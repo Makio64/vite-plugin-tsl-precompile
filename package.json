@@ -1,0 +1,24 @@
+{
+  "name": "vite-plugin-tsl-precompile-monorepo",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Vite plugin that AOT-compiles three.js TSL materials marked with .precompile(name).",
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter=!examples-* build",
+    "test": "pnpm -r --filter=!examples-* test",
+    "test:coverage": "pnpm --filter @tsl-precompile/plugin test:coverage",
+    "test:batch": "pnpm --filter examples-batch test",
+    "verify": "pnpm --filter @tsl-precompile/plugin verify",
+    "dev:ocean": "pnpm --filter examples-ocean dev",
+    "dev:bloom": "pnpm --filter examples-bloom dev",
+    "dev:compute": "pnpm --filter examples-compute dev"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0"
+  }
+}

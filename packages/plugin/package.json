@@ -1,0 +1,45 @@
+{
+  "name": "vite-plugin-tsl-precompile",
+  "version": "0.0.0",
+  "description": "Vite plugin that AOT-compiles three.js TSL materials marked with .precompile(name).",
+  "type": "module",
+  "license": "MIT",
+  "author": "David Ronai <davronai@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Makio64/vite-plugin-tsl-precompile.git",
+    "directory": "packages/plugin"
+  },
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test 'test/unit/*.test.js'",
+    "test:coverage": "node --test 'test/coverage/**/*.test.js'",
+    "verify": "node src/cli/verify.js"
+  },
+  "peerDependencies": {
+    "three": ">=0.175.0",
+    "vite": ">=5"
+  },
+  "dependencies": {
+    "@babel/parser": "^7.26.0",
+    "@babel/traverse": "^7.26.0",
+    "@babel/generator": "^7.26.0",
+    "@babel/types": "^7.26.0",
+    "magic-string": "^0.30.0"
+  },
+  "keywords": [
+    "vite-plugin",
+    "three.js",
+    "tsl",
+    "webgpu",
+    "shader",
+    "precompile",
+    "aot"
+  ]
+}

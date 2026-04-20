@@ -1,0 +1,32 @@
+{
+  "name": "@tsl-precompile/runtime",
+  "version": "0.0.0",
+  "description": "Runtime helpers for vite-plugin-tsl-precompile: UBO writers, artifact loader, dev-time .precompile marker.",
+  "type": "module",
+  "license": "MIT",
+  "author": "David Ronai <davronai@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Makio64/vite-plugin-tsl-precompile.git",
+    "directory": "packages/runtime"
+  },
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./writers": "./src/writers.js",
+    "./marker": "./src/precompile-marker.js",
+    "./apply": "./src/apply-precompiled.js",
+    "./loader": "./src/artifact-loader.js"
+  },
+  "files": [
+    "src",
+    "build"
+  ],
+  "scripts": {
+    "build": "echo 'TODO: Phase 7 — rollup slim bundle' && exit 0",
+    "test": "node --test test"
+  },
+  "peerDependencies": {
+    "three": ">=0.175.0"
+  }
+}

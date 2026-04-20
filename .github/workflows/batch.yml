@@ -1,0 +1,26 @@
+name: Batch harness (Phase 6)
+
+# Runs the full 206-example harness. Target: >=120/199 passing.
+# Skipped on every push because it's expensive; runs nightly and on demand.
+
+on:
+  schedule:
+    - cron: '17 5 * * *'   # 05:17 UTC daily
+  workflow_dispatch:
+
+jobs:
+  batch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: npx playwright install chromium
+      - run: pnpm test:batch
+        continue-on-error: true  # TODO: enforce threshold once Phase 6 lands

@@ -1,0 +1,10 @@
+{
+  "name": "examples-batch",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Runs the plugin against the 206 three.js webgpu examples and categorises failures. Phase 6 target: >=120/199 passing.",
+  "scripts": {
+    "test": "echo 'TODO: Phase 6 — port tsl-precompile-demo/shared/batch-precompile.mjs' && exit 0"
+  }
+}

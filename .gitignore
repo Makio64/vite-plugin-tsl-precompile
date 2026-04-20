@@ -1,0 +1,14 @@
+node_modules/
+.pnpm-store/
+.DS_Store
+dist/
+coverage/
+*.log
+
+# Per-project artifact caches (examples produce these when running the plugin)
+packages/examples/*/artifacts/
+packages/examples/*/.tsl-precompile-cache/
+
+# Playwright/CI scratch
+playwright-report/
+test-results/
