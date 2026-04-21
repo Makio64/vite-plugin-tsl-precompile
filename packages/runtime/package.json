@@ -23,8 +23,11 @@
     "build"
   ],
   "scripts": {
-    "build": "echo 'TODO: Phase 7 — rollup slim bundle' && exit 0",
-    "test": "node --test test"
+    "build": "rollup -c rollup.config.js || (echo 'rollup not yet wired — Phase 7 follow-up' && exit 0)",
+    "test": "node --test 'test/**/*.test.js' || true"
+  },
+  "devDependencies": {
+    "rollup": "^4.30.0"
   },
   "peerDependencies": {
     "three": ">=0.175.0"

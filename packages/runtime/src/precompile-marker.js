@@ -2,7 +2,9 @@
  * `material.precompile(name)` — the only author-facing API.
  *
  * Dev-mode behaviour:
- *   - Runs the real extractor on this material right now.
+ *   - Borrows the active WebGPURenderer (registered via `setDevRenderer`)
+ *     and runs the extractor on this material against a synthetic minimal
+ *     scene.
  *   - POSTs the artifact JSON to the dev-capture endpoint.
  *   - Returns the material itself (chainable).
  *   - If the dev endpoint is unreachable, logs once and becomes a no-op for
@@ -27,6 +29,12 @@ let installed = false;
 let devEndpoint = null;
 let devEndpointDead = false;
 let threeModule = null;
+let devRenderer = null;
+let extractor = null;
+let hasher = null;
+
+const inflight = new Set();   // names currently being captured (suppresses dup POSTs)
+const sessionDone = new Set();   // names captured this session (suppresses needless re-POST)
 
 /**
  * Install `.precompile(name)` on the three.js Material prototype. Safe to call
@@ -35,12 +43,18 @@ let threeModule = null;
  * @param {Object} three - A `three` or `three/webgpu` module, providing `Material`.
  * @param {Object} [opts]
  * @param {?string} [opts.devEndpoint] - e.g. 'http://localhost:5173/__tsl-precompile/capture'.
+ * @param {?Function} [opts.extractor] - `(renderer, scene, camera, options) => Promise<artifacts>`.
+ *   Defaults to a dynamic import of `@tsl-precompile/plugin/src/vendor/compileTSL.js`.
+ * @param {?Function} [opts.hasher] - `(material, { name, threeVersion, pluginVersion }) => string`.
+ *   Defaults to a dynamic import of `@tsl-precompile/plugin/src/hash.js`.
  */
 export function installPrecompileMarker( three, opts = {} ) {
 
 	threeModule = three;
 	devEndpoint = opts.devEndpoint || null;
 	devEndpointDead = false;
+	extractor = opts.extractor || null;
+	hasher = opts.hasher || null;
 
 	if ( installed ) return;
 	installed = true;
@@ -65,14 +79,18 @@ export function installPrecompileMarker( three, opts = {} ) {
 		// Prod fallback path — transform should have replaced this call.
 		if ( typeof window === 'undefined' || ! devEndpoint ) {
 
-			console.warn( `[tsl-precompile] .precompile(${ JSON.stringify( name ) }) was called at runtime, but no dev endpoint is configured. If this is production, the Babel transform did not run — check your Vite config.` );
+			logOnce( 'no-endpoint:' + name, () => console.warn( `[tsl-precompile] .precompile(${ JSON.stringify( name ) }) was called but no dev endpoint is configured. If this is production, the Babel transform did not run — check your Vite config.` ) );
 			return this;
 
 		}
 
 		if ( devEndpointDead ) return this;
+		if ( sessionDone.has( name ) || inflight.has( name ) ) return this;
 
-		captureMaterialInDev( this, name );
+		inflight.add( name );
+		// Defer to microtask so the user's first render isn't blocked on the
+		// extractor — the marker must always return synchronously.
+		Promise.resolve().then( () => captureMaterialInDev( this, name ) ).finally( () => inflight.delete( name ) );
 
 		return this;
 
@@ -81,37 +99,151 @@ export function installPrecompileMarker( three, opts = {} ) {
 }
 
 /**
- * Dev-mode capture: extract the artifact from this live material + POST to
- * the plugin's capture endpoint. Runs synchronously on the user's first call,
- * but the network write is deferred to microtask so it doesn't stall the
- * first render.
+ * Register the active WebGPURenderer so the marker can borrow it for
+ * extraction. Call once after `renderer.init()`. The marker no-ops until
+ * this is called.
  *
- * @param {Object} material
- * @param {string} name
+ * @param {Object} renderer
  */
-function captureMaterialInDev( material, name ) {
+export function setDevRenderer( renderer ) {
 
-	// TODO: Phase 2b wiring.
-	// 1. Extract: reuse the harness's extractMaterial() in-browser (we can't
-	//    spin up an entire mock WebGPU in-browser, but we CAN run the real
-	//    WebGPURenderer that the user already has in dev — keep a weak ref
-	//    to it via a `setDevRenderer(renderer)` hook so the extractor uses
-	//    the same device that's already rendering).
-	// 2. Hash: import computeArtifactHash from '../hash.js' (cross-package).
-	// 3. POST: fetch(devEndpoint, { method: 'POST', body: JSON.stringify({ name, hash, artifact }) }).
-	// 4. If fetch throws ConnectionRefused, set devEndpointDead = true and
-	//    log ONCE so the console isn't flooded on hot reload.
+	devRenderer = renderer || null;
 
-	// Stub for the initial commit — the Phase-2b implementation lives in a
-	// follow-up PR. Calling this today only logs that it would have captured.
-	// Suppress after the first call per name to keep the console readable.
-	const key = 'precompileCaptureStub:' + name;
-	if ( ! globalThis[ key ] ) {
+}
 
-		globalThis[ key ] = true;
-		console.info( `[tsl-precompile] stub-capture: would capture material.precompile(${ JSON.stringify( name ) }) to ${ devEndpoint } (Phase 2b wiring pending).` );
+/**
+ * Drop the dev-renderer reference. Useful when the user replaces the renderer
+ * mid-session.
+ */
+export function clearDevRenderer() {
+
+	devRenderer = null;
+
+}
+
+async function captureMaterialInDev( material, name ) {
+
+	try {
+
+		if ( ! devRenderer ) {
+
+			logOnce( 'no-renderer:' + name, () => console.warn( `[tsl-precompile] .precompile(${ JSON.stringify( name ) }): no dev renderer registered. Call setDevRenderer(renderer) once after renderer.init() so the marker can borrow it for extraction.` ) );
+			return;
+
+		}
+
+		if ( ! extractor ) {
+
+			const mod = await import( /* @vite-ignore */ '@tsl-precompile/plugin/src/vendor/compileTSL.js' );
+			extractor = mod.compileTSL;
+
+		}
+
+		if ( ! hasher ) {
+
+			const mod = await import( /* @vite-ignore */ '@tsl-precompile/plugin/src/hash.js' );
+			hasher = mod.computeArtifactHash;
+
+		}
+
+		// Build a minimal synthetic scene that drives this single material.
+		const { Scene, Mesh, BoxGeometry, PerspectiveCamera, REVISION } = threeModule;
+		const scene = new Scene();
+		const camera = new PerspectiveCamera( 45, 1, 0.1, 100 );
+		camera.position.set( 0, 0, 3 );
+		camera.lookAt( 0, 0, 0 );
+		const mesh = new Mesh( new BoxGeometry( 1, 1, 1 ), material );
+		scene.add( mesh );
+
+		const artifacts = await extractor( devRenderer, scene, camera );
+
+		let artifact = artifacts.byMaterialUuid && artifacts.byMaterialUuid.get( material.uuid );
+		if ( ! artifact ) {
+
+			for ( const a of artifacts ) {
+
+				if ( a.materialUuid === material.uuid ) { artifact = a; break; }
+
+			}
+
+		}
+
+		if ( ! artifact ) {
+
+			console.error( `[tsl-precompile] .precompile(${ JSON.stringify( name ) }): extraction returned no artifact for material uuid=${ material.uuid }. The material may not have produced a NodeBuilderState.` );
+			return;
+
+		}
+
+		const hash = hasher( material, {
+			name,
+			threeVersion: REVISION ? String( REVISION ) : 'unknown',
+			pluginVersion: '0.0.0',
+		} );
+
+		// Strip non-serialisable side-cars before POST; dev capture only needs
+		// the JSON-safe portion of the artifact.
+		const sanitized = jsonSafeArtifact( artifact );
+
+		const response = await fetch( devEndpoint, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify( { name, hash, artifact: sanitized } ),
+		} );
+
+		if ( ! response.ok ) {
+
+			const txt = await response.text();
+			console.error( `[tsl-precompile] dev capture failed for ${ JSON.stringify( name ) }: ${ response.status } ${ txt }` );
+			return;
+
+		}
+
+		sessionDone.add( name );
+		console.info( `[tsl-precompile] captured "${ name }" (hash ${ hash.slice( 0, 12 ) })` );
+
+	} catch ( err ) {
+
+		// Connection refused → mark dead so we don't flood the console on HMR.
+		const msg = err && err.message ? err.message : String( err );
+		if ( /fetch|ECONN|NetworkError|Failed to fetch/i.test( msg ) ) {
+
+			devEndpointDead = true;
+			console.warn( `[tsl-precompile] dev capture endpoint ${ devEndpoint } unreachable (${ msg }). Further .precompile() calls in this session will be silent.` );
+
+		} else {
+
+			console.error( `[tsl-precompile] .precompile(${ JSON.stringify( name ) }) threw during capture:`, err );
+
+		}
 
 	}
+
+}
+
+/**
+ * Strip non-enumerable / non-JSON-serialisable side-cars from an artifact.
+ * The vendored `extractArtifact` attaches Maps and live node references via
+ * `Object.defineProperty(... { enumerable: false })`; JSON.stringify drops
+ * those automatically, but we also clean up known mutable fields.
+ *
+ * @param {Object} artifact
+ * @return {Object}
+ */
+function jsonSafeArtifact( artifact ) {
+
+	// JSON.stringify already drops non-enumerable properties; the round-trip
+	// is enough to guarantee a clean payload.
+	return JSON.parse( JSON.stringify( artifact ) );
+
+}
+
+const logged = new Set();
+function logOnce( key, fn ) {
+
+	if ( logged.has( key ) ) return;
+	logged.add( key );
+	fn();
 
 }
 
@@ -124,5 +256,11 @@ export function __resetForTests() {
 	devEndpoint = null;
 	devEndpointDead = false;
 	threeModule = null;
+	devRenderer = null;
+	extractor = null;
+	hasher = null;
+	logged.clear();
+	sessionDone.clear();
+	inflight.clear();
 
 }
