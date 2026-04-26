@@ -1,0 +1,24 @@
+{
+  "total": 1,
+  "pass": 0,
+  "fail": 1,
+  "skip": 0,
+  "details": [
+    {
+      "name": "webgpu_lights_custom.html",
+      "status": "fail",
+      "captureBrightFrac": 0.4492,
+      "replayBrightFrac": 0.0099,
+      "userArtifacts": 4,
+      "auxArtifacts": 1,
+      "captureErrors": [],
+      "replayErrors": [
+        "Failed to execute 'setIndexBuffer' on 'GPURenderPassEncoder': parameter 1 is not of type 'GPUBuffer'.",
+        "Failed to execute 'setIndexBuffer' on 'GPURenderPassEncoder': parameter 1 is not of type 'GPUBuffer'.",
+        "THREE.The entry-point uses bindings in group 0 but [PipelineLayout (unlabeled)] doesn't have a BindGroupLayout for this index.\n - While validating vertex stage ([ShaderModule \"vertex_webgpu_lights_custom.html:NodeMaterial:1\"], entryPoint: \"main\").\n - While validating vertex state.\n - While calling [Device].CreateRenderPipeline([RenderPipelineDescriptor \"\"renderPipeline_webgpu_lights_custom.html:NodeMaterial:1_0\"\"]).\n",
+        "THREE.The entry-point uses bindings in group 0 but [PipelineLayout (unlabeled)] doesn't have a BindGroupLayout for this index.\n - While validating vertex stage ([ShaderModule \"vertex_webgpu_lights_custom.html:PointsNodeMaterial:1\"], entryPoint: \"main\").\n - While validating vertex state.\n - While calling [Device].CreateRenderPipeline([RenderPipelineDescriptor \"\"renderPipeline_webgpu_lights_custom.html:PointsNodeMaterial:1_3\"\"]).\n"
+      ],
+      "error": "Failed to execute 'setIndexBuffer' on 'GPURenderPassEncoder': parameter 1 is not of type 'GPUBuffer'."
+    }
+  ]
+}

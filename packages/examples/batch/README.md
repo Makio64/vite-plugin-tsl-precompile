@@ -1,6 +1,6 @@
 # batch (example harness)
 
-Runs the plugin against the 206 `webgpu_*.html` examples from the three.js repo. Phase 6 gate.
+Runs the plugin and slim runtime against the 206 `webgpu_*.html` examples from a local three.js repo. Phase 6/7 gate.
 
 ## Baseline
 
@@ -8,7 +8,13 @@ The monolithic slim-bundle approach in `Makio64/three.js` branch `tsl-precompile
 
 ## Target
 
-**≥ 120/199** for v1 release. Error buckets (from `tsl-precompile-demo/slim-examples/tools/EXPERIMENT_SUMMARY.md`):
+For the extractor/codegen harness, keep at least **≥ 120/199** passing for v1 release. The current checked-in extractor report is **197/198** candidates passing with **8** skipped.
+
+For the slim-bundle load-smoke harness, every candidate should either load cleanly or fail with an expected `tsl-precompile/slim` / `tsl-precompile/aux` loud error. The current checked-in slim report is **198/198** candidates passing with **0** unexpected errors and **8** skipped.
+
+For the E2E harness, start with focused filters. It automates the real loop for stock examples: full-three capture with auto-marked NodeMaterials, then slim replay with captured user and aux artifacts. A pass means replay reached a non-empty frame without unexpected browser errors; it is not yet a pixel-diff gate. Many examples are expected to fail today because serialized bindings/textures/storage paths still need richer runtime hydration.
+
+Historical error buckets from the monolithic slim fork:
 
 | Bucket | Cases | Plan-time disposition |
 |---|---|---|
@@ -23,6 +29,15 @@ The monolithic slim-bundle approach in `Makio64/three.js` branch `tsl-precompile
 
 Source examples aren't written with `.precompile()` calls. The harness injects `material.precompile(exampleName + ':<materialId>')` on every material it discovers — proves the extractor's coverage on the broad TSL surface.
 
-## Status
+## Commands
 
-TODO (Phase 6). Scaffold only.
+```sh
+pnpm test:batch
+pnpm test:slim
+pnpm test:e2e -- --filter=webgpu_lights_custom
+node packages/examples/batch/run.mjs --three-repo=/path/to/three.js --filter=webgpu_backdrop
+node packages/examples/batch/run-slim.mjs --three-repo=/path/to/three.js --filter=webgpu_backdrop
+node packages/examples/batch/run-e2e.mjs --three-repo=/path/to/three.js --filter=webgpu_lights_custom
+```
+
+By default the scripts look for a sibling `../three.js` checkout from the repo root.

@@ -4,4 +4,8 @@ Compute-shader demo: particles driven by a `computeFn`. Validates that ComputeNo
 
 ## Status
 
-TODO (Phase 3). Scaffold only.
+Demo scaffold for compute coverage. Compute/storage-buffer updater support is still documented-blocked in `emit-updater.js`, so this remains a focused test bed rather than a release-ready slim path.
+
+```sh
+pnpm dev:compute
+```

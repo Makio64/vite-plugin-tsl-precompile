@@ -9,11 +9,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "three": "^0.175.0",
-    "@tsl-precompile/runtime": "workspace:*"
+    "three": "^0.184.0",
+    "@tsl-precompile/runtime": "workspace:*",
+    "@tsl-precompile/inspector-panel": "workspace:*"
   },
   "devDependencies": {
-    "vite": "^6.0.0",
+    "vite": "^8.0.9",
     "vite-plugin-tsl-precompile": "workspace:*"
   }
 }

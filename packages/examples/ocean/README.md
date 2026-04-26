@@ -6,4 +6,8 @@ Flagship demo. A sea-surface MeshStandardNodeMaterial with animated normals and 
 
 ## Status
 
-TODO (Phase 3). Scaffold only.
+Active flagship demo. It wires the Vite plugin, dev capture endpoint, runtime marker, auxiliary background capture, and Inspector precompile panel.
+
+```sh
+pnpm dev:ocean
+```

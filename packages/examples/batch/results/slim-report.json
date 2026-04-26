@@ -1,0 +1,1200 @@
+{
+  "total": 198,
+  "pass": 198,
+  "fail": 0,
+  "skip": 8,
+  "categories": {
+    "expected-slim-fail": 196,
+    "clean": 2
+  },
+  "details": [
+    {
+      "name": "webgpu_animation_retargeting.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_animation_retargeting_readyplayer.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_backdrop.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.color() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_backdrop_area.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_backdrop_water.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_camera.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] only PrecompiledMaterial is supported in the slim bundle. Did you forget .precompile() on a material?"
+    },
+    {
+      "name": "webgpu_camera_array.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] only PrecompiledMaterial is supported in the slim bundle. Did you forget .precompile() on a material?"
+    },
+    {
+      "name": "webgpu_camera_logarithmicdepthbuffer.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_caustics.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_centroid_sampling.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_clearcoat.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_clipping.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_compute_audio.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_compute_birds.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_compute_cloth.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_compute_geometry.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_compute_particles.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_compute_particles_fluid.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_compute_particles_rain.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_compute_particles_snow.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_compute_points.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_compute_reduce.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.uniform() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_compute_sort_bitonic.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_compute_texture.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_compute_texture_3d.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_compute_texture_pingpong.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.uniform() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_compute_water.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_cubemap_adjustments.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_cubemap_dynamic.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_cubemap_mix.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_custom_fog.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_custom_fog_background.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.pass() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_custom_fog_scattering.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_depth_texture.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] new MeshBasicNodeMaterial() is not available. Build a PrecompiledMaterial via .precompile() in dev."
+    },
+    {
+      "name": "webgpu_display_stereo.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_equirectangular.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_fog_height.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_hdr.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_instance_mesh.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_instance_path.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_instance_points.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_instance_sprites.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_instance_uniform.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_instancing_morph.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_layers.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_lensflares.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_lightprobe.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_lightprobe_cubecamera.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_lights_custom.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] new NodeMaterial() is not available. Use .precompile(name) in dev and PrecompiledMaterial at runtime."
+    },
+    {
+      "name": "webgpu_lights_dynamic.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] LightsNode is not available."
+    },
+    {
+      "name": "webgpu_lights_ies_spotlight.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_lights_phong.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_lights_physical.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_lights_pointlights.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "Error: [tsl-precompile/slim] new MeshPhongNodeMaterial() is not available. Build a PrecompiledMaterial via .precompile() in dev.\n    at new <anonymous> (http://localhost:8719/__tsl-precompile__/three.webgpu.slim.js:1:789087)\n    at createMaterial (http://localhost:8719/examples/webgpu_lights_pointlights.html:137:22)\n    at http://localhost:8719/examples/webgpu_lights_pointlights.html:67:22\n    at Object.onLoad (http://localhost:8719/examples/jsm/loaders/OBJLoader.js:495:5)\n    at http://localhos"
+    },
+    {
+      "name": "webgpu_lights_projector.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_lights_rectarealight.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_lights_selective.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_lights_spotlight.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_lights_tiled.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_lines_fat.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.color() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_lines_fat_raycasting.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_lines_fat_wireframe.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_loader_gltf.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_loader_gltf_anisotropy.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/aux] no artifact for \"render-output:e504e192203d72fe6232ff295be029db7db49a1c4c9f9f8e5606efcc6d84b995\". Known render-output configHashes in this bundle: (none). Run dev mode on this scene so precompileAuxiliary() captures this config, then rebuild."
+    },
+    {
+      "name": "webgpu_loader_gltf_compressed.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/aux] no artifact for \"render-output:4cf84c6f25e9c6e371a924b0f43a4d1bc936b221c098e88dba54fdc12415ee6d\". Known render-output configHashes in this bundle: (none). Run dev mode on this scene so precompileAuxiliary() captures this config, then rebuild."
+    },
+    {
+      "name": "webgpu_loader_gltf_dispersion.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/aux] no artifact for \"render-output:aa1877f898b20e3a795fc226b5573db46c9de7ae85686792fb8673ae3f6c1f4e\". Known render-output configHashes in this bundle: (none). Run dev mode on this scene so precompileAuxiliary() captures this config, then rebuild."
+    },
+    {
+      "name": "webgpu_loader_gltf_iridescence.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/aux] no artifact for \"render-output:adc75d402d2e689fb855ec2a38efdfaa05bc6de1abb8ab751e1d9d23120f00e0\". Known render-output configHashes in this bundle: (none). Run dev mode on this scene so precompileAuxiliary() captures this config, then rebuild."
+    },
+    {
+      "name": "webgpu_loader_gltf_sheen.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_loader_gltf_transmission.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/aux] no artifact for \"render-output:fdebfae63557657f791d97f884f531ddbd87fec1ffc68c516c3ce4666f03d3e4\". Known render-output configHashes in this bundle: (none). Run dev mode on this scene so precompileAuxiliary() captures this config, then rebuild."
+    },
+    {
+      "name": "webgpu_loader_materialx.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_loader_texture_ktx2.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/aux] no artifact for \"render-output:5aea0858cbb4c2f4ab18b8ce32cedead33205b39abdd51c5750edc1c03e6e813\". Known render-output configHashes in this bundle: (none). Run dev mode on this scene so precompileAuxiliary() captures this config, then rebuild."
+    },
+    {
+      "name": "webgpu_materials.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_materials_alphahash.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_materials_arrays.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_materials_basic.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_materials_cubemap_mipmaps.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/aux] no artifact for \"render-output:7210762ab3f0c580d812f9eea89c3758e400eb52b2f3fce7eeed0fa14b2ee95a\". Known render-output configHashes in this bundle: (none). Run dev mode on this scene so precompileAuxiliary() captures this config, then rebuild."
+    },
+    {
+      "name": "webgpu_materials_displacementmap.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_materials_envmaps.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_materials_envmaps_bpcem.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_materials_lightmap.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_materials_matcap.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_materials_sss.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_materials_texture_html.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] only PrecompiledMaterial is supported in the slim bundle. Did you forget .precompile() on a material?"
+    },
+    {
+      "name": "webgpu_materials_texture_manualmipmap.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/aux] no artifact for \"render-output:d7da44ab6b6569bf7d4b7e90540b044b902d60589617de4da68a83e53286b5d7\". Known render-output configHashes in this bundle: (none). Run dev mode on this scene so precompileAuxiliary() captures this config, then rebuild."
+    },
+    {
+      "name": "webgpu_materials_toon.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_materials_transmission.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_materials_video.html",
+      "status": "pass",
+      "category": "clean",
+      "firstError": null
+    },
+    {
+      "name": "webgpu_materialx_noise.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_mesh_batch.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_mirror.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_modifier_curve.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] new MeshBasicNodeMaterial() is not available. Build a PrecompiledMaterial via .precompile() in dev."
+    },
+    {
+      "name": "webgpu_morphtargets.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_morphtargets_face.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_mrt.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_mrt_mask.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.color() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_multiple_canvas.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.color() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_multiple_elements.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.color() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_multiple_rendertargets.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] new NodeMaterial() is not available. Use .precompile(name) in dev and PrecompiledMaterial at runtime."
+    },
+    {
+      "name": "webgpu_multiple_rendertargets_readback.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_multisampled_renderbuffers.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_occlusion.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] new MeshPhongNodeMaterial() is not available. Build a PrecompiledMaterial via .precompile() in dev."
+    },
+    {
+      "name": "webgpu_ocean.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_parallax_uv.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_particles.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_performance.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_performance_renderbundle.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_pmrem_cubemap.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/aux] no artifact for \"render-output:c478ea29c85b19cdb234cc3903f48c39c49ec60f7386cdf90aa9dfe56c097626\". Known render-output configHashes in this bundle: (none). Run dev mode on this scene so precompileAuxiliary() captures this config, then rebuild."
+    },
+    {
+      "name": "webgpu_pmrem_equirectangular.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/aux] no artifact for \"render-output:af58afb5d86f7045a0f046f1c25e0f409508ce9a732be5a2f0f05efee9a7ffe1\". Known render-output configHashes in this bundle: (none). Run dev mode on this scene so precompileAuxiliary() captures this config, then rebuild."
+    },
+    {
+      "name": "webgpu_pmrem_scene.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_pmrem_test.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_portal.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_3dlut.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_afterimage.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_anamorphic.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_ao.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_bloom.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_bloom_emissive.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_bloom_selective.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_ca.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_difference.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_dof.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_dof_basic.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_fxaa.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_godrays.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_lensflare.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_masking.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_motion_blur.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_outline.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_pixel.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_radial_blur.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_retro.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.vec2() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_smaa.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_sobel.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_ssaa.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_ssgi.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_ssgi_ballpool.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.pass() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_ssr.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_sss.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_traa.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_postprocessing_transition.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_procedural_texture.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_reflection.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_reflection_blurred.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_reflection_roughness.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_refraction.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_rendertarget_2d-array_3d.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.vec2() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_reversed_depth_buffer.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.pass() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_rtt.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_sandbox.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_shadertoy.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] Node (base class) is not available — slim mode cannot author TSL graphs at runtime. Precompile via `.precompile(name)` in dev."
+    },
+    {
+      "name": "webgpu_shadow_contact.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_shadowmap.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_shadowmap_array.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_shadowmap_csm.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_shadowmap_opacity.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_shadowmap_pointlight.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] new MeshPhongNodeMaterial() is not available. Build a PrecompiledMaterial via .precompile() in dev."
+    },
+    {
+      "name": "webgpu_shadowmap_progressive.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_shadowmap_vsm.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_skinning.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.color() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_skinning_instancing.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.pass() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_skinning_points.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/aux] no artifact for \"render-output:a850f0233a681c0140077ac681e8fc66c33e60c00f2ad68e290ce492a387ca5b\". Known render-output configHashes in this bundle: (none). Run dev mode on this scene so precompileAuxiliary() captures this config, then rebuild."
+    },
+    {
+      "name": "webgpu_sky.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_sprites.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.color() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_storage_buffer.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.storage() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_struct_drawindirect.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.struct() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_test_memory.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_texturegrad.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] new MeshBasicNodeMaterial() is not available. Build a PrecompiledMaterial via .precompile() in dev."
+    },
+    {
+      "name": "webgpu_textures_2d-array.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/aux] no artifact for \"render-output:44dca37c32e9daa0f8359037a1367825b07e6c907358a933900b1f35e2550d9f\". Known render-output configHashes in this bundle: (none). Run dev mode on this scene so precompileAuxiliary() captures this config, then rebuild."
+    },
+    {
+      "name": "webgpu_textures_2d-array_compressed.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.uniform() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_textures_anisotropy.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/aux] no artifact for \"render-output:89fa9fb2fbf980e8c0b475ae1fda39af0e9e8ac8e9acb117a80f3b475c9bdd91\". Known render-output configHashes in this bundle: (none). Run dev mode on this scene so precompileAuxiliary() captures this config, then rebuild."
+    },
+    {
+      "name": "webgpu_textures_partialupdate.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] only PrecompiledMaterial is supported in the slim bundle. Did you forget .precompile() on a material?"
+    },
+    {
+      "name": "webgpu_tonemapping.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_tsl_compute_attractors_particles.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_tsl_earth.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_tsl_editor.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] new NodeMaterial() is not available. Use .precompile(name) in dev and PrecompiledMaterial at runtime."
+    },
+    {
+      "name": "webgpu_tsl_galaxy.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_tsl_graph.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_tsl_halftone.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_tsl_interoperability.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_tsl_procedural_terrain.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_tsl_raging_sea.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_tsl_transpiler.html",
+      "status": "pass",
+      "category": "clean",
+      "firstError": null
+    },
+    {
+      "name": "webgpu_tsl_vfx_flames.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_tsl_vfx_linkedparticles.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_tsl_vfx_tornado.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_tsl_wood.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_upscaling_fsr1.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_upscaling_taau.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_video_frame.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] only PrecompiledMaterial is supported in the slim bundle. Did you forget .precompile() on a material?"
+    },
+    {
+      "name": "webgpu_video_panorama.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] only PrecompiledMaterial is supported in the slim bundle. Did you forget .precompile() on a material?"
+    },
+    {
+      "name": "webgpu_volume_caustics.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_volume_cloud.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_volume_lighting.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_volume_lighting_rectarea.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_volume_lighting_traa.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_volume_perlin.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    },
+    {
+      "name": "webgpu_water.html",
+      "status": "pass",
+      "category": "expected-slim-fail",
+      "firstError": "[tsl-precompile/slim] TSL.Fn() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time."
+    }
+  ]
+}
