@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="color-scheme" content="dark">
+	<meta name="description" content="AOT shader compilation for three.js TSL materials. Mark a material with .precompile('name'); ship a slim runtime with static WGSL and a generated UBO updater.">
+	<meta property="og:title" content="vite-plugin-tsl-precompile">
+	<meta property="og:description" content="AOT shader compilation for three.js TSL materials.">
+	<meta property="og:type" content="website">
+	<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+	<title>vite-plugin-tsl-precompile — AOT shaders for three.js TSL</title>
+	<link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+	<a class="skip-link" href="#get-started">Skip to get started</a>
+
+	<!-- ========== HERO ========== -->
+	<header class="hero" id="top">
+		<canvas id="hero-bg" aria-hidden="true"></canvas>
+		<div class="hero-fallback" aria-hidden="true"></div>
+		<div class="hero-inner">
+			<div class="chip-row">
+				<span class="chip">v0.1</span>
+				<span class="chip chip-muted">early WIP</span>
+				<span class="chip chip-muted">MIT</span>
+			</div>
+			<h1 class="hero-title">
+				<span class="mono">vite-plugin-</span><span class="accent">tsl-precompile</span>
+			</h1>
+			<p class="hero-tagline">AOT shader compilation for three.js TSL materials.</p>
+			<p class="hero-sub">
+				Mark a material with <code>.precompile('name')</code>. The plugin captures it to static WGSL
+				and a generated UBO updater at build time. Ship a slim three.js with no node builder at runtime.
+			</p>
+			<div class="cta-row">
+				<a class="btn btn-primary" href="#get-started">Get started</a>
+				<a class="btn btn-ghost" href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">View on GitHub</a>
+			</div>
+		</div>
+		<div class="hero-scroll" aria-hidden="true">
+			<span></span>
+		</div>
+	</header>
+
+	<main>
+
+		<!-- ========== ONE LINE ========== -->
+		<section class="section reveal" id="one-line">
+			<p class="eyebrow">the one line you add</p>
+			<pre class="code-hero"><code><span class="tok-com">// your source, unchanged three.js TSL</span>
+<span class="tok-key">const</span> water = <span class="tok-key">new</span> <span class="tok-fn">MeshStandardNodeMaterial</span>();
+water.colorNode = <span class="tok-fn">mix</span>(<span class="tok-fn">color</span>(<span class="tok-str">'#002'</span>), <span class="tok-fn">color</span>(<span class="tok-str">'#4af'</span>), <span class="tok-fn">uv</span>().y);
+<span class="hl">water.<span class="tok-fn">precompile</span>(<span class="tok-str">'ocean-water'</span>);</span>   <span class="tok-com">// ← the only addition</span></code></pre>
+			<p class="section-caption">That's the entire author surface.</p>
+		</section>
+
+		<!-- ========== BEFORE / AFTER ========== -->
+		<section class="section reveal" id="compare">
+			<p class="eyebrow">before &amp; after</p>
+			<h2>The same material, two runtimes.</h2>
+			<div class="compare-grid">
+				<article class="compare-col compare-before">
+					<header>
+						<span class="compare-tag">Before — runtime TSL</span>
+						<h3>Full three.js, built every frame</h3>
+					</header>
+					<ul class="compare-list">
+						<li>Full three.js + node builder shipped</li>
+						<li>First render walks the TSL AST and compiles WGSL</li>
+						<li>Per-frame: descriptor walk, closures, branches</li>
+					</ul>
+					<div class="compare-meter compare-meter-bad">
+						<span>bundle</span><strong>~2 MB+</strong>
+					</div>
+				</article>
+				<div class="compare-arrow" aria-hidden="true">→</div>
+				<article class="compare-col compare-after">
+					<header>
+						<span class="compare-tag">After — precompiled</span>
+						<h3>Slim three.js + generated writer</h3>
+					</header>
+					<ul class="compare-list">
+						<li>Static WGSL, captured at build time</li>
+						<li>Slim runtime — no node builder shipped</li>
+						<li>Per-frame: straight-line byte writes, JIT-inlineable</li>
+					</ul>
+					<div class="compare-meter compare-meter-good">
+						<span>target bundle</span><strong>≤ 300 KB gzip</strong>
+					</div>
+				</article>
+			</div>
+		</section>
+
+		<!-- ========== HOW IT WORKS ========== -->
+		<section class="section reveal" id="how">
+			<p class="eyebrow">how it works</p>
+			<h2>Four steps, one round trip.</h2>
+			<ol class="flow">
+				<li class="flow-step">
+					<span class="flow-num">1</span>
+					<h3>Author marks</h3>
+					<p><code>material.precompile('name')</code> is a plain method call on <code>Material.prototype</code>. Explicit, source-visible, fails loudly on unsupported nodes.</p>
+				</li>
+				<li class="flow-arrow" aria-hidden="true"></li>
+				<li class="flow-step">
+					<span class="flow-num">2</span>
+					<h3>Dev plugin captures</h3>
+					<p>In dev, the marker runs the real three.js node builder on the live material and POSTs the artifact — WGSL, bindings, uniform plan — to the Vite dev server, which writes <code>artifacts/&lt;name&gt;.&lt;hash&gt;.json</code>.</p>
+				</li>
+				<li class="flow-arrow" aria-hidden="true"></li>
+				<li class="flow-step">
+					<span class="flow-num">3</span>
+					<h3>Build rewrites</h3>
+					<p>A Babel transform rewrites <code>.precompile('name')</code> to <code>__applyPrecompiled(...)</code>, injecting the baked artifact and a generated static <code>updater.js</code> via a virtual module.</p>
+				</li>
+				<li class="flow-arrow" aria-hidden="true"></li>
+				<li class="flow-step">
+					<span class="flow-num">4</span>
+					<h3>Slim runtime runs</h3>
+					<p>The shipped bundle is a slim three.js with no TSL builder. At app init, the hash is asserted; per frame, the generated updater writes UBO bytes directly.</p>
+				</li>
+			</ol>
+		</section>
+
+		<!-- ========== STALENESS GATES ========== -->
+		<section class="section reveal" id="gates">
+			<p class="eyebrow">five staleness gates</p>
+			<h2>Shaders never silently drift.</h2>
+			<p class="section-caption">Any single failure stops the build or app init.</p>
+			<ul class="gates-grid">
+				<li class="gate">
+					<span class="gate-num">1</span>
+					<h3>Content hash</h3>
+					<p>sha256 over the normalized TSL graph, three.js version, and plugin version.</p>
+				</li>
+				<li class="gate">
+					<span class="gate-num">2</span>
+					<h3>Dev hot re-extract</h3>
+					<p>File save re-runs the extractor; the dev server HMRs the new artifact.</p>
+				</li>
+				<li class="gate">
+					<span class="gate-num">3</span>
+					<h3>Build hash check</h3>
+					<p>The transform compares the committed hash to the one emitted at build. Mismatch is a hard error.</p>
+				</li>
+				<li class="gate">
+					<span class="gate-num">4</span>
+					<h3>Runtime assertion</h3>
+					<p><code>__applyPrecompiled</code> asserts the artifact hash at app init, before the first frame.</p>
+				</li>
+				<li class="gate">
+					<span class="gate-num">5</span>
+					<h3>CI verify</h3>
+					<p><code>pnpm verify</code> wipes <code>artifacts/</code>, re-extracts in a Node harness, and diffs against the committed set.</p>
+				</li>
+			</ul>
+		</section>
+
+		<!-- ========== GET STARTED ========== -->
+		<section class="section reveal" id="get-started">
+			<p class="eyebrow">get started</p>
+			<h2>Get started.</h2>
+
+			<!-- Prerequisites -->
+			<div class="prereqs">
+				<span class="prereq-label">Prereqs</span>
+				<span class="chip chip-muted">Node ≥ 20.19</span>
+				<span class="chip chip-muted">pnpm 10 (or npm / yarn)</span>
+				<span class="chip chip-muted">Vite 5+ · three 0.175+</span>
+				<span class="chip chip-muted">WebGPU browser — Chrome/Edge 113+, Safari TP</span>
+			</div>
+			<p class="prereqs-caption">Missing any of those? Fix them first — the rest won't work without them.</p>
+
+			<!-- Option A: Quick path -->
+			<div class="track">
+				<h3 class="track-title">
+					<span class="track-tag">Option A</span>
+					Try it in 2 minutes
+				</h3>
+				<div class="quick-path">
+					<div class="code-block">
+						<button class="copy-btn" data-copy type="button" aria-label="Copy clone command">copy</button>
+						<pre><code><span class="tok-com"># clone, install, run</span>
+git clone https://github.com/Makio64/vite-plugin-tsl-precompile.git
+<span class="tok-key">cd</span> vite-plugin-tsl-precompile &amp;&amp; pnpm install
+pnpm dev</code></pre>
+					</div>
+					<p class="quick-path-note">
+						Boots the ocean demo at <code>http://localhost:5173</code>. Every <code>.precompile('…')</code> call
+						in the source writes an artifact to <code>packages/examples/ocean/artifacts/</code>. Source:
+						<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/tree/main/packages/examples/ocean" rel="noopener">packages/examples/ocean</a>.
+					</p>
+				</div>
+			</div>
+
+			<!-- Option B: Add to your project -->
+			<div class="track">
+				<h3 class="track-title">
+					<span class="track-tag">Option B</span>
+					Add to an existing Vite + three.js project
+				</h3>
+
+				<div class="install-step">
+					<h4>1. Add the plugin and runtime</h4>
+					<div class="code-block">
+						<button class="copy-btn" data-copy type="button" aria-label="Copy install command">copy</button>
+						<pre><code>pnpm add -D vite-plugin-tsl-precompile @tsl-precompile/runtime</code></pre>
+					</div>
+					<p class="step-note">
+						Heads up — these aren't on npm yet (monorepo is at <code>v0.0.0</code>). For now, install from the
+						git repo or <code>pnpm link</code> it locally. See the
+						<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/ROADMAP.md" rel="noopener">roadmap</a>
+						for the v0.1 publish target.
+					</p>
+				</div>
+
+				<div class="install-step">
+					<h4>2. Register in <code>vite.config.js</code></h4>
+					<div class="code-block">
+						<button class="copy-btn" data-copy type="button" aria-label="Copy vite config">copy</button>
+						<pre><code><span class="tok-key">import</span> { defineConfig } <span class="tok-key">from</span> <span class="tok-str">'vite'</span>;
+<span class="tok-key">import</span> tslPrecompile <span class="tok-key">from</span> <span class="tok-str">'vite-plugin-tsl-precompile'</span>;
+
+<span class="tok-key">export default</span> <span class="tok-fn">defineConfig</span>({
+  plugins: [
+    <span class="tok-fn">tslPrecompile</span>({
+      artifactsDir: <span class="tok-str">'./artifacts'</span>,
+    }),
+  ],
+});</code></pre>
+					</div>
+				</div>
+
+				<div class="install-step">
+					<h4>3. Mark a material in your source</h4>
+					<div class="code-block">
+						<button class="copy-btn" data-copy type="button" aria-label="Copy material usage">copy</button>
+						<pre><code><span class="tok-key">import</span> { MeshStandardNodeMaterial } <span class="tok-key">from</span> <span class="tok-str">'three/webgpu'</span>;
+<span class="tok-key">import</span> { mix, color, uv } <span class="tok-key">from</span> <span class="tok-str">'three/tsl'</span>;
+
+<span class="tok-key">const</span> water = <span class="tok-key">new</span> <span class="tok-fn">MeshStandardNodeMaterial</span>();
+water.colorNode = <span class="tok-fn">mix</span>(<span class="tok-fn">color</span>(<span class="tok-str">'#002'</span>), <span class="tok-fn">color</span>(<span class="tok-str">'#4af'</span>), <span class="tok-fn">uv</span>().y);
+water.<span class="tok-fn">precompile</span>(<span class="tok-str">'ocean-water'</span>);
+
+mesh.material = water;</code></pre>
+					</div>
+				</div>
+			</div>
+
+			<!-- Verify -->
+			<div class="verify-block">
+				<h3 class="verify-title">Verify it worked</h3>
+				<ul class="verify-list">
+					<li>Dev server log shows <code>[tsl-precompile] captured &lt;name&gt; → artifacts/&lt;name&gt;.&lt;hash&gt;.json</code>.</li>
+					<li>A file <code>artifacts/&lt;name&gt;.&lt;hash&gt;.json</code> exists in your configured <code>artifactsDir</code>.</li>
+					<li>Saving the material source triggers an HMR re-capture with a new hash.</li>
+				</ul>
+				<p class="verify-note">If all three happen, you're good. Commit the <code>artifacts/</code> folder — those are your baked shaders.</p>
+			</div>
+
+			<!-- What's next -->
+			<p class="whats-next">
+				<strong>What next?</strong> Explore
+				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/tree/main/packages/examples/ocean" rel="noopener">ocean</a> (basic water),
+				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/tree/main/packages/examples/bloom" rel="noopener">bloom</a> (post-processing), and
+				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/tree/main/packages/examples/compute" rel="noopener">compute</a> (compute shaders) for more patterns.
+			</p>
+		</section>
+
+		<!-- ========== FAQ ========== -->
+		<section class="section reveal" id="faq">
+			<p class="eyebrow">troubleshooting</p>
+			<h2>Things that trip people up.</h2>
+			<div class="faq">
+				<details>
+					<summary>"WebGPU not available" in the console</summary>
+					<p>
+						The runtime needs a WebGPU-capable browser. Use Chrome/Edge 113+ (stable) or Safari Technology Preview.
+						Confirm your browser actually has a working adapter at <code>about://gpu</code> — look for
+						<em>WebGPU: Hardware accelerated</em>. If you're on Firefox or Safari stable, WebGPU isn't fully wired up yet.
+					</p>
+				</details>
+				<details>
+					<summary>The <code>artifacts/</code> folder is empty after <code>pnpm dev</code></summary>
+					<p>
+						The extractor only runs when <code>material.precompile('…')</code> is actually reached at runtime.
+						Open the page in the browser (a cold <code>pnpm dev</code> with no visit won't capture anything).
+						Confirm the marker is on a code path that executes — not hidden behind a feature flag or a component
+						that was never mounted.
+					</p>
+				</details>
+				<details>
+					<summary>"hash mismatch" error at build</summary>
+					<p>
+						The committed artifact and the source TSL graph have drifted. Run <code>pnpm dev</code>, visit the page
+						once to re-capture, commit the updated <code>artifacts/&lt;name&gt;.&lt;hash&gt;.json</code>, then rebuild.
+						This is Gate 3 from <a href="#gates">the staleness gates</a> doing its job.
+					</p>
+				</details>
+				<details>
+					<summary>Should I commit the <code>artifacts/</code> folder?</summary>
+					<p>
+						Yes — always. Those files are your baked shaders and bindings. The build fails without them because there's
+						nothing to inject into the slim runtime. Treat them like generated code you check in, similar to lockfiles.
+					</p>
+				</details>
+			</div>
+		</section>
+
+		<!-- ========== ROADMAP STATUS ========== -->
+		<section class="section reveal" id="status">
+			<p class="eyebrow">status</p>
+			<h2>Eight phases. We're in phase 3.</h2>
+			<ol class="phases">
+				<li class="phase phase-done"><span class="phase-num">1</span><span class="phase-name">Node harness</span></li>
+				<li class="phase phase-done"><span class="phase-num">2</span><span class="phase-name">.precompile() + dev capture</span></li>
+				<li class="phase phase-active"><span class="phase-num">3</span><span class="phase-name">AOT codegen</span></li>
+				<li class="phase"><span class="phase-num">4</span><span class="phase-name">Build rewrite</span></li>
+				<li class="phase"><span class="phase-num">5</span><span class="phase-name">Coverage matrix</span></li>
+				<li class="phase"><span class="phase-num">6</span><span class="phase-name">Batch harness</span></li>
+				<li class="phase"><span class="phase-num">7</span><span class="phase-name">Slim runtime bundle</span></li>
+				<li class="phase"><span class="phase-num">8</span><span class="phase-name">Launch</span></li>
+			</ol>
+			<p class="section-caption">
+				Full phase breakdown in
+				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/ROADMAP.md" rel="noopener">ROADMAP.md</a>.
+			</p>
+		</section>
+
+		<!-- ========== INSPIRED BY ========== -->
+		<section class="section reveal" id="credits">
+			<p class="eyebrow">inspired by</p>
+			<div class="credits-grid">
+				<article class="credit">
+					<h3>Unreal Material Compiler</h3>
+					<p>Explicit markers, offline shader compilation, generated <code>FMaterialUniformExpressionSet</code> C++ updaters at cook time.</p>
+				</article>
+				<article class="credit">
+					<h3>Unity Shader Graph + SRP Batcher</h3>
+					<p>HLSL variants compiled offline; SRP Batcher writes uniforms at runtime without per-material overhead.</p>
+				</article>
+				<article class="credit">
+					<h3>Sunag's <code>tsl-precompile</code> fork</h3>
+					<p>The foundation this project grew out of. Different architectural choice — dumb runtime via AOT codegen — on the same problem.</p>
+				</article>
+			</div>
+		</section>
+	</main>
+
+	<!-- ========== FOOTER ========== -->
+	<footer class="footer">
+		<div class="footer-inner">
+			<div>
+				<strong class="mono">vite-plugin-tsl-precompile</strong>
+				<span class="footer-sep">·</span>
+				<span class="muted">MIT</span>
+			</div>
+			<nav class="footer-nav">
+				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">GitHub</a>
+				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/ARCHITECTURE.md" rel="noopener">Architecture</a>
+				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/ROADMAP.md" rel="noopener">Roadmap</a>
+			</nav>
+		</div>
+	</footer>
+
+	<script type="module" src="/src/main.js"></script>
+</body>
+</html>

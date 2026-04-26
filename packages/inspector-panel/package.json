@@ -1,0 +1,37 @@
+{
+  "name": "@tsl-precompile/inspector-panel",
+  "version": "0.0.0",
+  "description": "three.js Inspector panel that shows captured TSL precompile artifacts live: user materials, aux passes (background / post-process / lights / pmrem), WGSL previews, and unsupported-kind warnings.",
+  "type": "module",
+  "license": "MIT",
+  "author": "David Ronai <davronai@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Makio64/vite-plugin-tsl-precompile.git",
+    "directory": "packages/inspector-panel"
+  },
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./panel": "./src/panel.js",
+    "./data-source": "./src/data-source.js"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test 'test/*.test.js'"
+  },
+  "peerDependencies": {
+    "@tsl-precompile/runtime": "workspace:*",
+    "three": ">=0.184.0"
+  },
+  "keywords": [
+    "three.js",
+    "tsl",
+    "inspector",
+    "precompile",
+    "webgpu",
+    "devtools"
+  ]
+}

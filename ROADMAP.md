@@ -35,12 +35,12 @@ Eight phases. Each has a release gate that must pass before moving on.
 ## Phase 6 — 206-example batch harness
 
 - Port the `batch-precompile.mjs` harness. Auto-mark mode injects `.precompile()` on every material.
-- **Gate**: ≥ 120 / 199 passing (baseline: 68/199 on the monolithic slim fork).
+- **Gate**: ≥ 120 / 199 passing (baseline: 68/199 on the monolithic slim fork). Current extractor/codegen harness: 197 / 198 candidates passing, 8 skipped.
 
 ## Phase 7 — Slim runtime bundle
 
 - Rollup `packages/runtime/build/three.webgpu.slim.js`. Vite alias `three/webgpu` → slim bundle when the plugin is active.
-- **Gate**: ≤ 300 KB gzip.
+- **Gate**: ≤ 300 KB gzip and 0 unexpected slim-bundle load-smoke errors. Current slim harness: 198 / 198 candidates passing, 8 skipped, 0 unexpected errors.
 
 ## Phase 8 — Launch
 

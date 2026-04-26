@@ -8,8 +8,9 @@ Thanks for picking this up. Read [ARCHITECTURE.md](./ARCHITECTURE.md) and [ROADM
 git clone https://github.com/Makio64/vite-plugin-tsl-precompile.git
 cd vite-plugin-tsl-precompile
 pnpm install
-pnpm test                # 17 unit tests
-pnpm test:coverage       # 17 coverage-matrix cells
+pnpm test                # package tests
+pnpm test:coverage       # coverage-matrix fixtures
+pnpm test:slim           # slim-bundle load-smoke, requires ../three.js
 pnpm dev:ocean           # open the ocean demo
 ```
 
@@ -27,10 +28,10 @@ Unsupported kinds emit `throw new Error(...)` AND log to `__unsupportedKinds`. D
 
 See [packages/plugin/src/vendor/VENDORING.md](packages/plugin/src/vendor/VENDORING.md). The procedure is:
 
-1. `pnpm verify` to snapshot current artifact hashes.
+1. `pnpm verify` to check committed artifact and manifest integrity.
 2. Copy newer source from the fork, re-apply import rewrites.
 3. `pnpm test:coverage` — every covered cell must still pass.
-4. `pnpm verify` after — hashes WILL change (three version is in the hash). Update the version table in `VENDORING.md`.
+4. `pnpm verify` after — artifact metadata must still be valid. Hashes can change because the three.js version is part of the hash.
 
 ## Phase status
 
@@ -40,10 +41,10 @@ See [packages/plugin/src/vendor/VENDORING.md](packages/plugin/src/vendor/VENDORI
 | 2 — `.precompile(name)` + dev capture | Done |
 | 3 — AOT codegen | Done (camera/object/material/time/uniform.constant/uniform.live) |
 | 4 — Build-time rewrite | Done |
-| 5 — Coverage matrix | 17 cells; expand toward full TSL surface |
-| 6 — 206-example batch harness | Skeleton; needs Vite + Playwright orchestration |
-| 7 — Slim runtime bundle | Rollup config; needs alias plugin |
-| 8 — Launch | Docs done; needs demo deployments + adoption |
+| 5 — Coverage matrix | Fixture coverage exists; expand toward full TSL surface |
+| 6 — 206-example batch harness | Extractor/codegen harness: 197/198 candidates passing |
+| 7 — Slim runtime bundle | Load-smoke harness: 198/198 candidates passing, 0 unexpected errors |
+| 8 — Launch | Docs/site exist; needs external adoption |
 
 ## Code style
 

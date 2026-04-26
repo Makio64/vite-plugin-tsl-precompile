@@ -1,12 +1,21 @@
 # vite-plugin-tsl-precompile
 
+**Site:** https://makio64.github.io/vite-plugin-tsl-precompile/
+
 AOT precompile for three.js TSL materials. Mark materials with `.precompile('name')` in your source; the plugin extracts each one to a static WGSL shader + a generated per-frame UBO updater at build time. Runtime ships a slim three.js without the TSL builder.
 
 Inspired by Unreal's Material Compiler and Unity's Shader Graph — explicit author markers, offline shader compilation, dumb runtime.
 
 ## Status
 
-Early work in progress. See [ROADMAP.md](./ROADMAP.md) for the phase plan.
+Experimental, but the main pieces are wired:
+
+- `pnpm test` runs plugin, runtime, and inspector-panel tests. The slim runtime smoke test exercises `WebGPURenderer.compileAsync()` with a `PrecompiledMaterial`.
+- `pnpm test:slim` runs a load-smoke pass across the 206 `webgpu_*.html` examples from a sibling `../three.js` checkout. Current checked-in result: 198/198 candidates pass, 8 skipped, 0 unexpected slim-bundle errors. Most passes are expected loud failures because raw examples still create TSL graphs at runtime instead of using captured artifacts.
+- `pnpm test:e2e -- --filter=<example>` runs the automated capture -> slim replay harness. It visits a stock three.js example with full TSL, auto-captures constructed NodeMaterials, reloads the same example with the slim bundle and captured artifacts, then checks for a non-empty replay frame.
+- `pnpm test:batch` runs the extractor/codegen batch harness. Current checked-in result: 197/198 candidates pass, 8 skipped.
+
+Still experimental: broad pixel-correct precompiled rendering requires closing the documented blocked uniform/texture/storage kinds in `emit-updater.js` and expanding the E2E harness beyond non-empty-frame checks.
 
 ## Install (once published)
 
@@ -46,13 +55,30 @@ In dev, `.precompile('ocean-water')` runs the real extractor on the live materia
 
 ## Development
 
+Three steps to see it running locally:
+
 ```sh
+git clone https://github.com/Makio64/vite-plugin-tsl-precompile.git
+cd vite-plugin-tsl-precompile
 pnpm install
-pnpm dev:ocean           # run the ocean demo against the dev plugin
+pnpm dev                 # boots the ocean demo on http://localhost:5173
+```
+
+`pnpm dev` is an alias for `pnpm dev:ocean` — open the URL and you should see a lit water plane plus the three.js Inspector panel with live `.precompile()` captures. Requires a WebGPU-capable browser (Chrome/Edge 113+, or Safari Technology Preview).
+
+Other scripts:
+
+```sh
+pnpm dev:bloom           # post-processing bloom demo
+pnpm dev:compute         # compute-shader demo
+pnpm dev:site            # docs site
 pnpm test                # unit tests per package
 pnpm test:coverage       # coverage-matrix fixtures
-pnpm test:batch          # 206 three.js webgpu examples
-pnpm verify              # staleness audit: re-extract all artifacts, diff vs committed
+pnpm test:batch          # extractor/codegen pass over 206 three.js webgpu examples
+pnpm test:slim           # slim-bundle load-smoke over the same examples
+pnpm test:e2e -- --filter=webgpu_lights_custom
+                          # capture -> slim replay for one or more examples
+pnpm verify              # artifact/manifest integrity check
 ```
 
 ## License
