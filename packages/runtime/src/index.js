@@ -1,6 +1,18 @@
 export { installPrecompileMarker, setDevRenderer, clearDevRenderer } from './precompile-marker.js';
 export { __applyPrecompiled } from './apply-precompiled.js';
-export { registerArtifact, getArtifact } from './artifact-loader.js';
+export { registerArtifact, getArtifact, listUserArtifacts } from './artifact-loader.js';
 export { default as PrecompiledMaterial } from './_vendor-PrecompiledMaterial.js';
+export { default as PrecompiledComputeNode } from './precompiled-compute-node.js';
 export { registerPrecompiledArtifact, registerPrecompiledArtifacts, unregisterPrecompiledArtifacts, getShadowArtifact, getPipelineArtifact, getOutputArtifact, dumpPrecompiledRegistry } from './_vendor-PrecompiledArtifactRegistry.js';
 export * from './writers.js';
+export {
+	hashNodeGraph,
+	hashNodeGraphSync,
+	hashPlainConfigSync,
+	normalizeMaterialGraph,
+	hashMaterialSync,
+	hashArtifactContentSync,
+} from './graph-hash.js';
+export { precompileAuxiliary } from './aux-marker.js';
+export { registerAuxArtifact, registerAuxArtifacts, loadAux, hasAux, listAux, __resetAuxRegistryForTests } from './aux-loader.js';
+export { hydrateNodeBuilderState } from './hydrator.js';
