@@ -21,7 +21,7 @@
  * @module NodeHarness
  */
 
-import { installMockWebGPU } from './mock-webgpu.js';
+import { installMockWebGPU, createMockGPUCanvasContext } from './mock-webgpu.js';
 import { computeArtifactHash } from './hash.js';
 import { compileTSL, extractArtifact } from './vendor/compileTSL.js';
 
@@ -68,7 +68,7 @@ async function importThree() {
  */
 export async function extractMaterial( factory, opts = {} ) {
 
-	const { webgpu, core } = await importThree();
+	const { webgpu, core, tsl } = await importThree();
 
 	const renderer = new webgpu.WebGPURenderer( {
 		canvas: makeFakeCanvas(),
@@ -76,7 +76,7 @@ export async function extractMaterial( factory, opts = {} ) {
 	} );
 	await renderer.init();
 
-	const { material, name, objects = [], camera: userCamera } = factory( { webgpu, core } );
+	const { material, name, objects = [], camera: userCamera } = await factory( { webgpu, core, tsl } );
 
 	const scene = new core.Scene();
 	// Minimal renderable to drive the material through the extractor: unless
@@ -146,14 +146,28 @@ export async function extractMaterial( factory, opts = {} ) {
  */
 function makeFakeCanvas( width = 256, height = 256 ) {
 
-	return {
+	// Cache one mock GPUCanvasContext per canvas — three.js calls getContext
+	// both at backend init (for configure) and during the render loop.
+	let gpuContext = null;
+	const canvas = {
 		width, height, clientWidth: width, clientHeight: height,
 		style: {},
-		getContext: () => null,
+		getContext: ( kind ) => {
+
+			if ( kind === 'webgpu' ) {
+
+				if ( ! gpuContext ) gpuContext = createMockGPUCanvasContext();
+				return gpuContext;
+
+			}
+			return null;
+
+		},
 		addEventListener: () => {},
 		removeEventListener: () => {},
 		getBoundingClientRect: () => ( { left: 0, top: 0, width, height, right: width, bottom: height, x: 0, y: 0 } ),
 	};
+	return canvas;
 
 }
 

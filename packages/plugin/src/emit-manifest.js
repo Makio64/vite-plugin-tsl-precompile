@@ -1,59 +1,63 @@
 /**
- * Manifest codegen — turns the on-disk `artifacts/manifest.json` into a
- * virtual ES module that the Vite plugin serves per-artifact.
+ * Manifest codegen — turns one captured artifact into a virtual ES module
+ * that the Vite plugin serves at `virtual:tsl-precompile/<name>`.
  *
- * For `virtual:tsl-precompile/<name>`, emit:
- *
- *   import { update as __update } from './ocean-water.<hash>.updater.js';
- *   const __artifact = { ... };   // inlined artifact JSON
- *   export const __hash = 'sha256:...';
- *   export const name = 'ocean-water';
- *   export const artifact = __artifact;
- *   export const update = __update;
- *
- * The Vite plugin's `load(id)` hook calls this to produce source for each
- * virtual module. This makes each artifact tree-shakeable and lazy-loadable.
+ * The virtual module inlines the artifact JSON AND the generated updater
+ * source directly (renamed-export to sidestep a separate file emission).
+ * That way each `import("virtual:tsl-precompile/<name>")` resolves to a
+ * self-contained module: the writers import tree-shakes at the bundler,
+ * the artifact is a static literal, and the per-frame update function is
+ * inlined static JS.
  *
  * @module EmitManifest
  */
 
+import { emitUpdaterSource } from './emit-updater.js';
+
 /**
  * @param {Object} manifestEntry - e.g. { file: 'ocean-water.abcd.json', hash: 'sha256:...' }
- * @param {Object} artifactJson - the parsed contents of the artifact file
+ * @param {Object} artifactJson - the parsed contents of the artifact file — expected to have `artifact`, `__hash`, `__name` keys from the dev capture payload.
  * @param {Object} [opts]
- * @param {string} [opts.updaterImportSpecifier] - relative path to the generated updater module
- * @return {string}
+ * @return {{ source: string, unsupportedKinds: Array<{ kind, severity, reason, byteOffset }> }}
  */
-export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
+export function emitArtifactModule( manifestEntry, artifactJson, _opts = {} ) {
 
-	const { updaterImportSpecifier } = opts;
+	// The dev-capture server stores { name, hash, artifact } at the top level.
+	// Some older artifacts may have the artifact fields at the root — tolerate
+	// both shapes.
+	const artifact = artifactJson.artifact || artifactJson;
+	const hash = artifactJson.__hash || artifact.__hash || manifestEntry.hash;
+	const name = artifactJson.__name || artifact.__name || manifestEntry.name || '';
 
-	const artifactLiteral = JSON.stringify( artifactJson.artifact || artifactJson );
-	const hash = artifactJson.__hash || manifestEntry.hash;
-	const name = artifactJson.__name || manifestEntry.name || '';
+	const artifactLiteral = JSON.stringify( artifact );
 
-	const lines = [];
+	// Generate the per-frame update function. Writers resolve at Vite bundle
+	// time via the runtime's package export.
+	const { source: updaterSource, unsupportedKinds } = emitUpdaterSource( artifact );
 
-	if ( updaterImportSpecifier ) {
+	// The updater module declares `export function update(...)` AND
+	// `export const __unsupportedKinds = [...]`. Rename it to `__generatedUpdate`
+	// locally so the virtual module's own `export const update = ...` doesn't
+	// collide. We do this via a small source rewrite — replacing the emitted
+	// `export function update` with `function __generatedUpdate` and appending
+	// a re-export.
+	const mangledUpdater = updaterSource
+		.replace( /export function update\(/, 'function __generatedUpdate(' )
+		.replace( /export const __unsupportedKinds/, 'const __codegenUnsupportedKinds' );
 
-		lines.push( `import { update as __update } from ${ JSON.stringify( updaterImportSpecifier ) };` );
+	const lines = [
+		mangledUpdater,
+		'',
+		`export const __hash = ${ JSON.stringify( hash ) };`,
+		`export const name = ${ JSON.stringify( name ) };`,
+		`export const artifact = ${ artifactLiteral };`,
+		`export const update = __generatedUpdate;`,
+		`export const __unsupportedKinds = ${ JSON.stringify( unsupportedKinds ) };`,
+		'',
+		`export default { __hash, name, artifact, update, __unsupportedKinds };`,
+		'',
+	];
 
-	} else {
-
-		lines.push( `const __update = null;  // no updater generated yet (Phase 3 pending for this artifact)` );
-
-	}
-
-	lines.push( '' );
-	lines.push( `export const __hash = ${ JSON.stringify( hash ) };` );
-	lines.push( `export const name = ${ JSON.stringify( name ) };` );
-	lines.push( `export const artifact = ${ artifactLiteral };` );
-	lines.push( `export const update = __update;` );
-	lines.push( '' );
-	// Default export mirrors __hash/name/artifact/update for simpler consumers.
-	lines.push( `export default { __hash, name, artifact, update };` );
-	lines.push( '' );
-
-	return lines.join( '\n' );
+	return { source: lines.join( '\n' ), unsupportedKinds };
 
 }

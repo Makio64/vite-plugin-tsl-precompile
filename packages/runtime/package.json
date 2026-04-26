@@ -16,20 +16,24 @@
     "./writers": "./src/writers.js",
     "./marker": "./src/precompile-marker.js",
     "./apply": "./src/apply-precompiled.js",
-    "./loader": "./src/artifact-loader.js"
+    "./loader": "./src/artifact-loader.js",
+    "./slim": "./build/three.webgpu.slim.js"
   },
   "files": [
     "src",
     "build"
   ],
   "scripts": {
-    "build": "rollup -c rollup.config.js || (echo 'rollup not yet wired — Phase 7 follow-up' && exit 0)",
-    "test": "node --test 'test/**/*.test.js' || true"
+    "build:slim": "rollup -c rollup.config.js",
+    "build": "rollup -c rollup.config.js",
+    "test": "node --test 'test/**/*.test.js'"
   },
   "devDependencies": {
-    "rollup": "^4.30.0"
+    "rollup": "^4.60.2",
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "@rollup/plugin-terser": "^1.0.0"
   },
   "peerDependencies": {
-    "three": ">=0.175.0"
+    "three": ">=0.184.0"
   }
 }

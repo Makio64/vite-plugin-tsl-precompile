@@ -15,20 +15,40 @@
  *     ...
  *   }
  *
- * Source kinds handled (Phase 3 minimum — expand per coverage matrix):
- *   - camera.projectionMatrix, camera.viewMatrix, camera.worldMatrix, camera.near, camera.far
- *   - object.worldMatrix, object.worldMatrixInverse, object.normalMatrix
- *   - material.<property>  (color, opacity, roughness, metalness, emissive, etc.)
- *   - time, deltaTime, frameId
- *   - uniform.live          (reads material-attached live value)
- *   - uniform.constant      (inlined literal)
+ * Source kinds are mapped from the extractor's dialect (produced by the
+ * vendored `extractUniformPlan.js`) to writer calls. The extractor emits
+ * e.g. `frame.time`, `constant`, `camera.projectionMatrixInverse`; earlier
+ * revisions of this file handled only `time`, `uniform.constant`, etc. The
+ * legacy cases are preserved so hand-written synthetic plans (used by the
+ * unit tests) still work.
  *
- * Unsupported kinds emit a `throw new Error(...)` line AND an exported
- * `__unsupportedKinds` array so the plugin can surface them to the author
- * at build time (the "loud failure" gate from ARCHITECTURE.md).
+ * Unsupported kinds fall into two tiers:
+ *
+ *   - `severity: 'unknown'` — the codegen has no case for this kind.
+ *     Either the extractor produced something new (vendor drift) or the
+ *     author is building a plan by hand. Generated code throws at update()
+ *     call time; the build gate fails loudly.
+ *   - `severity: 'blocked'` — the kind is recognised but deliberately not
+ *     supported yet (sampler / texture / storage bindings). Generated code
+ *     throws; the build warns but does not fail.
  *
  * @module EmitUpdater
  */
+
+/**
+ * Kinds the codegen deliberately does not implement yet. These surface as
+ * `severity: 'blocked'` in the returned unsupportedKinds array with a
+ * human-readable reason. A future Phase 5.5 push will move them into real
+ * codegen cases.
+ */
+export const DOCUMENTED_BLOCKED_KINDS = Object.freeze( {
+	'builtin.dfgLUT': 'IBL DFG LUT texture — needs a slim-runtime shared-data module (Phase 5.5).',
+	'artifact.texture': 'Generic artifact-level texture — needs a uuid-keyed runtime texture registry (Phase 5.5).',
+	'unsupported': 'Extractor flagged this binding as unsupported (no texture source identified).',
+	'storage.buffer': 'Storage-buffer bindings (compute) are captured but codegen is deferred (Phase 5.5).',
+	'depth.texture': 'Depth-texture bindings (shadow maps) are captured but codegen is deferred (Phase 5.5).',
+	'scene.overrideMaterial': 'scene.overrideMaterial context is out of scope for v1.',
+} );
 
 /**
  * Generate the source text of an updater module for a single artifact.
@@ -36,7 +56,7 @@
  * @param {Object} artifact - Output of the vendored `extractArtifact()`.
  * @param {Object} [opts]
  * @param {string} [opts.writersImport='@tsl-precompile/runtime/writers'] - Import specifier for the writers module.
- * @return {{ source: string, unsupportedKinds: string[] }}
+ * @return {{ source: string, unsupportedKinds: Array<{ kind: string, severity: 'unknown' | 'blocked', reason: string, byteOffset: number }> }}
  */
 export function emitUpdaterSource( artifact, opts = {} ) {
 
@@ -89,12 +109,15 @@ export function emitUpdaterSource( artifact, opts = {} ) {
  * @param {Object} slot
  * @param {Set<string>} usedWriters - Mutated with writer names encountered.
  * @param {Array<string>} constants - Mutated with any top-of-file const declarations needed.
- * @param {Array<string>} unsupportedKinds - Mutated with kinds we can't emit.
+ * @param {Array<{ kind: string, severity: string, reason: string, byteOffset: number }>} unsupportedKinds - Mutated with kinds we can't emit.
  * @return {string}
  */
 function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds ) {
 
-	const byteOffset = slot.byteOffset | 0;
+	// The extractor emits `offset` (byte-offset, `uniform.offset * 4`). Hand-
+	// written synthetic plans (used by the unit tests) emit `byteOffset`.
+	// Accept both.
+	const byteOffset = ( slot.byteOffset ?? slot.offset ?? 0 ) | 0;
 	const src = slot.source || {};
 	const kind = src.kind || 'unknown';
 
@@ -105,6 +128,10 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds ) {
 		case 'camera.projectionMatrix':
 			usedWriters.add( 'writeMat4' );
 			return `writeMat4(view, ${ off }, frame.camera.projectionMatrix);`;
+
+		case 'camera.projectionMatrixInverse':
+			usedWriters.add( 'writeMat4' );
+			return `writeMat4(view, ${ off }, frame.camera.projectionMatrixInverse);`;
 
 		case 'camera.viewMatrix':
 			usedWriters.add( 'writeMat4' );
@@ -142,14 +169,38 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds ) {
 			usedWriters.add( 'writeMat4' );
 			return `writeMat4(view, ${ off }, frame.object.modelViewMatrix);`;
 
+		// Object3DNode — `scope` picks which object metric. The common ones
+		// map directly onto three.js's Object3D properties; any other scope
+		// is documented-blocked (a future vendor-bump can expand the set).
+		case 'object3d.position':
+			usedWriters.add( 'writeVec3' );
+			return `writeVec3(view, ${ off }, frame.object.position);`;
+
+		case 'object3d.scale':
+			usedWriters.add( 'writeVec3' );
+			return `writeVec3(view, ${ off }, frame.object.scale);`;
+
+		case 'object3d.viewPosition':
+			usedWriters.add( 'writeVec3' );
+			return `writeVec3(view, ${ off }, frame.object.viewPosition);`;
+
+		case 'object3d.direction':
+			usedWriters.add( 'writeVec3' );
+			return `writeVec3(view, ${ off }, frame.object.direction);`;
+
+		// Frame-scoped uniforms — the extractor emits `frame.<x>`; earlier
+		// hand-written plans used the bare `<x>`. Both paths land here.
+		case 'frame.time':
 		case 'time':
 			usedWriters.add( 'writeF32' );
 			return `writeF32(view, ${ off }, frame.time);`;
 
+		case 'frame.deltaTime':
 		case 'deltaTime':
 			usedWriters.add( 'writeF32' );
 			return `writeF32(view, ${ off }, frame.deltaTime);`;
 
+		case 'frame.frameId':
 		case 'frameId':
 			usedWriters.add( 'writeU32' );
 			return `writeU32(view, ${ off }, frame.frameId);`;
@@ -157,6 +208,7 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds ) {
 		case 'material.color':
 		case 'material.emissive':
 		case 'material.specular':
+		case 'material.specularColor':
 		case 'material.sheenColor':
 		case 'material.attenuationColor': {
 
@@ -171,6 +223,11 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds ) {
 		case 'material.roughness':
 		case 'material.metalness':
 		case 'material.ior':
+		case 'material.emissiveIntensity':
+		case 'material.specularIntensity':
+		case 'material.shininess':
+		case 'material.size':
+		case 'material.rotation':
 		case 'material.clearcoat':
 		case 'material.clearcoatRoughness':
 		case 'material.sheen':
@@ -189,42 +246,56 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds ) {
 
 		}
 
-		case 'uniform.constant': {
+		// Scene-scoped uniforms — fog + scene-level state. The extractor
+		// prefixes with `scene.fog.` or `scene.`; the hydrator carries
+		// `frame.scene` and `frame.scene.fog` as the live references.
+		case 'scene.fog.color': {
 
-			// Inline the captured value as a literal — no runtime read.
-			return emitConstant( slot, off, usedWriters, constants );
+			usedWriters.add( 'writeColor' );
+			return `writeColor(view, ${ off }, frame.scene.fog.color);`;
+
+		}
+
+		case 'scene.fog.near':
+		case 'scene.fog.far':
+		case 'scene.fog.density': {
+
+			const prop = src.property || kind.split( '.' )[ 2 ];
+			usedWriters.add( 'writeF32' );
+			return `writeF32(view, ${ off }, frame.scene.fog.${ prop });`;
+
+		}
+
+		// Generic scene.<prop> (e.g. scene.environmentIntensity, scene.backgroundIntensity).
+		// Read dynamically. Numeric by default — fall back to snapshot's writer
+		// inference when a snapshot is present.
+		case 'scene.environmentIntensity':
+		case 'scene.backgroundIntensity':
+		case 'scene.backgroundBlurriness': {
+
+			const prop = src.property || kind.split( '.' )[ 1 ];
+			usedWriters.add( 'writeF32' );
+			return `writeF32(view, ${ off }, frame.scene.${ prop });`;
+
+		}
+
+		// Static snapshot baked at extraction time.
+		case 'uniform.constant':
+		case 'constant': {
+
+			return emitConstant( slot, off, usedWriters, constants, unsupportedKinds, byteOffset );
 
 		}
 
 		case 'uniform.live': {
 
-			// Live uniform — material carries a refresh callback that feeds a
-			// Vector3/Color/etc. The transform captured `property` pointing at
-			// the live holder on the material.
-			const prop = src.property;
-			if ( ! prop ) {
-
-				unsupportedKinds.push( kind + ' (missing property)' );
-				return `throw new Error("[tsl-precompile] unsupported uniform.live: missing property");`;
-
-			}
-
-			const writer = inferWriterForValueType( src.valueType );
-			if ( ! writer ) {
-
-				unsupportedKinds.push( `${ kind } (unknown valueType ${ src.valueType })` );
-				return `throw new Error("[tsl-precompile] unsupported uniform.live valueType ${ src.valueType }");`;
-
-			}
-			usedWriters.add( writer );
-			return `${ writer }(view, ${ off }, material.${ prop });`;
+			return emitLive( slot, off, usedWriters, constants, unsupportedKinds, byteOffset );
 
 		}
 
 		default: {
 
-			unsupportedKinds.push( kind );
-			return `throw new Error("[tsl-precompile] unsupported source.kind: ${ kind }");`;
+			return emitUnknownOrBlocked( kind, off, unsupportedKinds, byteOffset );
 
 		}
 
@@ -232,9 +303,31 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds ) {
 
 }
 
-function emitConstant( slot, off, usedWriters, constants ) {
+/**
+ * Inline a compile-time-snapshotted value as a literal. Handles both the
+ * legacy `{valueType, value}` shape (hand-written plans) AND the extractor's
+ * `{valueSnapshot: {type, data}}` shape.
+ */
+function emitConstant( slot, off, usedWriters, constants, unsupportedKinds, byteOffset ) {
 
-	const { valueType, value } = slot.source;
+	const src = slot.source;
+	// Normalize: legacy → { valueType, value }; extractor → { valueSnapshot: { type, data } }
+	const snap = src.valueSnapshot;
+	const valueType = src.valueType || ( snap && snap.type ) || null;
+	const value = src.value !== undefined ? src.value : ( snap && snap.data );
+
+	if ( valueType === null || value === undefined ) {
+
+		unsupportedKinds.push( {
+			kind: src.kind || 'uniform.constant',
+			severity: 'unknown',
+			reason: 'constant slot has neither valueType/value nor valueSnapshot',
+			byteOffset,
+		} );
+		return `throw new Error("[tsl-precompile] constant slot is missing value snapshot");`;
+
+	}
+
 	const idx = constants.length;
 	const varName = `__const${ idx }`;
 
@@ -242,9 +335,22 @@ function emitConstant( slot, off, usedWriters, constants ) {
 
 		case 'f32':
 		case 'float':
+		case 'number':
 			constants.push( `const ${ varName } = ${ Number( value ) };` );
 			usedWriters.add( 'writeF32' );
 			return `writeF32(view, ${ off }, ${ varName });`;
+
+		case 'i32':
+		case 'int':
+			constants.push( `const ${ varName } = ${ Number( value ) | 0 };` );
+			usedWriters.add( 'writeI32' );
+			return `writeI32(view, ${ off }, ${ varName });`;
+
+		case 'u32':
+		case 'uint':
+			constants.push( `const ${ varName } = ${ ( Number( value ) | 0 ) >>> 0 };` );
+			usedWriters.add( 'writeU32' );
+			return `writeU32(view, ${ off }, ${ varName });`;
 
 		case 'vec2':
 			constants.push( `const ${ varName } = { x: ${ value[ 0 ] }, y: ${ value[ 1 ] } };` );
@@ -266,11 +372,127 @@ function emitConstant( slot, off, usedWriters, constants ) {
 			usedWriters.add( 'writeColor' );
 			return `writeColor(view, ${ off }, ${ varName });`;
 
+		case 'mat3':
+			constants.push( `const ${ varName } = { elements: ${ JSON.stringify( Array.from( value ) ) } };` );
+			usedWriters.add( 'writeMat3' );
+			return `writeMat3(view, ${ off }, ${ varName });`;
+
+		case 'mat4':
+			constants.push( `const ${ varName } = { elements: ${ JSON.stringify( Array.from( value ) ) } };` );
+			usedWriters.add( 'writeMat4' );
+			return `writeMat4(view, ${ off }, ${ varName });`;
+
 		default:
-			// Fall through to unsupported handling at call site.
+			unsupportedKinds.push( {
+				kind: src.kind || 'uniform.constant',
+				severity: 'unknown',
+				reason: `uniform.constant has unknown valueType "${ valueType }"`,
+				byteOffset,
+			} );
 			return `throw new Error("[tsl-precompile] unsupported uniform.constant valueType: ${ valueType }");`;
 
 	}
+
+}
+
+/**
+ * Live uniform. Two shapes exist:
+ *   1. Legacy hand-written: `{ kind: 'uniform.live', property, valueType }`
+ *      → reads `material.<property>` live each frame.
+ *   2. Extractor-produced: `{ kind: 'uniform.live', name, valueSnapshot }`
+ *      → no runtime source mapped (the live-node registry is deferred);
+ *      emit the snapshot as a constant fallback and flag as blocked with
+ *      a clear reason so the build warns but doesn't fail.
+ */
+function emitLive( slot, off, usedWriters, constants, unsupportedKinds, byteOffset ) {
+
+	const src = slot.source;
+
+	// Path 1: hand-written / material-property reference
+	if ( src.property ) {
+
+		const writer = inferWriterForValueType( src.valueType );
+		if ( ! writer ) {
+
+			unsupportedKinds.push( {
+				kind: 'uniform.live',
+				severity: 'unknown',
+				reason: `uniform.live with property="${ src.property }" has unknown valueType "${ src.valueType }"`,
+				byteOffset,
+			} );
+			return `throw new Error("[tsl-precompile] unsupported uniform.live valueType ${ src.valueType }");`;
+
+		}
+		usedWriters.add( writer );
+		return `${ writer }(view, ${ off }, material.${ src.property });`;
+
+	}
+
+	// Path 2: extractor-produced, snapshot-only fallback
+	if ( src.valueSnapshot ) {
+
+		unsupportedKinds.push( {
+			kind: 'uniform.live',
+			severity: 'blocked',
+			reason: `uniform.live "${ src.name || '<unnamed>' }" has no property binding; using frozen snapshot. Animation via onRenderUpdate / LightNode.update() will not propagate. (Phase 5.5 live-node registry.)`,
+			byteOffset,
+		} );
+		return emitConstant(
+			{ source: { kind: 'constant', valueSnapshot: src.valueSnapshot } },
+			off,
+			usedWriters,
+			constants,
+			unsupportedKinds,
+			byteOffset,
+		);
+
+	}
+
+	unsupportedKinds.push( {
+		kind: 'uniform.live',
+		severity: 'unknown',
+		reason: `uniform.live "${ src.name || '<unnamed>' }" has no property, no snapshot`,
+		byteOffset,
+	} );
+	return `throw new Error("[tsl-precompile] uniform.live has no property or snapshot");`;
+
+}
+
+function emitUnknownOrBlocked( kind, off, unsupportedKinds, byteOffset ) {
+
+	if ( Object.prototype.hasOwnProperty.call( DOCUMENTED_BLOCKED_KINDS, kind ) ) {
+
+		unsupportedKinds.push( {
+			kind,
+			severity: 'blocked',
+			reason: DOCUMENTED_BLOCKED_KINDS[ kind ],
+			byteOffset,
+		} );
+		return `throw new Error("[tsl-precompile] blocked kind ${ JSON.stringify( kind ) } at byteOffset ${ byteOffset }: ${ escapeString( DOCUMENTED_BLOCKED_KINDS[ kind ] ) }");`;
+
+	}
+
+	// Unknown object3d.* scopes — treat as blocked (we know about Object3DNode,
+	// just haven't mapped this scope yet) with a clearer reason.
+	if ( kind.startsWith( 'object3d.' ) ) {
+
+		unsupportedKinds.push( {
+			kind,
+			severity: 'blocked',
+			reason: `Object3DNode scope "${ kind.slice( 'object3d.'.length ) }" is not mapped yet (add a case in emit-updater.js).`,
+			byteOffset,
+		} );
+		return `throw new Error("[tsl-precompile] unmapped object3d scope ${ JSON.stringify( kind ) }");`;
+
+	}
+
+	unsupportedKinds.push( {
+		kind,
+		severity: 'unknown',
+		reason: 'no codegen case for this kind (extractor drift or unrecognised dialect)',
+		byteOffset,
+	} );
+	return `throw new Error("[tsl-precompile] unsupported source.kind: ${ kind }");`;
 
 }
 
@@ -290,5 +512,11 @@ function inferWriterForValueType( valueType ) {
 		default: return null;
 
 	}
+
+}
+
+function escapeString( s ) {
+
+	return String( s ).replace( /\\/g, '\\\\' ).replace( /"/g, '\\"' );
 
 }

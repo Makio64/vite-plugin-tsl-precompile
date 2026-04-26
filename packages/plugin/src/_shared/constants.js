@@ -10,3 +10,8 @@ export const MARKER_METHOD_NAME = 'precompile';
 
 // Virtual module prefix consumed by the Vite plugin's `resolveId`/`load` hooks.
 export const VIRTUAL_MODULE_PREFIX = 'virtual:tsl-precompile/';
+
+// Virtual module that registers every captured aux-pass artifact at
+// app-load time. Imported for side-effects by the Babel-transformed
+// three.js source files.
+export const VIRTUAL_AUX_MODULE_ID = 'virtual:tsl-precompile/__aux';

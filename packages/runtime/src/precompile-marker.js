@@ -24,6 +24,8 @@
  */
 
 import { MARKER_METHOD_NAME } from './_constants.js';
+import { hashMaterialSync } from './graph-hash.js';
+import { registerArtifact } from './artifact-loader.js';
 
 let installed = false;
 let devEndpoint = null;
@@ -31,7 +33,9 @@ let devEndpointDead = false;
 let threeModule = null;
 let devRenderer = null;
 let extractor = null;
-let hasher = null;
+// `hasher` was a dynamic import of plugin/hash.js; replaced by direct
+// `hashMaterialSync` import above (node:crypto-free, browser-safe).
+let codegen = null;   // emitUpdaterSource — used to check for unknown kinds at capture time.
 
 const inflight = new Set();   // names currently being captured (suppresses dup POSTs)
 const sessionDone = new Set();   // names captured this session (suppresses needless re-POST)
@@ -44,9 +48,7 @@ const sessionDone = new Set();   // names captured this session (suppresses need
  * @param {Object} [opts]
  * @param {?string} [opts.devEndpoint] - e.g. 'http://localhost:5173/__tsl-precompile/capture'.
  * @param {?Function} [opts.extractor] - `(renderer, scene, camera, options) => Promise<artifacts>`.
- *   Defaults to a dynamic import of `@tsl-precompile/plugin/src/vendor/compileTSL.js`.
- * @param {?Function} [opts.hasher] - `(material, { name, threeVersion, pluginVersion }) => string`.
- *   Defaults to a dynamic import of `@tsl-precompile/plugin/src/hash.js`.
+ *   Defaults to a dynamic import of `vite-plugin-tsl-precompile/src/vendor/compileTSL.js`.
  */
 export function installPrecompileMarker( three, opts = {} ) {
 
@@ -54,7 +56,6 @@ export function installPrecompileMarker( three, opts = {} ) {
 	devEndpoint = opts.devEndpoint || null;
 	devEndpointDead = false;
 	extractor = opts.extractor || null;
-	hasher = opts.hasher || null;
 
 	if ( installed ) return;
 	installed = true;
@@ -103,11 +104,38 @@ export function installPrecompileMarker( three, opts = {} ) {
  * extraction. Call once after `renderer.init()`. The marker no-ops until
  * this is called.
  *
+ * Side-effect: if the renderer carries a `three/addons/inspector/Inspector.js`
+ * instance and `@tsl-precompile/inspector-panel` is installed, auto-register
+ * the precompile panel. Zero-setup for the common case; users who prefer
+ * explicit control can import `attachToInspector` directly.
+ *
  * @param {Object} renderer
  */
 export function setDevRenderer( renderer ) {
 
 	devRenderer = renderer || null;
+	if ( renderer && renderer.inspector ) autoAttachInspectorPanel( renderer.inspector );
+
+}
+
+let _inspectorAttachTried = false;
+async function autoAttachInspectorPanel( inspector ) {
+
+	if ( _inspectorAttachTried ) return;
+	_inspectorAttachTried = true;
+	if ( inspector.__tslPrecompilePanel ) return; // already attached
+	try {
+
+		const mod = await import( /* @vite-ignore */ '@tsl-precompile/inspector-panel' );
+		if ( typeof mod.attachToInspector === 'function' ) mod.attachToInspector( inspector );
+
+	} catch ( err ) {
+
+		// Not installed. That's fine — the panel is optional. Log once so
+		// users who WANTED auto-register see a hint; nobody else is spammed.
+		logOnce( 'no-inspector-panel', () => console.info( '[tsl-precompile] `@tsl-precompile/inspector-panel` is not installed; skipping auto-attach. (Install it to see live captures in the three.js Inspector.)' ) );
+
+	}
 
 }
 
@@ -134,15 +162,15 @@ async function captureMaterialInDev( material, name ) {
 
 		if ( ! extractor ) {
 
-			const mod = await import( /* @vite-ignore */ '@tsl-precompile/plugin/src/vendor/compileTSL.js' );
+			const mod = await import( /* @vite-ignore */ 'vite-plugin-tsl-precompile/src/vendor/compileTSL.js' );
 			extractor = mod.compileTSL;
 
 		}
 
-		if ( ! hasher ) {
+		if ( ! codegen ) {
 
-			const mod = await import( /* @vite-ignore */ '@tsl-precompile/plugin/src/hash.js' );
-			hasher = mod.computeArtifactHash;
+			const mod = await import( /* @vite-ignore */ 'vite-plugin-tsl-precompile/src/emit-updater.js' );
+			codegen = mod.emitUpdaterSource;
 
 		}
 
@@ -175,15 +203,52 @@ async function captureMaterialInDev( material, name ) {
 
 		}
 
-		const hash = hasher( material, {
+		const hash = hashMaterialSync( material, {
 			name,
 			threeVersion: REVISION ? String( REVISION ) : 'unknown',
 			pluginVersion: '0.0.0',
 		} );
 
+		// Phase 2 gate: any `severity: 'unknown'` kind in the codegen means we
+		// hit a case the updater can't emit. Throw at capture time so the
+		// developer sees the kind name next to their `.precompile()` call
+		// (surfaces as an unhandled rejection in the console). Blocked kinds
+		// are tolerated — they're known-deferred and get a warning instead.
+		const { unsupportedKinds } = codegen( artifact );
+		const unknowns = unsupportedKinds.filter( ( u ) => u.severity === 'unknown' );
+		if ( unknowns.length > 0 ) {
+
+			const summary = unknowns.map( ( u ) => `${ u.kind } @ byteOffset ${ u.byteOffset } — ${ u.reason }` ).join( '\n    ' );
+			throw new Error( `[tsl-precompile] .precompile(${ JSON.stringify( name ) }): codegen has no case for ${ unknowns.length } kind(s) the extractor produced:\n    ${ summary }\nAdd a case to packages/plugin/src/emit-updater.js or document-block this kind in DOCUMENTED_BLOCKED_KINDS.` );
+
+		}
+		const blocked = unsupportedKinds.filter( ( u ) => u.severity === 'blocked' );
+		if ( blocked.length > 0 ) {
+
+			logOnce( 'blocked:' + name, () => console.warn( `[tsl-precompile] .precompile(${ JSON.stringify( name ) }): ${ blocked.length } kind(s) are documented-blocked and fall back to frozen snapshots. Animation paths that depend on them won't update. Kinds: ${ blocked.map( ( b ) => b.kind ).join( ', ' ) }` ) );
+
+		}
+
 		// Strip non-serialisable side-cars before POST; dev capture only needs
 		// the JSON-safe portion of the artifact.
 		const sanitized = jsonSafeArtifact( artifact );
+
+		// Also register the artifact in the runtime's in-memory registry
+		// so the inspector panel (and any other local consumer) can see
+		// captures live — in DEV the disk write happens async via the POST
+		// below; the panel would stay empty if we only wrote to disk.
+		try {
+
+			registerArtifact( name, {
+				__hash: hash,
+				__name: name,
+				artifact: sanitized,
+				__unsupportedKinds: unsupportedKinds,
+			} );
+
+		} catch ( _ ) {
+			/* double-registration with a different hash throws; tolerate it in dev. */
+		}
 
 		const response = await fetch( devEndpoint, {
 			method: 'POST',
@@ -258,7 +323,7 @@ export function __resetForTests() {
 	threeModule = null;
 	devRenderer = null;
 	extractor = null;
-	hasher = null;
+	codegen = null;
 	logged.clear();
 	sessionDone.clear();
 	inflight.clear();

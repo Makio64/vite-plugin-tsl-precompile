@@ -323,6 +323,24 @@ export function createMockGPU() {
 }
 
 /**
+ * Build a mock GPUCanvasContext. Three.js's WebGPU backend calls
+ * `canvas.getContext('webgpu')`, then `context.configure({device, format, ...})`,
+ * then later `context.getCurrentTexture()` per-frame. We no-op the configure
+ * and return a reusable mock texture from getCurrentTexture.
+ */
+export function createMockGPUCanvasContext() {
+
+	const currentTexture = makeTexture( { label: 'mock-canvas-surface', size: { width: 256, height: 256 }, format: 'bgra8unorm' } );
+	return {
+		__kind: 'GPUCanvasContext',
+		configure: ( _descriptor ) => {},
+		unconfigure: () => {},
+		getCurrentTexture: () => currentTexture,
+	};
+
+}
+
+/**
  * WebGPU shader-stage bitmask. Three.js reads these off the global scope
  * during backend init, not through an import.
  */
@@ -363,5 +381,19 @@ export function installMockWebGPU( globalTarget = globalThis ) {
 	globalTarget.GPUTextureUsage = GPUTextureUsage;
 	globalTarget.GPUMapMode = GPUMapMode;
 	globalTarget.GPUColorWrite = GPUColorWrite;
+
+	// three.js's `Animation` class caches `self` as its rAF host; Node has
+	// no `self`. Alias it to globalThis so the rAF shim below is reachable.
+	if ( typeof globalTarget.self === 'undefined' ) globalTarget.self = globalTarget;
+
+	// `compileAsync()` yields through requestAnimationFrame in recent
+	// three.js versions. The shim must actually schedule the callback or Node's
+	// test runner sees a pending promise with no active handles and cancels it.
+	if ( typeof globalTarget.requestAnimationFrame !== 'function' ) {
+
+		globalTarget.requestAnimationFrame = ( cb ) => setTimeout( () => cb( Date.now() ), 0 );
+		globalTarget.cancelAnimationFrame = ( id ) => clearTimeout( id );
+
+	}
 
 }

@@ -40,6 +40,20 @@ export function getArtifact( name ) {
 
 }
 
+/**
+ * Enumerate every registered user-material artifact. Used by the inspector
+ * panel to render the live captures list.
+ *
+ * @return {Array<{ name: string, artifact: Object }>}
+ */
+export function listUserArtifacts() {
+
+	const out = [];
+	for ( const [ name, artifactModule ] of registry ) out.push( { name, artifact: artifactModule } );
+	return out;
+
+}
+
 export function __resetRegistry() {
 
 	registry.clear();
