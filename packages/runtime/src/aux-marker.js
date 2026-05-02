@@ -157,8 +157,17 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 		const shape = 'render-output';
 		try {
 
+			// `toneMappingExposure` belongs in the hash because three.js bakes
+			// the exposure into a `uniform.live` UniformNode whose snapshot is
+			// captured at extraction time. Two scenes with the same tone-mapper
+			// + colour-space but different exposure produce visually different
+			// frames yet, without exposure in the hash, share a registry slot —
+			// so whichever artifact is registered first wins for the other and
+			// the second scene replays at the wrong exposure. Including
+			// exposure here partitions the registry per-exposure.
 			const configHash = hashPlainConfigSync( {
 				toneMapping: renderer && renderer.toneMapping,
+				toneMappingExposure: renderer && renderer.toneMappingExposure,
 				outputColorSpace: renderer && renderer.outputColorSpace,
 			}, { shape, ...hashOpts } );
 			const artifact = await captureRenderOutputLive( renderer, scene, camera, opts );
