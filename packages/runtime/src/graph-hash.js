@@ -23,6 +23,79 @@
 const MAX_GRAPH_DEPTH = 128;
 
 /**
+ * Stable sentinel hash returned by `hashNodeGraphSync` when the input looks
+ * like a TSL stub-proxy rather than a real node graph. The slim replay
+ * harness substitutes every `three/tsl` import with a chainable proxy whose
+ * properties all reflect back as functions; hashing that proxy structurally
+ * would yield an unstable string with no cryptographic relationship to the
+ * captured graph's hash. By collapsing every stub-shaped input to the same
+ * sentinel — broken out by `shape` — we guarantee a deterministic miss that
+ * `loadAux`'s shape-fallback can resolve to a captured artifact, instead of
+ * a hash that drifts with proxy traversal order.
+ *
+ * The sentinel is namespaced with the shape so `loadAux('background', X)`
+ * and `loadAux('post-process', X)` can't accidentally collide on the same
+ * key in `hasAux`.
+ *
+ * Format: `tslp-stub:<shape>:<8-char marker>` (deterministic, distinguishable
+ * from real 64-char SHA-256 hex by the embedded prefix).
+ *
+ * @param {string} shape
+ * @return {string}
+ */
+function stubSentinelHash( shape ) {
+
+	return `tslp-stub:${ shape || 'unknown' }:fallback`;
+
+}
+
+/**
+ * Detect whether `node` is a TSL stub-proxy (the slim replay harness's
+ * `three/tsl` substitute) rather than a real three.js TSL node.
+ *
+ * Real TSL nodes carry primitive metadata: `constructor.type` is a string
+ * (or `constructor.name`), `getCacheKey()` returns a number, and
+ * inspectable properties like `nodeType` or attribute strings are
+ * primitives. The harness's `__stub` Proxy returns a chainable function
+ * for EVERY property access (so `stub.constructor.type` is itself a
+ * function, not 'ColorNode'). That mismatch is unique enough to gate on:
+ * if `isNode === true` but `constructor.type` and `constructor.name` are
+ * both NOT strings, the input is a stub.
+ *
+ * Falsey/primitive inputs are not stubs (handled separately by
+ * `normalizeNode`'s null/undefined branches).
+ *
+ * @param {*} node
+ * @return {boolean}
+ */
+export function isStubLikeNode( node ) {
+
+	if ( node === null || node === undefined ) return false;
+	if ( typeof node !== 'object' && typeof node !== 'function' ) return false;
+	// Real nodes have isNode === true; stubs do too. But stubs can't fake the
+	// primitive shape of three.js's class metadata.
+	let isNodeFlag;
+	try { isNodeFlag = node.isNode; } catch ( _ ) { return false; }
+	if ( isNodeFlag !== true ) return false;
+	let ctor;
+	try { ctor = node.constructor; } catch ( _ ) { return true; }
+	// A real Node has a real Function constructor whose `.type` and `.name`
+	// are strings. The stub-proxy returns ANOTHER stub function for both —
+	// so neither yields a string.
+	const ctorType = ctor && typeof ctor.type === 'string' ? ctor.type : null;
+	const ctorName = ctor && typeof ctor.name === 'string' && ctor !== node ? ctor.name : null;
+	if ( ctorType !== null || ctorName !== null ) {
+
+		// Looks like a real node (or at least a real Function constructor).
+		// Real proxies don't return strings here.
+		return false;
+
+	}
+	return true;
+
+}
+
+/**
  * @param {Object} node
  * @param {{ shape: string, threeVersion: string, pluginVersion: string }} opts
  * @return {Promise<string>} hex-encoded sha256, 64 chars
@@ -35,6 +108,8 @@ export async function hashNodeGraph( node, { shape, threeVersion, pluginVersion 
 
 	}
 
+	if ( isStubLikeNode( node ) ) return stubSentinelHash( shape );
+
 	const normalized = normalizeNode( node, new Set(), 0 );
 	const payload = [ 'node-v1', shape, threeVersion || '<unknown-three>', pluginVersion || '<unknown-plugin>', normalized ].join( '\n' );
 	return sha256Hex( payload );
@@ -46,11 +121,22 @@ export async function hashNodeGraph( node, { shape, threeVersion, pluginVersion 
  * use the sync hasher which falls back to a JS-side sha256 implementation.
  * Same algorithm, same output, just slower on long inputs.
  *
+ * Stub-proxy guard: when the input is a TSL stub-proxy (e.g. the e2e
+ * harness's `three/tsl` substitute) rather than a real node graph, the
+ * structural traversal degenerates — every property is a function that
+ * returns another proxy, so `Object.keys` returns nothing useful and the
+ * "hash" we'd compute is divorced from the captured graph's hash. Detect
+ * that case up-front and return a stable per-shape sentinel instead, so
+ * `loadAux`'s shape-fallback can route to a captured artifact via a
+ * predictable miss.
+ *
  * @param {Object} node
  * @param {{ shape: string, threeVersion: string, pluginVersion: string }} opts
- * @return {string} hex-encoded sha256, 64 chars
+ * @return {string} hex-encoded sha256 (real input) or `tslp-stub:<shape>:fallback` sentinel (stub input)
  */
 export function hashNodeGraphSync( node, { shape, threeVersion, pluginVersion } ) {
+
+	if ( isStubLikeNode( node ) ) return stubSentinelHash( shape );
 
 	const normalized = normalizeNode( node, new Set(), 0 );
 	const payload = [ 'node-v1', shape, threeVersion || '<unknown-three>', pluginVersion || '<unknown-plugin>', normalized ].join( '\n' );

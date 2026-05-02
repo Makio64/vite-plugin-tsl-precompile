@@ -60,8 +60,31 @@ export function registerAuxArtifacts( entries ) {
 }
 
 /**
- * Look up a precompiled aux artifact. Throws if not found — the build is
- * expected to have captured every aux-pass config the app will exercise.
+ * Look up a precompiled aux artifact.
+ *
+ * Lookup order:
+ *   1. Exact `<shape>:<configHash>` match — the happy path when the runtime
+ *      hash agrees with the captured hash.
+ *   2. Shape-compatible fallback — if the shape was captured at least once
+ *      this build, return the FIRST registered artifact for that shape with
+ *      a `console.warn`. This is the slim-replay safety net: TSL stub-proxy
+ *      inputs (e.g. the e2e harness's `three/tsl` substitute) can't be
+ *      hashed identically to the captured graph, so we'd otherwise miss on
+ *      every frame. Returning the first registered shape match keeps the
+ *      bg/post-process pass producing pixels instead of throwing or
+ *      clearing the canvas. Shape-fallback warnings are deduped per
+ *      `<shape>:<configHash>` so a render-hot caller doesn't spam the
+ *      console every frame.
+ *   3. Throws — only when NO artifact for this shape was ever registered.
+ *      That's a build-config bug (the dev-capture pass didn't see this
+ *      scene), not something fallback can paper over.
+ *
+ * Special case: the stub-sentinel hash `tslp-stub:<shape>:fallback`
+ * (produced by `hashNodeGraphSync` when given a stub-proxy input) takes a
+ * predictable path through (2) without polluting the warning channel —
+ * we surface a one-shot info message naming the sentinel so debugging
+ * doesn't require correlating an opaque hex hash with the registered
+ * captures.
  *
  * @param {string} shape
  * @param {string} configHash
@@ -76,11 +99,21 @@ export function loadAux( shape, configHash ) {
 	const known = Array.from( REGISTRY.keys() ).filter( ( x ) => x.startsWith( shape + ':' ) );
 	if ( known.length >= 1 ) {
 
-		console.warn(
-			`[tsl-precompile/aux] no exact artifact for ${ JSON.stringify( k ) }; ` +
-			`using ${ JSON.stringify( known[ 0 ] ) } as a shape-compatible fallback. ` +
-			`Recapture auxiliary artifacts if this scene's ${ shape } configuration changed.`
-		);
+		if ( ! WARNED_FALLBACKS.has( k ) ) {
+
+			WARNED_FALLBACKS.add( k );
+			const isStubInput = typeof configHash === 'string' && configHash.startsWith( STUB_SENTINEL_PREFIX );
+			const reason = isStubInput
+				? `runtime input was a TSL stub-proxy (no real graph to hash)`
+				: `runtime hash differs from any captured hash for this shape`;
+			console.warn(
+				`[tsl-precompile/aux] no exact artifact for ${ JSON.stringify( k ) }; ` +
+				`${ reason }. ` +
+				`Using ${ JSON.stringify( known[ 0 ] ) } as a shape-compatible fallback. ` +
+				`Known ${ shape } captures: ${ known.length }.`
+			);
+
+		}
 		return REGISTRY.get( known[ 0 ] );
 
 	}
@@ -92,6 +125,27 @@ export function loadAux( shape, configHash ) {
 	);
 
 }
+
+/**
+ * Hash prefix produced by `graph-hash.js::stubSentinelHash` when the input
+ * to `hashNodeGraphSync` looks like a TSL stub-proxy. We recognise it here
+ * so the shape-fallback warning can name the actual cause ("stub-proxy
+ * input") instead of "hash mismatch", which is misleading — there's no
+ * real graph to hash at all.
+ *
+ * Kept in lockstep with the producer: see `packages/runtime/src/graph-hash.js`.
+ */
+const STUB_SENTINEL_PREFIX = 'tslp-stub:';
+
+/**
+ * Per-key dedupe set so the shape-fallback warning fires AT MOST ONCE per
+ * unique `<shape>:<configHash>` pair. The patched `Background.js` /
+ * `PostProcessing.js` call `loadAux(...)` from the render hot path; without
+ * dedupe the console floods at 60 fps.
+ *
+ * @type {Set<string>}
+ */
+const WARNED_FALLBACKS = new Set();
 
 /**
  * @param {string} shape
@@ -155,6 +209,7 @@ export function attachArtifactTextureRefs( artifact, texture ) {
 export function __resetAuxRegistryForTests() {
 
 	REGISTRY.clear();
+	WARNED_FALLBACKS.clear();
 
 }
 
