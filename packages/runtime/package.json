@@ -20,7 +20,8 @@
     "./marker": "./src/precompile-marker.js",
     "./apply": "./src/apply-precompiled.js",
     "./loader": "./src/artifact-loader.js",
-    "./slim": "./build/three.webgpu.slim.js"
+    "./slim": "./build/three.webgpu.slim.js",
+    "./slim-stubs": "./src/slim-stubs.js"
   },
   "files": [
     "src",

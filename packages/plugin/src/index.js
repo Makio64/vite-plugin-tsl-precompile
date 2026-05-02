@@ -144,6 +144,7 @@ export default function tslPrecompile( userOpts = {} ) {
 				resolve: {
 					alias: [
 						{ find: /^three\/webgpu$/, replacement: '@tsl-precompile/runtime/slim' },
+						{ find: /^three\/tsl$/, replacement: '@tsl-precompile/runtime/slim-stubs' },
 					],
 				},
 			};
