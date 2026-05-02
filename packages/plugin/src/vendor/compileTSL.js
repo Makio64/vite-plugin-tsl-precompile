@@ -23,6 +23,7 @@
  */
 
 import { extractUniformPlan } from './extractUniformPlan.js';
+import { DataUtils, FloatType, HalfFloatType, RGBAFormat } from 'three';
 
 /**
  * Describes a single binding inside a bind group in serializable form.
@@ -215,6 +216,123 @@ function pushArtifactVariant( byMaterialVariants, materialUuid, artifact ) {
 }
 
 /**
+ * Detect and capture LTC BRDF approximation textures from a built artifact.
+ *
+ * RectAreaLightNode binds two 64×64 RGBA float DataTextures (ltc_1 / ltc_2)
+ * that are created by `RectAreaLightTexturesLib.init()` and stored as a
+ * static on `_ltcLib`. These are not accessible from outside the three.js
+ * module, so we detect them by their characteristic fingerprint:
+ *   - Sampled-texture binding with kind `artifact.texture`
+ *   - Snapshot is a 64×64 RGBA Float32Array (16384 elements, format 1023,
+ *     type 1015 = FloatType)
+ *
+ * When detected, we:
+ *   1. Convert the float32 data to uint16 half-float for maximum WebGPU
+ *      compatibility (float32 textures require the `float32-filterable`
+ *      adapter feature for linear filtering; half-float does not).
+ *   2. Store the converted arrays in `artifact.ltcTextures[0..n-1]`.
+ *   3. Upgrade the plan entry's source kind from `artifact.texture` to
+ *      `builtin.ltcTexture` with a numeric `ltcIndex` so the hydrator can
+ *      reconstruct the texture from the saved data without falling through
+ *      the generic snapshot path.
+ *
+ * @param {PrecompiledArtifact} artifact - Mutated in-place.
+ */
+function captureLtcTextures( artifact ) {
+
+	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
+	const ltcArrays = [];
+	// Maps textureUuid → ltcIndex so paired sampler entries can reuse the same
+	// array index as their corresponding sampled-texture entry.
+	const uuidToLtcIndex = new Map();
+
+	// First pass: walk sampled-texture entries only. Detect LTC fingerprint,
+	// convert to half-float, and build the ltcTextures array.
+	for ( const group of plan ) {
+
+		for ( const texEntry of ( group.textures || [] ) ) {
+
+			const source = texEntry.source;
+			// Only promote sampled-texture bindings, not sampler bindings.
+			// Sampler bindings are handled in the second pass below.
+			if ( texEntry.bindingKind !== 'sampled-texture' ) continue;
+			if ( ! source || source.kind !== 'artifact.texture' ) continue;
+
+			const snap = source.snapshot;
+			if ( ! snap ) continue;
+
+			// LTC texture fingerprint: 64×64 RGBA Float32.
+			// format 1023 = RGBAFormat, type 1015 = FloatType.
+			if ( snap.width !== 64 || snap.height !== 64 ) continue;
+			if ( snap.arrayType !== 'Float32Array' ) continue;
+			if ( snap.format !== RGBAFormat ) continue;
+			if ( snap.type !== FloatType ) continue;
+			if ( ! Array.isArray( snap.data ) || snap.data.length !== 64 * 64 * 4 ) continue;
+
+			// Convert float32 → half-float uint16 for replay compatibility.
+			const halfData = new Array( snap.data.length );
+			for ( let i = 0; i < snap.data.length; i ++ ) {
+
+				halfData[ i ] = DataUtils.toHalfFloat( snap.data[ i ] );
+
+			}
+
+			const ltcIndex = ltcArrays.length;
+			ltcArrays.push( halfData );
+
+			if ( source.textureUuid ) uuidToLtcIndex.set( source.textureUuid, ltcIndex );
+
+			// Promote the sampler settings for accurate filter/wrap replay.
+			const ltcSource = {
+				kind: 'builtin.ltcTexture',
+				ltcIndex,
+				magFilter: snap.magFilter,
+				minFilter: snap.minFilter,
+				wrapS: snap.wrapS,
+				wrapT: snap.wrapT,
+			};
+			texEntry.source = ltcSource;
+
+		}
+
+	}
+
+	if ( ltcArrays.length === 0 ) return;
+
+	artifact.ltcTextures = ltcArrays;
+
+	// Second pass: upgrade paired sampler bindings so they carry the same
+	// `builtin.ltcTexture` source kind. Samplers don't need array data but
+	// must share the kind/ltcIndex so the hydrator knows to skip the
+	// `artifact.texture` fallback chain.
+	for ( const group of plan ) {
+
+		for ( const texEntry of ( group.textures || [] ) ) {
+
+			if ( texEntry.bindingKind !== 'sampler' ) continue;
+			const source = texEntry.source;
+			if ( ! source || source.kind !== 'artifact.texture' ) continue;
+			if ( ! source.textureUuid ) continue;
+
+			const ltcIndex = uuidToLtcIndex.get( source.textureUuid );
+			if ( ltcIndex === undefined ) continue;
+
+			texEntry.source = {
+				kind: 'builtin.ltcTexture',
+				ltcIndex,
+				magFilter: source.magFilter,
+				minFilter: source.minFilter,
+				wrapS: source.wrapS,
+				wrapT: source.wrapT,
+			};
+
+		}
+
+	}
+
+}
+
+/**
  * Extract a serializable artifact from a single `NodeBuilderState`.
  *
  * @param {number} cacheKey
@@ -344,6 +462,13 @@ export function extractArtifact( cacheKey, state, material = null ) {
 	}
 
 	attachLiveUpdateSidecars( artifact, state );
+
+	// Detect and promote LTC BRDF textures (RectAreaLight) from the generic
+	// `artifact.texture` snapshot path to the dedicated `builtin.ltcTexture`
+	// kind. This ensures the hydrator reconstructs them as half-float
+	// DataTextures regardless of whether the replay device supports
+	// float32-filterable linear sampling.
+	captureLtcTextures( artifact );
 
 	return artifact;
 

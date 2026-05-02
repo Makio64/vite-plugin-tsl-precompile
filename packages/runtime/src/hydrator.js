@@ -27,7 +27,10 @@ import StorageBuffer from 'three/src/renderers/common/StorageBuffer.js';
 import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttribute.js';
 import Sampler from 'three/src/renderers/common/Sampler.js';
 import { SampledTexture, SampledCubeTexture, Sampled3DTexture, SampledArrayTexture } from 'three/src/renderers/common/SampledTexture.js';
-import { DataTexture, Data3DTexture, DataArrayTexture, DepthTexture, CubeTexture, RGBAFormat, DepthFormat, UnsignedByteType, UnsignedIntType, LessEqualCompare, Vector2, Vector3, Vector4, Matrix4 } from 'three';
+import StorageTexture from 'three/src/renderers/common/StorageTexture.js';
+import Storage3DTexture from 'three/src/renderers/common/Storage3DTexture.js';
+import StorageArrayTexture from 'three/src/renderers/common/StorageArrayTexture.js';
+import { DataTexture, Data3DTexture, DataArrayTexture, DepthTexture, CubeTexture, RGBAFormat, DepthFormat, UnsignedByteType, UnsignedIntType, LessEqualCompare, HalfFloatType, LinearFilter, NearestFilter, ClampToEdgeWrapping, Vector2, Vector3, Vector4, Matrix4 } from 'three';
 import { getDFGLUT } from './dfg-lut.js';
 
 const fallbackTexture = new DataTexture( new Uint8Array( [ 255, 255, 255, 255 ] ), 1, 1, RGBAFormat );
@@ -87,6 +90,11 @@ fallbackMultisampledDepthTexture.renderTarget = { samples: 4 };
 // same Texture instance hits the UUID path and never touches this index.
 const _liveTexturesBySrc = new Map();
 const _liveTexturesByName = new Map();
+// All registered storage textures, bucketed by texture dimensionality type
+// ('2d', '3d', '2d-array'). Used as a last-resort lookup when a binding's
+// captured UUID is dead and there is no textureName to match on (e.g. an
+// anonymous StorageTexture used via `material.colorNode = texture(sTex)`).
+const _liveStorageTexturesByType = { '2d': [], '3d': [], '2d-array': [] };
 
 export function registerLiveTexture( texture ) {
 
@@ -96,12 +104,120 @@ export function registerLiveTexture( texture ) {
 	if ( typeof src === 'string' && src.length > 0 ) _liveTexturesBySrc.set( src, texture );
 	if ( typeof texture.name === 'string' && texture.name.length > 0 && ! _liveTexturesByName.has( texture.name ) ) _liveTexturesByName.set( texture.name, texture );
 
+	// Also track storage textures by dimensionality for anonymous-storage fallback.
+	if ( texture.isStorageTexture ) {
+
+		const bucket = texture.is3DTexture ? '3d' : ( texture.isArrayTexture ? '2d-array' : '2d' );
+		const list = _liveStorageTexturesByType[ bucket ];
+		if ( list && ! list.includes( texture ) ) list.push( texture );
+
+	}
+
 }
 
 export function clearLiveTextureIndex() {
 
 	_liveTexturesBySrc.clear();
 	_liveTexturesByName.clear();
+	_liveStorageTexturesByType[ '2d' ].length = 0;
+	_liveStorageTexturesByType[ '3d' ].length = 0;
+	_liveStorageTexturesByType[ '2d-array' ].length = 0;
+
+}
+
+// Auto-register storage textures by prototype-level `name` accessor patching.
+//
+// Compute-written storage textures (StorageTexture, Storage3DTexture,
+// StorageArrayTexture) are created programmatically at runtime — they are
+// never loaded via a TextureLoader, so they never flow through the loader
+// patches that populate _liveTexturesByName. Yet the artifact captures their
+// `texture.name` (e.g. "cloud" for a Storage3DTexture in the cloud volumetric
+// example). Installing a `name` accessor on each storage texture class
+// prototype ensures any named instance is registered when the name is set, so
+// the name lookup in resolveTextureBinding finds the live compute-written
+// texture instead of falling back to a 1×1×1 grey stub.
+//
+// How prototype accessor interception works here:
+//   - `Texture` constructor does `this.name = ''`. Because we install the
+//     accessor on `StorageXxxTexture.prototype` BEFORE any instance exists,
+//     the property-set walks the prototype chain and finds our setter (no own
+//     `name` data property has been created yet). Our setter writes to a
+//     WeakMap rather than creating an own data property, so all subsequent
+//     assignments also route through the prototype setter.
+//   - Later, `storageTexture.name = 'cloud'` hits our setter and calls
+//     registerLiveTexture so the hydrator's name lookup finds the live texture.
+//
+// The patch is guarded by `__tslpNamePatched` and is idempotent.
+const _storageNames = new WeakMap();
+
+function _patchStorageTextureName( Ctor ) {
+
+	if ( ! Ctor || ! Ctor.prototype || Ctor.prototype.__tslpNamePatched ) return;
+	Ctor.prototype.__tslpNamePatched = true;
+
+	Object.defineProperty( Ctor.prototype, 'name', {
+		get() {
+
+			const v = _storageNames.get( this );
+			return v !== undefined ? v : '';
+
+		},
+		set( v ) {
+
+			const self = this;
+			_storageNames.set( self, v );
+			// Defer to a microtask so that the full constructor chain completes
+			// (including `this.isStorageTexture = true` in the Storage* subclass)
+			// before we call registerLiveTexture. During `this.name = ''` in the
+			// Texture base constructor, the subclass body hasn't run yet, so
+			// `isStorageTexture` is still undefined. By deferring one microtask we
+			// allow the entire `new StorageXxxTexture()` call to complete first.
+			Promise.resolve().then( function () { registerLiveTexture( self ); } );
+
+		},
+		configurable: true,
+		enumerable: true,
+	} );
+
+}
+
+_patchStorageTextureName( StorageTexture );
+_patchStorageTextureName( Storage3DTexture );
+_patchStorageTextureName( StorageArrayTexture );
+
+/**
+ * Create a blank storage texture of the right class for a storage-texture
+ * binding that has no live instance registered yet. Three.js allocates the
+ * GPU texture when the compute shader runs; the render material binds this
+ * placeholder until then. Setting `.name` triggers the patched setter which
+ * calls registerLiveTexture so subsequent name-lookups find this instance.
+ *
+ * @param {string|null} textureName - Captured name from the artifact source.
+ * @param {string} textureType - '3d', '2d-array', or '2d'.
+ * @param {number} [w=1] - Width hint (1 if unavailable from artifact).
+ * @param {number} [h=1] - Height hint.
+ * @param {number} [d=1] - Depth hint (3D/array only).
+ * @return {StorageTexture|Storage3DTexture|StorageArrayTexture}
+ */
+function _makeBlankStorageTexture( textureName, textureType, w = 1, h = 1, d = 1 ) {
+
+	let tex;
+	if ( textureType === '3d' ) {
+
+		tex = new Storage3DTexture( w, h, d );
+
+	} else if ( textureType === '2d-array' ) {
+
+		tex = new StorageArrayTexture( w, h, d );
+
+	} else {
+
+		tex = new StorageTexture( w, h );
+
+	}
+
+	if ( textureName ) tex.name = textureName;
+	return tex;
 
 }
 
@@ -111,6 +227,33 @@ function lookupLiveTextureByIdentity( source ) {
 	if ( source.imageSrc && _liveTexturesBySrc.has( source.imageSrc ) ) return _liveTexturesBySrc.get( source.imageSrc );
 	if ( source.textureName && _liveTexturesByName.has( source.textureName ) ) return _liveTexturesByName.get( source.textureName );
 	return null;
+
+}
+
+/**
+ * Last-resort lookup for anonymous compute-written storage textures.
+ *
+ * When a binding's textureUuid is dead, has no textureName, and has no
+ * snapshot (typical for StorageTexture created directly as a compute target
+ * without naming it), fall back to the first registered storage texture of
+ * the matching dimensionality ('2d', '3d', '2d-array'). This covers the
+ * simple case where only one storage texture of a given type exists in the
+ * scene — e.g. `webgpu_compute_texture` which has a single unnamed 2-D
+ * StorageTexture written by compute.
+ *
+ * Returns null if no matching storage texture has been registered.
+ *
+ * @param {string} textureType - '2d', '3d', or '2d-array'.
+ * @return {?StorageTexture|?Storage3DTexture|?StorageArrayTexture}
+ */
+function lookupAnonymousStorageTexture( textureType ) {
+
+	const list = _liveStorageTexturesByType[ textureType ];
+	if ( ! list || list.length === 0 ) return null;
+	// Return the most recently registered (last in list), which corresponds
+	// to the texture created latest in the example's init() flow — usually
+	// the one the compute writes into.
+	return list[ list.length - 1 ];
 
 }
 
@@ -549,6 +692,64 @@ function seedUniformBufferSnapshots( artifact, groupName, bindingName, buffer ) 
 
 }
 
+/**
+ * Reconstruct an LTC BRDF approximation DataTexture from half-float data
+ * stored in `artifact.ltcTextures[source.ltcIndex]` at capture time.
+ *
+ * Returns a cached instance if the artifact has already been hydrated for
+ * this ltcIndex to avoid re-creating the DataTexture on every frame's
+ * binding resolution. Returns null if the data is unavailable.
+ *
+ * @param {Object} artifact
+ * @param {Object} source - The plan entry source with `ltcIndex`.
+ * @return {?DataTexture}
+ */
+function buildLtcTexture( artifact, source ) {
+
+	const ltcIndex = typeof source.ltcIndex === 'number' ? source.ltcIndex : 0;
+	const ltcArrays = artifact.ltcTextures;
+	if ( ! Array.isArray( ltcArrays ) || ltcIndex >= ltcArrays.length ) return null;
+
+	// Cache reconstructed textures per artifact so we don't allocate new
+	// DataTextures on every resolveTextureBinding call (called per-frame).
+	if ( ! artifact._ltcTextureCache ) {
+
+		Object.defineProperty( artifact, '_ltcTextureCache', {
+			value: new Map(),
+			enumerable: false,
+			writable: true,
+		} );
+
+	}
+
+	if ( artifact._ltcTextureCache.has( ltcIndex ) ) {
+
+		return artifact._ltcTextureCache.get( ltcIndex );
+
+	}
+
+	const rawData = ltcArrays[ ltcIndex ];
+	if ( ! Array.isArray( rawData ) || rawData.length !== 64 * 64 * 4 ) return null;
+
+	// Reconstruct as half-float (Uint16Array). HalfFloatType supports linear
+	// filtering on all WebGPU devices; FloatType requires float32-filterable.
+	const halfData = new Uint16Array( rawData );
+
+	const tex = new DataTexture( halfData, 64, 64, RGBAFormat, HalfFloatType );
+
+	// Apply sampler settings from the capture. Fall back to the same filter
+	// configuration that RectAreaLightTexturesLib uses.
+	tex.magFilter = typeof source.magFilter === 'number' ? source.magFilter : LinearFilter;
+	tex.minFilter = typeof source.minFilter === 'number' ? source.minFilter : NearestFilter;
+	tex.wrapS = typeof source.wrapS === 'number' ? source.wrapS : ClampToEdgeWrapping;
+	tex.wrapT = typeof source.wrapT === 'number' ? source.wrapT : ClampToEdgeWrapping;
+	tex.needsUpdate = true;
+
+	artifact._ltcTextureCache.set( ltcIndex, tex );
+	return tex;
+
+}
+
 function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 
 	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
@@ -561,6 +762,17 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 	if ( source.kind === 'builtin.dfgLUT' ) {
 
 		return getDFGLUT() || fallbackTextureForBinding( artifact, bindingName );
+
+	}
+
+	// LTC BRDF approximation textures for RectAreaLight (ltc_1 / ltc_2).
+	// Captured at compile time from RectAreaLightTexturesLib and stored as
+	// uint16 half-float arrays in `artifact.ltcTextures[ltcIndex]`. We
+	// reconstruct as HalfFloatType DataTextures so linear filtering works
+	// on all WebGPU devices without requiring the `float32-filterable` feature.
+	if ( source.kind === 'builtin.ltcTexture' ) {
+
+		return buildLtcTexture( artifact, source ) || fallbackTextureForBinding( artifact, bindingName );
 
 	}
 
@@ -639,6 +851,22 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 		}
 
 		if ( wantsDepthTexture && wantsMultisampledTexture ) return fallbackMultisampledDepthTexture;
+
+		// Last-resort: anonymous storage texture lookup.
+		// When a compute-written StorageTexture has no name and no snapshot,
+		// and its captured UUID is dead, try to find the live storage texture
+		// by dimensionality. This covers simple single-storage-texture scenes
+		// (e.g. webgpu_compute_texture) where the right texture exists in the
+		// runtime but was never registered by name or src.
+		if ( texture ) {
+
+			const lookupType = texture.textureType === '3d' ? '3d'
+				: texture.textureType === '2d-array' ? '2d-array'
+				: '2d';
+			const anon = lookupAnonymousStorageTexture( lookupType );
+			if ( anon ) return anon;
+
+		}
 
 	}
 

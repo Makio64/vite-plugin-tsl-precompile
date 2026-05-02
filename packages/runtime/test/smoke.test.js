@@ -736,3 +736,98 @@ test( 'hydrator: NodeUniformBuffer seeded from valueSnapshot', () => {
 	assert.ok( Math.abs( view.getFloat32( 12, true ) - 4.5 ) < 0.001, 'seed[3] = 4.5' );
 
 } );
+
+test( 'hydrator: builtin.ltcTexture resolves a 64x64 HalfFloat DataTexture from artifact.ltcTextures', () => {
+
+	// Simulate half-float LTC data: 64*64*4 = 16384 uint16 values
+	// Use non-zero values so we can verify the data reaches the texture.
+	const ltcData = new Array( 64 * 64 * 4 ).fill( 0 );
+	ltcData[ 0 ] = 15360; // half-float 1.0
+	ltcData[ 1 ] = 0;
+	ltcData[ 2 ] = 0;
+	ltcData[ 3 ] = 15360; // half-float 1.0
+
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: '',
+		bindings: [ {
+			name: 'scene',
+			bindings: [
+				{ name: 'ltcTex1', kind: 'sampled-texture', visibility: 2, textureType: '2d' },
+				{ name: 'ltcTex1_sampler', kind: 'sampler', visibility: 2 },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'scene',
+			shared: false,
+			slots: [],
+			textures: [
+				{
+					name: 'ltcTex1',
+					bindingKind: 'sampled-texture',
+					textureType: '2d',
+					visibility: 2,
+					source: { kind: 'builtin.ltcTexture', ltcIndex: 0 },
+				},
+				{
+					name: 'ltcTex1_sampler',
+					bindingKind: 'sampler',
+					textureType: '2d',
+					visibility: 2,
+					source: { kind: 'builtin.ltcTexture', ltcIndex: 0 },
+				},
+			],
+		} ],
+		ltcTextures: [ ltcData ],
+	};
+
+	const state = hydrateNodeBuilderState( artifact );
+	assert.equal( state.bindings.length, 1 );
+	const bindings = state.bindings[ 0 ].bindings;
+	const texBinding = bindings.find( b => b.isSampledTexture );
+	assert.ok( texBinding, 'must produce a SampledTexture binding' );
+	const tex = texBinding.texture;
+	assert.ok( tex && tex.isDataTexture, 'bound texture must be a DataTexture' );
+	// HalfFloatType = 1016
+	assert.equal( tex.type, 1016, 'LTC texture must use HalfFloatType (1016)' );
+	assert.equal( tex.image.width, 64 );
+	assert.equal( tex.image.height, 64 );
+	assert.ok( tex.image.data instanceof Uint16Array, 'data must be Uint16Array for half-float' );
+	assert.equal( tex.image.data[ 0 ], 15360, 'first half-float value must survive round-trip' );
+
+} );
+
+test( 'hydrator: builtin.ltcTexture caches texture per ltcIndex to avoid re-allocation', () => {
+
+	const ltcData = new Array( 64 * 64 * 4 ).fill( 0 );
+
+	const artifact = {
+		vertexShader: '', fragmentShader: '',
+		// Include real bindings so resolveTextureBinding is actually invoked.
+		bindings: [ {
+			name: 'g',
+			bindings: [
+				{ name: 'ltc1', kind: 'sampled-texture', visibility: 2, textureType: '2d' },
+				{ name: 'ltc2', kind: 'sampled-texture', visibility: 2, textureType: '2d' },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'g', shared: false, slots: [],
+			textures: [
+				{ name: 'ltc1', bindingKind: 'sampled-texture', textureType: '2d', visibility: 2,
+				  source: { kind: 'builtin.ltcTexture', ltcIndex: 0 } },
+				{ name: 'ltc2', bindingKind: 'sampled-texture', textureType: '2d', visibility: 2,
+				  source: { kind: 'builtin.ltcTexture', ltcIndex: 0 } },
+			],
+		} ],
+		ltcTextures: [ ltcData ],
+	};
+
+	hydrateNodeBuilderState( artifact );
+	// Hydrate again — cache must already exist and not grow.
+	hydrateNodeBuilderState( artifact );
+	// Both hydrations share the _ltcTextureCache on the artifact.
+	assert.ok( artifact._ltcTextureCache instanceof Map, 'must create _ltcTextureCache' );
+	assert.equal( artifact._ltcTextureCache.size, 1, 'only one unique index 0' );
+
+} );
