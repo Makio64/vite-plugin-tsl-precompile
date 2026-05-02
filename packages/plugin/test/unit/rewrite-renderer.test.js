@@ -5,7 +5,11 @@
  *   - Construction `new QuadMesh(new NodeMaterial())` becomes
  *     `new QuadMesh(new Material())`.
  *   - Late `quad.material.fragmentNode = this._nodes.getOutputNode(renderTarget.texture)`
- *     becomes `quad.material = new PrecompiledMaterial(attachArtifactTextureRefs(loadAux('render-output', hashNodeGraphSync(..., { shape: 'render-output', ...__tslpHashOpts })), renderTarget.texture))`.
+ *     becomes `quad.material = new PrecompiledMaterial(attachArtifactTextureRefs(loadAux('render-output',
+ *     hashPlainConfigSync({ toneMapping: this.toneMapping, toneMappingExposure: this.toneMappingExposure,
+ *     outputColorSpace: this.outputColorSpace }, { shape: 'render-output', ...__tslpHashOpts })), renderTarget.texture))`.
+ *   NOTE: render-output uses hashPlainConfigSync (config-based) not hashNodeGraphSync (graph-based)
+ *   so the slim loadAux call matches the aux-marker registration hash.
  */
 
 import { test } from 'node:test';
@@ -35,7 +39,13 @@ test( 'rewrite/Renderer: NodeMaterial replaced with Material sentinel + fragment
 	assert.match( out, /loadAux\s*\(\s*["']render-output["']/ );
 	assert.match( out, /attachArtifactTextureRefs\s*\(/ );
 	assert.match( out, /renderTarget\.texture/ );
-	assert.match( out, /hashNodeGraphSync\s*\(/ );
+	// render-output now uses hashPlainConfigSync (config-based), not hashNodeGraphSync (graph-based),
+	// to match the aux-marker registration.
+	assert.match( out, /hashPlainConfigSync\s*\(/ );
+	assert.doesNotMatch( out, /hashNodeGraphSync\s*\(\s*this\._nodes\.getOutputNode/ );
+	assert.match( out, /toneMapping:\s*this\.toneMapping/ );
+	assert.match( out, /toneMappingExposure:\s*this\.toneMappingExposure/ );
+	assert.match( out, /outputColorSpace:\s*this\.outputColorSpace/ );
 	assert.match( out, /shape:\s*["']render-output["']/ );
 	assert.match( out, /\.\.\.__tslpHashOpts/ );
 
