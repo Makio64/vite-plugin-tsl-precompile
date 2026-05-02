@@ -51,6 +51,25 @@ function resolveFromUpdateNode( node ) {
 	//   sceneFog  → 'scene.fog.<prop>'   (scene.fog.color / near / far / density)
 	//   scene     → 'scene.<prop>'       (scene.environment, background, ...)
 	//   other     → 'reference.<prop>'   (generic; hydrator reads frame.object)
+	// UserDataNode — a ReferenceNode subclass whose `updateReference()` binds
+	// to `state.object.userData[property]` each draw. Emit a per-draw
+	// `object3d.userData` kind so the hydrator/updater reads the live value
+	// from `frame.object.userData[property]` at render time instead of
+	// freezing the compile-time snapshot (which is always 0 for unset keys).
+	if ( type === 'UserDataNode' ) {
+
+		if ( ! node.node ) return null;
+		return {
+			uniformNode: node.node,
+			source: {
+				kind: 'object3d.userData',
+				property: node.property,
+				uniformType: node.uniformType || 'float',
+			},
+		};
+
+	}
+
 	if ( type === 'ReferenceNode' || type === 'MaterialReferenceNode' ) {
 
 		// Route by target identity. Material + scene + fog references
@@ -662,6 +681,12 @@ function textureIdentity( texture ) {
 
 	if ( typeof texture.name === 'string' && texture.name.length > 0 ) out.textureName = texture.name;
 	if ( typeof texture.mapping === 'number' ) out.mapping = texture.mapping;
+	// Capture flipY so the replay texture matches the original orientation.
+	// HTMLImageElement textures loaded by TextureLoader default to flipY=true;
+	// RenderTarget / DataTexture textures typically default to flipY=false.
+	// Without capturing this, replay may reconstruct a texture with the wrong
+	// Y-axis orientation and sprites appear flipped vs capture.
+	if ( typeof texture.flipY === 'boolean' ) out.flipY = texture.flipY;
 
 	return Object.keys( out ).length > 0 ? out : null;
 

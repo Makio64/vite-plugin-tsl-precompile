@@ -223,6 +223,40 @@ test( 'emitUpdaterSource — object.scale and attenuationDistance', () => {
 
 } );
 
+test( 'emitUpdaterSource — object3d.userData float reads frame.object.userData[property]', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			name: 'object',
+			slots: [
+				{ byteOffset: 0, source: { kind: 'object3d.userData', property: 'rotation', uniformType: 'float' } },
+			],
+		} ],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.deepEqual( unsupportedKinds, [] );
+	assert.match( source, /writeF32\(view, byteOffset \+ 0, frame\.object && frame\.object\.userData != null \? frame\.object\.userData\["rotation"\] : undefined\)/ );
+	assert.match( source, /import \{ writeF32 \}/ );
+
+} );
+
+test( 'emitUpdaterSource — object3d.userData missing property emits blocked unsupportedKind', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			name: 'object',
+			slots: [
+				{ byteOffset: 0, source: { kind: 'object3d.userData' } },
+			],
+		} ],
+	};
+	const { unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.equal( unsupportedKinds.length, 1 );
+	assert.equal( unsupportedKinds[ 0 ].kind, 'object3d.userData' );
+	assert.equal( unsupportedKinds[ 0 ].severity, 'blocked' );
+
+} );
+
 test( 'emitUpdaterSource — inlined constants', () => {
 
 	const artifact = {

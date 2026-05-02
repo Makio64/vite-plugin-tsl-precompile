@@ -300,6 +300,43 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 			usedWriters.add( 'writeF32' );
 			return `writeF32(view, ${ off }, frame.object.geometry && frame.object.geometry.boundingSphere ? frame.object.geometry.boundingSphere.radius : 0);`;
 
+		case 'object3d.userData': {
+
+			// UserDataNode — per-draw read of frame.object.userData[property].
+			// The property name and uniformType are baked into the source
+			// descriptor by extractUniformPlan. Fall back to 0 / snapshot when
+			// the object or key is absent so sprites with unset userData keys
+			// don't produce NaN in the UBO.
+			const udProp = src.property;
+			const udType = src.uniformType || 'float';
+			const udWriter = inferWriterForValueType( udType );
+			if ( ! udProp ) {
+
+				unsupportedKinds.push( {
+					kind: 'object3d.userData',
+					severity: 'blocked',
+					reason: 'object3d.userData slot is missing property name',
+					byteOffset,
+				} );
+				return `/* object3d.userData: missing property name, skipped */`;
+
+			}
+			if ( ! udWriter ) {
+
+				unsupportedKinds.push( {
+					kind: 'object3d.userData',
+					severity: 'unknown',
+					reason: `object3d.userData has unknown uniformType "${ udType }"`,
+					byteOffset,
+				} );
+				return `throw new Error("[tsl-precompile] unsupported object3d.userData uniformType: ${ udType }");`;
+
+			}
+			usedWriters.add( udWriter );
+			return `${ udWriter }(view, ${ off }, frame.object && frame.object.userData != null ? frame.object.userData[${ JSON.stringify( udProp ) }] : undefined);`;
+
+		}
+
 		// Frame-scoped uniforms — the extractor emits `frame.<x>`; earlier
 		// hand-written plans used the bare `<x>`. Both paths land here.
 		case 'frame.time':
