@@ -37,6 +37,13 @@ let extractor = null;
 // `hashMaterialSync` import above (node:crypto-free, browser-safe).
 let codegen = null;   // emitUpdaterSource — used to check for unknown kinds at capture time.
 
+// Last ArrayCamera seen in a devRenderer.render() call. Used to auto-detect
+// ArrayCamera captures: when the user renders with an ArrayCamera the
+// synthetic capture scene must also use one, otherwise three.js's Camera.js
+// nodes emit the scalar `cameraViewMatrix` uniform path instead of the
+// per-element `cameraViewMatrices[cameraIndex]` path.
+let lastSeenArrayCamera = null;
+
 const inflight = new Set();   // names currently being captured (suppresses dup POSTs)
 const sessionDone = new Set();   // names captured this session (suppresses needless re-POST)
 
@@ -116,6 +123,27 @@ export function setDevRenderer( renderer ) {
 	devRenderer = renderer || null;
 	if ( renderer && renderer.inspector ) autoAttachInspectorPanel( renderer.inspector );
 
+	// Intercept renderer.render() to track when an ArrayCamera is in use.
+	// This lets the synthetic capture scene mirror the array-camera shader
+	// path without requiring the harness to explicitly tag each material.
+	// We only wrap once per renderer instance (guard via __tslpRenderWrapped).
+	if ( renderer && typeof renderer.render === 'function' && ! renderer.__tslpRenderWrapped ) {
+
+		renderer.__tslpRenderWrapped = true;
+		const _originalRender = renderer.render.bind( renderer );
+		renderer.render = function ( scene, camera, ...rest ) {
+
+			if ( camera && camera.isArrayCamera && camera.cameras && camera.cameras.length > 0 ) {
+
+				lastSeenArrayCamera = camera;
+
+			}
+			return _originalRender( scene, camera, ...rest );
+
+		};
+
+	}
+
 }
 
 let _inspectorAttachTried = false;
@@ -179,9 +207,46 @@ async function captureMaterialInDev( material, name ) {
 		// that read `frame.object` fields see the same shape they saw in the app.
 		const { Scene, Mesh, BoxGeometry, PerspectiveCamera, Color, REVISION } = threeModule;
 		const scene = new Scene();
-		const camera = new PerspectiveCamera( 45, 1, 0.1, 100 );
-		camera.position.set( 0, 0, 3 );
-		camera.lookAt( 0, 0, 0 );
+
+		// Determine the capture camera. Priority order:
+		//   1. material.__tslpArrayCamera — explicit hint set by user or harness
+		//   2. lastSeenArrayCamera — auto-detected from the last devRenderer.render() call
+		//   3. Fallback: plain PerspectiveCamera (pre-existing behaviour)
+		//
+		// Using an ArrayCamera with at least one sub-camera causes three.js's
+		// Camera.js TSL nodes to emit the `cameraViewMatrices[cameraIndex]`
+		// array-uniform path instead of the scalar `cameraViewMatrix` path.
+		// Without this, all 36 cells of webgpu_camera_array render the same
+		// view because the precompiled WGSL bakes the scalar path.
+		let sourceArrayCamera = null;
+		if ( material.__tslpArrayCamera && material.__tslpArrayCamera.isArrayCamera ) {
+
+			sourceArrayCamera = material.__tslpArrayCamera;
+
+		} else if ( lastSeenArrayCamera ) {
+
+			sourceArrayCamera = lastSeenArrayCamera;
+
+		}
+
+		let camera;
+		if ( sourceArrayCamera ) {
+
+			// Clone the ArrayCamera shell so we don't mutate the live camera, but
+			// re-use the same sub-camera array (read-only during extraction).
+			const ArrayCamera = sourceArrayCamera.constructor;
+			camera = new ArrayCamera( sourceArrayCamera.cameras );
+			camera.position.copy( sourceArrayCamera.position );
+			camera.quaternion.copy( sourceArrayCamera.quaternion );
+			camera.updateMatrixWorld( true );
+
+		} else {
+
+			camera = new PerspectiveCamera( 45, 1, 0.1, 100 );
+			camera.position.set( 0, 0, 3 );
+			camera.lookAt( 0, 0, 0 );
+
+		}
 		const sourceObject = material.__tslpPrecompileObject || null;
 
 		// Inherit scene-level state that drives PBR shader binding
@@ -497,6 +562,7 @@ export function __resetForTests() {
 	devRenderer = null;
 	extractor = null;
 	codegen = null;
+	lastSeenArrayCamera = null;
 	logged.clear();
 	sessionDone.clear();
 	inflight.clear();
