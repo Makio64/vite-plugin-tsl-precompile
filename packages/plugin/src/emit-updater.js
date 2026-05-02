@@ -380,6 +380,13 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 			usedWriters.add( 'writeVec4' );
 			return `if (frame.renderer) frame.renderer.getViewport(_rViewport); writeVec4(view, ${ off }, _rViewport);`;
 
+		case 'renderer.toneMappingExposure':
+			// toneMappingExposure is a bare `uniform()` with onRenderUpdate that reads
+			// renderer.toneMappingExposure each frame. Default is 1.0 when no renderer
+			// is present (matches three.js's own default for WebGPURenderer.toneMappingExposure).
+			usedWriters.add( 'writeF32' );
+			return `writeF32(view, ${ off }, frame.renderer ? frame.renderer.toneMappingExposure : 1.0);`;
+
 		case 'material.color':
 		case 'material.emissive':
 		case 'material.specular':

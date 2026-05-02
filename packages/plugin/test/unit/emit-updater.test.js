@@ -257,6 +257,23 @@ test( 'emitUpdaterSource — object3d.userData missing property emits blocked un
 
 } );
 
+test( 'emitUpdaterSource — renderer.toneMappingExposure writes frame.renderer.toneMappingExposure', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			name: 'render',
+			slots: [
+				{ offset: 128, source: { kind: 'renderer.toneMappingExposure' } },
+			],
+		} ],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.deepEqual( unsupportedKinds, [] );
+	assert.match( source, /writeF32\(view, byteOffset \+ 128, frame\.renderer \? frame\.renderer\.toneMappingExposure : 1\.0\)/ );
+	assert.match( source, /import \{ writeF32 \}/ );
+
+} );
+
 test( 'emitUpdaterSource — inlined constants', () => {
 
 	const artifact = {
