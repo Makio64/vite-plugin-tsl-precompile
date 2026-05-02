@@ -979,6 +979,10 @@ function writeUniformGroup( group, frame, view, material ) {
 			if ( frame.renderer ) { frame.renderer.getViewport( _rViewport ); writeVec4( view, offset, _rViewport ); }
 			else writeSnapshot( view, offset, source.valueSnapshot );
 
+		} else if ( kind === 'renderer.toneMappingExposure' ) {
+
+			view.setFloat32( offset, frame.renderer ? frame.renderer.toneMappingExposure : ( source.valueSnapshot ? Number( source.valueSnapshot.data ) : 1 ), true );
+
 		}
 		else if ( kind.startsWith( 'material.' ) ) writeMaterialValue( view, offset, frame.material || material, source, kind, slot.dtype );
 		else if ( kind === 'scene.fog.color' ) writeColor( view, offset, frame.scene && frame.scene.fog && frame.scene.fog.color, source.valueSnapshot );
