@@ -15,8 +15,12 @@
 
 import { nodeResolve } from '@rollup/plugin-node-resolve';
 import terser from '@rollup/plugin-terser';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { rewriteThreeSource } from '../plugin/src/three-rewrite.js';
+
+const __dirname = dirname( fileURLToPath( import.meta.url ) );
 
 /**
  * Rollup plugin that routes specific three.js source files through our
@@ -39,6 +43,30 @@ const threeRewritePlugin = {
 
 		}
 		return { code: r.code, map: r.map };
+
+	},
+};
+
+/**
+ * Resolve `@tsl-precompile/runtime` to this workspace package's own
+ * `src/index.js`. Without this alias, rollup's nodeResolve follows the
+ * symlink in the pnpm hoisted store which points to the PARENT repo's
+ * `packages/runtime` — a different directory from the worktree. That
+ * causes rollup to include aux-loader.js TWICE (once from the worktree
+ * source path, once from the main-repo resolved path), producing two
+ * separate REGISTRY Maps and breaking `registerAuxArtifacts` / `loadAux`
+ * pairing at runtime.
+ */
+const runtimeAliasPlugin = {
+	name: 'tsl-precompile:runtime-alias',
+	resolveId( id ) {
+
+		if ( id === '@tsl-precompile/runtime' ) {
+
+			return resolve( __dirname, 'src/index.js' );
+
+		}
+		return null;
 
 	},
 };
@@ -94,6 +122,7 @@ export default {
 		},
 	},
 	plugins: [
+		runtimeAliasPlugin,
 		auxVirtualStub,
 		nodeResolve( {
 			browser: true,
