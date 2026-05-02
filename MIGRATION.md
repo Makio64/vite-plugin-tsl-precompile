@@ -1,8 +1,107 @@
 # Migration guide
 
+Two audiences:
+
+1. **Users coming from `precompileScene()` or stock three.js** — see [Switching to `.precompile(name)`](#switching-to-precompilename) below.
+2. **Existing users bumping `three`, `vite-plugin-tsl-precompile`, or `@tsl-precompile/runtime`** — see [Version-bump contract](#version-bump-contract). Captured artifacts are pinned to specific versions; bumping any of them invalidates the on-disk artifact and the build will fail loudly until you re-capture.
+
+---
+
+## Version-bump contract
+
+### Why artifacts are versioned
+
+A captured artifact (`artifacts/<name>.<hash>.json`) is a frozen snapshot of three.js's WGSL emitter output for a specific material at a specific point in time. It contains:
+
+- WGSL vertex + fragment source produced by three's TSL → WGSL emitter,
+- a uniform plan describing how to push per-frame UBO bytes for every binding,
+- a binding layout that the runtime hands directly to the GPU,
+- captured value snapshots for nodes that aren't live-bound.
+
+Three things determine whether that snapshot is binary-compatible with what's running at execution time:
+
+| Versioned input | Why a bump invalidates artifacts |
+|---|---|
+| `three` | The TSL → WGSL emitter, NodeBuilder, uniform group layout, and binding kinds all live in three.js. Even a patch bump can shift uniform offsets or rename a binding kind. |
+| `vite-plugin-tsl-precompile` | Owns the artifact schema and the codegen for the per-frame updater. Schema changes (new field, renamed kind, different snapshot encoding) invalidate older artifacts. |
+| `@tsl-precompile/runtime` | Owns `__applyPrecompiled`, the hydrator, and the writers. A runtime release that expects a new artifact field will reject older artifacts at app init. |
+| Material schema | The user's TSL graph itself — every `*Node` slot, every uniform value, every texture uuid. Editing the source of a material invalidates its artifact. |
+
+The runtime fails loudly on any mismatch. Silent fallback to "render whatever ships" would produce visual regressions long after the bump.
+
+### Three layers that catch staleness
+
+Implemented in code today:
+
+1. **Content hash on each artifact.** The plugin computes `sha256(name + threeVersion + pluginVersion + normalized material graph)` at capture time and stores it as `__hash` in the artifact JSON. See [`packages/plugin/src/hash.js`](./packages/plugin/src/hash.js) — `computeArtifactHash()` for user materials, `computeArtifactContentHash()` and `computeNodeGraphHash()` for aux passes.
+2. **Build-time mismatch error from the Babel transform.** [`packages/plugin/src/babel-transform.js`](./packages/plugin/src/babel-transform.js) reads each captured artifact's hash from the manifest and bakes it into the rewritten call site as a string literal. If the manifest lookup fails (no artifact for that name), the transform throws at build:
+   ```
+   [tsl-precompile] <file>:<line>:<col> .precompile("<name>"): no captured artifact found. Run dev mode once to capture it, then rebuild.
+   ```
+3. **Runtime assertion in `__applyPrecompiled`.** [`packages/runtime/src/apply-precompiled.js`](./packages/runtime/src/apply-precompiled.js) compares the hash baked into the bundle (`expectedHash`) against the hash on the loaded artifact module (`artifactModule.__hash`). Mismatch throws at app init, before any frame is rendered:
+   ```
+   [tsl-precompile] stale artifact detected for "<name>": expected hash <baked>, bundle shipped <loaded>. Rebuild — the on-disk artifact is out of sync with source.
+   ```
+
+Two additional gates back this up: the dev-capture server hot-re-extracts on file save (so editing the material immediately produces a new hash + new artifact filename), and `pnpm verify` ([`packages/plugin/src/cli/verify.js`](./packages/plugin/src/cli/verify.js)) checks every committed artifact for a present `__hash`, valid manifest reference, and no `severity: 'unknown'` entries — wire it into CI to catch corrupt or partially-regenerated artifacts.
+
+### What to do on a `three` version bump
+
+1. Bump `three` in your `package.json` and run `pnpm install`.
+2. Run `pnpm dev` (or your equivalent dev server). The plugin auto-detects the new three version (see `detectThreeVersion()` in [`packages/plugin/src/index.js`](./packages/plugin/src/index.js)) and feeds it into the hash.
+3. **Re-trigger every `.precompile()` call site.** In dev mode, the marker fires the in-browser extractor and writes a new `artifacts/<name>.<new-hash>.json`. Visit every page / route that constructs a precompiled material so each call site captures.
+4. Delete the old `artifacts/<name>.<old-hash>.json` files (or run `pnpm verify` then `git status` to see which are now orphaned).
+5. Commit the new artifacts.
+
+There is **no auto-migration**. The artifact format is not backward-compatible across three.js minor versions because three.js itself can change WGSL emission rules between releases. Bumping three requires a fresh capture; the runtime will refuse to load a stale artifact rather than silently render the wrong shader.
+
+### What to do on a plugin or runtime version bump
+
+Same procedure as a `three` bump:
+
+1. Read the relevant CHANGELOG (the plugin's, the runtime's, or both) for the line **"artifact schema bumped"** — pre-1.0, treat every minor bump as schema-changing.
+2. Re-run dev capture for every `.precompile()` site.
+3. Commit the regenerated artifacts.
+
+If the schema changed, the build will fail with the "no captured artifact found" error before you get to runtime. If only the runtime changed (e.g. a new writer kind), older artifacts may still be valid — the runtime asserts on `__hash` only, so a no-op runtime bump is safe.
+
+### How to detect stale artifacts
+
+| Where | Symptom |
+|---|---|
+| Build (Vite) | `[tsl-precompile] <file>:<line>:<col> .precompile("<name>"): no captured artifact found. Run dev mode once to capture it, then rebuild.` — emitted by the Babel transform when the manifest has no entry for the name + hash combo. |
+| App init (browser) | `[tsl-precompile] stale artifact detected for "<name>": expected hash <X>, bundle shipped <Y>. Rebuild — the on-disk artifact is out of sync with source.` — thrown by `__applyPrecompiled` before the first frame. |
+| CI | `pnpm verify` exits non-zero on missing `__hash`, invalid JSON, or unknown unsupported kinds. |
+| Dev (HMR) | The dev-capture server re-extracts on save and writes a new `artifacts/<name>.<new-hash>.json`. Stale files become orphaned and visible in `git status`. |
+
+The build-time error is the front line — bumping `three` and rebuilding without re-capturing will fail at `pnpm build` long before anything reaches a user.
+
+### Pinning workflow
+
+Captured artifacts are tied to one `three` revision. Pin to keep them valid:
+
+1. **Lock `three` to an exact version** in your `package.json`:
+   ```json
+   {
+     "dependencies": {
+       "three": "0.184.0"
+     }
+   }
+   ```
+   The plugin's `peerDependencies` declare `"three": ">=0.184.0"` (see [`packages/plugin/package.json`](./packages/plugin/package.json) and [`packages/runtime/package.json`](./packages/runtime/package.json)) — that's the floor, not a recommendation to take latest. Pin tighter than the floor.
+2. **Use a lockfile** (`pnpm-lock.yaml`, `package-lock.json`, `yarn.lock`) and commit it. Lockfile + exact version means the same `three` resolves on every machine.
+3. **Add a CI gate** that runs `pnpm verify` and (optionally) `pnpm test:batch` so any drift between source and committed artifacts fails the build before it merges.
+4. **Treat `three`, `vite-plugin-tsl-precompile`, and `@tsl-precompile/runtime` bumps as a coordinated change.** Bump together, recapture together, commit the new artifacts in the same PR. Never let the lockfile and the artifacts diverge.
+
+If you need to upgrade `three` without re-capturing immediately (e.g. a security patch on a feature branch), keep the precompile path opt-in: materials without `.precompile()` use the full TSL pipeline, so they still render. Only the materials you've explicitly precompiled need the recapture.
+
+---
+
+## Switching to `.precompile(name)`
+
 For users coming from the `precompileScene()` helper in [Makio64/three.js@tsl-precompile](https://github.com/Makio64/three.js/tree/tsl-precompile), or from no precompile at all.
 
-## From `precompileScene(renderer, scene, camera, …)`
+### From `precompileScene(renderer, scene, camera, …)`
 
 **Before:**
 
@@ -48,14 +147,14 @@ renderer.render(scene, camera);
 
 Add `vite-plugin-tsl-precompile` to your Vite config.
 
-### Key differences
+#### Key differences
 
 - **No `await precompileScene(...)` call.** Each material opts in via `.precompile('name')`, called wherever the material is constructed — including inside loaders, async callbacks, conditional branches.
 - **No scene curation.** Dynamic / lazy-loaded materials Just Work, as long as their construction site reaches a `.precompile()` call.
 - **Names are required and authoritative.** The plugin uses the name as the artifact filename + the staleness-hash key + the prod-build rewrite target. Pick stable names; don't generate them.
-- **Hash-gated.** The plugin computes a content hash of the material's TSL graph + three.js version + plugin version + name. Mismatch at build → loud error. Mismatch at runtime → throw at app init.
+- **Hash-gated.** The plugin computes a content hash of the material's TSL graph + three.js version + plugin version + name. Mismatch at build → loud error. Mismatch at runtime → throw at app init. See the [Version-bump contract](#version-bump-contract) above.
 
-## From no precompile (stock three.js)
+### From no precompile (stock three.js)
 
 The plugin is opt-in per material. To start small, mark just one expensive material:
 
@@ -74,15 +173,17 @@ The plugin is opt-in per material. To start small, mark just one expensive mater
 
 Repeat for additional materials at your own pace. Materials without `.precompile()` use the full TSL path, unchanged.
 
+---
+
 ## Common errors
 
 ### `[tsl-precompile] no captured artifact for "<name>"`
 
-Build-time: the Babel transform found `.precompile('foo')` in source but no `artifacts/foo.<hash>.json`. Run `pnpm dev` once to capture.
+Build-time: the Babel transform found `.precompile('foo')` in source but no `artifacts/foo.<hash>.json`. Run `pnpm dev` once to capture. Most often happens after a `three` or plugin version bump — see [Version-bump contract](#version-bump-contract).
 
 ### `[tsl-precompile] stale artifact detected for "<name>"`
 
-Build-time or runtime: the source's hash changed since the artifact was captured. Run `pnpm dev` once to recapture.
+Build-time or runtime: the source's hash changed since the artifact was captured. Run `pnpm dev` once to recapture. Source: [`packages/runtime/src/apply-precompiled.js`](./packages/runtime/src/apply-precompiled.js).
 
 ### `[tsl-precompile] .precompile("<name>") was called but no dev endpoint`
 
