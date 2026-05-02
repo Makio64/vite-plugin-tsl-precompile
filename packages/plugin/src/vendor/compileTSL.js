@@ -694,6 +694,51 @@ function collectMaterialRenderState( material ) {
 }
 
 /**
+ * Collect the MRT node to use for the warm-up render.
+ *
+ * Priority:
+ *   1. `options.mrtNode` — caller explicitly provided the MRT descriptor.
+ *   2. Auto-detect: walk scene materials looking for any material that has an
+ *      `mrtNode` property set (three.js NodeMaterial stores it there when
+ *      `PassNode.setMRT()` wires it). The first non-null one wins.
+ *
+ * Returns `null` when no MRT is found so the caller can skip `setMRT`.
+ *
+ * @param {Scene|null} scene
+ * @param {Object} options
+ * @return {Object|null} MRT node or null.
+ */
+function collectSceneMRTNode( scene, options ) {
+
+	if ( options.mrtNode ) return options.mrtNode;
+	if ( ! scene || typeof scene.traverse !== 'function' ) return null;
+
+	let found = null;
+	scene.traverse( ( object ) => {
+
+		if ( found ) return;
+		const material = object && object.material;
+		if ( ! material ) return;
+
+		const materials = Array.isArray( material ) ? material : [ material ];
+		for ( const mat of materials ) {
+
+			if ( mat && mat.mrtNode ) {
+
+				found = mat.mrtNode;
+				return;
+
+			}
+
+		}
+
+	} );
+
+	return found;
+
+}
+
+/**
  * Precompile every node material reachable via `renderer.compileAsync` and
  * return an array of serializable artifacts (one per unique cache key).
  *
@@ -709,12 +754,19 @@ function collectMaterialRenderState( material ) {
  * `nodeBuilderCache`, so chains of bloom / FXAA / output-transform land
  * as regular artifacts.
  *
+ * MRT: when any scene material carries an `mrtNode`, or when the caller
+ * passes `options.mrtNode`, that MRT descriptor is activated on the renderer
+ * before the warm-up render so three.js emits a multi-output fragment shader
+ * (`@location(0)`, `@location(1)`, …) rather than a single-output one.
+ * The MRT state is always restored to `null` after the warm-up.
+ *
  * @param {Renderer} renderer
  * @param {Scene} scene
  * @param {Camera} camera
  * @param {Object} [options]
  * @param {Array<Node>} [options.computeNodes] - Compute nodes to precompile.
  * @param {RenderPipeline} [options.renderPipeline] - Post-process pipeline to warm up.
+ * @param {Object} [options.mrtNode] - Explicit MRT node to activate during warm-up.
  * @return {Promise<Array<PrecompiledArtifact>>}
  */
 export async function compileTSL( renderer, scene, camera, options = {} ) {
@@ -724,6 +776,11 @@ export async function compileTSL( renderer, scene, camera, options = {} ) {
 
 	const computeNodes = Array.isArray( options.computeNodes ) ? options.computeNodes : [];
 	const renderPipeline = options.renderPipeline || null;
+
+	// Detect the MRT node to activate during warm-up. Must be resolved before
+	// the getForRender hook is installed so the hook can record it for
+	// artifact stamping in the extraction pass below.
+	const sceneMRTNode = collectSceneMRTNode( scene, options );
 
 	// Temporarily wrap NodeManager.getForRender so we can see every
 	// renderObject that flows through the build path during compileAsync.
@@ -773,6 +830,17 @@ export async function compileTSL( renderer, scene, camera, options = {} ) {
 
 	try {
 
+		// Activate MRT on the renderer before the warm-up so three.js emits a
+		// multi-output fragment shader. Without this, the pipeline is compiled
+		// with a single color attachment and the fragment shader only declares
+		// `@location(0)`, which causes a WebGPU validation error when the
+		// material is later used against an MRT render target.
+		if ( sceneMRTNode && typeof renderer.setMRT === 'function' ) {
+
+			renderer.setMRT( sceneMRTNode );
+
+		}
+
 		await renderer.compileAsync( scene, camera );
 
 		// Compute precompile — each computeAsync call forces NodeManager
@@ -811,6 +879,15 @@ export async function compileTSL( renderer, scene, camera, options = {} ) {
 
 	} finally {
 
+		// Always restore MRT state so the renderer is clean for subsequent
+		// renders. Do this before restoring the getForRender hook so any
+		// post-finally render sees the clean state too.
+		if ( sceneMRTNode && typeof renderer.setMRT === 'function' ) {
+
+			renderer.setMRT( null );
+
+		}
+
 		manager.getForRender = origGetForRender;
 
 	}
@@ -830,6 +907,24 @@ export async function compileTSL( renderer, scene, camera, options = {} ) {
 		const artifact = extractArtifact( cacheKey, state, material );
 		if ( material && material.uuid ) artifact.materialUuid = material.uuid;
 		if ( userMaterial && userMaterial.uuid ) artifact.userMaterialUuid = userMaterial.uuid;
+
+		// Stamp mrtOutputCount when the warm-up ran with an MRT node active.
+		// Three.js keys the pipeline by the number of color attachments — the
+		// replay side needs this count to size the render target correctly and
+		// validate the pipeline descriptor. Accept both `.nodes` (MRTNode) and
+		// `.outputNodes` (PassNode-style) property names for robustness.
+		if ( sceneMRTNode ) {
+
+			const outputMap = sceneMRTNode.nodes || sceneMRTNode.outputNodes || null;
+			const outputCount = outputMap ? Object.keys( outputMap ).length : 0;
+			if ( outputCount > 1 ) {
+
+				artifact.mrtOutputCount = outputCount;
+
+			}
+
+		}
+
 		artifacts.push( artifact );
 		const isAuxiliary = isAuxiliaryArtifactShape( artifact.materialShape );
 
