@@ -152,6 +152,12 @@ export function emitUpdaterSource( artifact, opts = {} ) {
 			decls.push( 'const _lvec = new Vector3();' );
 
 		}
+		if ( allHelpers.has( 'm4rot' ) ) {
+
+			threeNames.add( 'Matrix4' );
+			decls.push( 'const _m4rot = new Matrix4();' );
+
+		}
 		// Per-call light cache — keyed by `frame.scene` and rebuilt when
 		// `frame.scene._tslpLightCacheVersion` changes (e.g. lights added/
 		// removed). Without caching, every slot write would re-traverse the
@@ -527,6 +533,28 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 			usedWriters.add( 'writeVec3' );
 			const idx = src.lightIndex | 0;
 			return `{ const _l = _tslpFindLight(frame.scene, ${ idx }); if (_l && _l.target) { _lvec.setFromMatrixPosition(_l.target.matrixWorld); writeVec3(view, ${ off }, _lvec); } }`;
+
+		}
+		case 'light.halfWidth': {
+
+			rendererHelpers.add( 'lightLookup' );
+			rendererHelpers.add( 'lightVec' );
+			rendererHelpers.add( 'worldMatrixInverse' );
+			rendererHelpers.add( 'm4rot' );
+			usedWriters.add( 'writeVec3' );
+			const halfWidthIdx = src.lightIndex || 0;
+			return `{ const _l = _tslpFindLight(frame.scene, ${ halfWidthIdx }); if (_l && frame.camera) { _mwi.copy(_l.matrixWorld).premultiply(frame.camera.matrixWorldInverse); _m4rot.extractRotation(_mwi); _lvec.set(_l.width * 0.5, 0, 0).applyMatrix4(_m4rot); writeVec3(view, ${ off }, _lvec); } }`;
+
+		}
+		case 'light.halfHeight': {
+
+			rendererHelpers.add( 'lightLookup' );
+			rendererHelpers.add( 'lightVec' );
+			rendererHelpers.add( 'worldMatrixInverse' );
+			rendererHelpers.add( 'm4rot' );
+			usedWriters.add( 'writeVec3' );
+			const halfHeightIdx = src.lightIndex || 0;
+			return `{ const _l = _tslpFindLight(frame.scene, ${ halfHeightIdx }); if (_l && frame.camera) { _mwi.copy(_l.matrixWorld).premultiply(frame.camera.matrixWorldInverse); _m4rot.extractRotation(_mwi); _lvec.set(0, _l.height * 0.5, 0).applyMatrix4(_m4rot); writeVec3(view, ${ off }, _lvec); } }`;
 
 		}
 
