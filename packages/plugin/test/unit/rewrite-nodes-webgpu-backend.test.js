@@ -16,6 +16,7 @@ const HERE = dirname( fileURLToPath( import.meta.url ) );
 const THREE_SRC = resolve( HERE, '../../../../node_modules/three/src' );
 const NODES_PATH = resolve( THREE_SRC, 'renderers/common/nodes/NodeManager.js' );
 const BACKEND_PATH = resolve( THREE_SRC, 'renderers/webgpu/WebGPUBackend.js' );
+const PIPELINE_UTILS_PATH = resolve( THREE_SRC, 'renderers/webgpu/utils/WebGPUPipelineUtils.js' );
 
 test( 'rewrite/Nodes.js: getForRender bypasses createNodeBuilder for precompiled materials', () => {
 
@@ -65,6 +66,12 @@ test( 'rewrite/WebGPUBackend.js: drops WGSLNodeBuilder import + stubs createNode
 	// createNodeBuilder now throws (no `new WGSLNodeBuilder(...)` reference).
 	assert.doesNotMatch( out, /new WGSLNodeBuilder\s*\(/ );
 	assert.match( out, /createNodeBuilder\s*\([^)]*\)\s*\{[\s\S]*throw new Error/ );
+	assert.match( out, /if\s*\(\s*buffer === undefined\s*\)/ );
+	assert.match( out, /this\.createIndexAttribute\(index\)/ );
+	assert.match( out, /this\.createAttribute\(vertexBuffer\)/ );
+	assert.match( out, /currentBindingGroups\.length\s*=\s*0/ );
+	assert.match( out, /this\.createBindings\(bindGroup, bindings, 0\)/ );
+	assert.match( out, /cameraIndex &&/ );
 
 } );
 
@@ -74,5 +81,16 @@ test( 'rewrite/WebGPUBackend.js: output parses as valid ESM', () => {
 	const r = rewriteThreeSource( src, BACKEND_PATH, { threeVersion: '175', pluginVersion: '0.0.0' } );
 	assert.ok( r && r.code );
 	assert.doesNotThrow( () => parse( r.code, { sourceType: 'module', plugins: [ 'importAttributes' ] } ) );
+
+} );
+
+test( 'rewrite/WebGPUPipelineUtils.js: lazily creates missing bind group layouts', () => {
+
+	const src = readFileSync( PIPELINE_UTILS_PATH, 'utf8' );
+	const r = rewriteThreeSource( src, PIPELINE_UTILS_PATH, { threeVersion: '175', pluginVersion: '0.0.0' } );
+	assert.ok( r, 'handler should return a result' );
+	assert.equal( r.warning, null, `expected no warning; got: ${ r.warning }` );
+	assert.match( r.code, /bindingsData\.layout \|\|/ );
+	assert.match( r.code, /backend\.bindingUtils\.createBindingsLayout\(bindGroup\)/ );
 
 } );

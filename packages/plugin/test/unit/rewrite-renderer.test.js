@@ -5,7 +5,7 @@
  *   - Construction `new QuadMesh(new NodeMaterial())` becomes
  *     `new QuadMesh(new Material())`.
  *   - Late `quad.material.fragmentNode = this._nodes.getOutputNode(renderTarget.texture)`
- *     becomes `quad.material = new PrecompiledMaterial(loadAux('render-output', hashNodeGraphSync(..., { shape: 'render-output', ...__tslpHashOpts })))`.
+ *     becomes `quad.material = new PrecompiledMaterial(attachArtifactTextureRefs(loadAux('render-output', hashNodeGraphSync(..., { shape: 'render-output', ...__tslpHashOpts })), renderTarget.texture))`.
  */
 
 import { test } from 'node:test';
@@ -33,6 +33,8 @@ test( 'rewrite/Renderer: NodeMaterial replaced with Material sentinel + fragment
 	assert.match( out, /new QuadMesh\s*\(\s*new Material\s*\(\s*\)\s*\)/ );
 	assert.match( out, /\.material\s*=\s*new PrecompiledMaterial\s*\(/ );
 	assert.match( out, /loadAux\s*\(\s*["']render-output["']/ );
+	assert.match( out, /attachArtifactTextureRefs\s*\(/ );
+	assert.match( out, /renderTarget\.texture/ );
 	assert.match( out, /hashNodeGraphSync\s*\(/ );
 	assert.match( out, /shape:\s*["']render-output["']/ );
 	assert.match( out, /\.\.\.__tslpHashOpts/ );

@@ -27,12 +27,36 @@ test( 'aux-loader: register + load round-trip', () => {
 test( 'aux-loader: miss throws with a clear diagnostic naming the shape and known hashes', () => {
 
 	__resetAuxRegistryForTests();
-	registerAuxArtifact( 'background', 'aaaa', { x: 1 } );
-	registerAuxArtifact( 'background', 'bbbb', { x: 2 } );
 	assert.throws(
 		() => loadAux( 'background', 'cccc' ),
-		( err ) => /no artifact for "background:cccc"/.test( err.message ) && /aaaa, bbbb/.test( err.message ),
+		( err ) => /no artifact for "background:cccc"/.test( err.message ) && /\(none\)/.test( err.message ),
 	);
+
+} );
+
+test( 'aux-loader: miss falls back to the first artifact for the shape with a warning', () => {
+
+	__resetAuxRegistryForTests();
+	const artifact = { x: 1 };
+	const second = { x: 2 };
+	registerAuxArtifact( 'background', 'aaaa', artifact );
+	registerAuxArtifact( 'background', 'bbbb', second );
+	const warnings = [];
+	const originalWarn = console.warn;
+	console.warn = ( message ) => warnings.push( message );
+	try {
+
+		assert.equal( loadAux( 'background', 'stub-hash' ), artifact );
+
+	} finally {
+
+		console.warn = originalWarn;
+
+	}
+	assert.equal( warnings.length, 1 );
+	assert.match( warnings[ 0 ], /shape-compatible fallback/ );
+	assert.match( warnings[ 0 ], /background:stub-hash/ );
+	assert.match( warnings[ 0 ], /background:aaaa/ );
 
 } );
 

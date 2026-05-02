@@ -15,8 +15,9 @@
  * etc.) handlers throw. The plugin catches and falls back to the full
  * slim bundle without the rewrite so Vite builds still complete.
  *
- * Currently wired: CubeRenderTarget. Roadmap: Renderer + PostProcessing,
- * then PMREM. Background deferred.
+ * Current targets include renderer/background/post-processing auxiliaries,
+ * NodeManager builder bypass, WebGPU backend/pipeline compatibility patches,
+ * and CubeRenderTarget helper material rewrites.
  *
  * @module ThreeRewrite
  */
@@ -96,6 +97,7 @@ function pickHandler( id ) {
 
 	if ( /\/three\/src\/renderers\/common\/CubeRenderTarget\.js$/.test( id ) ) return rewriteCubeRenderTarget;
 	if ( /\/three\/src\/renderers\/common\/Renderer\.js$/.test( id ) ) return rewriteRenderer;
+	if ( /\/three\/src\/renderers\/common\/RenderObject\.js$/.test( id ) ) return rewriteRenderObject;
 	// PostProcessing.js is the 0.175 name; since 0.183 it's a thin wrapper
 	// around RenderPipeline.js which carries the actual NodeMaterial. Both
 	// files share the same rewrite shape (bare NodeMaterial + late
@@ -108,8 +110,109 @@ function pickHandler( id ) {
 	if ( /\/three\/src\/renderers\/common\/nodes\/NodeManager\.js$/.test( id ) ) return rewriteNodesJs;
 	if ( /\/three\/src\/renderers\/webgpu\/WebGPURenderer\.js$/.test( id ) ) return rewriteWebGPURenderer;
 	if ( /\/three\/src\/renderers\/webgpu\/WebGPUBackend\.js$/.test( id ) ) return rewriteWebGPUBackend;
+	if ( /\/three\/src\/renderers\/webgpu\/utils\/WebGPUPipelineUtils\.js$/.test( id ) ) return rewriteWebGPUPipelineUtils;
 	if ( /\/three\/src\/renderers\/webgl-fallback\/WebGLBackend\.js$/.test( id ) ) return rewriteWebGLBackend;
 	return null;
+
+}
+
+function rewriteRenderObject( ast, ctx ) {
+
+	let patched = false;
+
+	traverse( ast, {
+		ExpressionStatement( path ) {
+
+			if ( patched || path.node.__tslpPatched ) return;
+
+			const expr = path.node.expression;
+			if ( ! t.isAssignmentExpression( expr, { operator: '=' } ) ) return;
+			if ( ! t.isMemberExpression( expr.left ) || ! t.isIdentifier( expr.left.object, { name: 'attributesId' } ) ) return;
+			if ( ! t.isMemberExpression( expr.right ) || ! t.isIdentifier( expr.right.object, { name: 'attribute' } ) || ! t.isIdentifier( expr.right.property, { name: 'id' } ) ) return;
+
+			ensureBufferAttributeImport( ast );
+			ensureRenderObjectFallbackHelper( ast );
+
+			const itemSizeCall = () => t.callExpression( t.identifier( '__tslpAttributeItemSize' ), [
+				t.memberExpression( t.identifier( 'nodeAttribute' ), t.identifier( 'type' ) ),
+			] );
+			const fallbackMember = t.memberExpression( t.identifier( 'nodeAttribute' ), t.identifier( '_tslpFallbackAttribute' ) );
+			const fallbackAttribute = t.newExpression( t.identifier( 'BufferAttribute' ), [
+				t.newExpression( t.identifier( 'Float32Array' ), [ itemSizeCall() ] ),
+				itemSizeCall(),
+			] );
+			const fallbackIf = t.ifStatement(
+				t.binaryExpression( '===', t.identifier( 'attribute' ), t.identifier( 'undefined' ) ),
+				t.blockStatement( [
+					t.expressionStatement( t.assignmentExpression(
+						'=',
+						t.identifier( 'attribute' ),
+						t.logicalExpression( '||',
+							t.cloneNode( fallbackMember ),
+							t.assignmentExpression( '=', t.cloneNode( fallbackMember ), fallbackAttribute )
+						)
+					) ),
+				] )
+			);
+			const idAssignment = t.cloneNode( path.node, true );
+			idAssignment.__tslpPatched = true;
+			path.replaceWithMultiple( [ fallbackIf, idAssignment ] );
+			path.skip();
+			patched = true;
+
+		},
+	} );
+
+	if ( ! patched ) throw new Error( 'RenderObject.getAttributes shape not found for missing-attribute guard' );
+	ctx.touched = true;
+
+}
+
+function ensureBufferAttributeImport( ast ) {
+
+	const hasImport = ast.program.body.some( ( node ) => t.isImportDeclaration( node ) &&
+		node.source.value === '../../core/BufferAttribute.js' &&
+		node.specifiers.some( ( spec ) => t.isImportSpecifier( spec ) && spec.imported.name === 'BufferAttribute' ) );
+	if ( hasImport ) return;
+
+	ast.program.body.unshift( t.importDeclaration(
+		[ t.importSpecifier( t.identifier( 'BufferAttribute' ), t.identifier( 'BufferAttribute' ) ) ],
+		t.stringLiteral( '../../core/BufferAttribute.js' )
+	) );
+
+}
+
+function ensureRenderObjectFallbackHelper( ast ) {
+
+	const hasHelper = ast.program.body.some( ( node ) => t.isFunctionDeclaration( node ) && node.id && node.id.name === '__tslpAttributeItemSize' );
+	if ( hasHelper ) return;
+
+	const helper = parse( `function __tslpAttributeItemSize( type ) {
+	switch ( type ) {
+		case 'float':
+		case 'number':
+		case 'int':
+		case 'uint':
+			return 1;
+		case 'vec2':
+		case 'ivec2':
+		case 'uvec2':
+			return 2;
+		case 'vec4':
+		case 'ivec4':
+		case 'uvec4':
+			return 4;
+		case 'vec3':
+		case 'ivec3':
+		case 'uvec3':
+		default:
+			return 3;
+	}
+}`, { sourceType: 'module' } ).program.body[ 0 ];
+
+	let insertAt = 0;
+	while ( insertAt < ast.program.body.length && t.isImportDeclaration( ast.program.body[ insertAt ] ) ) insertAt ++;
+	ast.program.body.splice( insertAt, 0, helper );
 
 }
 
@@ -258,15 +361,25 @@ function rewriteRenderer( ast, ctx ) {
 			foundConstruct = true;
 
 		},
+		CallExpression( path ) {
+
+			const callee = path.node.callee;
+			if ( ! t.isMemberExpression( callee ) ) return;
+			if ( ! t.isIdentifier( callee.object, { name: 'outputNode' } ) ) return;
+			if ( ! t.isIdentifier( callee.property, { name: 'context' } ) ) return;
+			path.replaceWith( t.identifier( 'outputNode' ) );
+
+		},
 		AssignmentExpression( path ) {
 
 			if ( ! matchFragmentNodeAssign( path.node ) ) return;
 			const owner = path.node.left.object.object;   // e.g. `quad`
 			const rhs = path.node.right;
+			const textureRef = extractRenderOutputTextureExpr( rhs );
 			path.replaceWith( t.assignmentExpression(
 				'=',
 				t.memberExpression( t.cloneNode( owner ), t.identifier( 'material' ) ),
-				buildPrecompiledExpr( 'render-output', rhs ),
+				buildPrecompiledExpr( 'render-output', rhs, textureRef ),
 			) );
 			foundAssign = true;
 
@@ -306,6 +419,15 @@ function rewritePostProcessing( ast, ctx ) {
 			if ( path.node.arguments.length !== 0 ) return;
 			path.replaceWith( t.newExpression( t.identifier( 'Material' ), [] ) );
 			foundConstruct = true;
+
+		},
+		CallExpression( path ) {
+
+			const callee = path.node.callee;
+			if ( ! t.isMemberExpression( callee ) ) return;
+			if ( ! t.isIdentifier( callee.object, { name: 'outputNode' } ) ) return;
+			if ( ! t.isIdentifier( callee.property, { name: 'context' } ) ) return;
+			path.replaceWith( t.identifier( 'outputNode' ) );
 
 		},
 		AssignmentExpression( path ) {
@@ -477,6 +599,7 @@ function rewriteNodesJs( ast, ctx ) {
 
 	const patchedCompute = rewriteGetForCompute( ast );
 	const helperMethod = findClassMethod( ast, '_createNodeBuilder' );
+	patchSlimOnlyCatchRethrow( ast );
 
 	if ( helperMethod ) {
 
@@ -556,6 +679,34 @@ function rewriteGetForCompute( ast ) {
 
 }
 
+function patchSlimOnlyCatchRethrow( ast ) {
+
+	let patched = 0;
+
+	traverse( ast, {
+		CatchClause( path ) {
+
+			const param = path.node.param;
+			if ( ! t.isIdentifier( param ) ) return;
+			if ( path.node.body.body.some( ( stmt ) => generate( stmt ).code.includes( 'tslPrecompileSlimOnly' ) ) ) return;
+
+			path.node.body.body.unshift( t.ifStatement(
+				t.logicalExpression(
+					'&&',
+					t.cloneNode( param ),
+					t.memberExpression( t.cloneNode( param ), t.identifier( 'tslPrecompileSlimOnly' ) ),
+				),
+				t.blockStatement( [ t.throwStatement( t.cloneNode( param ) ) ] ),
+			) );
+			patched ++;
+
+		},
+	} );
+
+	return patched;
+
+}
+
 function parseFunctionBody( source ) {
 
 	const parsed = parse( `function __tslp_stub__() {${ source }\n}`, {
@@ -632,24 +783,23 @@ function buildHelperStub() {
 	const renderObjectIdent = t.identifier( 'renderObject' );
 	const hydratedIdent = t.identifier( 'hydrated' );
 
-	const guard = t.ifStatement(
-		t.logicalExpression(
-			'||',
-			t.unaryExpression( '!', t.cloneNode( materialIdent ) ),
-			t.unaryExpression( '!', t.memberExpression( t.cloneNode( materialIdent ), t.identifier( 'isPrecompiledMaterial' ) ) ),
-		),
-		t.blockStatement( [
-			t.throwStatement( t.newExpression( t.identifier( 'Error' ), [
-				t.stringLiteral( '[tsl-precompile/slim] only PrecompiledMaterial is supported in the slim bundle. Did you forget .precompile() on a material?' ),
-			] ) ),
-		] ),
-	);
+	const guard = parseFunctionBody( `
+		if ( ! material || ! material.isPrecompiledMaterial ) {
+			const materialLabel = material ? ( material.type || ( material.constructor && material.constructor.name ) || 'Material' ) : String( material );
+			const object = renderObject && renderObject.object;
+			const objectLabel = object ? ( object.name || object.type || ( object.constructor && object.constructor.name ) || 'Object3D' ) : 'unknown object';
+			const err = new Error( '[tsl-precompile/slim] only PrecompiledMaterial is supported in the slim bundle. Got material=' + materialLabel + ' object=' + objectLabel + '. Did you forget .precompile() on a material?' );
+			err.tslPrecompileSlimOnly = true;
+			throw err;
+		}
+	` ).body[ 0 ];
 
 	const hydratedDecl = t.variableDeclaration( 'const', [
 		t.variableDeclarator(
 			hydratedIdent,
 			t.callExpression( t.identifier( 'hydrateNodeBuilderState' ), [
 				t.memberExpression( t.cloneNode( materialIdent ), t.identifier( 'precompiledArtifact' ) ),
+				t.cloneNode( materialIdent ),
 			] ),
 		),
 	] );
@@ -738,14 +888,18 @@ function buildPrecompileBypass() {
 		t.expressionStatement( t.assignmentExpression(
 			'=',
 			t.identifier( 'nodeBuilderState' ),
-			t.callExpression( t.identifier( 'hydrateNodeBuilderState' ), [ artifactExpr ] ),
+			t.callExpression( t.identifier( 'hydrateNodeBuilderState' ), [ artifactExpr, materialExpr ] ),
 		) ),
 	] );
-	const elseBlock = t.blockStatement( [
-		t.throwStatement( t.newExpression( t.identifier( 'Error' ), [
-			t.stringLiteral( '[tsl-precompile/slim] only PrecompiledMaterial is supported in the slim bundle. Did you forget .precompile() on a material?' ),
-		] ) ),
-	] );
+	const elseBlock = t.blockStatement( parseFunctionBody( `
+		const material = renderObject && renderObject.material;
+		const materialLabel = material ? ( material.type || ( material.constructor && material.constructor.name ) || 'Material' ) : String( material );
+		const object = renderObject && renderObject.object;
+		const objectLabel = object ? ( object.name || object.type || ( object.constructor && object.constructor.name ) || 'Object3D' ) : 'unknown object';
+		const err = new Error( '[tsl-precompile/slim] only PrecompiledMaterial is supported in the slim bundle. Got material=' + materialLabel + ' object=' + objectLabel + '. Did you forget .precompile() on a material?' );
+		err.tslPrecompileSlimOnly = true;
+		throw err;
+	` ).body );
 	const ifStmt = t.ifStatement(
 		t.logicalExpression(
 			'&&',
@@ -799,6 +953,253 @@ function injectHydratorImport( ast ) {
 function rewriteWebGPUBackend( ast, ctx ) {
 
 	stubCreateNodeBuilder( ast, /\/nodes\/WGSLNodeBuilder\.js$/, 'WGSLNodeBuilder', 'WebGPUBackend' );
+	patchLazyIndexBufferCreation( ast );
+	patchLazyVertexBufferCreation( ast );
+	patchRobustBindGroupSetting( ast );
+	patchMissingCameraIndexBinding( ast );
+	ctx.touched = true;
+
+}
+
+function patchLazyIndexBufferCreation( ast ) {
+
+	let patched = 0;
+
+	traverse( ast, {
+		VariableDeclaration( path ) {
+
+			if ( path.node.kind !== 'const' || path.node.declarations.length !== 1 ) return;
+			const declaration = path.node.declarations[ 0 ];
+			if ( ! t.isIdentifier( declaration.id, { name: 'buffer' } ) ) return;
+			if ( ! t.isMemberExpression( declaration.init ) ) return;
+			if ( ! t.isIdentifier( declaration.init.property, { name: 'buffer' } ) ) return;
+			const object = declaration.init.object;
+			if ( ! t.isCallExpression( object ) ) return;
+			if ( ! t.isMemberExpression( object.callee ) ) return;
+			if ( ! t.isThisExpression( object.callee.object ) ) return;
+			if ( ! t.isIdentifier( object.callee.property, { name: 'get' } ) ) return;
+			if ( object.arguments.length !== 1 || ! t.isIdentifier( object.arguments[ 0 ], { name: 'index' } ) ) return;
+
+			path.node.kind = 'let';
+			path.insertAfter( t.ifStatement(
+				t.binaryExpression( '===', t.identifier( 'buffer' ), t.identifier( 'undefined' ) ),
+				t.blockStatement( [
+					t.expressionStatement( t.callExpression(
+						t.memberExpression( t.thisExpression(), t.identifier( 'createIndexAttribute' ) ),
+						[ t.identifier( 'index' ) ]
+					) ),
+					t.expressionStatement( t.assignmentExpression(
+						'=',
+						t.identifier( 'buffer' ),
+						t.memberExpression(
+							t.callExpression(
+								t.memberExpression( t.thisExpression(), t.identifier( 'get' ) ),
+								[ t.identifier( 'index' ) ]
+							),
+							t.identifier( 'buffer' )
+						)
+					) ),
+				] )
+			) );
+			patched ++;
+
+		},
+	} );
+
+	if ( patched === 0 ) throw new Error( 'WebGPUBackend: shape changed (no index buffer lookup found)' );
+
+}
+
+function patchLazyVertexBufferCreation( ast ) {
+
+	let patched = 0;
+
+	traverse( ast, {
+		VariableDeclaration( path ) {
+
+			if ( path.node.kind !== 'const' || path.node.declarations.length !== 1 ) return;
+			const declaration = path.node.declarations[ 0 ];
+			if ( ! t.isIdentifier( declaration.id, { name: 'buffer' } ) ) return;
+			if ( ! t.isMemberExpression( declaration.init ) ) return;
+			if ( ! t.isIdentifier( declaration.init.property, { name: 'buffer' } ) ) return;
+			const object = declaration.init.object;
+			if ( ! t.isCallExpression( object ) ) return;
+			if ( ! t.isMemberExpression( object.callee ) ) return;
+			if ( ! t.isThisExpression( object.callee.object ) ) return;
+			if ( ! t.isIdentifier( object.callee.property, { name: 'get' } ) ) return;
+			if ( object.arguments.length !== 1 || ! t.isIdentifier( object.arguments[ 0 ], { name: 'vertexBuffer' } ) ) return;
+
+			path.node.kind = 'let';
+			path.insertAfter( t.ifStatement(
+				t.binaryExpression( '===', t.identifier( 'buffer' ), t.identifier( 'undefined' ) ),
+				t.blockStatement( [
+					t.expressionStatement( t.callExpression(
+						t.memberExpression( t.thisExpression(), t.identifier( 'createAttribute' ) ),
+						[ t.identifier( 'vertexBuffer' ) ]
+					) ),
+					t.expressionStatement( t.assignmentExpression(
+						'=',
+						t.identifier( 'buffer' ),
+						t.memberExpression(
+							t.callExpression(
+								t.memberExpression( t.thisExpression(), t.identifier( 'get' ) ),
+								[ t.identifier( 'vertexBuffer' ) ]
+							),
+							t.identifier( 'buffer' )
+						)
+					) ),
+				] )
+			) );
+			patched ++;
+
+		},
+	} );
+
+	if ( patched === 0 ) throw new Error( 'WebGPUBackend: shape changed (no vertex buffer lookup found)' );
+
+}
+
+function patchRobustBindGroupSetting( ast ) {
+
+	let resetPatched = 0;
+	let createPatched = 0;
+
+	traverse( ast, {
+		VariableDeclaration( path ) {
+
+			if ( path.node.declarations.length !== 1 ) return;
+			const declaration = path.node.declarations[ 0 ];
+
+			if ( t.isIdentifier( declaration.id, { name: 'currentBindingGroups' } ) &&
+				t.isMemberExpression( declaration.init ) &&
+				t.isIdentifier( declaration.init.property, { name: 'bindingGroups' } ) ) {
+
+				path.insertAfter( t.expressionStatement( t.assignmentExpression(
+					'=',
+					t.memberExpression( t.identifier( 'currentBindingGroups' ), t.identifier( 'length' ) ),
+					t.numericLiteral( 0 )
+				) ) );
+				resetPatched ++;
+				return;
+
+			}
+
+			if ( ! t.isIdentifier( declaration.id, { name: 'bindingsData' } ) ) return;
+			if ( ! t.isCallExpression( declaration.init ) ) return;
+			if ( ! t.isMemberExpression( declaration.init.callee ) ) return;
+			if ( ! t.isThisExpression( declaration.init.callee.object ) ) return;
+			if ( ! t.isIdentifier( declaration.init.callee.property, { name: 'get' } ) ) return;
+			if ( declaration.init.arguments.length !== 1 || ! t.isIdentifier( declaration.init.arguments[ 0 ], { name: 'bindGroup' } ) ) return;
+
+			const sibling = path.getSibling( path.key + 1 );
+			if ( ! sibling || ! sibling.isIfStatement() ) return;
+			if ( ! generate( sibling.node.test ).code.includes( 'currentBindingGroups' ) ) return;
+
+			const initBindings = parseFunctionBody( `
+				for ( const binding of bindGroup.bindings ) {
+					if ( binding.isSampledTexture ) {
+						const texture = binding.texture;
+						const textureData = texture ? this.get( texture ) : null;
+						if ( textureData && textureData.texture === undefined && textureData.externalTexture === undefined ) {
+							if ( this.renderer && this.renderer._textures ) {
+								texture.needsUpdate = true;
+								this.renderer._textures.updateTexture( texture );
+							} else {
+								this.createDefaultTexture( texture );
+							}
+						}
+					} else if ( binding.isSampler ) {
+						const texture = binding.texture;
+						const textureData = texture ? this.get( texture ) : null;
+						if ( textureData && textureData.sampler === undefined ) this.updateSampler( texture );
+					}
+				}
+			` ).body;
+
+			path.insertAfter( t.ifStatement(
+				t.binaryExpression( '===', t.memberExpression( t.identifier( 'bindingsData' ), t.identifier( 'group' ) ), t.identifier( 'undefined' ) ),
+				t.blockStatement( [
+					...initBindings,
+					t.expressionStatement( t.callExpression(
+						t.memberExpression( t.thisExpression(), t.identifier( 'createBindings' ) ),
+						[ t.identifier( 'bindGroup' ), t.identifier( 'bindings' ), t.numericLiteral( 0 ) ]
+					) ),
+				] )
+			) );
+			createPatched ++;
+
+		},
+	} );
+
+	if ( resetPatched === 0 ) throw new Error( 'WebGPUBackend: shape changed (no currentBindingGroups cache found)' );
+	if ( createPatched === 0 ) throw new Error( 'WebGPUBackend: shape changed (no bind group set loop found)' );
+
+}
+
+function patchMissingCameraIndexBinding( ast ) {
+
+	let patched = 0;
+
+	traverse( ast, {
+		IfStatement( path ) {
+
+			const code = generate( path.node.test ).code;
+			if ( ! code.includes( 'cameraData.indexesGPU' ) ) return;
+			if ( code.includes( 'cameraIndex &&' ) ) return;
+
+			path.node.test = t.logicalExpression(
+				'&&',
+				t.identifier( 'cameraIndex' ),
+				t.parenthesizedExpression( path.node.test )
+			);
+			patched ++;
+
+		},
+	} );
+
+	if ( patched === 0 ) throw new Error( 'WebGPUBackend: shape changed (no camera index binding guard found)' );
+
+}
+
+// -------------------------------------------------------------------------
+// WebGPUPipelineUtils.js handler — lazily create missing binding layouts
+// -------------------------------------------------------------------------
+
+function rewriteWebGPUPipelineUtils( ast, ctx ) {
+
+	let rewrites = 0;
+
+	traverse( ast, {
+		VariableDeclarator( path ) {
+
+			if ( ! t.isObjectPattern( path.node.id ) ) return;
+			if ( ! path.node.id.properties.some( ( prop ) => t.isObjectProperty( prop ) && t.isIdentifier( prop.key, { name: 'layoutGPU' } ) ) ) return;
+			if ( ! t.isMemberExpression( path.node.init ) ) return;
+			if ( ! t.isIdentifier( path.node.init.property, { name: 'layout' } ) ) return;
+			if ( ! t.isIdentifier( path.node.init.object, { name: 'bindingsData' } ) ) return;
+
+			path.node.init = t.logicalExpression(
+				'||',
+				t.memberExpression( t.identifier( 'bindingsData' ), t.identifier( 'layout' ) ),
+				t.objectExpression( [
+					t.objectProperty(
+						t.identifier( 'layoutGPU' ),
+						t.callExpression(
+							t.memberExpression(
+								t.memberExpression( t.identifier( 'backend' ), t.identifier( 'bindingUtils' ) ),
+								t.identifier( 'createBindingsLayout' )
+							),
+							[ t.identifier( 'bindGroup' ) ]
+						)
+					),
+				] )
+			);
+			rewrites ++;
+
+		},
+	} );
+
+	if ( rewrites === 0 ) throw new Error( 'WebGPUPipelineUtils: shape changed (no bindingsData.layout destructure found)' );
 	ctx.touched = true;
 
 }
@@ -950,7 +1351,7 @@ function rewriteWebGPURenderer( ast, ctx ) {
 /**
  * Build: new PrecompiledMaterial( loadAux( <shape>, hashNodeGraphSync( <inputExpr>, { shape: <shape>, ...__tslpHashOpts } ) ) )
  */
-function buildPrecompiledExpr( shape, inputExpr ) {
+function buildPrecompiledExpr( shape, inputExpr, textureRefExpr = null ) {
 
 	const hashOpts = t.objectExpression( [
 		t.objectProperty( t.identifier( 'shape' ), t.stringLiteral( shape ) ),
@@ -964,7 +1365,21 @@ function buildPrecompiledExpr( shape, inputExpr ) {
 		t.identifier( 'loadAux' ),
 		[ t.stringLiteral( shape ), hashCall ],
 	);
-	return t.newExpression( t.identifier( 'PrecompiledMaterial' ), [ loadCall ] );
+	const artifactExpr = textureRefExpr ? t.callExpression(
+		t.identifier( 'attachArtifactTextureRefs' ),
+		[ loadCall, t.cloneNode( textureRefExpr ) ],
+	) : loadCall;
+	return t.newExpression( t.identifier( 'PrecompiledMaterial' ), [ artifactExpr ] );
+
+}
+
+function extractRenderOutputTextureExpr( inputExpr ) {
+
+	if ( ! t.isCallExpression( inputExpr ) ) return null;
+	const callee = inputExpr.callee;
+	if ( ! t.isMemberExpression( callee ) ) return null;
+	if ( ! t.isIdentifier( callee.property, { name: 'getOutputNode' } ) ) return null;
+	return inputExpr.arguments[ 0 ] || null;
 
 }
 
@@ -1071,6 +1486,7 @@ function injectRuntimeImports( ast ) {
 		[
 			t.importSpecifier( t.identifier( 'PrecompiledMaterial' ), t.identifier( 'PrecompiledMaterial' ) ),
 			t.importSpecifier( t.identifier( 'loadAux' ), t.identifier( 'loadAux' ) ),
+			t.importSpecifier( t.identifier( 'attachArtifactTextureRefs' ), t.identifier( 'attachArtifactTextureRefs' ) ),
 			t.importSpecifier( t.identifier( 'hashNodeGraphSync' ), t.identifier( 'hashNodeGraphSync' ) ),
 		],
 		t.stringLiteral( RUNTIME_PACKAGE ),
