@@ -31,6 +31,37 @@ The agents pick the tasks from BACKLOG.md by ID, do the work in
 isolation, hand back branches. You then merge them in any order — they
 touch disjoint files so the merges are clean.
 
+#### ⚠ Worktree base may be stale (verify before editing)
+
+In Round 1 we observed two agents whose `isolation: "worktree"`
+worktrees were based on commit `1af8a1d` — predating the entire
+`runtime/aux-loader.js` / `graph-hash.js` / `hydrator.js`
+infrastructure. Both agents had to fall back to operating on `main`
+directly, which **defeats isolation entirely** — concurrent edits on
+`main` produced lockfile noise and forced manual stash recovery for
+one agent's BACKLOG.md additions.
+
+**Mitigation — every agent prompt MUST include this preflight:**
+
+```
+Before editing anything, verify the worktree base is current:
+
+  cd <worktree-path>
+  git rev-parse HEAD
+  git -C /Users/davidronai/Desktop/git/vite-plugin-tsl-precompile rev-parse main
+
+If the two hashes don't match, the worktree is on a stale commit. STOP
+immediately and report. Do NOT fall back to operating on `main` —
+that creates concurrent-edit races with the other parallel agents.
+```
+
+If a stale worktree is detected, the launching coordinator (you, or
+the meta-agent) has two options:
+1. Recreate the worktree pinned to current `HEAD`:
+   `git worktree remove <path> && git worktree add <path> -b <branch> HEAD`
+2. Skip that agent for this round; pick its task up serially after the
+   parallel set merges.
+
 ### 2. Separate branches with manual rebases
 
 If you don't want worktrees, give each agent (or contributor) a topic
