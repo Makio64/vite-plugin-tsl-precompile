@@ -2,11 +2,11 @@
 /**
  * Slim-mode batch verification.
  *
- * For each `webgpu_*.html` example, rewrite the served HTML to inject an
- * importmap that maps `three/webgpu` to our slim bundle, then load the page
- * and check for module-resolution errors.
+ * Default mode (no flags): for each `webgpu_*.html` example, rewrite the
+ * served HTML to inject an importmap that maps `three/webgpu` to our slim
+ * bundle, then load the page and check for module-resolution errors.
  *
- * This does NOT verify pixel-correct rendering — examples use raw
+ * This default does NOT verify pixel-correct rendering — examples use raw
  * `new *NodeMaterial()` constructions that hit our loud-fail gate
  * (precompile bypass expects an `isPrecompiledMaterial` flag). What it DOES
  * verify:
@@ -19,8 +19,20 @@
  *   3. The failure we DO expect (loud-fail on non-precompiled material)
  *      fires with our specific error message, not a generic crash.
  *
+ * Pixel-gate mode (`--pixel-gate`): runs a curated list of N examples
+ * through the full e2e capture+replay harness (`run-e2e.mjs`) and asserts
+ * each replay frame's brightFraction is above 0.05 (i.e. the canvas is not
+ * all-black). This catches regressions like the "empty replay frame" bug
+ * (session 4) or the "storage-buffer NaN size" crash (session 5) that the
+ * default smoke gate cannot see — it only verifies the bundle parses, not
+ * that pixels actually came out.
+ *
+ * Default off; opt-in via `--pixel-gate`. The default 198/198 smoke must
+ * keep passing without changes.
+ *
  *   node packages/examples/batch/run-slim.mjs --three-repo=<path>
  *                                             [--filter=<substr>] [--limit=<n>]
+ *   node packages/examples/batch/run-slim.mjs --pixel-gate [--port=<base>]
  */
 
 import { chromium } from 'playwright';
@@ -29,6 +41,7 @@ import { resolve, join, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 
 const SELF = dirname( fileURLToPath( import.meta.url ) );
 const OUT = resolve( SELF, 'results' );
@@ -54,11 +67,168 @@ const filter = getArg( '--filter=', '' );
 const limit = parseInt( getArg( '--limit=', '9999' ), 10 );
 const offset = parseInt( getArg( '--offset=', '0' ), 10 );
 const port = parseInt( getArg( '--port=', '8719' ), 10 );
+const pixelGate = args.includes( '--pixel-gate' );
 
 if ( ! existsSync( join( threeRepo, 'examples' ) ) ) {
 
 	console.error( `[batch-slim] three.js examples not found at ${ threeRepo }/examples` );
 	process.exit( 2 );
+
+}
+
+// ---- Pixel-gate mode --------------------------------------------------------
+// Opt-in via `--pixel-gate`. Runs a curated list of examples through the e2e
+// capture+replay harness and asserts each replay produced a non-empty frame.
+// We delegate to `run-e2e.mjs` (sister script) per-example so we don't have to
+// duplicate the capture/replay machinery here. Each child runs against the
+// same three.js repo and writes `results/e2e-report.json`; we read that
+// report between runs to harvest `replayBrightFrac`.
+//
+// Curated examples — chosen to span our coverage matrix without overlapping
+// any single failure mode. If any one of them comes back with a black/empty
+// frame, that's a real regression in slim:
+//
+//   webgpu_sandbox          basic NodeMaterial smoke (no IBL, no compute)
+//   webgpu_materials_basic  texture-mapped MeshBasicNodeMaterial sweep
+//   webgpu_clearcoat        PBR + IBL + lights (PMREM hot path)
+//   webgpu_camera           multi-view rendering, default lit scene
+//   webgpu_compute_reduce   compute kernel + storage buffer (the path that
+//                           hit the NaN-size crash in session 5)
+const PIXEL_GATE_EXAMPLES = [
+	'webgpu_sandbox.html',
+	'webgpu_materials_basic.html',
+	'webgpu_clearcoat.html',
+	'webgpu_camera.html',
+	'webgpu_compute_reduce.html',
+];
+
+// Threshold: anything below this is treated as a black/empty canvas. Matches
+// the "0.05" hint in the backlog task; well above the 0.005 noise floor the
+// e2e harness uses to detect "did anything render at all".
+const PIXEL_GATE_BRIGHT_MIN = 0.05;
+
+if ( pixelGate ) {
+
+	const RUN_E2E = resolve( SELF, 'run-e2e.mjs' );
+	const REPORT = resolve( OUT, 'e2e-report.json' );
+	const results = [];
+
+	console.log( `[batch-slim] pixel-gate: running ${ PIXEL_GATE_EXAMPLES.length } curated examples through run-e2e.mjs` );
+
+	for ( let i = 0; i < PIXEL_GATE_EXAMPLES.length; i ++ ) {
+
+		const name = PIXEL_GATE_EXAMPLES[ i ];
+		// Each child gets its own port so a wedged process from a previous
+		// run doesn't collide with the next.
+		const childPort = port + i;
+		const label = `[${ i + 1 }/${ PIXEL_GATE_EXAMPLES.length }] ${ name }`;
+
+		// Make sure the source example exists. If three.js is at a revision
+		// that doesn't ship one of our curated names we want a clear error
+		// rather than a misleading "0 candidates" pass from run-e2e.
+		const examplePath = join( threeRepo, 'examples', name );
+		if ( ! existsSync( examplePath ) ) {
+
+			results.push( { name, status: 'fail', bright: 0, reason: `example missing in three.js repo: ${ examplePath }` } );
+			console.log( `${ label } — ✗ MISSING` );
+			continue;
+
+		}
+
+		// Substring filter is fine because we include the trailing `.html`
+		// (no other file matches that exact substring). `--no-pixel-gate`
+		// disables run-e2e's PSNR gate so a low-PSNR replay still surfaces
+		// its `replayBrightFrac` in the report — we only care about the
+		// brightness here.
+		const childArgs = [
+			RUN_E2E,
+			`--three-repo=${ threeRepo }`,
+			`--filter=${ name }`,
+			`--port=${ childPort }`,
+			'--no-pixel-gate',
+		];
+
+		console.log( `${ label } — running run-e2e.mjs (port=${ childPort })...` );
+		const child = spawnSync( process.execPath, childArgs, { stdio: [ 'ignore', 'pipe', 'pipe' ], encoding: 'utf8' } );
+
+		// run-e2e logs per-example progress; surface its tail for debugging
+		// without flooding the slim-batch console.
+		const stdoutTail = ( child.stdout || '' ).split( '\n' ).filter( Boolean ).slice( -3 ).join( ' | ' );
+		const stderrTail = ( child.stderr || '' ).split( '\n' ).filter( Boolean ).slice( -2 ).join( ' | ' );
+
+		if ( child.error || child.status === null ) {
+
+			results.push( { name, status: 'fail', bright: 0, reason: `child crashed: ${ child.error && child.error.message || 'no exit code' } ${ stderrTail }` } );
+			console.log( `${ label } — ✗ child crashed` );
+			continue;
+
+		}
+
+		// Even a failing child writes the report. Trust the report's
+		// `replayBrightFrac` over the child's exit code — run-e2e exits 0
+		// regardless of pass/fail and we want to see actual pixel data.
+		let report;
+		try {
+
+			report = JSON.parse( readFileSync( REPORT, 'utf8' ) );
+
+		} catch ( err ) {
+
+			results.push( { name, status: 'fail', bright: 0, reason: `could not read e2e-report.json: ${ err.message }` } );
+			console.log( `${ label } — ✗ no report (${ err.message })` );
+			continue;
+
+		}
+
+		// run-e2e's `--filter=<name>.html` matches one entry; pick that one
+		// (or the closest match if three.js sneaks in a similarly-named
+		// file). Defensive: if the filter matched zero, the child wrote
+		// `total: 0` — surface that.
+		const detail = ( report.details || [] ).find( ( d ) => d.name === name ) || ( report.details || [] )[ 0 ];
+		if ( ! detail ) {
+
+			results.push( { name, status: 'fail', bright: 0, reason: `e2e report had no details (filter matched 0 examples). tail=${ stdoutTail }` } );
+			console.log( `${ label } — ✗ no detail in report` );
+			continue;
+
+		}
+
+		const bright = typeof detail.replayBrightFrac === 'number' ? detail.replayBrightFrac : 0;
+		const passes = bright > PIXEL_GATE_BRIGHT_MIN;
+		results.push( {
+			name,
+			status: passes ? 'pass' : 'fail',
+			bright,
+			reason: passes ? null : ( detail.error || `replay brightFraction ${ bright } <= ${ PIXEL_GATE_BRIGHT_MIN } (empty frame)` ),
+		} );
+		console.log( `${ label } — ${ passes ? '✓' : '✗' } bright=${ bright }${ passes ? '' : ` (need >${ PIXEL_GATE_BRIGHT_MIN })` }` );
+
+	}
+
+	const failed = results.filter( ( r ) => r.status !== 'pass' );
+	const passed = results.length - failed.length;
+	const reportPath = join( OUT, 'slim-pixel-gate-report.json' );
+	writeFileSync( reportPath, JSON.stringify( { total: results.length, pass: passed, fail: failed.length, threshold: PIXEL_GATE_BRIGHT_MIN, details: results }, null, 2 ) );
+
+	console.log( '\n═══ pixel-gate summary ═══' );
+	console.log( `  ${ passed } pass, ${ failed.length } fail of ${ results.length } curated examples` );
+	console.log( `  threshold: replayBrightFrac > ${ PIXEL_GATE_BRIGHT_MIN }` );
+	if ( failed.length > 0 ) {
+
+		console.log( '\n  failures:' );
+		for ( const f of failed ) console.log( `    ✗ ${ f.name } — bright=${ f.bright } reason="${ ( f.reason || '' ).slice( 0, 200 ) }"` );
+
+	}
+	console.log( `\n  report: ${ reportPath }` );
+
+	if ( failed.length > 0 ) {
+
+		console.log( `\n  FAIL: ${ failed.length } curated example(s) produced an empty/black replay frame.` );
+		process.exit( 1 );
+
+	}
+	console.log( `\n  PASS: every curated example produced a non-empty replay frame.` );
+	process.exit( 0 );
 
 }
 
