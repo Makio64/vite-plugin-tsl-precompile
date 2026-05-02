@@ -212,6 +212,15 @@ async function captureMaterialInDev( material, name ) {
 			if ( sourceScene.environmentNode ) scene.environmentNode = sourceScene.environmentNode;
 			if ( sourceScene.backgroundNode ) scene.backgroundNode = sourceScene.backgroundNode;
 
+			// Clone (don't reparent) the user's lights into the throwaway
+			// scene. Without this, `LightsNode` sees zero lights at
+			// extraction time and emits a no-light shader path, so PBR
+			// materials capture WITHOUT per-light uniform bindings — the
+			// resulting shader can never light the surface at replay.
+			// `Object3D.add()` would detach the original lights from the
+			// user's real render pass, so we deep-clone instead.
+			cloneLightsInto( sourceScene, scene );
+
 		}
 
 		const mesh = new Mesh( sourceObject && sourceObject.geometry || new BoxGeometry( 1, 1, 1 ), material );
@@ -346,6 +355,101 @@ function jsonSafeArtifact( artifact ) {
 	// JSON.stringify already drops non-enumerable properties; the round-trip
 	// is enough to guarantee a clean payload.
 	return JSON.parse( JSON.stringify( artifact ) );
+
+}
+
+/**
+ * Clone every light from the source scene into the destination throwaway
+ * scene. We must clone — never reparent — because `Object3D.add()` removes
+ * the light from its existing parent and breaks the user's real render pass.
+ *
+ * three.js's `Light.clone()` (inherited via `Object3D.clone()`) covers every
+ * built-in light class: AmbientLight, DirectionalLight, HemisphereLight,
+ * PointLight, RectAreaLight, SpotLight, plus the IES/probe variants. It
+ * preserves `color`, `intensity`, `position`, `distance`, `decay`, `angle`,
+ * `penumbra`, `castShadow`, etc. via the standard `copy()` chain.
+ *
+ * Targets (DirectionalLight.target, SpotLight.target) are themselves Object3Ds
+ * that live in the user's scene graph; `light.clone()` deep-clones the target
+ * by default, so the cloned target carries the original target's transform
+ * but is unparented. We add it to the throwaway scene alongside the light so
+ * `updateMatrixWorld()` finds it during extraction.
+ *
+ * Lights nested inside transformed parents (e.g. a `PointLight` child of a
+ * moving `particleLight` mesh) need their world transform baked in — the
+ * throwaway scene won't replicate the parent chain. We compute the source
+ * light's world matrix and decompose it onto the clone's local transform.
+ *
+ * @param {Object} sourceScene - The user's real scene (any Object3D with .traverse).
+ * @param {Object} destScene - The throwaway scene to populate.
+ */
+function cloneLightsInto( sourceScene, destScene ) {
+
+	if ( ! sourceScene || typeof sourceScene.traverse !== 'function' ) return;
+	const lights = [];
+	sourceScene.traverse( ( o ) => {
+
+		if ( o && o.isLight === true ) lights.push( o );
+
+	} );
+	if ( lights.length === 0 ) return;
+
+	// Make sure world matrices are current; users typically call
+	// `scene.updateMatrixWorld()` once per frame before render, but the
+	// extraction marker can fire from a microtask outside the render loop.
+	if ( typeof sourceScene.updateMatrixWorld === 'function' ) sourceScene.updateMatrixWorld( true );
+
+	for ( const light of lights ) {
+
+		let cloned;
+		try {
+
+			cloned = typeof light.clone === 'function' ? light.clone() : null;
+
+		} catch ( _ ) {
+
+			cloned = null;
+
+		}
+		if ( ! cloned ) continue;
+
+		// Bake world transform into the clone so a light parented under a
+		// moving rig still illuminates from the right place during capture.
+		// We only bother when the source has a non-identity world matrix
+		// different from its local matrix (i.e. a non-Scene parent).
+		if ( light.matrixWorld && light.parent && light.parent.isScene !== true ) {
+
+			cloned.matrix.copy( light.matrixWorld );
+			cloned.matrix.decompose( cloned.position, cloned.quaternion, cloned.scale );
+			cloned.matrixWorldNeedsUpdate = true;
+
+		}
+
+		destScene.add( cloned );
+
+		// SpotLight / DirectionalLight carry a separate `target` Object3D.
+		// `Light.clone()` already deep-clones it, but the cloned target
+		// stays unparented, so its world matrix never updates. Mirror the
+		// source target's world transform onto the clone's target and add
+		// it to the destination scene.
+		if ( cloned.target && cloned.target.isObject3D && cloned.target !== cloned ) {
+
+			const srcTarget = light.target;
+			if ( srcTarget && srcTarget.matrixWorld ) {
+
+				cloned.target.matrix.copy( srcTarget.matrixWorld );
+				cloned.target.matrix.decompose( cloned.target.position, cloned.target.quaternion, cloned.target.scale );
+				cloned.target.matrixWorldNeedsUpdate = true;
+
+			}
+			// Only attach if the target isn't already a descendant of the
+			// cloned light (some custom Light subclasses parent target to
+			// themselves).
+			if ( ! cloned.target.parent ) destScene.add( cloned.target );
+
+		}
+
+	}
 
 }
 
