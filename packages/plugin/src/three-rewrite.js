@@ -379,7 +379,7 @@ function rewriteRenderer( ast, ctx ) {
 			path.replaceWith( t.assignmentExpression(
 				'=',
 				t.memberExpression( t.cloneNode( owner ), t.identifier( 'material' ) ),
-				buildPrecompiledExpr( 'render-output', rhs, textureRef ),
+				buildRenderOutputExpr( textureRef ),
 			) );
 			foundAssign = true;
 
@@ -1373,6 +1373,57 @@ function buildPrecompiledExpr( shape, inputExpr, textureRefExpr = null ) {
 
 }
 
+/**
+ * Build: new PrecompiledMaterial(
+ *   attachArtifactTextureRefs(
+ *     loadAux( 'render-output',
+ *       hashPlainConfigSync(
+ *         { toneMapping: this.toneMapping, toneMappingExposure: this.toneMappingExposure, outputColorSpace: this.outputColorSpace },
+ *         { shape: 'render-output', ...__tslpHashOpts }
+ *       )
+ *     ),
+ *     <textureRefExpr>
+ *   )
+ * )
+ *
+ * When textureRefExpr is null, omits the attachArtifactTextureRefs wrapper.
+ */
+function buildRenderOutputExpr( textureRefExpr = null ) {
+
+	const hashOpts = t.objectExpression( [
+		t.objectProperty( t.identifier( 'shape' ), t.stringLiteral( 'render-output' ) ),
+		t.spreadElement( t.identifier( '__tslpHashOpts' ) ),
+	] );
+	const configObj = t.objectExpression( [
+		t.objectProperty(
+			t.identifier( 'toneMapping' ),
+			t.memberExpression( t.thisExpression(), t.identifier( 'toneMapping' ) ),
+		),
+		t.objectProperty(
+			t.identifier( 'toneMappingExposure' ),
+			t.memberExpression( t.thisExpression(), t.identifier( 'toneMappingExposure' ) ),
+		),
+		t.objectProperty(
+			t.identifier( 'outputColorSpace' ),
+			t.memberExpression( t.thisExpression(), t.identifier( 'outputColorSpace' ) ),
+		),
+	] );
+	const hashCall = t.callExpression(
+		t.identifier( 'hashPlainConfigSync' ),
+		[ configObj, hashOpts ],
+	);
+	const loadCall = t.callExpression(
+		t.identifier( 'loadAux' ),
+		[ t.stringLiteral( 'render-output' ), hashCall ],
+	);
+	const artifactExpr = textureRefExpr ? t.callExpression(
+		t.identifier( 'attachArtifactTextureRefs' ),
+		[ loadCall, t.cloneNode( textureRefExpr ) ],
+	) : loadCall;
+	return t.newExpression( t.identifier( 'PrecompiledMaterial' ), [ artifactExpr ] );
+
+}
+
 function extractRenderOutputTextureExpr( inputExpr ) {
 
 	if ( ! t.isCallExpression( inputExpr ) ) return null;
@@ -1488,6 +1539,7 @@ function injectRuntimeImports( ast ) {
 			t.importSpecifier( t.identifier( 'loadAux' ), t.identifier( 'loadAux' ) ),
 			t.importSpecifier( t.identifier( 'attachArtifactTextureRefs' ), t.identifier( 'attachArtifactTextureRefs' ) ),
 			t.importSpecifier( t.identifier( 'hashNodeGraphSync' ), t.identifier( 'hashNodeGraphSync' ) ),
+			t.importSpecifier( t.identifier( 'hashPlainConfigSync' ), t.identifier( 'hashPlainConfigSync' ) ),
 		],
 		t.stringLiteral( RUNTIME_PACKAGE ),
 	);
