@@ -120,6 +120,7 @@ const _rViewport = new Vector4( 0, 0, 1, 1 );
 const _ovp = new Vector3();
 const _odir = new Vector3();
 const _mwi = new Matrix4();
+const _m4rot = new Matrix4();
 const _lvec = new Vector3();
 
 // Find the Nth light in a scene by traversal order. Mirrors the cache
@@ -1130,6 +1131,26 @@ function writeLightValue( view, offset, kind, source, frame ) {
 			if ( light.target && light.target.matrixWorld ) {
 
 				_lvec.setFromMatrixPosition( light.target.matrixWorld );
+				writeVec3( view, offset, _lvec );
+
+			} else writeSnapshot( view, offset, source.valueSnapshot );
+			return;
+		case 'light.halfWidth':
+			if ( light.matrixWorld && frame.camera && frame.camera.matrixWorldInverse ) {
+
+				_mwi.copy( light.matrixWorld ).premultiply( frame.camera.matrixWorldInverse );
+				_m4rot.extractRotation( _mwi );
+				_lvec.set( light.width * 0.5, 0, 0 ).applyMatrix4( _m4rot );
+				writeVec3( view, offset, _lvec );
+
+			} else writeSnapshot( view, offset, source.valueSnapshot );
+			return;
+		case 'light.halfHeight':
+			if ( light.matrixWorld && frame.camera && frame.camera.matrixWorldInverse ) {
+
+				_mwi.copy( light.matrixWorld ).premultiply( frame.camera.matrixWorldInverse );
+				_m4rot.extractRotation( _mwi );
+				_lvec.set( 0, light.height * 0.5, 0 ).applyMatrix4( _m4rot );
 				writeVec3( view, offset, _lvec );
 
 			} else writeSnapshot( view, offset, source.valueSnapshot );

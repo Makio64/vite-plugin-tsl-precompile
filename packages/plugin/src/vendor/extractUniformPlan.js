@@ -381,6 +381,18 @@ function collectLightUniformSources( state ) {
 
 		} catch ( _ ) { /* PointLight has no target */ }
 
+		// RectAreaLightNode — view-space half-width / half-height (vec3 each)
+		if ( node.halfWidth ) {
+
+			out.set( node.halfWidth, { kind: 'light.halfWidth', ...base } );
+
+		}
+		if ( node.halfHeight ) {
+
+			out.set( node.halfHeight, { kind: 'light.halfHeight', ...base } );
+
+		}
+
 		lightIndex ++;
 
 	}
