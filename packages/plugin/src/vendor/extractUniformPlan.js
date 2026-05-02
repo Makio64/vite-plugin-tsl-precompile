@@ -21,7 +21,7 @@
 // and '../utils/Timer.js'. The stock three package re-exports them via 'three/tsl'.
 // If a future three.js release drops them from 'three/tsl', bump the vendor
 // version in VENDORING.md and add a compat shim in _shared/three-compat.js.
-import { modelNormalMatrix, modelWorldMatrixInverse, time, deltaTime, frameId } from 'three/tsl';
+import { modelNormalMatrix, modelWorldMatrixInverse, time, deltaTime, frameId, backgroundBlurriness, backgroundIntensity, backgroundRotation } from 'three/tsl';
 
 /**
  * Resolve a TSL update node to a `source` descriptor for the uniform slot
@@ -112,6 +112,26 @@ function resolveFromUpdateNode( node ) {
 
 	}
 
+	// ScreenNode — writes viewport / screen-size / DPR uniforms each frame
+	// from the live renderer. The internal UniformNode is lazily created by
+	// setup() and stored on `node._output`. By the time extractUniformPlan
+	// runs the NodeBuilderState is fully compiled, so `_output` is always set.
+	// Scopes COORDINATE and UV do not drive a UBO slot (they expand to
+	// built-in WGSL expressions), so we return null for them.
+	if ( type === 'ScreenNode' ) {
+
+		const scope = node.scope;
+		let kind = null;
+		if ( scope === 'size' ) kind = 'renderer.size';
+		else if ( scope === 'viewport' ) kind = 'renderer.viewport';
+		else if ( scope === 'dpr' ) kind = 'renderer.dpr';
+
+		if ( kind === null || ! node._output ) return null;
+
+		return { uniformNode: node._output, source: { kind } };
+
+	}
+
 	return null;
 
 }
@@ -131,6 +151,15 @@ function classifyByIdentity( node ) {
 	if ( node === time ) return { kind: 'frame.time' };
 	if ( node === deltaTime ) return { kind: 'frame.deltaTime' };
 	if ( node === frameId ) return { kind: 'frame.frameId' };
+	// Scene-state TSL helpers used by Background.js (and any user TSL
+	// graph that imports them). These are bare `uniform()` calls with
+	// `onRenderUpdate(({scene}) => scene.<prop>)` — the extractor would
+	// otherwise classify them as anonymous `uniform.live` and freeze
+	// them at extraction-time values, which makes
+	// `scene.backgroundBlurriness` ramps invisible at runtime.
+	if ( node === backgroundBlurriness ) return { kind: 'scene.backgroundBlurriness', property: 'backgroundBlurriness' };
+	if ( node === backgroundIntensity ) return { kind: 'scene.backgroundIntensity', property: 'backgroundIntensity' };
+	if ( node === backgroundRotation ) return { kind: 'scene.backgroundRotation', property: 'backgroundRotation' };
 	return null;
 
 }
@@ -440,8 +469,115 @@ export function extractUniformPlan( state ) {
 								textureUuid: tex.uuid
 							};
 
+							// Stable identifiers that survive a fresh Texture
+							// instance on replay (same image.src, same name).
+							// Production uses UUID match; harness/test paths
+							// use these to relink a freshly-loaded texture.
+							const ident = textureIdentity( tex );
+							if ( ident ) Object.assign( source, ident );
+
+							const snapshot = snapshotTexture( tex );
+							if ( snapshot ) source.snapshot = snapshot;
+
 						}
 
+
+// Stable identifying info that survives a fresh Texture instance on replay.
+// Used to relink a captured artifact.texture binding (whose textureUuid is
+// dead after the example reloads) back to a freshly-loaded live texture.
+function textureIdentity( texture ) {
+
+	if ( ! texture ) return null;
+	const out = {};
+	const image = texture.image || null;
+
+	// HTMLImageElement / HTMLVideoElement loaded via *Loader: image.src is
+	// the loader URL. ImageBitmap exposes the source URL through its
+	// underlying option in some loaders; we grab .src as a best-effort.
+	const src = image && ( image.src || image.currentSrc || null );
+	if ( typeof src === 'string' && src.length > 0 ) out.imageSrc = src;
+
+	// CubeTexture / DataArrayTexture: image is an array of faces. Capture
+	// the first face's src so cubemaps can be reattached too.
+	if ( Array.isArray( image ) && image.length > 0 ) {
+
+		const first = image[ 0 ];
+		const firstSrc = first && ( first.src || first.currentSrc || null );
+		if ( typeof firstSrc === 'string' && firstSrc.length > 0 ) out.imageSrc = firstSrc;
+
+	}
+
+	if ( typeof texture.name === 'string' && texture.name.length > 0 ) out.textureName = texture.name;
+	if ( typeof texture.mapping === 'number' ) out.mapping = texture.mapping;
+
+	return Object.keys( out ).length > 0 ? out : null;
+
+}
+
+function snapshotTexture( texture ) {
+
+	const image = texture && texture.image;
+	if ( ! image ) return null;
+
+	const colorSpace = texture.colorSpace || '';
+	const format = texture.format || null;
+	const type = texture.type || null;
+	const sampler = {
+		mapping: texture.mapping,
+		wrapS: texture.wrapS,
+		wrapT: texture.wrapT,
+		magFilter: texture.magFilter,
+		minFilter: texture.minFilter,
+		flipY: texture.flipY,
+	};
+
+	if ( image.data && ArrayBuffer.isView( image.data ) && image.width && image.height ) {
+
+		const data = image.data;
+		if ( image.width * image.height > 262144 ) return null;
+		return {
+			width: image.width,
+			height: image.height,
+			arrayType: data.constructor && data.constructor.name || 'Uint8Array',
+			data: Array.from( data ),
+			format,
+			type,
+			colorSpace,
+			...sampler,
+		};
+
+	}
+
+	if ( typeof image.getContext === 'function' && image.width && image.height ) {
+
+		if ( image.width * image.height > 262144 ) return null;
+		try {
+
+			const ctx = image.getContext( '2d' );
+			if ( ! ctx || typeof ctx.getImageData !== 'function' ) return null;
+			const imageData = ctx.getImageData( 0, 0, image.width, image.height );
+			return {
+				width: image.width,
+				height: image.height,
+				arrayType: 'Uint8Array',
+				data: Array.from( imageData.data ),
+				format,
+				type,
+				colorSpace,
+				...sampler,
+			};
+
+		} catch ( _ ) {
+
+			return null;
+
+		}
+
+	}
+
+	return null;
+
+}
 					}
 
 				}

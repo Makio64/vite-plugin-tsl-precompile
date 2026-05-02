@@ -28,25 +28,26 @@
  *     Either the extractor produced something new (vendor drift) or the
  *     author is building a plan by hand. Generated code throws at update()
  *     call time; the build gate fails loudly.
- *   - `severity: 'blocked'` — the kind is recognised but deliberately not
- *     supported yet (sampler / texture / storage bindings). Generated code
- *     throws; the build warns but does not fail.
+ *   - `severity: 'blocked'` — the kind is recognised but is either handled
+ *     outside UBO-slot codegen or deliberately out of scope. Generated code
+ *     throws if a hand-written plan places it in group.slots[].
  *
  * @module EmitUpdater
  */
 
 /**
- * Kinds the codegen deliberately does not implement yet. These surface as
- * `severity: 'blocked'` in the returned unsupportedKinds array with a
- * human-readable reason. A future Phase 5.5 push will move them into real
- * codegen cases.
+ * Kinds the codegen deliberately does not implement as UBO slot writes. These
+ * surface as `severity: 'blocked'` in the returned unsupportedKinds array with
+ * a human-readable reason.
  */
 export const DOCUMENTED_BLOCKED_KINDS = Object.freeze( {
-	'builtin.dfgLUT': 'IBL DFG LUT texture — needs a slim-runtime shared-data module (Phase 5.5).',
-	'artifact.texture': 'Generic artifact-level texture — needs a uuid-keyed runtime texture registry (Phase 5.5).',
-	'unsupported': 'Extractor flagged this binding as unsupported (no texture source identified).',
-	'storage.buffer': 'Storage-buffer bindings (compute) are captured but codegen is deferred (Phase 5.5).',
-	'depth.texture': 'Depth-texture bindings (shadow maps) are captured but codegen is deferred (Phase 5.5).',
+	// Texture-binding kinds — these appear in group.textures[], not group.slots[],
+	// so the UBO-slot updater never processes them. The hydrator handles them via
+	// its texture-binding resolution path. Listed here so the drift gate doesn't
+	// flag them as "unknown" if they ever surface in a synthetic hand-written plan.
+	'builtin.dfgLUT': 'IBL DFG LUT — resolved by the hydrator (getDFGLUT()). Not a UBO slot kind.',
+	'artifact.texture': 'Artifact-level texture — resolved by the hydrator via _textureRefs / material UUID scan. Not a UBO slot kind.',
+	'unsupported': 'Extractor flagged this texture binding as unsupported (no source identified). The hydrator substitutes a 1×1 white fallback. Not a UBO slot kind.',
 	'scene.overrideMaterial': 'scene.overrideMaterial context is out of scope for v1.',
 } );
 
@@ -67,19 +68,25 @@ export function emitUpdaterSource( artifact, opts = {} ) {
 	const usedWriters = new Set();
 	const unsupportedKinds = [];
 	const constants = [];
+	// Tracks which three.js classes need to be imported and scratched for
+	// renderer-side uniforms (screen size / viewport / DPR).
+	const rendererHelpers = new Set();
 
 	for ( const group of plan ) {
 
 		if ( ! Array.isArray( group.slots ) ) continue;
 
-		lines.push( `  // bind group ${ JSON.stringify( group.name || '' ) }` );
+		const groupName = group.name || '';
+		lines.push( `  if ( groupName === null || groupName === undefined || groupName === ${ JSON.stringify( groupName ) } ) {` );
+		lines.push( `    // bind group ${ JSON.stringify( groupName ) }` );
 
 		for ( const slot of group.slots ) {
 
-			const writer = emitSlotWrite( slot, usedWriters, constants, unsupportedKinds );
-			lines.push( '  ' + writer );
+			const writer = emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, rendererHelpers );
+			lines.push( '    ' + writer );
 
 		}
+		lines.push( '  }' );
 
 	}
 
@@ -90,10 +97,57 @@ export function emitUpdaterSource( artifact, opts = {} ) {
 		? `import { ${ writerImports.join( ', ' ) } } from ${ JSON.stringify( writersImport ) };\n\n`
 		: '';
 
+	// Emit scratch Vector2 / Vector4 / Vector3 / Matrix4 module-level constants
+	// for renderer-based and object-based uniforms. Allocated once per module so
+	// there is no per-frame GC pressure from temporary objects.
+	let rendererHelperDecls = '';
+	const allHelpers = new Set( [ ...rendererHelpers ] );
+	if ( allHelpers.size > 0 ) {
+
+		const threeNames = new Set();
+		const decls = [];
+		if ( allHelpers.has( 'size' ) ) {
+
+			threeNames.add( 'Vector2' );
+			decls.push( 'const _rSize = new Vector2( 1, 1 );' );
+
+		}
+		if ( allHelpers.has( 'viewport' ) ) {
+
+			threeNames.add( 'Vector4' );
+			decls.push( 'const _rViewport = new Vector4( 0, 0, 1, 1 );' );
+
+		}
+		if ( allHelpers.has( 'worldMatrixInverse' ) ) {
+
+			threeNames.add( 'Matrix4' );
+			decls.push( 'const _mwi = new Matrix4();' );
+
+		}
+		if ( allHelpers.has( 'viewPosition' ) ) {
+
+			threeNames.add( 'Vector3' );
+			decls.push( 'const _ovp = new Vector3();' );
+
+		}
+		if ( allHelpers.has( 'direction' ) ) {
+
+			threeNames.add( 'Vector3' );
+			decls.push( 'const _odir = new Vector3();' );
+
+		}
+		rendererHelperDecls = `import { ${ Array.from( threeNames ).join( ', ' ) } } from 'three';\n` + decls.join( '\n' ) + '\n\n';
+
+	}
+
 	const body = [
 		header,
+		rendererHelperDecls,
 		constantDecls,
 		`export function update(frame, material, view, byteOffset) {\n`,
+		`  updateGroup(frame, material, view, byteOffset, null);\n`,
+		`}\n`,
+		`\nexport function updateGroup(frame, material, view, byteOffset, groupName) {\n`,
 		lines.join( '\n' ),
 		`\n}\n`,
 		`\nexport const __unsupportedKinds = ${ JSON.stringify( unsupportedKinds ) };\n`,
@@ -110,9 +164,10 @@ export function emitUpdaterSource( artifact, opts = {} ) {
  * @param {Set<string>} usedWriters - Mutated with writer names encountered.
  * @param {Array<string>} constants - Mutated with any top-of-file const declarations needed.
  * @param {Array<{ kind: string, severity: string, reason: string, byteOffset: number }>} unsupportedKinds - Mutated with kinds we can't emit.
+ * @param {Set<string>} [rendererHelpers] - Mutated with scratch vars needed ('size','viewport','worldMatrixInverse','viewPosition','direction').
  * @return {string}
  */
-function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds ) {
+function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, rendererHelpers = new Set() ) {
 
 	// The extractor emits `offset` (byte-offset, `uniform.offset * 4`). Hand-
 	// written synthetic plans (used by the unit tests) emit `byteOffset`.
@@ -154,39 +209,52 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds ) {
 			return `writeF32(view, ${ off }, frame.camera.far);`;
 
 		case 'object.worldMatrix':
+		case 'object3d.worldMatrix':
 			usedWriters.add( 'writeMat4' );
 			return `writeMat4(view, ${ off }, frame.object.matrixWorld);`;
 
 		case 'object.worldMatrixInverse':
+			// modelWorldMatrixInverse = matrixWorld.invert() — must compute on the fly.
+			rendererHelpers.add( 'worldMatrixInverse' );
 			usedWriters.add( 'writeMat4' );
-			return `writeMat4(view, ${ off }, frame.object._worldMatrixInverse);`;
+			return `_mwi.copy(frame.object.matrixWorld).invert(); writeMat4(view, ${ off }, _mwi);`;
 
 		case 'object.normalMatrix':
+		case 'object3d.normalMatrix':
 			usedWriters.add( 'writeMat3' );
 			return `writeMat3(view, ${ off }, frame.object.normalMatrix);`;
 
 		case 'object.modelViewMatrix':
+		case 'object3d.modelViewMatrix':
 			usedWriters.add( 'writeMat4' );
 			return `writeMat4(view, ${ off }, frame.object.modelViewMatrix);`;
 
-		// Object3DNode — `scope` picks which object metric. The common ones
-		// map directly onto three.js's Object3D properties; any other scope
-		// is documented-blocked (a future vendor-bump can expand the set).
+		// Object3DNode — `scope` picks which object metric.
 		case 'object3d.position':
 			usedWriters.add( 'writeVec3' );
 			return `writeVec3(view, ${ off }, frame.object.position);`;
 
 		case 'object3d.scale':
+		case 'object.scale':
 			usedWriters.add( 'writeVec3' );
 			return `writeVec3(view, ${ off }, frame.object.scale);`;
 
 		case 'object3d.viewPosition':
+			// World position transformed into camera space.
+			rendererHelpers.add( 'viewPosition' );
 			usedWriters.add( 'writeVec3' );
-			return `writeVec3(view, ${ off }, frame.object.viewPosition);`;
+			return `_ovp.setFromMatrixPosition(frame.object.matrixWorld).applyMatrix4(frame.camera.matrixWorldInverse); writeVec3(view, ${ off }, _ovp);`;
 
 		case 'object3d.direction':
+			// World direction of the object (forward vector in world space).
+			rendererHelpers.add( 'direction' );
 			usedWriters.add( 'writeVec3' );
-			return `writeVec3(view, ${ off }, frame.object.direction);`;
+			return `frame.object.getWorldDirection(_odir); writeVec3(view, ${ off }, _odir);`;
+
+		case 'object3d.radius':
+			// Bounding-sphere radius in world space (computed on first access).
+			usedWriters.add( 'writeF32' );
+			return `writeF32(view, ${ off }, frame.object.geometry && frame.object.geometry.boundingSphere ? frame.object.geometry.boundingSphere.radius : 0);`;
 
 		// Frame-scoped uniforms — the extractor emits `frame.<x>`; earlier
 		// hand-written plans used the bare `<x>`. Both paths land here.
@@ -205,6 +273,32 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds ) {
 			usedWriters.add( 'writeU32' );
 			return `writeU32(view, ${ off }, frame.frameId);`;
 
+		// Renderer-scoped uniforms — ScreenNode drives these from the live
+		// renderer each frame. The slim runtime runs a full WebGPURenderer,
+		// so `frame.renderer` is always present at render time.
+		//
+		// Module-level scratch Vector2 / Vector4 objects are emitted by the
+		// caller (emitUpdaterSource) when rendererHelpers contains 'size' or
+		// 'viewport'. They are reused across frames to avoid GC pressure.
+		case 'renderer.dpr':
+			usedWriters.add( 'writeF32' );
+			return `writeF32(view, ${ off }, frame.renderer ? frame.renderer.getPixelRatio() : 1.0);`;
+
+		case 'renderer.size':
+			rendererHelpers.add( 'size' );
+			usedWriters.add( 'writeVec2' );
+			return `if (frame.renderer) frame.renderer.getDrawingBufferSize(_rSize); writeVec2(view, ${ off }, _rSize);`;
+
+		case 'renderer.halfHeight':
+			rendererHelpers.add( 'size' );
+			usedWriters.add( 'writeF32' );
+			return `if (frame.renderer) frame.renderer.getSize(_rSize); writeF32(view, ${ off }, 0.5 * _rSize.y);`;
+
+		case 'renderer.viewport':
+			rendererHelpers.add( 'viewport' );
+			usedWriters.add( 'writeVec4' );
+			return `if (frame.renderer) frame.renderer.getViewport(_rViewport); writeVec4(view, ${ off }, _rViewport);`;
+
 		case 'material.color':
 		case 'material.emissive':
 		case 'material.specular':
@@ -220,20 +314,27 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds ) {
 
 		case 'material.scalar':
 		case 'material.opacity':
+		case 'material.alphaTest':
 		case 'material.roughness':
 		case 'material.metalness':
 		case 'material.ior':
 		case 'material.emissiveIntensity':
+		case 'material.aoMapIntensity':
 		case 'material.specularIntensity':
 		case 'material.shininess':
 		case 'material.size':
 		case 'material.rotation':
+		case 'material.linewidth':
+		case 'material.dashSize':
+		case 'material.gapSize':
+		case 'material.scale':
 		case 'material.clearcoat':
 		case 'material.clearcoatRoughness':
 		case 'material.sheen':
 		case 'material.sheenRoughness':
 		case 'material.transmission':
 		case 'material.thickness':
+		case 'material.attenuationDistance':
 		case 'material.iridescence':
 		case 'material.iridescenceIOR':
 		case 'material.anisotropy':
@@ -243,6 +344,22 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds ) {
 			const prop = src.property || kind.split( '.' )[ 1 ];
 			usedWriters.add( 'writeF32' );
 			return `writeF32(view, ${ off }, material.${ prop });`;
+
+		}
+
+		case 'material.normalScale': {
+
+			const prop = src.property || 'normalScale';
+			usedWriters.add( 'writeVec2' );
+			return `writeVec2(view, ${ off }, material.${ prop });`;
+
+		}
+
+		case 'material.clearcoatNormalScale': {
+
+			const prop = src.property || 'clearcoatNormalScale';
+			usedWriters.add( 'writeVec2' );
+			return `writeVec2(view, ${ off }, material.${ prop });`;
 
 		}
 
@@ -279,6 +396,20 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds ) {
 
 		}
 
+		// scene.backgroundRotation — Matrix4 derived from
+		// scene.backgroundRotation (Euler) when scene.background is a
+		// texture. Stock three.js mirrors `_m1.makeRotationFromEuler(scene
+		// .backgroundRotation).transpose()` once per frame in the TSL
+		// uniform's onRenderUpdate. Mirror that here so AOT-emitted
+		// updaters keep the rotation in sync without going through the
+		// node graph.
+		case 'scene.backgroundRotation': {
+
+			usedWriters.add( 'writeMat4FromEuler' );
+			return `writeMat4FromEuler(view, ${ off }, frame.scene && frame.scene.backgroundRotation, frame.scene && frame.scene.background);`;
+
+		}
+
 		// Static snapshot baked at extraction time.
 		case 'uniform.constant':
 		case 'constant': {
@@ -293,11 +424,15 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds ) {
 
 		}
 
-		default: {
+		default:
+			if ( kind.startsWith( 'material.' ) && kind.endsWith( '.matrix' ) ) {
 
+				const prop = src.property || kind.split( '.' )[ 1 ];
+				usedWriters.add( 'writeMat3' );
+				return `writeMat3(view, ${ off }, material.${ prop } && material.${ prop }.matrix);`;
+
+			}
 			return emitUnknownOrBlocked( kind, off, unsupportedKinds, byteOffset );
-
-		}
 
 	}
 
@@ -448,13 +583,21 @@ function emitLive( slot, off, usedWriters, constants, unsupportedKinds, byteOffs
 
 	}
 
+	// Last resort: no property to read live and no captured snapshot.
+	// Downgrade to `blocked` rather than `unknown` so capture doesn't
+	// throw — static rendering with zero-initialised UBO bytes still
+	// produces valid output for many cases (e.g. sprite.userData.rotation
+	// where the user defaults the value to 0). Animation paths that
+	// depend on these uniforms WILL be wrong, but the artifact is at
+	// least usable for the common static case.
 	unsupportedKinds.push( {
 		kind: 'uniform.live',
-		severity: 'unknown',
-		reason: `uniform.live "${ src.name || '<unnamed>' }" has no property, no snapshot`,
+		severity: 'blocked',
+		reason: `uniform.live "${ src.name || '<unnamed>' }" has no property and no snapshot; freezing to zero. Live updates via onRenderUpdate / userData will not propagate.`,
 		byteOffset,
 	} );
-	return `throw new Error("[tsl-precompile] uniform.live has no property or snapshot");`;
+	// Emit a no-op (the buffer was already zero-initialised; nothing to write).
+	return `/* uniform.live "${ src.name || '<unnamed>' }" frozen to 0 (no property, no snapshot) */`;
 
 }
 

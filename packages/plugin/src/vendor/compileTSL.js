@@ -88,8 +88,8 @@ function describeBinding( binding ) {
 		if ( texture ) {
 
 			if ( texture.isCubeTexture ) descriptor.textureType = 'cube';
-			else if ( texture.isDataArrayTexture || texture.isCompressedArrayTexture ) descriptor.textureType = '2d-array';
-			else if ( texture.isData3DTexture ) descriptor.textureType = '3d';
+			else if ( texture.isDataArrayTexture || texture.isCompressedArrayTexture || texture.isArrayTexture ) descriptor.textureType = '2d-array';
+			else if ( texture.isData3DTexture || texture.is3DTexture ) descriptor.textureType = '3d';
 			else descriptor.textureType = '2d';
 
 		}
@@ -266,12 +266,19 @@ export function extractArtifact( cacheKey, state, material = null ) {
 
 	}
 	const uniformPlan = extractUniformPlan( state );
+	patchMaterialSpecificUniformPlan( uniformPlan, materialShape );
 
 	// Seed runtime defaults for the material properties the plan references.
 	// PrecompiledMaterial reads these to populate its own color/opacity/etc.
 	// so the hydrator can read from the material even before the user sets
 	// anything.
 	const defaults = collectMaterialDefaults( uniformPlan, material );
+	// Capture material render-state flags (transparent, side, depthWrite,
+	// blending, etc.). These drive pipeline state in three.js and aren't
+	// covered by the uniformPlan walk above. Without them sprites lose
+	// their alpha-blending, BackSide skybox materials disappear behind
+	// front-facing geometry, etc.
+	const renderState = collectMaterialRenderState( material );
 
 	// Collect live Texture references keyed by uuid so the hydrator can bind
 	// them at runtime. Non-serialisable — attached as a separate side-car
@@ -288,16 +295,21 @@ export function extractArtifact( cacheKey, state, material = null ) {
 		computeShader: state.computeShader || '',
 		attributes: ( state.nodeAttributes || [] ).map( ( a ) => {
 
+			const liveAttribute = a.node && a.node.attribute;
 			const entry = {
 				name: a.name,
 				type: a.type,
-				source: ( a.node && a.node.attribute ) ? 'node' : 'geometry'
+				source: liveAttribute ? 'node' : 'geometry'
 			};
 
-			if ( a.node && a.node.attribute ) {
+			if ( liveAttribute ) {
+
+				entry.count = liveAttribute.count || 1;
+				entry.itemSize = liveAttribute.itemSize || itemSizeFromAttributeType( a.type );
+				entry.arrayType = liveAttribute.array && liveAttribute.array.constructor && liveAttribute.array.constructor.name || 'Float32Array';
 
 				Object.defineProperty( entry, '_liveAttribute', {
-					value: a.node.attribute,
+					value: liveAttribute,
 					enumerable: false,
 					writable: true
 				} );
@@ -310,6 +322,7 @@ export function extractArtifact( cacheKey, state, material = null ) {
 		bindings,
 		uniformPlan,
 		defaults,
+		renderState,
 		meta: {
 			updateNodes: state.updateNodes ? state.updateNodes.length : 0,
 			updateBeforeNodes: state.updateBeforeNodes ? state.updateBeforeNodes.length : 0,
@@ -333,6 +346,64 @@ export function extractArtifact( cacheKey, state, material = null ) {
 	attachLiveUpdateSidecars( artifact, state );
 
 	return artifact;
+
+}
+
+function patchMaterialSpecificUniformPlan( uniformPlan, materialShape ) {
+
+	if ( materialShape !== 'points' || ! Array.isArray( uniformPlan ) ) return;
+
+	for ( const group of uniformPlan ) {
+
+		const slots = Array.isArray( group.slots ) ? group.slots : [];
+		const hasViewport = slots.some( ( slot ) => slot.source && slot.source.kind === 'renderer.viewport' );
+		const hasDpr = slots.some( ( slot ) => slot.source && slot.source.kind === 'renderer.dpr' );
+		if ( ! hasViewport || ! hasDpr ) continue;
+
+		for ( const slot of slots ) {
+
+			const source = slot.source || {};
+			if ( source.kind !== 'uniform.live' || source.name !== null || slot.dtype !== 'number' ) continue;
+
+			// PointsNodeMaterial's private `scale` UniformNode is not exported from
+			// three.js, but its role is stable: half the renderer's logical height.
+			// Serialise that explicit source so production artifacts don't freeze the
+			// capture-time 128px snapshot.
+			slot.source = {
+				kind: 'renderer.halfHeight',
+				valueSnapshot: source.valueSnapshot,
+			};
+
+		}
+
+	}
+
+}
+
+function itemSizeFromAttributeType( type ) {
+
+	switch ( type ) {
+
+		case 'float':
+		case 'number':
+		case 'int':
+		case 'uint':
+			return 1;
+		case 'vec2':
+		case 'ivec2':
+		case 'uvec2':
+			return 2;
+		case 'vec4':
+		case 'ivec4':
+		case 'uvec4':
+			return 4;
+		case 'vec3':
+		case 'ivec3':
+		case 'uvec3':
+		default:
+			return 3;
+
+	}
 
 }
 
@@ -452,6 +523,48 @@ function collectMaterialDefaults( uniformPlan, material ) {
 	}
 
 	return defaults;
+
+}
+
+/**
+ * Capture material render-state flags that drive pipeline construction.
+ * These need to land on the PrecompiledMaterial at runtime so three.js's
+ * pipeline cache key + bind-group setup match what the source material
+ * intended (transparent sprites, BackSide skybox, additive particles, etc.).
+ *
+ * Boolean / numeric flags only. Object properties (blendEquation, etc.)
+ * are referenced by integer constants on three.js's side and survive a
+ * JSON round-trip cleanly.
+ *
+ * @param {?Material} material
+ * @return {Object}
+ */
+function collectMaterialRenderState( material ) {
+
+	if ( ! material ) return {};
+	const out = {};
+	const props = [
+		'transparent', 'opacity', 'alphaTest', 'alphaToCoverage',
+		'side', 'depthTest', 'depthWrite', 'depthFunc',
+		'blending', 'blendSrc', 'blendDst', 'blendEquation',
+		'blendSrcAlpha', 'blendDstAlpha', 'blendEquationAlpha',
+		'colorWrite', 'premultipliedAlpha', 'dithering', 'toneMapped',
+		'vertexColors', 'wireframe', 'wireframeLinewidth',
+		'flatShading', 'fog', 'lights', 'allowOverride',
+		'forceSinglePass', 'polygonOffset', 'polygonOffsetFactor',
+		'polygonOffsetUnits', 'stencilWrite', 'stencilWriteMask',
+		'stencilFunc', 'stencilRef', 'stencilFuncMask',
+		'stencilFail', 'stencilZFail', 'stencilZPass',
+	];
+	for ( const key of props ) {
+
+		const value = material[ key ];
+		if ( value === undefined || value === null ) continue;
+		const t = typeof value;
+		if ( t === 'boolean' || t === 'number' ) out[ key ] = value;
+
+	}
+	return out;
 
 }
 

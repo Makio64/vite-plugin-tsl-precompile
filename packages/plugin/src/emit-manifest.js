@@ -43,6 +43,7 @@ export function emitArtifactModule( manifestEntry, artifactJson, _opts = {} ) {
 	// a re-export.
 	const mangledUpdater = updaterSource
 		.replace( /export function update\(/, 'function __generatedUpdate(' )
+		.replace( /export function updateGroup\(/, 'function __generatedUpdateGroup(' )
 		.replace( /export const __unsupportedKinds/, 'const __codegenUnsupportedKinds' );
 
 	const lines = [
@@ -52,9 +53,10 @@ export function emitArtifactModule( manifestEntry, artifactJson, _opts = {} ) {
 		`export const name = ${ JSON.stringify( name ) };`,
 		`export const artifact = ${ artifactLiteral };`,
 		`export const update = __generatedUpdate;`,
+		`export const updateGroup = __generatedUpdateGroup;`,
 		`export const __unsupportedKinds = ${ JSON.stringify( unsupportedKinds ) };`,
 		'',
-		`export default { __hash, name, artifact, update, __unsupportedKinds };`,
+		`export default { __hash, name, artifact, update, updateGroup, __unsupportedKinds };`,
 		'',
 	];
 

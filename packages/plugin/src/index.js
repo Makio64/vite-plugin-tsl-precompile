@@ -377,6 +377,7 @@ function isThreeRewriteTarget( id ) {
 	// WebGPU-specific surgical patches.
 	if ( /\/node_modules\/.*\/three\/src\/renderers\/webgpu\/WebGPURenderer\.js$/.test( id ) ) return true;
 	if ( /\/node_modules\/.*\/three\/src\/renderers\/webgpu\/WebGPUBackend\.js$/.test( id ) ) return true;
+	if ( /\/node_modules\/.*\/three\/src\/renderers\/webgpu\/utils\/WebGPUPipelineUtils\.js$/.test( id ) ) return true;
 	if ( /\/node_modules\/.*\/three\/src\/renderers\/webgl-fallback\/WebGLBackend\.js$/.test( id ) ) return true;
 	return false;
 

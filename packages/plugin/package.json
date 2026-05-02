@@ -1,9 +1,12 @@
 {
   "name": "vite-plugin-tsl-precompile",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Vite plugin that AOT-compiles three.js TSL materials marked with .precompile(name).",
   "type": "module",
   "license": "MIT",
+  "engines": {
+    "node": ">=20.19"
+  },
   "author": "David Ronai <davronai@gmail.com>",
   "repository": {
     "type": "git",

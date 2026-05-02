@@ -7,7 +7,24 @@ test( 'emitUpdaterSource — empty plan → empty update body', () => {
 
 	const { source, unsupportedKinds } = emitUpdaterSource( { uniformPlan: [] } );
 	assert.match( source, /export function update\(frame, material, view, byteOffset\)/ );
+	assert.match( source, /export function updateGroup\(frame, material, view, byteOffset, groupName\)/ );
 	assert.deepEqual( unsupportedKinds, [] );
+
+} );
+
+test( 'emitUpdaterSource — updateGroup gates writes by bind-group name', () => {
+
+	const artifact = {
+		uniformPlan: [
+			{ name: 'render', slots: [ { byteOffset: 0, source: { kind: 'frame.time' } } ] },
+			{ name: 'object', slots: [ { byteOffset: 0, source: { kind: 'material.opacity', property: 'opacity' } } ] },
+		],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.deepEqual( unsupportedKinds, [] );
+	assert.match( source, /groupName === "render"/ );
+	assert.match( source, /groupName === "object"/ );
+	assert.match( source, /updateGroup\(frame, material, view, byteOffset, null\)/ );
 
 } );
 
@@ -30,7 +47,7 @@ test( 'emitUpdaterSource — camera matrices', () => {
 
 } );
 
-test( 'emitUpdaterSource — material.color + material.roughness', () => {
+test( 'emitUpdaterSource — material.color + material scalar slots', () => {
 
 	const artifact = {
 		uniformPlan: [ {
@@ -38,12 +55,65 @@ test( 'emitUpdaterSource — material.color + material.roughness', () => {
 			slots: [
 				{ byteOffset: 0, source: { kind: 'material.color', property: 'color' } },
 				{ byteOffset: 16, source: { kind: 'material.roughness', property: 'roughness' } },
+				{ byteOffset: 20, source: { kind: 'material.alphaTest', property: 'alphaTest' } },
+				{ byteOffset: 24, source: { kind: 'material.aoMapIntensity', property: 'aoMapIntensity' } },
 			],
 		} ],
 	};
 	const { source } = emitUpdaterSource( artifact );
 	assert.match( source, /writeColor\(view, byteOffset \+ 0, material\.color\)/ );
 	assert.match( source, /writeF32\(view, byteOffset \+ 16, material\.roughness\)/ );
+	assert.match( source, /writeF32\(view, byteOffset \+ 20, material\.alphaTest\)/ );
+	assert.match( source, /writeF32\(view, byteOffset \+ 24, material\.aoMapIntensity\)/ );
+
+} );
+
+test( 'emitUpdaterSource — material texture matrix slots read material.<map>.matrix', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			name: 'object',
+			slots: [
+				{ byteOffset: 16, dtype: 'mat3', source: { kind: 'material.map.matrix', property: 'map' } },
+			],
+		} ],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.deepEqual( unsupportedKinds, [] );
+	assert.match( source, /writeMat3\(view, byteOffset \+ 16, material\.map && material\.map\.matrix\)/ );
+
+} );
+
+test( 'emitUpdaterSource — material.normalScale writes vec2', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			name: 'object',
+			slots: [
+				{ byteOffset: 32, dtype: 'vec2', source: { kind: 'material.normalScale', property: 'normalScale' } },
+			],
+		} ],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.deepEqual( unsupportedKinds, [] );
+	assert.match( source, /writeVec2\(view, byteOffset \+ 32, material\.normalScale\)/ );
+
+} );
+
+test( 'emitUpdaterSource — renderer.halfHeight writes half logical renderer height', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			name: 'object',
+			slots: [
+				{ byteOffset: 88, dtype: 'number', source: { kind: 'renderer.halfHeight' } },
+			],
+		} ],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.deepEqual( unsupportedKinds, [] );
+	assert.match( source, /frame\.renderer\.getSize\(_rSize\)/ );
+	assert.match( source, /writeF32\(view, byteOffset \+ 88, 0\.5 \* _rSize\.y\)/ );
 
 } );
 
@@ -133,6 +203,23 @@ test( 'emitUpdaterSource — scene.fog.* + object3d.position', () => {
 	assert.match( source, /writeColor\(view, byteOffset \+ 0, frame\.scene\.fog\.color\);/ );
 	assert.match( source, /writeF32\(view, byteOffset \+ 16, frame\.scene\.fog\.near\);/ );
 	assert.match( source, /writeVec3\(view, byteOffset \+ 32, frame\.object\.position\);/ );
+
+} );
+
+test( 'emitUpdaterSource — object.scale and attenuationDistance', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			slots: [
+				{ offset: 0, source: { kind: 'object.scale' } },
+				{ offset: 16, source: { kind: 'material.attenuationDistance', property: 'attenuationDistance' } },
+			],
+		} ],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.deepEqual( unsupportedKinds, [] );
+	assert.match( source, /writeVec3\(view, byteOffset \+ 0, frame\.object\.scale\);/ );
+	assert.match( source, /writeF32\(view, byteOffset \+ 16, material\.attenuationDistance\);/ );
 
 } );
 
