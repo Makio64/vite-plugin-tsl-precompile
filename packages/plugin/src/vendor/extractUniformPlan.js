@@ -21,7 +21,7 @@
 // and '../utils/Timer.js'. The stock three package re-exports them via 'three/tsl'.
 // If a future three.js release drops them from 'three/tsl', bump the vendor
 // version in VENDORING.md and add a compat shim in _shared/three-compat.js.
-import { modelNormalMatrix, modelWorldMatrixInverse, time, deltaTime, frameId, backgroundBlurriness, backgroundIntensity, backgroundRotation, lightPosition, lightTargetPosition, lightViewPosition } from 'three/tsl';
+import { modelNormalMatrix, modelWorldMatrixInverse, time, deltaTime, frameId, backgroundBlurriness, backgroundIntensity, backgroundRotation, toneMappingExposure, lightPosition, lightTargetPosition, lightViewPosition } from 'three/tsl';
 
 /**
  * Resolve a TSL update node to a `source` descriptor for the uniform slot
@@ -160,6 +160,11 @@ function classifyByIdentity( node ) {
 	if ( node === backgroundBlurriness ) return { kind: 'scene.backgroundBlurriness', property: 'backgroundBlurriness' };
 	if ( node === backgroundIntensity ) return { kind: 'scene.backgroundIntensity', property: 'backgroundIntensity' };
 	if ( node === backgroundRotation ) return { kind: 'scene.backgroundRotation', property: 'backgroundRotation' };
+	// toneMappingExposure is a bare `uniform()` with onRenderUpdate that reads
+	// renderer.toneMappingExposure. Without this identity check the slot falls
+	// through to `uniform.live` and freezes at extraction-time — animated
+	// exposure ramps never propagate on replay.
+	if ( node === toneMappingExposure ) return { kind: 'renderer.toneMappingExposure' };
 	return null;
 
 }
