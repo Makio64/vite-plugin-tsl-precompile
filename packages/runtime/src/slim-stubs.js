@@ -120,6 +120,11 @@ export class InspectorBase {
  * Post-process `PassNode` stub. The slim runtime cannot author pass graphs,
  * but examples may still instantiate pass objects before RenderPipeline swaps in
  * a precompiled auxiliary material. Keep the object inert and hashable.
+ *
+ * Task `mrt-pass-aux`: `setMRT(mrtNode)` stores the MRT descriptor so
+ * `aux-marker.js` can discover it during precompileAuxiliary; `getTexture(name)`
+ * returns an inert node stub for the named MRT output so downstream code that
+ * reads pass textures keeps loading without a throw.
  */
 export class PassNode {
 
@@ -155,6 +160,36 @@ export class PassNode {
 	setup() { return this; }
 	toVar() { return this; }
 	getCacheKey() { return `slim-pass-node:Object`; }
+
+	/**
+	 * Store the MRT descriptor on the stub so `precompileAuxiliary` can
+	 * discover it and emit an `mrt` shape descriptor. Returns `this` for
+	 * chaining, mirroring the real PassNode API.
+	 *
+	 * @param {Object} mrtNode - An MRTNode instance (or stub) describing outputs.
+	 * @return {PassNode}
+	 */
+	setMRT( mrtNode ) {
+
+		this._mrt = mrtNode;
+		return this;
+
+	}
+
+	/**
+	 * Return an inert node stub for the named MRT output texture. In slim mode
+	 * the real texture sampling is handled by the precompiled artifact; this
+	 * stub satisfies any code that reads `passNode.getTexture('output')` at
+	 * setup time without a throw.
+	 *
+	 * @param {string} _name - The MRT output name (e.g. 'output', 'normal').
+	 * @return {Object} An inert chainable node stub.
+	 */
+	getTexture( _name ) {
+
+		return inertNodeStub();
+
+	}
 
 }
 
@@ -394,3 +429,168 @@ export const NodeUtils = new Proxy( {}, {
 
 	},
 } );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TSL function stubs — Task `mrt-tsl-stub-leak`
+//
+// When `three/tsl` is aliased to this file in slim mode, examples that do
+//   import { mrt, output, normalWorld, screenUV, mix, texture, step } from 'three/tsl'
+// resolve to these inert stubs rather than the real TSL builder. Any chained
+// call returns the same inert proxy (e.g. `.xy`, `.mul(...)`, `.toVar()`).
+// None of them throw — they're silent no-ops that let example setup code
+// complete so the RenderPipeline can attach its precompiled aux material.
+//
+// The stubs are intentionally NOT chainableSlimStub (which throws on .apply())
+// — they use inertNodeStub() which returns itself on every call/property.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * `mrt({ output, normal, ... })` — returns an inert MRTNode stub.
+ * In slim mode the MRT graph is already baked into the aux artifact; this
+ * stub lets setup code run without a throw.
+ *
+ * @param {Object} [_outputs] - MRT output descriptor (ignored in slim mode).
+ * @return {Object} Inert node stub.
+ */
+export function mrt( _outputs ) {
+
+	return inertNodeStub();
+
+}
+
+/**
+ * Common TSL primitive constructors — each returns an inert node stub.
+ * These cover the identifiers MRT, backdrop, and post-process examples
+ * typically import from `three/tsl`.
+ */
+export const output = inertNodeStub();
+export const normalWorld = inertNodeStub();
+export const normalView = inertNodeStub();
+export const normalLocal = inertNodeStub();
+export const normalWorldGeometry = inertNodeStub();
+export const positionWorld = inertNodeStub();
+export const positionView = inertNodeStub();
+export const positionLocal = inertNodeStub();
+export const uv = inertNodeStub();
+export const screenUV = inertNodeStub();
+export const viewportUV = inertNodeStub();
+export const viewportTopLeft = inertNodeStub();
+export const modelWorldMatrix = inertNodeStub();
+export const modelViewMatrix = inertNodeStub();
+export const modelViewProjection = inertNodeStub();
+export const modelPosition = inertNodeStub();
+export const modelScale = inertNodeStub();
+export const cameraPosition = inertNodeStub();
+export const cameraProjectionMatrix = inertNodeStub();
+export const cameraWorldMatrix = inertNodeStub();
+export const cameraNormalMatrix = inertNodeStub();
+
+/**
+ * TSL callable stubs — these are called as functions (`mix(a, b, t)`).
+ * Each returns an inert node stub.
+ */
+export function mix( ..._ ) { return inertNodeStub(); }
+export function step( ..._ ) { return inertNodeStub(); }
+export function texture( ..._ ) { return inertNodeStub(); }
+export function cubeTexture( ..._ ) { return inertNodeStub(); }
+export function pmremTexture( ..._ ) { return inertNodeStub(); }
+export function vec2( ..._ ) { return inertNodeStub(); }
+export function vec3( ..._ ) { return inertNodeStub(); }
+export function vec4( ..._ ) { return inertNodeStub(); }
+export function float( ..._ ) { return inertNodeStub(); }
+export function int( ..._ ) { return inertNodeStub(); }
+export function uint( ..._ ) { return inertNodeStub(); }
+export function color( ..._ ) { return inertNodeStub(); }
+export function uniform( ..._ ) { return inertNodeStub(); }
+export function attribute( ..._ ) { return inertNodeStub(); }
+export function reference( ..._ ) { return inertNodeStub(); }
+export function add( ..._ ) { return inertNodeStub(); }
+export function sub( ..._ ) { return inertNodeStub(); }
+export function mul( ..._ ) { return inertNodeStub(); }
+export function div( ..._ ) { return inertNodeStub(); }
+export function dot( ..._ ) { return inertNodeStub(); }
+export function cross( ..._ ) { return inertNodeStub(); }
+export function normalize( ..._ ) { return inertNodeStub(); }
+export function length( ..._ ) { return inertNodeStub(); }
+export function clamp( ..._ ) { return inertNodeStub(); }
+export function smoothstep( ..._ ) { return inertNodeStub(); }
+export function pow( ..._ ) { return inertNodeStub(); }
+export function pow2( ..._ ) { return inertNodeStub(); }
+export function pow3( ..._ ) { return inertNodeStub(); }
+export function pow4( ..._ ) { return inertNodeStub(); }
+export function abs( ..._ ) { return inertNodeStub(); }
+export function sign( ..._ ) { return inertNodeStub(); }
+export function floor( ..._ ) { return inertNodeStub(); }
+export function ceil( ..._ ) { return inertNodeStub(); }
+export function fract( ..._ ) { return inertNodeStub(); }
+export function mod( ..._ ) { return inertNodeStub(); }
+export function min( ..._ ) { return inertNodeStub(); }
+export function max( ..._ ) { return inertNodeStub(); }
+export function sin( ..._ ) { return inertNodeStub(); }
+export function cos( ..._ ) { return inertNodeStub(); }
+export function tan( ..._ ) { return inertNodeStub(); }
+export function atan( ..._ ) { return inertNodeStub(); }
+export function atan2( ..._ ) { return inertNodeStub(); }
+export function sqrt( ..._ ) { return inertNodeStub(); }
+export function exp( ..._ ) { return inertNodeStub(); }
+export function exp2( ..._ ) { return inertNodeStub(); }
+export function log( ..._ ) { return inertNodeStub(); }
+export function log2( ..._ ) { return inertNodeStub(); }
+export function saturate( ..._ ) { return inertNodeStub(); }
+export function oneMinus( ..._ ) { return inertNodeStub(); }
+export function negate( ..._ ) { return inertNodeStub(); }
+export function invert( ..._ ) { return inertNodeStub(); }
+export function dFdx( ..._ ) { return inertNodeStub(); }
+export function dFdy( ..._ ) { return inertNodeStub(); }
+export function fwidth( ..._ ) { return inertNodeStub(); }
+export function select( ..._ ) { return inertNodeStub(); }
+export function cond( ..._ ) { return inertNodeStub(); }
+export function If( ..._ ) { return inertNodeStub(); }
+export function Fn( ..._ ) { return inertNodeStub(); }
+export function context( ..._ ) { return inertNodeStub(); }
+export function renderOutput( ..._ ) { return inertNodeStub(); }
+export function viewportSharedTexture( ..._ ) { return inertNodeStub(); }
+export function viewportTexture( ..._ ) { return inertNodeStub(); }
+export function cubeMapNode( ..._ ) { return inertNodeStub(); }
+export function equirectUV( ..._ ) { return inertNodeStub(); }
+export function fog( ..._ ) { return inertNodeStub(); }
+export function rangeFogFactor( ..._ ) { return inertNodeStub(); }
+export function densityFogFactor( ..._ ) { return inertNodeStub(); }
+export function builtin( ..._ ) { return inertNodeStub(); }
+export function mat3( ..._ ) { return inertNodeStub(); }
+export function mat4( ..._ ) { return inertNodeStub(); }
+export function ivec2( ..._ ) { return inertNodeStub(); }
+export function ivec3( ..._ ) { return inertNodeStub(); }
+export function ivec4( ..._ ) { return inertNodeStub(); }
+export function uvec2( ..._ ) { return inertNodeStub(); }
+export function uvec3( ..._ ) { return inertNodeStub(); }
+export function uvec4( ..._ ) { return inertNodeStub(); }
+
+/**
+ * `renderGroup` — used as a *value* (uniform group identity) in some examples.
+ * Exported as an inert node stub with stable identity.
+ */
+export const renderGroup = inertNodeStub();
+export const frameId = inertNodeStub();
+export const time = inertNodeStub();
+export const timerGlobal = inertNodeStub();
+export const timerLocal = inertNodeStub();
+export const timerDelta = inertNodeStub();
+
+/** Backdrop-specific TSL helpers */
+export const backgroundBlurriness = inertNodeStub();
+export const backgroundIntensity = inertNodeStub();
+export const backgroundRotation = inertNodeStub();
+
+/** Screen / viewport node stubs */
+export const screenSize = inertNodeStub();
+export const viewportSize = inertNodeStub();
+export const viewportDepthTexture = inertNodeStub();
+export const viewportLinearDepth = inertNodeStub();
+export const linearDepth = inertNodeStub();
+export const depth = inertNodeStub();
+export const depthPass = inertNodeStub();
+
+/** Matrix-based transform helpers used by background and MRT setups */
+export const highpModelNormalViewMatrix = inertNodeStub();
+export const highpModelViewMatrix = inertNodeStub();

@@ -114,6 +114,142 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 
 	}
 
+	// MRT pass nodes -------------------------------------------------------
+	// When the user builds a `pass(scene, camera).setMRT(mrt({...}))` pipeline
+	// (webgpu_mrt, webgpu_mrt_mask), the PassNode carries a live MRTNode
+	// describing the output textures. We need a `mrt` shape descriptor in the
+	// aux manifest so the slim runtime can size/format the MRT render target
+	// correctly and route output textures to the right attachment slots.
+	//
+	// Discovery: walk opts.renderPipeline?.outputNode (a RenderPipeline) or
+	// directly opts.passNode if provided. The user passes the pass instance
+	// via opts.passNode.
+	{
+
+		const passNodes = [];
+
+		// opts.passNode: user explicitly passed the pass instance
+		if ( opts.passNode && opts.passNode.isPassNode && opts.passNode._mrt ) {
+
+			passNodes.push( opts.passNode );
+
+		}
+
+		// opts.renderPipeline: walk its outputNode chain for PassNode instances
+		if ( opts.renderPipeline && opts.renderPipeline.outputNode ) {
+
+			const visited = new Set();
+			const walkNode = ( node ) => {
+
+				if ( ! node || visited.has( node ) ) return;
+				visited.add( node );
+				if ( node.isPassNode && node._mrt ) passNodes.push( node );
+				// Walk common node child properties.
+				for ( const key of [ 'node', 'aNode', 'bNode', 'cNode', 'colorNode', 'inputs' ] ) {
+
+					const child = node[ key ];
+					if ( Array.isArray( child ) ) child.forEach( walkNode );
+					else if ( child && typeof child === 'object' ) walkNode( child );
+
+				}
+
+			};
+			walkNode( opts.renderPipeline.outputNode );
+
+		}
+
+		for ( const passNode of passNodes ) {
+
+			const shape = 'mrt';
+			try {
+
+				// Hash the MRT descriptor: scene + camera identity + MRT output names.
+				const mrtNode = passNode._mrt;
+				const outputNames = mrtNode && mrtNode.outputNodes
+					? Object.keys( mrtNode.outputNodes ).sort()
+					: [];
+				const configHash = hashPlainConfigSync(
+					{ scene: scene && scene.uuid, camera: camera && camera.uuid, outputNames },
+					{ shape, ...hashOpts }
+				);
+				const artifact = await captureMRTLive( renderer, passNode, scene, camera, opts );
+				trackLocal( shape, configHash, artifact );
+				results.push( await post( opts.devEndpoint, {
+					materialShape: shape,
+					configHash,
+					artifact,
+					name: `aux-${ shape }-${ configHash.slice( 0, 12 ) }`,
+				}, shape, configHash ) );
+
+			} catch ( err ) {
+
+				results.push( { shape, configHash: null, ok: false, error: err && err.message || String( err ) } );
+
+			}
+
+		}
+
+	}
+
+	// Backdrop materials ----------------------------------------------------
+	// Walk the scene looking for materials with `backdropNode` set.
+	// Each unique `backdropNode` TSL graph gets captured as a `backdrop`
+	// shape artifact so the slim runtime can pre-wire the FramebufferTexture
+	// bindings that `viewportSharedTexture()` produces.
+	if ( scene && typeof scene.traverse === 'function' ) {
+
+		// Collect unique backdrop materials synchronously (traverse is sync).
+		const backdropMaterials = [];
+		const seenBackdropNodes = new Set();
+
+		scene.traverse( ( object ) => {
+
+			const material = object && object.material;
+			if ( ! material ) return;
+
+			// Handle multi-material objects.
+			const materials = Array.isArray( material ) ? material : [ material ];
+			for ( const mat of materials ) {
+
+				const backdropNode = mat && mat.backdropNode;
+				if ( ! backdropNode || ! backdropNode.isNode ) continue;
+
+				// De-duplicate by UUID so we don't capture the same graph twice.
+				const nodeId = backdropNode.uuid || backdropNode;
+				if ( seenBackdropNodes.has( nodeId ) ) continue;
+				seenBackdropNodes.add( nodeId );
+				backdropMaterials.push( { mat, backdropNode } );
+
+			}
+
+		} );
+
+		// Now process them asynchronously.
+		for ( const { mat, backdropNode } of backdropMaterials ) {
+
+			const shape = 'backdrop';
+			try {
+
+				const configHash = hashNodeGraphSync( backdropNode, { shape, ...hashOpts } );
+				const artifact = await captureBackdropLive( renderer, mat, scene, camera, opts );
+				trackLocal( shape, configHash, artifact );
+				results.push( await post( opts.devEndpoint, {
+					materialShape: shape,
+					configHash,
+					artifact,
+					name: `aux-${ shape }-${ configHash.slice( 0, 12 ) }`,
+				}, shape, configHash ) );
+
+			} catch ( err ) {
+
+				results.push( { shape, configHash: null, ok: false, error: err && err.message || String( err ) } );
+
+			}
+
+		}
+
+	}
+
 	// Lights ----------------------------------------------------------------
 	const lights = [];
 	if ( scene && typeof scene.traverse === 'function' ) {
@@ -259,6 +395,117 @@ async function captureRenderOutputLive( renderer, scene, camera, opts ) {
 	const artifact = artifacts.find( ( a ) => a.materialShape === 'output-transform' || a.materialShape === 'render-output' );
 	if ( ! artifact ) throw new Error( 'captureRenderOutputLive: no output-transform artifact produced' );
 	artifact.materialShape = 'render-output';
+	return jsonSafe( artifact );
+
+}
+
+/**
+ * Capture a backdrop material artifact.
+ *
+ * Backdrop materials use `viewportSharedTexture()` to sample the current
+ * framebuffer. We build a minimal scene with a single mesh using the
+ * material, run `compileTSL`, and locate the artifact for this material's
+ * uuid. The artifact's `_textureRefs` gets pre-wired by the aux-loader
+ * registry on load so the FramebufferTexture binding is satisfied at
+ * slim-replay time.
+ *
+ * @param {Object} renderer - Active WebGPURenderer.
+ * @param {Object} material - The mesh material with `backdropNode` set.
+ * @param {Object} scene - The user's scene (for environment/lights context).
+ * @param {Object} camera - Camera for the scene.
+ * @param {Object} opts - Same opts as precompileAuxiliary.
+ * @return {Promise<Object>} The captured artifact (JSON-safe).
+ */
+async function captureBackdropLive( renderer, material, scene, camera, opts ) {
+
+	const three = opts.three || null;
+	const compileTSL = opts.compileTSL || ( await lazyLoadCompileTSL() );
+
+	if ( ! three || ! three.Scene || ! three.Mesh || ! three.SphereGeometry ) {
+
+		throw new Error( 'captureBackdropLive: opts.three must expose Scene/Mesh/SphereGeometry' );
+
+	}
+
+	// Build a minimal throwaway scene with a single mesh using this material.
+	// We copy scene context (environment, background) to make IBL bindings
+	// match the real scene, but avoid mutating the user's scene.
+	const auxScene = new three.Scene();
+	if ( scene ) {
+
+		auxScene.environment = scene.environment || null;
+
+	}
+
+	// Use a sphere for the backdrop mesh (same as the three.js webgpu_backdrop
+	// examples), keeping the geometry simple enough to drive the shader.
+	const geo = new three.SphereGeometry( 1, 16, 16 );
+	const mesh = new three.Mesh( geo, material );
+	auxScene.add( mesh );
+
+	const artifacts = await compileTSL( renderer, auxScene, camera );
+	const artifact = artifacts.find( ( a ) => a.materialUuid === material.uuid )
+		|| artifacts.find( ( a ) => a.materialShape === 'mesh-standard' || a.materialShape === 'mesh-physical' || a.materialShape === 'node-material' )
+		|| artifacts[ 0 ];
+
+	if ( ! artifact ) throw new Error( 'captureBackdropLive: no artifact produced for backdrop material' );
+	return jsonSafe( artifact );
+
+}
+
+/**
+ * Capture an MRT (Multiple Render Targets) pass artifact.
+ *
+ * MRT examples build `pass(scene, camera).setMRT(mrt({ output, normal, ... }))`
+ * and then read individual textures via `passNode.getTexture('output')` etc.
+ * In slim mode the PassNode stub stores `_mrt`; this function captures the
+ * full pass render as an artifact with the MRT output names so the slim
+ * runtime knows how many and what attachment slots were compiled.
+ *
+ * The capture uses a minimal PostProcessing pipeline to drive the pass:
+ *   const pp = new PostProcessing(renderer);
+ *   pp.outputNode = scenePassNode;
+ *   compileTSL renders it and we locate the `post-process`-shaped artifact.
+ *
+ * @param {Object} renderer - Active WebGPURenderer.
+ * @param {Object} passNode - A PassNode with `_mrt` set.
+ * @param {Object} scene - The user's scene.
+ * @param {Object} camera - Camera for the scene.
+ * @param {Object} opts - Same opts as precompileAuxiliary.
+ * @return {Promise<Object>} The captured artifact (JSON-safe), stamped with MRT info.
+ */
+async function captureMRTLive( renderer, passNode, scene, camera, opts ) {
+
+	const three = opts.three || null;
+	const compileTSL = opts.compileTSL || ( await lazyLoadCompileTSL() );
+
+	if ( ! three || ! three.PostProcessing ) {
+
+		throw new Error( 'captureMRTLive: opts.three must expose PostProcessing' );
+
+	}
+
+	const mrtNode = passNode._mrt;
+	const outputNames = mrtNode && mrtNode.outputNodes
+		? Object.keys( mrtNode.outputNodes ).sort()
+		: [];
+
+	// Build a PostProcessing pipeline whose outputNode is the pass node.
+	// This mirrors how real MRT examples set up their render pipeline.
+	const pp = new three.PostProcessing( renderer );
+	pp.outputNode = passNode;
+
+	const artifacts = await compileTSL( renderer, scene, camera );
+	const artifact = artifacts.find( ( a ) => a.materialShape === 'post-process' )
+		|| artifacts.find( ( a ) => a.materialShape === 'output-transform' )
+		|| artifacts[ 0 ];
+
+	if ( ! artifact ) throw new Error( 'captureMRTLive: no artifact produced for MRT pass' );
+
+	// Stamp MRT metadata onto the artifact so the runtime can reconstruct
+	// the correct render target topology.
+	artifact.mrt = { outputNames };
+
 	return jsonSafe( artifact );
 
 }

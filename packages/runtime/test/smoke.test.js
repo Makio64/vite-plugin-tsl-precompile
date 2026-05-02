@@ -11,8 +11,18 @@ import {
 	setupViewportTextureClasses,
 	registerAuxArtifact,
 	loadAux,
+	attachMRTTextureRefs,
 	__resetAuxRegistryForTests,
 } from '../src/aux-loader.js';
+import {
+	PassNode,
+	mrt,
+	mix,
+	step,
+	texture,
+	normalWorld,
+	screenUV,
+} from '../src/slim-stubs.js';
 
 test( 'runtime artifact registry round-trips a module', () => {
 
@@ -829,5 +839,140 @@ test( 'hydrator: builtin.ltcTexture caches texture per ltcIndex to avoid re-allo
 	// Both hydrations share the _ltcTextureCache on the artifact.
 	assert.ok( artifact._ltcTextureCache instanceof Map, 'must create _ltcTextureCache' );
 	assert.equal( artifact._ltcTextureCache.size, 1, 'only one unique index 0' );
+
+} );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task mrt-pass-aux: PassNode.setMRT + getTexture stubs
+// ─────────────────────────────────────────────────────────────────────────────
+
+test( 'slim-stubs: PassNode.setMRT stores the mrt descriptor and returns this', () => {
+
+	const pass = new PassNode( PassNode.COLOR, null, null );
+	const mrtDescriptor = { isNode: true, outputNodes: { output: {}, normal: {} } };
+	const result = pass.setMRT( mrtDescriptor );
+
+	assert.equal( result, pass, 'setMRT must return this for chaining' );
+	assert.equal( pass._mrt, mrtDescriptor, 'setMRT must store mrtNode in _mrt' );
+
+} );
+
+test( 'slim-stubs: PassNode.getTexture returns an inert node stub', () => {
+
+	const pass = new PassNode();
+	const tex = pass.getTexture( 'output' );
+
+	assert.ok( tex, 'getTexture must return a value' );
+	// The returned stub must support chaining (node-like property access)
+	assert.ok( tex.isNode, 'stub must have isNode = true' );
+	// Must not throw on further property access
+	assert.doesNotThrow( () => tex.xy, 'chained property access must not throw' );
+
+} );
+
+test( 'slim-stubs: PassNode chaining: setMRT returns this, getTexture is chainable', () => {
+
+	const pass = new PassNode();
+	const mrtDesc = { isNode: true };
+	assert.equal( pass.setMRT( mrtDesc ).setSize( 512, 512 ), pass, 'chaining setMRT().setSize() must return pass' );
+
+} );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task mrt-tsl-stub-leak: TSL function exports from slim-stubs.js
+// ─────────────────────────────────────────────────────────────────────────────
+
+test( 'slim-stubs: mrt() returns an inert node stub without throwing', () => {
+
+	const result = mrt( { output: {}, normal: {} } );
+	assert.ok( result, 'mrt() must return a value' );
+	assert.ok( result.isNode, 'mrt() result must have isNode=true' );
+	// Must be chainable without throwing
+	assert.doesNotThrow( () => result.mul( 2 ), 'mrt result must be chainable' );
+
+} );
+
+test( 'slim-stubs: mix() returns an inert node stub without throwing', () => {
+
+	assert.doesNotThrow( () => mix( {}, {}, 0.5 ), 'mix() must not throw' );
+	const result = mix( {}, {}, 0.5 );
+	assert.ok( result, 'mix() must return a value' );
+
+} );
+
+test( 'slim-stubs: step() returns an inert node stub without throwing', () => {
+
+	assert.doesNotThrow( () => step( 0.5, {} ), 'step() must not throw' );
+
+} );
+
+test( 'slim-stubs: texture() returns an inert node stub without throwing', () => {
+
+	assert.doesNotThrow( () => texture( {} ), 'texture() must not throw' );
+
+} );
+
+test( 'slim-stubs: normalWorld is an inert node stub with isNode=true', () => {
+
+	assert.ok( normalWorld, 'normalWorld must be exported' );
+	assert.ok( normalWorld.isNode, 'normalWorld must have isNode=true' );
+
+} );
+
+test( 'slim-stubs: screenUV is an inert node stub, chainable for .mul()', () => {
+
+	assert.ok( screenUV, 'screenUV must be exported' );
+	assert.ok( screenUV.isNode, 'screenUV must have isNode=true' );
+	// screenUV.mul(40) is a common pattern in examples
+	assert.doesNotThrow( () => screenUV.mul( 40 ), 'screenUV.mul() must not throw' );
+
+} );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task mrt-pass-aux: attachMRTTextureRefs in aux-loader
+// ─────────────────────────────────────────────────────────────────────────────
+
+test( 'aux-loader: attachMRTTextureRefs wires render-target textures by name', () => {
+
+	const outputTex = { isTexture: true, uuid: 'mrt-output-uuid' };
+	const normalTex = { isTexture: true, uuid: 'mrt-normal-uuid' };
+
+	// Simulate an MRT artifact with two texture bindings
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: '',
+		uniformPlan: [ {
+			name: 'object',
+			slots: [],
+			textures: [
+				{ name: 'output', source: { kind: 'artifact.texture', textureUuid: 'captured-output-uuid' } },
+				{ name: 'normal', source: { kind: 'artifact.texture', textureUuid: 'captured-normal-uuid' } },
+			],
+		} ],
+		mrt: { outputNames: [ 'output', 'normal' ] },
+	};
+
+	// Simulate a render target with two textures
+	const renderTarget = {
+		textures: [ outputTex, normalTex ],
+	};
+
+	attachMRTTextureRefs( artifact, renderTarget );
+
+	assert.ok( artifact._textureRefs instanceof Map, '_textureRefs must be set' );
+	assert.equal( artifact._textureRefs.get( 'captured-output-uuid' ), outputTex, 'output texture must be wired to index 0' );
+	assert.equal( artifact._textureRefs.get( 'captured-normal-uuid' ), normalTex, 'normal texture must be wired to index 1' );
+
+} );
+
+test( 'aux-loader: attachMRTTextureRefs handles missing renderTarget gracefully', () => {
+
+	const artifact = {
+		uniformPlan: [ { name: 'object', slots: [], textures: [] } ],
+		mrt: { outputNames: [] },
+	};
+
+	assert.doesNotThrow( () => attachMRTTextureRefs( artifact, null ) );
+	assert.doesNotThrow( () => attachMRTTextureRefs( null, {} ) );
 
 } );

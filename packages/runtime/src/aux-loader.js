@@ -364,6 +364,70 @@ export function attachArtifactTextureRefs( artifact, texture ) {
 }
 
 /**
+ * Attach live MRT render-target textures to an MRT artifact.
+ *
+ * Task `mrt-pass-aux`: When an MRT artifact is loaded via `loadAux('mrt', hash)`,
+ * the individual render-target textures (output, normal, depth…) are live
+ * objects created at runtime by three.js's `WebGPURenderTarget`. This function
+ * walks the artifact's `mrt.outputNames` and the provided `renderTarget.textures`
+ * array, pairing each named output texture with the binding UUID from the
+ * uniformPlan so the hydrator can resolve them.
+ *
+ * Idempotent: safe to call multiple times as textures are resized.
+ *
+ * @param {Object} artifact - An MRT aux artifact (has `mrt.outputNames`, `uniformPlan`).
+ * @param {Object} renderTarget - A `WebGPURenderTarget` with `.textures` array.
+ * @return {Object} The artifact (for chaining).
+ */
+export function attachMRTTextureRefs( artifact, renderTarget ) {
+
+	if ( ! artifact || ! renderTarget ) return artifact;
+
+	const textures = renderTarget.textures || ( renderTarget.texture ? [ renderTarget.texture ] : [] );
+	if ( textures.length === 0 ) return artifact;
+
+	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
+	let changed = false;
+
+	for ( const group of artifact.uniformPlan || [] ) {
+
+		for ( const entry of group.textures || [] ) {
+
+			const source = entry && entry.source || {};
+			if ( source.kind !== 'artifact.texture' || ! source.textureUuid ) continue;
+
+			// Try to match by texture index in the MRT output array.
+			// The capture order mirrors the MRT descriptor's output order.
+			const outputNames = artifact.mrt && artifact.mrt.outputNames || [];
+			const texIndex = outputNames.indexOf( entry.name || '' );
+			const tex = texIndex >= 0 ? textures[ texIndex ] : textures[ 0 ];
+			if ( tex && tex.isTexture && ! refs.has( source.textureUuid ) ) {
+
+				refs.set( source.textureUuid, tex );
+				changed = true;
+
+			}
+
+		}
+
+	}
+
+	if ( changed ) {
+
+		Object.defineProperty( artifact, '_textureRefs', {
+			value: refs,
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		} );
+
+	}
+
+	return artifact;
+
+}
+
+/**
  * Test-only: reset the registry. Never call this from app code.
  */
 export function __resetAuxRegistryForTests() {
