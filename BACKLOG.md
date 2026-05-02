@@ -14,25 +14,30 @@ Each task lists:
 
 Pri legend: **P0** breaks rendering, **P1** wrong output, **P2** correctness/polish, **P3** nice-to-have.
 
-> Round 1 of parallel agent work landed 11 tasks (9 fully, 2 partial). See
-> [CONTINUATION_PLAN.md](./CONTINUATION_PLAN.md) for the per-agent reports.
-> Items marked **CARVE-OUT** below are follow-ups surfaced when an agent
-> stopped at the file boundary of a related fix.
+> Round 1 landed 11 tasks. Round 2 landed 5 more: `inspector-overlay-parity`,
+> `mrt-bright-frac-misleading`, `hash-graph-vs-config`, `lights-extra-types`,
+> `slim-load-smoke-pixel-gate-trustworthy` (auto-resolved by mrt-bright-frac).
+> See [CONTINUATION_PLAN.md](./CONTINUATION_PLAN.md) for per-agent reports.
+> Items marked **CARVE-OUT** are follow-ups surfaced when an agent stopped at
+> a file boundary.
 
 ---
 
 ## Lighting & PBR
 
-### `lights-extra-types` — P2
-The `lights-direct` round handled `light.position`/`color`/`viewPosition`/
-`targetPosition`/`cutoffDistance`/`decayExponent`/`coneCos`/`penumbraCos`
-for the common point/spot/directional set. RectAreaLight, IES spotlight, and
-projector-light each have their own UniformNodes (irradiance LUTs, IES
-profile, projector matrix) that aren't yet covered.
+### `lights-ltc-textures` — P2 — CARVE-OUT from `lights-extra-types`
+Round-2 `lights-extra-types` added `halfWidth`/`halfHeight` vec3 uniforms for
+`RectAreaLightNode`. The example now renders (`replayBrightFrac=0.35`, PSNR
+21 dB). The LTC approximation textures (`ltc_1`/`ltc_2`) are bound as sampled
+textures — not UBO slots — and are looked up from `RectAreaLightTexturesLib`
+(`RectAreaLightNode.setLTC(...)`). Currently these fall through to the
+shape-fallback texture slot (white/black). The fix requires capturing the
+LTC textures as aux-artifacts at precompile time and wiring them to the
+RectAreaLight PrecompiledMaterial at replay.
 
-- **Files**: `packages/plugin/src/vendor/extractUniformPlan.js`, `packages/plugin/src/emit-updater.js`, `packages/runtime/src/hydrator.js`
-- **Done when**: `webgpu_lights_rectarealight`, `webgpu_lights_ies_spotlight`, `webgpu_lights_projector` no longer go pure black on PBR meshes.
-- **Reference**: `webgpu_lights_rectarealight`, `webgpu_lights_ies_spotlight`, `webgpu_lights_projector`.
+- **Files**: `packages/plugin/src/vendor/compileTSL.js` (capture LTC textures), `packages/runtime/src/hydrator.js` (apply at replay)
+- **Done when**: `webgpu_lights_rectarealight` PSNR improves beyond 21 dB (LTC BRDF correct).
+- **Reference**: `webgpu_lights_rectarealight`.
 
 ---
 
@@ -63,33 +68,6 @@ capture doesn't throw, but the live read path is missing.
 - **Why**: `userData(name, type)` reads `frame.object.userData[name]`. Need an `object3d.userData` source kind that the codegen emits as `frame.object.userData.<name>`.
 - **Done when**: `webgpu_sprites` shows per-sprite rotation animation matching capture.
 - **Reference**: `webgpu_sprites`.
-
-### `tone-mapping` — P1 — PARTIAL, follow-ups below
-Round-1 `tone-mapping` agent added `toneMappingExposure` to the
-`render-output` aux config hash so different exposures don't collide.
-Replay frames still look brighter than capture because two follow-up bugs
-remain (carve-outs below).
-
-- **Files (already done in `aux-marker.js`)**: hash now includes exposure.
-- **Reference**: `webgpu_compute_water`, `webgpu_compute_cloth`, `webgpu_compute_particles_fluid`.
-
-### `hash-graph-vs-config` — P1 — CARVE-OUT from `tone-mapping`
-The slim's render-output rewrite (`packages/plugin/src/three-rewrite.js`
-line ~382, `buildPrecompiledExpr('render-output', rhs, …)`) emits
-`loadAux('render-output', hashNodeGraphSync(this._nodes.getOutputNode(t.texture), …))`.
-But `aux-marker.js` registers under `hashPlainConfigSync({...})`. The
-hashes never match; replay always falls through `aux-loader.js`'s
-shape-fallback (returns first registered artifact for the shape, with a
-warning). Works for single-example bundles but fragile.
-
-- **Files**: `packages/plugin/src/three-rewrite.js`
-- **Why**: Switch the renderer's render-output rewrite from
-  `hashNodeGraphSync(outputNode)` to `hashPlainConfigSync({toneMapping,
-  toneMappingExposure, outputColorSpace})` so the slim runtime exact-matches
-  the aux registry.
-- **Done when**: replay's render-output `loadAux` reports an exact-hash hit
-  (no shape-fallback warning) on `webgpu_compute_water` etc.
-- **Reference**: `webgpu_compute_water`, `webgpu_compute_cloth`, `webgpu_compute_particles_fluid`.
 
 ### `hydrator-toneMappingExposure` — P1 — CARVE-OUT from `tone-mapping`
 The hydrator's `writeUniformGroup` has no `renderer.toneMappingExposure`
@@ -259,59 +237,35 @@ captured / loaded.
 
 ---
 
-## Test infrastructure & quality of life
-
-### `worktree-base-stale` — P2 (multi-agent infra)
-The Agent tool's `isolation: "worktree"` may give a worktree based on
-an ancient commit. Round 1 saw two cases: agent 8's worktree was on
-commit `1af8a1d` (predates aux-loader.js entirely); agent 4's worktree
-was on the same stale base. Agents had to fall back to operating on
-main, which defeats isolation.
-
-- **Files**: `MULTI_AGENT.md` (document the gotcha + a workaround pattern)
-- **Why**: Pin the worktree base to current `HEAD` explicitly when launching, and have agents verify the worktree contains expected files before editing.
-- **Done when**: agent-launch instructions include a "verify base commit is current `HEAD`" step.
-
-### `slim-load-smoke-pixel-gate-trustworthy` — P3 — CARVE-OUT from `slim-load-smoke-pixel-gate`
-The pixel-gate added in round 1 calls `replayBrightFrac > 0.05` —
-which uses the same broken `brightFraction` as the rest of the harness
-(see `mrt-bright-frac-misleading`). A blank-canvas curated example would
-still pass. Land `mrt-bright-frac-misleading` first, then this becomes
-trustworthy automatically.
-
-- **Files**: same as `mrt-bright-frac-misleading`.
-- **Done when**: that fix lands.
-
----
-
 ## Coordination matrix
 
 When two tasks share a file, run them **sequentially**, not in parallel.
 
 | File | Tasks |
 |---|---|
-| `runtime/src/hydrator.js` | `bg-node-render-pipeline`, `userdata-uniform`, `storage-texture-3d`, `sprite-flip-y`, `hydrator-toneMappingExposure`, `lights-extra-types`, `mrt-fragment-locations` |
-| `plugin/src/vendor/extractUniformPlan.js` | `userdata-uniform`, `sprite-flip-y`, `lights-extra-types`, `hydrator-toneMappingExposure` (possibly) |
-| `plugin/src/emit-updater.js` | `userdata-uniform`, `compute-birds-capture-throw`, `lights-extra-types` |
-| `examples/batch/run-e2e.mjs` | `bg-node-render-pipeline`, `compute-kernel-replay`, `mrt-bright-frac-misleading`, `slim-load-smoke-pixel-gate-trustworthy`, `inspector-overlay-parity` |
+| `runtime/src/hydrator.js` | `bg-node-render-pipeline`, `userdata-uniform`, `storage-texture-3d`, `sprite-flip-y`, `hydrator-toneMappingExposure`, `lights-ltc-textures`, `mrt-fragment-locations` |
+| `plugin/src/vendor/extractUniformPlan.js` | `userdata-uniform`, `sprite-flip-y`, `hydrator-toneMappingExposure` (possibly) |
+| `plugin/src/emit-updater.js` | `userdata-uniform`, `compute-birds-capture-throw` |
+| `examples/batch/run-e2e.mjs` | `bg-node-render-pipeline`, `compute-kernel-replay` |
 | `runtime/src/aux-loader.js` | `mrt-tsl-stub-leak`, `mrt-pass-aux`, `backdrop-empty` |
 | `runtime/src/aux-marker.js` | `mrt-pass-aux`, `backdrop-empty` |
 | `runtime/src/slim-stubs.js` | `mrt-tsl-stub-leak`, `mrt-pass-aux` |
-| `plugin/src/three-rewrite.js` | `bg-node-render-pipeline`, `hash-graph-vs-config`, `mrt-tsl-stub-leak` |
+| `plugin/src/three-rewrite.js` | `bg-node-render-pipeline`, `mrt-tsl-stub-leak` |
 | `runtime/src/precompile-marker.js` | `compute-kernel-replay`, `array-camera-per-cell` |
 | `runtime/src/writers.js` | `storage-texture-3d` |
-| `plugin/src/vendor/compileTSL.js` | `compute-kernel-replay` (possibly), `mrt-fragment-locations`, `array-camera-per-cell` |
+| `plugin/src/vendor/compileTSL.js` | `compute-kernel-replay` (possibly), `lights-ltc-textures`, `mrt-fragment-locations`, `array-camera-per-cell` |
 
-### Round-2 parallel-safe set (recommended launch group)
+### Round-3 parallel-safe set (recommended launch group)
 
-Best zero-conflict trio for round 2:
+Best zero-conflict set for round 3 (core PBR correctness):
 
-1. **`inspector-overlay-parity`** (P1) — `run-e2e.mjs` only. Highest leverage: unblocks PSNR measurement for everything else.
-2. **`hash-graph-vs-config`** (P1) — `three-rewrite.js` only. Removes a fragile shape-fallback path.
-3. **`lights-extra-types`** (P2) — `extractUniformPlan.js` + `emit-updater.js` + `hydrator.js`. Single agent owns the entire lights area; no other agent should touch those files in this round.
+1. **`hydrator-toneMappingExposure`** (P1) — `hydrator.js` + maybe `extractUniformPlan.js`. Animated exposure reads live value.
+2. **`compute-birds-capture-throw`** (P2) — `emit-updater.js` only. Unblock birds compute capture.
+3. **`userdata-uniform`** (P2) — `extractUniformPlan.js` + `emit-updater.js` + `hydrator.js`. Sprite rotation live.
+4. **`sprite-flip-y`** (P2) — `extractUniformPlan.js` + `hydrator.js`. Texture orientation fix.
 
-Optional 4th if you want to push deeper:
-4. **`worktree-base-stale`** — docs only (`MULTI_AGENT.md`); doesn't conflict with anything.
+Note: `userdata-uniform` and `sprite-flip-y` share `extractUniformPlan.js` and `hydrator.js` — run them sequentially or in one agent. `hydrator-toneMappingExposure` may also touch `extractUniformPlan.js`; check before parallelising.
 
-After those merge, round 3 picks up `mrt-bright-frac-misleading`,
-`compute-birds-capture-throw`, `userdata-uniform`, `sprite-flip-y`.
+After those merge, round 4 tackles compute+MRT sub-tasks:
+`compute-kernel-replay`, `bg-node-render-pipeline`, `lights-ltc-textures`,
+`backdrop-empty`, MRT tasks.
