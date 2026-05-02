@@ -898,6 +898,20 @@ const NAV_TIMEOUT_MS = 30000;
 const RENDER_TIMEOUT_MS = 12000;
 const RENDER_POLL_MS = 400;
 const MAX_RUNS_PER_BROWSER = 12;
+
+// Deterministic-time replay support. Animated examples driven by
+// `setAnimationLoop` would otherwise sample different animation phases on
+// capture vs replay (the default capture-wait was 8 s vs replay-wait 5 s
+// in real-time wall-clock), tanking PSNR purely from animation jitter
+// rather than rendering differences. We inject a `requestAnimationFrame`
+// shim before navigation that hands out synthetic monotonic timestamps,
+// step by step, on every tick — so both passes see identical `time`
+// arguments at the same Nth tick. After both passes have advanced past
+// TARGET_TICK we freeze the synthetic clock and screenshot. Real-time
+// fetch / XHR are unaffected, so HDR / KTX2 / GLTF loaders still work.
+const FRAME_TIME_MS = 1000;
+const ASSET_SETTLE_MS = 1500;
+
 async function dumpCanvases( page ) {
 
 	const canvases = await page.$$( 'canvas' );
@@ -1086,12 +1100,107 @@ async function visitExample( browser, name, mode, waitMs ) {
 
 	} );
 
+	// Inject a deterministic-rAF shim BEFORE the page navigates so it's
+	// active from the very first script. Each `requestAnimationFrame`
+	// callback receives a synthetic monotonic timestamp that advances by
+	// exactly FRAME_STEP_MS per tick. `Date.now()` / `performance.now()`
+	// / `setTimeout` are left alone so async loaders, fetch, and
+	// renderer init still progress on real time — only the animation
+	// loop sees the synthetic clock.
+	//
+	// Both capture and replay block until tick >= TARGET_TICK, freeze
+	// the synthetic clock at TARGET_TICK, then screenshot. Any
+	// `setAnimationLoop( ( time ) => ... )` callback therefore sees the
+	// same `time` argument at the same simulated frame in both passes,
+	// so animated examples sample identical animation phase regardless
+	// of how long real-time setup took.
+	const TARGET_TICK = 60; // 60 frames of simulated 60Hz animation = 1s
+	const FRAME_STEP_MS = 16.6667;
+	try {
+
+		await page.addInitScript( ( { step, base } ) => {
+
+			// eslint-disable-next-line no-undef
+			const w = window;
+			if ( w.__tslpRafShimInstalled ) return;
+			w.__tslpRafShimInstalled = true;
+			w.__tslpRafTick = 0;
+
+			const origRaf = w.requestAnimationFrame.bind( w );
+			w.requestAnimationFrame = function ( cb ) {
+
+				return origRaf( () => {
+
+					const tick = ++ w.__tslpRafTick;
+					cb( base + tick * step );
+
+				} );
+
+			};
+
+		}, { step: FRAME_STEP_MS, base: 0 } );
+
+	} catch ( _ ) { /* older Playwright fallback */ }
+
 	try {
 
 		await page.goto( `http://localhost:${ port }/examples/${ name }?__tslp_mode=${ mode }`, { waitUntil: 'load', timeout: NAV_TIMEOUT_MS } );
 		await maybeClickStart( page );
-		const bright = await waitForFrame( page, mode === 'capture' ? RENDER_TIMEOUT_MS : waitMs );
-		if ( waitMs > 0 ) await new Promise( ( r ) => setTimeout( r, waitMs ) );
+
+		// Wait for the canvas to paint a non-empty frame under real
+		// wall-clock time. This lets async loaders, `renderer.init()`,
+		// aux capture (microtask chains), and the first rAF tick run
+		// uninterrupted. Without this window, captures with async
+		// setup (HDR / KTX2 / GLTF) would be incomplete.
+		const bright = await waitForFrame( page, mode === 'capture' ? RENDER_TIMEOUT_MS : Math.max( waitMs, RENDER_TIMEOUT_MS ) );
+
+		// Additional real-time settle so aux capture (Promise chains)
+		// and post-init scene mutations have time to complete.
+		await new Promise( ( r ) => setTimeout( r, ASSET_SETTLE_MS ) );
+
+		// Wait until the rAF tick counter reaches TARGET_TICK. Because
+		// the rAF shim assigns sequential synthetic timestamps to every
+		// callback, both capture and replay observe the SAME `time`
+		// argument at the same tick number. We poll real time and wait
+		// for the tick counter; once it crosses TARGET_TICK both
+		// passes are at identical animation phase.
+		try {
+
+			await page.waitForFunction(
+				( target ) => {
+
+					// eslint-disable-next-line no-undef
+					return typeof window.__tslpRafTick === 'number' && window.__tslpRafTick >= target;
+
+				},
+				TARGET_TICK,
+				{ timeout: RENDER_TIMEOUT_MS },
+			);
+
+			// Once we're past TARGET_TICK, freeze the synthetic clock
+			// so subsequent ticks repeat the same time. The browser
+			// still drives real rAF; we just clamp the synthetic
+			// timestamp at the target. The screenshot is taken after a
+			// short real settle so the canvas reflects the frozen
+			// frame.
+			await page.evaluate( ( target ) => {
+
+				// eslint-disable-next-line no-undef
+				const w = window;
+				w.__tslpRafTick = target;
+				const origRaf = w.requestAnimationFrame.bind( w );
+				w.requestAnimationFrame = function ( cb ) {
+
+					return origRaf( () => cb( target * 16.6667 ) );
+
+				};
+
+			}, TARGET_TICK );
+
+			await new Promise( ( r ) => setTimeout( r, FRAME_TIME_MS ) );
+
+		} catch ( _ ) { /* tick counter may not have advanced (no animation loop) */ }
+
 		const shot = await dumpCanvas( page );
 		const real = errors.filter( ( e ) => ! /favicon|Failed to load resource/i.test( e ) );
 		return { bright, shot, errors: real.slice( 0, 5 ), context, page };
