@@ -6,8 +6,8 @@ coverage/
 *.log
 
 # Per-project artifact caches (examples produce these when running the plugin)
-packages/examples/*/artifacts/
-packages/examples/*/.tsl-precompile-cache/
+packages/examples/**/artifacts/
+packages/examples/**/.tsl-precompile-cache/
 
 # Playwright/CI scratch
 playwright-report/
