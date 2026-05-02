@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { registerArtifact, getArtifact } from '../src/artifact-loader.js';
-import { hydrateNodeBuilderState } from '../src/hydrator.js';
+import { hydrateNodeBuilderState, registerLiveTexture, clearLiveTextureIndex } from '../src/hydrator.js';
 import { __applyPrecompiled } from '../src/apply-precompiled.js';
 import PrecompiledMaterial from '../src/_vendor-PrecompiledMaterial.js';
 import { PrecompiledComputeNode } from '../src/precompiled-compute-node.js';
@@ -974,5 +974,105 @@ test( 'aux-loader: attachMRTTextureRefs handles missing renderTarget gracefully'
 
 	assert.doesNotThrow( () => attachMRTTextureRefs( artifact, null ) );
 	assert.doesNotThrow( () => attachMRTTextureRefs( null, {} ) );
+
+} );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task storage-texture-3d: Storage3DTexture / StorageArrayTexture binding
+// ─────────────────────────────────────────────────────────────────────────────
+
+test( 'storage-texture: resolves Storage3DTexture binding by textureName', async () => {
+
+	clearLiveTextureIndex();
+
+	// Simulate a Storage3DTexture created at runtime with .name = 'cloud'.
+	// Import lazily to avoid top-level ESM issues in the test file.
+	const { default: Storage3DTexture } = await import( 'three/src/renderers/common/Storage3DTexture.js' );
+	const cloudTex = new Storage3DTexture( 128, 128, 128 );
+	cloudTex.name = 'cloud';
+
+	// Give the microtask queue a tick so the prototype-patch setter can call
+	// registerLiveTexture (it defers via Promise.resolve().then(...)).
+	await new Promise( resolve => setTimeout( resolve, 0 ) );
+
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: '@group(1) @binding(0) var cloud : texture_3d<f32>;',
+		computeShader: '',
+		bindings: [ {
+			name: 'compute',
+			bindings: [
+				{ name: 'cloud', kind: 'sampled-texture', visibility: 4, textureType: '3d' },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'compute',
+			shared: false,
+			slots: [],
+			textures: [
+				{
+					name: 'cloud',
+					bindingKind: 'sampled-texture',
+					textureType: '3d',
+					access: 'readOnly',
+					visibility: 4,
+					source: { kind: 'artifact.texture', textureUuid: 'dead-uuid-cloud', textureName: 'cloud' },
+				},
+			],
+		} ],
+	};
+
+	const state = hydrateNodeBuilderState( artifact );
+	assert.equal( state.bindings.length, 1 );
+	const binding = state.bindings[ 0 ].bindings[ 0 ];
+	assert.ok( binding.isSampled3DTexture, 'must produce a Sampled3DTexture binding' );
+	assert.ok( binding.isSampledTexture3D, 'isSampledTexture3D must also be true' );
+	assert.equal( binding.texture, cloudTex, 'must resolve to the live Storage3DTexture registered by name' );
+	assert.ok( binding.texture.is3DTexture, 'resolved texture must be a 3D texture' );
+
+	clearLiveTextureIndex();
+
+} );
+
+test( 'storage-texture: falls back to blank Storage3DTexture when not registered', () => {
+
+	clearLiveTextureIndex();
+
+	// No live Storage3DTexture is registered — hydrator must fall back to a
+	// white 1×1×1 Data3DTexture (the module-level fallback3DTexture).
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: '@group(1) @binding(0) var cloud : texture_3d<f32>;',
+		computeShader: '',
+		bindings: [ {
+			name: 'compute',
+			bindings: [
+				{ name: 'cloud', kind: 'sampled-texture', visibility: 4, textureType: '3d' },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'compute',
+			shared: false,
+			slots: [],
+			textures: [
+				{
+					name: 'cloud',
+					bindingKind: 'sampled-texture',
+					textureType: '3d',
+					access: 'readOnly',
+					visibility: 4,
+					source: { kind: 'artifact.texture', textureUuid: 'dead-uuid-cloud-2', textureName: 'cloud-unknown' },
+				},
+			],
+		} ],
+	};
+
+	const state = hydrateNodeBuilderState( artifact );
+	const binding = state.bindings[ 0 ].bindings[ 0 ];
+	assert.ok( binding.isSampled3DTexture, 'must still produce a Sampled3DTexture binding' );
+	assert.ok( binding.isSampledTexture3D, 'isSampledTexture3D must also be true' );
+	// When no named texture matches, the fallback is the module-level fallback3DTexture
+	// which is a Data3DTexture (isData3DTexture = true).
+	assert.ok( binding.texture && ( binding.texture.is3DTexture || binding.texture.isData3DTexture ), 'fallback must still be a 3D texture' );
 
 } );
