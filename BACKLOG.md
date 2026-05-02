@@ -1,9 +1,8 @@
 # Backlog
 
-A flat, deduplicated list of every open problem/feature gap surfaced across the
-last seven sessions, structured so multiple agents (human or AI) can pick
-items without colliding on files. See [MULTI_AGENT.md](./MULTI_AGENT.md) for
-the workflow.
+A flat, deduplicated list of every open problem/feature gap. Structured so
+multiple agents (human or AI) can pick items without colliding on files. See
+[MULTI_AGENT.md](./MULTI_AGENT.md) for the parallel-agent workflow.
 
 Each task lists:
 - **ID** — short stable handle (`bg-blur`, `lights`, etc.).
@@ -15,55 +14,40 @@ Each task lists:
 
 Pri legend: **P0** breaks rendering, **P1** wrong output, **P2** correctness/polish, **P3** nice-to-have.
 
+> Round 1 of parallel agent work landed 11 tasks (9 fully, 2 partial). See
+> [CONTINUATION_PLAN.md](./CONTINUATION_PLAN.md) for the per-agent reports.
+> Items marked **CARVE-OUT** below are follow-ups surfaced when an agent
+> stopped at the file boundary of a related fix.
+
 ---
 
 ## Lighting & PBR
 
-### `lights-direct` — P0
-Direct lights (point/dir/spot/area) are frozen at capture-time snapshots.
-Animated `light.intensity` / `light.position` / etc. don't propagate.
+### `lights-extra-types` — P2
+The `lights-direct` round handled `light.position`/`color`/`viewPosition`/
+`targetPosition`/`cutoffDistance`/`decayExponent`/`coneCos`/`penumbraCos`
+for the common point/spot/directional set. RectAreaLight, IES spotlight, and
+projector-light each have their own UniformNodes (irradiance LUTs, IES
+profile, projector matrix) that aren't yet covered.
 
 - **Files**: `packages/plugin/src/vendor/extractUniformPlan.js`, `packages/plugin/src/emit-updater.js`, `packages/runtime/src/hydrator.js`
-- **Why**: Light uniforms come from `LightNode` instances three.js builds at compile time. The extractor classifies them as anonymous `uniform.live` and freezes the snapshot value.
-- **Done when**: `webgpu_clearcoat` PBR spheres are no longer pure black on three of four; light intensity ramp visible.
-- **Reference**: `webgpu_clearcoat`, `webgpu_lights_phong`, `webgpu_lights_pointlights`.
-
-### `lights-clone-scene` — P1 (alt path to `lights-direct`)
-At capture time, the throwaway scene in `precompile-marker.js` has no lights
-(we deliberately don't reparent them; that would detach from the user's
-real scene). LightsNode therefore emits a no-light path.
-
-- **Files**: `packages/runtime/src/precompile-marker.js`
-- **Why**: Need to clone (not reparent) lights into the throwaway scene so capture sees the right LightsNode shape.
-- **Done when**: PBR materials capture per-light uniforms in their plan.
-- **Reference**: `webgpu_clearcoat` plus any PBR scene with lights.
+- **Done when**: `webgpu_lights_rectarealight`, `webgpu_lights_ies_spotlight`, `webgpu_lights_projector` no longer go pure black on PBR meshes.
+- **Reference**: `webgpu_lights_rectarealight`, `webgpu_lights_ies_spotlight`, `webgpu_lights_projector`.
 
 ---
 
 ## Backgrounds
 
-### `bg-pmrem` — P1
-HDR cubemap backgrounds with `backgroundBlurriness > 0` capture a PMREM-
-prefiltered 2D texture in the WGSL. The harness wires the **raw** cubemap
-to the artifact's `_textureRefs`, which produces black sky on replay.
-Attempted in session 7 but the GPU resource wasn't ready by bind-group
-recording time.
+### `bg-node-render-pipeline` — P2 — CARVE-OUT from `bg-node-hash`
+Even when `loadAux('background', <stub-hash>)` correctly returns the captured
+background-aux artifact (verified for `webgpu_compute_particles_snow` after
+the `bg-node-hash` fix landed), the bg mesh still renders solid white.
+Something downstream of the artifact load doesn't actually consume the
+captured WGSL — likely the bg PrecompiledMaterial's bind-group/UBO sizing,
+the `Background.js` rewrite, or the harness's bg material swap.
 
-- **Files**: `packages/examples/batch/run-e2e.mjs` (only — this is harness-only)
-- **Why**: `__wireBackgroundTextures` needs to detect PMREM-expecting bindings and run `PMREMGenerator.fromCubemap(scene.background)` then re-wire on the next frame.
-- **Done when**: `webgpu_compute_water` / `_cloth` / `_particles_fluid` backgrounds match the capture's blurred sky.
-- **Reference**: `webgpu_compute_water`, `webgpu_compute_cloth`, `webgpu_compute_particles_fluid`.
-
-### `bg-node-hash` — P1
-`scene.backgroundNode = mix(color(...), color(...), screenUV.y)` (or any TSL
-graph) is replaced by the slim's TSL stub proxy on replay. The patched
-Background.js calls `loadAux('background', hashNodeGraphSync(stubProxy))`
-which returns a different hash than the captured graph, so the wrong (or
-no) artifact loads.
-
-- **Files**: `packages/runtime/src/aux-loader.js`, possibly `packages/runtime/src/graph-hash.js`
-- **Why**: `loadAux` already has a shape-fallback (returns the first registered artifact for the shape). Verify it fires, and if it does, ensure the harness registers exactly one background-aux per scene.
-- **Done when**: `webgpu_compute_particles_snow` (or our `examples/background` demo's gradient bg) renders the captured backgroundNode artifact instead of clearing white.
+- **Files**: `packages/runtime/src/hydrator.js`, `packages/plugin/src/three-rewrite.js`, `packages/examples/batch/run-e2e.mjs`
+- **Done when**: `webgpu_compute_particles_snow` and `examples/background` show the captured TSL gradient instead of solid white.
 - **Reference**: `webgpu_compute_particles_snow`, `examples/background`.
 
 ---
@@ -80,18 +64,52 @@ capture doesn't throw, but the live read path is missing.
 - **Done when**: `webgpu_sprites` shows per-sprite rotation animation matching capture.
 - **Reference**: `webgpu_sprites`.
 
-### `tone-mapping` — P1
-Replay frames look washed-out / over-bright vs capture. Examples like
-`webgpu_compute_water` (ACES, exposure 0.5) and `webgpu_compute_cloth`
-(Neutral, exposure 1) bake their tone mapping into the render-output
-artifact at capture, but the runtime may not be honoring the
-`renderer.toneMapping` / `toneMappingExposure` carried in the
-render-output aux config hash.
+### `tone-mapping` — P1 — PARTIAL, follow-ups below
+Round-1 `tone-mapping` agent added `toneMappingExposure` to the
+`render-output` aux config hash so different exposures don't collide.
+Replay frames still look brighter than capture because two follow-up bugs
+remain (carve-outs below).
 
-- **Files**: `packages/runtime/src/aux-marker.js` (the `render-output` aux config hash) + harness check
-- **Why**: Capture-time hash includes `{ toneMapping, outputColorSpace }`; if the user's renderer setting at replay differs from capture, the hash misses.
-- **Done when**: `webgpu_compute_water`, `_cloth`, `_particles_fluid` PSNR ≥ 25 dB.
+- **Files (already done in `aux-marker.js`)**: hash now includes exposure.
 - **Reference**: `webgpu_compute_water`, `webgpu_compute_cloth`, `webgpu_compute_particles_fluid`.
+
+### `hash-graph-vs-config` — P1 — CARVE-OUT from `tone-mapping`
+The slim's render-output rewrite (`packages/plugin/src/three-rewrite.js`
+line ~382, `buildPrecompiledExpr('render-output', rhs, …)`) emits
+`loadAux('render-output', hashNodeGraphSync(this._nodes.getOutputNode(t.texture), …))`.
+But `aux-marker.js` registers under `hashPlainConfigSync({...})`. The
+hashes never match; replay always falls through `aux-loader.js`'s
+shape-fallback (returns first registered artifact for the shape, with a
+warning). Works for single-example bundles but fragile.
+
+- **Files**: `packages/plugin/src/three-rewrite.js`
+- **Why**: Switch the renderer's render-output rewrite from
+  `hashNodeGraphSync(outputNode)` to `hashPlainConfigSync({toneMapping,
+  toneMappingExposure, outputColorSpace})` so the slim runtime exact-matches
+  the aux registry.
+- **Done when**: replay's render-output `loadAux` reports an exact-hash hit
+  (no shape-fallback warning) on `webgpu_compute_water` etc.
+- **Reference**: `webgpu_compute_water`, `webgpu_compute_cloth`, `webgpu_compute_particles_fluid`.
+
+### `hydrator-toneMappingExposure` — P1 — CARVE-OUT from `tone-mapping`
+The hydrator's `writeUniformGroup` has no `renderer.toneMappingExposure`
+case. The captured render-output artifact's exposure uniform is currently
+classified as anonymous `uniform.live` and falls back to its `valueSnapshot`
+(captured exposure value). Animated exposure changes after capture won't
+propagate. Also: when the render-output's `render` group is `shared: true`
+but scene materials don't use the exposure slot, the shared UBO may be
+allocated with `byteLength=128` (camera matrices only); the exposure write
+at offset 128 either gets clipped or lands in a separate UBO.
+
+- **Files**: `packages/runtime/src/hydrator.js`, possibly `packages/plugin/src/vendor/extractUniformPlan.js`
+- **Why**: Add `else if (kind === 'renderer.toneMappingExposure')` reading
+  `frame.renderer.toneMappingExposure`. Audit the shared-UBO sizing path
+  (`findUniformGroupShared` + `cloneBinding`) to make sure the buffer is
+  big enough for output-transform slots even when scene materials don't use them.
+- **Done when**: animated exposure ramp visible in replay; PSNR for
+  `webgpu_compute_water`/`_cloth`/`_particles_fluid` improves vs the
+  pre-`hash-graph-vs-config` baseline.
+- **Reference**: same as above.
 
 ### `sprite-flip-y` — P2
 Sprite texture appears flipped on Y axis vs capture (user-reported).
@@ -137,35 +155,93 @@ Capture throws on `webgpu_compute_birds`'s NodeMaterial — different
 
 ## Cameras & Render Targets
 
-### `array-camera` — P2
-`webgpu_camera_array` (4×4 ArrayCamera multi-viewport) renders an empty
-canvas in replay despite capturing artifacts. Slim's renderer either
-doesn't drive the per-subcamera viewport loop, or our patch breaks it.
+### `array-camera-per-cell` — P3 — CARVE-OUT from `array-camera`
+`webgpu_camera_array` now renders the 6×6 grid layout, but every cell shows
+the parent ArrayCamera's view because `precompile-marker.js`'s synthetic
+scene uses a regular `PerspectiveCamera`. The captured WGSL bakes
+`render.cameraViewMatrix` (single uniform) instead of
+`_cameraViewMatrixArray.element(cameraIndex)`.
 
-- **Files**: `packages/plugin/src/three-rewrite.js` (the WebGPURenderer rewrite), maybe `packages/runtime/src/slim-entry.js`
-- **Why**: ArrayCamera renders the same scene N times into N viewports. Each subcamera triggers a render pass. Our patches may collapse or skip these.
-- **Done when**: `webgpu_camera_array` shows the 4×4 grid of camera views.
+- **Files**: `packages/runtime/src/precompile-marker.js`, possibly `packages/plugin/src/vendor/compileTSL.js`
+- **Why**: Either capture an ArrayCamera-shaped variant in the synthetic
+  scene, or re-drive the camera UBO per subcamera in the slim runtime.
+- **Done when**: each cell of `webgpu_camera_array` shows a different camera angle.
 - **Reference**: `webgpu_camera_array`.
 
-### `multiple-rendertargets` — P3
-Examples like `webgpu_multiple_rendertargets`, `_readback` not yet
-sweep-tested but likely have mrt-specific binding paths.
+---
 
-- **Files**: investigate first.
-- **Reference**: `webgpu_multiple_rendertargets*`, `webgpu_mrt*`.
+## Multi-Render-Target (MRT)
+
+Investigation done in round 1; the umbrella task split into 4 sub-tasks
+plus a harness false-positive. See
+`packages/examples/batch/results/shots/webgpu_{mrt,multiple_rendertargets}*.png`
+for capture/replay diffs.
+
+### `mrt-fragment-locations` — P2
+Materials drawn into a render target with multiple color attachments emit
+only `@location(0)` in the captured WGSL. At capture, `compileTSL`'s
+warm-up render is unaware of `renderer.setMRT(...)` / `pass.setMRT(...)` /
+`material.mrtNode`, so the downstream pipeline is built with N color
+targets but the fragment declares one output → WebGPU validation rejects
+with "targets[1] writeMask…".
+
+- **Files**: `packages/plugin/src/vendor/compileTSL.js`, `packages/plugin/src/aux-capture.js`, `packages/runtime/src/hydrator.js`, `packages/runtime/src/apply-precompiled.js`
+- **Done when**: `webgpu_multiple_rendertargets.html` replay shows the torus side-by-side (color | normal) and no GPU validation error.
+- **Reference**: `webgpu_multiple_rendertargets`, `_readback`, `webgpu_mrt`, `webgpu_mrt_mask`.
+
+### `mrt-tsl-stub-leak` — P2
+`webgpu_multiple_rendertargets*` import `mrt`, `output`, `normalWorld`,
+`screenUV`, `mix`, `texture`, `step` from `three/tsl`. After the slim
+swap those resolve to `chainableSlimStub` which throws on `apply()`. The
+example continues past the throws (Playwright swallows them); user's
+`renderPipeline.outputNode` never gets a real outputNode.
+
+- **Files**: `packages/runtime/src/slim-stubs.js`, `packages/plugin/src/three-rewrite.js`, `packages/runtime/src/aux-loader.js`
+- **Done when**: replay logs zero `Proxy(Function)` errors for the MRT examples.
+- **Reference**: `webgpu_multiple_rendertargets`, `_readback`.
+
+### `mrt-pass-aux` — P2
+`webgpu_mrt.html` and `webgpu_mrt_mask.html` use the post-processing path
+(`pass(scene, camera).setMRT(mrt({...}))` + `RenderPipeline.outputNode = …`),
+not raw `renderer.setMRT`. Capture has `aux artifacts: post-process +
+render-output` but no MRT-shape descriptor. `PassNode` slim stub at
+`slim-stubs.js:124` has `_mrt = null` and no `getTexture`/`setMRT` plumbing.
+
+- **Files**: `packages/runtime/src/aux-marker.js`, `packages/runtime/src/aux-loader.js`, `packages/runtime/src/slim-stubs.js`
+- **Done when**: `webgpu_mrt.html` shows the four-quadrant final/beauty/normal/emissive image (≥ 25 dB PSNR vs capture).
+- **Reference**: `webgpu_mrt`, `webgpu_mrt_mask`.
+
+### `mrt-bright-frac-misleading` — P3 (harness)
+All four MRT replays report `replayBrightFrac=1.00` despite producing empty
+canvases — `brightFraction` screenshots the whole page so the page bg
+bleeds through. Harness false-positives mask MRT and other "no error but
+blank" failures across the entire sweep. **Likely affects many other
+"passing" examples too** — re-verify after this fix lands.
+
+- **Files**: `packages/examples/batch/run-e2e.mjs` (the `brightFraction` helper at line ~978; clip the screenshot to canvas bounding rect or use `canvas.toDataURL` from page).
+- **Done when**: `webgpu_mrt.html` reports `replayBrightFrac < 0.05` until `mrt-pass-aux` is fixed; tier-1 sweep pass count is **trustworthy** (currently mixes blank-canvas false-positives in).
+- **Reference**: every MRT example, `bg-pmrem`-affected examples too.
 
 ---
 
 ## Animation & Determinism
 
-### `psnr-pacing` — P1
-PSNR scores stay low for animated examples because capture (8 s wait) and
-replay (5 s wait) sample different animation phases. Fix is harness-only.
+### `inspector-overlay-parity` — P1 — CARVE-OUT from `psnr-pacing`
+After deterministic-rAF pacing landed in round 1, PSNR gains were
+≤ 3 dB on most animated examples. Diagnosis: the lil-gui inspector
+overlay (Scene settings panel + FPS counter) shows in capture but not
+in replay (replay loads an inspector stub). This produces large
+per-pixel deltas regardless of animation phase. Until parity, PSNR
+ceiling is dominated by overlay deltas, not rendering correctness.
 
-- **Files**: `packages/examples/batch/run-e2e.mjs`
-- **Why**: Use `Page.clock.install()` (Playwright) to fix `Date.now()` and `requestAnimationFrame` so capture and replay run at the same simulated time, OR snap both to a fixed frame after a known number of `setAnimationLoop` ticks.
-- **Done when**: PSNR for `webgpu_camera`, `webgpu_clearcoat`, `webgpu_animation_retargeting*` ≥ 25 dB without other code changes.
-- **Reference**: every animated example.
+Side issue noticed: some replays render at a different canvas size
+than capture (e.g. 320×240 capture vs 480×360 replay). Same root area
+of investigation.
+
+- **Files**: `packages/examples/batch/run-e2e.mjs` (force-stub the inspector module in BOTH passes and pin canvas size identically)
+- **Why**: Make capture and replay visually equivalent before measuring rendering correctness with PSNR.
+- **Done when**: tier-1 PSNR pass count climbs from 2/29 to ≥ 8/29 without other code changes.
+- **Reference**: `webgpu_camera`, `webgpu_clearcoat`, `webgpu_animation_retargeting*`, every animated example.
 
 ---
 
@@ -185,46 +261,57 @@ captured / loaded.
 
 ## Test infrastructure & quality of life
 
-### `harness-fixed-clock` — see `psnr-pacing`
+### `worktree-base-stale` — P2 (multi-agent infra)
+The Agent tool's `isolation: "worktree"` may give a worktree based on
+an ancient commit. Round 1 saw two cases: agent 8's worktree was on
+commit `1af8a1d` (predates aux-loader.js entirely); agent 4's worktree
+was on the same stale base. Agents had to fall back to operating on
+main, which defeats isolation.
 
-### `slim-load-smoke-pixel-gate` — P3
-`pnpm test:slim` (198/198) only verifies module load. Should assert at
-least 5 curated examples produce non-empty pixel output.
+- **Files**: `MULTI_AGENT.md` (document the gotcha + a workaround pattern)
+- **Why**: Pin the worktree base to current `HEAD` explicitly when launching, and have agents verify the worktree contains expected files before editing.
+- **Done when**: agent-launch instructions include a "verify base commit is current `HEAD`" step.
 
-- **Files**: `packages/examples/batch/run-slim.mjs`
-- **Done when**: smoke harness has a `pixel-gate` flag that fails if any of N curated examples come out blank.
+### `slim-load-smoke-pixel-gate-trustworthy` — P3 — CARVE-OUT from `slim-load-smoke-pixel-gate`
+The pixel-gate added in round 1 calls `replayBrightFrac > 0.05` —
+which uses the same broken `brightFraction` as the rest of the harness
+(see `mrt-bright-frac-misleading`). A blank-canvas curated example would
+still pass. Land `mrt-bright-frac-misleading` first, then this becomes
+trustworthy automatically.
 
-### `subpackage-readmes` — P3
-`packages/plugin/`, `packages/runtime/` lack README.md. npm renders empty
-package pages without one. Blocks publishing.
-
-- **Files**: `packages/plugin/README.md`, `packages/runtime/README.md`
-- **Done when**: both files exist with install + usage section.
-
-### `migration-md` — P3
-`STATUS.md` references a `MIGRATION.md` that doesn't exist.
-
-- **Files**: `MIGRATION.md` (root), or remove references.
+- **Files**: same as `mrt-bright-frac-misleading`.
+- **Done when**: that fix lands.
 
 ---
 
 ## Coordination matrix
 
-When two tasks share a file (or near it), they must run **sequentially**, not
-in parallel. This grid tells you which pairs collide:
+When two tasks share a file, run them **sequentially**, not in parallel.
 
 | File | Tasks |
 |---|---|
-| `runtime/src/hydrator.js` | `lights-direct`, `userdata-uniform`, `storage-texture-3d`, `sprite-flip-y` |
-| `plugin/src/vendor/extractUniformPlan.js` | `lights-direct`, `userdata-uniform`, `sprite-flip-y` |
-| `plugin/src/emit-updater.js` | `lights-direct`, `userdata-uniform`, `compute-birds-capture-throw` |
-| `examples/batch/run-e2e.mjs` | `bg-pmrem`, `compute-kernel-replay`, `psnr-pacing` |
-| `runtime/src/aux-loader.js` | `bg-node-hash`, `backdrop-empty` |
-| `runtime/src/precompile-marker.js` | `lights-clone-scene`, `compute-kernel-replay` |
+| `runtime/src/hydrator.js` | `bg-node-render-pipeline`, `userdata-uniform`, `storage-texture-3d`, `sprite-flip-y`, `hydrator-toneMappingExposure`, `lights-extra-types`, `mrt-fragment-locations` |
+| `plugin/src/vendor/extractUniformPlan.js` | `userdata-uniform`, `sprite-flip-y`, `lights-extra-types`, `hydrator-toneMappingExposure` (possibly) |
+| `plugin/src/emit-updater.js` | `userdata-uniform`, `compute-birds-capture-throw`, `lights-extra-types` |
+| `examples/batch/run-e2e.mjs` | `bg-node-render-pipeline`, `compute-kernel-replay`, `mrt-bright-frac-misleading`, `slim-load-smoke-pixel-gate-trustworthy`, `inspector-overlay-parity` |
+| `runtime/src/aux-loader.js` | `mrt-tsl-stub-leak`, `mrt-pass-aux`, `backdrop-empty` |
+| `runtime/src/aux-marker.js` | `mrt-pass-aux`, `backdrop-empty` |
+| `runtime/src/slim-stubs.js` | `mrt-tsl-stub-leak`, `mrt-pass-aux` |
+| `plugin/src/three-rewrite.js` | `bg-node-render-pipeline`, `hash-graph-vs-config`, `mrt-tsl-stub-leak` |
+| `runtime/src/precompile-marker.js` | `compute-kernel-replay`, `array-camera-per-cell` |
 | `runtime/src/writers.js` | `storage-texture-3d` |
-| `plugin/src/three-rewrite.js` | `array-camera` |
+| `plugin/src/vendor/compileTSL.js` | `compute-kernel-replay` (possibly), `mrt-fragment-locations`, `array-camera-per-cell` |
 
-Tasks with NO shared files can run safely in parallel:
-- `bg-pmrem` (harness only) ‖ `lights-clone-scene` (precompile-marker only) ‖ `array-camera` (three-rewrite only)
-- `subpackage-readmes` ‖ `migration-md` ‖ anything (docs-only)
-- `slim-load-smoke-pixel-gate` (run-slim.mjs only) ‖ anything that doesn't touch `run-slim.mjs`
+### Round-2 parallel-safe set (recommended launch group)
+
+Best zero-conflict trio for round 2:
+
+1. **`inspector-overlay-parity`** (P1) — `run-e2e.mjs` only. Highest leverage: unblocks PSNR measurement for everything else.
+2. **`hash-graph-vs-config`** (P1) — `three-rewrite.js` only. Removes a fragile shape-fallback path.
+3. **`lights-extra-types`** (P2) — `extractUniformPlan.js` + `emit-updater.js` + `hydrator.js`. Single agent owns the entire lights area; no other agent should touch those files in this round.
+
+Optional 4th if you want to push deeper:
+4. **`worktree-base-stale`** — docs only (`MULTI_AGENT.md`); doesn't conflict with anything.
+
+After those merge, round 3 picks up `mrt-bright-frac-misleading`,
+`compute-birds-capture-throw`, `userdata-uniform`, `sprite-flip-y`.
