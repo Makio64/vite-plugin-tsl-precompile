@@ -874,7 +874,7 @@ const server = createServer( async ( req, res ) => {
 		if ( url.pathname === '/__tslp__/full-webgpu-auto.js' ) return sendJs( res, fullWebgpuAutoModule() );
 		if ( url.pathname === '/__tslp__/slim-webgpu-replay.js' ) return sendJs( res, slimWebgpuReplayModule() );
 		if ( url.pathname === '/__tslp__/tsl-stub.js' ) return sendJs( res, tslStubModule() );
-		if ( url.pathname === '/examples/jsm/inspector/Inspector.js' && /\b__tslp_mode=replay\b/.test( req.headers.referer || '' ) ) return sendJs( res, inspectorStubModule() );
+		if ( url.pathname === '/examples/jsm/inspector/Inspector.js' ) return sendJs( res, inspectorStubModule() );
 		if ( url.pathname === '/__tslp__/three.webgpu.slim.js' ) {
 
 			res.setHeader( 'content-type', 'application/javascript; charset=utf-8' );
@@ -1002,23 +1002,45 @@ async function dumpCanvases( page ) {
 
 }
 
+async function canvasBrightFractionInPage( page ) {
+
+	return await page.evaluate( () => {
+
+		const canvases = document.querySelectorAll( 'canvas' );
+		let bestBright = 0;
+		for ( const canvas of canvases ) {
+
+			if ( ! canvas.width || ! canvas.height ) continue;
+			try {
+
+				const off = new OffscreenCanvas( canvas.width, canvas.height );
+				const ctx = off.getContext( '2d' );
+				ctx.drawImage( canvas, 0, 0 );
+				const img = ctx.getImageData( 0, 0, canvas.width, canvas.height ).data;
+				let bright = 0;
+				for ( let i = 0; i < img.length; i += 4 ) {
+
+					if ( img[ i ] + img[ i + 1 ] + img[ i + 2 ] > 30 ) bright ++;
+
+				}
+				const frac = bright / ( img.length / 4 );
+				if ( frac > bestBright ) bestBright = frac;
+
+			} catch ( _ ) { /* ignore canvas read errors */ }
+
+		}
+		return bestBright;
+
+	} ).catch( () => 0 );
+
+}
+
 async function dumpBrightestCanvas( page ) {
 
 	const shots = await dumpCanvases( page );
-	let best = null;
-	let bestBright = 0;
-	for ( const shot of shots ) {
-
-		const bright = await brightFraction( page, shot );
-		if ( ! best || bright > bestBright ) {
-
-			best = shot;
-			bestBright = bright;
-
-		}
-
-	}
-	return { shot: best, bright: +bestBright.toFixed( 4 ) };
+	const bright = await canvasBrightFractionInPage( page );
+	const best = shots.length > 0 ? shots[ 0 ] : null;
+	return { shot: best, bright: +bright.toFixed( 4 ) };
 
 }
 
@@ -1154,7 +1176,7 @@ async function waitForFrame( page, timeoutMs ) {
 	let bright = 0;
 	while ( Date.now() < deadline ) {
 
-		bright = ( await dumpBrightestCanvas( page ) ).bright;
+		bright = await canvasBrightFractionInPage( page );
 		if ( bright > 0.005 ) break;
 		await new Promise( ( r ) => setTimeout( r, RENDER_POLL_MS ) );
 
