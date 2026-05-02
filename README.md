@@ -17,7 +17,7 @@ Experimental, but the main pieces are wired:
 
 Still experimental: broad pixel-correct precompiled rendering requires closing the documented blocked uniform/texture/storage kinds in `emit-updater.js` and expanding the E2E harness beyond non-empty-frame checks.
 
-## Install (once published)
+## Install
 
 ```sh
 pnpm add -D vite-plugin-tsl-precompile @tsl-precompile/runtime
