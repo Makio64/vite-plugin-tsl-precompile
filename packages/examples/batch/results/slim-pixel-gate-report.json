@@ -1,0 +1,38 @@
+{
+  "total": 5,
+  "pass": 5,
+  "fail": 0,
+  "threshold": 0.05,
+  "details": [
+    {
+      "name": "webgpu_sandbox.html",
+      "status": "pass",
+      "bright": 1,
+      "reason": null
+    },
+    {
+      "name": "webgpu_materials_basic.html",
+      "status": "pass",
+      "bright": 0.9913,
+      "reason": null
+    },
+    {
+      "name": "webgpu_clearcoat.html",
+      "status": "pass",
+      "bright": 0.9913,
+      "reason": null
+    },
+    {
+      "name": "webgpu_camera.html",
+      "status": "pass",
+      "bright": 0.5549,
+      "reason": null
+    },
+    {
+      "name": "webgpu_compute_reduce.html",
+      "status": "pass",
+      "bright": 1,
+      "reason": null
+    }
+  ]
+}
