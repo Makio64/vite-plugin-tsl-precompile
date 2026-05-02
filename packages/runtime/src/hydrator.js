@@ -615,7 +615,22 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 		// closures to resolve when the example reloads with fresh Texture
 		// instances whose uuids no longer match the captured artifact.
 		const byIdent = lookupLiveTextureByIdentity( source );
-		if ( byIdent && textureMatchesShaderMultisample( artifact, bindingName, byIdent ) ) return byIdent;
+		if ( byIdent && textureMatchesShaderMultisample( artifact, bindingName, byIdent ) ) {
+
+			// Apply the captured flipY so replay orientation matches capture.
+			// HTMLImageElement textures may default to flipY=true (three.js
+			// default for TextureLoader); DataTexture / RenderTarget textures
+			// default to false. Without this, re-loaded textures on replay
+			// can appear Y-flipped vs the original capture.
+			if ( typeof source.flipY === 'boolean' ) {
+
+				byIdent.flipY = source.flipY;
+				byIdent.needsUpdate = true;
+
+			}
+			return byIdent;
+
+		}
 
 		if ( source.snapshot ) {
 
@@ -953,6 +968,20 @@ function writeUniformGroup( group, frame, view, material ) {
 
 			if ( frame.object ) { frame.object.getWorldDirection( _odir ); writeVec3( view, offset, _odir ); }
 			else writeSnapshot( view, offset, source.valueSnapshot );
+
+		} else if ( kind === 'object3d.userData' ) {
+
+			// Per-draw read: `frame.object.userData[property]`.
+			// Supports float/int/uint today (scalars are the vast majority
+			// of userData-driven uniforms — e.g. sprite rotation, opacity).
+			const udProp = source.property;
+			const udType = source.uniformType || 'float';
+			const udRaw = ( frame.object && udProp != null && frame.object.userData != null )
+				? frame.object.userData[ udProp ]
+				: undefined;
+			if ( udType === 'int' || udType === 'i32' ) writeInt( view, offset, Number.isFinite( udRaw ) ? udRaw : null, source.valueSnapshot );
+			else if ( udType === 'uint' || udType === 'u32' ) writeUint( view, offset, Number.isFinite( udRaw ) ? udRaw : null, source.valueSnapshot );
+			else writeNumber( view, offset, Number.isFinite( udRaw ) ? udRaw : null, source.valueSnapshot );
 
 		} else if ( kind === 'object3d.radius' ) {
 

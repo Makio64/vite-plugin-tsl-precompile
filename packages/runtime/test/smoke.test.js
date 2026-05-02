@@ -539,6 +539,66 @@ test( 'hydrator: _textureRefs used for in-process artifact.texture resolution', 
 
 } );
 
+test( 'hydrator: object3d.userData float reads from frame.object.userData per draw', () => {
+
+	const artifact = {
+		vertexShader: '', fragmentShader: '',
+		bindings: [ { name: 'object', bindings: [ { name: 'object', kind: 'uniform-buffer', visibility: 7, byteLength: 16 } ] } ],
+		uniformPlan: [ {
+			name: 'object',
+			shared: false,
+			byteLength: 16,
+			slots: [
+				{ offset: 0, dtype: 'number', source: { kind: 'object3d.userData', property: 'rotation', uniformType: 'float' } },
+			],
+		} ],
+	};
+
+	const state = hydrateNodeBuilderState( artifact );
+	const ub = state.bindings[ 0 ].bindings[ 0 ];
+	const updateNode = state.updateNodes[ state.updateNodes.length - 1 ];
+
+	// Simulate first object at rotation 0.5
+	updateNode.update( { time: 0, camera: null, object: { userData: { rotation: 0.5 } } } );
+	const view = new DataView( ub.buffer.buffer );
+	assert.ok( Math.abs( view.getFloat32( 0, true ) - 0.5 ) < 0.0001, 'first draw rotation must be 0.5' );
+
+	// Simulate second object at rotation 1.25 (per-sprite live value)
+	updateNode.update( { time: 0, camera: null, object: { userData: { rotation: 1.25 } } } );
+	assert.ok( Math.abs( view.getFloat32( 0, true ) - 1.25 ) < 0.0001, 'second draw rotation must be 1.25' );
+
+	// Simulate object with no userData key — must not produce NaN
+	updateNode.update( { time: 0, camera: null, object: { userData: {} } } );
+	assert.equal( view.getFloat32( 0, true ), 0, 'missing userData key must default to 0' );
+
+} );
+
+test( 'hydrator: object3d.userData falls back to snapshot when object is absent', () => {
+
+	const artifact = {
+		vertexShader: '', fragmentShader: '',
+		bindings: [ { name: 'object', bindings: [ { name: 'object', kind: 'uniform-buffer', visibility: 7, byteLength: 16 } ] } ],
+		uniformPlan: [ {
+			name: 'object',
+			shared: false,
+			byteLength: 16,
+			slots: [
+				{ offset: 0, dtype: 'number', source: { kind: 'object3d.userData', property: 'rotation', uniformType: 'float', valueSnapshot: { type: 'number', data: 3.14 } } },
+			],
+		} ],
+	};
+
+	const state = hydrateNodeBuilderState( artifact );
+	const ub = state.bindings[ 0 ].bindings[ 0 ];
+	const updateNode = state.updateNodes[ state.updateNodes.length - 1 ];
+
+	// No object in frame — should use snapshot fallback
+	updateNode.update( { time: 0, camera: null } );
+	const view = new DataView( ub.buffer.buffer );
+	assert.ok( Math.abs( view.getFloat32( 0, true ) - 3.14 ) < 0.001, 'must fall back to snapshot 3.14' );
+
+} );
+
 test( 'hydrator: NodeUniformBuffer seeded from valueSnapshot', () => {
 
 	const snap = [ 1.5, 2.5, 3.5, 4.5 ];
