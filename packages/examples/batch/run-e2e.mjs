@@ -46,6 +46,35 @@ if ( ! existsSync( SLIM_BUNDLE ) ) {
 
 }
 
+// The slim bundle bakes in the threeVersion used to produce its hashes at
+// build time (e.g. { threeVersion: "184", pluginVersion: "0.0.0" }). The
+// capture pass must use the SAME threeVersion so that
+// hashPlainConfigSync(config, { shape, threeVersion, pluginVersion }) produces
+// matching configHashes for render-output, background, etc. artifacts.
+// Extract it from the bundle rather than hard-coding it.
+const SLIM_HASH_OPTS = ( () => {
+
+	const src = readFileSync( SLIM_BUNDLE, 'utf8' );
+	const m = src.match( /\{threeVersion:\s*"([^"]+)"[^}]*pluginVersion:\s*"([^"]+)"/ ) ||
+		src.match( /\{pluginVersion:\s*"([^"]+)"[^}]*threeVersion:\s*"([^"]+)"/ );
+	if ( m ) {
+
+		// First pattern: threeVersion first
+		if ( src.match( /\{threeVersion:\s*"([^"]+)"/ ) ) {
+
+			return { threeVersion: m[ 1 ], pluginVersion: m[ 2 ] };
+
+		}
+		// Second pattern: pluginVersion first
+		return { threeVersion: m[ 2 ], pluginVersion: m[ 1 ] };
+
+	}
+	console.warn( '[batch-e2e] could not extract threeVersion from slim bundle; capture hashes may mismatch.' );
+	return { threeVersion: 'unknown', pluginVersion: '0.0.0' };
+
+} )();
+console.log( `[batch-e2e] slim bundle hash opts: threeVersion=${ SLIM_HASH_OPTS.threeVersion } pluginVersion=${ SLIM_HASH_OPTS.pluginVersion }` );
+
 const args = process.argv.slice( 2 );
 function getArg( prefix, def ) {
 
@@ -144,7 +173,8 @@ function jsonScriptLiteral( value ) {
 
 function injectHtml( html, example, mode ) {
 
-	const boot = `<script>window.__TSLP_E2E=${ jsonScriptLiteral( { example, mode, artifacts: captureBucket( example ) } ) };</script>`;
+	const bucket = captureBucket( example );
+	const boot = `<script>window.__TSLP_E2E=${ jsonScriptLiteral( { example, mode, artifacts: bucket } ) };</script>`;
 	const mapped = rewriteImportmap( html, mode );
 	return mapped.includes( '</head>' )
 		? mapped.replace( '</head>', `${ boot }\n</head>` )
@@ -294,8 +324,8 @@ function __capturePostProcessing( pipeline ) {
 		devEndpoint: '/__tslp__/capture?example=' + encodeURIComponent( __state.example ),
 		postProcessing: pipeline,
 		three: Original,
-		threeVersion: String( Original.REVISION || 'unknown' ),
-		pluginVersion: '0.0.0',
+		threeVersion: ${ JSON.stringify( SLIM_HASH_OPTS.threeVersion ) },
+		pluginVersion: ${ JSON.stringify( SLIM_HASH_OPTS.pluginVersion ) },
 	} ) ).catch( ( err ) => console.warn( '[tslp-e2e] post-process aux capture failed:', err && err.message || err ) );
 }
 
@@ -335,8 +365,12 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 			Promise.resolve().then( () => precompileAuxiliary( this, scene, camera, {
 				devEndpoint: '/__tslp__/capture?example=' + encodeURIComponent( __state.example ),
 				three: Original,
-				threeVersion: String( Original.REVISION || 'unknown' ),
-				pluginVersion: '0.0.0',
+				// Use the slim bundle's baked-in threeVersion so capture hashes
+				// match replay hashes. The slim bundle hardcodes threeVersion at
+				// build time; using Original.REVISION (the three.js examples repo)
+				// can differ and produces mismatched configHashes.
+				threeVersion: ${ JSON.stringify( SLIM_HASH_OPTS.threeVersion ) },
+				pluginVersion: ${ JSON.stringify( SLIM_HASH_OPTS.pluginVersion ) },
 			} ) ).catch( ( err ) => console.warn( '[tslp-e2e] aux capture failed:', err && err.message || err ) );
 		}
 		return super.render( scene, camera );
@@ -674,18 +708,47 @@ function __indexLiveTextures( scene ) {
 }
 
 function __prepareSceneForReplay( scene, renderer ) {
-	// Drop backgroundNode (TSL graph) and Texture-typed backgrounds when we
-	// have no captured background aux — they'd hit the unloadable
-	// loadAux() path inside the patched Background.js. Keep Color
-	// backgrounds untouched: those render via the renderer's clear-color
-	// path and never need an aux artifact.
-	if ( scene && ! __hasBackgroundAux ) {
+	// Drop backgroundNode (TSL graph) and Texture-typed backgrounds.
+	// The slim bundle's internal Background rendering calls ng("background", ...)
+	// which reads from an unreachable private registry (rg) that has no exported
+	// setter — it is always empty at runtime. We suppress non-Color backgrounds
+	// unconditionally to avoid that loadAux throw. Color backgrounds are left
+	// intact: they render via the renderer's clear-color path and bypass loadAux.
+	if ( scene ) {
 		scene.backgroundNode = null;
 		if ( scene.background && ! scene.background.isColor ) scene.background = null;
 	}
 	__indexLiveTextures( scene );
 	__wireBackgroundTextures( scene, renderer );
 	__replaceSceneMaterials( scene );
+}
+
+// Lazy full-three.js compute renderer that shares the slim renderer's GPU
+// device. The slim NodeManager can only dispatch PrecompiledComputeNode; raw
+// TSL ComputeNodes (isComputeNode=true, isPrecompiledCompute!=true) need a
+// real NodeBuilder. We create a single auxiliary WebGPURenderer from the
+// unpatched three.webgpu.js, passing the already-initialised GPU device so
+// both renderers operate on the SAME WebGPU device — and therefore on the same
+// storage buffers written by instancedArray().
+let __computeRenderer = null;
+let __computeRendererInit = null;
+async function __getComputeRenderer( slimRenderer ) {
+	if ( __computeRenderer ) return __computeRenderer;
+	if ( __computeRendererInit ) return __computeRendererInit;
+	__computeRendererInit = ( async () => {
+		try {
+			const { WebGPURenderer: FullRenderer } = await import( '/build/three.webgpu.js' );
+			const device = slimRenderer.backend && slimRenderer.backend.device;
+			const r = new FullRenderer( device ? { device } : {} );
+			await r.init();
+			__computeRenderer = r;
+			return r;
+		} catch ( err ) {
+			console.warn( '[tslp-e2e] compute renderer init failed:', err && err.message || err );
+			return null;
+		}
+	} )();
+	return __computeRendererInit;
 }
 
 export class WebGPURenderer extends Slim.WebGPURenderer {
@@ -727,53 +790,159 @@ export class WebGPURenderer extends Slim.WebGPURenderer {
 		return r;
 	}
 	compute( computeNode, ...rest ) {
-		if ( ! computeNode || computeNode.isComputeNode !== true ) return undefined;
-		return super.compute( computeNode, ...rest );
+		// Precompiled compute nodes: slim renderer handles these directly.
+		if ( computeNode && computeNode.isPrecompiledCompute === true ) {
+			return super.compute( computeNode, ...rest );
+		}
+		// Raw TSL compute nodes: slim NodeManager cannot build them.
+		// Delegate asynchronously to the shared-device full renderer.
+		if ( computeNode && computeNode.isComputeNode === true ) {
+			this.computeAsync( computeNode, ...rest ).catch( () => {} );
+			return undefined;
+		}
+		return undefined;
 	}
 	computeAsync( computeNode, ...rest ) {
-		if ( ! computeNode || computeNode.isComputeNode !== true ) return Promise.resolve();
-		return super.computeAsync( computeNode, ...rest );
+		// Precompiled compute nodes: slim renderer handles these directly.
+		if ( computeNode && computeNode.isPrecompiledCompute === true ) {
+			return super.computeAsync( computeNode, ...rest );
+		}
+		// Raw TSL compute nodes: delegate to the shared-device full renderer.
+		if ( computeNode && computeNode.isComputeNode === true ) {
+			return __getComputeRenderer( this ).then( ( r ) => {
+				if ( ! r ) return;
+				return r.computeAsync( computeNode, ...rest );
+			} ).catch( ( err ) => {
+				console.warn( '[tslp-e2e] compute dispatch failed:', err && err.message || err );
+			} );
+		}
+		return Promise.resolve();
 	}
 	async getArrayBufferAsync( attribute, ...rest ) {
 		if ( ! attribute ) return new Float32Array( 1 ).buffer;
 		try { return await super.getArrayBufferAsync( attribute, ...rest ); }
 		catch ( _ ) { return new Float32Array( 1 ).buffer; }
 	}
+	_renderOutput( target ) {
+		// The slim bundle's internal loadAux (ng) reads from a private Map (rg)
+		// that has no exported setter and is always empty at runtime. Pre-populate
+		// this._quadCache (which super._renderOutput checks BEFORE calling ng) with
+		// a PrecompiledMaterial obtained from Slim.loadAux — the exported registry
+		// that Slim.registerAuxArtifacts() correctly populates.
+		//
+		// Slim.loadAux uses shape-fallback: if any 'render-output' artifact is
+		// registered it returns it (regardless of hash) with a console.warn. This
+		// means the correct artifact is served as long as one was captured.
+		try {
+			const cacheKey = this._nodes && this._nodes.getOutputCacheKey ? this._nodes.getOutputCacheKey() : '';
+			const cached = this._quadCache && this._quadCache.get( target.texture );
+			if ( ! cached || cached.cacheKey !== cacheKey ) {
+				// Any registered render-output artifact works via shape-fallback.
+				const artifact = Slim.loadAux( 'render-output', 'tslp-e2e-bypass' );
+				const mat = new Slim.PrecompiledMaterial(
+					Slim.attachArtifactTextureRefs( artifact, target.texture )
+				);
+				mat.name = 'outputColorTransform';
+				const quad = new Slim.QuadMesh( mat );
+				quad.name = 'Output Color Transform';
+				if ( ! this._quadCache ) this._quadCache = new Map();
+				const entry = { quad, cacheKey };
+				this._quadCache.set( target.texture, entry );
+				const cleanup = () => {
+					mat.dispose();
+					if ( this._quadCache ) this._quadCache.delete( target.texture );
+					target.texture.removeEventListener( 'dispose', cleanup );
+				};
+				target.texture.addEventListener( 'dispose', cleanup );
+			}
+		} catch ( err ) {
+			// No render-output artifact registered — let super throw loadAux error.
+			console.warn( '[tslp-e2e] _renderOutput pre-populate failed:', err && err.message || err );
+		}
+		return super._renderOutput( target );
+	}
 }
+
+// RenderPipeline (and PostProcessing which extends it) calls ng("post-process", ...)
+// from its _update() method — the same dual-registry problem as _renderOutput.
+// Override _update to pre-set _quadMesh.material from Slim.loadAux before ng fires.
+export class RenderPipeline extends Slim.RenderPipeline {
+	_update() {
+		// Sync renderer state flags (mirrors parent logic) so needsUpdate can
+		// be suppressed once we've pre-populated the material.
+		if ( this._toneMapping !== this.renderer.toneMapping ) {
+			this._toneMapping = this.renderer.toneMapping;
+			this.needsUpdate = true;
+		}
+		if ( this._outputColorSpace !== this.renderer.outputColorSpace ) {
+			this._outputColorSpace = this.renderer.outputColorSpace;
+			this.needsUpdate = true;
+		}
+		if ( this.needsUpdate ) {
+			try {
+				// Shape-fallback: returns any registered post-process artifact.
+				const artifact = Slim.loadAux( 'post-process', 'tslp-e2e-bypass' );
+				const mat = new Slim.PrecompiledMaterial( artifact );
+				mat.needsUpdate = true;
+				this._quadMesh.material = mat;
+				// Set up _context so render() can access onBefore/onAfterRenderPipeline.
+				this._context = {
+					renderPipeline: this,
+					onBeforeRenderPipeline: null,
+					onAfterRenderPipeline: null,
+				};
+				this.needsUpdate = false;
+				// Return early — super._update would call ng() which throws.
+				return;
+			} catch ( err ) {
+				// No post-process artifact captured; fall through to super (will throw).
+				console.warn( '[tslp-e2e] RenderPipeline._update pre-populate failed:', err && err.message || err );
+			}
+		}
+		return super._update();
+	}
+}
+
+export class PostProcessing extends RenderPipeline {}
 `;
 
 }
 
 function tslStubModule() {
 
+	// In replay mode `three/tsl` maps to this stub. We rebuild the TSL export
+	// surface by pulling real implementations from the full three.webgpu.js via
+	// its TSL namespace object. The import uses an absolute URL to bypass the
+	// replay import-map (which would redirect 'three/webgpu' to the slim bundle
+	// whose TSL stub throws on every property access).
+	//
+	// Without real node objects, Fn(...)().compute(count) returns a chainable
+	// proxy with no isComputeNode flag. The slim renderer's computeAsync guard
+	// then silently drops every dispatch, particle positions stay at origin/zero,
+	// and the particle blob is invisible.
+	//
+	// three.tsl.js itself does `import { TSL } from 'three/webgpu'` which in
+	// replay mode resolves to the slim stub — so we CANNOT re-export from
+	// three.tsl.js. We pull directly from /build/three.webgpu.js instead.
 	const src = readFileSync( join( threeRepo, 'build/three.tsl.js' ), 'utf8' );
 	const match = src.match( /export\s*\{([\s\S]*?)\};?\s*$/m );
 	const names = match
 		? match[ 1 ].split( ',' ).map( ( x ) => x.trim().split( /\s+as\s+/ ).pop().trim() ).filter( Boolean )
 		: [];
 	const unique = Array.from( new Set( names ) ).filter( ( name ) => /^[A-Za-z_$][\w$]*$/.test( name ) );
-	const exports = unique.map( ( name ) => `export const ${ name } = __stub(${ JSON.stringify( name ) });` ).join( '\n' );
+	const consts = unique.map( ( name ) => `const ${ name } = __TSL[ '${ name }' ];` ).join( '\n' );
+	const exportList = unique.join( ', ' );
 	return `
-function __stub( label ) {
-	const fn = function tslE2EStub() { return proxy; };
-	Object.defineProperty( fn, 'name', { value: label, writable: true, configurable: true } );
-	const proxy = new Proxy( fn, {
-		get( _target, prop ) {
-			if ( prop === Symbol.toPrimitive ) return () => 0;
-			if ( prop === 'toString' ) return () => '[tsl-e2e-stub ' + label + ']';
-			if ( prop === 'valueOf' ) return () => 0;
-			if ( prop === 'isNode' ) return true;
-			if ( prop === 'then' ) return undefined;
-			return __stub( label + '.' + String( prop ) );
-		},
-		set() { return true; },
-		apply() { return proxy; },
-		construct() { return proxy; },
-	} );
-	return proxy;
-}
-${ exports }
-export const TSL = __stub( 'TSL' );
+// Import the FULL three.js TSL namespace via absolute URL so the replay
+// import-map (which redirects 'three/webgpu' to the slim bundle) is bypassed.
+import { TSL as __TSL } from '/build/three.webgpu.js';
+
+// Re-expose every named TSL export so compute kernels (Fn, instancedArray, ...)
+// receive genuine TSL node objects whose isComputeNode flag is set correctly.
+${ consts }
+export { ${ exportList } };
+// Also export the TSL namespace object for code that imports it directly.
+export const TSL = __TSL;
 `;
 
 }
@@ -791,6 +960,7 @@ export class Inspector {
 	finishRender() {}
 	beginCompute() {}
 	finishCompute() {}
+	inspect() {}
 	copyFramebufferToTexture() {}
 	createParameters() { const gui = { paramList: { domElement: { style: {} } }, add() { return this; }, addColor() { return this; }, addFolder() { return this; }, name() { return this; }, onChange() { return this; }, step() { return this; }, min() { return this; }, max() { return this; }, open() { return this; }, listen() { return this; } }; return gui; }
 	add() {}
@@ -1299,8 +1469,15 @@ async function visitExample( browser, name, mode, waitMs ) {
 		} catch ( _ ) { /* tick counter may not have advanced (no animation loop) */ }
 
 		const shot = await dumpCanvas( page );
+		// Re-measure bright from the final screenshot PNG — WebGPU canvas pixels
+		// are often not readable via 2D-context drawImage during the animation loop
+		// (the compositing pipeline lags), so the waitForFrame poll may see 0 even
+		// when the canvas has content. The Playwright screenshot always captures the
+		// composited frame, so computing brightness from it gives the true value.
+		const shotBright = shot ? await brightFraction( page, shot ) : 0;
+		const finalBright = Math.max( bright, shotBright );
 		const real = errors.filter( ( e ) => ! /favicon|Failed to load resource/i.test( e ) );
-		return { bright, shot, errors: real.slice( 0, 5 ), context, page };
+		return { bright: finalBright, shot, errors: real.slice( 0, 5 ), context, page };
 
 	} catch ( err ) {
 

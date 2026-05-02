@@ -1,10 +1,10 @@
 [
   {
     "shape": "background",
-    "configHash": "792847f4bb567056505e4ba5520131b862bcf160d7a29b44f3d7815221ce42cc",
+    "configHash": "2e2a7eeabba20cb84c7bb57d5cd70a163862995b0172f2500393a6afaa278d9c",
     "artifact": {
       "version": 3,
-      "cacheKey": 13546044576876100,
+      "cacheKey": 10997750159064952,
       "materialShape": "node-material",
       "vertexShader": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tnodeUniform0 : f32,\n\tnodeUniform9 : f32,\n\tnodeUniform3 : mat4x4<f32>,\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : f32,\n\tnodeUniform2 : mat4x4<f32>,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform6 : f32,\n\tnodeUniform7 : f32,\n\tnodeUniform10 : f32,\n\tnodeUniform12 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_normalWorldGeometry : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLocal : vec3<f32>;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> nodeVar19 : vec3<f32>;\nvar<private> nodeVar20 : vec4<f32>;\nvar<private> nodeVar21 : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> v_normalViewGeometry : vec3<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) normal : vec3<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tnormalLocal = normal;\n\tv_normalViewGeometry = normalize( ( render.cameraViewMatrix * vec4<f32>( ( object.nodeUniform5 * normalLocal ), 0.0 ) ).xyz );\n\tnormalViewGeometry = normalize( v_normalViewGeometry );\n\tvaryings.v_normalWorldGeometry = normalize( ( vec4<f32>( normalViewGeometry, 0.0 ) * render.cameraViewMatrix ).xyz );\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform12 );\n\n\tif ( ( render.cameraProjectionMatrix[ 3u ][ 3u ] == 1.0 ) ) {\n\n\t\tnodeVar19 = ( positionLocal * vec3<f32>( ( ( 1.0 / render.cameraProjectionMatrix[ 1u ][ 1u ] ) * 3.0 ) ) );\n\n\t} else {\n\n\t\tnodeVar19 = positionLocal;\n\n\t}\n\n\tnodeVar20 = ( render.cameraProjectionMatrix * vec4<f32>( ( modelViewMatrix * vec4<f32>( nodeVar19, 0.0 ) ).xyz, 1.0 ) );\n\tnodeVar21 = vec4<f32>( nodeVar20.x, nodeVar20.y, nodeVar20.w, nodeVar20.w );\n\n\t// result\n\n\tvaryings.builtinClipSpace = nodeVar21;\n\n\treturn varyings;\n\n}\n",
       "fragmentShader": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform8_sampler : sampler;\n@binding( 2 ) @group( 1 ) var nodeUniform8 : texture_2d<f32>;\n\nstruct renderStruct {\n\tnodeUniform0 : f32,\n\tnodeUniform9 : f32,\n\tnodeUniform3 : mat4x4<f32>,\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : f32,\n\tnodeUniform2 : mat4x4<f32>,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform6 : f32,\n\tnodeUniform7 : f32,\n\tnodeUniform10 : f32,\n\tnodeUniform12 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> nodeVar0 : f32;\nvar<private> nodeVar1 : f32;\nvar<private> nodeVar2 : f32;\nvar<private> normalWorldGeometry : vec3<f32>;\nvar<private> nodeVar3 : vec4<f32>;\nvar<private> nodeVar4 : f32;\nvar<private> nodeVar5 : f32;\nvar<private> nodeVar6 : f32;\nvar<private> nodeVar7 : vec2<f32>;\nvar<private> nodeVar8 : vec4<f32>;\nvar<private> nodeVar9 : vec3<f32>;\nvar<private> nodeVar10 : f32;\nvar<private> nodeVar11 : f32;\nvar<private> nodeVar12 : f32;\nvar<private> nodeVar13 : f32;\nvar<private> nodeVar14 : f32;\nvar<private> nodeVar15 : vec2<f32>;\nvar<private> nodeVar16 : vec4<f32>;\nvar<private> nodeVar17 : vec3<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> nodeVar18 : vec4<f32>;\n\n// codes\nfn roughnessToMip ( roughness : f32 ) -> f32 {\n\n\tvar nodeVar0 : f32;\n\n\tnodeVar0 = 0.0;\n\n\tif ( ( roughness >= 0.8 ) ) {\n\n\t\tnodeVar0 = ( ( ( ( 1.0 - roughness ) * ( -1.0 - -2.0 ) ) / ( 1.0 - 0.8 ) ) + -2.0 );\n\t\t\n\n\t} else {\n\n\n\t\tif ( ( roughness >= 0.4 ) ) {\n\n\t\t\tnodeVar0 = ( ( ( ( 0.8 - roughness ) * ( 2.0 - -1.0 ) ) / ( 0.8 - 0.4 ) ) + -1.0 );\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( roughness >= 0.305 ) ) {\n\n\t\t\t\tnodeVar0 = ( ( ( ( 0.4 - roughness ) * ( 3.0 - 2.0 ) ) / ( 0.4 - 0.305 ) ) + 2.0 );\n\t\t\t\t\n\n\t\t\t} else {\n\n\n\t\t\t\tif ( ( roughness >= 0.21 ) ) {\n\n\t\t\t\t\tnodeVar0 = ( ( ( ( 0.305 - roughness ) * ( 4.0 - 3.0 ) ) / ( 0.305 - 0.21 ) ) + 3.0 );\n\t\t\t\t\t\n\n\t\t\t\t} else {\n\n\t\t\t\t\tnodeVar0 = ( -2.0 * log2( ( 1.16 * roughness ) ) );\n\t\t\t\t\t\n\n\t\t\t\t}\n\n\t\t\t\t\n\n\t\t\t}\n\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t}\n\n\n\treturn nodeVar0;\n\n}\n\nfn getFace ( direction : vec3<f32> ) -> f32 {\n\n\tvar nodeVar0 : vec3<f32>;\n\tvar nodeVar1 : f32;\n\tvar nodeVar2 : f32;\n\tvar nodeVar3 : f32;\n\tvar nodeVar4 : f32;\n\tvar nodeVar5 : f32;\n\n\tnodeVar0 = abs( direction );\n\tnodeVar1 = -1.0;\n\n\tif ( ( nodeVar0.x > nodeVar0.z ) ) {\n\n\n\t\tif ( ( nodeVar0.x > nodeVar0.y ) ) {\n\n\n\t\t\tif ( ( direction.x > 0.0 ) ) {\n\n\t\t\t\tnodeVar2 = 0.0;\n\n\t\t\t} else {\n\n\t\t\t\tnodeVar2 = 3.0;\n\n\t\t\t}\n\n\t\t\tnodeVar1 = nodeVar2;\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( direction.y > 0.0 ) ) {\n\n\t\t\t\tnodeVar3 = 1.0;\n\n\t\t\t} else {\n\n\t\t\t\tnodeVar3 = 4.0;\n\n\t\t\t}\n\n\t\t\tnodeVar1 = nodeVar3;\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t} else {\n\n\n\t\tif ( ( nodeVar0.z > nodeVar0.y ) ) {\n\n\n\t\t\tif ( ( direction.z > 0.0 ) ) {\n\n\t\t\t\tnodeVar4 = 2.0;\n\n\t\t\t} else {\n\n\t\t\t\tnodeVar4 = 5.0;\n\n\t\t\t}\n\n\t\t\tnodeVar1 = nodeVar4;\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( direction.y > 0.0 ) ) {\n\n\t\t\t\tnodeVar5 = 1.0;\n\n\t\t\t} else {\n\n\t\t\t\tnodeVar5 = 4.0;\n\n\t\t\t}\n\n\t\t\tnodeVar1 = nodeVar5;\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t}\n\n\n\treturn nodeVar1;\n\n}\n\nfn getUV ( direction : vec3<f32>, face : f32 ) -> vec2<f32> {\n\n\tvar nodeVar0 : vec2<f32>;\n\n\tnodeVar0 = vec2<f32>( 0.0, 0.0 );\n\n\tif ( ( face == 0.0 ) ) {\n\n\t\tnodeVar0 = ( vec2<f32>( direction.z, direction.y ) / vec2<f32>( abs( direction.x ) ) );\n\t\t\n\n\t} else {\n\n\n\t\tif ( ( face == 1.0 ) ) {\n\n\t\t\tnodeVar0 = ( vec2<f32>( ( - direction.x ), ( - direction.z ) ) / vec2<f32>( abs( direction.y ) ) );\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( face == 2.0 ) ) {\n\n\t\t\t\tnodeVar0 = ( vec2<f32>( ( - direction.x ), direction.y ) / vec2<f32>( abs( direction.z ) ) );\n\t\t\t\t\n\n\t\t\t} else {\n\n\n\t\t\t\tif ( ( face == 3.0 ) ) {\n\n\t\t\t\t\tnodeVar0 = ( vec2<f32>( ( - direction.z ), direction.y ) / vec2<f32>( abs( direction.x ) ) );\n\t\t\t\t\t\n\n\t\t\t\t} else {\n\n\n\t\t\t\t\tif ( ( face == 4.0 ) ) {\n\n\t\t\t\t\t\tnodeVar0 = ( vec2<f32>( ( - direction.x ), direction.z ) / vec2<f32>( abs( direction.y ) ) );\n\t\t\t\t\t\t\n\n\t\t\t\t\t} else {\n\n\t\t\t\t\t\tnodeVar0 = ( vec2<f32>( direction.x, direction.y ) / vec2<f32>( abs( direction.z ) ) );\n\t\t\t\t\t\t\n\n\t\t\t\t\t}\n\n\t\t\t\t\t\n\n\t\t\t\t}\n\n\t\t\t\t\n\n\t\t\t}\n\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t}\n\n\n\treturn ( vec2<f32>( 0.5 ) * ( nodeVar0 + vec2<f32>( 1.0 ) ) );\n\n}\n\n\n\n@fragment\nfn main( @location( 0 ) v_normalWorldGeometry : vec3<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = clamp( roughnessToMip( render.nodeUniform0 ), -2.0, object.nodeUniform1 );\n\tnodeVar1 = floor( nodeVar0 );\n\tnodeVar2 = nodeVar1;\n\tnormalWorldGeometry = normalize( v_normalWorldGeometry );\n\tnodeVar3 = ( render.nodeUniform3 * vec4<f32>( normalWorldGeometry, 1.0 ) );\n\tnodeVar4 = getFace( ( object.nodeUniform2 * vec4<f32>( vec3<f32>( nodeVar3.x, ( - nodeVar3.y ), nodeVar3.z ), 1.0 ) ).xyz );\n\tnodeVar5 = max( ( 4.0 - nodeVar2 ), 0.0 );\n\tnodeVar2 = max( nodeVar2, 4.0 );\n\tnodeVar6 = exp2( nodeVar2 );\n\tnodeVar7 = ( ( getUV( ( object.nodeUniform2 * vec4<f32>( vec3<f32>( nodeVar3.x, ( - nodeVar3.y ), nodeVar3.z ), 1.0 ) ).xyz, nodeVar4 ) * vec2<f32>( ( nodeVar6 - 2.0 ) ) ) + vec2<f32>( 1.0 ) );\n\n\tif ( ( nodeVar4 > 2.0 ) ) {\n\n\t\tnodeVar7.y = ( nodeVar7.y + nodeVar6 );\n\t\tnodeVar4 = ( nodeVar4 - 3.0 );\n\t\t\n\n\t}\n\n\tnodeVar7.x = ( nodeVar7.x + ( nodeVar4 * nodeVar6 ) );\n\tnodeVar7.x = ( nodeVar7.x + ( nodeVar5 * ( 3.0 * 16.0 ) ) );\n\tnodeVar7.y = ( nodeVar7.y + ( 4.0 * ( exp2( object.nodeUniform1 ) - nodeVar6 ) ) );\n\tnodeVar7.x = ( nodeVar7.x * object.nodeUniform6 );\n\tnodeVar7.y = ( nodeVar7.y * object.nodeUniform7 );\n\tnodeVar8 = textureSampleGrad( nodeUniform8, nodeUniform8_sampler, nodeVar7, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) );\n\tnodeVar9 = nodeVar8.xyz;\n\tnodeVar10 = fract( nodeVar0 );\n\n\tif ( ( nodeVar10 != 0.0 ) ) {\n\n\t\tnodeVar11 = ( nodeVar1 + 1.0 );\n\t\tnodeVar12 = getFace( ( object.nodeUniform2 * vec4<f32>( vec3<f32>( nodeVar3.x, ( - nodeVar3.y ), nodeVar3.z ), 1.0 ) ).xyz );\n\t\tnodeVar13 = max( ( 4.0 - nodeVar11 ), 0.0 );\n\t\tnodeVar11 = max( nodeVar11, 4.0 );\n\t\tnodeVar14 = exp2( nodeVar11 );\n\t\tnodeVar15 = ( ( getUV( ( object.nodeUniform2 * vec4<f32>( vec3<f32>( nodeVar3.x, ( - nodeVar3.y ), nodeVar3.z ), 1.0 ) ).xyz, nodeVar12 ) * vec2<f32>( ( nodeVar14 - 2.0 ) ) ) + vec2<f32>( 1.0 ) );\n\n\t\tif ( ( nodeVar12 > 2.0 ) ) {\n\n\t\t\tnodeVar15.y = ( nodeVar15.y + nodeVar14 );\n\t\t\tnodeVar12 = ( nodeVar12 - 3.0 );\n\t\t\t\n\n\t\t}\n\n\t\tnodeVar15.x = ( nodeVar15.x + ( nodeVar12 * nodeVar14 ) );\n\t\tnodeVar15.x = ( nodeVar15.x + ( nodeVar13 * ( 3.0 * 16.0 ) ) );\n\t\tnodeVar15.y = ( nodeVar15.y + ( 4.0 * ( exp2( object.nodeUniform1 ) - nodeVar14 ) ) );\n\t\tnodeVar15.x = ( nodeVar15.x * object.nodeUniform6 );\n\t\tnodeVar15.y = ( nodeVar15.y * object.nodeUniform7 );\n\t\tnodeVar16 = textureSampleGrad( nodeUniform8, nodeUniform8_sampler, nodeVar15, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) );\n\t\tnodeVar17 = nodeVar16.xyz;\n\t\tnodeVar9 = mix( nodeVar9, nodeVar17, nodeVar10 );\n\t\t\n\n\t}\n\n\tDiffuseColor = ( vec4<f32>( nodeVar9, 1.0 ) * vec4<f32>( render.nodeUniform9 ) );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform10 );\n\tDiffuseColor.w = 1.0;\n\tnodeVar18 = max( vec4<f32>( DiffuseColor.xyz, DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tOutput = nodeVar18;\n\n\t// result\n\n\toutput.color = nodeVar18;\n\n\treturn output;\n\n}\n",
@@ -478,9 +478,10 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "52e03122-233a-4f88-8ae6-037bde003481",
+                "textureUuid": "42d5a882-7b0b-4d2f-897f-ed671600c61c",
                 "textureName": "PMREM.cubeUv",
-                "mapping": 306
+                "mapping": 306,
+                "flipY": false
               }
             },
             {
@@ -491,9 +492,10 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "52e03122-233a-4f88-8ae6-037bde003481",
+                "textureUuid": "42d5a882-7b0b-4d2f-897f-ed671600c61c",
                 "textureName": "PMREM.cubeUv",
-                "mapping": 306
+                "mapping": 306,
+                "flipY": false
               }
             }
           ],
@@ -655,9 +657,10 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "52e03122-233a-4f88-8ae6-037bde003481",
+                  "textureUuid": "42d5a882-7b0b-4d2f-897f-ed671600c61c",
                   "textureName": "PMREM.cubeUv",
-                  "mapping": 306
+                  "mapping": 306,
+                  "flipY": false
                 }
               }
             },
@@ -679,9 +682,10 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "52e03122-233a-4f88-8ae6-037bde003481",
+                  "textureUuid": "42d5a882-7b0b-4d2f-897f-ed671600c61c",
                   "textureName": "PMREM.cubeUv",
-                  "mapping": 306
+                  "mapping": 306,
+                  "flipY": false
                 }
               }
             },
@@ -739,15 +743,15 @@
         "updateBeforeNodes": 1,
         "updateAfterNodes": 0
       },
-      "materialUuid": "11af4c2b-64da-411e-bc2b-8fb31fc069b9"
+      "materialUuid": "d9e12b45-5a3a-43be-a18c-2e660fe5c74f"
     }
   },
   {
     "shape": "render-output",
-    "configHash": "ba99d5e679058ed11d82d96f1000c50f41dd14d1b51826d6395a44041cd2fe61",
+    "configHash": "319e88c0d15efc2c44f28bfa3261c36b7e3432f85e6502eb844ac04dff1d5fb8",
     "artifact": {
       "version": 3,
-      "cacheKey": 7524314821120630,
+      "cacheKey": 3819760024754709,
       "materialShape": "render-output",
       "vertexShader": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform2 : f32\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : vec2<f32>,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar2 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform5 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar2 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar2;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
       "fragmentShader": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform1 : vec2<f32>,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform2 : f32\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> nodeVar1 : vec4<f32>;\n\n// codes\nfn acesFilmicToneMapping ( color : vec3<f32>, exposure : f32 ) -> vec3<f32> {\n\n\tvar nodeVar0 : vec3<f32>;\n\n\tnodeVar0 = ( mat3x3<f32>( 0.59719, 0.076, 0.0284, 0.35458, 0.90834, 0.13383, 0.04823, 0.01566, 0.83777 ) * ( ( color * vec3<f32>( exposure ) ) / vec3<f32>( 0.6 ) ) );\n\n\treturn clamp( ( mat3x3<f32>( 1.60475, -0.10208, -0.00327, -0.53108, 1.10813, -0.07276, -0.07367, -0.00605, 1.07602 ) * ( ( ( nodeVar0 * ( nodeVar0 + vec3<f32>( 0.0245786 ) ) ) - vec3<f32>( 0.000090537 ) ) / ( ( nodeVar0 * ( ( nodeVar0 + vec3<f32>( 0.432951 ) ) * vec3<f32>( 0.983729 ) ) ) + vec3<f32>( 0.238081 ) ) ) ), vec3<f32>( 0.0 ), vec3<f32>( 1.0 ) );\n\n}\n\nfn sRGBTransferOETF ( color : vec3<f32> ) -> vec3<f32> {\n\n\t\n\n\n\treturn mix( ( ( pow( color, vec3<f32>( 0.41666 ) ) * vec3<f32>( 1.055 ) ) - vec3<f32>( 0.055 ) ), ( color * vec3<f32>( 12.92 ) ), vec3<f32>( ( color <= vec3<f32>( 0.0031308 ) ) ) );\n\n}\n\n\n\n@fragment\nfn main( @builtin( position ) fragCoord : vec4<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform0, nodeUniform0_sampler, ( fragCoord.xy / object.nodeUniform1 ) );\n\tnodeVar1 = vec4<f32>( acesFilmicToneMapping( nodeVar0.xyz, render.nodeUniform2 ), nodeVar0.w );\n\n\t// result\n\n\toutput.color = vec4<f32>( sRGBTransferOETF( nodeVar1.xyz ), nodeVar1.w );\n\n\treturn output;\n\n}\n",
@@ -1032,8 +1036,9 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "1bfd0ade-d394-4d39-8e51-ec2200f3d269",
-                "mapping": 300
+                "textureUuid": "c4c68eb0-9d88-4f6c-b841-1a08a384a0e9",
+                "mapping": 300,
+                "flipY": false
               }
             },
             {
@@ -1044,8 +1049,9 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "1bfd0ade-d394-4d39-8e51-ec2200f3d269",
-                "mapping": 300
+                "textureUuid": "c4c68eb0-9d88-4f6c-b841-1a08a384a0e9",
+                "mapping": 300,
+                "flipY": false
               }
             }
           ],
@@ -1061,8 +1067,9 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "1bfd0ade-d394-4d39-8e51-ec2200f3d269",
-                  "mapping": 300
+                  "textureUuid": "c4c68eb0-9d88-4f6c-b841-1a08a384a0e9",
+                  "mapping": 300,
+                  "flipY": false
                 }
               }
             },
@@ -1084,8 +1091,9 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "1bfd0ade-d394-4d39-8e51-ec2200f3d269",
-                  "mapping": 300
+                  "textureUuid": "c4c68eb0-9d88-4f6c-b841-1a08a384a0e9",
+                  "mapping": 300,
+                  "flipY": false
                 }
               }
             },
