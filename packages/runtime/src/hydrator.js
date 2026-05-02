@@ -120,6 +120,39 @@ const _rViewport = new Vector4( 0, 0, 1, 1 );
 const _ovp = new Vector3();
 const _odir = new Vector3();
 const _mwi = new Matrix4();
+const _lvec = new Vector3();
+
+// Find the Nth light in a scene by traversal order. Mirrors the cache
+// strategy emit-updater.js bakes into AOT modules — both the AOT and
+// snapshot-based hydration paths read lights through this lookup so the
+// captured `lightIndex` resolves to the same Light at replay time.
+//
+// The cache key is the Scene instance; lights added/removed mid-session
+// won't invalidate the cache. That's acceptable for now: scene-graph
+// lighting changes are rare and the alternative (per-frame retraversal)
+// would tax every UBO update for materials with many light-driven slots.
+function findLightInScene( scene, index ) {
+
+	if ( ! scene ) return null;
+	let cache = scene._tslpLightCache;
+	if ( ! cache || cache.scene !== scene ) {
+
+		cache = { scene, lights: [] };
+		scene._tslpLightCache = cache;
+		if ( typeof scene.traverse === 'function' ) {
+
+			scene.traverse( ( o ) => {
+
+				if ( o && o.isLight === true ) cache.lights.push( o );
+
+			} );
+
+		}
+
+	}
+	return cache.lights[ index ] || null;
+
+}
 
 /**
  * Produce a NodeBuilderState-compatible object for a precompiled material.
@@ -972,6 +1005,10 @@ function writeUniformGroup( group, frame, view, material ) {
 
 			} else writeMat4( view, offset, null, source.valueSnapshot );
 
+		} else if ( kind && kind.startsWith( 'light.' ) ) {
+
+			writeLightValue( view, offset, kind, source, frame );
+
 		} else if ( kind === 'constant' || kind === 'uniform.constant' ) {
 
 			writeSnapshot( view, offset, source.valueSnapshot || { type: source.valueType, data: source.value } );
@@ -1011,6 +1048,98 @@ function writeMaterialValue( view, offset, material, source, kind, dtype ) {
 	else if ( dtype === 'mat3' ) writeMat3( view, offset, value, snapshot );
 	else if ( dtype === 'mat4' ) writeMat4( view, offset, value, snapshot );
 	else writeNumber( view, offset, value, snapshot );
+
+}
+
+/**
+ * Per-frame writer for direct-light uniforms. Looks up the live `Light`
+ * object on `frame.scene` by the `lightIndex` baked into the source at
+ * extract time, then writes the live value (intensity-scaled color, decay
+ * exponent, view-space position, ...) into the UBO. Without this, captures
+ * freeze at extraction-time light state and animated `light.intensity` /
+ * `light.position` etc. never reach the GPU.
+ *
+ * Falls back to the captured snapshot (if any) when the indexed light
+ * can't be resolved — e.g. JSON-loaded artifact replayed against a scene
+ * that no longer has that light. Three.js itself would render with the
+ * frozen value too in that case.
+ */
+function writeLightValue( view, offset, kind, source, frame ) {
+
+	const lightIndex = source && Number.isInteger( source.lightIndex ) ? source.lightIndex : 0;
+	const light = frame && frame.scene ? findLightInScene( frame.scene, lightIndex ) : null;
+
+	if ( ! light ) {
+
+		// Captured fallback — keeps PSNR within reach when the runtime
+		// scene differs from capture (no light at the captured index).
+		writeSnapshot( view, offset, source.valueSnapshot );
+		return;
+
+	}
+
+	switch ( kind ) {
+
+		case 'light.colorScaled': {
+
+			// Mirror AnalyticLightNode.update(): copy color + scale by
+			// intensity. Re-use a scratch field on `frame.scene` to avoid
+			// allocating per call; small enough to inline directly via
+			// component math instead of a Color helper.
+			const c = light.color || null;
+			const intensity = Number.isFinite( light.intensity ) ? light.intensity : 1;
+			const r = c ? c.r * intensity : 0;
+			const g = c ? c.g * intensity : 0;
+			const b = c ? c.b * intensity : 0;
+			view.setFloat32( offset, r, true );
+			view.setFloat32( offset + 4, g, true );
+			view.setFloat32( offset + 8, b, true );
+			return;
+
+		}
+		case 'light.distance':
+			writeNumber( view, offset, Number.isFinite( light.distance ) ? light.distance : 0 );
+			return;
+		case 'light.decay':
+			writeNumber( view, offset, Number.isFinite( light.decay ) ? light.decay : 2 );
+			return;
+		case 'light.coneCos':
+			writeNumber( view, offset, Math.cos( light.angle || 0 ) );
+			return;
+		case 'light.penumbraCos':
+			writeNumber( view, offset, Math.cos( ( light.angle || 0 ) * ( 1 - ( light.penumbra || 0 ) ) ) );
+			return;
+		case 'light.position':
+			if ( light.matrixWorld ) {
+
+				_lvec.setFromMatrixPosition( light.matrixWorld );
+				writeVec3( view, offset, _lvec );
+
+			} else writeSnapshot( view, offset, source.valueSnapshot );
+			return;
+		case 'light.viewPosition':
+			if ( light.matrixWorld && frame.camera && frame.camera.matrixWorldInverse ) {
+
+				_lvec.setFromMatrixPosition( light.matrixWorld );
+				_lvec.applyMatrix4( frame.camera.matrixWorldInverse );
+				writeVec3( view, offset, _lvec );
+
+			} else writeSnapshot( view, offset, source.valueSnapshot );
+			return;
+		case 'light.targetPosition':
+			if ( light.target && light.target.matrixWorld ) {
+
+				_lvec.setFromMatrixPosition( light.target.matrixWorld );
+				writeVec3( view, offset, _lvec );
+
+			} else writeSnapshot( view, offset, source.valueSnapshot );
+			return;
+		default:
+			// Unknown light.* kind — fall back to snapshot.
+			writeSnapshot( view, offset, source.valueSnapshot );
+			return;
+
+	}
 
 }
 

@@ -21,7 +21,7 @@
 // and '../utils/Timer.js'. The stock three package re-exports them via 'three/tsl'.
 // If a future three.js release drops them from 'three/tsl', bump the vendor
 // version in VENDORING.md and add a compat shim in _shared/three-compat.js.
-import { modelNormalMatrix, modelWorldMatrixInverse, time, deltaTime, frameId, backgroundBlurriness, backgroundIntensity, backgroundRotation } from 'three/tsl';
+import { modelNormalMatrix, modelWorldMatrixInverse, time, deltaTime, frameId, backgroundBlurriness, backgroundIntensity, backgroundRotation, lightPosition, lightTargetPosition, lightViewPosition } from 'three/tsl';
 
 /**
  * Resolve a TSL update node to a `source` descriptor for the uniform slot
@@ -273,6 +273,123 @@ function classifyTextureBinding( binding ) {
 }
 
 /**
+ * Walk `state.updateNodes` for `AnalyticLightNode` instances and harvest the
+ * UniformNodes each one owns. Each entry maps a UniformNode to a `light.<prop>`
+ * source descriptor tagged with the light's traversal index (0..N-1) so the
+ * runtime hydrator can locate the live `Light` object on `frame.scene` at
+ * render time. Without this, three.js's per-light uniforms (color * intensity,
+ * cutoff distance, decay exponent, cone/penumbra cosines, view-space position)
+ * fall through to the unnamed `uniform.live` path and freeze at extraction-time
+ * snapshots — so animated `light.intensity` / `light.position` never propagate.
+ *
+ * The matching helpers `lightPosition()` / `lightTargetPosition()` /
+ * `lightViewPosition()` from `three/tsl` are memoised by the live light
+ * instance, so calling them here returns the SAME UniformNode the original
+ * setup built — no duplicate uniform allocation.
+ *
+ * @param {Object} state - A built NodeBuilderState.
+ * @return {Map<Object, Object>} UniformNode → light source descriptor.
+ */
+function collectLightUniformSources( state ) {
+
+	const out = new Map();
+	if ( ! state || ! Array.isArray( state.updateNodes ) ) return out;
+
+	let lightIndex = 0;
+	for ( const node of state.updateNodes ) {
+
+		if ( ! node || node.isAnalyticLightNode !== true ) continue;
+		const light = node.light;
+		if ( ! light ) continue;
+
+		const lightUuid = typeof light.uuid === 'string' ? light.uuid : null;
+		const base = { lightIndex, lightUuid };
+
+		// `colorNode` is `uniform(this.color)` — `this.color` is the
+		// AnalyticLightNode's internal Color that `update()` sets to
+		// `light.color * light.intensity`. We want the runtime to compute
+		// the same product live, so we tag it as `light.colorScaled` and
+		// the hydrator/emit-updater multiply at write time.
+		if ( node.colorNode ) {
+
+			out.set( node.colorNode, { kind: 'light.colorScaled', ...base } );
+
+		}
+		// PointLight / SpotLight expose cutoffDistance + decay as uniforms.
+		if ( node.cutoffDistanceNode ) {
+
+			out.set( node.cutoffDistanceNode, { kind: 'light.distance', property: 'distance', ...base } );
+
+		}
+		if ( node.decayExponentNode ) {
+
+			out.set( node.decayExponentNode, { kind: 'light.decay', property: 'decay', ...base } );
+
+		}
+		// SpotLight only — `coneCos = cos(angle)`, `penumbraCos = cos(angle*(1-penumbra))`.
+		// `update()` writes Math.cos products into these UniformNodes; the runtime
+		// recomputes the same product live so animated angle/penumbra propagate.
+		if ( node.coneCosNode ) {
+
+			out.set( node.coneCosNode, { kind: 'light.coneCos', ...base } );
+
+		}
+		if ( node.penumbraCosNode ) {
+
+			out.set( node.penumbraCosNode, { kind: 'light.penumbraCos', ...base } );
+
+		}
+
+		// Position / target / view-space-position uniforms are NOT owned by
+		// the AnalyticLightNode — they live on a WeakMap keyed by light in
+		// `three/src/nodes/accessors/Lights.js`. Calling the public TSL
+		// helpers re-resolves them from the same WeakMap and returns the
+		// already-built UniformNode without allocating a new one. Wrapped
+		// in try/catch because not every light pulls in every helper at
+		// build-time — calling `lightTargetPosition` for a PointLight (no
+		// `.target`) would break onRenderUpdate at write time.
+		try {
+
+			if ( typeof lightPosition === 'function' ) {
+
+				const u = lightPosition( light );
+				if ( u && u.value ) out.set( u, { kind: 'light.position', ...base } );
+
+			}
+
+		} catch ( _ ) { /* not all lights expose position */ }
+
+		try {
+
+			if ( typeof lightViewPosition === 'function' ) {
+
+				const u = lightViewPosition( light );
+				if ( u && u.value ) out.set( u, { kind: 'light.viewPosition', ...base } );
+
+			}
+
+		} catch ( _ ) { /* not all lights expose viewPosition */ }
+
+		try {
+
+			if ( typeof lightTargetPosition === 'function' && light.target ) {
+
+				const u = lightTargetPosition( light );
+				if ( u && u.value ) out.set( u, { kind: 'light.targetPosition', ...base } );
+
+			}
+
+		} catch ( _ ) { /* PointLight has no target */ }
+
+		lightIndex ++;
+
+	}
+
+	return out;
+
+}
+
+/**
  * Extract a uniform plan from a built `NodeBuilderState`.
  *
  * @param {NodeBuilderState} state
@@ -285,16 +402,35 @@ export function extractUniformPlan( state ) {
 
 	if ( ! state || ! Array.isArray( state.bindings ) ) return [];
 
+	// Build the light-uniform map FIRST — we want light sources to win over
+	// the unnamed `uniform.live` fallback when both apply (a LightNode-owned
+	// UniformNode is technically also reachable via `state.updateNodes` as a
+	// bare UniformNode, but `resolveFromUpdateNode` returns null for it
+	// because we strip the AnalyticLightNode container).
+	const lightUniformSources = collectLightUniformSources( state );
+
 	// Walk updateNodes once, build two maps:
 	//   - uniformNode → source (UBO slots)
 	//   - textureNode → source (SampledTexture / Sampler bindings)
 	const uniformNodeToSource = new Map();
 	const textureNodeToSource = new Map();
 
+	// Seed the UBO map with every light-owned UniformNode found above.
+	for ( const [ uniformNode, source ] of lightUniformSources ) {
+
+		uniformNodeToSource.set( uniformNode, source );
+
+	}
+
 	for ( const node of state.updateNodes || [] ) {
 
 		const entry = resolveFromUpdateNode( node );
 		if ( ! entry || ! entry.uniformNode ) continue;
+
+		// Don't overwrite a pre-seeded light source — bare UniformNode
+		// classification returns `uniform.live` for unnamed uniforms, which
+		// would clobber the precise `light.<prop>` mapping we just built.
+		if ( lightUniformSources.has( entry.uniformNode ) ) continue;
 
 		// MaterialReferenceNode with uniformType 'texture' binds its `node`
 		// to a TextureNode rather than a plain UniformNode. Route it into
