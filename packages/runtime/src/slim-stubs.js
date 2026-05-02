@@ -61,6 +61,29 @@ function chainableSlimStub( name ) {
 
 }
 
+function inertNodeStub() {
+
+	const fn = function inertSlimNodeStub() { return proxy; };
+	Object.defineProperty( fn, 'name', { value: '', writable: true, configurable: true } );
+	const proxy = new Proxy( fn, {
+		get( _target, prop ) {
+
+			if ( prop === Symbol.toPrimitive ) return () => 0;
+			if ( prop === 'toString' ) return () => '[inert slim node]';
+			if ( prop === 'then' ) return undefined;
+			if ( prop === 'isNode' ) return true;
+			if ( prop === 'getUpdateType' ) return () => 'none';
+			if ( prop === 'updateReference' ) return () => proxy;
+			return proxy;
+
+		},
+		apply() { return proxy; },
+		construct() { return proxy; },
+	} );
+	return proxy;
+
+}
+
 /**
  * A Proxy that pretends to be the full TSL namespace. Every property access
  * returns a function that throws with a helpful message naming the accessed
@@ -94,12 +117,44 @@ export class InspectorBase {
 }
 
 /**
- * Post-process `PassNode` stub. A post-process example that references it
- * but doesn't actually construct one will load; construction throws loud.
+ * Post-process `PassNode` stub. The slim runtime cannot author pass graphs,
+ * but examples may still instantiate pass objects before RenderPipeline swaps in
+ * a precompiled auxiliary material. Keep the object inert and hashable.
  */
-export function PassNode() {
+export class PassNode {
 
-	throw new Error( '[tsl-precompile/slim] PassNode() is not available. Use precompileAuxiliary() to capture your post-process pipeline, then load it via `loadAux`.' );
+	static COLOR = 'color';
+	static DEPTH = 'depth';
+
+	constructor( scope = PassNode.COLOR, scene = null, camera = null ) {
+
+		this.isNode = true;
+		this.isPassNode = true;
+		this.scope = scope;
+		this.scene = scene;
+		this.camera = camera;
+		this.renderTarget = {
+			width: 1,
+			height: 1,
+			scissorTest: false,
+			scissor: { set() {} },
+			viewport: { set() {} },
+		};
+		this._previousTextures = {};
+		this._mrt = null;
+		this._cameraNear = { value: 0 };
+		this._cameraFar = { value: 1 };
+
+	}
+
+	setSize( width = 1, height = 1 ) { this.renderTarget.width = width; this.renderTarget.height = height; return this; }
+	toggleTexture() { return this; }
+	getUpdateType() { return 'none'; }
+	updateReference() { return this; }
+	updateBefore() {}
+	setup() { return this; }
+	toVar() { return this; }
+	getCacheKey() { return `slim-pass-node:Object`; }
 
 }
 
@@ -142,9 +197,13 @@ export class Node {
 
 	constructor() {
 
-		throw new Error( '[tsl-precompile/slim] Node (base class) is not available — slim mode cannot author TSL graphs at runtime. Precompile via `.precompile(name)` in dev.' );
+		return inertNodeStub();
 
 	}
+
+	getUpdateType() { return 'none'; }
+	updateReference() { return this; }
+	toVar() { return chainableSlimStub( 'Node.toVar' ); }
 
 }
 
@@ -166,9 +225,13 @@ export class TempNode {
 
 	constructor() {
 
-		throw new Error( '[tsl-precompile/slim] TempNode is not available in slim mode.' );
+		return inertNodeStub();
 
 	}
+
+	getUpdateType() { return 'none'; }
+	updateReference() { return this; }
+	toVar() { return chainableSlimStub( 'TempNode.toVar' ); }
 
 }
 
@@ -176,9 +239,13 @@ export class CubeMapNode {
 
 	constructor() {
 
-		throw new Error( '[tsl-precompile/slim] CubeMapNode is not available in slim mode.' );
+		return inertNodeStub();
 
 	}
+
+	getUpdateType() { return 'none'; }
+	updateReference() { return this; }
+	toVar() { return chainableSlimStub( 'CubeMapNode.toVar' ); }
 
 }
 
@@ -191,6 +258,8 @@ export const RendererUtils = new Proxy( {}, {
 
 		if ( prop === Symbol.toPrimitive || prop === 'toString' ) return () => '[RendererUtils slim-stub]';
 		if ( prop === '__esModule' ) return true;
+		if ( prop === 'resetRendererState' ) return () => ( {} );
+		if ( prop === 'restoreRendererState' ) return () => {};
 		return throwSlim( `RendererUtils.${ String( prop ) }` );
 
 	},
@@ -251,7 +320,25 @@ export class WebGLBackend {
  */
 export class LightsNode {
 
-	constructor() { throw new Error( '[tsl-precompile/slim] LightsNode is not available.' ); }
+	constructor() {
+
+		this.isNode = true;
+		this.isLightsNode = true;
+
+	}
+
+	setLights() { return this; }
+	getHash() { return 'slim-lights-node'; }
+	getCacheKey() { return 'slim-lights-node'; }
+	setup() { return this; }
+	build() { return ''; }
+	updateReference() { return this; }
+
+}
+
+export class RectAreaLightNode {
+
+	static setLTC() {}
 
 }
 

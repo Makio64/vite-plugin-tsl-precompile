@@ -1,9 +1,12 @@
 {
   "name": "@tsl-precompile/runtime",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Runtime helpers for vite-plugin-tsl-precompile: UBO writers, artifact loader, dev-time .precompile marker.",
   "type": "module",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "author": "David Ronai <davronai@gmail.com>",
   "repository": {
     "type": "git",

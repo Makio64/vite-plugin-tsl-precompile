@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { registerArtifact, getArtifact } from '../src/artifact-loader.js';
 import { hydrateNodeBuilderState } from '../src/hydrator.js';
 import { __applyPrecompiled } from '../src/apply-precompiled.js';
+import PrecompiledMaterial from '../src/_vendor-PrecompiledMaterial.js';
 import { PrecompiledComputeNode } from '../src/precompiled-compute-node.js';
 
 test( 'runtime artifact registry round-trips a module', () => {
@@ -30,6 +31,243 @@ test( 'runtime hydrator returns a NodeBuilderState-shaped object', () => {
 
 } );
 
+test( 'runtime hydrator rehydrates JSON node attributes with storage-buffer fallbacks', () => {
+
+	const state = hydrateNodeBuilderState( {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		attributes: [
+			{ name: 'nodeAttribute0', type: 'vec3', source: 'node', count: 4, itemSize: 3, arrayType: 'Float32Array' },
+		],
+		bindings: [],
+		uniformPlan: [],
+	} );
+
+	const nodeAttribute = state.nodeAttributes[ 0 ];
+	assert.equal( nodeAttribute.node.attribute.isStorageBufferAttribute, true );
+	assert.equal( nodeAttribute.node.attribute.itemSize, 3 );
+	assert.equal( nodeAttribute.node.attribute.count, 4 );
+
+} );
+
+test( 'runtime hydrator rehydrates uniform-buffer descriptors and updates UBO bytes', () => {
+
+	const artifact = {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		attributes: [ { name: 'position', type: 'vec3' } ],
+		bindings: [ {
+			name: 'render',
+			bindings: [
+				{ name: 'render', kind: 'uniform-buffer', visibility: 7, byteLength: 80 },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'render',
+			shared: true,
+			byteLength: 80,
+			slots: [
+				{ offset: 0, dtype: 'number', source: { kind: 'frame.time' } },
+				{ offset: 16, dtype: 'mat4', source: { kind: 'camera.projectionMatrix' } },
+			],
+		} ],
+	};
+
+	const state = hydrateNodeBuilderState( artifact );
+	assert.deepEqual( state.nodeAttributes, [ { name: 'position', type: 'vec3' } ] );
+	assert.equal( state.bindings.length, 1 );
+	assert.equal( state.bindings[ 0 ].bindings.length, 1 );
+
+	const uniformBuffer = state.bindings[ 0 ].bindings[ 0 ];
+	assert.equal( uniformBuffer.isUniformBuffer, true );
+	assert.equal( uniformBuffer.groupNode.shared, true );
+
+	state.updateNodes[ 0 ].update( {
+		time: 1.25,
+		camera: {
+			projectionMatrix: { elements: new Array( 16 ).fill( 0 ).map( ( _, i ) => i + 1 ) },
+		},
+	} );
+
+	const view = new DataView( uniformBuffer.buffer.buffer );
+	assert.equal( view.getFloat32( 0, true ), 1.25 );
+	assert.equal( view.getFloat32( 16, true ), 1 );
+	assert.equal( view.getFloat32( 16 + 15 * 4, true ), 16 );
+	assert.equal( uniformBuffer.groupNode.version, 1 );
+
+} );
+
+test( 'runtime hydrator seeds regular uniform buffers from valueSnapshot', () => {
+
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: '',
+		bindings: [ { name: 'object', bindings: [ { name: 'object', kind: 'uniform-buffer', visibility: 7, byteLength: 80 } ] } ],
+		uniformPlan: [ {
+			name: 'object',
+			byteLength: 80,
+			slots: [
+				{ offset: 0, dtype: 'mat4', source: { kind: 'object.worldMatrix', valueSnapshot: { type: 'mat4', data: new Array( 16 ).fill( 0 ).map( ( _, i ) => i + 1 ) } } },
+			],
+		} ],
+	};
+
+	const state = hydrateNodeBuilderState( artifact );
+	const ub = state.bindings[ 0 ].bindings[ 0 ];
+	const view = new DataView( ub.buffer.buffer );
+	assert.equal( view.getFloat32( 0, true ), 1 );
+	assert.equal( view.getFloat32( 15 * 4, true ), 16 );
+
+} );
+
+test( 'runtime hydrator rehydrates sampled texture and sampler descriptors', () => {
+
+	const map = { isTexture: true, addEventListener() {}, removeEventListener() {}, version: 0 };
+	const state = hydrateNodeBuilderState( {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'nodeSampler0', kind: 'sampler', visibility: 2 },
+				{ name: 'nodeTexture0', kind: 'sampled-texture', visibility: 2, textureType: '2d' },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			shared: false,
+			slots: [],
+			textures: [
+				{ name: 'nodeSampler0', source: { kind: 'material.map', property: 'map' } },
+				{ name: 'nodeTexture0', source: { kind: 'material.map', property: 'map' } },
+			],
+		} ],
+	}, { map } );
+
+	const [ sampler, texture ] = state.bindings[ 0 ].bindings;
+	assert.equal( sampler.isSampler, true );
+	assert.equal( texture.isSampledTexture, true );
+	assert.equal( sampler.texture, map );
+	assert.equal( texture.texture, map );
+
+} );
+
+test( 'runtime hydrator rehydrates artifact.texture snapshots', () => {
+
+	const snapshot = { width: 2, height: 1, arrayType: 'Uint8Array', data: [ 255, 0, 0, 255, 0, 255, 0, 255 ] };
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: '',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'nodeSampler0', kind: 'sampler', visibility: 2 },
+				{ name: 'nodeTexture0', kind: 'sampled-texture', visibility: 2, textureType: '2d' },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			slots: [],
+			textures: [
+				{ name: 'nodeSampler0', source: { kind: 'artifact.texture', textureUuid: 'tex-a', snapshot } },
+				{ name: 'nodeTexture0', source: { kind: 'artifact.texture', textureUuid: 'tex-a', snapshot } },
+			],
+		} ],
+	};
+
+	const state = hydrateNodeBuilderState( artifact );
+	const [ sampler, texture ] = state.bindings[ 0 ].bindings;
+	assert.equal( sampler.texture, texture.texture );
+	assert.equal( texture.texture.isDataTexture, true );
+	assert.equal( texture.texture.image.width, 2 );
+	assert.equal( texture.texture.image.data[ 0 ], 255 );
+	assert.equal( texture.texture.image.data[ 4 ], 0 );
+	assert.equal( texture.texture.image.data[ 5 ], 255 );
+
+} );
+
+test( 'runtime hydrator uses live color render-target texture refs for plain texture_2d bindings', () => {
+
+	const renderTargetTexture = {
+		isTexture: true,
+		isRenderTargetTexture: true,
+		uuid: 'rt-tex',
+		renderTarget: { samples: 4 },
+		addEventListener() {},
+		removeEventListener() {},
+		version: 0,
+	};
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: '@group(1) @binding(0) var nodeUniform0 : texture_2d<f32>;\n@group(1) @binding(1) var nodeUniform0_sampler : sampler;',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'nodeUniform0_sampler', kind: 'sampler', visibility: 2 },
+				{ name: 'nodeUniform0', kind: 'sampled-texture', visibility: 2, textureType: '2d' },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			slots: [],
+			textures: [
+				{ name: 'nodeUniform0_sampler', source: { kind: 'artifact.texture', textureUuid: 'rt-tex' } },
+				{ name: 'nodeUniform0', source: { kind: 'artifact.texture', textureUuid: 'rt-tex' } },
+			],
+		} ],
+	};
+	Object.defineProperty( artifact, '_textureRefs', { value: new Map( [ [ 'rt-tex', renderTargetTexture ] ] ) } );
+
+	const state = hydrateNodeBuilderState( artifact );
+	const [ sampler, texture ] = state.bindings[ 0 ].bindings;
+	assert.equal( sampler.texture, renderTargetTexture );
+	assert.equal( texture.texture, renderTargetTexture );
+
+} );
+
+test( 'runtime hydrator uses depth fallback for depth texture bindings', () => {
+
+	const state = hydrateNodeBuilderState( {
+		vertexShader: '',
+		fragmentShader: '@group(1) @binding(0) var shadowTex : texture_depth_2d;\n@group(1) @binding(1) var shadowSampler : sampler_comparison;',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'shadowTex', kind: 'sampled-texture', visibility: 2, textureType: '2d' },
+				{ name: 'shadowSampler', kind: 'sampler', visibility: 2 },
+			],
+		} ],
+		uniformPlan: [ { name: 'object', slots: [], textures: [] } ],
+	} );
+
+	const [ texture, sampler ] = state.bindings[ 0 ].bindings;
+	assert.equal( texture.texture.isDepthTexture, true );
+	assert.equal( sampler.texture.isDepthTexture, true );
+
+} );
+
+test( 'runtime hydrator uses 3D fallback for texture_3d bindings', () => {
+
+	const state = hydrateNodeBuilderState( {
+		vertexShader: '',
+		fragmentShader: '@group(1) @binding(0) var volumeTex : texture_3d<f32>;',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'volumeTex', kind: 'sampled-texture', visibility: 2, textureType: '3d' },
+			],
+		} ],
+		uniformPlan: [ { name: 'object', slots: [], textures: [] } ],
+	} );
+
+	const [ texture ] = state.bindings[ 0 ].bindings;
+	assert.equal( texture.isSampled3DTexture, true );
+	assert.equal( texture.isSampledTexture3D, true );
+	assert.equal( texture.texture.isData3DTexture, true );
+	assert.equal( texture.texture.image.depth, 1 );
+
+} );
+
 test( '__applyPrecompiled wraps a material and preserves common texture slots', () => {
 
 	const map = { uuid: 'map-a' };
@@ -45,6 +283,8 @@ test( '__applyPrecompiled wraps a material and preserves common texture slots', 
 	const wrapped = __applyPrecompiled( source, {
 		__hash: 'sha256:mat',
 		name: 'water',
+		update() {},
+		updateGroup() {},
 		artifact: {
 			__hash: 'sha256:mat',
 			uniformPlan: [],
@@ -59,6 +299,53 @@ test( '__applyPrecompiled wraps a material and preserves common texture slots', 
 	assert.equal( wrapped.map, map );
 	assert.equal( wrapped.normalMap, normalMap );
 	assert.equal( wrapped.normalScale, source.normalScale );
+	assert.equal( wrapped.customProgramCacheKey(), 'tslp:sha256:mat' );
+	assert.equal( typeof wrapped.precompiledArtifact._generatedUpdate, 'function' );
+	assert.equal( typeof wrapped.precompiledArtifact._generatedUpdateGroup, 'function' );
+
+} );
+
+test( 'PrecompiledMaterial derives distinct program keys from shader content', () => {
+
+	const a = new PrecompiledMaterial( { uniformPlan: [], vertexShader: 'v', fragmentShader: 'f-a' } );
+	const b = new PrecompiledMaterial( { uniformPlan: [], vertexShader: 'v', fragmentShader: 'f-b' } );
+	assert.notEqual( a.customProgramCacheKey(), b.customProgramCacheKey() );
+	assert.match( a.customProgramCacheKey(), /^tslp:/ );
+
+} );
+
+test( 'runtime hydrator prefers generated per-group updater when attached', () => {
+
+	const artifact = {
+		vertexShader: '', fragmentShader: '',
+		bindings: [ { name: 'object', bindings: [ { name: 'object', kind: 'uniform-buffer', visibility: 7, byteLength: 16 } ] } ],
+		uniformPlan: [ {
+			name: 'object',
+			shared: false,
+			byteLength: 16,
+			slots: [
+				{ offset: 0, dtype: 'number', source: { kind: 'material.opacity', property: 'opacity', valueSnapshot: { type: 'number', data: 0 } } },
+			],
+		} ],
+	};
+	let calledGroup = null;
+	Object.defineProperty( artifact, '_generatedUpdateGroup', {
+		value( frame, material, view, byteOffset, groupName ) {
+
+			calledGroup = groupName;
+			view.setFloat32( byteOffset, material.opacity, true );
+
+		},
+		enumerable: false,
+	} );
+
+	const state = hydrateNodeBuilderState( artifact, { opacity: 0.625 } );
+	const ub = state.bindings[ 0 ].bindings[ 0 ];
+	state.updateNodes[ state.updateNodes.length - 1 ].update( { time: 0, camera: null } );
+
+	const view = new DataView( ub.buffer.buffer );
+	assert.equal( calledGroup, 'object' );
+	assert.equal( view.getFloat32( 0, true ), 0.625 );
 
 } );
 
@@ -73,5 +360,206 @@ test( 'PrecompiledComputeNode exposes the slim compute fast-path flags', () => {
 	assert.equal( node.precompiledArtifact, artifact );
 	assert.equal( node.count, 32 );
 	assert.equal( node.getUpdateType(), 'none' );
+
+} );
+
+test( 'hydrator: storage-buffer descriptor produces a StorageBuffer binding', () => {
+
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: '',
+		computeShader: 'cs',
+		bindings: [ {
+			name: 'compute',
+			bindings: [
+				{ name: 'particles', kind: 'storage-buffer', visibility: 4, byteLength: 192, access: 'read_write' },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'compute',
+			shared: false,
+			slots: [],
+			textures: [],
+			storageBuffers: [
+				{ name: 'particles', access: 'read_write', visibility: 4, arrayType: 'Float32Array', count: 16, itemSize: 3 },
+			],
+		} ],
+	};
+
+	const state = hydrateNodeBuilderState( artifact );
+	assert.equal( state.bindings.length, 1 );
+	const sb = state.bindings[ 0 ].bindings[ 0 ];
+	assert.equal( sb.isStorageBuffer, true, 'binding must be StorageBuffer' );
+	assert.equal( sb.visibility, 4 );
+
+} );
+
+test( 'hydrator: storage-buffer seeded from _liveArray matches in-process data', () => {
+
+	const liveArray = new Float32Array( [ 1, 2, 3, 4, 5, 6 ] );
+	const liveAttr = { array: liveArray, count: 2, itemSize: 3, isStorageBufferAttribute: true };
+
+	const sbEntry = { name: 'verts', access: 'read_write', visibility: 4, arrayType: 'Float32Array', count: 2, itemSize: 3 };
+	Object.defineProperty( sbEntry, '_liveArray', { value: liveArray, enumerable: false } );
+	Object.defineProperty( sbEntry, '_liveAttribute', { value: liveAttr, enumerable: false } );
+
+	const artifact = {
+		vertexShader: '', fragmentShader: '', computeShader: 'cs',
+		bindings: [ {
+			name: 'g',
+			bindings: [ { name: 'verts', kind: 'storage-buffer', visibility: 4, byteLength: 24, access: 'read_write' } ],
+		} ],
+		uniformPlan: [ {
+			name: 'g', shared: false, slots: [], textures: [],
+			storageBuffers: [ sbEntry ],
+		} ],
+	};
+
+	const state = hydrateNodeBuilderState( artifact );
+	const sb = state.bindings[ 0 ].bindings[ 0 ];
+	assert.equal( sb.isStorageBuffer, true );
+	// _liveAttribute was provided — hydrator should use it directly
+	assert.equal( sb.attribute, liveAttr );
+
+} );
+
+test( 'hydrator: uniform.live reads _liveNode.value when present', () => {
+
+	const liveNode = { value: 42.5 };
+
+	const artifact = {
+		vertexShader: '', fragmentShader: '',
+		bindings: [ { name: 'render', bindings: [ { name: 'render', kind: 'uniform-buffer', visibility: 7, byteLength: 16 } ] } ],
+		uniformPlan: [ {
+			name: 'render',
+			shared: true,
+			byteLength: 16,
+			slots: [
+				{ offset: 0, dtype: 'number', source: { kind: 'uniform.live', valueSnapshot: { type: 'number', data: 0 } } },
+			],
+		} ],
+	};
+
+	// Attach _liveNode to the slot as the hydrator does for in-process flows
+	Object.defineProperty( artifact.uniformPlan[ 0 ].slots[ 0 ], '_liveNode', { value: liveNode, enumerable: false } );
+
+	const state = hydrateNodeBuilderState( artifact );
+	const ub = state.bindings[ 0 ].bindings[ 0 ];
+
+	state.updateNodes[ state.updateNodes.length - 1 ].update( { time: 0, camera: null } );
+
+	const view = new DataView( ub.buffer.buffer );
+	assert.equal( view.getFloat32( 0, true ), 42.5, 'must read live value 42.5 from _liveNode.value' );
+
+} );
+
+test( 'hydrator: uniform.live falls back to snapshot when _liveNode absent', () => {
+
+	const artifact = {
+		vertexShader: '', fragmentShader: '',
+		bindings: [ { name: 'render', bindings: [ { name: 'render', kind: 'uniform-buffer', visibility: 7, byteLength: 16 } ] } ],
+		uniformPlan: [ {
+			name: 'render',
+			shared: true,
+			byteLength: 16,
+			slots: [
+				{ offset: 0, dtype: 'number', source: { kind: 'uniform.live', valueSnapshot: { type: 'number', data: 7.77 } } },
+			],
+		} ],
+	};
+
+	const state = hydrateNodeBuilderState( artifact );
+	const ub = state.bindings[ 0 ].bindings[ 0 ];
+
+	state.updateNodes[ state.updateNodes.length - 1 ].update( { time: 0, camera: null } );
+
+	const view = new DataView( ub.buffer.buffer );
+	assert.ok( Math.abs( view.getFloat32( 0, true ) - 7.77 ) < 0.001, 'must fall back to snapshot 7.77' );
+
+} );
+
+test( 'hydrator: _liveUpdateNodes run before the snapshot updater', () => {
+
+	const liveNode = { value: 0 };
+	let liveUpdateCount = 0;
+
+	// Fake live update node that writes to liveNode.value each frame
+	const liveUpdateNode = {
+		getUpdateType() { return 'object'; },
+		updateReference() { return this; },
+		update( frame ) { liveNode.value = frame.time * 10; liveUpdateCount ++; },
+	};
+
+	const artifact = {
+		vertexShader: '', fragmentShader: '',
+		bindings: [ { name: 'render', bindings: [ { name: 'render', kind: 'uniform-buffer', visibility: 7, byteLength: 16 } ] } ],
+		uniformPlan: [ {
+			name: 'render', shared: true, byteLength: 16,
+			slots: [
+				{ offset: 0, dtype: 'number', source: { kind: 'uniform.live', valueSnapshot: { type: 'number', data: 0 } } },
+			],
+		} ],
+	};
+
+	Object.defineProperty( artifact.uniformPlan[ 0 ].slots[ 0 ], '_liveNode', { value: liveNode, enumerable: false } );
+	Object.defineProperty( artifact, '_liveUpdateNodes', { value: [ liveUpdateNode ], enumerable: false } );
+
+	const state = hydrateNodeBuilderState( artifact );
+	// _liveUpdateNode must be the FIRST updateNode; precompiled updater is last
+	assert.equal( state.updateNodes[ 0 ], liveUpdateNode, 'live update node must come first' );
+
+	// Simulate the renderer calling updateNodes in order
+	for ( const node of state.updateNodes ) node.update( { time: 2.5, camera: null } );
+
+	const ub = state.bindings[ 0 ].bindings[ 0 ];
+	const view = new DataView( ub.buffer.buffer );
+	assert.equal( view.getFloat32( 0, true ), 25, 'must write liveNode.value = time * 10 = 25' );
+	assert.equal( liveUpdateCount, 1 );
+
+} );
+
+test( 'hydrator: _textureRefs used for in-process artifact.texture resolution', () => {
+
+	const tex = { isTexture: true, uuid: 'tex-uuid-a', addEventListener() {}, removeEventListener() {}, version: 0 };
+	const textureRefs = new Map( [ [ 'tex-uuid-a', tex ] ] );
+
+	const artifact = {
+		vertexShader: '', fragmentShader: '',
+		bindings: [ { name: 'obj', bindings: [ { name: 'myTex', kind: 'sampled-texture', visibility: 2, textureType: '2d' } ] } ],
+		uniformPlan: [ {
+			name: 'obj', shared: false, slots: [],
+			textures: [ { name: 'myTex', source: { kind: 'artifact.texture', textureUuid: 'tex-uuid-a' } } ],
+		} ],
+	};
+	Object.defineProperty( artifact, '_textureRefs', { value: textureRefs, enumerable: false } );
+
+	const state = hydrateNodeBuilderState( artifact );
+	const binding = state.bindings[ 0 ].bindings[ 0 ];
+	assert.equal( binding.texture, tex, '_textureRefs UUID lookup must return the in-process texture' );
+
+} );
+
+test( 'hydrator: NodeUniformBuffer seeded from valueSnapshot', () => {
+
+	const snap = [ 1.5, 2.5, 3.5, 4.5 ];
+	const ubEntry = { name: 'postProcessUBO', byteLength: 16, arrayType: 'Float32Array', valueSnapshot: snap, visibility: 3 };
+
+	const artifact = {
+		vertexShader: '', fragmentShader: '',
+		bindings: [ { name: 'postProcessUBO', bindings: [ { name: 'postProcessUBO', kind: 'uniform-buffer', visibility: 3, byteLength: 16 } ] } ],
+		uniformPlan: [ {
+			name: 'postProcessUBO', shared: false, slots: [],
+			textures: [],
+			orderedBindings: [ { type: 'buffer-uniform', ref: ubEntry } ],
+		} ],
+	};
+
+	const state = hydrateNodeBuilderState( artifact );
+	const ub = state.bindings[ 0 ].bindings[ 0 ];
+	const view = new DataView( ub.buffer.buffer );
+	assert.ok( Math.abs( view.getFloat32( 0, true ) - 1.5 ) < 0.001, 'seed[0] = 1.5' );
+	assert.ok( Math.abs( view.getFloat32( 4, true ) - 2.5 ) < 0.001, 'seed[1] = 2.5' );
+	assert.ok( Math.abs( view.getFloat32( 8, true ) - 3.5 ) < 0.001, 'seed[2] = 3.5' );
+	assert.ok( Math.abs( view.getFloat32( 12, true ) - 4.5 ) < 0.001, 'seed[3] = 4.5' );
 
 } );

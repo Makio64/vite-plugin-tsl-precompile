@@ -175,12 +175,58 @@ async function captureMaterialInDev( material, name ) {
 		}
 
 		// Build a minimal synthetic scene that drives this single material.
-		const { Scene, Mesh, BoxGeometry, PerspectiveCamera, REVISION } = threeModule;
+		// Scene-driven capture can attach a source object so custom update nodes
+		// that read `frame.object` fields see the same shape they saw in the app.
+		const { Scene, Mesh, BoxGeometry, PerspectiveCamera, Color, REVISION } = threeModule;
 		const scene = new Scene();
 		const camera = new PerspectiveCamera( 45, 1, 0.1, 100 );
 		camera.position.set( 0, 0, 3 );
 		camera.lookAt( 0, 0, 0 );
-		const mesh = new Mesh( new BoxGeometry( 1, 1, 1 ), material );
+		const sourceObject = material.__tslpPrecompileObject || null;
+
+		// Inherit scene-level state that drives PBR shader binding
+		// generation. Without this, MeshStandard/MeshPhysical materials
+		// extract WITHOUT the envMap (IBL) binding even when the user's
+		// scene has `scene.environment` set — three.js's NodeBuilder reads
+		// these off the active scene at compile time. We copy the scalar
+		// scene-level fields (environment, fog, background); we do NOT
+		// reparent lights, since `Object3D.add()` would detach them from
+		// the user's actual scene and break their real render pass.
+		const sourceScene = findParentScene( sourceObject );
+		if ( sourceScene ) {
+
+			scene.environment = sourceScene.environment || null;
+			scene.environmentIntensity = sourceScene.environmentIntensity != null ? sourceScene.environmentIntensity : 1;
+			scene.environmentRotation = sourceScene.environmentRotation || scene.environmentRotation;
+			scene.background = sourceScene.background || null;
+			scene.backgroundIntensity = sourceScene.backgroundIntensity != null ? sourceScene.backgroundIntensity : 1;
+			scene.backgroundBlurriness = sourceScene.backgroundBlurriness || 0;
+			scene.backgroundRotation = sourceScene.backgroundRotation || scene.backgroundRotation;
+			scene.fog = sourceScene.fog || null;
+			// Node-graph forms of fog/environment/background — TSL fog like
+			// `scene.fogNode = fog(color(0x0000ff), rangeFogFactor(...))`
+			// drives per-fragment color mixing at extraction time, and the
+			// captured WGSL bakes it in. Without this copy, sprites fade
+			// out / blue-shift in capture but render flat in replay.
+			if ( sourceScene.fogNode ) scene.fogNode = sourceScene.fogNode;
+			if ( sourceScene.environmentNode ) scene.environmentNode = sourceScene.environmentNode;
+			if ( sourceScene.backgroundNode ) scene.backgroundNode = sourceScene.backgroundNode;
+
+		}
+
+		const mesh = new Mesh( sourceObject && sourceObject.geometry || new BoxGeometry( 1, 1, 1 ), material );
+		if ( sourceObject ) {
+
+			for ( const key of Object.keys( sourceObject ) ) {
+
+				if ( key === 'material' || key === 'geometry' || key === 'parent' || key === 'children' ) continue;
+				if ( key in mesh && key !== 'color' ) continue;
+				mesh[ key ] = sourceObject[ key ];
+
+			}
+
+		}
+		if ( mesh.color === undefined && Color ) mesh.color = sourceObject && sourceObject.color || material.color || new Color( 1, 1, 1 );
 		scene.add( mesh );
 
 		const artifacts = await extractor( devRenderer, scene, camera );
@@ -300,6 +346,29 @@ function jsonSafeArtifact( artifact ) {
 	// JSON.stringify already drops non-enumerable properties; the round-trip
 	// is enough to guarantee a clean payload.
 	return JSON.parse( JSON.stringify( artifact ) );
+
+}
+
+/**
+ * Walk up an Object3D's parent chain to find the Scene it lives in. Returns
+ * the Scene instance (anything with `.isScene === true`) or null. Used by
+ * the precompile marker so the throwaway extraction scene can inherit the
+ * real scene's environment / lights / fog — without that, PBR materials
+ * extract without IBL bindings even when scene.environment is set.
+ *
+ * @param {Object3D|null} obj
+ * @return {Object|null}
+ */
+function findParentScene( obj ) {
+
+	let cursor = obj;
+	while ( cursor ) {
+
+		if ( cursor.isScene === true ) return cursor;
+		cursor = cursor.parent || null;
+
+	}
+	return null;
 
 }
 

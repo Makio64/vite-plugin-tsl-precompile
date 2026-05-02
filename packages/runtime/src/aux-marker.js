@@ -66,12 +66,13 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 	};
 
 	// Background -------------------------------------------------------------
-	if ( scene && scene.backgroundNode && scene.backgroundNode.isNode ) {
+	const backgroundInput = scene && ( scene.backgroundNode || scene.background );
+	if ( backgroundInput ) {
 
 		const shape = 'background';
 		try {
 
-			const configHash = hashNodeGraphSync( scene.backgroundNode, { shape, ...hashOpts } );
+			const configHash = hashNodeGraphSync( backgroundInput, { shape, ...hashOpts } );
 			const artifact = await captureBackgroundLive( renderer, scene, camera, opts );
 			trackLocal( shape, configHash, artifact );
 			results.push( await post( opts.devEndpoint, {
@@ -150,6 +151,33 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 
 	}
 
+	// Renderer output transform ---------------------------------------------
+	{
+
+		const shape = 'render-output';
+		try {
+
+			const configHash = hashPlainConfigSync( {
+				toneMapping: renderer && renderer.toneMapping,
+				outputColorSpace: renderer && renderer.outputColorSpace,
+			}, { shape, ...hashOpts } );
+			const artifact = await captureRenderOutputLive( renderer, scene, camera, opts );
+			trackLocal( shape, configHash, artifact );
+			results.push( await post( opts.devEndpoint, {
+				materialShape: shape,
+				configHash,
+				artifact,
+				name: `aux-${ shape }-${ configHash.slice( 0, 12 ) }`,
+			}, shape, configHash ) );
+
+		} catch ( err ) {
+
+			results.push( { shape, configHash: null, ok: false, error: err && err.message || String( err ) } );
+
+		}
+
+	}
+
 	return results;
 
 }
@@ -171,6 +199,7 @@ async function captureBackgroundLive( renderer, scene, camera, opts ) {
 	const Ctor = opts.Scene || ( three && three.Scene ) || scene.constructor;
 	const aux = new Ctor();
 	aux.backgroundNode = scene.backgroundNode;
+	aux.background = scene.background;
 
 	const artifacts = await compileTSL( renderer, aux, camera );
 	const mesh = renderer._background && typeof renderer._background.get === 'function' ? renderer._background.get( aux ).backgroundMesh : null;
@@ -210,6 +239,17 @@ async function capturePostProcessingLive( renderer, postProcessing, opts ) {
 	const artifacts = await compileTSL( renderer, scene, camera );
 	const artifact = artifacts.find( ( a ) => a.materialUuid === mat.uuid ) || artifacts[ 0 ];
 	if ( ! artifact ) throw new Error( 'capturePostProcessingLive: no artifacts produced' );
+	return jsonSafe( artifact );
+
+}
+
+async function captureRenderOutputLive( renderer, scene, camera, opts ) {
+
+	const compileTSL = opts.compileTSL || ( await lazyLoadCompileTSL() );
+	const artifacts = await compileTSL( renderer, scene, camera );
+	const artifact = artifacts.find( ( a ) => a.materialShape === 'output-transform' || a.materialShape === 'render-output' );
+	if ( ! artifact ) throw new Error( 'captureRenderOutputLive: no output-transform artifact produced' );
+	artifact.materialShape = 'render-output';
 	return jsonSafe( artifact );
 
 }

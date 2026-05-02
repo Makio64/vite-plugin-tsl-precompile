@@ -33,10 +33,17 @@ export { default as QuadMesh } from 'three/src/renderers/common/QuadMesh.js';
 export { default as PostProcessing } from 'three/src/renderers/common/PostProcessing.js';
 export { default as RenderPipeline } from 'three/src/renderers/common/RenderPipeline.js';
 export { default as PMREMGenerator } from 'three/src/renderers/common/extras/PMREMGenerator.js';
+export { default as CanvasTarget } from 'three/src/renderers/common/CanvasTarget.js';
+export { default as InspectorBase } from 'three/src/renderers/common/InspectorBase.js';
+export { default as CubeRenderTarget } from 'three/src/renderers/common/CubeRenderTarget.js';
 export { default as StorageTexture } from 'three/src/renderers/common/StorageTexture.js';
+export { default as Storage3DTexture } from 'three/src/renderers/common/Storage3DTexture.js';
+export { default as StorageArrayTexture } from 'three/src/renderers/common/StorageArrayTexture.js';
 export { default as StorageBufferAttribute } from 'three/src/renderers/common/StorageBufferAttribute.js';
 export { default as StorageInstancedBufferAttribute } from 'three/src/renderers/common/StorageInstancedBufferAttribute.js';
 export { default as IndirectStorageBufferAttribute } from 'three/src/renderers/common/IndirectStorageBufferAttribute.js';
+export { default as IESSpotLight } from 'three/src/lights/webgpu/IESSpotLight.js';
+export { default as ProjectorLight } from 'three/src/lights/webgpu/ProjectorLight.js';
 export { ClippingGroup } from 'three/src/objects/ClippingGroup.js';
 
 // ---- slim stubs for dropped TSL/inspector exports ----------------------
@@ -45,14 +52,14 @@ export { ClippingGroup } from 'three/src/objects/ClippingGroup.js';
 // from 'three/webgpu'` keeps loading. Any runtime USE throws a clear
 // loud-failure error.
 export {
-	TSL, InspectorBase, PassNode, NodeMaterial,
+	TSL, PassNode, NodeMaterial,
 	Node, NodeUpdateType, TempNode, CubeMapNode, RendererUtils,
 	MeshBasicNodeMaterial, MeshStandardNodeMaterial, MeshPhysicalNodeMaterial,
 	MeshLambertNodeMaterial, MeshPhongNodeMaterial, MeshToonNodeMaterial,
 	MeshNormalNodeMaterial, MeshMatcapNodeMaterial, MeshSSSNodeMaterial,
 	LineBasicNodeMaterial, LineDashedNodeMaterial, Line2NodeMaterial,
 	PointsNodeMaterial, SpriteNodeMaterial, ShadowNodeMaterial,
-	WebGLBackend, LightsNode, LightingModel, ShadowBaseNode, CanvasTarget, NodeUtils,
+	WebGLBackend, LightsNode, LightingModel, ShadowBaseNode, RectAreaLightNode, NodeUtils,
 	R11_EAC_Format, RG11_EAC_Format, R_EAC_Signed_Format, RG_EAC_Signed_Format,
 } from './slim-stubs.js';
 
@@ -70,5 +77,6 @@ export {
 } from './_vendor-PrecompiledArtifactRegistry.js';
 export { __applyPrecompiled } from './apply-precompiled.js';
 export { registerArtifact, getArtifact } from './artifact-loader.js';
-export { hydrateNodeBuilderState } from './hydrator.js';
+export { hydrateNodeBuilderState, registerLiveTexture, clearLiveTextureIndex } from './hydrator.js';
+export { registerAuxArtifact, registerAuxArtifacts, loadAux, hasAux, listAux, attachArtifactTextureRefs } from './aux-loader.js';
 export * from './writers.js';

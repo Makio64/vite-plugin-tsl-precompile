@@ -44,6 +44,12 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 
 	const artifact = artifactModule.artifact || artifactModule;
 	const name = artifactModule.name || artifact.__name;
+	if ( artifactModule.__hash && ! artifact.__hash ) {
+
+		Object.defineProperty( artifact, '__hash', { value: artifactModule.__hash, enumerable: false, configurable: true } );
+
+	}
+	attachGeneratedUpdaters( artifact, artifactModule );
 
 	// Cache by name in the module-scoped registry so subsequent lookups
 	// (e.g. when scene is cloned, or the same name is referenced from
@@ -71,6 +77,24 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 	copyCommonMaterialProperties( material, wrapped );
 
 	return wrapped;
+
+}
+
+function attachGeneratedUpdaters( artifact, artifactModule ) {
+
+	if ( ! artifact || typeof artifact !== 'object' || ! artifactModule ) return;
+
+	if ( typeof artifactModule.update === 'function' ) {
+
+		Object.defineProperty( artifact, '_generatedUpdate', { value: artifactModule.update, enumerable: false, configurable: true } );
+
+	}
+
+	if ( typeof artifactModule.updateGroup === 'function' ) {
+
+		Object.defineProperty( artifact, '_generatedUpdateGroup', { value: artifactModule.updateGroup, enumerable: false, configurable: true } );
+
+	}
 
 }
 

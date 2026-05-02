@@ -74,11 +74,68 @@ class PrecompiledMaterial extends Material {
 		 * @type {Object}
 		 */
 		this.precompiledArtifact = artifact;
+		this._precompiledProgramCacheKey = makeProgramCacheKey( artifact );
 
 		// Seed runtime properties for every material property the plan reads.
 		// The hydrator re-reads these each frame, so user mutation after
 		// construction is honoured. Unknown dtypes are skipped.
 		seedMaterialProperties( this, artifact.defaults );
+
+		// Apply captured render-state flags (transparent, side, blending,
+		// depthWrite, etc.) so three.js's pipeline cache key + bind-group
+		// resolution match what the source material intended. Without
+		// this, transparent sprites render as opaque squares, BackSide
+		// skyboxes get culled, additive particles draw with normal blend,
+		// etc.
+		seedRenderState( this, artifact.renderState );
+
+	}
+
+	customProgramCacheKey() {
+
+		return this._precompiledProgramCacheKey;
+
+	}
+
+}
+
+function makeProgramCacheKey( artifact ) {
+
+	const explicit = artifact.__hash || artifact.hash || artifact.outputCacheKey;
+	if ( explicit !== undefined && explicit !== null ) return `tslp:${ explicit }`;
+
+	return `tslp:${ hashString( [
+		artifact.materialShape || '',
+		artifact.cacheKey || '',
+		artifact.vertexShader || '',
+		artifact.fragmentShader || '',
+		artifact.computeShader || '',
+	].join( '\n---tslp---\n' ) ) }`;
+
+}
+
+function hashString( value ) {
+
+	let hash = 2166136261;
+	for ( let i = 0; i < value.length; i ++ ) {
+
+		hash ^= value.charCodeAt( i );
+		hash = Math.imul( hash, 16777619 );
+
+	}
+	return ( hash >>> 0 ).toString( 36 );
+
+}
+
+function seedRenderState( material, renderState ) {
+
+	if ( ! renderState ) return;
+	for ( const key of Object.keys( renderState ) ) {
+
+		const value = renderState[ key ];
+		if ( value === undefined || value === null ) continue;
+		const t = typeof value;
+		if ( t === 'boolean' || t === 'number' ) material[ key ] = value;
 
 	}
 

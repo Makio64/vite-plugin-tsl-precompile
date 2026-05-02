@@ -71,17 +71,25 @@ export function loadAux( shape, configHash ) {
 
 	const k = key( shape, configHash );
 	const artifact = REGISTRY.get( k );
-	if ( ! artifact ) {
+	if ( artifact ) return artifact;
 
-		const known = Array.from( REGISTRY.keys() ).filter( ( x ) => x.startsWith( shape + ':' ) );
-		throw new Error(
-			`[tsl-precompile/aux] no artifact for ${ JSON.stringify( k ) }. ` +
-			`Known ${ shape } configHashes in this bundle: ${ known.length === 0 ? '(none)' : known.map( ( x ) => x.slice( shape.length + 1 ) ).join( ', ' ) }. ` +
-			`Run dev mode on this scene so precompileAuxiliary() captures this config, then rebuild.`
+	const known = Array.from( REGISTRY.keys() ).filter( ( x ) => x.startsWith( shape + ':' ) );
+	if ( known.length >= 1 ) {
+
+		console.warn(
+			`[tsl-precompile/aux] no exact artifact for ${ JSON.stringify( k ) }; ` +
+			`using ${ JSON.stringify( known[ 0 ] ) } as a shape-compatible fallback. ` +
+			`Recapture auxiliary artifacts if this scene's ${ shape } configuration changed.`
 		);
+		return REGISTRY.get( known[ 0 ] );
 
 	}
-	return artifact;
+
+	throw new Error(
+		`[tsl-precompile/aux] no artifact for ${ JSON.stringify( k ) }. ` +
+		`Known ${ shape } configHashes in this bundle: ${ known.length === 0 ? '(none)' : known.map( ( x ) => x.slice( shape.length + 1 ) ).join( ', ' ) }. ` +
+		`Run dev mode on this scene so precompileAuxiliary() captures this config, then rebuild.`
+	);
 
 }
 
@@ -111,6 +119,33 @@ export function listAux() {
 
 	}
 	return out;
+
+}
+
+export function attachArtifactTextureRefs( artifact, texture ) {
+
+	if ( ! artifact || ! texture || ! texture.isTexture ) return artifact;
+
+	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
+	for ( const group of artifact.uniformPlan || [] ) {
+
+		for ( const entry of group.textures || [] ) {
+
+			const source = entry && entry.source || {};
+			if ( source.kind === 'artifact.texture' && source.textureUuid ) refs.set( source.textureUuid, texture );
+
+		}
+
+	}
+
+	Object.defineProperty( artifact, '_textureRefs', {
+		value: refs,
+		enumerable: false,
+		configurable: true,
+		writable: true,
+	} );
+
+	return artifact;
 
 }
 
