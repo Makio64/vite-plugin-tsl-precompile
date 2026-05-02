@@ -1,10 +1,71 @@
 # Continuation Plan
 
-Last updated: 2026-05-02
+Last updated: 2026-05-03
 
 This file is the working handoff for continuing the current push: make the
 Vite plugin/runtime broadly usable for replacing the runtime three.js TSL
 builder with precompiled artifacts.
+
+## Round 3 — parallel agents (2026-05-03)
+
+Wave 1 (launched in previous conversation): `hydrator-toneMappingExposure` (Agent 1),
+`userdata-uniform` + `sprite-flip-y` (Agent 5), `compute-kernel-replay` harness
+(Agent 4, `run-e2e.mjs`), `bg-node-render-pipeline` (Agent 6, backgroundNode stub).
+
+Wave 2 (launched in this conversation): 12 agents / tasks.
+
+### What landed
+
+| Task | Result | Key files |
+|---|---|---|
+| `lights-ltc-textures` (P2) | LTC BRDF textures captured as half-float; wired in hydrator; PSNR 21→24 dB for `webgpu_lights_rectarealight` | `compileTSL.js`, `hydrator.js` |
+| `storage-texture-3d` (P2) | `Storage3DTexture`/`StorageArrayTexture` resolved by name via prototype name-intercept; fallback to blank typed texture | `hydrator.js` (prototype patches) |
+| `array-camera-per-cell` (P3) | `setDevRenderer` render intercept auto-detects `ArrayCamera`; `captureMaterialInDev` re-uses it so WGSL emits per-cell `cameraViewMatrices` array | `precompile-marker.js` |
+| `compute-birds-capture-throw` (P2) | Missing `case 'renderer.toneMappingExposure'` in `emitSlotWrite` caused capture throw for `webgpu_compute_birds` output-transform material | `emit-updater.js` |
+| `mrt-tsl-stub-leak` (P2) | ~80 TSL function exports added to `slim-stubs.js` as `inertNodeStub()`; `three/tsl → @tsl-precompile/runtime/slim-stubs` Vite alias added in plugin `index.js` + runtime `package.json` | `slim-stubs.js`, `index.js`, `package.json` |
+| `backdrop-empty` (P2) | `precompileAuxiliary` now traverses scene for `material.backdropNode.isNode` and captures each unique backdrop material via `captureBackdropLive()` | `aux-marker.js` |
+| `mrt-pass-aux` (P2) | `PassNode.setMRT()` / `getTexture()` added to slim stub; `captureMRTLive()` helper stamps `artifact.mrt.outputNames`; `attachMRTTextureRefs()` wires live render-target textures | `slim-stubs.js`, `aux-marker.js`, `aux-loader.js` |
+
+### Smoke test growth
+
+| After round | Tests |
+|---|---|
+| Round 1 | 21 |
+| Round 2 | 27 |
+| Round 3 wave 1 | 27 |
+| Round 3 wave 2 | 42 |
+
+### Round-3 commits on main (main HEAD: `2e448e7`)
+
+```
+2e448e7 Merge storage-texture-3d: Storage3DTexture/StorageArrayTexture binding resolution in hydrator
+693bd6a feat(hydrator): Storage3DTexture/StorageArrayTexture binding resolution
+b88e899 fix(plugin): add three/tsl → slim-stubs alias in slim mode; add slim-stubs export
+dd5f461 Merge mrt-tsl-stub-leak + backdrop-empty + mrt-pass-aux: TSL stubs, backdrop capture, MRT setMRT/getTexture
+d736db0 feat(slim): mrt-tsl-stub-leak + backdrop-empty + mrt-pass-aux — three tasks
+18a7b85 Merge compute-birds-capture-throw: add renderer.toneMappingExposure to emit-updater switch
+95321f9 fix(emit-updater): handle renderer.toneMappingExposure kind
+9ecb207 feat(lights-ltc-textures): capture LTC BRDF textures as half-float at precompile time
+ad154ee feat(precompile-marker): detect ArrayCamera at capture time for per-cell WGSL
+56cdb30 Merge bg-node-render-pipeline: backgroundNode stub restores snow/gradient sky
+```
+
+### Open after Round 3
+
+- **`mrt-fragment-locations`** (P2) — Agent on branch `agent/mrt-fragment-locations`;
+  compileTSL warm-up needs `renderer.setMRT(material.mrtNode)` so fragment emits
+  all `@location(N)` outputs. Also `apply-precompiled.js` color-target count.
+- **`compute-kernel-replay`** (P2) — harness fix landed; verify
+  `webgpu_compute_particles` particle blob renders.
+
+### Round-4 recommended actions
+
+1. Merge `agent/mrt-fragment-locations` once done.
+2. Run tier-1 PSNR sweep: `node packages/examples/batch/run-e2e.mjs --limit=30`.
+3. Close `compute-kernel-replay` if sweep shows particles rendering.
+4. Push all merged commits to `origin/main`.
+
+---
 
 ## Round 1 — parallel agents (2026-05-02)
 
