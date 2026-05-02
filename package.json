@@ -20,6 +20,7 @@
     "dev:ocean": "pnpm --filter examples-ocean dev",
     "dev:bloom": "pnpm --filter examples-bloom dev",
     "dev:compute": "pnpm --filter examples-compute dev",
+    "dev:background": "pnpm --filter examples-background dev",
     "dev:site": "pnpm --filter @tsl-precompile/site dev",
     "build:site": "pnpm --filter @tsl-precompile/site build"
   },
