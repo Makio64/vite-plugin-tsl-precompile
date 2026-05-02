@@ -6,6 +6,89 @@ This file is the working handoff for continuing the current push: make the
 Vite plugin/runtime broadly usable for replacing the runtime three.js TSL
 builder with precompiled artifacts.
 
+## Round 1 — parallel agents (2026-05-02)
+
+11 file-disjoint tasks launched in parallel via the `Agent` tool with
+`isolation: "worktree"`. 9 landed fully, 2 partial. See
+[BACKLOG.md](./BACKLOG.md) for the post-merge state and round-2 plan.
+
+### What landed
+
+| Task | Result | Files touched |
+|---|---|---|
+| `lights-direct` (P0) | new `light.<prop>` source kind; per-frame writes for color/position/viewPosition/targetPosition/cutoffDistance/decayExponent/coneCos/penumbraCos | `extractUniformPlan.js`, `emit-updater.js`, `hydrator.js` |
+| `lights-clone-scene` (P1) | `cloneLightsInto(sourceScene, destScene)` — bakes world transforms for nested rigs (e.g. clearcoat's particleLight) | `precompile-marker.js` |
+| `bg-pmrem` (P1) | re-entry guard solved session-7's silent failure (`PMREMGenerator.fromCubemap` recursively triggers our render hook); per-frame eager PMREM with init-gating | `run-e2e.mjs` |
+| `bg-node-hash` (P1) | `tslp-stub:<shape>:fallback` sentinel for TSL stub-proxies; warning dedupe | `aux-loader.js`, `graph-hash.js` |
+| `tone-mapping` (P1) | PARTIAL — `toneMappingExposure` now in render-output config hash; downstream still off (carve-outs `hash-graph-vs-config` + `hydrator-toneMappingExposure`) | `aux-marker.js` |
+| `array-camera` (P2) | DONE with zero edits — existing `patchMissingCameraIndexBinding` was correct, capture was failing because of `lights-direct`'s codegen drift gate | (no edits) |
+| `slim-load-smoke-pixel-gate` (P3) | opt-in `--pixel-gate` over 5 curated examples | `run-slim.mjs` |
+| `subpackage-readmes` (P3) | npm-page-ready READMEs | new files |
+| `migration-md` (P3) | version-bump contract + three-layer staleness gate (anchored to real code) | `MIGRATION.md`, `STATUS.md` |
+| `multiple-rendertargets` (P3→P2) | investigation-only, split into 4 sub-tasks (all in BACKLOG) | `BACKLOG.md` |
+| `psnr-pacing` (P1) | deterministic-rAF shim (synthetic monotonic timestamps via `addInitScript`); modest PSNR gains (≤3 dB on most) | `run-e2e.mjs` |
+
+### Critical meta-finding (from `multiple-rendertargets`)
+
+The harness's `brightFraction` helper screenshots the **whole page**, not
+just the canvas. Empty/transparent canvases let the page background bleed
+through and report `replayBrightFrac=1.00`. **Many prior tier-1 "passes"
+may be false positives.** Tracked as `mrt-bright-frac-misleading` in
+BACKLOG; landing it makes both `slim-load-smoke-pixel-gate` and every
+future tier-1 sweep result trustworthy.
+
+### Visible impact
+
+- `webgpu_clearcoat`: PBR spheres now show direct-light specular hot-spots
+  (was lavender wash from IBL only).
+- `webgpu_compute_water` / `_cloth` / `_particles_fluid`: smooth PMREM-blurred
+  sky background (was sharp marble walls leaking through).
+- `webgpu_camera_array`: 6×6 grid renders (was empty canvas).
+- `webgpu_compute_particles_snow`: shape-fallback firing correctly, but
+  downstream rendering still solid white — surfaced as
+  `bg-node-render-pipeline` carve-out.
+
+### Round-1 commits on main
+
+```
+5181430 Update BACKLOG after round-1 parallel agents merged
+17f5237 Inject deterministic-rAF shim into e2e harness
+8fbe8c0 Add per-package READMEs for npm publish
+7f51063 Detect TSL stub-proxies in aux loadAux fallback
+0e5e611 Add project status and planning notes
+5a128f7 Add how-it-works walkthrough and refresh home page
+0926f45 Add background example and dev:background script
+e115f9f Expand batch e2e harness and refresh capture/replay results
+3b392c1 Expand hydrator with texture binding resolution and live-update support
+8df196f Refresh emit-updater grouping and renderer/object uniform support
+e2279a3 Add rewrite handlers for RenderObject and WebGPU pipeline utils
+```
+
+Tests: runtime smoke 21/21, plugin units 89/89.
+
+### Round 2 launch (recommended)
+
+Three zero-conflict tasks for the next parallel run (full briefs in
+[BACKLOG.md](./BACKLOG.md)):
+
+1. **`inspector-overlay-parity`** (P1) — `run-e2e.mjs` only. Highest
+   leverage: unblocks PSNR measurement for everything else by stubbing
+   the lil-gui inspector overlay equally in capture and replay.
+2. **`hash-graph-vs-config`** (P1) — `three-rewrite.js` only. Switch the
+   render-output rewrite from `hashNodeGraphSync(outputNode)` to
+   `hashPlainConfigSync({toneMapping, toneMappingExposure,
+   outputColorSpace})` so the slim runtime exact-matches the aux registry.
+3. **`lights-extra-types`** (P2) — `extractUniformPlan.js` +
+   `emit-updater.js` + `hydrator.js`. Cover RectAreaLight, IES spotlight,
+   projector light. Single agent owns the lights area for the round.
+
+Optional 4th: `worktree-base-stale` — docs only, never conflicts.
+
+After round 2 merges, round 3 picks up `mrt-bright-frac-misleading`,
+`compute-birds-capture-throw`, `userdata-uniform`, `sprite-flip-y`.
+
+---
+
 ## Latest changes (2026-05-02, seventh session — scene.backgroundBlurriness + new test example)
 
 **Fixed `scene.backgroundBlurriness` ramp + identity classification for scene-state TSL helpers.**
