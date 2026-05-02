@@ -78,5 +78,17 @@ export {
 export { __applyPrecompiled } from './apply-precompiled.js';
 export { registerArtifact, getArtifact } from './artifact-loader.js';
 export { hydrateNodeBuilderState, registerLiveTexture, clearLiveTextureIndex } from './hydrator.js';
-export { registerAuxArtifact, registerAuxArtifacts, loadAux, hasAux, listAux, attachArtifactTextureRefs } from './aux-loader.js';
+export { registerAuxArtifact, registerAuxArtifacts, loadAux, hasAux, listAux, attachArtifactTextureRefs, wireViewportTextureRefs, setupViewportTextureClasses } from './aux-loader.js';
 export * from './writers.js';
+
+// ---- viewport texture class registration --------------------------------
+// Wire DepthTexture + FramebufferTexture into aux-loader at bundle
+// initialization time so wireViewportTextureRefs() can create proper
+// fallback instances for viewportSharedTexture() bindings (mapping === 300).
+// The classes come from Three.Core.js which is already in this bundle;
+// rollup deduplicates — no additional bundle cost.
+// Called here rather than in aux-loader.js itself to avoid any import of
+// 'three' from aux-loader (which would create a second module instance).
+import { DepthTexture, FramebufferTexture } from 'three/src/Three.Core.js';
+import { setupViewportTextureClasses as _setupVTC } from './aux-loader.js';
+_setupVTC( { DepthTexture, FramebufferTexture } );

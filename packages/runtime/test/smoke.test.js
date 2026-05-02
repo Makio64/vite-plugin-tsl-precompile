@@ -6,6 +6,13 @@ import { hydrateNodeBuilderState } from '../src/hydrator.js';
 import { __applyPrecompiled } from '../src/apply-precompiled.js';
 import PrecompiledMaterial from '../src/_vendor-PrecompiledMaterial.js';
 import { PrecompiledComputeNode } from '../src/precompiled-compute-node.js';
+import {
+	wireViewportTextureRefs,
+	setupViewportTextureClasses,
+	registerAuxArtifact,
+	loadAux,
+	__resetAuxRegistryForTests,
+} from '../src/aux-loader.js';
 
 test( 'runtime artifact registry round-trips a module', () => {
 
@@ -536,6 +543,115 @@ test( 'hydrator: _textureRefs used for in-process artifact.texture resolution', 
 	const state = hydrateNodeBuilderState( artifact );
 	const binding = state.bindings[ 0 ].bindings[ 0 ];
 	assert.equal( binding.texture, tex, '_textureRefs UUID lookup must return the in-process texture' );
+
+} );
+
+test( 'wireViewportTextureRefs: silently no-ops before setupViewportTextureClasses', () => {
+
+	// Without calling setupViewportTextureClasses first, wireViewportTextureRefs
+	// must return the artifact unchanged (no crash, no _textureRefs added).
+	const artifact = {
+		vertexShader: '@group(1) @binding(0) var nodeUniform20 : texture_depth_2d;',
+		fragmentShader: '',
+		uniformPlan: [ {
+			name: 'object',
+			slots: [],
+			textures: [
+				{ name: 'nodeUniform20', source: { kind: 'artifact.texture', textureUuid: 'vp-a', mapping: 300 } },
+			],
+		} ],
+	};
+
+	const result = wireViewportTextureRefs( artifact );
+	assert.equal( result, artifact, 'should return same artifact object' );
+	assert.ok( ! ( artifact._textureRefs instanceof Map ), '_textureRefs should not be set before setupViewportTextureClasses' );
+
+} );
+
+test( 'wireViewportTextureRefs: wires DepthTexture for texture_depth_2d bindings after setup', () => {
+
+	// Minimal stub constructors so the test doesn't need three.js.
+	function DepthTextureStub( w, h ) { this.w = w; this.h = h; this.isDepthTexture = true; this.needsUpdate = false; }
+	function FramebufferTextureStub( w, h ) { this.w = w; this.h = h; this.isFramebufferTexture = true; this.needsUpdate = false; }
+
+	setupViewportTextureClasses( { DepthTexture: DepthTextureStub, FramebufferTexture: FramebufferTextureStub } );
+
+	const uuid = 'vp-depth-a';
+	const artifact = {
+		vertexShader: `@group(1) @binding(0) var nodeUniform20 : texture_depth_2d;`,
+		fragmentShader: '',
+		uniformPlan: [ {
+			name: 'object',
+			slots: [],
+			textures: [
+				{ name: 'nodeUniform20', source: { kind: 'artifact.texture', textureUuid: uuid, mapping: 300 } },
+			],
+		} ],
+	};
+
+	wireViewportTextureRefs( artifact );
+	assert.ok( artifact._textureRefs instanceof Map, '_textureRefs must be a Map' );
+	const tex = artifact._textureRefs.get( uuid );
+	assert.ok( tex, 'must have a fallback texture for the UUID' );
+	assert.ok( tex.isDepthTexture, 'depth binding must produce a DepthTexture fallback' );
+	assert.ok( ! tex.isFramebufferTexture, 'depth fallback must NOT have isFramebufferTexture' );
+
+} );
+
+test( 'wireViewportTextureRefs: wires FramebufferTexture for texture_2d bindings', () => {
+
+	function DepthTextureStub( w, h ) { this.w = w; this.h = h; this.isDepthTexture = true; this.needsUpdate = false; }
+	function FramebufferTextureStub( w, h ) { this.w = w; this.h = h; this.isFramebufferTexture = true; this.needsUpdate = false; }
+	setupViewportTextureClasses( { DepthTexture: DepthTextureStub, FramebufferTexture: FramebufferTextureStub } );
+
+	const uuid = 'vp-color-b';
+	const artifact = {
+		vertexShader: `@group(1) @binding(0) var viewportTex : texture_2d<f32>;`,
+		fragmentShader: '',
+		uniformPlan: [ {
+			name: 'object',
+			slots: [],
+			textures: [
+				{ name: 'viewportTex', source: { kind: 'artifact.texture', textureUuid: uuid, mapping: 300 } },
+			],
+		} ],
+	};
+
+	wireViewportTextureRefs( artifact );
+	const tex = artifact._textureRefs && artifact._textureRefs.get( uuid );
+	assert.ok( tex, 'must have a fallback texture' );
+	assert.ok( tex.isFramebufferTexture, 'color viewport binding must produce a FramebufferTexture' );
+	assert.ok( ! tex.isDepthTexture, 'FramebufferTexture must not be a depth texture' );
+
+} );
+
+test( 'registerAuxArtifact: automatically wires viewport texture fallbacks on registration', () => {
+
+	__resetAuxRegistryForTests();
+
+	function DepthTextureStub( w, h ) { this.w = w; this.h = h; this.isDepthTexture = true; this.needsUpdate = false; }
+	function FramebufferTextureStub( w, h ) { this.w = w; this.h = h; this.isFramebufferTexture = true; this.needsUpdate = false; }
+	setupViewportTextureClasses( { DepthTexture: DepthTextureStub, FramebufferTexture: FramebufferTextureStub } );
+
+	const uuid = 'vp-reg-c';
+	const artifact = {
+		vertexShader: `@group(1) @binding(0) var nodeUniform20 : texture_depth_2d;`,
+		fragmentShader: '',
+		uniformPlan: [ {
+			name: 'object',
+			slots: [],
+			textures: [
+				{ name: 'nodeUniform20', source: { kind: 'artifact.texture', textureUuid: uuid, mapping: 300 } },
+			],
+		} ],
+	};
+
+	registerAuxArtifact( 'background', 'hash-bg-1', artifact );
+	const stored = loadAux( 'background', 'hash-bg-1' );
+
+	assert.ok( stored._textureRefs instanceof Map, 'registered artifact must have _textureRefs' );
+	const tex = stored._textureRefs.get( uuid );
+	assert.ok( tex && tex.isDepthTexture, 'depth viewport binding must be pre-wired as DepthTexture on registration' );
 
 } );
 

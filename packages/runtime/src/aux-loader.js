@@ -16,6 +16,25 @@
  *     flow for the missing config. This is the loud-failure gate — a silent
  *     fallback to the node builder would defeat the whole slim bundle.
  *
+ * Viewport texture wiring (backdrop / viewportSharedTexture):
+ *   Backdrop materials (MeshStandardNodeMaterial with backdropNode) sample the
+ *   framebuffer via `viewportSharedTexture()`, which is captured as a
+ *   `FramebufferTexture` binding (source.mapping === 300 in the uniformPlan).
+ *   These UUIDs are dead on slim replay (captured at dev time, new instances on
+ *   every reload). `wireViewportTextureRefs(artifact)` scans the uniformPlan for
+ *   mapping=300 entries and pre-populates `artifact._textureRefs` with
+ *   appropriate fallback textures:
+ *     - `texture_depth_2d` bindings → plain `DepthTexture(1,1)` (NOT
+ *       `isFramebufferTexture`, which would cause the WebGPU backend to
+ *       silently override the texture format with the canvas color format
+ *       — bgra8unorm — making the bind group fail depth-texture validation).
+ *     - `texture_2d<f32>` bindings → `FramebufferTexture(1,1)` (backend
+ *       assigns canvas bgra8unorm format, which is compatible with float
+ *       sample type in the pipeline BGL).
+ *   This prevents the "None of the supported sample types … match Depth"
+ *   WebGPU validation error that otherwise invalidates the entire frame's
+ *   command encoder and produces a fully black canvas.
+ *
  * @module AuxLoader
  */
 
@@ -43,6 +62,11 @@ export function registerAuxArtifact( shape, configHash, artifact ) {
 		throw new TypeError( 'registerAuxArtifact: configHash must be a non-empty string' );
 
 	}
+	// Pre-wire viewport/framebuffer texture fallbacks on registration so
+	// the artifact is ready for the hydrator before the first render frame.
+	// wireViewportTextureRefs is idempotent and silently no-ops until
+	// setupViewportTextureClasses() has been called.
+	wireViewportTextureRefs( artifact );
 	REGISTRY.set( key( shape, configHash ), artifact );
 
 }
@@ -173,6 +197,142 @@ export function listAux() {
 
 	}
 	return out;
+
+}
+
+/**
+ * Injected three.js texture constructors + constants. Set by
+ * `setupViewportTextureClasses()` before the first `wireViewportTextureRefs`
+ * call. Kept as a separate indirection so `aux-loader.js` does NOT import
+ * directly from `'three'` — an import of `'three'` resolves to the pre-built
+ * `three/build/three.module.js` (per the package.json `exports` field) rather
+ * than to the same source files that `slim-entry.js` uses
+ * (`three/src/Three.Core.js`). That causes rollup to inline a duplicate copy
+ * of the three.js bundle alongside the source-file tree, adding ~26 KB and
+ * (critically) causing the aux-loader REGISTRY Map to be renamed in a way
+ * that breaks the slim replay's `registerAuxArtifacts` / `loadAux` pairing.
+ *
+ * The PrecompiledMaterial constructor — which imports from `'three'` only via
+ * `Material` which is already in the bundle — calls
+ * `setupViewportTextureClasses(...)` on module load.
+ */
+let _DepthTextureCtor = null;
+let _FramebufferTextureCtor = null;
+const _DepthFormat = 1026; // three.js DepthFormat constant (stable across versions)
+const _UnsignedIntType = 1014; // three.js UnsignedIntType constant (stable across versions)
+
+/**
+ * Register the three.js texture constructors needed by `wireViewportTextureRefs`.
+ * Call this once from a module that already imports from `three` correctly
+ * (e.g. `_vendor-PrecompiledMaterial.js`).
+ *
+ * @param {{ DepthTexture: Function, FramebufferTexture: Function }} classes
+ */
+export function setupViewportTextureClasses( classes ) {
+
+	if ( classes && typeof classes.DepthTexture === 'function' ) _DepthTextureCtor = classes.DepthTexture;
+	if ( classes && typeof classes.FramebufferTexture === 'function' ) _FramebufferTextureCtor = classes.FramebufferTexture;
+
+}
+
+/**
+ * Pre-populate `artifact._textureRefs` with fallback textures for every
+ * `viewportSharedTexture` binding in the artifact's uniformPlan.
+ *
+ * `viewportSharedTexture()` bindings are identified by `source.mapping === 300`
+ * (three.js `FramebufferTextureMapping`). Their captured UUIDs are dead on replay
+ * (fresh Texture instances every page load), so without pre-wiring the hydrator
+ * falls through to the global fallback textures. The global depth fallback
+ * (`hydrator.fallbackDepthTexture`) has `isFramebufferTexture = true` which
+ * causes the WebGPU backend to assign the canvas colour format (bgra8unorm) at
+ * GPU-texture-init time — making `texture_depth_2d` bind groups invalid and
+ * invalidating the entire frame's command encoder (black canvas, no errors).
+ *
+ * Fix:
+ *   - `texture_depth_2d` bindings: supply a plain `DepthTexture(1,1)` without
+ *     `isFramebufferTexture`, so its `DepthFormat` is preserved by the backend.
+ *   - `texture_2d<f32>` bindings: supply a `FramebufferTexture(1,1)` — the
+ *     backend assigns bgra8unorm which is compatible with `sampleType: float`.
+ *
+ * Requires `setupViewportTextureClasses(...)` to have been called first with
+ * the three.js texture constructors. Silently no-ops if the classes haven't
+ * been registered yet (safe to call before setup; just won't wire anything).
+ *
+ * Idempotent: calling multiple times on the same artifact is harmless.
+ *
+ * @param {Object} artifact - A precompiled artifact (has `.uniformPlan` and
+ *   `.fragmentShader`/`.vertexShader`).
+ * @return {Object} The artifact (for chaining).
+ */
+export function wireViewportTextureRefs( artifact ) {
+
+	if ( ! artifact || ! Array.isArray( artifact.uniformPlan ) ) return artifact;
+	if ( ! _DepthTextureCtor || ! _FramebufferTextureCtor ) return artifact;
+
+	const wgsl = [
+		artifact.vertexShader || '',
+		artifact.fragmentShader || '',
+		artifact.computeShader || '',
+	].join( '\n' );
+
+	const refs = artifact._textureRefs instanceof Map
+		? new Map( artifact._textureRefs )
+		: new Map();
+
+	let changed = false;
+
+	for ( const group of artifact.uniformPlan ) {
+
+		for ( const entry of group.textures || [] ) {
+
+			const source = entry && entry.source || {};
+			if ( source.kind !== 'artifact.texture' || source.mapping !== 300 ) continue;
+			const uuid = source.textureUuid;
+			if ( ! uuid || refs.has( uuid ) ) continue;
+
+			// Determine WGSL type for this binding.
+			const bindingName = entry.name || '';
+			const escaped = bindingName.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
+			const isDepth = new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth`, 'm' ).test( wgsl );
+
+			let fallback;
+			if ( isDepth ) {
+
+				// Plain DepthTexture — NOT isFramebufferTexture to avoid the
+				// backend overriding the format with the canvas colour format.
+				fallback = new _DepthTextureCtor( 1, 1 );
+				fallback.format = _DepthFormat;
+				fallback.type = _UnsignedIntType;
+				// Do NOT set isFramebufferTexture here.
+
+			} else {
+
+				// Color viewport texture (texture_2d<f32> or texture_2d).
+				// FramebufferTexture: backend assigns bgra8unorm (canvas format)
+				// which satisfies `sampleType: float` in the pipeline BGL.
+				fallback = new _FramebufferTextureCtor( 1, 1 );
+
+			}
+			fallback.needsUpdate = true;
+			refs.set( uuid, fallback );
+			changed = true;
+
+		}
+
+	}
+
+	if ( changed ) {
+
+		Object.defineProperty( artifact, '_textureRefs', {
+			value: refs,
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		} );
+
+	}
+
+	return artifact;
 
 }
 
