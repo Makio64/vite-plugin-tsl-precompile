@@ -367,6 +367,41 @@ const __seenMaterials = new WeakMap();
 const __hasBackgroundAux = Array.isArray( __data.aux ) && __data.aux.some( ( entry ) => entry && entry.shape === 'background' );
 Slim.registerAuxArtifacts( Array.isArray( __data.aux ) ? __data.aux : [] );
 
+// PMREMGenerator drives nested renderer.compile / renderer.render calls when
+// it builds the prefiltered cubemap. Those nested calls re-enter this
+// wrapper's render(); without a guard, __prepareSceneForReplay would try
+// to swap PMREM's internal tmp-mesh material against our captured artifact
+// table and throw "no captured artifact for...". The guard keeps the
+// pre-render hook a no-op while a PMREM build is in flight.
+let __pmremRunning = 0;
+
+// Detect at boot whether any registered background-aux artifact references a
+// PMREM-prefiltered (CubeUVReflectionMapping) source. The capture-time
+// extractor stamps source.textureName === 'PMREM.cubeUv' and/or
+// source.mapping === 306 (CubeUVReflectionMapping) on every
+// artifact.texture binding that came from backgroundBlurriness > 0.
+// When this is true, the live cubemap on scene.background must be run
+// through PMREMGenerator before being wired into the artifact's
+// _textureRefs - wiring the raw cube produces a sharper / wrong sky
+// because the WGSL declares the binding as texture_2d.
+const __backgroundNeedsPMREM = ( function () {
+	const auxList = Array.isArray( __data.aux ) ? __data.aux : [];
+	for ( const entry of auxList ) {
+		if ( ! entry || entry.shape !== 'background' || ! entry.artifact ) continue;
+		const groups = Array.isArray( entry.artifact.uniformPlan ) ? entry.artifact.uniformPlan : [];
+		for ( const group of groups ) {
+			const textures = Array.isArray( group.textures ) ? group.textures : [];
+			for ( const t of textures ) {
+				const src = t && t.source || {};
+				if ( src.kind !== 'artifact.texture' ) continue;
+				if ( src.textureName === 'PMREM.cubeUv' ) return true;
+				if ( src.mapping === 306 ) return true; // CubeUVReflectionMapping
+			}
+		}
+	}
+	return false;
+} )();
+
 // Track every Texture loaded via *Loader.load so the hydrator can relink
 // captured artifact.texture-kind bindings (whose captured textureUuid is
 // dead on reload) by imageSrc / textureName. Production code keeps the
@@ -538,12 +573,25 @@ ${ materialClasses }
 // prefiltered texture. Wiring the raw HDR cubemap to that binding
 // gives the wrong format/orientation. We run PMREMGenerator on first
 // use (the same cache used by __wireEnvironmentPMREM) and use that.
-function __wireBackgroundTextures( scene ) {
+function __wireBackgroundTextures( scene, renderer ) {
 	if ( ! scene || ! scene.background || ! scene.background.isTexture ) return;
 	const auxList = Array.isArray( __data.aux ) ? __data.aux : [];
+	// Default: wire the raw cubemap. Falls back here when PMREM is not
+	// required, the renderer's backend isn't initialized yet, or PMREM
+	// generation throws. Wiring the raw cube keeps the sky visible (just
+	// sharper / wrongly oriented) instead of going BLACK on first frame.
+	let texToWire = scene.background;
+	if ( __backgroundNeedsPMREM
+		&& scene.background.isCubeTexture
+		&& renderer
+		&& typeof renderer.hasInitialized === 'function'
+		&& renderer.hasInitialized() ) {
+		const pmrem = __getPMREMFor( renderer, scene.background );
+		if ( pmrem && pmrem.isTexture ) texToWire = pmrem;
+	}
 	for ( const entry of auxList ) {
 		if ( entry && entry.shape === 'background' && entry.artifact ) {
-			Slim.attachArtifactTextureRefs( entry.artifact, scene.background );
+			Slim.attachArtifactTextureRefs( entry.artifact, texToWire );
 		}
 	}
 }
@@ -567,15 +615,26 @@ function __getPMREMFor( renderer, sourceTex ) {
 	if ( ! renderer || ! sourceTex ) return null;
 	if ( __pmremCache.has( sourceTex ) ) return __pmremCache.get( sourceTex );
 	if ( ! Slim.PMREMGenerator ) return null;
+	// PMREMGenerator.fromCubemap silently falls back to async ("called
+	// before backend is initialized") if the renderer isn't ready yet.
+	// Calling it pre-init returns a black target whose GPU resource
+	// hasn't been populated by the time downstream bind groups record
+	// it - that was the regression in session 7. Skip until the backend
+	// reports ready; the caller falls back to raw cube on the first
+	// frame, then PMREM kicks in once init completes.
+	if ( typeof renderer.hasInitialized === 'function' && ! renderer.hasInitialized() ) return null;
 	let pmrem;
+	__pmremRunning ++;
 	try {
 		const gen = new Slim.PMREMGenerator( renderer );
 		const target = sourceTex.isCubeTexture ? gen.fromCubemap( sourceTex ) : gen.fromEquirectangular( sourceTex );
 		pmrem = target && target.texture || target || null;
 		gen.dispose && gen.dispose();
 	} catch ( _ ) {
+		__pmremRunning --;
 		return null;
 	}
+	__pmremRunning --;
 	if ( pmrem && pmrem.isTexture ) __pmremCache.set( sourceTex, pmrem );
 	return pmrem || null;
 }
@@ -625,28 +684,44 @@ function __prepareSceneForReplay( scene, renderer ) {
 		if ( scene.background && ! scene.background.isColor ) scene.background = null;
 	}
 	__indexLiveTextures( scene );
-	__wireBackgroundTextures( scene );
+	__wireBackgroundTextures( scene, renderer );
 	__replaceSceneMaterials( scene );
 }
 
 export class WebGPURenderer extends Slim.WebGPURenderer {
 	compile( scene, camera, ...rest ) {
+		// While PMREMGenerator is driving its own internal compile passes,
+		// bypass the harness's scene-prep hooks (the tmp PMREM mesh isn't
+		// in the captured artifact table and __replaceSceneMaterials would
+		// throw "no captured artifact for ..." if we let it run).
+		if ( __pmremRunning > 0 ) return typeof super.compile === 'function' ? super.compile( scene, camera, ...rest ) : undefined;
 		__prepareSceneForReplay( scene, this );
 		const r = typeof super.compile === 'function' ? super.compile( scene, camera, ...rest ) : undefined;
 		__wireEnvironmentPMREM( this, scene );
 		return r;
 	}
 	compileAsync( scene, camera, ...rest ) {
+		if ( __pmremRunning > 0 ) return typeof super.compileAsync === 'function' ? super.compileAsync( scene, camera, ...rest ) : Promise.resolve();
 		__prepareSceneForReplay( scene, this );
 		const p = typeof super.compileAsync === 'function' ? super.compileAsync( scene, camera, ...rest ) : Promise.resolve();
 		Promise.resolve( p ).then( () => __wireEnvironmentPMREM( this, scene ) ).catch( () => {} );
 		return p;
 	}
 	render( scene, camera ) {
+		// Re-entry guard: PMREMGenerator.fromCubemap nests renderer.render
+		// calls on its internal flat-camera mesh. Skip our scene-prep so
+		// __replaceSceneMaterials doesn't try to swap the tmp PMREM mesh
+		// material against our captured-artifact table.
+		if ( __pmremRunning > 0 ) return super.render( scene, camera );
+		// First frame: backend is initialized by setAnimationLoop's
+		// awaited init() before the first rAF tick fires. So
+		// __prepareSceneForReplay can synchronously generate PMREM
+		// (via __wireBackgroundTextures -> __getPMREMFor) BEFORE
+		// super.render builds the background-aux PrecompiledMaterial's
+		// _bindings. The SampledTexture inside _bindings is locked at
+		// material-construction time; running PMREM after super.render
+		// would be too late for the first frame.
 		__prepareSceneForReplay( scene, this );
-		// Wire PMREM AFTER super.render so the prefiltered envMap is ready
-		// for the next frame's bind groups. The first frame paints with
-		// the cube fallback; subsequent frames pick up the real PMREM.
 		const r = super.render( scene, camera );
 		__wireEnvironmentPMREM( this, scene );
 		return r;
