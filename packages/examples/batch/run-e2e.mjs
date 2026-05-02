@@ -708,15 +708,30 @@ function __indexLiveTextures( scene ) {
 }
 
 function __prepareSceneForReplay( scene, renderer ) {
-	// Drop backgroundNode (TSL graph) and Texture-typed backgrounds.
-	// The slim bundle's internal Background rendering calls ng("background", ...)
-	// which reads from an unreachable private registry (rg) that has no exported
-	// setter — it is always empty at runtime. We suppress non-Color backgrounds
-	// unconditionally to avoid that loadAux throw. Color backgrounds are left
-	// intact: they render via the renderer's clear-color path and bypass loadAux.
+	// When a background-aux artifact is registered the rewritten Background.js
+	// inside the slim bundle calls loadAux('background', hashNodeGraphSync(backgroundNode))
+	// to build a PrecompiledMaterial for the sky quad.  That path is only
+	// reached when the backgroundNode has .isNode === true (or a Texture/Color
+	// falls through the legacy branches).  We therefore:
+	//   • If __hasBackgroundAux: replace the live TSL graph with a stub proxy
+	//     so Background.js enters its isNode branch.  hashNodeGraphSync detects
+	//     the stub-proxy shape and returns the sentinel hash; loadAux's shape-
+	//     fallback then returns the single registered background artifact.
+	//   • If no background aux: null out backgroundNode so Background.js falls
+	//     through to the renderer's clear-color path (old behaviour).
+	// Color backgrounds are left intact in both cases — they use the clear-
+	// color path and bypass loadAux entirely.
 	if ( scene ) {
-		scene.backgroundNode = null;
-		if ( scene.background && ! scene.background.isColor ) scene.background = null;
+		if ( __hasBackgroundAux ) {
+			// Replace with a stub so Background.js enters the isNode branch and
+			// calls loadAux, which will shape-fallback to the captured artifact.
+			scene.backgroundNode = __nodeStub();
+			// Don't null scene.background here; it won't be reached because
+			// backgroundNode takes priority in getBackgroundNode().
+		} else {
+			scene.backgroundNode = null;
+			if ( scene.background && ! scene.background.isColor ) scene.background = null;
+		}
 	}
 	__indexLiveTextures( scene );
 	__wireBackgroundTextures( scene, renderer );
