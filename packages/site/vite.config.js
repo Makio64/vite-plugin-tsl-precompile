@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { resolve } from 'node:path';
 
 // NOTE: the plugin is not registered here. The site's only job is to *explain*
 // vite-plugin-tsl-precompile — it has no .precompile() calls in its own source,
@@ -19,5 +20,11 @@ export default defineConfig( {
 		// three/webgpu is ~635 KB minified on its own chunk and is already
 		// dynamically imported from shader-bg.js — nothing to code-split further.
 		chunkSizeWarningLimit: 1000,
+		rollupOptions: {
+			input: {
+				main: resolve( __dirname, 'index.html' ),
+				howItWorks: resolve( __dirname, 'how-it-works.html' ),
+			},
+		},
 	},
 } );
