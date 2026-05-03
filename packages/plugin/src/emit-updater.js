@@ -602,6 +602,40 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 
 		}
 
+		// LightShadow uniforms — `ShadowNode.setupShadow()` builds anonymous
+		// `reference('bias' | 'normalBias' | 'radius' | 'intensity' |
+		// 'blurSamples' | 'mapSize', …, light.shadow)` calls. Without these
+		// per-frame writes the slim runtime would freeze each shadow tweakable
+		// at extraction-time — animated `light.shadow.bias` ramps never propagate.
+		// The extractor seeds `lightIndex` so we walk the same scene cache used
+		// for `light.colorScaled` / `light.position` etc.
+		case 'light.shadowBias':
+		case 'light.shadowNormalBias':
+		case 'light.shadowRadius':
+		case 'light.shadowIntensity':
+		case 'light.shadowBlurSamples': {
+
+			rendererHelpers.add( 'lightLookup' );
+			usedWriters.add( 'writeF32' );
+			const idxShadowF = src.lightIndex | 0;
+			const propShadowF = src.property || kind.replace( 'light.shadow', '' ).replace( /^./, ( c ) => c.toLowerCase() );
+			// Default values mirror three.js's LightShadow constructor:
+			//   bias=0, normalBias=0, radius=1, intensity=1, blurSamples=8.
+			let defaultLit = '0';
+			if ( kind === 'light.shadowRadius' || kind === 'light.shadowIntensity' ) defaultLit = '1';
+			else if ( kind === 'light.shadowBlurSamples' ) defaultLit = '8';
+			return `{ const _l = _tslpFindLight(frame.scene, ${ idxShadowF }); if (_l && _l.shadow) writeF32(view, ${ off }, Number.isFinite(_l.shadow.${ propShadowF }) ? _l.shadow.${ propShadowF } : ${ defaultLit }); }`;
+
+		}
+		case 'light.shadowMapSize': {
+
+			rendererHelpers.add( 'lightLookup' );
+			usedWriters.add( 'writeVec2' );
+			const idxShadowV = src.lightIndex | 0;
+			return `{ const _l = _tslpFindLight(frame.scene, ${ idxShadowV }); if (_l && _l.shadow && _l.shadow.mapSize) writeVec2(view, ${ off }, _l.shadow.mapSize); }`;
+
+		}
+
 		// Static snapshot baked at extraction time.
 		case 'uniform.constant':
 		case 'constant': {
@@ -755,13 +789,20 @@ function emitLive( slot, off, usedWriters, constants, unsupportedKinds, byteOffs
 
 	}
 
-	// Path 2: extractor-produced, snapshot-only fallback
+	// Path 2: extractor-produced, snapshot-only fallback. The extractor
+	// could not statically resolve the `onRenderUpdate` closure body (no
+	// LightNode / ShadowNode / SceneProperties / MaterialReferenceNode
+	// match in `extractUniformPlan.classifyByIdentity` or
+	// `collectShadowUniformSources`). The slot freezes to whatever the
+	// closure wrote at extract time — animated values WILL diverge from
+	// capture. Surface this clearly so users know to lift the value into
+	// a property the plugin can mirror (material / scene / light / shadow).
 	if ( src.valueSnapshot ) {
 
 		unsupportedKinds.push( {
 			kind: 'uniform.live',
 			severity: 'blocked',
-			reason: `uniform.live "${ src.name || '<unnamed>' }" has no property binding; using frozen snapshot. Animation via onRenderUpdate / LightNode.update() will not propagate. (Phase 5.5 live-node registry.)`,
+			reason: `uniform.live "${ src.name || '<unnamed>' }" has no property binding (statically-unresolvable onRenderUpdate / onObjectUpdate closure). Using frozen extract-time snapshot — animation will NOT propagate. Lift the driving value onto material / scene / light / light.shadow so the extractor can mirror it.`,
 			byteOffset,
 		} );
 		return emitConstant(
@@ -785,7 +826,7 @@ function emitLive( slot, off, usedWriters, constants, unsupportedKinds, byteOffs
 	unsupportedKinds.push( {
 		kind: 'uniform.live',
 		severity: 'blocked',
-		reason: `uniform.live "${ src.name || '<unnamed>' }" has no property and no snapshot; freezing to zero. Live updates via onRenderUpdate / userData will not propagate.`,
+		reason: `uniform.live "${ src.name || '<unnamed>' }" has no property and no snapshot (unresolvable onRenderUpdate closure). Freezing to zero — animation will NOT propagate.`,
 		byteOffset,
 	} );
 	// Emit a no-op (the buffer was already zero-initialised; nothing to write).

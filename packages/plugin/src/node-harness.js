@@ -76,7 +76,18 @@ export async function extractMaterial( factory, opts = {} ) {
 	} );
 	await renderer.init();
 
-	const { material, name, objects = [], camera: userCamera } = await factory( { webgpu, core, tsl } );
+	const { material, name, objects = [], camera: userCamera, configureRenderer } = await factory( { webgpu, core, tsl } );
+
+	// Optional hook so fixtures can flip renderer.shadowMap.enabled = true,
+	// configure tonemapping, etc. before compileTSL runs. Without this hook
+	// shadow-receiving materials never trigger ShadowNode.setupShadow() (it
+	// no-ops when renderer.shadowMap.enabled === false), so the extractor
+	// can't see the shadow uniform references.
+	if ( typeof configureRenderer === 'function' ) {
+
+		configureRenderer( renderer );
+
+	}
 
 	const scene = new core.Scene();
 	// Minimal renderable to drive the material through the extractor: unless

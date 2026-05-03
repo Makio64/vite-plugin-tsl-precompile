@@ -107,6 +107,14 @@ function resolveFromUpdateNode( node ) {
 
 	}
 
+	// LightNode.intensity is exposed via three/tsl `lightIntensity` (some
+	// future versions). The intensity is also driven by AnalyticLightNode's
+	// `colorScaled` (this.color = light.color * light.intensity), so the
+	// `light.colorScaled` kind already covers the most common case. The
+	// per-light shadow `bias` / `normalBias` / `radius` / `intensity` /
+	// `blurSamples` references are wired up separately via
+	// `collectShadowUniformSources` (called from `extractUniformPlan`).
+
 	// Object3DNode / ModelNode — the `scope` selects which object3d metric
 	// is written into the embedded UniformNode each frame.
 	if ( type === 'Object3DNode' || type === 'ModelNode' ) {
@@ -426,6 +434,94 @@ function collectLightUniformSources( state ) {
 }
 
 /**
+ * Walk `state.updateNodes` for `ReferenceNode` instances whose `reference`
+ * is a `LightShadow` belonging to one of the scene's `AnalyticLightNode`s.
+ * Map each one to a `light.shadow<Prop>` source descriptor tagged with the
+ * traversal-order `lightIndex` so the runtime can locate the live light at
+ * render time and read the shadow property live (e.g. `light.shadow.bias`).
+ *
+ * Without this, `ShadowNode.setupShadow()` builds anonymous
+ * `reference('bias', 'float', shadow)` calls which fall through to the
+ * unnamed `uniform.live` path and freeze at extraction-time snapshots —
+ * so animated `shadow.bias`, `shadow.normalBias`, `shadow.radius`,
+ * `shadow.intensity`, `shadow.blurSamples`, `shadow.mapSize` never propagate.
+ *
+ * @param {Object} state - A built NodeBuilderState.
+ * @return {Map<Object, Object>} UniformNode → shadow source descriptor.
+ */
+function collectShadowUniformSources( state ) {
+
+	const out = new Map();
+	if ( ! state || ! Array.isArray( state.updateNodes ) ) return out;
+
+	// First pass: build a map from `LightShadow` instance → { lightIndex, lightUuid }
+	// using the same AnalyticLightNode walk order that `collectLightUniformSources`
+	// uses, so the indices align with the existing `light.<prop>` plan.
+	const shadowToBase = new Map();
+	let lightIndex = 0;
+	for ( const node of state.updateNodes ) {
+
+		if ( ! node || node.isAnalyticLightNode !== true ) continue;
+		const light = node.light;
+		if ( light && light.shadow ) {
+
+			shadowToBase.set( light.shadow, {
+				lightIndex,
+				lightUuid: typeof light.uuid === 'string' ? light.uuid : null,
+			} );
+
+		}
+		lightIndex ++;
+
+	}
+
+	if ( shadowToBase.size === 0 ) return out;
+
+	// Map of LightShadow scalar/vector properties to (kind, uniformType)
+	// pairs. These mirror the `reference()` calls inside
+	// `ShadowNode.setupShadow()` and `ShadowNode.setupShadowCoord()`.
+	// Property names match `LightShadow` field names verbatim.
+	const SHADOW_PROP_KINDS = {
+		bias: { kind: 'light.shadowBias', uniformType: 'float' },
+		normalBias: { kind: 'light.shadowNormalBias', uniformType: 'float' },
+		radius: { kind: 'light.shadowRadius', uniformType: 'float' },
+		intensity: { kind: 'light.shadowIntensity', uniformType: 'float' },
+		blurSamples: { kind: 'light.shadowBlurSamples', uniformType: 'float' },
+		mapSize: { kind: 'light.shadowMapSize', uniformType: 'vec2' },
+	};
+
+	// Second pass: any ReferenceNode whose `reference` matches a known
+	// LightShadow gets routed to the corresponding `light.shadow<prop>` kind.
+	for ( const node of state.updateNodes ) {
+
+		if ( ! node ) continue;
+		const type = node.constructor ? node.constructor.type : null;
+		if ( type !== 'ReferenceNode' ) continue;
+
+		const target = node.reference;
+		if ( ! target ) continue;
+
+		const base = shadowToBase.get( target );
+		if ( ! base ) continue;
+
+		const meta = SHADOW_PROP_KINDS[ node.property ];
+		if ( ! meta ) continue;
+		if ( ! node.node ) continue;
+
+		out.set( node.node, {
+			kind: meta.kind,
+			property: node.property,
+			uniformType: node.uniformType || meta.uniformType,
+			...base,
+		} );
+
+	}
+
+	return out;
+
+}
+
+/**
  * Extract a uniform plan from a built `NodeBuilderState`.
  *
  * @param {NodeBuilderState} state
@@ -444,6 +540,7 @@ export function extractUniformPlan( state ) {
 	// bare UniformNode, but `resolveFromUpdateNode` returns null for it
 	// because we strip the AnalyticLightNode container).
 	const lightUniformSources = collectLightUniformSources( state );
+	const shadowUniformSources = collectShadowUniformSources( state );
 
 	// Walk updateNodes once, build two maps:
 	//   - uniformNode → source (UBO slots)
@@ -458,15 +555,33 @@ export function extractUniformPlan( state ) {
 
 	}
 
+	// Seed shadow-driven UniformNodes (bias / normalBias / radius / intensity
+	// / blurSamples / mapSize). These sit BEHIND `lightUniformSources` so a
+	// genuine light-owned uniform always wins, but they MUST be applied
+	// before the `resolveFromUpdateNode` walk so the bare `ReferenceNode`
+	// classification (which would otherwise bail out and leave the slot as
+	// `uniform.live`) doesn't run for these nodes.
+	for ( const [ uniformNode, source ] of shadowUniformSources ) {
+
+		if ( ! uniformNodeToSource.has( uniformNode ) ) {
+
+			uniformNodeToSource.set( uniformNode, source );
+
+		}
+
+	}
+
 	for ( const node of state.updateNodes || [] ) {
 
 		const entry = resolveFromUpdateNode( node );
 		if ( ! entry || ! entry.uniformNode ) continue;
 
-		// Don't overwrite a pre-seeded light source — bare UniformNode
-		// classification returns `uniform.live` for unnamed uniforms, which
-		// would clobber the precise `light.<prop>` mapping we just built.
+		// Don't overwrite a pre-seeded light or shadow source — bare
+		// UniformNode classification returns `uniform.live` for unnamed
+		// uniforms, which would clobber the precise `light.<prop>` /
+		// `light.shadow<Prop>` mapping we just built.
 		if ( lightUniformSources.has( entry.uniformNode ) ) continue;
+		if ( shadowUniformSources.has( entry.uniformNode ) ) continue;
 
 		// MaterialReferenceNode with uniformType 'texture' binds its `node`
 		// to a TextureNode rather than a plain UniformNode. Route it into

@@ -2,7 +2,13 @@ node_modules/
 .pnpm-store/
 .DS_Store
 dist/
-coverage/
+# Top-level coverage-reporter output (lcov, html, etc.). Pattern intentionally
+# uses a leading slash so it does NOT swallow nested fixture dirs like
+# `packages/plugin/test/coverage/` which contain real source.
+/coverage/
+# Scratch directory used by light-shadow-live.test.js when materialising
+# emit-updater modules onto disk for execution.
+packages/plugin/test/.scratch-shadow-live/
 *.log
 
 # Per-project artifact caches (examples produce these when running the plugin)
