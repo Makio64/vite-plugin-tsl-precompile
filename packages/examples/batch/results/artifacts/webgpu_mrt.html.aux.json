@@ -1,5 +1,577 @@
 [
   {
+    "shape": "post-process",
+    "configHash": "4f0fcae04980078a4b8015cee446ec0c378cf7f102779621d0e8fed4cf37bc91",
+    "artifact": {
+      "version": 3,
+      "cacheKey": 9185941839875452,
+      "materialShape": "node-material",
+      "vertexShader": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : vec2<f32>,\n\tnodeUniform5 : f32,\n\tnodeUniform8 : mat4x4<f32>\n};\n@binding( 1 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar9 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying4 = uv;\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform8 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar9 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar9;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
+      "fragmentShader": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n@binding( 2 ) @group( 1 ) var nodeUniform2 : texture_2d<f32>;\n@binding( 3 ) @group( 1 ) var nodeUniform3 : texture_2d<f32>;\n@binding( 4 ) @group( 1 ) var nodeUniform4 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform1 : vec2<f32>,\n\tnodeUniform5 : f32,\n\tnodeUniform8 : mat4x4<f32>\n};\n@binding( 1 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> nodeVar1 : vec2<u32>;\nvar<private> nodeVar2 : vec4<f32>;\nvar<private> nodeVar3 : vec2<u32>;\nvar<private> nodeVar4 : vec4<f32>;\nvar<private> nodeVar5 : vec2<u32>;\nvar<private> nodeVar6 : vec4<f32>;\nvar<private> nodeVar7 : vec2<u32>;\nvar<private> Output : vec4<f32>;\nvar<private> nodeVar8 : vec4<f32>;\n\n// codes\nfn tsl_clampWrapping_float( coord: f32 ) -> f32 { return clamp( coord, 0.0, 1.0 ); }\nfn tsl_coord_clampS_clamp_2dT( coord : vec2f ) -> vec2f {\n\n\treturn vec2f(\n\t\ttsl_clampWrapping_float( coord.x ),\n\t\ttsl_clampWrapping_float( coord.y )\n\t);\n\n}\n\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) fragCoord : vec4<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar1 = textureDimensions( nodeUniform0, u32( 0 ) );\n\tnodeVar0 = textureLoad( nodeUniform0, vec2<u32>( clamp( floor( tsl_coord_clampS_clamp_2dT( nodeVarying4 ) * vec2<f32>( nodeVar1 ) ), vec2<f32>( 0 ), vec2<f32>( nodeVar1 - vec2<u32>( 1, 1 ) ) ) ), u32( 0 ) );\n\tnodeVar3 = textureDimensions( nodeUniform2, u32( 0 ) );\n\tnodeVar2 = textureLoad( nodeUniform2, vec2<u32>( clamp( floor( tsl_coord_clampS_clamp_2dT( nodeVarying4 ) * vec2<f32>( nodeVar3 ) ), vec2<f32>( 0 ), vec2<f32>( nodeVar3 - vec2<u32>( 1, 1 ) ) ) ), u32( 0 ) );\n\tnodeVar5 = textureDimensions( nodeUniform3, u32( 0 ) );\n\tnodeVar4 = textureLoad( nodeUniform3, vec2<u32>( clamp( floor( tsl_coord_clampS_clamp_2dT( nodeVarying4 ) * vec2<f32>( nodeVar5 ) ), vec2<f32>( 0 ), vec2<f32>( nodeVar5 - vec2<u32>( 1, 1 ) ) ) ), u32( 0 ) );\n\tnodeVar7 = textureDimensions( nodeUniform4, u32( 0 ) );\n\tnodeVar6 = textureLoad( nodeUniform4, vec2<u32>( clamp( floor( tsl_coord_clampS_clamp_2dT( nodeVarying4 ) * vec2<f32>( nodeVar7 ) ), vec2<f32>( 0 ), vec2<f32>( nodeVar7 - vec2<u32>( 1, 1 ) ) ) ), u32( 0 ) );\n\tDiffuseColor = mix( mix( mix( mix( nodeVar0, nodeVar0, step( 0.2, ( fragCoord.xy / object.nodeUniform1 ).x ) ), nodeVar2, step( 0.4, ( fragCoord.xy / object.nodeUniform1 ).x ) ), nodeVar4, step( 0.6, ( fragCoord.xy / object.nodeUniform1 ).x ) ), nodeVar6, step( 0.8, ( fragCoord.xy / object.nodeUniform1 ).x ) );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform5 );\n\tDiffuseColor.w = 1.0;\n\tnodeVar8 = max( vec4<f32>( DiffuseColor.xyz, DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tOutput = nodeVar8;\n\n\t// result\n\n\toutput.color = nodeVar8;\n\n\treturn output;\n\n}\n",
+      "computeShader": "",
+      "attributes": [
+        {
+          "name": "uv",
+          "type": "vec2",
+          "source": "geometry"
+        },
+        {
+          "name": "position",
+          "type": "vec3",
+          "source": "geometry"
+        }
+      ],
+      "bindings": [
+        {
+          "name": "render",
+          "bindings": [
+            {
+              "name": "render",
+              "kind": "uniform-buffer",
+              "visibility": 7,
+              "textureType": null,
+              "byteLength": 128,
+              "access": null
+            }
+          ]
+        },
+        {
+          "name": "object",
+          "bindings": [
+            {
+              "name": "nodeUniform0",
+              "kind": "sampled-texture",
+              "visibility": 2,
+              "textureType": "2d",
+              "byteLength": null,
+              "access": "readOnly"
+            },
+            {
+              "name": "object",
+              "kind": "uniform-buffer",
+              "visibility": 7,
+              "textureType": null,
+              "byteLength": 80,
+              "access": null
+            },
+            {
+              "name": "nodeUniform2",
+              "kind": "sampled-texture",
+              "visibility": 2,
+              "textureType": "2d",
+              "byteLength": null,
+              "access": "readOnly"
+            },
+            {
+              "name": "nodeUniform3",
+              "kind": "sampled-texture",
+              "visibility": 2,
+              "textureType": "2d",
+              "byteLength": null,
+              "access": "readOnly"
+            },
+            {
+              "name": "nodeUniform4",
+              "kind": "sampled-texture",
+              "visibility": 2,
+              "textureType": "2d",
+              "byteLength": null,
+              "access": "readOnly"
+            }
+          ]
+        }
+      ],
+      "uniformPlan": [
+        {
+          "name": "render",
+          "shared": true,
+          "visibility": 7,
+          "byteLength": 128,
+          "slots": [
+            {
+              "name": "cameraProjectionMatrix",
+              "offset": 0,
+              "size": 64,
+              "dtype": "mat4",
+              "source": {
+                "kind": "camera.projectionMatrix",
+                "valueSnapshot": {
+                  "type": "mat4",
+                  "data": [
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    -1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1
+                  ]
+                }
+              }
+            },
+            {
+              "name": "cameraViewMatrix",
+              "offset": 64,
+              "size": 64,
+              "dtype": "mat4",
+              "source": {
+                "kind": "camera.viewMatrix",
+                "valueSnapshot": {
+                  "type": "mat4",
+                  "data": [
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1
+                  ]
+                }
+              }
+            }
+          ],
+          "textures": [],
+          "storageBuffers": [],
+          "orderedBindings": [
+            {
+              "type": "ubo",
+              "name": "render",
+              "byteLength": 128,
+              "visibility": 7,
+              "slots": [
+                {
+                  "name": "cameraProjectionMatrix",
+                  "offset": 0,
+                  "size": 64,
+                  "dtype": "mat4",
+                  "source": {
+                    "kind": "camera.projectionMatrix",
+                    "valueSnapshot": {
+                      "type": "mat4",
+                      "data": [
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "cameraViewMatrix",
+                  "offset": 64,
+                  "size": 64,
+                  "dtype": "mat4",
+                  "source": {
+                    "kind": "camera.viewMatrix",
+                    "valueSnapshot": {
+                      "type": "mat4",
+                      "data": [
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "object",
+          "shared": false,
+          "visibility": 2,
+          "byteLength": 80,
+          "slots": [
+            {
+              "name": "nodeUniform1",
+              "offset": 0,
+              "size": 8,
+              "dtype": "vec2",
+              "source": {
+                "kind": "uniform.live",
+                "valueSnapshot": {
+                  "type": "vec2",
+                  "data": [
+                    640,
+                    480
+                  ]
+                }
+              }
+            },
+            {
+              "name": "nodeUniform5",
+              "offset": 8,
+              "size": 4,
+              "dtype": "number",
+              "source": {
+                "kind": "material.opacity",
+                "property": "opacity",
+                "uniformType": "float",
+                "valueSnapshot": {
+                  "type": "number",
+                  "data": 1
+                }
+              }
+            },
+            {
+              "name": "nodeUniform8",
+              "offset": 16,
+              "size": 64,
+              "dtype": "mat4",
+              "source": {
+                "kind": "object.worldMatrix",
+                "valueSnapshot": {
+                  "type": "mat4",
+                  "data": [
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1
+                  ]
+                }
+              }
+            }
+          ],
+          "textures": [
+            {
+              "bindingKind": "sampled-texture",
+              "name": "nodeUniform0",
+              "textureType": "2d",
+              "access": "readOnly",
+              "visibility": 2,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "34e42d64-0fa8-4de4-aedc-3696c1db8939",
+                "textureName": "output",
+                "mapping": 300,
+                "flipY": false
+              }
+            },
+            {
+              "bindingKind": "sampled-texture",
+              "name": "nodeUniform2",
+              "textureType": "2d",
+              "access": "readOnly",
+              "visibility": 2,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "7cca2020-b709-4cb4-b6c1-12cca9b370fd",
+                "textureName": "normal",
+                "mapping": 300,
+                "flipY": false
+              }
+            },
+            {
+              "bindingKind": "sampled-texture",
+              "name": "nodeUniform3",
+              "textureType": "2d",
+              "access": "readOnly",
+              "visibility": 2,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "0c124e26-070c-4c0c-86bf-2ebd79faa632",
+                "textureName": "emissive",
+                "mapping": 300,
+                "flipY": false
+              }
+            },
+            {
+              "bindingKind": "sampled-texture",
+              "name": "nodeUniform4",
+              "textureType": "2d",
+              "access": "readOnly",
+              "visibility": 2,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "c479f866-5fa0-4e5b-be58-33e391885ad9",
+                "textureName": "diffuse",
+                "mapping": 300,
+                "flipY": false
+              }
+            }
+          ],
+          "storageBuffers": [],
+          "orderedBindings": [
+            {
+              "type": "sampled-texture",
+              "ref": {
+                "bindingKind": "sampled-texture",
+                "name": "nodeUniform0",
+                "textureType": "2d",
+                "access": "readOnly",
+                "visibility": 2,
+                "source": {
+                  "kind": "artifact.texture",
+                  "textureUuid": "34e42d64-0fa8-4de4-aedc-3696c1db8939",
+                  "textureName": "output",
+                  "mapping": 300,
+                  "flipY": false
+                }
+              }
+            },
+            {
+              "type": "unknown",
+              "name": "nodeUniform0",
+              "flags": [
+                "isSampler",
+                "isSampledTexture"
+              ],
+              "visibility": 2
+            },
+            {
+              "type": "ubo",
+              "name": "object",
+              "byteLength": 80,
+              "visibility": 7,
+              "slots": [
+                {
+                  "name": "nodeUniform1",
+                  "offset": 0,
+                  "size": 8,
+                  "dtype": "vec2",
+                  "source": {
+                    "kind": "uniform.live",
+                    "valueSnapshot": {
+                      "type": "vec2",
+                      "data": [
+                        640,
+                        480
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "nodeUniform5",
+                  "offset": 8,
+                  "size": 4,
+                  "dtype": "number",
+                  "source": {
+                    "kind": "material.opacity",
+                    "property": "opacity",
+                    "uniformType": "float",
+                    "valueSnapshot": {
+                      "type": "number",
+                      "data": 1
+                    }
+                  }
+                },
+                {
+                  "name": "nodeUniform8",
+                  "offset": 16,
+                  "size": 64,
+                  "dtype": "mat4",
+                  "source": {
+                    "kind": "object.worldMatrix",
+                    "valueSnapshot": {
+                      "type": "mat4",
+                      "data": [
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "sampled-texture",
+              "ref": {
+                "bindingKind": "sampled-texture",
+                "name": "nodeUniform2",
+                "textureType": "2d",
+                "access": "readOnly",
+                "visibility": 2,
+                "source": {
+                  "kind": "artifact.texture",
+                  "textureUuid": "7cca2020-b709-4cb4-b6c1-12cca9b370fd",
+                  "textureName": "normal",
+                  "mapping": 300,
+                  "flipY": false
+                }
+              }
+            },
+            {
+              "type": "unknown",
+              "name": "nodeUniform2",
+              "flags": [
+                "isSampler",
+                "isSampledTexture"
+              ],
+              "visibility": 2
+            },
+            {
+              "type": "sampled-texture",
+              "ref": {
+                "bindingKind": "sampled-texture",
+                "name": "nodeUniform3",
+                "textureType": "2d",
+                "access": "readOnly",
+                "visibility": 2,
+                "source": {
+                  "kind": "artifact.texture",
+                  "textureUuid": "0c124e26-070c-4c0c-86bf-2ebd79faa632",
+                  "textureName": "emissive",
+                  "mapping": 300,
+                  "flipY": false
+                }
+              }
+            },
+            {
+              "type": "unknown",
+              "name": "nodeUniform3",
+              "flags": [
+                "isSampler",
+                "isSampledTexture"
+              ],
+              "visibility": 2
+            },
+            {
+              "type": "sampled-texture",
+              "ref": {
+                "bindingKind": "sampled-texture",
+                "name": "nodeUniform4",
+                "textureType": "2d",
+                "access": "readOnly",
+                "visibility": 2,
+                "source": {
+                  "kind": "artifact.texture",
+                  "textureUuid": "c479f866-5fa0-4e5b-be58-33e391885ad9",
+                  "textureName": "diffuse",
+                  "mapping": 300,
+                  "flipY": false
+                }
+              }
+            },
+            {
+              "type": "unknown",
+              "name": "nodeUniform4",
+              "flags": [
+                "isSampler",
+                "isSampledTexture"
+              ],
+              "visibility": 2
+            }
+          ]
+        }
+      ],
+      "defaults": {
+        "opacity": 1
+      },
+      "renderState": {
+        "transparent": false,
+        "opacity": 1,
+        "alphaTest": 0,
+        "alphaToCoverage": false,
+        "side": 0,
+        "depthTest": true,
+        "depthWrite": true,
+        "depthFunc": 3,
+        "blending": 1,
+        "blendSrc": 204,
+        "blendDst": 205,
+        "blendEquation": 100,
+        "colorWrite": true,
+        "premultipliedAlpha": false,
+        "dithering": false,
+        "toneMapped": true,
+        "vertexColors": false,
+        "fog": true,
+        "lights": false,
+        "allowOverride": true,
+        "forceSinglePass": false,
+        "polygonOffset": false,
+        "polygonOffsetFactor": 0,
+        "polygonOffsetUnits": 0,
+        "stencilWrite": false,
+        "stencilWriteMask": 255,
+        "stencilFunc": 519,
+        "stencilRef": 0,
+        "stencilFuncMask": 255,
+        "stencilFail": 7680,
+        "stencilZFail": 7680,
+        "stencilZPass": 7680
+      },
+      "meta": {
+        "updateNodes": 7,
+        "updateBeforeNodes": 1,
+        "updateAfterNodes": 0
+      },
+      "materialUuid": "4436649c-df32-4267-bec8-109b113fec66"
+    }
+  },
+  {
     "shape": "render-output",
     "configHash": "03944659592153cd65d18f02961db44be60e8485d3c17a072a0d4c235cf4cf53",
     "artifact": {
@@ -529,578 +1101,6 @@
         "updateBeforeNodes": 1,
         "updateAfterNodes": 0
       }
-    }
-  },
-  {
-    "shape": "post-process",
-    "configHash": "4f0fcae04980078a4b8015cee446ec0c378cf7f102779621d0e8fed4cf37bc91",
-    "artifact": {
-      "version": 3,
-      "cacheKey": 9185941839875452,
-      "materialShape": "node-material",
-      "vertexShader": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : vec2<f32>,\n\tnodeUniform5 : f32,\n\tnodeUniform8 : mat4x4<f32>\n};\n@binding( 1 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar9 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying4 = uv;\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform8 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar9 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar9;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
-      "fragmentShader": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n@binding( 2 ) @group( 1 ) var nodeUniform2 : texture_2d<f32>;\n@binding( 3 ) @group( 1 ) var nodeUniform3 : texture_2d<f32>;\n@binding( 4 ) @group( 1 ) var nodeUniform4 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform1 : vec2<f32>,\n\tnodeUniform5 : f32,\n\tnodeUniform8 : mat4x4<f32>\n};\n@binding( 1 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> nodeVar1 : vec2<u32>;\nvar<private> nodeVar2 : vec4<f32>;\nvar<private> nodeVar3 : vec2<u32>;\nvar<private> nodeVar4 : vec4<f32>;\nvar<private> nodeVar5 : vec2<u32>;\nvar<private> nodeVar6 : vec4<f32>;\nvar<private> nodeVar7 : vec2<u32>;\nvar<private> Output : vec4<f32>;\nvar<private> nodeVar8 : vec4<f32>;\n\n// codes\nfn tsl_clampWrapping_float( coord: f32 ) -> f32 { return clamp( coord, 0.0, 1.0 ); }\nfn tsl_coord_clampS_clamp_2dT( coord : vec2f ) -> vec2f {\n\n\treturn vec2f(\n\t\ttsl_clampWrapping_float( coord.x ),\n\t\ttsl_clampWrapping_float( coord.y )\n\t);\n\n}\n\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) fragCoord : vec4<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar1 = textureDimensions( nodeUniform0, u32( 0 ) );\n\tnodeVar0 = textureLoad( nodeUniform0, vec2<u32>( clamp( floor( tsl_coord_clampS_clamp_2dT( nodeVarying4 ) * vec2<f32>( nodeVar1 ) ), vec2<f32>( 0 ), vec2<f32>( nodeVar1 - vec2<u32>( 1, 1 ) ) ) ), u32( 0 ) );\n\tnodeVar3 = textureDimensions( nodeUniform2, u32( 0 ) );\n\tnodeVar2 = textureLoad( nodeUniform2, vec2<u32>( clamp( floor( tsl_coord_clampS_clamp_2dT( nodeVarying4 ) * vec2<f32>( nodeVar3 ) ), vec2<f32>( 0 ), vec2<f32>( nodeVar3 - vec2<u32>( 1, 1 ) ) ) ), u32( 0 ) );\n\tnodeVar5 = textureDimensions( nodeUniform3, u32( 0 ) );\n\tnodeVar4 = textureLoad( nodeUniform3, vec2<u32>( clamp( floor( tsl_coord_clampS_clamp_2dT( nodeVarying4 ) * vec2<f32>( nodeVar5 ) ), vec2<f32>( 0 ), vec2<f32>( nodeVar5 - vec2<u32>( 1, 1 ) ) ) ), u32( 0 ) );\n\tnodeVar7 = textureDimensions( nodeUniform4, u32( 0 ) );\n\tnodeVar6 = textureLoad( nodeUniform4, vec2<u32>( clamp( floor( tsl_coord_clampS_clamp_2dT( nodeVarying4 ) * vec2<f32>( nodeVar7 ) ), vec2<f32>( 0 ), vec2<f32>( nodeVar7 - vec2<u32>( 1, 1 ) ) ) ), u32( 0 ) );\n\tDiffuseColor = mix( mix( mix( mix( nodeVar0, nodeVar0, step( 0.2, ( fragCoord.xy / object.nodeUniform1 ).x ) ), nodeVar2, step( 0.4, ( fragCoord.xy / object.nodeUniform1 ).x ) ), nodeVar4, step( 0.6, ( fragCoord.xy / object.nodeUniform1 ).x ) ), nodeVar6, step( 0.8, ( fragCoord.xy / object.nodeUniform1 ).x ) );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform5 );\n\tDiffuseColor.w = 1.0;\n\tnodeVar8 = max( vec4<f32>( DiffuseColor.xyz, DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tOutput = nodeVar8;\n\n\t// result\n\n\toutput.color = nodeVar8;\n\n\treturn output;\n\n}\n",
-      "computeShader": "",
-      "attributes": [
-        {
-          "name": "uv",
-          "type": "vec2",
-          "source": "geometry"
-        },
-        {
-          "name": "position",
-          "type": "vec3",
-          "source": "geometry"
-        }
-      ],
-      "bindings": [
-        {
-          "name": "render",
-          "bindings": [
-            {
-              "name": "render",
-              "kind": "uniform-buffer",
-              "visibility": 7,
-              "textureType": null,
-              "byteLength": 128,
-              "access": null
-            }
-          ]
-        },
-        {
-          "name": "object",
-          "bindings": [
-            {
-              "name": "nodeUniform0",
-              "kind": "sampled-texture",
-              "visibility": 2,
-              "textureType": "2d",
-              "byteLength": null,
-              "access": "readOnly"
-            },
-            {
-              "name": "object",
-              "kind": "uniform-buffer",
-              "visibility": 7,
-              "textureType": null,
-              "byteLength": 80,
-              "access": null
-            },
-            {
-              "name": "nodeUniform2",
-              "kind": "sampled-texture",
-              "visibility": 2,
-              "textureType": "2d",
-              "byteLength": null,
-              "access": "readOnly"
-            },
-            {
-              "name": "nodeUniform3",
-              "kind": "sampled-texture",
-              "visibility": 2,
-              "textureType": "2d",
-              "byteLength": null,
-              "access": "readOnly"
-            },
-            {
-              "name": "nodeUniform4",
-              "kind": "sampled-texture",
-              "visibility": 2,
-              "textureType": "2d",
-              "byteLength": null,
-              "access": "readOnly"
-            }
-          ]
-        }
-      ],
-      "uniformPlan": [
-        {
-          "name": "render",
-          "shared": true,
-          "visibility": 7,
-          "byteLength": 128,
-          "slots": [
-            {
-              "name": "cameraProjectionMatrix",
-              "offset": 0,
-              "size": 64,
-              "dtype": "mat4",
-              "source": {
-                "kind": "camera.projectionMatrix",
-                "valueSnapshot": {
-                  "type": "mat4",
-                  "data": [
-                    1,
-                    0,
-                    0,
-                    0,
-                    0,
-                    1,
-                    0,
-                    0,
-                    0,
-                    0,
-                    -1,
-                    0,
-                    0,
-                    0,
-                    0,
-                    1
-                  ]
-                }
-              }
-            },
-            {
-              "name": "cameraViewMatrix",
-              "offset": 64,
-              "size": 64,
-              "dtype": "mat4",
-              "source": {
-                "kind": "camera.viewMatrix",
-                "valueSnapshot": {
-                  "type": "mat4",
-                  "data": [
-                    1,
-                    0,
-                    0,
-                    0,
-                    0,
-                    1,
-                    0,
-                    0,
-                    0,
-                    0,
-                    1,
-                    0,
-                    0,
-                    0,
-                    0,
-                    1
-                  ]
-                }
-              }
-            }
-          ],
-          "textures": [],
-          "storageBuffers": [],
-          "orderedBindings": [
-            {
-              "type": "ubo",
-              "name": "render",
-              "byteLength": 128,
-              "visibility": 7,
-              "slots": [
-                {
-                  "name": "cameraProjectionMatrix",
-                  "offset": 0,
-                  "size": 64,
-                  "dtype": "mat4",
-                  "source": {
-                    "kind": "camera.projectionMatrix",
-                    "valueSnapshot": {
-                      "type": "mat4",
-                      "data": [
-                        1,
-                        0,
-                        0,
-                        0,
-                        0,
-                        1,
-                        0,
-                        0,
-                        0,
-                        0,
-                        -1,
-                        0,
-                        0,
-                        0,
-                        0,
-                        1
-                      ]
-                    }
-                  }
-                },
-                {
-                  "name": "cameraViewMatrix",
-                  "offset": 64,
-                  "size": 64,
-                  "dtype": "mat4",
-                  "source": {
-                    "kind": "camera.viewMatrix",
-                    "valueSnapshot": {
-                      "type": "mat4",
-                      "data": [
-                        1,
-                        0,
-                        0,
-                        0,
-                        0,
-                        1,
-                        0,
-                        0,
-                        0,
-                        0,
-                        1,
-                        0,
-                        0,
-                        0,
-                        0,
-                        1
-                      ]
-                    }
-                  }
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "name": "object",
-          "shared": false,
-          "visibility": 2,
-          "byteLength": 80,
-          "slots": [
-            {
-              "name": "nodeUniform1",
-              "offset": 0,
-              "size": 8,
-              "dtype": "vec2",
-              "source": {
-                "kind": "renderer.size",
-                "valueSnapshot": {
-                  "type": "vec2",
-                  "data": [
-                    640,
-                    480
-                  ]
-                }
-              }
-            },
-            {
-              "name": "nodeUniform5",
-              "offset": 8,
-              "size": 4,
-              "dtype": "number",
-              "source": {
-                "kind": "material.opacity",
-                "property": "opacity",
-                "uniformType": "float",
-                "valueSnapshot": {
-                  "type": "number",
-                  "data": 1
-                }
-              }
-            },
-            {
-              "name": "nodeUniform8",
-              "offset": 16,
-              "size": 64,
-              "dtype": "mat4",
-              "source": {
-                "kind": "object.worldMatrix",
-                "valueSnapshot": {
-                  "type": "mat4",
-                  "data": [
-                    1,
-                    0,
-                    0,
-                    0,
-                    0,
-                    1,
-                    0,
-                    0,
-                    0,
-                    0,
-                    1,
-                    0,
-                    0,
-                    0,
-                    0,
-                    1
-                  ]
-                }
-              }
-            }
-          ],
-          "textures": [
-            {
-              "bindingKind": "sampled-texture",
-              "name": "nodeUniform0",
-              "textureType": "2d",
-              "access": "readOnly",
-              "visibility": 2,
-              "source": {
-                "kind": "artifact.texture",
-                "textureUuid": "34e42d64-0fa8-4de4-aedc-3696c1db8939",
-                "textureName": "output",
-                "mapping": 300,
-                "flipY": false
-              }
-            },
-            {
-              "bindingKind": "sampled-texture",
-              "name": "nodeUniform2",
-              "textureType": "2d",
-              "access": "readOnly",
-              "visibility": 2,
-              "source": {
-                "kind": "artifact.texture",
-                "textureUuid": "7cca2020-b709-4cb4-b6c1-12cca9b370fd",
-                "textureName": "normal",
-                "mapping": 300,
-                "flipY": false
-              }
-            },
-            {
-              "bindingKind": "sampled-texture",
-              "name": "nodeUniform3",
-              "textureType": "2d",
-              "access": "readOnly",
-              "visibility": 2,
-              "source": {
-                "kind": "artifact.texture",
-                "textureUuid": "0c124e26-070c-4c0c-86bf-2ebd79faa632",
-                "textureName": "emissive",
-                "mapping": 300,
-                "flipY": false
-              }
-            },
-            {
-              "bindingKind": "sampled-texture",
-              "name": "nodeUniform4",
-              "textureType": "2d",
-              "access": "readOnly",
-              "visibility": 2,
-              "source": {
-                "kind": "artifact.texture",
-                "textureUuid": "c479f866-5fa0-4e5b-be58-33e391885ad9",
-                "textureName": "diffuse",
-                "mapping": 300,
-                "flipY": false
-              }
-            }
-          ],
-          "storageBuffers": [],
-          "orderedBindings": [
-            {
-              "type": "sampled-texture",
-              "ref": {
-                "bindingKind": "sampled-texture",
-                "name": "nodeUniform0",
-                "textureType": "2d",
-                "access": "readOnly",
-                "visibility": 2,
-                "source": {
-                  "kind": "artifact.texture",
-                  "textureUuid": "34e42d64-0fa8-4de4-aedc-3696c1db8939",
-                  "textureName": "output",
-                  "mapping": 300,
-                  "flipY": false
-                }
-              }
-            },
-            {
-              "type": "unknown",
-              "name": "nodeUniform0",
-              "flags": [
-                "isSampler",
-                "isSampledTexture"
-              ],
-              "visibility": 2
-            },
-            {
-              "type": "ubo",
-              "name": "object",
-              "byteLength": 80,
-              "visibility": 7,
-              "slots": [
-                {
-                  "name": "nodeUniform1",
-                  "offset": 0,
-                  "size": 8,
-                  "dtype": "vec2",
-                  "source": {
-                    "kind": "renderer.size",
-                    "valueSnapshot": {
-                      "type": "vec2",
-                      "data": [
-                        640,
-                        480
-                      ]
-                    }
-                  }
-                },
-                {
-                  "name": "nodeUniform5",
-                  "offset": 8,
-                  "size": 4,
-                  "dtype": "number",
-                  "source": {
-                    "kind": "material.opacity",
-                    "property": "opacity",
-                    "uniformType": "float",
-                    "valueSnapshot": {
-                      "type": "number",
-                      "data": 1
-                    }
-                  }
-                },
-                {
-                  "name": "nodeUniform8",
-                  "offset": 16,
-                  "size": 64,
-                  "dtype": "mat4",
-                  "source": {
-                    "kind": "object.worldMatrix",
-                    "valueSnapshot": {
-                      "type": "mat4",
-                      "data": [
-                        1,
-                        0,
-                        0,
-                        0,
-                        0,
-                        1,
-                        0,
-                        0,
-                        0,
-                        0,
-                        1,
-                        0,
-                        0,
-                        0,
-                        0,
-                        1
-                      ]
-                    }
-                  }
-                }
-              ]
-            },
-            {
-              "type": "sampled-texture",
-              "ref": {
-                "bindingKind": "sampled-texture",
-                "name": "nodeUniform2",
-                "textureType": "2d",
-                "access": "readOnly",
-                "visibility": 2,
-                "source": {
-                  "kind": "artifact.texture",
-                  "textureUuid": "7cca2020-b709-4cb4-b6c1-12cca9b370fd",
-                  "textureName": "normal",
-                  "mapping": 300,
-                  "flipY": false
-                }
-              }
-            },
-            {
-              "type": "unknown",
-              "name": "nodeUniform2",
-              "flags": [
-                "isSampler",
-                "isSampledTexture"
-              ],
-              "visibility": 2
-            },
-            {
-              "type": "sampled-texture",
-              "ref": {
-                "bindingKind": "sampled-texture",
-                "name": "nodeUniform3",
-                "textureType": "2d",
-                "access": "readOnly",
-                "visibility": 2,
-                "source": {
-                  "kind": "artifact.texture",
-                  "textureUuid": "0c124e26-070c-4c0c-86bf-2ebd79faa632",
-                  "textureName": "emissive",
-                  "mapping": 300,
-                  "flipY": false
-                }
-              }
-            },
-            {
-              "type": "unknown",
-              "name": "nodeUniform3",
-              "flags": [
-                "isSampler",
-                "isSampledTexture"
-              ],
-              "visibility": 2
-            },
-            {
-              "type": "sampled-texture",
-              "ref": {
-                "bindingKind": "sampled-texture",
-                "name": "nodeUniform4",
-                "textureType": "2d",
-                "access": "readOnly",
-                "visibility": 2,
-                "source": {
-                  "kind": "artifact.texture",
-                  "textureUuid": "c479f866-5fa0-4e5b-be58-33e391885ad9",
-                  "textureName": "diffuse",
-                  "mapping": 300,
-                  "flipY": false
-                }
-              }
-            },
-            {
-              "type": "unknown",
-              "name": "nodeUniform4",
-              "flags": [
-                "isSampler",
-                "isSampledTexture"
-              ],
-              "visibility": 2
-            }
-          ]
-        }
-      ],
-      "defaults": {
-        "opacity": 1
-      },
-      "renderState": {
-        "transparent": false,
-        "opacity": 1,
-        "alphaTest": 0,
-        "alphaToCoverage": false,
-        "side": 0,
-        "depthTest": true,
-        "depthWrite": true,
-        "depthFunc": 3,
-        "blending": 1,
-        "blendSrc": 204,
-        "blendDst": 205,
-        "blendEquation": 100,
-        "colorWrite": true,
-        "premultipliedAlpha": false,
-        "dithering": false,
-        "toneMapped": true,
-        "vertexColors": false,
-        "fog": true,
-        "lights": false,
-        "allowOverride": true,
-        "forceSinglePass": false,
-        "polygonOffset": false,
-        "polygonOffsetFactor": 0,
-        "polygonOffsetUnits": 0,
-        "stencilWrite": false,
-        "stencilWriteMask": 255,
-        "stencilFunc": 519,
-        "stencilRef": 0,
-        "stencilFuncMask": 255,
-        "stencilFail": 7680,
-        "stencilZFail": 7680,
-        "stencilZPass": 7680
-      },
-      "meta": {
-        "updateNodes": 7,
-        "updateBeforeNodes": 1,
-        "updateAfterNodes": 0
-      },
-      "materialUuid": "d48f2b3f-2f1f-41d8-8ea8-5a3ce1ff82e8"
     }
   }
 ]
