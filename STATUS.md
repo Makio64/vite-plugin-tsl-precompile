@@ -2,7 +2,34 @@
 
 Current audit of what works, what's blocked, and what remains before this plugin is truly usable by three.js developers. Companion to [ROADMAP.md](./ROADMAP.md), [ARCHITECTURE.md](./ARCHITECTURE.md), and [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-Last updated: 2026-05-02
+Last updated: 2026-05-03
+
+---
+
+## Round 4 results (2026-05-03)
+
+Six parallel agents + several follow-up commits pushed visual correctness forward on multiple fronts. Headline: **27/29 tier-1 examples render without errors** (same count as before Round 4 but different mix), **199/199 unit tests pass**.
+
+**Gained** (was broken/error → now renders):
+- `webgpu_compute_birds`: capture-side throw fixed (`object.computeBoundingSphere` skip on throwaway mesh) → replay renders sky background. Birds themselves still missing (instance buffer not propagating).
+- `webgpu_backdrop_water`: replay was empty → now produces non-empty frame.
+- `webgpu_compute_particles_rain`: replayBright 0.029 → 0.358 (12× improvement, particles visible).
+- `webgpu_shadow_contact`: was empty → renders geometry with hard shadows.
+- `webgpu_shadowmap_vsm`: PSNR 25.24 dB with visible torus + columns + spotlight cone shadow on floor.
+- `webgpu_compute_texture_3d`: cloud volumetric now visibly renders (via storage-texture cache invalidation; PSNR still low due to background sky color).
+
+**Regressed** (Round 4 introduced trade-offs):
+- `webgpu_compute_reduce`: 32.59 → 12.25 dB. **Lost the only PSNR-≥30 dB pass.**
+- `webgpu_caustics`: 0.76 → 0.006 brightness, 15.27 → 8.75 dB.
+- `webgpu_camera_array`: 1.0 → 0.013 brightness.
+- `webgpu_clipping`: brightness 0.47 → 0.009.
+- `webgpu_animation_retargeting_readyplayer`: new "binding dimension mismatch" error.
+- `webgpu_compute_texture_3d`: flaky "Texture already initialized" exception on some runs.
+- `webgpu_shadowmap_opacity`: 18.27 → 10.8 dB (capture-side WGSL gained shadow code; replay-side bind-group cache holds wrong sample type — `texture_depth_2d` declared, `BGRA8Unorm` bound).
+
+**Net assessment**: Round 4 added real infrastructure — shadow-scene render pass, storage-texture rebinder, MRT isolation + serialization, texture identity cataloguing. Several examples that were "renders empty" now render correctly. But the new code paths run too eagerly on scenes that don't need them, clobbering state. **Round 5 should surgically gate**: Round 4-S's shadow-scene render on actual `castShadow` lights, Round 4-H's storage-texture rebinder on examples with storage textures, fix the `Texture already initialized` race.
+
+**Round 4 commits on main (oldest → newest)**: e12b32e c78d51e 82588df 56f379f 27354bd 8e371f1 fc82f2d aa7abb4 43129c0 751eaad 29c92c4 c7b0d89 294f90f fbdaa81 8229d63 1b6873a 35e8971.
 
 ---
 
