@@ -124,6 +124,14 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 	// Discovery: walk opts.renderPipeline?.outputNode (a RenderPipeline) or
 	// directly opts.passNode if provided. The user passes the pass instance
 	// via opts.passNode.
+	//
+	// TODO(post-merge / Round 4-H): the slim runtime hydrator currently does
+	// not route `passNode.getTexture('output' | 'mask' | …)` to live render-
+	// target attachments. Even when this aux capture produces a `mrt`
+	// artifact, slim replay can't sample the per-attachment textures so MRT
+	// post-processing (webgpu_mrt) renders mostly black. See
+	// `packages/runtime/src/hydrator.js` and the pass-aware texture routing
+	// landing in Round 4-H.
 	{
 
 		const passNodes = [];
@@ -346,7 +354,13 @@ async function captureBackgroundLive( renderer, scene, camera, opts ) {
 	aux.backgroundNode = scene.backgroundNode;
 	aux.background = scene.background;
 
-	const artifacts = await compileTSL( renderer, aux, camera );
+	// `noGlobalMRT` tells compileTSL to skip the renderer-level MRT fallback.
+	// Aux scenes are single-output by design; if the host app has
+	// `renderer.setMRT(...)` set globally (webgpu_multiple_rendertargets), we
+	// must not inherit it — otherwise the captured fragment is multi-output
+	// against an aux scene that's rendered to a single attachment, and WGSL
+	// validation rejects it.
+	const artifacts = await compileTSL( renderer, aux, camera, { noGlobalMRT: true } );
 	const mesh = renderer._background && typeof renderer._background.get === 'function' ? renderer._background.get( aux ).backgroundMesh : null;
 	let artifact = null;
 	for ( const a of artifacts ) {
@@ -382,33 +396,21 @@ async function capturePostProcessingLive( renderer, postProcessing, opts ) {
 	scene.add( new three.QuadMesh( mat ) );
 	const camera = opts.camera || ( three.PerspectiveCamera ? new three.PerspectiveCamera( 45, 1, 0.1, 100 ) : null );
 
-	// Temporarily clear renderer MRT for the duration of this aux capture.
-	// When the host app already has `renderer.setMRT(...)` set globally
-	// (e.g. webgpu_multiple_rendertargets in init), three.js's
-	// NodeMaterial.setup() would emit an MRT-shaped fragment with empty
-	// `OutputType { }` for our post-process material (which doesn't carry an
-	// MRT-aware outputNode), crashing WGSL parsing. Save → null → restore.
-	const prevMRT = typeof renderer.getMRT === 'function' ? renderer.getMRT() : null;
-	if ( prevMRT && typeof renderer.setMRT === 'function' ) renderer.setMRT( null );
-	try {
-
-		const artifacts = await compileTSL( renderer, scene, camera );
-		const artifact = artifacts.find( ( a ) => a.materialUuid === mat.uuid ) || artifacts[ 0 ];
-		if ( ! artifact ) throw new Error( 'capturePostProcessingLive: no artifacts produced' );
-		return jsonSafe( artifact );
-
-	} finally {
-
-		if ( prevMRT && typeof renderer.setMRT === 'function' ) renderer.setMRT( prevMRT );
-
-	}
+	// Isolate this aux capture from any global MRT the host might have set
+	// (e.g. webgpu_multiple_rendertargets's `renderer.setMRT(...)` in init).
+	// Otherwise compileTSL would inherit it and emit a multi-output fragment
+	// for our single-output post-process material, crashing WGSL validation.
+	const artifacts = await compileTSL( renderer, scene, camera, { noGlobalMRT: true } );
+	const artifact = artifacts.find( ( a ) => a.materialUuid === mat.uuid ) || artifacts[ 0 ];
+	if ( ! artifact ) throw new Error( 'capturePostProcessingLive: no artifacts produced' );
+	return jsonSafe( artifact );
 
 }
 
 async function captureRenderOutputLive( renderer, scene, camera, opts ) {
 
 	const compileTSL = opts.compileTSL || ( await lazyLoadCompileTSL() );
-	const artifacts = await compileTSL( renderer, scene, camera );
+	const artifacts = await compileTSL( renderer, scene, camera, { noGlobalMRT: true } );
 	const artifact = artifacts.find( ( a ) => a.materialShape === 'output-transform' || a.materialShape === 'render-output' );
 	if ( ! artifact ) throw new Error( 'captureRenderOutputLive: no output-transform artifact produced' );
 	artifact.materialShape = 'render-output';
@@ -460,7 +462,7 @@ async function captureBackdropLive( renderer, material, scene, camera, opts ) {
 	const mesh = new three.Mesh( geo, material );
 	auxScene.add( mesh );
 
-	const artifacts = await compileTSL( renderer, auxScene, camera );
+	const artifacts = await compileTSL( renderer, auxScene, camera, { noGlobalMRT: true } );
 	const artifact = artifacts.find( ( a ) => a.materialUuid === material.uuid )
 		|| artifacts.find( ( a ) => a.materialShape === 'mesh-standard' || a.materialShape === 'mesh-physical' || a.materialShape === 'node-material' )
 		|| artifacts[ 0 ];

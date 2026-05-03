@@ -698,43 +698,84 @@ function collectMaterialRenderState( material ) {
  *
  * Priority:
  *   1. `options.mrtNode` — caller explicitly provided the MRT descriptor.
- *   2. Auto-detect: walk scene materials looking for any material that has an
- *      `mrtNode` property set (three.js NodeMaterial stores it there when
- *      `PassNode.setMRT()` wires it). The first non-null one wins.
+ *   2. `options.noGlobalMRT === true` — caller forces single-output path
+ *      (used by aux captures whose throwaway scenes are single-output by
+ *      design and must not inherit a global MRT).
+ *   3. Auto-detect: walk scene materials looking for any material that has
+ *      an `mrtNode` property set (three.js NodeMaterial stores it there
+ *      when `PassNode.setMRT()` wires it). The first non-null one wins.
+ *   4. Renderer-level MRT fallback (`renderer.getMRT()`). Hosts that drive
+ *      multi-render-targets with `renderer.setMRT(mrt({...}))` globally
+ *      (the `webgpu_multiple_rendertargets` pattern) end up with no
+ *      per-material `mrtNode` on the synthetic capture scene's mesh, so
+ *      without this fallback `compileTSL` would emit a single-output
+ *      fragment that mismatches the live multi-attachment render target.
+ *      Skipped when the scene contains only fullscreen quads
+ *      (post-process / render-output throwaway scenes), which always
+ *      target a single attachment.
  *
  * Returns `null` when no MRT is found so the caller can skip `setMRT`.
  *
- * @param {Scene|null} scene
+ * @param {?Renderer} renderer
+ * @param {?Scene} scene
  * @param {Object} options
  * @return {Object|null} MRT node or null.
  */
-function collectSceneMRTNode( scene, options ) {
+function collectSceneMRTNode( renderer, scene, options ) {
 
-	if ( options.mrtNode ) return options.mrtNode;
-	if ( ! scene || typeof scene.traverse !== 'function' ) return null;
+	if ( options && options.mrtNode ) return options.mrtNode;
+	if ( options && options.noGlobalMRT ) return null;
 
-	let found = null;
-	scene.traverse( ( object ) => {
+	if ( scene && typeof scene.traverse === 'function' ) {
 
-		if ( found ) return;
-		const material = object && object.material;
-		if ( ! material ) return;
+		let found = null;
+		scene.traverse( ( object ) => {
 
-		const materials = Array.isArray( material ) ? material : [ material ];
-		for ( const mat of materials ) {
+			if ( found ) return;
+			const material = object && object.material;
+			if ( ! material ) return;
 
-			if ( mat && mat.mrtNode ) {
+			const materials = Array.isArray( material ) ? material : [ material ];
+			for ( const mat of materials ) {
 
-				found = mat.mrtNode;
-				return;
+				if ( mat && mat.mrtNode ) {
+
+					found = mat.mrtNode;
+					return;
+
+				}
 
 			}
 
+		} );
+
+		if ( found ) return found;
+
+	}
+
+	if ( renderer && typeof renderer.getMRT === 'function' ) {
+
+		if ( scene && typeof scene.traverse === 'function' ) {
+
+			let onlyFullscreenQuads = true;
+			let sawAnyMesh = false;
+			scene.traverse( ( object ) => {
+
+				if ( ! object || ! object.material ) return;
+				sawAnyMesh = true;
+				const isQuad = object.isQuadMesh || ( object.constructor && object.constructor.name === 'QuadMesh' );
+				if ( ! isQuad ) onlyFullscreenQuads = false;
+
+			} );
+			if ( sawAnyMesh && onlyFullscreenQuads ) return null;
+
 		}
 
-	} );
+		return renderer.getMRT() || null;
 
-	return found;
+	}
+
+	return null;
 
 }
 
@@ -774,13 +815,44 @@ export async function compileTSL( renderer, scene, camera, options = {} ) {
 	const manager = renderer._nodes;
 	if ( ! manager ) return [];
 
+	// Serialise concurrent calls per renderer. Multiple `precompile()` and
+	// aux-capture microtasks queued during a single user `render()` would
+	// otherwise interleave on each `await` and clobber each other's saved
+	// MRT / renderTarget state. Without a lock, an aux capture's MRT-clear
+	// can leak into a concurrent precompile-marker call so the user
+	// material extracts as single-output instead of multi-output. The lock
+	// keeps each compileTSL's MRT/RT save → mutate → restore cycle atomic.
+	const lockKey = '__tslpCompileLock';
+	const prevLock = renderer[ lockKey ] || Promise.resolve();
+	let releaseLock;
+	const myLock = new Promise( ( resolve ) => { releaseLock = resolve; } );
+	renderer[ lockKey ] = prevLock.then( () => myLock );
+	let result;
+	try {
+
+		await prevLock;
+		result = await compileTSLInner( renderer, scene, camera, options, manager );
+
+	} finally {
+
+		releaseLock();
+
+	}
+	return result;
+
+}
+
+async function compileTSLInner( renderer, scene, camera, options, manager ) {
+
 	const computeNodes = Array.isArray( options.computeNodes ) ? options.computeNodes : [];
 	const renderPipeline = options.renderPipeline || null;
 
-	// Detect the MRT node to activate during warm-up. Must be resolved before
-	// the getForRender hook is installed so the hook can record it for
-	// artifact stamping in the extraction pass below.
-	const sceneMRTNode = collectSceneMRTNode( scene, options );
+	// Detect the MRT node to activate during warm-up. Resolved POST-lock so
+	// we observe the renderer's MRT in a quiescent moment (no concurrent aux
+	// capture has it cleared). Must be resolved before the getForRender
+	// hook is installed so the hook can record it for artifact stamping in
+	// the extraction pass below.
+	const sceneMRTNode = collectSceneMRTNode( renderer, scene, options );
 
 	// Temporarily wrap NodeManager.getForRender so we can see every
 	// renderObject that flows through the build path during compileAsync.
@@ -828,24 +900,59 @@ export async function compileTSL( renderer, scene, camera, options = {} ) {
 
 	};
 
+	// Always save the live render target so we can isolate the synthetic
+	// warm-up from any RT the host already had bound. When the host app is in
+	// the middle of `setRenderTarget(userRT); renderer.render(...)` and our
+	// dev-capture microtask runs in between, our `compileAsync` would
+	// otherwise compile against `userRT` — so a single-output post-process
+	// material ends up with a pipeline that targets the user's count=N MRT,
+	// which fails WebGPU validation ("Color target has no corresponding
+	// fragment stage output but writeMask is not zero"). Save it
+	// unconditionally and restore in the `finally` block.
+	const prevRenderTarget = typeof renderer.getRenderTarget === 'function' ? renderer.getRenderTarget() : null;
+
 	// MRT warm-up render target. NodeMaterial.setup() in three.js gates the
 	// MRT-output path on `renderTarget !== null` — without a bound RT, even
 	// `renderer.setMRT(...)` is silently ignored and the fragment shader is
 	// compiled with a single `@location(0)` output. To force the MRT shader
 	// path, we allocate a throwaway N-texture RenderTarget sized 1×1 and
-	// bind it for the warm-up render. Restored to null in the finally block.
+	// bind it for the warm-up render. The RT's `textures` array is named so
+	// `MRTNode.setup()`'s per-output-name lookup finds each member.
+	// Restored to null in the finally block.
+	//
+	// Only allocated when outputCount > 1. count=1 mrtNode (e.g.
+	// webgpu_mrt_mask's per-material `mrt({ mask: ... })`) needs the
+	// surrounding pass-level MRT for proper @location emission; allocating a
+	// count=1 named RT here would emit a single-`mask` output struct that
+	// the live count=2 RT then rejects. End-to-end MRT-merge handling is
+	// owned by Round 4-H.
 	let mrtWarmupRT = null;
-	let prevRenderTarget = null;
 	if ( sceneMRTNode && typeof renderer.setRenderTarget === 'function' ) {
 
 		const outputMap = sceneMRTNode.nodes || sceneMRTNode.outputNodes || null;
-		const outputCount = outputMap ? Object.keys( outputMap ).length : 0;
+		const outputNames = outputMap ? Object.keys( outputMap ) : [];
+		const outputCount = outputNames.length;
 		if ( outputCount > 1 ) {
 
 			try {
 
 				mrtWarmupRT = new RenderTarget( 1, 1, { count: outputCount } );
-				prevRenderTarget = typeof renderer.getRenderTarget === 'function' ? renderer.getRenderTarget() : null;
+				// Match three.js MRTNode.setup()'s `getTextureIndex(textures,
+				// name)` lookup: tag each attachment with the matching output
+				// name from the captured MRT graph. Without this, the
+				// MRTNode.setup() write loop drops every output (no name
+				// match) and emits an empty `OutputType {}` struct that
+				// fails WGSL parsing.
+				if ( Array.isArray( mrtWarmupRT.textures ) ) {
+
+					for ( let i = 0; i < outputNames.length; i ++ ) {
+
+						const tex = mrtWarmupRT.textures[ i ];
+						if ( tex ) tex.name = outputNames[ i ];
+
+					}
+
+				}
 
 			} catch ( _ ) {
 
@@ -860,30 +967,37 @@ export async function compileTSL( renderer, scene, camera, options = {} ) {
 
 	}
 
-	// Capture the renderer's prior MRT so we can restore it after the warm-up.
-	// When sceneMRTNode is set, restoring preserves any user-set
-	// `renderer.setMRT(...)` so the next real frame keeps the multi-output
-	// shader path. When sceneMRTNode is null we leave renderer.MRT untouched.
-	const prevMRT = sceneMRTNode && typeof renderer.getMRT === 'function' ? renderer.getMRT() : null;
+	// Always save the renderer's prior MRT and restore at exit so concurrent
+	// aux captures and precompile-marker calls don't observe each other's
+	// transient MRT-clear. When sceneMRTNode is null we set MRT to null for
+	// the duration of our synthetic compile to avoid emitting a multi-output
+	// frag shader for an aux scene that targets the canvas.
+	const prevMRT = typeof renderer.getMRT === 'function' ? renderer.getMRT() : null;
 
 	try {
 
-		// Activate MRT on the renderer before the warm-up so three.js emits a
-		// multi-output fragment shader. Without this, the pipeline is compiled
-		// with a single color attachment and the fragment shader only declares
-		// `@location(0)`, which causes a WebGPU validation error when the
-		// material is later used against an MRT render target.
-		if ( sceneMRTNode && typeof renderer.setMRT === 'function' ) {
+		// Activate (or clear) MRT on the renderer before the warm-up so
+		// three.js emits the right output struct. Without this, the pipeline
+		// is compiled with a mismatched attachment count vs the live render
+		// target (single-target frag against an MRT, or vice versa).
+		if ( typeof renderer.setMRT === 'function' ) {
 
-			renderer.setMRT( sceneMRTNode );
+			renderer.setMRT( sceneMRTNode || null );
 
 		}
 
 		// Bind the MRT warm-up RT so NodeMaterial.setup()'s
-		// `renderTarget !== null` gate fires.
+		// `renderTarget !== null` gate fires. When there's no MRT but the
+		// host had a render target bound, unbind it for the duration of the
+		// synthetic compile so the warm-up doesn't accidentally produce a
+		// pipeline whose fragment shader doesn't match the live RT layout.
 		if ( mrtWarmupRT ) {
 
 			renderer.setRenderTarget( mrtWarmupRT );
+
+		} else if ( prevRenderTarget && typeof renderer.setRenderTarget === 'function' ) {
+
+			renderer.setRenderTarget( null );
 
 		}
 
@@ -929,16 +1043,26 @@ export async function compileTSL( renderer, scene, camera, options = {} ) {
 		// our warm-up. Without this restoration, the user's next real render
 		// would see `renderer.getMRT() === null` and re-build the pipeline
 		// for a single-target fragment — mismatching their actual
-		// multi-target RenderTarget. Only fires when we actually set MRT.
-		if ( sceneMRTNode && typeof renderer.setMRT === 'function' ) {
+		// multi-target RenderTarget. Always fires now since we always save
+		// MRT at entry.
+		if ( typeof renderer.setMRT === 'function' ) {
 
-			renderer.setMRT( prevMRT );
+			try { renderer.setMRT( prevMRT ); } catch ( _ ) { /* ignore */ }
 
 		}
 
-		if ( mrtWarmupRT && typeof renderer.setRenderTarget === 'function' ) {
+		// Restore the host's render target. We always saved `prevRenderTarget`
+		// at entry; restore it whether or not we allocated an mrtWarmupRT so
+		// the host's `setRenderTarget(userRT)` survives our synthetic
+		// compileAsync round-trip.
+		if ( typeof renderer.setRenderTarget === 'function' ) {
 
 			try { renderer.setRenderTarget( prevRenderTarget ); } catch ( _ ) { /* ignore */ }
+
+		}
+
+		if ( mrtWarmupRT ) {
+
 			try { mrtWarmupRT.dispose(); } catch ( _ ) { /* ignore */ }
 
 		}
