@@ -89,6 +89,24 @@ class PrecompiledMaterial extends Material {
 		// etc.
 		seedRenderState( this, artifact.renderState );
 
+		// MRT stub — when the captured fragment shader emits multiple
+		// `@location(N)` outputs (because compileTSL warmed up with an
+		// MRT node active), `artifact.mrtOutputCount` is N. The slim
+		// runtime's pipeline build path reads `context.mrt` from the
+		// render context (set via `renderer.setMRT(...)`) for cache
+		// keying and per-target blend mode lookup. To keep code paths
+		// that probe `material.mrtNode` from blowing up — and to give
+		// the pipeline cache an identity it can use even when the
+		// renderer doesn't have a global MRT — attach an inert MRT
+		// stub here. The stub mirrors three.js's MRTNode surface
+		// (`outputNodes`, `getBlendMode`, `has`, `get`, `merge`) so
+		// downstream callers get sane defaults.
+		if ( typeof artifact.mrtOutputCount === 'number' && artifact.mrtOutputCount > 1 ) {
+
+			this.mrtNode = createInertMRTStub( artifact.mrtOutputCount );
+
+		}
+
 	}
 
 	customProgramCacheKey() {
@@ -124,6 +142,46 @@ function hashString( value ) {
 
 	}
 	return ( hash >>> 0 ).toString( 36 );
+
+}
+
+/**
+ * Build an inert MRTNode-shaped stub for a precompiled material.
+ *
+ * The stub satisfies three.js's MRT API contract (`isMRTNode`,
+ * `outputNodes`, `getBlendMode`, `has`, `get`, `merge`) without dragging
+ * in the TSL builder. It carries `outputNames` like `output0..outputN-1`
+ * — enough for the pipeline cache to resolve a per-target blend mode
+ * lookup (which always returns the default `MaterialBlending`).
+ *
+ * Each call returns a fresh instance with a stable, monotonic `id` so
+ * three.js's `RenderContexts.get(rt, mrt)` keys distinct precompiled
+ * materials into distinct render contexts (not strictly required since
+ * `context.textures.length` alone drives target count, but defensive).
+ *
+ * @param {number} outputCount - How many `@location(N)` outputs the captured fragment shader emits.
+ * @return {Object} An inert MRTNode-shaped stub.
+ */
+let _mrtStubIdCounter = 0;
+function createInertMRTStub( outputCount ) {
+
+	const outputNodes = {};
+	for ( let i = 0; i < outputCount; i ++ ) {
+
+		outputNodes[ `output${ i }` ] = { isNode: true };
+
+	}
+
+	return {
+		isNode: true,
+		isMRTNode: true,
+		id: `tslp-mrt-stub-${ ++ _mrtStubIdCounter }`,
+		outputNodes,
+		getBlendMode() { return { blending: 0 /* NoBlending */ }; },
+		has( name ) { return name in outputNodes; },
+		get( name ) { return outputNodes[ name ] || null; },
+		merge( other ) { return other || this; },
+	};
 
 }
 

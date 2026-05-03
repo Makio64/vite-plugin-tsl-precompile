@@ -76,6 +76,18 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 	const wrapped = new PrecompiledMaterial( artifact );
 	copyCommonMaterialProperties( material, wrapped );
 
+	// If the source material had its own `mrtNode` (e.g. user did
+	// `mat.mrtNode = mrt({...})` for per-material MRT), and the artifact
+	// did NOT already attach a stub, propagate it. The PrecompiledMaterial
+	// constructor handles the artifact-driven case via `mrtOutputCount`;
+	// this branch covers the rare per-material-MRT path so the wrapper
+	// keeps the same shape as the source.
+	if ( ! wrapped.mrtNode && material && material.mrtNode ) {
+
+		wrapped.mrtNode = material.mrtNode;
+
+	}
+
 	return wrapped;
 
 }

@@ -381,10 +381,27 @@ async function capturePostProcessingLive( renderer, postProcessing, opts ) {
 	const scene = new three.Scene();
 	scene.add( new three.QuadMesh( mat ) );
 	const camera = opts.camera || ( three.PerspectiveCamera ? new three.PerspectiveCamera( 45, 1, 0.1, 100 ) : null );
-	const artifacts = await compileTSL( renderer, scene, camera );
-	const artifact = artifacts.find( ( a ) => a.materialUuid === mat.uuid ) || artifacts[ 0 ];
-	if ( ! artifact ) throw new Error( 'capturePostProcessingLive: no artifacts produced' );
-	return jsonSafe( artifact );
+
+	// Temporarily clear renderer MRT for the duration of this aux capture.
+	// When the host app already has `renderer.setMRT(...)` set globally
+	// (e.g. webgpu_multiple_rendertargets in init), three.js's
+	// NodeMaterial.setup() would emit an MRT-shaped fragment with empty
+	// `OutputType { }` for our post-process material (which doesn't carry an
+	// MRT-aware outputNode), crashing WGSL parsing. Save → null → restore.
+	const prevMRT = typeof renderer.getMRT === 'function' ? renderer.getMRT() : null;
+	if ( prevMRT && typeof renderer.setMRT === 'function' ) renderer.setMRT( null );
+	try {
+
+		const artifacts = await compileTSL( renderer, scene, camera );
+		const artifact = artifacts.find( ( a ) => a.materialUuid === mat.uuid ) || artifacts[ 0 ];
+		if ( ! artifact ) throw new Error( 'capturePostProcessingLive: no artifacts produced' );
+		return jsonSafe( artifact );
+
+	} finally {
+
+		if ( prevMRT && typeof renderer.setMRT === 'function' ) renderer.setMRT( prevMRT );
+
+	}
 
 }
 

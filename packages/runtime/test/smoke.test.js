@@ -331,6 +331,72 @@ test( 'PrecompiledMaterial derives distinct program keys from shader content', (
 
 } );
 
+test( 'PrecompiledMaterial attaches an inert MRT stub when artifact.mrtOutputCount > 1', () => {
+
+	// Single-target artifact: no MRT stub.
+	const single = new PrecompiledMaterial( { uniformPlan: [], vertexShader: 'v', fragmentShader: 'f', mrtOutputCount: 1 } );
+	assert.equal( single.mrtNode, undefined, 'single-target artifact must not attach an MRT stub' );
+
+	// Multi-target artifact: MRT stub present, with N output entries and an
+	// MRTNode-shaped surface (id, isMRTNode, getBlendMode, has, get, merge).
+	const mrt = new PrecompiledMaterial( { uniformPlan: [], vertexShader: 'v', fragmentShader: 'f', mrtOutputCount: 3 } );
+	assert.ok( mrt.mrtNode, 'multi-target artifact must attach an MRT stub' );
+	assert.equal( mrt.mrtNode.isMRTNode, true );
+	assert.equal( mrt.mrtNode.isNode, true );
+	assert.equal( typeof mrt.mrtNode.id, 'string' );
+	assert.equal( Object.keys( mrt.mrtNode.outputNodes ).length, 3 );
+	assert.equal( mrt.mrtNode.has( 'output0' ), true );
+	assert.equal( mrt.mrtNode.has( 'unknown' ), false );
+	assert.deepEqual( mrt.mrtNode.getBlendMode(), { blending: 0 } );
+
+	// Two multi-target materials get distinct stub ids so RenderContexts.get()
+	// keys them into distinct render contexts.
+	const mrt2 = new PrecompiledMaterial( { uniformPlan: [], vertexShader: 'v', fragmentShader: 'f', mrtOutputCount: 2 } );
+	assert.notEqual( mrt.mrtNode.id, mrt2.mrtNode.id );
+
+} );
+
+test( '__applyPrecompiled forwards mrtNode from source material when artifact has none', () => {
+
+	const sourceMrt = { isMRTNode: true, id: 'user-mrt', outputNodes: { a: {}, b: {} } };
+	const source = { name: 'mrt-mat', mrtNode: sourceMrt };
+	const wrapped = __applyPrecompiled( source, {
+		__hash: 'sha256:mrt-fwd',
+		name: 'mrt-fwd',
+		artifact: {
+			__hash: 'sha256:mrt-fwd',
+			uniformPlan: [],
+			vertexShader: 'v',
+			fragmentShader: 'f',
+			// no mrtOutputCount on the artifact — propagation must come from source
+		},
+	}, 'sha256:mrt-fwd' );
+	assert.equal( wrapped.mrtNode, sourceMrt );
+
+} );
+
+test( '__applyPrecompiled prefers artifact-driven mrtNode over source.mrtNode', () => {
+
+	const sourceMrt = { isMRTNode: true, id: 'user-mrt', outputNodes: { a: {} } };
+	const source = { name: 'mrt-mat', mrtNode: sourceMrt };
+	const wrapped = __applyPrecompiled( source, {
+		__hash: 'sha256:mrt-art',
+		name: 'mrt-art',
+		artifact: {
+			__hash: 'sha256:mrt-art',
+			uniformPlan: [],
+			vertexShader: 'v',
+			fragmentShader: 'f',
+			mrtOutputCount: 4,
+		},
+	}, 'sha256:mrt-art' );
+	// Constructor's stub wins; we must not overwrite a baked stub.
+	assert.notEqual( wrapped.mrtNode, sourceMrt );
+	assert.equal( wrapped.mrtNode.isMRTNode, true );
+	assert.equal( Object.keys( wrapped.mrtNode.outputNodes ).length, 4 );
+
+} );
+
 test( 'runtime hydrator prefers generated per-group updater when attached', () => {
 
 	const artifact = {

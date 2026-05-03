@@ -317,7 +317,26 @@ async function captureMaterialInDev( material, name ) {
 		if ( mesh.color === undefined && Color ) mesh.color = sourceObject && sourceObject.color || material.color || new Color( 1, 1, 1 );
 		scene.add( mesh );
 
-		const artifacts = await extractor( devRenderer, scene, camera );
+		// MRT propagation — when the user has set `material.mrtNode` directly,
+		// OR set `renderer.setMRT(...)` and the source mesh renders to a
+		// multi-texture RenderTarget, the captured fragment shader must emit
+		// multiple `@location(N)` outputs to match the bound RT at replay.
+		// compileTSL uses `options.mrtNode` to activate MRT during warm-up.
+		//
+		// Heuristic: skip the renderer-scope fallback for fullscreen quad
+		// meshes (post-process pipelines) — those render to the canvas, not
+		// to the user's multi-target RT, so forcing MRT there would emit an
+		// empty `OutputType { }` struct and crash WGSL.
+		let mrtNode = material && material.mrtNode || null;
+		if ( ! mrtNode && typeof devRenderer.getMRT === 'function' ) {
+
+			const isFullscreenQuad = sourceObject && ( sourceObject.isQuadMesh || sourceObject.constructor && sourceObject.constructor.name === 'QuadMesh' );
+			if ( ! isFullscreenQuad ) mrtNode = devRenderer.getMRT();
+
+		}
+		const extractorOpts = mrtNode ? { mrtNode } : undefined;
+
+		const artifacts = await extractor( devRenderer, scene, camera, extractorOpts );
 
 		let artifact = artifacts.byMaterialUuid && artifacts.byMaterialUuid.get( material.uuid );
 		if ( ! artifact ) {

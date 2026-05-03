@@ -23,7 +23,7 @@
  */
 
 import { extractUniformPlan } from './extractUniformPlan.js';
-import { DataUtils, FloatType, HalfFloatType, RGBAFormat } from 'three';
+import { DataUtils, FloatType, HalfFloatType, RGBAFormat, RenderTarget } from 'three';
 
 /**
  * Describes a single binding inside a bind group in serializable form.
@@ -828,6 +828,44 @@ export async function compileTSL( renderer, scene, camera, options = {} ) {
 
 	};
 
+	// MRT warm-up render target. NodeMaterial.setup() in three.js gates the
+	// MRT-output path on `renderTarget !== null` — without a bound RT, even
+	// `renderer.setMRT(...)` is silently ignored and the fragment shader is
+	// compiled with a single `@location(0)` output. To force the MRT shader
+	// path, we allocate a throwaway N-texture RenderTarget sized 1×1 and
+	// bind it for the warm-up render. Restored to null in the finally block.
+	let mrtWarmupRT = null;
+	let prevRenderTarget = null;
+	if ( sceneMRTNode && typeof renderer.setRenderTarget === 'function' ) {
+
+		const outputMap = sceneMRTNode.nodes || sceneMRTNode.outputNodes || null;
+		const outputCount = outputMap ? Object.keys( outputMap ).length : 0;
+		if ( outputCount > 1 ) {
+
+			try {
+
+				mrtWarmupRT = new RenderTarget( 1, 1, { count: outputCount } );
+				prevRenderTarget = typeof renderer.getRenderTarget === 'function' ? renderer.getRenderTarget() : null;
+
+			} catch ( _ ) {
+
+				// Older three.js may not accept `count` here; let the warm-up
+				// proceed without a bound RT — the artifact won't get the MRT
+				// shader path but at least nothing throws.
+				mrtWarmupRT = null;
+
+			}
+
+		}
+
+	}
+
+	// Capture the renderer's prior MRT so we can restore it after the warm-up.
+	// When sceneMRTNode is set, restoring preserves any user-set
+	// `renderer.setMRT(...)` so the next real frame keeps the multi-output
+	// shader path. When sceneMRTNode is null we leave renderer.MRT untouched.
+	const prevMRT = sceneMRTNode && typeof renderer.getMRT === 'function' ? renderer.getMRT() : null;
+
 	try {
 
 		// Activate MRT on the renderer before the warm-up so three.js emits a
@@ -838,6 +876,14 @@ export async function compileTSL( renderer, scene, camera, options = {} ) {
 		if ( sceneMRTNode && typeof renderer.setMRT === 'function' ) {
 
 			renderer.setMRT( sceneMRTNode );
+
+		}
+
+		// Bind the MRT warm-up RT so NodeMaterial.setup()'s
+		// `renderTarget !== null` gate fires.
+		if ( mrtWarmupRT ) {
+
+			renderer.setRenderTarget( mrtWarmupRT );
 
 		}
 
@@ -879,12 +925,21 @@ export async function compileTSL( renderer, scene, camera, options = {} ) {
 
 	} finally {
 
-		// Always restore MRT state so the renderer is clean for subsequent
-		// renders. Do this before restoring the getForRender hook so any
-		// post-finally render sees the clean state too.
+		// Restore the renderer's MRT to whatever the host app had set before
+		// our warm-up. Without this restoration, the user's next real render
+		// would see `renderer.getMRT() === null` and re-build the pipeline
+		// for a single-target fragment — mismatching their actual
+		// multi-target RenderTarget. Only fires when we actually set MRT.
 		if ( sceneMRTNode && typeof renderer.setMRT === 'function' ) {
 
-			renderer.setMRT( null );
+			renderer.setMRT( prevMRT );
+
+		}
+
+		if ( mrtWarmupRT && typeof renderer.setRenderTarget === 'function' ) {
+
+			try { renderer.setRenderTarget( prevRenderTarget ); } catch ( _ ) { /* ignore */ }
+			try { mrtWarmupRT.dispose(); } catch ( _ ) { /* ignore */ }
 
 		}
 
