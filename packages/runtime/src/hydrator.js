@@ -233,6 +233,16 @@ function lookupLiveTextureByIdentity( source ) {
 		}
 		return _liveTexturesByName.get( source.textureName );
 	}
+	// Final identity fallback: derive the filename from imageSrc and try the
+	// name index. Covers older artifacts captured before textureName was
+	// synthesised, and any flow where a host registers textures by filename
+	// but the captured `texture.name` was empty.
+	if ( source.imageSrc ) {
+		const slash = source.imageSrc.lastIndexOf( '/' );
+		const tail = slash >= 0 ? source.imageSrc.slice( slash + 1 ) : source.imageSrc;
+		const filename = tail.split( '?' )[ 0 ].split( '#' )[ 0 ];
+		if ( filename && _liveTexturesByName.has( filename ) ) return _liveTexturesByName.get( filename );
+	}
 	if ( typeof window !== 'undefined' && source.textureName && ! window.__tslpProbeIdentMissed ) {
 		window.__tslpProbeIdentMissed = true;
 		const stack = new Error().stack || '';
@@ -334,11 +344,7 @@ export function hydrateNodeBuilderState( artifact, material = null ) {
 	// Same trick for compute-storage buffers wired through the user's
 	// `material.colorNode = colors.element( instanceIndex )` etc. — the
 	// kernel writes into `colors`, the render reads from the same buffer.
-	if ( typeof globalThis !== 'undefined' && globalThis.__TSLP_DISABLE_STORAGE_BIND === true ) {
-		// A/B test toggle — leave OFF in production
-	} else {
-		bindUserStorageBuffersToArtifact( artifact, material );
-	}
+	bindUserStorageBuffersToArtifact( artifact, material );
 
 	const { bindings, uniformBuffers, shadowDepthBindings, storageTextureBindings } = hydrateRuntimeBindings( artifact, material );
 	const updateNode = createUniformUpdateNode( artifact, uniformBuffers, material );

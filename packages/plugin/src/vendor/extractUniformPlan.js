@@ -628,7 +628,25 @@ function textureIdentity( texture ) {
 
 	}
 
-	if ( typeof texture.name === 'string' && texture.name.length > 0 ) out.textureName = texture.name;
+	if ( typeof texture.name === 'string' && texture.name.length > 0 ) {
+
+		out.textureName = texture.name;
+
+	} else if ( out.imageSrc ) {
+
+		// TextureLoader is async: at first render `tex.image` may still be
+		// undefined, so the runtime's by-imageSrc lookup hasn't been populated
+		// yet. Hosts (harness, app code) conventionally set `tex.name` to the
+		// URL filename so by-name lookup works synchronously. Mirror that here
+		// when the user didn't name the texture, so the captured identity
+		// always carries something the runtime can match before async loads
+		// complete.
+		const slash = out.imageSrc.lastIndexOf( '/' );
+		const tail = slash >= 0 ? out.imageSrc.slice( slash + 1 ) : out.imageSrc;
+		const filename = tail.split( '?' )[ 0 ].split( '#' )[ 0 ];
+		if ( filename ) out.textureName = filename;
+
+	}
 	if ( typeof texture.mapping === 'number' ) out.mapping = texture.mapping;
 	if ( typeof texture.flipY === 'boolean' ) out.flipY = texture.flipY;
 
