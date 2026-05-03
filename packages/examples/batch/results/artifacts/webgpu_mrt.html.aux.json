@@ -1,10 +1,10 @@
 [
   {
     "shape": "render-output",
-    "configHash": "ba99d5e679058ed11d82d96f1000c50f41dd14d1b51826d6395a44041cd2fe61",
+    "configHash": "03944659592153cd65d18f02961db44be60e8485d3c17a072a0d4c235cf4cf53",
     "artifact": {
       "version": 3,
-      "cacheKey": 7014873840831298,
+      "cacheKey": 8501216183234189,
       "materialShape": "render-output",
       "vertexShader": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform1 : f32\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform2 : vec2<f32>,\n\tnodeUniform8 : mat4x4<f32>\n};\n@binding( 1 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar9 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying4 = uv;\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform8 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar9 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar9;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
       "fragmentShader": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n@binding( 2 ) @group( 1 ) var nodeUniform3 : texture_2d<f32>;\n@binding( 3 ) @group( 1 ) var nodeUniform4 : texture_2d<f32>;\n@binding( 4 ) @group( 1 ) var nodeUniform5 : texture_2d<f32>;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform1 : f32\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform2 : vec2<f32>,\n\tnodeUniform8 : mat4x4<f32>\n};\n@binding( 1 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> nodeVar1 : vec2<u32>;\nvar<private> nodeVar2 : vec4<f32>;\nvar<private> nodeVar3 : vec4<f32>;\nvar<private> nodeVar4 : vec2<u32>;\nvar<private> nodeVar5 : vec4<f32>;\nvar<private> nodeVar6 : vec2<u32>;\nvar<private> nodeVar7 : vec4<f32>;\nvar<private> nodeVar8 : vec2<u32>;\n\n// codes\nfn tsl_clampWrapping_float( coord: f32 ) -> f32 { return clamp( coord, 0.0, 1.0 ); }\nfn tsl_coord_clampS_clamp_2dT( coord : vec2f ) -> vec2f {\n\n\treturn vec2f(\n\t\ttsl_clampWrapping_float( coord.x ),\n\t\ttsl_clampWrapping_float( coord.y )\n\t);\n\n}\n\nfn acesFilmicToneMapping ( color : vec3<f32>, exposure : f32 ) -> vec3<f32> {\n\n\tvar nodeVar0 : vec3<f32>;\n\n\tnodeVar0 = ( mat3x3<f32>( 0.59719, 0.076, 0.0284, 0.35458, 0.90834, 0.13383, 0.04823, 0.01566, 0.83777 ) * ( ( color * vec3<f32>( exposure ) ) / vec3<f32>( 0.6 ) ) );\n\n\treturn clamp( ( mat3x3<f32>( 1.60475, -0.10208, -0.00327, -0.53108, 1.10813, -0.07276, -0.07367, -0.00605, 1.07602 ) * ( ( ( nodeVar0 * ( nodeVar0 + vec3<f32>( 0.0245786 ) ) ) - vec3<f32>( 0.000090537 ) ) / ( ( nodeVar0 * ( ( nodeVar0 + vec3<f32>( 0.432951 ) ) * vec3<f32>( 0.983729 ) ) ) + vec3<f32>( 0.238081 ) ) ) ), vec3<f32>( 0.0 ), vec3<f32>( 1.0 ) );\n\n}\n\nfn sRGBTransferOETF ( color : vec3<f32> ) -> vec3<f32> {\n\n\t\n\n\n\treturn mix( ( ( pow( color, vec3<f32>( 0.41666 ) ) * vec3<f32>( 1.055 ) ) - vec3<f32>( 0.055 ) ), ( color * vec3<f32>( 12.92 ) ), vec3<f32>( ( color <= vec3<f32>( 0.0031308 ) ) ) );\n\n}\n\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) fragCoord : vec4<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar1 = textureDimensions( nodeUniform0, u32( 0 ) );\n\tnodeVar0 = textureLoad( nodeUniform0, vec2<u32>( clamp( floor( tsl_coord_clampS_clamp_2dT( nodeVarying4 ) * vec2<f32>( nodeVar1 ) ), vec2<f32>( 0 ), vec2<f32>( nodeVar1 - vec2<u32>( 1, 1 ) ) ) ), u32( 0 ) );\n\tnodeVar2 = vec4<f32>( acesFilmicToneMapping( nodeVar0.xyz, render.nodeUniform1 ), nodeVar0.w );\n\tnodeVar4 = textureDimensions( nodeUniform3, u32( 0 ) );\n\tnodeVar3 = textureLoad( nodeUniform3, vec2<u32>( clamp( floor( tsl_coord_clampS_clamp_2dT( nodeVarying4 ) * vec2<f32>( nodeVar4 ) ), vec2<f32>( 0 ), vec2<f32>( nodeVar4 - vec2<u32>( 1, 1 ) ) ) ), u32( 0 ) );\n\tnodeVar6 = textureDimensions( nodeUniform4, u32( 0 ) );\n\tnodeVar5 = textureLoad( nodeUniform4, vec2<u32>( clamp( floor( tsl_coord_clampS_clamp_2dT( nodeVarying4 ) * vec2<f32>( nodeVar6 ) ), vec2<f32>( 0 ), vec2<f32>( nodeVar6 - vec2<u32>( 1, 1 ) ) ) ), u32( 0 ) );\n\tnodeVar8 = textureDimensions( nodeUniform5, u32( 0 ) );\n\tnodeVar7 = textureLoad( nodeUniform5, vec2<u32>( clamp( floor( tsl_coord_clampS_clamp_2dT( nodeVarying4 ) * vec2<f32>( nodeVar8 ) ), vec2<f32>( 0 ), vec2<f32>( nodeVar8 - vec2<u32>( 1, 1 ) ) ) ), u32( 0 ) );\n\n\t// result\n\n\toutput.color = mix( mix( mix( mix( vec4<f32>( sRGBTransferOETF( nodeVar2.xyz ), nodeVar2.w ), nodeVar0, step( 0.2, ( fragCoord.xy / object.nodeUniform2 ).x ) ), nodeVar3, step( 0.4, ( fragCoord.xy / object.nodeUniform2 ).x ) ), nodeVar5, step( 0.6, ( fragCoord.xy / object.nodeUniform2 ).x ) ), nodeVar7, step( 0.8, ( fragCoord.xy / object.nodeUniform2 ).x ) );\n\n\treturn output;\n\n}\n",
@@ -310,9 +310,10 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "1529c30d-3112-4679-9588-f6f4dec624eb",
+                "textureUuid": "34e42d64-0fa8-4de4-aedc-3696c1db8939",
                 "textureName": "output",
-                "mapping": 300
+                "mapping": 300,
+                "flipY": false
               }
             },
             {
@@ -323,9 +324,10 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "521554c2-8bc6-4d71-9499-eb99a2eab409",
+                "textureUuid": "7cca2020-b709-4cb4-b6c1-12cca9b370fd",
                 "textureName": "normal",
-                "mapping": 300
+                "mapping": 300,
+                "flipY": false
               }
             },
             {
@@ -336,9 +338,10 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "143abd99-89a5-4fa1-85eb-5e820d1d155a",
+                "textureUuid": "0c124e26-070c-4c0c-86bf-2ebd79faa632",
                 "textureName": "emissive",
-                "mapping": 300
+                "mapping": 300,
+                "flipY": false
               }
             },
             {
@@ -349,9 +352,10 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "602bc602-f1e8-47a3-9398-575f65c34a4e",
+                "textureUuid": "c479f866-5fa0-4e5b-be58-33e391885ad9",
                 "textureName": "diffuse",
-                "mapping": 300
+                "mapping": 300,
+                "flipY": false
               }
             }
           ],
@@ -367,9 +371,10 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "1529c30d-3112-4679-9588-f6f4dec624eb",
+                  "textureUuid": "34e42d64-0fa8-4de4-aedc-3696c1db8939",
                   "textureName": "output",
-                  "mapping": 300
+                  "mapping": 300,
+                  "flipY": false
                 }
               }
             },
@@ -446,9 +451,10 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "521554c2-8bc6-4d71-9499-eb99a2eab409",
+                  "textureUuid": "7cca2020-b709-4cb4-b6c1-12cca9b370fd",
                   "textureName": "normal",
-                  "mapping": 300
+                  "mapping": 300,
+                  "flipY": false
                 }
               }
             },
@@ -471,9 +477,10 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "143abd99-89a5-4fa1-85eb-5e820d1d155a",
+                  "textureUuid": "0c124e26-070c-4c0c-86bf-2ebd79faa632",
                   "textureName": "emissive",
-                  "mapping": 300
+                  "mapping": 300,
+                  "flipY": false
                 }
               }
             },
@@ -496,9 +503,10 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "602bc602-f1e8-47a3-9398-575f65c34a4e",
+                  "textureUuid": "c479f866-5fa0-4e5b-be58-33e391885ad9",
                   "textureName": "diffuse",
-                  "mapping": 300
+                  "mapping": 300,
+                  "flipY": false
                 }
               }
             },
@@ -525,10 +533,10 @@
   },
   {
     "shape": "post-process",
-    "configHash": "86a7d43a9a37a613d75adbeb23274f67e303539d023ff3171d18741d55f0db3b",
+    "configHash": "4f0fcae04980078a4b8015cee446ec0c378cf7f102779621d0e8fed4cf37bc91",
     "artifact": {
       "version": 3,
-      "cacheKey": 9428608260770302,
+      "cacheKey": 9185941839875452,
       "materialShape": "node-material",
       "vertexShader": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : vec2<f32>,\n\tnodeUniform5 : f32,\n\tnodeUniform8 : mat4x4<f32>\n};\n@binding( 1 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar9 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying4 = uv;\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform8 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar9 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar9;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
       "fragmentShader": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n@binding( 2 ) @group( 1 ) var nodeUniform2 : texture_2d<f32>;\n@binding( 3 ) @group( 1 ) var nodeUniform3 : texture_2d<f32>;\n@binding( 4 ) @group( 1 ) var nodeUniform4 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform1 : vec2<f32>,\n\tnodeUniform5 : f32,\n\tnodeUniform8 : mat4x4<f32>\n};\n@binding( 1 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> nodeVar1 : vec2<u32>;\nvar<private> nodeVar2 : vec4<f32>;\nvar<private> nodeVar3 : vec2<u32>;\nvar<private> nodeVar4 : vec4<f32>;\nvar<private> nodeVar5 : vec2<u32>;\nvar<private> nodeVar6 : vec4<f32>;\nvar<private> nodeVar7 : vec2<u32>;\nvar<private> Output : vec4<f32>;\nvar<private> nodeVar8 : vec4<f32>;\n\n// codes\nfn tsl_clampWrapping_float( coord: f32 ) -> f32 { return clamp( coord, 0.0, 1.0 ); }\nfn tsl_coord_clampS_clamp_2dT( coord : vec2f ) -> vec2f {\n\n\treturn vec2f(\n\t\ttsl_clampWrapping_float( coord.x ),\n\t\ttsl_clampWrapping_float( coord.y )\n\t);\n\n}\n\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) fragCoord : vec4<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar1 = textureDimensions( nodeUniform0, u32( 0 ) );\n\tnodeVar0 = textureLoad( nodeUniform0, vec2<u32>( clamp( floor( tsl_coord_clampS_clamp_2dT( nodeVarying4 ) * vec2<f32>( nodeVar1 ) ), vec2<f32>( 0 ), vec2<f32>( nodeVar1 - vec2<u32>( 1, 1 ) ) ) ), u32( 0 ) );\n\tnodeVar3 = textureDimensions( nodeUniform2, u32( 0 ) );\n\tnodeVar2 = textureLoad( nodeUniform2, vec2<u32>( clamp( floor( tsl_coord_clampS_clamp_2dT( nodeVarying4 ) * vec2<f32>( nodeVar3 ) ), vec2<f32>( 0 ), vec2<f32>( nodeVar3 - vec2<u32>( 1, 1 ) ) ) ), u32( 0 ) );\n\tnodeVar5 = textureDimensions( nodeUniform3, u32( 0 ) );\n\tnodeVar4 = textureLoad( nodeUniform3, vec2<u32>( clamp( floor( tsl_coord_clampS_clamp_2dT( nodeVarying4 ) * vec2<f32>( nodeVar5 ) ), vec2<f32>( 0 ), vec2<f32>( nodeVar5 - vec2<u32>( 1, 1 ) ) ) ), u32( 0 ) );\n\tnodeVar7 = textureDimensions( nodeUniform4, u32( 0 ) );\n\tnodeVar6 = textureLoad( nodeUniform4, vec2<u32>( clamp( floor( tsl_coord_clampS_clamp_2dT( nodeVarying4 ) * vec2<f32>( nodeVar7 ) ), vec2<f32>( 0 ), vec2<f32>( nodeVar7 - vec2<u32>( 1, 1 ) ) ) ), u32( 0 ) );\n\tDiffuseColor = mix( mix( mix( mix( nodeVar0, nodeVar0, step( 0.2, ( fragCoord.xy / object.nodeUniform1 ).x ) ), nodeVar2, step( 0.4, ( fragCoord.xy / object.nodeUniform1 ).x ) ), nodeVar4, step( 0.6, ( fragCoord.xy / object.nodeUniform1 ).x ) ), nodeVar6, step( 0.8, ( fragCoord.xy / object.nodeUniform1 ).x ) );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform5 );\n\tDiffuseColor.w = 1.0;\n\tnodeVar8 = max( vec4<f32>( DiffuseColor.xyz, DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tOutput = nodeVar8;\n\n\t// result\n\n\toutput.color = nodeVar8;\n\n\treturn output;\n\n}\n",
@@ -758,7 +766,7 @@
               "size": 8,
               "dtype": "vec2",
               "source": {
-                "kind": "uniform.live",
+                "kind": "renderer.size",
                 "valueSnapshot": {
                   "type": "vec2",
                   "data": [
@@ -823,9 +831,10 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "1529c30d-3112-4679-9588-f6f4dec624eb",
+                "textureUuid": "34e42d64-0fa8-4de4-aedc-3696c1db8939",
                 "textureName": "output",
-                "mapping": 300
+                "mapping": 300,
+                "flipY": false
               }
             },
             {
@@ -836,9 +845,10 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "521554c2-8bc6-4d71-9499-eb99a2eab409",
+                "textureUuid": "7cca2020-b709-4cb4-b6c1-12cca9b370fd",
                 "textureName": "normal",
-                "mapping": 300
+                "mapping": 300,
+                "flipY": false
               }
             },
             {
@@ -849,9 +859,10 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "143abd99-89a5-4fa1-85eb-5e820d1d155a",
+                "textureUuid": "0c124e26-070c-4c0c-86bf-2ebd79faa632",
                 "textureName": "emissive",
-                "mapping": 300
+                "mapping": 300,
+                "flipY": false
               }
             },
             {
@@ -862,9 +873,10 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "602bc602-f1e8-47a3-9398-575f65c34a4e",
+                "textureUuid": "c479f866-5fa0-4e5b-be58-33e391885ad9",
                 "textureName": "diffuse",
-                "mapping": 300
+                "mapping": 300,
+                "flipY": false
               }
             }
           ],
@@ -880,9 +892,10 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "1529c30d-3112-4679-9588-f6f4dec624eb",
+                  "textureUuid": "34e42d64-0fa8-4de4-aedc-3696c1db8939",
                   "textureName": "output",
-                  "mapping": 300
+                  "mapping": 300,
+                  "flipY": false
                 }
               }
             },
@@ -907,7 +920,7 @@
                   "size": 8,
                   "dtype": "vec2",
                   "source": {
-                    "kind": "uniform.live",
+                    "kind": "renderer.size",
                     "valueSnapshot": {
                       "type": "vec2",
                       "data": [
@@ -974,9 +987,10 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "521554c2-8bc6-4d71-9499-eb99a2eab409",
+                  "textureUuid": "7cca2020-b709-4cb4-b6c1-12cca9b370fd",
                   "textureName": "normal",
-                  "mapping": 300
+                  "mapping": 300,
+                  "flipY": false
                 }
               }
             },
@@ -999,9 +1013,10 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "143abd99-89a5-4fa1-85eb-5e820d1d155a",
+                  "textureUuid": "0c124e26-070c-4c0c-86bf-2ebd79faa632",
                   "textureName": "emissive",
-                  "mapping": 300
+                  "mapping": 300,
+                  "flipY": false
                 }
               }
             },
@@ -1024,9 +1039,10 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "602bc602-f1e8-47a3-9398-575f65c34a4e",
+                  "textureUuid": "c479f866-5fa0-4e5b-be58-33e391885ad9",
                   "textureName": "diffuse",
-                  "mapping": 300
+                  "mapping": 300,
+                  "flipY": false
                 }
               }
             },
@@ -1084,7 +1100,7 @@
         "updateBeforeNodes": 1,
         "updateAfterNodes": 0
       },
-      "materialUuid": "da714f10-b827-4cde-be05-6d910e664c87"
+      "materialUuid": "d48f2b3f-2f1f-41d8-8ea8-5a3ce1ff82e8"
     }
   }
 ]

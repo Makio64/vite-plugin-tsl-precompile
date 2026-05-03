@@ -440,7 +440,7 @@
               "source": {
                 "kind": "artifact.texture",
                 "textureUuid": "3c14d90f-7748-4a82-b671-3ca9692055fe",
-                "imageSrc": "http://localhost:8729/examples/textures/cube/pisa/px.png",
+                "imageSrc": "http://localhost:8839/examples/textures/cube/pisa/px.png",
                 "mapping": 301,
                 "flipY": false
               }
@@ -454,7 +454,7 @@
               "source": {
                 "kind": "artifact.texture",
                 "textureUuid": "3c14d90f-7748-4a82-b671-3ca9692055fe",
-                "imageSrc": "http://localhost:8729/examples/textures/cube/pisa/px.png",
+                "imageSrc": "http://localhost:8839/examples/textures/cube/pisa/px.png",
                 "mapping": 301,
                 "flipY": false
               }
@@ -473,7 +473,7 @@
                 "source": {
                   "kind": "artifact.texture",
                   "textureUuid": "3c14d90f-7748-4a82-b671-3ca9692055fe",
-                  "imageSrc": "http://localhost:8729/examples/textures/cube/pisa/px.png",
+                  "imageSrc": "http://localhost:8839/examples/textures/cube/pisa/px.png",
                   "mapping": 301,
                   "flipY": false
                 }
@@ -498,7 +498,7 @@
                 "source": {
                   "kind": "artifact.texture",
                   "textureUuid": "3c14d90f-7748-4a82-b671-3ca9692055fe",
-                  "imageSrc": "http://localhost:8729/examples/textures/cube/pisa/px.png",
+                  "imageSrc": "http://localhost:8839/examples/textures/cube/pisa/px.png",
                   "mapping": 301,
                   "flipY": false
                 }
