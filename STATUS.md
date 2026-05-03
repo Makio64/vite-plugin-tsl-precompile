@@ -6,6 +6,27 @@ Last updated: 2026-05-02
 
 ---
 
+## Feature coverage (capture vs replay)
+
+An example **works** when the slim-runtime replay screenshot matches live three.js within PSNR ≥ 30 dB (the gate from [run-e2e.mjs](packages/examples/batch/run-e2e.mjs#L93)). Smoke-test pass counts (197/198 etc) only prove the example loads — they say nothing about whether the rendered pixels are correct.
+
+**1 / 36 graded examples currently match (3%).** The full per-example table lives at [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md) — refresh with `pnpm coverage` (or `pnpm coverage:retest` to re-capture fresh shots first via the e2e harness, then re-summarize — slow).
+
+| Category | Match / Total | Best example | Worst example |
+|---|---|---|---|
+| Materials | **1 / 6** | webgpu_materials_lightmap (35.77 dB) ✅ | webgpu_materials_displacementmap (10.06 dB) |
+| Lights | 0 / 3 | webgpu_lights_rectarealight (24.39 dB) | webgpu_lightprobe_cubecamera (17.48 dB) |
+| Shadows | 0 / 8 | webgpu_shadowmap_vsm (25.24 dB) | webgpu_shadowmap, webgpu_shadowmap_pointlight (no replay) |
+| Sprites | 0 / 1 | — | webgpu_sprites (12.51 dB) |
+| Compute | 0 / 10 | webgpu_compute_particles (21.85 dB) | webgpu_compute_particles_snow (0.75 dB) |
+| Camera | 0 / 3 | webgpu_camera_array (20.66 dB) | webgpu_camera (14.39 dB) |
+| MRT / RenderTargets | 0 / 4 | webgpu_mrt (2.88 dB) | webgpu_mrt_mask (1.22 dB) |
+| Particles | 0 / 1 | — | webgpu_particles (16.37 dB) |
+
+The full webgpu_* example set (~206 examples) is **not yet visually graded** — only 36 have paired capture/replay PNGs on disk. To grade more, run `pnpm --filter examples-batch run:e2e` over the unscored set (slow, headless Playwright). Fixing the regressions is tracked in [§What's left to do](#whats-left-to-do-ordered-by-user-impact) — particularly the `depth.texture` and `uniform.live` items, which likely account for most of the Shadows and Lights gap.
+
+---
+
 ## Latest fix (2026-05-02)
 
 **Slim runtime now actually renders pixels.** The hydrator's
@@ -34,7 +55,7 @@ for the before/after table and triage plan for remaining failures.
 | 3 — AOT codegen | `emit-updater.js` covers camera/object/material/time/uniform/scene | ✅ Done (core kinds) | Per-kind fixture pass |
 | 4 — Build-time rewrite | Babel transform + virtual modules + `__applyPrecompiled` | ✅ Done | 3-layer hash check fires on corrupt artifact |
 | 5 — Coverage matrix | Fixture infrastructure + 121 tests pass across all material classes | ✅ Core done | 100% cells covered or documented-blocked |
-| 6 — 206-example batch harness | Extractor/codegen batch over three.js webgpu_*.html examples | ✅ 197/198 | ≥ 120/199 (baseline: 68/199) |
+| 6 — 206-example batch harness | Extractor/codegen batch over three.js webgpu_*.html examples (load-smoke only — does not check pixel correctness; see [Feature coverage](#feature-coverage-capture-vs-replay)) | ✅ 197/198 | ≥ 120/199 (baseline: 68/199) |
 | 7 — Slim runtime bundle | Load-smoke over 198 examples, 0 unexpected errors | ✅ 198/198 | ≤ 300 KB gzip + 0 unexpected errors |
 | 8 — Launch | Docs, demos, site, migration guide | 🔶 Infrastructure ready | One external adopter |
 

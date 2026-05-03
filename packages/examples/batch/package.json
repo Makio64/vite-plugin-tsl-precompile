@@ -8,9 +8,11 @@
     "test": "node run.mjs",
     "run": "node run.mjs",
     "run:slim": "node run-slim.mjs",
-    "run:e2e": "node run-e2e.mjs"
+    "run:e2e": "node run-e2e.mjs",
+    "run:coverage-summary": "node run-coverage-summary.mjs"
   },
   "devDependencies": {
-    "playwright": "^1.59.1"
+    "playwright": "^1.59.1",
+    "pngjs": "^7.0.0"
   }
 }

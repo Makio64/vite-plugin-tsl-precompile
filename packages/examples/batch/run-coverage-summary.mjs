@@ -1,0 +1,286 @@
+#!/usr/bin/env node
+/**
+ * Score every paired capture/replay PNG in `results/shots/` and emit a
+ * categorized markdown summary. Answers the question: "for which three.js
+ * webgpu_* examples does the slim runtime produce the same pixels as live
+ * three.js right now?"
+ *
+ * For each `<name>.capture.png` + `<name>.replay.png` pair found on disk:
+ *   - Decode both PNGs (pngjs, pure JS).
+ *   - Compute PSNR using the same formula as run-e2e.mjs (mse over RGB, then
+ *     10*log10(255^2 / mse)). Default verdict threshold is 30 dB to match
+ *     run-e2e.mjs's existing pixel gate.
+ *   - Capture-only entries (no replay file) are flagged as "no replay".
+ *   - Dimension mismatches between capture and replay are flagged as well.
+ *
+ * Existing e2e-report.json `pixelGate.psnr` values are merged in for any
+ * example that doesn't have a paired PNG on disk, so the table doesn't
+ * lose information when shots get pruned.
+ *
+ * Output: results/coverage-summary.md (overwritten each run).
+ *
+ *   node packages/examples/batch/run-coverage-summary.mjs
+ *   node packages/examples/batch/run-coverage-summary.mjs --threshold=25
+ */
+
+import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { resolve, dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { PNG } from 'pngjs';
+
+const SELF = dirname( fileURLToPath( import.meta.url ) );
+const SHOTS = resolve( SELF, 'results/shots' );
+const E2E_REPORT = resolve( SELF, 'results/e2e-report.json' );
+const OUT = resolve( SELF, 'results/coverage-summary.md' );
+
+const args = process.argv.slice( 2 );
+function getArg( prefix, def ) {
+
+	const a = args.find( ( x ) => x.startsWith( prefix ) );
+	return a ? a.slice( prefix.length ) : def;
+
+}
+
+const threshold = parseFloat( getArg( '--threshold=', '30' ) );
+
+if ( ! existsSync( SHOTS ) ) {
+
+	console.error( `[coverage-summary] shots directory not found: ${ SHOTS }` );
+	process.exit( 2 );
+
+}
+
+const files = readdirSync( SHOTS );
+const captures = new Map();
+const replays = new Map();
+for ( const f of files ) {
+
+	const cap = f.match( /^(.+)\.capture\.png$/ );
+	const rep = f.match( /^(.+)\.replay\.png$/ );
+	if ( cap ) captures.set( cap[ 1 ], join( SHOTS, f ) );
+	if ( rep ) replays.set( rep[ 1 ], join( SHOTS, f ) );
+
+}
+
+const allNames = new Set( [ ...captures.keys(), ...replays.keys() ] );
+
+function decodePNG( path ) {
+
+	const buf = readFileSync( path );
+	const png = PNG.sync.read( buf );
+	return { width: png.width, height: png.height, data: png.data };
+
+}
+
+function comparePSNR( capPath, repPath ) {
+
+	const a = decodePNG( capPath );
+	const b = decodePNG( repPath );
+	if ( a.width !== b.width || a.height !== b.height ) {
+
+		return { error: `dim mismatch capture=${ a.width }x${ a.height } replay=${ b.width }x${ b.height }` };
+
+	}
+
+	let sumSq = 0;
+	const px = a.data.length / 4;
+	for ( let i = 0; i < a.data.length; i += 4 ) {
+
+		const dr = a.data[ i ] - b.data[ i ];
+		const dg = a.data[ i + 1 ] - b.data[ i + 1 ];
+		const db = a.data[ i + 2 ] - b.data[ i + 2 ];
+		sumSq += dr * dr + dg * dg + db * db;
+
+	}
+
+	const mse = sumSq / ( px * 3 );
+	const psnr = mse === 0 ? Infinity : 10 * Math.log10( ( 255 * 255 ) / mse );
+	return { psnr, width: a.width, height: a.height };
+
+}
+
+const e2eByName = new Map();
+if ( existsSync( E2E_REPORT ) ) {
+
+	const r = JSON.parse( readFileSync( E2E_REPORT, 'utf8' ) );
+	for ( const d of r.details || [] ) {
+
+		if ( d.pixelGate ) e2eByName.set( d.name, d.pixelGate );
+
+	}
+
+}
+
+function categoryOf( name ) {
+
+	if ( /^webgpu_lights_/.test( name ) || name === 'webgpu_lightprobe_cubecamera.html' ) return 'Lights';
+	if ( /^webgpu_materials_/.test( name ) || name === 'webgpu_clearcoat.html' || name === 'webgpu_sandbox.html' ) return 'Materials';
+	if ( /^webgpu_shadow/.test( name ) ) return 'Shadows';
+	if ( /^webgpu_compute_/.test( name ) ) return 'Compute';
+	if ( /^webgpu_sprites/.test( name ) ) return 'Sprites';
+	if ( /^webgpu_camera/.test( name ) ) return 'Camera';
+	if ( /^webgpu_mrt/.test( name ) || /^webgpu_multiple_rendertargets/.test( name ) ) return 'MRT / RenderTargets';
+	if ( /^webgpu_particles/.test( name ) ) return 'Particles';
+	if ( /^webgpu_postprocessing_/.test( name ) ) return 'Postprocessing';
+	return 'Misc';
+
+}
+
+const rows = [];
+for ( const name of allNames ) {
+
+	const hasCapture = captures.has( name );
+	const hasReplay = replays.has( name );
+	let psnr = null;
+	let verdict = '';
+	let note = '';
+
+	if ( hasCapture && hasReplay ) {
+
+		const r = comparePSNR( captures.get( name ), replays.get( name ) );
+		if ( r.error ) {
+
+			verdict = 'fail';
+			note = r.error;
+
+		} else {
+
+			psnr = r.psnr;
+			if ( psnr === Infinity ) verdict = 'pass';
+			else verdict = psnr >= threshold ? 'pass' : 'fail';
+
+		}
+
+	} else if ( hasCapture && ! hasReplay ) {
+
+		verdict = 'fail';
+		note = 'no replay (slim runtime did not produce a frame)';
+
+	} else if ( ! hasCapture && hasReplay ) {
+
+		verdict = 'fail';
+		note = 'no capture (live three.js did not produce a frame)';
+
+	}
+
+	rows.push( { name, hasCapture, hasReplay, psnr, verdict, note } );
+
+}
+
+// Merge in e2e-report entries for examples not on disk so nothing is lost
+// if shots get pruned. These entries are tagged so the reader can tell.
+for ( const [ name, gate ] of e2eByName ) {
+
+	if ( allNames.has( name ) ) continue;
+	let psnr = null;
+	let verdict = 'fail';
+	let note = '';
+	if ( gate.skipped ) {
+
+		note = `e2e-report: skipped — ${ gate.reason }`;
+
+	} else if ( gate.psnr === 'inf' ) {
+
+		psnr = Infinity;
+		verdict = 'pass';
+		note = 'e2e-report only';
+
+	} else if ( typeof gate.psnr === 'number' ) {
+
+		psnr = gate.psnr;
+		verdict = psnr >= threshold ? 'pass' : 'fail';
+		note = 'e2e-report only';
+
+	}
+
+	rows.push( { name, hasCapture: false, hasReplay: false, psnr, verdict, note } );
+
+}
+
+rows.sort( ( a, b ) => a.name.localeCompare( b.name ) );
+
+const byCategory = new Map();
+for ( const row of rows ) {
+
+	const cat = categoryOf( row.name );
+	if ( ! byCategory.has( cat ) ) byCategory.set( cat, [] );
+	byCategory.get( cat ).push( row );
+
+}
+
+const totalRows = rows.length;
+const passRows = rows.filter( ( r ) => r.verdict === 'pass' ).length;
+const failRows = totalRows - passRows;
+const pct = totalRows === 0 ? 0 : Math.round( ( passRows / totalRows ) * 100 );
+
+function fmtPSNR( psnr ) {
+
+	if ( psnr === null ) return '—';
+	if ( psnr === Infinity ) return 'inf';
+	return psnr.toFixed( 2 );
+
+}
+
+function tick( on ) {
+
+	return on ? '✓' : '✗';
+
+}
+
+function verdictTag( v ) {
+
+	if ( v === 'pass' ) return '✅ matches';
+	return '❌ regression';
+
+}
+
+const lines = [];
+lines.push( `# Feature coverage — capture vs replay` );
+lines.push( '' );
+lines.push( `Generated by \`packages/examples/batch/run-coverage-summary.mjs\`. Threshold: PSNR ≥ ${ threshold } dB.` );
+lines.push( '' );
+lines.push( `**${ passRows } / ${ totalRows } graded examples match (${ pct }%).** ${ failRows } regressions.` );
+lines.push( '' );
+lines.push( `An example **matches** if the slim-runtime replay screenshot is within ${ threshold } dB PSNR of live three.js. "no replay" means the slim runtime failed to produce any frame for that example. "no capture" means live three.js failed.` );
+lines.push( '' );
+
+const categoryOrder = [ 'Lights', 'Materials', 'Shadows', 'Sprites', 'Compute', 'Camera', 'MRT / RenderTargets', 'Particles', 'Postprocessing', 'Misc' ];
+const seen = new Set();
+const ordered = [];
+for ( const c of categoryOrder ) {
+
+	if ( byCategory.has( c ) ) {
+
+		ordered.push( c );
+		seen.add( c );
+
+	}
+
+}
+for ( const c of byCategory.keys() ) {
+
+	if ( ! seen.has( c ) ) ordered.push( c );
+
+}
+
+for ( const cat of ordered ) {
+
+	const items = byCategory.get( cat );
+	const catPass = items.filter( ( r ) => r.verdict === 'pass' ).length;
+	lines.push( `## ${ cat } (${ catPass } / ${ items.length } match)` );
+	lines.push( '' );
+	lines.push( '| Example | Capture | Replay | PSNR (dB) | Verdict | Note |' );
+	lines.push( '|---|---|---|---|---|---|' );
+	for ( const r of items ) {
+
+		lines.push( `| ${ r.name } | ${ tick( r.hasCapture ) } | ${ tick( r.hasReplay ) } | ${ fmtPSNR( r.psnr ) } | ${ verdictTag( r.verdict ) } | ${ r.note } |` );
+
+	}
+
+	lines.push( '' );
+
+}
+
+writeFileSync( OUT, lines.join( '\n' ) );
+console.log( `[coverage-summary] wrote ${ OUT }` );
+console.log( `[coverage-summary] ${ passRows } / ${ totalRows } match at PSNR >= ${ threshold } dB (${ pct }%)` );

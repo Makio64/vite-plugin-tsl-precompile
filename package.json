@@ -15,6 +15,8 @@
     "test:batch": "pnpm --filter examples-batch test",
     "test:slim": "pnpm --filter examples-batch run:slim",
     "test:e2e": "pnpm --filter examples-batch run:e2e",
+    "coverage": "pnpm --filter examples-batch run:coverage-summary",
+    "coverage:retest": "pnpm test:e2e && pnpm coverage",
     "verify": "pnpm --filter vite-plugin-tsl-precompile verify",
     "dev": "pnpm dev:ocean",
     "dev:ocean": "pnpm --filter examples-ocean dev",

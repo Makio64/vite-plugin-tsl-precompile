@@ -12,11 +12,30 @@ importers:
         specifier: ^25.6.0
         version: 25.6.0
 
+  packages/examples/background:
+    dependencies:
+      '@tsl-precompile/runtime':
+        specifier: workspace:*
+        version: link:../../runtime
+      three:
+        specifier: ^0.184.0
+        version: 0.184.0
+    devDependencies:
+      vite:
+        specifier: ^8.0.9
+        version: 8.0.9(@types/node@25.6.0)(terser@5.46.1)
+      vite-plugin-tsl-precompile:
+        specifier: workspace:*
+        version: link:../../plugin
+
   packages/examples/batch:
     devDependencies:
       playwright:
         specifier: ^1.59.1
         version: 1.59.1
+      pngjs:
+        specifier: ^7.0.0
+        version: 7.0.0
 
   packages/examples/bloom:
     dependencies:
@@ -818,6 +837,10 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
+  pngjs@7.0.0:
+    resolution: {integrity: sha512-LKWqWJRhstyYo9pGvgor/ivk2w94eSjE3RGVuzLGlr3NmD8bf7RcYGze1mNdEHRP6TRP6rMuDHk5t44hnTRyow==}
+    engines: {node: '>=14.19.0'}
+
   postcss@8.5.10:
     resolution: {integrity: sha512-pMMHxBOZKFU6HgAZ4eyGnwXF/EvPGGqUr0MnZ5+99485wwW41kW91A4LOGxSHhgugZmSChL5AlElNdwlNgcnLQ==}
     engines: {node: ^10 || ^12 || >=14}
@@ -1440,6 +1463,8 @@ snapshots:
       playwright-core: 1.59.1
     optionalDependencies:
       fsevents: 2.3.2
+
+  pngjs@7.0.0: {}
 
   postcss@8.5.10:
     dependencies:
