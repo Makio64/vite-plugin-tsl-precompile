@@ -650,8 +650,19 @@ function __classNameForMaterial( material ) {
 // Material-property keys that carry texture refs three.js's renderer
 // reads off the material directly. The hydrator's 'material.<prop>'
 // resolver pulls live values from these on each frame.
-const __TEXTURE_PROPS = [ 'map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'envMap', 'lightMap', 'aoMap', 'displacementMap', 'alphaMap', 'bumpMap', 'clearcoatMap', 'clearcoatNormalMap', 'clearcoatRoughnessMap', 'transmissionMap', 'thicknessMap', 'iridescenceMap', 'iridescenceThicknessMap', 'sheenColorMap', 'sheenRoughnessMap', 'specularMap', 'specularColorMap', 'specularIntensityMap', 'gradientMap', 'matcap' ];
-const __SCALAR_PROPS = [ 'color', 'opacity', 'transparent', 'side', 'visible', 'toneMapped', 'emissive', 'roughness', 'metalness', 'clearcoat', 'clearcoatRoughness', 'sheen', 'sheenColor', 'sheenRoughness', 'transmission', 'thickness', 'attenuationColor', 'attenuationDistance', 'iridescence', 'iridescenceIOR', 'normalScale', 'displacementScale', 'displacementBias', 'wireframe', 'wireframeLinewidth', 'flatShading', 'depthTest', 'depthWrite', 'alphaTest', 'blending', 'premultipliedAlpha', 'dithering', 'vertexColors' ];
+//
+// Audited against three.js r184 MeshStandardMaterial / MeshPhysicalMaterial /
+// MeshPhongMaterial / MeshBasicMaterial / MeshLambertMaterial / MeshMatcap-
+// Material / MeshToonMaterial. Keep in sync with the TEXTURE_PROPS scan in
+// runtime/src/hydrator.js.
+// TODO(post-merge): hydrator.js TEXTURE_PROPS scan (lines ~806-814) is missing
+// anisotropyMap -- add when Agent A's changes land so material->artifact UUID
+// fallback resolves anisotropy textures too.
+const __TEXTURE_PROPS = [ 'map', 'alphaMap', 'aoMap', 'bumpMap', 'displacementMap', 'emissiveMap', 'envMap', 'lightMap', 'normalMap', 'specularMap', 'roughnessMap', 'metalnessMap', 'gradientMap', 'matcap', 'clearcoatMap', 'clearcoatNormalMap', 'clearcoatRoughnessMap', 'iridescenceMap', 'iridescenceThicknessMap', 'sheenColorMap', 'sheenRoughnessMap', 'specularColorMap', 'specularIntensityMap', 'transmissionMap', 'thicknessMap', 'anisotropyMap' ];
+// Scalar/Color/Vector2/array PBR material properties -- copied source->swap
+// on every replay so live GUI tweaks (lightMapIntensity, displacementScale,
+// etc.) survive into the precompiled material's per-frame uniform updaters.
+const __SCALAR_PROPS = [ 'color', 'opacity', 'transparent', 'side', 'visible', 'toneMapped', 'emissive', 'emissiveIntensity', 'roughness', 'metalness', 'normalScale', 'normalMapType', 'bumpScale', 'displacementScale', 'displacementBias', 'lightMapIntensity', 'aoMapIntensity', 'envMapIntensity', 'envMapRotation', 'reflectivity', 'refractionRatio', 'shininess', 'specular', 'specularColor', 'specularIntensity', 'ior', 'clearcoat', 'clearcoatRoughness', 'clearcoatNormalScale', 'iridescence', 'iridescenceIOR', 'iridescenceThicknessRange', 'sheen', 'sheenColor', 'sheenRoughness', 'transmission', 'thickness', 'attenuationColor', 'attenuationDistance', 'anisotropy', 'anisotropyRotation', 'dispersion', 'alphaTest', 'alphaToCoverage', 'depthTest', 'depthWrite', 'blending', 'blendSrc', 'blendDst', 'blendEquation', 'premultipliedAlpha', 'dithering', 'vertexColors', 'wireframe', 'wireframeLinewidth', 'flatShading' ];
 function __copyMaterialProps( src, dst ) {
 	for ( const key of __SCALAR_PROPS ) if ( src && src[ key ] !== undefined ) dst[ key ] = src[ key ];
 	for ( const key of __TEXTURE_PROPS ) if ( src && src[ key ] !== undefined ) dst[ key ] = src[ key ];

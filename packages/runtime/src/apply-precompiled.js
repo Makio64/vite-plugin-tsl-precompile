@@ -114,8 +114,14 @@ function isAuxiliaryShape( shape ) {
  */
 function copyCommonMaterialProperties( src, dst ) {
 
+	// Audited against three.js r184: MeshStandardMaterial, MeshPhysicalMaterial,
+	// MeshPhongMaterial, MeshBasicMaterial, MeshLambertMaterial, MeshMatcap-
+	// Material, MeshToonMaterial. Keep in sync with `__TEXTURE_PROPS` /
+	// `__SCALAR_PROPS` in packages/examples/batch/run-e2e.mjs and the
+	// `TEXTURE_PROPS` scan in runtime/src/hydrator.js.
 	const props = [
 		'name',
+		// Color / scalar PBR properties
 		'color',
 		'emissive',
 		'emissiveIntensity',
@@ -125,14 +131,22 @@ function copyCommonMaterialProperties( src, dst ) {
 		'specularColor',
 		'specularIntensity',
 		'shininess',
+		'reflectivity',
+		'refractionRatio',
 		'ior',
 		'transmission',
 		'thickness',
+		'attenuationColor',
+		'attenuationDistance',
 		'sheen',
 		'sheenColor',
 		'sheenRoughness',
 		'clearcoat',
 		'clearcoatRoughness',
+		'clearcoatNormalScale',
+		'iridescence',
+		'iridescenceIOR',
+		'iridescenceThicknessRange',
 		'anisotropy',
 		'anisotropyRotation',
 		'dispersion',
@@ -149,8 +163,13 @@ function copyCommonMaterialProperties( src, dst ) {
 		'blendSrc',
 		'blendDst',
 		'blendEquation',
+		'premultipliedAlpha',
+		'dithering',
+		'vertexColors',
 		'wireframe',
+		'wireframeLinewidth',
 		'flatShading',
+		// PBR map properties (textures)
 		'map',
 		'alphaMap',
 		'aoMap',
@@ -179,13 +198,13 @@ function copyCommonMaterialProperties( src, dst ) {
 		'clearcoatMap',
 		'clearcoatRoughnessMap',
 		'clearcoatNormalMap',
-		'clearcoatNormalScale',
 		'transmissionMap',
 		'thicknessMap',
 		'iridescenceMap',
 		'iridescenceThicknessMap',
 		'sheenColorMap',
 		'sheenRoughnessMap',
+		'anisotropyMap',
 	];
 
 	for ( const k of props ) {
