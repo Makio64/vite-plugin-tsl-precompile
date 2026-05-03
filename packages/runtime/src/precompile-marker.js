@@ -314,6 +314,18 @@ async function captureMaterialInDev( material, name ) {
 		// subclass-specific cull paths (e.g. `intersectsSprite`); the throwaway
 		// camera is a placeholder so culling decisions here are meaningless.
 		mesh.frustumCulled = false;
+		// Propagate shadow flags. The `for...in Object.keys(sourceObject)` loop
+		// above SKIPS `receiveShadow` / `castShadow` because they're inherited
+		// `Object3D` defaults (so `key in mesh` returns true). Without this,
+		// three.js's NodeBuilder compiles materials WITHOUT shadow sampling,
+		// so the captured WGSL has no `getShadow()` call and replay shadows
+		// can never appear regardless of runtime depth-texture wiring.
+		if ( sourceObject ) {
+
+			if ( sourceObject.receiveShadow ) mesh.receiveShadow = true;
+			if ( sourceObject.castShadow ) mesh.castShadow = true;
+
+		}
 		if ( mesh.color === undefined && Color ) mesh.color = sourceObject && sourceObject.color || material.color || new Color( 1, 1, 1 );
 		scene.add( mesh );
 

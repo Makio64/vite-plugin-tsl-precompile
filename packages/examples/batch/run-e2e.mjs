@@ -408,6 +408,10 @@ window.__tslpPmremPending = 0;
 // Playwright waits for this to reach 0 before taking a screenshot so the GPU
 // storage buffers written by compute are visible in the final render.
 window.__tslpComputePending = 0;
+// Counter for in-flight async shadow-map renders run on the full WebGPURenderer
+// (slim has shadow code tree-shaken). Playwright waits for this to reach 0 so
+// light.shadow.map.depthTexture is allocated before the slim render samples it.
+window.__tslpShadowPending = 0;
 
 // PMREMGenerator drives nested renderer.compile / renderer.render calls when
 // it builds the prefiltered cubemap. Those nested calls re-enter this
@@ -1127,15 +1131,22 @@ function __syncStorageBuffers( computeNode, fullRenderer, slimRenderer ) {
 
 let __computeRenderer = null;
 let __computeRendererInit = null;
+let __fullThreeMod = null;
 async function __getComputeRenderer( slimRenderer ) {
 	if ( __computeRenderer ) return __computeRenderer;
 	if ( __computeRendererInit ) return __computeRendererInit;
 	__computeRendererInit = ( async () => {
 		try {
-			const { WebGPURenderer: FullRenderer } = await import( '/build/three.webgpu.js' );
+			const mod = await import( '/build/three.webgpu.js' );
+			__fullThreeMod = mod;
+			const FullRenderer = mod.WebGPURenderer;
 			const device = slimRenderer.backend && slimRenderer.backend.device;
 			const r = new FullRenderer( device ? { device } : {} );
 			await r.init();
+			// Enable shadow map on the full renderer so shadow passes fire when
+			// rendering the shadow scene below. The slim renderer's shadowMap
+			// flag is cosmetic (shadow code is tree-shaken).
+			r.shadowMap.enabled = true;
 			__computeRenderer = r;
 			return r;
 		} catch ( err ) {
@@ -1144,6 +1155,282 @@ async function __getComputeRenderer( slimRenderer ) {
 		}
 	} )();
 	return __computeRendererInit;
+}
+
+// ============================================================================
+// Shadow-map population (slim has shadow render pass tree-shaken)
+//
+// The slim renderer never allocates light.shadow.map. The hydrator's
+// createShadowDepthRebinder rebinds texture_depth_2d bindings to live
+// light.shadow.map.depthTexture — but they're null without help.
+//
+// We piggyback on the full WebGPURenderer (already initialised for compute
+// and PMREM, sharing the slim's GPU device). For each shadow-using scene we
+// build a parallel "shadow scene" with stand-in MeshBasicNodeMaterial meshes
+// that mirror the user's castShadow/receiveShadow flags, plus shared Light
+// references. fullRenderer.render(shadowScene, camera) triggers three.js's
+// shadow pass which allocates light.shadow.map (a RenderTarget) ON THE
+// SHARED LIGHT OBJECT — slim's rebinder then resolves to a real depth map.
+//
+// We render to an offscreen RenderTarget so the canvas is left alone.
+// ============================================================================
+
+const __shadowSceneCache = new WeakMap(); // user-scene -> shadow-scene
+const __shadowSceneMap = new WeakMap();   // user-scene -> { meshCount }
+const __shadowDiscardRT = { rt: null };
+
+function __sceneHasShadowLights( scene ) {
+	if ( ! scene || typeof scene.traverse !== 'function' ) return false;
+	let found = false;
+	scene.traverse( ( o ) => {
+		if ( found ) return;
+		if ( o && o.isLight === true && o.castShadow === true && o.shadow ) found = true;
+	} );
+	return found;
+}
+
+function __buildShadowScene( userScene ) {
+	if ( ! __fullThreeMod ) return null;
+	// MeshLambertNodeMaterial samples lights and shadows — without a shadow-
+	// sampling material in the scene, three.js's NodeBuilder skips ShadowNode
+	// setup and light.shadow.map never allocates. Lambert is the cheapest
+	// PCF-shadow-aware material we can stand-in for.
+	const { Scene: FullScene, Mesh: FullMesh, MeshLambertNodeMaterial } = __fullThreeMod;
+	if ( ! FullScene || ! FullMesh || ! MeshLambertNodeMaterial ) return null;
+	const StandinMaterial = MeshLambertNodeMaterial;
+	const shadowScene = new FullScene();
+	const lightPairs = []; // { src, clone } so we can refresh transforms each render
+	const meshPairs = []; // { src, clone } so we can refresh transforms each render
+	let meshCount = 0;
+	let lightCount = 0;
+	// Make sure all matrices are current before reading.
+	try { userScene.updateMatrixWorld( true ); } catch ( _ ) {}
+	userScene.traverse( ( o ) => {
+		if ( ! o ) return;
+		// Lights: clone (so the original keeps its parent in the user scene),
+		// but SHARE the LightShadow object by reference. Three.js's shadow
+		// pass writes shadow.map onto cloned.shadow — because shadow is the
+		// same LightShadow instance as the original, original.shadow.map is
+		// populated too, and the slim hydrator's rebinder picks it up.
+		if ( o.isLight === true && o.castShadow === true && o.shadow ) {
+			let cloned = null;
+			// Build a fresh light of the same type rather than cloning, to avoid
+			// any inherited internal state that disables shadow allocation.
+			try {
+				const FullThree = __fullThreeMod;
+				if ( o.isDirectionalLight && FullThree.DirectionalLight ) {
+					cloned = new FullThree.DirectionalLight( o.color ? o.color.clone() : 0xffffff, o.intensity || 1 );
+				} else if ( o.isSpotLight && FullThree.SpotLight ) {
+					cloned = new FullThree.SpotLight( o.color ? o.color.clone() : 0xffffff, o.intensity || 1 );
+					if ( o.distance !== undefined ) cloned.distance = o.distance;
+					if ( o.angle !== undefined ) cloned.angle = o.angle;
+					if ( o.penumbra !== undefined ) cloned.penumbra = o.penumbra;
+					if ( o.decay !== undefined ) cloned.decay = o.decay;
+				} else if ( o.isPointLight && FullThree.PointLight ) {
+					cloned = new FullThree.PointLight( o.color ? o.color.clone() : 0xffffff, o.intensity || 1 );
+					if ( o.distance !== undefined ) cloned.distance = o.distance;
+					if ( o.decay !== undefined ) cloned.decay = o.decay;
+				} else if ( typeof o.clone === 'function' ) {
+					cloned = o.clone();
+				}
+			} catch ( _ ) { cloned = null; }
+			if ( cloned ) {
+				cloned.castShadow = true;
+				// Copy mapSize/bias/normalBias/radius/camera params from source.shadow
+				if ( cloned.shadow && o.shadow ) {
+					if ( o.shadow.mapSize ) cloned.shadow.mapSize.copy( o.shadow.mapSize );
+					if ( typeof o.shadow.bias === 'number' ) cloned.shadow.bias = o.shadow.bias;
+					if ( typeof o.shadow.normalBias === 'number' ) cloned.shadow.normalBias = o.shadow.normalBias;
+					if ( typeof o.shadow.radius === 'number' ) cloned.shadow.radius = o.shadow.radius;
+					if ( o.shadow.camera ) {
+						if ( typeof o.shadow.camera.near === 'number' ) cloned.shadow.camera.near = o.shadow.camera.near;
+						if ( typeof o.shadow.camera.far === 'number' ) cloned.shadow.camera.far = o.shadow.camera.far;
+						if ( typeof o.shadow.camera.left === 'number' ) cloned.shadow.camera.left = o.shadow.camera.left;
+						if ( typeof o.shadow.camera.right === 'number' ) cloned.shadow.camera.right = o.shadow.camera.right;
+						if ( typeof o.shadow.camera.top === 'number' ) cloned.shadow.camera.top = o.shadow.camera.top;
+						if ( typeof o.shadow.camera.bottom === 'number' ) cloned.shadow.camera.bottom = o.shadow.camera.bottom;
+						if ( typeof o.shadow.camera.fov === 'number' ) cloned.shadow.camera.fov = o.shadow.camera.fov;
+						cloned.shadow.camera.updateProjectionMatrix();
+					}
+				}
+				// Decompose the original light's world transform onto the
+				// cloned light's local position/quaternion/scale. This way
+				// matrixAutoUpdate stays true and three.js's matrix update
+				// pipeline produces correct matrixWorld during render.
+				if ( o.matrixWorld ) {
+					o.matrixWorld.decompose( cloned.position, cloned.quaternion, cloned.scale );
+				}
+				// Directional / spot lights project shadows toward a target;
+				// the target is also an Object3D in the user scene. Clone it
+				// and parent under shadowScene to keep the projection correct.
+				if ( o.target && o.target.isObject3D ) {
+					const tgtClone = o.target.clone();
+					if ( o.target.matrixWorld ) {
+						o.target.matrixWorld.decompose( tgtClone.position, tgtClone.quaternion, tgtClone.scale );
+					}
+					shadowScene.add( tgtClone );
+					cloned.target = tgtClone;
+				}
+				shadowScene.add( cloned );
+				lightPairs.push( { src: o, clone: cloned } );
+				lightCount ++;
+			}
+			return;
+		}
+		// Mirror shadow-relevant meshes with a basic node material so the full
+		// renderer's NodeBuilder can compile them. The shadow pass overrides
+		// material with ShadowPassMaterial for the depth render anyway.
+		if ( ( o.isMesh === true || o.isSkinnedMesh === true ) && o.geometry && ( o.castShadow === true || o.receiveShadow === true ) ) {
+			const standin = new FullMesh( o.geometry, new StandinMaterial() );
+			standin.castShadow = !! o.castShadow;
+			standin.receiveShadow = !! o.receiveShadow;
+			// Decompose world matrix onto local position/quaternion/scale —
+			// matrixAutoUpdate=true (default) ensures matrixWorld is rebuilt
+			// during render's projectObject pass.
+			if ( o.matrixWorld ) {
+				o.matrixWorld.decompose( standin.position, standin.quaternion, standin.scale );
+			}
+			standin.frustumCulled = false;
+			// Carry alpha-related fields that the depth pass uses.
+			if ( o.material && ! Array.isArray( o.material ) ) {
+				if ( o.material.alphaTest ) standin.material.alphaTest = o.material.alphaTest;
+				if ( o.material.alphaMap ) standin.material.alphaMap = o.material.alphaMap;
+				if ( o.material.transparent ) standin.material.transparent = true;
+			}
+			shadowScene.add( standin );
+			meshPairs.push( { src: o, clone: standin } );
+			meshCount ++;
+		}
+	} );
+	if ( meshCount === 0 || lightCount === 0 ) return null;
+	shadowScene.__lightPairs = lightPairs;
+	shadowScene.__meshPairs = meshPairs;
+	__shadowSceneMap.set( userScene, { meshCount, lightCount } );
+	return shadowScene;
+}
+
+// Refresh world transforms on the cloned shadow-scene objects from their live
+// source counterparts so animations & camera-driven rigs cast accurate shadows.
+function __refreshShadowScene( userScene, shadowScene ) {
+	if ( ! shadowScene ) return;
+	try { userScene.updateMatrixWorld( true ); } catch ( _ ) {}
+	const lightPairs = shadowScene.__lightPairs || [];
+	for ( const { src, clone } of lightPairs ) {
+		if ( ! src || ! clone || ! src.matrixWorld ) continue;
+		// Decompose live world matrix into the clone's local position/quaternion/
+		// scale. We keep matrixAutoUpdate=true so three.js's pipeline rebuilds
+		// matrixWorld for the cloned light at the start of render — same as it
+		// does for the selftest scene that successfully sets shadow.map.
+		src.matrixWorld.decompose( clone.position, clone.quaternion, clone.scale );
+		if ( src.target && clone.target && src.target.matrixWorld ) {
+			src.target.matrixWorld.decompose( clone.target.position, clone.target.quaternion, clone.target.scale );
+		}
+	}
+	const meshPairs = shadowScene.__meshPairs || [];
+	for ( const { src, clone } of meshPairs ) {
+		if ( ! src || ! clone || ! src.matrixWorld ) continue;
+		src.matrixWorld.decompose( clone.position, clone.quaternion, clone.scale );
+	}
+}
+
+function __getOrBuildShadowScene( userScene ) {
+	if ( __shadowSceneCache.has( userScene ) ) return __shadowSceneCache.get( userScene );
+	const built = __buildShadowScene( userScene );
+	__shadowSceneCache.set( userScene, built ); // cache null too, so we don't retry
+	return built;
+}
+
+// Track per-scene state: whether a shadow render is in flight, and the last
+// (lights+meshes) count used to detect scene growth (e.g. async glTF load adds
+// the dragons after the first render). When the count changes we rebuild and
+// re-kick so the new geometry casts shadows too.
+const __shadowState = new WeakMap(); // userScene -> { inflight, signature }
+function __sceneSignature( scene ) {
+	if ( ! scene || typeof scene.traverse !== 'function' ) return '';
+	let lights = 0, meshes = 0;
+	scene.traverse( ( o ) => {
+		if ( ! o ) return;
+		if ( o.isLight === true && o.castShadow === true && o.shadow ) lights ++;
+		else if ( ( o.isMesh === true || o.isSkinnedMesh === true ) && o.geometry && ( o.castShadow === true || o.receiveShadow === true ) ) meshes ++;
+	} );
+	return lights + ':' + meshes;
+}
+function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
+	if ( ! userScene || ! camera ) return;
+	const sig = __sceneSignature( userScene );
+	if ( sig === '' || sig.startsWith( '0:' ) || sig.endsWith( ':0' ) ) return;
+	let st = __shadowState.get( userScene );
+	if ( ! st ) { st = { inflight: false, signature: '' }; __shadowState.set( userScene, st ); }
+	if ( st.inflight ) return;
+	if ( st.signature === sig ) return; // already populated for this configuration
+	// New or grown scene: discard cached shadow-scene so __buildShadowScene
+	// re-walks and picks up the freshly-added meshes (e.g. glTF children).
+	__shadowSceneCache.delete( userScene );
+	st.inflight = true;
+	st.signature = sig;
+	window.__tslpShadowPending = ( window.__tslpShadowPending | 0 ) + 1;
+	const _slimRenderer = slimRenderer;
+	const _userScene = userScene;
+	const _camera = camera;
+	__getComputeRenderer( slimRenderer ).then( async ( fullRenderer ) => {
+		if ( ! fullRenderer ) return;
+		const shadowScene = __getOrBuildShadowScene( _userScene );
+		if ( ! shadowScene ) return;
+		__refreshShadowScene( _userScene, shadowScene );
+		// Match the slim renderer's shadow-map type so PCF vs VSM matches.
+		try {
+			if ( _slimRenderer.shadowMap && typeof _slimRenderer.shadowMap.type === 'number' ) {
+				fullRenderer.shadowMap.type = _slimRenderer.shadowMap.type;
+			}
+			if ( _slimRenderer.shadowMap && _slimRenderer.shadowMap.transmitted ) {
+				fullRenderer.shadowMap.transmitted = true;
+			}
+		} catch ( _ ) {}
+		// Render to a tiny offscreen RT so the canvas pixels stay slim's. The
+		// RT must be large enough that the shadow pass setup doesn't take a
+		// degenerate path; 256x256 chosen to comfortably exceed the 4x4 lower
+		// bound where some backends NaN out.
+		try {
+			const { RenderTarget: FullRT } = __fullThreeMod;
+			if ( ! __shadowDiscardRT.rt && FullRT ) __shadowDiscardRT.rt = new FullRT( 256, 256 );
+			if ( __shadowDiscardRT.rt ) fullRenderer.setRenderTarget( __shadowDiscardRT.rt );
+		} catch ( _ ) {}
+		try {
+			await fullRenderer.render( shadowScene, _camera );
+			// Second render: the first render may have only built+queued shadow node
+			// setup; allocations happen during ShadowNode.updateBefore which fires
+			// from the SECOND render once nodeFrame.frameId advances.
+			await fullRenderer.render( shadowScene, _camera );
+			// Copy populated shadow.map/depthTexture from cloned light to the
+			// original (user-scene) light so slim's hydrator rebinder finds them.
+			let mapCount = 0;
+			for ( const { src, clone } of shadowScene.__lightPairs || [] ) {
+				if ( clone && clone.shadow && clone.shadow.map && src && src.shadow ) {
+					src.shadow.map = clone.shadow.map;
+					if ( clone.shadow.map.depthTexture ) src.shadow.map.depthTexture = clone.shadow.map.depthTexture;
+					src.shadow.camera = clone.shadow.camera;
+					src.shadow.matrix = clone.shadow.matrix;
+					mapCount ++;
+				}
+			}
+			if ( ! window.__tslpShadowLoggedOnce ) { window.__tslpShadowLoggedOnce = true; console.log( '[tslp-shadow] populated ' + mapCount + ' shadow maps' ); }
+		} catch ( err ) {
+			console.warn( '[tslp-e2e] shadow render failed:', err && err.message || err );
+		} finally {
+			try { fullRenderer.setRenderTarget( null ); } catch ( _ ) {}
+		}
+	} ).catch( ( err ) => {
+		console.warn( '[tslp-e2e] shadow kick failed:', err && err.message || err );
+	} ).finally( () => {
+		const stEnd = __shadowState.get( _userScene );
+		if ( stEnd ) stEnd.inflight = false;
+		window.__tslpShadowPending = Math.max( 0, ( window.__tslpShadowPending | 0 ) - 1 );
+		// After shadow map is populated, force one extra slim render so the
+		// rebinder sees the live depthTexture and the shadow shows up.
+		if ( window.__tslpFrozen ) {
+			try { _slimRenderer.render( _userScene, _camera ); } catch ( e ) { console.warn( '[tslp-shadow] forced re-render failed:', e && e.message || e ); }
+		}
+	} );
 }
 
 export class WebGPURenderer extends Slim.WebGPURenderer {
@@ -1175,6 +1462,10 @@ export class WebGPURenderer extends Slim.WebGPURenderer {
 		// reads the live prefiltered texture from _textureRefs. Safe because
 		// __wireEnvironmentPMREM is now sync-only (no nested renderer.render calls).
 		__wireEnvironmentPMREM( this, scene );
+		// Kick off async shadow-map population on the full renderer (slim has
+		// shadow code tree-shaken). On completion the rebinder picks up the
+		// live light.shadow.map.depthTexture and the next slim render shows it.
+		__kickShadowRenderAsync( this, scene, camera );
 		const r = super.render( scene, camera );
 		// After the first render, kick off async PMREM generation if not started.
 		// Environment PMREM: once ready, __wireEnvironmentPMREM sets needsUpdate on
@@ -1969,9 +2260,10 @@ async function visitExample( browser, name, mode, waitMs ) {
 		try {
 
 			await page.waitForFunction(
-				// Also wait for async PMREM generations and compute dispatches so
-				// IBL textures and GPU storage buffers are up-to-date before screenshot.
-				() => window.__tslpFrozen === true && ( window.__tslpPmremPending | 0 ) === 0 && ( window.__tslpComputePending | 0 ) === 0,
+				// Also wait for async PMREM generations, compute dispatches, and
+				// shadow-map renders so IBL textures, storage buffers, and shadow
+				// depth textures are up-to-date before the screenshot.
+				() => window.__tslpFrozen === true && ( window.__tslpPmremPending | 0 ) === 0 && ( window.__tslpComputePending | 0 ) === 0 && ( window.__tslpShadowPending | 0 ) === 0,
 				{ timeout: RENDER_TIMEOUT_MS },
 			);
 
