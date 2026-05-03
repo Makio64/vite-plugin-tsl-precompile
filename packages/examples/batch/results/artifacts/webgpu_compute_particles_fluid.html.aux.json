@@ -1,7 +1,7 @@
 [
   {
     "shape": "background",
-    "configHash": "2e2a7eeabba20cb84c7bb57d5cd70a163862995b0172f2500393a6afaa278d9c",
+    "configHash": "fa0a5b4a0a2d663416c959487d19dd165309f3b8f682163d17ff4b5bd6d9f4e7",
     "artifact": {
       "version": 3,
       "cacheKey": 10997750159064952,
@@ -748,7 +748,7 @@
   },
   {
     "shape": "render-output",
-    "configHash": "319e88c0d15efc2c44f28bfa3261c36b7e3432f85e6502eb844ac04dff1d5fb8",
+    "configHash": "8e099e7f4e35d1467b9e3dd68023304789a63216a2f24fc3c04b72306e46a666",
     "artifact": {
       "version": 3,
       "cacheKey": 3819760024754709,

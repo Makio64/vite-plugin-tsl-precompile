@@ -1,7 +1,7 @@
 [
   {
     "shape": "background",
-    "configHash": "0f3f030bff13d0ba8e091eaa5c93ce0a35192e31fdb549d4562e96400957daf9",
+    "configHash": "da4b33064c94e9bded6d8e9d3e9de2f01411879adc120c7c26ee2f54c31ec677",
     "artifact": {
       "version": 3,
       "cacheKey": 4676193999325015,
@@ -440,7 +440,7 @@
               "source": {
                 "kind": "artifact.texture",
                 "textureUuid": "3c14d90f-7748-4a82-b671-3ca9692055fe",
-                "imageSrc": "http://localhost:8734/examples/textures/cube/pisa/px.png",
+                "imageSrc": "http://localhost:8733/examples/textures/cube/pisa/px.png",
                 "mapping": 301,
                 "flipY": false
               }
@@ -454,7 +454,7 @@
               "source": {
                 "kind": "artifact.texture",
                 "textureUuid": "3c14d90f-7748-4a82-b671-3ca9692055fe",
-                "imageSrc": "http://localhost:8734/examples/textures/cube/pisa/px.png",
+                "imageSrc": "http://localhost:8733/examples/textures/cube/pisa/px.png",
                 "mapping": 301,
                 "flipY": false
               }
@@ -473,7 +473,7 @@
                 "source": {
                   "kind": "artifact.texture",
                   "textureUuid": "3c14d90f-7748-4a82-b671-3ca9692055fe",
-                  "imageSrc": "http://localhost:8734/examples/textures/cube/pisa/px.png",
+                  "imageSrc": "http://localhost:8733/examples/textures/cube/pisa/px.png",
                   "mapping": 301,
                   "flipY": false
                 }
@@ -498,7 +498,7 @@
                 "source": {
                   "kind": "artifact.texture",
                   "textureUuid": "3c14d90f-7748-4a82-b671-3ca9692055fe",
-                  "imageSrc": "http://localhost:8734/examples/textures/cube/pisa/px.png",
+                  "imageSrc": "http://localhost:8733/examples/textures/cube/pisa/px.png",
                   "mapping": 301,
                   "flipY": false
                 }
@@ -671,7 +671,7 @@
   },
   {
     "shape": "render-output",
-    "configHash": "90a5a84186bcbc44efdd95b20bf6492a0c0d34057e53f1b3ebe0bc95b1236c03",
+    "configHash": "d36b91adf79b6c825319324d1139b036b229c1a853d064a3e9e9bf91fff92fb7",
     "artifact": {
       "version": 3,
       "cacheKey": 11519813694183332,

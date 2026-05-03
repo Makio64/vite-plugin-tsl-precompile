@@ -1,7 +1,7 @@
 [
   {
     "shape": "post-process",
-    "configHash": "4f0fcae04980078a4b8015cee446ec0c378cf7f102779621d0e8fed4cf37bc91",
+    "configHash": "6e59ab7395d6d9f2a67803e42a882353ad612fbc51d4dbbb462175f1d5574d53",
     "artifact": {
       "version": 3,
       "cacheKey": 9185941839875452,
@@ -573,7 +573,7 @@
   },
   {
     "shape": "render-output",
-    "configHash": "03944659592153cd65d18f02961db44be60e8485d3c17a072a0d4c235cf4cf53",
+    "configHash": "4142a730894e4c15a994add402184076b75fd52a9bceac57f3fc7a3430a2f50c",
     "artifact": {
       "version": 3,
       "cacheKey": 8501216183234189,

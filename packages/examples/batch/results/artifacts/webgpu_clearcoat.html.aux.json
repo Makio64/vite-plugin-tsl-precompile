@@ -1,7 +1,7 @@
 [
   {
     "shape": "background",
-    "configHash": "0f3f030bff13d0ba8e091eaa5c93ce0a35192e31fdb549d4562e96400957daf9",
+    "configHash": "da4b33064c94e9bded6d8e9d3e9de2f01411879adc120c7c26ee2f54c31ec677",
     "artifact": {
       "version": 3,
       "cacheKey": 9138536981148194,
@@ -667,7 +667,7 @@
   },
   {
     "shape": "lights",
-    "configHash": "0bf520c044cad513f2939b0715a6ace385458b02cdedcf7e43dc6539a362e83b",
+    "configHash": "2ae89a52d26a3c5bd8ff819a5f21e18b73dc6af3767f19c178f6ddb74e3ec6b7",
     "artifact": {
       "uniformPlan": [],
       "vertexShader": "",
@@ -679,7 +679,7 @@
   },
   {
     "shape": "render-output",
-    "configHash": "f61ffc6d6039f4aa637f0f43a3ba910fee9a026ec52a54ede436a469e544ee4b",
+    "configHash": "09243d17513054309622d34d41610d4c779fb4ab06dde641a50f27a5f8e62500",
     "artifact": {
       "version": 3,
       "cacheKey": 5123845528458702,

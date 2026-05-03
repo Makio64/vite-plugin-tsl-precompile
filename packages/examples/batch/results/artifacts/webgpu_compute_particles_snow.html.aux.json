@@ -1,7 +1,7 @@
 [
   {
     "shape": "background",
-    "configHash": "ac118e805b8190abbb3b78d63b376bf287af101460406160028a38cf485b651e",
+    "configHash": "5a4bb5553994d0d137f9e0e36da914132c2c7762d44199e7c7527c76c0e1a0a0",
     "artifact": {
       "version": 3,
       "cacheKey": 1567440438050925,
@@ -403,7 +403,7 @@
   },
   {
     "shape": "lights",
-    "configHash": "e0b065a4fd6bd65a3f2eb536e2d72929fea3e32c22212d30a397f8d8076c3c3d",
+    "configHash": "86166a59880753f2b124357918c5ae4ca5c8b63122d2f373463d4d5324cc2752",
     "artifact": {
       "uniformPlan": [],
       "vertexShader": "",
@@ -416,7 +416,7 @@
   },
   {
     "shape": "post-process",
-    "configHash": "437c166f52bb3156cb18c211e3030f2bc9b4f57ddedbd7962ec6fdb96ab8c478",
+    "configHash": "f2dc6d6ca4e1812a3ebc1cb7ca1cbfc22e6e2d844ed4bb631bf7dd00776361f6",
     "artifact": {
       "version": 3,
       "cacheKey": 2458319930049458,
@@ -1176,7 +1176,7 @@
   },
   {
     "shape": "render-output",
-    "configHash": "03944659592153cd65d18f02961db44be60e8485d3c17a072a0d4c235cf4cf53",
+    "configHash": "4142a730894e4c15a994add402184076b75fd52a9bceac57f3fc7a3430a2f50c",
     "artifact": {
       "version": 3,
       "cacheKey": 8083302205846057,
