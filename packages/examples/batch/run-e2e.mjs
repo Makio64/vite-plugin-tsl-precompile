@@ -400,6 +400,14 @@ const __usedArtifactNames = new Set();
 const __seenMaterials = new WeakMap();
 const __hasBackgroundAux = Array.isArray( __data.aux ) && __data.aux.some( ( entry ) => entry && entry.shape === 'background' );
 Slim.registerAuxArtifacts( Array.isArray( __data.aux ) ? __data.aux : [] );
+// Counter for in-flight async PMREM generations. Playwright waits for this to
+// reach 0 (alongside __tslpFrozen) before taking a screenshot so PMREM-based
+// IBL textures are resolved and re-hydrated before capture.
+window.__tslpPmremPending = 0;
+// Counter for in-flight async compute dispatches delegated to the full renderer.
+// Playwright waits for this to reach 0 before taking a screenshot so the GPU
+// storage buffers written by compute are visible in the final render.
+window.__tslpComputePending = 0;
 
 // PMREMGenerator drives nested renderer.compile / renderer.render calls when
 // it builds the prefiltered cubemap. Those nested calls re-enter this
@@ -489,6 +497,92 @@ function __seedNodeProps( material ) {
 	}
 }
 
+// Collect StorageBufferNode.value attributes by walking a node tree via traverse().
+// Only picks up nodes with isStorageBufferNode to avoid vertex-attribute nodes
+// (BufferAttributeNode wrapping storage) — those are handled separately.
+function __collectStorageBufAttrs( rootNode, results ) {
+	if ( ! rootNode || typeof rootNode.traverse !== 'function' ) return;
+	rootNode.traverse( ( n ) => {
+		if ( n.isStorageBufferNode === true && n.value &&
+				( n.value.isStorageBufferAttribute === true || n.value.isStorageInstancedBufferAttribute === true ) ) {
+			results.push( n.value );
+		}
+	} );
+}
+
+// Before creating a PrecompiledMaterial, inject live StorageBufferAttribute /
+// StorageInstancedBufferAttribute objects from the source material's node graph
+// into the artifact's plan entries so hydrateNodeBuilderState uses the live
+// GPU-writable buffers instead of allocating fresh empty placeholders.
+// This is required for compute-driven examples where instancedArray() creates
+// a buffer that a compute kernel writes into and the render material reads from.
+function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
+	if ( ! sourceMaterial || ! artifact ) return;
+	function isStorageAttr( v ) { return v && ( v.isStorageBufferAttribute === true || v.isStorageInstancedBufferAttribute === true ); }
+
+	// vec3 StorageBufferAttributes are padded to itemSize=4 by WebGPU on first use.
+	// Accept both 3 and 4 when the artifact recorded 4 (pad already applied at capture).
+	function sizeMatches( liveSize, artifactSize ) {
+		return liveSize === artifactSize || ( liveSize === 3 && artifactSize === 4 );
+	}
+
+	// Wire nodeAttributes (vertex path): positionNode = storageNode.toAttribute()
+	// creates a BufferAttributeNode (isBufferNode, NOT isStorageBufferNode) wrapping
+	// the StorageInstancedBufferAttribute directly as .value.
+	const nodeAttrsArr = artifact.attributes || artifact.nodeAttributes || [];
+	const pn = sourceMaterial.positionNode;
+	if ( pn && pn.isBufferNode === true && ! pn.isStorageBufferNode && isStorageAttr( pn.value ) ) {
+		for ( const nodeAttr of nodeAttrsArr ) {
+			// _liveAttribute may already be set from JSON deserialization (plain object, not
+			// a live attribute). Only skip if it is already a proper live JS attribute object.
+			if ( ! nodeAttr || nodeAttr.source !== 'node' || isStorageAttr( nodeAttr._liveAttribute ) ) continue;
+			if ( pn.value.count === nodeAttr.count && sizeMatches( pn.value.itemSize, nodeAttr.itemSize ) ) {
+				Object.defineProperty( nodeAttr, '_liveAttribute', { value: pn.value, enumerable: false, writable: true, configurable: true } );
+				break;
+			}
+		}
+	}
+
+	// Wire storage-buffer bindings: colorNode / normalNode / etc. trees may contain
+	// StorageBufferNode instances (isStorageBufferNode = true) whose .value is the
+	// live buffer that compute writes to. Match them to uniformPlan storageBuffers by
+	// count + itemSize; use first match to handle the common single-buffer case.
+	// NOTE: _liveAttribute may already be set on plan entries as a serialized plain
+	// object from JSON capture (not a live JS attribute). Only skip if it is a real
+	// live attribute (isStorageBufferAttribute / isStorageInstancedBufferAttribute).
+	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
+	const nodeKeys = [ 'colorNode', 'normalNode', 'outputNode', 'roughnessNode', 'metalnessNode', 'emissiveNode', 'opacityNode', 'alphaTestNode' ];
+	const sbCandidates = [];
+	for ( const key of nodeKeys ) {
+		if ( sourceMaterial[ key ] ) __collectStorageBufAttrs( sourceMaterial[ key ], sbCandidates );
+	}
+	if ( sbCandidates.length > 0 ) {
+		for ( const group of plan ) {
+			// Try explicit storageBuffers list first
+			for ( const sb of ( group.storageBuffers || [] ) ) {
+				if ( isStorageAttr( sb._liveAttribute ) ) continue;
+				const match = sbCandidates.find( ( c ) => c.count === sb.count && sizeMatches( c.itemSize, sb.itemSize ) );
+				if ( match ) {
+					Object.defineProperty( sb, '_liveAttribute', { value: match, enumerable: false, writable: true, configurable: true } );
+					sbCandidates.splice( sbCandidates.indexOf( match ), 1 );
+				}
+			}
+			// Fall back to orderedBindings (storage-buffer type) — some artifacts store
+			// the storage buffer refs there rather than in the storageBuffers array.
+			for ( const ob of ( group.orderedBindings || [] ) ) {
+				if ( ! ob || ob.type !== 'storage-buffer' || ! ob.ref ) continue;
+				const sb = ob.ref;
+				if ( isStorageAttr( sb._liveAttribute ) ) continue;
+				const match = sbCandidates.find( ( c ) => c.count === sb.count && sizeMatches( c.itemSize, sb.itemSize ) );
+				if ( match ) {
+					Object.defineProperty( sb, '_liveAttribute', { value: match, enumerable: false, writable: true, configurable: true } );
+					sbCandidates.splice( sbCandidates.indexOf( match ), 1 );
+				}
+			}
+		}
+	}
+}
+
 function __takeMaterial( className, sourceMaterial = null ) {
 	const n = ( __counts[ className ] || 0 ) + 1;
 	__counts[ className ] = n;
@@ -516,6 +610,9 @@ function __takeMaterial( className, sourceMaterial = null ) {
 	}
 	__usedArtifactNames.add( name );
 	if ( mod.__hash && ! mod.artifact.__hash ) Object.defineProperty( mod.artifact, '__hash', { value: mod.__hash, enumerable: false, configurable: true } );
+	// Wire live storage buffer attributes from the source material's node graph into
+	// the artifact plan before hydration so compute results are visible in renders.
+	__wireComputeAttrsToArtifact( mod.artifact, sourceMaterial );
 	const material = new Slim.PrecompiledMaterial( mod.artifact );
 	material.name = name;
 	__seedNodeProps( material );
@@ -573,13 +670,26 @@ function __wireMaterialTextures( sourceMaterial, replacement ) {
 	}
 }
 
+const __wiredPCMaterials = new WeakSet();
+
 function __replaceSceneMaterials( scene ) {
 	if ( ! scene || typeof scene.traverse !== 'function' ) return;
 	scene.traverse( ( object ) => {
 		const material = object && object.material;
 		if ( ! material ) return;
 		const replaceOne = ( m ) => {
-			if ( ! m || m.isPrecompiledMaterial ) return m;
+			if ( ! m ) return m;
+			// Materials intercepted at constructor time come back as PrecompiledMaterial
+			// directly. Wire live compute attributes (positionNode, colorNode...) into
+			// the artifact plan entries now — before hydrateNodeBuilderState is first
+			// called in the upcoming super.render.
+			if ( m.isPrecompiledMaterial ) {
+				if ( m.precompiledArtifact && ! __wiredPCMaterials.has( m ) ) {
+					__wireComputeAttrsToArtifact( m.precompiledArtifact, m );
+					__wiredPCMaterials.add( m );
+				}
+				return m;
+			}
 			if ( m.visible === false ) return m;
 			if ( __seenMaterials.has( m ) ) return __seenMaterials.get( m );
 			const className = __classNameForMaterial( m );
@@ -611,17 +721,14 @@ function __wireBackgroundTextures( scene, renderer ) {
 	if ( ! scene || ! scene.background || ! scene.background.isTexture ) return;
 	const auxList = Array.isArray( __data.aux ) ? __data.aux : [];
 	// Default: wire the raw cubemap. Falls back here when PMREM is not
-	// required, the renderer's backend isn't initialized yet, or PMREM
-	// generation throws. Wiring the raw cube keeps the sky visible (just
-	// sharper / wrongly oriented) instead of going BLACK on first frame.
+	// required or the async generation hasn't finished yet.
+	// Wiring the raw cube keeps the sky visible (just sharper / slightly wrong
+	// orientation) instead of going BLACK on first frame.
 	let texToWire = scene.background;
-	if ( __backgroundNeedsPMREM
-		&& scene.background.isCubeTexture
-		&& renderer
-		&& typeof renderer.hasInitialized === 'function'
-		&& renderer.hasInitialized() ) {
-		const pmrem = __getPMREMFor( renderer, scene.background );
-		if ( pmrem && pmrem.isTexture ) texToWire = pmrem;
+	if ( __backgroundNeedsPMREM && scene.background.isCubeTexture ) {
+		// Use the sync cache — populated by __generatePMREMAsync via __kickPMREMGenAsync
+		const cached = __pmremCache.get( scene.background );
+		if ( cached && cached.isTexture ) texToWire = cached;
 	}
 	for ( const entry of auxList ) {
 		if ( entry && entry.shape === 'background' && entry.artifact ) {
@@ -637,54 +744,159 @@ function __wireBackgroundTextures( scene, renderer ) {
 // at replay the live renderer makes a fresh PMREM and we wire that into
 // every PBR material's artifact.texture-kind bindings so the hydrator
 // resolves to the live prefiltered map instead of the 1×1 fallback.
-// Cache of PMREM-prefiltered textures keyed by source cubemap. Mirrors
+// Cache of PMREM-prefiltered textures keyed by source texture. Mirrors
 // what three.js's EnvironmentNode does internally — but our patched
 // slim bypasses NodeBuilder.build() so PBR materials never trigger the
-// PMREM path on their own. We run PMREMGenerator manually on
-// scene.environment and wire the prefiltered output into every
-// PrecompiledMaterial's artifact.texture-kind bindings so the hydrator
-// resolves to the live prefiltered map instead of the 1×1 fallback.
-const __pmremCache = new WeakMap();
-function __getPMREMFor( renderer, sourceTex ) {
-	if ( ! renderer || ! sourceTex ) return null;
-	if ( __pmremCache.has( sourceTex ) ) return __pmremCache.get( sourceTex );
-	if ( ! Slim.PMREMGenerator ) return null;
-	// PMREMGenerator.fromCubemap silently falls back to async ("called
-	// before backend is initialized") if the renderer isn't ready yet.
-	// Calling it pre-init returns a black target whose GPU resource
-	// hasn't been populated by the time downstream bind groups record
-	// it - that was the regression in session 7. Skip until the backend
-	// reports ready; the caller falls back to raw cube on the first
-	// frame, then PMREM kicks in once init completes.
-	if ( typeof renderer.hasInitialized === 'function' && ! renderer.hasInitialized() ) return null;
-	let pmrem;
-	__pmremRunning ++;
+// PMREM path on their own. We run PMREMGenerator manually via the full
+// compute renderer (which can build PMREM's internal NodeMaterial; the
+// slim renderer cannot and throws tslPrecompileSlimOnly) and wire the
+// prefiltered output into every PrecompiledMaterial's artifact.texture-kind
+// bindings so the hydrator resolves to the live prefiltered map.
+const __pmremCache = new WeakMap();   // source tex → pmrem Texture (ready)
+const __pmremPending = new WeakMap(); // source tex → Promise<Texture|null>
+const __pmremWiredArtifacts = new WeakSet(); // artifacts already wired
+
+// Generate a PMREM texture using the full three.js renderer (which shares the
+// same WebGPU device as the slim renderer, so its GPU textures work as slim
+// bindings). Called only when no PMREM is cached for sourceTex.
+async function __generatePMREMAsync( slimRenderer, sourceTex ) {
+	const fullRenderer = await __getComputeRenderer( slimRenderer );
+	if ( ! fullRenderer ) { console.warn( '[tslp-e2e] PMREM: no compute renderer' ); return null; }
 	try {
-		const gen = new Slim.PMREMGenerator( renderer );
-		const target = sourceTex.isCubeTexture ? gen.fromCubemap( sourceTex ) : gen.fromEquirectangular( sourceTex );
-		pmrem = target && target.texture || target || null;
+		const { PMREMGenerator } = await import( '/build/three.webgpu.js' );
+		const gen = new PMREMGenerator( fullRenderer );
+		const target = sourceTex.isCubeTexture
+			? gen.fromCubemap( sourceTex )
+			: gen.fromEquirectangular( sourceTex );
+		const pmrem = target && target.texture || null;
 		gen.dispose && gen.dispose();
-	} catch ( _ ) {
-		__pmremRunning --;
+		if ( pmrem && pmrem.isTexture ) {
+			// The PMREM GPU texture lives in the full renderer's backend WeakMap.
+			// Both renderers share the same WebGPU device, so the GPUTexture is
+			// on the right device — but the slim backend doesn't know about it.
+			// Copy the backend data entry so the slim backend uses the existing
+			// GPU resource instead of trying to re-upload from (empty) CPU data.
+			try {
+				if ( fullRenderer.backend && slimRenderer.backend ) {
+					const fullData = fullRenderer.backend.get( pmrem );
+					if ( fullData && fullData.texture ) {
+						// Copy GPU resources from full backend to slim backend so the
+						// slim renderer can bind the already-created GPUTexture.
+						const slimData = slimRenderer.backend.get( pmrem );
+						for ( const key of Object.keys( fullData ) ) slimData[ key ] = fullData[ key ];
+						// The Textures manager (renderer._textures) has its OWN DataMap
+						// separate from the backend. updateTexture() checks
+						// textures.get(pmrem).initialized before calling
+						// backend.createTexture(). If textures.initialized is unset,
+						// it calls backend.createTexture() which throws "already
+						// initialized". Populate the Textures DataMap so updateTexture
+						// returns early without touching the backend.
+						const tx = slimRenderer._textures;
+						if ( tx && typeof tx.get === 'function' ) {
+							const txData = tx.get( pmrem );
+							txData.initialized = true;
+							txData.version = pmrem.version;
+							txData.generation = pmrem.version;
+							// bindGroups tracks which bind-groups reference this texture
+							// for invalidation on update. Must be a Set; created empty
+							// since we're registering the texture as already uploaded.
+							if ( ! txData.bindGroups ) txData.bindGroups = new Set();
+						}
+					} else {
+						console.warn( '[tslp-e2e] PMREM: full backend has no GPU texture for PMREM' );
+					}
+				}
+			} catch ( shareErr ) {
+				console.warn( '[tslp-e2e] PMREM GPU share failed:', shareErr && shareErr.message || shareErr );
+			}
+			__pmremCache.set( sourceTex, pmrem );
+		}
+		return pmrem || null;
+	} catch ( err ) {
+		console.warn( '[tslp-e2e] PMREM async generation failed:', err && err.message || err );
 		return null;
 	}
-	__pmremRunning --;
-	if ( pmrem && pmrem.isTexture ) __pmremCache.set( sourceTex, pmrem );
-	return pmrem || null;
+}
+
+// Wire a ready PMREM texture into PrecompiledMaterial artifacts that have
+// CubeUVReflectionMapping (mapping=306) or textureName=PMREM.cubeUv bindings.
+// IMPORTANT: do NOT wire PMREM into artifacts that only have raw cube/equirect
+// bindings (e.g. the background sky renderer uses texture_cube — wiring a 2D
+// PMREM texture there fails WebGPU validation and aborts the entire render pass).
+// Sets material.needsUpdate = true for newly-wired materials so Three.js
+// re-runs hydrateNodeBuilderState with the correct texture in _textureRefs
+// (hydration is cached per material version; needsUpdate invalidates the cache).
+function __artifactNeedsPMREM( artifact ) {
+	for ( const group of artifact.uniformPlan || [] ) {
+		for ( const t of group.textures || [] ) {
+			const src = t && t.source || {};
+			if ( src.kind === 'artifact.texture' && ( src.mapping === 306 || src.textureName === 'PMREM.cubeUv' ) ) return true;
+		}
+	}
+	return false;
 }
 
 function __wireEnvironmentPMREM( renderer, scene ) {
 	if ( ! renderer || ! scene || ! scene.environment || ! scene.environment.isTexture ) return;
-	const pmrem = __getPMREMFor( renderer, scene.environment );
+	const pmrem = __pmremCache.get( scene.environment );
 	if ( ! pmrem ) return;
+	let wiredCount = 0;
 	scene.traverse( ( object ) => {
 		const mat = object && object.material;
 		const list = Array.isArray( mat ) ? mat : mat ? [ mat ] : [];
 		for ( const m of list ) {
 			if ( m && m.isPrecompiledMaterial && m.precompiledArtifact ) {
-				Slim.attachArtifactTextureRefs( m.precompiledArtifact, pmrem );
+				const artifact = m.precompiledArtifact;
+				if ( ! __pmremWiredArtifacts.has( artifact ) ) {
+					__pmremWiredArtifacts.add( artifact ); // mark checked regardless
+					const needsPmrem = __artifactNeedsPMREM( artifact );
+					if ( needsPmrem ) {
+						Slim.attachArtifactTextureRefs( artifact, pmrem );
+						// dispose() triggers onDispose() which removes this material's
+						// RenderObject from the renderer chain map. The next render
+						// creates a fresh RenderObject (with _nodeBuilderState=null),
+						// forcing hydrateNodeBuilderState to re-run with updated
+						// _textureRefs. Clearing nodeBuilderCache below ensures the
+						// program-level cache also misses so _createNodeBuilder fires.
+						try { m.dispose(); } catch ( _ ) {}
+						wiredCount ++;
+					}
+				}
 			}
 		}
+	} );
+	// Bust the Nodes program cache so the fresh RenderObjects created after
+	// dispose() miss the cache and trigger _createNodeBuilder → hydrateNodeBuilderState.
+	// Without this, getForRender() would find the old NodeBuilderState in
+	// nodeBuilderCache (keyed by the stable initialCacheKey) and skip hydration.
+	if ( wiredCount > 0 ) {
+		try {
+			const nc = renderer._nodes && renderer._nodes.nodeBuilderCache;
+			if ( nc && typeof nc.clear === 'function' ) nc.clear();
+		} catch ( _ ) {}
+	}
+}
+
+// Kick off async PMREM generation if not already started. onReady is called
+// with the pmrem texture once generation completes. The global
+// window.__tslpPmremPending counter is incremented until the generation
+// finishes so Playwright's freeze-wait condition can include it.
+function __kickPMREMGenAsync( slimRenderer, sourceTex, onReady ) {
+	if ( ! slimRenderer || ! sourceTex || ! sourceTex.isTexture ) return;
+	if ( __pmremCache.has( sourceTex ) ) { onReady( __pmremCache.get( sourceTex ) ); return; }
+	if ( __pmremPending.has( sourceTex ) ) {
+		__pmremPending.get( sourceTex ).then( ( pmrem ) => { if ( pmrem ) onReady( pmrem ); } ).catch( () => {} );
+		return;
+	}
+	window.__tslpPmremPending = ( window.__tslpPmremPending | 0 ) + 1;
+	const resultPromise = __generatePMREMAsync( slimRenderer, sourceTex ).catch( () => null );
+	__pmremPending.set( sourceTex, resultPromise );
+	resultPromise.then( ( pmrem ) => {
+		if ( pmrem ) {
+			try { onReady( pmrem ); } catch ( _ ) {}
+		}
+	} ).finally( () => {
+		window.__tslpPmremPending = Math.max( 0, ( window.__tslpPmremPending | 0 ) - 1 );
 	} );
 }
 
@@ -745,6 +957,80 @@ function __prepareSceneForReplay( scene, renderer ) {
 // unpatched three.webgpu.js, passing the already-initialised GPU device so
 // both renderers operate on the SAME WebGPU device — and therefore on the same
 // storage buffers written by instancedArray().
+// After fullRenderer.computeAsync() resolves, the full renderer owns the GPUBuffers
+// that compute wrote into. If the slim renderer has no buffer yet for an attribute,
+// we pre-seed the DataMap so the slim renderer's first createAttribute call finds it
+// and skips allocation (vertex+storage attribute path checks: if void 0 === r.buffer).
+// If the slim renderer already has a separate buffer (from a prior render that ran
+// before the first compute, e.g., an init render), we GPU-copy the compute output
+// INTO that buffer via copyBufferToBuffer. The slim renderer's cached bind group
+// still references the same GPUBuffer; we just update its content. Both renderers
+// share the same GPUDevice so the copy is entirely on-GPU (no CPU round-trip).
+let __syncDbgOnce = true;
+let __syncDbgCount = 0;
+function __syncStorageBuffers( computeNode, fullRenderer, slimRenderer ) {
+	try {
+		const computeList = Array.isArray( computeNode ) ? computeNode : [ computeNode ];
+		const device = slimRenderer.backend.device;
+		let commandEncoder = null;
+		for ( const node of computeList ) {
+			let bindGroups;
+			try { bindGroups = fullRenderer._bindings.getForCompute( node ); }
+			catch ( _ ) { continue; }
+			if ( ! bindGroups ) continue;
+			let _totalBindings = 0, _storageBindings = 0;
+			for ( const bindGroup of bindGroups ) {
+				if ( ! bindGroup || ! bindGroup.bindings ) continue;
+				for ( const binding of bindGroup.bindings ) {
+					_totalBindings++;
+					if ( ! binding.isStorageBuffer ) {
+						if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] skip node=' + ( node && node.name ) + ' binding=' + binding.name + ' type=' + ( binding.constructor && binding.constructor.name ) );
+						continue;
+					}
+					_storageBindings++;
+					const attr = binding.attribute;
+					if ( ! attr ) {
+						if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] noattr node=' + ( node && node.name ) + ' binding=' + binding.name );
+						continue;
+					}
+					const fullBufData = fullRenderer.backend.get( attr );
+					if ( ! fullBufData || ! fullBufData.buffer ) continue;
+					const fullBuf = fullBufData.buffer;
+					const slimBufData = slimRenderer.backend.get( attr );
+					if ( ! slimBufData.buffer ) {
+						if ( ! commandEncoder ) commandEncoder = device.createCommandEncoder();
+						const newBuf = device.createBuffer( { size: fullBuf.size, usage: fullBuf.usage } );
+						commandEncoder.copyBufferToBuffer( fullBuf, 0, newBuf, 0, fullBuf.size );
+						slimBufData.buffer = newBuf;
+						const slimAttr = slimRenderer._attributes.get( attr );
+						if ( slimAttr && slimAttr.version === undefined ) {
+							slimAttr.version = 1;
+						}
+						if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] sync node=' + ( node && node.name ) + ' attr=' + attr.name + ' count=' + attr.count + ' create+copy fullBuf=' + fullBuf.size );
+					} else if ( slimBufData.buffer !== fullBuf ) {
+						const slimBuf = slimBufData.buffer;
+						const copySize = Math.min( fullBuf.size, slimBuf.size );
+						if ( copySize > 0 ) {
+							if ( ! commandEncoder ) commandEncoder = device.createCommandEncoder();
+							commandEncoder.copyBufferToBuffer( fullBuf, 0, slimBuf, 0, copySize );
+						}
+						if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] sync node=' + ( node && node.name ) + ' attr=' + attr.name + ' count=' + attr.count + ' copy=' + copySize );
+					} else {
+						if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] sync node=' + ( node && node.name ) + ' attr=' + attr.name + ' count=' + attr.count + ' same' );
+					}
+				}
+			}
+			if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] sync-summary node=' + ( node && node.name ) + ' totalBindings=' + _totalBindings + ' storageBindings=' + _storageBindings );
+		}
+		if ( commandEncoder ) device.queue.submit( [ commandEncoder.finish() ] );
+		__syncDbgOnce = false;
+		__syncDbgCount++;
+		if ( __syncDbgCount === 62 ) console.log( '[tslp-dbg] sync complete count=' + __syncDbgCount );
+	} catch ( err ) {
+		console.warn( '[tslp-e2e] storage buffer sync failed:', err && err.message || err );
+	}
+}
+
 let __computeRenderer = null;
 let __computeRendererInit = null;
 async function __getComputeRenderer( slimRenderer ) {
@@ -768,40 +1054,74 @@ async function __getComputeRenderer( slimRenderer ) {
 
 export class WebGPURenderer extends Slim.WebGPURenderer {
 	compile( scene, camera, ...rest ) {
-		// While PMREMGenerator is driving its own internal compile passes,
-		// bypass the harness's scene-prep hooks (the tmp PMREM mesh isn't
-		// in the captured artifact table and __replaceSceneMaterials would
-		// throw "no captured artifact for ..." if we let it run).
+		// __pmremRunning guard: PMREMGenerator drives nested compile/render calls
+		// for its internal flat-camera mesh; bypass scene-prep during those.
 		if ( __pmremRunning > 0 ) return typeof super.compile === 'function' ? super.compile( scene, camera, ...rest ) : undefined;
 		__prepareSceneForReplay( scene, this );
-		const r = typeof super.compile === 'function' ? super.compile( scene, camera, ...rest ) : undefined;
+		// Wire PMREM from sync cache BEFORE compile so hydration sees the live
+		// prefiltered texture. (Async gen is kicked from render(); compile is
+		// typically called only when the app pre-warms shaders, so skip kick.)
 		__wireEnvironmentPMREM( this, scene );
-		return r;
+		return typeof super.compile === 'function' ? super.compile( scene, camera, ...rest ) : undefined;
 	}
 	compileAsync( scene, camera, ...rest ) {
 		if ( __pmremRunning > 0 ) return typeof super.compileAsync === 'function' ? super.compileAsync( scene, camera, ...rest ) : Promise.resolve();
 		__prepareSceneForReplay( scene, this );
-		const p = typeof super.compileAsync === 'function' ? super.compileAsync( scene, camera, ...rest ) : Promise.resolve();
-		Promise.resolve( p ).then( () => __wireEnvironmentPMREM( this, scene ) ).catch( () => {} );
-		return p;
+		__wireEnvironmentPMREM( this, scene );
+		return typeof super.compileAsync === 'function' ? super.compileAsync( scene, camera, ...rest ) : Promise.resolve();
 	}
 	render( scene, camera ) {
-		// Re-entry guard: PMREMGenerator.fromCubemap nests renderer.render
-		// calls on its internal flat-camera mesh. Skip our scene-prep so
-		// __replaceSceneMaterials doesn't try to swap the tmp PMREM mesh
-		// material against our captured-artifact table.
 		if ( __pmremRunning > 0 ) return super.render( scene, camera );
-		// First frame: backend is initialized by setAnimationLoop's
-		// awaited init() before the first rAF tick fires. So
-		// __prepareSceneForReplay can synchronously generate PMREM
-		// (via __wireBackgroundTextures -> __getPMREMFor) BEFORE
-		// super.render builds the background-aux PrecompiledMaterial's
-		// _bindings. The SampledTexture inside _bindings is locked at
-		// material-construction time; running PMREM after super.render
-		// would be too late for the first frame.
+		// Track last scene/camera so post-compute forced renders can use them.
+		this._lastScene = scene;
+		this._lastCamera = camera;
 		__prepareSceneForReplay( scene, this );
-		const r = super.render( scene, camera );
+		// Wire PMREM from sync cache BEFORE super.render so that hydration
+		// (which runs inside super.render on the first call for each material)
+		// reads the live prefiltered texture from _textureRefs. Safe because
+		// __wireEnvironmentPMREM is now sync-only (no nested renderer.render calls).
 		__wireEnvironmentPMREM( this, scene );
+		const r = super.render( scene, camera );
+		// After the first render, kick off async PMREM generation if not started.
+		// Environment PMREM: once ready, __wireEnvironmentPMREM sets needsUpdate on
+		// every PrecompiledMaterial so Three.js re-runs hydrateNodeBuilderState with
+		// the correct texture. If the animation loop is already frozen by the time
+		// PMREM resolves, force one extra render so hydration fires before the
+		// screenshot. (Playwright waits for __tslpPmremPending === 0 before capture.)
+		const _envTex = scene && scene.environment;
+		if ( _envTex && _envTex.isTexture ) {
+			const _renderer = this;
+			const _scene = scene;
+			const _camera = camera;
+			__kickPMREMGenAsync( _renderer, _envTex, () => {
+				__wireEnvironmentPMREM( _renderer, _scene );
+				if ( window.__tslpFrozen ) {
+					try { _renderer.render( _scene, _camera ); } catch ( e ) { console.warn( '[tslp-e2e] forced render failed:', e && e.message || e ); }
+				}
+			} );
+		}
+		// Background PMREM: when background-aux artifacts need a prefiltered cube,
+		// kick async gen and re-wire+clear quad cache when ready so the sky quad
+		// picks up the correct PMREM-based texture on the next frame.
+		if ( scene && scene.background && scene.background.isCubeTexture && __backgroundNeedsPMREM ) {
+			const _renderer = this;
+			const _scene = scene;
+			const _camera = camera;
+			__kickPMREMGenAsync( _renderer, scene.background, ( pmrem ) => {
+				const auxList = Array.isArray( __data.aux ) ? __data.aux : [];
+				for ( const entry of auxList ) {
+					if ( entry && entry.shape === 'background' && entry.artifact ) {
+						Slim.attachArtifactTextureRefs( entry.artifact, pmrem );
+					}
+				}
+				// Clear renderer's internal quad cache so Background.js re-creates
+				// its PrecompiledMaterial with fresh _textureRefs on next frame.
+				if ( _renderer._quadCache ) _renderer._quadCache.clear();
+				if ( window.__tslpFrozen ) {
+					try { _renderer.render( _scene, _camera ); } catch ( _ ) {}
+				}
+			} );
+		}
 		return r;
 	}
 	compute( computeNode, ...rest ) {
@@ -823,12 +1143,30 @@ export class WebGPURenderer extends Slim.WebGPURenderer {
 			return super.computeAsync( computeNode, ...rest );
 		}
 		// Raw TSL compute nodes: delegate to the shared-device full renderer.
+		// Track in-flight dispatches so Playwright waits for GPU results before
+		// taking the screenshot. After the last compute completes, force one
+		// final render so the updated storage buffers appear on the canvas.
 		if ( computeNode && computeNode.isComputeNode === true ) {
+			window.__tslpComputePending = ( window.__tslpComputePending | 0 ) + 1;
+			const _slimRenderer = this;
 			return __getComputeRenderer( this ).then( ( r ) => {
 				if ( ! r ) return;
-				return r.computeAsync( computeNode, ...rest );
+				return r.computeAsync( computeNode, ...rest ).then( () => {
+					__syncStorageBuffers( computeNode, r, _slimRenderer );
+				} );
 			} ).catch( ( err ) => {
 				console.warn( '[tslp-e2e] compute dispatch failed:', err && err.message || err );
+			} ).finally( () => {
+				window.__tslpComputePending = Math.max( 0, ( window.__tslpComputePending | 0 ) - 1 );
+				// If already frozen and no more computes pending, force one extra
+				// render so the GPU buffer updates are visible before the screenshot.
+				if ( window.__tslpFrozen && ( window.__tslpComputePending | 0 ) === 0 ) {
+					const sc = _slimRenderer._lastScene;
+					const cam = _slimRenderer._lastCamera;
+					if ( sc && cam ) {
+						try { _slimRenderer.render( sc, cam ); } catch ( _ ) {}
+					}
+				}
 			} );
 		}
 		return Promise.resolve();
@@ -977,6 +1315,7 @@ export class Inspector {
 	finishCompute() {}
 	inspect() {}
 	copyFramebufferToTexture() {}
+	copyTextureToTexture() {}
 	createParameters() { const gui = { paramList: { domElement: { style: {} } }, add() { return this; }, addColor() { return this; }, addFolder() { return this; }, name() { return this; }, onChange() { return this; }, step() { return this; }, min() { return this; }, max() { return this; }, open() { return this; }, listen() { return this; } }; return gui; }
 	add() {}
 	remove() {}
@@ -1379,6 +1718,8 @@ async function visitExample( browser, name, mode, waitMs ) {
 	page.on( 'console', ( m ) => {
 
 		if ( m.type() === 'error' ) errors.push( m.text() );
+		if ( m.type() === 'warning' && m.text().includes( '[tslp' ) ) console.warn( `[page-warn] ${ m.text() }` );
+		if ( m.type() === 'log' && m.text().includes( '[tslp' ) ) console.log( `[page-log] ${ m.text() }` );
 
 	} );
 
@@ -1400,33 +1741,119 @@ async function visitExample( browser, name, mode, waitMs ) {
 	const FRAME_STEP_MS = 16.6667;
 	try {
 
-		await page.addInitScript( ( { step, base } ) => {
+		await page.addInitScript( ( { step, base, freezeAt } ) => {
 
 			// eslint-disable-next-line no-undef
 			const w = window;
 			if ( w.__tslpRafShimInstalled ) return;
 			w.__tslpRafShimInstalled = true;
 			w.__tslpRafTick = 0;
+			w.__tslpFrozen = false;
 
+				// Patch requestAnimationFrame to use a synthetic monotonic clock.
+			// This ensures both capture and replay see the same `time` argument
+			// in every animation callback — independent of real wall-clock time.
+			//
+			// Self-contained freeze: at exactly `freezeAt` ticks, the wrapper
+			// sets __tslpFrozen = true. Subsequent rAF calls are squashed (return
+			// immediately without firing cb). This guarantees EXACTLY `freezeAt`
+			// animate() invocations in both capture and replay, eliminating the
+			// Playwright round-trip race that caused 1-2 extra ticks in some runs.
 			const origRaf = w.requestAnimationFrame.bind( w );
 			w.requestAnimationFrame = function ( cb ) {
 
 				return origRaf( () => {
 
+					if ( w.__tslpFrozen ) return; // squash: freeze already triggered
 					const tick = ++ w.__tslpRafTick;
 					cb( base + tick * step );
+					if ( tick >= freezeAt ) w.__tslpFrozen = true; // freeze AFTER cb
 
 				} );
 
 			};
 
-		}, { step: FRAME_STEP_MS, base: 0 } );
+			// Also patch Date.now() and performance.now() so examples that
+			// drive animation from wall-clock time (instead of the rAF
+			// timestamp) produce the same positions in capture and replay.
+			// We use tick-based values starting at 0 so both passes are
+			// always in sync.
+			//
+			// Strategy: replace window.performance with a Proxy so the
+			// 'now' getter is intercepted regardless of how the native
+			// Performance object defines it (accessor vs data, configurable
+			// or not). window.performance itself is a configurable accessor
+			// on window, so we can swap it via Object.defineProperty.
+			const _syntheticNow = () => base + w.__tslpRafTick * step;
+			w.Date.now = _syntheticNow;
+			w.__tslpPerfNowLog = []; // diagnostic: log every performance.now() call
+			const _syntheticNowLogged = () => {
+				const val = base + w.__tslpRafTick * step;
+				w.__tslpPerfNowLog.push( val );
+				return val;
+			};
+			try {
+				const _origPerf = w.performance;
+				const _perfProxy = new Proxy( _origPerf, {
+					get( target, prop, receiver ) {
+						if ( prop === 'now' ) return _syntheticNowLogged;
+						const val = Reflect.get( target, prop, receiver );
+						return typeof val === 'function' ? val.bind( target ) : val;
+					},
+				} );
+				Object.defineProperty( w, 'performance', {
+					value: _perfProxy,
+					writable: true,
+					configurable: true,
+					enumerable: true,
+				} );
+			} catch ( _ ) {
+				// Fallback chain if Proxy or property replacement fails
+				try {
+					Object.defineProperty( w.Performance.prototype, 'now', {
+						value: _syntheticNow,
+						writable: true,
+						configurable: true,
+					} );
+				} catch ( _2 ) {
+					try {
+						Object.defineProperty( w.performance, 'now', {
+							value: _syntheticNow,
+							writable: true,
+							configurable: true,
+						} );
+					} catch ( _3 ) {
+						w.performance.now = _syntheticNow;
+					}
+				}
+			}
+
+			// Seed Math.random for deterministic particle/star-field
+			// positions — capture and replay must produce identical geometry.
+			let _rngSeed = 42;
+			w.Math.random = function () {
+
+				_rngSeed = ( _rngSeed * 1664525 + 1013904223 ) >>> 0;
+				return _rngSeed / 4294967296;
+
+			};
+
+		}, { step: FRAME_STEP_MS, base: 0, freezeAt: TARGET_TICK } );
 
 	} catch ( _ ) { /* older Playwright fallback */ }
 
 	try {
 
 		await page.goto( `http://localhost:${ port }/examples/${ name }?__tslp_mode=${ mode }`, { waitUntil: 'load', timeout: NAV_TIMEOUT_MS } );
+
+		// Debug: verify timing patch is active. performance.now() should return
+		// a tick-based synthetic value (< 10000) rather than real wall-clock
+		// time (>> 10000). Log a warning if patch isn't working.
+		try {
+			const _perfNowCheck = await page.evaluate( () => window.performance.now() );
+			if ( _perfNowCheck > 10000 ) console.warn( `[tslp-patch-warn] ${ name } ${ mode }: performance.now()=${ _perfNowCheck.toFixed(0) } — patch may not be active` );
+		} catch ( _ ) {}
+
 		await maybeClickStart( page );
 
 		// Wait for the canvas to paint a non-empty frame under real
@@ -1440,45 +1867,21 @@ async function visitExample( browser, name, mode, waitMs ) {
 		// and post-init scene mutations have time to complete.
 		await new Promise( ( r ) => setTimeout( r, ASSET_SETTLE_MS ) );
 
-		// Wait until the rAF tick counter reaches TARGET_TICK. Because
-		// the rAF shim assigns sequential synthetic timestamps to every
-		// callback, both capture and replay observe the SAME `time`
-		// argument at the same tick number. We poll real time and wait
-		// for the tick counter; once it crosses TARGET_TICK both
-		// passes are at identical animation phase.
+		// Wait until the init-script rAF wrapper has fired exactly
+		// TARGET_TICK callbacks and self-frozen. The freeze happens
+		// atomically inside the wrapper (no Playwright round-trip race),
+		// so both capture and replay always execute exactly the same
+		// number of animate() calls before we screenshot.
 		try {
 
 			await page.waitForFunction(
-				( target ) => {
-
-					// eslint-disable-next-line no-undef
-					return typeof window.__tslpRafTick === 'number' && window.__tslpRafTick >= target;
-
-				},
-				TARGET_TICK,
+				// Also wait for async PMREM generations and compute dispatches so
+				// IBL textures and GPU storage buffers are up-to-date before screenshot.
+				() => window.__tslpFrozen === true && ( window.__tslpPmremPending | 0 ) === 0 && ( window.__tslpComputePending | 0 ) === 0,
 				{ timeout: RENDER_TIMEOUT_MS },
 			);
 
-			// Once we're past TARGET_TICK, freeze the synthetic clock
-			// so subsequent ticks repeat the same time. The browser
-			// still drives real rAF; we just clamp the synthetic
-			// timestamp at the target. The screenshot is taken after a
-			// short real settle so the canvas reflects the frozen
-			// frame.
-			await page.evaluate( ( target ) => {
-
-				// eslint-disable-next-line no-undef
-				const w = window;
-				w.__tslpRafTick = target;
-				const origRaf = w.requestAnimationFrame.bind( w );
-				w.requestAnimationFrame = function ( cb ) {
-
-					return origRaf( () => cb( target * 16.6667 ) );
-
-				};
-
-			}, TARGET_TICK );
-
+			// Brief settle so the GPU presents the frozen frame.
 			await new Promise( ( r ) => setTimeout( r, FRAME_TIME_MS ) );
 
 		} catch ( _ ) { /* tick counter may not have advanced (no animation loop) */ }
