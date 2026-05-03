@@ -1,10 +1,10 @@
 [
   {
     "shape": "background",
-    "configHash": "2a9dbab7ac34d14b4b5a38144ae7341408c88bbfac6cc8c557585038679f248b",
+    "configHash": "0f3f030bff13d0ba8e091eaa5c93ce0a35192e31fdb549d4562e96400957daf9",
     "artifact": {
       "version": 3,
-      "cacheKey": 7468266059347478,
+      "cacheKey": 4676193999325015,
       "materialShape": "node-material",
       "vertexShader": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tnodeUniform5 : f32,\n\tnodeUniform6 : f32,\n\tnodeUniform2 : mat4x4<f32>,\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : mat4x4<f32>,\n\tnodeUniform4 : mat3x3<f32>,\n\tnodeUniform7 : f32,\n\tnodeUniform9 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_normalWorldGeometry : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLocal : vec3<f32>;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> nodeVar3 : vec3<f32>;\nvar<private> nodeVar4 : vec4<f32>;\nvar<private> nodeVar5 : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> v_normalViewGeometry : vec3<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) normal : vec3<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tnormalLocal = normal;\n\tv_normalViewGeometry = normalize( ( render.cameraViewMatrix * vec4<f32>( ( object.nodeUniform4 * normalLocal ), 0.0 ) ).xyz );\n\tnormalViewGeometry = normalize( v_normalViewGeometry );\n\tvaryings.v_normalWorldGeometry = normalize( ( vec4<f32>( normalViewGeometry, 0.0 ) * render.cameraViewMatrix ).xyz );\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform9 );\n\n\tif ( ( render.cameraProjectionMatrix[ 3u ][ 3u ] == 1.0 ) ) {\n\n\t\tnodeVar3 = ( positionLocal * vec3<f32>( ( ( 1.0 / render.cameraProjectionMatrix[ 1u ][ 1u ] ) * 3.0 ) ) );\n\n\t} else {\n\n\t\tnodeVar3 = positionLocal;\n\n\t}\n\n\tnodeVar4 = ( render.cameraProjectionMatrix * vec4<f32>( ( modelViewMatrix * vec4<f32>( nodeVar3, 0.0 ) ).xyz, 1.0 ) );\n\tnodeVar5 = vec4<f32>( nodeVar4.x, nodeVar4.y, nodeVar4.w, nodeVar4.w );\n\n\t// result\n\n\tvaryings.builtinClipSpace = nodeVar5;\n\n\treturn varyings;\n\n}\n",
       "fragmentShader": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_cube<f32>;\n\nstruct objectStruct {\n\tnodeUniform1 : mat4x4<f32>,\n\tnodeUniform4 : mat3x3<f32>,\n\tnodeUniform7 : f32,\n\tnodeUniform9 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tnodeUniform5 : f32,\n\tnodeUniform6 : f32,\n\tnodeUniform2 : mat4x4<f32>,\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> normalWorldGeometry : vec3<f32>;\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> nodeVar1 : vec4<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> nodeVar2 : vec4<f32>;\n\n// codes\n\n\n@fragment\nfn main( @location( 0 ) v_normalWorldGeometry : vec3<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnormalWorldGeometry = normalize( v_normalWorldGeometry );\n\tnodeVar0 = ( object.nodeUniform1 * ( render.nodeUniform2 * vec4<f32>( normalWorldGeometry, 1.0 ) ) );\n\tnodeVar1 = textureSampleLevel( nodeUniform0, nodeUniform0_sampler, vec3<f32>( ( - nodeVar0.x ), nodeVar0.yz ), render.nodeUniform5 );\n\tDiffuseColor = ( nodeVar1 * vec4<f32>( render.nodeUniform6 ) );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform7 );\n\tDiffuseColor.w = 1.0;\n\tnodeVar2 = max( vec4<f32>( DiffuseColor.xyz, DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tOutput = nodeVar2;\n\n\t// result\n\n\toutput.color = nodeVar2;\n\n\treturn output;\n\n}\n",
@@ -78,8 +78,8 @@
               "size": 4,
               "dtype": "number",
               "source": {
-                "kind": "uniform.live",
-                "name": null,
+                "kind": "scene.backgroundBlurriness",
+                "property": "backgroundBlurriness",
                 "valueSnapshot": {
                   "type": "number",
                   "data": 0
@@ -92,8 +92,8 @@
               "size": 4,
               "dtype": "number",
               "source": {
-                "kind": "uniform.live",
-                "name": null,
+                "kind": "scene.backgroundIntensity",
+                "property": "backgroundIntensity",
                 "valueSnapshot": {
                   "type": "number",
                   "data": 1
@@ -106,8 +106,8 @@
               "size": 64,
               "dtype": "mat4",
               "source": {
-                "kind": "uniform.live",
-                "name": null,
+                "kind": "scene.backgroundRotation",
+                "property": "backgroundRotation",
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
@@ -207,8 +207,8 @@
                   "size": 4,
                   "dtype": "number",
                   "source": {
-                    "kind": "uniform.live",
-                    "name": null,
+                    "kind": "scene.backgroundBlurriness",
+                    "property": "backgroundBlurriness",
                     "valueSnapshot": {
                       "type": "number",
                       "data": 0
@@ -221,8 +221,8 @@
                   "size": 4,
                   "dtype": "number",
                   "source": {
-                    "kind": "uniform.live",
-                    "name": null,
+                    "kind": "scene.backgroundIntensity",
+                    "property": "backgroundIntensity",
                     "valueSnapshot": {
                       "type": "number",
                       "data": 1
@@ -235,8 +235,8 @@
                   "size": 64,
                   "dtype": "mat4",
                   "source": {
-                    "kind": "uniform.live",
-                    "name": null,
+                    "kind": "scene.backgroundRotation",
+                    "property": "backgroundRotation",
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
@@ -439,9 +439,10 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "6902cd77-f77b-412d-b659-7f20c62d80d0",
+                "textureUuid": "3c14d90f-7748-4a82-b671-3ca9692055fe",
                 "imageSrc": "http://localhost:8729/examples/textures/cube/pisa/px.png",
-                "mapping": 301
+                "mapping": 301,
+                "flipY": false
               }
             },
             {
@@ -452,9 +453,10 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "6902cd77-f77b-412d-b659-7f20c62d80d0",
+                "textureUuid": "3c14d90f-7748-4a82-b671-3ca9692055fe",
                 "imageSrc": "http://localhost:8729/examples/textures/cube/pisa/px.png",
-                "mapping": 301
+                "mapping": 301,
+                "flipY": false
               }
             }
           ],
@@ -470,9 +472,10 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "6902cd77-f77b-412d-b659-7f20c62d80d0",
+                  "textureUuid": "3c14d90f-7748-4a82-b671-3ca9692055fe",
                   "imageSrc": "http://localhost:8729/examples/textures/cube/pisa/px.png",
-                  "mapping": 301
+                  "mapping": 301,
+                  "flipY": false
                 }
               }
             },
@@ -494,9 +497,10 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "6902cd77-f77b-412d-b659-7f20c62d80d0",
+                  "textureUuid": "3c14d90f-7748-4a82-b671-3ca9692055fe",
                   "imageSrc": "http://localhost:8729/examples/textures/cube/pisa/px.png",
-                  "mapping": 301
+                  "mapping": 301,
+                  "flipY": false
                 }
               }
             },
@@ -662,15 +666,15 @@
         "updateBeforeNodes": 1,
         "updateAfterNodes": 0
       },
-      "materialUuid": "564cabbe-d603-4619-bcec-4418ae02bbd7"
+      "materialUuid": "504d0105-7b26-478f-aa4f-ad3d0d21ad33"
     }
   },
   {
     "shape": "render-output",
-    "configHash": "4f812945c0e894ff7bd4e2ee4c8e15bf2354755aee5e4003607be984df0eb827",
+    "configHash": "90a5a84186bcbc44efdd95b20bf6492a0c0d34057e53f1b3ebe0bc95b1236c03",
     "artifact": {
       "version": 3,
-      "cacheKey": 13450353562455198,
+      "cacheKey": 11519813694183332,
       "materialShape": "render-output",
       "vertexShader": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : vec2<f32>,\n\tnodeUniform4 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar1 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform4 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar1 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar1;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
       "fragmentShader": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform1 : vec2<f32>,\n\tnodeUniform4 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> nodeVar0 : vec4<f32>;\n\n// codes\nfn sRGBTransferOETF ( color : vec3<f32> ) -> vec3<f32> {\n\n\t\n\n\n\treturn mix( ( ( pow( color, vec3<f32>( 0.41666 ) ) * vec3<f32>( 1.055 ) ) - vec3<f32>( 0.055 ) ), ( color * vec3<f32>( 12.92 ) ), vec3<f32>( ( color <= vec3<f32>( 0.0031308 ) ) ) );\n\n}\n\n\n\n@fragment\nfn main( @builtin( position ) fragCoord : vec4<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform0, nodeUniform0_sampler, ( fragCoord.xy / object.nodeUniform1 ) );\n\n\t// result\n\n\toutput.color = vec4<f32>( sRGBTransferOETF( nodeVar0.xyz ), nodeVar0.w );\n\n\treturn output;\n\n}\n",
@@ -929,8 +933,9 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "4a96360e-7a7d-4ccb-b0ed-fd0429521d0f",
-                "mapping": 300
+                "textureUuid": "d466a6fb-2f0a-485b-8e97-b6d6e12268b7",
+                "mapping": 300,
+                "flipY": false
               }
             },
             {
@@ -941,8 +946,9 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "4a96360e-7a7d-4ccb-b0ed-fd0429521d0f",
-                "mapping": 300
+                "textureUuid": "d466a6fb-2f0a-485b-8e97-b6d6e12268b7",
+                "mapping": 300,
+                "flipY": false
               }
             }
           ],
@@ -958,8 +964,9 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "4a96360e-7a7d-4ccb-b0ed-fd0429521d0f",
-                  "mapping": 300
+                  "textureUuid": "d466a6fb-2f0a-485b-8e97-b6d6e12268b7",
+                  "mapping": 300,
+                  "flipY": false
                 }
               }
             },
@@ -981,8 +988,9 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "4a96360e-7a7d-4ccb-b0ed-fd0429521d0f",
-                  "mapping": 300
+                  "textureUuid": "d466a6fb-2f0a-485b-8e97-b6d6e12268b7",
+                  "mapping": 300,
+                  "flipY": false
                 }
               }
             },
