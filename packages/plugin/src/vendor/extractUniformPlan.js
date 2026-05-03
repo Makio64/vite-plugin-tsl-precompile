@@ -522,6 +522,92 @@ function collectShadowUniformSources( state ) {
 }
 
 /**
+ * Walk `state.updateNodes` for `AnalyticLightNode` instances and try to find
+ * the one that owns the given depth texture. AnalyticLightNode lazily attaches
+ * a `ShadowNode` whose `setup()` allocates `shadow.map.depthTexture`; the
+ * binding's TextureNode wraps that exact instance. We match by reference and
+ * return the same `lightIndex` traversal index that `collectLightUniformSources`
+ * uses, so the hydrator can resolve `frame.scene`'s Nth light at render time.
+ *
+ * Also returns `vsm: true` when the matched texture is the
+ * VSM-horizontal-pass output (`vsmShadowMapHorizontal.texture`) rather than
+ * the raw depth texture — the runtime reads from `shadow.map.texture` in that
+ * case.
+ *
+ * @param {Object} state
+ * @param {Object} depthTexture
+ * @return {?{ lightIndex: number, lightUuid: ?string, vsm: boolean }}
+ */
+function findLightForDepthTexture( state, depthTexture ) {
+
+	if ( ! state || ! Array.isArray( state.updateNodes ) || ! depthTexture ) return null;
+
+	let lightIndex = 0;
+	for ( const node of state.updateNodes ) {
+
+		if ( ! node || node.isAnalyticLightNode !== true ) continue;
+		const light = node.light;
+		if ( light ) {
+
+			const map = light.shadow && light.shadow.map ? light.shadow.map : null;
+			if ( map ) {
+
+				if ( map.depthTexture === depthTexture ) {
+
+					return {
+						lightIndex,
+						lightUuid: typeof light.uuid === 'string' ? light.uuid : null,
+						vsm: false,
+					};
+
+				}
+				if ( map.texture === depthTexture ) {
+
+					return {
+						lightIndex,
+						lightUuid: typeof light.uuid === 'string' ? light.uuid : null,
+						vsm: true,
+					};
+
+				}
+
+			}
+			// VSM blur intermediate textures hang off the ShadowNode itself
+			// (`vsmShadowMapHorizontal.texture`, etc.). Match against those
+			// too so VSM shadow lookups resolve to the right light.
+			const sn = node.shadowNode;
+			if ( sn ) {
+
+				if ( sn.vsmShadowMapHorizontal && sn.vsmShadowMapHorizontal.texture === depthTexture ) {
+
+					return {
+						lightIndex,
+						lightUuid: typeof light.uuid === 'string' ? light.uuid : null,
+						vsm: true,
+					};
+
+				}
+				if ( sn.vsmShadowMapVertical && sn.vsmShadowMapVertical.texture === depthTexture ) {
+
+					return {
+						lightIndex,
+						lightUuid: typeof light.uuid === 'string' ? light.uuid : null,
+						vsm: true,
+					};
+
+				}
+
+			}
+
+		}
+		lightIndex ++;
+
+	}
+	return null;
+
+}
+
+/**
  * Extract a uniform plan from a built `NodeBuilderState`.
  *
  * @param {NodeBuilderState} state
@@ -748,6 +834,30 @@ export function extractUniformPlan( state ) {
 						if ( tex.name === 'DFG_LUT' ) {
 
 							source = { kind: 'builtin.dfgLUT' };
+
+						} else if ( tex.isDepthTexture === true ) {
+
+							// Shadow depth textures (DepthTexture instances) live
+							// on `light.shadow.map.depthTexture` and are
+							// (re)allocated by the renderer's shadow pass per
+							// frame. The captured uuid is dead the moment the
+							// example reloads, so the standard artifact.texture
+							// uuid lookup can never find it. Tag the binding
+							// with the owning light's traversal index instead;
+							// the hydrator's per-frame rebinder swaps in
+							// `frame.scene`'s actual shadow map at draw time.
+							const lightInfo = findLightForDepthTexture( state, tex );
+							source = {
+								kind: 'depth.texture',
+								textureUuid: tex.uuid,
+								lightIndex: lightInfo ? lightInfo.lightIndex : 0,
+								lightUuid: lightInfo ? lightInfo.lightUuid : null,
+								// `vsm` indicates a VSM horizontal pass texture
+								// rather than a raw depth texture; the runtime
+								// reads `shadow.map.texture` instead of
+								// `shadow.map.depthTexture` for VSM shadows.
+								vsm: lightInfo ? !! lightInfo.vsm : false,
+							};
 
 						} else {
 

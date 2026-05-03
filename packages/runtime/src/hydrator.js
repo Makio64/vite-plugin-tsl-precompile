@@ -312,8 +312,11 @@ export function hydrateNodeBuilderState( artifact, material = null ) {
 
 	}
 
-	const { bindings, uniformBuffers } = hydrateRuntimeBindings( artifact, material );
+	const { bindings, uniformBuffers, shadowDepthBindings } = hydrateRuntimeBindings( artifact, material );
 	const updateNode = createUniformUpdateNode( artifact, uniformBuffers, material );
+	const shadowDepthRebinder = shadowDepthBindings.length > 0
+		? createShadowDepthRebinder( shadowDepthBindings )
+		: null;
 
 	// In-process flows (dev-server capture → immediate render) carry live
 	// update node instances as non-enumerable sidecars on the artifact. Include
@@ -333,7 +336,13 @@ export function hydrateNodeBuilderState( artifact, material = null ) {
 		nodeAttributes: hydrateNodeAttributes( artifact.nodeAttributes || artifact.attributes || [] ),
 		bindings,
 		updateNodes: [ ...liveUpdateNodes, ...( updateNode ? [ updateNode ] : [] ) ],
-		updateBeforeNodes: [ ...liveUpdateBeforeNodes ],
+		// `shadowDepthRebinder` runs FIRST among updateBefore so the SampledTexture
+		// bindings point at the live `light.shadow.map.depthTexture` before the
+		// renderer reads bind-group versions for the upcoming draw.
+		updateBeforeNodes: [
+			...( shadowDepthRebinder ? [ shadowDepthRebinder ] : [] ),
+			...liveUpdateBeforeNodes,
+		],
 		updateAfterNodes: [ ...liveUpdateAfterNodes ],
 		observer: createStaticObserver(),
 		usedTimes: 0,
@@ -508,8 +517,9 @@ function cloneBinding( binding ) {
 function hydrateRuntimeBindings( artifact, material ) {
 
 	const uniformBuffers = new Map();
+	const shadowDepthBindings = [];
 	const bindings = artifact.bindings;
-	if ( ! Array.isArray( bindings ) ) return { bindings: [], uniformBuffers };
+	if ( ! Array.isArray( bindings ) ) return { bindings: [], uniformBuffers, shadowDepthBindings };
 
 	// Full three.js artifacts contain JSON descriptors. Rehydrate the subset
 	// needed by WGSL pipeline layout creation and UBO uploads. Texture/storage
@@ -533,13 +543,137 @@ function hydrateRuntimeBindings( artifact, material ) {
 			runtimeBindings.push( runtimeBinding );
 			if ( runtimeBinding.isUniformBuffer ) uniformBuffers.set( descriptor.name || group.name || '', runtimeBinding );
 
+			// Track depth-texture bindings so the per-frame rebinder can swap
+			// them to the live shadow map. The plan source carries `lightIndex`
+			// and `vsm` flags; we resolve the actual texture at update time
+			// because the renderer's shadow pass hasn't allocated it yet.
+			const planSource = descriptor.kind === 'sampled-texture' || descriptor.kind === 'sampler'
+				? findPlanTextureSource( artifact, group.name, descriptor.name )
+				: null;
+			if ( planSource && planSource.kind === 'depth.texture' ) {
+
+				shadowDepthBindings.push( {
+					binding: runtimeBinding,
+					lightIndex: Number.isInteger( planSource.lightIndex ) ? planSource.lightIndex : 0,
+					lightUuid: typeof planSource.lightUuid === 'string' ? planSource.lightUuid : null,
+					vsm: planSource.vsm === true,
+				} );
+
+			}
+
 		}
 
 		if ( runtimeBindings.length > 0 ) groups.push( new BindGroup( group.name || '', runtimeBindings ) );
 
 	}
 
-	return { bindings: groups, uniformBuffers };
+	return { bindings: groups, uniformBuffers, shadowDepthBindings };
+
+}
+
+/**
+ * Look up a texture binding's source descriptor in the artifact's uniform plan.
+ * Used by `hydrateRuntimeBindings` to discover `depth.texture` bindings that
+ * need per-frame texture rebinding.
+ *
+ * @param {Object} artifact
+ * @param {string} groupName
+ * @param {string} bindingName
+ * @return {?Object} Plan source descriptor, or null.
+ */
+function findPlanTextureSource( artifact, groupName, bindingName ) {
+
+	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
+	const group = plan.find( ( g ) => g.name === groupName );
+	if ( ! group ) return null;
+	const tex = ( group.textures || [] ).find( ( t ) => t.name === bindingName );
+	return tex ? ( tex.source || null ) : null;
+
+}
+
+/**
+ * Per-frame "node" that swaps each shadow-receiving binding's texture to the
+ * live `light.shadow.map.depthTexture` (or the VSM intermediate render target's
+ * `texture`) of the matching light in `frame.scene`. Without this, every
+ * texture_depth_2d binding stays pointed at the 1×1 fallback that
+ * `resolveTextureBinding` returned at hydration time, and shadow lookups in
+ * the WGSL always sample "no shadow".
+ *
+ * Returns an object shaped like a three.js update-before node so
+ * `NodeFrame.updateBeforeNode()` will dispatch to it. `getUpdateBeforeType()`
+ * returns `'render'` so the swap runs once per render pass — three.js's
+ * NodeFrame de-duplicates by render id, matching what stock three.js does
+ * for ShadowNode itself.
+ *
+ * @param {Array<{binding: Object, lightIndex: number, lightUuid: ?string, vsm: boolean}>} entries
+ * @param {Object} artifact
+ * @return {Object}
+ */
+function createShadowDepthRebinder( entries /* , artifact */ ) {
+
+	return {
+		getUpdateBeforeType() {
+
+			return 'render';
+
+		},
+		updateReference() {
+
+			return this;
+
+		},
+		updateBefore( frame ) {
+
+			const scene = frame && frame.scene ? frame.scene : null;
+			if ( ! scene ) return;
+
+			for ( const entry of entries ) {
+
+				const light = findShadowLight( scene, entry );
+				if ( ! light || ! light.shadow || ! light.shadow.map ) continue;
+
+				const map = light.shadow.map;
+				// VSM materials sample the blurred render-target texture
+				// (`shadow.map.texture`); standard PCF/Hard shadows sample
+				// the raw depth texture (`shadow.map.depthTexture`).
+				const liveTexture = entry.vsm ? map.texture : ( map.depthTexture || map.texture );
+				if ( ! liveTexture || liveTexture === entry.binding.texture ) continue;
+
+				entry.binding.texture = liveTexture;
+				if ( entry.binding.groupNode ) entry.binding.groupNode.version ++;
+
+			}
+
+		},
+	};
+
+}
+
+/**
+ * Find the live Light a shadow-depth binding belongs to. Prefers a UUID match
+ * (production: same Light instance survives across frames), falls back to a
+ * traversal-index lookup so harness/test paths that recreate the scene each
+ * load can still relink.
+ *
+ * @param {Object} scene
+ * @param {{lightIndex: number, lightUuid: ?string}} entry
+ * @return {?Object}
+ */
+function findShadowLight( scene, entry ) {
+
+	if ( entry.lightUuid && typeof scene.traverse === 'function' ) {
+
+		let found = null;
+		scene.traverse( ( o ) => {
+
+			if ( found ) return;
+			if ( o && o.isLight === true && o.uuid === entry.lightUuid ) found = o;
+
+		} );
+		if ( found ) return found;
+
+	}
+	return findLightInScene( scene, entry.lightIndex );
 
 }
 
@@ -756,6 +890,18 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 	const group = plan.find( ( item ) => item.name === groupName );
 	const texture = group && ( group.textures || [] ).find( ( item ) => item.name === bindingName );
 	const source = texture && texture.source || {};
+
+	// Shadow depth textures: extractor tags these with `kind: 'depth.texture'`
+	// and a `lightIndex` for the owning AnalyticLightNode. We can't resolve
+	// the live `light.shadow.map.depthTexture` here because the renderer
+	// hasn't allocated the shadow map yet at hydration time — the per-frame
+	// rebinder (registerShadowDepthRebinder, below) swaps it in at draw time.
+	// Return the matching fallback so the bind group is still validatable.
+	if ( source.kind === 'depth.texture' ) {
+
+		return fallbackTextureForBinding( artifact, bindingName );
+
+	}
 
 	// Built-in DFG LUT for IBL: static precomputed 16×16 RG16F texture.
 	// Identical to three.js's own DFGLUT.js — no renderer required.

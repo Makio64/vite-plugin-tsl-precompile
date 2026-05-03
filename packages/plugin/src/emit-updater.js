@@ -47,6 +47,7 @@ export const DOCUMENTED_BLOCKED_KINDS = Object.freeze( {
 	// flag them as "unknown" if they ever surface in a synthetic hand-written plan.
 	'builtin.dfgLUT': 'IBL DFG LUT — resolved by the hydrator (getDFGLUT()). Not a UBO slot kind.',
 	'artifact.texture': 'Artifact-level texture — resolved by the hydrator via _textureRefs / material UUID scan. Not a UBO slot kind.',
+	'depth.texture': 'Shadow depth texture (light.shadow.map.depthTexture) — resolved by the hydrator per-frame via the lightIndex baked into the source. Not a UBO slot kind.',
 	'unsupported': 'Extractor flagged this texture binding as unsupported (no source identified). The hydrator substitutes a 1×1 white fallback. Not a UBO slot kind.',
 	'scene.overrideMaterial': 'scene.overrideMaterial context is out of scope for v1.',
 } );
