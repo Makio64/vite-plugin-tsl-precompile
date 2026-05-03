@@ -387,9 +387,38 @@ export class LightingModel {
 
 }
 
+/**
+ * `ShadowBaseNode` — base class for `ShadowNode`, `CSMShadowNode`, and any
+ * user-defined shadow customisation. The slim runtime cannot run a shadow
+ * pass (the NodeBuilder is stripped, so `MeshDepthNodeMaterial` /
+ * `MeshDistanceNodeMaterial` aren't available). But examples like
+ * `webgpu_shadowmap_array` and `_csm` instantiate subclasses during scene
+ * setup, so we provide an inert stub: it constructs without throwing,
+ * carries `isNode` / `isShadowBaseNode` flags, and `setup()` / `build()`
+ * are no-ops. The shadow effect will simply be absent in slim replay
+ * (no depth texture is allocated by the slim renderer); to render real
+ * shadows, the harness/aux pipeline must populate `light.shadow.map`
+ * externally (see Wave 3-S task).
+ */
 export class ShadowBaseNode {
 
-	constructor() { throw new Error( '[tsl-precompile/slim] ShadowBaseNode is not available.' ); }
+	constructor( light ) {
+
+		this.isNode = true;
+		this.isShadowBaseNode = true;
+		this.light = light || null;
+		this.updateBeforeType = 'render';
+
+	}
+
+	getCacheKey() { return 'slim-shadow-base-node'; }
+	getHash() { return 'slim-shadow-base-node'; }
+	setup() { return this; }
+	setupShadowPosition() { /* no-op */ }
+	build() { return ''; }
+	updateBefore() { /* no-op */ }
+	updateReference() { return this; }
+	getUpdateBeforeType() { return 'render'; }
 
 }
 
