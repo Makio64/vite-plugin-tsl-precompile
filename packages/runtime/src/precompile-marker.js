@@ -294,12 +294,26 @@ async function captureMaterialInDev( material, name ) {
 			for ( const key of Object.keys( sourceObject ) ) {
 
 				if ( key === 'material' || key === 'geometry' || key === 'parent' || key === 'children' ) continue;
+				// `boundingSphere` and `boundingBox` are subclass-coupled to a
+				// `computeBoundingSphere`/`computeBoundingBox` method that lives
+				// on the source object's class (e.g. InstancedMesh, BatchedMesh,
+				// SkinnedMesh). Copying the field onto a plain `Mesh` makes
+				// `Frustum.intersectsObject` think the object owns these caches
+				// and call the missing `mesh.computeBoundingSphere()`, which
+				// throws during `compileAsync` projection. Skip them — frustum
+				// culling on the throwaway scene is meaningless anyway.
+				if ( key === 'boundingSphere' || key === 'boundingBox' ) continue;
 				if ( key in mesh && key !== 'color' ) continue;
 				mesh[ key ] = sourceObject[ key ];
 
 			}
 
 		}
+		// Force-disable frustum culling on the throwaway mesh. Even after the
+		// `boundingSphere` skip above, the source object may still have other
+		// subclass-specific cull paths (e.g. `intersectsSprite`); the throwaway
+		// camera is a placeholder so culling decisions here are meaningless.
+		mesh.frustumCulled = false;
 		if ( mesh.color === undefined && Color ) mesh.color = sourceObject && sourceObject.color || material.color || new Color( 1, 1, 1 );
 		scene.add( mesh );
 

@@ -510,6 +510,29 @@ function __collectStorageBufAttrs( rootNode, results ) {
 	} );
 }
 
+// Walk a node tree (including vertexNode/positionNode subtrees) and collect every
+// BufferAttributeNode whose .value is a Storage(Instanced)BufferAttribute. This
+// is the case when user code writes vertexNode = billboarding({ position:
+// positionBuffer.toAttribute() }) — the leaf is BufferAttributeNode wrapping the
+// storage attribute directly. Without this, compute-driven particle examples
+// (rain, snow, points) hydrate brand-new empty StorageBufferAttribute placeholders
+// in the slim render path and the compute output is never visible.
+function __collectStorageAttrNodeAttrs( rootNode, results ) {
+	if ( ! rootNode ) return;
+	function isStorageVal( v ) { return v && ( v.isStorageBufferAttribute === true || v.isStorageInstancedBufferAttribute === true ); }
+	// Top-level node may itself be a BufferAttributeNode (rare but possible:
+	// material.positionNode = positionBuffer.toAttribute()).
+	if ( rootNode.isBufferNode === true && ! rootNode.isStorageBufferNode && isStorageVal( rootNode.value ) ) {
+		results.push( rootNode.value );
+	}
+	if ( typeof rootNode.traverse !== 'function' ) return;
+	rootNode.traverse( ( n ) => {
+		if ( n && n.isBufferNode === true && ! n.isStorageBufferNode && isStorageVal( n.value ) ) {
+			if ( ! results.includes( n.value ) ) results.push( n.value );
+		}
+	} );
+}
+
 // Before creating a PrecompiledMaterial, inject live StorageBufferAttribute /
 // StorageInstancedBufferAttribute objects from the source material's node graph
 // into the artifact's plan entries so hydrateNodeBuilderState uses the live
@@ -526,20 +549,27 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 		return liveSize === artifactSize || ( liveSize === 3 && artifactSize === 4 );
 	}
 
-	// Wire nodeAttributes (vertex path): positionNode = storageNode.toAttribute()
-	// creates a BufferAttributeNode (isBufferNode, NOT isStorageBufferNode) wrapping
-	// the StorageInstancedBufferAttribute directly as .value.
+	// Wire nodeAttributes (vertex path). Two shapes are common:
+	//   - material.positionNode = positionBuffer.toAttribute() — the top-level
+	//     node is a BufferAttributeNode wrapping the storage attribute.
+	//   - material.vertexNode = billboarding({ position: positionBuffer.toAttribute() })
+	//     — the BufferAttributeNode is buried inside a deeper node tree (used by
+	//     the compute particle examples: rain, snow, points).
+	// Walk both positionNode and vertexNode to collect every storage-attribute
+	// candidate, then match each artifact node-attribute by count + itemSize.
 	const nodeAttrsArr = artifact.attributes || artifact.nodeAttributes || [];
-	const pn = sourceMaterial.positionNode;
-	if ( pn && pn.isBufferNode === true && ! pn.isStorageBufferNode && isStorageAttr( pn.value ) ) {
+	const naCandidates = [];
+	__collectStorageAttrNodeAttrs( sourceMaterial.positionNode, naCandidates );
+	__collectStorageAttrNodeAttrs( sourceMaterial.vertexNode, naCandidates );
+	if ( naCandidates.length > 0 ) {
 		for ( const nodeAttr of nodeAttrsArr ) {
 			// _liveAttribute may already be set from JSON deserialization (plain object, not
 			// a live attribute). Only skip if it is already a proper live JS attribute object.
 			if ( ! nodeAttr || nodeAttr.source !== 'node' || isStorageAttr( nodeAttr._liveAttribute ) ) continue;
-			if ( pn.value.count === nodeAttr.count && sizeMatches( pn.value.itemSize, nodeAttr.itemSize ) ) {
-				Object.defineProperty( nodeAttr, '_liveAttribute', { value: pn.value, enumerable: false, writable: true, configurable: true } );
-				break;
-			}
+			const matchIdx = naCandidates.findIndex( ( v ) => v.count === nodeAttr.count && sizeMatches( v.itemSize, nodeAttr.itemSize ) );
+			if ( matchIdx === -1 ) continue;
+			Object.defineProperty( nodeAttr, '_liveAttribute', { value: naCandidates[ matchIdx ], enumerable: false, writable: true, configurable: true } );
+			naCandidates.splice( matchIdx, 1 );
 		}
 	}
 
@@ -551,7 +581,7 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 	// object from JSON capture (not a live JS attribute). Only skip if it is a real
 	// live attribute (isStorageBufferAttribute / isStorageInstancedBufferAttribute).
 	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
-	const nodeKeys = [ 'colorNode', 'normalNode', 'outputNode', 'roughnessNode', 'metalnessNode', 'emissiveNode', 'opacityNode', 'alphaTestNode' ];
+	const nodeKeys = [ 'colorNode', 'normalNode', 'outputNode', 'roughnessNode', 'metalnessNode', 'emissiveNode', 'opacityNode', 'alphaTestNode', 'vertexNode', 'positionNode' ];
 	const sbCandidates = [];
 	for ( const key of nodeKeys ) {
 		if ( sourceMaterial[ key ] ) __collectStorageBufAttrs( sourceMaterial[ key ], sbCandidates );
@@ -994,6 +1024,59 @@ function __syncStorageBuffers( computeNode, fullRenderer, slimRenderer ) {
 				if ( ! bindGroup || ! bindGroup.bindings ) continue;
 				for ( const binding of bindGroup.bindings ) {
 					_totalBindings++;
+					// Storage textures: a compute kernel that writes to a StorageTexture
+					// (via textureStore) binds it as a sampled-texture-style binding with
+					// .texture being the StorageTexture instance. The slim renderer
+					// creates its own empty GPUTexture for the same JS object — make slim
+					// share full's GPUTexture so the compute output is visible in slim's
+					// render pass.
+					if ( binding.isSampledTexture && binding.texture && binding.texture.isStorageTexture === true ) {
+						const tex = binding.texture;
+						const fullTexData = fullRenderer.backend.get( tex );
+						if ( ! fullTexData || ! fullTexData.texture ) {
+							if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] tex-skip-nofull node=' + ( node && node.name ) + ' tex=' + ( tex.name || '' ) );
+							continue;
+						}
+						const slimTexData = slimRenderer.backend.get( tex );
+						if ( ! slimTexData.texture ) {
+							// Slim hasn't created a GPU texture yet — pre-seed with full's so
+							// when slim's first render hits updateTexture, the initialized
+							// short-circuit kicks in (no createTexture call, which would throw
+							// "Texture already initialized" against an already-shared resource).
+							slimTexData.texture = fullTexData.texture;
+							slimTexData.format = fullTexData.format;
+							slimTexData.initialized = true;
+							slimTexData.version = tex.version;
+							slimTexData.generation = ( slimTexData.generation || 0 ) + 1;
+							if ( ! slimTexData.bindGroups ) slimTexData.bindGroups = new Set();
+							if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] tex-preseed node=' + ( node && node.name ) + ' tex=' + ( tex.name || '<anon>' ) );
+						} else if ( slimTexData.texture !== fullTexData.texture ) {
+							// Slim already has its own GPUTexture (rendered before compute
+							// finished). Copy the full's GPU texture content INTO slim's
+							// existing texture — the bind groups and views still point at
+							// slim's texture, so this update is visible without invalidation.
+							try {
+								const fullTex = fullTexData.texture;
+								const slimTex = slimTexData.texture;
+								const w = fullTex.width;
+								const h = fullTex.height;
+								const d = fullTex.depthOrArrayLayers || 1;
+								const enc = device.createCommandEncoder();
+								enc.copyTextureToTexture(
+									{ texture: fullTex },
+									{ texture: slimTex },
+									{ width: w, height: h, depthOrArrayLayers: d }
+								);
+								device.queue.submit( [ enc.finish() ] );
+								if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] tex-copy node=' + ( node && node.name ) + ' tex=' + ( tex.name || '<anon>' ) + ' size=' + w + 'x' + h + 'x' + d );
+							} catch ( e ) {
+								if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] tex-copy-fail node=' + ( node && node.name ) + ' err=' + ( e && e.message || e ) );
+							}
+						} else {
+							if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] tex-already-shared node=' + ( node && node.name ) );
+						}
+						continue;
+					}
 					if ( ! binding.isStorageBuffer ) {
 						if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] skip node=' + ( node && node.name ) + ' binding=' + binding.name + ' type=' + ( binding.constructor && binding.constructor.name ) );
 						continue;
