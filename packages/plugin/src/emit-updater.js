@@ -409,14 +409,12 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 		case 'material.ior':
 		case 'material.emissiveIntensity':
 		case 'material.aoMapIntensity':
+		case 'material.lightMapIntensity':
+		case 'material.envMapIntensity':
 		case 'material.specularIntensity':
 		case 'material.shininess':
 		case 'material.size':
 		case 'material.rotation':
-		case 'material.linewidth':
-		case 'material.dashSize':
-		case 'material.gapSize':
-		case 'material.scale':
 		case 'material.clearcoat':
 		case 'material.clearcoatRoughness':
 		case 'material.sheen':
@@ -427,8 +425,13 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 		case 'material.iridescence':
 		case 'material.iridescenceIOR':
 		case 'material.anisotropy':
+		case 'material.anisotropyRotation':
 		case 'material.dispersion':
-		case 'material.reflectivity': {
+		case 'material.reflectivity':
+		case 'material.refractionRatio':
+		case 'material.bumpScale':
+		case 'material.displacementScale':
+		case 'material.displacementBias': {
 
 			const prop = src.property || kind.split( '.' )[ 1 ];
 			usedWriters.add( 'writeF32' );
