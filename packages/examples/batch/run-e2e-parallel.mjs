@@ -13,7 +13,7 @@ function getArg( prefix, def ) {
 	return found ? found.slice( prefix.length ) : def;
 }
 
-const workers  = parseInt( getArg( '--workers=', '16' ), 10 );
+const workers  = parseInt( getArg( '--workers=', '6' ), 10 );
 const basePort = parseInt( getArg( '--base-port=', '8730' ), 10 );
 const filter   = getArg( '--filter=', '' );
 const threeRepo = resolve( getArg( '--three-repo=', resolve( SELF, '../../../../three.js' ) ) );
