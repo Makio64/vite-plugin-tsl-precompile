@@ -9,6 +9,7 @@
     "run": "node run.mjs",
     "run:slim": "node run-slim.mjs",
     "run:e2e": "node run-e2e.mjs",
+    "run:e2e-parallel": "node run-e2e-parallel.mjs",
     "run:coverage-summary": "node run-coverage-summary.mjs"
   },
   "devDependencies": {

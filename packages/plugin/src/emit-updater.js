@@ -659,7 +659,10 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 
 				const prop = src.property || kind.split( '.' )[ 1 ];
 				usedWriters.add( 'writeMat3' );
-				return `writeMat3(view, ${ off }, material.${ prop } && material.${ prop }.matrix);`;
+				// Mirror three.js's TextureNode.update(): refresh texture.matrix from
+				// the live repeat/offset/rotation/center before reading it. Without this
+				// the matrix stays at the identity assigned in the Texture constructor.
+				return `(material.${ prop } && material.${ prop }.matrixAutoUpdate && material.${ prop }.updateMatrix()); writeMat3(view, ${ off }, material.${ prop } && material.${ prop }.matrix);`;
 
 			}
 			return emitUnknownOrBlocked( kind, off, unsupportedKinds, byteOffset );

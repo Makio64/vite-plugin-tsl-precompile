@@ -522,7 +522,19 @@ export function mix( ..._ ) { return inertNodeStub(); }
 export function step( ..._ ) { return inertNodeStub(); }
 export function texture( ..._ ) { return inertNodeStub(); }
 export function cubeTexture( ..._ ) { return inertNodeStub(); }
-export function pmremTexture( ..._ ) { return inertNodeStub(); }
+// Retain the source texture passed to pmremTexture(map, ...) so the e2e
+// harness (and any production wiring code) can recover it and run
+// PMREMGenerator on the same cubemap/equirect at replay time. The slim
+// stub itself is otherwise inert.
+const __pmremStubSources = new WeakMap();
+export function pmremTexture( source, ..._ ) {
+
+	const stub = inertNodeStub();
+	if ( source && ( source.isTexture || source.isCubeTexture ) ) __pmremStubSources.set( stub, source );
+	return stub;
+
+}
+export function __getPmremStubSource( stub ) { return __pmremStubSources.get( stub ); }
 export function vec2( ..._ ) { return inertNodeStub(); }
 export function vec3( ..._ ) { return inertNodeStub(); }
 export function vec4( ..._ ) { return inertNodeStub(); }

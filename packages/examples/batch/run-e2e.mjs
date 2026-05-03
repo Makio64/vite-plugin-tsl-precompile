@@ -93,6 +93,7 @@ const replayWaitMs = parseInt( getArg( '--replay-wait-ms=', '5000' ), 10 );
 const psnrThreshold = parseFloat( getArg( '--psnr-threshold=', '30' ) );
 const pixelGateEnabled = ! args.includes( '--no-pixel-gate' );
 const saveShots = args.includes( '--save-shots' );
+const reportFile = getArg( '--report=', 'e2e-report.json' );
 
 if ( ! existsSync( join( threeRepo, 'examples' ) ) ) {
 
@@ -236,6 +237,35 @@ const __pending = [];
 const __seenMaterials = new WeakMap();
 let __renderer = null;
 
+// Bump window.__tslpLoaderPending around every three.js loader item so the
+// Playwright wait gate doesn't screenshot while HDR/GLTF/MaterialX/etc. are
+// still in flight. All stock three.js loaders use DefaultLoadingManager unless
+// constructed with an explicit one; itemStart/itemEnd are the lower-level hooks
+// the manager calls per-item, so wrapping them catches every default loader.
+( function patchDefaultLoadingManager() {
+	const dlm = Original.DefaultLoadingManager;
+	if ( ! dlm || dlm.__tslpPatched ) return;
+	dlm.__tslpPatched = true;
+	const _origStart = dlm.itemStart.bind( dlm );
+	const _origEnd = dlm.itemEnd.bind( dlm );
+	const _origError = dlm.itemError ? dlm.itemError.bind( dlm ) : null;
+	const _now = () => ( typeof window.__tslpRealNow === 'function' ? window.__tslpRealNow() : Date.now() );
+	dlm.itemStart = function ( url ) {
+		window.__tslpLoaderPending = ( window.__tslpLoaderPending | 0 ) + 1;
+		window.__tslpLoaderLastBusyAt = _now();
+		return _origStart( url );
+	};
+	dlm.itemEnd = function ( url ) {
+		window.__tslpLoaderPending = Math.max( 0, ( window.__tslpLoaderPending | 0 ) - 1 );
+		window.__tslpLoaderLastBusyAt = _now();
+		return _origEnd( url );
+	};
+	if ( _origError ) dlm.itemError = function ( url ) {
+		// itemEnd is also called after itemError by Loader.load, so don't double-decrement here.
+		return _origError( url );
+	};
+} )();
+
 installPrecompileMarker( Original, {
 	devEndpoint: '/__tslp__/capture?example=' + encodeURIComponent( __state.example ),
 } );
@@ -355,23 +385,54 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 	compileAsync( scene, camera, ...rest ) {
 		__markSceneMaterials( scene );
 		__flush();
-		return typeof super.compileAsync === 'function' ? super.compileAsync( scene, camera, ...rest ) : Promise.resolve();
+		if ( typeof super.compileAsync !== 'function' ) return Promise.resolve();
+		// Track this compile so the screenshot waits for it. MaterialX, GLTF, and
+		// other examples await renderer.compileAsync between asset loads to warm
+		// the GPU pipeline; without this counter, the wait gate can fire while
+		// the next mesh's pipeline is still being built.
+		window.__tslpCompilePending = ( window.__tslpCompilePending | 0 ) + 1;
+		const _settle = () => { window.__tslpCompilePending = Math.max( 0, ( window.__tslpCompilePending | 0 ) - 1 ); };
+		const p = super.compileAsync( scene, camera, ...rest );
+		return Promise.resolve( p ).then( ( v ) => { _settle(); return v; }, ( e ) => { _settle(); throw e; } );
 	}
 	render( scene, camera ) {
 		__markSceneMaterials( scene );
 		__flush();
+		const __auxOpts = {
+			devEndpoint: '/__tslp__/capture?example=' + encodeURIComponent( __state.example ),
+			three: Original,
+			// Use the slim bundle's baked-in threeVersion so capture hashes
+			// match replay hashes. The slim bundle hardcodes threeVersion at
+			// build time; using Original.REVISION (the three.js examples repo)
+			// can differ and produces mismatched configHashes.
+			threeVersion: ${ JSON.stringify( SLIM_HASH_OPTS.threeVersion ) },
+			pluginVersion: ${ JSON.stringify( SLIM_HASH_OPTS.pluginVersion ) },
+		};
 		if ( ! this.__tslpAuxStarted ) {
 			this.__tslpAuxStarted = true;
-			Promise.resolve().then( () => precompileAuxiliary( this, scene, camera, {
-				devEndpoint: '/__tslp__/capture?example=' + encodeURIComponent( __state.example ),
-				three: Original,
-				// Use the slim bundle's baked-in threeVersion so capture hashes
-				// match replay hashes. The slim bundle hardcodes threeVersion at
-				// build time; using Original.REVISION (the three.js examples repo)
-				// can differ and produces mismatched configHashes.
-				threeVersion: ${ JSON.stringify( SLIM_HASH_OPTS.threeVersion ) },
-				pluginVersion: ${ JSON.stringify( SLIM_HASH_OPTS.pluginVersion ) },
-			} ) ).catch( ( err ) => console.warn( '[tslp-e2e] aux capture failed:', err && err.message || err ) );
+			Promise.resolve().then( () => precompileAuxiliary( this, scene, camera, __auxOpts ) )
+				.catch( ( err ) => console.warn( '[tslp-e2e] aux capture failed:', err && err.message || err ) );
+		}
+		// Re-trigger aux capture when scene.backgroundNode (or scene.environment)
+		// appears AFTER the first render. Examples with async loaders (HDR cubemap,
+		// EXR equirect) wire their PMREM-style background in the load callback,
+		// which fires after our first-render capture has already missed it. Re-
+		// running precompileAuxiliary captures the background-aux artifact this
+		// time around. registerAuxArtifact dedupes by configHash, so unchanged
+		// shapes are no-ops.
+		const _bgNode = scene && scene.backgroundNode;
+		const _envTex = scene && scene.environment;
+		if ( this.__tslpAuxStarted && (
+			( _bgNode && this.__tslpLastBgNode !== _bgNode ) ||
+			( _envTex && this.__tslpLastEnvTex !== _envTex )
+		) ) {
+			this.__tslpLastBgNode = _bgNode;
+			this.__tslpLastEnvTex = _envTex;
+			Promise.resolve().then( () => precompileAuxiliary( this, scene, camera, __auxOpts ) )
+				.catch( ( err ) => console.warn( '[tslp-e2e] aux re-capture failed:', err && err.message || err ) );
+		} else {
+			this.__tslpLastBgNode = _bgNode;
+			this.__tslpLastEnvTex = _envTex;
 		}
 		return super.render( scene, camera );
 	}
@@ -384,8 +445,14 @@ function slimWebgpuReplayModule() {
 
 	const materialClasses = NODE_MATERIAL_EXPORTS.map( ( name ) => `
 export class ${ name } {
-	constructor() {
-		return __takeMaterial( ${ JSON.stringify( name ) } );
+	constructor( params ) {
+		const mat = __takeMaterial( ${ JSON.stringify( name ) } );
+		if ( params && typeof params === 'object' ) {
+			for ( const key in params ) {
+				if ( params[ key ] !== undefined ) __assignParam( mat, key, params[ key ] );
+			}
+		}
+		return mat;
 	}
 }` ).join( '\n' );
 
@@ -413,13 +480,57 @@ window.__tslpComputePending = 0;
 // light.shadow.map.depthTexture is allocated before the slim render samples it.
 window.__tslpShadowPending = 0;
 
+// Mirror the capture-side patches: hook DefaultLoadingManager so HDR/GLTF/MaterialX
+// fetches block the screenshot, and wrap compileAsync so awaited GPU pipeline
+// builds also block. Counters were initialised in the page.addInitScript shim.
+( function patchSlimDefaultLoadingManager() {
+	const dlm = Slim.DefaultLoadingManager;
+	if ( ! dlm || dlm.__tslpPatched ) return;
+	dlm.__tslpPatched = true;
+	const _origStart = dlm.itemStart.bind( dlm );
+	const _origEnd = dlm.itemEnd.bind( dlm );
+	const _now = () => ( typeof window.__tslpRealNow === 'function' ? window.__tslpRealNow() : Date.now() );
+	dlm.itemStart = function ( url ) {
+		window.__tslpLoaderPending = ( window.__tslpLoaderPending | 0 ) + 1;
+		window.__tslpLoaderLastBusyAt = _now();
+		return _origStart( url );
+	};
+	dlm.itemEnd = function ( url ) {
+		window.__tslpLoaderPending = Math.max( 0, ( window.__tslpLoaderPending | 0 ) - 1 );
+		window.__tslpLoaderLastBusyAt = _now();
+		return _origEnd( url );
+	};
+} )();
+
 // PMREMGenerator drives nested renderer.compile / renderer.render calls when
 // it builds the prefiltered cubemap. Those nested calls re-enter this
 // wrapper's render(); without a guard, __prepareSceneForReplay would try
 // to swap PMREM's internal tmp-mesh material against our captured artifact
-// table and throw "no captured artifact for...". The guard keeps the
-// pre-render hook a no-op while a PMREM build is in flight.
+// table and produce identity-MISSes that get cached BEFORE the user's main
+// scene.environment ever gets registered. The guard keeps the pre-render
+// hook a no-op while a PMREM build is in flight.
 let __pmremRunning = 0;
+
+// Wrap PMREMGenerator.{fromScene,fromCubemap,fromEquirectangular,fromTexture}
+// to bump __pmremRunning around the entire call so nested renderer.render
+// calls inside them bypass __prepareSceneForReplay. Without this, the FIRST
+// nested render fires hydration on PMREM's internal tmp-meshes against our
+// scene-replace table, which (a) MISSes (registry empty pre-init) and (b)
+// caches dead bindings before the user's main scene ever runs.
+( function patchPMREMGenerator() {
+	const PG = Slim.PMREMGenerator;
+	if ( ! PG || ! PG.prototype || PG.prototype.__tslpPatched ) return;
+	PG.prototype.__tslpPatched = true;
+	for ( const method of [ 'fromScene', 'fromCubemap', 'fromEquirectangular', 'fromTexture' ] ) {
+		const orig = PG.prototype[ method ];
+		if ( typeof orig !== 'function' ) continue;
+		PG.prototype[ method ] = function ( ...args ) {
+			__pmremRunning ++;
+			try { return orig.apply( this, args ); }
+			finally { __pmremRunning --; }
+		};
+	}
+} )();
 
 // Detect at boot whether any registered background-aux artifact references a
 // PMREM-prefiltered (CubeUVReflectionMapping) source. The capture-time
@@ -461,9 +572,9 @@ const __backgroundNeedsPMREM = ( function () {
 		Ctor.prototype.__tslpPatched = true;
 		const origLoad = Ctor.prototype.load;
 		Ctor.prototype.load = function ( url, onLoad, onProgress, onError ) {
-			const wrappedOnLoad = ( texOrImage ) => {
+			const wrappedOnLoad = ( texOrImage, ...rest ) => {
 				try {
-					if ( typeof onLoad === 'function' ) onLoad( texOrImage );
+					if ( typeof onLoad === 'function' ) onLoad( texOrImage, ...rest );
 				} finally {
 					if ( tex && tex.isTexture ) Slim.registerLiveTexture( tex );
 				}
@@ -590,7 +701,11 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 	for ( const key of nodeKeys ) {
 		if ( sourceMaterial[ key ] ) __collectStorageBufAttrs( sourceMaterial[ key ], sbCandidates );
 	}
-	if ( sbCandidates.length > 0 ) {
+	// SUPERSEDED by runtime hydrator's bindUserStorageBuffersToArtifact —
+	// disabled to validate the runtime path. Re-enable by setting
+	// __TSLP_HARNESS_WIRE_STORAGE = true on window if you need the old behaviour.
+	const __useHarnessStorageWire = ( typeof window !== 'undefined' && window.__TSLP_HARNESS_WIRE_STORAGE === true );
+	if ( __useHarnessStorageWire && sbCandidates.length > 0 ) {
 		for ( const group of plan ) {
 			// Try explicit storageBuffers list first
 			for ( const sb of ( group.storageBuffers || [] ) ) {
@@ -697,8 +812,29 @@ const __TEXTURE_PROPS = [ 'map', 'alphaMap', 'aoMap', 'bumpMap', 'displacementMa
 // on every replay so live GUI tweaks (lightMapIntensity, displacementScale,
 // etc.) survive into the precompiled material's per-frame uniform updaters.
 const __SCALAR_PROPS = [ 'color', 'opacity', 'transparent', 'side', 'visible', 'toneMapped', 'emissive', 'emissiveIntensity', 'roughness', 'metalness', 'normalScale', 'normalMapType', 'bumpScale', 'displacementScale', 'displacementBias', 'lightMapIntensity', 'aoMapIntensity', 'envMapIntensity', 'envMapRotation', 'reflectivity', 'refractionRatio', 'shininess', 'specular', 'specularColor', 'specularIntensity', 'ior', 'clearcoat', 'clearcoatRoughness', 'clearcoatNormalScale', 'iridescence', 'iridescenceIOR', 'iridescenceThicknessRange', 'sheen', 'sheenColor', 'sheenRoughness', 'transmission', 'thickness', 'attenuationColor', 'attenuationDistance', 'anisotropy', 'anisotropyRotation', 'dispersion', 'alphaTest', 'alphaToCoverage', 'depthTest', 'depthWrite', 'blending', 'blendSrc', 'blendDst', 'blendEquation', 'premultipliedAlpha', 'dithering', 'vertexColors', 'wireframe', 'wireframeLinewidth', 'flatShading' ];
+// Mirror three.js's Material.setValues() coercion: when assigning into a slot
+// that already holds a Color/Vector instance (seeded from artifact.defaults),
+// mutate it in place via .set() / .copy() so the hydrator keeps reading a
+// live Color and hex / string / Color inputs are normalised the same way the
+// real three.js constructor would. Plain scalars and unknown shapes fall back
+// to direct assignment.
+function __assignParam( mat, key, value ) {
+	const current = mat[ key ];
+	if ( current && current.isColor ) {
+		current.set( value );
+	} else if ( current && value && (
+		( current.isVector2 && value.isVector2 ) ||
+		( current.isVector3 && value.isVector3 ) ||
+		( current.isVector4 && value.isVector4 )
+	) ) {
+		current.copy( value );
+	} else {
+		mat[ key ] = value;
+	}
+}
+
 function __copyMaterialProps( src, dst ) {
-	for ( const key of __SCALAR_PROPS ) if ( src && src[ key ] !== undefined ) dst[ key ] = src[ key ];
+	for ( const key of __SCALAR_PROPS ) if ( src && src[ key ] !== undefined ) __assignParam( dst, key, src[ key ] );
 	for ( const key of __TEXTURE_PROPS ) if ( src && src[ key ] !== undefined ) dst[ key ] = src[ key ];
 }
 
@@ -762,17 +898,48 @@ ${ materialClasses }
 // prefiltered texture. Wiring the raw HDR cubemap to that binding
 // gives the wrong format/orientation. We run PMREMGenerator on first
 // use (the same cache used by __wireEnvironmentPMREM) and use that.
+// Recursively walk a TSL node looking for a Texture/CubeTexture in any
+// value / _value / texture / _texture slot. Used to recover the source
+// cubemap from scene.backgroundNode = pmremTexture(map, ...) style code,
+// where the user's only handle on the cubemap is inside a real PMREMNode
+// (the e2e harness uses real three/tsl, not the slim stubs).
+function __findTextureInNode( node, depth = 0, seen = new Set() ) {
+	if ( ! node || depth > 6 || seen.has( node ) ) return null;
+	seen.add( node );
+	if ( node.isTexture ) return node;
+	for ( const key of [ 'value', '_value', 'texture', '_texture' ] ) {
+		const v = node[ key ];
+		if ( v && v.isTexture ) return v;
+	}
+	for ( const key of [ 'node', 'aNode', 'bNode', 'uvNode', 'levelNode', 'sourceNode' ] ) {
+		const child = node[ key ];
+		if ( child ) {
+			const found = __findTextureInNode( child, depth + 1, seen );
+			if ( found ) return found;
+		}
+	}
+	return null;
+}
+
+// Captured before scene.backgroundNode is replaced by __prepareSceneForReplay.
+// Holds the user's source cubemap when the example uses scene.backgroundNode =
+// pmremTexture(map, ...) (or similar) without ever assigning scene.background.
+let __capturedBackgroundSource = null;
+
 function __wireBackgroundTextures( scene, renderer ) {
-	if ( ! scene || ! scene.background || ! scene.background.isTexture ) return;
 	const auxList = Array.isArray( __data.aux ) ? __data.aux : [];
-	// Default: wire the raw cubemap. Falls back here when PMREM is not
-	// required or the async generation hasn't finished yet.
-	// Wiring the raw cube keeps the sky visible (just sharper / slightly wrong
-	// orientation) instead of going BLACK on first frame.
-	let texToWire = scene.background;
-	if ( __backgroundNeedsPMREM && scene.background.isCubeTexture ) {
-		// Use the sync cache — populated by __generatePMREMAsync via __kickPMREMGenAsync
-		const cached = __pmremCache.get( scene.background );
+	// Pick a source cubemap: prefer scene.background (legacy path) but fall
+	// back to a node-graph-recovered source for the backgroundNode-only path
+	// (e.g. webgpu_pmrem_cubemap.html does scene.backgroundNode = pmremTexture(map)
+	// and never sets scene.background).
+	let sourceTex = ( scene && scene.background && scene.background.isTexture ) ? scene.background : null;
+	if ( ! sourceTex && __capturedBackgroundSource && __capturedBackgroundSource.isTexture ) {
+		sourceTex = __capturedBackgroundSource;
+	}
+	if ( ! sourceTex ) return;
+	let texToWire = sourceTex;
+	if ( __backgroundNeedsPMREM && sourceTex.isCubeTexture ) {
+		const cached = __pmremCache.get( sourceTex );
 		if ( cached && cached.isTexture ) texToWire = cached;
 	}
 	for ( const entry of auxList ) {
@@ -882,9 +1049,10 @@ function __artifactNeedsPMREM( artifact ) {
 }
 
 function __wireEnvironmentPMREM( renderer, scene ) {
-	if ( ! renderer || ! scene || ! scene.environment || ! scene.environment.isTexture ) return;
-	const pmrem = __pmremCache.get( scene.environment );
-	if ( ! pmrem ) return;
+	if ( ! renderer || ! scene ) return;
+	const sceneEnvPmrem = ( scene.environment && scene.environment.isTexture )
+		? __pmremCache.get( scene.environment )
+		: null;
 	let wiredCount = 0;
 	scene.traverse( ( object ) => {
 		const mat = object && object.material;
@@ -893,6 +1061,12 @@ function __wireEnvironmentPMREM( renderer, scene ) {
 			if ( m && m.isPrecompiledMaterial && m.precompiledArtifact ) {
 				const artifact = m.precompiledArtifact;
 				if ( ! __pmremWiredArtifacts.has( artifact ) ) {
+					// Prefer per-material envMap PMREM (set by examples that pass
+					// envMap via constructor params), fall back to scene.environment.
+					const matEnv = m.envMap && m.envMap.isTexture ? m.envMap : null;
+					const matPmrem = matEnv ? __pmremCache.get( matEnv ) : null;
+					const pmrem = matPmrem || sceneEnvPmrem;
+					if ( ! pmrem ) continue;
 					__pmremWiredArtifacts.add( artifact ); // mark checked regardless
 					const needsPmrem = __artifactNeedsPMREM( artifact );
 					if ( needsPmrem ) {
@@ -952,6 +1126,14 @@ function __kickPMREMGenAsync( slimRenderer, sourceTex, onReady ) {
 function __indexLiveTextures( scene ) {
 	if ( ! scene || typeof scene.traverse !== 'function' ) return;
 	const visit = ( tex ) => { if ( tex && tex.isTexture ) Slim.registerLiveTexture( tex ); };
+	if ( ! window.__tslpProbeIdxCalled ) {
+		window.__tslpProbeIdxCalled = true;
+		console.log( '[tslp-probe] __indexLiveTextures FIRST CALL  hasEnv=' + !! ( scene.environment && scene.environment.isTexture ) );
+	}
+	if ( ! window.__tslpProbeLoggedEnv && scene.environment && scene.environment.isTexture ) {
+		window.__tslpProbeLoggedEnv = true;
+		console.log( '[tslp-probe] scene.environment name=' + JSON.stringify( scene.environment.name ) + ' uuid=' + scene.environment.uuid + ' type=' + ( scene.environment.constructor && scene.environment.constructor.name ) );
+	}
 	if ( scene.background && scene.background.isTexture ) visit( scene.background );
 	if ( scene.environment && scene.environment.isTexture ) visit( scene.environment );
 	scene.traverse( ( object ) => {
@@ -979,6 +1161,14 @@ function __prepareSceneForReplay( scene, renderer ) {
 	// Color backgrounds are left intact in both cases — they use the clear-
 	// color path and bypass loadAux entirely.
 	if ( scene ) {
+		// Recover the source texture from scene.backgroundNode BEFORE we replace
+		// it with a stub, so the PMREM wiring path can reach it later. Examples
+		// like webgpu_pmrem_cubemap.html only set scene.backgroundNode (a real
+		// PMREMNode in e2e mode); without this, the cubemap reference is lost.
+		if ( __hasBackgroundAux && scene.backgroundNode ) {
+			const recovered = __findTextureInNode( scene.backgroundNode );
+			if ( recovered ) __capturedBackgroundSource = recovered;
+		}
 		if ( __hasBackgroundAux ) {
 			// Replace with a stub so Background.js enters the isNode branch and
 			// calls loadAux, which will shape-fallback to the captured artifact.
@@ -1449,7 +1639,14 @@ export class WebGPURenderer extends Slim.WebGPURenderer {
 		if ( __pmremRunning > 0 ) return typeof super.compileAsync === 'function' ? super.compileAsync( scene, camera, ...rest ) : Promise.resolve();
 		__prepareSceneForReplay( scene, this );
 		__wireEnvironmentPMREM( this, scene );
-		return typeof super.compileAsync === 'function' ? super.compileAsync( scene, camera, ...rest ) : Promise.resolve();
+		if ( typeof super.compileAsync !== 'function' ) return Promise.resolve();
+		// Track in-flight pipeline compiles so the wait gate doesn't screenshot
+		// while the next mesh's GPU pipeline is still being built. Mirrors the
+		// capture-side wrapper.
+		window.__tslpCompilePending = ( window.__tslpCompilePending | 0 ) + 1;
+		const _settle = () => { window.__tslpCompilePending = Math.max( 0, ( window.__tslpCompilePending | 0 ) - 1 ); };
+		const p = super.compileAsync( scene, camera, ...rest );
+		return Promise.resolve( p ).then( ( v ) => { _settle(); return v; }, ( e ) => { _settle(); throw e; } );
 	}
 	render( scene, camera ) {
 		if ( __pmremRunning > 0 ) return super.render( scene, camera );
@@ -1473,11 +1670,11 @@ export class WebGPURenderer extends Slim.WebGPURenderer {
 		// the correct texture. If the animation loop is already frozen by the time
 		// PMREM resolves, force one extra render so hydration fires before the
 		// screenshot. (Playwright waits for __tslpPmremPending === 0 before capture.)
+		const _renderer = this;
+		const _scene = scene;
+		const _camera = camera;
 		const _envTex = scene && scene.environment;
 		if ( _envTex && _envTex.isTexture ) {
-			const _renderer = this;
-			const _scene = scene;
-			const _camera = camera;
 			__kickPMREMGenAsync( _renderer, _envTex, () => {
 				__wireEnvironmentPMREM( _renderer, _scene );
 				if ( window.__tslpFrozen ) {
@@ -1485,14 +1682,43 @@ export class WebGPURenderer extends Slim.WebGPURenderer {
 				}
 			} );
 		}
+		// Per-material envMap PMREM: examples that pass envMap via constructor
+		// params (e.g. webgpu_pmrem_cubemap.html: new MeshPhysicalNodeMaterial({envMap:map}))
+		// don't set scene.environment, so the path above doesn't fire. Walk every
+		// PrecompiledMaterial whose artifact needs PMREM and kick gen for unique
+		// envMap cubemaps. Reuses __pmremCache so duplicates are deduped.
+		if ( scene ) {
+			const _seen = new WeakSet();
+			scene.traverse( ( object ) => {
+				const mat = object && object.material;
+				const list = Array.isArray( mat ) ? mat : mat ? [ mat ] : [];
+				for ( const m of list ) {
+					if ( ! ( m && m.isPrecompiledMaterial && m.precompiledArtifact ) ) continue;
+					if ( ! __artifactNeedsPMREM( m.precompiledArtifact ) ) continue;
+					const env = m.envMap;
+					if ( ! env || ! env.isTexture || _seen.has( env ) ) continue;
+					_seen.add( env );
+					__kickPMREMGenAsync( _renderer, env, () => {
+						__wireEnvironmentPMREM( _renderer, _scene );
+						if ( window.__tslpFrozen ) {
+							try { _renderer.render( _scene, _camera ); } catch ( _ ) {}
+						}
+					} );
+				}
+			} );
+		}
 		// Background PMREM: when background-aux artifacts need a prefiltered cube,
 		// kick async gen and re-wire+clear quad cache when ready so the sky quad
-		// picks up the correct PMREM-based texture on the next frame.
-		if ( scene && scene.background && scene.background.isCubeTexture && __backgroundNeedsPMREM ) {
-			const _renderer = this;
-			const _scene = scene;
-			const _camera = camera;
-			__kickPMREMGenAsync( _renderer, scene.background, ( pmrem ) => {
+		// picks up the correct PMREM-based texture on the next frame. Falls back
+		// to the cubemap recovered from scene.backgroundNode for examples that
+		// only set backgroundNode (not scene.background).
+		const _bgSource = ( scene && scene.background && scene.background.isCubeTexture )
+			? scene.background
+			: ( __capturedBackgroundSource && __capturedBackgroundSource.isCubeTexture
+				? __capturedBackgroundSource
+				: null );
+		if ( _bgSource && __backgroundNeedsPMREM ) {
+			__kickPMREMGenAsync( _renderer, _bgSource, ( pmrem ) => {
 				const auxList = Array.isArray( __data.aux ) ? __data.aux : [];
 				for ( const entry of auxList ) {
 					if ( entry && entry.shape === 'background' && entry.artifact ) {
@@ -1880,6 +2106,23 @@ console.log( `[batch-e2e] server on http://localhost:${ port}/` );
 const BROWSER_ARGS = [ '--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--no-sandbox', '--disable-dev-shm-usage' ];
 const NAV_TIMEOUT_MS = 30000;
 const RENDER_TIMEOUT_MS = 12000;
+// Loader-gated wait can take much longer than RENDER_TIMEOUT_MS — examples like
+// webgpu_loader_materialx fetch 20+ .mtlx files sequentially and renderer.compileAsync
+// each one. The freeze itself is synthetic and fires fast; this budget purely
+// absorbs the network + sequential GPU-compile cascade.
+const LOADER_TIMEOUT_MS = 45000;
+// How long the loader/compile counters must remain at zero before we accept
+// "loaders settled". Bridges the gap between sequential awaits (load A → onLoad
+// callback kicks load B) where the counter briefly hits 0 mid-cascade.
+const LOADER_QUIESCENT_MS = 250;
+// Extra rAF ticks to fire at clamped time after counters first go quiet, before
+// the freeze actually engages. Covers things that DON'T bump our counters but
+// still need a few frames to converge: OrbitControls damping interpolation,
+// onWindowResize handlers calling renderer.setSize without an explicit render,
+// post-load setTimeout(0) chains, GUI build re-layouts. Each tick fires the
+// example's setAnimationLoop callback at the same clamped synthetic time so
+// animation phase stays deterministic between capture and replay.
+const SETTLE_FRAMES = 30;
 const RENDER_POLL_MS = 400;
 const MAX_RUNS_PER_BROWSER = 12;
 
@@ -2126,33 +2369,80 @@ async function visitExample( browser, name, mode, waitMs ) {
 	const FRAME_STEP_MS = 16.6667;
 	try {
 
-		await page.addInitScript( ( { step, base, freezeAt } ) => {
+		await page.addInitScript( ( { step, base, freezeAt, quiescentMs, settleFrames } ) => {
 
 			// eslint-disable-next-line no-undef
 			const w = window;
+			// A/B toggle for storage-buffer binding fix (set via env or here)
+			w.__TSLP_DISABLE_STORAGE_BIND = true;
 			if ( w.__tslpRafShimInstalled ) return;
 			w.__tslpRafShimInstalled = true;
 			w.__tslpRafTick = 0;
 			w.__tslpFrozen = false;
 
+			// Pending counters for async loaders (HDR/GLTF/MaterialX/Texture/...) and
+			// in-flight renderer.compileAsync() promises. The Playwright wait gate
+			// requires both === 0 (and 250 ms of quiescence) before screenshotting,
+			// so capture doesn't fire mid-cascade for examples like
+			// webgpu_loader_materialx that load 20+ assets sequentially.
+			w.__tslpLoaderPending = 0;
+			w.__tslpCompilePending = 0;
+			w.__tslpLoaderLastBusyAt = 0;
+
+			// Save the original Date.now BEFORE the synthetic-clock patch below
+			// overwrites it. The wait gate uses real wall-clock time to enforce
+			// "loaders quiet for 250 ms" — synthetic time freezes at tick 60 so it
+			// can't measure post-freeze real-time settle.
+			w.__tslpRealNow = Date.now.bind( Date );
+
 				// Patch requestAnimationFrame to use a synthetic monotonic clock.
 			// This ensures both capture and replay see the same `time` argument
 			// in every animation callback — independent of real wall-clock time.
 			//
-			// Self-contained freeze: at exactly `freezeAt` ticks, the wrapper
-			// sets __tslpFrozen = true. Subsequent rAF calls are squashed (return
-			// immediately without firing cb). This guarantees EXACTLY `freezeAt`
-			// animate() invocations in both capture and replay, eliminating the
-			// Playwright round-trip race that caused 1-2 extra ticks in some runs.
+			// Two-phase freeze:
+			//   Phase 1 (tick < freezeAt): tick advances; cb sees time = tick * step.
+			//   Phase 2 (tick >= freezeAt): tick is clamped at freezeAt; cb keeps
+			//     firing at the same frozen time so renderer.render() continues to
+			//     paint scene mutations from post-target loaders. The wrapper
+			//     self-freezes (__tslpFrozen = true, all subsequent rAF squashed)
+			//     once (a) all pending counters are 0 and have been quiet for
+			//     LOADER_QUIESCENT_MS AND (b) `settleFrames` extra ticks have
+			//     fired with everything still quiet. The settle pass covers
+			//     things that don't bump our counters but still need a few
+			//     frames to converge: OrbitControls damping, onWindowResize
+			//     handlers calling renderer.setSize without an explicit render,
+			//     post-load setTimeout(0) chains, GUI build re-layouts.
+			w.__tslpSettleTicks = 0;
 			const origRaf = w.requestAnimationFrame.bind( w );
 			w.requestAnimationFrame = function ( cb ) {
 
 				return origRaf( () => {
 
 					if ( w.__tslpFrozen ) return; // squash: freeze already triggered
-					const tick = ++ w.__tslpRafTick;
-					cb( base + tick * step );
-					if ( tick >= freezeAt ) w.__tslpFrozen = true; // freeze AFTER cb
+					if ( w.__tslpRafTick < freezeAt ) {
+						const tick = ++ w.__tslpRafTick;
+						cb( base + tick * step );
+						return;
+					}
+					// Phase 2: clamped time, keep painting until counters settle
+					// AND `settleFrames` extra ticks have fired without activity.
+					cb( base + freezeAt * step );
+					const lastBusy = w.__tslpLoaderLastBusyAt | 0;
+					const realNow = ( typeof w.__tslpRealNow === 'function' ) ? w.__tslpRealNow() : 0;
+					const quiescent = ( lastBusy === 0 ) || ( realNow && ( realNow - lastBusy ) >= quiescentMs );
+					const allZero = ( w.__tslpLoaderPending | 0 ) === 0
+						 && ( w.__tslpCompilePending | 0 ) === 0
+						 && ( w.__tslpPmremPending | 0 ) === 0
+						 && ( w.__tslpComputePending | 0 ) === 0
+						 && ( w.__tslpShadowPending | 0 ) === 0;
+					if ( quiescent && allZero ) {
+						w.__tslpSettleTicks = ( w.__tslpSettleTicks | 0 ) + 1;
+						if ( w.__tslpSettleTicks >= settleFrames ) w.__tslpFrozen = true;
+					} else {
+						// New activity in this settle pass — restart the countdown
+						// so freeze waits for another `settleFrames` quiet ticks.
+						w.__tslpSettleTicks = 0;
+					}
 
 				} );
 
@@ -2223,7 +2513,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 
 			};
 
-		}, { step: FRAME_STEP_MS, base: 0, freezeAt: TARGET_TICK } );
+		}, { step: FRAME_STEP_MS, base: 0, freezeAt: TARGET_TICK, quiescentMs: LOADER_QUIESCENT_MS, settleFrames: SETTLE_FRAMES } );
 
 	} catch ( _ ) { /* older Playwright fallback */ }
 
@@ -2260,11 +2550,26 @@ async function visitExample( browser, name, mode, waitMs ) {
 		try {
 
 			await page.waitForFunction(
-				// Also wait for async PMREM generations, compute dispatches, and
-				// shadow-map renders so IBL textures, storage buffers, and shadow
-				// depth textures are up-to-date before the screenshot.
-				() => window.__tslpFrozen === true && ( window.__tslpPmremPending | 0 ) === 0 && ( window.__tslpComputePending | 0 ) === 0 && ( window.__tslpShadowPending | 0 ) === 0,
-				{ timeout: RENDER_TIMEOUT_MS },
+				// Also wait for async PMREM generations, compute dispatches,
+				// shadow-map renders, three.js loader items (HDR/GLTF/MaterialX/
+				// Texture/...), and renderer.compileAsync() promises — so the
+				// screenshot fires on a fully-loaded, fully-compiled frame.
+				// LOADER_QUIESCENT_MS bridges sequential-load loops where the
+				// loader counter briefly hits 0 between awaits.
+				( quiescentMs ) => {
+					if ( window.__tslpFrozen !== true ) return false;
+					if ( ( window.__tslpPmremPending | 0 ) !== 0 ) return false;
+					if ( ( window.__tslpComputePending | 0 ) !== 0 ) return false;
+					if ( ( window.__tslpShadowPending | 0 ) !== 0 ) return false;
+					if ( ( window.__tslpLoaderPending | 0 ) !== 0 ) return false;
+					if ( ( window.__tslpCompilePending | 0 ) !== 0 ) return false;
+					const now = ( typeof window.__tslpRealNow === 'function' ) ? window.__tslpRealNow() : Date.now();
+					const lastBusy = window.__tslpLoaderLastBusyAt | 0;
+					if ( lastBusy && ( now - lastBusy ) < quiescentMs ) return false;
+					return true;
+				},
+				LOADER_QUIESCENT_MS,
+				{ timeout: LOADER_TIMEOUT_MS },
 			);
 
 			// Brief settle so the GPU presents the frozen frame.
@@ -2529,7 +2834,7 @@ try {
 
 }
 
-const reportPath = join( OUT, 'e2e-report.json' );
+const reportPath = join( OUT, reportFile );
 writeFileSync( reportPath, JSON.stringify( report, null, 2 ) );
 
 console.log( '\n═══ e2e summary ═══' );

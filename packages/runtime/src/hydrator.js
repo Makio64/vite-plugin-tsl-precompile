@@ -225,7 +225,20 @@ function lookupLiveTextureByIdentity( source ) {
 
 	if ( ! source ) return null;
 	if ( source.imageSrc && _liveTexturesBySrc.has( source.imageSrc ) ) return _liveTexturesBySrc.get( source.imageSrc );
-	if ( source.textureName && _liveTexturesByName.has( source.textureName ) ) return _liveTexturesByName.get( source.textureName );
+	if ( source.textureName && _liveTexturesByName.has( source.textureName ) ) {
+		if ( typeof window !== 'undefined' && ! window.__tslpProbeIdentHits ) window.__tslpProbeIdentHits = 0;
+		if ( typeof window !== 'undefined' && window.__tslpProbeIdentHits < 5 ) {
+			window.__tslpProbeIdentHits ++;
+			console.log( '[tslp-probe] identity-hit name=' + source.textureName + ' uuid-want=' + source.textureUuid );
+		}
+		return _liveTexturesByName.get( source.textureName );
+	}
+	if ( typeof window !== 'undefined' && source.textureName && ! window.__tslpProbeIdentMissed ) {
+		window.__tslpProbeIdentMissed = true;
+		const stack = new Error().stack || '';
+		console.log( '[tslp-probe] identity-MISS name=' + source.textureName + ' (registered names: ' + JSON.stringify( Array.from( _liveTexturesByName.keys() ) ) + ')' );
+		console.log( '[tslp-probe] stack: ' + stack.split('\n').slice(0, 8).join(' | ') );
+	}
 	return null;
 
 }
@@ -312,6 +325,21 @@ export function hydrateNodeBuilderState( artifact, material = null ) {
 
 	}
 
+	// Bind live BufferAttributes from the user's `*Node` material props
+	// (e.g. `material.positionNode = instancedBufferAttribute(buf)`) onto
+	// the artifact's node-attribute entries before hydration walks them.
+	// Idempotent and a no-op when capture didn't record `userPath` or the
+	// material has no matching node tree yet.
+	bindUserNodeAttributesToArtifact( artifact, material );
+	// Same trick for compute-storage buffers wired through the user's
+	// `material.colorNode = colors.element( instanceIndex )` etc. — the
+	// kernel writes into `colors`, the render reads from the same buffer.
+	if ( typeof globalThis !== 'undefined' && globalThis.__TSLP_DISABLE_STORAGE_BIND === true ) {
+		// A/B test toggle — leave OFF in production
+	} else {
+		bindUserStorageBuffersToArtifact( artifact, material );
+	}
+
 	const { bindings, uniformBuffers, shadowDepthBindings, storageTextureBindings } = hydrateRuntimeBindings( artifact, material );
 	const updateNode = createUniformUpdateNode( artifact, uniformBuffers, material );
 	const shadowDepthRebinder = shadowDepthBindings.length > 0
@@ -396,6 +424,152 @@ export function hydrateNodeBuilderState( artifact, material = null ) {
 
 		},
 	} );
+
+}
+
+/**
+ * Walk `artifact.attributes` (or legacy `nodeAttributes`) and seed
+ * `entry._liveAttribute` from the user material's TSL node graph.
+ *
+ * At capture time `compileTSL` records `userPath` (e.g. `["positionNode"]`)
+ * for each node-sourced attribute — naming the property on the source
+ * material whose node tree contains the attribute leaf. The
+ * BufferAttribute reference itself is non-serialisable, so out-of-process
+ * replay loses it. The user's JS still does `material.positionNode =
+ * instancedBufferAttribute(buf)` on the wrapped material in the new
+ * process; here we rewalk that node tree and bind the leaf attribute the
+ * user just constructed. Without this the fallback below allocates a
+ * zero-filled StorageBufferAttribute and every instance reads (0,0,0).
+ *
+ * Idempotent — skips entries that already carry a live attribute. Tolerates
+ * missing/mistyped paths and node-shaped slim stubs (which lack `traverse`).
+ *
+ * @param {Object} artifact - Artifact to mutate.
+ * @param {?Object} sourceMaterial - The wrapped PrecompiledMaterial whose
+ *   `*Node` properties the user assigns after construction.
+ */
+function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
+
+	if ( ! sourceMaterial ) return;
+	const entries = Array.isArray( artifact.attributes )
+		? artifact.attributes
+		: Array.isArray( artifact.nodeAttributes ) ? artifact.nodeAttributes : null;
+	if ( ! entries || entries.length === 0 ) return;
+
+	for ( const entry of entries ) {
+
+		if ( ! entry || entry.source !== 'node' ) continue;
+		if ( entry._liveAttribute && entry._liveAttribute.isBufferAttribute === true ) continue;
+
+		const path = entry.userPath;
+		if ( ! Array.isArray( path ) || path.length === 0 ) continue;
+
+		const root = sourceMaterial[ path[ 0 ] ];
+		if ( ! root || root.isNode !== true ) continue;
+
+		const live = findFirstAttributeMatchingEntry( root, entry );
+		if ( ! live ) continue;
+
+		Object.defineProperty( entry, '_liveAttribute', {
+			value: live,
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		} );
+
+	}
+
+}
+
+function findFirstAttributeMatchingEntry( node, entry ) {
+
+	const wantSize = entry.itemSize || 0;
+	const wantCount = entry.count || 0;
+	const wantArray = entry.arrayType || '';
+
+	let found = null;
+	const probe = ( n ) => {
+
+		if ( found || ! n ) return;
+		const cands = [ n.attribute, n.value ];
+		for ( const cand of cands ) {
+
+			if ( ! cand || cand.isBufferAttribute !== true ) continue;
+			// vec3 storage attributes get padded to itemSize=4 when WebGPU
+			// touches them. Accept (3 → 4) so a freshly-built live attribute
+			// matches an artifact entry recorded after the pad fired.
+			if ( wantSize && cand.itemSize !== wantSize
+				&& ! ( cand.itemSize === 3 && wantSize === 4 ) ) continue;
+			if ( wantCount && cand.count !== wantCount ) continue;
+			if ( wantArray
+				&& cand.array
+				&& cand.array.constructor
+				&& cand.array.constructor.name !== wantArray ) continue;
+			found = cand;
+			return;
+
+		}
+
+	};
+
+	probe( node );
+	if ( ! found && typeof node.traverse === 'function' ) node.traverse( probe );
+	return found;
+
+}
+
+/**
+ * Walk every `storageBuffers[]` entry in `artifact.uniformPlan` and seed
+ * `entry._liveAttribute` from the user material's TSL node graph.
+ *
+ * Compute kernels write into `instancedArray(...)` storage buffers; the
+ * render side reads them via `material.colorNode = colors.element( i )`
+ * (etc.) — same node-tree walk pattern as `bindUserNodeAttributesToArtifact`,
+ * but matching against `StorageBufferNode.value` instead of
+ * `BufferAttributeNode.attribute/value`. Without this the hydrator's
+ * storage-buffer wiring at `createBindingFromDescriptor` allocates a fresh
+ * empty `StorageBufferAttribute` and the compute output is invisible to
+ * the render path.
+ *
+ * @param {Object} artifact
+ * @param {?Object} sourceMaterial
+ */
+function bindUserStorageBuffersToArtifact( artifact, sourceMaterial ) {
+
+	if ( ! sourceMaterial ) return;
+	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : null;
+	if ( ! plan || plan.length === 0 ) return;
+
+	for ( const group of plan ) {
+
+		const entries = group && Array.isArray( group.storageBuffers ) ? group.storageBuffers : null;
+		if ( ! entries || entries.length === 0 ) continue;
+		for ( const entry of entries ) {
+
+			if ( ! entry ) continue;
+			if ( entry._liveAttribute
+				&& entry._liveAttribute.array
+				&& ArrayBuffer.isView( entry._liveAttribute.array ) ) continue;
+
+			const path = entry.userPath;
+			if ( ! Array.isArray( path ) || path.length === 0 ) continue;
+
+			const root = sourceMaterial[ path[ 0 ] ];
+			if ( ! root || root.isNode !== true ) continue;
+
+			const live = findFirstAttributeMatchingEntry( root, entry );
+			if ( ! live ) continue;
+
+			Object.defineProperty( entry, '_liveAttribute', {
+				value: live,
+				enumerable: false,
+				configurable: true,
+				writable: true,
+			} );
+
+		}
+
+	}
 
 }
 
@@ -1614,7 +1788,21 @@ function writeMaterialValue( view, offset, material, source, kind, dtype ) {
 
 	const property = source.property || kind.split( '.' )[ 1 ];
 	const materialValue = material && material[ property ];
-	const value = kind.endsWith( '.matrix' ) && materialValue ? materialValue.matrix : materialValue;
+	let value;
+	if ( kind.endsWith( '.matrix' ) && materialValue ) {
+
+		// Mirror three.js's TextureNode.update(): refresh texture.matrix from
+		// the live repeat/offset/rotation/center each frame. Without this the
+		// matrix stays at the constructor-set identity and any
+		// `texture.repeat.set(...)` the user wired up has no GPU-visible effect.
+		if ( materialValue.matrixAutoUpdate === true && typeof materialValue.updateMatrix === 'function' ) materialValue.updateMatrix();
+		value = materialValue.matrix;
+
+	} else {
+
+		value = materialValue;
+
+	}
 	const snapshot = source.valueSnapshot;
 
 	if ( dtype === 'color' || ( value && value.isColor ) ) writeColor( view, offset, value, snapshot );

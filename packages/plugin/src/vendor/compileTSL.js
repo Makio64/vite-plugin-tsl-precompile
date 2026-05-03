@@ -385,6 +385,14 @@ export function extractArtifact( cacheKey, state, material = null ) {
 	}
 	const uniformPlan = extractUniformPlan( state );
 	patchMaterialSpecificUniformPlan( uniformPlan, materialShape );
+	// For each compute-storage buffer the user wired through a material
+	// `*Node` slot (e.g. `material.colorNode = uv().mul( colors.element( i ) )`),
+	// record `userPath` so the hydrator can rebind the live attribute in a
+	// fresh process — same trick we use for vertex attributes. Without
+	// this the `StorageBuffer_*` plan entry has no link back to the live
+	// buffer that the compute kernel writes into, and the render path
+	// allocates a fresh empty buffer.
+	annotateStorageBufferUserPaths( uniformPlan, material );
 
 	// Seed runtime defaults for the material properties the plan references.
 	// PrecompiledMaterial reads these to populate its own color/opacity/etc.
@@ -425,6 +433,17 @@ export function extractArtifact( cacheKey, state, material = null ) {
 				entry.count = liveAttribute.count || 1;
 				entry.itemSize = liveAttribute.itemSize || itemSizeFromAttributeType( a.type );
 				entry.arrayType = liveAttribute.array && liveAttribute.array.constructor && liveAttribute.array.constructor.name || 'Float32Array';
+
+				// Record the source-material property whose node sub-tree
+				// references this attribute (e.g. "positionNode" for
+				// `material.positionNode = instancedBufferAttribute(buf)`).
+				// `_liveAttribute` survives only in the in-process capture →
+				// render flow; offline replay reloads from JSON and the
+				// reference is lost. The path lets the apply-side rewalk
+				// the user's freshly-constructed node tree and rebind the
+				// live BufferAttribute the user code created.
+				const userPath = findAttributePathOnMaterial( material, liveAttribute );
+				if ( userPath ) entry.userPath = userPath;
 
 				Object.defineProperty( entry, '_liveAttribute', {
 					value: liveAttribute,
@@ -529,6 +548,93 @@ function itemSizeFromAttributeType( type ) {
 			return 3;
 
 	}
+
+}
+
+/**
+ * Walk the source material's node-shaped properties looking for a TSL node
+ * whose attribute leaf === `target`. Returns the property name(s) as a path
+ * (currently always a single-element array — the root property). The
+ * apply-side rewalks the user's freshly-constructed node tree at this path
+ * to find the live BufferAttribute the user code created in the new
+ * process.
+ *
+ * Skips closures / non-node props by checking `isNode`. Tolerates missing
+ * `traverse` (slim-stub leaf nodes) by also testing the root directly.
+ *
+ * @param {?Object} material - Source NodeMaterial (the user's original).
+ * @param {Object} target - Live BufferAttribute we want to relocate.
+ * @return {?Array<string>} Property path or null when no match.
+ */
+function findAttributePathOnMaterial( material, target ) {
+
+	if ( ! material || ! target || typeof material !== 'object' ) return null;
+
+	for ( const key of Object.keys( material ) ) {
+
+		// Convention: NodeMaterial node-shaped slots end in `Node` (positionNode,
+		// colorNode, vertexNode, mrtNode, …). Avoids walking arbitrary user
+		// properties (textures, scalars) that can't possibly contain a Node.
+		if ( ! key.endsWith( 'Node' ) ) continue;
+		const root = material[ key ];
+		if ( ! root || root.isNode !== true ) continue;
+		if ( nodeTreeContainsAttribute( root, target ) ) return [ key ];
+
+	}
+
+	return null;
+
+}
+
+/**
+ * Walk every `storageBuffers[]` entry in the uniform plan; for each entry
+ * whose `_liveAttribute` is set, find the source-material `*Node` property
+ * whose node tree references it and stamp `entry.userPath = [propName]`.
+ *
+ * Compute-storage buffers are typically wired through a material's
+ * `colorNode`, `vertexNode`, etc. — `material.colorNode = uv().mul(
+ * colors.element( instanceIndex ) )` puts a `StorageBufferNode` (whose
+ * `.value` is the live `StorageBufferAttribute`) inside the colorNode
+ * tree. The hydrator rewalks the same tree at first render to relocate
+ * the live buffer so render and compute share one GPU buffer.
+ *
+ * @param {Array} uniformPlan
+ * @param {?Object} material
+ */
+function annotateStorageBufferUserPaths( uniformPlan, material ) {
+
+	if ( ! Array.isArray( uniformPlan ) || ! material ) return;
+
+	for ( const group of uniformPlan ) {
+
+		const entries = group && Array.isArray( group.storageBuffers ) ? group.storageBuffers : null;
+		if ( ! entries || entries.length === 0 ) continue;
+		for ( const sb of entries ) {
+
+			if ( ! sb || ! sb._liveAttribute ) continue;
+			const path = findAttributePathOnMaterial( material, sb._liveAttribute );
+			if ( path ) sb.userPath = path;
+
+		}
+
+	}
+
+}
+
+function nodeTreeContainsAttribute( node, target ) {
+
+	if ( ! node ) return false;
+	if ( node.attribute === target || node.value === target ) return true;
+	if ( typeof node.traverse !== 'function' ) return false;
+
+	let found = false;
+	node.traverse( ( child ) => {
+
+		if ( found || ! child ) return;
+		if ( child.attribute === target || child.value === target ) found = true;
+
+	} );
+	return found;
 
 }
 

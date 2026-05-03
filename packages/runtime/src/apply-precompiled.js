@@ -169,6 +169,12 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 	// `_textureRefs.get(uuid)` path resolves to the live Texture instance.
 	catalogueArtifactTextureRefs( artifact, material );
 
+	// Note: node-sourced attribute leaves (e.g. `material.positionNode =
+	// instancedBufferAttribute(buf)`) cannot be catalogued here — the user
+	// assigns `*Node` properties on the wrapped material AFTER this
+	// function returns. The hydrator handles that case at first-render,
+	// when the node assignments have already happened.
+
 	// Wrap in PrecompiledMaterial. We copy a small set of user-visible
 	// material properties over so downstream code that reads `mat.color`,
 	// `mat.opacity`, etc. continues to work.
