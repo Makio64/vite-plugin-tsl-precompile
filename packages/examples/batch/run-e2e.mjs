@@ -999,14 +999,23 @@ function __wireBackgroundTextures( scene, renderer ) {
 // bindings so the hydrator resolves to the live prefiltered map.
 const __pmremCache = new WeakMap();   // source tex → pmrem Texture (ready)
 const __pmremPending = new WeakMap(); // source tex → Promise<Texture|null>
+const __pmremFailed = new WeakSet();  // source tex → known-failed (don't retry, don't warn again)
 const __pmremWiredArtifacts = new WeakSet(); // artifacts already wired
+let __pmremNoRendererWarned = false;  // dedup the global "no compute renderer" warning
 
 // Generate a PMREM texture using the full three.js renderer (which shares the
 // same WebGPU device as the slim renderer, so its GPU textures work as slim
 // bindings). Called only when no PMREM is cached for sourceTex.
 async function __generatePMREMAsync( slimRenderer, sourceTex ) {
+	if ( __pmremFailed.has( sourceTex ) ) return null;
 	const fullRenderer = await __getComputeRenderer( slimRenderer );
-	if ( ! fullRenderer ) { console.warn( '[tslp-e2e] PMREM: no compute renderer' ); return null; }
+	if ( ! fullRenderer ) {
+		if ( ! __pmremNoRendererWarned ) {
+			__pmremNoRendererWarned = true;
+			console.warn( '[tslp-e2e] PMREM: no compute renderer' );
+		}
+		return null;
+	}
 	try {
 		const { PMREMGenerator } = await import( '/build/three.webgpu.js' );
 		const gen = new PMREMGenerator( fullRenderer );
@@ -1047,18 +1056,25 @@ async function __generatePMREMAsync( slimRenderer, sourceTex ) {
 							// since we're registering the texture as already uploaded.
 							if ( ! txData.bindGroups ) txData.bindGroups = new Set();
 						}
-					} else {
+					} else if ( ! __pmremFailed.has( sourceTex ) ) {
+						__pmremFailed.add( sourceTex );
 						console.warn( '[tslp-e2e] PMREM: full backend has no GPU texture for PMREM' );
 					}
 				}
 			} catch ( shareErr ) {
-				console.warn( '[tslp-e2e] PMREM GPU share failed:', shareErr && shareErr.message || shareErr );
+				if ( ! __pmremFailed.has( sourceTex ) ) {
+					__pmremFailed.add( sourceTex );
+					console.warn( '[tslp-e2e] PMREM GPU share failed:', shareErr && shareErr.message || shareErr );
+				}
 			}
 			__pmremCache.set( sourceTex, pmrem );
 		}
 		return pmrem || null;
 	} catch ( err ) {
-		console.warn( '[tslp-e2e] PMREM async generation failed:', err && err.message || err );
+		if ( ! __pmremFailed.has( sourceTex ) ) {
+			__pmremFailed.add( sourceTex );
+			console.warn( '[tslp-e2e] PMREM async generation failed:', err && err.message || err );
+		}
 		return null;
 	}
 }
@@ -2406,8 +2422,6 @@ async function visitExample( browser, name, mode, waitMs ) {
 
 			// eslint-disable-next-line no-undef
 			const w = window;
-			// A/B toggle for storage-buffer binding fix (set via env or here)
-			w.__TSLP_DISABLE_STORAGE_BIND = true;
 			if ( w.__tslpRafShimInstalled ) return;
 			w.__tslpRafShimInstalled = true;
 			w.__tslpRafTick = 0;
