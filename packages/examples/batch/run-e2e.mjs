@@ -926,6 +926,13 @@ function __findTextureInNode( node, depth = 0, seen = new Set() ) {
 // pmremTexture(map, ...) (or similar) without ever assigning scene.background.
 let __capturedBackgroundSource = null;
 
+// Tracks the last texture wired into each background artifact's _textureRefs
+// so we only invalidate the cached background material (and the renderer's
+// quad cache) when the source actually changes — typically when an async
+// CubeTextureLoader / TextureLoader resolves AFTER the first render has
+// already cached bindings against fallbackCubeTexture.
+const __lastWiredBgTex = new WeakMap();
+
 function __wireBackgroundTextures( scene, renderer ) {
 	const auxList = Array.isArray( __data.aux ) ? __data.aux : [];
 	// Pick a source cubemap: prefer scene.background (legacy path) but fall
@@ -942,10 +949,36 @@ function __wireBackgroundTextures( scene, renderer ) {
 		const cached = __pmremCache.get( sourceTex );
 		if ( cached && cached.isTexture ) texToWire = cached;
 	}
+	let changed = false;
 	for ( const entry of auxList ) {
 		if ( entry && entry.shape === 'background' && entry.artifact ) {
-			Slim.attachArtifactTextureRefs( entry.artifact, texToWire );
+			if ( __lastWiredBgTex.get( entry.artifact ) !== texToWire ) {
+				Slim.attachArtifactTextureRefs( entry.artifact, texToWire );
+				__lastWiredBgTex.set( entry.artifact, texToWire );
+				changed = true;
+			}
 		}
+	}
+	if ( changed && renderer ) {
+		// Force re-hydration of the cached Background.update mesh material so
+		// its bind group rebuilds against the updated artifact._textureRefs.
+		// Without this, an async CubeTextureLoader that resolves after the
+		// first render leaves the sky quad sampling fallbackCubeTexture forever
+		// (Background.js caches the mesh.material in sceneData and never
+		// recreates it because our __nodeStub() backgroundCacheKey is stable).
+		// Dispose mirrors the PMREM-completion path in __wireEnvironmentPMREM:
+		// the next render creates a fresh RenderObject with _nodeBuilderState=null,
+		// triggering hydrateNodeBuilderState against the now-correct _textureRefs.
+		const bg = renderer._background;
+		const sceneData = bg && typeof bg.get === 'function' ? bg.get( scene ) : null;
+		if ( sceneData && sceneData.backgroundMesh && sceneData.backgroundMesh.material ) {
+			try { sceneData.backgroundMesh.material.dispose(); } catch ( _ ) {}
+		}
+		try {
+			const nc = renderer._nodes && renderer._nodes.nodeBuilderCache;
+			if ( nc && typeof nc.clear === 'function' ) nc.clear();
+		} catch ( _ ) {}
+		if ( renderer._quadCache ) renderer._quadCache.clear();
 	}
 }
 
