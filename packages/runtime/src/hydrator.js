@@ -312,10 +312,13 @@ export function hydrateNodeBuilderState( artifact, material = null ) {
 
 	}
 
-	const { bindings, uniformBuffers, shadowDepthBindings } = hydrateRuntimeBindings( artifact, material );
+	const { bindings, uniformBuffers, shadowDepthBindings, storageTextureBindings } = hydrateRuntimeBindings( artifact, material );
 	const updateNode = createUniformUpdateNode( artifact, uniformBuffers, material );
 	const shadowDepthRebinder = shadowDepthBindings.length > 0
 		? createShadowDepthRebinder( shadowDepthBindings )
+		: null;
+	const storageTextureRebinder = storageTextureBindings.length > 0
+		? createStorageTextureRebinder( storageTextureBindings )
 		: null;
 
 	// In-process flows (dev-server capture → immediate render) carry live
@@ -339,8 +342,14 @@ export function hydrateNodeBuilderState( artifact, material = null ) {
 		// `shadowDepthRebinder` runs FIRST among updateBefore so the SampledTexture
 		// bindings point at the live `light.shadow.map.depthTexture` before the
 		// renderer reads bind-group versions for the upcoming draw.
+		// `storageTextureRebinder` follows: when the harness shares full's
+		// GPUTexture into slim's data map AFTER the bind group is built, slim's
+		// cached bind-group view still references the stale (empty) GPUTexture.
+		// Bumping `groupNode.version` here forces the renderer to rebuild the
+		// bind group with a fresh view created from the now-shared GPUTexture.
 		updateBeforeNodes: [
 			...( shadowDepthRebinder ? [ shadowDepthRebinder ] : [] ),
+			...( storageTextureRebinder ? [ storageTextureRebinder ] : [] ),
 			...liveUpdateBeforeNodes,
 		],
 		updateAfterNodes: [ ...liveUpdateAfterNodes ],
@@ -518,8 +527,9 @@ function hydrateRuntimeBindings( artifact, material ) {
 
 	const uniformBuffers = new Map();
 	const shadowDepthBindings = [];
+	const storageTextureBindings = [];
 	const bindings = artifact.bindings;
-	if ( ! Array.isArray( bindings ) ) return { bindings: [], uniformBuffers, shadowDepthBindings };
+	if ( ! Array.isArray( bindings ) ) return { bindings: [], uniformBuffers, shadowDepthBindings, storageTextureBindings };
 
 	// Full three.js artifacts contain JSON descriptors. Rehydrate the subset
 	// needed by WGSL pipeline layout creation and UBO uploads. Texture/storage
@@ -561,13 +571,49 @@ function hydrateRuntimeBindings( artifact, material ) {
 
 			}
 
+			// Compute-written storage textures (StorageTexture, Storage3DTexture,
+			// StorageArrayTexture): tracked for two related fixes.
+			//
+			// (a) Late-arriving live texture: hydration ran before the example's
+			//     `new StorageTexture(...)` was registered (the patched `name`
+			//     setter defers via Promise.resolve), so binding.texture is the
+			//     1×1 fallback. The rebinder re-resolves on each render-before;
+			//     once a live storage texture is registered, it swaps
+			//     binding.texture to the real instance. Sampler's texture setter
+			//     resets version/generation so three.js rebuilds the bind group
+			//     with a view of the correct GPUTexture.
+			//
+			// (b) Stale GPUTexture under the same JS texture: the harness shares
+			//     full's GPUTexture into slim's data map AFTER the bind group was
+			//     built (`slimRenderer.backend.get(tex).texture =
+			//     fullTexData.texture`). The rebinder bumps version + generation
+			//     to force three.js to rebuild the view from the now-shared
+			//     GPUTexture.
+			if ( descriptor.kind === 'sampled-texture'
+				&& runtimeBinding.isSampledTexture
+				&& planSource && planSource.kind === 'artifact.texture' ) {
+
+				const _planGroup = ( artifact.uniformPlan || [] ).find( ( g ) => g.name === group.name ) || {};
+				const _planTex = ( _planGroup.textures || [] ).find( ( t ) => t.name === descriptor.name ) || {};
+				storageTextureBindings.push( {
+					binding: runtimeBinding,
+					artifact,
+					groupName: group.name || '',
+					bindingName: descriptor.name || '',
+					source: planSource,
+					textureType: _planTex.textureType || '2d',
+					material,
+				} );
+
+			}
+
 		}
 
 		if ( runtimeBindings.length > 0 ) groups.push( new BindGroup( group.name || '', runtimeBindings ) );
 
 	}
 
-	return { bindings: groups, uniformBuffers, shadowDepthBindings };
+	return { bindings: groups, uniformBuffers, shadowDepthBindings, storageTextureBindings };
 
 }
 
@@ -641,6 +687,128 @@ function createShadowDepthRebinder( entries /* , artifact */ ) {
 
 				entry.binding.texture = liveTexture;
 				if ( entry.binding.groupNode ) entry.binding.groupNode.version ++;
+
+			}
+
+		},
+	};
+
+}
+
+/**
+ * Per-frame rebinder for compute-written storage textures.
+ *
+ * Compute kernels are dispatched through a shared full renderer (slim has no
+ * NodeBuilder). Two related issues can leave slim's bind group sampling the
+ * wrong data:
+ *
+ * (a) Late-arriving live texture. Storage textures are registered via the
+ *     patched `name` setter, which defers `registerLiveTexture` to a
+ *     microtask. If hydration runs before that microtask fires (rare but
+ *     observed), `lookupAnonymousStorageTexture` / `lookupLiveTextureByIdentity`
+ *     return null and the binding is wired to the 1×1 fallback. The
+ *     compute output then has nowhere visible to land.
+ *
+ * (b) Stale GPUTexture under the same JS texture. The harness shares full's
+ *     GPUTexture into slim's data map post-compute via
+ *     `slimRenderer.backend.get(tex).texture = fullTexData.texture`. If
+ *     slim's bind group was built BEFORE that swap (typical: render runs
+ *     synchronously while the compute promise is still in flight), the
+ *     bind-group view still references slim's stale empty GPUTexture and
+ *     the shader samples zeros — visible as a near-black canvas.
+ *
+ * On each render this node:
+ *   - Re-runs `resolveTextureBinding`. If it now returns a live storage
+ *     texture different from the bound one, swaps `binding.texture`
+ *     (Sampler's setter resets version/generation, three.js rebuilds the
+ *     bind group with a fresh view).
+ *   - Compares the renderer's currently-cached
+ *     `backend.get(binding.texture).texture` reference to the one we last
+ *     saw. If it changed, bumps `binding.groupNode.version` + resets
+ *     `binding.version` / `binding.generation` so `Bindings._update`
+ *     calls `backend.updateBindings` with a fresh view over the
+ *     now-shared GPUTexture.
+ *
+ * Mirrors the strategy used by `createShadowDepthRebinder` for
+ * `texture_depth_2d` bindings whose backing texture isn't allocated until
+ * after the renderer's first shadow pass.
+ *
+ * @param {Array<{binding: Object, artifact: Object, groupName: string, bindingName: string, source: Object, textureType: string, material: ?Material}>} entries - Tracked sampled-texture bindings.
+ * @return {Object} An update-before node compatible with `NodeFrame.updateBeforeNode()`.
+ */
+function createStorageTextureRebinder( entries ) {
+
+	// Track the last-seen GPUTexture per binding so we only invalidate when
+	// it actually swaps (and don't bump every frame, which would defeat
+	// three.js's bind-group cache).
+	const lastSeen = new WeakMap();
+
+	return {
+		getUpdateBeforeType() {
+
+			return 'render';
+
+		},
+		updateReference() {
+
+			return this;
+
+		},
+		updateBefore( frame ) {
+
+			const renderer = frame && frame.renderer ? frame.renderer : null;
+
+			for ( const entry of entries ) {
+
+				const binding = entry.binding;
+				if ( ! binding ) continue;
+
+				// (a) Re-resolve the JS Texture for this binding. If a live
+				// storage texture has registered since hydration, swap to it.
+				// Skip if the binding already points at a real (non-fallback)
+				// storage texture — re-resolving every frame would clobber
+				// the harness's pre-seed work.
+				const currentTex = binding.texture;
+				const currentIsStorage = currentTex && currentTex.isStorageTexture === true;
+				if ( ! currentIsStorage ) {
+
+					const candidate = resolveTextureBinding( entry.artifact, entry.groupName, entry.bindingName, entry.material );
+					if ( candidate && candidate !== currentTex && candidate.isStorageTexture === true ) {
+
+						// Sampler's `texture` setter resets version=-1 and
+						// generation=null automatically, so three.js will
+						// rebuild the bind group on the next draw.
+						binding.texture = candidate;
+						if ( binding.groupNode ) binding.groupNode.version ++;
+
+					}
+
+				}
+
+				// (b) Detect a swap of the underlying GPUTexture (slim's data
+				// map's `.texture` was reassigned to share full's GPUTexture
+				// after the bind group was built). Force three.js to rebuild
+				// the bind group on the next draw.
+				if ( ! renderer || ! renderer.backend ) continue;
+				const tex = binding.texture;
+				if ( ! tex ) continue;
+				const data = renderer.backend.get( tex );
+				const gpuTexture = data ? data.texture : null;
+				if ( ! gpuTexture ) continue;
+
+				const prev = lastSeen.get( binding );
+				if ( prev === gpuTexture ) continue;
+
+				lastSeen.set( binding, gpuTexture );
+
+				// First observation: just record. The bind group hasn't been
+				// built yet against this binding, so there's no stale view to
+				// invalidate.
+				if ( prev === undefined ) continue;
+
+				if ( binding.groupNode ) binding.groupNode.version ++;
+				binding.version = - 1;
+				binding.generation = null;
 
 			}
 
