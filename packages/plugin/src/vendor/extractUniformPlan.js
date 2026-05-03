@@ -607,6 +607,100 @@ function findLightForDepthTexture( state, depthTexture ) {
 
 }
 
+// Stable identifying info that survives a fresh Texture instance on replay.
+// Used to relink a captured texture binding (whose textureUuid is dead after
+// the example reloads) back to a freshly-loaded live texture by `imageSrc`
+// (loader URL) or `textureName`.
+function textureIdentity( texture ) {
+
+	if ( ! texture ) return null;
+	const out = {};
+	const image = texture.image || null;
+
+	const src = image && ( image.src || image.currentSrc || null );
+	if ( typeof src === 'string' && src.length > 0 ) out.imageSrc = src;
+
+	if ( Array.isArray( image ) && image.length > 0 ) {
+
+		const first = image[ 0 ];
+		const firstSrc = first && ( first.src || first.currentSrc || null );
+		if ( typeof firstSrc === 'string' && firstSrc.length > 0 ) out.imageSrc = firstSrc;
+
+	}
+
+	if ( typeof texture.name === 'string' && texture.name.length > 0 ) out.textureName = texture.name;
+	if ( typeof texture.mapping === 'number' ) out.mapping = texture.mapping;
+	if ( typeof texture.flipY === 'boolean' ) out.flipY = texture.flipY;
+
+	return Object.keys( out ).length > 0 ? out : null;
+
+}
+
+function snapshotTexture( texture ) {
+
+	const image = texture && texture.image;
+	if ( ! image ) return null;
+
+	const colorSpace = texture.colorSpace || '';
+	const format = texture.format || null;
+	const type = texture.type || null;
+	const sampler = {
+		mapping: texture.mapping,
+		wrapS: texture.wrapS,
+		wrapT: texture.wrapT,
+		magFilter: texture.magFilter,
+		minFilter: texture.minFilter,
+		flipY: texture.flipY,
+	};
+
+	if ( image.data && ArrayBuffer.isView( image.data ) && image.width && image.height ) {
+
+		const data = image.data;
+		if ( image.width * image.height > 262144 ) return null;
+		return {
+			width: image.width,
+			height: image.height,
+			arrayType: data.constructor && data.constructor.name || 'Uint8Array',
+			data: Array.from( data ),
+			format,
+			type,
+			colorSpace,
+			...sampler,
+		};
+
+	}
+
+	if ( typeof image.getContext === 'function' && image.width && image.height ) {
+
+		if ( image.width * image.height > 262144 ) return null;
+		try {
+
+			const ctx = image.getContext( '2d' );
+			if ( ! ctx || typeof ctx.getImageData !== 'function' ) return null;
+			const imageData = ctx.getImageData( 0, 0, image.width, image.height );
+			return {
+				width: image.width,
+				height: image.height,
+				arrayType: 'Uint8Array',
+				data: Array.from( imageData.data ),
+				format,
+				type,
+				colorSpace,
+				...sampler,
+			};
+
+		} catch ( _ ) {
+
+			return null;
+
+		}
+
+	}
+
+	return null;
+
+}
+
 /**
  * Extract a uniform plan from a built `NodeBuilderState`.
  *
@@ -816,6 +910,31 @@ export function extractUniformPlan( state ) {
 				const textureNode = binding.textureNode || null;
 				let source = textureNode ? textureNodeToSource.get( textureNode ) : null;
 
+				// Enrich `material.<prop>` texture sources with the live
+				// texture's identity (uuid + imageSrc + textureName + mapping
+				// + flipY) and embed a snapshot when feasible. The hydrator's
+				// `material.<prop>` path reads `material[prop]` live for user
+				// mutation, but downstream cataloguers (apply-precompiled)
+				// also use these hints to seed `_textureRefs` so the hydrator's
+				// UUID lookup hits before falling back to a 1×1 white. Side
+				// fields are ignored by the existing hydrator's
+				// `material.<prop>` resolver — production behaviour unchanged.
+				if ( source && typeof source.kind === 'string' && source.kind.startsWith( 'material.' ) && textureNode ) {
+
+					const tex = textureNode.value || ( textureNode._value ) || null;
+					if ( tex && tex.isTexture && tex.uuid ) {
+
+						const enriched = { ...source, textureUuid: tex.uuid };
+						const ident = textureIdentity( tex );
+						if ( ident ) Object.assign( enriched, ident );
+						const snap = snapshotTexture( tex );
+						if ( snap ) enriched.snapshot = snap;
+						source = enriched;
+
+					}
+
+				}
+
 				// If we failed to resolve a source via updateNodes, try a few
 				// fallbacks in order:
 				//
@@ -878,109 +997,6 @@ export function extractUniformPlan( state ) {
 
 						}
 
-
-// Stable identifying info that survives a fresh Texture instance on replay.
-// Used to relink a captured artifact.texture binding (whose textureUuid is
-// dead after the example reloads) back to a freshly-loaded live texture.
-function textureIdentity( texture ) {
-
-	if ( ! texture ) return null;
-	const out = {};
-	const image = texture.image || null;
-
-	// HTMLImageElement / HTMLVideoElement loaded via *Loader: image.src is
-	// the loader URL. ImageBitmap exposes the source URL through its
-	// underlying option in some loaders; we grab .src as a best-effort.
-	const src = image && ( image.src || image.currentSrc || null );
-	if ( typeof src === 'string' && src.length > 0 ) out.imageSrc = src;
-
-	// CubeTexture / DataArrayTexture: image is an array of faces. Capture
-	// the first face's src so cubemaps can be reattached too.
-	if ( Array.isArray( image ) && image.length > 0 ) {
-
-		const first = image[ 0 ];
-		const firstSrc = first && ( first.src || first.currentSrc || null );
-		if ( typeof firstSrc === 'string' && firstSrc.length > 0 ) out.imageSrc = firstSrc;
-
-	}
-
-	if ( typeof texture.name === 'string' && texture.name.length > 0 ) out.textureName = texture.name;
-	if ( typeof texture.mapping === 'number' ) out.mapping = texture.mapping;
-	// Capture flipY so the replay texture matches the original orientation.
-	// HTMLImageElement textures loaded by TextureLoader default to flipY=true;
-	// RenderTarget / DataTexture textures typically default to flipY=false.
-	// Without capturing this, replay may reconstruct a texture with the wrong
-	// Y-axis orientation and sprites appear flipped vs capture.
-	if ( typeof texture.flipY === 'boolean' ) out.flipY = texture.flipY;
-
-	return Object.keys( out ).length > 0 ? out : null;
-
-}
-
-function snapshotTexture( texture ) {
-
-	const image = texture && texture.image;
-	if ( ! image ) return null;
-
-	const colorSpace = texture.colorSpace || '';
-	const format = texture.format || null;
-	const type = texture.type || null;
-	const sampler = {
-		mapping: texture.mapping,
-		wrapS: texture.wrapS,
-		wrapT: texture.wrapT,
-		magFilter: texture.magFilter,
-		minFilter: texture.minFilter,
-		flipY: texture.flipY,
-	};
-
-	if ( image.data && ArrayBuffer.isView( image.data ) && image.width && image.height ) {
-
-		const data = image.data;
-		if ( image.width * image.height > 262144 ) return null;
-		return {
-			width: image.width,
-			height: image.height,
-			arrayType: data.constructor && data.constructor.name || 'Uint8Array',
-			data: Array.from( data ),
-			format,
-			type,
-			colorSpace,
-			...sampler,
-		};
-
-	}
-
-	if ( typeof image.getContext === 'function' && image.width && image.height ) {
-
-		if ( image.width * image.height > 262144 ) return null;
-		try {
-
-			const ctx = image.getContext( '2d' );
-			if ( ! ctx || typeof ctx.getImageData !== 'function' ) return null;
-			const imageData = ctx.getImageData( 0, 0, image.width, image.height );
-			return {
-				width: image.width,
-				height: image.height,
-				arrayType: 'Uint8Array',
-				data: Array.from( imageData.data ),
-				format,
-				type,
-				colorSpace,
-				...sampler,
-			};
-
-		} catch ( _ ) {
-
-			return null;
-
-		}
-
-	}
-
-	return null;
-
-}
 					}
 
 				}

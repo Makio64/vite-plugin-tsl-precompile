@@ -10,6 +10,12 @@
  *      picks up the baked shader + bindings instead of running the builder.
  *   3. Register the artifact in the module-scoped registry so the renderer's
  *      cache-key resolver can find it.
+ *   4. Catalogue the source material's live texture instances onto
+ *      `artifact._textureRefs` keyed by `source.textureUuid` (extractor-stamped),
+ *      so the hydrator's `_textureRefs.get(uuid)` lookup hits before falling
+ *      back to a 1×1 white. This survives multi-process flows: the artifact
+ *      JSON carries the identity hints and the Texture instances on the live
+ *      `material[prop]` are matched by UUID.
  *
  * @module ApplyPrecompiled
  */
@@ -17,6 +23,90 @@
 import { default as PrecompiledMaterial } from './_vendor-PrecompiledMaterial.js';
 import { registerPrecompiledArtifacts } from './_vendor-PrecompiledArtifactRegistry.js';
 import { registerArtifact } from './artifact-loader.js';
+
+// Texture properties three.js's MeshStandardMaterial / Mesh*Material families
+// recognise. Mirrors `__TEXTURE_PROPS` in run-e2e.mjs and the hydrator's
+// `TEXTURE_PROPS` scan. Used to find live textures on the source material so
+// they can be catalogued onto the artifact's `_textureRefs` map.
+const _TEXTURE_PROPS = [
+	'map', 'alphaMap', 'aoMap', 'bumpMap', 'displacementMap', 'emissiveMap',
+	'envMap', 'lightMap', 'normalMap', 'specularMap', 'roughnessMap',
+	'metalnessMap', 'gradientMap', 'matcap', 'clearcoatMap',
+	'clearcoatNormalMap', 'clearcoatRoughnessMap', 'iridescenceMap',
+	'iridescenceThicknessMap', 'sheenColorMap', 'sheenRoughnessMap',
+	'specularColorMap', 'specularIntensityMap', 'transmissionMap',
+	'thicknessMap', 'anisotropyMap',
+];
+
+/**
+ * Walk `artifact.uniformPlan.textures` and seed `artifact._textureRefs` from
+ * the source material's live texture properties. Matches by `source.textureUuid`
+ * (extractor-stamped) → `sourceMaterial[ property ].uuid`. Idempotent: skips
+ * entries already present in `_textureRefs`. Returns the number of textures
+ * catalogued.
+ *
+ * Called from `__applyPrecompiled` so the hydrator's `_textureRefs.get(uuid)`
+ * lookup path resolves to the live Texture instance even when the artifact
+ * is loaded from JSON (where the in-process Map populated by `collectTextureRefs`
+ * is gone). Out-of-process flows (per-frame compile-elsewhere → hydrate-here)
+ * pick up the textures via the source material's existing `material.<prop>`
+ * assignments — i.e. exactly the path users already wire up at construction.
+ *
+ * @param {Object} artifact - Artifact to mutate.
+ * @param {Object} sourceMaterial - The user's original NodeMaterial with live textures.
+ * @return {number} Count of newly-catalogued textures.
+ */
+export function catalogueArtifactTextureRefs( artifact, sourceMaterial ) {
+
+	if ( ! artifact || ! sourceMaterial ) return 0;
+	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
+	let added = 0;
+	let refs = artifact._textureRefs instanceof Map ? artifact._textureRefs : null;
+
+	// Build a uuid → live Texture lookup from the source material's known
+	// texture properties. Cheap (≤ 26 props) and only done once per apply.
+	const liveByUuid = new Map();
+	for ( const prop of _TEXTURE_PROPS ) {
+
+		const tex = sourceMaterial[ prop ];
+		if ( tex && tex.isTexture && tex.uuid ) liveByUuid.set( tex.uuid, tex );
+
+	}
+	if ( liveByUuid.size === 0 ) return 0;
+
+	for ( const group of plan ) {
+
+		const textures = Array.isArray( group.textures ) ? group.textures : [];
+		for ( const entry of textures ) {
+
+			if ( ! entry || entry.bindingKind === 'sampler' ) continue;
+			const source = entry.source || {};
+			if ( ! source.textureUuid ) continue;
+			if ( refs && refs.has( source.textureUuid ) ) continue;
+			const tex = liveByUuid.get( source.textureUuid );
+			if ( ! tex ) continue;
+			if ( ! refs ) refs = new Map();
+			refs.set( source.textureUuid, tex );
+			added ++;
+
+		}
+
+	}
+
+	if ( added > 0 ) {
+
+		Object.defineProperty( artifact, '_textureRefs', {
+			value: refs,
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		} );
+
+	}
+
+	return added;
+
+}
 
 /**
  * Injected into transformed code in place of `.precompile('name')` calls.
@@ -69,6 +159,15 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 		return material;
 
 	}
+
+	// Catalogue the source material's live texture instances onto
+	// `artifact._textureRefs` keyed by the extractor-stamped `source.textureUuid`.
+	// In-process flows already have `_textureRefs` populated by `collectTextureRefs`
+	// (compileTSL.js); JSON-loaded flows do not, and the hydrator's UUID lookup
+	// would otherwise miss for `material.<prop>` textures whose wrapper-side
+	// `material[prop]` is undefined. Cataloguing here means the hydrator's
+	// `_textureRefs.get(uuid)` path resolves to the live Texture instance.
+	catalogueArtifactTextureRefs( artifact, material );
 
 	// Wrap in PrecompiledMaterial. We copy a small set of user-visible
 	// material properties over so downstream code that reads `mat.color`,
