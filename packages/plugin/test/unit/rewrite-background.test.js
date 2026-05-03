@@ -12,14 +12,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 import { parse } from '@babel/parser';
 
 import { rewriteThreeSource } from '../../src/three-rewrite.js';
-
-const HERE = dirname( fileURLToPath( import.meta.url ) );
-const THREE_SRC = resolve( HERE, '../../../../node_modules/three/src' );
+import { THREE_SRC } from '../_three-src.js';
 const PATH = resolve( THREE_SRC, 'renderers/common/Background.js' );
 
 test( 'rewrite/Background: NodeMaterial → PrecompiledMaterial(loadAux(background, …))', () => {
