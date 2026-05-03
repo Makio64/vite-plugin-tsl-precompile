@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/davidronai/Desktop/git/**)",
+      "Bash(pnpm -r test)",
+      "Bash(node -e \"const r=require\\('/Users/davidronai/Desktop/git/vite-plugin-tsl-precompile/packages/examples/batch/results/e2e-report.json'\\); console.log\\('total:', r.total, 'pass:', r.pass, 'fail:', r.fail\\); for \\(const d of r.details\\) console.log\\(d.name, '| status:', d.status, '| pixelGate:', JSON.stringify\\(d.pixelGate\\)\\);\")",
+      "Bash(node run-e2e.mjs --filter=webgpu_textures_anisotropy --save-shots)",
+      "Bash(awk 'BEGIN{RS=\";\"} /matrixAutoUpdate/' /Users/davidronai/Desktop/git/vite-plugin-tsl-precompile/packages/runtime/build/three.webgpu.slim.js)",
+      "Bash(python3 -c \"import json,sys; p = json.load\\(sys.stdin\\); print\\(json.dumps\\(p.get\\('exports', {}\\), indent=2\\)\\)\")",
+      "Bash(node --input-type=module -e \"import {THREE_SRC} from '/Users/davidronai/Desktop/git/vite-plugin-tsl-precompile/packages/plugin/test/_three-src.js'; console.log\\(THREE_SRC\\)\")",
+      "Bash(node packages/examples/batch/run-e2e.mjs --filter=webgpu_fog_height)",
+      "Bash(node run-e2e.mjs --filter=webgpu_lightprobe --save-shots --replay-wait-ms=8000 --capture-wait-ms=10000)",
+      "Bash(node --check /Users/davidronai/Desktop/git/vite-plugin-tsl-precompile/packages/examples/batch/run-e2e.mjs)",
+      "Bash(pnpm --filter @tsl-precompile/plugin test)",
+      "Bash(git commit -m ' *)"
+    ]
+  }
+}
