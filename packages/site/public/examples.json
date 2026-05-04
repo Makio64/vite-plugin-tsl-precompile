@@ -1,12 +1,12 @@
 {
-	"generatedAt": "2026-05-03T21:12:26.335Z",
+	"generatedAt": "2026-05-04T14:32:51.570Z",
 	"totals": {
 		"examplesProcessed": 195,
-		"examplesVisible": 189,
-		"examplesHidden": 6,
-		"materialsBaked": 287,
-		"artifactsCaptured": 351,
-		"wgslBytes": 980302,
+		"examplesVisible": 187,
+		"examplesHidden": 8,
+		"materialsBaked": 355,
+		"artifactsCaptured": 420,
+		"wgslBytes": 1591444,
 		"runtimeNodeBuilderCalls": 0,
 		"smokeTotal": 198,
 		"smokePass": 197,
@@ -137,12 +137,12 @@
 			"totalWgslBytes": 7973,
 			"hasCompute": false,
 			"shapes": [
-				"post-process",
-				"render-output"
+				"render-output",
+				"post-process"
 			],
 			"materialShapes": [
-				"node-material",
-				"render-output"
+				"render-output",
+				"node-material"
 			],
 			"notes": "",
 			"thumbHealth": "ok",
@@ -997,8 +997,8 @@
 			"totalWgslBytes": 3645,
 			"hasCompute": false,
 			"shapes": [
-				"lights",
-				"render-output"
+				"render-output",
+				"lights"
 			],
 			"materialShapes": [
 				"render-output"
@@ -1333,17 +1333,25 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 2,
-			"artifactCount": 3,
-			"totalWgslBytes": 7153,
+			"materialCount": 6,
+			"artifactCount": 7,
+			"totalWgslBytes": 36777,
 			"hasCompute": false,
 			"shapes": [
 				"background",
 				"lights",
+				"pmrem-cubemap",
+				"pmrem-equirect",
+				"pmrem-blur",
+				"pmrem-ggx",
 				"render-output"
 			],
 			"materialShapes": [
 				"node-material",
+				"pmrem-cubemap",
+				"pmrem-equirect",
+				"pmrem-blur",
+				"pmrem-ggx",
 				"render-output"
 			],
 			"notes": "",
@@ -1528,9 +1536,9 @@
 			"totalWgslBytes": 11165,
 			"hasCompute": false,
 			"shapes": [
+				"post-process",
 				"background",
 				"lights",
-				"post-process",
 				"render-output"
 			],
 			"materialShapes": [
@@ -1872,7 +1880,7 @@
 			"hasCapture": true,
 			"materialCount": 1,
 			"artifactCount": 2,
-			"totalWgslBytes": 2397,
+			"totalWgslBytes": 2837,
 			"hasCompute": false,
 			"shapes": [
 				"lights",
@@ -2064,13 +2072,13 @@
 			"totalWgslBytes": 7153,
 			"hasCompute": false,
 			"shapes": [
+				"render-output",
 				"background",
-				"lights",
-				"render-output"
+				"lights"
 			],
 			"materialShapes": [
-				"node-material",
-				"render-output"
+				"render-output",
+				"node-material"
 			],
 			"notes": "",
 			"thumbHealth": "ok",
@@ -2326,9 +2334,9 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 2,
-			"artifactCount": 3,
-			"totalWgslBytes": 6252,
+			"materialCount": 3,
+			"artifactCount": 5,
+			"totalWgslBytes": 14723,
 			"hasCompute": false,
 			"shapes": [
 				"background",
@@ -2825,18 +2833,26 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 2,
-			"artifactCount": 3,
-			"totalWgslBytes": 12807,
+			"materialCount": 6,
+			"artifactCount": 7,
+			"totalWgslBytes": 42437,
 			"hasCompute": false,
 			"shapes": [
+				"render-output",
 				"background",
 				"lights",
-				"render-output"
+				"pmrem-blur",
+				"pmrem-ggx",
+				"pmrem-cubemap",
+				"pmrem-equirect"
 			],
 			"materialShapes": [
+				"render-output",
 				"node-material",
-				"render-output"
+				"pmrem-blur",
+				"pmrem-ggx",
+				"pmrem-cubemap",
+				"pmrem-equirect"
 			],
 			"notes": "",
 			"thumbHealth": "ok",
@@ -3207,17 +3223,25 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 2,
-			"artifactCount": 2,
-			"totalWgslBytes": 7153,
+			"materialCount": 6,
+			"artifactCount": 6,
+			"totalWgslBytes": 36783,
 			"hasCompute": false,
 			"shapes": [
 				"render-output",
-				"background"
+				"background",
+				"pmrem-cubemap",
+				"pmrem-equirect",
+				"pmrem-blur",
+				"pmrem-ggx"
 			],
 			"materialShapes": [
 				"render-output",
-				"node-material"
+				"node-material",
+				"pmrem-cubemap",
+				"pmrem-equirect",
+				"pmrem-blur",
+				"pmrem-ggx"
 			],
 			"notes": "",
 			"thumbHealth": "ok",
@@ -4410,7 +4434,7 @@
 				"render-output"
 			],
 			"notes": "",
-			"thumbHealth": "ok",
+			"thumbHealth": "blank",
 			"badge": "renders"
 		},
 		{
@@ -4436,15 +4460,17 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 1,
-			"artifactCount": 1,
-			"totalWgslBytes": 3645,
+			"materialCount": 2,
+			"artifactCount": 2,
+			"totalWgslBytes": 6428,
 			"hasCompute": false,
 			"shapes": [
-				"render-output"
+				"render-output",
+				"background"
 			],
 			"materialShapes": [
-				"render-output"
+				"render-output",
+				"node-material"
 			],
 			"notes": "",
 			"thumbHealth": "ok",
@@ -4516,12 +4542,12 @@
 			"totalWgslBytes": 6431,
 			"hasCompute": false,
 			"shapes": [
-				"post-process",
-				"render-output"
+				"render-output",
+				"post-process"
 			],
 			"materialShapes": [
-				"node-material",
-				"render-output"
+				"render-output",
+				"node-material"
 			],
 			"notes": "",
 			"thumbHealth": "ok",
@@ -4626,15 +4652,17 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 1,
-			"artifactCount": 1,
-			"totalWgslBytes": 2986,
+			"materialCount": 2,
+			"artifactCount": 2,
+			"totalWgslBytes": 12424,
 			"hasCompute": false,
 			"shapes": [
-				"render-output"
+				"render-output",
+				"background"
 			],
 			"materialShapes": [
-				"render-output"
+				"render-output",
+				"node-material"
 			],
 			"notes": "",
 			"thumbHealth": "ok",
@@ -4856,17 +4884,25 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 2,
-			"artifactCount": 2,
-			"totalWgslBytes": 12807,
+			"materialCount": 6,
+			"artifactCount": 6,
+			"totalWgslBytes": 42442,
 			"hasCompute": false,
 			"shapes": [
+				"pmrem-ggx",
+				"pmrem-cubemap",
+				"render-output",
+				"pmrem-equirect",
 				"background",
-				"render-output"
+				"pmrem-blur"
 			],
 			"materialShapes": [
+				"pmrem-ggx",
+				"pmrem-cubemap",
+				"render-output",
+				"pmrem-equirect",
 				"node-material",
-				"render-output"
+				"pmrem-blur"
 			],
 			"notes": "",
 			"thumbHealth": "ok",
@@ -5392,17 +5428,25 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 2,
-			"artifactCount": 3,
-			"totalWgslBytes": 6181,
+			"materialCount": 6,
+			"artifactCount": 7,
+			"totalWgslBytes": 35799,
 			"hasCompute": false,
 			"shapes": [
 				"background",
 				"lights",
+				"pmrem-cubemap",
+				"pmrem-equirect",
+				"pmrem-blur",
+				"pmrem-ggx",
 				"render-output"
 			],
 			"materialShapes": [
 				"node-material",
+				"pmrem-cubemap",
+				"pmrem-equirect",
+				"pmrem-blur",
+				"pmrem-ggx",
 				"render-output"
 			],
 			"notes": "",
@@ -5552,14 +5596,14 @@
 			"hasCompute": false,
 			"shapes": [
 				"backdrop",
-				"render-output",
 				"background",
-				"lights"
+				"lights",
+				"render-output"
 			],
 			"materialShapes": [
 				"mesh-standard",
-				"render-output",
-				"node-material"
+				"node-material",
+				"render-output"
 			],
 			"notes": "",
 			"thumbHealth": "ok",
@@ -5702,12 +5746,12 @@
 			"totalWgslBytes": 6051,
 			"hasCompute": false,
 			"shapes": [
-				"render-output",
-				"post-process"
+				"post-process",
+				"render-output"
 			],
 			"materialShapes": [
-				"render-output",
-				"node-material"
+				"node-material",
+				"render-output"
 			],
 			"notes": "",
 			"thumbHealth": "ok",
@@ -5892,14 +5936,24 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 1,
-			"artifactCount": 1,
-			"totalWgslBytes": 3645,
+			"materialCount": 6,
+			"artifactCount": 6,
+			"totalWgslBytes": 37058,
 			"hasCompute": false,
 			"shapes": [
+				"background",
+				"pmrem-cubemap",
+				"pmrem-equirect",
+				"pmrem-blur",
+				"pmrem-ggx",
 				"render-output"
 			],
 			"materialShapes": [
+				"node-material",
+				"pmrem-cubemap",
+				"pmrem-equirect",
+				"pmrem-blur",
+				"pmrem-ggx",
 				"render-output"
 			],
 			"notes": "",
@@ -6042,15 +6096,17 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 1,
-			"artifactCount": 1,
-			"totalWgslBytes": 3369,
+			"materialCount": 2,
+			"artifactCount": 2,
+			"totalWgslBytes": 7153,
 			"hasCompute": false,
 			"shapes": [
-				"render-output"
+				"render-output",
+				"background"
 			],
 			"materialShapes": [
-				"render-output"
+				"render-output",
+				"node-material"
 			],
 			"notes": "",
 			"thumbHealth": "ok",
@@ -6079,16 +6135,18 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 1,
-			"artifactCount": 2,
-			"totalWgslBytes": 3645,
+			"materialCount": 2,
+			"artifactCount": 3,
+			"totalWgslBytes": 13083,
 			"hasCompute": false,
 			"shapes": [
-				"lights",
-				"render-output"
+				"render-output",
+				"background",
+				"lights"
 			],
 			"materialShapes": [
-				"render-output"
+				"render-output",
+				"node-material"
 			],
 			"notes": "",
 			"thumbHealth": "ok",
@@ -6117,17 +6175,25 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 2,
-			"artifactCount": 2,
-			"totalWgslBytes": 13083,
+			"materialCount": 6,
+			"artifactCount": 6,
+			"totalWgslBytes": 42718,
 			"hasCompute": false,
 			"shapes": [
-				"background",
-				"render-output"
+				"pmrem-cubemap",
+				"pmrem-equirect",
+				"pmrem-blur",
+				"render-output",
+				"pmrem-ggx",
+				"background"
 			],
 			"materialShapes": [
-				"node-material",
-				"render-output"
+				"pmrem-cubemap",
+				"pmrem-equirect",
+				"pmrem-blur",
+				"render-output",
+				"pmrem-ggx",
+				"node-material"
 			],
 			"notes": "",
 			"thumbHealth": "ok",
@@ -6385,15 +6451,17 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 1,
-			"artifactCount": 1,
-			"totalWgslBytes": 3369,
+			"materialCount": 2,
+			"artifactCount": 2,
+			"totalWgslBytes": 7153,
 			"hasCompute": false,
 			"shapes": [
-				"render-output"
+				"render-output",
+				"background"
 			],
 			"materialShapes": [
-				"render-output"
+				"render-output",
+				"node-material"
 			],
 			"notes": "",
 			"thumbHealth": "ok",
@@ -6422,9 +6490,9 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 2,
-			"artifactCount": 2,
-			"totalWgslBytes": 7153,
+			"materialCount": 3,
+			"artifactCount": 3,
+			"totalWgslBytes": 10937,
 			"hasCompute": false,
 			"shapes": [
 				"background",
@@ -6461,15 +6529,17 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 1,
-			"artifactCount": 1,
-			"totalWgslBytes": 3369,
+			"materialCount": 2,
+			"artifactCount": 2,
+			"totalWgslBytes": 12807,
 			"hasCompute": false,
 			"shapes": [
-				"render-output"
+				"render-output",
+				"background"
 			],
 			"materialShapes": [
-				"render-output"
+				"render-output",
+				"node-material"
 			],
 			"notes": "",
 			"thumbHealth": "ok",
@@ -6612,18 +6682,20 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 1,
-			"artifactCount": 1,
-			"totalWgslBytes": 3369,
+			"materialCount": 2,
+			"artifactCount": 2,
+			"totalWgslBytes": 12807,
 			"hasCompute": false,
 			"shapes": [
+				"background",
 				"render-output"
 			],
 			"materialShapes": [
+				"node-material",
 				"render-output"
 			],
 			"notes": "",
-			"thumbHealth": "ok",
+			"thumbHealth": "blank",
 			"badge": "renders"
 		},
 		{
@@ -6654,13 +6726,13 @@
 			"totalWgslBytes": 12807,
 			"hasCompute": false,
 			"shapes": [
+				"render-output",
 				"background",
-				"lights",
-				"render-output"
+				"lights"
 			],
 			"materialShapes": [
-				"node-material",
-				"render-output"
+				"render-output",
+				"node-material"
 			],
 			"notes": "",
 			"thumbHealth": "ok",
@@ -7074,15 +7146,25 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 1,
-			"artifactCount": 1,
-			"totalWgslBytes": 3369,
+			"materialCount": 6,
+			"artifactCount": 6,
+			"totalWgslBytes": 42442,
 			"hasCompute": false,
 			"shapes": [
-				"render-output"
+				"render-output",
+				"pmrem-cubemap",
+				"pmrem-equirect",
+				"background",
+				"pmrem-blur",
+				"pmrem-ggx"
 			],
 			"materialShapes": [
-				"render-output"
+				"render-output",
+				"pmrem-cubemap",
+				"pmrem-equirect",
+				"node-material",
+				"pmrem-blur",
+				"pmrem-ggx"
 			],
 			"notes": "",
 			"thumbHealth": "ok",
@@ -7150,17 +7232,25 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 2,
-			"artifactCount": 2,
-			"totalWgslBytes": 15747,
+			"materialCount": 27,
+			"artifactCount": 27,
+			"totalWgslBytes": 315242,
 			"hasCompute": false,
 			"shapes": [
 				"background",
-				"render-output"
+				"render-output",
+				"pmrem-cubemap",
+				"pmrem-equirect",
+				"pmrem-blur",
+				"pmrem-ggx"
 			],
 			"materialShapes": [
 				"node-material",
-				"render-output"
+				"render-output",
+				"pmrem-cubemap",
+				"pmrem-equirect",
+				"pmrem-blur",
+				"pmrem-ggx"
 			],
 			"notes": "",
 			"thumbHealth": "ok",
@@ -7422,7 +7512,7 @@
 			"hasCapture": true,
 			"materialCount": 1,
 			"artifactCount": 1,
-			"totalWgslBytes": 2397,
+			"totalWgslBytes": 2988,
 			"hasCompute": false,
 			"shapes": [
 				"render-output"
