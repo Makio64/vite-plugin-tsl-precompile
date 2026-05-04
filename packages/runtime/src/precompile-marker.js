@@ -122,9 +122,15 @@ export function installPrecompileMarker( three, opts = {} ) {
 		if ( sessionDone.has( name ) || inflight.has( name ) ) return this;
 
 		inflight.add( name );
+		if ( typeof window !== 'undefined' ) window.__tslpPrecompilePending = ( window.__tslpPrecompilePending | 0 ) + 1;
 		// Defer to microtask so the user's first render isn't blocked on the
 		// extractor — the marker must always return synchronously.
-		Promise.resolve().then( () => captureMaterialInDev( this, name ) ).finally( () => inflight.delete( name ) );
+		Promise.resolve().then( () => captureMaterialInDev( this, name ) ).finally( () => {
+
+			inflight.delete( name );
+			if ( typeof window !== 'undefined' ) window.__tslpPrecompilePending = Math.max( 0, ( window.__tslpPrecompilePending | 0 ) - 1 );
+
+		} );
 
 		return this;
 
@@ -233,6 +239,8 @@ async function captureMaterialInDev( material, name ) {
 		// that read `frame.object` fields see the same shape they saw in the app.
 		const { Scene, Mesh, BoxGeometry, PerspectiveCamera, Color, ClippingGroup, REVISION } = threeModule;
 		const scene = new Scene();
+		scene.userData = scene.userData || {};
+		scene.userData.__tslpSyntheticCaptureScene = true;
 
 		// Determine the capture camera. Priority order:
 		//   1. material.__tslpArrayCamera — explicit hint set by user or harness
