@@ -968,17 +968,6 @@ export function extractUniformPlan( state ) {
 					const tex = textureNode.value || ( textureNode._value ) || null;
 					if ( tex && tex.isTexture ) {
 
-						// TSLP-DEBUG-VIEWPORT
-						if ( tex.isFramebufferTexture || ( textureNode && textureNode.isViewportTextureNode ) || tex.mapping === 300 ) {
-
-							try {
-
-								console.warn( '[tslp-debug] FBO-candidate binding=' + ( binding.name || '?' ) + ' texCtor=' + ( tex.constructor && tex.constructor.name ) + ' nodeCtor=' + ( textureNode.constructor && ( textureNode.constructor.type || textureNode.constructor.name ) ) + ' isFB=' + ( tex.isFramebufferTexture === true ) + ' isVTN=' + ( textureNode.isViewportTextureNode === true ) + ' isOTN=' + ( textureNode.isOutputTextureNode === true ) + ' mapping=' + tex.mapping + ' name=' + JSON.stringify( tex.name || '' ) );
-
-							} catch ( _ ) { /* ignore */ }
-
-						}
-
 						if ( tex.name === 'DFG_LUT' ) {
 
 							source = { kind: 'builtin.dfgLUT' };
@@ -1066,7 +1055,6 @@ export function extractUniformPlan( state ) {
 								kind: 'viewport.texture',
 								generateMipmaps: !! ( textureNode && textureNode.generateMipmaps ),
 							};
-							try { console.warn( '[tslp-debug] EMIT viewport.texture binding=' + ( binding.name || '?' ) ); } catch ( _ ) {}
 
 						} else {
 

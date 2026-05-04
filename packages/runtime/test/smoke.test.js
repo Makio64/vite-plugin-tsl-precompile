@@ -276,6 +276,42 @@ test( 'runtime hydrator uses depth fallback for depth texture bindings', () => {
 
 } );
 
+test( 'runtime hydrator does not bind color shadow maps into depth texture slots', () => {
+
+	const state = hydrateNodeBuilderState( {
+		vertexShader: '',
+		fragmentShader: '@group(1) @binding(0) var shadowTex : texture_depth_2d;',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'shadowTex', kind: 'sampled-texture', visibility: 2, textureType: '2d' },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			slots: [],
+			textures: [ { name: 'shadowTex', source: { kind: 'depth.texture', lightIndex: 0 } } ],
+		} ],
+	} );
+
+	const [ textureBinding ] = state.bindings[ 0 ].bindings;
+	const depthFallback = textureBinding.texture;
+	const colorShadowTarget = { isTexture: true, isDepthTexture: false };
+	const scene = {
+		traverse( visit ) {
+
+			visit( { isLight: true, castShadow: true, shadow: { map: { texture: colorShadowTarget } } } );
+
+		},
+	};
+
+	state.updateBeforeNodes[ 0 ].updateBefore( { scene } );
+
+	assert.equal( textureBinding.texture, depthFallback );
+	assert.notEqual( textureBinding.texture, colorShadowTarget );
+
+} );
+
 test( 'runtime hydrator uses 3D fallback for texture_3d bindings', () => {
 
 	const state = hydrateNodeBuilderState( {

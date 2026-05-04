@@ -380,11 +380,6 @@ function lookupLiveTextureByIdentity( source ) {
 	if ( ! source ) return null;
 	if ( source.imageSrc && _liveTexturesBySrc.has( source.imageSrc ) ) return _liveTexturesBySrc.get( source.imageSrc );
 	if ( source.textureName && _liveTexturesByName.has( source.textureName ) ) {
-		if ( typeof window !== 'undefined' && ! window.__tslpProbeIdentHits ) window.__tslpProbeIdentHits = 0;
-		if ( typeof window !== 'undefined' && window.__tslpProbeIdentHits < 5 ) {
-			window.__tslpProbeIdentHits ++;
-			console.log( '[tslp-probe] identity-hit name=' + source.textureName + ' uuid-want=' + source.textureUuid );
-		}
 		return _liveTexturesByName.get( source.textureName );
 	}
 	// Final identity fallback: derive the filename from imageSrc and try the
@@ -396,12 +391,6 @@ function lookupLiveTextureByIdentity( source ) {
 		const tail = slash >= 0 ? source.imageSrc.slice( slash + 1 ) : source.imageSrc;
 		const filename = tail.split( '?' )[ 0 ].split( '#' )[ 0 ];
 		if ( filename && _liveTexturesByName.has( filename ) ) return _liveTexturesByName.get( filename );
-	}
-	if ( typeof window !== 'undefined' && source.textureName && ! window.__tslpProbeIdentMissed ) {
-		window.__tslpProbeIdentMissed = true;
-		const stack = new Error().stack || '';
-		console.log( '[tslp-probe] identity-MISS name=' + source.textureName + ' (registered names: ' + JSON.stringify( Array.from( _liveTexturesByName.keys() ) ) + ')' );
-		console.log( '[tslp-probe] stack: ' + stack.split('\n').slice(0, 8).join(' | ') );
 	}
 	return null;
 
@@ -500,13 +489,13 @@ export function hydrateNodeBuilderState( artifact, material = null ) {
 	// kernel writes into `colors`, the render reads from the same buffer.
 	bindUserStorageBuffersToArtifact( artifact, material );
 
-	const { bindings, uniformBuffers, shadowDepthBindings, storageTextureBindings, viewportTextureBindings, reflectorTextureBindings } = hydrateRuntimeBindings( artifact, material );
+	const { bindings, uniformBuffers, shadowDepthBindings, artifactTextureBindings, viewportTextureBindings, reflectorTextureBindings } = hydrateRuntimeBindings( artifact, material );
 	const updateNode = createUniformUpdateNode( artifact, uniformBuffers, material );
 	const shadowDepthRebinder = shadowDepthBindings.length > 0
 		? createShadowDepthRebinder( shadowDepthBindings )
 		: null;
-	const storageTextureRebinder = storageTextureBindings.length > 0
-		? createStorageTextureRebinder( storageTextureBindings )
+	const artifactTextureRebinder = artifactTextureBindings.length > 0
+		? createArtifactTextureRebinder( artifactTextureBindings )
 		: null;
 	const viewportTextureRebinder = viewportTextureBindings.length > 0
 		? createViewportTextureRebinder( viewportTextureBindings )
@@ -536,14 +525,13 @@ export function hydrateNodeBuilderState( artifact, material = null ) {
 		// `shadowDepthRebinder` runs FIRST among updateBefore so the SampledTexture
 		// bindings point at the live `light.shadow.map.depthTexture` before the
 		// renderer reads bind-group versions for the upcoming draw.
-		// `storageTextureRebinder` follows: when the harness shares full's
-		// GPUTexture into slim's data map AFTER the bind group is built, slim's
-		// cached bind-group view still references the stale (empty) GPUTexture.
-		// Bumping `groupNode.version` here forces the renderer to rebuild the
-		// bind group with a fresh view created from the now-shared GPUTexture.
+		// `artifactTextureRebinder` follows: artifact.texture bindings may resolve
+		// after first hydration (PMREM/environment maps, compute-written storage
+		// textures, late loader identity matches). Bumping `groupNode.version` here
+		// forces the renderer to rebuild the bind group with the fresh texture.
 		updateBeforeNodes: [
 			...( shadowDepthRebinder ? [ shadowDepthRebinder ] : [] ),
-			...( storageTextureRebinder ? [ storageTextureRebinder ] : [] ),
+			...( artifactTextureRebinder ? [ artifactTextureRebinder ] : [] ),
 			// `viewportTextureRebinder` runs alongside the other rebinders so
 			// transmissive materials (KHR_materials_transmission glass) sample
 			// a freshly-copied framebuffer instead of the 1×1 fallback.
@@ -961,11 +949,11 @@ function hydrateRuntimeBindings( artifact, material ) {
 
 	const uniformBuffers = new Map();
 	const shadowDepthBindings = [];
-	const storageTextureBindings = [];
+	const artifactTextureBindings = [];
 	const viewportTextureBindings = [];
 	const reflectorTextureBindings = [];
 	const bindings = artifact.bindings;
-	if ( ! Array.isArray( bindings ) ) return { bindings: [], uniformBuffers, shadowDepthBindings, storageTextureBindings, viewportTextureBindings, reflectorTextureBindings };
+	if ( ! Array.isArray( bindings ) ) return { bindings: [], uniformBuffers, shadowDepthBindings, artifactTextureBindings, viewportTextureBindings, reflectorTextureBindings };
 
 	// Full three.js artifacts contain JSON descriptors. Rehydrate the subset
 	// needed by WGSL pipeline layout creation and UBO uploads. Texture/storage
@@ -1016,17 +1004,13 @@ function hydrateRuntimeBindings( artifact, material ) {
 
 			}
 
-			// Compute-written storage textures (StorageTexture, Storage3DTexture,
-			// StorageArrayTexture): tracked for two related fixes.
+			// Artifact textures: tracked for late relinking and stale GPUTexture fixes.
 			//
-			// (a) Late-arriving live texture: hydration ran before the example's
-			//     `new StorageTexture(...)` was registered (the patched `name`
-			//     setter defers via Promise.resolve), so binding.texture is the
-			//     1×1 fallback. The rebinder re-resolves on each render-before;
-			//     once a live storage texture is registered, it swaps
-			//     binding.texture to the real instance. Sampler's texture setter
-			//     resets version/generation so three.js rebuilds the bind group
-			//     with a view of the correct GPUTexture.
+			// (a) Late-arriving live texture: hydration ran before a live texture was
+			//     registered or generated (PMREM/environment maps, loader identity
+			//     matches, compute storage textures), so binding.texture is a 1×1
+			//     fallback. The rebinder re-resolves on each render-before and swaps to
+			//     the real instance once available.
 			//
 			// (b) Stale GPUTexture under the same JS texture: the harness shares
 			//     full's GPUTexture into slim's data map AFTER the bind group was
@@ -1034,13 +1018,13 @@ function hydrateRuntimeBindings( artifact, material ) {
 			//     fullTexData.texture`). The rebinder bumps version + generation
 			//     to force three.js to rebuild the view from the now-shared
 			//     GPUTexture.
-			if ( descriptor.kind === 'sampled-texture'
-				&& runtimeBinding.isSampledTexture
+			if ( ( descriptor.kind === 'sampled-texture' || descriptor.kind === 'sampler' )
+				&& ( runtimeBinding.isSampledTexture || runtimeBinding.isSampler )
 				&& planSource && planSource.kind === 'artifact.texture' ) {
 
 				const _planGroup = ( artifact.uniformPlan || [] ).find( ( g ) => g.name === group.name ) || {};
 				const _planTex = ( _planGroup.textures || [] ).find( ( t ) => t.name === descriptor.name ) || {};
-				storageTextureBindings.push( {
+				artifactTextureBindings.push( {
 					binding: runtimeBinding,
 					artifact,
 					groupName: group.name || '',
@@ -1069,20 +1053,6 @@ function hydrateRuntimeBindings( artifact, material ) {
 				&& planSource && planSource.kind === 'reflector.texture' ) {
 
 				const baseNode = findReflectorBaseNodeInMaterial( material );
-				if ( ! baseNode && material && ! globalThis.__tslp_rGraphLogged ) {
-					globalThis.__tslp_rGraphLogged = 1;
-					const types = [];
-					for ( const k of [ 'colorNode', 'outputNode', 'fragmentNode', 'backdropNode', 'emissiveNode' ] ) {
-						const root = material[ k ];
-						if ( ! root ) continue;
-						types.push( '#' + k + '=' + ( root.constructor ? ( root.constructor.type || root.constructor.name ) : '?' ) );
-						if ( typeof root.traverse === 'function' ) {
-							let n = 0;
-							root.traverse( ( ch ) => { if ( n < 20 && ch && ch.constructor ) { types.push( ' ' + ( ch.constructor.type || ch.constructor.name ) ); n ++; } } );
-						}
-					}
-					console.log( '[tslp_reflector] graph', descriptor.name, types.join( '' ) );
-				}
 				if ( baseNode ) {
 
 					reflectorTextureBindings.push( {
@@ -1116,7 +1086,7 @@ function hydrateRuntimeBindings( artifact, material ) {
 
 	}
 
-	return { bindings: groups, uniformBuffers, shadowDepthBindings, storageTextureBindings, viewportTextureBindings, reflectorTextureBindings };
+	return { bindings: groups, uniformBuffers, shadowDepthBindings, artifactTextureBindings, viewportTextureBindings, reflectorTextureBindings };
 
 }
 
@@ -1230,7 +1200,9 @@ function createShadowDepthRebinder( entries /* , artifact */ ) {
 					// VSM materials sample the blurred render-target texture
 					// (`shadow.map.texture`); standard PCF/Hard shadows sample
 					// the raw depth texture (`shadow.map.depthTexture`).
-					liveTexture = entry.vsm ? map.texture : ( map.depthTexture || map.texture );
+					liveTexture = entry.vsm
+						? map.texture
+						: ( map.depthTexture || ( map.texture && map.texture.isDepthTexture === true ? map.texture : null ) );
 
 				}
 
@@ -1307,10 +1279,6 @@ function createReflectorTextureRebinder( entries ) {
 			if ( scene && typeof scene.name === 'string' && scene.name.endsWith( '[ Reflector ]' ) ) return;
 
 			const camera = frame ? frame.camera : null;
-			if ( ! globalThis.__tslp_reflectorRebDbg ) {
-				globalThis.__tslp_reflectorRebDbg = 1;
-				console.log( '[tslp_reflector] reb fire entries=', entries.length, 'cam?', !! camera, 'rtSizes=', entries.map( ( e ) => e.baseNode && e.baseNode.renderTargets ? e.baseNode.renderTargets.size : -1 ).join( ',' ) );
-			}
 
 			for ( const entry of entries ) {
 
@@ -1429,48 +1397,7 @@ function createViewportTextureRebinder( entries ) {
 
 }
 
-/**
- * Per-frame rebinder for compute-written storage textures.
- *
- * Compute kernels are dispatched through a shared full renderer (slim has no
- * NodeBuilder). Two related issues can leave slim's bind group sampling the
- * wrong data:
- *
- * (a) Late-arriving live texture. Storage textures are registered via the
- *     patched `name` setter, which defers `registerLiveTexture` to a
- *     microtask. If hydration runs before that microtask fires (rare but
- *     observed), `lookupAnonymousStorageTexture` / `lookupLiveTextureByIdentity`
- *     return null and the binding is wired to the 1×1 fallback. The
- *     compute output then has nowhere visible to land.
- *
- * (b) Stale GPUTexture under the same JS texture. The harness shares full's
- *     GPUTexture into slim's data map post-compute via
- *     `slimRenderer.backend.get(tex).texture = fullTexData.texture`. If
- *     slim's bind group was built BEFORE that swap (typical: render runs
- *     synchronously while the compute promise is still in flight), the
- *     bind-group view still references slim's stale empty GPUTexture and
- *     the shader samples zeros — visible as a near-black canvas.
- *
- * On each render this node:
- *   - Re-runs `resolveTextureBinding`. If it now returns a live storage
- *     texture different from the bound one, swaps `binding.texture`
- *     (Sampler's setter resets version/generation, three.js rebuilds the
- *     bind group with a fresh view).
- *   - Compares the renderer's currently-cached
- *     `backend.get(binding.texture).texture` reference to the one we last
- *     saw. If it changed, bumps `binding.groupNode.version` + resets
- *     `binding.version` / `binding.generation` so `Bindings._update`
- *     calls `backend.updateBindings` with a fresh view over the
- *     now-shared GPUTexture.
- *
- * Mirrors the strategy used by `createShadowDepthRebinder` for
- * `texture_depth_2d` bindings whose backing texture isn't allocated until
- * after the renderer's first shadow pass.
- *
- * @param {Array<{binding: Object, artifact: Object, groupName: string, bindingName: string, source: Object, textureType: string, material: ?Material}>} entries - Tracked sampled-texture bindings.
- * @return {Object} An update-before node compatible with `NodeFrame.updateBeforeNode()`.
- */
-function createStorageTextureRebinder( entries ) {
+function createArtifactTextureRebinder( entries ) {
 
 	// Track the last-seen GPUTexture per binding so we only invalidate when
 	// it actually swaps (and don't bump every frame, which would defeat
@@ -1497,25 +1424,17 @@ function createStorageTextureRebinder( entries ) {
 				const binding = entry.binding;
 				if ( ! binding ) continue;
 
-				// (a) Re-resolve the JS Texture for this binding. If a live
-				// storage texture has registered since hydration, swap to it.
-				// Skip if the binding already points at a real (non-fallback)
-				// storage texture — re-resolving every frame would clobber
-				// the harness's pre-seed work.
 				const currentTex = binding.texture;
-				const currentIsStorage = currentTex && currentTex.isStorageTexture === true;
-				if ( ! currentIsStorage ) {
+				const candidate = resolveTextureBinding( entry.artifact, entry.groupName, entry.bindingName, entry.material );
+				if ( candidate && candidate !== currentTex ) {
 
-					const candidate = resolveTextureBinding( entry.artifact, entry.groupName, entry.bindingName, entry.material );
-					if ( candidate && candidate !== currentTex && candidate.isStorageTexture === true ) {
-
-						// Sampler's `texture` setter resets version=-1 and
-						// generation=null automatically, so three.js will
-						// rebuild the bind group on the next draw.
-						binding.texture = candidate;
-						if ( binding.groupNode ) binding.groupNode.version ++;
-
-					}
+					// Sampler's `texture` setter resets version=-1 and
+					// generation=null automatically. SampledTexture does not, so
+					// also bump below to make the bind-group cache rebuild.
+					binding.texture = candidate;
+					if ( binding.groupNode ) binding.groupNode.version ++;
+					binding.version = - 1;
+					binding.generation = null;
 
 				}
 
@@ -1850,12 +1769,16 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 
 		const wantsDepthTexture = shaderDeclaresDepthTexture( artifact, bindingName );
 		const wantsMultisampledTexture = shaderDeclaresMultisampledTexture( artifact, bindingName );
-		if ( wantsDepthTexture && ! wantsMultisampledTexture ) return fallbackDepthTexture;
+		if ( wantsDepthTexture && ! wantsMultisampledTexture ) {
+			return fallbackDepthTexture;
+		}
 
 		if ( artifact._textureRefs ) {
 
 			const tex = artifact._textureRefs.get( source.textureUuid );
-			if ( tex && textureMatchesShaderMultisample( artifact, bindingName, tex ) ) return tex;
+			if ( tex && textureMatchesShaderMultisample( artifact, bindingName, tex ) ) {
+				return tex;
+			}
 
 		}
 
@@ -1873,7 +1796,9 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 			for ( const prop of TEXTURE_PROPS ) {
 
 				const tex = material[ prop ];
-				if ( tex && tex.isTexture && tex.uuid === source.textureUuid && textureMatchesShaderMultisample( artifact, bindingName, tex ) ) return tex;
+				if ( tex && tex.isTexture && tex.uuid === source.textureUuid && textureMatchesShaderMultisample( artifact, bindingName, tex ) ) {
+					return tex;
+				}
 
 			}
 
@@ -1931,7 +1856,9 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 
 		}
 
-		if ( wantsDepthTexture && wantsMultisampledTexture ) return fallbackMultisampledDepthTexture;
+		if ( wantsDepthTexture && wantsMultisampledTexture ) {
+			return fallbackMultisampledDepthTexture;
+		}
 
 		// Last-resort: anonymous storage texture lookup.
 		// When a compute-written StorageTexture has no name and no snapshot,
