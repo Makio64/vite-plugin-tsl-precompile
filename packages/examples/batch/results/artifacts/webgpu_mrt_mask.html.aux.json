@@ -1,7 +1,7 @@
 [
   {
     "shape": "post-process",
-    "configHash": "baeb1f3cddad9c60efa3978c4be7754e1bec2150b4c5c9007fe222fd642c73ae",
+    "configHash": "4719d6d82a18a65d56b5a46075e7200a7471974ff96cd46d3f3c0a1e3db8440c",
     "artifact": {
       "version": 3,
       "cacheKey": 8461030122698493,
@@ -283,9 +283,15 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "e49059c9-ff8c-434c-9e1c-9ba8313ee45e",
+                "textureUuid": "741222e6-4f81-414c-ae64-08ff0147b756",
                 "textureName": "output",
                 "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "colorSpace": "",
                 "flipY": false
               }
             },
@@ -297,9 +303,15 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "e49059c9-ff8c-434c-9e1c-9ba8313ee45e",
+                "textureUuid": "741222e6-4f81-414c-ae64-08ff0147b756",
                 "textureName": "output",
                 "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "colorSpace": "",
                 "flipY": false
               }
             },
@@ -311,9 +323,15 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "9401c020-ef65-4d8e-8ec0-3aa2a1b41ab0",
+                "textureUuid": "246f4799-3f56-4555-9ed4-81c6711945cf",
                 "textureName": "GaussianBlurNode.vertical",
                 "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "colorSpace": "",
                 "flipY": false
               }
             },
@@ -325,9 +343,15 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "9401c020-ef65-4d8e-8ec0-3aa2a1b41ab0",
+                "textureUuid": "246f4799-3f56-4555-9ed4-81c6711945cf",
                 "textureName": "GaussianBlurNode.vertical",
                 "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "colorSpace": "",
                 "flipY": false
               }
             }
@@ -344,9 +368,15 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "e49059c9-ff8c-434c-9e1c-9ba8313ee45e",
+                  "textureUuid": "741222e6-4f81-414c-ae64-08ff0147b756",
                   "textureName": "output",
                   "mapping": 300,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1006,
+                  "minFilter": 1006,
+                  "anisotropy": 1,
+                  "colorSpace": "",
                   "flipY": false
                 }
               }
@@ -369,9 +399,15 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "e49059c9-ff8c-434c-9e1c-9ba8313ee45e",
+                  "textureUuid": "741222e6-4f81-414c-ae64-08ff0147b756",
                   "textureName": "output",
                   "mapping": 300,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1006,
+                  "minFilter": 1006,
+                  "anisotropy": 1,
+                  "colorSpace": "",
                   "flipY": false
                 }
               }
@@ -395,9 +431,15 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "9401c020-ef65-4d8e-8ec0-3aa2a1b41ab0",
+                  "textureUuid": "246f4799-3f56-4555-9ed4-81c6711945cf",
                   "textureName": "GaussianBlurNode.vertical",
                   "mapping": 300,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1006,
+                  "minFilter": 1006,
+                  "anisotropy": 1,
+                  "colorSpace": "",
                   "flipY": false
                 }
               }
@@ -420,9 +462,15 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "9401c020-ef65-4d8e-8ec0-3aa2a1b41ab0",
+                  "textureUuid": "246f4799-3f56-4555-9ed4-81c6711945cf",
                   "textureName": "GaussianBlurNode.vertical",
                   "mapping": 300,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1006,
+                  "minFilter": 1006,
+                  "anisotropy": 1,
+                  "colorSpace": "",
                   "flipY": false
                 }
               }
@@ -534,12 +582,12 @@
         "updateBeforeNodes": 2,
         "updateAfterNodes": 0
       },
-      "materialUuid": "10c53c92-3bbb-421e-aa5d-f84acd53b71f"
+      "materialUuid": "1859566e-a36f-42f1-b2f6-cde275ccaae8"
     }
   },
   {
     "shape": "render-output",
-    "configHash": "bc8d3571ffe463bfc77b718198894e99487bbad5256a9e7c87018ad9077653d1",
+    "configHash": "9fb9f6f5657fd43de057ba7406aad1e59f594d23336a3c2dcba88035c1ae1a85",
     "artifact": {
       "version": 3,
       "cacheKey": 2403439375331243,
@@ -832,9 +880,15 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "e49059c9-ff8c-434c-9e1c-9ba8313ee45e",
+                "textureUuid": "741222e6-4f81-414c-ae64-08ff0147b756",
                 "textureName": "output",
                 "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "colorSpace": "",
                 "flipY": false
               }
             },
@@ -846,9 +900,15 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "e49059c9-ff8c-434c-9e1c-9ba8313ee45e",
+                "textureUuid": "741222e6-4f81-414c-ae64-08ff0147b756",
                 "textureName": "output",
                 "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "colorSpace": "",
                 "flipY": false
               }
             },
@@ -860,9 +920,15 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "9401c020-ef65-4d8e-8ec0-3aa2a1b41ab0",
+                "textureUuid": "246f4799-3f56-4555-9ed4-81c6711945cf",
                 "textureName": "GaussianBlurNode.vertical",
                 "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "colorSpace": "",
                 "flipY": false
               }
             },
@@ -874,9 +940,15 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "9401c020-ef65-4d8e-8ec0-3aa2a1b41ab0",
+                "textureUuid": "246f4799-3f56-4555-9ed4-81c6711945cf",
                 "textureName": "GaussianBlurNode.vertical",
                 "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "colorSpace": "",
                 "flipY": false
               }
             }
@@ -893,9 +965,15 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "e49059c9-ff8c-434c-9e1c-9ba8313ee45e",
+                  "textureUuid": "741222e6-4f81-414c-ae64-08ff0147b756",
                   "textureName": "output",
                   "mapping": 300,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1006,
+                  "minFilter": 1006,
+                  "anisotropy": 1,
+                  "colorSpace": "",
                   "flipY": false
                 }
               }
@@ -918,9 +996,15 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "e49059c9-ff8c-434c-9e1c-9ba8313ee45e",
+                  "textureUuid": "741222e6-4f81-414c-ae64-08ff0147b756",
                   "textureName": "output",
                   "mapping": 300,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1006,
+                  "minFilter": 1006,
+                  "anisotropy": 1,
+                  "colorSpace": "",
                   "flipY": false
                 }
               }
@@ -944,9 +1028,15 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "9401c020-ef65-4d8e-8ec0-3aa2a1b41ab0",
+                  "textureUuid": "246f4799-3f56-4555-9ed4-81c6711945cf",
                   "textureName": "GaussianBlurNode.vertical",
                   "mapping": 300,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1006,
+                  "minFilter": 1006,
+                  "anisotropy": 1,
+                  "colorSpace": "",
                   "flipY": false
                 }
               }
@@ -969,9 +1059,15 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "9401c020-ef65-4d8e-8ec0-3aa2a1b41ab0",
+                  "textureUuid": "246f4799-3f56-4555-9ed4-81c6711945cf",
                   "textureName": "GaussianBlurNode.vertical",
                   "mapping": 300,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1006,
+                  "minFilter": 1006,
+                  "anisotropy": 1,
+                  "colorSpace": "",
                   "flipY": false
                 }
               }

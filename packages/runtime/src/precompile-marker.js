@@ -342,6 +342,13 @@ async function captureMaterialInDev( material, name ) {
 
 			}
 
+			// A plain Mesh starts with count=1, so the generic property-copy loop
+			// above intentionally skips the InstancedMesh count that Three's
+			// MorphNode uses to select the per-instance morph texture path.
+			// Preserve it explicitly for synthetic capture so instanced morph demos
+			// compile the same shader branch as the live object.
+			if ( sourceObject.isInstancedMesh === true && sourceObject.count > 1 ) mesh.count = sourceObject.count;
+
 		}
 		// Force-disable frustum culling on the throwaway mesh. Even after the
 		// `boundingSphere` skip above, the source object may still have other

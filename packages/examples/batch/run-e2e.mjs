@@ -1222,6 +1222,13 @@ function __countArtifactTextureSources( artifact, predicate = null ) {
 	return count;
 }
 
+function __artifactNodeAttributes( artifact ) {
+	const attrs = Array.isArray( artifact && artifact.attributes )
+		? artifact.attributes
+		: Array.isArray( artifact && artifact.nodeAttributes ) ? artifact.nodeAttributes : [];
+	return attrs.filter( ( entry ) => entry && entry.source === 'node' );
+}
+
 function __nodeGraphKeys() {
 	return [ 'colorNode', 'normalNode', 'positionNode', 'outputNode', 'roughnessNode', 'metalnessNode', 'emissiveNode', 'opacityNode', 'alphaTestNode', 'vertexNode', 'envNode', 'lightNode', 'aoNode', 'transmissionNode', 'thicknessNode' ];
 }
@@ -1248,7 +1255,7 @@ function __collectMaterialNodeTextures( sourceMaterial ) {
 	return out;
 }
 
-function __scoreArtifactForSource( key, mod, className, sourceMaterial ) {
+function __scoreArtifactForSource( key, mod, className, sourceMaterial, sourceObject = null ) {
 	const artifact = mod && mod.artifact;
 	if ( ! artifact ) return -Infinity;
 	let score = key.includes( ':' + className + ':' ) ? 30 : 0;
@@ -1278,16 +1285,30 @@ function __scoreArtifactForSource( key, mod, className, sourceMaterial ) {
 		if ( __artifactHasTextureSource( artifact ) ) score += 20;
 	}
 
+	const nodeAttrs = __artifactNodeAttributes( artifact );
+	if ( sourceObject && sourceObject.isInstancedMesh === true ) {
+		const count = sourceObject.count || 0;
+		const matchingAttrs = count ? nodeAttrs.filter( ( entry ) => entry.count === count ) : [];
+		const matrixAttrs = matchingAttrs.filter( ( entry ) => ( entry.itemSize || 0 ) === 4 || entry.type === 'vec4' );
+		const colorAttrs = matchingAttrs.filter( ( entry ) => ( entry.itemSize || 0 ) === 3 || entry.type === 'vec3' );
+		if ( matchingAttrs.length > 0 ) score += 80;
+		else if ( nodeAttrs.length === 0 ) score -= 45;
+		if ( sourceObject.instanceMatrix && matrixAttrs.length >= 4 ) score += 60;
+		if ( sourceObject.instanceColor && colorAttrs.length > 0 ) score += 40;
+	} else if ( nodeAttrs.length > 0 ) {
+		score -= 10;
+	}
+
 	return score;
 }
 
-function __findBestArtifactForSource( className, sourceMaterial, keys ) {
+function __findBestArtifactForSource( className, sourceMaterial, keys, sourceObject = null ) {
 	if ( ! sourceMaterial || ! Array.isArray( keys ) || keys.length === 0 ) return null;
 	let best = null;
 	let bestScore = -Infinity;
 	for ( const key of keys ) {
 		const mod = __data.user && __data.user[ key ];
-		const score = __scoreArtifactForSource( key, mod, className, sourceMaterial );
+		const score = __scoreArtifactForSource( key, mod, className, sourceMaterial, sourceObject );
 		if ( score > bestScore ) {
 			best = key;
 			bestScore = score;
@@ -1296,7 +1317,7 @@ function __findBestArtifactForSource( className, sourceMaterial, keys ) {
 	return best && bestScore >= 55 ? best : null;
 }
 
-function __takeMaterial( className, sourceMaterial = null ) {
+function __takeMaterial( className, sourceMaterial = null, sourceObject = null ) {
 	const n = ( __counts[ className ] || 0 ) + 1;
 	__counts[ className ] = n;
 	let name = __state.example + ':' + className + ':' + n;
@@ -1305,7 +1326,7 @@ function __takeMaterial( className, sourceMaterial = null ) {
 	if ( sourceMaterial ) {
 		const allKeys = Object.keys( __data.user || {} );
 		const unusedKeys = allKeys.filter( ( key ) => ! __usedArtifactNames.has( key ) );
-		const matchedName = __findBestArtifactForSource( className, sourceMaterial, unusedKeys );
+		const matchedName = __findBestArtifactForSource( className, sourceMaterial, unusedKeys, sourceObject );
 		if ( matchedName ) {
 			name = matchedName;
 			mod = __data.user[ name ];
@@ -1503,18 +1524,57 @@ function __attachArtifactTextureRefsWhere( artifact, texture, predicate ) {
 
 const __wiredPCMaterials = new WeakSet();
 
+function __classNameFromArtifactName( name ) {
+	if ( typeof name !== 'string' ) return '';
+	const parts = name.split( ':' );
+	return parts.length >= 3 ? parts[ 1 ] : '';
+}
+
+function __precompiledArtifactMatchesObject( artifact, object ) {
+	if ( ! object || object.isInstancedMesh !== true ) return true;
+	const count = object.count || 0;
+	if ( ! count ) return true;
+	return __artifactNodeAttributes( artifact ).some( ( entry ) => entry.count === count );
+}
+
+function __retargetPrecompiledMaterialForObject( material, object ) {
+	if ( ! material || ! material.isPrecompiledMaterial ) return material;
+	if ( __precompiledArtifactMatchesObject( material.precompiledArtifact, object ) ) return material;
+
+	const oldName = material.name || '';
+	const className = __classNameFromArtifactName( oldName ) || 'MeshStandardNodeMaterial';
+	if ( oldName ) __usedArtifactNames.delete( oldName );
+	let replacement = null;
+	try {
+		replacement = __takeMaterial( className, material, object );
+	} catch ( _ ) {
+		if ( oldName ) __usedArtifactNames.add( oldName );
+		return material;
+	}
+	if ( ! replacement || replacement === material ) {
+		if ( oldName ) __usedArtifactNames.add( oldName );
+		return material;
+	}
+	__copyMaterialProps( material, replacement );
+	__copyMaterialNodeProps( material, replacement );
+	__wireMaterialTextures( material, replacement );
+	return replacement;
+}
+
 function __replaceSceneMaterials( scene ) {
 	if ( ! scene || typeof scene.traverse !== 'function' ) return;
 	scene.traverse( ( object ) => {
 		const material = object && object.material;
 		if ( ! material ) return;
-		const replaceOne = ( m ) => {
+		const replaceOne = ( inputMaterial ) => {
+			let m = inputMaterial;
 			if ( ! m ) return m;
 			// Materials intercepted at constructor time come back as PrecompiledMaterial
 			// directly. Wire live compute attributes (positionNode, colorNode...) into
 			// the artifact plan entries now — before hydrateNodeBuilderState is first
 			// called in the upcoming super.render.
 			if ( m.isPrecompiledMaterial ) {
+				m = __retargetPrecompiledMaterialForObject( m, object );
 				try { Object.defineProperty( m, '__tslpPrecompileObject', { value: object, configurable: true } ); } catch ( _ ) {}
 				if ( m.precompiledArtifact && ! __wiredPCMaterials.has( m ) ) {
 					__wireComputeAttrsToArtifact( m.precompiledArtifact, m );
@@ -1526,7 +1586,7 @@ function __replaceSceneMaterials( scene ) {
 			if ( m.visible === false ) return m;
 			if ( __seenMaterials.has( m ) ) return __seenMaterials.get( m );
 			const className = __classNameForMaterial( m );
-			const replacement = __takeMaterial( className, m );
+			const replacement = __takeMaterial( className, m, object );
 			try { Object.defineProperty( replacement, '__tslpPrecompileObject', { value: object, configurable: true } ); } catch ( _ ) {}
 			__copyMaterialProps( m, replacement );
 			__copyMaterialNodeProps( m, replacement );

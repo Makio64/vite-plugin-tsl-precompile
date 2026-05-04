@@ -30,7 +30,7 @@ import { SampledTexture, SampledCubeTexture, Sampled3DTexture, SampledArrayTextu
 import StorageTexture from 'three/src/renderers/common/StorageTexture.js';
 import Storage3DTexture from 'three/src/renderers/common/Storage3DTexture.js';
 import StorageArrayTexture from 'three/src/renderers/common/StorageArrayTexture.js';
-import { DataTexture, Data3DTexture, DataArrayTexture, DepthTexture, CubeTexture, FramebufferTexture, RGBAFormat, DepthFormat, UnsignedByteType, UnsignedIntType, LessEqualCompare, HalfFloatType, LinearFilter, NearestFilter, LinearMipmapLinearFilter, ClampToEdgeWrapping, Vector2, Vector3, Vector4, Matrix4 } from 'three';
+import { DataTexture, Data3DTexture, DataArrayTexture, DepthTexture, CubeTexture, FramebufferTexture, RGBAFormat, RGBFormat, RGFormat, RedFormat, DepthFormat, UnsignedByteType, UnsignedIntType, LessEqualCompare, HalfFloatType, LinearFilter, NearestFilter, LinearMipmapLinearFilter, ClampToEdgeWrapping, Vector2, Vector3, Vector4, Matrix4, InstancedBufferAttribute } from 'three';
 import { viewportMipTexture, viewportTexture } from 'three/src/nodes/display/ViewportTextureNode.js';
 import { getDFGLUT } from './dfg-lut.js';
 import { collectLiveMaterialTextures } from './apply-precompiled.js';
@@ -619,18 +619,49 @@ function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 		: Array.isArray( artifact.nodeAttributes ) ? artifact.nodeAttributes : null;
 	if ( ! entries || entries.length === 0 ) return;
 
+	let nodeRoots = null;
+	const collectNodeRoots = () => {
+
+		if ( nodeRoots ) return nodeRoots;
+		nodeRoots = [];
+		for ( const key in sourceMaterial ) {
+
+			const v = sourceMaterial[ key ];
+			if ( v && v.isNode === true ) nodeRoots.push( v );
+
+		}
+		return nodeRoots;
+
+	};
+
+	const sourceObject = sourceMaterial.__tslpPrecompileObject || null;
+
 	for ( const entry of entries ) {
 
 		if ( ! entry || entry.source !== 'node' ) continue;
 		if ( entry._liveAttribute && entry._liveAttribute.isBufferAttribute === true ) continue;
 
+		let live = null;
 		const path = entry.userPath;
-		if ( ! Array.isArray( path ) || path.length === 0 ) continue;
+		if ( Array.isArray( path ) && path.length > 0 ) {
 
-		const root = sourceMaterial[ path[ 0 ] ];
-		if ( ! root || root.isNode !== true ) continue;
+			const root = sourceMaterial[ path[ 0 ] ];
+			if ( root && root.isNode === true ) live = findFirstAttributeMatchingEntry( root, entry );
 
-		const live = findFirstAttributeMatchingEntry( root, entry );
+		}
+
+		if ( ! live ) {
+
+			for ( const root of collectNodeRoots() ) {
+
+				live = findFirstAttributeMatchingEntry( root, entry );
+				if ( live ) break;
+
+			}
+
+		}
+
+		if ( ! live ) live = findInstancedObjectAttributeMatchingEntry( sourceObject, entry, entries );
 		if ( ! live ) continue;
 
 		Object.defineProperty( entry, '_liveAttribute', {
@@ -641,6 +672,81 @@ function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 		} );
 
 	}
+
+}
+
+function findInstancedObjectAttributeMatchingEntry( object, entry, entries ) {
+
+	if ( ! object || object.isInstancedMesh !== true ) return null;
+	const count = object.count || 0;
+	if ( ! count || entry.count !== count ) return null;
+	const itemSize = entry.itemSize || itemSizeFromAttributeType( entry.type );
+
+	if ( object.instanceColor && object.instanceColor.isBufferAttribute === true ) {
+
+		const color = object.instanceColor;
+		if ( itemSize === color.itemSize ) return color;
+
+	}
+
+	if ( itemSize !== 4 || ! object.instanceMatrix || ! object.instanceMatrix.array ) return null;
+
+	const matrixEntries = entries.filter( ( candidate ) => {
+
+		if ( ! candidate || candidate.source !== 'node' ) return false;
+		if ( candidate.count !== count ) return false;
+		const size = candidate.itemSize || itemSizeFromAttributeType( candidate.type );
+		return size === 4;
+
+	} );
+	const column = matrixEntries.indexOf( entry );
+	if ( column < 0 || column > 3 ) return null;
+
+	return getInstancedMatrixColumnAttribute( object, column );
+
+}
+
+function getInstancedMatrixColumnAttribute( object, column ) {
+
+	const source = object && object.instanceMatrix;
+	const sourceArray = source && source.array;
+	const count = object && object.count || 0;
+	if ( ! sourceArray || ! count ) return null;
+
+	const cacheKey = '__tslpMatrixColumnAttributes';
+	let cache = object[ cacheKey ];
+	if ( ! cache || cache.sourceArray !== sourceArray || cache.count !== count ) {
+
+		cache = {
+			sourceArray,
+			count,
+			attributes: [
+				new InstancedBufferAttribute( new Float32Array( count * 4 ), 4 ),
+				new InstancedBufferAttribute( new Float32Array( count * 4 ), 4 ),
+				new InstancedBufferAttribute( new Float32Array( count * 4 ), 4 ),
+				new InstancedBufferAttribute( new Float32Array( count * 4 ), 4 ),
+			],
+		};
+		for ( const attribute of cache.attributes ) attribute.needsUpdate = true;
+		try { Object.defineProperty( object, cacheKey, { value: cache, configurable: true } ); } catch ( _ ) { object[ cacheKey ] = cache; }
+
+	}
+
+	const attribute = cache.attributes[ column ];
+	const dst = attribute && attribute.array;
+	if ( ! dst ) return null;
+	for ( let i = 0; i < count; i ++ ) {
+
+		const srcOffset = i * 16 + column * 4;
+		const dstOffset = i * 4;
+		dst[ dstOffset + 0 ] = sourceArray[ srcOffset + 0 ];
+		dst[ dstOffset + 1 ] = sourceArray[ srcOffset + 1 ];
+		dst[ dstOffset + 2 ] = sourceArray[ srcOffset + 2 ];
+		dst[ dstOffset + 3 ] = sourceArray[ srcOffset + 3 ];
+
+	}
+	attribute.needsUpdate = true;
+	return attribute;
 
 }
 
@@ -1950,8 +2056,8 @@ function textureFromSnapshot( artifact, uuid, snapshot, bindingName = null ) {
 	const TypeArray = resolveTypedArrayCtor( snapshot.arrayType || 'Uint8Array' );
 	const data = new TypeArray( snapshot.data );
 	const wantsArrayTexture = bindingName && shaderDeclaresArrayTexture( artifact, bindingName );
-	const texture = wantsArrayTexture ?
-		new DataArrayTexture( data, snapshot.width, snapshot.height, snapshot.depth || 1 ) :
+	const depth = wantsArrayTexture ? snapshot.depth || inferSnapshotArrayDepth( snapshot ) : 1;
+	const texture = wantsArrayTexture ? new DataArrayTexture( data, snapshot.width, snapshot.height, depth ) :
 		new DataTexture(
 			data,
 			snapshot.width,
@@ -1959,6 +2065,12 @@ function textureFromSnapshot( artifact, uuid, snapshot, bindingName = null ) {
 			snapshot.format || RGBAFormat,
 			snapshot.type || UnsignedByteType
 		);
+	if ( wantsArrayTexture ) {
+
+		if ( snapshot.format ) texture.format = snapshot.format;
+		if ( snapshot.type ) texture.type = snapshot.type;
+
+	}
 	if ( snapshot.colorSpace !== undefined ) texture.colorSpace = snapshot.colorSpace;
 	for ( const prop of [ 'mapping', 'wrapS', 'wrapT', 'magFilter', 'minFilter', 'flipY' ] ) {
 
@@ -1968,6 +2080,35 @@ function textureFromSnapshot( artifact, uuid, snapshot, bindingName = null ) {
 	texture.needsUpdate = true;
 	artifact._textureSnapshotCache.set( key, texture );
 	return texture;
+
+}
+
+function inferSnapshotArrayDepth( snapshot ) {
+
+	if ( ! snapshot || ! Array.isArray( snapshot.data ) || ! snapshot.width || ! snapshot.height ) return 1;
+	const channels = channelsForTextureFormat( snapshot.format );
+	const layerSize = snapshot.width * snapshot.height * channels;
+	if ( layerSize <= 0 ) return 1;
+	const depth = snapshot.data.length / layerSize;
+	return Number.isFinite( depth ) && depth >= 1 ? Math.max( 1, Math.round( depth ) ) : 1;
+
+}
+
+function channelsForTextureFormat( format ) {
+
+	switch ( format ) {
+
+		case RedFormat:
+			return 1;
+		case RGFormat:
+			return 2;
+		case RGBFormat:
+			return 3;
+		case RGBAFormat:
+		default:
+			return 4;
+
+	}
 
 }
 
