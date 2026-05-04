@@ -42,8 +42,8 @@ See [packages/plugin/src/vendor/VENDORING.md](packages/plugin/src/vendor/VENDORI
 | 3 — AOT codegen | Done (camera/object/material/time/uniform.constant/uniform.live) |
 | 4 — Build-time rewrite | Done |
 | 5 — Coverage matrix | Fixture coverage exists; expand toward full TSL surface |
-| 6 — 206-example batch harness | Extractor/codegen harness: 197/198 candidates passing |
-| 7 — Slim runtime bundle | Load-smoke harness: 198/198 candidates passing, 0 unexpected errors |
+| 6 — 206-example batch harness | Extractor/codegen load-smoke exists; see [STATUS.md](STATUS.md) for current counts |
+| 7 — Slim runtime bundle | Slim load-smoke exists; see [STATUS.md](STATUS.md) for current counts |
 | 8 — Launch | Docs/site exist; needs external adoption |
 
 ## Code style

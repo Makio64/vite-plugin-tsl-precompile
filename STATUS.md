@@ -2,7 +2,7 @@
 
 Current audit of what works, what's blocked, and what remains before this plugin is truly usable by three.js developers. Companion to [ROADMAP.md](./ROADMAP.md), [ARCHITECTURE.md](./ARCHITECTURE.md), and [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-Last updated: 2026-05-03
+Last updated: 2026-05-04
 
 ---
 
@@ -35,26 +35,49 @@ Six parallel agents + several follow-up commits pushed visual correctness forwar
 
 ## Feature coverage (capture vs replay)
 
-An example **works** when the slim-runtime replay screenshot matches live three.js within PSNR ≥ 30 dB (the gate from [run-e2e.mjs](packages/examples/batch/run-e2e.mjs#L93)). Smoke-test pass counts (197/198 etc) only prove the example loads — they say nothing about whether the rendered pixels are correct.
+An example **works** when the slim-runtime replay screenshot matches a clean stock three.js reference within PSNR ≥ 30 dB (the gate from [run-e2e.mjs](packages/examples/batch/run-e2e.mjs#L93)). Smoke-test pass counts only prove the example loads — they say nothing about whether the rendered pixels are correct.
 
-**1 / 36 graded examples currently match (3%).** The full per-example table lives at [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md) — refresh with `pnpm coverage` (or `pnpm coverage:retest` to re-capture fresh shots first via the e2e harness, then re-summarize — slow).
+**30 / 194 graded examples currently match (15%).** The full per-example table lives at [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md) — refresh with `pnpm coverage` (or `pnpm coverage:retest` to re-capture fresh shots first via the e2e harness, then re-summarize — slow).
 
 | Category | Match / Total | Best example | Worst example |
 |---|---|---|---|
-| Materials | **1 / 6** | webgpu_materials_lightmap (35.77 dB) ✅ | webgpu_materials_displacementmap (10.06 dB) |
-| Lights | 0 / 3 | webgpu_lights_rectarealight (24.39 dB) | webgpu_lightprobe_cubecamera (17.48 dB) |
-| Shadows | 0 / 8 | webgpu_shadowmap_vsm (25.24 dB) | webgpu_shadowmap, webgpu_shadowmap_pointlight (no replay) |
-| Sprites | 0 / 1 | — | webgpu_sprites (12.51 dB) |
-| Compute | 0 / 10 | webgpu_compute_particles (21.85 dB) | webgpu_compute_particles_snow (0.75 dB) |
-| Camera | 0 / 3 | webgpu_camera_array (20.66 dB) | webgpu_camera (14.39 dB) |
-| MRT / RenderTargets | 0 / 4 | webgpu_mrt (2.88 dB) | webgpu_mrt_mask (1.22 dB) |
-| Particles | 0 / 1 | — | webgpu_particles (16.37 dB) |
+| Materials | **5 / 17** | webgpu_materials_envmaps (inf dB) ✅ | webgpu_materials_texture_html (5.37 dB) |
+| Lights | 3 / 11 | webgpu_lights_tiled (inf dB) ✅ | webgpu_lights_projector (11.51 dB) |
+| Shadows | 1 / 8 | webgpu_shadowmap_opacity (inf dB) ✅ | webgpu_shadowmap, webgpu_shadowmap_pointlight (no replay) |
+| Sprites | 0 / 1 | — | webgpu_sprites (13.37 dB) |
+| Compute | 1 / 15 | webgpu_compute_reduce (34.13 dB) ✅ | webgpu_compute_texture_3d (6.22 dB) |
+| Camera | 0 / 3 | webgpu_camera_logarithmicdepthbuffer (20.50 dB) | webgpu_camera_array (12.66 dB) |
+| MRT / RenderTargets | 0 / 4 | webgpu_mrt_mask (12.85 dB) | webgpu_multiple_rendertargets_readback (1.26 dB) |
+| Particles | 1 / 1 | webgpu_particles (36.74 dB) ✅ | — |
+| Postprocessing | 3 / 28 | webgpu_postprocessing_bloom (inf dB) ✅ | webgpu_postprocessing_ao (7.70 dB) |
 
-The full webgpu_* example set (~206 examples) is **not yet visually graded** — only 36 have paired capture/replay PNGs on disk. To grade more, run `pnpm --filter examples-batch run:e2e` over the unscored set (slow, headless Playwright). Fixing the regressions is tracked in [§What's left to do](#whats-left-to-do-ordered-by-user-impact) — particularly the `depth.texture` and `uniform.live` items, which likely account for most of the Shadows and Lights gap.
+The full webgpu_* example set is now substantially graded, but the headline is still load-smoke-heavy rather than production-ready: 164 graded examples are visual regressions.
+
+## v0.1 beta support slice
+
+Do not optimize for "all 194 examples" first. The credible beta surface for real users is ordinary PBR application rendering:
+
+- `MeshStandardNodeMaterial` / `MeshPhysicalNodeMaterial`
+- material texture maps and env maps / PMREM
+- direct lights and shadows
+- material uniforms and known live light/shadow uniforms
+- stable artifact invalidation across dev capture, build rewrite, runtime hash checks, and package contents
+
+Priority order: fix shadows first, then PMREM/environment/reflections, then transmission/viewport/reflector texture paths. Compute/storage follows as experimental WebGPU coverage. MRT and broad postprocessing stay deferred until the render-target / PassNode chain is truly wired.
 
 ---
 
-## Latest fix (2026-05-02)
+## Recent fixes (2026-05-04)
+
+**E2E output is now quieter and more actionable.** `run-e2e.mjs` prints concise per-example progress with artifacts, capture/replay brightness, PSNR, and the first failure reason. `run-e2e-parallel.mjs` filters worker boilerplate and page warnings by default, then prints an aggregated failure table from the merged JSON report. Pass `--verbose` (or `TSLP_E2E_VERBOSE=1`) to forward page warnings/logs while debugging harness internals.
+
+**The visual gate is real.** The E2E harness computes PSNR between a clean stock three.js reference and slim replay screenshots, fails below 30 dB by default, and keeps `--no-pixel-gate` for diagnostics. Focused `webgpu_clearcoat.html` is back above the gate after the DFG LUT source-module fix; broader coverage should be refreshed from the current E2E sweep before quoting new pass counts.
+
+**CI/release cleanup moved forward.** The drift gate accepts `reflector.texture` as a hydrator-resolved texture binding, unconditional `[tslp-debug]` / `[tslp-probe]` / `[tslp_reflector]` logging is gone from source, package peer ranges and READMEs agree on `three >= 0.184.0`, and the site gallery generator has a `data` script plus `sharp` dependency.
+
+**Shadow depth rebinding is safer.** Non-VSM shadow bindings now require a real `shadow.map.depthTexture` (or an actual depth texture) instead of falling back to `shadow.map.texture`, avoiding BGRA color targets in `texture_depth_2d` shader slots.
+
+## Previous fix (2026-05-02)
 
 **Slim runtime now actually renders pixels.** The hydrator's
 `createStaticObserver()` was returning `needsRefresh: false` on every
@@ -68,8 +91,8 @@ by returning `true` whenever `nodeFrame.renderId` changes (mirroring
 stock `NodeMaterialObserver.needsRefresh`). After the fix, replay
 brightness now matches capture brightness on most examples that were
 previously dark — see
-[CONTINUATION_PLAN.md](./CONTINUATION_PLAN.md#what-changed-in-the-last-session)
-for the before/after table and triage plan for remaining failures.
+[LOGS.md](./LOGS.md) for investigation history and [BACKLOG.md](./BACKLOG.md)
+for the current triage plan.
 
 ---
 
@@ -81,9 +104,9 @@ for the before/after table and triage plan for remaining failures.
 | 2 — `.precompile(name)` + dev capture | Marker, dev server, HMR | ✅ Done | Unsupported kinds throw at call site |
 | 3 — AOT codegen | `emit-updater.js` covers camera/object/material/time/uniform/scene | ✅ Done (core kinds) | Per-kind fixture pass |
 | 4 — Build-time rewrite | Babel transform + virtual modules + `__applyPrecompiled` | ✅ Done | 3-layer hash check fires on corrupt artifact |
-| 5 — Coverage matrix | Fixture infrastructure + 121 tests pass across all material classes | ✅ Core done | 100% cells covered or documented-blocked |
-| 6 — 206-example batch harness | Extractor/codegen batch over three.js webgpu_*.html examples (load-smoke only — does not check pixel correctness; see [Feature coverage](#feature-coverage-capture-vs-replay)) | ✅ 197/198 | ≥ 120/199 (baseline: 68/199) |
-| 7 — Slim runtime bundle | Load-smoke over 198 examples, 0 unexpected errors | ✅ 198/198 | ≤ 300 KB gzip + 0 unexpected errors |
+| 5 — Coverage matrix | Fixture infrastructure + 150 plugin tests pass across material classes, binding kinds, drift checks, and depth/artifact texture paths | ✅ Core done | 100% cells covered or documented-blocked |
+| 6 — 206-example batch harness | Extractor/codegen batch over three.js webgpu_*.html examples (load-smoke only — does not check pixel correctness; see [Feature coverage](#feature-coverage-capture-vs-replay)) | ✅ Load-smoke green | Keep above launch threshold |
+| 7 — Slim runtime bundle | Slim load-smoke over webgpu examples | ✅ No unexpected load-smoke errors | ≤ 300 KB gzip + 0 unexpected errors |
 | 8 — Launch | Docs, demos, site, migration guide | 🔶 Infrastructure ready | One external adopter |
 
 ---
@@ -91,11 +114,11 @@ for the before/after table and triage plan for remaining failures.
 ## Test suite summary (as of last run)
 
 ```
-packages/plugin        121 / 121 pass   (unit + coverage matrix)
-packages/runtime         9 /   9 pass   (hydrator, registry, smoke)
+packages/plugin        150 / 150 pass   (unit + coverage matrix)
+packages/runtime        55 /  55 pass   (hydrator, registry, smoke)
 packages/inspector-panel 7 /   7 pass
 ---
-Total                  137 / 137 pass   0 fail
+Total                  212 / 212 pass   0 fail
 ```
 
 Batch harness (`packages/examples/batch/results/report.json`):
@@ -114,72 +137,100 @@ Slim bundle load-smoke (`packages/examples/batch/results/slim-report.json`):
 - Virtual module resolver serves `artifact.json` + generated `updater.js` as a single bundled module.
 - AOT updater emits direct `DataView` writes (no switch, no closures) for all camera, object, material, time, scene-fog, and scene-state uniforms. All 12 standard NodeMaterial classes extract + codegen without unknown kinds.
 - `PrecompiledMaterial` wraps the artifact and redirects three.js's render pipeline to the baked WGSL + bind layout, bypassing the TSL node builder.
-- Slim runtime (`build/three.webgpu.slim.js`) strips the node builder; 198/198 three.js examples load without unexpected errors.
+- Slim runtime (`build/three.webgpu.slim.js`) strips the node builder; the webgpu example load-smoke currently completes without unexpected errors.
 - Five-layer staleness gate: content hash, dev hot re-extract, build-time mismatch error, runtime assertion, `pnpm verify` CI check.
 - Inspector panel integration: `attachToInspector(renderer.inspector)` shows captured artifact list, WGSL sizes, and unsupported-kind warnings.
 - Aux-pass capture: `precompileAuxiliary(renderer, scene, camera, opts)` captures shadow-depth, render-pipeline, and output-transform passes so the slim runtime has precompiled versions of those internal materials too.
 - Auto-mark mode (`autoMark: true` in plugin config): injects `.precompile()` on every material in the scene automatically (used by the batch harness; opt-in for users).
-- IBL DFG LUT: precomputed 16×16 RG16F `DataTexture` in `packages/runtime/src/dfg-lut.js` resolves `builtin.dfgLUT` bindings without needing a renderer; cached and shared across all precompiled materials.
+- IBL DFG LUT: precomputed 16×16 RG16F `DataTexture` in `packages/runtime/src/dfg-lut.js` resolves `builtin.dfgLUT` bindings without needing a renderer; cached and shared across all precompiled materials. The LUT is created from `three/src/**` modules so it matches the slim renderer's `DataTexture` class identity.
 - Artifact-level texture resolution: `__applyPrecompiled` catalogues source-material textures by uuid into `_textureRefs` (in-process) or scans `material[map|normalMap|...]` by uuid (JSON-loaded artifacts). PBR materials with `map`/`normalMap`/`roughnessMap`/`envMap` now hydrate end-to-end.
 
 ---
 
-## Documented-blocked kinds (Phase 5.5)
+## Non-UBO binding kinds and deferred kinds (Phase 5.5)
 
-These kinds are recognised but intentionally deferred. Generated updaters throw `severity: 'blocked'` errors — they don't silently produce wrong output.
+These kinds are recognised by the extractor/codegen contract but are not ordinary UBO-slot writes. Texture-binding kinds appear in `group.textures[]` and are resolved by the hydrator/rebinder path; truly unsupported contexts still surface loudly instead of silently producing wrong output.
 
 | Kind | Reason | Affects |
 |---|---|---|
-| `unsupported` | Extractor flagged the binding as unsupported (no texture source identified) | Exotic or custom texture nodes |
-| `storage.buffer` | Storage-buffer codegen deferred — hydrator can rehydrate them but `emit-updater.js` has no case to write storage bindings per frame | AOT compute materials (in-process compute still works) |
-| `depth.texture` | Hydrator returns a 1×1 `fallbackDepthTexture`; nothing reads `frame.shadowMap` yet | Shadow-receiving materials |
+| `unsupported` | Extractor flagged the binding as unsupported (no texture source identified); hydrator substitutes a fallback texture and reports the unsupported source | Exotic or custom texture nodes |
+| `storage.buffer` | Storage-buffer AOT/update model remains deferred; in-process compute/storage paths exist, but broad AOT compute coverage is not production-ready | AOT compute materials |
+| `depth.texture` | Hydrator starts on `fallbackDepthTexture`, then rebinds per frame to the live shadow map depth texture when available | Shadow-receiving materials |
+| `viewport.texture` | Hydrator uses a live `ViewportTextureNode` path and rebinds the framebuffer/mip texture per render | Transmission and viewport-dependent materials |
+| `reflector.texture` | Hydrator rebinds the live `ReflectorBaseNode` render target texture per render | Mirror/reflector materials |
 | `scene.overrideMaterial` | Scene-override context is out of scope for v1 | Any material injected via `scene.overrideMaterial` |
-| `uniform.live` (unnamed) | Extractor can recover a `property` for `MaterialReferenceNode` (animates live), but unnamed `UniformNode` instances freeze to a snapshot | Light intensity, `ShadowNode`, and custom `onRenderUpdate`-driven uniforms |
+| `uniform.live` (unnamed/custom) | Known light/shadow live sources have coverage, but custom `onRenderUpdate`-driven uniforms can still freeze if the extractor cannot map them to a stable source property | Custom live uniforms |
 
-**Impact today:** PBR materials (`MeshStandardNodeMaterial`, `MeshPhysicalNodeMaterial`) with assigned textures and IBL `envMap` now hydrate end-to-end — `artifact.texture` and `builtin.dfgLUT` resolve via the runtime hydrator. Shadow-receiving materials still render with a 1×1 depth fallback (visually wrong, doesn't crash). AOT compute materials are blocked at codegen. Animated unnamed uniforms (e.g. light intensity changing over time) freeze to their captured snapshot value.
+**Impact today:** PBR materials (`MeshStandardNodeMaterial`, `MeshPhysicalNodeMaterial`) with assigned textures and IBL `envMap` now hydrate end-to-end — `artifact.texture` and `builtin.dfgLUT` resolve via the runtime hydrator. `webgpu_clearcoat.html` is back above the E2E PSNR gate in the focused run. Shadow, viewport/transmission, and reflector texture bindings have runtime rebinder paths but still need visual hardening across the example set. AOT compute/storage paths remain the major binding-family gap.
 
 ---
 
 ## What's left to do (ordered by user impact)
 
-### 1. Publish to npm  *(prerequisite for any external adoption)*
+### 1. Shadows  *(first visual correctness cluster)*
+
+The loader/smoke story is good, but the PSNR report is still only **30 / 194**. Runtime rebinder paths now exist for `depth.texture`, `viewport.texture`, and `reflector.texture`; the remaining work is making them visually match live three.js across common examples:
+
+- [ ] Fix no-replay cases: `webgpu_shadowmap.html` and `webgpu_shadowmap_pointlight.html`.
+- [ ] Gate the replay shadow-scene/depth-texture path so it only runs for actual shadow receivers/casters and does not clobber non-shadow scenes.
+- [ ] Raise the shadow cluster above the PSNR gate, starting with `webgpu_shadow_contact.html`, `webgpu_shadowmap_vsm.html`, and `webgpu_shadowmap_progressive.html`.
+
+### 2. PMREM / environment / reflections  *(PBR correctness)*
+
+Many real PBR scenes depend on environment lighting. Wrong PMREM/reflection wiring is dangerous because output can look plausible while still being invalid.
+
+- [ ] Fix PMREM-prefiltered backgrounds and env lighting in `webgpu_pmrem_cubemap.html`, `webgpu_pmrem_equirectangular.html`, `webgpu_pmrem_scene.html`, and `webgpu_pmrem_test.html`.
+- [ ] Improve reflection examples: `webgpu_reflection.html`, `webgpu_reflection_roughness.html`, and `webgpu_reflection_blurred.html`.
+- [ ] Keep `MeshStandardNodeMaterial` / `MeshPhysicalNodeMaterial` texture-map coverage green while PMREM changes land.
+
+### 3. Transmission / viewport / reflector texture path
+
+`viewport.texture` and `reflector.texture` rebinder paths exist, but the common glass/mirror examples are still below the production bar.
+
+- [ ] Fix `webgpu_materials_transmission.html` and `webgpu_loader_gltf_transmission.html`.
+- [ ] Fix `webgpu_refraction.html` and `webgpu_mirror.html`.
+- [ ] Add focused fixture coverage for `viewport.texture` and `reflector.texture` once the runtime behavior is stable.
+
+### 4. Compute/storage paths  *(experimental for v0.1 beta)*
+
+In-process compute and some storage-texture paths work, but the AOT compute/storage story is still incomplete.
+
+- [ ] Add extractor/codegen coverage for storage buffers and the per-frame storage update model.
+- [ ] Keep `webgpu_compute_reduce.html` green while improving the rest of the compute set; it is currently the only compute PSNR pass.
+- [ ] Treat compute birds, storage buffers, and storage textures as experimental release notes unless the release goal changes toward creative-coding demos.
+
+### 5. `uniform.live` and custom update callbacks
+
+Known light/shadow live sources now have coverage (`light.shadow*`, `light.colorScaled`, PointsNodeMaterial scale), but arbitrary unnamed `UniformNode` / `onRenderUpdate`-driven uniforms can still freeze if the extractor cannot map them to a stable source property.
+
+- [ ] Extend `packages/plugin/src/vendor/extractUniformPlan.js` for more known live-node names and property paths.
+- [ ] For callbacks that cannot be statically resolved, document the limitation explicitly rather than silently freezing.
+
+### 6. Operationalize the PSNR E2E gate
+
+`run-e2e.mjs` now hard-fails visual mismatch by default. The next step is deciding how CI should consume it without making every PR run the full slow sweep.
+
+- [ ] Define a small tier-1 PSNR subset for PR CI and keep the full 194-example grading as a slower scheduled/manual gate.
+- [ ] Keep `--no-pixel-gate` for diagnostic load/runtime debugging, but do not treat it as a release gate.
+- [ ] Triage real visual regressions from the current broad E2E sweep into [BACKLOG.md](BACKLOG.md) instead of treating low PSNR as harness noise by default.
+
+### 7. Publish and external adoption  *(Phase 8 release gate)*
 
 Both packages are at `0.1.0` with `engines.node`, `publishConfig`, `files`, and `repository.directory` already set. Remaining blockers:
 
-- [ ] **Subpackage README files.** Neither `packages/plugin/` nor `packages/runtime/` has its own `README.md`. npm renders the package's own README on the package page — without one, the published page is empty.
-- [ ] **MIGRATION.md.** The root `STATUS.md` and the plugin reference a `MIGRATION.md` for the version-bump-invalidates-artifacts contract; the file does not exist. Either create it or remove the references.
-- [ ] Run `pnpm publish --dry-run` on both packages and verify the published file set.
+- [ ] Run `pnpm publish --dry-run` for `vite-plugin-tsl-precompile` and `@tsl-precompile/runtime`; verify README files, runtime `build/`, and export paths are included.
+- [ ] Confirm whether the unscoped plugin package needs any extra npm metadata beyond the current `files` list; the scoped runtime already has `publishConfig.access=public`.
 - [ ] Tag and push `v0.1.0`. Update the install line in `README.md` (currently says "once published").
-
-### 2. Phase 5.5 — remaining binding kinds  *(unlocks shadow + compute)*
-
-`builtin.dfgLUT` and `artifact.texture` are wired through the hydrator and have hydrator tests. The remaining gaps:
-
-- [ ] **`depth.texture`**: hydrator currently returns the 1×1 `fallbackDepthTexture` for any `texture_depth_2d` binding. Wire the actual shadow-map `DepthTexture` from `frame.shadowMap` so shadow-receiving materials render correctly.
-- [ ] **`storage.buffer`**: hydrator can rehydrate storage bindings (in-process compute works) but `emit-updater.js` has no case to emit per-frame storage writes. AOT compute is blocked until this lands.
-- [ ] **Coverage-matrix fixtures for the shipped paths**: `builtin.dfgLUT` and `artifact.texture` have hydrator tests but no positive fixture in `packages/plugin/test/coverage/` that asserts the extractor + emit-updater contract. Add one per kind; add a fixture for `depth.texture` + `storage.buffer` once they land.
-
-### 3. `uniform.live` for unnamed `UniformNode`  *(fixes light intensity + custom `onRenderUpdate`)*
-
-`MaterialReferenceNode`-backed uniforms already animate live: the extractor emits `property` and the hydrator reads `material[property]` per frame. The remaining gap is unnamed `UniformNode` instances (light intensity, `ShadowNode`, `LightNode`, custom `onRenderUpdate`-driven uniforms) — they currently freeze to the snapshot taken at extraction time.
-
-- [ ] Extend `packages/plugin/src/vendor/extractUniformPlan.js` to map known live-node names (light intensity, etc.) to their source property paths so the emit-updater can route them through the same live-property mechanism that already works for `MaterialReferenceNode`.
-- [ ] For nodes whose `onRenderUpdate` callback can't be statically resolved, document the limitation explicitly rather than silently freezing.
-
-### 4. Pixel-correct E2E gate  *(proves the output is actually right)*
-
-`run-e2e.mjs` already captures screenshots for both the live and slim renders and computes a channel-mean `pixelMatchScore` against threshold `0.85` — but it **only emits a warning**, never fails on visual mismatch. The latest report shows `pixelMatchScore: 0.3258` with a warning, while the test was marked fail for unrelated replay errors.
-
-- [ ] Replace the channel-mean check with a real per-pixel metric (PSNR, SSIM, or `pixelmatch`).
-- [ ] Flip `pixelMatchWarning` from a warning into a hard test failure so a precompiled shader that renders the wrong image actually fails CI.
-- [ ] Start with a generous PSNR threshold (≥ 30 dB) to avoid flakiness on minor rounding; tighten later.
-
-### 5. External adoption  *(Phase 8 release gate)*
 
 The ANNOUNCEMENT.md template is written; the ROADMAP Phase 8 gate requires "one external adopter reports success."
 
 - [ ] Share the repo on three.js Discord + GitHub Discussions once npm packages are published.
 - [ ] Keep a list of early adopter feedback in CONTRIBUTING.md or a separate ADOPTERS.md.
+
+### Deferred for v0.1 messaging
+
+- [ ] MRT / render-target examples remain experimental until the render-target / PassNode chain is wired end-to-end.
+- [ ] Broad postprocessing remains experimental even though a few examples match; the full category is 3 / 28 today.
 
 ---
 
@@ -221,7 +272,8 @@ Runtime (prod):         __applyPrecompiled()
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for setup and code style. The highest-leverage contributions are:
 
-1. **Pixel-correct E2E gate** — flip the existing `pixelMatchWarning` into a hard failure and swap the channel-mean check for a real per-pixel metric (PSNR / SSIM / `pixelmatch`). The capture infrastructure is already there in `run-e2e.mjs`.
-2. **`depth.texture` wiring** — the hydrator already creates the fallback; route `frame.shadowMap` into `resolveTextureBinding` for `texture_depth_2d` bindings. Unlocks shadow-receiving materials.
-3. **`uniform.live` property map for unnamed nodes** — extend `extractUniformPlan.js` to emit `property` for known live nodes (light intensity, etc.) so they animate live like `MaterialReferenceNode` already does.
-4. **Subpackage READMEs** — write `packages/plugin/README.md` and `packages/runtime/README.md` so npm pages aren't blank when we publish.
+1. **Shadow visual correctness** — depth texture rebinding exists, but shadow examples still have the worst user-visible gaps: no replay in two cases and low PSNR in most others.
+2. **PMREM/environment/reflection** — fix environment/IBL correctness before broad postprocessing; it affects common PBR and glTF usage.
+3. **Transmission/viewport/reflector hardening** — the rebinder paths exist, but the visual examples are still below the production bar.
+4. **Compute/storage coverage** — define the AOT storage-buffer update model and keep `webgpu_compute_reduce.html` passing while raising the rest of the compute set.
+5. **Release dry-runs** — run npm dry-runs for plugin/runtime and verify package contents before tagging `v0.1.0`.

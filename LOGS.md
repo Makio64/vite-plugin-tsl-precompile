@@ -4,6 +4,81 @@ Append-only journal of focused investigations and fixes. One entry per session/i
 
 ---
 
+## 2026-05-04 — `webgpu_clearcoat` black spheres fixed: DFG LUT module identity + deterministic E2E frame
+
+**Symptom.** `webgpu_clearcoat.html` capture/replay regressed to black spheres even though clearcoat highlights remained visible. The capture PNG was also misleading because the E2E visual baseline was using the instrumented capture path rather than a clean stock full-three reference.
+
+**Root cause.** PMREM was present and correctly sized, but `builtin.dfgLUT` sampled black in the slim renderer. The runtime LUT was built with `DataTexture` from the public `three` barrel while the slim renderer uses `three/src/**` classes, creating a module/class identity mismatch for WebGPU texture upload/binding. `MeshPhysicalMaterial` artifacts were also being stamped as `mesh-standard` because physical materials inherit standard flags.
+
+**Fix.** `packages/runtime/src/dfg-lut.js` now imports `DataTexture` and constants from `three/src/**`; runtime smoke coverage asserts the LUT is a source-module `DataTexture`. `classifyMaterialShape()` and the harness material-name helper now check physical materials before standard materials. The E2E harness runs a clean stock reference, a capture pass for artifacts, and a slim replay pass for comparison; animated examples default to `--target-tick=0` (first fully loaded settled frame), with `--target-tick=<n>` available for later animation-phase audits.
+
+**Verification.** Focused clearcoat run: `webgpu_clearcoat.html PASS | artifacts 5+7 | capture 97.2% | replay 97.2% | psnr 31.17/30 dB ok`. Runtime tests passed (`56/56`), plugin unit tests passed (`98/98` in the invoked unit run), and the slim bundle rebuilt successfully.
+
+## 2026-05-04 — `webgpu_instancing_morph` replay black: shadow-depth GPU-sharing fixed; instance/morph hydration deferred
+
+**Symptom.** [packages/examples/batch/results/shots/webgpu_instancing_morph.html.replay.png](packages/examples/batch/results/shots/webgpu_instancing_morph.html.replay.png) was fully black except for the HTML title overlay; capture is the expected ~1024 horse instances on a green plane. Pre-existing brightFrac was 0; PSNR 0.
+
+**Diagnostic.** Re-ran with `TSLP_DEBUG_TORNADO=1` to surface WebGPU validation warnings. The originating error before the cascade:
+
+```
+None of the supported sample types (Float|UnfilterableFloat) of
+[Texture (unlabeled 1x1 px, TextureFormat::BGRA8Unorm)] match the
+expected sample types (Depth).
+- While validating entries[2] against { binding: 2, visibility: ShaderStage::Fragment,
+  texture: {sampleType: TextureSampleType::Depth, viewDimension: TextureViewDimension::e2D, multisampled: 0} }.
+- While validating [BindGroupDescriptor "bindGroup_object"] against [BindGroupLayout (unlabeled)]
+- While calling [Device].CreateBindGroup([BindGroupDescriptor "bindGroup_object"]).
+```
+
+Each frame produced new `Invalid BindGroup "bindGroup_object"` errors that cascaded into `Invalid CommandBuffer` rejections — pipeline never created → canvas stayed at clear color.
+
+**Root cause (Phase 1, fixed).** The ground material `MeshStandardNodeMaterial:2` declares `nodeUniform16: texture_depth_2d` for shadow sampling. The hydrator at [packages/runtime/src/hydrator.js:1813-1817](packages/runtime/src/hydrator.js#L1813-L1817) routes `source.kind === 'depth.texture'` through `fallbackTextureForBinding` → returns `fallbackDepthTexture` (a real `DepthTexture`). The per-frame shadow rebinder at [packages/runtime/src/hydrator.js:1234](packages/runtime/src/hydrator.js#L1234) then swaps in `light.shadow.map.depthTexture` once the harness's offscreen full-three shadow render has populated it (see `[tslp-shadow] populated 1 shadow maps`).
+
+The JS-side wiring is correct. The break is in **WebGPU backend bookkeeping**: full's backend allocates the GPU `depthTexture` resource during the offscreen shadow render, but slim has its own `WebGPUBackend` instance with a separate `WeakMap<Texture, BackendData>`. When slim's first bindgroup creation references the same JS `DepthTexture` object, slim looks it up in *its own* backend, finds no entry, and creates a fresh 1×1 `BGRA8Unorm` GPUTexture as a placeholder — which the WGSL `texture_depth_2d` declaration rejects with the sample-type mismatch above.
+
+This is the same pattern the codebase already handles for compute/storage textures in [packages/examples/batch/run-e2e.mjs:1421-1466](packages/examples/batch/run-e2e.mjs#L1421-L1466) (`slimTexData.texture = fullTexData.texture` pre-seed) and for PMREM textures via `__sharePMREMGPUTexture`. It just hadn't been wired for shadow depth textures.
+
+**Fix (Phase 1).** [packages/examples/batch/run-e2e.mjs:1791-1822](packages/examples/batch/run-e2e.mjs#L1791-L1822) — extended the shadow-population block (right after `src.shadow.map = clone.shadow.map`) to also pre-seed slim's backend data for the depth texture:
+
+```js
+const fullData = fullRenderer.backend.get( depthTex );
+const slimData = _slimRenderer.backend.get( depthTex );
+if ( fullData && fullData.texture && slimData && ! slimData.texture ) {
+    slimData.texture = fullData.texture;
+    slimData.format = fullData.format;
+    slimData.initialized = true;
+    slimData.version = depthTex.version;
+    slimData.generation = ( slimData.generation || 0 ) + 1;
+    if ( ! slimData.bindGroups ) slimData.bindGroups = new Set();
+}
+```
+
+After fix: WebGPU validation errors gone, pipeline creates cleanly, brightFrac 0 → 0.0117. Visually still mostly black (only the HTML overlay text contributes the 1.17%) — Phase 2 still hasn't been implemented.
+
+**Out-of-scope follow-ups (Phase 2 deferred — not implemented).**
+
+The example also exercises three more paths the slim runtime has no hydration code for. The captured WGSL is correct; the data path at replay time is missing.
+
+1. **Instance matrix UBO** — `UniformBuffer_5` (`array<mat4x4, 1024>`, 65536 bytes) holds the per-instance transforms set by `mesh.setMatrixAt(i, ...)`. Captured snapshot is all zeros (three.js's `BufferNode.value` is an internally-managed array, not the live `mesh.instanceMatrix.array`; the contents only land in it via three.js's normal per-frame node-update path which the slim runtime bypasses for precompiled materials).
+
+2. **Instance color attribute** — `nodeAttribute4` (Float32Array, count=1024, itemSize=3) for `mesh.instanceColor`. The artifact records `count:1024` but with no `userPath`, so [`bindUserNodeAttributesToArtifact`](packages/runtime/src/hydrator.js#L490) can't resolve it (it only walks `material.*Node` slots; instance color hangs off the *mesh*).
+
+3. **Morph weights + morph texture** — `UniformBuffer_4` (15 vec4 weights, set per-frame by `mesh.setMorphAt`) and `nodeUniform2: texture_2d_array<f32>` (the morph displacement texture). Both need per-frame rebinding tied to `mesh.morphTexture.needsUpdate`/version.
+
+**Probe findings (informing Phase 2 design).** Temporarily instrumented [extractUniformPlan.js:1070](packages/plugin/src/vendor/extractUniformPlan.js#L1070) to print `binding.nodeUniform` shape for every UBO ≥ 240 bytes. Surfaced **four** distinct 65536-byte `BufferNode` UBOs in the captured material (`UniformBuffer_0/2/5/8`, all `BufferNode` type, all with empty `nodeUniform.attribute`) plus the morph weights as a `UniformArrayNode`. Implications:
+
+- Name- or size-based detection of "which UBO is the instance matrix" doesn't work — multiple BufferNodes have identical byte length.
+- `nodeUniform.attribute` is `undefined` on all of them (not a direct reference to `mesh.instanceMatrix`), so the obvious `binding.nodeUniform.attribute === mesh.instanceMatrix` check fails.
+- Distinguishing them requires either (a) passing the live mesh into the extractor and comparing `nodeUniform.value.buffer === mesh.instanceMatrix.array.buffer`, OR (b) walking three.js's `InstanceNode`/`BatchNode` internals to identify the synthesised UBO by its emitter, OR (c) tagging at three.js's `NodeBuilder` injection site rather than the extractor (capture-side annotation).
+
+**Phase 2 fix shape (estimated 2–4 days).** Capture-side: extend [`precompile-marker.js`](packages/runtime/src/precompile-marker.js) to pass `sourceObject` (the live mesh) into the extractor; teach [`extractUniformPlan`](packages/plugin/src/vendor/extractUniformPlan.js) to walk three.js's `InstanceNode`/`BatchNode`/morph-target wiring and tag the corresponding UBO/attribute bindings with new `source.kind`s (`mesh.instanceMatrix`, `mesh.instanceColor`, `mesh.morphInfluences`, `mesh.morphTexture`). Replay-side: in [`hydrator.js:2038`](packages/runtime/src/hydrator.js#L2038)'s per-frame UBO writer, add cases that pull from `frame.object.instanceMatrix.array` etc.; for morph texture, mirror the texture-rebinder pattern at [`hydrator.js:1654`](packages/runtime/src/hydrator.js#L1654).
+
+**Same root cause as.** [STATUS.md:14](STATUS.md#L14) (`webgpu_compute_birds`: "Birds themselves still missing — instance buffer not propagating") and the alphahash follow-up note in this file's [2026-05-03 entry](#2026-05-03--slim-pmremgenerator-cant-run-blur-passes-webgpu_pmrem_scene-empty-webgpu_materials_alphahash-black). Phase 2 lifts that whole class of `InstancedMesh` examples.
+
+**Impact sweep (Phase 1 only).** The shadow GPU-share fix is general — applies to every example that hits the offscreen shadow-render path. Worth a re-grade across the shadow examples (`webgpu_shadowmap*`, `webgpu_lights_pointlights`, anything with `light.castShadow=true`) before committing to Phase 2 scope.
+
+---
+
 ## 2026-05-04 — PMREM management direction audit + foundation for native slim PMREM
 
 **Trigger.** "Our way to manage PMREM still seems not correct" — request for a comparison vs. canonical three.js examples. Audit covered the four dedicated PMREM tests (`webgpu_pmrem_{cubemap,equirectangular,scene,test}` — still flagged as regressions in [coverage-summary.md:201-204](packages/examples/batch/results/coverage-summary.md#L201-L204) at 4.42–17.80 dB) and ~20 IBL-dependent regressions (`clearcoat`, `materials_alphahash`, `lights_physical`, `backdrop_*`, `caustics`, `equirectangular`, `loader_materialx`, `morphtargets_face`, `lightprobe`, `lightprobe_cubecamera`, `materials_envmaps_bpcem`).

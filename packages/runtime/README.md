@@ -4,7 +4,7 @@ Runtime helpers for [`vite-plugin-tsl-precompile`](https://www.npmjs.com/package
 
 ## Status
 
-Experimental — see [CONTINUATION_PLAN.md](https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/CONTINUATION_PLAN.md) for current limitations.
+Experimental — see [STATUS.md](https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/STATUS.md) for the current support snapshot and [BACKLOG.md](https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/BACKLOG.md) for known limitations.
 
 ## Install
 
@@ -12,7 +12,7 @@ Experimental — see [CONTINUATION_PLAN.md](https://github.com/Makio64/vite-plug
 pnpm add -D @tsl-precompile/runtime
 ```
 
-Peer dep: `three >= 0.175.0`.
+Peer dep: `three >= 0.184.0`.
 
 ## Usage
 

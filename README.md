@@ -8,14 +8,16 @@ Inspired by Unreal's Material Compiler and Unity's Shader Graph — explicit aut
 
 ## Status
 
-Experimental, but the main pieces are wired:
+Experimental, with the main AOT pipeline wired and a narrower v0.1 beta surface now defined. The canonical current snapshot lives in [STATUS.md](STATUS.md); open work is tracked in [BACKLOG.md](BACKLOG.md).
 
 - `pnpm test` runs plugin, runtime, and inspector-panel tests. The slim runtime smoke test exercises `WebGPURenderer.compileAsync()` with a `PrecompiledMaterial`.
-- `pnpm test:slim` runs a load-smoke pass across the 206 `webgpu_*.html` examples from a sibling `../three.js` checkout. Current checked-in result: 198/198 candidates pass, 8 skipped, 0 unexpected slim-bundle errors. Most passes are expected loud failures because raw examples still create TSL graphs at runtime instead of using captured artifacts.
-- `pnpm test:e2e -- --filter=<example>` runs the automated capture -> slim replay harness. It visits a stock three.js example with full TSL, auto-captures constructed NodeMaterials, reloads the same example with the slim bundle and captured artifacts, then checks for a non-empty replay frame.
-- `pnpm test:batch` runs the extractor/codegen batch harness. Current checked-in result: 197/198 candidates pass, 8 skipped.
+- `pnpm test:slim` runs a load-smoke pass across the 206 `webgpu_*.html` examples from a sibling `../three.js` checkout. Load-smoke results only prove examples load or fail loudly; visual correctness is gated by E2E PSNR.
+- `pnpm test:e2e -- --filter=<example>` runs the automated stock -> capture -> slim replay harness. It visits a clean stock three.js example for the visual reference, captures constructed NodeMaterials in a separate pass, reloads with the slim bundle and captured artifacts, then fails below the default 30 dB PSNR visual gate. Pass `--verbose` or set `TSLP_E2E_VERBOSE=1` for raw page logs.
+- `pnpm test:batch` runs the extractor/codegen batch harness.
 
-Still experimental: broad pixel-correct precompiled rendering requires closing the documented blocked uniform/texture/storage kinds in `emit-updater.js` and expanding the E2E harness beyond non-empty-frame checks.
+The credible v0.1 beta target is not "all 194 graded examples." It is ordinary PBR application rendering: `MeshStandardNodeMaterial` / `MeshPhysicalNodeMaterial`, material texture maps, env maps / PMREM, direct lights, shadows, material uniforms, and stable artifact invalidation. Compute/storage is experimental. MRT and broad postprocessing are deferred until the render-target / PassNode chain is truly wired.
+
+Still experimental: the next production work is shadows first, then PMREM/environment/reflections, then transmission/viewport texture correctness. Refresh visual coverage from the E2E report before quoting pass counts.
 
 ## Install
 

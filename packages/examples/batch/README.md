@@ -2,17 +2,17 @@
 
 Runs the plugin and slim runtime against the 206 `webgpu_*.html` examples from a local three.js repo. Phase 6/7 gate.
 
-## Baseline
-
-The monolithic slim-bundle approach in `Makio64/three.js` branch `tsl-precompile` passes **68/199** examples.
-
 ## Target
 
-For the extractor/codegen harness, keep at least **≥ 120/199** passing for v1 release. The current checked-in extractor report is **197/198** candidates passing with **8** skipped.
+Keep the extractor/codegen and slim-bundle load-smoke harnesses green enough to catch crashes, then use E2E PSNR for visual correctness. Current pass counts move quickly; use [STATUS.md](../../STATUS.md) for the latest curated snapshot and `packages/examples/batch/results/coverage-summary.md` for a generated visual table.
 
-For the slim-bundle load-smoke harness, every candidate should either load cleanly or fail with an expected `tsl-precompile/slim` / `tsl-precompile/aux` loud error. The current checked-in slim report is **198/198** candidates passing with **0** unexpected errors and **8** skipped.
+For the E2E harness, start with focused filters. It automates the real loop for stock examples: clean stock full-three reference, capture pass for auto-marked NodeMaterial artifacts, then slim replay with captured user and aux artifacts. A pass means replay reached a non-empty frame without unexpected browser errors and meets the PSNR pixel-diff threshold (30 dB by default). Use `--no-pixel-gate` for diagnostics when the goal is to inspect load/runtime failures separately from visual correctness. Many examples are expected to fail today; v0.1 beta should prioritize the PBR slice first: shadows, PMREM/environment/reflections, then transmission/viewport/reflector texture paths. Compute/storage remains experimental, while MRT and broad postprocessing are deferred.
 
-For the E2E harness, start with focused filters. It automates the real loop for stock examples: full-three capture with auto-marked NodeMaterials, then slim replay with captured user and aux artifacts. A pass means replay reached a non-empty frame without unexpected browser errors; it is not yet a pixel-diff gate. Many examples are expected to fail today because serialized bindings/textures/storage paths still need richer runtime hydration.
+The parallel E2E runner prints concise per-example progress by default and writes full details to `packages/examples/batch/results/e2e-report.json`. Pass `--verbose` or set `TSLP_E2E_VERBOSE=1` to forward page warnings/logs and worker boilerplate while debugging harness internals.
+
+The E2E server automatically falls forward to the next free port when the requested port is occupied. Use `--port=<n>` to choose the first port and `--port-retries=<n>` to cap the retry window.
+
+Animated examples compare the first fully loaded settled frame by default (`--target-tick=0`) so async asset timing does not masquerade as a shader regression. Use `--target-tick=<n>` when intentionally auditing a later animation phase.
 
 Historical error buckets from the monolithic slim fork:
 

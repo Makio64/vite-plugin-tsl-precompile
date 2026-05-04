@@ -14,27 +14,38 @@ Each task lists:
 
 Pri legend: **P0** breaks rendering, **P1** wrong output, **P2** correctness/polish, **P3** nice-to-have.
 
-> **Status (2026-05-03):** Wave 1 + Wave 2 merged. 199/199 unit tests pass. 27/29 sweep examples render without errors (was 1/29). 1/36 examples PSNR-pass at the 30 dB gate. See [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md) for the full per-example table.
+> **Status (2026-05-04):** Unit tests are green, load-smoke coverage is strong, and the PSNR gate is now the real visual signal: 30 / 194 graded examples match at 30 dB. See [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md) for the full per-example table.
+
+## v0.1 beta priority order
+
+Do not chase all 194 graded examples first. The production support slice is ordinary PBR app rendering:
+
+1. Shadows: first visual correctness cluster; users notice missing or wrong shadows immediately.
+2. PMREM / environment / reflections: PBR can look plausibly rendered while the lighting is wrong.
+3. Transmission / viewport / reflector textures: glass, refraction, and mirrors are real material features.
+4. Compute / storage sync: useful and important, but experimental for v0.1 unless the release target pivots to creative-coding demos.
+5. MRT and broad postprocessing: deferred until the render-target / PassNode chain is truly wired.
 
 ---
 
 ## Critical visual regressions (P0/P1, biggest user-visible impact)
 
 ### `shadows-no-render` — P0
-**Shadows do not appear at all on slim replay**, despite [packages/runtime/src/hydrator.js](packages/runtime/src/hydrator.js)'s `createShadowDepthRebinder` (Wave 1A) being in place.
+**Shadows are still the first beta blocker.** One shadow example now matches, but the category is only 1 / 8 and two examples still produce no replay frame.
 
-Two compounding root causes; both must be fixed in the same commit (fixing only one makes things worse):
+Current root-cause state:
 
-1. **Capture-time WGSL has no shadow code.** The throwaway mesh built in [packages/runtime/src/precompile-marker.js](packages/runtime/src/precompile-marker.js) lines 291-309 doesn't propagate `receiveShadow` / `castShadow` from the source object — `for...in` over `Object.keys(sourceObject)` skips them because `key in mesh` returns true (defaults exist on `Object3D`). So three.js's NodeBuilder never compiles the shadow-sampling path into the WGSL. Easy 4-line fix.
+1. **Capture-side shadow flags are now propagated.** [packages/runtime/src/precompile-marker.js](packages/runtime/src/precompile-marker.js) explicitly copies `receiveShadow` / `castShadow` onto the throwaway mesh, so WGSL can include shadow-sampling paths.
 
-2. **Runtime never populates `light.shadow.map.depthTexture`.** The slim build has the entire shadow-render pass tree-shaken out (`grep -c "shadowMap" build/three.webgpu.slim.js → 1`). Even with the capture-time fix in place, the rebinder finds no `light.shadow.map` to bind. Need either:
-   - Harness-side: run a full WebGPURenderer over a shadow-scene clone to populate `light.shadow.map` on the shared GPU device. Wave 3-S agent attempted this but it was on a stale base; their commit `037d33b` (now lost) added ~192 lines to run-e2e.mjs.
-   - Runtime-side (proper): precompile the shadow-depth and shadow-distance material variants as auxiliary artifacts so slim can run a real shadow pass.
+2. **Runtime shadow/depth binding remains the blocker.** The rebinder now refuses to put color shadow targets into `texture_depth_2d` slots, but the shadow pass still must reliably populate a live `shadow.map.depthTexture` and avoid running on scenes that do not need shadows.
 
-Verification (Wave 1A): partial fix to the capture side WITHOUT runtime fix actually makes replay BLACKER — the dragons disappeared entirely when WGSL had shadow sampling but the depth texture was a 1×1 fallback.
+Implementation direction:
+- Gate the replay shadow-scene render on actual shadow-casting lights and shadow-receiving materials.
+- Invalidate/rebuild bind groups when the fallback depth texture is replaced by the live shadow texture.
+- Keep the auxiliary shadow-depth path as the production direction; harness-side shadow scene rendering is useful for diagnosis but should not become the app contract.
 
-- **Files**: `packages/runtime/precompile-marker.js`, `packages/examples/batch/run-e2e.mjs`, plus possibly `packages/runtime/src/aux-marker.js` + `aux-loader.js` for the proper runtime path.
-- **Done when**: `webgpu_shadowmap_opacity.html.replay.png` shows the dragons casting shadows on the floor, `replayBright` ≈ capture, PSNR > 20 dB.
+- **Files**: `packages/runtime/src/hydrator.js`, `packages/runtime/src/aux-marker.js`, `packages/runtime/src/aux-loader.js`, `packages/examples/batch/run-e2e.mjs`.
+- **Done when**: `webgpu_shadowmap.html` and `webgpu_shadowmap_pointlight.html` replay, and the shadow category rises above the 30 dB gate on representative examples.
 - **Reference**: webgpu_shadowmap, webgpu_shadowmap_opacity, webgpu_shadowmap_vsm, webgpu_shadowmap_progressive, webgpu_shadow_contact (5 examples; 2 more — `_csm`, `_array` — also need it but `ShadowBaseNode` stub fix in 751eaad already unblocks the load).
 
 ### `displacementmap-blank-replay` — P0
@@ -48,7 +59,7 @@ Hypothesis: vertex shader displacement creates malformed positions that fail the
 - **Done when**: replay shows the ninja head model with visible displacement (≥70% of capture PNG size).
 - **Reference**: webgpu_materials_displacementmap.
 
-### `compute-instance-mesh-buffer` — P1
+### `compute-instance-mesh-buffer` — P2 experimental
 `webgpu_compute_birds.html` replay shows the gradient sky background but **no birds**. Capture shows ~600 small bird sprites scattered. The compute kernel writes bird positions into a storage buffer; an `InstancedMesh` reads positions per instance and draws bird sprites.
 
 Wave 2D (commit aa7abb4) fixed the capture-side throw (`object.computeBoundingSphere is not a function`) by skipping bounding-volume copies on the throwaway mesh. Replay now has artifacts and renders the background, but instance positions don't make it to slim's render path.
@@ -59,7 +70,7 @@ Hypothesis: the harness's `__syncStorageBuffers` ([run-e2e.mjs:1012](packages/ex
 - **Done when**: webgpu_compute_birds.html.replay.png shows visible bird sprites.
 - **Reference**: webgpu_compute_birds, possibly webgpu_compute_particles_snow (replayBright 0.008 — similar instance-buffer issue?).
 
-### `compute-storage-texture-sync` — P1
+### `compute-storage-texture-sync` — P2 experimental
 The storage-texture sync in `__syncStorageBuffers` ([run-e2e.mjs:1027-1079](packages/examples/batch/run-e2e.mjs#L1027)) IS implemented (handles `binding.isSampledTexture && binding.texture.isStorageTexture`), but `webgpu_compute_texture` / `_pingpong` / `_3d` still render at very-low brightness (0.007 / 0.011 / 1.0).
 
 For `webgpu_compute_texture_3d` brightness=1.0 but PSNR=4.42 — renders something, but very wrong colors.
@@ -77,14 +88,25 @@ Background and environment paths that depend on PMREM-prefiltered HDR cubemaps r
 - `webgpu_compute_cloth` (PSNR 9.61 dB)
 - `webgpu_compute_particles_fluid` (PSNR 4.83 dB)
 - `webgpu_lightprobe_cubecamera` (PSNR 17.48 dB) — light probe + PMREM
-- `webgpu_compute_water` (sharp marble walls leaking through)
-
-Per the seventh-session notes ([CONTINUATION_PLAN.md](CONTINUATION_PLAN.md)), the harness's PMREM kicking is partial: when the captured background-aux artifact's WGSL expects a PMREM 2D texture, the harness wires the raw cubemap. Tried PMREM-then-wire previously but the GPU resource isn't ready by the time bind groups are recorded.
+The clearcoat DFG regression is fixed, so this task is now specifically about PMREM-prefiltered background/environment routing rather than BRDF LUT upload. See [LOGS.md](LOGS.md) for the PMREM architecture notes and the clearcoat DFG fix.
 
 - **Files**: `packages/examples/batch/run-e2e.mjs` PMREM section (`__kickPMREMGenAsync`, `__wireEnvironmentPMREM`, `__backgroundNeedsPMREM`).
 - **Done when**: PSNR ≥ 20 dB on the four examples; backgrounds visually blurred or correctly colored.
 
-### `mrt-replay-empty` — P2
+### `transmission-viewport-texture` — P1
+Glass, refraction, and viewport-dependent materials are part of the beta PBR slice. The extractor emits `viewport.texture` and the hydrator has a rebinder path, but the visual examples are still far below the production bar:
+
+- `webgpu_materials_transmission.html` (5.91 dB)
+- `webgpu_loader_gltf_transmission.html` (4.92 dB)
+- `webgpu_refraction.html` (5.62 dB)
+- `webgpu_mirror.html` (10.69 dB; reflector path)
+
+Hypothesis: the live `ViewportTextureNode` / `ReflectorBaseNode` render target is being discovered, but bind-group caches or render-order timing keep replay sampling fallback/old framebuffer textures.
+
+- **Files**: `packages/runtime/src/hydrator.js`, `packages/runtime/src/apply-precompiled.js`, `packages/plugin/src/vendor/extractUniformPlan.js`, focused E2E harness helpers if timing diagnosis is needed.
+- **Done when**: transmission/refraction/mirror examples replay with the correct sampled scene content and PSNR is no longer dominated by fallback texture sampling.
+
+### `mrt-replay-empty` — P3 deferred
 The MRT runtime stub landed in Wave 2E (commit 43129c0):
 - `_vendor-PrecompiledMaterial.js` attaches an inert `mrtNode` stub when `artifact.mrtOutputCount > 1`
 - `apply-precompiled.js` forwards source `material.mrtNode` onto the wrapper
@@ -106,14 +128,14 @@ Wave 2E agent's report identifies the precise gaps. Implementation pending.
 ## Animation/timing-related (P2 — not "broken", just not pixel-correct)
 
 ### `psnr-animation-phase-drift` — P2
-Many examples render correctly but PSNR is 5-25 dB because the animation phase (model rotation, camera drift, particle positions) differs by a few frames between capture and replay. The deterministic-rAF shim (commit 17f5237 in Round 1) addressed some, but several remain:
+Many examples render correctly but PSNR is 5-25 dB because the animation phase (model rotation, camera drift, particle positions) differs by a few frames between capture and replay. The deterministic-rAF shim and the first-settled-frame default (`--target-tick=0`) addressed the worst false positives, but later-animation audits still need explicit target ticks:
 
 - webgpu_animation_retargeting / _readyplayer (~13.4 dB) — characters in different poses
 - webgpu_camera (14.4 dB) — camera animation diverged
 - webgpu_caustics (15.3 dB) — caustic patterns at different time offsets
 - webgpu_centroid_sampling (11.2 dB) — geometry rotation different
 
-These are correct rendering, wrong frame snapshot. Acceptable until pixel-gate goes hard. May need `Date.now()` mock or per-renderer animation freezing.
+These are correct rendering, wrong frame snapshot. Use `--target-tick=<n>` when intentionally testing a later animation phase; remaining work is for examples whose internal clocks still diverge even under deterministic RAF.
 
 - **Files**: `packages/examples/batch/run-e2e.mjs` deterministic-rAF section, possibly `__prepareSceneForReplay`.
 - **Done when**: PSNR ≥ 25 dB on the listed examples without changing rendering itself.
@@ -136,26 +158,28 @@ When two tasks share a file, run them **sequentially**, not in parallel.
 
 | File | Tasks |
 |---|---|
-| `packages/examples/batch/run-e2e.mjs` | shadows-no-render, compute-instance-mesh-buffer, compute-storage-texture-sync, pmrem-cubemap-bg, psnr-animation-phase-drift |
-| `packages/runtime/src/precompile-marker.js` | shadows-no-render, mrt-replay-empty |
-| `packages/runtime/src/hydrator.js` | shadows-no-render (runtime variant), mrt-replay-empty |
-| `packages/runtime/src/aux-marker.js` | shadows-no-render (runtime variant), mrt-replay-empty |
-| `packages/plugin/src/vendor/extractUniformPlan.js` | displacementmap-blank-replay |
+| `packages/examples/batch/run-e2e.mjs` | shadows-no-render, pmrem-cubemap-bg, compute-instance-mesh-buffer, compute-storage-texture-sync, psnr-animation-phase-drift |
+| `packages/runtime/src/hydrator.js` | shadows-no-render, transmission-viewport-texture, mrt-replay-empty |
+| `packages/runtime/src/aux-marker.js` | shadows-no-render, mrt-replay-empty |
+| `packages/runtime/src/aux-loader.js` | shadows-no-render |
+| `packages/runtime/src/apply-precompiled.js` | transmission-viewport-texture |
+| `packages/runtime/src/precompile-marker.js` | mrt-replay-empty |
+| `packages/plugin/src/vendor/extractUniformPlan.js` | displacementmap-blank-replay, transmission-viewport-texture |
 
 `run-e2e.mjs` is the biggest hotspot — multiple compute and PMREM tasks contend for it. Consider opening a `wave3-base` branch off main, then having each agent rebase their worktree onto it before starting work, so their work-in-progress diffs sit on top of the same recent base.
 
 ---
 
-## How to tackle Round 4
+## Current serial order
 
 Recommended order for serial work (each ~30-60 min focused):
 
-1. `shadows-no-render` — biggest user-visible gap; do both capture+runtime fix together.
-2. `compute-instance-mesh-buffer` — birds visible.
-3. `displacementmap-blank-replay` — narrow scope, big visual win.
-4. `pmrem-cubemap-bg` — 4 examples improve at once.
-5. `compute-storage-texture-sync` — 3 examples improve.
-6. `mrt-replay-empty` — 4 examples improve.
+1. `shadows-no-render` — first beta blocker; make shadow replay/depth binding reliable.
+2. `pmrem-cubemap-bg` — PBR environment/reflection correctness before broad features.
+3. `transmission-viewport-texture` — glass, refraction, and mirrors.
+4. `displacementmap-blank-replay` — still a PBR material-map gap.
+5. `compute-instance-mesh-buffer` / `compute-storage-texture-sync` — experimental compute/storage slice.
+6. `mrt-replay-empty` — deferred with broad postprocessing until render-target / PassNode routing is mature.
 
 For parallel agent work: file-disjoint sets are tricky because run-e2e.mjs is contended. Agent assignments need careful section-scoping or merge coordination.
 

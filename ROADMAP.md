@@ -35,14 +35,16 @@ Eight phases. Each has a release gate that must pass before moving on.
 ## Phase 6 — 206-example batch harness
 
 - Port the `batch-precompile.mjs` harness. Auto-mark mode injects `.precompile()` on every material.
-- **Gate**: ≥ 120 / 199 passing (baseline: 68/199 on the monolithic slim fork). Current extractor/codegen harness: 197 / 198 candidates passing, 8 skipped.
+- **Gate**: broad extractor/codegen load-smoke stays above the launch threshold; use [STATUS.md](STATUS.md) for the current curated count.
 
 ## Phase 7 — Slim runtime bundle
 
 - Rollup `packages/runtime/build/three.webgpu.slim.js`. Vite alias `three/webgpu` → slim bundle when the plugin is active.
-- **Gate**: ≤ 300 KB gzip and 0 unexpected slim-bundle load-smoke errors. Current slim harness: 198 / 198 candidates passing, 8 skipped, 0 unexpected errors.
+- **Gate**: ≤ 300 KB gzip and 0 unexpected slim-bundle load-smoke errors; use [STATUS.md](STATUS.md) for the current curated count.
 
 ## Phase 8 — Launch
 
 - Docs, three preview demos, migration guide, announcement.
-- **Gate**: one external adopter reports success.
+- v0.1 beta support slice: `MeshStandardNodeMaterial` / `MeshPhysicalNodeMaterial`, texture maps, env maps / PMREM, direct lights, shadows, material uniforms, and stable artifact invalidation.
+- Mark compute/storage as experimental and MRT / broad postprocessing as deferred in release messaging.
+- **Gate**: the beta support slice has representative PSNR coverage, npm dry-runs pass for plugin/runtime, and one external adopter reports success.

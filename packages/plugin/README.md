@@ -4,7 +4,7 @@ Vite plugin that AOT-compiles three.js TSL materials. Mark materials with `.prec
 
 ## Status
 
-Experimental — see [CONTINUATION_PLAN.md](https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/CONTINUATION_PLAN.md) for current limitations.
+Experimental — see [STATUS.md](https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/STATUS.md) for the current support snapshot and [BACKLOG.md](https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/BACKLOG.md) for known limitations.
 
 ## Install
 
@@ -12,7 +12,7 @@ Experimental — see [CONTINUATION_PLAN.md](https://github.com/Makio64/vite-plug
 pnpm add -D vite-plugin-tsl-precompile @tsl-precompile/runtime
 ```
 
-Peer deps: `three >= 0.175.0`, `vite >= 5`.
+Peer deps: `three >= 0.184.0`, `vite >= 5`.
 
 ## Usage
 

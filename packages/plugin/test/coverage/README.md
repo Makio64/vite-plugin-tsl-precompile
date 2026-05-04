@@ -33,6 +33,11 @@ Each cell is a single `.test.js` that:
 | `time-kinds.test.js` | TSL node kind — time | time, deltaTime, frameId |
 | `uniform-kinds.test.js` | TSL node kind — uniform | uniform.constant (f32/vec3/color/mat4), uniform.live (property path) |
 | `pipeline-contexts.test.js` | Pipeline context | standalone mesh, RenderPipeline.outputNode, live-uniform (shadow-like) |
+| `artifact-texture-snapshot.test.js` | Texture binding | `artifact.texture` sources include bounded static DataTexture snapshots |
+| `depth-texture-binding.test.js` | Texture binding | `depth.texture` extractor tagging and hydrator rebinding from fallback to live shadow maps |
+| `light-shadow-live.test.js` | Live light/shadow state | `light.shadow*` and `light.colorScaled` stay live through generated updaters |
+| `points-live-scale.test.js` | Renderer live state | PointsNodeMaterial scale maps to `renderer.halfHeight` |
+| `material-pbr-maps.test.js` | Material texture maps | PBR material map/lightMap/displacementMap bindings are extracted |
 | `kind-drift.test.js` | Drift detector | asserts every extractor kind is handled or documented-blocked; asserts no stale updater cases |
 
 ## Blocked-kind coverage gaps (Phase 5.5 todo)
@@ -40,13 +45,11 @@ Each cell is a single `.test.js` that:
 These documented-blocked kinds have no positive test fixture yet — meaning there is no test that constructs a material that actually emits them and asserts the correct `severity: 'blocked'` output:
 
 - `builtin.dfgLUT` — needs a PBR material with envMap assigned in the Node harness
-- `artifact.texture` — needs a material with a texture map
-- `depth.texture` — needs a shadow-receiving material
+- `viewport.texture` — needs a transmission/viewport material fixture
+- `reflector.texture` — needs a reflector material fixture
 - `storage.buffer` — needs a compute material
 - `uniform.live` (extractor-produced, no property) — already surfaced by `materials.test.js` PointsNodeMaterial; add a dedicated fixture
 
 ## What's still missing
 
-5. Pixel-diff step — item 5 in the fixture format above ("Eventually pixel-diffs") is not yet implemented.
-   The E2E harness (`packages/examples/batch/run-e2e.mjs`) checks for a non-empty frame only.
-   A screenshot-comparison step is the Phase 5.5 validation upgrade.
+5. Fixture-local pixel replay is still missing. The batch E2E harness (`packages/examples/batch/run-e2e.mjs`) now enforces PSNR by default, but these coverage tests are still static extractor/codegen/hydrator fixtures.

@@ -113,8 +113,8 @@ Each agent should be given:
 2. **The full BACKLOG.md row** — Why, Files, Done when, Reference.
 3. **Constraint** — "Do not edit files outside the listed Files set; if
    you discover you need to, stop and report."
-4. **Verification command** — usually a one-liner from the
-   `CONTINUATION_PLAN.md` or BACKLOG.md, e.g.
+4. **Verification command** — usually a one-liner from [BACKLOG.md](./BACKLOG.md)
+   or [LOGS.md](./LOGS.md), e.g.
    `node packages/examples/batch/run-e2e.mjs --filter=<example> --no-pixel-gate --save-shots`.
 
 Sample agent prompt:
@@ -164,10 +164,10 @@ smallest change first and rebase the larger one on it.
 When an agent finishes a task:
 
 1. Remove the section from BACKLOG.md.
-2. Add a short note to CONTINUATION_PLAN.md under the current session.
+2. Add a short note to LOGS.md when the fix leaves useful investigation history.
 3. If the fix uncovered new work, add new tasks to BACKLOG.md with
    their own IDs.
 4. Update the coordination matrix if files changed.
 
-Keep BACKLOG.md as the **single source of truth for what's open**. The
-session log in CONTINUATION_PLAN.md is for what's been done.
+Keep BACKLOG.md as the **single source of truth for what's open**. Use
+LOGS.md for durable investigation and fix history.
