@@ -19,6 +19,7 @@ const workers  = parseInt( getArg( '--workers=', '6' ), 10 );
 const basePort = parseInt( getArg( '--base-port=', '8730' ), 10 );
 const filter   = getArg( '--filter=', '' );
 const threeRepo = resolve( getArg( '--three-repo=', resolve( SELF, '../../../../three.js' ) ) );
+const verbose = args.includes( '--verbose' ) || process.env.TSLP_E2E_VERBOSE === '1';
 
 // Forward all flags to workers except the orchestrator-only ones
 const forwarded = args.filter( a =>
@@ -55,24 +56,78 @@ for ( let i = 0; i < actualWorkers; i++ ) {
 }
 
 console.log( `[e2e-parallel] ${ total } examples → ${ jobs.length } workers, ~${ chunk } each (base-port ${ basePort })` );
+if ( ! verbose ) console.log( '[e2e-parallel] showing per-example results only; pass --verbose for page logs and worker boilerplate' );
 
-function attachLinePrefix( stream, outStream, prefix, onLine ) {
+function shouldForwardWorkerLine( line ) {
+	if ( verbose ) return true;
+	const text = line.trim();
+	if ( ! text ) return false;
+	if ( text.startsWith( '[batch-e2e]' ) ) return false;
+	if ( text.startsWith( '[page-warn' ) || text.startsWith( '[page-log' ) ) return false;
+	if ( text.startsWith( '═══ e2e summary' ) ) return false;
+	if ( /^\d+ pass, \d+ fail/.test( text ) ) return false;
+	if ( text.startsWith( 'report:' ) ) return false;
+	return true;
+}
+
+function attachLinePrefix( stream, outStream, prefix, onLine, shouldForward = () => true ) {
 	let buf = '';
 	stream.on( 'data', ( chunk ) => {
 		buf += chunk.toString();
 		const lines = buf.split( '\n' );
 		buf = lines.pop();
 		for ( const line of lines ) {
-			outStream.write( `${ prefix } ${ line }\n` );
 			if ( onLine ) onLine( line );
+			if ( shouldForward( line ) ) outStream.write( `${ prefix } ${ line }\n` );
 		}
 	} );
 	stream.on( 'end', () => {
 		if ( buf ) {
-			outStream.write( `${ prefix } ${ buf }\n` );
 			if ( onLine ) onLine( buf );
+			if ( shouldForward( buf ) ) outStream.write( `${ prefix } ${ buf }\n` );
 		}
 	} );
+}
+
+function formatPercent( value ) {
+	if ( typeof value !== 'number' || ! Number.isFinite( value ) ) return 'n/a';
+	return ( value * 100 ).toFixed( 1 ) + '%';
+}
+
+function compactText( value, max = 220 ) {
+	const text = String( value || '' ).replace( /\s+/g, ' ' ).trim();
+	return text.length > max ? text.slice( 0, max - 1 ) + '…' : text;
+}
+
+function formatPixelGate( gate ) {
+	if ( ! gate ) return 'psnr n/a';
+	if ( gate.skipped ) return `psnr skipped (${ compactText( gate.reason, 48 ) })`;
+	if ( gate.pass === undefined ) return 'psnr n/a';
+	return `psnr ${ gate.psnr }/${ gate.threshold } dB ${ gate.pass ? 'ok' : 'FAIL' }`;
+}
+
+function diagnosticNote( diagnostics ) {
+	if ( ! diagnostics ) return '';
+	const parts = [];
+	if ( diagnostics.healedNullTextureImages > 0 ) parts.push( `healed-null-images=${ diagnostics.healedNullTextureImages }` );
+	const fallbacks = diagnostics.colorTransferFallbacks || {};
+	const fallbackTotal = Object.values( fallbacks ).reduce( ( sum, count ) => sum + ( count | 0 ), 0 );
+	if ( fallbackTotal > 0 ) parts.push( `color-fallbacks=${ fallbackTotal }` );
+	return parts.join( ', ' );
+}
+
+function printFailureSummary( details, max = 25 ) {
+	const failures = details.filter( ( result ) => result && result.status === 'fail' );
+	if ( failures.length === 0 ) return;
+	console.log( '\nTop failures:' );
+	for ( const result of failures.slice( 0, max ) ) {
+		const captureErrors = Array.isArray( result.captureErrors ) ? result.captureErrors.length : 0;
+		const replayErrors = Array.isArray( result.replayErrors ) ? result.replayErrors.length : 0;
+		const diag = diagnosticNote( result.replayDiagnostics );
+		console.log( `  - ${ result.name }: ${ formatPixelGate( result.pixelGate ) }; replay ${ formatPercent( result.replayBrightFrac ) }; artifacts ${ result.userArtifacts }+${ result.auxArtifacts }; captureErrors=${ captureErrors }; replayErrors=${ replayErrors }${ diag ? '; ' + diag : '' }` );
+		if ( result.error ) console.log( `    ${ compactText( result.error ) }` );
+	}
+	if ( failures.length > max ) console.log( `  ... ${ failures.length - max } more failures in ${ join( OUT, 'e2e-report.json' ) }` );
 }
 
 const promises = jobs.map( ( { off, lim, port, report, idx } ) =>
@@ -94,8 +149,8 @@ const promises = jobs.map( ( { off, lim, port, report, idx } ) =>
 		let summary = '';
 		attachLinePrefix( child.stdout, process.stdout, prefix, ( line ) => {
 			if ( line.includes( ' pass,' ) ) summary = line.trim();
-		} );
-		attachLinePrefix( child.stderr, process.stderr, prefix );
+		}, shouldForwardWorkerLine );
+		attachLinePrefix( child.stderr, process.stderr, prefix, null, shouldForwardWorkerLine );
 
 		child.on( 'close', ( code ) => {
 			console.log( `[e2e-parallel] worker ${ idx } done (exit=${ code })${ summary ? ' — ' + summary : '' }` );
@@ -133,5 +188,6 @@ writeFileSync( finalReport, JSON.stringify( merged, null, 2 ) );
 console.log( '\n═══ e2e-parallel summary ═══' );
 console.log( `  ${ merged.pass } pass, ${ merged.fail } fail, ${ merged.skip } skip, ${ merged.total } candidates` );
 console.log( `  report: ${ finalReport }` );
+printFailureSummary( merged.details );
 
 process.exit( results.some( r => r.code !== 0 ) ? 1 : 0 );

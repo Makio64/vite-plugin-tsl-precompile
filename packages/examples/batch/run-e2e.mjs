@@ -3,13 +3,15 @@
  * Capture -> slim replay harness for three.js WebGPU examples.
  *
  * Per example:
- *   1. Serve the stock example with an importmap wrapper around
+ *   1. Serve the stock example through full three.js and take the visual
+ *      reference screenshot.
+ *   2. Serve the same example with an importmap wrapper around
  *      `three/webgpu`/`three` that auto-marks every constructed NodeMaterial.
- *   2. Let the real three.js TSL builder render once and POST captured
+ *   3. Let the real three.js TSL builder render once and POST captured
  *      user-material + aux artifacts to this harness.
- *   3. Reload the same example with the slim bundle, a TSL authoring stub,
+ *   4. Reload the same example with the slim bundle, a TSL authoring stub,
  *      the captured user materials, and the captured aux registry.
- *   4. Report whether replay reached a non-empty frame without unexpected
+ *   5. Report whether replay reached a non-empty frame without unexpected
  *      console/page errors AND the per-pixel PSNR vs the capture frame is
  *      at or above the configured threshold (default 30 dB). The pixel
  *      gate can be disabled with `--no-pixel-gate` for diagnostic runs.
@@ -22,6 +24,8 @@
  *   node packages/examples/batch/run-e2e.mjs --filter=webgpu_backdrop
  *   node packages/examples/batch/run-e2e.mjs --filter=ocean --psnr-threshold=25
  *   node packages/examples/batch/run-e2e.mjs --filter=ocean --no-pixel-gate
+ *   node packages/examples/batch/run-e2e.mjs --filter=ocean --port=8729 --port-retries=20
+ *   node packages/examples/batch/run-e2e.mjs --filter=ocean --target-tick=60
  */
 
 import { chromium } from 'playwright';
@@ -89,12 +93,15 @@ const threeRepo = resolve( getArg( '--three-repo=', resolve( SELF, '../../../../
 const filter = getArg( '--filter=', '' );
 const limit = parseInt( getArg( '--limit=', '9999' ), 10 );
 const offset = parseInt( getArg( '--offset=', '0' ), 10 );
-const port = parseInt( getArg( '--port=', '8729' ), 10 );
+let port = parseInt( getArg( '--port=', '8729' ), 10 );
+const portRetries = parseInt( getArg( '--port-retries=', '100' ), 10 );
 const captureWaitMs = parseInt( getArg( '--capture-wait-ms=', '8000' ), 10 );
 const replayWaitMs = parseInt( getArg( '--replay-wait-ms=', '5000' ), 10 );
+const targetTick = parseInt( getArg( '--target-tick=', '0' ), 10 );
 const psnrThreshold = parseFloat( getArg( '--psnr-threshold=', '30' ) );
 const pixelGateEnabled = ! args.includes( '--no-pixel-gate' );
 const saveShots = args.includes( '--save-shots' );
+const verboseConsole = args.includes( '--verbose' ) || process.env.TSLP_E2E_VERBOSE === '1' || !! process.env.TSLP_DEBUG_TORNADO_VERBOSE;
 const reportFile = getArg( '--report=', 'e2e-report.json' );
 
 if ( ! existsSync( join( threeRepo, 'examples' ) ) ) {
@@ -190,7 +197,11 @@ function injectHtml( html, example, mode ) {
 
 function rewriteImportmap( html, mode ) {
 
-	const webgpuTarget = mode === 'capture' ? '/__tslp__/full-webgpu-auto.js' : '/__tslp__/slim-webgpu-replay.js';
+	const webgpuTarget = mode === 'capture'
+		? '/__tslp__/full-webgpu-auto.js'
+		: mode === 'stock'
+			? '/__tslp__/stock-webgpu.js'
+			: '/__tslp__/slim-webgpu-replay.js';
 	let out = html
 		.replace( /("three\/webgpu"\s*:\s*")[^"]+(")/g, `$1${ webgpuTarget }$2` )
 		.replace( /("three"\s*:\s*")[^"]*three\.webgpu[^"]*(")/g, `$1${ webgpuTarget }$2` );
@@ -221,15 +232,86 @@ function rewriteImportmap( html, mode ) {
 
 }
 
-function fullWebgpuAutoModule() {
+function stockWebgpuModule() {
 
-	const materialClasses = NODE_MATERIAL_EXPORTS.map( ( name ) => `
-export class ${ name } extends __base( ${ JSON.stringify( name ) } ) {
-	constructor( ...args ) {
-		super( ...args );
-		__mark( this, ${ JSON.stringify( name ) } );
+	return `
+import * as Original from '/build/three.webgpu.js';
+export * from '/build/three.webgpu.js';
+
+let __pmremRunning = 0;
+window.__tslpPmremPending = window.__tslpPmremPending || 0;
+window.__tslpCompilePending = window.__tslpCompilePending || 0;
+
+( function patchStockDefaultLoadingManager() {
+	const dlm = Original.DefaultLoadingManager;
+	if ( ! dlm || dlm.__tslpStockPatched ) return;
+	dlm.__tslpStockPatched = true;
+	const _origStart = dlm.itemStart.bind( dlm );
+	const _origEnd = dlm.itemEnd.bind( dlm );
+	const _origError = dlm.itemError ? dlm.itemError.bind( dlm ) : null;
+	const _now = () => ( typeof window.__tslpRealNow === 'function' ? window.__tslpRealNow() : Date.now() );
+	dlm.itemStart = function ( url ) {
+		window.__tslpLoaderPending = ( window.__tslpLoaderPending | 0 ) + 1;
+		window.__tslpLoaderLastBusyAt = _now();
+		return _origStart( url );
+	};
+	dlm.itemEnd = function ( url ) {
+		window.__tslpLoaderPending = Math.max( 0, ( window.__tslpLoaderPending | 0 ) - 1 );
+		window.__tslpLoaderLastBusyAt = _now();
+		return _origEnd( url );
+	};
+	if ( _origError ) dlm.itemError = function ( url ) { return _origError( url ); };
+} )();
+
+( function patchStockPMREMGenerator() {
+	const PG = Original.PMREMGenerator;
+	if ( ! PG || ! PG.prototype || PG.prototype.__tslpStockPatched ) return;
+	PG.prototype.__tslpStockPatched = true;
+	const begin = () => {
+		__pmremRunning ++;
+		window.__tslpPmremPending = ( window.__tslpPmremPending | 0 ) + 1;
+	};
+	const end = () => {
+		__pmremRunning = Math.max( 0, __pmremRunning - 1 );
+		window.__tslpPmremPending = Math.max( 0, ( window.__tslpPmremPending | 0 ) - 1 );
+	};
+	for ( const method of [ 'fromScene', 'fromCubemap', 'fromEquirectangular', 'fromTexture' ] ) {
+		const orig = PG.prototype[ method ];
+		if ( typeof orig !== 'function' ) continue;
+		PG.prototype[ method ] = function ( ...args ) {
+			begin();
+			try { return orig.apply( this, args ); }
+			finally { end(); }
+		};
 	}
-}` ).join( '\n' );
+	for ( const method of [ 'fromSceneAsync', 'fromCubemapAsync', 'fromEquirectangularAsync' ] ) {
+		const orig = PG.prototype[ method ];
+		if ( typeof orig !== 'function' ) continue;
+		PG.prototype[ method ] = function ( ...args ) {
+			begin();
+			let result;
+			try { result = orig.apply( this, args ); }
+			catch ( err ) { end(); throw err; }
+			return Promise.resolve( result ).finally( end );
+		};
+	}
+} )();
+
+export class WebGPURenderer extends Original.WebGPURenderer {
+	compileAsync( scene, camera, ...rest ) {
+		if ( __pmremRunning > 0 ) return typeof super.compileAsync === 'function' ? super.compileAsync( scene, camera, ...rest ) : Promise.resolve();
+		if ( typeof super.compileAsync !== 'function' ) return Promise.resolve();
+		window.__tslpCompilePending = ( window.__tslpCompilePending | 0 ) + 1;
+		const settle = () => { window.__tslpCompilePending = Math.max( 0, ( window.__tslpCompilePending | 0 ) - 1 ); };
+		const p = super.compileAsync( scene, camera, ...rest );
+		return Promise.resolve( p ).then( ( v ) => { settle(); return v; }, ( e ) => { settle(); throw e; } );
+	}
+}
+`;
+
+}
+
+function fullWebgpuAutoModule() {
 
 	return `
 import * as Original from '/build/three.webgpu.js';
@@ -240,7 +322,15 @@ const __state = window.__TSLP_E2E || { example: 'unknown' };
 const __counts = Object.create( null );
 const __pending = [];
 const __seenMaterials = new WeakMap();
+const __postProcessingPipelines = new Set();
+const __auxPromises = new Set();
 let __renderer = null;
+let __pmremRunning = 0;
+let __lastScene = null;
+let __lastCamera = null;
+window.__tslpPmremPending = window.__tslpPmremPending || 0;
+window.__tslpPrecompilePending = window.__tslpPrecompilePending || 0;
+window.__tslpAuxCapturePending = window.__tslpAuxCapturePending || 0;
 
 // Bump window.__tslpLoaderPending around every three.js loader item so the
 // Playwright wait gate doesn't screenshot while HDR/GLTF/MaterialX/etc. are
@@ -275,9 +365,46 @@ installPrecompileMarker( Original, {
 	devEndpoint: '/__tslp__/capture?example=' + encodeURIComponent( __state.example ),
 } );
 
-function __base( name ) {
-	return Original[ name ] || Original.NodeMaterial || Original.Material;
-}
+( function patchCapturePMREMGenerator() {
+	const PG = Original.PMREMGenerator;
+	if ( ! PG || ! PG.prototype || PG.prototype.__tslpCapturePatched ) return;
+	PG.prototype.__tslpCapturePatched = true;
+	const begin = () => {
+		__pmremRunning ++;
+		window.__tslpPmremPending = ( window.__tslpPmremPending | 0 ) + 1;
+	};
+	const end = () => {
+		__pmremRunning = Math.max( 0, __pmremRunning - 1 );
+		window.__tslpPmremPending = Math.max( 0, ( window.__tslpPmremPending | 0 ) - 1 );
+	};
+	for ( const method of [ 'fromScene', 'fromCubemap', 'fromEquirectangular', 'fromTexture' ] ) {
+		const orig = PG.prototype[ method ];
+		if ( typeof orig !== 'function' ) continue;
+		PG.prototype[ method ] = function ( ...args ) {
+			begin();
+			try {
+				return orig.apply( this, args );
+			} finally {
+				end();
+			}
+		};
+	}
+	for ( const method of [ 'fromSceneAsync', 'fromCubemapAsync', 'fromEquirectangularAsync' ] ) {
+		const orig = PG.prototype[ method ];
+		if ( typeof orig !== 'function' ) continue;
+		PG.prototype[ method ] = function ( ...args ) {
+			begin();
+			let result;
+			try {
+				result = orig.apply( this, args );
+			} catch ( err ) {
+				end();
+				throw err;
+			}
+			return Promise.resolve( result ).finally( end );
+		};
+	}
+} )();
 
 function __mark( material, className, sourceObject = null ) {
 	if ( ! material ) return;
@@ -302,8 +429,8 @@ function __mark( material, className, sourceObject = null ) {
 function __classNameForMaterial( material ) {
 	if ( ! material ) return 'Material';
 	if ( material.isMeshBasicNodeMaterial || material.isMeshBasicMaterial ) return 'MeshBasicNodeMaterial';
-	if ( material.isMeshStandardNodeMaterial || material.isMeshStandardMaterial ) return 'MeshStandardNodeMaterial';
 	if ( material.isMeshPhysicalNodeMaterial || material.isMeshPhysicalMaterial ) return 'MeshPhysicalNodeMaterial';
+	if ( material.isMeshStandardNodeMaterial || material.isMeshStandardMaterial ) return 'MeshStandardNodeMaterial';
 	if ( material.isMeshLambertNodeMaterial || material.isMeshLambertMaterial ) return 'MeshLambertNodeMaterial';
 	if ( material.isMeshPhongNodeMaterial || material.isMeshPhongMaterial ) return 'MeshPhongNodeMaterial';
 	if ( material.isMeshToonNodeMaterial || material.isMeshToonMaterial ) return 'MeshToonNodeMaterial';
@@ -314,8 +441,8 @@ function __classNameForMaterial( material ) {
 	if ( material.isSpriteNodeMaterial || material.isSpriteMaterial ) return 'SpriteNodeMaterial';
 	const type = material.type || '';
 	if ( type === 'MeshBasicNodeMaterial' || type === 'MeshBasicMaterial' ) return 'MeshBasicNodeMaterial';
-	if ( type === 'MeshStandardNodeMaterial' || type === 'MeshStandardMaterial' ) return 'MeshStandardNodeMaterial';
 	if ( type === 'MeshPhysicalNodeMaterial' || type === 'MeshPhysicalMaterial' ) return 'MeshPhysicalNodeMaterial';
+	if ( type === 'MeshStandardNodeMaterial' || type === 'MeshStandardMaterial' ) return 'MeshStandardNodeMaterial';
 	if ( type === 'MeshLambertNodeMaterial' || type === 'MeshLambertMaterial' ) return 'MeshLambertNodeMaterial';
 	if ( type === 'MeshPhongNodeMaterial' || type === 'MeshPhongMaterial' ) return 'MeshPhongNodeMaterial';
 	if ( type === 'MeshToonNodeMaterial' || type === 'MeshToonMaterial' ) return 'MeshToonNodeMaterial';
@@ -329,6 +456,9 @@ function __classNameForMaterial( material ) {
 
 function __markSceneMaterials( scene ) {
 	if ( ! scene || typeof scene.traverse !== 'function' ) return;
+	if ( scene.isScene !== true ) return;
+	if ( ! scene.userData || scene.userData.__tslpUserScene !== true ) return;
+	if ( scene.userData && scene.userData.__tslpSyntheticCaptureScene ) return;
 	scene.traverse( ( object ) => {
 		const material = object && object.material;
 		const materials = Array.isArray( material ) ? material : material ? [ material ] : [];
@@ -350,18 +480,66 @@ function __flush() {
 	}
 }
 
-${ materialClasses }
+function __trackAuxCapture( promise, label ) {
+	window.__tslpAuxCapturePending = ( window.__tslpAuxCapturePending | 0 ) + 1;
+	let tracked;
+	tracked = Promise.resolve( promise )
+		.catch( ( err ) => console.warn( '[tslp-e2e] ' + label + ' failed:', err && err.message || err ) )
+		.finally( () => {
+			window.__tslpAuxCapturePending = Math.max( 0, ( window.__tslpAuxCapturePending | 0 ) - 1 );
+			__auxPromises.delete( tracked );
+		} );
+	__auxPromises.add( tracked );
+	return tracked;
+}
 
-function __capturePostProcessing( pipeline ) {
-	if ( ! __renderer || ! pipeline || pipeline.__tslpAuxStarted ) return;
-	pipeline.__tslpAuxStarted = true;
-	Promise.resolve().then( () => precompileAuxiliary( __renderer, null, null, {
+function __auxOpts( extra = {} ) {
+	return {
 		devEndpoint: '/__tslp__/capture?example=' + encodeURIComponent( __state.example ),
-		postProcessing: pipeline,
 		three: Original,
 		threeVersion: ${ JSON.stringify( SLIM_HASH_OPTS.threeVersion ) },
 		pluginVersion: ${ JSON.stringify( SLIM_HASH_OPTS.pluginVersion ) },
-	} ) ).catch( ( err ) => console.warn( '[tslp-e2e] post-process aux capture failed:', err && err.message || err ) );
+		...extra,
+	};
+}
+
+async function __waitForCaptureIdle( timeoutMs = 45000 ) {
+	const now = () => ( typeof window.__tslpRealNow === 'function' ? window.__tslpRealNow() : Date.now() );
+	const start = now();
+	while ( ( window.__tslpPrecompilePending | 0 ) > 0 || ( window.__tslpAuxCapturePending | 0 ) > 0 || __auxPromises.size > 0 ) {
+		if ( now() - start > timeoutMs ) throw new Error( 'timed out waiting for capture artifacts' );
+		await new Promise( ( resolve ) => setTimeout( resolve, 50 ) );
+	}
+}
+
+window.__tslpFlushCaptureArtifacts = async function () {
+	__flush();
+	if ( __renderer && __lastScene && __lastCamera ) {
+		__trackAuxCapture( precompileAuxiliary( __renderer, __lastScene, __lastCamera, __auxOpts() ), 'aux capture' );
+	}
+	if ( __renderer ) {
+		for ( const pipeline of __postProcessingPipelines ) {
+			__trackAuxCapture( precompileAuxiliary( __renderer, null, null, __auxOpts( { postProcessing: pipeline } ) ), 'post-process aux capture' );
+		}
+	}
+	await __waitForCaptureIdle();
+	return {
+		pendingMaterials: __pending.length,
+		precompilePending: window.__tslpPrecompilePending | 0,
+		auxPending: window.__tslpAuxCapturePending | 0,
+	};
+};
+
+export class Scene extends Original.Scene {
+	constructor( ...args ) {
+		super( ...args );
+		this.userData = this.userData || {};
+		this.userData.__tslpUserScene = true;
+	}
+}
+
+function __capturePostProcessing( pipeline ) {
+	if ( pipeline ) __postProcessingPipelines.add( pipeline );
 }
 
 const __RenderPipelineBase = Original.RenderPipeline || Original.PostProcessing;
@@ -383,13 +561,17 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		return result;
 	}
 	compile( scene, camera, ...rest ) {
+		if ( __pmremRunning > 0 ) return typeof super.compile === 'function' ? super.compile( scene, camera, ...rest ) : undefined;
+		__lastScene = scene;
+		__lastCamera = camera;
 		__markSceneMaterials( scene );
-		__flush();
 		return typeof super.compile === 'function' ? super.compile( scene, camera, ...rest ) : undefined;
 	}
 	compileAsync( scene, camera, ...rest ) {
+		if ( __pmremRunning > 0 ) return typeof super.compileAsync === 'function' ? super.compileAsync( scene, camera, ...rest ) : Promise.resolve();
+		__lastScene = scene;
+		__lastCamera = camera;
 		__markSceneMaterials( scene );
-		__flush();
 		if ( typeof super.compileAsync !== 'function' ) return Promise.resolve();
 		// Track this compile so the screenshot waits for it. MaterialX, GLTF, and
 		// other examples await renderer.compileAsync between asset loads to warm
@@ -401,44 +583,10 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		return Promise.resolve( p ).then( ( v ) => { _settle(); return v; }, ( e ) => { _settle(); throw e; } );
 	}
 	render( scene, camera ) {
+		if ( __pmremRunning > 0 ) return super.render( scene, camera );
+		__lastScene = scene;
+		__lastCamera = camera;
 		__markSceneMaterials( scene );
-		__flush();
-		const __auxOpts = {
-			devEndpoint: '/__tslp__/capture?example=' + encodeURIComponent( __state.example ),
-			three: Original,
-			// Use the slim bundle's baked-in threeVersion so capture hashes
-			// match replay hashes. The slim bundle hardcodes threeVersion at
-			// build time; using Original.REVISION (the three.js examples repo)
-			// can differ and produces mismatched configHashes.
-			threeVersion: ${ JSON.stringify( SLIM_HASH_OPTS.threeVersion ) },
-			pluginVersion: ${ JSON.stringify( SLIM_HASH_OPTS.pluginVersion ) },
-		};
-		if ( ! this.__tslpAuxStarted ) {
-			this.__tslpAuxStarted = true;
-			Promise.resolve().then( () => precompileAuxiliary( this, scene, camera, __auxOpts ) )
-				.catch( ( err ) => console.warn( '[tslp-e2e] aux capture failed:', err && err.message || err ) );
-		}
-		// Re-trigger aux capture when scene.backgroundNode (or scene.environment)
-		// appears AFTER the first render. Examples with async loaders (HDR cubemap,
-		// EXR equirect) wire their PMREM-style background in the load callback,
-		// which fires after our first-render capture has already missed it. Re-
-		// running precompileAuxiliary captures the background-aux artifact this
-		// time around. registerAuxArtifact dedupes by configHash, so unchanged
-		// shapes are no-ops.
-		const _bgNode = scene && scene.backgroundNode;
-		const _envTex = scene && scene.environment;
-		if ( this.__tslpAuxStarted && (
-			( _bgNode && this.__tslpLastBgNode !== _bgNode ) ||
-			( _envTex && this.__tslpLastEnvTex !== _envTex )
-		) ) {
-			this.__tslpLastBgNode = _bgNode;
-			this.__tslpLastEnvTex = _envTex;
-			Promise.resolve().then( () => precompileAuxiliary( this, scene, camera, __auxOpts ) )
-				.catch( ( err ) => console.warn( '[tslp-e2e] aux re-capture failed:', err && err.message || err ) );
-		} else {
-			this.__tslpLastBgNode = _bgNode;
-			this.__tslpLastEnvTex = _envTex;
-		}
 		return super.render( scene, camera );
 	}
 }
@@ -486,15 +634,13 @@ window.__tslpPmremPending = 0;
 	if ( ! cm || cm.__tslpHardened ) return;
 	cm.__tslpHardened = true;
 	const orig = cm.getTransfer.bind( cm );
-	const reported = new Set();
 	cm.getTransfer = function ( colorSpace ) {
 		try {
 			return orig( colorSpace );
 		} catch ( _ ) {
-			if ( ! reported.has( colorSpace ) ) {
-				reported.add( colorSpace );
-				console.warn( '[tslp-e2e] ColorManagement.getTransfer fallback for unknown colorSpace=', JSON.stringify( colorSpace ) );
-			}
+			const diag = window.__tslpHarnessDiagnostics || ( window.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
+			const key = colorSpace === undefined ? 'undefined' : colorSpace === null ? 'null' : String( colorSpace );
+			diag.colorTransferFallbacks[ key ] = ( diag.colorTransferFallbacks[ key ] || 0 ) + 1;
 			return orig( '' );
 		}
 	};
@@ -883,8 +1029,8 @@ function __takeMaterial( className, sourceMaterial = null ) {
 function __classNameForMaterial( material ) {
 	if ( ! material ) return 'Material';
 	if ( material.isMeshBasicNodeMaterial || material.isMeshBasicMaterial ) return 'MeshBasicNodeMaterial';
-	if ( material.isMeshStandardNodeMaterial || material.isMeshStandardMaterial ) return 'MeshStandardNodeMaterial';
 	if ( material.isMeshPhysicalNodeMaterial || material.isMeshPhysicalMaterial ) return 'MeshPhysicalNodeMaterial';
+	if ( material.isMeshStandardNodeMaterial || material.isMeshStandardMaterial ) return 'MeshStandardNodeMaterial';
 	if ( material.isMeshLambertNodeMaterial || material.isMeshLambertMaterial ) return 'MeshLambertNodeMaterial';
 	if ( material.isMeshPhongNodeMaterial || material.isMeshPhongMaterial ) return 'MeshPhongNodeMaterial';
 	if ( material.isMeshToonNodeMaterial || material.isMeshToonMaterial ) return 'MeshToonNodeMaterial';
@@ -895,8 +1041,8 @@ function __classNameForMaterial( material ) {
 	if ( material.isSpriteNodeMaterial || material.isSpriteMaterial ) return 'SpriteNodeMaterial';
 	const type = material.type || '';
 	if ( type === 'MeshBasicNodeMaterial' || type === 'MeshBasicMaterial' ) return 'MeshBasicNodeMaterial';
-	if ( type === 'MeshStandardNodeMaterial' || type === 'MeshStandardMaterial' ) return 'MeshStandardNodeMaterial';
 	if ( type === 'MeshPhysicalNodeMaterial' || type === 'MeshPhysicalMaterial' ) return 'MeshPhysicalNodeMaterial';
+	if ( type === 'MeshStandardNodeMaterial' || type === 'MeshStandardMaterial' ) return 'MeshStandardNodeMaterial';
 	if ( type === 'MeshLambertNodeMaterial' || type === 'MeshLambertMaterial' ) return 'MeshLambertNodeMaterial';
 	if ( type === 'MeshPhongNodeMaterial' || type === 'MeshPhongMaterial' ) return 'MeshPhongNodeMaterial';
 	if ( type === 'MeshToonNodeMaterial' || type === 'MeshToonMaterial' ) return 'MeshToonNodeMaterial';
@@ -974,8 +1120,36 @@ function __wireMaterialTextures( sourceMaterial, replacement ) {
 	const artifact = replacement.precompiledArtifact;
 	for ( const key of __TEXTURE_PROPS ) {
 		const tex = sourceMaterial[ key ];
-		if ( tex && tex.isTexture ) Slim.attachArtifactTextureRefs( artifact, tex );
+		if ( tex && tex.isTexture ) __attachArtifactTextureRefsWhere( artifact, tex, ( source ) => ! __isPMREMArtifactTextureSource( source ) );
 	}
+}
+
+function __isPMREMArtifactTextureSource( source ) {
+	return !! ( source && source.kind === 'artifact.texture' && ( source.mapping === 306 || source.textureName === 'PMREM.cubeUv' ) );
+}
+
+function __attachArtifactTextureRefsWhere( artifact, texture, predicate ) {
+	if ( ! artifact || ! texture || ! texture.isTexture || typeof predicate !== 'function' ) return artifact;
+	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
+	let changed = false;
+	for ( const group of artifact.uniformPlan || [] ) {
+		for ( const entry of group.textures || [] ) {
+			const source = entry && entry.source || {};
+			if ( source.kind !== 'artifact.texture' || ! source.textureUuid ) continue;
+			if ( ! predicate( source, entry, group ) ) continue;
+			refs.set( source.textureUuid, texture );
+			changed = true;
+		}
+	}
+	if ( changed ) {
+		Object.defineProperty( artifact, '_textureRefs', {
+			value: refs,
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		} );
+	}
+	return artifact;
 }
 
 const __wiredPCMaterials = new WeakSet();
@@ -1079,6 +1253,63 @@ function __textureImageReady( texture ) {
 	return true;
 }
 
+function __newFallbackTextureImage() {
+	return { data: new Uint8Array( [ 255, 255, 255, 255 ] ), width: 1, height: 1 };
+}
+
+function __harnessDiagnostics() {
+	return window.__tslpHarnessDiagnostics || ( window.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
+}
+
+function __pmremDiagnostics() {
+	const diag = __harnessDiagnostics();
+	if ( ! diag.pmrem ) {
+		diag.pmrem = {
+			kickCalls: 0,
+			cacheHits: 0,
+			pendingJoins: 0,
+			skippedNotReady: 0,
+			generateCalls: 0,
+			generateSuccess: 0,
+			generateFailed: 0,
+			noComputeRenderer: 0,
+			noGPUTexture: 0,
+			wireCalls: 0,
+			wireNoPmrem: 0,
+			wireAlreadyWired: 0,
+			wireNeedsPmrem: 0,
+			wireAttached: 0,
+		};
+	}
+	return diag.pmrem;
+}
+
+function __healTextureImage( texture ) {
+	if ( ! texture || ! texture.isTexture ) return;
+	const img = texture.image;
+	if ( img === null || img === undefined ) {
+		try {
+			texture.image = __newFallbackTextureImage();
+			__harnessDiagnostics().healedNullTextureImages ++;
+		} catch ( _ ) {}
+		return;
+	}
+	if ( Array.isArray( img ) ) {
+		let changed = false;
+		const healed = img.map( ( face ) => {
+			if ( face ) return face;
+			changed = true;
+			return __newFallbackTextureImage();
+		} );
+		if ( changed ) {
+			try {
+				texture.image = healed;
+				__harnessDiagnostics().healedNullTextureImages ++;
+			} catch ( _ ) {}
+		}
+	}
+}
+
 function __wireBackgroundTextures( scene, renderer ) {
 	const auxList = Array.isArray( __data.aux ) ? __data.aux : [];
 	// Pick a source cubemap: prefer scene.background (legacy path) but fall
@@ -1163,8 +1394,10 @@ let __pmremNoRendererWarned = false;  // dedup the global "no compute renderer" 
 // bindings). Called only when no PMREM is cached for sourceTex.
 async function __generatePMREMAsync( slimRenderer, sourceTex ) {
 	if ( __pmremFailed.has( sourceTex ) ) return null;
+	__pmremDiagnostics().generateCalls ++;
 	const fullRenderer = await __getComputeRenderer( slimRenderer );
 	if ( ! fullRenderer ) {
+		__pmremDiagnostics().noComputeRenderer ++;
 		if ( ! __pmremNoRendererWarned ) {
 			__pmremNoRendererWarned = true;
 			console.warn( '[tslp-e2e] PMREM: no compute renderer' );
@@ -1185,18 +1418,21 @@ async function __generatePMREMAsync( slimRenderer, sourceTex ) {
 			// slim's bindings empty.
 			const fullData = fullRenderer.backend && fullRenderer.backend.get( pmrem );
 			if ( ! fullData || ! fullData.texture ) {
+				__pmremDiagnostics().noGPUTexture ++;
 				if ( ! __pmremFailed.has( sourceTex ) ) {
 					__pmremFailed.add( sourceTex );
 					console.warn( '[tslp-e2e] PMREM: full backend has no GPU texture for PMREM' );
 				}
 			} else {
 				__sharePMREMGPUTexture( slimRenderer, fullRenderer, pmrem );
+				__pmremDiagnostics().generateSuccess ++;
 			}
 			__pmremCache.set( sourceTex, pmrem );
 		}
 		return pmrem || null;
 	} catch ( err ) {
 		__pmremFailed.add( sourceTex );
+		__pmremDiagnostics().generateFailed ++;
 		// Per-page warn-once: log only the FIRST PMREM failure for the entire
 		// page load. Per-texture dedup wasn't reliable because scene.environment
 		// gets swapped between renders and per-material envMap iteration creates
@@ -1232,6 +1468,7 @@ function __artifactNeedsPMREM( artifact ) {
 
 function __wireEnvironmentPMREM( renderer, scene ) {
 	if ( ! renderer || ! scene ) return;
+	__pmremDiagnostics().wireCalls ++;
 	const sceneEnvPmrem = ( scene.environment && scene.environment.isTexture )
 		? __pmremCache.get( scene.environment )
 		: null;
@@ -1248,11 +1485,16 @@ function __wireEnvironmentPMREM( renderer, scene ) {
 					const matEnv = m.envMap && m.envMap.isTexture ? m.envMap : null;
 					const matPmrem = matEnv ? __pmremCache.get( matEnv ) : null;
 					const pmrem = matPmrem || sceneEnvPmrem;
-					if ( ! pmrem ) continue;
+					if ( ! pmrem ) {
+						if ( __artifactNeedsPMREM( artifact ) ) __pmremDiagnostics().wireNoPmrem ++;
+						continue;
+					}
 					__pmremWiredArtifacts.add( artifact ); // mark checked regardless
 					const needsPmrem = __artifactNeedsPMREM( artifact );
 					if ( needsPmrem ) {
-						Slim.attachArtifactTextureRefs( artifact, pmrem );
+						__pmremDiagnostics().wireNeedsPmrem ++;
+						__attachArtifactTextureRefsWhere( artifact, pmrem, __isPMREMArtifactTextureSource );
+						m.needsUpdate = true;
 						// dispose() triggers onDispose() which removes this material's
 						// RenderObject from the renderer chain map. The next render
 						// creates a fresh RenderObject (with _nodeBuilderState=null),
@@ -1261,7 +1503,10 @@ function __wireEnvironmentPMREM( renderer, scene ) {
 						// program-level cache also misses so _createNodeBuilder fires.
 						try { m.dispose(); } catch ( _ ) {}
 						wiredCount ++;
+						__pmremDiagnostics().wireAttached ++;
 					}
+				} else {
+					__pmremDiagnostics().wireAlreadyWired ++;
 				}
 			}
 		}
@@ -1284,8 +1529,10 @@ function __wireEnvironmentPMREM( renderer, scene ) {
 // finishes so Playwright's freeze-wait condition can include it.
 function __kickPMREMGenAsync( slimRenderer, sourceTex, onReady ) {
 	if ( ! slimRenderer || ! sourceTex || ! sourceTex.isTexture ) return;
-	if ( __pmremCache.has( sourceTex ) ) { onReady( __pmremCache.get( sourceTex ) ); return; }
+	__pmremDiagnostics().kickCalls ++;
+	if ( __pmremCache.has( sourceTex ) ) { __pmremDiagnostics().cacheHits ++; onReady( __pmremCache.get( sourceTex ) ); return; }
 	if ( __pmremPending.has( sourceTex ) ) {
+		__pmremDiagnostics().pendingJoins ++;
 		__pmremPending.get( sourceTex ).then( ( pmrem ) => { if ( pmrem ) onReady( pmrem ); } ).catch( () => {} );
 		return;
 	}
@@ -1298,7 +1545,7 @@ function __kickPMREMGenAsync( slimRenderer, sourceTex, onReady ) {
 	// over the Playwright IPC. The loader counter keeps the freeze pending in
 	// the meantime, so returning without scheduling is safe; the next render
 	// after onLoad retries.
-	if ( ! __textureImageReady( sourceTex ) ) return;
+	if ( ! __textureImageReady( sourceTex ) ) { __pmremDiagnostics().skippedNotReady ++; return; }
 	window.__tslpPmremPending = ( window.__tslpPmremPending | 0 ) + 1;
 	const resultPromise = __generatePMREMAsync( slimRenderer, sourceTex ).catch( () => null );
 	__pmremPending.set( sourceTex, resultPromise );
@@ -1317,15 +1564,12 @@ function __kickPMREMGenAsync( slimRenderer, sourceTex, onReady ) {
 // from the captured artifact against currently-loaded textures.
 function __indexLiveTextures( scene ) {
 	if ( ! scene || typeof scene.traverse !== 'function' ) return;
-	const visit = ( tex ) => { if ( tex && tex.isTexture ) Slim.registerLiveTexture( tex ); };
-	if ( ! window.__tslpProbeIdxCalled ) {
-		window.__tslpProbeIdxCalled = true;
-		console.log( '[tslp-probe] __indexLiveTextures FIRST CALL  hasEnv=' + !! ( scene.environment && scene.environment.isTexture ) );
-	}
-	if ( ! window.__tslpProbeLoggedEnv && scene.environment && scene.environment.isTexture ) {
-		window.__tslpProbeLoggedEnv = true;
-		console.log( '[tslp-probe] scene.environment name=' + JSON.stringify( scene.environment.name ) + ' uuid=' + scene.environment.uuid + ' type=' + ( scene.environment.constructor && scene.environment.constructor.name ) );
-	}
+	const visit = ( tex ) => {
+		if ( tex && tex.isTexture ) {
+			__healTextureImage( tex );
+			Slim.registerLiveTexture( tex );
+		}
+	};
 	if ( scene.background && scene.background.isTexture ) visit( scene.background );
 	if ( scene.environment && scene.environment.isTexture ) visit( scene.environment );
 	scene.traverse( ( object ) => {
@@ -1959,7 +2203,7 @@ export class WebGPURenderer extends Slim.WebGPURenderer {
 				const auxList = Array.isArray( __data.aux ) ? __data.aux : [];
 				for ( const entry of auxList ) {
 					if ( entry && entry.shape === 'background' && entry.artifact ) {
-						Slim.attachArtifactTextureRefs( entry.artifact, pmrem );
+						__attachArtifactTextureRefsWhere( entry.artifact, pmrem, __isPMREMArtifactTextureSource );
 					}
 				}
 				// Clear renderer's internal quad cache so Background.js re-creates
@@ -2243,6 +2487,7 @@ const server = createServer( async ( req, res ) => {
 		const url = new URL( req.url, 'http://localhost' );
 
 		if ( url.pathname === '/__tslp__/capture' ) return handleCapture( req, res, url );
+		if ( url.pathname === '/__tslp__/stock-webgpu.js' ) return sendJs( res, stockWebgpuModule() );
 		if ( url.pathname === '/__tslp__/full-webgpu-auto.js' ) return sendJs( res, fullWebgpuAutoModule() );
 		if ( url.pathname === '/__tslp__/slim-webgpu-replay.js' ) return sendJs( res, slimWebgpuReplayModule() );
 		if ( url.pathname === '/__tslp__/tsl-stub.js' ) return sendJs( res, tslStubModule() );
@@ -2287,7 +2532,8 @@ const server = createServer( async ( req, res ) => {
 		let buf = await readFile( filePath );
 		if ( filePath.endsWith( '.html' ) && filePath.includes( '/examples/webgpu_' ) ) {
 
-			const mode = url.searchParams.get( '__tslp_mode' ) === 'replay' ? 'replay' : 'capture';
+			const requestedMode = url.searchParams.get( '__tslp_mode' );
+			const mode = requestedMode === 'replay' ? 'replay' : requestedMode === 'stock' ? 'stock' : 'capture';
 			const example = url.pathname.split( '/' ).pop();
 			buf = Buffer.from( injectHtml( buf.toString( 'utf8' ), example, mode ) );
 
@@ -2337,7 +2583,46 @@ async function sendFile( res, file ) {
 
 }
 
-await new Promise( ( ok, fail ) => server.listen( port, '127.0.0.1', ok ).once( 'error', fail ) );
+async function listenWithPortFallback( server, startPort, maxRetries ) {
+
+	for ( let attempt = 0; attempt <= maxRetries; attempt ++ ) {
+
+		const candidate = startPort + attempt;
+		try {
+
+			await new Promise( ( ok, fail ) => {
+
+				const onError = ( err ) => {
+
+					server.off( 'listening', onListening );
+					fail( err );
+
+				};
+				const onListening = () => {
+
+					server.off( 'error', onError );
+					ok();
+
+				};
+				server.once( 'error', onError );
+				server.once( 'listening', onListening );
+				server.listen( candidate, '127.0.0.1' );
+
+			} );
+			if ( candidate !== startPort ) console.warn( `[batch-e2e] port ${ startPort } busy; using ${ candidate } instead` );
+			return candidate;
+
+		} catch ( err ) {
+
+			if ( ! err || err.code !== 'EADDRINUSE' || attempt === maxRetries ) throw err;
+
+		}
+
+	}
+
+}
+
+port = await listenWithPortFallback( server, port, portRetries );
 console.log( `[batch-e2e] server on http://localhost:${ port}/` );
 
 const BROWSER_ARGS = [ '--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--no-sandbox', '--disable-dev-shm-usage' ];
@@ -2370,14 +2655,11 @@ const MAX_RUNS_PER_BROWSER = 6;
 
 // Deterministic-time replay support. Animated examples driven by
 // `setAnimationLoop` would otherwise sample different animation phases on
-// capture vs replay (the default capture-wait was 8 s vs replay-wait 5 s
-// in real-time wall-clock), tanking PSNR purely from animation jitter
-// rather than rendering differences. We inject a `requestAnimationFrame`
-// shim before navigation that hands out synthetic monotonic timestamps,
-// step by step, on every tick — so both passes see identical `time`
-// arguments at the same Nth tick. After both passes have advanced past
-// TARGET_TICK we freeze the synthetic clock and screenshot. Real-time
-// fetch / XHR are unaffected, so HDR / KTX2 / GLTF loaders still work.
+// stock/capture/replay. The default target tick is 0: take the first fully
+// loaded, settled frame so per-frame mutations like `rotation += 0.005`
+// cannot drift while assets and PMREM compile at different speeds. Use
+// `--target-tick=60` when deliberately auditing a later animation phase.
+// Real-time fetch / XHR are unaffected, so HDR / KTX2 / GLTF loaders still work.
 const FRAME_TIME_MS = 1000;
 const ASSET_SETTLE_MS = 1500;
 
@@ -2584,6 +2866,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 	const context = await browser.newContext( { viewport: { width: 640, height: 480 } } );
 	const page = await context.newPage();
 	const errors = [];
+	const warnings = [];
 	page.on( 'pageerror', ( e ) => {
 
 		const detail = String( e && ( e.stack || e.message ) || e );
@@ -2619,8 +2902,11 @@ async function visitExample( browser, name, mode, waitMs ) {
 			errors.push( m.text() );
 			if ( process.env.TSLP_DEBUG_TORNADO ) console.error( `[console-error ${ mode }]`, m.text() );
 		}
-		if ( m.type() === 'warning' && m.text().includes( '[tslp' ) ) console.warn( `[page-warn] ${ m.text() }` );
-		if ( m.type() === 'log' && m.text().includes( '[tslp' ) ) console.log( `[page-log] ${ m.text() }` );
+		if ( m.type() === 'warning' && m.text().includes( '[tslp' ) ) {
+			warnings.push( m.text() );
+			if ( verboseConsole ) console.warn( `[page-warn ${ mode }] ${ m.text() }` );
+		}
+		if ( m.type() === 'log' && m.text().includes( '[tslp' ) && verboseConsole ) console.log( `[page-log ${ mode }] ${ m.text() }` );
 		if ( process.env.TSLP_DEBUG_TORNADO_VERBOSE ) console.log( `[page-${ m.type() } ${ mode }]`, m.text() );
 
 	} );
@@ -2633,13 +2919,13 @@ async function visitExample( browser, name, mode, waitMs ) {
 	// renderer init still progress on real time — only the animation
 	// loop sees the synthetic clock.
 	//
-	// Both capture and replay block until tick >= TARGET_TICK, freeze
-	// the synthetic clock at TARGET_TICK, then screenshot. Any
+	// Stock, capture, and replay block until tick >= TARGET_TICK, freeze
+	// the synthetic clock at TARGET_TICK, then screenshot. With the default
+	// target tick of 0, any
 	// `setAnimationLoop( ( time ) => ... )` callback therefore sees the
-	// same `time` argument at the same simulated frame in both passes,
-	// so animated examples sample identical animation phase regardless
-	// of how long real-time setup took.
-	const TARGET_TICK = 60; // 60 frames of simulated 60Hz animation = 1s
+	// same post-load settled time in all passes, so per-frame animations do
+	// not drift just because replay generated PMREM or hydrated artifacts.
+	const TARGET_TICK = Number.isFinite( targetTick ) ? Math.max( 0, targetTick | 0 ) : 0;
 	const FRAME_STEP_MS = 16.6667;
 	try {
 
@@ -2651,7 +2937,6 @@ async function visitExample( browser, name, mode, waitMs ) {
 		if ( name && name.includes( 'compute_cloth' ) && mode === 'replay' ) {
 			await page.addInitScript( () => { globalThis.__TSLP_DBG_CLOTH = true; window.__TSLP_DBG_CLOTH = true; } );
 		}
-
 		await page.addInitScript( ( { step, base, freezeAt, quiescentMs, settleFrames } ) => {
 
 			// eslint-disable-next-line no-undef
@@ -2823,11 +3108,10 @@ async function visitExample( browser, name, mode, waitMs ) {
 		// and post-init scene mutations have time to complete.
 		await new Promise( ( r ) => setTimeout( r, ASSET_SETTLE_MS ) );
 
-		// Wait until the init-script rAF wrapper has fired exactly
-		// TARGET_TICK callbacks and self-frozen. The freeze happens
+		// Wait until the init-script rAF wrapper reaches TARGET_TICK and
+		// self-freezes. The freeze happens
 		// atomically inside the wrapper (no Playwright round-trip race),
-		// so both capture and replay always execute exactly the same
-		// number of animate() calls before we screenshot.
+		// so stock/capture/replay screenshot the same settled animation phase.
 		try {
 
 			await page.waitForFunction(
@@ -2866,12 +3150,19 @@ async function visitExample( browser, name, mode, waitMs ) {
 		// composited frame, so computing brightness from it gives the true value.
 		const shotBright = shot ? await brightFraction( page, shot ) : 0;
 		const finalBright = Math.max( bright, shotBright );
+		if ( mode === 'capture' ) {
+			await page.evaluate( async () => {
+				if ( typeof window.__tslpFlushCaptureArtifacts === 'function' ) await window.__tslpFlushCaptureArtifacts();
+			} );
+		}
 		const real = errors.filter( ( e ) => ! /favicon|Failed to load resource/i.test( e ) );
-		return { bright: finalBright, shot, errors: real.slice( 0, 5 ), context, page };
+		const diagnostics = await page.evaluate( () => window.__tslpHarnessDiagnostics || null ).catch( () => null );
+		return { bright: finalBright, shot, errors: real.slice( 0, 5 ), warnings: warnings.slice( 0, 5 ), diagnostics, context, page };
 
 	} catch ( err ) {
 
-		return { bright: 0, shot: null, errors: [ err && err.message || String( err ) ], navigationError: true, context, page };
+		const diagnostics = await page.evaluate( () => window.__tslpHarnessDiagnostics || null ).catch( () => null );
+		return { bright: 0, shot: null, errors: [ err && err.message || String( err ) ], warnings: warnings.slice( 0, 5 ), diagnostics, navigationError: true, context, page };
 
 	}
 
@@ -2899,11 +3190,32 @@ function pixelGateOf( metrics, threshold ) {
 
 }
 
+function mergeDiagnostics( ...items ) {
+
+	const present = items.filter( Boolean );
+	if ( present.length === 0 ) return null;
+	const merged = { colorTransferFallbacks: {}, healedNullTextureImages: 0 };
+	for ( const item of present ) {
+
+		merged.healedNullTextureImages += item.healedNullTextureImages | 0;
+		for ( const [ key, count ] of Object.entries( item.colorTransferFallbacks || {} ) ) {
+
+			merged.colorTransferFallbacks[ key ] = ( merged.colorTransferFallbacks[ key ] || 0 ) + ( count | 0 );
+
+		}
+
+	}
+	return merged;
+
+}
+
 async function runOne( browser, name ) {
 
 	captures.delete( name );
-	const capture = await visitExample( browser, name, 'capture', captureWaitMs );
+	const capture = await visitExample( browser, name, 'stock', captureWaitMs );
 	await capture.context.close().catch( () => {} );
+	const artifactCapture = await visitExample( browser, name, 'capture', captureWaitMs );
+	await artifactCapture.context.close().catch( () => {} );
 	const bucket = captureBucket( name );
 	const userCount = Object.keys( bucket.user ).length;
 	const auxCount = bucket.aux.length;
@@ -2911,7 +3223,9 @@ async function runOne( browser, name ) {
 	const auxSummaries = summarizeAuxArtifacts( bucket );
 
 	const replay = await visitExample( browser, name, 'replay', replayWaitMs );
-	const blockingCaptureErrors = capture.errors.filter( ( error ) => ! isIgnorableCaptureError( error ) );
+	const captureErrors = [ ...capture.errors, ...artifactCapture.errors ];
+	const captureWarnings = [ ...( capture.warnings || [] ), ...( artifactCapture.warnings || [] ) ];
+	const blockingCaptureErrors = captureErrors.filter( ( error ) => ! isIgnorableCaptureError( error ) );
 	const blockingReplayErrors = replay.errors.filter( ( error ) => ! isIgnorableReplayError( error ) );
 
 	let pixelMetrics;
@@ -2952,8 +3266,12 @@ async function runOne( browser, name ) {
 		pixelGate,
 		userArtifacts: userCount,
 		auxArtifacts: auxCount,
-		captureErrors: capture.errors,
+		captureErrors,
 		replayErrors: replay.errors,
+		captureWarnings,
+		replayWarnings: replay.warnings || [],
+		captureDiagnostics: mergeDiagnostics( capture.diagnostics, artifactCapture.diagnostics ),
+		replayDiagnostics: replay.diagnostics || null,
 		artifactSummaries,
 		auxSummaries,
 		error: pass ? null : summarizeFailure( { userCount, blockingCaptureErrors, replayBright: replay.bright, blockingReplayErrors, pixelGate, pixelGateEnabled } ),
@@ -3064,11 +3382,82 @@ function summarizeFailure( { userCount, blockingCaptureErrors, replayBright, blo
 
 }
 
+function formatPercent( value ) {
+
+	if ( typeof value !== 'number' || ! Number.isFinite( value ) ) return 'n/a';
+	return ( value * 100 ).toFixed( 1 ) + '%';
+
+}
+
+function compactText( value, max = 180 ) {
+
+	const text = String( value || '' ).replace( /\s+/g, ' ' ).trim();
+	return text.length > max ? text.slice( 0, max - 1 ) + '…' : text;
+
+}
+
+function formatPixelGate( gate ) {
+
+	if ( ! gate ) return 'psnr n/a';
+	if ( gate.skipped ) return `psnr skipped (${ compactText( gate.reason, 48 ) })`;
+	if ( gate.pass === undefined ) return 'psnr n/a';
+	const verdict = gate.pass ? 'ok' : 'FAIL';
+	return `psnr ${ gate.psnr }/${ gate.threshold } dB ${ verdict }`;
+
+}
+
+function diagnosticNote( diagnostics ) {
+
+	if ( ! diagnostics ) return '';
+	const parts = [];
+	if ( diagnostics.healedNullTextureImages > 0 ) parts.push( `healed-null-images=${ diagnostics.healedNullTextureImages }` );
+	const fallbacks = diagnostics.colorTransferFallbacks || {};
+	const fallbackTotal = Object.values( fallbacks ).reduce( ( sum, count ) => sum + ( count | 0 ), 0 );
+	if ( fallbackTotal > 0 ) parts.push( `color-fallbacks=${ fallbackTotal }` );
+	return parts.length ? parts.join( ', ' ) : '';
+
+}
+
+function formatResultLine( label, result ) {
+
+	const status = result.status === 'pass' ? 'PASS' : 'FAIL';
+	const parts = [
+		`${ label } ${ status }`,
+		`artifacts ${ result.userArtifacts }+${ result.auxArtifacts }`,
+		`capture ${ formatPercent( result.captureBrightFrac ) }`,
+		`replay ${ formatPercent( result.replayBrightFrac ) }`,
+		formatPixelGate( result.pixelGate ),
+	];
+	const diag = diagnosticNote( result.replayDiagnostics );
+	if ( diag ) parts.push( diag );
+	if ( result.error ) parts.push( `error: ${ compactText( result.error ) }` );
+	return parts.join( ' | ' );
+
+}
+
+function printFailureSummary( details, max = 20 ) {
+
+	const failures = details.filter( ( result ) => result && result.status === 'fail' );
+	if ( failures.length === 0 ) return;
+	console.log( '\nFailures:' );
+	for ( const result of failures.slice( 0, max ) ) {
+		const replayErrors = Array.isArray( result.replayErrors ) ? result.replayErrors.length : 0;
+		const captureErrors = Array.isArray( result.captureErrors ) ? result.captureErrors.length : 0;
+		const diag = diagnosticNote( result.replayDiagnostics );
+		console.log( `  - ${ result.name }: ${ formatPixelGate( result.pixelGate ) }; replay ${ formatPercent( result.replayBrightFrac ) }; artifacts ${ result.userArtifacts }+${ result.auxArtifacts }; captureErrors=${ captureErrors }; replayErrors=${ replayErrors }${ diag ? '; ' + diag : '' }` );
+		if ( result.error ) console.log( `    ${ compactText( result.error, 240 ) }` );
+	}
+	if ( failures.length > max ) console.log( `  ... ${ failures.length - max } more failures in the JSON report` );
+
+}
+
 let browser = await chromium.launch( { channel: 'chrome', headless: true, args: BROWSER_ARGS } ).catch( () => null );
 if ( ! browser ) browser = await chromium.launch( { headless: true, args: BROWSER_ARGS } );
 
 const report = { total: candidates.length, pass: 0, fail: 0, skip: allExamples.length - candidates.length, details: [] };
 let runsSinceRestart = 0;
+
+const reportPath = join( OUT, reportFile );
 
 try {
 
@@ -3092,16 +3481,15 @@ try {
 			runsSinceRestart ++;
 			if ( result.status === 'pass' ) report.pass ++; else report.fail ++;
 			report.details.push( result );
+			writeFileSync( reportPath, JSON.stringify( report, null, 2 ) );
 
-			const tag = result.status === 'pass' ? '✓' : '✗';
-			const gate = result.pixelGate || {};
-			const pixInfo = gate.skipped ? ` px=skip(${ gate.reason })` : ( gate.pass !== undefined ? ` psnr=${ gate.psnr }dB${ gate.pass === false ? '✗' : '' }` : '' );
-			console.log( `${ label } — ${ tag} artifacts=${ result.userArtifacts } aux=${ result.auxArtifacts } replayBright=${ result.replayBrightFrac }${ pixInfo }${ result.error ? ' err="' + result.error.slice( 0, 80 ) + '"' : '' }` );
+			console.log( formatResultLine( label, result ) );
 
 		} catch ( err ) {
 
 			report.fail ++;
 			report.details.push( { name, status: 'fail', error: err && err.message || String( err ) } );
+			writeFileSync( reportPath, JSON.stringify( report, null, 2 ) );
 			console.log( `${ label } — FAIL harness-error "${ err && err.message || err }"` );
 
 			// Recover from a dead browser: without this, the first Chrome crash
@@ -3127,11 +3515,11 @@ try {
 
 }
 
-const reportPath = join( OUT, reportFile );
 writeFileSync( reportPath, JSON.stringify( report, null, 2 ) );
 
 console.log( '\n═══ e2e summary ═══' );
 console.log( `  ${ report.pass } pass, ${ report.fail } fail, ${ report.skip } skip, ${ report.total } candidates` );
 console.log( `  report: ${ reportPath }` );
+printFailureSummary( report.details );
 
 process.exit( report.fail === 0 ? 0 : 1 );

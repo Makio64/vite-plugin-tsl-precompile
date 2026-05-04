@@ -35,7 +35,11 @@
       "Bash(npm test *)",
       "Bash(TSLP_DEBUG_TORNADO=1 node packages/examples/batch/run-e2e.mjs --filter=webgpu_materials_toon --psnr-threshold=0 --no-pixel-gate)",
       "Bash(tee /tmp/toon-e2e.log)",
-      "Bash(node packages/examples/batch/run-e2e.mjs --filter=webgpu_clipping --save-shots)"
+      "Bash(node packages/examples/batch/run-e2e.mjs --filter=webgpu_clipping --save-shots)",
+      "Bash(node packages/examples/batch/run-e2e.mjs --filter=webgpu_particles --report=e2e-report-smoke.json)"
+    ],
+    "additionalDirectories": [
+      "/Users/davidronai/Desktop/git/vite-plugin-tsl-precompile/packages/examples/batch/results"
     ]
   }
 }
