@@ -59,9 +59,14 @@ export function rewriteThreeSource( code, id, opts ) {
 			errorRecovery: false,
 		} );
 
+		if ( typeof opts.threeVersion !== 'string' || opts.threeVersion.length === 0 ) {
+
+			throw new Error( 'rewriteThreeSource: opts.threeVersion is required (>= 184)' );
+
+		}
 		const ctx = {
 			id,
-			threeVersion: opts.threeVersion || 'unknown',
+			threeVersion: opts.threeVersion,
 			pluginVersion: opts.pluginVersion || '0.0.0',
 			touched: false,
 		};

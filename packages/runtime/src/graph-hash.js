@@ -22,6 +22,21 @@
 
 const MAX_GRAPH_DEPTH = 128;
 
+function assertVersion( fn, threeVersion, pluginVersion ) {
+
+	if ( typeof threeVersion !== 'string' || threeVersion.length === 0 ) {
+
+		throw new Error( `${ fn }: "threeVersion" is required (>= 184)` );
+
+	}
+	if ( typeof pluginVersion !== 'string' || pluginVersion.length === 0 ) {
+
+		throw new Error( `${ fn }: "pluginVersion" is required` );
+
+	}
+
+}
+
 /**
  * Stable sentinel hash returned by `hashNodeGraphSync` when the input looks
  * like a TSL stub-proxy rather than a real node graph. The slim replay
@@ -107,11 +122,12 @@ export async function hashNodeGraph( node, { shape, threeVersion, pluginVersion 
 		throw new TypeError( 'hashNodeGraph: "shape" must be a non-empty string' );
 
 	}
+	assertVersion( 'hashNodeGraph', threeVersion, pluginVersion );
 
 	if ( isStubLikeNode( node ) ) return stubSentinelHash( shape );
 
 	const normalized = normalizeNode( node, new Set(), 0 );
-	const payload = [ 'node-v1', shape, threeVersion || '<unknown-three>', pluginVersion || '<unknown-plugin>', normalized ].join( '\n' );
+	const payload = [ 'node-v1', shape, threeVersion, pluginVersion, normalized ].join( '\n' );
 	return sha256Hex( payload );
 
 }
@@ -136,10 +152,12 @@ export async function hashNodeGraph( node, { shape, threeVersion, pluginVersion 
  */
 export function hashNodeGraphSync( node, { shape, threeVersion, pluginVersion } ) {
 
+	assertVersion( 'hashNodeGraphSync', threeVersion, pluginVersion );
+
 	if ( isStubLikeNode( node ) ) return stubSentinelHash( shape );
 
 	const normalized = normalizeNode( node, new Set(), 0 );
-	const payload = [ 'node-v1', shape, threeVersion || '<unknown-three>', pluginVersion || '<unknown-plugin>', normalized ].join( '\n' );
+	const payload = [ 'node-v1', shape, threeVersion, pluginVersion, normalized ].join( '\n' );
 	return sha256HexSync( payload );
 
 }
@@ -160,11 +178,12 @@ export function hashPlainConfigSync( config, { shape, threeVersion, pluginVersio
 		throw new TypeError( 'hashPlainConfigSync: "shape" must be a non-empty string' );
 
 	}
+	assertVersion( 'hashPlainConfigSync', threeVersion, pluginVersion );
 	const payload = [
 		'plain-v1',
 		shape,
-		threeVersion || '<unknown-three>',
-		pluginVersion || '<unknown-plugin>',
+		threeVersion,
+		pluginVersion,
 		stableStringify( config ),
 	].join( '\n' );
 	return sha256HexSync( payload );
@@ -222,13 +241,14 @@ export function hashMaterialSync( material, { name, threeVersion, pluginVersion 
 		throw new TypeError( `hashMaterialSync: "name" must be a non-empty string; got ${ typeof name }` );
 
 	}
+	assertVersion( 'hashMaterialSync', threeVersion, pluginVersion );
 
 	const normalized = normalizeMaterialGraph( material );
 	const payload = [
 		'v1',
 		name,
-		threeVersion || '<unknown-three>',
-		pluginVersion || '<unknown-plugin>',
+		threeVersion,
+		pluginVersion,
 		normalized,
 	].join( '\n' );
 
@@ -251,13 +271,14 @@ export function hashArtifactContentSync( artifact, { shape, threeVersion, plugin
 		throw new TypeError( 'hashArtifactContentSync: "shape" must be a non-empty string' );
 
 	}
+	assertVersion( 'hashArtifactContentSync', threeVersion, pluginVersion );
 
 	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
 	const payload = [
 		'artifact-v1',
 		shape,
-		threeVersion || '<unknown-three>',
-		pluginVersion || '<unknown-plugin>',
+		threeVersion,
+		pluginVersion,
 		String( artifact.vertexShader || '' ),
 		String( artifact.fragmentShader || '' ),
 		normaliseUniformPlanLocal( plan ),
@@ -318,6 +339,18 @@ export function normalizeNode( node, seen, depth ) {
 
 	const leaf = leafRepr( node );
 	if ( leaf !== null ) return `${ tag }(${ leaf })`;
+
+	// MRTNode parity with packages/plugin/src/hash.js — `outputNodes` is the
+	// only structural property that determines the captured fragment shader's
+	// attachment count, but it doesn't match `isPotentialChild`'s whitelist.
+	if ( node.isMRTNode ) {
+
+		const outputMap = node.outputNodes || node.nodes || {};
+		const names = Object.keys( outputMap ).sort();
+		const slots = names.map( ( name ) => `${ name }=${ normalizeNode( outputMap[ name ], seen, depth + 1 ) }` );
+		return `${ tag }{outputs=[${ slots.join( ',' ) }]}`;
+
+	}
 
 	const kids = [];
 	for ( const key of Object.keys( node ).sort() ) {

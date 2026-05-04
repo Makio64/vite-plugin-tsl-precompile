@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { registerArtifact, getArtifact } from '../src/artifact-loader.js';
 import { hydrateNodeBuilderState, registerLiveTexture, clearLiveTextureIndex } from '../src/hydrator.js';
-import { __applyPrecompiled } from '../src/apply-precompiled.js';
+import { __applyPrecompiled, catalogueArtifactTextureRefs, collectLiveMaterialTextures } from '../src/apply-precompiled.js';
 import PrecompiledMaterial from '../src/_vendor-PrecompiledMaterial.js';
 import { PrecompiledComputeNode } from '../src/precompiled-compute-node.js';
 import {
@@ -353,6 +353,42 @@ test( 'PrecompiledMaterial attaches an inert MRT stub when artifact.mrtOutputCou
 	// keys them into distinct render contexts.
 	const mrt2 = new PrecompiledMaterial( { uniformPlan: [], vertexShader: 'v', fragmentShader: 'f', mrtOutputCount: 2 } );
 	assert.notEqual( mrt.mrtNode.id, mrt2.mrtNode.id );
+
+} );
+
+test( 'PrecompiledMaterial honors captured mrtOutputNames and mrtBlendModes', () => {
+
+	// When the artifact carries the captured per-output names + blend modes,
+	// the stub uses them so three.js's pipeline cache key matches what the
+	// fragment shader expects (no more hardcoded NoBlending). Names like
+	// `output`/`normal`/`mask` are real three.js MRT pass conventions.
+	const mat = new PrecompiledMaterial( {
+		uniformPlan: [],
+		vertexShader: 'v',
+		fragmentShader: 'f',
+		mrtOutputCount: 2,
+		mrtOutputNames: [ 'output', 'normal' ],
+		mrtBlendModes: { output: 1 /* NormalBlending */, normal: 0 /* NoBlending */ },
+	} );
+	assert.deepEqual( Object.keys( mat.mrtNode.outputNodes ).sort(), [ 'normal', 'output' ] );
+	assert.equal( mat.mrtNode.has( 'output' ), true );
+	assert.equal( mat.mrtNode.has( 'normal' ), true );
+	assert.equal( mat.mrtNode.has( 'output0' ), false, 'must not synthesize output0 when names provided' );
+	assert.deepEqual( mat.mrtNode.getBlendMode( 'output' ), { blending: 1 } );
+	assert.deepEqual( mat.mrtNode.getBlendMode( 'normal' ), { blending: 0 } );
+	assert.deepEqual( mat.mrtNode.getBlendMode( 'unknown' ), { blending: 0 }, 'unknown name falls back to NoBlending' );
+
+	// Length mismatch between outputCount and outputNames falls back to synthetic names.
+	const fallback = new PrecompiledMaterial( {
+		uniformPlan: [],
+		vertexShader: 'v',
+		fragmentShader: 'f',
+		mrtOutputCount: 3,
+		mrtOutputNames: [ 'just-one' ],
+	} );
+	assert.equal( fallback.mrtNode.has( 'output0' ), true );
+	assert.equal( fallback.mrtNode.has( 'output2' ), true );
+	assert.equal( fallback.mrtNode.has( 'just-one' ), false );
 
 } );
 
@@ -1140,5 +1176,247 @@ test( 'storage-texture: falls back to blank Storage3DTexture when not registered
 	// When no named texture matches, the fallback is the module-level fallback3DTexture
 	// which is a Data3DTexture (isData3DTexture = true).
 	assert.ok( binding.texture && ( binding.texture.is3DTexture || binding.texture.isData3DTexture ), 'fallback must still be a 3D texture' );
+
+} );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Anonymous DataTexture fallback for trivial-zeros snapshots — covers the
+// webgpu_compute_audio case where analyserTexture is captured before any audio
+// playback. The captured snapshot is all-zeros, but a unique live DataTexture
+// of matching shape exists; the hydrator should bind the live one.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test( 'hydrator: anonymous DataTexture by shape replaces trivial-zeros snapshot', async () => {
+
+	clearLiveTextureIndex();
+
+	const { DataTexture, RedFormat, UnsignedByteType } = await import( 'three' );
+	const live = new DataTexture( new Uint8Array( 1024 ), 1024, 1, RedFormat, UnsignedByteType );
+	live.needsUpdate = true;
+
+	// The prototype-patched setter defers registration via Promise.resolve().then(...).
+	await new Promise( resolve => setTimeout( resolve, 0 ) );
+
+	const snapshot = {
+		width: 1024,
+		height: 1,
+		arrayType: 'Uint8Array',
+		data: new Array( 1024 ).fill( 0 ),
+		format: RedFormat,
+		type: UnsignedByteType,
+		flipY: false,
+	};
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: '@group(1) @binding(0) var nodeUniform0 : texture_2d<f32>;',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'nodeUniform0', kind: 'sampled-texture', visibility: 2, textureType: '2d' },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			slots: [],
+			textures: [
+				{ name: 'nodeUniform0', source: { kind: 'artifact.texture', textureUuid: 'dead-uuid-audio', snapshot } },
+			],
+		} ],
+	};
+
+	const state = hydrateNodeBuilderState( artifact );
+	const binding = state.bindings[ 0 ].bindings[ 0 ];
+	assert.equal( binding.texture, live, 'must bind the live anonymous DataTexture, not a snapshot copy' );
+
+	clearLiveTextureIndex();
+
+} );
+
+test( 'hydrator: anonymous DataTexture fallback skipped when snapshot has real data', async () => {
+
+	clearLiveTextureIndex();
+
+	const { DataTexture, RedFormat, UnsignedByteType } = await import( 'three' );
+	const live = new DataTexture( new Uint8Array( 4 ), 2, 1, RedFormat, UnsignedByteType );
+	live.needsUpdate = true;
+	await new Promise( resolve => setTimeout( resolve, 0 ) );
+
+	// Snapshot has > 1% non-zero bytes — not trivial, must use snapshot.
+	const snapshot = {
+		width: 2,
+		height: 1,
+		arrayType: 'Uint8Array',
+		data: [ 255, 128, 64, 32 ],
+		format: RedFormat,
+		type: UnsignedByteType,
+	};
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: '@group(1) @binding(0) var nodeUniform0 : texture_2d<f32>;',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'nodeUniform0', kind: 'sampled-texture', visibility: 2, textureType: '2d' },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			slots: [],
+			textures: [
+				{ name: 'nodeUniform0', source: { kind: 'artifact.texture', textureUuid: 'dead-uuid-static', snapshot } },
+			],
+		} ],
+	};
+
+	const state = hydrateNodeBuilderState( artifact );
+	const binding = state.bindings[ 0 ].bindings[ 0 ];
+	assert.notEqual( binding.texture, live, 'snapshot has real data — must not collapse to live texture' );
+	assert.equal( binding.texture.image.data[ 0 ], 255 );
+
+	clearLiveTextureIndex();
+
+} );
+
+test( 'hydrator: anonymous DataTexture fallback bails on shape ambiguity', async () => {
+
+	clearLiveTextureIndex();
+
+	const { DataTexture, RedFormat, UnsignedByteType } = await import( 'three' );
+	const liveA = new DataTexture( new Uint8Array( 1024 ), 1024, 1, RedFormat, UnsignedByteType );
+	liveA.needsUpdate = true;
+	const liveB = new DataTexture( new Uint8Array( 1024 ), 1024, 1, RedFormat, UnsignedByteType );
+	liveB.needsUpdate = true;
+	await new Promise( resolve => setTimeout( resolve, 0 ) );
+
+	const snapshot = {
+		width: 1024,
+		height: 1,
+		arrayType: 'Uint8Array',
+		data: new Array( 1024 ).fill( 0 ),
+		format: RedFormat,
+		type: UnsignedByteType,
+	};
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: '@group(1) @binding(0) var nodeUniform0 : texture_2d<f32>;',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'nodeUniform0', kind: 'sampled-texture', visibility: 2, textureType: '2d' },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			slots: [],
+			textures: [
+				{ name: 'nodeUniform0', source: { kind: 'artifact.texture', textureUuid: 'dead-uuid-ambig', snapshot } },
+			],
+		} ],
+	};
+
+	const state = hydrateNodeBuilderState( artifact );
+	const binding = state.bindings[ 0 ].bindings[ 0 ];
+	assert.notEqual( binding.texture, liveA, 'ambiguous shape — must not pick liveA' );
+	assert.notEqual( binding.texture, liveB, 'ambiguous shape — must not pick liveB' );
+	assert.equal( binding.texture.isDataTexture, true, 'falls back to a snapshot DataTexture' );
+
+	clearLiveTextureIndex();
+
+} );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 1: Node-graph texture cataloguing — `material.colorNode = texture(t)`
+// must be picked up so the hydrator's UUID lookup hits the live Texture
+// instead of falling through to the 1×1 white fallback.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test( 'collectLiveMaterialTextures: catalogues hardcoded property textures', () => {
+
+	const map = { isTexture: true, uuid: 'tex-map' };
+	const envMap = { isTexture: true, uuid: 'tex-env' };
+	const out = collectLiveMaterialTextures( { map, envMap } );
+
+	assert.equal( out.size, 2 );
+	assert.equal( out.get( 'tex-map' ), map );
+	assert.equal( out.get( 'tex-env' ), envMap );
+
+} );
+
+test( 'collectLiveMaterialTextures: walks TextureNodes embedded in colorNode', () => {
+
+	// material.colorNode = texture(myTex) shape: top-level node IS a TextureNode.
+	const tex = { isTexture: true, uuid: 'tex-color-node' };
+	const colorNode = { isTextureNode: true, value: tex };
+	const out = collectLiveMaterialTextures( { colorNode } );
+
+	assert.equal( out.size, 1 );
+	assert.equal( out.get( 'tex-color-node' ), tex );
+
+} );
+
+test( 'collectLiveMaterialTextures: walks TextureNodes buried inside node.traverse()', () => {
+
+	// material.colorNode = mix(texture(a), texture(b), 0.5) shape: a wrapper
+	// node whose .traverse() visits child nodes.
+	const texA = { isTexture: true, uuid: 'tex-a' };
+	const texB = { isTexture: true, uuid: 'tex-b' };
+	const childA = { isTextureNode: true, value: texA };
+	const childB = { isTextureNode: true, value: texB };
+	const colorNode = {
+		isNode: true,
+		traverse( cb ) {
+
+			cb( childA );
+			cb( childB );
+
+		},
+	};
+	const out = collectLiveMaterialTextures( { colorNode } );
+
+	assert.equal( out.size, 2 );
+	assert.equal( out.get( 'tex-a' ), texA );
+	assert.equal( out.get( 'tex-b' ), texB );
+
+} );
+
+test( 'collectLiveMaterialTextures: deduplicates a texture present in both a property slot and a node graph', () => {
+
+	const tex = { isTexture: true, uuid: 'tex-shared' };
+	const out = collectLiveMaterialTextures( {
+		map: tex,
+		colorNode: { isTextureNode: true, value: tex },
+	} );
+
+	assert.equal( out.size, 1 );
+	assert.equal( out.get( 'tex-shared' ), tex );
+
+} );
+
+test( 'catalogueArtifactTextureRefs: stamps node-graph TextureNode uuids onto _textureRefs', () => {
+
+	// The artifact's uniformPlan claims two textureUuids — one matches a
+	// hardcoded `material.map`, the other only exists inside `colorNode`.
+	const mapTex = { isTexture: true, uuid: 'uuid-map' };
+	const nodeTex = { isTexture: true, uuid: 'uuid-node' };
+	const sourceMaterial = {
+		map: mapTex,
+		colorNode: { isTextureNode: true, value: nodeTex },
+	};
+	const artifact = {
+		uniformPlan: [ {
+			name: 'object',
+			textures: [
+				{ name: 'mapTex', source: { kind: 'artifact.texture', textureUuid: 'uuid-map' } },
+				{ name: 'colorNodeTex', source: { kind: 'artifact.texture', textureUuid: 'uuid-node' } },
+			],
+		} ],
+	};
+
+	const added = catalogueArtifactTextureRefs( artifact, sourceMaterial );
+
+	assert.equal( added, 2 );
+	assert.ok( artifact._textureRefs instanceof Map );
+	assert.equal( artifact._textureRefs.get( 'uuid-map' ), mapTex );
+	assert.equal( artifact._textureRefs.get( 'uuid-node' ), nodeTex, 'node-graph TextureNode uuid must be catalogued' );
 
 } );

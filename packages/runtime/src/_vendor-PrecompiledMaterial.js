@@ -103,7 +103,7 @@ class PrecompiledMaterial extends Material {
 		// downstream callers get sane defaults.
 		if ( typeof artifact.mrtOutputCount === 'number' && artifact.mrtOutputCount > 1 ) {
 
-			this.mrtNode = createInertMRTStub( artifact.mrtOutputCount );
+			this.mrtNode = createInertMRTStub( artifact.mrtOutputCount, artifact.mrtOutputNames, artifact.mrtBlendModes );
 
 		}
 
@@ -145,39 +145,21 @@ function hashString( value ) {
 
 }
 
-/**
- * Build an inert MRTNode-shaped stub for a precompiled material.
- *
- * The stub satisfies three.js's MRT API contract (`isMRTNode`,
- * `outputNodes`, `getBlendMode`, `has`, `get`, `merge`) without dragging
- * in the TSL builder. It carries `outputNames` like `output0..outputN-1`
- * — enough for the pipeline cache to resolve a per-target blend mode
- * lookup (which always returns the default `MaterialBlending`).
- *
- * Each call returns a fresh instance with a stable, monotonic `id` so
- * three.js's `RenderContexts.get(rt, mrt)` keys distinct precompiled
- * materials into distinct render contexts (not strictly required since
- * `context.textures.length` alone drives target count, but defensive).
- *
- * @param {number} outputCount - How many `@location(N)` outputs the captured fragment shader emits.
- * @return {Object} An inert MRTNode-shaped stub.
- */
+// Inert MRTNode-shaped stub. Captured names + blend modes flow in from the
+// artifact; legacy artifacts fall back to `output{i}` + NoBlending.
 let _mrtStubIdCounter = 0;
-function createInertMRTStub( outputCount ) {
+function createInertMRTStub( outputCount, outputNames, blendModes ) {
 
 	const outputNodes = {};
-	for ( let i = 0; i < outputCount; i ++ ) {
-
-		outputNodes[ `output${ i }` ] = { isNode: true };
-
-	}
+	const useNames = Array.isArray( outputNames ) && outputNames.length === outputCount;
+	for ( let i = 0; i < outputCount; i ++ ) outputNodes[ useNames ? outputNames[ i ] : `output${ i }` ] = { isNode: true };
 
 	return {
 		isNode: true,
 		isMRTNode: true,
 		id: `tslp-mrt-stub-${ ++ _mrtStubIdCounter }`,
 		outputNodes,
-		getBlendMode() { return { blending: 0 /* NoBlending */ }; },
+		getBlendMode( name ) { return { blending: blendModes && blendModes[ name ] != null ? blendModes[ name ] : 0 }; },
 		has( name ) { return name in outputNodes; },
 		get( name ) { return outputNodes[ name ] || null; },
 		merge( other ) { return other || this; },

@@ -12,7 +12,30 @@
       "Bash(node run-e2e.mjs --filter=webgpu_lightprobe --save-shots --replay-wait-ms=8000 --capture-wait-ms=10000)",
       "Bash(node --check /Users/davidronai/Desktop/git/vite-plugin-tsl-precompile/packages/examples/batch/run-e2e.mjs)",
       "Bash(pnpm --filter @tsl-precompile/plugin test)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(pnpm --filter examples-batch run run:e2e -- --filter=webgpu_equirectangular --save-shots)",
+      "Bash(node --check packages/examples/batch/run-e2e.mjs)",
+      "Bash(unset TSL_PRECOMPILE_THREE_VERSION)",
+      "Bash(pnpm --filter @tsl-precompile/runtime build)",
+      "Bash(python3 -c \"import json, sys; d = json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('scripts', {}\\), indent=2\\)\\)\")",
+      "Bash(node run-e2e.mjs --filter=webgpu_tsl_procedural_terrain)",
+      "Bash(node run-e2e.mjs --filter=alphahash --limit=1 --report=results/e2e-tmp-184.json --no-pixel-gate)",
+      "Bash(python3 -c ' *)",
+      "Bash(git stash *)",
+      "Bash(pnpm --filter @tsl-precompile/runtime build:slim)",
+      "Bash(node -e \"const{gzipSync}=require\\('zlib'\\);const{readFileSync,existsSync}=require\\('fs'\\);const p='packages/runtime/dist/slim/index.js';if\\(existsSync\\(p\\)\\){const r=readFileSync\\(p\\);console.log\\('baseline \\(before changes\\):',\\(gzipSync\\(r,{level:9}\\).length/1024\\).toFixed\\(2\\),'KB'\\)}else console.log\\('no bundle'\\);\")",
+      "Bash(node -e \"const{gzipSync}=require\\('zlib'\\);const{readFileSync}=require\\('fs'\\);const r=readFileSync\\('packages/runtime/build/three.webgpu.slim.js'\\);console.log\\('baseline gz:',\\(gzipSync\\(r,{level:9}\\).length/1024\\).toFixed\\(2\\),'KB'\\);console.log\\('baseline raw:',\\(r.length/1024\\).toFixed\\(2\\),'KB'\\);\")",
+      "Bash(node -e \"const{gzipSync}=require\\('zlib'\\);const{readFileSync}=require\\('fs'\\);const r=readFileSync\\('packages/runtime/build/three.webgpu.slim.js'\\);console.log\\('after gz:',\\(gzipSync\\(r,{level:9}\\).length/1024\\).toFixed\\(2\\),'KB'\\);console.log\\('after raw:',\\(r.length/1024\\).toFixed\\(2\\),'KB'\\);\")",
+      "Bash(pnpm --filter @mko/vite-plugin-tsl-precompile test)",
+      "Bash(git -C /Users/davidronai/Desktop/git/vite-plugin-tsl-precompile log --oneline -5)",
+      "Bash(git -C /Users/davidronai/Desktop/git/vite-plugin-tsl-precompile stash show)",
+      "Bash(node run-e2e.mjs --filter=webgpu_mirror --save-shots)",
+      "Bash(TSLP_DEBUG_TORNADO=1 TSLP_DEBUG_TORNADO_VERBOSE=1 timeout 120 node packages/examples/batch/run-e2e.mjs --filter=webgpu_instancing_morph)",
+      "Bash(tee /tmp/instancing_morph_diag.log)",
+      "Bash(npm test *)",
+      "Bash(TSLP_DEBUG_TORNADO=1 node packages/examples/batch/run-e2e.mjs --filter=webgpu_materials_toon --psnr-threshold=0 --no-pixel-gate)",
+      "Bash(tee /tmp/toon-e2e.log)",
+      "Bash(node packages/examples/batch/run-e2e.mjs --filter=webgpu_clipping --save-shots)"
     ]
   }
 }

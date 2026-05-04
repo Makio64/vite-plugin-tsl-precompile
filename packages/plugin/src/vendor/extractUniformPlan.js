@@ -968,6 +968,17 @@ export function extractUniformPlan( state ) {
 					const tex = textureNode.value || ( textureNode._value ) || null;
 					if ( tex && tex.isTexture ) {
 
+						// TSLP-DEBUG-VIEWPORT
+						if ( tex.isFramebufferTexture || ( textureNode && textureNode.isViewportTextureNode ) || tex.mapping === 300 ) {
+
+							try {
+
+								console.warn( '[tslp-debug] FBO-candidate binding=' + ( binding.name || '?' ) + ' texCtor=' + ( tex.constructor && tex.constructor.name ) + ' nodeCtor=' + ( textureNode.constructor && ( textureNode.constructor.type || textureNode.constructor.name ) ) + ' isFB=' + ( tex.isFramebufferTexture === true ) + ' isVTN=' + ( textureNode.isViewportTextureNode === true ) + ' isOTN=' + ( textureNode.isOutputTextureNode === true ) + ' mapping=' + tex.mapping + ' name=' + JSON.stringify( tex.name || '' ) );
+
+							} catch ( _ ) { /* ignore */ }
+
+						}
+
 						if ( tex.name === 'DFG_LUT' ) {
 
 							source = { kind: 'builtin.dfgLUT' };
@@ -983,18 +994,79 @@ export function extractUniformPlan( state ) {
 							// with the owning light's traversal index instead;
 							// the hydrator's per-frame rebinder swaps in
 							// `frame.scene`'s actual shadow map at draw time.
+							//
+							// When no AnalyticLightNode owns this DepthTexture
+							// (e.g. a `RenderTarget.depthTexture` sampled via
+							// `texture(depthTexture)` in a user material), emit
+							// `lightIndex: -1, fromMaterialGraph: true` — the
+							// runtime rebinder then resolves the live instance
+							// from the binding's owning material node graph.
 							const lightInfo = findLightForDepthTexture( state, tex );
-							source = {
+							source = lightInfo ? {
 								kind: 'depth.texture',
 								textureUuid: tex.uuid,
-								lightIndex: lightInfo ? lightInfo.lightIndex : 0,
-								lightUuid: lightInfo ? lightInfo.lightUuid : null,
+								lightIndex: lightInfo.lightIndex,
+								lightUuid: lightInfo.lightUuid,
 								// `vsm` indicates a VSM horizontal pass texture
 								// rather than a raw depth texture; the runtime
 								// reads `shadow.map.texture` instead of
 								// `shadow.map.depthTexture` for VSM shadows.
-								vsm: lightInfo ? !! lightInfo.vsm : false,
+								vsm: !! lightInfo.vsm,
+							} : {
+								kind: 'depth.texture',
+								textureUuid: tex.uuid,
+								lightIndex: -1,
+								lightUuid: null,
+								vsm: false,
+								fromMaterialGraph: true,
 							};
+
+						} else if ( textureNode && textureNode.constructor && textureNode.constructor.type === 'ReflectorNode' ) {
+
+							// TSL `reflector()` allocates a per-camera RenderTarget
+							// inside `ReflectorBaseNode.updateBefore` and assigns
+							// `textureNode.value = renderTarget.texture` each frame.
+							// At capture time the value is the module-private
+							// `_defaultRT.texture` — its uuid is dead the moment
+							// the example reloads (and is shared across every
+							// reflector globally). Tag the binding with the index
+							// of the owning `ReflectorBaseNode` in
+							// `state.updateBeforeNodes`; the runtime rebinder uses
+							// that index to look up the live ReflectorBaseNode in
+							// `artifact._liveUpdateBeforeNodes` and pull its
+							// per-camera `renderTarget.texture` at draw time.
+							const baseNode = textureNode._reflectorBaseNode || null;
+							const reflectorIndex = baseNode && Array.isArray( state.updateBeforeNodes )
+								? state.updateBeforeNodes.indexOf( baseNode )
+								: -1;
+							source = {
+								kind: 'reflector.texture',
+								textureUuid: tex.uuid,
+								reflectorIndex,
+							};
+
+						} else if ( tex.isFramebufferTexture === true
+							|| ( textureNode && ( textureNode.isViewportTextureNode === true
+								|| textureNode.isOutputTextureNode === true
+								|| ( textureNode.constructor && textureNode.constructor.type === 'ViewportTextureNode' ) ) ) ) {
+
+							// `viewportMipTexture()` / `viewportOpaqueMipTexture()` /
+							// `viewportTexture()` produce ViewportTextureNode instances
+							// whose `.value` is a per-render-target FramebufferTexture
+							// refreshed each frame via `renderer.copyFramebufferToTexture`.
+							// KHR_materials_transmission glass samples this for
+							// background refraction. The captured uuid is dead on
+							// replay (a fresh FramebufferTexture is allocated each
+							// run), and the framebuffer copy never runs without a
+							// live ViewportTextureNode driving it — so the lamp
+							// glass renders opaque/black. Tag the binding so the
+							// runtime can drive a real ViewportTextureNode each
+							// frame and rebind to its live FramebufferTexture.
+							source = {
+								kind: 'viewport.texture',
+								generateMipmaps: !! ( textureNode && textureNode.generateMipmaps ),
+							};
+							try { console.warn( '[tslp-debug] EMIT viewport.texture binding=' + ( binding.name || '?' ) ); } catch ( _ ) {}
 
 						} else {
 

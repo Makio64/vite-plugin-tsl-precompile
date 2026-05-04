@@ -807,10 +807,17 @@ function collectMaterialRenderState( material ) {
  *   2. `options.noGlobalMRT === true` — caller forces single-output path
  *      (used by aux captures whose throwaway scenes are single-output by
  *      design and must not inherit a global MRT).
- *   3. Auto-detect: walk scene materials looking for any material that has
+ *   3. `scene.userData.__tslp_mrtNode` — the dominant three.js MRT pattern
+ *      is `pass(scene, camera).setMRT(mrt({...}))` on a PassNode owned by
+ *      `postProcessing`. The PassNode never reaches the scene graph, and
+ *      `setMRT` only writes `material.mrtNode` once the pass actually
+ *      renders — too late for our synthetic warm-up. The aux-marker
+ *      stamps the discovered `passNode._mrt` here so this 5th-source-
+ *      walker can short-circuit before sources 4–5 give up.
+ *   4. Auto-detect: walk scene materials looking for any material that has
  *      an `mrtNode` property set (three.js NodeMaterial stores it there
  *      when `PassNode.setMRT()` wires it). The first non-null one wins.
- *   4. Renderer-level MRT fallback (`renderer.getMRT()`). Hosts that drive
+ *   5. Renderer-level MRT fallback (`renderer.getMRT()`). Hosts that drive
  *      multi-render-targets with `renderer.setMRT(mrt({...}))` globally
  *      (the `webgpu_multiple_rendertargets` pattern) end up with no
  *      per-material `mrtNode` on the synthetic capture scene's mesh, so
@@ -831,6 +838,12 @@ function collectSceneMRTNode( renderer, scene, options ) {
 
 	if ( options && options.mrtNode ) return options.mrtNode;
 	if ( options && options.noGlobalMRT ) return null;
+
+	if ( scene && scene.userData && scene.userData.__tslp_mrtNode ) {
+
+		return scene.userData.__tslp_mrtNode;
+
+	}
 
 	if ( scene && typeof scene.traverse === 'function' ) {
 
@@ -1201,10 +1214,34 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		if ( sceneMRTNode ) {
 
 			const outputMap = sceneMRTNode.nodes || sceneMRTNode.outputNodes || null;
-			const outputCount = outputMap ? Object.keys( outputMap ).length : 0;
+			const outputNames = outputMap ? Object.keys( outputMap ) : [];
+			const outputCount = outputNames.length;
 			if ( outputCount > 1 ) {
 
 				artifact.mrtOutputCount = outputCount;
+				// Stamp the per-output names + blend modes so the runtime's
+				// `createInertMRTStub` can replay the right blend mode per
+				// attachment. The previous hardcoded `NoBlending` clobbered
+				// any additive/normal blending the example expected (e.g. an
+				// emissive MRT slot). Skip silently if the source MRTNode
+				// doesn't expose `getBlendMode`.
+				artifact.mrtOutputNames = outputNames.slice();
+				if ( typeof sceneMRTNode.getBlendMode === 'function' ) {
+
+					const blendModes = {};
+					for ( const name of outputNames ) {
+
+						try {
+
+							const mode = sceneMRTNode.getBlendMode( name );
+							if ( mode && mode.blending != null ) blendModes[ name ] = mode.blending;
+
+						} catch ( _ ) { /* tolerate missing per-name blend mode */ }
+
+					}
+					if ( Object.keys( blendModes ).length > 0 ) artifact.mrtBlendModes = blendModes;
+
+				}
 
 			}
 

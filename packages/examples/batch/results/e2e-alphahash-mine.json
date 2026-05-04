@@ -1,0 +1,754 @@
+{
+  "total": 1,
+  "pass": 0,
+  "fail": 1,
+  "skip": 0,
+  "details": [
+    {
+      "name": "webgpu_materials_alphahash.html",
+      "status": "fail",
+      "captureBrightFrac": 0.177,
+      "replayBrightFrac": 0,
+      "pixelGate": {
+        "skipped": true,
+        "reason": "replay frame empty"
+      },
+      "userArtifacts": 17,
+      "auxArtifacts": 2,
+      "captureErrors": [],
+      "replayErrors": [
+        "THREE.TSL: TypeError: Cannot read properties of null (reading 'If') [Unknown location]",
+        "THREE.TSL: TypeError: Cannot read properties of null (reading 'If') [Unknown location]"
+      ],
+      "artifactSummaries": [
+        {
+          "name": "webgpu_materials_alphahash.html:MeshStandardNodeMaterial:3",
+          "hash": "7488009d6b496e213e477965fa7163074f2690870e15d9e57e733f36e73b15ee",
+          "cacheKey": 12997259235046436,
+          "shape": "mesh-standard",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct NodeBuffer_8851Struct {\n\tvalue : array< mat4x4<f32>, 27 >\n};\n@binding( 5 ) @group( 1 )\nvar<uniform> NodeBuffer_8851 : NodeBuffer_8851Struct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform2 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform7 : mat3x3<f32>,\n\tnodeUniform8 : vec3<f32>,\n\tnodeUniform9 : f32,\n\tnodeUniform10 : f32,\n\tnodeUniform11 : mat4x4<f32>,\n\tnodeUniform12 : mat4x4<f32>,\n\tnodeUniform14 : f32,\n\tnodeUniform15 : f32,\n\tnodeUniform17 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) positionLocal : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 2 ) v_positionViewDirection : vec3<f32>,\n\t@location( 3 ) vInstanceColor : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLocal : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nv",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform16_sampler : sampler;\n@binding( 2 ) @group( 1 ) var nodeUniform16 : texture_2d<f32>;\n@binding( 3 ) @group( 1 ) var nodeUniform18_sampler : sampler;\n@binding( 4 ) @group( 1 ) var nodeUniform18 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform2 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform7 : mat3x3<f32>,\n\tnodeUniform8 : vec3<f32>,\n\tnodeUniform9 : f32,\n\tnodeUniform10 : f32,\n\tnodeUniform11 : mat4x4<f32>,\n\tnodeUniform12 : mat4x4<f32>,\n\tnodeUniform14 : f32,\n\tnodeUniform15 : f32,\n\tnodeUniform17 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> Metalness : f32;\nvar<private> Roughness : f32;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> nodeVar0 : ve",
+          "attributes": [
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "normal",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "nodeAttribute1",
+              "type": "vec3",
+              "source": "node",
+              "count": 27,
+              "itemSize": 3,
+              "arrayType": "Float32Array"
+            }
+          ],
+          "textures": [
+            {
+              "group": "object",
+              "name": "nodeUniform16_sampler",
+              "kind": "artifact.texture",
+              "textureUuid": "89a8fc15-607e-447a-8b04-dddb3a73cae1",
+              "textureName": "PMREM.cubeUv",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform16",
+              "kind": "artifact.texture",
+              "textureUuid": "89a8fc15-607e-447a-8b04-dddb3a73cae1",
+              "textureName": "PMREM.cubeUv",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform18_sampler",
+              "kind": "builtin.dfgLUT",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform18",
+              "kind": "builtin.dfgLUT",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            }
+          ]
+        },
+        {
+          "name": "webgpu_materials_alphahash.html:MeshLambertNodeMaterial:3",
+          "hash": "8246317c7045900d84f4eff52d903a7ecab86038756265e0bcaf2eb74892cc78",
+          "cacheKey": 11260715910176612,
+          "shape": "mesh-lambert",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform8 : vec3<f32>,\n\tnodeUniform9 : f32,\n\tnodeUniform10 : f32,\n\tnodeUniform6 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform7 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLocal : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar20 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) normal : vec3<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform7 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform8 : vec3<f32>,\n\tnodeUniform9 : f32,\n\tnodeUniform10 : f32,\n\tnodeUniform6 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> EmissiveColor : vec3<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> directDiffuse : vec3<f32>;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> NORMAL_normalView : vec3<f32>;\nvar<private> normalView : vec3<f32>;\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> nodeVar1 : vec3<f32>;\nvar<private> nodeVar2 : f32;\nvar<private> nodeVar3 : f32;\nvar<private> nodeVar4 : f32;\nvar<private> nodeVar5 : f32;\nvar<private> nodeVar6 ",
+          "attributes": [
+            {
+              "name": "normal",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": []
+        },
+        {
+          "name": "webgpu_materials_alphahash.html:NodeMaterial:1",
+          "hash": "a8f9b3207e13a6d817e17ccab4eadeeeeeecd9640322d5698e1671d29b957c49",
+          "cacheKey": 6009282627738969,
+          "shape": "node-material",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : f32,\n\tnodeUniform1 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform6 : f32,\n\tnodeUniform9 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying4 : vec2<f32>,\n\t@location( 1 ) nodeVarying5 : f32,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar31 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) faceIndex : f32,\n\t@location( 2 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying4 = uv;\n\tvaryings.nodeVarying5 = faceIndex;\n\tpositionLo",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 2 ) @group( 1 ) var nodeUniform4_sampler : sampler;\n@binding( 3 ) @group( 1 ) var nodeUniform4 : texture_2d<f32>;\n\nstruct NodeBuffer_912Struct {\n\tvalue : array< vec4<f32>, 20 >\n};\n@binding( 1 ) @group( 1 )\nvar<uniform> NodeBuffer_912 : NodeBuffer_912Struct;\n\nstruct objectStruct {\n\tnodeUniform0 : f32,\n\tnodeUniform1 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform6 : f32,\n\tnodeUniform9 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> nodeVar1 : vec3<f32>;\nvar<private> nodeVar2 : vec3<f32>;\nvar<private> nodeVar3 : vec3<f32>;\nvar<private> nodeVar4 : vec3<f32>;\nvar<private> nodeVar5 : vec3<f32>;\nvar<private> nodeVar6 : f32;\nvar<private> nodeVar7 : vec3<f32>;\nvar<private> nodeVar8 : vec3<f32>;\nvar<private> nodeVar9 : f32;\nvar<private> nodeVar10 : f32;\nvar<private> nodeVar11 : f32;\nvar<private> nodeVar12 : f32;\nvar<private> nodeVar13 : vec2<f32>;\nvar<private> nodeVar14 :",
+          "attributes": [
+            {
+              "name": "uv",
+              "type": "vec2",
+              "source": "geometry"
+            },
+            {
+              "name": "faceIndex",
+              "type": "float",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": [
+            {
+              "group": "object",
+              "name": "nodeUniform4_sampler",
+              "kind": "artifact.texture",
+              "textureUuid": "59a7c32d-f04e-46db-9bfb-4d7f4ae2e057",
+              "textureName": "PMREM.cubeUv",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform4",
+              "kind": "artifact.texture",
+              "textureUuid": "59a7c32d-f04e-46db-9bfb-4d7f4ae2e057",
+              "textureName": "PMREM.cubeUv",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            }
+          ]
+        },
+        {
+          "name": "webgpu_materials_alphahash.html:MeshLambertNodeMaterial:5",
+          "hash": "187775de41c8855d891d5a1c0a17f1581607c0cbc52418196fac7b29af185601",
+          "cacheKey": 10992164792972788,
+          "shape": "mesh-lambert",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform8 : vec3<f32>,\n\tnodeUniform9 : f32,\n\tnodeUniform10 : f32,\n\tnodeUniform6 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform7 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLocal : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar20 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) normal : vec3<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform7 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform8 : vec3<f32>,\n\tnodeUniform9 : f32,\n\tnodeUniform10 : f32,\n\tnodeUniform6 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> EmissiveColor : vec3<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> directDiffuse : vec3<f32>;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> NORMAL_normalView : vec3<f32>;\nvar<private> normalView : vec3<f32>;\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> nodeVar1 : vec3<f32>;\nvar<private> nodeVar2 : f32;\nvar<private> nodeVar3 : f32;\nvar<private> nodeVar4 : f32;\nvar<private> nodeVar5 : f32;\nvar<private> nodeVar6 ",
+          "attributes": [
+            {
+              "name": "normal",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": []
+        },
+        {
+          "name": "webgpu_materials_alphahash.html:NodeMaterial:2",
+          "hash": "555dc309948ec89ed5a53f7ce97f768d739b9be0956b6e1e7388bb7879c0275a",
+          "cacheKey": 7454865947737681,
+          "shape": "node-material",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : f32,\n\tnodeUniform1 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying4 : vec2<f32>,\n\t@location( 1 ) nodeVarying5 : f32,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar27 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) faceIndex : f32,\n\t@location( 2 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying4 = uv;\n\tvaryings.nodeVarying5 = faceIndex;\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform2_sampler : sampler;\n@binding( 2 ) @group( 1 ) var nodeUniform2 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform0 : f32,\n\tnodeUniform1 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> nodeVar1 : vec3<f32>;\nvar<private> nodeVar2 : vec3<f32>;\nvar<private> nodeVar3 : f32;\nvar<private> nodeVar4 : f32;\nvar<private> nodeVar5 : f32;\nvar<private> nodeVar6 : f32;\nvar<private> nodeVar7 : f32;\nvar<private> nodeVar8 : vec2<f32>;\nvar<private> nodeVar9 : vec4<f32>;\nvar<private> nodeVar10 : vec3<f32>;\nvar<private> nodeVar11 : vec3<f32>;\nvar<private> nodeVar12 : vec3<f32>;\nvar<private> nodeVar13 : u32;\nvar<private> nodeVar14 : vec2<f32>;\nvar<private> nodeVar15 : f32;\nvar<private> nodeVar16 : vec3<f32>;\nvar<private> nodeVar17 : vec3<f32>;\nvar<private> nodeVar18 : vec3<f32>;\nvar<private> nodeVar19 : vec3<f32>;\nvar<private> nodeVar20 : f32;\nvar",
+          "attributes": [
+            {
+              "name": "uv",
+              "type": "vec2",
+              "source": "geometry"
+            },
+            {
+              "name": "faceIndex",
+              "type": "float",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": [
+            {
+              "group": "object",
+              "name": "nodeUniform2_sampler",
+              "kind": "artifact.texture",
+              "textureUuid": "59a7c32d-f04e-46db-9bfb-4d7f4ae2e057",
+              "textureName": "PMREM.cubeUv",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform2",
+              "kind": "artifact.texture",
+              "textureUuid": "59a7c32d-f04e-46db-9bfb-4d7f4ae2e057",
+              "textureName": "PMREM.cubeUv",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            }
+          ]
+        },
+        {
+          "name": "webgpu_materials_alphahash.html:MeshLambertNodeMaterial:2",
+          "hash": "950f26a8d80d3872c006e8499552dd91e111bdd0f9967368a2c811f6cb0ac888",
+          "cacheKey": 9879848661438404,
+          "shape": "mesh-lambert",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform8 : vec3<f32>,\n\tnodeUniform9 : f32,\n\tnodeUniform10 : f32,\n\tnodeUniform6 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform7 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLocal : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar20 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) normal : vec3<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform7 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform8 : vec3<f32>,\n\tnodeUniform9 : f32,\n\tnodeUniform10 : f32,\n\tnodeUniform6 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> EmissiveColor : vec3<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> directDiffuse : vec3<f32>;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> NORMAL_normalView : vec3<f32>;\nvar<private> normalView : vec3<f32>;\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> nodeVar1 : vec3<f32>;\nvar<private> nodeVar2 : f32;\nvar<private> nodeVar3 : f32;\nvar<private> nodeVar4 : f32;\nvar<private> nodeVar5 : f32;\nvar<private> nodeVar6 ",
+          "attributes": [
+            {
+              "name": "normal",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": []
+        },
+        {
+          "name": "webgpu_materials_alphahash.html:MeshStandardNodeMaterial:1",
+          "hash": "a83a6a05421ce817d99dbc816a587ecad0a6b94b32775785f619b72ad4488866",
+          "cacheKey": 2064388653643399,
+          "shape": "mesh-standard",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform10 : vec3<f32>,\n\tnodeUniform11 : f32,\n\tnodeUniform12 : f32,\n\tnodeUniform8 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : f32,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform6 : vec3<f32>,\n\tnodeUniform7 : f32,\n\tnodeUniform9 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 2 ) v_positionViewDirection : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLocal : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar102 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn mai",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform13_sampler : sampler;\n@binding( 2 ) @group( 1 ) var nodeUniform13 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : f32,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform6 : vec3<f32>,\n\tnodeUniform7 : f32,\n\tnodeUniform9 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform10 : vec3<f32>,\n\tnodeUniform11 : f32,\n\tnodeUniform12 : f32,\n\tnodeUniform8 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> Metalness : f32;\nvar<private> Roughness : f32;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> SpecularColor : vec3<f32>;\nvar<private> SpecularColorBlended : vec3<f32>;\nvar<private> SpecularF90 : f32;\nvar<private> Diffu",
+          "attributes": [
+            {
+              "name": "normal",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": [
+            {
+              "group": "object",
+              "name": "nodeUniform13_sampler",
+              "kind": "builtin.dfgLUT",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform13",
+              "kind": "builtin.dfgLUT",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            }
+          ]
+        },
+        {
+          "name": "webgpu_materials_alphahash.html:MeshLambertNodeMaterial:6",
+          "hash": "eb1d19daea7c6c627b4cd82297a3106ea179757c2494ff04eb981db469e53427",
+          "cacheKey": 4941018129667704,
+          "shape": "mesh-lambert",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform8 : vec3<f32>,\n\tnodeUniform9 : f32,\n\tnodeUniform10 : f32,\n\tnodeUniform6 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform7 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLocal : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar20 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) normal : vec3<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform7 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform8 : vec3<f32>,\n\tnodeUniform9 : f32,\n\tnodeUniform10 : f32,\n\tnodeUniform6 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> EmissiveColor : vec3<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> directDiffuse : vec3<f32>;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> NORMAL_normalView : vec3<f32>;\nvar<private> normalView : vec3<f32>;\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> nodeVar1 : vec3<f32>;\nvar<private> nodeVar2 : f32;\nvar<private> nodeVar3 : f32;\nvar<private> nodeVar4 : f32;\nvar<private> nodeVar5 : f32;\nvar<private> nodeVar6 ",
+          "attributes": [
+            {
+              "name": "normal",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": []
+        },
+        {
+          "name": "webgpu_materials_alphahash.html:NodeMaterial:4",
+          "hash": "6deeaf8ef9dc9a3c6eeffc13bfe64e87a4b3acadd38c2a1a917c72c9827e9b7b",
+          "cacheKey": 5150263035735875,
+          "shape": "node-material",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : mat3x3<f32>,\n\tnodeUniform2 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar1 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying4 = uv;\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform5 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVER",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform1 : mat3x3<f32>,\n\tnodeUniform2 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> nodeVar0 : vec4<f32>;\n\n// codes\nfn fn1 ( color : vec4<f32> ) -> vec4<f32> {\n\n\t\n\n\n\tif ( ( color.w == 0.0 ) ) {\n\n\t\treturn vec4<f32>( 0.0, 0.0, 0.0, 0.0 );\n\n\t}\n\n\n\treturn vec4<f32>( ( color.xyz / vec3<f32>( color.w ) ), color.w );\n\n}\n\nfn fn0 ( color : vec4<f32> ) -> vec4<f32> {\n\n\t\n\n\n\treturn vec4<f32>( ( color.xyz * vec3<f32>( color.w ) ), color.w );\n\n}\n\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying4 : vec2<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform1 * vec3<f32>( nodeVarying4, 1.0 ) ).xy );\n\n\t// result\n\n\toutput.color = fn0( fn1( ( nodeVar0 * vec4<f32>( object.nodeUniform2 ) ) ) );\n\n\treturn ",
+          "attributes": [
+            {
+              "name": "uv",
+              "type": "vec2",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": [
+            {
+              "group": "object",
+              "name": "nodeUniform0_sampler",
+              "kind": "artifact.texture",
+              "textureUuid": "e953ef00-4072-4fd5-aba6-a6481af2199a",
+              "textureName": "output",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform0",
+              "kind": "artifact.texture",
+              "textureUuid": "e953ef00-4072-4fd5-aba6-a6481af2199a",
+              "textureName": "output",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            }
+          ]
+        },
+        {
+          "name": "webgpu_materials_alphahash.html:MeshLambertNodeMaterial:4",
+          "hash": "2b54448ed3d5e79b3618f999fbd3672a4c9c5c7d58de17ddff560fe4b246a88f",
+          "cacheKey": 6087361827188944,
+          "shape": "mesh-lambert",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform8 : vec3<f32>,\n\tnodeUniform9 : f32,\n\tnodeUniform10 : f32,\n\tnodeUniform6 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform7 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLocal : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar20 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) normal : vec3<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform7 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform8 : vec3<f32>,\n\tnodeUniform9 : f32,\n\tnodeUniform10 : f32,\n\tnodeUniform6 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> EmissiveColor : vec3<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> directDiffuse : vec3<f32>;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> NORMAL_normalView : vec3<f32>;\nvar<private> normalView : vec3<f32>;\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> nodeVar1 : vec3<f32>;\nvar<private> nodeVar2 : f32;\nvar<private> nodeVar3 : f32;\nvar<private> nodeVar4 : f32;\nvar<private> nodeVar5 : f32;\nvar<private> nodeVar6 ",
+          "attributes": [
+            {
+              "name": "normal",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": []
+        },
+        {
+          "name": "webgpu_materials_alphahash.html:NodeMaterial:3",
+          "hash": "d3a69708e4131793f06210da9f7ee227e540b6d1b1eb7698366e1c7e86aef0bd",
+          "cacheKey": 11449528121715370,
+          "shape": "render-pipeline",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform3 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar2 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying4 = uv;\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform3 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar2 = ( render.cameraProjectionMatrix * v",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n\n// vars\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> nodeVar1 : vec4<f32>;\n\n// codes\nfn sRGBTransferOETF ( color : vec3<f32> ) -> vec3<f32> {\n\n\t\n\n\n\treturn mix( ( ( pow( color, vec3<f32>( 0.41666 ) ) * vec3<f32>( 1.055 ) ) - vec3<f32>( 0.055 ) ), ( color * vec3<f32>( 12.92 ) ), vec3<f32>( ( color <= vec3<f32>( 0.0031308 ) ) ) );\n\n}\n\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying4 : vec2<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform0, nodeUniform0_sampler, nodeVarying4 );\n\tnodeVar1 = nodeVar0;\n\n\t// result\n\n\toutput.color = vec4<f32>( sRGBTransferOETF( nodeVar1.xyz ), nodeVar1.w );\n\n\treturn output;\n\n}\n",
+          "attributes": [
+            {
+              "name": "uv",
+              "type": "vec2",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": [
+            {
+              "group": "object",
+              "name": "nodeUniform0_sampler",
+              "kind": "artifact.texture",
+              "textureUuid": "1de5ec63-e489-4e12-bf31-9a315e7d2f13",
+              "textureName": "output",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform0",
+              "kind": "artifact.texture",
+              "textureUuid": "1de5ec63-e489-4e12-bf31-9a315e7d2f13",
+              "textureName": "output",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            }
+          ]
+        },
+        {
+          "name": "webgpu_materials_alphahash.html:MeshLambertNodeMaterial:1",
+          "hash": "e0d1b55b425ec905d4936fa994f737d98266af189d69d848e0831b41c42d9903",
+          "cacheKey": 8001296637146959,
+          "shape": "mesh-lambert",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform8 : vec3<f32>,\n\tnodeUniform9 : f32,\n\tnodeUniform10 : f32,\n\tnodeUniform6 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform7 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLocal : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar20 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) normal : vec3<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform7 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform8 : vec3<f32>,\n\tnodeUniform9 : f32,\n\tnodeUniform10 : f32,\n\tnodeUniform6 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> EmissiveColor : vec3<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> directDiffuse : vec3<f32>;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> NORMAL_normalView : vec3<f32>;\nvar<private> normalView : vec3<f32>;\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> nodeVar1 : vec3<f32>;\nvar<private> nodeVar2 : f32;\nvar<private> nodeVar3 : f32;\nvar<private> nodeVar4 : f32;\nvar<private> nodeVar5 : f32;\nvar<private> nodeVar6 ",
+          "attributes": [
+            {
+              "name": "normal",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": []
+        },
+        {
+          "name": "webgpu_materials_alphahash.html:MeshBasicNodeMaterial:1",
+          "hash": "ba589ffadda3096d836b44cdf50c88f40632b0b6100adf085d6bf86306aeb830",
+          "cacheKey": 9077044178051620,
+          "shape": "mesh-basic",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform4 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar1 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform4 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar1 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewP",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform4 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> nodeVar0 : vec4<f32>;\n\n// codes\n\n\n@fragment\nfn main(  ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tDiffuseColor = vec4<f32>( object.nodeUniform0, 1.0 );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform1 );\n\tDiffuseColor.w = 1.0;\n\tnodeVar0 = max( vec4<f32>( DiffuseColor.xyz, DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tOutput = nodeVar0;\n\n\t// result\n\n\toutput.color = nodeVar0;\n\n\treturn output;\n\n}\n",
+          "attributes": [
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": []
+        },
+        {
+          "name": "webgpu_materials_alphahash.html:MeshStandardNodeMaterial:2",
+          "hash": "b3c9425656a3962ef32f032e39d056b51459761b714266091fb38af43ed6f4e8",
+          "cacheKey": 12014389882796096,
+          "shape": "mesh-standard",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct NodeBuffer_12896Struct {\n\tvalue : array< mat4x4<f32>, 6 >\n};\n@binding( 3 ) @group( 1 )\nvar<uniform> NodeBuffer_12896 : NodeBuffer_12896Struct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform11 : vec3<f32>,\n\tnodeUniform12 : f32,\n\tnodeUniform13 : f32,\n\tnodeUniform9 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : vec3<f32>,\n\tnodeUniform2 : f32,\n\tnodeUniform3 : f32,\n\tnodeUniform4 : f32,\n\tnodeUniform6 : mat3x3<f32>,\n\tnodeUniform7 : vec3<f32>,\n\tnodeUniform8 : f32,\n\tnodeUniform10 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 2 ) v_positionViewDirection : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLocal : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar102 : vec4<f32>;\nvar<private> posi",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform14_sampler : sampler;\n@binding( 2 ) @group( 1 ) var nodeUniform14 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform1 : vec3<f32>,\n\tnodeUniform2 : f32,\n\tnodeUniform3 : f32,\n\tnodeUniform4 : f32,\n\tnodeUniform6 : mat3x3<f32>,\n\tnodeUniform7 : vec3<f32>,\n\tnodeUniform8 : f32,\n\tnodeUniform10 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform11 : vec3<f32>,\n\tnodeUniform12 : f32,\n\tnodeUniform13 : f32,\n\tnodeUniform9 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> Metalness : f32;\nvar<private> Roughness : f32;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> SpecularColor : vec3<f32>;\nvar<private> SpecularColorBlended : vec3<f32>;\nvar<private> SpecularF90 : f32;\nvar<private> Diff",
+          "attributes": [
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "normal",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": [
+            {
+              "group": "object",
+              "name": "nodeUniform14_sampler",
+              "kind": "builtin.dfgLUT",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform14",
+              "kind": "builtin.dfgLUT",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            }
+          ]
+        },
+        {
+          "name": "webgpu_materials_alphahash.html:NodeMaterial:5",
+          "hash": "84bd154de1143c99dc93919ac7ec865763f698b83fa962f72c4eeff43c0d5bb4",
+          "cacheKey": 10696047798564660,
+          "shape": "node-material",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : f32,\n\tnodeUniform4 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar3 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying4 = uv;\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform4 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar3 = ( render.camer",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform1 : f32,\n\tnodeUniform4 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> nodeVar1 : vec4<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> nodeVar2 : vec4<f32>;\n\n// codes\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying4 : vec2<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform0, nodeUniform0_sampler, nodeVarying4 );\n\tnodeVar1 = nodeVar0;\n\tDiffuseColor = nodeVar1;\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform1 );\n\tDiffuseColor.w = 1.0;\n\tnodeVar2 = max( vec4<f32>( DiffuseColor.xyz, DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tOutput = nodeVar2;\n\n\t// result\n\n\toutput.color = nodeVar2;\n\n\treturn output;\n\n}\n",
+          "attributes": [
+            {
+              "name": "uv",
+              "type": "vec2",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": [
+            {
+              "group": "object",
+              "name": "nodeUniform0_sampler",
+              "kind": "artifact.texture",
+              "textureUuid": "1de5ec63-e489-4e12-bf31-9a315e7d2f13",
+              "textureName": "output",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform0",
+              "kind": "artifact.texture",
+              "textureUuid": "1de5ec63-e489-4e12-bf31-9a315e7d2f13",
+              "textureName": "output",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            }
+          ]
+        },
+        {
+          "name": "webgpu_materials_alphahash.html:NodeMaterial:6",
+          "hash": "c84814bbae8ae9e9280b95574932fe0edc3baa9a0f0e1d8bb4e72a59cc82411f",
+          "cacheKey": 4768991745442921,
+          "shape": "node-material",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : mat3x3<f32>,\n\tnodeUniform2 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar1 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying4 = uv;\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform5 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVER",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform1 : mat3x3<f32>,\n\tnodeUniform2 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> nodeVar0 : vec4<f32>;\n\n// codes\nfn fn1 ( color : vec4<f32> ) -> vec4<f32> {\n\n\t\n\n\n\tif ( ( color.w == 0.0 ) ) {\n\n\t\treturn vec4<f32>( 0.0, 0.0, 0.0, 0.0 );\n\n\t}\n\n\n\treturn vec4<f32>( ( color.xyz / vec3<f32>( color.w ) ), color.w );\n\n}\n\nfn fn0 ( color : vec4<f32> ) -> vec4<f32> {\n\n\t\n\n\n\treturn vec4<f32>( ( color.xyz * vec3<f32>( color.w ) ), color.w );\n\n}\n\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying4 : vec2<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform1 * vec3<f32>( nodeVarying4, 1.0 ) ).xy );\n\n\t// result\n\n\toutput.color = fn0( fn1( ( nodeVar0 * vec4<f32>( object.nodeUniform2 ) ) ) );\n\n\treturn ",
+          "attributes": [
+            {
+              "name": "uv",
+              "type": "vec2",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": [
+            {
+              "group": "object",
+              "name": "nodeUniform0_sampler",
+              "kind": "artifact.texture",
+              "textureUuid": "e953ef00-4072-4fd5-aba6-a6481af2199a",
+              "textureName": "output",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform0",
+              "kind": "artifact.texture",
+              "textureUuid": "e953ef00-4072-4fd5-aba6-a6481af2199a",
+              "textureName": "output",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            }
+          ]
+        },
+        {
+          "name": "webgpu_materials_alphahash.html:NodeMaterial:7",
+          "hash": "582ea922d373ddcb9c0174518884d58495b6360d5ca47a7db95d1847b70c30ba",
+          "cacheKey": 3478611473184121,
+          "shape": "node-material",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : mat3x3<f32>,\n\tnodeUniform2 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar1 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying4 = uv;\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform5 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVER",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform1 : mat3x3<f32>,\n\tnodeUniform2 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> nodeVar0 : vec4<f32>;\n\n// codes\nfn fn1 ( color : vec4<f32> ) -> vec4<f32> {\n\n\t\n\n\n\tif ( ( color.w == 0.0 ) ) {\n\n\t\treturn vec4<f32>( 0.0, 0.0, 0.0, 0.0 );\n\n\t}\n\n\n\treturn vec4<f32>( ( color.xyz / vec3<f32>( color.w ) ), color.w );\n\n}\n\nfn fn0 ( color : vec4<f32> ) -> vec4<f32> {\n\n\t\n\n\n\treturn vec4<f32>( ( color.xyz * vec3<f32>( color.w ) ), color.w );\n\n}\n\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying4 : vec2<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform1 * vec3<f32>( nodeVarying4, 1.0 ) ).xy );\n\n\t// result\n\n\toutput.color = fn0( fn1( ( nodeVar0 * vec4<f32>( object.nodeUniform2 ) ) ) );\n\n\treturn ",
+          "attributes": [
+            {
+              "name": "uv",
+              "type": "vec2",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": [
+            {
+              "group": "object",
+              "name": "nodeUniform0_sampler",
+              "kind": "artifact.texture",
+              "textureUuid": "e953ef00-4072-4fd5-aba6-a6481af2199a",
+              "textureName": "output",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform0",
+              "kind": "artifact.texture",
+              "textureUuid": "e953ef00-4072-4fd5-aba6-a6481af2199a",
+              "textureName": "output",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            }
+          ]
+        }
+      ],
+      "auxSummaries": [
+        {
+          "shape": "post-process",
+          "configHash": "7267f83b80886d03708f88fbb6642f3aeea6bb142238fa8d4d62d9e72ebdd887",
+          "artifactShape": "node-material",
+          "cacheKey": 10696047798564660,
+          "attributes": [
+            {
+              "name": "uv",
+              "type": "vec2",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "bindings": [
+            {
+              "name": "render",
+              "bindings": [
+                {
+                  "name": "render",
+                  "kind": "uniform-buffer",
+                  "byteLength": 128
+                }
+              ]
+            },
+            {
+              "name": "object",
+              "bindings": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "sampler",
+                  "byteLength": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "sampled-texture",
+                  "byteLength": null
+                },
+                {
+                  "name": "object",
+                  "kind": "uniform-buffer",
+                  "byteLength": 80
+                }
+              ]
+            }
+          ],
+          "uniformPlan": [
+            {
+              "name": "render",
+              "byteLength": 128,
+              "slotCount": 2,
+              "textures": []
+            },
+            {
+              "name": "object",
+              "byteLength": 80,
+              "slotCount": 2,
+              "textures": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "artifact.texture",
+                  "textureUuid": "1de5ec63-e489-4e12-bf31-9a315e7d2f13",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "artifact.texture",
+                  "textureUuid": "1de5ec63-e489-4e12-bf31-9a315e7d2f13",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "shape": "render-output",
+          "configHash": "d36b91adf79b6c825319324d1139b036b229c1a853d064a3e9e9bf91fff92fb7",
+          "artifactShape": "render-output",
+          "cacheKey": 4845534432580658,
+          "attributes": [
+            {
+              "name": "uv",
+              "type": "vec2",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "bindings": [
+            {
+              "name": "render",
+              "bindings": [
+                {
+                  "name": "render",
+                  "kind": "uniform-buffer",
+                  "byteLength": 128
+                }
+              ]
+            },
+            {
+              "name": "object",
+              "bindings": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "sampler",
+                  "byteLength": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "sampled-texture",
+                  "byteLength": null
+                },
+                {
+                  "name": "object",
+                  "kind": "uniform-buffer",
+                  "byteLength": 64
+                }
+              ]
+            }
+          ],
+          "uniformPlan": [
+            {
+              "name": "render",
+              "byteLength": 128,
+              "slotCount": 2,
+              "textures": []
+            },
+            {
+              "name": "object",
+              "byteLength": 64,
+              "slotCount": 1,
+              "textures": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "artifact.texture",
+                  "textureUuid": "1de5ec63-e489-4e12-bf31-9a315e7d2f13",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "artifact.texture",
+                  "textureUuid": "1de5ec63-e489-4e12-bf31-9a315e7d2f13",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "error": "slim replay did not produce a non-empty frame"
+    }
+  ]
+}

@@ -1,0 +1,118 @@
+{
+  "total": 1,
+  "pass": 1,
+  "fail": 0,
+  "skip": 0,
+  "details": [
+    {
+      "name": "webgpu_compute_points.html",
+      "status": "pass",
+      "captureBrightFrac": 0.06361328125,
+      "replayBrightFrac": 0.9096940104166666,
+      "pixelGate": {
+        "pass": false,
+        "psnr": 2.7,
+        "threshold": 30
+      },
+      "userArtifacts": 1,
+      "auxArtifacts": 1,
+      "captureErrors": [],
+      "replayErrors": [],
+      "artifactSummaries": [
+        {
+          "name": "webgpu_compute_points.html:PointsNodeMaterial:1",
+          "hash": "0bcefb1ddbf4a7e24ed0ad4c05c05ab9fad657bfa41e8257a91d61f6e0632c64",
+          "cacheKey": 8436875059890411,
+          "shape": "points",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct NodeBuffer_911Struct {\n\tvalue : array< vec2<f32> >\n};\n@binding( 2 ) @group( 1 )\nvar<storage, read> NodeBuffer_911 : NodeBuffer_911Struct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform2 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 1 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) @interpolate(flat, either) nodeVarying4 : u32,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar1 : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @builtin( instance_index ) instanceIndex : u32,\n\t@location( 0 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tpositionLocal = position;\n\tpositionLocal = vec3<f32",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n\nstruct NodeBuffer_911Struct {\n\tvalue : array< vec2<f32> >\n};\n@binding( 0 ) @group( 1 )\nvar<storage, read> NodeBuffer_911 : NodeBuffer_911Struct;\n\nstruct objectStruct {\n\tnodeUniform2 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 1 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> nodeVar0 : vec4<f32>;\n\n// codes\n\n\n@fragment\nfn main( @location( 0 ) @interpolate(flat, either) nodeVarying4 : u32 ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tDiffuseColor = vec4<f32>( ( vec3<f32>( NodeBuffer_911.value[ nodeVarying4 ], 0.0 ) + vec3<f32>( 1.0, 1.0, 1.0 ) ), 1.0 );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform2 );\n\tnodeVar0 = max( vec4<f32>( DiffuseColor.xyz, DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tOutput = nodeVar0;\n\n\t// result\n\n\toutput.color = nodeVar0;\n\n\treturn output;\n\n}\n",
+          "attributes": [
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": []
+        }
+      ],
+      "auxSummaries": [
+        {
+          "shape": "render-output",
+          "configHash": "90a5a84186bcbc44efdd95b20bf6492a0c0d34057e53f1b3ebe0bc95b1236c03",
+          "artifactShape": "render-output",
+          "cacheKey": 14970573273500608,
+          "attributes": [
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "bindings": [
+            {
+              "name": "render",
+              "bindings": [
+                {
+                  "name": "render",
+                  "kind": "uniform-buffer",
+                  "byteLength": 128
+                }
+              ]
+            },
+            {
+              "name": "object",
+              "bindings": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "sampler",
+                  "byteLength": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "sampled-texture",
+                  "byteLength": null
+                },
+                {
+                  "name": "object",
+                  "kind": "uniform-buffer",
+                  "byteLength": 80
+                }
+              ]
+            }
+          ],
+          "uniformPlan": [
+            {
+              "name": "render",
+              "byteLength": 128,
+              "slotCount": 2,
+              "textures": []
+            },
+            {
+              "name": "object",
+              "byteLength": 80,
+              "slotCount": 2,
+              "textures": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "artifact.texture",
+                  "textureUuid": "70bac6fe-1b71-488f-8ad9-39d3ade4f847",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "artifact.texture",
+                  "textureUuid": "70bac6fe-1b71-488f-8ad9-39d3ade4f847",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "error": null
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 [
   {
     "shape": "lights",
-    "configHash": "7cbeb7af52e835bc3f943adc705073da76498769d6092f541649dbf05b24ef5a",
+    "configHash": "816b7e9b3e430f34eb5194c264ab9dcade5072bdd7ef2290e2a914ad33de7407",
     "artifact": {
       "uniformPlan": [],
       "vertexShader": "",
@@ -14,7 +14,7 @@
   },
   {
     "shape": "render-output",
-    "configHash": "d36b91adf79b6c825319324d1139b036b229c1a853d064a3e9e9bf91fff92fb7",
+    "configHash": "90a5a84186bcbc44efdd95b20bf6492a0c0d34057e53f1b3ebe0bc95b1236c03",
     "artifact": {
       "version": 3,
       "cacheKey": 8677583074271256,

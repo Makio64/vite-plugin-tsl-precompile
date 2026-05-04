@@ -24,6 +24,7 @@
  */
 
 import { MARKER_METHOD_NAME } from './_constants.js';
+import { normalizeRevision } from './_normalize-revision.js';
 import { hashMaterialSync } from './graph-hash.js';
 import { registerArtifact } from './artifact-loader.js';
 
@@ -75,6 +76,31 @@ export function installPrecompileMarker( three, opts = {} ) {
 	}
 
 	if ( typeof Material.prototype[ MARKER_METHOD_NAME ] === 'function' ) return; // already installed (e.g. duplicate bundle)
+
+	// PassNode.setMRT hook: `pass(scene, cam).setMRT(mrtNode)` (the dominant
+	// MRT pattern in three.js examples) doesn't write `material.mrtNode` until
+	// the pass actually renders — too late for our synthetic warm-up. Stamp
+	// the descriptor on `passNode.scene.userData.__tslp_mrtNode` so the marker
+	// (and aux-marker, and compileTSL) can find it during capture.
+	const PassNode = three.PassNode;
+	if ( PassNode && PassNode.prototype && ! PassNode.prototype.__tslpSetMRTHooked ) {
+
+		const _origSetMRT = PassNode.prototype.setMRT;
+		PassNode.prototype.setMRT = function ( mrtNode ) {
+
+			const ret = _origSetMRT.call( this, mrtNode );
+			if ( this.scene && mrtNode ) {
+
+				this.scene.userData = this.scene.userData || {};
+				this.scene.userData.__tslp_mrtNode = mrtNode;
+
+			}
+			return ret;
+
+		};
+		PassNode.prototype.__tslpSetMRTHooked = true;
+
+	}
 
 	Material.prototype[ MARKER_METHOD_NAME ] = function precompile( name ) {
 
@@ -205,7 +231,7 @@ async function captureMaterialInDev( material, name ) {
 		// Build a minimal synthetic scene that drives this single material.
 		// Scene-driven capture can attach a source object so custom update nodes
 		// that read `frame.object` fields see the same shape they saw in the app.
-		const { Scene, Mesh, BoxGeometry, PerspectiveCamera, Color, REVISION } = threeModule;
+		const { Scene, Mesh, BoxGeometry, PerspectiveCamera, Color, ClippingGroup, REVISION } = threeModule;
 		const scene = new Scene();
 
 		// Determine the capture camera. Priority order:
@@ -327,7 +353,25 @@ async function captureMaterialInDev( material, name ) {
 
 		}
 		if ( mesh.color === undefined && Color ) mesh.color = sourceObject && sourceObject.color || material.color || new Color( 1, 1, 1 );
-		scene.add( mesh );
+
+		// ClippingGroup ancestry — when the source mesh is descended from one
+		// or more ClippingGroups, three.js's renderer walks that chain at
+		// render time to build a per-renderObject ClippingContext, which
+		// `NodeMaterial.setupClipping(builder)` then turns into ClippingNode
+		// WGSL (`discard()` for default scope, `discard()` + alpha-modulation
+		// for `alphaToCoverage:true`). The throwaway scene must mirror that
+		// ancestry or the extractor sees `builder.clippingContext === null`,
+		// `setupClipping()` returns early, and the captured shader has no
+		// clipping logic. Without this, replay can't render examples that
+		// rely on `ClippingGroup` (`webgpu_clipping.html`) — the slim runtime
+		// has no `Fn(...)`-based ClippingNode to fall back on.
+		//
+		// Clone the groups (don't reparent — the live groups are still in the
+		// user's scene). Order outermost → innermost to preserve parent
+		// chaining, matching how `ClippingContext.getGroupContext()` composes
+		// nested contexts.
+		const clipMountPoint = mountClippingGroupsInto( ClippingGroup, sourceObject, scene );
+		clipMountPoint.add( mesh );
 
 		// MRT propagation — when the user has set `material.mrtNode` directly,
 		// OR set `renderer.setMRT(...)` and the source mesh renders to a
@@ -340,10 +384,19 @@ async function captureMaterialInDev( material, name ) {
 		// to the user's multi-target RT, so forcing MRT there would emit an
 		// empty `OutputType { }` struct and crash WGSL.
 		let mrtNode = material && material.mrtNode || null;
-		if ( ! mrtNode && typeof devRenderer.getMRT === 'function' ) {
+		const isFullscreenQuad = sourceObject && ( sourceObject.isQuadMesh || sourceObject.constructor && sourceObject.constructor.name === 'QuadMesh' );
+		// PassNode-driven MRT (`pass(scene, cam).setMRT(...)`): aux-marker
+		// stamps the descriptor on `scene.userData.__tslp_mrtNode` because the
+		// PassNode only writes `material.mrtNode` during a live render — after
+		// our synthetic warm-up runs.
+		if ( ! mrtNode && ! isFullscreenQuad && sourceScene && sourceScene.userData && sourceScene.userData.__tslp_mrtNode ) {
 
-			const isFullscreenQuad = sourceObject && ( sourceObject.isQuadMesh || sourceObject.constructor && sourceObject.constructor.name === 'QuadMesh' );
-			if ( ! isFullscreenQuad ) mrtNode = devRenderer.getMRT();
+			mrtNode = sourceScene.userData.__tslp_mrtNode;
+
+		}
+		if ( ! mrtNode && ! isFullscreenQuad && typeof devRenderer.getMRT === 'function' ) {
+
+			mrtNode = devRenderer.getMRT();
 
 		}
 		const extractorOpts = mrtNode ? { mrtNode } : undefined;
@@ -370,7 +423,7 @@ async function captureMaterialInDev( material, name ) {
 
 		const hash = hashMaterialSync( material, {
 			name,
-			threeVersion: REVISION ? String( REVISION ) : 'unknown',
+			threeVersion: normalizeRevision( REVISION ),
 			pluginVersion: '0.0.0',
 		} );
 
@@ -560,6 +613,57 @@ function cloneLightsInto( sourceScene, destScene ) {
 		}
 
 	}
+
+}
+
+/**
+ * Mirror the source object's ClippingGroup ancestry into the throwaway
+ * extraction scene. Returns the Object3D the throwaway mesh should be
+ * attached to — either the innermost cloned ClippingGroup, or the destScene
+ * itself when the source has no ClippingGroup ancestors.
+ *
+ * Clones, never reparents — the live groups remain in the user's scene.
+ * Order is outermost → innermost so the cloned chain matches the user's,
+ * which matters because `ClippingContext.getGroupContext()` composes nested
+ * contexts by walking parent → child and merging plane sets.
+ *
+ * @param {Function|undefined} ClippingGroup - The three.js ClippingGroup constructor.
+ * @param {Object|null} sourceObject - The user's source mesh, may be null.
+ * @param {Object} destScene - The throwaway scene root.
+ * @return {Object} The Object3D the throwaway mesh should be added to.
+ */
+function mountClippingGroupsInto( ClippingGroup, sourceObject, destScene ) {
+
+	if ( ! ClippingGroup || ! sourceObject ) return destScene;
+
+	const chain = [];
+	let cursor = sourceObject.parent || null;
+	while ( cursor ) {
+
+		if ( cursor.isClippingGroup === true ) chain.unshift( cursor );
+		cursor = cursor.parent || null;
+
+	}
+	if ( chain.length === 0 ) return destScene;
+
+	let parent = destScene;
+	for ( const group of chain ) {
+
+		const cloned = new ClippingGroup();
+		// `clippingPlanes` is an array of `Plane` instances. Share the same
+		// references so the cloned group reflects live plane mutations during
+		// extraction (the user might tweak plane.constant in a GUI between
+		// scene mount and our extractor run; the captured shader is invariant
+		// to the values, only the count/scope matters for shader shape).
+		cloned.clippingPlanes = group.clippingPlanes;
+		cloned.enabled = group.enabled;
+		cloned.clipIntersection = group.clipIntersection;
+		cloned.clipShadows = group.clipShadows;
+		parent.add( cloned );
+		parent = cloned;
+
+	}
+	return parent;
 
 }
 

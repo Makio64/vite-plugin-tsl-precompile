@@ -119,7 +119,14 @@ function readBody( req ) {
 
 }
 
-const AUX_SHAPES = new Set( [ 'background', 'post-process', 'pmrem', 'lights', 'shadow-depth', 'render-pipeline', 'output-transform' ] );
+const AUX_SHAPES = new Set( [
+	'background', 'post-process', 'pmrem', 'lights', 'shadow-depth', 'render-pipeline', 'output-transform',
+	// PMREMGenerator's 4 internal materials, each captured separately so the
+	// slim runtime can `loadAux('pmrem-<sub>', hash)` per material on demand.
+	'pmrem-cubemap', 'pmrem-equirect', 'pmrem-blur', 'pmrem-ggx',
+	// Other shapes seen in the runtime that POST artifacts.
+	'mrt', 'backdrop', 'render-output', 'cube-render-target',
+] );
 
 function isAuxPayload( payload ) {
 

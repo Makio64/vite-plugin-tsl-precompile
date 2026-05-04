@@ -33,6 +33,21 @@ import { createHash } from 'node:crypto';
 
 const MAX_GRAPH_DEPTH = 128;
 
+function assertVersion( fn, threeVersion, pluginVersion ) {
+
+	if ( typeof threeVersion !== 'string' || threeVersion.length === 0 ) {
+
+		throw new Error( `${ fn }: "threeVersion" is required (>= 184)` );
+
+	}
+	if ( typeof pluginVersion !== 'string' || pluginVersion.length === 0 ) {
+
+		throw new Error( `${ fn }: "pluginVersion" is required` );
+
+	}
+
+}
+
 /**
  * Hash an already-extracted artifact by its RUNTIME content — WGSL strings,
  * binding shape, uniformPlan kinds, and captured value snapshots.
@@ -60,13 +75,14 @@ export function computeArtifactContentHash( artifact, { shape, threeVersion, plu
 		throw new TypeError( 'computeArtifactContentHash: "shape" must be a non-empty string' );
 
 	}
+	assertVersion( 'computeArtifactContentHash', threeVersion, pluginVersion );
 
 	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
 	const payload = [
 		'artifact-v1',
 		shape,
-		threeVersion || '<unknown-three>',
-		pluginVersion || '<unknown-plugin>',
+		threeVersion,
+		pluginVersion,
 		String( artifact.vertexShader || '' ),
 		String( artifact.fragmentShader || '' ),
 		normaliseUniformPlan( plan ),
@@ -119,13 +135,14 @@ export function computeArtifactHash( material, { name, threeVersion, pluginVersi
 		throw new TypeError( `computeArtifactHash: "name" must be a non-empty string; got ${ typeof name }` );
 
 	}
+	assertVersion( 'computeArtifactHash', threeVersion, pluginVersion );
 
 	const normalized = normalizeMaterialGraph( material );
 	const payload = [
 		'v1',
 		name,
-		threeVersion || '<unknown-three>',
-		pluginVersion || '<unknown-plugin>',
+		threeVersion,
+		pluginVersion,
 		normalized,
 	].join( '\n' );
 
@@ -159,9 +176,10 @@ export function computeNodeGraphHash( node, { shape, threeVersion, pluginVersion
 		throw new TypeError( 'computeNodeGraphHash: "shape" must be a non-empty string' );
 
 	}
+	assertVersion( 'computeNodeGraphHash', threeVersion, pluginVersion );
 
 	const normalized = normalizeNode( node, new Set(), 0 );
-	const payload = [ 'node-v1', shape, threeVersion || '<unknown-three>', pluginVersion || '<unknown-plugin>', normalized ].join( '\n' );
+	const payload = [ 'node-v1', shape, threeVersion, pluginVersion, normalized ].join( '\n' );
 	return createHash( 'sha256' ).update( payload ).digest( 'hex' );
 
 }
@@ -185,11 +203,12 @@ export function computePlainConfigHash( config, { shape, threeVersion, pluginVer
 		throw new TypeError( 'computePlainConfigHash: "shape" must be a non-empty string' );
 
 	}
+	assertVersion( 'computePlainConfigHash', threeVersion, pluginVersion );
 	const payload = [
 		'plain-v1',
 		shape,
-		threeVersion || '<unknown-three>',
-		pluginVersion || '<unknown-plugin>',
+		threeVersion,
+		pluginVersion,
 		stableStringify( config ),
 	].join( '\n' );
 	return createHash( 'sha256' ).update( payload ).digest( 'hex' );
@@ -271,6 +290,22 @@ function normalizeNode( node, seen, depth ) {
 	// get their `value` inlined so hash differentiates color(#f00) vs color(#00f).
 	const leaf = leafRepr( node );
 	if ( leaf !== null ) return `${ tag }(${ leaf })`;
+
+	// MRTNode: the captured fragment shader's `@location(N)` count and output
+	// struct field names are entirely driven by `mrtNode.outputNodes` keys.
+	// `isPotentialChild` doesn't whitelist `outputNodes` (plural, not ending
+	// in `Node`), so without this special case two materials that differ only
+	// in their MRT shape (`mrt({ a, b })` vs `mrt({ a, b, c })`) collapse to
+	// the same artifact hash and the runtime hands back a fragment shader
+	// with the wrong attachment count.
+	if ( node.isMRTNode ) {
+
+		const outputMap = node.outputNodes || node.nodes || {};
+		const names = Object.keys( outputMap ).sort();
+		const slots = names.map( ( name ) => `${ name }=${ normalizeNode( outputMap[ name ], seen, depth + 1 ) }` );
+		return `${ tag }{outputs=[${ slots.join( ',' ) }]}`;
+
+	}
 
 	// Otherwise walk structural children. We hit the common TSL fields first;
 	// anything else ending in Node, node, or fn is a plausible child.

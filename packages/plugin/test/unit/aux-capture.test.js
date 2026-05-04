@@ -83,6 +83,27 @@ test( 'aux/pmrem: equirect input produces a stamped artifact', async () => {
 
 } );
 
+test( 'aux/pmrem: captures all 4 internal materials with non-empty shaders', async () => {
+
+	const r = await extractPMREMArtifact( ( { core } ) => {
+		const tex = new core.DataTexture( new Uint8Array( 4 ), 1, 1 );
+		tex.needsUpdate = true;
+		return { sourceTexture: tex, kind: 'equirect', name: 'pmrem-internals' };
+	} );
+	assert.ok( r.artifacts && typeof r.artifacts === 'object', 'r.artifacts dict expected' );
+	for ( const subKind of [ 'cubemap', 'equirect', 'blur', 'ggx' ] ) {
+
+		const a = r.artifacts[ subKind ];
+		assert.ok( a, `missing artifact for sub-shape ${ subKind }` );
+		assert.equal( a.materialShape, `pmrem-${ subKind }` );
+		assert.equal( a.pmremKind, subKind );
+		assert.ok( typeof a.fragmentShader === 'string' && a.fragmentShader.length > 0, `${ subKind }: empty fragmentShader` );
+		assert.equal( a.__configHash, r.configHash, `${ subKind }: configHash mismatch with primary` );
+
+	}
+
+} );
+
 // -------- Lighting --------
 
 test( 'aux/lights: scene with a DirectionalLight and a PointLight hashes stably', async () => {

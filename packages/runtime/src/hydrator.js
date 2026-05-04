@@ -30,8 +30,10 @@ import { SampledTexture, SampledCubeTexture, Sampled3DTexture, SampledArrayTextu
 import StorageTexture from 'three/src/renderers/common/StorageTexture.js';
 import Storage3DTexture from 'three/src/renderers/common/Storage3DTexture.js';
 import StorageArrayTexture from 'three/src/renderers/common/StorageArrayTexture.js';
-import { DataTexture, Data3DTexture, DataArrayTexture, DepthTexture, CubeTexture, RGBAFormat, DepthFormat, UnsignedByteType, UnsignedIntType, LessEqualCompare, HalfFloatType, LinearFilter, NearestFilter, ClampToEdgeWrapping, Vector2, Vector3, Vector4, Matrix4 } from 'three';
+import { DataTexture, Data3DTexture, DataArrayTexture, DepthTexture, CubeTexture, FramebufferTexture, RGBAFormat, DepthFormat, UnsignedByteType, UnsignedIntType, LessEqualCompare, HalfFloatType, LinearFilter, NearestFilter, LinearMipmapLinearFilter, ClampToEdgeWrapping, Vector2, Vector3, Vector4, Matrix4 } from 'three';
+import { viewportMipTexture, viewportTexture } from 'three/src/nodes/display/ViewportTextureNode.js';
 import { getDFGLUT } from './dfg-lut.js';
+import { collectLiveMaterialTextures } from './apply-precompiled.js';
 
 const fallbackTexture = new DataTexture( new Uint8Array( [ 255, 255, 255, 255 ] ), 1, 1, RGBAFormat );
 fallbackTexture.needsUpdate = true;
@@ -83,6 +85,22 @@ fallbackMultisampledDepthTexture.format = DepthFormat;
 fallbackMultisampledDepthTexture.type = UnsignedIntType;
 fallbackMultisampledDepthTexture.renderTarget = { samples: 4 };
 
+// Per-binding 1×1 fallback for `viewport.texture` bindings. The live
+// FramebufferTexture is swapped in by `createViewportTextureRebinder` on the
+// first render-before; this fallback only exists so WebGPU bind-group
+// validation passes before that runs. Allocate fresh instances (rather than
+// a module singleton) so that aux-bg / postprocess paths whose own viewport
+// fallbacks are seeded by `wireViewportTextureRefs` aren't accidentally
+// pointed at the same texture.
+function makeViewportFallback() {
+
+	const tex = new FramebufferTexture( 1, 1 );
+	tex.minFilter = LinearMipmapLinearFilter;
+	tex.needsUpdate = true;
+	return tex;
+
+}
+
 // Live-texture identity index. Hosts (harness / app) call
 // `registerLiveTexture(tex)` on every freshly-loaded Texture they want the
 // hydrator to be able to relink to. The hydrator looks up by `imageSrc`
@@ -95,6 +113,17 @@ const _liveTexturesByName = new Map();
 // captured UUID is dead and there is no textureName to match on (e.g. an
 // anonymous StorageTexture used via `material.colorNode = texture(sTex)`).
 const _liveStorageTexturesByType = { '2d': [], '3d': [], '2d-array': [] };
+
+// Anonymous Data{,3D,Array}Texture index keyed by shape
+// `${width}x${height}[x${depth}]:${format}:${type}` → Set<Texture>. Used as a
+// fallback for `artifact.texture` bindings whose captured snapshot is trivial
+// (all zeros): the example creates a CPU-side DataTexture that gets populated
+// each frame (e.g. webgpu_compute_audio's analyserTexture), but the snapshot
+// was serialised before any data was written. If a single live DataTexture
+// matches the snapshot's shape, prefer it over the empty snapshot so the
+// per-frame `needsUpdate` flow drives the replay.
+const _liveAnonymousDataTexturesByShape = new Map();
+const _registeredAnonDataTextures = new WeakSet();
 
 export function registerLiveTexture( texture ) {
 
@@ -122,6 +151,9 @@ export function clearLiveTextureIndex() {
 	_liveStorageTexturesByType[ '2d' ].length = 0;
 	_liveStorageTexturesByType[ '3d' ].length = 0;
 	_liveStorageTexturesByType[ '2d-array' ].length = 0;
+	_liveAnonymousDataTexturesByShape.clear();
+	// _registeredAnonDataTextures is a WeakSet — entries are GC'd with the
+	// texture; explicit clearing isn't possible nor needed.
 
 }
 
@@ -184,6 +216,128 @@ function _patchStorageTextureName( Ctor ) {
 _patchStorageTextureName( StorageTexture );
 _patchStorageTextureName( Storage3DTexture );
 _patchStorageTextureName( StorageArrayTexture );
+
+// Auto-register anonymous (unnamed, no imageSrc) Data{,3D,Array}Texture
+// instances into a shape-keyed bucket on first `needsUpdate = true`. The hook
+// runs on the rising edge of needsUpdate, mirroring how three.js's GPU upload
+// path is triggered — at that point width/height/format/type are stable.
+function _patchDataTextureRegister( Ctor ) {
+
+	if ( ! Ctor || ! Ctor.prototype || Ctor.prototype.__tslpDataTextureRegPatched ) return;
+	Ctor.prototype.__tslpDataTextureRegPatched = true;
+
+	const proto = Ctor.prototype;
+	const existing = Object.getOwnPropertyDescriptor( proto, 'needsUpdate' ) || null;
+	const _slot = new WeakMap();
+
+	Object.defineProperty( proto, 'needsUpdate', {
+		get() {
+
+			if ( existing && existing.get ) return existing.get.call( this );
+			return _slot.get( this ) || false;
+
+		},
+		set( v ) {
+
+			if ( existing && existing.set ) existing.set.call( this, v );
+			else _slot.set( this, v );
+			if ( v === true ) {
+
+				const self = this;
+				// Defer one microtask so the constructor / image assignment
+				// chain has fully settled (mirrors `_patchStorageTextureName`).
+				Promise.resolve().then( function () { _registerAnonDataTexture( self ); } );
+
+			}
+
+		},
+		configurable: true,
+		enumerable: true,
+	} );
+
+}
+
+function _shapeKey( width, height, depth, format, type ) {
+
+	const w = width | 0;
+	const h = height | 0;
+	const d = depth | 0;
+	return d > 1 ? `${ w }x${ h }x${ d }:${ format }:${ type }` : `${ w }x${ h }:${ format }:${ type }`;
+
+}
+
+function _registerAnonDataTexture( texture ) {
+
+	if ( ! texture || _registeredAnonDataTextures.has( texture ) ) return;
+	const image = texture.image || null;
+	if ( ! image ) return;
+	const w = image.width | 0;
+	const h = image.height | 0;
+	const d = image.depth | 0 || 0;
+	if ( ! w || ! h ) return;
+	// Skip textures that already have an identity handle — they'll resolve
+	// through imageSrc / textureName lookup paths.
+	const src = image.src || image.currentSrc || null;
+	if ( typeof src === 'string' && src.length > 0 ) return;
+	if ( typeof texture.name === 'string' && texture.name.length > 0 ) return;
+	const format = texture.format != null ? texture.format : null;
+	const type = texture.type != null ? texture.type : null;
+	if ( format == null || type == null ) return;
+	_registeredAnonDataTextures.add( texture );
+	const key = _shapeKey( w, h, d, format, type );
+	let bucket = _liveAnonymousDataTexturesByShape.get( key );
+	if ( ! bucket ) {
+
+		bucket = new Set();
+		_liveAnonymousDataTexturesByShape.set( key, bucket );
+
+	}
+	bucket.add( texture );
+
+}
+
+_patchDataTextureRegister( DataTexture );
+_patchDataTextureRegister( Data3DTexture );
+_patchDataTextureRegister( DataArrayTexture );
+
+function lookupAnonymousDataTexture( snapshot ) {
+
+	if ( ! snapshot ) return null;
+	const w = snapshot.width | 0;
+	const h = snapshot.height | 0;
+	const d = ( snapshot.depth | 0 ) || 0;
+	if ( ! w || ! h ) return null;
+	const format = snapshot.format != null ? snapshot.format : null;
+	const type = snapshot.type != null ? snapshot.type : null;
+	if ( format == null || type == null ) return null;
+	const key = _shapeKey( w, h, d, format, type );
+	const bucket = _liveAnonymousDataTexturesByShape.get( key );
+	if ( ! bucket || bucket.size !== 1 ) return null;
+	return bucket.values().next().value;
+
+}
+
+function isTrivialSnapshot( snapshot ) {
+
+	if ( ! snapshot || ! Array.isArray( snapshot.data ) ) return false;
+	const data = snapshot.data;
+	const len = data.length;
+	if ( ! len || len > 65536 ) return false;
+	const threshold = Math.max( 1, ( len * 0.01 ) | 0 );
+	let nonZero = 0;
+	for ( let i = 0; i < len; i ++ ) {
+
+		if ( data[ i ] !== 0 ) {
+
+			nonZero ++;
+			if ( nonZero > threshold ) return false;
+
+		}
+
+	}
+	return true;
+
+}
 
 /**
  * Create a blank storage texture of the right class for a storage-texture
@@ -346,13 +500,19 @@ export function hydrateNodeBuilderState( artifact, material = null ) {
 	// kernel writes into `colors`, the render reads from the same buffer.
 	bindUserStorageBuffersToArtifact( artifact, material );
 
-	const { bindings, uniformBuffers, shadowDepthBindings, storageTextureBindings } = hydrateRuntimeBindings( artifact, material );
+	const { bindings, uniformBuffers, shadowDepthBindings, storageTextureBindings, viewportTextureBindings, reflectorTextureBindings } = hydrateRuntimeBindings( artifact, material );
 	const updateNode = createUniformUpdateNode( artifact, uniformBuffers, material );
 	const shadowDepthRebinder = shadowDepthBindings.length > 0
 		? createShadowDepthRebinder( shadowDepthBindings )
 		: null;
 	const storageTextureRebinder = storageTextureBindings.length > 0
 		? createStorageTextureRebinder( storageTextureBindings )
+		: null;
+	const viewportTextureRebinder = viewportTextureBindings.length > 0
+		? createViewportTextureRebinder( viewportTextureBindings )
+		: null;
+	const reflectorTextureRebinder = reflectorTextureBindings.length > 0
+		? createReflectorTextureRebinder( reflectorTextureBindings )
 		: null;
 
 	// In-process flows (dev-server capture → immediate render) carry live
@@ -384,7 +544,16 @@ export function hydrateNodeBuilderState( artifact, material = null ) {
 		updateBeforeNodes: [
 			...( shadowDepthRebinder ? [ shadowDepthRebinder ] : [] ),
 			...( storageTextureRebinder ? [ storageTextureRebinder ] : [] ),
+			// `viewportTextureRebinder` runs alongside the other rebinders so
+			// transmissive materials (KHR_materials_transmission glass) sample
+			// a freshly-copied framebuffer instead of the 1×1 fallback.
+			...( viewportTextureRebinder ? [ viewportTextureRebinder ] : [] ),
 			...liveUpdateBeforeNodes,
+			// `reflectorTextureRebinder` runs LAST: the live ReflectorBaseNode
+			// inside `liveUpdateBeforeNodes` keys its per-camera RenderTarget
+			// during its own `updateBefore`; only afterwards can we swap the
+			// binding to the live `renderTarget.texture`.
+			...( reflectorTextureRebinder ? [ reflectorTextureRebinder ] : [] ),
 		],
 		updateAfterNodes: [ ...liveUpdateAfterNodes ],
 		observer: createStaticObserver(),
@@ -462,18 +631,38 @@ function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 		: Array.isArray( artifact.nodeAttributes ) ? artifact.nodeAttributes : null;
 	if ( ! entries || entries.length === 0 ) return;
 
+	const __DBG = typeof globalThis !== 'undefined' && globalThis.__TSLP_DBG_INSTANCE === true;
+	const __dbgTag = __DBG ? `[tslp-dbg bindUserNode] artifact=${ artifact.__name || artifact.name || '<anon>' } material=${ sourceMaterial && sourceMaterial.name || '<anon>' }` : '';
+
 	for ( const entry of entries ) {
 
 		if ( ! entry || entry.source !== 'node' ) continue;
 		if ( entry._liveAttribute && entry._liveAttribute.isBufferAttribute === true ) continue;
 
 		const path = entry.userPath;
-		if ( ! Array.isArray( path ) || path.length === 0 ) continue;
+		if ( ! Array.isArray( path ) || path.length === 0 ) {
+			if ( __DBG ) console.log( `${ __dbgTag } SKIP ${ entry.name } noUserPath` );
+			continue;
+		}
 
 		const root = sourceMaterial[ path[ 0 ] ];
-		if ( ! root || root.isNode !== true ) continue;
+		if ( __DBG ) {
+			const rootKind = root === undefined ? 'undefined'
+				: root === null ? 'null'
+				: ( typeof root === 'object' || typeof root === 'function' )
+					? `${ typeof root }/isNode=${ root && root.isNode }/ctor=${ root && root.constructor && root.constructor.name }/hasAttribute=${ !! ( root && root.attribute ) }/hasValue=${ !! ( root && root.value ) }`
+					: typeof root;
+			console.log( `${ __dbgTag } entry=${ entry.name } path=${ JSON.stringify( path ) } want=size${ entry.itemSize }/count${ entry.count }/${ entry.arrayType } root=${ rootKind }` );
+		}
+		if ( ! root || root.isNode !== true ) {
+			if ( __DBG ) console.log( `${ __dbgTag }   -> SKIP root not a node` );
+			continue;
+		}
 
 		const live = findFirstAttributeMatchingEntry( root, entry );
+		if ( __DBG ) {
+			console.log( `${ __dbgTag }   -> live=${ live ? `BufferAttr(itemSize=${ live.itemSize },count=${ live.count },isInstanced=${ !! live.isInstancedBufferAttribute })` : 'NULL' }` );
+		}
 		if ( ! live ) continue;
 
 		Object.defineProperty( entry, '_liveAttribute', {
@@ -493,10 +682,24 @@ function findFirstAttributeMatchingEntry( node, entry ) {
 	const wantCount = entry.count || 0;
 	const wantArray = entry.arrayType || '';
 
+	const __DBG = typeof globalThis !== 'undefined' && globalThis.__TSLP_DBG_INSTANCE === true;
+	const __probedNodes = __DBG ? [] : null;
+
 	let found = null;
 	const probe = ( n ) => {
 
 		if ( found || ! n ) return;
+		if ( __DBG ) {
+			__probedNodes.push( {
+				ctor: n && n.constructor && n.constructor.name,
+				hasAttribute: !! ( n && n.attribute ),
+				hasValue: !! ( n && n.value ),
+				attrItemSize: n && n.attribute && n.attribute.itemSize,
+				attrCount: n && n.attribute && n.attribute.count,
+				attrIsBuffer: n && n.attribute && n.attribute.isBufferAttribute,
+				valIsBuffer: n && n.value && n.value.isBufferAttribute,
+			} );
+		}
 		const cands = [ n.attribute, n.value ];
 		for ( const cand of cands ) {
 
@@ -520,6 +723,10 @@ function findFirstAttributeMatchingEntry( node, entry ) {
 
 	probe( node );
 	if ( ! found && typeof node.traverse === 'function' ) node.traverse( probe );
+	if ( __DBG ) {
+		const sample = __probedNodes.slice( 0, 12 ).map( ( p ) => `${ p.ctor }${ p.attrIsBuffer ? `[attr ${ p.attrItemSize }x${ p.attrCount }]` : ( p.hasAttribute ? '[attr?]' : '' ) }${ p.valIsBuffer ? '[val=buf]' : '' }` ).join( ',' );
+		console.log( `[tslp-dbg findFirst] entry=${ entry.name } want=${ wantSize }/${ wantCount }/${ wantArray } rootCtor=${ node && node.constructor && node.constructor.name } probed=${ __probedNodes.length } found=${ !! found } sample=[${ sample }]` );
+	}
 	return found;
 
 }
@@ -546,6 +753,28 @@ function bindUserStorageBuffersToArtifact( artifact, sourceMaterial ) {
 	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : null;
 	if ( ! plan || plan.length === 0 ) return;
 
+	// Compute kernel storage buffers can be referenced from inside an Fn() body
+	// assigned to any *Node slot. Capture writes `entry.userPath` based on the
+	// node tree it walks, but Fn bodies that assign sibling material slots as a
+	// side effect (e.g. cloth's `positionNode = Fn(() => { material.normalNode = ...; vertexPositionBuffer.element(...) })()`)
+	// leave `userPath` pointing at the wrong slot, and some materials lose
+	// `userPath` to `undefined` entirely. When the path-rooted lookup misses,
+	// fall back to scanning every *Node property on the material.
+	let nodeRoots = null;
+	const collectNodeRoots = () => {
+
+		if ( nodeRoots ) return nodeRoots;
+		nodeRoots = [];
+		for ( const key in sourceMaterial ) {
+
+			const v = sourceMaterial[ key ];
+			if ( v && v.isNode === true ) nodeRoots.push( v );
+
+		}
+		return nodeRoots;
+
+	};
+
 	for ( const group of plan ) {
 
 		const entries = group && Array.isArray( group.storageBuffers ) ? group.storageBuffers : null;
@@ -557,13 +786,30 @@ function bindUserStorageBuffersToArtifact( artifact, sourceMaterial ) {
 				&& entry._liveAttribute.array
 				&& ArrayBuffer.isView( entry._liveAttribute.array ) ) continue;
 
+			let live = null;
 			const path = entry.userPath;
-			if ( ! Array.isArray( path ) || path.length === 0 ) continue;
+			if ( Array.isArray( path ) && path.length > 0 ) {
 
-			const root = sourceMaterial[ path[ 0 ] ];
-			if ( ! root || root.isNode !== true ) continue;
+				const root = sourceMaterial[ path[ 0 ] ];
+				if ( root && root.isNode === true ) {
 
-			const live = findFirstAttributeMatchingEntry( root, entry );
+					live = findFirstAttributeMatchingEntry( root, entry );
+
+				}
+
+			}
+
+			if ( ! live ) {
+
+				for ( const root of collectNodeRoots() ) {
+
+					live = findFirstAttributeMatchingEntry( root, entry );
+					if ( live ) break;
+
+				}
+
+			}
+
 			if ( ! live ) continue;
 
 			Object.defineProperty( entry, '_liveAttribute', {
@@ -583,11 +829,19 @@ function hydrateNodeAttributes( attributes ) {
 
 	if ( ! Array.isArray( attributes ) ) return [];
 
-	return attributes.map( ( attribute ) => {
+	const __DBG = typeof globalThis !== 'undefined' && globalThis.__TSLP_DBG_INSTANCE === true;
 
-		if ( ! attribute || attribute.source !== 'node' ) return attribute;
+	return attributes.map( ( attribute, i ) => {
+
+		if ( ! attribute || attribute.source !== 'node' ) {
+			if ( __DBG ) console.log( `[tslp-dbg hydrateNodeAttr] slot=${ i } name=${ attribute && attribute.name } source=${ attribute && attribute.source } passthrough` );
+			return attribute;
+		}
 
 		const liveAttribute = attribute._liveAttribute || ( attribute.node && attribute.node.attribute );
+		if ( __DBG ) {
+			console.log( `[tslp-dbg hydrateNodeAttr] slot=${ i } name=${ attribute.name } live=${ liveAttribute ? `BufferAttr(itemSize=${ liveAttribute.itemSize },count=${ liveAttribute.count },isInstanced=${ !! liveAttribute.isInstancedBufferAttribute })` : 'NULL→fallback' }` );
+		}
 		if ( liveAttribute ) return { ...attribute, node: { attribute: liveAttribute } };
 
 		const itemSize = attribute.itemSize || itemSizeFromAttributeType( attribute.type );
@@ -708,8 +962,10 @@ function hydrateRuntimeBindings( artifact, material ) {
 	const uniformBuffers = new Map();
 	const shadowDepthBindings = [];
 	const storageTextureBindings = [];
+	const viewportTextureBindings = [];
+	const reflectorTextureBindings = [];
 	const bindings = artifact.bindings;
-	if ( ! Array.isArray( bindings ) ) return { bindings: [], uniformBuffers, shadowDepthBindings, storageTextureBindings };
+	if ( ! Array.isArray( bindings ) ) return { bindings: [], uniformBuffers, shadowDepthBindings, storageTextureBindings, viewportTextureBindings, reflectorTextureBindings };
 
 	// Full three.js artifacts contain JSON descriptors. Rehydrate the subset
 	// needed by WGSL pipeline layout creation and UBO uploads. Texture/storage
@@ -747,6 +1003,15 @@ function hydrateRuntimeBindings( artifact, material ) {
 					lightIndex: Number.isInteger( planSource.lightIndex ) ? planSource.lightIndex : 0,
 					lightUuid: typeof planSource.lightUuid === 'string' ? planSource.lightUuid : null,
 					vsm: planSource.vsm === true,
+					// Non-light depth textures (e.g. RenderTarget.depthTexture
+					// sampled via `material.colorNode = texture(depthTexture)`)
+					// have no owning AnalyticLightNode. The plan source signals
+					// this with `lightIndex: -1, fromMaterialGraph: true`. The
+					// rebinder resolves the live DepthTexture by walking the
+					// owning material's node graph instead of `light.shadow.map`.
+					fromMaterialGraph: planSource.fromMaterialGraph === true,
+					textureUuid: typeof planSource.textureUuid === 'string' ? planSource.textureUuid : null,
+					material,
 				} );
 
 			}
@@ -787,13 +1052,71 @@ function hydrateRuntimeBindings( artifact, material ) {
 
 			}
 
+			// TSL `reflector()` bindings: each frame `ReflectorBaseNode.updateBefore`
+			// renders the scene from a mirrored camera into a per-camera RT and
+			// reassigns `textureNode.value`. The captured uuid points at the
+			// module-private `_defaultRT.texture` and is dead at replay; the
+			// artifact's `_liveUpdateBeforeNodes` sidecar is non-enumerable and
+			// lost across the e2e capture→replay JSON boundary, so resolve the
+			// live ReflectorBaseNode by walking the replay-side material's own
+			// node graph — `reflector()` ran on the replay page when the user
+			// HTML was imported, attaching a fresh ReflectorBaseNode to the
+			// material. Each material in the failing examples carries a single
+			// reflector, so the first ReflectorNode in the graph is correct;
+			// `reflectorIndex` is reserved for future multi-reflector support.
+			if ( descriptor.kind === 'sampled-texture'
+				&& runtimeBinding.isSampledTexture
+				&& planSource && planSource.kind === 'reflector.texture' ) {
+
+				const baseNode = findReflectorBaseNodeInMaterial( material );
+				if ( ! baseNode && material && ! globalThis.__tslp_rGraphLogged ) {
+					globalThis.__tslp_rGraphLogged = 1;
+					const types = [];
+					for ( const k of [ 'colorNode', 'outputNode', 'fragmentNode', 'backdropNode', 'emissiveNode' ] ) {
+						const root = material[ k ];
+						if ( ! root ) continue;
+						types.push( '#' + k + '=' + ( root.constructor ? ( root.constructor.type || root.constructor.name ) : '?' ) );
+						if ( typeof root.traverse === 'function' ) {
+							let n = 0;
+							root.traverse( ( ch ) => { if ( n < 20 && ch && ch.constructor ) { types.push( ' ' + ( ch.constructor.type || ch.constructor.name ) ); n ++; } } );
+						}
+					}
+					console.log( '[tslp_reflector] graph', descriptor.name, types.join( '' ) );
+				}
+				if ( baseNode ) {
+
+					reflectorTextureBindings.push( {
+						binding: runtimeBinding,
+						baseNode,
+					} );
+
+				}
+
+			}
+
+			// Viewport-texture bindings (transmission FBO etc.): captured WGSL
+			// samples a `viewportMipTexture()` / `viewportTexture()` whose
+			// FramebufferTexture is refreshed each frame. Track here so the
+			// per-frame rebinder can drive the framebuffer copy and swap in
+			// the live texture.
+			if ( descriptor.kind === 'sampled-texture'
+				&& runtimeBinding.isSampledTexture
+				&& planSource && planSource.kind === 'viewport.texture' ) {
+
+				viewportTextureBindings.push( {
+					binding: runtimeBinding,
+					generateMipmaps: planSource.generateMipmaps !== false,
+				} );
+
+			}
+
 		}
 
 		if ( runtimeBindings.length > 0 ) groups.push( new BindGroup( group.name || '', runtimeBindings ) );
 
 	}
 
-	return { bindings: groups, uniformBuffers, shadowDepthBindings, storageTextureBindings };
+	return { bindings: groups, uniformBuffers, shadowDepthBindings, storageTextureBindings, viewportTextureBindings, reflectorTextureBindings };
 
 }
 
@@ -835,6 +1158,37 @@ function findPlanTextureSource( artifact, groupName, bindingName ) {
  * @param {Object} artifact
  * @return {Object}
  */
+/**
+ * Resolve the live `DepthTexture` reachable from a material's node graph.
+ * Used by `createShadowDepthRebinder` for depth-texture bindings that are NOT
+ * owned by an `AnalyticLightNode` (e.g. `RenderTarget.depthTexture` sampled via
+ * `material.colorNode = texture(depthTexture)`). When the material's graph
+ * holds multiple `DepthTexture` instances, prefers the one whose uuid matches
+ * the captured hint.
+ *
+ * @param {?Object} material
+ * @param {?string} textureUuid - Captured uuid hint; may be stale across reload.
+ * @return {?Object}
+ */
+function resolveDepthTextureFromMaterial( material, textureUuid ) {
+
+	if ( ! material ) return null;
+	const textures = collectLiveMaterialTextures( material );
+	if ( ! textures || textures.size === 0 ) return null;
+
+	let match = null;
+	let firstDepth = null;
+	for ( const tex of textures.values() ) {
+
+		if ( ! tex || tex.isDepthTexture !== true ) continue;
+		if ( ! firstDepth ) firstDepth = tex;
+		if ( textureUuid && tex.uuid === textureUuid ) { match = tex; break; }
+
+	}
+	return match || firstDepth;
+
+}
+
 function createShadowDepthRebinder( entries /* , artifact */ ) {
 
 	return {
@@ -851,21 +1205,221 @@ function createShadowDepthRebinder( entries /* , artifact */ ) {
 		updateBefore( frame ) {
 
 			const scene = frame && frame.scene ? frame.scene : null;
-			if ( ! scene ) return;
 
 			for ( const entry of entries ) {
 
-				const light = findShadowLight( scene, entry );
-				if ( ! light || ! light.shadow || ! light.shadow.map ) continue;
+				let liveTexture = null;
 
-				const map = light.shadow.map;
-				// VSM materials sample the blurred render-target texture
-				// (`shadow.map.texture`); standard PCF/Hard shadows sample
-				// the raw depth texture (`shadow.map.depthTexture`).
-				const liveTexture = entry.vsm ? map.texture : ( map.depthTexture || map.texture );
+				if ( entry.fromMaterialGraph ) {
+
+					// Non-light depth textures (e.g. `RenderTarget.depthTexture`
+					// sampled via `material.colorNode = texture(depthTexture)`)
+					// are reachable through the binding's owning material's
+					// node graph. The user's reference is stable across frames,
+					// so this is functionally a one-time resolve, but we keep
+					// re-running so a swapped-out colorNode picks up.
+					liveTexture = resolveDepthTextureFromMaterial( entry.material, entry.textureUuid );
+
+				} else {
+
+					if ( ! scene ) continue;
+					const light = findShadowLight( scene, entry );
+					if ( ! light || ! light.shadow || ! light.shadow.map ) continue;
+
+					const map = light.shadow.map;
+					// VSM materials sample the blurred render-target texture
+					// (`shadow.map.texture`); standard PCF/Hard shadows sample
+					// the raw depth texture (`shadow.map.depthTexture`).
+					liveTexture = entry.vsm ? map.texture : ( map.depthTexture || map.texture );
+
+				}
+
 				if ( ! liveTexture || liveTexture === entry.binding.texture ) continue;
 
 				entry.binding.texture = liveTexture;
+				if ( entry.binding.groupNode ) entry.binding.groupNode.version ++;
+
+			}
+
+		},
+	};
+
+}
+
+/**
+ * Find the live `ReflectorBaseNode` attached to a precompiled material. The
+ * wrapped `PrecompiledMaterial` strips every `*Node` property, so the
+ * hydrator cannot walk `material.colorNode` to reach the reflector. Instead,
+ * `__applyPrecompiled` extracts each live ReflectorBaseNode from the source
+ * material's graph at wrap time and stashes them as a non-enumerable
+ * `__tslpReflectorBaseNodes` array on the wrapped material; we read it here.
+ * The failing examples carry one reflector per material, so the first entry
+ * is correct — multi-reflector support would key by `reflectorIndex`.
+ *
+ * @param {?Object} material
+ * @return {?Object} A live ReflectorBaseNode or null.
+ */
+function findReflectorBaseNodeInMaterial( material ) {
+
+	if ( ! material ) return null;
+	const list = material.__tslpReflectorBaseNodes;
+	if ( Array.isArray( list ) && list.length > 0 ) return list[ 0 ];
+	return null;
+
+}
+
+/**
+ * Per-frame rebinder for TSL `reflector()` bindings.
+ *
+ * `ReflectorBaseNode.updateBefore` lazy-allocates a `RenderTarget` per camera
+ * (keyed by camera identity in `node.renderTargets`) and assigns
+ * `node.textureNode.value = renderTarget.texture` each frame. The artifact's
+ * captured binding still holds the module-private `_defaultRT.texture` (or a
+ * 1×1 fallback after hydration), so without this rebinder the mirror surface
+ * samples a flat colour. Run AFTER the live ReflectorBaseNode's own
+ * `updateBefore` so the per-camera RT is keyed before we read it.
+ *
+ * Bails out when the current frame is the reflector's own nested render pass
+ * — `ReflectorBaseNode.updateBefore` renames the scene by appending
+ * ` [ Reflector ]` for the recursive `renderer.render(scene, virtualCamera)`,
+ * during which our binding swap would be a no-op (the reflector mesh is
+ * `material.visible = false`) and would still cost a bind-group rebuild.
+ *
+ * @param {Array<{binding: Object, baseNode: Object}>} entries
+ * @return {Object}
+ */
+function createReflectorTextureRebinder( entries ) {
+
+	return {
+		getUpdateBeforeType() {
+
+			return 'render';
+
+		},
+		updateReference() {
+
+			return this;
+
+		},
+		updateBefore( frame ) {
+
+			const scene = frame ? frame.scene : null;
+			if ( scene && typeof scene.name === 'string' && scene.name.endsWith( '[ Reflector ]' ) ) return;
+
+			const camera = frame ? frame.camera : null;
+			if ( ! globalThis.__tslp_reflectorRebDbg ) {
+				globalThis.__tslp_reflectorRebDbg = 1;
+				console.log( '[tslp_reflector] reb fire entries=', entries.length, 'cam?', !! camera, 'rtSizes=', entries.map( ( e ) => e.baseNode && e.baseNode.renderTargets ? e.baseNode.renderTargets.size : -1 ).join( ',' ) );
+			}
+
+			for ( const entry of entries ) {
+
+				const baseNode = entry.baseNode;
+				if ( ! baseNode || ! baseNode.renderTargets ) continue;
+
+				let rt = camera ? baseNode.renderTargets.get( camera ) : null;
+				if ( ! rt && baseNode.renderTargets.size > 0 ) {
+
+					// Fallback: replay-time slim camera identity may not match
+					// the camera passed to ReflectorBaseNode.updateBefore on the
+					// first run. Take any keyed RT — usually exactly one.
+					rt = baseNode.renderTargets.values().next().value;
+
+				}
+
+				const liveTexture = rt && rt.texture;
+				if ( ! liveTexture || liveTexture === entry.binding.texture ) continue;
+
+				entry.binding.texture = liveTexture;
+				if ( entry.binding.groupNode ) entry.binding.groupNode.version ++;
+
+			}
+
+		},
+	};
+
+}
+
+/**
+ * Per-frame rebinder for viewport-texture bindings (transmission FBO).
+ *
+ * KHR_materials_transmission glass samples `viewportMipTexture()` /
+ * `viewportOpaqueMipTexture()` — TSL nodes whose backing `FramebufferTexture`
+ * is refreshed each frame via `renderer.copyFramebufferToTexture`. The
+ * precompiled material has no node tree, so without this rebinder no copy
+ * runs and the WGSL `textureSampleLevel` returns the 1×1 fallback (lamp
+ * glass renders opaque/black instead of refractive).
+ *
+ * Strategy: lazily instantiate real three.js TSL ViewportTextureNode instances
+ * (one per generateMipmaps variant), call their `updateBefore()` — which does
+ * size sync + framebuffer copy + mipmap regen — then swap the binding's
+ * `.texture` to the live FramebufferTexture for the current render target.
+ * The copy is dedup'd by render id so multiple transmissive bindings in the
+ * same frame trigger only one copyFramebufferToTexture per variant.
+ *
+ * @param {Array<{binding: Object, generateMipmaps: boolean}>} entries
+ * @return {Object}
+ */
+function createViewportTextureRebinder( entries ) {
+
+	// Lazy singletons keyed by `generateMipmaps`. Sharing across all
+	// precompiled transmissive materials matches three.js's own pattern
+	// (see `_singletonOpaqueViewportTextureNode` in ViewportTextureNode.js)
+	// so we only do one framebuffer copy per render even when many bindings
+	// reference the same viewport-texture variant.
+	let mipNode = null;
+	let plainNode = null;
+	const lastCopyRenderId = { mip: -1, plain: -1 };
+
+	return {
+		getUpdateBeforeType() {
+
+			return 'render';
+
+		},
+		updateReference() {
+
+			return this;
+
+		},
+		updateBefore( frame ) {
+
+			if ( ! frame || ! frame.renderer ) return;
+
+			for ( const entry of entries ) {
+
+				const variant = entry.generateMipmaps ? 'mip' : 'plain';
+				let node = variant === 'mip' ? mipNode : plainNode;
+				if ( ! node ) {
+
+					node = variant === 'mip' ? viewportMipTexture() : viewportTexture();
+					if ( variant === 'mip' ) mipNode = node; else plainNode = node;
+
+				}
+
+				// `updateReference` selects the per-render-target FramebufferTexture
+				// and assigns it to `node.value`. Must run every render-before
+				// because `node.updateBefore` itself does NOT set `node.value`
+				// (it only does the copy). Without this, `node.value` stays at
+				// the constructor's 1×1 default fallback and we re-bind to that
+				// instead of the freshly-copied framebuffer.
+				if ( typeof node.updateReference === 'function' ) node.updateReference( frame );
+
+				// Drive the framebuffer copy at most once per render id —
+				// matches three.js' NodeFrame.RENDER de-dup so multiple
+				// transmissive bindings in one render share one copy.
+				const renderId = frame.renderId != null ? frame.renderId : 0;
+				if ( lastCopyRenderId[ variant ] !== renderId ) {
+
+					node.updateBefore( frame );
+					lastCopyRenderId[ variant ] = renderId;
+
+				}
+
+				const liveTex = node.value;
+				if ( ! liveTex || liveTex === entry.binding.texture ) continue;
+
+				entry.binding.texture = liveTex;
 				if ( entry.binding.groupNode ) entry.binding.groupNode.version ++;
 
 			}
@@ -1277,6 +1831,16 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 
 	}
 
+	// Viewport-texture bindings (transmission FBO etc.): the live
+	// FramebufferTexture is swapped in by `createViewportTextureRebinder`
+	// per render. Return a 1×1 FramebufferTexture so the WebGPU bind-group
+	// layout validates on the first frame (before updateBefore runs).
+	if ( source.kind === 'viewport.texture' ) {
+
+		return makeViewportFallback();
+
+	}
+
 	// artifact.texture: resolve by UUID first (production path — same Texture
 	// instance is used). Fall back to imageSrc/textureName matching against a
 	// runtime-registered texture index so harness/test paths that re-create
@@ -1339,6 +1903,29 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 		}
 
 		if ( source.snapshot ) {
+
+			// Anonymous live DataTexture fallback. When the captured snapshot
+			// is trivial (all zeros — e.g. webgpu_compute_audio's analyserBuffer
+			// captured before audio playback started), prefer a unique live
+			// DataTexture of matching shape over rebuilding from the empty
+			// snapshot. This lets the example's per-frame `needsUpdate` flow
+			// drive replay rendering instead of binding a dead zero buffer.
+			if ( ! wantsDepthTexture && ! wantsMultisampledTexture && isTrivialSnapshot( source.snapshot ) ) {
+
+				const anonData = lookupAnonymousDataTexture( source.snapshot );
+				if ( anonData && textureMatchesShaderMultisample( artifact, bindingName, anonData ) ) {
+
+					if ( typeof source.flipY === 'boolean' ) {
+
+						anonData.flipY = source.flipY;
+						anonData.needsUpdate = true;
+
+					}
+					return anonData;
+
+				}
+
+			}
 
 			return textureFromSnapshot( artifact, source.textureUuid, source.snapshot, bindingName );
 

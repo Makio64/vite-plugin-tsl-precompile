@@ -23,6 +23,7 @@
 
 import { installMockWebGPU, createMockGPUCanvasContext } from './mock-webgpu.js';
 import { computeArtifactHash } from './hash.js';
+import { normalizeRevision } from './_shared/normalize-revision.js';
 import { compileTSL, extractArtifact } from './vendor/compileTSL.js';
 
 let initialised = false;
@@ -132,7 +133,7 @@ export async function extractMaterial( factory, opts = {} ) {
 
 	const hash = computeArtifactHash( material, {
 		name,
-		threeVersion: opts.threeVersion || ( 'REVISION' in core ? String( core.REVISION ) : 'unknown' ),
+		threeVersion: opts.threeVersion || normalizeRevision( core.REVISION ),
 		pluginVersion: opts.pluginVersion || '0.0.0',
 	} );
 

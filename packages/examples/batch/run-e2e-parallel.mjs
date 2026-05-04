@@ -3,6 +3,8 @@ import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 
+import { assertThreeAtLeast184 } from './_three-version.mjs';
+
 const SELF = dirname( fileURLToPath( import.meta.url ) );
 const OUT  = resolve( SELF, 'results' );
 
@@ -33,6 +35,7 @@ if ( ! existsSync( examplesDir ) ) {
 	console.error( `[e2e-parallel] three.js examples not found at ${ examplesDir }. Pass --three-repo=<path>` );
 	process.exit( 1 );
 }
+assertThreeAtLeast184( threeRepo, 'e2e-parallel' );
 const allExamples = readdirSync( examplesDir )
 	.filter( f => f.startsWith( 'webgpu_' ) && f.endsWith( '.html' ) )
 	.filter( f => ! filter || f.includes( filter ) );

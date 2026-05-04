@@ -27,6 +27,7 @@
 
 import { installMockWebGPU, createMockGPUCanvasContext } from './mock-webgpu.js';
 import { computeArtifactContentHash, computeNodeGraphHash, computePlainConfigHash } from './hash.js';
+import { normalizeRevision } from './_shared/normalize-revision.js';
 import { compileTSL } from './vendor/compileTSL.js';
 
 let initialised = false;
@@ -51,7 +52,7 @@ async function importThree() {
 
 function threeVersion( core, opts ) {
 
-	return opts.threeVersion || ( 'REVISION' in core ? String( core.REVISION ) : 'unknown' );
+	return opts.threeVersion || normalizeRevision( core.REVISION );
 
 }
 
@@ -254,16 +255,35 @@ export async function extractPostProcessingArtifact( factory, opts = {} ) {
 // PMREM
 // -------------------------------------------------------------------------
 
+// PMREMGenerator builds 4 internal NodeMaterials. The cubemap and equirect
+// blit shaders are kind-specific only; blur and ggx depend on lodMax derived
+// from the source texture size. We capture all 4 keyed by sub-shape under a
+// single configHash that covers (kind, source dims) — that's the partition
+// the runtime needs at PMREMGenerator construction time.
+const PMREM_SUB_SHAPES = [ 'cubemap', 'equirect', 'blur', 'ggx' ];
+
+function pmremSubShape( subKind ) {
+
+	return `pmrem-${ subKind }`;
+
+}
+
 /**
- * Extract artifact(s) for a PMREMGenerator pre-filter pass.
+ * Extract artifacts for PMREMGenerator's 4 internal materials
+ * (PMREM_cubemap, PMREM_equirect, PMREM_blur, PMREM_ggx).
  *
- * PMREM produces multiple materials internally (one per mip). For the POC
- * we capture the first one — the dominant cost. A fuller implementation
- * returns an array keyed by mip level.
+ * The slim renderer cannot run PMREM's blur passes natively because its
+ * rewritten Nodes.js:getForRender throws on non-precompiled materials.
+ * Capturing these 4 internal materials as standard precompiled artifacts
+ * lets the slim renderer drive PMREM through the normal precompiled-material
+ * path — no dual-renderer fallback needed.
  *
  * @param {({webgpu, core, tsl}) => ({ sourceTexture: Object, kind: 'equirect' | 'cube', name?: string })} factory
  * @param {Object} [opts]
- * @return {Promise<{ artifact, configHash, materialShape: 'pmrem', hash: string }>}
+ * @return {Promise<{ artifact, artifacts: Object, configHash, materialShape: 'pmrem', hash: string }>}
+ *   `artifacts` is a dict keyed by sub-shape ('cubemap'|'equirect'|'blur'|'ggx').
+ *   `artifact` is the primary one matching `kind` (kept for back-compat with
+ *   the existing test fixture).
  */
 export async function extractPMREMArtifact( factory, opts = {} ) {
 
@@ -276,7 +296,9 @@ export async function extractPMREMArtifact( factory, opts = {} ) {
 
 	// The config-hash covers (kind, texture-shape). Texture identity (uuid)
 	// is NOT part of the hash — different textures of the same shape produce
-	// the same PMREM material graph, only the sampled values differ.
+	// the same PMREM material graph, only the sampled values differ. The
+	// runtime computes the SAME hash from the live source texture passed to
+	// PMREMGenerator.fromX(), so the registry lookup matches.
 	const configInput = {
 		kind,
 		width: sourceTexture.image ? sourceTexture.image.width | 0 : 0,
@@ -293,21 +315,79 @@ export async function extractPMREMArtifact( factory, opts = {} ) {
 	const PMREM = webgpu.PMREMGenerator;
 	if ( ! PMREM ) throw new Error( 'extractPMREMArtifact: three/webgpu does not export PMREMGenerator' );
 
-	// PMREMGenerator's internal pipeline renders to a cube target. Its
-	// internal materials aren't exposed cleanly via `compileTSL` unless we
-	// trigger a PMREM generation. For the POC we just report the
-	// configHash + a placeholder artifact; a real integration would hook
-	// into PMREMGenerator's internal material constructions.
-	const artifact = {
-		uniformPlan: [],
-		vertexShader: '',
-		fragmentShader: '',
-		materialShape: 'pmrem',
-		pmremKind: kind,
+	const pmrem = new PMREM( renderer );
+
+	// 1. Materialise the cubemap and equirect blit shaders. These are
+	//    compile-only (no render) — three.js exposes them precisely as
+	//    pre-warmup helpers, populating pmrem._cubemapMaterial /
+	//    pmrem._equirectMaterial without running fromX().
+	await pmrem.compileCubemapShader();
+	await pmrem.compileEquirectangularShader();
+
+	// 2. Materialise blur + ggx by manually invoking _setSizeFromTexture
+	//    + _init. _init builds _blurMaterial and _ggxMaterial sized for
+	//    the source. We avoid fromX() because that also runs render passes
+	//    we don't need (we only want compiled artifacts, not pixels).
+	pmrem._setSizeFromTexture( sourceTexture );
+	const cubeUVRenderTarget = pmrem._allocateTarget();
+	pmrem._init( cubeUVRenderTarget );
+
+	const materials = {
+		cubemap: pmrem._cubemapMaterial,
+		equirect: pmrem._equirectMaterial,
+		blur: pmrem._blurMaterial,
+		ggx: pmrem._ggxMaterial,
 	};
-	stamp( artifact, 'pmrem', configHash, name, core, opts );
+
+	// 3. Build a throwaway scene with one mesh per material. compileTSL
+	//    walks the renderer's NodeBuilder cache and returns one artifact
+	//    per compiled material, keyed by materialUuid.
+	const scene = new core.Scene();
+	const camera = new core.PerspectiveCamera( 45, 1, 0.1, 100 );
+	camera.position.set( 0, 0, 3 );
+
+	const meshUuids = {};
+	for ( const subKind of PMREM_SUB_SHAPES ) {
+
+		const mat = materials[ subKind ];
+		if ( ! mat ) continue;
+		const geom = new core.PlaneGeometry( 1, 1 );
+		const mesh = new core.Mesh( geom, mat );
+		scene.add( mesh );
+		meshUuids[ subKind ] = mat.uuid;
+
+	}
+
+	const allArtifacts = await compileTSL( renderer, scene, camera );
+
+	const artifacts = {};
+	for ( const subKind of PMREM_SUB_SHAPES ) {
+
+		const uuid = meshUuids[ subKind ];
+		if ( ! uuid ) continue;
+		const found = allArtifacts.find( ( a ) => a.materialUuid === uuid );
+		if ( ! found ) continue;
+		found.pmremKind = subKind;
+		stamp( found, pmremSubShape( subKind ), configHash, `${ name }-${ subKind }`, core, opts );
+		artifacts[ subKind ] = found;
+
+	}
+
+	if ( Object.keys( artifacts ).length === 0 ) {
+
+		throw new Error( `extractPMREMArtifact: produced 0 artifacts (compileTSL returned ${ allArtifacts.length }, none matched PMREM material UUIDs)` );
+
+	}
+
+	// Back-compat: return the artifact matching the input `kind` as
+	// `result.artifact` so the existing test fixture (which checks
+	// `r.artifact.pmremKind === 'equirect'`) keeps working.
+	const primaryKey = kind === 'cube' ? 'cubemap' : 'equirect';
+	const primary = artifacts[ primaryKey ] || Object.values( artifacts )[ 0 ];
+
+	pmrem.dispose();
 	if ( typeof renderer.dispose === 'function' ) renderer.dispose();
-	return { artifact, configHash, materialShape: 'pmrem', hash: artifact.__hash };
+	return { artifact: primary, artifacts, configHash, materialShape: 'pmrem', hash: primary.__hash };
 
 }
 

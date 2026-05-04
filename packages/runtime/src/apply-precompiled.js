@@ -38,6 +38,78 @@ const _TEXTURE_PROPS = [
 	'thicknessMap', 'anisotropyMap',
 ];
 
+// TSL node-tree keys that may host TextureNodes. Mirrors the `nodeKeys` list
+// in run-e2e.mjs `__wireComputeAttrsToArtifact` (line ~699).
+const _NODE_GRAPH_KEYS = [
+	'colorNode', 'normalNode', 'outputNode', 'roughnessNode', 'metalnessNode',
+	'emissiveNode', 'opacityNode', 'alphaTestNode', 'vertexNode', 'positionNode',
+];
+
+/**
+ * Walk a TSL node tree and push any embedded `Texture` instances (the `value`
+ * of a TextureNode) into the provided Map keyed by uuid. The TextureNode shape
+ * matches three.js: `node.isTextureNode === true && node.value.isTexture`.
+ * Handles the case where the top-level node *is* a TextureNode (no traverse
+ * needed) and the case where TextureNodes are buried in `node.traverse()`.
+ *
+ * @param {Object} rootNode - TSL node (may be undefined / null).
+ * @param {Map<string, Object>} out - Mutated; uuid → Texture.
+ */
+function _collectTexturesFromNode( rootNode, out ) {
+
+	if ( ! rootNode ) return;
+	if ( rootNode.isTextureNode === true && rootNode.value && rootNode.value.isTexture && rootNode.value.uuid ) {
+
+		if ( ! out.has( rootNode.value.uuid ) ) out.set( rootNode.value.uuid, rootNode.value );
+
+	}
+	if ( typeof rootNode.traverse !== 'function' ) return;
+	rootNode.traverse( ( n ) => {
+
+		if ( n && n.isTextureNode === true && n.value && n.value.isTexture && n.value.uuid && ! out.has( n.value.uuid ) ) {
+
+			out.set( n.value.uuid, n.value );
+
+		}
+
+	} );
+
+}
+
+/**
+ * Collect every `Texture` reachable from a source material — both the
+ * hardcoded property slots (`material.map`, `material.envMap`, …) and any
+ * `TextureNode` buried inside its `*Node` graphs (e.g.
+ * `material.colorNode = texture(myTex)`). Returns a `Map<uuid, Texture>`.
+ *
+ * Exported because `attachArtifactTextureRefs()` in `aux-loader.js` needs the
+ * same node-graph walk for background/aux artifacts.
+ *
+ * @param {Object} sourceMaterial
+ * @return {Map<string, Object>}
+ */
+export function collectLiveMaterialTextures( sourceMaterial ) {
+
+	const out = new Map();
+	if ( ! sourceMaterial ) return out;
+
+	for ( const prop of _TEXTURE_PROPS ) {
+
+		const tex = sourceMaterial[ prop ];
+		if ( tex && tex.isTexture && tex.uuid && ! out.has( tex.uuid ) ) out.set( tex.uuid, tex );
+
+	}
+
+	for ( const key of _NODE_GRAPH_KEYS ) {
+
+		_collectTexturesFromNode( sourceMaterial[ key ], out );
+
+	}
+
+	return out;
+
+}
+
 /**
  * Walk `artifact.uniformPlan.textures` and seed `artifact._textureRefs` from
  * the source material's live texture properties. Matches by `source.textureUuid`
@@ -63,15 +135,12 @@ export function catalogueArtifactTextureRefs( artifact, sourceMaterial ) {
 	let added = 0;
 	let refs = artifact._textureRefs instanceof Map ? artifact._textureRefs : null;
 
-	// Build a uuid → live Texture lookup from the source material's known
-	// texture properties. Cheap (≤ 26 props) and only done once per apply.
-	const liveByUuid = new Map();
-	for ( const prop of _TEXTURE_PROPS ) {
-
-		const tex = sourceMaterial[ prop ];
-		if ( tex && tex.isTexture && tex.uuid ) liveByUuid.set( tex.uuid, tex );
-
-	}
+	// Build a uuid → live Texture lookup from the source material — both the
+	// hardcoded `_TEXTURE_PROPS` slots AND any TextureNode buried in its
+	// `*Node` graphs (`material.colorNode = texture(myTex)` and friends).
+	// Without the node-graph pass, materials whose textures live only inside
+	// the TSL graph fall through to a 1×1 white fallback at hydrator time.
+	const liveByUuid = collectLiveMaterialTextures( sourceMaterial );
 	if ( liveByUuid.size === 0 ) return 0;
 
 	for ( const group of plan ) {
@@ -181,6 +250,26 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 	const wrapped = new PrecompiledMaterial( artifact );
 	copyCommonMaterialProperties( material, wrapped );
 
+	// Live ReflectorBaseNode handles for the runtime hydrator's reflector
+	// rebinder. PrecompiledMaterial drops every `*Node` property; the
+	// reflector's per-camera RenderTarget lives inside the user's
+	// `colorNode = mix(..., reflector())` graph, so we extract just the
+	// ReflectorBaseNode references here while the source material's graph
+	// is still intact. The hydrator reads each base node's per-camera
+	// `renderTarget.texture` per frame and rebinds the captured fallback
+	// texture to it — without this, the mirror surface samples a 1×1 white.
+	const reflectorBaseNodes = collectReflectorBaseNodes( material );
+	if ( reflectorBaseNodes.length > 0 ) {
+
+		Object.defineProperty( wrapped, '__tslpReflectorBaseNodes', {
+			value: reflectorBaseNodes,
+			enumerable: false,
+			writable: true,
+			configurable: true,
+		} );
+
+	}
+
 	// If the source material had its own `mrtNode` (e.g. user did
 	// `mat.mrtNode = mrt({...})` for per-material MRT), and the artifact
 	// did NOT already attach a stub, propagate it. The PrecompiledMaterial
@@ -194,6 +283,40 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 	}
 
 	return wrapped;
+
+}
+
+/**
+ * Collect every live `ReflectorBaseNode` reachable from a source material's
+ * node graph. The wrapped PrecompiledMaterial drops node-shaped properties,
+ * so the hydrator's reflector rebinder cannot reach the live base nodes via
+ * the wrapped material — extract them here while the source graph is intact.
+ *
+ * @param {?Object} material
+ * @return {Array<Object>} ReflectorBaseNode instances; empty if none.
+ */
+function collectReflectorBaseNodes( material ) {
+
+	if ( ! material ) return [];
+	const seen = new Set();
+	const result = [];
+	for ( const key of _NODE_GRAPH_KEYS ) {
+
+		const root = material[ key ];
+		if ( ! root || typeof root.traverse !== 'function' ) continue;
+		root.traverse( ( child ) => {
+
+			if ( ! child || ! child.constructor ) return;
+			if ( child.constructor.type !== 'ReflectorNode' ) return;
+			const baseNode = child._reflectorBaseNode;
+			if ( ! baseNode || seen.has( baseNode ) ) return;
+			seen.add( baseNode );
+			result.push( baseNode );
+
+		} );
+
+	}
+	return result;
 
 }
 

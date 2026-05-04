@@ -179,7 +179,7 @@ export default function tslPrecompile( userOpts = {} ) {
 			if ( opts.slim && isBuild && isThreeRewriteTarget( id ) ) {
 
 				const rewritten = rewriteThreeSource( code, id, {
-					threeVersion: opts.threeVersion || 'unknown',
+					threeVersion: opts.threeVersion,
 					pluginVersion: PLUGIN_VERSION,
 				} );
 				if ( rewritten ) {
@@ -395,13 +395,32 @@ async function detectThreeVersion( root ) {
 		try {
 
 			const pkg = JSON.parse( await readFile( file, 'utf8' ) );
-			if ( typeof pkg.version === 'string' && pkg.version.length > 0 ) return pkg.version;
+			if ( typeof pkg.version === 'string' && pkg.version.length > 0 ) {
 
-		} catch ( _ ) {
+				const m = pkg.version.match( /^0\.(\d+)\./ );
+				if ( ! m ) {
+
+					throw new Error( `detectThreeVersion: unrecognised three.js version ${ JSON.stringify( pkg.version ) } in ${ file }` );
+
+				}
+				const minor = parseInt( m[ 1 ], 10 );
+				if ( minor < 184 ) {
+
+					throw new Error( `detectThreeVersion: three.js ${ pkg.version } is below the supported minimum (>= r184)` );
+
+				}
+				return String( minor );
+
+			}
+
+		} catch ( err ) {
+
+			if ( err && err.message && err.message.startsWith( 'detectThreeVersion:' ) ) throw err;
 			// Try the next likely workspace location.
+
 		}
 
 	}
-	return 'unknown';
+	throw new Error( `detectThreeVersion: could not locate three/package.json under ${ candidates.join( ' or ' ) }` );
 
 }

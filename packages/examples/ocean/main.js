@@ -85,7 +85,7 @@ scene.add( mesh );
 precompileAuxiliary( renderer, scene, camera, {
 	devEndpoint: '/__tsl-precompile/capture',
 	three: THREE,
-	threeVersion: String( THREE.REVISION || 'unknown' ),
+	threeVersion: String( THREE.REVISION ).match( /^\d+/ )[ 0 ],
 	pluginVersion: '0.0.0',
 } ).then( ( results ) => {
 

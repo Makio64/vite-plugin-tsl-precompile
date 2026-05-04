@@ -43,6 +43,8 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 
+import { assertThreeAtLeast184 } from './_three-version.mjs';
+
 const SELF = dirname( fileURLToPath( import.meta.url ) );
 const OUT = resolve( SELF, 'results' );
 const SLIM_BUNDLE = resolve( SELF, '../../runtime/build/three.webgpu.slim.js' );
@@ -75,6 +77,8 @@ if ( ! existsSync( join( threeRepo, 'examples' ) ) ) {
 	process.exit( 2 );
 
 }
+
+assertThreeAtLeast184( threeRepo, 'batch-slim' );
 
 // ---- Pixel-gate mode --------------------------------------------------------
 // Opt-in via `--pixel-gate`. Runs a curated list of examples through the e2e

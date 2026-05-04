@@ -181,6 +181,122 @@ test( 'depth-texture/extractor: VSM intermediate texture is tagged kind=depth.te
 
 } );
 
+test( 'depth-texture/extractor: orphan DepthTexture (no owning light) is tagged lightIndex=-1 + fromMaterialGraph=true', () => {
+
+	// `webgpu_depth_texture.html` shape: a `RenderTarget.depthTexture` is
+	// sampled via `material.colorNode = texture(depthTexture)`. There is no
+	// AnalyticLightNode in updateNodes, so `findLightForDepthTexture` returns
+	// null and the source must signal "resolve from material graph at runtime".
+	const depthTexture = new DepthTexture( 4, 4 );
+	depthTexture.name = 'RT_DepthTexture';
+
+	const state = {
+		vertexShader: 'v',
+		fragmentShader: '@group(1) @binding(2) var rtDepth : texture_depth_2d;\n',
+		computeShader: '',
+		nodeAttributes: [],
+		updateNodes: [],
+		updateBeforeNodes: [],
+		updateAfterNodes: [],
+		bindings: [ {
+			name: 'mat',
+			bindings: [ {
+				name: 'rtDepth',
+				isSampledTexture: true, isSampler: false,
+				isUniformBuffer: false, isStorageBuffer: false,
+				visibility: 2,
+				groupNode: { shared: false, version: 0 },
+				textureNode: { value: depthTexture, _value: null, constructor: { type: 'TextureNode' } },
+				texture: depthTexture,
+			} ],
+		} ],
+	};
+
+	const artifact = extractArtifact( 7, state );
+	const allTextures = artifact.uniformPlan.flatMap( ( g ) => g.textures || [] );
+	const entry = allTextures.find( ( t ) => t.name === 'rtDepth' );
+	assert.ok( entry, 'rtDepth binding must appear in uniformPlan textures' );
+	assert.equal( entry.source.kind, 'depth.texture',
+		'orphan DepthTexture must still be tagged kind: depth.texture' );
+	assert.equal( entry.source.lightIndex, -1,
+		'orphan DepthTexture must use lightIndex: -1 (no owning AnalyticLightNode)' );
+	assert.equal( entry.source.lightUuid, null,
+		'orphan DepthTexture must have lightUuid: null' );
+	assert.equal( entry.source.fromMaterialGraph, true,
+		'orphan DepthTexture must set fromMaterialGraph: true so the runtime resolves via the material node graph' );
+	assert.equal( entry.source.textureUuid, depthTexture.uuid,
+		'orphan DepthTexture must keep the captured texture uuid as a hint' );
+
+} );
+
+test( 'depth-texture/hydrator: orphan DepthTexture binding is rebound from material.colorNode', () => {
+
+	// End-to-end for the orphan path: extract → hydrate(with material whose
+	// colorNode embeds a DepthTexture) → rebinder runs → binding.texture
+	// becomes the live DepthTexture (no scene/light needed).
+	const depthTexture = new DepthTexture( 4, 4 );
+	depthTexture.name = 'RT_DepthTexture';
+
+	const state = {
+		vertexShader: 'v',
+		fragmentShader: '@group(1) @binding(2) var rtDepth : texture_depth_2d;\n',
+		computeShader: '',
+		nodeAttributes: [],
+		updateNodes: [],
+		updateBeforeNodes: [],
+		updateAfterNodes: [],
+		bindings: [ {
+			name: 'mat',
+			bindings: [ {
+				name: 'rtDepth',
+				isSampledTexture: true, isSampler: false,
+				isUniformBuffer: false, isStorageBuffer: false,
+				visibility: 2,
+				groupNode: { shared: false, version: 0 },
+				textureNode: { value: depthTexture, _value: null, constructor: { type: 'TextureNode' } },
+				texture: depthTexture,
+			} ],
+		} ],
+	};
+
+	const artifact = extractArtifact( 7, state );
+
+	// Fake material whose `colorNode` mirrors `texture(depthTexture)` — a
+	// TextureNode whose `.value` is the live DepthTexture. The runtime's
+	// `collectLiveMaterialTextures` walks `_NODE_GRAPH_KEYS` (incl. colorNode)
+	// and detects the texture by `isTextureNode && value.isTexture`.
+	const material = {
+		colorNode: {
+			isTextureNode: true,
+			value: depthTexture,
+		},
+	};
+
+	const hydrated = hydrateNodeBuilderState( artifact, material );
+
+	const allBindings = hydrated.bindings.flatMap( ( g ) => g.bindings );
+	const rtBinding = allBindings.find( ( b ) => b.name === 'rtDepth' );
+	assert.ok( rtBinding, 'hydrated state must contain a rtDepth SampledTexture binding' );
+
+	const initialTex = rtBinding.texture;
+	assert.ok( initialTex && initialTex.isDepthTexture,
+		'pre-frame fallback must be a DepthTexture instance' );
+	assert.notEqual( initialTex, depthTexture,
+		'pre-frame fallback must NOT be the captured live DepthTexture (1×1 placeholder)' );
+
+	assert.ok( Array.isArray( hydrated.updateBeforeNodes ) && hydrated.updateBeforeNodes.length > 0,
+		'hydrator must register a rebinder for orphan depth.texture bindings' );
+	const rebinder = hydrated.updateBeforeNodes[ 0 ];
+
+	// Orphan rebinding does NOT require a scene; it walks the material's node
+	// graph. Drive with an empty frame to confirm.
+	rebinder.updateBefore( {} );
+
+	assert.equal( rtBinding.texture, depthTexture,
+		'after updateBefore, orphan binding must point at the DepthTexture from material.colorNode' );
+
+} );
+
 test( 'depth-texture/hydrator: depth.texture binding starts on fallback then swaps to live shadow map', () => {
 
 	const { state, dirLight, depthTexture } = makeShadowReceivingState();

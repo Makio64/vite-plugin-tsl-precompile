@@ -37,6 +37,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname } from 'node:path';
 
 import { aggregateFailureCategories } from '../../plugin/src/_shared/batch-report.js';
+import { assertThreeAtLeast184 } from './_three-version.mjs';
 
 const SELF = dirname( fileURLToPath( import.meta.url ) );
 const OUT = resolve( SELF, 'results' );
@@ -64,6 +65,8 @@ if ( ! existsSync( join( threeRepo, 'examples' ) ) ) {
 	process.exit( 2 );
 
 }
+
+assertThreeAtLeast184( threeRepo, 'batch' );
 
 const SKIP_PREFIXES = [
 	'webxr_', 'vr_', 'ar_', 'webgpu_xr_', 'webgpu_webxr_',

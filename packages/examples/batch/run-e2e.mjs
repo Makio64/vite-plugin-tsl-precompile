@@ -31,6 +31,8 @@ import { readFile, stat } from 'node:fs/promises';
 import { resolve, join, dirname, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { assertThreeAtLeast184 } from './_three-version.mjs';
+
 const SELF = dirname( fileURLToPath( import.meta.url ) );
 const REPO = resolve( SELF, '../../..' );
 const OUT = resolve( SELF, 'results' );
@@ -69,8 +71,8 @@ const SLIM_HASH_OPTS = ( () => {
 		return { threeVersion: m[ 2 ], pluginVersion: m[ 1 ] };
 
 	}
-	console.warn( '[batch-e2e] could not extract threeVersion from slim bundle; capture hashes may mismatch.' );
-	return { threeVersion: 'unknown', pluginVersion: '0.0.0' };
+	console.error( `[batch-e2e] could not extract threeVersion from slim bundle ${ SLIM_BUNDLE }. Rebuild it with \`pnpm --filter @tsl-precompile/runtime build:slim\`.` );
+	process.exit( 2 );
 
 } )();
 console.log( `[batch-e2e] slim bundle hash opts: threeVersion=${ SLIM_HASH_OPTS.threeVersion } pluginVersion=${ SLIM_HASH_OPTS.pluginVersion }` );
@@ -101,6 +103,8 @@ if ( ! existsSync( join( threeRepo, 'examples' ) ) ) {
 	process.exit( 2 );
 
 }
+
+assertThreeAtLeast184( threeRepo, 'batch-e2e' );
 
 const SKIP_PREFIXES = [
 	'webxr_', 'vr_', 'ar_', 'webgpu_xr_', 'webgpu_webxr_',
@@ -175,7 +179,8 @@ function jsonScriptLiteral( value ) {
 function injectHtml( html, example, mode ) {
 
 	const bucket = captureBucket( example );
-	const boot = `<script>window.__TSLP_E2E=${ jsonScriptLiteral( { example, mode, artifacts: bucket } ) };</script>`;
+	const dbgInstance = mode === 'replay' && /instance_path/.test( example );
+	const boot = `<script>window.__TSLP_E2E=${ jsonScriptLiteral( { example, mode, artifacts: bucket } ) };${ dbgInstance ? 'window.__TSLP_DBG_INSTANCE=true;' : '' }</script>`;
 	const mapped = rewriteImportmap( html, mode );
 	return mapped.includes( '</head>' )
 		? mapped.replace( '</head>', `${ boot }\n</head>` )
@@ -471,6 +476,51 @@ Slim.registerAuxArtifacts( Array.isArray( __data.aux ) ? __data.aux : [] );
 // reach 0 (alongside __tslpFrozen) before taking a screenshot so PMREM-based
 // IBL textures are resolved and re-hydrated before capture.
 window.__tslpPmremPending = 0;
+
+// Defensive patch: harden Slim.ColorManagement.getTransfer against unknown
+// colorSpace values. Some textures end up with colorSpace = undefined, and
+// the slim bundle minified getTransfer only special-cases empty string;
+// anything else hits this.spaces[ colorSpace ].transfer and throws.
+( function patchColorManagement() {
+	const cm = Slim.ColorManagement;
+	if ( ! cm || cm.__tslpHardened ) return;
+	cm.__tslpHardened = true;
+	const orig = cm.getTransfer.bind( cm );
+	const reported = new Set();
+	cm.getTransfer = function ( colorSpace ) {
+		try {
+			return orig( colorSpace );
+		} catch ( _ ) {
+			if ( ! reported.has( colorSpace ) ) {
+				reported.add( colorSpace );
+				console.warn( '[tslp-e2e] ColorManagement.getTransfer fallback for unknown colorSpace=', JSON.stringify( colorSpace ) );
+			}
+			return orig( '' );
+		}
+	};
+} )();
+
+// Heal Texture.prototype.colorSpace at the source: install a setter that
+// coerces undefined / null to '' (NoColorSpace). three.js Texture writes
+// this.colorSpace = colorSpace as a plain instance field; some ad-hoc
+// texture factories pass undefined, leaving this.spaces[ undefined ] and
+// throwing inside getTransfer. Routing all writes through a setter
+// guarantees colorSpace is always a valid string before getTransfer reads.
+( function healTextureColorSpace() {
+	const proto = Slim.Texture && Slim.Texture.prototype;
+	if ( ! proto || proto.__tslpColorSpaceHealed ) return;
+	proto.__tslpColorSpaceHealed = true;
+	const KEY = '__tslpColorSpace';
+	Object.defineProperty( proto, 'colorSpace', {
+		configurable: true,
+		enumerable: true,
+		get() { return this[ KEY ] === undefined ? '' : this[ KEY ]; },
+		set( v ) { this[ KEY ] = ( v === undefined || v === null ) ? '' : v; },
+	} );
+} )();
+// No-op kept so the render() callsite below stays consistent across patches.
+window.__tslpHealColorSpace = function () { return 0; };
+
 // Counter for in-flight async compute dispatches delegated to the full renderer.
 // Playwright waits for this to reach 0 before taking a screenshot so the GPU
 // storage buffers written by compute are visible in the final render.
@@ -512,11 +562,21 @@ window.__tslpShadowPending = 0;
 let __pmremRunning = 0;
 
 // Wrap PMREMGenerator.{fromScene,fromCubemap,fromEquirectangular,fromTexture}
-// to bump __pmremRunning around the entire call so nested renderer.render
-// calls inside them bypass __prepareSceneForReplay. Without this, the FIRST
-// nested render fires hydration on PMREM's internal tmp-meshes against our
-// scene-replace table, which (a) MISSes (registry empty pre-init) and (b)
-// caches dead bindings before the user's main scene ever runs.
+// to (1) bump __pmremRunning around the entire call so nested renderer.render
+// calls inside them bypass __prepareSceneForReplay, and (2) route the call to
+// the full compute renderer when one is available — PMREMGenerator's blur
+// passes construct an internal NodeMaterial (PMREMGenerator.js _getMaterial),
+// and the slim renderer's rewritten Nodes.js:getForRender throws
+// tslPrecompileSlimOnly on any non-PrecompiledMaterial. The full renderer can
+// build NodeMaterial; both renderers share the same WebGPU device, so the
+// resulting GPUTexture is shared back to the slim backend so subsequent
+// slim renders can sample it. Without this, examples that call
+// pmremGen.fromScene(RoomEnvironment) (e.g. webgpu_materials_alphahash) leave
+// scene.environment as a partially-initialized texture and PBR materials
+// shade to black. Without (1), the FIRST nested render fires hydration on
+// PMREM's internal tmp-meshes against our scene-replace table, which
+// (a) MISSes (registry empty pre-init) and (b) caches dead bindings before
+// the user's main scene ever runs.
 ( function patchPMREMGenerator() {
 	const PG = Slim.PMREMGenerator;
 	if ( ! PG || ! PG.prototype || PG.prototype.__tslpPatched ) return;
@@ -526,11 +586,63 @@ let __pmremRunning = 0;
 		if ( typeof orig !== 'function' ) continue;
 		PG.prototype[ method ] = function ( ...args ) {
 			__pmremRunning ++;
-			try { return orig.apply( this, args ); }
-			finally { __pmremRunning --; }
+			const slimRenderer = this._renderer;
+			const fullRenderer = __computeRenderer;
+			const useFull = fullRenderer && fullRenderer !== slimRenderer && slimRenderer && slimRenderer.backend;
+			if ( useFull ) this._renderer = fullRenderer;
+			try {
+				const target = orig.apply( this, args );
+				if ( useFull && target && target.texture && target.texture.isTexture ) {
+					__sharePMREMGPUTexture( slimRenderer, fullRenderer, target.texture );
+					// Self-cache: __wireEnvironmentPMREM does __pmremCache.get(scene.environment)
+					// where scene.environment IS this PMREM texture. Identity-map it so the
+					// existing wiring path picks it up without needing a separate source key.
+					__pmremCache.set( target.texture, target.texture );
+				}
+				return target;
+			} finally {
+				if ( useFull ) this._renderer = slimRenderer;
+				__pmremRunning --;
+			}
 		};
 	}
 } )();
+
+// Copy the PMREM GPU-texture entry from the full renderer's backend WeakMap
+// into the slim renderer's backend WeakMap so the slim renderer can bind the
+// already-created GPUTexture without trying to upload from (empty) CPU data.
+// Both renderers must share the same WebGPU device for this to be safe.
+// Extracted from __generatePMREMAsync so the synchronous PMREMGenerator
+// patch above can reuse it.
+function __sharePMREMGPUTexture( slimRenderer, fullRenderer, pmrem ) {
+	if ( ! slimRenderer || ! fullRenderer || ! pmrem ) return;
+	if ( ! slimRenderer.backend || ! fullRenderer.backend ) return;
+	try {
+		const fullData = fullRenderer.backend.get( pmrem );
+		if ( ! fullData || ! fullData.texture ) return;
+		const slimData = slimRenderer.backend.get( pmrem );
+		for ( const key of Object.keys( fullData ) ) slimData[ key ] = fullData[ key ];
+		// The Textures manager (renderer._textures) has its OWN DataMap separate
+		// from the backend. updateTexture() checks textures.get(pmrem).initialized
+		// before calling backend.createTexture(). If textures.initialized is unset,
+		// it calls backend.createTexture() which throws "already initialized".
+		// Populate the Textures DataMap so updateTexture returns early without
+		// touching the backend.
+		const tx = slimRenderer._textures;
+		if ( tx && typeof tx.get === 'function' ) {
+			const txData = tx.get( pmrem );
+			txData.initialized = true;
+			txData.version = pmrem.version;
+			txData.generation = pmrem.version;
+			// bindGroups tracks which bind-groups reference this texture for
+			// invalidation on update. Must be a Set; created empty since we're
+			// registering the texture as already uploaded.
+			if ( ! txData.bindGroups ) txData.bindGroups = new Set();
+		}
+	} catch ( shareErr ) {
+		console.warn( '[tslp-e2e] PMREM GPU share failed:', shareErr && shareErr.message || shareErr );
+	}
+}
 
 // Detect at boot whether any registered background-aux artifact references a
 // PMREM-prefiltered (CubeUVReflectionMapping) source. The capture-time
@@ -838,6 +950,21 @@ function __copyMaterialProps( src, dst ) {
 	for ( const key of __TEXTURE_PROPS ) if ( src && src[ key ] !== undefined ) dst[ key ] = src[ key ];
 }
 
+// The precompiled shader is already baked, so the wrapper does NOT recompile
+// from these — but the runtime hydrator's bindUserNodeAttributesToArtifact
+// walks dst[ userPath[0] ] to resolve live BufferAttribute leaves (e.g.
+// instancedBufferAttribute(buf) inside material.positionNode). Without
+// this copy the walk hits undefined and every captured node-attribute
+// falls back to a zero-filled StorageBufferAttribute → instances render at
+// origin with zero-vector colors (see webgpu_instance_path).
+function __copyMaterialNodeProps( src, dst ) {
+	if ( ! src ) return;
+	for ( const key of [ 'colorNode', 'normalNode', 'positionNode', 'outputNode', 'roughnessNode', 'metalnessNode', 'emissiveNode', 'opacityNode', 'alphaTestNode', 'vertexNode' ] ) {
+		const v = src[ key ];
+		if ( v && v.isNode === true ) dst[ key ] = v;
+	}
+}
+
 // Wire the source material's live textures onto the precompiled artifact's
 // _textureRefs map so the hydrator can resolve artifact.texture-kind
 // bindings whose captured textureUuid no longer matches anything.
@@ -876,6 +1003,7 @@ function __replaceSceneMaterials( scene ) {
 			const className = __classNameForMaterial( m );
 			const replacement = __takeMaterial( className, m );
 			__copyMaterialProps( m, replacement );
+			__copyMaterialNodeProps( m, replacement );
 			__wireMaterialTextures( m, replacement );
 			__seenMaterials.set( m, replacement );
 			return replacement;
@@ -933,6 +1061,24 @@ let __capturedBackgroundSource = null;
 // already cached bindings against fallbackCubeTexture.
 const __lastWiredBgTex = new WeakMap();
 
+// True iff a Texture's pixel source has actually arrived from its async loader.
+// CubeTexture: image is a 6-element array of HTMLImageElement / ImageBitmap.
+// 2D textures: image is a single HTMLImageElement / ImageBitmap / HTMLCanvasElement.
+// DataTexture: image carries .data (typed array) — these are sync, always ready.
+// HDR / equirect via RGBELoader / TextureLoader: image is set on onLoad.
+function __textureImageReady( texture ) {
+	if ( ! texture || ! texture.isTexture ) return false;
+	const img = texture.image;
+	if ( img === null || img === undefined ) return false;
+	if ( Array.isArray( img ) ) {
+		if ( img.length === 0 ) return false;
+		for ( const face of img ) if ( ! face ) return false;
+		return true;
+	}
+	// DataTexture / Data3DTexture / RenderTargetTexture: synchronous shape.
+	return true;
+}
+
 function __wireBackgroundTextures( scene, renderer ) {
 	const auxList = Array.isArray( __data.aux ) ? __data.aux : [];
 	// Pick a source cubemap: prefer scene.background (legacy path) but fall
@@ -944,8 +1090,17 @@ function __wireBackgroundTextures( scene, renderer ) {
 		sourceTex = __capturedBackgroundSource;
 	}
 	if ( ! sourceTex ) return;
+	// Guard: if the texture is async-loading (CubeTextureLoader, RGBELoader,
+	// TextureLoader) and its image hasn't arrived yet, skip wiring. Otherwise
+	// three.js's Textures.updateTexture → getTransfer( image ) throws when
+	// image is undefined, leaving the sky quad rendering fallback white forever
+	// (the cached bind group sticks to whatever was wired on first render).
+	// On the next frame after the loader resolves, the WeakMap lookup is still
+	// undefined for this artifact, so the wire fires fresh with image populated.
+	// CubeTexture image is an array of 6; consider it ready only if all six are present.
+	if ( ! __textureImageReady( sourceTex ) ) return;
 	let texToWire = sourceTex;
-	if ( __backgroundNeedsPMREM && sourceTex.isCubeTexture ) {
+	if ( __backgroundNeedsPMREM ) {
 		const cached = __pmremCache.get( sourceTex );
 		if ( cached && cached.isTexture ) texToWire = cached;
 	}
@@ -1025,54 +1180,32 @@ async function __generatePMREMAsync( slimRenderer, sourceTex ) {
 		const pmrem = target && target.texture || null;
 		gen.dispose && gen.dispose();
 		if ( pmrem && pmrem.isTexture ) {
-			// The PMREM GPU texture lives in the full renderer's backend WeakMap.
-			// Both renderers share the same WebGPU device, so the GPUTexture is
-			// on the right device — but the slim backend doesn't know about it.
-			// Copy the backend data entry so the slim backend uses the existing
-			// GPU resource instead of trying to re-upload from (empty) CPU data.
-			try {
-				if ( fullRenderer.backend && slimRenderer.backend ) {
-					const fullData = fullRenderer.backend.get( pmrem );
-					if ( fullData && fullData.texture ) {
-						// Copy GPU resources from full backend to slim backend so the
-						// slim renderer can bind the already-created GPUTexture.
-						const slimData = slimRenderer.backend.get( pmrem );
-						for ( const key of Object.keys( fullData ) ) slimData[ key ] = fullData[ key ];
-						// The Textures manager (renderer._textures) has its OWN DataMap
-						// separate from the backend. updateTexture() checks
-						// textures.get(pmrem).initialized before calling
-						// backend.createTexture(). If textures.initialized is unset,
-						// it calls backend.createTexture() which throws "already
-						// initialized". Populate the Textures DataMap so updateTexture
-						// returns early without touching the backend.
-						const tx = slimRenderer._textures;
-						if ( tx && typeof tx.get === 'function' ) {
-							const txData = tx.get( pmrem );
-							txData.initialized = true;
-							txData.version = pmrem.version;
-							txData.generation = pmrem.version;
-							// bindGroups tracks which bind-groups reference this texture
-							// for invalidation on update. Must be a Set; created empty
-							// since we're registering the texture as already uploaded.
-							if ( ! txData.bindGroups ) txData.bindGroups = new Set();
-						}
-					} else if ( ! __pmremFailed.has( sourceTex ) ) {
-						__pmremFailed.add( sourceTex );
-						console.warn( '[tslp-e2e] PMREM: full backend has no GPU texture for PMREM' );
-					}
-				}
-			} catch ( shareErr ) {
+			// Verify the full backend actually owns a GPUTexture for this
+			// PMREM result before sharing — sharing a stale entry leaves
+			// slim's bindings empty.
+			const fullData = fullRenderer.backend && fullRenderer.backend.get( pmrem );
+			if ( ! fullData || ! fullData.texture ) {
 				if ( ! __pmremFailed.has( sourceTex ) ) {
 					__pmremFailed.add( sourceTex );
-					console.warn( '[tslp-e2e] PMREM GPU share failed:', shareErr && shareErr.message || shareErr );
+					console.warn( '[tslp-e2e] PMREM: full backend has no GPU texture for PMREM' );
 				}
+			} else {
+				__sharePMREMGPUTexture( slimRenderer, fullRenderer, pmrem );
 			}
 			__pmremCache.set( sourceTex, pmrem );
 		}
 		return pmrem || null;
 	} catch ( err ) {
-		if ( ! __pmremFailed.has( sourceTex ) ) {
-			__pmremFailed.add( sourceTex );
+		__pmremFailed.add( sourceTex );
+		// Per-page warn-once: log only the FIRST PMREM failure for the entire
+		// page load. Per-texture dedup wasn't reliable because scene.environment
+		// gets swapped between renders and per-material envMap iteration creates
+		// new texture identities each frame, so each frame produced a fresh warn
+		// and the spam (37k+ lines) saturated the Playwright IPC and stalled
+		// the whole run. The error itself is still captured in the example's
+		// replayErrors via the report's failure pipeline.
+		if ( ! window.__tslpPmremWarned ) {
+			window.__tslpPmremWarned = true;
 			console.warn( '[tslp-e2e] PMREM async generation failed:', err && err.message || err );
 		}
 		return null;
@@ -1156,6 +1289,16 @@ function __kickPMREMGenAsync( slimRenderer, sourceTex, onReady ) {
 		__pmremPending.get( sourceTex ).then( ( pmrem ) => { if ( pmrem ) onReady( pmrem ); } ).catch( () => {} );
 		return;
 	}
+	// Defer until the source texture's pixel data has actually landed. Calling
+	// PMREMGenerator on a still-loading CubeTexture (image=[]) or HDR
+	// (image=null) makes _setSizeFromTexture compute NaN, _init builds an
+	// empty _lodMeshes, and _textureToCubeUV throws
+	// "Cannot set properties of undefined (setting 'material')" every frame
+	// until the loader resolves — the resulting console flood stalls the run
+	// over the Playwright IPC. The loader counter keeps the freeze pending in
+	// the meantime, so returning without scheduling is safe; the next render
+	// after onLoad retries.
+	if ( ! __textureImageReady( sourceTex ) ) return;
 	window.__tslpPmremPending = ( window.__tslpPmremPending | 0 ) + 1;
 	const resultPromise = __generatePMREMAsync( slimRenderer, sourceTex ).catch( () => null );
 	__pmremPending.set( sourceTex, resultPromise );
@@ -1254,6 +1397,8 @@ let __syncDbgOnce = true;
 let __syncDbgCount = 0;
 function __syncStorageBuffers( computeNode, fullRenderer, slimRenderer ) {
 	try {
+		const __DBG_CLOTH = typeof window !== 'undefined' && window.__TSLP_DBG_CLOTH === true;
+		const __dbgLimit = __DBG_CLOTH ? 6 : 3;
 		const computeList = Array.isArray( computeNode ) ? computeNode : [ computeNode ];
 		const device = slimRenderer.backend.device;
 		let commandEncoder = null;
@@ -1277,7 +1422,7 @@ function __syncStorageBuffers( computeNode, fullRenderer, slimRenderer ) {
 						const tex = binding.texture;
 						const fullTexData = fullRenderer.backend.get( tex );
 						if ( ! fullTexData || ! fullTexData.texture ) {
-							if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] tex-skip-nofull node=' + ( node && node.name ) + ' tex=' + ( tex.name || '' ) );
+							if ( __syncDbgCount < __dbgLimit ) console.log( '[tslp-dbg] tex-skip-nofull node=' + ( node && node.name ) + ' tex=' + ( tex.name || '' ) );
 							continue;
 						}
 						const slimTexData = slimRenderer.backend.get( tex );
@@ -1292,7 +1437,7 @@ function __syncStorageBuffers( computeNode, fullRenderer, slimRenderer ) {
 							slimTexData.version = tex.version;
 							slimTexData.generation = ( slimTexData.generation || 0 ) + 1;
 							if ( ! slimTexData.bindGroups ) slimTexData.bindGroups = new Set();
-							if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] tex-preseed node=' + ( node && node.name ) + ' tex=' + ( tex.name || '<anon>' ) );
+							if ( __syncDbgCount < __dbgLimit ) console.log( '[tslp-dbg] tex-preseed node=' + ( node && node.name ) + ' tex=' + ( tex.name || '<anon>' ) );
 						} else if ( slimTexData.texture !== fullTexData.texture ) {
 							// Slim already has its own GPUTexture (rendered before compute
 							// finished). Copy the full's GPU texture content INTO slim's
@@ -1311,29 +1456,33 @@ function __syncStorageBuffers( computeNode, fullRenderer, slimRenderer ) {
 									{ width: w, height: h, depthOrArrayLayers: d }
 								);
 								device.queue.submit( [ enc.finish() ] );
-								if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] tex-copy node=' + ( node && node.name ) + ' tex=' + ( tex.name || '<anon>' ) + ' size=' + w + 'x' + h + 'x' + d );
+								if ( __syncDbgCount < __dbgLimit ) console.log( '[tslp-dbg] tex-copy node=' + ( node && node.name ) + ' tex=' + ( tex.name || '<anon>' ) + ' size=' + w + 'x' + h + 'x' + d );
 							} catch ( e ) {
-								if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] tex-copy-fail node=' + ( node && node.name ) + ' err=' + ( e && e.message || e ) );
+								if ( __syncDbgCount < __dbgLimit ) console.log( '[tslp-dbg] tex-copy-fail node=' + ( node && node.name ) + ' err=' + ( e && e.message || e ) );
 							}
 						} else {
-							if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] tex-already-shared node=' + ( node && node.name ) );
+							if ( __syncDbgCount < __dbgLimit ) console.log( '[tslp-dbg] tex-already-shared node=' + ( node && node.name ) );
 						}
 						continue;
 					}
 					if ( ! binding.isStorageBuffer ) {
-						if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] skip node=' + ( node && node.name ) + ' binding=' + binding.name + ' type=' + ( binding.constructor && binding.constructor.name ) );
+						if ( __syncDbgCount < __dbgLimit ) console.log( '[tslp-dbg] skip node=' + ( node && node.name ) + ' binding=' + binding.name + ' type=' + ( binding.constructor && binding.constructor.name ) );
 						continue;
 					}
 					_storageBindings++;
 					const attr = binding.attribute;
 					if ( ! attr ) {
-						if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] noattr node=' + ( node && node.name ) + ' binding=' + binding.name );
+						if ( __syncDbgCount < __dbgLimit ) console.log( '[tslp-dbg] noattr node=' + ( node && node.name ) + ' binding=' + binding.name );
 						continue;
 					}
 					const fullBufData = fullRenderer.backend.get( attr );
 					if ( ! fullBufData || ! fullBufData.buffer ) continue;
 					const fullBuf = fullBufData.buffer;
 					const slimBufData = slimRenderer.backend.get( attr );
+					if ( __DBG_CLOTH && __syncDbgCount < __dbgLimit ) {
+						const slimAttrCache = slimRenderer._attributes && slimRenderer._attributes.get( attr );
+						console.log( '[tslp-dbg-cloth sync-pre] node=' + ( node && node.name ) + ' attr=' + ( attr.name || '<anon>' ) + ' count=' + attr.count + ' itemSize=' + attr.itemSize + ' slimHasAttr=' + !! slimAttrCache + ' slimHasBuf=' + !! slimBufData.buffer + ' fullBufSize=' + fullBuf.size );
+					}
 					if ( ! slimBufData.buffer ) {
 						if ( ! commandEncoder ) commandEncoder = device.createCommandEncoder();
 						const newBuf = device.createBuffer( { size: fullBuf.size, usage: fullBuf.usage } );
@@ -1343,7 +1492,7 @@ function __syncStorageBuffers( computeNode, fullRenderer, slimRenderer ) {
 						if ( slimAttr && slimAttr.version === undefined ) {
 							slimAttr.version = 1;
 						}
-						if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] sync node=' + ( node && node.name ) + ' attr=' + attr.name + ' count=' + attr.count + ' create+copy fullBuf=' + fullBuf.size );
+						if ( __syncDbgCount < __dbgLimit ) console.log( '[tslp-dbg] sync node=' + ( node && node.name ) + ' attr=' + attr.name + ' count=' + attr.count + ' create+copy fullBuf=' + fullBuf.size );
 					} else if ( slimBufData.buffer !== fullBuf ) {
 						const slimBuf = slimBufData.buffer;
 						const copySize = Math.min( fullBuf.size, slimBuf.size );
@@ -1351,13 +1500,13 @@ function __syncStorageBuffers( computeNode, fullRenderer, slimRenderer ) {
 							if ( ! commandEncoder ) commandEncoder = device.createCommandEncoder();
 							commandEncoder.copyBufferToBuffer( fullBuf, 0, slimBuf, 0, copySize );
 						}
-						if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] sync node=' + ( node && node.name ) + ' attr=' + attr.name + ' count=' + attr.count + ' copy=' + copySize );
+						if ( __syncDbgCount < __dbgLimit ) console.log( '[tslp-dbg] sync node=' + ( node && node.name ) + ' attr=' + attr.name + ' count=' + attr.count + ' copy=' + copySize );
 					} else {
-						if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] sync node=' + ( node && node.name ) + ' attr=' + attr.name + ' count=' + attr.count + ' same' );
+						if ( __syncDbgCount < __dbgLimit ) console.log( '[tslp-dbg] sync node=' + ( node && node.name ) + ' attr=' + attr.name + ' count=' + attr.count + ' same' );
 					}
 				}
 			}
-			if ( __syncDbgCount < 3 ) console.log( '[tslp-dbg] sync-summary node=' + ( node && node.name ) + ' totalBindings=' + _totalBindings + ' storageBindings=' + _storageBindings );
+			if ( __syncDbgCount < __dbgLimit ) console.log( '[tslp-dbg] sync-summary node=' + ( node && node.name ) + ' totalBindings=' + _totalBindings + ' storageBindings=' + _storageBindings );
 		}
 		if ( commandEncoder ) device.queue.submit( [ commandEncoder.finish() ] );
 		__syncDbgOnce = false;
@@ -1642,6 +1791,12 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 			await fullRenderer.render( shadowScene, _camera );
 			// Copy populated shadow.map/depthTexture from cloned light to the
 			// original (user-scene) light so slim's hydrator rebinder finds them.
+			// Then share the GPUTexture across renderers: full's backend allocated
+			// the depth texture during shadow render, but slim has its own backend
+			// data map. Without pre-seeding slim's data.texture from full, slim's
+			// first bindgroup-creation creates a fresh 1x1 BGRA8 GPUTexture for the
+			// same JS DepthTexture, which the WGSL texture_depth_2d declaration
+			// rejects with a sample-type mismatch (Float vs Depth).
 			let mapCount = 0;
 			for ( const { src, clone } of shadowScene.__lightPairs || [] ) {
 				if ( clone && clone.shadow && clone.shadow.map && src && src.shadow ) {
@@ -1649,6 +1804,19 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 					if ( clone.shadow.map.depthTexture ) src.shadow.map.depthTexture = clone.shadow.map.depthTexture;
 					src.shadow.camera = clone.shadow.camera;
 					src.shadow.matrix = clone.shadow.matrix;
+					const depthTex = src.shadow.map.depthTexture;
+					if ( depthTex ) {
+						const fullData = fullRenderer.backend.get( depthTex );
+						const slimData = _slimRenderer.backend.get( depthTex );
+						if ( fullData && fullData.texture && slimData && ! slimData.texture ) {
+							slimData.texture = fullData.texture;
+							slimData.format = fullData.format;
+							slimData.initialized = true;
+							slimData.version = depthTex.version;
+							slimData.generation = ( slimData.generation || 0 ) + 1;
+							if ( ! slimData.bindGroups ) slimData.bindGroups = new Set();
+						}
+					}
 					mapCount ++;
 				}
 			}
@@ -1673,6 +1841,19 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 }
 
 export class WebGPURenderer extends Slim.WebGPURenderer {
+	async init() {
+		const r = await super.init();
+		// Eagerly bring up the full compute renderer so PMREMGenerator's
+		// fromScene / fromCubemap / fromEquirectangular / fromTexture can route
+		// to it on the user's NEXT (synchronous) call. Examples typically
+		// await renderer.init() before constructing PMREMGenerator, so chaining
+		// the full-renderer init here means the patched PMREMGenerator methods
+		// see __computeRenderer ready when fired. Failure is non-fatal — without
+		// the full renderer, PMREMGenerator falls through to the original
+		// (slim-throwing) path, matching prior behavior.
+		try { await __getComputeRenderer( this ); } catch ( _ ) {}
+		return r;
+	}
 	compile( scene, camera, ...rest ) {
 		// __pmremRunning guard: PMREMGenerator drives nested compile/render calls
 		// for its internal flat-camera mesh; bypass scene-prep during those.
@@ -1708,6 +1889,11 @@ export class WebGPURenderer extends Slim.WebGPURenderer {
 		// reads the live prefiltered texture from _textureRefs. Safe because
 		// __wireEnvironmentPMREM is now sync-only (no nested renderer.render calls).
 		__wireEnvironmentPMREM( this, scene );
+		// Heal any Texture whose colorSpace ended up as undefined (some ad-hoc
+		// runtime-created textures skip the constructor that defaults to '').
+		// Cheap pre-render sweep; without it Textures.updateTexture throws in
+		// ColorManagement.getTransfer( undefined ).
+		try { window.__tslpHealColorSpace && window.__tslpHealColorSpace( this ); } catch ( _ ) {}
 		// Kick off async shadow-map population on the full renderer (slim has
 		// shadow code tree-shaken). On completion the rebinder picks up the
 		// live light.shadow.map.depthTexture and the next slim render shows it.
@@ -1761,11 +1947,13 @@ export class WebGPURenderer extends Slim.WebGPURenderer {
 		// picks up the correct PMREM-based texture on the next frame. Falls back
 		// to the cubemap recovered from scene.backgroundNode for examples that
 		// only set backgroundNode (not scene.background).
-		const _bgSource = ( scene && scene.background && scene.background.isCubeTexture )
-			? scene.background
-			: ( __capturedBackgroundSource && __capturedBackgroundSource.isCubeTexture
-				? __capturedBackgroundSource
-				: null );
+		const _bgFromScene = ( scene && scene.background && scene.background.isTexture &&
+			( scene.background.isCubeTexture || scene.background.mapping === 301 ) )
+			? scene.background : null;
+		const _bgFromCaptured = ( __capturedBackgroundSource && __capturedBackgroundSource.isTexture &&
+			( __capturedBackgroundSource.isCubeTexture || __capturedBackgroundSource.mapping === 301 ) )
+			? __capturedBackgroundSource : null;
+		const _bgSource = _bgFromScene || _bgFromCaptured;
 		if ( _bgSource && __backgroundNeedsPMREM ) {
 			__kickPMREMGenAsync( _renderer, _bgSource, ( pmrem ) => {
 				const auxList = Array.isArray( __data.aux ) ? __data.aux : [];
@@ -2173,7 +2361,12 @@ const LOADER_QUIESCENT_MS = 250;
 // animation phase stays deterministic between capture and replay.
 const SETTLE_FRAMES = 30;
 const RENDER_POLL_MS = 400;
-const MAX_RUNS_PER_BROWSER = 12;
+// Restart the browser more aggressively than wear-and-tear suggests because
+// some examples (PMREM-heavy, large GLTF, postprocessing) corrupt the WebGPU
+// state in a way that crashes the whole renderer process after 8–11 runs.
+// Recreating proactively at 6 sidesteps the crash; the per-example catch
+// below handles the residual case where a crash hits before we hit this cap.
+const MAX_RUNS_PER_BROWSER = 6;
 
 // Deterministic-time replay support. Animated examples driven by
 // `setAnimationLoop` would otherwise sample different animation phases on
@@ -2391,12 +2584,44 @@ async function visitExample( browser, name, mode, waitMs ) {
 	const context = await browser.newContext( { viewport: { width: 640, height: 480 } } );
 	const page = await context.newPage();
 	const errors = [];
-	page.on( 'pageerror', ( e ) => errors.push( String( e && ( e.stack || e.message ) || e ) ) );
+	page.on( 'pageerror', ( e ) => {
+
+		const detail = String( e && ( e.stack || e.message ) || e );
+		errors.push( detail );
+		if ( process.env.TSLP_DEBUG_TORNADO ) console.error( `[page-error ${ mode }]`, detail );
+
+	} );
+	page.on( 'requestfailed', ( req ) => {
+
+		if ( process.env.TSLP_DEBUG_TORNADO ) console.error( `[req-failed ${ mode }]`, req.url(), '->', req.failure() && req.failure().errorText );
+
+	} );
+	if ( process.env.TSLP_DEBUG_TORNADO_TRACE ) {
+		page.on( 'response', async ( res ) => {
+
+			const url = res.url();
+			if ( /__tslp__|__tslp_runtime|__tslp_plugin|three\.webgpu|three\.tsl|tsl-stub|tornado/.test( url ) ) {
+				try {
+					const txt = await res.text();
+					console.log( `[res ${ mode }]`, res.status(), url, 'len=', txt.length );
+					if ( /tornado/.test( url ) && process.env.TSLP_DEBUG_DUMP_HTML ) {
+						const fs = await import( 'node:fs' );
+						fs.writeFileSync( `/tmp/tornado-${ mode }.html`, txt );
+					}
+				} catch ( _ ) { /* not text */ }
+			}
+
+		} );
+	}
 	page.on( 'console', ( m ) => {
 
-		if ( m.type() === 'error' ) errors.push( m.text() );
+		if ( m.type() === 'error' ) {
+			errors.push( m.text() );
+			if ( process.env.TSLP_DEBUG_TORNADO ) console.error( `[console-error ${ mode }]`, m.text() );
+		}
 		if ( m.type() === 'warning' && m.text().includes( '[tslp' ) ) console.warn( `[page-warn] ${ m.text() }` );
 		if ( m.type() === 'log' && m.text().includes( '[tslp' ) ) console.log( `[page-log] ${ m.text() }` );
+		if ( process.env.TSLP_DEBUG_TORNADO_VERBOSE ) console.log( `[page-${ m.type() } ${ mode }]`, m.text() );
 
 	} );
 
@@ -2417,6 +2642,15 @@ async function visitExample( browser, name, mode, waitMs ) {
 	const TARGET_TICK = 60; // 60 frames of simulated 60Hz animation = 1s
 	const FRAME_STEP_MS = 16.6667;
 	try {
+
+		// TEMP debug flag — fires hydrator console logs only for instance_path replay.
+		if ( name && name.includes( 'instance_path' ) && mode === 'replay' ) {
+			await page.addInitScript( () => { globalThis.__TSLP_DBG_INSTANCE = true; } );
+		}
+		// TEMP cloth diagnosis: enable runtime hydrator + harness storage-buffer logs.
+		if ( name && name.includes( 'compute_cloth' ) && mode === 'replay' ) {
+			await page.addInitScript( () => { globalThis.__TSLP_DBG_CLOTH = true; window.__TSLP_DBG_CLOTH = true; } );
+		}
 
 		await page.addInitScript( ( { step, base, freezeAt, quiescentMs, settleFrames } ) => {
 
@@ -2869,6 +3103,18 @@ try {
 			report.fail ++;
 			report.details.push( { name, status: 'fail', error: err && err.message || String( err ) } );
 			console.log( `${ label } — FAIL harness-error "${ err && err.message || err }"` );
+
+			// Recover from a dead browser: without this, the first Chrome crash
+			// poisons every remaining example because newContext() keeps throwing
+			// "Target page, context or browser has been closed" against the dead
+			// handle, so we lose ~80 % of the slice every time the renderer dies.
+			const msg = err && err.message || String( err );
+			if ( /browser has been closed|Target page, context|Browser closed/i.test( msg ) ) {
+				await browser.close().catch( () => {} );
+				browser = await chromium.launch( { channel: 'chrome', headless: true, args: BROWSER_ARGS } ).catch( () => null );
+				if ( ! browser ) browser = await chromium.launch( { headless: true, args: BROWSER_ARGS } );
+				runsSinceRestart = 0;
+			}
 
 		}
 

@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="color-scheme" content="dark">
+	<meta name="description" content="Compiled three.js TSL examples gallery — every webgpu_* example run end-to-end through vite-plugin-tsl-precompile.">
+	<meta property="og:title" content="vite-plugin-tsl-precompile · examples gallery">
+	<meta property="og:description" content="195 three.js TSL examples precompiled to static WGSL. PSNR-graded against live three.js.">
+	<meta property="og:type" content="website">
+	<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+	<title>examples — vite-plugin-tsl-precompile</title>
+	<link rel="stylesheet" href="/src/styles.css">
+	<link rel="stylesheet" href="/src/examples.css">
+</head>
+<body>
+	<a class="skip-link" href="#gallery">Skip to gallery</a>
+
+	<!-- ========== TOP NAV ========== -->
+	<nav class="ex-nav" aria-label="Site navigation">
+		<a class="ex-nav-brand" href="/">
+			<span class="mono">vite-plugin-</span><span class="accent">tsl-precompile</span>
+		</a>
+		<div class="ex-nav-links">
+			<a href="/">Overview</a>
+			<a href="how-it-works.html">How it works</a>
+			<a class="ex-nav-current" aria-current="page" href="examples.html">Examples</a>
+			<a href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">GitHub ↗</a>
+		</div>
+	</nav>
+
+	<main>
+		<!-- ========== HEADER + METRICS STRIP ========== -->
+		<header class="ex-header">
+			<p class="eyebrow">examples gallery</p>
+			<h1 class="ex-title">
+				The three.js TSL suite, <span class="accent">precompiled</span>.
+			</h1>
+			<p class="ex-lead">
+				We ran every <code>webgpu_*</code> TSL example from three.js end-to-end through
+				<code>vite-plugin-tsl-precompile</code> &rarr; the slim runtime, then diffed every replayed
+				frame against live three.js. Every card links back to the original demo.
+			</p>
+
+			<ul class="ex-metrics" id="ex-metrics" aria-label="Headline metrics">
+				<li class="ex-metric"><span class="ex-metric-num" data-key="examplesProcessed">—</span><span class="ex-metric-lab">three.js TSL examples processed</span></li>
+				<li class="ex-metric"><span class="ex-metric-num" data-key="materialsBaked">—</span><span class="ex-metric-lab">materials baked to static WGSL</span></li>
+				<li class="ex-metric"><span class="ex-metric-num" data-key="wgslKb">—</span><span class="ex-metric-lab">of WGSL emitted ahead-of-time</span></li>
+				<li class="ex-metric"><span class="ex-metric-num">0</span><span class="ex-metric-lab">runtime node-graph compilations</span></li>
+				<li class="ex-metric"><span class="ex-metric-num" data-key="smokePassRate">—</span><span class="ex-metric-lab">load-smoke pass-rate</span></li>
+				<li class="ex-metric"><span class="ex-metric-num" data-key="pixelMatchCount">—</span><span class="ex-metric-lab">render pixel-identical to live three.js</span></li>
+			</ul>
+			<p class="ex-metrics-foot">
+				Numbers reproducible from
+				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/packages/examples/batch/results/coverage-summary.md" rel="noopener">coverage-summary.md</a>
+				&middot; PSNR-graded with a 30 dB threshold &middot; the slim runtime ships with
+				<strong>zero</strong> node-builder code.
+			</p>
+		</header>
+
+		<!-- ========== TIER LEGEND ========== -->
+		<section class="ex-legend" aria-label="Per-card badges">
+			<span class="ex-legend-item"><span class="ex-dot ex-dot-pixel"></span><strong>pixel-match</strong> &middot; PSNR &ge; 30 dB</span>
+			<span class="ex-legend-item"><span class="ex-dot ex-dot-visual"></span><strong>visual-match</strong> &middot; PSNR &ge; 20 dB</span>
+			<span class="ex-legend-item"><span class="ex-dot ex-dot-renders"></span><strong>renders</strong> &middot; replay produced a frame</span>
+			<span class="ex-legend-item"><span class="ex-dot ex-dot-capture"></span><strong>capture-only</strong> &middot; no replay frame yet</span>
+		</section>
+
+		<!-- ========== FILTER BAR ========== -->
+		<section class="ex-filterbar" aria-label="Gallery filters">
+			<div class="ex-chips" id="ex-chips" role="tablist"></div>
+			<div class="ex-controls">
+				<input type="search" id="ex-search" class="ex-search" placeholder="Search examples…" autocomplete="off" aria-label="Search examples">
+				<label class="ex-sort">
+					<span class="ex-sort-label">Sort</span>
+					<select id="ex-sort">
+						<option value="featured">Most-impressive first</option>
+						<option value="name">Alphabetical</option>
+						<option value="psnr">Best PSNR first</option>
+						<option value="psnr-asc">Worst PSNR first</option>
+						<option value="materials">Most materials baked</option>
+					</select>
+				</label>
+			</div>
+		</section>
+
+		<!-- ========== GALLERY ========== -->
+		<section id="gallery" class="ex-gallery" aria-label="Compiled examples">
+			<div id="ex-grid" class="ex-grid" aria-live="polite"></div>
+			<p id="ex-empty" class="ex-empty" hidden>No examples match the current filter.</p>
+			<div id="ex-hidden-toggle" class="ex-hidden-toggle" hidden>
+				<button type="button" id="ex-show-hidden">+ Show <span data-hidden-count></span> with no replay frame</button>
+				<p class="muted">Captures exist for these &mdash; the slim runtime hasn&rsquo;t produced a replayed frame yet.</p>
+			</div>
+		</section>
+
+		<!-- ========== METHODOLOGY ========== -->
+		<section class="ex-methodology">
+			<h2>How these numbers were produced</h2>
+			<ol class="ex-method-list">
+				<li>Each three.js <code>webgpu_*</code> TSL example is loaded in headless Chrome with a deterministic <code>requestAnimationFrame</code> shim.</li>
+				<li>The <strong>capture</strong> screenshot is taken against live three.js running the full TSL node builder &mdash; this is the golden reference.</li>
+				<li>The same scene is replayed against <code>three/webgpu/slim</code> using the artifact emitted by this plugin &mdash; no node builder ships.</li>
+				<li>Capture and replay are diffed pixel-for-pixel; PSNR &ge; 30 dB is the &ldquo;visually identical&rdquo; gate (ITSD-R standard for human-imperceptible difference).</li>
+				<li>The <em>load-smoke</em> rate counts every example that runs to first frame without throwing &mdash; whether the pixels match or not.</li>
+			</ol>
+			<p class="muted">
+				Triage notes for each regression cluster live in the
+				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/tree/main/packages/examples/batch/results" rel="noopener">batch results folder</a>
+				on GitHub.
+			</p>
+		</section>
+	</main>
+
+	<!-- ========== MODAL ========== -->
+	<dialog id="ex-modal" class="ex-modal" aria-label="Example detail">
+		<form method="dialog" class="ex-modal-close-form">
+			<button class="ex-modal-close" aria-label="Close">&times;</button>
+		</form>
+		<div class="ex-modal-body" id="ex-modal-body"></div>
+	</dialog>
+
+	<!-- ========== FOOTER ========== -->
+	<footer class="footer">
+		<div class="footer-inner">
+			<div>
+				<strong class="mono">vite-plugin-tsl-precompile</strong>
+				<span class="footer-sep">&middot;</span>
+				<span class="muted">MIT</span>
+			</div>
+			<nav class="footer-nav">
+				<a href="/">Overview</a>
+				<a href="how-it-works.html">How it works</a>
+				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">GitHub</a>
+				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/ARCHITECTURE.md" rel="noopener">Architecture</a>
+				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/ROADMAP.md" rel="noopener">Roadmap</a>
+			</nav>
+		</div>
+	</footer>
+
+	<script type="module" src="/src/examples.js"></script>
+</body>
+</html>

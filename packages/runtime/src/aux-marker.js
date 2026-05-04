@@ -51,9 +51,14 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 
 	}
 
+	if ( typeof opts.threeVersion !== 'string' || opts.threeVersion.length === 0 ) {
+
+		throw new Error( 'precompileAuxiliary: opts.threeVersion is required (>= 184). Pass `threeVersion: String(THREE.REVISION).match(/^\\d+/)[0]` (e.g. "184").' );
+
+	}
 	const results = [];
 	const hashOpts = {
-		threeVersion: opts.threeVersion || 'unknown',
+		threeVersion: opts.threeVersion,
 		pluginVersion: opts.pluginVersion || '0.0.0',
 	};
 
@@ -163,6 +168,17 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 
 			};
 			walkNode( opts.renderPipeline.outputNode );
+
+		}
+
+		// Sticky-stamp the discovered MRT on `scene.userData.__tslp_mrtNode`
+		// so compileTSL's collectSceneMRTNode and precompile-marker captures
+		// see it during their synthetic warm-up — PassNode only writes
+		// `material.mrtNode` during a live render, too late for our compile.
+		if ( passNodes.length > 0 && scene ) {
+
+			scene.userData = scene.userData || {};
+			scene.userData.__tslp_mrtNode = passNodes[ 0 ]._mrt;
 
 		}
 
@@ -290,6 +306,54 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 		} catch ( err ) {
 
 			results.push( { shape: 'lights', configHash: null, ok: false, error: err && err.message || String( err ) } );
+
+		}
+
+	}
+
+	// PMREM ------------------------------------------------------------------
+	// Discover every (kind, sourceWidth, sourceHeight) signature reachable
+	// from the scene that PMREMGenerator could be invoked on. For each unique
+	// signature, capture the 4 internal materials (cubemap, equirect, blur,
+	// ggx) so the slim renderer can drive PMREM through its precompiled
+	// material path. Over-capturing is safe — the runtime only loads the
+	// signatures it actually looks up via loadAux('pmrem-<sub>', hash).
+	{
+
+		const inputs = collectPMREMInputs( scene );
+		for ( const { sourceTexture, kind } of inputs ) {
+
+			try {
+
+				const configInput = {
+					kind,
+					width: sourceTexture.image ? sourceTexture.image.width | 0 : 0,
+					height: sourceTexture.image ? sourceTexture.image.height | 0 : 0,
+					format: sourceTexture.format || 'unknown',
+					type: sourceTexture.type || 'unknown',
+				};
+				const configHash = hashPlainConfigSync( configInput, { shape: 'pmrem', ...hashOpts } );
+				const captured = await capturePMREMLive( renderer, sourceTexture, kind, opts );
+				for ( const subKind of [ 'cubemap', 'equirect', 'blur', 'ggx' ] ) {
+
+					const subArtifact = captured[ subKind ];
+					if ( ! subArtifact ) continue;
+					const subShape = `pmrem-${ subKind }`;
+					trackLocal( subShape, configHash, subArtifact );
+					results.push( await post( opts.devEndpoint, {
+						materialShape: subShape,
+						configHash,
+						artifact: subArtifact,
+						name: `aux-${ subShape }-${ configHash.slice( 0, 12 ) }`,
+					}, subShape, configHash ) );
+
+				}
+
+			} catch ( err ) {
+
+				results.push( { shape: 'pmrem', configHash: null, ok: false, error: err && err.message || String( err ) } );
+
+			}
 
 		}
 
@@ -514,7 +578,11 @@ async function captureMRTLive( renderer, passNode, scene, camera, opts ) {
 	const pp = new three.PostProcessing( renderer );
 	pp.outputNode = passNode;
 
-	const artifacts = await compileTSL( renderer, scene, camera );
+	// Pass `mrtNode` explicitly so compileTSL's warm-up activates the right
+	// MRT topology even when the renderer/material haven't observed the pass
+	// yet. Without this, the synthetic compile emits a single-output fragment
+	// against a multi-attachment RT.
+	const artifacts = await compileTSL( renderer, scene, camera, { mrtNode } );
 	const artifact = artifacts.find( ( a ) => a.materialShape === 'post-process' )
 		|| artifacts.find( ( a ) => a.materialShape === 'output-transform' )
 		|| artifacts[ 0 ];
@@ -526,6 +594,191 @@ async function captureMRTLive( renderer, passNode, scene, camera, opts ) {
 	artifact.mrt = { outputNames };
 
 	return jsonSafe( artifact );
+
+}
+
+/**
+ * Walk a scene for textures that PMREMGenerator could be invoked on.
+ * Returns deduped entries keyed by (kind, width, height) — the partition
+ * the runtime needs.
+ *
+ * Heuristic: cubemaps and 2D textures with reflection mappings are
+ * candidate PMREM inputs. CubeUVReflectionMapping (306) is the PMREM
+ * RESULT and is excluded.
+ *
+ * @param {Object} scene
+ * @return {Array<{ sourceTexture: Object, kind: 'equirect' | 'cube' }>}
+ */
+function collectPMREMInputs( scene ) {
+
+	const seen = new Map();
+
+	function record( tex ) {
+
+		if ( ! tex || ! tex.isTexture ) return;
+		if ( tex.mapping === 306 ) return; // CubeUVReflectionMapping = PMREM result, skip
+		let kind = null;
+		if ( tex.isCubeTexture || tex.mapping === 301 || tex.mapping === 302 ) {
+
+			kind = 'cube';
+
+		} else if ( tex.mapping === 303 || tex.mapping === 304 ) {
+
+			kind = 'equirect';
+
+		}
+		if ( ! kind ) return;
+		const w = tex.image ? tex.image.width | 0 : 0;
+		const h = tex.image ? tex.image.height | 0 : 0;
+		const key = `${ kind }:${ w }:${ h }:${ tex.format || '' }:${ tex.type || '' }`;
+		if ( seen.has( key ) ) return;
+		seen.set( key, { sourceTexture: tex, kind } );
+
+	}
+
+	if ( ! scene ) return [];
+	if ( scene.background && scene.background.isTexture ) record( scene.background );
+
+	// Walk scene.backgroundNode for pmremTexture(source) — the real PMREMNode
+	// (dev path uses real three/tsl, not slim stubs) carries `.value`/`.texture`
+	// pointing at the source.
+	if ( scene.backgroundNode ) {
+
+		const found = findTextureInNode( scene.backgroundNode );
+		if ( found ) record( found );
+
+	}
+
+	if ( typeof scene.traverse === 'function' ) {
+
+		scene.traverse( ( object ) => {
+
+			const m = object && object.material;
+			if ( ! m ) return;
+			const mats = Array.isArray( m ) ? m : [ m ];
+			for ( const mat of mats ) {
+
+				if ( mat && mat.envMap && mat.envMap.isTexture ) record( mat.envMap );
+
+			}
+
+		} );
+
+	}
+
+	return Array.from( seen.values() );
+
+}
+
+function findTextureInNode( node, depth = 0, seen = new Set() ) {
+
+	if ( ! node || depth > 6 || seen.has( node ) ) return null;
+	seen.add( node );
+	if ( node.isTexture ) return node;
+	for ( const key of [ 'value', '_value', 'texture', '_texture' ] ) {
+
+		const v = node[ key ];
+		if ( v && v.isTexture ) return v;
+
+	}
+	for ( const key of [ 'node', 'aNode', 'bNode', 'uvNode', 'levelNode', 'sourceNode' ] ) {
+
+		const child = node[ key ];
+		if ( child ) {
+
+			const found = findTextureInNode( child, depth + 1, seen );
+			if ( found ) return found;
+
+		}
+
+	}
+	return null;
+
+}
+
+/**
+ * Live capture of PMREMGenerator's 4 internal materials for a given
+ * (sourceTexture, kind) signature. Mirrors `extractPMREMArtifact` in the
+ * plugin but uses the live renderer (so artifact byte content matches what
+ * production builds would emit).
+ *
+ * Returns a dict keyed by sub-shape ('cubemap'|'equirect'|'blur'|'ggx').
+ *
+ * @param {Object} renderer
+ * @param {Object} sourceTexture
+ * @param {'equirect'|'cube'} kind
+ * @param {Object} opts
+ * @return {Promise<{ cubemap: Object, equirect: Object, blur: Object, ggx: Object }>}
+ */
+async function capturePMREMLive( renderer, sourceTexture, kind, opts ) {
+
+	const three = opts.three || null;
+	const compileTSL = opts.compileTSL || ( await lazyLoadCompileTSL() );
+
+	if ( ! three || ! three.PMREMGenerator || ! three.Scene || ! three.Mesh || ! three.PlaneGeometry || ! three.PerspectiveCamera ) {
+
+		throw new Error( 'capturePMREMLive: opts.three must expose PMREMGenerator/Scene/Mesh/PlaneGeometry/PerspectiveCamera' );
+
+	}
+
+	const pmrem = new three.PMREMGenerator( renderer );
+
+	// Materialise cubemap + equirect blit shaders (compile-only, no render).
+	await pmrem.compileCubemapShader();
+	await pmrem.compileEquirectangularShader();
+
+	// Materialise blur + ggx by manually invoking _setSizeFromTexture + _init.
+	// We avoid fromX() because that runs render passes we don't need.
+	pmrem._setSizeFromTexture( sourceTexture );
+	const cubeUVRenderTarget = pmrem._allocateTarget();
+	pmrem._init( cubeUVRenderTarget );
+
+	const materials = {
+		cubemap: pmrem._cubemapMaterial,
+		equirect: pmrem._equirectMaterial,
+		blur: pmrem._blurMaterial,
+		ggx: pmrem._ggxMaterial,
+	};
+
+	const auxScene = new three.Scene();
+	const camera = new three.PerspectiveCamera( 45, 1, 0.1, 100 );
+	camera.position.set( 0, 0, 3 );
+
+	const meshUuids = {};
+	for ( const subKind of [ 'cubemap', 'equirect', 'blur', 'ggx' ] ) {
+
+		const mat = materials[ subKind ];
+		if ( ! mat ) continue;
+		const mesh = new three.Mesh( new three.PlaneGeometry( 1, 1 ), mat );
+		auxScene.add( mesh );
+		meshUuids[ subKind ] = mat.uuid;
+
+	}
+
+	const allArtifacts = await compileTSL( renderer, auxScene, camera, { noGlobalMRT: true } );
+
+	const captured = {};
+	for ( const subKind of [ 'cubemap', 'equirect', 'blur', 'ggx' ] ) {
+
+		const uuid = meshUuids[ subKind ];
+		if ( ! uuid ) continue;
+		const found = allArtifacts.find( ( a ) => a.materialUuid === uuid );
+		if ( ! found ) continue;
+		found.materialShape = `pmrem-${ subKind }`;
+		found.pmremKind = subKind;
+		captured[ subKind ] = jsonSafe( found );
+
+	}
+
+	pmrem.dispose();
+
+	if ( Object.keys( captured ).length === 0 ) {
+
+		throw new Error( `capturePMREMLive: produced 0 artifacts (compileTSL returned ${ allArtifacts.length })` );
+
+	}
+
+	return captured;
 
 }
 

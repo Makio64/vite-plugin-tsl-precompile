@@ -5,31 +5,31 @@
   "skip": 0,
   "details": [
     {
-      "name": "webgpu_sprites.html",
+      "name": "webgpu_clipping.html",
       "status": "fail",
-      "captureBrightFrac": 0.22220377604166666,
-      "replayBrightFrac": 0.23609049479166666,
+      "captureBrightFrac": 0.237353515625,
+      "replayBrightFrac": 0.008544921875,
       "pixelGate": {
         "pass": false,
-        "psnr": 13.48,
+        "psnr": 12.8,
         "threshold": 30
       },
-      "userArtifacts": 1,
-      "auxArtifacts": 1,
+      "userArtifacts": 2,
+      "auxArtifacts": 2,
       "captureErrors": [],
       "replayErrors": [],
       "artifactSummaries": [
         {
-          "name": "webgpu_sprites.html:SpriteNodeMaterial:1",
-          "hash": "c6eec025bfe4b6e73ce8be21c486447e6902e26344fc6184e04d9a19596b0f6c",
-          "cacheKey": 9603633538539616,
-          "shape": "node-material",
-          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : mat3x3<f32>,\n\tnodeUniform3 : mat4x4<f32>,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : vec2<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec4<f32>,\n\t@location( 1 ) nodeVarying3 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> nodeVar1 : vec4<f32>;\nvar<private> nodeVar2 : f32;\nvar<private> nodeVar3 : f32;\nvar<private> nodeVar4 : vec4<f32>;\nvar<private> VERTEX_nodeVar6 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying3 = uv;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUn",
-          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform1 : mat3x3<f32>,\n\tnodeUniform3 : mat4x4<f32>,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : vec2<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> nodeVar5 : vec4<f32>;\n\n// codes\n\n\n@fragment\nfn main( @location( 0 ) v_positionView : vec4<f32>,\n\t@location( 1 ) nodeVarying3 : vec2<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform1 * vec3<f32>( nodeVarying3, 1.0 ) ).xy );\n\tDiffuseColor = clamp( ( ( nodeVar0 * vec4<f32>( vec3<f32>( nodeVarying3, 0.0 ), 1.0 ) ) * vec4<f32>( 2.0 ) ), vec4<f32>( 0.0 ), vec4<f32>( 1.0 ) );\n\tDiffuseColor.w = ( DiffuseColor.w * nodeVar0.w );\n\tOutput = max( vec4<f32>( DiffuseColor.xyz,",
+          "name": "webgpu_clipping.html:MeshPhongNodeMaterial:2",
+          "hash": "1a3c1323b5ad0fe7e7b20aa95f8f8936ea10a3645614341bfe2bb65a89eb9e19",
+          "cacheKey": 882909624685362,
+          "shape": "mesh-phong",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\nenable clip_distances;\n\n// structs\n\n\n// uniforms\n\nstruct NodeBuffer_2735Struct {\n\tvalue : array< vec4<f32>, 1 >\n};\n@binding( 1 ) @group( 0 )\nvar<uniform> NodeBuffer_2735 : NodeBuffer_2735Struct;\n\nstruct renderStruct {\n\tcameraViewMatrix : mat4x4<f32>,\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tnodeUniform8 : vec3<f32>,\n\tnodeUniform20 : f32,\n\tnodeUniform21 : f32,\n\tnodeUniform24 : f32,\n\tnodeUniform25 : f32,\n\tnodeUniform11 : vec3<f32>,\n\tnodeUniform28 : vec3<f32>,\n\tnodeUniform10 : vec3<f32>,\n\tnodeUniform22 : vec3<f32>,\n\tnodeUniform23 : vec3<f32>,\n\tnodeUniform26 : vec3<f32>,\n\tnodeUniform27 : vec3<f32>,\n\tnodeUniform12 : mat4x4<f32>,\n\tnodeUniform14 : f32,\n\tnodeUniform15 : f32,\n\tnodeUniform17 : f32,\n\tnodeUniform18 : vec2<f32>,\n\tnodeUniform19 : f32,\n\tnodeUniform29 : mat4x4<f32>,\n\tnodeUniform30 : f32,\n\tnodeUniform31 : f32,\n\tnodeUniform33 : f32,\n\tnodeUniform34 : vec2<f32>,\n\tnodeUniform35 : f32\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : mat4x4<f32>,\n\tnodeUniform2 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : vec3<f32>,\n\tnodeUniform6 : vec3<f32>,\n\tnodeUniform7 : f32",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform16_sampler : sampler_comparison;\n@binding( 2 ) @group( 1 ) var nodeUniform16 : texture_depth_2d;\n@binding( 3 ) @group( 1 ) var nodeUniform32_sampler : sampler_comparison;\n@binding( 4 ) @group( 1 ) var nodeUniform32 : texture_depth_2d;\n\nstruct objectStruct {\n\tnodeUniform1 : mat4x4<f32>,\n\tnodeUniform2 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : vec3<f32>,\n\tnodeUniform6 : vec3<f32>,\n\tnodeUniform7 : f32,\n\tnodeUniform9 : mat3x3<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraViewMatrix : mat4x4<f32>,\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tnodeUniform8 : vec3<f32>,\n\tnodeUniform20 : f32,\n\tnodeUniform21 : f32,\n\tnodeUniform24 : f32,\n\tnodeUniform25 : f32,\n\tnodeUniform11 : vec3<f32>,\n\tnodeUniform28 : vec3<f32>,\n\tnodeUniform10 : vec3<f32>,\n\tnodeUniform22 : vec3<f32>,\n\tnodeUniform23 : vec3<f32>,\n\tnodeUniform26 : vec3<f32>,\n\tnodeUniform27 : vec3<f32>,\n\tnodeUniform12 : mat4",
           "attributes": [
             {
-              "name": "uv",
-              "type": "vec2",
+              "name": "normal",
+              "type": "vec3",
               "source": "geometry"
             },
             {
@@ -41,33 +41,73 @@
           "textures": [
             {
               "group": "object",
-              "name": "nodeUniform0_sampler",
-              "kind": "artifact.texture",
-              "textureUuid": "c0d4053c-2ba7-4862-9af8-d6e03d558a95",
-              "imageSrc": "http://localhost:8729/examples/textures/sprite1.png",
-              "textureName": "sprite1.png",
+              "name": "nodeUniform16_sampler",
+              "kind": "depth.texture",
+              "textureUuid": "8474d15c-1fdc-4bc8-bee0-8d4351fa2f2b",
               "hasSnapshot": false,
               "snapshotSize": null
             },
             {
               "group": "object",
-              "name": "nodeUniform0",
-              "kind": "artifact.texture",
-              "textureUuid": "c0d4053c-2ba7-4862-9af8-d6e03d558a95",
-              "imageSrc": "http://localhost:8729/examples/textures/sprite1.png",
-              "textureName": "sprite1.png",
+              "name": "nodeUniform16",
+              "kind": "depth.texture",
+              "textureUuid": "8474d15c-1fdc-4bc8-bee0-8d4351fa2f2b",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform32_sampler",
+              "kind": "depth.texture",
+              "textureUuid": "5c80a3bb-1786-4671-9652-b957094f7f98",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform32",
+              "kind": "depth.texture",
+              "textureUuid": "5c80a3bb-1786-4671-9652-b957094f7f98",
               "hasSnapshot": false,
               "snapshotSize": null
             }
           ]
+        },
+        {
+          "name": "webgpu_clipping.html:MeshPhongNodeMaterial:1",
+          "hash": "4c051cdf1f7aea5b765d1d2180700bca7d52d7bd08889fea54c7e9502be36f07",
+          "cacheKey": 9728284624081188,
+          "shape": "mesh-phong",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\nenable clip_distances;\n\n// structs\n\n\n// uniforms\n\nstruct NodeBuffer_3685Struct {\n\tvalue : array< vec4<f32>, 1 >\n};\n@binding( 2 ) @group( 0 )\nvar<uniform> NodeBuffer_3685 : NodeBuffer_3685Struct;\n\nstruct renderStruct {\n\tcameraViewMatrix : mat4x4<f32>,\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tnodeUniform9 : vec3<f32>,\n\tnodeUniform13 : f32,\n\tnodeUniform14 : f32,\n\tnodeUniform18 : f32,\n\tnodeUniform19 : f32,\n\tnodeUniform12 : vec3<f32>,\n\tnodeUniform22 : vec3<f32>,\n\tnodeUniform11 : vec3<f32>,\n\tnodeUniform16 : vec3<f32>,\n\tnodeUniform17 : vec3<f32>,\n\tnodeUniform20 : vec3<f32>,\n\tnodeUniform21 : vec3<f32>\n};\n@binding( 1 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : mat4x4<f32>,\n\tnodeUniform3 : vec3<f32>,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform6 : vec3<f32>,\n\tnodeUniform7 : vec3<f32>,\n\tnodeUniform8 : f32,\n\tnodeUniform10 : mat3x3<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_positionViewDirection : vec3<f32>,\n\t@location( 2 ) v_normalViewGeometry : vec3<f32>,\n\t@builtin( ",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n\nstruct NodeBuffer_3735Struct {\n\tvalue : array< vec4<f32>, 2 >\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> NodeBuffer_3735 : NodeBuffer_3735Struct;\n\nstruct objectStruct {\n\tnodeUniform1 : mat4x4<f32>,\n\tnodeUniform3 : vec3<f32>,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform6 : vec3<f32>,\n\tnodeUniform7 : vec3<f32>,\n\tnodeUniform8 : f32,\n\tnodeUniform10 : mat3x3<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraViewMatrix : mat4x4<f32>,\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tnodeUniform9 : vec3<f32>,\n\tnodeUniform13 : f32,\n\tnodeUniform14 : f32,\n\tnodeUniform18 : f32,\n\tnodeUniform19 : f32,\n\tnodeUniform12 : vec3<f32>,\n\tnodeUniform22 : vec3<f32>,\n\tnodeUniform11 : vec3<f32>,\n\tnodeUniform16 : vec3<f32>,\n\tnodeUniform17 : vec3<f32>,\n\tnodeUniform20 : vec3<f32>,\n\tnodeUniform21 : vec3<f32>\n};\n@binding( 1 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> clipped : bool;\nvar<private> DiffuseColor : vec4<f32>;\nvar<priva",
+          "attributes": [
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "normal",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": []
         }
       ],
       "auxSummaries": [
         {
+          "shape": "lights",
+          "configHash": "13a2683a7dde6574f64452484f58b0db67620a64709b1dfe26cb714a2cdedd33",
+          "attributes": [],
+          "bindings": [],
+          "uniformPlan": []
+        },
+        {
           "shape": "render-output",
-          "configHash": "d36b91adf79b6c825319324d1139b036b229c1a853d064a3e9e9bf91fff92fb7",
+          "configHash": "90a5a84186bcbc44efdd95b20bf6492a0c0d34057e53f1b3ebe0bc95b1236c03",
           "artifactShape": "render-output",
-          "cacheKey": 8993850794617859,
+          "cacheKey": 4608382801094449,
           "attributes": [
             {
               "name": "position",
@@ -122,14 +162,14 @@
                 {
                   "name": "nodeUniform0_sampler",
                   "kind": "artifact.texture",
-                  "textureUuid": "b49d093f-8f13-4fab-ae51-ee1b41d32b96",
+                  "textureUuid": "b0643b21-5b96-4a6b-8a3e-6d7ded7bc630",
                   "hasSnapshot": false,
                   "snapshotSize": null
                 },
                 {
                   "name": "nodeUniform0",
                   "kind": "artifact.texture",
-                  "textureUuid": "b49d093f-8f13-4fab-ae51-ee1b41d32b96",
+                  "textureUuid": "b0643b21-5b96-4a6b-8a3e-6d7ded7bc630",
                   "hasSnapshot": false,
                   "snapshotSize": null
                 }
@@ -138,7 +178,7 @@
           ]
         }
       ],
-      "error": "pixel diff PSNR 13.48 dB < threshold 30 dB (visual regression)"
+      "error": "pixel diff PSNR 12.8 dB < threshold 30 dB (visual regression)"
     }
   ]
 }

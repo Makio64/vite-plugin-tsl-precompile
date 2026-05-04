@@ -32,7 +32,7 @@ const threeRewritePlugin = {
 	transform( code, id ) {
 
 		const r = rewriteThreeSource( code, id, {
-			threeVersion: process.env.TSL_PRECOMPILE_THREE_VERSION || '175',
+			threeVersion: process.env.TSL_PRECOMPILE_THREE_VERSION || '184',
 			pluginVersion: '0.0.0',
 		} );
 		if ( ! r ) return null;
