@@ -137,8 +137,8 @@ export function classifyMaterialShape( material ) {
 	if ( material.name === 'RenderPipeline' ) return 'render-pipeline';
 	if ( material.name === 'outputColorTransform' ) return 'output-transform';
 	if ( material.isMeshBasicNodeMaterial ) return 'mesh-basic';
-	if ( material.isMeshStandardNodeMaterial ) return 'mesh-standard';
 	if ( material.isMeshPhysicalNodeMaterial ) return 'mesh-physical';
+	if ( material.isMeshStandardNodeMaterial ) return 'mesh-standard';
 	if ( material.isMeshLambertNodeMaterial ) return 'mesh-lambert';
 	if ( material.isMeshPhongNodeMaterial ) return 'mesh-phong';
 	if ( material.isMeshToonNodeMaterial ) return 'mesh-toon';
@@ -152,8 +152,8 @@ export function classifyMaterialShape( material ) {
 	// `is*Material` flag so the auto-port swap can match a plain
 	// `new MeshBasicMaterial()` against the wrapped artifact.
 	if ( material.isMeshBasicMaterial ) return 'mesh-basic';
-	if ( material.isMeshStandardMaterial ) return 'mesh-standard';
 	if ( material.isMeshPhysicalMaterial ) return 'mesh-physical';
+	if ( material.isMeshStandardMaterial ) return 'mesh-standard';
 	if ( material.isMeshPhongMaterial ) return 'mesh-phong';
 	if ( material.isMeshLambertMaterial ) return 'mesh-lambert';
 	if ( material.isMeshToonMaterial ) return 'mesh-toon';

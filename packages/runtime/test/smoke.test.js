@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { DataTexture } from 'three/src/textures/DataTexture.js';
 
 import { registerArtifact, getArtifact } from '../src/artifact-loader.js';
+import { getDFGLUT } from '../src/dfg-lut.js';
 import { hydrateNodeBuilderState, registerLiveTexture, clearLiveTextureIndex } from '../src/hydrator.js';
 import { __applyPrecompiled, catalogueArtifactTextureRefs, collectLiveMaterialTextures } from '../src/apply-precompiled.js';
 import PrecompiledMaterial from '../src/_vendor-PrecompiledMaterial.js';
@@ -166,6 +168,17 @@ test( 'runtime hydrator rehydrates sampled texture and sampler descriptors', () 
 	assert.equal( texture.isSampledTexture, true );
 	assert.equal( sampler.texture, map );
 	assert.equal( texture.texture, map );
+
+} );
+
+test( 'runtime DFG LUT uses the renderer source-module DataTexture class', () => {
+
+	const lut = getDFGLUT();
+	assert.ok( lut instanceof DataTexture );
+	assert.equal( lut.isDataTexture, true );
+	assert.equal( lut.image.width, 16 );
+	assert.equal( lut.image.height, 16 );
+	assert.equal( lut.image.data.length, 16 * 16 * 2 );
 
 } );
 
