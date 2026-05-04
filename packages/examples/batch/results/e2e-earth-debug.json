@@ -1,0 +1,254 @@
+{
+  "total": 1,
+  "pass": 1,
+  "fail": 0,
+  "skip": 0,
+  "details": [
+    {
+      "name": "webgpu_tsl_earth.html",
+      "status": "pass",
+      "captureBrightFrac": 0.39690755208333334,
+      "replayBrightFrac": 0.39690755208333334,
+      "pixelGate": {
+        "pass": true,
+        "psnr": 107.78,
+        "threshold": 30
+      },
+      "userArtifacts": 2,
+      "auxArtifacts": 2,
+      "captureErrors": [],
+      "replayErrors": [],
+      "captureWarnings": [],
+      "replayWarnings": [],
+      "captureDiagnostics": null,
+      "replayDiagnostics": {
+        "colorTransferFallbacks": {},
+        "healedNullTextureImages": 0,
+        "pmrem": {
+          "kickCalls": 0,
+          "cacheHits": 0,
+          "pendingJoins": 0,
+          "skippedNotReady": 0,
+          "generateCalls": 0,
+          "generateSuccess": 0,
+          "generateFailed": 0,
+          "noComputeRenderer": 0,
+          "noGPUTexture": 0,
+          "wireCalls": 15,
+          "wireNoPmrem": 0,
+          "wireAlreadyWired": 0,
+          "wireNeedsPmrem": 0,
+          "wireAttached": 0
+        }
+      },
+      "artifactSummaries": [
+        {
+          "name": "webgpu_tsl_earth.html:MeshStandardNodeMaterial:1",
+          "hash": "3d55484d55e54c10ccd44913e804c8678c3b1450e260b95b444785b287eb2224",
+          "cacheKey": 12108558288210100,
+          "shape": "mesh-standard",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tcameraPosition : vec3<f32>,\n\tnodeUniform17 : vec3<f32>,\n\tnodeUniform15 : vec3<f32>,\n\tnodeUniform16 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : mat3x3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform6 : f32,\n\tnodeUniform7 : f32,\n\tnodeUniform9 : mat3x3<f32>,\n\tnodeUniform10 : vec3<f32>,\n\tnodeUniform11 : f32,\n\tnodeUniform12 : mat4x4<f32>,\n\tnodeUniform13 : mat3x3<f32>,\n\tnodeUniform20 : mat3x3<f32>,\n\tnodeUniform21 : vec3<f32>,\n\tnodeUniform22 : vec3<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 2 ) v_positionViewDirection : vec3<f32>,\n\t@location( 3 ) v_normalWorldGeometry : vec3<f32>,\n\t@location( 4 ) v_positionWorld : vec3<f32>,\n\t@location( 5 ) nodeVarying8 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n@binding( 3 ) @group( 1 ) var nodeUniform2_sampler : sampler;\n@binding( 4 ) @group( 1 ) var nodeUniform2 : texture_2d<f32>;\n@binding( 5 ) @group( 1 ) var nodeUniform18_sampler : sampler;\n@binding( 6 ) @group( 1 ) var nodeUniform18 : texture_2d<f32>;\n@binding( 7 ) @group( 1 ) var nodeUniform19_sampler : sampler;\n@binding( 8 ) @group( 1 ) var nodeUniform19 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform1 : mat3x3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform6 : f32,\n\tnodeUniform7 : f32,\n\tnodeUniform9 : mat3x3<f32>,\n\tnodeUniform10 : vec3<f32>,\n\tnodeUniform11 : f32,\n\tnodeUniform12 : mat4x4<f32>,\n\tnodeUniform13 : mat3x3<f32>,\n\tnodeUniform20 : mat3x3<f32>,\n\tnodeUniform21 : vec3<f32>,\n\tnodeUniform22 : vec3<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjecti",
+          "attributes": [
+            {
+              "name": "uv",
+              "type": "vec2",
+              "source": "geometry"
+            },
+            {
+              "name": "normal",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": [
+            {
+              "group": "object",
+              "name": "nodeUniform0_sampler",
+              "kind": "artifact.texture",
+              "textureUuid": "5ca7520a-1781-4509-9611-5ec30902f75a",
+              "imageSrc": "http://localhost:8890/examples/textures/planets/earth_day_4096.jpg",
+              "textureName": "earth_day_4096.jpg",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform0",
+              "kind": "artifact.texture",
+              "textureUuid": "5ca7520a-1781-4509-9611-5ec30902f75a",
+              "imageSrc": "http://localhost:8890/examples/textures/planets/earth_day_4096.jpg",
+              "textureName": "earth_day_4096.jpg",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform2_sampler",
+              "kind": "artifact.texture",
+              "textureUuid": "eca62a44-67db-40fe-a687-4d6ad960bac5",
+              "imageSrc": "http://localhost:8890/examples/textures/planets/earth_bump_roughness_clouds_4096.jpg",
+              "textureName": "earth_bump_roughness_clouds_4096.jpg",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform2",
+              "kind": "artifact.texture",
+              "textureUuid": "eca62a44-67db-40fe-a687-4d6ad960bac5",
+              "imageSrc": "http://localhost:8890/examples/textures/planets/earth_bump_roughness_clouds_4096.jpg",
+              "textureName": "earth_bump_roughness_clouds_4096.jpg",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform18_sampler",
+              "kind": "builtin.dfgLUT",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform18",
+              "kind": "builtin.dfgLUT",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform19_sampler",
+              "kind": "artifact.texture",
+              "textureUuid": "a4f2458b-bf03-47df-9ea4-c842f1a20a99",
+              "imageSrc": "http://localhost:8890/examples/textures/planets/earth_night_4096.jpg",
+              "textureName": "earth_night_4096.jpg",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform19",
+              "kind": "artifact.texture",
+              "textureUuid": "a4f2458b-bf03-47df-9ea4-c842f1a20a99",
+              "imageSrc": "http://localhost:8890/examples/textures/planets/earth_night_4096.jpg",
+              "textureName": "earth_night_4096.jpg",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            }
+          ]
+        },
+        {
+          "name": "webgpu_tsl_earth.html:MeshBasicNodeMaterial:1",
+          "hash": "6a480af5b8e1ee6ea1b61b599f1fa5f31d6ccd3a1711f629f98079b71abb942f",
+          "cacheKey": 13291971307356280,
+          "shape": "mesh-basic",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tcameraPosition : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : vec3<f32>,\n\tnodeUniform3 : vec3<f32>,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform6 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_normalWorldGeometry : vec3<f32>,\n\t@location( 1 ) v_positionWorld : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLocal : vec3<f32>;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar8 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> v_normalViewGeometry : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) normal :",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : vec3<f32>,\n\tnodeUniform3 : vec3<f32>,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform6 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tcameraPosition : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> indirectDiffuse : vec3<f32>;\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> ambientOcclusion : f32;\nvar<private> nodeVar1 : vec3<f32>;\nvar<private> nodeVar2 : vec3<f32>;\nvar<private> totalDiffuse : vec3<f32>;\nvar<private> directDiffuse : vec3<f32>;\nvar<private> nodeVar3 : vec3<f32>;\nvar<private> totalSpecular : vec3<f32>;\nvar<private> directSpecular : vec3<f32>;\nvar<private> indirectSpecular : vec3<f32>;\nvar<private> nodeVar4 : vec3<f32>;\nvar<private> outgoi",
+          "attributes": [
+            {
+              "name": "normal",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": []
+        }
+      ],
+      "auxSummaries": [
+        {
+          "shape": "lights",
+          "configHash": "c49804ded2aebdc6f53a744b8627fae0fcedc47ba3e309cfb77202319e34fb69",
+          "attributes": [],
+          "bindings": [],
+          "uniformPlan": []
+        },
+        {
+          "shape": "render-output",
+          "configHash": "90a5a84186bcbc44efdd95b20bf6492a0c0d34057e53f1b3ebe0bc95b1236c03",
+          "artifactShape": "render-output",
+          "cacheKey": 5107013560407726,
+          "attributes": [
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "bindings": [
+            {
+              "name": "render",
+              "bindings": [
+                {
+                  "name": "render",
+                  "kind": "uniform-buffer",
+                  "byteLength": 128
+                }
+              ]
+            },
+            {
+              "name": "object",
+              "bindings": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "sampler",
+                  "byteLength": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "sampled-texture",
+                  "byteLength": null
+                },
+                {
+                  "name": "object",
+                  "kind": "uniform-buffer",
+                  "byteLength": 80
+                }
+              ]
+            }
+          ],
+          "uniformPlan": [
+            {
+              "name": "render",
+              "byteLength": 128,
+              "slotCount": 2,
+              "textures": []
+            },
+            {
+              "name": "object",
+              "byteLength": 80,
+              "slotCount": 2,
+              "textures": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "artifact.texture",
+                  "textureUuid": "2c0df274-a78c-4ee7-a607-af64196407dc",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "artifact.texture",
+                  "textureUuid": "2c0df274-a78c-4ee7-a607-af64196407dc",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "error": null
+    }
+  ]
+}
