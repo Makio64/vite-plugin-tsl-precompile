@@ -89,6 +89,16 @@ class PrecompiledMaterial extends Material {
 		// etc.
 		seedRenderState( this, artifact.renderState );
 
+		// Materials with transmission > 0 must be transparent for the slim
+		// path to alpha-blend them. Live three.js renders transmission via a
+		// dedicated framebuffer-copy pass that doesn't need transparent=true,
+		// but the precompiled path has no such pass — it composites
+		// transmission directly in the fragment, so the pipeline still needs
+		// the transparent flag for blending. GLTF loader doesn't auto-flip
+		// this when KHR_materials_transmission is present, so the captured
+		// renderState carries transparent=false; coerce here.
+		if ( artifact.defaults && typeof artifact.defaults.transmission === 'number' && artifact.defaults.transmission > 0 ) this.transparent = true;
+
 		// MRT stub — when the captured fragment shader emits multiple
 		// `@location(N)` outputs (because compileTSL warmed up with an
 		// MRT node active), `artifact.mrtOutputCount` is N. The slim
@@ -112,6 +122,21 @@ class PrecompiledMaterial extends Material {
 	customProgramCacheKey() {
 
 		return this._precompiledProgramCacheKey;
+
+	}
+
+	clone() {
+
+		// User libraries (e.g. CurveModifierGPU's Flow) call material.clone()
+		// to fork a material before mutating its node graph. Three.js's default
+		// Material.clone() does `new this.constructor().copy( this )` which
+		// fails here because the constructor requires the precompiled artifact.
+		// The cloned material shares the artifact (read-only at runtime); any
+		// `*Node` reassignments the caller makes are no-ops on the precompiled
+		// path because the shader is already baked in the artifact.
+		const cloned = new PrecompiledMaterial( this.precompiledArtifact );
+		cloned.copy( this );
+		return cloned;
 
 	}
 

@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { totalmem } from 'node:os';
 
 import { assertThreeAtLeast184 } from './_three-version.mjs';
 
@@ -15,7 +16,10 @@ function getArg( prefix, def ) {
 	return found ? found.slice( prefix.length ) : def;
 }
 
-const workers  = parseInt( getArg( '--workers=', '6' ), 10 );
+// Each worker = its own Chromium + WebGPU + Node heap, ~1.5 GB peak.
+// Cap by RAM (-1 slot for OS/editor) and by 4 (above 4 the GPU is the bottleneck).
+const DEFAULT_WORKERS = Math.max( 1, Math.min( 4, Math.floor( totalmem() / ( 1.5 * 1024 ** 3 ) ) - 1 ) );
+const workers  = parseInt( getArg( '--workers=', String( DEFAULT_WORKERS ) ), 10 );
 const basePort = parseInt( getArg( '--base-port=', '8730' ), 10 );
 const filter   = getArg( '--filter=', '' );
 const threeRepo = resolve( getArg( '--three-repo=', resolve( SELF, '../../../../three.js' ) ) );
@@ -55,7 +59,8 @@ for ( let i = 0; i < actualWorkers; i++ ) {
 	jobs.push( { off, lim, port: basePort + i, report: `e2e-report-worker-${ i }.json`, idx: i } );
 }
 
-console.log( `[e2e-parallel] ${ total } examples → ${ jobs.length } workers, ~${ chunk } each (base-port ${ basePort })` );
+const ramGb = ( totalmem() / 1024 ** 3 ).toFixed( 1 );
+console.log( `[e2e-parallel] ${ total } examples → ${ jobs.length } workers (auto from ${ ramGb } GB RAM, override with --workers=N), ~${ chunk } each (base-port ${ basePort })` );
 if ( ! verbose ) console.log( '[e2e-parallel] showing per-example results only; pass --verbose for page logs and worker boilerplate' );
 
 function shouldForwardWorkerLine( line ) {
@@ -130,6 +135,34 @@ function printFailureSummary( details, max = 25 ) {
 	if ( failures.length > max ) console.log( `  ... ${ failures.length - max } more failures in ${ join( OUT, 'e2e-report.json' ) }` );
 }
 
+// Track live children so we can reap them on signals / crashes. Without this,
+// a non-TTY kill of the orchestrator leaves orphaned Chromium workers eating
+// RAM/GPU until the user notices and kills them by hand.
+const liveChildren = new Set();
+let shuttingDown = false;
+
+function shutdown( reason ) {
+	if ( shuttingDown ) return;
+	shuttingDown = true;
+	if ( liveChildren.size === 0 ) return;
+	console.error( `\n[e2e-parallel] ${ reason } — terminating ${ liveChildren.size } worker(s)` );
+	for ( const c of liveChildren ) {
+		try { c.kill( 'SIGTERM' ); } catch {}
+	}
+	// Force-kill stragglers after a grace period (Playwright closes Chromium on SIGTERM).
+	setTimeout( () => {
+		for ( const c of liveChildren ) {
+			try { c.kill( 'SIGKILL' ); } catch {}
+		}
+	}, 5000 ).unref();
+}
+
+process.on( 'SIGINT',  () => { shutdown( 'SIGINT' );  process.exitCode = 130; } );
+process.on( 'SIGTERM', () => { shutdown( 'SIGTERM' ); process.exitCode = 143; } );
+process.on( 'SIGHUP',  () => { shutdown( 'SIGHUP' );  process.exitCode = 129; } );
+process.on( 'uncaughtException',  ( err ) => { console.error( err ); shutdown( 'uncaughtException' );  process.exitCode = 1; } );
+process.on( 'unhandledRejection', ( err ) => { console.error( err ); shutdown( 'unhandledRejection' ); process.exitCode = 1; } );
+
 const promises = jobs.map( ( { off, lim, port, report, idx } ) =>
 	new Promise( ( resolve ) => {
 		const child = spawn(
@@ -144,6 +177,7 @@ const promises = jobs.map( ( { off, lim, port, report, idx } ) =>
 			],
 			{ cwd: SELF, stdio: [ 'ignore', 'pipe', 'pipe' ] }
 		);
+		liveChildren.add( child );
 
 		const prefix = `[w${ idx }]`;
 		let summary = '';
@@ -153,6 +187,7 @@ const promises = jobs.map( ( { off, lim, port, report, idx } ) =>
 		attachLinePrefix( child.stderr, process.stderr, prefix, null, shouldForwardWorkerLine );
 
 		child.on( 'close', ( code ) => {
+			liveChildren.delete( child );
 			console.log( `[e2e-parallel] worker ${ idx } done (exit=${ code })${ summary ? ' — ' + summary : '' }` );
 			resolve( { code, idx, report } );
 		} );

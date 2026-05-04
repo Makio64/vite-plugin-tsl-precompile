@@ -338,7 +338,7 @@ export function wireViewportTextureRefs( artifact ) {
 
 export function attachArtifactTextureRefs( artifact, texture ) {
 
-	if ( ! artifact || ! texture || ! texture.isTexture ) return artifact;
+	if ( ! artifact || ! texture || texture.isTexture !== true ) return artifact;
 
 	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
 	for ( const group of artifact.uniformPlan || [] ) {
@@ -401,7 +401,7 @@ export function attachMRTTextureRefs( artifact, renderTarget ) {
 			const outputNames = artifact.mrt && artifact.mrt.outputNames || [];
 			const texIndex = outputNames.indexOf( entry.name || '' );
 			const tex = texIndex >= 0 ? textures[ texIndex ] : textures[ 0 ];
-			if ( tex && tex.isTexture && ! refs.has( source.textureUuid ) ) {
+			if ( tex && tex.isTexture === true && ! refs.has( source.textureUuid ) ) {
 
 				refs.set( source.textureUuid, tex );
 				changed = true;

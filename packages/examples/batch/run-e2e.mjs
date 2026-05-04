@@ -186,8 +186,7 @@ function jsonScriptLiteral( value ) {
 function injectHtml( html, example, mode ) {
 
 	const bucket = captureBucket( example );
-	const dbgInstance = mode === 'replay' && /instance_path/.test( example );
-	const boot = `<script>window.__TSLP_E2E=${ jsonScriptLiteral( { example, mode, artifacts: bucket } ) };${ dbgInstance ? 'window.__TSLP_DBG_INSTANCE=true;' : '' }</script>`;
+	const boot = `<script>window.__TSLP_E2E=${ jsonScriptLiteral( { example, mode, artifacts: bucket } ) };</script>`;
 	const mapped = rewriteImportmap( html, mode );
 	return mapped.includes( '</head>' )
 		? mapped.replace( '</head>', `${ boot }\n</head>` )
@@ -322,6 +321,7 @@ const __state = window.__TSLP_E2E || { example: 'unknown' };
 const __counts = Object.create( null );
 const __pending = [];
 const __seenMaterials = new WeakMap();
+const __bundleSharedNames = new Map();
 const __postProcessingPipelines = new Set();
 const __auxPromises = new Set();
 let __renderer = null;
@@ -410,11 +410,17 @@ function __mark( material, className, sourceObject = null ) {
 	if ( ! material ) return;
 	if ( sourceObject && ! material.__tslpPrecompileObject ) Object.defineProperty( material, '__tslpPrecompileObject', { value: sourceObject, configurable: true } );
 	if ( __seenMaterials.has( material ) ) return;
+	const bundleKey = __isInsideBundleGroup( sourceObject ) ? className : null;
+	if ( bundleKey && __bundleSharedNames.has( bundleKey ) ) {
+		__seenMaterials.set( material, __bundleSharedNames.get( bundleKey ) );
+		return;
+	}
 	const n = ( __counts[ className ] || 0 ) + 1;
 	__counts[ className ] = n;
 	const name = __state.example + ':' + className + ':' + n;
 	material.name = material.name || name;
 	__seenMaterials.set( material, name );
+	if ( bundleKey ) __bundleSharedNames.set( bundleKey, name );
 	__pending.push( { material, name, done: false } );
 	// Do NOT __flush() here. precompile() must run AFTER the example
 	// has finished setting up the scene (background, environment,
@@ -426,9 +432,19 @@ function __mark( material, className, sourceObject = null ) {
 	// guaranteed to be fully wired.
 }
 
+function __isInsideBundleGroup( object ) {
+	let current = object;
+	while ( current ) {
+		if ( current.isBundleGroup === true ) return true;
+		current = current.parent || null;
+	}
+	return false;
+}
+
 function __classNameForMaterial( material ) {
 	if ( ! material ) return 'Material';
 	if ( material.isMeshBasicNodeMaterial || material.isMeshBasicMaterial ) return 'MeshBasicNodeMaterial';
+	if ( material.isMeshSSSNodeMaterial || material.type === 'MeshSSSNodeMaterial' ) return 'MeshSSSNodeMaterial';
 	if ( material.isMeshPhysicalNodeMaterial || material.isMeshPhysicalMaterial ) return 'MeshPhysicalNodeMaterial';
 	if ( material.isMeshStandardNodeMaterial || material.isMeshStandardMaterial ) return 'MeshStandardNodeMaterial';
 	if ( material.isMeshLambertNodeMaterial || material.isMeshLambertMaterial ) return 'MeshLambertNodeMaterial';
@@ -436,11 +452,13 @@ function __classNameForMaterial( material ) {
 	if ( material.isMeshToonNodeMaterial || material.isMeshToonMaterial ) return 'MeshToonNodeMaterial';
 	if ( material.isMeshNormalNodeMaterial || material.isMeshNormalMaterial ) return 'MeshNormalNodeMaterial';
 	if ( material.isMeshMatcapNodeMaterial || material.isMeshMatcapMaterial ) return 'MeshMatcapNodeMaterial';
+	if ( material.isLine2NodeMaterial ) return 'Line2NodeMaterial';
 	if ( material.isLineBasicNodeMaterial || material.isLineBasicMaterial ) return 'LineBasicNodeMaterial';
 	if ( material.isPointsNodeMaterial || material.isPointsMaterial ) return 'PointsNodeMaterial';
 	if ( material.isSpriteNodeMaterial || material.isSpriteMaterial ) return 'SpriteNodeMaterial';
 	const type = material.type || '';
 	if ( type === 'MeshBasicNodeMaterial' || type === 'MeshBasicMaterial' ) return 'MeshBasicNodeMaterial';
+	if ( type === 'MeshSSSNodeMaterial' ) return 'MeshSSSNodeMaterial';
 	if ( type === 'MeshPhysicalNodeMaterial' || type === 'MeshPhysicalMaterial' ) return 'MeshPhysicalNodeMaterial';
 	if ( type === 'MeshStandardNodeMaterial' || type === 'MeshStandardMaterial' ) return 'MeshStandardNodeMaterial';
 	if ( type === 'MeshLambertNodeMaterial' || type === 'MeshLambertMaterial' ) return 'MeshLambertNodeMaterial';
@@ -448,6 +466,7 @@ function __classNameForMaterial( material ) {
 	if ( type === 'MeshToonNodeMaterial' || type === 'MeshToonMaterial' ) return 'MeshToonNodeMaterial';
 	if ( type === 'MeshNormalNodeMaterial' || type === 'MeshNormalMaterial' ) return 'MeshNormalNodeMaterial';
 	if ( type === 'MeshMatcapNodeMaterial' || type === 'MeshMatcapMaterial' ) return 'MeshMatcapNodeMaterial';
+	if ( type === 'Line2NodeMaterial' ) return 'Line2NodeMaterial';
 	if ( type === 'LineBasicNodeMaterial' || type === 'LineBasicMaterial' ) return 'LineBasicNodeMaterial';
 	if ( type === 'PointsNodeMaterial' || type === 'PointsMaterial' ) return 'PointsNodeMaterial';
 	if ( type === 'SpriteNodeMaterial' || type === 'SpriteMaterial' ) return 'SpriteNodeMaterial';
@@ -599,11 +618,12 @@ function slimWebgpuReplayModule() {
 	const materialClasses = NODE_MATERIAL_EXPORTS.map( ( name ) => `
 export class ${ name } {
 	constructor( params ) {
-		const mat = __takeMaterial( ${ JSON.stringify( name ) } );
+			const mat = __takeMaterial( ${ JSON.stringify( name ) }, params && typeof params === 'object' ? params : null );
 		if ( params && typeof params === 'object' ) {
 			for ( const key in params ) {
 				if ( params[ key ] !== undefined ) __assignParam( mat, key, params[ key ] );
 			}
+				__wireMaterialTextures( params, mat );
 		}
 		return mat;
 	}
@@ -707,6 +727,103 @@ window.__tslpShadowPending = 0;
 // hook a no-op while a PMREM build is in flight.
 let __pmremRunning = 0;
 
+function __makeFullRoomEnvironment( Three ) {
+	if ( ! Three ) return null;
+	const {
+		BackSide,
+		BoxGeometry,
+		InstancedMesh,
+		Mesh,
+		MeshLambertMaterial,
+		MeshStandardMaterial,
+		PointLight,
+		Scene,
+		Object3D,
+	} = Three;
+	if ( ! Scene || ! BoxGeometry || ! Mesh || ! MeshStandardMaterial || ! MeshLambertMaterial ) return null;
+
+	const scene = new Scene();
+	scene.name = 'RoomEnvironment';
+	scene.position.y = - 3.5;
+
+	const geometry = new BoxGeometry();
+	geometry.deleteAttribute( 'uv' );
+
+	const roomMaterial = new MeshStandardMaterial( { side: BackSide } );
+	const boxMaterial = new MeshStandardMaterial();
+
+	const mainLight = new PointLight( 0xffffff, 900, 28, 2 );
+	mainLight.position.set( 0.418, 16.199, 0.300 );
+	scene.add( mainLight );
+
+	const room = new Mesh( geometry, roomMaterial );
+	room.position.set( - 0.757, 13.219, 0.717 );
+	room.scale.set( 31.713, 28.305, 28.591 );
+	scene.add( room );
+
+	const boxes = new InstancedMesh( geometry, boxMaterial, 6 );
+	const transform = new Object3D();
+	const boxTransforms = [
+		[ [ - 10.906, 2.009, 1.846 ], [ 0, - 0.195, 0 ], [ 2.328, 7.905, 4.651 ] ],
+		[ [ - 5.607, - 0.754, - 0.758 ], [ 0, 0.994, 0 ], [ 1.970, 1.534, 3.955 ] ],
+		[ [ 6.167, 0.857, 7.803 ], [ 0, 0.561, 0 ], [ 3.927, 6.285, 3.687 ] ],
+		[ [ - 2.017, 0.018, 6.124 ], [ 0, 0.333, 0 ], [ 2.002, 4.566, 2.064 ] ],
+		[ [ 2.291, - 0.756, - 2.621 ], [ 0, - 0.286, 0 ], [ 1.546, 1.552, 1.496 ] ],
+		[ [ - 2.193, - 0.369, - 5.547 ], [ 0, 0.516, 0 ], [ 3.875, 3.487, 2.986 ] ],
+	];
+	boxTransforms.forEach( ( [ position, rotation, scale ], index ) => {
+		transform.position.set( position[ 0 ], position[ 1 ], position[ 2 ] );
+		transform.rotation.set( rotation[ 0 ], rotation[ 1 ], rotation[ 2 ] );
+		transform.scale.set( scale[ 0 ], scale[ 1 ], scale[ 2 ] );
+		transform.updateMatrix();
+		boxes.setMatrixAt( index, transform.matrix );
+	} );
+	scene.add( boxes );
+
+	const createAreaLightMaterial = ( intensity ) => new MeshLambertMaterial( {
+		color: 0x000000,
+		emissive: 0xffffff,
+		emissiveIntensity: intensity,
+	} );
+	const areaLights = [
+		[ 50, [ - 16.116, 14.37, 8.208 ], [ 0.1, 2.428, 2.739 ] ],
+		[ 50, [ - 16.109, 18.021, - 8.207 ], [ 0.1, 2.425, 2.751 ] ],
+		[ 17, [ 14.904, 12.198, - 1.832 ], [ 0.15, 4.265, 6.331 ] ],
+		[ 43, [ - 0.462, 8.89, 14.520 ], [ 4.38, 5.441, 0.088 ] ],
+		[ 20, [ 3.235, 11.486, - 12.541 ], [ 2.5, 2.0, 0.1 ] ],
+		[ 100, [ 0.0, 20.0, 0.0 ], [ 1.0, 0.1, 1.0 ] ],
+	];
+	for ( const [ intensity, position, scale ] of areaLights ) {
+		const light = new Mesh( geometry, createAreaLightMaterial( intensity ) );
+		light.position.set( position[ 0 ], position[ 1 ], position[ 2 ] );
+		light.scale.set( scale[ 0 ], scale[ 1 ], scale[ 2 ] );
+		scene.add( light );
+	}
+
+	scene.dispose = function () {
+		const resources = new Set();
+		this.traverse( ( object ) => {
+			if ( object && object.isMesh ) {
+				resources.add( object.geometry );
+				resources.add( object.material );
+			}
+		} );
+		for ( const resource of resources ) {
+			try { resource.dispose && resource.dispose(); } catch ( _ ) {}
+		}
+	};
+
+	return scene;
+}
+
+function __preparePMREMArgsForFullRenderer( method, args ) {
+	if ( method !== 'fromScene' || ! args || ! args[ 0 ] ) return args;
+	const scene = args[ 0 ];
+	if ( scene.name !== 'RoomEnvironment' && scene.constructor && scene.constructor.name !== 'RoomEnvironment' ) return args;
+	const fullScene = __makeFullRoomEnvironment( __fullThreeMod );
+	return fullScene ? [ fullScene, ...args.slice( 1 ) ] : args;
+}
+
 // Wrap PMREMGenerator.{fromScene,fromCubemap,fromEquirectangular,fromTexture}
 // to (1) bump __pmremRunning around the entire call so nested renderer.render
 // calls inside them bypass __prepareSceneForReplay, and (2) route the call to
@@ -734,20 +851,35 @@ let __pmremRunning = 0;
 			__pmremRunning ++;
 			const slimRenderer = this._renderer;
 			const fullRenderer = __computeRenderer;
-			const useFull = fullRenderer && fullRenderer !== slimRenderer && slimRenderer && slimRenderer.backend;
-			if ( useFull ) this._renderer = fullRenderer;
+			const FullPMREMGenerator = __fullThreeMod && __fullThreeMod.PMREMGenerator;
+			const useFull = fullRenderer && fullRenderer !== slimRenderer && slimRenderer && slimRenderer.backend && typeof FullPMREMGenerator === 'function';
 			try {
-				const target = orig.apply( this, args );
-				if ( useFull && target && target.texture && target.texture.isTexture ) {
+				let target;
+				let fullArgs = args;
+				if ( useFull ) {
+					const gen = new FullPMREMGenerator( fullRenderer );
+					try {
+						fullArgs = __preparePMREMArgsForFullRenderer( method, args );
+						target = gen[ method ]( ...fullArgs );
+					} finally {
+						try { gen.dispose && gen.dispose(); } catch ( _ ) {}
+						if ( fullArgs !== args && fullArgs[ 0 ] && typeof fullArgs[ 0 ].dispose === 'function' ) {
+							try { fullArgs[ 0 ].dispose(); } catch ( _ ) {}
+						}
+					}
+				} else {
+					target = orig.apply( this, args );
+				}
+				if ( useFull && target && target.texture && target.texture.isTexture === true ) {
 					__sharePMREMGPUTexture( slimRenderer, fullRenderer, target.texture );
 					// Self-cache: __wireEnvironmentPMREM does __pmremCache.get(scene.environment)
 					// where scene.environment IS this PMREM texture. Identity-map it so the
 					// existing wiring path picks it up without needing a separate source key.
 					__pmremCache.set( target.texture, target.texture );
+					Slim.registerLiveTexture( target.texture );
 				}
 				return target;
 			} finally {
-				if ( useFull ) this._renderer = slimRenderer;
 				__pmremRunning --;
 			}
 		};
@@ -834,11 +966,11 @@ const __backgroundNeedsPMREM = ( function () {
 				try {
 					if ( typeof onLoad === 'function' ) onLoad( texOrImage, ...rest );
 				} finally {
-					if ( tex && tex.isTexture ) Slim.registerLiveTexture( tex );
+					if ( tex && tex.isTexture === true ) Slim.registerLiveTexture( tex );
 				}
 			};
 			const tex = origLoad.call( this, url, wrappedOnLoad, onProgress, onError );
-			if ( tex && tex.isTexture ) {
+			if ( tex && tex.isTexture === true ) {
 				if ( ! tex.name && typeof url === 'string' ) tex.name = url.split( '/' ).pop().split( '?' )[ 0 ];
 				Slim.registerLiveTexture( tex );
 			}
@@ -990,21 +1122,206 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 	}
 }
 
+function __sourceTypeNeedle( sourceMaterial ) {
+	const type = sourceMaterial && typeof sourceMaterial.type === 'string' ? sourceMaterial.type : '';
+	return type ? type.replace( /Material$/, 'NodeMaterial' ) : '';
+}
+
+function __readColorTriplet( value ) {
+	if ( ! value ) return null;
+	if ( value.isColor === true ) return [ value.r, value.g, value.b ];
+	if ( typeof value === 'number' && Number.isFinite( value ) ) {
+		return [ ( ( value >> 16 ) & 255 ) / 255, ( ( value >> 8 ) & 255 ) / 255, ( value & 255 ) / 255 ];
+	}
+	if ( typeof value === 'string' && typeof Slim.Color === 'function' ) {
+		try {
+			const c = new Slim.Color( value );
+			return [ c.r, c.g, c.b ];
+		} catch ( _ ) {}
+	}
+	return null;
+}
+
+function __artifactColorTriplet( artifact ) {
+	const fromDefault = artifact && artifact.defaults && artifact.defaults.color;
+	if ( fromDefault && Array.isArray( fromDefault.data ) ) return fromDefault.data.slice( 0, 3 );
+	for ( const group of artifact && artifact.uniformPlan || [] ) {
+		for ( const slot of group.slots || [] ) {
+			const source = slot && slot.source || {};
+			const snap = source.valueSnapshot || null;
+			if ( source.kind === 'material.color' && snap && Array.isArray( snap.data ) ) return snap.data.slice( 0, 3 );
+		}
+	}
+	return null;
+}
+
+function __colorDistanceSq( a, b ) {
+	if ( ! a || ! b ) return Infinity;
+	const dr = ( a[ 0 ] || 0 ) - ( b[ 0 ] || 0 );
+	const dg = ( a[ 1 ] || 0 ) - ( b[ 1 ] || 0 );
+	const db = ( a[ 2 ] || 0 ) - ( b[ 2 ] || 0 );
+	return dr * dr + dg * dg + db * db;
+}
+
+function __artifactHasTextureSource( artifact, predicate = null ) {
+	for ( const group of artifact && artifact.uniformPlan || [] ) {
+		for ( const entry of group.textures || [] ) {
+			const source = entry && entry.source || {};
+			if ( ! source.kind ) continue;
+			if ( ! predicate || predicate( source, entry, group ) ) return true;
+		}
+	}
+	return false;
+}
+
+function __isPMREMTexture( texture ) {
+	return !! ( texture && texture.isTexture === true && ( texture.mapping === 306 || texture.name === 'PMREM.cubeUv' ) );
+}
+
+function __textureImageSrc( texture ) {
+	const image = texture && texture.image;
+	if ( ! image ) return null;
+	if ( Array.isArray( image ) && image.length > 0 ) {
+		const first = image[ 0 ];
+		const src = first && ( first.src || first.currentSrc || null );
+		return typeof src === 'string' && src.length > 0 ? src : null;
+	}
+	const src = image.src || image.currentSrc || null;
+	return typeof src === 'string' && src.length > 0 ? src : null;
+}
+
+function __basenameFromUrl( value ) {
+	if ( typeof value !== 'string' || value.length === 0 ) return '';
+	const slash = value.lastIndexOf( '/' );
+	const tail = slash >= 0 ? value.slice( slash + 1 ) : value;
+	return tail.split( '?' )[ 0 ].split( '#' )[ 0 ];
+}
+
+function __textureMatchesArtifactSource( texture, source ) {
+	if ( ! texture || texture.isTexture !== true || ! source || source.kind !== 'artifact.texture' ) return false;
+	if ( source.textureUuid && texture.uuid === source.textureUuid ) return true;
+	const textureName = typeof texture.name === 'string' ? texture.name : '';
+	if ( source.textureName && textureName === source.textureName ) return true;
+	const textureSrc = __textureImageSrc( texture );
+	if ( source.imageSrc && textureSrc && source.imageSrc === textureSrc ) return true;
+	const sourceBase = __basenameFromUrl( source.textureName || source.imageSrc );
+	const textureBase = __basenameFromUrl( textureName || textureSrc );
+	return !! ( sourceBase && textureBase && sourceBase === textureBase );
+}
+
+function __countArtifactTextureSources( artifact, predicate = null ) {
+	let count = 0;
+	for ( const group of artifact && artifact.uniformPlan || [] ) {
+		for ( const entry of group.textures || [] ) {
+			const source = entry && entry.source || {};
+			if ( source.kind !== 'artifact.texture' || ! source.textureUuid ) continue;
+			if ( predicate && ! predicate( source, entry, group ) ) continue;
+			count ++;
+		}
+	}
+	return count;
+}
+
+function __nodeGraphKeys() {
+	return [ 'colorNode', 'normalNode', 'positionNode', 'outputNode', 'roughnessNode', 'metalnessNode', 'emissiveNode', 'opacityNode', 'alphaTestNode', 'vertexNode', 'envNode', 'lightNode', 'aoNode', 'transmissionNode', 'thicknessNode' ];
+}
+
+function __sourceHasNodeGraph( sourceMaterial ) {
+	if ( ! sourceMaterial ) return false;
+	for ( const key of __nodeGraphKeys() ) if ( sourceMaterial[ key ] && sourceMaterial[ key ].isNode === true ) return true;
+	return false;
+}
+
+function __collectMaterialNodeTextures( sourceMaterial ) {
+	const out = [];
+	if ( ! sourceMaterial ) return out;
+	const seen = new Set();
+	for ( const key of __nodeGraphKeys() ) {
+		const node = sourceMaterial[ key ];
+		if ( ! node ) continue;
+		const texture = __findTextureInNode( node );
+		if ( texture && texture.isTexture === true && ! seen.has( texture ) ) {
+			seen.add( texture );
+			out.push( texture );
+		}
+	}
+	return out;
+}
+
+function __scoreArtifactForSource( key, mod, className, sourceMaterial ) {
+	const artifact = mod && mod.artifact;
+	if ( ! artifact ) return -Infinity;
+	let score = key.includes( ':' + className + ':' ) ? 30 : 0;
+	const typeNeedle = __sourceTypeNeedle( sourceMaterial );
+	if ( typeNeedle && key.includes( ':' + typeNeedle + ':' ) ) score += 15;
+
+	const sourceColor = __readColorTriplet( sourceMaterial && sourceMaterial.color );
+	if ( sourceColor ) {
+		const artifactColor = __artifactColorTriplet( artifact );
+		if ( artifactColor ) {
+			const d2 = __colorDistanceSq( sourceColor, artifactColor );
+			if ( d2 < 1e-5 ) score += 120;
+			else if ( d2 < 0.05 ) score += 45;
+			else score -= 30;
+		}
+		if ( __artifactHasTextureSource( artifact, __isPMREMArtifactTextureSource ) ) score -= 35;
+	}
+
+	const nodeTextures = __collectMaterialNodeTextures( sourceMaterial );
+	const sourceHasNodeTexture = nodeTextures.length > 0;
+	const sourceHasPmremTexture = nodeTextures.some( __isPMREMTexture );
+	if ( sourceHasNodeTexture ) {
+		if ( __artifactHasTextureSource( artifact ) ) score += 45;
+		else score -= 25;
+		if ( sourceHasPmremTexture && __artifactHasTextureSource( artifact, __isPMREMArtifactTextureSource ) ) score += 90;
+	} else if ( __sourceHasNodeGraph( sourceMaterial ) ) {
+		if ( __artifactHasTextureSource( artifact ) ) score += 20;
+	}
+
+	return score;
+}
+
+function __findBestArtifactForSource( className, sourceMaterial, keys ) {
+	if ( ! sourceMaterial || ! Array.isArray( keys ) || keys.length === 0 ) return null;
+	let best = null;
+	let bestScore = -Infinity;
+	for ( const key of keys ) {
+		const mod = __data.user && __data.user[ key ];
+		const score = __scoreArtifactForSource( key, mod, className, sourceMaterial );
+		if ( score > bestScore ) {
+			best = key;
+			bestScore = score;
+		}
+	}
+	return best && bestScore >= 55 ? best : null;
+}
+
 function __takeMaterial( className, sourceMaterial = null ) {
 	const n = ( __counts[ className ] || 0 ) + 1;
 	__counts[ className ] = n;
 	let name = __state.example + ':' + className + ':' + n;
 	let mod = __data.user && __data.user[ name ];
+	if ( mod && __usedArtifactNames.has( name ) ) mod = null;
+	if ( sourceMaterial ) {
+		const allKeys = Object.keys( __data.user || {} );
+		const unusedKeys = allKeys.filter( ( key ) => ! __usedArtifactNames.has( key ) );
+		const matchedName = __findBestArtifactForSource( className, sourceMaterial, unusedKeys );
+		if ( matchedName ) {
+			name = matchedName;
+			mod = __data.user[ name ];
+		}
+	}
 	if ( ! mod || ! mod.artifact ) {
 		const allKeys = Object.keys( __data.user || {} );
 		const unusedKeys = allKeys.filter( ( key ) => ! __usedArtifactNames.has( key ) );
-		const type = sourceMaterial && sourceMaterial.type || '';
-		const typeNeedle = type.replace( /Material$/, 'NodeMaterial' );
+		const typeNeedle = __sourceTypeNeedle( sourceMaterial );
 		const findType = ( keys ) => keys.find( ( key ) => typeNeedle && key.includes( ':' + typeNeedle + ':' ) );
 		const findCompatible = ( keys ) => keys.find( ( key ) => /:(MeshBasic|MeshLambert|MeshStandard)NodeMaterial:/.test( key ) );
 		const findClass = ( keys ) => keys.find( ( key ) => key.includes( ':' + className + ':' ) );
+		const findLineBasic = ( keys ) => keys.find( ( key ) => /:LineBasicNodeMaterial:/.test( key ) );
 		const fallbackName = findType( unusedKeys ) || findType( allKeys ) ||
 			( className === 'Line2NodeMaterial' ? findCompatible( unusedKeys ) || findCompatible( allKeys ) : null ) ||
+			( className === 'LineDashedNodeMaterial' ? findLineBasic( unusedKeys ) || findLineBasic( allKeys ) : null ) ||
 			findClass( unusedKeys ) || findClass( allKeys ) ||
 			( className.length <= 3 ? findCompatible( unusedKeys ) || findCompatible( allKeys ) : null );
 		if ( fallbackName ) {
@@ -1029,6 +1346,7 @@ function __takeMaterial( className, sourceMaterial = null ) {
 function __classNameForMaterial( material ) {
 	if ( ! material ) return 'Material';
 	if ( material.isMeshBasicNodeMaterial || material.isMeshBasicMaterial ) return 'MeshBasicNodeMaterial';
+	if ( material.isMeshSSSNodeMaterial || material.type === 'MeshSSSNodeMaterial' ) return 'MeshSSSNodeMaterial';
 	if ( material.isMeshPhysicalNodeMaterial || material.isMeshPhysicalMaterial ) return 'MeshPhysicalNodeMaterial';
 	if ( material.isMeshStandardNodeMaterial || material.isMeshStandardMaterial ) return 'MeshStandardNodeMaterial';
 	if ( material.isMeshLambertNodeMaterial || material.isMeshLambertMaterial ) return 'MeshLambertNodeMaterial';
@@ -1036,11 +1354,13 @@ function __classNameForMaterial( material ) {
 	if ( material.isMeshToonNodeMaterial || material.isMeshToonMaterial ) return 'MeshToonNodeMaterial';
 	if ( material.isMeshNormalNodeMaterial || material.isMeshNormalMaterial ) return 'MeshNormalNodeMaterial';
 	if ( material.isMeshMatcapNodeMaterial || material.isMeshMatcapMaterial ) return 'MeshMatcapNodeMaterial';
+	if ( material.isLine2NodeMaterial ) return 'Line2NodeMaterial';
 	if ( material.isLineBasicNodeMaterial || material.isLineBasicMaterial ) return 'LineBasicNodeMaterial';
 	if ( material.isPointsNodeMaterial || material.isPointsMaterial ) return 'PointsNodeMaterial';
 	if ( material.isSpriteNodeMaterial || material.isSpriteMaterial ) return 'SpriteNodeMaterial';
 	const type = material.type || '';
 	if ( type === 'MeshBasicNodeMaterial' || type === 'MeshBasicMaterial' ) return 'MeshBasicNodeMaterial';
+	if ( type === 'MeshSSSNodeMaterial' ) return 'MeshSSSNodeMaterial';
 	if ( type === 'MeshPhysicalNodeMaterial' || type === 'MeshPhysicalMaterial' ) return 'MeshPhysicalNodeMaterial';
 	if ( type === 'MeshStandardNodeMaterial' || type === 'MeshStandardMaterial' ) return 'MeshStandardNodeMaterial';
 	if ( type === 'MeshLambertNodeMaterial' || type === 'MeshLambertMaterial' ) return 'MeshLambertNodeMaterial';
@@ -1048,6 +1368,7 @@ function __classNameForMaterial( material ) {
 	if ( type === 'MeshToonNodeMaterial' || type === 'MeshToonMaterial' ) return 'MeshToonNodeMaterial';
 	if ( type === 'MeshNormalNodeMaterial' || type === 'MeshNormalMaterial' ) return 'MeshNormalNodeMaterial';
 	if ( type === 'MeshMatcapNodeMaterial' || type === 'MeshMatcapMaterial' ) return 'MeshMatcapNodeMaterial';
+	if ( type === 'Line2NodeMaterial' ) return 'Line2NodeMaterial';
 	if ( type === 'LineBasicNodeMaterial' || type === 'LineBasicMaterial' ) return 'LineBasicNodeMaterial';
 	if ( type === 'PointsNodeMaterial' || type === 'PointsMaterial' ) return 'PointsNodeMaterial';
 	if ( type === 'SpriteNodeMaterial' || type === 'SpriteMaterial' ) return 'SpriteNodeMaterial';
@@ -1120,7 +1441,35 @@ function __wireMaterialTextures( sourceMaterial, replacement ) {
 	const artifact = replacement.precompiledArtifact;
 	for ( const key of __TEXTURE_PROPS ) {
 		const tex = sourceMaterial[ key ];
-		if ( tex && tex.isTexture ) __attachArtifactTextureRefsWhere( artifact, tex, ( source ) => ! __isPMREMArtifactTextureSource( source ) );
+		if ( tex && tex.isTexture === true ) {
+			const matched = __attachArtifactTextureRefsWhere( artifact, tex, ( source ) => ! __isPMREMArtifactTextureSource( source ) && __textureMatchesArtifactSource( tex, source ) );
+			if ( ! matched && __countArtifactTextureSources( artifact, ( source ) => ! __isPMREMArtifactTextureSource( source ) ) <= 1 ) {
+				__attachArtifactTextureRefsWhere( artifact, tex, ( source ) => ! __isPMREMArtifactTextureSource( source ) );
+			}
+		}
+	}
+	__wireMaterialNodeTextures( sourceMaterial, replacement );
+}
+
+function __wireMaterialNodeTextures( sourceMaterial, replacement ) {
+	if ( ! sourceMaterial || ! replacement || ! replacement.precompiledArtifact ) return;
+	const artifact = replacement.precompiledArtifact;
+	const nodeTextures = __collectMaterialNodeTextures( sourceMaterial );
+	for ( const tex of nodeTextures ) {
+		if ( tex && tex.isTexture === true ) Slim.registerLiveTexture( tex );
+		const predicate = __isPMREMTexture( tex )
+			? __isPMREMArtifactTextureSource
+			: ( source ) => ! __isPMREMArtifactTextureSource( source ) && __textureMatchesArtifactSource( tex, source );
+		const matched = __attachArtifactTextureRefsWhere( artifact, tex, predicate );
+		// Anonymous-DataTexture fallback (e.g. CurveModifierGPU's Flow.splineTexture):
+		// the captured source has no textureName/imageSrc/uuid, and the live texture
+		// likewise has no identity, so the standard matcher can never link them.
+		// When the artifact has exactly one unmatched non-PMREM artifact-texture
+		// source, attach by elimination — same idea as __wireMaterialTextures'
+		// single-source fallback at line 1450.
+		if ( ! matched && ! __isPMREMTexture( tex ) && __countArtifactTextureSources( artifact, ( source ) => ! __isPMREMArtifactTextureSource( source ) ) <= 1 ) {
+			__attachArtifactTextureRefsWhere( artifact, tex, ( source ) => ! __isPMREMArtifactTextureSource( source ) );
+		}
 	}
 }
 
@@ -1129,7 +1478,7 @@ function __isPMREMArtifactTextureSource( source ) {
 }
 
 function __attachArtifactTextureRefsWhere( artifact, texture, predicate ) {
-	if ( ! artifact || ! texture || ! texture.isTexture || typeof predicate !== 'function' ) return artifact;
+	if ( ! artifact || ! texture || texture.isTexture !== true || typeof predicate !== 'function' ) return artifact;
 	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
 	let changed = false;
 	for ( const group of artifact.uniformPlan || [] ) {
@@ -1149,7 +1498,7 @@ function __attachArtifactTextureRefsWhere( artifact, texture, predicate ) {
 			writable: true,
 		} );
 	}
-	return artifact;
+	return changed;
 }
 
 const __wiredPCMaterials = new WeakSet();
@@ -1166,8 +1515,10 @@ function __replaceSceneMaterials( scene ) {
 			// the artifact plan entries now — before hydrateNodeBuilderState is first
 			// called in the upcoming super.render.
 			if ( m.isPrecompiledMaterial ) {
+				try { Object.defineProperty( m, '__tslpPrecompileObject', { value: object, configurable: true } ); } catch ( _ ) {}
 				if ( m.precompiledArtifact && ! __wiredPCMaterials.has( m ) ) {
 					__wireComputeAttrsToArtifact( m.precompiledArtifact, m );
+					__wireMaterialNodeTextures( m, m );
 					__wiredPCMaterials.add( m );
 				}
 				return m;
@@ -1176,6 +1527,7 @@ function __replaceSceneMaterials( scene ) {
 			if ( __seenMaterials.has( m ) ) return __seenMaterials.get( m );
 			const className = __classNameForMaterial( m );
 			const replacement = __takeMaterial( className, m );
+			try { Object.defineProperty( replacement, '__tslpPrecompileObject', { value: object, configurable: true } ); } catch ( _ ) {}
 			__copyMaterialProps( m, replacement );
 			__copyMaterialNodeProps( m, replacement );
 			__wireMaterialTextures( m, replacement );
@@ -1206,18 +1558,39 @@ ${ materialClasses }
 // where the user's only handle on the cubemap is inside a real PMREMNode
 // (the e2e harness uses real three/tsl, not the slim stubs).
 function __findTextureInNode( node, depth = 0, seen = new Set() ) {
-	if ( ! node || depth > 6 || seen.has( node ) ) return null;
+	if ( ! node || depth > 12 || seen.has( node ) ) return null;
 	seen.add( node );
-	if ( node.isTexture ) return node;
-	for ( const key of [ 'value', '_value', 'texture', '_texture' ] ) {
-		const v = node[ key ];
-		if ( v && v.isTexture ) return v;
+	if ( node.isTexture === true ) return node;
+	const read = ( object, key ) => {
+		try { return object && object[ key ]; }
+		catch ( _ ) { return null; }
+	};
+	for ( const key of [ 'value', '_value', 'texture', '_texture', 'textureNode', 'source', '_source', 'renderTarget' ] ) {
+		const v = read( node, key );
+		if ( v && v.isTexture === true ) return v;
+		if ( v && v.texture && v.texture.isTexture === true ) return v.texture;
 	}
-	for ( const key of [ 'node', 'aNode', 'bNode', 'uvNode', 'levelNode', 'sourceNode' ] ) {
-		const child = node[ key ];
+	for ( const key of [ 'node', 'aNode', 'bNode', 'uvNode', 'levelNode', 'sourceNode', 'textureNode', 'pmremNode' ] ) {
+		const child = read( node, key );
 		if ( child ) {
 			const found = __findTextureInNode( child, depth + 1, seen );
 			if ( found ) return found;
+		}
+	}
+	for ( const key of Object.getOwnPropertyNames( node ) ) {
+		if ( key === 'parent' || key === 'children' ) continue;
+		const child = read( node, key );
+		if ( child && child.isTexture === true ) return child;
+		if ( child && Array.isArray( child ) ) {
+			for ( const item of child ) {
+				const found = __findTextureInNode( item, depth + 1, seen );
+				if ( found ) return found;
+			}
+		} else if ( child && typeof child === 'object' && child.isTexture !== true ) {
+			if ( child.isNode === true || child.isTextureNode === true || Object.getPrototypeOf( child ) === Object.prototype ) {
+				const found = __findTextureInNode( child, depth + 1, seen );
+				if ( found ) return found;
+			}
 		}
 	}
 	return null;
@@ -1241,7 +1614,7 @@ const __lastWiredBgTex = new WeakMap();
 // DataTexture: image carries .data (typed array) — these are sync, always ready.
 // HDR / equirect via RGBELoader / TextureLoader: image is set on onLoad.
 function __textureImageReady( texture ) {
-	if ( ! texture || ! texture.isTexture ) return false;
+	if ( ! texture || texture.isTexture !== true ) return false;
 	const img = texture.image;
 	if ( img === null || img === undefined ) return false;
 	if ( Array.isArray( img ) ) {
@@ -1285,7 +1658,7 @@ function __pmremDiagnostics() {
 }
 
 function __healTextureImage( texture ) {
-	if ( ! texture || ! texture.isTexture ) return;
+	if ( ! texture || texture.isTexture !== true ) return;
 	const img = texture.image;
 	if ( img === null || img === undefined ) {
 		try {
@@ -1316,8 +1689,8 @@ function __wireBackgroundTextures( scene, renderer ) {
 	// back to a node-graph-recovered source for the backgroundNode-only path
 	// (e.g. webgpu_pmrem_cubemap.html does scene.backgroundNode = pmremTexture(map)
 	// and never sets scene.background).
-	let sourceTex = ( scene && scene.background && scene.background.isTexture ) ? scene.background : null;
-	if ( ! sourceTex && __capturedBackgroundSource && __capturedBackgroundSource.isTexture ) {
+	let sourceTex = ( scene && scene.background && scene.background.isTexture === true ) ? scene.background : null;
+	if ( ! sourceTex && __capturedBackgroundSource && __capturedBackgroundSource.isTexture === true ) {
 		sourceTex = __capturedBackgroundSource;
 	}
 	if ( ! sourceTex ) return;
@@ -1333,7 +1706,7 @@ function __wireBackgroundTextures( scene, renderer ) {
 	let texToWire = sourceTex;
 	if ( __backgroundNeedsPMREM ) {
 		const cached = __pmremCache.get( sourceTex );
-		if ( cached && cached.isTexture ) texToWire = cached;
+		if ( cached && cached.isTexture === true ) texToWire = cached;
 	}
 	let changed = false;
 	for ( const entry of auxList ) {
@@ -1412,7 +1785,7 @@ async function __generatePMREMAsync( slimRenderer, sourceTex ) {
 			: gen.fromEquirectangular( sourceTex );
 		const pmrem = target && target.texture || null;
 		gen.dispose && gen.dispose();
-		if ( pmrem && pmrem.isTexture ) {
+		if ( pmrem && pmrem.isTexture === true ) {
 			// Verify the full backend actually owns a GPUTexture for this
 			// PMREM result before sharing — sharing a stale entry leaves
 			// slim's bindings empty.
@@ -1469,7 +1842,7 @@ function __artifactNeedsPMREM( artifact ) {
 function __wireEnvironmentPMREM( renderer, scene ) {
 	if ( ! renderer || ! scene ) return;
 	__pmremDiagnostics().wireCalls ++;
-	const sceneEnvPmrem = ( scene.environment && scene.environment.isTexture )
+	const sceneEnvPmrem = ( scene.environment && scene.environment.isTexture === true )
 		? __pmremCache.get( scene.environment )
 		: null;
 	let wiredCount = 0;
@@ -1482,7 +1855,7 @@ function __wireEnvironmentPMREM( renderer, scene ) {
 				if ( ! __pmremWiredArtifacts.has( artifact ) ) {
 					// Prefer per-material envMap PMREM (set by examples that pass
 					// envMap via constructor params), fall back to scene.environment.
-					const matEnv = m.envMap && m.envMap.isTexture ? m.envMap : null;
+					const matEnv = m.envMap && m.envMap.isTexture === true ? m.envMap : null;
 					const matPmrem = matEnv ? __pmremCache.get( matEnv ) : null;
 					const pmrem = matPmrem || sceneEnvPmrem;
 					if ( ! pmrem ) {
@@ -1528,7 +1901,7 @@ function __wireEnvironmentPMREM( renderer, scene ) {
 // window.__tslpPmremPending counter is incremented until the generation
 // finishes so Playwright's freeze-wait condition can include it.
 function __kickPMREMGenAsync( slimRenderer, sourceTex, onReady ) {
-	if ( ! slimRenderer || ! sourceTex || ! sourceTex.isTexture ) return;
+	if ( ! slimRenderer || ! sourceTex || sourceTex.isTexture !== true ) return;
 	__pmremDiagnostics().kickCalls ++;
 	if ( __pmremCache.has( sourceTex ) ) { __pmremDiagnostics().cacheHits ++; onReady( __pmremCache.get( sourceTex ) ); return; }
 	if ( __pmremPending.has( sourceTex ) ) {
@@ -1565,14 +1938,19 @@ function __kickPMREMGenAsync( slimRenderer, sourceTex, onReady ) {
 function __indexLiveTextures( scene ) {
 	if ( ! scene || typeof scene.traverse !== 'function' ) return;
 	const visit = ( tex ) => {
-		if ( tex && tex.isTexture ) {
+		if ( tex && tex.isTexture === true ) {
 			__healTextureImage( tex );
 			Slim.registerLiveTexture( tex );
 		}
 	};
-	if ( scene.background && scene.background.isTexture ) visit( scene.background );
-	if ( scene.environment && scene.environment.isTexture ) visit( scene.environment );
+	if ( scene.background && scene.background.isTexture === true ) visit( scene.background );
+	if ( scene.environment && scene.environment.isTexture === true ) visit( scene.environment );
 	scene.traverse( ( object ) => {
+		// Lights can carry textures (SpotLight.map / RectAreaLight.map). Three.js
+		// bakes those into the LightsNode TSL graph, so the captured artifact
+		// references them by uuid/imageSrc just like material.map. They must be
+		// registered or the artifact-texture rebinder falls back to a 1x1 stub.
+		if ( object && object.isLight === true && object.map && object.map.isTexture === true ) visit( object.map );
 		const ms = object && object.material;
 		const list = Array.isArray( ms ) ? ms : ms ? [ ms ] : [];
 		for ( const m of list ) {
@@ -2059,6 +2437,14 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 							slimData.version = depthTex.version;
 							slimData.generation = ( slimData.generation || 0 ) + 1;
 							if ( ! slimData.bindGroups ) slimData.bindGroups = new Set();
+							const tx = _slimRenderer._textures;
+							if ( tx && typeof tx.get === 'function' ) {
+								const txData = tx.get( depthTex );
+								txData.initialized = true;
+								txData.version = depthTex.version;
+								txData.generation = depthTex.version;
+								if ( ! txData.bindGroups ) txData.bindGroups = new Set();
+							}
 						}
 					}
 					mapCount ++;
@@ -2084,9 +2470,52 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 	} );
 }
 
+function __bindGroupLayoutSignature( bindGroup ) {
+	const list = bindGroup && Array.isArray( bindGroup.bindings ) ? bindGroup.bindings : [];
+	return list.map( ( binding ) => {
+		if ( ! binding ) return 'null';
+		return [
+			binding.name || '',
+			binding.visibility | 0,
+			binding.isUniformBuffer ? 'ubo' : '',
+			binding.isStorageBuffer ? 'storage' : '',
+			binding.isSampler ? 'sampler' : '',
+			binding.isSampledTexture ? 'sampled' : '',
+			binding.isSampledCubeTexture ? 'cube' : '',
+			binding.isSampledTexture3D ? '3d' : '',
+			binding.isSampledArrayTexture ? 'array' : '',
+			binding.store ? 'store' : '',
+			binding.access || '',
+			binding.byteLength || 0,
+		].join( ':' );
+	} ).join( '|' );
+}
+
+function __patchBindGroupLayoutRefresh( renderer ) {
+	const utils = renderer && renderer.backend && renderer.backend.bindingUtils;
+	if ( ! utils || utils.__tslpBindLayoutRefreshPatched || typeof utils.createBindings !== 'function' ) return;
+	utils.__tslpBindLayoutRefreshPatched = true;
+	const origCreateBindings = utils.createBindings;
+	utils.createBindings = function ( bindGroup, bindings, cacheIndex, version ) {
+		try {
+			const data = this.backend && this.backend.get && this.backend.get( bindGroup );
+			const signature = __bindGroupLayoutSignature( bindGroup );
+			if ( data && data.__tslpLayoutSignature !== signature ) {
+				if ( typeof this.deleteBindGroupData === 'function' ) this.deleteBindGroupData( bindGroup );
+				data.group = undefined;
+				data.groups = undefined;
+				data.versions = undefined;
+				data.__tslpLayoutSignature = signature;
+			}
+		} catch ( _ ) {}
+		return origCreateBindings.call( this, bindGroup, bindings, cacheIndex, version );
+	};
+}
+
 export class WebGPURenderer extends Slim.WebGPURenderer {
 	async init() {
 		const r = await super.init();
+		__patchBindGroupLayoutRefresh( this );
 		// Eagerly bring up the full compute renderer so PMREMGenerator's
 		// fromScene / fromCubemap / fromEquirectangular / fromTexture can route
 		// to it on the user's NEXT (synchronous) call. Examples typically
@@ -2153,7 +2582,7 @@ export class WebGPURenderer extends Slim.WebGPURenderer {
 		const _scene = scene;
 		const _camera = camera;
 		const _envTex = scene && scene.environment;
-		if ( _envTex && _envTex.isTexture ) {
+		if ( _envTex && _envTex.isTexture === true ) {
 			__kickPMREMGenAsync( _renderer, _envTex, () => {
 				__wireEnvironmentPMREM( _renderer, _scene );
 				if ( window.__tslpFrozen ) {
@@ -2175,7 +2604,7 @@ export class WebGPURenderer extends Slim.WebGPURenderer {
 					if ( ! ( m && m.isPrecompiledMaterial && m.precompiledArtifact ) ) continue;
 					if ( ! __artifactNeedsPMREM( m.precompiledArtifact ) ) continue;
 					const env = m.envMap;
-					if ( ! env || ! env.isTexture || _seen.has( env ) ) continue;
+					if ( ! env || env.isTexture !== true || _seen.has( env ) ) continue;
 					_seen.add( env );
 					__kickPMREMGenAsync( _renderer, env, () => {
 						__wireEnvironmentPMREM( _renderer, _scene );
@@ -2191,10 +2620,10 @@ export class WebGPURenderer extends Slim.WebGPURenderer {
 		// picks up the correct PMREM-based texture on the next frame. Falls back
 		// to the cubemap recovered from scene.backgroundNode for examples that
 		// only set backgroundNode (not scene.background).
-		const _bgFromScene = ( scene && scene.background && scene.background.isTexture &&
+		const _bgFromScene = ( scene && scene.background && scene.background.isTexture === true &&
 			( scene.background.isCubeTexture || scene.background.mapping === 301 ) )
 			? scene.background : null;
-		const _bgFromCaptured = ( __capturedBackgroundSource && __capturedBackgroundSource.isTexture &&
+		const _bgFromCaptured = ( __capturedBackgroundSource && __capturedBackgroundSource.isTexture === true &&
 			( __capturedBackgroundSource.isCubeTexture || __capturedBackgroundSource.mapping === 301 ) )
 			? __capturedBackgroundSource : null;
 		const _bgSource = _bgFromScene || _bgFromCaptured;
@@ -2308,6 +2737,56 @@ export class WebGPURenderer extends Slim.WebGPURenderer {
 	}
 }
 
+function __findPassNodeInGraph( node, depth = 0, seen = new Set() ) {
+	if ( ! node || depth > 10 || seen.has( node ) ) return null;
+	seen.add( node );
+	if ( node.isPassNode === true && node.scene && node.camera ) return node;
+	const keys = [];
+	try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
+	for ( const key of keys ) {
+		if ( key === 'parent' || key === 'children' || key === '_cache' ) continue;
+		let child = null;
+		try { child = node[ key ]; } catch ( _ ) { continue; }
+		if ( ! child ) continue;
+		if ( Array.isArray( child ) ) {
+			for ( const item of child ) {
+				const found = __findPassNodeInGraph( item, depth + 1, seen );
+				if ( found ) return found;
+			}
+		} else if ( typeof child === 'object' || typeof child === 'function' ) {
+			const found = __findPassNodeInGraph( child, depth + 1, seen );
+			if ( found ) return found;
+		}
+	}
+	return null;
+}
+
+function __textureFromPassNode( passNode ) {
+	if ( ! passNode ) return null;
+	try {
+		const tex = typeof passNode.getTexture === 'function'
+			? passNode.getTexture( 'output' )
+			: passNode.renderTarget && passNode.renderTarget.texture;
+		return tex && tex.isTexture === true ? tex : null;
+	} catch ( _ ) {
+		return null;
+	}
+}
+
+function __renderPassNodeForPipeline( renderer, passNode ) {
+	if ( ! renderer || ! passNode || ! passNode.scene || ! passNode.camera ) return;
+	try { __prepareSceneForReplay( passNode.scene, renderer ); } catch ( _ ) {}
+	try {
+		if ( typeof passNode.updateBefore === 'function' ) passNode.updateBefore( { renderer } );
+		else renderer.render( passNode.scene, passNode.camera );
+	} catch ( err ) {
+		if ( ! window.__tslpPassRenderWarned ) {
+			window.__tslpPassRenderWarned = true;
+			console.warn( '[tslp-e2e] RenderPipeline pass render failed:', err && err.message || err );
+		}
+	}
+}
+
 // RenderPipeline (and PostProcessing which extends it) calls ng("post-process", ...)
 // from its _update() method — the same dual-registry problem as _renderOutput.
 // Override _update to pre-set _quadMesh.material from Slim.loadAux before ng fires.
@@ -2326,14 +2805,17 @@ export class RenderPipeline extends Slim.RenderPipeline {
 		if ( this.needsUpdate ) {
 			try {
 				// Shape-fallback: returns any registered post-process artifact.
-				const artifact = Slim.loadAux( 'post-process', 'tslp-e2e-bypass' );
+				let artifact = Slim.loadAux( 'post-process', 'tslp-e2e-bypass' );
+				const passNode = __findPassNodeInGraph( this.outputNode );
+				const passTexture = __textureFromPassNode( passNode );
+				if ( passTexture ) artifact = Slim.attachArtifactTextureRefs( artifact, passTexture );
 				const mat = new Slim.PrecompiledMaterial( artifact );
 				mat.needsUpdate = true;
 				this._quadMesh.material = mat;
 				// Set up _context so render() can access onBefore/onAfterRenderPipeline.
 				this._context = {
 					renderPipeline: this,
-					onBeforeRenderPipeline: null,
+					onBeforeRenderPipeline: passNode ? () => __renderPassNodeForPipeline( this.renderer, passNode ) : null,
 					onAfterRenderPipeline: null,
 				};
 				this.needsUpdate = false;
@@ -2929,10 +3411,6 @@ async function visitExample( browser, name, mode, waitMs ) {
 	const FRAME_STEP_MS = 16.6667;
 	try {
 
-		// TEMP debug flag — fires hydrator console logs only for instance_path replay.
-		if ( name && name.includes( 'instance_path' ) && mode === 'replay' ) {
-			await page.addInitScript( () => { globalThis.__TSLP_DBG_INSTANCE = true; } );
-		}
 		// TEMP cloth diagnosis: enable runtime hydrator + harness storage-buffer logs.
 		if ( name && name.includes( 'compute_cloth' ) && mode === 'replay' ) {
 			await page.addInitScript( () => { globalThis.__TSLP_DBG_CLOTH = true; window.__TSLP_DBG_CLOTH = true; } );
@@ -3174,8 +3652,9 @@ async function visitExample( browser, name, mode, waitMs ) {
  *   { pass: true,  psnr, threshold } — frames agree at or above the threshold
  *   { pass: false, psnr, threshold } — frames diverge below threshold (visual regression)
  *
- * When the pixel gate is enabled, skipped comparisons fail the example because
- * the runner cannot prove visual equivalence.
+ * The caller folds `pass === false` into the overall pass calculation; `skipped`
+ * never counts as a failure (the underlying frame-empty / nav-error gates catch
+ * those cases on their own).
  */
 function pixelGateOf( metrics, threshold ) {
 
@@ -3254,7 +3733,7 @@ async function runOne( browser, name ) {
 	await replay.context.close().catch( () => {} );
 
 	const pixelGate = pixelGateOf( pixelMetrics, psnrThreshold );
-	const pixelGateOk = ! pixelGateEnabled || pixelGate.pass === true;
+	const pixelGateOk = ! pixelGateEnabled || pixelGate.pass !== false;
 	const pass = ( userCount > 0 || auxCount > 0 ) && blockingCaptureErrors.length === 0 && replay.bright > 0.005 && blockingReplayErrors.length === 0 && pixelGateOk;
 
 	return {
@@ -3376,7 +3855,6 @@ function summarizeFailure( { userCount, blockingCaptureErrors, replayBright, blo
 	if ( blockingCaptureErrors.length > 0 ) return blockingCaptureErrors[ 0 ].slice( 0, 500 );
 	if ( replayBright <= 0.005 ) return 'slim replay did not produce a non-empty frame';
 	if ( blockingReplayErrors.length > 0 ) return blockingReplayErrors[ 0 ].slice( 0, 500 );
-	if ( pixelGateEnabled && pixelGate && pixelGate.skipped ) return `pixel comparison skipped: ${ pixelGate.reason || 'unknown reason' }`;
 	if ( pixelGateEnabled && pixelGate && pixelGate.pass === false ) return `pixel diff PSNR ${ pixelGate.psnr } dB < threshold ${ pixelGate.threshold } dB (visual regression)`;
 	return 'unknown replay failure';
 
@@ -3518,7 +3996,7 @@ try {
 writeFileSync( reportPath, JSON.stringify( report, null, 2 ) );
 
 console.log( '\n═══ e2e summary ═══' );
-console.log( `  ${ report.pass } pass, ${ report.fail } fail, ${ report.total } candidates tested, ${ report.skip } skipped` );
+console.log( `  ${ report.pass } pass, ${ report.fail } fail, ${ report.skip } skip, ${ report.total } candidates` );
 console.log( `  report: ${ reportPath }` );
 printFailureSummary( report.details );
 

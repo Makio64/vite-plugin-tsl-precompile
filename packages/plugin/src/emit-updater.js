@@ -433,7 +433,12 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 		case 'material.refractionRatio':
 		case 'material.bumpScale':
 		case 'material.displacementScale':
-		case 'material.displacementBias': {
+		case 'material.displacementBias':
+		case 'material.linewidth':
+		case 'material.scale':
+		case 'material.dashSize':
+		case 'material.gapSize':
+		case 'material.dashOffset': {
 
 			const prop = src.property || kind.split( '.' )[ 1 ];
 			usedWriters.add( 'writeF32' );

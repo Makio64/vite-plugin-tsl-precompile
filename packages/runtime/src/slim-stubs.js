@@ -61,20 +61,77 @@ function chainableSlimStub( name ) {
 
 }
 
-function inertNodeStub() {
+const SLIM_NODE_CHAIN_METHODS = [
+	'add', 'sub', 'mul', 'div', 'mod', 'pow', 'min', 'max', 'mix',
+	'clamp', 'normalize', 'dot', 'cross', 'abs', 'sign',
+	'floor', 'ceil', 'fract', 'sin', 'cos', 'tan', 'toVar', 'assign',
+];
+
+function traverseSlimNode( node, callback, seen = new Set() ) {
+
+	if ( ! node || node.isNode !== true || seen.has( node ) ) return;
+	seen.add( node );
+	callback( node );
+
+	const visitChild = ( child ) => traverseSlimNode( child, callback, seen );
+	if ( Object.prototype.hasOwnProperty.call( node, '_children' ) && Array.isArray( node._children ) ) {
+
+		for ( const child of node._children ) visitChild( child );
+
+	}
+
+	for ( const key of Object.getOwnPropertyNames( node ) ) {
+
+		if ( key.startsWith( '_' ) ) continue;
+		const value = node[ key ];
+		if ( value && value.isNode === true ) visitChild( value );
+		else if ( Array.isArray( value ) ) {
+
+			for ( const child of value ) if ( child && child.isNode === true ) visitChild( child );
+
+		} else if ( value && Object.getPrototypeOf( value ) === Object.prototype ) {
+
+			for ( const child of Object.values( value ) ) if ( child && child.isNode === true ) visitChild( child );
+
+		}
+
+	}
+
+}
+
+function inertNodeStub( children = [], props = {} ) {
 
 	const fn = function inertSlimNodeStub() { return proxy; };
 	Object.defineProperty( fn, 'name', { value: '', writable: true, configurable: true } );
+	Object.assign( fn, props );
+	fn.isNode = true;
+	fn._children = children.filter( ( child ) => child && child.isNode === true );
+	fn.getUpdateType = () => 'none';
+	fn.getUpdateBeforeType = () => 'none';
+	fn.getUpdateAfterType = () => 'none';
+	fn.updateReference = () => proxy;
+	fn.traverse = ( callback ) => traverseSlimNode( proxy, callback );
+	for ( const method of SLIM_NODE_CHAIN_METHODS ) {
+
+		fn[ method ] = ( ...args ) => inertNodeStub( [ proxy, ...args ] );
+
+	}
+
 	const proxy = new Proxy( fn, {
-		get( _target, prop ) {
+		get( target, prop ) {
 
 			if ( prop === Symbol.toPrimitive ) return () => 0;
 			if ( prop === 'toString' ) return () => '[inert slim node]';
 			if ( prop === 'then' ) return undefined;
-			if ( prop === 'isNode' ) return true;
-			if ( prop === 'getUpdateType' ) return () => 'none';
-			if ( prop === 'updateReference' ) return () => proxy;
+			if ( prop === 'length' ) return ( ...args ) => inertNodeStub( [ proxy, ...args ] );
+			if ( prop in target ) return target[ prop ];
 			return proxy;
+
+		},
+		set( target, prop, value ) {
+
+			target[ prop ] = value;
+			return true;
 
 		},
 		apply() { return proxy; },
@@ -222,23 +279,51 @@ export function warnOnce( msg ) {
 }
 
 /**
- * `Node` base class stub. Many examples use `Node` as the base class for
- * custom TSL derivatives; in slim mode you cannot author custom node
- * classes — all TSL paths must be precompiled — so constructing Node
- * throws. The class IS exported so `import { Node } from 'three/webgpu'`
- * succeeds, and `extends Node` subclasses load (though they throw on `new`).
+ * `Node` base class stub. Custom subclasses still need to exist at replay
+ * time because their update hooks can drive `uniform.live` values captured
+ * in the precompiled artifact. This lightweight class preserves graph shape
+ * and update metadata without pulling in the real TSL builder.
  */
 export class Node {
 
-	constructor() {
+	constructor( nodeType = null ) {
 
-		return inertNodeStub();
+		this.nodeType = nodeType;
+		this.updateType = NodeUpdateType.NONE;
+		this.updateBeforeType = NodeUpdateType.NONE;
+		this.updateAfterType = NodeUpdateType.NONE;
+		this.isNode = true;
 
 	}
 
-	getUpdateType() { return 'none'; }
+	getUpdateType() { return this.updateType || NodeUpdateType.NONE; }
+	getUpdateBeforeType() { return this.updateBeforeType || NodeUpdateType.NONE; }
+	getUpdateAfterType() { return this.updateAfterType || NodeUpdateType.NONE; }
 	updateReference() { return this; }
-	toVar() { return chainableSlimStub( 'Node.toVar' ); }
+	traverse( callback ) { traverseSlimNode( this, callback ); }
+	toVar() { return inertNodeStub( [ this ] ); }
+	add( ...args ) { return inertNodeStub( [ this, ...args ] ); }
+	sub( ...args ) { return inertNodeStub( [ this, ...args ] ); }
+	mul( ...args ) { return inertNodeStub( [ this, ...args ] ); }
+	div( ...args ) { return inertNodeStub( [ this, ...args ] ); }
+
+}
+
+class UniformNode extends Node {
+
+	constructor( value, nodeType = null ) {
+
+		super( nodeType );
+		this.isUniformNode = true;
+		this.value = value;
+		this.name = '';
+		this.groupNode = null;
+
+	}
+
+	setName( name ) { this.name = name; return this; }
+	label( name ) { return this.setName( name ); }
+	setGroup( group ) { this.groupNode = group; return this; }
 
 }
 
@@ -520,8 +605,8 @@ export const cameraNormalMatrix = inertNodeStub();
  */
 export function mix( ..._ ) { return inertNodeStub(); }
 export function step( ..._ ) { return inertNodeStub(); }
-export function texture( ..._ ) { return inertNodeStub(); }
-export function cubeTexture( ..._ ) { return inertNodeStub(); }
+export function texture( source, ..._ ) { return inertNodeStub( [], source && source.isTexture === true ? { isTextureNode: true, value: source } : {} ); }
+export function cubeTexture( source, ..._ ) { return inertNodeStub( [], source && source.isTexture === true ? { isTextureNode: true, value: source } : {} ); }
 // Retain the source texture passed to pmremTexture(map, ...) so the e2e
 // harness (and any production wiring code) can recover it and run
 // PMREMGenerator on the same cubemap/equirect at replay time. The slim
@@ -530,7 +615,7 @@ const __pmremStubSources = new WeakMap();
 export function pmremTexture( source, ..._ ) {
 
 	const stub = inertNodeStub();
-	if ( source && ( source.isTexture || source.isCubeTexture ) ) __pmremStubSources.set( stub, source );
+	if ( source && ( source.isTexture === true || source.isCubeTexture === true ) ) __pmremStubSources.set( stub, source );
 	return stub;
 
 }
@@ -542,20 +627,20 @@ export function float( ..._ ) { return inertNodeStub(); }
 export function int( ..._ ) { return inertNodeStub(); }
 export function uint( ..._ ) { return inertNodeStub(); }
 export function color( ..._ ) { return inertNodeStub(); }
-export function uniform( ..._ ) { return inertNodeStub(); }
+export function uniform( value, nodeType = null ) { return new UniformNode( value, nodeType ); }
 export function attribute( ..._ ) { return inertNodeStub(); }
 export function reference( ..._ ) { return inertNodeStub(); }
-export function add( ..._ ) { return inertNodeStub(); }
-export function sub( ..._ ) { return inertNodeStub(); }
-export function mul( ..._ ) { return inertNodeStub(); }
-export function div( ..._ ) { return inertNodeStub(); }
-export function dot( ..._ ) { return inertNodeStub(); }
-export function cross( ..._ ) { return inertNodeStub(); }
-export function normalize( ..._ ) { return inertNodeStub(); }
-export function length( ..._ ) { return inertNodeStub(); }
-export function clamp( ..._ ) { return inertNodeStub(); }
+export function add( ...args ) { return inertNodeStub( args ); }
+export function sub( ...args ) { return inertNodeStub( args ); }
+export function mul( ...args ) { return inertNodeStub( args ); }
+export function div( ...args ) { return inertNodeStub( args ); }
+export function dot( ...args ) { return inertNodeStub( args ); }
+export function cross( ...args ) { return inertNodeStub( args ); }
+export function normalize( ...args ) { return inertNodeStub( args ); }
+export function length( ...args ) { return inertNodeStub( args ); }
+export function clamp( ...args ) { return inertNodeStub( args ); }
 export function smoothstep( ..._ ) { return inertNodeStub(); }
-export function pow( ..._ ) { return inertNodeStub(); }
+export function pow( ...args ) { return inertNodeStub( args ); }
 export function pow2( ..._ ) { return inertNodeStub(); }
 export function pow3( ..._ ) { return inertNodeStub(); }
 export function pow4( ..._ ) { return inertNodeStub(); }
@@ -565,8 +650,8 @@ export function floor( ..._ ) { return inertNodeStub(); }
 export function ceil( ..._ ) { return inertNodeStub(); }
 export function fract( ..._ ) { return inertNodeStub(); }
 export function mod( ..._ ) { return inertNodeStub(); }
-export function min( ..._ ) { return inertNodeStub(); }
-export function max( ..._ ) { return inertNodeStub(); }
+export function min( ...args ) { return inertNodeStub( args ); }
+export function max( ...args ) { return inertNodeStub( args ); }
 export function sin( ..._ ) { return inertNodeStub(); }
 export function cos( ..._ ) { return inertNodeStub(); }
 export function tan( ..._ ) { return inertNodeStub(); }

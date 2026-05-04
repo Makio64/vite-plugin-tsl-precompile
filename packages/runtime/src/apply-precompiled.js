@@ -43,7 +43,88 @@ const _TEXTURE_PROPS = [
 const _NODE_GRAPH_KEYS = [
 	'colorNode', 'normalNode', 'outputNode', 'roughnessNode', 'metalnessNode',
 	'emissiveNode', 'opacityNode', 'alphaTestNode', 'vertexNode', 'positionNode',
+	'mrtNode', 'envNode', 'lightNode', 'aoNode', 'iorNode', 'iridescenceNode',
+	'iridescenceIORNode', 'iridescenceThicknessNode', 'specularIntensityNode',
+	'specularColorNode', 'sheenColorNode', 'sheenRoughnessNode',
+	'clearcoatNode', 'clearcoatRoughnessNode', 'clearcoatNormalNode',
+	'transmissionNode', 'thicknessNode', 'attenuationDistanceNode',
+	'attenuationColorNode',
 ];
+
+const _NODE_TEXTURE_FIELDS = [ 'value', 'texture', '_value', '_texture', '_pmrem', 'renderTarget' ];
+
+function _readObjectProp( object, prop ) {
+
+	try {
+
+		return object && object[ prop ];
+
+	} catch ( _ ) {
+
+		return undefined;
+
+	}
+
+}
+
+function _addTextureCandidate( value, out ) {
+
+	if ( ! value ) return;
+	if ( value.isTexture === true ) {
+
+		if ( value.uuid && ! out.has( value.uuid ) ) out.set( value.uuid, value );
+		return;
+
+	}
+
+	if ( value.isTextureNode === true ) _addTextureCandidate( _readObjectProp( value, 'value' ), out );
+
+	const texture = _readObjectProp( value, 'texture' );
+	if ( texture && texture.isTexture === true ) _addTextureCandidate( texture, out );
+
+	const nodeValue = _readObjectProp( value, 'value' );
+	if ( nodeValue && nodeValue.isTexture === true ) _addTextureCandidate( nodeValue, out );
+
+}
+
+function _collectKnownNodeTextureFields( node, out ) {
+
+	for ( const field of _NODE_TEXTURE_FIELDS ) _addTextureCandidate( _readObjectProp( node, field ), out );
+
+}
+
+function _walkTextureNodeShape( value, out, seen ) {
+
+	if ( ! value || typeof value !== 'object' || seen.has( value ) ) return;
+	_addTextureCandidate( value, out );
+	if ( value.isTexture === true ) return;
+	seen.add( value );
+
+	const shouldInspect = value.isNode === true || value.isTextureNode === true || typeof value.traverse === 'function' || Object.getPrototypeOf( value ) === Object.prototype;
+	if ( ! shouldInspect ) return;
+
+	_collectKnownNodeTextureFields( value, out );
+	for ( const key of Object.getOwnPropertyNames( value ) ) {
+
+		const child = _readObjectProp( value, key );
+		_addTextureCandidate( child, out );
+		if ( Array.isArray( child ) ) {
+
+			for ( const item of child ) _walkTextureNodeShape( item, out, seen );
+
+		} else if ( child && typeof child === 'object' && child.isTexture !== true ) {
+
+			if ( child.isNode === true || child.isTextureNode === true || Object.getPrototypeOf( child ) === Object.prototype ) {
+
+				_walkTextureNodeShape( child, out, seen );
+
+			}
+
+		}
+
+	}
+
+}
 
 /**
  * Walk a TSL node tree and push any embedded `Texture` instances (the `value`
@@ -58,21 +139,20 @@ const _NODE_GRAPH_KEYS = [
 function _collectTexturesFromNode( rootNode, out ) {
 
 	if ( ! rootNode ) return;
-	if ( rootNode.isTextureNode === true && rootNode.value && rootNode.value.isTexture && rootNode.value.uuid ) {
+	_addTextureCandidate( rootNode, out );
+	_collectKnownNodeTextureFields( rootNode, out );
+	if ( typeof rootNode.traverse === 'function' ) {
 
-		if ( ! out.has( rootNode.value.uuid ) ) out.set( rootNode.value.uuid, rootNode.value );
+		rootNode.traverse( ( n ) => {
+
+			_addTextureCandidate( n, out );
+			_collectKnownNodeTextureFields( n, out );
+
+		} );
 
 	}
-	if ( typeof rootNode.traverse !== 'function' ) return;
-	rootNode.traverse( ( n ) => {
 
-		if ( n && n.isTextureNode === true && n.value && n.value.isTexture && n.value.uuid && ! out.has( n.value.uuid ) ) {
-
-			out.set( n.value.uuid, n.value );
-
-		}
-
-	} );
+	_walkTextureNodeShape( rootNode, out, new Set() );
 
 }
 
@@ -96,7 +176,7 @@ export function collectLiveMaterialTextures( sourceMaterial ) {
 	for ( const prop of _TEXTURE_PROPS ) {
 
 		const tex = sourceMaterial[ prop ];
-		if ( tex && tex.isTexture && tex.uuid && ! out.has( tex.uuid ) ) out.set( tex.uuid, tex );
+		if ( tex && tex.isTexture === true && tex.uuid && ! out.has( tex.uuid ) ) out.set( tex.uuid, tex );
 
 	}
 

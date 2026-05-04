@@ -1,0 +1,701 @@
+{
+  "total": 1,
+  "pass": 0,
+  "fail": 1,
+  "skip": 0,
+  "details": [
+    {
+      "name": "webgpu_reflection_roughness.html",
+      "status": "fail",
+      "captureBrightFrac": 1,
+      "replayBrightFrac": 1,
+      "pixelGate": {
+        "pass": false,
+        "psnr": 16.95,
+        "threshold": 30
+      },
+      "userArtifacts": 2,
+      "auxArtifacts": 6,
+      "captureErrors": [],
+      "replayErrors": [],
+      "captureWarnings": [],
+      "replayWarnings": [],
+      "captureDiagnostics": null,
+      "replayDiagnostics": {
+        "colorTransferFallbacks": {},
+        "healedNullTextureImages": 0,
+        "pmrem": {
+          "kickCalls": 17,
+          "cacheHits": 15,
+          "pendingJoins": 1,
+          "skippedNotReady": 0,
+          "generateCalls": 1,
+          "generateSuccess": 1,
+          "generateFailed": 0,
+          "noComputeRenderer": 0,
+          "noGPUTexture": 0,
+          "wireCalls": 35,
+          "wireNoPmrem": 6,
+          "wireAlreadyWired": 62,
+          "wireNeedsPmrem": 2,
+          "wireAttached": 2
+        }
+      },
+      "artifactSummaries": [
+        {
+          "name": "webgpu_reflection_roughness.html:MeshStandardNodeMaterial:2",
+          "hash": "f8493d0db39395325415a88d7b53457da81d3bd33376eaa0315baa261173090b",
+          "cacheKey": 4469307168172953,
+          "shape": "mesh-standard",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tnodeUniform3 : f32,\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec2<f32>,\n\tnodeUniform4 : f32,\n\tnodeUniform6 : mat4x4<f32>,\n\tnodeUniform7 : f32,\n\tnodeUniform8 : f32,\n\tnodeUniform9 : mat3x3<f32>,\n\tnodeUniform10 : vec3<f32>,\n\tnodeUniform11 : f32,\n\tnodeUniform12 : f32,\n\tnodeUniform13 : mat4x4<f32>,\n\tnodeUniform15 : f32,\n\tnodeUniform16 : f32,\n\tnodeUniform18 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 2 ) v_positionViewDirection : vec3<f32>,\n\t@location( 3 ) nodeVarying6 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> normalLocal : vec3<f32>;\nvar<private> nodeVar38 : vec3<f32>;\nvar<private> VERTEX_nodeVar149 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nv",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform1_sampler : sampler;\n@binding( 2 ) @group( 1 ) var nodeUniform1 : texture_2d<f32>;\n@binding( 3 ) @group( 1 ) var nodeUniform2_sampler : sampler;\n@binding( 4 ) @group( 1 ) var nodeUniform2 : texture_2d<f32>;\n@binding( 5 ) @group( 1 ) var nodeUniform17_sampler : sampler;\n@binding( 6 ) @group( 1 ) var nodeUniform17 : texture_2d<f32>;\n@binding( 7 ) @group( 1 ) var nodeUniform19_sampler : sampler;\n@binding( 8 ) @group( 1 ) var nodeUniform19 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform0 : vec2<f32>,\n\tnodeUniform4 : f32,\n\tnodeUniform6 : mat4x4<f32>,\n\tnodeUniform7 : f32,\n\tnodeUniform8 : f32,\n\tnodeUniform9 : mat3x3<f32>,\n\tnodeUniform10 : vec3<f32>,\n\tnodeUniform11 : f32,\n\tnodeUniform12 : f32,\n\tnodeUniform13 : mat4x4<f32>,\n\tnodeUniform15 : f32,\n\tnodeUniform16 : f32,\n\tnodeUniform18 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tnodeUniform3 : f32,\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcamer",
+          "attributes": [
+            {
+              "name": "uv",
+              "type": "vec2",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "normal",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": [
+            {
+              "group": "object",
+              "name": "nodeUniform1_sampler",
+              "kind": "reflector.texture",
+              "textureUuid": "9042ba5a-bb1a-438e-aa36-eab24d5f2801",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform1",
+              "kind": "reflector.texture",
+              "textureUuid": "9042ba5a-bb1a-438e-aa36-eab24d5f2801",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform2_sampler",
+              "kind": "artifact.texture",
+              "textureUuid": "e009c478-cb19-4c71-ba8a-7fd4dd807264",
+              "imageSrc": "http://localhost:8729/examples/textures/noises/perlin/rgb-256x256.png",
+              "textureName": "rgb-256x256.png",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform2",
+              "kind": "artifact.texture",
+              "textureUuid": "e009c478-cb19-4c71-ba8a-7fd4dd807264",
+              "imageSrc": "http://localhost:8729/examples/textures/noises/perlin/rgb-256x256.png",
+              "textureName": "rgb-256x256.png",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform17_sampler",
+              "kind": "artifact.texture",
+              "textureUuid": "546ca12a-af51-484c-8e39-67c4615639ef",
+              "textureName": "PMREM.cubeUv",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform17",
+              "kind": "artifact.texture",
+              "textureUuid": "546ca12a-af51-484c-8e39-67c4615639ef",
+              "textureName": "PMREM.cubeUv",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform19_sampler",
+              "kind": "builtin.dfgLUT",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform19",
+              "kind": "builtin.dfgLUT",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            }
+          ]
+        },
+        {
+          "name": "webgpu_reflection_roughness.html:MeshStandardNodeMaterial:1",
+          "hash": "42c07cffc051fb2fcada63671ee022951615b82f0d328fd2ec7b06b4fceba3c4",
+          "cacheKey": 6234668018059366,
+          "shape": "mesh-standard",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform2 : mat3x3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform6 : mat3x3<f32>,\n\tnodeUniform8 : mat3x3<f32>,\n\tnodeUniform9 : vec3<f32>,\n\tnodeUniform10 : f32,\n\tnodeUniform11 : mat3x3<f32>,\n\tnodeUniform12 : f32,\n\tnodeUniform13 : mat4x4<f32>,\n\tnodeUniform14 : mat4x4<f32>,\n\tnodeUniform16 : f32,\n\tnodeUniform17 : f32,\n\tnodeUniform19 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 1 ) v_positionViewDirection : vec3<f32>,\n\t@location( 2 ) nodeVarying6 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLocal : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> nodeVar7 : vec3<f32>;\nvar<private> VERTEX_nodeVar118 : vec4<f32>;\nvar<private> v_modelViewPro",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform1_sampler : sampler;\n@binding( 2 ) @group( 1 ) var nodeUniform1 : texture_2d<f32>;\n@binding( 3 ) @group( 1 ) var nodeUniform18_sampler : sampler;\n@binding( 4 ) @group( 1 ) var nodeUniform18 : texture_2d<f32>;\n@binding( 5 ) @group( 1 ) var nodeUniform20_sampler : sampler;\n@binding( 6 ) @group( 1 ) var nodeUniform20 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform2 : mat3x3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform6 : mat3x3<f32>,\n\tnodeUniform8 : mat3x3<f32>,\n\tnodeUniform9 : vec3<f32>,\n\tnodeUniform10 : f32,\n\tnodeUniform11 : mat3x3<f32>,\n\tnodeUniform12 : f32,\n\tnodeUniform13 : mat4x4<f32>,\n\tnodeUniform14 : mat4x4<f32>,\n\tnodeUniform16 : f32,\n\tnodeUniform17 : f32,\n\tnodeUniform19 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nva",
+          "attributes": [
+            {
+              "name": "uv",
+              "type": "vec2",
+              "source": "geometry"
+            },
+            {
+              "name": "normal",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": [
+            {
+              "group": "object",
+              "name": "nodeUniform1_sampler",
+              "kind": "material.map",
+              "property": "map",
+              "textureUuid": "18c77060-a305-4e82-b294-c84575d25838",
+              "imageSrc": "http://localhost:8729/examples/textures/uv_grid_directx.jpg",
+              "textureName": "uv_grid_directx.jpg",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform1",
+              "kind": "material.map",
+              "property": "map",
+              "textureUuid": "18c77060-a305-4e82-b294-c84575d25838",
+              "imageSrc": "http://localhost:8729/examples/textures/uv_grid_directx.jpg",
+              "textureName": "uv_grid_directx.jpg",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform18_sampler",
+              "kind": "artifact.texture",
+              "textureUuid": "546ca12a-af51-484c-8e39-67c4615639ef",
+              "textureName": "PMREM.cubeUv",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform18",
+              "kind": "artifact.texture",
+              "textureUuid": "546ca12a-af51-484c-8e39-67c4615639ef",
+              "textureName": "PMREM.cubeUv",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform20_sampler",
+              "kind": "builtin.dfgLUT",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform20",
+              "kind": "builtin.dfgLUT",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            }
+          ]
+        }
+      ],
+      "auxSummaries": [
+        {
+          "shape": "background",
+          "configHash": "2e2a7eeabba20cb84c7bb57d5cd70a163862995b0172f2500393a6afaa278d9c",
+          "artifactShape": "node-material",
+          "cacheKey": 7378204239743798,
+          "attributes": [
+            {
+              "name": "normal",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "bindings": [
+            {
+              "name": "render",
+              "bindings": [
+                {
+                  "name": "render",
+                  "kind": "uniform-buffer",
+                  "byteLength": 208
+                }
+              ]
+            },
+            {
+              "name": "object",
+              "bindings": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "sampler",
+                  "byteLength": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "sampled-texture",
+                  "byteLength": null
+                },
+                {
+                  "name": "object",
+                  "kind": "uniform-buffer",
+                  "byteLength": 192
+                }
+              ]
+            }
+          ],
+          "uniformPlan": [
+            {
+              "name": "render",
+              "byteLength": 208,
+              "slotCount": 5,
+              "textures": []
+            },
+            {
+              "name": "object",
+              "byteLength": 192,
+              "slotCount": 4,
+              "textures": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "artifact.texture",
+                  "textureUuid": "c03d13c1-2bfc-4cbc-9a49-6d803d72727d",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "artifact.texture",
+                  "textureUuid": "c03d13c1-2bfc-4cbc-9a49-6d803d72727d",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "shape": "pmrem-cubemap",
+          "configHash": "162dfb3fa9f5b8b55affaef6b0b1492ebd7f933318d177fda8bf47cc2991ceae",
+          "artifactShape": "pmrem-cubemap",
+          "cacheKey": 4217484427949436,
+          "attributes": [
+            {
+              "name": "uv",
+              "type": "vec2",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "bindings": [
+            {
+              "name": "render",
+              "bindings": [
+                {
+                  "name": "render",
+                  "kind": "uniform-buffer",
+                  "byteLength": 128
+                }
+              ]
+            },
+            {
+              "name": "object",
+              "bindings": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "sampler",
+                  "byteLength": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "sampled-texture",
+                  "byteLength": null
+                },
+                {
+                  "name": "object",
+                  "kind": "uniform-buffer",
+                  "byteLength": 128
+                }
+              ]
+            }
+          ],
+          "uniformPlan": [
+            {
+              "name": "render",
+              "byteLength": 128,
+              "slotCount": 2,
+              "textures": []
+            },
+            {
+              "name": "object",
+              "byteLength": 128,
+              "slotCount": 2,
+              "textures": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "artifact.texture",
+                  "textureUuid": "687a83fd-b300-4373-82b4-111905500c31",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "artifact.texture",
+                  "textureUuid": "687a83fd-b300-4373-82b4-111905500c31",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "shape": "pmrem-equirect",
+          "configHash": "162dfb3fa9f5b8b55affaef6b0b1492ebd7f933318d177fda8bf47cc2991ceae",
+          "artifactShape": "pmrem-equirect",
+          "cacheKey": 4827142898729608,
+          "attributes": [
+            {
+              "name": "uv",
+              "type": "vec2",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "bindings": [
+            {
+              "name": "render",
+              "bindings": [
+                {
+                  "name": "render",
+                  "kind": "uniform-buffer",
+                  "byteLength": 128
+                }
+              ]
+            },
+            {
+              "name": "object",
+              "bindings": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "sampler",
+                  "byteLength": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "sampled-texture",
+                  "byteLength": null
+                },
+                {
+                  "name": "object",
+                  "kind": "uniform-buffer",
+                  "byteLength": 64
+                }
+              ]
+            }
+          ],
+          "uniformPlan": [
+            {
+              "name": "render",
+              "byteLength": 128,
+              "slotCount": 2,
+              "textures": []
+            },
+            {
+              "name": "object",
+              "byteLength": 64,
+              "slotCount": 1,
+              "textures": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "artifact.texture",
+                  "textureUuid": "a04678d4-8baf-47d8-baa5-50ae9d5c7961",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "artifact.texture",
+                  "textureUuid": "a04678d4-8baf-47d8-baa5-50ae9d5c7961",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "shape": "pmrem-blur",
+          "configHash": "162dfb3fa9f5b8b55affaef6b0b1492ebd7f933318d177fda8bf47cc2991ceae",
+          "artifactShape": "pmrem-blur",
+          "cacheKey": 8594886415198782,
+          "attributes": [
+            {
+              "name": "uv",
+              "type": "vec2",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "bindings": [
+            {
+              "name": "render",
+              "bindings": [
+                {
+                  "name": "render",
+                  "kind": "uniform-buffer",
+                  "byteLength": 128
+                }
+              ]
+            },
+            {
+              "name": "object",
+              "bindings": [
+                {
+                  "name": "object",
+                  "kind": "uniform-buffer",
+                  "byteLength": 112
+                },
+                {
+                  "name": "UniformBuffer_0",
+                  "kind": "uniform-buffer",
+                  "byteLength": 320
+                },
+                {
+                  "name": "nodeUniform4_sampler",
+                  "kind": "sampler",
+                  "byteLength": null
+                },
+                {
+                  "name": "nodeUniform4",
+                  "kind": "sampled-texture",
+                  "byteLength": null
+                }
+              ]
+            }
+          ],
+          "uniformPlan": [
+            {
+              "name": "render",
+              "byteLength": 128,
+              "slotCount": 2,
+              "textures": []
+            },
+            {
+              "name": "object",
+              "byteLength": 112,
+              "slotCount": 6,
+              "textures": [
+                {
+                  "name": "nodeUniform4_sampler",
+                  "kind": "artifact.texture",
+                  "textureUuid": "a04678d4-8baf-47d8-baa5-50ae9d5c7961",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                },
+                {
+                  "name": "nodeUniform4",
+                  "kind": "artifact.texture",
+                  "textureUuid": "a04678d4-8baf-47d8-baa5-50ae9d5c7961",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "shape": "pmrem-ggx",
+          "configHash": "162dfb3fa9f5b8b55affaef6b0b1492ebd7f933318d177fda8bf47cc2991ceae",
+          "artifactShape": "pmrem-ggx",
+          "cacheKey": 4610571930555360,
+          "attributes": [
+            {
+              "name": "uv",
+              "type": "vec2",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "bindings": [
+            {
+              "name": "render",
+              "bindings": [
+                {
+                  "name": "render",
+                  "kind": "uniform-buffer",
+                  "byteLength": 128
+                }
+              ]
+            },
+            {
+              "name": "object",
+              "bindings": [
+                {
+                  "name": "object",
+                  "kind": "uniform-buffer",
+                  "byteLength": 80
+                },
+                {
+                  "name": "nodeUniform2_sampler",
+                  "kind": "sampler",
+                  "byteLength": null
+                },
+                {
+                  "name": "nodeUniform2",
+                  "kind": "sampled-texture",
+                  "byteLength": null
+                }
+              ]
+            }
+          ],
+          "uniformPlan": [
+            {
+              "name": "render",
+              "byteLength": 128,
+              "slotCount": 2,
+              "textures": []
+            },
+            {
+              "name": "object",
+              "byteLength": 80,
+              "slotCount": 3,
+              "textures": [
+                {
+                  "name": "nodeUniform2_sampler",
+                  "kind": "artifact.texture",
+                  "textureUuid": "a04678d4-8baf-47d8-baa5-50ae9d5c7961",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                },
+                {
+                  "name": "nodeUniform2",
+                  "kind": "artifact.texture",
+                  "textureUuid": "a04678d4-8baf-47d8-baa5-50ae9d5c7961",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "shape": "render-output",
+          "configHash": "3f6d8ee1d97c7691e86896ef76e5ee332eba18db4265633cccde85935ca6b62b",
+          "artifactShape": "render-output",
+          "cacheKey": 2303522485691197,
+          "attributes": [
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "bindings": [
+            {
+              "name": "render",
+              "bindings": [
+                {
+                  "name": "render",
+                  "kind": "uniform-buffer",
+                  "byteLength": 144
+                }
+              ]
+            },
+            {
+              "name": "object",
+              "bindings": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "sampler",
+                  "byteLength": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "sampled-texture",
+                  "byteLength": null
+                },
+                {
+                  "name": "object",
+                  "kind": "uniform-buffer",
+                  "byteLength": 80
+                }
+              ]
+            }
+          ],
+          "uniformPlan": [
+            {
+              "name": "render",
+              "byteLength": 144,
+              "slotCount": 3,
+              "textures": []
+            },
+            {
+              "name": "object",
+              "byteLength": 80,
+              "slotCount": 2,
+              "textures": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "artifact.texture",
+                  "textureUuid": "e807b011-3330-470b-821e-55e185ab0186",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "artifact.texture",
+                  "textureUuid": "e807b011-3330-470b-821e-55e185ab0186",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "error": "pixel diff PSNR 16.95 dB < threshold 30 dB (visual regression)"
+    }
+  ]
+}

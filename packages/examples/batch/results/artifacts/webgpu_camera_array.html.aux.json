@@ -226,7 +226,7 @@
               "size": 8,
               "dtype": "vec2",
               "source": {
-                "kind": "renderer.size",
+                "kind": "uniform.live",
                 "valueSnapshot": {
                   "type": "vec2",
                   "data": [
@@ -276,7 +276,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "ac99271c-27af-4173-a6c8-8641992a2fd6",
+                "textureUuid": "61bfb1f5-58b7-4839-a3b8-de05f22ead54",
                 "mapping": 300,
                 "flipY": false
               }
@@ -289,7 +289,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "ac99271c-27af-4173-a6c8-8641992a2fd6",
+                "textureUuid": "61bfb1f5-58b7-4839-a3b8-de05f22ead54",
                 "mapping": 300,
                 "flipY": false
               }
@@ -307,7 +307,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "ac99271c-27af-4173-a6c8-8641992a2fd6",
+                  "textureUuid": "61bfb1f5-58b7-4839-a3b8-de05f22ead54",
                   "mapping": 300,
                   "flipY": false
                 }
@@ -331,7 +331,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "ac99271c-27af-4173-a6c8-8641992a2fd6",
+                  "textureUuid": "61bfb1f5-58b7-4839-a3b8-de05f22ead54",
                   "mapping": 300,
                   "flipY": false
                 }
@@ -358,7 +358,7 @@
                   "size": 8,
                   "dtype": "vec2",
                   "source": {
-                    "kind": "renderer.size",
+                    "kind": "uniform.live",
                     "valueSnapshot": {
                       "type": "vec2",
                       "data": [

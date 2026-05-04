@@ -127,7 +127,7 @@ const _registeredAnonDataTextures = new WeakSet();
 
 export function registerLiveTexture( texture ) {
 
-	if ( ! texture || ! texture.isTexture ) return;
+	if ( ! texture || texture.isTexture !== true ) return;
 	const image = texture.image || null;
 	const src = image && ( image.src || image.currentSrc || ( Array.isArray( image ) && image[ 0 ] && ( image[ 0 ].src || image[ 0 ].currentSrc ) ) || null );
 	if ( typeof src === 'string' && src.length > 0 ) _liveTexturesBySrc.set( src, texture );
@@ -619,38 +619,18 @@ function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 		: Array.isArray( artifact.nodeAttributes ) ? artifact.nodeAttributes : null;
 	if ( ! entries || entries.length === 0 ) return;
 
-	const __DBG = typeof globalThis !== 'undefined' && globalThis.__TSLP_DBG_INSTANCE === true;
-	const __dbgTag = __DBG ? `[tslp-dbg bindUserNode] artifact=${ artifact.__name || artifact.name || '<anon>' } material=${ sourceMaterial && sourceMaterial.name || '<anon>' }` : '';
-
 	for ( const entry of entries ) {
 
 		if ( ! entry || entry.source !== 'node' ) continue;
 		if ( entry._liveAttribute && entry._liveAttribute.isBufferAttribute === true ) continue;
 
 		const path = entry.userPath;
-		if ( ! Array.isArray( path ) || path.length === 0 ) {
-			if ( __DBG ) console.log( `${ __dbgTag } SKIP ${ entry.name } noUserPath` );
-			continue;
-		}
+		if ( ! Array.isArray( path ) || path.length === 0 ) continue;
 
 		const root = sourceMaterial[ path[ 0 ] ];
-		if ( __DBG ) {
-			const rootKind = root === undefined ? 'undefined'
-				: root === null ? 'null'
-				: ( typeof root === 'object' || typeof root === 'function' )
-					? `${ typeof root }/isNode=${ root && root.isNode }/ctor=${ root && root.constructor && root.constructor.name }/hasAttribute=${ !! ( root && root.attribute ) }/hasValue=${ !! ( root && root.value ) }`
-					: typeof root;
-			console.log( `${ __dbgTag } entry=${ entry.name } path=${ JSON.stringify( path ) } want=size${ entry.itemSize }/count${ entry.count }/${ entry.arrayType } root=${ rootKind }` );
-		}
-		if ( ! root || root.isNode !== true ) {
-			if ( __DBG ) console.log( `${ __dbgTag }   -> SKIP root not a node` );
-			continue;
-		}
+		if ( ! root || root.isNode !== true ) continue;
 
 		const live = findFirstAttributeMatchingEntry( root, entry );
-		if ( __DBG ) {
-			console.log( `${ __dbgTag }   -> live=${ live ? `BufferAttr(itemSize=${ live.itemSize },count=${ live.count },isInstanced=${ !! live.isInstancedBufferAttribute })` : 'NULL' }` );
-		}
 		if ( ! live ) continue;
 
 		Object.defineProperty( entry, '_liveAttribute', {
@@ -670,24 +650,10 @@ function findFirstAttributeMatchingEntry( node, entry ) {
 	const wantCount = entry.count || 0;
 	const wantArray = entry.arrayType || '';
 
-	const __DBG = typeof globalThis !== 'undefined' && globalThis.__TSLP_DBG_INSTANCE === true;
-	const __probedNodes = __DBG ? [] : null;
-
 	let found = null;
 	const probe = ( n ) => {
 
 		if ( found || ! n ) return;
-		if ( __DBG ) {
-			__probedNodes.push( {
-				ctor: n && n.constructor && n.constructor.name,
-				hasAttribute: !! ( n && n.attribute ),
-				hasValue: !! ( n && n.value ),
-				attrItemSize: n && n.attribute && n.attribute.itemSize,
-				attrCount: n && n.attribute && n.attribute.count,
-				attrIsBuffer: n && n.attribute && n.attribute.isBufferAttribute,
-				valIsBuffer: n && n.value && n.value.isBufferAttribute,
-			} );
-		}
 		const cands = [ n.attribute, n.value ];
 		for ( const cand of cands ) {
 
@@ -711,10 +677,6 @@ function findFirstAttributeMatchingEntry( node, entry ) {
 
 	probe( node );
 	if ( ! found && typeof node.traverse === 'function' ) node.traverse( probe );
-	if ( __DBG ) {
-		const sample = __probedNodes.slice( 0, 12 ).map( ( p ) => `${ p.ctor }${ p.attrIsBuffer ? `[attr ${ p.attrItemSize }x${ p.attrCount }]` : ( p.hasAttribute ? '[attr?]' : '' ) }${ p.valIsBuffer ? '[val=buf]' : '' }` ).join( ',' );
-		console.log( `[tslp-dbg findFirst] entry=${ entry.name } want=${ wantSize }/${ wantCount }/${ wantArray } rootCtor=${ node && node.constructor && node.constructor.name } probed=${ __probedNodes.length } found=${ !! found } sample=[${ sample }]` );
-	}
 	return found;
 
 }
@@ -817,19 +779,13 @@ function hydrateNodeAttributes( attributes ) {
 
 	if ( ! Array.isArray( attributes ) ) return [];
 
-	const __DBG = typeof globalThis !== 'undefined' && globalThis.__TSLP_DBG_INSTANCE === true;
-
 	return attributes.map( ( attribute, i ) => {
 
 		if ( ! attribute || attribute.source !== 'node' ) {
-			if ( __DBG ) console.log( `[tslp-dbg hydrateNodeAttr] slot=${ i } name=${ attribute && attribute.name } source=${ attribute && attribute.source } passthrough` );
 			return attribute;
 		}
 
 		const liveAttribute = attribute._liveAttribute || ( attribute.node && attribute.node.attribute );
-		if ( __DBG ) {
-			console.log( `[tslp-dbg hydrateNodeAttr] slot=${ i } name=${ attribute.name } live=${ liveAttribute ? `BufferAttr(itemSize=${ liveAttribute.itemSize },count=${ liveAttribute.count },isInstanced=${ !! liveAttribute.isInstancedBufferAttribute })` : 'NULL→fallback' }` );
-		}
 		if ( liveAttribute ) return { ...attribute, node: { attribute: liveAttribute } };
 
 		const itemSize = attribute.itemSize || itemSizeFromAttributeType( attribute.type );
@@ -934,6 +890,7 @@ function cloneBinding( binding ) {
 		const cloned = new UniformBuffer( binding.name, newBuffer );
 		cloned.visibility = binding.visibility | 0;
 		cloned.groupNode = { shared: false, version: 0 };
+		if ( binding.__tslpLiveArrayResolver ) attachLiveUniformBufferUpdater( cloned, binding.__tslpLiveArrayResolver );
 		return cloned;
 
 	}
@@ -1498,6 +1455,54 @@ function findShadowLight( scene, entry ) {
 
 }
 
+function createLiveUniformArrayResolver( bindingName, byteLength, material ) {
+
+	if ( ! /^UniformBuffer_/.test( bindingName || '' ) ) return null;
+	if ( ! material ) return null;
+	return function resolveLiveUniformArray() {
+
+		const object = material.__tslpPrecompileObject;
+		if ( ! object ) return null;
+
+		const skeleton = object.skeleton;
+		const boneMatrices = skeleton && skeleton.boneMatrices;
+		if ( boneMatrices && boneMatrices.byteLength === byteLength ) {
+
+			if ( typeof skeleton.update === 'function' ) skeleton.update();
+			return boneMatrices;
+
+		}
+
+		const instanceArray = object.instanceMatrix && object.instanceMatrix.array;
+		if ( instanceArray && instanceArray.byteLength === byteLength ) return instanceArray;
+
+		return null;
+
+	};
+
+}
+
+function attachLiveUniformBufferUpdater( uniformBuffer, liveArrayResolver ) {
+
+	if ( ! uniformBuffer || typeof liveArrayResolver !== 'function' ) return;
+	Object.defineProperty( uniformBuffer, '__tslpLiveArrayResolver', {
+		value: liveArrayResolver,
+		configurable: true,
+	} );
+	uniformBuffer.update = function updateLiveUniformBuffer() {
+
+		const liveArray = this.__tslpLiveArrayResolver && this.__tslpLiveArrayResolver();
+		if ( liveArray && this.buffer && typeof this.buffer.set === 'function' ) {
+
+			this.buffer.set( liveArray.subarray ? liveArray.subarray( 0, this.buffer.length ) : liveArray.slice( 0, this.buffer.length ) );
+
+		}
+		return true;
+
+	};
+
+}
+
 function createRuntimeBinding( artifact, group, descriptor, material, groupNode ) {
 
 	const name = descriptor.name || group.name || '';
@@ -1532,6 +1537,8 @@ function createRuntimeBinding( artifact, group, descriptor, material, groupNode 
 		const uniformBuffer = new UniformBuffer( name, buffer );
 		uniformBuffer.visibility = descriptor.visibility | 0;
 		uniformBuffer.groupNode = groupNode;
+		const liveArrayResolver = createLiveUniformArrayResolver( name, buffer.byteLength, material );
+		if ( liveArrayResolver ) attachLiveUniformBufferUpdater( uniformBuffer, liveArrayResolver );
 		return uniformBuffer;
 
 	}
@@ -1705,6 +1712,37 @@ function buildLtcTexture( artifact, source ) {
 
 }
 
+function applyTextureSourceSettings( texture, source ) {
+
+	if ( ! texture || ! source ) return texture;
+	let changed = false;
+	for ( const prop of [ 'mapping', 'wrapS', 'wrapT', 'magFilter', 'minFilter', 'anisotropy' ] ) {
+
+		if ( typeof source[ prop ] === 'number' && texture[ prop ] !== source[ prop ] ) {
+
+			texture[ prop ] = source[ prop ];
+			changed = true;
+
+		}
+
+	}
+	if ( typeof source.colorSpace === 'string' && texture.colorSpace !== source.colorSpace ) {
+
+		texture.colorSpace = source.colorSpace;
+		changed = true;
+
+	}
+	if ( typeof source.flipY === 'boolean' && texture.flipY !== source.flipY ) {
+
+		texture.flipY = source.flipY;
+		changed = true;
+
+	}
+	if ( changed ) texture.needsUpdate = true;
+	return texture;
+
+}
+
 function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 
 	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
@@ -1777,7 +1815,7 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 
 			const tex = artifact._textureRefs.get( source.textureUuid );
 			if ( tex && textureMatchesShaderMultisample( artifact, bindingName, tex ) ) {
-				return tex;
+				return applyTextureSourceSettings( tex, source );
 			}
 
 		}
@@ -1796,8 +1834,8 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 			for ( const prop of TEXTURE_PROPS ) {
 
 				const tex = material[ prop ];
-				if ( tex && tex.isTexture && tex.uuid === source.textureUuid && textureMatchesShaderMultisample( artifact, bindingName, tex ) ) {
-					return tex;
+				if ( tex && tex.isTexture === true && tex.uuid === source.textureUuid && textureMatchesShaderMultisample( artifact, bindingName, tex ) ) {
+					return applyTextureSourceSettings( tex, source );
 				}
 
 			}
@@ -1812,18 +1850,7 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 		const byIdent = lookupLiveTextureByIdentity( source );
 		if ( byIdent && textureMatchesShaderMultisample( artifact, bindingName, byIdent ) ) {
 
-			// Apply the captured flipY so replay orientation matches capture.
-			// HTMLImageElement textures may default to flipY=true (three.js
-			// default for TextureLoader); DataTexture / RenderTarget textures
-			// default to false. Without this, re-loaded textures on replay
-			// can appear Y-flipped vs the original capture.
-			if ( typeof source.flipY === 'boolean' ) {
-
-				byIdent.flipY = source.flipY;
-				byIdent.needsUpdate = true;
-
-			}
-			return byIdent;
+			return applyTextureSourceSettings( byIdent, source );
 
 		}
 
@@ -1840,13 +1867,7 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 				const anonData = lookupAnonymousDataTexture( source.snapshot );
 				if ( anonData && textureMatchesShaderMultisample( artifact, bindingName, anonData ) ) {
 
-					if ( typeof source.flipY === 'boolean' ) {
-
-						anonData.flipY = source.flipY;
-						anonData.needsUpdate = true;
-
-					}
-					return anonData;
+					return applyTextureSourceSettings( anonData, source );
 
 				}
 
@@ -1963,7 +1984,12 @@ function fallbackTextureForBinding( artifact, bindingName ) {
 	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_3d`, 'm' ).test( wgsl ) ) return fallback3DTexture;
 	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_2d_array`, 'm' ).test( wgsl ) ) return fallbackArrayTexture;
 	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*sampler_comparison`, 'm' ).test( wgsl ) ) return fallbackComparisonDepthTexture;
-	if ( /sampler/i.test( bindingName ) && /sampler_comparison/.test( wgsl ) ) return fallbackComparisonDepthTexture;
+	if ( /sampler/i.test( bindingName ) ) {
+
+		const textureName = bindingName.replace( /_sampler$/, '' );
+		if ( textureName !== bindingName && shaderDeclaresDepthTexture( artifact, textureName ) ) return fallbackDepthTexture;
+
+	}
 	return fallbackTexture;
 
 }
@@ -2268,7 +2294,7 @@ function writeUniformGroup( group, frame, view, material ) {
 			// background is a textured cube/equirect map. Mirror three.js's
 			// SceneProperties: rotate-from-euler then transpose. Skip for
 			// non-rotated scenes (Euler is zero) by writing identity.
-			if ( frame.scene && frame.scene.backgroundRotation && frame.scene.background && frame.scene.background.isTexture ) {
+			if ( frame.scene && frame.scene.backgroundRotation && frame.scene.background && frame.scene.background.isTexture === true ) {
 
 				_mwi.makeRotationFromEuler( frame.scene.backgroundRotation ).transpose();
 				writeMat4( view, offset, _mwi );

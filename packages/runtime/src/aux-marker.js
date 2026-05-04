@@ -615,7 +615,7 @@ function collectPMREMInputs( scene ) {
 
 	function record( tex ) {
 
-		if ( ! tex || ! tex.isTexture ) return;
+		if ( ! tex || tex.isTexture !== true ) return;
 		if ( tex.mapping === 306 ) return; // CubeUVReflectionMapping = PMREM result, skip
 		let kind = null;
 		if ( tex.isCubeTexture || tex.mapping === 301 || tex.mapping === 302 ) {
@@ -637,7 +637,7 @@ function collectPMREMInputs( scene ) {
 	}
 
 	if ( ! scene ) return [];
-	if ( scene.background && scene.background.isTexture ) record( scene.background );
+	if ( scene.background && scene.background.isTexture === true ) record( scene.background );
 
 	// Walk scene.backgroundNode for pmremTexture(source) — the real PMREMNode
 	// (dev path uses real three/tsl, not slim stubs) carries `.value`/`.texture`
@@ -658,7 +658,7 @@ function collectPMREMInputs( scene ) {
 			const mats = Array.isArray( m ) ? m : [ m ];
 			for ( const mat of mats ) {
 
-				if ( mat && mat.envMap && mat.envMap.isTexture ) record( mat.envMap );
+				if ( mat && mat.envMap && mat.envMap.isTexture === true ) record( mat.envMap );
 
 			}
 
@@ -674,11 +674,11 @@ function findTextureInNode( node, depth = 0, seen = new Set() ) {
 
 	if ( ! node || depth > 6 || seen.has( node ) ) return null;
 	seen.add( node );
-	if ( node.isTexture ) return node;
+	if ( node.isTexture === true ) return node;
 	for ( const key of [ 'value', '_value', 'texture', '_texture' ] ) {
 
 		const v = node[ key ];
-		if ( v && v.isTexture ) return v;
+		if ( v && v.isTexture === true ) return v;
 
 	}
 	for ( const key of [ 'node', 'aNode', 'bNode', 'uvNode', 'levelNode', 'sourceNode' ] ) {

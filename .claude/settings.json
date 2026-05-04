@@ -36,7 +36,10 @@
       "Bash(TSLP_DEBUG_TORNADO=1 node packages/examples/batch/run-e2e.mjs --filter=webgpu_materials_toon --psnr-threshold=0 --no-pixel-gate)",
       "Bash(tee /tmp/toon-e2e.log)",
       "Bash(node packages/examples/batch/run-e2e.mjs --filter=webgpu_clipping --save-shots)",
-      "Bash(node packages/examples/batch/run-e2e.mjs --filter=webgpu_particles --report=e2e-report-smoke.json)"
+      "Bash(node packages/examples/batch/run-e2e.mjs --filter=webgpu_particles --report=e2e-report-smoke.json)",
+      "Bash(timeout 240 node run-e2e.mjs --filter=webgpu_pmrem_scene)",
+      "Bash(node -e \"const { totalmem } = require\\('node:os'\\); const ram = totalmem\\(\\); const w = Math.max\\(1, Math.min\\(4, Math.floor\\(ram / \\(1.5 * 1024**3\\)\\) - 1\\)\\); console.log\\('RAM:', \\(ram / 1024**3\\).toFixed\\(1\\), 'GB → default workers:', w\\);\")",
+      "Bash(node --check /Users/davidronai/Desktop/git/vite-plugin-tsl-precompile/packages/examples/batch/run-e2e-parallel.mjs)"
     ],
     "additionalDirectories": [
       "/Users/davidronai/Desktop/git/vite-plugin-tsl-precompile/packages/examples/batch/results"

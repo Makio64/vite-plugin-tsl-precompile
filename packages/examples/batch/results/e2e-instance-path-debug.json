@@ -1,0 +1,260 @@
+{
+  "total": 1,
+  "pass": 0,
+  "fail": 1,
+  "skip": 0,
+  "details": [
+    {
+      "name": "webgpu_instance_path.html",
+      "status": "fail",
+      "captureBrightFrac": 0.9740169270833333,
+      "replayBrightFrac": 0.9268294270833334,
+      "pixelGate": {
+        "pass": false,
+        "psnr": 16.12,
+        "threshold": 30
+      },
+      "userArtifacts": 1,
+      "auxArtifacts": 2,
+      "captureErrors": [],
+      "replayErrors": [],
+      "captureWarnings": [],
+      "replayWarnings": [],
+      "captureDiagnostics": null,
+      "replayDiagnostics": {
+        "colorTransferFallbacks": {},
+        "healedNullTextureImages": 0,
+        "pmrem": {
+          "kickCalls": 15,
+          "cacheHits": 15,
+          "pendingJoins": 0,
+          "skippedNotReady": 0,
+          "generateCalls": 0,
+          "generateSuccess": 0,
+          "generateFailed": 0,
+          "noComputeRenderer": 0,
+          "noGPUTexture": 0,
+          "wireCalls": 30,
+          "wireNoPmrem": 0,
+          "wireAlreadyWired": 29,
+          "wireNeedsPmrem": 1,
+          "wireAttached": 1
+        }
+      },
+      "artifactSummaries": [
+        {
+          "name": "webgpu_instance_path.html:MeshStandardNodeMaterial:1",
+          "hash": "24bae3586cae0c201402c77f220735ed35ec37c45eb40a14c6a3f7dc258f422b",
+          "cacheKey": 7963042088019009,
+          "shape": "mesh-standard",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tnodeUniform1 : f32,\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform5 : f32,\n\tnodeUniform6 : f32,\n\tnodeUniform7 : f32,\n\tnodeUniform9 : mat3x3<f32>,\n\tnodeUniform10 : vec3<f32>,\n\tnodeUniform11 : f32,\n\tnodeUniform12 : f32,\n\tnodeUniform13 : mat4x4<f32>,\n\tnodeUniform14 : mat4x4<f32>,\n\tnodeUniform16 : f32,\n\tnodeUniform17 : f32,\n\tnodeUniform19 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 1 ) v_positionViewDirection : vec3<f32>,\n\t@location( 2 ) nodeVarying6 : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> nodeVar0 : f32;\nvar<private> nodeVar1 : f32;\nvar<private> normalLocal : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> nodeVar6 : vec3<f32>;\nvar<private> VERTEX_nodeVar117 : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> v_modelVi",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform18_sampler : sampler;\n@binding( 2 ) @group( 1 ) var nodeUniform18 : texture_2d<f32>;\n@binding( 3 ) @group( 1 ) var nodeUniform20_sampler : sampler;\n@binding( 4 ) @group( 1 ) var nodeUniform20 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform5 : f32,\n\tnodeUniform6 : f32,\n\tnodeUniform7 : f32,\n\tnodeUniform9 : mat3x3<f32>,\n\tnodeUniform10 : vec3<f32>,\n\tnodeUniform11 : f32,\n\tnodeUniform12 : f32,\n\tnodeUniform13 : mat4x4<f32>,\n\tnodeUniform14 : mat4x4<f32>,\n\tnodeUniform16 : f32,\n\tnodeUniform17 : f32,\n\tnodeUniform19 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tnodeUniform1 : f32,\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> Metalness : f32;\nvar<private> Roughness : f32;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> nodeVar2 : vec3<f",
+          "attributes": [
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "normal",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "nodeAttribute0",
+              "type": "float",
+              "source": "node",
+              "count": 1000,
+              "itemSize": 1,
+              "arrayType": "Float32Array"
+            },
+            {
+              "name": "nodeAttribute2",
+              "type": "vec3",
+              "source": "node",
+              "count": 1000,
+              "itemSize": 3,
+              "arrayType": "Float32Array"
+            },
+            {
+              "name": "nodeAttribute3",
+              "type": "float",
+              "source": "node",
+              "count": 1000,
+              "itemSize": 1,
+              "arrayType": "Float32Array"
+            },
+            {
+              "name": "nodeAttribute4",
+              "type": "vec3",
+              "source": "node",
+              "count": 1000,
+              "itemSize": 3,
+              "arrayType": "Float32Array"
+            }
+          ],
+          "textures": [
+            {
+              "group": "object",
+              "name": "nodeUniform18_sampler",
+              "kind": "artifact.texture",
+              "textureUuid": "4dfeb2e1-54f1-46d9-af12-ee3c4e062803",
+              "textureName": "PMREM.cubeUv",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform18",
+              "kind": "artifact.texture",
+              "textureUuid": "4dfeb2e1-54f1-46d9-af12-ee3c4e062803",
+              "textureName": "PMREM.cubeUv",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform20_sampler",
+              "kind": "builtin.dfgLUT",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform20",
+              "kind": "builtin.dfgLUT",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            }
+          ]
+        }
+      ],
+      "auxSummaries": [
+        {
+          "shape": "background",
+          "configHash": "f3da243b0f0532f9010ad3496ba6fcdcc7a0b4f34e332ac561b5c96164c28eb3",
+          "artifactShape": "node-material",
+          "cacheKey": 5636625060660079,
+          "attributes": [
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "bindings": [
+            {
+              "name": "render",
+              "bindings": [
+                {
+                  "name": "render",
+                  "kind": "uniform-buffer",
+                  "byteLength": 144
+                }
+              ]
+            },
+            {
+              "name": "object",
+              "bindings": [
+                {
+                  "name": "object",
+                  "kind": "uniform-buffer",
+                  "byteLength": 80
+                }
+              ]
+            }
+          ],
+          "uniformPlan": [
+            {
+              "name": "render",
+              "byteLength": 144,
+              "slotCount": 3,
+              "textures": []
+            },
+            {
+              "name": "object",
+              "byteLength": 80,
+              "slotCount": 3,
+              "textures": []
+            }
+          ]
+        },
+        {
+          "shape": "render-output",
+          "configHash": "3e0046e93e9d37d3f992af601f7b5a639b2b8b490f1289d0e4f7ba83f330b432",
+          "artifactShape": "render-output",
+          "cacheKey": 5487590419590586,
+          "attributes": [
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "bindings": [
+            {
+              "name": "render",
+              "bindings": [
+                {
+                  "name": "render",
+                  "kind": "uniform-buffer",
+                  "byteLength": 144
+                }
+              ]
+            },
+            {
+              "name": "object",
+              "bindings": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "sampler",
+                  "byteLength": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "sampled-texture",
+                  "byteLength": null
+                },
+                {
+                  "name": "object",
+                  "kind": "uniform-buffer",
+                  "byteLength": 80
+                }
+              ]
+            }
+          ],
+          "uniformPlan": [
+            {
+              "name": "render",
+              "byteLength": 144,
+              "slotCount": 3,
+              "textures": []
+            },
+            {
+              "name": "object",
+              "byteLength": 80,
+              "slotCount": 2,
+              "textures": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "artifact.texture",
+                  "textureUuid": "71afe0a7-2848-416a-b3f3-a0784288ef43",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "artifact.texture",
+                  "textureUuid": "71afe0a7-2848-416a-b3f3-a0784288ef43",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "error": "pixel diff PSNR 16.12 dB < threshold 30 dB (visual regression)"
+    }
+  ]
+}

@@ -32,6 +32,7 @@ export { default as Lighting } from 'three/src/renderers/common/Lighting.js';
 export { default as QuadMesh } from 'three/src/renderers/common/QuadMesh.js';
 export { default as PostProcessing } from 'three/src/renderers/common/PostProcessing.js';
 export { default as RenderPipeline } from 'three/src/renderers/common/RenderPipeline.js';
+export { default as BundleGroup } from 'three/src/renderers/common/BundleGroup.js';
 export { default as PMREMGenerator } from 'three/src/renderers/common/extras/PMREMGenerator.js';
 export { default as CanvasTarget } from 'three/src/renderers/common/CanvasTarget.js';
 export { default as InspectorBase } from 'three/src/renderers/common/InspectorBase.js';

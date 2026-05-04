@@ -137,7 +137,7 @@ function _ensureBgRotImpl() {
 export function writeMat4FromEuler( view, byteOffset, euler, background ) {
 
 	const e = _bgRotScratch.elements;
-	if ( background && background.isTexture && euler ) {
+	if ( background && background.isTexture === true && euler ) {
 
 		_ensureBgRotImpl()( e, euler._x || euler.x || 0, euler._y || euler.y || 0, euler._z || euler.z || 0 );
 		// Transpose: matches `_m1.transpose()` in stock SceneProperties.

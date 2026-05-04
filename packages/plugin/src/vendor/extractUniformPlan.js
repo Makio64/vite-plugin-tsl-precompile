@@ -648,6 +648,12 @@ function textureIdentity( texture ) {
 
 	}
 	if ( typeof texture.mapping === 'number' ) out.mapping = texture.mapping;
+	if ( typeof texture.wrapS === 'number' ) out.wrapS = texture.wrapS;
+	if ( typeof texture.wrapT === 'number' ) out.wrapT = texture.wrapT;
+	if ( typeof texture.magFilter === 'number' ) out.magFilter = texture.magFilter;
+	if ( typeof texture.minFilter === 'number' ) out.minFilter = texture.minFilter;
+	if ( typeof texture.anisotropy === 'number' ) out.anisotropy = texture.anisotropy;
+	if ( typeof texture.colorSpace === 'string' ) out.colorSpace = texture.colorSpace;
 	if ( typeof texture.flipY === 'boolean' ) out.flipY = texture.flipY;
 
 	return Object.keys( out ).length > 0 ? out : null;
