@@ -2,10 +2,6 @@
 // filter / sort / search / modal. Vanilla DOM, no framework — matches the rest
 // of the site.
 
-const FEATURED_CHIPS = [
-	{ id: 'pixel-match', label: 'Pixel-match' },
-];
-
 const TIER_LABEL = {
 	'pixel-match': 'Pixel-match',
 	'visual-match': 'Visual-match',
@@ -14,6 +10,13 @@ const TIER_LABEL = {
 };
 
 const TIER_RANK = { 'pixel-match': 0, 'visual-match': 1, 'renders': 2, 'capture-only': 3 };
+
+const TIER_CHIPS = [
+	{ id: 'pixel-match', totalsKey: 'pixelMatchCount' },
+	{ id: 'visual-match', totalsKey: 'visualMatchCount' },
+	{ id: 'renders', totalsKey: 'rendersCount' },
+	{ id: 'capture-only', totalsKey: 'captureOnlyCount' },
+];
 
 const state = {
 	data: null,
@@ -73,18 +76,22 @@ function renderMetrics( totals ) {
 
 function renderChips( categories, totals ) {
 	const chipsEl = $( '#ex-chips' );
+	const tierChips = TIER_CHIPS.map( c => ( {
+		id: c.id,
+		label: TIER_LABEL[ c.id ],
+		count: totals[ c.totalsKey ] ?? 0,
+		tier: true,
+	} ) );
 	const all = [
 		{ id: 'all', label: 'All', count: totals.examplesProcessed },
-		...FEATURED_CHIPS.map( c => ( {
-			id: c.id, label: c.label,
-			count: c.id === 'pixel-match' ? totals.pixelMatchCount : 0,
-		} ) ),
+		...tierChips,
 		...categories,
 	];
 	chipsEl.innerHTML = all.map( c => {
 		const sel = state.filter === c.id ? 'true' : 'false';
-		return `<button type="button" role="tab" aria-selected="${sel}" class="ex-chip" data-filter="${escapeHtml( c.id )}">
-			<span>${escapeHtml( c.label )}</span>
+		const dot = c.tier ? `<span class="ex-dot ex-dot-${escapeHtml( c.id )}" aria-hidden="true"></span>` : '';
+		return `<button type="button" role="tab" aria-selected="${sel}" class="ex-chip${c.tier ? ' ex-chip-tier' : ''}" data-filter="${escapeHtml( c.id )}">
+			${dot}<span>${escapeHtml( c.label )}</span>
 			<span class="ex-chip-count">${c.count}</span>
 		</button>`;
 	} ).join( '' );
@@ -102,9 +109,11 @@ function renderChips( categories, totals ) {
 
 function applyFilters( examples ) {
 	let xs = examples;
-	if ( ! state.showHidden ) xs = xs.filter( r => r.thumbHealth === 'ok' );
-	if ( state.filter === 'pixel-match' ) {
-		xs = xs.filter( r => r.badge === 'pixel-match' );
+	const isTierFilter = state.filter in TIER_LABEL;
+	// Capture-only entries have thumbHealth !== 'ok'; surface them when that tier is selected.
+	if ( ! state.showHidden && state.filter !== 'capture-only' ) xs = xs.filter( r => r.thumbHealth === 'ok' );
+	if ( isTierFilter ) {
+		xs = xs.filter( r => r.badge === state.filter );
 	} else if ( state.filter !== 'all' ) {
 		xs = xs.filter( r => r.category === state.filter );
 	}

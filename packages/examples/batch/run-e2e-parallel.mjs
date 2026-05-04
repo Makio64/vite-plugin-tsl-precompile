@@ -186,7 +186,7 @@ const finalReport = resolve( OUT, 'e2e-report.json' );
 writeFileSync( finalReport, JSON.stringify( merged, null, 2 ) );
 
 console.log( '\n═══ e2e-parallel summary ═══' );
-console.log( `  ${ merged.pass } pass, ${ merged.fail } fail, ${ merged.skip } skip, ${ merged.total } candidates` );
+console.log( `  ${ merged.pass } pass, ${ merged.fail } fail, ${ merged.total } candidates tested, ${ merged.skip } skipped` );
 console.log( `  report: ${ finalReport }` );
 printFailureSummary( merged.details );
 

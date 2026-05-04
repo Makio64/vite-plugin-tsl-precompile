@@ -3038,7 +3038,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 				const _perfProxy = new Proxy( _origPerf, {
 					get( target, prop, receiver ) {
 						if ( prop === 'now' ) return _syntheticNowLogged;
-						const val = Reflect.get( target, prop, receiver );
+						const val = Reflect.get( target, prop, target );
 						return typeof val === 'function' ? val.bind( target ) : val;
 					},
 				} );
@@ -3174,9 +3174,8 @@ async function visitExample( browser, name, mode, waitMs ) {
  *   { pass: true,  psnr, threshold } — frames agree at or above the threshold
  *   { pass: false, psnr, threshold } — frames diverge below threshold (visual regression)
  *
- * The caller folds `pass === false` into the overall pass calculation; `skipped`
- * never counts as a failure (the underlying frame-empty / nav-error gates catch
- * those cases on their own).
+ * When the pixel gate is enabled, skipped comparisons fail the example because
+ * the runner cannot prove visual equivalence.
  */
 function pixelGateOf( metrics, threshold ) {
 
@@ -3255,7 +3254,7 @@ async function runOne( browser, name ) {
 	await replay.context.close().catch( () => {} );
 
 	const pixelGate = pixelGateOf( pixelMetrics, psnrThreshold );
-	const pixelGateOk = ! pixelGateEnabled || pixelGate.pass !== false;
+	const pixelGateOk = ! pixelGateEnabled || pixelGate.pass === true;
 	const pass = ( userCount > 0 || auxCount > 0 ) && blockingCaptureErrors.length === 0 && replay.bright > 0.005 && blockingReplayErrors.length === 0 && pixelGateOk;
 
 	return {
@@ -3377,6 +3376,7 @@ function summarizeFailure( { userCount, blockingCaptureErrors, replayBright, blo
 	if ( blockingCaptureErrors.length > 0 ) return blockingCaptureErrors[ 0 ].slice( 0, 500 );
 	if ( replayBright <= 0.005 ) return 'slim replay did not produce a non-empty frame';
 	if ( blockingReplayErrors.length > 0 ) return blockingReplayErrors[ 0 ].slice( 0, 500 );
+	if ( pixelGateEnabled && pixelGate && pixelGate.skipped ) return `pixel comparison skipped: ${ pixelGate.reason || 'unknown reason' }`;
 	if ( pixelGateEnabled && pixelGate && pixelGate.pass === false ) return `pixel diff PSNR ${ pixelGate.psnr } dB < threshold ${ pixelGate.threshold } dB (visual regression)`;
 	return 'unknown replay failure';
 
@@ -3518,7 +3518,7 @@ try {
 writeFileSync( reportPath, JSON.stringify( report, null, 2 ) );
 
 console.log( '\n═══ e2e summary ═══' );
-console.log( `  ${ report.pass } pass, ${ report.fail } fail, ${ report.skip } skip, ${ report.total } candidates` );
+console.log( `  ${ report.pass } pass, ${ report.fail } fail, ${ report.total } candidates tested, ${ report.skip } skipped` );
 console.log( `  report: ${ reportPath }` );
 printFailureSummary( report.details );
 

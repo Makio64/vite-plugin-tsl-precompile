@@ -91,17 +91,14 @@
 }
 
 /* =========================================================
-   2. PROBLEM — sticky pin with stat reveals.
+   2. PROBLEM — stat reveals.
    ========================================================= */
 .problem {
 	position: relative;
-	min-height: 180vh;
-	padding: 0 1.5rem;
+	padding: 6rem 1.5rem;
 }
 .problem-sticky {
-	position: sticky;
-	top: 0;
-	min-height: 100vh;
+	min-height: 80vh;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -212,7 +209,6 @@
 }
 @media (max-width: 640px) {
 	.problem-stats { grid-template-columns: 1fr; }
-	.problem { min-height: 140vh; }
 }
 
 /* =========================================================

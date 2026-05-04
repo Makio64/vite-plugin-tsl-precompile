@@ -145,10 +145,13 @@
 	display: inline-block;
 	box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05);
 }
-.ex-dot-pixel { background: var(--good); box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.18); }
-.ex-dot-visual { background: #fbbf24; box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.18); }
+.ex-dot-pixel,
+.ex-dot-pixel-match { background: var(--good); box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.18); }
+.ex-dot-visual,
+.ex-dot-visual-match { background: #fbbf24; box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.18); }
 .ex-dot-renders { background: var(--muted); box-shadow: 0 0 0 2px rgba(125, 131, 154, 0.18); }
-.ex-dot-capture { background: var(--bad); box-shadow: 0 0 0 2px rgba(251, 113, 133, 0.18); }
+.ex-dot-capture,
+.ex-dot-capture-only { background: var(--bad); box-shadow: 0 0 0 2px rgba(251, 113, 133, 0.18); }
 
 /* ---------- filter bar ---------- */
 .ex-filterbar {
@@ -199,6 +202,8 @@
 	color: inherit;
 }
 .ex-chip[aria-selected="true"] .ex-chip-count { background: rgba(0, 0, 0, 0.18); }
+.ex-chip-tier .ex-dot { width: 8px; height: 8px; box-shadow: none; }
+.ex-chip-tier[aria-selected="true"] .ex-dot { box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.18); }
 
 .ex-controls {
 	display: flex;
