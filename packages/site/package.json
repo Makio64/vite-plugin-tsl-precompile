@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Landing site for vite-plugin-tsl-precompile.",
   "scripts": {
+    "data": "node scripts/build-examples-data.mjs",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
@@ -13,6 +14,7 @@
     "three": "^0.184.0"
   },
   "devDependencies": {
+    "sharp": "^0.34.5",
     "vite": "^8.0.9"
   }
 }

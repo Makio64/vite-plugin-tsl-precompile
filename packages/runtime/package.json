@@ -38,6 +38,6 @@
     "@rollup/plugin-terser": "^1.0.0"
   },
   "peerDependencies": {
-    "three": "^0.184.0"
+    "three": ">=0.184.0"
   }
 }
