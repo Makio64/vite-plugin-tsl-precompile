@@ -1,7 +1,7 @@
 [
   {
     "shape": "render-output",
-    "configHash": "d36b91adf79b6c825319324d1139b036b229c1a853d064a3e9e9bf91fff92fb7",
+    "configHash": "90a5a84186bcbc44efdd95b20bf6492a0c0d34057e53f1b3ebe0bc95b1236c03",
     "artifact": {
       "version": 3,
       "cacheKey": 6275157924382396,
@@ -314,9 +314,15 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "5ca7520a-1781-4509-9611-5ec30902f75a",
+                "textureUuid": "34e42d64-0fa8-4de4-aedc-3696c1db8939",
                 "textureName": "output",
                 "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1003,
+                "minFilter": 1003,
+                "anisotropy": 1,
+                "colorSpace": "",
                 "flipY": false
               }
             },
@@ -328,9 +334,15 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "a4f2458b-bf03-47df-9ea4-c842f1a20a99",
+                "textureUuid": "7cca2020-b709-4cb4-b6c1-12cca9b370fd",
                 "textureName": "normal",
                 "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1003,
+                "minFilter": 1003,
+                "anisotropy": 1,
+                "colorSpace": "",
                 "flipY": false
               }
             }
@@ -347,9 +359,15 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "5ca7520a-1781-4509-9611-5ec30902f75a",
+                  "textureUuid": "34e42d64-0fa8-4de4-aedc-3696c1db8939",
                   "textureName": "output",
                   "mapping": 300,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1003,
+                  "minFilter": 1003,
+                  "anisotropy": 1,
+                  "colorSpace": "",
                   "flipY": false
                 }
               }
@@ -473,9 +491,15 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "a4f2458b-bf03-47df-9ea4-c842f1a20a99",
+                  "textureUuid": "7cca2020-b709-4cb4-b6c1-12cca9b370fd",
                   "textureName": "normal",
                   "mapping": 300,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1003,
+                  "minFilter": 1003,
+                  "anisotropy": 1,
+                  "colorSpace": "",
                   "flipY": false
                 }
               }
@@ -503,7 +527,7 @@
   },
   {
     "shape": "post-process",
-    "configHash": "f338e8282ce3e609dceb9f95c5366d5dfceaa7027b71bd3e4556fe624818e528",
+    "configHash": "736d2599c4f4b0e94770481abd3b4833bd5d9cf2ff9697085e5b75257676d7e2",
     "artifact": {
       "version": 3,
       "cacheKey": 7352854927103546,
@@ -831,9 +855,15 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "5ca7520a-1781-4509-9611-5ec30902f75a",
+                "textureUuid": "34e42d64-0fa8-4de4-aedc-3696c1db8939",
                 "textureName": "output",
                 "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1003,
+                "minFilter": 1003,
+                "anisotropy": 1,
+                "colorSpace": "",
                 "flipY": false
               }
             },
@@ -845,9 +875,15 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "a4f2458b-bf03-47df-9ea4-c842f1a20a99",
+                "textureUuid": "7cca2020-b709-4cb4-b6c1-12cca9b370fd",
                 "textureName": "normal",
                 "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1003,
+                "minFilter": 1003,
+                "anisotropy": 1,
+                "colorSpace": "",
                 "flipY": false
               }
             }
@@ -864,9 +900,15 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "5ca7520a-1781-4509-9611-5ec30902f75a",
+                  "textureUuid": "34e42d64-0fa8-4de4-aedc-3696c1db8939",
                   "textureName": "output",
                   "mapping": 300,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1003,
+                  "minFilter": 1003,
+                  "anisotropy": 1,
+                  "colorSpace": "",
                   "flipY": false
                 }
               }
@@ -1005,9 +1047,15 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "a4f2458b-bf03-47df-9ea4-c842f1a20a99",
+                  "textureUuid": "7cca2020-b709-4cb4-b6c1-12cca9b370fd",
                   "textureName": "normal",
                   "mapping": 300,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1003,
+                  "minFilter": 1003,
+                  "anisotropy": 1,
+                  "colorSpace": "",
                   "flipY": false
                 }
               }
@@ -1066,7 +1114,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "043831c7-9fc9-4d6e-bef0-072bd1c30f12"
+      "materialUuid": "0891c38e-d3e6-4792-a224-825725bbdb0f"
     }
   }
 ]

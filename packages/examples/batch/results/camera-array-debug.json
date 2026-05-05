@@ -1,0 +1,213 @@
+{
+  "total": 1,
+  "pass": 1,
+  "fail": 0,
+  "skip": 0,
+  "details": [
+    {
+      "name": "webgpu_camera_array.html",
+      "status": "pass",
+      "captureBrightFrac": 0.9995084635416667,
+      "replayBrightFrac": 0.99287109375,
+      "pixelGate": {
+        "pass": false,
+        "psnr": 18.41,
+        "threshold": 30
+      },
+      "userArtifacts": 2,
+      "auxArtifacts": 2,
+      "captureErrors": [],
+      "replayErrors": [],
+      "captureWarnings": [],
+      "replayWarnings": [],
+      "captureDiagnostics": {
+        "colorTransferFallbacks": {},
+        "healedNullTextureImages": 0
+      },
+      "replayDiagnostics": {
+        "colorTransferFallbacks": {},
+        "healedNullTextureImages": 0,
+        "gpuErrors": [],
+        "pmrem": {
+          "kickCalls": 0,
+          "cacheHits": 0,
+          "pendingJoins": 0,
+          "skippedNotReady": 0,
+          "generateCalls": 0,
+          "generateSuccess": 0,
+          "generateFailed": 0,
+          "noComputeRenderer": 0,
+          "noGPUTexture": 0,
+          "wireCalls": 16,
+          "wireNoPmrem": 0,
+          "wireAlreadyWired": 0,
+          "wireNeedsPmrem": 0,
+          "wireAttached": 0,
+          "generated": []
+        }
+      },
+      "artifactSummaries": [
+        {
+          "name": "webgpu_camera_array.html:MeshPhongNodeMaterial:1",
+          "hash": "b2af0dbb50a8ad851e85879b474a42ce59f271e62b595e2d160b1bf9cac69ec6",
+          "cacheKey": 12082936352517268,
+          "shape": "mesh-phong",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct cameraViewMatricesStruct {\n\tvalue : array< mat4x4<f32>, 36 >\n};\n@binding( 2 ) @group( 0 )\nvar<uniform> cameraViewMatrices : cameraViewMatricesStruct;\n\nstruct cameraProjectionMatricesStruct {\n\tvalue : array< mat4x4<f32>, 36 >\n};\n@binding( 3 ) @group( 0 )\nvar<uniform> cameraProjectionMatrices : cameraProjectionMatricesStruct;\n\nstruct cameraIndexStruct {\n\tu_cameraIndex : u32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> cameraIndex : cameraIndexStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : f32,\n\tnodeUniform3 : vec3<f32>,\n\tnodeUniform4 : vec3<f32>,\n\tnodeUniform5 : f32,\n\tnodeUniform9 : mat3x3<f32>,\n\tnodeUniform14 : mat4x4<f32>\n};\n@binding( 0 ) @group( 2 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) @interpolate(flat, either) v_cameraIndex : u32,\n\t@location( 1 ) v_positionWorld : vec3<f32>,\n\t@location( 2 ) v_positionViewDirection : vec3<f32>,\n\t@location( 3 ) v_normalViewGeometry : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLoca",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 2 ) var nodeUniform18_sampler : sampler_comparison;\n@binding( 2 ) @group( 2 ) var nodeUniform18 : texture_depth_2d;\n\nstruct cameraViewMatricesStruct {\n\tvalue : array< mat4x4<f32>, 36 >\n};\n@binding( 1 ) @group( 0 )\nvar<uniform> cameraViewMatrices : cameraViewMatricesStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : f32,\n\tnodeUniform3 : vec3<f32>,\n\tnodeUniform4 : vec3<f32>,\n\tnodeUniform5 : f32,\n\tnodeUniform9 : mat3x3<f32>,\n\tnodeUniform14 : mat4x4<f32>\n};\n@binding( 0 ) @group( 2 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tnodeUniform6 : vec3<f32>,\n\tnodeUniform13 : vec3<f32>,\n\tnodeUniform11 : vec3<f32>,\n\tnodeUniform12 : vec3<f32>,\n\tnodeUniform15 : mat4x4<f32>,\n\tnodeUniform16 : f32,\n\tnodeUniform17 : f32,\n\tnodeUniform19 : f32,\n\tnodeUniform20 : vec2<f32>,\n\tnodeUniform21 : f32\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> S",
+          "attributes": [
+            {
+              "name": "normal",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": [
+            {
+              "group": "object",
+              "name": "nodeUniform18_sampler",
+              "kind": "depth.texture",
+              "textureUuid": "04b15ab8-9fee-4e05-bed1-e4bed130ed8e",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform18",
+              "kind": "depth.texture",
+              "textureUuid": "04b15ab8-9fee-4e05-bed1-e4bed130ed8e",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            }
+          ]
+        },
+        {
+          "name": "webgpu_camera_array.html:MeshPhongNodeMaterial:2",
+          "hash": "7e4fbcc496ff323d64d4dd2783c589cca6db3d158a0d36161f30c57a033bd17d",
+          "cacheKey": 9279090322082942,
+          "shape": "mesh-phong",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct cameraViewMatricesStruct {\n\tvalue : array< mat4x4<f32>, 36 >\n};\n@binding( 2 ) @group( 0 )\nvar<uniform> cameraViewMatrices : cameraViewMatricesStruct;\n\nstruct cameraProjectionMatricesStruct {\n\tvalue : array< mat4x4<f32>, 36 >\n};\n@binding( 3 ) @group( 0 )\nvar<uniform> cameraProjectionMatrices : cameraProjectionMatricesStruct;\n\nstruct cameraIndexStruct {\n\tu_cameraIndex : u32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> cameraIndex : cameraIndexStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : f32,\n\tnodeUniform3 : vec3<f32>,\n\tnodeUniform4 : vec3<f32>,\n\tnodeUniform5 : f32,\n\tnodeUniform9 : mat3x3<f32>,\n\tnodeUniform14 : mat4x4<f32>\n};\n@binding( 0 ) @group( 2 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) @interpolate(flat, either) v_cameraIndex : u32,\n\t@location( 1 ) v_positionWorld : vec3<f32>,\n\t@location( 2 ) v_positionViewDirection : vec3<f32>,\n\t@location( 3 ) v_normalViewGeometry : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLoca",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 2 ) var nodeUniform18_sampler : sampler_comparison;\n@binding( 2 ) @group( 2 ) var nodeUniform18 : texture_depth_2d;\n\nstruct cameraViewMatricesStruct {\n\tvalue : array< mat4x4<f32>, 36 >\n};\n@binding( 1 ) @group( 0 )\nvar<uniform> cameraViewMatrices : cameraViewMatricesStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : f32,\n\tnodeUniform3 : vec3<f32>,\n\tnodeUniform4 : vec3<f32>,\n\tnodeUniform5 : f32,\n\tnodeUniform9 : mat3x3<f32>,\n\tnodeUniform14 : mat4x4<f32>\n};\n@binding( 0 ) @group( 2 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tnodeUniform6 : vec3<f32>,\n\tnodeUniform13 : vec3<f32>,\n\tnodeUniform11 : vec3<f32>,\n\tnodeUniform12 : vec3<f32>,\n\tnodeUniform15 : mat4x4<f32>,\n\tnodeUniform16 : f32,\n\tnodeUniform17 : f32,\n\tnodeUniform19 : f32,\n\tnodeUniform20 : vec2<f32>,\n\tnodeUniform21 : f32\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> S",
+          "attributes": [
+            {
+              "name": "normal",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": [
+            {
+              "group": "object",
+              "name": "nodeUniform18_sampler",
+              "kind": "depth.texture",
+              "textureUuid": "24688508-3ffb-40fe-9e35-e7f3710611fb",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform18",
+              "kind": "depth.texture",
+              "textureUuid": "24688508-3ffb-40fe-9e35-e7f3710611fb",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            }
+          ]
+        }
+      ],
+      "auxSummaries": [
+        {
+          "shape": "lights",
+          "configHash": "734d428ffa4cefcf369ede03ed8170ebf12d3ccb14da1b10b6a1859994528576",
+          "attributes": [],
+          "bindings": [],
+          "uniformPlan": []
+        },
+        {
+          "shape": "render-output",
+          "configHash": "90a5a84186bcbc44efdd95b20bf6492a0c0d34057e53f1b3ebe0bc95b1236c03",
+          "artifactShape": "render-output",
+          "cacheKey": 6674497328608901,
+          "attributes": [
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "bindings": [
+            {
+              "name": "render",
+              "bindings": [
+                {
+                  "name": "render",
+                  "kind": "uniform-buffer",
+                  "byteLength": 128
+                }
+              ]
+            },
+            {
+              "name": "object",
+              "bindings": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "sampler",
+                  "byteLength": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "sampled-texture",
+                  "byteLength": null
+                },
+                {
+                  "name": "object",
+                  "kind": "uniform-buffer",
+                  "byteLength": 80
+                }
+              ]
+            }
+          ],
+          "uniformPlan": [
+            {
+              "name": "render",
+              "byteLength": 128,
+              "slotCount": 2,
+              "textures": []
+            },
+            {
+              "name": "object",
+              "byteLength": 80,
+              "slotCount": 2,
+              "textures": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "artifact.texture",
+                  "textureUuid": "f42e89a4-cff3-48d6-ae34-587b81dd57d0",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "artifact.texture",
+                  "textureUuid": "f42e89a4-cff3-48d6-ae34-587b81dd57d0",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "error": null
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 [
   {
     "shape": "post-process",
-    "configHash": "4719d6d82a18a65d56b5a46075e7200a7471974ff96cd46d3f3c0a1e3db8440c",
+    "configHash": "aab2af3ba8fa8fb546fad318144b68e1031b4fc6fb6846b186b9b3e605d9a2a7",
     "artifact": {
       "version": 3,
       "cacheKey": 8461030122698493,
@@ -283,7 +283,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "741222e6-4f81-414c-ae64-08ff0147b756",
+                "textureUuid": "bcc0da20-f70a-4be2-b651-55b9e9868ba5",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -303,7 +303,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "741222e6-4f81-414c-ae64-08ff0147b756",
+                "textureUuid": "bcc0da20-f70a-4be2-b651-55b9e9868ba5",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -323,7 +323,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "246f4799-3f56-4555-9ed4-81c6711945cf",
+                "textureUuid": "6cb3dbb2-e77d-4960-a6c8-ac5959a7c32d",
                 "textureName": "GaussianBlurNode.vertical",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -343,7 +343,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "246f4799-3f56-4555-9ed4-81c6711945cf",
+                "textureUuid": "6cb3dbb2-e77d-4960-a6c8-ac5959a7c32d",
                 "textureName": "GaussianBlurNode.vertical",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -368,7 +368,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "741222e6-4f81-414c-ae64-08ff0147b756",
+                  "textureUuid": "bcc0da20-f70a-4be2-b651-55b9e9868ba5",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -399,7 +399,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "741222e6-4f81-414c-ae64-08ff0147b756",
+                  "textureUuid": "bcc0da20-f70a-4be2-b651-55b9e9868ba5",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -431,7 +431,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "246f4799-3f56-4555-9ed4-81c6711945cf",
+                  "textureUuid": "6cb3dbb2-e77d-4960-a6c8-ac5959a7c32d",
                   "textureName": "GaussianBlurNode.vertical",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -462,7 +462,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "246f4799-3f56-4555-9ed4-81c6711945cf",
+                  "textureUuid": "6cb3dbb2-e77d-4960-a6c8-ac5959a7c32d",
                   "textureName": "GaussianBlurNode.vertical",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -582,7 +582,7 @@
         "updateBeforeNodes": 2,
         "updateAfterNodes": 0
       },
-      "materialUuid": "1859566e-a36f-42f1-b2f6-cde275ccaae8"
+      "materialUuid": "e0db5b65-cbc3-4d74-ba2c-3184ddba03e9"
     }
   },
   {
@@ -880,7 +880,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "741222e6-4f81-414c-ae64-08ff0147b756",
+                "textureUuid": "bcc0da20-f70a-4be2-b651-55b9e9868ba5",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -900,7 +900,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "741222e6-4f81-414c-ae64-08ff0147b756",
+                "textureUuid": "bcc0da20-f70a-4be2-b651-55b9e9868ba5",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -920,7 +920,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "246f4799-3f56-4555-9ed4-81c6711945cf",
+                "textureUuid": "6cb3dbb2-e77d-4960-a6c8-ac5959a7c32d",
                 "textureName": "GaussianBlurNode.vertical",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -940,7 +940,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "246f4799-3f56-4555-9ed4-81c6711945cf",
+                "textureUuid": "6cb3dbb2-e77d-4960-a6c8-ac5959a7c32d",
                 "textureName": "GaussianBlurNode.vertical",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -965,7 +965,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "741222e6-4f81-414c-ae64-08ff0147b756",
+                  "textureUuid": "bcc0da20-f70a-4be2-b651-55b9e9868ba5",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -996,7 +996,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "741222e6-4f81-414c-ae64-08ff0147b756",
+                  "textureUuid": "bcc0da20-f70a-4be2-b651-55b9e9868ba5",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -1028,7 +1028,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "246f4799-3f56-4555-9ed4-81c6711945cf",
+                  "textureUuid": "6cb3dbb2-e77d-4960-a6c8-ac5959a7c32d",
                   "textureName": "GaussianBlurNode.vertical",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -1059,7 +1059,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "246f4799-3f56-4555-9ed4-81c6711945cf",
+                  "textureUuid": "6cb3dbb2-e77d-4960-a6c8-ac5959a7c32d",
                   "textureName": "GaussianBlurNode.vertical",
                   "mapping": 300,
                   "wrapS": 1001,

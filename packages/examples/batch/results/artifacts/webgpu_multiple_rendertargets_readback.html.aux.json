@@ -1,7 +1,7 @@
 [
   {
     "shape": "render-output",
-    "configHash": "d36b91adf79b6c825319324d1139b036b229c1a853d064a3e9e9bf91fff92fb7",
+    "configHash": "90a5a84186bcbc44efdd95b20bf6492a0c0d34057e53f1b3ebe0bc95b1236c03",
     "artifact": {
       "version": 3,
       "cacheKey": 9932139344999188,
@@ -263,8 +263,14 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "4c98dedd-475d-4010-8660-d6f9b99d43b7",
+                "textureUuid": "dc9356e7-9783-43eb-9632-f34f89a8fc15",
                 "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "colorSpace": "srgb-linear",
                 "flipY": false
               }
             },
@@ -276,8 +282,14 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "4c98dedd-475d-4010-8660-d6f9b99d43b7",
+                "textureUuid": "dc9356e7-9783-43eb-9632-f34f89a8fc15",
                 "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "colorSpace": "srgb-linear",
                 "flipY": false
               }
             }
@@ -294,8 +306,14 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "4c98dedd-475d-4010-8660-d6f9b99d43b7",
+                  "textureUuid": "dc9356e7-9783-43eb-9632-f34f89a8fc15",
                   "mapping": 300,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1006,
+                  "minFilter": 1006,
+                  "anisotropy": 1,
+                  "colorSpace": "srgb-linear",
                   "flipY": false
                 }
               }
@@ -318,8 +336,14 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "4c98dedd-475d-4010-8660-d6f9b99d43b7",
+                  "textureUuid": "dc9356e7-9783-43eb-9632-f34f89a8fc15",
                   "mapping": 300,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1006,
+                  "minFilter": 1006,
+                  "anisotropy": 1,
+                  "colorSpace": "srgb-linear",
                   "flipY": false
                 }
               }

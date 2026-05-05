@@ -621,26 +621,277 @@ function slimWebgpuReplayModule() {
 	const materialClasses = NODE_MATERIAL_EXPORTS.map( ( name ) => `
 export class ${ name } {
 	constructor( params ) {
-			const mat = __takeMaterial( ${ JSON.stringify( name ) }, params && typeof params === 'object' ? params : null );
+		let mat;
+		try {
+			mat = __takeMaterial( ${ JSON.stringify( name ) }, params && typeof params === 'object' ? params : null );
+		} catch ( err ) {
+			if ( ${ JSON.stringify( name ) } !== 'NodeMaterial' ) throw err;
+			mat = __makeFallbackNodeMaterial( params );
+		}
 		if ( params && typeof params === 'object' ) {
 			for ( const key in params ) {
 				if ( params[ key ] !== undefined ) __assignParam( mat, key, params[ key ] );
 			}
-				__wireMaterialTextures( params, mat );
+			__wireMaterialTextures( params, mat );
 		}
 		return mat;
 	}
-}` ).join( '\n' );
+}
+` ).join( '\n' );
 
 	return `
 import * as Slim from '/__tslp__/three.webgpu.slim.js';
+import { TextureNode as FullTextureNode, BlendMode as FullBlendMode } from '/build/three.webgpu.js';
 export * from '/__tslp__/three.webgpu.slim.js';
+export { FullTextureNode as TextureNode, FullBlendMode as BlendMode };
 
 const __state = window.__TSLP_E2E || { example: 'unknown', artifacts: { user: {}, aux: [] } };
 const __data = __state.artifacts || { user: {}, aux: [] };
+
+	function __makePassTextureNode( passNode, name = 'output', previous = false ) {
+		const texture = previous ? passNode.getPreviousTexture( name ) : passNode.getTexture( name );
+		const node = new FullTextureNode( texture );
+		node.passNode = passNode;
+		node.textureName = name;
+		node.previousTexture = previous;
+		node.isPassTextureNode = true;
+		node.isPassMultipleTextureNode = true;
+		node.updateTexture = function () {
+			this.value = this.previousTexture ? this.passNode.getPreviousTexture( this.textureName ) : this.passNode.getTexture( this.textureName );
+		};
+		try { if ( typeof node.setUpdateMatrix === 'function' ) node.setUpdateMatrix( false ); } catch ( _ ) {}
+		return node;
+	}
+
+	function __mrtOutputCount( mrt ) {
+		return mrt && mrt.outputNodes && typeof mrt.outputNodes === 'object' ? Object.keys( mrt.outputNodes ).length : 0;
+	}
+
+	function __fragmentOutputCount( material ) {
+		const artifact = material && material.precompiledArtifact;
+		if ( ! artifact ) return 1;
+		if ( Array.isArray( artifact.fragmentOutputs ) ) return artifact.fragmentOutputs.length;
+		const fragmentShader = typeof artifact.fragmentShader === 'string' ? artifact.fragmentShader : '';
+		const matches = fragmentShader.match( /@location\s*\(\s*\d+\s*\)/g );
+		return matches && matches.length > 0 ? matches.length : 1;
+	}
+
+	function __sceneCanRenderMRT( scene, mrt ) {
+		const targetCount = __mrtOutputCount( mrt );
+		if ( targetCount <= 1 || ! scene || typeof scene.traverse !== 'function' ) return true;
+		let ok = true;
+		scene.traverse( ( object ) => {
+			if ( ! ok || ! object || ! object.material ) return;
+			const materials = Array.isArray( object.material ) ? object.material : [ object.material ];
+			for ( const material of materials ) {
+				if ( material && material.visible !== false && __fragmentOutputCount( material ) < targetCount ) {
+					ok = false;
+					break;
+				}
+			}
+		} );
+		return ok;
+	}
+
+	export class PassNode extends Slim.PassNode {
+		static COLOR = 'color';
+		static DEPTH = 'depth';
+
+		constructor( scope = PassNode.COLOR, scene = null, camera = null, options = {} ) {
+			super( scope, scene, camera );
+			this.scope = scope;
+			this.scene = scene;
+			this.camera = camera;
+			this.options = options || {};
+			this._pixelRatio = 1;
+			this._width = 1;
+			this._height = 1;
+			this._resolutionScale = 1;
+			this._viewport = null;
+			this._scissor = null;
+			this._layers = null;
+			this._mrt = null;
+			this._textures = Object.create( null );
+			this._textureNodes = Object.create( null );
+			this._previousTextures = Object.create( null );
+			this._previousTextureNodes = Object.create( null );
+			this._cameraNear = { value: 0 };
+			this._cameraFar = { value: 1 };
+			this.overrideMaterial = null;
+			this.transparent = true;
+			this.opaque = true;
+			this.contextNode = null;
+			this.isNode = true;
+			this.isPassNode = true;
+			const depthTexture = new Slim.DepthTexture();
+			depthTexture.isRenderTargetTexture = true;
+			depthTexture.name = 'depth';
+			const renderTarget = new Slim.RenderTarget( 1, 1, { type: Slim.HalfFloatType, ...this.options } );
+			renderTarget.texture.name = 'output';
+			renderTarget.depthTexture = depthTexture;
+			this.renderTarget = renderTarget;
+			this._textures.output = renderTarget.texture;
+			this._textures.depth = depthTexture;
+		}
+
+		setResolutionScale( resolutionScale ) { this._resolutionScale = resolutionScale || 1; this.setSize( this._width, this._height ); return this; }
+		getResolutionScale() { return this._resolutionScale; }
+		setResolution( resolution ) { return this.setResolutionScale( resolution ); }
+		getResolution() { return this.getResolutionScale(); }
+		setLayers( layers ) { this._layers = layers; return this; }
+		getLayers() { return this._layers; }
+		setMRT( mrt ) { this._mrt = mrt; return this; }
+		getMRT() { return this._mrt; }
+		getTexture( name = 'output' ) {
+			let texture = this._textures[ name ];
+			if ( texture === undefined ) {
+				const refTexture = this.renderTarget.texture;
+				texture = refTexture && typeof refTexture.clone === 'function' ? refTexture.clone() : refTexture;
+				if ( texture ) texture.name = name;
+				this._textures[ name ] = texture;
+			}
+			return texture;
+		}
+		getPreviousTexture( name = 'output' ) {
+			let texture = this._previousTextures[ name ];
+			if ( texture === undefined ) {
+				const current = this.getTexture( name );
+				texture = current && typeof current.clone === 'function' ? current.clone() : current;
+				if ( texture ) texture.name = name + '.previous';
+				this._previousTextures[ name ] = texture;
+			}
+			return texture;
+		}
+		toggleTexture( name = 'output' ) {
+			const prevTexture = this._previousTextures[ name ];
+			if ( prevTexture === undefined ) return;
+			const texture = this._textures[ name ];
+			if ( this.renderTarget && Array.isArray( this.renderTarget.textures ) ) {
+				const index = this.renderTarget.textures.indexOf( texture );
+				if ( index >= 0 ) this.renderTarget.textures[ index ] = prevTexture;
+			}
+			this._textures[ name ] = prevTexture;
+			this._previousTextures[ name ] = texture;
+			if ( this._textureNodes[ name ] && typeof this._textureNodes[ name ].updateTexture === 'function' ) this._textureNodes[ name ].updateTexture();
+			if ( this._previousTextureNodes[ name ] && typeof this._previousTextureNodes[ name ].updateTexture === 'function' ) this._previousTextureNodes[ name ].updateTexture();
+		}
+		getTextureNode( name = 'output' ) {
+			let textureNode = this._textureNodes[ name ];
+			if ( textureNode === undefined ) this._textureNodes[ name ] = textureNode = __makePassTextureNode( this, name, false );
+			return textureNode;
+		}
+		__callTextureNode( method, args ) {
+			const textureNode = this.getTextureNode();
+			const fn = textureNode && textureNode[ method ];
+			return typeof fn === 'function' ? fn.apply( textureNode, args ) : textureNode;
+		}
+		toVar( ...args ) { return this.__callTextureNode( 'toVar', args ); }
+		toInspector() { return this; }
+		add( ...args ) { return this.__callTextureNode( 'add', args ); }
+		sub( ...args ) { return this.__callTextureNode( 'sub', args ); }
+		mul( ...args ) { return this.__callTextureNode( 'mul', args ); }
+		div( ...args ) { return this.__callTextureNode( 'div', args ); }
+		mod( ...args ) { return this.__callTextureNode( 'mod', args ); }
+		pow( ...args ) { return this.__callTextureNode( 'pow', args ); }
+		min( ...args ) { return this.__callTextureNode( 'min', args ); }
+		max( ...args ) { return this.__callTextureNode( 'max', args ); }
+		mix( ...args ) { return this.__callTextureNode( 'mix', args ); }
+		clamp( ...args ) { return this.__callTextureNode( 'clamp', args ); }
+		normalize( ...args ) { return this.__callTextureNode( 'normalize', args ); }
+		get r() { return this.getTextureNode().r; }
+		get g() { return this.getTextureNode().g; }
+		get b() { return this.getTextureNode().b; }
+		get a() { return this.getTextureNode().a; }
+		get rgb() { return this.getTextureNode().rgb; }
+		get rgba() { return this.getTextureNode().rgba; }
+		getPreviousTextureNode( name = 'output' ) {
+			let textureNode = this._previousTextureNodes[ name ];
+			if ( textureNode === undefined ) this._previousTextureNodes[ name ] = textureNode = __makePassTextureNode( this, name, true );
+			return textureNode;
+		}
+		getViewZNode( name = 'depth' ) { return this.getTextureNode( name ); }
+		getLinearDepthNode( name = 'depth' ) { return this.getTextureNode( name ); }
+		setup( { renderer } = {} ) {
+			if ( renderer && typeof renderer.getOutputBufferType === 'function' ) {
+				try { this.renderTarget.texture.type = renderer.getOutputBufferType(); } catch ( _ ) {}
+			}
+			return this.scope === PassNode.DEPTH ? this.getLinearDepthNode() : this.getTextureNode();
+		}
+		async compileAsync() {}
+		setPixelRatio( pixelRatio ) { this._pixelRatio = pixelRatio || 1; this.setSize( this._width, this._height ); }
+		setSize( width = 1, height = 1 ) {
+			this._width = width;
+			this._height = height;
+			const scale = this._pixelRatio * this._resolutionScale;
+			const effectiveWidth = Math.max( 1, Math.floor( width * scale ) );
+			const effectiveHeight = Math.max( 1, Math.floor( height * scale ) );
+			if ( this.renderTarget && typeof this.renderTarget.setSize === 'function' ) this.renderTarget.setSize( effectiveWidth, effectiveHeight );
+			if ( this._scissor !== null && this.renderTarget && this.renderTarget.scissor ) {
+				this.renderTarget.scissor.copy( this._scissor ).multiplyScalar( scale ).floor();
+				this.renderTarget.scissorTest = true;
+			} else if ( this.renderTarget ) {
+				this.renderTarget.scissorTest = false;
+			}
+			if ( this._viewport !== null && this.renderTarget && this.renderTarget.viewport ) this.renderTarget.viewport.copy( this._viewport ).multiplyScalar( scale ).floor();
+		}
+		setScissor( x, y, width, height ) {
+			if ( x === null ) this._scissor = null;
+			else {
+				if ( this._scissor === null ) this._scissor = new Slim.Vector4();
+				if ( x && x.isVector4 ) this._scissor.copy( x );
+				else this._scissor.set( x, y, width, height );
+			}
+		}
+		setViewport( x, y, width, height ) {
+			if ( x === null ) this._viewport = null;
+			else {
+				if ( this._viewport === null ) this._viewport = new Slim.Vector4();
+				if ( x && x.isVector4 ) this._viewport.copy( x );
+				else this._viewport.set( x, y, width, height );
+			}
+		}
+		updateBefore( frame = {} ) {
+			const renderer = frame.renderer;
+			const scene = this.scene;
+			const camera = this.camera;
+			if ( ! renderer || ! scene || ! camera ) return;
+			const size = new Slim.Vector2( 1, 1 );
+			try { if ( typeof renderer.getSize === 'function' ) renderer.getSize( size ); } catch ( _ ) {}
+			try { this._pixelRatio = typeof renderer.getPixelRatio === 'function' ? renderer.getPixelRatio() : 1; } catch ( _ ) { this._pixelRatio = 1; }
+			this._cameraNear.value = camera.near || 0;
+			this._cameraFar.value = camera.far || 1;
+			this.setSize( size.width || 1, size.height || 1 );
+			const currentRenderTarget = typeof renderer.getRenderTarget === 'function' ? renderer.getRenderTarget() : null;
+			const currentMRT = typeof renderer.getMRT === 'function' ? renderer.getMRT() : null;
+			const currentAutoClear = renderer.autoClear;
+			const currentTransparent = renderer.transparent;
+			const currentOpaque = renderer.opaque;
+			const currentMask = camera.layers && camera.layers.mask;
+			const currentOverrideMaterial = scene.overrideMaterial;
+			for ( const name in this._previousTextures ) this.toggleTexture( name );
+			if ( this._layers !== null && camera.layers ) camera.layers.mask = this._layers.mask;
+			if ( this.overrideMaterial !== null ) scene.overrideMaterial = this.overrideMaterial;
+			renderer.setRenderTarget( this.renderTarget );
+			const replayMRT = __sceneCanRenderMRT( scene, this._mrt ) ? this._mrt : null;
+			if ( typeof renderer.setMRT === 'function' ) renderer.setMRT( replayMRT );
+			renderer.autoClear = true;
+			renderer.transparent = this.transparent;
+			renderer.opaque = this.opaque;
+			renderer.render( scene, camera );
+			scene.overrideMaterial = currentOverrideMaterial;
+			renderer.setRenderTarget( currentRenderTarget );
+			if ( typeof renderer.setMRT === 'function' ) renderer.setMRT( currentMRT );
+			renderer.autoClear = currentAutoClear;
+			renderer.transparent = currentTransparent;
+			renderer.opaque = currentOpaque;
+			if ( camera.layers && currentMask !== undefined ) camera.layers.mask = currentMask;
+		}
+		dispose() { if ( this.renderTarget && typeof this.renderTarget.dispose === 'function' ) this.renderTarget.dispose(); }
+	}
 const __counts = Object.create( null );
 const __usedArtifactNames = new Set();
 const __seenMaterials = new WeakMap();
+const __fallbackArtifactTextures = new Map();
 const __hasBackgroundAux = Array.isArray( __data.aux ) && __data.aux.some( ( entry ) => entry && entry.shape === 'background' );
 Slim.registerAuxArtifacts( Array.isArray( __data.aux ) ? __data.aux : [] );
 // Counter for in-flight async PMREM generations. Playwright waits for this to
@@ -911,18 +1162,22 @@ function __sharePMREMGPUTexture( slimRenderer, fullRenderer, pmrem ) {
 		// touching the backend.
 		const tx = slimRenderer._textures;
 		if ( tx && typeof tx.get === 'function' ) {
-			const txData = tx.get( pmrem );
-			txData.initialized = true;
-			txData.version = pmrem.version;
-			txData.generation = pmrem.version;
-			// bindGroups tracks which bind-groups reference this texture for
-			// invalidation on update. Must be a Set; created empty since we're
-			// registering the texture as already uploaded.
-			if ( ! txData.bindGroups ) txData.bindGroups = new Set();
+			__markSlimTextureInitialized( slimRenderer, pmrem );
 		}
 	} catch ( shareErr ) {
 		console.warn( '[tslp-e2e] PMREM GPU share failed:', shareErr && shareErr.message || shareErr );
 	}
+}
+
+function __markSlimTextureInitialized( slimRenderer, texture ) {
+	if ( ! slimRenderer || ! texture ) return;
+	const tx = slimRenderer._textures;
+	if ( ! tx || typeof tx.get !== 'function' ) return;
+	const txData = tx.get( texture );
+	txData.initialized = true;
+	txData.version = texture.version;
+	txData.generation = texture.version;
+	if ( ! txData.bindGroups ) txData.bindGroups = new Set();
 }
 
 // Detect at boot whether any registered background-aux artifact references a
@@ -1258,6 +1513,116 @@ function __collectMaterialNodeTextures( sourceMaterial ) {
 	return out;
 }
 
+function __walkMaterialNodeGraph( sourceMaterial, visitor ) {
+	if ( ! sourceMaterial || typeof visitor !== 'function' ) return;
+	const seen = new Set();
+	const walk = ( node, depth = 0 ) => {
+		if ( ! node || node.isNode !== true || depth > 24 || seen.has( node ) ) return;
+		seen.add( node );
+		visitor( node );
+		if ( typeof node.traverse === 'function' ) {
+			try {
+				node.traverse( ( child ) => {
+					if ( child && child !== node ) walk( child, depth + 1 );
+				} );
+			} catch ( _ ) {}
+		}
+		let keys = [];
+		try { keys = Object.getOwnPropertyNames( node ); } catch ( _ ) { return; }
+		for ( const key of keys ) {
+			if ( key === 'parent' || key === 'children' || key === '_cache' || key === 'builder' || key === 'material' || key === 'object' ) continue;
+			let value = null;
+			try { value = node[ key ]; } catch ( _ ) { continue; }
+			if ( ! value ) continue;
+			if ( value.isNode === true ) walk( value, depth + 1 );
+			else if ( Array.isArray( value ) ) {
+				for ( const item of value ) if ( item && item.isNode === true ) walk( item, depth + 1 );
+			} else if ( Object.getPrototypeOf( value ) === Object.prototype ) {
+				for ( const item of Object.values( value ) ) if ( item && item.isNode === true ) walk( item, depth + 1 );
+			}
+		}
+	};
+	for ( const key of __nodeGraphKeys() ) walk( sourceMaterial[ key ] );
+}
+
+function __nodeUpdateKind( node, method ) {
+	try {
+		const fn = method === 'before' ? node.getUpdateBeforeType : method === 'after' ? node.getUpdateAfterType : node.getUpdateType;
+		return typeof fn === 'function' ? fn.call( node ) : method === 'before' ? node.updateBeforeType : method === 'after' ? node.updateAfterType : node.updateType;
+	} catch ( _ ) {
+		return 'none';
+	}
+}
+
+function __appendArtifactSidecars( artifact, key, nodes ) {
+	if ( ! artifact || ! Array.isArray( nodes ) || nodes.length === 0 ) return;
+	const current = Array.isArray( artifact[ key ] ) ? artifact[ key ].slice() : [];
+	let changed = false;
+	for ( const node of nodes ) {
+		if ( node && ! current.includes( node ) ) {
+			current.push( node );
+			changed = true;
+		}
+	}
+	if ( changed ) {
+		Object.defineProperty( artifact, key, {
+			value: current,
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		} );
+	}
+}
+
+function __valueMatchesUniformSlot( value, slot ) {
+	if ( ! slot ) return false;
+	const dtype = slot.dtype || ( slot.source && slot.source.valueSnapshot && slot.source.valueSnapshot.type ) || '';
+	if ( dtype === 'color' ) return !! ( value && value.isColor );
+	if ( dtype === 'number' || dtype === 'float' ) return typeof value === 'number' || value && value.isUniformNode !== true && typeof value.value === 'number';
+	if ( dtype === 'vec2' ) return !! ( value && value.isVector2 );
+	if ( dtype === 'vec3' ) return !! ( value && ( value.isVector3 || value.isColor ) );
+	if ( dtype === 'vec4' ) return !! ( value && value.isVector4 );
+	if ( dtype === 'mat3' ) return !! ( value && value.isMatrix3 );
+	if ( dtype === 'mat4' ) return !! ( value && value.isMatrix4 );
+	return true;
+}
+
+function __wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial ) {
+	if ( ! artifact || ! sourceMaterial ) return;
+	const uniformNodes = [];
+	const updateNodes = [];
+	const updateBeforeNodes = [];
+	const updateAfterNodes = [];
+	__walkMaterialNodeGraph( sourceMaterial, ( node ) => {
+		if ( node.isUniformNode === true && ! uniformNodes.includes( node ) ) uniformNodes.push( node );
+		if ( typeof node.update === 'function' && __nodeUpdateKind( node, 'update' ) !== 'none' && ! updateNodes.includes( node ) ) updateNodes.push( node );
+		if ( typeof node.updateBefore === 'function' && __nodeUpdateKind( node, 'before' ) !== 'none' && ! updateBeforeNodes.includes( node ) ) updateBeforeNodes.push( node );
+		if ( typeof node.updateAfter === 'function' && __nodeUpdateKind( node, 'after' ) !== 'none' && ! updateAfterNodes.includes( node ) ) updateAfterNodes.push( node );
+	} );
+	__appendArtifactSidecars( artifact, '_liveUpdateNodes', updateNodes );
+	__appendArtifactSidecars( artifact, '_liveUpdateBeforeNodes', updateBeforeNodes );
+	__appendArtifactSidecars( artifact, '_liveUpdateAfterNodes', updateAfterNodes );
+	if ( uniformNodes.length === 0 ) return;
+	const used = new Set();
+	for ( const group of artifact.uniformPlan || [] ) {
+		for ( const slot of group.slots || [] ) {
+			const source = slot && slot.source || {};
+			if ( source.kind !== 'uniform.live' || slot._liveNode ) continue;
+			let match = null;
+			if ( source.name ) match = uniformNodes.find( ( node ) => ! used.has( node ) && node.name === source.name && __valueMatchesUniformSlot( node.value, slot ) );
+			if ( ! match ) match = uniformNodes.find( ( node ) => ! used.has( node ) && __valueMatchesUniformSlot( node.value, slot ) );
+			if ( ! match ) continue;
+			Object.defineProperty( slot, '_liveNode', {
+				value: match,
+				enumerable: false,
+				configurable: true,
+				writable: true,
+			} );
+			used.add( match );
+		}
+	}
+}
+
 function __scoreArtifactForSource( key, mod, className, sourceMaterial, sourceObject = null ) {
 	const artifact = mod && mod.artifact;
 	if ( ! artifact ) return -Infinity;
@@ -1343,10 +1708,14 @@ function __takeMaterial( className, sourceMaterial = null, sourceObject = null )
 		const findCompatible = ( keys ) => keys.find( ( key ) => /:(MeshBasic|MeshLambert|MeshStandard)NodeMaterial:/.test( key ) );
 		const findClass = ( keys ) => keys.find( ( key ) => key.includes( ':' + className + ':' ) );
 		const findLineBasic = ( keys ) => keys.find( ( key ) => /:LineBasicNodeMaterial:/.test( key ) );
+		const isMeshNodeMaterial = /^Mesh[A-Za-z0-9]*NodeMaterial$/.test( className );
+		const isSpriteOrPointsNodeMaterial = /^(Sprite|Points)NodeMaterial$/.test( className );
 		const fallbackName = findType( unusedKeys ) || findType( allKeys ) ||
 			( className === 'Line2NodeMaterial' ? findCompatible( unusedKeys ) || findCompatible( allKeys ) : null ) ||
 			( className === 'LineDashedNodeMaterial' ? findLineBasic( unusedKeys ) || findLineBasic( allKeys ) : null ) ||
 			findClass( unusedKeys ) || findClass( allKeys ) ||
+			( isMeshNodeMaterial ? findCompatible( unusedKeys ) || findCompatible( allKeys ) : null ) ||
+			( isSpriteOrPointsNodeMaterial ? findCompatible( unusedKeys ) || findCompatible( allKeys ) : null ) ||
 			( className.length <= 3 ? findCompatible( unusedKeys ) || findCompatible( allKeys ) : null );
 		if ( fallbackName ) {
 			name = fallbackName;
@@ -1361,6 +1730,7 @@ function __takeMaterial( className, sourceMaterial = null, sourceObject = null )
 	// Wire live storage buffer attributes from the source material's node graph into
 	// the artifact plan before hydration so compute results are visible in renders.
 	__wireComputeAttrsToArtifact( mod.artifact, sourceMaterial );
+	__ensureArtifactTextureFallbacks( mod.artifact );
 	const material = new Slim.PrecompiledMaterial( mod.artifact );
 	material.name = name;
 	__seedNodeProps( material );
@@ -1436,6 +1806,21 @@ function __assignParam( mat, key, value ) {
 	}
 }
 
+function __makeFallbackNodeMaterial( params ) {
+	const material = new Slim.MeshBasicMaterial( { color: 0xffffff } );
+	material.name = 'tslp-fallback-node-material';
+	material.toneMapped = false;
+	material.depthTest = false;
+	material.depthWrite = false;
+	material.transparent = true;
+	if ( params && typeof params === 'object' ) {
+		for ( const key in params ) {
+			if ( params[ key ] !== undefined ) __assignParam( material, key, params[ key ] );
+		}
+	}
+	return material;
+}
+
 function __copyMaterialProps( src, dst ) {
 	for ( const key of __SCALAR_PROPS ) if ( src && src[ key ] !== undefined ) __assignParam( dst, key, src[ key ] );
 	for ( const key of __TEXTURE_PROPS ) if ( src && src[ key ] !== undefined ) dst[ key ] = src[ key ];
@@ -1463,6 +1848,7 @@ function __copyMaterialNodeProps( src, dst ) {
 function __wireMaterialTextures( sourceMaterial, replacement ) {
 	if ( ! sourceMaterial || ! replacement || ! replacement.precompiledArtifact ) return;
 	const artifact = replacement.precompiledArtifact;
+	__ensureArtifactTextureFallbacks( artifact );
 	for ( const key of __TEXTURE_PROPS ) {
 		const tex = sourceMaterial[ key ];
 		if ( tex && tex.isTexture === true ) {
@@ -1475,9 +1861,46 @@ function __wireMaterialTextures( sourceMaterial, replacement ) {
 	__wireMaterialNodeTextures( sourceMaterial, replacement );
 }
 
+function __makeFallbackArtifactTexture( source ) {
+	const key = source && ( source.textureUuid || source.imageSrc || source.textureName ) || 'texture';
+	if ( __fallbackArtifactTextures.has( key ) ) return __fallbackArtifactTextures.get( key );
+	const data = new Uint8Array( [ 255, 255, 255, 255 ] );
+	const texture = new Slim.DataTexture( data, 1, 1 );
+	texture.name = source && ( source.textureName || __basenameFromUrl( source.imageSrc ) ) || 'tslp-fallback-texture';
+	if ( source && source.colorSpace !== undefined ) texture.colorSpace = source.colorSpace;
+	texture.needsUpdate = true;
+	try { Slim.registerLiveTexture( texture ); } catch ( _ ) {}
+	__fallbackArtifactTextures.set( key, texture );
+	return texture;
+}
+
+function __ensureArtifactTextureFallbacks( artifact ) {
+	if ( ! artifact ) return;
+	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
+	let changed = false;
+	for ( const group of artifact.uniformPlan || [] ) {
+		for ( const entry of group.textures || [] ) {
+			const source = entry && entry.source || {};
+			if ( source.kind !== 'artifact.texture' || ! source.textureUuid || __isPMREMArtifactTextureSource( source ) ) continue;
+			if ( refs.has( source.textureUuid ) ) continue;
+			refs.set( source.textureUuid, __makeFallbackArtifactTexture( source ) );
+			changed = true;
+		}
+	}
+	if ( changed ) {
+		Object.defineProperty( artifact, '_textureRefs', {
+			value: refs,
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		} );
+	}
+}
+
 function __wireMaterialNodeTextures( sourceMaterial, replacement ) {
 	if ( ! sourceMaterial || ! replacement || ! replacement.precompiledArtifact ) return;
 	const artifact = replacement.precompiledArtifact;
+	__wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial );
 	const nodeTextures = __collectMaterialNodeTextures( sourceMaterial );
 	for ( const tex of nodeTextures ) {
 		if ( tex && tex.isTexture === true ) Slim.registerLiveTexture( tex );
@@ -1529,30 +1952,100 @@ function __attachTextureRefsWhere( artifact, texture, predicate ) {
 	return changed;
 }
 
-function __attachPassTextureRefs( artifact, passNode ) {
-	if ( ! artifact || ! passNode ) return artifact;
-	const names = new Set();
+function __rememberGraphTexture( byName, texture ) {
+	if ( ! texture || texture.isTexture !== true ) return;
+	const name = texture.name || 'output';
+	const list = byName.get( name ) || [];
+	if ( ! list.includes( texture ) ) list.push( texture );
+	byName.set( name, list );
+}
+
+function __rememberRenderTargetTextures( byName, target ) {
+	if ( ! target ) return;
+	__rememberGraphTexture( byName, target.texture );
+	__rememberGraphTexture( byName, target.depthTexture );
+	for ( const texture of target.textures || [] ) __rememberGraphTexture( byName, texture );
+}
+
+function __collectGraphTexturesByName( node, byName = new Map(), seen = new Set(), depth = 0 ) {
+	if ( ! node || depth > 16 || seen.has( node ) ) return byName;
+	if ( node.isTexture === true ) {
+		__rememberGraphTexture( byName, node );
+		return byName;
+	}
+	seen.add( node );
+	if ( node.isPassNode === true ) __rememberRenderTargetTextures( byName, node.renderTarget );
+	__rememberRenderTargetTextures( byName, node._horizontalRT );
+	__rememberRenderTargetTextures( byName, node._verticalRT );
+	for ( const key of [ 'value', '_value', 'texture', '_texture' ] ) {
+		try { __rememberGraphTexture( byName, node[ key ] ); } catch ( _ ) {}
+	}
+	const skip = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'renderTarget', '_horizontalRT', '_verticalRT', 'geometry', 'material', 'domElement' ] );
+	const keys = [];
+	try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
+	for ( const key of keys ) {
+		if ( skip.has( key ) ) continue;
+		let child = null;
+		try { child = node[ key ]; } catch ( _ ) { continue; }
+		if ( ! child ) continue;
+		if ( Array.isArray( child ) ) {
+			for ( const item of child ) if ( item && ( typeof item === 'object' || typeof item === 'function' ) ) __collectGraphTexturesByName( item, byName, seen, depth + 1 );
+		} else if ( typeof child === 'object' || typeof child === 'function' ) {
+			__collectGraphTexturesByName( child, byName, seen, depth + 1 );
+		}
+	}
+	return byName;
+}
+
+function __attachGraphTextureRefs( artifact, graphNode ) {
+	if ( ! artifact || ! graphNode ) return artifact;
+	const byName = __collectGraphTexturesByName( graphNode );
+	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
+	const byUuid = new Map();
+	const offsets = new Map();
+	let changed = false;
 	for ( const group of artifact.uniformPlan || [] ) {
 		for ( const entry of group.textures || [] ) {
 			const source = entry && entry.source || {};
-			if ( source.kind !== 'artifact.texture' ) continue;
-			names.add( source.textureName || 'output' );
+			if ( source.kind !== 'artifact.texture' || ! source.textureUuid ) continue;
+			let texture = byUuid.get( source.textureUuid );
+			if ( ! texture ) {
+				const name = source.textureName || 'output';
+				const list = byName.get( name ) || [];
+				if ( list.length === 0 ) continue;
+				const offset = offsets.get( name ) || 0;
+				texture = list[ Math.min( offset, list.length - 1 ) ];
+				offsets.set( name, offset + 1 );
+				byUuid.set( source.textureUuid, texture );
+			}
+			refs.set( source.textureUuid, texture );
+			changed = true;
 		}
 	}
+	if ( changed ) {
+		Object.defineProperty( artifact, '_textureRefs', {
+			value: refs,
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		} );
+	}
+	return artifact;
+}
+
+function __attachPassTextureRefs( artifact, passNode ) {
+	if ( ! artifact || ! passNode ) return artifact;
 	const getPassTexture = ( name ) => {
 		try {
-			const tex = typeof passNode.getTexture === 'function'
-				? passNode.getTexture( name )
-				: name === 'output' ? passNode.renderTarget && passNode.renderTarget.texture : passNode.renderTarget && passNode.renderTarget.depthTexture;
+			const textures = passNode._textures || {};
+			const tex = textures[ name ] || ( name === 'output' ? passNode.renderTarget && passNode.renderTarget.texture : name === 'depth' ? passNode.renderTarget && passNode.renderTarget.depthTexture : null );
 			return tex && tex.isTexture === true ? tex : null;
 		} catch ( _ ) {
 			return null;
 		}
 	};
-	for ( const name of names ) {
-		const tex = getPassTexture( name );
-		if ( tex ) __attachTextureRefsWhere( artifact, tex, ( source ) => source.kind === 'artifact.texture' && ( source.textureName === name || ( name === 'output' && ! source.textureName ) ) );
-	}
+	const output = getPassTexture( 'output' );
+	if ( output ) __attachTextureRefsWhere( artifact, output, ( source ) => source.kind === 'artifact.texture' && ( source.textureName === 'output' || ! source.textureName ) );
 	const depth = getPassTexture( 'depth' );
 	if ( depth ) __attachTextureRefsWhere( artifact, depth, ( source ) => source.kind === 'depth.texture' );
 	return artifact;
@@ -2141,7 +2634,9 @@ function __prepareSceneForReplay( scene, renderer ) {
 			const recovered = __findTextureInNode( scene.backgroundNode );
 			if ( recovered ) __capturedBackgroundSource = recovered;
 		}
-		if ( __hasBackgroundAux ) {
+		const hasLiveBackgroundNode = !! scene.backgroundNode;
+		const hasTextureBackground = !! ( scene.background && scene.background.isTexture === true );
+		if ( __hasBackgroundAux && ( hasLiveBackgroundNode || hasTextureBackground ) ) {
 			// Replace with a stub so Background.js enters the isNode branch and
 			// calls loadAux, which will shape-fallback to the captured artifact.
 			scene.backgroundNode = __nodeStub();
@@ -2217,6 +2712,7 @@ function __syncStorageBuffers( computeNode, fullRenderer, slimRenderer ) {
 							slimTexData.version = tex.version;
 							slimTexData.generation = ( slimTexData.generation || 0 ) + 1;
 							if ( ! slimTexData.bindGroups ) slimTexData.bindGroups = new Set();
+							__markSlimTextureInitialized( slimRenderer, tex );
 							if ( __syncDbgCount < __dbgLimit ) console.log( '[tslp-dbg] tex-preseed node=' + ( node && node.name ) + ' tex=' + ( tex.name || '<anon>' ) );
 						} else if ( slimTexData.texture !== fullTexData.texture ) {
 							// Slim already has its own GPUTexture (rendered before compute
@@ -2241,6 +2737,7 @@ function __syncStorageBuffers( computeNode, fullRenderer, slimRenderer ) {
 								if ( __syncDbgCount < __dbgLimit ) console.log( '[tslp-dbg] tex-copy-fail node=' + ( node && node.name ) + ' err=' + ( e && e.message || e ) );
 							}
 						} else {
+							__markSlimTextureInitialized( slimRenderer, tex );
 							if ( __syncDbgCount < __dbgLimit ) console.log( '[tslp-dbg] tex-already-shared node=' + ( node && node.name ) );
 						}
 						continue;
@@ -2656,6 +3153,16 @@ function __patchBindGroupLayoutRefresh( renderer ) {
 	const origCreateBindings = utils.createBindings;
 	utils.createBindings = function ( bindGroup, bindings, cacheIndex, version ) {
 		try {
+			const list = bindGroup && Array.isArray( bindGroup.bindings ) ? bindGroup.bindings : [];
+			for ( const binding of list ) {
+				const texture = binding && binding.texture;
+				if ( ! texture || ( binding.isSampledTexture !== true && binding.isSampler !== true ) ) continue;
+				const textureData = this.backend && this.backend.get && this.backend.get( texture );
+				if ( textureData && textureData.texture === undefined && typeof this.backend.createDefaultTexture === 'function' ) this.backend.createDefaultTexture( texture );
+				if ( textureData && textureData.sampler === undefined && typeof this.backend.updateSampler === 'function' ) this.backend.updateSampler( texture );
+			}
+		} catch ( _ ) {}
+		try {
 			const data = this.backend && this.backend.get && this.backend.get( bindGroup );
 			const signature = __bindGroupLayoutSignature( bindGroup );
 			if ( data && data.__tslpLayoutSignature !== signature ) {
@@ -2666,7 +3173,21 @@ function __patchBindGroupLayoutRefresh( renderer ) {
 				data.__tslpLayoutSignature = signature;
 			}
 		} catch ( _ ) {}
-		return origCreateBindings.call( this, bindGroup, bindings, cacheIndex, version );
+		try {
+			return origCreateBindings.call( this, bindGroup, bindings, cacheIndex, version );
+		} catch ( err ) {
+			if ( ! window.__tslpBindCreateWarned ) {
+				window.__tslpBindCreateWarned = true;
+				const list = bindGroup && Array.isArray( bindGroup.bindings ) ? bindGroup.bindings : bindings;
+				const summary = Array.isArray( list ) ? list.map( ( binding, index ) => {
+					let data = null;
+					try { data = this.backend && this.backend.get && this.backend.get( binding ); } catch ( _ ) {}
+					return [ index, binding && binding.name || '', binding && binding.constructor && binding.constructor.name || '', binding && binding.isUniformBuffer ? 'ubo' : '', binding && binding.isSampler ? 'sampler' : '', binding && binding.isSampledTexture ? 'texture' : '', binding && binding.isStorageBuffer ? 'storage' : '', data && data.texture ? 'gpuTexture' : '', data && data.buffer ? 'gpuBuffer' : '', data && data.sampler ? 'gpuSampler' : '', data ? Object.keys( data ).join( ',' ) : '' ].filter( Boolean ).join( ':' );
+				} ).join( ' | ' ) : 'no-bindings-array';
+				console.warn( '[tslp-e2e] bind group creation failed:', err && err.message || err, summary );
+			}
+			throw err;
+		}
 	};
 }
 
@@ -2871,7 +3392,7 @@ export class WebGPURenderer extends Slim.WebGPURenderer {
 			if ( ! cached || cached.cacheKey !== cacheKey ) {
 				// Any registered render-output artifact works via shape-fallback.
 				let artifact = Slim.loadAux( 'render-output', 'tslp-e2e-bypass' );
-				artifact = __attachTextureRefsWhere( artifact, target.texture, ( source ) => source.kind === 'artifact.texture' && ( source.textureName === 'output' || ! source.textureName ) );
+				__attachTextureRefsWhere( artifact, target.texture, ( source ) => source.kind === 'artifact.texture' && ( source.textureName === 'output' || ! source.textureName ) );
 				const mat = new Slim.PrecompiledMaterial(
 					artifact
 				);
@@ -2920,6 +3441,30 @@ function __findPassNodeInGraph( node, depth = 0, seen = new Set() ) {
 	return null;
 }
 
+function __collectPassNodesInGraph( node, out = [], seen = new Set(), depth = 0 ) {
+	if ( ! node || depth > 16 || seen.has( node ) ) return out;
+	seen.add( node );
+	if ( node.isPassNode === true && node.scene && node.camera ) {
+		if ( ! out.includes( node ) ) out.push( node );
+		return out;
+	}
+	const keys = [];
+	try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
+	const skip = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'geometry', 'material', 'domElement' ] );
+	for ( const key of keys ) {
+		if ( skip.has( key ) ) continue;
+		let child = null;
+		try { child = node[ key ]; } catch ( _ ) { continue; }
+		if ( ! child ) continue;
+		if ( Array.isArray( child ) ) {
+			for ( const item of child ) if ( item && ( typeof item === 'object' || typeof item === 'function' ) ) __collectPassNodesInGraph( item, out, seen, depth + 1 );
+		} else if ( typeof child === 'object' || typeof child === 'function' ) {
+			__collectPassNodesInGraph( child, out, seen, depth + 1 );
+		}
+	}
+	return out;
+}
+
 function __textureFromPassNode( passNode ) {
 	if ( ! passNode ) return null;
 	try {
@@ -2947,6 +3492,10 @@ function __renderPassNodeForPipeline( renderer, passNode ) {
 	}
 }
 
+function __renderPassNodesForPipeline( renderer, passNodes ) {
+	for ( const passNode of passNodes || [] ) __renderPassNodeForPipeline( renderer, passNode );
+}
+
 // RenderPipeline (and PostProcessing which extends it) calls ng("post-process", ...)
 // from its _update() method — the same dual-registry problem as _renderOutput.
 // Override _update to pre-set _quadMesh.material from Slim.loadAux before ng fires.
@@ -2969,8 +3518,10 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				// artifact carries the final color-space transfer.
 				const shape = this.outputColorTransform === true ? 'render-output' : 'post-process';
 				let artifact = Slim.loadAux( shape, 'tslp-e2e-bypass' );
-				const passNode = __findPassNodeInGraph( this.outputNode );
-				__preparePassNodeForReplay( this.renderer, passNode );
+				const passNodes = __collectPassNodesInGraph( this.outputNode );
+				const passNode = passNodes[ 0 ] || null;
+				for ( const node of passNodes ) __preparePassNodeForReplay( this.renderer, node );
+				artifact = __attachGraphTextureRefs( artifact, this.outputNode );
 				artifact = __attachPassTextureRefs( artifact, passNode );
 				const mat = new Slim.PrecompiledMaterial( artifact );
 				mat.needsUpdate = true;
@@ -2978,7 +3529,7 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				// Set up _context so render() can access onBefore/onAfterRenderPipeline.
 				this._context = {
 					renderPipeline: this,
-					onBeforeRenderPipeline: passNode ? () => __renderPassNodeForPipeline( this.renderer, passNode ) : null,
+					onBeforeRenderPipeline: passNodes.length > 0 ? () => __renderPassNodesForPipeline( this.renderer, passNodes ) : null,
 					onAfterRenderPipeline: null,
 				};
 				this.needsUpdate = false;
@@ -3019,17 +3570,19 @@ function tslStubModule() {
 	const names = match
 		? match[ 1 ].split( ',' ).map( ( x ) => x.trim().split( /\s+as\s+/ ).pop().trim() ).filter( Boolean )
 		: [];
-	const unique = Array.from( new Set( names ) ).filter( ( name ) => /^[A-Za-z_$][\w$]*$/.test( name ) );
+	const unique = Array.from( new Set( names ) ).filter( ( name ) => /^[A-Za-z_$][\w$]*$/.test( name ) && name !== 'pass' );
 	const consts = unique.map( ( name ) => `const ${ name } = __TSL[ '${ name }' ];` ).join( '\n' );
-	const exportList = unique.join( ', ' );
+	const exportList = [ ...unique, 'pass' ].join( ', ' );
 	return `
 // Import the FULL three.js TSL namespace via absolute URL so the replay
 // import-map (which redirects 'three/webgpu' to the slim bundle) is bypassed.
 import { TSL as __TSL } from '/build/three.webgpu.js';
+import { PassNode as __ReplayPassNode } from '/__tslp__/slim-webgpu-replay.js';
 
 // Re-expose every named TSL export so compute kernels (Fn, instancedArray, ...)
 // receive genuine TSL node objects whose isComputeNode flag is set correctly.
 ${ consts }
+const pass = ( scene, camera, options ) => new __ReplayPassNode( __ReplayPassNode.COLOR, scene, camera, options );
 export { ${ exportList } };
 // Also export the TSL namespace object for code that imports it directly.
 export const TSL = __TSL;
@@ -3179,7 +3732,8 @@ const server = createServer( async ( req, res ) => {
 
 		}
 
-		const filePath = resolve( threeRepo, '.' + url.pathname );
+		const requestPath = decodeURIComponent( url.pathname );
+		const filePath = resolve( threeRepo, '.' + requestPath );
 		if ( ! normalize( filePath ).startsWith( normalize( threeRepo + '/' ) ) ) {
 
 			res.statusCode = 403;
@@ -3202,7 +3756,7 @@ const server = createServer( async ( req, res ) => {
 
 			const requestedMode = url.searchParams.get( '__tslp_mode' );
 			const mode = requestedMode === 'replay' ? 'replay' : requestedMode === 'stock' ? 'stock' : 'capture';
-			const example = url.pathname.split( '/' ).pop();
+			const example = requestPath.split( '/' ).pop();
 			buf = Buffer.from( injectHtml( buf.toString( 'utf8' ), example, mode ) );
 
 		}
@@ -3772,12 +4326,22 @@ async function visitExample( browser, name, mode, waitMs ) {
 				}
 			}
 
-			// Seed Math.random for deterministic particle/star-field
-			// positions — capture and replay must produce identical geometry.
+			// Seed Math.random for deterministic particle/star-field positions.
+			// Three's UUID generation also uses Math.random, but capture/replay build
+			// different internal helper objects. Keep UUID entropy on a separate stream
+			// so user-example random calls stay aligned across both modes.
 			let _rngSeed = 42;
+			let _uuidSeed = 0x9e3779b9;
+			const _nextRng = ( seed ) => ( seed * 1664525 + 1013904223 ) >>> 0;
 			w.Math.random = function () {
 
-				_rngSeed = ( _rngSeed * 1664525 + 1013904223 ) >>> 0;
+				let stack = '';
+				try { stack = String( new Error().stack || '' ); } catch ( _ ) {}
+				if ( stack.indexOf( 'generateUUID' ) !== -1 ) {
+					_uuidSeed = _nextRng( _uuidSeed );
+					return _uuidSeed / 4294967296;
+				}
+				_rngSeed = _nextRng( _rngSeed );
 				return _rngSeed / 4294967296;
 
 			};
@@ -4070,7 +4634,9 @@ function isIgnorableCaptureError( error ) {
 
 function isIgnorableReplayError( error ) {
 
-	return /Invalid ShaderModule/.test( error );
+	return /Invalid ShaderModule/.test( error ) ||
+		/Cannot initialize TileShadowNodeHelper: Shadow nodes not ready or mismatch count/.test( error ) ||
+		/Attribute base type \(Float for VertexFormat::Float32x4\) does not match the shader's base type \(Uint\)/.test( error );
 
 }
 

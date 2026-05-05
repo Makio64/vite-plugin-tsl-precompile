@@ -1,0 +1,250 @@
+{
+  "total": 1,
+  "pass": 1,
+  "fail": 0,
+  "skip": 0,
+  "details": [
+    {
+      "name": "webgpu_instancing_morph.html",
+      "status": "pass",
+      "captureBrightFrac": 1,
+      "replayBrightFrac": 0.989716796875,
+      "pixelGate": {
+        "pass": false,
+        "psnr": 15.45,
+        "threshold": 30
+      },
+      "userArtifacts": 2,
+      "auxArtifacts": 2,
+      "captureErrors": [],
+      "replayErrors": [],
+      "captureWarnings": [],
+      "replayWarnings": [],
+      "captureDiagnostics": {
+        "colorTransferFallbacks": {},
+        "healedNullTextureImages": 0
+      },
+      "replayDiagnostics": {
+        "colorTransferFallbacks": {},
+        "healedNullTextureImages": 0,
+        "gpuErrors": [],
+        "pmrem": {
+          "kickCalls": 0,
+          "cacheHits": 0,
+          "pendingJoins": 0,
+          "skippedNotReady": 0,
+          "generateCalls": 0,
+          "generateSuccess": 0,
+          "generateFailed": 0,
+          "noComputeRenderer": 0,
+          "noGPUTexture": 0,
+          "wireCalls": 16,
+          "wireNoPmrem": 0,
+          "wireAlreadyWired": 0,
+          "wireNeedsPmrem": 0,
+          "wireAttached": 0,
+          "generated": []
+        }
+      },
+      "artifactSummaries": [
+        {
+          "name": "webgpu_instancing_morph.html:MeshStandardNodeMaterial:2",
+          "hash": "895a4f746bf99c183bf6d2ce7581f7caea1f6b758ad976811db599dbb186ce5a",
+          "cacheKey": 2022519581912467,
+          "shape": "mesh-standard",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n@binding( 3 ) @group( 1 ) var nodeUniform1 : texture_2d<f32>;\n@binding( 4 ) @group( 1 ) var nodeUniform2 : texture_2d_array<f32>;\n\nstruct NodeBuffer_2965Struct {\n\tvalue : array< mat4x4<f32>, 1024 >\n};\n@binding( 5 ) @group( 1 )\nvar<uniform> NodeBuffer_2965 : NodeBuffer_2965Struct;\n\nstruct objectStruct {\n\tnodeUniform0 : f32,\n\tnodeUniform5 : vec3<f32>,\n\tnodeUniform6 : f32,\n\tnodeUniform7 : f32,\n\tnodeUniform8 : f32,\n\tnodeUniform9 : vec3<f32>,\n\tnodeUniform10 : f32,\n\tnodeUniform12 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform21 : vec3<f32>,\n\tnodeUniform22 : f32,\n\tnodeUniform23 : f32,\n\tnodeUniform16 : vec3<f32>,\n\tnodeUniform19 : vec3<f32>,\n\tnodeUniform20 : vec3<f32>,\n\tnodeUniform18 : vec3<f32>,\n\tnodeUniform14 : vec3<f32>,\n\tnodeUniform15 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_positionViewDirection : vec3<f32>,\n\t@location( 2 ) vInstanceColor :",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform17_sampler : sampler;\n@binding( 2 ) @group( 1 ) var nodeUniform17 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform0 : f32,\n\tnodeUniform5 : vec3<f32>,\n\tnodeUniform6 : f32,\n\tnodeUniform7 : f32,\n\tnodeUniform8 : f32,\n\tnodeUniform9 : vec3<f32>,\n\tnodeUniform10 : f32,\n\tnodeUniform12 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform21 : vec3<f32>,\n\tnodeUniform22 : f32,\n\tnodeUniform23 : f32,\n\tnodeUniform16 : vec3<f32>,\n\tnodeUniform19 : vec3<f32>,\n\tnodeUniform20 : vec3<f32>,\n\tnodeUniform18 : vec3<f32>,\n\tnodeUniform14 : vec3<f32>,\n\tnodeUniform15 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> Metalness : f32;\nvar<private> Roughness : f32;\nvar<private> SpecularColor : vec3<f32>;\nvar<private> SpecularColorBlended : vec3<f",
+          "attributes": [
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "nodeAttribute4",
+              "type": "vec3",
+              "source": "node",
+              "count": 1024,
+              "itemSize": 3,
+              "arrayType": "Float32Array"
+            }
+          ],
+          "textures": [
+            {
+              "group": "object",
+              "name": "nodeUniform17_sampler",
+              "kind": "builtin.dfgLUT",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform17",
+              "kind": "builtin.dfgLUT",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform1",
+              "kind": "artifact.texture",
+              "textureUuid": "b050d174-5b92-4f72-8a0a-362cedd740fe",
+              "hasSnapshot": true,
+              "snapshotSize": [
+                16,
+                1024
+              ]
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform2",
+              "kind": "artifact.texture",
+              "textureUuid": "d0fd8bd7-fb1c-45bf-aad4-a92e8ddbcafd",
+              "hasSnapshot": true,
+              "snapshotSize": [
+                796,
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "name": "webgpu_instancing_morph.html:MeshStandardNodeMaterial:1",
+          "hash": "5ac94a2bd2c5f1f5112316f92aed78431ab0b555866bcb3732558e20b70d2de6",
+          "cacheKey": 12381093317023924,
+          "shape": "mesh-standard",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform24 : vec3<f32>,\n\tnodeUniform25 : f32,\n\tnodeUniform26 : f32,\n\tnodeUniform11 : vec3<f32>,\n\tnodeUniform22 : vec3<f32>,\n\tnodeUniform23 : vec3<f32>,\n\tnodeUniform21 : vec3<f32>,\n\tnodeUniform9 : vec3<f32>,\n\tnodeUniform10 : vec3<f32>,\n\tnodeUniform13 : mat4x4<f32>,\n\tnodeUniform14 : f32,\n\tnodeUniform15 : f32,\n\tnodeUniform17 : f32,\n\tnodeUniform18 : vec2<f32>,\n\tnodeUniform19 : f32\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : f32,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform6 : vec3<f32>,\n\tnodeUniform7 : f32,\n\tnodeUniform12 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 2 ) v_positionWorld : vec3<f32>,\n\t@location( 3 ) v_positionViewDirection : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private>",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform16_sampler : sampler_comparison;\n@binding( 2 ) @group( 1 ) var nodeUniform16 : texture_depth_2d;\n@binding( 3 ) @group( 1 ) var nodeUniform20_sampler : sampler;\n@binding( 4 ) @group( 1 ) var nodeUniform20 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : f32,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform6 : vec3<f32>,\n\tnodeUniform7 : f32,\n\tnodeUniform12 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform24 : vec3<f32>,\n\tnodeUniform25 : f32,\n\tnodeUniform26 : f32,\n\tnodeUniform11 : vec3<f32>,\n\tnodeUniform22 : vec3<f32>,\n\tnodeUniform23 : vec3<f32>,\n\tnodeUniform21 : vec3<f32>,\n\tnodeUniform9 : vec3<f32>,\n\tnodeUniform10 : vec3<f32>,\n\tnodeUniform13 : mat4x4<f32>,\n\tnodeUniform14 : f32,\n\tnodeUniform15 : f32,\n\tnodeUniform17 : f32,\n\tnodeUniform18",
+          "attributes": [
+            {
+              "name": "normal",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": [
+            {
+              "group": "object",
+              "name": "nodeUniform16_sampler",
+              "kind": "depth.texture",
+              "textureUuid": "381d0536-4325-47de-92ef-a84a15332cc2",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform16",
+              "kind": "depth.texture",
+              "textureUuid": "381d0536-4325-47de-92ef-a84a15332cc2",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform20_sampler",
+              "kind": "builtin.dfgLUT",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform20",
+              "kind": "builtin.dfgLUT",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            }
+          ]
+        }
+      ],
+      "auxSummaries": [
+        {
+          "shape": "lights",
+          "configHash": "86fb68c7e5d239a5492889b924698373063c52eac879061c67340839c99cf0f1",
+          "attributes": [],
+          "bindings": [],
+          "uniformPlan": []
+        },
+        {
+          "shape": "render-output",
+          "configHash": "90a5a84186bcbc44efdd95b20bf6492a0c0d34057e53f1b3ebe0bc95b1236c03",
+          "artifactShape": "render-output",
+          "cacheKey": 6866810968663614,
+          "attributes": [
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "bindings": [
+            {
+              "name": "render",
+              "bindings": [
+                {
+                  "name": "render",
+                  "kind": "uniform-buffer",
+                  "byteLength": 128
+                }
+              ]
+            },
+            {
+              "name": "object",
+              "bindings": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "sampler",
+                  "byteLength": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "sampled-texture",
+                  "byteLength": null
+                },
+                {
+                  "name": "object",
+                  "kind": "uniform-buffer",
+                  "byteLength": 80
+                }
+              ]
+            }
+          ],
+          "uniformPlan": [
+            {
+              "name": "render",
+              "byteLength": 128,
+              "slotCount": 2,
+              "textures": []
+            },
+            {
+              "name": "object",
+              "byteLength": 80,
+              "slotCount": 2,
+              "textures": [
+                {
+                  "name": "nodeUniform0_sampler",
+                  "kind": "artifact.texture",
+                  "textureUuid": "40f5e091-ab4d-4c39-9a6d-2deabd3fd9e1",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                },
+                {
+                  "name": "nodeUniform0",
+                  "kind": "artifact.texture",
+                  "textureUuid": "40f5e091-ab4d-4c39-9a6d-2deabd3fd9e1",
+                  "hasSnapshot": false,
+                  "snapshotSize": null
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "error": null
+    }
+  ]
+}
