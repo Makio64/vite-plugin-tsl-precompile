@@ -478,7 +478,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "98ab9475-23a0-4b33-b26d-989cf5d0a995",
+                "textureUuid": "607ee47a-4b04-4ddb-ba73-cae15d4f639e",
                 "textureName": "PMREM.cubeUv",
                 "mapping": 306,
                 "wrapS": 1001,
@@ -498,7 +498,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "98ab9475-23a0-4b33-b26d-989cf5d0a995",
+                "textureUuid": "607ee47a-4b04-4ddb-ba73-cae15d4f639e",
                 "textureName": "PMREM.cubeUv",
                 "mapping": 306,
                 "wrapS": 1001,
@@ -669,7 +669,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "98ab9475-23a0-4b33-b26d-989cf5d0a995",
+                  "textureUuid": "607ee47a-4b04-4ddb-ba73-cae15d4f639e",
                   "textureName": "PMREM.cubeUv",
                   "mapping": 306,
                   "wrapS": 1001,
@@ -700,7 +700,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "98ab9475-23a0-4b33-b26d-989cf5d0a995",
+                  "textureUuid": "607ee47a-4b04-4ddb-ba73-cae15d4f639e",
                   "textureName": "PMREM.cubeUv",
                   "mapping": 306,
                   "wrapS": 1001,
@@ -767,7 +767,7 @@
         "updateBeforeNodes": 1,
         "updateAfterNodes": 0
       },
-      "materialUuid": "586255aa-e367-4582-b211-7eebb5aeb72d"
+      "materialUuid": "200d7c94-0bc4-4f7c-baaf-24b81de5ec63"
     }
   },
   {
@@ -1261,7 +1261,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "606730df-4bd9-4df3-ba44-a3575decab66",
+      "materialUuid": "28b3ff65-7362-4eca-822b-7861c5d7504a",
       "pmremKind": "cubemap"
     }
   },
@@ -1693,7 +1693,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "6cccd84a-e7c2-4961-a649-be1c59340da8",
+      "materialUuid": "b4b92052-8f7f-4394-aecd-3f24411fb795",
       "pmremKind": "equirect"
     }
   },
@@ -2362,7 +2362,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "38fa4ede-435e-456d-92d4-d74615d4cb9c",
+      "materialUuid": "00a1884e-6b86-4e62-9ace-96887db6e575",
       "pmremKind": "blur"
     }
   },
@@ -2846,7 +2846,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "7c7c6f1f-b713-4768-b643-fe8ea94d326b",
+      "materialUuid": "c46b1d92-5fea-4ae7-be1a-8f9591624f69",
       "pmremKind": "ggx"
     }
   },
@@ -3140,7 +3140,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "2c0df274-a78c-4ee7-a607-af64196407dc",
+                "textureUuid": "741222e6-4f81-414c-ae64-08ff0147b756",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
@@ -3159,7 +3159,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "2c0df274-a78c-4ee7-a607-af64196407dc",
+                "textureUuid": "741222e6-4f81-414c-ae64-08ff0147b756",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
@@ -3183,7 +3183,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "2c0df274-a78c-4ee7-a607-af64196407dc",
+                  "textureUuid": "741222e6-4f81-414c-ae64-08ff0147b756",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,
@@ -3213,7 +3213,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "2c0df274-a78c-4ee7-a607-af64196407dc",
+                  "textureUuid": "741222e6-4f81-414c-ae64-08ff0147b756",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,

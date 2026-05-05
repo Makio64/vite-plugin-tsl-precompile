@@ -2588,7 +2588,7 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 					if ( depthTex ) {
 						const fullData = fullRenderer.backend.get( depthTex );
 						const slimData = _slimRenderer.backend.get( depthTex );
-						if ( fullData && fullData.texture && slimData && ! slimData.texture ) {
+						if ( fullData && fullData.texture && slimData ) {
 							slimData.texture = fullData.texture;
 							slimData.format = fullData.format;
 							slimData.initialized = true;

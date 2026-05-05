@@ -1,17 +1,18 @@
 {
   "total": 1,
-  "pass": 0,
-  "fail": 1,
+  "pass": 1,
+  "fail": 0,
   "skip": 0,
   "details": [
     {
       "name": "webgpu_shadowmap_pointlight.html",
-      "status": "fail",
+      "status": "pass",
       "captureBrightFrac": 1,
-      "replayBrightFrac": 0.0043326822916666665,
+      "replayBrightFrac": 1,
       "pixelGate": {
-        "skipped": true,
-        "reason": "replay frame empty"
+        "pass": false,
+        "psnr": 20.47,
+        "threshold": 30
       },
       "userArtifacts": 5,
       "auxArtifacts": 2,
@@ -28,47 +29,7 @@
       "replayDiagnostics": {
         "colorTransferFallbacks": {},
         "healedNullTextureImages": 0,
-        "gpuErrors": [
-          "Texture view array layer range (baseArrayLayer: 0, arrayLayerCount: 6) exceeds the texture's array layer count (1).\n - While validating [TextureViewDescriptor] against [Texture (unlabeled 1x1 px, TextureFormat::Depth24Plus)].\n - While calling [Texture (unlabeled 1x1 px, TextureFormat::Depth24Plus)].CreateView([TextureViewDescriptor]).\n",
-          "[Invalid TextureView] is invalid due to a previous error.\n - While validating entries[4] against { binding: 4, visibility: ShaderStage::Fragment, texture: {sampleType: TextureSampleType::Depth, viewDimension: TextureViewDimension::Cube, multisampled: 0} }.\n - While validating [BindGroupDescriptor \"\"bindGroup_object\"\"] against [BindGroupLayout (unlabeled)]\n - While calling [Device].CreateBindGroup([BindGroupDescriptor \"\"bindGroup_object\"\"]).\n",
-          "[Invalid TextureView] is invalid due to a previous error.\n - While validating entries[4] against { binding: 4, visibility: ShaderStage::Fragment, texture: {sampleType: TextureSampleType::Depth, viewDimension: TextureViewDimension::Cube, multisampled: 0} }.\n - While validating [BindGroupDescriptor \"\"bindGroup_object\"\"] against [BindGroupLayout (unlabeled)]\n - While calling [Device].CreateBindGroup([BindGroupDescriptor \"\"bindGroup_object\"\"]).\n",
-          "[Invalid TextureView] is invalid due to a previous error.\n - While validating entries[4] against { binding: 4, visibility: ShaderStage::Fragment, texture: {sampleType: TextureSampleType::Depth, viewDimension: TextureViewDimension::Cube, multisampled: 0} }.\n - While validating [BindGroupDescriptor \"\"bindGroup_object\"\"] against [BindGroupLayout (unlabeled)]\n - While calling [Device].CreateBindGroup([BindGroupDescriptor \"\"bindGroup_object\"\"]).\n",
-          "[Invalid TextureView] is invalid due to a previous error.\n - While validating entries[4] against { binding: 4, visibility: ShaderStage::Fragment, texture: {sampleType: TextureSampleType::Depth, viewDimension: TextureViewDimension::Cube, multisampled: 0} }.\n - While validating [BindGroupDescriptor \"\"bindGroup_object\"\"] against [BindGroupLayout (unlabeled)]\n - While calling [Device].CreateBindGroup([BindGroupDescriptor \"\"bindGroup_object\"\"]).\n",
-          "[Invalid TextureView] is invalid due to a previous error.\n - While validating entries[2] against { binding: 2, visibility: ShaderStage::Fragment, texture: {sampleType: TextureSampleType::Depth, viewDimension: TextureViewDimension::Cube, multisampled: 0} }.\n - While validating [BindGroupDescriptor \"\"bindGroup_object\"\"] against [BindGroupLayout (unlabeled)]\n - While calling [Device].CreateBindGroup([BindGroupDescriptor \"\"bindGroup_object\"\"]).\n",
-          "[Invalid TextureView] is invalid due to a previous error.\n - While validating entries[2] against { binding: 2, visibility: ShaderStage::Fragment, texture: {sampleType: TextureSampleType::Depth, viewDimension: TextureViewDimension::Cube, multisampled: 0} }.\n - While validating [BindGroupDescriptor \"\"bindGroup_object\"\"] against [BindGroupLayout (unlabeled)]\n - While calling [Device].CreateBindGroup([BindGroupDescriptor \"\"bindGroup_object\"\"]).\n",
-          "[Invalid BindGroup \"bindGroup_object\"] is invalid due to a previous error.\n - While encoding [RenderPassEncoder (unlabeled)].SetBindGroup(1, [Invalid BindGroup \"bindGroup_object\"], 0, ...).\n - While finishing [CommandEncoder \"renderContext_0\"].\n",
-          "[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"] is invalid due to a previous error.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"]])\n",
-          "[Invalid BindGroup \"bindGroup_object\"] is invalid due to a previous error.\n - While encoding [RenderPassEncoder (unlabeled)].SetBindGroup(1, [Invalid BindGroup \"bindGroup_object\"], 0, ...).\n - While finishing [CommandEncoder \"renderContext_0\"].\n",
-          "[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"] is invalid due to a previous error.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"]])\n",
-          "[Invalid BindGroup \"bindGroup_object\"] is invalid due to a previous error.\n - While encoding [RenderPassEncoder (unlabeled)].SetBindGroup(1, [Invalid BindGroup \"bindGroup_object\"], 0, ...).\n - While finishing [CommandEncoder \"renderContext_0\"].\n",
-          "[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"] is invalid due to a previous error.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"]])\n",
-          "[Invalid BindGroup \"bindGroup_object\"] is invalid due to a previous error.\n - While encoding [RenderPassEncoder (unlabeled)].SetBindGroup(1, [Invalid BindGroup \"bindGroup_object\"], 0, ...).\n - While finishing [CommandEncoder \"renderContext_0\"].\n",
-          "[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"] is invalid due to a previous error.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"]])\n",
-          "[Invalid BindGroup \"bindGroup_object\"] is invalid due to a previous error.\n - While encoding [RenderPassEncoder (unlabeled)].SetBindGroup(1, [Invalid BindGroup \"bindGroup_object\"], 0, ...).\n - While finishing [CommandEncoder \"renderContext_0\"].\n",
-          "[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"] is invalid due to a previous error.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"]])\n",
-          "[Invalid BindGroup \"bindGroup_object\"] is invalid due to a previous error.\n - While encoding [RenderPassEncoder (unlabeled)].SetBindGroup(1, [Invalid BindGroup \"bindGroup_object\"], 0, ...).\n - While finishing [CommandEncoder \"renderContext_0\"].\n",
-          "[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"] is invalid due to a previous error.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"]])\n",
-          "[Invalid BindGroup \"bindGroup_object\"] is invalid due to a previous error.\n - While encoding [RenderPassEncoder (unlabeled)].SetBindGroup(1, [Invalid BindGroup \"bindGroup_object\"], 0, ...).\n - While finishing [CommandEncoder \"renderContext_0\"].\n",
-          "[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"] is invalid due to a previous error.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"]])\n",
-          "[Invalid BindGroup \"bindGroup_object\"] is invalid due to a previous error.\n - While encoding [RenderPassEncoder (unlabeled)].SetBindGroup(1, [Invalid BindGroup \"bindGroup_object\"], 0, ...).\n - While finishing [CommandEncoder \"renderContext_0\"].\n",
-          "[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"] is invalid due to a previous error.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"]])\n",
-          "[Invalid BindGroup \"bindGroup_object\"] is invalid due to a previous error.\n - While encoding [RenderPassEncoder (unlabeled)].SetBindGroup(1, [Invalid BindGroup \"bindGroup_object\"], 0, ...).\n - While finishing [CommandEncoder \"renderContext_0\"].\n",
-          "[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"] is invalid due to a previous error.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"]])\n",
-          "[Invalid BindGroup \"bindGroup_object\"] is invalid due to a previous error.\n - While encoding [RenderPassEncoder (unlabeled)].SetBindGroup(1, [Invalid BindGroup \"bindGroup_object\"], 0, ...).\n - While finishing [CommandEncoder \"renderContext_0\"].\n",
-          "[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"] is invalid due to a previous error.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"]])\n",
-          "[Invalid BindGroup \"bindGroup_object\"] is invalid due to a previous error.\n - While encoding [RenderPassEncoder (unlabeled)].SetBindGroup(1, [Invalid BindGroup \"bindGroup_object\"], 0, ...).\n - While finishing [CommandEncoder \"renderContext_0\"].\n",
-          "[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"] is invalid due to a previous error.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"]])\n",
-          "[Invalid BindGroup \"bindGroup_object\"] is invalid due to a previous error.\n - While encoding [RenderPassEncoder (unlabeled)].SetBindGroup(1, [Invalid BindGroup \"bindGroup_object\"], 0, ...).\n - While finishing [CommandEncoder \"renderContext_0\"].\n",
-          "[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"] is invalid due to a previous error.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"]])\n",
-          "[Invalid BindGroup \"bindGroup_object\"] is invalid due to a previous error.\n - While encoding [RenderPassEncoder (unlabeled)].SetBindGroup(1, [Invalid BindGroup \"bindGroup_object\"], 0, ...).\n - While finishing [CommandEncoder \"renderContext_0\"].\n",
-          "[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"] is invalid due to a previous error.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"]])\n",
-          "[Invalid BindGroup \"bindGroup_object\"] is invalid due to a previous error.\n - While encoding [RenderPassEncoder (unlabeled)].SetBindGroup(1, [Invalid BindGroup \"bindGroup_object\"], 0, ...).\n - While finishing [CommandEncoder \"renderContext_0\"].\n",
-          "[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"] is invalid due to a previous error.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"]])\n",
-          "[Invalid BindGroup \"bindGroup_object\"] is invalid due to a previous error.\n - While encoding [RenderPassEncoder (unlabeled)].SetBindGroup(1, [Invalid BindGroup \"bindGroup_object\"], 0, ...).\n - While finishing [CommandEncoder \"renderContext_0\"].\n",
-          "[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"] is invalid due to a previous error.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"]])\n",
-          "[Invalid BindGroup \"bindGroup_object\"] is invalid due to a previous error.\n - While encoding [RenderPassEncoder (unlabeled)].SetBindGroup(1, [Invalid BindGroup \"bindGroup_object\"], 0, ...).\n - While finishing [CommandEncoder \"renderContext_0\"].\n",
-          "[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"] is invalid due to a previous error.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"renderContext_0\"]])\n"
-        ],
+        "gpuErrors": [],
         "pmrem": {
           "kickCalls": 0,
           "cacheHits": 0,
@@ -89,8 +50,8 @@
       },
       "artifactSummaries": [
         {
-          "name": "webgpu_shadowmap_pointlight.html:MeshBasicNodeMaterial:1",
-          "hash": "d351dda6781e24886a485e583fe17a6a7d8a83d810c42b768725c374a2a934f2",
+          "name": "webgpu_shadowmap_pointlight.html:MeshBasicNodeMaterial:2",
+          "hash": "f396f8d6c787f86cad1e182af619df344347e755d97a0351cb6de019c061d897",
           "cacheKey": 11962977387844216,
           "shape": "mesh-basic",
           "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform2 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar8 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform5 );\n\tvaryings.v_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar8 = ( render.cameraProjectionMatrix * vec4<f32>( varyin",
@@ -105,8 +66,8 @@
           "textures": []
         },
         {
-          "name": "webgpu_shadowmap_pointlight.html:MeshPhongNodeMaterial:2",
-          "hash": "addcdeeb663499c80a0dcd50420407b081ec0bb761be2069fc7321269751b902",
+          "name": "webgpu_shadowmap_pointlight.html:MeshPhongNodeMaterial:1",
+          "hash": "65987cedfb531c06790db6f82ad8d6559b7fb2762b5161d88e01900ca93d1329",
           "cacheKey": 8346331944423407,
           "shape": "mesh-phong",
           "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform9 : vec3<f32>,\n\tnodeUniform14 : vec3<f32>,\n\tnodeUniform25 : f32,\n\tnodeUniform26 : f32,\n\tnodeUniform28 : vec3<f32>,\n\tnodeUniform38 : f32,\n\tnodeUniform39 : f32,\n\tnodeUniform12 : vec3<f32>,\n\tnodeUniform27 : vec3<f32>,\n\tnodeUniform15 : mat4x4<f32>,\n\tnodeUniform19 : f32,\n\tnodeUniform18 : f32,\n\tnodeUniform17 : f32,\n\tnodeUniform20 : f32,\n\tnodeUniform22 : f32,\n\tnodeUniform23 : vec2<f32>,\n\tnodeUniform24 : f32,\n\tnodeUniform29 : mat4x4<f32>,\n\tnodeUniform32 : f32,\n\tnodeUniform31 : f32,\n\tnodeUniform30 : f32,\n\tnodeUniform33 : f32,\n\tnodeUniform35 : f32,\n\tnodeUniform36 : vec2<f32>,\n\tnodeUniform37 : f32\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform3 : mat3x3<f32>,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform6 : vec3<f32>,\n\tnodeUniform7 : vec3<f32>,\n\tnodeUniform8 : f32,\n\tnodeUniform11 : mat3x3<f32>,\n\tnodeUniform13 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstr",
@@ -134,7 +95,7 @@
               "name": "nodeUniform2_sampler",
               "kind": "material.alphaMap",
               "property": "alphaMap",
-              "textureUuid": "9047a0cc-bb5b-4f7a-aa83-8fa54d483bb5",
+              "textureUuid": "70bac6fe-1b71-488f-8ad9-39d3ade4f847",
               "hasSnapshot": true,
               "snapshotSize": [
                 2,
@@ -146,7 +107,7 @@
               "name": "nodeUniform2",
               "kind": "material.alphaMap",
               "property": "alphaMap",
-              "textureUuid": "9047a0cc-bb5b-4f7a-aa83-8fa54d483bb5",
+              "textureUuid": "70bac6fe-1b71-488f-8ad9-39d3ade4f847",
               "hasSnapshot": true,
               "snapshotSize": [
                 2,
@@ -157,7 +118,7 @@
               "group": "object",
               "name": "nodeUniform21_sampler",
               "kind": "depth.texture",
-              "textureUuid": "fc4fee0d-37d1-4cb5-b6e3-b9582967c6fe",
+              "textureUuid": "44aff67f-df57-4823-bea9-3ef211ace614",
               "hasSnapshot": false,
               "snapshotSize": null
             },
@@ -165,7 +126,7 @@
               "group": "object",
               "name": "nodeUniform21",
               "kind": "depth.texture",
-              "textureUuid": "fc4fee0d-37d1-4cb5-b6e3-b9582967c6fe",
+              "textureUuid": "44aff67f-df57-4823-bea9-3ef211ace614",
               "hasSnapshot": false,
               "snapshotSize": null
             },
@@ -173,7 +134,7 @@
               "group": "object",
               "name": "nodeUniform34_sampler",
               "kind": "depth.texture",
-              "textureUuid": "1cc31fcb-d769-4e42-9663-be12c9a82dbf",
+              "textureUuid": "648676bf-7f04-4d4e-9e2d-f3bdb121d640",
               "hasSnapshot": false,
               "snapshotSize": null
             },
@@ -181,16 +142,86 @@
               "group": "object",
               "name": "nodeUniform34",
               "kind": "depth.texture",
-              "textureUuid": "1cc31fcb-d769-4e42-9663-be12c9a82dbf",
+              "textureUuid": "648676bf-7f04-4d4e-9e2d-f3bdb121d640",
               "hasSnapshot": false,
               "snapshotSize": null
             }
           ]
         },
         {
-          "name": "webgpu_shadowmap_pointlight.html:MeshPhongNodeMaterial:1",
-          "hash": "65987cedfb531c06790db6f82ad8d6559b7fb2762b5161d88e01900ca93d1329",
-          "cacheKey": 4217420295596688,
+          "name": "webgpu_shadowmap_pointlight.html:MeshPhongNodeMaterial:3",
+          "hash": "3a503eb42226df6068fd6b55a03c7658b2f6a2d098e0a5ac4e53ec7301ed57e7",
+          "cacheKey": 5475967623925523,
+          "shape": "mesh-phong",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform6 : vec3<f32>,\n\tnodeUniform11 : vec3<f32>,\n\tnodeUniform22 : f32,\n\tnodeUniform23 : f32,\n\tnodeUniform25 : vec3<f32>,\n\tnodeUniform35 : f32,\n\tnodeUniform36 : f32,\n\tnodeUniform9 : vec3<f32>,\n\tnodeUniform24 : vec3<f32>,\n\tnodeUniform12 : mat4x4<f32>,\n\tnodeUniform16 : f32,\n\tnodeUniform15 : f32,\n\tnodeUniform14 : f32,\n\tnodeUniform17 : f32,\n\tnodeUniform19 : f32,\n\tnodeUniform20 : vec2<f32>,\n\tnodeUniform21 : f32,\n\tnodeUniform26 : mat4x4<f32>,\n\tnodeUniform29 : f32,\n\tnodeUniform28 : f32,\n\tnodeUniform27 : f32,\n\tnodeUniform30 : f32,\n\tnodeUniform32 : f32,\n\tnodeUniform33 : vec2<f32>,\n\tnodeUniform34 : f32\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : f32,\n\tnodeUniform3 : vec3<f32>,\n\tnodeUniform4 : vec3<f32>,\n\tnodeUniform5 : f32,\n\tnodeUniform8 : mat3x3<f32>,\n\tnodeUniform10 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView ",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform18_sampler : sampler_comparison;\n@binding( 2 ) @group( 1 ) var nodeUniform18 : texture_depth_cube;\n@binding( 3 ) @group( 1 ) var nodeUniform31_sampler : sampler_comparison;\n@binding( 4 ) @group( 1 ) var nodeUniform31 : texture_depth_cube;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : f32,\n\tnodeUniform3 : vec3<f32>,\n\tnodeUniform4 : vec3<f32>,\n\tnodeUniform5 : f32,\n\tnodeUniform8 : mat3x3<f32>,\n\tnodeUniform10 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform6 : vec3<f32>,\n\tnodeUniform11 : vec3<f32>,\n\tnodeUniform22 : f32,\n\tnodeUniform23 : f32,\n\tnodeUniform25 : vec3<f32>,\n\tnodeUniform35 : f32,\n\tnodeUniform36 : f32,\n\tnodeUniform9 : vec3<f32>,\n\tnodeUniform24 : vec3<f32>,\n\tnodeUniform12 : mat4x4<f32>,\n\tnodeUniform16 : f32,\n\tnodeUniform15 : f32,\n\tnodeUniform14 : f32,\n\tnode",
+          "attributes": [
+            {
+              "name": "normal",
+              "type": "vec3",
+              "source": "geometry"
+            },
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": [
+            {
+              "group": "object",
+              "name": "nodeUniform18_sampler",
+              "kind": "depth.texture",
+              "textureUuid": "2c3ffe40-a716-4901-a609-b46a197e145b",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform18",
+              "kind": "depth.texture",
+              "textureUuid": "2c3ffe40-a716-4901-a609-b46a197e145b",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform31_sampler",
+              "kind": "depth.texture",
+              "textureUuid": "4ccab360-47e7-4f89-8662-8ce6b9b74d73",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            },
+            {
+              "group": "object",
+              "name": "nodeUniform31",
+              "kind": "depth.texture",
+              "textureUuid": "4ccab360-47e7-4f89-8662-8ce6b9b74d73",
+              "hasSnapshot": false,
+              "snapshotSize": null
+            }
+          ]
+        },
+        {
+          "name": "webgpu_shadowmap_pointlight.html:MeshBasicNodeMaterial:1",
+          "hash": "d351dda6781e24886a485e583fe17a6a7d8a83d810c42b768725c374a2a934f2",
+          "cacheKey": 4383117161309523,
+          "shape": "mesh-basic",
+          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform2 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar8 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform5 );\n\tvaryings.v_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar8 = ( render.cameraProjectionMatrix * vec4<f32>( varyin",
+          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform2 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> irradiance : vec3<f32>;\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> indirectDiffuse : vec3<f32>;\nvar<private> nodeVar1 : vec4<f32>;\nvar<private> ambientOcclusion : f32;\nvar<private> nodeVar2 : vec3<f32>;\nvar<private> nodeVar3 : vec3<f32>;\nvar<private> totalDiffuse : vec3<f32>;\nvar<private> directDiffuse : vec3<f32>;\nvar<private> nodeVar4 : vec3<f32>;\nvar<private> totalSpecular : vec3<f32>;\nvar<private> directSpecular : vec3<f32>;\nvar<private> indirectSpecular : vec3<f32>;\nvar<private> nodeVar5 : vec3<f32>;\nvar<private> outgoingLight : vec",
+          "attributes": [
+            {
+              "name": "position",
+              "type": "vec3",
+              "source": "geometry"
+            }
+          ],
+          "textures": []
+        },
+        {
+          "name": "webgpu_shadowmap_pointlight.html:MeshPhongNodeMaterial:2",
+          "hash": "addcdeeb663499c80a0dcd50420407b081ec0bb761be2069fc7321269751b902",
+          "cacheKey": 9297761325063418,
           "shape": "mesh-phong",
           "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform9 : vec3<f32>,\n\tnodeUniform14 : vec3<f32>,\n\tnodeUniform25 : f32,\n\tnodeUniform26 : f32,\n\tnodeUniform28 : vec3<f32>,\n\tnodeUniform38 : f32,\n\tnodeUniform39 : f32,\n\tnodeUniform12 : vec3<f32>,\n\tnodeUniform27 : vec3<f32>,\n\tnodeUniform15 : mat4x4<f32>,\n\tnodeUniform19 : f32,\n\tnodeUniform18 : f32,\n\tnodeUniform17 : f32,\n\tnodeUniform20 : f32,\n\tnodeUniform22 : f32,\n\tnodeUniform23 : vec2<f32>,\n\tnodeUniform24 : f32,\n\tnodeUniform29 : mat4x4<f32>,\n\tnodeUniform32 : f32,\n\tnodeUniform31 : f32,\n\tnodeUniform30 : f32,\n\tnodeUniform33 : f32,\n\tnodeUniform35 : f32,\n\tnodeUniform36 : vec2<f32>,\n\tnodeUniform37 : f32\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform3 : mat3x3<f32>,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform6 : vec3<f32>,\n\tnodeUniform7 : vec3<f32>,\n\tnodeUniform8 : f32,\n\tnodeUniform11 : mat3x3<f32>,\n\tnodeUniform13 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstr",
           "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform2_sampler : sampler;\n@binding( 2 ) @group( 1 ) var nodeUniform2 : texture_2d<f32>;\n@binding( 3 ) @group( 1 ) var nodeUniform21_sampler : sampler_comparison;\n@binding( 4 ) @group( 1 ) var nodeUniform21 : texture_depth_cube;\n@binding( 5 ) @group( 1 ) var nodeUniform34_sampler : sampler_comparison;\n@binding( 6 ) @group( 1 ) var nodeUniform34 : texture_depth_cube;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform3 : mat3x3<f32>,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform6 : vec3<f32>,\n\tnodeUniform7 : vec3<f32>,\n\tnodeUniform8 : f32,\n\tnodeUniform11 : mat3x3<f32>,\n\tnodeUniform13 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform9 : vec3<f32>,\n\tnodeUniform14 : vec3<f32>,\n\tnodeUniform25 : f32,\n\tnodeUniform26 : f32,\n\tnodeUniform28 : vec3<f32>,\n\tnodeUniform38 : f32,\n\tno",
@@ -217,7 +248,7 @@
               "name": "nodeUniform2_sampler",
               "kind": "material.alphaMap",
               "property": "alphaMap",
-              "textureUuid": "a8a58728-f3b2-4484-8241-5d3445fc6979",
+              "textureUuid": "58991bdb-e332-4055-b260-1c62b5b13bfe",
               "hasSnapshot": true,
               "snapshotSize": [
                 2,
@@ -229,7 +260,7 @@
               "name": "nodeUniform2",
               "kind": "material.alphaMap",
               "property": "alphaMap",
-              "textureUuid": "a8a58728-f3b2-4484-8241-5d3445fc6979",
+              "textureUuid": "58991bdb-e332-4055-b260-1c62b5b13bfe",
               "hasSnapshot": true,
               "snapshotSize": [
                 2,
@@ -240,7 +271,7 @@
               "group": "object",
               "name": "nodeUniform21_sampler",
               "kind": "depth.texture",
-              "textureUuid": "e482a709-ffd6-4440-9ede-070f3118b6d9",
+              "textureUuid": "7835c97c-83e0-45f6-92f2-d38855d08045",
               "hasSnapshot": false,
               "snapshotSize": null
             },
@@ -248,7 +279,7 @@
               "group": "object",
               "name": "nodeUniform21",
               "kind": "depth.texture",
-              "textureUuid": "e482a709-ffd6-4440-9ede-070f3118b6d9",
+              "textureUuid": "7835c97c-83e0-45f6-92f2-d38855d08045",
               "hasSnapshot": false,
               "snapshotSize": null
             },
@@ -256,7 +287,7 @@
               "group": "object",
               "name": "nodeUniform34_sampler",
               "kind": "depth.texture",
-              "textureUuid": "042a2889-9f13-444e-beb2-05e6d19d3e9e",
+              "textureUuid": "98061937-233f-46a6-b280-acd5f5c74056",
               "hasSnapshot": false,
               "snapshotSize": null
             },
@@ -264,77 +295,7 @@
               "group": "object",
               "name": "nodeUniform34",
               "kind": "depth.texture",
-              "textureUuid": "042a2889-9f13-444e-beb2-05e6d19d3e9e",
-              "hasSnapshot": false,
-              "snapshotSize": null
-            }
-          ]
-        },
-        {
-          "name": "webgpu_shadowmap_pointlight.html:MeshBasicNodeMaterial:2",
-          "hash": "f396f8d6c787f86cad1e182af619df344347e755d97a0351cb6de019c061d897",
-          "cacheKey": 4383117161309523,
-          "shape": "mesh-basic",
-          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform2 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar8 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform5 );\n\tvaryings.v_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar8 = ( render.cameraProjectionMatrix * vec4<f32>( varyin",
-          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform2 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> irradiance : vec3<f32>;\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> indirectDiffuse : vec3<f32>;\nvar<private> nodeVar1 : vec4<f32>;\nvar<private> ambientOcclusion : f32;\nvar<private> nodeVar2 : vec3<f32>;\nvar<private> nodeVar3 : vec3<f32>;\nvar<private> totalDiffuse : vec3<f32>;\nvar<private> directDiffuse : vec3<f32>;\nvar<private> nodeVar4 : vec3<f32>;\nvar<private> totalSpecular : vec3<f32>;\nvar<private> directSpecular : vec3<f32>;\nvar<private> indirectSpecular : vec3<f32>;\nvar<private> nodeVar5 : vec3<f32>;\nvar<private> outgoingLight : vec",
-          "attributes": [
-            {
-              "name": "position",
-              "type": "vec3",
-              "source": "geometry"
-            }
-          ],
-          "textures": []
-        },
-        {
-          "name": "webgpu_shadowmap_pointlight.html:MeshPhongNodeMaterial:3",
-          "hash": "3a503eb42226df6068fd6b55a03c7658b2f6a2d098e0a5ac4e53ec7301ed57e7",
-          "cacheKey": 10556308653392252,
-          "shape": "mesh-phong",
-          "vertexSnippet": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform6 : vec3<f32>,\n\tnodeUniform11 : vec3<f32>,\n\tnodeUniform22 : f32,\n\tnodeUniform23 : f32,\n\tnodeUniform25 : vec3<f32>,\n\tnodeUniform35 : f32,\n\tnodeUniform36 : f32,\n\tnodeUniform9 : vec3<f32>,\n\tnodeUniform24 : vec3<f32>,\n\tnodeUniform12 : mat4x4<f32>,\n\tnodeUniform16 : f32,\n\tnodeUniform15 : f32,\n\tnodeUniform14 : f32,\n\tnodeUniform17 : f32,\n\tnodeUniform19 : f32,\n\tnodeUniform20 : vec2<f32>,\n\tnodeUniform21 : f32,\n\tnodeUniform26 : mat4x4<f32>,\n\tnodeUniform29 : f32,\n\tnodeUniform28 : f32,\n\tnodeUniform27 : f32,\n\tnodeUniform30 : f32,\n\tnodeUniform32 : f32,\n\tnodeUniform33 : vec2<f32>,\n\tnodeUniform34 : f32\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : f32,\n\tnodeUniform3 : vec3<f32>,\n\tnodeUniform4 : vec3<f32>,\n\tnodeUniform5 : f32,\n\tnodeUniform8 : mat3x3<f32>,\n\tnodeUniform10 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView ",
-          "fragmentSnippet": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform18_sampler : sampler_comparison;\n@binding( 2 ) @group( 1 ) var nodeUniform18 : texture_depth_cube;\n@binding( 3 ) @group( 1 ) var nodeUniform31_sampler : sampler_comparison;\n@binding( 4 ) @group( 1 ) var nodeUniform31 : texture_depth_cube;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : f32,\n\tnodeUniform3 : vec3<f32>,\n\tnodeUniform4 : vec3<f32>,\n\tnodeUniform5 : f32,\n\tnodeUniform8 : mat3x3<f32>,\n\tnodeUniform10 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform6 : vec3<f32>,\n\tnodeUniform11 : vec3<f32>,\n\tnodeUniform22 : f32,\n\tnodeUniform23 : f32,\n\tnodeUniform25 : vec3<f32>,\n\tnodeUniform35 : f32,\n\tnodeUniform36 : f32,\n\tnodeUniform9 : vec3<f32>,\n\tnodeUniform24 : vec3<f32>,\n\tnodeUniform12 : mat4x4<f32>,\n\tnodeUniform16 : f32,\n\tnodeUniform15 : f32,\n\tnodeUniform14 : f32,\n\tnode",
-          "attributes": [
-            {
-              "name": "normal",
-              "type": "vec3",
-              "source": "geometry"
-            },
-            {
-              "name": "position",
-              "type": "vec3",
-              "source": "geometry"
-            }
-          ],
-          "textures": [
-            {
-              "group": "object",
-              "name": "nodeUniform18_sampler",
-              "kind": "depth.texture",
-              "textureUuid": "b0dfda9d-5bd5-454d-8a71-e9faed126707",
-              "hasSnapshot": false,
-              "snapshotSize": null
-            },
-            {
-              "group": "object",
-              "name": "nodeUniform18",
-              "kind": "depth.texture",
-              "textureUuid": "b0dfda9d-5bd5-454d-8a71-e9faed126707",
-              "hasSnapshot": false,
-              "snapshotSize": null
-            },
-            {
-              "group": "object",
-              "name": "nodeUniform31_sampler",
-              "kind": "depth.texture",
-              "textureUuid": "d00cc514-fbdf-440d-aabb-b8628d969621",
-              "hasSnapshot": false,
-              "snapshotSize": null
-            },
-            {
-              "group": "object",
-              "name": "nodeUniform31",
-              "kind": "depth.texture",
-              "textureUuid": "d00cc514-fbdf-440d-aabb-b8628d969621",
+              "textureUuid": "98061937-233f-46a6-b280-acd5f5c74056",
               "hasSnapshot": false,
               "snapshotSize": null
             }
@@ -408,14 +369,14 @@
                 {
                   "name": "nodeUniform0_sampler",
                   "kind": "artifact.texture",
-                  "textureUuid": "9401c020-ef65-4d8e-8ec0-3aa2a1b41ab0",
+                  "textureUuid": "dc9356e7-9783-43eb-9632-f34f89a8fc15",
                   "hasSnapshot": false,
                   "snapshotSize": null
                 },
                 {
                   "name": "nodeUniform0",
                   "kind": "artifact.texture",
-                  "textureUuid": "9401c020-ef65-4d8e-8ec0-3aa2a1b41ab0",
+                  "textureUuid": "dc9356e7-9783-43eb-9632-f34f89a8fc15",
                   "hasSnapshot": false,
                   "snapshotSize": null
                 }
@@ -424,7 +385,7 @@
           ]
         }
       ],
-      "error": "slim replay did not produce a non-empty frame"
+      "error": null
     }
   ]
 }

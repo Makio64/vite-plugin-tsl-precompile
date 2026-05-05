@@ -30,7 +30,7 @@ import { SampledTexture, SampledCubeTexture, Sampled3DTexture, SampledArrayTextu
 import StorageTexture from 'three/src/renderers/common/StorageTexture.js';
 import Storage3DTexture from 'three/src/renderers/common/Storage3DTexture.js';
 import StorageArrayTexture from 'three/src/renderers/common/StorageArrayTexture.js';
-import { DataTexture, Data3DTexture, DataArrayTexture, DepthTexture, CubeTexture, FramebufferTexture, RGBAFormat, RGBFormat, RGFormat, RedFormat, DepthFormat, UnsignedByteType, UnsignedIntType, LessEqualCompare, HalfFloatType, LinearFilter, NearestFilter, LinearMipmapLinearFilter, ClampToEdgeWrapping, Vector2, Vector3, Vector4, Matrix4, InstancedBufferAttribute } from 'three';
+import { DataTexture, Data3DTexture, DataArrayTexture, DepthTexture, CubeDepthTexture, CubeTexture, FramebufferTexture, RGBAFormat, RGBFormat, RGFormat, RedFormat, DepthFormat, UnsignedByteType, UnsignedIntType, LessEqualCompare, HalfFloatType, LinearFilter, NearestFilter, LinearMipmapLinearFilter, ClampToEdgeWrapping, Vector2, Vector3, Vector4, Matrix4, InstancedBufferAttribute } from 'three';
 import { viewportMipTexture, viewportTexture } from 'three/src/nodes/display/ViewportTextureNode.js';
 import { getDFGLUT } from './dfg-lut.js';
 import { collectLiveMaterialTextures } from './apply-precompiled.js';
@@ -84,6 +84,11 @@ const fallbackMultisampledDepthTexture = new DepthTexture( 1, 1 );
 fallbackMultisampledDepthTexture.format = DepthFormat;
 fallbackMultisampledDepthTexture.type = UnsignedIntType;
 fallbackMultisampledDepthTexture.renderTarget = { samples: 4 };
+const fallbackDepthCubeTexture = new CubeDepthTexture( 1 );
+fallbackDepthCubeTexture.format = DepthFormat;
+fallbackDepthCubeTexture.type = UnsignedIntType;
+fallbackDepthCubeTexture.compareFunction = LessEqualCompare;
+fallbackDepthCubeTexture.renderTarget = { samples: 1 };
 
 // Per-binding 1×1 fallback for `viewport.texture` bindings. The live
 // FramebufferTexture is swapped in by `createViewportTextureRebinder` on the
@@ -1272,7 +1277,7 @@ function createShadowDepthRebinder( entries /* , artifact */ ) {
 				}
 
 				if ( ! liveTexture || liveTexture === entry.binding.texture ) continue;
-				if ( ! textureMatchesShaderMultisample( entry.artifact, entry.bindingName, liveTexture ) ) continue;
+				if ( ! textureMatchesShaderBinding( entry.artifact, entry.bindingName, liveTexture ) ) continue;
 
 				entry.binding.texture = liveTexture;
 				if ( entry.binding.groupNode ) entry.binding.groupNode.version ++;
@@ -1870,7 +1875,7 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 		if ( artifact._textureRefs && source.textureUuid ) {
 
 			const tex = artifact._textureRefs.get( source.textureUuid );
-			if ( tex && tex.isDepthTexture === true && textureMatchesShaderMultisample( artifact, bindingName, tex ) ) return tex;
+			if ( tex && tex.isDepthTexture === true && textureMatchesShaderBinding( artifact, bindingName, tex ) ) return tex;
 
 		}
 
@@ -1930,7 +1935,7 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 		if ( artifact._textureRefs ) {
 
 			const tex = artifact._textureRefs.get( source.textureUuid );
-			if ( tex && textureMatchesShaderMultisample( artifact, bindingName, tex ) ) {
+			if ( tex && textureMatchesShaderBinding( artifact, bindingName, tex ) ) {
 				return applyTextureSourceSettings( tex, source );
 			}
 
@@ -1950,7 +1955,7 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 			for ( const prop of TEXTURE_PROPS ) {
 
 				const tex = material[ prop ];
-				if ( tex && tex.isTexture === true && tex.uuid === source.textureUuid && textureMatchesShaderMultisample( artifact, bindingName, tex ) ) {
+				if ( tex && tex.isTexture === true && tex.uuid === source.textureUuid && textureMatchesShaderBinding( artifact, bindingName, tex ) ) {
 					return applyTextureSourceSettings( tex, source );
 				}
 
@@ -1964,7 +1969,7 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 		// closures to resolve when the example reloads with fresh Texture
 		// instances whose uuids no longer match the captured artifact.
 		const byIdent = lookupLiveTextureByIdentity( source );
-		if ( byIdent && textureMatchesShaderMultisample( artifact, bindingName, byIdent ) ) {
+		if ( byIdent && textureMatchesShaderBinding( artifact, bindingName, byIdent ) ) {
 
 			return applyTextureSourceSettings( byIdent, source );
 
@@ -1981,7 +1986,7 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 			if ( ! wantsDepthTexture && ! wantsMultisampledTexture && isTrivialSnapshot( source.snapshot ) ) {
 
 				const anonData = lookupAnonymousDataTexture( source.snapshot );
-				if ( anonData && textureMatchesShaderMultisample( artifact, bindingName, anonData ) ) {
+				if ( anonData && textureMatchesShaderBinding( artifact, bindingName, anonData ) ) {
 
 					return applyTextureSourceSettings( anonData, source );
 
@@ -2026,6 +2031,27 @@ function shaderDeclaresDepthTexture( artifact, bindingName ) {
 	return new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth`, 'm' ).test( wgsl );
 
 }
+
+function shaderDeclaresCubeTexture( artifact, bindingName ) {
+
+	const wgsl = `${ artifact.vertexShader || '' }\n${ artifact.fragmentShader || '' }\n${ artifact.computeShader || '' }`;
+	const escaped = bindingName.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
+	return new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_(?:depth_)?cube`, 'm' ).test( wgsl );
+
+}
+
+function textureMatchesShaderBinding( artifact, bindingName, texture ) {
+
+	if ( ! textureMatchesShaderMultisample( artifact, bindingName, texture ) ) return false;
+	if ( ! texture ) return true;
+	if ( shaderDeclaresCubeTexture( artifact, bindingName ) ) return texture.isCubeTexture === true;
+	const textureType = inferTextureTypeFromShader( artifact, bindingName );
+	if ( textureType === '3d' ) return texture.isData3DTexture === true || texture.isTexture3D === true;
+	if ( textureType === '2d-array' ) return texture.isDataArrayTexture === true || texture.isArrayTexture === true || texture.isCompressedArrayTexture === true;
+	return true;
+
+}
+
 function textureMatchesShaderMultisample( artifact, bindingName, texture ) {
 
 	if ( ! texture ) return true;
@@ -2126,6 +2152,7 @@ function fallbackTextureForBinding( artifact, bindingName ) {
 
 	const wgsl = `${ artifact.vertexShader || '' }\n${ artifact.fragmentShader || '' }\n${ artifact.computeShader || '' }`;
 	const escaped = bindingName.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
+	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth_cube`, 'm' ).test( wgsl ) ) return fallbackDepthCubeTexture;
 	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth`, 'm' ).test( wgsl ) ) {
 
 		return shaderDeclaresMultisampledTexture( artifact, bindingName ) ? fallbackMultisampledDepthTexture : fallbackDepthTexture;
@@ -2149,6 +2176,7 @@ function inferTextureTypeFromShader( artifact, bindingName ) {
 
 	const wgsl = `${ artifact.vertexShader || '' }\n${ artifact.fragmentShader || '' }\n${ artifact.computeShader || '' }`;
 	const escaped = bindingName.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
+	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth_cube`, 'm' ).test( wgsl ) ) return 'cube';
 	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_cube`, 'm' ).test( wgsl ) ) return 'cube';
 	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_3d`, 'm' ).test( wgsl ) ) return '3d';
 	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_2d_array`, 'm' ).test( wgsl ) ) return '2d-array';
