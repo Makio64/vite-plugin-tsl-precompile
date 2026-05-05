@@ -123,6 +123,7 @@ export async function hashNodeGraph( node, { shape, threeVersion, pluginVersion 
 
 	}
 	assertVersion( 'hashNodeGraph', threeVersion, pluginVersion );
+	if ( node && typeof node.__tslpAuxConfigHash === 'string' && node.__tslpAuxConfigHash.length > 0 ) return node.__tslpAuxConfigHash;
 
 	if ( isStubLikeNode( node ) ) return stubSentinelHash( shape );
 
@@ -153,6 +154,7 @@ export async function hashNodeGraph( node, { shape, threeVersion, pluginVersion 
 export function hashNodeGraphSync( node, { shape, threeVersion, pluginVersion } ) {
 
 	assertVersion( 'hashNodeGraphSync', threeVersion, pluginVersion );
+	if ( node && typeof node.__tslpAuxConfigHash === 'string' && node.__tslpAuxConfigHash.length > 0 ) return node.__tslpAuxConfigHash;
 
 	if ( isStubLikeNode( node ) ) return stubSentinelHash( shape );
 
