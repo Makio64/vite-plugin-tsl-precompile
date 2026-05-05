@@ -14,7 +14,7 @@ Each task lists:
 
 Pri legend: **P0** breaks rendering, **P1** wrong output, **P2** correctness/polish, **P3** nice-to-have.
 
-> **Status (2026-05-04):** Unit tests are green, load-smoke coverage is strong, and the PSNR gate is now the real visual signal: 30 / 194 graded examples match at 30 dB. See [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md) for the full per-example table.
+> **Status (2026-05-05):** Unit tests/load-smoke are still assumed from the previous green baseline; no full suite was rerun after the latest focused visual work. The last broad PSNR summary was 30 / 194 graded examples at 30 dB, but focused runs now have `webgpu_loader_gltf.html`, `webgpu_loader_gltf_sheen.html`, `webgpu_pmrem_cubemap.html`, and `webgpu_portal.html` at PSNR `inf`. Bloom is the current unfinished thread. See [STATUS.md](STATUS.md) and [CONTINUATION_PLAN.md](CONTINUATION_PLAN.md) for the focused report list.
 
 ## v0.1 beta priority order
 
@@ -47,6 +47,19 @@ Implementation direction:
 - **Files**: `packages/runtime/src/hydrator.js`, `packages/runtime/src/aux-marker.js`, `packages/runtime/src/aux-loader.js`, `packages/examples/batch/run-e2e.mjs`.
 - **Done when**: `webgpu_shadowmap.html` and `webgpu_shadowmap_pointlight.html` replay, and the shadow category rises above the 30 dB gate on representative examples.
 - **Reference**: webgpu_shadowmap, webgpu_shadowmap_opacity, webgpu_shadowmap_vsm, webgpu_shadowmap_progressive, webgpu_shadow_contact (5 examples; 2 more — `_csm`, `_array` — also need it but `ShadowBaseNode` stub fix in 751eaad already unblocks the load).
+
+### `postprocess-bloom-texture-handoff` — P1
+The portal `pass(scene, camera)` path now works in the focused run, but bloom still proves that the render-target texture chain is incomplete. Replay runs a real addon `BloomNode` and the internal high-pass/blur/composite passes report no WebGPU/runtime errors, but the final composite is too dim or effectively black.
+
+Latest useful signals:
+- `visual-bloom-diagnostic-15.json`: `webgpu_postprocessing_bloom.html` status pass, PSNR `15.44`, replay brightness `0.1186` vs capture `0.7503`, bloom diagnostics `collected=1`, `prepared=1`, `fullRendered=15`, `highPass=15`, `blur=150`, `composite=15`, `renderFailed=0`.
+- `visual-bloom-after-internal-aux.json`: `webgpu_postprocessing_bloom.html` PSNR `15.44`, `webgpu_postprocessing_bloom_emissive.html` PSNR `20.84`, `webgpu_postprocessing_bloom_selective.html` PSNR about `13.36`.
+
+Hypothesis: the full-renderer bloom pass executes, but either the source pass output handed to the full renderer is black/stale, or the final slim postprocess artifact is not rebinding/sampling the intended bloom composite texture (`UnrealBloomPass.h0`).
+
+- **Files**: `packages/examples/batch/run-e2e.mjs`, `packages/runtime/src/aux-marker.js`, `packages/runtime/src/slim-entry.js`, possibly `packages/runtime/src/slim-stubs.js` and `packages/runtime/src/graph-hash.js` if pass-node/runtime exports need more hardening.
+- **Done when**: `webgpu_postprocessing_bloom.html`, `webgpu_postprocessing_bloom_emissive.html`, and `webgpu_postprocessing_bloom_selective.html` replay with visible bloom and pass the 30 dB PSNR gate.
+- **Reference**: webgpu_postprocessing_bloom, webgpu_postprocessing_bloom_emissive, webgpu_postprocessing_bloom_selective; follow-up for `webgpu_postprocessing.html` missing dots.
 
 ### `displacementmap-blank-replay` — P0
 `webgpu_materials_displacementmap.html` replay is **completely black** despite 3 user artifacts + 2 aux artifacts captured. Capture shows a fully-rendered ninja head with displacement, normal, AO, and environment maps lit by red/blue point lights. Replay shows just the page header text — the model is not drawing at all.
@@ -82,16 +95,22 @@ Hypothesis: the slim renderer's bind-group cache holds a different GPUTexture in
 - **Reference**: webgpu_compute_texture, webgpu_compute_texture_pingpong, webgpu_compute_texture_3d.
 
 ### `pmrem-cubemap-bg` — P1
-Background and environment paths that depend on PMREM-prefiltered HDR cubemaps render with wrong colors / sharp instead of blurred sky:
+Partially resolved in the 2026-05-05 focused queue. The glTF/PMREM cubemap bucket is now green:
+
+- `webgpu_loader_gltf.html` — PSNR `inf` in `visual-loader-gltf-after-pmrem-flipy.json`.
+- `webgpu_loader_gltf_sheen.html` — PSNR `inf` in `visual-loader-gltf-sheen-after-pmrem-flipy.json`.
+- `webgpu_pmrem_cubemap.html` — PSNR `inf` in `visual-pmrem-cubemap-after-cube-mapping-normalize.json`.
+
+Remaining work is the broader PMREM/reflection/background family, especially paths not covered by those focused reports:
 
 - `webgpu_compute_water` (PSNR 12.95 dB) — sky should be smooth blurred PMREM, comes out wrong
 - `webgpu_compute_cloth` (PSNR 9.61 dB)
 - `webgpu_compute_particles_fluid` (PSNR 4.83 dB)
 - `webgpu_lightprobe_cubecamera` (PSNR 17.48 dB) — light probe + PMREM
-The clearcoat DFG regression is fixed, so this task is now specifically about PMREM-prefiltered background/environment routing rather than BRDF LUT upload. See [LOGS.md](LOGS.md) for the PMREM architecture notes and the clearcoat DFG fix.
+The clearcoat DFG regression is fixed, so this task is now specifically about PMREM-prefiltered background/environment routing outside the focused glTF/PMREM cubemap bucket. See [LOGS.md](LOGS.md) for the PMREM architecture notes and the clearcoat DFG fix.
 
 - **Files**: `packages/examples/batch/run-e2e.mjs` PMREM section (`__kickPMREMGenAsync`, `__wireEnvironmentPMREM`, `__backgroundNeedsPMREM`).
-- **Done when**: PSNR ≥ 20 dB on the four examples; backgrounds visually blurred or correctly colored.
+- **Done when**: the broader PMREM/reflection set is re-graded and representative examples are visually blurred/correctly colored without regressing the three focused green reports.
 
 ### `transmission-viewport-texture` — P1
 Glass, refraction, and viewport-dependent materials are part of the beta PBR slice. The extractor emits `viewport.texture` and the hydrator has a rebinder path, but the visual examples are still far below the production bar:
@@ -158,9 +177,11 @@ When two tasks share a file, run them **sequentially**, not in parallel.
 
 | File | Tasks |
 |---|---|
-| `packages/examples/batch/run-e2e.mjs` | shadows-no-render, pmrem-cubemap-bg, compute-instance-mesh-buffer, compute-storage-texture-sync, psnr-animation-phase-drift |
+| `packages/examples/batch/run-e2e.mjs` | shadows-no-render, postprocess-bloom-texture-handoff, pmrem-cubemap-bg, compute-instance-mesh-buffer, compute-storage-texture-sync, psnr-animation-phase-drift |
 | `packages/runtime/src/hydrator.js` | shadows-no-render, transmission-viewport-texture, mrt-replay-empty |
-| `packages/runtime/src/aux-marker.js` | shadows-no-render, mrt-replay-empty |
+| `packages/runtime/src/aux-marker.js` | shadows-no-render, postprocess-bloom-texture-handoff, mrt-replay-empty |
+| `packages/runtime/src/slim-entry.js` | postprocess-bloom-texture-handoff |
+| `packages/runtime/src/graph-hash.js` | postprocess-bloom-texture-handoff |
 | `packages/runtime/src/aux-loader.js` | shadows-no-render |
 | `packages/runtime/src/apply-precompiled.js` | transmission-viewport-texture |
 | `packages/runtime/src/precompile-marker.js` | mrt-replay-empty |
@@ -174,12 +195,13 @@ When two tasks share a file, run them **sequentially**, not in parallel.
 
 Recommended order for serial work (each ~30-60 min focused):
 
-1. `shadows-no-render` — first beta blocker; make shadow replay/depth binding reliable.
-2. `pmrem-cubemap-bg` — PBR environment/reflection correctness before broad features.
-3. `transmission-viewport-texture` — glass, refraction, and mirrors.
-4. `displacementmap-blank-replay` — still a PBR material-map gap.
-5. `compute-instance-mesh-buffer` / `compute-storage-texture-sync` — experimental compute/storage slice.
-6. `mrt-replay-empty` — deferred with broad postprocessing until render-target / PassNode routing is mature.
+1. `postprocess-bloom-texture-handoff` — current paused thread; portal proved pass-node rendering can be made exact, bloom still needs texture handoff/composite wiring.
+2. `shadows-no-render` — first beta blocker; make shadow replay/depth binding reliable.
+3. `pmrem-cubemap-bg` — focused glTF/PMREM cubemap bucket is green, but broader PMREM/reflection examples need a re-grade.
+4. `transmission-viewport-texture` — glass, refraction, and mirrors.
+5. `displacementmap-blank-replay` — still a PBR material-map gap.
+6. `compute-instance-mesh-buffer` / `compute-storage-texture-sync` — experimental compute/storage slice.
+7. `mrt-replay-empty` — deferred with broad postprocessing until render-target / PassNode routing is mature.
 
 For parallel agent work: file-disjoint sets are tricky because run-e2e.mjs is contended. Agent assignments need careful section-scoping or merge coordination.
 

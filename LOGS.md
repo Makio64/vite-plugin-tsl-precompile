@@ -4,6 +4,42 @@ Append-only journal of focused investigations and fixes. One entry per session/i
 
 ---
 
+## 2026-05-05 — Focused visual replay queue: PMREM/glTF + portal green, bloom paused
+
+**Scope.** Followed the user-prioritized visual queue after the postprocessing base became functional: wrong/missing backgrounds, instance colors, physical/spot lights, PMREM/glTF environment maps, portal clipping, and bloom visibility.
+
+**Focused green outcomes.**
+
+- `webgpu_loader_gltf.html` now matches capture at PSNR `inf` in `visual-loader-gltf-after-pmrem-flipy.json`.
+- `webgpu_loader_gltf_sheen.html` now matches capture at PSNR `inf` in `visual-loader-gltf-sheen-after-pmrem-flipy.json`. The earlier inverted sheen lighting was a PMREM `flipY` issue.
+- `webgpu_pmrem_cubemap.html` now matches capture at PSNR `inf` in `visual-pmrem-cubemap-after-cube-mapping-normalize.json`.
+- `webgpu_portal.html` now matches capture at PSNR `inf` in `visual-portal-after-bg-exact.json`.
+
+**Improved but not fully green.**
+
+- `webgpu_lights_spotlight.html` now shows projected texture/color with no replay errors/warnings. Latest focused report: `visual-lights-spotlight-targeted-shadow-fallback.json`, PSNR `29.71`.
+- `webgpu_lights_physical.html` improved after live object matrix updates. Latest focused report: `visual-lights-physical-after-matrix.json`, PSNR `25.65`.
+- `webgpu_instancing_morph.html` improved after instance color work, but replay remains visually mismatched. Latest focused report: `visual-instancing-morph-after-random-split.json`, PSNR `15.65`.
+
+**Main root causes fixed.**
+
+- **PMREM/glTF.** Replay was feeding PMREMGenerator source textures whose `image` shape and `mapping` disagreed: equirectangular HDR images could carry cube-style mapping, and HDR cube sources could carry `CubeUVReflectionMapping` after three.js internal conversion. The harness now chooses equirect/cube PMREM generation from image shape, normalizes mapping on a short-lived clone, and preserves loader `flipY`. Equirectangular HDR backgrounds captured as `texture_cube` background artifacts are converted to live `CubeTexture`s through the shared full WebGPU renderer and shared back into slim.
+- **Spotlight.** Shadowed `AnalyticLightNode` wrapped the true intensity-scaled color under `baseColorNode`, so extraction had tagged the wrong uniform. Runtime now writes the correct live light/shadow uniform cases. The harness also preserves full shadow-pass matrices and disables replay shadow intensity only for projected spotlights whose generated depth texture is all-zero.
+- **Portal.** The replay `PassNode` path needed `.context(...)`, update-before shape compatibility, safe node traversal around `ContextNode` callback objects, and proactive rendering of pass nodes found inside material graphs. The final visual leak was shape-only background aux fallback: the portal scene's noise background was being used as the main scene background. Exact per-scene background aux config matching fixed it.
+
+**Current paused issue: bloom.**
+
+Bloom is not fixed. The current replay path can collect and run a real addon `BloomNode`, and diagnostics show internal high-pass/blur/composite passes executing without WebGPU/runtime errors, but the final bloom contribution remains too dim or black:
+
+- `visual-bloom-diagnostic-15.json`: `webgpu_postprocessing_bloom.html` PSNR `15.44`, capture brightness `0.7503`, replay brightness `0.1186`; bloom diagnostics show `collected=1`, `prepared=1`, `fullRendered=15`, `highPass=15`, `blur=150`, `composite=15`, `renderFailed=0`.
+- `visual-bloom-after-internal-aux.json`: `webgpu_postprocessing_bloom.html` PSNR `15.44`, `webgpu_postprocessing_bloom_emissive.html` PSNR `20.84`, `webgpu_postprocessing_bloom_selective.html` PSNR about `13.36`.
+
+Likely next check: determine whether the black/dim data is at the source pass output, high-pass output, blur chain, composite output (`UnrealBloomPass.h0`), or the final postprocess artifact's texture rebinding.
+
+**Dirty-state note.** The session produced many generated reports/screenshots under `packages/examples/batch/results/`. Clean or intentionally keep them before committing. `node --check packages/examples/batch/run-e2e.mjs` passed during focused work, but no full lint/test run was completed after the bloom experiments.
+
+---
+
 ## 2026-05-04 — `webgpu_clearcoat` black spheres fixed: DFG LUT module identity + deterministic E2E frame
 
 **Symptom.** `webgpu_clearcoat.html` capture/replay regressed to black spheres even though clearcoat highlights remained visible. The capture PNG was also misleading because the E2E visual baseline was using the instrumented capture path rather than a clean stock full-three reference.
