@@ -24,6 +24,7 @@ export default defineConfig( {
 			input: {
 				main: resolve( __dirname, 'index.html' ),
 				howItWorks: resolve( __dirname, 'how-it-works.html' ),
+				examples: resolve( __dirname, 'examples.html' ),
 			},
 		},
 	},

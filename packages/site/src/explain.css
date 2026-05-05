@@ -30,6 +30,7 @@
 	transition: background 150ms ease, color 150ms ease;
 }
 .explain-nav-fixed a:hover { background: var(--surface); color: var(--text); }
+.explain-nav-right { display: flex; gap: 0.4rem; align-items: center; }
 
 /* =========================================================
    1. HOOK — tall hero with scroll cue.

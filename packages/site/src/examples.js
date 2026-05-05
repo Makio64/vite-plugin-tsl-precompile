@@ -1,6 +1,6 @@
-// Examples gallery controller. Reads /examples.json, renders cards, handles
-// filter / sort / search / modal. Vanilla DOM, no framework — matches the rest
-// of the site.
+// Examples browser. Reads /examples.json, renders sidebar list + main stage,
+// handles filter / search / hash routing / prev-next / keyboard nav.
+// Vanilla DOM, no framework — matches the rest of the site.
 
 const TIER_LABEL = {
 	'pixel-match': 'Pixel-match',
@@ -21,9 +21,10 @@ const TIER_CHIPS = [
 const state = {
 	data: null,
 	filter: 'all',
-	sort: 'featured',
 	query: '',
-	showHidden: false,
+	view: [],            // currently filtered+sorted array (the prev/next walk path)
+	currentBasename: null,
+	stageView: 'replay', // 'replay' | 'capture'
 };
 
 const $ = sel => document.querySelector( sel );
@@ -47,11 +48,6 @@ function fmtBytes( n ) {
 	if ( n < 1024 ) return `${n} B`;
 	if ( n < 1024 * 1024 ) return `${( n / 1024 ).toFixed( 1 )} KB`;
 	return `${( n / ( 1024 * 1024 ) ).toFixed( 2 )} MB`;
-}
-
-function fmtCount( n, label ) {
-	if ( n == null || n === 0 ) return null;
-	return `${n} ${label}`;
 }
 
 function escapeHtml( s ) {
@@ -103,7 +99,7 @@ function renderChips( categories, totals ) {
 		for ( const c of chipsEl.querySelectorAll( '.ex-chip' ) ) {
 			c.setAttribute( 'aria-selected', c === btn ? 'true' : 'false' );
 		}
-		renderGrid();
+		rebuildView( { keepSelection: true } );
 	} );
 }
 
@@ -111,7 +107,7 @@ function applyFilters( examples ) {
 	let xs = examples;
 	const isTierFilter = state.filter in TIER_LABEL;
 	// Capture-only entries have thumbHealth !== 'ok'; surface them when that tier is selected.
-	if ( ! state.showHidden && state.filter !== 'capture-only' ) xs = xs.filter( r => r.thumbHealth === 'ok' );
+	if ( state.filter !== 'capture-only' ) xs = xs.filter( r => r.thumbHealth === 'ok' );
 	if ( isTierFilter ) {
 		xs = xs.filter( r => r.badge === state.filter );
 	} else if ( state.filter !== 'all' ) {
@@ -128,224 +124,318 @@ function applyFilters( examples ) {
 	return xs;
 }
 
-function applySort( xs ) {
+function defaultSort( xs ) {
+	// "Featured-style": tier rank first, then PSNR descending. Same as the
+	// previous gallery default — gives a stable, useful ordering for the sidebar.
 	const sorted = xs.slice();
-	switch ( state.sort ) {
-		case 'name':
-			sorted.sort( ( a, b ) => a.basename.localeCompare( b.basename ) );
-			break;
-		case 'psnr':
-			sorted.sort( ( a, b ) => effectivePsnr( b.pixel ) - effectivePsnr( a.pixel ) );
-			break;
-		case 'psnr-asc':
-			sorted.sort( ( a, b ) => {
-				const av = a.pixel.identical ? 1e6 : ( a.pixel.psnr ?? 9e9 );
-				const bv = b.pixel.identical ? 1e6 : ( b.pixel.psnr ?? 9e9 );
-				return av - bv;
-			} );
-			break;
-		case 'materials':
-			sorted.sort( ( a, b ) => ( b.materialCount ?? 0 ) - ( a.materialCount ?? 0 ) );
-			break;
-		default:
-			// 'featured' — already in JSON in most-impressive order; preserve.
-			sorted.sort( ( a, b ) => {
-				const ta = TIER_RANK[ a.badge ] ?? 9;
-				const tb = TIER_RANK[ b.badge ] ?? 9;
-				if ( ta !== tb ) return ta - tb;
-				return effectivePsnr( b.pixel ) - effectivePsnr( a.pixel );
-			} );
-	}
+	sorted.sort( ( a, b ) => {
+		const ta = TIER_RANK[ a.badge ] ?? 9;
+		const tb = TIER_RANK[ b.badge ] ?? 9;
+		if ( ta !== tb ) return ta - tb;
+		return effectivePsnr( b.pixel ) - effectivePsnr( a.pixel );
+	} );
 	return sorted;
 }
 
-function cardHtml( r ) {
-	const tier = TIER_LABEL[ r.badge ] ?? r.badge;
-	const psnr = fmtPsnr( r.pixel );
-	const stats = [
-		fmtCount( r.materialCount, 'mat' ),
-		r.totalWgslBytes ? `${fmtBytes( r.totalWgslBytes )} WGSL` : null,
-		r.hasCompute ? 'compute' : null,
-	].filter( Boolean ).join( ' · ' );
-	const thumb = r.thumbReplay
-		? `<img class="ex-card-thumb" src="${escapeHtml( r.thumbReplay )}" alt="${escapeHtml( r.displayName )} replay" loading="lazy" decoding="async" width="320" height="240">`
-		: `<div class="ex-card-thumb ex-card-thumb-empty">no replay frame</div>`;
-	return `
-		<article class="ex-card" data-basename="${escapeHtml( r.basename )}" tabindex="0">
-			<a class="ex-card-link" href="${escapeHtml( r.threejsUrl )}" rel="noopener" aria-label="View original on threejs.org" title="View original on threejs.org">↗</a>
-			${thumb}
-			<div class="ex-card-meta">
-				<span class="ex-card-cat">${escapeHtml( r.categoryLabel )}</span>
-				<span class="ex-card-title">
-					<span class="ex-card-title-text">${escapeHtml( r.displayName )}</span>
-					<span class="ex-dot ex-dot-${escapeHtml( r.badge )}" title="${escapeHtml( tier )} · ${escapeHtml( psnr )}"></span>
-				</span>
-				${stats ? `<span class="ex-card-stats"><span class="ex-card-stat">${escapeHtml( stats )}</span></span>` : ''}
-			</div>
-		</article>
-	`;
-}
-
-function renderGrid() {
-	const grid = $( '#ex-grid' );
-	const filtered = applyFilters( state.data.examples );
-	const sorted = applySort( filtered );
-
-	grid.innerHTML = sorted.map( cardHtml ).join( '' );
-	$( '#ex-empty' ).hidden = sorted.length > 0;
-
-	// Hidden-blanks toggle.
-	const hidden = state.data.examples.filter( r => r.thumbHealth !== 'ok' );
-	const toggle = $( '#ex-hidden-toggle' );
-	if ( hidden.length && state.filter === 'all' && ! state.query ) {
-		toggle.hidden = false;
-		const btn = toggle.querySelector( 'button' );
-		const span = btn.querySelector( '[data-hidden-count]' );
-		span.textContent = hidden.length;
-		btn.textContent = state.showHidden
-			? `− Hide ${hidden.length} captures with no replay`
-			: `+ Show ${hidden.length} captures with no replay`;
-	} else {
-		toggle.hidden = true;
+function groupByCategory( xs ) {
+	// Preserve sort order within each category bucket, but emit categories in
+	// the order they first appear in `xs` so the sidebar reads top-down in the
+	// same order the sorted list ranks them.
+	const buckets = new Map();
+	for ( const r of xs ) {
+		if ( ! buckets.has( r.category ) ) buckets.set( r.category, { label: r.categoryLabel, items: [] } );
+		buckets.get( r.category ).items.push( r );
 	}
+	return [ ...buckets.entries() ].map( ( [ id, b ] ) => ( { id, label: b.label, items: b.items } ) );
 }
 
-// ---------- modal ----------
+function renderSidebar() {
+	const listEl = $( '#ex-sidebar-list' );
+	const empty = $( '#ex-empty' );
+	if ( ! state.view.length ) {
+		listEl.innerHTML = '';
+		empty.hidden = false;
+		return;
+	}
+	empty.hidden = true;
 
-function modalBodyHtml( r ) {
+	// Don't group when the user is searching or filtering by tier — the result
+	// set is small and a flat list reads better.
+	const flat = state.query || state.filter in TIER_LABEL;
+	const groups = flat
+		? [ { id: '__flat__', label: null, items: state.view } ]
+		: groupByCategory( state.view );
+
+	listEl.innerHTML = groups.map( g => {
+		const items = g.items.map( r => {
+			const isCurrent = r.basename === state.currentBasename;
+			return `<a class="ex-side-item${isCurrent ? ' is-current' : ''}"
+				href="#${escapeHtml( r.basename )}"
+				data-basename="${escapeHtml( r.basename )}"
+				aria-current="${isCurrent ? 'true' : 'false'}">
+				<span class="ex-dot ex-dot-${escapeHtml( r.badge )}" aria-hidden="true"></span>
+				<span class="ex-side-name">${escapeHtml( r.displayName )}</span>
+			</a>`;
+		} ).join( '' );
+
+		if ( g.label === null ) return `<div class="ex-side-flat">${items}</div>`;
+		return `<details class="ex-side-group" open>
+			<summary class="ex-side-group-summary">
+				<span>${escapeHtml( g.label )}</span>
+				<span class="ex-side-group-count">${g.items.length}</span>
+			</summary>
+			<div class="ex-side-group-items">${items}</div>
+		</details>`;
+	} ).join( '' );
+
+	// Scroll the current item into view inside the sidebar.
+	const current = listEl.querySelector( '.is-current' );
+	if ( current ) current.scrollIntoView( { block: 'nearest', behavior: 'auto' } );
+}
+
+function renderStage() {
+	const r = state.data.examples.find( x => x.basename === state.currentBasename );
+	const stage = $( '#ex-stage' );
+	if ( ! r ) {
+		stage.dataset.empty = 'true';
+		$( '#ex-stage-title' ).textContent = 'No example selected';
+		$( '#ex-stage-cat' ).textContent = '—';
+		$( '#ex-stage-badge' ).innerHTML = '';
+		$( '#ex-stage-stats' ).innerHTML = '';
+		$( '#ex-stage-cta' ).hidden = true;
+		$( '#ex-stage-empty' ).hidden = false;
+		$( '#ex-stage-view' ).removeAttribute( 'src' );
+		return;
+	}
+	stage.dataset.empty = 'false';
+
+	$( '#ex-stage-title' ).textContent = r.displayName;
+	$( '#ex-stage-cat' ).textContent = r.categoryLabel;
+
 	const tier = TIER_LABEL[ r.badge ] ?? r.badge;
 	const psnr = fmtPsnr( r.pixel );
-	const captureSrc = r.thumbCaptureModal ?? r.thumbCapture;
+	$( '#ex-stage-badge' ).innerHTML = `<span class="ex-dot ex-dot-${escapeHtml( r.badge )}"></span>${escapeHtml( tier )} &middot; ${escapeHtml( psnr )}`;
+
+	// Image source — pick replay vs capture per current toggle, fall back to whichever exists.
 	const replaySrc = r.thumbReplayModal ?? r.thumbReplay;
+	const captureSrc = r.thumbCaptureModal ?? r.thumbCapture;
+	const wantReplay = state.stageView === 'replay';
+	const src = ( wantReplay ? replaySrc : captureSrc ) ?? replaySrc ?? captureSrc;
+	const view = $( '#ex-stage-view' );
+	const empty = $( '#ex-stage-empty' );
+	if ( src ) {
+		view.src = src;
+		view.alt = `${r.displayName} — ${wantReplay ? 'slim runtime replay' : 'live three.js capture'}`;
+		view.hidden = false;
+		empty.hidden = true;
+	} else {
+		view.removeAttribute( 'src' );
+		view.hidden = true;
+		empty.hidden = false;
+	}
+
+	// Per-toggle availability indicator.
+	for ( const btn of document.querySelectorAll( '.ex-stage-toggle [data-view]' ) ) {
+		const which = btn.dataset.view;
+		const has = which === 'replay' ? !! replaySrc : !! captureSrc;
+		btn.disabled = ! has;
+		btn.setAttribute( 'aria-selected', state.stageView === which ? 'true' : 'false' );
+	}
+
+	// Stats row.
 	const stats = [
+		[ 'PSNR vs three.js', psnr ],
 		[ 'materials', r.materialCount ?? '—' ],
 		[ 'WGSL', r.totalWgslBytes ? fmtBytes( r.totalWgslBytes ) : '—' ],
-		[ 'shaders', r.materialShapes && r.materialShapes.length ? r.materialShapes.join( ', ' ) : '—' ],
-		[ 'PSNR vs three.js', psnr ],
+		[ 'shapes', r.materialShapes && r.materialShapes.length ? r.materialShapes.join( ', ' ) : '—' ],
 	];
+	$( '#ex-stage-stats' ).innerHTML = stats.map( ( [ lab, val ] ) =>
+		`<div class="ex-stage-stat"><div class="ex-stage-stat-num">${escapeHtml( String( val ) )}</div><div class="ex-stage-stat-lab">${escapeHtml( lab )}</div></div>`
+	).join( '' );
 
-	const compareHtml = `
-		<div class="ex-modal-compare">
-			<figure class="ex-modal-pane">
-				${captureSrc ? `<img src="${escapeHtml( captureSrc )}" alt="${escapeHtml( r.displayName )} live three.js capture" loading="eager">` : '<div style="aspect-ratio:4/3"></div>'}
-				<figcaption class="ex-modal-pane-label"><strong>Live three.js</strong> &middot; full TSL node builder</figcaption>
-			</figure>
-			<figure class="ex-modal-pane">
-				${replaySrc ? `<img src="${escapeHtml( replaySrc )}" alt="${escapeHtml( r.displayName )} slim runtime replay" loading="eager">` : '<div style="aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;color:var(--muted);font-family:var(--font-mono);font-size:.85rem">no replay frame</div>'}
-				<figcaption class="ex-modal-pane-label"><strong>vite-plugin-tsl-precompile</strong> &middot; slim runtime replay</figcaption>
-			</figure>
-		</div>
-	`;
+	const cta = $( '#ex-stage-cta' );
+	if ( r.threejsUrl ) {
+		cta.hidden = false;
+		cta.href = r.threejsUrl;
+	} else {
+		cta.hidden = true;
+	}
 
-	const statsHtml = `
-		<div class="ex-modal-stats">
-			${stats.map( ( [ lab, val ] ) => `<div><div class="ex-modal-stat-num">${escapeHtml( String( val ) )}</div><div class="ex-modal-stat-lab">${escapeHtml( lab )}</div></div>` ).join( '' )}
-		</div>
-	`;
-
-	const noteHtml = r.notes
-		? `<p class="ex-modal-notes">${escapeHtml( r.notes )}</p>`
-		: '';
-
-	const explainerHtml = r.badge === 'pixel-match'
-		? ''
-		: `<div class="ex-modal-note-block">
+	// Notes / explainer block.
+	const notesEl = $( '#ex-stage-notes' );
+	const parts = [];
+	if ( r.notes ) parts.push( `<p class="ex-stage-note">${escapeHtml( r.notes )}</p>` );
+	if ( r.badge !== 'pixel-match' ) {
+		parts.push( `<div class="ex-stage-note-block">
 			<strong>Why doesn&rsquo;t this match pixel-perfect?</strong>
 			The slim runtime is still wiring through PMREM environment maps, asynchronous texture-load timing,
 			and post-process render-target chains. The shader compiles and runs &mdash; visual output diverges
 			from live three.js until those clusters land.
 			Track progress in <a href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/ROADMAP.md" rel="noopener">ROADMAP.md</a>.
-		</div>`;
+		</div>` );
+	}
+	if ( parts.length ) {
+		notesEl.innerHTML = parts.join( '' );
+		notesEl.hidden = false;
+	} else {
+		notesEl.hidden = true;
+	}
 
-	return `
-		<div class="ex-modal-cat">${escapeHtml( r.categoryLabel )}</div>
-		<div class="ex-modal-title">
-			<h2>${escapeHtml( r.displayName )}</h2>
-			<span class="ex-modal-badge"><span class="ex-dot ex-dot-${escapeHtml( r.badge )}"></span>${escapeHtml( tier )} &middot; ${escapeHtml( psnr )}</span>
-		</div>
-		${compareHtml}
-		${statsHtml}
-		<a class="ex-modal-cta" href="${escapeHtml( r.threejsUrl )}" rel="noopener">View original on threejs.org &rarr;</a>
-		${noteHtml}
-		${explainerHtml}
-	`;
+	// Prev/Next state.
+	const idx = state.view.findIndex( x => x.basename === state.currentBasename );
+	$( '#ex-prev' ).disabled = idx <= 0;
+	$( '#ex-next' ).disabled = idx === - 1 || idx >= state.view.length - 1;
 }
 
-function openModal( basename ) {
-	const r = state.data.examples.find( x => x.basename === basename );
-	if ( ! r ) return;
-	$( '#ex-modal-body' ).innerHTML = modalBodyHtml( r );
-	const modal = $( '#ex-modal' );
-	if ( typeof modal.showModal === 'function' ) modal.showModal();
-	else modal.setAttribute( 'open', '' );
+function selectExample( basename, opts = {} ) {
+	const exists = state.data.examples.some( x => x.basename === basename );
+	if ( ! exists ) return;
+	state.currentBasename = basename;
+	if ( opts.updateHash !== false ) {
+		const hash = `#${basename}`;
+		if ( location.hash !== hash ) {
+			history.replaceState( null, '', hash );
+		}
+	}
+	// Mark sidebar selection without re-rendering the whole list.
+	for ( const a of document.querySelectorAll( '.ex-side-item' ) ) {
+		const isCurrent = a.dataset.basename === basename;
+		a.classList.toggle( 'is-current', isCurrent );
+		a.setAttribute( 'aria-current', isCurrent ? 'true' : 'false' );
+	}
+	const current = document.querySelector( '.ex-side-item.is-current' );
+	if ( current ) current.scrollIntoView( { block: 'nearest', behavior: 'auto' } );
+	renderStage();
+	closeDrawer();
 }
 
-function bindModal() {
-	const modal = $( '#ex-modal' );
-	modal.addEventListener( 'click', e => {
-		// click on backdrop (the dialog itself, not the body) closes
-		if ( e.target === modal ) modal.close();
-	} );
+function rebuildView( opts = {} ) {
+	const filtered = applyFilters( state.data.examples );
+	state.view = defaultSort( filtered );
+	renderSidebar();
+
+	// Pick a selection: keep the current one if still in view, else fall back to first.
+	const stillIn = state.view.some( x => x.basename === state.currentBasename );
+	if ( opts.keepSelection && stillIn ) {
+		renderStage();
+	} else if ( state.view.length ) {
+		selectExample( state.view[ 0 ].basename );
+	} else {
+		state.currentBasename = null;
+		renderStage();
+	}
 }
 
-function bindGridInteractions() {
-	const grid = $( '#ex-grid' );
-	grid.addEventListener( 'click', e => {
-		// Don't trigger modal when the ↗ link is clicked.
-		if ( e.target.closest( '.ex-card-link' ) ) return;
-		const card = e.target.closest( '.ex-card' );
-		if ( ! card ) return;
-		openModal( card.dataset.basename );
-	} );
-	grid.addEventListener( 'keydown', e => {
-		if ( e.key !== 'Enter' && e.key !== ' ' ) return;
-		const card = e.target.closest( '.ex-card' );
-		if ( ! card ) return;
+function bindSidebar() {
+	const listEl = $( '#ex-sidebar-list' );
+	listEl.addEventListener( 'click', e => {
+		const a = e.target.closest( '.ex-side-item' );
+		if ( ! a ) return;
 		e.preventDefault();
-		openModal( card.dataset.basename );
+		selectExample( a.dataset.basename );
 	} );
 }
 
-function bindControls() {
+function bindStage() {
+	$( '#ex-prev' ).addEventListener( 'click', () => {
+		const idx = state.view.findIndex( x => x.basename === state.currentBasename );
+		if ( idx > 0 ) selectExample( state.view[ idx - 1 ].basename );
+	} );
+	$( '#ex-next' ).addEventListener( 'click', () => {
+		const idx = state.view.findIndex( x => x.basename === state.currentBasename );
+		if ( idx >= 0 && idx < state.view.length - 1 ) selectExample( state.view[ idx + 1 ].basename );
+	} );
+
+	const toggle = document.querySelector( '.ex-stage-toggle' );
+	toggle.addEventListener( 'click', e => {
+		const btn = e.target.closest( '[data-view]' );
+		if ( ! btn || btn.disabled ) return;
+		state.stageView = btn.dataset.view;
+		renderStage();
+	} );
+}
+
+function bindKeyboard() {
+	window.addEventListener( 'keydown', e => {
+		if ( e.target.matches( 'input, textarea, [contenteditable="true"]' ) ) return;
+		if ( e.key === 'ArrowLeft' ) {
+			$( '#ex-prev' ).click();
+		} else if ( e.key === 'ArrowRight' ) {
+			$( '#ex-next' ).click();
+		}
+	} );
+}
+
+function bindSearch() {
 	const search = $( '#ex-search' );
 	search.addEventListener( 'input', () => {
 		state.query = search.value.trim();
-		renderGrid();
+		rebuildView( { keepSelection: true } );
 	} );
+}
 
-	const sort = $( '#ex-sort' );
-	sort.addEventListener( 'change', () => {
-		state.sort = sort.value;
-		renderGrid();
+function bindHash() {
+	window.addEventListener( 'hashchange', () => {
+		const basename = decodeURIComponent( location.hash.replace( /^#/, '' ) );
+		if ( basename && basename !== state.currentBasename ) {
+			selectExample( basename, { updateHash: false } );
+		}
 	} );
+}
 
-	const toggleBtn = $( '#ex-show-hidden' );
-	toggleBtn.addEventListener( 'click', () => {
-		state.showHidden = ! state.showHidden;
-		renderGrid();
+function openDrawer() {
+	$( '#ex-sidebar' ).classList.add( 'is-open' );
+	$( '#ex-drawer-toggle' ).setAttribute( 'aria-expanded', 'true' );
+}
+
+function closeDrawer() {
+	$( '#ex-sidebar' ).classList.remove( 'is-open' );
+	$( '#ex-drawer-toggle' ).setAttribute( 'aria-expanded', 'false' );
+}
+
+function bindDrawer() {
+	$( '#ex-drawer-toggle' ).addEventListener( 'click', () => {
+		const open = $( '#ex-sidebar' ).classList.toggle( 'is-open' );
+		$( '#ex-drawer-toggle' ).setAttribute( 'aria-expanded', open ? 'true' : 'false' );
 	} );
 }
 
 async function init() {
-	const grid = $( '#ex-grid' );
-	grid.textContent = 'Loading…';
+	const stageTitle = $( '#ex-stage-title' );
+	stageTitle.textContent = 'Loading…';
+
 	let data;
 	try {
 		const res = await fetch( new URL( 'examples.json', document.baseURI ) );
 		if ( ! res.ok ) throw new Error( `HTTP ${res.status}` );
 		data = await res.json();
 	} catch ( err ) {
-		grid.textContent = `Failed to load examples.json (${err.message}).`;
+		stageTitle.textContent = `Failed to load examples.json (${err.message}).`;
 		return;
 	}
 	state.data = data;
 
+	$( '#ex-drawer-count' ).textContent = data.totals.examplesProcessed;
+
 	renderMetrics( data.totals );
 	renderChips( data.categories, data.totals );
-	bindGridInteractions();
-	bindControls();
-	bindModal();
-	renderGrid();
+	bindSidebar();
+	bindStage();
+	bindSearch();
+	bindKeyboard();
+	bindHash();
+	bindDrawer();
+
+	// Build view, then honor URL hash if present and valid.
+	const filtered = applyFilters( data.examples );
+	state.view = defaultSort( filtered );
+	renderSidebar();
+
+	const hashBasename = decodeURIComponent( location.hash.replace( /^#/, '' ) );
+	const hashHit = hashBasename && data.examples.some( x => x.basename === hashBasename );
+	const initial = hashHit ? hashBasename : ( state.view[ 0 ]?.basename ?? null );
+	if ( initial ) selectExample( initial, { updateHash: ! hashHit } );
+	else renderStage();
 }
 
 init();

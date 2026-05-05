@@ -14,23 +14,29 @@
 	<link rel="stylesheet" href="/src/examples.css">
 </head>
 <body>
-	<a class="skip-link" href="#gallery">Skip to gallery</a>
+	<a class="skip-link" href="#ex-stage">Skip to current example</a>
 
 	<!-- ========== TOP NAV ========== -->
-	<nav class="ex-nav" aria-label="Site navigation">
-		<a class="ex-nav-brand" href="/">
+	<nav class="site-nav" aria-label="Site navigation">
+		<a class="site-nav-brand" href="/">
 			<span class="mono">vite-plugin-</span><span class="accent">tsl-precompile</span>
 		</a>
-		<div class="ex-nav-links">
+		<div class="site-nav-links">
 			<a href="/">Overview</a>
 			<a href="how-it-works.html">How it works</a>
-			<a class="ex-nav-current" aria-current="page" href="examples.html">Examples</a>
+			<a class="site-nav-current" aria-current="page" href="examples.html">Examples</a>
 			<a href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">GitHub ↗</a>
 		</div>
 	</nav>
 
-	<main>
-		<!-- ========== HEADER + METRICS STRIP ========== -->
+	<!-- ========== HEADER + METRICS STRIP (collapsible) ========== -->
+	<details class="ex-header-shell" id="ex-header-shell">
+		<summary class="ex-header-summary">
+			<span class="ex-header-summary-text">
+				<strong>The three.js TSL suite, precompiled.</strong>
+				<span class="muted">— click to expand methodology &amp; metrics</span>
+			</span>
+		</summary>
 		<header class="ex-header">
 			<p class="eyebrow">examples gallery</p>
 			<h1 class="ex-title">
@@ -39,7 +45,7 @@
 			<p class="ex-lead">
 				We ran every <code>webgpu_*</code> TSL example from three.js end-to-end through
 				<code>vite-plugin-tsl-precompile</code> &rarr; the slim runtime, then diffed every replayed
-				frame against live three.js. Every card links back to the original demo.
+				frame against live three.js.
 			</p>
 
 			<ul class="ex-metrics" id="ex-metrics" aria-label="Headline metrics">
@@ -56,69 +62,88 @@
 				&middot; PSNR-graded with a 30 dB threshold &middot; the slim runtime ships with
 				<strong>zero</strong> node-builder code.
 			</p>
+
+			<section class="ex-legend" aria-label="Per-card badges">
+				<span class="ex-legend-item"><span class="ex-dot ex-dot-pixel"></span><strong>pixel-match</strong> &middot; PSNR &ge; 30 dB</span>
+				<span class="ex-legend-item"><span class="ex-dot ex-dot-visual"></span><strong>visual-match</strong> &middot; PSNR &ge; 20 dB</span>
+				<span class="ex-legend-item"><span class="ex-dot ex-dot-renders"></span><strong>renders</strong> &middot; replay produced a frame</span>
+				<span class="ex-legend-item"><span class="ex-dot ex-dot-capture"></span><strong>capture-only</strong> &middot; no replay frame yet</span>
+			</section>
 		</header>
+	</details>
 
-		<!-- ========== TIER LEGEND ========== -->
-		<section class="ex-legend" aria-label="Per-card badges">
-			<span class="ex-legend-item"><span class="ex-dot ex-dot-pixel"></span><strong>pixel-match</strong> &middot; PSNR &ge; 30 dB</span>
-			<span class="ex-legend-item"><span class="ex-dot ex-dot-visual"></span><strong>visual-match</strong> &middot; PSNR &ge; 20 dB</span>
-			<span class="ex-legend-item"><span class="ex-dot ex-dot-renders"></span><strong>renders</strong> &middot; replay produced a frame</span>
-			<span class="ex-legend-item"><span class="ex-dot ex-dot-capture"></span><strong>capture-only</strong> &middot; no replay frame yet</span>
-		</section>
+	<!-- ========== BROWSER (sidebar + stage) ========== -->
+	<section class="ex-browser" aria-label="Examples browser">
+		<button type="button" class="ex-drawer-toggle" id="ex-drawer-toggle" aria-controls="ex-sidebar" aria-expanded="false">
+			<span class="ex-drawer-toggle-icon" aria-hidden="true">☰</span>
+			<span>Browse <span id="ex-drawer-count">—</span> examples</span>
+		</button>
 
-		<!-- ========== FILTER BAR ========== -->
-		<section class="ex-filterbar" aria-label="Gallery filters">
-			<div class="ex-chips" id="ex-chips" role="tablist"></div>
-			<div class="ex-controls">
+		<aside class="ex-sidebar" id="ex-sidebar" aria-label="Examples list">
+			<div class="ex-sidebar-controls">
 				<input type="search" id="ex-search" class="ex-search" placeholder="Search examples…" autocomplete="off" aria-label="Search examples">
-				<label class="ex-sort">
-					<span class="ex-sort-label">Sort</span>
-					<select id="ex-sort">
-						<option value="featured">Most-impressive first</option>
-						<option value="name">Alphabetical</option>
-						<option value="psnr">Best PSNR first</option>
-						<option value="psnr-asc">Worst PSNR first</option>
-						<option value="materials">Most materials baked</option>
-					</select>
-				</label>
+				<div class="ex-chips" id="ex-chips" role="tablist"></div>
 			</div>
-		</section>
-
-		<!-- ========== GALLERY ========== -->
-		<section id="gallery" class="ex-gallery" aria-label="Compiled examples">
-			<div id="ex-grid" class="ex-grid" aria-live="polite"></div>
+			<div class="ex-sidebar-list" id="ex-sidebar-list" aria-live="polite"></div>
 			<p id="ex-empty" class="ex-empty" hidden>No examples match the current filter.</p>
-			<div id="ex-hidden-toggle" class="ex-hidden-toggle" hidden>
-				<button type="button" id="ex-show-hidden">+ Show <span data-hidden-count></span> with no replay frame</button>
-				<p class="muted">Captures exist for these &mdash; the slim runtime hasn&rsquo;t produced a replayed frame yet.</p>
+		</aside>
+
+		<main class="ex-stage" id="ex-stage" tabindex="-1">
+			<div class="ex-stage-toolbar">
+				<button type="button" class="ex-stage-nav" id="ex-prev" aria-label="Previous example" disabled>
+					<span aria-hidden="true">←</span> Prev
+				</button>
+				<div class="ex-stage-title-wrap">
+					<span class="ex-stage-cat" id="ex-stage-cat">—</span>
+					<h2 class="ex-stage-title" id="ex-stage-title">Loading…</h2>
+					<span class="ex-stage-badge" id="ex-stage-badge"></span>
+				</div>
+				<button type="button" class="ex-stage-nav" id="ex-next" aria-label="Next example" disabled>
+					Next <span aria-hidden="true">→</span>
+				</button>
 			</div>
-		</section>
 
-		<!-- ========== METHODOLOGY ========== -->
-		<section class="ex-methodology">
-			<h2>How these numbers were produced</h2>
-			<ol class="ex-method-list">
-				<li>Each three.js <code>webgpu_*</code> TSL example is loaded in headless Chrome with a deterministic <code>requestAnimationFrame</code> shim.</li>
-				<li>The <strong>capture</strong> screenshot is taken against live three.js running the full TSL node builder &mdash; this is the golden reference.</li>
-				<li>The same scene is replayed against <code>three/webgpu/slim</code> using the artifact emitted by this plugin &mdash; no node builder ships.</li>
-				<li>Capture and replay are diffed pixel-for-pixel; PSNR &ge; 30 dB is the &ldquo;visually identical&rdquo; gate (ITSD-R standard for human-imperceptible difference).</li>
-				<li>The <em>load-smoke</em> rate counts every example that runs to first frame without throwing &mdash; whether the pixels match or not.</li>
-			</ol>
-			<p class="muted">
-				Triage notes for each regression cluster live in the
-				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/tree/main/packages/examples/batch/results" rel="noopener">batch results folder</a>
-				on GitHub.
-			</p>
-		</section>
-	</main>
+			<div class="ex-stage-viewport" id="ex-stage-viewport">
+				<!--
+					Image-based stage today. To wire live precompile-replay iframes later,
+					replace this <img id="ex-stage-view"> with <iframe id="ex-stage-view"
+					src="/examples/<basename>.html"> at the same DOM slot — no other
+					layout changes needed.
+				-->
+				<img id="ex-stage-view" class="ex-stage-view" alt="" loading="eager" decoding="async">
+				<div class="ex-stage-empty" id="ex-stage-empty" hidden>No replay frame for this example yet.</div>
+				<div class="ex-stage-toggle" role="tablist" aria-label="Compare view">
+					<button type="button" role="tab" aria-selected="true" data-view="replay">Slim replay</button>
+					<button type="button" role="tab" aria-selected="false" data-view="capture">Live three.js</button>
+				</div>
+			</div>
 
-	<!-- ========== MODAL ========== -->
-	<dialog id="ex-modal" class="ex-modal" aria-label="Example detail">
-		<form method="dialog" class="ex-modal-close-form">
-			<button class="ex-modal-close" aria-label="Close">&times;</button>
-		</form>
-		<div class="ex-modal-body" id="ex-modal-body"></div>
-	</dialog>
+			<div class="ex-stage-meta">
+				<div class="ex-stage-stats" id="ex-stage-stats"></div>
+				<div class="ex-stage-actions">
+					<a class="ex-stage-cta" id="ex-stage-cta" href="#" target="_blank" rel="noopener">View original on threejs.org →</a>
+				</div>
+				<div class="ex-stage-notes" id="ex-stage-notes" hidden></div>
+			</div>
+		</main>
+	</section>
+
+	<!-- ========== METHODOLOGY ========== -->
+	<section class="ex-methodology">
+		<h2>How these numbers were produced</h2>
+		<ol class="ex-method-list">
+			<li>Each three.js <code>webgpu_*</code> TSL example is loaded in headless Chrome with a deterministic <code>requestAnimationFrame</code> shim.</li>
+			<li>The <strong>capture</strong> screenshot is taken against live three.js running the full TSL node builder &mdash; this is the golden reference.</li>
+			<li>The same scene is replayed against <code>three/webgpu/slim</code> using the artifact emitted by this plugin &mdash; no node builder ships.</li>
+			<li>Capture and replay are diffed pixel-for-pixel; PSNR &ge; 30 dB is the &ldquo;visually identical&rdquo; gate (ITSD-R standard for human-imperceptible difference).</li>
+			<li>The <em>load-smoke</em> rate counts every example that runs to first frame without throwing &mdash; whether the pixels match or not.</li>
+		</ol>
+		<p class="muted">
+			Triage notes for each regression cluster live in the
+			<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/tree/main/packages/examples/batch/results" rel="noopener">batch results folder</a>
+			on GitHub.
+		</p>
+	</section>
 
 	<!-- ========== FOOTER ========== -->
 	<footer class="footer">
