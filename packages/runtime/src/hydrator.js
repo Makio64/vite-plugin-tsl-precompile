@@ -30,7 +30,7 @@ import { SampledTexture, SampledCubeTexture, Sampled3DTexture, SampledArrayTextu
 import StorageTexture from 'three/src/renderers/common/StorageTexture.js';
 import Storage3DTexture from 'three/src/renderers/common/Storage3DTexture.js';
 import StorageArrayTexture from 'three/src/renderers/common/StorageArrayTexture.js';
-import { DataTexture, Data3DTexture, DataArrayTexture, DepthTexture, CubeDepthTexture, CubeTexture, FramebufferTexture, RGBAFormat, RGBFormat, RGFormat, RedFormat, DepthFormat, UnsignedByteType, UnsignedIntType, LessEqualCompare, HalfFloatType, LinearFilter, NearestFilter, LinearMipmapLinearFilter, ClampToEdgeWrapping, Vector2, Vector3, Vector4, Matrix4, InstancedBufferAttribute } from 'three';
+import { DataTexture, Data3DTexture, DataArrayTexture, DepthTexture, CubeDepthTexture, CubeTexture, FramebufferTexture, RGBAFormat, RGBFormat, RGFormat, RedFormat, DepthFormat, UnsignedByteType, UnsignedIntType, LessEqualCompare, GreaterEqualCompare, HalfFloatType, LinearFilter, NearestFilter, LinearMipmapLinearFilter, ClampToEdgeWrapping, WebGPUCoordinateSystem, Vector2, Vector3, Vector4, Matrix4, InstancedBufferAttribute } from 'three';
 import { viewportMipTexture, viewportTexture } from 'three/src/nodes/display/ViewportTextureNode.js';
 import { getDFGLUT } from './dfg-lut.js';
 import { collectLiveMaterialTextures } from './apply-precompiled.js';
@@ -136,7 +136,14 @@ export function registerLiveTexture( texture ) {
 	const image = texture.image || null;
 	const src = image && ( image.src || image.currentSrc || ( Array.isArray( image ) && image[ 0 ] && ( image[ 0 ].src || image[ 0 ].currentSrc ) ) || null );
 	if ( typeof src === 'string' && src.length > 0 ) _liveTexturesBySrc.set( src, texture );
-	if ( typeof texture.name === 'string' && texture.name.length > 0 && ! _liveTexturesByName.has( texture.name ) ) _liveTexturesByName.set( texture.name, texture );
+	if ( typeof texture.name === 'string' && texture.name.length > 0 ) {
+
+		const existing = _liveTexturesByName.get( texture.name );
+		const existingImage = existing && existing.image || null;
+		const existingSrc = existingImage && ( existingImage.src || existingImage.currentSrc || ( Array.isArray( existingImage ) && existingImage[ 0 ] && ( existingImage[ 0 ].src || existingImage[ 0 ].currentSrc ) ) || null );
+		if ( ! existing || ( typeof src === 'string' && src.length > 0 && ! existingSrc ) ) _liveTexturesByName.set( texture.name, texture );
+
+	}
 
 	// Also track storage textures by dimensionality for anonymous-storage fallback.
 	if ( texture.isStorageTexture ) {
@@ -1278,6 +1285,14 @@ function createShadowDepthRebinder( entries /* , artifact */ ) {
 
 				if ( ! liveTexture || liveTexture === entry.binding.texture ) continue;
 				if ( ! textureMatchesShaderBinding( entry.artifact, entry.bindingName, liveTexture ) ) continue;
+				const compareFunction = liveTexture.compareFunction !== null && liveTexture.compareFunction !== undefined ? liveTexture.compareFunction :
+					frame && frame.renderer && frame.renderer.reversedDepthBuffer ? GreaterEqualCompare : LessEqualCompare;
+				if ( entry.vsm !== true && liveTexture.isDepthTexture === true && liveTexture.compareFunction !== compareFunction ) {
+
+					liveTexture.compareFunction = compareFunction;
+					liveTexture.needsUpdate = true;
+
+				}
 
 				entry.binding.texture = liveTexture;
 				if ( entry.binding.groupNode ) entry.binding.groupNode.version ++;
@@ -1932,6 +1947,17 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 			return fallbackDepthTexture;
 		}
 
+		// Prefer a currently-loaded texture with matching image/name identity over
+		// sidecar refs. The replay harness may seed _textureRefs with conservative
+		// 1x1 fallbacks before async loaders finish; identity lookup lets later
+		// TextureLoader / light.map registrations replace those stubs.
+		const byIdent = lookupLiveTextureByIdentity( source );
+		if ( byIdent && textureMatchesShaderBinding( artifact, bindingName, byIdent ) ) {
+
+			return applyTextureSourceSettings( byIdent, source );
+
+		}
+
 		if ( artifact._textureRefs ) {
 
 			const tex = artifact._textureRefs.get( source.textureUuid );
@@ -1968,13 +1994,6 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 		// `registerLiveTexture`. This is what allows TSL `texture(uvTex)`
 		// closures to resolve when the example reloads with fresh Texture
 		// instances whose uuids no longer match the captured artifact.
-		const byIdent = lookupLiveTextureByIdentity( source );
-		if ( byIdent && textureMatchesShaderBinding( artifact, bindingName, byIdent ) ) {
-
-			return applyTextureSourceSettings( byIdent, source );
-
-		}
-
 		if ( source.snapshot ) {
 
 			// Anonymous live DataTexture fallback. When the captured snapshot
@@ -2392,8 +2411,21 @@ function writeUniformGroup( group, frame, view, material ) {
 			if ( frame.object ) { _mwi.copy( frame.object.matrixWorld ).invert(); writeMat4( view, offset, _mwi ); }
 			else writeSnapshot( view, offset, source.valueSnapshot );
 
-		} else if ( kind === 'object.normalMatrix' || kind === 'object3d.normalMatrix' ) writeMat3( view, offset, frame.object && frame.object.normalMatrix, source.valueSnapshot );
-		else if ( kind === 'object.modelViewMatrix' || kind === 'object3d.modelViewMatrix' ) writeMat4( view, offset, frame.object && frame.object.modelViewMatrix, source.valueSnapshot );
+		} else if ( kind === 'object.normalMatrix' || kind === 'object3d.normalMatrix' ) {
+
+			if ( frame.object && frame.object.normalMatrix && frame.object.matrixWorld ) {
+				frame.object.normalMatrix.getNormalMatrix( frame.object.matrixWorld );
+				writeMat3( view, offset, frame.object.normalMatrix );
+			} else writeSnapshot( view, offset, source.valueSnapshot );
+
+		} else if ( kind === 'object.modelViewMatrix' || kind === 'object3d.modelViewMatrix' ) {
+
+			if ( frame.object && frame.object.modelViewMatrix && frame.object.matrixWorld && frame.camera && frame.camera.matrixWorldInverse ) {
+				frame.object.modelViewMatrix.multiplyMatrices( frame.camera.matrixWorldInverse, frame.object.matrixWorld );
+				writeMat4( view, offset, frame.object.modelViewMatrix );
+			} else writeSnapshot( view, offset, source.valueSnapshot );
+
+		}
 		else if ( kind === 'object.position' || kind === 'object3d.position' ) writeVec3( view, offset, frame.object && frame.object.position, source.valueSnapshot );
 		else if ( kind === 'object.scale' || kind === 'object3d.scale' ) writeVec3( view, offset, frame.object && frame.object.scale, source.valueSnapshot );
 		else if ( kind === 'object3d.viewPosition' ) {
@@ -2493,7 +2525,13 @@ function writeUniformGroup( group, frame, view, material ) {
 			// Prefer the live node's current value (updated by _liveUpdateNodes
 			// that ran earlier this frame). Fall back to the compile-time snapshot
 			// when no live node is available (JSON-loaded artifacts).
-			if ( slot._liveNode && slot._liveNode.value !== null && slot._liveNode.value !== undefined ) {
+			const shadowMatrixLight = slot.dtype === 'mat4' ? findShadowMatrixLightForGroup( group, frame ) : null;
+			if ( shadowMatrixLight && shadowMatrixLight.shadow && shadowMatrixLight.shadow.matrix ) {
+
+				updateLightShadowMatrixForFrame( shadowMatrixLight, frame );
+				writeMat4( view, offset, shadowMatrixLight.shadow.matrix );
+
+			} else if ( slot._liveNode && slot._liveNode.value !== null && slot._liveNode.value !== undefined ) {
 
 				writeLiveValue( view, offset, slot._liveNode.value, slot.dtype );
 
@@ -2506,6 +2544,47 @@ function writeUniformGroup( group, frame, view, material ) {
 		}
 
 	}
+
+}
+
+function findShadowMatrixLightForGroup( group, frame ) {
+
+	if ( ! group || ! frame || ! frame.scene ) return null;
+	for ( const sibling of group.slots || [] ) {
+
+		const source = sibling && sibling.source || {};
+		if ( source.kind && source.kind.startsWith( 'light.shadow' ) && Number.isInteger( source.lightIndex ) ) {
+
+			return findLightInScene( frame.scene, source.lightIndex );
+
+		}
+
+	}
+	return null;
+
+}
+
+function updateLightShadowMatrixForFrame( light, frame ) {
+
+	if ( ! light || ! light.shadow || typeof light.shadow.updateMatrices !== 'function' ) return;
+	if ( light.shadow.map && light.shadow.matrix ) return;
+	try {
+
+		const shadowCamera = light.shadow.camera;
+		const renderer = frame && frame.renderer;
+		const frameCamera = frame && frame.camera;
+		const coordinateSystem = renderer && renderer.coordinateSystem !== undefined ? renderer.coordinateSystem :
+			frameCamera && frameCamera.coordinateSystem !== undefined ? frameCamera.coordinateSystem :
+			WebGPUCoordinateSystem;
+		if ( shadowCamera && coordinateSystem !== undefined && shadowCamera.coordinateSystem !== coordinateSystem ) {
+
+			shadowCamera.coordinateSystem = coordinateSystem;
+			if ( typeof shadowCamera.updateProjectionMatrix === 'function' ) shadowCamera.updateProjectionMatrix();
+
+		}
+		light.shadow.updateMatrices( light );
+
+	} catch ( _ ) {}
 
 }
 
@@ -2622,6 +2701,29 @@ function writeLightValue( view, offset, kind, source, frame ) {
 				writeVec3( view, offset, _lvec );
 
 			} else writeSnapshot( view, offset, source.valueSnapshot );
+			return;
+		case 'light.shadowMatrix':
+			if ( light.shadow && light.shadow.matrix ) {
+
+				updateLightShadowMatrixForFrame( light, frame );
+				writeMat4( view, offset, light.shadow.matrix );
+
+			} else writeSnapshot( view, offset, source.valueSnapshot );
+			return;
+		case 'light.shadowBias':
+			writeNumber( view, offset, light.shadow ? light.shadow.bias : null, source.valueSnapshot );
+			return;
+		case 'light.shadowNormalBias':
+			writeNumber( view, offset, light.shadow ? light.shadow.normalBias : null, source.valueSnapshot );
+			return;
+		case 'light.shadowRadius':
+			writeNumber( view, offset, light.shadow ? light.shadow.radius : null, source.valueSnapshot );
+			return;
+		case 'light.shadowMapSize':
+			writeVec2( view, offset, light.shadow ? light.shadow.mapSize : null, source.valueSnapshot );
+			return;
+		case 'light.shadowIntensity':
+			writeNumber( view, offset, light.shadow && light.shadow.__tslpDisableReplayShadow === true ? 0 : light.shadow && Number.isFinite( light.shadow.intensity ) ? light.shadow.intensity : null, source.valueSnapshot );
 			return;
 		case 'light.halfWidth':
 			if ( light.matrixWorld && frame.camera && frame.camera.matrixWorldInverse ) {

@@ -342,9 +342,10 @@ function collectLightUniformSources( state ) {
 		// `light.color * light.intensity`. We want the runtime to compute
 		// the same product live, so we tag it as `light.colorScaled` and
 		// the hydrator/emit-updater multiply at write time.
-		if ( node.colorNode ) {
+		const lightColorNode = node.baseColorNode || node.colorNode;
+		if ( lightColorNode ) {
 
-			out.set( node.colorNode, { kind: 'light.colorScaled', ...base } );
+			out.set( lightColorNode, { kind: 'light.colorScaled', ...base } );
 
 		}
 		// PointLight / SpotLight expose cutoffDistance + decay as uniforms.
@@ -488,6 +489,7 @@ function collectShadowUniformSources( state ) {
 		intensity: { kind: 'light.shadowIntensity', uniformType: 'float' },
 		blurSamples: { kind: 'light.shadowBlurSamples', uniformType: 'float' },
 		mapSize: { kind: 'light.shadowMapSize', uniformType: 'vec2' },
+		matrix: { kind: 'light.shadowMatrix', uniformType: 'mat4' },
 	};
 
 	// Second pass: any ReferenceNode whose `reference` matches a known
