@@ -126,6 +126,7 @@ const AUX_SHAPES = new Set( [
 	'pmrem-cubemap', 'pmrem-equirect', 'pmrem-blur', 'pmrem-ggx',
 	// Other shapes seen in the runtime that POST artifacts.
 	'mrt', 'backdrop', 'render-output', 'cube-render-target',
+	'bloom-high-pass', 'bloom-composite', 'bloom-blur-0', 'bloom-blur-1', 'bloom-blur-2', 'bloom-blur-3', 'bloom-blur-4',
 ] );
 
 function isAuxPayload( payload ) {

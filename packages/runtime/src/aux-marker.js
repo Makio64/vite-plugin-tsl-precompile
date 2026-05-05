@@ -102,7 +102,9 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 		try {
 
 			const configHash = hashNodeGraphSync( opts.postProcessing.outputNode, { shape, ...hashOpts } );
-			const artifact = await capturePostProcessingLive( renderer, opts.postProcessing, opts );
+			const captured = await capturePostProcessingLive( renderer, opts.postProcessing, opts, hashOpts );
+			const artifact = captured && captured.artifact ? captured.artifact : captured;
+			const extraArtifacts = captured && Array.isArray( captured.extraArtifacts ) ? captured.extraArtifacts : [];
 			trackLocal( shape, configHash, artifact );
 			results.push( await post( opts.devEndpoint, {
 				materialShape: shape,
@@ -110,6 +112,18 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 				artifact,
 				name: `aux-${ shape }-${ configHash.slice( 0, 12 ) }`,
 			}, shape, configHash ) );
+			for ( const extra of extraArtifacts ) {
+
+				if ( ! extra || ! extra.shape || ! extra.configHash || ! extra.artifact ) continue;
+				trackLocal( extra.shape, extra.configHash, extra.artifact );
+				results.push( await post( opts.devEndpoint, {
+					materialShape: extra.shape,
+					configHash: extra.configHash,
+					artifact: extra.artifact,
+					name: `aux-${ extra.shape }-${ extra.configHash.slice( 0, 12 ) }`,
+				}, extra.shape, extra.configHash ) );
+
+			}
 
 		} catch ( err ) {
 
@@ -439,7 +453,7 @@ async function captureBackgroundLive( renderer, scene, camera, opts ) {
 
 }
 
-async function capturePostProcessingLive( renderer, postProcessing, opts ) {
+async function capturePostProcessingLive( renderer, postProcessing, opts, hashOpts = null ) {
 
 	const three = opts.three || null;
 	const compileTSL = opts.compileTSL || ( await lazyLoadCompileTSL() );
@@ -467,7 +481,140 @@ async function capturePostProcessingLive( renderer, postProcessing, opts ) {
 	const artifacts = await compileTSL( renderer, scene, camera, { noGlobalMRT: true } );
 	const artifact = artifacts.find( ( a ) => a.materialUuid === mat.uuid ) || artifacts[ 0 ];
 	if ( ! artifact ) throw new Error( 'capturePostProcessingLive: no artifacts produced' );
+	const extraArtifacts = await captureBloomEffectArtifactsLive( renderer, postProcessing.outputNode, opts, hashOpts || {
+		threeVersion: opts.threeVersion,
+		pluginVersion: opts.pluginVersion || '0.0.0',
+	} );
+	return { artifact: jsonSafe( artifact ), extraArtifacts };
+
+}
+
+async function captureBloomEffectArtifactsLive( renderer, outputNode, opts, hashOpts ) {
+
+	const nodes = collectBloomEffectNodes( outputNode );
+	if ( nodes.length === 0 ) return [];
+
+	const compileTSL = opts.compileTSL || ( await lazyLoadCompileTSL() );
+	const three = opts.three || null;
+	if ( ! three || ! three.Scene || ! three.QuadMesh ) return [];
+
+	const out = [];
+	for ( let bloomIndex = 0; bloomIndex < nodes.length; bloomIndex ++ ) {
+
+		const node = nodes[ bloomIndex ];
+		const captures = [];
+		if ( node._highPassFilterMaterial ) {
+
+			captures.push( {
+				shape: 'bloom-high-pass',
+				config: { type: 'bloom-high-pass', bloomIndex },
+				material: node._highPassFilterMaterial,
+			} );
+
+		}
+		if ( Array.isArray( node._separableBlurMaterials ) ) {
+
+			for ( let i = 0; i < node._separableBlurMaterials.length; i ++ ) {
+
+				const material = node._separableBlurMaterials[ i ];
+				if ( ! material ) continue;
+				try {
+
+					if ( material.colorTexture && node._renderTargetBright && node._renderTargetBright.texture ) material.colorTexture.value = node._renderTargetBright.texture;
+
+				} catch ( _ ) {}
+				captures.push( {
+					shape: `bloom-blur-${ i }`,
+					config: { type: 'bloom-blur', bloomIndex, index: i },
+					material,
+				} );
+
+			}
+
+		}
+		if ( node._compositeMaterial ) {
+
+			captures.push( {
+				shape: 'bloom-composite',
+				config: { type: 'bloom-composite', bloomIndex },
+				material: node._compositeMaterial,
+			} );
+
+		}
+
+		for ( const item of captures ) {
+
+			try {
+
+				const configHash = hashPlainConfigSync( item.config, { shape: item.shape, ...hashOpts } );
+				const artifact = await captureNodeMaterialAsAuxLive( renderer, item.material, opts, compileTSL, item.shape );
+				out.push( { shape: item.shape, configHash, artifact } );
+
+			} catch ( _ ) {}
+
+		}
+
+	}
+
+	return out;
+
+}
+
+async function captureNodeMaterialAsAuxLive( renderer, material, opts, compileTSL, shape ) {
+
+	const three = opts.three || null;
+	const scene = new three.Scene();
+	scene.add( new three.QuadMesh( material ) );
+	const camera = opts.camera || ( three.PerspectiveCamera ? new three.PerspectiveCamera( 45, 1, 0.1, 100 ) : null );
+	const artifacts = await compileTSL( renderer, scene, camera, { noGlobalMRT: true } );
+	const artifact = artifacts.find( ( a ) => a.materialUuid === material.uuid ) || artifacts[ 0 ];
+	if ( ! artifact ) throw new Error( `captureNodeMaterialAsAuxLive: no artifact produced for ${ shape }` );
+	artifact.materialShape = shape;
 	return jsonSafe( artifact );
+
+}
+
+function collectBloomEffectNodes( node, out = [], seen = new Set(), depth = 0 ) {
+
+	if ( ! node || ( typeof node !== 'object' && typeof node !== 'function' ) || depth > 32 || seen.has( node ) ) return out;
+	seen.add( node );
+	if ( isBloomEffectNode( node ) ) {
+
+		if ( ! out.includes( node ) ) out.push( node );
+		return out;
+
+	}
+	const keys = [];
+	try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
+	const skip = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'geometry', 'material', 'domElement' ] );
+	for ( const key of keys ) {
+
+		if ( skip.has( key ) ) continue;
+		let child = null;
+		try { child = node[ key ]; } catch ( _ ) { continue; }
+		if ( ! child ) continue;
+		if ( Array.isArray( child ) ) {
+
+			for ( const item of child ) collectBloomEffectNodes( item, out, seen, depth + 1 );
+
+		} else {
+
+			collectBloomEffectNodes( child, out, seen, depth + 1 );
+
+		}
+
+	}
+	return out;
+
+}
+
+function isBloomEffectNode( node ) {
+
+	return !! ( node
+		&& typeof node.updateBefore === 'function'
+		&& node._renderTargetBright
+		&& Array.isArray( node._renderTargetsHorizontal )
+		&& Array.isArray( node._renderTargetsVertical ) );
 
 }
 
