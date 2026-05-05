@@ -21,3 +21,7 @@ test-results/
 
 # Per-worker e2e reports — only the merged e2e-report.json is checked in
 packages/examples/batch/results/e2e-report-worker-*.json
+
+# Local diagnostic snapshots produced while debugging individual examples
+packages/examples/batch/results/visual-*.json
+packages/examples/batch/results/debug-*.json
