@@ -276,8 +276,14 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "61bfb1f5-58b7-4839-a3b8-de05f22ead54",
+                "textureUuid": "ac99271c-27af-4173-a6c8-8641992a2fd6",
                 "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "colorSpace": "srgb-linear",
                 "flipY": false
               }
             },
@@ -289,8 +295,14 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "61bfb1f5-58b7-4839-a3b8-de05f22ead54",
+                "textureUuid": "ac99271c-27af-4173-a6c8-8641992a2fd6",
                 "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "colorSpace": "srgb-linear",
                 "flipY": false
               }
             }
@@ -307,8 +319,14 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "61bfb1f5-58b7-4839-a3b8-de05f22ead54",
+                  "textureUuid": "ac99271c-27af-4173-a6c8-8641992a2fd6",
                   "mapping": 300,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1006,
+                  "minFilter": 1006,
+                  "anisotropy": 1,
+                  "colorSpace": "srgb-linear",
                   "flipY": false
                 }
               }
@@ -331,8 +349,14 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "61bfb1f5-58b7-4839-a3b8-de05f22ead54",
+                  "textureUuid": "ac99271c-27af-4173-a6c8-8641992a2fd6",
                   "mapping": 300,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1006,
+                  "minFilter": 1006,
+                  "anisotropy": 1,
+                  "colorSpace": "srgb-linear",
                   "flipY": false
                 }
               }

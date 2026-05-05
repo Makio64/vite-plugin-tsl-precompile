@@ -211,7 +211,10 @@ function rewriteImportmap( html, mode ) {
 
 	}
 
+	const tslTarget = mode === 'replay' ? '/__tslp__/tsl-stub.js' : '/build/three.tsl.js';
 	const extraImports = [
+		`"three/webgpu": "${ webgpuTarget }"`,
+		`"three/tsl": "${ tslTarget }"`,
 		`"@tsl-precompile/runtime": "/__tslp_runtime/index.js"`,
 		`"@tsl-precompile/runtime/apply": "/__tslp_runtime/apply-precompiled.js"`,
 		`"@tsl-precompile/runtime/writers": "/__tslp_runtime/writers.js"`,
@@ -1499,13 +1502,17 @@ function __isPMREMArtifactTextureSource( source ) {
 }
 
 function __attachArtifactTextureRefsWhere( artifact, texture, predicate ) {
+	return __attachTextureRefsWhere( artifact, texture, ( source, entry, group ) => source.kind === 'artifact.texture' && predicate( source, entry, group ) );
+}
+
+function __attachTextureRefsWhere( artifact, texture, predicate ) {
 	if ( ! artifact || ! texture || texture.isTexture !== true || typeof predicate !== 'function' ) return artifact;
 	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
 	let changed = false;
 	for ( const group of artifact.uniformPlan || [] ) {
 		for ( const entry of group.textures || [] ) {
 			const source = entry && entry.source || {};
-			if ( source.kind !== 'artifact.texture' || ! source.textureUuid ) continue;
+			if ( ! source.textureUuid ) continue;
 			if ( ! predicate( source, entry, group ) ) continue;
 			refs.set( source.textureUuid, texture );
 			changed = true;
@@ -1520,6 +1527,48 @@ function __attachArtifactTextureRefsWhere( artifact, texture, predicate ) {
 		} );
 	}
 	return changed;
+}
+
+function __attachPassTextureRefs( artifact, passNode ) {
+	if ( ! artifact || ! passNode ) return artifact;
+	const names = new Set();
+	for ( const group of artifact.uniformPlan || [] ) {
+		for ( const entry of group.textures || [] ) {
+			const source = entry && entry.source || {};
+			if ( source.kind !== 'artifact.texture' ) continue;
+			names.add( source.textureName || 'output' );
+		}
+	}
+	const getPassTexture = ( name ) => {
+		try {
+			const tex = typeof passNode.getTexture === 'function'
+				? passNode.getTexture( name )
+				: name === 'output' ? passNode.renderTarget && passNode.renderTarget.texture : passNode.renderTarget && passNode.renderTarget.depthTexture;
+			return tex && tex.isTexture === true ? tex : null;
+		} catch ( _ ) {
+			return null;
+		}
+	};
+	for ( const name of names ) {
+		const tex = getPassTexture( name );
+		if ( tex ) __attachTextureRefsWhere( artifact, tex, ( source ) => source.kind === 'artifact.texture' && ( source.textureName === name || ( name === 'output' && ! source.textureName ) ) );
+	}
+	const depth = getPassTexture( 'depth' );
+	if ( depth ) __attachTextureRefsWhere( artifact, depth, ( source ) => source.kind === 'depth.texture' );
+	return artifact;
+}
+
+function __preparePassNodeForReplay( renderer, passNode ) {
+	if ( ! renderer || ! passNode || ! passNode.renderTarget ) return;
+	try {
+		passNode.renderTarget.samples = passNode.options && passNode.options.samples !== undefined ? passNode.options.samples : renderer.samples;
+		if ( passNode.renderTarget.texture && typeof renderer.getOutputBufferType === 'function' ) {
+			passNode.renderTarget.texture.type = renderer.getOutputBufferType();
+		}
+		if ( renderer.reversedDepthBuffer === true && passNode.renderTarget.depthTexture ) {
+			passNode.renderTarget.depthTexture.type = Slim.FloatType || passNode.renderTarget.depthTexture.type;
+		}
+	} catch ( _ ) {}
 }
 
 const __wiredPCMaterials = new WeakSet();
@@ -1563,9 +1612,14 @@ function __retargetPrecompiledMaterialForObject( material, object ) {
 
 function __replaceSceneMaterials( scene ) {
 	if ( ! scene || typeof scene.traverse !== 'function' ) return;
+	const objects = [];
 	scene.traverse( ( object ) => {
+		if ( object && object.material ) objects.push( object );
+	} );
+	objects.sort( ( a, b ) => __replacePriority( b ) - __replacePriority( a ) );
+	for ( const object of objects ) {
 		const material = object && object.material;
-		if ( ! material ) return;
+		if ( ! material ) continue;
 		const replaceOne = ( inputMaterial ) => {
 			let m = inputMaterial;
 			if ( ! m ) return m;
@@ -1595,7 +1649,14 @@ function __replaceSceneMaterials( scene ) {
 			return replacement;
 		};
 		object.material = Array.isArray( material ) ? material.map( replaceOne ) : replaceOne( material );
-	} );
+	}
+}
+
+function __replacePriority( object ) {
+	if ( ! object ) return 0;
+	if ( object.isInstancedMesh === true ) return 20;
+	if ( object.count && object.count > 1 ) return 10;
+	return 0;
 }
 
 ${ materialClasses }
@@ -1712,9 +1773,34 @@ function __pmremDiagnostics() {
 			wireAlreadyWired: 0,
 			wireNeedsPmrem: 0,
 			wireAttached: 0,
+			generated: [],
 		};
 	}
 	return diag.pmrem;
+}
+
+function __recordGeneratedPMREM( sourceTex, pmrem ) {
+	try {
+		const diag = __pmremDiagnostics();
+		if ( ! Array.isArray( diag.generated ) ) diag.generated = [];
+		if ( diag.generated.length >= 8 ) return;
+		const srcImg = sourceTex && sourceTex.image || null;
+		const pmImg = pmrem && pmrem.image || null;
+		diag.generated.push( {
+			sourceName: sourceTex && sourceTex.name || '',
+			sourceMapping: sourceTex && sourceTex.mapping,
+			sourceFlipY: sourceTex && sourceTex.flipY,
+			sourceColorSpace: sourceTex && sourceTex.colorSpace,
+			sourceWidth: srcImg && srcImg.width,
+			sourceHeight: srcImg && srcImg.height,
+			pmremName: pmrem && pmrem.name || '',
+			pmremMapping: pmrem && pmrem.mapping,
+			pmremColorSpace: pmrem && pmrem.colorSpace,
+			pmremWidth: pmImg && pmImg.width,
+			pmremHeight: pmImg && pmImg.height,
+			pmremVersion: pmrem && pmrem.version,
+		} );
+	} catch ( _ ) {}
 }
 
 function __healTextureImage( texture ) {
@@ -1840,12 +1926,24 @@ async function __generatePMREMAsync( slimRenderer, sourceTex ) {
 	try {
 		const { PMREMGenerator } = await import( '/build/three.webgpu.js' );
 		const gen = new PMREMGenerator( fullRenderer );
-		const target = sourceTex.isCubeTexture
-			? gen.fromCubemap( sourceTex )
-			: gen.fromEquirectangular( sourceTex );
+		let target = null;
+		const oldFlipY = sourceTex.flipY;
+		try {
+			// PMREMGenerator samples equirectangular sources in shader space. In
+			// replay those source textures may already have their loader-side Y
+			// orientation baked into the uploaded image, so applying flipY again
+			// mirrors the generated cubeUV environment.
+			if ( ! sourceTex.isCubeTexture ) sourceTex.flipY = false;
+			target = sourceTex.isCubeTexture
+				? gen.fromCubemap( sourceTex )
+				: gen.fromEquirectangular( sourceTex );
+		} finally {
+			if ( ! sourceTex.isCubeTexture ) sourceTex.flipY = oldFlipY;
+		}
 		const pmrem = target && target.texture || null;
 		gen.dispose && gen.dispose();
 		if ( pmrem && pmrem.isTexture === true ) {
+			__recordGeneratedPMREM( sourceTex, pmrem );
 			// Verify the full backend actually owns a GPUTexture for this
 			// PMREM result before sharing — sharing a stale entry leaves
 			// slim's bindings empty.
@@ -2772,9 +2870,10 @@ export class WebGPURenderer extends Slim.WebGPURenderer {
 			const cached = this._quadCache && this._quadCache.get( target.texture );
 			if ( ! cached || cached.cacheKey !== cacheKey ) {
 				// Any registered render-output artifact works via shape-fallback.
-				const artifact = Slim.loadAux( 'render-output', 'tslp-e2e-bypass' );
+				let artifact = Slim.loadAux( 'render-output', 'tslp-e2e-bypass' );
+				artifact = __attachTextureRefsWhere( artifact, target.texture, ( source ) => source.kind === 'artifact.texture' && ( source.textureName === 'output' || ! source.textureName ) );
 				const mat = new Slim.PrecompiledMaterial(
-					Slim.attachArtifactTextureRefs( artifact, target.texture )
+					artifact
 				);
 				mat.name = 'outputColorTransform';
 				const quad = new Slim.QuadMesh( mat );
@@ -2836,6 +2935,7 @@ function __textureFromPassNode( passNode ) {
 function __renderPassNodeForPipeline( renderer, passNode ) {
 	if ( ! renderer || ! passNode || ! passNode.scene || ! passNode.camera ) return;
 	try { __prepareSceneForReplay( passNode.scene, renderer ); } catch ( _ ) {}
+	__preparePassNodeForReplay( renderer, passNode );
 	try {
 		if ( typeof passNode.updateBefore === 'function' ) passNode.updateBefore( { renderer } );
 		else renderer.render( passNode.scene, passNode.camera );
@@ -2864,11 +2964,14 @@ export class RenderPipeline extends Slim.RenderPipeline {
 		}
 		if ( this.needsUpdate ) {
 			try {
-				// Shape-fallback: returns any registered post-process artifact.
-				let artifact = Slim.loadAux( 'post-process', 'tslp-e2e-bypass' );
+				// Shape-fallback: returns any registered render-pipeline artifact.
+				// outputColorTransform=true wraps the pipeline in renderOutput(), whose
+				// artifact carries the final color-space transfer.
+				const shape = this.outputColorTransform === true ? 'render-output' : 'post-process';
+				let artifact = Slim.loadAux( shape, 'tslp-e2e-bypass' );
 				const passNode = __findPassNodeInGraph( this.outputNode );
-				const passTexture = __textureFromPassNode( passNode );
-				if ( passTexture ) artifact = Slim.attachArtifactTextureRefs( artifact, passTexture );
+				__preparePassNodeForReplay( this.renderer, passNode );
+				artifact = __attachPassTextureRefs( artifact, passNode );
 				const mat = new Slim.PrecompiledMaterial( artifact );
 				mat.needsUpdate = true;
 				this._quadMesh.material = mat;
@@ -2961,6 +3064,28 @@ export default Inspector;
 
 }
 
+function statsStubModule() {
+
+	return `
+function Stats() {
+	const dom = document.createElement( 'div' );
+	return {
+		REVISION: 16,
+		dom,
+		domElement: dom,
+		addPanel() { return { dom: document.createElement( 'canvas' ), update() {} }; },
+		showPanel() {},
+		begin() {},
+		end() { return ( performance || Date ).now(); },
+		update() {},
+	};
+}
+Stats.Panel = function () { return { dom: document.createElement( 'canvas' ), update() {} }; };
+export default Stats;
+`;
+
+}
+
 async function readBody( req ) {
 
 	const chunks = [];
@@ -3034,6 +3159,7 @@ const server = createServer( async ( req, res ) => {
 		if ( url.pathname === '/__tslp__/slim-webgpu-replay.js' ) return sendJs( res, slimWebgpuReplayModule() );
 		if ( url.pathname === '/__tslp__/tsl-stub.js' ) return sendJs( res, tslStubModule() );
 		if ( url.pathname === '/examples/jsm/inspector/Inspector.js' ) return sendJs( res, inspectorStubModule() );
+		if ( url.pathname === '/examples/jsm/libs/stats.module.js' ) return sendJs( res, statsStubModule() );
 		if ( url.pathname === '/__tslp__/three.webgpu.slim.js' ) {
 
 			res.setHeader( 'content-type', 'application/javascript; charset=utf-8' );
@@ -3479,6 +3605,45 @@ async function visitExample( browser, name, mode, waitMs ) {
 
 			// eslint-disable-next-line no-undef
 			const w = window;
+			const diagnostics = w.__tslpHarnessDiagnostics || ( w.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
+			diagnostics.gpuErrors = diagnostics.gpuErrors || [];
+			try {
+
+				const gpu = w.navigator && w.navigator.gpu;
+				if ( gpu && typeof gpu.requestAdapter === 'function' && ! gpu.__tslpErrorHooked ) {
+
+					gpu.__tslpErrorHooked = true;
+					const requestAdapter = gpu.requestAdapter.bind( gpu );
+					gpu.requestAdapter = async function ( ...args ) {
+
+						const adapter = await requestAdapter( ...args );
+						if ( adapter && typeof adapter.requestDevice === 'function' && ! adapter.__tslpErrorHooked ) {
+
+							adapter.__tslpErrorHooked = true;
+							const requestDevice = adapter.requestDevice.bind( adapter );
+							adapter.requestDevice = async function ( ...deviceArgs ) {
+
+								const device = await requestDevice( ...deviceArgs );
+								try {
+									device.addEventListener( 'uncapturederror', ( event ) => {
+
+										const message = event && event.error && event.error.message || event && event.message || String( event );
+										diagnostics.gpuErrors.push( message );
+
+									} );
+								} catch ( _ ) {}
+								return device;
+
+							};
+
+						}
+						return adapter;
+
+					};
+
+				}
+
+			} catch ( _ ) {}
 			if ( w.__tslpRafShimInstalled ) return;
 			w.__tslpRafShimInstalled = true;
 			w.__tslpRafTick = 0;

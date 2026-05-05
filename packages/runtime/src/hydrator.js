@@ -74,12 +74,12 @@ fallbackArrayTexture.needsUpdate = true;
 const fallbackDepthTexture = new DepthTexture( 1, 1 );
 fallbackDepthTexture.format = DepthFormat;
 fallbackDepthTexture.type = UnsignedIntType;
-fallbackDepthTexture.isFramebufferTexture = true;
+fallbackDepthTexture.renderTarget = { samples: 1 };
 const fallbackComparisonDepthTexture = new DepthTexture( 1, 1 );
 fallbackComparisonDepthTexture.format = DepthFormat;
 fallbackComparisonDepthTexture.type = UnsignedIntType;
-fallbackComparisonDepthTexture.isFramebufferTexture = true;
 fallbackComparisonDepthTexture.compareFunction = LessEqualCompare;
+fallbackComparisonDepthTexture.renderTarget = { samples: 1 };
 const fallbackMultisampledDepthTexture = new DepthTexture( 1, 1 );
 fallbackMultisampledDepthTexture.format = DepthFormat;
 fallbackMultisampledDepthTexture.type = UnsignedIntType;
@@ -1051,6 +1051,8 @@ function hydrateRuntimeBindings( artifact, material ) {
 
 				shadowDepthBindings.push( {
 					binding: runtimeBinding,
+					artifact,
+					bindingName: descriptor.name || '',
 					lightIndex: Number.isInteger( planSource.lightIndex ) ? planSource.lightIndex : 0,
 					lightUuid: typeof planSource.lightUuid === 'string' ? planSource.lightUuid : null,
 					vsm: planSource.vsm === true,
@@ -1270,6 +1272,7 @@ function createShadowDepthRebinder( entries /* , artifact */ ) {
 				}
 
 				if ( ! liveTexture || liveTexture === entry.binding.texture ) continue;
+				if ( ! textureMatchesShaderMultisample( entry.artifact, entry.bindingName, liveTexture ) ) continue;
 
 				entry.binding.texture = liveTexture;
 				if ( entry.binding.groupNode ) entry.binding.groupNode.version ++;
@@ -1863,6 +1866,13 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 	// rebinder (registerShadowDepthRebinder, below) swaps it in at draw time.
 	// Return the matching fallback so the bind group is still validatable.
 	if ( source.kind === 'depth.texture' ) {
+
+		if ( artifact._textureRefs && source.textureUuid ) {
+
+			const tex = artifact._textureRefs.get( source.textureUuid );
+			if ( tex && tex.isDepthTexture === true && textureMatchesShaderMultisample( artifact, bindingName, tex ) ) return tex;
+
+		}
 
 		return fallbackTextureForBinding( artifact, bindingName );
 

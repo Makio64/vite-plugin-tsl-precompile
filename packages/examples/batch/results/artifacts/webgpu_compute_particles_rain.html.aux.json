@@ -278,6 +278,12 @@
                 "kind": "artifact.texture",
                 "textureUuid": "59a7c32d-f04e-46db-9bfb-4d7f4ae2e057",
                 "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "colorSpace": "srgb-linear",
                 "flipY": false
               }
             },
@@ -291,6 +297,12 @@
                 "kind": "artifact.texture",
                 "textureUuid": "59a7c32d-f04e-46db-9bfb-4d7f4ae2e057",
                 "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "colorSpace": "srgb-linear",
                 "flipY": false
               }
             }
@@ -309,6 +321,12 @@
                   "kind": "artifact.texture",
                   "textureUuid": "59a7c32d-f04e-46db-9bfb-4d7f4ae2e057",
                   "mapping": 300,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1006,
+                  "minFilter": 1006,
+                  "anisotropy": 1,
+                  "colorSpace": "srgb-linear",
                   "flipY": false
                 }
               }
@@ -333,6 +351,12 @@
                   "kind": "artifact.texture",
                   "textureUuid": "59a7c32d-f04e-46db-9bfb-4d7f4ae2e057",
                   "mapping": 300,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1006,
+                  "minFilter": 1006,
+                  "anisotropy": 1,
+                  "colorSpace": "srgb-linear",
                   "flipY": false
                 }
               }
