@@ -30,8 +30,9 @@ import { SampledTexture, SampledCubeTexture, Sampled3DTexture, SampledArrayTextu
 import StorageTexture from 'three/src/renderers/common/StorageTexture.js';
 import Storage3DTexture from 'three/src/renderers/common/Storage3DTexture.js';
 import StorageArrayTexture from 'three/src/renderers/common/StorageArrayTexture.js';
-import { DataTexture, Data3DTexture, DataArrayTexture, DepthTexture, CubeDepthTexture, CubeTexture, FramebufferTexture, RGBAFormat, RGBFormat, RGFormat, RedFormat, DepthFormat, UnsignedByteType, UnsignedIntType, LessEqualCompare, GreaterEqualCompare, HalfFloatType, LinearFilter, NearestFilter, NearestMipmapNearestFilter, NearestMipmapLinearFilter, LinearMipmapNearestFilter, LinearMipmapLinearFilter, ClampToEdgeWrapping, WebGPUCoordinateSystem, Vector2, Vector3, Vector4, Matrix4, InstancedBufferAttribute } from 'three';
+import { DataTexture, Data3DTexture, DataArrayTexture, DepthTexture, CubeDepthTexture, CubeTexture, FramebufferTexture, RGBAFormat, RGBFormat, RGFormat, RedFormat, DepthFormat, UnsignedByteType, UnsignedIntType, LessEqualCompare, GreaterEqualCompare, HalfFloatType, LinearFilter, NearestFilter, NearestMipmapNearestFilter, NearestMipmapLinearFilter, LinearMipmapNearestFilter, LinearMipmapLinearFilter, ClampToEdgeWrapping, WebGPUCoordinateSystem, Vector2, Vector3, Vector4, Matrix4, Matrix3, Plane, InstancedBufferAttribute } from 'three';
 import { viewportMipTexture, viewportTexture } from 'three/src/nodes/display/ViewportTextureNode.js';
+import { viewportDepthTexture } from 'three/src/nodes/display/ViewportDepthTextureNode.js';
 import { getDFGLUT } from './dfg-lut.js';
 import { collectLiveMaterialTextures, collectReflectorBaseNodes } from './apply-precompiled.js';
 
@@ -97,13 +98,26 @@ fallbackDepthCubeTexture.compareFunction = LessEqualCompare;
 fallbackDepthCubeTexture.renderTarget = { samples: 1 };
 
 // Per-binding 1×1 fallback for `viewport.texture` bindings. The live
-// FramebufferTexture is swapped in by `createViewportTextureRebinder` on the
+// viewport texture is swapped in by `createViewportTextureRebinder` on the
 // first render-before; this fallback only exists so WebGPU bind-group
 // validation passes before that runs. Allocate fresh instances (rather than
 // a module singleton) so that aux-bg / postprocess paths whose own viewport
 // fallbacks are seeded by `wireViewportTextureRefs` aren't accidentally
 // pointed at the same texture.
-function makeViewportFallback() {
+function makeViewportFallback( artifact, bindingName, source = null ) {
+
+	const isDepth = source && source.isDepth === true ||
+		( artifact && bindingName && shaderDeclaresDepthTexture( artifact, bindingName ) );
+	if ( isDepth ) {
+
+		const tex = new DepthTexture( 1, 1 );
+		tex.format = DepthFormat;
+		tex.type = UnsignedIntType;
+		tex.renderTarget = { samples: 1 };
+		tex.needsUpdate = true;
+		return tex;
+
+	}
 
 	const tex = new FramebufferTexture( 1, 1 );
 	tex.minFilter = LinearMipmapLinearFilter;
@@ -245,7 +259,14 @@ function _patchDataTextureRegister( Ctor ) {
 	Ctor.prototype.__tslpDataTextureRegPatched = true;
 
 	const proto = Ctor.prototype;
-	const existing = Object.getOwnPropertyDescriptor( proto, 'needsUpdate' ) || null;
+	let cursor = proto;
+	let existing = null;
+	while ( cursor && ! existing ) {
+
+		existing = Object.getOwnPropertyDescriptor( cursor, 'needsUpdate' ) || null;
+		cursor = Object.getPrototypeOf( cursor );
+
+	}
 	const _slot = new WeakMap();
 
 	Object.defineProperty( proto, 'needsUpdate', {
@@ -449,11 +470,13 @@ const _odir = new Vector3();
 const _mwi = new Matrix4();
 const _m4rot = new Matrix4();
 const _lvec = new Vector3();
+const _clipPlane = new Plane();
+const _clipNormalMatrix = new Matrix3();
 
 // Find the Nth light in a scene by traversal order. Mirrors the cache
 // strategy emit-updater.js bakes into AOT modules — both the AOT and
-// snapshot-based hydration paths read lights through this lookup so the
-// captured `lightIndex` resolves to the same Light at replay time.
+// snapshot-based hydration paths use this as a fallback when a captured
+// light UUID is unavailable.
 //
 // The cache key is the Scene instance; lights added/removed mid-session
 // won't invalidate the cache. That's acceptable for now: scene-graph
@@ -482,6 +505,77 @@ function findLightInScene( scene, index ) {
 
 }
 
+function findLightBySource( scene, source ) {
+
+	if ( ! scene || ! source ) return null;
+	if ( source.lightUuid && typeof scene.traverse === 'function' ) {
+
+		let found = null;
+		scene.traverse( ( o ) => {
+
+			if ( found ) return;
+			if ( o && o.isLight === true && o.uuid === source.lightUuid ) found = o;
+
+		} );
+		if ( found ) return found;
+
+	}
+	const lightIndex = Number.isInteger( source.lightIndex ) ? source.lightIndex : 0;
+	return findLightInScene( scene, lightIndex );
+
+}
+
+function recordLightLinkDiagnostic( event ) {
+
+	try {
+
+		const root = typeof globalThis !== 'undefined' ? globalThis : null;
+		if ( ! root || root.__TSLP_DEBUG_LIGHT_LINKAGE !== true ) return;
+		const diag = root.__tslpHarnessDiagnostics || ( root.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
+		const list = diag.lightLinkage || ( diag.lightLinkage = [] );
+		if ( list.length < 120 ) list.push( event );
+
+	} catch ( _ ) {}
+
+}
+
+function recordShadowBindingDiagnostic( event ) {
+
+	try {
+
+		const root = typeof globalThis !== 'undefined' ? globalThis : null;
+		if ( ! root || root.__TSLP_DEBUG_SHADOW_BINDINGS !== true ) return;
+		const diag = root.__tslpHarnessDiagnostics || ( root.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
+		const list = diag.shadowBindings || ( diag.shadowBindings = [] );
+		if ( list.length < 120 ) list.push( event );
+
+	} catch ( _ ) {}
+
+}
+
+function lightDiagnosticShape( light ) {
+
+	if ( ! light ) return null;
+	let position = null;
+	try {
+
+		if ( light.matrixWorld ) {
+
+			_lvec.setFromMatrixPosition( light.matrixWorld );
+			position = [ _lvec.x, _lvec.y, _lvec.z ];
+
+		}
+
+	} catch ( _ ) {}
+	return {
+		type: light.isSpotLight ? 'spot' : light.isDirectionalLight ? 'directional' : light.isAmbientLight ? 'ambient' : light.type || 'light',
+		uuid: light.uuid || null,
+		intensity: Number.isFinite( light.intensity ) ? light.intensity : null,
+		position,
+	};
+
+}
+
 /**
  * Produce a NodeBuilderState-compatible object for a precompiled material.
  *
@@ -507,8 +601,11 @@ export function hydrateNodeBuilderState( artifact, material = null ) {
 	// kernel writes into `colors`, the render reads from the same buffer.
 	bindUserStorageBuffersToArtifact( artifact, material );
 
-	const { bindings, uniformBuffers, shadowDepthBindings, materialDepthBindings, artifactTextureBindings, viewportTextureBindings, reflectorTextureBindings } = hydrateRuntimeBindings( artifact, material );
+	const { bindings, uniformBuffers, shadowDepthBindings, materialDepthBindings, artifactTextureBindings, materialTextureBindings, viewportTextureBindings, reflectorTextureBindings, clippingUniformBuffers } = hydrateRuntimeBindings( artifact, material );
 	const updateNode = createUniformUpdateNode( artifact, uniformBuffers, material );
+	const clippingUniformUpdateNode = clippingUniformBuffers.length > 0
+		? createClippingUniformUpdateNode( clippingUniformBuffers, material )
+		: null;
 	const shadowDepthRebinder = shadowDepthBindings.length > 0
 		? createShadowDepthRebinder( shadowDepthBindings )
 		: null;
@@ -517,6 +614,9 @@ export function hydrateNodeBuilderState( artifact, material = null ) {
 		: null;
 	const artifactTextureRebinder = artifactTextureBindings.length > 0
 		? createArtifactTextureRebinder( artifactTextureBindings )
+		: null;
+	const materialTextureRebinder = materialTextureBindings.length > 0
+		? createMaterialTextureRebinder( materialTextureBindings )
 		: null;
 	const viewportTextureRebinder = viewportTextureBindings.length > 0
 		? createViewportTextureRebinder( viewportTextureBindings )
@@ -544,7 +644,7 @@ export function hydrateNodeBuilderState( artifact, material = null ) {
 		transforms: artifact.transforms || [],
 		nodeAttributes: hydrateNodeAttributes( artifact.nodeAttributes || artifact.attributes || [] ),
 		bindings,
-		updateNodes: [ ...liveUpdateNodes, ...( updateNode ? [ updateNode ] : [] ) ],
+		updateNodes: [ ...liveUpdateNodes, ...( updateNode ? [ updateNode ] : [] ), ...( clippingUniformUpdateNode ? [ clippingUniformUpdateNode ] : [] ) ],
 		// `shadowDepthRebinder` runs FIRST among updateBefore so the SampledTexture
 		// bindings point at the live `light.shadow.map.depthTexture` before the
 		// renderer reads bind-group versions for the upcoming draw.
@@ -555,6 +655,7 @@ export function hydrateNodeBuilderState( artifact, material = null ) {
 		updateBeforeNodes: [
 			...( shadowDepthRebinder ? [ shadowDepthRebinder ] : [] ),
 			...( artifactTextureRebinder ? [ artifactTextureRebinder ] : [] ),
+			...( materialTextureRebinder ? [ materialTextureRebinder ] : [] ),
 			// `viewportTextureRebinder` runs alongside the other rebinders so
 			// transmissive materials (KHR_materials_transmission glass) sample
 			// a freshly-copied framebuffer instead of the 1×1 fallback.
@@ -1043,10 +1144,13 @@ function hydrateRuntimeBindings( artifact, material ) {
 	const shadowDepthBindings = [];
 	const materialDepthBindings = [];
 	const artifactTextureBindings = [];
+	const materialTextureBindings = [];
 	const viewportTextureBindings = [];
 	const reflectorTextureBindings = [];
+	const clippingUniformBuffers = [];
 	const bindings = artifact.bindings;
-	if ( ! Array.isArray( bindings ) ) return { bindings: [], uniformBuffers, shadowDepthBindings, materialDepthBindings, artifactTextureBindings, viewportTextureBindings, reflectorTextureBindings };
+	if ( ! Array.isArray( bindings ) ) return { bindings: [], uniformBuffers, shadowDepthBindings, materialDepthBindings, artifactTextureBindings, materialTextureBindings, viewportTextureBindings, reflectorTextureBindings, clippingUniformBuffers };
+	const hasClippingUniformBuffers = artifactUsesClippingUniformBuffers( artifact );
 
 	// Full three.js artifacts contain JSON descriptors. Rehydrate the subset
 	// needed by WGSL pipeline layout creation and UBO uploads. Texture/storage
@@ -1069,6 +1173,15 @@ function hydrateRuntimeBindings( artifact, material ) {
 
 			runtimeBindings.push( runtimeBinding );
 			if ( runtimeBinding.isUniformBuffer ) uniformBuffers.set( descriptor.name || group.name || '', runtimeBinding );
+			if ( hasClippingUniformBuffers && runtimeBinding.isUniformBuffer && /^UniformBuffer_/.test( descriptor.name || '' ) ) {
+
+				clippingUniformBuffers.push( {
+					binding: runtimeBinding,
+					byteLength: runtimeBinding.buffer ? runtimeBinding.buffer.byteLength : descriptor.byteLength || 0,
+					visibility: descriptor.visibility | 0,
+				} );
+
+			}
 
 			// Track depth-texture bindings so the per-frame rebinder can swap
 			// them to the live shadow map. The plan source carries `lightIndex`
@@ -1133,6 +1246,21 @@ function hydrateRuntimeBindings( artifact, material ) {
 
 			}
 
+			if ( ( descriptor.kind === 'sampled-texture' || descriptor.kind === 'sampler' )
+				&& ( runtimeBinding.isSampledTexture || runtimeBinding.isSampler )
+				&& planSource && planSource.kind && planSource.kind.startsWith( 'material.' ) ) {
+
+				materialTextureBindings.push( {
+					binding: runtimeBinding,
+					artifact,
+					groupName: group.name || '',
+					bindingName: descriptor.name || '',
+					source: planSource,
+					material,
+				} );
+
+			}
+
 			// TSL `reflector()` bindings: each frame `ReflectorBaseNode.updateBefore`
 			// renders the scene from a mirrored camera into a per-camera RT and
 			// reassigns `textureNode.value`. The captured uuid points at the
@@ -1173,6 +1301,7 @@ function hydrateRuntimeBindings( artifact, material ) {
 				viewportTextureBindings.push( {
 					binding: runtimeBinding,
 					generateMipmaps: planSource.generateMipmaps !== false,
+					isDepth: planSource.isDepth === true || shaderDeclaresDepthTexture( artifact, descriptor.name || '' ),
 				} );
 
 			}
@@ -1183,7 +1312,7 @@ function hydrateRuntimeBindings( artifact, material ) {
 
 	}
 
-	return { bindings: groups, uniformBuffers, shadowDepthBindings, materialDepthBindings, artifactTextureBindings, viewportTextureBindings, reflectorTextureBindings };
+	return { bindings: groups, uniformBuffers, shadowDepthBindings, materialDepthBindings, artifactTextureBindings, materialTextureBindings, viewportTextureBindings, reflectorTextureBindings, clippingUniformBuffers };
 
 }
 
@@ -1304,6 +1433,7 @@ function createShadowDepthRebinder( entries /* , artifact */ ) {
 			for ( const entry of entries ) {
 
 				let liveTexture = null;
+				let light = null;
 
 				if ( entry.fromMaterialGraph ) {
 
@@ -1320,7 +1450,7 @@ function createShadowDepthRebinder( entries /* , artifact */ ) {
 				} else {
 
 					if ( ! scene ) continue;
-					const light = findShadowLight( scene, entry );
+					light = findShadowLight( scene, entry );
 					if ( ! light || ! light.shadow || ! light.shadow.map ) continue;
 
 					const map = light.shadow.map;
@@ -1335,39 +1465,56 @@ function createShadowDepthRebinder( entries /* , artifact */ ) {
 
 				if ( ! liveTexture ) continue;
 				if ( ! textureMatchesShaderBinding( entry.artifact, entry.bindingName, liveTexture ) ) continue;
-				const compareFunction = liveTexture.compareFunction !== null && liveTexture.compareFunction !== undefined ? liveTexture.compareFunction :
-					frame && frame.renderer && frame.renderer.reversedDepthBuffer ? GreaterEqualCompare : LessEqualCompare;
-				if ( entry.fromMaterialGraph !== true && entry.vsm !== true && liveTexture.isDepthTexture === true && liveTexture.compareFunction !== compareFunction ) {
+					const shadowCompareFunction = Number.isFinite( liveTexture.__tslpShadowCompareFunction ) ? liveTexture.__tslpShadowCompareFunction : null;
+					const rendererCompareFunction = frame && frame.renderer && frame.renderer.reversedDepthBuffer ? GreaterEqualCompare : LessEqualCompare;
+					const compareFunction = entry.fromMaterialGraph !== true && entry.vsm !== true && liveTexture.isDepthTexture === true
+						? shadowCompareFunction ?? ( liveTexture.compareFunction !== null && liveTexture.compareFunction !== undefined ? liveTexture.compareFunction : rendererCompareFunction )
+						: liveTexture.compareFunction !== null && liveTexture.compareFunction !== undefined ? liveTexture.compareFunction : rendererCompareFunction;
+					if ( entry.fromMaterialGraph !== true && entry.vsm !== true && liveTexture.isDepthTexture === true && liveTexture.compareFunction !== compareFunction ) {
 
 					liveTexture.compareFunction = compareFunction;
 					liveTexture.needsUpdate = true;
 
 				}
 
-				let changed = false;
-				if ( liveTexture !== entry.binding.texture ) {
-
-					entry.binding.texture = liveTexture;
-					changed = true;
-
-				}
-
 				const renderer = frame && frame.renderer ? frame.renderer : null;
 				const data = renderer && renderer.backend ? renderer.backend.get( liveTexture ) : null;
 				const gpuTexture = data ? data.texture : null;
-				if ( gpuTexture ) {
+				let changed = rebindTextureBindingTargets( entry.binding, liveTexture );
+				let targetCount = 0;
 
-					const prev = lastSeen.get( entry.binding );
-					lastSeen.set( entry.binding, gpuTexture );
-					if ( prev !== undefined && prev !== gpuTexture ) changed = true;
+				for ( const target of textureBindingTargets( entry.binding ) ) {
+
+					targetCount ++;
+					if ( ! gpuTexture ) continue;
+
+					const prev = lastSeen.get( target );
+					lastSeen.set( target, gpuTexture );
+					if ( prev !== gpuTexture ) changed = true;
 
 				}
 
+				recordShadowBindingDiagnostic( {
+					bindingName: entry.bindingName,
+					lightIndex: entry.lightIndex,
+					lightUuid: entry.lightUuid,
+					light: lightDiagnosticShape( light ),
+					textureUuid: liveTexture.uuid || null,
+					isDepthTexture: liveTexture.isDepthTexture === true,
+					compareFunction: liveTexture.compareFunction ?? null,
+					hasGpuTexture: !! gpuTexture,
+					gpuTexSize: gpuTexture ? [ gpuTexture.width || 0, gpuTexture.height || 0 ] : null,
+					gpuTexFormat: gpuTexture ? ( gpuTexture.format || null ) : null,
+					dataInitialized: !! ( data && data.initialized ),
+					sharedFromFull: !! ( data && data.__tslpSharedShadowGPUTexture && data.__tslpSharedShadowGPUTexture === gpuTexture ),
+					changed,
+					sameBindingTexture: entry.binding.texture === liveTexture,
+					targetCount,
+				} );
+
 				if ( changed ) {
 
-					if ( entry.binding.groupNode ) entry.binding.groupNode.version ++;
-					entry.binding.version = - 1;
-					entry.binding.generation = null;
+					for ( const target of textureBindingTargets( entry.binding ) ) invalidateTextureBindingTarget( target );
 
 				}
 
@@ -1423,6 +1570,113 @@ function findReflectorBaseNodeInMaterial( material, reflectorIndex = -1 ) {
 	if ( list.length === 0 ) return null;
 	if ( Number.isInteger( reflectorIndex ) && reflectorIndex >= 0 && reflectorIndex < list.length ) return list[ reflectorIndex ];
 	return list[ 0 ];
+
+}
+
+function installRebindableTextureBindingClone( binding ) {
+
+	if ( ! binding || binding.__tslpRebindableClonePatched === true || typeof binding.clone !== 'function' ) return binding;
+	if ( binding.isSampledTexture !== true && binding.isSampler !== true ) return binding;
+
+	const originalClone = binding.clone;
+	const clones = new Set();
+	Object.defineProperty( binding, '__tslpRebindClones', {
+		value: clones,
+		configurable: true,
+	} );
+	Object.defineProperty( binding, '__tslpRebindableClonePatched', {
+		value: true,
+		configurable: true,
+	} );
+	binding.clone = function cloneRebindableTextureBinding() {
+
+		const cloned = originalClone.call( this );
+		clones.add( cloned );
+		Object.defineProperty( cloned, '__tslpRebindSource', {
+			value: binding,
+			configurable: true,
+		} );
+		return cloned;
+
+	};
+	return binding;
+
+}
+
+function textureBindingTargets( binding ) {
+
+	if ( ! binding ) return [];
+	const source = binding.__tslpRebindSource || binding;
+	const out = [ source ];
+	const clones = source.__tslpRebindClones;
+	if ( clones && typeof clones.forEach === 'function' ) {
+
+		clones.forEach( ( clone ) => {
+
+			if ( clone && ! out.includes( clone ) ) out.push( clone );
+
+		} );
+
+	}
+	return out;
+
+}
+
+function invalidateTextureBindingTarget( binding ) {
+
+	if ( ! binding ) return;
+	if ( binding.groupNode ) binding.groupNode.version ++;
+	binding.version = - 1;
+	binding.generation = null;
+
+}
+
+function rebindTextureBindingTargets( binding, texture ) {
+
+	let changed = false;
+	for ( const target of textureBindingTargets( binding ) ) {
+
+		if ( target.texture !== texture ) {
+
+			target.texture = texture;
+			changed = true;
+
+		}
+
+		if ( changed ) invalidateTextureBindingTarget( target );
+
+	}
+	return changed;
+
+}
+
+function textureBindingResourceSignature( target, renderer ) {
+
+	const texture = target && target.texture || null;
+	const backend = renderer && renderer.backend && typeof renderer.backend.get === 'function' ? renderer.backend : null;
+	const data = texture && backend ? backend.get( texture ) : null;
+	return {
+		texture,
+		gpuTexture: data ? data.texture || null : null,
+		version: texture && Number.isFinite( texture.version ) ? texture.version : null,
+	};
+
+}
+
+function invalidateOnTextureResourceChange( target, renderer, lastSeen ) {
+
+	if ( ! target || ! lastSeen ) return;
+	const current = textureBindingResourceSignature( target, renderer );
+	const previous = lastSeen.get( target );
+	lastSeen.set( target, current );
+	if ( ! previous ) return;
+	if ( previous.texture !== current.texture ||
+		previous.gpuTexture !== current.gpuTexture ||
+		previous.version !== current.version ) {
+
+		invalidateTextureBindingTarget( target );
+
+	}
 
 }
 
@@ -1505,12 +1759,9 @@ function createReflectorTextureRebinder( entries ) {
 				const rt = resolveReflectorRenderTarget( baseNode, camera );
 
 				const liveTexture = rt && rt.texture || baseNode.textureNode && baseNode.textureNode.value;
-				if ( ! liveTexture || liveTexture === entry.binding.texture ) continue;
+				if ( ! liveTexture ) continue;
 
-				entry.binding.texture = liveTexture;
-				if ( entry.binding.groupNode ) entry.binding.groupNode.version ++;
-				entry.binding.version = - 1;
-				entry.binding.generation = null;
+				rebindTextureBindingTargets( entry.binding, liveTexture );
 
 			}
 
@@ -1536,7 +1787,7 @@ function createReflectorTextureRebinder( entries ) {
  * The copy is dedup'd by render id so multiple transmissive bindings in the
  * same frame trigger only one copyFramebufferToTexture per variant.
  *
- * @param {Array<{binding: Object, generateMipmaps: boolean}>} entries
+ * @param {Array<{binding: Object, generateMipmaps: boolean, isDepth: boolean}>} entries
  * @return {Object}
  */
 function createViewportTextureRebinder( entries ) {
@@ -1548,7 +1799,8 @@ function createViewportTextureRebinder( entries ) {
 	// reference the same viewport-texture variant.
 	let mipNode = null;
 	let plainNode = null;
-	const lastCopyRenderId = { mip: -1, plain: -1 };
+	let depthNode = null;
+	const lastCopyRenderId = { mip: -1, plain: -1, depth: -1 };
 
 	return {
 		getUpdateBeforeType() {
@@ -1567,12 +1819,14 @@ function createViewportTextureRebinder( entries ) {
 
 			for ( const entry of entries ) {
 
-				const variant = entry.generateMipmaps ? 'mip' : 'plain';
-				let node = variant === 'mip' ? mipNode : plainNode;
+				const variant = entry.isDepth ? 'depth' : entry.generateMipmaps ? 'mip' : 'plain';
+				let node = variant === 'depth' ? depthNode : variant === 'mip' ? mipNode : plainNode;
 				if ( ! node ) {
 
-					node = variant === 'mip' ? viewportMipTexture() : viewportTexture();
-					if ( variant === 'mip' ) mipNode = node; else plainNode = node;
+					node = variant === 'depth' ? viewportDepthTexture() : variant === 'mip' ? viewportMipTexture() : viewportTexture();
+					if ( variant === 'depth' ) depthNode = node;
+					else if ( variant === 'mip' ) mipNode = node;
+					else plainNode = node;
 
 				}
 
@@ -1596,10 +1850,49 @@ function createViewportTextureRebinder( entries ) {
 				}
 
 				const liveTex = node.value;
-				if ( ! liveTex || liveTex === entry.binding.texture ) continue;
+				if ( ! liveTex ) continue;
 
-				entry.binding.texture = liveTex;
-				if ( entry.binding.groupNode ) entry.binding.groupNode.version ++;
+				rebindTextureBindingTargets( entry.binding, liveTex );
+
+			}
+
+		},
+	};
+
+}
+
+function createMaterialTextureRebinder( entries ) {
+
+	const lastSeen = new WeakMap();
+
+	return {
+		getUpdateBeforeType() {
+
+			return 'render';
+
+		},
+		updateReference() {
+
+			return this;
+
+		},
+		updateBefore( frame ) {
+
+			const renderer = frame && frame.renderer ? frame.renderer : null;
+
+			for ( const entry of entries ) {
+
+				const binding = entry && entry.binding;
+				if ( ! binding ) continue;
+
+				const candidate = resolveTextureBinding( entry.artifact, entry.groupName, entry.bindingName, entry.material );
+				if ( candidate ) rebindTextureBindingTargets( binding, candidate );
+
+				for ( const target of textureBindingTargets( binding ) ) {
+
+					invalidateOnTextureResourceChange( target, renderer, lastSeen );
+
+				}
 
 			}
 
@@ -1635,17 +1928,13 @@ function createArtifactTextureRebinder( entries ) {
 				const binding = entry.binding;
 				if ( ! binding ) continue;
 
-				const currentTex = binding.texture;
 				const candidate = resolveTextureBinding( entry.artifact, entry.groupName, entry.bindingName, entry.material );
-				if ( candidate && candidate !== currentTex ) {
+				if ( candidate ) {
 
 					// Sampler's `texture` setter resets version=-1 and
 					// generation=null automatically. SampledTexture does not, so
 					// also bump below to make the bind-group cache rebuild.
-					binding.texture = candidate;
-					if ( binding.groupNode ) binding.groupNode.version ++;
-					binding.version = - 1;
-					binding.generation = null;
+					rebindTextureBindingTargets( binding, candidate );
 
 				}
 
@@ -1654,25 +1943,27 @@ function createArtifactTextureRebinder( entries ) {
 				// after the bind group was built). Force three.js to rebuild
 				// the bind group on the next draw.
 				if ( ! renderer || ! renderer.backend ) continue;
-				const tex = binding.texture;
-				if ( ! tex ) continue;
-				const data = renderer.backend.get( tex );
-				const gpuTexture = data ? data.texture : null;
-				if ( ! gpuTexture ) continue;
+				for ( const target of textureBindingTargets( binding ) ) {
 
-				const prev = lastSeen.get( binding );
-				if ( prev === gpuTexture ) continue;
+					const tex = target.texture;
+					if ( ! tex ) continue;
+					const data = renderer.backend.get( tex );
+					const gpuTexture = data ? data.texture : null;
+					if ( ! gpuTexture ) continue;
 
-				lastSeen.set( binding, gpuTexture );
+					const prev = lastSeen.get( target );
+					if ( prev === gpuTexture ) continue;
 
-				// First observation: just record. The bind group hasn't been
-				// built yet against this binding, so there's no stale view to
-				// invalidate.
-				if ( prev === undefined ) continue;
+					lastSeen.set( target, gpuTexture );
 
-				if ( binding.groupNode ) binding.groupNode.version ++;
-				binding.version = - 1;
-				binding.generation = null;
+					// First observation: just record. The bind group hasn't been
+					// built yet against this binding, so there's no stale view to
+					// invalidate.
+					if ( prev === undefined ) continue;
+
+					invalidateTextureBindingTarget( target );
+
+				}
 
 			}
 
@@ -1693,19 +1984,7 @@ function createArtifactTextureRebinder( entries ) {
  */
 function findShadowLight( scene, entry ) {
 
-	if ( entry.lightUuid && typeof scene.traverse === 'function' ) {
-
-		let found = null;
-		scene.traverse( ( o ) => {
-
-			if ( found ) return;
-			if ( o && o.isLight === true && o.uuid === entry.lightUuid ) found = o;
-
-		} );
-		if ( found ) return found;
-
-	}
-	return findLightInScene( scene, entry.lightIndex );
+	return findLightBySource( scene, entry );
 
 }
 
@@ -1763,20 +2042,30 @@ function createRuntimeBinding( artifact, group, descriptor, material, groupNode 
 
 	if ( descriptor.kind === 'uniform-buffer' ) {
 
-		const byteLength = Math.max(
-			descriptor.byteLength || 0,
-			findUniformGroupByteLength( artifact, group.name, descriptor.name ),
-			findUniformGroupRequiredByteLength( artifact, group.name, descriptor.name )
-		);
+		const ubPlanEntry = resolvePlanBufferUniform( artifact, group.name, name );
+		const planBufferByteLength = ubPlanEntry
+			? Math.max(
+				ubPlanEntry.byteLength || 0,
+				ubPlanEntry.valueSnapshot && ubPlanEntry.valueSnapshot.length ? ubPlanEntry.valueSnapshot.length * 4 : 0
+			)
+			: 0;
+		const standaloneUniformBuffer = /^UniformBuffer_/.test( name ) && name !== group.name;
+		const flatUniformBuffer = standaloneUniformBuffer || !! ubPlanEntry;
+		const byteLength = flatUniformBuffer
+			? Math.max( descriptor.byteLength || 0, planBufferByteLength, 16 )
+			: Math.max(
+				descriptor.byteLength || 0,
+				findUniformGroupByteLength( artifact, group.name, descriptor.name ),
+				findUniformGroupRequiredByteLength( artifact, group.name, descriptor.name )
+			);
 		const buffer = new Float32Array( Math.max( 4, Math.ceil( byteLength / 4 ) ) );
-		seedUniformBufferSnapshots( artifact, group.name, name, buffer );
+		if ( ! flatUniformBuffer ) seedUniformBufferSnapshots( artifact, group.name, name, buffer );
 
 		// Seed a NodeUniformBuffer (flat typed-array UBO used by FXAA, DoF,
 		// and similar post-process shaders) from its compile-time snapshot.
 		// These buffers have no slot decomposition in the plan, so the normal
 		// per-slot write path skips them. A one-time snapshot seed at
 		// least gives correct initial parameters for static post-process.
-		const ubPlanEntry = resolvePlanBufferUniform( artifact, group.name, name );
 		if ( ubPlanEntry ) {
 
 			const snap = ubPlanEntry._liveArray || ubPlanEntry.valueSnapshot;
@@ -1813,6 +2102,7 @@ function createRuntimeBinding( artifact, group, descriptor, material, groupNode 
 		else binding = new SampledTexture( name, texture );
 		binding.visibility = descriptor.visibility | 0;
 		binding.groupNode = groupNode;
+		installRebindableTextureBindingClone( binding );
 		return binding;
 
 	}
@@ -1823,6 +2113,7 @@ function createRuntimeBinding( artifact, group, descriptor, material, groupNode 
 		const binding = new Sampler( name, texture );
 		binding.visibility = descriptor.visibility | 0;
 		binding.groupNode = groupNode;
+		installRebindableTextureBindingClone( binding );
 		return binding;
 
 	}
@@ -1969,6 +2260,7 @@ function buildLtcTexture( artifact, source ) {
 function applyTextureSourceSettings( texture, source ) {
 
 	if ( ! texture || ! source ) return texture;
+	if ( texture.isRenderTargetTexture === true || texture.isFramebufferTexture === true ) return texture;
 	let changed = false;
 	for ( const prop of [ 'mapping', 'wrapS', 'wrapT', 'magFilter', 'minFilter', 'anisotropy' ] ) {
 
@@ -2009,6 +2301,7 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 	const group = plan.find( ( item ) => item.name === groupName );
 	const texture = group && ( group.textures || [] ).find( ( item ) => item.name === bindingName );
 	const source = texture && texture.source || {};
+	const textureTypeHint = resolvePlanTextureTypeHint( artifact, group, texture, source, bindingName );
 
 	// Shadow depth textures: extractor tags these with `kind: 'depth.texture'`
 	// and a `lightIndex` for the owning AnalyticLightNode. We can't resolve
@@ -2053,7 +2346,7 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 	// layout validates on the first frame (before updateBefore runs).
 	if ( source.kind === 'viewport.texture' ) {
 
-		return makeViewportFallback();
+		return makeViewportFallback( artifact, bindingName, source );
 
 	}
 
@@ -2074,12 +2367,12 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 		// sidecar refs. The replay harness may seed _textureRefs with conservative
 		// 1x1 fallbacks before async loaders finish; identity lookup lets later
 		// TextureLoader / light.map registrations replace those stubs.
-			const byIdent = lookupLiveTextureByIdentity( source );
-			if ( byIdent && textureMatchesShaderBinding( artifact, bindingName, byIdent ) ) {
+		const byIdent = lookupLiveTextureByIdentity( source );
+		if ( byIdent && textureMatchesShaderBinding( artifact, bindingName, byIdent ) ) {
 
-				return applyTextureSourceSettings( byIdent, source );
+			return applyTextureSourceSettings( byIdent, source );
 
-			}
+		}
 
 		if ( artifact._textureRefs ) {
 
@@ -2136,7 +2429,7 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 
 			}
 
-			return textureFromSnapshot( artifact, source.textureUuid, source.snapshot, bindingName );
+			return textureFromSnapshot( artifact, source.textureUuid, source.snapshot, bindingName, textureTypeHint );
 
 		}
 
@@ -2166,18 +2459,58 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 
 }
 
+function textureBindingNameForSampler( bindingName ) {
+
+	return typeof bindingName === 'string' && bindingName.endsWith( '_sampler' )
+		? bindingName.slice( 0, - '_sampler'.length )
+		: bindingName;
+
+}
+
+function resolvePlanTextureTypeHint( artifact, group, textureEntry, source, bindingName ) {
+
+	const textureBindingName = textureBindingNameForSampler( bindingName );
+	const shaderType = inferTextureTypeFromShader( artifact, textureBindingName );
+	const explicit = textureEntry && textureEntry.textureType && textureEntry.textureType !== 'unknown' ? textureEntry.textureType
+		: source && source.textureType && source.textureType !== 'unknown' ? source.textureType
+			: source && source.textureDimension && source.textureDimension !== 'unknown' ? source.textureDimension
+				: null;
+	if ( explicit ) return shaderType && shaderType !== explicit ? shaderType : explicit;
+
+	if ( textureBindingName !== bindingName && group && Array.isArray( group.textures ) ) {
+
+		const paired = group.textures.find( ( item ) => item && item.name === textureBindingName );
+		if ( paired && paired.textureType && paired.textureType !== 'unknown' ) return shaderType && shaderType !== paired.textureType ? shaderType : paired.textureType;
+		const pairedSource = paired && paired.source || null;
+		if ( pairedSource && pairedSource.textureType && pairedSource.textureType !== 'unknown' ) return shaderType && shaderType !== pairedSource.textureType ? shaderType : pairedSource.textureType;
+		if ( pairedSource && pairedSource.textureDimension && pairedSource.textureDimension !== 'unknown' ) return shaderType && shaderType !== pairedSource.textureDimension ? shaderType : pairedSource.textureDimension;
+
+	}
+
+	return shaderType;
+
+}
+
 function shaderDeclaresDepthTexture( artifact, bindingName ) {
 
 	const wgsl = `${ artifact.vertexShader || '' }\n${ artifact.fragmentShader || '' }\n${ artifact.computeShader || '' }`;
-	const escaped = bindingName.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
+	const escaped = textureBindingNameForSampler( bindingName ).replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
 	return new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth`, 'm' ).test( wgsl );
+
+}
+
+function shaderDeclaresComparisonSampler( artifact, bindingName ) {
+
+	const wgsl = `${ artifact.vertexShader || '' }\n${ artifact.fragmentShader || '' }\n${ artifact.computeShader || '' }`;
+	const escaped = String( bindingName || '' ).replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
+	return new RegExp( `var\\s+${ escaped }\\s*:\\s*sampler_comparison`, 'm' ).test( wgsl );
 
 }
 
 function shaderDeclaresCubeTexture( artifact, bindingName ) {
 
 	const wgsl = `${ artifact.vertexShader || '' }\n${ artifact.fragmentShader || '' }\n${ artifact.computeShader || '' }`;
-	const escaped = bindingName.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
+	const escaped = textureBindingNameForSampler( bindingName ).replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
 	return new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_(?:depth_)?cube`, 'm' ).test( wgsl );
 
 }
@@ -2213,40 +2546,60 @@ function isLikelyMultisampledTexture( texture ) {
 function shaderDeclaresMultisampledTexture( artifact, bindingName ) {
 
 	const wgsl = `${ artifact.vertexShader || '' }\n${ artifact.fragmentShader || '' }\n${ artifact.computeShader || '' }`;
-	const escaped = bindingName.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
+	const escaped = textureBindingNameForSampler( bindingName ).replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
 	return new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_(?:depth_)?multisampled_2d`, 'm' ).test( wgsl );
 
 }
 function shaderDeclaresArrayTexture( artifact, bindingName ) {
 
 	const wgsl = `${ artifact.vertexShader || '' }\n${ artifact.fragmentShader || '' }\n${ artifact.computeShader || '' }`;
-	const escaped = bindingName.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
+	const escaped = textureBindingNameForSampler( bindingName ).replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
 	return new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_(?:depth_)?2d_array`, 'm' ).test( wgsl );
 
 }
-function textureFromSnapshot( artifact, uuid, snapshot, bindingName = null ) {
 
-	if ( ! snapshot || ! Array.isArray( snapshot.data ) || ! snapshot.width || ! snapshot.height ) return fallbackTexture;
-	const key = uuid || `${ snapshot.width }x${ snapshot.height }:${ snapshot.data.length }`;
+function artifactUsesClippingUniformBuffers( artifact ) {
+
+	const wgsl = `${ artifact && artifact.vertexShader || '' }\n${ artifact && artifact.fragmentShader || '' }`;
+	return /\bclip_distances\b|\bhw_clip_distances\b|\bclipped\b|\bclipOpacity\b|\bdistanceToPlane\b/.test( wgsl );
+
+}
+
+function textureFromSnapshot( artifact, uuid, snapshot, bindingName = null, textureTypeHint = null ) {
+
+	if ( ! snapshot || ! Array.isArray( snapshot.data ) || ! snapshot.width || ! snapshot.height ) {
+
+		return artifact && bindingName ? fallbackTextureForBinding( artifact, bindingName ) : fallbackTexture;
+
+	}
+	const textureType = textureTypeHint && textureTypeHint !== 'unknown' ? textureTypeHint :
+		bindingName ? inferTextureTypeFromShader( artifact, bindingName ) : null;
+	const wants3DTexture = textureType === '3d';
+	const wantsArrayTexture = textureType === '2d-array';
+	const depth = ( wants3DTexture || wantsArrayTexture ) ?
+		snapshot.depth || snapshot.layers || snapshot.depthOrArrayLayers || inferSnapshotArrayDepth( snapshot ) :
+		1;
+	const dimensionKey = wants3DTexture ? '3d' : wantsArrayTexture ? '2d-array' : '2d';
+	const keyBase = uuid || `${ snapshot.width }x${ snapshot.height }:${ snapshot.data.length }`;
+	const key = `${ keyBase }:${ dimensionKey }:${ depth }`;
 	if ( ! artifact._textureSnapshotCache ) Object.defineProperty( artifact, '_textureSnapshotCache', { value: new Map(), enumerable: false } );
 	if ( artifact._textureSnapshotCache.has( key ) ) return artifact._textureSnapshotCache.get( key );
 
 	const TypeArray = resolveTypedArrayCtor( snapshot.arrayType || 'Uint8Array' );
 	const data = new TypeArray( snapshot.data );
-	const wantsArrayTexture = bindingName && shaderDeclaresArrayTexture( artifact, bindingName );
-	const depth = wantsArrayTexture ? snapshot.depth || inferSnapshotArrayDepth( snapshot ) : 1;
-	const texture = wantsArrayTexture ? new DataArrayTexture( data, snapshot.width, snapshot.height, depth ) :
-		new DataTexture(
-			data,
-			snapshot.width,
-			snapshot.height,
-			snapshot.format || RGBAFormat,
-			snapshot.type || UnsignedByteType
-		);
-	if ( wantsArrayTexture ) {
+	const texture = wants3DTexture ? new Data3DTexture( data, snapshot.width, snapshot.height, depth ) :
+		wantsArrayTexture ? new DataArrayTexture( data, snapshot.width, snapshot.height, depth ) :
+			new DataTexture(
+				data,
+				snapshot.width,
+				snapshot.height,
+				snapshot.format || RGBAFormat,
+				snapshot.type || UnsignedByteType
+			);
+	if ( wants3DTexture || wantsArrayTexture ) {
 
-		if ( snapshot.format ) texture.format = snapshot.format;
-		if ( snapshot.type ) texture.type = snapshot.type;
+		texture.format = snapshot.format || RGBAFormat;
+		texture.type = snapshot.type || UnsignedByteType;
 
 	}
 	if ( snapshot.colorSpace !== undefined ) texture.colorSpace = snapshot.colorSpace;
@@ -2312,7 +2665,8 @@ function channelsForTextureFormat( format ) {
 function fallbackTextureForBinding( artifact, bindingName ) {
 
 	const wgsl = `${ artifact.vertexShader || '' }\n${ artifact.fragmentShader || '' }\n${ artifact.computeShader || '' }`;
-	const escaped = bindingName.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
+	if ( shaderDeclaresComparisonSampler( artifact, bindingName ) ) return fallbackComparisonDepthTexture;
+	const escaped = textureBindingNameForSampler( bindingName ).replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
 	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth_cube`, 'm' ).test( wgsl ) ) return fallbackDepthCubeTexture;
 	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth_2d_array`, 'm' ).test( wgsl ) ) return fallbackDepthArrayTexture;
 	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth`, 'm' ).test( wgsl ) ) {
@@ -2327,7 +2681,7 @@ function fallbackTextureForBinding( artifact, bindingName ) {
 	if ( /sampler/i.test( bindingName ) ) {
 
 		const textureName = bindingName.replace( /_sampler$/, '' );
-		if ( textureName !== bindingName && shaderDeclaresDepthTexture( artifact, textureName ) ) return fallbackDepthTexture;
+		if ( textureName !== bindingName && shaderDeclaresDepthTexture( artifact, textureName ) ) return shaderDeclaresComparisonSampler( artifact, bindingName ) ? fallbackComparisonDepthTexture : fallbackDepthTexture;
 
 	}
 	return fallbackTexture;
@@ -2337,7 +2691,7 @@ function fallbackTextureForBinding( artifact, bindingName ) {
 function inferTextureTypeFromShader( artifact, bindingName ) {
 
 	const wgsl = `${ artifact.vertexShader || '' }\n${ artifact.fragmentShader || '' }\n${ artifact.computeShader || '' }`;
-	const escaped = bindingName.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
+	const escaped = textureBindingNameForSampler( bindingName ).replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
 	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth_cube`, 'm' ).test( wgsl ) ) return 'cube';
 	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_cube`, 'm' ).test( wgsl ) ) return 'cube';
 	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_3d`, 'm' ).test( wgsl ) ) return '3d';
@@ -2490,6 +2844,118 @@ function findUniformGroupShared( artifact, groupName, bindingName ) {
 
 	const group = findUniformGroup( artifact, groupName, bindingName );
 	return !! ( group && group.shared );
+
+}
+
+function collectClippingGroupsForObject( object, shadowPass = false ) {
+
+	const groups = [];
+	let cursor = object && object.parent || null;
+	while ( cursor ) {
+
+		if ( cursor.isClippingGroup === true && cursor.enabled !== false && ( ! shadowPass || cursor.clipShadows === true ) ) groups.unshift( cursor );
+		cursor = cursor.parent || null;
+
+	}
+	return groups;
+
+}
+
+function projectClippingPlanes( planes, camera ) {
+
+	const count = Array.isArray( planes ) ? planes.length : 0;
+	const out = new Float32Array( count * 4 );
+	if ( count === 0 || ! camera || ! camera.matrixWorldInverse ) return out;
+	_clipNormalMatrix.getNormalMatrix( camera.matrixWorldInverse );
+	for ( let i = 0; i < count; i ++ ) {
+
+		const plane = planes[ i ];
+		if ( ! plane || ! plane.normal ) continue;
+		_clipPlane.copy( plane ).applyMatrix4( camera.matrixWorldInverse, _clipNormalMatrix );
+		const normal = _clipPlane.normal;
+		const offset = i * 4;
+		out[ offset + 0 ] = - normal.x;
+		out[ offset + 1 ] = - normal.y;
+		out[ offset + 2 ] = - normal.z;
+		out[ offset + 3 ] = _clipPlane.constant;
+
+	}
+	return out;
+
+}
+
+function clippingPlaneSetsForFrame( frame, material ) {
+
+	const object = frame && frame.object || material && material.__tslpPrecompileObject || null;
+	const camera = frame && frame.camera || null;
+	if ( ! object || ! camera ) return null;
+	const groups = collectClippingGroupsForObject( object, frame && frame.scene && frame.scene.overrideMaterial && frame.scene.overrideMaterial.isShadowPassMaterial === true );
+	if ( groups.length === 0 ) return null;
+	const unionPlanes = [];
+	const intersectionPlanes = [];
+	for ( const group of groups ) {
+
+		const planes = Array.isArray( group.clippingPlanes ) ? group.clippingPlanes : [];
+		if ( planes.length === 0 ) continue;
+		if ( group.clipIntersection === true ) intersectionPlanes.push( ...planes );
+		else unionPlanes.push( ...planes );
+
+	}
+	return {
+		union: projectClippingPlanes( unionPlanes, camera ),
+		intersection: projectClippingPlanes( intersectionPlanes, camera ),
+	};
+
+}
+
+function selectClippingPlaneArray( entry, sets ) {
+
+	if ( ! entry || ! sets ) return null;
+	const count = Math.max( 0, ( entry.byteLength / 16 ) | 0 );
+	if ( count === 0 ) return null;
+	const unionCount = sets.union.length / 4;
+	const intersectionCount = sets.intersection.length / 4;
+	const vertexOnly = ( entry.visibility & 1 ) !== 0 && ( entry.visibility & 2 ) === 0;
+	const fragmentOnly = ( entry.visibility & 2 ) !== 0 && ( entry.visibility & 1 ) === 0;
+	if ( vertexOnly && unionCount === count ) return sets.union;
+	if ( fragmentOnly && intersectionCount === count ) return sets.intersection;
+	if ( unionCount === count && intersectionCount !== count ) return sets.union;
+	if ( intersectionCount === count && unionCount !== count ) return sets.intersection;
+	if ( fragmentOnly && unionCount === count ) return sets.union;
+	if ( vertexOnly && intersectionCount === count ) return sets.intersection;
+	return null;
+
+}
+
+function createClippingUniformUpdateNode( entries, material ) {
+
+	return {
+		getUpdateType() {
+
+			return 'object';
+
+		},
+		updateReference() {
+
+			return this;
+
+		},
+		update( frame ) {
+
+			const sets = clippingPlaneSetsForFrame( frame, frame && frame.material || material );
+			for ( const entry of entries ) {
+
+				const binding = entry && entry.binding;
+				if ( ! binding || ! binding.buffer || typeof binding.buffer.fill !== 'function' ) continue;
+				const values = selectClippingPlaneArray( entry, sets );
+				binding.buffer.fill( 0 );
+				if ( values ) binding.buffer.set( values.subarray ? values.subarray( 0, binding.buffer.length ) : values.slice( 0, binding.buffer.length ) );
+				if ( binding.groupNode ) binding.groupNode.version ++;
+
+			}
+
+		},
+	};
 
 }
 
@@ -2707,6 +3173,7 @@ function findShadowMatrixLightForSlot( group, slot, frame ) {
 			seenLightIndices.add( siblingSource.lightIndex );
 			shadowGroups.push( {
 				lightIndex: siblingSource.lightIndex,
+				lightUuid: siblingSource.lightUuid || null,
 				offset: sibling.offset ?? sibling.byteOffset ?? Number.POSITIVE_INFINITY,
 			} );
 
@@ -2728,13 +3195,33 @@ function findShadowMatrixLightForSlot( group, slot, frame ) {
 	const matrixIndex = liveShadowMatrices.indexOf( slot );
 	if ( matrixIndex >= 0 && shadowGroups.length >= liveShadowMatrices.length ) {
 
-		return findLightInScene( frame.scene, shadowGroups[ matrixIndex ].lightIndex );
+		const light = findLightBySource( frame.scene, shadowGroups[ matrixIndex ] );
+		recordLightLinkDiagnostic( {
+			kind: 'light.shadowMatrix',
+			slotOffset: slot.offset ?? slot.byteOffset ?? 0,
+			source: shadowGroups[ matrixIndex ],
+			light: lightDiagnosticShape( light ),
+			matrix: light && light.shadow && light.shadow.matrix && light.shadow.matrix.elements ? light.shadow.matrix.elements.slice() : null,
+		} );
+		return light;
 
 	}
 
 	const slotOffset = slot.offset ?? slot.byteOffset ?? 0;
 	const nextShadowGroup = shadowGroups.find( ( entry ) => entry.offset > slotOffset );
-	if ( nextShadowGroup ) return findLightInScene( frame.scene, nextShadowGroup.lightIndex );
+	if ( nextShadowGroup ) {
+
+		const light = findLightBySource( frame.scene, nextShadowGroup );
+		recordLightLinkDiagnostic( {
+			kind: 'light.shadowMatrix',
+			slotOffset,
+			source: nextShadowGroup,
+			light: lightDiagnosticShape( light ),
+			matrix: light && light.shadow && light.shadow.matrix && light.shadow.matrix.elements ? light.shadow.matrix.elements.slice() : null,
+		} );
+		return light;
+
+	}
 	return null;
 
 }
@@ -2809,8 +3296,15 @@ function writeMaterialValue( view, offset, material, source, kind, dtype ) {
  */
 function writeLightValue( view, offset, kind, source, frame ) {
 
-	const lightIndex = source && Number.isInteger( source.lightIndex ) ? source.lightIndex : 0;
-	const light = frame && frame.scene ? findLightInScene( frame.scene, lightIndex ) : null;
+	const light = frame && frame.scene ? findLightBySource( frame.scene, source ) : null;
+	recordLightLinkDiagnostic( {
+		kind,
+		source: source ? {
+			lightIndex: Number.isInteger( source.lightIndex ) ? source.lightIndex : null,
+			lightUuid: source.lightUuid || null,
+		} : null,
+		light: lightDiagnosticShape( light ),
+	} );
 
 	if ( ! light ) {
 
@@ -2893,6 +3387,12 @@ function writeLightValue( view, offset, kind, source, frame ) {
 			return;
 		case 'light.shadowRadius':
 			writeNumber( view, offset, light.shadow ? light.shadow.radius : null, source.valueSnapshot );
+			return;
+		case 'light.shadowCameraNear':
+			writeNumber( view, offset, light.shadow && light.shadow.camera ? light.shadow.camera.near : null, source.valueSnapshot );
+			return;
+		case 'light.shadowCameraFar':
+			writeNumber( view, offset, light.shadow && light.shadow.camera ? light.shadow.camera.far : null, source.valueSnapshot );
 			return;
 		case 'light.shadowMapSize':
 			writeVec2( view, offset, light.shadow ? light.shadow.mapSize : null, source.valueSnapshot );

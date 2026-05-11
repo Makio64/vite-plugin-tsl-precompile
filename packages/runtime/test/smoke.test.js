@@ -155,22 +155,22 @@ test( 'runtime hydrator pairs anonymous shadow matrices with their light blocks'
 			byteLength: 256,
 			slots: [
 				{ offset: 0, dtype: 'mat4', source: { kind: 'uniform.live', name: null, valueSnapshot: { type: 'mat4', data: new Array( 16 ).fill( - 1 ) } } },
-				{ offset: 64, dtype: 'number', source: { kind: 'light.shadowBias', lightIndex: 1, property: 'bias' } },
+				{ offset: 64, dtype: 'number', source: { kind: 'light.shadowBias', lightIndex: 1, lightUuid: 'light-a', property: 'bias' } },
 				{ offset: 128, dtype: 'mat4', source: { kind: 'uniform.live', name: null, valueSnapshot: { type: 'mat4', data: new Array( 16 ).fill( - 2 ) } } },
-				{ offset: 192, dtype: 'number', source: { kind: 'light.shadowBias', lightIndex: 2, property: 'bias' } },
+				{ offset: 192, dtype: 'number', source: { kind: 'light.shadowBias', lightIndex: 2, lightUuid: 'light-b', property: 'bias' } },
 			],
 		} ],
 	};
 	const state = hydrateNodeBuilderState( artifact );
 	const uniformBuffer = state.bindings[ 0 ].bindings[ 0 ];
-	const light1 = { isLight: true, shadow: { map: {}, matrix: makeMatrix( 100 ), bias: 0.1 } };
-	const light2 = { isLight: true, shadow: { map: {}, matrix: makeMatrix( 200 ), bias: 0.2 } };
+	const light1 = { isLight: true, uuid: 'light-a', shadow: { map: {}, matrix: makeMatrix( 100 ), bias: 0.1 } };
+	const light2 = { isLight: true, uuid: 'light-b', shadow: { map: {}, matrix: makeMatrix( 200 ), bias: 0.2 } };
 	const scene = {
 		traverse( visit ) {
 
 			visit( { isLight: true } );
-			visit( light1 );
 			visit( light2 );
+			visit( light1 );
 
 		},
 	};
@@ -182,6 +182,95 @@ test( 'runtime hydrator pairs anonymous shadow matrices with their light blocks'
 	assert.equal( view.getFloat32( 15 * 4, true ), 115 );
 	assert.equal( view.getFloat32( 128, true ), 200 );
 	assert.equal( view.getFloat32( 128 + 15 * 4, true ), 215 );
+
+} );
+
+test( 'runtime hydrator writes light uniforms by UUID before traversal index', () => {
+
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: '',
+		bindings: [ {
+			name: 'render',
+			bindings: [ { name: 'render', kind: 'uniform-buffer', visibility: 7, byteLength: 32 } ],
+		} ],
+		uniformPlan: [ {
+			name: 'render',
+			byteLength: 32,
+			slots: [
+				{ offset: 0, dtype: 'vec3', source: { kind: 'light.position', lightIndex: 1, lightUuid: 'spot-light', valueSnapshot: { type: 'vec3', data: [ - 1, - 1, - 1 ] } } },
+			],
+		} ],
+	};
+	const state = hydrateNodeBuilderState( artifact );
+	const uniformBuffer = state.bindings[ 0 ].bindings[ 0 ];
+	const wrongIndexLight = {
+		isLight: true,
+		uuid: 'directional-light',
+		matrixWorld: { elements: [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 9, 9, 9, 1 ] },
+	};
+	const spotLight = {
+		isLight: true,
+		uuid: 'spot-light',
+		matrixWorld: { elements: [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 3, 4, 1 ] },
+	};
+	const scene = {
+		traverse( visit ) {
+
+			visit( { isLight: true } );
+			visit( wrongIndexLight );
+			visit( spotLight );
+
+		},
+	};
+
+	state.updateNodes[ 0 ].update( { scene } );
+
+	const view = new DataView( uniformBuffer.buffer.buffer );
+	assert.equal( view.getFloat32( 0, true ), 2 );
+	assert.equal( view.getFloat32( 4, true ), 3 );
+	assert.equal( view.getFloat32( 8, true ), 4 );
+
+} );
+
+test( 'runtime hydrator writes point shadow camera near/far live', () => {
+
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: '',
+		bindings: [ {
+			name: 'render',
+			bindings: [ { name: 'render', kind: 'uniform-buffer', visibility: 7, byteLength: 16 } ],
+		} ],
+		uniformPlan: [ {
+			name: 'render',
+			byteLength: 16,
+			slots: [
+				{ offset: 0, dtype: 'number', source: { kind: 'light.shadowCameraNear', lightIndex: 0, lightUuid: 'point-light', valueSnapshot: { type: 'number', data: 0.1 } } },
+				{ offset: 4, dtype: 'number', source: { kind: 'light.shadowCameraFar', lightIndex: 0, lightUuid: 'point-light', valueSnapshot: { type: 'number', data: 100 } } },
+			],
+		} ],
+	};
+	const state = hydrateNodeBuilderState( artifact );
+	const uniformBuffer = state.bindings[ 0 ].bindings[ 0 ];
+	const pointLight = {
+		isLight: true,
+		uuid: 'point-light',
+		shadow: { camera: { near: 0.25, far: 8 } },
+	};
+	const scene = {
+		traverse( visit ) {
+
+			visit( pointLight );
+
+		},
+	};
+
+	state.updateNodes[ 0 ].update( { scene } );
+
+	const view = new DataView( uniformBuffer.buffer.buffer );
+	assert.equal( view.getFloat32( 0, true ), 0.25 );
+	assert.equal( view.getFloat32( 4, true ), 8 );
 
 } );
 
@@ -214,6 +303,46 @@ test( 'runtime hydrator rehydrates sampled texture and sampler descriptors', () 
 	assert.equal( texture.isSampledTexture, true );
 	assert.equal( sampler.texture, map );
 	assert.equal( texture.texture, map );
+
+} );
+
+test( 'runtime hydrator rebinds material texture descriptors when material slots change', () => {
+
+	const firstMap = { isTexture: true, addEventListener() {}, removeEventListener() {}, version: 0 };
+	const nextMap = { isTexture: true, addEventListener() {}, removeEventListener() {}, version: 1 };
+	const material = { map: firstMap };
+	const state = hydrateNodeBuilderState( {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'nodeSampler0', kind: 'sampler', visibility: 2 },
+				{ name: 'nodeTexture0', kind: 'sampled-texture', visibility: 2, textureType: '2d' },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			shared: false,
+			slots: [],
+			textures: [
+				{ name: 'nodeSampler0', source: { kind: 'material.map', property: 'map' } },
+				{ name: 'nodeTexture0', source: { kind: 'material.map', property: 'map' } },
+			],
+		} ],
+	}, material );
+
+	const [ sampler, textureBinding ] = state.bindings[ 0 ].bindings;
+	assert.equal( sampler.texture, firstMap );
+	assert.equal( textureBinding.texture, firstMap );
+
+	material.map = nextMap;
+	const rebinder = state.updateBeforeNodes.find( ( node ) => typeof node.updateBefore === 'function' );
+	assert.ok( rebinder, 'material texture rebinder must be installed' );
+	rebinder.updateBefore( { renderer: { backend: new WeakMap() } } );
+
+	assert.equal( sampler.texture, nextMap );
+	assert.equal( textureBinding.texture, nextMap );
 
 } );
 
@@ -356,6 +485,29 @@ test( 'runtime hydrator uses depth fallback for depth texture bindings', () => {
 	const [ texture, sampler ] = state.bindings[ 0 ].bindings;
 	assert.equal( texture.texture.isDepthTexture, true );
 	assert.equal( sampler.texture.isDepthTexture, true );
+	assert.notEqual( sampler.texture.compareFunction, null );
+
+} );
+
+test( 'runtime hydrator uses comparison fallback for paired depth samplers', () => {
+
+	const state = hydrateNodeBuilderState( {
+		vertexShader: '',
+		fragmentShader: '@group(1) @binding(0) var nodeUniform16 : texture_depth_2d;\n@group(1) @binding(1) var nodeUniform16_sampler : sampler_comparison;',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'nodeUniform16', kind: 'sampled-texture', visibility: 2, textureType: '2d' },
+				{ name: 'nodeUniform16_sampler', kind: 'sampler', visibility: 2 },
+			],
+		} ],
+		uniformPlan: [ { name: 'object', slots: [], textures: [] } ],
+	} );
+
+	const [ texture, sampler ] = state.bindings[ 0 ].bindings;
+	assert.equal( texture.texture.isDepthTexture, true );
+	assert.equal( sampler.texture.isDepthTexture, true );
+	assert.notEqual( sampler.texture.compareFunction, null );
 
 } );
 
@@ -453,6 +605,97 @@ test( 'runtime hydrator invalidates shadow texture bindings after live depth reb
 	assert.equal( textureBinding.texture, liveDepth );
 	assert.equal( textureBinding.version, - 1 );
 	assert.equal( textureBinding.generation, null );
+
+} );
+
+test( 'runtime hydrator rebinds cloned shadow texture bindings', () => {
+
+	const state = hydrateNodeBuilderState( {
+		vertexShader: '',
+		fragmentShader: '@group(1) @binding(0) var shadowTex : texture_depth_2d;',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'shadowTex', kind: 'sampled-texture', visibility: 2, textureType: '2d' },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			slots: [],
+			textures: [ { name: 'shadowTex', source: { kind: 'depth.texture', lightIndex: 0 } } ],
+		} ],
+	} );
+
+	const [ textureBinding ] = state.bindings[ 0 ].bindings;
+	const clonedBinding = textureBinding.clone();
+	clonedBinding.version = 8;
+	clonedBinding.generation = 9;
+	const liveDepth = { isTexture: true, isDepthTexture: true, addEventListener() {}, removeEventListener() {} };
+	const scene = {
+		traverse( visit ) {
+
+			visit( { isLight: true, castShadow: true, shadow: { map: { depthTexture: liveDepth } } } );
+
+		},
+	};
+
+	state.updateBeforeNodes[ 0 ].updateBefore( { scene } );
+
+	assert.equal( textureBinding.texture, liveDepth );
+	assert.equal( clonedBinding.texture, liveDepth );
+	assert.equal( clonedBinding.version, - 1 );
+	assert.equal( clonedBinding.generation, null );
+
+} );
+
+test( 'runtime hydrator invalidates shadow binding when GPU texture appears later', () => {
+
+	const state = hydrateNodeBuilderState( {
+		vertexShader: '',
+		fragmentShader: '@group(1) @binding(0) var shadowTex : texture_depth_2d;',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'shadowTex', kind: 'sampled-texture', visibility: 2, textureType: '2d' },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			slots: [],
+			textures: [ { name: 'shadowTex', source: { kind: 'depth.texture', lightIndex: 0 } } ],
+		} ],
+	} );
+
+	const [ textureBinding ] = state.bindings[ 0 ].bindings;
+	const liveDepth = { isTexture: true, isDepthTexture: true, compareFunction: null, addEventListener() {}, removeEventListener() {} };
+	textureBinding.texture = liveDepth;
+	textureBinding.version = 8;
+	textureBinding.generation = 9;
+	textureBinding.groupNode.version = 0;
+	const gpuTexture = {};
+	const scene = {
+		traverse( visit ) {
+
+			visit( { isLight: true, castShadow: true, shadow: { map: { depthTexture: liveDepth } } } );
+
+		},
+	};
+	const renderer = {
+		backend: {
+			get( texture ) {
+
+				return texture === liveDepth ? { texture: gpuTexture } : null;
+
+			},
+		},
+	};
+
+	state.updateBeforeNodes[ 0 ].updateBefore( { scene, renderer } );
+
+	assert.equal( textureBinding.texture, liveDepth );
+	assert.equal( textureBinding.version, - 1 );
+	assert.equal( textureBinding.generation, null );
+	assert.equal( textureBinding.groupNode.version, 1 );
 
 } );
 
@@ -1123,6 +1366,44 @@ test( 'hydrator: NodeUniformBuffer seeded from valueSnapshot', () => {
 	assert.ok( Math.abs( view.getFloat32( 4, true ) - 2.5 ) < 0.001, 'seed[1] = 2.5' );
 	assert.ok( Math.abs( view.getFloat32( 8, true ) - 3.5 ) < 0.001, 'seed[2] = 3.5' );
 	assert.ok( Math.abs( view.getFloat32( 12, true ) - 4.5 ) < 0.001, 'seed[3] = 4.5' );
+
+} );
+
+test( 'hydrator: standalone buffer-uniform keeps its own byte length inside render group', () => {
+
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: 'fn clipped() -> bool { return false; }',
+		bindings: [ {
+			name: 'render',
+			bindings: [
+				{ name: 'UniformBuffer_4', kind: 'uniform-buffer', visibility: 2, byteLength: 32 },
+				{ name: 'render', kind: 'uniform-buffer', visibility: 7, byteLength: 272 },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'render',
+			byteLength: 272,
+			slots: [ {
+				name: 'cameraViewMatrix',
+				offset: 0,
+				size: 64,
+				dtype: 'mat4',
+				source: { kind: 'camera.viewMatrix', valueSnapshot: { type: 'mat4', data: new Array( 16 ).fill( 1 ) } },
+			} ],
+			textures: [],
+			orderedBindings: [
+				{ type: 'buffer-uniform', ref: { name: 'UniformBuffer_4', byteLength: 32, valueSnapshot: [ 1, 2, 3, 4, 5, 6, 7, 8 ] } },
+				{ type: 'ubo' },
+			],
+		} ],
+	};
+
+	const state = hydrateNodeBuilderState( artifact );
+	const [ standalone, render ] = state.bindings[ 0 ].bindings;
+	assert.equal( standalone.buffer.length, 8 );
+	assert.equal( render.buffer.length, 68 );
+	assert.deepEqual( Array.from( standalone.buffer ), [ 1, 2, 3, 4, 5, 6, 7, 8 ] );
 
 } );
 
