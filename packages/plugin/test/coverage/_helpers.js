@@ -17,6 +17,8 @@
 import { emitUpdaterSource } from '../../src/emit-updater.js';
 import { extractMaterial } from '../../src/node-harness.js';
 
+const RUNTIME_WRITERS_URL = new URL( '../../../runtime/src/writers.js', import.meta.url ).href;
+
 /**
  * @param {{ groups?: Array<Object> }} plan
  * @return {{ source: string, unsupportedKinds: Array<{ kind, severity, reason, byteOffset }> }}
@@ -37,6 +39,22 @@ export async function generateForMaterial( factory ) {
 	const { artifact } = await extractMaterial( factory );
 	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
 	return { source, unsupportedKinds, artifact };
+
+}
+
+/**
+ * Rewrites generated updater imports from the published runtime package to
+ * local source URLs so scratch-file imports work inside the monorepo checkout.
+ *
+ * @param {string} source
+ * @return {string}
+ */
+export function patchGeneratedUpdaterImports( source ) {
+
+	return String( source ).replace(
+		/from\s+["']@tsl-precompile\/runtime\/writers["']/g,
+		`from ${ JSON.stringify( RUNTIME_WRITERS_URL ) }`,
+	);
 
 }
 

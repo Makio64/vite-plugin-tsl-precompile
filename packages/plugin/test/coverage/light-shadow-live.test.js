@@ -24,7 +24,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { generateForMaterial, assertNoUnknownKinds } from './_helpers.js';
+import { generateForMaterial, assertNoUnknownKinds, patchGeneratedUpdaterImports } from './_helpers.js';
 
 const HERE = dirname( fileURLToPath( import.meta.url ) );
 
@@ -45,11 +45,7 @@ mkdirSync( SCRATCH_ROOT, { recursive: true } );
  */
 async function loadEmittedModule( source ) {
 
-	const writersUrl = new URL( '../../../runtime/src/writers.js', import.meta.url ).href;
-	const patched = source.replace(
-		/from '@tsl-precompile\/runtime\/writers'/,
-		`from ${ JSON.stringify( writersUrl ) }`,
-	);
+	const patched = patchGeneratedUpdaterImports( source );
 	const dir = mkdtempSync( join( SCRATCH_ROOT, 'updater-' ) );
 	const file = join( dir, 'updater.mjs' );
 	writeFileSync( file, patched, 'utf8' );
