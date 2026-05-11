@@ -17,7 +17,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
@@ -25,6 +25,7 @@ import { createServer } from 'node:http';
 import { extractBackgroundArtifact } from '../../src/aux-capture.js';
 import { attachDevCapture } from '../../src/dev-capture-server.js';
 import { VIRTUAL_AUX_MODULE_ID } from '../../src/_shared/constants.js';
+import tslPrecompile from '../../src/index.js';
 import {
 	registerAuxArtifact,
 	registerAuxArtifacts,
@@ -202,6 +203,65 @@ test( 'aux-roundtrip: red vs green backgrounds → two entries, each looks up to
 
 } );
 
+test( 'slim build: user modules import the aux registry even without material markers', async () => {
+
+	const root = mkdtempSync( join( tmpdir(), 'tslp-rt-' ) );
+	const plugin = tslPrecompile( { artifactsDir: 'artifacts', slim: true } );
+	await plugin.configResolved( { root, command: 'build' } );
+
+	try {
+
+		const out = await plugin.transform.call( makePluginContext(), 'console.log( "boot" );\n', join( root, 'src/main.js' ) );
+		assert.ok( out, 'slim build should touch user modules to load aux artifacts' );
+		assert.match( out.code, /^import "virtual:tsl-precompile\/__aux";\n/ );
+
+	} finally {
+
+		rmSync( root, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'slim build: virtual aux module registers into the slim runtime registry', async () => {
+
+	const root = mkdtempSync( join( tmpdir(), 'tslp-rt-' ) );
+	const artifactsDir = join( root, 'artifacts' );
+	mkdirSync( artifactsDir, { recursive: true } );
+	writeFileSync( join( artifactsDir, 'aux-post-process-abc123.json' ), JSON.stringify( {
+		__materialShape: 'post-process',
+		__configHash: 'abc123',
+		__hash: 'abc123',
+		__name: 'aux-post-process-abc123',
+		artifact: {
+			version: 3,
+			materialShape: 'post-process',
+			vertexShader: '',
+			fragmentShader: '',
+			computeShader: '',
+			uniformPlan: [],
+		},
+	} ), 'utf8' );
+
+	const plugin = tslPrecompile( { artifactsDir: 'artifacts', slim: true } );
+	await plugin.configResolved( { root, command: 'build' } );
+
+	try {
+
+		const id = plugin.resolveId( VIRTUAL_AUX_MODULE_ID );
+		const source = await plugin.load.call( makePluginContext(), id );
+		assert.match( source, /import \{ registerAuxArtifacts \} from "@tsl-precompile\/runtime\/slim";/ );
+		assert.match( source, /"configHash"\s*:\s*"abc123"/ );
+		assert.match( source, /registerAuxArtifacts\( __auxEntries \);/ );
+
+	} finally {
+
+		rmSync( root, { recursive: true, force: true } );
+
+	}
+
+} );
+
 /**
  * Same shape as the generator in `packages/plugin/src/index.js` — inlined
  * here to keep the test self-contained (the plugin's load() hook is
@@ -226,5 +286,14 @@ function buildVirtualAuxSource( auxManifest ) {
 	lines.push( `export default __auxEntries;` );
 	lines.push( `// ${ VIRTUAL_AUX_MODULE_ID }` );
 	return lines.join( '\n' );
+
+}
+
+function makePluginContext() {
+
+	return {
+		error( message ) { throw new Error( message ); },
+		warn() {},
+	};
 
 }

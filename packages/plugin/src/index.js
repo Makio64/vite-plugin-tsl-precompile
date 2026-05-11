@@ -269,9 +269,19 @@ export default function tslPrecompile( userOpts = {} ) {
 					resolveArtifact,
 				} );
 
-				if ( result.touchedNames.length === 0 ) return null;
+				let outputCode = result.code;
+				let touched = result.touchedNames.length > 0;
+				if ( opts.slim ) {
 
-				return { code: result.code, map: result.map };
+					const injected = injectSlimAuxImport( outputCode );
+					outputCode = injected.code;
+					touched = touched || injected.touched;
+
+				}
+
+				if ( ! touched ) return null;
+
+				return { code: outputCode, map: result.map };
 
 			} catch ( err ) {
 
@@ -343,7 +353,8 @@ export default function tslPrecompile( userOpts = {} ) {
 				} );
 				const usedWgslPoolRefs = getExternalWgslRefIdentifiers( auxEntriesLiteral );
 				const lines = [];
-				lines.push( `import { registerAuxArtifacts } from '@tsl-precompile/runtime';` );
+				const runtimeModule = opts.slim ? '@tsl-precompile/runtime/slim' : '@tsl-precompile/runtime';
+				lines.push( `import { registerAuxArtifacts } from ${ JSON.stringify( runtimeModule ) };` );
 				if ( usedWgslPoolRefs.length > 0 ) lines.push( `import { ${ usedWgslPoolRefs.join( ', ' ) } } from ${ JSON.stringify( VIRTUAL_WGSL_POOL_MODULE_ID ) };` );
 				lines.push( '' );
 				for ( const declaration of wgslDeclarations ) lines.push( declaration );
@@ -412,6 +423,29 @@ function isTransformable( id ) {
 	if ( id.startsWith( '\0' ) ) return false;
 	if ( id.includes( '/node_modules/' ) ) return false;
 	return /\.(m?[jt]sx?)$/.test( id );
+
+}
+
+function injectSlimAuxImport( code ) {
+
+	if ( code.includes( VIRTUAL_AUX_MODULE_ID ) ) return { code, touched: false };
+
+	const importLine = `import ${ JSON.stringify( VIRTUAL_AUX_MODULE_ID ) };\n`;
+	if ( code.startsWith( '#!' ) ) {
+
+		const newline = code.indexOf( '\n' );
+		if ( newline !== - 1 ) {
+
+			return {
+				code: `${ code.slice( 0, newline + 1 ) }${ importLine }${ code.slice( newline + 1 ) }`,
+				touched: true,
+			};
+
+		}
+
+	}
+
+	return { code: importLine + code, touched: true };
 
 }
 
