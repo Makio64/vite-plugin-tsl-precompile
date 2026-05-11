@@ -10,20 +10,12 @@
  * + scalar values. This test pins the extractor contract so the runtime side
  * (`__copyMaterialProps` / `__SCALAR_PROPS` / `__TEXTURE_PROPS`) and the
  * hydrator's `material.*` resolver have a stable surface to bind against.
- *
- * NOTE: as of this writing the codegen in `packages/plugin/src/emit-updater.js`
- * does not yet have cases for `material.lightMapIntensity`,
- * `material.displacementScale`, or `material.displacementBias` — these surface
- * as `severity: 'unknown'` in the updater. The fixture pins them as the
- * "extractor-emitted but codegen-unhandled" contract so the parallel codegen
- * fix can light them up without changing what the extractor produces. Once the
- * codegen catches up, swap `assertNoUnknownKinds` back in.
  */
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { generateForMaterial } from './_helpers.js';
+import { generateForMaterial, assertNoUnknownKinds } from './_helpers.js';
 
 test( 'material: MeshStandardNodeMaterial with lightMap + displacementMap exposes expected material.* bindings', async () => {
 
@@ -84,16 +76,7 @@ test( 'material: MeshStandardNodeMaterial with lightMap + displacementMap expose
 	assert.ok( kinds.includes( 'material.displacementScale' ), `expected material.displacementScale binding; got: ${ kinds.join( ', ' ) }` );
 	assert.ok( kinds.includes( 'material.displacementBias' ), `expected material.displacementBias binding; got: ${ kinds.join( ', ' ) }` );
 
-	// The generated updater must export update(); blocked-by-design kinds
-	// are tolerated. Filter the unknowns down to the three documented above
-	// (codegen TODO for Agent B) and assert nothing else slipped in.
-	const TODO_UNKNOWN = new Set( [
-		'material.lightMapIntensity',
-		'material.displacementScale',
-		'material.displacementBias',
-	] );
-	const otherUnknowns = result.unsupportedKinds.filter( ( u ) => u.severity === 'unknown' && ! TODO_UNKNOWN.has( u.kind ) );
-	assert.deepEqual( otherUnknowns, [], `unexpected unknown extractor kinds (codegen drift): ${ otherUnknowns.map( ( u ) => u.kind ).join( ', ' ) }` );
+	assertNoUnknownKinds( result, 'material-pbr-maps' );
 
 	// Sanity: generated updater function is present.
 	assert.match( result.source, /export function update\(frame, material, view, byteOffset\)/ );

@@ -42,3 +42,20 @@ test( 'cell: clearcoat / sheen physical-material kinds', () => {
 	assertGenerates( r, 'writeColor(view, byteOffset + 32, material.sheenColor)' );
 
 } );
+
+test( 'cell: line material scalar kinds', () => {
+
+	const r = generateForPlan( { groups: [ { slots: [
+		{ byteOffset: 0, source: { kind: 'material.linewidth', property: 'linewidth' } },
+		{ byteOffset: 4, source: { kind: 'material.scale', property: 'scale' } },
+		{ byteOffset: 8, source: { kind: 'material.dashSize', property: 'dashSize' } },
+		{ byteOffset: 12, source: { kind: 'material.gapSize', property: 'gapSize' } },
+		{ byteOffset: 16, source: { kind: 'material.dashOffset', property: 'dashOffset' } },
+	] } ] } );
+	assertGenerates( r, 'writeF32(view, byteOffset + 0, material.linewidth)' );
+	assertGenerates( r, 'writeF32(view, byteOffset + 4, material.scale)' );
+	assertGenerates( r, 'writeF32(view, byteOffset + 8, material.dashSize)' );
+	assertGenerates( r, 'writeF32(view, byteOffset + 12, material.gapSize)' );
+	assertGenerates( r, 'writeF32(view, byteOffset + 16, material.dashOffset)' );
+
+} );

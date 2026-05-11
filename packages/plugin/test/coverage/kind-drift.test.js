@@ -130,6 +130,8 @@ test( 'drift — every updater case corresponds to a real extractor kind (catche
 		'material.anisotropy', 'material.anisotropyRotation', 'material.dispersion',
 		'material.reflectivity', 'material.refractionRatio', 'material.normalScale',
 		'material.bumpScale', 'material.displacementScale', 'material.displacementBias',
+		'material.linewidth', 'material.scale',
+		'material.dashSize', 'material.gapSize', 'material.dashOffset',
 		// scene.fog.<prop> + scene.<prop> — same dynamic-concat caveat.
 		'scene.fog.color', 'scene.fog.near', 'scene.fog.far', 'scene.fog.density',
 		'scene.environmentIntensity', 'scene.backgroundIntensity',
