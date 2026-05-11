@@ -6,7 +6,7 @@ Runs the plugin and slim runtime against the 206 `webgpu_*.html` examples from a
 
 Keep the extractor/codegen and slim-bundle load-smoke harnesses green enough to catch crashes, then use E2E PSNR for visual correctness. Current pass counts move quickly; use [STATUS.md](../../STATUS.md) for the latest curated snapshot and `packages/examples/batch/results/coverage-summary.md` for a generated visual table.
 
-For the E2E harness, start with focused filters. It automates the real loop for stock examples: clean stock full-three reference, capture pass for auto-marked NodeMaterial artifacts, then slim replay with captured user and aux artifacts. A pass means replay reached a non-empty frame without unexpected browser errors and meets the PSNR pixel-diff threshold (30 dB by default). Use `--no-pixel-gate` for diagnostics when the goal is to inspect load/runtime failures separately from visual correctness. Many examples are expected to fail today; v0.1 beta should prioritize the PBR slice first: shadows, PMREM/environment/reflections, then transmission/viewport/reflector texture paths. Compute/storage remains experimental, while MRT and broad postprocessing are deferred.
+For the E2E harness, start with focused filters. It automates the real loop for stock examples: clean stock full-three reference, capture pass for auto-marked NodeMaterial artifacts, then slim replay with captured user and aux artifacts. A pass means replay reached a non-empty frame without unexpected browser errors and meets the PSNR pixel-diff threshold (30 dB by default). Use `--no-pixel-gate` for diagnostics when the goal is to inspect load/runtime failures separately from visual correctness. Many examples are expected to fail today; v0.1 beta should prioritize the PBR slice first: shadows, PMREM/environment/reflections, then transmission/viewport/reflector texture paths. Compute/storage remains experimental. Focused bloom/PassNode replay is green, but MRT and broad postprocessing are still not the beta target.
 
 The default E2E scripts save paired capture/replay PNGs to `packages/examples/batch/results/shots/` and refresh `packages/examples/batch/results/coverage-summary.md` after each run. Pass `--no-save-shots` or `--no-coverage` only for throwaway diagnostics; raw harness scripts are still available as `run:e2e:raw` and `run:e2e-parallel:raw`.
 
@@ -14,7 +14,9 @@ For runtime-only screenshot refreshes, use `pnpm test:e2e:replay -- --filter=<ex
 
 Use `--timings` while tuning slow examples. The harness now caps the unreliable pre-screenshot WebGPU brightness poll and uses shorter fixed settle windows; if a specific example needs the old conservative behavior, override with `--bright-poll-ms=12000 --asset-settle-ms=1500 --present-settle-ms=1000 --settle-frames=30`.
 
-The parallel E2E runner prints concise per-example progress by default and writes full details to `packages/examples/batch/results/e2e-report.json`. It honors `--filter`, `--limit`, and `--offset` before splitting work across workers, so `pnpm test:e2e -- --limit=12` is a quick partial visual sweep. Pass `--verbose` or set `TSLP_E2E_VERBOSE=1` to forward page warnings/logs and worker boilerplate while debugging harness internals.
+The parallel E2E runner prints concise per-example progress by default and writes full details to `packages/examples/batch/results/e2e-report.json`. It honors `--filter`, `--limit`, and `--offset` before splitting work into short-lived worker batches, so `pnpm test:e2e -- --limit=12` is a quick partial visual sweep and `pnpm test:e2e -- --limit=24 --batch-size=6 --workers=1` keeps memory tighter on laptops. Defaults favor stability: one worker slot on ordinary machines, two on machines with at least 24 GB RAM, batch size 12, and a 750 ms slot cooldown. Override with `--workers`, `--batch-size`, `--worker-max-old-space-mb`, or the matching `TSLP_E2E_WORKERS`, `TSLP_E2E_BATCH_SIZE`, `TSLP_E2E_WORKER_MAX_OLD_SPACE_MB`, and `TSLP_E2E_SLOT_COOLDOWN_MS` env vars.
+
+The serial worker recycles Chromium every two examples by default to avoid long WebGPU process lifetimes. Override with `--max-runs-per-browser=<n>` / `TSLP_E2E_MAX_RUNS_PER_BROWSER` and `TSLP_E2E_BROWSER_RESPAWN_DELAY_MS` only when investigating harness performance or browser behavior. Pass `--verbose` or set `TSLP_E2E_VERBOSE=1` to forward page warnings/logs and worker boilerplate while debugging harness internals.
 
 The E2E server automatically falls forward to the next free port when the requested port is occupied. Use `--port=<n>` to choose the first port and `--port-retries=<n>` to cap the retry window.
 
@@ -55,6 +57,7 @@ pnpm coverage:site
 node packages/examples/batch/run.mjs --three-repo=/path/to/three.js --filter=webgpu_backdrop
 node packages/examples/batch/run-slim.mjs --three-repo=/path/to/three.js --filter=webgpu_backdrop
 node packages/examples/batch/run-e2e.mjs --three-repo=/path/to/three.js --filter=webgpu_lights_custom
+node packages/examples/batch/run-e2e.mjs --local-examples-root=/path/to/local/pages --filter=directional
 ```
 
-By default the scripts look for a sibling `../three.js` checkout from the repo root.
+By default the scripts look for a sibling `../three.js` checkout from the repo root. Use `--local-examples-root=/path/to/pages` when you want the E2E harness to serve a small local `.html` corpus instead of upstream three.js examples.

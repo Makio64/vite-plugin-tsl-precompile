@@ -35,7 +35,7 @@ import { chromium } from 'playwright';
 import { createServer } from 'node:http';
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
-import { resolve, join, dirname, extname, normalize } from 'node:path';
+import { resolve, join, dirname, extname, normalize, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { assertThreeAtLeast184 } from './_three-version.mjs';
@@ -46,6 +46,7 @@ const OUT = resolve( SELF, 'results' );
 const RUNTIME_SRC = resolve( REPO, 'packages/runtime/src' );
 const PLUGIN_SRC = resolve( REPO, 'packages/plugin/src' );
 const SLIM_BUNDLE = resolve( REPO, 'packages/runtime/build/three.webgpu.slim.js' );
+const CACHE_BUST = Date.now().toString( 36 );
 
 if ( ! existsSync( OUT ) ) mkdirSync( OUT, { recursive: true } );
 if ( ! existsSync( SLIM_BUNDLE ) ) {
@@ -92,16 +93,32 @@ function getArg( prefix, def ) {
 
 }
 
+function parseIntAtLeast( value, fallback, min ) {
+
+	const n = parseInt( value, 10 );
+	return Number.isFinite( n ) && n >= min ? n : fallback;
+
+}
+
+function parseFloatOr( value, fallback ) {
+
+	const n = parseFloat( value );
+	return Number.isFinite( n ) ? n : fallback;
+
+}
+
 const threeRepo = resolve( getArg( '--three-repo=', resolve( SELF, '../../../../three.js' ) ) );
+const localExamplesRootArg = getArg( '--local-examples-root=', '' );
+const localExamplesRoot = localExamplesRootArg ? resolve( localExamplesRootArg ) : null;
 const filter = getArg( '--filter=', '' );
-const limit = parseInt( getArg( '--limit=', '9999' ), 10 );
-const offset = parseInt( getArg( '--offset=', '0' ), 10 );
-let port = parseInt( getArg( '--port=', '8729' ), 10 );
-const portRetries = parseInt( getArg( '--port-retries=', '100' ), 10 );
-const captureWaitMs = parseInt( getArg( '--capture-wait-ms=', '8000' ), 10 );
-const replayWaitMs = parseInt( getArg( '--replay-wait-ms=', '5000' ), 10 );
-const targetTick = parseInt( getArg( '--target-tick=', '0' ), 10 );
-const psnrThreshold = parseFloat( getArg( '--psnr-threshold=', '30' ) );
+const limit = parseIntAtLeast( getArg( '--limit=', '9999' ), 9999, 0 );
+const offset = parseIntAtLeast( getArg( '--offset=', '0' ), 0, 0 );
+let port = parseIntAtLeast( getArg( '--port=', '8729' ), 8729, 1 );
+const portRetries = parseIntAtLeast( getArg( '--port-retries=', '100' ), 100, 0 );
+const captureWaitMs = parseIntAtLeast( getArg( '--capture-wait-ms=', '8000' ), 8000, 0 );
+const replayWaitMs = parseIntAtLeast( getArg( '--replay-wait-ms=', '5000' ), 5000, 0 );
+const targetTick = parseIntAtLeast( getArg( '--target-tick=', '0' ), 0, 0 );
+const psnrThreshold = parseFloatOr( getArg( '--psnr-threshold=', '30' ), 30 );
 const pixelGateEnabled = ! args.includes( '--no-pixel-gate' );
 const saveShots = args.includes( '--save-shots' );
 const replayOnly = args.includes( '--replay-only' );
@@ -116,6 +133,12 @@ if ( ! existsSync( join( threeRepo, 'examples' ) ) ) {
 	process.exit( 2 );
 
 }
+if ( localExamplesRoot && ! existsSync( localExamplesRoot ) ) {
+
+	console.error( `[batch-e2e] local examples root not found at ${ localExamplesRoot }` );
+	process.exit( 2 );
+
+}
 
 assertThreeAtLeast184( threeRepo, 'batch-e2e' );
 
@@ -126,13 +149,68 @@ const SKIP_PREFIXES = [
 ];
 function shouldSkip( name ) { return SKIP_PREFIXES.some( ( p ) => name.includes( p ) ); }
 
-const allExamples = readdirSync( join( threeRepo, 'examples' ) )
-	.filter( ( f ) => f.startsWith( 'webgpu_' ) && f.endsWith( '.html' ) )
-	.filter( ( f ) => ! filter || f.includes( filter ) )
-	.slice( offset, offset + limit );
-const candidates = allExamples.filter( ( f ) => ! shouldSkip( f ) );
+const examplesRoot = localExamplesRoot || join( threeRepo, 'examples' );
+const examplePaths = new Map();
+function stripExampleQuery( examplePath ) {
 
-console.log( `[batch-e2e] discovered ${ allExamples.length } webgpu_*.html — ${ candidates.length } after skip list` );
+	return String( examplePath || '' ).split( /[?#]/ )[ 0 ];
+
+}
+function examplePathFor( name ) {
+
+	return examplePaths.get( name ) || name;
+
+}
+function discoverLocalExampleCases() {
+
+	const manifestPath = join( localExamplesRoot, 'e2e-cases.json' );
+	if ( existsSync( manifestPath ) ) {
+
+		const parsed = JSON.parse( readFileSync( manifestPath, 'utf8' ) );
+		const cases = Array.isArray( parsed ) ? parsed : Array.isArray( parsed.cases ) ? parsed.cases : [];
+		return cases.map( ( entry ) => {
+
+			const path = typeof entry === 'string' ? entry : entry && entry.path;
+			const name = typeof entry === 'string' ? safeExampleName( entry ) : entry && entry.name || safeExampleName( path || '' );
+			if ( ! path || ! name ) return null;
+			examplePaths.set( name, path );
+			return name;
+
+		} ).filter( Boolean );
+
+	}
+
+	return readdirSync( examplesRoot )
+		.filter( ( f ) => f.endsWith( '.html' ) && f !== 'index.html' );
+
+}
+
+const discoveredExamples = localExamplesRoot
+	? discoverLocalExampleCases()
+	: readdirSync( examplesRoot )
+		.filter( ( f ) => f.startsWith( 'webgpu_' ) && f.endsWith( '.html' ) );
+const allExamples = discoveredExamples
+	.filter( ( f ) => ! filter || f.includes( filter ) || examplePathFor( f ).includes( filter ) )
+	.slice( offset, offset + limit );
+const candidates = localExamplesRoot ? allExamples : allExamples.filter( ( f ) => ! shouldSkip( f ) );
+
+if ( localExamplesRoot ) {
+	console.log( `[batch-e2e] discovered ${ allExamples.length } local *.html in ${ localExamplesRoot } — ${ candidates.length } candidates` );
+} else {
+	console.log( `[batch-e2e] discovered ${ allExamples.length } webgpu_*.html — ${ candidates.length } after skip list` );
+}
+
+const deferredSceneAssetCache = new Map();
+async function exampleUsesDeferredSceneAssets( name ) {
+
+	if ( deferredSceneAssetCache.has( name ) ) return deferredSceneAssetCache.get( name );
+	const file = localExamplesRoot ? join( localExamplesRoot, stripExampleQuery( examplePathFor( name ) ) ) : join( threeRepo, 'examples', name );
+	const source = await readFile( file, 'utf8' ).catch( () => '' );
+	const result = /\b(?:GLTFLoader|FBXLoader|OBJLoader|ColladaLoader|PLYLoader|STLLoader|LDrawLoader|LWOLoader|USDZLoader)\b/.test( source );
+	deferredSceneAssetCache.set( name, result );
+	return result;
+
+}
 
 const MIME = {
 	'.html': 'text/html; charset=utf-8',
@@ -192,7 +270,8 @@ function jsonScriptLiteral( value ) {
 function injectHtml( html, example, mode ) {
 
 	const bucket = captureBucket( example );
-	const boot = `<script>window.__TSLP_E2E=${ jsonScriptLiteral( { example, mode, artifacts: bucket } ) };</script>`;
+	const captureEndpoint = '/__tslp__/capture?example=' + encodeURIComponent( example );
+	const boot = `<script>window.__TSLP_E2E=${ jsonScriptLiteral( { example, mode, artifacts: bucket, captureEndpoint, localExamples: !! localExamplesRoot } ) };</script>`;
 	const mapped = rewriteImportmap( html, mode );
 	return mapped.includes( '</head>' )
 		? mapped.replace( '</head>', `${ boot }\n</head>` )
@@ -202,11 +281,12 @@ function injectHtml( html, example, mode ) {
 
 function rewriteImportmap( html, mode ) {
 
+	const bust = ( path ) => `${ path }?v=${ CACHE_BUST }`;
 	const webgpuTarget = mode === 'capture'
-		? '/__tslp__/full-webgpu-auto.js'
+		? bust( '/__tslp__/full-webgpu-auto.js' )
 		: mode === 'stock'
-			? '/__tslp__/stock-webgpu.js'
-			: '/__tslp__/slim-webgpu-replay.js';
+			? bust( '/__tslp__/stock-webgpu.js' )
+			: bust( '/__tslp__/slim-webgpu-replay.js' );
 	let out = html
 		.replace( /("three\/webgpu"\s*:\s*")[^"]+(")/g, `$1${ webgpuTarget }$2` )
 		.replace( /("three"\s*:\s*")[^"]*three\.webgpu[^"]*(")/g, `$1${ webgpuTarget }$2` );
@@ -217,8 +297,9 @@ function rewriteImportmap( html, mode ) {
 
 	}
 
-	const tslTarget = mode === 'replay' ? '/__tslp__/tsl-stub.js' : '/build/three.tsl.js';
+	const tslTarget = mode === 'replay' ? bust( '/__tslp__/tsl-stub.js' ) : '/build/three.tsl.js';
 	const extraImports = [
+		`"three": "${ webgpuTarget }"`,
 		`"three/webgpu": "${ webgpuTarget }"`,
 		`"three/tsl": "${ tslTarget }"`,
 		`"@tsl-precompile/runtime": "/__tslp_runtime/index.js"`,
@@ -228,6 +309,17 @@ function rewriteImportmap( html, mode ) {
 		`"vite-plugin-tsl-precompile/src/vendor/compileTSL.js": "/__tslp_plugin/vendor/compileTSL.js"`,
 		`"vite-plugin-tsl-precompile/src/emit-updater.js": "/__tslp_plugin/emit-updater.js"`,
 	];
+
+	// Local example packages (--local-examples-root) don't ship `examples/jsm/`,
+	// and the harness intercepts `/examples/*` for them, so the upstream-style
+	// `"three/addons/": "./jsm/"` mapping can't resolve. Inject a mapping to the
+	// `/__tslp_addons/` route (served from `<threeRepo>/examples/jsm/`). Upstream
+	// three examples that already declare `three/addons/` keep their own mapping.
+	if ( ! /["']three\/addons\/["']\s*:/.test( out ) ) {
+
+		extraImports.push( '"three/addons/": "/__tslp_addons/"' );
+
+	}
 
 	if ( out.includes( '</script>' ) && out.includes( '"imports"' ) ) {
 
@@ -306,6 +398,10 @@ window.__tslpCompilePending = window.__tslpCompilePending || 0;
 } )();
 
 export class WebGPURenderer extends Original.WebGPURenderer {
+	setAnimationLoop( callback ) {
+		const wrap = typeof window.__tslpWrapAnimationLoop === 'function' ? window.__tslpWrapAnimationLoop : null;
+		return super.setAnimationLoop( wrap ? wrap( callback ) : callback );
+	}
 	compileAsync( scene, camera, ...rest ) {
 		if ( __pmremRunning > 0 ) return typeof super.compileAsync === 'function' ? super.compileAsync( scene, camera, ...rest ) : Promise.resolve();
 		if ( typeof super.compileAsync !== 'function' ) return Promise.resolve();
@@ -488,6 +584,9 @@ function __markSceneMaterials( scene ) {
 	if ( scene.isScene !== true ) return;
 	if ( ! scene.userData || scene.userData.__tslpUserScene !== true ) return;
 	if ( scene.userData && scene.userData.__tslpSyntheticCaptureScene ) return;
+	if ( scene.overrideMaterial && scene.overrideMaterial.visible !== false ) {
+		__mark( scene.overrideMaterial, __classNameForMaterial( scene.overrideMaterial ), null );
+	}
 	scene.traverse( ( object ) => {
 		const material = object && object.material;
 		const materials = Array.isArray( material ) ? material : material ? [ material ] : [];
@@ -498,6 +597,20 @@ function __markSceneMaterials( scene ) {
 
 		}
 	} );
+}
+
+// QuadMesh.render(renderer) bottoms out at renderer.render(quadMesh, _camera),
+// so the "scene" argument is a Mesh — not a Scene — and __markSceneMaterials
+// short-circuits. Catch the post-FX material on the QuadMesh (and any other
+// standalone mesh.render path) here so its precompile artifact gets captured.
+function __markStandaloneRenderTargetMaterial( target ) {
+	if ( ! target || target.isScene === true || ! target.material ) return;
+	const materials = Array.isArray( target.material ) ? target.material : [ target.material ];
+	for ( const m of materials ) {
+		if ( ! m || m.visible === false ) continue;
+		if ( __classNameForMaterial( m ) === 'NodeMaterial' && target.name !== 'Render Pipeline' ) continue;
+		__mark( m, __classNameForMaterial( m ), target );
+	}
 }
 
 function __rememberAuxScene( scene, camera ) {
@@ -593,6 +706,10 @@ export class RenderPipeline extends __RenderPipelineBase {
 export class PostProcessing extends RenderPipeline {}
 
 export class WebGPURenderer extends Original.WebGPURenderer {
+	setAnimationLoop( callback ) {
+		const wrap = typeof window.__tslpWrapAnimationLoop === 'function' ? window.__tslpWrapAnimationLoop : null;
+		return super.setAnimationLoop( wrap ? wrap( callback ) : callback );
+	}
 	async init( ...args ) {
 		const result = await super.init( ...args );
 		__renderer = this;
@@ -606,6 +723,7 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		__lastCamera = camera;
 		__rememberAuxScene( scene, camera );
 		__markSceneMaterials( scene );
+		__markStandaloneRenderTargetMaterial( scene );
 		return typeof super.compile === 'function' ? super.compile( scene, camera, ...rest ) : undefined;
 	}
 	compileAsync( scene, camera, ...rest ) {
@@ -614,6 +732,7 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		__lastCamera = camera;
 		__rememberAuxScene( scene, camera );
 		__markSceneMaterials( scene );
+		__markStandaloneRenderTargetMaterial( scene );
 		if ( typeof super.compileAsync !== 'function' ) return Promise.resolve();
 		// Track this compile so the screenshot waits for it. MaterialX, GLTF, and
 		// other examples await renderer.compileAsync between asset loads to warm
@@ -630,6 +749,7 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		__lastCamera = camera;
 		__rememberAuxScene( scene, camera );
 		__markSceneMaterials( scene );
+		__markStandaloneRenderTargetMaterial( scene );
 		return super.render( scene, camera );
 	}
 }
@@ -643,15 +763,26 @@ function slimWebgpuReplayModule() {
 export class ${ name } {
 	constructor( params ) {
 		let mat;
-		try {
-			mat = __takeMaterial( ${ JSON.stringify( name ) }, params && typeof params === 'object' ? params : null );
-		} catch ( err ) {
-			const hasParams = params && typeof params === 'object' && Object.keys( params ).length > 0;
-			if ( hasParams ) {
-				if ( ${ JSON.stringify( name ) } !== 'NodeMaterial' ) throw err;
-				mat = __makeFallbackNodeMaterial( params );
-			} else {
-				mat = __makeInternalNodeMaterial( ${ JSON.stringify( name ) }, params );
+		// Plain "new NodeMaterial()" (no params) is almost always an internal addon
+		// (GaussianBlur, AfterImage, etc.) authoring its own quad material via
+		// fragmentNode = blur().context(builder.getSharedContext()). The full renderer
+		// drives those quads, and its PrecompiledHydrator does not handle every
+		// uniform source kind the slim hydrator emits (e.g. renderer.size). Skip the
+		// captured-artifact wrap for those calls so the addon gets a real FullNodeMaterial.
+		const skipPrecompileWrap = ${ JSON.stringify( name ) } === 'NodeMaterial' && ( ! params || typeof params !== 'object' || Object.keys( params ).length === 0 );
+		if ( skipPrecompileWrap ) {
+			mat = __makeInternalNodeMaterial( ${ JSON.stringify( name ) }, params );
+		} else {
+			try {
+				mat = __takeMaterial( ${ JSON.stringify( name ) }, params && typeof params === 'object' ? params : null );
+			} catch ( err ) {
+				const hasParams = params && typeof params === 'object' && Object.keys( params ).length > 0;
+				if ( hasParams ) {
+					if ( ${ JSON.stringify( name ) } !== 'NodeMaterial' ) throw err;
+					mat = __makeFallbackNodeMaterial( params );
+				} else {
+					mat = __makeInternalNodeMaterial( ${ JSON.stringify( name ) }, params );
+				}
 			}
 		}
 		if ( params && typeof params === 'object' ) {
@@ -666,13 +797,53 @@ export class ${ name } {
 ` ).join( '\n' );
 
 	return `
-import * as Slim from '/__tslp__/three.webgpu.slim.js';
-import { TextureNode as FullTextureNode, BlendMode as FullBlendMode, TempNode as FullTempNode, NodeUpdateType as FullNodeUpdateType, NodeMaterial as FullNodeMaterial, MeshBasicNodeMaterial as FullMeshBasicNodeMaterial, MeshPhongNodeMaterial as FullMeshPhongNodeMaterial, SpriteNodeMaterial as FullSpriteNodeMaterial, RenderTarget as FullRenderTarget, QuadMesh as FullQuadMesh, RendererUtils as FullRendererUtils, Vector2 as FullVector2 } from '/build/three.webgpu.js';
+import * as Slim from '/__tslp__/three.webgpu.slim.js?v=${ CACHE_BUST }';
+import { TSL as FullTSL, TextureNode as FullTextureNode, BlendMode as FullBlendMode, TempNode as FullTempNode, NodeUpdateType as FullNodeUpdateType, NodeMaterial as FullNodeMaterial, MeshBasicNodeMaterial as FullMeshBasicNodeMaterial, MeshPhongNodeMaterial as FullMeshPhongNodeMaterial, SpriteNodeMaterial as FullSpriteNodeMaterial, RenderTarget as FullRenderTarget, QuadMesh as FullQuadMesh, RendererUtils as FullRendererUtils, Vector2 as FullVector2, TextureLoader as FullTextureLoader, CubeTextureLoader as FullCubeTextureLoader, DataTextureLoader as FullDataTextureLoader, ImageBitmapLoader as FullImageBitmapLoader } from '/build/three.webgpu.js';
 export * from '/__tslp__/three.webgpu.slim.js';
 export { FullTextureNode as TextureNode, FullBlendMode as BlendMode, FullTempNode as TempNode, FullNodeUpdateType as NodeUpdateType, FullRenderTarget as RenderTarget, FullQuadMesh as QuadMesh, FullRendererUtils as RendererUtils };
 
 const __state = window.__TSLP_E2E || { example: 'unknown', artifacts: { user: {}, aux: [] } };
 const __data = __state.artifacts || { user: {}, aux: [] };
+
+// Worker-async loaders (KTX2Loader, DRACOLoader, MeshoptLoader) decode in
+// web workers AFTER FileLoader.load resolves manager.itemEnd, so the outer
+// manager-pending counter drops to zero while parse is still in flight.
+// Without this, the synthetic-rAF clock can freeze before the user's
+// \`await ktxLoader.loadAsync(...)\` resumes and adds the post-await meshes —
+// the first render with content never fires (see webgpu_sandbox.html which
+// uses await ktxLoader.loadAsync(...) before adding any mesh to scene).
+// Wrap Loader.prototype.loadAsync so __tslpLoaderPending stays bumped until
+// the full promise (load + parse) resolves.
+( function patchSlimLoaderLoadAsync() {
+	const L = Slim.Loader;
+	if ( ! L || ! L.prototype || L.prototype.__tslpLoadAsyncPatched ) return;
+	L.prototype.__tslpLoadAsyncPatched = true;
+	const origLoad = L.prototype.load;
+	const origLoadAsync = L.prototype.loadAsync;
+	const _now = () => ( typeof window.__tslpRealNow === 'function' ? window.__tslpRealNow() : Date.now() );
+	if ( typeof origLoad === 'function' ) {
+		L.prototype.load = function ( url, onLoad, onProgress, onError ) {
+			const touch = () => { window.__tslpLoaderLastBusyAt = _now(); };
+			touch();
+			const wrap = ( cb ) => typeof cb === 'function'
+				? ( ...args ) => {
+					try { return cb.apply( this, args ); }
+					finally { touch(); }
+				}
+				: cb;
+			return origLoad.call( this, url, wrap( onLoad ), onProgress, wrap( onError ) );
+		};
+	}
+	if ( typeof origLoadAsync !== 'function' ) return;
+	L.prototype.loadAsync = function ( ...args ) {
+		window.__tslpLoaderPending = ( window.__tslpLoaderPending | 0 ) + 1;
+		window.__tslpLoaderLastBusyAt = _now();
+		return origLoadAsync.apply( this, args ).finally( () => {
+			window.__tslpLoaderPending = Math.max( 0, ( window.__tslpLoaderPending | 0 ) - 1 );
+			window.__tslpLoaderLastBusyAt = _now();
+		} );
+	};
+} )();
 
 	function __makePassTextureNode( passNode, name = 'output', previous = false ) {
 		const texture = previous ? passNode.getPreviousTexture( name ) : passNode.getTexture( name );
@@ -722,7 +893,6 @@ const __data = __state.artifacts || { user: {}, aux: [] };
 	function __sceneCanRenderMRT( scene, mrt ) {
 		const targetCount = __mrtOutputCount( mrt );
 		if ( targetCount <= 1 || ! scene || typeof scene.traverse !== 'function' ) return true;
-		if ( scene.background || scene.backgroundNode ) return false;
 		let ok = true;
 		scene.traverse( ( object ) => {
 			if ( ! ok || ! object || ! object.material ) return;
@@ -757,10 +927,12 @@ const __data = __state.artifacts || { user: {}, aux: [] };
 			this._mrt = null;
 			this._textures = Object.create( null );
 			this._textureNodes = Object.create( null );
+			this._viewZNodes = Object.create( null );
+			this._linearDepthNodes = Object.create( null );
 			this._previousTextures = Object.create( null );
 			this._previousTextureNodes = Object.create( null );
-			this._cameraNear = { value: 0 };
-			this._cameraFar = { value: 1 };
+			this._cameraNear = FullTSL.uniform( 0 );
+			this._cameraFar = FullTSL.uniform( 1 );
 			this.overrideMaterial = null;
 			this.transparent = true;
 			this.opaque = true;
@@ -773,6 +945,10 @@ const __data = __state.artifacts || { user: {}, aux: [] };
 			const renderTarget = new Slim.RenderTarget( 1, 1, { type: Slim.HalfFloatType, ...this.options } );
 			renderTarget.texture.name = 'output';
 			renderTarget.depthTexture = depthTexture;
+			// Back-link depth texture to its render target so the slim
+			// hydrator multisample check accepts it as a multisampled
+			// depth binding when samples is greater than 1.
+			depthTexture.renderTarget = renderTarget;
 			this.renderTarget = renderTarget;
 			this._textures.output = renderTarget.texture;
 			this._textures.depth = depthTexture;
@@ -851,6 +1027,8 @@ const __data = __state.artifacts || { user: {}, aux: [] };
 		mix( ...args ) { return this.__callTextureNode( 'mix', args ); }
 		clamp( ...args ) { return this.__callTextureNode( 'clamp', args ); }
 		normalize( ...args ) { return this.__callTextureNode( 'normalize', args ); }
+		toneMapping( ...args ) { return this.__callTextureNode( 'toneMapping', args ); }
+		renderOutput( ...args ) { return this.__callTextureNode( 'renderOutput', args ); }
 		get r() { return this.getTextureNode().r; }
 		get g() { return this.getTextureNode().g; }
 		get b() { return this.getTextureNode().b; }
@@ -862,8 +1040,24 @@ const __data = __state.artifacts || { user: {}, aux: [] };
 			if ( textureNode === undefined ) this._previousTextureNodes[ name ] = textureNode = __makePassTextureNode( this, name, true );
 			return textureNode;
 		}
-		getViewZNode( name = 'depth' ) { return this.getTextureNode( name ); }
-		getLinearDepthNode( name = 'depth' ) { return this.getTextureNode( name ); }
+		getViewZNode( name = 'depth' ) {
+			let viewZNode = this._viewZNodes[ name ];
+			if ( viewZNode === undefined ) {
+				viewZNode = FullTSL.perspectiveDepthToViewZ( this.getTextureNode( name ), this._cameraNear, this._cameraFar );
+				try { viewZNode.passNode = this; } catch ( _ ) {}
+				this._viewZNodes[ name ] = viewZNode;
+			}
+			return viewZNode;
+		}
+		getLinearDepthNode( name = 'depth' ) {
+			let linearDepthNode = this._linearDepthNodes[ name ];
+			if ( linearDepthNode === undefined ) {
+				linearDepthNode = FullTSL.viewZToOrthographicDepth( this.getViewZNode( name ), this._cameraNear, this._cameraFar );
+				try { linearDepthNode.passNode = this; } catch ( _ ) {}
+				this._linearDepthNodes[ name ] = linearDepthNode;
+			}
+			return linearDepthNode;
+		}
 		setup( { renderer } = {} ) {
 			if ( renderer && typeof renderer.getOutputBufferType === 'function' ) {
 				try { this.renderTarget.texture.type = renderer.getOutputBufferType(); } catch ( _ ) {}
@@ -914,6 +1108,7 @@ const __data = __state.artifacts || { user: {}, aux: [] };
 			this._cameraNear.value = camera.near || 0;
 			this._cameraFar.value = camera.far || 1;
 			this.setSize( size.width || 1, size.height || 1 );
+			__recordRenderableObjectCount( scene );
 			const currentRenderTarget = typeof renderer.getRenderTarget === 'function' ? renderer.getRenderTarget() : null;
 			const currentMRT = typeof renderer.getMRT === 'function' ? renderer.getMRT() : null;
 			const currentAutoClear = renderer.autoClear;
@@ -926,12 +1121,36 @@ const __data = __state.artifacts || { user: {}, aux: [] };
 			if ( this.overrideMaterial !== null ) scene.overrideMaterial = this.overrideMaterial;
 			renderer.setRenderTarget( this.renderTarget );
 			const replayMRT = __sceneCanRenderMRT( scene, this._mrt ) ? this._mrt : null;
-			__syncPassRenderTargetTextures( this, replayMRT );
-			if ( typeof renderer.setMRT === 'function' ) renderer.setMRT( replayMRT );
 			renderer.autoClear = true;
 			renderer.transparent = this.transparent;
 			renderer.opaque = this.opaque;
-			renderer.render( scene, camera );
+			if ( replayMRT && ( scene.background || scene.backgroundNode ) ) {
+				const backgroundScene = this.__tslpBackgroundScene || ( this.__tslpBackgroundScene = new Slim.Scene() );
+				backgroundScene.background = scene.background;
+				backgroundScene.backgroundNode = scene.backgroundNode;
+				backgroundScene.environment = scene.environment;
+				__syncPassRenderTargetTextures( this, null );
+				if ( typeof renderer.setMRT === 'function' ) renderer.setMRT( null );
+				renderer.render( backgroundScene, camera );
+
+				const savedBackground = scene.background;
+				const savedBackgroundNode = scene.backgroundNode;
+				try {
+					scene.background = null;
+					scene.backgroundNode = null;
+					__syncPassRenderTargetTextures( this, replayMRT );
+					if ( typeof renderer.setMRT === 'function' ) renderer.setMRT( replayMRT );
+					renderer.autoClear = false;
+					renderer.render( scene, camera );
+				} finally {
+					scene.background = savedBackground;
+					scene.backgroundNode = savedBackgroundNode;
+				}
+			} else {
+				__syncPassRenderTargetTextures( this, replayMRT );
+				if ( typeof renderer.setMRT === 'function' ) renderer.setMRT( replayMRT );
+				renderer.render( scene, camera );
+			}
 			scene.overrideMaterial = currentOverrideMaterial;
 			renderer.setRenderTarget( currentRenderTarget );
 			if ( typeof renderer.setMRT === 'function' ) renderer.setMRT( currentMRT );
@@ -1058,6 +1277,13 @@ function __rememberLiveTexture( texture ) {
 // scene.environment ever gets registered. The guard keeps the pre-render
 // hook a no-op while a PMREM build is in flight.
 let __pmremRunning = 0;
+
+// Re-entrancy depth for renderer.render(). RTTNode.updateBefore / PassNode.updateBefore
+// invoke QuadMesh.render( renderer ) which calls renderer.render( quadScene, ... )
+// recursively on us. Those nested scenes contain full-renderer-internal NodeMaterials
+// with no captured artifact — __replaceSceneMaterials would throw. Skip scene prep
+// (and the explicit RTT/effect drives, already in flight at depth 0) when nested.
+let __renderDepth = 0;
 
 function __makeFullRoomEnvironment( Three ) {
 	if ( ! Three ) return null;
@@ -1266,6 +1492,18 @@ function __shareGPUTextureEntry( targetRenderer, sourceRenderer, texture ) {
 			}
 			return;
 		}
+		const tx = targetRenderer._textures;
+		const txData = tx && typeof tx.get === 'function' ? tx.get( texture ) : null;
+		if ( txData && txData.bindGroups ) {
+			for ( const bindGroup of txData.bindGroups ) {
+				const bindingsData = targetRenderer.backend.get( bindGroup );
+				if ( bindingsData ) {
+					bindingsData.groups = undefined;
+					bindingsData.versions = undefined;
+				}
+			}
+			txData.bindGroups.clear();
+		}
 		const targetData = targetRenderer.backend.get( texture );
 		for ( const key of Object.keys( sourceData ) ) targetData[ key ] = sourceData[ key ];
 		__markSlimTextureInitialized( targetRenderer, texture );
@@ -1278,15 +1516,40 @@ function __shareGPUTextureEntry( targetRenderer, sourceRenderer, texture ) {
 	}
 }
 
+function __recordRenderableObjectCount( scene ) {
+	if ( ! scene || typeof scene.traverse !== 'function' ) return;
+	let count = 0;
+	try {
+		scene.traverse( ( object ) => {
+			if ( object && object.visible !== false && object.geometry && object.material ) count ++;
+		} );
+	} catch ( _ ) {
+		return;
+	}
+	const prev = window.__tslpRenderableObjectCount | 0;
+	if ( count !== prev ) {
+		window.__tslpRenderableObjectCount = count;
+		window.__tslpRenderableLastBusyAt = typeof window.__tslpRealNow === 'function' ? window.__tslpRealNow() : Date.now();
+	}
+}
+
 function __markSlimTextureInitialized( slimRenderer, texture ) {
 	if ( ! slimRenderer || ! texture ) return;
 	const tx = slimRenderer._textures;
 	if ( ! tx || typeof tx.get !== 'function' ) return;
 	const txData = tx.get( texture );
 	txData.initialized = true;
+	txData.isDefaultTexture = false;
 	txData.version = texture.version;
 	txData.generation = texture.version;
 	if ( ! txData.bindGroups ) txData.bindGroups = new Set();
+}
+
+function __clearTextureViewCache( textureData ) {
+	if ( ! textureData ) return;
+	for ( const key of Object.keys( textureData ) ) {
+		if ( key.startsWith( 'view-' ) ) delete textureData[ key ];
+	}
 }
 
 // Detect at boot whether any registered background-aux artifact references a
@@ -1322,9 +1585,17 @@ const __backgroundNeedsPMREM = ( function () {
 // same Texture instance and hits the UUID path; this index is harness-
 // and test-only.
 ( function patchLoaders() {
-	const loaders = [ 'TextureLoader', 'CubeTextureLoader', 'DataTextureLoader', 'ImageBitmapLoader' ];
-	for ( const name of loaders ) {
-		const Ctor = Slim[ name ];
+	const loaders = [
+		[ 'TextureLoader', Slim.TextureLoader ],
+		[ 'CubeTextureLoader', Slim.CubeTextureLoader ],
+		[ 'DataTextureLoader', Slim.DataTextureLoader ],
+		[ 'ImageBitmapLoader', Slim.ImageBitmapLoader ],
+		[ 'FullTextureLoader', FullTextureLoader ],
+		[ 'FullCubeTextureLoader', FullCubeTextureLoader ],
+		[ 'FullDataTextureLoader', FullDataTextureLoader ],
+		[ 'FullImageBitmapLoader', FullImageBitmapLoader ],
+	];
+	for ( const [ name, Ctor ] of loaders ) {
 		if ( ! Ctor || ! Ctor.prototype || ! Ctor.prototype.load || Ctor.prototype.__tslpPatched ) continue;
 		Ctor.prototype.__tslpPatched = true;
 		const origLoad = Ctor.prototype.load;
@@ -1625,8 +1896,8 @@ function __basenameFromUrl( value ) {
 	return tail.split( '?' )[ 0 ].split( '#' )[ 0 ];
 }
 
-function __textureMatchesArtifactSource( texture, source ) {
-	if ( ! texture || texture.isTexture !== true || ! source || source.kind !== 'artifact.texture' ) return false;
+function __textureMatchesSource( texture, source ) {
+	if ( ! texture || texture.isTexture !== true || ! source || ! source.kind ) return false;
 	if ( source.textureUuid && texture.uuid === source.textureUuid ) return true;
 	const textureName = typeof texture.name === 'string' ? texture.name : '';
 	if ( source.textureName && textureName === source.textureName ) return true;
@@ -1635,6 +1906,11 @@ function __textureMatchesArtifactSource( texture, source ) {
 	const sourceBase = __basenameFromUrl( source.textureName || source.imageSrc );
 	const textureBase = __basenameFromUrl( textureName || textureSrc );
 	return !! ( sourceBase && textureBase && sourceBase === textureBase );
+}
+
+function __textureMatchesArtifactSource( texture, source ) {
+	if ( ! source || source.kind !== 'artifact.texture' ) return false;
+	return __textureMatchesSource( texture, source );
 }
 
 function __countArtifactTextureSources( artifact, predicate = null ) {
@@ -1672,7 +1948,7 @@ function __artifactNodeAttributes( artifact ) {
 }
 
 function __nodeGraphKeys() {
-	return [ 'colorNode', 'fragmentNode', 'normalNode', 'positionNode', 'outputNode', 'roughnessNode', 'metalnessNode', 'emissiveNode', 'opacityNode', 'alphaTestNode', 'vertexNode', 'envNode', 'lightNode', 'aoNode', 'transmissionNode', 'thicknessNode' ];
+	return [ 'colorNode', 'fragmentNode', 'normalNode', 'positionNode', 'outputNode', 'roughnessNode', 'metalnessNode', 'emissiveNode', 'opacityNode', 'alphaTestNode', 'vertexNode', 'envNode', 'lightNode', 'aoNode', 'transmissionNode', 'thicknessNode', 'maskNode', 'maskShadowNode', 'receivedShadowPositionNode', 'castShadowPositionNode', 'castShadowNode' ];
 }
 
 function __sourceHasNodeGraph( sourceMaterial ) {
@@ -1694,6 +1970,16 @@ function __collectMaterialNodeTextures( sourceMaterial ) {
 				out.push( texture );
 			}
 		}
+	}
+	return out;
+}
+
+function __collectMaterialPropertyTextures( sourceMaterial ) {
+	const out = [];
+	if ( ! sourceMaterial ) return out;
+	for ( const property of __TEXTURE_PROPS ) {
+		const texture = sourceMaterial[ property ];
+		if ( texture && texture.isTexture === true ) out.push( { property, texture } );
 	}
 	return out;
 }
@@ -1833,6 +2119,42 @@ function __scoreArtifactForSource( key, mod, className, sourceMaterial, sourceOb
 		if ( __artifactHasTextureSource( artifact, __isPMREMArtifactTextureSource ) ) score -= 35;
 	}
 
+	if ( sourceMaterial && typeof sourceMaterial.wireframe === 'boolean' && artifact.renderState && typeof artifact.renderState.wireframe === 'boolean' ) {
+		if ( sourceMaterial.wireframe === artifact.renderState.wireframe ) score += 90;
+		else score -= 120;
+	}
+
+	const materialTextures = __collectMaterialPropertyTextures( sourceMaterial );
+	if ( materialTextures.length > 0 ) {
+		const matchedMaterialTextureSources = new Set();
+		const sourceMaterialTextureProps = new Set( materialTextures.map( ( item ) => item.property ).filter( Boolean ) );
+		const artifactMaterialTextureProps = new Set();
+		for ( const group of artifact.uniformPlan || [] ) {
+			for ( const entry of group.textures || [] ) {
+				const source = entry && entry.source || {};
+				if ( ! source.kind || ! source.kind.startsWith( 'material.' ) ) continue;
+				const property = source.property || source.kind.split( '.' )[ 1 ];
+				if ( property ) artifactMaterialTextureProps.add( property );
+				const matchIndex = materialTextures.findIndex( ( item, index ) => ! matchedMaterialTextureSources.has( index ) && ( property === item.property || source.kind === 'material.' + item.property ) && __textureMatchesSource( item.texture, source ) );
+				if ( matchIndex !== -1 ) matchedMaterialTextureSources.add( matchIndex );
+			}
+		}
+		let propertyMatches = 0;
+		for ( const property of sourceMaterialTextureProps ) if ( artifactMaterialTextureProps.has( property ) ) propertyMatches ++;
+		const missingSourceProps = Math.max( 0, sourceMaterialTextureProps.size - propertyMatches );
+		const extraArtifactProps = Math.max( 0, artifactMaterialTextureProps.size - propertyMatches );
+		if ( matchedMaterialTextureSources.size > 0 ) score += matchedMaterialTextureSources.size * 130 + propertyMatches * 20;
+		else if ( propertyMatches > 0 ) {
+			score += propertyMatches * 45;
+			if ( missingSourceProps === 0 && extraArtifactProps === 0 ) score += 35;
+			else score -= missingSourceProps * 20 + extraArtifactProps * 10;
+		}
+		else if ( __artifactHasTextureSource( artifact, ( source ) => source.kind && source.kind.startsWith( 'material.' ) ) ) score -= 75;
+		else score -= 55;
+	} else if ( __artifactHasTextureSource( artifact, ( source ) => source.kind && source.kind.startsWith( 'material.' ) ) ) {
+		score -= 75;
+	}
+
 	const nodeTextures = __collectMaterialNodeTextures( sourceMaterial );
 	const sourceHasNodeTexture = nodeTextures.length > 0;
 	const sourceHasPmremTexture = nodeTextures.some( __isPMREMTexture );
@@ -1855,11 +2177,18 @@ function __scoreArtifactForSource( key, mod, className, sourceMaterial, sourceOb
 		}
 		if ( matchedNodeTextureSources.size > 0 ) score += matchedNodeTextureSources.size * 90;
 		else if ( identifiableNodeTextures.length > 0 && __artifactHasTextureSource( artifact, ( source ) => source.kind === 'artifact.texture' && ! __isPMREMArtifactTextureSource( source ) ) ) score -= 55;
-	} else if ( __sourceHasNodeGraph( sourceMaterial ) ) {
-		if ( __artifactHasTextureSource( artifact ) ) score += 20;
-	}
+		} else if ( __sourceHasNodeGraph( sourceMaterial ) ) {
+			if ( __artifactHasTextureSource( artifact ) ) score += 20;
+		}
 
-	const nodeAttrs = __artifactNodeAttributes( artifact );
+		const nodeAttrs = __artifactNodeAttributes( artifact );
+	const declaredAttrs = Array.isArray( artifact.attributes ) ? artifact.attributes : [];
+	const artifactSkinned = declaredAttrs.some( ( entry ) => entry && ( entry.name === 'skinIndex' || entry.name === 'skinWeight' ) );
+	const sourceGeometryAttrs = sourceObject && sourceObject.geometry && sourceObject.geometry.attributes || {};
+	const sourceSkinned = !! ( sourceObject && ( sourceObject.isSkinnedMesh === true || sourceGeometryAttrs.skinIndex || sourceGeometryAttrs.skinWeight ) );
+	if ( artifactSkinned && sourceSkinned ) score += 90;
+	else if ( artifactSkinned && sourceObject && ! sourceSkinned ) score -= 220;
+	else if ( sourceSkinned && ! artifactSkinned ) score -= 120;
 	if ( sourceObject && sourceObject.isInstancedMesh === true ) {
 		const count = sourceObject.count || 0;
 		const matchingAttrs = count ? nodeAttrs.filter( ( entry ) => entry.count === count ) : [];
@@ -1878,9 +2207,12 @@ function __scoreArtifactForSource( key, mod, className, sourceMaterial, sourceOb
 
 function __findBestArtifactForSource( className, sourceMaterial, keys, sourceObject = null ) {
 	if ( ! sourceMaterial || ! Array.isArray( keys ) || keys.length === 0 ) return null;
+	const typeNeedle = __sourceTypeNeedle( sourceMaterial );
+	const preferredKeys = keys.filter( ( key ) => key.includes( ':' + className + ':' ) || ( typeNeedle && key.includes( ':' + typeNeedle + ':' ) ) );
+	const searchKeys = preferredKeys.length > 0 ? preferredKeys : keys;
 	let best = null;
 	let bestScore = -Infinity;
-	for ( const key of keys ) {
+	for ( const key of searchKeys ) {
 		const mod = __data.user && __data.user[ key ];
 		const score = __scoreArtifactForSource( key, mod, className, sourceMaterial, sourceObject );
 		if ( score > bestScore ) {
@@ -2093,6 +2425,25 @@ function __wireMaterialTextures( sourceMaterial, replacement ) {
 function __makeFallbackArtifactTexture( source ) {
 	const key = source && ( source.textureUuid || source.imageSrc || source.textureName ) || 'texture';
 	if ( __fallbackArtifactTextures.has( key ) ) return __fallbackArtifactTextures.get( key );
+	if ( source && source.imageSrc && ! /\.(?:hdr|exr|ktx2?|basis)(?:[?#]|$)/i.test( source.imageSrc ) ) {
+		let url = source.imageSrc;
+		try {
+			const parsed = new URL( source.imageSrc, window.location.href );
+			url = parsed.pathname + parsed.search + parsed.hash;
+		} catch ( _ ) {}
+		const texture = new Slim.TextureLoader().load( url, () => {
+			__rememberLiveTexture( texture );
+		} );
+		texture.name = source.textureName || __basenameFromUrl( source.imageSrc ) || texture.name;
+		if ( source.colorSpace !== undefined ) texture.colorSpace = source.colorSpace;
+		if ( ! __textureImageReady( texture ) ) {
+			texture.image = __newFallbackTextureImage();
+			texture.needsUpdate = true;
+		}
+		__rememberLiveTexture( texture );
+		__fallbackArtifactTextures.set( key, texture );
+		return texture;
+	}
 	const data = new Uint8Array( [ 255, 255, 255, 255 ] );
 	const texture = new Slim.DataTexture( data, 1, 1 );
 	texture.name = source && ( source.textureName || __basenameFromUrl( source.imageSrc ) ) || 'tslp-fallback-texture';
@@ -2131,6 +2482,17 @@ function __wireMaterialNodeTextures( sourceMaterial, replacement ) {
 	const artifact = replacement.precompiledArtifact;
 	__wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial );
 	const nodeTextures = __collectMaterialNodeTextures( sourceMaterial );
+	const globalTslTextures = Array.isArray( window.__tslpTslTextureArgs ) ? window.__tslpTslTextureArgs : [];
+	for ( const texture of globalTslTextures ) {
+		if ( nodeTextures.includes( texture ) ) continue;
+		if ( __artifactHasTextureSource( artifact, ( source ) => __textureMatchesArtifactSource( texture, source ) ) ) {
+			nodeTextures.push( texture );
+		}
+	}
+	if ( nodeTextures.length === 0 && __countArtifactTextureSources( artifact, ( source ) => ! __isPMREMArtifactTextureSource( source ) ) <= 1 ) {
+		const candidates = globalTslTextures.filter( ( texture ) => texture && texture.isTexture === true && texture.isCubeTexture !== true && texture.isData3DTexture !== true && texture.is3DTexture !== true && ! __isPMREMTexture( texture ) );
+		if ( candidates.length === 1 ) nodeTextures.push( candidates[ 0 ] );
+	}
 	const anonymousNodeTextures = nodeTextures.filter( ( tex ) => tex && tex.isTexture === true && ! __isPMREMTexture( tex ) && ! tex.name && ! __textureImageSrc( tex ) );
 	for ( const tex of nodeTextures ) {
 		if ( tex && tex.isTexture === true ) __rememberLiveTexture( tex );
@@ -2256,6 +2618,11 @@ function __rememberGraphTexture( byName, texture ) {
 	const list = byName.get( name ) || [];
 	if ( ! list.includes( texture ) ) list.push( texture );
 	byName.set( name, list );
+	const dimension = __textureDimensionKey( texture );
+	const dimensionKey = \`__dimension:\${ dimension }\`;
+	const dimensionList = byName.get( dimensionKey ) || [];
+	if ( ! dimensionList.includes( texture ) ) dimensionList.push( texture );
+	byName.set( dimensionKey, dimensionList );
 }
 
 function __rememberRenderTargetTextures( byName, target ) {
@@ -2299,9 +2666,111 @@ function __collectGraphTexturesByName( node, byName = new Map(), seen = new Set(
 	return byName;
 }
 
+function __collectFrameEffectTextureAliases( node, byName, seen = new Set(), depth = 0 ) {
+	if ( ! node || ! byName || depth > 32 || seen.has( node ) ) return byName;
+	seen.add( node );
+	const type = node.constructor && ( node.constructor.type || node.constructor.name ) || node.type || '';
+	if ( type === 'AfterImageNode' ) {
+		let texture = null;
+		try {
+			const textureNode = typeof node.getTextureNode === 'function' ? node.getTextureNode() : node._textureNode;
+			texture = textureNode && textureNode.value;
+		} catch ( _ ) {}
+		if ( texture && texture.isTexture === true ) {
+			byName.set( 'AfterImageNode.old', [ texture ] );
+			byName.set( 'AfterImageNode.comp', [ texture ] );
+		}
+	}
+	const keys = [];
+	try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
+	const skip = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'geometry', 'material', 'domElement', 'renderTarget', '_compRT', '_oldRT' ] );
+	for ( const key of keys ) {
+		if ( skip.has( key ) ) continue;
+		let child = null;
+		try { child = node[ key ]; } catch ( _ ) { continue; }
+		if ( ! child ) continue;
+		if ( Array.isArray( child ) ) {
+			for ( const item of child ) if ( item && ( typeof item === 'object' || typeof item === 'function' ) ) __collectFrameEffectTextureAliases( item, byName, seen, depth + 1 );
+		} else if ( typeof child === 'object' || typeof child === 'function' ) {
+			__collectFrameEffectTextureAliases( child, byName, seen, depth + 1 );
+		}
+	}
+	return byName;
+}
+
+function __textureDimensionKey( texture ) {
+	if ( ! texture || texture.isTexture !== true ) return '2d';
+	if ( texture.isCubeTexture === true ) return 'cube';
+	if ( texture.isData3DTexture === true || texture.isTexture3D === true ) return '3d';
+	if ( texture.isDataArrayTexture === true || texture.isArrayTexture === true || texture.isCompressedArrayTexture === true ) return '2d-array';
+	return '2d';
+}
+
+function __planTextureDimension( source, entry ) {
+	const explicit = entry && entry.textureType && entry.textureType !== 'unknown' ? entry.textureType
+		: source && source.textureType ? source.textureType
+			: source && source.textureDimension ? source.textureDimension
+				: null;
+	if ( explicit === '3d' || explicit === '2d-array' || explicit === 'cube' || explicit === '2d' ) return explicit;
+	const snapshot = source && source.snapshot;
+	if ( snapshot ) {
+		const depth = ( snapshot.depth | 0 ) || ( snapshot.layers | 0 ) || ( snapshot.depthOrArrayLayers | 0 );
+		if ( depth > 1 ) return '3d';
+		const width = snapshot.width | 0;
+		const height = snapshot.height | 0;
+		const data = snapshot.data || snapshot.array;
+		const dataLength = data && typeof data.length === 'number' ? data.length : 0;
+		if ( width > 0 && height > 0 && dataLength > width * height * 4 ) return '3d';
+	}
+	return null;
+}
+
+function __collectArtifactTextureDimensions( artifact ) {
+	const dimensions = new Map();
+	const rank = { '2d': 1, '2d-array': 2, cube: 2, '3d': 3 };
+	for ( const group of artifact && artifact.uniformPlan || [] ) {
+		for ( const entry of group.textures || [] ) {
+			const source = entry && entry.source || {};
+			if ( source.kind !== 'artifact.texture' || ! source.textureUuid ) continue;
+			const dimension = __planTextureDimension( source, entry );
+			if ( ! dimension ) continue;
+			const current = dimensions.get( source.textureUuid );
+			if ( ! current || ( rank[ dimension ] || 0 ) > ( rank[ current ] || 0 ) ) dimensions.set( source.textureUuid, dimension );
+		}
+	}
+	return dimensions;
+}
+
+function __selectGraphTexture( byName, name, dimension, offsets ) {
+	let list = byName.get( name ) || [];
+	let offsetKey = name;
+	if ( dimension ) {
+		const matching = list.filter( ( texture ) => __textureDimensionKey( texture ) === dimension );
+		if ( matching.length > 0 ) {
+			list = matching;
+			offsetKey = \`\${ name }|\${ dimension }\`;
+		} else {
+			const dimensionKey = \`__dimension:\${ dimension }\`;
+			const dimensionList = byName.get( dimensionKey ) || [];
+			if ( dimensionList.length > 0 ) {
+				list = dimensionList;
+				offsetKey = dimensionKey;
+			} else {
+				list = [];
+			}
+		}
+	}
+	if ( list.length === 0 ) return null;
+	const offset = offsets.get( offsetKey ) || 0;
+	offsets.set( offsetKey, offset + 1 );
+	return list[ Math.min( offset, list.length - 1 ) ];
+}
+
 function __attachGraphTextureRefs( artifact, graphNode ) {
 	if ( ! artifact || ! graphNode ) return artifact;
 	const byName = __collectGraphTexturesByName( graphNode );
+	__collectFrameEffectTextureAliases( graphNode, byName );
+	const dimensionsByUuid = __collectArtifactTextureDimensions( artifact );
 	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
 	const byUuid = new Map();
 	const offsets = new Map();
@@ -2313,11 +2782,9 @@ function __attachGraphTextureRefs( artifact, graphNode ) {
 			let texture = byUuid.get( source.textureUuid );
 			if ( ! texture ) {
 				const name = source.textureName || 'output';
-				const list = byName.get( name ) || [];
-				if ( list.length === 0 ) continue;
-				const offset = offsets.get( name ) || 0;
-				texture = list[ Math.min( offset, list.length - 1 ) ];
-				offsets.set( name, offset + 1 );
+				const dimension = dimensionsByUuid.get( source.textureUuid ) || __planTextureDimension( source, entry );
+				texture = __selectGraphTexture( byName, name, dimension, offsets );
+				if ( ! texture ) continue;
 				byUuid.set( source.textureUuid, texture );
 			}
 			refs.set( source.textureUuid, texture );
@@ -2349,14 +2816,35 @@ function __attachPassTextureRefs( artifact, passNode ) {
 	const output = getPassTexture( 'output' );
 	if ( output ) __attachTextureRefsWhere( artifact, output, ( source ) => source.kind === 'artifact.texture' && ( source.textureName === 'output' || ! source.textureName ) );
 	const depth = getPassTexture( 'depth' );
-	if ( depth ) __attachTextureRefsWhere( artifact, depth, ( source ) => source.kind === 'depth.texture' );
+	if ( depth ) {
+		__attachTextureRefsWhere( artifact, depth, ( source ) => source.kind === 'depth.texture' );
+		// Re-tag pass-rendered depth bindings (fromMaterialGraph, no light)
+		// from kind=depth.texture to kind=artifact.texture so the slim
+		// hydrator resolves them through the existing _textureRefs path
+		// (the depth.texture path targets shadow maps and returns an empty
+		// 1x1 fallback that reads as 0 -> viewZ near -> fog factor 0 -> fog
+		// never appears). Shadow-map depth bindings (lightUuid set or
+		// lightIndex>=0) keep kind=depth.texture so the per-frame shadow
+		// rebinder still owns them.
+		for ( const group of artifact.uniformPlan || [] ) {
+			for ( const entry of group.textures || [] ) {
+				const src = entry && entry.source;
+				if ( ! src || src.kind !== 'depth.texture' ) continue;
+				if ( src.lightUuid || ( typeof src.lightIndex === 'number' && src.lightIndex >= 0 ) ) continue;
+				if ( src.fromMaterialGraph !== true ) continue;
+				src.kind = 'artifact.texture';
+			}
+		}
+	}
 	return artifact;
 }
 
 function __attachRTTTextureRefs( artifact, rttNodes ) {
 	if ( ! artifact || ! Array.isArray( rttNodes ) || rttNodes.length === 0 ) return artifact;
 	const rtt = rttNodes[ 0 ];
-	if ( __rttPrecompiledShape( rtt ) === 'render-output' ) return artifact;
+	const rttShape = __rttPrecompiledShape( rtt );
+	const artifactShape = artifact.materialShape || artifact.shape || '';
+	if ( rttShape === 'render-output' && artifactShape === 'render-output' ) return artifact;
 	const texture = rtt && rtt.renderTarget && rtt.renderTarget.texture;
 	if ( texture && texture.isTexture === true ) {
 		__attachTextureRefsWhere( artifact, texture, ( source ) => source.kind === 'artifact.texture' && ! source.textureName );
@@ -2385,7 +2873,18 @@ function __classNameFromArtifactName( name ) {
 	return parts.length >= 3 ? parts[ 1 ] : '';
 }
 
+function __artifactRequiresSkinning( artifact ) {
+	return ( Array.isArray( artifact && artifact.attributes ) ? artifact.attributes : [] )
+		.some( ( entry ) => entry && ( entry.name === 'skinIndex' || entry.name === 'skinWeight' ) );
+}
+
+function __objectHasSkinning( object ) {
+	const attrs = object && object.geometry && object.geometry.attributes || {};
+	return !! ( object && ( object.isSkinnedMesh === true || attrs.skinIndex || attrs.skinWeight ) );
+}
+
 function __precompiledArtifactMatchesObject( artifact, object ) {
+	if ( object && __artifactRequiresSkinning( artifact ) !== __objectHasSkinning( object ) ) return false;
 	if ( ! object || object.isInstancedMesh !== true ) return true;
 	const count = object.count || 0;
 	if ( ! count ) return true;
@@ -2417,6 +2916,53 @@ function __retargetPrecompiledMaterialForObject( material, object ) {
 	return replacement;
 }
 
+function __replaceMaterialForReplay( inputMaterial, object = null, force = false ) {
+	let m = inputMaterial;
+	if ( ! m ) return m;
+	// Materials intercepted at constructor time come back as PrecompiledMaterial
+	// directly. Wire live compute attributes (positionNode, colorNode...) into
+	// the artifact plan entries now — before hydrateNodeBuilderState is first
+	// called in the upcoming super.render.
+	if ( m.isPrecompiledMaterial ) {
+		m = __retargetPrecompiledMaterialForObject( m, object );
+		if ( object ) {
+			try { Object.defineProperty( m, '__tslpPrecompileObject', { value: object, configurable: true } ); } catch ( _ ) {}
+		}
+		if ( __wireMaterialPropertyTexturesFromArtifact( m ) ) __markMaterialTextureRewire( m );
+		if ( m.precompiledArtifact && ! __wiredPCMaterials.has( m ) ) {
+			__wireComputeAttrsToArtifact( m.precompiledArtifact, m );
+			__wireMaterialNodeTextures( m, m );
+			__wiredPCMaterials.add( m );
+		}
+		return m;
+	}
+	if ( ! force && m.visible === false ) return m;
+	if ( __seenMaterials.has( m ) ) {
+		const replacement = __seenMaterials.get( m );
+		__copyMaterialProps( m, replacement );
+		__copyMaterialNodeProps( m, replacement );
+		__wireMaterialTextures( m, replacement );
+		if ( __wireMaterialPropertyTexturesFromArtifact( replacement ) ) __markMaterialTextureRewire( replacement );
+		return replacement;
+	}
+	const className = __classNameForMaterial( m );
+	const replacement = __takeMaterial( className, m, object );
+	if ( object ) {
+		try { Object.defineProperty( replacement, '__tslpPrecompileObject', { value: object, configurable: true } ); } catch ( _ ) {}
+	}
+	__copyMaterialProps( m, replacement );
+	__copyMaterialNodeProps( m, replacement );
+	__wireMaterialTextures( m, replacement );
+	if ( __wireMaterialPropertyTexturesFromArtifact( replacement ) ) __markMaterialTextureRewire( replacement );
+	__seenMaterials.set( m, replacement );
+	return replacement;
+}
+
+function __replaceSceneOverrideMaterial( scene ) {
+	if ( ! scene || ! scene.overrideMaterial ) return;
+	scene.overrideMaterial = __replaceMaterialForReplay( scene.overrideMaterial, null, true );
+}
+
 function __replaceSceneMaterials( scene ) {
 	if ( ! scene || typeof scene.traverse !== 'function' ) return;
 	const objects = [];
@@ -2427,43 +2973,7 @@ function __replaceSceneMaterials( scene ) {
 	for ( const object of objects ) {
 		const material = object && object.material;
 		if ( ! material ) continue;
-		const replaceOne = ( inputMaterial ) => {
-			let m = inputMaterial;
-			if ( ! m ) return m;
-			// Materials intercepted at constructor time come back as PrecompiledMaterial
-			// directly. Wire live compute attributes (positionNode, colorNode...) into
-			// the artifact plan entries now — before hydrateNodeBuilderState is first
-			// called in the upcoming super.render.
-			if ( m.isPrecompiledMaterial ) {
-				m = __retargetPrecompiledMaterialForObject( m, object );
-				try { Object.defineProperty( m, '__tslpPrecompileObject', { value: object, configurable: true } ); } catch ( _ ) {}
-				if ( __wireMaterialPropertyTexturesFromArtifact( m ) ) __markMaterialTextureRewire( m );
-				if ( m.precompiledArtifact && ! __wiredPCMaterials.has( m ) ) {
-					__wireComputeAttrsToArtifact( m.precompiledArtifact, m );
-					__wireMaterialNodeTextures( m, m );
-					__wiredPCMaterials.add( m );
-				}
-				return m;
-			}
-			if ( m.visible === false ) return m;
-			if ( __seenMaterials.has( m ) ) {
-				const replacement = __seenMaterials.get( m );
-				__copyMaterialProps( m, replacement );
-				__copyMaterialNodeProps( m, replacement );
-				__wireMaterialTextures( m, replacement );
-				if ( __wireMaterialPropertyTexturesFromArtifact( replacement ) ) __markMaterialTextureRewire( replacement );
-				return replacement;
-			}
-			const className = __classNameForMaterial( m );
-			const replacement = __takeMaterial( className, m, object );
-			try { Object.defineProperty( replacement, '__tslpPrecompileObject', { value: object, configurable: true } ); } catch ( _ ) {}
-			__copyMaterialProps( m, replacement );
-			__copyMaterialNodeProps( m, replacement );
-			__wireMaterialTextures( m, replacement );
-			if ( __wireMaterialPropertyTexturesFromArtifact( replacement ) ) __markMaterialTextureRewire( replacement );
-			__seenMaterials.set( m, replacement );
-			return replacement;
-		};
+		const replaceOne = ( inputMaterial ) => __replaceMaterialForReplay( inputMaterial, object );
 		object.material = Array.isArray( material ) ? material.map( replaceOne ) : replaceOne( material );
 	}
 }
@@ -2504,7 +3014,7 @@ function __appendUniqueTextures( out, textures ) {
 }
 
 function __collectTexturesInNode( node, out = [], depth = 0, seen = new Set() ) {
-	if ( ! node || depth > 12 || seen.has( node ) ) return out;
+	if ( ! node || depth > 64 || seen.has( node ) ) return out;
 	if ( typeof node !== 'object' && typeof node !== 'function' ) return out;
 	seen.add( node );
 	if ( node.isTexture === true ) {
@@ -3173,7 +3683,8 @@ function __wireEnvironmentPMREM( renderer, scene ) {
 function __kickPMREMGenAsync( slimRenderer, sourceTex, onReady ) {
 	if ( ! slimRenderer || ! sourceTex || sourceTex.isTexture !== true ) return;
 	__pmremDiagnostics().kickCalls ++;
-	if ( __pmremCache.has( sourceTex ) ) { __pmremDiagnostics().cacheHits ++; onReady( __pmremCache.get( sourceTex ) ); return; }
+	const readyPMREM = __getCachedPMREMForSource( sourceTex );
+	if ( readyPMREM && readyPMREM.isTexture === true ) { __pmremDiagnostics().cacheHits ++; onReady( readyPMREM ); return; }
 	if ( __pmremPending.has( sourceTex ) ) {
 		__pmremDiagnostics().pendingJoins ++;
 		__pmremPending.get( sourceTex ).then( ( pmrem ) => { if ( pmrem ) onReady( pmrem ); } ).catch( () => {} );
@@ -3207,9 +3718,9 @@ function __kickPMREMGenAsync( slimRenderer, sourceTex, onReady ) {
 // from the captured artifact against currently-loaded textures.
 function __indexLiveTextures( scene ) {
 	if ( ! scene || typeof scene.traverse !== 'function' ) return;
-	const visit = ( tex ) => {
+	const visit = ( tex, options = {} ) => {
 		if ( tex && tex.isTexture === true ) {
-			__healTextureImage( tex );
+			if ( options.heal !== false ) __healTextureImage( tex );
 			__rememberLiveTexture( tex );
 		}
 	};
@@ -3230,12 +3741,12 @@ function __indexLiveTextures( scene ) {
 		// bakes those into the LightsNode TSL graph, so the captured artifact
 		// references them by uuid/imageSrc just like material.map. They must be
 		// registered or the artifact-texture rebinder falls back to a 1x1 stub.
-		if ( object && object.isLight === true && object.map && object.map.isTexture === true ) visit( object.map );
+		if ( object && object.isLight === true && object.map && object.map.isTexture === true ) visit( object.map, { heal: false } );
 		const ms = object && object.material;
 		const list = Array.isArray( ms ) ? ms : ms ? [ ms ] : [];
 		for ( const m of list ) {
 			if ( ! m ) continue;
-			for ( const key of __TEXTURE_PROPS ) visit( m[ key ] );
+			for ( const key of __TEXTURE_PROPS ) visit( m[ key ], { heal: false } );
 		}
 	} );
 }
@@ -3297,7 +3808,160 @@ function __prepareSceneForReplay( scene, renderer ) {
 	}
 	__indexLiveTextures( scene );
 	__wireBackgroundTextures( scene, renderer );
+	__replaceSceneOverrideMaterial( scene );
 	__replaceSceneMaterials( scene );
+}
+
+// Auto-compute dispatch for material *Node slots that hold a raw TSL ComputeNode.
+// In stock three.js, NodeMaterial.setup() registers each ComputeNode-shaped slot
+// (e.g. webgpu_skinning_points: material.positionNode = Fn(...)().compute(N).onInit(...))
+// for updateBefore, which calls renderer.compute(this) ahead of every draw so
+// the storage buffer feeding .toAttribute() is fresh. The slim renderer bypasses
+// NodeMaterial.setup, so updateBefore never fires and the buffer stays zeroed —
+// 16k skinned points collapse to a single dot at origin.
+//
+// Walking the scene per-frame and routing each ComputeNode through this.compute()
+// reuses the existing full-renderer + __syncStorageBuffers path (same one the
+// .compute() wrapper drives for explicit user dispatches like webgpu_compute_birds).
+const __AUTO_COMPUTE_SLOTS = [ 'positionNode', 'vertexNode', 'colorNode', 'outputNode' ];
+const __wiredAutoComputeMaterials = new WeakSet();
+// Build the auto-compute's NodeBuilderState on the full renderer just to populate
+// its bind groups, then walk those bindings to find the live storage attributes
+// (pointPositionArray, pointSpeedArray, ...) the kernel writes to. Match each
+// unwired artifact.attributes[i] (vertex stage) by count + itemSize so the slim
+// hydrator reads from the same GPU buffer the compute is updating. Without this,
+// the artifact's nodeAttribute0 ends up bound to a fresh zero-filled
+// StorageBufferAttribute and the compute output is invisible to render.
+function __wireAutoComputeAttrsToArtifact( material, computeNode ) {
+	let wiredCount = 0;
+	if ( ! material || ! material.precompiledArtifact || ! computeNode ) return 0;
+	if ( ! __computeRenderer ) return 0;
+	let nodeBuilderState;
+	try { nodeBuilderState = __computeRenderer._nodes.getForCompute( computeNode ); }
+	catch ( err ) { console.warn( '[tslp-e2e] auto-compute getForCompute failed:', err && err.message || err ); return 0; }
+	const bindings = nodeBuilderState && nodeBuilderState.bindings;
+	if ( ! bindings ) return 0;
+	// Keep only read-write storage attrs — those are the buffers the user's kernel
+	// outputs to (pointPositionArray, pointSpeedArray). Skip readOnly inputs like
+	// SkinningNode's internal position/skinIndex/skinWeight storage, which the
+	// kernel only samples from.
+	const candidates = [];
+	for ( const bg of bindings ) {
+		if ( ! bg || ! bg.bindings ) continue;
+		for ( const b of bg.bindings ) {
+			if ( ! b || ! b.isStorageBuffer || ! b.attribute ) continue;
+			if ( b.access && b.access !== 'readWrite' && b.access !== 'writeOnly' ) continue;
+			const attr = b.attribute;
+			if ( ! ( attr.isStorageBufferAttribute === true || attr.isStorageInstancedBufferAttribute === true ) ) continue;
+			if ( ! candidates.includes( attr ) ) candidates.push( attr );
+		}
+	}
+	if ( candidates.length === 0 ) return 0;
+	// Exclude storage attrs already referenced by other *Node slots — those are
+	// wired by the runtime hydrator via userPath. Without this, autowire might
+	// consume pointSpeedArray for nodeAttribute0 and leave pointPositionArray
+	// orphaned, swapping the position and color channels.
+	const usedByOtherSlots = new Set();
+	const collectStorageLeavesViaTraverse = ( node, out ) => {
+		// __collectStorageAttrNodeAttrs uses __walkNodeSafely, which only follows
+		// _children / array-shaped getChildren(); three.js getChildren() is a
+		// generator, so it walks nothing for real nodes. Use Node.traverse instead.
+		if ( ! node || typeof node.traverse !== 'function' ) return;
+		const seen = new Set();
+		try {
+			node.traverse( ( n ) => {
+				if ( ! n || seen.has( n ) ) return;
+				seen.add( n );
+				const v = n.value;
+				if ( v && ( v.isStorageBufferAttribute === true || v.isStorageInstancedBufferAttribute === true ) && ! out.includes( v ) ) out.push( v );
+				const a = n.attribute;
+				if ( a && ( a.isStorageBufferAttribute === true || a.isStorageInstancedBufferAttribute === true ) && ! out.includes( a ) ) out.push( a );
+			} );
+		} catch ( _ ) {}
+	};
+	for ( const slot of [ 'colorNode', 'vertexNode', 'normalNode', 'outputNode', 'emissiveNode', 'opacityNode' ] ) {
+		if ( ! material[ slot ] ) continue;
+		const found = [];
+		collectStorageLeavesViaTraverse( material[ slot ], found );
+		for ( const f of found ) usedByOtherSlots.add( f );
+	}
+	const artifact = material.precompiledArtifact;
+	const nodeAttrsArr = artifact.attributes || artifact.nodeAttributes || [];
+	const wired = new Set();
+	for ( const na of nodeAttrsArr ) {
+		if ( na && na._liveAttribute && na._liveAttribute.isBufferAttribute === true ) wired.add( na._liveAttribute );
+	}
+	const remaining = candidates.filter( ( c ) => ! wired.has( c ) && ! usedByOtherSlots.has( c ) );
+	for ( const na of nodeAttrsArr ) {
+		if ( ! na || na.source !== 'node' ) continue;
+		if ( na._liveAttribute && na._liveAttribute.isBufferAttribute === true ) continue;
+		// Skip entries with userPath — the runtime hydrator wires those via the
+		// recorded node-tree path. Autowire only fills entries with NO userPath,
+		// where the live attribute is buried inside a Fn closure (the compute
+		// body) that the runtime walk can't reach.
+		if ( Array.isArray( na.userPath ) && na.userPath.length > 0 ) continue;
+		// Match on count + itemSize + array constructor. The compute's bind groups
+		// usually include several storage buffers (positions, speeds, skinIndices,
+		// skinWeights, ...) with the same count; without the arrayType check we'd
+		// wire a uint skin-index buffer to a float vertex attribute and the WebGPU
+		// validator rejects the pipeline.
+		const idx = remaining.findIndex( ( c ) => {
+			if ( c.count !== na.count ) return false;
+			if ( ! ( c.itemSize === na.itemSize || ( c.itemSize === 3 && na.itemSize === 4 ) ) ) return false;
+			if ( na.arrayType && c.array && c.array.constructor && c.array.constructor.name !== na.arrayType ) return false;
+			return true;
+		} );
+		if ( idx === -1 ) continue;
+		Object.defineProperty( na, '_liveAttribute', { value: remaining[ idx ], enumerable: false, writable: true, configurable: true } );
+		remaining.splice( idx, 1 );
+		wiredCount ++;
+	}
+	return wiredCount;
+}
+const __dispatchedAutoComputeMaterials = new WeakSet();
+const __frozenDispatchedAutoComputeNodes = new Set();
+function __dispatchAutoComputeNodes( scene, slimRenderer ) {
+	if ( ! scene || typeof scene.traverse !== 'function' ) return;
+	// Once the animation loop has self-frozen, the compute() wrapper forces an
+	// extra render each time the pending-compute count drains to 0 so the GPU
+	// buffer write is visible before the screenshot. Re-dispatching the kernel
+	// on those forced renders would keep the count oscillating 0→1→0 forever
+	// (compute → forced render → compute → …). Dispatch each node at most once
+	// during the frozen phase: the first forced render carries the final pose
+	// into the buffer; subsequent forced renders are no-ops here.
+	const frozen = typeof window !== 'undefined' && window.__tslpFrozen === true;
+	const seen = new Set();
+	scene.traverse( ( object ) => {
+		const material = object && object.material;
+		const list = Array.isArray( material ) ? material : material ? [ material ] : [];
+		for ( const m of list ) {
+			if ( ! m ) continue;
+			for ( const key of __AUTO_COMPUTE_SLOTS ) {
+				const node = m[ key ];
+				if ( ! node || node.isComputeNode !== true || node.isPrecompiledCompute === true ) continue;
+				if ( seen.has( node ) ) continue;
+				seen.add( node );
+				if ( ! __wiredAutoComputeMaterials.has( m ) ) {
+					// Only re-dispatch this kernel every frame if its output buffer
+					// actually feeds an unwired vertex attribute on this precompiled
+					// material (the webgpu_skinning_points pattern). When nothing
+					// wires up, the kernel result is never read by the precompiled
+					// render path, so dispatching is pointless — and risks breaking
+					// examples whose ComputeNode-shaped material slot is unrelated to
+					// the precompiled vertex layout (e.g. webgpu_skinning_instancing).
+					if ( ( __wireAutoComputeAttrsToArtifact( m, node ) | 0 ) > 0 ) __dispatchedAutoComputeMaterials.add( m );
+					__wiredAutoComputeMaterials.add( m );
+				}
+				if ( ! __dispatchedAutoComputeMaterials.has( m ) ) continue;
+				if ( frozen ) {
+					if ( __frozenDispatchedAutoComputeNodes.has( node ) ) continue;
+					__frozenDispatchedAutoComputeNodes.add( node );
+				}
+				try { slimRenderer.compute( node ); }
+				catch ( err ) { console.warn( '[tslp-e2e] auto-compute dispatch failed:', err && err.message || err ); }
+			}
+		}
+	} );
 }
 
 // Lazy full-three.js compute renderer that shares the slim renderer's GPU
@@ -3442,6 +4106,7 @@ function __syncStorageBuffers( computeNode, fullRenderer, slimRenderer ) {
 	}
 }
 
+
 let __computeRenderer = null;
 let __computeRendererInit = null;
 let __fullThreeMod = null;
@@ -3492,6 +4157,8 @@ const __shadowSceneCache = new WeakMap(); // user-scene -> shadow-scene
 const __shadowSceneMap = new WeakMap();   // user-scene -> { meshCount }
 const __shadowGeometryCache = new WeakMap(); // slim geometry -> full geometry
 const __shadowDiscardRT = { rt: null };
+const __shadowCoverageRT = { rt: null, material: null };
+const __shadowDepthViewRT = { rt: null, material: null, quad: null, texture: null };
 
 function __sceneHasShadowLights( scene ) {
 	if ( ! scene || typeof scene.traverse !== 'function' ) return false;
@@ -3552,18 +4219,62 @@ function __cloneGeometryForFullRenderer( geometry ) {
 	return cloned;
 }
 
+function __fullLightColorValue( light ) {
+	const color = light && light.color;
+	if ( color && typeof color.getHex === 'function' ) {
+		try { return color.getHex(); } catch ( _ ) {}
+	}
+	if ( color && Number.isFinite( color.r ) && Number.isFinite( color.g ) && Number.isFinite( color.b ) ) {
+		return ( Math.round( Math.min( 1, Math.max( 0, color.r ) ) * 255 ) << 16 )
+			| ( Math.round( Math.min( 1, Math.max( 0, color.g ) ) * 255 ) << 8 )
+			| Math.round( Math.min( 1, Math.max( 0, color.b ) ) * 255 );
+	}
+	return 0xffffff;
+}
+
 function __buildShadowScene( userScene ) {
 	if ( ! __fullThreeMod ) return null;
 	// MeshLambertNodeMaterial samples lights and shadows — without a shadow-
 	// sampling material in the scene, three.js's NodeBuilder skips ShadowNode
 	// setup and light.shadow.map never allocates. Lambert is the cheapest
 	// PCF-shadow-aware material we can stand-in for.
-	const { Scene: FullScene, Mesh: FullMesh, MeshLambertMaterial, MeshLambertNodeMaterial } = __fullThreeMod;
+	const { Scene: FullScene, Mesh: FullMesh, MeshLambertMaterial, MeshLambertNodeMaterial, ClippingGroup: FullClippingGroup } = __fullThreeMod;
 	if ( ! FullScene || ! FullMesh || ( ! MeshLambertMaterial && ! MeshLambertNodeMaterial ) ) return null;
-	const StandinMaterial = MeshLambertMaterial || MeshLambertNodeMaterial;
+	const StandinMaterial = MeshLambertNodeMaterial || MeshLambertMaterial;
 	const shadowScene = new FullScene();
 	const lightPairs = []; // { src, clone } so we can refresh transforms each render
 	const meshPairs = []; // { src, clone } so we can refresh transforms each render
+	const clipPairs = []; // { src, clone } so live GUI toggles update helper groups
+	const clipParentCache = new WeakMap();
+	function clipMountPointFor( sourceObject ) {
+		if ( ! FullClippingGroup || ! sourceObject ) return shadowScene;
+		const chain = [];
+		let cursor = sourceObject.parent || null;
+		while ( cursor ) {
+			if ( cursor.isClippingGroup === true ) chain.unshift( cursor );
+			cursor = cursor.parent || null;
+		}
+		if ( chain.length === 0 ) return shadowScene;
+		let parent = shadowScene;
+		for ( const srcGroup of chain ) {
+			let cloneGroup = clipParentCache.get( srcGroup );
+			if ( ! cloneGroup ) {
+				cloneGroup = new FullClippingGroup();
+				cloneGroup.clippingPlanes = srcGroup.clippingPlanes;
+				cloneGroup.enabled = srcGroup.enabled;
+				cloneGroup.clipIntersection = srcGroup.clipIntersection;
+				cloneGroup.clipShadows = srcGroup.clipShadows;
+				if ( srcGroup.layers && cloneGroup.layers ) cloneGroup.layers.mask = srcGroup.layers.mask;
+				parent.add( cloneGroup );
+				clipParentCache.set( srcGroup, cloneGroup );
+				clipPairs.push( { src: srcGroup, clone: cloneGroup } );
+			} else if ( cloneGroup.parent !== parent ) {
+				parent.add( cloneGroup );
+			}
+			parent = cloneGroup;
+		}
+		return parent;
+	}
 	let meshCount = 0;
 	let casterCount = 0;
 	let lightCount = 0;
@@ -3583,15 +4294,15 @@ function __buildShadowScene( userScene ) {
 			try {
 				const FullThree = __fullThreeMod;
 				if ( o.isDirectionalLight && FullThree.DirectionalLight ) {
-					cloned = new FullThree.DirectionalLight( o.color ? o.color.clone() : 0xffffff, o.intensity || 1 );
+					cloned = new FullThree.DirectionalLight( __fullLightColorValue( o ), o.intensity || 1 );
 				} else if ( o.isSpotLight && FullThree.SpotLight ) {
-					cloned = new FullThree.SpotLight( o.color ? o.color.clone() : 0xffffff, o.intensity || 1 );
+					cloned = new FullThree.SpotLight( __fullLightColorValue( o ), o.intensity || 1 );
 					if ( o.distance !== undefined ) cloned.distance = o.distance;
 					if ( o.angle !== undefined ) cloned.angle = o.angle;
 					if ( o.penumbra !== undefined ) cloned.penumbra = o.penumbra;
 					if ( o.decay !== undefined ) cloned.decay = o.decay;
 				} else if ( o.isPointLight && FullThree.PointLight ) {
-					cloned = new FullThree.PointLight( o.color ? o.color.clone() : 0xffffff, o.intensity || 1 );
+					cloned = new FullThree.PointLight( __fullLightColorValue( o ), o.intensity || 1 );
 					if ( o.distance !== undefined ) cloned.distance = o.distance;
 					if ( o.decay !== undefined ) cloned.decay = o.decay;
 				} else if ( typeof o.clone === 'function' ) {
@@ -3600,6 +4311,7 @@ function __buildShadowScene( userScene ) {
 			} catch ( _ ) { cloned = null; }
 			if ( cloned ) {
 				cloned.castShadow = true;
+				cloned.shadow = o.shadow;
 				// Copy mapSize/bias/normalBias/radius/camera params from source.shadow
 				if ( cloned.shadow && o.shadow ) {
 					if ( o.shadow.mapSize ) cloned.shadow.mapSize.copy( o.shadow.mapSize );
@@ -3626,6 +4338,7 @@ function __buildShadowScene( userScene ) {
 				if ( o.matrixWorld ) {
 					o.matrixWorld.decompose( cloned.position, cloned.quaternion, cloned.scale );
 				}
+				if ( o.layers && cloned.layers ) cloned.layers.mask = o.layers.mask;
 				// Directional / spot lights project shadows toward a target;
 				// the target is also an Object3D in the user scene. Clone it
 				// and parent under shadowScene to keep the projection correct.
@@ -3634,6 +4347,7 @@ function __buildShadowScene( userScene ) {
 					if ( o.target.matrixWorld ) {
 						o.target.matrixWorld.decompose( tgtClone.position, tgtClone.quaternion, tgtClone.scale );
 					}
+					if ( o.target.layers && tgtClone.layers ) tgtClone.layers.mask = o.target.layers.mask;
 					shadowScene.add( tgtClone );
 					cloned.target = tgtClone;
 				}
@@ -3647,7 +4361,12 @@ function __buildShadowScene( userScene ) {
 		// renderer's NodeBuilder can compile them. The shadow pass overrides
 		// material with ShadowPassMaterial for the depth render anyway.
 		if ( ( o.isMesh === true || o.isSkinnedMesh === true ) && o.geometry && ( o.castShadow === true || o.receiveShadow === true ) ) {
-			const standin = new FullMesh( __cloneGeometryForFullRenderer( o.geometry ), new StandinMaterial() );
+			let standinMaterial;
+			try { standinMaterial = new StandinMaterial( { color: 0xffffff } ); } catch ( _ ) { standinMaterial = new StandinMaterial(); }
+			try {
+				if ( standinMaterial.color && typeof standinMaterial.color.setHex === 'function' ) standinMaterial.color.setHex( 0xffffff );
+			} catch ( _ ) {}
+			const standin = new FullMesh( __cloneGeometryForFullRenderer( o.geometry ), standinMaterial );
 			standin.castShadow = !! o.castShadow;
 			standin.receiveShadow = !! o.receiveShadow;
 			// Decompose world matrix onto local position/quaternion/scale —
@@ -3656,6 +4375,7 @@ function __buildShadowScene( userScene ) {
 			if ( o.matrixWorld ) {
 				o.matrixWorld.decompose( standin.position, standin.quaternion, standin.scale );
 			}
+			if ( o.layers && standin.layers ) standin.layers.mask = o.layers.mask;
 			standin.frustumCulled = false;
 			// Carry alpha-related fields that the depth pass uses.
 			if ( o.material && ! Array.isArray( o.material ) ) {
@@ -3668,7 +4388,7 @@ function __buildShadowScene( userScene ) {
 					if ( o.material[ key ] && o.material[ key ].isNode === true ) standin.material[ key ] = o.material[ key ];
 				}
 			}
-			shadowScene.add( standin );
+			clipMountPointFor( o ).add( standin );
 			meshPairs.push( { src: o, clone: standin } );
 			meshCount ++;
 			if ( standin.castShadow === true ) casterCount ++;
@@ -3677,6 +4397,7 @@ function __buildShadowScene( userScene ) {
 	if ( meshCount === 0 || lightCount === 0 || casterCount === 0 ) return null;
 	shadowScene.__lightPairs = lightPairs;
 	shadowScene.__meshPairs = meshPairs;
+	shadowScene.__clipPairs = clipPairs;
 	shadowScene.__casterCount = casterCount;
 	__shadowSceneMap.set( userScene, { meshCount, lightCount } );
 	return shadowScene;
@@ -3695,14 +4416,26 @@ function __refreshShadowScene( userScene, shadowScene ) {
 		// matrixWorld for the cloned light at the start of render — same as it
 		// does for the selftest scene that successfully sets shadow.map.
 		src.matrixWorld.decompose( clone.position, clone.quaternion, clone.scale );
+		if ( src.layers && clone.layers ) clone.layers.mask = src.layers.mask;
 		if ( src.target && clone.target && src.target.matrixWorld ) {
 			src.target.matrixWorld.decompose( clone.target.position, clone.target.quaternion, clone.target.scale );
+			if ( src.target.layers && clone.target.layers ) clone.target.layers.mask = src.target.layers.mask;
 		}
 	}
 	const meshPairs = shadowScene.__meshPairs || [];
 	for ( const { src, clone } of meshPairs ) {
 		if ( ! src || ! clone || ! src.matrixWorld ) continue;
 		src.matrixWorld.decompose( clone.position, clone.quaternion, clone.scale );
+		if ( src.layers && clone.layers ) clone.layers.mask = src.layers.mask;
+	}
+	const clipPairs = shadowScene.__clipPairs || [];
+	for ( const { src, clone } of clipPairs ) {
+		if ( ! src || ! clone ) continue;
+		clone.clippingPlanes = src.clippingPlanes;
+		clone.enabled = src.enabled;
+		clone.clipIntersection = src.clipIntersection;
+		clone.clipShadows = src.clipShadows;
+		if ( src.layers && clone.layers ) clone.layers.mask = src.layers.mask;
 	}
 }
 
@@ -3713,12 +4446,98 @@ function __getOrBuildShadowScene( userScene ) {
 	return built;
 }
 
+function __cloneCameraForFullRenderer( camera, fallbackAspect = 1 ) {
+	if ( ! camera || ! __fullThreeMod ) return camera;
+	const FullThree = __fullThreeMod;
+	let cloned = null;
+	try {
+		if ( camera.isPerspectiveCamera === true && FullThree.PerspectiveCamera ) {
+			cloned = new FullThree.PerspectiveCamera( camera.fov, camera.aspect || fallbackAspect || 1, camera.near, camera.far );
+			for ( const key of [ 'zoom', 'filmGauge', 'filmOffset', 'focus' ] ) {
+				if ( camera[ key ] !== undefined ) cloned[ key ] = camera[ key ];
+			}
+		} else if ( camera.isOrthographicCamera === true && FullThree.OrthographicCamera ) {
+			cloned = new FullThree.OrthographicCamera( camera.left, camera.right, camera.top, camera.bottom, camera.near, camera.far );
+			if ( camera.zoom !== undefined ) cloned.zoom = camera.zoom;
+		} else if ( FullThree.Camera ) {
+			cloned = new FullThree.Camera();
+			if ( camera.near !== undefined ) cloned.near = camera.near;
+			if ( camera.far !== undefined ) cloned.far = camera.far;
+		}
+		if ( ! cloned ) return camera;
+		cloned.matrixAutoUpdate = false;
+		if ( camera.matrix ) cloned.matrix.copy( camera.matrix );
+		if ( camera.matrixWorld ) cloned.matrixWorld.copy( camera.matrixWorld );
+		if ( camera.matrixWorldInverse ) cloned.matrixWorldInverse.copy( camera.matrixWorldInverse );
+		if ( camera.projectionMatrix ) cloned.projectionMatrix.copy( camera.projectionMatrix );
+		if ( camera.projectionMatrixInverse ) cloned.projectionMatrixInverse.copy( camera.projectionMatrixInverse );
+		if ( camera.position ) cloned.position.copy( camera.position );
+		if ( camera.quaternion ) cloned.quaternion.copy( camera.quaternion );
+		if ( camera.scale ) cloned.scale.copy( camera.scale );
+		if ( camera.layers && cloned.layers ) cloned.layers.mask = camera.layers.mask;
+		if ( camera.coordinateSystem !== undefined ) cloned.coordinateSystem = camera.coordinateSystem;
+		if ( camera.reversedDepth !== undefined ) cloned.reversedDepth = camera.reversedDepth;
+		return cloned;
+	} catch ( _ ) {
+		return camera;
+	}
+}
+
 // Track per-scene state: whether a shadow render is in flight, and the last
 // shadow-scene signature used to detect scene growth or moving shadow casters /
 // lights. Animated examples (e.g. a moving spotlight) need their offscreen full
 // renderer shadow map refreshed when transforms move, otherwise the slim shader
 // samples a stale depth map with a fresh light matrix and over-shadows the scene.
 const __shadowState = new WeakMap(); // userScene -> { inflight, signature }
+function __makeCustomShadowNodeBuilder( renderer, camera ) {
+	const FullThree = __fullThreeMod || {};
+	const FullRT = FullThree.RenderTarget;
+	return {
+		renderer,
+		camera,
+		createRenderTarget( width, height, options = {} ) {
+			if ( FullRT ) return new FullRT( width, height, options );
+			return {
+				width,
+				height,
+				depth: options && Number.isFinite( options.depth ) ? options.depth : 1,
+				texture: { isTexture: true, name: '', isRenderTargetTexture: true },
+				depthTexture: null,
+				setSize( nextWidth, nextHeight, nextDepth ) {
+					this.width = nextWidth;
+					this.height = nextHeight;
+					if ( Number.isFinite( nextDepth ) ) this.depth = nextDepth;
+				},
+				dispose() {},
+			};
+		},
+	};
+}
+
+function __prepareCustomShadowNodes( scene, renderer, camera ) {
+	if ( ! scene || typeof scene.traverse !== 'function' ) return 0;
+	const builder = __makeCustomShadowNodeBuilder( renderer, camera );
+	let prepared = 0;
+	try { scene.updateMatrixWorld( true ); } catch ( _ ) {}
+	scene.traverse( ( light ) => {
+		const shadowNode = light && light.isLight === true && light.shadow && light.shadow.shadowNode || null;
+		if ( ! shadowNode || shadowNode.isShadowBaseNode !== true ) return;
+		try {
+			const ctorName = shadowNode.constructor && shadowNode.constructor.name || '';
+			if ( /TileShadowNode/.test( ctorName ) && typeof shadowNode.init === 'function' && ( ! Array.isArray( shadowNode.lights ) || shadowNode.lights.length === 0 ) ) {
+				shadowNode.init( builder );
+				prepared ++;
+			}
+		} catch ( err ) {
+			if ( window.__TSLP_DEBUG_SHADOW_BINDINGS === true || window.__TSLP_DEBUG_SHADOW_COVERAGE === true ) {
+				console.warn( '[tslp-shadow] custom shadow init failed:', err && err.message || err );
+			}
+		}
+	} );
+	if ( prepared > 0 && scene._tslpLightCache ) delete scene._tslpLightCache;
+	return prepared;
+}
+
 function __signatureMatrix( object ) {
 	if ( ! object || ! object.matrixWorld || ! object.matrixWorld.elements ) return '';
 	return object.matrixWorld.elements.map( ( value ) => Math.round( value * 1000 ) / 1000 ).join( ',' );
@@ -3769,6 +4588,148 @@ async function __probeShadowDepthTexture( fullRenderer, depthTex, light, preferr
 		if ( Number.isFinite( value ) ) { min = Math.min( min, value ); max = Math.max( max, value ); }
 	}
 	return { width, height, min, max };
+}
+
+async function __probeShadowCameraCoverage( fullRenderer, shadowScene, light, size = 128 ) {
+	if ( ! window.__TSLP_DEBUG_SHADOW_COVERAGE ) return null;
+	if ( ! fullRenderer || ! fullRenderer.backend || typeof fullRenderer.backend.copyTextureToBuffer !== 'function' || ! shadowScene || ! light || ! light.shadow || ! light.shadow.camera || ! __fullThreeMod ) return null;
+	const { RenderTarget: FullRT, MeshBasicMaterial: FullBasicMaterial, Color: FullColor } = __fullThreeMod;
+	if ( ! FullRT || ! FullBasicMaterial ) return null;
+	try {
+		if ( ! __shadowCoverageRT.rt ) __shadowCoverageRT.rt = new FullRT( size, size );
+		if ( ! __shadowCoverageRT.material ) __shadowCoverageRT.material = new FullBasicMaterial( { color: 0xffffff } );
+		const rt = __shadowCoverageRT.rt;
+		if ( rt.width !== size || rt.height !== size ) rt.setSize( size, size );
+		const hidden = [];
+		for ( const { clone } of shadowScene.__meshPairs || [] ) {
+			if ( clone && clone.castShadow !== true && clone.visible !== false ) {
+				clone.visible = false;
+				hidden.push( clone );
+			}
+		}
+		const prevRT = fullRenderer.getRenderTarget ? fullRenderer.getRenderTarget() : null;
+		const prevOverride = shadowScene.overrideMaterial;
+		const prevShadowEnabled = fullRenderer.shadowMap ? fullRenderer.shadowMap.enabled : undefined;
+		const prevClearColor = fullRenderer.getClearColor && FullColor ? fullRenderer.getClearColor( new FullColor() ) : null;
+		const prevClearAlpha = fullRenderer.getClearAlpha ? fullRenderer.getClearAlpha() : null;
+		try {
+			if ( fullRenderer.shadowMap ) fullRenderer.shadowMap.enabled = false;
+			shadowScene.overrideMaterial = __shadowCoverageRT.material;
+			if ( typeof fullRenderer.setClearColor === 'function' ) fullRenderer.setClearColor( 0x000000, 1 );
+			fullRenderer.setRenderTarget( rt );
+			if ( typeof fullRenderer.clear === 'function' ) fullRenderer.clear();
+			await fullRenderer.render( shadowScene, light.shadow.camera );
+			const buf = await fullRenderer.backend.copyTextureToBuffer( rt.texture, 0, 0, size, size, 0 );
+			const sample = ArrayBuffer.isView( buf ) ? buf : new Uint8Array( buf );
+			let pixels = 0;
+			let minX = size, minY = size, maxX = - 1, maxY = - 1;
+			for ( let i = 0; i + 3 < sample.length; i += 4 ) {
+				const lit = sample[ i ] + sample[ i + 1 ] + sample[ i + 2 ];
+				if ( lit <= 24 ) continue;
+				const p = i / 4;
+				const x = p % size;
+				const y = Math.floor( p / size );
+				pixels ++;
+				minX = Math.min( minX, x );
+				minY = Math.min( minY, y );
+				maxX = Math.max( maxX, x );
+				maxY = Math.max( maxY, y );
+			}
+			return {
+				type: light.isSpotLight ? 'spot' : light.isDirectionalLight ? 'directional' : light.type || 'light',
+				uuid: light.uuid || null,
+				pixels,
+				coverage: pixels / ( size * size ),
+				bbox: pixels > 0 ? [ minX, minY, maxX, maxY ] : null,
+			};
+		} finally {
+			shadowScene.overrideMaterial = prevOverride;
+			for ( const clone of hidden ) clone.visible = true;
+			if ( fullRenderer.shadowMap && prevShadowEnabled !== undefined ) fullRenderer.shadowMap.enabled = prevShadowEnabled;
+			try {
+				if ( prevClearColor && typeof fullRenderer.setClearColor === 'function' ) fullRenderer.setClearColor( prevClearColor, prevClearAlpha === null ? 1 : prevClearAlpha );
+			} catch ( _ ) {}
+			try { fullRenderer.setRenderTarget( prevRT ); } catch ( _ ) {}
+		}
+	} catch ( err ) {
+		return { type: light.isSpotLight ? 'spot' : light.isDirectionalLight ? 'directional' : light.type || 'light', error: err && err.message || String( err ) };
+	}
+}
+
+	async function __probeShadowDepthTextureView( fullRenderer, depthTex, light, size = 128, options = {} ) {
+		const shouldReport = window.__TSLP_DEBUG_SHADOW_COVERAGE === true;
+		if ( shouldReport !== true && options.warm !== true ) return null;
+		if ( ! fullRenderer || ! fullRenderer.backend || typeof fullRenderer.backend.copyTextureToBuffer !== 'function' || ! depthTex || ! FullTSL || ! FullNodeMaterial || ! FullQuadMesh || ! FullRenderTarget ) return null;
+	try {
+		if ( ! __shadowDepthViewRT.rt ) __shadowDepthViewRT.rt = new FullRenderTarget( size, size );
+		const rt = __shadowDepthViewRT.rt;
+		if ( rt.width !== size || rt.height !== size ) rt.setSize( size, size );
+		if ( ! __shadowDepthViewRT.material || __shadowDepthViewRT.texture !== depthTex ) {
+			// Read the raw stored depth in [0,1] via textureLoad (no sampler needed — avoids the
+			// comparison-sampler-vs-textureSample mismatch that made the previous probe shader
+			// invalid). Value 1.0 (white) = cleared far texel; small values = caster depths near the light.
+			const depthTexNode = FullTSL.texture( depthTex );
+			const coords = FullTSL.ivec2( FullTSL.uv().mul( FullTSL.vec2( FullTSL.textureSize( depthTexNode, FullTSL.int( 0 ) ) ) ) );
+			const depthValue = FullTSL.textureLoad( depthTexNode, coords );
+			const material = new FullNodeMaterial();
+			material.depthTest = false;
+			material.depthWrite = false;
+			material.fragmentNode = FullTSL.vec4( depthValue, depthValue, depthValue, 1 );
+			material.name = 'TSLPShadowDepthProbe';
+			__shadowDepthViewRT.material = material;
+			__shadowDepthViewRT.quad = new FullQuadMesh( material );
+			__shadowDepthViewRT.texture = depthTex;
+		}
+		const prevRT = fullRenderer.getRenderTarget ? fullRenderer.getRenderTarget() : null;
+		try {
+			fullRenderer.setRenderTarget( rt );
+				if ( typeof fullRenderer.clear === 'function' ) fullRenderer.clear();
+				__shadowDepthViewRT.quad.render( fullRenderer );
+				if ( shouldReport !== true ) {
+					try {
+						const queue = fullRenderer.backend && fullRenderer.backend.device && fullRenderer.backend.device.queue;
+						if ( queue && typeof queue.onSubmittedWorkDone === 'function' ) await queue.onSubmittedWorkDone();
+					} catch ( _ ) {}
+					return { warmed: true };
+				}
+				const buf = await fullRenderer.backend.copyTextureToBuffer( rt.texture, 0, 0, size, size, 0 );
+			const sample = ArrayBuffer.isView( buf ) ? buf : new Uint8Array( buf );
+			let pixels = 0;
+			let min = 255;
+			let max = 0;
+			let sum = 0;
+			let minX = size, minY = size, maxX = - 1, maxY = - 1;
+			for ( let i = 0; i + 3 < sample.length; i += 4 ) {
+				const value = sample[ i ];
+				min = Math.min( min, value );
+				max = Math.max( max, value );
+				sum += value;
+				if ( value <= 2 ) continue;
+				const p = i / 4;
+				const x = p % size;
+				const y = Math.floor( p / size );
+				pixels ++;
+				minX = Math.min( minX, x );
+				minY = Math.min( minY, y );
+				maxX = Math.max( maxX, x );
+				maxY = Math.max( maxY, y );
+			}
+			return {
+				type: light && light.isSpotLight ? 'spot' : light && light.isDirectionalLight ? 'directional' : light && light.type || 'light',
+				uuid: light && light.uuid || null,
+				pixels,
+				coverage: pixels / ( size * size ),
+				min,
+				max,
+				mean: sum / Math.max( 1, sample.length / 4 ),
+				bbox: pixels > 0 ? [ minX, minY, maxX, maxY ] : null,
+			};
+		} finally {
+			try { fullRenderer.setRenderTarget( prevRT ); } catch ( _ ) {}
+		}
+	} catch ( err ) {
+		return { type: light && light.isSpotLight ? 'spot' : light && light.isDirectionalLight ? 'directional' : light && light.type || 'light', error: err && err.message || String( err ) };
+	}
 }
 
 const __projectedSpotMapState = new WeakMap(); // light -> mutable projected map state
@@ -3891,6 +4852,7 @@ function __updateProjectedSpotMapShadow( light, shadowScene ) {
 
 function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 	if ( ! userScene || ! camera ) return;
+	__prepareCustomShadowNodes( userScene, slimRenderer, camera );
 	const signature = __sceneSignature( userScene );
 	if ( ! signature || signature.lights === 0 || signature.meshes === 0 || signature.casters === 0 ) return;
 	const sig = signature.value;
@@ -3915,7 +4877,7 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 		if ( ! fullRenderer ) return;
 		const shadowScene = __getOrBuildShadowScene( _userScene );
 		if ( ! shadowScene ) return;
-		let shadowRenderCamera = _camera;
+		let shadowRenderCamera = __cloneCameraForFullRenderer( _camera, 1 );
 		if ( _camera.isArrayCamera === true && __fullThreeMod && __fullThreeMod.PerspectiveCamera ) {
 			shadowRenderCamera = new __fullThreeMod.PerspectiveCamera( 50, 1, 0.1, 10 );
 			shadowRenderCamera.position.z = 1;
@@ -3949,13 +4911,17 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 			if ( __shadowDiscardRT.rt ) fullRenderer.setRenderTarget( __shadowDiscardRT.rt );
 		} catch ( _ ) {}
 		try {
-			await fullRenderer.render( shadowScene, shadowRenderCamera );
-			// Second render: the first render may have only built+queued shadow node
-			// setup; allocations happen during ShadowNode.updateBefore which fires
-			// from the SECOND render once nodeFrame.frameId advances.
-			await fullRenderer.render( shadowScene, shadowRenderCamera );
-			// Copy populated shadow.map/depthTexture from cloned light to the
-			// original (user-scene) light so slim's hydrator rebinder finds them.
+				await fullRenderer.render( shadowScene, shadowRenderCamera );
+				// Second render: the first render may have only built+queued shadow node
+				// setup; allocations happen during ShadowNode.updateBefore which fires
+				// from the SECOND render once nodeFrame.frameId advances.
+				await fullRenderer.render( shadowScene, shadowRenderCamera );
+				try {
+					const queue = fullRenderer.backend && fullRenderer.backend.device && fullRenderer.backend.device.queue;
+					if ( queue && typeof queue.onSubmittedWorkDone === 'function' ) await queue.onSubmittedWorkDone();
+				} catch ( _ ) {}
+				// Copy populated shadow.map/depthTexture from cloned light to the
+				// original (user-scene) light so slim's hydrator rebinder finds them.
 			// Then share the GPUTexture across renderers: full's backend allocated
 			// the depth texture during shadow render, but slim has its own backend
 			// data map. Without pre-seeding slim's data.texture from full, slim's
@@ -3969,9 +4935,60 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 					if ( clone.shadow.map.depthTexture ) src.shadow.map.depthTexture = clone.shadow.map.depthTexture;
 					src.shadow.camera = clone.shadow.camera;
 					src.shadow.matrix = clone.shadow.matrix;
+					const coverage = await __probeShadowCameraCoverage( fullRenderer, shadowScene, src );
+					if ( coverage ) {
+						const diag = window.__tslpHarnessDiagnostics || ( window.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
+						if ( ! Array.isArray( diag.shadowCoverage ) ) diag.shadowCoverage = [];
+						diag.shadowCoverage.push( {
+							...coverage,
+							mapSize: src.shadow && src.shadow.mapSize ? [ src.shadow.mapSize.width, src.shadow.mapSize.height ] : null,
+							hasDepthTexture: !! ( src.shadow && src.shadow.map && src.shadow.map.depthTexture ),
+						} );
+					}
 					if ( _camera.isArrayCamera === true && Number.isFinite( src.shadow.intensity ) ) src.shadow.intensity = Math.min( src.shadow.intensity, 0.25 );
-					let depthTex = src.shadow.map.depthTexture;
-					if ( depthTex ) {
+						let depthTex = src.shadow.map.depthTexture;
+						if ( depthTex ) {
+							// Shadow depth comparison direction follows the depth-buffer convention:
+							// three.js ShadowNode emits coordZ+bias + LessEqualCompare for a forward
+							// depth buffer, and coordZ-bias + GreaterEqualCompare when reversedDepthBuffer
+							// is on. The captured shader baked whichever convention the dev renderer used,
+							// and both the slim renderer (runs the captured shader) and this full renderer
+							// (renders the depth map) default to forward depth, so honour that instead of
+							// hard-coding GreaterEqual. Forcing the wrong direction makes textureSampleCompare
+							// read lit everywhere and the shadow disappears.
+							const reversedDepthBuffer = !! ( _slimRenderer && _slimRenderer.reversedDepthBuffer ) || !! ( fullRenderer && fullRenderer.reversedDepthBuffer );
+							const shadowCompareFunction = reversedDepthBuffer ? ( __fullThreeMod.GreaterEqualCompare ?? 518 ) : ( __fullThreeMod.LessEqualCompare ?? 515 );
+							if ( depthTex.compareFunction !== shadowCompareFunction ) {
+								depthTex.compareFunction = shadowCompareFunction;
+								depthTex.needsUpdate = true;
+							}
+							depthTex.__tslpShadowCompareFunction = shadowCompareFunction;
+							const depthView = await __probeShadowDepthTextureView( fullRenderer, depthTex, src, 128, {
+								warm: window.__TSLP_E2E && window.__TSLP_E2E.localExamples === true,
+							} );
+							if ( window.__TSLP_DEBUG_SHADOW_COVERAGE === true && depthView ) {
+							const diag = window.__tslpHarnessDiagnostics || ( window.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
+							if ( ! Array.isArray( diag.shadowDepthView ) ) diag.shadowDepthView = [];
+							diag.shadowDepthView.push( depthView );
+							if ( ! Array.isArray( diag.shadowMatrixDump ) ) diag.shadowMatrixDump = [];
+							const __dbgCam = src.shadow && src.shadow.camera;
+							diag.shadowMatrixDump.push( {
+								type: src.isSpotLight ? 'spot' : src.isDirectionalLight ? 'directional' : src.isPointLight ? 'point' : ( src.type || 'light' ),
+								reversedDepthBuffer,
+								compareFunction: shadowCompareFunction,
+								depthTexFormat: depthTex.format != null ? depthTex.format : null,
+								depthTexType: depthTex.type != null ? depthTex.type : null,
+								depthTexIsDepth: depthTex.isDepthTexture === true,
+								depthTexImage: depthTex.image ? [ depthTex.image.width || 0, depthTex.image.height || 0 ] : null,
+								shadowMatrix: src.shadow && src.shadow.matrix && src.shadow.matrix.elements ? Array.from( src.shadow.matrix.elements ) : null,
+								camProj: __dbgCam && __dbgCam.projectionMatrix && __dbgCam.projectionMatrix.elements ? Array.from( __dbgCam.projectionMatrix.elements ) : null,
+								camWorldInv: __dbgCam && __dbgCam.matrixWorldInverse && __dbgCam.matrixWorldInverse.elements ? Array.from( __dbgCam.matrixWorldInverse.elements ) : null,
+								camParams: __dbgCam ? { near: __dbgCam.near, far: __dbgCam.far, left: __dbgCam.left, right: __dbgCam.right, top: __dbgCam.top, bottom: __dbgCam.bottom, fov: __dbgCam.fov, coordinateSystem: __dbgCam.coordinateSystem } : null,
+								camPos: __dbgCam && __dbgCam.position ? [ __dbgCam.position.x, __dbgCam.position.y, __dbgCam.position.z ] : null,
+								bias: src.shadow ? src.shadow.bias : null,
+								normalBias: src.shadow ? src.shadow.normalBias : null,
+							} );
+						}
 						let disableReplayShadow = false;
 						try {
 
@@ -3993,19 +5010,42 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 						const fullData = fullRenderer.backend.get( depthTex );
 						const slimData = _slimRenderer.backend.get( depthTex );
 						if ( fullData && fullData.texture && slimData ) {
+							__clearTextureViewCache( slimData );
 							slimData.texture = fullData.texture;
+							slimData.__tslpSharedShadowGPUTexture = fullData.texture;
 							slimData.format = fullData.format;
 							slimData.initialized = true;
-							slimData.version = depthTex.version;
-							slimData.generation = ( slimData.generation || 0 ) + 1;
+							slimData.isDefaultTexture = false;
+							// Bump the JS texture version so the slim renderer's Bindings._update sees
+							// binding.update() return true and recreates the shadow material's bind group
+							// against the freshly-shared GPU texture. The shadow-depth rebinder may have
+							// already cached a bind group built against a 1x1 / fresh-uninitialised stand-in
+							// (it swaps light.shadow.map.depthTexture in before this share runs); without a
+							// version bump that stale bind group is reused and the shadow reads 0 everywhere.
+							// Sync every renderer's per-texture data to the bumped version so neither
+							// Textures.updateTexture destroys/recreates the shared GPU texture, and give the
+							// textures-data a fresh generation so the bind group rebuilds at least once.
+							const nextVersion = ( depthTex.version | 0 ) + 1;
+							depthTex.version = nextVersion;
+							slimData.version = nextVersion;
+							slimData.generation = nextVersion;
+							fullData.version = nextVersion;
 							if ( ! slimData.bindGroups ) slimData.bindGroups = new Set();
 							const tx = _slimRenderer._textures;
 							if ( tx && typeof tx.get === 'function' ) {
 								const txData = tx.get( depthTex );
 								txData.initialized = true;
-								txData.version = depthTex.version;
-								txData.generation = depthTex.version;
+								txData.isDefaultTexture = false;
+								txData.version = nextVersion;
+								txData.generation = nextVersion;
 								if ( ! txData.bindGroups ) txData.bindGroups = new Set();
+							}
+							const ftx = fullRenderer._textures;
+							if ( ftx && typeof ftx.get === 'function' ) {
+								const ftxData = ftx.get( depthTex );
+								ftxData.initialized = true;
+								ftxData.version = nextVersion;
+								ftxData.generation = nextVersion;
 							}
 						}
 					}
@@ -4028,11 +5068,18 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 		const needsReplay = latestSignature && latestSignature.lights > 0 && latestSignature.meshes > 0 && latestSignature.casters > 0 &&
 			( stEnd && stEnd.queuedSignature && stEnd.queuedSignature !== stEnd.signature || latestSignature.value !== ( stEnd && stEnd.signature ) );
 		if ( needsReplay && stEnd ) stEnd.signature = '';
-		// After shadow map is populated, force one extra slim render so the
-		// rebinder sees the live depthTexture and the shadow shows up.
-		if ( needsReplay || window.__tslpFrozen ) {
-			try { _slimRenderer.render( _userScene, _camera ); } catch ( e ) { console.warn( '[tslp-shadow] forced re-render failed:', e && e.message || e ); }
-		}
+		// After shadow maps are populated, always force a slim render. The async
+		// shadow pass can finish before the deterministic-rAF shim marks the page
+		// frozen, but after the final user animation-loop render for this frame.
+		// Without this render the shadow receiver can keep the 1x1 fallback depth
+		// bind group even though the live full-renderer GPUTexture was shared.
+		try {
+			_slimRenderer.render( _userScene, _camera );
+			// The first render after fullRenderer shares its GPUTexture can
+			// invalidate stale fallback bind groups from updateBefore. Render
+			// once more so the draw consumes the refreshed depth bindings.
+			_slimRenderer.render( _userScene, _camera );
+		} catch ( e ) { console.warn( '[tslp-shadow] forced re-render failed:', e && e.message || e ); }
 	} );
 }
 
@@ -4065,13 +5112,48 @@ function __patchBindGroupLayoutRefresh( renderer ) {
 	utils.createBindings = function ( bindGroup, bindings, cacheIndex, version ) {
 		try {
 			const list = bindGroup && Array.isArray( bindGroup.bindings ) ? bindGroup.bindings : [];
-			for ( const binding of list ) {
-				const texture = binding && binding.texture;
-				if ( ! texture || ( binding.isSampledTexture !== true && binding.isSampler !== true ) ) continue;
-				const textureData = this.backend && this.backend.get && this.backend.get( texture );
-				if ( textureData && textureData.texture === undefined && typeof this.backend.createDefaultTexture === 'function' ) this.backend.createDefaultTexture( texture );
-				if ( textureData && textureData.sampler === undefined && typeof this.backend.updateSampler === 'function' ) this.backend.updateSampler( texture );
-			}
+				for ( const binding of list ) {
+					const texture = binding && binding.texture;
+					if ( ! texture || ( binding.isSampledTexture !== true && binding.isSampler !== true ) ) continue;
+					const textureData = this.backend && this.backend.get && this.backend.get( texture );
+					if ( window.__TSLP_DEBUG_SHADOW_BINDINGS === true && /^nodeUniform(?:16|32)(?:_sampler)?$/.test( binding.name || '' ) ) {
+						const diag = window.__tslpHarnessDiagnostics || ( window.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
+						const shadowBindCreates = diag.shadowBindCreates || ( diag.shadowBindCreates = [] );
+						if ( shadowBindCreates.length < 120 ) {
+							let textureManagerData = null;
+							try {
+								const ownerRenderer = this.backend && this.backend.renderer;
+								textureManagerData = ownerRenderer && ownerRenderer._textures && typeof ownerRenderer._textures.get === 'function'
+									? ownerRenderer._textures.get( texture )
+									: null;
+							} catch ( _ ) {}
+							const gpuTexture = textureData && textureData.texture;
+							shadowBindCreates.push( {
+								name: binding.name || '',
+								isSampler: binding.isSampler === true,
+								isSampledTexture: binding.isSampledTexture === true,
+								textureUuid: texture.uuid || null,
+								textureId: Number.isFinite( texture.id ) ? texture.id : null,
+								textureVersion: texture.version,
+								compareFunction: texture.compareFunction ?? null,
+								isDepthTexture: texture.isDepthTexture === true,
+								gpuWidth: gpuTexture && gpuTexture.width || 0,
+								gpuHeight: gpuTexture && gpuTexture.height || 0,
+								gpuFormat: gpuTexture && gpuTexture.format || null,
+								hasSampler: !! ( textureData && textureData.sampler ),
+								backendInitialized: !! ( textureData && textureData.initialized ),
+								backendIsDefault: textureData && textureData.isDefaultTexture === true,
+								managerInitialized: !! ( textureManagerData && textureManagerData.initialized ),
+								managerIsDefault: textureManagerData && textureManagerData.isDefaultTexture === true,
+								managerGeneration: textureManagerData ? textureManagerData.generation ?? null : null,
+								bindingVersion: binding.version,
+								bindingGeneration: binding.generation ?? null,
+							} );
+						}
+					}
+					if ( textureData && textureData.texture === undefined && typeof this.backend.createDefaultTexture === 'function' ) this.backend.createDefaultTexture( texture );
+					if ( textureData && textureData.sampler === undefined && typeof this.backend.updateSampler === 'function' ) this.backend.updateSampler( texture );
+				}
 		} catch ( _ ) {}
 		try {
 			const data = this.backend && this.backend.get && this.backend.get( bindGroup );
@@ -4102,10 +5184,61 @@ function __patchBindGroupLayoutRefresh( renderer ) {
 	};
 }
 
+function __patchShadowBindingUpdateDiagnostics( renderer ) {
+	if ( ! renderer || ! renderer._bindings || renderer._bindings.__tslpShadowUpdatePatched ) return;
+	const bindings = renderer._bindings;
+	if ( typeof bindings.updateForRender !== 'function' ) return;
+	bindings.__tslpShadowUpdatePatched = true;
+	const origUpdateForRender = bindings.updateForRender;
+	bindings.updateForRender = function ( renderObject ) {
+		if ( window.__TSLP_DEBUG_SHADOW_BINDINGS === true ) {
+			try {
+				const groups = renderObject && typeof renderObject.getBindings === 'function' ? renderObject.getBindings() : [];
+				const diag = window.__tslpHarnessDiagnostics || ( window.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
+				const list = diag.shadowBindingUpdates || ( diag.shadowBindingUpdates = [] );
+				if ( list.length < 160 ) {
+					for ( const group of groups || [] ) {
+						for ( const binding of group && group.bindings || [] ) {
+							if ( ! binding || ! /^nodeUniform(?:16|32)(?:_sampler)?$/.test( binding.name || '' ) ) continue;
+							const texture = binding.texture;
+							const textureData = texture && renderer.backend && renderer.backend.get ? renderer.backend.get( texture ) : null;
+							const gpuTexture = textureData && textureData.texture;
+							list.push( {
+								name: binding.name || '',
+								isSampler: binding.isSampler === true,
+								isSampledTexture: binding.isSampledTexture === true,
+								textureUuid: texture && texture.uuid || null,
+								textureId: texture && Number.isFinite( texture.id ) ? texture.id : null,
+								textureVersion: texture && texture.version,
+								compareFunction: texture ? texture.compareFunction ?? null : null,
+								isDepthTexture: texture && texture.isDepthTexture === true,
+								gpuWidth: gpuTexture && gpuTexture.width || 0,
+								gpuHeight: gpuTexture && gpuTexture.height || 0,
+								gpuFormat: gpuTexture && gpuTexture.format || null,
+								backendInitialized: !! ( textureData && textureData.initialized ),
+								backendIsDefault: textureData && textureData.isDefaultTexture === true,
+								bindingVersion: binding.version,
+								bindingGeneration: binding.generation ?? null,
+								groupName: group.name || '',
+							} );
+						}
+					}
+				}
+			} catch ( _ ) {}
+		}
+		return origUpdateForRender.call( this, renderObject );
+	};
+}
+
 export class WebGPURenderer extends Slim.WebGPURenderer {
+	setAnimationLoop( callback ) {
+		const wrap = typeof window.__tslpWrapAnimationLoop === 'function' ? window.__tslpWrapAnimationLoop : null;
+		return super.setAnimationLoop( wrap ? wrap( callback ) : callback );
+	}
 	async init() {
 		const r = await super.init();
 		__patchBindGroupLayoutRefresh( this );
+		__patchShadowBindingUpdateDiagnostics( this );
 		// Eagerly bring up the full compute renderer so PMREMGenerator's
 		// fromScene / fromCubemap / fromEquirectangular / fromTexture can route
 		// to it on the user's NEXT (synchronous) call. Examples typically
@@ -4145,9 +5278,17 @@ export class WebGPURenderer extends Slim.WebGPURenderer {
 	}
 	render( scene, camera ) {
 		if ( __pmremRunning > 0 ) return super.render( scene, camera );
+		// Nested renderer.render() (e.g. QuadMesh.render from inside RTTNode/PassNode
+		// updateBefore) — skip scene-material replacement / pre-render hooks. The
+		// top-level call already drove RTT/effect/pass nodes; the recursion is just
+		// the slim renderer following node-graph updateBefore hooks into a quad scene.
+		if ( __renderDepth > 0 ) return super.render( scene, camera );
+		__renderDepth ++;
+		try {
 		// Track last scene/camera so post-compute forced renders can use them.
 		this._lastScene = scene;
 		this._lastCamera = camera;
+		if ( scene && scene.isScene === true ) __recordRenderableObjectCount( scene );
 		__prepareSceneForReplay( scene, this );
 		__flushMaterialTextureRewire( this );
 		// Wire PMREM from sync cache BEFORE super.render so that hydration
@@ -4155,7 +5296,20 @@ export class WebGPURenderer extends Slim.WebGPURenderer {
 		// reads the live prefiltered texture from _textureRefs. Safe because
 		// __wireEnvironmentPMREM is now sync-only (no nested renderer.render calls).
 		__wireEnvironmentPMREM( this, scene );
+		__dispatchAutoComputeNodes( scene, this );
 		__renderPassNodesForPipeline( this, __collectScenePassNodes( scene ) );
+		// Examples that embed RTT nodes (convertToTexture) or frame-effect nodes
+		// (gaussianBlur, etc.) directly inside material.colorNode without a
+		// RenderPipeline never get those nodes driven — the slim renderer doesn't
+		// walk the node graph. Mirror the RenderPipeline._update wiring here so
+		// the procedural-to-texture quad and post-quads run before the main draw.
+		const __sceneRTTNodes = __collectSceneRTTNodes( scene );
+		const __sceneEffectNodes = __collectSceneFrameEffectNodes( scene );
+		if ( __sceneRTTNodes.length > 0 ) __renderRTTNodesForPipeline( this, __sceneRTTNodes );
+		if ( __sceneEffectNodes.length > 0 ) {
+			for ( const node of __sceneEffectNodes ) __prepareFrameEffectNodeForReplay( node, __computeRenderer, {} );
+			__renderFrameEffectNodesForPipeline( this, __sceneEffectNodes, {} );
+		}
 		// Heal any Texture whose colorSpace ended up as undefined (some ad-hoc
 		// runtime-created textures skip the constructor that defaults to '').
 		// Cheap pre-render sweep; without it Textures.updateTexture throws in
@@ -4236,6 +5390,9 @@ export class WebGPURenderer extends Slim.WebGPURenderer {
 			}
 		}
 		return r;
+		} finally {
+			__renderDepth --;
+		}
 	}
 	compute( computeNode, ...rest ) {
 		// Precompiled compute nodes: slim renderer handles these directly.
@@ -4391,13 +5548,62 @@ function __textureFromPassNode( passNode ) {
 }
 
 function __renderPassNodeForPipeline( renderer, passNode ) {
-	if ( ! renderer || ! passNode || ! passNode.scene || ! passNode.camera ) return;
-	try { __prepareSceneForReplay( passNode.scene, renderer ); } catch ( _ ) {}
-	__preparePassNodeForReplay( renderer, passNode );
+	const diag = __harnessDiagnostics();
+	const passDiag = diag.pass || ( diag.pass = { attempts: 0, skipped: 0, rendered: 0, failed: 0, objects: [], materials: [], objectDetails: [] } );
+	passDiag.attempts ++;
+	if ( ! renderer || ! passNode || ! passNode.scene || ! passNode.camera ) {
+		passDiag.skipped ++;
+		return;
+	}
 	try {
-		if ( typeof passNode.updateBefore === 'function' ) passNode.updateBefore( { renderer } );
-		else renderer.render( passNode.scene, passNode.camera );
-	} catch ( err ) {
+		let objectCount = 0;
+		const materials = [];
+		passDiag.objectDetails = [];
+		passNode.scene.traverse( ( object ) => {
+			if ( object && object.isObject3D ) objectCount ++;
+			const mat = object && object.material;
+			const list = Array.isArray( mat ) ? mat : mat ? [ mat ] : [];
+			for ( const m of list ) {
+				if ( ! m ) continue;
+				const label = [ m.name || '', m.type || '', m.isPrecompiledMaterial ? 'precompiled' : '' ].filter( Boolean ).join( ':' );
+				if ( label && ! materials.includes( label ) && materials.length < 12 ) materials.push( label );
+			}
+			if ( passDiag.objectDetails.length < 24 && object && object.geometry && list.length > 0 ) {
+				const attrs = object.geometry.attributes || {};
+				passDiag.objectDetails.push( {
+					name: object.name || '',
+					type: object.type || '',
+					visible: object.visible !== false,
+					frustumCulled: object.frustumCulled !== false,
+					position: object.position && object.position.toArray ? object.position.toArray() : null,
+					attrs: Object.keys( attrs ),
+					count: attrs.position && attrs.position.count || 0,
+					materials: list.map( ( m ) => m && ( m.name || m.type || '' ) ).filter( Boolean ),
+					textures: list.flatMap( ( m ) => __collectMaterialPropertyTextures( m ).map( ( item ) => {
+						const tex = item.texture;
+						const img = tex && tex.image || null;
+						return {
+							property: item.property,
+							name: tex && tex.name || '',
+							ready: __textureImageReady( tex ),
+							width: img && ( img.width || img.videoWidth || img.naturalWidth ) || 0,
+							height: img && ( img.height || img.videoHeight || img.naturalHeight ) || 0,
+						};
+					} ) ),
+				} );
+			}
+		} );
+		if ( passDiag.objects.length < 12 ) passDiag.objects.push( objectCount );
+		for ( const material of materials ) if ( passDiag.materials.length < 20 && ! passDiag.materials.includes( material ) ) passDiag.materials.push( material );
+	} catch ( _ ) {}
+	try { __prepareSceneForReplay( passNode.scene, renderer ); } catch ( _ ) {}
+		__preparePassNodeForReplay( renderer, passNode );
+		try {
+			if ( typeof passNode.updateBefore === 'function' ) passNode.updateBefore( { renderer } );
+			else renderer.render( passNode.scene, passNode.camera );
+			passDiag.rendered ++;
+		} catch ( err ) {
+		passDiag.failed ++;
 		if ( ! window.__tslpPassRenderWarned ) {
 			window.__tslpPassRenderWarned = true;
 			console.warn( '[tslp-e2e] RenderPipeline pass render failed:', err && err.message || err );
@@ -4647,13 +5853,32 @@ let __slimRTTQuad = null;
 let __fullRTTRendererState = null;
 const __fullRTTSize = new FullVector2();
 
-function __shareGraphTexturesBetweenRenderers( targetRenderer, sourceRenderer, graphNode ) {
+function __collectOwnedRenderTargetTextures( node, out = new Set() ) {
+	if ( ! node || ( typeof node !== 'object' && typeof node !== 'function' ) ) return out;
+	const keys = [];
+	try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
+	for ( const key of keys ) {
+		let value = null;
+		try { value = node[ key ]; } catch ( _ ) { continue; }
+		if ( ! value || typeof value !== 'object' || typeof value.setSize !== 'function' ) continue;
+		if ( value.texture && value.texture.isTexture === true ) out.add( value.texture );
+		if ( value.depthTexture && value.depthTexture.isTexture === true ) out.add( value.depthTexture );
+		for ( const texture of value.textures || [] ) {
+			if ( texture && texture.isTexture === true ) out.add( texture );
+		}
+	}
+	return out;
+}
+
+function __shareGraphTexturesBetweenRenderers( targetRenderer, sourceRenderer, graphNode, options = {} ) {
 	const byName = __collectGraphTexturesByName( graphNode );
+	const skipOwned = options && options.skipOwnedRenderTargets ? __collectOwnedRenderTargetTextures( graphNode ) : null;
 	const seen = new Set();
 	for ( const textures of byName.values() ) {
 		const list = Array.isArray( textures ) ? textures : [ textures ];
 		for ( const texture of list ) {
 			if ( ! texture || texture.isTexture !== true || seen.has( texture ) ) continue;
+			if ( skipOwned && skipOwned.has( texture ) ) continue;
 			seen.add( texture );
 			__shareGPUTextureEntry( targetRenderer, sourceRenderer, texture );
 		}
@@ -4752,7 +5977,6 @@ function __renderBloomNodeWithFullRenderer( bloomNode, slimRenderer, fullRendere
 
 function __renderRTTNodeWithFullRenderer( rttNode, slimRenderer, fullRenderer ) {
 	if ( ! __isRTTNode( rttNode ) || ! slimRenderer || ! fullRenderer ) return false;
-	if ( __renderRTTNodeWithPrecompiledSlim( rttNode, slimRenderer ) ) return true;
 	try {
 		if ( ! __fullRTTQuad ) __fullRTTQuad = new FullQuadMesh();
 		if ( ! rttNode.__tslpFullRTTMaterial ) {
@@ -4791,12 +6015,12 @@ function __renderRTTNodeWithFullRenderer( rttNode, slimRenderer, fullRenderer ) 
 			window.__tslpRTTFullRenderWarned = true;
 			console.warn( '[tslp-e2e] RTT full-renderer replay failed:', err && ( err.stack || err.message ) || err );
 		}
-		return false;
 	} finally {
 		try {
 			if ( __fullRTTRendererState && FullRendererUtils && typeof FullRendererUtils.restoreRendererState === 'function' ) FullRendererUtils.restoreRendererState( fullRenderer, __fullRTTRendererState );
 		} catch ( _ ) {}
 	}
+	return __renderRTTNodeWithPrecompiledSlim( rttNode, slimRenderer );
 }
 
 function __rttPrecompiledShape( rttNode ) {
@@ -4927,6 +6151,19 @@ function __renderBloomNodesForPipeline( renderer, bloomNodes ) {
 	}
 }
 
+function __neutralizeRTTNodeUpdateBefore( rttNode ) {
+	// Once we've driven the RTT explicitly via our quad / full renderer, the
+	// slim renderer must not re-trigger RTTNode.updateBefore: the RTTNode's
+	// internal quad mesh carries a full-renderer NodeMaterial which the slim
+	// bundle refuses to build. Stub updateBefore to a no-op and clear the
+	// auto-update flag so the slim renderer's node-update walker leaves it alone.
+	if ( ! rttNode || rttNode.__tslpRTTUpdateNeutered === true ) return;
+	try { rttNode.autoUpdate = false; } catch ( _ ) {}
+	try { rttNode.textureNeedsUpdate = false; } catch ( _ ) {}
+	try { rttNode.updateBefore = function () {}; } catch ( _ ) {}
+	try { Object.defineProperty( rttNode, '__tslpRTTUpdateNeutered', { value: true, configurable: true } ); } catch ( _ ) {}
+}
+
 function __renderRTTNodesForPipeline( renderer, rttNodes ) {
 	try {
 		const diag = __harnessDiagnostics();
@@ -4935,6 +6172,7 @@ function __renderRTTNodesForPipeline( renderer, rttNodes ) {
 	} catch ( _ ) {}
 	for ( const rttNode of rttNodes || [] ) {
 		if ( __renderRTTNodeWithFullRenderer( rttNode, renderer, __computeRenderer ) ) {
+			__neutralizeRTTNodeUpdateBefore( rttNode );
 			try { __harnessDiagnostics().rtt.rendered ++; } catch ( _ ) {}
 		} else {
 			try { __harnessDiagnostics().rtt.failed ++; } catch ( _ ) {}
@@ -4966,6 +6204,18 @@ function __nodeOwnsRenderTarget( node ) {
 function __isFrameEffectNode( node ) {
 	if ( ! node || typeof node.updateBefore !== 'function' ) return false;
 	if ( node.isPassNode === true || node.isRTTNode === true || __isBloomEffectNode( node ) ) return false;
+	const proto = Object.getPrototypeOf( node );
+	const hasSpecialUpdateBefore = Object.prototype.hasOwnProperty.call( node, 'updateBefore' )
+		|| !! ( proto && Object.prototype.hasOwnProperty.call( proto, 'updateBefore' ) );
+	if ( ! hasSpecialUpdateBefore && ! __nodeOwnsRenderTarget( node ) ) return false;
+	// ReflectorBaseNode renders the scene from a mirrored camera into a per-camera
+	// RenderTarget. The hydrator already wires it into the floor material's
+	// updateBeforeNodes via __tslpReflectorBaseNodes, so the slim renderer drives
+	// it with a proper { scene, camera, renderer } frame. Driving it again here
+	// through the full renderer with no scene/camera crashes in getVirtualCamera
+	// (camera.clone of undefined).
+	const ctorType = node.constructor && node.constructor.type || '';
+	if ( ctorType === 'ReflectorBaseNode' || ctorType === 'ReflectorNode' ) return false;
 	const kind = __nodeUpdateKind( node, 'before' );
 	if ( kind === 'none' || kind === null || kind === undefined ) return false;
 	if ( typeof node.setup !== 'function' && typeof node.getTextureNode !== 'function' && ! __nodeOwnsRenderTarget( node ) ) return false;
@@ -5040,11 +6290,26 @@ function __prepareFrameEffectNodeForReplay( node, fullRenderer, context ) {
 	}
 }
 
+function __neutralizeFrameEffectNodeUpdateBefore( node ) {
+	if ( ! node || node.__tslpFrameEffectUpdateNeutered === true ) return;
+	const original = typeof node.updateBefore === 'function' ? node.updateBefore : null;
+	if ( original && ! node.__tslpFrameEffectOriginalUpdateBefore ) {
+		try { Object.defineProperty( node, '__tslpFrameEffectOriginalUpdateBefore', { value: original, configurable: true } ); } catch ( _ ) {}
+	}
+	try { node.updateBefore = function () {}; } catch ( _ ) {}
+	try { Object.defineProperty( node, '__tslpFrameEffectUpdateNeutered', { value: true, configurable: true } ); } catch ( _ ) {}
+}
+
 function __renderFrameEffectNodeWithFullRenderer( node, slimRenderer, fullRenderer, context ) {
 	if ( ! __isFrameEffectNode( node ) || ! slimRenderer || ! fullRenderer ) return false;
 	const diag = __frameEffectDiagnostics();
+	const effectName = node.constructor && ( node.constructor.type || node.constructor.name ) || node.type || 'effect';
 	try {
 		if ( ! __prepareFrameEffectNodeForReplay( node, fullRenderer, context ) ) return false;
+		if ( effectName === 'AfterImageNode' && node.__tslpFrameEffectRenderedOnce === true ) {
+			diag.reused = ( diag.reused || 0 ) + 1;
+			return true;
+		}
 		try {
 			fullRenderer.toneMapping = slimRenderer.toneMapping;
 			fullRenderer.toneMappingExposure = slimRenderer.toneMappingExposure;
@@ -5053,17 +6318,22 @@ function __renderFrameEffectNodeWithFullRenderer( node, slimRenderer, fullRender
 		try {
 			const size = slimRenderer.getDrawingBufferSize( __fullRTTSize );
 			if ( typeof fullRenderer.setSize === 'function' ) fullRenderer.setSize( size.width, size.height, false );
-		} catch ( _ ) {}
-		__shareGraphTexturesBetweenRenderers( fullRenderer, slimRenderer, node );
-		node.updateBefore( {
-			renderer: fullRenderer,
-			frameId: window.__tslpRafTick | 0,
-			renderId: window.__tslpRafTick | 0,
-			context: context || {},
-		} );
-		__shareGraphTexturesBetweenRenderers( slimRenderer, fullRenderer, node );
-		diag.rendered ++;
-		if ( diag.names.length < 20 ) diag.names.push( node.constructor && ( node.constructor.type || node.constructor.name ) || node.type || 'effect' );
+			} catch ( _ ) {}
+			__shareGraphTexturesBetweenRenderers( fullRenderer, slimRenderer, node, { skipOwnedRenderTargets: true } );
+			const updateBefore = node.__tslpFrameEffectOriginalUpdateBefore || node.updateBefore;
+			updateBefore.call( node, {
+				renderer: fullRenderer,
+				frameId: window.__tslpRafTick | 0,
+				renderId: window.__tslpRafTick | 0,
+				context: context || {},
+			} );
+			__neutralizeFrameEffectNodeUpdateBefore( node );
+			__shareGraphTexturesBetweenRenderers( slimRenderer, fullRenderer, node );
+			diag.rendered ++;
+			if ( effectName === 'AfterImageNode' ) {
+				try { Object.defineProperty( node, '__tslpFrameEffectRenderedOnce', { value: true, configurable: true } ); } catch ( _ ) {}
+			}
+			if ( diag.names.length < 20 ) diag.names.push( effectName );
 		return true;
 	} catch ( err ) {
 		diag.failed ++;
@@ -5085,6 +6355,15 @@ function __renderFrameEffectNodesForPipeline( renderer, effectNodes, context ) {
 	}
 }
 
+function __findUserArtifactByMaterialShape( shape ) {
+	if ( ! shape || ! __data || ! __data.user ) return null;
+	for ( const mod of Object.values( __data.user ) ) {
+		const artifact = mod && mod.artifact;
+		if ( artifact && artifact.materialShape === shape ) return artifact;
+	}
+	return null;
+}
+
 function __collectScenePassNodes( scene ) {
 	const out = [];
 	if ( ! scene || typeof scene.traverse !== 'function' ) return out;
@@ -5099,10 +6378,52 @@ function __collectScenePassNodes( scene ) {
 	return out;
 }
 
+function __collectSceneRTTNodes( scene ) {
+	const out = [];
+	if ( ! scene || typeof scene.traverse !== 'function' ) return out;
+	scene.traverse( ( object ) => {
+		const material = object && object.material;
+		const list = Array.isArray( material ) ? material : material ? [ material ] : [];
+		for ( const m of list ) {
+			if ( ! m ) continue;
+			for ( const key of __nodeGraphKeys() ) __collectRTTNodesInGraph( m[ key ], out );
+		}
+	} );
+	return out;
+}
+
+function __collectSceneFrameEffectNodes( scene ) {
+	const out = [];
+	if ( ! scene || typeof scene.traverse !== 'function' ) return out;
+	scene.traverse( ( object ) => {
+		const material = object && object.material;
+		const list = Array.isArray( material ) ? material : material ? [ material ] : [];
+		for ( const m of list ) {
+			if ( ! m ) continue;
+			for ( const key of __nodeGraphKeys() ) __collectFrameEffectNodesInGraph( m[ key ], out );
+		}
+	} );
+	return out;
+}
+
 // RenderPipeline (and PostProcessing which extends it) calls ng("post-process", ...)
 // from its _update() method — the same dual-registry problem as _renderOutput.
 // Override _update to pre-set _quadMesh.material from Slim.loadAux before ng fires.
 export class RenderPipeline extends Slim.RenderPipeline {
+	constructor( ...args ) {
+		super( ...args );
+		try {
+			const diag = __frameEffectDiagnostics();
+			diag.pipelineConstructed = ( diag.pipelineConstructed || 0 ) + 1;
+		} catch ( _ ) {}
+	}
+	render( ...args ) {
+		try {
+			const diag = __frameEffectDiagnostics();
+			diag.pipelineRenderCalls = ( diag.pipelineRenderCalls || 0 ) + 1;
+		} catch ( _ ) {}
+		return super.render( ...args );
+	}
 	_update() {
 		// Sync renderer state flags (mirrors parent logic) so needsUpdate can
 		// be suppressed once we've pre-populated the material.
@@ -5121,6 +6442,14 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				// artifact carries the final color-space transfer.
 				const shape = this.outputColorTransform === true ? 'render-output' : 'post-process';
 				let artifact = Slim.loadAux( shape, 'tslp-e2e-bypass' );
+				let usedUserPipelineArtifact = false;
+				if ( this.outputColorTransform !== true ) {
+					const userPipelineArtifact = __findUserArtifactByMaterialShape( 'render-pipeline' );
+					if ( userPipelineArtifact ) {
+						artifact = userPipelineArtifact;
+						usedUserPipelineArtifact = true;
+					}
+				}
 				const passNodes = __collectPassNodesInGraph( this.outputNode );
 				const rttNodes = __collectRTTNodesInGraph( this.outputNode );
 				const passEffectNodes = [];
@@ -5129,6 +6458,9 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				const effectNodes = [ ...passEffectNodes, ...outputEffectNodes ];
 				try {
 					const fxDiag = __frameEffectDiagnostics();
+					fxDiag.pipelineUpdates = ( fxDiag.pipelineUpdates || 0 ) + 1;
+					fxDiag.pipelineShape = shape;
+					fxDiag.usedUserPipelineArtifact = usedUserPipelineArtifact;
 					fxDiag.passNodes = ( fxDiag.passNodes || 0 ) + passNodes.length;
 					fxDiag.passContextEffects = ( fxDiag.passContextEffects || 0 ) + passEffectNodes.length;
 					fxDiag.outputEffects = ( fxDiag.outputEffects || 0 ) + outputEffectNodes.length;
@@ -5153,6 +6485,7 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				const mat = new Slim.PrecompiledMaterial( artifact );
 				mat.needsUpdate = true;
 				this._quadMesh.material = mat;
+				this._quadMesh.frustumCulled = false;
 				// Set up _context so render() can access onBefore/onAfterRenderPipeline.
 				context.onBeforeRenderPipeline = ( passNodes.length > 0 || rttNodes.length > 0 || effectNodes.length > 0 || bloomNodes.length > 0 ) ? () => {
 						if ( typeof effectBeforeRenderPipeline === 'function' ) effectBeforeRenderPipeline();
@@ -5207,6 +6540,9 @@ function tslStubModule() {
 	const consts = unique
 		.filter( ( name ) => name !== 'reflector' )
 		.filter( ( name ) => name !== 'builtinAOContext' )
+		.filter( ( name ) => name !== 'renderOutput' )
+		.filter( ( name ) => name !== 'texture' )
+		.filter( ( name ) => name !== 'texture3D' )
 		.map( ( name ) => `const ${ name } = __TSL[ '${ name }' ];` )
 		.join( '\n' );
 	const reflectorShim = unique.includes( 'reflector' )
@@ -5233,18 +6569,46 @@ const builtinAOContext = ( aoNode, node = null ) => {
 };
 `
 		: '';
+	const renderOutputShim = unique.includes( 'renderOutput' )
+		? `
+const __tslpRealRenderOutput = __TSL[ 'renderOutput' ];
+const renderOutput = ( node, ...args ) => {
+	if ( node && node.isPassNode === true && typeof node.getTextureNode === 'function' ) {
+		return node.getTextureNode().renderOutput( ...args );
+	}
+	return __tslpRealRenderOutput( node, ...args );
+};
+`
+		: '';
 	const exportList = [ ...unique, 'pass' ].join( ', ' );
 	return `
 // Import the FULL three.js TSL namespace via absolute URL so the replay
 // import-map (which redirects 'three/webgpu' to the slim bundle) is bypassed.
 import { TSL as __TSL } from '/build/three.webgpu.js';
-import { PassNode as __ReplayPassNode } from '/__tslp__/slim-webgpu-replay.js';
+import { PassNode as __ReplayPassNode, registerLiveTexture as __tslpRegisterLiveTexture } from '/__tslp__/slim-webgpu-replay.js?v=${ CACHE_BUST }';
 
 // Re-expose every named TSL export so compute kernels (Fn, instancedArray, ...)
 // receive genuine TSL node objects whose isComputeNode flag is set correctly.
 ${ consts }
 ${ reflectorShim }
 ${ builtinAOContextShim }
+${ renderOutputShim }
+const __tslpRememberTextureArg = ( value ) => {
+	if ( ! value || value.isTexture !== true ) return;
+	const list = globalThis.__tslpTslTextureArgs || ( globalThis.__tslpTslTextureArgs = [] );
+	if ( ! list.includes( value ) ) list.push( value );
+	try { __tslpRegisterLiveTexture( value ); } catch ( _ ) {}
+};
+const __tslpRealTexture = __TSL[ 'texture' ];
+const texture = ( ...args ) => {
+	__tslpRememberTextureArg( args[ 0 ] );
+	return __tslpRealTexture( ...args );
+};
+const __tslpRealTexture3D = __TSL[ 'texture3D' ];
+const texture3D = ( ...args ) => {
+	__tslpRememberTextureArg( args[ 0 ] );
+	return __tslpRealTexture3D( ...args );
+};
 const pass = ( scene, camera, options ) => new __ReplayPassNode( __ReplayPassNode.COLOR, scene, camera, options );
 export { ${ exportList } };
 // Also export the TSL namespace object for code that imports it directly.
@@ -5376,9 +6740,21 @@ const server = createServer( async ( req, res ) => {
 		if ( url.pathname === '/__tslp__/tsl-stub.js' ) return sendJs( res, tslStubModule() );
 		if ( url.pathname === '/examples/jsm/inspector/Inspector.js' ) return sendJs( res, inspectorStubModule() );
 		if ( url.pathname === '/examples/jsm/libs/stats.module.js' ) return sendJs( res, statsStubModule() );
+		// `three/addons/*` for local-examples-root packages: `/examples/*` is
+		// intercepted to the local root (which has no `jsm/`), so route the
+		// importmap-injected `"three/addons/"` here instead → `<threeRepo>/examples/jsm/`.
+		if ( url.pathname.startsWith( '/__tslp_addons/' ) ) {
+
+			const rel = url.pathname.slice( '/__tslp_addons/'.length );
+			if ( rel === 'inspector/Inspector.js' ) return sendJs( res, inspectorStubModule() );
+			if ( rel === 'libs/stats.module.js' ) return sendJs( res, statsStubModule() );
+			return sendFile( res, safeResolveUnder( join( threeRepo, 'examples/jsm' ), rel ) );
+
+		}
 		if ( url.pathname === '/__tslp__/three.webgpu.slim.js' ) {
 
 			res.setHeader( 'content-type', 'application/javascript; charset=utf-8' );
+			res.setHeader( 'cache-control', 'no-store' );
 			res.end( await readFile( SLIM_BUNDLE ) );
 			return;
 
@@ -5396,8 +6772,21 @@ const server = createServer( async ( req, res ) => {
 		}
 
 		const requestPath = decodeURIComponent( url.pathname );
-		const filePath = resolve( threeRepo, '.' + requestPath );
-		if ( ! normalize( filePath ).startsWith( normalize( threeRepo + '/' ) ) ) {
+		let filePath;
+		if ( localExamplesRoot && requestPath.startsWith( '/examples/' ) ) {
+
+			filePath = safeResolveUnder( localExamplesRoot, requestPath.slice( '/examples/'.length ) );
+
+		} else if ( localExamplesRoot && requestPath.startsWith( '/__local_src/' ) ) {
+
+			filePath = safeResolveUnder( localExamplesRoot, 'src/' + requestPath.slice( '/__local_src/'.length ) );
+
+		} else {
+
+			filePath = resolve( threeRepo, '.' + requestPath );
+
+		}
+		if ( ! filePath || ! normalize( filePath ).startsWith( normalize( ( localExamplesRoot && ( requestPath.startsWith( '/examples/' ) || requestPath.startsWith( '/__local_src/' ) ) ? localExamplesRoot : threeRepo ) + '/' ) ) ) {
 
 			res.statusCode = 403;
 			res.end( 'forbidden' );
@@ -5415,17 +6804,23 @@ const server = createServer( async ( req, res ) => {
 		}
 
 		let buf = await readFile( filePath );
-		if ( filePath.endsWith( '.html' ) && filePath.includes( '/examples/webgpu_' ) ) {
+		const isLocalHtml = localExamplesRoot && filePath.endsWith( '.html' ) && normalize( filePath ).startsWith( normalize( localExamplesRoot + '/' ) );
+		const isThreeWebgpuHtml = filePath.endsWith( '.html' ) && filePath.includes( '/examples/webgpu_' );
+		if ( isLocalHtml || isThreeWebgpuHtml ) {
 
 			const requestedMode = url.searchParams.get( '__tslp_mode' );
 			const mode = requestedMode === 'replay' ? 'replay' : requestedMode === 'stock' ? 'stock' : 'capture';
-			const example = requestPath.split( '/' ).pop();
-			buf = Buffer.from( injectHtml( buf.toString( 'utf8' ), example, mode ) );
+			const example = url.searchParams.get( '__tslp_case' ) || basename( requestPath );
+			const html = isLocalHtml
+				? buf.toString( 'utf8' ).replace( /(["'])\/src\//g, '$1/__local_src/' )
+				: buf.toString( 'utf8' );
+			buf = Buffer.from( injectHtml( html, example, mode ) );
 
 		}
 
 		res.setHeader( 'access-control-allow-origin', '*' );
 		res.setHeader( 'content-type', MIME[ extname( filePath ).toLowerCase() ] || 'application/octet-stream' );
+		res.setHeader( 'cache-control', 'no-store' );
 		res.end( buf );
 
 	} catch ( err ) {
@@ -5441,6 +6836,7 @@ function sendJs( res, code ) {
 
 	res.setHeader( 'access-control-allow-origin', '*' );
 	res.setHeader( 'content-type', 'application/javascript; charset=utf-8' );
+	res.setHeader( 'cache-control', 'no-store' );
 	res.end( code );
 
 }
@@ -5464,6 +6860,7 @@ async function sendFile( res, file ) {
 	}
 	res.setHeader( 'access-control-allow-origin', '*' );
 	res.setHeader( 'content-type', MIME[ extname( file ).toLowerCase() ] || 'application/javascript; charset=utf-8' );
+	res.setHeader( 'cache-control', 'no-store' );
 	res.end( await readFile( file ) );
 
 }
@@ -5529,14 +6926,25 @@ const LOADER_QUIESCENT_MS = 250;
 // post-load setTimeout(0) chains, GUI build re-layouts. Each tick fires the
 // example's setAnimationLoop callback at the same clamped synthetic time so
 // animation phase stays deterministic between capture and replay.
-const SETTLE_FRAMES = parseInt( getArg( '--settle-frames=', '8' ), 10 );
+const SETTLE_FRAMES = parseIntAtLeast( getArg( '--settle-frames=', '8' ), 8, 0 );
 const RENDER_POLL_MS = 400;
 // Restart the browser more aggressively than wear-and-tear suggests because
 // some examples (PMREM-heavy, large GLTF, postprocessing) corrupt the WebGPU
 // state in a way that crashes the whole renderer process after 8–11 runs.
-// Recreating proactively at 6 sidesteps the crash; the per-example catch
-// below handles the residual case where a crash hits before we hit this cap.
-const MAX_RUNS_PER_BROWSER = 6;
+// Recreating proactively also keeps Metal/GPU buffer accumulation in check
+// on Apple Silicon, where unified memory means GPU pressure freezes the
+// whole OS — at 4 runs/browser the parallel runner still froze users'
+// machines around the 150-example mark, so we cycle every 2 by default.
+// Override with TSLP_E2E_MAX_RUNS_PER_BROWSER=N or --max-runs-per-browser=N
+// if a future Chromium/Playwright makes per-context GPU release reliable
+// enough to relax this. The per-example catch below handles the residual
+// case where a crash hits before we hit this cap.
+const MAX_RUNS_PER_BROWSER = parseIntAtLeast( process.env.TSLP_E2E_MAX_RUNS_PER_BROWSER || getArg( '--max-runs-per-browser=', '2' ), 2, 1 );
+// Pause after `browser.close()` before relaunching. Without this, Chromium's
+// GPU process can still hold Metal buffers when the new browser starts,
+// doubling unified-memory pressure for the cross-over moment. 250 ms is
+// enough on Apple Silicon for the OS to reclaim GPU resources.
+const BROWSER_RESPAWN_DELAY_MS = parseIntAtLeast( process.env.TSLP_E2E_BROWSER_RESPAWN_DELAY_MS || '250', 250, 0 );
 
 // Deterministic-time replay support. Animated examples driven by
 // `setAnimationLoop` would otherwise sample different animation phases on
@@ -5545,9 +6953,9 @@ const MAX_RUNS_PER_BROWSER = 6;
 // cannot drift while assets and PMREM compile at different speeds. Use
 // `--target-tick=60` when deliberately auditing a later animation phase.
 // Real-time fetch / XHR are unaffected, so HDR / KTX2 / GLTF loaders still work.
-const PRESENT_SETTLE_MS = parseInt( getArg( '--present-settle-ms=', '120' ), 10 );
-const ASSET_SETTLE_MS = parseInt( getArg( '--asset-settle-ms=', '250' ), 10 );
-const BRIGHT_POLL_MS = parseInt( getArg( '--bright-poll-ms=', '400' ), 10 );
+const PRESENT_SETTLE_MS = parseIntAtLeast( getArg( '--present-settle-ms=', '120' ), 120, 0 );
+const ASSET_SETTLE_MS = parseIntAtLeast( getArg( '--asset-settle-ms=', '250' ), 250, 0 );
+const BRIGHT_POLL_MS = parseIntAtLeast( getArg( '--bright-poll-ms=', '400' ), 400, 0 );
 
 async function dumpCanvases( page ) {
 
@@ -5629,6 +7037,7 @@ function emptyVisitResult( overrides = {} ) {
 		diagnostics: null,
 		context: null,
 		page: null,
+		cleanup: async () => {},
 		...overrides,
 	};
 
@@ -5837,36 +7246,41 @@ async function visitExample( browser, name, mode, waitMs ) {
 	mark( 'contextMs', stepStartedAt );
 	const errors = [];
 	const warnings = [];
-	page.on( 'pageerror', ( e ) => {
+
+	// Named handlers so cleanup() can detach them. Without removeListener
+	// the closures retain references to errors/warnings/mode for the lifetime
+	// of the underlying Playwright page object — across a long parallel run
+	// that holds page+context (and the GPU resources they back) past
+	// context.close() and shows up as steady RSS climb.
+	const onPageError = ( e ) => {
 
 		const detail = String( e && ( e.stack || e.message ) || e );
 		errors.push( detail );
 		if ( process.env.TSLP_DEBUG_TORNADO ) console.error( `[page-error ${ mode }]`, detail );
 
-	} );
-	page.on( 'requestfailed', ( req ) => {
+	};
+	const onRequestFailed = ( req ) => {
 
 		if ( process.env.TSLP_DEBUG_TORNADO ) console.error( `[req-failed ${ mode }]`, req.url(), '->', req.failure() && req.failure().errorText );
 
-	} );
-	if ( process.env.TSLP_DEBUG_TORNADO_TRACE ) {
-		page.on( 'response', async ( res ) => {
+	};
+	const traceResponses = !! process.env.TSLP_DEBUG_TORNADO_TRACE;
+	const onResponse = async ( res ) => {
 
-			const url = res.url();
-			if ( /__tslp__|__tslp_runtime|__tslp_plugin|three\.webgpu|three\.tsl|tsl-stub|tornado/.test( url ) ) {
-				try {
-					const txt = await res.text();
-					console.log( `[res ${ mode }]`, res.status(), url, 'len=', txt.length );
-					if ( /tornado/.test( url ) && process.env.TSLP_DEBUG_DUMP_HTML ) {
-						const fs = await import( 'node:fs' );
-						fs.writeFileSync( `/tmp/tornado-${ mode }.html`, txt );
-					}
-				} catch ( _ ) { /* not text */ }
-			}
+		const url = res.url();
+		if ( /__tslp__|__tslp_runtime|__tslp_plugin|three\.webgpu|three\.tsl|tsl-stub|tornado/.test( url ) ) {
+			try {
+				const txt = await res.text();
+				console.log( `[res ${ mode }]`, res.status(), url, 'len=', txt.length );
+				if ( /tornado/.test( url ) && process.env.TSLP_DEBUG_DUMP_HTML ) {
+					const fs = await import( 'node:fs' );
+					fs.writeFileSync( `/tmp/tornado-${ mode }.html`, txt );
+				}
+			} catch ( _ ) { /* not text */ }
+		}
 
-		} );
-	}
-	page.on( 'console', ( m ) => {
+	};
+	const onConsole = ( m ) => {
 
 		if ( m.type() === 'error' ) {
 			errors.push( m.text() );
@@ -5879,7 +7293,28 @@ async function visitExample( browser, name, mode, waitMs ) {
 		if ( m.type() === 'log' && m.text().includes( '[tslp' ) && verboseConsole ) console.log( `[page-log ${ mode }] ${ m.text() }` );
 		if ( process.env.TSLP_DEBUG_TORNADO_VERBOSE ) console.log( `[page-${ m.type() } ${ mode }]`, m.text() );
 
-	} );
+	};
+	page.on( 'pageerror', onPageError );
+	page.on( 'requestfailed', onRequestFailed );
+	if ( traceResponses ) page.on( 'response', onResponse );
+	page.on( 'console', onConsole );
+
+	// Single owner for tearing down a visit's Playwright resources. Always
+	// detach listeners first (so any in-flight event between page.close()
+	// and context.close() can't push into the captured arrays and keep
+	// them alive), then close the page, then close the context.
+	const cleanup = async () => {
+
+		try {
+			page.off( 'pageerror', onPageError );
+			page.off( 'requestfailed', onRequestFailed );
+			if ( traceResponses ) page.off( 'response', onResponse );
+			page.off( 'console', onConsole );
+		} catch ( _ ) {}
+		try { await page.close( { runBeforeUnload: false } ); } catch ( _ ) {}
+		try { await context.close(); } catch ( _ ) {}
+
+	};
 
 	// Inject a deterministic-rAF shim BEFORE the page navigates so it's
 	// active from the very first script. Each `requestAnimationFrame`
@@ -5897,6 +7332,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 	// not drift just because replay generated PMREM or hydrated artifacts.
 	const TARGET_TICK = Number.isFinite( targetTick ) ? Math.max( 0, targetTick | 0 ) : 0;
 	const FRAME_STEP_MS = 16.6667;
+	const waitForRenderableObjects = mode === 'replay' && await exampleUsesDeferredSceneAssets( name );
 	try {
 
 		stepStartedAt = Date.now();
@@ -5904,7 +7340,16 @@ async function visitExample( browser, name, mode, waitMs ) {
 		if ( name && name.includes( 'compute_cloth' ) && mode === 'replay' ) {
 			await page.addInitScript( () => { globalThis.__TSLP_DBG_CLOTH = true; window.__TSLP_DBG_CLOTH = true; } );
 		}
-		await page.addInitScript( ( { step, base, freezeAt, quiescentMs, settleFrames } ) => {
+		if ( process.env.TSLP_DEBUG_SHADOW_COVERAGE === '1' && mode === 'replay' ) {
+			await page.addInitScript( () => { globalThis.__TSLP_DEBUG_SHADOW_COVERAGE = true; window.__TSLP_DEBUG_SHADOW_COVERAGE = true; } );
+		}
+		if ( process.env.TSLP_DEBUG_LIGHT_LINKAGE === '1' && mode === 'replay' ) {
+			await page.addInitScript( () => { globalThis.__TSLP_DEBUG_LIGHT_LINKAGE = true; window.__TSLP_DEBUG_LIGHT_LINKAGE = true; } );
+		}
+		if ( process.env.TSLP_DEBUG_SHADOW_BINDINGS === '1' && mode === 'replay' ) {
+			await page.addInitScript( () => { globalThis.__TSLP_DEBUG_SHADOW_BINDINGS = true; window.__TSLP_DEBUG_SHADOW_BINDINGS = true; } );
+		}
+		await page.addInitScript( ( { step, base, freezeAt, quiescentMs, settleFrames, waitForRenderableObjects } ) => {
 
 			// eslint-disable-next-line no-undef
 			const w = window;
@@ -5951,6 +7396,22 @@ async function visitExample( browser, name, mode, waitMs ) {
 			w.__tslpRafShimInstalled = true;
 			w.__tslpRafTick = 0;
 			w.__tslpFrozen = false;
+			w.__tslpAnimationLoopRegistered = false;
+			w.__tslpAnimationLoopCalls = 0;
+			w.__tslpWrapAnimationLoop = function ( callback ) {
+
+				w.__tslpAnimationLoopRegistered = typeof callback === 'function';
+				w.__tslpAnimationLoopCalls = 0;
+				w.__tslpSettleTicks = 0;
+				if ( typeof callback !== 'function' ) return callback;
+				return function ( ...args ) {
+
+					w.__tslpAnimationLoopCalls = ( w.__tslpAnimationLoopCalls | 0 ) + 1;
+					return callback.apply( this, args );
+
+				};
+
+			};
 
 			// Pending counters for async loaders (HDR/GLTF/MaterialX/Texture/...) and
 			// in-flight renderer.compileAsync() promises. The Playwright wait gate
@@ -5960,6 +7421,9 @@ async function visitExample( browser, name, mode, waitMs ) {
 			w.__tslpLoaderPending = 0;
 			w.__tslpCompilePending = 0;
 			w.__tslpLoaderLastBusyAt = 0;
+			w.__tslpWaitForRenderableObjects = waitForRenderableObjects === true;
+			w.__tslpRenderableObjectCount = 0;
+			w.__tslpRenderableLastBusyAt = 0;
 
 			// Save the original Date.now BEFORE the synthetic-clock patch below
 			// overwrites it. The wait gate uses real wall-clock time to enforce
@@ -6000,15 +7464,23 @@ async function visitExample( browser, name, mode, waitMs ) {
 					// AND `settleFrames` extra ticks have fired without activity.
 					cb( base + freezeAt * step );
 					const lastBusy = w.__tslpLoaderLastBusyAt | 0;
+					const renderableLastBusy = w.__tslpRenderableLastBusyAt | 0;
 					const realNow = ( typeof w.__tslpRealNow === 'function' ) ? w.__tslpRealNow() : 0;
-					const quiescent = ( lastBusy === 0 ) || ( realNow && ( realNow - lastBusy ) >= quiescentMs );
+					const renderableReady = w.__tslpWaitForRenderableObjects !== true || ( w.__tslpRenderableObjectCount | 0 ) > 0;
+					const animationLoopRegistered = w.__tslpAnimationLoopRegistered === true;
+					const animationLoopReady = ! animationLoopRegistered || ( w.__tslpAnimationLoopCalls | 0 ) >= settleFrames;
+					const settleTarget = animationLoopRegistered ? 1 : settleFrames;
+					const quiescent = ( ( lastBusy === 0 ) || ( realNow && ( realNow - lastBusy ) >= quiescentMs ) )
+						&& ( ( renderableLastBusy === 0 ) || ( realNow && ( realNow - renderableLastBusy ) >= quiescentMs ) );
 					const allZero = ( w.__tslpLoaderPending | 0 ) === 0
 						 && ( w.__tslpCompilePending | 0 ) === 0
 						 && ( w.__tslpPmremPending | 0 ) === 0
-						 && ( w.__tslpComputePending | 0 ) === 0;
+						 && ( w.__tslpComputePending | 0 ) === 0
+						 && renderableReady
+						 && animationLoopReady;
 					if ( quiescent && allZero ) {
 						w.__tslpSettleTicks = ( w.__tslpSettleTicks | 0 ) + 1;
-						if ( w.__tslpSettleTicks >= settleFrames ) w.__tslpFrozen = true;
+						if ( w.__tslpSettleTicks >= settleTarget ) w.__tslpFrozen = true;
 					} else {
 						// New activity in this settle pass — restart the countdown
 						// so freeze waits for another `settleFrames` quiet ticks.
@@ -6116,7 +7588,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 
 			};
 
-		}, { step: FRAME_STEP_MS, base: 0, freezeAt: TARGET_TICK, quiescentMs: LOADER_QUIESCENT_MS, settleFrames: SETTLE_FRAMES } );
+		}, { step: FRAME_STEP_MS, base: 0, freezeAt: TARGET_TICK, quiescentMs: LOADER_QUIESCENT_MS, settleFrames: SETTLE_FRAMES, waitForRenderableObjects } );
 		mark( 'initScriptMs', stepStartedAt );
 
 	} catch ( _ ) { /* older Playwright fallback */ }
@@ -6124,7 +7596,9 @@ async function visitExample( browser, name, mode, waitMs ) {
 	try {
 
 		stepStartedAt = Date.now();
-		await page.goto( `http://localhost:${ port }/examples/${ name }?__tslp_mode=${ mode }`, { waitUntil: 'load', timeout: NAV_TIMEOUT_MS } );
+			const examplePath = examplePathFor( name );
+			const separator = examplePath.includes( '?' ) ? '&' : '?';
+			await page.goto( `http://localhost:${ port }/examples/${ examplePath }${ separator }__tslp_mode=${ mode }&__tslp_case=${ encodeURIComponent( name ) }`, { waitUntil: 'load', timeout: NAV_TIMEOUT_MS } );
 		mark( 'gotoMs', stepStartedAt );
 
 		// Debug: verify timing patch is active. performance.now() should return
@@ -6177,10 +7651,10 @@ async function visitExample( browser, name, mode, waitMs ) {
 					const lastBusy = window.__tslpLoaderLastBusyAt | 0;
 					if ( lastBusy && ( now - lastBusy ) < quiescentMs ) return false;
 					return true;
-				},
-				LOADER_QUIESCENT_MS,
-				{ timeout: LOADER_TIMEOUT_MS },
-			);
+					},
+					LOADER_QUIESCENT_MS,
+					{ timeout: LOADER_TIMEOUT_MS, polling: 50 },
+				);
 			mark( 'freezeWaitMs', stepStartedAt );
 
 			// Brief settle so the GPU presents the frozen frame.
@@ -6188,10 +7662,23 @@ async function visitExample( browser, name, mode, waitMs ) {
 			await new Promise( ( r ) => setTimeout( r, PRESENT_SETTLE_MS ) );
 			mark( 'presentSettleMs', stepStartedAt );
 
-		} catch ( _ ) {
-			mark( 'freezeWaitMs', stepStartedAt );
-			timings.freezeTimedOut = true;
-		}
+			} catch ( _ ) {
+				mark( 'freezeWaitMs', stepStartedAt );
+				timings.freezeTimedOut = true;
+				try {
+					timings.freezeState = await page.evaluate( () => ( {
+						frozen: window.__tslpFrozen === true,
+						rafTick: window.__tslpRafTick | 0,
+						settleTicks: window.__tslpSettleTicks | 0,
+						loaderPending: window.__tslpLoaderPending | 0,
+						compilePending: window.__tslpCompilePending | 0,
+						pmremPending: window.__tslpPmremPending | 0,
+						computePending: window.__tslpComputePending | 0,
+						shadowPending: window.__tslpShadowPending | 0,
+						lastBusyAgeMs: typeof window.__tslpRealNow === 'function' ? window.__tslpRealNow() - ( window.__tslpLoaderLastBusyAt | 0 ) : null,
+					} ) );
+				} catch ( _2 ) {}
+			}
 
 		stepStartedAt = Date.now();
 		const shot = await dumpCanvas( page );
@@ -6213,15 +7700,17 @@ async function visitExample( browser, name, mode, waitMs ) {
 			mark( 'flushCaptureMs', stepStartedAt );
 		}
 		const real = errors.filter( ( e ) => ! /favicon|Failed to load resource/i.test( e ) );
-		const diagnostics = await page.evaluate( () => window.__tslpHarnessDiagnostics || null ).catch( () => null );
+		const diagnostics = await page.evaluate( () => {
+			return window.__tslpHarnessDiagnostics || null;
+		} ).catch( () => null );
 		timings.totalMs = Date.now() - startedAt;
-		return { bright: finalBright, shot, errors: real.slice( 0, 5 ), warnings: warnings.slice( 0, 5 ), diagnostics, context, page, timings };
+		return { bright: finalBright, shot, errors: real.slice( 0, 5 ), warnings: warnings.slice( 0, 5 ), diagnostics, context, page, timings, cleanup };
 
 	} catch ( err ) {
 
 		const diagnostics = await page.evaluate( () => window.__tslpHarnessDiagnostics || null ).catch( () => null );
 		timings.totalMs = Date.now() - startedAt;
-		return { bright: 0, shot: null, errors: [ err && err.message || String( err ) ], warnings: warnings.slice( 0, 5 ), diagnostics, navigationError: true, context, page, timings };
+		return { bright: 0, shot: null, errors: [ err && err.message || String( err ) ], warnings: warnings.slice( 0, 5 ), diagnostics, navigationError: true, context, page, timings, cleanup };
 
 	}
 
@@ -6274,12 +7763,24 @@ async function runOne( browser, name ) {
 	const capture = reuseReferenceShot
 		? loadSavedReferenceShot( name )
 		: await visitExample( browser, name, 'stock', captureWaitMs );
-	await capture.context?.close().catch( () => {} );
+	// Tear down listeners + page + context as soon as the visit returns.
+	// Holding only the screenshot Buffer past this point lets Chromium
+	// release the page's GPU surface before we open the next one.
+	if ( capture.cleanup ) await capture.cleanup();
+	capture.cleanup = null;
+	capture.context = null;
+	capture.page = null;
 
 	const artifactCapture = replayOnly
 		? emptyVisitResult()
 		: await visitExample( browser, name, 'capture', captureWaitMs );
-	await artifactCapture.context?.close().catch( () => {} );
+	if ( artifactCapture.cleanup ) await artifactCapture.cleanup();
+	artifactCapture.cleanup = null;
+	artifactCapture.context = null;
+	artifactCapture.page = null;
+	// The capture pass exists to harvest TSL artifacts into `bucket`; its
+	// screenshot is never read downstream (PSNR runs against the stock shot).
+	artifactCapture.shot = null;
 
 	if ( replayOnly ) loadSavedArtifacts( name );
 	const bucket = captureBucket( name );
@@ -6303,7 +7804,10 @@ async function runOne( browser, name ) {
 	}
 	const captureErrors = [ ...capture.errors, ...artifactCapture.errors ];
 	const captureWarnings = [ ...( capture.warnings || [] ), ...( artifactCapture.warnings || [] ) ];
-	const blockingCaptureErrors = captureErrors.filter( ( error ) => ! isIgnorableCaptureError( error ) );
+	const blockingCaptureErrors = [
+		...capture.errors,
+		...artifactCapture.errors.filter( ( error ) => ! isIgnorableCaptureError( error ) ),
+	];
 	const blockingReplayErrors = replay.errors.filter( ( error ) => ! isIgnorableReplayError( error ) );
 
 	let pixelMetrics;
@@ -6330,11 +7834,24 @@ async function runOne( browser, name ) {
 		writeFileSync( join( artifactsDir, `${ safe }.aux.json` ), JSON.stringify( bucket.aux, null, 2 ) );
 
 	}
-	await replay.context.close().catch( () => {} );
+	if ( replay.cleanup ) await replay.cleanup();
+	replay.cleanup = null;
+	replay.context = null;
+	replay.page = null;
 
 	const pixelGate = pixelGateOf( pixelMetrics, psnrThreshold );
 	const pixelGateOk = ! pixelGateEnabled || pixelGate.pass !== false;
 	const pass = ( userCount > 0 || auxCount > 0 ) && blockingCaptureErrors.length === 0 && replay.bright > 0.005 && blockingReplayErrors.length === 0 && pixelGateOk;
+
+	// Release everything that won't make it into the report: TSL artifact
+	// buckets (many MB on heavy scenes) and the capture/replay screenshot
+	// Buffers (~1.5 MB each at 640×480). Without this the worker accumulates
+	// these per-example across its whole slice and the OS sees steady RSS
+	// growth — on Apple Silicon's unified memory that compounds with the
+	// Chromium GPU process and eventually freezes the whole machine.
+	captures.delete( name );
+	capture.shot = null;
+	replay.shot = null;
 
 	return {
 		name,
@@ -6440,7 +7957,8 @@ function isIgnorableCaptureError( error ) {
 
 	return /extraction returned no artifact/.test( error ) ||
 		/texture\( value \).*valid instance of THREE\.Texture/.test( error ) ||
-		/RenderPassEncoder .* already ended/.test( error );
+		/RenderPassEncoder .* already ended/.test( error ) ||
+		/Invalid ShaderModule/.test( error );
 
 }
 
@@ -6560,8 +8078,31 @@ function printFailureSummary( details, max = 20 ) {
 
 }
 
-let browser = await chromium.launch( { channel: 'chrome', headless: true, args: BROWSER_ARGS } ).catch( () => null );
-if ( ! browser ) browser = await chromium.launch( { headless: true, args: BROWSER_ARGS } );
+async function launchBrowser() {
+
+	const b = await chromium.launch( { channel: 'chrome', headless: true, args: BROWSER_ARGS } ).catch( () => null );
+	if ( b ) return b;
+	return await chromium.launch( { headless: true, args: BROWSER_ARGS } );
+
+}
+
+async function recycleBrowser( current ) {
+
+	try { await current?.close(); } catch ( _ ) {}
+	// Give the OS a beat to reclaim Chromium's GPU process before we spawn a
+	// fresh one — without this delay the new browser's GPU process overlaps
+	// with the dying one and unified-memory pressure spikes on Apple Silicon.
+	if ( BROWSER_RESPAWN_DELAY_MS > 0 ) await new Promise( ( r ) => setTimeout( r, BROWSER_RESPAWN_DELAY_MS ) );
+	// Best-effort manual GC between browser lifetimes — only fires if the
+	// worker was launched with --expose-gc (the parallel runner does so).
+	if ( typeof globalThis.gc === 'function' ) {
+		try { globalThis.gc(); } catch ( _ ) {}
+	}
+	return await launchBrowser();
+
+}
+
+let browser = await launchBrowser();
 
 const report = { total: candidates.length, pass: 0, fail: 0, skip: allExamples.length - candidates.length, details: [] };
 let runsSinceRestart = 0;
@@ -6579,9 +8120,7 @@ try {
 
 			if ( runsSinceRestart >= MAX_RUNS_PER_BROWSER ) {
 
-				await browser.close().catch( () => {} );
-				browser = await chromium.launch( { channel: 'chrome', headless: true, args: BROWSER_ARGS } ).catch( () => null );
-				if ( ! browser ) browser = await chromium.launch( { headless: true, args: BROWSER_ARGS } );
+				browser = await recycleBrowser( browser );
 				runsSinceRestart = 0;
 
 			}
@@ -6611,9 +8150,7 @@ try {
 			// handle, so we lose ~80 % of the slice every time the renderer dies.
 			const msg = err && err.message || String( err );
 			if ( /browser has been closed|Target page, context|Browser closed/i.test( msg ) ) {
-				await browser.close().catch( () => {} );
-				browser = await chromium.launch( { channel: 'chrome', headless: true, args: BROWSER_ARGS } ).catch( () => null );
-				if ( ! browser ) browser = await chromium.launch( { headless: true, args: BROWSER_ARGS } );
+				browser = await recycleBrowser( browser );
 				runsSinceRestart = 0;
 			}
 
