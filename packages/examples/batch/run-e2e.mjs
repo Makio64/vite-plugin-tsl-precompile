@@ -2356,6 +2356,7 @@ function __attachPassTextureRefs( artifact, passNode ) {
 function __attachRTTTextureRefs( artifact, rttNodes ) {
 	if ( ! artifact || ! Array.isArray( rttNodes ) || rttNodes.length === 0 ) return artifact;
 	const rtt = rttNodes[ 0 ];
+	if ( __rttPrecompiledShape( rtt ) === 'render-output' ) return artifact;
 	const texture = rtt && rtt.renderTarget && rtt.renderTarget.texture;
 	if ( texture && texture.isTexture === true ) {
 		__attachTextureRefsWhere( artifact, texture, ( source ) => source.kind === 'artifact.texture' && ! source.textureName );
@@ -3744,6 +3745,11 @@ function __sceneSignature( scene ) {
 
 async function __probeShadowDepthTexture( fullRenderer, depthTex, light, preferredSize ) {
 	if ( ! fullRenderer || ! fullRenderer.backend || typeof fullRenderer.backend.copyTextureToBuffer !== 'function' || ! depthTex ) return null;
+	// WebGPU depth-only textures such as Depth24Plus cannot be copied to a
+	// CPU buffer by this backend helper. Probing them poisons the command
+	// encoder and can black out later replay passes; still share the GPU
+	// texture below, just skip the optional zero-map heuristic.
+	if ( depthTex.isDepthTexture === true ) return null;
 	const image = depthTex.image || {};
 	const width = image.width || light && light.shadow && light.shadow.mapSize && light.shadow.mapSize.width || 0;
 	const height = image.height || light && light.shadow && light.shadow.mapSize && light.shadow.mapSize.height || 0;
@@ -4637,6 +4643,7 @@ const __fullBloomSize = new FullVector2();
 const __fullBloomBlurX = new FullVector2( 1, 0 );
 const __fullBloomBlurY = new FullVector2( 0, 1 );
 let __fullRTTQuad = null;
+let __slimRTTQuad = null;
 let __fullRTTRendererState = null;
 const __fullRTTSize = new FullVector2();
 
@@ -4745,6 +4752,7 @@ function __renderBloomNodeWithFullRenderer( bloomNode, slimRenderer, fullRendere
 
 function __renderRTTNodeWithFullRenderer( rttNode, slimRenderer, fullRenderer ) {
 	if ( ! __isRTTNode( rttNode ) || ! slimRenderer || ! fullRenderer ) return false;
+	if ( __renderRTTNodeWithPrecompiledSlim( rttNode, slimRenderer ) ) return true;
 	try {
 		if ( ! __fullRTTQuad ) __fullRTTQuad = new FullQuadMesh();
 		if ( ! rttNode.__tslpFullRTTMaterial ) {
@@ -4788,6 +4796,49 @@ function __renderRTTNodeWithFullRenderer( rttNode, slimRenderer, fullRenderer ) 
 		try {
 			if ( __fullRTTRendererState && FullRendererUtils && typeof FullRendererUtils.restoreRendererState === 'function' ) FullRendererUtils.restoreRendererState( fullRenderer, __fullRTTRendererState );
 		} catch ( _ ) {}
+	}
+}
+
+function __rttPrecompiledShape( rttNode ) {
+	const node = rttNode && ( rttNode._rttNode || rttNode.node );
+	const type = node && node.constructor && ( node.constructor.type || node.constructor.name ) || node && node.type || '';
+	if ( type === 'RenderOutputNode' ) return 'render-output';
+	return null;
+}
+
+function __renderRTTNodeWithPrecompiledSlim( rttNode, renderer ) {
+	const shape = __rttPrecompiledShape( rttNode );
+	if ( ! shape || ! renderer || ! rttNode || ! rttNode.renderTarget ) return false;
+	try {
+		if ( ! __slimRTTQuad ) __slimRTTQuad = new Slim.QuadMesh();
+		const node = rttNode._rttNode || rttNode.node;
+		let artifact = Slim.loadAux( shape, 'tslp-e2e-bypass' );
+		const passNodes = __collectPassNodesInGraph( node );
+		for ( const passNode of passNodes ) __preparePassNodeForReplay( renderer, passNode );
+		artifact = __attachGraphTextureRefs( artifact, node );
+		artifact = __attachPassTextureRefs( artifact, passNodes[ 0 ] || null );
+		const material = new Slim.PrecompiledMaterial( artifact );
+		material.name = 'RTT_' + shape;
+		material.needsUpdate = true;
+		const currentRenderTarget = typeof renderer.getRenderTarget === 'function' ? renderer.getRenderTarget() : null;
+		const currentMRT = typeof renderer.getMRT === 'function' ? renderer.getMRT() : null;
+		try {
+			renderer.setRenderTarget( rttNode.renderTarget );
+			if ( typeof renderer.setMRT === 'function' ) renderer.setMRT( null );
+			__slimRTTQuad.material = material;
+			__slimRTTQuad.name = 'RTT [ ' + shape + ' ]';
+			__slimRTTQuad.render( renderer );
+		} finally {
+			try { renderer.setRenderTarget( currentRenderTarget ); } catch ( _ ) {}
+			try { if ( typeof renderer.setMRT === 'function' ) renderer.setMRT( currentMRT ); } catch ( _ ) {}
+		}
+		return true;
+	} catch ( err ) {
+		if ( ! window.__tslpRTTPrecompiledWarned ) {
+			window.__tslpRTTPrecompiledWarned = true;
+			console.warn( '[tslp-e2e] RTT precompiled replay failed:', err && ( err.stack || err.message ) || err );
+		}
+		return false;
 	}
 }
 
@@ -4891,6 +4942,149 @@ function __renderRTTNodesForPipeline( renderer, rttNodes ) {
 	}
 }
 
+function __frameEffectDiagnostics() {
+	const diag = __harnessDiagnostics();
+	if ( ! diag.frameEffects ) {
+		diag.frameEffects = { collected: 0, prepared: 0, rendered: 0, failed: 0, setupFailed: 0, names: [] };
+	}
+	return diag.frameEffects;
+}
+
+function __nodeOwnsRenderTarget( node ) {
+	if ( ! node || ( typeof node !== 'object' && typeof node !== 'function' ) ) return false;
+	const keys = [];
+	try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
+	for ( const key of keys ) {
+		let value = null;
+		try { value = node[ key ]; } catch ( _ ) { continue; }
+		if ( value && value.isRenderTarget === true ) return true;
+		if ( value && value.texture && value.texture.isTexture === true && typeof value.setSize === 'function' ) return true;
+	}
+	return false;
+}
+
+function __isFrameEffectNode( node ) {
+	if ( ! node || typeof node.updateBefore !== 'function' ) return false;
+	if ( node.isPassNode === true || node.isRTTNode === true || __isBloomEffectNode( node ) ) return false;
+	const kind = __nodeUpdateKind( node, 'before' );
+	if ( kind === 'none' || kind === null || kind === undefined ) return false;
+	if ( typeof node.setup !== 'function' && typeof node.getTextureNode !== 'function' && ! __nodeOwnsRenderTarget( node ) ) return false;
+	return true;
+}
+
+function __collectFrameEffectNodesInGraph( node, out = [], seen = new Set(), depth = 0 ) {
+	if ( ! node || depth > 32 || seen.has( node ) ) return out;
+	seen.add( node );
+	const keys = [];
+	try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
+	const skip = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'geometry', 'material', 'domElement', 'renderTarget', '_aoRenderTarget', '_ssgiRenderTarget', '_ssrRenderTarget', '_blurRenderTarget', '_renderTarget', '_compRT', '_oldRT', '_CoCRT', '_CoCBlurredRT', '_blur64RT', '_blur16NearRT', '_blur16FarRT', '_compositeRT' ] );
+	for ( const key of keys ) {
+		if ( skip.has( key ) ) continue;
+		let child = null;
+		try { child = node[ key ]; } catch ( _ ) { continue; }
+		if ( ! child ) continue;
+		if ( Array.isArray( child ) ) {
+			for ( const item of child ) {
+				if ( item && ( item.isNode === true || typeof item.updateBefore === 'function' ) ) __collectFrameEffectNodesInGraph( item, out, seen, depth + 1 );
+			}
+		} else if ( child.isNode === true || typeof child.updateBefore === 'function' ) {
+			__collectFrameEffectNodesInGraph( child, out, seen, depth + 1 );
+		} else if ( Object.getPrototypeOf( child ) === Object.prototype ) {
+			for ( const item of Object.values( child ) ) {
+				if ( item && ( item.isNode === true || typeof item.updateBefore === 'function' ) ) __collectFrameEffectNodesInGraph( item, out, seen, depth + 1 );
+			}
+		}
+	}
+	if ( __isFrameEffectNode( node ) && ! out.includes( node ) ) out.push( node );
+	return out;
+}
+
+const __frameEffectNodeProperties = new WeakMap();
+
+function __makeReplayNodeBuilder( renderer, context ) {
+	const sharedContext = context || {};
+	return {
+		renderer,
+		context: sharedContext,
+		getSharedContext() {
+			return sharedContext;
+		},
+		getNodeProperties( node ) {
+			if ( ! node || ( typeof node !== 'object' && typeof node !== 'function' ) ) return {};
+			let props = __frameEffectNodeProperties.get( node );
+			if ( ! props ) {
+				props = {};
+				__frameEffectNodeProperties.set( node, props );
+			}
+			return props;
+		},
+	};
+}
+
+function __prepareFrameEffectNodeForReplay( node, fullRenderer, context ) {
+	if ( ! __isFrameEffectNode( node ) || ! fullRenderer ) return false;
+	if ( node.__tslpFrameEffectReady === true ) return true;
+	const diag = __frameEffectDiagnostics();
+	try {
+		if ( typeof node.setup === 'function' ) node.setup( __makeReplayNodeBuilder( fullRenderer, context ) );
+		Object.defineProperty( node, '__tslpFrameEffectReady', { value: true, configurable: true } );
+		diag.prepared ++;
+		return true;
+	} catch ( err ) {
+		diag.setupFailed ++;
+		if ( ! window.__tslpFrameEffectSetupWarned ) {
+			window.__tslpFrameEffectSetupWarned = true;
+			console.warn( '[tslp-e2e] postprocess effect setup failed:', err && ( err.stack || err.message ) || err );
+		}
+		return false;
+	}
+}
+
+function __renderFrameEffectNodeWithFullRenderer( node, slimRenderer, fullRenderer, context ) {
+	if ( ! __isFrameEffectNode( node ) || ! slimRenderer || ! fullRenderer ) return false;
+	const diag = __frameEffectDiagnostics();
+	try {
+		if ( ! __prepareFrameEffectNodeForReplay( node, fullRenderer, context ) ) return false;
+		try {
+			fullRenderer.toneMapping = slimRenderer.toneMapping;
+			fullRenderer.toneMappingExposure = slimRenderer.toneMappingExposure;
+			fullRenderer.outputColorSpace = slimRenderer.outputColorSpace;
+		} catch ( _ ) {}
+		try {
+			const size = slimRenderer.getDrawingBufferSize( __fullRTTSize );
+			if ( typeof fullRenderer.setSize === 'function' ) fullRenderer.setSize( size.width, size.height, false );
+		} catch ( _ ) {}
+		__shareGraphTexturesBetweenRenderers( fullRenderer, slimRenderer, node );
+		node.updateBefore( {
+			renderer: fullRenderer,
+			frameId: window.__tslpRafTick | 0,
+			renderId: window.__tslpRafTick | 0,
+			context: context || {},
+		} );
+		__shareGraphTexturesBetweenRenderers( slimRenderer, fullRenderer, node );
+		diag.rendered ++;
+		if ( diag.names.length < 20 ) diag.names.push( node.constructor && ( node.constructor.type || node.constructor.name ) || node.type || 'effect' );
+		return true;
+	} catch ( err ) {
+		diag.failed ++;
+		if ( ! window.__tslpFrameEffectRenderWarned ) {
+			window.__tslpFrameEffectRenderWarned = true;
+			console.warn( '[tslp-e2e] postprocess effect render failed:', err && ( err.stack || err.message ) || err );
+		}
+		return false;
+	}
+}
+
+function __renderFrameEffectNodesForPipeline( renderer, effectNodes, context ) {
+	try {
+		const diag = __frameEffectDiagnostics();
+		diag.collected += effectNodes && effectNodes.length || 0;
+	} catch ( _ ) {}
+	for ( const node of effectNodes || [] ) {
+		__renderFrameEffectNodeWithFullRenderer( node, renderer, __computeRenderer, context );
+	}
+}
+
 function __collectScenePassNodes( scene ) {
 	const out = [];
 	if ( ! scene || typeof scene.traverse !== 'function' ) return out;
@@ -4929,6 +5123,16 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				let artifact = Slim.loadAux( shape, 'tslp-e2e-bypass' );
 				const passNodes = __collectPassNodesInGraph( this.outputNode );
 				const rttNodes = __collectRTTNodesInGraph( this.outputNode );
+				const passEffectNodes = [];
+				for ( const node of passNodes ) __collectFrameEffectNodesInGraph( node, passEffectNodes );
+				const outputEffectNodes = __collectFrameEffectNodesInGraph( this.outputNode ).filter( ( node ) => ! passEffectNodes.includes( node ) );
+				const effectNodes = [ ...passEffectNodes, ...outputEffectNodes ];
+				try {
+					const fxDiag = __frameEffectDiagnostics();
+					fxDiag.passNodes = ( fxDiag.passNodes || 0 ) + passNodes.length;
+					fxDiag.passContextEffects = ( fxDiag.passContextEffects || 0 ) + passEffectNodes.length;
+					fxDiag.outputEffects = ( fxDiag.outputEffects || 0 ) + outputEffectNodes.length;
+				} catch ( _ ) {}
 				const bloomNodes = __collectBloomNodesInGraph( this.outputNode );
 				__bloomDiagnostics().collected += bloomNodes.length;
 				const passNode = passNodes[ 0 ] || null;
@@ -4937,8 +5141,12 @@ export class RenderPipeline extends Slim.RenderPipeline {
 					onBeforeRenderPipeline: null,
 					onAfterRenderPipeline: null,
 				};
+				this._context = context;
 				for ( const node of passNodes ) __preparePassNodeForReplay( this.renderer, node );
+				for ( const node of effectNodes ) __prepareFrameEffectNodeForReplay( node, __computeRenderer, context );
 				for ( const node of bloomNodes ) __prepareBloomNodeForReplay( node, context );
+				const effectBeforeRenderPipeline = context.onBeforeRenderPipeline;
+				const effectAfterRenderPipeline = context.onAfterRenderPipeline;
 				artifact = __attachGraphTextureRefs( artifact, this.outputNode );
 				artifact = __attachPassTextureRefs( artifact, passNode );
 				artifact = __attachRTTTextureRefs( artifact, rttNodes );
@@ -4946,11 +5154,16 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				mat.needsUpdate = true;
 				this._quadMesh.material = mat;
 				// Set up _context so render() can access onBefore/onAfterRenderPipeline.
-				context.onBeforeRenderPipeline = ( passNodes.length > 0 || rttNodes.length > 0 || bloomNodes.length > 0 ) ? () => {
+				context.onBeforeRenderPipeline = ( passNodes.length > 0 || rttNodes.length > 0 || effectNodes.length > 0 || bloomNodes.length > 0 ) ? () => {
+						if ( typeof effectBeforeRenderPipeline === 'function' ) effectBeforeRenderPipeline();
 						__renderPassNodesForPipeline( this.renderer, passNodes );
 						__renderRTTNodesForPipeline( this.renderer, rttNodes );
+						__renderFrameEffectNodesForPipeline( this.renderer, passEffectNodes, context );
+						if ( passEffectNodes.length > 0 ) __renderPassNodesForPipeline( this.renderer, passNodes );
+						__renderFrameEffectNodesForPipeline( this.renderer, outputEffectNodes, context );
 						__renderBloomNodesForPipeline( this.renderer, bloomNodes );
-					} : null;
+					} : effectBeforeRenderPipeline;
+				context.onAfterRenderPipeline = typeof effectAfterRenderPipeline === 'function' ? () => effectAfterRenderPipeline() : null;
 				this._context = context;
 				this.needsUpdate = false;
 				// Return early — super._update would call ng() which throws.
@@ -4993,6 +5206,7 @@ function tslStubModule() {
 	const unique = Array.from( new Set( names ) ).filter( ( name ) => /^[A-Za-z_$][\w$]*$/.test( name ) && name !== 'pass' );
 	const consts = unique
 		.filter( ( name ) => name !== 'reflector' )
+		.filter( ( name ) => name !== 'builtinAOContext' )
 		.map( ( name ) => `const ${ name } = __TSL[ '${ name }' ];` )
 		.join( '\n' );
 	const reflectorShim = unique.includes( 'reflector' )
@@ -5009,6 +5223,16 @@ const reflector = ( ...args ) => {
 };
 `
 		: '';
+	const builtinAOContextShim = unique.includes( 'builtinAOContext' )
+		? `
+const __tslpRealBuiltinAOContext = __TSL[ 'builtinAOContext' ];
+const builtinAOContext = ( aoNode, node = null ) => {
+	const contextNode = __tslpRealBuiltinAOContext( aoNode, node );
+	try { Object.defineProperty( contextNode, '__tslpAOInputNode', { value: aoNode, configurable: true } ); } catch ( _ ) {}
+	return contextNode;
+};
+`
+		: '';
 	const exportList = [ ...unique, 'pass' ].join( ', ' );
 	return `
 // Import the FULL three.js TSL namespace via absolute URL so the replay
@@ -5020,6 +5244,7 @@ import { PassNode as __ReplayPassNode } from '/__tslp__/slim-webgpu-replay.js';
 // receive genuine TSL node objects whose isComputeNode flag is set correctly.
 ${ consts }
 ${ reflectorShim }
+${ builtinAOContextShim }
 const pass = ( scene, camera, options ) => new __ReplayPassNode( __ReplayPassNode.COLOR, scene, camera, options );
 export { ${ exportList } };
 // Also export the TSL namespace object for code that imports it directly.
