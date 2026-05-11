@@ -22,6 +22,8 @@ test-results/
 # Per-worker e2e reports — only the merged e2e-report.json is checked in
 packages/examples/batch/results/e2e-report-worker-*.json
 
-# Local diagnostic snapshots produced while debugging individual examples
-packages/examples/batch/results/visual-*.json
-packages/examples/batch/results/debug-*.json
+# Local diagnostic snapshots produced while debugging individual examples.
+# The only canonical *.json under results/ is e2e-report.json (nested
+# artifacts/*.aux.json live in a subdir and aren't matched by this glob).
+packages/examples/batch/results/*.json
+!packages/examples/batch/results/e2e-report.json
