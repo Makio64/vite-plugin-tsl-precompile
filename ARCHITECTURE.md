@@ -51,8 +51,9 @@ Inspired by Unreal's Material Compiler (`FMaterialUniformExpressionSet` generate
          │
          ▼  (codegen, phase 3)
 ┌─────────────────────────────────────────────┐
-│ generated updater.js — static JS that writes
-│ UBO bytes directly, using runtime/writers.js
+│ generated virtual modules — static artifact,
+│ optional WGSL pool, and updater.js writes via
+│ runtime/writers.js
 └─────────────────────────────────────────────┘
          │
          ▼  (runtime, phase 4)
@@ -75,6 +76,8 @@ The Vite plugin. Runs at build time.
 - `src/dev-capture-server.js` — POST endpoint for the runtime marker in dev mode.
 - `src/node-harness.js` — headless three.js + mock WebGPU, for CI verify.
 - `src/emit-updater.js` — descriptor → static updater.js codegen.
+- `src/emit-manifest.js` — artifact JSON → virtual module source.
+- `src/wgsl-optimize.js` — build-output-only WGSL minify/dedupe support, including the shared `virtual:tsl-precompile/__wgsl` pool.
 - `src/hash.js` — normalized TSL graph hasher.
 - `src/vendor/` — vendored files from the three.js fork (compileTSL, extractUniformPlan, …).
 
@@ -90,7 +93,7 @@ Ships with the user's bundle. Runtime only.
 
 ### `packages/examples/*`
 
-Integration testbeds: ocean, bloom, compute, batch.
+Integration testbeds: ocean, bloom, compute, background, shadow-debug, compute-debug, batch, and the docs site.
 
 ## Staleness gates
 

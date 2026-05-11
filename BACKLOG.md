@@ -14,7 +14,7 @@ Each task lists:
 
 Pri legend: **P0** breaks rendering, **P1** wrong output, **P2** correctness/polish, **P3** nice-to-have.
 
-> **Status (2026-05-05):** Unit tests/load-smoke are still assumed from the previous green baseline; no full suite was rerun after the latest focused visual work. The last broad PSNR summary was 30 / 194 graded examples at 30 dB, but focused runs now have `webgpu_loader_gltf.html`, `webgpu_loader_gltf_sheen.html`, `webgpu_pmrem_cubemap.html`, and `webgpu_portal.html` at PSNR `inf`. Bloom is the current unfinished thread. See [STATUS.md](STATUS.md) and [CONTINUATION_PLAN.md](CONTINUATION_PLAN.md) for the focused report list.
+> **Status (2026-05-11):** The last broad PSNR summary is still 30 / 194 graded examples at 30 dB, but focused runs now have `webgpu_loader_gltf.html`, `webgpu_loader_gltf_sheen.html`, `webgpu_pmrem_cubemap.html`, `webgpu_portal.html`, and the three-example bloom cluster at PSNR `inf`. Focused bloom is no longer the active blocker; shadows remain first in the beta queue. See [STATUS.md](STATUS.md) and [CONTINUATION_PLAN.md](CONTINUATION_PLAN.md) for the focused report list and test notes.
 
 ## v0.1 beta priority order
 
@@ -24,7 +24,7 @@ Do not chase all 194 graded examples first. The production support slice is ordi
 2. PMREM / environment / reflections: PBR can look plausibly rendered while the lighting is wrong.
 3. Transmission / viewport / reflector textures: glass, refraction, and mirrors are real material features.
 4. Compute / storage sync: useful and important, but experimental for v0.1 unless the release target pivots to creative-coding demos.
-5. MRT and broad postprocessing: deferred until the render-target / PassNode chain is truly wired.
+5. MRT and broad postprocessing: focused bloom is green, but the wider render-target / PassNode chain is still deferred.
 
 ---
 
@@ -48,17 +48,17 @@ Implementation direction:
 - **Done when**: `webgpu_shadowmap.html` and `webgpu_shadowmap_pointlight.html` replay, and the shadow category rises above the 30 dB gate on representative examples.
 - **Reference**: webgpu_shadowmap, webgpu_shadowmap_opacity, webgpu_shadowmap_vsm, webgpu_shadowmap_progressive, webgpu_shadow_contact (5 examples; 2 more — `_csm`, `_array` — also need it but `ShadowBaseNode` stub fix in 751eaad already unblocks the load).
 
-### `postprocess-bloom-texture-handoff` — P1
-The portal `pass(scene, camera)` path now works in the focused run, but bloom still proves that the render-target texture chain is incomplete. Replay runs a real addon `BloomNode` and the internal high-pass/blur/composite passes report no WebGPU/runtime errors, but the final composite is too dim or effectively black.
+### `postprocess-bloom-texture-handoff` — P1 — resolved for focused bloom cluster
+The portal `pass(scene, camera)` path works in the focused run, and the bloom texture handoff is now green for the focused cluster.
 
 Latest useful signals:
-- `visual-bloom-diagnostic-15.json`: `webgpu_postprocessing_bloom.html` status pass, PSNR `15.44`, replay brightness `0.1186` vs capture `0.7503`, bloom diagnostics `collected=1`, `prepared=1`, `fullRendered=15`, `highPass=15`, `blur=150`, `composite=15`, `renderFailed=0`.
-- `visual-bloom-after-internal-aux.json`: `webgpu_postprocessing_bloom.html` PSNR `15.44`, `webgpu_postprocessing_bloom_emissive.html` PSNR `20.84`, `webgpu_postprocessing_bloom_selective.html` PSNR about `13.36`.
+- `visual-bloom-cluster-after-fixes.json` (2026-05-11): `webgpu_postprocessing_bloom.html`, `webgpu_postprocessing_bloom_emissive.html`, and `webgpu_postprocessing_bloom_selective.html` all pass with PSNR `inf`.
+- Selective bloom now captures 51 user artifacts + 14 aux artifacts; MeshBasic MRT artifacts carry `mrtOutputCount: 2` with `output,bloomIntensity`.
 
-Hypothesis: the full-renderer bloom pass executes, but either the source pass output handed to the full renderer is black/stale, or the final slim postprocess artifact is not rebinding/sampling the intended bloom composite texture (`UnrealBloomPass.h0`).
+The original dim/black bloom hypothesis is retired for these three examples. Remaining broad-postprocessing work should focus on non-bloom examples that still share PassNode/render-target plumbing.
 
 - **Files**: `packages/examples/batch/run-e2e.mjs`, `packages/runtime/src/aux-marker.js`, `packages/runtime/src/slim-entry.js`, possibly `packages/runtime/src/slim-stubs.js` and `packages/runtime/src/graph-hash.js` if pass-node/runtime exports need more hardening.
-- **Done when**: `webgpu_postprocessing_bloom.html`, `webgpu_postprocessing_bloom_emissive.html`, and `webgpu_postprocessing_bloom_selective.html` replay with visible bloom and pass the 30 dB PSNR gate.
+- **Done when**: done for the three focused bloom examples; re-open only if the full postprocessing sweep exposes a bloom-specific regression.
 - **Reference**: webgpu_postprocessing_bloom, webgpu_postprocessing_bloom_emissive, webgpu_postprocessing_bloom_selective; follow-up for `webgpu_postprocessing.html` missing dots.
 
 ### `displacementmap-blank-replay` — P0
@@ -82,6 +82,7 @@ Hypothesis: the harness's `__syncStorageBuffers` ([run-e2e.mjs:1012](packages/ex
 - **Files**: `packages/examples/batch/run-e2e.mjs` (`__syncStorageBuffers` and/or `__wireComputeAttrsToArtifact`).
 - **Done when**: webgpu_compute_birds.html.replay.png shows visible bird sprites.
 - **Reference**: webgpu_compute_birds, possibly webgpu_compute_particles_snow (replayBright 0.008 — similar instance-buffer issue?).
+- **Minimal repro**: `packages/examples/compute-debug/instanced.html` (`pnpm test:e2e:compute-debug -- --filter=instanced.html`).
 
 ### `compute-storage-texture-sync` — P2 experimental
 The storage-texture sync in `__syncStorageBuffers` ([run-e2e.mjs:1027-1079](packages/examples/batch/run-e2e.mjs#L1027)) IS implemented (handles `binding.isSampledTexture && binding.texture.isStorageTexture`), but `webgpu_compute_texture` / `_pingpong` / `_3d` still render at very-low brightness (0.007 / 0.011 / 1.0).
@@ -93,6 +94,7 @@ Hypothesis: the slim renderer's bind-group cache holds a different GPUTexture in
 - **Files**: `packages/examples/batch/run-e2e.mjs` `__syncStorageBuffers`.
 - **Done when**: all three replay PNGs ≥70% of capture size.
 - **Reference**: webgpu_compute_texture, webgpu_compute_texture_pingpong, webgpu_compute_texture_3d.
+- **Minimal repro**: `packages/examples/compute-debug/texture.html` (`pnpm test:e2e:compute-debug -- --filter=texture.html`).
 
 ### `pmrem-cubemap-bg` — P1
 Partially resolved in the 2026-05-05 focused queue. The glTF/PMREM cubemap bucket is now green:
@@ -195,13 +197,12 @@ When two tasks share a file, run them **sequentially**, not in parallel.
 
 Recommended order for serial work (each ~30-60 min focused):
 
-1. `postprocess-bloom-texture-handoff` — current paused thread; portal proved pass-node rendering can be made exact, bloom still needs texture handoff/composite wiring.
-2. `shadows-no-render` — first beta blocker; make shadow replay/depth binding reliable.
-3. `pmrem-cubemap-bg` — focused glTF/PMREM cubemap bucket is green, but broader PMREM/reflection examples need a re-grade.
-4. `transmission-viewport-texture` — glass, refraction, and mirrors.
-5. `displacementmap-blank-replay` — still a PBR material-map gap.
-6. `compute-instance-mesh-buffer` / `compute-storage-texture-sync` — experimental compute/storage slice.
-7. `mrt-replay-empty` — deferred with broad postprocessing until render-target / PassNode routing is mature.
+1. `shadows-no-render` — first beta blocker; make shadow replay/depth binding reliable.
+2. `pmrem-cubemap-bg` — focused glTF/PMREM cubemap bucket is green, but broader PMREM/reflection examples need a re-grade.
+3. `transmission-viewport-texture` — glass, refraction, and mirrors.
+4. `displacementmap-blank-replay` — still a PBR material-map gap.
+5. `compute-instance-mesh-buffer` / `compute-storage-texture-sync` — experimental compute/storage slice.
+6. `mrt-replay-empty` — deferred with broad postprocessing until render-target / PassNode routing is mature.
 
 For parallel agent work: file-disjoint sets are tricky because run-e2e.mjs is contended. Agent assignments need careful section-scoping or merge coordination.
 

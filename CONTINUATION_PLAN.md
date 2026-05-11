@@ -10,15 +10,17 @@ Canonical docs now are:
 - Parallel-agent workflow: [MULTI_AGENT.md](MULTI_AGENT.md)
 - User-facing usage: [README.md](README.md)
 
-Current handoff (2026-05-05):
+Current handoff (2026-05-11):
 
 We stopped during the visual replay cleanup queue for Three.js WebGPU examples. The main work-in-progress source files are:
 
-- [packages/examples/batch/run-e2e.mjs](packages/examples/batch/run-e2e.mjs) — replay harness patches for backgrounds, PMREM, pass nodes, portal, bloom experiments, full-renderer helpers, and focused diagnostics.
+- [packages/examples/batch/run-e2e.mjs](packages/examples/batch/run-e2e.mjs) and [packages/examples/batch/run-e2e-parallel.mjs](packages/examples/batch/run-e2e-parallel.mjs) — replay harness patches for backgrounds, PMREM, pass nodes, portal, bloom fixes, local example roots, memory-bounded worker batching, full-renderer helpers, and focused diagnostics.
 - [packages/runtime/src/hydrator.js](packages/runtime/src/hydrator.js) — live uniform/shadow/texture rebinding fixes.
 - [packages/plugin/src/vendor/extractUniformPlan.js](packages/plugin/src/vendor/extractUniformPlan.js) — light uniform source extraction fixes.
+- [packages/plugin/src/wgsl-optimize.js](packages/plugin/src/wgsl-optimize.js), [packages/plugin/src/index.js](packages/plugin/src/index.js), and [packages/plugin/src/emit-manifest.js](packages/plugin/src/emit-manifest.js) — WGSL minification/deduplication for emitted virtual modules.
 - [packages/runtime/src/aux-marker.js](packages/runtime/src/aux-marker.js), [packages/runtime/src/graph-hash.js](packages/runtime/src/graph-hash.js), [packages/runtime/src/slim-entry.js](packages/runtime/src/slim-entry.js), and [packages/plugin/src/dev-capture-server.js](packages/plugin/src/dev-capture-server.js) — aux/background/pass capture and replay support added while fixing portal/bloom.
 - [packages/runtime/build/three.webgpu.slim.js](packages/runtime/build/three.webgpu.slim.js) — rebuilt slim bundle; keep in sync with runtime source changes.
+- [packages/examples/shadow-debug](packages/examples/shadow-debug) — small local shadow repro pages wired to the E2E harness.
 
 What is done:
 
@@ -31,6 +33,8 @@ What is done:
 	- `webgpu_loader_gltf_sheen.html`: `visual-loader-gltf-sheen-after-pmrem-flipy.json`, PSNR `inf`, no errors/warnings.
 	- `webgpu_pmrem_cubemap.html`: `visual-pmrem-cubemap-after-cube-mapping-normalize.json`, PSNR `inf`, no errors/warnings.
 - Portal clipping is green. `webgpu_portal.html` now captures separate background aux artifacts for the main scene/pass scene and replays at PSNR `inf` in `visual-portal-after-bg-exact.json`.
+- Focused bloom is green. `webgpu_postprocessing_bloom.html`, `webgpu_postprocessing_bloom_emissive.html`, and `webgpu_postprocessing_bloom_selective.html` all pass with PSNR `inf` in `visual-bloom-cluster-after-fixes.json`.
+- The parallel E2E harness now uses short-lived worker batches, one worker slot by default on ordinary machines, and single-example retries for crashed batches so long sweeps are less likely to exhaust Chromium/WebGPU memory.
 
 Important implementation notes:
 
@@ -42,28 +46,21 @@ Important implementation notes:
 
 Where we stopped:
 
-- Bloom is the current unfinished item. The experiments made the real addon `BloomNode` run in replay and removed WebGPU/runtime errors, but the bloom contribution is still too dim or effectively black in the final composite.
-- Latest useful bloom diagnostics:
-	- `visual-bloom-diagnostic-15.json`: `webgpu_postprocessing_bloom.html` functionally passes but PSNR is `15.44`; replay brightness `0.1186` vs capture `0.7503`. Bloom diagnostics showed `collected=1`, `prepared=1`, `fullRendered=15`, `highPass=15`, `blur=150`, `composite=15`, and no render failures.
-	- `visual-bloom-after-internal-aux.json`: `webgpu_postprocessing_bloom.html` PSNR `15.44`, `webgpu_postprocessing_bloom_emissive.html` PSNR `20.84`, `webgpu_postprocessing_bloom_selective.html` PSNR about `13.36` and still fails the pixel gate.
-	- `visual-bloom-texture-share.json` is an incomplete/failed diagnostic run and should not be treated as a success signal.
-- Current suspicion: the full-renderer bloom pass can execute, but the final slim postprocess artifact is still not sampling the intended bloom composite texture (`UnrealBloomPass.h0`) or the source texture handed to the full renderer is still black/stale.
+- Bloom is no longer the current unfinished item for the focused cluster. `visual-bloom-cluster-after-fixes.json` (2026-05-11) has `webgpu_postprocessing_bloom.html`, `webgpu_postprocessing_bloom_emissive.html`, and `webgpu_postprocessing_bloom_selective.html` all passing with PSNR `inf`.
+- The key selective-bloom fix was to capture material artifacts against the pass/global MRT descriptor first, letting three.js merge each material-level `mrtNode` into the pass layout. Captured selective MeshBasic artifacts now emit both `output` and `bloomIntensity`.
+- The replay gate now waits for deferred scene assets in loader examples, which fixed the emissive bloom timing case where replay froze after the HDR background but before the GLTF helmet arrived.
 
 What remains next:
 
-- Continue bloom from the texture handoff/composite wiring point. Verify which texture is black: source pass output, high-pass output, blur chain, composite output, or final artifact rebinding.
-- Recheck `webgpu_postprocessing_bloom.html`, `webgpu_postprocessing_bloom_emissive.html`, and `webgpu_postprocessing_bloom_selective.html` after each bloom patch with focused reports and screenshots.
-- Revisit `webgpu_postprocessing.html` missing dots after bloom, since it likely shares PassNode/render-target plumbing.
+- Revisit `webgpu_postprocessing.html` missing dots and `webgpu_postprocessing_ao.html`, since broad postprocessing still has non-bloom gaps.
 - Revisit `webgpu_instancing_morph.html` replay color/darkness and `webgpu_lights_physical.html` remaining PSNR gap after the PMREM and shadow fixes.
 - Check `webgpu_materials_basic.html.capture` black sphere if still visible in the current screenshots.
 - Clean or intentionally keep generated debug reports/screenshots under `packages/examples/batch/results/` before any commit. There are many untracked `visual-*` and `debug-*` JSON files from this session.
-- Run formatting/lint/tests before commit. `node --check packages/examples/batch/run-e2e.mjs` passed during focused work; no final full lint/test pass was run after the bloom experiments. The user's terminal shows an older `pnpm lint` exit code `254`, so do not assume lint is clean.
+- Run formatting/lint/tests before commit. `node --check`, plugin tests, runtime tests, and the focused bloom E2E cluster passed on 2026-05-11; the user's terminal still shows an older `pnpm lint` exit code `254`, so do not assume lint is clean.
 
 Useful focused commands:
 
 ```bash
 pnpm --filter @tsl-precompile/runtime build:slim
-pnpm --filter examples-batch run:e2e -- --filter=webgpu_postprocessing_bloom.html --save-shots --no-pixel-gate --replay-wait-ms=12000 --capture-wait-ms=12000 --verbose --report=visual-bloom-next.json
-pnpm --filter examples-batch run:e2e -- --filter=webgpu_postprocessing_bloom_emissive.html --save-shots --no-pixel-gate --replay-wait-ms=12000 --capture-wait-ms=12000 --verbose --report=visual-bloom-emissive-next.json
-pnpm --filter examples-batch run:e2e -- --filter=webgpu_postprocessing_bloom_selective.html --save-shots --no-pixel-gate --replay-wait-ms=12000 --capture-wait-ms=12000 --verbose --report=visual-bloom-selective-next.json
+pnpm --filter examples-batch run:e2e -- --filter=webgpu_postprocessing_bloom --save-shots --replay-wait-ms=12000 --capture-wait-ms=12000 --report=visual-bloom-cluster-after-fixes.json
 ```

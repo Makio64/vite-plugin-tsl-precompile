@@ -2,32 +2,35 @@
 
 Current audit of what works, what's blocked, and what remains before this plugin is truly usable by three.js developers. Companion to [ROADMAP.md](./ROADMAP.md), [ARCHITECTURE.md](./ARCHITECTURE.md), and [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-Last updated: 2026-05-05
+Last updated: 2026-05-11
 
 ---
 
-## Focused visual queue (2026-05-05)
+## Focused visual queue (2026-05-11)
 
-This was a focused cleanup pass, not a refreshed full 194-example coverage sweep. The aggregate coverage table below still comes from the last broad summary; the focused reports listed here supersede those individual examples only.
+This tracks focused cleanup since 2026-05-05, not a refreshed full 194-example coverage sweep. The aggregate coverage table below still comes from the last broad summary; the focused reports listed here supersede those individual examples only.
 
 **Green in focused runs:**
 - `webgpu_loader_gltf.html` — PMREM environment/reflection/background replay now matches capture at PSNR `inf` in `visual-loader-gltf-after-pmrem-flipy.json`.
 - `webgpu_loader_gltf_sheen.html` — sheen environment lighting is no longer Y-inverted; PSNR `inf` in `visual-loader-gltf-sheen-after-pmrem-flipy.json`.
 - `webgpu_pmrem_cubemap.html` — cubemap PMREM source mapping is normalized before generation; PSNR `inf` in `visual-pmrem-cubemap-after-cube-mapping-normalize.json`.
 - `webgpu_portal.html` — pass-scene and main-scene backgrounds are separated by exact aux/background matching; PSNR `inf` in `visual-portal-after-bg-exact.json`.
+- `webgpu_postprocessing_bloom.html`, `webgpu_postprocessing_bloom_emissive.html`, `webgpu_postprocessing_bloom_selective.html` — focused bloom cluster now matches stock at PSNR `inf` in `visual-bloom-cluster-after-fixes.json` (2026-05-11).
 
 **Improved but not fully green:**
 - `webgpu_lights_spotlight.html` — projected texture/color restored, no replay errors/warnings, PSNR `29.71` in `visual-lights-spotlight-targeted-shadow-fallback.json`. Still just below the 30 dB gate.
 - `webgpu_lights_physical.html` — live object matrix updates improved the image, PSNR `25.65` in `visual-lights-physical-after-matrix.json`.
 - `webgpu_instancing_morph.html` — instance color path improved, but replay remains visually mismatched; latest focused report PSNR `15.65` in `visual-instancing-morph-after-random-split.json`.
 
-**Paused active thread:**
-- Bloom/postprocessing is not fixed yet. The replay now runs a real addon `BloomNode` path without WebGPU/runtime errors, but the bloom contribution is still too dim or black in the final composite. Latest useful report: `visual-bloom-diagnostic-15.json`, PSNR `15.44` for `webgpu_postprocessing_bloom.html` with replay brightness `0.1186` vs capture `0.7503`.
+**Resolved active thread (2026-05-11):**
+- Bloom/postprocessing texture handoff is green for the focused bloom cluster. The remaining broad-postprocessing work should move to non-bloom examples such as `webgpu_postprocessing.html` and `webgpu_postprocessing_ao.html`.
 
 **Implementation highlights:**
 - PMREM generation chooses equirect/cube mode from source image shape rather than trusting rewritten `texture.mapping`, uses cloned source textures for temporary mapping changes, and preserves loader `flipY`.
 - Equirectangular HDR backgrounds captured as `texture_cube` background artifacts are converted to live `CubeTexture`s through the shared full WebGPU renderer, then shared back into slim.
 - Portal replay captures/uses exact per-scene background aux config hashes so a portal-scene background cannot leak into the main scene.
+- Selective bloom captures material artifacts against the pass/global MRT descriptor first, allowing three.js to merge material-level `mrtNode` outputs into the pass layout before extraction.
+- Loader-gated replay waits for deferred scene assets before freezing the frame, which fixed the emissive bloom timing case where replay stopped after the HDR background but before GLTF content arrived.
 
 ---
 
@@ -62,7 +65,7 @@ Six parallel agents + several follow-up commits pushed visual correctness forwar
 
 An example **works** when the slim-runtime replay screenshot matches a clean stock three.js reference within PSNR ≥ 30 dB (the gate from [run-e2e.mjs](packages/examples/batch/run-e2e.mjs#L93)). Smoke-test pass counts only prove the example loads — they say nothing about whether the rendered pixels are correct.
 
-**30 / 194 graded examples matched in the last broad summary (15%).** The full per-example table lives at [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md) — refresh from saved shots with `pnpm coverage`, refresh the site data too with `pnpm coverage:site`, or re-capture fresh shots first with `pnpm coverage:retest` / `pnpm test:e2e` (slow). Focused 2026-05-05 fixes above are not yet rolled into this aggregate.
+**30 / 194 graded examples matched in the last broad summary (15%).** The full per-example table lives at [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md) — refresh from saved shots with `pnpm coverage`, refresh the site data too with `pnpm coverage:site`, or re-capture fresh shots first with `pnpm coverage:retest` / `pnpm test:e2e` (slow). Focused 2026-05-05 and 2026-05-11 fixes above are not yet rolled into this aggregate.
 
 | Category | Match / Total | Best example | Worst example |
 |---|---|---|---|
@@ -76,7 +79,7 @@ An example **works** when the slim-runtime replay screenshot matches a clean sto
 | Particles | 1 / 1 | webgpu_particles (36.74 dB) ✅ | — |
 | Postprocessing | 3 / 28 | webgpu_postprocessing_bloom (inf dB) ✅ | webgpu_postprocessing_ao (7.70 dB) |
 
-Note: this table is a historical broad summary and has stale individual rows. In particular, the latest focused bloom diagnostics are below the PSNR gate; use the 2026-05-05 focused reports above for bloom status until the full coverage summary is regenerated.
+Note: this table is a historical broad summary and has stale individual rows. Use the focused reports above for examples touched after the broad run, especially the 2026-05-11 bloom cluster.
 
 The full webgpu_* example set is now substantially graded, but the headline is still load-smoke-heavy rather than production-ready: 164 graded examples are visual regressions.
 
@@ -91,6 +94,18 @@ Do not optimize for "all 194 examples" first. The credible beta surface for real
 - stable artifact invalidation across dev capture, build rewrite, runtime hash checks, and package contents
 
 Priority order: fix shadows first, then PMREM/environment/reflections, then transmission/viewport/reflector texture paths. Compute/storage follows as experimental WebGPU coverage. MRT and broad postprocessing stay deferred until the render-target / PassNode chain is truly wired.
+
+---
+
+## Recent fixes (2026-05-11)
+
+**WGSL output optimization landed.** Plugin-emitted virtual modules now compact WGSL by default and pool repeated shader strings through `virtual:tsl-precompile/__wgsl`. The checked-in artifact JSON stays readable; only generated production modules are optimized. Disable with `minifyWgsl: false` or `dedupeWgsl: false` in `tslPrecompile()`.
+
+**The E2E runner is safer for long sweeps.** `run-e2e-parallel.mjs` now runs short-lived worker batches instead of long-lived worker chunks, defaults to one worker slot on ordinary machines, supports `--batch-size`, `--worker-max-old-space-mb`, and matching `TSLP_E2E_*` env vars, and retries crashed multi-example batches as single-example batches. The serial runner also recycles Chromium every two examples by default.
+
+**Local/focused visual repros improved.** `run-e2e.mjs` can serve a small local `.html` corpus via `--local-examples-root`, and `packages/examples/shadow-debug` adds minimal directional/spot/point/VSM shadow pages with a root `pnpm test:e2e:shadow-debug` script.
+
+**Runtime hydration widened.** The hydrator now prefers light UUIDs over traversal index when linking live light uniforms, handles viewport depth texture extraction before generic depth-texture fallback, adds clipping-group uniform updates, and can rehydrate 3D / array texture snapshots for shader bindings that declare those dimensions.
 
 ---
 
@@ -131,21 +146,21 @@ for the current triage plan.
 | 2 — `.precompile(name)` + dev capture | Marker, dev server, HMR | ✅ Done | Unsupported kinds throw at call site |
 | 3 — AOT codegen | `emit-updater.js` covers camera/object/material/time/uniform/scene | ✅ Done (core kinds) | Per-kind fixture pass |
 | 4 — Build-time rewrite | Babel transform + virtual modules + `__applyPrecompiled` | ✅ Done | 3-layer hash check fires on corrupt artifact |
-| 5 — Coverage matrix | Fixture infrastructure + 150 plugin tests pass across material classes, binding kinds, drift checks, and depth/artifact texture paths | ✅ Core done | 100% cells covered or documented-blocked |
+| 5 — Coverage matrix | Fixture infrastructure + 160 plugin tests pass across material classes, binding kinds, drift checks, WGSL output optimization, and depth/artifact texture paths | ✅ Core done | 100% cells covered or documented-blocked |
 | 6 — 206-example batch harness | Extractor/codegen batch over three.js webgpu_*.html examples (load-smoke only — does not check pixel correctness; see [Feature coverage](#feature-coverage-capture-vs-replay)) | ✅ Load-smoke green | Keep above launch threshold |
 | 7 — Slim runtime bundle | Slim load-smoke over webgpu examples | ✅ No unexpected load-smoke errors | ≤ 300 KB gzip + 0 unexpected errors |
 | 8 — Launch | Docs, demos, site, migration guide | 🔶 Infrastructure ready | One external adopter |
 
 ---
 
-## Test suite summary (as of last run)
+## Test suite summary (as of 2026-05-11 run)
 
 ```
-packages/plugin        150 / 150 pass   (unit + coverage matrix)
-packages/runtime        55 /  55 pass   (hydrator, registry, smoke)
+packages/plugin        160 / 160 pass   (unit + coverage matrix)
+packages/runtime        67 /  67 pass   (hydrator, registry, smoke)
 packages/inspector-panel 7 /   7 pass
 ---
-Total                  212 / 212 pass   0 fail
+Total                  234 / 234 pass   0 fail
 ```
 
 Batch harness (`packages/examples/batch/results/report.json`):
@@ -162,6 +177,7 @@ Slim bundle load-smoke (`packages/examples/batch/results/slim-report.json`):
 - `material.precompile('name')` in dev mode fires the in-browser extractor, POSTs the artifact + hash to the dev server, writes `artifacts/<name>.<hash>.json`, and fires HMR. Runs fully in the browser — no Node involvement in dev flow.
 - Build-mode Babel transform finds every `.precompile('name')` call, resolves the artifact by name from `artifacts/`, verifies hash, rewrites to `__applyPrecompiled(material, import('virtual:tsl-precompile/name'), hash)`.
 - Virtual module resolver serves `artifact.json` + generated `updater.js` as a single bundled module.
+- Virtual artifact modules compact WGSL and share repeated shader strings through `virtual:tsl-precompile/__wgsl` by default, while leaving captured JSON readable on disk.
 - AOT updater emits direct `DataView` writes (no switch, no closures) for all camera, object, material, time, scene-fog, and scene-state uniforms. All 12 standard NodeMaterial classes extract + codegen without unknown kinds.
 - `PrecompiledMaterial` wraps the artifact and redirects three.js's render pipeline to the baked WGSL + bind layout, bypassing the TSL node builder.
 - Slim runtime (`build/three.webgpu.slim.js`) strips the node builder; the webgpu example load-smoke currently completes without unexpected errors.
@@ -170,7 +186,7 @@ Slim bundle load-smoke (`packages/examples/batch/results/slim-report.json`):
 - Aux-pass capture: `precompileAuxiliary(renderer, scene, camera, opts)` captures shadow-depth, render-pipeline, and output-transform passes so the slim runtime has precompiled versions of those internal materials too.
 - Auto-mark mode (`autoMark: true` in plugin config): injects `.precompile()` on every material in the scene automatically (used by the batch harness; opt-in for users).
 - IBL DFG LUT: precomputed 16×16 RG16F `DataTexture` in `packages/runtime/src/dfg-lut.js` resolves `builtin.dfgLUT` bindings without needing a renderer; cached and shared across all precompiled materials. The LUT is created from `three/src/**` modules so it matches the slim renderer's `DataTexture` class identity.
-- Artifact-level texture resolution: `__applyPrecompiled` catalogues source-material textures by uuid into `_textureRefs` (in-process) or scans `material[map|normalMap|...]` by uuid (JSON-loaded artifacts). PBR materials with `map`/`normalMap`/`roughnessMap`/`envMap` now hydrate end-to-end.
+- Artifact-level texture resolution: `__applyPrecompiled` catalogues source-material textures by uuid into `_textureRefs` (in-process) or scans `material[map|normalMap|...]` by uuid (JSON-loaded artifacts). PBR materials with `map`/`normalMap`/`roughnessMap`/`envMap` now hydrate end-to-end, with runtime rebinder paths for depth, viewport, reflector, array, and 3D texture bindings.
 
 ---
 
@@ -202,12 +218,11 @@ The loader/smoke story is good, but the PSNR report is still only **30 / 194**. 
 - [ ] Gate the replay shadow-scene/depth-texture path so it only runs for actual shadow receivers/casters and does not clobber non-shadow scenes.
 - [ ] Raise the shadow cluster above the PSNR gate, starting with `webgpu_shadow_contact.html`, `webgpu_shadowmap_vsm.html`, and `webgpu_shadowmap_progressive.html`.
 
-### 2. Bloom / postprocessing pass textures  *(current paused thread)*
+### 2. Bloom / postprocessing pass textures  *(focused bloom cluster green)*
 
-The portal `pass(scene, camera)` path is now healthy for the focused portal example, but bloom still proves the render-target texture handoff is incomplete.
+The portal `pass(scene, camera)` path is healthy, and the focused bloom cluster now verifies the render-target texture handoff for base, emissive, and selective bloom.
 
-- [ ] Continue from `visual-bloom-diagnostic-15.json`: identify whether the black/dim bloom data is the source pass output, high-pass output, blur chain, composite output, or final artifact rebinding.
-- [ ] Raise `webgpu_postprocessing_bloom.html`, `webgpu_postprocessing_bloom_emissive.html`, and `webgpu_postprocessing_bloom_selective.html` above the PSNR gate.
+- [x] Raise `webgpu_postprocessing_bloom.html`, `webgpu_postprocessing_bloom_emissive.html`, and `webgpu_postprocessing_bloom_selective.html` above the PSNR gate (`visual-bloom-cluster-after-fixes.json`, PSNR `inf` for all three).
 - [ ] Revisit `webgpu_postprocessing.html` missing dots after bloom, since it likely shares PassNode/render-target plumbing.
 
 ### 3. PMREM / environment / reflections  *(PBR correctness)*
@@ -256,7 +271,7 @@ Both packages are at `0.1.0` with `engines.node`, `publishConfig`, `files`, and 
 
 - [ ] Run `pnpm publish --dry-run` for `vite-plugin-tsl-precompile` and `@tsl-precompile/runtime`; verify README files, runtime `build/`, and export paths are included.
 - [ ] Confirm whether the unscoped plugin package needs any extra npm metadata beyond the current `files` list; the scoped runtime already has `publishConfig.access=public`.
-- [ ] Tag and push `v0.1.0`. Update the install line in `README.md` (currently says "once published").
+- [ ] Tag and push `v0.1.0`.
 
 The ANNOUNCEMENT.md template is written; the ROADMAP Phase 8 gate requires "one external adopter reports success."
 
@@ -292,7 +307,7 @@ Dev mode:               precompile-marker.js  →  in-browser extractor
 Build mode:             babel-transform.js rewrites the call to:
                             __applyPrecompiled(water, __art_ocean_water, '<hash>')
                         with virtual module import resolved by index.js
-                        →  emit-manifest.js serves artifact JSON
+                        →  emit-manifest.js serves optimized artifact module
                         →  emit-updater.js generates static updater.js (UBO writes)
 
 Runtime (prod):         __applyPrecompiled()
@@ -309,7 +324,7 @@ Runtime (prod):         __applyPrecompiled()
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for setup and code style. The highest-leverage contributions are:
 
 1. **Shadow visual correctness** — depth texture rebinding exists, but shadow examples still have the worst user-visible gaps: no replay in two cases and low PSNR in most others.
-2. **Bloom/pass texture handoff** — portal is green, but bloom still shows that some pass/composite textures are not reaching the final precompiled postprocess artifact correctly.
+2. **Broad postprocess pass textures** — portal and the focused bloom cluster are green, but non-bloom postprocessing examples still need render-target / PassNode hardening.
 3. **Broader PMREM/environment/reflection sweep** — the focused glTF/PMREM cubemap bucket is green; re-grade the broader PMREM/reflection set before calling PBR done.
 4. **Transmission/viewport/reflector hardening** — the rebinder paths exist, but the visual examples are still below the production bar.
 5. **Compute/storage coverage** — define the AOT storage-buffer update model and keep `webgpu_compute_reduce.html` passing while raising the rest of the compute set.
