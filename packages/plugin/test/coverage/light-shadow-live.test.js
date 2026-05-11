@@ -4,11 +4,11 @@
  * Captures a `MeshStandardNodeMaterial` rendered under a `DirectionalLight`
  * whose `castShadow=true` and asserts:
  *
- *   1. The extractor maps `light.shadow.bias` / `normalBias` / `radius` /
- *      `intensity` / `blurSamples` / `mapSize` to `light.shadow*` source
- *      kinds with a non-null `lightIndex`. (Anything else means the
- *      `ShadowNode.setupShadow()` reference closures fell back to
- *      `uniform.live` and would freeze on replay.)
+ *   1. The extractor maps `light.shadow.matrix` / `bias` / `normalBias` /
+ *      `radius` / `intensity` / `blurSamples` / `mapSize`, plus PointLight
+ *      `shadow.camera.near/far`, to `light.shadow*` source kinds with a
+ *      non-null `lightIndex`. (Anything else means the `ShadowNode` closures
+ *      fell back to `uniform.live` and would freeze on replay.)
  *
  *   2. The emitted updater reads `_l.shadow.bias` (etc.) live from the
  *      indexed light at render time — no inlined snapshot literal.
@@ -110,6 +110,53 @@ async function captureWithDirectionalLight() {
 
 }
 
+async function captureWithPointLight() {
+
+	return generateForMaterial( ( { webgpu, core } ) => {
+
+		const light = new core.PointLight( 0xffffff, 65, 8, 1.5 );
+		light.castShadow = true;
+		light.shadow.camera.near = 0.25;
+		light.shadow.camera.far = 8;
+		light.shadow.bias = - 0.0042;
+		light.shadow.normalBias = 0.123;
+		light.shadow.radius = 3.5;
+		light.shadow.intensity = 0.75;
+		light.position.set( 0, 3, 0 );
+
+		const ambient = new core.AmbientLight( 0x202020, 0.25 );
+
+		const material = new webgpu.MeshStandardNodeMaterial();
+		material.color = new core.Color( 0x808080 );
+
+		const ground = new core.Mesh(
+			new core.PlaneGeometry( 10, 10 ),
+			material,
+		);
+		ground.receiveShadow = true;
+
+		const cube = new core.Mesh(
+			new core.BoxGeometry( 1, 1, 1 ),
+			material,
+		);
+		cube.castShadow = true;
+		cube.position.set( 0, 1.5, 0 );
+
+		return {
+			material,
+			name: 'coverage-point-shadow-live',
+			objects: [ light, ambient, ground, cube ],
+			configureRenderer( renderer ) {
+
+				renderer.shadowMap.enabled = true;
+
+			},
+		};
+
+	} );
+
+}
+
 /**
  * Stand-in `frame` for executing emit-updater modules in tests. Fields
  * are the union of what the various `light.*` / camera writers read —
@@ -166,6 +213,7 @@ test( 'shadow live: ShadowNode.bias / normalBias / radius / intensity / mapSize 
 	// light won't reach it. The synthetic-plan test in uniform-kinds.test.js
 	// covers the codegen.
 	const expectedKinds = [
+		'light.shadowMatrix',
 		'light.shadowBias',
 		'light.shadowNormalBias',
 		'light.shadowRadius',
@@ -200,6 +248,45 @@ test( 'shadow live: ShadowNode.bias / normalBias / radius / intensity / mapSize 
 		);
 
 	}
+
+} );
+
+test( 'point shadow live: camera near/far → light.shadowCamera* with lightIndex', async () => {
+
+	const result = await captureWithPointLight();
+	assertNoUnknownKinds( result, 'point-shadow-live' );
+
+	const expectedKinds = [
+		'light.shadowMatrix',
+		'light.shadowCameraNear',
+		'light.shadowCameraFar',
+	];
+
+	const seen = new Set();
+	const slots = findSlotsByKind( result.artifact, ( k ) => k && ( k === 'light.shadowMatrix' || k.startsWith( 'light.shadowCamera' ) ) );
+
+	for ( const slot of slots ) {
+
+		seen.add( slot.source.kind );
+		assert.equal(
+			Number.isInteger( slot.source.lightIndex ),
+			true,
+			`expected ${ slot.source.kind } slot to carry a numeric lightIndex; got ${ JSON.stringify( slot.source ) }`,
+		);
+
+	}
+
+	for ( const kind of expectedKinds ) {
+
+		assert.ok(
+			seen.has( kind ),
+			`expected at least one slot with kind=${ kind }; saw kinds=${ Array.from( seen ).sort().join( ',' ) || '<none>' }`,
+		);
+
+	}
+
+	assert.match( result.source, /_l\.shadow\.camera\.near/ );
+	assert.match( result.source, /_l\.shadow\.camera\.far/ );
 
 } );
 

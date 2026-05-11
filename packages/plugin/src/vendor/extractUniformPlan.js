@@ -21,7 +21,7 @@
 // and '../utils/Timer.js'. The stock three package re-exports them via 'three/tsl'.
 // If a future three.js release drops them from 'three/tsl', bump the vendor
 // version in VENDORING.md and add a compat shim in _shared/three-compat.js.
-import { modelNormalMatrix, modelWorldMatrixInverse, time, deltaTime, frameId, backgroundBlurriness, backgroundIntensity, backgroundRotation, toneMappingExposure, lightPosition, lightTargetPosition, lightViewPosition } from 'three/tsl';
+import { modelNormalMatrix, modelWorldMatrixInverse, time, deltaTime, frameId, backgroundBlurriness, backgroundIntensity, backgroundRotation, toneMappingExposure, lightPosition, lightTargetPosition, lightViewPosition, lightShadowMatrix } from 'three/tsl';
 
 /**
  * Resolve a TSL update node to a `source` descriptor for the uniform slot
@@ -111,8 +111,8 @@ function resolveFromUpdateNode( node ) {
 	// future versions). The intensity is also driven by AnalyticLightNode's
 	// `colorScaled` (this.color = light.color * light.intensity), so the
 	// `light.colorScaled` kind already covers the most common case. The
-	// per-light shadow `bias` / `normalBias` / `radius` / `intensity` /
-	// `blurSamples` references are wired up separately via
+	// per-light shadow `matrix` / `bias` / `normalBias` / `radius` /
+	// `intensity` / `blurSamples` references are wired up separately via
 	// `collectShadowUniformSources` (called from `extractUniformPlan`).
 
 	// Object3DNode / ModelNode — the `scope` selects which object3d metric
@@ -383,6 +383,17 @@ function collectLightUniformSources( state ) {
 		// `.target`) would break onRenderUpdate at write time.
 		try {
 
+			if ( typeof lightShadowMatrix === 'function' && light.shadow ) {
+
+				const u = lightShadowMatrix( light );
+				if ( u && u.value ) out.set( u, { kind: 'light.shadowMatrix', property: 'matrix', ...base } );
+
+			}
+
+		} catch ( _ ) { /* not all lights expose shadow matrices */ }
+
+		try {
+
 			if ( typeof lightPosition === 'function' ) {
 
 				const u = lightPosition( light );
@@ -516,6 +527,124 @@ function collectShadowUniformSources( state ) {
 			uniformType: node.uniformType || meta.uniformType,
 			...base,
 		} );
+
+	}
+
+	return out;
+
+}
+
+/**
+ * PointLight shadows use two anonymous render-group UniformNodes for
+ * `shadow.camera.near` / `shadow.camera.far` inside PointShadowNode. Those
+ * nodes are not reachable through ReferenceNode, so probe the live update
+ * closures with temporary sentinel values and tag the matching nodes.
+ *
+ * @param {Object} state - A built NodeBuilderState.
+ * @return {Map<Object, Object>} UniformNode → point shadow camera descriptor.
+ */
+function collectPointShadowCameraUniformSources( state ) {
+
+	const out = new Map();
+	if ( ! state || ! Array.isArray( state.updateNodes ) ) return out;
+
+	const pointLights = [];
+	let lightIndex = 0;
+	for ( const node of state.updateNodes ) {
+
+		if ( ! node || node.isAnalyticLightNode !== true ) continue;
+		const light = node.light;
+		if ( light && light.isPointLight === true && light.shadow && light.shadow.camera ) {
+
+			pointLights.push( {
+				light,
+				lightIndex,
+				lightUuid: typeof light.uuid === 'string' ? light.uuid : null,
+			} );
+
+		}
+		lightIndex ++;
+
+	}
+
+	if ( pointLights.length === 0 ) return out;
+
+	const candidates = [];
+	for ( const node of state.updateNodes ) {
+
+		const type = node && node.constructor ? node.constructor.type : null;
+		if ( type !== 'UniformNode' ) continue;
+		if ( typeof node.update !== 'function' ) continue;
+		if ( typeof node.value !== 'number' ) continue;
+		candidates.push( node );
+
+	}
+
+	if ( candidates.length === 0 ) return out;
+
+	for ( let i = 0; i < pointLights.length; i ++ ) {
+
+		const base = pointLights[ i ];
+		const camera = base.light.shadow.camera;
+		const previousNear = camera.near;
+		const previousFar = camera.far;
+		const sentinelNear = 12345.125 + i * 2;
+		const sentinelFar = sentinelNear + 1;
+
+		camera.near = sentinelNear;
+		camera.far = sentinelFar;
+
+		try {
+
+			for ( const candidate of candidates ) {
+
+				if ( out.has( candidate ) ) continue;
+				const previousValue = candidate.value;
+
+				try {
+
+					candidate.update( {} );
+					if ( candidate.value === sentinelNear ) {
+
+						out.set( candidate, {
+							kind: 'light.shadowCameraNear',
+							property: 'camera.near',
+							uniformType: 'float',
+							lightIndex: base.lightIndex,
+							lightUuid: base.lightUuid,
+						} );
+
+					} else if ( candidate.value === sentinelFar ) {
+
+						out.set( candidate, {
+							kind: 'light.shadowCameraFar',
+							property: 'camera.far',
+							uniformType: 'float',
+							lightIndex: base.lightIndex,
+							lightUuid: base.lightUuid,
+						} );
+
+					}
+
+				} catch ( _ ) {
+
+					// Other anonymous UniformNodes may require a full frame;
+					// they are not point-shadow camera uniforms.
+
+				} finally {
+
+					candidate.value = previousValue;
+
+				}
+
+			}
+
+		} finally {
+
+			camera.near = previousNear;
+			camera.far = previousFar;
+
+		}
 
 	}
 
@@ -749,6 +878,7 @@ export function extractUniformPlan( state ) {
 	// because we strip the AnalyticLightNode container).
 	const lightUniformSources = collectLightUniformSources( state );
 	const shadowUniformSources = collectShadowUniformSources( state );
+	const pointShadowCameraUniformSources = collectPointShadowCameraUniformSources( state );
 
 	// Walk updateNodes once, build two maps:
 	//   - uniformNode → source (UBO slots)
@@ -779,6 +909,16 @@ export function extractUniformPlan( state ) {
 
 	}
 
+	for ( const [ uniformNode, source ] of pointShadowCameraUniformSources ) {
+
+		if ( ! uniformNodeToSource.has( uniformNode ) ) {
+
+			uniformNodeToSource.set( uniformNode, source );
+
+		}
+
+	}
+
 	for ( const node of state.updateNodes || [] ) {
 
 		const entry = resolveFromUpdateNode( node );
@@ -790,6 +930,7 @@ export function extractUniformPlan( state ) {
 		// `light.shadow<Prop>` mapping we just built.
 		if ( lightUniformSources.has( entry.uniformNode ) ) continue;
 		if ( shadowUniformSources.has( entry.uniformNode ) ) continue;
+		if ( pointShadowCameraUniformSources.has( entry.uniformNode ) ) continue;
 
 		// MaterialReferenceNode with uniformType 'texture' binds its `node`
 		// to a TextureNode rather than a plain UniformNode. Route it into
@@ -981,6 +1122,29 @@ export function extractUniformPlan( state ) {
 						if ( tex.name === 'DFG_LUT' ) {
 
 							source = { kind: 'builtin.dfgLUT' };
+
+						} else if ( textureNode && ( textureNode.isViewportTextureNode === true
+							|| textureNode.isOutputTextureNode === true
+							|| ( textureNode.constructor && (
+								textureNode.constructor.type === 'ViewportTextureNode'
+								|| textureNode.constructor.type === 'ViewportDepthTextureNode'
+								|| textureNode.constructor.type === 'ViewportSharedTextureNode' ) ) ) ) {
+
+							// Viewport texture nodes (both color and depth variants)
+							// take precedence over the generic depth-texture branch
+							// below because `ViewportDepthTextureNode` extends
+							// `ViewportTextureNode` and exposes a `DepthTexture` as
+							// its `.value`. Without this ordering, `viewportSafeUV`'s
+							// depth probe is mis-tagged as `depth.texture`/`fromMaterialGraph`
+							// and the hydrator's shadow rebinder fails to resolve it
+							// (the depth lives on the shared viewport depth buffer,
+							// not in the material graph), leaving the binding at the
+							// 1×1 fallback and breaking refraction depth checks.
+							source = {
+								kind: 'viewport.texture',
+								generateMipmaps: !! ( textureNode && textureNode.generateMipmaps ),
+								isDepth: tex.isDepthTexture === true,
+							};
 
 						} else if ( tex.isDepthTexture === true ) {
 

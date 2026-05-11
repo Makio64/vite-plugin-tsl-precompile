@@ -646,6 +646,16 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 			return `{ const _l = _tslpFindLight(frame.scene, ${ idxShadowF }); if (_l && _l.shadow) writeF32(view, ${ off }, Number.isFinite(_l.shadow.${ propShadowF }) ? _l.shadow.${ propShadowF } : ${ defaultLit }); }`;
 
 		}
+		case 'light.shadowCameraNear':
+		case 'light.shadowCameraFar': {
+
+			rendererHelpers.add( 'lightLookup' );
+			usedWriters.add( 'writeF32' );
+			const idxShadowCamera = src.lightIndex | 0;
+			const propShadowCamera = kind === 'light.shadowCameraNear' ? 'near' : 'far';
+			return `{ const _l = _tslpFindLight(frame.scene, ${ idxShadowCamera }); if (_l && _l.shadow && _l.shadow.camera) writeF32(view, ${ off }, Number.isFinite(_l.shadow.camera.${ propShadowCamera }) ? _l.shadow.camera.${ propShadowCamera } : 0); }`;
+
+		}
 		case 'light.shadowMapSize': {
 
 			rendererHelpers.add( 'lightLookup' );

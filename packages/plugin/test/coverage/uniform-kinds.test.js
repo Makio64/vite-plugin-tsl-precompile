@@ -48,11 +48,15 @@ test( 'cell: light.shadowNormalBias / Radius / Intensity / BlurSamples → all w
 		{ byteOffset: 4, source: { kind: 'light.shadowRadius', property: 'radius', lightIndex: 1 } },
 		{ byteOffset: 8, source: { kind: 'light.shadowIntensity', property: 'intensity', lightIndex: 1 } },
 		{ byteOffset: 12, source: { kind: 'light.shadowBlurSamples', property: 'blurSamples', lightIndex: 1 } },
+		{ byteOffset: 16, source: { kind: 'light.shadowCameraNear', property: 'camera.near', lightIndex: 1 } },
+		{ byteOffset: 20, source: { kind: 'light.shadowCameraFar', property: 'camera.far', lightIndex: 1 } },
 	] } ] } );
 	assertGenerates( r, '_l.shadow.normalBias' );
 	assertGenerates( r, '_l.shadow.radius' );
 	assertGenerates( r, '_l.shadow.intensity' );
 	assertGenerates( r, '_l.shadow.blurSamples' );
+	assertGenerates( r, '_l.shadow.camera.near' );
+	assertGenerates( r, '_l.shadow.camera.far' );
 	assertGenerates( r, '_tslpFindLight(frame.scene, 1)' );
 
 } );
