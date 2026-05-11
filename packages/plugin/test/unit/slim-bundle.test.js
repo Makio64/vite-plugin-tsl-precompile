@@ -22,12 +22,19 @@ const BUNDLE = resolve( HERE, '../../../runtime/build/three.webgpu.slim.js' );
 //   - With the compat allowlist (`export * from Three.Core.js`, 0.184)
 //     we ship ~217 KB, which still beats three.webgpu.nodes.min.js.
 //   - Three.js 0.184 core is larger than 0.175 core — adjust gate accordingly.
-// Cap at 230 KB: catches regressions, accommodates three-version churn.
+// The cap is intentionally tight enough to catch regressions while leaving
+// a little room for three-version and runtime-support churn.
 // Bumped from 225 → 228 to make room for MRT support (Phase A–C of the
 // MRT triage plan): scene→MRT registry stamp in precompile-marker, MRT
 // shape special-case in graph-hash, per-output blend modes in createInertMRTStub.
 // Bumped from 228 → 230 after the current built baseline settled at 229.7 KB.
-const GATE_KB = 230;
+// Bumped from 230 → 232 after the runtime hydrator's GPU-texture-identity
+// rebind + material-graph depth compareFunction handling landed; fresh build
+// settled at ~230.6 KB.
+// Bumped from 232 → 235 after viewport-depth, clipping-group UBO, 3D texture
+// fallback support, and MRT/pass-texture replay support landed; fresh build
+// settled at ~233.8 KB.
+const GATE_KB = 235;
 
 const bundleExists = existsSync( BUNDLE );
 
