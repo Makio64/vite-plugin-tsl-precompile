@@ -15,3 +15,8 @@ export const VIRTUAL_MODULE_PREFIX = 'virtual:tsl-precompile/';
 // app-load time. Imported for side-effects by the Babel-transformed
 // three.js source files.
 export const VIRTUAL_AUX_MODULE_ID = 'virtual:tsl-precompile/__aux';
+
+// Virtual module that pools repeated WGSL strings across generated artifact
+// modules. Imported by per-artifact virtual modules when a large shader source
+// appears in more than one artifact.
+export const VIRTUAL_WGSL_POOL_MODULE_ID = 'virtual:tsl-precompile/__wgsl';

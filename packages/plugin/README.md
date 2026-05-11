@@ -26,6 +26,8 @@ export default defineConfig({
     tslPrecompile({
       artifactsDir: './artifacts',
       // fail: 'error' | 'warn'  — what to do if a named artifact is missing in build
+      // minifyWgsl: true        — compact WGSL in emitted prod modules
+      // dedupeWgsl: true        — hoist repeated WGSL strings into a tree-shakeable shared pool
     }),
   ],
 });
@@ -53,6 +55,10 @@ The runtime side (`installPrecompileMarker`, `setDevRenderer`) lives in [`@tsl-p
 |---|---|---|
 | `artifactsDir` | `'./artifacts'` | Where captured artifacts live on disk. |
 | `fail` | `'error'` | `'error'` or `'warn'` when a named artifact is missing in build. |
+| `minifyWgsl` | `true` | Compacts WGSL only in generated virtual modules; captured artifact JSON stays readable. |
+| `dedupeWgsl` | `true` | Hoists repeated WGSL strings into tree-shakeable named exports in `virtual:tsl-precompile/__wgsl`, shared by generated artifact modules. |
+
+The WGSL options affect production virtual modules only. They do not rewrite files in `artifacts/`, so captured JSON remains diffable and useful for debugging.
 
 ## More
 

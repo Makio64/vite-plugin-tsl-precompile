@@ -13,6 +13,8 @@
  */
 
 import { emitUpdaterSource } from './emit-updater.js';
+import { VIRTUAL_WGSL_POOL_MODULE_ID } from './_shared/constants.js';
+import { emitOptimizedJsonExpression, getExternalWgslRefIdentifiers } from './wgsl-optimize.js';
 
 /**
  * @param {Object} manifestEntry - e.g. { file: 'ocean-water.abcd.json', hash: 'sha256:...' }
@@ -20,7 +22,7 @@ import { emitUpdaterSource } from './emit-updater.js';
  * @param {Object} [opts]
  * @return {{ source: string, unsupportedKinds: Array<{ kind, severity, reason, byteOffset }> }}
  */
-export function emitArtifactModule( manifestEntry, artifactJson, _opts = {} ) {
+export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 
 	// The dev-capture server stores { name, hash, artifact } at the top level.
 	// Some older artifacts may have the artifact fields at the root — tolerate
@@ -29,7 +31,11 @@ export function emitArtifactModule( manifestEntry, artifactJson, _opts = {} ) {
 	const hash = artifactJson.__hash || artifact.__hash || manifestEntry.hash;
 	const name = artifactJson.__name || artifact.__name || manifestEntry.name || '';
 
-	const artifactLiteral = JSON.stringify( artifact );
+	const {
+		declarations: wgslDeclarations,
+		expression: artifactLiteral,
+	} = emitOptimizedJsonExpression( artifact, opts );
+	const usedWgslPoolRefs = getExternalWgslRefIdentifiers( artifactLiteral );
 
 	// Generate the per-frame update function. Writers resolve at Vite bundle
 	// time via the runtime's package export.
@@ -46,11 +52,19 @@ export function emitArtifactModule( manifestEntry, artifactJson, _opts = {} ) {
 		.replace( /export function updateGroup\(/, 'function __generatedUpdateGroup(' )
 		.replace( /export const __unsupportedKinds/, 'const __codegenUnsupportedKinds' );
 
-	const lines = [
+	const lines = [];
+	if ( usedWgslPoolRefs.length > 0 ) {
+
+		lines.push( `import { ${ usedWgslPoolRefs.join( ', ' ) } } from ${ JSON.stringify( VIRTUAL_WGSL_POOL_MODULE_ID ) };` );
+		lines.push( '' );
+
+	}
+	lines.push(
 		mangledUpdater,
 		'',
 		`export const __hash = ${ JSON.stringify( hash ) };`,
 		`export const name = ${ JSON.stringify( name ) };`,
+		...wgslDeclarations,
 		`export const artifact = ${ artifactLiteral };`,
 		`export const update = __generatedUpdate;`,
 		`export const updateGroup = __generatedUpdateGroup;`,
@@ -58,7 +72,7 @@ export function emitArtifactModule( manifestEntry, artifactJson, _opts = {} ) {
 		'',
 		`export default { __hash, name, artifact, update, updateGroup, __unsupportedKinds };`,
 		'',
-	];
+	);
 
 	return { source: lines.join( '\n' ), unsupportedKinds };
 

@@ -14,6 +14,8 @@
  *   tslPrecompile({
  *     artifactsDir: './artifacts',   // where captured artifacts live on disk
  *     fail: 'error' | 'warn',        // what to do when a named artifact is missing in build (default: 'error')
+ *     minifyWgsl: true,              // compact WGSL in emitted virtual modules
+ *     dedupeWgsl: true,              // hoist repeated WGSL strings into a tree-shakeable shared pool
  *   })
  *
  * @module ViteTslPrecompilePlugin
@@ -26,9 +28,10 @@ import { resolve, join } from 'node:path';
 import { transformSource } from './babel-transform.js';
 import { autoMarkSource } from './auto-mark.js';
 import { emitArtifactModule } from './emit-manifest.js';
+import { createWgslStringPool, emitOptimizedJsonExpression, getExternalWgslRefIdentifiers } from './wgsl-optimize.js';
 import { attachDevCapture } from './dev-capture-server.js';
 import { rewriteThreeSource } from './three-rewrite.js';
-import { VIRTUAL_MODULE_PREFIX, VIRTUAL_AUX_MODULE_ID, PLUGIN_VERSION } from './_shared/constants.js';
+import { VIRTUAL_MODULE_PREFIX, VIRTUAL_AUX_MODULE_ID, VIRTUAL_WGSL_POOL_MODULE_ID, PLUGIN_VERSION } from './_shared/constants.js';
 
 const VIRTUAL_RESOLVE_PREFIX = '\0' + VIRTUAL_MODULE_PREFIX;
 
@@ -36,6 +39,8 @@ const VIRTUAL_RESOLVE_PREFIX = '\0' + VIRTUAL_MODULE_PREFIX;
  * @param {Object} [userOpts]
  * @param {string} [userOpts.artifactsDir='./artifacts']
  * @param {'error' | 'warn'} [userOpts.fail='error']
+ * @param {boolean} [userOpts.minifyWgsl=true] - Compact WGSL in emitted virtual modules; captured JSON stays untouched.
+ * @param {boolean} [userOpts.dedupeWgsl=true] - Hoist repeated WGSL strings inside emitted virtual modules.
  * @param {string} [userOpts.threeVersion] - Overrides the auto-detected three.js version used in rewrite hashes.
  * @returns {import('vite').Plugin}
  */
@@ -48,18 +53,22 @@ export default function tslPrecompile( userOpts = {} ) {
 		autoMarkPrefix: userOpts.autoMarkPrefix || 'auto',
 		slim: !! userOpts.slim,
 		threeVersion: userOpts.threeVersion || null,
+		minifyWgsl: userOpts.minifyWgsl !== false,
+		dedupeWgsl: userOpts.dedupeWgsl !== false,
 	};
 
 	let root = process.cwd();
 	let isBuild = false;
 	let manifest = null;   // { [name]: { file, hash, entry, mtime } }
 	let auxManifest = null; // { [`<shape>:<configHash>`]: { file, hash, entry, mtime } }
+	let wgslPool = null;    // { strings: string[], refs: Map<string, string> }
 
 	async function loadManifest() {
 
 		const artifactsDir = resolve( root, opts.artifactsDir );
 		manifest = {};
 		auxManifest = {};
+		wgslPool = null;
 
 		if ( ! existsSync( artifactsDir ) ) return manifest;
 
@@ -123,6 +132,29 @@ export default function tslPrecompile( userOpts = {} ) {
 		if ( ! manifest ) return null;
 		const entry = manifest[ name ];
 		return entry ? { hash: entry.hash } : null;
+
+	}
+
+	function buildWgslPool() {
+
+		if ( wgslPool ) return wgslPool;
+		const values = [];
+		for ( const entry of Object.values( manifest || {} ) ) {
+
+			values.push( entry.entry && entry.entry.artifact ? entry.entry.artifact : entry.entry );
+
+		}
+		for ( const entry of Object.values( auxManifest || {} ) ) {
+
+			values.push( entry.entry && entry.entry.artifact ? entry.entry.artifact : entry.entry );
+
+		}
+		wgslPool = createWgslStringPool( values, {
+			minifyWgsl: opts.minifyWgsl,
+			dedupeWgsl: opts.dedupeWgsl,
+			refPrefix: '__tslp_wgslPool',
+		} );
+		return wgslPool;
 
 	}
 
@@ -274,6 +306,17 @@ export default function tslPrecompile( userOpts = {} ) {
 
 			if ( ! manifest ) await loadManifest();
 
+			if ( '\0' + VIRTUAL_WGSL_POOL_MODULE_ID === id ) {
+
+				const pool = buildWgslPool();
+				return [
+					...pool.strings.map( ( string, index ) => `export const __tslp_wgslPool${ index } = ${ JSON.stringify( string ) };` ),
+					`export default { ${ pool.strings.map( ( _string, index ) => `__tslp_wgslPool${ index }` ).join( ', ' ) } };`,
+					'',
+				].join( '\n' );
+
+			}
+
 			// Aux registry virtual module: `virtual:tsl-precompile/__aux`.
 			// Emits a side-effect-only module that registers every captured
 			// aux artifact at app-load time.
@@ -285,17 +328,27 @@ export default function tslPrecompile( userOpts = {} ) {
 					return `// [tsl-precompile] no aux artifacts captured yet.\nexport default [];\n`;
 
 				}
-				const lines = [];
-				lines.push( `import { registerAuxArtifacts } from '@tsl-precompile/runtime';` );
-				lines.push( '' );
-				lines.push( `const __auxEntries = [` );
-				for ( const e of entries ) {
+				const auxEntries = entries.map( ( e ) => {
 
 					const artifact = e.entry && e.entry.artifact ? e.entry.artifact : e.entry;
-					lines.push( `  { shape: ${ JSON.stringify( e.shape ) }, configHash: ${ JSON.stringify( e.configHash ) }, artifact: ${ JSON.stringify( artifact ) } },` );
+					return { shape: e.shape, configHash: e.configHash, artifact };
 
-				}
-				lines.push( `];` );
+				} );
+				const {
+					declarations: wgslDeclarations,
+					expression: auxEntriesLiteral,
+				} = emitOptimizedJsonExpression( auxEntries, {
+					...opts,
+					externalWgslRefs: buildWgslPool().refs,
+				} );
+				const usedWgslPoolRefs = getExternalWgslRefIdentifiers( auxEntriesLiteral );
+				const lines = [];
+				lines.push( `import { registerAuxArtifacts } from '@tsl-precompile/runtime';` );
+				if ( usedWgslPoolRefs.length > 0 ) lines.push( `import { ${ usedWgslPoolRefs.join( ', ' ) } } from ${ JSON.stringify( VIRTUAL_WGSL_POOL_MODULE_ID ) };` );
+				lines.push( '' );
+				for ( const declaration of wgslDeclarations ) lines.push( declaration );
+				if ( wgslDeclarations.length > 0 ) lines.push( '' );
+				lines.push( `const __auxEntries = ${ auxEntriesLiteral };` );
 				lines.push( '' );
 				lines.push( `registerAuxArtifacts( __auxEntries );` );
 				lines.push( `export default __auxEntries;` );
@@ -310,8 +363,10 @@ export default function tslPrecompile( userOpts = {} ) {
 				return null;
 
 			}
-
-			const { source, unsupportedKinds } = emitArtifactModule( entry, entry.entry, {} );
+			const { source, unsupportedKinds } = emitArtifactModule( entry, entry.entry, {
+				...opts,
+				externalWgslRefs: buildWgslPool().refs,
+			} );
 
 			// Build gate:
 			//   severity: 'unknown'  → fail (the codegen has no case for a
