@@ -263,7 +263,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "4919295b-8564-4ef0-8d4a-34f462887ac4",
+                "textureUuid": "6b6dc5e1-a8e6-4724-8ef5-56950961f6cd",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
@@ -283,7 +283,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "4919295b-8564-4ef0-8d4a-34f462887ac4",
+                "textureUuid": "6b6dc5e1-a8e6-4724-8ef5-56950961f6cd",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
@@ -308,7 +308,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "4919295b-8564-4ef0-8d4a-34f462887ac4",
+                  "textureUuid": "6b6dc5e1-a8e6-4724-8ef5-56950961f6cd",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,
@@ -339,7 +339,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "4919295b-8564-4ef0-8d4a-34f462887ac4",
+                  "textureUuid": "6b6dc5e1-a8e6-4724-8ef5-56950961f6cd",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,
