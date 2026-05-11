@@ -1079,11 +1079,16 @@ function patchRobustBindGroupSetting( ast ) {
 				t.isMemberExpression( declaration.init ) &&
 				t.isIdentifier( declaration.init.property, { name: 'bindingGroups' } ) ) {
 
-				path.insertAfter( t.expressionStatement( t.assignmentExpression(
-					'=',
-					t.memberExpression( t.identifier( 'currentBindingGroups' ), t.identifier( 'length' ) ),
-					t.numericLiteral( 0 )
-				) ) );
+				path.insertAfter( parseFunctionBody( `
+					const __tslpPreservedBindingGroups = currentSets.__tslpPreservedBindingGroups;
+					currentBindingGroups.length = 0;
+					if ( __tslpPreservedBindingGroups ) {
+						for ( const __tslpIndex in __tslpPreservedBindingGroups ) {
+							currentBindingGroups[ __tslpIndex ] = __tslpPreservedBindingGroups[ __tslpIndex ];
+						}
+						currentSets.__tslpPreservedBindingGroups = null;
+					}
+				` ).body );
 				resetPatched ++;
 				return;
 
@@ -1144,6 +1149,7 @@ function patchRobustBindGroupSetting( ast ) {
 function patchMissingCameraIndexBinding( ast ) {
 
 	let patched = 0;
+	let preservePatched = 0;
 
 	traverse( ast, {
 		IfStatement( path ) {
@@ -1160,9 +1166,30 @@ function patchMissingCameraIndexBinding( ast ) {
 			patched ++;
 
 		},
+		ExpressionStatement( path ) {
+
+			const expr = path.node.expression;
+			if ( ! t.isAssignmentExpression( expr ) ) return;
+			if ( ! t.isMemberExpression( expr.left ) ) return;
+			if ( ! t.isMemberExpression( expr.left.object ) ) return;
+			if ( ! t.isIdentifier( expr.left.object.object, { name: 'sets' } ) ) return;
+			if ( ! t.isIdentifier( expr.left.object.property, { name: 'bindingGroups' } ) ) return;
+			if ( ! t.isIdentifier( expr.left.property, { name: 'indexPos' } ) ) return;
+			if ( ! t.isMemberExpression( expr.right ) ) return;
+			if ( ! t.isIdentifier( expr.right.object, { name: 'cameraIndex' } ) ) return;
+			if ( ! t.isIdentifier( expr.right.property, { name: 'id' } ) ) return;
+
+			path.insertAfter( parseFunctionBody( `
+				if ( sets.__tslpPreservedBindingGroups === undefined || sets.__tslpPreservedBindingGroups === null ) sets.__tslpPreservedBindingGroups = [];
+				sets.__tslpPreservedBindingGroups[ indexPos ] = cameraIndex.id;
+			` ).body );
+			preservePatched ++;
+
+		},
 	} );
 
 	if ( patched === 0 ) throw new Error( 'WebGPUBackend: shape changed (no camera index binding guard found)' );
+	if ( preservePatched === 0 ) throw new Error( 'WebGPUBackend: shape changed (no camera index binding preservation point found)' );
 
 }
 

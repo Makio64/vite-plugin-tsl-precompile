@@ -69,6 +69,7 @@ test( 'rewrite/WebGPUBackend.js: drops WGSLNodeBuilder import + stubs createNode
 	assert.match( out, /currentBindingGroups\.length\s*=\s*0/ );
 	assert.match( out, /this\.createBindings\(bindGroup, bindings, 0\)/ );
 	assert.match( out, /cameraIndex &&/ );
+	assert.match( out, /__tslpPreservedBindingGroups/ );
 
 } );
 
