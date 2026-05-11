@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DataTexture } from 'three/src/textures/DataTexture.js';
+import { DepthTexture } from 'three/src/textures/DepthTexture.js';
 
 import { registerArtifact, getArtifact } from '../src/artifact-loader.js';
 import { getDFGLUT } from '../src/dfg-lut.js';
@@ -139,6 +140,51 @@ test( 'runtime hydrator seeds regular uniform buffers from valueSnapshot', () =>
 
 } );
 
+test( 'runtime hydrator pairs anonymous shadow matrices with their light blocks', () => {
+
+	const makeMatrix = ( base ) => ( { elements: new Array( 16 ).fill( 0 ).map( ( _, i ) => base + i ) } );
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: '',
+		bindings: [ {
+			name: 'render',
+			bindings: [ { name: 'render', kind: 'uniform-buffer', visibility: 7, byteLength: 256 } ],
+		} ],
+		uniformPlan: [ {
+			name: 'render',
+			byteLength: 256,
+			slots: [
+				{ offset: 0, dtype: 'mat4', source: { kind: 'uniform.live', name: null, valueSnapshot: { type: 'mat4', data: new Array( 16 ).fill( - 1 ) } } },
+				{ offset: 64, dtype: 'number', source: { kind: 'light.shadowBias', lightIndex: 1, property: 'bias' } },
+				{ offset: 128, dtype: 'mat4', source: { kind: 'uniform.live', name: null, valueSnapshot: { type: 'mat4', data: new Array( 16 ).fill( - 2 ) } } },
+				{ offset: 192, dtype: 'number', source: { kind: 'light.shadowBias', lightIndex: 2, property: 'bias' } },
+			],
+		} ],
+	};
+	const state = hydrateNodeBuilderState( artifact );
+	const uniformBuffer = state.bindings[ 0 ].bindings[ 0 ];
+	const light1 = { isLight: true, shadow: { map: {}, matrix: makeMatrix( 100 ), bias: 0.1 } };
+	const light2 = { isLight: true, shadow: { map: {}, matrix: makeMatrix( 200 ), bias: 0.2 } };
+	const scene = {
+		traverse( visit ) {
+
+			visit( { isLight: true } );
+			visit( light1 );
+			visit( light2 );
+
+		},
+	};
+
+	state.updateNodes[ 0 ].update( { scene } );
+
+	const view = new DataView( uniformBuffer.buffer.buffer );
+	assert.equal( view.getFloat32( 0, true ), 100 );
+	assert.equal( view.getFloat32( 15 * 4, true ), 115 );
+	assert.equal( view.getFloat32( 128, true ), 200 );
+	assert.equal( view.getFloat32( 128 + 15 * 4, true ), 215 );
+
+} );
+
 test( 'runtime hydrator rehydrates sampled texture and sampler descriptors', () => {
 
 	const map = { isTexture: true, addEventListener() {}, removeEventListener() {}, version: 0 };
@@ -216,6 +262,43 @@ test( 'runtime hydrator rehydrates artifact.texture snapshots', () => {
 
 } );
 
+test( 'runtime hydrator downgrades legacy texture snapshot mipmap filters to base-level sampling', async () => {
+
+	const { LinearMipmapLinearFilter, RGBAFormat, UnsignedByteType } = await import( 'three' );
+	const snapshot = {
+		width: 128,
+		height: 1,
+		arrayType: 'Uint8Array',
+		data: new Array( 128 * 4 ).fill( 255 ),
+		format: RGBAFormat,
+		type: UnsignedByteType,
+		minFilter: LinearMipmapLinearFilter,
+	};
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: '@group(1) @binding(0) var nodeTexture0 : texture_2d<f32>;',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'nodeTexture0', kind: 'sampled-texture', visibility: 2, textureType: '2d' },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			slots: [],
+			textures: [
+				{ name: 'nodeTexture0', source: { kind: 'artifact.texture', textureUuid: 'tex-mipmap-legacy', snapshot } },
+			],
+		} ],
+	};
+
+	const state = hydrateNodeBuilderState( artifact );
+	const texture = state.bindings[ 0 ].bindings[ 0 ].texture;
+	assert.equal( texture.minFilter, texture.magFilter );
+	assert.equal( texture.generateMipmaps, false );
+
+} );
+
 test( 'runtime hydrator uses live color render-target texture refs for plain texture_2d bindings', () => {
 
 	const renderTargetTexture = {
@@ -276,6 +359,29 @@ test( 'runtime hydrator uses depth fallback for depth texture bindings', () => {
 
 } );
 
+test( 'runtime hydrator uses array-shaped fallback for depth texture array bindings', () => {
+
+	const state = hydrateNodeBuilderState( {
+		vertexShader: '',
+		fragmentShader: '@group(1) @binding(0) var shadowTileTex : texture_depth_2d_array;\n@group(1) @binding(1) var shadowTileSampler : sampler_comparison;',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'shadowTileTex', kind: 'sampled-texture', visibility: 2, textureType: '2d-array' },
+				{ name: 'shadowTileSampler', kind: 'sampler', visibility: 2 },
+			],
+		} ],
+		uniformPlan: [ { name: 'object', slots: [], textures: [] } ],
+	} );
+
+	const [ texture, sampler ] = state.bindings[ 0 ].bindings;
+	assert.equal( texture.texture.isDepthTexture, true );
+	assert.equal( texture.texture.isArrayTexture, true );
+	assert.equal( texture.texture.image.depth, 1 );
+	assert.equal( sampler.texture.isDepthTexture, true );
+
+} );
+
 test( 'runtime hydrator does not bind color shadow maps into depth texture slots', () => {
 
 	const state = hydrateNodeBuilderState( {
@@ -309,6 +415,127 @@ test( 'runtime hydrator does not bind color shadow maps into depth texture slots
 
 	assert.equal( textureBinding.texture, depthFallback );
 	assert.notEqual( textureBinding.texture, colorShadowTarget );
+
+} );
+
+test( 'runtime hydrator invalidates shadow texture bindings after live depth rebind', () => {
+
+	const state = hydrateNodeBuilderState( {
+		vertexShader: '',
+		fragmentShader: '@group(1) @binding(0) var shadowTex : texture_depth_2d;',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'shadowTex', kind: 'sampled-texture', visibility: 2, textureType: '2d' },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			slots: [],
+			textures: [ { name: 'shadowTex', source: { kind: 'depth.texture', lightIndex: 0 } } ],
+		} ],
+	} );
+
+	const [ textureBinding ] = state.bindings[ 0 ].bindings;
+	textureBinding.version = 8;
+	textureBinding.generation = 9;
+	const liveDepth = { isTexture: true, isDepthTexture: true, addEventListener() {}, removeEventListener() {} };
+	const scene = {
+		traverse( visit ) {
+
+			visit( { isLight: true, castShadow: true, shadow: { map: { depthTexture: liveDepth } } } );
+
+		},
+	};
+
+	state.updateBeforeNodes[ 0 ].updateBefore( { scene } );
+
+	assert.equal( textureBinding.texture, liveDepth );
+	assert.equal( textureBinding.version, - 1 );
+	assert.equal( textureBinding.generation, null );
+
+} );
+
+test( 'runtime hydrator drives material reflectors before rebinding their texture and sampler', () => {
+
+	const liveReflectionTexture = new DataTexture( new Uint8Array( [ 255, 255, 255, 255 ] ), 1, 1 );
+	const staleNestedReflectionTexture = new DataTexture( new Uint8Array( [ 0, 0, 0, 255 ] ), 1, 1 );
+	const liveDepthTexture = new DepthTexture( 1, 1 );
+	const staleDepthTexture = new DepthTexture( 1, 1 );
+	const virtualCamera = { name: 'virtual-camera' };
+	const nestedVirtualCamera = { name: 'nested-virtual-camera' };
+	const depthReflectorNode = {
+		isNode: true,
+		isTextureNode: true,
+		constructor: { type: 'ReflectorNode' },
+		value: staleDepthTexture,
+	};
+	const baseNode = {
+		constructor: { type: 'ReflectorBaseNode' },
+		textureNode: {
+			value: null,
+			getDepthNode() {
+
+				return depthReflectorNode;
+
+			},
+		},
+		renderTargets: new Map( [ [ nestedVirtualCamera, { texture: staleNestedReflectionTexture } ] ] ),
+		updateBeforeCalls: 0,
+		getVirtualCamera() {
+
+			return virtualCamera;
+
+		},
+		updateBefore() {
+
+			this.updateBeforeCalls ++;
+			this.renderTargets.set( virtualCamera, { texture: liveReflectionTexture, depthTexture: liveDepthTexture } );
+			this.textureNode.value = liveReflectionTexture;
+
+		},
+	};
+	depthReflectorNode._reflectorBaseNode = baseNode;
+	const material = {
+		__tslpReflectorBaseNodes: [ baseNode ],
+	};
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: '@group(1) @binding(0) var reflectionSampler : sampler;\n@group(1) @binding(1) var reflectionTex : texture_2d<f32>;\n@group(1) @binding(2) var reflectionDepth : texture_depth_2d;',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'reflectionSampler', kind: 'sampler', visibility: 2 },
+				{ name: 'reflectionTex', kind: 'sampled-texture', visibility: 2, textureType: '2d' },
+				{ name: 'reflectionDepth', kind: 'sampled-texture', visibility: 2, textureType: '2d' },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			slots: [],
+			textures: [
+				{ name: 'reflectionSampler', source: { kind: 'reflector.texture', textureUuid: 'dead-reflector', reflectorIndex: 0 } },
+				{ name: 'reflectionTex', source: { kind: 'reflector.texture', textureUuid: 'dead-reflector', reflectorIndex: 0 } },
+				{ name: 'reflectionDepth', source: { kind: 'depth.texture', textureUuid: 'dead-depth', lightIndex: -1, fromMaterialGraph: true } },
+			],
+		} ],
+	};
+
+	const state = hydrateNodeBuilderState( artifact, material );
+	assert.equal( state.updateBeforeNodes[ 0 ], baseNode );
+	assert.equal( state.updateBeforeNodes.length, 3 );
+
+	const [ samplerBinding, textureBinding, depthBinding ] = state.bindings[ 0 ].bindings;
+	assert.notEqual( samplerBinding.texture, liveReflectionTexture );
+	assert.notEqual( textureBinding.texture, liveReflectionTexture );
+	assert.notEqual( depthBinding.texture, liveDepthTexture );
+
+	for ( const node of state.updateBeforeNodes ) node.updateBefore( { scene: { name: 'Scene' }, camera: {}, material } );
+
+	assert.equal( baseNode.updateBeforeCalls, 1 );
+	assert.equal( samplerBinding.texture, liveReflectionTexture );
+	assert.equal( textureBinding.texture, liveReflectionTexture );
+	assert.equal( depthBinding.texture, liveDepthTexture );
 
 } );
 

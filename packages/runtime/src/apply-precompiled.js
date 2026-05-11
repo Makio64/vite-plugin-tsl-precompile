@@ -375,25 +375,93 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
  * @param {?Object} material
  * @return {Array<Object>} ReflectorBaseNode instances; empty if none.
  */
-function collectReflectorBaseNodes( material ) {
+export function collectReflectorBaseNodes( material ) {
 
 	if ( ! material ) return [];
 	const seen = new Set();
+	const seenBaseNodes = new Set();
 	const result = [];
+	const addBaseNode = ( node ) => {
+
+		if ( ! node || ! node.constructor ) return;
+		const baseNode = node.constructor.type === 'ReflectorBaseNode'
+			? node
+			: node._reflectorBaseNode;
+		if ( ! baseNode || baseNode.constructor && baseNode.constructor.type !== 'ReflectorBaseNode' ) return;
+		if ( ! ( baseNode.renderTargets instanceof Map ) ) return;
+		if ( typeof baseNode.updateBefore !== 'function' ) return;
+		if ( seenBaseNodes.has( baseNode ) ) return;
+		seenBaseNodes.add( baseNode );
+		result.push( baseNode );
+
+	};
+	const walk = ( value, depth = 0 ) => {
+
+		if ( ! value || depth > 24 ) return;
+		const type = typeof value;
+		if ( type !== 'object' && type !== 'function' ) return;
+		if ( seen.has( value ) ) return;
+		seen.add( value );
+
+		addBaseNode( value );
+
+		if ( typeof value.traverse === 'function' ) {
+
+			try {
+
+				value.traverse( ( child ) => {
+
+					addBaseNode( child );
+					walk( child, depth + 1 );
+
+				} );
+
+			} catch ( _ ) {
+
+				// Keep the reflective walker best-effort; user node graphs can
+				// contain getters that throw outside a builder.
+
+			}
+
+		}
+
+		const shouldInspect = value.isNode === true ||
+			value.isTextureNode === true ||
+			typeof value.traverse === 'function' ||
+			Object.getPrototypeOf( value ) === Object.prototype;
+		if ( ! shouldInspect ) return;
+
+		const skip = new Set( [ 'parent', 'children', 'builder', 'material', 'object', 'geometry', 'scene', 'camera', 'renderer', 'domElement' ] );
+		for ( const key of Object.getOwnPropertyNames( value ) ) {
+
+			if ( skip.has( key ) ) continue;
+			let child;
+			try {
+
+				child = value[ key ];
+
+			} catch ( _ ) {
+
+				continue;
+
+			}
+			if ( Array.isArray( child ) ) {
+
+				for ( const item of child ) walk( item, depth + 1 );
+
+			} else {
+
+				walk( child, depth + 1 );
+
+			}
+
+		}
+
+	};
 	for ( const key of _NODE_GRAPH_KEYS ) {
 
 		const root = material[ key ];
-		if ( ! root || typeof root.traverse !== 'function' ) continue;
-		root.traverse( ( child ) => {
-
-			if ( ! child || ! child.constructor ) return;
-			if ( child.constructor.type !== 'ReflectorNode' ) return;
-			const baseNode = child._reflectorBaseNode;
-			if ( ! baseNode || seen.has( baseNode ) ) return;
-			seen.add( baseNode );
-			result.push( baseNode );
-
-		} );
+		walk( root );
 
 	}
 	return result;
