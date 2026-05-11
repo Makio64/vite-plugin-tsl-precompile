@@ -12,7 +12,7 @@ Experimental, with the main AOT pipeline wired and a narrower v0.1 beta surface 
 
 - `pnpm test` runs plugin, runtime, and inspector-panel tests. The slim runtime smoke test exercises `WebGPURenderer.compileAsync()` with a `PrecompiledMaterial`.
 - `pnpm test:slim` runs a load-smoke pass across the 206 `webgpu_*.html` examples from a sibling `../three.js` checkout. Load-smoke results only prove examples load or fail loudly; visual correctness is gated by E2E PSNR.
-- `pnpm test:e2e -- --filter=<example>` runs the automated stock -> capture -> slim replay harness. It visits a clean stock three.js example for the visual reference, captures constructed NodeMaterials in a separate pass, reloads with the slim bundle and captured artifacts, then fails below the default 30 dB PSNR visual gate. Pass `--verbose` or set `TSLP_E2E_VERBOSE=1` for raw page logs.
+- `pnpm test:e2e -- --filter=<example>` runs the automated stock -> capture -> slim replay harness. It visits a clean stock three.js example for the visual reference, captures constructed NodeMaterials in a separate pass, reloads with the slim bundle and captured artifacts, then fails below the default 30 dB PSNR visual gate. The default `test:e2e` and `test:e2e-serial` scripts save `results/shots/*.png` and refresh `coverage-summary.md`; pass `--no-save-shots` or `--no-coverage` only for throwaway diagnostics. Pass `--verbose` or set `TSLP_E2E_VERBOSE=1` for raw page logs.
 - `pnpm test:batch` runs the extractor/codegen batch harness.
 
 The credible v0.1 beta target is not "all 194 graded examples." It is ordinary PBR application rendering: `MeshStandardNodeMaterial` / `MeshPhysicalNodeMaterial`, material texture maps, env maps / PMREM, direct lights, shadows, material uniforms, and stable artifact invalidation. Compute/storage is experimental. MRT and broad postprocessing are deferred until the render-target / PassNode chain is truly wired.
@@ -79,7 +79,15 @@ pnpm test:coverage       # coverage-matrix fixtures
 pnpm test:batch          # extractor/codegen pass over 206 three.js webgpu examples
 pnpm test:slim           # slim-bundle load-smoke over the same examples
 pnpm test:e2e -- --filter=webgpu_lights_custom
-                          # capture -> slim replay for one or more examples
+                          # capture -> slim replay, saved screenshots, coverage refresh
+pnpm test:e2e -- --limit=12
+                          # faster partial replay sweep; parallel runner honors limit/offset
+pnpm test:e2e -- --filter=webgpu_clearcoat.html --timings
+                          # print per-pass timing breakdown for slow examples
+pnpm test:e2e:replay -- --filter=webgpu_lights_custom
+                          # fastest screenshot refresh: reuse saved reference PNGs/artifacts,
+                          # then rerun only slim replay; use after runtime-only changes
+pnpm coverage:site        # regenerate coverage markdown + site examples data from saved shots
 pnpm verify              # artifact/manifest integrity check
 ```
 

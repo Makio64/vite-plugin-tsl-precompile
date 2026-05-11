@@ -62,7 +62,7 @@ Six parallel agents + several follow-up commits pushed visual correctness forwar
 
 An example **works** when the slim-runtime replay screenshot matches a clean stock three.js reference within PSNR ≥ 30 dB (the gate from [run-e2e.mjs](packages/examples/batch/run-e2e.mjs#L93)). Smoke-test pass counts only prove the example loads — they say nothing about whether the rendered pixels are correct.
 
-**30 / 194 graded examples matched in the last broad summary (15%).** The full per-example table lives at [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md) — refresh with `pnpm coverage` (or `pnpm coverage:retest` to re-capture fresh shots first via the e2e harness, then re-summarize — slow). Focused 2026-05-05 fixes above are not yet rolled into this aggregate.
+**30 / 194 graded examples matched in the last broad summary (15%).** The full per-example table lives at [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md) — refresh from saved shots with `pnpm coverage`, refresh the site data too with `pnpm coverage:site`, or re-capture fresh shots first with `pnpm coverage:retest` / `pnpm test:e2e` (slow). Focused 2026-05-05 fixes above are not yet rolled into this aggregate.
 
 | Category | Match / Total | Best example | Worst example |
 |---|---|---|---|
