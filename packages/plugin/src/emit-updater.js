@@ -615,11 +615,19 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 
 		// LightShadow uniforms — `ShadowNode.setupShadow()` builds anonymous
 		// `reference('bias' | 'normalBias' | 'radius' | 'intensity' |
-		// 'blurSamples' | 'mapSize', …, light.shadow)` calls. Without these
+		// 'blurSamples' | 'mapSize' | 'matrix', …, light.shadow)` calls. Without these
 		// per-frame writes the slim runtime would freeze each shadow tweakable
 		// at extraction-time — animated `light.shadow.bias` ramps never propagate.
 		// The extractor seeds `lightIndex` so we walk the same scene cache used
 		// for `light.colorScaled` / `light.position` etc.
+		case 'light.shadowMatrix': {
+
+			rendererHelpers.add( 'lightLookup' );
+			usedWriters.add( 'writeMat4' );
+			const idxShadowM = src.lightIndex | 0;
+			return `{ const _l = _tslpFindLight(frame.scene, ${ idxShadowM }); if (_l && _l.shadow && _l.shadow.matrix) writeMat4(view, ${ off }, _l.shadow.matrix); }`;
+
+		}
 		case 'light.shadowBias':
 		case 'light.shadowNormalBias':
 		case 'light.shadowRadius':

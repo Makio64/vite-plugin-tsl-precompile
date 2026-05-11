@@ -64,3 +64,12 @@ test( 'cell: light.shadowMapSize → writeVec2 from _l.shadow.mapSize', () => {
 	assertGenerates( r, 'writeVec2(view, byteOffset + 32, _l.shadow.mapSize)' );
 
 } );
+
+test( 'cell: light.shadowMatrix → writeMat4 from _l.shadow.matrix', () => {
+
+	const r = generateForPlan( { groups: [ { slots: [ { byteOffset: 64, source: { kind: 'light.shadowMatrix', property: 'matrix', lightIndex: 3 } } ] } ] } );
+	assertGenerates( r, '_l.shadow.matrix' );
+	assertGenerates( r, '_tslpFindLight(frame.scene, 3)' );
+	assertGenerates( r, 'writeMat4(view, byteOffset + 64, _l.shadow.matrix)' );
+
+} );

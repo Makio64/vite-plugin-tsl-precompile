@@ -655,6 +655,7 @@ function textureIdentity( texture ) {
 	if ( typeof texture.magFilter === 'number' ) out.magFilter = texture.magFilter;
 	if ( typeof texture.minFilter === 'number' ) out.minFilter = texture.minFilter;
 	if ( typeof texture.anisotropy === 'number' ) out.anisotropy = texture.anisotropy;
+	if ( typeof texture.generateMipmaps === 'boolean' ) out.generateMipmaps = texture.generateMipmaps;
 	if ( typeof texture.colorSpace === 'string' ) out.colorSpace = texture.colorSpace;
 	if ( typeof texture.flipY === 'boolean' ) out.flipY = texture.flipY;
 
@@ -677,6 +678,7 @@ function snapshotTexture( texture ) {
 		magFilter: texture.magFilter,
 		minFilter: texture.minFilter,
 		flipY: texture.flipY,
+		generateMipmaps: texture.generateMipmaps,
 	};
 
 	if ( image.data && ArrayBuffer.isView( image.data ) && image.width && image.height ) {
