@@ -59,7 +59,7 @@ function parseCoverage( md ) {
 			continue;
 		}
 		if ( ! current ) continue;
-		const m = raw.match( /^\| (webgpu_[^ |]+\.html) \| (.+?) \| (.+?) \| (.+?) \| (.+?) \|(.*)\|/ );
+		const m = raw.match( /^\| ([^ |]+\.html) \| (.+?) \| (.+?) \| (.+?) \| (.+?) \|(.*)\|/ );
 		if ( ! m ) continue;
 		const basename = m[ 1 ].replace( /\.html$/, '' );
 		const capture = m[ 2 ].trim() === '✓';

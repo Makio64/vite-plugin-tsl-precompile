@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "description": "Vite plugin that AOT-compiles three.js TSL materials marked with .precompile(name).",
   "type": "module",
-  "packageManager": "pnpm@10.33.1",
+  "packageManager": "pnpm@11.1.0",
   "engines": {
     "node": ">=20.19"
   },
@@ -20,7 +20,9 @@
     "test:e2e-serial:replay": "pnpm --filter examples-batch run:e2e -- --replay-only",
     "test:e2e:shadow-debug": "pnpm --filter examples-shadow-debug test:e2e",
     "test:e2e:postprocessing-debug": "pnpm --filter examples-postprocessing-debug test:e2e",
+    "test:e2e:pmrem-debug": "pnpm --filter examples-pmrem-debug test:e2e",
     "test:e2e:compute-debug": "pnpm --filter examples-compute-debug test:e2e",
+    "test:e2e:mrt-debug": "pnpm --filter examples-mrt-debug test:e2e",
     "coverage": "pnpm --filter examples-batch run:coverage-summary",
     "coverage:site": "pnpm coverage && pnpm --filter @tsl-precompile/site data",
     "coverage:retest": "pnpm test:e2e",
@@ -33,11 +35,13 @@
     "dev:background": "pnpm --filter examples-background dev",
     "dev:shadow-debug": "pnpm --filter examples-shadow-debug dev",
     "dev:postprocessing-debug": "pnpm --filter examples-postprocessing-debug dev",
+    "dev:pmrem-debug": "pnpm --filter examples-pmrem-debug dev",
     "dev:compute-debug": "pnpm --filter examples-compute-debug dev",
+    "dev:mrt-debug": "pnpm --filter examples-mrt-debug dev",
     "dev:site": "pnpm --filter @tsl-precompile/site dev",
     "build:site": "pnpm --filter @tsl-precompile/site build"
   },
   "devDependencies": {
-    "@types/node": "^25.6.0"
+    "@types/node": "^25.7.0"
   }
 }

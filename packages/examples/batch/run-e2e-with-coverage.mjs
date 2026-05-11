@@ -16,6 +16,7 @@ const forwarded = args.filter( ( arg ) =>
 	arg !== '--no-save-shots' &&
 	arg !== '--'
 );
+const reportArg = forwarded.find( ( arg ) => arg.startsWith( '--report=' ) );
 
 if ( saveShotsEnabled && ! forwarded.includes( '--save-shots' ) ) {
 
@@ -70,7 +71,11 @@ const e2eStatus = await runNode(
 let coverageStatus = 0;
 if ( coverageEnabled ) {
 
-	coverageStatus = await runNode( 'refreshing coverage summary', 'run-coverage-summary.mjs' );
+	coverageStatus = await runNode(
+		'refreshing coverage summary',
+		'run-coverage-summary.mjs',
+		reportArg ? [ reportArg ] : []
+	);
 
 }
 

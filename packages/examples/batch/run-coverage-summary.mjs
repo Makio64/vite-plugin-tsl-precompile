@@ -24,7 +24,7 @@
  */
 
 import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { resolve, dirname, join } from 'node:path';
+import { resolve, dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 
@@ -42,6 +42,10 @@ function getArg( prefix, def ) {
 }
 
 const threshold = parseFloat( getArg( '--threshold=', '30' ) );
+const reportArgs = args
+	.filter( ( x ) => x.startsWith( '--report=' ) )
+	.map( ( x ) => x.slice( '--report='.length ) )
+	.filter( Boolean );
 
 if ( ! existsSync( SHOTS ) ) {
 
@@ -99,13 +103,27 @@ function comparePSNR( capPath, repPath ) {
 
 }
 
-const e2eByName = new Map();
-if ( existsSync( E2E_REPORT ) ) {
+function resolveReportPath( value ) {
 
-	const r = JSON.parse( readFileSync( E2E_REPORT, 'utf8' ) );
+	if ( ! value ) return null;
+	if ( isAbsolute( value ) ) return value;
+	return resolve( SELF, 'results', value );
+
+}
+
+const reportPaths = [ E2E_REPORT, ...reportArgs.map( resolveReportPath ) ].filter( Boolean );
+const e2eByName = new Map();
+for ( const reportPath of reportPaths ) {
+
+	if ( ! existsSync( reportPath ) ) continue;
+
+	const r = JSON.parse( readFileSync( reportPath, 'utf8' ) );
 	for ( const d of r.details || [] ) {
 
-		if ( d.pixelGate ) e2eByName.set( d.name, d.pixelGate );
+		if ( d.pixelGate ) e2eByName.set( d.name, {
+			gate: d.pixelGate,
+			source: reportPath === E2E_REPORT ? 'e2e-report.json' : reportPath.split( '/' ).pop()
+		} );
 
 	}
 
@@ -151,6 +169,25 @@ for ( const name of allNames ) {
 
 		}
 
+		const reportEntry = e2eByName.get( name );
+		if ( reportEntry ) {
+
+			const gate = reportEntry.gate;
+			if ( gate.psnr === 'inf' ) {
+
+				psnr = Infinity;
+				verdict = 'pass';
+
+			} else if ( typeof gate.psnr === 'number' ) {
+
+				psnr = gate.psnr;
+				verdict = psnr >= threshold ? 'pass' : 'fail';
+
+			}
+			note = note ? `${ note }; ${ reportEntry.source } pixel gate` : `${ reportEntry.source } pixel gate`;
+
+		}
+
 	} else if ( hasCapture && ! hasReplay ) {
 
 		verdict = 'fail';
@@ -169,9 +206,10 @@ for ( const name of allNames ) {
 
 // Merge in e2e-report entries for examples not on disk so nothing is lost
 // if shots get pruned. These entries are tagged so the reader can tell.
-for ( const [ name, gate ] of e2eByName ) {
+for ( const [ name, reportEntry ] of e2eByName ) {
 
 	if ( allNames.has( name ) ) continue;
+	const gate = reportEntry.gate;
 	let psnr = null;
 	let verdict = 'fail';
 	let note = '';
@@ -183,13 +221,13 @@ for ( const [ name, gate ] of e2eByName ) {
 
 		psnr = Infinity;
 		verdict = 'pass';
-		note = 'e2e-report only';
+		note = `${ reportEntry.source } only`;
 
 	} else if ( typeof gate.psnr === 'number' ) {
 
 		psnr = gate.psnr;
 		verdict = psnr >= threshold ? 'pass' : 'fail';
-		note = 'e2e-report only';
+		note = `${ reportEntry.source } only`;
 
 	}
 
