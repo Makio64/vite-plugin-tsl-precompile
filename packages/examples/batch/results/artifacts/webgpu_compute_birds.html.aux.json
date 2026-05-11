@@ -289,13 +289,14 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "07efc3f5-c646-4720-b9d5-4ff190667525",
+                "textureUuid": "af2f638d-4e7f-4897-a1e4-6d81589894e5",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
                 "magFilter": 1006,
                 "minFilter": 1006,
                 "anisotropy": 1,
+                "generateMipmaps": false,
                 "colorSpace": "srgb-linear",
                 "flipY": false
               }
@@ -308,13 +309,14 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "07efc3f5-c646-4720-b9d5-4ff190667525",
+                "textureUuid": "af2f638d-4e7f-4897-a1e4-6d81589894e5",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
                 "magFilter": 1006,
                 "minFilter": 1006,
                 "anisotropy": 1,
+                "generateMipmaps": false,
                 "colorSpace": "srgb-linear",
                 "flipY": false
               }
@@ -332,13 +334,14 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "07efc3f5-c646-4720-b9d5-4ff190667525",
+                  "textureUuid": "af2f638d-4e7f-4897-a1e4-6d81589894e5",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,
                   "magFilter": 1006,
                   "minFilter": 1006,
                   "anisotropy": 1,
+                  "generateMipmaps": false,
                   "colorSpace": "srgb-linear",
                   "flipY": false
                 }
@@ -362,13 +365,14 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "07efc3f5-c646-4720-b9d5-4ff190667525",
+                  "textureUuid": "af2f638d-4e7f-4897-a1e4-6d81589894e5",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,
                   "magFilter": 1006,
                   "minFilter": 1006,
                   "anisotropy": 1,
+                  "generateMipmaps": false,
                   "colorSpace": "srgb-linear",
                   "flipY": false
                 }

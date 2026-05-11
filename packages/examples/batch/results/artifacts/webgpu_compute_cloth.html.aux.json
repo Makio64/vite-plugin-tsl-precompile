@@ -478,7 +478,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "23934d2d-32c4-43d0-b53b-477cdc02f7c8",
+                "textureUuid": "4b571d21-3aaa-4022-9d1a-ae9b24bef515",
                 "textureName": "PMREM.cubeUv",
                 "mapping": 306,
                 "wrapS": 1001,
@@ -486,6 +486,7 @@
                 "magFilter": 1006,
                 "minFilter": 1006,
                 "anisotropy": 1,
+                "generateMipmaps": false,
                 "colorSpace": "srgb-linear",
                 "flipY": false
               }
@@ -498,7 +499,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "23934d2d-32c4-43d0-b53b-477cdc02f7c8",
+                "textureUuid": "4b571d21-3aaa-4022-9d1a-ae9b24bef515",
                 "textureName": "PMREM.cubeUv",
                 "mapping": 306,
                 "wrapS": 1001,
@@ -506,6 +507,7 @@
                 "magFilter": 1006,
                 "minFilter": 1006,
                 "anisotropy": 1,
+                "generateMipmaps": false,
                 "colorSpace": "srgb-linear",
                 "flipY": false
               }
@@ -669,7 +671,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "23934d2d-32c4-43d0-b53b-477cdc02f7c8",
+                  "textureUuid": "4b571d21-3aaa-4022-9d1a-ae9b24bef515",
                   "textureName": "PMREM.cubeUv",
                   "mapping": 306,
                   "wrapS": 1001,
@@ -677,6 +679,7 @@
                   "magFilter": 1006,
                   "minFilter": 1006,
                   "anisotropy": 1,
+                  "generateMipmaps": false,
                   "colorSpace": "srgb-linear",
                   "flipY": false
                 }
@@ -700,7 +703,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "23934d2d-32c4-43d0-b53b-477cdc02f7c8",
+                  "textureUuid": "4b571d21-3aaa-4022-9d1a-ae9b24bef515",
                   "textureName": "PMREM.cubeUv",
                   "mapping": 306,
                   "wrapS": 1001,
@@ -708,6 +711,7 @@
                   "magFilter": 1006,
                   "minFilter": 1006,
                   "anisotropy": 1,
+                  "generateMipmaps": false,
                   "colorSpace": "srgb-linear",
                   "flipY": false
                 }
@@ -767,7 +771,7 @@
         "updateBeforeNodes": 1,
         "updateAfterNodes": 0
       },
-      "materialUuid": "e35a70ee-f268-4efc-b519-066e9cc5c2c3"
+      "materialUuid": "0b17596c-fae6-4f7c-9db0-08f1e4d8f922"
     }
   },
   {
@@ -775,7 +779,7 @@
     "configHash": "162dfb3fa9f5b8b55affaef6b0b1492ebd7f933318d177fda8bf47cc2991ceae",
     "artifact": {
       "version": 3,
-      "cacheKey": 10259249999708592,
+      "cacheKey": 11834937202419680,
       "materialShape": "pmrem-cubemap",
       "vertexShader": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : mat4x4<f32>,\n\tnodeUniform4 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar3 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying4 = uv;\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform4 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar3 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar3;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
       "fragmentShader": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_cube<f32>;\n\nstruct objectStruct {\n\tnodeUniform1 : mat4x4<f32>,\n\tnodeUniform4 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> nodeVar1 : vec4<f32>;\nvar<private> nodeVar2 : vec4<f32>;\n\n// codes\nfn getDirection ( uv : vec2<f32>, face : f32 ) -> vec3<f32> {\n\n\tvar nodeVar0 : vec2<f32>;\n\tvar nodeVar1 : vec3<f32>;\n\tvar nodeVar2 : vec2<f32>;\n\tvar nodeVar3 : vec2<f32>;\n\tvar nodeVar4 : vec2<f32>;\n\n\tnodeVar0 = uv;\n\tnodeVar0 = ( ( vec2<f32>( 2.0 ) * nodeVar0 ) - vec2<f32>( 1.0 ) );\n\tnodeVar1 = vec3<f32>( nodeVar0, 1.0 );\n\n\tif ( ( face == 0.0 ) ) {\n\n\t\tnodeVar1 = nodeVar1.zyx;\n\t\t\n\n\t} else {\n\n\n\t\tif ( ( face == 1.0 ) ) {\n\n\t\t\tnodeVar1 = nodeVar1.xzy;\n\t\t\tnodeVar2 = ( nodeVar1.xz * vec2<f32>( -1.0 ) );\n\t\t\tnodeVar1.x = nodeVar2[ 0 ];\n\t\t\tnodeVar1.z = nodeVar2[ 1 ];\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( face == 2.0 ) ) {\n\n\t\t\t\tnodeVar1.x = ( nodeVar1.x * -1.0 );\n\t\t\t\t\n\n\t\t\t} else {\n\n\n\t\t\t\tif ( ( face == 3.0 ) ) {\n\n\t\t\t\t\tnodeVar1 = nodeVar1.zyx;\n\t\t\t\t\tnodeVar3 = ( nodeVar1.xz * vec2<f32>( -1.0 ) );\n\t\t\t\t\tnodeVar1.x = nodeVar3[ 0 ];\n\t\t\t\t\tnodeVar1.z = nodeVar3[ 1 ];\n\t\t\t\t\t\n\n\t\t\t\t} else {\n\n\n\t\t\t\t\tif ( ( face == 4.0 ) ) {\n\n\t\t\t\t\t\tnodeVar1 = nodeVar1.xzy;\n\t\t\t\t\t\tnodeVar4 = ( nodeVar1.xy * vec2<f32>( -1.0 ) );\n\t\t\t\t\t\tnodeVar1.x = nodeVar4[ 0 ];\n\t\t\t\t\t\tnodeVar1.y = nodeVar4[ 1 ];\n\t\t\t\t\t\t\n\n\t\t\t\t\t} else {\n\n\n\t\t\t\t\t\tif ( ( face == 5.0 ) ) {\n\n\t\t\t\t\t\t\tnodeVar1.z = ( nodeVar1.z * -1.0 );\n\t\t\t\t\t\t\t\n\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\n\n\t\t\t\t\t}\n\n\t\t\t\t\t\n\n\t\t\t\t}\n\n\t\t\t\t\n\n\t\t\t}\n\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t}\n\n\n\treturn nodeVar1;\n\n}\n\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying4 : vec2<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = normalize( getDirection( nodeVarying4, 0.0 ) );\n\tnodeVar1 = ( object.nodeUniform1 * vec4<f32>( vec3<f32>( nodeVar0.x, nodeVar0.y, nodeVar0.z ), 1.0 ) );\n\tnodeVar2 = textureSample( nodeUniform0, nodeUniform0_sampler, vec3<f32>( ( - nodeVar1.x ), nodeVar1.yz ) );\n\n\t// result\n\n\toutput.color = nodeVar2;\n\n\treturn output;\n\n}\n",
@@ -1061,6 +1065,7 @@
                 "magFilter": 1006,
                 "minFilter": 1008,
                 "anisotropy": 1,
+                "generateMipmaps": true,
                 "colorSpace": "",
                 "flipY": false
               }
@@ -1080,6 +1085,7 @@
                 "magFilter": 1006,
                 "minFilter": 1008,
                 "anisotropy": 1,
+                "generateMipmaps": true,
                 "colorSpace": "",
                 "flipY": false
               }
@@ -1104,6 +1110,7 @@
                   "magFilter": 1006,
                   "minFilter": 1008,
                   "anisotropy": 1,
+                  "generateMipmaps": true,
                   "colorSpace": "",
                   "flipY": false
                 }
@@ -1134,6 +1141,7 @@
                   "magFilter": 1006,
                   "minFilter": 1008,
                   "anisotropy": 1,
+                  "generateMipmaps": true,
                   "colorSpace": "",
                   "flipY": false
                 }
@@ -1261,7 +1269,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "4b2c5aad-3a7b-454b-9db7-62a424b7afd2",
+      "materialUuid": "73152529-4242-4132-8502-e1e16cfb4ca1",
       "pmremKind": "cubemap"
     }
   },
@@ -1270,7 +1278,7 @@
     "configHash": "162dfb3fa9f5b8b55affaef6b0b1492ebd7f933318d177fda8bf47cc2991ceae",
     "artifact": {
       "version": 3,
-      "cacheKey": 8869790681370122,
+      "cacheKey": 11732212213609756,
       "materialShape": "pmrem-equirect",
       "vertexShader": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform3 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar3 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying4 = uv;\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform3 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar3 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar3;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
       "fragmentShader": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n\n// vars\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> nodeVar1 : vec3<f32>;\nvar<private> nodeVar2 : vec4<f32>;\n\n// codes\nfn getDirection ( uv : vec2<f32>, face : f32 ) -> vec3<f32> {\n\n\tvar nodeVar0 : vec2<f32>;\n\tvar nodeVar1 : vec3<f32>;\n\tvar nodeVar2 : vec2<f32>;\n\tvar nodeVar3 : vec2<f32>;\n\tvar nodeVar4 : vec2<f32>;\n\n\tnodeVar0 = uv;\n\tnodeVar0 = ( ( vec2<f32>( 2.0 ) * nodeVar0 ) - vec2<f32>( 1.0 ) );\n\tnodeVar1 = vec3<f32>( nodeVar0, 1.0 );\n\n\tif ( ( face == 0.0 ) ) {\n\n\t\tnodeVar1 = nodeVar1.zyx;\n\t\t\n\n\t} else {\n\n\n\t\tif ( ( face == 1.0 ) ) {\n\n\t\t\tnodeVar1 = nodeVar1.xzy;\n\t\t\tnodeVar2 = ( nodeVar1.xz * vec2<f32>( -1.0 ) );\n\t\t\tnodeVar1.x = nodeVar2[ 0 ];\n\t\t\tnodeVar1.z = nodeVar2[ 1 ];\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( face == 2.0 ) ) {\n\n\t\t\t\tnodeVar1.x = ( nodeVar1.x * -1.0 );\n\t\t\t\t\n\n\t\t\t} else {\n\n\n\t\t\t\tif ( ( face == 3.0 ) ) {\n\n\t\t\t\t\tnodeVar1 = nodeVar1.zyx;\n\t\t\t\t\tnodeVar3 = ( nodeVar1.xz * vec2<f32>( -1.0 ) );\n\t\t\t\t\tnodeVar1.x = nodeVar3[ 0 ];\n\t\t\t\t\tnodeVar1.z = nodeVar3[ 1 ];\n\t\t\t\t\t\n\n\t\t\t\t} else {\n\n\n\t\t\t\t\tif ( ( face == 4.0 ) ) {\n\n\t\t\t\t\t\tnodeVar1 = nodeVar1.xzy;\n\t\t\t\t\t\tnodeVar4 = ( nodeVar1.xy * vec2<f32>( -1.0 ) );\n\t\t\t\t\t\tnodeVar1.x = nodeVar4[ 0 ];\n\t\t\t\t\t\tnodeVar1.y = nodeVar4[ 1 ];\n\t\t\t\t\t\t\n\n\t\t\t\t\t} else {\n\n\n\t\t\t\t\t\tif ( ( face == 5.0 ) ) {\n\n\t\t\t\t\t\t\tnodeVar1.z = ( nodeVar1.z * -1.0 );\n\t\t\t\t\t\t\t\n\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\n\n\t\t\t\t\t}\n\n\t\t\t\t\t\n\n\t\t\t\t}\n\n\t\t\t\t\n\n\t\t\t}\n\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t}\n\n\n\treturn nodeVar1;\n\n}\n\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying4 : vec2<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = normalize( getDirection( nodeVarying4, 0.0 ) );\n\tnodeVar1 = vec3<f32>( nodeVar0.x, nodeVar0.y, nodeVar0.z );\n\tnodeVar2 = textureSampleLevel( nodeUniform0, nodeUniform0_sampler, vec2<f32>( ( ( atan2( nodeVar1.z, nodeVar1.x ) * 0.15915494309189535 ) + 0.5 ), ( ( asin( clamp( nodeVar1.y, -1.0, 1.0 ) ) * 0.3183098861837907 ) + 0.5 ) ), 0.0 );\n\n\t// result\n\n\toutput.color = nodeVar2;\n\n\treturn output;\n\n}\n",
@@ -1525,6 +1533,7 @@
                 "magFilter": 1006,
                 "minFilter": 1008,
                 "anisotropy": 1,
+                "generateMipmaps": true,
                 "colorSpace": "",
                 "flipY": true
               }
@@ -1544,6 +1553,7 @@
                 "magFilter": 1006,
                 "minFilter": 1008,
                 "anisotropy": 1,
+                "generateMipmaps": true,
                 "colorSpace": "",
                 "flipY": true
               }
@@ -1568,6 +1578,7 @@
                   "magFilter": 1006,
                   "minFilter": 1008,
                   "anisotropy": 1,
+                  "generateMipmaps": true,
                   "colorSpace": "",
                   "flipY": true
                 }
@@ -1598,6 +1609,7 @@
                   "magFilter": 1006,
                   "minFilter": 1008,
                   "anisotropy": 1,
+                  "generateMipmaps": true,
                   "colorSpace": "",
                   "flipY": true
                 }
@@ -1693,7 +1705,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "e7252aa7-2650-4538-998f-82eaf016f829",
+      "materialUuid": "8f427089-aeb4-4771-81da-d7d9b854cd9d",
       "pmremKind": "equirect"
     }
   },
@@ -1702,10 +1714,10 @@
     "configHash": "162dfb3fa9f5b8b55affaef6b0b1492ebd7f933318d177fda8bf47cc2991ceae",
     "artifact": {
       "version": 3,
-      "cacheKey": 8534900189138318,
+      "cacheKey": 9861142140758060,
       "materialShape": "pmrem-blur",
       "vertexShader": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : f32,\n\tnodeUniform1 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform6 : f32,\n\tnodeUniform9 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar31 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying4 = uv;\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform9 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar31 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar31;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
-      "fragmentShader": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 2 ) @group( 1 ) var nodeUniform4_sampler : sampler;\n@binding( 3 ) @group( 1 ) var nodeUniform4 : texture_2d<f32>;\n\nstruct NodeBuffer_9816Struct {\n\tvalue : array< vec4<f32>, 20 >\n};\n@binding( 1 ) @group( 1 )\nvar<uniform> NodeBuffer_9816 : NodeBuffer_9816Struct;\n\nstruct objectStruct {\n\tnodeUniform0 : f32,\n\tnodeUniform1 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform6 : f32,\n\tnodeUniform9 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> nodeVar1 : vec3<f32>;\nvar<private> nodeVar2 : vec3<f32>;\nvar<private> nodeVar3 : vec3<f32>;\nvar<private> nodeVar4 : vec3<f32>;\nvar<private> nodeVar5 : vec3<f32>;\nvar<private> nodeVar6 : f32;\nvar<private> nodeVar7 : vec3<f32>;\nvar<private> nodeVar8 : vec3<f32>;\nvar<private> nodeVar9 : f32;\nvar<private> nodeVar10 : f32;\nvar<private> nodeVar11 : f32;\nvar<private> nodeVar12 : f32;\nvar<private> nodeVar13 : vec2<f32>;\nvar<private> nodeVar14 : vec4<f32>;\nvar<private> nodeVar15 : f32;\nvar<private> nodeVar16 : f32;\nvar<private> nodeVar17 : f32;\nvar<private> nodeVar18 : f32;\nvar<private> nodeVar19 : f32;\nvar<private> nodeVar20 : f32;\nvar<private> nodeVar21 : f32;\nvar<private> nodeVar22 : vec2<f32>;\nvar<private> nodeVar23 : vec4<f32>;\nvar<private> nodeVar24 : f32;\nvar<private> nodeVar25 : f32;\nvar<private> nodeVar26 : f32;\nvar<private> nodeVar27 : f32;\nvar<private> nodeVar28 : f32;\nvar<private> nodeVar29 : vec2<f32>;\nvar<private> nodeVar30 : vec4<f32>;\n\n// codes\nfn getDirection ( uv : vec2<f32>, face : f32 ) -> vec3<f32> {\n\n\tvar nodeVar0 : vec2<f32>;\n\tvar nodeVar1 : vec3<f32>;\n\tvar nodeVar2 : vec2<f32>;\n\tvar nodeVar3 : vec2<f32>;\n\tvar nodeVar4 : vec2<f32>;\n\n\tnodeVar0 = uv;\n\tnodeVar0 = ( ( vec2<f32>( 2.0 ) * nodeVar0 ) - vec2<f32>( 1.0 ) );\n\tnodeVar1 = vec3<f32>( nodeVar0, 1.0 );\n\n\tif ( ( face == 0.0 ) ) {\n\n\t\tnodeVar1 = nodeVar1.zyx;\n\t\t\n\n\t} else {\n\n\n\t\tif ( ( face == 1.0 ) ) {\n\n\t\t\tnodeVar1 = nodeVar1.xzy;\n\t\t\tnodeVar2 = ( nodeVar1.xz * vec2<f32>( -1.0 ) );\n\t\t\tnodeVar1.x = nodeVar2[ 0 ];\n\t\t\tnodeVar1.z = nodeVar2[ 1 ];\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( face == 2.0 ) ) {\n\n\t\t\t\tnodeVar1.x = ( nodeVar1.x * -1.0 );\n\t\t\t\t\n\n\t\t\t} else {\n\n\n\t\t\t\tif ( ( face == 3.0 ) ) {\n\n\t\t\t\t\tnodeVar1 = nodeVar1.zyx;\n\t\t\t\t\tnodeVar3 = ( nodeVar1.xz * vec2<f32>( -1.0 ) );\n\t\t\t\t\tnodeVar1.x = nodeVar3[ 0 ];\n\t\t\t\t\tnodeVar1.z = nodeVar3[ 1 ];\n\t\t\t\t\t\n\n\t\t\t\t} else {\n\n\n\t\t\t\t\tif ( ( face == 4.0 ) ) {\n\n\t\t\t\t\t\tnodeVar1 = nodeVar1.xzy;\n\t\t\t\t\t\tnodeVar4 = ( nodeVar1.xy * vec2<f32>( -1.0 ) );\n\t\t\t\t\t\tnodeVar1.x = nodeVar4[ 0 ];\n\t\t\t\t\t\tnodeVar1.y = nodeVar4[ 1 ];\n\t\t\t\t\t\t\n\n\t\t\t\t\t} else {\n\n\n\t\t\t\t\t\tif ( ( face == 5.0 ) ) {\n\n\t\t\t\t\t\t\tnodeVar1.z = ( nodeVar1.z * -1.0 );\n\t\t\t\t\t\t\t\n\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\n\n\t\t\t\t\t}\n\n\t\t\t\t\t\n\n\t\t\t\t}\n\n\t\t\t\t\n\n\t\t\t}\n\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t}\n\n\n\treturn nodeVar1;\n\n}\n\nfn getFace ( direction : vec3<f32> ) -> f32 {\n\n\tvar nodeVar0 : vec3<f32>;\n\tvar nodeVar1 : f32;\n\tvar nodeVar2 : f32;\n\tvar nodeVar3 : f32;\n\tvar nodeVar4 : f32;\n\tvar nodeVar5 : f32;\n\n\tnodeVar0 = abs( direction );\n\tnodeVar1 = -1.0;\n\n\tif ( ( nodeVar0.x > nodeVar0.z ) ) {\n\n\n\t\tif ( ( nodeVar0.x > nodeVar0.y ) ) {\n\n\n\t\t\tif ( ( direction.x > 0.0 ) ) {\n\n\t\t\t\tnodeVar2 = 0.0;\n\n\t\t\t} else {\n\n\t\t\t\tnodeVar2 = 3.0;\n\n\t\t\t}\n\n\t\t\tnodeVar1 = nodeVar2;\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( direction.y > 0.0 ) ) {\n\n\t\t\t\tnodeVar3 = 1.0;\n\n\t\t\t} else {\n\n\t\t\t\tnodeVar3 = 4.0;\n\n\t\t\t}\n\n\t\t\tnodeVar1 = nodeVar3;\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t} else {\n\n\n\t\tif ( ( nodeVar0.z > nodeVar0.y ) ) {\n\n\n\t\t\tif ( ( direction.z > 0.0 ) ) {\n\n\t\t\t\tnodeVar4 = 2.0;\n\n\t\t\t} else {\n\n\t\t\t\tnodeVar4 = 5.0;\n\n\t\t\t}\n\n\t\t\tnodeVar1 = nodeVar4;\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( direction.y > 0.0 ) ) {\n\n\t\t\t\tnodeVar5 = 1.0;\n\n\t\t\t} else {\n\n\t\t\t\tnodeVar5 = 4.0;\n\n\t\t\t}\n\n\t\t\tnodeVar1 = nodeVar5;\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t}\n\n\n\treturn nodeVar1;\n\n}\n\nfn getUV ( direction : vec3<f32>, face : f32 ) -> vec2<f32> {\n\n\tvar nodeVar0 : vec2<f32>;\n\n\tnodeVar0 = vec2<f32>( 0.0, 0.0 );\n\n\tif ( ( face == 0.0 ) ) {\n\n\t\tnodeVar0 = ( vec2<f32>( direction.z, direction.y ) / vec2<f32>( abs( direction.x ) ) );\n\t\t\n\n\t} else {\n\n\n\t\tif ( ( face == 1.0 ) ) {\n\n\t\t\tnodeVar0 = ( vec2<f32>( ( - direction.x ), ( - direction.z ) ) / vec2<f32>( abs( direction.y ) ) );\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( face == 2.0 ) ) {\n\n\t\t\t\tnodeVar0 = ( vec2<f32>( ( - direction.x ), direction.y ) / vec2<f32>( abs( direction.z ) ) );\n\t\t\t\t\n\n\t\t\t} else {\n\n\n\t\t\t\tif ( ( face == 3.0 ) ) {\n\n\t\t\t\t\tnodeVar0 = ( vec2<f32>( ( - direction.z ), direction.y ) / vec2<f32>( abs( direction.x ) ) );\n\t\t\t\t\t\n\n\t\t\t\t} else {\n\n\n\t\t\t\t\tif ( ( face == 4.0 ) ) {\n\n\t\t\t\t\t\tnodeVar0 = ( vec2<f32>( ( - direction.x ), direction.z ) / vec2<f32>( abs( direction.y ) ) );\n\t\t\t\t\t\t\n\n\t\t\t\t\t} else {\n\n\t\t\t\t\t\tnodeVar0 = ( vec2<f32>( direction.x, direction.y ) / vec2<f32>( abs( direction.z ) ) );\n\t\t\t\t\t\t\n\n\t\t\t\t\t}\n\n\t\t\t\t\t\n\n\t\t\t\t}\n\n\t\t\t\t\n\n\t\t\t}\n\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t}\n\n\n\treturn ( vec2<f32>( 0.5 ) * ( nodeVar0 + vec2<f32>( 1.0 ) ) );\n\n}\n\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying4 : vec2<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\n\tif ( ( object.nodeUniform0 == 1.0 ) ) {\n\n\t\tnodeVar0 = object.nodeUniform1;\n\n\t} else {\n\n\t\tnodeVar1 = normalize( getDirection( nodeVarying4, 0.0 ) );\n\t\tnodeVar0 = cross( object.nodeUniform1, vec3<f32>( nodeVar1.x, nodeVar1.y, nodeVar1.z ) );\n\n\t}\n\n\tnodeVar2 = nodeVar0;\n\n\tif ( all( ( nodeVar2 == vec3<f32>( 0.0, 0.0, 0.0 ) ) ) ) {\n\n\t\tnodeVar3 = normalize( getDirection( nodeVarying4, 0.0 ) );\n\t\tnodeVar4 = vec3<f32>( nodeVar3.x, nodeVar3.y, nodeVar3.z );\n\t\tnodeVar2 = vec3<f32>( nodeVar4.z, 0.0, ( - nodeVar4.x ) );\n\t\t\n\n\t}\n\n\tnodeVar2 = normalize( nodeVar2 );\n\tnodeVar5 = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar6 = object.nodeUniform3;\n\tnodeVar7 = normalize( getDirection( nodeVarying4, 0.0 ) );\n\tnodeVar8 = vec3<f32>( nodeVar7.x, nodeVar7.y, nodeVar7.z );\n\tnodeVar9 = cos( 0.0 );\n\tnodeVar10 = getFace( ( ( ( nodeVar8 * vec3<f32>( nodeVar9 ) ) + ( cross( nodeVar2, nodeVar8 ) * vec3<f32>( sin( 0.0 ) ) ) ) + ( nodeVar2 * vec3<f32>( ( dot( nodeVar2, nodeVar8 ) * ( 1.0 - nodeVar9 ) ) ) ) ) );\n\tnodeVar11 = max( ( 4.0 - nodeVar6 ), 0.0 );\n\tnodeVar6 = max( nodeVar6, 4.0 );\n\tnodeVar12 = exp2( nodeVar6 );\n\tnodeVar13 = ( ( getUV( ( ( ( nodeVar8 * vec3<f32>( nodeVar9 ) ) + ( cross( nodeVar2, nodeVar8 ) * vec3<f32>( sin( 0.0 ) ) ) ) + ( nodeVar2 * vec3<f32>( ( dot( nodeVar2, nodeVar8 ) * ( 1.0 - nodeVar9 ) ) ) ) ), nodeVar10 ) * vec2<f32>( ( nodeVar12 - 2.0 ) ) ) + vec2<f32>( 1.0 ) );\n\n\tif ( ( nodeVar10 > 2.0 ) ) {\n\n\t\tnodeVar13.y = ( nodeVar13.y + nodeVar12 );\n\t\tnodeVar10 = ( nodeVar10 - 3.0 );\n\t\t\n\n\t}\n\n\tnodeVar13.x = ( nodeVar13.x + ( nodeVar10 * nodeVar12 ) );\n\tnodeVar13.x = ( nodeVar13.x + ( nodeVar11 * ( 3.0 * 16.0 ) ) );\n\tnodeVar13.y = ( nodeVar13.y + ( 4.0 * ( exp2( 9.0 ) - nodeVar12 ) ) );\n\tnodeVar13.x = ( nodeVar13.x * 0.0006510416666666666 );\n\tnodeVar13.y = ( nodeVar13.y * 0.00048828125 );\n\tnodeVar14 = textureSampleGrad( nodeUniform4, nodeUniform4_sampler, nodeVar13, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) );\n\tnodeVar5 = ( vec4<f32>( nodeVar5, 1.0 ) + ( vec4<f32>( NodeBuffer_9816.value[ 0u ].x ) * nodeVar14 ) ).xyz;\n\n\tfor ( var i : i32 = 1; i < 20; i ++ ) {\n\n\n\t\tif ( ( f32( i ) >= object.nodeUniform5 ) ) {\n\n\t\t\tbreak;\n\t\t\t\n\n\t\t}\n\n\t\tnodeVar15 = ( object.nodeUniform6 * f32( i ) );\n\t\tnodeVar16 = object.nodeUniform3;\n\t\tnodeVar17 = ( nodeVar15 * -1.0 );\n\t\tnodeVar18 = cos( nodeVar17 );\n\t\tnodeVar19 = getFace( ( ( ( nodeVar8 * vec3<f32>( nodeVar18 ) ) + ( cross( nodeVar2, nodeVar8 ) * vec3<f32>( sin( nodeVar17 ) ) ) ) + ( nodeVar2 * vec3<f32>( ( dot( nodeVar2, nodeVar8 ) * ( 1.0 - nodeVar18 ) ) ) ) ) );\n\t\tnodeVar20 = max( ( 4.0 - nodeVar16 ), 0.0 );\n\t\tnodeVar16 = max( nodeVar16, 4.0 );\n\t\tnodeVar21 = exp2( nodeVar16 );\n\t\tnodeVar22 = ( ( getUV( ( ( ( nodeVar8 * vec3<f32>( nodeVar18 ) ) + ( cross( nodeVar2, nodeVar8 ) * vec3<f32>( sin( nodeVar17 ) ) ) ) + ( nodeVar2 * vec3<f32>( ( dot( nodeVar2, nodeVar8 ) * ( 1.0 - nodeVar18 ) ) ) ) ), nodeVar19 ) * vec2<f32>( ( nodeVar21 - 2.0 ) ) ) + vec2<f32>( 1.0 ) );\n\n\t\tif ( ( nodeVar19 > 2.0 ) ) {\n\n\t\t\tnodeVar22.y = ( nodeVar22.y + nodeVar21 );\n\t\t\tnodeVar19 = ( nodeVar19 - 3.0 );\n\t\t\t\n\n\t\t}\n\n\t\tnodeVar22.x = ( nodeVar22.x + ( nodeVar19 * nodeVar21 ) );\n\t\tnodeVar22.x = ( nodeVar22.x + ( nodeVar20 * ( 3.0 * 16.0 ) ) );\n\t\tnodeVar22.y = ( nodeVar22.y + ( 4.0 * ( exp2( 9.0 ) - nodeVar21 ) ) );\n\t\tnodeVar22.x = ( nodeVar22.x * 0.0006510416666666666 );\n\t\tnodeVar22.y = ( nodeVar22.y * 0.00048828125 );\n\t\tnodeVar23 = textureSampleGrad( nodeUniform4, nodeUniform4_sampler, nodeVar22, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) );\n\t\tnodeVar5 = ( vec4<f32>( nodeVar5, 1.0 ) + ( vec4<f32>( NodeBuffer_9816.value[ i ].x ) * nodeVar23 ) ).xyz;\n\t\tnodeVar24 = object.nodeUniform3;\n\t\tnodeVar25 = cos( nodeVar15 );\n\t\tnodeVar26 = getFace( ( ( ( nodeVar8 * vec3<f32>( nodeVar25 ) ) + ( cross( nodeVar2, nodeVar8 ) * vec3<f32>( sin( nodeVar15 ) ) ) ) + ( nodeVar2 * vec3<f32>( ( dot( nodeVar2, nodeVar8 ) * ( 1.0 - nodeVar25 ) ) ) ) ) );\n\t\tnodeVar27 = max( ( 4.0 - nodeVar24 ), 0.0 );\n\t\tnodeVar24 = max( nodeVar24, 4.0 );\n\t\tnodeVar28 = exp2( nodeVar24 );\n\t\tnodeVar29 = ( ( getUV( ( ( ( nodeVar8 * vec3<f32>( nodeVar25 ) ) + ( cross( nodeVar2, nodeVar8 ) * vec3<f32>( sin( nodeVar15 ) ) ) ) + ( nodeVar2 * vec3<f32>( ( dot( nodeVar2, nodeVar8 ) * ( 1.0 - nodeVar25 ) ) ) ) ), nodeVar26 ) * vec2<f32>( ( nodeVar28 - 2.0 ) ) ) + vec2<f32>( 1.0 ) );\n\n\t\tif ( ( nodeVar26 > 2.0 ) ) {\n\n\t\t\tnodeVar29.y = ( nodeVar29.y + nodeVar28 );\n\t\t\tnodeVar26 = ( nodeVar26 - 3.0 );\n\t\t\t\n\n\t\t}\n\n\t\tnodeVar29.x = ( nodeVar29.x + ( nodeVar26 * nodeVar28 ) );\n\t\tnodeVar29.x = ( nodeVar29.x + ( nodeVar27 * ( 3.0 * 16.0 ) ) );\n\t\tnodeVar29.y = ( nodeVar29.y + ( 4.0 * ( exp2( 9.0 ) - nodeVar28 ) ) );\n\t\tnodeVar29.x = ( nodeVar29.x * 0.0006510416666666666 );\n\t\tnodeVar29.y = ( nodeVar29.y * 0.00048828125 );\n\t\tnodeVar30 = textureSampleGrad( nodeUniform4, nodeUniform4_sampler, nodeVar29, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) );\n\t\tnodeVar5 = ( vec4<f32>( nodeVar5, 1.0 ) + ( vec4<f32>( NodeBuffer_9816.value[ i ].x ) * nodeVar30 ) ).xyz;\n\n\t}\n\n\n\t// result\n\n\toutput.color = vec4<f32>( nodeVar5, 1.0 );\n\n\treturn output;\n\n}\n",
+      "fragmentShader": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 2 ) @group( 1 ) var nodeUniform4_sampler : sampler;\n@binding( 3 ) @group( 1 ) var nodeUniform4 : texture_2d<f32>;\n\nstruct NodeBuffer_9835Struct {\n\tvalue : array< vec4<f32>, 20 >\n};\n@binding( 1 ) @group( 1 )\nvar<uniform> NodeBuffer_9835 : NodeBuffer_9835Struct;\n\nstruct objectStruct {\n\tnodeUniform0 : f32,\n\tnodeUniform1 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform6 : f32,\n\tnodeUniform9 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> nodeVar1 : vec3<f32>;\nvar<private> nodeVar2 : vec3<f32>;\nvar<private> nodeVar3 : vec3<f32>;\nvar<private> nodeVar4 : vec3<f32>;\nvar<private> nodeVar5 : vec3<f32>;\nvar<private> nodeVar6 : f32;\nvar<private> nodeVar7 : vec3<f32>;\nvar<private> nodeVar8 : vec3<f32>;\nvar<private> nodeVar9 : f32;\nvar<private> nodeVar10 : f32;\nvar<private> nodeVar11 : f32;\nvar<private> nodeVar12 : f32;\nvar<private> nodeVar13 : vec2<f32>;\nvar<private> nodeVar14 : vec4<f32>;\nvar<private> nodeVar15 : f32;\nvar<private> nodeVar16 : f32;\nvar<private> nodeVar17 : f32;\nvar<private> nodeVar18 : f32;\nvar<private> nodeVar19 : f32;\nvar<private> nodeVar20 : f32;\nvar<private> nodeVar21 : f32;\nvar<private> nodeVar22 : vec2<f32>;\nvar<private> nodeVar23 : vec4<f32>;\nvar<private> nodeVar24 : f32;\nvar<private> nodeVar25 : f32;\nvar<private> nodeVar26 : f32;\nvar<private> nodeVar27 : f32;\nvar<private> nodeVar28 : f32;\nvar<private> nodeVar29 : vec2<f32>;\nvar<private> nodeVar30 : vec4<f32>;\n\n// codes\nfn getDirection ( uv : vec2<f32>, face : f32 ) -> vec3<f32> {\n\n\tvar nodeVar0 : vec2<f32>;\n\tvar nodeVar1 : vec3<f32>;\n\tvar nodeVar2 : vec2<f32>;\n\tvar nodeVar3 : vec2<f32>;\n\tvar nodeVar4 : vec2<f32>;\n\n\tnodeVar0 = uv;\n\tnodeVar0 = ( ( vec2<f32>( 2.0 ) * nodeVar0 ) - vec2<f32>( 1.0 ) );\n\tnodeVar1 = vec3<f32>( nodeVar0, 1.0 );\n\n\tif ( ( face == 0.0 ) ) {\n\n\t\tnodeVar1 = nodeVar1.zyx;\n\t\t\n\n\t} else {\n\n\n\t\tif ( ( face == 1.0 ) ) {\n\n\t\t\tnodeVar1 = nodeVar1.xzy;\n\t\t\tnodeVar2 = ( nodeVar1.xz * vec2<f32>( -1.0 ) );\n\t\t\tnodeVar1.x = nodeVar2[ 0 ];\n\t\t\tnodeVar1.z = nodeVar2[ 1 ];\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( face == 2.0 ) ) {\n\n\t\t\t\tnodeVar1.x = ( nodeVar1.x * -1.0 );\n\t\t\t\t\n\n\t\t\t} else {\n\n\n\t\t\t\tif ( ( face == 3.0 ) ) {\n\n\t\t\t\t\tnodeVar1 = nodeVar1.zyx;\n\t\t\t\t\tnodeVar3 = ( nodeVar1.xz * vec2<f32>( -1.0 ) );\n\t\t\t\t\tnodeVar1.x = nodeVar3[ 0 ];\n\t\t\t\t\tnodeVar1.z = nodeVar3[ 1 ];\n\t\t\t\t\t\n\n\t\t\t\t} else {\n\n\n\t\t\t\t\tif ( ( face == 4.0 ) ) {\n\n\t\t\t\t\t\tnodeVar1 = nodeVar1.xzy;\n\t\t\t\t\t\tnodeVar4 = ( nodeVar1.xy * vec2<f32>( -1.0 ) );\n\t\t\t\t\t\tnodeVar1.x = nodeVar4[ 0 ];\n\t\t\t\t\t\tnodeVar1.y = nodeVar4[ 1 ];\n\t\t\t\t\t\t\n\n\t\t\t\t\t} else {\n\n\n\t\t\t\t\t\tif ( ( face == 5.0 ) ) {\n\n\t\t\t\t\t\t\tnodeVar1.z = ( nodeVar1.z * -1.0 );\n\t\t\t\t\t\t\t\n\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\n\n\t\t\t\t\t}\n\n\t\t\t\t\t\n\n\t\t\t\t}\n\n\t\t\t\t\n\n\t\t\t}\n\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t}\n\n\n\treturn nodeVar1;\n\n}\n\nfn getFace ( direction : vec3<f32> ) -> f32 {\n\n\tvar nodeVar0 : vec3<f32>;\n\tvar nodeVar1 : f32;\n\tvar nodeVar2 : f32;\n\tvar nodeVar3 : f32;\n\tvar nodeVar4 : f32;\n\tvar nodeVar5 : f32;\n\n\tnodeVar0 = abs( direction );\n\tnodeVar1 = -1.0;\n\n\tif ( ( nodeVar0.x > nodeVar0.z ) ) {\n\n\n\t\tif ( ( nodeVar0.x > nodeVar0.y ) ) {\n\n\n\t\t\tif ( ( direction.x > 0.0 ) ) {\n\n\t\t\t\tnodeVar2 = 0.0;\n\n\t\t\t} else {\n\n\t\t\t\tnodeVar2 = 3.0;\n\n\t\t\t}\n\n\t\t\tnodeVar1 = nodeVar2;\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( direction.y > 0.0 ) ) {\n\n\t\t\t\tnodeVar3 = 1.0;\n\n\t\t\t} else {\n\n\t\t\t\tnodeVar3 = 4.0;\n\n\t\t\t}\n\n\t\t\tnodeVar1 = nodeVar3;\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t} else {\n\n\n\t\tif ( ( nodeVar0.z > nodeVar0.y ) ) {\n\n\n\t\t\tif ( ( direction.z > 0.0 ) ) {\n\n\t\t\t\tnodeVar4 = 2.0;\n\n\t\t\t} else {\n\n\t\t\t\tnodeVar4 = 5.0;\n\n\t\t\t}\n\n\t\t\tnodeVar1 = nodeVar4;\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( direction.y > 0.0 ) ) {\n\n\t\t\t\tnodeVar5 = 1.0;\n\n\t\t\t} else {\n\n\t\t\t\tnodeVar5 = 4.0;\n\n\t\t\t}\n\n\t\t\tnodeVar1 = nodeVar5;\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t}\n\n\n\treturn nodeVar1;\n\n}\n\nfn getUV ( direction : vec3<f32>, face : f32 ) -> vec2<f32> {\n\n\tvar nodeVar0 : vec2<f32>;\n\n\tnodeVar0 = vec2<f32>( 0.0, 0.0 );\n\n\tif ( ( face == 0.0 ) ) {\n\n\t\tnodeVar0 = ( vec2<f32>( direction.z, direction.y ) / vec2<f32>( abs( direction.x ) ) );\n\t\t\n\n\t} else {\n\n\n\t\tif ( ( face == 1.0 ) ) {\n\n\t\t\tnodeVar0 = ( vec2<f32>( ( - direction.x ), ( - direction.z ) ) / vec2<f32>( abs( direction.y ) ) );\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( face == 2.0 ) ) {\n\n\t\t\t\tnodeVar0 = ( vec2<f32>( ( - direction.x ), direction.y ) / vec2<f32>( abs( direction.z ) ) );\n\t\t\t\t\n\n\t\t\t} else {\n\n\n\t\t\t\tif ( ( face == 3.0 ) ) {\n\n\t\t\t\t\tnodeVar0 = ( vec2<f32>( ( - direction.z ), direction.y ) / vec2<f32>( abs( direction.x ) ) );\n\t\t\t\t\t\n\n\t\t\t\t} else {\n\n\n\t\t\t\t\tif ( ( face == 4.0 ) ) {\n\n\t\t\t\t\t\tnodeVar0 = ( vec2<f32>( ( - direction.x ), direction.z ) / vec2<f32>( abs( direction.y ) ) );\n\t\t\t\t\t\t\n\n\t\t\t\t\t} else {\n\n\t\t\t\t\t\tnodeVar0 = ( vec2<f32>( direction.x, direction.y ) / vec2<f32>( abs( direction.z ) ) );\n\t\t\t\t\t\t\n\n\t\t\t\t\t}\n\n\t\t\t\t\t\n\n\t\t\t\t}\n\n\t\t\t\t\n\n\t\t\t}\n\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t}\n\n\n\treturn ( vec2<f32>( 0.5 ) * ( nodeVar0 + vec2<f32>( 1.0 ) ) );\n\n}\n\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying4 : vec2<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\n\tif ( ( object.nodeUniform0 == 1.0 ) ) {\n\n\t\tnodeVar0 = object.nodeUniform1;\n\n\t} else {\n\n\t\tnodeVar1 = normalize( getDirection( nodeVarying4, 0.0 ) );\n\t\tnodeVar0 = cross( object.nodeUniform1, vec3<f32>( nodeVar1.x, nodeVar1.y, nodeVar1.z ) );\n\n\t}\n\n\tnodeVar2 = nodeVar0;\n\n\tif ( all( ( nodeVar2 == vec3<f32>( 0.0, 0.0, 0.0 ) ) ) ) {\n\n\t\tnodeVar3 = normalize( getDirection( nodeVarying4, 0.0 ) );\n\t\tnodeVar4 = vec3<f32>( nodeVar3.x, nodeVar3.y, nodeVar3.z );\n\t\tnodeVar2 = vec3<f32>( nodeVar4.z, 0.0, ( - nodeVar4.x ) );\n\t\t\n\n\t}\n\n\tnodeVar2 = normalize( nodeVar2 );\n\tnodeVar5 = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar6 = object.nodeUniform3;\n\tnodeVar7 = normalize( getDirection( nodeVarying4, 0.0 ) );\n\tnodeVar8 = vec3<f32>( nodeVar7.x, nodeVar7.y, nodeVar7.z );\n\tnodeVar9 = cos( 0.0 );\n\tnodeVar10 = getFace( ( ( ( nodeVar8 * vec3<f32>( nodeVar9 ) ) + ( cross( nodeVar2, nodeVar8 ) * vec3<f32>( sin( 0.0 ) ) ) ) + ( nodeVar2 * vec3<f32>( ( dot( nodeVar2, nodeVar8 ) * ( 1.0 - nodeVar9 ) ) ) ) ) );\n\tnodeVar11 = max( ( 4.0 - nodeVar6 ), 0.0 );\n\tnodeVar6 = max( nodeVar6, 4.0 );\n\tnodeVar12 = exp2( nodeVar6 );\n\tnodeVar13 = ( ( getUV( ( ( ( nodeVar8 * vec3<f32>( nodeVar9 ) ) + ( cross( nodeVar2, nodeVar8 ) * vec3<f32>( sin( 0.0 ) ) ) ) + ( nodeVar2 * vec3<f32>( ( dot( nodeVar2, nodeVar8 ) * ( 1.0 - nodeVar9 ) ) ) ) ), nodeVar10 ) * vec2<f32>( ( nodeVar12 - 2.0 ) ) ) + vec2<f32>( 1.0 ) );\n\n\tif ( ( nodeVar10 > 2.0 ) ) {\n\n\t\tnodeVar13.y = ( nodeVar13.y + nodeVar12 );\n\t\tnodeVar10 = ( nodeVar10 - 3.0 );\n\t\t\n\n\t}\n\n\tnodeVar13.x = ( nodeVar13.x + ( nodeVar10 * nodeVar12 ) );\n\tnodeVar13.x = ( nodeVar13.x + ( nodeVar11 * ( 3.0 * 16.0 ) ) );\n\tnodeVar13.y = ( nodeVar13.y + ( 4.0 * ( exp2( 9.0 ) - nodeVar12 ) ) );\n\tnodeVar13.x = ( nodeVar13.x * 0.0006510416666666666 );\n\tnodeVar13.y = ( nodeVar13.y * 0.00048828125 );\n\tnodeVar14 = textureSampleGrad( nodeUniform4, nodeUniform4_sampler, nodeVar13, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) );\n\tnodeVar5 = ( vec4<f32>( nodeVar5, 1.0 ) + ( vec4<f32>( NodeBuffer_9835.value[ 0u ].x ) * nodeVar14 ) ).xyz;\n\n\tfor ( var i : i32 = 1; i < 20; i ++ ) {\n\n\n\t\tif ( ( f32( i ) >= object.nodeUniform5 ) ) {\n\n\t\t\tbreak;\n\t\t\t\n\n\t\t}\n\n\t\tnodeVar15 = ( object.nodeUniform6 * f32( i ) );\n\t\tnodeVar16 = object.nodeUniform3;\n\t\tnodeVar17 = ( nodeVar15 * -1.0 );\n\t\tnodeVar18 = cos( nodeVar17 );\n\t\tnodeVar19 = getFace( ( ( ( nodeVar8 * vec3<f32>( nodeVar18 ) ) + ( cross( nodeVar2, nodeVar8 ) * vec3<f32>( sin( nodeVar17 ) ) ) ) + ( nodeVar2 * vec3<f32>( ( dot( nodeVar2, nodeVar8 ) * ( 1.0 - nodeVar18 ) ) ) ) ) );\n\t\tnodeVar20 = max( ( 4.0 - nodeVar16 ), 0.0 );\n\t\tnodeVar16 = max( nodeVar16, 4.0 );\n\t\tnodeVar21 = exp2( nodeVar16 );\n\t\tnodeVar22 = ( ( getUV( ( ( ( nodeVar8 * vec3<f32>( nodeVar18 ) ) + ( cross( nodeVar2, nodeVar8 ) * vec3<f32>( sin( nodeVar17 ) ) ) ) + ( nodeVar2 * vec3<f32>( ( dot( nodeVar2, nodeVar8 ) * ( 1.0 - nodeVar18 ) ) ) ) ), nodeVar19 ) * vec2<f32>( ( nodeVar21 - 2.0 ) ) ) + vec2<f32>( 1.0 ) );\n\n\t\tif ( ( nodeVar19 > 2.0 ) ) {\n\n\t\t\tnodeVar22.y = ( nodeVar22.y + nodeVar21 );\n\t\t\tnodeVar19 = ( nodeVar19 - 3.0 );\n\t\t\t\n\n\t\t}\n\n\t\tnodeVar22.x = ( nodeVar22.x + ( nodeVar19 * nodeVar21 ) );\n\t\tnodeVar22.x = ( nodeVar22.x + ( nodeVar20 * ( 3.0 * 16.0 ) ) );\n\t\tnodeVar22.y = ( nodeVar22.y + ( 4.0 * ( exp2( 9.0 ) - nodeVar21 ) ) );\n\t\tnodeVar22.x = ( nodeVar22.x * 0.0006510416666666666 );\n\t\tnodeVar22.y = ( nodeVar22.y * 0.00048828125 );\n\t\tnodeVar23 = textureSampleGrad( nodeUniform4, nodeUniform4_sampler, nodeVar22, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) );\n\t\tnodeVar5 = ( vec4<f32>( nodeVar5, 1.0 ) + ( vec4<f32>( NodeBuffer_9835.value[ i ].x ) * nodeVar23 ) ).xyz;\n\t\tnodeVar24 = object.nodeUniform3;\n\t\tnodeVar25 = cos( nodeVar15 );\n\t\tnodeVar26 = getFace( ( ( ( nodeVar8 * vec3<f32>( nodeVar25 ) ) + ( cross( nodeVar2, nodeVar8 ) * vec3<f32>( sin( nodeVar15 ) ) ) ) + ( nodeVar2 * vec3<f32>( ( dot( nodeVar2, nodeVar8 ) * ( 1.0 - nodeVar25 ) ) ) ) ) );\n\t\tnodeVar27 = max( ( 4.0 - nodeVar24 ), 0.0 );\n\t\tnodeVar24 = max( nodeVar24, 4.0 );\n\t\tnodeVar28 = exp2( nodeVar24 );\n\t\tnodeVar29 = ( ( getUV( ( ( ( nodeVar8 * vec3<f32>( nodeVar25 ) ) + ( cross( nodeVar2, nodeVar8 ) * vec3<f32>( sin( nodeVar15 ) ) ) ) + ( nodeVar2 * vec3<f32>( ( dot( nodeVar2, nodeVar8 ) * ( 1.0 - nodeVar25 ) ) ) ) ), nodeVar26 ) * vec2<f32>( ( nodeVar28 - 2.0 ) ) ) + vec2<f32>( 1.0 ) );\n\n\t\tif ( ( nodeVar26 > 2.0 ) ) {\n\n\t\t\tnodeVar29.y = ( nodeVar29.y + nodeVar28 );\n\t\t\tnodeVar26 = ( nodeVar26 - 3.0 );\n\t\t\t\n\n\t\t}\n\n\t\tnodeVar29.x = ( nodeVar29.x + ( nodeVar26 * nodeVar28 ) );\n\t\tnodeVar29.x = ( nodeVar29.x + ( nodeVar27 * ( 3.0 * 16.0 ) ) );\n\t\tnodeVar29.y = ( nodeVar29.y + ( 4.0 * ( exp2( 9.0 ) - nodeVar28 ) ) );\n\t\tnodeVar29.x = ( nodeVar29.x * 0.0006510416666666666 );\n\t\tnodeVar29.y = ( nodeVar29.y * 0.00048828125 );\n\t\tnodeVar30 = textureSampleGrad( nodeUniform4, nodeUniform4_sampler, nodeVar29, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) );\n\t\tnodeVar5 = ( vec4<f32>( nodeVar5, 1.0 ) + ( vec4<f32>( NodeBuffer_9835.value[ i ].x ) * nodeVar30 ) ).xyz;\n\n\t}\n\n\n\t// result\n\n\toutput.color = vec4<f32>( nodeVar5, 1.0 );\n\n\treturn output;\n\n}\n",
       "computeShader": "",
       "attributes": [
         {
@@ -2034,6 +2046,7 @@
                 "magFilter": 1006,
                 "minFilter": 1008,
                 "anisotropy": 1,
+                "generateMipmaps": true,
                 "colorSpace": "",
                 "flipY": true
               }
@@ -2053,6 +2066,7 @@
                 "magFilter": 1006,
                 "minFilter": 1008,
                 "anisotropy": 1,
+                "generateMipmaps": true,
                 "colorSpace": "",
                 "flipY": true
               }
@@ -2275,6 +2289,7 @@
                   "magFilter": 1006,
                   "minFilter": 1008,
                   "anisotropy": 1,
+                  "generateMipmaps": true,
                   "colorSpace": "",
                   "flipY": true
                 }
@@ -2305,6 +2320,7 @@
                   "magFilter": 1006,
                   "minFilter": 1008,
                   "anisotropy": 1,
+                  "generateMipmaps": true,
                   "colorSpace": "",
                   "flipY": true
                 }
@@ -2362,7 +2378,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "43d10a61-d2ab-40e9-95bf-881d7c6ba9e1",
+      "materialUuid": "6b59a24b-da85-4a7e-bd01-40d1c43a9582",
       "pmremKind": "blur"
     }
   },
@@ -2371,7 +2387,7 @@
     "configHash": "162dfb3fa9f5b8b55affaef6b0b1492ebd7f933318d177fda8bf47cc2991ceae",
     "artifact": {
       "version": 3,
-      "cacheKey": 7103377877569047,
+      "cacheKey": 4683811984144072,
       "materialShape": "pmrem-ggx",
       "vertexShader": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : f32,\n\tnodeUniform1 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar27 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying4 = uv;\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform5 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar27 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar27;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
       "fragmentShader": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform2_sampler : sampler;\n@binding( 2 ) @group( 1 ) var nodeUniform2 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform0 : f32,\n\tnodeUniform1 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> nodeVar1 : vec3<f32>;\nvar<private> nodeVar2 : vec3<f32>;\nvar<private> nodeVar3 : f32;\nvar<private> nodeVar4 : f32;\nvar<private> nodeVar5 : f32;\nvar<private> nodeVar6 : f32;\nvar<private> nodeVar7 : f32;\nvar<private> nodeVar8 : vec2<f32>;\nvar<private> nodeVar9 : vec4<f32>;\nvar<private> nodeVar10 : vec3<f32>;\nvar<private> nodeVar11 : vec3<f32>;\nvar<private> nodeVar12 : vec3<f32>;\nvar<private> nodeVar13 : u32;\nvar<private> nodeVar14 : vec2<f32>;\nvar<private> nodeVar15 : f32;\nvar<private> nodeVar16 : vec3<f32>;\nvar<private> nodeVar17 : vec3<f32>;\nvar<private> nodeVar18 : vec3<f32>;\nvar<private> nodeVar19 : vec3<f32>;\nvar<private> nodeVar20 : f32;\nvar<private> nodeVar21 : f32;\nvar<private> nodeVar22 : f32;\nvar<private> nodeVar23 : f32;\nvar<private> nodeVar24 : f32;\nvar<private> nodeVar25 : vec2<f32>;\nvar<private> nodeVar26 : vec4<f32>;\n\n// codes\nfn getDirection ( uv : vec2<f32>, face : f32 ) -> vec3<f32> {\n\n\tvar nodeVar0 : vec2<f32>;\n\tvar nodeVar1 : vec3<f32>;\n\tvar nodeVar2 : vec2<f32>;\n\tvar nodeVar3 : vec2<f32>;\n\tvar nodeVar4 : vec2<f32>;\n\n\tnodeVar0 = uv;\n\tnodeVar0 = ( ( vec2<f32>( 2.0 ) * nodeVar0 ) - vec2<f32>( 1.0 ) );\n\tnodeVar1 = vec3<f32>( nodeVar0, 1.0 );\n\n\tif ( ( face == 0.0 ) ) {\n\n\t\tnodeVar1 = nodeVar1.zyx;\n\t\t\n\n\t} else {\n\n\n\t\tif ( ( face == 1.0 ) ) {\n\n\t\t\tnodeVar1 = nodeVar1.xzy;\n\t\t\tnodeVar2 = ( nodeVar1.xz * vec2<f32>( -1.0 ) );\n\t\t\tnodeVar1.x = nodeVar2[ 0 ];\n\t\t\tnodeVar1.z = nodeVar2[ 1 ];\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( face == 2.0 ) ) {\n\n\t\t\t\tnodeVar1.x = ( nodeVar1.x * -1.0 );\n\t\t\t\t\n\n\t\t\t} else {\n\n\n\t\t\t\tif ( ( face == 3.0 ) ) {\n\n\t\t\t\t\tnodeVar1 = nodeVar1.zyx;\n\t\t\t\t\tnodeVar3 = ( nodeVar1.xz * vec2<f32>( -1.0 ) );\n\t\t\t\t\tnodeVar1.x = nodeVar3[ 0 ];\n\t\t\t\t\tnodeVar1.z = nodeVar3[ 1 ];\n\t\t\t\t\t\n\n\t\t\t\t} else {\n\n\n\t\t\t\t\tif ( ( face == 4.0 ) ) {\n\n\t\t\t\t\t\tnodeVar1 = nodeVar1.xzy;\n\t\t\t\t\t\tnodeVar4 = ( nodeVar1.xy * vec2<f32>( -1.0 ) );\n\t\t\t\t\t\tnodeVar1.x = nodeVar4[ 0 ];\n\t\t\t\t\t\tnodeVar1.y = nodeVar4[ 1 ];\n\t\t\t\t\t\t\n\n\t\t\t\t\t} else {\n\n\n\t\t\t\t\t\tif ( ( face == 5.0 ) ) {\n\n\t\t\t\t\t\t\tnodeVar1.z = ( nodeVar1.z * -1.0 );\n\t\t\t\t\t\t\t\n\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\n\n\t\t\t\t\t}\n\n\t\t\t\t\t\n\n\t\t\t\t}\n\n\t\t\t\t\n\n\t\t\t}\n\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t}\n\n\n\treturn nodeVar1;\n\n}\n\nfn getFace ( direction : vec3<f32> ) -> f32 {\n\n\tvar nodeVar0 : vec3<f32>;\n\tvar nodeVar1 : f32;\n\tvar nodeVar2 : f32;\n\tvar nodeVar3 : f32;\n\tvar nodeVar4 : f32;\n\tvar nodeVar5 : f32;\n\n\tnodeVar0 = abs( direction );\n\tnodeVar1 = -1.0;\n\n\tif ( ( nodeVar0.x > nodeVar0.z ) ) {\n\n\n\t\tif ( ( nodeVar0.x > nodeVar0.y ) ) {\n\n\n\t\t\tif ( ( direction.x > 0.0 ) ) {\n\n\t\t\t\tnodeVar2 = 0.0;\n\n\t\t\t} else {\n\n\t\t\t\tnodeVar2 = 3.0;\n\n\t\t\t}\n\n\t\t\tnodeVar1 = nodeVar2;\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( direction.y > 0.0 ) ) {\n\n\t\t\t\tnodeVar3 = 1.0;\n\n\t\t\t} else {\n\n\t\t\t\tnodeVar3 = 4.0;\n\n\t\t\t}\n\n\t\t\tnodeVar1 = nodeVar3;\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t} else {\n\n\n\t\tif ( ( nodeVar0.z > nodeVar0.y ) ) {\n\n\n\t\t\tif ( ( direction.z > 0.0 ) ) {\n\n\t\t\t\tnodeVar4 = 2.0;\n\n\t\t\t} else {\n\n\t\t\t\tnodeVar4 = 5.0;\n\n\t\t\t}\n\n\t\t\tnodeVar1 = nodeVar4;\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( direction.y > 0.0 ) ) {\n\n\t\t\t\tnodeVar5 = 1.0;\n\n\t\t\t} else {\n\n\t\t\t\tnodeVar5 = 4.0;\n\n\t\t\t}\n\n\t\t\tnodeVar1 = nodeVar5;\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t}\n\n\n\treturn nodeVar1;\n\n}\n\nfn getUV ( direction : vec3<f32>, face : f32 ) -> vec2<f32> {\n\n\tvar nodeVar0 : vec2<f32>;\n\n\tnodeVar0 = vec2<f32>( 0.0, 0.0 );\n\n\tif ( ( face == 0.0 ) ) {\n\n\t\tnodeVar0 = ( vec2<f32>( direction.z, direction.y ) / vec2<f32>( abs( direction.x ) ) );\n\t\t\n\n\t} else {\n\n\n\t\tif ( ( face == 1.0 ) ) {\n\n\t\t\tnodeVar0 = ( vec2<f32>( ( - direction.x ), ( - direction.z ) ) / vec2<f32>( abs( direction.y ) ) );\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( face == 2.0 ) ) {\n\n\t\t\t\tnodeVar0 = ( vec2<f32>( ( - direction.x ), direction.y ) / vec2<f32>( abs( direction.z ) ) );\n\t\t\t\t\n\n\t\t\t} else {\n\n\n\t\t\t\tif ( ( face == 3.0 ) ) {\n\n\t\t\t\t\tnodeVar0 = ( vec2<f32>( ( - direction.z ), direction.y ) / vec2<f32>( abs( direction.x ) ) );\n\t\t\t\t\t\n\n\t\t\t\t} else {\n\n\n\t\t\t\t\tif ( ( face == 4.0 ) ) {\n\n\t\t\t\t\t\tnodeVar0 = ( vec2<f32>( ( - direction.x ), direction.z ) / vec2<f32>( abs( direction.y ) ) );\n\t\t\t\t\t\t\n\n\t\t\t\t\t} else {\n\n\t\t\t\t\t\tnodeVar0 = ( vec2<f32>( direction.x, direction.y ) / vec2<f32>( abs( direction.z ) ) );\n\t\t\t\t\t\t\n\n\t\t\t\t\t}\n\n\t\t\t\t\t\n\n\t\t\t\t}\n\n\t\t\t\t\n\n\t\t\t}\n\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t}\n\n\n\treturn ( vec2<f32>( 0.5 ) * ( nodeVar0 + vec2<f32>( 1.0 ) ) );\n\n}\n\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying4 : vec2<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = normalize( getDirection( nodeVarying4, 0.0 ) );\n\tnodeVar1 = vec3<f32>( nodeVar0.x, nodeVar0.y, nodeVar0.z );\n\tnodeVar2 = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar3 = 0.0;\n\n\tif ( ( object.nodeUniform0 < 0.001 ) ) {\n\n\t\tnodeVar4 = object.nodeUniform1;\n\t\tnodeVar5 = getFace( nodeVar1 );\n\t\tnodeVar6 = max( ( 4.0 - nodeVar4 ), 0.0 );\n\t\tnodeVar4 = max( nodeVar4, 4.0 );\n\t\tnodeVar7 = exp2( nodeVar4 );\n\t\tnodeVar8 = ( ( getUV( nodeVar1, nodeVar5 ) * vec2<f32>( ( nodeVar7 - 2.0 ) ) ) + vec2<f32>( 1.0 ) );\n\n\t\tif ( ( nodeVar5 > 2.0 ) ) {\n\n\t\t\tnodeVar8.y = ( nodeVar8.y + nodeVar7 );\n\t\t\tnodeVar5 = ( nodeVar5 - 3.0 );\n\t\t\t\n\n\t\t}\n\n\t\tnodeVar8.x = ( nodeVar8.x + ( nodeVar5 * nodeVar7 ) );\n\t\tnodeVar8.x = ( nodeVar8.x + ( nodeVar6 * ( 3.0 * 16.0 ) ) );\n\t\tnodeVar8.y = ( nodeVar8.y + ( 4.0 * ( exp2( 9.0 ) - nodeVar7 ) ) );\n\t\tnodeVar8.x = ( nodeVar8.x * 0.0006510416666666666 );\n\t\tnodeVar8.y = ( nodeVar8.y * 0.00048828125 );\n\t\tnodeVar9 = textureSampleGrad( nodeUniform2, nodeUniform2_sampler, nodeVar8, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) );\n\t\tnodeVar2 = nodeVar9.xyz;\n\t\t\n\n\t} else {\n\n\n\t\tif ( ( abs( nodeVar1.z ) < 0.999 ) ) {\n\n\t\t\tnodeVar10 = vec3<f32>( 0.0, 0.0, 1.0 );\n\n\t\t} else {\n\n\t\t\tnodeVar10 = vec3<f32>( 1.0, 0.0, 0.0 );\n\n\t\t}\n\n\t\tnodeVar11 = normalize( cross( nodeVar10, nodeVar1 ) );\n\t\tnodeVar12 = cross( nodeVar1, nodeVar11 );\n\n\t\tfor ( var i : i32 = 0; i < 512; i ++ ) {\n\n\t\t\tlet nodeConst0 = ( object.nodeUniform0 * object.nodeUniform0 );\n\t\t\tlet nodeConst1 = vec3<f32>( 1.0, 0.0, 0.0 );\n\t\t\tlet nodeConst2 = cross( vec3<f32>( 0.0, 0.0, 1.0 ), nodeConst1 );\n\t\t\tnodeVar13 = u32( i );\n\t\t\tnodeVar13 = ( ( nodeVar13 << 16u ) | ( nodeVar13 >> 16u ) );\n\t\t\tnodeVar13 = ( ( ( nodeVar13 & 1431655765u ) << 1u ) | ( ( nodeVar13 & 2863311530u ) >> 1u ) );\n\t\t\tnodeVar13 = ( ( ( nodeVar13 & 858993459u ) << 2u ) | ( ( nodeVar13 & 3435973836u ) >> 2u ) );\n\t\t\tnodeVar13 = ( ( ( nodeVar13 & 252645135u ) << 4u ) | ( ( nodeVar13 & 4042322160u ) >> 4u ) );\n\t\t\tnodeVar13 = ( ( ( nodeVar13 & 16711935u ) << 8u ) | ( ( nodeVar13 & 4278255360u ) >> 8u ) );\n\t\t\tnodeVar14 = vec2<f32>( ( f32( i ) / 512.0 ), ( f32( nodeVar13 ) * 2.3283064365386963e-10 ) );\n\t\t\tlet nodeConst3 = sqrt( nodeVar14.x );\n\t\t\tlet nodeConst4 = ( ( 2.0 * 3.14159265359 ) * nodeVar14.y );\n\t\t\tlet nodeConst5 = ( nodeConst3 * cos( nodeConst4 ) );\n\t\t\tnodeVar15 = ( nodeConst3 * sin( nodeConst4 ) );\n\t\t\tlet nodeConst6 = ( 0.5 * ( vec3<f32>( 0.0, 0.0, 1.0 ).z + 1.0 ) );\n\t\t\tnodeVar15 = ( ( ( 1.0 - nodeConst6 ) * sqrt( ( 1.0 - ( nodeConst5 * nodeConst5 ) ) ) ) + ( nodeConst6 * nodeVar15 ) );\n\t\t\tnodeVar16 = ( ( ( nodeConst1 * vec3<f32>( nodeConst5 ) ) + ( nodeConst2 * vec3<f32>( nodeVar15 ) ) ) + ( vec3<f32>( 0.0, 0.0, 1.0 ) * vec3<f32>( sqrt( max( 0.0, ( 1.0 - ( ( nodeConst5 * nodeConst5 ) + ( nodeVar15 * nodeVar15 ) ) ) ) ) ) ) );\n\t\t\tnodeVar17 = normalize( vec3<f32>( ( nodeConst0 * nodeVar16.x ), ( nodeConst0 * nodeVar16.y ), max( 0.0, nodeVar16.z ) ) );\n\t\t\tnodeVar18 = normalize( ( ( ( nodeVar11 * vec3<f32>( nodeVar17.x ) ) + ( nodeVar12 * vec3<f32>( nodeVar17.y ) ) ) + ( nodeVar1 * vec3<f32>( nodeVar17.z ) ) ) );\n\t\t\tnodeVar19 = normalize( ( ( nodeVar18 * vec3<f32>( ( dot( nodeVar1, nodeVar18 ) * 2.0 ) ) ) - nodeVar1 ) );\n\t\t\tnodeVar20 = max( dot( nodeVar1, nodeVar19 ), 0.0 );\n\n\t\t\tif ( ( nodeVar20 > 0.0 ) ) {\n\n\t\t\t\tnodeVar21 = object.nodeUniform1;\n\t\t\t\tnodeVar22 = getFace( nodeVar19 );\n\t\t\t\tnodeVar23 = max( ( 4.0 - nodeVar21 ), 0.0 );\n\t\t\t\tnodeVar21 = max( nodeVar21, 4.0 );\n\t\t\t\tnodeVar24 = exp2( nodeVar21 );\n\t\t\t\tnodeVar25 = ( ( getUV( nodeVar19, nodeVar22 ) * vec2<f32>( ( nodeVar24 - 2.0 ) ) ) + vec2<f32>( 1.0 ) );\n\n\t\t\t\tif ( ( nodeVar22 > 2.0 ) ) {\n\n\t\t\t\t\tnodeVar25.y = ( nodeVar25.y + nodeVar24 );\n\t\t\t\t\tnodeVar22 = ( nodeVar22 - 3.0 );\n\t\t\t\t\t\n\n\t\t\t\t}\n\n\t\t\t\tnodeVar25.x = ( nodeVar25.x + ( nodeVar22 * nodeVar24 ) );\n\t\t\t\tnodeVar25.x = ( nodeVar25.x + ( nodeVar23 * ( 3.0 * 16.0 ) ) );\n\t\t\t\tnodeVar25.y = ( nodeVar25.y + ( 4.0 * ( exp2( 9.0 ) - nodeVar24 ) ) );\n\t\t\t\tnodeVar25.x = ( nodeVar25.x * 0.0006510416666666666 );\n\t\t\t\tnodeVar25.y = ( nodeVar25.y * 0.00048828125 );\n\t\t\t\tnodeVar26 = textureSampleGrad( nodeUniform2, nodeUniform2_sampler, nodeVar25, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) );\n\t\t\t\tnodeVar2 = ( vec4<f32>( nodeVar2, 1.0 ) + ( nodeVar26 * vec4<f32>( nodeVar20 ) ) ).xyz;\n\t\t\t\tnodeVar3 = ( nodeVar3 + nodeVar20 );\n\t\t\t\t\n\n\t\t\t}\n\n\n\t\t}\n\n\n\t\tif ( ( nodeVar3 > 0.0 ) ) {\n\n\t\t\tnodeVar2 = ( nodeVar2 / vec3<f32>( nodeVar3 ) );\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t}\n\n\n\t// result\n\n\toutput.color = vec4<f32>( nodeVar2, 1.0 );\n\n\treturn output;\n\n}\n",
@@ -2652,6 +2668,7 @@
                 "magFilter": 1006,
                 "minFilter": 1008,
                 "anisotropy": 1,
+                "generateMipmaps": true,
                 "colorSpace": "",
                 "flipY": true
               }
@@ -2671,6 +2688,7 @@
                 "magFilter": 1006,
                 "minFilter": 1008,
                 "anisotropy": 1,
+                "generateMipmaps": true,
                 "colorSpace": "",
                 "flipY": true
               }
@@ -2759,6 +2777,7 @@
                   "magFilter": 1006,
                   "minFilter": 1008,
                   "anisotropy": 1,
+                  "generateMipmaps": true,
                   "colorSpace": "",
                   "flipY": true
                 }
@@ -2789,6 +2808,7 @@
                   "magFilter": 1006,
                   "minFilter": 1008,
                   "anisotropy": 1,
+                  "generateMipmaps": true,
                   "colorSpace": "",
                   "flipY": true
                 }
@@ -2846,7 +2866,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "b73612b2-b60a-41e1-a968-40e10000028f",
+      "materialUuid": "5f6daa10-3ec1-4aab-91dd-2014c85fa4fd",
       "pmremKind": "ggx"
     }
   },
@@ -3140,13 +3160,14 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "a7ef7f63-e60e-43aa-99bf-a575b00388e9",
+                "textureUuid": "4f443f48-6e4b-4dc8-8102-21d778d91a82",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
                 "magFilter": 1006,
                 "minFilter": 1006,
                 "anisotropy": 1,
+                "generateMipmaps": false,
                 "colorSpace": "srgb-linear",
                 "flipY": false
               }
@@ -3159,13 +3180,14 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "a7ef7f63-e60e-43aa-99bf-a575b00388e9",
+                "textureUuid": "4f443f48-6e4b-4dc8-8102-21d778d91a82",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
                 "magFilter": 1006,
                 "minFilter": 1006,
                 "anisotropy": 1,
+                "generateMipmaps": false,
                 "colorSpace": "srgb-linear",
                 "flipY": false
               }
@@ -3183,13 +3205,14 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "a7ef7f63-e60e-43aa-99bf-a575b00388e9",
+                  "textureUuid": "4f443f48-6e4b-4dc8-8102-21d778d91a82",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,
                   "magFilter": 1006,
                   "minFilter": 1006,
                   "anisotropy": 1,
+                  "generateMipmaps": false,
                   "colorSpace": "srgb-linear",
                   "flipY": false
                 }
@@ -3213,13 +3236,14 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "a7ef7f63-e60e-43aa-99bf-a575b00388e9",
+                  "textureUuid": "4f443f48-6e4b-4dc8-8102-21d778d91a82",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,
                   "magFilter": 1006,
                   "minFilter": 1006,
                   "anisotropy": 1,
+                  "generateMipmaps": false,
                   "colorSpace": "srgb-linear",
                   "flipY": false
                 }
