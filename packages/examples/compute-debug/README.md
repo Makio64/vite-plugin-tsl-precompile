@@ -16,6 +16,13 @@ analogue in parentheses):
 - `/texture.html` — a compute kernel writes an animated pattern into a
   `StorageTexture` via `textureStore()`; a plane samples it
   (`webgpu_compute_texture*` — the `compute-storage-texture-sync` slice).
+- `/dispatch2d.html` — an explicit `[x, y, z]` dispatch with a `8x8x1`
+  workgroup writes a storage texture using `globalId`, covering the
+  dispatch-array / workgroup-size path.
+- `/uniform.html` — a JS-updated TSL `uniform()` steers a branch/select inside
+  a storage-texture compute shader, keeping the rendered output deterministic.
+- `/pipeline.html` — two simple compute passes feed each other through storage
+  buffers before a `PointsNodeMaterial` reads the final buffer as an attribute.
 - `/reduce.html` — a compute kernel reduces a storage buffer to a single scalar
   that drives a material uniform (`webgpu_compute_reduce`).
 
@@ -28,10 +35,8 @@ capture and replay see the same clock.
 
 These are deliberately the *minimal* version of each mechanic — extend a page
 toward its upstream analogue (sprite quads, ping-pong buffers, 3D textures,
-parallel reductions, …) to bisect where slim replay diverges. As of writing,
-`particles` / `instanced` / `texture` replay byte-for-byte (PSNR ∞) and
-`reduce` is just under the PSNR gate (~28.6 dB) — a small storage-buffer →
-uniform feedback drift between the compute renderer's clock and replay.
+parallel reductions, …) to bisect where slim replay diverges. The full
+`compute-debug` matrix is expected to pass the strict pixel gate.
 
 Run:
 

@@ -11,6 +11,9 @@ const PAGES = [
 	[ 'particles.html', 'Particles' ],
 	[ 'instanced.html', 'Instanced' ],
 	[ 'texture.html', 'Texture' ],
+	[ 'dispatch2d.html', '2D Dispatch' ],
+	[ 'uniform.html', 'Uniform' ],
+	[ 'pipeline.html', 'Pipeline' ],
 	[ 'reduce.html', 'Reduce' ],
 ];
 

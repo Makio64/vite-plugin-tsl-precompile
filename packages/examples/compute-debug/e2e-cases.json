@@ -3,6 +3,9 @@
     { "name": "particles.html", "path": "particles.html" },
     { "name": "instanced.html", "path": "instanced.html" },
     { "name": "texture.html", "path": "texture.html" },
+    { "name": "dispatch2d.html", "path": "dispatch2d.html" },
+    { "name": "uniform.html", "path": "uniform.html" },
+    { "name": "pipeline.html", "path": "pipeline.html" },
     { "name": "reduce.html", "path": "reduce.html" }
   ]
 }
