@@ -2644,6 +2644,19 @@ function resolveTextureBinding( artifact, groupName, bindingName, material, opti
 		const nodeTexture = lookupMaterialNodeTexture( material, source, artifact, bindingName, options && options.avoidTexture || null );
 		if ( nodeTexture ) return applyTextureSourceSettings( nodeTexture, source );
 
+		// Render-target textures are frame-local products, not assets. In replay
+		// the host wires the live target through _textureRefs, while the identity
+		// index may still contain an earlier 1x1 fallback with the same
+		// textureName. Prefer the explicit sidecar ref for those targets.
+		if ( artifact._textureRefs ) {
+
+			const tex = artifact._textureRefs.get( source.textureUuid );
+			if ( tex && tex.isRenderTargetTexture === true && textureMatchesShaderBinding( artifact, bindingName, tex ) ) {
+				return applyTextureSourceSettings( tex, source );
+			}
+
+		}
+
 		// Prefer a currently-loaded texture with matching image/name identity over
 		// sidecar refs. The replay harness may seed _textureRefs with conservative
 		// 1x1 fallbacks before async loaders finish; identity lookup lets later
@@ -2800,6 +2813,9 @@ function textureMatchesShaderBinding( artifact, bindingName, texture ) {
 
 	if ( ! textureMatchesShaderMultisample( artifact, bindingName, texture ) ) return false;
 	if ( ! texture ) return true;
+	const wantsDepthTexture = shaderDeclaresDepthTexture( artifact, bindingName );
+	if ( texture.isDepthTexture === true ) return wantsDepthTexture;
+	if ( wantsDepthTexture ) return false;
 	if ( shaderDeclaresCubeTexture( artifact, bindingName ) ) return texture.isCubeTexture === true;
 	const textureType = inferTextureTypeFromShader( artifact, bindingName );
 	if ( textureType === '3d' ) return texture.isData3DTexture === true || texture.isTexture3D === true;

@@ -43,6 +43,7 @@ const _TEXTURE_PROPS = [
 const _NODE_GRAPH_KEYS = [
 	'colorNode', 'normalNode', 'outputNode', 'roughnessNode', 'metalnessNode',
 	'emissiveNode', 'opacityNode', 'alphaTestNode', 'vertexNode', 'positionNode',
+	'geometryNode',
 	'mrtNode', 'envNode', 'lightNode', 'aoNode', 'iorNode', 'iridescenceNode',
 	'iridescenceIORNode', 'iridescenceThicknessNode', 'specularIntensityNode',
 	'specularColorNode', 'sheenColorNode', 'sheenRoughnessNode',

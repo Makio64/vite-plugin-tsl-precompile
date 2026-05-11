@@ -28,6 +28,41 @@ function logOnce( key, fn ) {
 
 }
 
+function collectAuxPassNodes( opts ) {
+
+	const passNodes = [];
+	const push = ( node ) => {
+
+		if ( node && node.isPassNode && node._mrt && ! passNodes.includes( node ) ) passNodes.push( node );
+
+	};
+
+	push( opts && opts.passNode );
+
+	const visited = new Set();
+	const walkNode = ( node ) => {
+
+		if ( ! node || ( typeof node !== 'object' && typeof node !== 'function' ) || visited.has( node ) ) return;
+		visited.add( node );
+		push( node );
+		for ( const key of [ 'node', 'aNode', 'bNode', 'cNode', 'colorNode', 'outputNode', 'inputs' ] ) {
+
+			let child = null;
+			try { child = node[ key ]; } catch ( _ ) { continue; }
+			if ( Array.isArray( child ) ) child.forEach( walkNode );
+			else walkNode( child );
+
+		}
+
+	};
+
+	walkNode( opts && opts.renderPipeline && opts.renderPipeline.outputNode );
+	walkNode( opts && opts.postProcessing && opts.postProcessing.outputNode );
+
+	return passNodes;
+
+}
+
 /**
  * Drive auxiliary-pass captures for a scene.
  *
@@ -70,6 +105,15 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 
 	};
 
+	const passNodes = collectAuxPassNodes( opts );
+	const mrtNode = opts.mrtNode || scene && scene.userData && scene.userData.__tslp_mrtNode || passNodes[ 0 ] && passNodes[ 0 ]._mrt || null;
+	if ( mrtNode && scene ) {
+
+		scene.userData = scene.userData || {};
+		scene.userData.__tslp_mrtNode = mrtNode;
+
+	}
+
 	// Background -------------------------------------------------------------
 	const backgroundInput = scene && ( scene.backgroundNode || scene.background );
 	if ( backgroundInput ) {
@@ -78,7 +122,7 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 		try {
 
 			const configHash = hashNodeGraphSync( backgroundInput, { shape, ...hashOpts } );
-			const artifact = await captureBackgroundLive( renderer, scene, camera, opts );
+			const artifact = await captureBackgroundLive( renderer, scene, camera, mrtNode ? { ...opts, mrtNode } : opts );
 			trackLocal( shape, configHash, artifact );
 			results.push( await post( opts.devEndpoint, {
 				materialShape: shape,
@@ -143,47 +187,10 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 	// Discovery: walk opts.renderPipeline?.outputNode (a RenderPipeline) or
 	// directly opts.passNode if provided. The user passes the pass instance
 	// via opts.passNode.
-	//
-	// TODO(post-merge / Round 4-H): the slim runtime hydrator currently does
-	// not route `passNode.getTexture('output' | 'mask' | …)` to live render-
-	// target attachments. Even when this aux capture produces a `mrt`
-	// artifact, slim replay can't sample the per-attachment textures so MRT
-	// post-processing (webgpu_mrt) renders mostly black. See
-	// `packages/runtime/src/hydrator.js` and the pass-aware texture routing
-	// landing in Round 4-H.
+	// The same pass list is resolved before background capture so PassNode
+	// backgrounds compile with the pass MRT topology instead of the
+	// single-output aux fallback.
 	{
-
-		const passNodes = [];
-
-		// opts.passNode: user explicitly passed the pass instance
-		if ( opts.passNode && opts.passNode.isPassNode && opts.passNode._mrt ) {
-
-			passNodes.push( opts.passNode );
-
-		}
-
-		// opts.renderPipeline: walk its outputNode chain for PassNode instances
-		if ( opts.renderPipeline && opts.renderPipeline.outputNode ) {
-
-			const visited = new Set();
-			const walkNode = ( node ) => {
-
-				if ( ! node || visited.has( node ) ) return;
-				visited.add( node );
-				if ( node.isPassNode && node._mrt ) passNodes.push( node );
-				// Walk common node child properties.
-				for ( const key of [ 'node', 'aNode', 'bNode', 'cNode', 'colorNode', 'inputs' ] ) {
-
-					const child = node[ key ];
-					if ( Array.isArray( child ) ) child.forEach( walkNode );
-					else if ( child && typeof child === 'object' ) walkNode( child );
-
-				}
-
-			};
-			walkNode( opts.renderPipeline.outputNode );
-
-		}
 
 		// Sticky-stamp the discovered MRT on `scene.userData.__tslp_mrtNode`
 		// so compileTSL's collectSceneMRTNode and precompile-marker captures
@@ -432,13 +439,12 @@ async function captureBackgroundLive( renderer, scene, camera, opts ) {
 	aux.backgroundNode = scene.backgroundNode;
 	aux.background = scene.background;
 
-	// `noGlobalMRT` tells compileTSL to skip the renderer-level MRT fallback.
-	// Aux scenes are single-output by design; if the host app has
-	// `renderer.setMRT(...)` set globally (webgpu_multiple_rendertargets), we
-	// must not inherit it — otherwise the captured fragment is multi-output
-	// against an aux scene that's rendered to a single attachment, and WGSL
-	// validation rejects it.
-	const artifacts = await compileTSL( renderer, aux, camera, { noGlobalMRT: true } );
+	const mrtNode = opts.mrtNode || scene && scene.userData && scene.userData.__tslp_mrtNode || null;
+
+	// Plain aux scenes must not inherit a global MRT from the host renderer,
+	// but PassNode MRT backgrounds do need the explicit pass descriptor so the
+	// sky material emits the same multi-output fragment as the live pass.
+	const artifacts = await compileTSL( renderer, aux, camera, mrtNode ? { mrtNode } : { noGlobalMRT: true } );
 	const mesh = renderer._background && typeof renderer._background.get === 'function' ? renderer._background.get( aux ).backgroundMesh : null;
 	let artifact = null;
 	for ( const a of artifacts ) {
