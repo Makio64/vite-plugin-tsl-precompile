@@ -1,0 +1,8 @@
+{
+  "cases": [
+    { "name": "equirect.html", "path": "equirect.html" },
+    { "name": "cubemap.html", "path": "cubemap.html" },
+    { "name": "from-scene.html", "path": "from-scene.html" },
+    { "name": "transmission.html", "path": "transmission.html" }
+  ]
+}

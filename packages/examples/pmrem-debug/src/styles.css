@@ -1,0 +1,92 @@
+html,
+body {
+	margin: 0;
+	min-height: 100%;
+	background: #121418;
+	color: #f5f1e8;
+	font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+canvas {
+	display: block;
+	width: 100vw;
+	height: 100vh;
+}
+
+.hud {
+	position: fixed;
+	top: 16px;
+	left: 16px;
+	z-index: 10;
+	max-width: min(520px, calc(100vw - 32px));
+	padding: 12px 14px;
+	border: 1px solid rgb(255 255 255 / 12%);
+	border-radius: 8px;
+	background: rgb(18 20 24 / 78%);
+	backdrop-filter: blur(14px);
+	box-shadow: 0 10px 28px rgb(0 0 0 / 24%);
+}
+
+.hud-title {
+	font-weight: 750;
+	line-height: 1.2;
+}
+
+.hud-status {
+	margin-top: 4px;
+	color: #c9ced8;
+	font-size: 13px;
+	line-height: 1.35;
+}
+
+.hud-links,
+.menu-grid {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 10px;
+}
+
+.hud-links a,
+.menu-grid a {
+	color: #f5f1e8;
+	text-decoration: none;
+	border: 1px solid rgb(255 255 255 / 14%);
+	border-radius: 8px;
+	background: rgb(255 255 255 / 8%);
+	padding: 7px 9px;
+	font-size: 13px;
+}
+
+.hud-links a[aria-current="page"] {
+	background: #f0c95a;
+	color: #15110a;
+	border-color: #f0c95a;
+}
+
+.index-page {
+	display: grid;
+	place-items: center;
+	min-height: 100vh;
+}
+
+.menu {
+	width: min(760px, calc(100vw - 32px));
+}
+
+.menu h1 {
+	margin: 0 0 10px;
+	font-size: 42px;
+	line-height: 1;
+}
+
+.menu p {
+	max-width: 640px;
+	margin: 0;
+	color: #c9ced8;
+	line-height: 1.5;
+}
+
+.menu-grid {
+	margin-top: 22px;
+}
