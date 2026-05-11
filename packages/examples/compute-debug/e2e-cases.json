@@ -1,0 +1,8 @@
+{
+  "cases": [
+    { "name": "particles.html", "path": "particles.html" },
+    { "name": "instanced.html", "path": "instanced.html" },
+    { "name": "texture.html", "path": "texture.html" },
+    { "name": "reduce.html", "path": "reduce.html" }
+  ]
+}
