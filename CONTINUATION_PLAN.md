@@ -24,16 +24,21 @@ We stopped during the visual replay cleanup queue for Three.js WebGPU examples. 
 
 What is done:
 
+- The generated broad visual summary was refreshed: `packages/examples/batch/results/coverage-summary.md` now reports 131 / 222 examples at the 30 dB gate, with 91 visual regressions remaining. `pnpm --filter @tsl-precompile/site data` was refreshed from this summary; site data now reports 222 examples, 631 materials, 2630.7 KB WGSL, smoke 99.5%, pixel-match 109.
 - Background replay fixes are in place for the earlier wrong-background cases, including preserving explicit null backgrounds instead of forcing captured background aux artifacts.
 - Instance-uniform color replay was fixed for the instance-uniform path; `webgpu_instancing_morph.html` is improved but still visually mismatched.
-- Physical-light replay improved after recomputing live object `modelViewMatrix` / `normalMatrix`; latest focused report was `visual-lights-physical-after-matrix.json` with PSNR `25.65`, no replay errors/warnings.
-- `webgpu_lights_spotlight.html` is restored functionally with projected texture/color visible. Latest focused report: `visual-lights-spotlight-targeted-shadow-fallback.json`, PSNR `29.71`, no replay errors/warnings. It is visually close but still just below the default 30 dB gate.
+- Physical-light and spotlight replay are now green in the refreshed generated broad summary.
+- The focused shadow sweep is green in `packages/examples/batch/results/e2e-report.json`; all eight shadow examples pass there, including `webgpu_shadowmap_array.html` at 33.01 dB. `run-coverage-summary.mjs` now prefers E2E pixel gates when available, so the generated broad summary reports shadows at 8 / 8.
+- `webgpu_materials_texture_manualmipmap.html` refreshed to PSNR `inf` in `next-pbr-manualmipmap.json`, and `webgpu_loader_gltf_iridescence.html` refreshed to 37.95 dB in `next-pbr-iridescence.json`.
 - PMREM/environment/background bucket is green:
 	- `webgpu_loader_gltf.html`: `visual-loader-gltf-after-pmrem-flipy.json`, PSNR `inf`, no errors/warnings.
 	- `webgpu_loader_gltf_sheen.html`: `visual-loader-gltf-sheen-after-pmrem-flipy.json`, PSNR `inf`, no errors/warnings.
 	- `webgpu_pmrem_cubemap.html`: `visual-pmrem-cubemap-after-cube-mapping-normalize.json`, PSNR `inf`, no errors/warnings.
 - Portal clipping is green. `webgpu_portal.html` now captures separate background aux artifacts for the main scene/pass scene and replays at PSNR `inf` in `visual-portal-after-bg-exact.json`.
 - Focused bloom is green. `webgpu_postprocessing_bloom.html`, `webgpu_postprocessing_bloom_emissive.html`, and `webgpu_postprocessing_bloom_selective.html` all pass with PSNR `inf` in `visual-bloom-cluster-after-fixes.json`.
+- `webgpu_materials_toon.html` is green. The E2E harness now captures the dynamic `Toon_Outline` material from `renderer.renderObject()` and swaps the replay outline material to the captured `NodeMaterial` artifact; `next-toon-outline-pass.json` reports PSNR `inf`.
+- Standalone render-target / QuadMesh material replay is fixed for `webgpu_rtt.html`, `webgpu_depth_texture.html`, and `webgpu_multisampled_renderbuffers.html`; all three focused reports are PSNR `inf`.
+- Fresh focused runs promoted `webgpu_tsl_vfx_tornado.html` and `webgpu_equirectangular.html` to PSNR `inf`.
 - The parallel E2E harness now uses short-lived worker batches, one worker slot by default on ordinary machines, and single-example retries for crashed batches so long sweeps are less likely to exhaust Chromium/WebGPU memory.
 
 Important implementation notes:
@@ -52,8 +57,10 @@ Where we stopped:
 
 What remains next:
 
-- Revisit `webgpu_postprocessing.html` missing dots and `webgpu_postprocessing_ao.html`, since broad postprocessing still has non-bloom gaps.
-- Revisit `webgpu_instancing_morph.html` replay color/darkness and `webgpu_lights_physical.html` remaining PSNR gap after the PMREM and shadow fixes.
+- Continue with beta-relevant near-threshold material/light examples: `webgpu_materials_transmission.html` (26.25 dB fresh) and `webgpu_lights_selective.html` (25.64 dB fresh). Keep the now-green manual-mipmap, iridescence, and toon examples as guardrails.
+- MRT/readback is the next render-target-specific blocker: `webgpu_multiple_rendertargets_readback.html` still captures its scene material as a single-output `NodeMaterial`, then replay renders it under MRT and hits a multi-output pipeline mismatch. `webgpu_rendertarget_2d-array_3d.html` compares at 30.87 dB from saved shots but its focused report exits with `Invalid string length`, so the harness/reporting path needs cleanup.
+- Revisit `webgpu_postprocessing_ao.html`, `webgpu_postprocessing_masking.html`, `webgpu_postprocessing_outline.html`, plus near-threshold `webgpu_postprocessing_dof_basic.html` and `webgpu_postprocessing_ssgi.html`; `webgpu_postprocessing.html` itself is green in the current generated summary.
+- Revisit `webgpu_instancing_morph.html` replay color/darkness.
 - Check `webgpu_materials_basic.html.capture` black sphere if still visible in the current screenshots.
 - Clean or intentionally keep generated debug reports/screenshots under `packages/examples/batch/results/` before any commit. There are many untracked `visual-*` and `debug-*` JSON files from this session.
 - Run formatting/lint/tests before commit. `node --check`, plugin tests, runtime tests, and the focused bloom E2E cluster passed on 2026-05-11; the user's terminal still shows an older `pnpm lint` exit code `254`, so do not assume lint is clean.
@@ -62,5 +69,7 @@ Useful focused commands:
 
 ```bash
 pnpm --filter @tsl-precompile/runtime build:slim
+pnpm coverage
+pnpm --filter @tsl-precompile/site data
 pnpm --filter examples-batch run:e2e -- --filter=webgpu_postprocessing_bloom --save-shots --replay-wait-ms=12000 --capture-wait-ms=12000 --report=visual-bloom-cluster-after-fixes.json
 ```

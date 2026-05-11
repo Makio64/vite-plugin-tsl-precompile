@@ -8,7 +8,7 @@ Last updated: 2026-05-11
 
 ## Focused visual queue (2026-05-11)
 
-This tracks focused cleanup since 2026-05-05, not a refreshed full 194-example coverage sweep. The aggregate coverage table below still comes from the last broad summary; the focused reports listed here supersede those individual examples only.
+This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage snapshot generated on 2026-05-11 from saved capture/replay shots.
 
 **Green in focused runs:**
 - `webgpu_loader_gltf.html` — PMREM environment/reflection/background replay now matches capture at PSNR `inf` in `visual-loader-gltf-after-pmrem-flipy.json`.
@@ -16,14 +16,21 @@ This tracks focused cleanup since 2026-05-05, not a refreshed full 194-example c
 - `webgpu_pmrem_cubemap.html` — cubemap PMREM source mapping is normalized before generation; PSNR `inf` in `visual-pmrem-cubemap-after-cube-mapping-normalize.json`.
 - `webgpu_portal.html` — pass-scene and main-scene backgrounds are separated by exact aux/background matching; PSNR `inf` in `visual-portal-after-bg-exact.json`.
 - `webgpu_postprocessing_bloom.html`, `webgpu_postprocessing_bloom_emissive.html`, `webgpu_postprocessing_bloom_selective.html` — focused bloom cluster now matches stock at PSNR `inf` in `visual-bloom-cluster-after-fixes.json` (2026-05-11).
+- Shadow focused sweep — all eight shadow examples pass; `run-coverage-summary.mjs` now prefers E2E pixel gates when available, so the generated broad summary reports shadows at 8 / 8 and `webgpu_shadowmap_array.html` at 33.01 dB.
+- `webgpu_materials_texture_manualmipmap.html` — refreshed focused run now matches stock at PSNR `inf` in `next-pbr-manualmipmap.json`.
+- `webgpu_loader_gltf_iridescence.html` — refreshed focused run now passes at 37.95 dB in `next-pbr-iridescence.json`.
+- `webgpu_materials_toon.html` — `toonOutlinePass` now captures and replays its dynamic `Toon_Outline` material; PSNR `inf` in `next-toon-outline-pass.json`.
+- `webgpu_tsl_vfx_tornado.html` and `webgpu_equirectangular.html` — fresh focused runs now match at PSNR `inf`.
+- `webgpu_rtt.html`, `webgpu_depth_texture.html`, and `webgpu_multisampled_renderbuffers.html` — standalone `QuadMesh` / render-target materials now replay through captured precompiled materials; all three focused runs report PSNR `inf`.
 
 **Improved but not fully green:**
-- `webgpu_lights_spotlight.html` — projected texture/color restored, no replay errors/warnings, PSNR `29.71` in `visual-lights-spotlight-targeted-shadow-fallback.json`. Still just below the 30 dB gate.
-- `webgpu_lights_physical.html` — live object matrix updates improved the image, PSNR `25.65` in `visual-lights-physical-after-matrix.json`.
+- `webgpu_lines_fat_raycasting.html` — visually very close but still below the gate at 28.93 dB after a fresh run.
+- `webgpu_postprocessing_dof_basic.html` and `webgpu_postprocessing_ssgi.html` — fresh postprocessing near misses at 23.14 dB and 28.62 dB.
+- `webgpu_rendertarget_2d-array_3d.html` — saved-shot coverage now compares at 30.87 dB, but the focused E2E report still exits with `Invalid string length`; keep it as a harness-cleanup item before treating it as fully green.
 - `webgpu_instancing_morph.html` — instance color path improved, but replay remains visually mismatched; latest focused report PSNR `15.65` in `visual-instancing-morph-after-random-split.json`.
 
 **Resolved active thread (2026-05-11):**
-- Bloom/postprocessing texture handoff is green for the focused bloom cluster. The remaining broad-postprocessing work should move to non-bloom examples such as `webgpu_postprocessing.html` and `webgpu_postprocessing_ao.html`.
+- Bloom/postprocessing texture handoff is green for the focused bloom cluster, and `webgpu_postprocessing.html` now passes in the generated broad summary. Remaining broad-postprocessing work should move to non-bloom examples such as `webgpu_postprocessing_ao.html`, `webgpu_postprocessing_masking.html`, `webgpu_postprocessing_outline.html`, and the near-threshold DOF/SSGI examples.
 
 **Implementation highlights:**
 - PMREM generation chooses equirect/cube mode from source image shape rather than trusting rewritten `texture.mapping`, uses cloned source textures for temporary mapping changes, and preserves loader `flipY`.
@@ -65,23 +72,22 @@ Six parallel agents + several follow-up commits pushed visual correctness forwar
 
 An example **works** when the slim-runtime replay screenshot matches a clean stock three.js reference within PSNR ≥ 30 dB (the gate from [run-e2e.mjs](packages/examples/batch/run-e2e.mjs#L93)). Smoke-test pass counts only prove the example loads — they say nothing about whether the rendered pixels are correct.
 
-**30 / 194 graded examples matched in the last broad summary (15%).** The full per-example table lives at [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md) — refresh from saved shots with `pnpm coverage`, refresh the site data too with `pnpm coverage:site`, or re-capture fresh shots first with `pnpm coverage:retest` / `pnpm test:e2e` (slow). Focused 2026-05-05 and 2026-05-11 fixes above are not yet rolled into this aggregate.
+**131 / 222 graded examples match in the latest generated broad summary (59%).** The full per-example table lives at [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md) — refresh from saved shots with `pnpm coverage`, refresh the site data too with `pnpm coverage:site`, or re-capture fresh shots first with `pnpm coverage:retest` / `pnpm test:e2e` (slow).
 
 | Category | Match / Total | Best example | Worst example |
 |---|---|---|---|
-| Materials | **5 / 17** | webgpu_materials_envmaps (inf dB) ✅ | webgpu_materials_texture_html (5.37 dB) |
-| Lights | 3 / 11 | webgpu_lights_tiled (inf dB) ✅ | webgpu_lights_projector (11.51 dB) |
-| Shadows | 1 / 8 | webgpu_shadowmap_opacity (inf dB) ✅ | webgpu_shadowmap, webgpu_shadowmap_pointlight (no replay) |
-| Sprites | 0 / 1 | — | webgpu_sprites (13.37 dB) |
-| Compute | 1 / 15 | webgpu_compute_reduce (34.13 dB) ✅ | webgpu_compute_texture_3d (6.22 dB) |
-| Camera | 0 / 3 | webgpu_camera_logarithmicdepthbuffer (20.50 dB) | webgpu_camera_array (12.66 dB) |
-| MRT / RenderTargets | 0 / 4 | webgpu_mrt_mask (12.85 dB) | webgpu_multiple_rendertargets_readback (1.26 dB) |
-| Particles | 1 / 1 | webgpu_particles (36.74 dB) ✅ | — |
-| Postprocessing | 3 / 28 | webgpu_postprocessing_bloom (inf dB) ✅ | webgpu_postprocessing_ao (7.70 dB) |
+| Materials | **12 / 17** | webgpu_materials_envmaps (inf dB) ✅ | webgpu_materials_alphahash (10.26 dB) |
+| Lights | 6 / 12 | webgpu_lights_physical (inf dB) ✅ | webgpu_lights_projector (12.23 dB) |
+| Shadows | 8 / 8 | webgpu_shadowmap (inf dB) ✅ | webgpu_shadowmap_array (33.01 dB) |
+| Sprites | 1 / 1 | webgpu_sprites (41.95 dB) ✅ | — |
+| Compute | 6 / 15 | webgpu_compute_audio (inf dB) ✅ | webgpu_compute_particles_snow (6.68 dB) |
+| Camera | 2 / 3 | webgpu_camera_array (34.62 dB) ✅ | webgpu_camera (14.41 dB) |
+| MRT / RenderTargets | 1 / 4 | webgpu_multiple_rendertargets (inf dB) ✅ | webgpu_mrt (6.97 dB) |
+| Particles | 1 / 1 | webgpu_particles (inf dB) ✅ | — |
+| Postprocessing | 16 / 29 | webgpu_postprocessing_bloom (inf dB) ✅ | webgpu_postprocessing_masking (3.16 dB) |
+| Misc | 78 / 132 | many exact matches | gtao (7.41 dB) |
 
-Note: this table is a historical broad summary and has stale individual rows. Use the focused reports above for examples touched after the broad run, especially the 2026-05-11 bloom cluster.
-
-The full webgpu_* example set is now substantially graded, but the headline is still load-smoke-heavy rather than production-ready: 164 graded examples are visual regressions.
+The full example set is now substantially graded, but the headline is still short of production-ready: 91 graded examples remain visual regressions.
 
 ## v0.1 beta support slice
 
@@ -93,7 +99,7 @@ Do not optimize for "all 194 examples" first. The credible beta surface for real
 - material uniforms and known live light/shadow uniforms
 - stable artifact invalidation across dev capture, build rewrite, runtime hash checks, and package contents
 
-Priority order: fix shadows first, then PMREM/environment/reflections, then transmission/viewport/reflector texture paths. Compute/storage follows as experimental WebGPU coverage. MRT and broad postprocessing stay deferred until the render-target / PassNode chain is truly wired.
+Priority order: keep shadows green, then close the near-threshold PBR/material and lighting misses, then PMREM/reflection outliers and transmission/viewport/reflector texture paths. Compute/storage follows as experimental WebGPU coverage. MRT and broad postprocessing stay deferred until the render-target / PassNode chain is truly wired.
 
 ---
 
@@ -210,20 +216,22 @@ These kinds are recognised by the extractor/codegen contract but are not ordinar
 
 ## What's left to do (ordered by user impact)
 
-### 1. Shadows  *(first visual correctness cluster)*
+### 1. PBR/material and lighting near misses  *(first beta correctness cluster)*
 
-The loader/smoke story is good, but the PSNR report is still only **30 / 194**. Runtime rebinder paths now exist for `depth.texture`, `viewport.texture`, and `reflector.texture`; the remaining work is making them visually match live three.js across common examples:
+The broad summary is now **131 / 222**, and shadows are green in both focused and generated coverage. The best beta ROI is the set of ordinary material/lighting examples that are close to the 30 dB gate or represent common PBR features:
 
-- [ ] Fix no-replay cases: `webgpu_shadowmap.html` and `webgpu_shadowmap_pointlight.html`.
-- [ ] Gate the replay shadow-scene/depth-texture path so it only runs for actual shadow receivers/casters and does not clobber non-shadow scenes.
-- [ ] Raise the shadow cluster above the PSNR gate, starting with `webgpu_shadow_contact.html`, `webgpu_shadowmap_vsm.html`, and `webgpu_shadowmap_progressive.html`.
+- [x] Refresh `webgpu_materials_texture_manualmipmap.html` (now PSNR `inf`) and `webgpu_loader_gltf_iridescence.html` (now 37.95 dB).
+- [x] Fix `webgpu_materials_toon.html`; dynamic `toonOutlinePass` material replay now reaches PSNR `inf`.
+- [ ] Improve `webgpu_materials_transmission.html` (26.25 dB fresh) and `webgpu_lights_selective.html` (25.64 dB fresh).
+- [x] Reconcile the `webgpu_shadowmap_array.html` discrepancy; `coverage-summary.md` now reports the E2E pixel gate at 33.01 dB.
 
 ### 2. Bloom / postprocessing pass textures  *(focused bloom cluster green)*
 
 The portal `pass(scene, camera)` path is healthy, and the focused bloom cluster now verifies the render-target texture handoff for base, emissive, and selective bloom.
 
 - [x] Raise `webgpu_postprocessing_bloom.html`, `webgpu_postprocessing_bloom_emissive.html`, and `webgpu_postprocessing_bloom_selective.html` above the PSNR gate (`visual-bloom-cluster-after-fixes.json`, PSNR `inf` for all three).
-- [ ] Revisit `webgpu_postprocessing.html` missing dots after bloom, since it likely shares PassNode/render-target plumbing.
+- [x] `webgpu_postprocessing.html` is green in the refreshed generated summary.
+- [ ] Revisit non-bloom failures such as `webgpu_postprocessing_ao.html`, `webgpu_postprocessing_masking.html`, `webgpu_postprocessing_outline.html`, and the near-threshold DOF/SSGI examples.
 
 ### 3. PMREM / environment / reflections  *(PBR correctness)*
 
@@ -238,8 +246,8 @@ Many real PBR scenes depend on environment lighting. Wrong PMREM/reflection wiri
 
 `viewport.texture` and `reflector.texture` rebinder paths exist, but the common glass/mirror examples are still below the production bar.
 
-- [ ] Fix `webgpu_materials_transmission.html` and `webgpu_loader_gltf_transmission.html`.
-- [ ] Fix `webgpu_refraction.html` and `webgpu_mirror.html`.
+- [ ] Fix `webgpu_materials_transmission.html` and `webgpu_refraction.html`.
+- [ ] Keep `webgpu_loader_gltf_transmission.html` and `webgpu_mirror.html` green as guardrails while changing viewport/reflector code.
 - [ ] Add focused fixture coverage for `viewport.texture` and `reflector.texture` once the runtime behavior is stable.
 
 ### 5. Compute/storage paths  *(experimental for v0.1 beta)*
