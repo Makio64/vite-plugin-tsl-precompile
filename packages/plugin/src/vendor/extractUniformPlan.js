@@ -1119,6 +1119,11 @@ export function extractUniformPlan( state ) {
 					const tex = textureNode.value || ( textureNode._value ) || null;
 					if ( tex && tex.isTexture ) {
 
+						// Lazily-filled `{ lightIndex, lightUuid, vsm }` (or null) for shadow
+						// textures — covers both raw `DepthTexture` shadow maps and VSM
+						// blur-output RG render targets that aren't `DepthTexture` instances.
+						let shadowLightInfo = undefined;
+
 						if ( tex.name === 'DFG_LUT' ) {
 
 							source = { kind: 'builtin.dfgLUT' };
@@ -1146,17 +1151,19 @@ export function extractUniformPlan( state ) {
 								isDepth: tex.isDepthTexture === true,
 							};
 
-						} else if ( tex.isDepthTexture === true ) {
+						} else if ( tex.isDepthTexture === true || ( ( shadowLightInfo = findLightForDepthTexture( state, tex ) ) && shadowLightInfo.vsm ) ) {
 
-							// Shadow depth textures (DepthTexture instances) live
-							// on `light.shadow.map.depthTexture` and are
-							// (re)allocated by the renderer's shadow pass per
-							// frame. The captured uuid is dead the moment the
-							// example reloads, so the standard artifact.texture
-							// uuid lookup can never find it. Tag the binding
-							// with the owning light's traversal index instead;
-							// the hydrator's per-frame rebinder swaps in
-							// `frame.scene`'s actual shadow map at draw time.
+							// Shadow depth textures live on `light.shadow.map.depthTexture`
+							// (raw depth, PCF/Hard) or, for VSM, on the shadow node's
+							// `vsmShadowMapHorizontal.texture` (an RG HalfFloat render target —
+							// NOT a DepthTexture, hence the explicit `findLightForDepthTexture`
+							// fallback above). Both are (re)allocated by the renderer's shadow
+							// pass per frame, so the captured uuid is dead the moment the example
+							// reloads and the standard artifact.texture uuid lookup can never find
+							// it. Tag the binding with the owning light's traversal index instead;
+							// the hydrator's per-frame rebinder swaps in `frame.scene`'s actual
+							// shadow map (raw depth, or the harness-supplied VSM blur output) at
+							// draw time.
 							//
 							// When no AnalyticLightNode owns this DepthTexture
 							// (e.g. a `RenderTarget.depthTexture` sampled via
@@ -1164,16 +1171,15 @@ export function extractUniformPlan( state ) {
 							// `lightIndex: -1, fromMaterialGraph: true` — the
 							// runtime rebinder then resolves the live instance
 							// from the binding's owning material node graph.
-							const lightInfo = findLightForDepthTexture( state, tex );
+							const lightInfo = shadowLightInfo !== undefined ? shadowLightInfo : findLightForDepthTexture( state, tex );
 							source = lightInfo ? {
 								kind: 'depth.texture',
 								textureUuid: tex.uuid,
 								lightIndex: lightInfo.lightIndex,
 								lightUuid: lightInfo.lightUuid,
-								// `vsm` indicates a VSM horizontal pass texture
-								// rather than a raw depth texture; the runtime
-								// reads `shadow.map.texture` instead of
-								// `shadow.map.depthTexture` for VSM shadows.
+								// `vsm` indicates a VSM blur-output texture (RG colour)
+								// rather than a raw depth texture; the runtime resolves
+								// the live VSM blur output instead of `shadow.map.depthTexture`.
 								vsm: !! lightInfo.vsm,
 							} : {
 								kind: 'depth.texture',

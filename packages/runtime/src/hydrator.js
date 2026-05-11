@@ -1454,11 +1454,15 @@ function createShadowDepthRebinder( entries /* , artifact */ ) {
 					if ( ! light || ! light.shadow || ! light.shadow.map ) continue;
 
 					const map = light.shadow.map;
-					// VSM materials sample the blurred render-target texture
-					// (`shadow.map.texture`); standard PCF/Hard shadows sample
+					// VSM materials sample the blurred VSM moments texture
+					// (`ShadowNode.vsmShadowMapHorizontal.texture` — an RG colour render
+					// target, not a DepthTexture). The slim renderer never runs shadow
+					// setup so it has no shadow node; the e2e/full-renderer harness stashes
+					// the live VSM blur output on `light.shadow.__tslpVsmShadowTexture` after
+					// rendering the parallel shadow scene. Standard PCF/Hard shadows sample
 					// the raw depth texture (`shadow.map.depthTexture`).
 					liveTexture = entry.vsm
-						? map.texture
+						? ( light.shadow.__tslpVsmShadowTexture || map.texture || null )
 						: ( map.depthTexture || ( map.texture && map.texture.isDepthTexture === true ? map.texture : null ) );
 
 				}

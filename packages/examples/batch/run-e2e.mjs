@@ -1552,6 +1552,84 @@ function __clearTextureViewCache( textureData ) {
 	}
 }
 
+// Pre-seed the slim renderer's backend data for a render-target texture (a shadow
+// depth map, or a VSM blur-output colour map) with the GPU texture the full
+// renderer allocated, and bump the JS texture version so the slim renderer's
+// Bindings._update rebuilds the bind group against it. Without the version bump
+// the shadow-depth rebinder may have already cached a bind group built against a
+// fresh 1x1 uninitialised stand-in, which would be reused (reads 0 -> no/over
+// shadow). Sync every renderer's per-texture data to the bumped version so neither
+// Textures.updateTexture destroys/recreates the shared GPU texture on its next pass.
+function __shareShadowGpuTextureIntoSlim( tex, fullRenderer, slimRenderer ) {
+	if ( ! tex || ! fullRenderer || ! fullRenderer.backend || ! slimRenderer || ! slimRenderer.backend ) return false;
+	const fullData = fullRenderer.backend.get( tex );
+	const slimData = slimRenderer.backend.get( tex );
+	if ( ! fullData || ! fullData.texture || ! slimData ) return false;
+	__clearTextureViewCache( slimData );
+	slimData.texture = fullData.texture;
+	slimData.__tslpSharedShadowGPUTexture = fullData.texture;
+	slimData.format = fullData.format;
+	slimData.initialized = true;
+	slimData.isDefaultTexture = false;
+	const nextVersion = ( tex.version | 0 ) + 1;
+	tex.version = nextVersion;
+	slimData.version = nextVersion;
+	slimData.generation = nextVersion;
+	fullData.version = nextVersion;
+	if ( ! slimData.bindGroups ) slimData.bindGroups = new Set();
+	const stx = slimRenderer._textures;
+	if ( stx && typeof stx.get === 'function' ) {
+		const txData = stx.get( tex );
+		txData.initialized = true;
+		txData.isDefaultTexture = false;
+		txData.version = nextVersion;
+		txData.generation = nextVersion;
+		if ( ! txData.bindGroups ) txData.bindGroups = new Set();
+	}
+	const ftx = fullRenderer._textures;
+	if ( ftx && typeof ftx.get === 'function' ) {
+		const ftxData = ftx.get( tex );
+		ftxData.initialized = true;
+		ftxData.version = nextVersion;
+		ftxData.generation = nextVersion;
+	}
+	return true;
+}
+
+// VSM shadows sample the horizontal-blur-pass output texture, which three.js
+// stores on the per-light ShadowNode (vsmShadowMapHorizontal.texture) for a
+// single-layer shadow map, or on shadow.map._vsmShadowMapHorizontal when the
+// shadow map is layered. The slim renderer never builds a ShadowNode, so the
+// harness fishes the full renderer's blur output out of the render list's lights
+// node and shares it through to the slim backend.
+function __findVsmBlurTexture( fullRenderer, shadowScene, shadowRenderCamera, cloneLight ) {
+	try {
+		const map = cloneLight && cloneLight.shadow && cloneLight.shadow.map;
+		if ( map && map._vsmShadowMapHorizontal && map._vsmShadowMapHorizontal.texture ) return map._vsmShadowMapHorizontal.texture;
+		const lists = fullRenderer && fullRenderer._renderLists;
+		const renderList = lists && typeof lists.get === 'function' ? lists.get( shadowScene, shadowRenderCamera ) : null;
+		const lightsNode0 = renderList && renderList.lightsNode || null;
+		const lightsNode = lightsNode0 && lightsNode0.node ? lightsNode0.node : lightsNode0;
+		let lightNodes = lightsNode && Array.isArray( lightsNode._lightNodes ) ? lightsNode._lightNodes : null;
+		if ( ! lightNodes && lightsNode && typeof lightsNode.getLightNodes === 'function' ) {
+			// RenderList.begin() calls lightsNode.setLights() each frame, which nulls
+			// _lightNodes; getLightNodes() rebuilds it (reusing the cached AnalyticLightNodes
+			// from LightsNode's module-level WeakMap, and therefore their already-allocated
+			// ShadowNode + vsmShadowMapHorizontal render target).
+			try { lightNodes = lightsNode.getLightNodes( { renderer: fullRenderer } ); } catch ( _ ) {}
+		}
+		if ( Array.isArray( lightNodes ) ) {
+			for ( const ln of lightNodes ) {
+				if ( ! ln || ln.isAnalyticLightNode !== true || ln.light !== cloneLight ) continue;
+				const sn = ln.shadowNode && ln.shadowNode.node ? ln.shadowNode.node : ln.shadowNode;
+				const h = sn && sn.vsmShadowMapHorizontal || null;
+				if ( h && h.texture ) return h.texture;
+			}
+		}
+	} catch ( _ ) {}
+	return null;
+}
+
 // Detect at boot whether any registered background-aux artifact references a
 // PMREM-prefiltered (CubeUVReflectionMapping) source. The capture-time
 // extractor stamps source.textureName === 'PMREM.cubeUv' and/or
@@ -5048,6 +5126,32 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 								ftxData.generation = nextVersion;
 							}
 						}
+					}
+					// VSM (variance shadow map): the captured shader samples the blurred
+					// moments texture, not the raw depth map. Point lights keep the depth-cube
+					// path (three.js gates the VSM branch off for isPointLightShadow), so only
+					// directional/spot need this. Stash the full renderer's blur output on
+					// src.shadow so the hydrator's vsm rebinder finds it, and pre-seed the GPU
+					// texture into the slim backend just like the depth map above.
+					if ( ( fullRenderer.shadowMap && fullRenderer.shadowMap.type ) === ( __fullThreeMod.VSMShadowMap ?? 3 ) && src.isPointLight !== true ) {
+						// The VSM blur quads build their pipelines lazily across render passes
+						// (like the shadow pass itself), so the two warm-up renders above don't
+						// reliably leave vsmShadowMapHorizontal fully written. Render once more,
+						// flush, then grab + share the blur output.
+						try {
+							await fullRenderer.render( shadowScene, shadowRenderCamera );
+							const q = fullRenderer.backend && fullRenderer.backend.device && fullRenderer.backend.device.queue;
+							if ( q && typeof q.onSubmittedWorkDone === 'function' ) await q.onSubmittedWorkDone();
+						} catch ( _ ) {}
+						const vsmTex = __findVsmBlurTexture( fullRenderer, shadowScene, shadowRenderCamera, clone );
+						if ( vsmTex && vsmTex.isTexture ) {
+							src.shadow.__tslpVsmShadowTexture = vsmTex;
+							__shareShadowGpuTextureIntoSlim( vsmTex, fullRenderer, _slimRenderer );
+						} else if ( src.shadow.__tslpVsmShadowTexture !== undefined ) {
+							delete src.shadow.__tslpVsmShadowTexture;
+						}
+					} else if ( src.shadow.__tslpVsmShadowTexture !== undefined ) {
+						delete src.shadow.__tslpVsmShadowTexture;
 					}
 					mapCount ++;
 				}
