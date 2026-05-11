@@ -8,11 +8,23 @@ Keep the extractor/codegen and slim-bundle load-smoke harnesses green enough to 
 
 For the E2E harness, start with focused filters. It automates the real loop for stock examples: clean stock full-three reference, capture pass for auto-marked NodeMaterial artifacts, then slim replay with captured user and aux artifacts. A pass means replay reached a non-empty frame without unexpected browser errors and meets the PSNR pixel-diff threshold (30 dB by default). Use `--no-pixel-gate` for diagnostics when the goal is to inspect load/runtime failures separately from visual correctness. Many examples are expected to fail today; v0.1 beta should prioritize the PBR slice first: shadows, PMREM/environment/reflections, then transmission/viewport/reflector texture paths. Compute/storage remains experimental, while MRT and broad postprocessing are deferred.
 
-The parallel E2E runner prints concise per-example progress by default and writes full details to `packages/examples/batch/results/e2e-report.json`. Pass `--verbose` or set `TSLP_E2E_VERBOSE=1` to forward page warnings/logs and worker boilerplate while debugging harness internals.
+The default E2E scripts save paired capture/replay PNGs to `packages/examples/batch/results/shots/` and refresh `packages/examples/batch/results/coverage-summary.md` after each run. Pass `--no-save-shots` or `--no-coverage` only for throwaway diagnostics; raw harness scripts are still available as `run:e2e:raw` and `run:e2e-parallel:raw`.
+
+For runtime-only screenshot refreshes, use `pnpm test:e2e:replay -- --filter=<example>`. It skips the stock/reference and artifact-capture visits, loads `results/shots/<example>.capture.png` plus `results/artifacts/<example>.{user,aux}.json`, and regenerates only the slim replay PNG/report. If the plugin/extractor or captured artifact format changed, run a normal `pnpm test:e2e -- --filter=<example>` instead. `--reuse-reference-shot` is the middle path: reuse the saved stock PNG but still recapture fresh artifacts.
+
+Use `--timings` while tuning slow examples. The harness now caps the unreliable pre-screenshot WebGPU brightness poll and uses shorter fixed settle windows; if a specific example needs the old conservative behavior, override with `--bright-poll-ms=12000 --asset-settle-ms=1500 --present-settle-ms=1000 --settle-frames=30`.
+
+The parallel E2E runner prints concise per-example progress by default and writes full details to `packages/examples/batch/results/e2e-report.json`. It honors `--filter`, `--limit`, and `--offset` before splitting work across workers, so `pnpm test:e2e -- --limit=12` is a quick partial visual sweep. Pass `--verbose` or set `TSLP_E2E_VERBOSE=1` to forward page warnings/logs and worker boilerplate while debugging harness internals.
 
 The E2E server automatically falls forward to the next free port when the requested port is occupied. Use `--port=<n>` to choose the first port and `--port-retries=<n>` to cap the retry window.
 
 Animated examples compare the first fully loaded settled frame by default (`--target-tick=0`) so async asset timing does not masquerade as a shader regression. Use `--target-tick=<n>` when intentionally auditing a later animation phase.
+
+## Local results UI
+
+Run `pnpm examples:ui` from the repo root to launch a local interface over `results/shots/`. It shows every saved live-three.js capture beside the slim replay, with PSNR/status metadata from `coverage-summary.md`. Each example has buttons to regenerate the full capture+replay, regenerate replay only, or reuse the saved capture and refresh the artifacts/replay.
+
+Use `pnpm examples:ui -- --port=8788` to pick a different UI port, or `pnpm examples:ui -- --three-repo=/path/to/three.js` when the three.js checkout is not the default sibling directory.
 
 Historical error buckets from the monolithic slim fork:
 
@@ -35,6 +47,11 @@ Source examples aren't written with `.precompile()` calls. The harness injects `
 pnpm test:batch
 pnpm test:slim
 pnpm test:e2e -- --filter=webgpu_lights_custom
+pnpm test:e2e -- --limit=12
+pnpm test:e2e -- --filter=webgpu_clearcoat.html --timings
+pnpm test:e2e:replay -- --filter=webgpu_lights_custom
+pnpm examples:ui
+pnpm coverage:site
 node packages/examples/batch/run.mjs --three-repo=/path/to/three.js --filter=webgpu_backdrop
 node packages/examples/batch/run-slim.mjs --three-repo=/path/to/three.js --filter=webgpu_backdrop
 node packages/examples/batch/run-e2e.mjs --three-repo=/path/to/three.js --filter=webgpu_lights_custom

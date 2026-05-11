@@ -7,9 +7,13 @@
   "scripts": {
     "test": "node run.mjs",
     "run": "node run.mjs",
+    "ui": "node run-ui.mjs",
+    "run:ui": "node run-ui.mjs",
     "run:slim": "node run-slim.mjs",
-    "run:e2e": "node run-e2e.mjs",
-    "run:e2e-parallel": "node run-e2e-parallel.mjs",
+    "run:e2e": "node run-e2e-with-coverage.mjs",
+    "run:e2e:raw": "node run-e2e.mjs",
+    "run:e2e-parallel": "node run-e2e-with-coverage.mjs --parallel",
+    "run:e2e-parallel:raw": "node run-e2e-parallel.mjs",
     "run:coverage-summary": "node run-coverage-summary.mjs"
   },
   "devDependencies": {

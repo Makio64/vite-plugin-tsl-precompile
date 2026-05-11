@@ -22,11 +22,14 @@ const DEFAULT_WORKERS = Math.max( 1, Math.min( 4, Math.floor( totalmem() / ( 1.5
 const workers  = parseInt( getArg( '--workers=', String( DEFAULT_WORKERS ) ), 10 );
 const basePort = parseInt( getArg( '--base-port=', '8730' ), 10 );
 const filter   = getArg( '--filter=', '' );
+const limit    = parseInt( getArg( '--limit=', '9999' ), 10 );
+const offset   = parseInt( getArg( '--offset=', '0' ), 10 );
 const threeRepo = resolve( getArg( '--three-repo=', resolve( SELF, '../../../../three.js' ) ) );
 const verbose = args.includes( '--verbose' ) || process.env.TSLP_E2E_VERBOSE === '1';
 
 // Forward all flags to workers except the orchestrator-only ones
 const forwarded = args.filter( a =>
+	a !== '--' &&
 	! a.startsWith( '--workers=' ) &&
 	! a.startsWith( '--base-port=' ) &&
 	! a.startsWith( '--port=' ) &&
@@ -43,9 +46,18 @@ if ( ! existsSync( examplesDir ) ) {
 assertThreeAtLeast184( threeRepo, 'e2e-parallel' );
 const allExamples = readdirSync( examplesDir )
 	.filter( f => f.startsWith( 'webgpu_' ) && f.endsWith( '.html' ) )
-	.filter( f => ! filter || f.includes( filter ) );
+	.filter( f => ! filter || f.includes( filter ) )
+	.slice( offset, offset + limit );
 
 const total = allExamples.length;
+if ( total === 0 ) {
+	const finalReport = resolve( OUT, 'e2e-report.json' );
+	mkdirSync( OUT, { recursive: true } );
+	writeFileSync( finalReport, JSON.stringify( { total: 0, pass: 0, fail: 0, skip: 0, details: [] }, null, 2 ) );
+	console.log( `[e2e-parallel] 0 examples matched filter="${ filter }" offset=${ offset } limit=${ limit }` );
+	console.log( `  report: ${ finalReport }` );
+	process.exit( 0 );
+}
 const actualWorkers = Math.min( workers, total );
 const chunk = Math.ceil( total / actualWorkers );
 
