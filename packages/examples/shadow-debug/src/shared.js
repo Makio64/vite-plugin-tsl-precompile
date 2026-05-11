@@ -70,12 +70,16 @@ function makeMaterial( color, roughness = 0.55 ) {
 	} );
 }
 
+function attachPrecompileSource( material, object, scene ) {
+	material.__tslpPrecompileObject = object;
+	material.__tslpPrecompileScene = scene;
+}
+
 function addDebugGeometry( scene ) {
 	const group = new Group();
 	group.name = 'shadow-casters';
 
 	const floorMaterial = makeMaterial( 0x9b927f, 0.7 );
-	if ( ! IS_E2E_REPLAY ) floorMaterial.precompile( 'shadow-debug-floor' );
 	const floor = new Mesh(
 		new PlaneGeometry( 8, 8 ),
 		floorMaterial,
@@ -84,30 +88,40 @@ function addDebugGeometry( scene ) {
 	floor.rotation.x = - Math.PI / 2;
 	floor.receiveShadow = true;
 	scene.add( floor );
+	if ( ! IS_E2E_REPLAY ) {
+		attachPrecompileSource( floorMaterial, floor, scene );
+		floorMaterial.precompile( 'shadow-debug-floor' );
+	}
 
 	const cubeMaterial = makeMaterial( 0xd77f47, 0.45 );
-	if ( ! IS_E2E_REPLAY ) cubeMaterial.precompile( 'shadow-debug-cube' );
 	const cube = new Mesh(
 		new BoxGeometry( 1, 1, 1 ),
 		cubeMaterial,
 	);
 	cube.name = 'cube';
-	cube.position.set( - 0.85, 0.5, 0 );
+	cube.position.set( - 0.85, 0.75, 0 );
 	cube.castShadow = true;
 	cube.receiveShadow = true;
 	group.add( cube );
+	if ( ! IS_E2E_REPLAY ) {
+		attachPrecompileSource( cubeMaterial, cube, scene );
+		cubeMaterial.precompile( 'shadow-debug-cube' );
+	}
 
 	const sphereMaterial = makeMaterial( 0x72a7d8, 0.35 );
-	if ( ! IS_E2E_REPLAY ) sphereMaterial.precompile( 'shadow-debug-sphere' );
 	const sphere = new Mesh(
 		new SphereGeometry( 0.5, 32, 16 ),
 		sphereMaterial,
 	);
 	sphere.name = 'sphere';
-	sphere.position.set( 0.85, 0.5, 0.15 );
+	sphere.position.set( 0.85, 0.75, 0.15 );
 	sphere.castShadow = true;
 	sphere.receiveShadow = true;
 	group.add( sphere );
+	if ( ! IS_E2E_REPLAY ) {
+		attachPrecompileSource( sphereMaterial, sphere, scene );
+		sphereMaterial.precompile( 'shadow-debug-sphere' );
+	}
 
 	scene.add( group );
 	return group;
