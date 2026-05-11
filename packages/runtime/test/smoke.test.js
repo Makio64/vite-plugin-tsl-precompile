@@ -536,6 +536,7 @@ test( 'runtime hydrator drives material reflectors before rebinding their textur
 	assert.equal( samplerBinding.texture, liveReflectionTexture );
 	assert.equal( textureBinding.texture, liveReflectionTexture );
 	assert.equal( depthBinding.texture, liveDepthTexture );
+	assert.equal( liveDepthTexture.compareFunction, null );
 
 } );
 

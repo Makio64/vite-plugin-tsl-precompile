@@ -1284,6 +1284,8 @@ function resolveDepthTextureFromMaterial( material, textureUuid, camera = null )
 
 function createShadowDepthRebinder( entries /* , artifact */ ) {
 
+	const lastSeen = new WeakMap();
+
 	return {
 		getUpdateBeforeType() {
 
@@ -1331,21 +1333,43 @@ function createShadowDepthRebinder( entries /* , artifact */ ) {
 
 				}
 
-				if ( ! liveTexture || liveTexture === entry.binding.texture ) continue;
+				if ( ! liveTexture ) continue;
 				if ( ! textureMatchesShaderBinding( entry.artifact, entry.bindingName, liveTexture ) ) continue;
 				const compareFunction = liveTexture.compareFunction !== null && liveTexture.compareFunction !== undefined ? liveTexture.compareFunction :
 					frame && frame.renderer && frame.renderer.reversedDepthBuffer ? GreaterEqualCompare : LessEqualCompare;
-				if ( entry.vsm !== true && liveTexture.isDepthTexture === true && liveTexture.compareFunction !== compareFunction ) {
+				if ( entry.fromMaterialGraph !== true && entry.vsm !== true && liveTexture.isDepthTexture === true && liveTexture.compareFunction !== compareFunction ) {
 
 					liveTexture.compareFunction = compareFunction;
 					liveTexture.needsUpdate = true;
 
 				}
 
-				entry.binding.texture = liveTexture;
-				if ( entry.binding.groupNode ) entry.binding.groupNode.version ++;
-				entry.binding.version = - 1;
-				entry.binding.generation = null;
+				let changed = false;
+				if ( liveTexture !== entry.binding.texture ) {
+
+					entry.binding.texture = liveTexture;
+					changed = true;
+
+				}
+
+				const renderer = frame && frame.renderer ? frame.renderer : null;
+				const data = renderer && renderer.backend ? renderer.backend.get( liveTexture ) : null;
+				const gpuTexture = data ? data.texture : null;
+				if ( gpuTexture ) {
+
+					const prev = lastSeen.get( entry.binding );
+					lastSeen.set( entry.binding, gpuTexture );
+					if ( prev !== undefined && prev !== gpuTexture ) changed = true;
+
+				}
+
+				if ( changed ) {
+
+					if ( entry.binding.groupNode ) entry.binding.groupNode.version ++;
+					entry.binding.version = - 1;
+					entry.binding.generation = null;
+
+				}
 
 			}
 
