@@ -927,6 +927,7 @@ function collectSceneMRTNode( renderer, scene, options ) {
  * @param {Array<Node>} [options.computeNodes] - Compute nodes to precompile.
  * @param {RenderPipeline} [options.renderPipeline] - Post-process pipeline to warm up.
  * @param {Object} [options.mrtNode] - Explicit MRT node to activate during warm-up.
+ * @param {boolean} [options.skipWarmupRender=false] - Skip the extra synthetic render after compileAsync.
  * @return {Promise<Array<PrecompiledArtifact>>}
  */
 export async function compileTSL( renderer, scene, camera, options = {} ) {
@@ -1148,7 +1149,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 			// be initialised (compileAsync already guaranteed that).
 			renderPipeline.render();
 
-		} else {
+		} else if ( ! options.skipWarmupRender ) {
 
 			// renderer.render() is the non-deprecated entry; compileAsync
 			// above already ran `init` so the sync form is safe.

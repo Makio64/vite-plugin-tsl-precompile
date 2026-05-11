@@ -388,23 +388,26 @@ async function captureMaterialInDev( material, name ) {
 		const clipMountPoint = mountClippingGroupsInto( ClippingGroup, sourceObject, scene );
 		clipMountPoint.add( mesh );
 
-		// MRT propagation — when the user has set `material.mrtNode` directly,
-		// OR set `renderer.setMRT(...)` and the source mesh renders to a
-		// multi-texture RenderTarget, the captured fragment shader must emit
-		// multiple `@location(N)` outputs to match the bound RT at replay.
-		// compileTSL uses `options.mrtNode` to activate MRT during warm-up.
+		// MRT propagation — the pass/global MRT defines the render-target
+		// attachment layout, while `material.mrtNode` can override individual
+		// outputs inside that layout. Prefer the pass/global descriptor when it
+		// exists so NodeMaterial.setup() can perform the same
+		// `rendererMRT.merge(materialMRT)` step it performs during live render.
+		// Fall back to a pure material-level MRT when there is no surrounding
+		// pass/global MRT.
 		//
 		// Heuristic: skip the renderer-scope fallback for fullscreen quad
 		// meshes (post-process pipelines) — those render to the canvas, not
 		// to the user's multi-target RT, so forcing MRT there would emit an
 		// empty `OutputType { }` struct and crash WGSL.
-		let mrtNode = material && material.mrtNode || null;
+		const materialMRTNode = material && material.mrtNode || null;
+		let mrtNode = null;
 		const isFullscreenQuad = sourceObject && ( sourceObject.isQuadMesh || sourceObject.constructor && sourceObject.constructor.name === 'QuadMesh' );
 		// PassNode-driven MRT (`pass(scene, cam).setMRT(...)`): aux-marker
 		// stamps the descriptor on `scene.userData.__tslp_mrtNode` because the
 		// PassNode only writes `material.mrtNode` during a live render — after
 		// our synthetic warm-up runs.
-		if ( ! mrtNode && ! isFullscreenQuad && sourceScene && sourceScene.userData && sourceScene.userData.__tslp_mrtNode ) {
+		if ( ! isFullscreenQuad && sourceScene && sourceScene.userData && sourceScene.userData.__tslp_mrtNode ) {
 
 			mrtNode = sourceScene.userData.__tslp_mrtNode;
 
@@ -414,7 +417,15 @@ async function captureMaterialInDev( material, name ) {
 			mrtNode = devRenderer.getMRT();
 
 		}
-		const extractorOpts = mrtNode ? { mrtNode } : undefined;
+		if ( ! mrtNode ) mrtNode = materialMRTNode;
+		let extractorOpts = undefined;
+		if ( mrtNode ) {
+
+			extractorOpts = { mrtNode };
+			const mrtOutputs = mrtNode.nodes || mrtNode.outputNodes || null;
+			if ( mrtOutputs && Object.keys( mrtOutputs ).length > 1 ) extractorOpts.skipWarmupRender = true;
+
+		}
 
 		const artifacts = await extractor( devRenderer, scene, camera, extractorOpts );
 
