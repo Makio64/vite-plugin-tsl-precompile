@@ -44,7 +44,11 @@
       "Bash(curl -s -o /dev/null -w \"examples: %{http_code}\\\\n\" http://localhost:5179/vite-plugin-tsl-precompile/examples.html)",
       "Bash(curl -s -o /dev/null -w \"how-it-works: %{http_code}\\\\n\" http://localhost:5179/vite-plugin-tsl-precompile/how-it-works.html)",
       "Bash(curl -s -o /dev/null -w \"examples.json: %{http_code}\\\\n\" http://localhost:5179/vite-plugin-tsl-precompile/examples.json)",
-      "Bash(curl -s http://localhost:5179/vite-plugin-tsl-precompile/)"
+      "Bash(curl -s http://localhost:5179/vite-plugin-tsl-precompile/)",
+      "Bash(TSLP_DEBUG_SHADOW_COVERAGE=1 TSLP_DEBUG_SHADOW_BINDINGS=1 timeout 280 pnpm --filter examples-shadow-debug test:e2e -- --filter=directional-basic)",
+      "Bash(node -e \"console.log\\(require.resolve\\('three'\\).replace\\(/build.three\\\\.cjs$/,''\\)\\)\")",
+      "Bash(node -e ' *)",
+      "Bash(git commit -m 'feat\\(plugin\\): minify and dedupe WGSL in emitted virtual modules' -m 'Add `minifyWgsl` and `dedupeWgsl` options \\(both default on\\). The plugin now *)"
     ],
     "additionalDirectories": [
       "/Users/davidronai/Desktop/git/vite-plugin-tsl-precompile/packages/examples/batch/results"

@@ -1,0 +1,16 @@
+{
+  "cases": [
+    { "name": "directional-basic.html", "path": "directional.html?shadow=basic" },
+    { "name": "directional-pcf.html", "path": "directional.html?shadow=pcf" },
+    { "name": "directional-pcf-soft.html", "path": "directional.html?shadow=pcf-soft" },
+    { "name": "directional-vsm.html", "path": "directional.html?shadow=vsm" },
+    { "name": "spot-basic.html", "path": "spot.html?shadow=basic" },
+    { "name": "spot-pcf.html", "path": "spot.html?shadow=pcf" },
+    { "name": "spot-pcf-soft.html", "path": "spot.html?shadow=pcf-soft" },
+    { "name": "spot-vsm.html", "path": "spot.html?shadow=vsm" },
+    { "name": "point-basic.html", "path": "point.html?shadow=basic" },
+    { "name": "point-pcf.html", "path": "point.html?shadow=pcf" },
+    { "name": "point-pcf-soft.html", "path": "point.html?shadow=pcf-soft" },
+    { "name": "point-vsm.html", "path": "point.html?shadow=vsm" }
+  ]
+}
