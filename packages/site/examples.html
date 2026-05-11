@@ -4,12 +4,12 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta name="color-scheme" content="dark">
-	<meta name="description" content="Compiled three.js TSL examples gallery — every webgpu_* example run end-to-end through vite-plugin-tsl-precompile.">
-	<meta property="og:title" content="vite-plugin-tsl-precompile · examples gallery">
-	<meta property="og:description" content="195 three.js TSL examples precompiled to static WGSL. PSNR-graded against live three.js.">
+	<meta name="description" content="Side-by-side: live three.js vs the slim runtime replay. Every webgpu_* TSL example, precompiled and pixel-diffed.">
+	<meta property="og:title" content="vite-plugin-tsl-precompile · live vs replay">
+	<meta property="og:description" content="Drag the slider. Watch live three.js and the slim precompiled runtime overlap pixel-for-pixel — or not.">
 	<meta property="og:type" content="website">
 	<link rel="icon" type="image/svg+xml" href="/favicon.svg">
-	<title>examples — vite-plugin-tsl-precompile</title>
+	<title>compare — vite-plugin-tsl-precompile</title>
 	<link rel="stylesheet" href="/src/styles.css">
 	<link rel="stylesheet" href="/src/examples.css">
 </head>
@@ -24,56 +24,50 @@
 		<div class="site-nav-links">
 			<a href="/">Overview</a>
 			<a href="how-it-works.html">How it works</a>
-			<a class="site-nav-current" aria-current="page" href="examples.html">Examples</a>
+			<a class="site-nav-current" aria-current="page" href="examples.html">Compare</a>
 			<a href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">GitHub ↗</a>
 		</div>
 	</nav>
 
-	<!-- ========== HEADER + METRICS STRIP (collapsible) ========== -->
-	<details class="ex-header-shell" id="ex-header-shell">
-		<summary class="ex-header-summary">
-			<span class="ex-header-summary-text">
-				<strong>The three.js TSL suite, precompiled.</strong>
-				<span class="muted">— click to expand methodology &amp; metrics</span>
-			</span>
-		</summary>
-		<header class="ex-header">
-			<p class="eyebrow">examples gallery</p>
-			<h1 class="ex-title">
-				The three.js TSL suite, <span class="accent">precompiled</span>.
+	<!-- ========== HERO ========== -->
+	<header class="ex-hero">
+		<div class="ex-hero-inner">
+			<p class="eyebrow">live three.js&nbsp; vs &nbsp;slim precompiled runtime</p>
+			<h1 class="ex-hero-title">
+				Drag the seam. See the diff.
 			</h1>
-			<p class="ex-lead">
-				We ran every <code>webgpu_*</code> TSL example from three.js end-to-end through
-				<code>vite-plugin-tsl-precompile</code> &rarr; the slim runtime, then diffed every replayed
-				frame against live three.js.
+			<p class="ex-hero-lead">
+				Every <code>webgpu_*</code> TSL example, captured against live three.js and replayed through
+				the precompiled slim runtime. Pick an example, slide the handle, and read the PSNR.
 			</p>
 
-			<ul class="ex-metrics" id="ex-metrics" aria-label="Headline metrics">
-				<li class="ex-metric"><span class="ex-metric-num" data-key="examplesProcessed">—</span><span class="ex-metric-lab">three.js TSL examples processed</span></li>
-				<li class="ex-metric"><span class="ex-metric-num" data-key="materialsBaked">—</span><span class="ex-metric-lab">materials baked to static WGSL</span></li>
-				<li class="ex-metric"><span class="ex-metric-num" data-key="wgslKb">—</span><span class="ex-metric-lab">of WGSL emitted ahead-of-time</span></li>
-				<li class="ex-metric"><span class="ex-metric-num">0</span><span class="ex-metric-lab">runtime node-graph compilations</span></li>
-				<li class="ex-metric"><span class="ex-metric-num" data-key="smokePassRate">—</span><span class="ex-metric-lab">load-smoke pass-rate</span></li>
-				<li class="ex-metric"><span class="ex-metric-num" data-key="pixelMatchCount">—</span><span class="ex-metric-lab">render pixel-identical to live three.js</span></li>
+			<!-- Tier breakdown stacked bar -->
+			<div class="ex-tier-bar" id="ex-tier-bar" aria-label="Coverage breakdown">
+				<div class="ex-tier-segment" data-tier="pixel-match" style="--pct: 0"></div>
+				<div class="ex-tier-segment" data-tier="visual-match" style="--pct: 0"></div>
+				<div class="ex-tier-segment" data-tier="renders" style="--pct: 0"></div>
+				<div class="ex-tier-segment" data-tier="capture-only" style="--pct: 0"></div>
+			</div>
+			<ul class="ex-tier-legend" aria-hidden="true">
+				<li><span class="ex-dot ex-dot-pixel"></span><strong data-key="pixelMatchCount">—</strong> pixel-match <span class="muted">≥ 30 dB</span></li>
+				<li><span class="ex-dot ex-dot-visual"></span><strong data-key="visualMatchCount">—</strong> visual-match <span class="muted">≥ 20 dB</span></li>
+				<li><span class="ex-dot ex-dot-renders"></span><strong data-key="rendersCount">—</strong> renders</li>
+				<li><span class="ex-dot ex-dot-capture"></span><strong data-key="captureOnlyCount">—</strong> capture only</li>
 			</ul>
-			<p class="ex-metrics-foot">
-				Numbers reproducible from
-				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/packages/examples/batch/results/coverage-summary.md" rel="noopener">coverage-summary.md</a>
-				&middot; PSNR-graded with a 30 dB threshold &middot; the slim runtime ships with
-				<strong>zero</strong> node-builder code.
-			</p>
 
-			<section class="ex-legend" aria-label="Per-card badges">
-				<span class="ex-legend-item"><span class="ex-dot ex-dot-pixel"></span><strong>pixel-match</strong> &middot; PSNR &ge; 30 dB</span>
-				<span class="ex-legend-item"><span class="ex-dot ex-dot-visual"></span><strong>visual-match</strong> &middot; PSNR &ge; 20 dB</span>
-				<span class="ex-legend-item"><span class="ex-dot ex-dot-renders"></span><strong>renders</strong> &middot; replay produced a frame</span>
-				<span class="ex-legend-item"><span class="ex-dot ex-dot-capture"></span><strong>capture-only</strong> &middot; no replay frame yet</span>
-			</section>
-		</header>
-	</details>
+			<!-- Compact KPI strip -->
+			<ul class="ex-kpis">
+				<li><span class="ex-kpi-num" data-key="examplesProcessed">—</span><span class="ex-kpi-lab">examples</span></li>
+				<li><span class="ex-kpi-num" data-key="materialsBaked">—</span><span class="ex-kpi-lab">materials baked</span></li>
+				<li><span class="ex-kpi-num" data-key="wgslKb">—</span><span class="ex-kpi-lab">WGSL emitted</span></li>
+				<li><span class="ex-kpi-num">0</span><span class="ex-kpi-lab">runtime builder calls</span></li>
+				<li><span class="ex-kpi-num" data-key="smokePassRate">—</span><span class="ex-kpi-lab">load-smoke pass</span></li>
+			</ul>
+		</div>
+	</header>
 
 	<!-- ========== BROWSER (sidebar + stage) ========== -->
-	<section class="ex-browser" aria-label="Examples browser">
+	<section class="ex-browser" aria-label="Examples comparison">
 		<button type="button" class="ex-drawer-toggle" id="ex-drawer-toggle" aria-controls="ex-sidebar" aria-expanded="false">
 			<span class="ex-drawer-toggle-icon" aria-hidden="true">☰</span>
 			<span>Browse <span id="ex-drawer-count">—</span> examples</span>
@@ -89,6 +83,7 @@
 		</aside>
 
 		<main class="ex-stage" id="ex-stage" tabindex="-1">
+			<!-- Toolbar: prev/next + title + badge -->
 			<div class="ex-stage-toolbar">
 				<button type="button" class="ex-stage-nav" id="ex-prev" aria-label="Previous example" disabled>
 					<span aria-hidden="true">←</span> Prev
@@ -103,46 +98,99 @@
 				</button>
 			</div>
 
-			<div class="ex-stage-viewport" id="ex-stage-viewport">
-				<!--
-					Image-based stage today. To wire live precompile-replay iframes later,
-					replace this <img id="ex-stage-view"> with <iframe id="ex-stage-view"
-					src="/examples/<basename>.html"> at the same DOM slot — no other
-					layout changes needed.
-				-->
-				<img id="ex-stage-view" class="ex-stage-view" alt="" loading="eager" decoding="async">
-				<div class="ex-stage-empty" id="ex-stage-empty" hidden>No replay frame for this example yet.</div>
-				<div class="ex-stage-toggle" role="tablist" aria-label="Compare view">
-					<button type="button" role="tab" aria-selected="true" data-view="replay">Slim replay</button>
-					<button type="button" role="tab" aria-selected="false" data-view="capture">Live three.js</button>
+			<!-- Mode tabs: Slider / Split / Solo -->
+			<div class="ex-mode-tabs" role="tablist" aria-label="Comparison mode">
+				<button type="button" role="tab" data-mode="slider" aria-selected="true">
+					<span class="ex-mode-icon" aria-hidden="true">⇄</span> Slider
+				</button>
+				<button type="button" role="tab" data-mode="split" aria-selected="false">
+					<span class="ex-mode-icon" aria-hidden="true">▮▮</span> Side-by-side
+				</button>
+				<button type="button" role="tab" data-mode="solo" aria-selected="false">
+					<span class="ex-mode-icon" aria-hidden="true">▢</span> Solo
+				</button>
+			</div>
+
+			<!-- Comparison viewport: holds slider, split, or solo presentations -->
+			<div class="cmp-viewport" id="cmp-viewport" data-mode="slider">
+
+				<!-- Slider presentation -->
+				<div class="cmp-slider" data-pane="slider">
+					<img class="cmp-img cmp-img-bottom" id="cmp-slider-bottom" alt="" loading="eager" decoding="async">
+					<div class="cmp-img-clip" id="cmp-slider-clip">
+						<img class="cmp-img cmp-img-top" id="cmp-slider-top" alt="" loading="eager" decoding="async">
+					</div>
+					<div class="cmp-label cmp-label-left" id="cmp-slider-label-left">Live three.js</div>
+					<div class="cmp-label cmp-label-right" id="cmp-slider-label-right">Slim replay</div>
+					<button type="button" class="cmp-handle" id="cmp-handle" aria-label="Drag to compare" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+						<span class="cmp-handle-bar" aria-hidden="true"></span>
+						<span class="cmp-handle-grip" aria-hidden="true">
+							<span class="cmp-handle-arrow">‹</span>
+							<span class="cmp-handle-arrow">›</span>
+						</span>
+					</button>
+				</div>
+
+				<!-- Split presentation -->
+				<div class="cmp-split" data-pane="split">
+					<figure class="cmp-half">
+						<img class="cmp-img" id="cmp-split-left" alt="" loading="lazy" decoding="async">
+						<figcaption class="cmp-half-cap"><span class="ex-dot ex-dot-capture"></span>Live three.js</figcaption>
+					</figure>
+					<figure class="cmp-half">
+						<img class="cmp-img" id="cmp-split-right" alt="" loading="lazy" decoding="async">
+						<figcaption class="cmp-half-cap"><span class="ex-dot ex-dot-pixel"></span>Slim replay</figcaption>
+					</figure>
+				</div>
+
+				<!-- Solo presentation -->
+				<div class="cmp-solo" data-pane="solo">
+					<img class="cmp-img" id="cmp-solo-img" alt="" loading="lazy" decoding="async">
+					<div class="cmp-solo-toggle" role="tablist" aria-label="Solo view">
+						<button type="button" role="tab" data-solo="capture" aria-selected="false">Live three.js</button>
+						<button type="button" role="tab" data-solo="replay" aria-selected="true">Slim replay</button>
+					</div>
+				</div>
+
+				<div class="cmp-empty" id="cmp-empty" hidden>No frame available for this example yet.</div>
+
+				<!-- Floating PSNR readout (always present, all modes) -->
+				<div class="cmp-psnr-chip" id="cmp-psnr-chip" hidden>
+					<span class="cmp-psnr-num" id="cmp-psnr-num">—</span>
+					<span class="cmp-psnr-lab">PSNR</span>
 				</div>
 			</div>
 
+			<!-- Stats + actions + notes -->
 			<div class="ex-stage-meta">
 				<div class="ex-stage-stats" id="ex-stage-stats"></div>
 				<div class="ex-stage-actions">
 					<a class="ex-stage-cta" id="ex-stage-cta" href="#" target="_blank" rel="noopener">View original on threejs.org →</a>
+					<button type="button" class="ex-stage-share" id="ex-stage-share" title="Copy direct link to this example">
+						<span aria-hidden="true">🔗</span> Copy link
+					</button>
 				</div>
 				<div class="ex-stage-notes" id="ex-stage-notes" hidden></div>
 			</div>
 		</main>
 	</section>
 
-	<!-- ========== METHODOLOGY ========== -->
+	<!-- ========== METHODOLOGY (compact) ========== -->
 	<section class="ex-methodology">
-		<h2>How these numbers were produced</h2>
-		<ol class="ex-method-list">
-			<li>Each three.js <code>webgpu_*</code> TSL example is loaded in headless Chrome with a deterministic <code>requestAnimationFrame</code> shim.</li>
-			<li>The <strong>capture</strong> screenshot is taken against live three.js running the full TSL node builder &mdash; this is the golden reference.</li>
-			<li>The same scene is replayed against <code>three/webgpu/slim</code> using the artifact emitted by this plugin &mdash; no node builder ships.</li>
-			<li>Capture and replay are diffed pixel-for-pixel; PSNR &ge; 30 dB is the &ldquo;visually identical&rdquo; gate (ITSD-R standard for human-imperceptible difference).</li>
-			<li>The <em>load-smoke</em> rate counts every example that runs to first frame without throwing &mdash; whether the pixels match or not.</li>
-		</ol>
-		<p class="muted">
-			Triage notes for each regression cluster live in the
-			<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/tree/main/packages/examples/batch/results" rel="noopener">batch results folder</a>
-			on GitHub.
-		</p>
+		<details>
+			<summary><strong>How these numbers were produced</strong> <span class="muted">— click to expand</span></summary>
+			<ol class="ex-method-list">
+				<li>Each three.js <code>webgpu_*</code> TSL example is loaded in headless Chrome with a deterministic <code>requestAnimationFrame</code> shim.</li>
+				<li>The <strong>capture</strong> screenshot is taken against live three.js running the full TSL node builder — this is the golden reference.</li>
+				<li>The same scene is replayed against <code>three/webgpu/slim</code> using the artifact emitted by this plugin — <em>no node builder ships</em>.</li>
+				<li>Capture and replay are diffed pixel-for-pixel; PSNR ≥ 30 dB is the “visually identical” gate.</li>
+				<li>The <em>load-smoke</em> rate counts every example that runs to first frame without throwing — whether the pixels match or not.</li>
+			</ol>
+			<p class="muted">
+				Reproducible from <a href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/packages/examples/batch/results/coverage-summary.md" rel="noopener">coverage-summary.md</a>.
+				Triage notes per regression cluster live in the <a href="https://github.com/Makio64/vite-plugin-tsl-precompile/tree/main/packages/examples/batch/results" rel="noopener">batch results folder</a>.
+			</p>
+		</details>
 	</section>
 
 	<!-- ========== FOOTER ========== -->
@@ -150,7 +198,7 @@
 		<div class="footer-inner">
 			<div>
 				<strong class="mono">vite-plugin-tsl-precompile</strong>
-				<span class="footer-sep">&middot;</span>
+				<span class="footer-sep">·</span>
 				<span class="muted">MIT</span>
 			</div>
 			<nav class="footer-nav">

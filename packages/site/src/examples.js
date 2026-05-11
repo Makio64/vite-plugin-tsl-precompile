@@ -1,5 +1,5 @@
-// Examples browser. Reads /examples.json, renders sidebar list + main stage,
-// handles filter / search / hash routing / prev-next / keyboard nav.
+// Compare page — reads /examples.json, renders sidebar + comparison stage.
+// Three view modes: slider (default, draggable seam), split (side-by-side), solo (single image with toggle).
 // Vanilla DOM, no framework — matches the rest of the site.
 
 const TIER_LABEL = {
@@ -18,13 +18,17 @@ const TIER_CHIPS = [
 	{ id: 'capture-only', totalsKey: 'captureOnlyCount' },
 ];
 
+const VALID_MODES = new Set( [ 'slider', 'split', 'solo' ] );
+
 const state = {
 	data: null,
 	filter: 'all',
 	query: '',
-	view: [],            // currently filtered+sorted array (the prev/next walk path)
+	view: [],                 // currently filtered+sorted array (the prev/next walk path)
 	currentBasename: null,
-	stageView: 'replay', // 'replay' | 'capture'
+	mode: 'slider',           // 'slider' | 'split' | 'solo'
+	soloSide: 'replay',       // 'replay' | 'capture' — used in solo mode
+	sliderPos: 50,            // % — used in slider mode
 };
 
 const $ = sel => document.querySelector( sel );
@@ -63,11 +67,27 @@ function renderMetrics( totals ) {
 		wgslKb: `${Math.round( totals.wgslBytes / 1024 )} KB`,
 		smokePassRate: `${totals.smokePassRate}%`,
 		pixelMatchCount: totals.pixelMatchCount,
+		visualMatchCount: totals.visualMatchCount,
+		rendersCount: totals.rendersCount,
+		captureOnlyCount: totals.captureOnlyCount,
 	};
 	for ( const el of document.querySelectorAll( '[data-key]' ) ) {
 		const k = el.getAttribute( 'data-key' );
 		if ( map[ k ] != null ) el.textContent = map[ k ];
 	}
+}
+
+function renderTierBar( totals ) {
+	const total = ( totals.pixelMatchCount ?? 0 )
+		+ ( totals.visualMatchCount ?? 0 )
+		+ ( totals.rendersCount ?? 0 )
+		+ ( totals.captureOnlyCount ?? 0 );
+	if ( ! total ) return;
+	const pct = key => ( ( totals[ key ] ?? 0 ) / total ) * 100;
+	document.querySelector( '.ex-tier-segment[data-tier="pixel-match"]' ).style.setProperty( '--pct', pct( 'pixelMatchCount' ) );
+	document.querySelector( '.ex-tier-segment[data-tier="visual-match"]' ).style.setProperty( '--pct', pct( 'visualMatchCount' ) );
+	document.querySelector( '.ex-tier-segment[data-tier="renders"]' ).style.setProperty( '--pct', pct( 'rendersCount' ) );
+	document.querySelector( '.ex-tier-segment[data-tier="capture-only"]' ).style.setProperty( '--pct', pct( 'captureOnlyCount' ) );
 }
 
 function renderChips( categories, totals ) {
@@ -125,8 +145,6 @@ function applyFilters( examples ) {
 }
 
 function defaultSort( xs ) {
-	// "Featured-style": tier rank first, then PSNR descending. Same as the
-	// previous gallery default — gives a stable, useful ordering for the sidebar.
 	const sorted = xs.slice();
 	sorted.sort( ( a, b ) => {
 		const ta = TIER_RANK[ a.badge ] ?? 9;
@@ -138,9 +156,6 @@ function defaultSort( xs ) {
 }
 
 function groupByCategory( xs ) {
-	// Preserve sort order within each category bucket, but emit categories in
-	// the order they first appear in `xs` so the sidebar reads top-down in the
-	// same order the sorted list ranks them.
 	const buckets = new Map();
 	for ( const r of xs ) {
 		if ( ! buckets.has( r.category ) ) buckets.set( r.category, { label: r.categoryLabel, items: [] } );
@@ -159,8 +174,6 @@ function renderSidebar() {
 	}
 	empty.hidden = true;
 
-	// Don't group when the user is searching or filtering by tier — the result
-	// set is small and a flat list reads better.
 	const flat = state.query || state.filter in TIER_LABEL;
 	const groups = flat
 		? [ { id: '__flat__', label: null, items: state.view } ]
@@ -188,14 +201,44 @@ function renderSidebar() {
 		</details>`;
 	} ).join( '' );
 
-	// Scroll the current item into view inside the sidebar.
 	const current = listEl.querySelector( '.is-current' );
 	if ( current ) current.scrollIntoView( { block: 'nearest', behavior: 'auto' } );
+}
+
+function setSliderPos( pct ) {
+	const v = Math.max( 0, Math.min( 100, pct ) );
+	state.sliderPos = v;
+	const slider = document.querySelector( '.cmp-slider' );
+	if ( slider ) slider.style.setProperty( '--slider-pos', `${v}%` );
+	const handle = $( '#cmp-handle' );
+	if ( handle ) handle.setAttribute( 'aria-valuenow', Math.round( v ) );
+}
+
+function setMode( mode ) {
+	if ( ! VALID_MODES.has( mode ) ) return;
+	state.mode = mode;
+	$( '#cmp-viewport' ).dataset.mode = mode;
+	for ( const btn of document.querySelectorAll( '.ex-mode-tabs [data-mode]' ) ) {
+		btn.setAttribute( 'aria-selected', btn.dataset.mode === mode ? 'true' : 'false' );
+	}
+	renderStage();
+}
+
+function setSoloSide( side ) {
+	if ( side !== 'replay' && side !== 'capture' ) return;
+	state.soloSide = side;
+	for ( const btn of document.querySelectorAll( '.cmp-solo-toggle [data-solo]' ) ) {
+		btn.setAttribute( 'aria-selected', btn.dataset.solo === side ? 'true' : 'false' );
+	}
+	renderStage();
 }
 
 function renderStage() {
 	const r = state.data.examples.find( x => x.basename === state.currentBasename );
 	const stage = $( '#ex-stage' );
+	const psnrChip = $( '#cmp-psnr-chip' );
+	const empty = $( '#cmp-empty' );
+
 	if ( ! r ) {
 		stage.dataset.empty = 'true';
 		$( '#ex-stage-title' ).textContent = 'No example selected';
@@ -203,8 +246,11 @@ function renderStage() {
 		$( '#ex-stage-badge' ).innerHTML = '';
 		$( '#ex-stage-stats' ).innerHTML = '';
 		$( '#ex-stage-cta' ).hidden = true;
-		$( '#ex-stage-empty' ).hidden = false;
-		$( '#ex-stage-view' ).removeAttribute( 'src' );
+		$( '#ex-stage-share' ).hidden = true;
+		psnrChip.hidden = true;
+		empty.hidden = false;
+		// Clear images
+		for ( const img of document.querySelectorAll( '.cmp-img' ) ) img.removeAttribute( 'src' );
 		return;
 	}
 	stage.dataset.empty = 'false';
@@ -216,33 +262,91 @@ function renderStage() {
 	const psnr = fmtPsnr( r.pixel );
 	$( '#ex-stage-badge' ).innerHTML = `<span class="ex-dot ex-dot-${escapeHtml( r.badge )}"></span>${escapeHtml( tier )} &middot; ${escapeHtml( psnr )}`;
 
-	// Image source — pick replay vs capture per current toggle, fall back to whichever exists.
 	const replaySrc = r.thumbReplayModal ?? r.thumbReplay;
 	const captureSrc = r.thumbCaptureModal ?? r.thumbCapture;
-	const wantReplay = state.stageView === 'replay';
-	const src = ( wantReplay ? replaySrc : captureSrc ) ?? replaySrc ?? captureSrc;
-	const view = $( '#ex-stage-view' );
-	const empty = $( '#ex-stage-empty' );
-	if ( src ) {
-		view.src = src;
-		view.alt = `${r.displayName} — ${wantReplay ? 'slim runtime replay' : 'live three.js capture'}`;
-		view.hidden = false;
-		empty.hidden = true;
+
+	// PSNR chip
+	if ( replaySrc && captureSrc ) {
+		psnrChip.hidden = false;
+		psnrChip.dataset.tier = r.badge;
+		$( '#cmp-psnr-num' ).textContent = psnr;
 	} else {
-		view.removeAttribute( 'src' );
-		view.hidden = true;
-		empty.hidden = false;
+		psnrChip.hidden = true;
 	}
 
-	// Per-toggle availability indicator.
-	for ( const btn of document.querySelectorAll( '.ex-stage-toggle [data-view]' ) ) {
-		const which = btn.dataset.view;
+	// Mode-tab availability: slider/split need both sources; solo needs at least one.
+	const hasBoth = !! replaySrc && !! captureSrc;
+	const hasAny = !! replaySrc || !! captureSrc;
+	for ( const btn of document.querySelectorAll( '.ex-mode-tabs [data-mode]' ) ) {
+		const m = btn.dataset.mode;
+		btn.disabled = ( m === 'slider' || m === 'split' ) ? ! hasBoth : ! hasAny;
+	}
+	// Auto-fallback if current mode is unsupported for this example.
+	let effectiveMode = state.mode;
+	if ( ( effectiveMode === 'slider' || effectiveMode === 'split' ) && ! hasBoth ) {
+		effectiveMode = hasAny ? 'solo' : effectiveMode;
+		$( '#cmp-viewport' ).dataset.mode = effectiveMode;
+		for ( const btn of document.querySelectorAll( '.ex-mode-tabs [data-mode]' ) ) {
+			btn.setAttribute( 'aria-selected', btn.dataset.mode === effectiveMode ? 'true' : 'false' );
+		}
+	}
+
+	if ( ! hasAny ) {
+		empty.hidden = false;
+		for ( const img of document.querySelectorAll( '.cmp-img' ) ) img.removeAttribute( 'src' );
+		$( '#ex-stage-cta' ).hidden = ! r.threejsUrl;
+		if ( r.threejsUrl ) $( '#ex-stage-cta' ).href = r.threejsUrl;
+		updateNotes( r );
+		updateStats( r );
+		updateNav();
+		return;
+	}
+	empty.hidden = true;
+
+	// Wire all image elements (slider top/bottom, split left/right, solo).
+	// In slider: bottom = replay (revealed by default at 50%), top (clipped from left) = capture.
+	const sliderTop = $( '#cmp-slider-top' );        // capture (clipped)
+	const sliderBottom = $( '#cmp-slider-bottom' );  // replay (full)
+	const splitLeft = $( '#cmp-split-left' );        // capture
+	const splitRight = $( '#cmp-split-right' );      // replay
+	const soloImg = $( '#cmp-solo-img' );
+
+	if ( captureSrc ) sliderTop.src = captureSrc; else sliderTop.removeAttribute( 'src' );
+	if ( replaySrc ) sliderBottom.src = replaySrc; else sliderBottom.removeAttribute( 'src' );
+	if ( captureSrc ) splitLeft.src = captureSrc; else splitLeft.removeAttribute( 'src' );
+	if ( replaySrc ) splitRight.src = replaySrc; else splitRight.removeAttribute( 'src' );
+
+	// Solo: pick the requested side, fall back to whichever exists.
+	const wantReplay = state.soloSide === 'replay';
+	const soloSrc = ( wantReplay ? replaySrc : captureSrc ) ?? replaySrc ?? captureSrc;
+	if ( soloSrc ) {
+		soloImg.src = soloSrc;
+		soloImg.alt = `${r.displayName} — ${wantReplay ? 'slim replay' : 'live three.js'}`;
+	}
+	for ( const btn of document.querySelectorAll( '.cmp-solo-toggle [data-solo]' ) ) {
+		const which = btn.dataset.solo;
 		const has = which === 'replay' ? !! replaySrc : !! captureSrc;
 		btn.disabled = ! has;
-		btn.setAttribute( 'aria-selected', state.stageView === which ? 'true' : 'false' );
+		btn.setAttribute( 'aria-selected', state.soloSide === which ? 'true' : 'false' );
 	}
 
-	// Stats row.
+	updateStats( r );
+	updateNotes( r );
+
+	const cta = $( '#ex-stage-cta' );
+	if ( r.threejsUrl ) {
+		cta.hidden = false;
+		cta.href = r.threejsUrl;
+	} else {
+		cta.hidden = true;
+	}
+	$( '#ex-stage-share' ).hidden = false;
+
+	updateNav();
+}
+
+function updateStats( r ) {
+	const psnr = fmtPsnr( r.pixel );
 	const stats = [
 		[ 'PSNR vs three.js', psnr ],
 		[ 'materials', r.materialCount ?? '—' ],
@@ -252,25 +356,18 @@ function renderStage() {
 	$( '#ex-stage-stats' ).innerHTML = stats.map( ( [ lab, val ] ) =>
 		`<div class="ex-stage-stat"><div class="ex-stage-stat-num">${escapeHtml( String( val ) )}</div><div class="ex-stage-stat-lab">${escapeHtml( lab )}</div></div>`
 	).join( '' );
+}
 
-	const cta = $( '#ex-stage-cta' );
-	if ( r.threejsUrl ) {
-		cta.hidden = false;
-		cta.href = r.threejsUrl;
-	} else {
-		cta.hidden = true;
-	}
-
-	// Notes / explainer block.
+function updateNotes( r ) {
 	const notesEl = $( '#ex-stage-notes' );
 	const parts = [];
 	if ( r.notes ) parts.push( `<p class="ex-stage-note">${escapeHtml( r.notes )}</p>` );
-	if ( r.badge !== 'pixel-match' ) {
+	if ( r.badge !== 'pixel-match' && r.badge !== 'visual-match' ) {
 		parts.push( `<div class="ex-stage-note-block">
 			<strong>Why doesn&rsquo;t this match pixel-perfect?</strong>
-			The slim runtime is still wiring through PMREM environment maps, asynchronous texture-load timing,
-			and post-process render-target chains. The shader compiles and runs &mdash; visual output diverges
-			from live three.js until those clusters land.
+			The slim runtime is still hardening shadow/depth rebinding, transmission and viewport textures,
+			asynchronous texture-load timing, and broad post-process render-target chains. The shader compiles
+			and runs &mdash; visual output can diverge from live three.js until those clusters land.
 			Track progress in <a href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/ROADMAP.md" rel="noopener">ROADMAP.md</a>.
 		</div>` );
 	}
@@ -280,8 +377,9 @@ function renderStage() {
 	} else {
 		notesEl.hidden = true;
 	}
+}
 
-	// Prev/Next state.
+function updateNav() {
 	const idx = state.view.findIndex( x => x.basename === state.currentBasename );
 	$( '#ex-prev' ).disabled = idx <= 0;
 	$( '#ex-next' ).disabled = idx === - 1 || idx >= state.view.length - 1;
@@ -297,7 +395,6 @@ function selectExample( basename, opts = {} ) {
 			history.replaceState( null, '', hash );
 		}
 	}
-	// Mark sidebar selection without re-rendering the whole list.
 	for ( const a of document.querySelectorAll( '.ex-side-item' ) ) {
 		const isCurrent = a.dataset.basename === basename;
 		a.classList.toggle( 'is-current', isCurrent );
@@ -314,7 +411,6 @@ function rebuildView( opts = {} ) {
 	state.view = defaultSort( filtered );
 	renderSidebar();
 
-	// Pick a selection: keep the current one if still in view, else fall back to first.
 	const stillIn = state.view.some( x => x.basename === state.currentBasename );
 	if ( opts.keepSelection && stillIn ) {
 		renderStage();
@@ -346,22 +442,114 @@ function bindStage() {
 		if ( idx >= 0 && idx < state.view.length - 1 ) selectExample( state.view[ idx + 1 ].basename );
 	} );
 
-	const toggle = document.querySelector( '.ex-stage-toggle' );
-	toggle.addEventListener( 'click', e => {
-		const btn = e.target.closest( '[data-view]' );
+	// Mode tabs
+	document.querySelector( '.ex-mode-tabs' ).addEventListener( 'click', e => {
+		const btn = e.target.closest( '[data-mode]' );
 		if ( ! btn || btn.disabled ) return;
-		state.stageView = btn.dataset.view;
-		renderStage();
+		setMode( btn.dataset.mode );
 	} );
+
+	// Solo side toggle
+	document.querySelector( '.cmp-solo-toggle' ).addEventListener( 'click', e => {
+		const btn = e.target.closest( '[data-solo]' );
+		if ( ! btn || btn.disabled ) return;
+		setSoloSide( btn.dataset.solo );
+	} );
+
+	// Copy link
+	$( '#ex-stage-share' ).addEventListener( 'click', async () => {
+		try {
+			await navigator.clipboard.writeText( location.href );
+			const btn = $( '#ex-stage-share' );
+			btn.classList.add( 'is-copied' );
+			const orig = btn.innerHTML;
+			btn.innerHTML = '<span aria-hidden="true">✓</span> Copied';
+			setTimeout( () => {
+				btn.classList.remove( 'is-copied' );
+				btn.innerHTML = orig;
+			}, 1500 );
+		} catch ( err ) {
+			// Clipboard blocked; ignore silently.
+		}
+	} );
+}
+
+function bindSlider() {
+	const slider = document.querySelector( '.cmp-slider' );
+	const handle = $( '#cmp-handle' );
+	if ( ! slider || ! handle ) return;
+
+	let dragging = false;
+
+	function updateFromClientX( clientX ) {
+		const rect = slider.getBoundingClientRect();
+		const pct = ( ( clientX - rect.left ) / rect.width ) * 100;
+		setSliderPos( pct );
+	}
+
+	function onPointerDown( e ) {
+		// Only react in slider mode.
+		if ( state.mode !== 'slider' ) return;
+		dragging = true;
+		handle.setPointerCapture?.( e.pointerId );
+		updateFromClientX( e.clientX );
+		e.preventDefault();
+	}
+	function onPointerMove( e ) {
+		if ( ! dragging ) return;
+		updateFromClientX( e.clientX );
+	}
+	function onPointerUp() {
+		dragging = false;
+	}
+
+	// Click anywhere on the slider (not just the handle) jumps the seam.
+	slider.addEventListener( 'pointerdown', e => {
+		if ( state.mode !== 'slider' ) return;
+		// Skip if the press began on the handle — that's a drag, handled below.
+		if ( e.target.closest( '.cmp-handle' ) ) return;
+		updateFromClientX( e.clientX );
+	} );
+
+	handle.addEventListener( 'pointerdown', onPointerDown );
+	window.addEventListener( 'pointermove', onPointerMove );
+	window.addEventListener( 'pointerup', onPointerUp );
+	window.addEventListener( 'pointercancel', onPointerUp );
+
+	// Keyboard arrows on handle nudge by 2% / 10%-with-shift.
+	handle.addEventListener( 'keydown', e => {
+		let delta = 0;
+		const step = e.shiftKey ? 10 : 2;
+		if ( e.key === 'ArrowLeft' ) delta = - step;
+		else if ( e.key === 'ArrowRight' ) delta = step;
+		else if ( e.key === 'Home' ) { setSliderPos( 0 ); e.preventDefault(); return; }
+		else if ( e.key === 'End' ) { setSliderPos( 100 ); e.preventDefault(); return; }
+		if ( delta ) {
+			setSliderPos( state.sliderPos + delta );
+			e.preventDefault();
+			e.stopPropagation();
+		}
+	} );
+
+	// Double-click resets to 50%.
+	handle.addEventListener( 'dblclick', () => setSliderPos( 50 ) );
 }
 
 function bindKeyboard() {
 	window.addEventListener( 'keydown', e => {
 		if ( e.target.matches( 'input, textarea, [contenteditable="true"]' ) ) return;
+		// Don't fight with slider-handle arrows.
+		if ( e.target.closest?.( '.cmp-handle' ) ) return;
 		if ( e.key === 'ArrowLeft' ) {
 			$( '#ex-prev' ).click();
 		} else if ( e.key === 'ArrowRight' ) {
 			$( '#ex-next' ).click();
+		} else if ( e.key === '1' ) {
+			setMode( 'slider' );
+		} else if ( e.key === '2' ) {
+			setMode( 'split' );
+		} else if ( e.key === '3' ) {
+			setMode( 'solo' );
 		}
 	} );
 }
@@ -418,15 +606,19 @@ async function init() {
 	$( '#ex-drawer-count' ).textContent = data.totals.examplesProcessed;
 
 	renderMetrics( data.totals );
+	renderTierBar( data.totals );
 	renderChips( data.categories, data.totals );
 	bindSidebar();
 	bindStage();
+	bindSlider();
 	bindSearch();
 	bindKeyboard();
 	bindHash();
 	bindDrawer();
 
-	// Build view, then honor URL hash if present and valid.
+	// Initial seam position
+	setSliderPos( 50 );
+
 	const filtered = applyFilters( data.examples );
 	state.view = defaultSort( filtered );
 	renderSidebar();
