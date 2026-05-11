@@ -1364,6 +1364,26 @@ function rewriteWebGPURenderer( ast, ctx ) {
 		// arrow assignment so the WebGLBackend reference is fully gone.
 		AssignmentExpression( path ) {
 
+			// `BackendClass = WebGLBackend` (line 59 of WebGPURenderer.js) —
+			// bare identifier reference under `if (parameters.forceWebGL)`.
+			// Without this rewrite, removing the import leaves a dangling
+			// reference that throws `WebGLBackend is not defined` at runtime.
+			// Replace the RHS with an IIFE throw so the user sees the same
+			// loud error as the `new WebGLBackend(...)` rewrite above.
+			if ( t.isIdentifier( path.node.right, { name: 'WebGLBackend' } ) ) {
+
+				path.node.right = t.callExpression(
+					t.arrowFunctionExpression( [], t.blockStatement( [
+						t.throwStatement( t.newExpression( t.identifier( 'Error' ), [
+							t.stringLiteral( '[tsl-precompile/slim] WebGL fallback is stripped from the slim bundle. Remove `forceWebGL: true` or use the full three.webgpu.js.' ),
+						] ) ),
+					] ) ),
+					[],
+				);
+				return;
+
+			}
+
 			if ( ! t.isMemberExpression( path.node.left ) ) return;
 			if ( ! t.isIdentifier( path.node.left.property, { name: 'getFallback' } ) ) return;
 			const stmt = path.getStatementParent();
