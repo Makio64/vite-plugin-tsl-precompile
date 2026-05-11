@@ -150,20 +150,38 @@ const _liveStorageTexturesByType = { '2d': [], '3d': [], '2d-array': [] };
 const _liveAnonymousDataTexturesByShape = new Map();
 const _registeredAnonDataTextures = new WeakSet();
 
+function imageSrcForTexture( texture ) {
+
+	const image = texture && texture.image || null;
+	return image && ( image.src || image.currentSrc || ( Array.isArray( image ) && image[ 0 ] && ( image[ 0 ].src || image[ 0 ].currentSrc ) ) || null );
+
+}
+
+function basenameFromUrl( value ) {
+
+	if ( typeof value !== 'string' || value.length === 0 ) return '';
+	const slash = value.lastIndexOf( '/' );
+	const tail = slash >= 0 ? value.slice( slash + 1 ) : value;
+	return tail.split( '?' )[ 0 ].split( '#' )[ 0 ];
+
+}
+
+function registerLiveTextureName( name, texture, src ) {
+
+	if ( typeof name !== 'string' || name.length === 0 ) return;
+	const existing = _liveTexturesByName.get( name );
+	const existingSrc = imageSrcForTexture( existing );
+	if ( ! existing || ( typeof src === 'string' && src.length > 0 && ! existingSrc ) ) _liveTexturesByName.set( name, texture );
+
+}
+
 export function registerLiveTexture( texture ) {
 
 	if ( ! texture || texture.isTexture !== true ) return;
-	const image = texture.image || null;
-	const src = image && ( image.src || image.currentSrc || ( Array.isArray( image ) && image[ 0 ] && ( image[ 0 ].src || image[ 0 ].currentSrc ) ) || null );
+	const src = imageSrcForTexture( texture );
 	if ( typeof src === 'string' && src.length > 0 ) _liveTexturesBySrc.set( src, texture );
-	if ( typeof texture.name === 'string' && texture.name.length > 0 ) {
-
-		const existing = _liveTexturesByName.get( texture.name );
-		const existingImage = existing && existing.image || null;
-		const existingSrc = existingImage && ( existingImage.src || existingImage.currentSrc || ( Array.isArray( existingImage ) && existingImage[ 0 ] && ( existingImage[ 0 ].src || existingImage[ 0 ].currentSrc ) ) || null );
-		if ( ! existing || ( typeof src === 'string' && src.length > 0 && ! existingSrc ) ) _liveTexturesByName.set( texture.name, texture );
-
-	}
+	registerLiveTextureName( texture.name, texture, src );
+	registerLiveTextureName( basenameFromUrl( src ), texture, src );
 
 	// Also track storage textures by dimensionality for anonymous-storage fallback.
 	if ( texture.isStorageTexture ) {
@@ -462,6 +480,190 @@ function lookupAnonymousStorageTexture( textureType ) {
 
 }
 
+const MATERIAL_NODE_TEXTURE_KEYS = [
+	'colorNode',
+	'fragmentNode',
+	'normalNode',
+	'positionNode',
+	'outputNode',
+	'roughnessNode',
+	'metalnessNode',
+	'emissiveNode',
+	'opacityNode',
+	'alphaTestNode',
+	'vertexNode',
+	'envNode',
+	'lightNode',
+	'aoNode',
+	'transmissionNode',
+	'thicknessNode',
+	'maskNode',
+	'maskShadowNode',
+	'receivedShadowPositionNode',
+	'castShadowPositionNode',
+	'castShadowNode',
+];
+
+function collectMaterialNodeTextures( material ) {
+
+	const out = [];
+	const seenNodes = new Set();
+	const seenTextures = new Set();
+
+	function visitTexture( texture ) {
+
+		if ( ! texture || texture.isTexture !== true || seenTextures.has( texture ) ) return;
+		seenTextures.add( texture );
+		out.push( texture );
+
+	}
+
+	function walk( node, depth = 0 ) {
+
+		if ( ! node || node.isNode !== true || depth > 32 || seenNodes.has( node ) ) return;
+		seenNodes.add( node );
+		visitTexture( node.value );
+		visitTexture( node._value );
+
+		if ( typeof node.traverse === 'function' ) {
+
+			try {
+
+				node.traverse( ( child ) => {
+
+					if ( child && child !== node ) walk( child, depth + 1 );
+
+				} );
+
+			} catch ( _ ) {}
+
+		}
+
+		let keys = [];
+		try {
+
+			keys = Object.getOwnPropertyNames( node );
+
+		} catch ( _ ) {
+
+			return;
+
+		}
+
+		for ( const key of keys ) {
+
+			if ( key === 'parent' || key === 'children' || key === 'builder' || key === 'material' || key === 'object' ) continue;
+			let value = null;
+			try {
+
+				value = node[ key ];
+
+			} catch ( _ ) {
+
+				continue;
+
+			}
+			if ( ! value ) continue;
+			visitTexture( value );
+			if ( value.isNode === true ) walk( value, depth + 1 );
+			else if ( Array.isArray( value ) ) {
+
+				for ( const item of value ) {
+
+					if ( item && item.isTexture === true ) visitTexture( item );
+					else if ( item && item.isNode === true ) walk( item, depth + 1 );
+
+				}
+
+			} else if ( Object.getPrototypeOf( value ) === Object.prototype ) {
+
+				for ( const item of Object.values( value ) ) {
+
+					if ( item && item.isTexture === true ) visitTexture( item );
+					else if ( item && item.isNode === true ) walk( item, depth + 1 );
+
+				}
+
+			}
+
+		}
+
+	}
+
+	if ( material ) {
+
+		for ( const key of MATERIAL_NODE_TEXTURE_KEYS ) walk( material[ key ] );
+
+	}
+
+	return out;
+
+}
+
+function lookupMaterialNodeTexture( material, source, artifact, bindingName, avoidTexture = null ) {
+
+	const textures = collectMaterialNodeTextures( material ).filter( ( texture ) => textureMatchesShaderBinding( artifact, bindingName, texture ) );
+	if ( textures.length === 0 ) return null;
+	const usableTextures = avoidTexture ? textures.filter( ( texture ) => texture !== avoidTexture ) : textures;
+
+	if ( source && source.textureUuid ) {
+
+		const match = usableTextures.find( ( texture ) => texture.uuid === source.textureUuid );
+		if ( match ) return match;
+
+	}
+	const named = lookupLiveTextureByIdentity( source );
+	if ( named && usableTextures.includes( named ) ) return named;
+
+	if ( usableTextures.length === 1 ) return usableTextures[ 0 ];
+	return null;
+
+}
+
+function collectMaterialContextDepthTextures( material ) {
+
+	const out = [];
+	const seen = new Set();
+	const add = ( texture ) => {
+
+		if ( ! texture || texture.isDepthTexture !== true || seen.has( texture ) ) return;
+		seen.add( texture );
+		out.push( texture );
+
+	};
+	const addFromCarrier = ( carrier ) => {
+
+		if ( ! carrier ) return;
+		add( carrier.depthTexture );
+		const shadowMap = carrier.shadowMap || carrier.map || null;
+		if ( shadowMap ) add( shadowMap.depthTexture );
+		const renderTarget = carrier.renderTarget || carrier.target || null;
+		if ( renderTarget ) add( renderTarget.depthTexture );
+		const tileShadowNode = carrier.tileShadowNode || carrier.userData && carrier.userData.tileShadowNode || null;
+		if ( tileShadowNode && tileShadowNode.shadowMap ) add( tileShadowNode.shadowMap.depthTexture );
+
+	};
+
+	let object = null;
+	try {
+
+		object = material && material.__tslpPrecompileObject || null;
+
+	} catch ( _ ) {}
+
+	let cursor = object;
+	let depth = 0;
+	while ( cursor && depth ++ < 32 ) {
+
+		addFromCarrier( cursor );
+		cursor = cursor.parent || null;
+
+	}
+
+	return out;
+
+}
+
 // Module-level scratch objects — reused per frame to avoid GC pressure.
 const _rSize = new Vector2( 1, 1 );
 const _rViewport = new Vector4( 0, 0, 1, 1 );
@@ -547,7 +749,7 @@ function recordShadowBindingDiagnostic( event ) {
 		if ( ! root || root.__TSLP_DEBUG_SHADOW_BINDINGS !== true ) return;
 		const diag = root.__tslpHarnessDiagnostics || ( root.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
 		const list = diag.shadowBindings || ( diag.shadowBindings = [] );
-		if ( list.length < 120 ) list.push( event );
+		if ( list.length < 500 ) list.push( event );
 
 	} catch ( _ ) {}
 
@@ -1209,6 +1411,18 @@ function hydrateRuntimeBindings( artifact, material ) {
 					textureUuid: typeof planSource.textureUuid === 'string' ? planSource.textureUuid : null,
 					material,
 				};
+				recordShadowBindingDiagnostic( {
+					phase: 'hydrateDepth',
+					bindingName: depthBinding.bindingName,
+					lightIndex: depthBinding.lightIndex,
+					lightUuid: depthBinding.lightUuid,
+					fromMaterialGraph: depthBinding.fromMaterialGraph,
+					vsm: depthBinding.vsm,
+					textureUuid: depthBinding.textureUuid,
+					artifactName: artifact && artifact.name || material && material.name || null,
+					bindingKind: descriptor.kind || null,
+					textureType: descriptor.textureType || null,
+				} );
 				if ( depthBinding.fromMaterialGraph ) materialDepthBindings.push( depthBinding );
 				else shadowDepthBindings.push( depthBinding );
 
@@ -1395,6 +1609,29 @@ function resolveDepthTextureFromMaterial( material, textureUuid, camera = null )
 	}
 	if ( firstReflectorDepth ) return firstReflectorDepth;
 
+	const graphTextures = collectMaterialNodeTextures( material );
+	let graphMatch = null;
+	let firstGraphDepth = null;
+	for ( const tex of graphTextures ) {
+
+		if ( ! tex || tex.isDepthTexture !== true ) continue;
+		if ( ! firstGraphDepth ) firstGraphDepth = tex;
+		if ( textureUuid && tex.uuid === textureUuid ) { graphMatch = tex; break; }
+
+	}
+	if ( graphMatch || firstGraphDepth ) return graphMatch || firstGraphDepth;
+
+	const contextTextures = collectMaterialContextDepthTextures( material );
+	let contextMatch = null;
+	let firstContextDepth = null;
+	for ( const tex of contextTextures ) {
+
+		if ( ! firstContextDepth ) firstContextDepth = tex;
+		if ( textureUuid && tex.uuid === textureUuid ) { contextMatch = tex; break; }
+
+	}
+	if ( contextMatch || firstContextDepth ) return contextMatch || firstContextDepth;
+
 	const textures = collectLiveMaterialTextures( material );
 	if ( ! textures || textures.size === 0 ) return null;
 
@@ -1446,6 +1683,24 @@ function createShadowDepthRebinder( entries /* , artifact */ ) {
 					// target first and fall back to a graph walk for plain
 					// user-created RenderTarget.depthTexture nodes.
 					liveTexture = resolveDepthTextureFromMaterial( entry.material, entry.textureUuid, frame && frame.camera || null );
+					if ( ! liveTexture ) {
+
+						const graphTextures = collectMaterialNodeTextures( entry.material );
+						recordShadowBindingDiagnostic( {
+							phase: 'materialDepthMiss',
+							bindingName: entry.bindingName,
+							textureUuid: entry.textureUuid,
+							artifactName: entry.artifact && entry.artifact.name || entry.material && entry.material.name || null,
+							nodeTextureCount: graphTextures.length,
+							nodeTextures: graphTextures.slice( 0, 8 ).map( ( texture ) => ( {
+								uuid: texture.uuid || null,
+								name: texture.name || '',
+								isDepthTexture: texture.isDepthTexture === true,
+								image: texture.image ? [ texture.image.width || 0, texture.image.height || 0, texture.image.depth || 0 ] : null,
+							} ) ),
+						} );
+
+					}
 
 				} else {
 
@@ -1468,7 +1723,19 @@ function createShadowDepthRebinder( entries /* , artifact */ ) {
 				}
 
 				if ( ! liveTexture ) continue;
-				if ( ! textureMatchesShaderBinding( entry.artifact, entry.bindingName, liveTexture ) ) continue;
+				if ( ! textureMatchesShaderBinding( entry.artifact, entry.bindingName, liveTexture ) ) {
+
+					recordShadowBindingDiagnostic( {
+						phase: 'materialDepthTypeMismatch',
+						bindingName: entry.bindingName,
+						textureUuid: liveTexture.uuid || null,
+						artifactName: entry.artifact && entry.artifact.name || entry.material && entry.material.name || null,
+						isDepthTexture: liveTexture.isDepthTexture === true,
+						image: liveTexture.image ? [ liveTexture.image.width || 0, liveTexture.image.height || 0, liveTexture.image.depth || 0 ] : null,
+					} );
+					continue;
+
+				}
 					const shadowCompareFunction = Number.isFinite( liveTexture.__tslpShadowCompareFunction ) ? liveTexture.__tslpShadowCompareFunction : null;
 					const rendererCompareFunction = frame && frame.renderer && frame.renderer.reversedDepthBuffer ? GreaterEqualCompare : LessEqualCompare;
 					const compareFunction = entry.fromMaterialGraph !== true && entry.vsm !== true && liveTexture.isDepthTexture === true
@@ -1926,13 +2193,20 @@ function createArtifactTextureRebinder( entries ) {
 		updateBefore( frame ) {
 
 			const renderer = frame && frame.renderer ? frame.renderer : null;
+			let avoidTexture = null;
+			try {
+
+				const renderTarget = renderer && typeof renderer.getRenderTarget === 'function' ? renderer.getRenderTarget() : null;
+				avoidTexture = renderTarget && renderTarget.texture || null;
+
+			} catch ( _ ) {}
 
 			for ( const entry of entries ) {
 
 				const binding = entry.binding;
 				if ( ! binding ) continue;
 
-				const candidate = resolveTextureBinding( entry.artifact, entry.groupName, entry.bindingName, entry.material );
+				const candidate = resolveTextureBinding( entry.artifact, entry.groupName, entry.bindingName, entry.material, { avoidTexture } );
 				if ( candidate ) {
 
 					// Sampler's `texture` setter resets version=-1 and
@@ -2299,7 +2573,7 @@ function applyTextureSourceSettings( texture, source ) {
 
 }
 
-function resolveTextureBinding( artifact, groupName, bindingName, material ) {
+function resolveTextureBinding( artifact, groupName, bindingName, material, options = null ) {
 
 	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
 	const group = plan.find( ( item ) => item.name === groupName );
@@ -2366,6 +2640,9 @@ function resolveTextureBinding( artifact, groupName, bindingName, material ) {
 		if ( wantsDepthTexture && ! wantsMultisampledTexture ) {
 			return fallbackDepthTexture;
 		}
+
+		const nodeTexture = lookupMaterialNodeTexture( material, source, artifact, bindingName, options && options.avoidTexture || null );
+		if ( nodeTexture ) return applyTextureSourceSettings( nodeTexture, source );
 
 		// Prefer a currently-loaded texture with matching image/name identity over
 		// sidecar refs. The replay harness may seed _textureRefs with conservative
@@ -2526,7 +2803,7 @@ function textureMatchesShaderBinding( artifact, bindingName, texture ) {
 	if ( shaderDeclaresCubeTexture( artifact, bindingName ) ) return texture.isCubeTexture === true;
 	const textureType = inferTextureTypeFromShader( artifact, bindingName );
 	if ( textureType === '3d' ) return texture.isData3DTexture === true || texture.isTexture3D === true;
-	if ( textureType === '2d-array' ) return texture.isDataArrayTexture === true || texture.isArrayTexture === true || texture.isCompressedArrayTexture === true;
+	if ( textureType === '2d-array' ) return texture.isDataArrayTexture === true || texture.isArrayTexture === true || texture.isCompressedArrayTexture === true || ( texture.isDepthTexture === true && texture.image && texture.image.depth > 1 );
 	return true;
 
 }

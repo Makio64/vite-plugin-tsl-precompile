@@ -362,7 +362,30 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 
 	}
 
-	return wrapped;
+	return adoptPrecompiledMaterial( material, wrapped );
+
+}
+
+function adoptPrecompiledMaterial( target, wrapped ) {
+
+	if ( ! target || typeof target !== 'object' ) return wrapped;
+
+	try {
+
+		for ( const key of Reflect.ownKeys( wrapped ) ) {
+
+			const descriptor = Object.getOwnPropertyDescriptor( wrapped, key );
+			if ( descriptor ) Object.defineProperty( target, key, descriptor );
+
+		}
+		Object.setPrototypeOf( target, Object.getPrototypeOf( wrapped ) );
+		return target;
+
+	} catch ( _ ) {
+
+		return wrapped;
+
+	}
 
 }
 

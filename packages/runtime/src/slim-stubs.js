@@ -16,6 +16,23 @@
  * @module SlimStubs
  */
 
+import {
+	LineBasicMaterial,
+	LineDashedMaterial,
+	Material,
+	MeshBasicMaterial,
+	MeshLambertMaterial,
+	MeshMatcapMaterial,
+	MeshNormalMaterial,
+	MeshPhongMaterial,
+	MeshPhysicalMaterial,
+	MeshStandardMaterial,
+	MeshToonMaterial,
+	PointsMaterial,
+	ShadowMaterial,
+	SpriteMaterial,
+} from 'three/src/Three.Core.js';
+
 function slimMessage( name ) {
 
 	return `[tsl-precompile/slim] ${ name }() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time.`;
@@ -304,18 +321,44 @@ export class PassNode {
 
 	}
 
+	getTextureNode( name = 'output' ) {
+
+		return inertNodeStub( [], {
+			isTextureNode: true,
+			isPassTextureNode: true,
+			passNode: this,
+			textureName: name,
+		} );
+
+	}
+
+	getPreviousTextureNode( name = 'output' ) {
+
+		return inertNodeStub( [], {
+			isTextureNode: true,
+			isPassTextureNode: true,
+			passNode: this,
+			textureName: name,
+			previousTexture: true,
+		} );
+
+	}
+
 }
 
 /**
  * `NodeMaterial` stub — some examples import the class directly (e.g. for
- * custom-material hacks). Construction throws; users must use
- * `PrecompiledMaterial` instead.
+ * custom-material hacks). It behaves like a lightweight material shell so
+ * transformed `.precompile()` calls can wrap or adopt it before render.
  */
-export class NodeMaterial {
+export class NodeMaterial extends Material {
 
-	constructor() {
+	constructor( params = undefined ) {
 
-		throw new Error( '[tsl-precompile/slim] new NodeMaterial() is not available. Use .precompile(name) in dev and PrecompiledMaterial at runtime.' );
+		super();
+		this.isNodeMaterial = true;
+		this.type = 'NodeMaterial';
+		if ( params && typeof params === 'object' ) this.setValues( params );
 
 	}
 
@@ -546,17 +589,20 @@ export const RendererUtils = new Proxy( {}, {
 } );
 
 /**
- * *NodeMaterial stubs — examples that import specific node material classes
- * hit these. Construction throws with a clear migration hint.
+ * *NodeMaterial stubs — examples construct these before the transformed
+ * `.precompile()` call runs. Use the nearest non-node material base so
+ * constructor params (`color`, `roughness`, maps, render state...) survive
+ * until `__applyPrecompiled()` copies them onto the precompiled wrapper.
  */
-function makeNodeMaterialStub( name ) {
+function makeNodeMaterialStub( name, Base = Material ) {
 
-	return class extends Object {
+	return class extends Base {
 
-		constructor() {
+		constructor( params = undefined ) {
 
-			super();
-			throw new Error( `[tsl-precompile/slim] new ${ name }() is not available. Build a PrecompiledMaterial via .precompile() in dev.` );
+			super( params );
+			this.isNodeMaterial = true;
+			this.type = name;
 
 		}
 
@@ -564,21 +610,21 @@ function makeNodeMaterialStub( name ) {
 
 }
 
-export const MeshBasicNodeMaterial = makeNodeMaterialStub( 'MeshBasicNodeMaterial' );
-export const MeshStandardNodeMaterial = makeNodeMaterialStub( 'MeshStandardNodeMaterial' );
-export const MeshPhysicalNodeMaterial = makeNodeMaterialStub( 'MeshPhysicalNodeMaterial' );
-export const MeshLambertNodeMaterial = makeNodeMaterialStub( 'MeshLambertNodeMaterial' );
-export const MeshPhongNodeMaterial = makeNodeMaterialStub( 'MeshPhongNodeMaterial' );
-export const MeshToonNodeMaterial = makeNodeMaterialStub( 'MeshToonNodeMaterial' );
-export const MeshNormalNodeMaterial = makeNodeMaterialStub( 'MeshNormalNodeMaterial' );
-export const MeshMatcapNodeMaterial = makeNodeMaterialStub( 'MeshMatcapNodeMaterial' );
-export const LineBasicNodeMaterial = makeNodeMaterialStub( 'LineBasicNodeMaterial' );
-export const LineDashedNodeMaterial = makeNodeMaterialStub( 'LineDashedNodeMaterial' );
-export const Line2NodeMaterial = makeNodeMaterialStub( 'Line2NodeMaterial' );
-export const PointsNodeMaterial = makeNodeMaterialStub( 'PointsNodeMaterial' );
-export const SpriteNodeMaterial = makeNodeMaterialStub( 'SpriteNodeMaterial' );
-export const ShadowNodeMaterial = makeNodeMaterialStub( 'ShadowNodeMaterial' );
-export const MeshSSSNodeMaterial = makeNodeMaterialStub( 'MeshSSSNodeMaterial' );
+export const MeshBasicNodeMaterial = makeNodeMaterialStub( 'MeshBasicNodeMaterial', MeshBasicMaterial );
+export const MeshStandardNodeMaterial = makeNodeMaterialStub( 'MeshStandardNodeMaterial', MeshStandardMaterial );
+export const MeshPhysicalNodeMaterial = makeNodeMaterialStub( 'MeshPhysicalNodeMaterial', MeshPhysicalMaterial );
+export const MeshLambertNodeMaterial = makeNodeMaterialStub( 'MeshLambertNodeMaterial', MeshLambertMaterial );
+export const MeshPhongNodeMaterial = makeNodeMaterialStub( 'MeshPhongNodeMaterial', MeshPhongMaterial );
+export const MeshToonNodeMaterial = makeNodeMaterialStub( 'MeshToonNodeMaterial', MeshToonMaterial );
+export const MeshNormalNodeMaterial = makeNodeMaterialStub( 'MeshNormalNodeMaterial', MeshNormalMaterial );
+export const MeshMatcapNodeMaterial = makeNodeMaterialStub( 'MeshMatcapNodeMaterial', MeshMatcapMaterial );
+export const LineBasicNodeMaterial = makeNodeMaterialStub( 'LineBasicNodeMaterial', LineBasicMaterial );
+export const LineDashedNodeMaterial = makeNodeMaterialStub( 'LineDashedNodeMaterial', LineDashedMaterial );
+export const Line2NodeMaterial = makeNodeMaterialStub( 'Line2NodeMaterial', LineBasicMaterial );
+export const PointsNodeMaterial = makeNodeMaterialStub( 'PointsNodeMaterial', PointsMaterial );
+export const SpriteNodeMaterial = makeNodeMaterialStub( 'SpriteNodeMaterial', SpriteMaterial );
+export const ShadowNodeMaterial = makeNodeMaterialStub( 'ShadowNodeMaterial', ShadowMaterial );
+export const MeshSSSNodeMaterial = makeNodeMaterialStub( 'MeshSSSNodeMaterial', MeshPhysicalMaterial );
 
 /**
  * `WebGLBackend` stub — slim mode is WebGPU-only, but examples still
@@ -732,6 +778,12 @@ export function mrt( _outputs ) {
 
 }
 
+export function pass( scene, camera ) {
+
+	return new PassNode( PassNode.COLOR, scene || null, camera || null );
+
+}
+
 /**
  * Common TSL primitive constructors — each returns an inert node stub.
  * These cover the identifiers MRT, backdrop, and post-process examples
@@ -758,6 +810,7 @@ export const cameraPosition = inertNodeStub();
 export const cameraProjectionMatrix = inertNodeStub();
 export const cameraWorldMatrix = inertNodeStub();
 export const cameraNormalMatrix = inertNodeStub();
+export const PI = inertNodeStub();
 
 /**
  * TSL callable stubs — these are called as functions (`mix(a, b, t)`).
@@ -767,6 +820,16 @@ export function mix( ..._ ) { return inertNodeStub(); }
 export function step( ..._ ) { return inertNodeStub(); }
 export function texture( source, ..._ ) { return inertNodeStub( [], source && source.isTexture === true ? { isTextureNode: true, value: source } : {} ); }
 export function cubeTexture( source, ..._ ) { return inertNodeStub( [], source && source.isTexture === true ? { isTextureNode: true, value: source } : {} ); }
+export function passTexture( passNode, textureValue ) {
+
+	return inertNodeStub( [], {
+		isTextureNode: true,
+		isPassTextureNode: true,
+		passNode: passNode || null,
+		value: textureValue || null,
+	} );
+
+}
 // Retain the source texture passed to pmremTexture(map, ...) so the e2e
 // harness (and any production wiring code) can recover it and run
 // PMREMGenerator on the same cubemap/equirect at replay time. The slim
@@ -786,8 +849,17 @@ export function vec4( ..._ ) { return inertNodeStub(); }
 export function float( ..._ ) { return inertNodeStub(); }
 export function int( ..._ ) { return inertNodeStub(); }
 export function uint( ..._ ) { return inertNodeStub(); }
+export function bool( ..._ ) { return inertNodeStub(); }
 export function color( ..._ ) { return inertNodeStub(); }
 export function uniform( value, nodeType = null ) { return new UniformNode( value, nodeType ); }
+export function uniformArray( values = [] ) {
+
+	const node = inertNodeStub( [], { values: Array.isArray( values ) ? values : [] } );
+	node.element = () => inertNodeStub();
+	return node;
+
+}
+export function nodeObject( value ) { return value && value.isNode === true ? value : inertNodeStub(); }
 export function attribute( ..._ ) { return inertNodeStub(); }
 export function reference( ..._ ) { return inertNodeStub(); }
 export function add( ...args ) { return inertNodeStub( args ); }
@@ -817,6 +889,7 @@ export function cos( ..._ ) { return inertNodeStub(); }
 export function tan( ..._ ) { return inertNodeStub(); }
 export function atan( ..._ ) { return inertNodeStub(); }
 export function atan2( ..._ ) { return inertNodeStub(); }
+export function acos( ..._ ) { return inertNodeStub(); }
 export function sqrt( ..._ ) { return inertNodeStub(); }
 export function exp( ..._ ) { return inertNodeStub(); }
 export function exp2( ..._ ) { return inertNodeStub(); }
@@ -832,9 +905,18 @@ export function fwidth( ..._ ) { return inertNodeStub(); }
 export function select( ..._ ) { return inertNodeStub(); }
 export function cond( ..._ ) { return inertNodeStub(); }
 export function If( ..._ ) { return inertNodeStub(); }
+export function Loop( ..._ ) { return inertNodeStub(); }
+export function Break( ..._ ) { return inertNodeStub(); }
 export function Fn( ..._ ) { return inertNodeStub(); }
 export function context( ..._ ) { return inertNodeStub(); }
 export function renderOutput( ..._ ) { return inertNodeStub(); }
+export function convertToTexture( node, ..._ ) {
+
+	if ( node && ( node.isSampleNode === true || node.isTextureNode === true ) ) return node;
+	if ( node && node.isPassNode === true && typeof node.getTextureNode === 'function' ) return node.getTextureNode();
+	return inertNodeStub( [ node ] );
+
+}
 export function viewportSharedTexture( ..._ ) { return inertNodeStub(); }
 export function viewportTexture( ..._ ) { return inertNodeStub(); }
 export function cubeMapNode( ..._ ) { return inertNodeStub(); }
@@ -842,6 +924,13 @@ export function equirectUV( ..._ ) { return inertNodeStub(); }
 export function fog( ..._ ) { return inertNodeStub(); }
 export function rangeFogFactor( ..._ ) { return inertNodeStub(); }
 export function densityFogFactor( ..._ ) { return inertNodeStub(); }
+export function logarithmicDepthToViewZ( ..._ ) { return inertNodeStub(); }
+export function viewZToPerspectiveDepth( ..._ ) { return inertNodeStub(); }
+export function getNormalFromDepth( ..._ ) { return inertNodeStub(); }
+export function getScreenPosition( ..._ ) { return inertNodeStub(); }
+export function getViewPosition( ..._ ) { return inertNodeStub(); }
+export function textureSize( ..._ ) { return inertNodeStub(); }
+export function luminance( ..._ ) { return inertNodeStub(); }
 export function builtin( ..._ ) { return inertNodeStub(); }
 export function mat3( ..._ ) { return inertNodeStub(); }
 export function mat4( ..._ ) { return inertNodeStub(); }

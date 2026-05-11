@@ -48,6 +48,66 @@ let lastSeenArrayCamera = null;
 const inflight = new Set();   // names currently being captured (suppresses dup POSTs)
 const sessionDone = new Set();   // names captured this session (suppresses needless re-POST)
 
+const MATERIAL_NODE_PROPS = [
+	'colorNode',
+	'fragmentNode',
+	'normalNode',
+	'positionNode',
+	'outputNode',
+	'roughnessNode',
+	'metalnessNode',
+	'emissiveNode',
+	'opacityNode',
+	'alphaTestNode',
+	'vertexNode',
+	'envNode',
+	'lightNode',
+	'aoNode',
+	'transmissionNode',
+	'thicknessNode',
+	'maskNode',
+	'maskShadowNode',
+	'receivedShadowPositionNode',
+	'castShadowPositionNode',
+	'castShadowNode',
+];
+
+function objectSourceMetadata( object ) {
+
+	if ( ! object ) return null;
+	return {
+		type: object.type || object.constructor && object.constructor.name || null,
+		renderOrder: Number.isFinite( object.renderOrder ) ? object.renderOrder : 0,
+		castShadow: object.castShadow === true,
+		receiveShadow: object.receiveShadow === true,
+		isInstancedMesh: object.isInstancedMesh === true,
+		isSkinnedMesh: object.isSkinnedMesh === true,
+		scale: object.scale ? [ object.scale.x, object.scale.y, object.scale.z ] : null,
+	};
+
+}
+
+function materialSourceMetadata( material, sourceObject = null ) {
+
+	const nodeProps = [];
+	if ( material ) {
+
+		for ( const key of MATERIAL_NODE_PROPS ) {
+
+			const value = material[ key ];
+			if ( value && value.isNode === true ) nodeProps.push( key );
+
+		}
+
+	}
+	return {
+		type: material && typeof material.type === 'string' ? material.type : null,
+		nodeProps,
+		object: objectSourceMetadata( sourceObject ),
+	};
+
+}
+
 /**
  * Install `.precompile(name)` on the three.js Material prototype. Safe to call
  * multiple times; subsequent calls update the dev endpoint.
@@ -253,9 +313,13 @@ async function captureMaterialInDev( material, name ) {
 		// Without this, all 36 cells of webgpu_camera_array render the same
 		// view because the precompiled WGSL bakes the scalar path.
 		let sourceArrayCamera = null;
-		if ( material.__tslpArrayCamera && material.__tslpArrayCamera.isArrayCamera ) {
+		if ( Object.prototype.hasOwnProperty.call( material, '__tslpArrayCamera' ) ) {
 
-			sourceArrayCamera = material.__tslpArrayCamera;
+			if ( material.__tslpArrayCamera && material.__tslpArrayCamera.isArrayCamera ) {
+
+				sourceArrayCamera = material.__tslpArrayCamera;
+
+			}
 
 		} else if ( lastSeenArrayCamera ) {
 
@@ -291,7 +355,7 @@ async function captureMaterialInDev( material, name ) {
 		// scene-level fields (environment, fog, background); we do NOT
 		// reparent lights, since `Object3D.add()` would detach them from
 		// the user's actual scene and break their real render pass.
-		const sourceScene = findParentScene( sourceObject );
+		const sourceScene = material.__tslpPrecompileScene || findParentScene( sourceObject );
 		if ( sourceScene ) {
 
 			scene.environment = sourceScene.environment || null;
@@ -476,6 +540,7 @@ async function captureMaterialInDev( material, name ) {
 		// Strip non-serialisable side-cars before POST; dev capture only needs
 		// the JSON-safe portion of the artifact.
 		const sanitized = jsonSafeArtifact( artifact );
+		sanitized.sourceMaterial = materialSourceMetadata( material, sourceObject );
 
 		// Also register the artifact in the runtime's in-memory registry
 		// so the inspector panel (and any other local consumer) can see
