@@ -6074,23 +6074,45 @@ async function visitExample( browser, name, mode, waitMs ) {
 				}
 			}
 
-			// Seed Math.random for deterministic particle/star-field positions.
-			// Three's UUID generation also uses Math.random, but capture/replay build
-			// different internal helper objects. Keep UUID entropy on a separate stream
-			// so user-example random calls stay aligned across both modes.
-			let _rngSeed = 42;
-			let _uuidSeed = 0x9e3779b9;
-			const _nextRng = ( seed ) => ( seed * 1664525 + 1013904223 ) >>> 0;
+			// Deterministic Math.random per callsite. A single global RNG stream is
+			// too fragile here because replay constructs extra helper objects, which
+			// shifts later user-scene random calls. Keying by normalized stack line
+			// keeps loops at the same user callsite aligned across stock/capture/replay.
+			const _rngCounts = new Map();
+			const _hashString = ( text ) => {
+				let h = 2166136261 >>> 0;
+				for ( let i = 0; i < text.length; i ++ ) {
+					h ^= text.charCodeAt( i );
+					h = Math.imul( h, 16777619 ) >>> 0;
+				}
+				return h >>> 0;
+			};
+			const _mixRng = ( seed ) => {
+				let x = seed >>> 0;
+				x ^= x >>> 16;
+				x = Math.imul( x, 0x7feb352d ) >>> 0;
+				x ^= x >>> 15;
+				x = Math.imul( x, 0x846ca68b ) >>> 0;
+				x ^= x >>> 16;
+				return x >>> 0;
+			};
+			const _randomKeyFromStack = ( stack ) => {
+				const lines = String( stack || '' ).split( '\n' ).slice( 1 );
+				for ( let line of lines ) {
+					if ( line.includes( '__tslp__' ) || line.includes( 'Math.random' ) ) continue;
+					line = line.replace( /https?:\/\/[^/]+/g, '' ).replace( /\?__tslp_mode=[^:)\s]+/g, '' ).trim();
+					if ( line ) return line;
+				}
+				return 'unknown';
+			};
 			w.Math.random = function () {
 
 				let stack = '';
 				try { stack = String( new Error().stack || '' ); } catch ( _ ) {}
-				if ( stack.indexOf( 'generateUUID' ) !== -1 ) {
-					_uuidSeed = _nextRng( _uuidSeed );
-					return _uuidSeed / 4294967296;
-				}
-				_rngSeed = _nextRng( _rngSeed );
-				return _rngSeed / 4294967296;
+				const key = _randomKeyFromStack( stack );
+				const count = ( _rngCounts.get( key ) || 0 ) + 1;
+				_rngCounts.set( key, count );
+				return _mixRng( _hashString( key + '#' + count + '#42' ) ) / 4294967296;
 
 			};
 
