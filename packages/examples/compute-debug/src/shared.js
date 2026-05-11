@@ -4,6 +4,7 @@ import { installPrecompileMarker, precompileAuxiliary, setDevRenderer } from '@t
 import * as THREE from 'three';
 
 const CAPTURE_ENDPOINT = window.__TSLP_E2E?.captureEndpoint || '/__tsl-precompile/capture';
+export const IS_E2E = !! window.__TSLP_E2E;
 export const IS_E2E_REPLAY = window.__TSLP_E2E?.mode === 'replay';
 
 const PAGES = [

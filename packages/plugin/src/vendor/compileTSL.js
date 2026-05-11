@@ -1327,12 +1327,12 @@ export function extractComputeArtifact( cacheKey, state, computeNode ) {
 	const bindings = ( state.bindings || [] ).map( describeBindGroup );
 	const uniformPlan = extractUniformPlan( state );
 
-	// Dispatch size — ComputeNode tracks this via `.count` (for 1D) or
-	// `.workgroupSize` × `.dispatchCount` for 3D. Mirror whatever the node
-	// carries so the slim-side dispatcher can reconstruct it.
-	const dispatchSize = computeNode && computeNode.count !== undefined ?
-		computeNode.count :
-		( computeNode && computeNode.dispatchCount !== undefined ? computeNode.dispatchCount : null );
+	// Dispatch size — ComputeNode tracks this via `.count` for 1D work, or
+	// `.dispatchSize` when the author passed an explicit [x, y, z] group
+	// count. `count` is initialised to null by three.js, so null must not mask
+	// a real `.dispatchSize`.
+	const dispatchSize = readComputeDispatchSize( computeNode );
+	const workgroupSize = readComputeWorkgroupSize( computeNode );
 
 	const name = computeNode && computeNode.name ? computeNode.name : '';
 
@@ -1349,6 +1349,7 @@ export function extractComputeArtifact( cacheKey, state, computeNode ) {
 		uniformPlan,
 		defaults: {},
 		dispatchSize,
+		workgroupSize,
 		meta: {
 			updateNodes: state.updateNodes ? state.updateNodes.length : 0,
 			updateBeforeNodes: state.updateBeforeNodes ? state.updateBeforeNodes.length : 0,
@@ -1359,6 +1360,32 @@ export function extractComputeArtifact( cacheKey, state, computeNode ) {
 	attachLiveUpdateSidecars( artifact, state );
 
 	return artifact;
+
+}
+
+function readComputeDispatchSize( computeNode ) {
+
+	if ( ! computeNode ) return null;
+	if ( computeNode.count !== undefined && computeNode.count !== null ) return cloneDispatchValue( computeNode.count );
+	if ( computeNode.dispatchSize !== undefined && computeNode.dispatchSize !== null ) return cloneDispatchValue( computeNode.dispatchSize );
+	if ( computeNode.dispatchCount !== undefined && computeNode.dispatchCount !== null ) return cloneDispatchValue( computeNode.dispatchCount );
+	return null;
+
+}
+
+function cloneDispatchValue( value ) {
+
+	return Array.isArray( value ) ? value.slice() : value;
+
+}
+
+function readComputeWorkgroupSize( computeNode ) {
+
+	const value = computeNode && Array.isArray( computeNode.workgroupSize ) ? computeNode.workgroupSize : null;
+	if ( ! value || value.length === 0 ) return [ 64, 1, 1 ];
+	const out = value.slice( 0, 3 ).map( ( item ) => Number.isFinite( item ) && item > 0 ? Math.floor( item ) : 1 );
+	while ( out.length < 3 ) out.push( 1 );
+	return out;
 
 }
 

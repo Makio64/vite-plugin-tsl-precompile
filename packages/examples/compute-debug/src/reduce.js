@@ -4,7 +4,7 @@
 import { AmbientLight, BoxGeometry, DirectionalLight, Mesh } from 'three';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { Fn, Loop, float, instanceIndex, instancedArray, mix, positionLocal, sin, time, vec3 } from 'three/tsl';
-import { createScene, runAux, IS_E2E_REPLAY } from './shared.js';
+import { createScene, runAux, IS_E2E, IS_E2E_REPLAY } from './shared.js';
 
 const COUNT = 256;
 
@@ -66,8 +66,8 @@ async function main() {
 		renderer.compute( computeReduce );
 		renderer.render( scene, camera );
 
-		// Dev-only HUD readback; skipped during E2E to keep replay deterministic.
-		if ( ! IS_E2E_REPLAY && ( frame ++ % 20 ) === 0 ) {
+		// Dev-only HUD readback; skipped during E2E to keep screenshots deterministic.
+		if ( ! IS_E2E && ! IS_E2E_REPLAY && ( frame ++ % 20 ) === 0 ) {
 
 			renderer.getArrayBufferAsync( result.value ).then( ( buf ) => {
 

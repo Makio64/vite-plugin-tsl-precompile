@@ -990,7 +990,7 @@ test( 'runtime hydrator prefers generated per-group updater when attached', () =
 
 test( 'PrecompiledComputeNode exposes the slim compute fast-path flags', () => {
 
-	const artifact = { kind: 'compute', computeShader: 'cs', uniformPlan: [], dispatchSize: 32 };
+	const artifact = { kind: 'compute', computeShader: 'cs', uniformPlan: [], dispatchSize: 32, workgroupSize: [ 8, 4 ] };
 	const node = new PrecompiledComputeNode( artifact );
 
 	assert.equal( node.isNode, true );
@@ -998,7 +998,33 @@ test( 'PrecompiledComputeNode exposes the slim compute fast-path flags', () => {
 	assert.equal( node.isPrecompiledCompute, true );
 	assert.equal( node.precompiledArtifact, artifact );
 	assert.equal( node.count, 32 );
+	assert.equal( node.dispatchSize, null );
+	assert.deepEqual( node.workgroupSize, [ 8, 4, 1 ] );
 	assert.equal( node.getUpdateType(), 'none' );
+
+} );
+
+test( 'PrecompiledComputeNode preserves explicit dispatch arrays and renderer event hooks', () => {
+
+	const artifact = { kind: 'compute', computeShader: 'cs', uniformPlan: [], dispatchSize: [ 2, 3, 4 ], workgroupSize: [ 16, 2, 1 ] };
+	const node = new PrecompiledComputeNode( artifact );
+	let disposed = 0;
+	const onDispose = ( event ) => {
+
+		assert.equal( event.target, node );
+		disposed ++;
+
+	};
+
+	node.addEventListener( 'dispose', onDispose );
+	assert.equal( node.hasEventListener( 'dispose', onDispose ), true );
+	node.dispose();
+	node.removeEventListener( 'dispose', onDispose );
+	node.dispose();
+
+	assert.equal( node.count, null );
+	assert.deepEqual( node.dispatchSize, [ 2, 3, 4 ] );
+	assert.equal( disposed, 1 );
 
 } );
 

@@ -5,9 +5,13 @@
  * `precompiledArtifact` directly, so compute dispatch does not need the TSL
  * ComputeNode / NodeBuilder graph at runtime.
  */
-export class PrecompiledComputeNode {
+import { EventDispatcher } from 'three';
+
+export class PrecompiledComputeNode extends EventDispatcher {
 
 	constructor( artifact ) {
+
+		super();
 
 		if ( ! artifact || typeof artifact !== 'object' ) {
 
@@ -26,11 +30,32 @@ export class PrecompiledComputeNode {
 		this.isPrecompiledCompute = true;
 		this.precompiledArtifact = artifact;
 		this.name = artifact.name || artifact.__name || '';
-		this.count = artifact.dispatchSize;
+		this.count = Array.isArray( artifact.dispatchSize ) ? null : ( artifact.dispatchSize ?? null );
+		this.dispatchSize = Array.isArray( artifact.dispatchSize ) ? artifact.dispatchSize.slice() : null;
 		this.updateType = 'compute';
 		this.onInitFunction = null;
-		this.dispatchCount = null;
-		this.workgroupSize = artifact.workgroupSize || [ 64, 1, 1 ];
+		this.workgroupSize = normalizeWorkgroupSize( artifact.workgroupSize );
+		this.version = 1;
+
+	}
+
+	setName( name ) {
+
+		this.name = name;
+		return this;
+
+	}
+
+	label( name ) {
+
+		return this.setName( name );
+
+	}
+
+	onInit( callback ) {
+
+		this.onInitFunction = typeof callback === 'function' ? callback : null;
+		return this;
 
 	}
 
@@ -43,6 +68,21 @@ export class PrecompiledComputeNode {
 	updateBefore() {}
 	update() {}
 	updateAfter() {}
+
+	dispose() {
+
+		this.dispatchEvent( { type: 'dispose' } );
+
+	}
+
+}
+
+function normalizeWorkgroupSize( value ) {
+
+	if ( ! Array.isArray( value ) || value.length === 0 ) return [ 64, 1, 1 ];
+	const out = value.slice( 0, 3 ).map( ( item ) => Number.isFinite( item ) && item > 0 ? Math.floor( item ) : 1 );
+	while ( out.length < 3 ) out.push( 1 );
+	return out;
 
 }
 
