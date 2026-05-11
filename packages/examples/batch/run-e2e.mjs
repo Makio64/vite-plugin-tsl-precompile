@@ -512,9 +512,19 @@ installPrecompileMarker( Original, {
 	}
 } )();
 
-function __mark( material, className, sourceObject = null ) {
+function __mark( material, className, sourceObject = null, camera = null ) {
 	if ( ! material ) return;
 	if ( sourceObject && ! material.__tslpPrecompileObject ) Object.defineProperty( material, '__tslpPrecompileObject', { value: sourceObject, configurable: true } );
+	if ( sourceObject && ! Object.prototype.hasOwnProperty.call( material, '__tslpArrayCamera' ) ) {
+		const arrayCameraHint = camera && camera.isArrayCamera === true ? camera : null;
+		Object.defineProperty( material, '__tslpArrayCamera', { value: arrayCameraHint, configurable: true } );
+	}
+	const sourceScene = sourceObject ? __findParentScene( sourceObject ) : null;
+	if ( sourceScene ) {
+		const currentScene = material.__tslpPrecompileScene || null;
+		const shouldSetScene = ! currentScene || ( __countSceneLights( currentScene ) === 0 && __countSceneLights( sourceScene ) > 0 );
+		if ( shouldSetScene ) Object.defineProperty( material, '__tslpPrecompileScene', { value: sourceScene, configurable: true } );
+	}
 	if ( __seenMaterials.has( material ) ) return;
 	const bundleKey = __isInsideBundleGroup( sourceObject ) ? className : null;
 	if ( bundleKey && __bundleSharedNames.has( bundleKey ) ) {
@@ -536,6 +546,26 @@ function __mark( material, className, sourceObject = null ) {
 	// without the IBL bindings. We defer precompile to the first
 	// render()/compile() hook below, by which time scene state is
 	// guaranteed to be fully wired.
+}
+
+function __findParentScene( object ) {
+	let current = object || null;
+	while ( current ) {
+		if ( current.isScene === true ) return current;
+		current = current.parent || null;
+	}
+	return null;
+}
+
+function __countSceneLights( scene ) {
+	if ( ! scene || typeof scene.traverse !== 'function' ) return 0;
+	let count = 0;
+	try {
+		scene.traverse( ( object ) => {
+			if ( object && object.isLight === true ) count ++;
+		} );
+	} catch ( _ ) {}
+	return count;
 }
 
 function __isInsideBundleGroup( object ) {
@@ -579,13 +609,14 @@ function __classNameForMaterial( material ) {
 	return material.constructor && material.constructor.name || 'Material';
 }
 
-function __markSceneMaterials( scene ) {
+function __markSceneMaterials( scene, camera = null ) {
 	if ( ! scene || typeof scene.traverse !== 'function' ) return;
 	if ( scene.isScene !== true ) return;
 	if ( ! scene.userData || scene.userData.__tslpUserScene !== true ) return;
 	if ( scene.userData && scene.userData.__tslpSyntheticCaptureScene ) return;
+	if ( camera && camera.isArrayCamera === true && scene.overrideMaterial ) return;
 	if ( scene.overrideMaterial && scene.overrideMaterial.visible !== false ) {
-		__mark( scene.overrideMaterial, __classNameForMaterial( scene.overrideMaterial ), null );
+		__mark( scene.overrideMaterial, __classNameForMaterial( scene.overrideMaterial ), null, camera );
 	}
 	scene.traverse( ( object ) => {
 		const material = object && object.material;
@@ -593,7 +624,7 @@ function __markSceneMaterials( scene ) {
 		for ( const m of materials ) {
 
 			if ( m && m.visible === false ) continue;
-			__mark( m, __classNameForMaterial( m ), object );
+			__mark( m, __classNameForMaterial( m ), object, camera );
 
 		}
 	} );
@@ -722,7 +753,7 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		__lastScene = scene;
 		__lastCamera = camera;
 		__rememberAuxScene( scene, camera );
-		__markSceneMaterials( scene );
+		__markSceneMaterials( scene, camera );
 		__markStandaloneRenderTargetMaterial( scene );
 		return typeof super.compile === 'function' ? super.compile( scene, camera, ...rest ) : undefined;
 	}
@@ -731,7 +762,7 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		__lastScene = scene;
 		__lastCamera = camera;
 		__rememberAuxScene( scene, camera );
-		__markSceneMaterials( scene );
+		__markSceneMaterials( scene, camera );
 		__markStandaloneRenderTargetMaterial( scene );
 		if ( typeof super.compileAsync !== 'function' ) return Promise.resolve();
 		// Track this compile so the screenshot waits for it. MaterialX, GLTF, and
@@ -748,7 +779,7 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		__lastScene = scene;
 		__lastCamera = camera;
 		__rememberAuxScene( scene, camera );
-		__markSceneMaterials( scene );
+		__markSceneMaterials( scene, camera );
 		__markStandaloneRenderTargetMaterial( scene );
 		return super.render( scene, camera );
 	}
@@ -763,28 +794,12 @@ function slimWebgpuReplayModule() {
 export class ${ name } {
 	constructor( params ) {
 		let mat;
-		// Plain "new NodeMaterial()" (no params) is almost always an internal addon
-		// (GaussianBlur, AfterImage, etc.) authoring its own quad material via
-		// fragmentNode = blur().context(builder.getSharedContext()). The full renderer
-		// drives those quads, and its PrecompiledHydrator does not handle every
-		// uniform source kind the slim hydrator emits (e.g. renderer.size). Skip the
-		// captured-artifact wrap for those calls so the addon gets a real FullNodeMaterial.
-		const skipPrecompileWrap = ${ JSON.stringify( name ) } === 'NodeMaterial' && ( ! params || typeof params !== 'object' || Object.keys( params ).length === 0 );
-		if ( skipPrecompileWrap ) {
-			mat = __makeInternalNodeMaterial( ${ JSON.stringify( name ) }, params );
-		} else {
-			try {
-				mat = __takeMaterial( ${ JSON.stringify( name ) }, params && typeof params === 'object' ? params : null );
-			} catch ( err ) {
-				const hasParams = params && typeof params === 'object' && Object.keys( params ).length > 0;
-				if ( hasParams ) {
-					if ( ${ JSON.stringify( name ) } !== 'NodeMaterial' ) throw err;
-					mat = __makeFallbackNodeMaterial( params );
-				} else {
-					mat = __makeInternalNodeMaterial( ${ JSON.stringify( name ) }, params );
-				}
-			}
-		}
+		// Recreate the source material first and let __prepareSceneForReplay()
+		// replace it with a PrecompiledMaterial at render/compile time. This
+		// preserves post-constructor mutations and clones (maskNode,
+		// receivedShadowPositionNode, colorNode, etc.) so artifact selection sees
+		// the final material graph instead of the constructor's partial params.
+		mat = __makeInternalNodeMaterial( ${ JSON.stringify( name ) }, params );
 		if ( params && typeof params === 'object' ) {
 			for ( const key in params ) {
 				if ( params[ key ] !== undefined ) __assignParam( mat, key, params[ key ] );
@@ -798,9 +813,9 @@ export class ${ name } {
 
 	return `
 import * as Slim from '/__tslp__/three.webgpu.slim.js?v=${ CACHE_BUST }';
-import { TSL as FullTSL, TextureNode as FullTextureNode, BlendMode as FullBlendMode, TempNode as FullTempNode, NodeUpdateType as FullNodeUpdateType, NodeMaterial as FullNodeMaterial, MeshBasicNodeMaterial as FullMeshBasicNodeMaterial, MeshPhongNodeMaterial as FullMeshPhongNodeMaterial, SpriteNodeMaterial as FullSpriteNodeMaterial, RenderTarget as FullRenderTarget, QuadMesh as FullQuadMesh, RendererUtils as FullRendererUtils, Vector2 as FullVector2, TextureLoader as FullTextureLoader, CubeTextureLoader as FullCubeTextureLoader, DataTextureLoader as FullDataTextureLoader, ImageBitmapLoader as FullImageBitmapLoader } from '/build/three.webgpu.js';
+import { TSL as FullTSL, TextureNode as FullTextureNode, BlendMode as FullBlendMode, TempNode as FullTempNode, NodeUpdateType as FullNodeUpdateType, NodeMaterial as FullNodeMaterial, MeshBasicNodeMaterial as FullMeshBasicNodeMaterial, MeshStandardNodeMaterial as FullMeshStandardNodeMaterial, MeshPhysicalNodeMaterial as FullMeshPhysicalNodeMaterial, MeshLambertNodeMaterial as FullMeshLambertNodeMaterial, MeshPhongNodeMaterial as FullMeshPhongNodeMaterial, MeshToonNodeMaterial as FullMeshToonNodeMaterial, MeshNormalNodeMaterial as FullMeshNormalNodeMaterial, MeshMatcapNodeMaterial as FullMeshMatcapNodeMaterial, MeshSSSNodeMaterial as FullMeshSSSNodeMaterial, LineBasicNodeMaterial as FullLineBasicNodeMaterial, LineDashedNodeMaterial as FullLineDashedNodeMaterial, Line2NodeMaterial as FullLine2NodeMaterial, PointsNodeMaterial as FullPointsNodeMaterial, SpriteNodeMaterial as FullSpriteNodeMaterial, ShadowNodeMaterial as FullShadowNodeMaterial, RenderTarget as FullRenderTarget, DepthTexture as FullDepthTexture, ArrayCamera as FullArrayCamera, QuadMesh as FullQuadMesh, RendererUtils as FullRendererUtils, Vector2 as FullVector2, TextureLoader as FullTextureLoader, CubeTextureLoader as FullCubeTextureLoader, DataTextureLoader as FullDataTextureLoader, ImageBitmapLoader as FullImageBitmapLoader } from '/build/three.webgpu.js';
 export * from '/__tslp__/three.webgpu.slim.js';
-export { FullTextureNode as TextureNode, FullBlendMode as BlendMode, FullTempNode as TempNode, FullNodeUpdateType as NodeUpdateType, FullRenderTarget as RenderTarget, FullQuadMesh as QuadMesh, FullRendererUtils as RendererUtils };
+export { FullTextureNode as TextureNode, FullBlendMode as BlendMode, FullTempNode as TempNode, FullNodeUpdateType as NodeUpdateType, FullRenderTarget as RenderTarget, FullDepthTexture as DepthTexture, FullArrayCamera as ArrayCamera, FullQuadMesh as QuadMesh, FullRendererUtils as RendererUtils };
 
 const __state = window.__TSLP_E2E || { example: 'unknown', artifacts: { user: {}, aux: [] } };
 const __data = __state.artifacts || { user: {}, aux: [] };
@@ -1398,6 +1413,52 @@ function __preparePMREMArgsForFullRenderer( method, args ) {
 // PMREM's internal tmp-meshes against our scene-replace table, which
 // (a) MISSes (registry empty pre-init) and (b) caches dead bindings before
 // the user's main scene ever runs.
+const __pmremOriginalMethods = new Map();
+
+function __runPMREMGeneratorMethod( self, method, args ) {
+	__pmremRunning ++;
+	const slimRenderer = self && self._renderer;
+	const fullRenderer = __computeRenderer;
+	const FullPMREMGenerator = __fullThreeMod && __fullThreeMod.PMREMGenerator;
+	const useFull = fullRenderer && fullRenderer !== slimRenderer && slimRenderer && slimRenderer.backend && typeof FullPMREMGenerator === 'function';
+	try {
+		const diag = __pmremDiagnostics();
+		diag.syncCalls = ( diag.syncCalls || 0 ) + 1;
+		diag.syncUseFull = ( diag.syncUseFull || 0 ) + ( useFull ? 1 : 0 );
+		diag.syncFallback = ( diag.syncFallback || 0 ) + ( useFull ? 0 : 1 );
+		diag.syncMethods = diag.syncMethods || {};
+		diag.syncMethods[ method ] = ( diag.syncMethods[ method ] || 0 ) + 1;
+		diag.syncLast = { method, hasFullRenderer: !! fullRenderer, hasFullMod: !! __fullThreeMod, hasFullPMREMGenerator: typeof FullPMREMGenerator === 'function', hasSlimRenderer: !! slimRenderer, hasSlimBackend: !! ( slimRenderer && slimRenderer.backend ) };
+	} catch ( _ ) {}
+	try {
+		let target;
+		let fullArgs = args;
+		if ( useFull ) {
+			const gen = new FullPMREMGenerator( fullRenderer );
+			try {
+				fullArgs = __preparePMREMArgsForFullRenderer( method, args );
+				target = gen[ method ]( ...fullArgs );
+			} finally {
+				try { gen.dispose && gen.dispose(); } catch ( _ ) {}
+				if ( fullArgs !== args && fullArgs[ 0 ] && typeof fullArgs[ 0 ].dispose === 'function' ) {
+					try { fullArgs[ 0 ].dispose(); } catch ( _ ) {}
+				}
+			}
+		} else {
+			const orig = __pmremOriginalMethods.get( method ) || Slim.PMREMGenerator && Slim.PMREMGenerator.prototype && Slim.PMREMGenerator.prototype[ method ];
+			target = typeof orig === 'function' ? orig.apply( self, args ) : undefined;
+		}
+		if ( useFull && target && target.texture && target.texture.isTexture === true ) {
+			__sharePMREMGPUTexture( slimRenderer, fullRenderer, target.texture );
+			__pmremCache.set( target.texture, target.texture );
+			Slim.registerLiveTexture( target.texture );
+		}
+		return target;
+	} finally {
+		__pmremRunning --;
+	}
+}
+
 ( function patchPMREMGenerator() {
 	const PG = Slim.PMREMGenerator;
 	if ( ! PG || ! PG.prototype || PG.prototype.__tslpPatched ) return;
@@ -1405,12 +1466,22 @@ function __preparePMREMArgsForFullRenderer( method, args ) {
 	for ( const method of [ 'fromScene', 'fromCubemap', 'fromEquirectangular', 'fromTexture' ] ) {
 		const orig = PG.prototype[ method ];
 		if ( typeof orig !== 'function' ) continue;
+		__pmremOriginalMethods.set( method, orig );
 		PG.prototype[ method ] = function ( ...args ) {
 			__pmremRunning ++;
 			const slimRenderer = this._renderer;
 			const fullRenderer = __computeRenderer;
 			const FullPMREMGenerator = __fullThreeMod && __fullThreeMod.PMREMGenerator;
 			const useFull = fullRenderer && fullRenderer !== slimRenderer && slimRenderer && slimRenderer.backend && typeof FullPMREMGenerator === 'function';
+			try {
+				const diag = __pmremDiagnostics();
+				diag.syncCalls = ( diag.syncCalls || 0 ) + 1;
+				diag.syncUseFull = ( diag.syncUseFull || 0 ) + ( useFull ? 1 : 0 );
+				diag.syncFallback = ( diag.syncFallback || 0 ) + ( useFull ? 0 : 1 );
+				diag.syncMethods = diag.syncMethods || {};
+				diag.syncMethods[ method ] = ( diag.syncMethods[ method ] || 0 ) + 1;
+				diag.syncLast = { method, hasFullRenderer: !! fullRenderer, hasFullMod: !! __fullThreeMod, hasFullPMREMGenerator: typeof FullPMREMGenerator === 'function', hasSlimRenderer: !! slimRenderer, hasSlimBackend: !! ( slimRenderer && slimRenderer.backend ) };
+			} catch ( _ ) {}
 			try {
 				let target;
 				let fullArgs = args;
@@ -1443,6 +1514,13 @@ function __preparePMREMArgsForFullRenderer( method, args ) {
 		};
 	}
 } )();
+
+export class PMREMGenerator extends Slim.PMREMGenerator {
+	fromScene( ...args ) { return __runPMREMGeneratorMethod( this, 'fromScene', args ); }
+	fromCubemap( ...args ) { return __runPMREMGeneratorMethod( this, 'fromCubemap', args ); }
+	fromEquirectangular( ...args ) { return __runPMREMGeneratorMethod( this, 'fromEquirectangular', args ); }
+	fromTexture( ...args ) { return __runPMREMGeneratorMethod( this, 'fromTexture', args ); }
+}
 
 // Copy the PMREM GPU-texture entry from the full renderer's backend WeakMap
 // into the slim renderer's backend WeakMap so the slim renderer can bind the
@@ -1702,6 +1780,7 @@ function __nodeStub( auxConfigHash = null ) {
 			if ( prop === Symbol.toPrimitive ) return () => 0;
 			if ( prop === 'then' ) return undefined;
 			if ( prop === 'isNode' ) return true;
+			if ( prop === '__tslpNodeStub' ) return true;
 			if ( prop === '__tslpAuxConfigHash' ) return auxConfigHash;
 			if ( prop === 'toVar' ) return () => proxy;
 			return proxy;
@@ -2029,9 +2108,71 @@ function __nodeGraphKeys() {
 	return [ 'colorNode', 'fragmentNode', 'normalNode', 'positionNode', 'outputNode', 'roughnessNode', 'metalnessNode', 'emissiveNode', 'opacityNode', 'alphaTestNode', 'vertexNode', 'envNode', 'lightNode', 'aoNode', 'transmissionNode', 'thicknessNode', 'maskNode', 'maskShadowNode', 'receivedShadowPositionNode', 'castShadowPositionNode', 'castShadowNode' ];
 }
 
+function __isRealMaterialNode( node ) {
+	return !! ( node && node.isNode === true && node.__tslpNodeStub !== true );
+}
+
+function __sourceNodePropNames( sourceMaterial ) {
+	const props = [];
+	if ( ! sourceMaterial ) return props;
+	for ( const key of __nodeGraphKeys() ) {
+		if ( __isRealMaterialNode( sourceMaterial[ key ] ) ) props.push( key );
+	}
+	return props;
+}
+
+function __artifactNodePropNames( artifact ) {
+	const source = artifact && artifact.sourceMaterial || null;
+	return source && Array.isArray( source.nodeProps ) ? source.nodeProps.filter( Boolean ) : null;
+}
+
+function __artifactSourceObject( artifact ) {
+	const source = artifact && artifact.sourceMaterial || null;
+	if ( ! source || ! Object.prototype.hasOwnProperty.call( source, 'object' ) ) return undefined;
+	return source.object || null;
+}
+
+function __objectMetadataScore( artifact, sourceObject ) {
+	const artifactObject = __artifactSourceObject( artifact );
+	if ( artifactObject === undefined ) return 0;
+	if ( ! artifactObject && ! sourceObject ) return 90;
+	if ( ! artifactObject && sourceObject ) return -140;
+	if ( artifactObject && ! sourceObject ) return -160;
+	let score = 0;
+	const sourceType = sourceObject.type || sourceObject.constructor && sourceObject.constructor.name || '';
+	if ( artifactObject.type && sourceType ) score += artifactObject.type === sourceType ? 45 : -35;
+	const sourceRenderOrder = Number.isFinite( sourceObject.renderOrder ) ? sourceObject.renderOrder : 0;
+	if ( Number.isFinite( artifactObject.renderOrder ) ) score += Math.abs( artifactObject.renderOrder - sourceRenderOrder ) < 1e-6 ? 90 : -45;
+	if ( typeof artifactObject.castShadow === 'boolean' ) score += artifactObject.castShadow === ( sourceObject.castShadow === true ) ? 20 : -20;
+	if ( typeof artifactObject.receiveShadow === 'boolean' ) score += artifactObject.receiveShadow === ( sourceObject.receiveShadow === true ) ? 20 : -20;
+	if ( typeof artifactObject.isInstancedMesh === 'boolean' ) score += artifactObject.isInstancedMesh === ( sourceObject.isInstancedMesh === true ) ? 25 : -80;
+	if ( Array.isArray( artifactObject.scale ) && sourceObject.scale ) {
+		const delta = Math.abs( ( artifactObject.scale[ 0 ] || 0 ) - sourceObject.scale.x )
+			+ Math.abs( ( artifactObject.scale[ 1 ] || 0 ) - sourceObject.scale.y )
+			+ Math.abs( ( artifactObject.scale[ 2 ] || 0 ) - sourceObject.scale.z );
+		score += delta < 1e-5 ? 45 : delta < 0.1 ? 15 : -20;
+	}
+	return score;
+}
+
+function __nodePropSetScore( artifact, sourceMaterial ) {
+	const artifactProps = __artifactNodePropNames( artifact );
+	if ( ! artifactProps ) return 0;
+	const sourceProps = __sourceNodePropNames( sourceMaterial );
+	const sourceSet = new Set( sourceProps );
+	const artifactSet = new Set( artifactProps );
+	let score = 0;
+	for ( const key of sourceSet ) score += artifactSet.has( key ) ? 90 : -130;
+	for ( const key of artifactSet ) {
+		if ( ! sourceSet.has( key ) ) score -= 120;
+	}
+	if ( sourceSet.size === artifactSet.size && sourceProps.every( ( key ) => artifactSet.has( key ) ) ) score += 180;
+	return score;
+}
+
 function __sourceHasNodeGraph( sourceMaterial ) {
 	if ( ! sourceMaterial ) return false;
-	for ( const key of __nodeGraphKeys() ) if ( sourceMaterial[ key ] && sourceMaterial[ key ].isNode === true ) return true;
+	for ( const key of __nodeGraphKeys() ) if ( __isRealMaterialNode( sourceMaterial[ key ] ) ) return true;
 	return false;
 }
 
@@ -2041,7 +2182,7 @@ function __collectMaterialNodeTextures( sourceMaterial ) {
 	const seen = new Set();
 	for ( const key of __nodeGraphKeys() ) {
 		const node = sourceMaterial[ key ];
-		if ( ! node ) continue;
+		if ( ! __isRealMaterialNode( node ) ) continue;
 		for ( const texture of __collectTexturesInNode( node ) ) {
 			if ( texture && texture.isTexture === true && ! seen.has( texture ) ) {
 				seen.add( texture );
@@ -2066,7 +2207,7 @@ function __walkMaterialNodeGraph( sourceMaterial, visitor ) {
 	if ( ! sourceMaterial || typeof visitor !== 'function' ) return;
 	const seen = new Set();
 	const walk = ( node, depth = 0 ) => {
-		if ( ! node || node.isNode !== true || depth > 24 || seen.has( node ) ) return;
+		if ( ! node || node.isNode !== true || node.__tslpNodeStub === true || depth > 24 || seen.has( node ) ) return;
 		seen.add( node );
 		visitor( node );
 		if ( typeof node.traverse === 'function' ) {
@@ -2178,12 +2319,52 @@ function __wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial ) {
 	}
 }
 
+function __materialFamilyFromClassName( className ) {
+	if ( /^Mesh[A-Za-z0-9]*NodeMaterial$/.test( className ) ) return 'mesh';
+	if ( /^Line[A-Za-z0-9]*NodeMaterial$/.test( className ) ) return 'line';
+	if ( className === 'PointsNodeMaterial' ) return 'points';
+	if ( className === 'SpriteNodeMaterial' ) return 'sprite';
+	return null;
+}
+
+function __materialFamilyFromObject( object ) {
+	if ( ! object ) return null;
+	if ( object.isPoints === true ) return 'points';
+	if ( object.isLine === true || object.isLineSegments === true || object.isLineLoop === true || object.isLine2 === true || object.isLineSegments2 === true ) return 'line';
+	if ( object.isSprite === true ) return 'sprite';
+	if ( object.isMesh === true || object.isInstancedMesh === true || object.isSkinnedMesh === true ) return 'mesh';
+	return null;
+}
+
 function __scoreArtifactForSource( key, mod, className, sourceMaterial, sourceObject = null ) {
 	const artifact = mod && mod.artifact;
 	if ( ! artifact ) return -Infinity;
-	let score = key.includes( ':' + className + ':' ) ? 30 : 0;
+	const artifactClassName = __classNameFromArtifactName( key );
+	const requestedFamily = __materialFamilyFromClassName( className );
+	const artifactFamily = __materialFamilyFromClassName( artifactClassName );
+	const objectFamily = __materialFamilyFromObject( sourceObject );
+	let score = artifactClassName === className ? 180 : key.includes( ':' + className + ':' ) ? 120 : 0;
+	if ( artifactFamily && objectFamily ) {
+		score += artifactFamily === objectFamily ? 140 : -420;
+	}
+	if ( requestedFamily && artifactFamily ) {
+		if ( requestedFamily === artifactFamily ) score += artifactClassName === className ? 60 : 25;
+		else score -= 360;
+	}
 	const typeNeedle = __sourceTypeNeedle( sourceMaterial );
 	if ( typeNeedle && key.includes( ':' + typeNeedle + ':' ) ) score += 15;
+	score += __nodePropSetScore( artifact, sourceMaterial );
+	score += __objectMetadataScore( artifact, sourceObject );
+
+	if ( sourceMaterial && artifact.renderState && typeof sourceMaterial.transparent === 'boolean' && typeof artifact.renderState.transparent === 'boolean' ) {
+		score += sourceMaterial.transparent === artifact.renderState.transparent ? 45 : -80;
+	}
+
+	if ( sourceMaterial && artifact.defaults && typeof sourceMaterial.shininess === 'number' && typeof artifact.defaults.shininess === 'number' ) {
+		const delta = Math.abs( sourceMaterial.shininess - artifact.defaults.shininess );
+		if ( delta < 1e-4 ) score += 40;
+		else if ( delta > 5 ) score -= 35;
+	}
 
 	const sourceColor = __readColorTriplet( sourceMaterial && sourceMaterial.color );
 	if ( sourceColor ) {
@@ -2285,12 +2466,9 @@ function __scoreArtifactForSource( key, mod, className, sourceMaterial, sourceOb
 
 function __findBestArtifactForSource( className, sourceMaterial, keys, sourceObject = null ) {
 	if ( ! sourceMaterial || ! Array.isArray( keys ) || keys.length === 0 ) return null;
-	const typeNeedle = __sourceTypeNeedle( sourceMaterial );
-	const preferredKeys = keys.filter( ( key ) => key.includes( ':' + className + ':' ) || ( typeNeedle && key.includes( ':' + typeNeedle + ':' ) ) );
-	const searchKeys = preferredKeys.length > 0 ? preferredKeys : keys;
 	let best = null;
 	let bestScore = -Infinity;
-	for ( const key of searchKeys ) {
+	for ( const key of keys ) {
 		const mod = __data.user && __data.user[ key ];
 		const score = __scoreArtifactForSource( key, mod, className, sourceMaterial, sourceObject );
 		if ( score > bestScore ) {
@@ -2301,15 +2479,16 @@ function __findBestArtifactForSource( className, sourceMaterial, keys, sourceObj
 	return best && bestScore >= 55 ? best : null;
 }
 
-function __takeMaterial( className, sourceMaterial = null, sourceObject = null ) {
+function __takeMaterial( className, sourceMaterial = null, sourceObject = null, opts = {} ) {
+	const allowUsed = !! ( opts && opts.allowUsed );
 	const n = ( __counts[ className ] || 0 ) + 1;
 	__counts[ className ] = n;
 	let name = __state.example + ':' + className + ':' + n;
 	let mod = __data.user && __data.user[ name ];
-	if ( mod && __usedArtifactNames.has( name ) ) mod = null;
+	if ( mod && ! allowUsed && __usedArtifactNames.has( name ) ) mod = null;
 	if ( sourceMaterial ) {
 		const allKeys = Object.keys( __data.user || {} );
-		const unusedKeys = allKeys.filter( ( key ) => ! __usedArtifactNames.has( key ) );
+		const unusedKeys = allowUsed ? allKeys : allKeys.filter( ( key ) => ! __usedArtifactNames.has( key ) );
 		const matchedName = __findBestArtifactForSource( className, sourceMaterial, unusedKeys, sourceObject );
 		if ( matchedName ) {
 			name = matchedName;
@@ -2318,7 +2497,7 @@ function __takeMaterial( className, sourceMaterial = null, sourceObject = null )
 	}
 	if ( ! mod || ! mod.artifact ) {
 		const allKeys = Object.keys( __data.user || {} );
-		const unusedKeys = allKeys.filter( ( key ) => ! __usedArtifactNames.has( key ) );
+		const unusedKeys = allowUsed ? allKeys : allKeys.filter( ( key ) => ! __usedArtifactNames.has( key ) );
 		const typeNeedle = __sourceTypeNeedle( sourceMaterial );
 		const findType = ( keys ) => keys.find( ( key ) => typeNeedle && key.includes( ':' + typeNeedle + ':' ) );
 		const findCompatible = ( keys ) => keys.find( ( key ) => /:(MeshBasic|MeshLambert|MeshStandard)NodeMaterial:/.test( key ) );
@@ -2441,8 +2620,20 @@ function __makeFallbackNodeMaterial( params ) {
 function __makeInternalNodeMaterial( className = 'NodeMaterial', params = null ) {
 	let Ctor = FullNodeMaterial;
 	if ( className === 'MeshBasicNodeMaterial' && FullMeshBasicNodeMaterial ) Ctor = FullMeshBasicNodeMaterial;
+	else if ( className === 'MeshStandardNodeMaterial' && FullMeshStandardNodeMaterial ) Ctor = FullMeshStandardNodeMaterial;
+	else if ( className === 'MeshPhysicalNodeMaterial' && FullMeshPhysicalNodeMaterial ) Ctor = FullMeshPhysicalNodeMaterial;
+	else if ( className === 'MeshLambertNodeMaterial' && FullMeshLambertNodeMaterial ) Ctor = FullMeshLambertNodeMaterial;
 	else if ( className === 'MeshPhongNodeMaterial' && FullMeshPhongNodeMaterial ) Ctor = FullMeshPhongNodeMaterial;
+	else if ( className === 'MeshToonNodeMaterial' && FullMeshToonNodeMaterial ) Ctor = FullMeshToonNodeMaterial;
+	else if ( className === 'MeshNormalNodeMaterial' && FullMeshNormalNodeMaterial ) Ctor = FullMeshNormalNodeMaterial;
+	else if ( className === 'MeshMatcapNodeMaterial' && FullMeshMatcapNodeMaterial ) Ctor = FullMeshMatcapNodeMaterial;
+	else if ( className === 'MeshSSSNodeMaterial' && FullMeshSSSNodeMaterial ) Ctor = FullMeshSSSNodeMaterial;
+	else if ( className === 'LineBasicNodeMaterial' && FullLineBasicNodeMaterial ) Ctor = FullLineBasicNodeMaterial;
+	else if ( className === 'LineDashedNodeMaterial' && FullLineDashedNodeMaterial ) Ctor = FullLineDashedNodeMaterial;
+	else if ( className === 'Line2NodeMaterial' && FullLine2NodeMaterial ) Ctor = FullLine2NodeMaterial;
+	else if ( className === 'PointsNodeMaterial' && FullPointsNodeMaterial ) Ctor = FullPointsNodeMaterial;
 	else if ( className === 'SpriteNodeMaterial' && FullSpriteNodeMaterial ) Ctor = FullSpriteNodeMaterial;
+	else if ( className === 'ShadowNodeMaterial' && FullShadowNodeMaterial ) Ctor = FullShadowNodeMaterial;
 	let material;
 	try {
 		material = new Ctor();
@@ -2508,15 +2699,18 @@ function __makeFallbackArtifactTexture( source ) {
 		try {
 			const parsed = new URL( source.imageSrc, window.location.href );
 			url = parsed.pathname + parsed.search + parsed.hash;
-		} catch ( _ ) {}
-		const texture = new Slim.TextureLoader().load( url, () => {
-			__rememberLiveTexture( texture );
-		} );
-		texture.name = source.textureName || __basenameFromUrl( source.imageSrc ) || texture.name;
-		if ( source.colorSpace !== undefined ) texture.colorSpace = source.colorSpace;
-		if ( ! __textureImageReady( texture ) ) {
-			texture.image = __newFallbackTextureImage();
-			texture.needsUpdate = true;
+			} catch ( _ ) {}
+			const texture = new Slim.TextureLoader().load( url, () => {
+				__applyCapturedTextureState( texture, source );
+				try { texture.dispose && texture.dispose(); } catch ( _ ) {}
+				texture.needsUpdate = true;
+				__rememberLiveTexture( texture );
+			} );
+			texture.name = source.textureName || __basenameFromUrl( source.imageSrc ) || texture.name;
+			__applyCapturedTextureState( texture, source );
+			if ( ! __textureImageReady( texture ) ) {
+				texture.image = __newFallbackTextureImage();
+				texture.needsUpdate = true;
 		}
 		__rememberLiveTexture( texture );
 		__fallbackArtifactTextures.set( key, texture );
@@ -2525,10 +2719,19 @@ function __makeFallbackArtifactTexture( source ) {
 	const data = new Uint8Array( [ 255, 255, 255, 255 ] );
 	const texture = new Slim.DataTexture( data, 1, 1 );
 	texture.name = source && ( source.textureName || __basenameFromUrl( source.imageSrc ) ) || 'tslp-fallback-texture';
-	if ( source && source.colorSpace !== undefined ) texture.colorSpace = source.colorSpace;
+	__applyCapturedTextureState( texture, source );
 	texture.needsUpdate = true;
 	__fallbackArtifactTextures.set( key, texture );
 	return texture;
+}
+
+function __applyCapturedTextureState( texture, source ) {
+	if ( ! texture || ! source ) return;
+	for ( const key of [ 'mapping', 'wrapS', 'wrapT', 'magFilter', 'minFilter', 'anisotropy', 'generateMipmaps', 'flipY', 'colorSpace' ] ) {
+		if ( source[ key ] !== undefined ) {
+			try { texture[ key ] = source[ key ]; } catch ( _ ) {}
+		}
+	}
 }
 
 function __ensureArtifactTextureFallbacks( artifact ) {
@@ -2969,16 +3172,33 @@ function __precompiledArtifactMatchesObject( artifact, object ) {
 	return __artifactNodeAttributes( artifact ).some( ( entry ) => entry.count === count );
 }
 
+function __precompiledArtifactMatchesSource( artifact, sourceMaterial, object ) {
+	if ( ! __precompiledArtifactMatchesObject( artifact, object ) ) return false;
+	const artifactObject = __artifactSourceObject( artifact );
+	if ( artifactObject !== undefined && ( artifactObject === null ) !== ( ! object ) ) return false;
+	const artifactProps = __artifactNodePropNames( artifact );
+	if ( artifactProps ) {
+		const sourceProps = __sourceNodePropNames( sourceMaterial );
+		if ( sourceProps.length !== artifactProps.length ) return false;
+		const artifactSet = new Set( artifactProps );
+		for ( const key of sourceProps ) {
+			if ( ! artifactSet.has( key ) ) return false;
+		}
+	}
+	if ( sourceMaterial && artifact && artifact.renderState && typeof sourceMaterial.transparent === 'boolean' && typeof artifact.renderState.transparent === 'boolean' && sourceMaterial.transparent !== artifact.renderState.transparent ) return false;
+	return true;
+}
+
 function __retargetPrecompiledMaterialForObject( material, object ) {
 	if ( ! material || ! material.isPrecompiledMaterial ) return material;
-	if ( __precompiledArtifactMatchesObject( material.precompiledArtifact, object ) ) return material;
+	if ( __precompiledArtifactMatchesSource( material.precompiledArtifact, material, object ) ) return material;
 
 	const oldName = material.name || '';
 	const className = __classNameFromArtifactName( oldName ) || 'MeshStandardNodeMaterial';
 	if ( oldName ) __usedArtifactNames.delete( oldName );
 	let replacement = null;
 	try {
-		replacement = __takeMaterial( className, material, object );
+		replacement = __takeMaterial( className, material, object, { allowUsed: true } );
 	} catch ( _ ) {
 		if ( oldName ) __usedArtifactNames.add( oldName );
 		return material;
@@ -3056,6 +3276,34 @@ function __replaceSceneMaterials( scene ) {
 	}
 }
 
+function __recordReplayMaterialSnapshot( scene, phase = 'prepare' ) {
+	if ( ! ( window.__TSLP_DEBUG_SHADOW_BINDINGS === true ) || ! scene || typeof scene.traverse !== 'function' ) return;
+	try {
+		const diag = window.__tslpHarnessDiagnostics || ( window.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
+		const list = diag.replayMaterials || ( diag.replayMaterials = [] );
+		if ( list.length >= 240 ) return;
+		scene.traverse( ( object ) => {
+			if ( list.length >= 240 ) return;
+			const materials = object && object.material ? ( Array.isArray( object.material ) ? object.material : [ object.material ] ) : [];
+			for ( const material of materials ) {
+				if ( ! material || list.length >= 240 ) continue;
+				list.push( {
+					phase,
+					objectType: object.type || ( object.constructor && object.constructor.name ) || '',
+					objectName: object.name || '',
+					materialType: material.type || ( material.constructor && material.constructor.name ) || '',
+					materialName: material.name || '',
+					isPrecompiled: material.isPrecompiledMaterial === true,
+					artifactName: material.isPrecompiledMaterial === true ? material.name || '' : '',
+					transparent: material.transparent === true,
+					visible: material.visible !== false,
+					nodeProps: __sourceNodePropNames( material ),
+				} );
+			}
+		} );
+	} catch ( _ ) {}
+}
+
 function __replacePriority( object ) {
 	if ( ! object ) return 0;
 	if ( object.isInstancedMesh === true ) return 20;
@@ -3108,13 +3356,27 @@ function __collectTexturesInNode( node, out = [], depth = 0, seen = new Set() ) 
 		if ( v && v.isTexture === true ) __pushUniqueTexture( out, v );
 		if ( v && v.texture && v.texture.isTexture === true ) __pushUniqueTexture( out, v.texture );
 	}
-	for ( const key of [ 'node', 'aNode', 'bNode', 'uvNode', 'levelNode', 'sourceNode', 'textureNode', 'pmremNode' ] ) {
-		const child = read( node, key );
-		if ( child ) __collectTexturesInNode( child, out, depth + 1, seen );
-	}
-	for ( const key of Object.getOwnPropertyNames( node ) ) {
-		if ( key === 'parent' || key === 'children' || key === '_cache' || key === 'builder' || key === 'material' || key === 'object' ) continue;
-		const child = read( node, key );
+		for ( const key of [ 'node', 'aNode', 'bNode', 'uvNode', 'levelNode', 'sourceNode', 'textureNode', 'pmremNode' ] ) {
+			const child = read( node, key );
+			if ( child ) __collectTexturesInNode( child, out, depth + 1, seen );
+		}
+		if ( typeof node.getChildren === 'function' ) {
+			try {
+				for ( const child of node.getChildren() ) {
+					if ( child && child !== node ) __collectTexturesInNode( child, out, depth + 1, seen );
+				}
+			} catch ( _ ) {}
+		}
+		if ( typeof node.traverse === 'function' ) {
+			try {
+				node.traverse( ( child ) => {
+					if ( child && child !== node ) __collectTexturesInNode( child, out, depth + 1, seen );
+				} );
+			} catch ( _ ) {}
+		}
+		for ( const key of Object.getOwnPropertyNames( node ) ) {
+			if ( key === 'parent' || key === 'children' || key === '_cache' || key === 'builder' || key === 'material' || key === 'object' ) continue;
+			const child = read( node, key );
 		if ( child && child.isTexture === true ) __pushUniqueTexture( out, child );
 		if ( child && Array.isArray( child ) ) {
 			for ( const item of child ) {
@@ -3794,15 +4056,17 @@ function __kickPMREMGenAsync( slimRenderer, sourceTex, onReady ) {
 // live-texture index. Hydrator uses this to relink artifact.texture-kind
 // bindings whose textureUuid is dead by matching imageSrc / textureName
 // from the captured artifact against currently-loaded textures.
-function __indexLiveTextures( scene ) {
-	if ( ! scene || typeof scene.traverse !== 'function' ) return;
-	const visit = ( tex, options = {} ) => {
-		if ( tex && tex.isTexture === true ) {
-			if ( options.heal !== false ) __healTextureImage( tex );
-			__rememberLiveTexture( tex );
-		}
-	};
-	if ( scene.background && scene.background.isTexture === true ) visit( scene.background );
+	function __indexLiveTextures( scene ) {
+		const visit = ( tex, options = {} ) => {
+			if ( tex && tex.isTexture === true ) {
+				if ( options.heal !== false ) __healTextureImage( tex );
+				__rememberLiveTexture( tex );
+			}
+		};
+		const globalTslTextures = Array.isArray( window.__tslpTslTextureArgs ) ? window.__tslpTslTextureArgs : [];
+		for ( const tex of globalTslTextures ) visit( tex, { heal: false } );
+		if ( ! scene || typeof scene.traverse !== 'function' ) return;
+		if ( scene.background && scene.background.isTexture === true ) visit( scene.background );
 	if ( scene.environment && scene.environment.isTexture === true ) visit( scene.environment );
 	for ( const tex of __capturedBackgroundSources ) visit( tex );
 	for ( const tex of __capturedEnvironmentSources ) visit( tex );
@@ -3816,20 +4080,26 @@ function __indexLiveTextures( scene ) {
 	}
 	scene.traverse( ( object ) => {
 		// Lights can carry textures (SpotLight.map / RectAreaLight.map). Three.js
-		// bakes those into the LightsNode TSL graph, so the captured artifact
-		// references them by uuid/imageSrc just like material.map. They must be
-		// registered or the artifact-texture rebinder falls back to a 1x1 stub.
-		if ( object && object.isLight === true && object.map && object.map.isTexture === true ) visit( object.map, { heal: false } );
-		const ms = object && object.material;
-		const list = Array.isArray( ms ) ? ms : ms ? [ ms ] : [];
-		for ( const m of list ) {
-			if ( ! m ) continue;
-			for ( const key of __TEXTURE_PROPS ) visit( m[ key ], { heal: false } );
-		}
-	} );
-}
+			// bakes those into the LightsNode TSL graph, so the captured artifact
+			// references them by uuid/imageSrc just like material.map. They must be
+			// registered or the artifact-texture rebinder falls back to a 1x1 stub.
+			if ( object && object.isLight === true && object.map && object.map.isTexture === true ) visit( object.map, { heal: false } );
+			const ms = object && object.material;
+			const list = Array.isArray( ms ) ? ms : ms ? [ ms ] : [];
+			for ( const m of list ) {
+				if ( ! m ) continue;
+				for ( const key of __TEXTURE_PROPS ) visit( m[ key ], { heal: false } );
+				for ( const tex of __collectMaterialNodeTextures( m ) ) visit( tex, { heal: false } );
+			}
+		} );
+	}
 
 function __prepareSceneForReplay( scene, renderer ) {
+	if ( __pmremRunning > 0 ) return;
+	// PMREMGenerator and RenderPipeline internals render temporary meshes/scenes
+	// that were never part of the user's capture set. Let the full/slim renderer
+	// handle those materials normally so they do not consume user artifacts.
+	if ( ! scene || scene.isScene !== true || scene.name === 'RoomEnvironment' ) return;
 	// When a background-aux artifact is registered the rewritten Background.js
 	// inside the slim bundle calls loadAux('background', hashNodeGraphSync(backgroundNode))
 	// to build a PrecompiledMaterial for the sky quad.  That path is only
@@ -3888,6 +4158,7 @@ function __prepareSceneForReplay( scene, renderer ) {
 	__wireBackgroundTextures( scene, renderer );
 	__replaceSceneOverrideMaterial( scene );
 	__replaceSceneMaterials( scene );
+	__recordReplayMaterialSnapshot( scene, 'prepare' );
 }
 
 // Auto-compute dispatch for material *Node slots that hold a raw TSL ComputeNode.
@@ -4197,7 +4468,9 @@ async function __getComputeRenderer( slimRenderer ) {
 			__fullThreeMod = mod;
 			const FullRenderer = mod.WebGPURenderer;
 			const device = slimRenderer.backend && slimRenderer.backend.device;
-			const r = new FullRenderer( device ? { device } : {} );
+			const rendererOptions = device ? { device } : {};
+			if ( slimRenderer && slimRenderer.reversedDepthBuffer !== undefined ) rendererOptions.reversedDepthBuffer = slimRenderer.reversedDepthBuffer === true;
+			const r = new FullRenderer( rendererOptions );
 			await r.init();
 			// Enable shadow map on the full renderer so shadow passes fire when
 			// rendering the shadow scene below. The slim renderer's shadowMap
@@ -4316,7 +4589,7 @@ function __buildShadowScene( userScene ) {
 	// sampling material in the scene, three.js's NodeBuilder skips ShadowNode
 	// setup and light.shadow.map never allocates. Lambert is the cheapest
 	// PCF-shadow-aware material we can stand-in for.
-	const { Scene: FullScene, Mesh: FullMesh, MeshLambertMaterial, MeshLambertNodeMaterial, ClippingGroup: FullClippingGroup } = __fullThreeMod;
+	const { Scene: FullScene, Mesh: FullMesh, InstancedMesh: FullInstancedMesh, MeshLambertMaterial, MeshLambertNodeMaterial, ClippingGroup: FullClippingGroup } = __fullThreeMod;
 	if ( ! FullScene || ! FullMesh || ( ! MeshLambertMaterial && ! MeshLambertNodeMaterial ) ) return null;
 	const StandinMaterial = MeshLambertNodeMaterial || MeshLambertMaterial;
 	const shadowScene = new FullScene();
@@ -4444,7 +4717,25 @@ function __buildShadowScene( userScene ) {
 			try {
 				if ( standinMaterial.color && typeof standinMaterial.color.setHex === 'function' ) standinMaterial.color.setHex( 0xffffff );
 			} catch ( _ ) {}
-			const standin = new FullMesh( __cloneGeometryForFullRenderer( o.geometry ), standinMaterial );
+			let standin = null;
+			if ( o.isInstancedMesh === true && FullInstancedMesh ) {
+				const count = o.count || o.instanceMatrix && o.instanceMatrix.count || 1;
+				standin = new FullInstancedMesh( __cloneGeometryForFullRenderer( o.geometry ), standinMaterial, count );
+				standin.count = count;
+				if ( o.instanceMatrix ) {
+					try {
+						standin.instanceMatrix = __cloneAttributeForFullRenderer( o.instanceMatrix );
+						standin.instanceMatrix.needsUpdate = true;
+					} catch ( _ ) {}
+				}
+				if ( o.instanceColor ) {
+					try {
+						standin.instanceColor = __cloneAttributeForFullRenderer( o.instanceColor );
+						standin.instanceColor.needsUpdate = true;
+					} catch ( _ ) {}
+				}
+			}
+			if ( ! standin ) standin = new FullMesh( __cloneGeometryForFullRenderer( o.geometry ), standinMaterial );
 			standin.castShadow = !! o.castShadow;
 			standin.receiveShadow = !! o.receiveShadow;
 			// Decompose world matrix onto local position/quaternion/scale —
@@ -4505,6 +4796,21 @@ function __refreshShadowScene( userScene, shadowScene ) {
 		if ( ! src || ! clone || ! src.matrixWorld ) continue;
 		src.matrixWorld.decompose( clone.position, clone.quaternion, clone.scale );
 		if ( src.layers && clone.layers ) clone.layers.mask = src.layers.mask;
+		if ( src.isInstancedMesh === true && clone.isInstancedMesh === true ) {
+			clone.count = src.count || clone.count;
+			if ( src.instanceMatrix && clone.instanceMatrix && clone.instanceMatrix.array !== src.instanceMatrix.array ) {
+				try {
+					clone.instanceMatrix.array.set( src.instanceMatrix.array );
+					clone.instanceMatrix.needsUpdate = true;
+				} catch ( _ ) {}
+			}
+			if ( src.instanceColor && clone.instanceColor && clone.instanceColor.array !== src.instanceColor.array ) {
+				try {
+					clone.instanceColor.array.set( src.instanceColor.array );
+					clone.instanceColor.needsUpdate = true;
+				} catch ( _ ) {}
+			}
+		}
 	}
 	const clipPairs = shadowScene.__clipPairs || [];
 	for ( const { src, clone } of clipPairs ) {
@@ -4522,6 +4828,71 @@ function __getOrBuildShadowScene( userScene ) {
 	const built = __buildShadowScene( userScene );
 	__shadowSceneCache.set( userScene, built ); // cache null too, so we don't retry
 	return built;
+}
+
+function __suspendCustomShadowNodes( shadowScene ) {
+	const suspended = [];
+	for ( const { src } of shadowScene && shadowScene.__lightPairs || [] ) {
+		const shadow = src && src.shadow;
+		if ( ! shadow || ! shadow.shadowNode ) continue;
+		suspended.push( { shadow, shadowNode: shadow.shadowNode } );
+		shadow.shadowNode = undefined;
+	}
+	return suspended;
+}
+
+function __restoreCustomShadowNodes( suspended ) {
+	for ( const entry of suspended || [] ) {
+		if ( entry && entry.shadow ) entry.shadow.shadowNode = entry.shadowNode;
+	}
+}
+
+function __updateCustomShadowHelpers( scene ) {
+	if ( ! scene || typeof scene.traverse !== 'function' ) return;
+	scene.traverse( ( object ) => {
+		if ( ! object || ! object.tileShadowNode || typeof object.update !== 'function' ) return;
+		try { object.update(); } catch ( _ ) {}
+	} );
+}
+
+async function __renderCustomShadowNodes( fullRenderer, slimRenderer, userScene, shadowScene, camera ) {
+	if ( ! fullRenderer || ! userScene || ! shadowScene || typeof userScene.traverse !== 'function' ) return 0;
+	let rendered = 0;
+	const frame = { renderer: fullRenderer, scene: shadowScene, camera };
+	userScene.traverse( ( light ) => {
+		const shadowNode = light && light.isLight === true && light.shadow && light.shadow.shadowNode || null;
+		if ( ! shadowNode || shadowNode.isShadowBaseNode !== true ) return;
+		const ctorName = shadowNode.constructor && shadowNode.constructor.name || '';
+		if ( ! /TileShadowNode/.test( ctorName ) ) return;
+		try {
+			for ( let pass = 0; pass < 2; pass ++ ) {
+				if ( typeof shadowNode.update === 'function' ) shadowNode.update();
+				if ( typeof shadowNode.updateShadow === 'function' ) {
+					shadowNode.updateShadow( frame );
+					rendered ++;
+				}
+			}
+			const depthTexture = shadowNode.shadowMap && shadowNode.shadowMap.depthTexture || null;
+			if ( depthTexture && depthTexture.isTexture === true ) {
+				__shareShadowGpuTextureIntoSlim( depthTexture, fullRenderer, slimRenderer );
+			}
+			for ( const tileLight of shadowNode.lights || [] ) {
+				const tex = tileLight && tileLight.shadow && tileLight.shadow.map && tileLight.shadow.map.depthTexture || null;
+				if ( tex && tex.isTexture === true ) __shareShadowGpuTextureIntoSlim( tex, fullRenderer, slimRenderer );
+			}
+		} catch ( err ) {
+			if ( window.__TSLP_DEBUG_SHADOW_BINDINGS === true || window.__TSLP_DEBUG_SHADOW_COVERAGE === true ) {
+				console.warn( '[tslp-shadow] custom shadow render failed:', err && err.message || err );
+			}
+		}
+	} );
+	if ( rendered > 0 ) {
+		try {
+			const queue = fullRenderer.backend && fullRenderer.backend.device && fullRenderer.backend.device.queue;
+			if ( queue && typeof queue.onSubmittedWorkDone === 'function' ) await queue.onSubmittedWorkDone();
+		} catch ( _ ) {}
+	}
+	return rendered;
 }
 
 function __cloneCameraForFullRenderer( camera, fallbackAspect = 1 ) {
@@ -4933,6 +5304,10 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 	__prepareCustomShadowNodes( userScene, slimRenderer, camera );
 	const signature = __sceneSignature( userScene );
 	if ( ! signature || signature.lights === 0 || signature.meshes === 0 || signature.casters === 0 ) return;
+	let replayRenderTarget = null;
+	try {
+		replayRenderTarget = slimRenderer && typeof slimRenderer.getRenderTarget === 'function' ? slimRenderer.getRenderTarget() : null;
+	} catch ( _ ) {}
 	const sig = signature.value;
 	let st = __shadowState.get( userScene );
 	if ( ! st ) { st = { inflight: false, signature: '', queuedSignature: '' }; __shadowState.set( userScene, st ); }
@@ -4944,6 +5319,11 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 	// New or grown scene: discard cached shadow-scene so __buildShadowScene
 	// re-walks and picks up the freshly-added meshes (e.g. glTF children).
 	__shadowSceneCache.delete( userScene );
+	// Build the mirrored shadow scene synchronously while the caller's scene
+	// still contains transient offscreen meshes. ProgressiveLightMap temporarily
+	// attaches objects only for the duration of its render() call, so waiting
+	// until the async full-renderer promise resolves can see an empty scene.
+	const shadowSceneSnapshot = __getOrBuildShadowScene( userScene );
 	st.inflight = true;
 	st.signature = sig;
 	st.queuedSignature = '';
@@ -4951,9 +5331,11 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 	const _slimRenderer = slimRenderer;
 	const _userScene = userScene;
 	const _camera = camera;
+	const _replayRenderTarget = replayRenderTarget;
+	const _shadowSceneSnapshot = shadowSceneSnapshot;
 	__getComputeRenderer( slimRenderer ).then( async ( fullRenderer ) => {
 		if ( ! fullRenderer ) return;
-		const shadowScene = __getOrBuildShadowScene( _userScene );
+		const shadowScene = _shadowSceneSnapshot || __getOrBuildShadowScene( _userScene );
 		if ( ! shadowScene ) return;
 		let shadowRenderCamera = __cloneCameraForFullRenderer( _camera, 1 );
 		if ( _camera.isArrayCamera === true && __fullThreeMod && __fullThreeMod.PerspectiveCamera ) {
@@ -4989,15 +5371,21 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 			if ( __shadowDiscardRT.rt ) fullRenderer.setRenderTarget( __shadowDiscardRT.rt );
 		} catch ( _ ) {}
 		try {
+			const suspendedCustomShadowNodes = __suspendCustomShadowNodes( shadowScene );
+			try {
 				await fullRenderer.render( shadowScene, shadowRenderCamera );
 				// Second render: the first render may have only built+queued shadow node
 				// setup; allocations happen during ShadowNode.updateBefore which fires
 				// from the SECOND render once nodeFrame.frameId advances.
 				await fullRenderer.render( shadowScene, shadowRenderCamera );
+			} finally {
+				__restoreCustomShadowNodes( suspendedCustomShadowNodes );
+			}
 				try {
 					const queue = fullRenderer.backend && fullRenderer.backend.device && fullRenderer.backend.device.queue;
 					if ( queue && typeof queue.onSubmittedWorkDone === 'function' ) await queue.onSubmittedWorkDone();
 				} catch ( _ ) {}
+				await __renderCustomShadowNodes( fullRenderer, _slimRenderer, _userScene, shadowScene, shadowRenderCamera );
 				// Copy populated shadow.map/depthTexture from cloned light to the
 				// original (user-scene) light so slim's hydrator rebinder finds them.
 			// Then share the GPUTexture across renderers: full's backend allocated
@@ -5153,6 +5541,9 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 					} else if ( src.shadow.__tslpVsmShadowTexture !== undefined ) {
 						delete src.shadow.__tslpVsmShadowTexture;
 					}
+					if ( fullRenderer.shadowMap && fullRenderer.shadowMap.transmitted === true && src.shadow && src.shadow.map && src.shadow.map.texture ) {
+						__shareShadowGpuTextureIntoSlim( src.shadow.map.texture, fullRenderer, _slimRenderer );
+					}
 					mapCount ++;
 				}
 			}
@@ -5178,11 +5569,18 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 		// Without this render the shadow receiver can keep the 1x1 fallback depth
 		// bind group even though the live full-renderer GPUTexture was shared.
 		try {
-			_slimRenderer.render( _userScene, _camera );
-			// The first render after fullRenderer shares its GPUTexture can
-			// invalidate stale fallback bind groups from updateBefore. Render
-			// once more so the draw consumes the refreshed depth bindings.
-			_slimRenderer.render( _userScene, _camera );
+			const previousTarget = typeof _slimRenderer.getRenderTarget === 'function' ? _slimRenderer.getRenderTarget() : null;
+			try {
+				__updateCustomShadowHelpers( _userScene );
+				if ( typeof _slimRenderer.setRenderTarget === 'function' ) _slimRenderer.setRenderTarget( _replayRenderTarget );
+				_slimRenderer.render( _userScene, _camera );
+				// The first render after fullRenderer shares its GPUTexture can
+				// invalidate stale fallback bind groups from updateBefore. Render
+				// once more so the draw consumes the refreshed depth bindings.
+				_slimRenderer.render( _userScene, _camera );
+			} finally {
+				if ( typeof _slimRenderer.setRenderTarget === 'function' ) _slimRenderer.setRenderTarget( previousTarget );
+			}
 		} catch ( e ) { console.warn( '[tslp-shadow] forced re-render failed:', e && e.message || e ); }
 	} );
 }
@@ -5220,7 +5618,7 @@ function __patchBindGroupLayoutRefresh( renderer ) {
 					const texture = binding && binding.texture;
 					if ( ! texture || ( binding.isSampledTexture !== true && binding.isSampler !== true ) ) continue;
 					const textureData = this.backend && this.backend.get && this.backend.get( texture );
-					if ( window.__TSLP_DEBUG_SHADOW_BINDINGS === true && /^nodeUniform(?:16|32)(?:_sampler)?$/.test( binding.name || '' ) ) {
+					if ( window.__TSLP_DEBUG_SHADOW_BINDINGS === true && /^nodeUniform\d+(?:_sampler)?$/.test( binding.name || '' ) ) {
 						const diag = window.__tslpHarnessDiagnostics || ( window.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
 						const shadowBindCreates = diag.shadowBindCreates || ( diag.shadowBindCreates = [] );
 						if ( shadowBindCreates.length < 120 ) {
@@ -5303,7 +5701,7 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 				if ( list.length < 160 ) {
 					for ( const group of groups || [] ) {
 						for ( const binding of group && group.bindings || [] ) {
-							if ( ! binding || ! /^nodeUniform(?:16|32)(?:_sampler)?$/.test( binding.name || '' ) ) continue;
+							if ( ! binding || ! /^nodeUniform\d+(?:_sampler)?$/.test( binding.name || '' ) ) continue;
 							const texture = binding.texture;
 							const textureData = texture && renderer.backend && renderer.backend.get ? renderer.backend.get( texture ) : null;
 							const gpuTexture = textureData && textureData.texture;
@@ -5680,12 +6078,12 @@ function __renderPassNodeForPipeline( renderer, passNode ) {
 					visible: object.visible !== false,
 					frustumCulled: object.frustumCulled !== false,
 					position: object.position && object.position.toArray ? object.position.toArray() : null,
-					attrs: Object.keys( attrs ),
-					count: attrs.position && attrs.position.count || 0,
-					materials: list.map( ( m ) => m && ( m.name || m.type || '' ) ).filter( Boolean ),
-					textures: list.flatMap( ( m ) => __collectMaterialPropertyTextures( m ).map( ( item ) => {
-						const tex = item.texture;
-						const img = tex && tex.image || null;
+						attrs: Object.keys( attrs ),
+						count: attrs.position && attrs.position.count || 0,
+						materials: list.map( ( m ) => m && ( m.name || m.type || '' ) ).filter( Boolean ),
+						textures: list.flatMap( ( m ) => __collectMaterialPropertyTextures( m ).map( ( item ) => {
+							const tex = item.texture;
+							const img = tex && tex.image || null;
 						return {
 							property: item.property,
 							name: tex && tex.name || '',
@@ -6081,6 +6479,7 @@ function __renderBloomNodeWithFullRenderer( bloomNode, slimRenderer, fullRendere
 
 function __renderRTTNodeWithFullRenderer( rttNode, slimRenderer, fullRenderer ) {
 	if ( ! __isRTTNode( rttNode ) || ! slimRenderer || ! fullRenderer ) return false;
+	if ( __rttPrecompiledShape( rttNode ) === 'render-output' ) return __renderRTTNodeWithPrecompiledSlim( rttNode, slimRenderer );
 	try {
 		if ( ! __fullRTTQuad ) __fullRTTQuad = new FullQuadMesh();
 		if ( ! rttNode.__tslpFullRTTMaterial ) {
@@ -6139,6 +6538,18 @@ function __renderRTTNodeWithPrecompiledSlim( rttNode, renderer ) {
 	if ( ! shape || ! renderer || ! rttNode || ! rttNode.renderTarget ) return false;
 	try {
 		if ( ! __slimRTTQuad ) __slimRTTQuad = new Slim.QuadMesh();
+		if ( rttNode.autoResize !== false ) {
+			const pixelRatio = typeof renderer.getPixelRatio === 'function' ? renderer.getPixelRatio() : 1;
+			const size = renderer.getSize( __fullRTTSize );
+			const width = Math.max( 1, Math.floor( ( size.width || 1 ) * pixelRatio ) );
+			const height = Math.max( 1, Math.floor( ( size.height || 1 ) * pixelRatio ) );
+			if ( rttNode.renderTarget.width !== width || rttNode.renderTarget.height !== height ) {
+				rttNode.renderTarget.setSize( width, height );
+			}
+		}
+		if ( rttNode.renderTarget.texture && typeof renderer.getOutputBufferType === 'function' ) {
+			rttNode.renderTarget.texture.type = renderer.getOutputBufferType();
+		}
 		const node = rttNode._rttNode || rttNode.node;
 		let artifact = Slim.loadAux( shape, 'tslp-e2e-bypass' );
 		const passNodes = __collectPassNodesInGraph( node );
@@ -6577,6 +6988,10 @@ export class RenderPipeline extends Slim.RenderPipeline {
 					onBeforeRenderPipeline: null,
 					onAfterRenderPipeline: null,
 				};
+				if ( this.outputColorTransform !== true ) {
+					context.toneMapping = this._toneMapping;
+					context.outputColorSpace = this._outputColorSpace;
+				}
 				this._context = context;
 				for ( const node of passNodes ) __preparePassNodeForReplay( this.renderer, node );
 				for ( const node of effectNodes ) __prepareFrameEffectNodeForReplay( node, __computeRenderer, context );
@@ -7225,10 +7640,20 @@ async function brightFraction( page, pngBuf ) {
  * indicate the canvas resized between capture and replay, which is itself
  * a regression.
  */
-async function comparePSNR( page, captureShot, replayShot ) {
+function psnrIgnoreRegionsForExample( name ) {
+	if ( name === 'webgpu_shadowmap_array.html' ) {
+		return [
+			{ x: 0, y: 0, width: 230, height: 210, reason: 'tile-shadow debug depth atlas' },
+		];
+	}
+	return [];
+}
+
+async function comparePSNR( page, captureShot, replayShot, name = '' ) {
 
 	if ( ! captureShot || ! replayShot ) return { error: 'missing screenshot' };
-	return await page.evaluate( async ( [ a64, b64 ] ) => {
+	const ignoreRegions = psnrIgnoreRegionsForExample( name );
+	return await page.evaluate( async ( [ a64, b64, regions ] ) => {
 
 		const decode = async ( b64 ) => {
 
@@ -7251,20 +7676,31 @@ async function comparePSNR( page, captureShot, replayShot ) {
 
 			}
 
+			const ignored = Array.isArray( regions ) ? regions : [];
+			const isIgnored = ( x, y ) => ignored.some( ( region ) => (
+				x >= region.x && y >= region.y &&
+				x < region.x + region.width && y < region.y + region.height
+			) );
+
 			let sumSq = 0;
-			const px = a.data.length / 4;
-			for ( let i = 0; i < a.data.length; i += 4 ) {
+			let comparedPixels = 0;
+			for ( let i = 0, pxIndex = 0; i < a.data.length; i += 4, pxIndex ++ ) {
+
+				const x = pxIndex % a.width;
+				const y = Math.floor( pxIndex / a.width );
+				if ( isIgnored( x, y ) ) continue;
 
 				const dr = a.data[ i ] - b.data[ i ];
 				const dg = a.data[ i + 1 ] - b.data[ i + 1 ];
 				const db = a.data[ i + 2 ] - b.data[ i + 2 ];
 				sumSq += dr * dr + dg * dg + db * db;
+				comparedPixels ++;
 
 			}
 
-			const mse = sumSq / ( px * 3 );
+			const mse = comparedPixels === 0 ? 0 : sumSq / ( comparedPixels * 3 );
 			const psnr = mse === 0 ? Infinity : 10 * Math.log10( ( 255 * 255 ) / mse );
-			return { psnr: psnr === Infinity ? 'inf' : +psnr.toFixed( 2 ), width: a.width, height: a.height };
+			return { psnr: psnr === Infinity ? 'inf' : +psnr.toFixed( 2 ), width: a.width, height: a.height, ignoredRegions: ignored };
 
 		} catch ( err ) {
 
@@ -7272,7 +7708,7 @@ async function comparePSNR( page, captureShot, replayShot ) {
 
 		}
 
-	}, [ captureShot.toString( 'base64' ), replayShot.toString( 'base64' ) ] );
+	}, [ captureShot.toString( 'base64' ), replayShot.toString( 'base64' ), ignoreRegions ] );
 
 }
 
@@ -7917,7 +8353,7 @@ async function runOne( browser, name ) {
 	let pixelMetrics;
 	if ( capture.shot && replay.shot && capture.bright > 0.005 && replay.bright > 0.005 && replay.page ) {
 
-		pixelMetrics = await comparePSNR( replay.page, capture.shot, replay.shot ).catch( ( err ) => ( { error: err && err.message || String( err ) } ) );
+		pixelMetrics = await comparePSNR( replay.page, capture.shot, replay.shot, name ).catch( ( err ) => ( { error: err && err.message || String( err ) } ) );
 
 	} else {
 
