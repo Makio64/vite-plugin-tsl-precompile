@@ -1,0 +1,7 @@
+{
+  "cases": [
+    { "name": "pass.html", "path": "pass.html" },
+    { "name": "mask.html", "path": "mask.html" },
+    { "name": "manual.html", "path": "manual.html" }
+  ]
+}
