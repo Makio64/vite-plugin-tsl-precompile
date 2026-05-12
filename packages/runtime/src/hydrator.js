@@ -24,20 +24,19 @@
 import BindGroup from 'three/src/renderers/common/BindGroup.js';
 import UniformBuffer from 'three/src/renderers/common/UniformBuffer.js';
 import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttribute.js';
-import { DataTexture, Data3DTexture, DataArrayTexture, DepthTexture, CubeDepthTexture, CubeTexture, FramebufferTexture, RGBAFormat, DepthFormat, UnsignedByteType, UnsignedIntType, LessEqualCompare, GreaterEqualCompare, HalfFloatType, LinearFilter, NearestFilter, LinearMipmapLinearFilter, ClampToEdgeWrapping, WebGPUCoordinateSystem, Vector2, Vector3, Vector4, Matrix4, Matrix3, Plane, InstancedBufferAttribute } from 'three';
+import { DataTexture, Data3DTexture, DataArrayTexture, DepthTexture, CubeDepthTexture, CubeTexture, FramebufferTexture, RGBAFormat, DepthFormat, UnsignedByteType, UnsignedIntType, LessEqualCompare, HalfFloatType, LinearFilter, NearestFilter, LinearMipmapLinearFilter, ClampToEdgeWrapping, WebGPUCoordinateSystem, Vector2, Vector3, Vector4, Matrix4, Matrix3, Plane, InstancedBufferAttribute } from 'three';
 import { getDFGLUT } from './dfg-lut.js';
-import { collectLiveMaterialTextures, collectReflectorBaseNodes } from './apply-precompiled.js';
 import { recordTextureResolutionStrategy, resolveArtifactTextureBinding } from './hydrate/artifact-texture-resolver.js';
 import { installLiveTextureRegistryPatches, lookupAnonymousDataTexture, lookupAnonymousStorageTexture, lookupLiveTextureByIdentity } from './hydrate/live-texture-registry.js';
 import { createRuntimeBindingFromKind } from './hydrate/kinds/runtime-binding-dispatcher.js';
-import { collectMaterialNodeTextures, lookupMaterialNodeTexture } from './hydrate/material-node-textures.js';
-import { createReflectorTextureRebinder, resolveReflectorRenderTarget } from './hydrate/rebinders/reflector-texture-rebinder.js';
-import { invalidateTextureBindingTarget, rebindTextureBindingTargets, textureBindingTargets } from './hydrate/rebinders/texture-binding-targets.js';
+import { lookupMaterialNodeTexture } from './hydrate/material-node-textures.js';
+import { collectMaterialReflectorBaseNodes, createReflectorTextureRebinder, findReflectorBaseNodeInMaterial } from './hydrate/rebinders/reflector-texture-rebinder.js';
+import { createShadowDepthRebinder } from './hydrate/rebinders/shadow-depth-rebinder.js';
 import { createArtifactTextureRebinder, createMaterialTextureRebinder } from './hydrate/rebinders/texture-rebinders.js';
 import { createViewportTextureRebinder, shouldSkipViewportCopyForZeroThicknessTransmission } from './hydrate/rebinders/viewport-texture-rebinder.js';
 import { isTrivialSnapshot, textureFromSnapshot } from './hydrate/texture-snapshot.js';
 import { resolveTypedArrayCtor } from './hydrate/typed-arrays.js';
-import { findPlanTextureSource, inferTextureTypeFromShader, resolvePlanTextureTypeHint, selectFallbackTextureForBinding, shaderDeclaresDepthTexture, shaderDeclaresMultisampledTexture, textureMatchesShaderBinding } from './hydrate/texture-resolver.js';
+import { findPlanTextureSource, inferTextureTypeFromShader, resolvePlanTextureTypeHint, selectFallbackTextureForBinding, shaderDeclaresDepthTexture, shaderDeclaresMultisampledTexture } from './hydrate/texture-resolver.js';
 
 export { clearLiveTextureIndex, registerLiveTexture } from './hydrate/live-texture-registry.js';
 
@@ -132,50 +131,6 @@ function makeViewportFallback( artifact, bindingName, source = null ) {
 }
 
 installLiveTextureRegistryPatches();
-
-function collectMaterialContextDepthTextures( material ) {
-
-	const out = [];
-	const seen = new Set();
-	const add = ( texture ) => {
-
-		if ( ! texture || texture.isDepthTexture !== true || seen.has( texture ) ) return;
-		seen.add( texture );
-		out.push( texture );
-
-	};
-	const addFromCarrier = ( carrier ) => {
-
-		if ( ! carrier ) return;
-		add( carrier.depthTexture );
-		const shadowMap = carrier.shadowMap || carrier.map || null;
-		if ( shadowMap ) add( shadowMap.depthTexture );
-		const renderTarget = carrier.renderTarget || carrier.target || null;
-		if ( renderTarget ) add( renderTarget.depthTexture );
-		const tileShadowNode = carrier.tileShadowNode || carrier.userData && carrier.userData.tileShadowNode || null;
-		if ( tileShadowNode && tileShadowNode.shadowMap ) add( tileShadowNode.shadowMap.depthTexture );
-
-	};
-
-	let object = null;
-	try {
-
-		object = material && material.__tslpPrecompileObject || null;
-
-	} catch ( _ ) {}
-
-	let cursor = object;
-	let depth = 0;
-	while ( cursor && depth ++ < 32 ) {
-
-		addFromCarrier( cursor );
-		cursor = cursor.parent || null;
-
-	}
-
-	return out;
-
-}
 
 // Module-level scratch objects — reused per frame to avoid GC pressure.
 const _rSize = new Vector2( 1, 1 );
@@ -444,11 +399,16 @@ export function hydrateNodeBuilderState( artifact, material = null ) {
 	const clippingUniformUpdateNode = clippingUniformBuffers.length > 0
 		? createClippingUniformUpdateNode( clippingUniformBuffers, material )
 		: null;
+	const shadowRebinderDeps = {
+		findLightBySource,
+		recordDiagnostic: recordShadowBindingDiagnostic,
+		describeLight: lightDiagnosticShape,
+	};
 	const shadowDepthRebinder = shadowDepthBindings.length > 0
-		? createShadowDepthRebinder( shadowDepthBindings )
+		? createShadowDepthRebinder( shadowDepthBindings, shadowRebinderDeps )
 		: null;
 	const materialDepthRebinder = materialDepthBindings.length > 0
-		? createShadowDepthRebinder( materialDepthBindings )
+		? createShadowDepthRebinder( materialDepthBindings, shadowRebinderDeps )
 		: null;
 	const artifactTextureRebinder = artifactTextureBindings.length > 0
 		? createArtifactTextureRebinder( artifactTextureBindings, { resolveTextureBinding } )
@@ -1166,316 +1126,6 @@ function hydrateRuntimeBindings( artifact, material ) {
 	}
 
 	return { bindings: groups, uniformBuffers, shadowDepthBindings, materialDepthBindings, artifactTextureBindings, materialTextureBindings, viewportTextureBindings, reflectorTextureBindings, clippingUniformBuffers };
-
-}
-
-/**
- * Per-frame "node" that swaps each shadow-receiving binding's texture to the
- * live `light.shadow.map.depthTexture` (or the VSM intermediate render target's
- * `texture`) of the matching light in `frame.scene`. Without this, every
- * texture_depth_2d binding stays pointed at the 1×1 fallback that
- * `resolveTextureBinding` returned at hydration time, and shadow lookups in
- * the WGSL always sample "no shadow".
- *
- * Returns an object shaped like a three.js update-before node so
- * `NodeFrame.updateBeforeNode()` will dispatch to it. `getUpdateBeforeType()`
- * returns `'render'` so the swap runs once per render pass — three.js's
- * NodeFrame de-duplicates by render id, matching what stock three.js does
- * for ShadowNode itself.
- *
- * @param {Array<{binding: Object, lightIndex: number, lightUuid: ?string, vsm: boolean}>} entries
- * @param {Object} artifact
- * @return {Object}
- */
-/**
- * Resolve the live `DepthTexture` reachable from a material's node graph.
- * Used by `createShadowDepthRebinder` for depth-texture bindings that are NOT
- * owned by an `AnalyticLightNode` (e.g. `RenderTarget.depthTexture` sampled via
- * `material.colorNode = texture(depthTexture)`). When the material's graph
- * holds multiple `DepthTexture` instances, prefers the one whose uuid matches
- * the captured hint.
- *
- * @param {?Object} material
- * @param {?string} textureUuid - Captured uuid hint; may be stale across reload.
- * @return {?Object}
- */
-function resolveDepthTextureFromMaterial( material, textureUuid, camera = null ) {
-
-	if ( ! material ) return null;
-	let firstReflectorDepth = null;
-	for ( const baseNode of collectMaterialReflectorBaseNodes( material ) ) {
-
-		const rt = resolveReflectorRenderTarget( baseNode, camera );
-		let tex = rt && rt.depthTexture || null;
-		if ( ! tex && baseNode.textureNode && typeof baseNode.textureNode.getDepthNode === 'function' ) {
-
-			try {
-
-				const depthNode = baseNode.textureNode.getDepthNode();
-				tex = depthNode && depthNode.value || null;
-
-			} catch ( _ ) {
-
-				tex = null;
-
-			}
-
-		}
-		if ( ! tex || tex.isDepthTexture !== true ) continue;
-		if ( ! firstReflectorDepth ) firstReflectorDepth = tex;
-		if ( textureUuid && tex.uuid === textureUuid ) return tex;
-
-	}
-	if ( firstReflectorDepth ) return firstReflectorDepth;
-
-	const graphTextures = collectMaterialNodeTextures( material );
-	let graphMatch = null;
-	let firstGraphDepth = null;
-	for ( const tex of graphTextures ) {
-
-		if ( ! tex || tex.isDepthTexture !== true ) continue;
-		if ( ! firstGraphDepth ) firstGraphDepth = tex;
-		if ( textureUuid && tex.uuid === textureUuid ) { graphMatch = tex; break; }
-
-	}
-	if ( graphMatch || firstGraphDepth ) return graphMatch || firstGraphDepth;
-
-	const contextTextures = collectMaterialContextDepthTextures( material );
-	let contextMatch = null;
-	let firstContextDepth = null;
-	for ( const tex of contextTextures ) {
-
-		if ( ! firstContextDepth ) firstContextDepth = tex;
-		if ( textureUuid && tex.uuid === textureUuid ) { contextMatch = tex; break; }
-
-	}
-	if ( contextMatch || firstContextDepth ) return contextMatch || firstContextDepth;
-
-	const textures = collectLiveMaterialTextures( material );
-	if ( ! textures || textures.size === 0 ) return null;
-
-	let match = null;
-	let firstDepth = null;
-	for ( const tex of textures.values() ) {
-
-		if ( ! tex || tex.isDepthTexture !== true ) continue;
-		if ( ! firstDepth ) firstDepth = tex;
-		if ( textureUuid && tex.uuid === textureUuid ) { match = tex; break; }
-
-	}
-	return match || firstDepth;
-
-}
-
-function createShadowDepthRebinder( entries /* , artifact */ ) {
-
-	const lastSeen = new WeakMap();
-
-	return {
-		getUpdateBeforeType() {
-
-			return 'render';
-
-		},
-		updateReference() {
-
-			return this;
-
-		},
-		updateBefore( frame ) {
-
-			const scene = frame && frame.scene ? frame.scene : null;
-
-			for ( const entry of entries ) {
-
-				let liveTexture = null;
-				let light = null;
-
-				if ( entry.fromMaterialGraph ) {
-
-					// Non-light depth textures (e.g. `RenderTarget.depthTexture`
-					// sampled via `material.colorNode = texture(depthTexture)`)
-					// are reachable through the binding's owning material's
-					// node graph. Reflector depth nodes are special in replay:
-					// PrecompiledMaterial no longer carries the source colorNode,
-					// so resolve through the stashed ReflectorBaseNode render
-					// target first and fall back to a graph walk for plain
-					// user-created RenderTarget.depthTexture nodes.
-					liveTexture = resolveDepthTextureFromMaterial( entry.material, entry.textureUuid, frame && frame.camera || null );
-					if ( ! liveTexture ) {
-
-						const graphTextures = collectMaterialNodeTextures( entry.material );
-						recordShadowBindingDiagnostic( {
-							phase: 'materialDepthMiss',
-							bindingName: entry.bindingName,
-							textureUuid: entry.textureUuid,
-							artifactName: entry.artifact && entry.artifact.name || entry.material && entry.material.name || null,
-							nodeTextureCount: graphTextures.length,
-							nodeTextures: graphTextures.slice( 0, 8 ).map( ( texture ) => ( {
-								uuid: texture.uuid || null,
-								name: texture.name || '',
-								isDepthTexture: texture.isDepthTexture === true,
-								image: texture.image ? [ texture.image.width || 0, texture.image.height || 0, texture.image.depth || 0 ] : null,
-							} ) ),
-						} );
-
-					}
-
-				} else {
-
-					if ( ! scene ) continue;
-					light = findShadowLight( scene, entry );
-					if ( ! light || ! light.shadow || ! light.shadow.map ) continue;
-
-					const map = light.shadow.map;
-					// VSM materials sample the blurred VSM moments texture
-					// (`ShadowNode.vsmShadowMapHorizontal.texture` — an RG colour render
-					// target, not a DepthTexture). The slim renderer never runs shadow
-					// setup so it has no shadow node; the e2e/full-renderer harness stashes
-					// the live VSM blur output on `light.shadow.__tslpVsmShadowTexture` after
-					// rendering the parallel shadow scene. Standard PCF/Hard shadows sample
-					// the raw depth texture (`shadow.map.depthTexture`).
-					liveTexture = entry.vsm
-						? ( light.shadow.__tslpVsmShadowTexture || map.texture || null )
-						: ( map.depthTexture || ( map.texture && map.texture.isDepthTexture === true ? map.texture : null ) );
-
-				}
-
-				if ( ! liveTexture ) continue;
-				if ( ! textureMatchesShaderBinding( entry.artifact, entry.bindingName, liveTexture ) ) {
-
-					recordShadowBindingDiagnostic( {
-						phase: 'materialDepthTypeMismatch',
-						bindingName: entry.bindingName,
-						textureUuid: liveTexture.uuid || null,
-						artifactName: entry.artifact && entry.artifact.name || entry.material && entry.material.name || null,
-						isDepthTexture: liveTexture.isDepthTexture === true,
-						image: liveTexture.image ? [ liveTexture.image.width || 0, liveTexture.image.height || 0, liveTexture.image.depth || 0 ] : null,
-					} );
-					continue;
-
-				}
-					const shadowCompareFunction = Number.isFinite( liveTexture.__tslpShadowCompareFunction ) ? liveTexture.__tslpShadowCompareFunction : null;
-					const rendererCompareFunction = frame && frame.renderer && frame.renderer.reversedDepthBuffer ? GreaterEqualCompare : LessEqualCompare;
-					const compareFunction = entry.fromMaterialGraph !== true && entry.vsm !== true && liveTexture.isDepthTexture === true
-						? shadowCompareFunction ?? ( liveTexture.compareFunction !== null && liveTexture.compareFunction !== undefined ? liveTexture.compareFunction : rendererCompareFunction )
-						: liveTexture.compareFunction !== null && liveTexture.compareFunction !== undefined ? liveTexture.compareFunction : rendererCompareFunction;
-					if ( entry.fromMaterialGraph !== true && entry.vsm !== true && liveTexture.isDepthTexture === true && liveTexture.compareFunction !== compareFunction ) {
-
-					liveTexture.compareFunction = compareFunction;
-					liveTexture.needsUpdate = true;
-
-				}
-
-				const renderer = frame && frame.renderer ? frame.renderer : null;
-				const data = renderer && renderer.backend ? renderer.backend.get( liveTexture ) : null;
-				const gpuTexture = data ? data.texture : null;
-				let changed = rebindTextureBindingTargets( entry.binding, liveTexture );
-				let targetCount = 0;
-
-				for ( const target of textureBindingTargets( entry.binding ) ) {
-
-					targetCount ++;
-					if ( ! gpuTexture ) continue;
-
-					const prev = lastSeen.get( target );
-					lastSeen.set( target, gpuTexture );
-					if ( prev !== gpuTexture ) changed = true;
-
-				}
-
-				recordShadowBindingDiagnostic( {
-					bindingName: entry.bindingName,
-					lightIndex: entry.lightIndex,
-					lightUuid: entry.lightUuid,
-					light: lightDiagnosticShape( light ),
-					textureUuid: liveTexture.uuid || null,
-					isDepthTexture: liveTexture.isDepthTexture === true,
-					compareFunction: liveTexture.compareFunction ?? null,
-					hasGpuTexture: !! gpuTexture,
-					gpuTexSize: gpuTexture ? [ gpuTexture.width || 0, gpuTexture.height || 0 ] : null,
-					gpuTexFormat: gpuTexture ? ( gpuTexture.format || null ) : null,
-					dataInitialized: !! ( data && data.initialized ),
-					sharedFromFull: !! ( data && data.__tslpSharedShadowGPUTexture && data.__tslpSharedShadowGPUTexture === gpuTexture ),
-					changed,
-					sameBindingTexture: entry.binding.texture === liveTexture,
-					targetCount,
-				} );
-
-				if ( changed ) {
-
-					for ( const target of textureBindingTargets( entry.binding ) ) invalidateTextureBindingTarget( target );
-
-				}
-
-			}
-
-		},
-	};
-
-}
-
-/**
- * Return the live `ReflectorBaseNode` handles attached to a precompiled
- * material. The wrapped `PrecompiledMaterial` strips every `*Node` property,
- * so `__applyPrecompiled` extracts these handles from the source material's
- * graph at wrap time and stashes them on `__tslpReflectorBaseNodes`.
- *
- * @param {?Object} material
- * @return {Array<Object>}
- */
-function collectMaterialReflectorBaseNodes( material ) {
-
-	if ( ! material ) return [];
-	const list = material.__tslpReflectorBaseNodes;
-	const out = [];
-	const append = ( node ) => {
-
-		if ( ! node || typeof node.updateBefore !== 'function' ) return;
-		if ( ! node.constructor || node.constructor.type !== 'ReflectorBaseNode' ) return;
-		if ( ! ( node.renderTargets instanceof Map ) ) return;
-		if ( ! out.includes( node ) ) out.push( node );
-
-	};
-	if ( Array.isArray( list ) ) {
-
-		for ( const node of list ) append( node );
-
-	}
-	for ( const node of collectReflectorBaseNodes( material ) ) append( node );
-	return out;
-
-}
-
-/**
- * Find the live `ReflectorBaseNode` for a captured reflector binding.
- *
- * @param {?Object} material
- * @param {number} reflectorIndex
- * @return {?Object} A live ReflectorBaseNode or null.
- */
-function findReflectorBaseNodeInMaterial( material, reflectorIndex = -1 ) {
-
-	const list = collectMaterialReflectorBaseNodes( material );
-	if ( list.length === 0 ) return null;
-	if ( Number.isInteger( reflectorIndex ) && reflectorIndex >= 0 && reflectorIndex < list.length ) return list[ reflectorIndex ];
-	return list[ 0 ];
-
-}
-
-/**
- * Find the live Light a shadow-depth binding belongs to. Prefers a UUID match
- * (production: same Light instance survives across frames), falls back to a
- * traversal-index lookup so harness/test paths that recreate the scene each
- * load can still relink.
- *
- * @param {Object} scene
- * @param {{lightIndex: number, lightUuid: ?string}} entry
- * @return {?Object}
- */
-function findShadowLight( scene, entry ) {
-
-	return findLightBySource( scene, entry );
 
 }
 

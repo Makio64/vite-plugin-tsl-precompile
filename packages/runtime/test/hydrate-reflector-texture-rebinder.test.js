@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+	collectMaterialReflectorBaseNodes,
 	createReflectorTextureRebinder,
+	findReflectorBaseNodeInMaterial,
 	resolveReflectorRenderTarget,
 } from '../src/hydrate/rebinders/reflector-texture-rebinder.js';
 
@@ -84,5 +86,31 @@ test( 'reflector texture rebinder can use textureNode.value when no render targe
 	rebinder.updateBefore( { camera: { id: 'camera' } } );
 
 	assert.equal( binding.texture, liveTexture );
+
+} );
+
+test( 'reflector material helpers prefer stashed base nodes and reflector index', () => {
+
+	const first = {
+		constructor: { type: 'ReflectorBaseNode' },
+		renderTargets: new Map(),
+		updateBefore() {},
+	};
+	const second = {
+		constructor: { type: 'ReflectorBaseNode' },
+		renderTargets: new Map(),
+		updateBefore() {},
+	};
+	const invalid = {
+		constructor: { type: 'ReflectorBaseNode' },
+		renderTargets: new Map(),
+	};
+	const material = {
+		__tslpReflectorBaseNodes: [ first, invalid, second, first ],
+	};
+
+	assert.deepEqual( collectMaterialReflectorBaseNodes( material ), [ first, second ] );
+	assert.equal( findReflectorBaseNodeInMaterial( material, 1 ), second );
+	assert.equal( findReflectorBaseNodeInMaterial( material, - 1 ), first );
 
 } );
