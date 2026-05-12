@@ -1891,11 +1891,104 @@ function __makeFullRoomEnvironment( Three ) {
 	return scene;
 }
 
+function __copyFullObjectState( source, target ) {
+	if ( ! source || ! target ) return;
+	target.name = source.name || target.name;
+	target.visible = source.visible !== false;
+	if ( source.position && target.position && typeof target.position.copy === 'function' ) target.position.copy( source.position );
+	if ( source.quaternion && target.quaternion && typeof target.quaternion.copy === 'function' ) target.quaternion.copy( source.quaternion );
+	if ( source.scale && target.scale && typeof target.scale.copy === 'function' ) target.scale.copy( source.scale );
+	if ( source.rotation && target.rotation && typeof target.rotation.copy === 'function' ) target.rotation.copy( source.rotation );
+	if ( source.matrix && target.matrix && typeof target.matrix.copy === 'function' ) target.matrix.copy( source.matrix );
+	if ( source.matrixWorld && target.matrixWorld && typeof target.matrixWorld.copy === 'function' ) target.matrixWorld.copy( source.matrixWorld );
+	target.matrixAutoUpdate = source.matrixAutoUpdate !== false;
+	target.matrixWorldAutoUpdate = source.matrixWorldAutoUpdate !== false;
+}
+
+function __makeFullPMREMMaterial( Three, source ) {
+	if ( ! Three || ! source ) return null;
+	const Ctor = source.isMeshStandardMaterial && Three.MeshStandardMaterial ? Three.MeshStandardMaterial
+		: source.isMeshPhysicalMaterial && Three.MeshPhysicalMaterial ? Three.MeshPhysicalMaterial
+			: source.isMeshLambertMaterial && Three.MeshLambertMaterial ? Three.MeshLambertMaterial
+				: source.isMeshBasicMaterial && Three.MeshBasicMaterial ? Three.MeshBasicMaterial
+					: null;
+	if ( ! Ctor ) return null;
+	const material = new Ctor();
+	for ( const key of [ 'side', 'transparent', 'opacity', 'alphaTest', 'depthTest', 'depthWrite', 'toneMapped', 'blending', 'premultipliedAlpha', 'wireframe', 'roughness', 'metalness' ] ) {
+		if ( source[ key ] !== undefined ) {
+			try { material[ key ] = source[ key ]; } catch ( _ ) {}
+		}
+	}
+	for ( const key of [ 'color', 'emissive', 'specular' ] ) {
+		if ( source[ key ] && material[ key ] && typeof material[ key ].copy === 'function' ) {
+			try { material[ key ].copy( source[ key ] ); } catch ( _ ) {}
+		}
+	}
+	for ( const key of [ 'map', 'envMap', 'emissiveMap', 'alphaMap', 'aoMap', 'lightMap' ] ) {
+		if ( source[ key ] && source[ key ].isTexture === true ) material[ key ] = source[ key ];
+	}
+	material.needsUpdate = true;
+	return material;
+}
+
+function __makeFullSceneForPMREM( scene, Three ) {
+	if ( ! scene || ! Three || ! Three.Scene || ! Three.Mesh || ! Three.Group ) return null;
+	const createdMaterials = new Set();
+	const fullScene = new Three.Scene();
+	__copyFullObjectState( scene, fullScene );
+	if ( scene.background && scene.background.isColor && Three.Color ) {
+		fullScene.background = new Three.Color().copy( scene.background );
+	} else {
+		fullScene.background = scene.background || null;
+	}
+	fullScene.environment = scene.environment || null;
+
+	const cloneNode = ( source ) => {
+		if ( ! source || source.visible === false ) return null;
+		if ( source.isSkinnedMesh === true || source.isInstancedMesh === true ) return null;
+		let target = null;
+		if ( source.isMesh === true ) {
+			const material = __makeFullPMREMMaterial( Three, Array.isArray( source.material ) ? source.material[ 0 ] : source.material );
+			if ( ! material ) return null;
+			createdMaterials.add( material );
+			target = new Three.Mesh( __cloneGeometryForFullRenderer( source.geometry ), material );
+		} else if ( source.isGroup === true || Array.isArray( source.children ) ) {
+			target = new Three.Group();
+		} else {
+			return null;
+		}
+		__copyFullObjectState( source, target );
+		for ( const child of source.children || [] ) {
+			const cloned = cloneNode( child );
+			if ( cloned ) target.add( cloned );
+		}
+		return target;
+	};
+
+	for ( const child of scene.children || [] ) {
+		const cloned = cloneNode( child );
+		if ( ! cloned && child && child.visible !== false ) return null;
+		if ( cloned ) fullScene.add( cloned );
+	}
+	fullScene.dispose = function () {
+		for ( const material of createdMaterials ) {
+			try { material.dispose && material.dispose(); } catch ( _ ) {}
+		}
+	};
+	return fullScene;
+}
+
 function __preparePMREMArgsForFullRenderer( method, args ) {
 	if ( method !== 'fromScene' || ! args || ! args[ 0 ] ) return args;
 	const scene = args[ 0 ];
-	if ( scene.name !== 'RoomEnvironment' && scene.constructor && scene.constructor.name !== 'RoomEnvironment' ) return args;
-	const fullScene = __makeFullRoomEnvironment( __fullThreeMod );
+	const isRoomEnvironment = scene.name === 'RoomEnvironment' || scene.constructor && scene.constructor.name === 'RoomEnvironment';
+	const fullScene = isRoomEnvironment ? __makeFullRoomEnvironment( __fullThreeMod ) : __makeFullSceneForPMREM( scene, __fullThreeMod );
+	try {
+		const diag = __pmremDiagnostics();
+		diag.syncFullSceneClone = ( diag.syncFullSceneClone || 0 ) + ( fullScene ? 1 : 0 );
+		diag.syncFullSceneCloneMiss = ( diag.syncFullSceneCloneMiss || 0 ) + ( fullScene ? 0 : 1 );
+		if ( fullScene ) diag.syncFullSceneChildren = fullScene.children && fullScene.children.length || 0;
+	} catch ( _ ) {}
 	return fullScene ? [ fullScene, ...args.slice( 1 ) ] : args;
 }
 
@@ -1916,6 +2009,26 @@ function __preparePMREMArgsForFullRenderer( method, args ) {
 // (a) MISSes (registry empty pre-init) and (b) caches dead bindings before
 // the user's main scene ever runs.
 const __pmremOriginalMethods = new Map();
+
+try {
+	if ( typeof Slim.setTextureResolutionDebugHook === 'function' ) {
+		Slim.setTextureResolutionDebugHook( ( event ) => {
+			if ( ! event || event.sourceKind !== 'artifact.texture' ) return;
+			const textureName = event.resolvedTextureName || event.textureName || '';
+			if ( textureName !== 'PMREM.cubeUv' ) return;
+			const diag = __pmremDiagnostics();
+			if ( ! Array.isArray( diag.resolvedPmremTextures ) ) diag.resolvedPmremTextures = [];
+			if ( diag.resolvedPmremTextures.length >= 8 ) return;
+			diag.resolvedPmremTextures.push( {
+				strategy: event.strategy,
+				bindingName: event.bindingName,
+				textureName,
+				width: event.resolvedTextureWidth,
+				height: event.resolvedTextureHeight,
+			} );
+		} );
+	}
+} catch ( _ ) {}
 
 function __runPMREMGeneratorMethod( self, method, args ) {
 	__pmremRunning ++;
@@ -2031,11 +2144,16 @@ export class PMREMGenerator extends Slim.PMREMGenerator {
 // Extracted from __generatePMREMAsync so the synchronous PMREMGenerator
 // patch above can reuse it.
 function __sharePMREMGPUTexture( slimRenderer, fullRenderer, pmrem ) {
-	if ( ! slimRenderer || ! fullRenderer || ! pmrem ) return;
-	if ( ! slimRenderer.backend || ! fullRenderer.backend ) return;
+	if ( ! slimRenderer || ! fullRenderer || ! pmrem ) return false;
+	if ( ! slimRenderer.backend || ! fullRenderer.backend ) return false;
 	try {
 		const fullData = fullRenderer.backend.get( pmrem );
-		if ( ! fullData || ! fullData.texture ) return;
+		const diag = __pmremDiagnostics();
+		diag.shareCalls = ( diag.shareCalls || 0 ) + 1;
+		if ( ! fullData || ! fullData.texture ) {
+			diag.shareMissingTexture = ( diag.shareMissingTexture || 0 ) + 1;
+			return false;
+		}
 		const slimData = slimRenderer.backend.get( pmrem );
 		for ( const key of Object.keys( fullData ) ) slimData[ key ] = fullData[ key ];
 		// The Textures manager (renderer._textures) has its OWN DataMap separate
@@ -2048,9 +2166,12 @@ function __sharePMREMGPUTexture( slimRenderer, fullRenderer, pmrem ) {
 		if ( tx && typeof tx.get === 'function' ) {
 			__markSlimTextureInitialized( slimRenderer, pmrem );
 		}
+		diag.shareSuccess = ( diag.shareSuccess || 0 ) + 1;
+		return true;
 	} catch ( shareErr ) {
 		console.warn( '[tslp-e2e] PMREM GPU share failed:', shareErr && shareErr.message || shareErr );
 	}
+	return false;
 }
 
 function __shareGPUTextureEntry( targetRenderer, sourceRenderer, texture ) {
@@ -4730,9 +4851,24 @@ function __wireEnvironmentPMREM( renderer, scene ) {
 				// envMap via constructor params), fall back to scene.environment /
 				// scene.environmentNode. Multi-PMREM node graphs are wired by the
 				// distinct PMREM source order captured in the artifact.
+				const nodePmrems = [];
+				for ( const tex of __collectMaterialNodeTextures( m ) ) {
+					if ( __isPMREMTexture( tex ) ) __pushUniqueTexture( nodePmrems, tex );
+				}
+				if ( nodePmrems.length > 0 ) {
+					const diag = __pmremDiagnostics();
+					diag.wireNodePmremCandidates = ( diag.wireNodePmremCandidates || 0 ) + nodePmrems.length;
+					if ( ! Array.isArray( diag.nodePmremSamples ) ) diag.nodePmremSamples = [];
+					if ( diag.nodePmremSamples.length < 4 ) {
+						const img = nodePmrems[ 0 ].image || null;
+						diag.nodePmremSamples.push( { width: img && img.width, height: img && img.height, version: nodePmrems[ 0 ].version } );
+					}
+				}
 				const matEnv = m.envMap && m.envMap.isTexture === true ? m.envMap : null;
 				const matPmrem = matEnv ? __getCachedPMREMForSource( matEnv ) : null;
-				const pmrems = matPmrem && sourceUuids.length <= 1 ? [ matPmrem ] : sceneEnvPmrems;
+				const pmrems = nodePmrems.length >= sourceUuids.length ? nodePmrems
+					: matPmrem && sourceUuids.length <= 1 ? [ matPmrem ]
+						: sceneEnvPmrems;
 				if ( pmrems.length < sourceUuids.length ) {
 					__pmremDiagnostics().wireNoPmrem ++;
 					continue;
@@ -4827,12 +4963,42 @@ function __kickPMREMGenAsync( slimRenderer, sourceTex, onReady ) {
 		} );
 	}
 
+function __hasReplayArtifactMatch( root ) {
+	if ( ! root || typeof root.traverse !== 'function' ) return false;
+	const keys = Object.keys( __data.user || {} );
+	if ( keys.length === 0 ) return false;
+	let matched = false;
+	try {
+		root.traverse( ( object ) => {
+			if ( matched || ! object || ! object.material ) return;
+			const list = Array.isArray( object.material ) ? object.material : [ object.material ];
+			for ( const material of list ) {
+				if ( ! material ) continue;
+				if ( material.isPrecompiledMaterial === true ) {
+					matched = true;
+					return;
+				}
+				const className = __classNameForMaterial( material );
+				if ( __findBestArtifactForSource( className, material, keys, object ) ) {
+					matched = true;
+					return;
+				}
+			}
+		} );
+	} catch ( _ ) {}
+	return matched;
+}
+
+function __shouldBypassReplayPrepareDuringPMREM( root ) {
+	return __pmremRunning > 0 && ! __hasReplayArtifactMatch( root );
+}
+
 function __prepareSceneForReplay( scene, renderer ) {
-	if ( __pmremRunning > 0 ) return;
+	if ( __shouldBypassReplayPrepareDuringPMREM( scene ) ) return;
 	// PMREMGenerator and RenderPipeline internals render temporary meshes/scenes
 	// that were never part of the user's capture set. Let the full/slim renderer
 	// handle those materials normally so they do not consume user artifacts.
-	if ( ! scene || scene.isScene !== true || scene.name === 'RoomEnvironment' ) return;
+	if ( ! scene || typeof scene.traverse !== 'function' || scene.name === 'RoomEnvironment' ) return;
 	// When a background-aux artifact is registered the rewritten Background.js
 	// inside the slim bundle calls loadAux('background', hashNodeGraphSync(backgroundNode))
 	// to build a PrecompiledMaterial for the sky quad.  That path is only
@@ -4845,7 +5011,7 @@ function __prepareSceneForReplay( scene, renderer ) {
 	//     through to the renderer's clear-color path (old behaviour).
 	// Color backgrounds are left intact in both cases — they use the clear-
 	// color path and bypass loadAux entirely.
-	if ( scene ) {
+	if ( scene && scene.isScene === true ) {
 		if ( scene.environmentNode ) {
 			const envSources = [];
 			__rememberPMREMSourceTexturesFromNode( envSources, scene.environmentNode );
@@ -6518,7 +6684,7 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 	compile( scene, camera, ...rest ) {
 		// __pmremRunning guard: PMREMGenerator drives nested compile/render calls
 		// for its internal flat-camera mesh; bypass scene-prep during those.
-		if ( __pmremRunning > 0 ) return typeof super.compile === 'function' ? super.compile( scene, camera, ...rest ) : undefined;
+		if ( __shouldBypassReplayPrepareDuringPMREM( scene ) ) return typeof super.compile === 'function' ? super.compile( scene, camera, ...rest ) : undefined;
 		__replaceStandaloneRenderTargetMaterial( scene );
 		__prepareSceneForReplay( scene, this );
 		const previousMRT = typeof this.getMRT === 'function' ? this.getMRT() : null;
@@ -6533,7 +6699,7 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 		return typeof super.compile === 'function' ? super.compile( scene, camera, ...rest ) : undefined;
 	}
 	compileAsync( scene, camera, ...rest ) {
-		if ( __pmremRunning > 0 ) return typeof super.compileAsync === 'function' ? super.compileAsync( scene, camera, ...rest ) : Promise.resolve();
+		if ( __shouldBypassReplayPrepareDuringPMREM( scene ) ) return typeof super.compileAsync === 'function' ? super.compileAsync( scene, camera, ...rest ) : Promise.resolve();
 		__replaceStandaloneRenderTargetMaterial( scene );
 		__prepareSceneForReplay( scene, this );
 		__prepareSceneForCurrentMRT( scene, this );
@@ -6549,7 +6715,7 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 		return Promise.resolve( p ).then( ( v ) => { _settle(); return v; }, ( e ) => { _settle(); throw e; } );
 	}
 	render( scene, camera ) {
-		if ( __pmremRunning > 0 ) return super.render( scene, camera );
+		if ( __shouldBypassReplayPrepareDuringPMREM( scene ) ) return super.render( scene, camera );
 		// Nested renderer.render() (e.g. QuadMesh.render from inside RTTNode/PassNode
 		// updateBefore) — skip scene-material replacement / pre-render hooks. The
 		// top-level call already drove RTT/effect/pass nodes; the recursion is just
@@ -7611,6 +7777,10 @@ function __isFrameEffectNode( node ) {
 	// (camera.clone of undefined).
 	const ctorType = node.constructor && node.constructor.type || '';
 	if ( ctorType === 'ReflectorBaseNode' || ctorType === 'ReflectorNode' ) return false;
+	// PMREMNode setup is already represented in the captured shader and texture
+	// refs. Driving it as a frame effect can regenerate/share an unrelated PMREM
+	// while replay is settling.
+	if ( ctorType === 'PMREMNode' ) return false;
 	const kind = __nodeUpdateKind( node, 'before' );
 	if ( kind === 'none' || kind === null || kind === undefined ) return false;
 	if ( typeof node.setup !== 'function' && typeof node.getTextureNode !== 'function' && ! __nodeOwnsRenderTarget( node ) ) return false;
