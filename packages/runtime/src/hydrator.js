@@ -24,9 +24,9 @@
 import BindGroup from 'three/src/renderers/common/BindGroup.js';
 import UniformBuffer from 'three/src/renderers/common/UniformBuffer.js';
 import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttribute.js';
-import { DataTexture, Data3DTexture, DataArrayTexture, DepthTexture, CubeDepthTexture, CubeTexture, FramebufferTexture, RGBAFormat, DepthFormat, UnsignedByteType, UnsignedIntType, LessEqualCompare, HalfFloatType, LinearFilter, NearestFilter, LinearMipmapLinearFilter, ClampToEdgeWrapping, WebGPUCoordinateSystem, Vector2, Vector3, Vector4, Matrix4, Matrix3, Plane, InstancedBufferAttribute } from 'three';
-import { getDFGLUT } from './dfg-lut.js';
+import { DataTexture, Data3DTexture, DataArrayTexture, DepthTexture, CubeDepthTexture, CubeTexture, FramebufferTexture, RGBAFormat, DepthFormat, UnsignedByteType, UnsignedIntType, LessEqualCompare, LinearMipmapLinearFilter, WebGPUCoordinateSystem, Vector2, Vector3, Vector4, Matrix4, Matrix3, Plane, InstancedBufferAttribute } from 'three';
 import { recordTextureResolutionStrategy, resolveArtifactTextureBinding } from './hydrate/artifact-texture-resolver.js';
+import { resolveBuiltinTextureBinding } from './hydrate/builtin-textures.js';
 import { installLiveTextureRegistryPatches, lookupAnonymousDataTexture, lookupAnonymousStorageTexture, lookupLiveTextureByIdentity } from './hydrate/live-texture-registry.js';
 import { createRuntimeBindingFromKind } from './hydrate/kinds/runtime-binding-dispatcher.js';
 import { lookupMaterialNodeTexture } from './hydrate/material-node-textures.js';
@@ -1217,64 +1217,6 @@ function seedUniformBufferSnapshots( artifact, groupName, bindingName, buffer ) 
 
 }
 
-/**
- * Reconstruct an LTC BRDF approximation DataTexture from half-float data
- * stored in `artifact.ltcTextures[source.ltcIndex]` at capture time.
- *
- * Returns a cached instance if the artifact has already been hydrated for
- * this ltcIndex to avoid re-creating the DataTexture on every frame's
- * binding resolution. Returns null if the data is unavailable.
- *
- * @param {Object} artifact
- * @param {Object} source - The plan entry source with `ltcIndex`.
- * @return {?DataTexture}
- */
-function buildLtcTexture( artifact, source ) {
-
-	const ltcIndex = typeof source.ltcIndex === 'number' ? source.ltcIndex : 0;
-	const ltcArrays = artifact.ltcTextures;
-	if ( ! Array.isArray( ltcArrays ) || ltcIndex >= ltcArrays.length ) return null;
-
-	// Cache reconstructed textures per artifact so we don't allocate new
-	// DataTextures on every resolveTextureBinding call (called per-frame).
-	if ( ! artifact._ltcTextureCache ) {
-
-		Object.defineProperty( artifact, '_ltcTextureCache', {
-			value: new Map(),
-			enumerable: false,
-			writable: true,
-		} );
-
-	}
-
-	if ( artifact._ltcTextureCache.has( ltcIndex ) ) {
-
-		return artifact._ltcTextureCache.get( ltcIndex );
-
-	}
-
-	const rawData = ltcArrays[ ltcIndex ];
-	if ( ! Array.isArray( rawData ) || rawData.length !== 64 * 64 * 4 ) return null;
-
-	// Reconstruct as half-float (Uint16Array). HalfFloatType supports linear
-	// filtering on all WebGPU devices; FloatType requires float32-filterable.
-	const halfData = new Uint16Array( rawData );
-
-	const tex = new DataTexture( halfData, 64, 64, RGBAFormat, HalfFloatType );
-
-	// Apply sampler settings from the capture. Fall back to the same filter
-	// configuration that RectAreaLightTexturesLib uses.
-	tex.magFilter = typeof source.magFilter === 'number' ? source.magFilter : LinearFilter;
-	tex.minFilter = typeof source.minFilter === 'number' ? source.minFilter : NearestFilter;
-	tex.wrapS = typeof source.wrapS === 'number' ? source.wrapS : ClampToEdgeWrapping;
-	tex.wrapT = typeof source.wrapT === 'number' ? source.wrapT : ClampToEdgeWrapping;
-	tex.needsUpdate = true;
-
-	artifact._ltcTextureCache.set( ltcIndex, tex );
-	return tex;
-
-}
-
 function applyTextureSourceSettings( texture, source ) {
 
 	if ( ! texture || ! source ) return texture;
@@ -1364,24 +1306,8 @@ function resolveTextureBinding( artifact, groupName, bindingName, material, opti
 
 	}
 
-	// Built-in DFG LUT for IBL: static precomputed 16×16 RG16F texture.
-	// Identical to three.js's own DFGLUT.js — no renderer required.
-	if ( source.kind === 'builtin.dfgLUT' ) {
-
-		return getDFGLUT() || fallbackTextureForBinding( artifact, bindingName );
-
-	}
-
-	// LTC BRDF approximation textures for RectAreaLight (ltc_1 / ltc_2).
-	// Captured at compile time from RectAreaLightTexturesLib and stored as
-	// uint16 half-float arrays in `artifact.ltcTextures[ltcIndex]`. We
-	// reconstruct as HalfFloatType DataTextures so linear filtering works
-	// on all WebGPU devices without requiring the `float32-filterable` feature.
-	if ( source.kind === 'builtin.ltcTexture' ) {
-
-		return buildLtcTexture( artifact, source ) || fallbackTextureForBinding( artifact, bindingName );
-
-	}
+	const builtinTexture = resolveBuiltinTextureBinding( { artifact, source, bindingName, fallbackTextureForBinding } );
+	if ( builtinTexture !== undefined ) return builtinTexture;
 
 	if ( source.kind && source.kind.startsWith( 'material.' ) ) {
 
