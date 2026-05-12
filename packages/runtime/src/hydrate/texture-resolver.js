@@ -129,3 +129,35 @@ export function textureMatchesShaderBinding( artifact, bindingName, texture ) {
 	return true;
 
 }
+
+export function selectFallbackTextureForBinding( artifact, bindingName, fallbacks ) {
+
+	const texture = fallbacks && fallbacks.texture || null;
+	const comparisonDepth = fallbacks && fallbacks.comparisonDepth || texture;
+	const depth = fallbacks && fallbacks.depth || texture;
+	const depthCube = fallbacks && fallbacks.depthCube || depth;
+	const depthArray = fallbacks && fallbacks.depthArray || depth;
+	const multisampledDepth = fallbacks && fallbacks.multisampledDepth || depth;
+	const cube = fallbacks && fallbacks.cube || texture;
+	const texture3D = fallbacks && fallbacks.texture3D || texture;
+	const array = fallbacks && fallbacks.array || texture;
+	const wgsl = shaderSource( artifact );
+	const escaped = escapedBindingName( bindingName );
+
+	if ( shaderDeclaresComparisonSampler( artifact, bindingName ) ) return comparisonDepth;
+	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth_cube`, 'm' ).test( wgsl ) ) return depthCube;
+	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth_2d_array`, 'm' ).test( wgsl ) ) return depthArray;
+	if ( shaderDeclaresDepthTexture( artifact, bindingName ) ) return shaderDeclaresMultisampledTexture( artifact, bindingName ) ? multisampledDepth : depth;
+	if ( shaderDeclaresCubeTexture( artifact, bindingName ) ) return cube;
+	if ( inferTextureTypeFromShader( artifact, bindingName ) === '3d' ) return texture3D;
+	if ( shaderDeclaresArrayTexture( artifact, bindingName ) ) return array;
+	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*sampler_comparison`, 'm' ).test( wgsl ) ) return comparisonDepth;
+	if ( /sampler/i.test( bindingName ) ) {
+
+		const textureName = bindingName.replace( /_sampler$/, '' );
+		if ( textureName !== bindingName && shaderDeclaresDepthTexture( artifact, textureName ) ) return shaderDeclaresComparisonSampler( artifact, bindingName ) ? comparisonDepth : depth;
+
+	}
+	return texture;
+
+}

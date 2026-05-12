@@ -36,7 +36,7 @@ import { viewportMipTexture, viewportTexture } from 'three/src/nodes/display/Vie
 import { viewportDepthTexture } from 'three/src/nodes/display/ViewportDepthTextureNode.js';
 import { getDFGLUT } from './dfg-lut.js';
 import { collectLiveMaterialTextures, collectReflectorBaseNodes } from './apply-precompiled.js';
-import { findPlanTextureSource, inferTextureTypeFromShader, resolvePlanTextureTypeHint, shaderDeclaresComparisonSampler, shaderDeclaresDepthTexture, shaderDeclaresMultisampledTexture, textureBindingNameForSampler, textureMatchesShaderBinding } from './hydrate/texture-resolver.js';
+import { findPlanTextureSource, inferTextureTypeFromShader, resolvePlanTextureTypeHint, selectFallbackTextureForBinding, shaderDeclaresDepthTexture, shaderDeclaresMultisampledTexture, textureMatchesShaderBinding } from './hydrate/texture-resolver.js';
 
 const fallbackTexture = new DataTexture( new Uint8Array( [ 255, 255, 255, 255 ] ), 1, 1, RGBAFormat );
 fallbackTexture.needsUpdate = true;
@@ -1615,8 +1615,11 @@ function hydrateRuntimeBindings( artifact, material ) {
 
 				viewportTextureBindings.push( {
 					binding: runtimeBinding,
+					fallbackTexture: runtimeBinding.texture,
 					generateMipmaps: planSource.generateMipmaps !== false,
 					isDepth: planSource.isDepth === true || shaderDeclaresDepthTexture( artifact, descriptor.name || '' ),
+					material,
+					skipZeroThicknessTransmission: shouldSkipViewportCopyForZeroThicknessTransmission( artifact ),
 				} );
 
 			}
@@ -2139,7 +2142,7 @@ function createReflectorTextureRebinder( entries ) {
  * The copy is dedup'd by render id so multiple transmissive bindings in the
  * same frame trigger only one copyFramebufferToTexture per variant.
  *
- * @param {Array<{binding: Object, generateMipmaps: boolean, isDepth: boolean}>} entries
+ * @param {Array<{binding: Object, fallbackTexture: Object, generateMipmaps: boolean, isDepth: boolean, material: Object, skipZeroThicknessTransmission: boolean}>} entries
  * @return {Object}
  */
 function createViewportTextureRebinder( entries ) {
@@ -2171,6 +2174,21 @@ function createViewportTextureRebinder( entries ) {
 			if ( ! frame || ! frame.renderer ) return;
 
 			for ( const entry of entries ) {
+
+				if ( shouldUseViewportFallbackForFrame( entry ) ) {
+
+					const changed = entry.fallbackTexture
+						? rebindTextureBindingTargets( entry.binding, entry.fallbackTexture )
+						: false;
+					for ( const target of textureBindingTargets( entry.binding ) ) {
+
+						invalidateOnTextureResourceChange( target, frame.renderer, lastSeen );
+						if ( changed ) invalidateTextureBindingTarget( target );
+
+					}
+					continue;
+
+				}
 
 				const variant = entry.isDepth ? 'depth' : entry.generateMipmaps ? 'mip' : 'plain';
 				let node = variant === 'depth' ? depthNode : variant === 'mip' ? mipNode : plainNode;
@@ -2938,27 +2956,17 @@ function channelsForTextureFormat( format ) {
 
 function fallbackTextureForBinding( artifact, bindingName ) {
 
-	const wgsl = `${ artifact.vertexShader || '' }\n${ artifact.fragmentShader || '' }\n${ artifact.computeShader || '' }`;
-	if ( shaderDeclaresComparisonSampler( artifact, bindingName ) ) return fallbackComparisonDepthTexture;
-	const escaped = textureBindingNameForSampler( bindingName ).replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
-	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth_cube`, 'm' ).test( wgsl ) ) return fallbackDepthCubeTexture;
-	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth_2d_array`, 'm' ).test( wgsl ) ) return fallbackDepthArrayTexture;
-	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth`, 'm' ).test( wgsl ) ) {
-
-		return shaderDeclaresMultisampledTexture( artifact, bindingName ) ? fallbackMultisampledDepthTexture : fallbackDepthTexture;
-
-	}
-	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_cube`, 'm' ).test( wgsl ) ) return fallbackCubeTexture;
-	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_3d`, 'm' ).test( wgsl ) ) return fallback3DTexture;
-	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_2d_array`, 'm' ).test( wgsl ) ) return fallbackArrayTexture;
-	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*sampler_comparison`, 'm' ).test( wgsl ) ) return fallbackComparisonDepthTexture;
-	if ( /sampler/i.test( bindingName ) ) {
-
-		const textureName = bindingName.replace( /_sampler$/, '' );
-		if ( textureName !== bindingName && shaderDeclaresDepthTexture( artifact, textureName ) ) return shaderDeclaresComparisonSampler( artifact, bindingName ) ? fallbackComparisonDepthTexture : fallbackDepthTexture;
-
-	}
-	return fallbackTexture;
+	return selectFallbackTextureForBinding( artifact, bindingName, {
+		texture: fallbackTexture,
+		comparisonDepth: fallbackComparisonDepthTexture,
+		depth: fallbackDepthTexture,
+		depthCube: fallbackDepthCubeTexture,
+		depthArray: fallbackDepthArrayTexture,
+		multisampledDepth: fallbackMultisampledDepthTexture,
+		cube: fallbackCubeTexture,
+		texture3D: fallback3DTexture,
+		array: fallbackArrayTexture,
+	} );
 
 }
 
