@@ -822,6 +822,7 @@ function __auxOpts( extra = {} ) {
 function __collectCapturePassNodesInGraph( node, out = [], seen = new Set(), depth = 0 ) {
 	if ( ! node || depth > 16 || seen.has( node ) ) return out;
 	if ( typeof node !== 'object' && typeof node !== 'function' ) return out;
+	if ( ! __isGraphTraversalCandidate( node ) ) return out;
 	seen.add( node );
 	if ( node.isPassNode === true && node.scene && node.camera ) {
 		if ( ! out.includes( node ) ) out.push( node );
@@ -831,8 +832,7 @@ function __collectCapturePassNodesInGraph( node, out = [], seen = new Set(), dep
 	const skip = new Set( [ 'parent', 'children', '_cache', 'renderer', 'geometry', 'material', 'domElement' ] );
 	for ( const key of keys ) {
 		if ( skip.has( key ) ) continue;
-		let child = null;
-		try { child = node[ key ]; } catch ( _ ) { continue; }
+		const child = __readGraphOwnValue( node, key );
 		if ( ! child ) continue;
 		if ( Array.isArray( child ) ) {
 			for ( const item of child ) __collectCapturePassNodesInGraph( item, out, seen, depth + 1 );
@@ -2314,6 +2314,7 @@ function __seedNodeProps( material ) {
 function __walkNodeSafely( rootNode, visitor, seen = new Set(), depth = 0 ) {
 	if ( ! rootNode || ( typeof rootNode !== 'object' && typeof rootNode !== 'function' ) || depth > 64 || seen.has( rootNode ) ) return;
 	if ( ArrayBuffer.isView( rootNode ) || rootNode instanceof ArrayBuffer ) return;
+	if ( ! __isGraphTraversalCandidate( rootNode ) ) return;
 	seen.add( rootNode );
 	visitor( rootNode );
 	const children = [];
@@ -2326,15 +2327,16 @@ function __walkNodeSafely( rootNode, visitor, seen = new Set(), depth = 0 ) {
 				}
 		}
 	} catch ( _ ) {}
-	if ( Array.isArray( rootNode._children ) ) children.push( ...rootNode._children );
+	const nodeChildren = __readGraphOwnValue( rootNode, '_children' );
+	if ( Array.isArray( nodeChildren ) ) children.push( ...nodeChildren );
 	const skip = new Set( [ 'parent', 'children', '_cache', 'renderer', 'geometry', 'material', 'domElement', 'array', 'buffer' ] );
-	try {
-		for ( const key of Object.getOwnPropertyNames( rootNode ) ) {
-			if ( skip.has( key ) ) continue;
-			const child = rootNode[ key ];
-			if ( child ) children.push( child );
-		}
-	} catch ( _ ) {}
+	const keys = [];
+	try { keys.push( ...Object.getOwnPropertyNames( rootNode ) ); } catch ( _ ) {}
+	for ( const key of keys ) {
+		if ( skip.has( key ) ) continue;
+		const child = __readGraphOwnValue( rootNode, key );
+		if ( child ) children.push( child );
+	}
 	for ( const child of children ) {
 		if ( ! child || ( typeof child !== 'object' && typeof child !== 'function' ) ) continue;
 		__walkNodeSafely( child, visitor, seen, depth + 1 );
@@ -2775,8 +2777,7 @@ function __walkMaterialNodeGraph( sourceMaterial, visitor ) {
 		try { keys = Object.getOwnPropertyNames( node ); } catch ( _ ) { return; }
 		for ( const key of keys ) {
 			if ( key === 'parent' || key === 'children' || key === '_cache' || key === 'builder' || key === 'material' || key === 'object' ) continue;
-			let value = null;
-			try { value = node[ key ]; } catch ( _ ) { continue; }
+			const value = __readGraphOwnValue( node, key );
 			if ( ! value ) continue;
 			if ( value.isNode === true ) walk( value, depth + 1 );
 			else if ( Array.isArray( value ) ) {
@@ -3542,12 +3543,37 @@ function __rememberRenderTargetTextures( byName, target ) {
 	for ( const texture of target.textures || [] ) __rememberGraphTexture( byName, texture );
 }
 
+function __isGraphTraversalCandidate( value ) {
+	if ( ! value || ( typeof value !== 'object' && typeof value !== 'function' ) ) return false;
+	try {
+		if ( value.isTexture === true || value.isNode === true || value.isPassNode === true || value.isRTTNode === true || value.isRenderTarget === true ) return true;
+	} catch ( _ ) {}
+	try {
+		if ( value.texture && value.texture.isTexture === true && typeof value.setSize === 'function' ) return true;
+	} catch ( _ ) {}
+	if ( Array.isArray( value ) ) return true;
+	let tag = '';
+	try { tag = Object.prototype.toString.call( value ); } catch ( _ ) { return false; }
+	return tag === '[object Object]';
+}
+
+function __readGraphOwnValue( node, key ) {
+	let descriptor = null;
+	try { descriptor = Object.getOwnPropertyDescriptor( node, key ); } catch ( _ ) { return null; }
+	if ( descriptor ) {
+		if ( ! Object.prototype.hasOwnProperty.call( descriptor, 'value' ) ) return null;
+		return descriptor.value;
+	}
+	try { return node[ key ]; } catch ( _ ) { return null; }
+}
+
 function __collectGraphTexturesByName( node, byName = new Map(), seen = new Set(), depth = 0 ) {
 	if ( ! node || depth > 16 || seen.has( node ) ) return byName;
 	if ( node.isTexture === true ) {
 		__rememberGraphTexture( byName, node );
 		return byName;
 	}
+	if ( ! __isGraphTraversalCandidate( node ) ) return byName;
 	seen.add( node );
 	if ( node.isPassNode === true ) __rememberRenderTargetTextures( byName, node.renderTarget );
 	if ( node.isRTTNode === true ) __rememberRenderTargetTextures( byName, node.renderTarget );
@@ -3557,15 +3583,14 @@ function __collectGraphTexturesByName( node, byName = new Map(), seen = new Set(
 	__rememberRenderTargetTextures( byName, node._horizontalRT );
 	__rememberRenderTargetTextures( byName, node._verticalRT );
 	for ( const key of [ 'value', '_value', 'texture', '_texture' ] ) {
-		try { __rememberGraphTexture( byName, node[ key ] ); } catch ( _ ) {}
+		__rememberGraphTexture( byName, __readGraphOwnValue( node, key ) );
 	}
 	const skip = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'renderTarget', '_horizontalRT', '_verticalRT', 'geometry', 'material', 'domElement' ] );
 	const keys = [];
 	try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
 	for ( const key of keys ) {
 		if ( skip.has( key ) ) continue;
-		let child = null;
-		try { child = node[ key ]; } catch ( _ ) { continue; }
+		const child = __readGraphOwnValue( node, key );
 		if ( ! child ) continue;
 		if ( Array.isArray( child ) ) {
 			for ( const item of child ) if ( item && ( typeof item === 'object' || typeof item === 'function' ) ) __collectGraphTexturesByName( item, byName, seen, depth + 1 );
@@ -3578,6 +3603,7 @@ function __collectGraphTexturesByName( node, byName = new Map(), seen = new Set(
 
 function __collectFrameEffectTextureAliases( node, byName, seen = new Set(), depth = 0 ) {
 	if ( ! node || ! byName || depth > 32 || seen.has( node ) ) return byName;
+	if ( ! __isGraphTraversalCandidate( node ) ) return byName;
 	seen.add( node );
 	const type = node.constructor && ( node.constructor.type || node.constructor.name ) || node.type || '';
 	if ( type === 'AfterImageNode' ) {
@@ -3596,8 +3622,7 @@ function __collectFrameEffectTextureAliases( node, byName, seen = new Set(), dep
 	const skip = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'geometry', 'material', 'domElement', 'renderTarget', '_compRT', '_oldRT' ] );
 	for ( const key of keys ) {
 		if ( skip.has( key ) ) continue;
-		let child = null;
-		try { child = node[ key ]; } catch ( _ ) { continue; }
+		const child = __readGraphOwnValue( node, key );
 		if ( ! child ) continue;
 		if ( Array.isArray( child ) ) {
 			for ( const item of child ) if ( item && ( typeof item === 'object' || typeof item === 'function' ) ) __collectFrameEffectTextureAliases( item, byName, seen, depth + 1 );
@@ -4155,15 +4180,13 @@ function __appendUniqueTextures( out, textures ) {
 function __collectTexturesInNode( node, out = [], depth = 0, seen = new Set() ) {
 	if ( ! node || depth > 64 || seen.has( node ) ) return out;
 	if ( typeof node !== 'object' && typeof node !== 'function' ) return out;
+	if ( ! __isGraphTraversalCandidate( node ) ) return out;
 	seen.add( node );
 	if ( node.isTexture === true ) {
 		__pushUniqueTexture( out, node );
 		return out;
 	}
-	const read = ( object, key ) => {
-		try { return object && object[ key ]; }
-		catch ( _ ) { return null; }
-	};
+	const read = __readGraphOwnValue;
 	for ( const key of [ 'value', '_value', 'texture', '_texture', 'textureNode', 'source', '_source', 'renderTarget' ] ) {
 		const v = read( node, key );
 		if ( v && v.isTexture === true ) __pushUniqueTexture( out, v );
@@ -4187,7 +4210,9 @@ function __collectTexturesInNode( node, out = [], depth = 0, seen = new Set() ) 
 				} );
 			} catch ( _ ) {}
 		}
-		for ( const key of Object.getOwnPropertyNames( node ) ) {
+		const keys = [];
+		try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
+		for ( const key of keys ) {
 			if ( key === 'parent' || key === 'children' || key === '_cache' || key === 'builder' || key === 'material' || key === 'object' ) continue;
 			const child = read( node, key );
 		if ( child && child.isTexture === true ) __pushUniqueTexture( out, child );
@@ -6780,14 +6805,14 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 
 function __findPassNodeInGraph( node, depth = 0, seen = new Set() ) {
 	if ( ! node || depth > 10 || seen.has( node ) ) return null;
+	if ( ! __isGraphTraversalCandidate( node ) ) return null;
 	seen.add( node );
 	if ( node.isPassNode === true && node.scene && node.camera ) return node;
 	const keys = [];
 	try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
 	for ( const key of keys ) {
 		if ( key === 'parent' || key === 'children' || key === '_cache' ) continue;
-		let child = null;
-		try { child = node[ key ]; } catch ( _ ) { continue; }
+		const child = __readGraphOwnValue( node, key );
 		if ( ! child ) continue;
 		if ( Array.isArray( child ) ) {
 			for ( const item of child ) {
@@ -6804,6 +6829,7 @@ function __findPassNodeInGraph( node, depth = 0, seen = new Set() ) {
 
 function __collectPassNodesInGraph( node, out = [], seen = new Set(), depth = 0 ) {
 	if ( ! node || depth > 16 || seen.has( node ) ) return out;
+	if ( ! __isGraphTraversalCandidate( node ) ) return out;
 	seen.add( node );
 	if ( node.isPassNode === true && node.scene && node.camera ) {
 		if ( ! out.includes( node ) ) out.push( node );
@@ -6814,8 +6840,7 @@ function __collectPassNodesInGraph( node, out = [], seen = new Set(), depth = 0 
 	const skip = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'geometry', 'material', 'domElement' ] );
 	for ( const key of keys ) {
 		if ( skip.has( key ) ) continue;
-		let child = null;
-		try { child = node[ key ]; } catch ( _ ) { continue; }
+		const child = __readGraphOwnValue( node, key );
 		if ( ! child ) continue;
 		if ( Array.isArray( child ) ) {
 			for ( const item of child ) if ( item && ( typeof item === 'object' || typeof item === 'function' ) ) __collectPassNodesInGraph( item, out, seen, depth + 1 );
@@ -6993,6 +7018,7 @@ function __bloomDiagnostics() {
 
 function __collectBloomNodesInGraph( node, out = [], seen = new Set(), depth = 0 ) {
 	if ( ! node || depth > 24 || seen.has( node ) ) return out;
+	if ( ! __isGraphTraversalCandidate( node ) ) return out;
 	seen.add( node );
 	if ( __isBloomEffectNode( node ) ) {
 		if ( ! out.includes( node ) ) out.push( node );
@@ -7003,8 +7029,7 @@ function __collectBloomNodesInGraph( node, out = [], seen = new Set(), depth = 0
 	const skip = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'geometry', 'material', 'domElement' ] );
 	for ( const key of keys ) {
 		if ( skip.has( key ) ) continue;
-		let child = null;
-		try { child = node[ key ]; } catch ( _ ) { continue; }
+		const child = __readGraphOwnValue( node, key );
 		if ( ! child ) continue;
 		if ( Array.isArray( child ) ) {
 			for ( const item of child ) if ( item && ( typeof item === 'object' || typeof item === 'function' ) ) __collectBloomNodesInGraph( item, out, seen, depth + 1 );
@@ -7021,6 +7046,7 @@ function __isRTTNode( node ) {
 
 function __collectRTTNodesInGraph( node, out = [], seen = new Set(), depth = 0 ) {
 	if ( ! node || depth > 24 || seen.has( node ) ) return out;
+	if ( ! __isGraphTraversalCandidate( node ) ) return out;
 	seen.add( node );
 	if ( __isRTTNode( node ) ) {
 		if ( ! out.includes( node ) ) out.push( node );
@@ -7030,8 +7056,7 @@ function __collectRTTNodesInGraph( node, out = [], seen = new Set(), depth = 0 )
 	const skip = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'geometry', 'material', 'domElement' ] );
 	for ( const key of keys ) {
 		if ( skip.has( key ) ) continue;
-		let child = null;
-		try { child = node[ key ]; } catch ( _ ) { continue; }
+		const child = __readGraphOwnValue( node, key );
 		if ( ! child ) continue;
 		if ( Array.isArray( child ) ) {
 			for ( const item of child ) if ( item && ( typeof item === 'object' || typeof item === 'function' ) ) __collectRTTNodesInGraph( item, out, seen, depth + 1 );
@@ -7212,11 +7237,11 @@ const __fullRTTSize = new FullVector2();
 
 function __collectOwnedRenderTargetTextures( node, out = new Set() ) {
 	if ( ! node || ( typeof node !== 'object' && typeof node !== 'function' ) ) return out;
+	if ( ! __isGraphTraversalCandidate( node ) ) return out;
 	const keys = [];
 	try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
 	for ( const key of keys ) {
-		let value = null;
-		try { value = node[ key ]; } catch ( _ ) { continue; }
+		const value = __readGraphOwnValue( node, key );
 		if ( ! value || typeof value !== 'object' || typeof value.setSize !== 'function' ) continue;
 		if ( value.texture && value.texture.isTexture === true ) out.add( value.texture );
 		if ( value.depthTexture && value.depthTexture.isTexture === true ) out.add( value.depthTexture );
@@ -7560,11 +7585,11 @@ function __frameEffectDiagnostics() {
 
 function __nodeOwnsRenderTarget( node ) {
 	if ( ! node || ( typeof node !== 'object' && typeof node !== 'function' ) ) return false;
+	if ( ! __isGraphTraversalCandidate( node ) ) return false;
 	const keys = [];
 	try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
 	for ( const key of keys ) {
-		let value = null;
-		try { value = node[ key ]; } catch ( _ ) { continue; }
+		const value = __readGraphOwnValue( node, key );
 		if ( value && value.isRenderTarget === true ) return true;
 		if ( value && value.texture && value.texture.isTexture === true && typeof value.setSize === 'function' ) return true;
 	}
@@ -7594,14 +7619,14 @@ function __isFrameEffectNode( node ) {
 
 function __collectFrameEffectNodesInGraph( node, out = [], seen = new Set(), depth = 0 ) {
 	if ( ! node || depth > 32 || seen.has( node ) ) return out;
+	if ( ! __isGraphTraversalCandidate( node ) ) return out;
 	seen.add( node );
 	const keys = [];
 	try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
 	const skip = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'geometry', 'material', 'domElement', 'renderTarget', '_aoRenderTarget', '_ssgiRenderTarget', '_ssrRenderTarget', '_blurRenderTarget', '_renderTarget', '_compRT', '_oldRT', '_CoCRT', '_CoCBlurredRT', '_blur64RT', '_blur16NearRT', '_blur16FarRT', '_compositeRT' ] );
 	for ( const key of keys ) {
 		if ( skip.has( key ) ) continue;
-		let child = null;
-		try { child = node[ key ]; } catch ( _ ) { continue; }
+		const child = __readGraphOwnValue( node, key );
 		if ( ! child ) continue;
 		if ( Array.isArray( child ) ) {
 			for ( const item of child ) {
