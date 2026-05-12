@@ -2,7 +2,7 @@
 
 Current audit of what works, what's blocked, and what remains before this plugin is truly usable by three.js developers. Companion to [ROADMAP.md](./ROADMAP.md), [ARCHITECTURE.md](./ARCHITECTURE.md), and [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-Last updated: 2026-05-12
+Last updated: 2026-05-13
 
 ---
 
@@ -36,8 +36,8 @@ This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage s
 - Bloom/postprocessing texture handoff is green for the focused bloom cluster, and `webgpu_postprocessing.html`, AO, and masking now pass in the generated broad summary. Remaining broad-postprocessing work should move to harder non-bloom examples such as `webgpu_postprocessing_outline.html`, `webgpu_postprocessing_godrays.html`, SSR, and the near-threshold DOF/SSGI examples.
 
 **Implementation highlights:**
-- `@tsl-precompile/runtime/slim-support/pmrem` now owns PMREM texture/source detection and PMREM `_textureRefs` wiring helpers; the E2E harness delegates those pure rules to runtime surface instead of carrying a local copy.
-- The hydrator now imports shader texture-shape inference and texture binding compatibility checks from `packages/runtime/src/hydrate/texture-resolver.js`, the first split toward a binding-kind pipeline.
+- `@tsl-precompile/runtime/slim-support/pmrem` now owns PMREM texture/source detection, cache/pending generation orchestration, image-ready skips, and PMREM `_textureRefs` wiring helpers; the E2E harness delegates those rules to runtime surface instead of carrying a local copy.
+- The hydrator now imports shader texture-shape inference, texture binding compatibility checks, and fallback texture selection from `packages/runtime/src/hydrate/texture-resolver.js`, the first split toward a binding-kind pipeline.
 - `@tsl-precompile/contract/dynamic-bindings` documents owner/target/phase/resolver metadata for live uniform slots and runtime texture/rebinder sources.
 - PMREM generation chooses equirect/cube mode from source image shape rather than trusting rewritten `texture.mapping`, uses cloned source textures for temporary mapping changes, and preserves loader `flipY`.
 - Equirectangular HDR backgrounds captured as `texture_cube` background artifacts are converted to live `CubeTexture`s through the shared full WebGPU renderer, then shared back into slim.
@@ -49,7 +49,7 @@ This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage s
 
 ## Round 4 results (2026-05-03)
 
-Six parallel agents + several follow-up commits pushed visual correctness forward on multiple fronts. Headline: **27/29 tier-1 examples render without errors** (same count as before Round 4 but different mix). Latest package test pass: **266 / 266 tests** across plugin 177, runtime 82, and inspector 7.
+Six parallel agents + several follow-up commits pushed visual correctness forward on multiple fronts. Headline: **27/29 tier-1 examples render without errors** (same count as before Round 4 but different mix). Latest package test pass: **267 / 267 tests** across plugin 177, runtime 83, and inspector 7.
 
 **Gained** (was broken/error → now renders):
 - `webgpu_compute_birds`: capture-side throw fixed (`object.computeBoundingSphere` skip on throwaway mesh) → replay renders sky background. Birds themselves still missing (instance buffer not propagating).
@@ -113,7 +113,7 @@ Fresh triage on 2026-05-12 confirms the deferral: `webgpu_compute_reduce.html` i
 
 ## Recent fixes (2026-05-12)
 
-**Architecture evolution first wedges landed.** `@tsl-precompile/contract` now owns shared graph normalization, canonical material/node texture-property lists, the shared `KINDS` registry, dynamic binding descriptors, blocked-kind reasons, and artifact payload validation. The runtime exposes `slim-support` modules for live texture indexing, null-image healing, and PMREM source/ref wiring. The E2E harness imports those pieces instead of carrying another local copy.
+**Architecture evolution first wedges landed.** `@tsl-precompile/contract` now owns shared graph normalization, canonical material/node texture-property lists, the shared `KINDS` registry, dynamic binding descriptors, blocked-kind reasons, and artifact payload validation. The runtime exposes `slim-support` modules for live texture indexing, null-image healing, and PMREM source/ref wiring plus cache/pending generation orchestration. The E2E harness imports those pieces instead of carrying another local copy.
 
 **Artifact validation moved into the contract.** `pnpm verify` now checks committed artifact payloads against `validateArtifact()`, including unknown `source.kind` detection and dynamic binding descriptor required fields. Runtime artifact validation can also be enabled in dev or with `globalThis.__TSLP_VALIDATE_ARTIFACTS = true`; the current example artifact corpus cross-checks at 509 / 509 valid JSON payloads.
 
@@ -181,14 +181,14 @@ for the current triage plan.
 
 ---
 
-## Test suite summary (as of 2026-05-12 run)
+## Test suite summary (as of 2026-05-13 run)
 
 ```
-packages/plugin        174 / 174 pass   (unit + coverage matrix)
-packages/runtime        73 /  73 pass   (hydrator, registry, slim-support, smoke)
+packages/plugin        177 / 177 pass   (unit + coverage matrix)
+packages/runtime        83 /  83 pass   (hydrator, registry, slim-support, smoke)
 packages/inspector-panel 7 /   7 pass
 ---
-Total                  254 / 254 pass   0 fail
+Total                  267 / 267 pass   0 fail
 ```
 
 Batch harness (`packages/examples/batch/results/report.json`):

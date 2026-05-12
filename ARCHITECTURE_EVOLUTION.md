@@ -8,13 +8,13 @@ This file is the **structural** to-do list: the changes that make the plugins ea
 
 Items are ordered **P0 → P3**. Each has: **Symptom** (what's wrong), **Why it blocks evolution/fidelity**, **Change** (target shape), **First step** (a small, low-risk wedge), **Files**.
 
-Last updated: 2026-05-12.
+Last updated: 2026-05-13.
 
 ---
 
 ## The one-paragraph diagnosis
 
-The real fidelity work — PMREM generation, texture rebinding by identity, compute-buffer sync, shadow/pass delegation — still mostly lives in a **9.4k-line test harness** ([`packages/examples/batch/run-e2e.mjs`](packages/examples/batch/run-e2e.mjs)), so fixes can land in scaffolding before adopters benefit. The first productized runtime wedges now exist in [`packages/runtime/src/slim-support/live-scene-index.js`](packages/runtime/src/slim-support/live-scene-index.js) and [`packages/runtime/src/slim-support/pmrem.js`](packages/runtime/src/slim-support/pmrem.js), but PMREM generation orchestration / compute / fallback-renderer behavior still needs to move behind that API. The runtime's [`hydrator.js`](packages/runtime/src/hydrator.js) is still large, but the first texture resolver seam now lives in [`packages/runtime/src/hydrate/texture-resolver.js`](packages/runtime/src/hydrate/texture-resolver.js). The extractor -> codegen -> runtime contract now has a shared package ([`packages/contract`](packages/contract)) for graph normalization, texture-property lists, the `source.kind` registry, dynamic binding descriptors, and artifact validation, removing several drift risks. The vendored three.js fork (~2.8k LOC) plus [`three-rewrite.js`](packages/plugin/src/three-rewrite.js) (1,718 LOC of source-text AST surgery on ~9 three.js files) now fails strict/CI builds on rewrite warnings, but the deeper upstream seam is still unresolved. And pure slim **cannot generate shaders**, so shadows / clipping / dynamic node subgraphs are blocked — the harness papers over this by spinning up a *full* `WebGPURenderer` on the side, a pattern that is not yet productized.
+The real fidelity work — PMREM generation, texture rebinding by identity, compute-buffer sync, shadow/pass delegation — still mostly lives in a **9.4k-line test harness** ([`packages/examples/batch/run-e2e.mjs`](packages/examples/batch/run-e2e.mjs)), so fixes can land in scaffolding before adopters benefit. The first productized runtime wedges now exist in [`packages/runtime/src/slim-support/live-scene-index.js`](packages/runtime/src/slim-support/live-scene-index.js) and [`packages/runtime/src/slim-support/pmrem.js`](packages/runtime/src/slim-support/pmrem.js), including PMREM cache/pending orchestration, but compute / fallback-renderer behavior still needs to move behind that API. The runtime's [`hydrator.js`](packages/runtime/src/hydrator.js) is still large, but the first texture resolver seams now live in [`packages/runtime/src/hydrate/texture-resolver.js`](packages/runtime/src/hydrate/texture-resolver.js). The extractor -> codegen -> runtime contract now has a shared package ([`packages/contract`](packages/contract)) for graph normalization, texture-property lists, the `source.kind` registry, dynamic binding descriptors, and artifact validation, removing several drift risks. The vendored three.js fork (~2.8k LOC) plus [`three-rewrite.js`](packages/plugin/src/three-rewrite.js) (1,718 LOC of source-text AST surgery on ~9 three.js files) now fails strict/CI builds on rewrite warnings and has a locked/latest compat matrix, but the deeper upstream seam is still unresolved. And pure slim **cannot generate shaders**, so shadows / clipping / dynamic node subgraphs are blocked — the harness papers over this by spinning up a *full* `WebGPURenderer` on the side, a pattern that is not yet productized.
 
 ---
 
@@ -43,9 +43,9 @@ support.renderPassWithFallback(pass);
 
 Move the harness `__*` helpers in there one cluster at a time (textures → PMREM → compute → pass/shadow fallback), leaving `run-e2e.mjs` as a thin caller of the same API real users would use.
 
-**Status (2026-05-12).** First wedges landed. [`packages/runtime/src/slim-support/live-scene-index.js`](packages/runtime/src/slim-support/live-scene-index.js) now owns live texture identity indexing, material/node texture cataloguing, and null-image healing. [`packages/runtime/src/slim-support/pmrem.js`](packages/runtime/src/slim-support/pmrem.js) now owns PMREM artifact/source detection plus `_textureRefs` wiring helpers. `run-e2e.mjs` imports those helpers through the runtime package, and focused runtime tests cover the extracted behavior.
+**Status (2026-05-13).** First wedges landed. [`packages/runtime/src/slim-support/live-scene-index.js`](packages/runtime/src/slim-support/live-scene-index.js) now owns live texture identity indexing, material/node texture cataloguing, and null-image healing. [`packages/runtime/src/slim-support/pmrem.js`](packages/runtime/src/slim-support/pmrem.js) now owns PMREM artifact/source detection, cache hits, pending joins, image-readiness skips, generation diagnostics, pending-counter hooks, and `_textureRefs` wiring helpers. `run-e2e.mjs` imports those helpers through the runtime package, while still supplying the harness-specific full-renderer PMREM generator.
 
-**Next step.** Finish moving PMREM cache/generation orchestration into `slim-support`, then keep pulling harness-only runtime behavior in this order: compute sync, full-renderer fallback, pass/shadow delegation.
+**Next step.** Finish productizing the full-renderer PMREM generator/device-sharing backend behind the future `fullRendererFallback` API, then keep pulling harness-only runtime behavior in this order: compute sync, full-renderer fallback, pass/shadow delegation.
 
 **Files.** new `packages/runtime/src/slim-support/*`; `packages/runtime/src/index.js` (export); `packages/runtime/package.json` (export map); `packages/examples/batch/run-e2e.mjs` (call, don't inline).
 
@@ -65,7 +65,7 @@ Move the harness `__*` helpers in there one cluster at a time (textures → PMRE
 
 Adding a binding kind becomes: add one file under `kinds/`, register it. (Today it's "grep both plugin and runtime for the string literal.")
 
-**Status (2026-05-12).** First no-behavior-change seam landed. [`packages/runtime/src/hydrate/texture-resolver.js`](packages/runtime/src/hydrate/texture-resolver.js) now owns uniform-plan texture lookup, shader texture-shape inference, and texture-vs-binding compatibility checks, with focused tests in [`packages/runtime/test/hydrate-texture-resolver.test.js`](packages/runtime/test/hydrate-texture-resolver.test.js).
+**Status (2026-05-13).** First no-behavior-change seams landed. [`packages/runtime/src/hydrate/texture-resolver.js`](packages/runtime/src/hydrate/texture-resolver.js) now owns uniform-plan texture lookup, shader texture-shape inference, texture-vs-binding compatibility checks, and shader-compatible fallback texture selection, with focused tests in [`packages/runtime/test/hydrate-texture-resolver.test.js`](packages/runtime/test/hydrate-texture-resolver.test.js).
 
 **Next step.** Move the remaining `resolveTextureBinding` fallback chain (`textureFromSnapshot`, `lookupLiveTextureByIdentity`, `lookupAnonymousDataTexture`, `lookupAnonymousStorageTexture`) into explicit named strategies and record which strategy resolved each binding.
 
@@ -122,9 +122,9 @@ Wire it so the **plugin build fails** when an artifact has a `source.kind` not i
 3. Evaluate replacing the riskiest text surgery with a **single upstreamed seam** — e.g. a `NodeManager` precompile hook or a `Renderer` extension point in three.js itself (the "sidecar / upstream the marker" direction in [IDEAS.md §5.6](IDEAS.md)). One sanctioned hook beats nine fragile rewrites.
 4. Consider splitting the vendored extractor into `@tsl-precompile/three-extract` with its own version-compat matrix, decoupling its release cadence from the plugin.
 
-**Status (2026-05-12).** First wedge landed. [`packages/runtime/rollup.config.js`](packages/runtime/rollup.config.js) now turns rewrite warnings into build errors when `CI=true` or `TSLP_FAIL_ON_REWRITE_WARNING=1`, and [`.github/workflows/three-compat.yml`](.github/workflows/three-compat.yml) runs a nightly/manual `three@latest` slim-build probe.
+**Status (2026-05-12).** First wedge landed. [`packages/runtime/rollup.config.js`](packages/runtime/rollup.config.js) now turns rewrite warnings into build errors when `CI=true` or `TSLP_FAIL_ON_REWRITE_WARNING=1`, and [`.github/workflows/three-compat.yml`](.github/workflows/three-compat.yml) runs a nightly/manual locked/latest matrix: per-file rewrite shape tests first, then a strict slim-build probe.
 
-**Next step.** Extend the probe into a compat matrix with per-file rewrite diagnostics, then evaluate the smallest upstream three.js hook that could remove the riskiest source rewrites.
+**Next step.** Expand the matrix with targeted vendor/extractor diagnostics, then evaluate the smallest upstream three.js hook that could remove the riskiest source rewrites.
 
 **Files.** `.github/workflows/*`; `packages/plugin/src/three-rewrite.js`; `packages/plugin/src/index.js`; `packages/plugin/src/vendor/VENDORING.md`.
 
@@ -239,15 +239,15 @@ P0.4 (hasher dedupe) ──┐  first shared-module wedge landed
 P0.3 (shared contract) ─┼─► both feed P0.2 (hydrator split) and P1.7 (dynamic bindings)
                         │  texture-props + KINDS/schema + dynamic descriptors landed
 P0.1 (slim-support) ────┴─► enables P1.6 (full-renderer policy) and P3.12 (debug hooks)
-                           live-scene-index wedge landed; PMREM next
+                           live-scene-index + PMREM orchestration wedges landed; compute/full-renderer next
 
-P0.5 (three.js seam)  — strict rewrite warnings + nightly probe landed; compat matrix next
+P0.5 (three.js seam)  — strict rewrite warnings + locked/latest rewrite/slim matrix landed; vendor diagnostics next
 P2.9 (coverage)       — shared PSNR + config/tier data + CI tier gate landed; expand/stabilize next
 P2.8 (codegen)        — parser guard landed; writer table/AST codegen next
 P2.10 (verify) , P3.* — opportunistic
 ```
 
-Suggested order from here: **P0.5 compat matrix** (make upstream drift visible), then **P0.2 texture resolver split → P0.1 PMREM support**, then **P1.6 / P1.7 dynamic bindings**, then **P2.10 dev/build extractor convergence**, with P2/P3 cleanup folded in as the touched areas stabilize.
+Suggested order from here: **P0.2 texture resolver split → P0.1 PMREM support**, then **P1.6 / P1.7 dynamic bindings**, then **P2.10 dev/build extractor convergence**, with P0.5 vendor diagnostics and P2/P3 cleanup folded in as the touched areas stabilize.
 
 ## What "done" looks like
 
