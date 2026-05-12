@@ -87,22 +87,42 @@ test( 'createPMREMSupport caches generation and wires artifacts once per signatu
 	const source = texture( { uuid: 'source' } );
 	const pmrem = texture( { uuid: 'pmrem-ready', mapping: 306 } );
 	let generateCalls = 0;
+	let releasePMREM = null;
+	const pendingChanges = [];
 	const support = createPMREMSupport( {
 		diagnostics,
-		generatePMREM: async () => {
+		onPendingChange: ( delta, texture ) => {
 
-			generateCalls ++;
-			return pmrem;
+			pendingChanges.push( [ delta, texture && texture.uuid ] );
 
 		},
+		generatePMREM: () => new Promise( ( resolve ) => {
+
+			generateCalls ++;
+			releasePMREM = () => resolve( pmrem );
+
+		} ),
 	} );
 
-	const first = await support.kickGenerate( null, source );
-	const second = await support.kickGenerate( null, source );
+	const firstPromise = support.kickGenerate( null, source );
+	const secondPromise = support.kickGenerate( null, source );
+	await Promise.resolve();
+	assert.equal( generateCalls, 1 );
+	assert.deepEqual( pendingChanges, [ [ 1, 'source' ] ] );
+	assert.equal( diagnostics.pendingJoins, 1 );
+
+	releasePMREM();
+	const first = await firstPromise;
+	const second = await secondPromise;
 	assert.equal( first, pmrem );
 	assert.equal( second, pmrem );
+	assert.deepEqual( pendingChanges, [ [ 1, 'source' ], [ -1, 'source' ] ] );
 	assert.equal( generateCalls, 1 );
+	assert.equal( diagnostics.generateCalls, 1 );
 	assert.equal( diagnostics.generateSuccess, 1 );
+
+	const cached = await support.kickGenerate( null, source );
+	assert.equal( cached, pmrem );
 	assert.equal( diagnostics.cacheHits, 1 );
 
 	const captured = artifact( [ { kind: 'artifact.texture', textureUuid: 'env', mapping: 306 } ] );
@@ -113,5 +133,31 @@ test( 'createPMREMSupport caches generation and wires artifacts once per signatu
 	assert.equal( diagnostics.wireAttached, 1 );
 	assert.equal( diagnostics.wireAlreadyWired, 1 );
 	assert.equal( textureListSignature( [ pmrem ], 1 ), 'pmrem-ready' );
+
+} );
+
+test( 'createPMREMSupport skips generation until PMREM sources are image-ready', async () => {
+
+	const diagnostics = {};
+	const pendingChanges = [];
+	const source = texture( { uuid: 'loading' } );
+	let generateCalls = 0;
+	const support = createPMREMSupport( {
+		diagnostics,
+		textureImageReady: () => false,
+		onPendingChange: ( delta ) => pendingChanges.push( delta ),
+		generatePMREM: async () => {
+
+			generateCalls ++;
+			return texture( { uuid: 'pmrem' } );
+
+		},
+	} );
+
+	const result = await support.kickGenerate( null, source );
+	assert.equal( result, null );
+	assert.equal( generateCalls, 0 );
+	assert.deepEqual( pendingChanges, [] );
+	assert.equal( diagnostics.skippedNotReady, 1 );
 
 } );

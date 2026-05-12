@@ -124,6 +124,7 @@ export function createPMREMSupport( opts = {} ) {
 	const getDiagnostics = typeof opts.getDiagnostics === 'function' ? opts.getDiagnostics : () => opts.diagnostics || null;
 	const generatePMREM = typeof opts.generatePMREM === 'function' ? opts.generatePMREM : null;
 	const textureImageReady = typeof opts.textureImageReady === 'function' ? opts.textureImageReady : () => true;
+	const onPendingChange = typeof opts.onPendingChange === 'function' ? opts.onPendingChange : null;
 
 	function bump( key ) {
 
@@ -215,6 +216,8 @@ export function createPMREMSupport( opts = {} ) {
 
 		}
 
+		bump( 'generateCalls' );
+		if ( onPendingChange ) onPendingChange( 1, sourceTex );
 		const promise = Promise.resolve()
 			.then( () => generatePMREM( renderer, sourceTex ) )
 			.then( ( pmrem ) => {
@@ -237,7 +240,12 @@ export function createPMREMSupport( opts = {} ) {
 				return null;
 
 			} )
-			.finally( () => pending.delete( sourceTex ) );
+			.finally( () => {
+
+				pending.delete( sourceTex );
+				if ( onPendingChange ) onPendingChange( -1, sourceTex );
+
+			} );
 		pending.set( sourceTex, promise );
 		return promise;
 

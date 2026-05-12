@@ -1020,7 +1020,7 @@ export class ${ name } {
 import * as Slim from '/__tslp__/three.webgpu.slim.js?v=${ CACHE_BUST }';
 import { TSL as FullTSL, TextureNode as FullTextureNode, BlendMode as FullBlendMode, TempNode as FullTempNode, NodeUpdateType as FullNodeUpdateType, NodeMaterial as FullNodeMaterial, MeshBasicNodeMaterial as FullMeshBasicNodeMaterial, MeshStandardNodeMaterial as FullMeshStandardNodeMaterial, MeshPhysicalNodeMaterial as FullMeshPhysicalNodeMaterial, MeshLambertNodeMaterial as FullMeshLambertNodeMaterial, MeshPhongNodeMaterial as FullMeshPhongNodeMaterial, MeshToonNodeMaterial as FullMeshToonNodeMaterial, MeshNormalNodeMaterial as FullMeshNormalNodeMaterial, MeshMatcapNodeMaterial as FullMeshMatcapNodeMaterial, MeshSSSNodeMaterial as FullMeshSSSNodeMaterial, LineBasicNodeMaterial as FullLineBasicNodeMaterial, LineDashedNodeMaterial as FullLineDashedNodeMaterial, Line2NodeMaterial as FullLine2NodeMaterial, PointsNodeMaterial as FullPointsNodeMaterial, SpriteNodeMaterial as FullSpriteNodeMaterial, ShadowNodeMaterial as FullShadowNodeMaterial, RenderTarget as FullRenderTarget, DepthTexture as FullDepthTexture, ArrayCamera as FullArrayCamera, QuadMesh as FullQuadMesh, RendererUtils as FullRendererUtils, Vector2 as FullVector2, TextureLoader as FullTextureLoader, CubeTextureLoader as FullCubeTextureLoader, DataTextureLoader as FullDataTextureLoader, ImageBitmapLoader as FullImageBitmapLoader } from '/build/three.webgpu.js';
 import { createLiveSceneIndex, textureImageReady as __sharedTextureImageReady, textureImageSrc as __sharedTextureImageSrc, newFallbackTextureImage as __sharedNewFallbackTextureImage } from '/__tslp_runtime/slim-support/live-scene-index.js';
-import { artifactNeedsPMREM as __sharedArtifactNeedsPMREM, artifactPMREMSourceUuids as __sharedArtifactPMREMSourceUuids, attachPMREMRefsByOrder as __sharedAttachPMREMRefsByOrder, isPMREMArtifactTextureSource as __sharedIsPMREMArtifactTextureSource, isPMREMTexture as __sharedIsPMREMTexture, pmremTexturesForSources as __sharedPMREMTexturesForSources, textureListSignature as __sharedTextureListSignature } from '/__tslp_runtime/slim-support/pmrem.js';
+import { artifactNeedsPMREM as __sharedArtifactNeedsPMREM, artifactPMREMSourceUuids as __sharedArtifactPMREMSourceUuids, attachPMREMRefsByOrder as __sharedAttachPMREMRefsByOrder, createPMREMSupport as __sharedCreatePMREMSupport, isPMREMArtifactTextureSource as __sharedIsPMREMArtifactTextureSource, isPMREMTexture as __sharedIsPMREMTexture, textureListSignature as __sharedTextureListSignature } from '/__tslp_runtime/slim-support/pmrem.js';
 import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS } from '/__tslp_contract/texture-props.js';
 export * from '/__tslp__/three.webgpu.slim.js';
 export { FullTextureNode as TextureNode, FullBlendMode as BlendMode, FullTempNode as TempNode, FullNodeUpdateType as NodeUpdateType, FullRenderTarget as RenderTarget, FullDepthTexture as DepthTexture, FullArrayCamera as ArrayCamera, FullQuadMesh as QuadMesh, FullRendererUtils as RendererUtils };
@@ -4278,10 +4278,7 @@ function __healTextureImage( texture ) {
 }
 
 function __getCachedPMREMForSource( sourceTex ) {
-	if ( ! sourceTex || sourceTex.isTexture !== true ) return null;
-	const cached = __pmremCache.get( sourceTex );
-	if ( cached && cached.isTexture === true ) return cached;
-	return __isPMREMTexture( sourceTex ) ? sourceTex : null;
+	return __getPMREMSupport().getCachedPMREMForSource( sourceTex );
 }
 
 function __wireBackgroundTextures( scene, renderer ) {
@@ -4385,6 +4382,35 @@ const __pmremPending = new WeakMap(); // source tex → Promise<Texture|null>
 const __pmremFailed = new WeakSet();  // source tex → known-failed (don't retry, don't warn again)
 const __pmremWiredArtifacts = new WeakMap(); // artifact -> PMREM texture signature
 let __pmremNoRendererWarned = false;  // dedup the global "no compute renderer" warning
+let __pmremSupport = null;
+
+function __bumpPMREMPending( delta ) {
+	window.__tslpPmremPending = Math.max( 0, ( window.__tslpPmremPending | 0 ) + delta );
+}
+
+function __getPMREMSupport() {
+	if ( __pmremSupport ) return __pmremSupport;
+	__pmremSupport = __sharedCreatePMREMSupport( {
+		cache: __pmremCache,
+		pending: __pmremPending,
+		failed: __pmremFailed,
+		wiredArtifacts: __pmremWiredArtifacts,
+		getDiagnostics: __pmremDiagnostics,
+		textureImageReady: __textureImageReady,
+		generatePMREM: __generatePMREMAsync,
+		onPendingChange: ( delta ) => __bumpPMREMPending( delta ),
+		onError: ( err ) => {
+			// Per-page warn-once: log only the FIRST PMREM failure for the entire
+			// page load. Per-texture dedup was too noisy for scenes that swap
+			// environment textures while replay is settling.
+			if ( ! window.__tslpPmremWarned ) {
+				window.__tslpPmremWarned = true;
+				console.warn( '[tslp-e2e] PMREM async generation failed:', err && err.message || err );
+			}
+		},
+	} );
+	return __pmremSupport;
+}
 
 const __backgroundCubeCache = new WeakMap();   // equirect source tex → CubeTexture (ready)
 const __backgroundCubePending = new WeakMap(); // equirect source tex → Promise<CubeTexture|null>
@@ -4468,7 +4494,6 @@ function __kickBackgroundCubeGenAsync( slimRenderer, sourceTex, onReady ) {
 // bindings). Called only when no PMREM is cached for sourceTex.
 async function __generatePMREMAsync( slimRenderer, sourceTex ) {
 	if ( __pmremFailed.has( sourceTex ) ) return null;
-	__pmremDiagnostics().generateCalls ++;
 	const fullRenderer = await __getComputeRenderer( slimRenderer );
 	if ( ! fullRenderer ) {
 		__pmremDiagnostics().noComputeRenderer ++;
@@ -4518,28 +4543,14 @@ async function __generatePMREMAsync( slimRenderer, sourceTex ) {
 					__pmremFailed.add( sourceTex );
 					console.warn( '[tslp-e2e] PMREM: full backend has no GPU texture for PMREM' );
 				}
+				return null;
 			} else {
 				__sharePMREMGPUTexture( slimRenderer, fullRenderer, pmrem );
-				__pmremDiagnostics().generateSuccess ++;
 			}
-			__pmremCache.set( sourceTex, pmrem );
 		}
 		return pmrem || null;
 	} catch ( err ) {
-		__pmremFailed.add( sourceTex );
-		__pmremDiagnostics().generateFailed ++;
-		// Per-page warn-once: log only the FIRST PMREM failure for the entire
-		// page load. Per-texture dedup wasn't reliable because scene.environment
-		// gets swapped between renders and per-material envMap iteration creates
-		// new texture identities each frame, so each frame produced a fresh warn
-		// and the spam (37k+ lines) saturated the Playwright IPC and stalled
-		// the whole run. The error itself is still captured in the example's
-		// replayErrors via the report's failure pipeline.
-		if ( ! window.__tslpPmremWarned ) {
-			window.__tslpPmremWarned = true;
-			console.warn( '[tslp-e2e] PMREM async generation failed:', err && err.message || err );
-		}
-		return null;
+		throw err;
 	}
 }
 
@@ -4564,7 +4575,7 @@ function __cachedPMREMForSource( sourceTex ) {
 }
 
 function __pmremTexturesForSources( sources ) {
-	return __sharedPMREMTexturesForSources( sources, __getCachedPMREMForSource );
+	return __getPMREMSupport().texturesForSources( sources );
 }
 
 function __textureListSignature( textures, count = 0 ) {
@@ -4641,34 +4652,11 @@ function __wireEnvironmentPMREM( renderer, scene ) {
 // finishes so Playwright's freeze-wait condition can include it.
 function __kickPMREMGenAsync( slimRenderer, sourceTex, onReady ) {
 	if ( ! slimRenderer || ! sourceTex || sourceTex.isTexture !== true ) return;
-	__pmremDiagnostics().kickCalls ++;
-	const readyPMREM = __getCachedPMREMForSource( sourceTex );
-	if ( readyPMREM && readyPMREM.isTexture === true ) { __pmremDiagnostics().cacheHits ++; onReady( readyPMREM ); return; }
-	if ( __pmremPending.has( sourceTex ) ) {
-		__pmremDiagnostics().pendingJoins ++;
-		__pmremPending.get( sourceTex ).then( ( pmrem ) => { if ( pmrem ) onReady( pmrem ); } ).catch( () => {} );
-		return;
-	}
-	// Defer until the source texture's pixel data has actually landed. Calling
-	// PMREMGenerator on a still-loading CubeTexture (image=[]) or HDR
-	// (image=null) makes _setSizeFromTexture compute NaN, _init builds an
-	// empty _lodMeshes, and _textureToCubeUV throws
-	// "Cannot set properties of undefined (setting 'material')" every frame
-	// until the loader resolves — the resulting console flood stalls the run
-	// over the Playwright IPC. The loader counter keeps the freeze pending in
-	// the meantime, so returning without scheduling is safe; the next render
-	// after onLoad retries.
-	if ( ! __textureImageReady( sourceTex ) ) { __pmremDiagnostics().skippedNotReady ++; return; }
-	window.__tslpPmremPending = ( window.__tslpPmremPending | 0 ) + 1;
-	const resultPromise = __generatePMREMAsync( slimRenderer, sourceTex ).catch( () => null );
-	__pmremPending.set( sourceTex, resultPromise );
-	resultPromise.then( ( pmrem ) => {
+	__getPMREMSupport().kickGenerate( slimRenderer, sourceTex, ( pmrem ) => {
 		if ( pmrem ) {
 			try { onReady( pmrem ); } catch ( _ ) {}
 		}
-	} ).finally( () => {
-		window.__tslpPmremPending = Math.max( 0, ( window.__tslpPmremPending | 0 ) - 1 );
-	} );
+	} ).catch( () => {} );
 }
 
 // Walk the scene and register every discovered Texture in the runtime's
