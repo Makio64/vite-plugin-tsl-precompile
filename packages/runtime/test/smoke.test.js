@@ -6,6 +6,7 @@ import { DepthTexture } from 'three/src/textures/DepthTexture.js';
 import { registerArtifact, getArtifact } from '../src/artifact-loader.js';
 import { getDFGLUT } from '../src/dfg-lut.js';
 import { hydrateNodeBuilderState, registerLiveTexture, clearLiveTextureIndex } from '../src/hydrator.js';
+import { setTextureResolutionDebugHook } from '../src/hydrate/artifact-texture-resolver.js';
 import { __applyPrecompiled, catalogueArtifactTextureRefs, collectLiveMaterialTextures } from '../src/apply-precompiled.js';
 import PrecompiledMaterial from '../src/_vendor-PrecompiledMaterial.js';
 import { PrecompiledComputeNode } from '../src/precompiled-compute-node.js';
@@ -380,7 +381,18 @@ test( 'runtime hydrator rehydrates artifact.texture snapshots', () => {
 		} ],
 	};
 
-	const state = hydrateNodeBuilderState( artifact );
+	const textureResolutionEvents = [];
+	const previousHook = setTextureResolutionDebugHook( ( event ) => textureResolutionEvents.push( event ) );
+	let state;
+	try {
+
+		state = hydrateNodeBuilderState( artifact );
+
+	} finally {
+
+		setTextureResolutionDebugHook( previousHook );
+
+	}
 	const [ sampler, texture ] = state.bindings[ 0 ].bindings;
 	assert.equal( sampler.texture, texture.texture );
 	assert.equal( texture.texture.isDataTexture, true );
@@ -390,6 +402,11 @@ test( 'runtime hydrator rehydrates artifact.texture snapshots', () => {
 	assert.equal( texture.texture.image.data[ 5 ], 255 );
 	assert.equal( artifact._textureResolutionStrategies.get( 'object:nodeTexture0' ), 'snapshot' );
 	assert.equal( Object.prototype.propertyIsEnumerable.call( artifact, '_textureResolutionStrategies' ), false );
+	assert.equal( textureResolutionEvents.length, 2 );
+	assert.equal( textureResolutionEvents[ 1 ].strategy, 'snapshot' );
+	assert.equal( textureResolutionEvents[ 1 ].sourceKind, 'artifact.texture' );
+	assert.equal( textureResolutionEvents[ 1 ].textureUuid, 'tex-a' );
+	assert.equal( textureResolutionEvents[ 1 ].resolvedTextureType, '2d' );
 
 } );
 

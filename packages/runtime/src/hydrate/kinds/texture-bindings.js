@@ -1,0 +1,63 @@
+import Sampler from 'three/src/renderers/common/Sampler.js';
+import { SampledTexture, SampledCubeTexture, Sampled3DTexture, SampledArrayTexture } from 'three/src/renderers/common/SampledTexture.js';
+
+export function createSampledTextureBinding( { name, texture, textureType, visibility = 0, groupNode = null } ) {
+
+	let binding;
+	if ( textureType === 'cube' ) binding = new SampledCubeTexture( name, texture );
+	else if ( textureType === '3d' ) {
+
+		binding = new Sampled3DTexture( name, texture );
+		binding.isSampledTexture3D = true;
+
+	}
+	else if ( textureType === '2d-array' ) binding = new SampledArrayTexture( name, texture );
+	else binding = new SampledTexture( name, texture );
+	return prepareTextureBinding( binding, visibility, groupNode );
+
+}
+
+export function createSamplerBinding( { name, texture, visibility = 0, groupNode = null } ) {
+
+	return prepareTextureBinding( new Sampler( name, texture ), visibility, groupNode );
+
+}
+
+function prepareTextureBinding( binding, visibility, groupNode ) {
+
+	binding.visibility = visibility | 0;
+	binding.groupNode = groupNode;
+	installRebindableTextureBindingClone( binding );
+	return binding;
+
+}
+
+export function installRebindableTextureBindingClone( binding ) {
+
+	if ( ! binding || binding.__tslpRebindableClonePatched === true || typeof binding.clone !== 'function' ) return binding;
+	if ( binding.isSampledTexture !== true && binding.isSampler !== true ) return binding;
+
+	const originalClone = binding.clone;
+	const clones = new Set();
+	Object.defineProperty( binding, '__tslpRebindClones', {
+		value: clones,
+		configurable: true,
+	} );
+	Object.defineProperty( binding, '__tslpRebindableClonePatched', {
+		value: true,
+		configurable: true,
+	} );
+	binding.clone = function cloneRebindableTextureBinding() {
+
+		const cloned = originalClone.call( this );
+		clones.add( cloned );
+		Object.defineProperty( cloned, '__tslpRebindSource', {
+			value: binding,
+			configurable: true,
+		} );
+		return cloned;
+
+	};
+	return binding;
+
+}

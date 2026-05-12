@@ -25,8 +25,6 @@ import BindGroup from 'three/src/renderers/common/BindGroup.js';
 import UniformBuffer from 'three/src/renderers/common/UniformBuffer.js';
 import StorageBuffer from 'three/src/renderers/common/StorageBuffer.js';
 import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttribute.js';
-import Sampler from 'three/src/renderers/common/Sampler.js';
-import { SampledTexture, SampledCubeTexture, Sampled3DTexture, SampledArrayTexture } from 'three/src/renderers/common/SampledTexture.js';
 import { DataTexture, Data3DTexture, DataArrayTexture, DepthTexture, CubeDepthTexture, CubeTexture, FramebufferTexture, RGBAFormat, DepthFormat, UnsignedByteType, UnsignedIntType, LessEqualCompare, GreaterEqualCompare, HalfFloatType, LinearFilter, NearestFilter, LinearMipmapLinearFilter, ClampToEdgeWrapping, WebGPUCoordinateSystem, Vector2, Vector3, Vector4, Matrix4, Matrix3, Plane, InstancedBufferAttribute } from 'three';
 import { viewportMipTexture, viewportTexture } from 'three/src/nodes/display/ViewportTextureNode.js';
 import { viewportDepthTexture } from 'three/src/nodes/display/ViewportDepthTextureNode.js';
@@ -34,6 +32,8 @@ import { getDFGLUT } from './dfg-lut.js';
 import { collectLiveMaterialTextures, collectReflectorBaseNodes } from './apply-precompiled.js';
 import { recordTextureResolutionStrategy, resolveArtifactTextureBinding } from './hydrate/artifact-texture-resolver.js';
 import { installLiveTextureRegistryPatches, lookupAnonymousDataTexture, lookupAnonymousStorageTexture, lookupLiveTextureByIdentity } from './hydrate/live-texture-registry.js';
+import { createSampledTextureBinding, createSamplerBinding } from './hydrate/kinds/texture-bindings.js';
+import { createUniformBufferBinding } from './hydrate/kinds/uniform-buffer.js';
 import { collectMaterialNodeTextures, lookupMaterialNodeTexture } from './hydrate/material-node-textures.js';
 import { isTrivialSnapshot, textureFromSnapshot } from './hydrate/texture-snapshot.js';
 import { findPlanTextureSource, inferTextureTypeFromShader, resolvePlanTextureTypeHint, selectFallbackTextureForBinding, shaderDeclaresDepthTexture, shaderDeclaresMultisampledTexture, textureMatchesShaderBinding } from './hydrate/texture-resolver.js';
@@ -1462,36 +1462,6 @@ function findReflectorBaseNodeInMaterial( material, reflectorIndex = -1 ) {
 
 }
 
-function installRebindableTextureBindingClone( binding ) {
-
-	if ( ! binding || binding.__tslpRebindableClonePatched === true || typeof binding.clone !== 'function' ) return binding;
-	if ( binding.isSampledTexture !== true && binding.isSampler !== true ) return binding;
-
-	const originalClone = binding.clone;
-	const clones = new Set();
-	Object.defineProperty( binding, '__tslpRebindClones', {
-		value: clones,
-		configurable: true,
-	} );
-	Object.defineProperty( binding, '__tslpRebindableClonePatched', {
-		value: true,
-		configurable: true,
-	} );
-	binding.clone = function cloneRebindableTextureBinding() {
-
-		const cloned = originalClone.call( this );
-		clones.add( cloned );
-		Object.defineProperty( cloned, '__tslpRebindSource', {
-			value: binding,
-			configurable: true,
-		} );
-		return cloned;
-
-	};
-	return binding;
-
-}
-
 function textureBindingTargets( binding ) {
 
 	if ( ! binding ) return [];
@@ -1665,6 +1635,8 @@ function shouldSkipViewportCopyForZeroThicknessTransmission( artifact ) {
 	if ( ! defaults || ! ( defaults.transmission > 0 ) ) return false;
 	if ( defaults.thickness !== 0 ) return false;
 
+	// Zero thickness samples the current pixel. Re-copying the transparent
+	// framebuffer during replay feeds the material's own color back through it.
 	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
 	for ( const group of plan ) {
 
@@ -1993,47 +1965,22 @@ function createRuntimeBinding( artifact, group, descriptor, material, groupNode 
 
 	if ( descriptor.kind === 'uniform-buffer' ) {
 
-		const ubPlanEntry = resolvePlanBufferUniform( artifact, group.name, name );
-		const planBufferByteLength = ubPlanEntry
-			? Math.max(
-				ubPlanEntry.byteLength || 0,
-				ubPlanEntry.valueSnapshot && ubPlanEntry.valueSnapshot.length ? ubPlanEntry.valueSnapshot.length * 4 : 0
-			)
-			: 0;
-		const standaloneUniformBuffer = /^UniformBuffer_/.test( name ) && name !== group.name;
-		const flatUniformBuffer = standaloneUniformBuffer || !! ubPlanEntry;
-		const byteLength = flatUniformBuffer
-			? Math.max( descriptor.byteLength || 0, planBufferByteLength, 16 )
-			: Math.max(
-				descriptor.byteLength || 0,
-				findUniformGroupByteLength( artifact, group.name, descriptor.name ),
-				findUniformGroupRequiredByteLength( artifact, group.name, descriptor.name )
-			);
-		const buffer = new Float32Array( Math.max( 4, Math.ceil( byteLength / 4 ) ) );
-		if ( ! flatUniformBuffer ) seedUniformBufferSnapshots( artifact, group.name, name, buffer );
-
-		// Seed a NodeUniformBuffer (flat typed-array UBO used by FXAA, DoF,
-		// and similar post-process shaders) from its compile-time snapshot.
-		// These buffers have no slot decomposition in the plan, so the normal
-		// per-slot write path skips them. A one-time snapshot seed at
-		// least gives correct initial parameters for static post-process.
-		if ( ubPlanEntry ) {
-
-			const snap = ubPlanEntry._liveArray || ubPlanEntry.valueSnapshot;
-			if ( snap ) {
-
-				for ( let i = 0; i < Math.min( snap.length, buffer.length ); i ++ ) buffer[ i ] = snap[ i ];
-
-			}
-
-		}
-
-		const uniformBuffer = new UniformBuffer( name, buffer );
-		uniformBuffer.visibility = descriptor.visibility | 0;
-		uniformBuffer.groupNode = groupNode;
-		const liveArrayResolver = createLiveUniformArrayResolver( name, buffer.byteLength, material );
-		if ( liveArrayResolver ) attachLiveUniformBufferUpdater( uniformBuffer, liveArrayResolver );
-		return uniformBuffer;
+		return createUniformBufferBinding( {
+			artifact,
+			groupName: group.name,
+			descriptor,
+			name,
+			material,
+			groupNode,
+			deps: {
+				attachLiveUniformBufferUpdater,
+				createLiveUniformArrayResolver,
+				findUniformGroupByteLength,
+				findUniformGroupRequiredByteLength,
+				resolvePlanBufferUniform,
+				seedUniformBufferSnapshots,
+			},
+		} );
 
 	}
 
@@ -2041,31 +1988,25 @@ function createRuntimeBinding( artifact, group, descriptor, material, groupNode 
 
 		const texture = resolveTextureBinding( artifact, group.name, descriptor.name, material );
 		const textureType = descriptor.textureType || inferTextureTypeFromShader( artifact, descriptor.name );
-		let binding;
-		if ( textureType === 'cube' ) binding = new SampledCubeTexture( name, texture );
-		else if ( textureType === '3d' ) {
-
-			binding = new Sampled3DTexture( name, texture );
-			binding.isSampledTexture3D = true;
-
-		}
-		else if ( textureType === '2d-array' ) binding = new SampledArrayTexture( name, texture );
-		else binding = new SampledTexture( name, texture );
-		binding.visibility = descriptor.visibility | 0;
-		binding.groupNode = groupNode;
-		installRebindableTextureBindingClone( binding );
-		return binding;
+		return createSampledTextureBinding( {
+			name,
+			texture,
+			textureType,
+			visibility: descriptor.visibility,
+			groupNode,
+		} );
 
 	}
 
 	if ( descriptor.kind === 'sampler' ) {
 
 		const texture = resolveTextureBinding( artifact, group.name, descriptor.name, material );
-		const binding = new Sampler( name, texture );
-		binding.visibility = descriptor.visibility | 0;
-		binding.groupNode = groupNode;
-		installRebindableTextureBindingClone( binding );
-		return binding;
+		return createSamplerBinding( {
+			name,
+			texture,
+			visibility: descriptor.visibility,
+			groupNode,
+		} );
 
 	}
 
@@ -2246,6 +2187,35 @@ function applyTextureSourceSettings( texture, source ) {
 
 }
 
+function textureResolutionDiagnosticDetails( source, textureEntry, textureTypeHint, resolvedTexture ) {
+
+	return {
+		sourceKind: source && source.kind || null,
+		textureUuid: source && source.textureUuid || null,
+		textureName: source && source.textureName || null,
+		imageSrc: source && source.imageSrc || null,
+		planTextureType: textureEntry && textureEntry.textureType || null,
+		textureTypeHint: textureTypeHint || null,
+		resolvedTextureUuid: resolvedTexture && resolvedTexture.uuid || null,
+		resolvedTextureName: resolvedTexture && resolvedTexture.name || null,
+		resolvedTextureType: textureDiagnosticType( resolvedTexture ),
+	};
+
+}
+
+function textureDiagnosticType( texture ) {
+
+	if ( ! texture ) return null;
+	if ( texture.isCubeTexture ) return 'cube';
+	if ( texture.isData3DTexture || texture.is3DTexture ) return '3d';
+	if ( texture.isDataArrayTexture || texture.isArrayTexture ) return '2d-array';
+	if ( texture.isDepthTexture ) return 'depth';
+	if ( texture.isRenderTargetTexture ) return 'render-target';
+	if ( texture.isStorageTexture ) return 'storage';
+	return texture.isTexture ? '2d' : null;
+
+}
+
 function resolveTextureBinding( artifact, groupName, bindingName, material, options = null ) {
 
 	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
@@ -2338,12 +2308,25 @@ function resolveTextureBinding( artifact, groupName, bindingName, material, opti
 		} );
 		if ( result ) {
 
-			recordTextureResolutionStrategy( artifact, groupName, bindingName, result.strategy );
+			recordTextureResolutionStrategy(
+				artifact,
+				groupName,
+				bindingName,
+				result.strategy,
+				textureResolutionDiagnosticDetails( source, texture, textureTypeHint, result.texture )
+			);
 			return result.texture;
 
 		}
-		recordTextureResolutionStrategy( artifact, groupName, bindingName, 'shader-fallback' );
-		return fallbackTextureForBinding( artifact, bindingName );
+		const shaderFallbackTexture = fallbackTextureForBinding( artifact, bindingName );
+		recordTextureResolutionStrategy(
+			artifact,
+			groupName,
+			bindingName,
+			'shader-fallback',
+			textureResolutionDiagnosticDetails( source, texture, textureTypeHint, shaderFallbackTexture )
+		);
+		return shaderFallbackTexture;
 
 	}
 

@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 
 import {
 	ARTIFACT_TEXTURE_STRATEGY_NAMES,
+	getTextureResolutionDebugHook,
 	recordTextureResolutionStrategy,
 	resolveArtifactTextureBinding,
+	setTextureResolutionDebugHook,
 } from '../src/hydrate/artifact-texture-resolver.js';
 
 test( 'artifact texture resolver exposes stable named strategy order', () => {
@@ -55,5 +57,46 @@ test( 'artifact texture resolver records strategies on non-enumerable artifact s
 
 	assert.equal( artifact._textureResolutionStrategies.get( 'group:binding' ), 'snapshot' );
 	assert.equal( Object.prototype.propertyIsEnumerable.call( artifact, '_textureResolutionStrategies' ), false );
+
+} );
+
+test( 'artifact texture resolver emits safe debug-hook diagnostics', () => {
+
+	const artifact = {};
+	const previous = setTextureResolutionDebugHook( null );
+	const events = [];
+
+	try {
+
+		assert.equal( getTextureResolutionDebugHook(), null );
+		assert.throws( () => setTextureResolutionDebugHook( {} ), /function or null/ );
+		setTextureResolutionDebugHook( ( event ) => events.push( event ) );
+		recordTextureResolutionStrategy( artifact, 'group', 'binding', 'texture-ref', {
+			sourceKind: 'artifact.texture',
+			textureUuid: 'tex-a',
+			resolvedTextureUuid: 'tex-live',
+		} );
+
+		assert.equal( events.length, 1 );
+		assert.equal( events[ 0 ].artifact, artifact );
+		assert.equal( events[ 0 ].groupName, 'group' );
+		assert.equal( events[ 0 ].bindingName, 'binding' );
+		assert.equal( events[ 0 ].strategy, 'texture-ref' );
+		assert.equal( events[ 0 ].sourceKind, 'artifact.texture' );
+		assert.equal( events[ 0 ].textureUuid, 'tex-a' );
+		assert.equal( events[ 0 ].resolvedTextureUuid, 'tex-live' );
+
+		setTextureResolutionDebugHook( () => {
+
+			throw new Error( 'diagnostic hook failed' );
+
+		} );
+		assert.doesNotThrow( () => recordTextureResolutionStrategy( artifact, 'group', 'binding', 'shader-fallback' ) );
+
+	} finally {
+
+		setTextureResolutionDebugHook( previous );
+
+	}
 
 } );

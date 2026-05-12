@@ -5,13 +5,42 @@ import {
 	textureMatchesShaderBinding,
 } from './texture-resolver.js';
 
+let textureResolutionDebugHook = null;
+
+/**
+ * Install a process-local listener for artifact texture resolution events.
+ * Pass `null` to clear the hook. Hook failures are swallowed so diagnostics
+ * cannot break rendering.
+ *
+ * @param {?Function} hook
+ * @return {?Function} previously installed hook
+ */
+export function setTextureResolutionDebugHook( hook ) {
+
+	if ( hook !== null && hook !== undefined && typeof hook !== 'function' ) {
+
+		throw new TypeError( 'setTextureResolutionDebugHook expects a function or null' );
+
+	}
+	const previous = textureResolutionDebugHook;
+	textureResolutionDebugHook = hook || null;
+	return previous;
+
+}
+
+export function getTextureResolutionDebugHook() {
+
+	return textureResolutionDebugHook;
+
+}
+
 function textureResolutionResult( texture, strategy ) {
 
 	return texture ? { texture, strategy } : null;
 
 }
 
-export function recordTextureResolutionStrategy( artifact, groupName, bindingName, strategy ) {
+export function recordTextureResolutionStrategy( artifact, groupName, bindingName, strategy, details = null ) {
 
 	if ( ! artifact || ! strategy ) return;
 	try {
@@ -26,6 +55,26 @@ export function recordTextureResolutionStrategy( artifact, groupName, bindingNam
 
 		}
 		artifact._textureResolutionStrategies.set( `${ groupName }:${ bindingName }`, strategy );
+
+	} catch ( _ ) {}
+	emitTextureResolutionDiagnostic( artifact, groupName, bindingName, strategy, details );
+
+}
+
+function emitTextureResolutionDiagnostic( artifact, groupName, bindingName, strategy, details ) {
+
+	const hook = textureResolutionDebugHook;
+	if ( ! hook ) return;
+	const event = {
+		...( details && typeof details === 'object' ? details : {} ),
+		artifact,
+		groupName,
+		bindingName,
+		strategy,
+	};
+	try {
+
+		hook( event );
 
 	} catch ( _ ) {}
 

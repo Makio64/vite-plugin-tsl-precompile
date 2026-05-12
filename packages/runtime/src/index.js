@@ -16,6 +16,7 @@ export {
 export { precompileAuxiliary } from './aux-marker.js';
 export { registerAuxArtifact, registerAuxArtifacts, loadAux, hasAux, listAux, findAux, bindAuxConfig, bindAuxByName, attachArtifactTextureRefs, __resetAuxRegistryForTests } from './aux-loader.js';
 export { hydrateNodeBuilderState, registerLiveTexture, clearLiveTextureIndex } from './hydrator.js';
+export { getTextureResolutionDebugHook, setTextureResolutionDebugHook } from './hydrate/artifact-texture-resolver.js';
 export { getDFGLUT } from './dfg-lut.js';
 export { createLiveSceneIndex, collectMaterialNodeTextures, textureImageReady, textureImageSrc, healTextureImage } from './slim-support/live-scene-index.js';
 export { PMREM_CUBE_UV_MAPPING, isPMREMTexture, isPMREMArtifactTextureSource, artifactNeedsPMREM, artifactPMREMSourceUuids, attachPMREMRefsByOrder, createPMREMSupport } from './slim-support/pmrem.js';
