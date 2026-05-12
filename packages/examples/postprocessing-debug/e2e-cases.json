@@ -3,6 +3,7 @@
     { "name": "passthrough.html", "path": "passthrough.html" },
     { "name": "bloom.html", "path": "bloom.html" },
     { "name": "fxaa.html", "path": "fxaa.html" },
-    { "name": "gtao.html", "path": "gtao.html" }
+    { "name": "gtao.html", "path": "gtao.html" },
+    { "name": "variants.html", "path": "variants.html" }
   ]
 }

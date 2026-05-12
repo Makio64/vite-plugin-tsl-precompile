@@ -4,11 +4,13 @@ Tiny WebGPU post-processing repro scenes for isolating `PassNode` /
 `RenderPipeline` failures without the larger upstream examples — the
 post-processing counterpart of `examples-shadow-debug`.
 
-All four pages share the same minimal scene (floor + cube + emissive sphere,
+The first four pages share the same minimal scene (floor + cube + emissive sphere,
 plain `MeshStandardNodeMaterial` materials marked with `.precompile()`) and
 differ only in `postProcessing.outputNode`. They are ordered easiest → most
 complex, and each mirrors the matching upstream `webgpu_postprocessing*`
-example, so a failing page maps directly to an upstream regression:
+example, so a failing page maps directly to an upstream regression. The
+variants page demonstrates app-level switching between multiple precompiled
+material graphs and two named post-processing pipelines.
 
 | Page | `outputNode` | Mirrors |
 | --- | --- | --- |
@@ -16,6 +18,7 @@ example, so a failing page maps directly to an upstream regression:
 | `/bloom.html` | `scenePassColor.add( bloom(scenePassColor) )` | `webgpu_postprocessing_bloom.html` |
 | `/fxaa.html` | `fxaa( renderOutput( pass(scene, camera) ) )` | `webgpu_postprocessing_fxaa.html` |
 | `/gtao.html` | MRT `pass.setMRT(mrt({ output, normal }))` + `ao(depth, normal, camera)` | `webgpu_postprocessing_ao.html` / `GTAONode` docs |
+| `/variants.html` | switches named `post-process` aux captures + material variants | local regression page for graph-level swapping |
 
 Run:
 

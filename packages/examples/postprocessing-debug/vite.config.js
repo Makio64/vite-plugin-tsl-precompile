@@ -19,6 +19,7 @@ export default defineConfig( {
 				bloom: 'bloom.html',
 				fxaa: 'fxaa.html',
 				gtao: 'gtao.html',
+				variants: 'variants.html',
 			},
 		},
 	},
