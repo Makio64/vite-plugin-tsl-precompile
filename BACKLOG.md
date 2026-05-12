@@ -71,17 +71,18 @@ The latest shared-PSNR broad summary reports `webgpu_shadowmap_array.html` at 34
 - **Done when**: done; keep as historical context if future report/PNG disagreement appears.
 - **Reference**: webgpu_shadowmap_array.
 
-### `postprocess-bloom-texture-handoff` — P1 — resolved for focused bloom cluster
-The portal `pass(scene, camera)` path works in the focused run, and the bloom texture handoff is now green for the focused cluster.
+### `postprocess-bloom-texture-handoff` — P1 — reopened for selective bloom
+The portal `pass(scene, camera)` path worked in the 2026-05-11 focused run, but the latest selective-bloom rerun no longer clears the visual gate.
 
 Latest useful signals:
 - `visual-bloom-cluster-after-fixes.json` (2026-05-11): `webgpu_postprocessing_bloom.html`, `webgpu_postprocessing_bloom_emissive.html`, and `webgpu_postprocessing_bloom_selective.html` all pass with PSNR `inf`.
+- `architecture-capture-graph-helper.json` (2026-05-13): `webgpu_postprocessing_bloom_selective.html` improves after capture graph helper parity but still fails at 19.61 dB with one capture-side shader validation error.
 - Selective bloom now captures 51 user artifacts + 14 aux artifacts; MeshBasic MRT artifacts carry `mrtOutputCount: 2` with `output,bloomIntensity`.
 
-The original dim/black bloom hypothesis is retired for these three examples. Remaining broad-postprocessing work should focus on non-bloom examples that still share PassNode/render-target plumbing.
+The original full-white replay failure is reduced, but selective bloom still needs a narrower PassNode/MRT follow-up before this can be closed again.
 
 - **Files**: `packages/examples/batch/run-e2e.mjs`, `packages/runtime/src/aux-marker.js`, `packages/runtime/src/slim-entry.js`, possibly `packages/runtime/src/slim-stubs.js` and `packages/runtime/src/graph-hash.js` if pass-node/runtime exports need more hardening.
-- **Done when**: done for the three focused bloom examples; re-open only if the full postprocessing sweep exposes a bloom-specific regression.
+- **Done when**: the three focused bloom examples are above the PSNR gate again, with no capture-side shader validation error.
 - **Reference**: webgpu_postprocessing_bloom, webgpu_postprocessing_bloom_emissive, webgpu_postprocessing_bloom_selective; follow-up for `webgpu_postprocessing.html` missing dots.
 
 ### `displacementmap-blank-replay` — P0 — resolved in broad summary
@@ -129,7 +130,7 @@ Partially resolved in the 2026-05-05 focused queue. The glTF/PMREM cubemap bucke
 Remaining work is the broader PMREM/reflection/background family, especially paths not covered by those focused reports:
 
 - `webgpu_compute_water` (PSNR 22.23 dB) — sky should be smooth blurred PMREM, comes out wrong
-- `webgpu_pmrem_scene` (PSNR 15.56 dB) — scene-driven PMREM path still mismatches
+- `webgpu_pmrem_scene` (PSNR 27.15 dB in `architecture-pmrem-scene-compile-root.json`) — scene-driven PMREM now uses a full-renderer scene clone but still misses the 30 dB gate
 - `webgpu_reflection` (PSNR 15.01 dB) — reflection routing still mismatches
 The clearcoat DFG regression is fixed, so this task is now specifically about PMREM-prefiltered background/environment routing outside the focused glTF/PMREM cubemap bucket. See [LOGS.md](LOGS.md) for the PMREM architecture notes and the clearcoat DFG fix.
 

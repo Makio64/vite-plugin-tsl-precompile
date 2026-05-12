@@ -51,7 +51,7 @@ This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage s
 
 ## Round 4 results (2026-05-03)
 
-Six parallel agents + several follow-up commits pushed visual correctness forward on multiple fronts. Headline: **27/29 tier-1 examples render without errors** (same count as before Round 4 but different mix). Latest package test pass: **281 / 281 tests** across plugin 177, runtime 97, and inspector 7.
+Six parallel agents + several follow-up commits pushed visual correctness forward on multiple fronts. Headline: **27/29 tier-1 examples render without errors** (same count as before Round 4 but different mix). Latest package test pass: **310 / 310 tests** across plugin 177, runtime 126, and inspector 7.
 
 **Gained** (was broken/error → now renders):
 - `webgpu_compute_birds`: capture-side throw fixed (`object.computeBoundingSphere` skip on throwaway mesh) → replay renders sky background. Birds themselves still missing (instance buffer not propagating).
@@ -187,10 +187,10 @@ for the current triage plan.
 
 ```
 packages/plugin        177 / 177 pass   (unit + coverage matrix)
-packages/runtime        97 /  97 pass   (hydrator, registry, slim-support, smoke)
+packages/runtime       126 / 126 pass   (hydrator, registry, slim-support, smoke)
 packages/inspector-panel 7 /   7 pass
 ---
-Total                  281 / 281 pass   0 fail
+Total                  310 / 310 pass   0 fail
 ```
 
 Batch harness (`packages/examples/batch/results/report.json`):
@@ -254,7 +254,7 @@ The broad summary is now **153 / 225**. Shadows are no longer entirely green in 
 
 The portal `pass(scene, camera)` path is healthy, and the focused bloom cluster now verifies the render-target texture handoff for base, emissive, and selective bloom.
 
-- [x] Raise `webgpu_postprocessing_bloom.html`, `webgpu_postprocessing_bloom_emissive.html`, and `webgpu_postprocessing_bloom_selective.html` above the PSNR gate (`visual-bloom-cluster-after-fixes.json`, PSNR `inf` for all three).
+- [ ] Reconfirm the focused bloom cluster. `visual-bloom-cluster-after-fixes.json` had all three at PSNR `inf`, but the latest `architecture-capture-graph-helper.json` rerun has `webgpu_postprocessing_bloom_selective.html` at 19.61 dB with one capture-side shader validation error.
 - [x] `webgpu_postprocessing.html` is green in the refreshed generated summary.
 - [ ] Revisit non-bloom failures such as `webgpu_postprocessing_outline.html`, `webgpu_postprocessing_godrays.html`, `webgpu_postprocessing_ssr.html`, plus the near-threshold DOF/SSGI examples.
 
@@ -263,7 +263,7 @@ The portal `pass(scene, camera)` path is healthy, and the focused bloom cluster 
 Many real PBR scenes depend on environment lighting. Wrong PMREM/reflection wiring is dangerous because output can look plausible while still being invalid.
 
 - [x] Focused glTF/PMREM bucket is green for `webgpu_loader_gltf.html`, `webgpu_loader_gltf_sheen.html`, and `webgpu_pmrem_cubemap.html`.
-- [ ] Re-run the broader PMREM set: `webgpu_pmrem_equirectangular.html`, `webgpu_pmrem_scene.html`, `webgpu_pmrem_test.html`, plus PMREM-heavy compute/background examples.
+- [ ] Re-run the broader PMREM set: `webgpu_pmrem_equirectangular.html`, `webgpu_pmrem_scene.html`, `webgpu_pmrem_test.html`, plus PMREM-heavy compute/background examples. The scene-driven PMREM case improved to 27.15 dB in `architecture-pmrem-scene-compile-root.json`, while `webgpu_loader_gltf.html` and `webgpu_pmrem_cubemap.html` stayed green in focused regression checks.
 - [ ] Improve reflection examples: `webgpu_reflection.html`, `webgpu_reflection_roughness.html`, and `webgpu_reflection_blurred.html`.
 - [ ] Keep `MeshStandardNodeMaterial` / `MeshPhysicalNodeMaterial` texture-map coverage green while PMREM changes land.
 
