@@ -819,6 +819,30 @@ function __auxOpts( extra = {} ) {
 	};
 }
 
+function __isGraphTraversalCandidate( value ) {
+	if ( ! value || ( typeof value !== 'object' && typeof value !== 'function' ) ) return false;
+	try {
+		if ( value.isTexture === true || value.isNode === true || value.isPassNode === true || value.isRTTNode === true || value.isRenderTarget === true ) return true;
+	} catch ( _ ) {}
+	try {
+		if ( value.texture && value.texture.isTexture === true && typeof value.setSize === 'function' ) return true;
+	} catch ( _ ) {}
+	if ( Array.isArray( value ) ) return true;
+	let tag = '';
+	try { tag = Object.prototype.toString.call( value ); } catch ( _ ) { return false; }
+	return tag === '[object Object]';
+}
+
+function __readGraphOwnValue( node, key ) {
+	let descriptor = null;
+	try { descriptor = Object.getOwnPropertyDescriptor( node, key ); } catch ( _ ) { return null; }
+	if ( descriptor ) {
+		if ( ! Object.prototype.hasOwnProperty.call( descriptor, 'value' ) ) return null;
+		return descriptor.value;
+	}
+	try { return node[ key ]; } catch ( _ ) { return null; }
+}
+
 function __collectCapturePassNodesInGraph( node, out = [], seen = new Set(), depth = 0 ) {
 	if ( ! node || depth > 16 || seen.has( node ) ) return out;
 	if ( typeof node !== 'object' && typeof node !== 'function' ) return out;
@@ -1154,6 +1178,16 @@ const __data = __state.artifacts || { user: {}, aux: [] };
 		return target;
 	}
 
+	function __refreshPassTextureNodes( passNode ) {
+		if ( ! passNode ) return;
+		for ( const node of Object.values( passNode._textureNodes || {} ) ) {
+			try { if ( node && typeof node.updateTexture === 'function' ) node.updateTexture(); } catch ( _ ) {}
+		}
+		for ( const node of Object.values( passNode._previousTextureNodes || {} ) ) {
+			try { if ( node && typeof node.updateTexture === 'function' ) node.updateTexture(); } catch ( _ ) {}
+		}
+	}
+
 	function __fragmentOutputCount( material ) {
 		const artifact = material && material.precompiledArtifact;
 		if ( ! artifact ) return 1;
@@ -1181,10 +1215,11 @@ const __data = __state.artifacts || { user: {}, aux: [] };
 		let target = passNode && passNode.renderTarget;
 		if ( ! target || ! Array.isArray( target.textures ) ) return;
 		if ( ! mrt || ! mrt.outputNodes || typeof mrt.outputNodes !== 'object' ) {
-			target = __ensurePassRenderTargetAttachmentCount( passNode, 1 ) || target;
+			if ( ! target.texture && target.textures[ 0 ] ) target.texture = target.textures[ 0 ];
 			target.textures = [ target.texture ];
 			passNode._textures.output = target.texture;
 			if ( target.depthTexture ) passNode._textures.depth = target.depthTexture;
+			__refreshPassTextureNodes( passNode );
 			return;
 		}
 		const names = Object.keys( mrt.outputNodes );
@@ -1204,6 +1239,7 @@ const __data = __state.artifacts || { user: {}, aux: [] };
 		if ( textures.length === 0 && target.texture ) textures.push( target.texture );
 		target.textures = textures;
 		if ( target.depthTexture ) passNode._textures.depth = target.depthTexture;
+		__refreshPassTextureNodes( passNode );
 	}
 
 function __sceneCanRenderMRT( scene, mrt ) {
@@ -1374,7 +1410,7 @@ function __renderPassNodeWithSourceMaterials( passNode, renderer, camera ) {
 
 function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer, camera ) {
 	if ( ! passNode || ! slimRenderer || ! fullRenderer || ! passNode.scene || ! passNode.renderTarget ) return false;
-	if ( passNode._mrt || ! __sceneHasMultiOutputPrecompiledMaterial( passNode.scene ) ) return false;
+	if ( ! passNode._mrt && ! __sceneHasMultiOutputPrecompiledMaterial( passNode.scene ) ) return false;
 	try {
 		try {
 			fullRenderer.toneMapping = slimRenderer.toneMapping;
@@ -1391,7 +1427,7 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 		const currentContextNode = fullRenderer.contextNode;
 		try {
 			fullRenderer.setRenderTarget( passNode.renderTarget );
-			if ( typeof fullRenderer.setMRT === 'function' ) fullRenderer.setMRT( null );
+			if ( typeof fullRenderer.setMRT === 'function' ) fullRenderer.setMRT( passNode._mrt || null );
 			fullRenderer.autoClear = true;
 			fullRenderer.transparent = passNode.transparent;
 			fullRenderer.opaque = passNode.opaque;
@@ -1642,29 +1678,32 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 			renderer.transparent = this.transparent;
 			renderer.opaque = this.opaque;
 			if ( replayMRT && ( scene.background || scene.backgroundNode ) && ! __backgroundAuxCanRenderMRT( replayMRT ) ) {
-				const backgroundScene = this.__tslpBackgroundScene || ( this.__tslpBackgroundScene = new Slim.Scene() );
-				backgroundScene.background = scene.background;
-				backgroundScene.backgroundNode = scene.backgroundNode;
-				backgroundScene.environment = scene.environment;
-				__syncPassRenderTargetTextures( this, null );
-				if ( typeof renderer.setMRT === 'function' ) renderer.setMRT( null );
-				renderer.setRenderTarget( this.renderTarget );
-				renderer.render( backgroundScene, camera );
-
-				const savedBackground = scene.background;
-				const savedBackgroundNode = scene.backgroundNode;
-				try {
-					scene.background = null;
-					scene.backgroundNode = null;
-					__syncPassRenderTargetTextures( this, replayMRT );
-					if ( typeof renderer.setMRT === 'function' ) renderer.setMRT( replayMRT );
+				__syncPassRenderTargetTextures( this, replayMRT );
+				if ( ! __renderPassNodeWithFullRenderer( this, renderer, __computeRenderer, camera ) ) {
+					const backgroundScene = this.__tslpBackgroundScene || ( this.__tslpBackgroundScene = new Slim.Scene() );
+					backgroundScene.background = scene.background;
+					backgroundScene.backgroundNode = scene.backgroundNode;
+					backgroundScene.environment = scene.environment;
+					__syncPassRenderTargetTextures( this, null );
+					if ( typeof renderer.setMRT === 'function' ) renderer.setMRT( null );
 					renderer.setRenderTarget( this.renderTarget );
-					renderer.autoClear = false;
-					__resetRendererPipelineCachesForMRTReplay( renderer, replayMRT );
-					renderer.render( scene, camera );
-				} finally {
-					scene.background = savedBackground;
-					scene.backgroundNode = savedBackgroundNode;
+					renderer.render( backgroundScene, camera );
+
+					const savedBackground = scene.background;
+					const savedBackgroundNode = scene.backgroundNode;
+					try {
+						scene.background = null;
+						scene.backgroundNode = null;
+						__syncPassRenderTargetTextures( this, replayMRT );
+						if ( typeof renderer.setMRT === 'function' ) renderer.setMRT( replayMRT );
+						renderer.setRenderTarget( this.renderTarget );
+						renderer.autoClear = false;
+						__resetRendererPipelineCachesForMRTReplay( renderer, replayMRT );
+						renderer.render( scene, camera );
+					} finally {
+						scene.background = savedBackground;
+						scene.backgroundNode = savedBackgroundNode;
+					}
 				}
 			} else {
 				__syncPassRenderTargetTextures( this, replayMRT );
@@ -8028,15 +8067,22 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				// outputColorTransform=true wraps the pipeline in renderOutput(), whose
 				// artifact carries the final color-space transfer.
 				const shape = this.outputColorTransform === true ? 'render-output' : 'post-process';
-				let artifact = Slim.loadAux( shape, 'tslp-e2e-bypass' );
+				let artifact = null;
+				let auxError = null;
 				let usedUserPipelineArtifact = false;
-				if ( this.outputColorTransform !== true ) {
+				try {
+					artifact = Slim.loadAux( shape, 'tslp-e2e-bypass' );
+				} catch ( err ) {
+					auxError = err;
+				}
+				if ( ! artifact && this.outputColorTransform !== true ) {
 					const userPipelineArtifact = __findUserArtifactByMaterialShape( 'render-pipeline' );
 					if ( userPipelineArtifact ) {
 						artifact = userPipelineArtifact;
 						usedUserPipelineArtifact = true;
 					}
 				}
+				if ( ! artifact ) throw auxError || new Error( 'no ' + shape + ' artifact available' );
 				const passNodes = __collectPassNodesInGraph( this.outputNode );
 				__appendLivePassNodesForArtifact( passNodes, artifact );
 				const rttNodes = __collectRTTNodesInGraph( this.outputNode );
@@ -8082,14 +8128,19 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				this._quadMesh.frustumCulled = false;
 				// Set up _context so render() can access onBefore/onAfterRenderPipeline.
 				context.onBeforeRenderPipeline = ( passNodes.length > 0 || rttNodes.length > 0 || effectNodes.length > 0 || bloomNodes.length > 0 ) ? () => {
-						if ( typeof effectBeforeRenderPipeline === 'function' ) effectBeforeRenderPipeline();
-						__renderPassNodesForPipeline( this.renderer, passNodes );
-						__renderRTTNodesForPipeline( this.renderer, rttNodes );
-						__renderFrameEffectNodesForPipeline( this.renderer, passEffectNodes, context );
-						if ( passEffectNodes.length > 0 ) __renderPassNodesForPipeline( this.renderer, passNodes );
-						__renderFrameEffectNodesForPipeline( this.renderer, outputEffectNodes, context );
-						__renderBloomNodesForPipeline( this.renderer, bloomNodes );
-					} : effectBeforeRenderPipeline;
+					if ( typeof effectBeforeRenderPipeline === 'function' ) effectBeforeRenderPipeline();
+					__renderPassNodesForPipeline( this.renderer, passNodes );
+					__renderRTTNodesForPipeline( this.renderer, rttNodes );
+					artifact = __attachGraphTextureRefs( artifact, this.outputNode );
+					artifact = __attachOrderedPassOutputRefs( artifact, passNodes );
+					artifact = __attachPassTextureRefs( artifact, passNodes.length === 1 ? passNode : null );
+					artifact = __attachRTTTextureRefs( artifact, rttNodes );
+					mat.precompiledArtifact = artifact;
+					__renderFrameEffectNodesForPipeline( this.renderer, passEffectNodes, context );
+					if ( passEffectNodes.length > 0 ) __renderPassNodesForPipeline( this.renderer, passNodes );
+					__renderFrameEffectNodesForPipeline( this.renderer, outputEffectNodes, context );
+					__renderBloomNodesForPipeline( this.renderer, bloomNodes );
+				} : effectBeforeRenderPipeline;
 				context.onAfterRenderPipeline = typeof effectAfterRenderPipeline === 'function' ? () => effectAfterRenderPipeline() : null;
 				this._context = context;
 				this.needsUpdate = false;
