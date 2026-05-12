@@ -25,8 +25,6 @@ import BindGroup from 'three/src/renderers/common/BindGroup.js';
 import UniformBuffer from 'three/src/renderers/common/UniformBuffer.js';
 import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttribute.js';
 import { DataTexture, Data3DTexture, DataArrayTexture, DepthTexture, CubeDepthTexture, CubeTexture, FramebufferTexture, RGBAFormat, DepthFormat, UnsignedByteType, UnsignedIntType, LessEqualCompare, GreaterEqualCompare, HalfFloatType, LinearFilter, NearestFilter, LinearMipmapLinearFilter, ClampToEdgeWrapping, WebGPUCoordinateSystem, Vector2, Vector3, Vector4, Matrix4, Matrix3, Plane, InstancedBufferAttribute } from 'three';
-import { viewportMipTexture, viewportTexture } from 'three/src/nodes/display/ViewportTextureNode.js';
-import { viewportDepthTexture } from 'three/src/nodes/display/ViewportDepthTextureNode.js';
 import { getDFGLUT } from './dfg-lut.js';
 import { collectLiveMaterialTextures, collectReflectorBaseNodes } from './apply-precompiled.js';
 import { recordTextureResolutionStrategy, resolveArtifactTextureBinding } from './hydrate/artifact-texture-resolver.js';
@@ -34,8 +32,9 @@ import { installLiveTextureRegistryPatches, lookupAnonymousDataTexture, lookupAn
 import { createRuntimeBindingFromKind } from './hydrate/kinds/runtime-binding-dispatcher.js';
 import { collectMaterialNodeTextures, lookupMaterialNodeTexture } from './hydrate/material-node-textures.js';
 import { createReflectorTextureRebinder, resolveReflectorRenderTarget } from './hydrate/rebinders/reflector-texture-rebinder.js';
-import { invalidateOnTextureResourceChange, invalidateTextureBindingTarget, rebindTextureBindingTargets, textureBindingTargets } from './hydrate/rebinders/texture-binding-targets.js';
+import { invalidateTextureBindingTarget, rebindTextureBindingTargets, textureBindingTargets } from './hydrate/rebinders/texture-binding-targets.js';
 import { createArtifactTextureRebinder, createMaterialTextureRebinder } from './hydrate/rebinders/texture-rebinders.js';
+import { createViewportTextureRebinder, shouldSkipViewportCopyForZeroThicknessTransmission } from './hydrate/rebinders/viewport-texture-rebinder.js';
 import { isTrivialSnapshot, textureFromSnapshot } from './hydrate/texture-snapshot.js';
 import { resolveTypedArrayCtor } from './hydrate/typed-arrays.js';
 import { findPlanTextureSource, inferTextureTypeFromShader, resolvePlanTextureTypeHint, selectFallbackTextureForBinding, shaderDeclaresDepthTexture, shaderDeclaresMultisampledTexture, textureMatchesShaderBinding } from './hydrate/texture-resolver.js';
@@ -1461,154 +1460,6 @@ function findReflectorBaseNodeInMaterial( material, reflectorIndex = -1 ) {
 	if ( list.length === 0 ) return null;
 	if ( Number.isInteger( reflectorIndex ) && reflectorIndex >= 0 && reflectorIndex < list.length ) return list[ reflectorIndex ];
 	return list[ 0 ];
-
-}
-
-function shouldSkipViewportCopyForZeroThicknessTransmission( artifact ) {
-
-	const defaults = artifact && artifact.defaults;
-	if ( ! defaults || ! ( defaults.transmission > 0 ) ) return false;
-	if ( defaults.thickness !== 0 ) return false;
-
-	// Zero thickness samples the current pixel. Re-copying the transparent
-	// framebuffer during replay feeds the material's own color back through it.
-	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
-	for ( const group of plan ) {
-
-		const textures = Array.isArray( group && group.textures ) ? group.textures : [];
-		for ( const texture of textures ) {
-
-			const source = texture && texture.source;
-			if ( source && source.kind === 'material.thicknessMap' ) return false;
-
-		}
-
-	}
-
-	return true;
-
-}
-
-function shouldUseViewportFallbackForFrame( entry ) {
-
-	if ( ! entry || entry.isDepth === true || entry.skipZeroThicknessTransmission !== true ) return false;
-	const material = entry.material || {};
-	const transmission = Number.isFinite( material.transmission ) ? material.transmission : 1;
-	const thickness = Number.isFinite( material.thickness ) ? material.thickness : 0;
-	return transmission > 0 && Math.abs( thickness ) <= 1e-7;
-
-}
-
-/**
- * Per-frame rebinder for viewport-texture bindings (transmission FBO).
- *
- * KHR_materials_transmission glass samples `viewportMipTexture()` /
- * `viewportOpaqueMipTexture()` — TSL nodes whose backing `FramebufferTexture`
- * is refreshed each frame via `renderer.copyFramebufferToTexture`. The
- * precompiled material has no node tree, so without this rebinder no copy
- * runs and the WGSL `textureSampleLevel` returns the 1×1 fallback (lamp
- * glass renders opaque/black instead of refractive).
- *
- * Strategy: lazily instantiate real three.js TSL ViewportTextureNode instances
- * (one per generateMipmaps variant), call their `updateBefore()` — which does
- * size sync + framebuffer copy + mipmap regen — then swap the binding's
- * `.texture` to the live FramebufferTexture for the current render target.
- * The copy is dedup'd by render id so multiple transmissive bindings in the
- * same frame trigger only one copyFramebufferToTexture per variant.
- *
- * @param {Array<{binding: Object, fallbackTexture: Object, generateMipmaps: boolean, isDepth: boolean, material: Object, skipZeroThicknessTransmission: boolean}>} entries
- * @return {Object}
- */
-function createViewportTextureRebinder( entries ) {
-
-	// Lazy singletons keyed by `generateMipmaps`. Sharing across all
-	// precompiled transmissive materials matches three.js's own pattern
-	// (see `_singletonOpaqueViewportTextureNode` in ViewportTextureNode.js)
-	// so we only do one framebuffer copy per render even when many bindings
-	// reference the same viewport-texture variant.
-	let mipNode = null;
-	let plainNode = null;
-	let depthNode = null;
-	const lastCopyRenderId = { mip: -1, plain: -1, depth: -1 };
-	const lastSeen = new WeakMap();
-
-	return {
-		getUpdateBeforeType() {
-
-			return 'render';
-
-		},
-		updateReference() {
-
-			return this;
-
-		},
-		updateBefore( frame ) {
-
-			if ( ! frame || ! frame.renderer ) return;
-
-			for ( const entry of entries ) {
-
-				if ( shouldUseViewportFallbackForFrame( entry ) ) {
-
-					const changed = entry.fallbackTexture
-						? rebindTextureBindingTargets( entry.binding, entry.fallbackTexture )
-						: false;
-					for ( const target of textureBindingTargets( entry.binding ) ) {
-
-						invalidateOnTextureResourceChange( target, frame.renderer, lastSeen );
-						if ( changed ) invalidateTextureBindingTarget( target );
-
-					}
-					continue;
-
-				}
-
-				const variant = entry.isDepth ? 'depth' : entry.generateMipmaps ? 'mip' : 'plain';
-				let node = variant === 'depth' ? depthNode : variant === 'mip' ? mipNode : plainNode;
-				if ( ! node ) {
-
-					node = variant === 'depth' ? viewportDepthTexture() : variant === 'mip' ? viewportMipTexture() : viewportTexture();
-					if ( variant === 'depth' ) depthNode = node;
-					else if ( variant === 'mip' ) mipNode = node;
-					else plainNode = node;
-
-				}
-
-				// `updateReference` selects the per-render-target FramebufferTexture
-				// and assigns it to `node.value`. Must run every render-before
-				// because `node.updateBefore` itself does NOT set `node.value`
-				// (it only does the copy). Without this, `node.value` stays at
-				// the constructor's 1×1 default fallback and we re-bind to that
-				// instead of the freshly-copied framebuffer.
-				if ( typeof node.updateReference === 'function' ) node.updateReference( frame );
-
-				// Drive the framebuffer copy at most once per render id —
-				// matches three.js' NodeFrame.RENDER de-dup so multiple
-				// transmissive bindings in one render share one copy.
-				const renderId = frame.renderId != null ? frame.renderId : 0;
-				if ( lastCopyRenderId[ variant ] !== renderId ) {
-
-					node.updateBefore( frame );
-					lastCopyRenderId[ variant ] = renderId;
-
-				}
-
-				const liveTex = node.value;
-				if ( ! liveTex ) continue;
-
-				const changed = rebindTextureBindingTargets( entry.binding, liveTex );
-				for ( const target of textureBindingTargets( entry.binding ) ) {
-
-					invalidateOnTextureResourceChange( target, frame.renderer, lastSeen );
-					if ( changed ) invalidateTextureBindingTarget( target );
-
-				}
-
-			}
-
-		},
-	};
 
 }
 
