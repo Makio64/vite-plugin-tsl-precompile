@@ -160,7 +160,7 @@ Current MRT/render-target state:
 - `webgpu_mrt_mask` (18.75 dB) — post-process pipeline does not yet match stock.
 - `webgpu_multiple_rendertargets` and `webgpu_multiple_rendertargets_readback` now pass at PSNR `inf` in `architecture-mrt-attachments.json`; replay retargets global `renderer.setMRT(...)` scenes to the captured multi-output artifact before WebGPU pipeline creation.
 - `webgpu_rtt.html`, `webgpu_depth_texture.html`, and `webgpu_multisampled_renderbuffers.html` are now green after replay started replacing standalone `QuadMesh` / render-target materials before slim render.
-- `webgpu_rendertarget_2d-array_3d.html` compares at 30.87 dB from saved shots, but its focused run still exits with `Invalid string length`, so the harness/reporting path needs cleanup before calling that case fully closed.
+- `webgpu_rendertarget_2d-array_3d.html` now passes focused E2E at 41.96 dB in `architecture-rendertarget-array3d.json`; safe graph traversal avoids expanding accessor-heavy runtime objects.
 
 Wave 2E agent's report identifies the precise gaps. Implementation pending.
 

@@ -25,12 +25,12 @@ This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage s
 - `webgpu_tsl_vfx_tornado.html` and `webgpu_equirectangular.html` — fresh focused runs now match at PSNR `inf`.
 - `webgpu_rtt.html`, `webgpu_depth_texture.html`, and `webgpu_multisampled_renderbuffers.html` — standalone `QuadMesh` / render-target materials now replay through captured precompiled materials; all three focused runs report PSNR `inf`.
 - `webgpu_multiple_rendertargets.html` and `webgpu_multiple_rendertargets_readback.html` — global MRT replay now retargets precompiled materials to the captured multi-output artifact and matches stock at PSNR `inf` in `architecture-mrt-attachments.json`.
+- `webgpu_rendertarget_2d-array_3d.html` — safe graph traversal avoids accessor-heavy runtime objects and the focused run now passes at 41.96 dB in `architecture-rendertarget-array3d.json`.
 
 **Improved but not fully green:**
 - `webgpu_materials_transmission.html` — viewport texture invalidation is hardened, but the focused verification still misses the 30 dB gate at 26.25 dB. This remains the beta PBR blocker.
 - `webgpu_lines_fat_raycasting.html` — visually very close but still below the gate at 28.93 dB after a fresh run.
 - `webgpu_postprocessing_dof_basic.html`, `webgpu_postprocessing_ssgi.html`, and `webgpu_postprocessing_ssgi_ballpool.html` — fresh triage reports 23.14 dB, 18.38 dB, and 11.71 dB respectively; broad postprocessing still needs pass-chain work.
-- `webgpu_rendertarget_2d-array_3d.html` — saved-shot coverage now compares at 30.87 dB, but the focused E2E report still exits with `Invalid string length`; keep it as a harness-cleanup item before treating it as fully green.
 - `webgpu_instancing_morph.html` — instance color path improved, but replay remains visually mismatched; latest focused report PSNR `15.65` in `visual-instancing-morph-after-random-split.json`.
 
 **Resolved active thread (2026-05-11):**
@@ -51,7 +51,7 @@ This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage s
 
 ## Round 4 results (2026-05-03)
 
-Six parallel agents + several follow-up commits pushed visual correctness forward on multiple fronts. Headline: **27/29 tier-1 examples render without errors** (same count as before Round 4 but different mix). Latest package test pass: **276 / 276 tests** across plugin 177, runtime 92, and inspector 7.
+Six parallel agents + several follow-up commits pushed visual correctness forward on multiple fronts. Headline: **27/29 tier-1 examples render without errors** (same count as before Round 4 but different mix). Latest package test pass: **281 / 281 tests** across plugin 177, runtime 97, and inspector 7.
 
 **Gained** (was broken/error → now renders):
 - `webgpu_compute_birds`: capture-side throw fixed (`object.computeBoundingSphere` skip on throwaway mesh) → replay renders sky background. Birds themselves still missing (instance buffer not propagating).
@@ -187,10 +187,10 @@ for the current triage plan.
 
 ```
 packages/plugin        177 / 177 pass   (unit + coverage matrix)
-packages/runtime        92 /  92 pass   (hydrator, registry, slim-support, smoke)
+packages/runtime        97 /  97 pass   (hydrator, registry, slim-support, smoke)
 packages/inspector-panel 7 /   7 pass
 ---
-Total                  276 / 276 pass   0 fail
+Total                  281 / 281 pass   0 fail
 ```
 
 Batch harness (`packages/examples/batch/results/report.json`):
