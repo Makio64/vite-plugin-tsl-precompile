@@ -24,6 +24,7 @@ This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage s
 - `webgpu_materials_toon.html` — `toonOutlinePass` now captures and replays its dynamic `Toon_Outline` material; PSNR `inf` in `next-toon-outline-pass.json`.
 - `webgpu_tsl_vfx_tornado.html` and `webgpu_equirectangular.html` — fresh focused runs now match at PSNR `inf`.
 - `webgpu_rtt.html`, `webgpu_depth_texture.html`, and `webgpu_multisampled_renderbuffers.html` — standalone `QuadMesh` / render-target materials now replay through captured precompiled materials; all three focused runs report PSNR `inf`.
+- `webgpu_multiple_rendertargets.html` and `webgpu_multiple_rendertargets_readback.html` — global MRT replay now retargets precompiled materials to the captured multi-output artifact and matches stock at PSNR `inf` in `architecture-mrt-attachments.json`.
 
 **Improved but not fully green:**
 - `webgpu_materials_transmission.html` — viewport texture invalidation is hardened, but the focused verification still misses the 30 dB gate at 26.25 dB. This remains the beta PBR blocker.
@@ -37,7 +38,8 @@ This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage s
 
 **Implementation highlights:**
 - `@tsl-precompile/runtime/slim-support/pmrem` now owns PMREM texture/source detection, cache/pending generation orchestration, image-ready skips, and PMREM `_textureRefs` wiring helpers; the E2E harness delegates those rules to runtime surface instead of carrying a local copy.
-- The hydrator now imports shader texture-shape inference, texture binding compatibility checks, and fallback texture selection from `packages/runtime/src/hydrate/texture-resolver.js`; `artifact.texture` resolution is split into named strategies and records the winning strategy for diagnostics.
+- The hydrator now imports shader texture-shape inference, texture binding compatibility checks, and fallback texture selection from `packages/runtime/src/hydrate/texture-resolver.js`; `artifact.texture` resolution, live texture identity lookup, and snapshot texture hydration now live in focused `hydrate/*` modules with named strategies and tests.
+- The E2E harness now resizes PassNode render targets to the active MRT descriptor and retargets global `renderer.setMRT(...)` scenes to captured multi-output artifacts before WebGPU pipeline creation.
 - `@tsl-precompile/contract/dynamic-bindings` documents owner/target/phase/resolver metadata for live uniform slots and runtime texture/rebinder sources.
 - PMREM generation chooses equirect/cube mode from source image shape rather than trusting rewritten `texture.mapping`, uses cloned source textures for temporary mapping changes, and preserves loader `flipY`.
 - Equirectangular HDR backgrounds captured as `texture_cube` background artifacts are converted to live `CubeTexture`s through the shared full WebGPU renderer, then shared back into slim.
@@ -49,7 +51,7 @@ This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage s
 
 ## Round 4 results (2026-05-03)
 
-Six parallel agents + several follow-up commits pushed visual correctness forward on multiple fronts. Headline: **27/29 tier-1 examples render without errors** (same count as before Round 4 but different mix). Latest package test pass: **269 / 269 tests** across plugin 177, runtime 85, and inspector 7.
+Six parallel agents + several follow-up commits pushed visual correctness forward on multiple fronts. Headline: **27/29 tier-1 examples render without errors** (same count as before Round 4 but different mix). Latest package test pass: **276 / 276 tests** across plugin 177, runtime 92, and inspector 7.
 
 **Gained** (was broken/error → now renders):
 - `webgpu_compute_birds`: capture-side throw fixed (`object.computeBoundingSphere` skip on throwaway mesh) → replay renders sky background. Birds themselves still missing (instance buffer not propagating).
@@ -88,7 +90,7 @@ An example **works** when the slim-runtime replay screenshot matches a clean sto
 | Sprites | 1 / 1 | webgpu_sprites (inf dB) ✅ | — |
 | Compute | 9 / 15 | webgpu_compute_audio (inf dB) ✅ | webgpu_compute_sort_bitonic (12.21 dB) |
 | Camera | 1 / 3 | webgpu_camera_array (37.14 dB) ✅ | webgpu_camera (14.39 dB) |
-| MRT / RenderTargets | 1 / 4 | webgpu_mrt (inf dB) ✅ | webgpu_multiple_rendertargets_readback (11.79 dB) |
+| MRT / RenderTargets | 3 / 4 | webgpu_mrt / multiple_rendertargets (inf dB) ✅ | webgpu_mrt_mask (18.75 dB) |
 | Particles | 1 / 1 | webgpu_particles (inf dB) ✅ | — |
 | Postprocessing | 19 / 29 | webgpu_postprocessing_3dlut (inf dB) ✅ | webgpu_postprocessing_outline (2.43 dB) |
 | Misc | 95 / 135 | many exact matches | webgpu_loader_gltf_anisotropy (1.07 dB) |
@@ -105,9 +107,9 @@ Do not optimize for every graded example first. The credible beta surface for re
 - material uniforms and known live light/shadow uniforms
 - stable artifact invalidation across dev capture, build rewrite, runtime hash checks, and package contents
 
-Priority order: restore and keep shadows green, then close the near-threshold PBR/material and lighting misses, then PMREM/reflection outliers and transmission/viewport/reflector texture paths. Compute/storage follows as experimental WebGPU coverage. MRT and broad postprocessing stay deferred until the render-target / PassNode chain is truly wired.
+Priority order: restore and keep shadows green, then close the near-threshold PBR/material and lighting misses, then PMREM/reflection outliers and transmission/viewport/reflector texture paths. Compute/storage follows as experimental WebGPU coverage. MRT is mostly green after the global render-target retargeting pass, but `webgpu_mrt_mask.html` and broad postprocessing still stay deferred until the PassNode chain is truly wired.
 
-Fresh triage on 2026-05-12 confirms the deferral: `webgpu_compute_reduce.html` is 14.81 dB, `webgpu_compute_texture_pingpong.html` is 21.75 dB, `webgpu_mrt.html` is 19.54 dB with background MRT attachment-state errors, and the multiple-render-target pair fails validation because target 1 has no matching fragment output.
+Fresh triage on 2026-05-13 updates the MRT slice: `webgpu_multiple_rendertargets.html` and `webgpu_multiple_rendertargets_readback.html` now pass at PSNR `inf` in `architecture-mrt-attachments.json`; `webgpu_mrt_mask.html` remains the active MRT/render-target miss. Compute deferrals from 2026-05-12 still stand: `webgpu_compute_reduce.html` is 14.81 dB and `webgpu_compute_texture_pingpong.html` is 21.75 dB.
 
 ---
 
@@ -185,10 +187,10 @@ for the current triage plan.
 
 ```
 packages/plugin        177 / 177 pass   (unit + coverage matrix)
-packages/runtime        85 /  85 pass   (hydrator, registry, slim-support, smoke)
+packages/runtime        92 /  92 pass   (hydrator, registry, slim-support, smoke)
 packages/inspector-panel 7 /   7 pass
 ---
-Total                  269 / 269 pass   0 fail
+Total                  276 / 276 pass   0 fail
 ```
 
 Batch harness (`packages/examples/batch/results/report.json`):
@@ -312,7 +314,7 @@ The ANNOUNCEMENT.md template is written; the ROADMAP Phase 8 gate requires "one 
 
 ### Deferred for v0.1 messaging
 
-- [ ] MRT / render-target examples remain experimental until the render-target / PassNode chain is wired end-to-end.
+- [ ] MRT / render-target examples remain experimental until `webgpu_mrt_mask.html` and the PassNode/postprocess chain are wired end-to-end.
 - [ ] Broad postprocessing remains experimental even though many examples now match; the full category is 19 / 29 today.
 
 ---

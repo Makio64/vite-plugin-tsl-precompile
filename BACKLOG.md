@@ -155,18 +155,17 @@ The MRT runtime stub landed in Wave 2E (commit 43129c0):
 - `apply-precompiled.js` forwards source `material.mrtNode` onto the wrapper
 - `compileTSL.js` binds a 1×1 N-texture warm-up RT before `compileAsync`
 
-But three of the four MRT/render-target examples are still below the gate:
+Current MRT/render-target state:
 - `webgpu_mrt` is now green at PSNR `inf`; keep it as a guardrail.
 - `webgpu_mrt_mask` (18.75 dB) — post-process pipeline does not yet match stock.
-- `webgpu_multiple_rendertargets_readback` (11.79 dB) — user calls `setRenderTarget` inside `render()`, after precompile() runs.
-- `webgpu_multiple_rendertargets` (11.79 dB) — currently regressed in the broad summary; this replaces the older "green guardrail" assumption.
+- `webgpu_multiple_rendertargets` and `webgpu_multiple_rendertargets_readback` now pass at PSNR `inf` in `architecture-mrt-attachments.json`; replay retargets global `renderer.setMRT(...)` scenes to the captured multi-output artifact before WebGPU pipeline creation.
 - `webgpu_rtt.html`, `webgpu_depth_texture.html`, and `webgpu_multisampled_renderbuffers.html` are now green after replay started replacing standalone `QuadMesh` / render-target materials before slim render.
 - `webgpu_rendertarget_2d-array_3d.html` compares at 30.87 dB from saved shots, but its focused run still exits with `Invalid string length`, so the harness/reporting path needs cleanup before calling that case fully closed.
 
 Wave 2E agent's report identifies the precise gaps. Implementation pending.
 
 - **Files**: `packages/examples/batch/run-e2e.mjs`, `packages/runtime/src/precompile-marker.js` (per-material RT binding tracking via `setRenderTarget` hook), `packages/runtime/src/aux-marker.js`, `packages/runtime/src/hydrator.js` (PassNode `getTexture` routing to live RT attachments).
-- **Done when**: `webgpu_mrt_mask.html`, `webgpu_multiple_rendertargets.html`, and `webgpu_multiple_rendertargets_readback.html` improve without regressing the now-green `webgpu_mrt.html`.
+- **Done when**: `webgpu_mrt_mask.html` improves without regressing the now-green `webgpu_mrt.html`, `webgpu_multiple_rendertargets.html`, and `webgpu_multiple_rendertargets_readback.html`.
 
 ---
 
@@ -226,7 +225,7 @@ Recommended order for serial work (each ~30-60 min focused):
 2. `pbr-near-threshold` — close the remaining ordinary material/light examples nearest the gate (`materials_transmission`, `lights_selective`).
 3. `transmission-viewport-texture` — glass/refraction remains relevant, with `materials_transmission` and `refraction` still below the gate.
 4. `pmrem-cubemap-bg` — focused glTF/PMREM cubemap bucket is green, but `webgpu_pmrem_scene.html` and `webgpu_reflection.html` still need work.
-5. `mrt-replay-empty` — `webgpu_mrt.html` is green, but the multiple-render-target/readback cases still need correct multi-output capture and replay.
+5. `mrt-replay-empty` — `webgpu_mrt.html` and the multiple-render-target/readback cases are green; `webgpu_mrt_mask.html` still needs correct post-process MRT masking.
 6. `compute-instance-mesh-buffer` / `compute-storage-texture-sync` — experimental compute/storage slice.
 
 For parallel agent work: file-disjoint sets are tricky because run-e2e.mjs is contended. Agent assignments need careful section-scoping or merge coordination.
