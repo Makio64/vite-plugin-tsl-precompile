@@ -46,3 +46,30 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
+
+  tier1-visual:
+    name: Tier-1 visual gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: npx playwright install --with-deps chromium
+      - name: Build slim bundle with rewrite fallbacks fatal
+        run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim
+      - name: Run configured tier-1 visual subset
+        run: xvfb-run -a pnpm test:e2e:tier1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tier1-visual-results
+          path: |
+            packages/examples/batch/results/tier1-report.json
+            packages/examples/batch/results/coverage-summary.md
+            packages/examples/batch/results/shots/*.png
+          if-no-files-found: ignore

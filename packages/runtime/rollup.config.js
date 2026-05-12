@@ -38,6 +38,11 @@ const threeRewritePlugin = {
 		if ( ! r ) return null;
 		if ( r.warning ) {
 
+			if ( process.env.CI === 'true' || process.env.TSLP_FAIL_ON_REWRITE_WARNING === '1' ) {
+
+				this.error( r.warning );
+
+			}
 			this.warn( r.warning );
 			return null;
 

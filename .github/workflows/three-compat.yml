@@ -1,0 +1,23 @@
+name: three.js compatibility probe
+
+on:
+  schedule:
+    - cron: '41 4 * * *'
+  workflow_dispatch:
+
+jobs:
+  latest-three-slim-build:
+    name: Slim build against three@latest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install latest three.js for compat probe
+        run: pnpm --filter @tsl-precompile/runtime add three@latest --save-dev
+      - name: Build slim bundle with rewrite fallbacks fatal
+        run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim
