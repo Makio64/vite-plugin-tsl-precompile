@@ -37,7 +37,7 @@ This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage s
 
 **Implementation highlights:**
 - `@tsl-precompile/runtime/slim-support/pmrem` now owns PMREM texture/source detection, cache/pending generation orchestration, image-ready skips, and PMREM `_textureRefs` wiring helpers; the E2E harness delegates those rules to runtime surface instead of carrying a local copy.
-- The hydrator now imports shader texture-shape inference, texture binding compatibility checks, and fallback texture selection from `packages/runtime/src/hydrate/texture-resolver.js`, the first split toward a binding-kind pipeline.
+- The hydrator now imports shader texture-shape inference, texture binding compatibility checks, and fallback texture selection from `packages/runtime/src/hydrate/texture-resolver.js`; `artifact.texture` resolution is split into named strategies and records the winning strategy for diagnostics.
 - `@tsl-precompile/contract/dynamic-bindings` documents owner/target/phase/resolver metadata for live uniform slots and runtime texture/rebinder sources.
 - PMREM generation chooses equirect/cube mode from source image shape rather than trusting rewritten `texture.mapping`, uses cloned source textures for temporary mapping changes, and preserves loader `flipY`.
 - Equirectangular HDR backgrounds captured as `texture_cube` background artifacts are converted to live `CubeTexture`s through the shared full WebGPU renderer, then shared back into slim.
@@ -49,7 +49,7 @@ This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage s
 
 ## Round 4 results (2026-05-03)
 
-Six parallel agents + several follow-up commits pushed visual correctness forward on multiple fronts. Headline: **27/29 tier-1 examples render without errors** (same count as before Round 4 but different mix). Latest package test pass: **267 / 267 tests** across plugin 177, runtime 83, and inspector 7.
+Six parallel agents + several follow-up commits pushed visual correctness forward on multiple fronts. Headline: **27/29 tier-1 examples render without errors** (same count as before Round 4 but different mix). Latest package test pass: **269 / 269 tests** across plugin 177, runtime 85, and inspector 7.
 
 **Gained** (was broken/error → now renders):
 - `webgpu_compute_birds`: capture-side throw fixed (`object.computeBoundingSphere` skip on throwaway mesh) → replay renders sky background. Birds themselves still missing (instance buffer not propagating).
@@ -185,10 +185,10 @@ for the current triage plan.
 
 ```
 packages/plugin        177 / 177 pass   (unit + coverage matrix)
-packages/runtime        83 /  83 pass   (hydrator, registry, slim-support, smoke)
+packages/runtime        85 /  85 pass   (hydrator, registry, slim-support, smoke)
 packages/inspector-panel 7 /   7 pass
 ---
-Total                  267 / 267 pass   0 fail
+Total                  269 / 269 pass   0 fail
 ```
 
 Batch harness (`packages/examples/batch/results/report.json`):

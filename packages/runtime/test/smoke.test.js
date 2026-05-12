@@ -388,6 +388,8 @@ test( 'runtime hydrator rehydrates artifact.texture snapshots', () => {
 	assert.equal( texture.texture.image.data[ 0 ], 255 );
 	assert.equal( texture.texture.image.data[ 4 ], 0 );
 	assert.equal( texture.texture.image.data[ 5 ], 255 );
+	assert.equal( artifact._textureResolutionStrategies.get( 'object:nodeTexture0' ), 'snapshot' );
+	assert.equal( Object.prototype.propertyIsEnumerable.call( artifact, '_textureResolutionStrategies' ), false );
 
 } );
 
@@ -464,6 +466,7 @@ test( 'runtime hydrator uses live color render-target texture refs for plain tex
 	const [ sampler, texture ] = state.bindings[ 0 ].bindings;
 	assert.equal( sampler.texture, renderTargetTexture );
 	assert.equal( texture.texture, renderTargetTexture );
+	assert.equal( artifact._textureResolutionStrategies.get( 'object:nodeUniform0' ), 'render-target-texture-ref' );
 
 } );
 
@@ -1228,6 +1231,7 @@ test( 'hydrator: _textureRefs used for in-process artifact.texture resolution', 
 	const state = hydrateNodeBuilderState( artifact );
 	const binding = state.bindings[ 0 ].bindings[ 0 ];
 	assert.equal( binding.texture, tex, '_textureRefs UUID lookup must return the in-process texture' );
+	assert.equal( artifact._textureResolutionStrategies.get( 'obj:myTex' ), 'texture-ref' );
 
 } );
 
@@ -1364,6 +1368,43 @@ test( 'wireViewportTextureRefs: wires FramebufferTexture for texture_2d bindings
 	assert.ok( tex, 'must have a fallback texture' );
 	assert.ok( tex.isFramebufferTexture, 'color viewport binding must produce a FramebufferTexture' );
 	assert.ok( ! tex.isDepthTexture, 'FramebufferTexture must not be a depth texture' );
+
+} );
+
+test( 'hydrator keeps viewport fallback for zero-thickness transmission', () => {
+
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: '@group(1) @binding(0) var viewportTex : texture_2d<f32>;',
+		defaults: { transmission: 1, thickness: 0 },
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'viewportTex', kind: 'sampled-texture', visibility: 2 },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			slots: [],
+			textures: [
+				{ name: 'viewportTex', source: { kind: 'viewport.texture', generateMipmaps: true, isDepth: false } },
+			],
+		} ],
+	};
+	const material = { transmission: 1, thickness: 0 };
+	const state = hydrateNodeBuilderState( artifact, material );
+	const binding = state.bindings[ 0 ].bindings[ 0 ];
+	const fallback = binding.texture;
+	const live = new DataTexture( new Uint8Array( [ 0, 0, 0, 255 ] ), 1, 1 );
+	binding.texture = live;
+
+	assert.notEqual( binding.texture, fallback );
+	state.updateBeforeNodes[ 0 ].updateBefore( {
+		renderer: {
+			backend: { get() { return {}; } },
+		},
+	} );
+	assert.equal( binding.texture, fallback );
 
 } );
 

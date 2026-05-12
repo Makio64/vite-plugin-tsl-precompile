@@ -2125,6 +2125,39 @@ function createReflectorTextureRebinder( entries ) {
 
 }
 
+function shouldSkipViewportCopyForZeroThicknessTransmission( artifact ) {
+
+	const defaults = artifact && artifact.defaults;
+	if ( ! defaults || ! ( defaults.transmission > 0 ) ) return false;
+	if ( defaults.thickness !== 0 ) return false;
+
+	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
+	for ( const group of plan ) {
+
+		const textures = Array.isArray( group && group.textures ) ? group.textures : [];
+		for ( const texture of textures ) {
+
+			const source = texture && texture.source;
+			if ( source && source.kind === 'material.thicknessMap' ) return false;
+
+		}
+
+	}
+
+	return true;
+
+}
+
+function shouldUseViewportFallbackForFrame( entry ) {
+
+	if ( ! entry || entry.isDepth === true || entry.skipZeroThicknessTransmission !== true ) return false;
+	const material = entry.material || {};
+	const transmission = Number.isFinite( material.transmission ) ? material.transmission : 1;
+	const thickness = Number.isFinite( material.thickness ) ? material.thickness : 0;
+	return transmission > 0 && Math.abs( thickness ) <= 1e-7;
+
+}
+
 /**
  * Per-frame rebinder for viewport-texture bindings (transmission FBO).
  *
@@ -2679,6 +2712,170 @@ function applyTextureSourceSettings( texture, source ) {
 
 }
 
+function textureResolutionResult( texture, strategy ) {
+
+	return texture ? { texture, strategy } : null;
+
+}
+
+function recordTextureResolutionStrategy( artifact, groupName, bindingName, strategy ) {
+
+	if ( ! artifact || ! strategy ) return;
+	try {
+
+		if ( ! artifact._textureResolutionStrategies ) {
+
+			Object.defineProperty( artifact, '_textureResolutionStrategies', {
+				value: new Map(),
+				enumerable: false,
+				configurable: true,
+			} );
+
+		}
+		artifact._textureResolutionStrategies.set( `${ groupName }:${ bindingName }`, strategy );
+
+	} catch ( _ ) {}
+
+}
+
+const ARTIFACT_TEXTURE_STRATEGIES = [
+	{ name: 'material-node-texture', resolve: resolveMaterialNodeTextureStrategy },
+	{ name: 'render-target-texture-ref', resolve: resolveRenderTargetTextureRefStrategy },
+	{ name: 'live-texture-identity', resolve: resolveLiveTextureIdentityStrategy },
+	{ name: 'texture-ref', resolve: resolveTextureRefStrategy },
+	{ name: 'material-slot-uuid', resolve: resolveMaterialSlotUuidStrategy },
+	{ name: 'anonymous-data-texture', resolve: resolveAnonymousDataTextureStrategy },
+	{ name: 'snapshot', resolve: resolveTextureSnapshotStrategy },
+	{ name: 'multisampled-depth-fallback', resolve: resolveMultisampledDepthFallbackStrategy },
+	{ name: 'anonymous-storage-texture', resolve: resolveAnonymousStorageTextureStrategy },
+];
+
+function resolveArtifactTextureBinding( context ) {
+
+	context.wantsDepthTexture = shaderDeclaresDepthTexture( context.artifact, context.bindingName );
+	context.wantsMultisampledTexture = shaderDeclaresMultisampledTexture( context.artifact, context.bindingName );
+	if ( context.wantsDepthTexture && ! context.wantsMultisampledTexture ) {
+
+		return textureResolutionResult( fallbackDepthTexture, 'depth-texture-fallback' );
+
+	}
+
+	for ( const strategy of ARTIFACT_TEXTURE_STRATEGIES ) {
+
+		const texture = strategy.resolve( context );
+		if ( texture ) return textureResolutionResult( texture, strategy.name );
+
+	}
+	return null;
+
+}
+
+function resolveMaterialNodeTextureStrategy( context ) {
+
+	const { artifact, bindingName, material, options, source } = context;
+	const texture = lookupMaterialNodeTexture( material, source, artifact, bindingName, options && options.avoidTexture || null );
+	return texture ? applyTextureSourceSettings( texture, source ) : null;
+
+}
+
+function resolveRenderTargetTextureRefStrategy( context ) {
+
+	const { artifact, bindingName, source } = context;
+	if ( ! artifact._textureRefs ) return null;
+	const texture = artifact._textureRefs.get( source.textureUuid );
+	if ( texture && texture.isRenderTargetTexture === true && textureMatchesShaderBinding( artifact, bindingName, texture ) ) {
+
+		return applyTextureSourceSettings( texture, source );
+
+	}
+	return null;
+
+}
+
+function resolveLiveTextureIdentityStrategy( context ) {
+
+	const { artifact, bindingName, source } = context;
+	const texture = lookupLiveTextureByIdentity( source );
+	if ( texture && textureMatchesShaderBinding( artifact, bindingName, texture ) ) {
+
+		return applyTextureSourceSettings( texture, source );
+
+	}
+	return null;
+
+}
+
+function resolveTextureRefStrategy( context ) {
+
+	const { artifact, bindingName, source } = context;
+	if ( ! artifact._textureRefs ) return null;
+	const texture = artifact._textureRefs.get( source.textureUuid );
+	if ( texture && textureMatchesShaderBinding( artifact, bindingName, texture ) ) {
+
+		return applyTextureSourceSettings( texture, source );
+
+	}
+	return null;
+
+}
+
+function resolveMaterialSlotUuidStrategy( context ) {
+
+	const { artifact, bindingName, material, source } = context;
+	if ( ! material ) return null;
+	for ( const prop of MATERIAL_TEXTURE_PROPS ) {
+
+		const texture = material[ prop ];
+		if ( texture && texture.isTexture === true && texture.uuid === source.textureUuid && textureMatchesShaderBinding( artifact, bindingName, texture ) ) {
+
+			return applyTextureSourceSettings( texture, source );
+
+		}
+
+	}
+	return null;
+
+}
+
+function resolveAnonymousDataTextureStrategy( context ) {
+
+	const { artifact, bindingName, source, wantsDepthTexture, wantsMultisampledTexture } = context;
+	if ( ! source.snapshot || wantsDepthTexture || wantsMultisampledTexture || ! isTrivialSnapshot( source.snapshot ) ) return null;
+	const texture = lookupAnonymousDataTexture( source.snapshot );
+	if ( texture && textureMatchesShaderBinding( artifact, bindingName, texture ) ) {
+
+		return applyTextureSourceSettings( texture, source );
+
+	}
+	return null;
+
+}
+
+function resolveTextureSnapshotStrategy( context ) {
+
+	const { artifact, bindingName, source, textureTypeHint } = context;
+	if ( ! source.snapshot ) return null;
+	return textureFromSnapshot( artifact, source.textureUuid, source.snapshot, bindingName, textureTypeHint );
+
+}
+
+function resolveMultisampledDepthFallbackStrategy( context ) {
+
+	return context.wantsDepthTexture && context.wantsMultisampledTexture ? fallbackMultisampledDepthTexture : null;
+
+}
+
+function resolveAnonymousStorageTextureStrategy( context ) {
+
+	const { textureEntry } = context;
+	if ( ! textureEntry ) return null;
+	const lookupType = textureEntry.textureType === '3d' ? '3d'
+		: textureEntry.textureType === '2d-array' ? '2d-array'
+			: '2d';
+	return lookupAnonymousStorageTexture( lookupType );
+
+}
+
 function resolveTextureBinding( artifact, groupName, bindingName, material, options = null ) {
 
 	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
@@ -2741,108 +2938,15 @@ function resolveTextureBinding( artifact, groupName, bindingName, material, opti
 	// last resort.
 	if ( source.kind === 'artifact.texture' && source.textureUuid ) {
 
-		const wantsDepthTexture = shaderDeclaresDepthTexture( artifact, bindingName );
-		const wantsMultisampledTexture = shaderDeclaresMultisampledTexture( artifact, bindingName );
-		if ( wantsDepthTexture && ! wantsMultisampledTexture ) {
-			return fallbackDepthTexture;
-		}
+		const result = resolveArtifactTextureBinding( { artifact, groupName, bindingName, material, options, textureEntry: texture, source, textureTypeHint } );
+		if ( result ) {
 
-		const nodeTexture = lookupMaterialNodeTexture( material, source, artifact, bindingName, options && options.avoidTexture || null );
-		if ( nodeTexture ) return applyTextureSourceSettings( nodeTexture, source );
-
-		// Render-target textures are frame-local products, not assets. In replay
-		// the host wires the live target through _textureRefs, while the identity
-		// index may still contain an earlier 1x1 fallback with the same
-		// textureName. Prefer the explicit sidecar ref for those targets.
-		if ( artifact._textureRefs ) {
-
-			const tex = artifact._textureRefs.get( source.textureUuid );
-			if ( tex && tex.isRenderTargetTexture === true && textureMatchesShaderBinding( artifact, bindingName, tex ) ) {
-				return applyTextureSourceSettings( tex, source );
-			}
+			recordTextureResolutionStrategy( artifact, groupName, bindingName, result.strategy );
+			return result.texture;
 
 		}
-
-		// Prefer a currently-loaded texture with matching image/name identity over
-		// sidecar refs. The replay harness may seed _textureRefs with conservative
-		// 1x1 fallbacks before async loaders finish; identity lookup lets later
-		// TextureLoader / light.map registrations replace those stubs.
-		const byIdent = lookupLiveTextureByIdentity( source );
-		if ( byIdent && textureMatchesShaderBinding( artifact, bindingName, byIdent ) ) {
-
-			return applyTextureSourceSettings( byIdent, source );
-
-		}
-
-		if ( artifact._textureRefs ) {
-
-			const tex = artifact._textureRefs.get( source.textureUuid );
-			if ( tex && textureMatchesShaderBinding( artifact, bindingName, tex ) ) {
-				return applyTextureSourceSettings( tex, source );
-			}
-
-		}
-
-		if ( material ) {
-
-			for ( const prop of MATERIAL_TEXTURE_PROPS ) {
-
-				const tex = material[ prop ];
-				if ( tex && tex.isTexture === true && tex.uuid === source.textureUuid && textureMatchesShaderBinding( artifact, bindingName, tex ) ) {
-					return applyTextureSourceSettings( tex, source );
-				}
-
-			}
-
-		}
-
-		// Identity-based relink (imageSrc / textureName). The runtime keeps
-		// a global index updated by the host (harness or app) via
-		// `registerLiveTexture`. This is what allows TSL `texture(uvTex)`
-		// closures to resolve when the example reloads with fresh Texture
-		// instances whose uuids no longer match the captured artifact.
-		if ( source.snapshot ) {
-
-			// Anonymous live DataTexture fallback. When the captured snapshot
-			// is trivial (all zeros — e.g. webgpu_compute_audio's analyserBuffer
-			// captured before audio playback started), prefer a unique live
-			// DataTexture of matching shape over rebuilding from the empty
-			// snapshot. This lets the example's per-frame `needsUpdate` flow
-			// drive replay rendering instead of binding a dead zero buffer.
-			if ( ! wantsDepthTexture && ! wantsMultisampledTexture && isTrivialSnapshot( source.snapshot ) ) {
-
-				const anonData = lookupAnonymousDataTexture( source.snapshot );
-				if ( anonData && textureMatchesShaderBinding( artifact, bindingName, anonData ) ) {
-
-					return applyTextureSourceSettings( anonData, source );
-
-				}
-
-			}
-
-			return textureFromSnapshot( artifact, source.textureUuid, source.snapshot, bindingName, textureTypeHint );
-
-		}
-
-		if ( wantsDepthTexture && wantsMultisampledTexture ) {
-			return fallbackMultisampledDepthTexture;
-		}
-
-		// Last-resort: anonymous storage texture lookup.
-		// When a compute-written StorageTexture has no name and no snapshot,
-		// and its captured UUID is dead, try to find the live storage texture
-		// by dimensionality. This covers simple single-storage-texture scenes
-		// (e.g. webgpu_compute_texture) where the right texture exists in the
-		// runtime but was never registered by name or src.
-		if ( texture ) {
-
-			const lookupType = texture.textureType === '3d' ? '3d'
-				: texture.textureType === '2d-array' ? '2d-array'
-				: '2d';
-			const anon = lookupAnonymousStorageTexture( lookupType );
-			if ( anon ) return anon;
-
-		}
+		recordTextureResolutionStrategy( artifact, groupName, bindingName, 'shader-fallback' );
+		return fallbackTextureForBinding( artifact, bindingName );
 
 	}
 
