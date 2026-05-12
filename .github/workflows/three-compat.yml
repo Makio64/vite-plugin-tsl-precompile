@@ -6,9 +6,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  latest-three-slim-build:
-    name: Slim build against three@latest
+  rewrite-and-slim-build:
+    name: Rewrite shape + slim build (${{ matrix.three-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        three-version: [locked, latest]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -18,6 +22,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Install latest three.js for compat probe
+        if: matrix.three-version == 'latest'
         run: pnpm --filter @tsl-precompile/runtime add three@latest --save-dev
+      - name: Install latest three.js for rewrite probe
+        if: matrix.three-version == 'latest'
+        run: pnpm --filter vite-plugin-tsl-precompile add three@latest --save-dev
+      - name: Run per-file rewrite shape tests
+        run: pnpm test:three-rewrite
       - name: Build slim bundle with rewrite fallbacks fatal
         run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim

@@ -24,6 +24,7 @@
   "scripts": {
     "test": "node --test --test-concurrency=1 'test/unit/*.test.js' 'test/coverage/*.test.js'",
     "test:unit": "node --test 'test/unit/*.test.js'",
+    "test:rewrite": "node --test --test-concurrency=1 'test/unit/rewrite-*.test.js'",
     "test:coverage": "node --test --test-concurrency=1 'test/coverage/*.test.js'",
     "verify": "node src/cli/verify.js"
   },
