@@ -23,7 +23,6 @@
 
 import BindGroup from 'three/src/renderers/common/BindGroup.js';
 import UniformBuffer from 'three/src/renderers/common/UniformBuffer.js';
-import StorageBuffer from 'three/src/renderers/common/StorageBuffer.js';
 import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttribute.js';
 import { DataTexture, Data3DTexture, DataArrayTexture, DepthTexture, CubeDepthTexture, CubeTexture, FramebufferTexture, RGBAFormat, DepthFormat, UnsignedByteType, UnsignedIntType, LessEqualCompare, GreaterEqualCompare, HalfFloatType, LinearFilter, NearestFilter, LinearMipmapLinearFilter, ClampToEdgeWrapping, WebGPUCoordinateSystem, Vector2, Vector3, Vector4, Matrix4, Matrix3, Plane, InstancedBufferAttribute } from 'three';
 import { viewportMipTexture, viewportTexture } from 'three/src/nodes/display/ViewportTextureNode.js';
@@ -32,10 +31,13 @@ import { getDFGLUT } from './dfg-lut.js';
 import { collectLiveMaterialTextures, collectReflectorBaseNodes } from './apply-precompiled.js';
 import { recordTextureResolutionStrategy, resolveArtifactTextureBinding } from './hydrate/artifact-texture-resolver.js';
 import { installLiveTextureRegistryPatches, lookupAnonymousDataTexture, lookupAnonymousStorageTexture, lookupLiveTextureByIdentity } from './hydrate/live-texture-registry.js';
-import { createSampledTextureBinding, createSamplerBinding } from './hydrate/kinds/texture-bindings.js';
-import { createUniformBufferBinding } from './hydrate/kinds/uniform-buffer.js';
+import { createRuntimeBindingFromKind } from './hydrate/kinds/runtime-binding-dispatcher.js';
 import { collectMaterialNodeTextures, lookupMaterialNodeTexture } from './hydrate/material-node-textures.js';
+import { createReflectorTextureRebinder, resolveReflectorRenderTarget } from './hydrate/rebinders/reflector-texture-rebinder.js';
+import { invalidateOnTextureResourceChange, invalidateTextureBindingTarget, rebindTextureBindingTargets, textureBindingTargets } from './hydrate/rebinders/texture-binding-targets.js';
+import { createArtifactTextureRebinder, createMaterialTextureRebinder } from './hydrate/rebinders/texture-rebinders.js';
 import { isTrivialSnapshot, textureFromSnapshot } from './hydrate/texture-snapshot.js';
+import { resolveTypedArrayCtor } from './hydrate/typed-arrays.js';
 import { findPlanTextureSource, inferTextureTypeFromShader, resolvePlanTextureTypeHint, selectFallbackTextureForBinding, shaderDeclaresDepthTexture, shaderDeclaresMultisampledTexture, textureMatchesShaderBinding } from './hydrate/texture-resolver.js';
 
 export { clearLiveTextureIndex, registerLiveTexture } from './hydrate/live-texture-registry.js';
@@ -450,10 +452,10 @@ export function hydrateNodeBuilderState( artifact, material = null ) {
 		? createShadowDepthRebinder( materialDepthBindings )
 		: null;
 	const artifactTextureRebinder = artifactTextureBindings.length > 0
-		? createArtifactTextureRebinder( artifactTextureBindings )
+		? createArtifactTextureRebinder( artifactTextureBindings, { resolveTextureBinding } )
 		: null;
 	const materialTextureRebinder = materialTextureBindings.length > 0
-		? createMaterialTextureRebinder( materialTextureBindings )
+		? createMaterialTextureRebinder( materialTextureBindings, { resolveTextureBinding } )
 		: null;
 	const viewportTextureRebinder = viewportTextureBindings.length > 0
 		? createViewportTextureRebinder( viewportTextureBindings )
@@ -1462,173 +1464,6 @@ function findReflectorBaseNodeInMaterial( material, reflectorIndex = -1 ) {
 
 }
 
-function textureBindingTargets( binding ) {
-
-	if ( ! binding ) return [];
-	const source = binding.__tslpRebindSource || binding;
-	const out = [ source ];
-	const clones = source.__tslpRebindClones;
-	if ( clones && typeof clones.forEach === 'function' ) {
-
-		clones.forEach( ( clone ) => {
-
-			if ( clone && ! out.includes( clone ) ) out.push( clone );
-
-		} );
-
-	}
-	return out;
-
-}
-
-function invalidateTextureBindingTarget( binding ) {
-
-	if ( ! binding ) return;
-	if ( binding.groupNode ) binding.groupNode.version ++;
-	binding.version = - 1;
-	binding.generation = null;
-
-}
-
-function rebindTextureBindingTargets( binding, texture ) {
-
-	let changed = false;
-	for ( const target of textureBindingTargets( binding ) ) {
-
-		if ( target.texture !== texture ) {
-
-			target.texture = texture;
-			changed = true;
-
-		}
-
-		if ( changed ) invalidateTextureBindingTarget( target );
-
-	}
-	return changed;
-
-}
-
-function textureBindingResourceSignature( target, renderer ) {
-
-	const texture = target && target.texture || null;
-	const backend = renderer && renderer.backend && typeof renderer.backend.get === 'function' ? renderer.backend : null;
-	const data = texture && backend ? backend.get( texture ) : null;
-	return {
-		texture,
-		gpuTexture: data ? data.texture || null : null,
-		version: texture && Number.isFinite( texture.version ) ? texture.version : null,
-	};
-
-}
-
-function invalidateOnTextureResourceChange( target, renderer, lastSeen ) {
-
-	if ( ! target || ! lastSeen ) return;
-	const current = textureBindingResourceSignature( target, renderer );
-	const previous = lastSeen.get( target );
-	lastSeen.set( target, current );
-	if ( ! previous ) return;
-	if ( previous.texture !== current.texture ||
-		previous.gpuTexture !== current.gpuTexture ||
-		previous.version !== current.version ) {
-
-		invalidateTextureBindingTarget( target );
-
-	}
-
-}
-
-function resolveReflectorRenderTarget( baseNode, camera ) {
-
-	if ( ! baseNode || ! baseNode.renderTargets ) return null;
-	let rt = null;
-	if ( camera ) {
-
-		let renderTargetCamera = camera;
-		if ( typeof baseNode.getVirtualCamera === 'function' ) {
-
-			try {
-
-				renderTargetCamera = baseNode.getVirtualCamera( camera );
-
-			} catch ( _ ) {
-
-				renderTargetCamera = camera;
-
-			}
-
-		}
-		rt = baseNode.renderTargets.get( renderTargetCamera ) || baseNode.renderTargets.get( camera );
-
-	}
-	if ( ! rt && baseNode.renderTargets.size > 0 ) {
-
-		// Fallback: replay-time slim camera identity may not match the camera
-		// passed to ReflectorBaseNode.updateBefore on the first run. Take any
-		// keyed RT — usually exactly one outside bouncing multi-reflector scenes.
-		rt = baseNode.renderTargets.values().next().value;
-
-	}
-	return rt || null;
-
-}
-
-/**
- * Per-frame rebinder for TSL `reflector()` bindings.
- *
- * `ReflectorBaseNode.updateBefore` lazy-allocates a `RenderTarget` per camera
- * (keyed by camera identity in `node.renderTargets`) and assigns
- * `node.textureNode.value = renderTarget.texture` each frame. The artifact's
- * captured binding still holds the module-private `_defaultRT.texture` (or a
- * 1×1 fallback after hydration), so without this rebinder the mirror surface
- * samples a flat colour. Run AFTER the live ReflectorBaseNode's own
- * `updateBefore` so the per-camera RT is keyed before we read it.
- *
- * This also runs during nested reflector render passes. `reflector()` defaults
- * to `bounces: true`, so a mirror render target may legitimately need to
- * sample another reflector's freshly-rendered target before the outer frame
- * reaches the main camera draw.
- *
- * @param {Array<{binding: Object, baseNode: Object}>} entries
- * @return {Object}
- */
-function createReflectorTextureRebinder( entries ) {
-
-	return {
-		getUpdateBeforeType() {
-
-			return 'render';
-
-		},
-		updateReference() {
-
-			return this;
-
-		},
-		updateBefore( frame ) {
-
-			const camera = frame ? frame.camera : null;
-
-			for ( const entry of entries ) {
-
-				const baseNode = entry.baseNode;
-				if ( ! baseNode || ! baseNode.renderTargets ) continue;
-
-				const rt = resolveReflectorRenderTarget( baseNode, camera );
-
-				const liveTexture = rt && rt.texture || baseNode.textureNode && baseNode.textureNode.value;
-				if ( ! liveTexture ) continue;
-
-				rebindTextureBindingTargets( entry.binding, liveTexture );
-
-			}
-
-		},
-	};
-
-}
-
 function shouldSkipViewportCopyForZeroThicknessTransmission( artifact ) {
 
 	const defaults = artifact && artifact.defaults;
@@ -1777,124 +1612,6 @@ function createViewportTextureRebinder( entries ) {
 
 }
 
-function createMaterialTextureRebinder( entries ) {
-
-	const lastSeen = new WeakMap();
-
-	return {
-		getUpdateBeforeType() {
-
-			return 'render';
-
-		},
-		updateReference() {
-
-			return this;
-
-		},
-		updateBefore( frame ) {
-
-			const renderer = frame && frame.renderer ? frame.renderer : null;
-
-			for ( const entry of entries ) {
-
-				const binding = entry && entry.binding;
-				if ( ! binding ) continue;
-
-				const candidate = resolveTextureBinding( entry.artifact, entry.groupName, entry.bindingName, entry.material );
-				if ( candidate ) rebindTextureBindingTargets( binding, candidate );
-
-				for ( const target of textureBindingTargets( binding ) ) {
-
-					invalidateOnTextureResourceChange( target, renderer, lastSeen );
-
-				}
-
-			}
-
-		},
-	};
-
-}
-
-function createArtifactTextureRebinder( entries ) {
-
-	// Track the last-seen GPUTexture per binding so we only invalidate when
-	// it actually swaps (and don't bump every frame, which would defeat
-	// three.js's bind-group cache).
-	const lastSeen = new WeakMap();
-
-	return {
-		getUpdateBeforeType() {
-
-			return 'render';
-
-		},
-		updateReference() {
-
-			return this;
-
-		},
-		updateBefore( frame ) {
-
-			const renderer = frame && frame.renderer ? frame.renderer : null;
-			let avoidTexture = null;
-			try {
-
-				const renderTarget = renderer && typeof renderer.getRenderTarget === 'function' ? renderer.getRenderTarget() : null;
-				avoidTexture = renderTarget && renderTarget.texture || null;
-
-			} catch ( _ ) {}
-
-			for ( const entry of entries ) {
-
-				const binding = entry.binding;
-				if ( ! binding ) continue;
-
-				const candidate = resolveTextureBinding( entry.artifact, entry.groupName, entry.bindingName, entry.material, { avoidTexture } );
-				if ( candidate ) {
-
-					// Sampler's `texture` setter resets version=-1 and
-					// generation=null automatically. SampledTexture does not, so
-					// also bump below to make the bind-group cache rebuild.
-					rebindTextureBindingTargets( binding, candidate );
-
-				}
-
-				// (b) Detect a swap of the underlying GPUTexture (slim's data
-				// map's `.texture` was reassigned to share full's GPUTexture
-				// after the bind group was built). Force three.js to rebuild
-				// the bind group on the next draw.
-				if ( ! renderer || ! renderer.backend ) continue;
-				for ( const target of textureBindingTargets( binding ) ) {
-
-					const tex = target.texture;
-					if ( ! tex ) continue;
-					const data = renderer.backend.get( tex );
-					const gpuTexture = data ? data.texture : null;
-					if ( ! gpuTexture ) continue;
-
-					const prev = lastSeen.get( target );
-					if ( prev === gpuTexture ) continue;
-
-					lastSeen.set( target, gpuTexture );
-
-					// First observation: just record. The bind group hasn't been
-					// built yet against this binding, so there's no stale view to
-					// invalidate.
-					if ( prev === undefined ) continue;
-
-					invalidateTextureBindingTarget( target );
-
-				}
-
-			}
-
-		},
-	};
-
-}
-
 /**
  * Find the live Light a shadow-depth binding belongs to. Prefers a UUID match
  * (production: same Light instance survives across frames), falls back to a
@@ -1961,116 +1678,24 @@ function attachLiveUniformBufferUpdater( uniformBuffer, liveArrayResolver ) {
 
 function createRuntimeBinding( artifact, group, descriptor, material, groupNode ) {
 
-	const name = descriptor.name || group.name || '';
-
-	if ( descriptor.kind === 'uniform-buffer' ) {
-
-		return createUniformBufferBinding( {
-			artifact,
-			groupName: group.name,
-			descriptor,
-			name,
-			material,
-			groupNode,
-			deps: {
-				attachLiveUniformBufferUpdater,
-				createLiveUniformArrayResolver,
-				findUniformGroupByteLength,
-				findUniformGroupRequiredByteLength,
-				resolvePlanBufferUniform,
-				seedUniformBufferSnapshots,
-			},
-		} );
-
-	}
-
-	if ( descriptor.kind === 'sampled-texture' ) {
-
-		const texture = resolveTextureBinding( artifact, group.name, descriptor.name, material );
-		const textureType = descriptor.textureType || inferTextureTypeFromShader( artifact, descriptor.name );
-		return createSampledTextureBinding( {
-			name,
-			texture,
-			textureType,
-			visibility: descriptor.visibility,
-			groupNode,
-		} );
-
-	}
-
-	if ( descriptor.kind === 'sampler' ) {
-
-		const texture = resolveTextureBinding( artifact, group.name, descriptor.name, material );
-		return createSamplerBinding( {
-			name,
-			texture,
-			visibility: descriptor.visibility,
-			groupNode,
-		} );
-
-	}
-
-	// Storage buffers — compute shaders bind typed arrays for read/write by
-	// the compute kernel. Reconstruct from captured metadata. In-process flows
-	// carry the live attribute as `_liveAttribute` on the plan entry; use it
-	// directly to share the same typed array the compute kernel wrote into.
-	if ( descriptor.kind === 'storage-buffer' ) {
-
-		const sbEntry = resolvePlanStorageBuffer( artifact, group.name, name );
-		let attr;
-		// In-process flows attach a live StorageBufferAttribute; out-of-
-		// process (JSON-loaded) flows lose the prototype + TypedArray view
-		// to the round-trip. Trust `_liveAttribute` only when its
-		// `.array` is still a real TypedArray — otherwise allocate fresh
-		// from count/itemSize/arrayType so WebGPU's `createBuffer` sees a
-		// finite byteLength.
-		const liveAttr = sbEntry && sbEntry._liveAttribute;
-		const liveAttrIsLive = liveAttr && liveAttr.array && ArrayBuffer.isView( liveAttr.array );
-		if ( liveAttrIsLive ) {
-
-			attr = liveAttr;
-
-		} else {
-
-			const count = sbEntry ? ( sbEntry.count || 1 ) : 1;
-			const itemSize = sbEntry ? ( sbEntry.itemSize || 1 ) : 1;
-			const TypedArray = resolveTypedArrayCtor( sbEntry ? sbEntry.arrayType : null );
-			attr = new StorageBufferAttribute( count, itemSize, TypedArray );
-			// Seed from `_liveArray` only if it survived as a TypedArray.
-			// JSON round-trip drops the buffer view; the plain-object form
-			// can still seed values via numeric-key iteration.
-			const liveArr = sbEntry && sbEntry._liveArray;
-			if ( liveArr ) {
-
-				if ( ArrayBuffer.isView( liveArr ) ) {
-
-					attr.array.set( liveArr.subarray( 0, attr.array.length ) );
-
-				} else if ( typeof liveArr === 'object' ) {
-
-					const keys = Object.keys( liveArr );
-					for ( let i = 0; i < keys.length; i ++ ) {
-
-						const k = keys[ i ];
-						const idx = +k;
-						if ( idx >= 0 && idx < attr.array.length ) attr.array[ idx ] = liveArr[ k ];
-
-					}
-
-				}
-
-			}
-
-		}
-		const storageBuffer = new StorageBuffer( name, attr );
-		storageBuffer.access = descriptor.access || 'read_write';
-		storageBuffer.visibility = descriptor.visibility | 0;
-		storageBuffer.groupNode = groupNode;
-		return storageBuffer;
-
-	}
-
-	return null;
+	return createRuntimeBindingFromKind( {
+		artifact,
+		group,
+		descriptor,
+		material,
+		groupNode,
+		deps: {
+			attachLiveUniformBufferUpdater,
+			createLiveUniformArrayResolver,
+			findUniformGroupByteLength,
+			findUniformGroupRequiredByteLength,
+			inferTextureTypeFromShader,
+			resolvePlanBufferUniform,
+			resolvePlanStorageBuffer,
+			resolveTextureBinding,
+			seedUniformBufferSnapshots,
+		},
+	} );
 
 }
 
@@ -2189,6 +1814,7 @@ function applyTextureSourceSettings( texture, source ) {
 
 function textureResolutionDiagnosticDetails( source, textureEntry, textureTypeHint, resolvedTexture ) {
 
+	const image = resolvedTexture && resolvedTexture.image || null;
 	return {
 		sourceKind: source && source.kind || null,
 		textureUuid: source && source.textureUuid || null,
@@ -2199,6 +1825,8 @@ function textureResolutionDiagnosticDetails( source, textureEntry, textureTypeHi
 		resolvedTextureUuid: resolvedTexture && resolvedTexture.uuid || null,
 		resolvedTextureName: resolvedTexture && resolvedTexture.name || null,
 		resolvedTextureType: textureDiagnosticType( resolvedTexture ),
+		resolvedTextureWidth: image && image.width || null,
+		resolvedTextureHeight: image && image.height || null,
 	};
 
 }
@@ -2468,32 +2096,6 @@ function resolvePlanBufferUniform( artifact, groupName, bindingName ) {
 	}
 
 	return null;
-
-}
-
-/**
- * Resolve a typed-array constructor name to the actual constructor.
- * Defaults to Float32Array for unknown / missing names.
- *
- * @param {?string} name
- * @return {typeof Float32Array}
- */
-function resolveTypedArrayCtor( name ) {
-
-	switch ( name ) {
-
-		case 'Int8Array': return Int8Array;
-		case 'Uint8Array': return Uint8Array;
-		case 'Uint8ClampedArray': return Uint8ClampedArray;
-		case 'Int16Array': return Int16Array;
-		case 'Uint16Array': return Uint16Array;
-		case 'Int32Array': return Int32Array;
-		case 'Uint32Array': return Uint32Array;
-		case 'Float32Array': return Float32Array;
-		case 'Float64Array': return Float64Array;
-		default: return Float32Array;
-
-	}
 
 }
 
