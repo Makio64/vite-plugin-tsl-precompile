@@ -78,8 +78,16 @@ The Vite plugin. Runs at build time.
 - `src/emit-updater.js` — descriptor → static updater.js codegen.
 - `src/emit-manifest.js` — artifact JSON → virtual module source.
 - `src/wgsl-optimize.js` — build-output-only WGSL minify/dedupe support, including the shared `virtual:tsl-precompile/__wgsl` pool.
-- `src/hash.js` — normalized TSL graph hasher.
+- `src/hash.js` — artifact hash wrapper around the shared graph normalizer from `@tsl-precompile/contract`.
 - `src/vendor/` — vendored files from the three.js fork (compileTSL, extractUniformPlan, …).
+
+### `@tsl-precompile/contract`
+
+Shared extractor/codegen/runtime contract helpers.
+
+- `src/graph-normalize.js` — one graph-normalization implementation imported by plugin and runtime hashers.
+- `src/kinds.js` — shared `source.kind` registry, blocked-kind reasons, artifact payload/aggregate validation, and source-kind collection.
+- `src/texture-props.js` — canonical material texture slots and node-graph texture keys.
 
 ### `@tsl-precompile/runtime`
 
@@ -87,6 +95,7 @@ Ships with the user's bundle. Runtime only.
 
 - `src/precompile-marker.js` — `Material.prototype.precompile`. In dev, calls the extractor + POSTs artifact. In prod, replaced by transform.
 - `src/apply-precompiled.js` — `__applyPrecompiled` helper injected by transform.
+- `src/slim-support/live-scene-index.js` — first productized slim-support helper for live texture indexing and null-image healing.
 - `src/writers.js` — `writeMat4 / writeVec4 / writeF32 / writeColor`.
 - `src/artifact-loader.js` — manifest resolver.
 - `build/three.webgpu.slim.js` — prebuilt slim three.js (no node builder).
@@ -103,4 +112,12 @@ Five layered; any single failure stops the build:
 2. Hot re-extract in dev on file save.
 3. Build-time hash mismatch → hard error.
 4. Runtime hash assertion at app init.
-5. `pnpm verify` CI gate: wipe + re-extract + diff.
+5. `pnpm verify` CI gate: committed artifact metadata, schema, and source-kind validation.
+
+## Evolution / structural debt
+
+For the structural changes that make the plugins easier to evolve and 100% visual
+fidelity reachable (extracting the slim-support runtime module, splitting the hydrator,
+a shared extractor↔codegen↔runtime contract, de-duplicating the graph hasher, hardening
+the three.js fork seam, …), see [ARCHITECTURE_EVOLUTION.md](./ARCHITECTURE_EVOLUTION.md) —
+the prioritized P0→P3 audit.

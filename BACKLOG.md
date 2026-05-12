@@ -14,13 +14,13 @@ Each task lists:
 
 Pri legend: **P0** breaks rendering, **P1** wrong output, **P2** correctness/polish, **P3** nice-to-have.
 
-> **Status (2026-05-11):** The refreshed broad PSNR summary is 131 / 222 graded examples at 30 dB, with 91 visual regressions remaining. Focused runs have the glTF/PMREM bucket, portal, focused bloom cluster, the eight-example shadow sweep, `webgpu_materials_toon.html`, and several standalone render-target examples green. `run-coverage-summary.mjs` now prefers E2E pixel gates when available, so `webgpu_shadowmap_array.html` is counted at 33.01 dB instead of the stale capture/replay PNG comparison.
+> **Status (2026-05-12):** The refreshed broad PSNR summary is 153 / 225 graded examples at 30 dB, with 72 visual regressions remaining. E2E and coverage-summary PSNR now share [packages/examples/batch/psnr.mjs](packages/examples/batch/psnr.mjs), so `webgpu_shadowmap_array.html` is counted consistently at 34.20 dB. The generated shadow bucket is currently 7 / 8 because `webgpu_shadowmap_opacity.html` is below the gate at 10.80 dB.
 
 ## v0.1 beta priority order
 
-Do not chase all 194 graded examples first. The production support slice is ordinary PBR app rendering:
+Do not chase every graded example first. The production support slice is ordinary PBR app rendering:
 
-1. Keep shadows green, but move the active beta queue to near-threshold PBR/material and lighting regressions.
+1. Restore the broad shadow bucket to green, then keep the active beta queue on near-threshold PBR/material and lighting regressions.
 2. PMREM / environment / reflections: PBR can look plausibly rendered while the lighting is wrong.
 3. Transmission / viewport / reflector textures: glass, refraction, and mirrors are real material features.
 4. Compute / storage sync: useful and important, but experimental for v0.1 unless the release target pivots to creative-coding demos.
@@ -30,6 +30,13 @@ Do not chase all 194 graded examples first. The production support slice is ordi
 
 ## Critical visual regressions (P0/P1, biggest user-visible impact)
 
+### `shadowmap-opacity-broad-regression` — P1
+The shared-PSNR broad summary now reports `webgpu_shadowmap_opacity.html` at 10.80 dB, while the previous focused shadow sweep had all eight shadow examples passing. First distinguish stale saved shots/report drift from a real runtime regression before touching the shadow rebinder.
+
+- **Files**: likely `packages/examples/batch/run-e2e.mjs`, `packages/runtime/src/hydrator.js`, and `packages/runtime/src/aux-loader.js` if diagnosis confirms a runtime issue; otherwise refreshed `packages/examples/batch/results/shots/*shadowmap_opacity*` and `packages/examples/batch/results/coverage-summary.md`.
+- **Done when**: focused and broad `webgpu_shadowmap_opacity.html` both compare above 30 dB, the generated shadow bucket returns to 8 / 8, and `webgpu_shadowmap_array.html` remains a guardrail above the gate.
+- **Reference**: webgpu_shadowmap_opacity, webgpu_shadowmap_array.
+
 ### `pbr-near-threshold` — P1
 Several beta-relevant examples are close to the 30 dB gate or represent common material/light features. This remains the best first active queue after the shadow and bloom focused sweeps landed.
 
@@ -37,7 +44,7 @@ Current useful signals:
 - `webgpu_materials_texture_manualmipmap.html` — resolved by refresh; now PSNR `inf`.
 - `webgpu_loader_gltf_iridescence.html` — resolved by refresh; now 37.95 dB.
 - `webgpu_materials_transmission.html` — 26.25 dB in the fresh focused run.
-- `webgpu_lights_selective.html` — 25.64 dB in the fresh focused run.
+- `webgpu_lights_selective.html` — 26.18 dB in the generated broad summary.
 
 Likely root causes vary by example: material extension uniforms and viewport texture timing for transmission, and light/pass routing for selective lighting. Treat this as a triage bucket: pick one example, run a focused E2E report with saved shots, then split any confirmed root cause into a narrower task if it touches a different subsystem.
 
@@ -58,7 +65,7 @@ Useful investigation:
 - **Reference**: webgpu_materials_toon, webgpu_postprocessing_outline.
 
 ### `shadowmap-array-refresh` — P2 — resolved
-The latest focused shadow sweep has all eight shadow examples passing, including `webgpu_shadowmap_array.html` at 33.01 dB. `run-coverage-summary.mjs` now uses E2E pixel gates for matching report entries, so the generated broad summary reports shadows at 8 / 8.
+The latest shared-PSNR broad summary reports `webgpu_shadowmap_array.html` at 34.20 dB, using the same ignore region in both E2E and coverage-summary paths. The old report/PNG disagreement is resolved. The current generated shadow bucket is still 7 / 8 because `webgpu_shadowmap_opacity.html` is below the gate; track that separately under `shadowmap-opacity-broad-regression`.
 
 - **Files**: `packages/examples/batch/results/shots/*shadowmap_array*`, `packages/examples/batch/results/coverage-summary.md`, and site thumbs/data if refreshing public artifacts.
 - **Done when**: done; keep as historical context if future report/PNG disagreement appears.
@@ -101,15 +108,15 @@ Hypothesis: the harness's `__syncStorageBuffers` ([run-e2e.mjs:1012](packages/ex
 - **Minimal repro**: `packages/examples/compute-debug/instanced.html` (`pnpm test:e2e:compute-debug -- --filter=instanced.html`).
 
 ### `compute-storage-texture-sync` — P2 experimental
-The storage-texture sync in `__syncStorageBuffers` ([run-e2e.mjs:1027-1079](packages/examples/batch/run-e2e.mjs#L1027)) IS implemented (handles `binding.isSampledTexture && binding.texture.isStorageTexture`), but `webgpu_compute_texture` / `_pingpong` / `_3d` still render at very-low brightness (0.007 / 0.011 / 1.0).
+The storage-texture sync in `__syncStorageBuffers` ([run-e2e.mjs:1027-1079](packages/examples/batch/run-e2e.mjs#L1027)) IS implemented (handles `binding.isSampledTexture && binding.texture.isStorageTexture`), and the refreshed broad summary now has both `webgpu_compute_texture.html` and `webgpu_compute_texture_3d.html` above the gate. `webgpu_compute_texture_pingpong.html` still misses at 21.86 dB.
 
-`webgpu_compute_texture_3d.html` is green in the refreshed broad summary, while `webgpu_compute_texture.html` and `webgpu_compute_texture_pingpong.html` remain below the gate.
+Keep the exact/green texture cases as guardrails while diagnosing the ping-pong path.
 
 Hypothesis: the slim renderer's bind-group cache holds a different GPUTexture instance than what the sync is updating, so the texture-to-texture copy lands in an unbound resource. Or: `slimTexData.texture = fullTexData.texture` reference assignment isn't being seen by slim's pipeline cache key.
 
 - **Files**: `packages/examples/batch/run-e2e.mjs` `__syncStorageBuffers`.
-- **Done when**: `webgpu_compute_texture.html` and `webgpu_compute_texture_pingpong.html` improve without regressing `webgpu_compute_texture_3d.html`.
-- **Reference**: webgpu_compute_texture, webgpu_compute_texture_pingpong, webgpu_compute_texture_3d as a guardrail.
+- **Done when**: `webgpu_compute_texture_pingpong.html` improves without regressing `webgpu_compute_texture.html` or `webgpu_compute_texture_3d.html`.
+- **Reference**: webgpu_compute_texture_pingpong; webgpu_compute_texture and webgpu_compute_texture_3d as guardrails.
 - **Minimal repro**: `packages/examples/compute-debug/texture.html` (`pnpm test:e2e:compute-debug -- --filter=texture.html`).
 
 ### `pmrem-cubemap-bg` — P1
@@ -148,18 +155,18 @@ The MRT runtime stub landed in Wave 2E (commit 43129c0):
 - `apply-precompiled.js` forwards source `material.mrtNode` onto the wrapper
 - `compileTSL.js` binds a 1×1 N-texture warm-up RT before `compileAsync`
 
-But the four MRT examples are still broken at replay:
-- `webgpu_mrt` (PSNR 6.97 dB) — PassNode-based MRT, replay mostly empty
-- `webgpu_mrt_mask` (PSNR 16.97 dB) — post-process pipeline does not yet match stock
-- `webgpu_multiple_rendertargets_readback` (PSNR 10.51 dB) — user calls `setRenderTarget` inside `render()`, after precompile() runs
-- `webgpu_multiple_rendertargets` is green and should stay a guardrail.
+But three of the four MRT/render-target examples are still below the gate:
+- `webgpu_mrt` is now green at PSNR `inf`; keep it as a guardrail.
+- `webgpu_mrt_mask` (18.75 dB) — post-process pipeline does not yet match stock.
+- `webgpu_multiple_rendertargets_readback` (11.79 dB) — user calls `setRenderTarget` inside `render()`, after precompile() runs.
+- `webgpu_multiple_rendertargets` (11.79 dB) — currently regressed in the broad summary; this replaces the older "green guardrail" assumption.
 - `webgpu_rtt.html`, `webgpu_depth_texture.html`, and `webgpu_multisampled_renderbuffers.html` are now green after replay started replacing standalone `QuadMesh` / render-target materials before slim render.
 - `webgpu_rendertarget_2d-array_3d.html` compares at 30.87 dB from saved shots, but its focused run still exits with `Invalid string length`, so the harness/reporting path needs cleanup before calling that case fully closed.
 
 Wave 2E agent's report identifies the precise gaps. Implementation pending.
 
 - **Files**: `packages/examples/batch/run-e2e.mjs`, `packages/runtime/src/precompile-marker.js` (per-material RT binding tracking via `setRenderTarget` hook), `packages/runtime/src/aux-marker.js`, `packages/runtime/src/hydrator.js` (PassNode `getTexture` routing to live RT attachments).
-- **Done when**: `webgpu_mrt.html`, `webgpu_mrt_mask.html`, and `webgpu_multiple_rendertargets_readback.html` improve without regressing the now-green `webgpu_multiple_rendertargets.html`.
+- **Done when**: `webgpu_mrt_mask.html`, `webgpu_multiple_rendertargets.html`, and `webgpu_multiple_rendertargets_readback.html` improve without regressing the now-green `webgpu_mrt.html`.
 
 ---
 
@@ -196,13 +203,13 @@ When two tasks share a file, run them **sequentially**, not in parallel.
 
 | File | Tasks |
 |---|---|
-| `packages/examples/batch/run-e2e.mjs` | pbr-near-threshold diagnostics, standalone render-target material replay, postprocess-bloom-texture-handoff, pmrem-cubemap-bg, compute-instance-mesh-buffer, compute-storage-texture-sync, psnr-animation-phase-drift |
-| `packages/runtime/src/hydrator.js` | pbr-near-threshold, transmission-viewport-texture, mrt-replay-empty |
+| `packages/examples/batch/run-e2e.mjs` | shadowmap-opacity-broad-regression, pbr-near-threshold diagnostics, standalone render-target material replay, postprocess-bloom-texture-handoff, pmrem-cubemap-bg, compute-instance-mesh-buffer, compute-storage-texture-sync, psnr-animation-phase-drift |
+| `packages/runtime/src/hydrator.js` | shadowmap-opacity-broad-regression if runtime-confirmed, pbr-near-threshold, transmission-viewport-texture, mrt-replay-empty |
 | `packages/runtime/src/aux-marker.js` | toon-outline-pass, postprocess-bloom-texture-handoff, mrt-replay-empty |
 | `packages/runtime/src/slim-entry.js` | postprocess-bloom-texture-handoff |
 | `packages/runtime/src/slim-stubs.js` | toon-outline-pass if a replay-safe `toonOutlinePass` shim is needed |
 | `packages/runtime/src/graph-hash.js` | postprocess-bloom-texture-handoff |
-| `packages/runtime/src/aux-loader.js` | shadowmap-array-refresh only if the focused pass stops reproducing |
+| `packages/runtime/src/aux-loader.js` | shadowmap-opacity-broad-regression if runtime-confirmed, shadowmap-array-refresh only if the focused pass stops reproducing |
 | `packages/runtime/src/apply-precompiled.js` | transmission-viewport-texture |
 | `packages/runtime/src/precompile-marker.js` | mrt-replay-empty |
 | `packages/plugin/src/vendor/extractUniformPlan.js` | pbr-near-threshold, transmission-viewport-texture |
@@ -215,11 +222,12 @@ When two tasks share a file, run them **sequentially**, not in parallel.
 
 Recommended order for serial work (each ~30-60 min focused):
 
-1. `pbr-near-threshold` — close the remaining ordinary material/light examples nearest the gate (`materials_transmission`, `lights_selective`).
-2. `transmission-viewport-texture` — glass/refraction remains relevant, with `materials_transmission` and `refraction` still below the gate.
-3. `pmrem-cubemap-bg` — focused glTF/PMREM cubemap bucket is green, but `webgpu_pmrem_scene.html` and `webgpu_reflection.html` still need work.
-4. `mrt-replay-empty` — standalone QuadMesh material replay is fixed, but MRT scene materials still need correct multi-output capture.
-5. `compute-instance-mesh-buffer` / `compute-storage-texture-sync` — experimental compute/storage slice.
+1. `shadowmap-opacity-broad-regression` — make focused and generated shadow coverage agree again.
+2. `pbr-near-threshold` — close the remaining ordinary material/light examples nearest the gate (`materials_transmission`, `lights_selective`).
+3. `transmission-viewport-texture` — glass/refraction remains relevant, with `materials_transmission` and `refraction` still below the gate.
+4. `pmrem-cubemap-bg` — focused glTF/PMREM cubemap bucket is green, but `webgpu_pmrem_scene.html` and `webgpu_reflection.html` still need work.
+5. `mrt-replay-empty` — `webgpu_mrt.html` is green, but the multiple-render-target/readback cases still need correct multi-output capture and replay.
+6. `compute-instance-mesh-buffer` / `compute-storage-texture-sync` — experimental compute/storage slice.
 
 For parallel agent work: file-disjoint sets are tricky because run-e2e.mjs is contended. Agent assignments need careful section-scoping or merge coordination.
 

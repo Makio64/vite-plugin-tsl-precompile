@@ -2,13 +2,13 @@
 
 Current audit of what works, what's blocked, and what remains before this plugin is truly usable by three.js developers. Companion to [ROADMAP.md](./ROADMAP.md), [ARCHITECTURE.md](./ARCHITECTURE.md), and [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-Last updated: 2026-05-11
+Last updated: 2026-05-12
 
 ---
 
-## Focused visual queue (2026-05-11)
+## Focused visual queue (2026-05-12)
 
-This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage snapshot generated on 2026-05-11 from saved capture/replay shots.
+This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage snapshot generated on 2026-05-12 from saved capture/replay shots. E2E and coverage-summary PSNR now share the same Node-side comparator in [packages/examples/batch/psnr.mjs](packages/examples/batch/psnr.mjs).
 
 **Green in focused runs:**
 - `webgpu_loader_gltf.html` — PMREM environment/reflection/background replay now matches capture at PSNR `inf` in `visual-loader-gltf-after-pmrem-flipy.json`.
@@ -16,7 +16,7 @@ This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage s
 - `webgpu_pmrem_cubemap.html` — cubemap PMREM source mapping is normalized before generation; PSNR `inf` in `visual-pmrem-cubemap-after-cube-mapping-normalize.json`.
 - `webgpu_portal.html` — pass-scene and main-scene backgrounds are separated by exact aux/background matching; PSNR `inf` in `visual-portal-after-bg-exact.json`.
 - `webgpu_postprocessing_bloom.html`, `webgpu_postprocessing_bloom_emissive.html`, `webgpu_postprocessing_bloom_selective.html` — focused bloom cluster now matches stock at PSNR `inf` in `visual-bloom-cluster-after-fixes.json` (2026-05-11).
-- Shadow focused sweep — all eight shadow examples pass; `run-coverage-summary.mjs` now prefers E2E pixel gates when available, so the generated broad summary reports shadows at 8 / 8 and `webgpu_shadowmap_array.html` at 33.01 dB.
+- Shadow focused sweep — the focused eight-example sweep was green, but the refreshed broad summary now reports shadows at 7 / 8. `webgpu_shadowmap_array.html` is reconciled through the shared PSNR ignore region at 34.20 dB; the active broad-shadow regression is `webgpu_shadowmap_opacity.html` at 10.80 dB.
 - `webgpu_materials_texture_manualmipmap.html` — refreshed focused run now matches stock at PSNR `inf` in `next-pbr-manualmipmap.json`.
 - `webgpu_loader_gltf_iridescence.html` — refreshed focused run now passes at 37.95 dB in `next-pbr-iridescence.json`.
 - `webgpu_materials_toon.html` — `toonOutlinePass` now captures and replays its dynamic `Toon_Outline` material; PSNR `inf` in `next-toon-outline-pass.json`.
@@ -30,7 +30,7 @@ This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage s
 - `webgpu_instancing_morph.html` — instance color path improved, but replay remains visually mismatched; latest focused report PSNR `15.65` in `visual-instancing-morph-after-random-split.json`.
 
 **Resolved active thread (2026-05-11):**
-- Bloom/postprocessing texture handoff is green for the focused bloom cluster, and `webgpu_postprocessing.html` now passes in the generated broad summary. Remaining broad-postprocessing work should move to non-bloom examples such as `webgpu_postprocessing_ao.html`, `webgpu_postprocessing_masking.html`, `webgpu_postprocessing_outline.html`, and the near-threshold DOF/SSGI examples.
+- Bloom/postprocessing texture handoff is green for the focused bloom cluster, and `webgpu_postprocessing.html`, AO, and masking now pass in the generated broad summary. Remaining broad-postprocessing work should move to harder non-bloom examples such as `webgpu_postprocessing_outline.html`, `webgpu_postprocessing_godrays.html`, SSR, and the near-threshold DOF/SSGI examples.
 
 **Implementation highlights:**
 - PMREM generation chooses equirect/cube mode from source image shape rather than trusting rewritten `texture.mapping`, uses cloned source textures for temporary mapping changes, and preserves loader `flipY`.
@@ -72,26 +72,26 @@ Six parallel agents + several follow-up commits pushed visual correctness forwar
 
 An example **works** when the slim-runtime replay screenshot matches a clean stock three.js reference within PSNR ≥ 30 dB (the gate from [run-e2e.mjs](packages/examples/batch/run-e2e.mjs#L93)). Smoke-test pass counts only prove the example loads — they say nothing about whether the rendered pixels are correct.
 
-**131 / 222 graded examples match in the latest generated broad summary (59%).** The full per-example table lives at [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md) — refresh from saved shots with `pnpm coverage`, refresh the site data too with `pnpm coverage:site`, or re-capture fresh shots first with `pnpm coverage:retest` / `pnpm test:e2e` (slow).
+**153 / 225 graded examples match in the latest generated broad summary (68%).** The full per-example table lives at [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md) — refresh from saved shots with `pnpm coverage`, refresh the site data too with `pnpm coverage:site`, or re-capture fresh shots first with `pnpm coverage:retest` / `pnpm test:e2e` (slow).
 
 | Category | Match / Total | Best example | Worst example |
 |---|---|---|---|
-| Materials | **12 / 17** | webgpu_materials_envmaps (inf dB) ✅ | webgpu_materials_alphahash (10.26 dB) |
-| Lights | 6 / 12 | webgpu_lights_physical (inf dB) ✅ | webgpu_lights_projector (12.23 dB) |
-| Shadows | 8 / 8 | webgpu_shadowmap (inf dB) ✅ | webgpu_shadowmap_array (33.01 dB) |
-| Sprites | 1 / 1 | webgpu_sprites (41.95 dB) ✅ | — |
-| Compute | 6 / 15 | webgpu_compute_audio (inf dB) ✅ | webgpu_compute_particles_snow (6.68 dB) |
-| Camera | 2 / 3 | webgpu_camera_array (34.62 dB) ✅ | webgpu_camera (14.41 dB) |
-| MRT / RenderTargets | 1 / 4 | webgpu_multiple_rendertargets (inf dB) ✅ | webgpu_mrt (6.97 dB) |
+| Materials | **13 / 17** | webgpu_clearcoat (inf dB) ✅ | webgpu_materials_envmaps_bpcem (11.98 dB) |
+| Lights | 6 / 12 | webgpu_lightprobe_cubecamera (inf dB) ✅ | webgpu_lights_dynamic (10.79 dB) |
+| Shadows | 7 / 8 | webgpu_shadowmap_pointlight (inf dB) ✅ | webgpu_shadowmap_opacity (10.80 dB) |
+| Sprites | 1 / 1 | webgpu_sprites (inf dB) ✅ | — |
+| Compute | 9 / 15 | webgpu_compute_audio (inf dB) ✅ | webgpu_compute_sort_bitonic (12.21 dB) |
+| Camera | 1 / 3 | webgpu_camera_array (37.14 dB) ✅ | webgpu_camera (14.39 dB) |
+| MRT / RenderTargets | 1 / 4 | webgpu_mrt (inf dB) ✅ | webgpu_multiple_rendertargets_readback (11.79 dB) |
 | Particles | 1 / 1 | webgpu_particles (inf dB) ✅ | — |
-| Postprocessing | 16 / 29 | webgpu_postprocessing_bloom (inf dB) ✅ | webgpu_postprocessing_masking (3.16 dB) |
-| Misc | 78 / 132 | many exact matches | gtao (7.41 dB) |
+| Postprocessing | 19 / 29 | webgpu_postprocessing_3dlut (inf dB) ✅ | webgpu_postprocessing_outline (2.43 dB) |
+| Misc | 95 / 135 | many exact matches | webgpu_loader_gltf_anisotropy (1.07 dB) |
 
-The full example set is now substantially graded, but the headline is still short of production-ready: 91 graded examples remain visual regressions.
+The full example set is now substantially graded, but the headline is still short of production-ready: 72 graded examples remain visual regressions.
 
 ## v0.1 beta support slice
 
-Do not optimize for "all 194 examples" first. The credible beta surface for real users is ordinary PBR application rendering:
+Do not optimize for every graded example first. The credible beta surface for real users is ordinary PBR application rendering:
 
 - `MeshStandardNodeMaterial` / `MeshPhysicalNodeMaterial`
 - material texture maps and env maps / PMREM
@@ -99,9 +99,23 @@ Do not optimize for "all 194 examples" first. The credible beta surface for real
 - material uniforms and known live light/shadow uniforms
 - stable artifact invalidation across dev capture, build rewrite, runtime hash checks, and package contents
 
-Priority order: keep shadows green, then close the near-threshold PBR/material and lighting misses, then PMREM/reflection outliers and transmission/viewport/reflector texture paths. Compute/storage follows as experimental WebGPU coverage. MRT and broad postprocessing stay deferred until the render-target / PassNode chain is truly wired.
+Priority order: restore and keep shadows green, then close the near-threshold PBR/material and lighting misses, then PMREM/reflection outliers and transmission/viewport/reflector texture paths. Compute/storage follows as experimental WebGPU coverage. MRT and broad postprocessing stay deferred until the render-target / PassNode chain is truly wired.
 
 ---
+
+## Recent fixes (2026-05-12)
+
+**Architecture evolution first wedges landed.** `@tsl-precompile/contract` now owns shared graph normalization, canonical material/node texture-property lists, the shared `KINDS` registry, blocked-kind reasons, and artifact payload validation. The runtime exposes the first `slim-support` module for live texture indexing and null-image healing. The E2E harness imports those pieces instead of carrying another local copy.
+
+**Artifact validation moved into the contract.** `pnpm verify` now checks committed artifact payloads against `validateArtifact()`, including unknown `source.kind` detection. Runtime artifact validation can also be enabled in dev or with `globalThis.__TSLP_VALIDATE_ARTIFACTS = true`; the current example artifact corpus cross-checks at 500 / 500 valid JSON payloads.
+
+**The Three.js seam is stricter.** Slim builds now fail on rewrite warnings when `CI=true` or `TSLP_FAIL_ON_REWRITE_WARNING=1`, and `.github/workflows/three-compat.yml` adds a nightly/manual `three@latest` compatibility probe.
+
+**Updater codegen has a parse guard.** `emit-updater` unit coverage now parses representative generated ESM modules, which caught and fixed a malformed blocked-kind diagnostic with nested quotes.
+
+**Coverage measurement has one PSNR path.** `run-e2e.mjs` and `run-coverage-summary.mjs` now both call [packages/examples/batch/psnr.mjs](packages/examples/batch/psnr.mjs), including the `webgpu_shadowmap_array.html` ignore region. This removes one architecture-evolution weak point where the harness and generated summary could disagree.
+
+**Coverage gate config is data-driven.** [packages/examples/batch/coverage-config.json](packages/examples/batch/coverage-config.json) now owns diagnostic/volatile pixel-gate exclusions, ignore regions, and the first `tier1` subset. CI now runs that configured tier-1 subset after a strict slim build and uploads the report, coverage summary, and screenshots.
 
 ## Recent fixes (2026-05-11)
 
@@ -152,21 +166,21 @@ for the current triage plan.
 | 2 — `.precompile(name)` + dev capture | Marker, dev server, HMR | ✅ Done | Unsupported kinds throw at call site |
 | 3 — AOT codegen | `emit-updater.js` covers camera/object/material/time/uniform/scene | ✅ Done (core kinds) | Per-kind fixture pass |
 | 4 — Build-time rewrite | Babel transform + virtual modules + `__applyPrecompiled` | ✅ Done | 3-layer hash check fires on corrupt artifact |
-| 5 — Coverage matrix | Fixture infrastructure + 160 plugin tests pass across material classes, binding kinds, drift checks, WGSL output optimization, and depth/artifact texture paths | ✅ Core done | 100% cells covered or documented-blocked |
+| 5 — Coverage matrix | Fixture infrastructure + 174 plugin tests pass across material classes, binding kinds, shared contract validation, drift checks, WGSL output optimization, and depth/artifact texture paths | ✅ Core done | 100% cells covered or documented-blocked |
 | 6 — 206-example batch harness | Extractor/codegen batch over three.js webgpu_*.html examples (load-smoke only — does not check pixel correctness; see [Feature coverage](#feature-coverage-capture-vs-replay)) | ✅ Load-smoke green | Keep above launch threshold |
 | 7 — Slim runtime bundle | Slim load-smoke over webgpu examples | ✅ No unexpected load-smoke errors | ≤ 300 KB gzip + 0 unexpected errors |
 | 8 — Launch | Docs, demos, site, migration guide | 🔶 Infrastructure ready | One external adopter |
 
 ---
 
-## Test suite summary (as of 2026-05-11 run)
+## Test suite summary (as of 2026-05-12 run)
 
 ```
-packages/plugin        160 / 160 pass   (unit + coverage matrix)
-packages/runtime        67 /  67 pass   (hydrator, registry, smoke)
+packages/plugin        174 / 174 pass   (unit + coverage matrix)
+packages/runtime        73 /  73 pass   (hydrator, registry, slim-support, smoke)
 packages/inspector-panel 7 /   7 pass
 ---
-Total                  234 / 234 pass   0 fail
+Total                  254 / 254 pass   0 fail
 ```
 
 Batch harness (`packages/examples/batch/results/report.json`):
@@ -187,7 +201,7 @@ Slim bundle load-smoke (`packages/examples/batch/results/slim-report.json`):
 - AOT updater emits direct `DataView` writes (no switch, no closures) for all camera, object, material, time, scene-fog, and scene-state uniforms. All 12 standard NodeMaterial classes extract + codegen without unknown kinds.
 - `PrecompiledMaterial` wraps the artifact and redirects three.js's render pipeline to the baked WGSL + bind layout, bypassing the TSL node builder.
 - Slim runtime (`build/three.webgpu.slim.js`) strips the node builder; the webgpu example load-smoke currently completes without unexpected errors.
-- Five-layer staleness gate: content hash, dev hot re-extract, build-time mismatch error, runtime assertion, `pnpm verify` CI check.
+- Five-layer staleness gate: content hash, dev hot re-extract, build-time mismatch error, runtime assertion, `pnpm verify` CI check. `pnpm verify` also validates artifact shape and every declared `source.kind` against the shared contract registry.
 - Inspector panel integration: `attachToInspector(renderer.inspector)` shows captured artifact list, WGSL sizes, and unsupported-kind warnings.
 - Aux-pass capture: `precompileAuxiliary(renderer, scene, camera, opts)` captures shadow-depth, render-pipeline, and output-transform passes so the slim runtime has precompiled versions of those internal materials too.
 - Auto-mark mode (`autoMark: true` in plugin config): injects `.precompile()` on every material in the scene automatically (used by the batch harness; opt-in for users).
@@ -218,12 +232,13 @@ These kinds are recognised by the extractor/codegen contract but are not ordinar
 
 ### 1. PBR/material and lighting near misses  *(first beta correctness cluster)*
 
-The broad summary is now **131 / 222**, and shadows are green in both focused and generated coverage. The best beta ROI is the set of ordinary material/lighting examples that are close to the 30 dB gate or represent common PBR features:
+The broad summary is now **153 / 225**. Shadows are no longer entirely green in generated coverage: `webgpu_shadowmap_array.html` is reconciled, but `webgpu_shadowmap_opacity.html` is below the gate. The best beta ROI is keeping that shadow regression visible, then returning to ordinary material/lighting examples that are close to the 30 dB gate or represent common PBR features:
 
 - [x] Refresh `webgpu_materials_texture_manualmipmap.html` (now PSNR `inf`) and `webgpu_loader_gltf_iridescence.html` (now 37.95 dB).
 - [x] Fix `webgpu_materials_toon.html`; dynamic `toonOutlinePass` material replay now reaches PSNR `inf`.
-- [ ] Improve `webgpu_materials_transmission.html` (26.25 dB fresh) and `webgpu_lights_selective.html` (25.64 dB fresh).
-- [x] Reconcile the `webgpu_shadowmap_array.html` discrepancy; `coverage-summary.md` now reports the E2E pixel gate at 33.01 dB.
+- [ ] Re-check `webgpu_shadowmap_opacity.html` (10.80 dB in the generated broad summary) against the focused shadow sweep before changing runtime behavior.
+- [ ] Improve `webgpu_materials_transmission.html` (26.25 dB fresh) and `webgpu_lights_selective.html` (26.18 dB in the generated broad summary).
+- [x] Reconcile the `webgpu_shadowmap_array.html` discrepancy; `coverage-summary.md` now reports the shared PSNR result at 34.20 dB.
 
 ### 2. Bloom / postprocessing pass textures  *(focused bloom cluster green)*
 
@@ -231,7 +246,7 @@ The portal `pass(scene, camera)` path is healthy, and the focused bloom cluster 
 
 - [x] Raise `webgpu_postprocessing_bloom.html`, `webgpu_postprocessing_bloom_emissive.html`, and `webgpu_postprocessing_bloom_selective.html` above the PSNR gate (`visual-bloom-cluster-after-fixes.json`, PSNR `inf` for all three).
 - [x] `webgpu_postprocessing.html` is green in the refreshed generated summary.
-- [ ] Revisit non-bloom failures such as `webgpu_postprocessing_ao.html`, `webgpu_postprocessing_masking.html`, `webgpu_postprocessing_outline.html`, and the near-threshold DOF/SSGI examples.
+- [ ] Revisit non-bloom failures such as `webgpu_postprocessing_outline.html`, `webgpu_postprocessing_godrays.html`, `webgpu_postprocessing_ssr.html`, plus the near-threshold DOF/SSGI examples.
 
 ### 3. PMREM / environment / reflections  *(PBR correctness)*
 
@@ -255,7 +270,7 @@ Many real PBR scenes depend on environment lighting. Wrong PMREM/reflection wiri
 In-process compute and some storage-texture paths work, but the AOT compute/storage story is still incomplete.
 
 - [ ] Add extractor/codegen coverage for storage buffers and the per-frame storage update model.
-- [ ] Keep `webgpu_compute_reduce.html` green while improving the rest of the compute set; it is currently the only compute PSNR pass.
+- [ ] Keep the newly green compute examples stable while improving `webgpu_compute_reduce.html`, particle, and ping-pong texture regressions.
 - [ ] Treat compute birds, storage buffers, and storage textures as experimental release notes unless the release goal changes toward creative-coding demos.
 
 ### 6. `uniform.live` and custom update callbacks
@@ -267,9 +282,10 @@ Known light/shadow live sources now have coverage (`light.shadow*`, `light.color
 
 ### 7. Operationalize the PSNR E2E gate
 
-`run-e2e.mjs` now hard-fails visual mismatch by default. The next step is deciding how CI should consume it without making every PR run the full slow sweep.
+`run-e2e.mjs` now hard-fails visual mismatch by default, and CI has a configured tier-1 visual gate for the PR-sized subset. The full slow sweep remains scheduled/manual coverage.
 
-- [ ] Define a small tier-1 PSNR subset for PR CI and keep the full 194-example grading as a slower scheduled/manual gate.
+- [x] Define a small tier-1 PSNR subset for PR CI and keep the full 225-example grading as a slower scheduled/manual gate.
+- [ ] Watch hosted CI stability for WebGPU/Chromium before expanding the tier-1 set.
 - [ ] Keep `--no-pixel-gate` for diagnostic load/runtime debugging, but do not treat it as a release gate.
 - [ ] Triage real visual regressions from the current broad E2E sweep into [BACKLOG.md](BACKLOG.md) instead of treating low PSNR as harness noise by default.
 
@@ -289,7 +305,7 @@ The ANNOUNCEMENT.md template is written; the ROADMAP Phase 8 gate requires "one 
 ### Deferred for v0.1 messaging
 
 - [ ] MRT / render-target examples remain experimental until the render-target / PassNode chain is wired end-to-end.
-- [ ] Broad postprocessing remains experimental even though a few examples match; the full category is 3 / 28 today.
+- [ ] Broad postprocessing remains experimental even though many examples now match; the full category is 19 / 29 today.
 
 ---
 
@@ -331,9 +347,9 @@ Runtime (prod):         __applyPrecompiled()
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for setup and code style. The highest-leverage contributions are:
 
-1. **Shadow visual correctness** — depth texture rebinding exists, but shadow examples still have the worst user-visible gaps: no replay in two cases and low PSNR in most others.
-2. **Broad postprocess pass textures** — portal and the focused bloom cluster are green, but non-bloom postprocessing examples still need render-target / PassNode hardening.
+1. **Shadow visual correctness** — depth texture rebinding exists and most generated shadow coverage is green, but `webgpu_shadowmap_opacity.html` is now the active broad-shadow regression.
+2. **Broad postprocess pass textures** — portal, the focused bloom cluster, AO, and masking are green in the generated summary, but outline, SSGI, SSR, godrays, and related pass chains still need render-target / PassNode hardening.
 3. **Broader PMREM/environment/reflection sweep** — the focused glTF/PMREM cubemap bucket is green; re-grade the broader PMREM/reflection set before calling PBR done.
 4. **Transmission/viewport/reflector hardening** — the rebinder paths exist, but the visual examples are still below the production bar.
-5. **Compute/storage coverage** — define the AOT storage-buffer update model and keep `webgpu_compute_reduce.html` passing while raising the rest of the compute set.
+5. **Compute/storage coverage** — define the AOT storage-buffer update model and keep the newly green compute cases stable while raising the rest of the compute set.
 6. **Release dry-runs** — run npm dry-runs for plugin/runtime and verify package contents before tagging `v0.1.0`.

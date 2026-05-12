@@ -2,6 +2,18 @@
 
 Eight phases. Each has a release gate that must pass before moving on.
 
+> For the **structural** work that runs alongside the phase gates — extracting the
+> slim-support runtime module, splitting the hydrator, a shared extractor↔codegen↔runtime
+> contract, de-duplicating the graph hasher, hardening the three.js fork seam, trustworthy
+> coverage measurement — see [ARCHITECTURE_EVOLUTION.md](./ARCHITECTURE_EVOLUTION.md)
+> (prioritized P0→P3). Several of those items are prerequisites for closing the Phase 8
+> fidelity gate at scale.
+> First wedges are now in place for the shared contract, graph hasher,
+> kind registry / artifact validator, tier-1 coverage CI gate,
+> Three.js compat probe, updater parse guard, and
+> `runtime/slim-support`; the next work is to deepen those seams rather than
+> add more harness-only fixes.
+
 ## Phase 1 — Node harness
 
 - Port `compileTSL.js` + `extractUniformPlan.js` into `packages/plugin/src/vendor/`.
