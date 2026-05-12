@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { parse } from '@babel/parser';
 
 import { emitUpdaterSource } from '../../src/emit-updater.js';
 
@@ -289,5 +290,52 @@ test( 'emitUpdaterSource — inlined constants', () => {
 	assert.match( source, /const __const1 = \{ x: 0\.1, y: 0\.2, z: 0\.3 \};/ );
 	assert.match( source, /writeF32\(view, byteOffset \+ 0, __const0\);/ );
 	assert.match( source, /writeVec3\(view, byteOffset \+ 16, __const1\);/ );
+
+} );
+
+test( 'emitUpdaterSource — generated modules parse as ESM', () => {
+
+	const artifacts = [
+		{ uniformPlan: [] },
+		{
+			uniformPlan: [ {
+				name: 'scene',
+				slots: [
+					{ offset: 0, source: { kind: 'camera.projectionMatrix' } },
+					{ offset: 64, source: { kind: 'camera.viewMatrix' } },
+					{ offset: 128, source: { kind: 'frame.time' } },
+					{ offset: 144, source: { kind: 'material.color', property: 'color' } },
+					{ offset: 160, source: { kind: 'material.map.matrix', property: 'map' } },
+					{ offset: 208, source: { kind: 'constant', valueSnapshot: { type: 'vec4', data: [ 1, 0.5, 0.25, 1 ] } } },
+				],
+			} ],
+		},
+		{
+			uniformPlan: [ {
+				name: 'object',
+				slots: [
+					{ offset: 0, source: { kind: 'scene.fog.color', property: 'color' } },
+					{ offset: 16, source: { kind: 'object3d.userData', property: 'wind', uniformType: 'float' } },
+					{ offset: 32, source: { kind: 'renderer.toneMappingExposure' } },
+				],
+			} ],
+		},
+		{
+			uniformPlan: [ {
+				name: 'blocked',
+				slots: [
+					{ offset: 0, source: { kind: 'builtin.dfgLUT' } },
+					{ offset: 16, source: { kind: 'mystery.kind' } },
+				],
+			} ],
+		},
+	];
+
+	for ( const artifact of artifacts ) {
+
+		const { source } = emitUpdaterSource( artifact );
+		assert.doesNotThrow( () => parse( source, { sourceType: 'module' } ) );
+
+	}
 
 } );

@@ -23,36 +23,40 @@
 import { default as PrecompiledMaterial } from './_vendor-PrecompiledMaterial.js';
 import { registerPrecompiledArtifacts } from './_vendor-PrecompiledArtifactRegistry.js';
 import { registerArtifact } from './artifact-loader.js';
-
-// Texture properties three.js's MeshStandardMaterial / Mesh*Material families
-// recognise. Mirrors `__TEXTURE_PROPS` in run-e2e.mjs and the hydrator's
-// `TEXTURE_PROPS` scan. Used to find live textures on the source material so
-// they can be catalogued onto the artifact's `_textureRefs` map.
-const _TEXTURE_PROPS = [
-	'map', 'alphaMap', 'aoMap', 'bumpMap', 'displacementMap', 'emissiveMap',
-	'envMap', 'lightMap', 'normalMap', 'specularMap', 'roughnessMap',
-	'metalnessMap', 'gradientMap', 'matcap', 'clearcoatMap',
-	'clearcoatNormalMap', 'clearcoatRoughnessMap', 'iridescenceMap',
-	'iridescenceThicknessMap', 'sheenColorMap', 'sheenRoughnessMap',
-	'specularColorMap', 'specularIntensityMap', 'transmissionMap',
-	'thicknessMap', 'anisotropyMap',
-];
-
-// TSL node-tree keys that may host TextureNodes. Mirrors the `nodeKeys` list
-// in run-e2e.mjs `__wireComputeAttrsToArtifact` (line ~699).
-const _NODE_GRAPH_KEYS = [
-	'colorNode', 'normalNode', 'outputNode', 'roughnessNode', 'metalnessNode',
-	'emissiveNode', 'opacityNode', 'alphaTestNode', 'vertexNode', 'positionNode',
-	'geometryNode',
-	'mrtNode', 'envNode', 'lightNode', 'aoNode', 'iorNode', 'iridescenceNode',
-	'iridescenceIORNode', 'iridescenceThicknessNode', 'specularIntensityNode',
-	'specularColorNode', 'sheenColorNode', 'sheenRoughnessNode',
-	'clearcoatNode', 'clearcoatRoughnessNode', 'clearcoatNormalNode',
-	'transmissionNode', 'thicknessNode', 'attenuationDistanceNode',
-	'attenuationColorNode',
-];
+import {
+	MATERIAL_TEXTURE_PROPS as _TEXTURE_PROPS,
+	NODE_GRAPH_TEXTURE_KEYS as _NODE_GRAPH_KEYS,
+} from '@tsl-precompile/contract/texture-props';
+import { validateArtifact } from '@tsl-precompile/contract/kinds';
 
 const _NODE_TEXTURE_FIELDS = [ 'value', 'texture', '_value', '_texture', '_pmrem', 'renderTarget' ];
+
+function shouldValidateArtifact() {
+
+	const globalFlag = typeof globalThis !== 'undefined' ? globalThis.__TSLP_VALIDATE_ARTIFACTS : undefined;
+	if ( globalFlag === true ) return true;
+	if ( globalFlag === false ) return false;
+	try {
+
+		return import.meta && import.meta.env && import.meta.env.DEV === true;
+
+	} catch ( _ ) {
+
+		return false;
+
+	}
+
+}
+
+function validateArtifactInDev( artifact, label ) {
+
+	if ( ! shouldValidateArtifact() ) return;
+	const result = validateArtifact( artifact, { label } );
+	if ( result.ok ) return;
+	const summary = result.errors.map( ( error ) => `  - ${ error.message }` ).join( '\n' );
+	throw new Error( `[tsl-precompile] invalid artifact "${ label || '<unnamed>' }":\n${ summary }` );
+
+}
 
 function _readObjectProp( object, prop ) {
 
@@ -217,7 +221,7 @@ export function catalogueArtifactTextureRefs( artifact, sourceMaterial ) {
 	let refs = artifact._textureRefs instanceof Map ? artifact._textureRefs : null;
 
 	// Build a uuid → live Texture lookup from the source material — both the
-	// hardcoded `_TEXTURE_PROPS` slots AND any TextureNode buried in its
+	// shared material texture-property slots AND any TextureNode buried in its
 	// `*Node` graphs (`material.colorNode = texture(myTex)` and friends).
 	// Without the node-graph pass, materials whose textures live only inside
 	// the TSL graph fall through to a 1×1 white fallback at hydrator time.
@@ -284,6 +288,7 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 
 	const artifact = artifactModule.artifact || artifactModule;
 	const name = artifactModule.name || artifact.__name;
+	validateArtifactInDev( artifact, name );
 	if ( artifactModule.__hash && ! artifact.__hash ) {
 
 		Object.defineProperty( artifact, '__hash', { value: artifactModule.__hash, enumerable: false, configurable: true } );
@@ -528,9 +533,8 @@ function copyCommonMaterialProperties( src, dst ) {
 
 	// Audited against three.js r184: MeshStandardMaterial, MeshPhysicalMaterial,
 	// MeshPhongMaterial, MeshBasicMaterial, MeshLambertMaterial, MeshMatcap-
-	// Material, MeshToonMaterial. Keep in sync with `__TEXTURE_PROPS` /
-	// `__SCALAR_PROPS` in packages/examples/batch/run-e2e.mjs and the
-	// `TEXTURE_PROPS` scan in runtime/src/hydrator.js.
+	// Material, MeshToonMaterial. Texture slots come from
+	// @tsl-precompile/contract; scalar slots are mirrored by the E2E harness.
 	const props = [
 		'name',
 		// Color / scalar PBR properties

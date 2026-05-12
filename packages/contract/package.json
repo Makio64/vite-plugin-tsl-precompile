@@ -1,0 +1,26 @@
+{
+  "name": "@tsl-precompile/contract",
+  "version": "0.1.0",
+  "description": "Shared extractor, codegen, and runtime contracts for tsl-precompile packages.",
+  "type": "module",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "author": "David Ronai <davronai@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Makio64/vite-plugin-tsl-precompile.git",
+    "directory": "packages/contract"
+  },
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./graph-normalize": "./src/graph-normalize.js",
+    "./kinds": "./src/kinds.js",
+    "./texture-props": "./src/texture-props.js"
+  },
+  "files": [
+    "src"
+  ]
+}

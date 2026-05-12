@@ -4,7 +4,7 @@
  * Phase 5's release gate says: "100% of cells either covered or documented-
  * blocked." The most robust reading is structural: every kind the extractor
  * can emit must either have a codegen case in `emit-updater.js` or be in
- * `DOCUMENTED_BLOCKED_KINDS`. Conversely, every kind the codegen handles
+ * the shared `@tsl-precompile/contract/kinds` blocked registry. Conversely, every kind the codegen handles
  * should still be a kind the extractor produces (catches stale cases after
  * a vendor bump).
  *
@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
-import { DOCUMENTED_BLOCKED_KINDS } from '../../src/emit-updater.js';
+import { BLOCKED_KINDS, KINDS } from '@tsl-precompile/contract/kinds';
 
 const HERE = dirname( fileURLToPath( import.meta.url ) );
 const PLUGIN_SRC = resolve( HERE, '../../src' );
@@ -73,7 +73,7 @@ function extractUpdaterCases( src ) {
 
 const extractorKinds = extractLiteralKinds( extractorSrc );
 const updaterCases = extractUpdaterCases( updaterSrc );
-const blockedKinds = new Set( Object.keys( DOCUMENTED_BLOCKED_KINDS ) );
+const blockedKinds = new Set( Object.keys( BLOCKED_KINDS ) );
 
 test( 'drift — every literal kind the extractor emits is handled or documented-blocked', () => {
 
@@ -176,10 +176,11 @@ test( 'drift — every updater case corresponds to a real extractor kind (catche
 
 test( 'drift — DOCUMENTED_BLOCKED_KINDS entries have non-empty reasons', () => {
 
-	for ( const [ kind, reason ] of Object.entries( DOCUMENTED_BLOCKED_KINDS ) ) {
+	for ( const [ kind, reason ] of Object.entries( BLOCKED_KINDS ) ) {
 
 		assert.equal( typeof reason, 'string', `reason for "${ kind }" must be a string` );
 		assert.ok( reason.length > 10, `reason for "${ kind }" is too short — give the user a clue about the migration path` );
+		assert.ok( KINDS[ kind ], `blocked kind "${ kind }" must also be registered in KINDS` );
 
 	}
 

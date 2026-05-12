@@ -11,6 +11,8 @@ import { access, readFile, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 
+import { isArtifactCollection, validateArtifact } from '@tsl-precompile/contract/kinds';
+
 const args = process.argv.slice( 2 );
 const dirs = args.length > 0 ? args : [ 'artifacts' ];
 const issues = [];
@@ -117,11 +119,27 @@ async function validateArtifactFile( dir, file ) {
 
 	}
 
+	const allowEmptyCollection = file.endsWith( '.user.json' ) || file.endsWith( '.aux.json' );
+	const isCollection = isArtifactCollection( parsed, { allowEmpty: allowEmptyCollection } );
+	if ( isCollection ) {
+
+		const validation = validateArtifact( parsed, { label: path, allowEmptyCollection } );
+		for ( const error of validation.errors ) issues.push( `${ path}: ${ error.message }` );
+		return;
+
+	}
+
 	const isUser = typeof parsed.__name === 'string' && parsed.__name.length > 0;
 	const isAux = typeof parsed.__materialShape === 'string' && typeof parsed.__configHash === 'string';
 	if ( ! isUser && ! isAux ) issues.push( `${ path}: expected __name or __materialShape/__configHash metadata` );
 	if ( typeof parsed.__hash !== 'string' || parsed.__hash.length === 0 ) issues.push( `${ path}: missing __hash` );
 	if ( ! parsed.artifact || typeof parsed.artifact !== 'object' ) issues.push( `${ path}: missing artifact object` );
+	else {
+
+		const validation = validateArtifact( parsed, { label: path } );
+		for ( const error of validation.errors ) issues.push( `${ path}: ${ error.message }` );
+
+	}
 
 	const unsupported = Array.isArray( parsed.__unsupportedKinds ) ? parsed.__unsupportedKinds : [];
 	for ( const item of unsupported ) {

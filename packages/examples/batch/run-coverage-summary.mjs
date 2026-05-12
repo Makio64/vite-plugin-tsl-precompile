@@ -6,10 +6,9 @@
  * three.js right now?"
  *
  * For each `<name>.capture.png` + `<name>.replay.png` pair found on disk:
- *   - Decode both PNGs (pngjs, pure JS).
- *   - Compute PSNR using the same formula as run-e2e.mjs (mse over RGB, then
- *     10*log10(255^2 / mse)). Default verdict threshold is 30 dB to match
- *     run-e2e.mjs's existing pixel gate.
+ *   - Decode both PNGs and compute PSNR through the shared psnr.mjs helper.
+ *     Default verdict threshold is 30 dB to match run-e2e.mjs's existing
+ *     pixel gate.
  *   - Capture-only entries (no replay file) are flagged as "no replay".
  *   - Dimension mismatches between capture and replay are flagged as well.
  *
@@ -26,7 +25,8 @@
 import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve, dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PNG } from 'pngjs';
+
+import { comparePngFiles } from './psnr.mjs';
 
 const SELF = dirname( fileURLToPath( import.meta.url ) );
 const SHOTS = resolve( SELF, 'results/shots' );
@@ -68,38 +68,14 @@ for ( const f of files ) {
 
 const allNames = new Set( [ ...captures.keys(), ...replays.keys() ] );
 
-function decodePNG( path ) {
-
-	const buf = readFileSync( path );
-	const png = PNG.sync.read( buf );
-	return { width: png.width, height: png.height, data: png.data };
-
-}
-
 function comparePSNR( capPath, repPath ) {
 
-	const a = decodePNG( capPath );
-	const b = decodePNG( repPath );
-	if ( a.width !== b.width || a.height !== b.height ) {
-
-		return { error: `dim mismatch capture=${ a.width }x${ a.height } replay=${ b.width }x${ b.height }` };
-
-	}
-
-	let sumSq = 0;
-	const px = a.data.length / 4;
-	for ( let i = 0; i < a.data.length; i += 4 ) {
-
-		const dr = a.data[ i ] - b.data[ i ];
-		const dg = a.data[ i + 1 ] - b.data[ i + 1 ];
-		const db = a.data[ i + 2 ] - b.data[ i + 2 ];
-		sumSq += dr * dr + dg * dg + db * db;
-
-	}
-
-	const mse = sumSq / ( px * 3 );
-	const psnr = mse === 0 ? Infinity : 10 * Math.log10( ( 255 * 255 ) / mse );
-	return { psnr, width: a.width, height: a.height };
+	const name = capPath.split( '/' ).pop().replace( /\.capture\.png$/, '' );
+	const result = comparePngFiles( capPath, repPath, { name, round: false } );
+	return {
+		...result,
+		psnr: result.psnr === 'inf' ? Infinity : result.psnr,
+	};
 
 }
 

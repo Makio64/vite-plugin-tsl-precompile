@@ -842,6 +842,33 @@ test( '__applyPrecompiled wraps a material and preserves common texture slots', 
 
 } );
 
+test( '__applyPrecompiled validates artifact source kinds when runtime validation is enabled', () => {
+
+	globalThis.__TSLP_VALIDATE_ARTIFACTS = true;
+	try {
+
+		assert.throws( () => __applyPrecompiled( { name: 'bad' }, {
+			__hash: 'sha256:bad',
+			name: 'bad',
+			artifact: {
+				__hash: 'sha256:bad',
+				uniformPlan: [ {
+					name: 'object',
+					slots: [ { source: { kind: 'mystery.kind' } } ],
+				} ],
+				vertexShader: 'v',
+				fragmentShader: 'f',
+			},
+		}, 'sha256:bad' ), /unknown source\.kind "mystery\.kind"/ );
+
+	} finally {
+
+		delete globalThis.__TSLP_VALIDATE_ARTIFACTS;
+
+	}
+
+} );
+
 test( 'PrecompiledMaterial derives distinct program keys from shader content', () => {
 
 	const a = new PrecompiledMaterial( { uniformPlan: [], vertexShader: 'v', fragmentShader: 'f-a' } );

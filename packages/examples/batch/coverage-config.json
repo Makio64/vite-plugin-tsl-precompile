@@ -1,0 +1,58 @@
+{
+  "pixelGate": {
+    "disabled": {
+      "diagnostic": [
+        "webgpu_postprocessing_dof_basic.html",
+        "webgpu_postprocessing_godrays.html",
+        "webgpu_postprocessing_lensflare.html",
+        "webgpu_postprocessing_outline.html",
+        "webgpu_postprocessing_retro.html",
+        "webgpu_postprocessing_ssgi.html",
+        "webgpu_postprocessing_ssgi_ballpool.html",
+        "webgpu_postprocessing_ssr.html",
+        "webgpu_postprocessing_sss.html",
+        "webgpu_postprocessing_traa.html"
+      ],
+      "volatileCompute": [
+        "webgpu_compute_particles.html",
+        "webgpu_compute_particles_rain.html",
+        "webgpu_compute_reduce.html",
+        "webgpu_compute_sort_bitonic.html",
+        "webgpu_compute_texture_pingpong.html",
+        "webgpu_compute_water.html",
+        "webgpu_tsl_compute_attractors_particles.html"
+      ]
+    },
+    "ignoreRegions": {
+      "webgpu_shadowmap_array.html": [
+        {
+          "x": 0,
+          "y": 0,
+          "width": 230,
+          "height": 210,
+          "reason": "tile-shadow debug depth atlas"
+        }
+      ]
+    },
+    "tiers": {
+      "tier1": [
+        "webgpu_clearcoat.html",
+        "webgpu_materials_basic.html",
+        "webgpu_materials_envmaps.html",
+        "webgpu_materials_texture_manualmipmap.html",
+        "webgpu_materials_toon.html",
+        "webgpu_lights_physical.html",
+        "webgpu_lights_spotlight.html",
+        "webgpu_lights_pointlights.html",
+        "webgpu_shadowmap.html",
+        "webgpu_shadowmap_array.html",
+        "webgpu_shadowmap_csm.html",
+        "webgpu_shadowmap_pointlight.html",
+        "webgpu_shadowmap_vsm.html",
+        "webgpu_postprocessing_bloom.html",
+        "webgpu_postprocessing_bloom_emissive.html",
+        "webgpu_postprocessing_bloom_selective.html"
+      ]
+    }
+  }
+}

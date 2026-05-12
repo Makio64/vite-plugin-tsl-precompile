@@ -31,6 +31,7 @@ import StorageTexture from 'three/src/renderers/common/StorageTexture.js';
 import Storage3DTexture from 'three/src/renderers/common/Storage3DTexture.js';
 import StorageArrayTexture from 'three/src/renderers/common/StorageArrayTexture.js';
 import { DataTexture, Data3DTexture, DataArrayTexture, DepthTexture, CubeDepthTexture, CubeTexture, FramebufferTexture, RGBAFormat, RGBFormat, RGFormat, RedFormat, DepthFormat, UnsignedByteType, UnsignedIntType, LessEqualCompare, GreaterEqualCompare, HalfFloatType, LinearFilter, NearestFilter, NearestMipmapNearestFilter, NearestMipmapLinearFilter, LinearMipmapNearestFilter, LinearMipmapLinearFilter, ClampToEdgeWrapping, WebGPUCoordinateSystem, Vector2, Vector3, Vector4, Matrix4, Matrix3, Plane, InstancedBufferAttribute } from 'three';
+import { MATERIAL_NODE_TEXTURE_KEYS, MATERIAL_TEXTURE_PROPS } from '@tsl-precompile/contract/texture-props';
 import { viewportMipTexture, viewportTexture } from 'three/src/nodes/display/ViewportTextureNode.js';
 import { viewportDepthTexture } from 'three/src/nodes/display/ViewportDepthTextureNode.js';
 import { getDFGLUT } from './dfg-lut.js';
@@ -479,30 +480,6 @@ function lookupAnonymousStorageTexture( textureType ) {
 	return list[ list.length - 1 ];
 
 }
-
-const MATERIAL_NODE_TEXTURE_KEYS = [
-	'colorNode',
-	'fragmentNode',
-	'normalNode',
-	'positionNode',
-	'outputNode',
-	'roughnessNode',
-	'metalnessNode',
-	'emissiveNode',
-	'opacityNode',
-	'alphaTestNode',
-	'vertexNode',
-	'envNode',
-	'lightNode',
-	'aoNode',
-	'transmissionNode',
-	'thicknessNode',
-	'maskNode',
-	'maskShadowNode',
-	'receivedShadowPositionNode',
-	'castShadowPositionNode',
-	'castShadowNode',
-];
 
 function collectMaterialNodeTextures( material ) {
 
@@ -2679,16 +2656,7 @@ function resolveTextureBinding( artifact, groupName, bindingName, material, opti
 
 		if ( material ) {
 
-			const TEXTURE_PROPS = [
-				'map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap',
-				'emissiveMap', 'envMap', 'lightMap', 'displacementMap',
-				'alphaMap', 'bumpMap', 'clearcoatMap', 'clearcoatNormalMap',
-				'clearcoatRoughnessMap', 'transmissionMap', 'thicknessMap',
-				'iridescenceMap', 'iridescenceThicknessMap', 'sheenColorMap',
-				'sheenRoughnessMap', 'specularMap', 'specularColorMap',
-				'specularIntensityMap', 'gradientMap', 'matcap',
-			];
-			for ( const prop of TEXTURE_PROPS ) {
+			for ( const prop of MATERIAL_TEXTURE_PROPS ) {
 
 				const tex = material[ prop ];
 				if ( tex && tex.isTexture === true && tex.uuid === source.textureUuid && textureMatchesShaderBinding( artifact, bindingName, tex ) ) {

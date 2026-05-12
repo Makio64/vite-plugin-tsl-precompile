@@ -35,24 +35,11 @@
  * @module EmitUpdater
  */
 
-/**
- * Kinds the codegen deliberately does not implement as UBO slot writes. These
- * surface as `severity: 'blocked'` in the returned unsupportedKinds array with
- * a human-readable reason.
- */
-export const DOCUMENTED_BLOCKED_KINDS = Object.freeze( {
-	// Texture-binding kinds — these appear in group.textures[], not group.slots[],
-	// so the UBO-slot updater never processes them. The hydrator handles them via
-	// its texture-binding resolution path. Listed here so the drift gate doesn't
-	// flag them as "unknown" if they ever surface in a synthetic hand-written plan.
-	'builtin.dfgLUT': 'IBL DFG LUT — resolved by the hydrator (getDFGLUT()). Not a UBO slot kind.',
-	'artifact.texture': 'Artifact-level texture — resolved by the hydrator via _textureRefs / material UUID scan. Not a UBO slot kind.',
-	'depth.texture': 'Shadow depth texture (light.shadow.map.depthTexture) — resolved by the hydrator per-frame via the lightIndex baked into the source. Not a UBO slot kind.',
-	'viewport.texture': 'Viewport-mip framebuffer texture (KHR_materials_transmission glass) — resolved by the hydrator via createViewportTextureRebinder, which drives a real ViewportTextureNode per render. Not a UBO slot kind.',
-	'reflector.texture': 'Reflector render-target texture — resolved by the hydrator via createReflectorTextureRebinder, which binds the live ReflectorBaseNode render target per render. Not a UBO slot kind.',
-	'unsupported': 'Extractor flagged this texture binding as unsupported (no source identified). The hydrator substitutes a 1×1 white fallback. Not a UBO slot kind.',
-	'scene.overrideMaterial': 'scene.overrideMaterial context is out of scope for v1.',
-} );
+import { BLOCKED_KINDS, blockedKindReason, isBlockedKind } from '@tsl-precompile/contract/kinds';
+
+// Back-compat export for older tests/callers. The canonical registry now lives
+// in @tsl-precompile/contract/kinds.
+export const DOCUMENTED_BLOCKED_KINDS = BLOCKED_KINDS;
 
 /**
  * Generate the source text of an updater module for a single artifact.
@@ -868,15 +855,17 @@ function emitLive( slot, off, usedWriters, constants, unsupportedKinds, byteOffs
 
 function emitUnknownOrBlocked( kind, off, unsupportedKinds, byteOffset ) {
 
-	if ( Object.prototype.hasOwnProperty.call( DOCUMENTED_BLOCKED_KINDS, kind ) ) {
+	if ( isBlockedKind( kind ) ) {
+
+		const reason = blockedKindReason( kind );
 
 		unsupportedKinds.push( {
 			kind,
 			severity: 'blocked',
-			reason: DOCUMENTED_BLOCKED_KINDS[ kind ],
+			reason,
 			byteOffset,
 		} );
-		return `throw new Error("[tsl-precompile] blocked kind ${ JSON.stringify( kind ) } at byteOffset ${ byteOffset }: ${ escapeString( DOCUMENTED_BLOCKED_KINDS[ kind ] ) }");`;
+		return `throw new Error(${ JSON.stringify( `[tsl-precompile] blocked kind ${ kind } at byteOffset ${ byteOffset }: ${ reason }` ) });`;
 
 	}
 
@@ -890,7 +879,7 @@ function emitUnknownOrBlocked( kind, off, unsupportedKinds, byteOffset ) {
 			reason: `Object3DNode scope "${ kind.slice( 'object3d.'.length ) }" is not mapped yet (add a case in emit-updater.js).`,
 			byteOffset,
 		} );
-		return `throw new Error("[tsl-precompile] unmapped object3d scope ${ JSON.stringify( kind ) }");`;
+		return `throw new Error(${ JSON.stringify( `[tsl-precompile] unmapped object3d scope ${ kind }` ) });`;
 
 	}
 
@@ -900,7 +889,7 @@ function emitUnknownOrBlocked( kind, off, unsupportedKinds, byteOffset ) {
 		reason: 'no codegen case for this kind (extractor drift or unrecognised dialect)',
 		byteOffset,
 	} );
-	return `throw new Error("[tsl-precompile] unsupported source.kind: ${ kind }");`;
+	return `throw new Error(${ JSON.stringify( `[tsl-precompile] unsupported source.kind: ${ kind }` ) });`;
 
 }
 
@@ -920,11 +909,5 @@ function inferWriterForValueType( valueType ) {
 		default: return null;
 
 	}
-
-}
-
-function escapeString( s ) {
-
-	return String( s ).replace( /\\/g, '\\\\' ).replace( /"/g, '\\"' );
 
 }

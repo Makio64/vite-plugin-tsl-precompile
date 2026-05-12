@@ -26,6 +26,7 @@
  *   node packages/examples/batch/run-e2e.mjs --filter=ocean --no-pixel-gate
  *   node packages/examples/batch/run-e2e.mjs --filter=ocean --replay-only
  *   node packages/examples/batch/run-e2e.mjs --filter=ocean --reuse-reference-shot
+ *   node packages/examples/batch/run-e2e.mjs --tier=tier1
  *   node packages/examples/batch/run-e2e.mjs --filter=ocean --port=8729 --port-retries=20
  *   node packages/examples/batch/run-e2e.mjs --filter=ocean --target-tick=60
  *   node packages/examples/batch/run-e2e.mjs --filter=ocean --timings
@@ -37,14 +38,17 @@ import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 
 import { readFile, stat } from 'node:fs/promises';
 import { resolve, join, dirname, extname, normalize, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS } from '@tsl-precompile/contract/texture-props';
 
 import { assertThreeAtLeast184 } from './_three-version.mjs';
+import { comparePngBuffers, pixelGateDisabledReasonForExample, tierExamples } from './psnr.mjs';
 
 const SELF = dirname( fileURLToPath( import.meta.url ) );
 const REPO = resolve( SELF, '../../..' );
 const OUT = resolve( SELF, 'results' );
 const RUNTIME_SRC = resolve( REPO, 'packages/runtime/src' );
 const PLUGIN_SRC = resolve( REPO, 'packages/plugin/src' );
+const CONTRACT_SRC = resolve( REPO, 'packages/contract/src' );
 const SLIM_BUNDLE = resolve( REPO, 'packages/runtime/build/three.webgpu.slim.js' );
 const CACHE_BUST = Date.now().toString( 36 );
 
@@ -111,6 +115,7 @@ const threeRepo = resolve( getArg( '--three-repo=', resolve( SELF, '../../../../
 const localExamplesRootArg = getArg( '--local-examples-root=', '' );
 const localExamplesRoot = localExamplesRootArg ? resolve( localExamplesRootArg ) : null;
 const filter = getArg( '--filter=', '' );
+const tier = getArg( '--tier=', '' );
 const limit = parseIntAtLeast( getArg( '--limit=', '9999' ), 9999, 0 );
 const offset = parseIntAtLeast( getArg( '--offset=', '0' ), 0, 0 );
 let port = parseIntAtLeast( getArg( '--port=', '8729' ), 8729, 1 );
@@ -152,27 +157,14 @@ function shouldSkip( name ) { return SKIP_PREFIXES.some( ( p ) => name.includes(
 const examplesRoot = localExamplesRoot || join( threeRepo, 'examples' );
 const examplePaths = new Map();
 const localExampleOptions = new Map();
-const DIAGNOSTIC_PIXEL_GATE_EXAMPLES = new Set( [
-	'webgpu_postprocessing_dof_basic.html',
-	'webgpu_postprocessing_godrays.html',
-	'webgpu_postprocessing_lensflare.html',
-	'webgpu_postprocessing_outline.html',
-	'webgpu_postprocessing_retro.html',
-	'webgpu_postprocessing_ssgi.html',
-	'webgpu_postprocessing_ssgi_ballpool.html',
-	'webgpu_postprocessing_ssr.html',
-	'webgpu_postprocessing_sss.html',
-	'webgpu_postprocessing_traa.html',
-] );
-const VOLATILE_COMPUTE_PIXEL_GATE_EXAMPLES = new Set( [
-	'webgpu_compute_particles.html',
-	'webgpu_compute_particles_rain.html',
-	'webgpu_compute_reduce.html',
-	'webgpu_compute_sort_bitonic.html',
-	'webgpu_compute_texture_pingpong.html',
-	'webgpu_compute_water.html',
-	'webgpu_tsl_compute_attractors_particles.html',
-] );
+const tierExampleNames = tier ? tierExamples( tier ) : [];
+const tierExampleSet = tier ? new Set( tierExampleNames ) : null;
+if ( tier && tierExampleNames.length === 0 ) {
+
+	console.error( `[batch-e2e] unknown or empty coverage tier "${ tier }"` );
+	process.exit( 2 );
+
+}
 function stripExampleQuery( examplePath ) {
 
 	return String( examplePath || '' ).split( /[?#]/ )[ 0 ];
@@ -213,6 +205,7 @@ const discoveredExamples = localExamplesRoot
 	: readdirSync( examplesRoot )
 		.filter( ( f ) => f.startsWith( 'webgpu_' ) && f.endsWith( '.html' ) );
 const allExamples = discoveredExamples
+	.filter( ( f ) => ! tierExampleSet || tierExampleSet.has( f ) )
 	.filter( ( f ) => ! filter || f.includes( filter ) || examplePathFor( f ).includes( filter ) )
 	.slice( offset, offset + limit );
 const candidates = localExamplesRoot ? allExamples : allExamples.filter( ( f ) => ! shouldSkip( f ) );
@@ -328,6 +321,12 @@ function rewriteImportmap( html, mode ) {
 		`"@tsl-precompile/runtime": "/__tslp_runtime/index.js"`,
 		`"@tsl-precompile/runtime/apply": "/__tslp_runtime/apply-precompiled.js"`,
 		`"@tsl-precompile/runtime/writers": "/__tslp_runtime/writers.js"`,
+		`"@tsl-precompile/runtime/slim-support/live-scene-index": "/__tslp_runtime/slim-support/live-scene-index.js"`,
+		`"@tsl-precompile/contract": "/__tslp_contract/index.js"`,
+		`"@tsl-precompile/contract/graph-normalize": "/__tslp_contract/graph-normalize.js"`,
+		`"@tsl-precompile/contract/kinds": "/__tslp_contract/kinds.js"`,
+		`"@tsl-precompile/contract/texture-props": "/__tslp_contract/texture-props.js"`,
+		`"@tsl-precompile/contract/": "/__tslp_contract/"`,
 		`"three/src/": "/src/"`,
 		`"vite-plugin-tsl-precompile/src/vendor/compileTSL.js": "/__tslp_plugin/vendor/compileTSL.js"`,
 		`"vite-plugin-tsl-precompile/src/emit-updater.js": "/__tslp_plugin/emit-updater.js"`,
@@ -956,6 +955,8 @@ export class ${ name } {
 	return `
 import * as Slim from '/__tslp__/three.webgpu.slim.js?v=${ CACHE_BUST }';
 import { TSL as FullTSL, TextureNode as FullTextureNode, BlendMode as FullBlendMode, TempNode as FullTempNode, NodeUpdateType as FullNodeUpdateType, NodeMaterial as FullNodeMaterial, MeshBasicNodeMaterial as FullMeshBasicNodeMaterial, MeshStandardNodeMaterial as FullMeshStandardNodeMaterial, MeshPhysicalNodeMaterial as FullMeshPhysicalNodeMaterial, MeshLambertNodeMaterial as FullMeshLambertNodeMaterial, MeshPhongNodeMaterial as FullMeshPhongNodeMaterial, MeshToonNodeMaterial as FullMeshToonNodeMaterial, MeshNormalNodeMaterial as FullMeshNormalNodeMaterial, MeshMatcapNodeMaterial as FullMeshMatcapNodeMaterial, MeshSSSNodeMaterial as FullMeshSSSNodeMaterial, LineBasicNodeMaterial as FullLineBasicNodeMaterial, LineDashedNodeMaterial as FullLineDashedNodeMaterial, Line2NodeMaterial as FullLine2NodeMaterial, PointsNodeMaterial as FullPointsNodeMaterial, SpriteNodeMaterial as FullSpriteNodeMaterial, ShadowNodeMaterial as FullShadowNodeMaterial, RenderTarget as FullRenderTarget, DepthTexture as FullDepthTexture, ArrayCamera as FullArrayCamera, QuadMesh as FullQuadMesh, RendererUtils as FullRendererUtils, Vector2 as FullVector2, TextureLoader as FullTextureLoader, CubeTextureLoader as FullCubeTextureLoader, DataTextureLoader as FullDataTextureLoader, ImageBitmapLoader as FullImageBitmapLoader } from '/build/three.webgpu.js';
+import { createLiveSceneIndex, textureImageReady as __sharedTextureImageReady, textureImageSrc as __sharedTextureImageSrc, newFallbackTextureImage as __sharedNewFallbackTextureImage } from '/__tslp_runtime/slim-support/live-scene-index.js';
+import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS } from '/__tslp_contract/texture-props.js';
 export * from '/__tslp__/three.webgpu.slim.js';
 export { FullTextureNode as TextureNode, FullBlendMode as BlendMode, FullTempNode as TempNode, FullNodeUpdateType as NodeUpdateType, FullRenderTarget as RenderTarget, FullDepthTexture as DepthTexture, FullArrayCamera as ArrayCamera, FullQuadMesh as QuadMesh, FullRendererUtils as RendererUtils };
 
@@ -1542,9 +1543,17 @@ const __counts = Object.create( null );
 const __usedArtifactNames = new Set();
 const __seenMaterials = new WeakMap();
 const __fallbackArtifactTextures = new Map();
-const __liveTexturesByUuid = new Map();
-const __liveTexturesByName = new Map();
-const __liveMaterialTextures = [];
+const __liveSceneIndex = createLiveSceneIndex( {
+	registerLiveTexture: ( texture ) => Slim.registerLiveTexture( texture ),
+	getDiagnostics: () => __harnessDiagnostics(),
+	materialTextureProps: __TEXTURE_PROPS,
+	collectMaterialNodeTextures: ( material ) => __collectMaterialNodeTextures( material ),
+	isEnvironmentTextureSource: ( texture ) => __isEnvironmentTextureSource( texture ),
+	isPMREMTexture: ( texture ) => __isPMREMTexture( texture ),
+} );
+const __liveTexturesByUuid = __liveSceneIndex.texturesByUuid;
+const __liveTexturesByName = __liveSceneIndex.texturesByName;
+const __liveMaterialTextures = __liveSceneIndex.materialTextures;
 const __hasBackgroundAux = Array.isArray( __data.aux ) && __data.aux.some( ( entry ) => entry && entry.shape === 'background' );
 const __backgroundAuxCount = Array.isArray( __data.aux ) ? __data.aux.filter( ( entry ) => entry && entry.shape === 'background' ).length : 0;
 Slim.registerAuxArtifacts( Array.isArray( __data.aux ) ? __data.aux : [] );
@@ -1605,23 +1614,7 @@ window.__tslpComputePending = 0;
 window.__tslpShadowPending = 0;
 
 function __rememberLiveTexture( texture ) {
-	if ( ! texture || texture.isTexture !== true ) return;
-	Slim.registerLiveTexture( texture );
-	if ( texture.uuid ) __liveTexturesByUuid.set( texture.uuid, texture );
-	const names = [];
-	if ( texture.name ) names.push( texture.name );
-	const imageSrc = __textureImageSrc( texture );
-	if ( imageSrc ) names.push( imageSrc );
-	for ( const name of names ) {
-		if ( typeof name !== 'string' || name.length === 0 ) continue;
-		__liveTexturesByName.set( name, texture );
-		const base = __basenameFromUrl( name );
-		if ( base ) __liveTexturesByName.set( base, texture );
-	}
-	const identity = texture.name || imageSrc || '';
-	if ( ! /\.(hdr|exr)$/i.test( __basenameFromUrl( identity ) ) && ! __isEnvironmentTextureSource( texture ) && ! __liveMaterialTextures.includes( texture ) ) {
-		__liveMaterialTextures.push( texture );
-	}
+	__liveSceneIndex.rememberLiveTexture( texture );
 }
 
 // Mirror the capture-side patches: hook DefaultLoadingManager so HDR/GLTF/MaterialX
@@ -2457,15 +2450,7 @@ function __isPMREMTexture( texture ) {
 }
 
 function __textureImageSrc( texture ) {
-	const image = texture && texture.image;
-	if ( ! image ) return null;
-	if ( Array.isArray( image ) && image.length > 0 ) {
-		const first = image[ 0 ];
-		const src = first && ( first.src || first.currentSrc || null );
-		return typeof src === 'string' && src.length > 0 ? src : null;
-	}
-	const src = image.src || image.currentSrc || null;
-	return typeof src === 'string' && src.length > 0 ? src : null;
+	return __sharedTextureImageSrc( texture ) || null;
 }
 
 function __basenameFromUrl( value ) {
@@ -3074,13 +3059,6 @@ function __classNameForMaterial( material ) {
 // resolver pulls live values from these on each frame.
 //
 // Audited against three.js r184 MeshStandardMaterial / MeshPhysicalMaterial /
-// MeshPhongMaterial / MeshBasicMaterial / MeshLambertMaterial / MeshMatcap-
-// Material / MeshToonMaterial. Keep in sync with the TEXTURE_PROPS scan in
-// runtime/src/hydrator.js.
-// TODO(post-merge): hydrator.js TEXTURE_PROPS scan (lines ~806-814) is missing
-// anisotropyMap -- add when Agent A's changes land so material->artifact UUID
-// fallback resolves anisotropy textures too.
-const __TEXTURE_PROPS = [ 'map', 'alphaMap', 'aoMap', 'bumpMap', 'displacementMap', 'emissiveMap', 'envMap', 'lightMap', 'normalMap', 'specularMap', 'roughnessMap', 'metalnessMap', 'gradientMap', 'matcap', 'clearcoatMap', 'clearcoatNormalMap', 'clearcoatRoughnessMap', 'iridescenceMap', 'iridescenceThicknessMap', 'sheenColorMap', 'sheenRoughnessMap', 'specularColorMap', 'specularIntensityMap', 'transmissionMap', 'thicknessMap', 'anisotropyMap' ];
 // Scalar/Color/Vector2/array PBR material properties -- copied source->swap
 // on every replay so live GUI tweaks (lightMapIntensity, displacementScale,
 // etc.) survive into the precompiled material's per-frame uniform updaters.
@@ -4170,34 +4148,12 @@ function __isEnvironmentTextureSource( texture ) {
 	return mapping === 301 || mapping === 302 || mapping === 303 || mapping === 304 || mapping === 306;
 }
 
-// True iff a Texture's pixel source has actually arrived from its async loader.
-// CubeTexture: image is a 6-element array of HTMLImageElement / ImageBitmap.
-// 2D textures: image is a single HTMLImageElement / ImageBitmap / HTMLCanvasElement.
-// DataTexture: image carries .data (typed array) — these are sync, always ready.
-// HDR / equirect via RGBELoader / TextureLoader: image is set on onLoad.
 function __textureImageReady( texture ) {
-	if ( ! texture || texture.isTexture !== true ) return false;
-	const hasSize = ( image ) => {
-
-		if ( ! image ) return false;
-		const width = image.width || image.naturalWidth || image.videoWidth || image.image && image.image.width;
-		const height = image.height || image.naturalHeight || image.videoHeight || image.image && image.image.height;
-		return width > 0 && height > 0;
-
-	};
-	const img = texture.image;
-	if ( img === null || img === undefined ) return false;
-	if ( Array.isArray( img ) ) {
-		if ( img.length === 0 ) return false;
-		for ( const face of img ) if ( ! hasSize( face ) ) return false;
-		return true;
-	}
-	// DataTexture / Data3DTexture / RenderTargetTexture: synchronous shape.
-	return hasSize( img );
+	return __sharedTextureImageReady( texture );
 }
 
 function __newFallbackTextureImage() {
-	return { data: new Uint8Array( [ 255, 255, 255, 255 ] ), width: 1, height: 1 };
+	return __sharedNewFallbackTextureImage();
 }
 
 function __harnessDiagnostics() {
@@ -4253,29 +4209,7 @@ function __recordGeneratedPMREM( sourceTex, pmrem ) {
 }
 
 function __healTextureImage( texture ) {
-	if ( ! texture || texture.isTexture !== true ) return;
-	const img = texture.image;
-	if ( img === null || img === undefined ) {
-		try {
-			texture.image = __newFallbackTextureImage();
-			__harnessDiagnostics().healedNullTextureImages ++;
-		} catch ( _ ) {}
-		return;
-	}
-	if ( Array.isArray( img ) ) {
-		let changed = false;
-		const healed = img.map( ( face ) => {
-			if ( face ) return face;
-			changed = true;
-			return __newFallbackTextureImage();
-		} );
-		if ( changed ) {
-			try {
-				texture.image = healed;
-				__harnessDiagnostics().healedNullTextureImages ++;
-			} catch ( _ ) {}
-		}
-	}
+	__liveSceneIndex.healTextureImage( texture );
 }
 
 function __getCachedPMREMForSource( sourceTex ) {
@@ -4727,8 +4661,7 @@ function __kickPMREMGenAsync( slimRenderer, sourceTex, onReady ) {
 	function __indexLiveTextures( scene ) {
 		const visit = ( tex, options = {} ) => {
 			if ( tex && tex.isTexture === true ) {
-				if ( options.heal !== false ) __healTextureImage( tex );
-				__rememberLiveTexture( tex );
+				__liveSceneIndex.indexTexture( tex, options );
 			}
 		};
 		const globalTslTextures = Array.isArray( window.__tslpTslTextureArgs ) ? window.__tslpTslTextureArgs : [];
@@ -8110,6 +8043,11 @@ const server = createServer( async ( req, res ) => {
 			return sendFile( res, safeResolveUnder( RUNTIME_SRC, url.pathname.slice( '/__tslp_runtime/'.length ) ) );
 
 		}
+		if ( url.pathname.startsWith( '/__tslp_contract/' ) ) {
+
+			return sendFile( res, safeResolveUnder( CONTRACT_SRC, url.pathname.slice( '/__tslp_contract/'.length ) ) );
+
+		}
 		if ( url.pathname.startsWith( '/__tslp_plugin/' ) ) {
 
 			return sendFile( res, safeResolveUnder( PLUGIN_SRC, url.pathname.slice( '/__tslp_plugin/'.length ) ) );
@@ -8453,88 +8391,10 @@ async function brightFraction( page, pngBuf ) {
 
 }
 
-/**
- * Compute PSNR (peak signal-to-noise ratio) between two PNG buffers.
- *
- * PSNR is the de-facto standard for screenshot regression — it scales with
- * actual per-pixel error rather than aggregate channel means, so a scene
- * that renders the right *average* colour but the wrong *shape* fails it.
- * Returns { psnr, width, height } where psnr is in dB (Infinity if identical),
- * or { error: <reason> } when the comparison can't be made.
- *
- * Both screenshots must share dimensions — divergent dimensions usually
- * indicate the canvas resized between capture and replay, which is itself
- * a regression.
- */
-function psnrIgnoreRegionsForExample( name ) {
-	if ( name === 'webgpu_shadowmap_array.html' ) {
-		return [
-			{ x: 0, y: 0, width: 230, height: 210, reason: 'tile-shadow debug depth atlas' },
-		];
-	}
-	return [];
-}
-
-async function comparePSNR( page, captureShot, replayShot, name = '' ) {
+async function comparePSNR( _page, captureShot, replayShot, name = '' ) {
 
 	if ( ! captureShot || ! replayShot ) return { error: 'missing screenshot' };
-	const ignoreRegions = psnrIgnoreRegionsForExample( name );
-	return await page.evaluate( async ( [ a64, b64, regions ] ) => {
-
-		const decode = async ( b64 ) => {
-
-			const blob = await ( await fetch( 'data:image/png;base64,' + b64 ) ).blob();
-			const bmp = await createImageBitmap( blob );
-			const off = new OffscreenCanvas( bmp.width, bmp.height );
-			const ctx = off.getContext( '2d' );
-			ctx.drawImage( bmp, 0, 0 );
-			return { width: bmp.width, height: bmp.height, data: ctx.getImageData( 0, 0, bmp.width, bmp.height ).data };
-
-		};
-
-		try {
-
-			const a = await decode( a64 );
-			const b = await decode( b64 );
-			if ( a.width !== b.width || a.height !== b.height ) {
-
-				return { error: `dim mismatch capture=${ a.width }x${ a.height } replay=${ b.width }x${ b.height }`, width: a.width, height: a.height };
-
-			}
-
-			const ignored = Array.isArray( regions ) ? regions : [];
-			const isIgnored = ( x, y ) => ignored.some( ( region ) => (
-				x >= region.x && y >= region.y &&
-				x < region.x + region.width && y < region.y + region.height
-			) );
-
-			let sumSq = 0;
-			let comparedPixels = 0;
-			for ( let i = 0, pxIndex = 0; i < a.data.length; i += 4, pxIndex ++ ) {
-
-				const x = pxIndex % a.width;
-				const y = Math.floor( pxIndex / a.width );
-				if ( isIgnored( x, y ) ) continue;
-
-				const dr = a.data[ i ] - b.data[ i ];
-				const dg = a.data[ i + 1 ] - b.data[ i + 1 ];
-				const db = a.data[ i + 2 ] - b.data[ i + 2 ];
-				sumSq += dr * dr + dg * dg + db * db;
-				comparedPixels ++;
-
-			}
-
-			const mse = comparedPixels === 0 ? 0 : sumSq / ( comparedPixels * 3 );
-			const psnr = mse === 0 ? Infinity : 10 * Math.log10( ( 255 * 255 ) / mse );
-			return { psnr: psnr === Infinity ? 'inf' : +psnr.toFixed( 2 ), width: a.width, height: a.height, ignoredRegions: ignored };
-
-		} catch ( err ) {
-
-			return { error: err && err.message || String( err ) };
-
-		}
-
-	}, [ captureShot.toString( 'base64' ), replayShot.toString( 'base64' ), ignoreRegions ] );
+	return comparePngBuffers( captureShot, replayShot, { name } );
 
 }
 
@@ -9114,8 +8974,7 @@ function pixelGateOf( metrics, threshold ) {
 function pixelGateEnabledForExample( name ) {
 
 	if ( ! pixelGateEnabled ) return false;
-	if ( DIAGNOSTIC_PIXEL_GATE_EXAMPLES.has( name ) ) return false;
-	if ( VOLATILE_COMPUTE_PIXEL_GATE_EXAMPLES.has( name ) ) return false;
+	if ( pixelGateDisabledReasonForExample( name ) ) return false;
 	if ( localExamplesRoot ) {
 		const options = localExampleOptions.get( name );
 		if ( options && options.pixelGate === false ) return false;

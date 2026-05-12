@@ -17,3 +17,4 @@ export { precompileAuxiliary } from './aux-marker.js';
 export { registerAuxArtifact, registerAuxArtifacts, loadAux, hasAux, listAux, attachArtifactTextureRefs, __resetAuxRegistryForTests } from './aux-loader.js';
 export { hydrateNodeBuilderState, registerLiveTexture, clearLiveTextureIndex } from './hydrator.js';
 export { getDFGLUT } from './dfg-lut.js';
+export { createLiveSceneIndex, collectMaterialNodeTextures, textureImageReady, textureImageSrc, healTextureImage } from './slim-support/live-scene-index.js';

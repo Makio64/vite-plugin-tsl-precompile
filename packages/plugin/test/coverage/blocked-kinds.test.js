@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { DOCUMENTED_BLOCKED_KINDS } from '../../src/emit-updater.js';
+import { BLOCKED_KINDS } from '@tsl-precompile/contract/kinds';
 import { generateForPlan } from './_helpers.js';
 
 test( 'documented-blocked source kinds report severity=blocked when misrouted into UBO slots', () => {
 
-	for ( const kind of Object.keys( DOCUMENTED_BLOCKED_KINDS ) ) {
+	for ( const kind of Object.keys( BLOCKED_KINDS ) ) {
 
 		const result = generateForPlan( { groups: [ { slots: [ { byteOffset: 0, source: { kind } } ] } ] } );
 		assert.equal( result.unsupportedKinds.length, 1, `expected one unsupported entry for ${ kind }` );

@@ -20,6 +20,7 @@
     "./marker": "./src/precompile-marker.js",
     "./apply": "./src/apply-precompiled.js",
     "./loader": "./src/artifact-loader.js",
+    "./slim-support/live-scene-index": "./src/slim-support/live-scene-index.js",
     "./slim": "./build/three.webgpu.slim.js",
     "./slim-stubs": "./src/slim-stubs.js"
   },
@@ -31,6 +32,9 @@
     "build:slim": "rollup -c rollup.config.js",
     "build": "rollup -c rollup.config.js",
     "test": "node --test 'test/**/*.test.js'"
+  },
+  "dependencies": {
+    "@tsl-precompile/contract": "workspace:*"
   },
   "devDependencies": {
     "rollup": "^4.60.2",
