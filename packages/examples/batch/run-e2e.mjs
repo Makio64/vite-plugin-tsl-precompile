@@ -1090,6 +1090,70 @@ const __data = __state.artifacts || { user: {}, aux: [] };
 		return mrt && mrt.outputNodes && typeof mrt.outputNodes === 'object' ? Object.keys( mrt.outputNodes ).length : 0;
 	}
 
+	function __mrtFromRenderTarget( renderTarget ) {
+		const textures = renderTarget && Array.isArray( renderTarget.textures ) ? renderTarget.textures : [];
+		if ( textures.length <= 1 ) return null;
+		const names = textures.map( ( texture, index ) => texture && texture.name || ( index === 0 ? 'output' : 'output' + index ) );
+		const key = names.join( '|' );
+		if ( renderTarget.__tslpMRTStub && renderTarget.__tslpMRTStub.__tslpKey === key ) return renderTarget.__tslpMRTStub;
+		const outputNodes = {};
+		for ( const name of names ) outputNodes[ name ] = { isNode: true };
+		const mrt = {
+			isNode: true,
+			isMRTNode: true,
+			id: 'tslp-render-target-mrt:' + key,
+			outputNodes,
+			__tslpKey: key,
+			getBlendMode() { return { blending: 0 }; },
+			has( name ) { return name in outputNodes; },
+			get( name ) { return outputNodes[ name ] || null; },
+			merge( other ) { return other || this; },
+		};
+		try { Object.defineProperty( renderTarget, '__tslpMRTStub', { value: mrt, configurable: true, writable: true } ); }
+		catch ( _ ) { renderTarget.__tslpMRTStub = mrt; }
+		return mrt;
+	}
+
+	function __makePassDepthTexture( renderTarget ) {
+		const depthTexture = new Slim.DepthTexture();
+		depthTexture.isRenderTargetTexture = true;
+		depthTexture.name = 'depth';
+		depthTexture.renderTarget = renderTarget;
+		return depthTexture;
+	}
+
+	function __ensurePassRenderTargetAttachmentCount( passNode, count = 1 ) {
+		if ( ! passNode || ! passNode.renderTarget ) return null;
+		const targetCount = Math.max( 1, count | 0 );
+		let target = passNode.renderTarget;
+		const textures = Array.isArray( target.textures ) ? target.textures : target.texture ? [ target.texture ] : [];
+		if ( textures.length === targetCount ) return target;
+
+		const width = Math.max( 1, target.width || passNode._width || 1 );
+		const height = Math.max( 1, target.height || passNode._height || 1 );
+		const options = { ...( passNode._renderTargetOptions || passNode.options || {} ), count: targetCount };
+		let nextTarget;
+		try {
+			nextTarget = new Slim.RenderTarget( width, height, options );
+		} catch ( _ ) {
+			return target;
+		}
+
+		if ( target.scissor && nextTarget.scissor && typeof nextTarget.scissor.copy === 'function' ) nextTarget.scissor.copy( target.scissor );
+		if ( target.viewport && nextTarget.viewport && typeof nextTarget.viewport.copy === 'function' ) nextTarget.viewport.copy( target.viewport );
+		nextTarget.scissorTest = target.scissorTest === true;
+		if ( target.samples !== undefined ) nextTarget.samples = target.samples;
+		nextTarget.texture.name = 'output';
+		nextTarget.depthTexture = __makePassDepthTexture( nextTarget );
+
+		passNode.renderTarget = nextTarget;
+		passNode._textures = Object.create( null );
+		passNode._textures.output = nextTarget.texture;
+		passNode._textures.depth = nextTarget.depthTexture;
+		target = nextTarget;
+		return target;
+	}
+
 	function __fragmentOutputCount( material ) {
 		const artifact = material && material.precompiledArtifact;
 		if ( ! artifact ) return 1;
@@ -1114,19 +1178,32 @@ const __data = __state.artifacts || { user: {}, aux: [] };
 	}
 
 	function __syncPassRenderTargetTextures( passNode, mrt ) {
-		const target = passNode && passNode.renderTarget;
+		let target = passNode && passNode.renderTarget;
 		if ( ! target || ! Array.isArray( target.textures ) ) return;
 		if ( ! mrt || ! mrt.outputNodes || typeof mrt.outputNodes !== 'object' ) {
+			target = __ensurePassRenderTargetAttachmentCount( passNode, 1 ) || target;
 			target.textures = [ target.texture ];
+			passNode._textures.output = target.texture;
+			if ( target.depthTexture ) passNode._textures.depth = target.depthTexture;
 			return;
 		}
+		const names = Object.keys( mrt.outputNodes );
+		target = __ensurePassRenderTargetAttachmentCount( passNode, names.length ) || target;
 		const textures = [];
-		for ( const name of Object.keys( mrt.outputNodes ) ) {
-			const texture = passNode.getTexture( name );
+		for ( let i = 0; i < names.length; i ++ ) {
+			const name = names[ i ];
+			const texture = target.textures[ i ] || passNode.getTexture( name );
+			if ( texture ) {
+				texture.name = name;
+				texture.isRenderTargetTexture = true;
+				texture.renderTarget = target;
+				passNode._textures[ name ] = texture;
+			}
 			if ( texture && ! textures.includes( texture ) ) textures.push( texture );
 		}
 		if ( textures.length === 0 && target.texture ) textures.push( target.texture );
 		target.textures = textures;
+		if ( target.depthTexture ) passNode._textures.depth = target.depthTexture;
 	}
 
 function __sceneCanRenderMRT( scene, mrt ) {
@@ -1372,19 +1449,16 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 			this.isNode = true;
 			this.isPassNode = true;
 			this.__tslpPassIndex = __passNodeSequence ++;
-			const depthTexture = new Slim.DepthTexture();
-			depthTexture.isRenderTargetTexture = true;
-			depthTexture.name = 'depth';
-			const renderTarget = new Slim.RenderTarget( 1, 1, { type: Slim.HalfFloatType, ...this.options } );
+			this._renderTargetOptions = { type: Slim.HalfFloatType, ...this.options };
+			const renderTarget = new Slim.RenderTarget( 1, 1, this._renderTargetOptions );
 			renderTarget.texture.name = 'output';
-			renderTarget.depthTexture = depthTexture;
+			renderTarget.depthTexture = __makePassDepthTexture( renderTarget );
 			// Back-link depth texture to its render target so the slim
 			// hydrator multisample check accepts it as a multisampled
 			// depth binding when samples is greater than 1.
-			depthTexture.renderTarget = renderTarget;
 			this.renderTarget = renderTarget;
 			this._textures.output = renderTarget.texture;
-			this._textures.depth = depthTexture;
+			this._textures.depth = renderTarget.depthTexture;
 			__livePassNodes.push( this );
 		}
 
@@ -1397,7 +1471,7 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 		getUpdateType() { return 'none'; }
 		getUpdateBeforeType() { return 'render'; }
 		getUpdateAfterType() { return 'none'; }
-		setMRT( mrt ) { this._mrt = mrt; return this; }
+		setMRT( mrt ) { this._mrt = mrt; __syncPassRenderTargetTextures( this, mrt ); return this; }
 		getMRT() { return this._mrt; }
 		getTexture( name = 'output' ) {
 			let texture = this._textures[ name ];
@@ -1553,8 +1627,16 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 			for ( const name in this._previousTextures ) this.toggleTexture( name );
 			if ( this._layers !== null && camera.layers ) camera.layers.mask = this._layers.mask;
 			if ( this.overrideMaterial !== null ) scene.overrideMaterial = this.overrideMaterial;
-			const replayMRT = __sceneCanRenderMRT( scene, this._mrt ) ? this._mrt : null;
-			__retargetSceneMaterialsForPassTarget( scene, replayMRT ? __mrtOutputCount( replayMRT ) : 1 );
+			let replayMRT = this._mrt || null;
+			if ( replayMRT ) {
+				__retargetSceneMaterialsForPassTarget( scene, __mrtOutputCount( replayMRT ) );
+				if ( ! __sceneCanRenderMRT( scene, replayMRT ) ) {
+					replayMRT = null;
+					__retargetSceneMaterialsForPassTarget( scene, 1 );
+				}
+			} else {
+				__retargetSceneMaterialsForPassTarget( scene, 1 );
+			}
 			__prepareSceneMaterialsForMRTReplay( scene, replayMRT );
 			renderer.autoClear = true;
 			renderer.transparent = this.transparent;
@@ -3912,6 +3994,26 @@ function __retargetSceneMaterialsForPassTarget( scene, targetCount ) {
 		const retargetOne = ( mat ) => __retargetPrecompiledMaterialForPassTarget( mat, object, targetCount );
 		object.material = Array.isArray( material ) ? material.map( retargetOne ) : retargetOne( material );
 	} );
+}
+
+function __prepareSceneForCurrentMRT( scene, renderer ) {
+	if ( ! renderer || typeof renderer.getMRT !== 'function' ) return null;
+	let mrt = renderer.getMRT();
+	if ( ! mrt && typeof renderer.getRenderTarget === 'function' ) {
+		try { mrt = __mrtFromRenderTarget( renderer.getRenderTarget() ); } catch ( _ ) { mrt = null; }
+	}
+	const targetCount = __mrtOutputCount( mrt );
+	if ( targetCount <= 1 ) {
+		__retargetSceneMaterialsForPassTarget( scene, 1 );
+		return null;
+	}
+	__retargetSceneMaterialsForPassTarget( scene, targetCount );
+	if ( ! __sceneCanRenderMRT( scene, mrt ) ) {
+		__retargetSceneMaterialsForPassTarget( scene, 1 );
+		return null;
+	}
+	__prepareSceneMaterialsForMRTReplay( scene, mrt );
+	return mrt;
 }
 
 function __replaceMaterialForReplay( inputMaterial, object = null, force = false ) {
@@ -6394,6 +6496,10 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 		if ( __pmremRunning > 0 ) return typeof super.compile === 'function' ? super.compile( scene, camera, ...rest ) : undefined;
 		__replaceStandaloneRenderTargetMaterial( scene );
 		__prepareSceneForReplay( scene, this );
+		const previousMRT = typeof this.getMRT === 'function' ? this.getMRT() : null;
+		const preparedMRT = __prepareSceneForCurrentMRT( scene, this );
+		const restorePreparedMRT = preparedMRT && previousMRT !== preparedMRT && typeof this.setMRT === 'function';
+		if ( restorePreparedMRT ) this.setMRT( preparedMRT );
 		__flushMaterialTextureRewire( this );
 		// Wire PMREM from sync cache BEFORE compile so hydration sees the live
 		// prefiltered texture. (Async gen is kicked from render(); compile is
@@ -6405,6 +6511,7 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 		if ( __pmremRunning > 0 ) return typeof super.compileAsync === 'function' ? super.compileAsync( scene, camera, ...rest ) : Promise.resolve();
 		__replaceStandaloneRenderTargetMaterial( scene );
 		__prepareSceneForReplay( scene, this );
+		__prepareSceneForCurrentMRT( scene, this );
 		__flushMaterialTextureRewire( this );
 		__wireEnvironmentPMREM( this, scene );
 		if ( typeof super.compileAsync !== 'function' ) return Promise.resolve();
@@ -6426,6 +6533,8 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 			__resetRendererPipelineCachesForAttachmentChange( this, scene );
 			return super.render( scene, camera );
 		}
+		let previousMRT = null;
+		let restorePreparedMRT = false;
 		__renderDepth ++;
 		try {
 		// Track last scene/camera so post-compute forced renders can use them.
@@ -6434,6 +6543,10 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 		if ( scene && scene.isScene === true ) __recordRenderableObjectCount( scene );
 		__replaceStandaloneRenderTargetMaterial( scene );
 		__prepareSceneForReplay( scene, this );
+		previousMRT = typeof this.getMRT === 'function' ? this.getMRT() : null;
+		const preparedMRT = __prepareSceneForCurrentMRT( scene, this );
+		restorePreparedMRT = !! ( preparedMRT && previousMRT !== preparedMRT && typeof this.setMRT === 'function' );
+		if ( restorePreparedMRT ) this.setMRT( preparedMRT );
 		__flushMaterialTextureRewire( this );
 		// Wire PMREM from sync cache BEFORE super.render so that hydration
 		// (which runs inside super.render on the first call for each material)
@@ -6536,6 +6649,9 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 		}
 		return r;
 		} finally {
+			if ( restorePreparedMRT ) {
+				try { this.setMRT( previousMRT ); } catch ( _ ) {}
+			}
 			__renderDepth --;
 		}
 	}
