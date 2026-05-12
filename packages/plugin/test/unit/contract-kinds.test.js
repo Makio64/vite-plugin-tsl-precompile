@@ -10,6 +10,13 @@ import {
 	isKnownKind,
 	validateArtifact,
 } from '@tsl-precompile/contract/kinds';
+import {
+	DYNAMIC_BINDING_PHASE,
+	DYNAMIC_BINDING_TARGET,
+	dynamicBindingDescriptor,
+	isDynamicBindingKind,
+	validateDynamicBindingSource,
+} from '@tsl-precompile/contract/dynamic-bindings';
 
 test( 'contract kind registry recognises codegen and runtime texture kinds', () => {
 
@@ -66,10 +73,10 @@ test( 'contract artifact validation accepts known slot and texture kinds', () =>
 			name: 'object',
 			slots: [
 				{ source: { kind: 'camera.viewMatrix' } },
-				{ source: { kind: 'material.map.matrix' } },
+				{ source: { kind: 'material.map.matrix', property: 'map' } },
 			],
 			textures: [
-				{ source: { kind: 'material.map' } },
+				{ source: { kind: 'material.map', property: 'map' } },
 				{ source: { kind: 'artifact.texture' } },
 			],
 		} ],
@@ -103,7 +110,7 @@ test( 'contract artifact validation accepts aggregate artifact dumps', () => {
 				fragmentShader: 'f',
 				uniformPlan: [ {
 					name: 'material',
-					textures: [ { source: { kind: 'material.normalMap' } } ],
+					textures: [ { source: { kind: 'material.normalMap', property: 'normalMap' } } ],
 				} ],
 			},
 		},
@@ -123,5 +130,49 @@ test( 'contract artifact validation can accept empty aggregate dumps explicitly'
 
 	assert.equal( result.ok, true );
 	assert.deepEqual( result.sourceKinds, [] );
+
+} );
+
+test( 'contract dynamic binding descriptors document runtime texture and live slot resolvers', () => {
+
+	const viewport = dynamicBindingDescriptor( 'viewport.texture' );
+	assert.equal( viewport.target, DYNAMIC_BINDING_TARGET.SAMPLED_TEXTURE );
+	assert.equal( viewport.phase, DYNAMIC_BINDING_PHASE.UPDATE_BEFORE );
+	assert.match( viewport.resolver, /viewport-texture/ );
+
+	const live = dynamicBindingDescriptor( 'uniform.live' );
+	assert.equal( live.target, DYNAMIC_BINDING_TARGET.UNIFORM_SLOT );
+	assert.equal( live.phase, DYNAMIC_BINDING_PHASE.UPDATE_BEFORE );
+
+	const materialMap = dynamicBindingDescriptor( 'material.map' );
+	assert.equal( materialMap.target, DYNAMIC_BINDING_TARGET.SAMPLED_TEXTURE );
+	assert.equal( materialMap.property, 'map' );
+
+	const materialScalar = dynamicBindingDescriptor( 'material.opacity' );
+	assert.equal( materialScalar.target, DYNAMIC_BINDING_TARGET.UNIFORM_SLOT );
+	assert.equal( materialScalar.owner, 'material' );
+
+	assert.equal( isDynamicBindingKind( 'light.shadowMatrix' ), true );
+	assert.equal( isDynamicBindingKind( 'totally.new.kind' ), false );
+
+} );
+
+test( 'contract dynamic binding descriptor validation reports missing required fields', () => {
+
+	assert.deepEqual( validateDynamicBindingSource( { kind: 'object3d.userData', property: 'speed' } ), [] );
+	assert.deepEqual( validateDynamicBindingSource( { kind: 'object3d.userData' } ).map( ( error ) => error.field ), [ 'property' ] );
+	assert.deepEqual( validateDynamicBindingSource( { kind: 'material.map', property: 'map' } ), [] );
+	assert.deepEqual( validateDynamicBindingSource( { kind: 'material.map' } ).map( ( error ) => error.field ), [ 'property' ] );
+
+	const result = validateArtifact( {
+		fragmentShader: 'var nodeTexture0: texture_2d<f32>;',
+		uniformPlan: [ {
+			name: 'material',
+			textures: [ { name: 'nodeTexture0', source: { kind: 'material.map' } } ],
+		} ],
+	}, { label: 'fixture' } );
+
+	assert.equal( result.ok, false );
+	assert.equal( result.errors.find( ( error ) => error.code === 'dynamic-binding.required' ).path, 'uniformPlan[0].textures[0].source.property' );
 
 } );

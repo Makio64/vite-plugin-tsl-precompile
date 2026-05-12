@@ -1,4 +1,5 @@
 import { MATERIAL_TEXTURE_PROPS } from './texture-props.js';
+import { validateDynamicBindingSource } from './dynamic-bindings.js';
 
 export const KIND_STATUS = Object.freeze( {
 	CODEGEN: 'codegen',
@@ -387,6 +388,16 @@ export function validateArtifact( input, opts = {} ) {
 					if ( ! isKnownKind( kind ) ) {
 
 						errors.push( validationError( 'source.kind.unknown', `${ label}: unknown source.kind "${ kind }" at ${ itemPath }`, itemPath ) );
+
+					}
+					for ( const dynamicError of validateDynamicBindingSource( source ) ) {
+
+						const sourcePath = `${ groupPath}.${ listName }[${ itemIndex }].source`;
+						errors.push( validationError(
+							dynamicError.code,
+							`${ label}: ${ dynamicError.message } at ${ sourcePath }`,
+							`${ sourcePath }.${ dynamicError.field }`
+						) );
 
 					}
 

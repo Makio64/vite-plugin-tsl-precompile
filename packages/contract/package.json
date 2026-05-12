@@ -16,6 +16,7 @@
   "main": "./src/index.js",
   "exports": {
     ".": "./src/index.js",
+    "./dynamic-bindings": "./src/dynamic-bindings.js",
     "./graph-normalize": "./src/graph-normalize.js",
     "./kinds": "./src/kinds.js",
     "./texture-props": "./src/texture-props.js"
