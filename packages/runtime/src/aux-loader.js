@@ -50,7 +50,7 @@ const REGISTRY = new Map();
  * @param {string} configHash - 64-char hex produced by `hashNodeGraphSync` or `hashPlainConfigSync`.
  * @param {Object} artifact - The artifact object (uniformPlan + WGSL + bindings).
  */
-export function registerAuxArtifact( shape, configHash, artifact ) {
+export function registerAuxArtifact( shape, configHash, artifact, opts = {} ) {
 
 	if ( typeof shape !== 'string' || shape.length === 0 ) {
 
@@ -62,6 +62,8 @@ export function registerAuxArtifact( shape, configHash, artifact ) {
 		throw new TypeError( 'registerAuxArtifact: configHash must be a non-empty string' );
 
 	}
+	stampAuxMetadata( artifact, shape, configHash, opts.name );
+
 	// Pre-wire viewport/framebuffer texture fallbacks on registration so
 	// the artifact is ready for the hydrator before the first render frame.
 	// wireViewportTextureRefs is idempotent and silently no-ops until
@@ -79,7 +81,7 @@ export function registerAuxArtifact( shape, configHash, artifact ) {
  */
 export function registerAuxArtifacts( entries ) {
 
-	for ( const e of entries ) registerAuxArtifact( e.shape, e.configHash, e.artifact );
+	for ( const e of entries ) registerAuxArtifact( e.shape, e.configHash, e.artifact, { name: e.name } );
 
 }
 
@@ -193,10 +195,129 @@ export function listAux() {
 	for ( const k of REGISTRY.keys() ) {
 
 		const i = k.indexOf( ':' );
-		out.push( { shape: k.slice( 0, i ), configHash: k.slice( i + 1 ) } );
+		const artifact = REGISTRY.get( k );
+		out.push( {
+			shape: k.slice( 0, i ),
+			configHash: k.slice( i + 1 ),
+			name: artifact && ( artifact.__tslpAuxName || artifact.__name || artifact.name ) || null,
+		} );
 
 	}
 	return out;
+
+}
+
+/**
+ * Find an aux artifact by shape and either its friendly capture name or its
+ * config hash. Friendly names come from `precompileAuxiliary(..., {
+ * postProcessingName })` or from the generated `aux-<shape>-<hash>` default.
+ *
+ * @param {string} shape
+ * @param {string} nameOrConfigHash
+ * @return {?{ shape: string, configHash: string, name: ?string, artifact: Object }}
+ */
+export function findAux( shape, nameOrConfigHash ) {
+
+	for ( const entry of listAux() ) {
+
+		if ( entry.shape !== shape ) continue;
+		if ( entry.configHash !== nameOrConfigHash && entry.name !== nameOrConfigHash ) continue;
+		return {
+			...entry,
+			artifact: REGISTRY.get( key( entry.shape, entry.configHash ) ),
+		};
+
+	}
+	return null;
+
+}
+
+/**
+ * Stamp a TSL node with an exact aux config hash so `hashNodeGraphSync(node)`
+ * returns that hash in slim builds. This avoids shape-fallback ambiguity when
+ * an app has multiple post-processing/background graphs of the same shape.
+ *
+ * @param {Object|Function} node
+ * @param {string|Object} shapeOrEntry - Shape string or an entry returned by `findAux()`.
+ * @param {string} [configHash]
+ * @return {Object|Function}
+ */
+export function bindAuxConfig( node, shapeOrEntry, configHash = undefined ) {
+
+	if ( ! node || ( typeof node !== 'object' && typeof node !== 'function' ) ) {
+
+		throw new TypeError( 'bindAuxConfig: node must be an object/function TSL node.' );
+
+	}
+	const entry = typeof shapeOrEntry === 'object' && shapeOrEntry
+		? shapeOrEntry
+		: { shape: shapeOrEntry, configHash };
+	if ( typeof entry.shape !== 'string' || entry.shape.length === 0 ) {
+
+		throw new TypeError( 'bindAuxConfig: shape must be a non-empty string.' );
+
+	}
+	if ( typeof entry.configHash !== 'string' || entry.configHash.length === 0 ) {
+
+		throw new TypeError( 'bindAuxConfig: configHash must be a non-empty string.' );
+
+	}
+	Object.defineProperty( node, '__tslpAuxShape', {
+		value: entry.shape,
+		enumerable: false,
+		configurable: true,
+		writable: true,
+	} );
+	Object.defineProperty( node, '__tslpAuxConfigHash', {
+		value: entry.configHash,
+		enumerable: false,
+		configurable: true,
+		writable: true,
+	} );
+	return node;
+
+}
+
+/**
+ * Find an aux capture by friendly name/hash and bind it to a runtime node.
+ *
+ * @param {Object|Function} node
+ * @param {string} shape
+ * @param {string} nameOrConfigHash
+ * @return {Object|Function}
+ */
+export function bindAuxByName( node, shape, nameOrConfigHash ) {
+
+	const entry = findAux( shape, nameOrConfigHash );
+	if ( ! entry ) {
+
+		const known = listAux()
+			.filter( ( item ) => item.shape === shape )
+			.map( ( item ) => item.name || item.configHash );
+		throw new Error(
+			`bindAuxByName: no ${ shape } aux artifact named "${ nameOrConfigHash }". ` +
+			`Known ${ shape } captures: ${ known.length === 0 ? '(none)' : known.join( ', ' ) }.`
+		);
+
+	}
+	return bindAuxConfig( node, entry );
+
+}
+
+function stampAuxMetadata( artifact, shape, configHash, name = undefined ) {
+
+	if ( ! artifact || typeof artifact !== 'object' ) return;
+	const auxName = name || artifact.__tslpAuxName || artifact.__name || artifact.name || null;
+	try {
+
+		Object.defineProperty( artifact, '__tslpAuxShape', { value: shape, enumerable: false, configurable: true, writable: true } );
+		Object.defineProperty( artifact, '__tslpAuxConfigHash', { value: configHash, enumerable: false, configurable: true, writable: true } );
+		if ( auxName ) Object.defineProperty( artifact, '__tslpAuxName', { value: auxName, enumerable: false, configurable: true, writable: true } );
+
+	} catch ( _ ) {
+		// Frozen/user-provided artifact objects still remain registered; they
+		// simply will not be discoverable by friendly name.
+	}
 
 }
 

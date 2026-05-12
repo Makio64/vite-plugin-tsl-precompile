@@ -335,6 +335,7 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 	// `mat.opacity`, etc. continues to work.
 	const wrapped = new PrecompiledMaterial( artifact );
 	copyCommonMaterialProperties( material, wrapped );
+	applyPrecompiledRenderLimitations( artifact, wrapped );
 
 	// Live ReflectorBaseNode handles for the runtime hydrator's reflector
 	// rebinder. PrecompiledMaterial drops every `*Node` property; the
@@ -369,6 +370,23 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 	}
 
 	return adoptPrecompiledMaterial( material, wrapped );
+
+}
+
+function applyPrecompiledRenderLimitations( artifact, material ) {
+
+	// Three.js builds a distinct back-side render object for DoubleSide
+	// transmissive materials. A single precompiled artifact captures only the
+	// source material's current shader variant, so drawing an extra back-side
+	// pass reuses the wrong viewport-texture path and over-brightens glass.
+	// Until artifacts carry pass variants, prefer the captured/front variant.
+	if ( artifact && artifact.defaults && artifact.defaults.transmission > 0
+		&& artifact.renderState && artifact.renderState.side === 2
+		&& material && material.forceSinglePass === false ) {
+
+		material.forceSinglePass = true;
+
+	}
 
 }
 

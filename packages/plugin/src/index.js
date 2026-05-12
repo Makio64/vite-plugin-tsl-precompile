@@ -341,7 +341,8 @@ export default function tslPrecompile( userOpts = {} ) {
 				const auxEntries = entries.map( ( e ) => {
 
 					const artifact = e.entry && e.entry.artifact ? e.entry.artifact : e.entry;
-					return { shape: e.shape, configHash: e.configHash, artifact };
+					const name = e.entry && ( e.entry.__name || e.entry.name ) || artifact && ( artifact.__name || artifact.name ) || null;
+					return { shape: e.shape, configHash: e.configHash, name, artifact };
 
 				} );
 				const {

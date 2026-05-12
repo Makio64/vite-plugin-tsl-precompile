@@ -11,6 +11,8 @@ import {
 	loadAux,
 	hasAux,
 	listAux,
+	findAux,
+	bindAuxByName,
 	__resetAuxRegistryForTests,
 } from '../../../runtime/src/aux-loader.js';
 
@@ -84,6 +86,24 @@ test( 'aux-loader: registerAuxArtifacts (bulk) + listAux', () => {
 	assert.equal( list[ 0 ].shape, 'background' );
 	assert.equal( list[ 0 ].configHash, 'h1' );
 	assert.equal( list[ 1 ].shape, 'lights' );
+
+} );
+
+test( 'aux-loader: named aux captures can be found and bound to a node', () => {
+
+	__resetAuxRegistryForTests();
+	const artifact = { kind: 'pp' };
+	registerAuxArtifact( 'post-process', 'hash-pp', artifact, { name: 'scene-bloom' } );
+
+	const listed = listAux();
+	assert.equal( listed.length, 1 );
+	assert.equal( listed[ 0 ].name, 'scene-bloom' );
+	assert.equal( findAux( 'post-process', 'scene-bloom' ).configHash, 'hash-pp' );
+
+	const node = { isNode: true };
+	bindAuxByName( node, 'post-process', 'scene-bloom' );
+	assert.equal( node.__tslpAuxConfigHash, 'hash-pp' );
+	assert.equal( node.__tslpAuxShape, 'post-process' );
 
 } );
 

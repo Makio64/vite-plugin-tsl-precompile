@@ -36,6 +36,7 @@ import { viewportMipTexture, viewportTexture } from 'three/src/nodes/display/Vie
 import { viewportDepthTexture } from 'three/src/nodes/display/ViewportDepthTextureNode.js';
 import { getDFGLUT } from './dfg-lut.js';
 import { collectLiveMaterialTextures, collectReflectorBaseNodes } from './apply-precompiled.js';
+import { findPlanTextureSource, inferTextureTypeFromShader, resolvePlanTextureTypeHint, shaderDeclaresComparisonSampler, shaderDeclaresDepthTexture, shaderDeclaresMultisampledTexture, textureBindingNameForSampler, textureMatchesShaderBinding } from './hydrate/texture-resolver.js';
 
 const fallbackTexture = new DataTexture( new Uint8Array( [ 255, 255, 255, 255 ] ), 1, 1, RGBAFormat );
 fallbackTexture.needsUpdate = true;
@@ -649,6 +650,7 @@ const _odir = new Vector3();
 const _mwi = new Matrix4();
 const _m4rot = new Matrix4();
 const _lvec = new Vector3();
+const _lightMatchVec = new Vector3();
 const _clipPlane = new Plane();
 const _clipNormalMatrix = new Matrix3();
 
@@ -661,9 +663,9 @@ const _clipNormalMatrix = new Matrix3();
 // won't invalidate the cache. That's acceptable for now: scene-graph
 // lighting changes are rare and the alternative (per-frame retraversal)
 // would tax every UBO update for materials with many light-driven slots.
-function findLightInScene( scene, index ) {
+function getSceneLights( scene ) {
 
-	if ( ! scene ) return null;
+	if ( ! scene ) return [];
 	let cache = scene._tslpLightCache;
 	if ( ! cache || cache.scene !== scene ) {
 
@@ -680,11 +682,113 @@ function findLightInScene( scene, index ) {
 		}
 
 	}
-	return cache.lights[ index ] || null;
+	return cache.lights;
 
 }
 
-function findLightBySource( scene, source ) {
+function findLightInScene( scene, index ) {
+
+	const lights = getSceneLights( scene );
+	return lights[ index ] || null;
+
+}
+
+function snapshotArray( source, type ) {
+
+	const snap = source && source.valueSnapshot;
+	if ( ! snap || snap.type !== type || ! Array.isArray( snap.data ) ) return null;
+	return snap.data;
+
+}
+
+function vecDistanceSq( a, b ) {
+
+	if ( ! a || ! b || b.length < 3 ) return Infinity;
+	const dx = a.x - b[ 0 ];
+	const dy = a.y - b[ 1 ];
+	const dz = a.z - b[ 2 ];
+	return dx * dx + dy * dy + dz * dz;
+
+}
+
+function colorDistanceSq( light, data ) {
+
+	if ( ! light || ! light.color || ! data || data.length < 3 ) return Infinity;
+	const intensity = Number.isFinite( light.intensity ) ? light.intensity : 1;
+	const r = light.color.r * intensity - data[ 0 ];
+	const g = light.color.g * intensity - data[ 1 ];
+	const b = light.color.b * intensity - data[ 2 ];
+	return r * r + g * g + b * b;
+
+}
+
+function findLightBySnapshot( scene, source, frame = null ) {
+
+	const lights = getSceneLights( scene );
+	if ( lights.length === 0 || ! source ) return null;
+	let best = null;
+	let bestScore = Infinity;
+
+	if ( source.kind === 'light.colorScaled' ) {
+
+		const data = snapshotArray( source, 'color' );
+		if ( data ) {
+
+			for ( const light of lights ) {
+
+				const score = colorDistanceSq( light, data );
+				if ( score < bestScore ) {
+
+					bestScore = score;
+					best = light;
+
+				}
+
+			}
+			return bestScore < 1e-3 ? best : null;
+
+		}
+
+	}
+
+	const vec = snapshotArray( source, 'vec3' );
+	if ( ! vec ) return null;
+	for ( const light of lights ) {
+
+		if ( ! light || ! light.matrixWorld ) continue;
+		if ( source.kind === 'light.viewPosition' ) {
+
+			if ( ! ( frame && frame.camera && frame.camera.matrixWorldInverse ) ) continue;
+			_lightMatchVec.setFromMatrixPosition( light.matrixWorld ).applyMatrix4( frame.camera.matrixWorldInverse );
+
+		} else if ( source.kind === 'light.position' ) {
+
+			_lightMatchVec.setFromMatrixPosition( light.matrixWorld );
+
+		} else if ( source.kind === 'light.targetPosition' && light.target && light.target.matrixWorld ) {
+
+			_lightMatchVec.setFromMatrixPosition( light.target.matrixWorld );
+
+		} else {
+
+			continue;
+
+		}
+
+		const score = vecDistanceSq( _lightMatchVec, vec );
+		if ( score < bestScore ) {
+
+			bestScore = score;
+			best = light;
+
+		}
+
+	}
+	return bestScore < 1e-4 ? best : null;
+
+}
+
+function findLightBySource( scene, source, frame = null ) {
 
 	if ( ! scene || ! source ) return null;
 	if ( source.lightUuid && typeof scene.traverse === 'function' ) {
@@ -697,6 +801,26 @@ function findLightBySource( scene, source ) {
 
 		} );
 		if ( found ) return found;
+		const remap = scene._tslpLightUuidRemap;
+		if ( remap && remap.has( source.lightUuid ) ) return remap.get( source.lightUuid );
+
+	}
+	const snapshotMatch = findLightBySnapshot( scene, source, frame );
+	if ( snapshotMatch ) {
+
+		if ( source.lightUuid ) {
+
+			let remap = scene._tslpLightUuidRemap;
+			if ( ! remap ) {
+
+				remap = new Map();
+				scene._tslpLightUuidRemap = remap;
+
+			}
+			remap.set( source.lightUuid, snapshotMatch );
+
+		}
+		return snapshotMatch;
 
 	}
 	const lightIndex = Number.isInteger( source.lightIndex ) ? source.lightIndex : 0;
@@ -1508,26 +1632,6 @@ function hydrateRuntimeBindings( artifact, material ) {
 }
 
 /**
- * Look up a texture binding's source descriptor in the artifact's uniform plan.
- * Used by `hydrateRuntimeBindings` to discover `depth.texture` bindings that
- * need per-frame texture rebinding.
- *
- * @param {Object} artifact
- * @param {string} groupName
- * @param {string} bindingName
- * @return {?Object} Plan source descriptor, or null.
- */
-function findPlanTextureSource( artifact, groupName, bindingName ) {
-
-	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
-	const group = plan.find( ( g ) => g.name === groupName );
-	if ( ! group ) return null;
-	const tex = ( group.textures || [] ).find( ( t ) => t.name === bindingName );
-	return tex ? ( tex.source || null ) : null;
-
-}
-
-/**
  * Per-frame "node" that swaps each shadow-receiving binding's texture to the
  * live `light.shadow.map.depthTexture` (or the VSM intermediate render target's
  * `texture`) of the matching light in `frame.scene`. Without this, every
@@ -2049,6 +2153,7 @@ function createViewportTextureRebinder( entries ) {
 	let plainNode = null;
 	let depthNode = null;
 	const lastCopyRenderId = { mip: -1, plain: -1, depth: -1 };
+	const lastSeen = new WeakMap();
 
 	return {
 		getUpdateBeforeType() {
@@ -2100,7 +2205,13 @@ function createViewportTextureRebinder( entries ) {
 				const liveTex = node.value;
 				if ( ! liveTex ) continue;
 
-				rebindTextureBindingTargets( entry.binding, liveTex );
+				const changed = rebindTextureBindingTargets( entry.binding, liveTex );
+				for ( const target of textureBindingTargets( entry.binding ) ) {
+
+					invalidateOnTextureResourceChange( target, frame.renderer, lastSeen );
+					if ( changed ) invalidateTextureBindingTarget( target );
+
+				}
 
 			}
 
@@ -2721,108 +2832,6 @@ function resolveTextureBinding( artifact, groupName, bindingName, material, opti
 
 }
 
-function textureBindingNameForSampler( bindingName ) {
-
-	return typeof bindingName === 'string' && bindingName.endsWith( '_sampler' )
-		? bindingName.slice( 0, - '_sampler'.length )
-		: bindingName;
-
-}
-
-function resolvePlanTextureTypeHint( artifact, group, textureEntry, source, bindingName ) {
-
-	const textureBindingName = textureBindingNameForSampler( bindingName );
-	const shaderType = inferTextureTypeFromShader( artifact, textureBindingName );
-	const explicit = textureEntry && textureEntry.textureType && textureEntry.textureType !== 'unknown' ? textureEntry.textureType
-		: source && source.textureType && source.textureType !== 'unknown' ? source.textureType
-			: source && source.textureDimension && source.textureDimension !== 'unknown' ? source.textureDimension
-				: null;
-	if ( explicit ) return shaderType && shaderType !== explicit ? shaderType : explicit;
-
-	if ( textureBindingName !== bindingName && group && Array.isArray( group.textures ) ) {
-
-		const paired = group.textures.find( ( item ) => item && item.name === textureBindingName );
-		if ( paired && paired.textureType && paired.textureType !== 'unknown' ) return shaderType && shaderType !== paired.textureType ? shaderType : paired.textureType;
-		const pairedSource = paired && paired.source || null;
-		if ( pairedSource && pairedSource.textureType && pairedSource.textureType !== 'unknown' ) return shaderType && shaderType !== pairedSource.textureType ? shaderType : pairedSource.textureType;
-		if ( pairedSource && pairedSource.textureDimension && pairedSource.textureDimension !== 'unknown' ) return shaderType && shaderType !== pairedSource.textureDimension ? shaderType : pairedSource.textureDimension;
-
-	}
-
-	return shaderType;
-
-}
-
-function shaderDeclaresDepthTexture( artifact, bindingName ) {
-
-	const wgsl = `${ artifact.vertexShader || '' }\n${ artifact.fragmentShader || '' }\n${ artifact.computeShader || '' }`;
-	const escaped = textureBindingNameForSampler( bindingName ).replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
-	return new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth`, 'm' ).test( wgsl );
-
-}
-
-function shaderDeclaresComparisonSampler( artifact, bindingName ) {
-
-	const wgsl = `${ artifact.vertexShader || '' }\n${ artifact.fragmentShader || '' }\n${ artifact.computeShader || '' }`;
-	const escaped = String( bindingName || '' ).replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
-	return new RegExp( `var\\s+${ escaped }\\s*:\\s*sampler_comparison`, 'm' ).test( wgsl );
-
-}
-
-function shaderDeclaresCubeTexture( artifact, bindingName ) {
-
-	const wgsl = `${ artifact.vertexShader || '' }\n${ artifact.fragmentShader || '' }\n${ artifact.computeShader || '' }`;
-	const escaped = textureBindingNameForSampler( bindingName ).replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
-	return new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_(?:depth_)?cube`, 'm' ).test( wgsl );
-
-}
-
-function textureMatchesShaderBinding( artifact, bindingName, texture ) {
-
-	if ( ! textureMatchesShaderMultisample( artifact, bindingName, texture ) ) return false;
-	if ( ! texture ) return true;
-	const wantsDepthTexture = shaderDeclaresDepthTexture( artifact, bindingName );
-	if ( texture.isDepthTexture === true ) return wantsDepthTexture;
-	if ( wantsDepthTexture ) return false;
-	if ( shaderDeclaresCubeTexture( artifact, bindingName ) ) return texture.isCubeTexture === true;
-	const textureType = inferTextureTypeFromShader( artifact, bindingName );
-	if ( textureType === '3d' ) return texture.isData3DTexture === true || texture.isTexture3D === true;
-	if ( textureType === '2d-array' ) return texture.isDataArrayTexture === true || texture.isArrayTexture === true || texture.isCompressedArrayTexture === true || ( texture.isDepthTexture === true && texture.image && texture.image.depth > 1 );
-	return true;
-
-}
-
-function textureMatchesShaderMultisample( artifact, bindingName, texture ) {
-
-	if ( ! texture ) return true;
-	const wantsMultisampledTexture = shaderDeclaresMultisampledTexture( artifact, bindingName );
-	if ( texture.isRenderTargetTexture === true && texture.isDepthTexture !== true ) return wantsMultisampledTexture === false;
-	const isMultisampledTexture = isLikelyMultisampledTexture( texture );
-	return wantsMultisampledTexture ? isMultisampledTexture : ! isMultisampledTexture;
-
-}
-
-function isLikelyMultisampledTexture( texture ) {
-
-	return !! ( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
-
-}
-
-function shaderDeclaresMultisampledTexture( artifact, bindingName ) {
-
-	const wgsl = `${ artifact.vertexShader || '' }\n${ artifact.fragmentShader || '' }\n${ artifact.computeShader || '' }`;
-	const escaped = textureBindingNameForSampler( bindingName ).replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
-	return new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_(?:depth_)?multisampled_2d`, 'm' ).test( wgsl );
-
-}
-function shaderDeclaresArrayTexture( artifact, bindingName ) {
-
-	const wgsl = `${ artifact.vertexShader || '' }\n${ artifact.fragmentShader || '' }\n${ artifact.computeShader || '' }`;
-	const escaped = textureBindingNameForSampler( bindingName ).replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
-	return new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_(?:depth_)?2d_array`, 'm' ).test( wgsl );
-
-}
-
 function artifactUsesClippingUniformBuffers( artifact ) {
 
 	const wgsl = `${ artifact && artifact.vertexShader || '' }\n${ artifact && artifact.fragmentShader || '' }`;
@@ -2950,18 +2959,6 @@ function fallbackTextureForBinding( artifact, bindingName ) {
 
 	}
 	return fallbackTexture;
-
-}
-
-function inferTextureTypeFromShader( artifact, bindingName ) {
-
-	const wgsl = `${ artifact.vertexShader || '' }\n${ artifact.fragmentShader || '' }\n${ artifact.computeShader || '' }`;
-	const escaped = textureBindingNameForSampler( bindingName ).replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
-	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth_cube`, 'm' ).test( wgsl ) ) return 'cube';
-	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_cube`, 'm' ).test( wgsl ) ) return 'cube';
-	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_3d`, 'm' ).test( wgsl ) ) return '3d';
-	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_(?:depth_)?2d_array`, 'm' ).test( wgsl ) ) return '2d-array';
-	return null;
 
 }
 
@@ -3561,7 +3558,7 @@ function writeMaterialValue( view, offset, material, source, kind, dtype ) {
  */
 function writeLightValue( view, offset, kind, source, frame ) {
 
-	const light = frame && frame.scene ? findLightBySource( frame.scene, source ) : null;
+	const light = frame && frame.scene ? findLightBySource( frame.scene, source, frame ) : null;
 	recordLightLinkDiagnostic( {
 		kind,
 		source: source ? {

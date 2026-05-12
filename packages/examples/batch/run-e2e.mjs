@@ -322,11 +322,13 @@ function rewriteImportmap( html, mode ) {
 		`"@tsl-precompile/runtime/apply": "/__tslp_runtime/apply-precompiled.js"`,
 		`"@tsl-precompile/runtime/writers": "/__tslp_runtime/writers.js"`,
 		`"@tsl-precompile/runtime/slim-support/live-scene-index": "/__tslp_runtime/slim-support/live-scene-index.js"`,
+		`"@tsl-precompile/runtime/slim-support/pmrem": "/__tslp_runtime/slim-support/pmrem.js"`,
 		`"@tsl-precompile/contract": "/__tslp_contract/index.js"`,
 		`"@tsl-precompile/contract/graph-normalize": "/__tslp_contract/graph-normalize.js"`,
 		`"@tsl-precompile/contract/kinds": "/__tslp_contract/kinds.js"`,
 		`"@tsl-precompile/contract/texture-props": "/__tslp_contract/texture-props.js"`,
 		`"@tsl-precompile/contract/": "/__tslp_contract/"`,
+		`"virtual:tsl-precompile/__aux": "${ bust( '/__tslp__/aux-virtual.js' ) }"`,
 		`"three/src/": "/src/"`,
 		`"vite-plugin-tsl-precompile/src/vendor/compileTSL.js": "/__tslp_plugin/vendor/compileTSL.js"`,
 		`"vite-plugin-tsl-precompile/src/emit-updater.js": "/__tslp_plugin/emit-updater.js"`,
@@ -354,6 +356,12 @@ function rewriteImportmap( html, mode ) {
 
 }
 
+function rewriteHarnessVirtualImports( source ) {
+
+	return String( source ).replace( /(["'])virtual:tsl-precompile\/__aux\1/g, `$1/__tslp__/aux-virtual.js?v=${ CACHE_BUST }$1` );
+
+}
+
 function stockWebgpuModule() {
 
 	return `
@@ -363,6 +371,23 @@ export * from '/build/three.webgpu.js';
 let __pmremRunning = 0;
 window.__tslpPmremPending = window.__tslpPmremPending || 0;
 window.__tslpCompilePending = window.__tslpCompilePending || 0;
+
+function __recordRenderableObjectCount( scene ) {
+	if ( ! scene || typeof scene.traverse !== 'function' ) return;
+	let count = 0;
+	try {
+		scene.traverse( ( object ) => {
+			if ( object && object.visible !== false && object.geometry && object.material ) count ++;
+		} );
+	} catch ( _ ) {
+		return;
+	}
+	const prev = window.__tslpRenderableObjectCount | 0;
+	if ( count !== prev ) {
+		window.__tslpRenderableObjectCount = count;
+		window.__tslpRenderableLastBusyAt = typeof window.__tslpRealNow === 'function' ? window.__tslpRealNow() : Date.now();
+	}
+}
 
 ( function patchStockDefaultLoadingManager() {
 	const dlm = Original.DefaultLoadingManager;
@@ -432,7 +457,28 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		const p = super.compileAsync( scene, camera, ...rest );
 		return Promise.resolve( p ).then( ( v ) => { settle(); return v; }, ( e ) => { settle(); throw e; } );
 	}
+	render( scene, camera ) {
+		__recordRenderableObjectCount( scene );
+		return super.render( scene, camera );
+	}
 }
+`;
+
+}
+
+function auxVirtualModule() {
+
+	return `
+import { registerAuxArtifacts } from '@tsl-precompile/runtime';
+
+const __state = window.__TSLP_E2E || {};
+const __entries = __state.mode === 'replay' && __state.artifacts && Array.isArray( __state.artifacts.aux )
+	? __state.artifacts.aux
+	: [];
+
+if ( __entries.length > 0 ) registerAuxArtifacts( __entries );
+
+export default __entries;
 `;
 
 }
@@ -459,6 +505,23 @@ let __lastCamera = null;
 window.__tslpPmremPending = window.__tslpPmremPending || 0;
 window.__tslpPrecompilePending = window.__tslpPrecompilePending || 0;
 window.__tslpAuxCapturePending = window.__tslpAuxCapturePending || 0;
+
+function __recordRenderableObjectCount( scene ) {
+	if ( ! scene || typeof scene.traverse !== 'function' ) return;
+	let count = 0;
+	try {
+		scene.traverse( ( object ) => {
+			if ( object && object.visible !== false && object.geometry && object.material ) count ++;
+		} );
+	} catch ( _ ) {
+		return;
+	}
+	const prev = window.__tslpRenderableObjectCount | 0;
+	if ( count !== prev ) {
+		window.__tslpRenderableObjectCount = count;
+		window.__tslpRenderableLastBusyAt = typeof window.__tslpRealNow === 'function' ? window.__tslpRealNow() : Date.now();
+	}
+}
 
 // Bump window.__tslpLoaderPending around every three.js loader item so the
 // Playwright wait gate doesn't screenshot while HDR/GLTF/MaterialX/etc. are
@@ -916,6 +979,7 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 	}
 	render( scene, camera ) {
 		if ( __pmremRunning > 0 ) return super.render( scene, camera );
+		__recordRenderableObjectCount( scene );
 		__lastScene = scene;
 		__lastCamera = camera;
 		__rememberAuxScene( scene, camera );
@@ -956,6 +1020,7 @@ export class ${ name } {
 import * as Slim from '/__tslp__/three.webgpu.slim.js?v=${ CACHE_BUST }';
 import { TSL as FullTSL, TextureNode as FullTextureNode, BlendMode as FullBlendMode, TempNode as FullTempNode, NodeUpdateType as FullNodeUpdateType, NodeMaterial as FullNodeMaterial, MeshBasicNodeMaterial as FullMeshBasicNodeMaterial, MeshStandardNodeMaterial as FullMeshStandardNodeMaterial, MeshPhysicalNodeMaterial as FullMeshPhysicalNodeMaterial, MeshLambertNodeMaterial as FullMeshLambertNodeMaterial, MeshPhongNodeMaterial as FullMeshPhongNodeMaterial, MeshToonNodeMaterial as FullMeshToonNodeMaterial, MeshNormalNodeMaterial as FullMeshNormalNodeMaterial, MeshMatcapNodeMaterial as FullMeshMatcapNodeMaterial, MeshSSSNodeMaterial as FullMeshSSSNodeMaterial, LineBasicNodeMaterial as FullLineBasicNodeMaterial, LineDashedNodeMaterial as FullLineDashedNodeMaterial, Line2NodeMaterial as FullLine2NodeMaterial, PointsNodeMaterial as FullPointsNodeMaterial, SpriteNodeMaterial as FullSpriteNodeMaterial, ShadowNodeMaterial as FullShadowNodeMaterial, RenderTarget as FullRenderTarget, DepthTexture as FullDepthTexture, ArrayCamera as FullArrayCamera, QuadMesh as FullQuadMesh, RendererUtils as FullRendererUtils, Vector2 as FullVector2, TextureLoader as FullTextureLoader, CubeTextureLoader as FullCubeTextureLoader, DataTextureLoader as FullDataTextureLoader, ImageBitmapLoader as FullImageBitmapLoader } from '/build/three.webgpu.js';
 import { createLiveSceneIndex, textureImageReady as __sharedTextureImageReady, textureImageSrc as __sharedTextureImageSrc, newFallbackTextureImage as __sharedNewFallbackTextureImage } from '/__tslp_runtime/slim-support/live-scene-index.js';
+import { artifactNeedsPMREM as __sharedArtifactNeedsPMREM, artifactPMREMSourceUuids as __sharedArtifactPMREMSourceUuids, attachPMREMRefsByOrder as __sharedAttachPMREMRefsByOrder, isPMREMArtifactTextureSource as __sharedIsPMREMArtifactTextureSource, isPMREMTexture as __sharedIsPMREMTexture, pmremTexturesForSources as __sharedPMREMTexturesForSources, textureListSignature as __sharedTextureListSignature } from '/__tslp_runtime/slim-support/pmrem.js';
 import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS } from '/__tslp_contract/texture-props.js';
 export * from '/__tslp__/three.webgpu.slim.js';
 export { FullTextureNode as TextureNode, FullBlendMode as BlendMode, FullTempNode as TempNode, FullNodeUpdateType as NodeUpdateType, FullRenderTarget as RenderTarget, FullDepthTexture as DepthTexture, FullArrayCamera as ArrayCamera, FullQuadMesh as QuadMesh, FullRendererUtils as RendererUtils };
@@ -2446,7 +2511,7 @@ function __attachReflectorBaseNodesForArtifact( material, artifact ) {
 }
 
 function __isPMREMTexture( texture ) {
-	return !! ( texture && texture.isTexture === true && texture.isCubeTexture !== true && ! Array.isArray( texture.image ) && ( texture.mapping === 306 || texture.name === 'PMREM.cubeUv' ) );
+	return __sharedIsPMREMTexture( texture );
 }
 
 function __textureImageSrc( texture ) {
@@ -3344,7 +3409,7 @@ function __flushMaterialTextureRewire( renderer ) {
 }
 
 function __isPMREMArtifactTextureSource( source ) {
-	return !! ( source && source.kind === 'artifact.texture' && ( source.mapping === 306 || source.textureName === 'PMREM.cubeUv' ) );
+	return __sharedIsPMREMArtifactTextureSource( source );
 }
 
 function __attachArtifactTextureRefsWhere( artifact, texture, predicate ) {
@@ -4487,27 +4552,11 @@ async function __generatePMREMAsync( slimRenderer, sourceTex ) {
 // re-runs hydrateNodeBuilderState with the correct texture in _textureRefs
 // (hydration is cached per material version; needsUpdate invalidates the cache).
 function __artifactNeedsPMREM( artifact ) {
-	for ( const group of artifact.uniformPlan || [] ) {
-		for ( const t of group.textures || [] ) {
-			const src = t && t.source || {};
-			if ( src.kind === 'artifact.texture' && ( src.mapping === 306 || src.textureName === 'PMREM.cubeUv' ) ) return true;
-		}
-	}
-	return false;
+	return __sharedArtifactNeedsPMREM( artifact );
 }
 
 function __artifactPMREMSourceUuids( artifact ) {
-	const out = [];
-	const seen = new Set();
-	for ( const group of artifact && artifact.uniformPlan || [] ) {
-		for ( const entry of group.textures || [] ) {
-			const source = entry && entry.source || {};
-			if ( ! source.textureUuid || ! __isPMREMArtifactTextureSource( source ) || seen.has( source.textureUuid ) ) continue;
-			seen.add( source.textureUuid );
-			out.push( source.textureUuid );
-		}
-	}
-	return out;
+	return __sharedArtifactPMREMSourceUuids( artifact );
 }
 
 function __cachedPMREMForSource( sourceTex ) {
@@ -4515,47 +4564,15 @@ function __cachedPMREMForSource( sourceTex ) {
 }
 
 function __pmremTexturesForSources( sources ) {
-	const out = [];
-	for ( const source of sources || [] ) {
-		const pmrem = __getCachedPMREMForSource( source );
-		if ( pmrem && pmrem.isTexture === true ) __pushUniqueTexture( out, pmrem );
-	}
-	return out;
+	return __sharedPMREMTexturesForSources( sources, __getCachedPMREMForSource );
 }
 
 function __textureListSignature( textures, count = 0 ) {
-	const limit = Math.max( 0, count || ( textures && textures.length ) || 0 );
-	return ( textures || [] ).slice( 0, limit ).map( ( texture, index ) => {
-		return texture && ( texture.uuid || texture.name || String( index ) ) || String( index );
-	} ).join( '|' );
+	return __sharedTextureListSignature( textures, count );
 }
 
 function __attachPMREMRefsByOrder( artifact, pmremTextures ) {
-	const sourceUuids = __artifactPMREMSourceUuids( artifact );
-	if ( sourceUuids.length === 0 ) return false;
-	const pmrems = [];
-	for ( const texture of pmremTextures || [] ) {
-		if ( texture && texture.isTexture === true ) __pushUniqueTexture( pmrems, texture );
-	}
-	if ( pmrems.length < sourceUuids.length ) return false;
-	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
-	let changed = false;
-	for ( let i = 0; i < sourceUuids.length; i ++ ) {
-		const uuid = sourceUuids[ i ];
-		const texture = pmrems[ i ];
-		if ( refs.get( uuid ) === texture ) continue;
-		refs.set( uuid, texture );
-		changed = true;
-	}
-	if ( changed ) {
-		Object.defineProperty( artifact, '_textureRefs', {
-			value: refs,
-			enumerable: false,
-			configurable: true,
-			writable: true,
-		} );
-	}
-	return true;
+	return __sharedAttachPMREMRefsByOrder( artifact, pmremTextures );
 }
 
 function __wireEnvironmentPMREM( renderer, scene ) {
@@ -7966,6 +7983,7 @@ async function handleCapture( req, res, url ) {
 			bucket.aux.push( {
 				shape: payload.materialShape,
 				configHash: payload.configHash,
+				name: payload.name || null,
 				artifact: payload.artifact,
 			} );
 
@@ -8016,6 +8034,7 @@ const server = createServer( async ( req, res ) => {
 		if ( url.pathname === '/__tslp__/full-webgpu-auto.js' ) return sendJs( res, fullWebgpuAutoModule() );
 		if ( url.pathname === '/__tslp__/slim-webgpu-replay.js' ) return sendJs( res, slimWebgpuReplayModule() );
 		if ( url.pathname === '/__tslp__/tsl-stub.js' ) return sendJs( res, tslStubModule() );
+		if ( url.pathname === '/__tslp__/aux-virtual.js' ) return sendJs( res, auxVirtualModule() );
 		if ( url.pathname === '/examples/jsm/inspector/Inspector.js' ) return sendJs( res, inspectorStubModule() );
 		if ( url.pathname === '/examples/jsm/libs/stats.module.js' ) return sendJs( res, statsStubModule() );
 		// `three/addons/*` for local-examples-root packages: `/examples/*` is
@@ -8098,6 +8117,12 @@ const server = createServer( async ( req, res ) => {
 				? buf.toString( 'utf8' ).replace( /(["'])\/src\//g, '$1/__local_src/' )
 				: buf.toString( 'utf8' );
 			buf = Buffer.from( injectHtml( html, example, mode ) );
+
+		}
+		const isLocalJs = localExamplesRoot && /\.(?:mjs|js)$/.test( filePath ) && normalize( filePath ).startsWith( normalize( localExamplesRoot + '/' ) );
+		if ( isLocalJs ) {
+
+			buf = Buffer.from( rewriteHarnessVirtualImports( buf.toString( 'utf8' ) ) );
 
 		}
 
@@ -8558,7 +8583,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 	// not drift just because replay generated PMREM or hydrated artifacts.
 	const TARGET_TICK = Number.isFinite( targetTick ) ? Math.max( 0, targetTick | 0 ) : 0;
 	const FRAME_STEP_MS = 16.6667;
-	const waitForRenderableObjects = mode === 'replay' && await exampleUsesDeferredSceneAssets( name );
+	const waitForRenderableObjects = await exampleUsesDeferredSceneAssets( name );
 	try {
 
 		stepStartedAt = Date.now();
@@ -8629,8 +8654,16 @@ async function visitExample( browser, name, mode, waitMs ) {
 				return function ( ...args ) {
 
 					const atTarget = ( w.__tslpRafTick | 0 ) >= freezeAt;
+					const waitingForRenderableObjects = w.__tslpWaitForRenderableObjects === true && ( w.__tslpRenderableObjectCount | 0 ) === 0;
+					const waitingForAsyncWork = ( w.__tslpLoaderPending | 0 ) !== 0
+						|| ( w.__tslpCompilePending | 0 ) !== 0
+						|| ( w.__tslpPmremPending | 0 ) !== 0
+						|| ( w.__tslpShadowPending | 0 ) !== 0
+						|| ( w.__tslpComputePending | 0 ) !== 0
+						|| waitingForRenderableObjects;
+					if ( atTarget && waitingForAsyncWork ) w.__tslpAnimationLoopCalls = 0;
 					if ( atTarget && ( w.__tslpComputePending | 0 ) !== 0 ) return;
-					if ( atTarget && ( w.__tslpAnimationLoopCalls | 0 ) >= settleFrames ) return;
+					if ( atTarget && ! waitingForAsyncWork && ( w.__tslpAnimationLoopCalls | 0 ) >= settleFrames ) return;
 					w.__tslpAnimationLoopCalls = ( w.__tslpAnimationLoopCalls | 0 ) + 1;
 					return callback.apply( this, args );
 

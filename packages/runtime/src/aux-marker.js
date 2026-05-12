@@ -99,9 +99,9 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 
 	// Register an aux artifact both on the dev server (via POST) AND in the
 	// local runtime registry so the inspector panel sees captures live.
-	const trackLocal = ( shape, configHash, artifact ) => {
+	const trackLocal = ( shape, configHash, artifact, name = undefined ) => {
 
-		try { registerAuxArtifact( shape, configHash, artifact ); } catch ( _ ) { /* tolerate duplicates */ }
+		try { registerAuxArtifact( shape, configHash, artifact, { name } ); } catch ( _ ) { /* tolerate duplicates */ }
 
 	};
 
@@ -146,15 +146,16 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 		try {
 
 			const configHash = hashNodeGraphSync( opts.postProcessing.outputNode, { shape, ...hashOpts } );
+			const captureName = opts.postProcessingName || `aux-${ shape }-${ configHash.slice( 0, 12 ) }`;
 			const captured = await capturePostProcessingLive( renderer, opts.postProcessing, opts, hashOpts );
 			const artifact = captured && captured.artifact ? captured.artifact : captured;
 			const extraArtifacts = captured && Array.isArray( captured.extraArtifacts ) ? captured.extraArtifacts : [];
-			trackLocal( shape, configHash, artifact );
+			trackLocal( shape, configHash, artifact, captureName );
 			results.push( await post( opts.devEndpoint, {
 				materialShape: shape,
 				configHash,
 				artifact,
-				name: `aux-${ shape }-${ configHash.slice( 0, 12 ) }`,
+				name: captureName,
 			}, shape, configHash ) );
 			for ( const extra of extraArtifacts ) {
 
