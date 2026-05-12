@@ -41,7 +41,7 @@ An example **matches** if the slim-runtime replay screenshot is within 30 dB PSN
 | webgpu_materials_texture_html.html | ✓ | ✓ | inf | ✅ matches | e2e-report.json pixel gate |
 | webgpu_materials_texture_manualmipmap.html | ✓ | ✓ | inf | ✅ matches | e2e-report.json pixel gate |
 | webgpu_materials_toon.html | ✓ | ✓ | inf | ✅ matches | e2e-report.json pixel gate |
-| webgpu_materials_transmission.html | ✓ | ✓ | 26.25 | ❌ regression | e2e-report.json pixel gate |
+| webgpu_materials_transmission.html | ✓ | ✓ | 26.25 | ❌ regression | verify-transmission-final.json pixel gate |
 | webgpu_materials_video.html | ✓ | ✓ | 86.38 | ✅ matches | e2e-report.json pixel gate |
 | webgpu_sandbox.html | ✓ | ✓ | 14.93 | ❌ regression | e2e-report.json pixel gate |
 
