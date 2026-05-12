@@ -4,6 +4,8 @@ Companion to [ARCHITECTURE.md](./ARCHITECTURE.md) (what the system is), [STATUS.
 
 This file is the **structural** to-do list: the changes that make the plugins easier to evolve and make 100% visual fidelity *reachable* rather than a per-example grind. The latest generated coverage summary currently reports **153 / 225 graded examples** at PSNR ≥ 30 dB, and that number moves quickly; refresh `packages/examples/batch/results/coverage-summary.md` before quoting it externally. The remaining work is no longer mostly limited by individual rendering bugs — it is limited by where the fidelity logic lives, how the modules are factored, and how brittle the three.js coupling is. Fix the structure and the per-example work gets cheaper, safer, and shippable to real users.
 
+**Current read.** This roadmap is good to use, but it is not "done." The first shared-contract, graph-normalization, slim-support, texture-resolver, codegen-parse, coverage-config, and strict-rewrite wedges have landed. The unfinished evolution is the second half: move the rest of the harness runtime behavior into `slim-support`, shrink `hydrator.js` into binding modules, turn dynamic binding descriptors into emitted/runtime-resolved artifact data, harden the three.js compat matrix, and add a dev-vs-build extractor convergence guard.
+
 Items are ordered **P0 → P3**. Each has: **Symptom** (what's wrong), **Why it blocks evolution/fidelity**, **Change** (target shape), **First step** (a small, low-risk wedge), **Files**.
 
 Last updated: 2026-05-12.
@@ -12,7 +14,7 @@ Last updated: 2026-05-12.
 
 ## The one-paragraph diagnosis
 
-The real fidelity work — PMREM generation, texture rebinding by identity, compute-buffer sync, shadow/pass delegation — still mostly lives in a **9.4k-line test harness** ([`packages/examples/batch/run-e2e.mjs`](packages/examples/batch/run-e2e.mjs)), so fixes can land in scaffolding before adopters benefit. The first productized runtime wedge now exists in [`packages/runtime/src/slim-support/live-scene-index.js`](packages/runtime/src/slim-support/live-scene-index.js), but most PMREM / compute / fallback-renderer behavior still needs to move behind that API. The runtime's [`hydrator.js`](packages/runtime/src/hydrator.js) is still a **3,843-line god module** with too few internal seams. The extractor -> codegen -> runtime contract now has a shared package ([`packages/contract`](packages/contract)) for graph normalization, texture-property lists, the `source.kind` registry, and artifact validation, removing several drift risks. The vendored three.js fork (~2.8k LOC) plus [`three-rewrite.js`](packages/plugin/src/three-rewrite.js) (1,718 LOC of source-text AST surgery on ~9 three.js files) now fails strict/CI builds on rewrite warnings, but the deeper upstream seam is still unresolved. And pure slim **cannot generate shaders**, so shadows / clipping / dynamic node subgraphs are blocked — the harness papers over this by spinning up a *full* `WebGPURenderer` on the side, a pattern that is not yet productized.
+The real fidelity work — PMREM generation, texture rebinding by identity, compute-buffer sync, shadow/pass delegation — still mostly lives in a **9.4k-line test harness** ([`packages/examples/batch/run-e2e.mjs`](packages/examples/batch/run-e2e.mjs)), so fixes can land in scaffolding before adopters benefit. The first productized runtime wedges now exist in [`packages/runtime/src/slim-support/live-scene-index.js`](packages/runtime/src/slim-support/live-scene-index.js) and [`packages/runtime/src/slim-support/pmrem.js`](packages/runtime/src/slim-support/pmrem.js), but PMREM generation orchestration / compute / fallback-renderer behavior still needs to move behind that API. The runtime's [`hydrator.js`](packages/runtime/src/hydrator.js) is still large, but the first texture resolver seam now lives in [`packages/runtime/src/hydrate/texture-resolver.js`](packages/runtime/src/hydrate/texture-resolver.js). The extractor -> codegen -> runtime contract now has a shared package ([`packages/contract`](packages/contract)) for graph normalization, texture-property lists, the `source.kind` registry, dynamic binding descriptors, and artifact validation, removing several drift risks. The vendored three.js fork (~2.8k LOC) plus [`three-rewrite.js`](packages/plugin/src/three-rewrite.js) (1,718 LOC of source-text AST surgery on ~9 three.js files) now fails strict/CI builds on rewrite warnings, but the deeper upstream seam is still unresolved. And pure slim **cannot generate shaders**, so shadows / clipping / dynamic node subgraphs are blocked — the harness papers over this by spinning up a *full* `WebGPURenderer` on the side, a pattern that is not yet productized.
 
 ---
 
@@ -41,9 +43,9 @@ support.renderPassWithFallback(pass);
 
 Move the harness `__*` helpers in there one cluster at a time (textures → PMREM → compute → pass/shadow fallback), leaving `run-e2e.mjs` as a thin caller of the same API real users would use.
 
-**Status (2026-05-12).** First wedge landed. [`packages/runtime/src/slim-support/live-scene-index.js`](packages/runtime/src/slim-support/live-scene-index.js) now owns live texture identity indexing, material/node texture cataloguing, and null-image healing. `run-e2e.mjs` imports the helper through the runtime package, and [`packages/runtime/test/slim-support-live-scene-index.test.js`](packages/runtime/test/slim-support-live-scene-index.test.js) covers the extracted behavior.
+**Status (2026-05-12).** First wedges landed. [`packages/runtime/src/slim-support/live-scene-index.js`](packages/runtime/src/slim-support/live-scene-index.js) now owns live texture identity indexing, material/node texture cataloguing, and null-image healing. [`packages/runtime/src/slim-support/pmrem.js`](packages/runtime/src/slim-support/pmrem.js) now owns PMREM artifact/source detection plus `_textureRefs` wiring helpers. `run-e2e.mjs` imports those helpers through the runtime package, and focused runtime tests cover the extracted behavior.
 
-**Next step.** Move the next cluster — PMREM source selection/cache/generation — into `slim-support`, then keep pulling harness-only runtime behavior in this order: compute sync, full-renderer fallback, pass/shadow delegation.
+**Next step.** Finish moving PMREM cache/generation orchestration into `slim-support`, then keep pulling harness-only runtime behavior in this order: compute sync, full-renderer fallback, pass/shadow delegation.
 
 **Files.** new `packages/runtime/src/slim-support/*`; `packages/runtime/src/index.js` (export); `packages/runtime/package.json` (export map); `packages/examples/batch/run-e2e.mjs` (call, don't inline).
 
@@ -63,7 +65,9 @@ Move the harness `__*` helpers in there one cluster at a time (textures → PMRE
 
 Adding a binding kind becomes: add one file under `kinds/`, register it. (Today it's "grep both plugin and runtime for the string literal.")
 
-**First step.** Extract `resolveTextureBinding` + its helpers (`textureFromSnapshot`, `lookupLiveTextureByIdentity`, `lookupAnonymousDataTexture`, `lookupAnonymousStorageTexture`, the `shaderDeclares*` introspection helpers) into `texture-resolver.js` with no behavior change, strategies as named functions, plus a debug hook recording which strategy resolved each binding.
+**Status (2026-05-12).** First no-behavior-change seam landed. [`packages/runtime/src/hydrate/texture-resolver.js`](packages/runtime/src/hydrate/texture-resolver.js) now owns uniform-plan texture lookup, shader texture-shape inference, and texture-vs-binding compatibility checks, with focused tests in [`packages/runtime/test/hydrate-texture-resolver.test.js`](packages/runtime/test/hydrate-texture-resolver.test.js).
+
+**Next step.** Move the remaining `resolveTextureBinding` fallback chain (`textureFromSnapshot`, `lookupLiveTextureByIdentity`, `lookupAnonymousDataTexture`, `lookupAnonymousStorageTexture`) into explicit named strategies and record which strategy resolved each binding.
 
 **Files.** new `packages/runtime/src/hydrate/*`; `packages/runtime/src/hydrator.js` (slimmed); `packages/runtime/src/writers.js`.
 
@@ -82,9 +86,9 @@ Adding a binding kind becomes: add one file under `kinds/`, register it. (Today 
 
 Wire it so the **plugin build fails** when an artifact has a `source.kind` not in `KINDS`, and the **runtime validates artifacts on load in dev mode**.
 
-**Status (2026-05-12).** Contract wedge landed. [`packages/contract/src/texture-props.js`](packages/contract/src/texture-props.js) now exports `MATERIAL_TEXTURE_PROPS`, `NODE_GRAPH_TEXTURE_KEYS`, and `MATERIAL_NODE_TEXTURE_KEYS`; runtime, hydrator, and the E2E harness import the shared arrays. [`packages/contract/src/kinds.js`](packages/contract/src/kinds.js) now exports `KINDS`, `BLOCKED_KINDS`, kind lookup helpers, `collectArtifactSourceKinds()`, and `validateArtifact()`. `emit-updater` imports the blocked-kind reasons from the shared registry, root `pnpm verify` validates the checked-in example artifact payloads against the registry, and `__applyPrecompiled` can validate artifacts in dev / `__TSLP_VALIDATE_ARTIFACTS` mode. The validator currently cross-checks 38 checked-in artifact JSON files with zero schema/source-kind failures.
+**Status (2026-05-12).** Contract wedge landed. [`packages/contract/src/texture-props.js`](packages/contract/src/texture-props.js) now exports `MATERIAL_TEXTURE_PROPS`, `NODE_GRAPH_TEXTURE_KEYS`, and `MATERIAL_NODE_TEXTURE_KEYS`; runtime, hydrator, and the E2E harness import the shared arrays. [`packages/contract/src/kinds.js`](packages/contract/src/kinds.js) now exports `KINDS`, `BLOCKED_KINDS`, kind lookup helpers, `collectArtifactSourceKinds()`, and `validateArtifact()`. [`packages/contract/src/dynamic-bindings.js`](packages/contract/src/dynamic-bindings.js) now describes live/dynamic source descriptors and `validateArtifact()` enforces required descriptor fields. `emit-updater` imports the blocked-kind reasons from the shared registry, root `pnpm verify` validates the checked-in example artifact payloads against the registry, and `__applyPrecompiled` can validate artifacts in dev / `__TSLP_VALIDATE_ARTIFACTS` mode. The validator currently cross-checks 45 checked-in package artifact JSON files plus 464 batch artifact JSON files with zero schema/source-kind failures.
 
-**Next step.** Push the registry deeper into extractor/runtime internals: classify dynamic bindings in the contract, then make the hydrator binding-kind split (P0.2) consume the same registry instead of local string branches.
+**Next step.** Push the dynamic descriptor registry deeper into extractor/runtime internals: emit explicit artifact-level dynamic bindings, then make the hydrator binding-kind split (P0.2) consume those descriptors instead of local string branches.
 
 **Files.** [`packages/contract/*`](packages/contract); `packages/plugin/src/emit-updater.js`, `packages/plugin/src/vendor/extractUniformPlan.js`; `packages/runtime/src/apply-precompiled.js`, `packages/runtime/src/hydrator.js`; `packages/examples/batch/run-e2e.mjs`.
 
@@ -140,6 +144,8 @@ Wire it so the **plugin build fails** when an artifact has a `source.kind` not i
 
 Likely (A) now, (B) later. Either way, document it as the policy.
 
+**Status.** Not done yet. The harness already behaves like option (A), but runtime/API docs do not yet define it as a supported mode.
+
 **First step.** Write the decision section here. If (A): move `__getComputeRenderer` + `__renderPassNodeWithFullRenderer` into `slim-support` (depends on P0.1) behind a `fullRendererFallback` flag.
 
 **Files.** this doc; later `packages/runtime/src/slim-support/*`, `packages/runtime/src/slim-stubs.js`, `packages/runtime/src/aux-marker.js`.
@@ -154,7 +160,9 @@ Likely (A) now, (B) later. Either way, document it as the policy.
 
 **Change.** Add a `dynamicBindings` section to the artifact: "slot X resolves its GPU resource per render from descriptor D" (descriptor types: `shadow-depth(lightRef)`, `reflector-rt(reflectorRef, camera)`, `viewport-texture`, `framebuffer`, …). One generic `DynamicBindingResolver` keyed by descriptor type replaces the five bespoke rebinders. Pairs naturally with the kinds pipeline (P0.2).
 
-**First step.** Enumerate every existing rebinder's "what it resolves and from where" into a table here; design the `dynamicBindings` descriptor schema and put it in the shared contract (P0.3).
+**Status.** First contract wedge landed. [`packages/contract/src/dynamic-bindings.js`](packages/contract/src/dynamic-bindings.js) now describes dynamic binding sources and validates required descriptor fields, but artifacts do not yet emit a first-class `dynamicBindings` section and the runtime still resolves them through the existing rebinder factories.
+
+**Next step.** Enumerate every existing rebinder's "what it resolves and from where" into a table here, then promote the descriptors into emitted artifact data consumed by one runtime resolver.
 
 **Files.** this doc; later `packages/plugin/src/emit-*.js` (emit the section), `packages/plugin/src/vendor/extractUniformPlan.js` (classify dynamic slots), `packages/runtime/src/hydrate/*`.
 
@@ -202,6 +210,8 @@ Likely (A) now, (B) later. Either way, document it as the policy.
 
 **Change.** Have `pnpm verify` (or a dedicated check) diff dev-captured vs build-re-extracted artifacts across the example corpus and fail on shape divergence; document explicitly which scene properties are *allowed* to differ.
 
+**Status.** Not done yet. `pnpm verify` validates artifact shape/source-kind contract coverage, but it does not yet diff dev-captured artifacts against build-re-extracted artifacts.
+
 **First step.** Add the diff step to [`packages/plugin/src/cli/verify.js`](packages/plugin/src/cli/verify.js).
 
 **Files.** `packages/plugin/src/cli/verify.js`; `packages/plugin/src/node-harness.js`.
@@ -227,7 +237,7 @@ Likely (A) now, (B) later. Either way, document it as the policy.
 ```
 P0.4 (hasher dedupe) ──┐  first shared-module wedge landed
 P0.3 (shared contract) ─┼─► both feed P0.2 (hydrator split) and P1.7 (dynamic bindings)
-                        │  texture-props + KINDS/schema landed; dynamicBindings next
+                        │  texture-props + KINDS/schema + dynamic descriptors landed
 P0.1 (slim-support) ────┴─► enables P1.6 (full-renderer policy) and P3.12 (debug hooks)
                            live-scene-index wedge landed; PMREM next
 
@@ -237,7 +247,7 @@ P2.8 (codegen)        — parser guard landed; writer table/AST codegen next
 P2.10 (verify) , P3.* — opportunistic
 ```
 
-Suggested order from here: **P0.5 compat matrix** (make upstream drift visible), then **P0.2 texture resolver split → P0.1 PMREM support**, then **P1.6 / P1.7 dynamic bindings**, with P2/P3 cleanup folded in as the touched areas stabilize.
+Suggested order from here: **P0.5 compat matrix** (make upstream drift visible), then **P0.2 texture resolver split → P0.1 PMREM support**, then **P1.6 / P1.7 dynamic bindings**, then **P2.10 dev/build extractor convergence**, with P2/P3 cleanup folded in as the touched areas stabilize.
 
 ## What "done" looks like
 

@@ -11,12 +11,14 @@ Last updated: 2026-05-12
 This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage snapshot generated on 2026-05-12 from saved capture/replay shots. E2E and coverage-summary PSNR now share the same Node-side comparator in [packages/examples/batch/psnr.mjs](packages/examples/batch/psnr.mjs).
 
 **Green in focused runs:**
+- `webgpu_shadowmap_opacity.html` — capture/replay now wait for deferred renderable scene content before freezing; focused verification passes at 67.34 dB in `verify-shadowmap-opacity-final.json`.
+- `webgpu_lights_selective.html` — stale captured light UUIDs now remap by light color/position snapshots, including selective light lists whose `lightIndex` is local to the selected set; focused verification matches at PSNR `inf` in `verify-lights-selective-final.json`.
 - `webgpu_loader_gltf.html` — PMREM environment/reflection/background replay now matches capture at PSNR `inf` in `visual-loader-gltf-after-pmrem-flipy.json`.
 - `webgpu_loader_gltf_sheen.html` — sheen environment lighting is no longer Y-inverted; PSNR `inf` in `visual-loader-gltf-sheen-after-pmrem-flipy.json`.
 - `webgpu_pmrem_cubemap.html` — cubemap PMREM source mapping is normalized before generation; PSNR `inf` in `visual-pmrem-cubemap-after-cube-mapping-normalize.json`.
 - `webgpu_portal.html` — pass-scene and main-scene backgrounds are separated by exact aux/background matching; PSNR `inf` in `visual-portal-after-bg-exact.json`.
 - `webgpu_postprocessing_bloom.html`, `webgpu_postprocessing_bloom_emissive.html`, `webgpu_postprocessing_bloom_selective.html` — focused bloom cluster now matches stock at PSNR `inf` in `visual-bloom-cluster-after-fixes.json` (2026-05-11).
-- Shadow focused sweep — the focused eight-example sweep was green, but the refreshed broad summary now reports shadows at 7 / 8. `webgpu_shadowmap_array.html` is reconciled through the shared PSNR ignore region at 34.20 dB; the active broad-shadow regression is `webgpu_shadowmap_opacity.html` at 10.80 dB.
+- Shadow focused sweep — the focused eight-example sweep was green, and the later `webgpu_shadowmap_opacity.html` regression is fixed in focused verification. Refresh the full broad summary before quoting the category count.
 - `webgpu_materials_texture_manualmipmap.html` — refreshed focused run now matches stock at PSNR `inf` in `next-pbr-manualmipmap.json`.
 - `webgpu_loader_gltf_iridescence.html` — refreshed focused run now passes at 37.95 dB in `next-pbr-iridescence.json`.
 - `webgpu_materials_toon.html` — `toonOutlinePass` now captures and replays its dynamic `Toon_Outline` material; PSNR `inf` in `next-toon-outline-pass.json`.
@@ -24,8 +26,9 @@ This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage s
 - `webgpu_rtt.html`, `webgpu_depth_texture.html`, and `webgpu_multisampled_renderbuffers.html` — standalone `QuadMesh` / render-target materials now replay through captured precompiled materials; all three focused runs report PSNR `inf`.
 
 **Improved but not fully green:**
+- `webgpu_materials_transmission.html` — viewport texture invalidation is hardened, but the focused verification still misses the 30 dB gate at 26.25 dB. This remains the beta PBR blocker.
 - `webgpu_lines_fat_raycasting.html` — visually very close but still below the gate at 28.93 dB after a fresh run.
-- `webgpu_postprocessing_dof_basic.html` and `webgpu_postprocessing_ssgi.html` — fresh postprocessing near misses at 23.14 dB and 28.62 dB.
+- `webgpu_postprocessing_dof_basic.html`, `webgpu_postprocessing_ssgi.html`, and `webgpu_postprocessing_ssgi_ballpool.html` — fresh triage reports 23.14 dB, 18.38 dB, and 11.71 dB respectively; broad postprocessing still needs pass-chain work.
 - `webgpu_rendertarget_2d-array_3d.html` — saved-shot coverage now compares at 30.87 dB, but the focused E2E report still exits with `Invalid string length`; keep it as a harness-cleanup item before treating it as fully green.
 - `webgpu_instancing_morph.html` — instance color path improved, but replay remains visually mismatched; latest focused report PSNR `15.65` in `visual-instancing-morph-after-random-split.json`.
 
@@ -33,6 +36,9 @@ This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage s
 - Bloom/postprocessing texture handoff is green for the focused bloom cluster, and `webgpu_postprocessing.html`, AO, and masking now pass in the generated broad summary. Remaining broad-postprocessing work should move to harder non-bloom examples such as `webgpu_postprocessing_outline.html`, `webgpu_postprocessing_godrays.html`, SSR, and the near-threshold DOF/SSGI examples.
 
 **Implementation highlights:**
+- `@tsl-precompile/runtime/slim-support/pmrem` now owns PMREM texture/source detection and PMREM `_textureRefs` wiring helpers; the E2E harness delegates those pure rules to runtime surface instead of carrying a local copy.
+- The hydrator now imports shader texture-shape inference and texture binding compatibility checks from `packages/runtime/src/hydrate/texture-resolver.js`, the first split toward a binding-kind pipeline.
+- `@tsl-precompile/contract/dynamic-bindings` documents owner/target/phase/resolver metadata for live uniform slots and runtime texture/rebinder sources.
 - PMREM generation chooses equirect/cube mode from source image shape rather than trusting rewritten `texture.mapping`, uses cloned source textures for temporary mapping changes, and preserves loader `flipY`.
 - Equirectangular HDR backgrounds captured as `texture_cube` background artifacts are converted to live `CubeTexture`s through the shared full WebGPU renderer, then shared back into slim.
 - Portal replay captures/uses exact per-scene background aux config hashes so a portal-scene background cannot leak into the main scene.
@@ -43,7 +49,7 @@ This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage s
 
 ## Round 4 results (2026-05-03)
 
-Six parallel agents + several follow-up commits pushed visual correctness forward on multiple fronts. Headline: **27/29 tier-1 examples render without errors** (same count as before Round 4 but different mix), **199/199 unit tests pass**.
+Six parallel agents + several follow-up commits pushed visual correctness forward on multiple fronts. Headline: **27/29 tier-1 examples render without errors** (same count as before Round 4 but different mix). Latest package test pass: **266 / 266 tests** across plugin 177, runtime 82, and inspector 7.
 
 **Gained** (was broken/error → now renders):
 - `webgpu_compute_birds`: capture-side throw fixed (`object.computeBoundingSphere` skip on throwaway mesh) → replay renders sky background. Birds themselves still missing (instance buffer not propagating).
@@ -101,13 +107,15 @@ Do not optimize for every graded example first. The credible beta surface for re
 
 Priority order: restore and keep shadows green, then close the near-threshold PBR/material and lighting misses, then PMREM/reflection outliers and transmission/viewport/reflector texture paths. Compute/storage follows as experimental WebGPU coverage. MRT and broad postprocessing stay deferred until the render-target / PassNode chain is truly wired.
 
+Fresh triage on 2026-05-12 confirms the deferral: `webgpu_compute_reduce.html` is 14.81 dB, `webgpu_compute_texture_pingpong.html` is 21.75 dB, `webgpu_mrt.html` is 19.54 dB with background MRT attachment-state errors, and the multiple-render-target pair fails validation because target 1 has no matching fragment output.
+
 ---
 
 ## Recent fixes (2026-05-12)
 
-**Architecture evolution first wedges landed.** `@tsl-precompile/contract` now owns shared graph normalization, canonical material/node texture-property lists, the shared `KINDS` registry, blocked-kind reasons, and artifact payload validation. The runtime exposes the first `slim-support` module for live texture indexing and null-image healing. The E2E harness imports those pieces instead of carrying another local copy.
+**Architecture evolution first wedges landed.** `@tsl-precompile/contract` now owns shared graph normalization, canonical material/node texture-property lists, the shared `KINDS` registry, dynamic binding descriptors, blocked-kind reasons, and artifact payload validation. The runtime exposes `slim-support` modules for live texture indexing, null-image healing, and PMREM source/ref wiring. The E2E harness imports those pieces instead of carrying another local copy.
 
-**Artifact validation moved into the contract.** `pnpm verify` now checks committed artifact payloads against `validateArtifact()`, including unknown `source.kind` detection. Runtime artifact validation can also be enabled in dev or with `globalThis.__TSLP_VALIDATE_ARTIFACTS = true`; the current example artifact corpus cross-checks at 500 / 500 valid JSON payloads.
+**Artifact validation moved into the contract.** `pnpm verify` now checks committed artifact payloads against `validateArtifact()`, including unknown `source.kind` detection and dynamic binding descriptor required fields. Runtime artifact validation can also be enabled in dev or with `globalThis.__TSLP_VALIDATE_ARTIFACTS = true`; the current example artifact corpus cross-checks at 509 / 509 valid JSON payloads.
 
 **The Three.js seam is stricter.** Slim builds now fail on rewrite warnings when `CI=true` or `TSLP_FAIL_ON_REWRITE_WARNING=1`, and `.github/workflows/three-compat.yml` adds a nightly/manual `three@latest` compatibility probe.
 
@@ -166,7 +174,7 @@ for the current triage plan.
 | 2 — `.precompile(name)` + dev capture | Marker, dev server, HMR | ✅ Done | Unsupported kinds throw at call site |
 | 3 — AOT codegen | `emit-updater.js` covers camera/object/material/time/uniform/scene | ✅ Done (core kinds) | Per-kind fixture pass |
 | 4 — Build-time rewrite | Babel transform + virtual modules + `__applyPrecompiled` | ✅ Done | 3-layer hash check fires on corrupt artifact |
-| 5 — Coverage matrix | Fixture infrastructure + 174 plugin tests pass across material classes, binding kinds, shared contract validation, drift checks, WGSL output optimization, and depth/artifact texture paths | ✅ Core done | 100% cells covered or documented-blocked |
+| 5 — Coverage matrix | Fixture infrastructure + 177 plugin tests pass across material classes, binding kinds, shared contract validation, drift checks, WGSL output optimization, and depth/artifact texture paths | ✅ Core done | 100% cells covered or documented-blocked |
 | 6 — 206-example batch harness | Extractor/codegen batch over three.js webgpu_*.html examples (load-smoke only — does not check pixel correctness; see [Feature coverage](#feature-coverage-capture-vs-replay)) | ✅ Load-smoke green | Keep above launch threshold |
 | 7 — Slim runtime bundle | Slim load-smoke over webgpu examples | ✅ No unexpected load-smoke errors | ≤ 300 KB gzip + 0 unexpected errors |
 | 8 — Launch | Docs, demos, site, migration guide | 🔶 Infrastructure ready | One external adopter |
