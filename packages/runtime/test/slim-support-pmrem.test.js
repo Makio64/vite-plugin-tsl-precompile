@@ -8,6 +8,7 @@ import {
 	createPMREMSupport,
 	isPMREMArtifactTextureSource,
 	isPMREMTexture,
+	selectPMREMTexturesForArtifact,
 	textureListSignature,
 } from '../src/slim-support/pmrem.js';
 
@@ -78,6 +79,49 @@ test( 'attachPMREMRefsByOrder writes non-enumerable texture refs without clobber
 	assert.equal( captured._textureRefs.get( 'env-a' ), a );
 	assert.equal( captured._textureRefs.get( 'env-b' ), b );
 	assert.equal( Object.prototype.propertyIsEnumerable.call( captured, '_textureRefs' ), false );
+
+} );
+
+test( 'selectPMREMTexturesForArtifact chooses material node, env-map, then scene PMREM sources', () => {
+
+	const captured = artifact( [ { kind: 'artifact.texture', textureUuid: 'env', mapping: 306 } ] );
+	const nodePmrem = texture( { uuid: 'node-pmrem', mapping: 306 } );
+	const envMap = texture( { uuid: 'env-source' } );
+	const envPmrem = texture( { uuid: 'env-pmrem', mapping: 306 } );
+	const sceneSource = texture( { uuid: 'scene-source' } );
+	const scenePmrem = texture( { uuid: 'scene-pmrem', mapping: 306 } );
+	const cache = new Map( [
+		[ envMap, envPmrem ],
+		[ sceneSource, scenePmrem ],
+	] );
+	const getCachedPMREMForSource = ( source ) => cache.get( source ) || null;
+
+	let selected = selectPMREMTexturesForArtifact( captured, {
+		material: { colorNode: {}, envMap },
+		collectMaterialNodeTextures: () => [ nodePmrem ],
+		getCachedPMREMForSource,
+		environmentSources: [ sceneSource ],
+	} );
+	assert.equal( selected.strategy, 'material-node' );
+	assert.deepEqual( selected.pmremTextures, [ nodePmrem ] );
+
+	selected = selectPMREMTexturesForArtifact( captured, {
+		material: { envMap },
+		collectMaterialNodeTextures: () => [],
+		getCachedPMREMForSource,
+		environmentSources: [ sceneSource ],
+	} );
+	assert.equal( selected.strategy, 'material-env-map' );
+	assert.deepEqual( selected.pmremTextures, [ envPmrem ] );
+
+	selected = selectPMREMTexturesForArtifact( captured, {
+		material: {},
+		collectMaterialNodeTextures: () => [],
+		getCachedPMREMForSource,
+		environmentSources: [ sceneSource ],
+	} );
+	assert.equal( selected.strategy, 'scene-environment' );
+	assert.deepEqual( selected.pmremTextures, [ scenePmrem ] );
 
 } );
 

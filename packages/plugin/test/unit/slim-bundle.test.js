@@ -66,6 +66,7 @@ test( 'slim bundle — exports the promised slim surface', { skip: bundleExists 
 	assert.match( src, /PrecompiledMaterial/, 'slim bundle missing PrecompiledMaterial' );
 	assert.match( src, /PrecompiledComputeNode/, 'slim bundle missing PrecompiledComputeNode' );
 	assert.match( src, /writeMat4|writeVec3|writeF32/, 'slim bundle missing writers' );
+	assert.match( src, /__TSLP_SLIM__/, 'slim bundle missing setupPrecompile slim sentinel' );
 
 } );
 

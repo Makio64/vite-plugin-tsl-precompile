@@ -1,4 +1,5 @@
 export { installPrecompileMarker, setDevRenderer, clearDevRenderer } from './precompile-marker.js';
+export { setupPrecompile } from './setup.js';
 export { __applyPrecompiled } from './apply-precompiled.js';
 export { registerArtifact, getArtifact, listUserArtifacts } from './artifact-loader.js';
 export { default as PrecompiledMaterial } from './_vendor-PrecompiledMaterial.js';
@@ -19,5 +20,6 @@ export { hydrateNodeBuilderState, registerLiveTexture, clearLiveTextureIndex } f
 export { getTextureResolutionDebugHook, setTextureResolutionDebugHook } from './hydrate/artifact-texture-resolver.js';
 export { getDFGLUT } from './dfg-lut.js';
 export { createLiveSceneIndex, collectMaterialNodeTextures, textureImageReady, textureImageSrc, healTextureImage } from './slim-support/live-scene-index.js';
-export { PMREM_CUBE_UV_MAPPING, isPMREMTexture, isPMREMArtifactTextureSource, artifactNeedsPMREM, artifactPMREMSourceUuids, attachPMREMRefsByOrder, createPMREMSupport } from './slim-support/pmrem.js';
+export { PMREM_CUBE_UV_MAPPING, isPMREMTexture, isPMREMArtifactTextureSource, artifactNeedsPMREM, artifactPMREMSourceUuids, attachPMREMRefsByOrder, selectPMREMTexturesForArtifact, createPMREMSupport } from './slim-support/pmrem.js';
+export { clearTextureViewCache, markTextureInitialized, shareGPUTextureEntry, sharePMREMGPUTexture, shareShadowGPUTextureIntoSlim } from './slim-support/gpu-texture-share.js';
 export { MaterialVariantSet, createMaterialVariants, applyMaterialVariant } from './material-variants.js';

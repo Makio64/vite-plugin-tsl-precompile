@@ -1,0 +1,173 @@
+/**
+ * `@tsl-precompile/runtime` — runtime helpers for `vite-plugin-tsl-precompile`.
+ *
+ * The plugin's Babel transform rewrites every `material.precompile('name')` call
+ * site at build time, so most exports here are only used in dev. The public API
+ * surface a typical app needs is:
+ *
+ *   - `setupPrecompile({ three, renderer })` — one-call dev wiring (recommended).
+ *   - `installPrecompileMarker(three, opts?)` + `setDevRenderer(renderer)` —
+ *     manual wiring, for apps that need fine-grained control.
+ *
+ * Everything else is for power users (custom artifact loaders, aux passes,
+ * material variants, slim-support helpers, etc.).
+ */
+
+/** Module augmentation: adds the dynamically-installed `.precompile(name)` method to three.js `Material`. */
+declare module 'three' {
+	interface Material {
+		/**
+		 * Mark this material for AOT precompilation. In dev, calling this
+		 * runs the TSL extractor on the live material and POSTs the
+		 * captured artifact to the plugin's dev-server endpoint. In production
+		 * builds, the call is rewritten away by `vite-plugin-tsl-precompile`.
+		 */
+		precompile( name: string ): this;
+	}
+}
+
+// ---------- setupPrecompile (recommended entry) ----------
+
+export interface SetupPrecompileOptions {
+	/** The `three/webgpu` namespace, e.g. `import * as THREE from 'three/webgpu'`. Required outside slim mode. */
+	three: unknown;
+	/** The `WebGPURenderer` instance. May be passed before or after `init()`. */
+	renderer: unknown;
+	/** Custom dev-capture endpoint. Default: `'/__tsl-precompile/capture'`. */
+	devEndpoint?: string;
+	/** `true` exposes `captureAux()`; an object is forwarded as extra opts to `precompileAuxiliary`. */
+	aux?: boolean | Record<string, unknown>;
+	/** Required only when `aux` is truthy. */
+	scene?: unknown;
+	/** Required only when `aux` is truthy. */
+	camera?: unknown;
+}
+
+export interface SetupPrecompileResult {
+	/** Resolves once the marker is installed and the dev renderer is registered. */
+	ready: Promise<void>;
+	/** Capture aux artifacts (background, PMREM, etc.). No-op unless `aux` was truthy. */
+	captureAux: () => Promise<unknown[]>;
+	/** Swap the dev renderer (useful when the renderer is recreated). */
+	setRenderer: ( renderer: unknown ) => void;
+}
+
+/** One-call wiring for `.precompile()` dev capture. Idempotent and slim-mode-safe. */
+export function setupPrecompile( opts: SetupPrecompileOptions ): SetupPrecompileResult;
+
+// ---------- Marker (manual wiring) ----------
+
+export interface InstallPrecompileMarkerOptions {
+	/** Custom dev-capture endpoint. Default: `'/__tsl-precompile/capture'`. */
+	devEndpoint?: string;
+}
+
+export function installPrecompileMarker( three: unknown, opts?: InstallPrecompileMarkerOptions ): void;
+export function setDevRenderer( renderer: unknown ): void;
+export function clearDevRenderer(): void;
+
+// ---------- Apply (used by the plugin's build-time rewrite) ----------
+
+/** Injected by the plugin's Babel transform at build time. Not called by app code. */
+export function __applyPrecompiled( material: unknown, artifactModule: unknown, expectedHash: string ): unknown;
+
+// ---------- Artifact loader ----------
+
+export function registerArtifact( name: string, artifact: unknown ): void;
+export function getArtifact( name: string ): unknown;
+export function listUserArtifacts(): string[];
+
+// ---------- Material classes ----------
+
+export const PrecompiledMaterial: new ( ...args: unknown[] ) => unknown;
+export const PrecompiledComputeNode: new ( ...args: unknown[] ) => unknown;
+
+// ---------- Precompiled artifact registry (vendor) ----------
+
+export function registerPrecompiledArtifact( key: string, artifact: unknown ): void;
+export function registerPrecompiledArtifacts( entries: Iterable<[ string, unknown ]> ): void;
+export function unregisterPrecompiledArtifacts(): void;
+export function getShadowArtifact( key: string ): unknown;
+export function getPipelineArtifact( key: string ): unknown;
+export function getOutputArtifact( key: string ): unknown;
+export function dumpPrecompiledRegistry(): Record<string, unknown>;
+
+// ---------- UBO writers ----------
+
+export function writeF32( view: DataView, byteOffset: number, value: number ): void;
+export function writeI32( view: DataView, byteOffset: number, value: number ): void;
+export function writeU32( view: DataView, byteOffset: number, value: number ): void;
+export function writeVec2( view: DataView, byteOffset: number, value: { x: number; y: number } ): void;
+export function writeVec3( view: DataView, byteOffset: number, value: { x: number; y: number; z: number } ): void;
+export function writeVec4( view: DataView, byteOffset: number, value: { x: number; y: number; z: number; w: number } ): void;
+export function writeColor( view: DataView, byteOffset: number, value: { r: number; g: number; b: number } ): void;
+export function writeColorRGBA( view: DataView, byteOffset: number, color: { r: number; g: number; b: number }, alpha: number ): void;
+export function writeMat3( view: DataView, byteOffset: number, mat: { elements: ArrayLike<number> } ): void;
+export function writeMat4( view: DataView, byteOffset: number, mat: { elements: ArrayLike<number> } ): void;
+export function writeMat4FromEuler( view: DataView, byteOffset: number, euler: unknown, background: unknown ): void;
+export function writeBytes( view: DataView, byteOffset: number, source: ArrayBufferView, sourceByteOffset: number, byteLength: number ): void;
+
+// ---------- Hashing helpers ----------
+
+export function hashNodeGraph( graph: unknown ): Promise<string>;
+export function hashNodeGraphSync( graph: unknown ): string;
+export function hashPlainConfigSync( config: unknown ): string;
+export function normalizeMaterialGraph( graph: unknown ): unknown;
+export function hashMaterialSync( material: unknown ): string;
+export function hashArtifactContentSync( artifact: unknown ): string;
+
+// ---------- Aux (background, PMREM, postprocessing) ----------
+
+export function precompileAuxiliary(
+	renderer: unknown,
+	scene: unknown,
+	camera: unknown,
+	opts?: Record<string, unknown>,
+): Promise<unknown[]>;
+export function registerAuxArtifact( entry: unknown ): void;
+export function registerAuxArtifacts( entries: Iterable<unknown> ): void;
+export function loadAux( shape: string, configHash: string ): unknown;
+export function hasAux( shape: string, configHash: string ): boolean;
+export function listAux(): unknown[];
+export function findAux( predicate: ( entry: unknown ) => boolean ): unknown;
+export function bindAuxConfig( config: unknown ): unknown;
+export function bindAuxByName( name: string ): unknown;
+export function attachArtifactTextureRefs( artifact: unknown, refs: unknown ): void;
+export function __resetAuxRegistryForTests(): void;
+
+// ---------- Hydrator ----------
+
+export function hydrateNodeBuilderState( state: unknown, artifact: unknown ): unknown;
+export function registerLiveTexture( key: string, texture: unknown ): void;
+export function clearLiveTextureIndex(): void;
+export function getTextureResolutionDebugHook(): ( ...args: unknown[] ) => void;
+export function setTextureResolutionDebugHook( hook: ( ...args: unknown[] ) => void ): void;
+export function getDFGLUT(): unknown;
+
+// ---------- Slim-support helpers ----------
+
+export function createLiveSceneIndex( opts?: Record<string, unknown> ): unknown;
+export function collectMaterialNodeTextures( material: unknown ): unknown[];
+export function textureImageReady( texture: unknown ): boolean;
+export function textureImageSrc( texture: unknown ): string | null;
+export function healTextureImage( texture: unknown ): void;
+
+export const PMREM_CUBE_UV_MAPPING: number;
+export function isPMREMTexture( texture: unknown ): boolean;
+export function isPMREMArtifactTextureSource( source: unknown ): boolean;
+export function artifactNeedsPMREM( artifact: unknown ): boolean;
+export function artifactPMREMSourceUuids( artifact: unknown ): string[];
+export function attachPMREMRefsByOrder( artifact: unknown, refs: unknown ): void;
+export function selectPMREMTexturesForArtifact( artifact: unknown, opts?: Record<string, unknown> ): unknown[];
+export function createPMREMSupport( opts?: Record<string, unknown> ): unknown;
+export function clearTextureViewCache( textureData: unknown ): void;
+export function markTextureInitialized( renderer: unknown, texture: unknown ): void;
+export function shareGPUTextureEntry( targetRenderer: unknown, sourceRenderer: unknown, texture: unknown, opts?: Record<string, unknown> ): boolean;
+export function sharePMREMGPUTexture( slimRenderer: unknown, fullRenderer: unknown, pmrem: unknown, opts?: Record<string, unknown> ): boolean;
+export function shareShadowGPUTextureIntoSlim( texture: unknown, fullRenderer: unknown, slimRenderer: unknown ): boolean;
+
+// ---------- Material variants ----------
+
+export const MaterialVariantSet: new ( ...args: unknown[] ) => unknown;
+export function createMaterialVariants( base: unknown, variants: unknown ): unknown;
+export function applyMaterialVariant( material: unknown, variant: unknown ): unknown;

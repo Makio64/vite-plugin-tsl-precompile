@@ -15,6 +15,12 @@
  * @module SlimEntry
  */
 
+// Sentinel: lets `setupPrecompile()` (and any future helper) detect that
+// the namespace being passed is the slim bundle, so it can short-circuit
+// work that's pointless without the node builder. Plain boolean keeps the
+// check trivial: `if ( three.__TSLP_SLIM__ ) ...`.
+export const __TSLP_SLIM__ = true;
+
 // ---- three.js core (scene graph, math, cameras, geometries, materials,
 //      lights, helpers, loaders, animation) ----------------------------
 // Three.Core.js is the big barrel of all non-TSL / non-renderer exports.
@@ -27,7 +33,10 @@ export * from 'three/src/Three.Core.js';
 export { warnOnce } from 'three/src/utils.js';
 
 // ---- three.js WebGPU renderer + common surface --------------------------
-export { default as WebGPURenderer } from 'three/src/renderers/webgpu/WebGPURenderer.js';
+import WebGPURenderer from 'three/src/renderers/webgpu/WebGPURenderer.js';
+WebGPURenderer.__TSLP_SLIM__ = true;
+WebGPURenderer.prototype.__TSLP_SLIM__ = true;
+export { WebGPURenderer };
 export { default as Lighting } from 'three/src/renderers/common/Lighting.js';
 export { default as QuadMesh } from 'three/src/renderers/common/QuadMesh.js';
 export { default as PostProcessing } from 'three/src/renderers/common/PostProcessing.js';
@@ -83,6 +92,7 @@ export { getTextureResolutionDebugHook, setTextureResolutionDebugHook } from './
 export { registerAuxArtifact, registerAuxArtifacts, loadAux, hasAux, listAux, findAux, bindAuxConfig, bindAuxByName, attachArtifactTextureRefs, wireViewportTextureRefs, setupViewportTextureClasses } from './aux-loader.js';
 export { hashNodeGraphSync } from './graph-hash.js';
 export { MaterialVariantSet, createMaterialVariants, applyMaterialVariant } from './material-variants.js';
+export { clearTextureViewCache, markTextureInitialized, shareGPUTextureEntry, sharePMREMGPUTexture, shareShadowGPUTextureIntoSlim } from './slim-support/gpu-texture-share.js';
 export * from './writers.js';
 
 // ---- viewport texture class registration --------------------------------

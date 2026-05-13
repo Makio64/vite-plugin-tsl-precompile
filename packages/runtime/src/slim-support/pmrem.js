@@ -115,6 +115,75 @@ export function attachPMREMRefsByOrder( artifact, pmremTextures ) {
 
 }
 
+export function selectPMREMTexturesForArtifact( artifact, opts = {} ) {
+
+	const sourceUuids = artifactPMREMSourceUuids( artifact );
+	if ( sourceUuids.length === 0 ) {
+
+		return {
+			sourceUuids,
+			pmremTextures: [],
+			strategy: 'none',
+			nodePmrems: [],
+			materialPmrem: null,
+			environmentPmrems: [],
+		};
+
+	}
+
+	const material = opts.material || null;
+	const collectMaterialNodeTextures = typeof opts.collectMaterialNodeTextures === 'function' ? opts.collectMaterialNodeTextures : () => [];
+	const getCachedPMREMForSource = typeof opts.getCachedPMREMForSource === 'function' ? opts.getCachedPMREMForSource : () => null;
+	const environmentSources = Array.isArray( opts.environmentSources ) ? opts.environmentSources : [];
+
+	const nodePmrems = [];
+	for ( const texture of collectMaterialNodeTextures( material ) || [] ) {
+
+		if ( isPMREMTexture( texture ) ) pushUniqueTexture( nodePmrems, texture );
+
+	}
+
+	const materialEnvMap = material && material.envMap && material.envMap.isTexture === true ? material.envMap : null;
+	const materialPmrem = materialEnvMap ? getCachedPMREMForSource( materialEnvMap ) : null;
+	const environmentPmrems = pmremTexturesForSources( environmentSources, getCachedPMREMForSource );
+
+	if ( nodePmrems.length >= sourceUuids.length ) {
+
+		return {
+			sourceUuids,
+			pmremTextures: nodePmrems,
+			strategy: 'material-node',
+			nodePmrems,
+			materialPmrem,
+			environmentPmrems,
+		};
+
+	}
+
+	if ( materialPmrem && sourceUuids.length <= 1 ) {
+
+		return {
+			sourceUuids,
+			pmremTextures: [ materialPmrem ],
+			strategy: 'material-env-map',
+			nodePmrems,
+			materialPmrem,
+			environmentPmrems,
+		};
+
+	}
+
+	return {
+		sourceUuids,
+		pmremTextures: environmentPmrems,
+		strategy: environmentPmrems.length > 0 ? 'scene-environment' : 'missing',
+		nodePmrems,
+		materialPmrem,
+		environmentPmrems,
+	};
+
+}
+
 export function createPMREMSupport( opts = {} ) {
 
 	const cache = opts.cache || new WeakMap();
@@ -266,6 +335,7 @@ export function createPMREMSupport( opts = {} ) {
 		artifactNeedsPMREM,
 		artifactPMREMSourceUuids,
 		attachPMREMRefsByOrder,
+		selectPMREMTexturesForArtifact,
 		textureListSignature,
 	};
 

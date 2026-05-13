@@ -14,26 +14,57 @@
     "directory": "packages/runtime"
   },
   "main": "./src/index.js",
+  "types": "./types/index.d.ts",
   "exports": {
-    ".": "./src/index.js",
-    "./writers": "./src/writers.js",
-    "./marker": "./src/precompile-marker.js",
-    "./apply": "./src/apply-precompiled.js",
-    "./loader": "./src/artifact-loader.js",
-    "./material-variants": "./src/material-variants.js",
-    "./slim-support/live-scene-index": "./src/slim-support/live-scene-index.js",
-    "./slim-support/pmrem": "./src/slim-support/pmrem.js",
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./writers": {
+      "types": "./types/writers.d.ts",
+      "default": "./src/writers.js"
+    },
+    "./marker": {
+      "types": "./types/precompile-marker.d.ts",
+      "default": "./src/precompile-marker.js"
+    },
+    "./apply": {
+      "types": "./types/apply-precompiled.d.ts",
+      "default": "./src/apply-precompiled.js"
+    },
+    "./loader": {
+      "types": "./types/artifact-loader.d.ts",
+      "default": "./src/artifact-loader.js"
+    },
+    "./material-variants": {
+      "types": "./types/material-variants.d.ts",
+      "default": "./src/material-variants.js"
+    },
+    "./slim-support/live-scene-index": {
+      "types": "./types/slim-support/live-scene-index.d.ts",
+      "default": "./src/slim-support/live-scene-index.js"
+    },
+    "./slim-support/pmrem": {
+      "types": "./types/slim-support/pmrem.d.ts",
+      "default": "./src/slim-support/pmrem.js"
+    },
+    "./slim-support/gpu-texture-share": {
+      "types": "./types/slim-support/gpu-texture-share.d.ts",
+      "default": "./src/slim-support/gpu-texture-share.js"
+    },
     "./slim": "./build/three.webgpu.slim.js",
     "./slim-stubs": "./src/slim-stubs.js"
   },
   "files": [
     "src",
-    "build"
+    "build",
+    "types"
   ],
   "scripts": {
     "build:slim": "rollup -c rollup.config.js",
     "build": "rollup -c rollup.config.js",
-    "test": "node --test 'test/**/*.test.js'"
+    "test": "node --test 'test/**/*.test.js'",
+    "prepublishOnly": "TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm run build && pnpm run test"
   },
   "dependencies": {
     "@tsl-precompile/contract": "workspace:*"
