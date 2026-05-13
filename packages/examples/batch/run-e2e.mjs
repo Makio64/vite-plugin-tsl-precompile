@@ -324,6 +324,7 @@ function rewriteImportmap( html, mode ) {
 		`"@tsl-precompile/runtime/slim-support/live-scene-index": "/__tslp_runtime/slim-support/live-scene-index.js"`,
 		`"@tsl-precompile/runtime/slim-support/pmrem": "/__tslp_runtime/slim-support/pmrem.js"`,
 		`"@tsl-precompile/runtime/slim-support/gpu-texture-share": "/__tslp_runtime/slim-support/gpu-texture-share.js"`,
+		`"@tsl-precompile/runtime/slim-support/compute-sync": "/__tslp_runtime/slim-support/compute-sync.js"`,
 		`"@tsl-precompile/contract": "/__tslp_contract/index.js"`,
 		`"@tsl-precompile/contract/graph-normalize": "/__tslp_contract/graph-normalize.js"`,
 		`"@tsl-precompile/contract/kinds": "/__tslp_contract/kinds.js"`,
@@ -1047,6 +1048,9 @@ import { TSL as FullTSL, TextureNode as FullTextureNode, BlendMode as FullBlendM
 import { createLiveSceneIndex, textureImageReady as __sharedTextureImageReady, textureImageSrc as __sharedTextureImageSrc, newFallbackTextureImage as __sharedNewFallbackTextureImage } from '/__tslp_runtime/slim-support/live-scene-index.js';
 import { artifactNeedsPMREM as __sharedArtifactNeedsPMREM, artifactPMREMSourceUuids as __sharedArtifactPMREMSourceUuids, attachPMREMRefsByOrder as __sharedAttachPMREMRefsByOrder, createPMREMSupport as __sharedCreatePMREMSupport, isPMREMArtifactTextureSource as __sharedIsPMREMArtifactTextureSource, isPMREMTexture as __sharedIsPMREMTexture, selectPMREMTexturesForArtifact as __sharedSelectPMREMTexturesForArtifact, textureListSignature as __sharedTextureListSignature } from '/__tslp_runtime/slim-support/pmrem.js';
 import { clearTextureViewCache as __sharedClearTextureViewCache, markTextureInitialized as __sharedMarkTextureInitialized, shareGPUTextureEntry as __sharedShareGPUTextureEntry, sharePMREMGPUTexture as __sharedSharePMREMGPUTexture, shareShadowGPUTextureIntoSlim as __sharedShareShadowGpuTextureIntoSlim } from '/__tslp_runtime/slim-support/gpu-texture-share.js';
+import { computeNodeUsesStorageTexture as __sharedComputeNodeUsesStorageTexture, syncComputeStorageOutputs as __sharedSyncComputeStorageOutputs } from '/__tslp_runtime/slim-support/compute-sync.js';
+import { artifactHasTextureSource as __sharedArtifactHasTextureSource, attachArtifactTextureRefsWhere as __sharedAttachArtifactTextureRefsWhere, attachTextureRefsWhere as __sharedAttachTextureRefsWhere, countArtifactTextureSources as __sharedCountArtifactTextureSources, singleArtifactTextureUuid as __sharedSingleArtifactTextureUuid, textureMatchesArtifactSource as __sharedTextureMatchesArtifactSource, textureMatchesSource as __sharedTextureMatchesSource } from '/__tslp_runtime/slim-support/artifact-texture-wiring.js';
+import { createFullRendererFallback as __sharedCreateFullRendererFallback } from '/__tslp_runtime/slim-support/full-renderer-fallback.js';
 import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS } from '/__tslp_contract/texture-props.js';
 export * from '/__tslp__/three.webgpu.slim.js';
 export { FullTextureNode as TextureNode, FullBlendMode as BlendMode, FullTempNode as TempNode, FullNodeUpdateType as NodeUpdateType, FullRenderTarget as RenderTarget, FullDepthTexture as DepthTexture, FullArrayCamera as ArrayCamera, FullQuadMesh as QuadMesh, FullRendererUtils as RendererUtils };
@@ -2655,14 +2659,7 @@ function __colorDistanceSq( a, b ) {
 }
 
 function __artifactHasTextureSource( artifact, predicate = null ) {
-	for ( const group of artifact && artifact.uniformPlan || [] ) {
-		for ( const entry of group.textures || [] ) {
-			const source = entry && entry.source || {};
-			if ( ! source.kind ) continue;
-			if ( ! predicate || predicate( source, entry, group ) ) return true;
-		}
-	}
-	return false;
+	return __sharedArtifactHasTextureSource( artifact, predicate );
 }
 
 let __reflectorBaseCursor = 0;
@@ -2711,47 +2708,19 @@ function __basenameFromUrl( value ) {
 }
 
 function __textureMatchesSource( texture, source ) {
-	if ( ! texture || texture.isTexture !== true || ! source || ! source.kind ) return false;
-	if ( source.textureUuid && texture.uuid === source.textureUuid ) return true;
-	const textureName = typeof texture.name === 'string' ? texture.name : '';
-	if ( source.textureName && textureName === source.textureName ) return true;
-	const textureSrc = __textureImageSrc( texture );
-	if ( source.imageSrc && textureSrc && source.imageSrc === textureSrc ) return true;
-	const sourceBase = __basenameFromUrl( source.textureName || source.imageSrc );
-	const textureBase = __basenameFromUrl( textureName || textureSrc );
-	return !! ( sourceBase && textureBase && sourceBase === textureBase );
+	return __sharedTextureMatchesSource( texture, source );
 }
 
 function __textureMatchesArtifactSource( texture, source ) {
-	if ( ! source || source.kind !== 'artifact.texture' ) return false;
-	return __textureMatchesSource( texture, source );
+	return __sharedTextureMatchesArtifactSource( texture, source );
 }
 
 function __countArtifactTextureSources( artifact, predicate = null ) {
-	const uuids = new Set();
-	for ( const group of artifact && artifact.uniformPlan || [] ) {
-		for ( const entry of group.textures || [] ) {
-			const source = entry && entry.source || {};
-			if ( source.kind !== 'artifact.texture' || ! source.textureUuid ) continue;
-			if ( predicate && ! predicate( source, entry, group ) ) continue;
-			uuids.add( source.textureUuid );
-		}
-	}
-	return uuids.size;
+	return __sharedCountArtifactTextureSources( artifact, predicate );
 }
 
 function __singleArtifactTextureUuid( artifact, predicate = null ) {
-	let uuid = null;
-	for ( const group of artifact && artifact.uniformPlan || [] ) {
-		for ( const entry of group.textures || [] ) {
-			const source = entry && entry.source || {};
-			if ( source.kind !== 'artifact.texture' || ! source.textureUuid ) continue;
-			if ( predicate && ! predicate( source, entry, group ) ) continue;
-			if ( uuid && uuid !== source.textureUuid ) return null;
-			uuid = source.textureUuid;
-		}
-	}
-	return uuid;
+	return __sharedSingleArtifactTextureUuid( artifact, predicate );
 }
 
 function __artifactNodeAttributes( artifact ) {
@@ -3012,6 +2981,14 @@ function __valueMatchesUniformSlot( value, slot ) {
 
 function __wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, replacement = null ) {
 	if ( ! artifact || ! sourceMaterial ) return;
+	const isPMREMArtifact = __artifactHasTextureSource( artifact, __isPMREMArtifactTextureSource );
+	if ( isPMREMArtifact ) {
+		// PMREMNode setup already ran during capture and is represented by the
+		// shader plus artifact.texture refs. Replaying the source graph's live
+		// UniformNode/update sidecars can retarget PMREM sampling constants to
+		// transient internals, so keep the captured PMREM constants for replay.
+		return;
+	}
 	const uniformNodes = [];
 	const updateNodes = [];
 	const updateBeforeNodes = [];
@@ -3597,31 +3574,11 @@ function __isPMREMArtifactTextureSource( source ) {
 }
 
 function __attachArtifactTextureRefsWhere( artifact, texture, predicate ) {
-	return __attachTextureRefsWhere( artifact, texture, ( source, entry, group ) => source.kind === 'artifact.texture' && predicate( source, entry, group ) );
+	return __sharedAttachArtifactTextureRefsWhere( artifact, texture, predicate );
 }
 
 function __attachTextureRefsWhere( artifact, texture, predicate ) {
-	if ( ! artifact || ! texture || texture.isTexture !== true || typeof predicate !== 'function' ) return artifact;
-	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
-	let changed = false;
-	for ( const group of artifact.uniformPlan || [] ) {
-		for ( const entry of group.textures || [] ) {
-			const source = entry && entry.source || {};
-			if ( ! source.textureUuid ) continue;
-			if ( ! predicate( source, entry, group ) ) continue;
-			refs.set( source.textureUuid, texture );
-			changed = true;
-		}
-	}
-	if ( changed ) {
-		Object.defineProperty( artifact, '_textureRefs', {
-			value: refs,
-			enumerable: false,
-			configurable: true,
-			writable: true,
-		} );
-	}
-	return changed;
+	return __sharedAttachTextureRefsWhere( artifact, texture, predicate );
 }
 
 function __rememberGraphTexture( byName, texture ) {
@@ -5214,20 +5171,7 @@ function __dispatchAutoComputeNodes( scene, slimRenderer ) {
 // still references the same GPUBuffer; we just update its content. Both renderers
 // share the same GPUDevice so the copy is entirely on-GPU (no CPU round-trip).
 function __computeNodeUsesStorageTexture( computeNode, fullRenderer ) {
-	const computeList = Array.isArray( computeNode ) ? computeNode : [ computeNode ];
-	for ( const node of computeList ) {
-		let bindGroups;
-		try { bindGroups = fullRenderer._bindings.getForCompute( node ); }
-		catch ( _ ) { continue; }
-		if ( ! bindGroups ) continue;
-		for ( const bindGroup of bindGroups ) {
-			if ( ! bindGroup || ! bindGroup.bindings ) continue;
-			for ( const binding of bindGroup.bindings ) {
-				if ( binding && binding.isSampledTexture && binding.texture && binding.texture.isStorageTexture === true ) return true;
-			}
-		}
-	}
-	return false;
+	return __sharedComputeNodeUsesStorageTexture( computeNode, fullRenderer );
 }
 
 function __wireSceneComputeAttrsFromFallbacks( scene ) {
@@ -5249,125 +5193,48 @@ function __wireSceneComputeAttrsFromFallbacks( scene ) {
 	} );
 }
 
+// Thin wrapper — see @tsl-precompile/runtime/slim-support/compute-sync for
+// the storage-texture + storage-buffer copy/adopt logic. The harness still
+// owns the post-sync attribute-fallback wiring and the storage-attr ledger,
+// passed in via opts.
 function __syncStorageBuffers( computeNode, fullRenderer, slimRenderer ) {
-	try {
-		const computeList = Array.isArray( computeNode ) ? computeNode : [ computeNode ];
-		const device = slimRenderer.backend.device;
-		let commandEncoder = null;
-		for ( const node of computeList ) {
-			let bindGroups;
-			try { bindGroups = fullRenderer._bindings.getForCompute( node ); }
-			catch ( _ ) { continue; }
-			if ( ! bindGroups ) continue;
-			for ( const bindGroup of bindGroups ) {
-				if ( ! bindGroup || ! bindGroup.bindings ) continue;
-				for ( const binding of bindGroup.bindings ) {
-					// Storage textures: a compute kernel that writes to a StorageTexture
-					// (via textureStore) binds it as a sampled-texture-style binding with
-					// .texture being the StorageTexture instance. The slim renderer
-					// creates its own empty GPUTexture for the same JS object — make slim
-					// share full's GPUTexture so the compute output is visible in slim's
-					// render pass.
-					if ( binding.isSampledTexture && binding.texture && binding.texture.isStorageTexture === true ) {
-						const tex = binding.texture;
-						const fullTexData = fullRenderer.backend.get( tex );
-						if ( ! fullTexData || ! fullTexData.texture ) {
-							continue;
-						}
-						const slimTexData = slimRenderer.backend.get( tex );
-						__clearTextureViewCache( slimTexData );
-						slimTexData.texture = fullTexData.texture;
-						slimTexData.format = fullTexData.format;
-						slimTexData.initialized = true;
-						slimTexData.isDefaultTexture = false;
-						const nextVersion = ( tex.version | 0 ) + 1;
-						tex.version = nextVersion;
-						slimTexData.version = nextVersion;
-						slimTexData.generation = nextVersion;
-						fullTexData.version = nextVersion;
-						if ( ! slimTexData.bindGroups ) slimTexData.bindGroups = new Set();
-						__markSlimTextureInitialized( slimRenderer, tex );
-						const slimTextureManagerData = slimRenderer._textures && typeof slimRenderer._textures.get === 'function' ? slimRenderer._textures.get( tex ) : null;
-						if ( slimTextureManagerData ) {
-							slimTextureManagerData.initialized = true;
-							slimTextureManagerData.isDefaultTexture = false;
-							slimTextureManagerData.version = nextVersion;
-							slimTextureManagerData.generation = nextVersion;
-							if ( ! slimTextureManagerData.bindGroups ) slimTextureManagerData.bindGroups = new Set();
-						}
-						const fullTextureManagerData = fullRenderer._textures && typeof fullRenderer._textures.get === 'function' ? fullRenderer._textures.get( tex ) : null;
-						if ( fullTextureManagerData ) {
-							fullTextureManagerData.initialized = true;
-							fullTextureManagerData.version = nextVersion;
-							fullTextureManagerData.generation = nextVersion;
-						}
-						if ( tex.generateMipmaps !== false && slimRenderer.backend && typeof slimRenderer.backend.generateMipmaps === 'function' ) {
-							try { slimRenderer.backend.generateMipmaps( tex ); } catch ( _ ) {}
-						}
-						continue;
-					}
-					if ( ! binding.isStorageBuffer ) {
-						continue;
-					}
-					const attr = binding.attribute;
-					if ( ! attr ) {
-						continue;
-					}
-					__rememberComputeStorageAttr( attr );
-					const fullBufData = fullRenderer.backend.get( attr );
-					if ( ! fullBufData || ! fullBufData.buffer ) continue;
-					const fullBuf = fullBufData.buffer;
-					const slimBufData = slimRenderer.backend.get( attr );
-					if ( ! slimBufData.buffer ) {
-						slimBufData.buffer = fullBuf;
-						const slimAttr = slimRenderer._attributes.get( attr );
-						if ( slimAttr && slimAttr.version === undefined ) {
-							slimAttr.version = 1;
-						}
-					} else if ( slimBufData.buffer !== fullBuf ) {
-						const slimBuf = slimBufData.buffer;
-						const copySize = Math.min( fullBuf.size, slimBuf.size );
-						if ( copySize > 0 ) {
-							if ( ! commandEncoder ) commandEncoder = device.createCommandEncoder();
-							commandEncoder.copyBufferToBuffer( fullBuf, 0, slimBuf, 0, copySize );
-						}
-					}
-				}
-			}
-		}
-		if ( commandEncoder ) device.queue.submit( [ commandEncoder.finish() ] );
-		__wireSceneComputeAttrsFromFallbacks( slimRenderer && slimRenderer._lastScene );
-	} catch ( err ) {
-			console.warn( '[tslp-e2e] storage buffer sync failed:', err && err.message || err );
-		}
-	}
+	__sharedSyncComputeStorageOutputs( computeNode, fullRenderer, slimRenderer, {
+		onStorageAttr: __rememberComputeStorageAttr,
+		onError: ( err ) => console.warn( '[tslp-e2e] storage buffer sync failed:', err && err.message || err ),
+	} );
+	__wireSceneComputeAttrsFromFallbacks( slimRenderer && slimRenderer._lastScene );
+}
 
+// Lazy full-`WebGPURenderer` boot — productized through
+// `slim-support/full-renderer-fallback`. The fallback owns the shared-device
+// init, the de-duplicated promise, and the `shadowMap.enabled` flip; we keep
+// `__computeRenderer` and `__fullThreeMod` as in-page references because
+// other harness helpers (`__makeFullSceneForPMREM`, `__rememberStorageAttr`,
+// `__convertGeometryToFullThree`) read them synchronously.
 let __computeRenderer = null;
 let __computeRendererInit = null;
 let __fullThreeMod = null;
+const __fullRendererFallbackPlaceholder = { slimRenderer: null };
+let __fullRendererFallback = null;
 async function __getComputeRenderer( slimRenderer ) {
 	if ( __computeRenderer ) return __computeRenderer;
 	if ( __computeRendererInit ) return __computeRendererInit;
 	__computeRendererInit = ( async () => {
-		try {
-			const mod = await import( '/build/three.webgpu.js' );
-			__fullThreeMod = mod;
-			const FullRenderer = mod.WebGPURenderer;
-			const device = slimRenderer.backend && slimRenderer.backend.device;
-			const rendererOptions = device ? { device } : {};
-			if ( slimRenderer && slimRenderer.reversedDepthBuffer !== undefined ) rendererOptions.reversedDepthBuffer = slimRenderer.reversedDepthBuffer === true;
-			const r = new FullRenderer( rendererOptions );
-			await r.init();
-			// Enable shadow map on the full renderer so shadow passes fire when
-			// rendering the shadow scene below. The slim renderer's shadowMap
-			// flag is cosmetic (shadow code is tree-shaken).
-			r.shadowMap.enabled = true;
-			__computeRenderer = r;
-			return r;
-		} catch ( err ) {
-			console.warn( '[tslp-e2e] compute renderer init failed:', err && err.message || err );
-			return null;
+		if ( ! __fullRendererFallback || __fullRendererFallbackPlaceholder.slimRenderer !== slimRenderer ) {
+			__fullRendererFallbackPlaceholder.slimRenderer = slimRenderer;
+			__fullRendererFallback = __sharedCreateFullRendererFallback( {
+				slimRenderer,
+				loadThreeFullModule: async () => {
+					const mod = await import( '/build/three.webgpu.js' );
+					__fullThreeMod = mod;
+					return mod;
+				},
+				onError: ( err ) => console.warn( '[tslp-e2e] compute renderer init failed:', err && err.message || err ),
+			} );
 		}
+		const r = await __fullRendererFallback.getRenderer();
+		if ( r ) __computeRenderer = r;
+		return r;
 	} )();
 	return __computeRendererInit;
 }

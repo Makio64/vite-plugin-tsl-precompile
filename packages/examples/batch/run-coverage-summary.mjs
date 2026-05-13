@@ -105,6 +105,33 @@ for ( const reportPath of reportPaths ) {
 
 }
 
+function rowFromReportEntry( reportEntry ) {
+
+	const gate = reportEntry.gate;
+	let psnr = null;
+	let verdict = 'fail';
+	let note = '';
+	if ( gate.skipped ) {
+
+		note = `e2e-report: skipped — ${ gate.reason }`;
+
+	} else if ( gate.psnr === 'inf' ) {
+
+		psnr = Infinity;
+		verdict = 'pass';
+		note = `${ reportEntry.source } only`;
+
+	} else if ( typeof gate.psnr === 'number' ) {
+
+		psnr = gate.psnr;
+		verdict = psnr >= threshold ? 'pass' : 'fail';
+		note = `${ reportEntry.source } only`;
+
+	}
+	return { psnr, verdict, note };
+
+}
+
 function categoryOf( name ) {
 
 	if ( /^webgpu_lights_/.test( name ) || name === 'webgpu_lightprobe_cubecamera.html' ) return 'Lights';
@@ -145,34 +172,25 @@ for ( const name of allNames ) {
 
 		}
 
-		const reportEntry = e2eByName.get( name );
-		if ( reportEntry ) {
-
-			const gate = reportEntry.gate;
-			if ( gate.psnr === 'inf' ) {
-
-				psnr = Infinity;
-				verdict = 'pass';
-
-			} else if ( typeof gate.psnr === 'number' ) {
-
-				psnr = gate.psnr;
-				verdict = psnr >= threshold ? 'pass' : 'fail';
-
-			}
-			note = note ? `${ note }; ${ reportEntry.source } pixel gate` : `${ reportEntry.source } pixel gate`;
-
-		}
-
 	} else if ( hasCapture && ! hasReplay ) {
 
-		verdict = 'fail';
-		note = 'no replay (slim runtime did not produce a frame)';
+		const reportEntry = e2eByName.get( name );
+		if ( reportEntry ) {
+			( { psnr, verdict, note } = rowFromReportEntry( reportEntry ) );
+		} else {
+			verdict = 'fail';
+			note = 'no replay (slim runtime did not produce a frame)';
+		}
 
 	} else if ( ! hasCapture && hasReplay ) {
 
-		verdict = 'fail';
-		note = 'no capture (live three.js did not produce a frame)';
+		const reportEntry = e2eByName.get( name );
+		if ( reportEntry ) {
+			( { psnr, verdict, note } = rowFromReportEntry( reportEntry ) );
+		} else {
+			verdict = 'fail';
+			note = 'no capture (live three.js did not produce a frame)';
+		}
 
 	}
 
@@ -185,27 +203,7 @@ for ( const name of allNames ) {
 for ( const [ name, reportEntry ] of e2eByName ) {
 
 	if ( allNames.has( name ) ) continue;
-	const gate = reportEntry.gate;
-	let psnr = null;
-	let verdict = 'fail';
-	let note = '';
-	if ( gate.skipped ) {
-
-		note = `e2e-report: skipped — ${ gate.reason }`;
-
-	} else if ( gate.psnr === 'inf' ) {
-
-		psnr = Infinity;
-		verdict = 'pass';
-		note = `${ reportEntry.source } only`;
-
-	} else if ( typeof gate.psnr === 'number' ) {
-
-		psnr = gate.psnr;
-		verdict = psnr >= threshold ? 'pass' : 'fail';
-		note = `${ reportEntry.source } only`;
-
-	}
+	const { psnr, verdict, note } = rowFromReportEntry( reportEntry );
 
 	rows.push( { name, hasCapture: false, hasReplay: false, psnr, verdict, note } );
 

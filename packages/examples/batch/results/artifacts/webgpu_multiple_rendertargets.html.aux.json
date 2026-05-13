@@ -2,6 +2,7 @@
   {
     "shape": "render-output",
     "configHash": "90a5a84186bcbc44efdd95b20bf6492a0c0d34057e53f1b3ebe0bc95b1236c03",
+    "name": "aux-render-output-90a5a84186bc",
     "artifact": {
       "version": 3,
       "cacheKey": 6275157924382396,
@@ -532,6 +533,7 @@
   {
     "shape": "post-process",
     "configHash": "5584832c9d74d8ac5c84e9d20de3c3a334bd960cb6422f12b2ff422e39d8021c",
+    "name": "aux-post-process-5584832c9d74",
     "artifact": {
       "version": 3,
       "cacheKey": 7352854927103546,
