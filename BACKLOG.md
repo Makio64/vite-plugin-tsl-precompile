@@ -43,14 +43,14 @@ Several beta-relevant examples are close to the 30 dB gate or represent common m
 Current useful signals:
 - `webgpu_materials_texture_manualmipmap.html` — resolved by refresh; now PSNR `inf`.
 - `webgpu_loader_gltf_iridescence.html` — resolved by refresh; now 37.95 dB.
-- `webgpu_materials_transmission.html` — 26.25 dB in the fresh focused run.
+- `webgpu_materials_transmission.html` — now above the focused gate at 33.77 dB; keep it as a guardrail.
 - `webgpu_lights_selective.html` — 26.18 dB in the generated broad summary.
 
 Likely root causes vary by example: material extension uniforms and viewport texture timing for transmission, and light/pass routing for selective lighting. Treat this as a triage bucket: pick one example, run a focused E2E report with saved shots, then split any confirmed root cause into a narrower task if it touches a different subsystem.
 
 - **Files**: likely `packages/runtime/src/hydrator.js`, `packages/runtime/src/apply-precompiled.js`, `packages/plugin/src/vendor/extractUniformPlan.js`, and focused `packages/examples/batch/run-e2e.mjs` diagnostics depending on the chosen example.
 - **Done when**: at least one near-threshold beta example moves above 30 dB without regressing the focused shadow, PMREM, and bloom reports.
-- **Reference**: webgpu_materials_transmission, webgpu_lights_selective; keep webgpu_materials_texture_manualmipmap and webgpu_loader_gltf_iridescence as guardrails.
+- **Reference**: webgpu_lights_selective; keep webgpu_materials_transmission, webgpu_materials_texture_manualmipmap, and webgpu_loader_gltf_iridescence as guardrails.
 
 ### `toon-outline-pass` — P1 — resolved
 `webgpu_materials_toon.html` now passes at PSNR `inf` in `next-toon-outline-pass.json`. The example uses `toonOutlinePass(scene, camera)`, whose `updateBefore()` creates a dynamic outline `NodeMaterial` and calls `renderer.renderObject()` outside the normal scene material marking path.
@@ -138,11 +138,11 @@ The clearcoat DFG regression is fixed, so this task is now specifically about PM
 - **Done when**: the broader PMREM/reflection set is re-graded and representative examples are visually blurred/correctly colored without regressing the three focused green reports.
 
 ### `transmission-viewport-texture` — P1
-Glass, refraction, and viewport-dependent materials are part of the beta PBR slice. The extractor emits `viewport.texture` and the hydrator has a rebinder path, but the visual examples are still far below the production bar:
+Glass, refraction, and viewport-dependent materials are part of the beta PBR slice. The extractor emits `viewport.texture` and the hydrator has a rebinder path; transmission is now above the gate, while refraction remains the active visual miss:
 
-- `webgpu_materials_transmission.html` (26.28 dB)
+- `webgpu_materials_transmission.html` (33.77 dB; keep as a guardrail)
 - `webgpu_refraction.html` (14.74 dB)
-- `webgpu_loader_gltf_transmission.html` (35.24 dB; keep as a guardrail)
+- `webgpu_loader_gltf_transmission.html` (34.81 dB; keep as a guardrail)
 - `webgpu_mirror.html` (61.72 dB; keep as a guardrail)
 
 Hypothesis: the live `ViewportTextureNode` / `ReflectorBaseNode` render target is being discovered, but bind-group caches or render-order timing keep replay sampling fallback/old framebuffer textures.
@@ -158,7 +158,7 @@ The MRT runtime stub landed in Wave 2E (commit 43129c0):
 
 Current MRT/render-target state:
 - `webgpu_mrt` is now green at PSNR `inf`; keep it as a guardrail.
-- `webgpu_mrt_mask` (18.75 dB) — post-process pipeline does not yet match stock.
+- `webgpu_mrt_mask` is now green at 32.46 dB after the RenderPipeline fullscreen quad bypass; keep it as a guardrail.
 - `webgpu_multiple_rendertargets` and `webgpu_multiple_rendertargets_readback` now pass at PSNR `inf` in `architecture-mrt-attachments.json`; replay retargets global `renderer.setMRT(...)` scenes to the captured multi-output artifact before WebGPU pipeline creation.
 - `webgpu_rtt.html`, `webgpu_depth_texture.html`, and `webgpu_multisampled_renderbuffers.html` are now green after replay started replacing standalone `QuadMesh` / render-target materials before slim render.
 - `webgpu_rendertarget_2d-array_3d.html` now passes focused E2E at 41.96 dB in `architecture-rendertarget-array3d.json`; safe graph traversal avoids expanding accessor-heavy runtime objects.
@@ -166,7 +166,7 @@ Current MRT/render-target state:
 Wave 2E agent's report identifies the precise gaps. Implementation pending.
 
 - **Files**: `packages/examples/batch/run-e2e.mjs`, `packages/runtime/src/precompile-marker.js` (per-material RT binding tracking via `setRenderTarget` hook), `packages/runtime/src/aux-marker.js`, `packages/runtime/src/hydrator.js` (PassNode `getTexture` routing to live RT attachments).
-- **Done when**: `webgpu_mrt_mask.html` improves without regressing the now-green `webgpu_mrt.html`, `webgpu_multiple_rendertargets.html`, and `webgpu_multiple_rendertargets_readback.html`.
+- **Done when**: the focused MRT guard set stays green (`webgpu_mrt.html`, `webgpu_mrt_mask.html`, `webgpu_multiple_rendertargets.html`, and `webgpu_multiple_rendertargets_readback.html`) while broader postprocessing work proceeds.
 
 ---
 
@@ -223,10 +223,10 @@ When two tasks share a file, run them **sequentially**, not in parallel.
 Recommended order for serial work (each ~30-60 min focused):
 
 1. `shadowmap-opacity-broad-regression` — make focused and generated shadow coverage agree again.
-2. `pbr-near-threshold` — close the remaining ordinary material/light examples nearest the gate (`materials_transmission`, `lights_selective`).
-3. `transmission-viewport-texture` — glass/refraction remains relevant, with `materials_transmission` and `refraction` still below the gate.
+2. `pbr-near-threshold` — close the remaining ordinary material/light examples nearest the gate; keep the now-green transmission and selective-light examples as guardrails.
+3. `transmission-viewport-texture` — viewport transmission is green for `materials_transmission` and `loader_gltf_transmission`; continue with refraction/reflector follow-ups.
 4. `pmrem-cubemap-bg` — focused glTF/PMREM cubemap bucket is green, but `webgpu_pmrem_scene.html` and `webgpu_reflection.html` still need work.
-5. `mrt-replay-empty` — `webgpu_mrt.html` and the multiple-render-target/readback cases are green; `webgpu_mrt_mask.html` still needs correct post-process MRT masking.
+5. `mrt-replay-empty` — focused MRT is green now; keep the four MRT/render-target guards in the regression loop while prioritizing PMREM-scene and broad postprocessing misses.
 6. `compute-instance-mesh-buffer` / `compute-storage-texture-sync` — experimental compute/storage slice.
 
 For parallel agent work: file-disjoint sets are tricky because run-e2e.mjs is contended. Agent assignments need careful section-scoping or merge coordination.

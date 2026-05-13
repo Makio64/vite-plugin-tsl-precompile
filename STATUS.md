@@ -25,10 +25,11 @@ This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage s
 - `webgpu_tsl_vfx_tornado.html` and `webgpu_equirectangular.html` — fresh focused runs now match at PSNR `inf`.
 - `webgpu_rtt.html`, `webgpu_depth_texture.html`, and `webgpu_multisampled_renderbuffers.html` — standalone `QuadMesh` / render-target materials now replay through captured precompiled materials; all three focused runs report PSNR `inf`.
 - `webgpu_multiple_rendertargets.html` and `webgpu_multiple_rendertargets_readback.html` — global MRT replay now retargets precompiled materials to the captured multi-output artifact and matches stock at PSNR `inf` in `architecture-mrt-attachments.json`.
+- `webgpu_mrt.html` and `webgpu_mrt_mask.html` — RenderPipeline fullscreen quads now bypass scene-material replacement while replay keeps the captured user pipeline artifact; focused post-build verification reports PSNR `inf` and 32.46 dB in `verify-mrt-post-build-final.json` / `verify-mrt-mask-after-pipeline-quad-bypass.json`.
+- `webgpu_materials_transmission.html` and `webgpu_loader_gltf_transmission.html` — viewport/transmission replay now passes focused verification at 33.77 dB and 34.81 dB in `verify-transmission-post-build-final.json` / `verify-loader-transmission-after-pipeline-quad-bypass.json`.
 - `webgpu_rendertarget_2d-array_3d.html` — safe graph traversal avoids accessor-heavy runtime objects and the focused run now passes at 41.96 dB in `architecture-rendertarget-array3d.json`.
 
 **Improved but not fully green:**
-- `webgpu_materials_transmission.html` — viewport texture invalidation is hardened, but the focused verification still misses the 30 dB gate at 26.25 dB. This remains the beta PBR blocker.
 - `webgpu_lines_fat_raycasting.html` — visually very close but still below the gate at 28.93 dB after a fresh run.
 - `webgpu_postprocessing_dof_basic.html`, `webgpu_postprocessing_ssgi.html`, and `webgpu_postprocessing_ssgi_ballpool.html` — fresh triage reports 23.14 dB, 18.38 dB, and 11.71 dB respectively; broad postprocessing still needs pass-chain work.
 - `webgpu_instancing_morph.html` — instance color path improved, but replay remains visually mismatched; latest focused report PSNR `15.65` in `visual-instancing-morph-after-random-split.json`.
@@ -40,6 +41,7 @@ This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage s
 - `@tsl-precompile/runtime/slim-support/pmrem` now owns PMREM texture/source detection, cache/pending generation orchestration, image-ready skips, and PMREM `_textureRefs` wiring helpers; the E2E harness delegates those rules to runtime surface instead of carrying a local copy.
 - The hydrator now imports shader texture-shape inference, texture binding compatibility checks, and fallback texture selection from `packages/runtime/src/hydrate/texture-resolver.js`; `artifact.texture` resolution, live texture identity lookup, and snapshot texture hydration now live in focused `hydrate/*` modules with named strategies and tests.
 - The E2E harness now resizes PassNode render targets to the active MRT descriptor and retargets global `renderer.setMRT(...)` scenes to captured multi-output artifacts before WebGPU pipeline creation.
+- RenderPipeline fullscreen quad replay now skips generic scene-material replacement while the pipeline is rendering, preventing the already-precompiled pipeline quad from being retargeted as if it were a user mesh.
 - `@tsl-precompile/contract/dynamic-bindings` documents owner/target/phase/resolver metadata for live uniform slots and runtime texture/rebinder sources.
 - PMREM generation chooses equirect/cube mode from source image shape rather than trusting rewritten `texture.mapping`, uses cloned source textures for temporary mapping changes, and preserves loader `flipY`.
 - Equirectangular HDR backgrounds captured as `texture_cube` background artifacts are converted to live `CubeTexture`s through the shared full WebGPU renderer, then shared back into slim.
@@ -107,9 +109,9 @@ Do not optimize for every graded example first. The credible beta surface for re
 - material uniforms and known live light/shadow uniforms
 - stable artifact invalidation across dev capture, build rewrite, runtime hash checks, and package contents
 
-Priority order: restore and keep shadows green, then close the near-threshold PBR/material and lighting misses, then PMREM/reflection outliers and transmission/viewport/reflector texture paths. Compute/storage follows as experimental WebGPU coverage. MRT is mostly green after the global render-target retargeting pass, but `webgpu_mrt_mask.html` and broad postprocessing still stay deferred until the PassNode chain is truly wired.
+Priority order: restore and keep shadows green, then close the near-threshold PBR/material and lighting misses, then PMREM/reflection outliers and reflector texture paths. Transmission/viewport and the focused MRT guard set are now green, but compute/storage and broad postprocessing remain experimental WebGPU coverage.
 
-Fresh triage on 2026-05-13 updates the MRT slice: `webgpu_multiple_rendertargets.html` and `webgpu_multiple_rendertargets_readback.html` now pass at PSNR `inf` in `architecture-mrt-attachments.json`; `webgpu_mrt_mask.html` remains the active MRT/render-target miss. Compute deferrals from 2026-05-12 still stand: `webgpu_compute_reduce.html` is 14.81 dB and `webgpu_compute_texture_pingpong.html` is 21.75 dB.
+Fresh triage on 2026-05-13 updates the MRT slice: `webgpu_mrt.html`, `webgpu_mrt_mask.html`, `webgpu_multiple_rendertargets.html`, and `webgpu_multiple_rendertargets_readback.html` all pass focused verification after the RenderPipeline quad bypass. Compute deferrals from 2026-05-12 still stand: `webgpu_compute_reduce.html` is 14.81 dB and `webgpu_compute_texture_pingpong.html` is 21.75 dB.
 
 ---
 
@@ -234,7 +236,7 @@ These kinds are recognised by the extractor/codegen contract but are not ordinar
 | `scene.overrideMaterial` | Scene-override context is out of scope for v1 | Any material injected via `scene.overrideMaterial` |
 | `uniform.live` (unnamed/custom) | Known light/shadow live sources have coverage, but custom `onRenderUpdate`-driven uniforms can still freeze if the extractor cannot map them to a stable source property | Custom live uniforms |
 
-**Impact today:** PBR materials (`MeshStandardNodeMaterial`, `MeshPhysicalNodeMaterial`) with assigned textures and IBL `envMap` now hydrate end-to-end — `artifact.texture` and `builtin.dfgLUT` resolve via the runtime hydrator. `webgpu_clearcoat.html` is back above the E2E PSNR gate in the focused run. Shadow, viewport/transmission, and reflector texture bindings have runtime rebinder paths but still need visual hardening across the example set. AOT compute/storage paths remain the major binding-family gap.
+**Impact today:** PBR materials (`MeshStandardNodeMaterial`, `MeshPhysicalNodeMaterial`) with assigned textures and IBL `envMap` now hydrate end-to-end — `artifact.texture` and `builtin.dfgLUT` resolve via the runtime hydrator. `webgpu_clearcoat.html` is back above the E2E PSNR gate in the focused run, and the focused transmission viewport checks are now above the gate. Shadow and reflector texture bindings have runtime rebinder paths but still need visual hardening across the broader example set. AOT compute/storage paths remain the major binding-family gap.
 
 ---
 
@@ -247,7 +249,8 @@ The broad summary is now **153 / 225**. Shadows are no longer entirely green in 
 - [x] Refresh `webgpu_materials_texture_manualmipmap.html` (now PSNR `inf`) and `webgpu_loader_gltf_iridescence.html` (now 37.95 dB).
 - [x] Fix `webgpu_materials_toon.html`; dynamic `toonOutlinePass` material replay now reaches PSNR `inf`.
 - [ ] Re-check `webgpu_shadowmap_opacity.html` (10.80 dB in the generated broad summary) against the focused shadow sweep before changing runtime behavior.
-- [ ] Improve `webgpu_materials_transmission.html` (26.25 dB fresh) and `webgpu_lights_selective.html` (26.18 dB in the generated broad summary).
+- [x] Improve `webgpu_materials_transmission.html`; focused verification now passes at 33.77 dB.
+- [ ] Improve `webgpu_lights_selective.html` (26.18 dB in the generated broad summary).
 - [x] Reconcile the `webgpu_shadowmap_array.html` discrepancy; `coverage-summary.md` now reports the shared PSNR result at 34.20 dB.
 
 ### 2. Bloom / postprocessing pass textures  *(focused bloom cluster green)*
@@ -269,9 +272,10 @@ Many real PBR scenes depend on environment lighting. Wrong PMREM/reflection wiri
 
 ### 4. Transmission / viewport / reflector texture path
 
-`viewport.texture` and `reflector.texture` rebinder paths exist, but the common glass/mirror examples are still below the production bar.
+`viewport.texture` and `reflector.texture` rebinder paths exist. Focused transmission is now above the production bar; refraction remains the active viewport miss.
 
-- [ ] Fix `webgpu_materials_transmission.html` and `webgpu_refraction.html`.
+- [x] Fix `webgpu_materials_transmission.html`; focused verification now passes at 33.77 dB.
+- [ ] Fix `webgpu_refraction.html`.
 - [ ] Keep `webgpu_loader_gltf_transmission.html` and `webgpu_mirror.html` green as guardrails while changing viewport/reflector code.
 - [ ] Add focused fixture coverage for `viewport.texture` and `reflector.texture` once the runtime behavior is stable.
 

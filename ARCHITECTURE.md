@@ -95,7 +95,9 @@ Ships with the user's bundle. Runtime only.
 
 - `src/precompile-marker.js` — `Material.prototype.precompile`. In dev, calls the extractor + POSTs artifact. In prod, replaced by transform.
 - `src/apply-precompiled.js` — `__applyPrecompiled` helper injected by transform.
+- `src/hydrate/*` — runtime hydration modules: static binding allocation, texture/source resolution, built-in texture reconstruction, live texture registry, and per-frame texture rebinders.
 - `src/slim-support/live-scene-index.js` — first productized slim-support helper for live texture indexing and null-image healing.
+- `src/slim-support/pmrem.js` — productized PMREM support helpers for artifact/source detection, cache orchestration, and `_textureRefs` wiring; the harness still supplies the full-renderer generator.
 - `src/writers.js` — `writeMat4 / writeVec4 / writeF32 / writeColor`.
 - `src/artifact-loader.js` — manifest resolver.
 - `build/three.webgpu.slim.js` — prebuilt slim three.js (no node builder).
