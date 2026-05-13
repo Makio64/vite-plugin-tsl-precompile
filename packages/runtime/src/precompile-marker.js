@@ -246,7 +246,11 @@ async function autoAttachInspectorPanel( inspector ) {
 	if ( inspector.__tslPrecompilePanel ) return; // already attached
 	try {
 
-		const mod = await import( /* @vite-ignore */ '@tsl-precompile/inspector-panel' );
+		// The specifier is held in a variable so Vite's import-analysis does
+		// not statically try to resolve it at dev-server boot. The panel is
+		// optional; consumers without it just hit the catch below at runtime.
+		const inspectorPanelSpecifier = '@tsl-precompile/inspector-panel';
+		const mod = await import( /* @vite-ignore */ inspectorPanelSpecifier );
 		if ( typeof mod.attachToInspector === 'function' ) mod.attachToInspector( inspector );
 
 	} catch ( err ) {

@@ -23,7 +23,8 @@
 
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { resolve, join } from 'node:path';
+import { resolve, join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { transformSource } from './babel-transform.js';
 import { autoMarkSource } from './auto-mark.js';
@@ -35,16 +36,100 @@ import { VIRTUAL_MODULE_PREFIX, VIRTUAL_AUX_MODULE_ID, VIRTUAL_WGSL_POOL_MODULE_
 
 const VIRTUAL_RESOLVE_PREFIX = '\0' + VIRTUAL_MODULE_PREFIX;
 
+// Absolute path to this file's directory — used to alias the runtime's
+// bare-specifier dynamic imports (`vite-plugin-tsl-precompile/src/...`) to
+// the plugin's own source. Without this, Vite resolves those specifiers
+// from the runtime package's location, where pnpm has not created a symlink
+// (runtime doesn't declare the plugin as a dep), and resolution fails.
+const PLUGIN_SRC_DIR = dirname( fileURLToPath( import.meta.url ) );
+
+const KNOWN_OPTION_KEYS = new Set( [
+	'artifactsDir',
+	'fail',
+	'autoMark',
+	'autoMarkPrefix',
+	'slim',
+	'threeVersion',
+	'minifyWgsl',
+	'dedupeWgsl',
+] );
+
+const FAIL_MODES = new Set( [ 'error', 'warn' ] );
+
+function isPlainObject( value ) {
+
+	if ( ! value || typeof value !== 'object' || Array.isArray( value ) ) return false;
+	const proto = Object.getPrototypeOf( value );
+	return proto === Object.prototype || proto === null;
+
+}
+
+function validateOptions( userOpts ) {
+
+	if ( ! isPlainObject( userOpts ) ) {
+
+		throw new TypeError( `[tsl-precompile] options must be a plain object, received ${ Array.isArray( userOpts ) ? 'array' : typeof userOpts }.` );
+
+	}
+
+	const unknown = Object.keys( userOpts ).filter( ( k ) => ! KNOWN_OPTION_KEYS.has( k ) );
+	if ( unknown.length > 0 ) {
+
+		throw new Error( `[tsl-precompile] unknown plugin option(s): ${ unknown.map( ( k ) => `"${ k }"` ).join( ', ' ) }. Known options: ${ [ ...KNOWN_OPTION_KEYS ].map( ( k ) => `"${ k }"` ).join( ', ' ) }.` );
+
+	}
+
+	if ( userOpts.fail !== undefined && ! FAIL_MODES.has( userOpts.fail ) ) {
+
+		throw new Error( `[tsl-precompile] invalid \`fail\` option: ${ JSON.stringify( userOpts.fail ) }. Expected 'error' or 'warn'.` );
+
+	}
+
+	if ( userOpts.artifactsDir !== undefined && typeof userOpts.artifactsDir !== 'string' ) {
+
+		throw new TypeError( `[tsl-precompile] \`artifactsDir\` must be a string, received ${ typeof userOpts.artifactsDir }.` );
+
+	}
+
+	if ( userOpts.autoMarkPrefix !== undefined && typeof userOpts.autoMarkPrefix !== 'string' ) {
+
+		throw new TypeError( `[tsl-precompile] \`autoMarkPrefix\` must be a string, received ${ typeof userOpts.autoMarkPrefix }.` );
+
+	}
+
+	if ( userOpts.threeVersion !== undefined && userOpts.threeVersion !== null && typeof userOpts.threeVersion !== 'string' ) {
+
+		throw new TypeError( `[tsl-precompile] \`threeVersion\` must be a string when set, received ${ typeof userOpts.threeVersion }.` );
+
+	}
+
+	for ( const key of [ 'autoMark', 'slim', 'minifyWgsl', 'dedupeWgsl' ] ) {
+
+		if ( userOpts[ key ] !== undefined && typeof userOpts[ key ] !== 'boolean' ) {
+
+			throw new TypeError( `[tsl-precompile] \`${ key }\` must be a boolean, received ${ typeof userOpts[ key ] }.` );
+
+		}
+
+	}
+
+}
+
 /**
  * @param {Object} [userOpts]
  * @param {string} [userOpts.artifactsDir='./artifacts']
  * @param {'error' | 'warn'} [userOpts.fail='error']
+ * @param {boolean} [userOpts.autoMark=false] - Auto-mark every `new *NodeMaterial(...)` with `.precompile('<prefix>-<slug>-<n>')` so unmodified three.js demos flow through the AOT pipeline.
+ * @param {string}  [userOpts.autoMarkPrefix='auto'] - Prefix used by auto-mark names.
+ * @param {boolean} [userOpts.slim=false] - Alias `three/webgpu` to the slim bundle (no TSL builder).
+ * @param {string}  [userOpts.threeVersion] - Override the auto-detected three.js version used in artifact hashes.
  * @param {boolean} [userOpts.minifyWgsl=true] - Compact WGSL in emitted virtual modules; captured JSON stays untouched.
  * @param {boolean} [userOpts.dedupeWgsl=true] - Hoist repeated WGSL strings inside emitted virtual modules.
- * @param {string} [userOpts.threeVersion] - Overrides the auto-detected three.js version used in rewrite hashes.
  * @returns {import('vite').Plugin}
  */
 export default function tslPrecompile( userOpts = {} ) {
+
+	validateOptions( userOpts );
 
 	const opts = {
 		artifactsDir: userOpts.artifactsDir || './artifacts',
@@ -164,7 +249,16 @@ export default function tslPrecompile( userOpts = {} ) {
 
 		config( _userConfig, env ) {
 
-			if ( ! opts.slim ) return null;
+			// The runtime's dev-mode `.precompile()` and aux-capture paths do
+			// `await import('vite-plugin-tsl-precompile/src/...')` from inside
+			// `@tsl-precompile/runtime`. The runtime package does not declare
+			// the plugin as a dep, so Vite's bare-specifier resolution starting
+			// from the runtime source can't find it. Alias those two paths to
+			// this plugin's actual source files, regardless of mode.
+			const alias = [
+				{ find: 'vite-plugin-tsl-precompile/src/vendor/compileTSL.js', replacement: resolve( PLUGIN_SRC_DIR, 'vendor/compileTSL.js' ) },
+				{ find: 'vite-plugin-tsl-precompile/src/emit-updater.js', replacement: resolve( PLUGIN_SRC_DIR, 'emit-updater.js' ) },
+			];
 
 			// Alias `three/webgpu` → slim bundle when the plugin is active in
 			// `slim: true` mode. Users' `import { WebGPURenderer } from 'three/webgpu'`
@@ -172,14 +266,16 @@ export default function tslPrecompile( userOpts = {} ) {
 			// full build with node-builder. The slim bundle exports the same
 			// symbol surface minus *NodeMaterial / TSL / Nodes; any code path
 			// that touched those must have been precompiled away.
-			return {
-				resolve: {
-					alias: [
-						{ find: /^three\/webgpu$/, replacement: '@tsl-precompile/runtime/slim' },
-						{ find: /^three\/tsl$/, replacement: '@tsl-precompile/runtime/slim-stubs' },
-					],
-				},
-			};
+			if ( opts.slim ) {
+
+				alias.push(
+					{ find: /^three\/webgpu$/, replacement: '@tsl-precompile/runtime/slim' },
+					{ find: /^three\/tsl$/, replacement: '@tsl-precompile/runtime/slim-stubs' },
+				);
+
+			}
+
+			return { resolve: { alias } };
 
 		},
 
@@ -407,7 +503,7 @@ export default function tslPrecompile( userOpts = {} ) {
 
 			if ( blocked.length > 0 ) {
 
-				this.warn( `[tsl-precompile] artifact "${ name }" has ${ blocked.length } documented-blocked kind(s) (${ blocked.map( ( b ) => b.kind ).join( ', ' ) }). The updater ships a frozen-snapshot fallback; animation paths for these kinds won't propagate until Phase 5.5.` );
+				this.warn( `[tsl-precompile] artifact "${ name }" has ${ blocked.length } not-yet-animated kind(s) (${ blocked.map( ( b ) => b.kind ).join( ', ' ) }). The updater ships a frozen-snapshot fallback — frame-0 visual is correct, but values from these kinds won't animate over time. Track support at packages/examples/batch/results/coverage-summary.md.` );
 
 			}
 

@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<title>tsl-precompile / getting-started</title>
+	<style>
+		html, body { margin: 0; padding: 0; height: 100%; background: #101418; color: #fff; font-family: monospace; overflow: hidden; }
+		canvas { display: block; }
+		#info {
+			position: fixed; top: 8px; left: 8px; padding: 8px 12px;
+			background: rgba(0,0,0,0.6); font-size: 12px; line-height: 1.5;
+			pointer-events: none; z-index: 10;
+		}
+		#info code { color: #8df; }
+		#status { color: #8df; }
+	</style>
+</head>
+<body>
+	<div id="info">
+		<div><strong>tsl-precompile / getting-started</strong></div>
+		<div>minimal scene: a torus knot with one precompiled <code>MeshStandardNodeMaterial</code></div>
+		<div>status: <span id="status">starting…</span></div>
+	</div>
+	<script type="module" src="./main.js"></script>
+</body>
+</html>

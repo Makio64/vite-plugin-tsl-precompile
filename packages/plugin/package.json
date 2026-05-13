@@ -8,25 +8,34 @@
     "node": ">=20.19"
   },
   "author": "David Ronai <davronai@gmail.com>",
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/Makio64/vite-plugin-tsl-precompile.git",
     "directory": "packages/plugin"
   },
   "main": "./src/index.js",
+  "types": "./types/index.d.ts",
   "exports": {
-    ".": "./src/index.js",
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    },
     "./src/*": "./src/*"
   },
   "files": [
-    "src"
+    "src",
+    "types"
   ],
   "scripts": {
     "test": "node --test --test-concurrency=1 'test/unit/*.test.js' 'test/coverage/*.test.js'",
     "test:unit": "node --test 'test/unit/*.test.js'",
     "test:rewrite": "node --test --test-concurrency=1 'test/unit/rewrite-*.test.js'",
     "test:coverage": "node --test --test-concurrency=1 'test/coverage/*.test.js'",
-    "verify": "node src/cli/verify.js"
+    "verify": "node src/cli/verify.js",
+    "prepublishOnly": "pnpm run test"
   },
   "peerDependencies": {
     "three": ">=0.184.0",

@@ -10,8 +10,8 @@ export default defineConfig( {
 	resolve: {
 		alias: {
 			'@tsl-precompile/inspector-panel': resolve( REPO_ROOT, 'packages/inspector-panel/src/index.js' ),
-			'vite-plugin-tsl-precompile/src': resolve( REPO_ROOT, 'packages/plugin/src' ),
-			'vite-plugin-tsl-precompile/src/vendor/compileTSL.js': resolve( REPO_ROOT, 'packages/plugin/src/vendor/compileTSL.js' ),
+			// `vite-plugin-tsl-precompile/src/...` aliases are now auto-injected
+			// by the plugin's `config()` hook (see packages/plugin/src/index.js).
 		},
 	},
 	plugins: [
