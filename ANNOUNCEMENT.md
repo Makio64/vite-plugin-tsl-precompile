@@ -1,6 +1,12 @@
-# Announcement (template — fill in once Phase 8 lands)
+# Announcement — maintainer draft
 
-Use this when the project hits its v0.1 beta release gate: representative PSNR coverage for the beta support slice, npm dry-runs for plugin/runtime, and at least one external adopter.
+> **Audience: maintainers only.** This file is a draft of the release-day
+> messaging for v0.1.0. It is checked into the repo so the wording is
+> review-able alongside code, but it is **not** consumer documentation.
+> External users should start with [README.md](README.md) and
+> [CHANGELOG.md](CHANGELOG.md).
+
+To be published when the project hits its v0.1 beta release gate: representative PSNR coverage for the beta support slice, npm dry-runs for plugin/runtime, and at least one external adopter.
 
 ## Tweet / BlueSky
 

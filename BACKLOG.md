@@ -14,27 +14,27 @@ Each task lists:
 
 Pri legend: **P0** breaks rendering, **P1** wrong output, **P2** correctness/polish, **P3** nice-to-have.
 
-> **Status (2026-05-12):** The refreshed broad PSNR summary is 153 / 225 graded examples at 30 dB, with 72 visual regressions remaining. E2E and coverage-summary PSNR now share [packages/examples/batch/psnr.mjs](packages/examples/batch/psnr.mjs), so `webgpu_shadowmap_array.html` is counted consistently at 34.20 dB. The generated shadow bucket is currently 7 / 8 because `webgpu_shadowmap_opacity.html` is below the gate at 10.80 dB.
+> **Status (2026-05-13):** The refreshed broad PSNR summary is 163 / 226 graded examples at 30 dB, with 63 visual regressions remaining. E2E and coverage-summary PSNR now share [packages/examples/batch/psnr.mjs](packages/examples/batch/psnr.mjs). Current refreshed guards: shadows 8 / 8, lights 8 / 12, camera 2 / 3, MRT/render-targets 4 / 4, `webgpu_pmrem_scene.html` PSNR `inf`, `webgpu_materials_transmission.html` 33.77 dB, and `webgpu_lights_selective.html` PSNR `inf`.
 
 ## v0.1 beta priority order
 
 Do not chase every graded example first. The production support slice is ordinary PBR app rendering:
 
-1. Restore the broad shadow bucket to green, then keep the active beta queue on near-threshold PBR/material and lighting regressions.
-2. PMREM / environment / reflections: PBR can look plausibly rendered while the lighting is wrong.
-3. Transmission / viewport / reflector textures: glass, refraction, and mirrors are real material features.
-4. Compute / storage sync: useful and important, but experimental for v0.1 unless the release target pivots to creative-coding demos.
-5. MRT and broad postprocessing: focused bloom is green, but the wider render-target / PassNode chain is still deferred.
+1. Keep the now-green shadows, selective lights, transmission, and MRT guard set in the regression loop.
+2. PMREM / environment / reflections: `webgpu_pmrem_scene.html` is now green; plain/roughness reflection examples are the active PBR correctness blockers.
+3. Remaining material/light outliers: BPCEM, alphahash, dynamic/projector/custom/tiled lights.
+4. Broad postprocessing: focused bloom is green, but the wider render-target / PassNode chain is still deferred.
+5. Compute / storage sync: useful and important, but experimental for v0.1 unless the release target pivots to creative-coding demos.
 
 ---
 
 ## Critical visual regressions (P0/P1, biggest user-visible impact)
 
-### `shadowmap-opacity-broad-regression` — P1
-The shared-PSNR broad summary now reports `webgpu_shadowmap_opacity.html` at 10.80 dB, while the previous focused shadow sweep had all eight shadow examples passing. First distinguish stale saved shots/report drift from a real runtime regression before touching the shadow rebinder.
+### `shadowmap-opacity-broad-regression` — P1 — resolved
+The broad summary now reports `webgpu_shadowmap_opacity.html` at 67.34 dB in `verify-shadowmap-opacity-current.json`, and the generated shadow bucket is 8 / 8. The 10.80 dB result was stale saved evidence, not a current shadow rebinder regression.
 
 - **Files**: likely `packages/examples/batch/run-e2e.mjs`, `packages/runtime/src/hydrator.js`, and `packages/runtime/src/aux-loader.js` if diagnosis confirms a runtime issue; otherwise refreshed `packages/examples/batch/results/shots/*shadowmap_opacity*` and `packages/examples/batch/results/coverage-summary.md`.
-- **Done when**: focused and broad `webgpu_shadowmap_opacity.html` both compare above 30 dB, the generated shadow bucket returns to 8 / 8, and `webgpu_shadowmap_array.html` remains a guardrail above the gate.
+- **Done when**: done; keep `webgpu_shadowmap_opacity.html` and `webgpu_shadowmap_array.html` as shadow guardrails.
 - **Reference**: webgpu_shadowmap_opacity, webgpu_shadowmap_array.
 
 ### `pbr-near-threshold` — P1
@@ -44,13 +44,13 @@ Current useful signals:
 - `webgpu_materials_texture_manualmipmap.html` — resolved by refresh; now PSNR `inf`.
 - `webgpu_loader_gltf_iridescence.html` — resolved by refresh; now 37.95 dB.
 - `webgpu_materials_transmission.html` — now above the focused gate at 33.77 dB; keep it as a guardrail.
-- `webgpu_lights_selective.html` — 26.18 dB in the generated broad summary.
+- `webgpu_lights_selective.html` — now matches at PSNR `inf`; keep it as a guardrail.
 
 Likely root causes vary by example: material extension uniforms and viewport texture timing for transmission, and light/pass routing for selective lighting. Treat this as a triage bucket: pick one example, run a focused E2E report with saved shots, then split any confirmed root cause into a narrower task if it touches a different subsystem.
 
 - **Files**: likely `packages/runtime/src/hydrator.js`, `packages/runtime/src/apply-precompiled.js`, `packages/plugin/src/vendor/extractUniformPlan.js`, and focused `packages/examples/batch/run-e2e.mjs` diagnostics depending on the chosen example.
 - **Done when**: at least one near-threshold beta example moves above 30 dB without regressing the focused shadow, PMREM, and bloom reports.
-- **Reference**: webgpu_lights_selective; keep webgpu_materials_transmission, webgpu_materials_texture_manualmipmap, and webgpu_loader_gltf_iridescence as guardrails.
+- **Reference**: remaining dynamic/projector/custom/tiled lights; keep webgpu_lights_selective, webgpu_materials_transmission, webgpu_materials_texture_manualmipmap, and webgpu_loader_gltf_iridescence as guardrails.
 
 ### `toon-outline-pass` — P1 — resolved
 `webgpu_materials_toon.html` now passes at PSNR `inf` in `next-toon-outline-pass.json`. The example uses `toonOutlinePass(scene, camera)`, whose `updateBefore()` creates a dynamic outline `NodeMaterial` and calls `renderer.renderObject()` outside the normal scene material marking path.
@@ -65,7 +65,7 @@ Useful investigation:
 - **Reference**: webgpu_materials_toon, webgpu_postprocessing_outline.
 
 ### `shadowmap-array-refresh` — P2 — resolved
-The latest shared-PSNR broad summary reports `webgpu_shadowmap_array.html` at 34.20 dB, using the same ignore region in both E2E and coverage-summary paths. The old report/PNG disagreement is resolved. The current generated shadow bucket is still 7 / 8 because `webgpu_shadowmap_opacity.html` is below the gate; track that separately under `shadowmap-opacity-broad-regression`.
+The latest shared-PSNR broad summary reports `webgpu_shadowmap_array.html` at 34.20 dB, using the same ignore region in both E2E and coverage-summary paths. The old report/PNG disagreement is resolved, and the generated shadow bucket is now 8 / 8.
 
 - **Files**: `packages/examples/batch/results/shots/*shadowmap_array*`, `packages/examples/batch/results/coverage-summary.md`, and site thumbs/data if refreshing public artifacts.
 - **Done when**: done; keep as historical context if future report/PNG disagreement appears.
@@ -130,8 +130,8 @@ Partially resolved in the 2026-05-05 focused queue. The glTF/PMREM cubemap bucke
 Remaining work is the broader PMREM/reflection/background family, especially paths not covered by those focused reports:
 
 - `webgpu_compute_water` (PSNR 22.23 dB) — sky should be smooth blurred PMREM, comes out wrong
-- `webgpu_pmrem_scene` (PSNR 27.15 dB in `architecture-pmrem-scene-compile-root.json`) — scene-driven PMREM now uses a full-renderer scene clone but still misses the 30 dB gate
-- `webgpu_reflection` (PSNR 15.01 dB) — reflection routing still mismatches
+- `webgpu_pmrem_scene` — resolved by current focused verification; PSNR `inf` in `verify-pmrem-scene-current-final.json`
+- `webgpu_reflection` (PSNR 16.19 dB) and `webgpu_reflection_roughness` (17.54 dB) — reflection routing still mismatches
 The clearcoat DFG regression is fixed, so this task is now specifically about PMREM-prefiltered background/environment routing outside the focused glTF/PMREM cubemap bucket. See [LOGS.md](LOGS.md) for the PMREM architecture notes and the clearcoat DFG fix.
 
 - **Files**: `packages/examples/batch/run-e2e.mjs` PMREM section (`__kickPMREMGenAsync`, `__wireEnvironmentPMREM`, `__backgroundNeedsPMREM`).
@@ -222,11 +222,11 @@ When two tasks share a file, run them **sequentially**, not in parallel.
 
 Recommended order for serial work (each ~30-60 min focused):
 
-1. `shadowmap-opacity-broad-regression` — make focused and generated shadow coverage agree again.
-2. `pbr-near-threshold` — close the remaining ordinary material/light examples nearest the gate; keep the now-green transmission and selective-light examples as guardrails.
-3. `transmission-viewport-texture` — viewport transmission is green for `materials_transmission` and `loader_gltf_transmission`; continue with refraction/reflector follow-ups.
-4. `pmrem-cubemap-bg` — focused glTF/PMREM cubemap bucket is green, but `webgpu_pmrem_scene.html` and `webgpu_reflection.html` still need work.
-5. `mrt-replay-empty` — focused MRT is green now; keep the four MRT/render-target guards in the regression loop while prioritizing PMREM-scene and broad postprocessing misses.
+1. `pmrem-cubemap-bg` / reflection follow-up — focused glTF/PMREM cubemap and `webgpu_pmrem_scene.html` are green, but `webgpu_reflection.html` and `webgpu_reflection_roughness.html` still need work.
+2. `pbr-near-threshold` — close remaining ordinary material/light outliers; keep the now-green shadows, transmission, and selective-light examples as guardrails.
+3. `transmission-viewport-texture` — viewport transmission is green for `materials_transmission` and `loader_gltf_transmission`; continue with reflector/refraction follow-ups as regressions appear.
+4. `mrt-replay-empty` — focused MRT is green now; keep the four MRT/render-target guards in the regression loop while prioritizing reflection and broad postprocessing misses.
+5. `postprocess-bloom-texture-handoff` / broad PassNode follow-ups — selective bloom is green in generated coverage, but hard postprocessing examples still need pass-chain work.
 6. `compute-instance-mesh-buffer` / `compute-storage-texture-sync` — experimental compute/storage slice.
 
 For parallel agent work: file-disjoint sets are tricky because run-e2e.mjs is contended. Agent assignments need careful section-scoping or merge coordination.

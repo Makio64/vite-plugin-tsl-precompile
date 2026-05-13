@@ -12,9 +12,9 @@ author markers, offline shader compilation, dumb runtime.
 
 > **Status — experimental.** The beta target is ordinary PBR app rendering
 > (`Mesh{Standard,Physical}NodeMaterial` + texture maps + env/PMREM + direct
-> lights + shadows + material uniforms). Compute/storage and broad
-> postprocessing/MRT are deferred. Current visual coverage and the live
-> support matrix live in [STATUS.md](STATUS.md) and
+> lights + shadows + material uniforms). Focused MRT/render-target guards are
+> green, while compute/storage and broad postprocessing remain deferred.
+> Current visual coverage and the live support matrix live in [STATUS.md](STATUS.md) and
 > [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md).
 
 ## Requirements
@@ -199,8 +199,8 @@ physical node materials, material texture maps, env maps / PMREM, direct
 lights, shadows, material uniforms, plus stable artifact invalidation
 across dev capture / build rewrite / runtime hash check.
 
-Compute and storage shaders are experimental. MRT and broad postprocessing
-beyond focused bloom are deferred.
+Compute and storage shaders are experimental. The focused MRT/render-target
+guard set is green; broad postprocessing beyond focused bloom is deferred.
 
 The live per-example matrix and a category breakdown live in
 [STATUS.md](STATUS.md). The latest generated coverage table is at
