@@ -1,87 +1,184 @@
-import { Scene, PerspectiveCamera, Mesh, PlaneGeometry, Color, HemisphereLight, DirectionalLight } from 'three';
-import { WebGPURenderer, MeshStandardNodeMaterial } from 'three/webgpu';
-import { uv, color, mix, sin, time, vec3, positionLocal, normalLocal, backgroundBlurriness, backgroundIntensity, backgroundRotation, normalWorld } from 'three/tsl';
+/**
+ * tsl-precompile · ocean demo
+ *
+ * Mirrors three.js' stock `webgpu_ocean.html` (WaterMesh + SkyMesh + PMREM
+ * env + RenderPipeline-with-bloom + OrbitControls) and threads our
+ * precompile pipeline through it:
+ *
+ *   • `water.material.precompile('ocean-water')` — user material capture.
+ *   • `sky.material.precompile('ocean-sky')`     — second user material.
+ *   • `precompileAuxiliary(...)`                  — aux-pass capture for
+ *      background, post-processing (bloom), and PMREM convolution.
+ *
+ * This is the canonical hand-test for the dev capture endpoint and is also
+ * spawned by `packages/examples/batch/run-capture-replay.mjs` and
+ * `run-inspector-smoke.mjs` to validate the end-to-end loop.
+ */
+
+import * as THREE from 'three/webgpu';
+import { pass } from 'three/tsl';
+import { bloom } from 'three/addons/tsl/display/BloomNode.js';
+
+import { Inspector } from 'three/addons/inspector/Inspector.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { WaterMesh } from 'three/addons/objects/WaterMesh.js';
+import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 
 import { installPrecompileMarker, setDevRenderer, precompileAuxiliary, listAux } from '@tsl-precompile/runtime';
-import { Inspector } from 'three/addons/inspector/Inspector.js';
 import { attachToInspector } from '@tsl-precompile/inspector-panel';
-import * as THREE from 'three';
 
-const status = document.getElementById( 'status' );
-const setStatus = ( msg ) => { status.textContent = msg; console.info( '[ocean]', msg ); };
+// --- status overlay (preserved from the old demo for the spawning harnesses
+//     that scrape #status) --------------------------------------------------
+const statusEl = document.getElementById( 'status' );
+const setStatus = ( msg ) => { if ( statusEl ) statusEl.textContent = msg; console.info( '[ocean]', msg ); };
 
 setStatus( 'creating renderer…' );
 
-const renderer = new WebGPURenderer( { antialias: true } );
+// --- renderer --------------------------------------------------------------
+const renderer = new THREE.WebGPURenderer();
+renderer.setPixelRatio( window.devicePixelRatio );
 renderer.setSize( window.innerWidth, window.innerHeight );
-renderer.setPixelRatio( Math.min( 2, window.devicePixelRatio || 1 ) );
-renderer.setClearColor( 0x001020 );
-document.body.appendChild( renderer.domElement );
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.1;
 
-// --- three.js Inspector + Precompile panel ------------------------------
-//
-// MUST be assigned BEFORE `renderer.init()` — three.js calls
-// `inspector.init()` as the last step of renderer.init(). Setting it
-// after won't mount the inspector DOM.
+// Inspector MUST be assigned before renderer.init(); three.js calls
+// `inspector.init()` as the final step inside the renderer's init().
 renderer.inspector = new Inspector();
 attachToInspector( renderer.inspector );
+
+document.body.appendChild( renderer.domElement );
 
 await renderer.init();
 setStatus( 'renderer ready' );
 
-// --- precompile marker setup -----------------------------------------------
-//
-// Install once, give it the active renderer for in-browser extraction in dev.
-// In a production build, the Babel transform replaces .precompile() calls
-// before the bundle ever loads — these two lines are a no-op there.
-installPrecompileMarker( THREE, {
-	devEndpoint: '/__tsl-precompile/capture',
-} );
+// --- precompile marker (no-op in production: Babel rewrites the call) ------
+installPrecompileMarker( THREE, { devEndpoint: '/__tsl-precompile/capture' } );
 setDevRenderer( renderer );
 
-// --- scene ---------------------------------------------------------------
-const scene = new Scene();
+// --- scene + camera --------------------------------------------------------
+const scene = new THREE.Scene();
 
-// Demonstrate the aux-pass precompile path: use a TSL node as the scene
-// background. Three.js will create an internal `NodeMaterial` from it —
-// precompileAuxiliary() captures that material so the slim runtime can
-// load it precompiled instead of running the node builder.
-scene.backgroundNode = mix( color( 0x001020 ), color( 0x204060 ), normalWorld.y.mul( 0.5 ).add( 0.5 ) );
+const camera = new THREE.PerspectiveCamera( 55, window.innerWidth / window.innerHeight, 1, 20000 );
+camera.position.set( 30, 30, 100 );
 
-const camera = new PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 100 );
-camera.position.set( 0, 2, 4 );
-camera.lookAt( 0, 0, 0 );
+// --- water -----------------------------------------------------------------
+const waterGeometry = new THREE.PlaneGeometry( 10000, 10000 );
+const waterNormals = new THREE.TextureLoader().load( 'textures/waternormals.jpg' );
+waterNormals.wrapS = waterNormals.wrapT = THREE.RepeatWrapping;
 
-scene.add( new HemisphereLight( 0x88bbff, 0x001020, 1.2 ) );
-const sun = new DirectionalLight( 0xffeecc, 2.0 );
-sun.position.set( 3, 5, 2 );
-scene.add( sun );
+const water = new WaterMesh(
+	waterGeometry,
+	{
+		waterNormals,
+		sunDirection: new THREE.Vector3(),
+		sunColor: 0xffffff,
+		waterColor: 0x001e0f,
+		distortionScale: 3.7,
+	},
+);
+water.rotation.x = - Math.PI / 2;
+water.material.precompile( 'ocean-water' );
+scene.add( water );
 
-// --- water material -------------------------------------------------------
-const water = new MeshStandardNodeMaterial();
-water.color = new Color( 0x002244 );
-water.roughness = 0.4;
-water.metalness = 0.1;
+// --- sky -------------------------------------------------------------------
+const sky = new SkyMesh();
+sky.scale.setScalar( 10000 );
 
-// Animated normal-warp via TSL. Trivial demo shader — the point is to
-// exercise the .precompile() path, not to look photorealistic.
-const wave = sin( positionLocal.x.mul( 6 ).add( time.mul( 2 ) ) )
-	.mul( 0.05 )
-	.add( sin( positionLocal.y.mul( 8 ).add( time ) ).mul( 0.05 ) );
-water.colorNode = mix( color( 0x002a55 ), color( 0x6fb4ff ), wave.add( 0.5 ) );
+sky.turbidity.value = 10;
+sky.rayleigh.value = 2;
+sky.mieCoefficient.value = 0.005;
+sky.mieDirectionalG.value = 0.8;
+sky.cloudCoverage.value = 0.4;
+sky.cloudDensity.value = 0.5;
+sky.cloudElevation.value = 0.5;
 
-water.precompile( 'ocean-water' );
+sky.material.precompile( 'ocean-sky' );
+scene.add( sky );
 
-const geom = new PlaneGeometry( 8, 8, 64, 64 );
-geom.rotateX( - Math.PI / 2 );
-const mesh = new Mesh( geom, water );
-scene.add( mesh );
+// --- sun + PMREM env -------------------------------------------------------
+const sun = new THREE.Vector3();
+const parameters = { elevation: 2, azimuth: 180, exposure: 0.1 };
+const pmremGenerator = new THREE.PMREMGenerator( renderer );
+const sceneEnv = new THREE.Scene();
+let renderTarget;
 
-// Capture the Background aux-pass graph (the NodeMaterial three.js builds
-// from scene.backgroundNode). In a production bundle with the plugin's
-// Babel rewrite, this will have already been precompiled at build time; in
-// dev mode this call POSTs the artifact to the capture endpoint so the
-// next build can pick it up.
+function updateSun() {
+
+	const phi = THREE.MathUtils.degToRad( 90 - parameters.elevation );
+	const theta = THREE.MathUtils.degToRad( parameters.azimuth );
+
+	sun.setFromSphericalCoords( 1, phi, theta );
+	sky.sunPosition.value.copy( sun );
+	water.sunDirection.value.copy( sun ).normalize();
+
+	if ( renderTarget !== undefined ) renderTarget.dispose();
+
+	// Re-parent the sky into a throwaway scene for the PMREM bake, then put
+	// it back into the visible scene afterwards.
+	sceneEnv.add( sky );
+	renderTarget = pmremGenerator.fromScene( sceneEnv );
+	scene.add( sky );
+
+	scene.environment = renderTarget.texture;
+
+}
+
+updateSun();
+
+// --- chrome cube -----------------------------------------------------------
+const cube = new THREE.Mesh(
+	new THREE.BoxGeometry( 30, 30, 30 ),
+	new THREE.MeshStandardMaterial( { roughness: 0 } ),
+);
+scene.add( cube );
+
+// --- orbit controls --------------------------------------------------------
+const controls = new OrbitControls( camera, renderer.domElement );
+controls.maxPolarAngle = Math.PI * 0.495;
+controls.target.set( 0, 10, 0 );
+controls.minDistance = 40.0;
+controls.maxDistance = 200.0;
+controls.update();
+
+// --- post-processing: scene + bloom ----------------------------------------
+const renderPipeline = new THREE.RenderPipeline( renderer );
+
+const scenePass = pass( scene, camera );
+const scenePassColor = scenePass.getTextureNode( 'output' );
+
+const bloomPass = bloom( scenePassColor );
+bloomPass.threshold.value = 0;
+bloomPass.strength.value = 0.1;
+bloomPass.radius.value = 0;
+
+renderPipeline.outputNode = scenePassColor.add( bloomPass );
+
+// --- GUI (via three.js Inspector's lil-gui-compatible parameter panel) -----
+const gui = renderer.inspector.createParameters( 'Settings' );
+
+const folderSky = gui.addFolder( 'Sky' );
+folderSky.add( parameters, 'elevation', 0, 90, 0.1 ).onChange( updateSun );
+folderSky.add( parameters, 'azimuth', - 180, 180, 0.1 ).onChange( updateSun );
+folderSky.add( parameters, 'exposure', 0, 1, 0.0001 ).onChange( ( value ) => { renderer.toneMappingExposure = value; } );
+
+const folderWater = gui.addFolder( 'Water' );
+folderWater.add( water.distortionScale, 'value', 0, 8, 0.1 ).name( 'distortionScale' );
+folderWater.add( water.size, 'value', 0.1, 10, 0.1 ).name( 'size' );
+
+const folderBloom = gui.addFolder( 'Bloom' );
+folderBloom.add( bloomPass.strength, 'value', 0, 3, 0.01 ).name( 'strength' );
+folderBloom.add( bloomPass.radius, 'value', 0, 1, 0.01 ).name( 'radius' );
+
+const folderClouds = gui.addFolder( 'Clouds' );
+folderClouds.add( sky.cloudCoverage, 'value', 0, 1, 0.01 ).name( 'coverage' );
+folderClouds.add( sky.cloudDensity, 'value', 0, 1, 0.01 ).name( 'density' );
+folderClouds.add( sky.cloudElevation, 'value', 0, 1, 0.01 ).name( 'elevation' );
+
+// --- aux capture -----------------------------------------------------------
+// Capture the auxiliary NodeMaterials three.js builds internally — the
+// scene background (from `scene.environment`), the bloom post-pass, and the
+// PMREM convolution. In a production bundle these get baked at build time;
+// the dev endpoint here just persists the JSON for the next build to pick up.
 precompileAuxiliary( renderer, scene, camera, {
 	devEndpoint: '/__tsl-precompile/capture',
 	three: THREE,
@@ -99,20 +196,22 @@ precompileAuxiliary( renderer, scene, camera, {
 
 } );
 
-// --- render loop ----------------------------------------------------------
-let frame = 0;
-function tick() {
+// --- animation loop --------------------------------------------------------
+renderer.setAnimationLoop( () => {
 
-	requestAnimationFrame( tick );
-	frame ++;
-	mesh.rotation.y = frame * 0.001;
-	renderer.render( scene, camera );
+	const t = performance.now() * 0.001;
 
-}
-tick();
+	cube.position.y = Math.sin( t ) * 20 + 5;
+	cube.rotation.x = t * 0.5;
+	cube.rotation.z = t * 0.51;
+
+	renderPipeline.render();
+
+} );
+
 setStatus( 'rendering — open dev tools, watch for capture log' );
 
-// Resize
+// --- resize ----------------------------------------------------------------
 window.addEventListener( 'resize', () => {
 
 	camera.aspect = window.innerWidth / window.innerHeight;
