@@ -43,6 +43,15 @@ const VIRTUAL_RESOLVE_PREFIX = '\0' + VIRTUAL_MODULE_PREFIX;
 // (runtime doesn't declare the plugin as a dep), and resolution fails.
 const PLUGIN_SRC_DIR = dirname( fileURLToPath( import.meta.url ) );
 
+// Bare specifiers the runtime imports dynamically. Vite 8's import-analysis
+// statically resolves string-literal dynamic-import specifiers even with
+// `/* @vite-ignore */`, and the `resolve.alias` set up in `config()` does
+// not always reach this path — explicit `resolveId` short-circuits it.
+const PLUGIN_BARE_SOURCES = {
+	'vite-plugin-tsl-precompile/src/vendor/compileTSL.js': resolve( PLUGIN_SRC_DIR, 'vendor/compileTSL.js' ),
+	'vite-plugin-tsl-precompile/src/emit-updater.js': resolve( PLUGIN_SRC_DIR, 'emit-updater.js' ),
+};
+
 const KNOWN_OPTION_KEYS = new Set( [
 	'artifactsDir',
 	'fail',
@@ -394,6 +403,8 @@ export default function tslPrecompile( userOpts = {} ) {
 		},
 
 		resolveId( id ) {
+
+			if ( PLUGIN_BARE_SOURCES[ id ] ) return PLUGIN_BARE_SOURCES[ id ];
 
 			if ( id.startsWith( VIRTUAL_MODULE_PREFIX ) ) {
 
