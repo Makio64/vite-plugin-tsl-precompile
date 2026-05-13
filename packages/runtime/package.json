@@ -52,6 +52,22 @@
       "types": "./types/slim-support/gpu-texture-share.d.ts",
       "default": "./src/slim-support/gpu-texture-share.js"
     },
+    "./slim-support/artifact-texture-wiring": {
+      "types": "./types/slim-support/artifact-texture-wiring.d.ts",
+      "default": "./src/slim-support/artifact-texture-wiring.js"
+    },
+    "./slim-support/compute-sync": {
+      "types": "./types/slim-support/compute-sync.d.ts",
+      "default": "./src/slim-support/compute-sync.js"
+    },
+    "./slim-support/full-renderer-fallback": {
+      "types": "./types/slim-support/full-renderer-fallback.d.ts",
+      "default": "./src/slim-support/full-renderer-fallback.js"
+    },
+    "./slim-support/scene-support": {
+      "types": "./types/slim-support/scene-support.d.ts",
+      "default": "./src/slim-support/scene-support.js"
+    },
     "./slim": "./build/three.webgpu.slim.js",
     "./slim-stubs": "./src/slim-stubs.js"
   },
@@ -76,5 +92,8 @@
   },
   "peerDependencies": {
     "three": ">=0.184.0"
+  },
+  "peerDependenciesMeta": {
+    "three": { "optional": false }
   }
 }

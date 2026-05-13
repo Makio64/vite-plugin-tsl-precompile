@@ -165,6 +165,42 @@ export function markTextureInitialized( renderer: unknown, texture: unknown ): v
 export function shareGPUTextureEntry( targetRenderer: unknown, sourceRenderer: unknown, texture: unknown, opts?: Record<string, unknown> ): boolean;
 export function sharePMREMGPUTexture( slimRenderer: unknown, fullRenderer: unknown, pmrem: unknown, opts?: Record<string, unknown> ): boolean;
 export function shareShadowGPUTextureIntoSlim( texture: unknown, fullRenderer: unknown, slimRenderer: unknown ): boolean;
+export function textureMatchesSource( texture: unknown, source: Record<string, unknown> | null | undefined ): boolean;
+export function textureMatchesArtifactSource( texture: unknown, source: Record<string, unknown> | null | undefined ): boolean;
+export function artifactHasTextureSource( artifact: unknown, predicate?: ( source: Record<string, unknown>, entry: Record<string, unknown>, group: Record<string, unknown> ) => boolean ): boolean;
+export function countArtifactTextureSources( artifact: unknown, predicate?: ( source: Record<string, unknown>, entry: Record<string, unknown>, group: Record<string, unknown> ) => boolean ): number;
+export function singleArtifactTextureUuid( artifact: unknown, predicate?: ( source: Record<string, unknown>, entry: Record<string, unknown>, group: Record<string, unknown> ) => boolean ): string | null;
+export function attachTextureRefsWhere( artifact: unknown, texture: unknown, predicate: ( source: Record<string, unknown>, entry: Record<string, unknown>, group: Record<string, unknown> ) => boolean ): boolean;
+export function attachArtifactTextureRefsWhere( artifact: unknown, texture: unknown, predicate: ( source: Record<string, unknown>, entry: Record<string, unknown>, group: Record<string, unknown> ) => boolean ): boolean;
+export type ComputeSyncStats = {
+	texturesShared: number;
+	buffersAdopted: number;
+	buffersCopied: number;
+};
+export function getComputeBindGroups( computeNode: unknown, fullRenderer: unknown ): unknown[];
+export function computeNodeUsesStorageTexture( computeNode: unknown, fullRenderer: unknown ): boolean;
+export function syncComputeStorageOutputs( computeNode: unknown, fullRenderer: unknown, slimRenderer: unknown, opts?: Record<string, unknown> ): ComputeSyncStats;
+export function createFullRendererFallback( opts: Record<string, unknown> ): {
+	getRenderer: () => Promise<unknown | null>;
+	getModule: () => unknown | null;
+	isInitialised: () => boolean;
+	dispose: () => void;
+};
+export function createSlimSceneSupport( opts: Record<string, unknown> ): {
+	liveSceneIndex: unknown;
+	pmrem: unknown;
+	fallback: unknown;
+	diagnostics: Record<string, unknown>;
+	indexScene: ( scene: unknown ) => void;
+	rememberLiveTexture: ( texture: unknown ) => void;
+	getFullRenderer: () => Promise<unknown | null>;
+	generatePMREMAsync: ( sourceTexture: unknown, generator?: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => Promise<unknown | null>;
+	syncComputeOutputs: ( computeNode: unknown, fullRenderer: unknown, syncOpts?: Record<string, unknown> ) => ComputeSyncStats;
+	computeNodeUsesStorageTexture: ( computeNode: unknown, sourceRenderer: unknown ) => boolean;
+	shareTexture: ( sourceRenderer: unknown, texture: unknown ) => boolean;
+	shareShadowTexture: ( texture: unknown, sourceRenderer: unknown ) => boolean;
+	dispose: () => void;
+};
 
 // ---------- Material variants ----------
 

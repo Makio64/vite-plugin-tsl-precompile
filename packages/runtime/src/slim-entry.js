@@ -93,6 +93,10 @@ export { registerAuxArtifact, registerAuxArtifacts, loadAux, hasAux, listAux, fi
 export { hashNodeGraphSync } from './graph-hash.js';
 export { MaterialVariantSet, createMaterialVariants, applyMaterialVariant } from './material-variants.js';
 export { clearTextureViewCache, markTextureInitialized, shareGPUTextureEntry, sharePMREMGPUTexture, shareShadowGPUTextureIntoSlim } from './slim-support/gpu-texture-share.js';
+export { textureMatchesSource, textureMatchesArtifactSource, artifactHasTextureSource, countArtifactTextureSources, singleArtifactTextureUuid, attachTextureRefsWhere, attachArtifactTextureRefsWhere } from './slim-support/artifact-texture-wiring.js';
+export { getComputeBindGroups, computeNodeUsesStorageTexture, syncComputeStorageOutputs } from './slim-support/compute-sync.js';
+export { createFullRendererFallback } from './slim-support/full-renderer-fallback.js';
+export { createSlimSceneSupport } from './slim-support/scene-support.js';
 export * from './writers.js';
 
 // ---- viewport texture class registration --------------------------------
