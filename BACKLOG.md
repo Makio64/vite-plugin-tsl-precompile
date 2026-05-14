@@ -170,6 +170,27 @@ Wave 2E agent's report identifies the precise gaps. Implementation pending.
 
 ---
 
+### `ocean-preview-pipeline` — P1 — resolved (2026-05-13)
+`packages/examples/ocean` now renders + animates end-to-end through `vite build && vite preview`. Confirmed with a Playwright probe under Vulkan/swiftshader (1280×800 viewport, 5s + 3s waits): two frames captured 3s apart have 99.4% byte diff and zero `pageerror` events. The original "5 not-yet-animated `uniform.live`" build warning was a *false alarm* — those slots are static identity texture-sampler matrices (4 mat3) and viewport size (1 vec2), not animated values; the warning copy should be made more discriminating in a follow-up.
+
+Three wedges landed:
+1. **`precompileAuxiliary()` dev-gating in user code.** Wrapped the call in `if ( import.meta.env.DEV )` at [packages/examples/ocean/main.js:188](packages/examples/ocean/main.js#L188). Stops the production runtime from POSTing to the dev capture endpoint (404 → SPA fallback HTML → `JSON.parse` throws) and from lazy-loading `compileTSL.js` via `/* @vite-ignore */` (which fails because the bare specifier isn't bundled in production).
+2. **Aux-artifact registry injected in every production build, not just slim.** [packages/plugin/src/index.js:377-385](packages/plugin/src/index.js#L377-L385) used to read `if ( opts.slim ) { injectSlimAuxImport(...) }`; the gate has been removed. Captured `aux-background-*.json`, `aux-render-output-*.json`, `aux-lights-*.json` files on disk are now bundled into the artifact registry regardless of slim mode.
+3. **Inspector dev-gated in the example.** [packages/examples/ocean/main.js:22-29, 47-52, 161-180](packages/examples/ocean/main.js#L22) — Inspector + `@tsl-precompile/inspector-panel` are now imported via `await import(...)` only when `import.meta.env.DEV`, and the GUI builder is wrapped in `if ( Inspector && typeof renderer.inspector?.createParameters === 'function' )`. Without this, Inspector's `extensions.json` fetch ([three/addons/inspector/tabs/Settings.js:256](node_modules/.pnpm/three@0.184.0/node_modules/three/examples/jsm/inspector/tabs/Settings.js)) hits Vite preview's SPA fallback and throws — and stripping it confirmed it was also blocking render init, not just throwing cosmetically.
+
+Follow-ups landed 2026-05-14 (items 1, 3, 4, 5 from the prior open list):
+- **Item 1 — `precompileAuxiliary()` production no-op landed.** [packages/runtime/src/aux-marker.js](packages/runtime/src/aux-marker.js): `lazyLoadCompileTSL()` now catches the `/* @vite-ignore */` dynamic-import failure, sets a `compileTSLLoadFailed` flag, and emits one info-level note via `logOnce('aux-prod-noop', ...)`; `precompileAuxiliary()` short-circuits to `[]` when the flag is set. `import.meta.env.DEV` guard removed from the ocean example to demonstrate the new ergonomics.
+- **Item 3 — warning copy refined.** [packages/plugin/src/emit-updater.js](packages/plugin/src/emit-updater.js): added `isStaticSnapshot()` helper (identity mat3 detection) and an `isStaticSnapshot` flag on the `severity: 'blocked'` push site. [packages/plugin/src/index.js:515-526](packages/plugin/src/index.js#L515-L526) splits the warning into two messages: "static-snapshot uniform slot(s) … safe to ignore" for identity matrices vs. the original alarming "not-yet-animated" copy for live-driver slots. Ocean now warns 4× safe-to-ignore + 1× still-alarming (the viewport vec2), instead of 5× alarming.
+- **Item 4 — slim Node Proxy fallback landed.** [packages/runtime/src/slim-stubs.js](packages/runtime/src/slim-stubs.js) `wrapWithSlimNodeChainFallback()`: Node constructor returns a Proxy whose `get` trap returns an `inertNodeStub` for any unknown property. WaterMesh's `this.sunDirection.negate()` and similar addon-shader-graph chains no longer throw under `slim: true`. All 245 runtime tests still pass. Note: a separate slim-mode usage gap remains — `MeshBasicMaterial` (and likely other unprecompiled internal meshes) still gets rejected by the slim runtime; that's tracked under [§P1.6](ARCHITECTURE_EVOLUTION.md) (slim/full-renderer policy), not item 4.
+- **Item 5 — preview-smoke CI gate landed.** New package [packages/examples/preview-smoke/](packages/examples/preview-smoke/) (`run.mjs` + `package.json` + `README.md`) builds the named example, spawns `vite preview`, drives Playwright/Chromium with Vulkan/swiftshader, and asserts (a) ≥ 50% non-zero pixel bytes, (b) ≥ 5% inter-frame byte diff, (c) zero `pageerror` events. Wired into [.github/workflows/ci.yml](.github/workflows/ci.yml) as the PR-blocking `preview-smoke-ocean` job. Local run: `{"ok":true,"nonZeroRatio":0.9761,"diffRatio":0.994}`.
+
+All four follow-ups closed; the Inspector preview gap was also closed via a Vite plugin middleware (`attachInspectorExtensionsShim` in [packages/plugin/src/index.js](packages/plugin/src/index.js)) wired to both `configureServer` and `configurePreviewServer`. The middleware intercepts requests matching `/extensions/extensions.json` and returns `[]`, so Inspector loads cleanly in both dev and preview. The dev-gating boilerplate has been removed from [packages/examples/ocean/main.js](packages/examples/ocean/main.js); Inspector now imports unconditionally. Ocean is now adopter-clean — zero `import.meta.env.DEV` guards anywhere.
+
+- **Files touched**: [packages/plugin/src/index.js:377-385](packages/plugin/src/index.js#L377-L385), [packages/examples/ocean/main.js](packages/examples/ocean/main.js), [packages/runtime/src/slim-stubs.js:943-946](packages/runtime/src/slim-stubs.js#L943-L946).
+- **Verification**: `pnpm --filter examples-ocean build && pnpm --filter examples-ocean preview`, open http://localhost:4173/ in a real Chrome/Edge (`chrome://flags/#enable-unsafe-webgpu` for software fallback if needed). Or run Playwright with `--enable-unsafe-webgpu --use-vulkan=swiftshader` and probe two frames a few seconds apart.
+
+---
+
 ## Animation/timing-related (P2 — not "broken", just not pixel-correct)
 
 ### `psnr-animation-phase-drift` — P2
@@ -213,6 +234,9 @@ When two tasks share a file, run them **sequentially**, not in parallel.
 | `packages/runtime/src/apply-precompiled.js` | transmission-viewport-texture |
 | `packages/runtime/src/precompile-marker.js` | mrt-replay-empty |
 | `packages/plugin/src/vendor/extractUniformPlan.js` | pbr-near-threshold, transmission-viewport-texture |
+| `packages/runtime/src/aux-marker.js` | ocean-preview-pipeline (production no-op) |
+| `packages/plugin/src/index.js` | ocean-preview-pipeline (un-gate aux injection) |
+| `packages/runtime/src/slim-stubs.js` | ocean-preview-pipeline (Node method-chain fallback) |
 
 `run-e2e.mjs` is the biggest hotspot — multiple compute and PMREM tasks contend for it. Consider opening a `wave3-base` branch off main, then having each agent rebase their worktree onto it before starting work, so their work-in-progress diffs sit on top of the same recent base.
 

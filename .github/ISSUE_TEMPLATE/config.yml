@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Bring your own project — 5-minute walkthrough
+    url: https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/BYO.md
+    about: Read this first if you're starting from scratch on your own three.js + Vite project.
+  - name: STATUS.md — what's currently working
+    url: https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/STATUS.md
+    about: Visual coverage table, known regressions, and current beta target. Check here before filing a "doesn't work for X" bug.
+  - name: GitHub Discussions
+    url: https://github.com/Makio64/vite-plugin-tsl-precompile/discussions
+    about: "Open-ended questions, 'is this a good fit for my project?', or feedback that isn't a bug."

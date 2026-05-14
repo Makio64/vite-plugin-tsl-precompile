@@ -133,7 +133,7 @@ Fresh triage on 2026-05-13 updates the guard slice: `webgpu_shadowmap_opacity.ht
 
 **WGSL output optimization landed.** Plugin-emitted virtual modules now compact WGSL by default and pool repeated shader strings through `virtual:tsl-precompile/__wgsl`. The checked-in artifact JSON stays readable; only generated production modules are optimized. Disable with `minifyWgsl: false` or `dedupeWgsl: false` in `tslPrecompile()`.
 
-**The E2E runner is safer for long sweeps.** `run-e2e-parallel.mjs` now runs short-lived worker batches instead of long-lived worker chunks, defaults to one worker slot on ordinary machines, supports `--batch-size`, `--worker-max-old-space-mb`, and matching `TSLP_E2E_*` env vars, and retries crashed multi-example batches as single-example batches. The serial runner also recycles Chromium every two examples by default.
+**The E2E runner is safer for long sweeps.** `run-e2e.mjs` recycles Chromium every two examples by default to avoid long WebGPU process lifetimes.
 
 **Local/focused visual repros improved.** `run-e2e.mjs` can serve a small local `.html` corpus via `--local-examples-root`, and `packages/examples/shadow-debug` adds minimal directional/spot/point/VSM shadow pages with a root `pnpm test:e2e:shadow-debug` script.
 
@@ -143,7 +143,7 @@ Fresh triage on 2026-05-13 updates the guard slice: `webgpu_shadowmap_opacity.ht
 
 ## Recent fixes (2026-05-04)
 
-**E2E output is now quieter and more actionable.** `run-e2e.mjs` prints concise per-example progress with artifacts, capture/replay brightness, PSNR, and the first failure reason. `run-e2e-parallel.mjs` filters worker boilerplate and page warnings by default, then prints an aggregated failure table from the merged JSON report. Pass `--verbose` (or `TSLP_E2E_VERBOSE=1`) to forward page warnings/logs while debugging harness internals.
+**E2E output is now quieter and more actionable.** `run-e2e.mjs` prints concise per-example progress with artifacts, capture/replay brightness, PSNR, and the first failure reason. Pass `--verbose` (or `TSLP_E2E_VERBOSE=1`) to forward page warnings/logs while debugging harness internals.
 
 **The visual gate is real.** The E2E harness computes PSNR between a clean stock three.js reference and slim replay screenshots, fails below 30 dB by default, and keeps `--no-pixel-gate` for diagnostics. Focused `webgpu_clearcoat.html` is back above the gate after the DFG LUT source-module fix; broader coverage should be refreshed from the current E2E sweep before quoting new pass counts.
 
@@ -234,7 +234,7 @@ These kinds are recognised by the extractor/codegen contract but are not ordinar
 | `viewport.texture` | Hydrator uses a live `ViewportTextureNode` path and rebinds the framebuffer/mip texture per render | Transmission and viewport-dependent materials |
 | `reflector.texture` | Hydrator rebinds the live `ReflectorBaseNode` render target texture per render | Mirror/reflector materials |
 | `scene.overrideMaterial` | Scene-override context is out of scope for v1 | Any material injected via `scene.overrideMaterial` |
-| `uniform.live` (unnamed/custom) | Known light/shadow live sources have coverage, but custom `onRenderUpdate`-driven uniforms can still freeze if the extractor cannot map them to a stable source property | Custom live uniforms |
+| `uniform.live` (unnamed/custom) | Known light/shadow live sources have coverage, but custom `onRenderUpdate`-driven uniforms can still freeze when the extractor's `classifyByIdentity()` cannot map them to a stable source property. **Note (2026-05-14):** the build warning now splits "static-snapshot uniform slot(s) (identity texture-sampler matrices etc.) — safe to ignore" from the alarming "not-yet-animated kind(s)" copy, so identity-matrix slots no longer mislead diagnosis (see the resolved `ocean-preview-pipeline` in [BACKLOG.md](BACKLOG.md)). Genuinely-live custom closures still freeze and warrant the alarming wording. | Custom live uniforms with closures the extractor can't map |
 
 **Impact today:** PBR materials (`MeshStandardNodeMaterial`, `MeshPhysicalNodeMaterial`) with assigned textures and IBL `envMap` now hydrate end-to-end — `artifact.texture` and `builtin.dfgLUT` resolve via the runtime hydrator. `webgpu_clearcoat.html` is back above the E2E PSNR gate in the focused run, and the focused transmission viewport checks are now above the gate. Shadow and reflector texture bindings have runtime rebinder paths but still need visual hardening across the broader example set. AOT compute/storage paths remain the major binding-family gap.
 
@@ -292,8 +292,11 @@ In-process compute and some storage-texture paths work, but the AOT compute/stor
 
 Known light/shadow live sources now have coverage (`light.shadow*`, `light.colorScaled`, PointsNodeMaterial scale), but arbitrary unnamed `UniformNode` / `onRenderUpdate`-driven uniforms can still freeze if the extractor cannot map them to a stable source property.
 
-- [ ] Extend `packages/plugin/src/vendor/extractUniformPlan.js` for more known live-node names and property paths.
-- [ ] For callbacks that cannot be statically resolved, document the limitation explicitly rather than silently freezing.
+**Note (2026-05-13):** `packages/examples/ocean` was thought to be a canonical exemplar of this gap based on its build warning "5 not-yet-animated kind(s) (`uniform.live` × 5)". Investigation showed the 5 slots are 4 static identity texture-sampler matrices (mat3) plus a viewport size (vec2) — none of them actually animate. The warning was a false alarm. The real cause of ocean's broken preview is `ocean-preview-pipeline` in [BACKLOG.md](BACKLOG.md) (production-preview pipeline gaps). The structural channel below is still useful for *other* examples whose closures genuinely freeze animated values, but it is no longer the lead item.
+
+- [ ] Extend `packages/plugin/src/vendor/extractUniformPlan.js` for more known live-node names and property paths (incremental as new examples surface specific frozen identities).
+- [ ] Improve the build warning copy to distinguish "static texture matrix in a uniform.live slot" (harmless) from "live driver freezing animation" (actual problem). Today the same wording covers both.
+- [ ] For closures that genuinely cannot be statically resolved AND drive animation, fail the build by default rather than silently freezing.
 
 ### 7. Operationalize the PSNR E2E gate
 
@@ -315,7 +318,7 @@ Both packages are at `0.1.0` with `engines.node`, `publishConfig`, `files`, and 
 The ANNOUNCEMENT.md template is written; the ROADMAP Phase 8 gate requires "one external adopter reports success."
 
 - [ ] Share the repo on three.js Discord + GitHub Discussions once npm packages are published.
-- [ ] Keep a list of early adopter feedback in CONTRIBUTING.md or a separate ADOPTERS.md.
+- [x] Adopter feedback ledger seeded at [ADOPTERS.md](./ADOPTERS.md) (first entry closes the Phase 8 gate). Structured friction reports via [`.github/ISSUE_TEMPLATE/adoption-feedback.yml`](.github/ISSUE_TEMPLATE/adoption-feedback.yml).
 
 ### Deferred for v0.1 messaging
 

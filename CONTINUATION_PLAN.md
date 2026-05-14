@@ -11,7 +11,17 @@ Canonical docs now are:
 - AI contributor operating guide: [AGENTS.md](AGENTS.md)
 - User-facing usage: [README.md](README.md)
 
-Current handoff (2026-05-12):
+Current handoff (2026-05-13):
+
+**Resolved (2026-05-13, follow-ups landed 2026-05-14):** `packages/examples/ocean` now renders + animates end-to-end through `vite build && vite preview`, the production-preview pipeline is adopter-friendly (no `import.meta.env.DEV` boilerplate around `precompileAuxiliary`), build warnings discriminate between static and live frozen slots, slim mode survives addon-shader-graph chains, and a PR-blocking Playwright smoke locks in the regression. Filed and closed as `ocean-preview-pipeline` in [BACKLOG.md](BACKLOG.md); structural notes in [ARCHITECTURE_EVOLUTION.md §P1.8](ARCHITECTURE_EVOLUTION.md). Three wedges landed:
+
+1. **`precompileAuxiliary()` dev-gated in user code** — [packages/examples/ocean/main.js:188](packages/examples/ocean/main.js#L188) wraps the call in `if ( import.meta.env.DEV )`. Stops the runtime from POSTing to the dev capture endpoint (404 in preview) and from lazy-loading `compileTSL.js` via `/* @vite-ignore */` (bare specifier unresolvable in production).
+2. **Aux-artifact registry now injected in every production build, not just slim** — [packages/plugin/src/index.js:377-385](packages/plugin/src/index.js#L377-L385) used to read `if ( opts.slim ) { injectSlimAuxImport(...) }`; the gate is removed. Captured `aux-background-*.json`, `aux-render-output-*.json`, `aux-lights-*.json` files on disk are now bundled into the artifact registry regardless of slim mode.
+3. **Inspector + `@tsl-precompile/inspector-panel` dynamically imported only in dev** — [packages/examples/ocean/main.js:22-29, 47-52, 161-180](packages/examples/ocean/main.js#L22-L29). Inspector's `extensions.json` fetch hits Vite preview's SPA fallback and throws; without this guard it also blocks render init in preview, not just throws cosmetically.
+
+Doc note: the original P1.8 framing (`uniform-live-tsl-globals` / TSL-global resolution) was a misread of a build warning. The 5 frozen `uniform.live` slots in ocean-water are 4 static identity texture-sampler matrices + 1 viewport vec2 — none of them animate, none of them blocked anything. The "not-yet-animated kind(s)" warning copy should be made more discriminating in a follow-up.
+
+Older handoff (2026-05-12):
 
 We stopped during the visual replay cleanup queue for Three.js WebGPU examples. The main work-in-progress source files are:
 
@@ -62,6 +72,9 @@ Where we stopped:
 
 What remains next:
 
+- **Done 2026-05-14:** items 1 (runtime DEV detection in aux-marker.js), 3 (split warning copy in emit-updater.js + plugin/src/index.js), 4 (slim Node Proxy fallback in slim-stubs.js), and 5 (`packages/examples/preview-smoke/` + PR-blocking CI job) all landed and verified. See the resolved `ocean-preview-pipeline` entry in [BACKLOG.md](BACKLOG.md) for file-level details.
+- **Continue the structural track from [ARCHITECTURE_EVOLUTION.md](ARCHITECTURE_EVOLUTION.md):** watch hosted CI stability for the `tier1` visual gate AND the new `preview-smoke-ocean` gate, split the hydrator texture resolver, formalize dynamic binding descriptors in the shared contract, and move PMREM support into `runtime/slim-support`.
+- **Inspector preview gap also closed (2026-05-14):** new `attachInspectorExtensionsShim` middleware in [packages/plugin/src/index.js](packages/plugin/src/index.js) intercepts `/extensions/extensions.json` requests in both `vite` and `vite preview`, returning `[]` so Inspector loads cleanly without the 404 → SPA-fallback HTML → JSON.parse trap. Ocean's `import.meta.env.DEV` guards around Inspector are gone — zero adopter-facing boilerplate left. `ocean-preview-pipeline` is fully closed.
 - First re-check `webgpu_shadowmap_opacity.html` against a fresh focused shadow run so the broad-shadow bucket and focused report agree again.
 - Continue the structural track from [ARCHITECTURE_EVOLUTION.md](ARCHITECTURE_EVOLUTION.md): watch hosted CI stability for the new `tier1` visual gate, split the hydrator texture resolver, formalize dynamic binding descriptors in the shared contract, and move PMREM support into `runtime/slim-support`.
 - Continue with beta-relevant near-threshold material/light examples: `webgpu_materials_transmission.html` (26.25 dB fresh) and `webgpu_lights_selective.html` (26.18 dB in the generated broad summary). Keep the now-green manual-mipmap, iridescence, and toon examples as guardrails.

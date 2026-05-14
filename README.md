@@ -23,9 +23,11 @@ author markers, offline shader compilation, dumb runtime.
 |---|---|
 | **Renderer** | `WebGPURenderer` only — no WebGL fallback |
 | **Browser** | WebGPU-capable: Chrome/Edge 113+, Safari 18+ (or Safari Technology Preview) |
-| **three.js** | `>= 0.184.0` peer dependency. Pin to a tested patch — see [MIGRATION.md](MIGRATION.md) for the re-capture workflow when bumping. |
+| **three.js** | `>= 0.184.0`, **pinned to an exact patch** in `package.json` (e.g. `"three": "0.184.0"`, not `"^0.184.0"`). Artifacts are versioned against the WGSL emitter; a silent patch bump invalidates them. See [MIGRATION.md](MIGRATION.md) for the re-capture workflow when bumping deliberately. |
 | **Vite** | `>= 5` |
 | **Node** | `>= 20.19` (build tooling only; not a runtime requirement) |
+
+> **Adopting this on your own project?** Start at [BYO.md](BYO.md) — a 5-minute walkthrough covering install, first capture, day-2 workflow, and the common pitfalls.
 
 ## Quickstart
 
@@ -192,6 +194,19 @@ optimizeDeps: {
 (The addon uses `import.meta.url` to locate `extensions.json`; pre-bundling
 rewrites that URL and the fetch falls through to the SPA fallback.)
 
+To avoid the same crash in `vite preview` / production, use the runtime helper
+that returns `null` in production-like environments:
+
+```js
+import { loadInspectorOptional } from '@tsl-precompile/runtime';
+
+const Inspector = await loadInspectorOptional();
+if ( Inspector ) {
+	const inspector = new Inspector( renderer );
+	// ...
+}
+```
+
 ## What works today
 
 Beta-target features are green for ordinary PBR rendering: standard and
@@ -209,6 +224,7 @@ The live per-example matrix and a category breakdown live in
 ## Examples in this repo
 
 - [`packages/examples/getting-started`](packages/examples/getting-started) — minimal copy-paste template
+- [`packages/examples/pbr-shadows`](packages/examples/pbr-shadows) — PBR sphere + ground + shadow-casting light (two markers in one scene)
 - [`packages/examples/ocean`](packages/examples/ocean) — flagship demo: animated TSL + Inspector + aux pass
 - [`packages/examples/bloom`](packages/examples/bloom) — post-processing bloom
 - [`packages/examples/background`](packages/examples/background) — TSL background node + PMREM

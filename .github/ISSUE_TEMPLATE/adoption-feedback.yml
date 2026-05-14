@@ -1,0 +1,104 @@
+name: Adoption feedback
+description: I tried to use this on a real three.js + Vite project. Here's what happened.
+title: "[adoption] "
+labels: ["adoption", "v0.1"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying this on a real project. This template captures the few facts that make a friction report actionable.
+
+        **If you got it working,** I'd love to add you to [ADOPTERS.md](../../blob/main/ADOPTERS.md) — just say so below.
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: How far did you get?
+      options:
+        - "Install + dev capture worked, build worked, app rendered"
+        - "Install + dev capture worked, build failed"
+        - "Install worked, dev capture failed"
+        - "Install itself failed"
+        - "I'm still trying — wanted to file early"
+    validations:
+      required: true
+  - type: input
+    id: three-version
+    attributes:
+      label: three.js version
+      description: The exact version pinned in your package.json (e.g. `0.184.0`).
+      placeholder: "0.184.0"
+    validations:
+      required: true
+  - type: input
+    id: plugin-version
+    attributes:
+      label: vite-plugin-tsl-precompile version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: vite-version
+    attributes:
+      label: Vite version
+      placeholder: "5.4.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Which mode are you using?
+      multiple: true
+      options:
+        - Explicit `.precompile('name')` markers (recommended)
+        - "`autoMark: true`"
+        - "`slim: true` (slim runtime bundle)"
+        - "`precompileAuxiliary` for backgrounds / post-processing"
+        - "`createSlimSceneSupport` with `fullRendererFallback: true`"
+        - Inspector addon
+        - Other addons (water, sky, GLTFLoader, …)
+    validations:
+      required: true
+  - type: textarea
+    id: scene-shape
+    attributes:
+      label: Scene shape (high-level)
+      description: |
+        A sentence or two. What kind of three.js app is this? PBR-heavy, postprocessing-heavy, GPGPU/compute, custom TSL nodes? GLTF loader content? Lots of addons?
+      placeholder: |
+        e.g. "Standard PBR scene with one GLTF model, env map, two shadow-casting lights, no post-processing."
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What actually happened
+      description: |
+        Concrete: command you ran, error message, screenshot if there's a visual mismatch.
+        If "it worked," still useful — note the package count installed, bundle size, and dev capture log lines so we can compare against expectations.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: friction
+    attributes:
+      label: What was confusing or surprising
+      description: |
+        Specifically: docs you couldn't find, error messages that didn't point at the cause, decisions you weren't sure how to make.
+        This is the most useful field — it's how we shape the next round of work.
+  - type: dropdown
+    id: list-me
+    attributes:
+      label: Add you to ADOPTERS.md?
+      description: Only if your build is green; we'll follow up in this thread.
+      options:
+        - "Yes, with project name + URL"
+        - "Yes, anonymous (just stack description)"
+        - "No / not yet"
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        Thanks. We'll respond within a day or two.
+
+        If your issue is urgent or you'd rather chat than file, the [three.js Discord](https://discord.gg/threejs) thread linked in the README is also fine.
