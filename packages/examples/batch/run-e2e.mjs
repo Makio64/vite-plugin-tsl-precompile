@@ -572,6 +572,58 @@ window.__tslpPmremPending = window.__tslpPmremPending || 0;
 window.__tslpPrecompilePending = window.__tslpPrecompilePending || 0;
 window.__tslpAuxCapturePending = window.__tslpAuxCapturePending || 0;
 
+function __tslpLoaderBasename( value ) {
+	const raw = String( value || '' );
+	const tail = raw.split( /[?#]/ )[ 0 ].split( '/' ).filter( Boolean ).pop() || raw;
+	return tail || '';
+}
+
+window.__tslpMarkLoaderTexture = function ( texture, url ) {
+	if ( ! texture || texture.isTexture !== true ) return texture;
+	const name = __tslpLoaderBasename( url );
+	if ( name && ! texture.name ) texture.name = name;
+	try {
+		texture.userData = texture.userData || {};
+		if ( typeof url === 'string' && url.length > 0 ) texture.userData.__tslpLoaderUrl = url;
+	} catch ( _ ) {}
+	return texture;
+};
+
+window.__tslpPatchTextureLoaderClass = function ( Ctor ) {
+	if ( ! Ctor || ! Ctor.prototype || typeof Ctor.prototype.load !== 'function' || Ctor.prototype.__tslpCallbackLoadPatched ) return;
+	Ctor.prototype.__tslpCallbackLoadPatched = true;
+	const origLoad = Ctor.prototype.load;
+	const _now = () => ( typeof window.__tslpRealNow === 'function' ? window.__tslpRealNow() : Date.now() );
+	Ctor.prototype.load = function ( url, onLoad, onProgress, onError ) {
+		window.__tslpLoaderPending = ( window.__tslpLoaderPending | 0 ) + 1;
+		window.__tslpLoaderLastBusyAt = _now();
+		let settled = false;
+		const settle = () => {
+			if ( settled ) return;
+			settled = true;
+			window.__tslpLoaderPending = Math.max( 0, ( window.__tslpLoaderPending | 0 ) - 1 );
+			window.__tslpLoaderLastBusyAt = _now();
+		};
+		const wrapLoad = ( texture, ...rest ) => {
+			window.__tslpMarkLoaderTexture( texture, url );
+			try { if ( typeof onLoad === 'function' ) return onLoad.call( this, texture, ...rest ); }
+			finally { settle(); }
+		};
+		const wrapError = ( err, ...rest ) => {
+			try { if ( typeof onError === 'function' ) return onError.call( this, err, ...rest ); }
+			finally { settle(); }
+		};
+		try {
+			const result = origLoad.call( this, url, wrapLoad, onProgress, wrapError );
+			window.__tslpMarkLoaderTexture( result, url );
+			return result;
+		} catch ( err ) {
+			settle();
+			throw err;
+		}
+	};
+};
+
 function __recordRenderableObjectCount( scene ) {
 	if ( ! scene || typeof scene.traverse !== 'function' ) return;
 	let count = 0;
@@ -1124,6 +1176,64 @@ export { FullTextureNode as TextureNode, FullBlendMode as BlendMode, FullTempNod
 
 const __state = window.__TSLP_E2E || { example: 'unknown', artifacts: { user: {}, aux: [] } };
 const __data = __state.artifacts || { user: {}, aux: [] };
+
+function __tslpLoaderBasename( value ) {
+	const raw = String( value || '' );
+	const tail = raw.split( /[?#]/ )[ 0 ].split( '/' ).filter( Boolean ).pop() || raw;
+	return tail || '';
+}
+
+window.__tslpMarkLoaderTexture = function ( texture, url ) {
+	if ( ! texture || texture.isTexture !== true ) return texture;
+	const name = __tslpLoaderBasename( url );
+	if ( name && ! texture.name ) texture.name = name;
+	try {
+		texture.userData = texture.userData || {};
+		if ( typeof url === 'string' && url.length > 0 ) texture.userData.__tslpLoaderUrl = url;
+	} catch ( _ ) {}
+	try {
+		if ( typeof Slim.registerLiveTexture === 'function' ) Slim.registerLiveTexture( texture );
+	} catch ( _ ) {}
+	try {
+		if ( typeof window.__tslpRememberLiveTexture === 'function' ) window.__tslpRememberLiveTexture( texture );
+	} catch ( _ ) {}
+	return texture;
+};
+
+window.__tslpPatchTextureLoaderClass = function ( Ctor ) {
+	if ( ! Ctor || ! Ctor.prototype || typeof Ctor.prototype.load !== 'function' || Ctor.prototype.__tslpCallbackLoadPatched ) return;
+	Ctor.prototype.__tslpCallbackLoadPatched = true;
+	const origLoad = Ctor.prototype.load;
+	const _now = () => ( typeof window.__tslpRealNow === 'function' ? window.__tslpRealNow() : Date.now() );
+	Ctor.prototype.load = function ( url, onLoad, onProgress, onError ) {
+		window.__tslpLoaderPending = ( window.__tslpLoaderPending | 0 ) + 1;
+		window.__tslpLoaderLastBusyAt = _now();
+		let settled = false;
+		const settle = () => {
+			if ( settled ) return;
+			settled = true;
+			window.__tslpLoaderPending = Math.max( 0, ( window.__tslpLoaderPending | 0 ) - 1 );
+			window.__tslpLoaderLastBusyAt = _now();
+		};
+		const wrapLoad = ( texture, ...rest ) => {
+			window.__tslpMarkLoaderTexture( texture, url );
+			try { if ( typeof onLoad === 'function' ) return onLoad.call( this, texture, ...rest ); }
+			finally { settle(); }
+		};
+		const wrapError = ( err, ...rest ) => {
+			try { if ( typeof onError === 'function' ) return onError.call( this, err, ...rest ); }
+			finally { settle(); }
+		};
+		try {
+			const result = origLoad.call( this, url, wrapLoad, onProgress, wrapError );
+			window.__tslpMarkLoaderTexture( result, url );
+			return result;
+		} catch ( err ) {
+			settle();
+			throw err;
+		}
+	};
+};
 
 // Worker-async loaders (KTX2Loader, DRACOLoader, MeshoptLoader) decode in
 // web workers AFTER FileLoader.load resolves manager.itemEnd, so the outer
@@ -1891,6 +2001,7 @@ window.__tslpShadowPending = 0;
 function __rememberLiveTexture( texture ) {
 	__liveSceneIndex.rememberLiveTexture( texture );
 }
+window.__tslpRememberLiveTexture = __rememberLiveTexture;
 
 // Mirror the capture-side patches: hook DefaultLoadingManager so HDR/GLTF/MaterialX
 // fetches block the screenshot, and wrap compileAsync so awaited GPU pipeline
@@ -8331,6 +8442,12 @@ const server = createServer( async ( req, res ) => {
 			const rel = url.pathname.slice( '/__tslp_addons/'.length );
 			if ( rel === 'inspector/Inspector.js' ) return sendJs( res, inspectorStubModule() );
 			if ( rel === 'libs/stats.module.js' ) return sendJs( res, statsStubModule() );
+			if ( rel === 'loaders/KTX2Loader.js' ) {
+
+				const source = await readFile( safeResolveUnder( join( threeRepo, 'examples/jsm' ), rel ), 'utf8' );
+				return sendJs( res, rewriteTextureLoaderAddon( source, 'KTX2Loader' ) );
+
+			}
 			return sendFile( res, safeResolveUnder( join( threeRepo, 'examples/jsm' ), rel ) );
 
 		}
@@ -8409,6 +8526,11 @@ const server = createServer( async ( req, res ) => {
 		if ( isLocalJs ) {
 
 			buf = Buffer.from( rewriteHarnessVirtualImports( buf.toString( 'utf8' ) ) );
+
+		}
+		if ( requestPath === '/examples/jsm/loaders/KTX2Loader.js' ) {
+
+			buf = Buffer.from( rewriteTextureLoaderAddon( buf.toString( 'utf8' ), 'KTX2Loader' ) );
 
 		}
 

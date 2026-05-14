@@ -799,9 +799,12 @@ function textureIdentity( texture ) {
 	if ( ! texture ) return null;
 	const out = {};
 	const image = texture.image || null;
+	const userData = texture.userData || null;
 
 	const src = image && ( image.src || image.currentSrc || null );
 	if ( typeof src === 'string' && src.length > 0 ) out.imageSrc = src;
+	const loaderSrc = userData && userData.__tslpLoaderUrl;
+	if ( ! out.imageSrc && typeof loaderSrc === 'string' && loaderSrc.length > 0 ) out.imageSrc = loaderSrc;
 
 	if ( Array.isArray( image ) && image.length > 0 ) {
 
