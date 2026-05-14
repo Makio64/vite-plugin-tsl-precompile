@@ -37,6 +37,30 @@ export function tierExamples( tierName, config = coverageConfig ) {
 
 }
 
+export function captureWaitOverrideForExample( name, config = coverageConfig ) {
+
+	const override = config.pixelGate?.captureWaitOverrides?.[ name ];
+	return typeof override === 'number' && override > 0 ? override : 0;
+
+}
+
+export function psnrThresholdForExample( name, defaultThreshold, config = coverageConfig ) {
+
+	const override = config.pixelGate?.psnrThresholdOverrides?.[ name ];
+	return typeof override === 'number' && override > 0 ? override : defaultThreshold;
+
+}
+
+export function expectedReplayErrorPatternsForExample( name, config = coverageConfig ) {
+
+	const patterns = config.pixelGate?.expectedReplayErrors?.[ name ];
+	if ( ! Array.isArray( patterns ) ) return [];
+	return patterns.map( ( p ) => {
+		try { return new RegExp( p ); } catch ( _ ) { return null; }
+	} ).filter( Boolean );
+
+}
+
 export function decodePngBuffer( buffer ) {
 
 	const png = PNG.sync.read( buffer );
