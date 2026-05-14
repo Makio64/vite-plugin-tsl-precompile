@@ -77,6 +77,8 @@ const water = new WaterMesh(
 	},
 );
 water.rotation.x = - Math.PI / 2;
+water.material.__tslpPrecompileObject = water;
+water.material.__tslpPrecompileScene = scene;
 water.material.precompile( 'ocean-water' );
 scene.add( water );
 
@@ -92,6 +94,8 @@ sky.cloudCoverage.value = 0.4;
 sky.cloudDensity.value = 0.5;
 sky.cloudElevation.value = 0.5;
 
+sky.material.__tslpPrecompileObject = sky;
+sky.material.__tslpPrecompileScene = scene;
 sky.material.precompile( 'ocean-sky' );
 scene.add( sky );
 
@@ -177,8 +181,9 @@ folderClouds.add( sky.cloudElevation, 'value', 0, 1, 0.01 ).name( 'elevation' );
 // --- aux capture -----------------------------------------------------------
 // Capture the auxiliary NodeMaterials three.js builds internally — the
 // scene background (from `scene.environment`), the bloom post-pass, and the
-// PMREM convolution. In a production bundle these get baked at build time;
-// the dev endpoint here just persists the JSON for the next build to pick up.
+// PMREM convolution. The dev endpoint persists the JSON for the next build
+// to pick up. The runtime auto-detects production builds (where compileTSL
+// isn't bundled) and silently no-ops, so this call is safe in any mode.
 precompileAuxiliary( renderer, scene, camera, {
 	devEndpoint: '/__tsl-precompile/capture',
 	three: THREE,
