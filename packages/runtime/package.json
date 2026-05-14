@@ -71,6 +71,14 @@
     "./slim-support/postprocess-wire": {
       "default": "./src/slim-support/postprocess-wire.js"
     },
+    "./slim-support/postprocess-effects": {
+      "types": "./types/slim-support/postprocess-effects.d.ts",
+      "default": "./src/slim-support/postprocess-effects.js"
+    },
+    "./slim-support/postprocess-effects-replay": {
+      "types": "./types/slim-support/postprocess-effects-replay.d.ts",
+      "default": "./src/slim-support/postprocess-effects-replay.js"
+    },
     "./slim-support/pass-render-fallback": {
       "default": "./src/slim-support/pass-render-fallback.js"
     },

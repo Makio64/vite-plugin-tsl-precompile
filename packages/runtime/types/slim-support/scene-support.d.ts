@@ -8,10 +8,14 @@ export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	indexScene: ( scene: unknown ) => void;
 	rememberLiveTexture: ( texture: unknown ) => void;
 	getFullRenderer: () => Promise<unknown | null>;
+	ensureFallback: () => Promise<void>;
 	generatePMREMAsync: ( sourceTexture: unknown, generator?: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => Promise<unknown | null>;
+	setPMREMGenerator: ( generator: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => void;
 	syncComputeOutputs: ( computeNode: unknown, fullRenderer: unknown, syncOpts?: Record<string, unknown> ) => ComputeSyncStats;
 	computeNodeUsesStorageTexture: ( computeNode: unknown, sourceRenderer: unknown ) => boolean;
 	shareTexture: ( sourceRenderer: unknown, texture: unknown ) => boolean;
 	shareShadowTexture: ( texture: unknown, sourceRenderer: unknown ) => boolean;
+	preparePostprocess: ( prepArgs?: Record<string, unknown> ) => { effects: number; prepared: unknown[]; missed: unknown[] };
+	wirePostprocess: ( wireArgs?: Record<string, unknown> ) => { effects: number; wired: unknown[]; missed: unknown[] };
 	dispose: () => void;
 };

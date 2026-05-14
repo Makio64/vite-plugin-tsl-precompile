@@ -194,13 +194,89 @@ export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	indexScene: ( scene: unknown ) => void;
 	rememberLiveTexture: ( texture: unknown ) => void;
 	getFullRenderer: () => Promise<unknown | null>;
+	ensureFallback: () => Promise<void>;
 	generatePMREMAsync: ( sourceTexture: unknown, generator?: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => Promise<unknown | null>;
+	setPMREMGenerator: ( generator: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => void;
 	syncComputeOutputs: ( computeNode: unknown, fullRenderer: unknown, syncOpts?: Record<string, unknown> ) => ComputeSyncStats;
 	computeNodeUsesStorageTexture: ( computeNode: unknown, sourceRenderer: unknown ) => boolean;
 	shareTexture: ( sourceRenderer: unknown, texture: unknown ) => boolean;
 	shareShadowTexture: ( texture: unknown, sourceRenderer: unknown ) => boolean;
+	preparePostprocess: ( prepArgs?: Record<string, unknown> ) => { effects: number; prepared: unknown[]; missed: unknown[] };
+	wirePostprocess: ( wireArgs?: Record<string, unknown> ) => { effects: number; wired: unknown[]; missed: unknown[] };
 	dispose: () => void;
 };
+
+export type EffectSubPass = {
+	material?: unknown;
+	shape: string;
+	config?: Record<string, unknown>;
+};
+export type EffectHandler = {
+	name: string;
+	detect: ( node: unknown ) => boolean;
+	subPasses: ( node: unknown, index: number ) => EffectSubPass[];
+	forceSetup?: ( node: unknown, context?: Record<string, unknown> ) => void;
+	wireSubPassUniforms?: ( subPass: EffectSubPass, sourceMaterial: unknown, opts?: Record<string, unknown> ) => void;
+	wireSubPassTextures?: ( subPass: EffectSubPass, node: unknown, opts?: Record<string, unknown> ) => void;
+	patchUpdateBefore?: ( node: unknown, result: { prepared: unknown[]; missed: unknown[] }, opts?: Record<string, unknown> ) => void;
+};
+export type EffectNodeMatch = {
+	handler: EffectHandler;
+	node: unknown;
+};
+export type PostprocessMiss = {
+	shape: string;
+	reason: string;
+};
+export type PreparedEffectSubPass = {
+	handler: string;
+	shape: string;
+	config: Record<string, unknown> | null;
+	sourceMaterial: unknown;
+	replacement: unknown;
+};
+export type PreparePrecompiledPostprocessArgs = {
+	postProcessing?: { outputNode?: unknown };
+	outputNode?: unknown;
+	loadAux: ( shape: string, configHash: string ) => unknown;
+	PrecompiledMaterial: new ( artifact: unknown ) => unknown;
+	auxConfigHash?: string;
+	sharedContext?: unknown;
+	diagnostics?: { byHandler?: Record<string, { prepared: number; missed: number }> } & Record<string, unknown>;
+};
+export type PreparePrecompiledPostprocessResult = {
+	effects: number;
+	prepared: PreparedEffectSubPass[];
+	missed: PostprocessMiss[];
+};
+export type PrepareEffectNodeForReplayOptions = {
+	loadAux: ( shape: string, configHash: string ) => unknown;
+	PrecompiledMaterial: new ( artifact: unknown ) => unknown;
+	auxConfigHash?: string;
+	sharedContext?: unknown;
+	effectIndex?: number;
+};
+export type PrepareEffectNodeForReplayResult = {
+	prepared: PreparedEffectSubPass[];
+	missed: PostprocessMiss[];
+	alreadyPrepared: boolean;
+};
+export type LiveSidecarWireStats = {
+	uniformsMatched: number;
+	updateNodes: number;
+	updateBeforeNodes: number;
+	updateAfterNodes: number;
+};
+export function registerEffectHandler( handler: EffectHandler ): void;
+export function unregisterEffectHandler( name: string ): boolean;
+export function getEffectHandlers(): EffectHandler[];
+export function findEffectHandler( node: unknown ): EffectHandler | null;
+export function collectEffectNodes( root: unknown, opts?: { depthCap?: number } ): EffectNodeMatch[];
+export function preparePrecompiledPostprocess( args: PreparePrecompiledPostprocessArgs ): PreparePrecompiledPostprocessResult;
+export function prepareEffectNodeForReplay( handler: EffectHandler, node: unknown, opts: PrepareEffectNodeForReplayOptions ): PrepareEffectNodeForReplayResult;
+export function makePrecompiledAuxMaterial( shape: string, sourceMaterial: unknown, opts: PrepareEffectNodeForReplayOptions ): unknown | null;
+export function cloneAuxArtifact<T = unknown>( artifact: T ): T;
+export function wireLiveNodeSidecarsToArtifact( artifact: unknown, sourceMaterial: unknown, replacement?: unknown ): LiveSidecarWireStats;
 
 // ---------- Material variants ----------
 
