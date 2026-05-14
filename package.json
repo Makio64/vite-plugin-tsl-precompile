@@ -12,7 +12,9 @@
     "build": "pnpm -r --filter=!examples-* build",
     "test": "pnpm -r --filter=!examples-* test",
     "test:coverage": "pnpm --filter vite-plugin-tsl-precompile test:coverage",
+
     "test:three-rewrite": "pnpm --filter vite-plugin-tsl-precompile test:rewrite",
+    "vendor:probe": "pnpm --filter vite-plugin-tsl-precompile vendor:probe",
     "test:batch": "pnpm --filter examples-batch test",
     "test:slim": "pnpm --filter examples-batch run:slim",
     "test:e2e": "pnpm --filter examples-batch run:e2e-parallel",

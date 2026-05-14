@@ -35,6 +35,7 @@
     "test:rewrite": "node --test --test-concurrency=1 'test/unit/rewrite-*.test.js'",
     "test:coverage": "node --test --test-concurrency=1 'test/coverage/*.test.js'",
     "verify": "node src/cli/verify.js",
+    "vendor:probe": "node scripts/probe-vendor.mjs",
     "prepublishOnly": "pnpm run test"
   },
   "peerDependencies": {
