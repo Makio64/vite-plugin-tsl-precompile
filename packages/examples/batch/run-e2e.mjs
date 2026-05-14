@@ -125,7 +125,7 @@ const replayWaitMs = parseIntAtLeast( getArg( '--replay-wait-ms=', '5000' ), 500
 const targetTick = parseIntAtLeast( getArg( '--target-tick=', '0' ), 0, 0 );
 const psnrThreshold = parseFloatOr( getArg( '--psnr-threshold=', '30' ), 30 );
 const pixelGateEnabled = ! args.includes( '--no-pixel-gate' );
-const saveShots = args.includes( '--save-shots' );
+const saveShots = ! args.includes( '--no-save-shots' );
 const replayOnly = args.includes( '--replay-only' );
 const reuseReferenceShot = replayOnly || args.includes( '--reuse-reference-shot' );
 const verboseConsole = args.includes( '--verbose' ) || process.env.TSLP_E2E_VERBOSE === '1' || !! process.env.TSLP_DEBUG_TORNADO_VERBOSE;
@@ -326,6 +326,7 @@ function rewriteImportmap( html, mode ) {
 		`"@tsl-precompile/runtime/slim-support/gpu-texture-share": "/__tslp_runtime/slim-support/gpu-texture-share.js"`,
 		`"@tsl-precompile/runtime/slim-support/compute-sync": "/__tslp_runtime/slim-support/compute-sync.js"`,
 		`"@tsl-precompile/contract": "/__tslp_contract/index.js"`,
+		`"@tsl-precompile/contract/dynamic-bindings": "/__tslp_contract/dynamic-bindings.js"`,
 		`"@tsl-precompile/contract/graph-normalize": "/__tslp_contract/graph-normalize.js"`,
 		`"@tsl-precompile/contract/kinds": "/__tslp_contract/kinds.js"`,
 		`"@tsl-precompile/contract/texture-props": "/__tslp_contract/texture-props.js"`,
@@ -364,6 +365,16 @@ function rewriteHarnessVirtualImports( source ) {
 
 }
 
+function rewriteTextureLoaderAddon( source, className ) {
+
+	const text = String( source );
+	if ( text.includes( '__tslpPatchTextureLoaderClass' ) ) return text;
+	const exportRe = new RegExp( `export\\s*\\{\\s*${ className }\\s*\\};` );
+	if ( ! exportRe.test( text ) ) return text;
+	return text.replace( exportRe, `if ( globalThis.__tslpPatchTextureLoaderClass ) globalThis.__tslpPatchTextureLoaderClass( ${ className }, '${ className }' );\nexport { ${ className } };` );
+
+}
+
 function stockWebgpuModule() {
 
 	return `
@@ -373,6 +384,58 @@ export * from '/build/three.webgpu.js';
 let __pmremRunning = 0;
 window.__tslpPmremPending = window.__tslpPmremPending || 0;
 window.__tslpCompilePending = window.__tslpCompilePending || 0;
+
+function __tslpLoaderBasename( value ) {
+	const raw = String( value || '' );
+	const tail = raw.split( /[?#]/ )[ 0 ].split( '/' ).filter( Boolean ).pop() || raw;
+	return tail || '';
+}
+
+window.__tslpMarkLoaderTexture = function ( texture, url ) {
+	if ( ! texture || texture.isTexture !== true ) return texture;
+	const name = __tslpLoaderBasename( url );
+	if ( name && ! texture.name ) texture.name = name;
+	try {
+		texture.userData = texture.userData || {};
+		if ( typeof url === 'string' && url.length > 0 ) texture.userData.__tslpLoaderUrl = url;
+	} catch ( _ ) {}
+	return texture;
+};
+
+window.__tslpPatchTextureLoaderClass = function ( Ctor ) {
+	if ( ! Ctor || ! Ctor.prototype || typeof Ctor.prototype.load !== 'function' || Ctor.prototype.__tslpCallbackLoadPatched ) return;
+	Ctor.prototype.__tslpCallbackLoadPatched = true;
+	const origLoad = Ctor.prototype.load;
+	const _now = () => ( typeof window.__tslpRealNow === 'function' ? window.__tslpRealNow() : Date.now() );
+	Ctor.prototype.load = function ( url, onLoad, onProgress, onError ) {
+		window.__tslpLoaderPending = ( window.__tslpLoaderPending | 0 ) + 1;
+		window.__tslpLoaderLastBusyAt = _now();
+		let settled = false;
+		const settle = () => {
+			if ( settled ) return;
+			settled = true;
+			window.__tslpLoaderPending = Math.max( 0, ( window.__tslpLoaderPending | 0 ) - 1 );
+			window.__tslpLoaderLastBusyAt = _now();
+		};
+		const wrapLoad = ( texture, ...rest ) => {
+			window.__tslpMarkLoaderTexture( texture, url );
+			try { if ( typeof onLoad === 'function' ) return onLoad.call( this, texture, ...rest ); }
+			finally { settle(); }
+		};
+		const wrapError = ( err, ...rest ) => {
+			try { if ( typeof onError === 'function' ) return onError.call( this, err, ...rest ); }
+			finally { settle(); }
+		};
+		try {
+			const result = origLoad.call( this, url, wrapLoad, onProgress, wrapError );
+			window.__tslpMarkLoaderTexture( result, url );
+			return result;
+		} catch ( err ) {
+			settle();
+			throw err;
+		}
+	};
+};
 
 function __recordRenderableObjectCount( scene ) {
 	if ( ! scene || typeof scene.traverse !== 'function' ) return;
@@ -490,7 +553,8 @@ function fullWebgpuAutoModule() {
 	return `
 import * as Original from '/build/three.webgpu.js';
 export * from '/build/three.webgpu.js';
-import { installPrecompileMarker, setDevRenderer, precompileAuxiliary } from '@tsl-precompile/runtime';
+import { installPrecompileMarker, setDevRenderer } from '/__tslp_runtime/precompile-marker.js';
+import { precompileAuxiliary } from '/__tslp_runtime/aux-marker.js';
 
 const __state = window.__TSLP_E2E || { example: 'unknown' };
 const __counts = Object.create( null );
@@ -972,6 +1036,7 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		const result = await super.init( ...args );
 		__renderer = this;
 		setDevRenderer( this );
+		window.__tslpRendererBound = true;
 		// __flush deliberately skipped here — see __mark for why.
 		return result;
 	}
@@ -1015,6 +1080,8 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		return super.render( scene, camera );
 	}
 }
+
+window.__tslpFullAutoLoaded = true;
 `;
 
 }
@@ -1077,14 +1144,27 @@ const __data = __state.artifacts || { user: {}, aux: [] };
 	if ( typeof origLoad === 'function' ) {
 		L.prototype.load = function ( url, onLoad, onProgress, onError ) {
 			const touch = () => { window.__tslpLoaderLastBusyAt = _now(); };
+			window.__tslpLoaderPending = ( window.__tslpLoaderPending | 0 ) + 1;
+			let settled = false;
+			const settle = () => {
+				if ( settled ) return;
+				settled = true;
+				window.__tslpLoaderPending = Math.max( 0, ( window.__tslpLoaderPending | 0 ) - 1 );
+				touch();
+			};
 			touch();
-			const wrap = ( cb ) => typeof cb === 'function'
+			const wrap = ( cb, shouldSettle = false ) => typeof cb === 'function'
 				? ( ...args ) => {
 					try { return cb.apply( this, args ); }
-					finally { touch(); }
+					finally { shouldSettle ? settle() : touch(); }
 				}
-				: cb;
-			return origLoad.call( this, url, wrap( onLoad ), onProgress, wrap( onError ) );
+				: shouldSettle ? ( ..._args ) => settle() : cb;
+			try {
+				return origLoad.call( this, url, wrap( onLoad, true ), onProgress, wrap( onError, true ) );
+			} catch ( err ) {
+				settle();
+				throw err;
+			}
 		};
 	}
 	if ( typeof origLoadAsync !== 'function' ) return;
@@ -1688,10 +1768,16 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 				backgroundScene.background = scene.background;
 				backgroundScene.backgroundNode = scene.backgroundNode;
 				backgroundScene.environment = scene.environment;
+				const savedTargetTextures = this.renderTarget && Array.isArray( this.renderTarget.textures )
+					? this.renderTarget.textures.slice()
+					: null;
+				const savedTextureMap = { ...this._textures };
 				__syncPassRenderTargetTextures( this, null );
 				if ( typeof renderer.setMRT === 'function' ) renderer.setMRT( null );
 				renderer.setRenderTarget( this.renderTarget );
 				renderer.render( backgroundScene, camera );
+				if ( savedTargetTextures && this.renderTarget ) this.renderTarget.textures = savedTargetTextures;
+				this._textures = savedTextureMap;
 
 				const savedBackground = scene.background;
 				const savedBackgroundNode = scene.backgroundNode;
@@ -3470,20 +3556,28 @@ function __wireMaterialNodeTextures( sourceMaterial, replacement ) {
 	if ( ! sourceMaterial || ! replacement || ! replacement.precompiledArtifact ) return;
 	const artifact = replacement.precompiledArtifact;
 	__wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, replacement );
+	let avoidTexture = null;
+	try {
+		const renderer = window.__tslpCurrentReplayRenderer;
+		const target = renderer && typeof renderer.getRenderTarget === 'function' ? renderer.getRenderTarget() : null;
+		avoidTexture = target && target.texture || null;
+	} catch ( _ ) {}
 	const nodeTextures = __collectMaterialNodeTextures( sourceMaterial );
 	const globalTslTextures = Array.isArray( window.__tslpTslTextureArgs ) ? window.__tslpTslTextureArgs : [];
 	for ( const texture of globalTslTextures ) {
+		if ( texture === avoidTexture ) continue;
 		if ( nodeTextures.includes( texture ) ) continue;
 		if ( __artifactHasTextureSource( artifact, ( source ) => __textureMatchesArtifactSource( texture, source ) ) ) {
 			nodeTextures.push( texture );
 		}
 	}
 	if ( nodeTextures.length === 0 && __countArtifactTextureSources( artifact, ( source ) => ! __isPMREMArtifactTextureSource( source ) ) <= 1 ) {
-		const candidates = globalTslTextures.filter( ( texture ) => texture && texture.isTexture === true && texture.isCubeTexture !== true && texture.isData3DTexture !== true && texture.is3DTexture !== true && ! __isPMREMTexture( texture ) );
+		const candidates = globalTslTextures.filter( ( texture ) => texture && texture !== avoidTexture && texture.isTexture === true && texture.isCubeTexture !== true && texture.isData3DTexture !== true && texture.is3DTexture !== true && ! __isPMREMTexture( texture ) );
 		if ( candidates.length === 1 ) nodeTextures.push( candidates[ 0 ] );
 	}
 	const anonymousNodeTextures = nodeTextures.filter( ( tex ) => tex && tex.isTexture === true && ! __isPMREMTexture( tex ) && ! tex.name && ! __textureImageSrc( tex ) );
 	for ( const tex of nodeTextures ) {
+		if ( tex === avoidTexture ) continue;
 		if ( tex && tex.isTexture === true ) __rememberLiveTexture( tex );
 		const predicate = __isPMREMTexture( tex )
 			? __isPMREMArtifactTextureSource
@@ -4929,12 +5023,29 @@ function __shouldBypassReplayPrepareDuringPMREM( root ) {
 	return __pmremRunning > 0 && ! __hasReplayArtifactMatch( root );
 }
 
+function __normalizeClippingGroupForReplay( object ) {
+	if ( ! object || ! object.isClippingGroup ) return false;
+	let repaired = false;
+	if ( ! Array.isArray( object.clippingPlanes ) ) { object.clippingPlanes = []; repaired = true; }
+	if ( typeof object.clipIntersection !== 'boolean' ) { object.clipIntersection = false; repaired = true; }
+	if ( typeof object.clipShadows !== 'boolean' ) { object.clipShadows = false; repaired = true; }
+	if ( typeof object.enabled !== 'boolean' ) { object.enabled = true; repaired = true; }
+	try {
+		const diag = __harnessDiagnostics();
+		diag.clippingGroups = diag.clippingGroups || { seen: 0, repaired: 0 };
+		diag.clippingGroups.seen ++;
+		if ( repaired ) diag.clippingGroups.repaired ++;
+	} catch ( _ ) {}
+	return true;
+}
+
 function __prepareSceneForReplay( scene, renderer ) {
 	if ( __shouldBypassReplayPrepareDuringPMREM( scene ) ) return;
 	// PMREMGenerator and RenderPipeline internals render temporary meshes/scenes
 	// that were never part of the user's capture set. Let the full/slim renderer
 	// handle those materials normally so they do not consume user artifacts.
 	if ( ! scene || typeof scene.traverse !== 'function' || scene.name === 'RoomEnvironment' ) return;
+	scene.traverse( __normalizeClippingGroupForReplay );
 	// When a background-aux artifact is registered the rewritten Background.js
 	// inside the slim bundle calls loadAux('background', hashNodeGraphSync(backgroundNode))
 	// to build a PrecompiledMaterial for the sky quad.  That path is only
@@ -5205,12 +5316,12 @@ function __syncStorageBuffers( computeNode, fullRenderer, slimRenderer ) {
 	__wireSceneComputeAttrsFromFallbacks( slimRenderer && slimRenderer._lastScene );
 }
 
-// Lazy full-`WebGPURenderer` boot — productized through
-// `slim-support/full-renderer-fallback`. The fallback owns the shared-device
-// init, the de-duplicated promise, and the `shadowMap.enabled` flip; we keep
-// `__computeRenderer` and `__fullThreeMod` as in-page references because
-// other harness helpers (`__makeFullSceneForPMREM`, `__rememberStorageAttr`,
-// `__convertGeometryToFullThree`) read them synchronously.
+// Lazy full-WebGPURenderer boot — productized through
+// slim-support/full-renderer-fallback. The fallback owns the shared-device
+// init, the de-duplicated promise, and the shadowMap.enabled flip; we keep
+// __computeRenderer and __fullThreeMod as in-page references because
+// other harness helpers (__makeFullSceneForPMREM, __rememberStorageAttr,
+// __convertGeometryToFullThree) read them synchronously.
 let __computeRenderer = null;
 let __computeRendererInit = null;
 let __fullThreeMod = null;
@@ -6560,6 +6671,10 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 		const p = super.compileAsync( scene, camera, ...rest );
 		return Promise.resolve( p ).then( ( v ) => { _settle(); return v; }, ( e ) => { _settle(); throw e; } );
 	}
+	_projectObject( object, ...rest ) {
+		__normalizeClippingGroupForReplay( object );
+		return super._projectObject( object, ...rest );
+	}
 	render( scene, camera ) {
 		if ( __shouldBypassReplayPrepareDuringPMREM( scene ) ) return super.render( scene, camera );
 		if ( ( this.__tslpInsideRenderPipeline | 0 ) > 0 && scene && scene.isQuadMesh === true && scene.name === 'Render Pipeline' ) {
@@ -7003,7 +7118,7 @@ function __renderPassNodeForPipeline( renderer, passNode ) {
 		passDiag.failed ++;
 		if ( ! window.__tslpPassRenderWarned ) {
 			window.__tslpPassRenderWarned = true;
-			console.warn( '[tslp-e2e] RenderPipeline pass render failed:', err && err.message || err );
+			console.warn( '[tslp-e2e] RenderPipeline pass render failed:', err && ( err.stack || err.message ) || err );
 		}
 	}
 }
@@ -7955,6 +8070,11 @@ export class RenderPipeline extends Slim.RenderPipeline {
 					__renderFrameEffectNodesForPipeline( this.renderer, passEffectNodes, context );
 					if ( passEffectNodes.length > 0 ) __renderPassNodesForPipeline( this.renderer, passNodes );
 					__renderFrameEffectNodesForPipeline( this.renderer, outputEffectNodes, context );
+					if ( outputEffectNodes.length > 0 ) {
+						artifact = __attachGraphTextureRefs( artifact, this.outputNode );
+						mat.precompiledArtifact = artifact;
+						mat.needsUpdate = true;
+					}
 					__renderBloomNodesForPipeline( this.renderer, bloomNodes );
 				} : effectBeforeRenderPipeline;
 				context.onAfterRenderPipeline = typeof effectAfterRenderPipeline === 'function' ? () => effectAfterRenderPipeline() : null;
@@ -8678,7 +8798,16 @@ async function visitExample( browser, name, mode, waitMs ) {
 	};
 	const onRequestFailed = ( req ) => {
 
-		if ( process.env.TSLP_DEBUG_TORNADO ) console.error( `[req-failed ${ mode }]`, req.url(), '->', req.failure() && req.failure().errorText );
+		const reqUrl = req.url();
+		const errText = req.failure() && req.failure().errorText || 'unknown';
+		if ( process.env.TSLP_DEBUG_TORNADO ) console.error( `[req-failed ${ mode }]`, reqUrl, '->', errText );
+		// Surface harness-asset failures (runtime/contract/plugin/webgpu/tsl modules)
+		// into `errors` so ES-module load failures show up in the e2e report — the
+		// browser doesn't fire `pageerror` for these and the console message may
+		// arrive as a warning that `onConsole` filters out.
+		if ( /__tslp__|__tslp_runtime|__tslp_plugin|__tslp_contract|three\.webgpu|three\.tsl/.test( reqUrl ) ) {
+			errors.push( `harness asset failed: ${ reqUrl } (${ errText })` );
+		}
 
 	};
 	const traceResponses = !! process.env.TSLP_DEBUG_TORNADO_TRACE;
@@ -9108,6 +9237,11 @@ async function visitExample( browser, name, mode, waitMs ) {
 						computePending: window.__tslpComputePending | 0,
 						shadowPending: window.__tslpShadowPending | 0,
 						lastBusyAgeMs: typeof window.__tslpRealNow === 'function' ? window.__tslpRealNow() - ( window.__tslpLoaderLastBusyAt | 0 ) : null,
+						fullAutoLoaded: window.__tslpFullAutoLoaded === true,
+						rendererBound: window.__tslpRendererBound === true,
+						animationLoopRegistered: window.__tslpAnimationLoopRegistered === true,
+						animationLoopCalls: window.__tslpAnimationLoopCalls | 0,
+						wrapperIsActive: typeof window.__tslpWrapAnimationLoop === 'function',
 					} ) );
 				} catch ( _2 ) {}
 			}

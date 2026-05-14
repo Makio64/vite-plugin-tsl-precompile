@@ -6,23 +6,14 @@ import { fileURLToPath } from 'node:url';
 const SELF = dirname( fileURLToPath( import.meta.url ) );
 const args = process.argv.slice( 2 );
 
-const parallel = args.includes( '--parallel' );
 const coverageEnabled = ! args.includes( '--no-coverage' );
 const saveShotsEnabled = ! args.includes( '--no-save-shots' );
 
 const forwarded = args.filter( ( arg ) =>
-	arg !== '--parallel' &&
 	arg !== '--no-coverage' &&
-	arg !== '--no-save-shots' &&
 	arg !== '--'
 );
 const reportArg = forwarded.find( ( arg ) => arg.startsWith( '--report=' ) );
-
-if ( saveShotsEnabled && ! forwarded.includes( '--save-shots' ) ) {
-
-	forwarded.push( '--save-shots' );
-
-}
 
 function signalExitCode( signal ) {
 
@@ -61,10 +52,9 @@ function runNode( label, script, scriptArgs = [] ) {
 
 }
 
-const modeLabel = parallel ? 'running parallel e2e' : 'running serial e2e';
 const e2eStatus = await runNode(
-	`${ modeLabel }${ saveShotsEnabled ? ' with saved screenshots' : '' }`,
-	parallel ? 'run-e2e-parallel.mjs' : 'run-e2e.mjs',
+	`running e2e${ saveShotsEnabled ? ' with saved screenshots' : '' }`,
+	'run-e2e.mjs',
 	forwarded
 );
 

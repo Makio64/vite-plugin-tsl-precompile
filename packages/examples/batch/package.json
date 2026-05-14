@@ -13,8 +13,6 @@
     "run:e2e": "node run-e2e-with-coverage.mjs",
     "run:e2e:tier1": "node run-e2e-with-coverage.mjs --tier=tier1 --report=tier1-report.json",
     "run:e2e:raw": "node run-e2e.mjs",
-    "run:e2e-parallel": "node run-e2e-with-coverage.mjs --parallel",
-    "run:e2e-parallel:raw": "node run-e2e-parallel.mjs",
     "run:coverage-summary": "node run-coverage-summary.mjs"
   },
   "devDependencies": {
