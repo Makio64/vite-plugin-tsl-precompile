@@ -103,6 +103,7 @@ function classifyReflectorTexture( entry, runtimeBinding, descriptor, ctx ) {
 	ctx.reflectorTextureBindings.push( {
 		binding: runtimeBinding,
 		baseNode,
+		source: entry.source || {},
 	} );
 
 }

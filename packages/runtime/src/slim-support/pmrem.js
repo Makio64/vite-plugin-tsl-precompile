@@ -29,6 +29,12 @@ export function artifactNeedsPMREM( artifact ) {
 
 export function artifactPMREMSourceUuids( artifact ) {
 
+	return artifactPMREMSourceEntries( artifact ).map( ( entry ) => entry.textureUuid );
+
+}
+
+function artifactPMREMSourceEntries( artifact ) {
+
 	const out = [];
 	const seen = new Set();
 	for ( const group of artifact && artifact.uniformPlan || [] ) {
@@ -38,12 +44,42 @@ export function artifactPMREMSourceUuids( artifact ) {
 			const source = entry && entry.source || {};
 			if ( ! source.textureUuid || ! isPMREMArtifactTextureSource( source ) || seen.has( source.textureUuid ) ) continue;
 			seen.add( source.textureUuid );
-			out.push( source.textureUuid );
+			out.push( source );
 
 		}
 
 	}
 	return out;
+
+}
+
+function sourceHasImageSize( source ) {
+
+	return !! ( source && typeof source.imageWidth === 'number' && typeof source.imageHeight === 'number' );
+
+}
+
+function textureMatchesPMREMSourceSize( texture, source ) {
+
+	if ( ! sourceHasImageSize( source ) ) return true;
+	const image = texture && texture.image || null;
+	if ( ! image || image.width !== source.imageWidth || image.height !== source.imageHeight ) return false;
+	return typeof source.imageDepth !== 'number' || image.depth === source.imageDepth;
+
+}
+
+function filterPMREMTexturesBySourceSize( textures, sources ) {
+
+	const candidates = [];
+	const sourceList = sources || [];
+	const hasSizeHints = sourceList.some( sourceHasImageSize );
+	if ( ! hasSizeHints ) return textures || [];
+	for ( const texture of textures || [] ) {
+
+		if ( sourceList.some( ( source ) => textureMatchesPMREMSourceSize( texture, source ) ) ) pushUniqueTexture( candidates, texture );
+
+	}
+	return candidates;
 
 }
 
@@ -117,7 +153,8 @@ export function attachPMREMRefsByOrder( artifact, pmremTextures ) {
 
 export function selectPMREMTexturesForArtifact( artifact, opts = {} ) {
 
-	const sourceUuids = artifactPMREMSourceUuids( artifact );
+	const sourceEntries = artifactPMREMSourceEntries( artifact );
+	const sourceUuids = sourceEntries.map( ( source ) => source.textureUuid );
 	if ( sourceUuids.length === 0 ) {
 
 		return {
@@ -142,16 +179,17 @@ export function selectPMREMTexturesForArtifact( artifact, opts = {} ) {
 		if ( isPMREMTexture( texture ) ) pushUniqueTexture( nodePmrems, texture );
 
 	}
+	const matchingNodePmrems = filterPMREMTexturesBySourceSize( nodePmrems, sourceEntries );
 
 	const materialEnvMap = material && material.envMap && material.envMap.isTexture === true ? material.envMap : null;
 	const materialPmrem = materialEnvMap ? getCachedPMREMForSource( materialEnvMap ) : null;
 	const environmentPmrems = pmremTexturesForSources( environmentSources, getCachedPMREMForSource );
 
-	if ( nodePmrems.length >= sourceUuids.length ) {
+	if ( matchingNodePmrems.length >= sourceUuids.length ) {
 
 		return {
 			sourceUuids,
-			pmremTextures: nodePmrems,
+			pmremTextures: matchingNodePmrems,
 			strategy: 'material-node',
 			nodePmrems,
 			materialPmrem,

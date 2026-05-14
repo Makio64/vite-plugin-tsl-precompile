@@ -26,12 +26,13 @@
  *   | `lightLinkage`           | `__TSLP_DEBUG_LIGHT_LINKAGE=true`  | 120   | `hydrate/light-writers.js` |
  *   | `shadowBindings`         | `__TSLP_DEBUG_SHADOW_BINDINGS=true`| 500   | `hydrate/light-writers.js` |
  *   | `shadowCoverage`         | `__TSLP_DEBUG_SHADOW_COVERAGE=true`| —     | `run-e2e.mjs` |
+ *   | `reflectorBindings`      | `__TSLP_DEBUG_REFLECTOR_BINDINGS=true` | 500 | `hydrate/rebinders/reflector-texture-rebinder.js` |
  *   | `colorTransferFallbacks` | always                             | obj   | `slim-support/live-scene-index.js` |
  *   | `healedNullTextureImages`| always                             | i32   | `slim-support/live-scene-index.js` |
  *   | `pmrem`                  | always                             | obj   | `slim-support/pmrem.js` |
  *   | `textureShare`           | always                             | obj   | `slim-support/scene-support.js` |
  *
- * The first two are gated by a process-local flag; the rest are always-on
+ * Flagged channels are gated by a process-local flag; the rest are always-on
  * counters that consumers read after a run. `record()` is a no-op when the
  * corresponding flag is off, so gating remains zero-cost on the hot path.
  *
@@ -52,12 +53,14 @@ const CHANNEL_LIMITS = Object.freeze( {
 	lightLinkage: 120,
 	shadowBindings: 500,
 	shadowCoverage: 1000,
+	reflectorBindings: 500,
 } );
 
 const CHANNEL_FLAGS = Object.freeze( {
 	lightLinkage: '__TSLP_DEBUG_LIGHT_LINKAGE',
 	shadowBindings: '__TSLP_DEBUG_SHADOW_BINDINGS',
 	shadowCoverage: '__TSLP_DEBUG_SHADOW_COVERAGE',
+	reflectorBindings: '__TSLP_DEBUG_REFLECTOR_BINDINGS',
 } );
 
 /**

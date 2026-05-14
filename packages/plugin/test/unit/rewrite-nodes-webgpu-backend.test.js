@@ -27,6 +27,7 @@ test( 'rewrite/Nodes.js: getForRender bypasses createNodeBuilder for precompiled
 	// Precompile bypass appears.
 	assert.match( out, /material\.isPrecompiledMaterial/ );
 	assert.match( out, /hydrateNodeBuilderState\s*\(\s*material\.precompiledArtifact/ );
+	assert.match( out, /hydrateNodeBuilderState\s*\(\s*material\.precompiledArtifact\s*,\s*material\s*,\s*renderObject\.object\s*\)/ );
 	assert.match( out, /computeNode\.isPrecompiledCompute/ );
 	assert.match( out, /hydrateNodeBuilderState\s*\(\s*computeNode\.precompiledArtifact/ );
 

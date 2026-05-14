@@ -156,6 +156,29 @@ const ARTIFACT_TEXTURE_STRATEGIES = [
 
 export const ARTIFACT_TEXTURE_STRATEGY_NAMES = Object.freeze( ARTIFACT_TEXTURE_STRATEGIES.map( strategy => strategy.name ) );
 
+const PMREM_CUBE_UV_MAPPING = 306;
+
+function isPMREMArtifactSource( source ) {
+
+	return !! ( source && source.kind === 'artifact.texture' && ( source.mapping === PMREM_CUBE_UV_MAPPING || source.textureName === 'PMREM.cubeUv' ) );
+
+}
+
+function textureMatchesCapturedPMREMSize( texture, source ) {
+
+	if ( ! isPMREMArtifactSource( source ) || typeof source.imageWidth !== 'number' || typeof source.imageHeight !== 'number' ) return true;
+	const image = texture && texture.image || null;
+	if ( ! image || image.width !== source.imageWidth || image.height !== source.imageHeight ) return false;
+	return typeof source.imageDepth !== 'number' || image.depth === source.imageDepth;
+
+}
+
+function artifactTextureMatchesSource( texture, source ) {
+
+	return textureMatchesCapturedPMREMSize( texture, source );
+
+}
+
 export function resolveArtifactTextureBinding( context ) {
 
 	const deps = context.deps || {};
@@ -191,6 +214,7 @@ function resolveMaterialNodeTextureStrategy( context ) {
 	const lookupMaterialNodeTexture = context.deps && context.deps.lookupMaterialNodeTexture;
 	if ( ! lookupMaterialNodeTexture ) return null;
 	const texture = lookupMaterialNodeTexture( material, source, artifact, bindingName, options && options.avoidTexture || null );
+	if ( ! artifactTextureMatchesSource( texture, source ) ) return null;
 	return applySourceSettings( context, texture );
 
 }
@@ -200,7 +224,7 @@ function resolveRenderTargetTextureRefStrategy( context ) {
 	const { artifact, bindingName, source } = context;
 	if ( ! artifact._textureRefs ) return null;
 	const texture = artifact._textureRefs.get( source.textureUuid );
-	if ( texture && texture.isRenderTargetTexture === true && textureMatchesShaderBinding( artifact, bindingName, texture ) ) {
+	if ( texture && texture.isRenderTargetTexture === true && artifactTextureMatchesSource( texture, source ) && textureMatchesShaderBinding( artifact, bindingName, texture ) ) {
 
 		return applySourceSettings( context, texture );
 
@@ -215,7 +239,7 @@ function resolveLiveTextureIdentityStrategy( context ) {
 	const lookupLiveTextureByIdentity = context.deps && context.deps.lookupLiveTextureByIdentity;
 	if ( ! lookupLiveTextureByIdentity ) return null;
 	const texture = lookupLiveTextureByIdentity( source );
-	if ( texture && textureMatchesShaderBinding( artifact, bindingName, texture ) ) {
+	if ( texture && artifactTextureMatchesSource( texture, source ) && textureMatchesShaderBinding( artifact, bindingName, texture ) ) {
 
 		return applySourceSettings( context, texture );
 
@@ -229,7 +253,7 @@ function resolveTextureRefStrategy( context ) {
 	const { artifact, bindingName, source } = context;
 	if ( ! artifact._textureRefs ) return null;
 	const texture = artifact._textureRefs.get( source.textureUuid );
-	if ( texture && textureMatchesShaderBinding( artifact, bindingName, texture ) ) {
+	if ( texture && artifactTextureMatchesSource( texture, source ) && textureMatchesShaderBinding( artifact, bindingName, texture ) ) {
 
 		return applySourceSettings( context, texture );
 
@@ -245,7 +269,7 @@ function resolveMaterialSlotUuidStrategy( context ) {
 	for ( const prop of MATERIAL_TEXTURE_PROPS ) {
 
 		const texture = material[ prop ];
-		if ( texture && texture.isTexture === true && texture.uuid === source.textureUuid && textureMatchesShaderBinding( artifact, bindingName, texture ) ) {
+		if ( texture && texture.isTexture === true && texture.uuid === source.textureUuid && artifactTextureMatchesSource( texture, source ) && textureMatchesShaderBinding( artifact, bindingName, texture ) ) {
 
 			return applySourceSettings( context, texture );
 

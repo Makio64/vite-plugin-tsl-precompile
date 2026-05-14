@@ -750,7 +750,7 @@ function findClassMethod( ast, methodName ) {
  *     throw new Error('…slim-only…');
  *   }
  *   const artifact = material.precompiledArtifact;
- *   const hydrated = hydrateNodeBuilderState( artifact );
+ *   const hydrated = hydrateNodeBuilderState( artifact, material, renderObject.object );
  *   return {
  *     material, scene: renderObject.scene, camera: renderObject.camera,
  *     vertexShader: hydrated.vertexShader,
@@ -810,6 +810,7 @@ function buildHelperStub() {
 			t.callExpression( t.identifier( 'hydrateNodeBuilderState' ), [
 				t.memberExpression( t.cloneNode( materialIdent ), t.identifier( 'precompiledArtifact' ) ),
 				t.cloneNode( materialIdent ),
+					t.memberExpression( t.cloneNode( renderObjectIdent ), t.identifier( 'object' ) ),
 			] ),
 		),
 	] );
@@ -898,7 +899,11 @@ function buildPrecompileBypass() {
 		t.expressionStatement( t.assignmentExpression(
 			'=',
 			t.identifier( 'nodeBuilderState' ),
-			t.callExpression( t.identifier( 'hydrateNodeBuilderState' ), [ artifactExpr, materialExpr ] ),
+			t.callExpression( t.identifier( 'hydrateNodeBuilderState' ), [
+				artifactExpr,
+				materialExpr,
+				t.memberExpression( t.identifier( 'renderObject' ), t.identifier( 'object' ) ),
+			] ),
 		) ),
 	] );
 	const elseBlock = t.blockStatement( parseFunctionBody( `

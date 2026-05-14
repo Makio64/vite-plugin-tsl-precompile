@@ -90,7 +90,7 @@ const exactDescriptors = {
 		owner: 'artifact',
 		resolver: 'hydrator/artifact-texture',
 		required: [],
-		optional: [ 'textureUuid', 'textureName', 'imageSrc', 'snapshot', 'mapping', 'textureType', 'textureDimension', 'generateMipmaps', 'colorSpace', 'flipY' ],
+		optional: [ 'textureUuid', 'textureName', 'imageSrc', 'snapshot', 'mapping', 'textureType', 'textureDimension', 'generateMipmaps', 'colorSpace', 'flipY', 'imageWidth', 'imageHeight', 'imageDepth' ],
 	} ),
 	'depth.texture': freezeDescriptor( {
 		kind: 'depth.texture',
@@ -117,7 +117,7 @@ const exactDescriptors = {
 		owner: 'reflector',
 		resolver: 'hydrator/reflector-texture-rebinder',
 		required: [],
-		optional: [ 'reflectorIndex', 'textureUuid' ],
+		optional: [ 'reflectorIndex', 'textureUuid', 'generateMipmaps', 'resolutionScale', 'samples', 'bounces', 'depth' ],
 	} ),
 	'builtin.dfgLUT': freezeDescriptor( {
 		kind: 'builtin.dfgLUT',

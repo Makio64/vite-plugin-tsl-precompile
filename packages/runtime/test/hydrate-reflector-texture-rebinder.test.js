@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { LinearMipmapLinearFilter } from 'three/src/constants.js';
+
 import {
 	collectMaterialReflectorBaseNodes,
 	createReflectorTextureRebinder,
@@ -69,6 +71,41 @@ test( 'reflector texture rebinder rebinds to the live reflector texture', () => 
 	assert.equal( binding.groupNode.version, 1 );
 	assert.equal( binding.version, -1 );
 	assert.equal( binding.generation, null );
+
+} );
+
+test( 'reflector texture rebinder applies captured render-target settings', () => {
+
+	const fallbackTexture = { uuid: 'fallback' };
+	const liveTexture = { uuid: 'mirror', generateMipmaps: false, minFilter: 1006, needsUpdate: false };
+	const binding = createBinding( fallbackTexture );
+	const camera = { id: 'camera' };
+	const baseNode = {
+		generateMipmaps: false,
+		resolutionScale: 1,
+		samples: 0,
+		bounces: true,
+		depth: false,
+		renderTargets: new Map( [ [ camera, { texture: liveTexture } ] ] ),
+	};
+	const rebinder = createReflectorTextureRebinder( [ {
+		binding,
+		baseNode,
+		source: { generateMipmaps: true, resolutionScale: 0.5, samples: 4, bounces: false, depth: true },
+	} ] );
+
+	assert.equal( baseNode.generateMipmaps, true );
+	assert.equal( baseNode.resolutionScale, 0.5 );
+	assert.equal( baseNode.samples, 4 );
+	assert.equal( baseNode.bounces, false );
+	assert.equal( baseNode.depth, true );
+
+	rebinder.updateBefore( { camera } );
+
+	assert.equal( binding.texture, liveTexture );
+	assert.equal( liveTexture.generateMipmaps, true );
+	assert.equal( liveTexture.minFilter, LinearMipmapLinearFilter );
+	assert.equal( liveTexture.needsUpdate, true );
 
 } );
 

@@ -13,7 +13,9 @@ import {
 test( 'dynamicBindingDescriptor resolves exact kinds', () => {
 
 	assert.equal( dynamicBindingDescriptor( 'artifact.texture' ).target, DYNAMIC_BINDING_TARGET.SAMPLED_TEXTURE );
+	assert.ok( dynamicBindingDescriptor( 'artifact.texture' ).optional.includes( 'imageWidth' ) );
 	assert.equal( dynamicBindingDescriptor( 'depth.texture' ).target, DYNAMIC_BINDING_TARGET.SAMPLED_TEXTURE );
+	assert.ok( dynamicBindingDescriptor( 'reflector.texture' ).optional.includes( 'generateMipmaps' ) );
 	assert.equal( dynamicBindingDescriptor( 'uniform.live' ).target, DYNAMIC_BINDING_TARGET.UNIFORM_SLOT );
 	assert.equal( dynamicBindingDescriptor( 'object3d.nodeUniform' ).owner, 'object3d' );
 	assert.equal( dynamicBindingDescriptor( 'builtin.dfgLUT' ).owner, 'runtime' );

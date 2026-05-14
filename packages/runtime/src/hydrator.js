@@ -37,7 +37,7 @@ import { resolveTypedArrayCtor } from './hydrate/typed-arrays.js';
 import { inferTextureTypeFromShader, shaderDeclaresDepthTexture } from './hydrate/texture-resolver.js';
 import { textureBindingFallbacks, makeViewportFallback } from './hydrate/fallback-textures.js';
 import { clippingPlaneSetsForFrame, selectClippingPlaneArray } from './hydrate/clipping-planes.js';
-import { bindUserNodeAttributesToArtifact, bindUserStorageBuffersToArtifact, hydrateNodeAttributes } from './hydrate/user-attributes.js';
+import { applyCapturedInstancedDrawCount, bindUserNodeAttributesToArtifact, bindUserStorageBuffersToArtifact, hydrateNodeAttributes } from './hydrate/user-attributes.js';
 
 export { clearLiveTextureIndex, registerLiveTexture } from './hydrate/live-texture-registry.js';
 
@@ -49,7 +49,7 @@ installLiveTextureRegistryPatches();
  * @param {Object} artifact - The `precompiledArtifact` carried on the material.
  * @return {Object} A plain object with the fields `Pipelines.js` + `RenderObject.js` read.
  */
-export function hydrateNodeBuilderState( artifact, material = null ) {
+export function hydrateNodeBuilderState( artifact, material = null, object = null ) {
 
 	if ( ! artifact ) {
 
@@ -63,6 +63,7 @@ export function hydrateNodeBuilderState( artifact, material = null ) {
 	// Idempotent and a no-op when capture didn't record `userPath` or the
 	// material has no matching node tree yet.
 	bindUserNodeAttributesToArtifact( artifact, material );
+	applyCapturedInstancedDrawCount( artifact, object || material && material.__tslpPrecompileObject || null );
 	// Same trick for compute-storage buffers wired through the user's
 	// `material.colorNode = colors.element( instanceIndex )` etc. — the
 	// kernel writes into `colors`, the render reads from the same buffer.

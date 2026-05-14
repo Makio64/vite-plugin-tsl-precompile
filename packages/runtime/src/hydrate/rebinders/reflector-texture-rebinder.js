@@ -1,4 +1,7 @@
+import { LinearMipmapLinearFilter } from 'three/src/constants.js';
+
 import { collectReflectorBaseNodes } from '../../apply-precompiled.js';
+import { recordDiagnostic } from '../../slim-support/diagnostics.js';
 import { rebindTextureBindingTargets } from './texture-binding-targets.js';
 
 export function resolveReflectorRenderTarget( baseNode, camera ) {
@@ -68,6 +71,8 @@ export function findReflectorBaseNodeInMaterial( material, reflectorIndex = - 1 
 
 export function createReflectorTextureRebinder( entries ) {
 
+	for ( const entry of entries ) applyReflectorSourceSettings( entry && entry.baseNode, entry && entry.source );
+
 	return {
 		getUpdateBeforeType() {
 
@@ -87,17 +92,77 @@ export function createReflectorTextureRebinder( entries ) {
 
 				const baseNode = entry.baseNode;
 				if ( ! baseNode || ! baseNode.renderTargets ) continue;
+				applyReflectorSourceSettings( baseNode, entry.source );
 
 				const rt = resolveReflectorRenderTarget( baseNode, camera );
 
 				const liveTexture = rt && rt.texture || baseNode.textureNode && baseNode.textureNode.value;
 				if ( ! liveTexture ) continue;
+				applyReflectorTextureSettings( liveTexture, entry.source );
 
-				rebindTextureBindingTargets( entry.binding, liveTexture );
+
+				const changed = rebindTextureBindingTargets( entry.binding, liveTexture );
+				recordReflectorBindingDiagnostic( entry, baseNode, rt, liveTexture, changed );
 
 			}
 
 		},
 	};
+
+}
+
+function recordReflectorBindingDiagnostic( entry, baseNode, renderTarget, texture, changed ) {
+
+	recordDiagnostic( 'reflectorBindings', {
+		bindingName: entry && entry.binding && entry.binding.name || null,
+		changed,
+		baseGenerateMipmaps: baseNode && baseNode.generateMipmaps === true,
+		baseResolutionScale: baseNode && typeof baseNode.resolutionScale === 'number' ? baseNode.resolutionScale : null,
+		renderTargetWidth: renderTarget && typeof renderTarget.width === 'number' ? renderTarget.width : null,
+		renderTargetHeight: renderTarget && typeof renderTarget.height === 'number' ? renderTarget.height : null,
+		textureName: texture && texture.name || null,
+		textureWidth: texture && texture.image && typeof texture.image.width === 'number' ? texture.image.width : null,
+		textureHeight: texture && texture.image && typeof texture.image.height === 'number' ? texture.image.height : null,
+		textureGenerateMipmaps: texture && texture.generateMipmaps === true,
+		textureMinFilter: texture && typeof texture.minFilter === 'number' ? texture.minFilter : null,
+		textureVersion: texture && typeof texture.version === 'number' ? texture.version : null,
+	} );
+
+}
+
+function applyReflectorSourceSettings( baseNode, source ) {
+
+	if ( ! baseNode || ! source ) return;
+	if ( typeof source.generateMipmaps === 'boolean' ) baseNode.generateMipmaps = source.generateMipmaps;
+	if ( typeof source.resolutionScale === 'number' ) baseNode.resolutionScale = source.resolutionScale;
+	if ( typeof source.samples === 'number' ) baseNode.samples = source.samples;
+	if ( typeof source.bounces === 'boolean' ) baseNode.bounces = source.bounces;
+	if ( typeof source.depth === 'boolean' ) baseNode.depth = source.depth;
+	if ( ! ( baseNode.renderTargets instanceof Map ) ) return;
+	for ( const renderTarget of baseNode.renderTargets.values() ) {
+
+		if ( renderTarget && renderTarget.texture ) applyReflectorTextureSettings( renderTarget.texture, source );
+
+	}
+
+}
+
+function applyReflectorTextureSettings( texture, source ) {
+
+	if ( ! texture || ! source ) return;
+	let changed = false;
+	if ( typeof source.generateMipmaps === 'boolean' && texture.generateMipmaps !== source.generateMipmaps ) {
+
+		texture.generateMipmaps = source.generateMipmaps;
+		changed = true;
+
+	}
+	if ( source.generateMipmaps === true && texture.minFilter !== LinearMipmapLinearFilter ) {
+
+		texture.minFilter = LinearMipmapLinearFilter;
+		changed = true;
+
+	}
+	if ( changed ) texture.needsUpdate = true;
 
 }

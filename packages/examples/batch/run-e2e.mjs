@@ -5594,6 +5594,112 @@ function __fullLightColorValue( light ) {
 	return 0xffffff;
 }
 
+function __nodeAttributeSnapshotArray( entry ) {
+	const array = entry && ( entry.arraySnapshot || entry._liveArray ) || null;
+	return array && typeof array.length === 'number' ? array : null;
+}
+
+function __nodeAttributeSpreadScore( entry ) {
+	const array = __nodeAttributeSnapshotArray( entry );
+	const itemSize = entry && ( entry.itemSize || 0 ) || 0;
+	const count = entry && ( entry.count || 0 ) || 0;
+	if ( ! array || itemSize < 3 || count <= 0 ) return - Infinity;
+	let minX = Infinity, minY = Infinity, minZ = Infinity;
+	let maxX = - Infinity, maxY = - Infinity, maxZ = - Infinity;
+	for ( let i = 0; i < count; i ++ ) {
+		const offset = i * itemSize;
+		const x = Number( array[ offset ] );
+		const y = Number( array[ offset + 1 ] );
+		const z = Number( array[ offset + 2 ] );
+		if ( ! Number.isFinite( x ) || ! Number.isFinite( y ) || ! Number.isFinite( z ) ) continue;
+		minX = Math.min( minX, x ); minY = Math.min( minY, y ); minZ = Math.min( minZ, z );
+		maxX = Math.max( maxX, x ); maxY = Math.max( maxY, y ); maxZ = Math.max( maxZ, z );
+	}
+	if ( minX === Infinity ) return - Infinity;
+	const dx = maxX - minX;
+	const dy = maxY - minY;
+	const dz = maxZ - minZ;
+	return dx * dx + dy * dy + dz * dz;
+}
+
+function __shadowProxyArtifactForObject( object ) {
+	const material = object && object.material;
+	const list = Array.isArray( material ) ? material : material ? [ material ] : [];
+	for ( const mat of list ) {
+		if ( mat && mat.isPrecompiledMaterial === true && mat.precompiledArtifact ) return mat.precompiledArtifact;
+	}
+	return null;
+}
+
+function __shaderInstancedShadowProxyAttributes( object ) {
+	const artifact = __shadowProxyArtifactForObject( object );
+	const entries = Array.isArray( artifact && artifact.attributes ) ? artifact.attributes : Array.isArray( artifact && artifact.nodeAttributes ) ? artifact.nodeAttributes : [];
+	const candidates = entries.filter( ( entry ) => entry && entry.source === 'node' && entry.instanced === true && ! entry.userPath && __nodeAttributeSnapshotArray( entry ) );
+	if ( candidates.length === 0 ) return null;
+	let position = null;
+	let bestScore = - Infinity;
+	for ( const entry of candidates ) {
+		const score = __nodeAttributeSpreadScore( entry );
+		if ( score > bestScore ) {
+			position = entry;
+			bestScore = score;
+		}
+	}
+	if ( ! position || bestScore <= 0 ) return null;
+	const count = Math.min( object && object.count || position.count || 0, position.count || 0 );
+	if ( count <= 0 ) return null;
+	let scale = null;
+	const vertexShader = String( artifact && artifact.vertexShader || '' );
+	scale = candidates.find( ( entry ) => entry !== position && entry.name && vertexShader.includes( entry.name + '.x' ) ) || null;
+	const normal = candidates.find( ( entry ) => entry !== position && entry !== scale && entry.name && vertexShader.includes( entry.name + ' * vec3<f32>( abs' ) ) || null;
+	return { position, scale, normal, count };
+}
+
+function __makeShaderInstancedShadowProxy( sourceObject, geometry, material ) {
+	if ( ! sourceObject || ! __fullThreeMod ) return null;
+	const { InstancedMesh: FullInstancedMesh, Matrix4: FullMatrix4 } = __fullThreeMod;
+	if ( ! FullInstancedMesh || ! FullMatrix4 ) return null;
+	const proxy = __shaderInstancedShadowProxyAttributes( sourceObject );
+	if ( ! proxy ) return null;
+	const posArray = __nodeAttributeSnapshotArray( proxy.position );
+	const posSize = proxy.position.itemSize || 3;
+	const scaleArray = __nodeAttributeSnapshotArray( proxy.scale );
+	const scaleSize = proxy.scale && proxy.scale.itemSize || 0;
+	const normalArray = __nodeAttributeSnapshotArray( proxy.normal );
+	const normalSize = proxy.normal && proxy.normal.itemSize || 0;
+	if ( ! posArray || posSize < 3 ) return null;
+	let standin = null;
+	try {
+		standin = new FullInstancedMesh( geometry, material, proxy.count );
+		const matrix = new FullMatrix4();
+		for ( let i = 0; i < proxy.count; i ++ ) {
+			const posOffset = i * posSize;
+			let instanceScale = 1;
+			let normalOffset = 0;
+			if ( scaleArray && scaleSize > 0 ) {
+				const scaleValue = Math.abs( Number( scaleArray[ i * scaleSize ] ) );
+				if ( Number.isFinite( scaleValue ) && scaleValue > 0 ) instanceScale = 1 + scaleValue * 2;
+				if ( scaleSize > 2 ) {
+					const seed = Number( scaleArray[ i * scaleSize + 2 ] );
+					if ( Number.isFinite( seed ) ) normalOffset = Math.abs( Math.sin( seed * 2 ) * 1.5 );
+				}
+			}
+			const normalOffsetBase = i * normalSize;
+			const offsetX = normalArray && normalSize >= 3 ? ( Number( normalArray[ normalOffsetBase ] ) || 0 ) * normalOffset : 0;
+			const offsetY = normalArray && normalSize >= 3 ? ( Number( normalArray[ normalOffsetBase + 1 ] ) || 0 ) * normalOffset : 0;
+			const offsetZ = normalArray && normalSize >= 3 ? ( Number( normalArray[ normalOffsetBase + 2 ] ) || 0 ) * normalOffset : 0;
+			matrix.makeScale( instanceScale, instanceScale, instanceScale );
+			matrix.setPosition( ( Number( posArray[ posOffset ] ) || 0 ) + offsetX, ( Number( posArray[ posOffset + 1 ] ) || 0 ) + offsetY, ( Number( posArray[ posOffset + 2 ] ) || 0 ) + offsetZ );
+			standin.setMatrixAt( i, matrix );
+		}
+		standin.count = proxy.count;
+		if ( standin.instanceMatrix ) standin.instanceMatrix.needsUpdate = true;
+		return standin;
+	} catch ( _ ) {
+		return null;
+	}
+}
+
 function __buildShadowScene( userScene ) {
 	if ( ! __fullThreeMod ) return null;
 	// MeshLambertNodeMaterial samples lights and shadows — without a shadow-
@@ -5746,7 +5852,10 @@ function __buildShadowScene( userScene ) {
 					} catch ( _ ) {}
 				}
 			}
-			if ( ! standin ) standin = new FullMesh( __cloneGeometryForFullRenderer( o.geometry ), standinMaterial );
+			if ( ! standin ) {
+				const fullGeometry = __cloneGeometryForFullRenderer( o.geometry );
+				standin = __makeShaderInstancedShadowProxy( o, fullGeometry, standinMaterial ) || new FullMesh( fullGeometry, standinMaterial );
+			}
 			standin.castShadow = !! o.castShadow;
 			standin.receiveShadow = !! o.receiveShadow;
 			// Decompose world matrix onto local position/quaternion/scale —
@@ -6016,7 +6125,7 @@ function __sceneSignature( scene ) {
 		} else if ( ( o.isMesh === true || o.isSkinnedMesh === true ) && o.geometry && ( o.castShadow === true || o.receiveShadow === true ) ) {
 			meshes ++;
 			if ( o.castShadow === true ) casters ++;
-			parts.push( 'm' + ( o.uuid || o.id || meshes ) + ':' + ( o.castShadow === true ? 'c' : 'r' ) + ':' + __signatureMatrix( o ) );
+			parts.push( 'm' + ( o.uuid || o.id || meshes ) + ':' + ( o.castShadow === true ? 'c' : 'r' ) + ':' + ( o.count || 0 ) + ':' + __signatureMatrix( o ) );
 		}
 	} );
 	return { lights, meshes, casters, value: lights + ':' + meshes + ':' + casters + ':' + parts.join( '|' ) };
@@ -9061,6 +9170,9 @@ async function visitExample( browser, name, mode, waitMs ) {
 		}
 		if ( process.env.TSLP_DEBUG_SHADOW_BINDINGS === '1' && mode === 'replay' ) {
 			await page.addInitScript( () => { globalThis.__TSLP_DEBUG_SHADOW_BINDINGS = true; window.__TSLP_DEBUG_SHADOW_BINDINGS = true; } );
+		}
+		if ( process.env.TSLP_DEBUG_REFLECTOR_BINDINGS === '1' && mode === 'replay' ) {
+			await page.addInitScript( () => { globalThis.__TSLP_DEBUG_REFLECTOR_BINDINGS = true; window.__TSLP_DEBUG_REFLECTOR_BINDINGS = true; } );
 		}
 		await page.addInitScript( ( { step, base, freezeAt, quiescentMs, settleFrames, waitForRenderableObjects } ) => {
 

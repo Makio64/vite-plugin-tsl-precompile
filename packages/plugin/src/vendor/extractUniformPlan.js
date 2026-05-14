@@ -842,6 +842,13 @@ function textureIdentity( texture ) {
 	if ( typeof texture.generateMipmaps === 'boolean' ) out.generateMipmaps = texture.generateMipmaps;
 	if ( typeof texture.colorSpace === 'string' ) out.colorSpace = texture.colorSpace;
 	if ( typeof texture.flipY === 'boolean' ) out.flipY = texture.flipY;
+	if ( image && typeof image.width === 'number' && typeof image.height === 'number' ) {
+
+		out.imageWidth = image.width;
+		out.imageHeight = image.height;
+		if ( typeof image.depth === 'number' ) out.imageDepth = image.depth;
+
+	}
 
 	return Object.keys( out ).length > 0 ? out : null;
 
@@ -1292,6 +1299,15 @@ export function extractUniformPlan( state, context = null ) {
 								textureUuid: tex.uuid,
 								reflectorIndex,
 							};
+							if ( baseNode ) {
+
+								if ( typeof baseNode.generateMipmaps === 'boolean' ) source.generateMipmaps = baseNode.generateMipmaps;
+								if ( typeof baseNode.resolutionScale === 'number' ) source.resolutionScale = baseNode.resolutionScale;
+								if ( typeof baseNode.samples === 'number' ) source.samples = baseNode.samples;
+								if ( typeof baseNode.bounces === 'boolean' ) source.bounces = baseNode.bounces;
+								if ( typeof baseNode.depth === 'boolean' ) source.depth = baseNode.depth;
+
+							}
 
 						} else if ( tex.isFramebufferTexture === true
 							|| ( textureNode && ( textureNode.isViewportTextureNode === true

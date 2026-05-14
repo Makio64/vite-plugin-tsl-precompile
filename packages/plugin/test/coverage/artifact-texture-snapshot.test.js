@@ -20,6 +20,8 @@ test( 'artifact.texture sources carry bounded static DataTexture snapshots', asy
 		.flatMap( ( group ) => group.textures || [] )
 		.find( ( entry ) => entry.source && entry.source.kind === 'artifact.texture' );
 	assert.ok( textureEntry, 'expected artifact.texture binding' );
+	assert.equal( textureEntry.source.imageWidth, 2 );
+	assert.equal( textureEntry.source.imageHeight, 1 );
 	assert.equal( textureEntry.source.snapshot.width, 2 );
 	assert.equal( textureEntry.source.snapshot.height, 1 );
 	assert.deepEqual( textureEntry.source.snapshot.data.slice( 0, 8 ), [ 255, 0, 0, 255, 0, 255, 0, 255 ] );

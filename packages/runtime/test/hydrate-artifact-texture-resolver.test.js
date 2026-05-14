@@ -50,6 +50,39 @@ test( 'artifact texture resolver reports render-target sidecar refs before gener
 
 } );
 
+test( 'artifact texture resolver rejects wrong-sized PMREM material-node candidates', () => {
+
+	const staleNodePMREM = { isTexture: true, name: 'PMREM.cubeUv', mapping: 306, image: { width: 256, height: 256 } };
+	const wiredPMREM = { isTexture: true, name: 'PMREM.cubeUv', mapping: 306, image: { width: 1536, height: 2048 } };
+	const artifact = {
+		fragmentShader: 'var nodeTexture0: texture_2d<f32>;',
+		_textureRefs: new Map( [ [ 'pmrem-a', wiredPMREM ] ] ),
+	};
+	const result = resolveArtifactTextureBinding( {
+		artifact,
+		bindingName: 'nodeTexture0',
+		source: {
+			kind: 'artifact.texture',
+			textureUuid: 'pmrem-a',
+			textureName: 'PMREM.cubeUv',
+			mapping: 306,
+			imageWidth: 1536,
+			imageHeight: 2048,
+		},
+		deps: {
+			lookupMaterialNodeTexture() {
+
+				return staleNodePMREM;
+
+			},
+		},
+	} );
+
+	assert.equal( result.strategy, 'texture-ref' );
+	assert.equal( result.texture, wiredPMREM );
+
+} );
+
 test( 'artifact texture resolver records strategies on non-enumerable artifact state', () => {
 
 	const artifact = {};

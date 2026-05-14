@@ -108,7 +108,7 @@ test( 'classifier dispatches reflector.texture only when a base node is found', 
 	const ctxWithout = freshContext( { findReflectorBaseNodeInMaterial: () => null } );
 	const entry = {
 		kind: 'reflector.texture', target: 'sampled-texture', group: 'g', binding: 'rt',
-		source: { kind: 'reflector.texture', reflectorIndex: 0 },
+		source: { kind: 'reflector.texture', reflectorIndex: 0, generateMipmaps: true },
 	};
 	const runtimeBinding = { isSampledTexture: true };
 	const descriptor = { kind: 'sampled-texture', name: 'rt' };
@@ -116,6 +116,7 @@ test( 'classifier dispatches reflector.texture only when a base node is found', 
 	classifyDynamicTextureBinding( entry, runtimeBinding, descriptor, ctxWithout );
 	assert.equal( ctxWith.reflectorTextureBindings.length, 1 );
 	assert.equal( ctxWith.reflectorTextureBindings[ 0 ].baseNode, baseNode );
+	assert.equal( ctxWith.reflectorTextureBindings[ 0 ].source.generateMipmaps, true );
 	assert.equal( ctxWithout.reflectorTextureBindings.length, 0 );
 
 } );

@@ -435,6 +435,11 @@ export function extractArtifact( cacheKey, state, material = null, object = null
 				entry.count = liveAttribute.count || 1;
 				entry.itemSize = liveAttribute.itemSize || itemSizeFromAttributeType( a.type );
 				entry.arrayType = liveAttribute.array && liveAttribute.array.constructor && liveAttribute.array.constructor.name || 'Float32Array';
+				entry.instanced = liveAttribute.isInstancedBufferAttribute === true || liveAttribute.isStorageInstancedBufferAttribute === true;
+				entry.storage = liveAttribute.isStorageBufferAttribute === true || liveAttribute.isStorageInstancedBufferAttribute === true;
+				if ( liveAttribute.normalized === true ) entry.normalized = true;
+				if ( typeof liveAttribute.meshPerAttribute === 'number' && liveAttribute.meshPerAttribute !== 1 ) entry.meshPerAttribute = liveAttribute.meshPerAttribute;
+				if ( typeof liveAttribute.usage === 'number' ) entry.usage = liveAttribute.usage;
 
 				// Record the source-material property whose node sub-tree
 				// references this attribute (e.g. "positionNode" for
@@ -445,7 +450,15 @@ export function extractArtifact( cacheKey, state, material = null, object = null
 				// the user's freshly-constructed node tree and rebind the
 				// live BufferAttribute the user code created.
 				const userPath = findAttributePathOnMaterial( material, liveAttribute );
-				if ( userPath ) entry.userPath = userPath;
+				if ( userPath ) {
+
+					entry.userPath = userPath;
+
+				} else if ( liveAttribute.array && ArrayBuffer.isView( liveAttribute.array ) ) {
+
+					entry.arraySnapshot = Array.from( liveAttribute.array );
+
+				}
 
 				Object.defineProperty( entry, '_liveAttribute', {
 					value: liveAttribute,

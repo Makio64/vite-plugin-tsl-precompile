@@ -58,7 +58,7 @@ test( 'runtime hydrator rehydrates JSON node attributes with storage-buffer fall
 		vertexShader: 'vertex',
 		fragmentShader: 'fragment',
 		attributes: [
-			{ name: 'nodeAttribute0', type: 'vec3', source: 'node', count: 4, itemSize: 3, arrayType: 'Float32Array' },
+			{ name: 'nodeAttribute0', type: 'vec3', source: 'node', count: 4, itemSize: 3, arrayType: 'Float32Array', arraySnapshot: [ 1, 2, 3, 4, 5, 6 ] },
 		],
 		bindings: [],
 		uniformPlan: [],
@@ -68,6 +68,106 @@ test( 'runtime hydrator rehydrates JSON node attributes with storage-buffer fall
 	assert.equal( nodeAttribute.node.attribute.isStorageBufferAttribute, true );
 	assert.equal( nodeAttribute.node.attribute.itemSize, 3 );
 	assert.equal( nodeAttribute.node.attribute.count, 4 );
+	assert.deepEqual( Array.from( nodeAttribute.node.attribute.array.slice( 0, 6 ) ), [ 1, 2, 3, 4, 5, 6 ] );
+
+} );
+
+test( 'runtime hydrator preserves anonymous instanced node attributes from snapshots', () => {
+
+	const state = hydrateNodeBuilderState( {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		attributes: [
+			{ name: 'nodeAttribute0', type: 'vec3', source: 'node', count: 2, itemSize: 3, arrayType: 'Float32Array', instanced: true, storage: false, arraySnapshot: [ 1, 2, 3, 4, 5, 6 ] },
+		],
+		bindings: [],
+		uniformPlan: [],
+	} );
+
+	const nodeAttribute = state.nodeAttributes[ 0 ].node.attribute;
+	assert.equal( nodeAttribute.isInstancedBufferAttribute, true );
+	assert.notEqual( nodeAttribute.isStorageBufferAttribute, true );
+	assert.equal( nodeAttribute.itemSize, 3 );
+	assert.equal( nodeAttribute.count, 2 );
+	assert.deepEqual( Array.from( nodeAttribute.array ), [ 1, 2, 3, 4, 5, 6 ] );
+
+} );
+
+test( 'runtime hydrator prefers anonymous attribute snapshots over shape-only live matches', () => {
+
+	const liveAttribute = {
+		isBufferAttribute: true,
+		isInstancedBufferAttribute: true,
+		count: 2,
+		itemSize: 3,
+		array: new Float32Array( [ 9, 9, 9, 8, 8, 8 ] ),
+	};
+	const sourceMaterial = {
+		positionNode: {
+			isNode: true,
+			traverse( visitor ) {
+
+				visitor( { attribute: liveAttribute } );
+
+			},
+		},
+	};
+	const artifact = {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		attributes: [
+			{ name: 'nodeAttribute0', type: 'vec3', source: 'node', count: 2, itemSize: 3, arrayType: 'Float32Array', instanced: true, storage: false, arraySnapshot: [ 1, 2, 3, 4, 5, 6 ] },
+		],
+		bindings: [],
+		uniformPlan: [],
+	};
+	Object.defineProperty( artifact.attributes[ 0 ], '_liveAttribute', {
+		value: liveAttribute,
+		enumerable: false,
+		configurable: true,
+		writable: true,
+	} );
+
+	const state = hydrateNodeBuilderState( artifact, sourceMaterial );
+
+	const nodeAttribute = state.nodeAttributes[ 0 ].node.attribute;
+	assert.notEqual( nodeAttribute, liveAttribute );
+	assert.deepEqual( Array.from( nodeAttribute.array ), [ 1, 2, 3, 4, 5, 6 ] );
+
+} );
+
+test( 'runtime hydrator restores captured draw count for anonymous instanced snapshots', () => {
+
+	const object = { count: 5, geometry: {} };
+	hydrateNodeBuilderState( {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		attributes: [
+			{ name: 'nodeAttribute0', type: 'vec3', source: 'node', count: 2, itemSize: 3, arrayType: 'Float32Array', instanced: true, storage: false, arraySnapshot: [ 1, 2, 3, 4, 5, 6 ] },
+			{ name: 'nodeAttribute1', type: 'vec3', source: 'node', count: 2, itemSize: 3, arrayType: 'Float32Array', instanced: true, storage: false, arraySnapshot: [ 6, 5, 4, 3, 2, 1 ] },
+		],
+		bindings: [],
+		uniformPlan: [],
+	}, null, object );
+
+	assert.equal( object.count, 2 );
+
+} );
+
+test( 'runtime hydrator leaves live-path instanced draw counts alone', () => {
+
+	const object = { count: 5, geometry: {} };
+	hydrateNodeBuilderState( {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		attributes: [
+			{ name: 'nodeAttribute0', type: 'vec3', source: 'node', count: 2, itemSize: 3, arrayType: 'Float32Array', instanced: true, storage: false, userPath: [ 'positionNode' ] },
+		],
+		bindings: [],
+		uniformPlan: [],
+	}, null, object );
+
+	assert.equal( object.count, 5 );
 
 } );
 

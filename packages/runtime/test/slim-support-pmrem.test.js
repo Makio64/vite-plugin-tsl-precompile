@@ -125,6 +125,27 @@ test( 'selectPMREMTexturesForArtifact chooses material node, env-map, then scene
 
 } );
 
+test( 'selectPMREMTexturesForArtifact rejects wrong-sized material node PMREMs when the artifact has dimensions', () => {
+
+	const captured = artifact( [ { kind: 'artifact.texture', textureUuid: 'env', mapping: 306, imageWidth: 1536, imageHeight: 2048 } ] );
+	const staleNodePmrem = texture( { uuid: 'stale-node-pmrem', mapping: 306, image: { width: 256, height: 256 } } );
+	const sceneSource = texture( { uuid: 'scene-source' } );
+	const scenePmrem = texture( { uuid: 'scene-pmrem', mapping: 306, image: { width: 1536, height: 2048 } } );
+	const cache = new Map( [ [ sceneSource, scenePmrem ] ] );
+
+	const selected = selectPMREMTexturesForArtifact( captured, {
+		material: { colorNode: {} },
+		collectMaterialNodeTextures: () => [ staleNodePmrem ],
+		getCachedPMREMForSource: ( source ) => cache.get( source ) || null,
+		environmentSources: [ sceneSource ],
+	} );
+
+	assert.equal( selected.strategy, 'scene-environment' );
+	assert.deepEqual( selected.nodePmrems, [ staleNodePmrem ] );
+	assert.deepEqual( selected.pmremTextures, [ scenePmrem ] );
+
+} );
+
 test( 'createPMREMSupport caches generation and wires artifacts once per signature', async () => {
 
 	const diagnostics = {};

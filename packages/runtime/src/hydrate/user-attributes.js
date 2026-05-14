@@ -30,8 +30,9 @@
  * @module Hydrate.UserAttributes
  */
 
-import { InstancedBufferAttribute } from 'three';
+import { BufferAttribute, InstancedBufferAttribute } from 'three';
 import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttribute.js';
+import StorageInstancedBufferAttribute from 'three/src/renderers/common/StorageInstancedBufferAttribute.js';
 
 import { resolveTypedArrayCtor } from './typed-arrays.js';
 
@@ -71,6 +72,7 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 
 		if ( ! entry || entry.source !== 'node' ) continue;
 		if ( entry._liveAttribute && entry._liveAttribute.isBufferAttribute === true ) continue;
+		if ( ! entry.userPath && entry.arraySnapshot ) continue;
 
 		let live = null;
 		const path = entry.userPath;
@@ -103,6 +105,57 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 		} );
 
 	}
+
+}
+
+/**
+ * Anonymous captured instanced attributes are self-contained artifact data.
+ * If a fresh replay page procedurally rebuilds a different object.count, the
+ * renderer will draw the right buffers with the wrong instance count. Restore
+ * the captured count when every captured anonymous instanced attribute agrees.
+ *
+ * @param {Object} artifact
+ * @param {?Object} object
+ * @returns {boolean} true when a count was applied
+ */
+export function applyCapturedInstancedDrawCount( artifact, object ) {
+
+	if ( ! object ) return false;
+	const count = capturedAnonymousInstancedCount( artifact );
+	if ( count === null ) return false;
+
+	const geometry = object.geometry || null;
+	if ( geometry && geometry.isInstancedBufferGeometry === true ) {
+
+		if ( geometry.instanceCount !== count ) geometry.instanceCount = count;
+		return true;
+
+	}
+
+	if ( object.count !== count ) object.count = count;
+	return true;
+
+}
+
+function capturedAnonymousInstancedCount( artifact ) {
+
+	const entries = Array.isArray( artifact && artifact.attributes )
+		? artifact.attributes
+		: Array.isArray( artifact && artifact.nodeAttributes ) ? artifact.nodeAttributes : null;
+	if ( ! entries || entries.length === 0 ) return null;
+
+	let count = null;
+	for ( const entry of entries ) {
+
+		if ( ! entry || entry.source !== 'node' || entry.instanced !== true ) continue;
+		if ( entry.userPath ) continue;
+		if ( ! entry.arraySnapshot && ! entry._liveArray ) continue;
+		if ( ! Number.isFinite( entry.count ) || entry.count <= 0 ) continue;
+		if ( count === null ) count = entry.count;
+		else if ( count !== entry.count ) return null;
+
+	}
+	return count;
 
 }
 
@@ -323,21 +376,81 @@ export function hydrateNodeAttributes( attributes ) {
 
 		if ( ! attribute || attribute.source !== 'node' ) return attribute;
 
-		const liveAttribute = attribute._liveAttribute || ( attribute.node && attribute.node.attribute );
+		const hasCapturedAnonymousSnapshot = ! attribute.userPath && ( attribute.arraySnapshot || attribute._liveArray );
+		const liveAttribute = hasCapturedAnonymousSnapshot
+			? null
+			: attribute._liveAttribute || ( attribute.node && attribute.node.attribute );
 		if ( liveAttribute ) return { ...attribute, node: { attribute: liveAttribute } };
 
 		const itemSize = attribute.itemSize || itemSizeFromAttributeType( attribute.type );
 		const count = Math.max( 1, attribute.count || 1 );
 		const TypeArray = resolveTypedArrayCtor( attribute.arrayType );
+		const fallbackAttribute = createFallbackNodeAttribute( attribute, count, itemSize, TypeArray );
+		seedAttributeArray( fallbackAttribute, attribute.arraySnapshot || attribute._liveArray );
 
 		return {
 			...attribute,
 			node: {
-				attribute: new StorageBufferAttribute( count, itemSize, TypeArray ),
+				attribute: fallbackAttribute,
 			},
 		};
 
 	} );
+
+}
+
+function createFallbackNodeAttribute( entry, count, itemSize, TypeArray ) {
+
+	let attribute;
+	const normalized = entry.normalized === true;
+	if ( entry.storage === true && entry.instanced === true ) {
+
+		attribute = new StorageInstancedBufferAttribute( count, itemSize, TypeArray );
+
+	} else if ( entry.storage === true || ( entry.instanced !== true && entry.storage !== false ) ) {
+
+		attribute = new StorageBufferAttribute( count, itemSize, TypeArray );
+
+	} else if ( entry.instanced === true ) {
+
+		attribute = new InstancedBufferAttribute( new TypeArray( count * itemSize ), itemSize, normalized, entry.meshPerAttribute || 1 );
+
+	} else {
+
+		attribute = new BufferAttribute( new TypeArray( count * itemSize ), itemSize, normalized );
+
+	}
+
+	if ( typeof entry.usage === 'number' && typeof attribute.setUsage === 'function' ) attribute.setUsage( entry.usage );
+	return attribute;
+
+}
+
+function seedAttributeArray( attribute, sourceArray ) {
+
+	if ( ! attribute || ! attribute.array || ! sourceArray ) return attribute;
+
+	if ( ArrayBuffer.isView( sourceArray ) || Array.isArray( sourceArray ) ) {
+
+		attribute.array.set( sourceArray.slice ? sourceArray.slice( 0, attribute.array.length ) : sourceArray.subarray( 0, attribute.array.length ) );
+		attribute.needsUpdate = true;
+		return attribute;
+
+	}
+
+	if ( typeof sourceArray === 'object' ) {
+
+		for ( const key of Object.keys( sourceArray ) ) {
+
+			const index = + key;
+			if ( index >= 0 && index < attribute.array.length ) attribute.array[ index ] = sourceArray[ key ];
+
+		}
+		attribute.needsUpdate = true;
+
+	}
+
+	return attribute;
 
 }
 
