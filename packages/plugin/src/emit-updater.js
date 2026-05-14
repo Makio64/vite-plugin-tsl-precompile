@@ -456,12 +456,27 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 		case 'object.normalMatrix':
 		case 'object3d.normalMatrix':
 			usedWriters.add( 'writeMat3' );
-			return `if (frame.object && frame.object.normalMatrix && frame.object.matrixWorld) frame.object.normalMatrix.getNormalMatrix(frame.object.matrixWorld); writeMat3(view, ${ off }, frame.object && frame.object.normalMatrix);`;
+			// Recompute the normal matrix from the live world matrix BEFORE
+			// writing it. Three.js's renderer keeps `object.normalMatrix` up to
+			// date for standard meshes, but several PBR paths read it AFTER it
+			// went stale (notably webgpu_materials_envmaps_bpcem lifted from
+			// 11.98 → 75.03 dB after this recompute landed). Skip the
+			// recompute for meshes whose renderer-path already encodes
+			// additional transforms in their matrices: SkinnedMesh
+			// (bone-space offsets), InstancedMesh (instanceMatrix), and
+			// Points-material draws (billboard alignment) — clobbering those
+			// breaks webgpu_skinning_points and friends.
+			return `if (frame.object && frame.object.normalMatrix && frame.object.matrixWorld && frame.object.isSkinnedMesh !== true && frame.object.isInstancedMesh !== true && (!frame.object.material || frame.object.material.isPointsNodeMaterial !== true)) frame.object.normalMatrix.getNormalMatrix(frame.object.matrixWorld); writeMat3(view, ${ off }, frame.object && frame.object.normalMatrix);`;
 
 		case 'object.modelViewMatrix':
 		case 'object3d.modelViewMatrix':
 			usedWriters.add( 'writeMat4' );
-			return `if (frame.object && frame.object.modelViewMatrix && frame.object.matrixWorld && frame.camera && frame.camera.matrixWorldInverse) frame.object.modelViewMatrix.multiplyMatrices(frame.camera.matrixWorldInverse, frame.object.matrixWorld); writeMat4(view, ${ off }, frame.object && frame.object.modelViewMatrix);`;
+			// Same gate as normalMatrix above. The recompute is required for
+			// standard meshes (BPCEM, materials with stale matrix arriving
+			// at the updater) but the renderer's special-case meshes already
+			// have a populated modelViewMatrix that encodes more than
+			// `camera.matrixWorldInverse * matrixWorld`.
+			return `if (frame.object && frame.object.modelViewMatrix && frame.object.matrixWorld && frame.camera && frame.camera.matrixWorldInverse && frame.object.isSkinnedMesh !== true && frame.object.isInstancedMesh !== true && (!frame.object.material || frame.object.material.isPointsNodeMaterial !== true)) frame.object.modelViewMatrix.multiplyMatrices(frame.camera.matrixWorldInverse, frame.object.matrixWorld); writeMat4(view, ${ off }, frame.object && frame.object.modelViewMatrix);`;
 
 		// Object3DNode — `scope` picks which object metric.
 		case 'object3d.position':

@@ -9381,9 +9381,15 @@ export class RenderPipeline extends Slim.RenderPipeline {
 					}
 					__renderBloomNodesForPipeline( this.renderer, bloomNodes );
 					__renderOutlineNodesForPipeline( this.renderer, outlineNodes );
-					__renderSSRNodesForPipeline( this.renderer, ssrNodes );
-					__renderDOFNodesForPipeline( this.renderer, dofNodes );
+					// Wave 5 Phase A3: gate WIP postprocess fallbacks.
+					// SSR/DOF replay scaffolding (commit 2c15bb25) regressed
+					// afterimage/SMAA to <30 dB. TRAA stays dispatched.
+					// Re-enable with globalThis.__tslpEnableWipPostprocessFallbacks=true.
 					__renderTRAANodesForPipeline( this.renderer, traaNodes );
+					if ( typeof globalThis !== 'undefined' && globalThis.__tslpEnableWipPostprocessFallbacks === true ) {
+						__renderSSRNodesForPipeline( this.renderer, ssrNodes );
+						__renderDOFNodesForPipeline( this.renderer, dofNodes );
+					}
 					if ( outlineNodes.length > 0 ) {
 						// Re-attach graph texture refs so the slim post-process artifact
 						// sees the freshly-shared _renderTargetComposite.texture from the

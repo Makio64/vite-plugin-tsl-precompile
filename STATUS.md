@@ -6,6 +6,42 @@ Last updated: 2026-05-14
 
 ---
 
+## Supported feature matrix (Wave 5)
+
+The plugin's coverage clusters into three tiers. Adopters should know which tier their app falls into before adopting.
+
+### Tier A — green for production v0.1 (recommended for "ship today")
+
+Materials that consistently match stock three.js at PSNR ≥ 30 dB:
+
+- **PBR materials**: `MeshStandardNodeMaterial`, `MeshPhysicalNodeMaterial`, `MeshPhongNodeMaterial`, `MeshLambertNodeMaterial`, `MeshBasicNodeMaterial`, `MeshNormalNodeMaterial`, `MeshMatcapNodeMaterial`, `MeshToonNodeMaterial`, `MeshSSSNodeMaterial`, `SpriteNodeMaterial`, `LineBasicNodeMaterial`, `Line2NodeMaterial`, `PointsNodeMaterial`, `ShadowNodeMaterial` — with map / normalMap / roughnessMap / metalnessMap / aoMap / emissiveMap / envMap.
+- **PMREM / IBL**: equirectangular + cube source environments through `PMREMGenerator`. Per-material `envMap` and scene-level `scene.environment`.
+- **Lighting**: directional, spot, point, hemisphere, rect-area, IES spot, light probe. Shadows: directional / spot / point with PCF / PCF-soft / VSM. Selective lighting.
+- **Reflections & mirrors**: `webgpu_reflection*`, `webgpu_mirror`, `webgpu_refraction`. `ReflectorBaseNode` per-camera RTs.
+- **Postprocessing**: bloom (3 variants), outline, TRAA, FXAA, sobel, chromatic aberration, 3D LUT, masking, pixelation, radial blur, transition, anamorphic, SSAA. AO (just above gate).
+- **MRT**: multi-render-target with up to N attachments per pass, including selective bloom & transmission.
+- **Transmission & refraction**: viewport texture rebinding.
+- **Animation**: skinning (regular meshes + points), morph targets, instancing (regular).
+- **Scene shaping**: clipping groups, fog (height fog), cubemap adjustments, layers, sprites.
+
+If your app uses only Tier A features, the slim bundle will replay pixel-accurate against stock three.js. Use `fullRendererFallback: 'auto'` (default since Wave 5) to safely proxy anything unexpected to a full renderer.
+
+### Tier B — experimental (works in many cases, doesn't guarantee parity)
+
+- **Compute kernels** with storage buffers / storage instanced buffer attributes — most work, but some examples (`webgpu_compute_birds`, `webgpu_compute_particles`, `webgpu_compute_reduce`, `webgpu_compute_sort_bitonic`, `webgpu_compute_texture_pingpong`, `webgpu_compute_water`) currently below the gate. Architectural follow-up tracked in [BACKLOG.md].
+- **Advanced postprocessing**: DOF (`webgpu_postprocessing_dof`, `webgpu_postprocessing_dof_basic`), SSR, SSGI ballpool, godrays, afterimage, SMAA, motion blur, retro, FSR1, TAAU. Some work, some need scaffolding completion.
+- **Animation phase determinism**: time-driven examples (raging sea, caustics, galaxy, procedural terrain, cubemap dynamic) may show animation-phase drift between capture and replay frames even when the rendering itself is correct.
+- **Custom shader graphs in Fn closures** with multiple same-shape instance attributes — the extractor's `findAttributePathOnMaterial` doesn't recurse into `Fn(...)` bodies, so the runtime falls back to a snapshot path that freezes initial data (works for reflection-style cases, breaks for compute-driven attributes).
+
+### Tier C — known unsupported
+
+- **Dynamic shader conditional logic**: `material.colorNode = mode ? A : B` where `mode` changes at runtime. The captured artifact only holds the WGSL for `mode`'s value at capture time. (Tier C variant-keyed artifacts is the foundation that would unlock this — landed as plumbing in `6a15d662`; needs multi-state warmup to populate.)
+- **Real-time material graph mutation**: re-assigning `material.fragmentNode` after `.precompile()`.
+- **Scenes with > 100k materials**: capture takes minutes; not optimised for batch workflows.
+- **Backend-specific WGSL**: code paths that depend on three.js's WebGL fallback (slim bundle is WebGPU-only).
+
+---
+
 ## Focused visual queue (2026-05-12)
 
 This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage snapshot generated on 2026-05-12 from saved capture/replay shots. E2E and coverage-summary PSNR now share the same Node-side comparator in [packages/examples/batch/psnr.mjs](packages/examples/batch/psnr.mjs).

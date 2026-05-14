@@ -68,11 +68,66 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 
 	const sourceObject = sourceMaterial.__tslpPrecompileObject || null;
 
+	// Wave 5 Phase B2 — anonymous storage attribute live binding.
+	// Before the snapshot-fallback skip below, also try to find a LIVE
+	// storage/instanced-storage attribute in the source material's node
+	// graph via DFS-encounter-order. This catches compute-driven
+	// attributes (webgpu_compute_birds + compute_particles family) where:
+	//   - `userPath` is absent (compute output flows through Fn closures)
+	//   - `arraySnapshot` is present (extractor's fallback)
+	//   - the LIVE source material's node tree DOES expose a
+	//     StorageInstancedBufferAttribute or StorageBufferAttribute
+	//
+	// When found, set `_liveAttribute` so the snapshot fallback in
+	// `hydrateNodeAttributes` defers to the live data (compute kernel
+	// keeps writing each frame). Bump the attribute's `version` so slim's
+	// bind-group cache rebuilds against the live GPU buffer.
+	const anonStorageCandidates = new Map();
+	let anonStorageDfsIndex = 0;
+	const collectStorageFromRoots = () => {
+
+		if ( anonStorageCandidates.size > 0 ) return; // memoise
+		for ( const root of collectNodeRoots() ) {
+
+			collectStorageAttributesInOrder( root, anonStorageCandidates, { dfsIndex: () => anonStorageDfsIndex ++ } );
+
+		}
+
+	};
+	let anonStorageShapeIndex = new Map();
+
 	for ( const entry of entries ) {
 
 		if ( ! entry || entry.source !== 'node' ) continue;
 		if ( entry._liveAttribute && entry._liveAttribute.isBufferAttribute === true ) continue;
-		if ( ! entry.userPath && entry.arraySnapshot ) continue;
+
+		// Anonymous + snapshot path: try the live storage lookup first.
+		if ( ! entry.userPath && entry.arraySnapshot ) {
+
+			collectStorageFromRoots();
+			const shapeKey = entry.itemSize + ':' + entry.count + ':' + ( entry.arrayType || '' );
+			const slotIdx = anonStorageShapeIndex.get( shapeKey ) || 0;
+			anonStorageShapeIndex.set( shapeKey, slotIdx + 1 );
+			const matchingStorage = findNthStorageMatchingShape( anonStorageCandidates, entry, slotIdx );
+			if ( matchingStorage ) {
+
+				Object.defineProperty( entry, '_liveAttribute', {
+					value: matchingStorage,
+					enumerable: false,
+					configurable: true,
+					writable: true,
+				} );
+				// Force bind-group rebuild: slim's `Bindings._update` only
+				// rebuilds when `binding.version !== attribute.version`. The
+				// compute kernel doesn't bump `version` on its own — bump
+				// here so the bind group picks up the live buffer on the
+				// first hydrate.
+				if ( typeof matchingStorage.version === 'number' ) matchingStorage.version = matchingStorage.version + 1;
+
+			}
+			continue;
+
+		}
 
 		let live = null;
 		const path = entry.userPath;
@@ -272,6 +327,80 @@ function findFirstAttributeMatchingEntry( node, entry ) {
 }
 
 /**
+ * Wave 5 Phase B2 — DFS-walk a node tree collecting StorageBufferAttribute /
+ * StorageInstancedBufferAttribute candidates in encounter order. Used to
+ * disambiguate multiple same-shape compute-driven attributes (e.g.
+ * webgpu_compute_birds: 4 anonymous vec4 entries — position, velocity, …
+ * — each backed by a distinct compute storage buffer).
+ *
+ * @param {?Object} node - The TSL node tree root (e.g. material.colorNode)
+ * @param {Map<Object, { index: number }>} candidates - accumulator, keyed by
+ *   live attribute reference to dedupe across passes
+ * @param {{ dfsIndex: () => number }} ctx - shared encounter-index counter
+ */
+function collectStorageAttributesInOrder( node, candidates, ctx ) {
+
+	const visit = ( n ) => {
+
+		if ( ! n ) return;
+		const cands = [ n.attribute, n.value ];
+		for ( const cand of cands ) {
+
+			if ( ! cand || cand.isBufferAttribute !== true ) continue;
+			if ( cand.isStorageBufferAttribute !== true && cand.isStorageInstancedBufferAttribute !== true ) continue;
+			if ( candidates.has( cand ) ) continue;
+			candidates.set( cand, { index: ctx.dfsIndex() } );
+
+		}
+
+	};
+
+	visit( node );
+	if ( node && typeof node.traverse === 'function' ) {
+
+		try { node.traverse( visit ); } catch ( _ ) { /* tolerate broken traverse */ }
+
+	}
+
+}
+
+/**
+ * Wave 5 Phase B2 — pick the Nth storage candidate whose shape matches the
+ * artifact entry. The Nth-of-same-shape disambiguates encounter-order
+ * collisions when a material exposes multiple same-shape storage attrs.
+ *
+ * @param {Map<Object, { index: number }>} candidates - from `collectStorageAttributesInOrder`
+ * @param {Object} entry - the artifact attribute entry to match
+ * @param {number} slotIdx - 0-based index among same-shape entries
+ * @returns {?Object} matched live storage attribute or null
+ */
+function findNthStorageMatchingShape( candidates, entry, slotIdx ) {
+
+	const wantSize = entry.itemSize || 0;
+	const wantCount = entry.count || 0;
+	const wantArray = entry.arrayType || '';
+
+	const matching = [];
+	for ( const [ cand ] of candidates ) {
+
+		if ( wantSize && cand.itemSize !== wantSize
+			&& ! ( cand.itemSize === 3 && wantSize === 4 ) ) continue;
+		if ( wantCount && cand.count !== wantCount ) continue;
+		if ( wantArray
+			&& cand.array
+			&& cand.array.constructor
+			&& cand.array.constructor.name !== wantArray ) continue;
+		matching.push( cand );
+
+	}
+
+	if ( matching.length === 0 ) return null;
+	if ( slotIdx >= matching.length ) return matching[ matching.length - 1 ];
+	return matching[ slotIdx ];
+
+}
+
+/**
  * Walk every `storageBuffers[]` entry in `artifact.uniformPlan` and seed
  * `entry._liveAttribute` from the user material's TSL node graph.
  *
@@ -376,8 +505,18 @@ export function hydrateNodeAttributes( attributes ) {
 
 		if ( ! attribute || attribute.source !== 'node' ) return attribute;
 
+		// Wave 5 Phase B2 — when the snapshot fallback would normally fire
+		// (no userPath, has arraySnapshot) but `bindUserNodeAttributesToArtifact`
+		// already wired a LIVE storage attribute (compute-driven case:
+		// webgpu_compute_birds + compute_particles family), prefer the live
+		// one. The compute kernel writes to that buffer every frame; the
+		// snapshot is stale capture-time data.
+		const isLiveStorageAttribute = attribute._liveAttribute && (
+			attribute._liveAttribute.isStorageBufferAttribute === true
+			|| attribute._liveAttribute.isStorageInstancedBufferAttribute === true
+		);
 		const hasCapturedAnonymousSnapshot = ! attribute.userPath && ( attribute.arraySnapshot || attribute._liveArray );
-		const liveAttribute = hasCapturedAnonymousSnapshot
+		const liveAttribute = ( hasCapturedAnonymousSnapshot && ! isLiveStorageAttribute )
 			? null
 			: attribute._liveAttribute || ( attribute.node && attribute.node.attribute );
 		if ( liveAttribute ) return { ...attribute, node: { attribute: liveAttribute } };

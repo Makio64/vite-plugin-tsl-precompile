@@ -296,6 +296,14 @@ test( 'emitUpdaterSource — object matrices recompute from live frame object', 
 	assert.match( source, /writeMat3\(view, byteOffset \+ 0, frame\.object && frame\.object\.normalMatrix\);/ );
 	assert.match( source, /writeMat4\(view, byteOffset \+ 48, frame\.object && frame\.object\.modelViewMatrix\);/ );
 
+	// Wave 5 Phase A1: recompute is gated for SkinnedMesh / InstancedMesh /
+	// PointsNodeMaterial — their renderer path already encodes additional
+	// transforms (skinning offsets, instanceMatrix, billboard alignment) that
+	// a naive `camera.matrixWorldInverse * matrixWorld` would clobber.
+	assert.match( source, /frame\.object\.isSkinnedMesh !== true/ );
+	assert.match( source, /frame\.object\.isInstancedMesh !== true/ );
+	assert.match( source, /frame\.object\.material\.isPointsNodeMaterial !== true/ );
+
 } );
 
 test( 'emitUpdaterSource — light.shadowMatrix refreshes non-point lights, leaves point-light matrix untouched', () => {

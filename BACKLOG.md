@@ -72,15 +72,21 @@ The three focused bloom examples (`webgpu_postprocessing_bloom.html`, `_bloom_em
 - **Reference**: webgpu_postprocessing_bloom, webgpu_postprocessing_bloom_emissive, webgpu_postprocessing_bloom_selective.
 
 ### `compute-instance-mesh-buffer` — P2 experimental
-`webgpu_compute_birds.html` is green in the refreshed broad summary, but related compute/storage examples still fail. Keep this task focused on the remaining instance/particle storage-buffer family rather than birds specifically.
+`webgpu_compute_birds.html` REGRESSED from PSNR `inf` to 15.18 dB during the Wedge 1-4 session (snapshot fallback for anonymous instanced attributes, commit `22935858`). Related compute/storage examples (`webgpu_compute_particles*`, `webgpu_compute_sort_bitonic`, `webgpu_compute_reduce`, `webgpu_compute_texture_pingpong`, `webgpu_compute_water`) similarly fail.
 
-Wave 2D (commit aa7abb4) fixed the capture-side throw (`object.computeBoundingSphere is not a function`) by skipping bounding-volume copies on the throwaway mesh. Replay now has artifacts and renders the background, but instance positions don't make it to slim's render path.
+**Investigation history (Wave 5 Phase B2)**:
+- The snapshot fallback in [`hydrate/user-attributes.js`](packages/runtime/src/hydrate/user-attributes.js) freezes 4 anonymous `nodeAttribute0..3` (vec4 count=8192) to capture-time data. The compute kernel keeps writing to live storage attributes, but the hydrated draw reads the frozen snapshot.
+- Wave 5 Phase B2 added a DFS-encounter-order walker (`collectStorageAttributesInOrder` + `findNthStorageMatchingShape`) that locates live `StorageBufferAttribute` / `StorageInstancedBufferAttribute` candidates in the source material's node tree and sets `entry._liveAttribute` before the snapshot path triggers. The `hydrateNodeAttributes` short-circuit now prefers `_liveAttribute` when it's a storage attribute.
+- Birds remains at 15.18 dB despite this infrastructure — the LIVE source material at slim-replay time doesn't expose the compute kernel's storage attributes via its traversable node tree, so the walker returns no candidates.
 
-Hypothesis: the harness's `__syncStorageBuffers` ([run-e2e.mjs:1012](packages/examples/batch/run-e2e.mjs#L1012)) syncs storage attribute *buffers*, but compute-driven instance position attributes may be flagged differently than a normal storage buffer. The slim renderer's vertex pull from the storage attribute may be reading the wrong buffer or zero-length.
+**Real fix shape (3 candidates, ordered by leverage)**:
+1. **Direct compute-output → artifact wiring** at scene-prep time: when the harness calls `__wireComputeAttrsToArtifact` (run-e2e.mjs ~line 2709), it ALREADY locates storage attributes correctly. The issue is timing — slim's `nodeBuilderState` is hydrated BEFORE `__wireComputeAttrsToArtifact` runs. Re-running hydration after compute-wiring (or running compute-wiring FIRST) would surface live attributes.
+2. **Pre-flight compute dispatch** before first hydration so storage attributes are bound in the harness ledger when hydration first reads them.
+3. **Tier C variant-keyed artifact families** (commit `6a15d662` plumbing) with multi-state warmup that captures one variant per compute lifecycle phase (initial / after-first-dispatch).
 
-- **Files**: `packages/examples/batch/run-e2e.mjs` (`__syncStorageBuffers` and/or `__wireComputeAttrsToArtifact`).
-- **Done when**: `webgpu_compute_particles_snow.html`, `webgpu_compute_particles_rain.html`, and `webgpu_compute_particles.html` improve without regressing the now-green birds case.
-- **Reference**: webgpu_compute_particles_snow, webgpu_compute_particles_rain, webgpu_compute_particles, webgpu_compute_birds as a guardrail.
+- **Files**: `packages/examples/batch/run-e2e.mjs` (compute attribute wiring order), possibly `packages/runtime/src/hydrate/user-attributes.js`.
+- **Done when**: `webgpu_compute_birds.html` back to ≥30 dB without regressing currently-green compute examples (`webgpu_compute_audio.html`, `webgpu_compute_texture.html`, `webgpu_compute_texture_3d.html`).
+- **Reference**: webgpu_compute_birds.html, webgpu_compute_particles*.html, webgpu_compute_sort_bitonic.html, webgpu_compute_reduce.html, webgpu_compute_texture_pingpong.html, webgpu_compute_water.html.
 - **Minimal repro**: `packages/examples/compute-debug/instanced.html` (`pnpm test:e2e:compute-debug -- --filter=instanced.html`).
 
 ### `compute-storage-texture-sync` — P2 experimental

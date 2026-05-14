@@ -50,7 +50,14 @@ import { loadAux } from '../aux-loader.js';
 import PrecompiledMaterial from '../_vendor-PrecompiledMaterial.js';
 
 const DEFAULT_OPTS = {
-	fullRendererFallback: false,
+	// Wave 5 Phase B3 — default to `'auto'` so any three.js project that
+	// also configures `threeFullModule` or `loadThreeFullModule` gets the
+	// fallback for free. Slim renders the precompiled fast-path; anything
+	// unrecognised proxies to the full renderer. Set `false` explicitly to
+	// opt out (smaller bundle if you control every material). `'auto'`
+	// silently skips when no `threeFullModule`/`loadThreeFullModule` is
+	// configured — i.e. zero surprise for legacy callers.
+	fullRendererFallback: 'auto',
 	pmrem: true,
 	computeSync: true,
 	textureSharing: true,
@@ -97,7 +104,15 @@ export function createSlimSceneSupport( opts = {} ) {
 	} ) : null;
 
 	// --- full-renderer fallback (lazy, opt-in) ------------------------------
-	const fallback = settings.fullRendererFallback ? createFullRendererFallback( {
+	// `'auto'` means: enable when a full-three module reference is
+	// available (either eagerly via `threeFullModule` or lazily via
+	// `loadThreeFullModule`). Silently no-op when neither is configured so
+	// existing call sites that never expected a fallback don't regress.
+	// Explicit `true` keeps the prior behavior. Explicit `false` opts out.
+	const fallbackEnabled = settings.fullRendererFallback === 'auto'
+		? !! ( settings.threeFullModule || typeof settings.loadThreeFullModule === 'function' )
+		: !! settings.fullRendererFallback;
+	const fallback = fallbackEnabled ? createFullRendererFallback( {
 		slimRenderer: renderer,
 		threeFullModule: settings.threeFullModule,
 		loadThreeFullModule: settings.loadThreeFullModule,
