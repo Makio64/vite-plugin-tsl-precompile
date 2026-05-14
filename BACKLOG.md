@@ -48,20 +48,21 @@ Likely root causes vary by example: material extension uniforms and viewport tex
 - `webgpu_hdr.html` — visual passes (PSNR `inf`); `Proxy(Function)` replay errors whitelisted via [coverage-config.json](packages/examples/batch/coverage-config.json) `expectedReplayErrors`.
 - `webgpu_camera_logarithmicdepthbuffer.html` — passes at 29.66 dB with per-example threshold of 28 via `psnrThresholdOverrides`.
 
-**Still excluded — real runtime bugs:**
+**No longer runtime errors — now visual regressions (2026-05-14 re-check):** the four examples below have moved out of tier-excluded into the broader coverage summary. They render but at low PSNR; they no longer block rendering. Triage as visual regressions, not hard runtime bugs.
 
-- **`webgpu_postprocessing_smaa.html` — P2 slim shader bug.** Invalid ShaderModule errors for `vertex_SMAANode.edges`, `_weights`, `_blend`. Slim runtime fails to emit valid vertex stage for SMAA's three internal passes. Replay produces 0.7% pixels.
-- **`webgpu_postprocessing_afterimage.html` — P2 slim Proxy bug.** Five replay errors textualised as `Proxy(Function)` block rendering (replay 0.8%). Likely the slim Node Proxy fallback ([packages/runtime/src/slim-stubs.js](packages/runtime/src/slim-stubs.js) `wrapWithSlimNodeChainFallback`) returning an unexpected value when AfterImageNode's pass graph evaluates its texture chain.
-- **`webgpu_upscaling_fsr1.html` — P2 slim PassNode binding.** `THREE.TSL: texture(value) expects a valid instance of THREE.Texture()`. FSR1's TSL graph passes a PassNode wrapper where slim TSL expects a raw Texture; hydrator binding gap.
-- **`webgpu_rendertarget_2d-array_3d.html` — P3 harness bug.** "Invalid string length" — JSON.stringify hits V8's 512MB string limit on a particularly large artifact. Harness needs streaming-write or per-artifact size cap.
+| Example | PSNR | Likely cause |
+|---|---|---|
+| `webgpu_postprocessing_smaa.html` | 13.64 dB | Slim SMAA vertex-stage WGSL inaccuracies; rendering, color/edge mismatch |
+| `webgpu_postprocessing_afterimage.html` | 18.85 dB | Slim Node Proxy fallback `wrapWithSlimNodeChainFallback` no longer throws; texture-chain produces wrong frame |
+| `webgpu_upscaling_fsr1.html` | 3.30 dB | PassNode→Texture binding gap in hydrator; scene renders but FSR1 result is essentially blank |
+| `webgpu_rendertarget_2d-array_3d.html` | 27.62 dB | Just below 30 dB; no longer throwing the JSON.stringify 512MB harness error |
 
 **Permanently excluded — example design mismatches slim mode:**
 
 - **`webgpu_texturegrad.html`** — the example explicitly calls `init(true)` to render a side-by-side comparison against `forceWebGL: true`. The slim bundle is WebGPU-only by design (no `WebGLBackend`); the WebGL half can never render under slim. Adopters using `forceWebGL: true` need the full bundle.
 - **`webgpu_tsl_transpiler.html`** — the example renders a TSL preview pane; no `MeshXNodeMaterial` instances exist for auto-mark to capture. The visual passes (PSNR 55 dB) but the harness requires at least one user artifact. Not a precompile target.
 
-- **Files**: depend on the example; see per-bullet pointers above.
-- **Done when**: each remaining real bug clears its specific error and re-enters tier2/tier3.
+- **Done when**: each of the four visual regressions above is either pushed above 30 dB or explicitly documented in the v0.1 known-issues with a tracked fix plan.
 
 ### `postprocess-bloom-broad` — P2
 The three focused bloom examples (`webgpu_postprocessing_bloom.html`, `_bloom_emissive.html`, `_bloom_selective.html`) all pass tier-1 at PSNR `inf` (2026-05-14). Keep them as guardrails. Remaining bloom/postprocess work is the broader pass-chain on outline / SSR / godrays / DOF / SSGI — tracked separately in STATUS section 1.
@@ -97,28 +98,26 @@ Hypothesis: the slim renderer's bind-group cache holds a different GPUTexture in
 ### `pmrem-cubemap-bg` — P1
 The glTF/PMREM cubemap bucket plus `webgpu_pmrem_scene.html` are green guardrails. Remaining work is the broader PMREM/reflection/background family:
 
-- `webgpu_compute_water` (PSNR 22.23 dB) — sky should be smooth blurred PMREM, comes out wrong
-- `webgpu_reflection` (PSNR 16.19 dB) and `webgpu_reflection_roughness` (17.54 dB) — reflection routing still mismatches
+- `webgpu_compute_water` (PSNR 20.24 dB) — sky should be smooth blurred PMREM, comes out wrong
+- `webgpu_reflection` (PSNR 16.28 dB) and `webgpu_reflection_roughness` (13.73 dB) — instanced tree mesh missing from replay (see root cause below)
 
-**Concrete finding (2026-05-14):** visual diff of `webgpu_reflection.html` shows the floor + reflection both render correctly, but the **tree mesh is entirely absent** in replay. Capture has 5 user artifacts including `MeshStandardNodeMaterial:1` and `MeshPhongNodeMaterial:1`. Replay coverage is 85.8% (close to capture 85.7%) but visually the cubes are missing. The tree is an instanced mesh built via `createTreeMesh()` with `Math.random()`-driven geometry. Hypothesis: either auto-mark missed the tree material (despite 5 artifacts), or the slim instanced-mesh draw call short-circuits when the `reflector.target` render-target binding hasn't materialised — the reflection capture path may starve the main scene draw.
+**Root cause (2026-05-14):** the captured artifact for `webgpu_reflection.html:MeshStandardNodeMaterial:1` emits 4 `source: 'node'` attribute entries — `nodeAttribute0` (instanceData), `nodeAttribute3` (instancePosition), `nodeAttribute4` (instanceNormal), `nodeAttribute6` (instanceColor) — all with identical shape (`vec3` / `count: 9500` / `Float32Array`). The extractor's `findAttributePathOnMaterial()` in [packages/plugin/src/vendor/compileTSL.js:571](packages/plugin/src/vendor/compileTSL.js#L571) returns `null` for these entries because the relevant `BufferAttributeNode`s sit inside `Fn(() => { ... })()` closures whose `.traverse()` does not visit closure-referenced subnodes. With no `userPath` recorded, the runtime matcher [packages/runtime/src/hydrate/user-attributes.js `findFirstAttributeMatchingEntry`](packages/runtime/src/hydrate/user-attributes.js#L184) falls back to shape-matching and returns the first encountered `BufferAttributeNode` for every entry — so all four slots get bound to the same underlying buffer.
 
-Scope is PMREM-prefiltered background/environment routing outside the focused glTF/PMREM cubemap bucket. See [LOGS.md](LOGS.md) for the PMREM architecture notes and the clearcoat DFG fix.
+**Fix shape (deferred):** either (a) extend the extractor's path discovery to walk into `Fn` invocation bodies and emit per-entry `attributeOrder` indices that the runtime can match in encounter order, or (b) emit a stable structural fingerprint (`materialProp + dfsIndex`) on each entry. Both require coordinated extractor + runtime changes plus regression coverage for currently-green instanced examples (`webgpu_instancing_*.html`, `webgpu_compute_birds.html`). Not a v0.1 blocker — documented as a known issue.
 
-- **Files**: `packages/examples/batch/run-e2e.mjs` PMREM section (`__kickPMREMGenAsync`, `__wireEnvironmentPMREM`, `__backgroundNeedsPMREM`).
-- **Done when**: the broader PMREM/reflection set is re-graded and representative examples are visually blurred/correctly colored without regressing the three focused green reports.
+- **Files**: `packages/plugin/src/vendor/compileTSL.js` (`findAttributePathOnMaterial` Fn-body traversal), `packages/runtime/src/hydrate/user-attributes.js` (matcher consuming order/fingerprint).
+- **Done when**: `webgpu_reflection.html` and `webgpu_reflection_roughness.html` >= 30 dB without regressing `webgpu_instancing_morph.html`, `webgpu_compute_birds.html`, and the focused PMREM/transmission guards.
 
-### `transmission-viewport-texture` — P1
-Glass, refraction, and viewport-dependent materials are part of the beta PBR slice. The extractor emits `viewport.texture` and the hydrator has a rebinder path; transmission is now above the gate, while refraction remains the active visual miss:
+### `transmission-viewport-texture` — RESOLVED guardrail
+Glass, refraction, and viewport-dependent materials are part of the beta PBR slice. Refraction was previously the active miss; the broad coverage summary on 2026-05-14 reports `webgpu_refraction.html` at PSNR `inf`. All four examples in this cluster are now guardrails:
 
-- `webgpu_materials_transmission.html` (33.77 dB; keep as a guardrail)
-- `webgpu_refraction.html` (14.74 dB)
-- `webgpu_loader_gltf_transmission.html` (34.81 dB; keep as a guardrail)
-- `webgpu_mirror.html` (61.72 dB; keep as a guardrail)
+- `webgpu_materials_transmission.html` (33.77 dB) — guardrail
+- `webgpu_refraction.html` (PSNR `inf`) — guardrail (previously 14.74 dB)
+- `webgpu_loader_gltf_transmission.html` (34.81 dB) — guardrail
+- `webgpu_mirror.html` (PSNR `inf`) — guardrail
 
-Hypothesis: the live `ViewportTextureNode` / `ReflectorBaseNode` render target is being discovered, but bind-group caches or render-order timing keep replay sampling fallback/old framebuffer textures.
-
-- **Files**: `packages/runtime/src/hydrator.js`, `packages/runtime/src/apply-precompiled.js`, `packages/plugin/src/vendor/extractUniformPlan.js`, focused E2E harness helpers if timing diagnosis is needed.
-- **Done when**: transmission/refraction/mirror examples replay with the correct sampled scene content and PSNR is no longer dominated by fallback texture sampling.
+- **Watch**: regressions in `viewport-texture-rebinder.js` (zero-thickness transmission fallback + render-id copy dedupe) and `reflector-texture-rebinder.js` paths.
+- **Files**: [packages/runtime/src/hydrate/rebinders/viewport-texture-rebinder.js](packages/runtime/src/hydrate/rebinders/viewport-texture-rebinder.js), [packages/runtime/src/hydrate/rebinders/reflector-texture-rebinder.js](packages/runtime/src/hydrate/rebinders/reflector-texture-rebinder.js).
 
 ### `mrt-replay-empty` — P3 deferred
 The MRT runtime stub landed in Wave 2E (commit 43129c0): `_vendor-PrecompiledMaterial.js` attaches an inert `mrtNode` stub when `artifact.mrtOutputCount > 1`, `apply-precompiled.js` forwards source `material.mrtNode` onto the wrapper, and `compileTSL.js` binds a 1×1 N-texture warm-up RT before `compileAsync`. Guard set is green and replay retargets global `renderer.setMRT(...)` scenes to the captured multi-output artifact before WebGPU pipeline creation; safe graph traversal avoids expanding accessor-heavy runtime objects.
