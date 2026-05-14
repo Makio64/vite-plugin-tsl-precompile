@@ -456,12 +456,12 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 		case 'object.normalMatrix':
 		case 'object3d.normalMatrix':
 			usedWriters.add( 'writeMat3' );
-			return `writeMat3(view, ${ off }, frame.object.normalMatrix);`;
+			return `if (frame.object && frame.object.normalMatrix && frame.object.matrixWorld) frame.object.normalMatrix.getNormalMatrix(frame.object.matrixWorld); writeMat3(view, ${ off }, frame.object && frame.object.normalMatrix);`;
 
 		case 'object.modelViewMatrix':
 		case 'object3d.modelViewMatrix':
 			usedWriters.add( 'writeMat4' );
-			return `writeMat4(view, ${ off }, frame.object.modelViewMatrix);`;
+			return `if (frame.object && frame.object.modelViewMatrix && frame.object.matrixWorld && frame.camera && frame.camera.matrixWorldInverse) frame.object.modelViewMatrix.multiplyMatrices(frame.camera.matrixWorldInverse, frame.object.matrixWorld); writeMat4(view, ${ off }, frame.object && frame.object.modelViewMatrix);`;
 
 		// Object3DNode — `scope` picks which object metric.
 		case 'object3d.position':
@@ -727,7 +727,14 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 			rendererHelpers.add( 'lightLookup' );
 			usedWriters.add( 'writeMat4' );
 			const idxShadowM = src.lightIndex | 0;
-			return `{ const _l = _tslpFindLight(frame.scene, ${ idxShadowM }); if (_l && _l.shadow && _l.shadow.matrix) writeMat4(view, ${ off }, _l.shadow.matrix); }`;
+			// For non-point lights: refresh `shadow.matrix` via `updateMatrices`
+			// when the shadow map hasn't been built yet (a few frames into init
+			// the matrix can be stale). For point lights: do NOT override
+			// `shadow.matrix` — the renderer's shadow pass already sets it to
+			// the correct per-face transform and an unconditional translation
+			// override produces a near-identity matrix that breaks
+			// `webgpu_shadowmap_pointlight.html`.
+			return `{ const _l = _tslpFindLight(frame.scene, ${ idxShadowM }); if (_l && _l.shadow && _l.shadow.matrix) { if (!_l.shadow.map && typeof _l.shadow.updateMatrices === 'function' && _l.isPointLight !== true && _l.shadow.isPointLightShadow !== true) { _l.shadow.updateMatrices(_l); } writeMat4(view, ${ off }, _l.shadow.matrix); } }`;
 
 		}
 		case 'light.shadowBias':

@@ -1280,7 +1280,7 @@ export class ${ name } {
 import * as Slim from '/__tslp__/three.webgpu.slim.js?v=${ CACHE_BUST }';
 import { TSL as FullTSL, TextureNode as FullTextureNode, BlendMode as FullBlendMode, TempNode as FullTempNode, NodeUpdateType as FullNodeUpdateType, NodeMaterial as FullNodeMaterial, MeshBasicNodeMaterial as FullMeshBasicNodeMaterial, MeshStandardNodeMaterial as FullMeshStandardNodeMaterial, MeshPhysicalNodeMaterial as FullMeshPhysicalNodeMaterial, MeshLambertNodeMaterial as FullMeshLambertNodeMaterial, MeshPhongNodeMaterial as FullMeshPhongNodeMaterial, MeshToonNodeMaterial as FullMeshToonNodeMaterial, MeshNormalNodeMaterial as FullMeshNormalNodeMaterial, MeshMatcapNodeMaterial as FullMeshMatcapNodeMaterial, MeshSSSNodeMaterial as FullMeshSSSNodeMaterial, LineBasicNodeMaterial as FullLineBasicNodeMaterial, LineDashedNodeMaterial as FullLineDashedNodeMaterial, Line2NodeMaterial as FullLine2NodeMaterial, PointsNodeMaterial as FullPointsNodeMaterial, SpriteNodeMaterial as FullSpriteNodeMaterial, ShadowNodeMaterial as FullShadowNodeMaterial, RenderTarget as FullRenderTarget, DepthTexture as FullDepthTexture, ArrayCamera as FullArrayCamera, QuadMesh as FullQuadMesh, RendererUtils as FullRendererUtils, Vector2 as FullVector2, TextureLoader as FullTextureLoader, CubeTextureLoader as FullCubeTextureLoader, DataTextureLoader as FullDataTextureLoader, ImageBitmapLoader as FullImageBitmapLoader } from '/build/three.webgpu.js';
 import { createLiveSceneIndex, textureImageReady as __sharedTextureImageReady, textureImageSrc as __sharedTextureImageSrc, newFallbackTextureImage as __sharedNewFallbackTextureImage } from '/__tslp_runtime/slim-support/live-scene-index.js';
-import { artifactNeedsPMREM as __sharedArtifactNeedsPMREM, artifactPMREMSourceUuids as __sharedArtifactPMREMSourceUuids, attachPMREMRefsByOrder as __sharedAttachPMREMRefsByOrder, createPMREMSupport as __sharedCreatePMREMSupport, isPMREMArtifactTextureSource as __sharedIsPMREMArtifactTextureSource, isPMREMTexture as __sharedIsPMREMTexture, selectPMREMTexturesForArtifact as __sharedSelectPMREMTexturesForArtifact, textureListSignature as __sharedTextureListSignature } from '/__tslp_runtime/slim-support/pmrem.js';
+import { artifactNeedsPMREM as __sharedArtifactNeedsPMREM, artifactPMREMSourceUuids as __sharedArtifactPMREMSourceUuids, attachPMREMRefsByOrder as __sharedAttachPMREMRefsByOrder, collectPMREMSourceTexturesFromMaterial as __sharedCollectPMREMSourceTexturesFromMaterial, collectPMREMSourceTexturesInNode as __sharedCollectPMREMSourceTexturesInNode, createPMREMSupport as __sharedCreatePMREMSupport, isPMREMArtifactTextureSource as __sharedIsPMREMArtifactTextureSource, isPMREMTexture as __sharedIsPMREMTexture, selectPMREMTexturesForArtifact as __sharedSelectPMREMTexturesForArtifact, textureListSignature as __sharedTextureListSignature } from '/__tslp_runtime/slim-support/pmrem.js';
 import { clearTextureViewCache as __sharedClearTextureViewCache, markTextureInitialized as __sharedMarkTextureInitialized, shareGPUTextureEntry as __sharedShareGPUTextureEntry, sharePMREMGPUTexture as __sharedSharePMREMGPUTexture, shareShadowGPUTextureIntoSlim as __sharedShareShadowGpuTextureIntoSlim } from '/__tslp_runtime/slim-support/gpu-texture-share.js';
 import { computeNodeUsesStorageTexture as __sharedComputeNodeUsesStorageTexture, syncComputeStorageOutputs as __sharedSyncComputeStorageOutputs, syncComputeStorageOutputsPerPass as __sharedSyncComputeStorageOutputsPerPass, pingPongInvalidate as __sharedPingPongInvalidate, shareInstancedAttributeBufferIntoSlim as __sharedShareInstancedAttributeBufferIntoSlim } from '/__tslp_runtime/slim-support/compute-sync.js';
 import { artifactHasTextureSource as __sharedArtifactHasTextureSource, attachArtifactTextureRefsWhere as __sharedAttachArtifactTextureRefsWhere, attachTextureRefsWhere as __sharedAttachTextureRefsWhere, countArtifactTextureSources as __sharedCountArtifactTextureSources, singleArtifactTextureUuid as __sharedSingleArtifactTextureUuid, textureMatchesArtifactSource as __sharedTextureMatchesArtifactSource, textureMatchesSource as __sharedTextureMatchesSource } from '/__tslp_runtime/slim-support/artifact-texture-wiring.js';
@@ -2724,6 +2724,11 @@ function __backgroundAuxConfigHashForScene( scene ) {
 
 function __seedNodeProps( material ) {
 	const stub = __nodeStub();
+	// Limit to the original "always-seeded" set. The full __nodeGraphKeys()
+	// list is too broad — adding lightNode/envNode/aoNode/transmissionNode
+	// stubs to materials that didn't have them (e.g. MeshStandardNodeMaterial
+	// in webgpu_shadowmap_pointlight.html) breaks the renderer's lighting
+	// evaluation path. __copyMaterialNodeProps still walks the full list.
 	for ( const key of [ 'colorNode', 'normalNode', 'positionNode', 'geometryNode', 'outputNode', 'roughnessNode', 'metalnessNode', 'emissiveNode', 'opacityNode', 'alphaTestNode' ] ) {
 		if ( material[ key ] === undefined ) material[ key ] = stub;
 	}
@@ -3686,7 +3691,7 @@ function __copyMaterialProps( src, dst ) {
 // origin with zero-vector colors (see webgpu_instance_path).
 function __copyMaterialNodeProps( src, dst ) {
 	if ( ! src ) return;
-	for ( const key of [ 'colorNode', 'fragmentNode', 'normalNode', 'positionNode', 'geometryNode', 'outputNode', 'roughnessNode', 'metalnessNode', 'emissiveNode', 'opacityNode', 'alphaTestNode', 'vertexNode', 'maskNode', 'maskShadowNode', 'receivedShadowPositionNode', 'castShadowPositionNode', 'castShadowNode' ] ) {
+	for ( const key of __nodeGraphKeys() ) {
 		const v = src[ key ];
 		if ( v && v.isNode === true ) dst[ key ] = v;
 	}
@@ -4635,34 +4640,12 @@ function __collectTexturesInNode( node, out = [], depth = 0, seen = new Set() ) 
 	return out;
 }
 
-function __isPMREMNode( node ) {
-	return !! ( node && node.isNode === true && Object.prototype.hasOwnProperty.call( node, '_value' ) && Object.prototype.hasOwnProperty.call( node, '_pmrem' ) );
+function __collectPMREMSourceTexturesInNode( node, out = [], depth = 0, seen = new Set() ) {
+	return __sharedCollectPMREMSourceTexturesInNode( node, { getPmremStubSource: Slim.__getPmremStubSource }, out, depth, seen );
 }
 
-function __collectPMREMSourceTexturesInNode( node, out = [], depth = 0, seen = new Set() ) {
-	if ( ! node || depth > 24 || seen.has( node ) ) return out;
-	if ( typeof node !== 'object' && typeof node !== 'function' ) return out;
-	seen.add( node );
-	const read = ( object, key ) => {
-		try { return object && object[ key ]; }
-		catch ( _ ) { return null; }
-	};
-	if ( __isPMREMNode( node ) ) {
-		const source = read( node, '_value' );
-		if ( source && source.isTexture === true && __isEnvironmentTextureSource( source ) ) __pushUniqueTexture( out, source );
-	}
-	if ( typeof node.getChildren === 'function' ) {
-		try {
-			for ( const child of node.getChildren() ) {
-				__collectPMREMSourceTexturesInNode( child, out, depth + 1, seen );
-			}
-		} catch ( _ ) {}
-	}
-	for ( const key of [ 'node', 'aNode', 'bNode', 'uvNode', 'levelNode', 'sourceNode', 'textureNode', 'pmremNode' ] ) {
-		const child = read( node, key );
-		if ( child ) __collectPMREMSourceTexturesInNode( child, out, depth + 1, seen );
-	}
-	return out;
+function __collectMaterialPMREMSourceTextures( material ) {
+	return __sharedCollectPMREMSourceTexturesFromMaterial( material, { nodeGraphKeys: __nodeGraphKeys(), getPmremStubSource: Slim.__getPmremStubSource } );
 }
 
 function __findTextureInNode( node, depth = 0, seen = new Set() ) {
@@ -5037,6 +5020,7 @@ async function __generatePMREMAsync( slimRenderer, sourceTex ) {
 		return null;
 	}
 	try {
+		__shareGPUTextureEntry( fullRenderer, slimRenderer, sourceTex );
 		const { PMREMGenerator } = await import( '/build/three.webgpu.js' );
 		const gen = new PMREMGenerator( fullRenderer );
 		let target = null;
@@ -5119,6 +5103,7 @@ function __selectPMREMTexturesForArtifact( artifact, material, environmentSource
 	return __sharedSelectPMREMTexturesForArtifact( artifact, {
 		material,
 		collectMaterialNodeTextures: __collectMaterialNodeTextures,
+		collectMaterialPMREMSources: __collectMaterialPMREMSourceTextures,
 		getCachedPMREMForSource: __getCachedPMREMForSource,
 		environmentSources,
 	} );
@@ -7178,11 +7163,12 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 				}
 			} );
 		}
-		// Per-material envMap PMREM: examples that pass envMap via constructor
+		// Per-material PMREM: examples that pass envMap via constructor
+		// or material envNode = pmremTexture(renderTarget.texture, ...)
 		// params (e.g. webgpu_pmrem_cubemap.html: new MeshPhysicalNodeMaterial({envMap:map}))
 		// don't set scene.environment, so the path above doesn't fire. Walk every
 		// PrecompiledMaterial whose artifact needs PMREM and kick gen for unique
-		// envMap cubemaps. Reuses __pmremCache so duplicates are deduped.
+		// material-local source textures. Reuses __pmremCache so duplicates are deduped.
 		if ( scene ) {
 			const _seen = new WeakSet();
 			scene.traverse( ( object ) => {
@@ -7191,15 +7177,18 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 				for ( const m of list ) {
 					if ( ! ( m && m.isPrecompiledMaterial && m.precompiledArtifact ) ) continue;
 					if ( ! __artifactNeedsPMREM( m.precompiledArtifact ) ) continue;
-					const env = m.envMap;
-					if ( ! env || env.isTexture !== true || _seen.has( env ) ) continue;
-					_seen.add( env );
-					__kickPMREMGenAsync( _renderer, env, () => {
-						__wireEnvironmentPMREM( _renderer, _scene );
-						if ( window.__tslpFrozen ) {
-							try { _renderer.render( _scene, _camera ); } catch ( _ ) {}
-						}
-					} );
+					const sources = __collectMaterialPMREMSourceTextures( m );
+					if ( m.envMap && m.envMap.isTexture === true ) __pushUniqueTexture( sources, m.envMap );
+					for ( const env of sources ) {
+						if ( ! env || env.isTexture !== true || _seen.has( env ) ) continue;
+						_seen.add( env );
+						__kickPMREMGenAsync( _renderer, env, () => {
+							__wireEnvironmentPMREM( _renderer, _scene );
+							if ( window.__tslpFrozen ) {
+								try { _renderer.render( _scene, _camera ); } catch ( _ ) {}
+							}
+						} );
+					}
 				}
 			} );
 		}
@@ -7828,6 +7817,7 @@ function __fullBloomStrengthScale( bloomNode ) {
 	try {
 		const byName = __collectGraphTexturesByName( bloomNode && bloomNode.inputNode );
 		for ( const name of byName.keys() ) {
+			if ( typeof name === 'string' && name.startsWith( '__' ) ) continue;
 			if ( name && name !== 'output' && name !== 'depth' ) return 1;
 		}
 	} catch ( _ ) {}
@@ -9458,6 +9448,7 @@ function tslStubModule() {
 		.filter( ( name ) => name !== 'renderOutput' )
 		.filter( ( name ) => name !== 'texture' )
 		.filter( ( name ) => name !== 'texture3D' )
+		.filter( ( name ) => name !== 'pmremTexture' )
 		.map( ( name ) => `const ${ name } = __TSL[ '${ name }' ];` )
 		.join( '\n' );
 	const reflectorShim = unique.includes( 'reflector' )
@@ -9495,6 +9486,15 @@ const renderOutput = ( node, ...args ) => {
 };
 `
 		: '';
+	const pmremTextureShim = unique.includes( 'pmremTexture' )
+		? `
+const __tslpRealPmremTexture = __TSL[ 'pmremTexture' ];
+const pmremTexture = ( ...args ) => {
+	__tslpRememberTextureArg( args[ 0 ] );
+	return __tslpRealPmremTexture( ...args );
+};
+`
+		: '';
 	const exportList = [ ...unique, 'pass' ].join( ', ' );
 	return `
 // Import the FULL three.js TSL namespace via absolute URL so the replay
@@ -9524,6 +9524,7 @@ const texture3D = ( ...args ) => {
 	__tslpRememberTextureArg( args[ 0 ] );
 	return __tslpRealTexture3D( ...args );
 };
+${ pmremTextureShim }
 const pass = ( scene, camera, options ) => new __ReplayPassNode( __ReplayPassNode.COLOR, scene, camera, options );
 export { ${ exportList } };
 // Also export the TSL namespace object for code that imports it directly.

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { setupPrecompile } from '../src/setup.js';
-import { __resetForTests as resetMarkerForTests } from '../src/precompile-marker.js';
+import { __cloneLightsIntoForTests, __resetForTests as resetMarkerForTests } from '../src/precompile-marker.js';
 
 const MARKER_METHOD = 'precompile';
 
@@ -142,5 +142,70 @@ test( 'setupPrecompile throws when aux is requested without scene/camera', () =>
 		() => setupPrecompile( { three, renderer, aux: true } ),
 		/aux capture needs/,
 	);
+
+} );
+
+test( 'precompile light cloning strips helper children from synthetic lights', () => {
+
+	class FakeObject3D {
+
+		constructor() {
+
+			this.children = [];
+			this.parent = null;
+			this.isObject3D = true;
+			this.matrixWorld = null;
+
+		}
+
+		add( child ) {
+
+			this.children.push( child );
+			child.parent = this;
+
+		}
+
+		remove( child ) {
+
+			this.children = this.children.filter( ( item ) => item !== child );
+			child.parent = null;
+
+		}
+
+		traverse( visitor ) {
+
+			visitor( this );
+			for ( const child of this.children ) child.traverse ? child.traverse( visitor ) : visitor( child );
+
+		}
+
+		clone() {
+
+			const cloned = new FakeObject3D();
+			cloned.isLight = this.isLight;
+			cloned.target = this.target;
+			for ( const child of this.children ) cloned.add( child.clone ? child.clone() : { ...child } );
+			return cloned;
+
+		}
+
+	}
+
+	const scene = new FakeObject3D();
+	scene.isScene = true;
+	scene.updateMatrixWorld = () => {};
+	const light = new FakeObject3D();
+	light.isLight = true;
+	const helper = new FakeObject3D();
+	helper.isHelper = true;
+	light.add( helper );
+	scene.add( light );
+	const dest = new FakeObject3D();
+
+	__cloneLightsIntoForTests( scene, dest );
+
+	assert.equal( dest.children.length, 1 );
+	assert.equal( dest.children[ 0 ].isLight, true );
+	assert.equal( dest.children[ 0 ].children.length, 0 );
 
 } );

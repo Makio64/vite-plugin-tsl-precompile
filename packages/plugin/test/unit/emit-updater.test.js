@@ -278,6 +278,49 @@ test( 'emitUpdaterSource — object.scale and attenuationDistance', () => {
 
 } );
 
+test( 'emitUpdaterSource — object matrices recompute from live frame object', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			name: 'object',
+			slots: [
+				{ offset: 0, source: { kind: 'object.normalMatrix' } },
+				{ offset: 48, source: { kind: 'object.modelViewMatrix' } },
+			],
+		} ],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.deepEqual( unsupportedKinds, [] );
+	assert.match( source, /frame\.object\.normalMatrix\.getNormalMatrix\(frame\.object\.matrixWorld\)/ );
+	assert.match( source, /frame\.object\.modelViewMatrix\.multiplyMatrices\(frame\.camera\.matrixWorldInverse, frame\.object\.matrixWorld\)/ );
+	assert.match( source, /writeMat3\(view, byteOffset \+ 0, frame\.object && frame\.object\.normalMatrix\);/ );
+	assert.match( source, /writeMat4\(view, byteOffset \+ 48, frame\.object && frame\.object\.modelViewMatrix\);/ );
+
+} );
+
+test( 'emitUpdaterSource — light.shadowMatrix refreshes non-point lights, leaves point-light matrix untouched', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			name: 'render',
+			slots: [
+				{ offset: 240, source: { kind: 'light.shadowMatrix', lightIndex: 1 } },
+			],
+		} ],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.deepEqual( unsupportedKinds, [] );
+	// Non-point lights refresh shadow.matrix via updateMatrices when the
+	// shadow map hasn't been built yet.
+	assert.match( source, /_l\.isPointLight !== true && _l\.shadow\.isPointLightShadow !== true/ );
+	assert.match( source, /_l\.shadow\.updateMatrices\(_l\)/ );
+	// Point lights keep the renderer-set shadow.matrix untouched — we do NOT
+	// override it with a translation (which broke webgpu_shadowmap_pointlight).
+	assert.doesNotMatch( source, /makeTranslation/ );
+	assert.match( source, /writeMat4\(view, byteOffset \+ 240, _l\.shadow\.matrix\)/ );
+
+} );
+
 test( 'emitUpdaterSource — object3d.userData float reads frame.object.userData[property]', () => {
 
 	const artifact = {

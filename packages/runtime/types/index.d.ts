@@ -153,11 +153,15 @@ export function textureImageSrc( texture: unknown ): string | null;
 export function healTextureImage( texture: unknown ): void;
 
 export const PMREM_CUBE_UV_MAPPING: number;
+export function isCubeTextureSource( texture: unknown ): boolean;
+export function isEnvironmentTextureSource( texture: unknown ): boolean;
 export function isPMREMTexture( texture: unknown ): boolean;
 export function isPMREMArtifactTextureSource( source: unknown ): boolean;
 export function artifactNeedsPMREM( artifact: unknown ): boolean;
 export function artifactPMREMSourceUuids( artifact: unknown ): string[];
 export function attachPMREMRefsByOrder( artifact: unknown, refs: unknown ): void;
+export function collectPMREMSourceTexturesInNode( node: unknown, opts?: Record<string, unknown>, out?: unknown[], depth?: number, seen?: Set<unknown> ): unknown[];
+export function collectPMREMSourceTexturesFromMaterial( material: unknown, opts?: Record<string, unknown> ): unknown[];
 export function selectPMREMTexturesForArtifact( artifact: unknown, opts?: Record<string, unknown> ): unknown[];
 export function createPMREMSupport( opts?: Record<string, unknown> ): unknown;
 export function clearTextureViewCache( textureData: unknown ): void;

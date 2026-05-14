@@ -351,6 +351,19 @@ export function findShadowMatrixLightForSlot( group, slot, frame ) {
 export function updateLightShadowMatrixForFrame( light, frame ) {
 
 	if ( ! light || ! light.shadow || typeof light.shadow.updateMatrices !== 'function' ) return;
+	if ( ( light.isPointLight === true || light.shadow.isPointLightShadow === true ) && light.shadow.matrix ) {
+
+		try {
+
+			if ( light.matrixWorld ) _lvec.setFromMatrixPosition( light.matrixWorld );
+			else if ( light.position ) _lvec.copy( light.position );
+			else return;
+			light.shadow.matrix.makeTranslation( - _lvec.x, - _lvec.y, - _lvec.z );
+
+		} catch ( _ ) {}
+		return;
+
+	}
 	if ( light.shadow.map && light.shadow.matrix ) return;
 	try {
 

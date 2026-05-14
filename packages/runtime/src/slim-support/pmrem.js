@@ -1,8 +1,95 @@
+import { NODE_GRAPH_TEXTURE_KEYS } from '@tsl-precompile/contract/texture-props';
+
 export const PMREM_CUBE_UV_MAPPING = 306;
+export const CUBE_REFLECTION_MAPPING = 301;
+export const CUBE_REFRACTION_MAPPING = 302;
+export const EQUIRECTANGULAR_REFLECTION_MAPPING = 303;
+export const EQUIRECTANGULAR_REFRACTION_MAPPING = 304;
 
 export function isPMREMTexture( texture ) {
 
 	return !! ( texture && texture.isTexture === true && texture.isCubeTexture !== true && ! Array.isArray( texture.image ) && ( texture.mapping === PMREM_CUBE_UV_MAPPING || texture.name === 'PMREM.cubeUv' ) );
+
+}
+
+export function isCubeTextureSource( texture ) {
+
+	return !! ( texture && texture.isTexture === true && ( texture.isCubeTexture === true || texture.mapping === CUBE_REFLECTION_MAPPING || texture.mapping === CUBE_REFRACTION_MAPPING ) );
+
+}
+
+export function isEnvironmentTextureSource( texture ) {
+
+	if ( ! ( texture && texture.isTexture === true ) ) return false;
+	if ( isPMREMTexture( texture ) ) return false;
+	return isCubeTextureSource( texture ) || texture.mapping === EQUIRECTANGULAR_REFLECTION_MAPPING || texture.mapping === EQUIRECTANGULAR_REFRACTION_MAPPING;
+
+}
+
+function readGraphValue( object, key ) {
+
+	if ( ! object || ! key ) return null;
+	try {
+		const descriptor = Object.getOwnPropertyDescriptor( object, key );
+		if ( descriptor && Object.prototype.hasOwnProperty.call( descriptor, 'value' ) ) return descriptor.value;
+	} catch ( _ ) {}
+	try { return object[ key ]; } catch ( _ ) { return null; }
+
+}
+
+function isPMREMNodeLike( node ) {
+
+	if ( ! node || node.isNode !== true ) return false;
+	const type = node.constructor && ( node.constructor.type || node.constructor.name ) || node.type || '';
+	return type === 'PMREMNode' || node.isPMREMNode === true || ( readGraphValue( node, '_texture' ) && readGraphValue( node, '_width' ) && readGraphValue( node, '_height' ) && readGraphValue( node, '_value' ) );
+
+}
+
+export function collectPMREMSourceTexturesInNode( node, opts = {}, out = [], depth = 0, seen = new Set() ) {
+
+	if ( ! node || ( typeof node !== 'object' && typeof node !== 'function' ) || depth > 64 || seen.has( node ) ) return out;
+	seen.add( node );
+	const getPmremStubSource = typeof opts.getPmremStubSource === 'function' ? opts.getPmremStubSource : null;
+	if ( isPMREMNodeLike( node ) ) {
+
+		const source = readGraphValue( node, '_value' ) || readGraphValue( node, 'value' );
+		if ( isEnvironmentTextureSource( source ) ) pushUniqueTexture( out, source );
+
+	}
+	if ( getPmremStubSource ) {
+
+		const source = getPmremStubSource( node );
+		if ( isEnvironmentTextureSource( source ) ) pushUniqueTexture( out, source );
+
+	}
+	let children = [];
+	try {
+		if ( typeof node.getChildren === 'function' ) {
+			const list = node.getChildren();
+			if ( Array.isArray( list ) ) children = children.concat( list );
+			else if ( list && typeof list[ Symbol.iterator ] === 'function' ) children = children.concat( Array.from( list ) );
+		}
+	} catch ( _ ) {}
+	const childKeys = [ '_children', 'children', 'node', 'inputNode', 'textureNode', 'uvNode', 'levelNode', 'valueNode', 'aNode', 'bNode' ];
+	for ( const key of childKeys ) {
+
+		const value = readGraphValue( node, key );
+		if ( Array.isArray( value ) ) children = children.concat( value );
+		else if ( value && ( typeof value === 'object' || typeof value === 'function' ) ) children.push( value );
+
+	}
+	for ( const child of children ) collectPMREMSourceTexturesInNode( child, opts, out, depth + 1, seen );
+	return out;
+
+}
+
+export function collectPMREMSourceTexturesFromMaterial( material, opts = {} ) {
+
+	const out = [];
+	if ( ! material ) return out;
+	const keys = Array.isArray( opts.nodeGraphKeys ) ? opts.nodeGraphKeys : NODE_GRAPH_TEXTURE_KEYS;
+	for ( const key of keys ) collectPMREMSourceTexturesInNode( readGraphValue( material, key ), opts, out );
+	return out;
 
 }
 
@@ -105,6 +192,55 @@ export function pmremTexturesForSources( sources, getCachedPMREMForSource ) {
 
 }
 
+function sourcePMREMVersion( texture ) {
+
+	return texture && typeof texture.pmremVersion === 'number' ? texture.pmremVersion : null;
+
+}
+
+function readCachedPMREM( cache, sourceTex ) {
+
+	if ( ! sourceTex ) return null;
+	if ( isPMREMTexture( sourceTex ) ) return sourceTex;
+	const cached = cache.get( sourceTex );
+	if ( ! cached ) return null;
+	const sourceVersion = sourcePMREMVersion( sourceTex );
+	if ( cached.isTexture === true ) {
+
+		const cachedVersion = sourcePMREMVersion( cached );
+		if ( sourceVersion !== null && cachedVersion !== null && cachedVersion !== sourceVersion ) return null;
+		return cached;
+
+	}
+	const texture = cached.texture;
+	if ( texture && texture.isTexture === true ) {
+
+		if ( sourceVersion !== null && cached.pmremVersion !== sourceVersion ) return null;
+		return texture;
+
+	}
+	return null;
+
+}
+
+function writeCachedPMREM( cache, sourceTex, pmrem ) {
+
+	if ( ! sourceTex || ! pmrem || pmrem.isTexture !== true ) return null;
+	const version = sourcePMREMVersion( sourceTex );
+	if ( version !== null ) {
+
+		try { pmrem.pmremVersion = version; } catch ( _ ) {}
+		cache.set( sourceTex, { texture: pmrem, pmremVersion: version } );
+
+	} else {
+
+		cache.set( sourceTex, pmrem );
+
+	}
+	return pmrem;
+
+}
+
 export function textureListSignature( textures, count = 0 ) {
 
 	const limit = Math.max( 0, count || textures && textures.length || 0 );
@@ -164,12 +300,15 @@ export function selectPMREMTexturesForArtifact( artifact, opts = {} ) {
 			nodePmrems: [],
 			materialPmrem: null,
 			environmentPmrems: [],
+			materialPMREMSources: [],
+			materialNodeSourcePmrems: [],
 		};
 
 	}
 
 	const material = opts.material || null;
 	const collectMaterialNodeTextures = typeof opts.collectMaterialNodeTextures === 'function' ? opts.collectMaterialNodeTextures : () => [];
+	const collectMaterialPMREMSources = typeof opts.collectMaterialPMREMSources === 'function' ? opts.collectMaterialPMREMSources : () => [];
 	const getCachedPMREMForSource = typeof opts.getCachedPMREMForSource === 'function' ? opts.getCachedPMREMForSource : () => null;
 	const environmentSources = Array.isArray( opts.environmentSources ) ? opts.environmentSources : [];
 
@@ -180,10 +319,28 @@ export function selectPMREMTexturesForArtifact( artifact, opts = {} ) {
 
 	}
 	const matchingNodePmrems = filterPMREMTexturesBySourceSize( nodePmrems, sourceEntries );
+	const materialPMREMSources = [];
+	for ( const texture of collectMaterialPMREMSources( material ) || [] ) pushUniqueTexture( materialPMREMSources, texture );
+	const materialNodeSourcePmrems = filterPMREMTexturesBySourceSize( pmremTexturesForSources( materialPMREMSources, getCachedPMREMForSource ), sourceEntries );
 
 	const materialEnvMap = material && material.envMap && material.envMap.isTexture === true ? material.envMap : null;
 	const materialPmrem = materialEnvMap ? getCachedPMREMForSource( materialEnvMap ) : null;
 	const environmentPmrems = pmremTexturesForSources( environmentSources, getCachedPMREMForSource );
+
+	if ( materialNodeSourcePmrems.length >= sourceUuids.length ) {
+
+		return {
+			sourceUuids,
+			pmremTextures: materialNodeSourcePmrems,
+			strategy: 'material-node-source',
+			nodePmrems,
+			materialPmrem,
+			environmentPmrems,
+			materialPMREMSources,
+			materialNodeSourcePmrems,
+		};
+
+	}
 
 	if ( matchingNodePmrems.length >= sourceUuids.length ) {
 
@@ -194,6 +351,8 @@ export function selectPMREMTexturesForArtifact( artifact, opts = {} ) {
 			nodePmrems,
 			materialPmrem,
 			environmentPmrems,
+			materialPMREMSources,
+			materialNodeSourcePmrems,
 		};
 
 	}
@@ -207,6 +366,8 @@ export function selectPMREMTexturesForArtifact( artifact, opts = {} ) {
 			nodePmrems,
 			materialPmrem,
 			environmentPmrems,
+			materialPMREMSources,
+			materialNodeSourcePmrems,
 		};
 
 	}
@@ -218,6 +379,8 @@ export function selectPMREMTexturesForArtifact( artifact, opts = {} ) {
 		nodePmrems,
 		materialPmrem,
 		environmentPmrems,
+		materialPMREMSources,
+		materialNodeSourcePmrems,
 	};
 
 }
@@ -242,17 +405,13 @@ export function createPMREMSupport( opts = {} ) {
 
 	function getCachedPMREMForSource( sourceTex ) {
 
-		if ( ! sourceTex ) return null;
-		const cached = cache.get( sourceTex );
-		if ( cached && cached.isTexture === true ) return cached;
-		return isPMREMTexture( sourceTex ) ? sourceTex : null;
+		return readCachedPMREM( cache, sourceTex );
 
 	}
 
 	function rememberPMREM( sourceTex, pmrem ) {
 
-		if ( sourceTex && pmrem && pmrem.isTexture === true ) cache.set( sourceTex, pmrem );
-		return pmrem && pmrem.isTexture === true ? pmrem : null;
+		return writeCachedPMREM( cache, sourceTex, pmrem );
 
 	}
 

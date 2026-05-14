@@ -5,7 +5,10 @@ import {
 	attachPMREMRefsByOrder,
 	artifactNeedsPMREM,
 	artifactPMREMSourceUuids,
+	collectPMREMSourceTexturesFromMaterial,
+	collectPMREMSourceTexturesInNode,
 	createPMREMSupport,
+	isEnvironmentTextureSource,
 	isPMREMArtifactTextureSource,
 	isPMREMTexture,
 	selectPMREMTexturesForArtifact,
@@ -38,6 +41,33 @@ test( 'PMREM helpers identify runtime textures and captured artifact sources', (
 	assert.equal( isPMREMArtifactTextureSource( { kind: 'artifact.texture', mapping: 306 } ), true );
 	assert.equal( isPMREMArtifactTextureSource( { kind: 'artifact.texture', textureName: 'PMREM.cubeUv' } ), true );
 	assert.equal( isPMREMArtifactTextureSource( { kind: 'artifact.texture', mapping: 301 } ), false );
+	assert.equal( isEnvironmentTextureSource( texture( { mapping: 301 } ) ), true );
+	assert.equal( isEnvironmentTextureSource( texture( { mapping: 303 } ) ), true );
+	assert.equal( isEnvironmentTextureSource( texture( { mapping: 306 } ) ), false );
+
+} );
+
+test( 'collectPMREMSourceTexturesFromMaterial finds material envNode PMREM sources', () => {
+
+	const env = texture( { uuid: 'env', mapping: 301 } );
+	const material = {
+		envNode: {
+			isNode: true,
+			constructor: { type: 'PMREMNode' },
+			_value: env,
+		},
+	};
+
+	assert.deepEqual( collectPMREMSourceTexturesFromMaterial( material ), [ env ] );
+
+} );
+
+test( 'collectPMREMSourceTexturesInNode accepts slim pmremTexture stub carriers', () => {
+
+	const env = texture( { uuid: 'env', mapping: 303 } );
+	const stub = { isNode: true };
+
+	assert.deepEqual( collectPMREMSourceTexturesInNode( stub, { getPmremStubSource: ( node ) => node === stub ? env : null } ), [ env ] );
 
 } );
 
@@ -125,6 +155,25 @@ test( 'selectPMREMTexturesForArtifact chooses material node, env-map, then scene
 
 } );
 
+test( 'selectPMREMTexturesForArtifact chooses cached material envNode PMREM sources', () => {
+
+	const captured = artifact( [ { kind: 'artifact.texture', textureUuid: 'env', mapping: 306 } ] );
+	const envSource = texture( { uuid: 'env-source', mapping: 301 } );
+	const envPMREM = texture( { uuid: 'env-pmrem', mapping: 306 } );
+	const selected = selectPMREMTexturesForArtifact( captured, {
+		material: {},
+		collectMaterialNodeTextures: () => [],
+		collectMaterialPMREMSources: () => [ envSource ],
+		getCachedPMREMForSource: ( source ) => source === envSource ? envPMREM : null,
+		environmentSources: [],
+	} );
+
+	assert.equal( selected.strategy, 'material-node-source' );
+	assert.deepEqual( selected.pmremTextures, [ envPMREM ] );
+	assert.deepEqual( selected.materialPMREMSources, [ envSource ] );
+
+} );
+
 test( 'selectPMREMTexturesForArtifact rejects wrong-sized material node PMREMs when the artifact has dimensions', () => {
 
 	const captured = artifact( [ { kind: 'artifact.texture', textureUuid: 'env', mapping: 306, imageWidth: 1536, imageHeight: 2048 } ] );
@@ -198,6 +247,27 @@ test( 'createPMREMSupport caches generation and wires artifacts once per signatu
 	assert.equal( diagnostics.wireAttached, 1 );
 	assert.equal( diagnostics.wireAlreadyWired, 1 );
 	assert.equal( textureListSignature( [ pmrem ], 1 ), 'pmrem-ready' );
+
+} );
+
+test( 'createPMREMSupport invalidates cached PMREM when source pmremVersion changes', async () => {
+
+	const source = texture( { uuid: 'dynamic-source', pmremVersion: 1 } );
+	const firstPMREM = texture( { uuid: 'pmrem-v1', mapping: 306 } );
+	const secondPMREM = texture( { uuid: 'pmrem-v2', mapping: 306 } );
+	const support = createPMREMSupport( {
+		generatePMREM: async () => firstPMREM,
+	} );
+
+	assert.equal( await support.kickGenerate( null, source ), firstPMREM );
+	assert.equal( support.getCachedPMREMForSource( source ), firstPMREM );
+	assert.equal( firstPMREM.pmremVersion, 1 );
+
+	source.pmremVersion = 2;
+	assert.equal( support.getCachedPMREMForSource( source ), null );
+	support.rememberPMREM( source, secondPMREM );
+	assert.equal( support.getCachedPMREMForSource( source ), secondPMREM );
+	assert.equal( secondPMREM.pmremVersion, 2 );
 
 } );
 

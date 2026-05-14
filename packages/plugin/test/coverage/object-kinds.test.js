@@ -11,13 +11,15 @@ test( 'cell: object.worldMatrix → writeMat4', () => {
 test( 'cell: object.normalMatrix → writeMat3', () => {
 
 	const r = generateForPlan( { groups: [ { slots: [ { byteOffset: 64, source: { kind: 'object.normalMatrix' } } ] } ] } );
-	assertGenerates( r, 'writeMat3(view, byteOffset + 64, frame.object.normalMatrix)' );
+	assertGenerates( r, 'frame.object.normalMatrix.getNormalMatrix(frame.object.matrixWorld)' );
+	assertGenerates( r, 'writeMat3(view, byteOffset + 64, frame.object && frame.object.normalMatrix)' );
 
 } );
 
 test( 'cell: object.modelViewMatrix → writeMat4', () => {
 
 	const r = generateForPlan( { groups: [ { slots: [ { byteOffset: 0, source: { kind: 'object.modelViewMatrix' } } ] } ] } );
-	assertGenerates( r, 'writeMat4(view, byteOffset + 0, frame.object.modelViewMatrix)' );
+	assertGenerates( r, 'frame.object.modelViewMatrix.multiplyMatrices(frame.camera.matrixWorldInverse, frame.object.matrixWorld)' );
+	assertGenerates( r, 'writeMat4(view, byteOffset + 0, frame.object && frame.object.modelViewMatrix)' );
 
 } );

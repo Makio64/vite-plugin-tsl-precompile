@@ -9,6 +9,7 @@ import {
 	findShadowMatrixLightForSlot,
 	getSceneLights,
 	lightDiagnosticShape,
+	updateLightShadowMatrixForFrame,
 	writeLightValue,
 } from '../src/hydrate/light-writers.js';
 
@@ -29,6 +30,7 @@ function fakeLight( opts = {} ) {
 	};
 	if ( opts.isSpotLight ) light.isSpotLight = true;
 	if ( opts.isDirectionalLight ) light.isDirectionalLight = true;
+	if ( opts.isPointLight ) light.isPointLight = true;
 	if ( opts.shadow ) light.shadow = opts.shadow;
 	if ( opts.position ) light.matrixWorld.setPosition( opts.position.x || 0, opts.position.y || 0, opts.position.z || 0 );
 	if ( opts.target ) {
@@ -158,6 +160,44 @@ test( 'writeLightValue: light.shadowMatrix writes light.shadow.matrix', () => {
 	writeLightValue( view, 0, 'light.shadowMatrix', { kind: 'light.shadowMatrix', lightUuid: 'a' }, { scene } );
 	// element[12] is at byte offset 48
 	assert.equal( view.getFloat32( 48, true ), 7 );
+
+} );
+
+test( 'updateLightShadowMatrixForFrame uses point-light translation semantics', () => {
+
+	let updateCalls = 0;
+	const matrix = new Matrix4().identity();
+	const light = fakeLight( {
+		isPointLight: true,
+		position: { x: 2, y: 3, z: 4 },
+		shadow: {
+			matrix,
+			updateMatrices() { updateCalls ++; },
+		},
+	} );
+	updateLightShadowMatrixForFrame( light, {} );
+	assert.equal( updateCalls, 0 );
+	assert.deepEqual( matrix.elements.slice( 12, 15 ), [ - 2, - 3, - 4 ] );
+
+} );
+
+test( 'updateLightShadowMatrixForFrame keeps generic path for non-point shadows', () => {
+
+	let updateCalls = 0;
+	const matrix = new Matrix4().identity();
+	const light = fakeLight( {
+		isSpotLight: true,
+		shadow: {
+			matrix,
+			camera: {},
+			updateMatrices( owner ) {
+				assert.equal( owner, light );
+				updateCalls ++;
+			},
+		},
+	} );
+	updateLightShadowMatrixForFrame( light, {} );
+	assert.equal( updateCalls, 1 );
 
 } );
 
