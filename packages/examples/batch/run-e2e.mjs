@@ -8230,6 +8230,506 @@ function __attachOutlineCompositeTextureRefs( artifact, outlineNodes, passNodes 
 	return artifact;
 }
 
+// =============================================================================
+// SSR / DOF / TRAA replay machinery (Wedge 1.5-C)
+//
+// SSRNode, DepthOfFieldNode, and TRAANode each build a small set of internal
+// NodeMaterials at setup() and drive a per-frame quad-mesh pipeline through
+// updateBefore. The slim runtime has the node-builder stripped and cannot
+// compile those live materials. We mirror the outline pattern: keep the
+// original updateBefore, patch the public one to dispatch to the full
+// WebGPURenderer, and share the resulting render-target texture(s) back into
+// the slim renderer so the post-process artifact reads correct pixels.
+//
+// Why full-renderer fallback (not in-process like bloom)? Each effect's
+// internal materials reference live RenderTarget texture objects whose UUIDs
+// don't appear in the captured aux artifacts as stable inputs (they're
+// internal scratch). Driving the materials through the full renderer keeps
+// the live RT plumbing intact while we only have to share the FINAL output
+// texture(s) into slim — exactly like outline.
+// =============================================================================
+
+function __ssrDiagnostics() {
+	const diag = __harnessDiagnostics();
+	if ( ! diag.ssr ) {
+		diag.ssr = { collected: 0, prepared: 0, rendered: 0, fullRendered: 0, prepFailed: 0, renderFailed: 0, setupCalls: 0, ctor: '', type: '' };
+	}
+	return diag.ssr;
+}
+
+function __isSSREffectNode( node ) {
+	if ( ! node || typeof node === 'function' ) return false;
+	const type = node && node.constructor && node.constructor.type || node && node.type || '';
+	if ( type && type !== 'SSRNode' ) return false;
+	return !! ( node
+		&& typeof node.updateBefore === 'function'
+		&& node._ssrMaterial
+		&& node._blurMaterial
+		&& node._copyMaterial
+		&& node._ssrRenderTarget
+		&& node._blurRenderTarget );
+}
+
+function __collectSSRNodesInGraph( node, out = [], seen = new Set(), depth = 0 ) {
+	if ( ! node || depth > 24 || seen.has( node ) ) return out;
+	if ( ! __isGraphTraversalCandidate( node ) ) return out;
+	seen.add( node );
+	if ( __isSSREffectNode( node ) ) {
+		if ( ! out.includes( node ) ) out.push( node );
+		return out;
+	}
+	const keys = [];
+	try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
+	const skip = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'geometry', 'material', 'domElement' ] );
+	for ( const key of keys ) {
+		if ( skip.has( key ) ) continue;
+		const child = __readGraphOwnValue( node, key );
+		if ( ! child ) continue;
+		if ( Array.isArray( child ) ) {
+			for ( const item of child ) if ( item && ( typeof item === 'object' || typeof item === 'function' ) ) __collectSSRNodesInGraph( item, out, seen, depth + 1 );
+		} else if ( typeof child === 'object' || typeof child === 'function' ) {
+			__collectSSRNodesInGraph( child, out, seen, depth + 1 );
+		}
+	}
+	return out;
+}
+
+let __fullSSRRendererState = null;
+
+function __renderSSRNodeWithFullRenderer( ssrNode, slimRenderer, fullRenderer, diag ) {
+	if ( ! ssrNode || ! slimRenderer || ! fullRenderer ) return false;
+	const originalUpdateBefore = ssrNode.__tslpSSROriginalUpdateBefore;
+	if ( typeof originalUpdateBefore !== 'function' ) return false;
+	try {
+		if ( FullRendererUtils && typeof FullRendererUtils.resetRendererState === 'function' ) {
+			__fullSSRRendererState = FullRendererUtils.resetRendererState( fullRenderer, __fullSSRRendererState || undefined );
+		}
+		try {
+			fullRenderer.toneMapping = slimRenderer.toneMapping;
+			fullRenderer.toneMappingExposure = slimRenderer.toneMappingExposure;
+			fullRenderer.outputColorSpace = slimRenderer.outputColorSpace;
+		} catch ( _ ) {}
+		const tmpSize = new FullVector2();
+		const drawingSize = slimRenderer.getDrawingBufferSize( tmpSize );
+		if ( typeof fullRenderer.setSize === 'function' ) fullRenderer.setSize( drawingSize.width, drawingSize.height, false );
+
+		// Share live scene textures (depth, beauty, normal) into the full
+		// renderer so the SSR fragment node samples them correctly.
+		__shareGraphTexturesBetweenRenderers( fullRenderer, slimRenderer, ssrNode, { skipOwnedRenderTargets: true } );
+
+		// Run the real updateBefore on the full renderer. SSR drives a 1+N
+		// pass pipeline (trace + optional blur mips) through quad-mesh
+		// renders; the full node-builder compiles each material's
+		// fragmentNode on demand.
+		originalUpdateBefore.call( ssrNode, { renderer: fullRenderer } );
+
+		// Hand the output texture(s) over to the slim renderer.
+		try { __shareGPUTextureEntry( slimRenderer, fullRenderer, ssrNode._ssrRenderTarget.texture ); } catch ( _ ) {}
+		try { __shareGPUTextureEntry( slimRenderer, fullRenderer, ssrNode._blurRenderTarget.texture ); } catch ( _ ) {}
+
+		diag.fullRendered ++;
+		diag.rendered ++;
+		return true;
+	} catch ( err ) {
+		diag.fullError = err && ( err.stack || err.message ) || String( err );
+		if ( ! window.__tslpSSRFullRenderWarned ) {
+			window.__tslpSSRFullRenderWarned = true;
+			console.warn( '[tslp-e2e] SSR full-renderer replay failed:', diag.fullError );
+		}
+		return false;
+	} finally {
+		try {
+			if ( __fullSSRRendererState && FullRendererUtils && typeof FullRendererUtils.restoreRendererState === 'function' ) FullRendererUtils.restoreRendererState( fullRenderer, __fullSSRRendererState );
+		} catch ( _ ) {}
+	}
+}
+
+function __patchSSRNodeUpdateBefore( ssrNode ) {
+	if ( ssrNode.__tslpSSRUpdatePatched === true ) return;
+	const originalUpdateBefore = ssrNode.updateBefore;
+	Object.defineProperty( ssrNode, '__tslpSSROriginalUpdateBefore', { value: originalUpdateBefore, configurable: true } );
+	ssrNode.updateBefore = function ( frame = {} ) {
+		const slimRenderer = frame && frame.renderer;
+		if ( ! slimRenderer ) return;
+		const diag = __ssrDiagnostics();
+		const currentRenderTarget = typeof slimRenderer.getRenderTarget === 'function' ? slimRenderer.getRenderTarget() : null;
+		const currentMRT = typeof slimRenderer.getMRT === 'function' ? slimRenderer.getMRT() : null;
+		try {
+			if ( __computeRenderer ) {
+				if ( __renderSSRNodeWithFullRenderer( this, slimRenderer, __computeRenderer, diag ) ) return;
+			}
+			if ( typeof originalUpdateBefore === 'function' ) originalUpdateBefore.call( this, frame );
+		} catch ( err ) {
+			diag.renderFailed ++;
+			if ( ! window.__tslpSSRRenderWarned ) {
+				window.__tslpSSRRenderWarned = true;
+				console.warn( '[tslp-e2e] SSR replay render failed:', err && err.message || err );
+			}
+		} finally {
+			try { slimRenderer.setRenderTarget( currentRenderTarget ); } catch ( _ ) {}
+			try { if ( typeof slimRenderer.setMRT === 'function' ) slimRenderer.setMRT( currentMRT ); } catch ( _ ) {}
+		}
+	};
+	Object.defineProperty( ssrNode, '__tslpSSRUpdatePatched', { value: true, configurable: true } );
+}
+
+function __prepareSSRNodeForReplay( ssrNode, context ) {
+	if ( ! __isSSREffectNode( ssrNode ) ) return false;
+	if ( ssrNode.__tslpSSRReplayReady === true ) return true;
+	try {
+		const diag = __ssrDiagnostics();
+		diag.ctor = ssrNode.constructor && ssrNode.constructor.name || '';
+		diag.type = ssrNode.constructor && ssrNode.constructor.type || ssrNode.type || '';
+		// Drive setup() on the FULL renderer so the SSR/blur/copy materials
+		// receive their fragmentNodes through the live TSL builder. Mirrors
+		// __prepareFrameEffectNodeForReplay.
+		if ( __computeRenderer && typeof ssrNode.setup === 'function' ) {
+			try {
+				ssrNode.setup( __makeReplayNodeBuilder( __computeRenderer, context || {} ) );
+				diag.setupCalls ++;
+			} catch ( err ) {
+				diag.setupError = err && ( err.stack || err.message ) || String( err );
+			}
+		}
+		__patchSSRNodeUpdateBefore( ssrNode );
+		Object.defineProperty( ssrNode, '__tslpSSRReplayReady', { value: true, configurable: true } );
+		diag.prepared ++;
+		return true;
+	} catch ( err ) {
+		__ssrDiagnostics().prepFailed ++;
+		if ( ! window.__tslpSSRPrepWarned ) {
+			window.__tslpSSRPrepWarned = true;
+			console.warn( '[tslp-e2e] SSR replay prep failed:', err && err.message || err );
+		}
+		return false;
+	}
+}
+
+function __renderSSRNodesForPipeline( renderer, ssrNodes ) {
+	for ( const ssrNode of ssrNodes || [] ) {
+		if ( __prepareSSRNodeForReplay( ssrNode, null ) ) ssrNode.updateBefore( { renderer } );
+	}
+}
+
+// -----------------------------------------------------------------------------
+// DOF
+// -----------------------------------------------------------------------------
+
+function __dofDiagnostics() {
+	const diag = __harnessDiagnostics();
+	if ( ! diag.dof ) {
+		diag.dof = { collected: 0, prepared: 0, rendered: 0, fullRendered: 0, prepFailed: 0, renderFailed: 0, setupCalls: 0, ctor: '', type: '' };
+	}
+	return diag.dof;
+}
+
+function __isDOFEffectNode( node ) {
+	if ( ! node || typeof node === 'function' ) return false;
+	const type = node && node.constructor && node.constructor.type || node && node.type || '';
+	if ( type && type !== 'DepthOfFieldNode' ) return false;
+	return !! ( node
+		&& typeof node.updateBefore === 'function'
+		&& node._CoCMaterial
+		&& node._CoCBlurredMaterial
+		&& node._blur64Material
+		&& node._blur16Material
+		&& node._compositeMaterial
+		&& node._compositeRT );
+}
+
+function __collectDOFNodesInGraph( node, out = [], seen = new Set(), depth = 0 ) {
+	if ( ! node || depth > 24 || seen.has( node ) ) return out;
+	if ( ! __isGraphTraversalCandidate( node ) ) return out;
+	seen.add( node );
+	if ( __isDOFEffectNode( node ) ) {
+		if ( ! out.includes( node ) ) out.push( node );
+		return out;
+	}
+	const keys = [];
+	try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
+	const skip = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'geometry', 'material', 'domElement' ] );
+	for ( const key of keys ) {
+		if ( skip.has( key ) ) continue;
+		const child = __readGraphOwnValue( node, key );
+		if ( ! child ) continue;
+		if ( Array.isArray( child ) ) {
+			for ( const item of child ) if ( item && ( typeof item === 'object' || typeof item === 'function' ) ) __collectDOFNodesInGraph( item, out, seen, depth + 1 );
+		} else if ( typeof child === 'object' || typeof child === 'function' ) {
+			__collectDOFNodesInGraph( child, out, seen, depth + 1 );
+		}
+	}
+	return out;
+}
+
+let __fullDOFRendererState = null;
+
+function __renderDOFNodeWithFullRenderer( dofNode, slimRenderer, fullRenderer, diag ) {
+	if ( ! dofNode || ! slimRenderer || ! fullRenderer ) return false;
+	const originalUpdateBefore = dofNode.__tslpDOFOriginalUpdateBefore;
+	if ( typeof originalUpdateBefore !== 'function' ) return false;
+	try {
+		if ( FullRendererUtils && typeof FullRendererUtils.resetRendererState === 'function' ) {
+			__fullDOFRendererState = FullRendererUtils.resetRendererState( fullRenderer, __fullDOFRendererState || undefined );
+		}
+		try {
+			fullRenderer.toneMapping = slimRenderer.toneMapping;
+			fullRenderer.toneMappingExposure = slimRenderer.toneMappingExposure;
+			fullRenderer.outputColorSpace = slimRenderer.outputColorSpace;
+		} catch ( _ ) {}
+		const tmpSize = new FullVector2();
+		const drawingSize = slimRenderer.getDrawingBufferSize( tmpSize );
+		if ( typeof fullRenderer.setSize === 'function' ) fullRenderer.setSize( drawingSize.width, drawingSize.height, false );
+
+		__shareGraphTexturesBetweenRenderers( fullRenderer, slimRenderer, dofNode, { skipOwnedRenderTargets: true } );
+
+		originalUpdateBefore.call( dofNode, { renderer: fullRenderer } );
+
+		try { __shareGPUTextureEntry( slimRenderer, fullRenderer, dofNode._compositeRT.texture ); } catch ( _ ) {}
+		try { __shareGPUTextureEntry( slimRenderer, fullRenderer, dofNode._blur16NearRT.texture ); } catch ( _ ) {}
+		try { __shareGPUTextureEntry( slimRenderer, fullRenderer, dofNode._blur16FarRT.texture ); } catch ( _ ) {}
+
+		diag.fullRendered ++;
+		diag.rendered ++;
+		return true;
+	} catch ( err ) {
+		diag.fullError = err && ( err.stack || err.message ) || String( err );
+		if ( ! window.__tslpDOFFullRenderWarned ) {
+			window.__tslpDOFFullRenderWarned = true;
+			console.warn( '[tslp-e2e] DOF full-renderer replay failed:', diag.fullError );
+		}
+		return false;
+	} finally {
+		try {
+			if ( __fullDOFRendererState && FullRendererUtils && typeof FullRendererUtils.restoreRendererState === 'function' ) FullRendererUtils.restoreRendererState( fullRenderer, __fullDOFRendererState );
+		} catch ( _ ) {}
+	}
+}
+
+function __patchDOFNodeUpdateBefore( dofNode ) {
+	if ( dofNode.__tslpDOFUpdatePatched === true ) return;
+	const originalUpdateBefore = dofNode.updateBefore;
+	Object.defineProperty( dofNode, '__tslpDOFOriginalUpdateBefore', { value: originalUpdateBefore, configurable: true } );
+	dofNode.updateBefore = function ( frame = {} ) {
+		const slimRenderer = frame && frame.renderer;
+		if ( ! slimRenderer ) return;
+		const diag = __dofDiagnostics();
+		const currentRenderTarget = typeof slimRenderer.getRenderTarget === 'function' ? slimRenderer.getRenderTarget() : null;
+		const currentMRT = typeof slimRenderer.getMRT === 'function' ? slimRenderer.getMRT() : null;
+		try {
+			if ( __computeRenderer ) {
+				if ( __renderDOFNodeWithFullRenderer( this, slimRenderer, __computeRenderer, diag ) ) return;
+			}
+			if ( typeof originalUpdateBefore === 'function' ) originalUpdateBefore.call( this, frame );
+		} catch ( err ) {
+			diag.renderFailed ++;
+			if ( ! window.__tslpDOFRenderWarned ) {
+				window.__tslpDOFRenderWarned = true;
+				console.warn( '[tslp-e2e] DOF replay render failed:', err && err.message || err );
+			}
+		} finally {
+			try { slimRenderer.setRenderTarget( currentRenderTarget ); } catch ( _ ) {}
+			try { if ( typeof slimRenderer.setMRT === 'function' ) slimRenderer.setMRT( currentMRT ); } catch ( _ ) {}
+		}
+	};
+	Object.defineProperty( dofNode, '__tslpDOFUpdatePatched', { value: true, configurable: true } );
+}
+
+function __prepareDOFNodeForReplay( dofNode, context ) {
+	if ( ! __isDOFEffectNode( dofNode ) ) return false;
+	if ( dofNode.__tslpDOFReplayReady === true ) return true;
+	try {
+		const diag = __dofDiagnostics();
+		diag.ctor = dofNode.constructor && dofNode.constructor.name || '';
+		diag.type = dofNode.constructor && dofNode.constructor.type || dofNode.type || '';
+		if ( __computeRenderer && typeof dofNode.setup === 'function' ) {
+			try {
+				dofNode.setup( __makeReplayNodeBuilder( __computeRenderer, context || {} ) );
+				diag.setupCalls ++;
+			} catch ( err ) {
+				diag.setupError = err && ( err.stack || err.message ) || String( err );
+			}
+		}
+		__patchDOFNodeUpdateBefore( dofNode );
+		Object.defineProperty( dofNode, '__tslpDOFReplayReady', { value: true, configurable: true } );
+		diag.prepared ++;
+		return true;
+	} catch ( err ) {
+		__dofDiagnostics().prepFailed ++;
+		if ( ! window.__tslpDOFPrepWarned ) {
+			window.__tslpDOFPrepWarned = true;
+			console.warn( '[tslp-e2e] DOF replay prep failed:', err && err.message || err );
+		}
+		return false;
+	}
+}
+
+function __renderDOFNodesForPipeline( renderer, dofNodes ) {
+	for ( const dofNode of dofNodes || [] ) {
+		if ( __prepareDOFNodeForReplay( dofNode, null ) ) dofNode.updateBefore( { renderer } );
+	}
+}
+
+// -----------------------------------------------------------------------------
+// TRAA
+// -----------------------------------------------------------------------------
+
+function __traaDiagnostics() {
+	const diag = __harnessDiagnostics();
+	if ( ! diag.traa ) {
+		diag.traa = { collected: 0, prepared: 0, rendered: 0, fullRendered: 0, prepFailed: 0, renderFailed: 0, setupCalls: 0, ctor: '', type: '' };
+	}
+	return diag.traa;
+}
+
+function __isTRAAEffectNode( node ) {
+	if ( ! node || typeof node === 'function' ) return false;
+	const type = node && node.constructor && node.constructor.type || node && node.type || '';
+	if ( type && type !== 'TRAANode' ) return false;
+	return !! ( node
+		&& typeof node.updateBefore === 'function'
+		&& node._resolveMaterial
+		&& node._historyRenderTarget
+		&& node._resolveRenderTarget );
+}
+
+function __collectTRAANodesInGraph( node, out = [], seen = new Set(), depth = 0 ) {
+	if ( ! node || depth > 24 || seen.has( node ) ) return out;
+	if ( ! __isGraphTraversalCandidate( node ) ) return out;
+	seen.add( node );
+	if ( __isTRAAEffectNode( node ) ) {
+		if ( ! out.includes( node ) ) out.push( node );
+		return out;
+	}
+	const keys = [];
+	try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
+	const skip = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'geometry', 'material', 'domElement' ] );
+	for ( const key of keys ) {
+		if ( skip.has( key ) ) continue;
+		const child = __readGraphOwnValue( node, key );
+		if ( ! child ) continue;
+		if ( Array.isArray( child ) ) {
+			for ( const item of child ) if ( item && ( typeof item === 'object' || typeof item === 'function' ) ) __collectTRAANodesInGraph( item, out, seen, depth + 1 );
+		} else if ( typeof child === 'object' || typeof child === 'function' ) {
+			__collectTRAANodesInGraph( child, out, seen, depth + 1 );
+		}
+	}
+	return out;
+}
+
+let __fullTRAARendererState = null;
+
+function __renderTRAANodeWithFullRenderer( traaNode, slimRenderer, fullRenderer, diag ) {
+	if ( ! traaNode || ! slimRenderer || ! fullRenderer ) return false;
+	const originalUpdateBefore = traaNode.__tslpTRAAOriginalUpdateBefore;
+	if ( typeof originalUpdateBefore !== 'function' ) return false;
+	try {
+		if ( FullRendererUtils && typeof FullRendererUtils.resetRendererState === 'function' ) {
+			__fullTRAARendererState = FullRendererUtils.resetRendererState( fullRenderer, __fullTRAARendererState || undefined );
+		}
+		try {
+			fullRenderer.toneMapping = slimRenderer.toneMapping;
+			fullRenderer.toneMappingExposure = slimRenderer.toneMappingExposure;
+			fullRenderer.outputColorSpace = slimRenderer.outputColorSpace;
+		} catch ( _ ) {}
+		const tmpSize = new FullVector2();
+		const drawingSize = slimRenderer.getDrawingBufferSize( tmpSize );
+		if ( typeof fullRenderer.setSize === 'function' ) fullRenderer.setSize( drawingSize.width, drawingSize.height, false );
+
+		__shareGraphTexturesBetweenRenderers( fullRenderer, slimRenderer, traaNode, { skipOwnedRenderTargets: true } );
+
+		// TRAA's updateBefore calls renderer.initRenderTarget /
+		// copyTextureToTexture on first run; these only work on the full
+		// renderer. The original handles its own state save/restore.
+		originalUpdateBefore.call( traaNode, { renderer: fullRenderer } );
+
+		// Share resolve + history textures back into slim. The post-process
+		// artifact samples the resolve target via passTexture.
+		try { __shareGPUTextureEntry( slimRenderer, fullRenderer, traaNode._resolveRenderTarget.texture ); } catch ( _ ) {}
+		try { __shareGPUTextureEntry( slimRenderer, fullRenderer, traaNode._historyRenderTarget.texture ); } catch ( _ ) {}
+
+		diag.fullRendered ++;
+		diag.rendered ++;
+		return true;
+	} catch ( err ) {
+		diag.fullError = err && ( err.stack || err.message ) || String( err );
+		if ( ! window.__tslpTRAAFullRenderWarned ) {
+			window.__tslpTRAAFullRenderWarned = true;
+			console.warn( '[tslp-e2e] TRAA full-renderer replay failed:', diag.fullError );
+		}
+		return false;
+	} finally {
+		try {
+			if ( __fullTRAARendererState && FullRendererUtils && typeof FullRendererUtils.restoreRendererState === 'function' ) FullRendererUtils.restoreRendererState( fullRenderer, __fullTRAARendererState );
+		} catch ( _ ) {}
+	}
+}
+
+function __patchTRAANodeUpdateBefore( traaNode ) {
+	if ( traaNode.__tslpTRAAUpdatePatched === true ) return;
+	const originalUpdateBefore = traaNode.updateBefore;
+	Object.defineProperty( traaNode, '__tslpTRAAOriginalUpdateBefore', { value: originalUpdateBefore, configurable: true } );
+	traaNode.updateBefore = function ( frame = {} ) {
+		const slimRenderer = frame && frame.renderer;
+		if ( ! slimRenderer ) return;
+		const diag = __traaDiagnostics();
+		const currentRenderTarget = typeof slimRenderer.getRenderTarget === 'function' ? slimRenderer.getRenderTarget() : null;
+		const currentMRT = typeof slimRenderer.getMRT === 'function' ? slimRenderer.getMRT() : null;
+		try {
+			if ( __computeRenderer ) {
+				if ( __renderTRAANodeWithFullRenderer( this, slimRenderer, __computeRenderer, diag ) ) return;
+			}
+			if ( typeof originalUpdateBefore === 'function' ) originalUpdateBefore.call( this, frame );
+		} catch ( err ) {
+			diag.renderFailed ++;
+			if ( ! window.__tslpTRAARenderWarned ) {
+				window.__tslpTRAARenderWarned = true;
+				console.warn( '[tslp-e2e] TRAA replay render failed:', err && err.message || err );
+			}
+		} finally {
+			try { slimRenderer.setRenderTarget( currentRenderTarget ); } catch ( _ ) {}
+			try { if ( typeof slimRenderer.setMRT === 'function' ) slimRenderer.setMRT( currentMRT ); } catch ( _ ) {}
+		}
+	};
+	Object.defineProperty( traaNode, '__tslpTRAAUpdatePatched', { value: true, configurable: true } );
+}
+
+function __prepareTRAANodeForReplay( traaNode, context ) {
+	if ( ! __isTRAAEffectNode( traaNode ) ) return false;
+	if ( traaNode.__tslpTRAAReplayReady === true ) return true;
+	try {
+		const diag = __traaDiagnostics();
+		diag.ctor = traaNode.constructor && traaNode.constructor.name || '';
+		diag.type = traaNode.constructor && traaNode.constructor.type || traaNode.type || '';
+		// TRAA's setup() requires builder.renderer + builder.context.renderPipeline.
+		// Drive setup on the full renderer so the resolveMaterial gets its colorNode.
+		if ( __computeRenderer && typeof traaNode.setup === 'function' ) {
+			try {
+				traaNode.setup( __makeReplayNodeBuilder( __computeRenderer, context || {} ) );
+				diag.setupCalls ++;
+			} catch ( err ) {
+				diag.setupError = err && ( err.stack || err.message ) || String( err );
+			}
+		}
+		__patchTRAANodeUpdateBefore( traaNode );
+		Object.defineProperty( traaNode, '__tslpTRAAReplayReady', { value: true, configurable: true } );
+		diag.prepared ++;
+		return true;
+	} catch ( err ) {
+		__traaDiagnostics().prepFailed ++;
+		if ( ! window.__tslpTRAAPrepWarned ) {
+			window.__tslpTRAAPrepWarned = true;
+			console.warn( '[tslp-e2e] TRAA replay prep failed:', err && err.message || err );
+		}
+		return false;
+	}
+}
+
+function __renderTRAANodesForPipeline( renderer, traaNodes ) {
+	for ( const traaNode of traaNodes || [] ) {
+		if ( __prepareTRAANodeForReplay( traaNode, null ) ) traaNode.updateBefore( { renderer } );
+	}
+}
+
 function __neutralizeRTTNodeUpdateBefore( rttNode ) {
 	// Once we've driven the RTT explicitly via our quad / full renderer, the
 	// slim renderer must not re-trigger RTTNode.updateBefore: the RTTNode's
@@ -8283,6 +8783,7 @@ function __nodeOwnsRenderTarget( node ) {
 function __isFrameEffectNode( node ) {
 	if ( ! node || typeof node.updateBefore !== 'function' ) return false;
 	if ( node.isPassNode === true || node.isRTTNode === true || __isBloomEffectNode( node ) || __isOutlineEffectNode( node ) ) return false;
+	if ( __isSSREffectNode( node ) || __isDOFEffectNode( node ) || __isTRAAEffectNode( node ) ) return false;
 	const proto = Object.getPrototypeOf( node );
 	const hasSpecialUpdateBefore = Object.prototype.hasOwnProperty.call( node, 'updateBefore' )
 		|| !! ( proto && Object.prototype.hasOwnProperty.call( proto, 'updateBefore' ) );
@@ -8592,6 +9093,12 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				__bloomDiagnostics().collected += bloomNodes.length;
 				const outlineNodes = __collectOutlineNodesInGraph( this.outputNode );
 				__outlineDiagnostics().collected += outlineNodes.length;
+				const ssrNodes = __collectSSRNodesInGraph( this.outputNode );
+				__ssrDiagnostics().collected += ssrNodes.length;
+				const dofNodes = __collectDOFNodesInGraph( this.outputNode );
+				__dofDiagnostics().collected += dofNodes.length;
+				const traaNodes = __collectTRAANodesInGraph( this.outputNode );
+				__traaDiagnostics().collected += traaNodes.length;
 				const passNode = passNodes[ 0 ] || null;
 				const context = {
 					renderPipeline: this,
@@ -8608,6 +9115,9 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				for ( const node of effectNodes ) __prepareFrameEffectNodeForReplay( node, __computeRenderer, context );
 				for ( const node of bloomNodes ) __prepareBloomNodeForReplay( node, context );
 				for ( const node of outlineNodes ) __prepareOutlineNodeForReplay( node, context );
+				for ( const node of ssrNodes ) __prepareSSRNodeForReplay( node, context );
+				for ( const node of dofNodes ) __prepareDOFNodeForReplay( node, context );
+				for ( const node of traaNodes ) __prepareTRAANodeForReplay( node, context );
 				const effectBeforeRenderPipeline = context.onBeforeRenderPipeline;
 				const effectAfterRenderPipeline = context.onAfterRenderPipeline;
 				artifact = __attachGraphTextureRefs( artifact, this.outputNode );
@@ -8620,7 +9130,7 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				this._quadMesh.material = mat;
 				this._quadMesh.frustumCulled = false;
 				// Set up _context so render() can access onBefore/onAfterRenderPipeline.
-				context.onBeforeRenderPipeline = ( passNodes.length > 0 || rttNodes.length > 0 || effectNodes.length > 0 || bloomNodes.length > 0 || outlineNodes.length > 0 ) ? () => {
+				context.onBeforeRenderPipeline = ( passNodes.length > 0 || rttNodes.length > 0 || effectNodes.length > 0 || bloomNodes.length > 0 || outlineNodes.length > 0 || ssrNodes.length > 0 || dofNodes.length > 0 || traaNodes.length > 0 ) ? () => {
 					if ( typeof effectBeforeRenderPipeline === 'function' ) effectBeforeRenderPipeline();
 					__renderPassNodesForPipeline( this.renderer, passNodes );
 					__renderRTTNodesForPipeline( this.renderer, rttNodes );
@@ -8641,12 +9151,22 @@ export class RenderPipeline extends Slim.RenderPipeline {
 					}
 					__renderBloomNodesForPipeline( this.renderer, bloomNodes );
 					__renderOutlineNodesForPipeline( this.renderer, outlineNodes );
+					__renderSSRNodesForPipeline( this.renderer, ssrNodes );
+					__renderDOFNodesForPipeline( this.renderer, dofNodes );
+					__renderTRAANodesForPipeline( this.renderer, traaNodes );
 					if ( outlineNodes.length > 0 ) {
 						// Re-attach graph texture refs so the slim post-process artifact
 						// sees the freshly-shared _renderTargetComposite.texture from the
 						// full-renderer pass.
 						artifact = __attachGraphTextureRefs( artifact, this.outputNode );
 						artifact = __attachOutlineCompositeTextureRefs( artifact, outlineNodes, passNodes );
+						mat.precompiledArtifact = artifact;
+						mat.needsUpdate = true;
+					}
+					if ( ssrNodes.length > 0 || dofNodes.length > 0 || traaNodes.length > 0 ) {
+						// Re-attach graph texture refs so the slim post-process artifact
+						// sees the freshly-shared output textures from the full-renderer pass.
+						artifact = __attachGraphTextureRefs( artifact, this.outputNode );
 						mat.precompiledArtifact = artifact;
 						mat.needsUpdate = true;
 					}
