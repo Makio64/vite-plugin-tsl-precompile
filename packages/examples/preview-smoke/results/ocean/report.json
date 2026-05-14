@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "nonZeroRatio": 0.9763,
+  "diffRatio": 0.9941,
+  "pageErrors": [],
+  "consoleErrors": [],
+  "failures": [],
+  "example": "ocean",
+  "thresholds": {
+    "minNonZeroRatio": 0.5,
+    "minDiffRatio": 0.05
+  }
+}
