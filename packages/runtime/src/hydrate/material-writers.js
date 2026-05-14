@@ -158,7 +158,21 @@ export function writeUniformGroup( group, frame, view, material ) {
 			else writeSnapshot( view, offset, source.valueSnapshot );
 
 		}
-		else if ( kind === 'frame.time' ) writeNumber( view, offset, frame.time, source.valueSnapshot );
+		else if ( kind === 'frame.time' ) {
+
+			// Wedge 4: honour the global "pinned clock" set by the harness /
+			// public `pinClock(t)` helper. PSNR snapshot replay pins the clock
+			// to `artifact.captureClock` so time-driven node graphs (`mix(a,
+			// b, sin(time*k))`, scrolling UVs, particle position +=
+			// velocity*time) render with the same `t` that capture saw,
+			// regardless of how many frames replay actually drove before
+			// snapshotting. Falls back to `frame.time` when unset (the normal
+			// real-time path).
+			const pinnedTime = globalThis.__tslpPinnedClock;
+			const effectiveTime = ( typeof pinnedTime === 'number' && Number.isFinite( pinnedTime ) ) ? pinnedTime : frame.time;
+			writeNumber( view, offset, effectiveTime, source.valueSnapshot );
+
+		}
 		else if ( kind === 'frame.deltaTime' ) writeNumber( view, offset, frame.deltaTime, source.valueSnapshot );
 		else if ( kind === 'frame.frameId' ) writeUint( view, offset, frame.frameId, source.valueSnapshot );
 		else if ( kind === 'object.worldMatrix' || kind === 'object3d.worldMatrix' ) writeMat4( view, offset, frame.object && frame.object.matrixWorld, source.valueSnapshot );

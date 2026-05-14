@@ -25,7 +25,7 @@ export { clearTextureViewCache, markTextureInitialized, shareGPUTextureEntry, sh
 export { textureMatchesSource, textureMatchesArtifactSource, artifactHasTextureSource, countArtifactTextureSources, singleArtifactTextureUuid, attachTextureRefsWhere, attachArtifactTextureRefsWhere } from './slim-support/artifact-texture-wiring.js';
 export { getComputeBindGroups, computeNodeUsesStorageTexture, syncComputeStorageOutputs, syncComputeStorageOutputsPerPass, pingPongInvalidate, shareInstancedAttributeBufferIntoSlim } from './slim-support/compute-sync.js';
 export { createFullRendererFallback } from './slim-support/full-renderer-fallback.js';
-export { createSlimSceneSupport } from './slim-support/scene-support.js';
+export { createSlimSceneSupport, pinClock, unpinClock } from './slim-support/scene-support.js';
 export { setSlimRenderFallback, getSlimRenderFallback } from './slim-support/render-fallback-registry.js';
 export { collectLiveBloomNodes, wireBloomNode, wirePrecompiledPostprocess, findPostprocessAux } from './slim-support/postprocess-wire.js';
 export { registerEffectHandler, unregisterEffectHandler, getEffectHandlers, findEffectHandler, collectEffectNodes } from './slim-support/postprocess-effects.js';

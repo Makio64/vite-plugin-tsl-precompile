@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createSlimSceneSupport } from '../src/slim-support/scene-support.js';
+import { createSlimSceneSupport, pinClock, unpinClock } from '../src/slim-support/scene-support.js';
 
 function fakeDataMap() {
 
@@ -153,5 +153,74 @@ test( 'createSlimSceneSupport generatePMREMAsync routes through the PMREM cache 
 	const cached = await support.generatePMREMAsync( source, async () => { secondCalled = true; return pmremResult; } );
 	assert.equal( cached, pmremResult );
 	assert.equal( secondCalled, false );
+
+} );
+
+test( 'pinClock(t) stores a finite number on globalThis.__tslpPinnedClock', () => {
+
+	try {
+
+		pinClock( 1.25 );
+		assert.equal( globalThis.__tslpPinnedClock, 1.25 );
+		pinClock( 0 );
+		assert.equal( globalThis.__tslpPinnedClock, 0 );
+
+	} finally {
+
+		unpinClock();
+
+	}
+
+} );
+
+test( 'pinClock with a non-finite value clears the pin', () => {
+
+	try {
+
+		pinClock( 7 );
+		assert.equal( globalThis.__tslpPinnedClock, 7 );
+		pinClock( NaN );
+		assert.equal( globalThis.__tslpPinnedClock, null );
+		pinClock( 9 );
+		pinClock( Infinity );
+		assert.equal( globalThis.__tslpPinnedClock, null );
+		pinClock( 3 );
+		pinClock( 'oops' );
+		assert.equal( globalThis.__tslpPinnedClock, null );
+
+	} finally {
+
+		unpinClock();
+
+	}
+
+} );
+
+test( 'unpinClock() clears the pin', () => {
+
+	pinClock( 42 );
+	assert.equal( globalThis.__tslpPinnedClock, 42 );
+	unpinClock();
+	assert.equal( globalThis.__tslpPinnedClock, null );
+
+} );
+
+test( 'createSlimSceneSupport exposes pinClock/unpinClock that flip the same global', () => {
+
+	const support = createSlimSceneSupport( { renderer: fakeRenderer() } );
+	try {
+
+		assert.equal( typeof support.pinClock, 'function' );
+		assert.equal( typeof support.unpinClock, 'function' );
+		support.pinClock( 0.5 );
+		assert.equal( globalThis.__tslpPinnedClock, 0.5 );
+		support.unpinClock();
+		assert.equal( globalThis.__tslpPinnedClock, null );
+
+	} finally {
+
+		unpinClock();
+
+	}
 
 } );

@@ -60,6 +60,44 @@ test( 'writeUniformGroup writes frame.time and frame.frameId', () => {
 
 } );
 
+test( 'writeUniformGroup honours globalThis.__tslpPinnedClock for frame.time (Wedge 4)', () => {
+
+	const view = makeView();
+	const group = makeGroup( [
+		{ offset: 0, dtype: 'f32', source: { kind: 'frame.time' } },
+	] );
+	try {
+
+		globalThis.__tslpPinnedClock = 3.75;
+		writeUniformGroup( group, { time: 1.5 }, view, null );
+		assert.equal( view.getFloat32( 0, true ), 3.75, 'pinned clock overrides frame.time' );
+
+	} finally {
+
+		globalThis.__tslpPinnedClock = null;
+
+	}
+
+} );
+
+test( 'writeUniformGroup falls back to frame.time when pinned clock is null/non-finite', () => {
+
+	const view = makeView();
+	const group = makeGroup( [
+		{ offset: 0, dtype: 'f32', source: { kind: 'frame.time' } },
+	] );
+	globalThis.__tslpPinnedClock = null;
+	writeUniformGroup( group, { time: 2.5 }, view, null );
+	assert.equal( view.getFloat32( 0, true ), 2.5 );
+
+	globalThis.__tslpPinnedClock = NaN;
+	writeUniformGroup( group, { time: 4.0 }, view, null );
+	assert.equal( view.getFloat32( 0, true ), 4.0, 'NaN does not pin' );
+
+	globalThis.__tslpPinnedClock = null;
+
+} );
+
 test( 'writeUniformGroup writes object3d.viewPosition (object position in camera space)', () => {
 
 	const view = makeView();

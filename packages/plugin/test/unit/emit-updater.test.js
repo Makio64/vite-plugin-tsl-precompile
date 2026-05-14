@@ -164,7 +164,9 @@ test( 'emitUpdaterSource — extractor dialect (frame.time, constant with valueS
 	};
 	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
 	assert.deepEqual( unsupportedKinds, [] );
-	assert.match( source, /writeF32\(view, byteOffset \+ 0, frame\.time\);/ );
+	// Wedge 4: frame.time writer honours globalThis.__tslpPinnedClock for
+	// PSNR-snapshot replay, falling back to frame.time otherwise.
+	assert.match( source, /writeF32\(view, byteOffset \+ 0, \(typeof globalThis\.__tslpPinnedClock === 'number' && Number\.isFinite\(globalThis\.__tslpPinnedClock\) \? globalThis\.__tslpPinnedClock : frame\.time\)\);/ );
 	assert.match( source, /writeMat4\(view, byteOffset \+ 16, frame\.camera\.projectionMatrixInverse\);/ );
 	assert.match( source, /writeVec3\(view, byteOffset \+ 80, __const0\);/ );
 	assert.match( source, /const __const0 = \{ x: 0\.1, y: 0\.2, z: 0\.3 \};/ );

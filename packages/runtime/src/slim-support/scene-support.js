@@ -346,7 +346,41 @@ export function createSlimSceneSupport( opts = {} ) {
 		shareShadowTexture,
 		preparePostprocess,
 		wirePostprocess,
+		// Wedge 4: clock alignment helpers (same global the runtime writers
+		// consult). Expose on the support object for instance-style callers;
+		// also exported as standalone functions from `@tsl-precompile/runtime`.
+		pinClock,
+		unpinClock,
 		dispose,
 	};
+
+}
+
+/**
+ * Pin `nodeFrame.time` to a fixed value during the next render(s). The
+ * hydrator runtime + AOT-generated updater both consult
+ * `globalThis.__tslpPinnedClock` when writing the `frame.time` UBO slot, so
+ * pinning makes time-driven node graphs (`mix(a, b, sin(time*k))`, scrolling
+ * UVs, particle position += velocity*time) render with the same `t` value
+ * regardless of how many frames replay actually drove before snapshotting.
+ *
+ * Pass any non-finite value (`null`, `NaN`, `undefined`) to clear the pin —
+ * equivalent to `unpinClock()`.
+ *
+ * @param {number} t
+ */
+export function pinClock( t ) {
+
+	globalThis.__tslpPinnedClock = ( typeof t === 'number' && Number.isFinite( t ) ) ? t : null;
+
+}
+
+/**
+ * Clear the pinned clock — subsequent renders fall back to `frame.time` from
+ * the renderer's nodeFrame.
+ */
+export function unpinClock() {
+
+	globalThis.__tslpPinnedClock = null;
 
 }

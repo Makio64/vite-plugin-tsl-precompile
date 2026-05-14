@@ -288,7 +288,46 @@ function injectHtml( html, example, mode ) {
 
 	const bucket = captureBucket( example );
 	const captureEndpoint = '/__tslp__/capture?example=' + encodeURIComponent( example );
-	const boot = `<script>window.__TSLP_E2E=${ jsonScriptLiteral( { example, mode, artifacts: bucket, captureEndpoint, localExamples: !! localExamplesRoot } ) };</script>`;
+	// Wedge 4: stamp a global "pinned clock" for replay so time-driven node
+	// graphs render at the SAME `t` the stock comparison frame observed.
+	// `bucket.frameClock` is set by `runOne` to the stock pass's
+	// `nodeFrame.time` at screenshot moment — the correct reference for
+	// pinning replay. Fall back to per-artifact `captureClock` (stamped at
+	// compileTSL time) for offline replays where the harness can't measure
+	// stock. Stock/capture modes leave the global undefined.
+	let pinnedClock = null;
+	if ( mode === 'replay' ) {
+
+		if ( typeof bucket.frameClock === 'number' && Number.isFinite( bucket.frameClock ) ) {
+
+			pinnedClock = bucket.frameClock;
+
+		} else {
+
+			for ( const entry of Object.values( bucket.user || {} ) ) {
+
+				const t = entry && entry.artifact && entry.artifact.captureClock;
+				if ( typeof t === 'number' && Number.isFinite( t ) ) { pinnedClock = t; break; }
+
+			}
+			if ( pinnedClock === null ) {
+
+				for ( const entry of ( bucket.aux || [] ) ) {
+
+					const t = entry && entry.artifact && entry.artifact.captureClock;
+					if ( typeof t === 'number' && Number.isFinite( t ) ) { pinnedClock = t; break; }
+
+				}
+
+			}
+
+		}
+
+	}
+	const pinBoot = pinnedClock !== null
+		? `<script>globalThis.__tslpPinnedClock=${ pinnedClock };</script>`
+		: '';
+	const boot = `<script>window.__TSLP_E2E=${ jsonScriptLiteral( { example, mode, artifacts: bucket, captureEndpoint, localExamples: !! localExamplesRoot } ) };</script>${ pinBoot }`;
 	const mapped = rewriteImportmap( html, mode );
 	return mapped.includes( '</head>' )
 		? mapped.replace( '</head>', `${ boot }\n</head>` )
@@ -511,6 +550,12 @@ function __recordRenderableObjectCount( scene ) {
 } )();
 
 export class WebGPURenderer extends Original.WebGPURenderer {
+	constructor( ...args ) {
+		super( ...args );
+		// Wedge 4: expose the harness's WebGPURenderer so the runner can read
+		// nodeFrame.time at screenshot time (the "freeze clock") to pin replay.
+		window.__tslpHarnessRenderer = this;
+	}
 	setAnimationLoop( callback ) {
 		const wrap = typeof window.__tslpWrapAnimationLoop === 'function' ? window.__tslpWrapAnimationLoop : null;
 		return super.setAnimationLoop( wrap ? wrap( callback ) : callback );
@@ -1075,6 +1120,13 @@ export class RenderPipeline extends __RenderPipelineBase {
 export class PostProcessing extends RenderPipeline {}
 
 export class WebGPURenderer extends Original.WebGPURenderer {
+	constructor( ...args ) {
+		super( ...args );
+		// Wedge 4: expose the full renderer so the runner can read nodeFrame.time
+		// at screenshot time.
+		window.__tslpHarnessRenderer = this;
+		window.__tslpFullRenderer = this;
+	}
 	setAnimationLoop( callback ) {
 		const wrap = typeof window.__tslpWrapAnimationLoop === 'function' ? window.__tslpWrapAnimationLoop : null;
 		return super.setAnimationLoop( wrap ? wrap( callback ) : callback );
@@ -6917,6 +6969,13 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 }
 
 	export class WebGPURenderer extends Slim.WebGPURenderer {
+		constructor( ...args ) {
+			super( ...args );
+			// Wedge 4: expose the slim renderer so the runner can read
+			// nodeFrame.time at screenshot time.
+			window.__tslpHarnessRenderer = this;
+			window.__tslpSlimRenderer = this;
+		}
 		setAnimationLoop( callback ) {
 			const wrap = typeof window.__tslpWrapAnimationLoop === 'function' ? window.__tslpWrapAnimationLoop : null;
 			const renderer = this;
@@ -10453,12 +10512,38 @@ async function visitExample( browser, name, mode, waitMs ) {
 			} );
 			mark( 'flushCaptureMs', stepStartedAt );
 		}
+		// Wedge 4: read the deterministic clock at the moment the screenshot
+		// was taken. nodeFrame.time accumulates from `performance.now()`, which
+		// the harness patched to `base + __tslpRafTick * step`. So at freeze,
+		// nodeFrame.time should equal that synthetic value (in seconds).
+		// We try renderer._nodes.nodeFrame.time first (authoritative), then
+		// fall back to the synthetic rAF clock if no renderer global is exposed.
+		let frameClock = null;
+		try {
+			frameClock = await page.evaluate( () => {
+				const w = window;
+				const candidates = [];
+				if ( w.__tslpSlimRenderer ) candidates.push( w.__tslpSlimRenderer );
+				if ( w.__tslpFullRenderer ) candidates.push( w.__tslpFullRenderer );
+				if ( w.__tslpCurrentReplayRenderer ) candidates.push( w.__tslpCurrentReplayRenderer );
+				if ( w.__tslpHarnessRenderer ) candidates.push( w.__tslpHarnessRenderer );
+				for ( const r of candidates ) {
+					const t = r && r._nodes && r._nodes.nodeFrame && r._nodes.nodeFrame.time;
+					if ( typeof t === 'number' && Number.isFinite( t ) ) return t;
+				}
+				// Fallback: the synthetic rAF clock (seconds, base 0, step ms / 1000).
+				if ( typeof w.__tslpRafTick === 'number' && typeof w.__tslpFrozen === 'boolean' ) {
+					return ( w.__tslpRafTick | 0 ) * ( 16.6667 / 1000 );
+				}
+				return null;
+			} );
+		} catch ( _ ) {}
 		const real = errors.filter( ( e ) => ! /favicon|Failed to load resource/i.test( e ) );
 		const diagnostics = await page.evaluate( () => {
 			return window.__tslpHarnessDiagnostics || null;
 		} ).catch( () => null );
 		timings.totalMs = Date.now() - startedAt;
-		return { bright: finalBright, shot, errors: real.slice( 0, 5 ), warnings: warnings.slice( 0, 5 ), diagnostics, context, page, timings, cleanup };
+		return { bright: finalBright, shot, errors: real.slice( 0, 5 ), warnings: warnings.slice( 0, 5 ), diagnostics, context, page, timings, cleanup, frameClock };
 
 	} catch ( err ) {
 
@@ -10531,6 +10616,14 @@ async function runOne( browser, name ) {
 	const capture = reuseReferenceShot
 		? loadSavedReferenceShot( name )
 		: await visitExample( browser, name, 'stock', effectiveCaptureWait );
+	// Wedge 4: remember the stock pass's nodeFrame.time so the replay pass can
+	// pin its clock to the SAME value the comparison-reference screenshot saw.
+	// injectHtml in replay mode reads this from the bucket below.
+	if ( capture && typeof capture.frameClock === 'number' && Number.isFinite( capture.frameClock ) ) {
+		const bucket = captureBucket( name );
+		bucket.frameClock = capture.frameClock;
+		if ( process.env.TSLP_DEBUG_CLOCK === '1' ) console.log( '[tslp-clock] ' + name + ' stock frameClock=' + capture.frameClock );
+	}
 	// Tear down listeners + page + context as soon as the visit returns.
 	// Holding only the screenshot Buffer past this point lets Chromium
 	// release the page's GPU surface before we open the next one.

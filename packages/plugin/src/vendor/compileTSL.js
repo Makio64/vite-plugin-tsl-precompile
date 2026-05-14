@@ -1214,6 +1214,12 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	const byMaterialUuid = new Map();
 	const byMaterialVariants = new Map();
 	const byComputeNode = new Map();
+	// Wedge 4: snapshot the renderer's nodeFrame.time at capture so the runtime
+	// can pin it during PSNR-snapshot replay. Without this, time-driven graphs
+	// (`mix(a, b, sin(time*k))`, scrolling UVs, particle position +=
+	// velocity*time) drift by 1–2 animation ticks because capture and replay
+	// freeze nodeFrame at slightly different t values.
+	const captureClock = ( renderer && renderer._nodes && renderer._nodes.nodeFrame && Number.isFinite( renderer._nodes.nodeFrame.time ) ) ? renderer._nodes.nodeFrame.time : null;
 	for ( const [ cacheKey, state ] of cache ) {
 
 		const material = materialByCacheKey.get( cacheKey ) || null;
@@ -1222,6 +1228,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		const artifact = extractArtifact( cacheKey, state, material, meshes[ 0 ] || null );
 		if ( material && material.uuid ) artifact.materialUuid = material.uuid;
 		if ( userMaterial && userMaterial.uuid ) artifact.userMaterialUuid = userMaterial.uuid;
+		if ( captureClock !== null ) artifact.captureClock = captureClock;
 
 		// Stamp mrtOutputCount when the warm-up ran with an MRT node active.
 		// Three.js keys the pipeline by the number of color attachments — the
@@ -1311,6 +1318,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		if ( ! state ) continue;
 
 		const artifact = extractComputeArtifact( nextComputeCacheKey ++, state, computeNode );
+		if ( captureClock !== null ) artifact.captureClock = captureClock;
 		artifacts.push( artifact );
 		byComputeNode.set( computeNode, artifact );
 

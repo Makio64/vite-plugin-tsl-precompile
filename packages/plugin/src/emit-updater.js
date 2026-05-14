@@ -535,10 +535,12 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 
 		// Frame-scoped uniforms — the extractor emits `frame.<x>`; earlier
 		// hand-written plans used the bare `<x>`. Both paths land here.
+		// Wedge 4: honour `globalThis.__tslpPinnedClock` so the AOT updater
+		// matches the hydrator runtime path during snapshot replay.
 		case 'frame.time':
 		case 'time':
 			usedWriters.add( 'writeF32' );
-			return `writeF32(view, ${ off }, frame.time);`;
+			return `writeF32(view, ${ off }, (typeof globalThis.__tslpPinnedClock === 'number' && Number.isFinite(globalThis.__tslpPinnedClock) ? globalThis.__tslpPinnedClock : frame.time));`;
 
 		case 'frame.deltaTime':
 		case 'deltaTime':
