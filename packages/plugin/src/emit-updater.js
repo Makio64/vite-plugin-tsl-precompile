@@ -41,6 +41,143 @@ import { BLOCKED_KINDS, blockedKindReason, isBlockedKind } from '@tsl-precompile
 // in @tsl-precompile/contract/kinds.
 export const DOCUMENTED_BLOCKED_KINDS = BLOCKED_KINDS;
 
+// --- Writer-template tables ---------------------------------------------------
+//
+// Many `material.*` / `scene.*` / `frame.*` slots emit identical code:
+// `writeYYY(view, off, <expr>)` differing only by the writer name and the
+// property accessor. The legacy switch had ~50 cases that fit this pattern;
+// the tables below let `emitSlotWrite` short-circuit them as a single lookup.
+// Cases not in any table fall through to the switch's per-kind logic.
+
+const MATERIAL_COLOR_KINDS = new Set( [
+	'material.color',
+	'material.emissive',
+	'material.specular',
+	'material.specularColor',
+	'material.sheenColor',
+	'material.attenuationColor',
+] );
+
+const MATERIAL_SCALAR_KINDS = new Set( [
+	'material.scalar',
+	'material.opacity',
+	'material.alphaTest',
+	'material.roughness',
+	'material.metalness',
+	'material.ior',
+	'material.emissiveIntensity',
+	'material.aoMapIntensity',
+	'material.lightMapIntensity',
+	'material.envMapIntensity',
+	'material.specularIntensity',
+	'material.shininess',
+	'material.size',
+	'material.rotation',
+	'material.clearcoat',
+	'material.clearcoatRoughness',
+	'material.sheen',
+	'material.sheenRoughness',
+	'material.transmission',
+	'material.thickness',
+	'material.attenuationDistance',
+	'material.iridescence',
+	'material.iridescenceIOR',
+	'material.anisotropy',
+	'material.anisotropyRotation',
+	'material.dispersion',
+	'material.reflectivity',
+	'material.refractionRatio',
+	'material.bumpScale',
+	'material.displacementScale',
+	'material.displacementBias',
+	'material.linewidth',
+	'material.scale',
+	'material.dashSize',
+	'material.gapSize',
+	'material.dashOffset',
+] );
+
+const MATERIAL_VEC2_KINDS = new Set( [
+	'material.normalScale',
+	'material.clearcoatNormalScale',
+] );
+
+const SCENE_FOG_SCALAR_KINDS = new Set( [
+	'scene.fog.near',
+	'scene.fog.far',
+	'scene.fog.density',
+] );
+
+const SCENE_SCALAR_KINDS = new Set( [
+	'scene.environmentIntensity',
+	'scene.backgroundIntensity',
+	'scene.backgroundBlurriness',
+] );
+
+// Provably-static snapshot detection: identity mat3 (texture sampler matrix
+// for an untransformed texture). The frozen snapshot of an identity matrix
+// is the value the live renderer would write each frame anyway, so the
+// "won't animate" warning copy is misleading for these slots.
+function isStaticSnapshot( snapshot ) {
+
+	if ( ! snapshot || snapshot.type !== 'mat3' || ! Array.isArray( snapshot.data ) || snapshot.data.length !== 9 ) return false;
+	const d = snapshot.data;
+	return d[ 0 ] === 1 && d[ 1 ] === 0 && d[ 2 ] === 0 &&
+		d[ 3 ] === 0 && d[ 4 ] === 1 && d[ 5 ] === 0 &&
+		d[ 6 ] === 0 && d[ 7 ] === 0 && d[ 8 ] === 1;
+
+}
+
+/**
+ * Try to emit the slot from one of the writer-template tables. Returns
+ * `null` if the kind doesn't match any table — the caller's switch handles
+ * those. Centralises the "writer + property accessor" pattern so adding a
+ * new `material.<scalar>` extractor kind is one Set entry instead of one
+ * switch case.
+ *
+ * @returns {?string} emitted write expression, or null when no table applies.
+ */
+function emitFromWriterTable( kind, src, off, usedWriters ) {
+
+	if ( MATERIAL_COLOR_KINDS.has( kind ) ) {
+
+		const prop = src.property || kind.split( '.' )[ 1 ];
+		usedWriters.add( 'writeColor' );
+		return `writeColor(view, ${ off }, material.${ prop });`;
+
+	}
+	if ( MATERIAL_SCALAR_KINDS.has( kind ) ) {
+
+		const prop = src.property || kind.split( '.' )[ 1 ];
+		usedWriters.add( 'writeF32' );
+		return `writeF32(view, ${ off }, material.${ prop });`;
+
+	}
+	if ( MATERIAL_VEC2_KINDS.has( kind ) ) {
+
+		const prop = src.property || kind.split( '.' )[ 1 ];
+		usedWriters.add( 'writeVec2' );
+		return `writeVec2(view, ${ off }, material.${ prop });`;
+
+	}
+	if ( SCENE_FOG_SCALAR_KINDS.has( kind ) ) {
+
+		const prop = src.property || kind.split( '.' )[ 2 ];
+		usedWriters.add( 'writeF32' );
+		return `writeF32(view, ${ off }, frame.scene.fog.${ prop });`;
+
+	}
+	if ( SCENE_SCALAR_KINDS.has( kind ) ) {
+
+		const prop = src.property || kind.split( '.' )[ 1 ];
+		usedWriters.add( 'writeF32' );
+		return `writeF32(view, ${ off }, frame.scene.${ prop });`;
+
+	}
+	return null;
+
+}
+
 /**
  * Generate the source text of an updater module for a single artifact.
  *
@@ -148,6 +285,48 @@ export function emitUpdaterSource( artifact, opts = {} ) {
 			decls.push( 'const _m4rot = new Matrix4();' );
 
 		}
+		if ( allHelpers.has( 'velocity' ) ) {
+
+			threeNames.add( 'Matrix4' );
+			decls.push( 'const _tslpVelocityCameraStates = new WeakMap();' );
+			decls.push( 'const _tslpVelocityObjectStates = new WeakMap();' );
+			decls.push( 'function _tslpFrameKey(frame) {' );
+			decls.push( '  return frame && Number.isFinite(frame.frameId) ? frame.frameId : frame && Number.isFinite(frame.renderId) ? frame.renderId : 0;' );
+			decls.push( '}' );
+			decls.push( 'function _tslpVelocityCamera(frame) {' );
+			decls.push( '  const camera = frame && frame.camera;' );
+			decls.push( '  if (!camera) return null;' );
+			decls.push( '  const key = _tslpFrameKey(frame);' );
+			decls.push( '  let state = _tslpVelocityCameraStates.get(camera);' );
+			decls.push( '  if (!state) {' );
+			decls.push( '    state = { frameId: key, previousProjectionMatrix: new Matrix4().copy(camera.projectionMatrix), previousCameraViewMatrix: new Matrix4().copy(camera.matrixWorldInverse), currentProjectionMatrix: new Matrix4().copy(camera.projectionMatrix), currentCameraViewMatrix: new Matrix4().copy(camera.matrixWorldInverse) };' );
+			decls.push( '    _tslpVelocityCameraStates.set(camera, state);' );
+			decls.push( '  } else if (state.frameId !== key) {' );
+			decls.push( '    state.frameId = key;' );
+			decls.push( '    state.previousProjectionMatrix.copy(state.currentProjectionMatrix);' );
+			decls.push( '    state.previousCameraViewMatrix.copy(state.currentCameraViewMatrix);' );
+			decls.push( '    state.currentProjectionMatrix.copy(camera.projectionMatrix);' );
+			decls.push( '    state.currentCameraViewMatrix.copy(camera.matrixWorldInverse);' );
+			decls.push( '  }' );
+			decls.push( '  return state;' );
+			decls.push( '}' );
+			decls.push( 'function _tslpVelocityObject(frame) {' );
+			decls.push( '  const object = frame && frame.object;' );
+			decls.push( '  if (!object || !object.matrixWorld) return null;' );
+			decls.push( '  const key = _tslpFrameKey(frame);' );
+			decls.push( '  let state = _tslpVelocityObjectStates.get(object);' );
+			decls.push( '  if (!state) {' );
+			decls.push( '    state = { frameId: key, previousModelWorldMatrix: new Matrix4().copy(object.matrixWorld), currentModelWorldMatrix: new Matrix4().copy(object.matrixWorld) };' );
+			decls.push( '    _tslpVelocityObjectStates.set(object, state);' );
+			decls.push( '  } else if (state.frameId !== key) {' );
+			decls.push( '    state.frameId = key;' );
+			decls.push( '    state.previousModelWorldMatrix.copy(state.currentModelWorldMatrix);' );
+			decls.push( '    state.currentModelWorldMatrix.copy(object.matrixWorld);' );
+			decls.push( '  }' );
+			decls.push( '  return state;' );
+			decls.push( '}' );
+
+		}
 		// Per-call light cache — keyed by `frame.scene` and rebuilt when
 		// `frame.scene._tslpLightCacheVersion` changes (e.g. lights added/
 		// removed). Without caching, every slot write would re-traverse the
@@ -212,6 +391,12 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 
 	const off = `byteOffset + ${ byteOffset }`;
 
+	// Writer-template tables first — collapse ~50 identical-shape cases
+	// (material.* color/scalar/vec2, scene.fog.* scalar, scene.* scalar) into
+	// a single lookup. See `emitFromWriterTable` above.
+	const tableWrite = emitFromWriterTable( kind, src, off, usedWriters );
+	if ( tableWrite !== null ) return tableWrite;
+
 	switch ( kind ) {
 
 		case 'camera.projectionMatrix':
@@ -241,6 +426,21 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 		case 'camera.far':
 			usedWriters.add( 'writeF32' );
 			return `writeF32(view, ${ off }, frame.camera.far);`;
+
+		case 'velocity.previousProjectionMatrix':
+			rendererHelpers.add( 'velocity' );
+			usedWriters.add( 'writeMat4' );
+			return `{ const _v = _tslpVelocityCamera(frame); if (_v) writeMat4(view, ${ off }, _v.previousProjectionMatrix); }`;
+
+		case 'velocity.previousCameraViewMatrix':
+			rendererHelpers.add( 'velocity' );
+			usedWriters.add( 'writeMat4' );
+			return `{ const _v = _tslpVelocityCamera(frame); if (_v) writeMat4(view, ${ off }, _v.previousCameraViewMatrix); }`;
+
+		case 'velocity.previousModelWorldMatrix':
+			rendererHelpers.add( 'velocity' );
+			usedWriters.add( 'writeMat4' );
+			return `{ const _v = _tslpVelocityObject(frame); if (_v) writeMat4(view, ${ off }, _v.previousModelWorldMatrix); }`;
 
 		case 'object.worldMatrix':
 		case 'object3d.worldMatrix':
@@ -289,6 +489,12 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 			// Bounding-sphere radius in world space (computed on first access).
 			usedWriters.add( 'writeF32' );
 			return `writeF32(view, ${ off }, frame.object.geometry && frame.object.geometry.boundingSphere ? frame.object.geometry.boundingSphere.radius : 0);`;
+
+		case 'object3d.nodeUniform': {
+
+			return emitObjectNodeUniform( slot, off, usedWriters, constants, unsupportedKinds, byteOffset );
+
+		}
 
 		case 'object3d.userData': {
 
@@ -377,108 +583,15 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 			usedWriters.add( 'writeF32' );
 			return `writeF32(view, ${ off }, frame.renderer ? frame.renderer.toneMappingExposure : 1.0);`;
 
-		case 'material.color':
-		case 'material.emissive':
-		case 'material.specular':
-		case 'material.specularColor':
-		case 'material.sheenColor':
-		case 'material.attenuationColor': {
-
-			const prop = src.property || kind.split( '.' )[ 1 ];
-			usedWriters.add( 'writeColor' );
-			return `writeColor(view, ${ off }, material.${ prop });`;
-
-		}
-
-		case 'material.scalar':
-		case 'material.opacity':
-		case 'material.alphaTest':
-		case 'material.roughness':
-		case 'material.metalness':
-		case 'material.ior':
-		case 'material.emissiveIntensity':
-		case 'material.aoMapIntensity':
-		case 'material.lightMapIntensity':
-		case 'material.envMapIntensity':
-		case 'material.specularIntensity':
-		case 'material.shininess':
-		case 'material.size':
-		case 'material.rotation':
-		case 'material.clearcoat':
-		case 'material.clearcoatRoughness':
-		case 'material.sheen':
-		case 'material.sheenRoughness':
-		case 'material.transmission':
-		case 'material.thickness':
-		case 'material.attenuationDistance':
-		case 'material.iridescence':
-		case 'material.iridescenceIOR':
-		case 'material.anisotropy':
-		case 'material.anisotropyRotation':
-		case 'material.dispersion':
-		case 'material.reflectivity':
-		case 'material.refractionRatio':
-		case 'material.bumpScale':
-		case 'material.displacementScale':
-		case 'material.displacementBias':
-		case 'material.linewidth':
-		case 'material.scale':
-		case 'material.dashSize':
-		case 'material.gapSize':
-		case 'material.dashOffset': {
-
-			const prop = src.property || kind.split( '.' )[ 1 ];
-			usedWriters.add( 'writeF32' );
-			return `writeF32(view, ${ off }, material.${ prop });`;
-
-		}
-
-		case 'material.normalScale': {
-
-			const prop = src.property || 'normalScale';
-			usedWriters.add( 'writeVec2' );
-			return `writeVec2(view, ${ off }, material.${ prop });`;
-
-		}
-
-		case 'material.clearcoatNormalScale': {
-
-			const prop = src.property || 'clearcoatNormalScale';
-			usedWriters.add( 'writeVec2' );
-			return `writeVec2(view, ${ off }, material.${ prop });`;
-
-		}
-
-		// Scene-scoped uniforms — fog + scene-level state. The extractor
+		// Scene-scoped uniforms with non-table shapes. The extractor
 		// prefixes with `scene.fog.` or `scene.`; the hydrator carries
 		// `frame.scene` and `frame.scene.fog` as the live references.
+		// `scene.fog.numeric` / `scene.<scalar>` are handled by the
+		// writer-template table above.
 		case 'scene.fog.color': {
 
 			usedWriters.add( 'writeColor' );
 			return `writeColor(view, ${ off }, frame.scene.fog.color);`;
-
-		}
-
-		case 'scene.fog.near':
-		case 'scene.fog.far':
-		case 'scene.fog.density': {
-
-			const prop = src.property || kind.split( '.' )[ 2 ];
-			usedWriters.add( 'writeF32' );
-			return `writeF32(view, ${ off }, frame.scene.fog.${ prop });`;
-
-		}
-
-		// Generic scene.<prop> (e.g. scene.environmentIntensity, scene.backgroundIntensity).
-		// Read dynamically. Numeric by default — fall back to snapshot's writer
-		// inference when a snapshot is present.
-		case 'scene.environmentIntensity':
-		case 'scene.backgroundIntensity':
-		case 'scene.backgroundBlurriness': {
-
-			const prop = src.property || kind.split( '.' )[ 1 ];
-			usedWriters.add( 'writeF32' );
-			return `writeF32(view, ${ off }, frame.scene.${ prop });`;
 
 		}
 
@@ -823,6 +936,7 @@ function emitLive( slot, off, usedWriters, constants, unsupportedKinds, byteOffs
 			severity: 'blocked',
 			reason: `uniform.live "${ src.name || '<unnamed>' }" has no property binding (statically-unresolvable onRenderUpdate / onObjectUpdate closure). Using frozen extract-time snapshot — animation will NOT propagate. Lift the driving value onto material / scene / light / light.shadow so the extractor can mirror it.`,
 			byteOffset,
+			isStaticSnapshot: isStaticSnapshot( src.valueSnapshot ),
 		} );
 		return emitConstant(
 			{ source: { kind: 'constant', valueSnapshot: src.valueSnapshot } },
@@ -850,6 +964,81 @@ function emitLive( slot, off, usedWriters, constants, unsupportedKinds, byteOffs
 	} );
 	// Emit a no-op (the buffer was already zero-initialised; nothing to write).
 	return `/* uniform.live "${ src.name || '<unnamed>' }" frozen to 0 (no property, no snapshot) */`;
+
+}
+
+function emitObjectNodeUniform( slot, off, usedWriters, constants, unsupportedKinds, byteOffset ) {
+
+	const src = slot.source || {};
+	const prop = src.property;
+	const declaredValueType = src.valueType || src.uniformType || src.valueSnapshot && src.valueSnapshot.type;
+	let writer = inferWriterForValueType( declaredValueType );
+	let resolvedValueType = declaredValueType;
+
+	// Fallback: extractor produced an opaque valueType (null / "undefined")
+	// because the snapshot was captured before the property was assigned —
+	// e.g., SkyMesh's `showSunDisc` defaults are set lazily. Sniff the actual
+	// runtime data shape so booleans and numbers don't crash capture, and
+	// promote the resolved type so the constant fallback uses the same writer.
+	if ( ! writer && src.valueSnapshot ) {
+
+		writer = inferWriterFromSnapshotData( src.valueSnapshot.data );
+		if ( writer ) resolvedValueType = valueTypeForWriter( writer );
+
+	}
+
+	if ( ! prop ) {
+
+		unsupportedKinds.push( {
+			kind: 'object3d.nodeUniform',
+			severity: 'blocked',
+			reason: 'object3d.nodeUniform slot is missing property name',
+			byteOffset,
+		} );
+		return `/* object3d.nodeUniform: missing property name, skipped */`;
+
+	}
+	if ( ! writer ) {
+
+		// Mirror the `uniform.live` Last-resort: downgrade to `blocked` rather
+		// than throwing so capture survives. Zero-initialised UBO bytes still
+		// render correctly for the common case where the property defaults to
+		// 0 / false; animation paths that depend on this property WILL be
+		// wrong. Add a writer case (or annotate the snapshot type) to recover
+		// animation.
+		unsupportedKinds.push( {
+			kind: 'object3d.nodeUniform',
+			severity: 'blocked',
+			reason: `object3d.nodeUniform "${ prop }" has unknown valueType "${ declaredValueType }" — freezing to zero (animation will NOT propagate). Lift the value into a known scope or set a typed valueSnapshot to recover.`,
+			byteOffset,
+		} );
+		return `/* object3d.nodeUniform "${ prop }" frozen to 0 (unknown valueType "${ declaredValueType }") */`;
+
+	}
+
+	usedWriters.add( writer );
+	const nodeExpr = `frame.object && frame.object[${ JSON.stringify( prop ) }]`;
+	const liveWrite = `${ writer }(view, ${ off }, _node.value);`;
+	let fallbackWrite = `/* object3d.nodeUniform "${ prop }" missing; no snapshot */`;
+	if ( src.valueSnapshot && src.valueSnapshot.data !== undefined ) {
+
+		// Re-stamp the snapshot with the resolved type so emitConstant routes
+		// to the matching writer even when the extractor labelled the type as
+		// "undefined".
+		const resolvedSnapshot = resolvedValueType !== declaredValueType
+			? { type: resolvedValueType, data: src.valueSnapshot.data }
+			: src.valueSnapshot;
+		fallbackWrite = emitConstant(
+			{ source: { kind: 'constant', valueSnapshot: resolvedSnapshot } },
+			off,
+			usedWriters,
+			constants,
+			unsupportedKinds,
+			byteOffset,
+		);
+
+	}
+	return `{ const _node = ${ nodeExpr }; if (_node && _node.value !== undefined && _node.value !== null) ${ liveWrite } else ${ fallbackWrite } }`;
 
 }
 
@@ -897,15 +1086,49 @@ function inferWriterForValueType( valueType ) {
 
 	switch ( valueType ) {
 
-		case 'f32': case 'float': return 'writeF32';
+		case 'f32': case 'float': case 'number': return 'writeF32';
 		case 'i32': case 'int': return 'writeI32';
 		case 'u32': case 'uint': return 'writeU32';
+		case 'bool': case 'boolean': return 'writeF32';
 		case 'vec2': return 'writeVec2';
 		case 'vec3': return 'writeVec3';
 		case 'vec4': return 'writeVec4';
 		case 'color': return 'writeColor';
 		case 'mat3': return 'writeMat3';
 		case 'mat4': return 'writeMat4';
+		default: return null;
+
+	}
+
+}
+
+function inferWriterFromSnapshotData( data ) {
+
+	if ( typeof data === 'number' || typeof data === 'boolean' ) return 'writeF32';
+	if ( Array.isArray( data ) ) {
+
+		if ( data.length === 2 ) return 'writeVec2';
+		if ( data.length === 3 ) return 'writeVec3';
+		if ( data.length === 4 ) return 'writeVec4';
+
+	}
+	return null;
+
+}
+
+function valueTypeForWriter( writer ) {
+
+	switch ( writer ) {
+
+		case 'writeF32': return 'f32';
+		case 'writeI32': return 'i32';
+		case 'writeU32': return 'u32';
+		case 'writeVec2': return 'vec2';
+		case 'writeVec3': return 'vec3';
+		case 'writeVec4': return 'vec4';
+		case 'writeColor': return 'color';
+		case 'writeMat3': return 'mat3';
+		case 'writeMat4': return 'mat4';
 		default: return null;
 
 	}

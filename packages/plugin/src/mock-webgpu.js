@@ -15,12 +15,25 @@
  *   - queue.submit, writeBuffer, copyBufferToBuffer, map operations.
  *   - encoder.begin{Render,Compute}Pass → returns a pass that records drawIndexed etc. as no-ops.
  *
- * What is NOT supported (phase 5/6 work):
- *   - Feature flags (float32-filterable, depth32float-stencil8, etc.).
- *     Real three.js probes for these on init; the mock returns a static
- *     feature set meant to match "WebGPU on desktop Chrome".
- *   - Readback (mapReadAsync). If a scene does readback, the harness
- *     returns zeros. Flag such scenes for real-browser re-render in CI.
+ * **Important limitations (callers must handle):**
+ *
+ *   - **No readback.** `mapReadAsync` / `GPUBuffer.mapAsync` return
+ *     zero-filled bytes. Scenes whose extraction depends on reading back
+ *     a compute output (PMREM probe, compute kernels that re-feed the
+ *     extractor, etc.) MUST be flagged for real-browser re-render in CI —
+ *     the node-harness path can capture their WGSL + uniform plan, but
+ *     any values that came from a readback are zero. Treat the resulting
+ *     artifacts as needing browser confirmation before shipping.
+ *   - **Static feature set.** Real three.js probes `device.features` for
+ *     `float32-filterable`, `depth32float-stencil8`, etc. on init; the
+ *     mock returns the desktop-Chrome WebGPU baseline (see
+ *     `MOCK_FEATURES` below). If three.js adds a new feature gate, the
+ *     mock won't advertise it and the extraction path may degrade
+ *     silently — `pnpm vendor:probe` (P0.5) catches the related
+ *     `three/src/**` surface drift.
+ *   - **No timing / fences.** `device.queue.onSubmittedWorkDone()` etc.
+ *     resolve immediately; tests that depend on real GPU completion
+ *     order will not exercise the same paths the browser does.
  *
  * Usage:
  *   import { createMockGPU } from './mock-webgpu.js';

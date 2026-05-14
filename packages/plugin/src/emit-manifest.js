@@ -12,6 +12,7 @@
  * @module EmitManifest
  */
 
+import { collectArtifactDynamicBindings } from '@tsl-precompile/contract/dynamic-bindings';
 import { emitUpdaterSource } from './emit-updater.js';
 import { VIRTUAL_WGSL_POOL_MODULE_ID } from './_shared/constants.js';
 import { emitOptimizedJsonExpression, getExternalWgslRefIdentifiers } from './wgsl-optimize.js';
@@ -31,10 +32,24 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 	const hash = artifactJson.__hash || artifact.__hash || manifestEntry.hash;
 	const name = artifactJson.__name || artifact.__name || manifestEntry.name || '';
 
+	// Compute the dynamic-binding section once over the artifact's
+	// uniformPlan. P1.7's descriptor-driven resolver reads this directly;
+	// emitting it here keeps the contract registry as the single source of
+	// truth — extractor records `source.kind`, the contract registry resolves
+	// it to a descriptor, the runtime consumes the resolved list. Idempotent;
+	// only attaches a shallow copy when not already present so re-runs over
+	// the same artifact don't double-write.
+	const dynamicBindings = Array.isArray( artifact.dynamicBindings )
+		? artifact.dynamicBindings
+		: collectArtifactDynamicBindings( artifact );
+	const artifactForEmission = artifact.dynamicBindings === dynamicBindings
+		? artifact
+		: { ...artifact, dynamicBindings };
+
 	const {
 		declarations: wgslDeclarations,
 		expression: artifactLiteral,
-	} = emitOptimizedJsonExpression( artifact, opts );
+	} = emitOptimizedJsonExpression( artifactForEmission, opts );
 	const usedWgslPoolRefs = getExternalWgslRefIdentifiers( artifactLiteral );
 
 	// Generate the per-frame update function. Writers resolve at Vite bundle
@@ -69,8 +84,9 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 		`export const update = __generatedUpdate;`,
 		`export const updateGroup = __generatedUpdateGroup;`,
 		`export const __unsupportedKinds = ${ JSON.stringify( unsupportedKinds ) };`,
+		`export const dynamicBindings = artifact.dynamicBindings;`,
 		'',
-		`export default { __hash, name, artifact, update, updateGroup, __unsupportedKinds };`,
+		`export default { __hash, name, artifact, update, updateGroup, __unsupportedKinds, dynamicBindings };`,
 		'',
 	);
 

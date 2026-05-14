@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { computeArtifactHash, normalizeMaterialGraph } from '../../src/hash.js';
+import { registerMaterial, unregisterMaterial, materialIdentity } from '@tsl-precompile/contract/graph-normalize';
 
 test( 'hash — same material, same name, same versions → same hash', () => {
 
@@ -69,3 +70,56 @@ function fakeMat( overrides = {} ) {
 	};
 
 }
+
+test( 'registerMaterial pins identity for a subclass across minified class names', () => {
+
+	// Simulate a minifier-renamed subclass: the dev build's class name is
+	// `MyMaterial`, the prod build's is `m`. Without registerMaterial the hash
+	// would differ. With it, both builds resolve to the same identity.
+	class DevClass {}
+	class ProdClass {}      // pretends to be minified
+	unregisterMaterial( DevClass );
+	unregisterMaterial( ProdClass );
+
+	registerMaterial( DevClass, { type: 'MyMaterial' } );
+	registerMaterial( ProdClass, { type: 'MyMaterial' } );
+
+	const dev = Object.create( DevClass.prototype );
+	const prod = Object.create( ProdClass.prototype );
+
+	assert.equal( materialIdentity( dev ), 'MyMaterial' );
+	assert.equal( materialIdentity( prod ), 'MyMaterial' );
+	assert.equal( normalizeMaterialGraph( dev ), normalizeMaterialGraph( prod ) );
+
+	unregisterMaterial( DevClass );
+	unregisterMaterial( ProdClass );
+
+} );
+
+test( 'registerMaterial is idempotent on identical descriptors; conflicts throw', () => {
+
+	class FoxMaterial {}
+	unregisterMaterial( FoxMaterial );
+	registerMaterial( FoxMaterial, { type: 'Fox' } );
+	const second = registerMaterial( FoxMaterial, { type: 'Fox' } );
+	assert.equal( second, 'Fox' );
+	assert.throws( () => registerMaterial( FoxMaterial, { type: 'Wolf' } ), /already registered/ );
+	unregisterMaterial( FoxMaterial );
+
+} );
+
+test( 'registerMaterial validates inputs', () => {
+
+	assert.throws( () => registerMaterial( null, { type: 'x' } ), /constructor/ );
+	assert.throws( () => registerMaterial( class A {}, null ), /descriptor/ );
+	assert.throws( () => registerMaterial( class B {}, {} ), /type must be a non-empty string/ );
+
+} );
+
+test( 'materialIdentity falls back to constructor.type then constructor.name', () => {
+
+	assert.equal( materialIdentity( { constructor: { type: 'TypeWins' } } ), 'TypeWins' );
+	assert.equal( materialIdentity( { constructor: { name: 'NameAsFallback' } } ), 'NameAsFallback' );
+	assert.equal( materialIdentity( null ), 'UnknownMaterial' );
+
+} );

@@ -339,9 +339,11 @@ function captureLtcTextures( artifact ) {
  * @param {NodeBuilderState} state
  * @param {?Material} [material=null] - Optional source material; used to tag
  *     the artifact with a shape the runtime hydrator can consume.
+ * @param {?Object3D} [object=null] - Optional source object; used to map
+ *     object-owned UniformNode properties such as WaterMesh.distortionScale.
  * @return {PrecompiledArtifact}
  */
-export function extractArtifact( cacheKey, state, material = null ) {
+export function extractArtifact( cacheKey, state, material = null, object = null ) {
 
 	const bindings = ( state.bindings || [] ).map( describeBindGroup );
 	let materialShape = classifyMaterialShape( material );
@@ -383,7 +385,7 @@ export function extractArtifact( cacheKey, state, material = null ) {
 		}
 
 	}
-	const uniformPlan = extractUniformPlan( state );
+	const uniformPlan = extractUniformPlan( state, { material, object } );
 	patchMaterialSpecificUniformPlan( uniformPlan, materialShape );
 	// For each compute-storage buffer the user wired through a material
 	// `*Node` slot (e.g. `material.colorNode = uv().mul( colors.element( i ) )`),
@@ -1203,7 +1205,8 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 		const material = materialByCacheKey.get( cacheKey ) || null;
 		const userMaterial = materialByCacheKey.get( cacheKey + ':user' ) || null;
-		const artifact = extractArtifact( cacheKey, state, material );
+		const meshes = meshesByCacheKey.get( cacheKey ) || [];
+		const artifact = extractArtifact( cacheKey, state, material, meshes[ 0 ] || null );
 		if ( material && material.uuid ) artifact.materialUuid = material.uuid;
 		if ( userMaterial && userMaterial.uuid ) artifact.userMaterialUuid = userMaterial.uuid;
 
@@ -1273,7 +1276,6 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 		if ( ! isAuxiliary ) {
 
-			const meshes = meshesByCacheKey.get( cacheKey ) || [];
 			for ( const mesh of meshes ) {
 
 				const expectedShape = classifyMaterialShape( mesh.material );

@@ -207,6 +207,58 @@ test( 'emitUpdaterSource — scene.fog.* + object3d.position', () => {
 
 } );
 
+test( 'emitUpdaterSource — object3d.nodeUniform reads frame.object[property].value live', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			slots: [
+				{ offset: 0, source: { kind: 'object3d.nodeUniform', property: 'distortionScale', valueSnapshot: { type: 'number', data: 3.7 } } },
+			],
+		} ],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.deepEqual( unsupportedKinds, [] );
+	assert.match( source, /frame\.object && frame\.object\["distortionScale"\]/ );
+	assert.match( source, /writeF32\(view, byteOffset \+ 0, _node\.value\);/ );
+	assert.match( source, /writeF32\(view, byteOffset \+ 0, __const0\);/ );
+
+} );
+
+test( 'emitUpdaterSource — object3d.nodeUniform with opaque valueType + numeric snapshot infers writeF32 (Sky showSunDisc)', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			slots: [
+				{ offset: 0, source: { kind: 'object3d.nodeUniform', property: 'showSunDisc', uniformType: null, valueSnapshot: { type: 'undefined', data: 1 } } },
+			],
+		} ],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.deepEqual( unsupportedKinds, [] );
+	assert.match( source, /frame\.object && frame\.object\["showSunDisc"\]/ );
+	assert.match( source, /writeF32\(view, byteOffset \+ 0, _node\.value\);/ );
+
+} );
+
+test( 'emitUpdaterSource — object3d.nodeUniform with fully-opaque valueType downgrades to blocked + no-op (does not throw)', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			slots: [
+				{ offset: 0, source: { kind: 'object3d.nodeUniform', property: 'mysteryFlag', uniformType: null, valueSnapshot: { type: 'undefined', data: undefined } } },
+			],
+		} ],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.equal( unsupportedKinds.length, 1 );
+	assert.equal( unsupportedKinds[ 0 ].severity, 'blocked' );
+	assert.equal( unsupportedKinds[ 0 ].kind, 'object3d.nodeUniform' );
+	assert.match( unsupportedKinds[ 0 ].reason, /unknown valueType/ );
+	assert.doesNotMatch( source, /throw new Error/ );
+	assert.match( source, /frozen to 0/ );
+
+} );
+
 test( 'emitUpdaterSource — object.scale and attenuationDistance', () => {
 
 	const artifact = {

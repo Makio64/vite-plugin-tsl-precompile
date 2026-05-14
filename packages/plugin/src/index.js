@@ -300,10 +300,22 @@ export default function tslPrecompile( userOpts = {} ) {
 		async configureServer( server ) {
 
 			attachDevCapture( server, { artifactsDir: resolve( root, opts.artifactsDir ) } );
+			attachInspectorExtensionsShim( server );
 
 			// Re-read manifest when capture files change on disk.
 			server.watcher.on( 'add', () => loadManifest() );
 			server.watcher.on( 'change', () => loadManifest() );
+
+		},
+
+		// `vite preview` uses a separate server lifecycle; the dev capture
+		// endpoint is intentionally not mounted here (preview should never
+		// re-capture), but the Inspector extensions.json shim is needed so
+		// production builds that ship Inspector don't 404 → SPA-fallback HTML
+		// → JSON.parse throw.
+		async configurePreviewServer( server ) {
+
+			attachInspectorExtensionsShim( server );
 
 		},
 
@@ -376,13 +388,14 @@ export default function tslPrecompile( userOpts = {} ) {
 
 				let outputCode = result.code;
 				let touched = result.touchedNames.length > 0;
-				if ( opts.slim ) {
-
-					const injected = injectSlimAuxImport( outputCode );
-					outputCode = injected.code;
-					touched = touched || injected.touched;
-
-				}
+				// Inject the aux-artifact registry virtual module in any production build,
+				// not just slim mode. Without this, captured background / PMREM / post-process
+				// artifacts on disk are never registered in the bundle, and the precompiled
+				// RenderPipeline / scene background fall through to live three.js compilation
+				// paths that may not produce a valid frame.
+				const injected = injectSlimAuxImport( outputCode );
+				outputCode = injected.code;
+				touched = touched || injected.touched;
 
 				if ( ! touched ) return null;
 
@@ -514,7 +527,19 @@ export default function tslPrecompile( userOpts = {} ) {
 
 			if ( blocked.length > 0 ) {
 
-				this.warn( `[tsl-precompile] artifact "${ name }" has ${ blocked.length } not-yet-animated kind(s) (${ blocked.map( ( b ) => b.kind ).join( ', ' ) }). The updater ships a frozen-snapshot fallback — frame-0 visual is correct, but values from these kinds won't animate over time. Track support at packages/examples/batch/results/coverage-summary.md.` );
+				const staticBlocked = blocked.filter( ( b ) => b.isStaticSnapshot );
+				const liveBlocked = blocked.filter( ( b ) => ! b.isStaticSnapshot );
+
+				if ( staticBlocked.length > 0 ) {
+
+					this.warn( `[tsl-precompile] artifact "${ name }" has ${ staticBlocked.length } static-snapshot uniform slot(s) (${ staticBlocked.map( ( b ) => b.kind ).join( ', ' ) }) — these are provably-static values like identity texture-sampler matrices that don't animate by design. Safe to ignore.` );
+
+				}
+				if ( liveBlocked.length > 0 ) {
+
+					this.warn( `[tsl-precompile] artifact "${ name }" has ${ liveBlocked.length } not-yet-animated kind(s) (${ liveBlocked.map( ( b ) => b.kind ).join( ', ' ) }). The updater ships a frozen-snapshot fallback — frame-0 visual is correct, but values from these kinds won't animate over time. Track support at packages/examples/batch/results/coverage-summary.md.` );
+
+				}
 
 			}
 
@@ -531,6 +556,29 @@ function isTransformable( id ) {
 	if ( id.startsWith( '\0' ) ) return false;
 	if ( id.includes( '/node_modules/' ) ) return false;
 	return /\.(m?[jt]sx?)$/.test( id );
+
+}
+
+// Inspector (`three/addons/inspector/tabs/Settings.js`) does
+// `await fetch( new URL( '../extensions/extensions.json', import.meta.url ) ).then( r => r.json() )`.
+// In production builds the URL resolves under the assets dir where no
+// `extensions.json` exists, so Vite preview's SPA fallback returns
+// index.html and `JSON.parse` throws "Unexpected token '<'", blocking
+// render init. Intercept the request and return an empty extension list.
+function attachInspectorExtensionsShim( server ) {
+
+	server.middlewares.use( ( req, res, next ) => {
+
+		if ( req.url && /\/extensions\/extensions\.json(\?|$)/.test( req.url ) ) {
+
+			res.setHeader( 'content-type', 'application/json' );
+			res.end( '[]' );
+			return;
+
+		}
+		next();
+
+	} );
 
 }
 

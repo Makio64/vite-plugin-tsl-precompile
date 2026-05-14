@@ -653,6 +653,58 @@ function collectPointShadowCameraUniformSources( state ) {
 }
 
 /**
+ * Some three.js addon meshes (WaterMesh, SkyMesh) store public tweakable
+ * UniformNodes on the Object3D instance rather than on the material. When the
+ * precompile marker is given the source object, capture those direct
+ * `object.foo = uniform(...)` references so generated updaters can read
+ * `frame.object.foo.value` at render time instead of freezing anonymous
+ * `uniform.live` snapshots.
+ *
+ * @param {?Object} object
+ * @return {Map<Object, Object>} UniformNode → object source descriptor.
+ */
+function collectObjectUniformSources( object ) {
+
+	const out = new Map();
+	if ( ! object || typeof object !== 'object' ) return out;
+
+	for ( const property of Object.keys( object ) ) {
+
+		const node = object[ property ];
+		if ( ! node || node.isUniformNode !== true ) continue;
+		out.set( node, {
+			kind: 'object3d.nodeUniform',
+			property,
+			uniformType: node.nodeType || null,
+		} );
+
+	}
+	return out;
+
+}
+
+function collectVelocityUniformSources( state ) {
+
+	const out = new Map();
+	const nodes = [
+		...( Array.isArray( state && state.updateNodes ) ? state.updateNodes : [] ),
+		...( Array.isArray( state && state.updateBeforeNodes ) ? state.updateBeforeNodes : [] ),
+		...( Array.isArray( state && state.updateAfterNodes ) ? state.updateAfterNodes : [] ),
+	];
+	for ( const node of nodes ) {
+
+		const type = node && node.constructor && node.constructor.type;
+		if ( type !== 'VelocityNode' ) continue;
+		if ( node.previousProjectionMatrix ) out.set( node.previousProjectionMatrix, { kind: 'velocity.previousProjectionMatrix' } );
+		if ( node.previousCameraViewMatrix ) out.set( node.previousCameraViewMatrix, { kind: 'velocity.previousCameraViewMatrix' } );
+		if ( node.previousModelWorldMatrix ) out.set( node.previousModelWorldMatrix, { kind: 'velocity.previousModelWorldMatrix' } );
+
+	}
+	return out;
+
+}
+
+/**
  * Walk `state.updateNodes` for `AnalyticLightNode` instances and try to find
  * the one that owns the given depth texture. AnalyticLightNode lazily attaches
  * a `ShadowNode` whose `setup()` allocates `shadow.map.depthTexture`; the
@@ -867,7 +919,7 @@ function snapshotTexture( texture ) {
  *   Slots are per-uniform (UBO std140), textures are per-binding (sampled-
  *   textures and samplers). Either list can be empty.
  */
-export function extractUniformPlan( state ) {
+export function extractUniformPlan( state, context = null ) {
 
 	if ( ! state || ! Array.isArray( state.bindings ) ) return [];
 
@@ -879,6 +931,8 @@ export function extractUniformPlan( state ) {
 	const lightUniformSources = collectLightUniformSources( state );
 	const shadowUniformSources = collectShadowUniformSources( state );
 	const pointShadowCameraUniformSources = collectPointShadowCameraUniformSources( state );
+	const objectUniformSources = collectObjectUniformSources( context && context.object || null );
+	const velocityUniformSources = collectVelocityUniformSources( state );
 
 	// Walk updateNodes once, build two maps:
 	//   - uniformNode → source (UBO slots)
@@ -919,6 +973,26 @@ export function extractUniformPlan( state ) {
 
 	}
 
+	for ( const [ uniformNode, source ] of objectUniformSources ) {
+
+		if ( ! uniformNodeToSource.has( uniformNode ) ) {
+
+			uniformNodeToSource.set( uniformNode, source );
+
+		}
+
+	}
+
+	for ( const [ uniformNode, source ] of velocityUniformSources ) {
+
+		if ( ! uniformNodeToSource.has( uniformNode ) ) {
+
+			uniformNodeToSource.set( uniformNode, source );
+
+		}
+
+	}
+
 	for ( const node of state.updateNodes || [] ) {
 
 		const entry = resolveFromUpdateNode( node );
@@ -931,6 +1005,8 @@ export function extractUniformPlan( state ) {
 		if ( lightUniformSources.has( entry.uniformNode ) ) continue;
 		if ( shadowUniformSources.has( entry.uniformNode ) ) continue;
 		if ( pointShadowCameraUniformSources.has( entry.uniformNode ) ) continue;
+		if ( objectUniformSources.has( entry.uniformNode ) ) continue;
+		if ( velocityUniformSources.has( entry.uniformNode ) ) continue;
 
 		// MaterialReferenceNode with uniformType 'texture' binds its `node`
 		// to a TextureNode rather than a plain UniformNode. Route it into
