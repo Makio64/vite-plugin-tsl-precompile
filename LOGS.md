@@ -2,6 +2,8 @@
 
 Append-only journal of focused investigations and fixes. One entry per session/issue, newest first. For broader status snapshots see [STATUS.md](./STATUS.md).
 
+> Note: `hydrator.js:NNNN` line numbers in pre-2026-05-10 entries point into a since-refactored ~1.8k LOC file. The hydrator is now 656 LOC and the bulk of its old logic lives in [packages/runtime/src/hydrate/](packages/runtime/src/hydrate/). The fix narratives below are still accurate; only the line anchors are stale.
+
 ---
 
 ## 2026-05-05 — Focused visual replay queue: PMREM/glTF + portal green, bloom paused

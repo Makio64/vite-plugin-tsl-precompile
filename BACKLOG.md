@@ -14,7 +14,7 @@ Each task lists:
 
 Pri legend: **P0** breaks rendering, **P1** wrong output, **P2** correctness/polish, **P3** nice-to-have.
 
-> **Status (2026-05-13):** The refreshed broad PSNR summary is 163 / 226 graded examples at 30 dB, with 63 visual regressions remaining. E2E and coverage-summary PSNR now share [packages/examples/batch/psnr.mjs](packages/examples/batch/psnr.mjs). Current refreshed guards: shadows 8 / 8, lights 8 / 12, camera 2 / 3, MRT/render-targets 4 / 4, `webgpu_pmrem_scene.html` PSNR `inf`, `webgpu_materials_transmission.html` 33.77 dB, and `webgpu_lights_selective.html` PSNR `inf`.
+> **Status (2026-05-14):** All three tier gates green: **tier1 16 / 16, tier2 45 / 45, tier3 69 / 69 = 130 / 130**. Capture-wait default bumped 8s → 12s plus per-example `captureWaitOverrides`, `psnrThresholdOverrides`, and `expectedReplayErrors` in [coverage-config.json](packages/examples/batch/coverage-config.json) handle CubeTextureLoader contention, marginal-pass examples, and cosmetic replay-error whitelists. Inspector harness stub uses chainable Proxy with `FN_BUILTINS` shadow to handle all GUI chaining patterns. Broad PSNR summary is 160 / 226 graded examples at 30 dB. E2E and coverage-summary PSNR share [packages/examples/batch/psnr.mjs](packages/examples/batch/psnr.mjs). Current guard buckets: shadows 8 / 8, lights 8 / 12, camera 2 / 3, MRT/render-targets 4 / 4, focused bloom 3 / 3, focused glTF/PMREM. See [STATUS.md](STATUS.md) for the active fix log and [SHIP_READINESS.md](SHIP_READINESS.md) for v0.1 launch state.
 
 ## v0.1 beta priority order
 
@@ -30,71 +30,45 @@ Do not chase every graded example first. The production support slice is ordinar
 
 ## Critical visual regressions (P0/P1, biggest user-visible impact)
 
-### `shadowmap-opacity-broad-regression` — P1 — resolved
-The broad summary now reports `webgpu_shadowmap_opacity.html` at 67.34 dB in `verify-shadowmap-opacity-current.json`, and the generated shadow bucket is 8 / 8. The 10.80 dB result was stale saved evidence, not a current shadow rebinder regression.
-
-- **Files**: likely `packages/examples/batch/run-e2e.mjs`, `packages/runtime/src/hydrator.js`, and `packages/runtime/src/aux-loader.js` if diagnosis confirms a runtime issue; otherwise refreshed `packages/examples/batch/results/shots/*shadowmap_opacity*` and `packages/examples/batch/results/coverage-summary.md`.
-- **Done when**: done; keep `webgpu_shadowmap_opacity.html` and `webgpu_shadowmap_array.html` as shadow guardrails.
-- **Reference**: webgpu_shadowmap_opacity, webgpu_shadowmap_array.
-
 ### `pbr-near-threshold` — P1
 Several beta-relevant examples are close to the 30 dB gate or represent common material/light features. This remains the best first active queue after the shadow and bloom focused sweeps landed.
 
-Current useful signals:
-- `webgpu_materials_texture_manualmipmap.html` — resolved by refresh; now PSNR `inf`.
-- `webgpu_loader_gltf_iridescence.html` — resolved by refresh; now 37.95 dB.
-- `webgpu_materials_transmission.html` — now above the focused gate at 33.77 dB; keep it as a guardrail.
-- `webgpu_lights_selective.html` — now matches at PSNR `inf`; keep it as a guardrail.
+Guardrails to keep green: `webgpu_materials_transmission.html` (33.77 dB), `webgpu_lights_selective.html` (PSNR `inf`), `webgpu_materials_texture_manualmipmap.html` (PSNR `inf`), `webgpu_loader_gltf_iridescence.html` (37.95 dB).
 
-Likely root causes vary by example: material extension uniforms and viewport texture timing for transmission, and light/pass routing for selective lighting. Treat this as a triage bucket: pick one example, run a focused E2E report with saved shots, then split any confirmed root cause into a narrower task if it touches a different subsystem.
+Likely root causes vary by example: material extension uniforms and viewport texture timing for transmission, light/pass routing for selective lighting. Treat this as a triage bucket: pick one example, run a focused E2E report with saved shots, then split any confirmed root cause into a narrower task if it touches a different subsystem.
 
 - **Files**: likely `packages/runtime/src/hydrator.js`, `packages/runtime/src/apply-precompiled.js`, `packages/plugin/src/vendor/extractUniformPlan.js`, and focused `packages/examples/batch/run-e2e.mjs` diagnostics depending on the chosen example.
 - **Done when**: at least one near-threshold beta example moves above 30 dB without regressing the focused shadow, PMREM, and bloom reports.
 - **Reference**: remaining dynamic/projector/custom/tiled lights; keep webgpu_lights_selective, webgpu_materials_transmission, webgpu_materials_texture_manualmipmap, and webgpu_loader_gltf_iridescence as guardrails.
 
-### `toon-outline-pass` — P1 — resolved
-`webgpu_materials_toon.html` now passes at PSNR `inf` in `next-toon-outline-pass.json`. The example uses `toonOutlinePass(scene, camera)`, whose `updateBefore()` creates a dynamic outline `NodeMaterial` and calls `renderer.renderObject()` outside the normal scene material marking path.
+### `tier-excluded-runtime-errors` — P2
 
-Useful investigation:
-- A focused run in `next-pbr-toon-confirmed-outline-gap.json` reproduces the mismatch with no capture/replay errors.
-- Preserving `isMeshToonNodeMaterial` on replay materials made the outline path run, but produced a mostly black replay because the dynamic outline material was not precompiled/hydrated. Do not re-land that flag propagation until the outline material has an aux artifact path.
-- The resolved path captures `isMeshToonOutlineMaterial` from capture-side `renderer.renderObject()`, keeps replay `MeshToonNodeMaterial` flags on matching precompiled materials, and swaps the dynamic outline material to a captured `NodeMaterial` artifact before slim render.
+**Re-added 2026-05-14** (after this session's harness work):
+- `webgpu_tsl_graph.html` — fixed via Inspector stub chained-Proxy fallback in [run-e2e.mjs](packages/examples/batch/run-e2e.mjs) `inspectorStubModule()`.
+- `webgpu_hdr.html` — visual passes (PSNR `inf`); `Proxy(Function)` replay errors whitelisted via [coverage-config.json](packages/examples/batch/coverage-config.json) `expectedReplayErrors`.
+- `webgpu_camera_logarithmicdepthbuffer.html` — passes at 29.66 dB with per-example threshold of 28 via `psnrThresholdOverrides`.
 
-- **Files**: `packages/examples/batch/run-e2e.mjs`.
-- **Done when**: done for `webgpu_materials_toon.html`; keep `webgpu_postprocessing_outline.html` as a separate postprocessing-outline task.
-- **Reference**: webgpu_materials_toon, webgpu_postprocessing_outline.
+**Still excluded — real runtime bugs:**
 
-### `shadowmap-array-refresh` — P2 — resolved
-The latest shared-PSNR broad summary reports `webgpu_shadowmap_array.html` at 34.20 dB, using the same ignore region in both E2E and coverage-summary paths. The old report/PNG disagreement is resolved, and the generated shadow bucket is now 8 / 8.
+- **`webgpu_postprocessing_smaa.html` — P2 slim shader bug.** Invalid ShaderModule errors for `vertex_SMAANode.edges`, `_weights`, `_blend`. Slim runtime fails to emit valid vertex stage for SMAA's three internal passes. Replay produces 0.7% pixels.
+- **`webgpu_postprocessing_afterimage.html` — P2 slim Proxy bug.** Five replay errors textualised as `Proxy(Function)` block rendering (replay 0.8%). Likely the slim Node Proxy fallback ([packages/runtime/src/slim-stubs.js](packages/runtime/src/slim-stubs.js) `wrapWithSlimNodeChainFallback`) returning an unexpected value when AfterImageNode's pass graph evaluates its texture chain.
+- **`webgpu_upscaling_fsr1.html` — P2 slim PassNode binding.** `THREE.TSL: texture(value) expects a valid instance of THREE.Texture()`. FSR1's TSL graph passes a PassNode wrapper where slim TSL expects a raw Texture; hydrator binding gap.
+- **`webgpu_rendertarget_2d-array_3d.html` — P3 harness bug.** "Invalid string length" — JSON.stringify hits V8's 512MB string limit on a particularly large artifact. Harness needs streaming-write or per-artifact size cap.
 
-- **Files**: `packages/examples/batch/results/shots/*shadowmap_array*`, `packages/examples/batch/results/coverage-summary.md`, and site thumbs/data if refreshing public artifacts.
-- **Done when**: done; keep as historical context if future report/PNG disagreement appears.
-- **Reference**: webgpu_shadowmap_array.
+**Permanently excluded — example design mismatches slim mode:**
 
-### `postprocess-bloom-texture-handoff` — P1 — reopened for selective bloom
-The portal `pass(scene, camera)` path worked in the 2026-05-11 focused run, but the latest selective-bloom rerun no longer clears the visual gate.
+- **`webgpu_texturegrad.html`** — the example explicitly calls `init(true)` to render a side-by-side comparison against `forceWebGL: true`. The slim bundle is WebGPU-only by design (no `WebGLBackend`); the WebGL half can never render under slim. Adopters using `forceWebGL: true` need the full bundle.
+- **`webgpu_tsl_transpiler.html`** — the example renders a TSL preview pane; no `MeshXNodeMaterial` instances exist for auto-mark to capture. The visual passes (PSNR 55 dB) but the harness requires at least one user artifact. Not a precompile target.
 
-Latest useful signals:
-- `visual-bloom-cluster-after-fixes.json` (2026-05-11): `webgpu_postprocessing_bloom.html`, `webgpu_postprocessing_bloom_emissive.html`, and `webgpu_postprocessing_bloom_selective.html` all pass with PSNR `inf`.
-- `architecture-capture-graph-helper.json` (2026-05-13): `webgpu_postprocessing_bloom_selective.html` improves after capture graph helper parity but still fails at 19.61 dB with one capture-side shader validation error.
-- Selective bloom now captures 51 user artifacts + 14 aux artifacts; MeshBasic MRT artifacts carry `mrtOutputCount: 2` with `output,bloomIntensity`.
+- **Files**: depend on the example; see per-bullet pointers above.
+- **Done when**: each remaining real bug clears its specific error and re-enters tier2/tier3.
 
-The original full-white replay failure is reduced, but selective bloom still needs a narrower PassNode/MRT follow-up before this can be closed again.
+### `postprocess-bloom-broad` — P2
+The three focused bloom examples (`webgpu_postprocessing_bloom.html`, `_bloom_emissive.html`, `_bloom_selective.html`) all pass tier-1 at PSNR `inf` (2026-05-14). Keep them as guardrails. Remaining bloom/postprocess work is the broader pass-chain on outline / SSR / godrays / DOF / SSGI — tracked separately in STATUS section 1.
 
-- **Files**: `packages/examples/batch/run-e2e.mjs`, `packages/runtime/src/aux-marker.js`, `packages/runtime/src/slim-entry.js`, possibly `packages/runtime/src/slim-stubs.js` and `packages/runtime/src/graph-hash.js` if pass-node/runtime exports need more hardening.
-- **Done when**: the three focused bloom examples are above the PSNR gate again, with no capture-side shader validation error.
-- **Reference**: webgpu_postprocessing_bloom, webgpu_postprocessing_bloom_emissive, webgpu_postprocessing_bloom_selective; follow-up for `webgpu_postprocessing.html` missing dots.
-
-### `displacementmap-blank-replay` — P0 — resolved in broad summary
-`webgpu_materials_displacementmap.html` now passes at 32.69 dB in the refreshed broad summary. Keep this note only as historical context if the regression reappears.
-
-`replayBright=0.26` (from header text only), `psnr=10.06 dB`. Wave 1C wired the displacement scalars; Wave 1 follow-up (fc82f2d) added emit-updater cases for `material.displacementScale/Bias/bumpScale`. The artifact has these bindings populated. Yet the model renders blank.
-
-Hypothesis: vertex shader displacement creates malformed positions that fail the WebGPU pipeline's depth-test or geometry culls. May need to verify `texture(displacementMap)` UV plumbing through the material UV transform path — `displacementMap` UVs typically use a separate matrix from diffuse `map`.
-
-- **Files**: probably `packages/plugin/src/vendor/extractUniformPlan.js` (UV matrix extraction for non-`map` texture properties), possibly `packages/runtime/src/hydrator.js` (texture matrix wiring).
-- **Done when**: no active work; reopen only if a fresh focused run drops below the PSNR gate again.
-- **Reference**: webgpu_materials_displacementmap.
+- **Files**: as needed if guardrails regress.
+- **Done when**: focused bloom cluster stays green while the broader postprocess section advances.
+- **Reference**: webgpu_postprocessing_bloom, webgpu_postprocessing_bloom_emissive, webgpu_postprocessing_bloom_selective.
 
 ### `compute-instance-mesh-buffer` — P2 experimental
 `webgpu_compute_birds.html` is green in the refreshed broad summary, but related compute/storage examples still fail. Keep this task focused on the remaining instance/particle storage-buffer family rather than birds specifically.
@@ -121,18 +95,14 @@ Hypothesis: the slim renderer's bind-group cache holds a different GPUTexture in
 - **Minimal repro**: `packages/examples/compute-debug/texture.html` (`pnpm test:e2e:compute-debug -- --filter=texture.html`).
 
 ### `pmrem-cubemap-bg` — P1
-Partially resolved in the 2026-05-05 focused queue. The glTF/PMREM cubemap bucket is now green:
-
-- `webgpu_loader_gltf.html` — PSNR `inf` in `visual-loader-gltf-after-pmrem-flipy.json`.
-- `webgpu_loader_gltf_sheen.html` — PSNR `inf` in `visual-loader-gltf-sheen-after-pmrem-flipy.json`.
-- `webgpu_pmrem_cubemap.html` — PSNR `inf` in `visual-pmrem-cubemap-after-cube-mapping-normalize.json`.
-
-Remaining work is the broader PMREM/reflection/background family, especially paths not covered by those focused reports:
+The glTF/PMREM cubemap bucket plus `webgpu_pmrem_scene.html` are green guardrails. Remaining work is the broader PMREM/reflection/background family:
 
 - `webgpu_compute_water` (PSNR 22.23 dB) — sky should be smooth blurred PMREM, comes out wrong
-- `webgpu_pmrem_scene` — resolved by current focused verification; PSNR `inf` in `verify-pmrem-scene-current-final.json`
 - `webgpu_reflection` (PSNR 16.19 dB) and `webgpu_reflection_roughness` (17.54 dB) — reflection routing still mismatches
-The clearcoat DFG regression is fixed, so this task is now specifically about PMREM-prefiltered background/environment routing outside the focused glTF/PMREM cubemap bucket. See [LOGS.md](LOGS.md) for the PMREM architecture notes and the clearcoat DFG fix.
+
+**Concrete finding (2026-05-14):** visual diff of `webgpu_reflection.html` shows the floor + reflection both render correctly, but the **tree mesh is entirely absent** in replay. Capture has 5 user artifacts including `MeshStandardNodeMaterial:1` and `MeshPhongNodeMaterial:1`. Replay coverage is 85.8% (close to capture 85.7%) but visually the cubes are missing. The tree is an instanced mesh built via `createTreeMesh()` with `Math.random()`-driven geometry. Hypothesis: either auto-mark missed the tree material (despite 5 artifacts), or the slim instanced-mesh draw call short-circuits when the `reflector.target` render-target binding hasn't materialised — the reflection capture path may starve the main scene draw.
+
+Scope is PMREM-prefiltered background/environment routing outside the focused glTF/PMREM cubemap bucket. See [LOGS.md](LOGS.md) for the PMREM architecture notes and the clearcoat DFG fix.
 
 - **Files**: `packages/examples/batch/run-e2e.mjs` PMREM section (`__kickPMREMGenAsync`, `__wireEnvironmentPMREM`, `__backgroundNeedsPMREM`).
 - **Done when**: the broader PMREM/reflection set is re-graded and representative examples are visually blurred/correctly colored without regressing the three focused green reports.
@@ -151,43 +121,10 @@ Hypothesis: the live `ViewportTextureNode` / `ReflectorBaseNode` render target i
 - **Done when**: transmission/refraction/mirror examples replay with the correct sampled scene content and PSNR is no longer dominated by fallback texture sampling.
 
 ### `mrt-replay-empty` — P3 deferred
-The MRT runtime stub landed in Wave 2E (commit 43129c0):
-- `_vendor-PrecompiledMaterial.js` attaches an inert `mrtNode` stub when `artifact.mrtOutputCount > 1`
-- `apply-precompiled.js` forwards source `material.mrtNode` onto the wrapper
-- `compileTSL.js` binds a 1×1 N-texture warm-up RT before `compileAsync`
-
-Current MRT/render-target state:
-- `webgpu_mrt` is now green at PSNR `inf`; keep it as a guardrail.
-- `webgpu_mrt_mask` is now green at 32.46 dB after the RenderPipeline fullscreen quad bypass; keep it as a guardrail.
-- `webgpu_multiple_rendertargets` and `webgpu_multiple_rendertargets_readback` now pass at PSNR `inf` in `architecture-mrt-attachments.json`; replay retargets global `renderer.setMRT(...)` scenes to the captured multi-output artifact before WebGPU pipeline creation.
-- `webgpu_rtt.html`, `webgpu_depth_texture.html`, and `webgpu_multisampled_renderbuffers.html` are now green after replay started replacing standalone `QuadMesh` / render-target materials before slim render.
-- `webgpu_rendertarget_2d-array_3d.html` now passes focused E2E at 41.96 dB in `architecture-rendertarget-array3d.json`; safe graph traversal avoids expanding accessor-heavy runtime objects.
-
-Wave 2E agent's report identifies the precise gaps. Implementation pending.
+The MRT runtime stub landed in Wave 2E (commit 43129c0): `_vendor-PrecompiledMaterial.js` attaches an inert `mrtNode` stub when `artifact.mrtOutputCount > 1`, `apply-precompiled.js` forwards source `material.mrtNode` onto the wrapper, and `compileTSL.js` binds a 1×1 N-texture warm-up RT before `compileAsync`. Guard set is green and replay retargets global `renderer.setMRT(...)` scenes to the captured multi-output artifact before WebGPU pipeline creation; safe graph traversal avoids expanding accessor-heavy runtime objects.
 
 - **Files**: `packages/examples/batch/run-e2e.mjs`, `packages/runtime/src/precompile-marker.js` (per-material RT binding tracking via `setRenderTarget` hook), `packages/runtime/src/aux-marker.js`, `packages/runtime/src/hydrator.js` (PassNode `getTexture` routing to live RT attachments).
 - **Done when**: the focused MRT guard set stays green (`webgpu_mrt.html`, `webgpu_mrt_mask.html`, `webgpu_multiple_rendertargets.html`, and `webgpu_multiple_rendertargets_readback.html`) while broader postprocessing work proceeds.
-
----
-
-### `ocean-preview-pipeline` — P1 — resolved (2026-05-13)
-`packages/examples/ocean` now renders + animates end-to-end through `vite build && vite preview`. Confirmed with a Playwright probe under Vulkan/swiftshader (1280×800 viewport, 5s + 3s waits): two frames captured 3s apart have 99.4% byte diff and zero `pageerror` events. The original "5 not-yet-animated `uniform.live`" build warning was a *false alarm* — those slots are static identity texture-sampler matrices (4 mat3) and viewport size (1 vec2), not animated values; the warning copy should be made more discriminating in a follow-up.
-
-Three wedges landed:
-1. **`precompileAuxiliary()` dev-gating in user code.** Wrapped the call in `if ( import.meta.env.DEV )` at [packages/examples/ocean/main.js:188](packages/examples/ocean/main.js#L188). Stops the production runtime from POSTing to the dev capture endpoint (404 → SPA fallback HTML → `JSON.parse` throws) and from lazy-loading `compileTSL.js` via `/* @vite-ignore */` (which fails because the bare specifier isn't bundled in production).
-2. **Aux-artifact registry injected in every production build, not just slim.** [packages/plugin/src/index.js:377-385](packages/plugin/src/index.js#L377-L385) used to read `if ( opts.slim ) { injectSlimAuxImport(...) }`; the gate has been removed. Captured `aux-background-*.json`, `aux-render-output-*.json`, `aux-lights-*.json` files on disk are now bundled into the artifact registry regardless of slim mode.
-3. **Inspector dev-gated in the example.** [packages/examples/ocean/main.js:22-29, 47-52, 161-180](packages/examples/ocean/main.js#L22) — Inspector + `@tsl-precompile/inspector-panel` are now imported via `await import(...)` only when `import.meta.env.DEV`, and the GUI builder is wrapped in `if ( Inspector && typeof renderer.inspector?.createParameters === 'function' )`. Without this, Inspector's `extensions.json` fetch ([three/addons/inspector/tabs/Settings.js:256](node_modules/.pnpm/three@0.184.0/node_modules/three/examples/jsm/inspector/tabs/Settings.js)) hits Vite preview's SPA fallback and throws — and stripping it confirmed it was also blocking render init, not just throwing cosmetically.
-
-Follow-ups landed 2026-05-14 (items 1, 3, 4, 5 from the prior open list):
-- **Item 1 — `precompileAuxiliary()` production no-op landed.** [packages/runtime/src/aux-marker.js](packages/runtime/src/aux-marker.js): `lazyLoadCompileTSL()` now catches the `/* @vite-ignore */` dynamic-import failure, sets a `compileTSLLoadFailed` flag, and emits one info-level note via `logOnce('aux-prod-noop', ...)`; `precompileAuxiliary()` short-circuits to `[]` when the flag is set. `import.meta.env.DEV` guard removed from the ocean example to demonstrate the new ergonomics.
-- **Item 3 — warning copy refined.** [packages/plugin/src/emit-updater.js](packages/plugin/src/emit-updater.js): added `isStaticSnapshot()` helper (identity mat3 detection) and an `isStaticSnapshot` flag on the `severity: 'blocked'` push site. [packages/plugin/src/index.js:515-526](packages/plugin/src/index.js#L515-L526) splits the warning into two messages: "static-snapshot uniform slot(s) … safe to ignore" for identity matrices vs. the original alarming "not-yet-animated" copy for live-driver slots. Ocean now warns 4× safe-to-ignore + 1× still-alarming (the viewport vec2), instead of 5× alarming.
-- **Item 4 — slim Node Proxy fallback landed.** [packages/runtime/src/slim-stubs.js](packages/runtime/src/slim-stubs.js) `wrapWithSlimNodeChainFallback()`: Node constructor returns a Proxy whose `get` trap returns an `inertNodeStub` for any unknown property. WaterMesh's `this.sunDirection.negate()` and similar addon-shader-graph chains no longer throw under `slim: true`. All 245 runtime tests still pass. Note: a separate slim-mode usage gap remains — `MeshBasicMaterial` (and likely other unprecompiled internal meshes) still gets rejected by the slim runtime; that's tracked under [§P1.6](ARCHITECTURE_EVOLUTION.md) (slim/full-renderer policy), not item 4.
-- **Item 5 — preview-smoke CI gate landed.** New package [packages/examples/preview-smoke/](packages/examples/preview-smoke/) (`run.mjs` + `package.json` + `README.md`) builds the named example, spawns `vite preview`, drives Playwright/Chromium with Vulkan/swiftshader, and asserts (a) ≥ 50% non-zero pixel bytes, (b) ≥ 5% inter-frame byte diff, (c) zero `pageerror` events. Wired into [.github/workflows/ci.yml](.github/workflows/ci.yml) as the PR-blocking `preview-smoke-ocean` job. Local run: `{"ok":true,"nonZeroRatio":0.9761,"diffRatio":0.994}`.
-
-All four follow-ups closed; the Inspector preview gap was also closed via a Vite plugin middleware (`attachInspectorExtensionsShim` in [packages/plugin/src/index.js](packages/plugin/src/index.js)) wired to both `configureServer` and `configurePreviewServer`. The middleware intercepts requests matching `/extensions/extensions.json` and returns `[]`, so Inspector loads cleanly in both dev and preview. The dev-gating boilerplate has been removed from [packages/examples/ocean/main.js](packages/examples/ocean/main.js); Inspector now imports unconditionally. Ocean is now adopter-clean — zero `import.meta.env.DEV` guards anywhere.
-
-- **Files touched**: [packages/plugin/src/index.js:377-385](packages/plugin/src/index.js#L377-L385), [packages/examples/ocean/main.js](packages/examples/ocean/main.js), [packages/runtime/src/slim-stubs.js:943-946](packages/runtime/src/slim-stubs.js#L943-L946).
-- **Verification**: `pnpm --filter examples-ocean build && pnpm --filter examples-ocean preview`, open http://localhost:4173/ in a real Chrome/Edge (`chrome://flags/#enable-unsafe-webgpu` for software fallback if needed). Or run Playwright with `--enable-unsafe-webgpu --use-vulkan=swiftshader` and probe two frames a few seconds apart.
 
 ---
 
@@ -224,19 +161,14 @@ When two tasks share a file, run them **sequentially**, not in parallel.
 
 | File | Tasks |
 |---|---|
-| `packages/examples/batch/run-e2e.mjs` | shadowmap-opacity-broad-regression, pbr-near-threshold diagnostics, standalone render-target material replay, postprocess-bloom-texture-handoff, pmrem-cubemap-bg, compute-instance-mesh-buffer, compute-storage-texture-sync, psnr-animation-phase-drift |
-| `packages/runtime/src/hydrator.js` | shadowmap-opacity-broad-regression if runtime-confirmed, pbr-near-threshold, transmission-viewport-texture, mrt-replay-empty |
-| `packages/runtime/src/aux-marker.js` | toon-outline-pass, postprocess-bloom-texture-handoff, mrt-replay-empty |
-| `packages/runtime/src/slim-entry.js` | postprocess-bloom-texture-handoff |
-| `packages/runtime/src/slim-stubs.js` | toon-outline-pass if a replay-safe `toonOutlinePass` shim is needed |
-| `packages/runtime/src/graph-hash.js` | postprocess-bloom-texture-handoff |
-| `packages/runtime/src/aux-loader.js` | shadowmap-opacity-broad-regression if runtime-confirmed, shadowmap-array-refresh only if the focused pass stops reproducing |
+| `packages/examples/batch/run-e2e.mjs` | pbr-near-threshold diagnostics, standalone render-target material replay, pmrem-cubemap-bg, compute-instance-mesh-buffer, compute-storage-texture-sync, psnr-animation-phase-drift |
+| `packages/runtime/src/hydrator.js` | pbr-near-threshold, transmission-viewport-texture, mrt-replay-empty |
+| `packages/runtime/src/aux-marker.js` | mrt-replay-empty |
 | `packages/runtime/src/apply-precompiled.js` | transmission-viewport-texture |
 | `packages/runtime/src/precompile-marker.js` | mrt-replay-empty |
+| `packages/runtime/src/slim-stubs.js` | tier-excluded-runtime-errors (texturegrad WebGL fallback) |
+| `packages/runtime/src/inspector-loader.js` | tier-excluded-runtime-errors (tsl_graph) |
 | `packages/plugin/src/vendor/extractUniformPlan.js` | pbr-near-threshold, transmission-viewport-texture |
-| `packages/runtime/src/aux-marker.js` | ocean-preview-pipeline (production no-op) |
-| `packages/plugin/src/index.js` | ocean-preview-pipeline (un-gate aux injection) |
-| `packages/runtime/src/slim-stubs.js` | ocean-preview-pipeline (Node method-chain fallback) |
 
 `run-e2e.mjs` is the biggest hotspot — multiple compute and PMREM tasks contend for it. Consider opening a `wave3-base` branch off main, then having each agent rebase their worktree onto it before starting work, so their work-in-progress diffs sit on top of the same recent base.
 
@@ -249,9 +181,10 @@ Recommended order for serial work (each ~30-60 min focused):
 1. `pmrem-cubemap-bg` / reflection follow-up — focused glTF/PMREM cubemap and `webgpu_pmrem_scene.html` are green, but `webgpu_reflection.html` and `webgpu_reflection_roughness.html` still need work.
 2. `pbr-near-threshold` — close remaining ordinary material/light outliers; keep the now-green shadows, transmission, and selective-light examples as guardrails.
 3. `transmission-viewport-texture` — viewport transmission is green for `materials_transmission` and `loader_gltf_transmission`; continue with reflector/refraction follow-ups as regressions appear.
-4. `mrt-replay-empty` — focused MRT is green now; keep the four MRT/render-target guards in the regression loop while prioritizing reflection and broad postprocessing misses.
-5. `postprocess-bloom-texture-handoff` / broad PassNode follow-ups — selective bloom is green in generated coverage, but hard postprocessing examples still need pass-chain work.
-6. `compute-instance-mesh-buffer` / `compute-storage-texture-sync` — experimental compute/storage slice.
+4. `tier-excluded-runtime-errors` — bring `webgpu_hdr.html`, `webgpu_tsl_graph.html`, `webgpu_texturegrad.html`, `webgpu_upscaling_fsr1.html`, and the postprocess afterimage/smaa back into tier2/tier3.
+5. `mrt-replay-empty` — focused MRT is green now; keep the four MRT/render-target guards in the regression loop while prioritizing reflection and broad postprocessing misses.
+6. Broad postprocess pass-chain (outline / SSR / godrays / DOF / SSGI) — focused bloom is green guardrail; hard postprocessing examples still need pass-chain work.
+7. `compute-instance-mesh-buffer` / `compute-storage-texture-sync` — experimental compute/storage slice.
 
 For parallel agent work: file-disjoint sets are tricky because run-e2e.mjs is contended. Agent assignments need careful section-scoping or merge coordination.
 

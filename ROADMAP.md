@@ -2,57 +2,43 @@
 
 Eight phases. Each has a release gate that must pass before moving on.
 
-> For the **structural** work that runs alongside the phase gates — extracting the
-> slim-support runtime module, splitting the hydrator, a shared extractor↔codegen↔runtime
-> contract, de-duplicating the graph hasher, hardening the three.js fork seam, trustworthy
-> coverage measurement — see [ARCHITECTURE_EVOLUTION.md](./ARCHITECTURE_EVOLUTION.md)
-> (prioritized P0→P3). Several of those items are prerequisites for closing the Phase 8
-> fidelity gate at scale.
-> First wedges are now in place for the shared contract, graph hasher,
-> kind registry / artifact validator, tier-1 coverage CI gate,
-> Three.js compat probe, updater parse guard, and
-> `runtime/slim-support`; the next work is to deepen those seams rather than
-> add more harness-only fixes.
+> Phases 1–7 are shipped; active work is Phase 8 (launch). For the **structural** work
+> that runs alongside the phase gates — slim-support runtime module, hydrator
+> decomposition, shared extractor↔codegen↔runtime contract, three.js fork seam,
+> trustworthy coverage measurement — see [ARCHITECTURE_EVOLUTION.md](./ARCHITECTURE_EVOLUTION.md)
+> (P0→P3). Several items there are prerequisites for closing the Phase 8 fidelity
+> gate at scale.
 
-## Phase 1 — Node harness
+## Phase 1 — Node harness — ✅ shipped
 
-- Port `compileTSL.js` + `extractUniformPlan.js` into `packages/plugin/src/vendor/`.
-- Mock WebGPU device captures WGSL strings instead of submitting.
-- `hash.js` produces a stable sha256 over the normalized TSL graph + three version + plugin version.
-- **Gate**: every artifact produced in Node byte-matches the browser-produced baseline on the ocean, bloom, and compute fixtures.
+Node-side `compileTSL` + `extractUniformPlan` + stable hash; artifacts byte-match the browser baseline. See [STATUS.md phase table](STATUS.md#phase-completion).
 
-## Phase 2 — `.precompile(name)` + dev capture
+## Phase 2 — `.precompile(name)` + dev capture — ✅ shipped
 
-- `Material.prototype.precompile(name)` in `packages/runtime/src/precompile-marker.js`. Dev behaviour: extract + POST to dev server. Prod behaviour: transform-rewritten.
-- Dev server writes `artifacts/<name>.<hash>.json`, updates `manifest.json`, fires HMR.
-- **Gate**: unsupported-kind errors throw synchronously at the call site with the offending node kind.
+Marker, dev server, HMR; unsupported-kind errors throw synchronously at the call site.
 
-## Phase 3 — AOT codegen
+## Phase 3 — AOT codegen — ✅ shipped (core kinds)
 
-- `emit-updater.js` emits a static `updater.js` per artifact, covering every `source.kind`.
-- `packages/runtime/src/writers.js` — `writeMat4 / writeVec4 / writeF32 / writeColor`.
-- **Gate**: per-kind fixture — descriptor JSON → generated JS → byte-match UBO against the current hydrator's output.
+`emit-updater.js` covers camera/object/material/time/uniform/scene with direct `DataView` writes. Per-kind fixtures byte-match.
 
-## Phase 4 — Build-time rewrite
+## Phase 4 — Build-time rewrite — ✅ shipped
 
-- `babel-transform.js` rewrites `.precompile('name')` to `__applyPrecompiled(this, import(...), expectedHash)`.
-- Virtual module `virtual:tsl-precompile/<name>` resolves to artifact JSON + generated updater.
-- **Gate**: three-layer hash check (transform, build-output, runtime) all fire on corrupted artifact; demos pixel-identical dev vs prod.
+Babel transform + virtual modules + `__applyPrecompiled`; three-layer hash check fires on corrupt artifact.
 
-## Phase 5 — Coverage matrix
+## Phase 5 — Coverage matrix — ✅ core done
 
 - `packages/plugin/test/coverage/` — one fixture per (material class × TSL node kind × pipeline context) cell.
 - **Gate**: 100% of cells either covered or documented-blocked. Blocked cells throw clear errors at `.precompile()` time.
 
-## Phase 6 — 206-example batch harness
+## Phase 6 — 206-example batch harness — ✅ shipped
 
-- Port the `batch-precompile.mjs` harness. Auto-mark mode injects `.precompile()` on every material.
-- **Gate**: broad extractor/codegen load-smoke stays above the launch threshold; use [STATUS.md](STATUS.md) for the current curated count.
+- Auto-mark mode injects `.precompile()` on every material; the batch runners ([packages/examples/batch/run-e2e.mjs](packages/examples/batch/run-e2e.mjs), [run-capture-replay.mjs](packages/examples/batch/run-capture-replay.mjs), [run-coverage-summary.mjs](packages/examples/batch/run-coverage-summary.mjs)) replaced the original `batch-precompile.mjs` sketch.
+- **Gate (recurring)**: broad extractor/codegen load-smoke stays above the launch threshold; use [STATUS.md](STATUS.md) for the current curated count.
 
-## Phase 7 — Slim runtime bundle
+## Phase 7 — Slim runtime bundle — ✅ shipped
 
-- Rollup `packages/runtime/build/three.webgpu.slim.js`. Vite alias `three/webgpu` → slim bundle when the plugin is active.
-- **Gate**: ≤ 300 KB gzip and 0 unexpected slim-bundle load-smoke errors; use [STATUS.md](STATUS.md) for the current curated count.
+- Rollup output at [packages/runtime/build/three.webgpu.slim.js](packages/runtime/build/three.webgpu.slim.js); Vite alias `three/webgpu` → slim bundle when `tslPrecompile({ slim: true })` is active.
+- **Gate (recurring)**: ≤ 300 KB gzip and 0 unexpected slim-bundle load-smoke errors; use [STATUS.md](STATUS.md) for the current curated count.
 
 ## Phase 8 — Launch
 

@@ -19,7 +19,7 @@ To be published when the project hits its v0.1 beta release gate:
 >
 > Add `material.precompile('name')` once. The Vite plugin captures + bakes it. Slim runtime ships static WGSL + a generated UBO updater per material — no node builder at runtime.
 >
-> Inspired by Unreal's Material Compiler. Demo: <ocean-demo-url>
+> Inspired by Unreal's Material Compiler. Demo: <!-- TODO before publish: fill in real ocean demo URL --> <ocean-demo-url>
 >
 > https://github.com/Makio64/vite-plugin-tsl-precompile
 
@@ -37,10 +37,10 @@ To be published when the project hits its v0.1 beta release gate:
 >
 > Status: v0.1 beta. Current target: ordinary PBR materials (`MeshStandardNodeMaterial` / `MeshPhysicalNodeMaterial`), texture maps, env maps / PMREM, direct lights, shadows, material uniforms, focused bloom, and artifact invalidation. Compute/storage and broad postprocessing remain experimental — for hard cases the runtime supports an opt-in full-renderer fallback on the shared GPU device.
 >
-> 5-minute "Bring Your Own Project" guide: <BYO.md-url>
+> 5-minute "Bring Your Own Project" guide: <!-- TODO before publish: fill in real BYO.md URL --> <BYO.md-url>
 > Repo: https://github.com/Makio64/vite-plugin-tsl-precompile
-> Demos: <demo-urls>
-> Architecture write-up: <ARCHITECTURE.md-url>
+> Demos: <!-- TODO before publish: fill in real demo URLs --> <demo-urls>
+> Architecture write-up: <!-- TODO before publish: fill in real ARCHITECTURE.md URL --> <ARCHITECTURE.md-url>
 >
 > Looking for one or two early adopters who'd be willing to try this on a real three.js + Vite + WebGPU app and report what breaks. I'll respond fast to issues.
 

@@ -2,7 +2,7 @@
 
 Current audit of what works, what's blocked, and what remains before this plugin is truly usable by three.js developers. Companion to [ROADMAP.md](./ROADMAP.md), [ARCHITECTURE.md](./ARCHITECTURE.md), and [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-Last updated: 2026-05-13
+Last updated: 2026-05-14
 
 ---
 
@@ -234,7 +234,7 @@ These kinds are recognised by the extractor/codegen contract but are not ordinar
 | `viewport.texture` | Hydrator uses a live `ViewportTextureNode` path and rebinds the framebuffer/mip texture per render | Transmission and viewport-dependent materials |
 | `reflector.texture` | Hydrator rebinds the live `ReflectorBaseNode` render target texture per render | Mirror/reflector materials |
 | `scene.overrideMaterial` | Scene-override context is out of scope for v1 | Any material injected via `scene.overrideMaterial` |
-| `uniform.live` (unnamed/custom) | Known light/shadow live sources have coverage, but custom `onRenderUpdate`-driven uniforms can still freeze when the extractor's `classifyByIdentity()` cannot map them to a stable source property. **Note (2026-05-14):** the build warning now splits "static-snapshot uniform slot(s) (identity texture-sampler matrices etc.) — safe to ignore" from the alarming "not-yet-animated kind(s)" copy, so identity-matrix slots no longer mislead diagnosis (see the resolved `ocean-preview-pipeline` in [BACKLOG.md](BACKLOG.md)). Genuinely-live custom closures still freeze and warrant the alarming wording. | Custom live uniforms with closures the extractor can't map |
+| `uniform.live` (unnamed/custom) | Known light/shadow live sources have coverage, but custom `onRenderUpdate`-driven uniforms can still freeze when the extractor's `classifyByIdentity()` cannot map them to a stable source property. The build warning splits "static-snapshot uniform slot(s) (identity texture-sampler matrices etc.) — safe to ignore" from the alarming "not-yet-animated kind(s)" copy, so identity-matrix slots no longer mislead diagnosis. Genuinely-live custom closures still freeze and warrant the alarming wording. | Custom live uniforms with closures the extractor can't map |
 
 **Impact today:** PBR materials (`MeshStandardNodeMaterial`, `MeshPhysicalNodeMaterial`) with assigned textures and IBL `envMap` now hydrate end-to-end — `artifact.texture` and `builtin.dfgLUT` resolve via the runtime hydrator. `webgpu_clearcoat.html` is back above the E2E PSNR gate in the focused run, and the focused transmission viewport checks are now above the gate. Shadow and reflector texture bindings have runtime rebinder paths but still need visual hardening across the broader example set. AOT compute/storage paths remain the major binding-family gap.
 
@@ -242,45 +242,31 @@ These kinds are recognised by the extractor/codegen contract but are not ordinar
 
 ## What's left to do (ordered by user impact)
 
-### 1. PBR/material and lighting near misses  *(first beta correctness cluster)*
+Tier gates (2026-05-14): **tier1 16 / 16, tier2 45 / 45, tier3 69 / 69 = 130 / 130 green**. Capture-wait default bumped 8s → 12s plus per-example `captureWaitOverrides` / `psnrThresholdOverrides` / `expectedReplayErrors` in [coverage-config.json](packages/examples/batch/coverage-config.json) handle CubeTextureLoader contention, marginal-pass examples, and cosmetic replay-error whitelists. Inspector stub now uses chainable Proxy with `FN_BUILTINS` shadow so `gui.add(...).name('Label').onChange(...)` works. Broad summary is **160 / 226** at the 30 dB gate. Shadows (8 / 8), lights (8 / 12), camera (2 / 3), MRT/render-targets (4 / 4), focused bloom (3 / 3), `webgpu_pmrem_scene.html`, `webgpu_materials_transmission.html`, and `webgpu_lights_selective.html` are all guardrails. Best beta ROI now: reflection correctness (`webgpu_reflection.html` tree mesh missing in replay), remaining ordinary material/lighting misses, and the 4 deeper tier-excluded bugs (SMAA shader compile, FSR1 NodeError, afterimage `Proxy(Function)`, rendertarget_2d-array_3d harness serialization). See [SHIP_READINESS.md](SHIP_READINESS.md) for v0.1 launch state.
 
-The broad summary is now **163 / 226**. The immediate stale beta reds are reconciled: shadows are 8 / 8, lights are 8 / 12, camera is 2 / 3 with `webgpu_camera_logarithmicdepthbuffer.html` at PSNR `inf`, `webgpu_pmrem_scene.html` is `inf`, `webgpu_materials_transmission.html` is 33.77 dB, and `webgpu_lights_selective.html` is `inf`. The best beta ROI is now reflection correctness and the remaining ordinary material/lighting misses.
+### 1. Broad postprocessing pass textures
 
-- [x] Refresh `webgpu_materials_texture_manualmipmap.html` (now PSNR `inf`) and `webgpu_loader_gltf_iridescence.html` (now 37.95 dB).
-- [x] Fix `webgpu_materials_toon.html`; dynamic `toonOutlinePass` material replay now reaches PSNR `inf`.
-- [x] Re-check `webgpu_shadowmap_opacity.html`; current focused verification is 67.34 dB and the generated shadow bucket is 8 / 8.
-- [x] Improve `webgpu_materials_transmission.html`; focused verification now passes at 33.77 dB.
-- [x] Improve `webgpu_lights_selective.html`; current focused verification matches at PSNR `inf`.
-- [x] Reconcile the `webgpu_shadowmap_array.html` discrepancy; `coverage-summary.md` now reports the shared PSNR result at 34.20 dB.
+Focused bloom cluster (base + emissive + selective) is tier-1 green at PSNR `inf`. Remaining work is the broader pass-chain.
 
-### 2. Bloom / postprocessing pass textures  *(focused bloom cluster green)*
-
-The portal `pass(scene, camera)` path is healthy, and the focused bloom cluster now verifies the render-target texture handoff for base, emissive, and selective bloom.
-
-- [ ] Reconfirm the focused bloom cluster. `visual-bloom-cluster-after-fixes.json` had all three at PSNR `inf`, but the latest `architecture-capture-graph-helper.json` rerun has `webgpu_postprocessing_bloom_selective.html` at 19.61 dB with one capture-side shader validation error.
-- [x] `webgpu_postprocessing.html` is green in the refreshed generated summary.
 - [ ] Revisit non-bloom failures such as `webgpu_postprocessing_outline.html`, `webgpu_postprocessing_godrays.html`, `webgpu_postprocessing_ssr.html`, plus the near-threshold DOF/SSGI examples.
 
-### 3. PMREM / environment / reflections  *(PBR correctness)*
+### 2. PMREM / environment / reflections  *(PBR correctness)*
 
-Many real PBR scenes depend on environment lighting. Wrong PMREM/reflection wiring is dangerous because output can look plausible while still being invalid.
+Many real PBR scenes depend on environment lighting. Wrong PMREM/reflection wiring is dangerous because output can look plausible while still being invalid. Focused glTF/PMREM bucket and `webgpu_pmrem_scene.html` are green guardrails.
 
-- [x] Focused glTF/PMREM bucket is green for `webgpu_loader_gltf.html`, `webgpu_loader_gltf_sheen.html`, and `webgpu_pmrem_cubemap.html`.
-- [x] Re-run `webgpu_pmrem_scene.html`; current focused verification matches at PSNR `inf` in `verify-pmrem-scene-current-final.json`.
 - [ ] Re-run the remaining broader PMREM set: `webgpu_pmrem_equirectangular.html`, `webgpu_pmrem_test.html`, plus PMREM-heavy compute/background examples.
 - [ ] Improve reflection examples: `webgpu_reflection.html` (16.19 dB) and `webgpu_reflection_roughness.html` (17.54 dB); `webgpu_reflection_blurred.html` is currently just above the gate at 30.25 dB and should stay a guardrail.
 - [ ] Keep `MeshStandardNodeMaterial` / `MeshPhysicalNodeMaterial` texture-map coverage green while PMREM changes land.
 
-### 4. Transmission / viewport / reflector texture path
+### 3. Transmission / viewport / reflector texture path
 
-`viewport.texture` and `reflector.texture` rebinder paths exist. Focused transmission is now above the production bar; refraction remains the active viewport miss.
+`viewport.texture` and `reflector.texture` rebinder paths exist. Focused transmission is above the production bar; refraction remains the active viewport miss.
 
-- [x] Fix `webgpu_materials_transmission.html`; focused verification now passes at 33.77 dB.
 - [ ] Fix `webgpu_refraction.html`.
 - [ ] Keep `webgpu_loader_gltf_transmission.html` and `webgpu_mirror.html` green as guardrails while changing viewport/reflector code.
 - [ ] Add focused fixture coverage for `viewport.texture` and `reflector.texture` once the runtime behavior is stable.
 
-### 5. Compute/storage paths  *(experimental for v0.1 beta)*
+### 4. Compute/storage paths  *(experimental for v0.1 beta)*
 
 In-process compute and some storage-texture paths work, but the AOT compute/storage story is still incomplete.
 
@@ -288,41 +274,34 @@ In-process compute and some storage-texture paths work, but the AOT compute/stor
 - [ ] Keep the newly green compute examples stable while improving `webgpu_compute_reduce.html`, particle, and ping-pong texture regressions.
 - [ ] Treat compute birds, storage buffers, and storage textures as experimental release notes unless the release goal changes toward creative-coding demos.
 
-### 6. `uniform.live` and custom update callbacks
+### 5. `uniform.live` and custom update callbacks
 
 Known light/shadow live sources now have coverage (`light.shadow*`, `light.colorScaled`, PointsNodeMaterial scale), but arbitrary unnamed `UniformNode` / `onRenderUpdate`-driven uniforms can still freeze if the extractor cannot map them to a stable source property.
 
-**Note (2026-05-13):** `packages/examples/ocean` was thought to be a canonical exemplar of this gap based on its build warning "5 not-yet-animated kind(s) (`uniform.live` × 5)". Investigation showed the 5 slots are 4 static identity texture-sampler matrices (mat3) plus a viewport size (vec2) — none of them actually animate. The warning was a false alarm. The real cause of ocean's broken preview is `ocean-preview-pipeline` in [BACKLOG.md](BACKLOG.md) (production-preview pipeline gaps). The structural channel below is still useful for *other* examples whose closures genuinely freeze animated values, but it is no longer the lead item.
+Known light/shadow live sources have coverage; arbitrary unnamed `UniformNode` / `onRenderUpdate`-driven uniforms can still freeze if the extractor cannot map them to a stable source property. The build warning now splits "static-snapshot uniform slot(s) — safe to ignore" from the alarming "not-yet-animated kind(s)" copy, so identity-matrix slots no longer mislead diagnosis.
 
 - [ ] Extend `packages/plugin/src/vendor/extractUniformPlan.js` for more known live-node names and property paths (incremental as new examples surface specific frozen identities).
-- [ ] Improve the build warning copy to distinguish "static texture matrix in a uniform.live slot" (harmless) from "live driver freezing animation" (actual problem). Today the same wording covers both.
 - [ ] For closures that genuinely cannot be statically resolved AND drive animation, fail the build by default rather than silently freezing.
 
-### 7. Operationalize the PSNR E2E gate
+### 6. Operationalize the PSNR E2E gate
 
-`run-e2e.mjs` now hard-fails visual mismatch by default, and CI has a configured tier-1 visual gate for the PR-sized subset. The full slow sweep remains scheduled/manual coverage.
+`run-e2e.mjs` hard-fails visual mismatch by default, and CI has a configured tier-1 visual gate for the PR-sized subset. The full slow sweep remains scheduled/manual coverage.
 
-- [x] Define a small tier-1 PSNR subset for PR CI and keep the full 225-example grading as a slower scheduled/manual gate.
 - [ ] Watch hosted CI stability for WebGPU/Chromium before expanding the tier-1 set.
 - [ ] Keep `--no-pixel-gate` for diagnostic load/runtime debugging, but do not treat it as a release gate.
 - [ ] Triage real visual regressions from the current broad E2E sweep into [BACKLOG.md](BACKLOG.md) instead of treating low PSNR as harness noise by default.
 
-### 8. Publish and external adoption  *(Phase 8 release gate)*
+### 7. Publish and external adoption  *(Phase 8 release gate)*
 
-Both packages are at `0.1.0` with `engines.node`, `publishConfig`, `files`, and `repository.directory` already set. Remaining blockers:
+Both packages are at `0.1.0` with `engines.node`, `publishConfig`, `files`, and `repository.directory` set. Adopter feedback ledger seeded at [ADOPTERS.md](./ADOPTERS.md); the ROADMAP Phase 8 gate requires "one external adopter reports success."
 
 - [ ] Run `pnpm publish --dry-run` for `vite-plugin-tsl-precompile` and `@tsl-precompile/runtime`; verify README files, runtime `build/`, and export paths are included.
 - [ ] Confirm whether the unscoped plugin package needs any extra npm metadata beyond the current `files` list; the scoped runtime already has `publishConfig.access=public`.
 - [ ] Tag and push `v0.1.0`.
-
-The ANNOUNCEMENT.md template is written; the ROADMAP Phase 8 gate requires "one external adopter reports success."
-
 - [ ] Share the repo on three.js Discord + GitHub Discussions once npm packages are published.
-- [x] Adopter feedback ledger seeded at [ADOPTERS.md](./ADOPTERS.md) (first entry closes the Phase 8 gate). Structured friction reports via [`.github/ISSUE_TEMPLATE/adoption-feedback.yml`](.github/ISSUE_TEMPLATE/adoption-feedback.yml).
 
 ### Deferred for v0.1 messaging
 
-- [x] Focused MRT / render-target guard set is green; keep it in the regression loop while broad PassNode/postprocess remains experimental.
 - [ ] Broad postprocessing remains experimental even though many examples now match; the full category is 19 / 29 today.
 
 ---

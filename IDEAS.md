@@ -2,7 +2,7 @@
 
 A wide brainstorm of other ways to solve the "ship a slim three.js + skip the runtime TSL builder" problem. Some are small variations of the current `.precompile('name')` interface, some replace the entire mental model. None are commitments; this file is a menu, not a plan.
 
-Last updated: 2026-05-02.
+Last updated: 2026-05-14.
 
 ---
 

@@ -2,11 +2,25 @@
 
 AOT precompile for three.js TSL materials. You mark each material with
 `.precompile('name')` in your source; the plugin extracts it to a static WGSL
-shader plus a generated per-frame UBO updater at build time. The runtime can
-optionally ship a slim three.js (~239 KB gzip) without the TSL builder.
+shader plus a generated per-frame UBO updater at build time. The slim runtime
+mode optionally swaps `three/webgpu` for a node-builder-stripped bundle so the
+TSL→WGSL compiler doesn't ship to production at all.
 
 Inspired by Unreal's Material Compiler and Unity's Shader Graph — explicit
 author markers, offline shader compilation, dumb runtime.
+
+**What you get:** predictable cold start (no TSL→WGSL compile blocking first
+frame), lower per-frame CPU (AOT updater writes UBO bytes directly — no node
+graph traversal, no closure dispatch), and a five-layer staleness gate that
+fails loudly instead of regressing visuals silently.
+
+**What this is *not*:** a bundle-size silver bullet. Measured on a minimal
+PBR scene, the slim bundle is roughly the same gzip size as stock three.js
+TSL (~220–240 kB gzip either way) — the win is *what runs at runtime*, not
+*what's downloaded*. The bundle-size advantage only shows up on apps that use
+many TSL helpers / postprocessing chains, where stock three.js drags the
+whole node-builder + TSL function library into the bundle while slim ships
+only stubs. **Run the numbers on your own scene before assuming a win.**
 
 **Site:** https://makio64.github.io/vite-plugin-tsl-precompile/
 
@@ -95,9 +109,11 @@ A full runnable copy lives in
    The plugin's `load()` hook resolves that virtual module to the captured
    artifact JSON + a generated `updater.js` that writes UBOs per frame.
 3. **Slim runtime (optional).** With `slim: true`, the plugin also aliases
-   `three/webgpu` to `@tsl-precompile/runtime/slim` — a ~239 KB gzip three.js
-   without the node builder. Only materials reached through a precompiled
-   artifact work in slim mode.
+   `three/webgpu` to `@tsl-precompile/runtime/slim` — a three.js bundle with
+   the node builder stripped out. Only materials reached through a
+   precompiled artifact work in slim mode. The bundle is roughly the same
+   gzip size as stock three.js TSL on a minimal scene; the win is runtime
+   (no JIT shader compile, no node-graph traversal), not download.
 
 ## Adoption modes
 
@@ -124,7 +140,7 @@ touching shader source.
 Caveat: artifact names are positional. Reordering materials in source
 reshuffles names, which invalidates the on-disk artifacts.
 
-### 3. `slim` — ship a ~239 KB three.js
+### 3. `slim` — ship a node-builder-stripped three.js
 
 ```js
 tslPrecompile( { slim: true } );
@@ -134,6 +150,16 @@ The plugin aliases `three/webgpu` → `@tsl-precompile/runtime/slim` (the
 node-builder-stripped bundle) and `three/tsl` → a stub module that throws
 loud, descriptive errors if any un-precompiled TSL helper is reached.
 
+**What slim mode actually changes:**
+- ✅ Eliminates the TSL→WGSL compiler from production runtime (no JIT shader
+  compile at first frame, no node-graph traversal each draw).
+- ✅ Removes node-graph data structures from memory.
+- ✅ Catches forgotten `.precompile()` markers as loud runtime errors instead
+  of silent live compilation.
+- ⚠️ Gzip bundle size is roughly the same as stock three.js TSL on simple
+  scenes (~220–240 kB gzip either way). The download-size win only appears
+  on scenes that pull in many TSL helpers / postprocessing chains.
+
 **`optimizeDeps` is required** in `vite.config.js` for slim:
 
 ```js
@@ -142,8 +168,9 @@ optimizeDeps: {
 },
 ```
 
-Pairs naturally with `autoMark` if you want the smallest possible bundle
-on an existing project.
+Pairs naturally with `autoMark` if you want to remove the live TSL compiler
+from production on an existing project without manually marking every
+material.
 
 ## Plugin options
 

@@ -2,7 +2,7 @@
 
 Three.js **Inspector** tab that shows **live TSL precompile captures** — user materials, aux-pass artifacts (background / post-process / lights / PMREM), WGSL previews, and unsupported-kind warnings.
 
-![Precompile panel mock layout](https://i.imgur.com/placeholder.png) <!-- replace with real screenshot -->
+![Precompile panel mock layout](https://i.imgur.com/placeholder.png) <!-- TODO before publish: replace placeholder.png with real inspector screenshot -->
 
 ## Install
 

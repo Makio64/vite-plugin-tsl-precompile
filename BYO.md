@@ -129,15 +129,17 @@ The Babel transform rewrites every `material.precompile('name')` call into a has
 
 The five-layer staleness gate (content hash, dev hot-recapture, build mismatch error, runtime assertion, `pnpm verify` CI check) is designed so silent visual regressions are not possible. Loud failure with a clear next step is the only failure mode.
 
-## Optional: `slim: true` (smaller bundle, harder mode)
+## Optional: `slim: true` (no TSL compiler at runtime, harder mode)
 
 ```js
 tslPrecompile( { slim: true } )
 ```
 
-Aliases `three/webgpu` to a node-builder-stripped ~239 KB three.js. **Every** material reachable in production must be marked with `.precompile()` (or `autoMark: true`). Any un-precompiled TSL path throws at runtime with a descriptive error.
+Aliases `three/webgpu` to a node-builder-stripped three.js. **Every** material reachable in production must be marked with `.precompile()` (or `autoMark: true`). Any un-precompiled TSL path throws at runtime with a descriptive error.
 
-Slim is the right choice for shipping a tightly-controlled scene. It is the wrong choice if you have a sprawling scene with addons (`WaterMesh`, `Sky`, etc.) you haven't audited — start without slim, get the dev-capture flow working, then enable slim once you know which materials need markers.
+**What slim mode buys you:** no TSL→WGSL compile at first frame (predictable cold start), no node-graph traversal per draw, and loud errors on forgotten markers instead of silent live compilation. **It is not primarily a bundle-size win** — measured on a minimal PBR scene, the slim three.js bundle is roughly the same gzip size as stock three.js TSL. Run the numbers on your own scene before assuming a download-size benefit.
+
+Slim is the right choice for shipping a tightly-controlled scene where you want predictable runtime behavior. It is the wrong choice if you have a sprawling scene with addons (`WaterMesh`, `Sky`, etc.) you haven't audited — start without slim, get the dev-capture flow working, then enable slim once you know which materials need markers.
 
 ## Common questions
 

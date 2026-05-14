@@ -68,7 +68,7 @@ entirely at runtime.
 | `fail` | `'error'` | Use `'warn'` to keep building when a named artifact is missing. |
 | `autoMark` | `false` | Auto-chain `.precompile('auto-<n>')` onto every `new *NodeMaterial(...)` — zero source edits. |
 | `autoMarkPrefix` | `'auto'` | Prefix used by `autoMark`. |
-| `slim` | `false` | Alias `three/webgpu` → the ~239 KB slim runtime bundle. |
+| `slim` | `false` | Alias `three/webgpu` → the node-builder-stripped slim runtime. Removes the TSL→WGSL compiler from production. Gzip bundle size is ~equal to stock three.js TSL on simple scenes; the win is runtime behavior, not download. |
 | `minifyWgsl` | `true` | Compact WGSL only in emitted virtual modules; captured artifact JSON stays readable. |
 | `dedupeWgsl` | `true` | Hoist repeated WGSL strings into `virtual:tsl-precompile/__wgsl` for tree-shakeable reuse. |
 | `threeVersion` | auto-detect | Override the three.js version used in rewrite hashes. |

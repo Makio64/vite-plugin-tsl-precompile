@@ -10,7 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - **Vite plugin** (`vite-plugin-tsl-precompile`) — AOT pipeline for three.js TSL materials marked with `.precompile('name')`. Dev capture endpoint, build-time Babel rewrite to `__applyPrecompiled(...)`, virtual-module resolution per artifact name, WGSL string deduplication and minification.
 - **Runtime** (`@tsl-precompile/runtime`) — dev marker, dev-renderer wiring, artifact loader, hydrator, UBO writers, `PrecompiledMaterial`, aux registry (background/PMREM/postprocessing), live-scene index, PMREM support, material variants.
 - **One-call setup** — `setupPrecompile({ three, renderer })` composes the marker install, dev-renderer registration, and optional aux capture, removing the init()-ordering footgun.
-- **`slim` mode** — `tslPrecompile({ slim: true })` aliases `three/webgpu` to a node-builder-stripped bundle (~239 KB gzip) and stubs `three/tsl` with loud errors for any un-precompiled path.
+- **`slim` mode** — `tslPrecompile({ slim: true })` aliases `three/webgpu` to a node-builder-stripped bundle and stubs `three/tsl` with loud errors for any un-precompiled path. Removes the TSL→WGSL compiler from production runtime (predictable cold start, lower per-frame CPU); gzip bundle size is roughly equivalent to stock three.js TSL on simple scenes.
 - **`autoMark` mode** — `tslPrecompile({ autoMark: true })` chains `.precompile('auto-<n>')` onto every `new *NodeMaterial(...)` in source, useful for trying the pipeline on existing projects without source edits.
 - **Inspector panel** (`@tsl-precompile/inspector-panel`) — dev-time three.js Inspector tab showing live captures + WGSL sizes + supported-kind status.
 - **TypeScript declarations** — `.d.ts` files for both `vite-plugin-tsl-precompile` and `@tsl-precompile/runtime`, with module augmentation that adds `Material.precompile(name)` to the `three` type surface.
@@ -25,5 +25,5 @@ The v0.1 beta target is ordinary PBR application rendering (`Mesh{Standard,Physi
 
 ### Notes
 
-- Both packages are scoped under the same `0.0.x` lockstep policy until v0.1.0 ships to npm. Pin to a tested three.js patch — see [MIGRATION.md](MIGRATION.md) for the re-capture workflow when bumping three.js.
+- The plugin, runtime, and contract packages share a single lockstep version (currently `0.1.0` in each `package.json`; first npm publish pending). Pin to a tested three.js patch — see [MIGRATION.md](MIGRATION.md) for the re-capture workflow when bumping three.js.
 - Captured artifacts (`./artifacts/*.json`) should be committed to git; CI must be able to build without re-running dev capture. See the Troubleshooting section of the README.
