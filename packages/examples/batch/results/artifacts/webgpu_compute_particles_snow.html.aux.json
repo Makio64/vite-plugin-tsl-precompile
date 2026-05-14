@@ -399,7 +399,8 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "5c1456be-5889-42be-8dde-9fdc09e1b6aa"
+      "materialUuid": "5c1456be-5889-42be-8dde-9fdc09e1b6aa",
+      "captureClock": 0
     }
   },
   {
@@ -745,7 +746,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             },
             {
@@ -766,7 +770,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             },
             {
@@ -787,7 +794,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 320,
+                "imageHeight": 240,
+                "imageDepth": 1
               }
             },
             {
@@ -808,7 +818,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 320,
+                "imageHeight": 240,
+                "imageDepth": 1
               }
             },
             {
@@ -829,7 +842,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             },
             {
@@ -850,7 +866,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             },
             {
@@ -871,7 +890,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 128,
+                "imageHeight": 96,
+                "imageDepth": 1
               }
             },
             {
@@ -892,7 +914,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 128,
+                "imageHeight": 96,
+                "imageDepth": 1
               }
             }
           ],
@@ -918,7 +943,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -950,7 +978,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -983,7 +1014,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 320,
+                  "imageHeight": 240,
+                  "imageDepth": 1
                 }
               }
             },
@@ -1015,7 +1049,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 320,
+                  "imageHeight": 240,
+                  "imageDepth": 1
                 }
               }
             },
@@ -1117,7 +1154,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -1149,7 +1189,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -1182,7 +1225,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 128,
+                  "imageHeight": 96,
+                  "imageDepth": 1
                 }
               }
             },
@@ -1214,7 +1260,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 128,
+                  "imageHeight": 96,
+                  "imageDepth": 1
                 }
               }
             },
@@ -1272,7 +1321,8 @@
         "updateBeforeNodes": 4,
         "updateAfterNodes": 0
       },
-      "materialUuid": "46444a7c-4c0d-4ec3-bf14-fd06996b88ad"
+      "materialUuid": "46444a7c-4c0d-4ec3-bf14-fd06996b88ad",
+      "captureClock": 0
     }
   },
   {
@@ -1643,7 +1693,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             },
             {
@@ -1664,7 +1717,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             },
             {
@@ -1685,7 +1741,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 320,
+                "imageHeight": 240,
+                "imageDepth": 1
               }
             },
             {
@@ -1706,7 +1765,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 320,
+                "imageHeight": 240,
+                "imageDepth": 1
               }
             },
             {
@@ -1727,7 +1789,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             },
             {
@@ -1748,7 +1813,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             },
             {
@@ -1769,7 +1837,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 128,
+                "imageHeight": 96,
+                "imageDepth": 1
               }
             },
             {
@@ -1790,7 +1861,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 128,
+                "imageHeight": 96,
+                "imageDepth": 1
               }
             }
           ],
@@ -1816,7 +1890,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -1848,7 +1925,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -1881,7 +1961,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 320,
+                  "imageHeight": 240,
+                  "imageDepth": 1
                 }
               }
             },
@@ -1913,7 +1996,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 320,
+                  "imageHeight": 240,
+                  "imageDepth": 1
                 }
               }
             },
@@ -2000,7 +2086,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -2032,7 +2121,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -2065,7 +2157,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 128,
+                  "imageHeight": 96,
+                  "imageDepth": 1
                 }
               }
             },
@@ -2097,7 +2192,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 128,
+                  "imageHeight": 96,
+                  "imageDepth": 1
                 }
               }
             },
@@ -2119,7 +2217,8 @@
         "updateNodes": 8,
         "updateBeforeNodes": 4,
         "updateAfterNodes": 0
-      }
+      },
+      "captureClock": 0
     }
   }
 ]

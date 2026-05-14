@@ -489,7 +489,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "srgb-linear",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 1536,
+                "imageHeight": 2048,
+                "imageDepth": 1
               }
             },
             {
@@ -510,7 +513,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "srgb-linear",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 1536,
+                "imageHeight": 2048,
+                "imageDepth": 1
               }
             }
           ],
@@ -682,7 +688,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "srgb-linear",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 1536,
+                  "imageHeight": 2048,
+                  "imageDepth": 1
                 }
               }
             },
@@ -714,7 +723,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "srgb-linear",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 1536,
+                  "imageHeight": 2048,
+                  "imageDepth": 1
                 }
               }
             },
@@ -772,7 +784,8 @@
         "updateBeforeNodes": 1,
         "updateAfterNodes": 0
       },
-      "materialUuid": "b6b29391-aa63-4dab-92f8-c1c4f10e1ffa"
+      "materialUuid": "b6b29391-aa63-4dab-92f8-c1c4f10e1ffa",
+      "captureClock": 0
     }
   },
   {
@@ -1272,6 +1285,7 @@
         "updateAfterNodes": 0
       },
       "materialUuid": "df4ef6ff-21dd-4ab4-a9c7-a0dd3520ebc1",
+      "captureClock": 0,
       "pmremKind": "cubemap"
     }
   },
@@ -1709,6 +1723,7 @@
         "updateAfterNodes": 0
       },
       "materialUuid": "06382d0b-b1a7-4bef-9339-a3651586a51f",
+      "captureClock": 0,
       "pmremKind": "equirect"
     }
   },
@@ -2383,6 +2398,7 @@
         "updateAfterNodes": 0
       },
       "materialUuid": "ed47b6f8-c811-4ee1-9022-4ae25ef65715",
+      "captureClock": 0,
       "pmremKind": "blur"
     }
   },
@@ -2872,6 +2888,7 @@
         "updateAfterNodes": 0
       },
       "materialUuid": "60cc53a7-b6ef-4222-be32-ee92edb42eff",
+      "captureClock": 0,
       "pmremKind": "ggx"
     }
   },
@@ -3175,7 +3192,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "srgb-linear",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             },
             {
@@ -3195,7 +3215,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "srgb-linear",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             }
           ],
@@ -3220,7 +3243,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "srgb-linear",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -3251,7 +3277,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "srgb-linear",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -3327,7 +3356,8 @@
         "updateNodes": 7,
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
-      }
+      },
+      "captureClock": 0
     }
   }
 ]

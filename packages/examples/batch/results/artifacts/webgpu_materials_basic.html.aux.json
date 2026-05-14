@@ -441,7 +441,7 @@
               "source": {
                 "kind": "artifact.texture",
                 "textureUuid": "5ca6177a-d64f-4464-af99-e5ed9dbfad8b",
-                "imageSrc": "http://localhost:8730/examples/textures/cube/pisa/px.png",
+                "imageSrc": "http://localhost:8900/examples/textures/cube/pisa/px.png",
                 "textureName": "px.png",
                 "mapping": 301,
                 "wrapS": 1001,
@@ -463,7 +463,7 @@
               "source": {
                 "kind": "artifact.texture",
                 "textureUuid": "5ca6177a-d64f-4464-af99-e5ed9dbfad8b",
-                "imageSrc": "http://localhost:8730/examples/textures/cube/pisa/px.png",
+                "imageSrc": "http://localhost:8900/examples/textures/cube/pisa/px.png",
                 "textureName": "px.png",
                 "mapping": 301,
                 "wrapS": 1001,
@@ -490,7 +490,7 @@
                 "source": {
                   "kind": "artifact.texture",
                   "textureUuid": "5ca6177a-d64f-4464-af99-e5ed9dbfad8b",
-                  "imageSrc": "http://localhost:8730/examples/textures/cube/pisa/px.png",
+                  "imageSrc": "http://localhost:8900/examples/textures/cube/pisa/px.png",
                   "textureName": "px.png",
                   "mapping": 301,
                   "wrapS": 1001,
@@ -523,7 +523,7 @@
                 "source": {
                   "kind": "artifact.texture",
                   "textureUuid": "5ca6177a-d64f-4464-af99-e5ed9dbfad8b",
-                  "imageSrc": "http://localhost:8730/examples/textures/cube/pisa/px.png",
+                  "imageSrc": "http://localhost:8900/examples/textures/cube/pisa/px.png",
                   "textureName": "px.png",
                   "mapping": 301,
                   "wrapS": 1001,
@@ -699,7 +699,8 @@
         "updateBeforeNodes": 1,
         "updateAfterNodes": 0
       },
-      "materialUuid": "d9aaa9c3-4c32-4aed-ab13-a0d45a802150"
+      "materialUuid": "d9aaa9c3-4c32-4aed-ab13-a0d45a802150",
+      "captureClock": 0
     }
   },
   {
@@ -1199,6 +1200,7 @@
         "updateAfterNodes": 0
       },
       "materialUuid": "12b4d1a3-0346-40aa-b8ab-34c752a9b0ce",
+      "captureClock": 0,
       "pmremKind": "cubemap"
     }
   },
@@ -1636,6 +1638,7 @@
         "updateAfterNodes": 0
       },
       "materialUuid": "b6b29391-aa63-4dab-92f8-c1c4f10e1ffa",
+      "captureClock": 0,
       "pmremKind": "equirect"
     }
   },
@@ -2310,6 +2313,7 @@
         "updateAfterNodes": 0
       },
       "materialUuid": "df4ef6ff-21dd-4ab4-a9c7-a0dd3520ebc1",
+      "captureClock": 0,
       "pmremKind": "blur"
     }
   },
@@ -2799,6 +2803,7 @@
         "updateAfterNodes": 0
       },
       "materialUuid": "06382d0b-b1a7-4bef-9339-a3651586a51f",
+      "captureClock": 0,
       "pmremKind": "ggx"
     }
   },
@@ -3076,7 +3081,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "srgb-linear",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             },
             {
@@ -3096,7 +3104,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "srgb-linear",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             }
           ],
@@ -3121,7 +3132,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "srgb-linear",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -3152,7 +3166,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "srgb-linear",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -3228,7 +3245,8 @@
         "updateNodes": 6,
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
-      }
+      },
+      "captureClock": 0
     }
   }
 ]

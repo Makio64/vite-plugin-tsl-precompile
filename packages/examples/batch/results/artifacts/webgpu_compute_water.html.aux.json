@@ -479,7 +479,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "dcb4df03-0d4c-4431-b85f-1548dea13fa1",
+                "textureUuid": "6450288c-f8f7-48b4-a548-3197bd9dfe66",
                 "textureName": "PMREM.cubeUv",
                 "mapping": 306,
                 "wrapS": 1001,
@@ -489,7 +489,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "srgb-linear",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 768,
+                "imageHeight": 1024,
+                "imageDepth": 1
               }
             },
             {
@@ -500,7 +503,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "dcb4df03-0d4c-4431-b85f-1548dea13fa1",
+                "textureUuid": "6450288c-f8f7-48b4-a548-3197bd9dfe66",
                 "textureName": "PMREM.cubeUv",
                 "mapping": 306,
                 "wrapS": 1001,
@@ -510,7 +513,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "srgb-linear",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 768,
+                "imageHeight": 1024,
+                "imageDepth": 1
               }
             }
           ],
@@ -672,7 +678,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "dcb4df03-0d4c-4431-b85f-1548dea13fa1",
+                  "textureUuid": "6450288c-f8f7-48b4-a548-3197bd9dfe66",
                   "textureName": "PMREM.cubeUv",
                   "mapping": 306,
                   "wrapS": 1001,
@@ -682,7 +688,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "srgb-linear",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 768,
+                  "imageHeight": 1024,
+                  "imageDepth": 1
                 }
               }
             },
@@ -704,7 +713,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "dcb4df03-0d4c-4431-b85f-1548dea13fa1",
+                  "textureUuid": "6450288c-f8f7-48b4-a548-3197bd9dfe66",
                   "textureName": "PMREM.cubeUv",
                   "mapping": 306,
                   "wrapS": 1001,
@@ -714,7 +723,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "srgb-linear",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 768,
+                  "imageHeight": 1024,
+                  "imageDepth": 1
                 }
               }
             },
@@ -772,7 +784,8 @@
         "updateBeforeNodes": 1,
         "updateAfterNodes": 0
       },
-      "materialUuid": "253397e9-3546-4e4a-81b0-748e48ad3e5d"
+      "materialUuid": "253397e9-3546-4e4a-81b0-748e48ad3e5d",
+      "captureClock": 0
     }
   },
   {
@@ -1285,6 +1298,7 @@
         "updateAfterNodes": 0
       },
       "materialUuid": "97890dca-2d01-49ab-84ff-dd77d3929423",
+      "captureClock": 0,
       "pmremKind": "cubemap"
     }
   },
@@ -1722,6 +1736,7 @@
         "updateAfterNodes": 0
       },
       "materialUuid": "ab3760b9-55a8-4d20-8d95-5b83f51f80be",
+      "captureClock": 0,
       "pmremKind": "equirect"
     }
   },
@@ -2396,6 +2411,7 @@
         "updateAfterNodes": 0
       },
       "materialUuid": "5c1456be-5889-42be-8dde-9fdc09e1b6aa",
+      "captureClock": 0,
       "pmremKind": "blur"
     }
   },
@@ -2885,6 +2901,7 @@
         "updateAfterNodes": 0
       },
       "materialUuid": "46444a7c-4c0d-4ec3-bf14-fd06996b88ad",
+      "captureClock": 0,
       "pmremKind": "ggx"
     }
   },
@@ -3179,7 +3196,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "03e4c44a-89a0-48a9-b9a9-fbfc77e2e2ae",
+                "textureUuid": "48643968-1030-4651-b75e-a2b0811d6a3a",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
@@ -3188,7 +3205,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "srgb-linear",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             },
             {
@@ -3199,7 +3219,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "03e4c44a-89a0-48a9-b9a9-fbfc77e2e2ae",
+                "textureUuid": "48643968-1030-4651-b75e-a2b0811d6a3a",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
@@ -3208,7 +3228,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "srgb-linear",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             }
           ],
@@ -3224,7 +3247,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "03e4c44a-89a0-48a9-b9a9-fbfc77e2e2ae",
+                  "textureUuid": "48643968-1030-4651-b75e-a2b0811d6a3a",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,
@@ -3233,7 +3256,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "srgb-linear",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -3255,7 +3281,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "03e4c44a-89a0-48a9-b9a9-fbfc77e2e2ae",
+                  "textureUuid": "48643968-1030-4651-b75e-a2b0811d6a3a",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,
@@ -3264,7 +3290,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "srgb-linear",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -3340,7 +3369,8 @@
         "updateNodes": 7,
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
-      }
+      },
+      "captureClock": 0
     }
   }
 ]

@@ -692,6 +692,7 @@
         "updateAfterNodes": 0
       },
       "materialUuid": "6b29a9d1-9a63-4b03-91a3-56f45eb81b6c",
+      "captureClock": 0,
       "mrtOutputCount": 4,
       "mrtOutputNames": [
         "output",
@@ -1018,7 +1019,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             },
             {
@@ -1039,7 +1043,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             },
             {
@@ -1060,7 +1067,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             },
             {
@@ -1081,7 +1091,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             }
           ],
@@ -1107,7 +1120,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -1209,7 +1225,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -1242,7 +1261,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -1275,7 +1297,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -1333,7 +1358,8 @@
         "updateBeforeNodes": 1,
         "updateAfterNodes": 0
       },
-      "materialUuid": "253397e9-3546-4e4a-81b0-748e48ad3e5d"
+      "materialUuid": "253397e9-3546-4e4a-81b0-748e48ad3e5d",
+      "captureClock": 0
     }
   },
   {
@@ -1833,6 +1859,7 @@
         "updateAfterNodes": 0
       },
       "materialUuid": "97890dca-2d01-49ab-84ff-dd77d3929423",
+      "captureClock": 0,
       "pmremKind": "cubemap"
     }
   },
@@ -2270,6 +2297,7 @@
         "updateAfterNodes": 0
       },
       "materialUuid": "ab3760b9-55a8-4d20-8d95-5b83f51f80be",
+      "captureClock": 0,
       "pmremKind": "equirect"
     }
   },
@@ -2944,6 +2972,7 @@
         "updateAfterNodes": 0
       },
       "materialUuid": "5c1456be-5889-42be-8dde-9fdc09e1b6aa",
+      "captureClock": 0,
       "pmremKind": "blur"
     }
   },
@@ -3433,6 +3462,7 @@
         "updateAfterNodes": 0
       },
       "materialUuid": "46444a7c-4c0d-4ec3-bf14-fd06996b88ad",
+      "captureClock": 0,
       "pmremKind": "ggx"
     }
   },
@@ -3758,7 +3788,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             },
             {
@@ -3779,7 +3812,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             },
             {
@@ -3800,7 +3836,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             },
             {
@@ -3821,7 +3860,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             }
           ],
@@ -3847,7 +3889,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -3934,7 +3979,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -3967,7 +4015,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -4000,7 +4051,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -4022,7 +4076,8 @@
         "updateNodes": 7,
         "updateBeforeNodes": 1,
         "updateAfterNodes": 0
-      }
+      },
+      "captureClock": 0
     }
   }
 ]

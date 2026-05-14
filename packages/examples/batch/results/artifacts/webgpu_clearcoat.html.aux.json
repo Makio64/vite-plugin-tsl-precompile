@@ -691,7 +691,8 @@
         "updateBeforeNodes": 1,
         "updateAfterNodes": 0
       },
-      "materialUuid": "db462b3b-1087-4fa6-b731-4f51db771b87"
+      "materialUuid": "db462b3b-1087-4fa6-b731-4f51db771b87",
+      "captureClock": 0
     }
   },
   {
@@ -1204,6 +1205,7 @@
         "updateAfterNodes": 0
       },
       "materialUuid": "5a7618bb-8501-41fe-bdad-74613a1e3de4",
+      "captureClock": 0,
       "pmremKind": "cubemap"
     }
   },
@@ -1641,6 +1643,7 @@
         "updateAfterNodes": 0
       },
       "materialUuid": "503c6adc-8502-4551-88a4-fec7ba7a67f2",
+      "captureClock": 0,
       "pmremKind": "equirect"
     }
   },
@@ -2315,6 +2318,7 @@
         "updateAfterNodes": 0
       },
       "materialUuid": "2ffc0ff0-1c00-402a-8b38-cedd6927fb9d",
+      "captureClock": 0,
       "pmremKind": "blur"
     }
   },
@@ -2804,6 +2808,7 @@
         "updateAfterNodes": 0
       },
       "materialUuid": "0ec6eb70-6b70-40a7-95b1-bd065ec74572",
+      "captureClock": 0,
       "pmremKind": "ggx"
     }
   },
@@ -3107,7 +3112,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "srgb-linear",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             },
             {
@@ -3127,7 +3135,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "srgb-linear",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             }
           ],
@@ -3152,7 +3163,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "srgb-linear",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -3183,7 +3197,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "srgb-linear",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -3259,7 +3276,8 @@
         "updateNodes": 7,
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
-      }
+      },
+      "captureClock": 0
     }
   }
 ]

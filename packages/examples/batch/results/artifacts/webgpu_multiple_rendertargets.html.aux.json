@@ -325,7 +325,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             },
             {
@@ -346,7 +349,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             }
           ],
@@ -372,7 +378,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -505,7 +514,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -527,7 +539,8 @@
         "updateNodes": 8,
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
-      }
+      },
+      "captureClock": 0
     }
   },
   {
@@ -871,7 +884,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             },
             {
@@ -892,7 +908,10 @@
                 "anisotropy": 1,
                 "generateMipmaps": false,
                 "colorSpace": "",
-                "flipY": false
+                "flipY": false,
+                "imageWidth": 640,
+                "imageHeight": 480,
+                "imageDepth": 1
               }
             }
           ],
@@ -918,7 +937,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -1066,7 +1088,10 @@
                   "anisotropy": 1,
                   "generateMipmaps": false,
                   "colorSpace": "",
-                  "flipY": false
+                  "flipY": false,
+                  "imageWidth": 640,
+                  "imageHeight": 480,
+                  "imageDepth": 1
                 }
               }
             },
@@ -1124,7 +1149,8 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "06426c15-267d-4310-b7f5-de9aee3a88e4"
+      "materialUuid": "06426c15-267d-4310-b7f5-de9aee3a88e4",
+      "captureClock": 0
     }
   }
 ]
