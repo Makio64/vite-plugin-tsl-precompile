@@ -27,6 +27,8 @@ jobs:
       - name: Install latest three.js for rewrite probe
         if: matrix.three-version == 'latest'
         run: pnpm --filter vite-plugin-tsl-precompile add three@latest --save-dev
+      - name: Probe vendored extractor surfaces
+        run: pnpm vendor:probe
       - name: Run per-file rewrite shape tests
         run: pnpm test:three-rewrite
       - name: Build slim bundle with rewrite fallbacks fatal

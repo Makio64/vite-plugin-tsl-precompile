@@ -73,3 +73,25 @@ jobs:
             packages/examples/batch/results/coverage-summary.md
             packages/examples/batch/results/shots/*.png
           if-no-files-found: ignore
+
+  preview-smoke-ocean:
+    name: Preview smoke (ocean)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: npx playwright install --with-deps chromium
+      - name: Run preview smoke for ocean
+        run: xvfb-run -a pnpm --filter examples-preview-smoke test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: preview-smoke-ocean-results
+          path: packages/examples/preview-smoke/results/**
+          if-no-files-found: ignore
