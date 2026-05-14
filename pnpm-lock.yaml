@@ -141,6 +141,22 @@ importers:
         specifier: workspace:*
         version: link:../../plugin
 
+  packages/examples/pbr-shadows:
+    dependencies:
+      '@tsl-precompile/runtime':
+        specifier: workspace:*
+        version: link:../../runtime
+      three:
+        specifier: ^0.184.0
+        version: 0.184.0
+    devDependencies:
+      vite:
+        specifier: ^8.0.9
+        version: 8.0.9(@types/node@25.7.0)(terser@5.46.1)
+      vite-plugin-tsl-precompile:
+        specifier: workspace:*
+        version: link:../../plugin
+
   packages/examples/pmrem-debug:
     dependencies:
       '@tsl-precompile/runtime':
