@@ -162,6 +162,7 @@ export function selectPMREMTexturesForArtifact( artifact: unknown, opts?: Record
 export function createPMREMSupport( opts?: Record<string, unknown> ): unknown;
 export function clearTextureViewCache( textureData: unknown ): void;
 export function markTextureInitialized( renderer: unknown, texture: unknown ): void;
+export function invalidateTextureBindGroups( renderer: unknown, texture: unknown ): boolean;
 export function shareGPUTextureEntry( targetRenderer: unknown, sourceRenderer: unknown, texture: unknown, opts?: Record<string, unknown> ): boolean;
 export function sharePMREMGPUTexture( slimRenderer: unknown, fullRenderer: unknown, pmrem: unknown, opts?: Record<string, unknown> ): boolean;
 export function shareShadowGPUTextureIntoSlim( texture: unknown, fullRenderer: unknown, slimRenderer: unknown ): boolean;
@@ -177,9 +178,24 @@ export type ComputeSyncStats = {
 	buffersAdopted: number;
 	buffersCopied: number;
 };
+export type ComputeSyncPerPassStats = ComputeSyncStats & {
+	pass: number | null;
+};
+export type ComputeSyncOptions = {
+	generateMipmaps?: boolean;
+	onStorageTexture?: ( texture: unknown, binding: unknown ) => void;
+	onStorageAttr?: ( attribute: unknown ) => void;
+	onError?: ( err: unknown ) => void;
+};
+export type ComputeSyncPerPassOptions = ComputeSyncOptions & {
+	onPass?: ( passIndex: number, stats: ComputeSyncStats ) => void;
+};
 export function getComputeBindGroups( computeNode: unknown, fullRenderer: unknown ): unknown[];
 export function computeNodeUsesStorageTexture( computeNode: unknown, fullRenderer: unknown ): boolean;
-export function syncComputeStorageOutputs( computeNode: unknown, fullRenderer: unknown, slimRenderer: unknown, opts?: Record<string, unknown> ): ComputeSyncStats;
+export function syncComputeStorageOutputs( computeNode: unknown, fullRenderer: unknown, slimRenderer: unknown, opts?: ComputeSyncOptions ): ComputeSyncStats;
+export function syncComputeStorageOutputsPerPass( computeNode: unknown, fullRenderer: unknown, slimRenderer: unknown, passIndex: number | undefined, opts?: ComputeSyncPerPassOptions ): ComputeSyncPerPassStats;
+export function pingPongInvalidate( textureA: unknown, textureB: unknown, renderers: unknown | unknown[] ): boolean;
+export function shareInstancedAttributeBufferIntoSlim( attribute: unknown, fullRenderer: unknown, slimRenderer: unknown ): boolean;
 export function createFullRendererFallback( opts: Record<string, unknown> ): {
 	getRenderer: () => Promise<unknown | null>;
 	getModule: () => unknown | null;
@@ -197,7 +213,10 @@ export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	ensureFallback: () => Promise<void>;
 	generatePMREMAsync: ( sourceTexture: unknown, generator?: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => Promise<unknown | null>;
 	setPMREMGenerator: ( generator: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => void;
-	syncComputeOutputs: ( computeNode: unknown, fullRenderer: unknown, syncOpts?: Record<string, unknown> ) => ComputeSyncStats;
+	syncComputeOutputs: ( computeNode: unknown, fullRenderer: unknown, syncOpts?: ComputeSyncOptions ) => ComputeSyncStats;
+	syncComputeOutputsPerPass: ( computeNode: unknown, fullRenderer: unknown, passIndex: number | undefined, syncOpts?: ComputeSyncPerPassOptions ) => ComputeSyncPerPassStats;
+	pingPongInvalidate: ( textureA: unknown, textureB: unknown, extraRenderer?: unknown ) => boolean;
+	shareInstancedAttributeBuffer: ( attribute: unknown, sourceRenderer: unknown ) => boolean;
 	computeNodeUsesStorageTexture: ( computeNode: unknown, sourceRenderer: unknown ) => boolean;
 	shareTexture: ( sourceRenderer: unknown, texture: unknown ) => boolean;
 	shareShadowTexture: ( texture: unknown, sourceRenderer: unknown ) => boolean;

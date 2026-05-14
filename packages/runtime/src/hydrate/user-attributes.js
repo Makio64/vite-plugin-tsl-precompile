@@ -67,6 +67,7 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 	};
 
 	const sourceObject = sourceMaterial.__tslpPrecompileObject || null;
+	const claimedAttributes = createClaimedAttributeSet( entries );
 
 	for ( const entry of entries ) {
 
@@ -79,7 +80,7 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 		if ( Array.isArray( path ) && path.length > 0 ) {
 
 			const root = sourceMaterial[ path[ 0 ] ];
-			if ( root && root.isNode === true ) live = findFirstAttributeMatchingEntry( root, entry );
+			if ( root && root.isNode === true ) live = findFirstAttributeMatchingEntry( root, entry, claimedAttributes );
 
 		}
 
@@ -87,7 +88,7 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 
 			for ( const root of collectNodeRoots() ) {
 
-				live = findFirstAttributeMatchingEntry( root, entry );
+				live = findFirstAttributeMatchingEntry( root, entry, claimedAttributes );
 				if ( live ) break;
 
 			}
@@ -95,7 +96,9 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 		}
 
 		if ( ! live ) live = findInstancedObjectAttributeMatchingEntry( sourceObject, entry, entries );
+		if ( live && isAttributeClaimed( live, claimedAttributes ) ) live = null;
 		if ( ! live ) continue;
+		claimAttribute( live, claimedAttributes );
 
 		Object.defineProperty( entry, '_liveAttribute', {
 			value: live,
@@ -234,7 +237,29 @@ function getInstancedMatrixColumnAttribute( object, column ) {
 
 }
 
-function findFirstAttributeMatchingEntry( node, entry ) {
+function createClaimedAttributeSet( entries ) {
+
+	const claimed = new WeakSet();
+	if ( ! Array.isArray( entries ) ) return claimed;
+	for ( const entry of entries ) claimAttribute( entry && entry._liveAttribute, claimed );
+	return claimed;
+
+}
+
+function claimAttribute( attribute, claimedAttributes ) {
+
+	if ( ! claimedAttributes || ! attribute || ( typeof attribute !== 'object' && typeof attribute !== 'function' ) ) return;
+	claimedAttributes.add( attribute );
+
+}
+
+function isAttributeClaimed( attribute, claimedAttributes ) {
+
+	return !! ( claimedAttributes && attribute && ( typeof attribute === 'object' || typeof attribute === 'function' ) && claimedAttributes.has( attribute ) );
+
+}
+
+function findFirstAttributeMatchingEntry( node, entry, claimedAttributes = null ) {
 
 	const wantSize = entry.itemSize || 0;
 	const wantCount = entry.count || 0;
@@ -248,6 +273,7 @@ function findFirstAttributeMatchingEntry( node, entry ) {
 		for ( const cand of cands ) {
 
 			if ( ! cand || cand.isBufferAttribute !== true ) continue;
+			if ( isAttributeClaimed( cand, claimedAttributes ) ) continue;
 			// vec3 storage attributes get padded to itemSize=4 when WebGPU
 			// touches them. Accept (3 → 4) so a freshly-built live attribute
 			// matches an artifact entry recorded after the pad fired.
@@ -292,6 +318,14 @@ export function bindUserStorageBuffersToArtifact( artifact, sourceMaterial ) {
 	if ( ! sourceMaterial ) return;
 	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : null;
 	if ( ! plan || plan.length === 0 ) return;
+	const planEntries = [];
+	for ( const group of plan ) {
+
+		const entries = group && Array.isArray( group.storageBuffers ) ? group.storageBuffers : null;
+		if ( entries ) planEntries.push( ...entries );
+
+	}
+	const claimedAttributes = createClaimedAttributeSet( planEntries );
 
 	let nodeRoots = null;
 	const collectNodeRoots = () => {
@@ -326,7 +360,7 @@ export function bindUserStorageBuffersToArtifact( artifact, sourceMaterial ) {
 				const root = sourceMaterial[ path[ 0 ] ];
 				if ( root && root.isNode === true ) {
 
-					live = findFirstAttributeMatchingEntry( root, entry );
+					live = findFirstAttributeMatchingEntry( root, entry, claimedAttributes );
 
 				}
 
@@ -336,7 +370,7 @@ export function bindUserStorageBuffersToArtifact( artifact, sourceMaterial ) {
 
 				for ( const root of collectNodeRoots() ) {
 
-					live = findFirstAttributeMatchingEntry( root, entry );
+					live = findFirstAttributeMatchingEntry( root, entry, claimedAttributes );
 					if ( live ) break;
 
 				}
@@ -344,6 +378,7 @@ export function bindUserStorageBuffersToArtifact( artifact, sourceMaterial ) {
 			}
 
 			if ( ! live ) continue;
+			claimAttribute( live, claimedAttributes );
 
 			Object.defineProperty( entry, '_liveAttribute', {
 				value: live,

@@ -48,6 +48,7 @@ This tracks focused cleanup since 2026-05-05 plus the refreshed broad coverage s
 - Portal replay captures/uses exact per-scene background aux config hashes so a portal-scene background cannot leak into the main scene.
 - Selective bloom captures material artifacts against the pass/global MRT descriptor first, allowing three.js to merge material-level `mrtNode` outputs into the pass layout before extraction.
 - Loader-gated replay waits for deferred scene assets before freezing the frame, which fixed the emissive bloom timing case where replay stopped after the HDR background but before GLTF content arrived.
+- Configured visual tier runs now isolate browser processes more aggressively and retry a failing example once in a fresh `run-e2e` process, so transient WebGPU capture contamination is recorded in the report without hiding persistent failures.
 
 ---
 
@@ -80,24 +81,24 @@ Six parallel agents + several follow-up commits pushed visual correctness forwar
 
 ## Feature coverage (capture vs replay)
 
-An example **works** when the slim-runtime replay screenshot matches a clean stock three.js reference within PSNR ≥ 30 dB (the gate from [run-e2e.mjs](packages/examples/batch/run-e2e.mjs#L93)). Smoke-test pass counts only prove the example loads — they say nothing about whether the rendered pixels are correct.
+An example **works** when the slim-runtime replay screenshot matches a clean stock three.js reference within PSNR ≥ 30 dB (the gate from [run-e2e.mjs](packages/examples/batch/run-e2e.mjs#L127)). Smoke-test pass counts only prove the example loads — they say nothing about whether the rendered pixels are correct.
 
-**163 / 226 graded examples match in the latest generated broad summary (72%).** The full per-example table lives at [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md) — refresh from saved shots with `pnpm coverage`, refresh the site data too with `pnpm coverage:site`, or re-capture fresh shots first with `pnpm coverage:retest` / `pnpm test:e2e` (slow).
+**162 / 226 graded examples match in the latest generated broad summary (72%).** The full per-example table lives at [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md) — refresh from saved shots with `pnpm coverage`, refresh the site data too with `pnpm coverage:site`, or re-capture fresh shots first with `pnpm coverage:retest` / `pnpm test:e2e` (slow).
 
 | Category | Match / Total | Best example | Worst example |
 |---|---|---|---|
 | Materials | **14 / 17** | webgpu_clearcoat (inf dB) ✅ | webgpu_materials_envmaps_bpcem (11.98 dB) |
-| Lights | 8 / 12 | webgpu_lights_selective / several (inf dB) ✅ | webgpu_lights_dynamic (10.79 dB) |
-| Shadows | 8 / 8 | several exact matches (inf dB) ✅ | webgpu_shadow_contact (32.07 dB) |
+| Lights | 9 / 12 | webgpu_lights_selective / several (inf dB) ✅ | webgpu_lights_dynamic (12.10 dB) |
+| Shadows | 7 / 8 | several exact matches (inf dB) ✅ | webgpu_shadowmap_progressive (15.19 dB) |
 | Sprites | 1 / 1 | webgpu_sprites (inf dB) ✅ | — |
-| Compute | 9 / 15 | webgpu_compute_audio (inf dB) ✅ | webgpu_compute_sort_bitonic (12.21 dB) |
-| Camera | 2 / 3 | webgpu_camera_logarithmicdepthbuffer (inf dB) ✅ | webgpu_camera (14.39 dB) |
+| Compute | 9 / 15 | webgpu_compute_audio (inf dB) ✅ | webgpu_compute_sort_bitonic (12.25 dB) |
+| Camera | 2 / 3 | webgpu_camera_logarithmicdepthbuffer (inf dB) ✅ | webgpu_camera (14.40 dB) |
 | MRT / RenderTargets | 4 / 4 | all four focused guards (inf dB) ✅ | — |
 | Particles | 1 / 1 | webgpu_particles (inf dB) ✅ | — |
-| Postprocessing | 19 / 29 | webgpu_postprocessing_3dlut (inf dB) ✅ | webgpu_postprocessing_outline (2.34 dB) |
-| Misc | 97 / 136 | many exact matches | webgpu_loader_gltf_anisotropy (1.07 dB) |
+| Postprocessing | 16 / 29 | webgpu_postprocessing_3dlut (inf dB) ✅ | webgpu_postprocessing_ssgi_ballpool (9.17 dB) |
+| Misc | 99 / 136 | many exact matches | webgpu_tsl_editor (3.01 dB) |
 
-The full example set is now substantially graded, but the headline is still short of production-ready: 63 graded examples remain visual regressions.
+The full example set is now substantially graded, but the headline is still short of production-ready: 64 graded examples remain visual regressions.
 
 ## v0.1 beta support slice
 
@@ -185,14 +186,14 @@ for the current triage plan.
 
 ---
 
-## Test suite summary (as of 2026-05-13 run)
+## Test suite summary (as of 2026-05-14 run)
 
 ```
-packages/plugin        177 / 177 pass   (unit + coverage matrix)
-packages/runtime       126 / 126 pass   (hydrator, registry, slim-support, smoke)
+packages/plugin        210 / 210 pass   (unit + coverage matrix)
+packages/runtime       335 / 335 pass   (hydrator, registry, slim-support, smoke)
 packages/inspector-panel 7 /   7 pass
 ---
-Total                  310 / 310 pass   0 fail
+Total                  552 / 552 pass   0 fail
 ```
 
 Batch harness (`packages/examples/batch/results/report.json`):

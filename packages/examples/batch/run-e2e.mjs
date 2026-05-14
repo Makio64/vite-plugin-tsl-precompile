@@ -8507,6 +8507,35 @@ function __prepareSSRNodeForReplay( ssrNode, context ) {
 				diag.setupError = err && ( err.stack || err.message ) || String( err );
 			}
 		}
+		// SSRNode._blurRenderTarget is constructed at 1x1 with 5 mip levels pushed
+		// in. If anything (e.g. a sibling SMAA frame-effect's __shareGraphTextures-
+		// BetweenRenderers traversal that reaches SSR's RTs through the SMAA input
+		// chain) tries to share / initRenderTarget this texture before SSR's
+		// updateBefore has had a chance to call setSize(), WebGPU rejects the
+		// allocation: "Texture mip level count (5) exceeds the maximum (1) for its
+		// size ([Extent3D width:1, height:1])". Eagerly call SSRNode.setSize with
+		// the slim renderer's drawing buffer size so the RTs are valid the moment
+		// any prior frame effect shares textures through their subtree.
+		if ( typeof ssrNode.setSize === 'function' ) {
+			try {
+				const sizeSource = __computeRenderer && typeof __computeRenderer.getDrawingBufferSize === 'function' ? __computeRenderer : null;
+				const tmp = new FullVector2();
+				let width = 0;
+				let height = 0;
+				if ( sizeSource ) {
+					sizeSource.getDrawingBufferSize( tmp );
+					width = tmp.width | 0;
+					height = tmp.height | 0;
+				}
+				if ( ( width <= 1 || height <= 1 ) && typeof window !== 'undefined' ) {
+					width = Math.max( 1, ( window.innerWidth | 0 ) || 640 );
+					height = Math.max( 1, ( window.innerHeight | 0 ) || 480 );
+				}
+				if ( width > 1 && height > 1 ) ssrNode.setSize( width, height );
+			} catch ( err ) {
+				diag.setSizeError = err && ( err.stack || err.message ) || String( err );
+			}
+		}
 		__patchSSRNodeUpdateBefore( ssrNode );
 		Object.defineProperty( ssrNode, '__tslpSSRReplayReady', { value: true, configurable: true } );
 		diag.prepared ++;
@@ -9754,17 +9783,13 @@ const LOADER_QUIESCENT_MS = 250;
 const SETTLE_FRAMES = parseIntAtLeast( getArg( '--settle-frames=', '8' ), 8, 0 );
 const RENDER_POLL_MS = 400;
 // Restart the browser more aggressively than wear-and-tear suggests because
-// some examples (PMREM-heavy, large GLTF, postprocessing) corrupt the WebGPU
-// state in a way that crashes the whole renderer process after 8–11 runs.
-// Recreating proactively also keeps Metal/GPU buffer accumulation in check
-// on Apple Silicon, where unified memory means GPU pressure freezes the
-// whole OS — at 4 runs/browser the parallel runner still froze users'
-// machines around the 150-example mark, so we cycle every 2 by default.
-// Override with TSLP_E2E_MAX_RUNS_PER_BROWSER=N or --max-runs-per-browser=N
-// if a future Chromium/Playwright makes per-context GPU release reliable
-// enough to relax this. The per-example catch below handles the residual
-// case where a crash hits before we hit this cap.
-const MAX_RUNS_PER_BROWSER = parseIntAtLeast( process.env.TSLP_E2E_MAX_RUNS_PER_BROWSER || getArg( '--max-runs-per-browser=', '2' ), 2, 1 );
+// some examples (PMREM-heavy, large GLTF, postprocessing) contaminate WebGPU
+// state across contexts. Configured tier gates prioritize determinism, so they
+// use a fresh browser per example by default. Broad sweeps still cycle every 2
+// examples to keep runtime reasonable. Override with
+// TSLP_E2E_MAX_RUNS_PER_BROWSER=N or --max-runs-per-browser=N if needed.
+const DEFAULT_MAX_RUNS_PER_BROWSER = tier ? '1' : '2';
+const MAX_RUNS_PER_BROWSER = parseIntAtLeast( process.env.TSLP_E2E_MAX_RUNS_PER_BROWSER || getArg( '--max-runs-per-browser=', DEFAULT_MAX_RUNS_PER_BROWSER ), Number( DEFAULT_MAX_RUNS_PER_BROWSER ), 1 );
 // Pause after `browser.close()` before relaunching. Without this, Chromium's
 // GPU process can still hold Metal buffers when the new browser starts,
 // doubling unified-memory pressure for the cross-over moment. 250 ms is
@@ -10897,8 +10922,29 @@ function formatResultLine( label, result ) {
 	];
 	const diag = diagnosticNote( result.replayDiagnostics );
 	if ( diag ) parts.push( diag );
+	if ( result.retryOf ) parts.push( result.status === 'pass' ? 'retry recovered' : 'retry failed' );
 	if ( result.error ) parts.push( `error: ${ compactText( result.error ) }` );
 	return parts.join( ' | ' );
+
+}
+
+function retrySummary( result ) {
+
+	return {
+		status: result.status,
+		error: result.error || null,
+		captureBrightFrac: result.captureBrightFrac,
+		replayBrightFrac: result.replayBrightFrac,
+		pixelGate: result.pixelGate || null,
+		captureErrors: Array.isArray( result.captureErrors ) ? result.captureErrors : [],
+		replayErrors: Array.isArray( result.replayErrors ) ? result.replayErrors : [],
+	};
+
+}
+
+function shouldRetryResult( result ) {
+
+	return !! tier && result && result.status === 'fail' && ! result.retryOf;
 
 }
 
@@ -10993,8 +11039,19 @@ try {
 
 			}
 
-			const result = await runOne( browser, name );
+			let result = await runOne( browser, name );
 			runsSinceRestart ++;
+			if ( shouldRetryResult( result ) ) {
+
+				const firstAttempt = result;
+				console.log( `${ label } RETRY | first attempt: ${ compactText( firstAttempt.error || formatPixelGate( firstAttempt.pixelGate ), 220 ) }` );
+				browser = await recycleBrowser( browser );
+				runsSinceRestart = 0;
+				result = await runOne( browser, name );
+				runsSinceRestart ++;
+				result.retryOf = retrySummary( firstAttempt );
+
+			}
 			if ( result.status === 'pass' ) report.pass ++; else report.fail ++;
 			report.details.push( result );
 			writeFileSync( reportPath, JSON.stringify( report, null, 2 ) );

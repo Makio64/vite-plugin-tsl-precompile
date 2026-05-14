@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { setupPrecompile } from '../src/setup.js';
-import { __resetForTests as resetMarkerForTests } from '../src/precompile-marker.js';
+import { __cloneLightsIntoForTests, __resetForTests as resetMarkerForTests } from '../src/precompile-marker.js';
 
 const MARKER_METHOD = 'precompile';
 
@@ -142,5 +142,69 @@ test( 'setupPrecompile throws when aux is requested without scene/camera', () =>
 		() => setupPrecompile( { three, renderer, aux: true } ),
 		/aux capture needs/,
 	);
+
+} );
+
+test( 'precompile light cloning strips helper children from synthetic lights', () => {
+
+	const helper = {
+		type: 'RectAreaLightHelper',
+		parent: null,
+		updateMatrixWorld() {
+
+			throw new Error( 'helper should not be updated in synthetic capture' );
+
+		},
+	};
+	const sourceLight = {
+		isLight: true,
+		parent: { isScene: true },
+		children: [ helper ],
+		clone() {
+
+			const child = { ...helper };
+			const cloned = {
+				isLight: true,
+				children: [ child ],
+				remove( object ) {
+
+					this.children = this.children.filter( ( entry ) => entry !== object );
+					object.parent = null;
+
+				},
+			};
+			child.parent = cloned;
+			return cloned;
+
+		},
+	};
+	const sourceScene = {
+		updateMatrixWorldCalled: false,
+		traverse( visitor ) {
+
+			visitor( sourceLight );
+
+		},
+		updateMatrixWorld() {
+
+			this.updateMatrixWorldCalled = true;
+
+		},
+	};
+	const added = [];
+	const destScene = {
+		add( object ) {
+
+			added.push( object );
+
+		},
+	};
+
+	__cloneLightsIntoForTests( sourceScene, destScene );
+
+	assert.equal( sourceScene.updateMatrixWorldCalled, true );
+	assert.equal( added.length, 1 );
+	assert.deepEqual( added[ 0 ].children, [] );
+	assert.equal( helper.parent, null );
 
 } );

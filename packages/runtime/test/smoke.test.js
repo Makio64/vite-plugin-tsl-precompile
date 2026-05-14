@@ -136,6 +136,51 @@ test( 'runtime hydrator prefers anonymous attribute snapshots over shape-only li
 
 } );
 
+test( 'runtime hydrator pairs same-shaped live node attributes by encounter order', () => {
+
+	const liveAttributes = [ 1, 2, 3, 4 ].map( ( base ) => ( {
+		isBufferAttribute: true,
+		isInstancedBufferAttribute: true,
+		count: 2,
+		itemSize: 3,
+		array: new Float32Array( [ base, base, base, base + 0.5, base + 0.5, base + 0.5 ] ),
+	} ) );
+	const sourceMaterial = {
+		positionNode: {
+			isNode: true,
+			traverse( visitor ) {
+
+				for ( const attribute of liveAttributes ) visitor( { attribute } );
+
+			},
+		},
+	};
+	const artifact = {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		attributes: liveAttributes.map( ( _, index ) => ( {
+			name: `nodeAttribute${ index }`,
+			type: 'vec3',
+			source: 'node',
+			count: 2,
+			itemSize: 3,
+			arrayType: 'Float32Array',
+			instanced: true,
+			storage: false,
+		} ) ),
+		bindings: [],
+		uniformPlan: [],
+	};
+
+	const state = hydrateNodeBuilderState( artifact, sourceMaterial );
+
+	assert.deepEqual(
+		state.nodeAttributes.map( ( entry ) => entry.node.attribute ),
+		liveAttributes,
+	);
+
+} );
+
 test( 'runtime hydrator restores captured draw count for anonymous instanced snapshots', () => {
 
 	const object = { count: 5, geometry: {} };
@@ -1232,6 +1277,55 @@ test( 'hydrator: storage-buffer seeded from _liveArray matches in-process data',
 	assert.equal( sb.isStorageBuffer, true );
 	// _liveAttribute was provided — hydrator should use it directly
 	assert.equal( sb.attribute, liveAttr );
+
+} );
+
+test( 'hydrator: same-shaped live storage buffers are paired by encounter order', () => {
+
+	const liveAttributes = [ 1, 2 ].map( ( base ) => ( {
+		isBufferAttribute: true,
+		isStorageBufferAttribute: true,
+		array: new Float32Array( [ base, base + 1, base + 2, base + 3, base + 4, base + 5 ] ),
+		count: 2,
+		itemSize: 3,
+	} ) );
+	const sourceMaterial = {
+		colorNode: {
+			isNode: true,
+			traverse( visitor ) {
+
+				for ( const attribute of liveAttributes ) visitor( { value: attribute } );
+
+			},
+		},
+	};
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: '',
+		computeShader: 'cs',
+		bindings: [ {
+			name: 'g',
+			bindings: [
+				{ name: 'a', kind: 'storage-buffer', visibility: 4, byteLength: 24, access: 'read_write' },
+				{ name: 'b', kind: 'storage-buffer', visibility: 4, byteLength: 24, access: 'read_write' },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'g',
+			shared: false,
+			slots: [],
+			textures: [],
+			storageBuffers: [
+				{ name: 'a', access: 'read_write', visibility: 4, arrayType: 'Float32Array', count: 2, itemSize: 3 },
+				{ name: 'b', access: 'read_write', visibility: 4, arrayType: 'Float32Array', count: 2, itemSize: 3 },
+			],
+		} ],
+	};
+
+	const state = hydrateNodeBuilderState( artifact, sourceMaterial );
+
+	assert.equal( state.bindings[ 0 ].bindings[ 0 ].attribute, liveAttributes[ 0 ] );
+	assert.equal( state.bindings[ 0 ].bindings[ 1 ].attribute, liveAttributes[ 1 ] );
 
 } );
 

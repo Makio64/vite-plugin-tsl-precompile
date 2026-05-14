@@ -670,6 +670,7 @@ function cloneLightsInto( sourceScene, destScene ) {
 
 		}
 		if ( ! cloned ) continue;
+		stripClonedLightChildren( cloned );
 
 		// Bake world transform into the clone so a light parented under a
 		// moving rig still illuminates from the right place during capture.
@@ -708,6 +709,34 @@ function cloneLightsInto( sourceScene, destScene ) {
 		}
 
 	}
+
+}
+
+function stripClonedLightChildren( light ) {
+
+	if ( ! light || ! Array.isArray( light.children ) || light.children.length === 0 ) return;
+	const children = light.children.slice();
+	for ( const child of children ) {
+
+		try {
+
+			if ( typeof light.remove === 'function' ) light.remove( child );
+			else if ( child ) child.parent = null;
+
+		} catch ( _ ) {
+
+			if ( child ) child.parent = null;
+
+		}
+
+	}
+	if ( light.children.length > 0 ) light.children.length = 0;
+
+}
+
+export function __cloneLightsIntoForTests( sourceScene, destScene ) {
+
+	cloneLightsInto( sourceScene, destScene );
 
 }
 

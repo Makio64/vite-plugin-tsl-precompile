@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
 	clearTextureViewCache,
 	markTextureInitialized,
+	invalidateTextureBindGroups,
 	shareGPUTextureEntry,
 	sharePMREMGPUTexture,
 	shareShadowGPUTextureIntoSlim,
@@ -66,6 +67,29 @@ test( 'markTextureInitialized sets the Textures DataMap flags', () => {
 	assert.equal( entry.version, 3 );
 	assert.equal( entry.generation, 3 );
 	assert.ok( entry.bindGroups instanceof Set );
+
+} );
+
+test( 'invalidateTextureBindGroups clears cached texture views and binding state', () => {
+
+	const renderer = fakeRenderer();
+	const tex = fakeTexture();
+	const texData = renderer.backend.get( tex );
+	texData[ 'view-0' ] = { stale: true };
+	const bindGroup = { id: 'bg' };
+	const txData = renderer._textures.get( tex );
+	txData.bindGroups = new Set( [ bindGroup ] );
+	const bindingData = renderer.backend.get( bindGroup );
+	bindingData.groups = { stale: true };
+	bindingData.versions = [ 1 ];
+
+	const ok = invalidateTextureBindGroups( renderer, tex );
+
+	assert.equal( ok, true );
+	assert.equal( texData[ 'view-0' ], undefined );
+	assert.equal( bindingData.groups, undefined );
+	assert.equal( bindingData.versions, undefined );
+	assert.equal( txData.bindGroups.size, 0 );
 
 } );
 
@@ -202,9 +226,17 @@ test( 'shareShadowGPUTextureIntoSlim bumps the JS texture version and clears vie
 	const fullData = full.backend.get( depthMap );
 	fullData.texture = { __gpu: 'depth' };
 	fullData.format = 'depth32float';
+	fullData.dimension = '2d';
+	fullData.levels = 4;
 
 	const slimData = slim.backend.get( depthMap );
 	slimData[ 'view-0' ] = { stale: true };
+	const bindGroup = { id: 'shadow-bg' };
+	const txData = slim._textures.get( depthMap );
+	txData.bindGroups = new Set( [ bindGroup ] );
+	const bindingsData = slim.backend.get( bindGroup );
+	bindingsData.groups = { stale: true };
+	bindingsData.versions = [ 5 ];
 
 	const ok = shareShadowGPUTextureIntoSlim( depthMap, full, slim );
 
@@ -212,8 +244,13 @@ test( 'shareShadowGPUTextureIntoSlim bumps the JS texture version and clears vie
 	assert.equal( depthMap.version, 6, 'JS version was bumped' );
 	assert.equal( slimData.texture, fullData.texture );
 	assert.equal( slimData.format, 'depth32float' );
+	assert.equal( slimData.dimension, '2d' );
+	assert.equal( slimData.levels, 4 );
 	assert.equal( slimData.__tslpSharedShadowGPUTexture, fullData.texture );
 	assert.equal( slimData[ 'view-0' ], undefined, 'stale view cache cleared' );
+	assert.equal( bindingsData.groups, undefined );
+	assert.equal( bindingsData.versions, undefined );
+	assert.equal( txData.bindGroups.size, 0 );
 	assert.equal( slimData.version, 6 );
 	assert.equal( fullData.version, 6, 'both renderers see the bumped version' );
 	assert.equal( slim._textures.get( depthMap ).initialized, true );

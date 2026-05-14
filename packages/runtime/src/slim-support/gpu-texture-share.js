@@ -73,6 +73,45 @@ export function markTextureInitialized( renderer, texture ) {
 }
 
 /**
+ * Invalidate renderer-side caches that were built against a texture's previous
+ * GPU resource. The next renderer update will rebuild them and pick up the new
+ * backend texture/view data.
+ *
+ * @returns {boolean} true when a texture entry was found and cleared.
+ */
+export function invalidateTextureBindGroups( renderer, texture ) {
+
+	if ( ! renderer || ! renderer.backend || ! texture ) return false;
+	let invalidated = false;
+	const backendData = renderer.backend.get( texture );
+	if ( backendData ) {
+
+		clearTextureViewCache( backendData );
+		invalidated = true;
+
+	}
+
+	const tx = renderer._textures;
+	const txData = tx && typeof tx.get === 'function' ? tx.get( texture ) : null;
+	if ( ! txData || ! txData.bindGroups ) return invalidated;
+
+	for ( const bindGroup of txData.bindGroups ) {
+
+		const bindingsData = renderer.backend.get( bindGroup );
+		if ( bindingsData ) {
+
+			bindingsData.groups = undefined;
+			bindingsData.versions = undefined;
+
+		}
+
+	}
+	txData.bindGroups.clear();
+	return true;
+
+}
+
+/**
  * Copy the backend data record for `texture` from `sourceRenderer` to
  * `targetRenderer`, then mark the target's Textures manager entry as
  * initialised. Used to bind the slim renderer to a `GPUTexture` the full
@@ -128,24 +167,7 @@ export function shareGPUTextureEntry( targetRenderer, sourceRenderer, texture, o
 		// Invalidate any bind groups the target had built against the
 		// previous (stand-in) texture so the next render rebuilds them
 		// against the shared GPU resource.
-		const tx = targetRenderer._textures;
-		const txData = tx && typeof tx.get === 'function' ? tx.get( texture ) : null;
-		if ( txData && txData.bindGroups ) {
-
-			for ( const bindGroup of txData.bindGroups ) {
-
-				const bindingsData = targetRenderer.backend.get( bindGroup );
-				if ( bindingsData ) {
-
-					bindingsData.groups = undefined;
-					bindingsData.versions = undefined;
-
-				}
-
-			}
-			txData.bindGroups.clear();
-
-		}
+		invalidateTextureBindGroups( targetRenderer, texture );
 
 		const targetData = targetRenderer.backend.get( texture );
 		for ( const key of Object.keys( sourceData ) ) targetData[ key ] = sourceData[ key ];
@@ -194,6 +216,7 @@ export function sharePMREMGPUTexture( slimRenderer, fullRenderer, pmrem, opts = 
 
 		}
 
+		invalidateTextureBindGroups( slimRenderer, pmrem );
 		const slimData = slimRenderer.backend.get( pmrem );
 		for ( const key of Object.keys( fullData ) ) slimData[ key ] = fullData[ key ];
 		markTextureInitialized( slimRenderer, pmrem );
@@ -229,10 +252,10 @@ export function shareShadowGPUTextureIntoSlim( tex, fullRenderer, slimRenderer )
 	const slimData = slimRenderer.backend.get( tex );
 	if ( ! fullData || ! fullData.texture || ! slimData ) return false;
 
+	invalidateTextureBindGroups( slimRenderer, tex );
+	for ( const key of Object.keys( fullData ) ) slimData[ key ] = fullData[ key ];
 	clearTextureViewCache( slimData );
-	slimData.texture = fullData.texture;
 	slimData.__tslpSharedShadowGPUTexture = fullData.texture;
-	slimData.format = fullData.format;
 	slimData.initialized = true;
 	slimData.isDefaultTexture = false;
 

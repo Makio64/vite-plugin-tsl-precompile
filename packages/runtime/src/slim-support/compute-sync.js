@@ -22,7 +22,7 @@
  * @module SlimSupportComputeSync
  */
 
-import { shareShadowGPUTextureIntoSlim, clearTextureViewCache } from './gpu-texture-share.js';
+import { shareShadowGPUTextureIntoSlim, clearTextureViewCache, invalidateTextureBindGroups } from './gpu-texture-share.js';
 
 function asList( node ) { return Array.isArray( node ) ? node : [ node ]; }
 
@@ -253,22 +253,7 @@ function bumpTextureVersion( renderer, texture, nextVersion ) {
 
 		txData.version = nextVersion;
 		txData.generation = nextVersion;
-		if ( txData.bindGroups && typeof txData.bindGroups.clear === 'function' ) {
-
-			for ( const bindGroup of txData.bindGroups ) {
-
-				const bindingsData = renderer.backend.get( bindGroup );
-				if ( bindingsData ) {
-
-					bindingsData.groups = undefined;
-					bindingsData.versions = undefined;
-
-				}
-
-			}
-			txData.bindGroups.clear();
-
-		}
+		invalidateTextureBindGroups( renderer, texture );
 
 	}
 	return true;
