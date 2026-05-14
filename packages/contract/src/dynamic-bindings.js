@@ -4,6 +4,7 @@ export const DYNAMIC_BINDING_TARGET = Object.freeze( {
 	UNIFORM_SLOT: 'uniform-slot',
 	SAMPLED_TEXTURE: 'sampled-texture',
 	STORAGE_TEXTURE: 'storage-texture',
+	STORAGE_BUFFER: 'storage-buffer',
 	SAMPLER: 'sampler',
 } );
 
@@ -63,6 +64,15 @@ const exactDescriptors = {
 		resolver: 'hydrator/live-node',
 		required: [],
 		optional: [ 'name', 'property', 'valueType', 'valueSnapshot' ],
+	} ),
+	'object3d.nodeUniform': freezeDescriptor( {
+		kind: 'object3d.nodeUniform',
+		target: DYNAMIC_BINDING_TARGET.UNIFORM_SLOT,
+		phase: DYNAMIC_BINDING_PHASE.CODEGEN_UPDATE,
+		owner: 'object3d',
+		resolver: 'emit-updater/object-node-uniform',
+		required: [ 'property' ],
+		optional: [ 'uniformType', 'valueType', 'valueSnapshot' ],
 	} ),
 	'object3d.userData': freezeDescriptor( {
 		kind: 'object3d.userData',
@@ -126,6 +136,25 @@ const exactDescriptors = {
 		resolver: 'hydrator/ltc-texture',
 		required: [ 'ltcIndex' ],
 		optional: [ 'magFilter', 'minFilter', 'wrapS', 'wrapT' ],
+	} ),
+	// Storage-buffer descriptor scaffolding (Tier 3 work-in-progress).
+	// The runtime side (`packages/runtime/src/hydrate/kinds/storage-buffer.js`)
+	// already allocates `StorageBuffer` instances from artifact-side snapshots
+	// or live attribute reuse. The AOT extractor side — emitting compute-shader
+	// storage-buffer descriptors with a per-frame update model — is the
+	// remaining gap (STATUS §1.5 / IDEAS). When the AOT path lands, the
+	// extractor should populate `source.kind = 'storage.buffer'` and the
+	// expected `required` fields below. Listed here so artifact validation
+	// already knows the shape and adopters can register storage-buffer-flavoured
+	// custom kinds against this descriptor.
+	'storage.buffer': freezeDescriptor( {
+		kind: 'storage.buffer',
+		target: DYNAMIC_BINDING_TARGET.STORAGE_BUFFER,
+		phase: DYNAMIC_BINDING_PHASE.UPDATE_BEFORE,
+		owner: 'compute',
+		resolver: 'hydrator/storage-buffer',
+		required: [],
+		optional: [ 'itemSize', 'count', 'usage', 'attributeName', 'computeNodeUuid', 'snapshot' ],
 	} ),
 };
 
@@ -253,5 +282,75 @@ export function validateDynamicBindingSource( source ) {
 
 	}
 	return errors;
+
+}
+
+/**
+ * Walk `artifact.uniformPlan` and emit one descriptor entry per dynamic
+ * binding (uniform slot, sampled texture, storage texture, sampler) that
+ * carries a `source.kind` in the registry. The output is a stable,
+ * serializable view of "which slots need per-frame resolution and from
+ * where" — the artifact section consumers like the dynamic-binding
+ * resolver read.
+ *
+ * Each entry: `{ kind, target, phase, owner, resolver, group, binding,
+ * source }`. Slots whose `source.kind` is missing or unknown are skipped
+ * silently (the codegen build-time gate is responsible for rejecting
+ * unknown kinds; this function is a non-throwing reader).
+ *
+ * Pure function. Idempotent. Does not mutate the artifact.
+ *
+ * @param {Object} artifact
+ * @returns {Array<Object>}
+ */
+export function collectArtifactDynamicBindings( artifact ) {
+
+	const out = [];
+	if ( ! artifact || ! Array.isArray( artifact.uniformPlan ) ) return out;
+
+	for ( const group of artifact.uniformPlan ) {
+
+		const groupName = group && group.name || '';
+
+		for ( const slot of group && group.slots || [] ) {
+
+			const source = slot && slot.source || null;
+			const descriptor = source && dynamicBindingDescriptor( source.kind );
+			if ( ! descriptor ) continue;
+			out.push( {
+				kind: source.kind,
+				target: descriptor.target,
+				phase: descriptor.phase,
+				owner: descriptor.owner,
+				resolver: descriptor.resolver,
+				group: groupName,
+				binding: slot.name || null,
+				offset: slot.offset ?? slot.byteOffset ?? null,
+				source,
+			} );
+
+		}
+
+		for ( const textureEntry of group && group.textures || [] ) {
+
+			const source = textureEntry && textureEntry.source || null;
+			const descriptor = source && dynamicBindingDescriptor( source.kind );
+			if ( ! descriptor ) continue;
+			out.push( {
+				kind: source.kind,
+				target: descriptor.target,
+				phase: descriptor.phase,
+				owner: descriptor.owner,
+				resolver: descriptor.resolver,
+				group: groupName,
+				binding: textureEntry.name || null,
+				textureType: textureEntry.textureType || null,
+				source,
+			} );
+
+		}
+
+	}
+	return out;
 
 }

@@ -1,5 +1,5 @@
 import { MATERIAL_TEXTURE_PROPS } from './texture-props.js';
-import { validateDynamicBindingSource } from './dynamic-bindings.js';
+import { collectArtifactDynamicBindings, validateDynamicBindingSource } from './dynamic-bindings.js';
 
 export const KIND_STATUS = Object.freeze( {
 	CODEGEN: 'codegen',
@@ -41,7 +41,11 @@ const CODEGEN_SLOT_KINDS = [
 	'object3d.viewPosition',
 	'object3d.direction',
 	'object3d.radius',
+	'object3d.nodeUniform',
 	'object3d.userData',
+	'velocity.previousProjectionMatrix',
+	'velocity.previousCameraViewMatrix',
+	'velocity.previousModelWorldMatrix',
 	'frame.time',
 	'frame.deltaTime',
 	'frame.frameId',
@@ -189,6 +193,7 @@ function dynamicKindInfo( kind ) {
 
 	if ( typeof kind !== 'string' || kind.length === 0 ) return null;
 	if ( Object.prototype.hasOwnProperty.call( KINDS, kind ) ) return KINDS[ kind ];
+	if ( USER_KINDS.has( kind ) ) return USER_KINDS.get( kind );
 
 	if ( kind.startsWith( 'object3d.' ) ) {
 
@@ -202,6 +207,131 @@ function dynamicKindInfo( kind ) {
 	}
 
 	return null;
+
+}
+
+/**
+ * User-extensible kind registry. Keyed by `kind` (e.g. `custom.myEffect`).
+ * Mutable at module scope so `registerKind()` can extend the system without
+ * forking. `dynamicKindInfo()` consults this after the built-in `KINDS` table.
+ *
+ * @type {Map<string, Readonly<Object>>}
+ */
+const USER_KINDS = new Map();
+
+const VALID_REGISTER_STATUSES = new Set( [
+	KIND_STATUS.CODEGEN,
+	KIND_STATUS.RUNTIME_TEXTURE,
+	KIND_STATUS.RUNTIME_DYNAMIC,
+] );
+
+function descriptorsEqual( a, b ) {
+
+	if ( a === b ) return true;
+	if ( ! a || ! b ) return false;
+	const ka = Object.keys( a ).sort();
+	const kb = Object.keys( b ).sort();
+	if ( ka.length !== kb.length ) return false;
+	for ( let i = 0; i < ka.length; i ++ ) {
+
+		if ( ka[ i ] !== kb[ i ] ) return false;
+		if ( a[ ka[ i ] ] !== b[ kb[ i ] ] ) return false;
+
+	}
+	return true;
+
+}
+
+/**
+ * Register a custom `source.kind` so the extractor → codegen → runtime
+ * pipeline accepts it.
+ *
+ * The closed built-in registry covers the standard three.js TSL surface; this
+ * lets adopters with custom TSL nodes (or third-party libraries that emit
+ * binding kinds we don't know about) plug into the system without forking the
+ * contract package. `validateArtifact()` consults this after the built-in
+ * table, so registered custom kinds pass validation everywhere — dev capture,
+ * build verify, runtime hydrator.
+ *
+ * Re-registering the same kind with the same descriptor is a no-op (idempotent
+ * across module reloads). Re-registering with a *different* descriptor throws
+ * — the system enforces "one descriptor per kind."
+ *
+ * @param {Object} entry
+ * @param {string} entry.kind   - the `source.kind` string the extractor emits (e.g. `custom.myEffect`)
+ * @param {string} entry.status - one of `'codegen'`, `'runtime-texture'`, `'runtime-dynamic'`
+ * @param {string} [entry.codegen] - codegen emitter id (when status === 'codegen')
+ * @param {string} [entry.runtime] - runtime resolver id (when status starts with 'runtime')
+ * @param {string} [entry.reason]  - optional human-facing description
+ * @param {Object} [entry...]      - additional descriptor fields surfaced via `kindInfo()`
+ * @return {Readonly<Object>} the frozen descriptor that's now resolvable via `kindInfo(entry.kind)`
+ * @throws {TypeError} on invalid shape
+ * @throws {Error} when re-registering an existing kind with a different descriptor
+ */
+export function registerKind( entry ) {
+
+	if ( ! entry || typeof entry !== 'object' ) {
+
+		throw new TypeError( 'registerKind: entry object is required.' );
+
+	}
+	const { kind } = entry;
+	if ( typeof kind !== 'string' || kind.length === 0 ) {
+
+		throw new TypeError( 'registerKind: entry.kind must be a non-empty string.' );
+
+	}
+	if ( ! VALID_REGISTER_STATUSES.has( entry.status ) ) {
+
+		throw new TypeError(
+			`registerKind: entry.status must be one of ${ JSON.stringify( [ ...VALID_REGISTER_STATUSES ] ) } (got ${ JSON.stringify( entry.status ) }).`
+		);
+
+	}
+	if ( Object.prototype.hasOwnProperty.call( KINDS, kind ) ) {
+
+		throw new Error( `registerKind: cannot override built-in kind ${ JSON.stringify( kind ) }; built-in descriptors are immutable.` );
+
+	}
+	const descriptor = Object.freeze( { ...entry } );
+	const existing = USER_KINDS.get( kind );
+	if ( existing ) {
+
+		if ( descriptorsEqual( existing, descriptor ) ) return existing;
+		throw new Error( `registerKind: kind ${ JSON.stringify( kind ) } is already registered with a different descriptor.` );
+
+	}
+	USER_KINDS.set( kind, descriptor );
+	return descriptor;
+
+}
+
+/**
+ * Remove a user-registered kind. Built-in kinds cannot be unregistered.
+ * Returns `true` when an entry was removed, `false` when the kind wasn't
+ * user-registered.
+ *
+ * Mostly a test helper / explicit teardown for adopters that hot-swap their
+ * custom node sets at dev time.
+ *
+ * @param {string} kind
+ * @return {boolean}
+ */
+export function unregisterKind( kind ) {
+
+	if ( typeof kind !== 'string' ) return false;
+	return USER_KINDS.delete( kind );
+
+}
+
+/**
+ * Snapshot of user-registered kinds (frozen). Useful for diagnostics.
+ *
+ * @return {Readonly<Array<Object>>}
+ */
+export function listRegisteredKinds() {
+
+	return Object.freeze( [ ...USER_KINDS.values() ] );
 
 }
 
@@ -402,6 +532,48 @@ export function validateArtifact( input, opts = {} ) {
 					}
 
 				}
+
+			}
+
+		}
+
+	}
+
+	// Convergence guard: if the artifact ships a frozen `dynamicBindings`
+	// section, assert it matches the live collector. This is the dev↔build
+	// extractor convergence canary — when a node-harness re-extraction
+	// produces a different `dynamicBindings` shape than the dev capture
+	// originally stamped, `pnpm verify` fails with a specific kind-set diff
+	// instead of silently shipping stale descriptors.
+	if ( Array.isArray( artifact.uniformPlan ) && Array.isArray( artifact.dynamicBindings ) && opts.strictDynamicBindings !== false ) {
+
+		const computed = collectArtifactDynamicBindings( artifact );
+		const storedKey = ( e ) => `${ e.kind }|${ e.group }|${ e.binding }`;
+		const storedKeys = new Set( artifact.dynamicBindings.map( storedKey ) );
+		const computedKeys = new Set( computed.map( storedKey ) );
+
+		for ( const key of computedKeys ) {
+
+			if ( ! storedKeys.has( key ) ) {
+
+				errors.push( validationError(
+					'dynamicBindings.missing',
+					`${ label }: dynamicBindings is missing entry "${ key }" that the uniformPlan implies`,
+					'dynamicBindings',
+				) );
+
+			}
+
+		}
+		for ( const key of storedKeys ) {
+
+			if ( ! computedKeys.has( key ) ) {
+
+				errors.push( validationError(
+					'dynamicBindings.stale',
+					`${ label }: dynamicBindings has stale entry "${ key }" that the uniformPlan no longer produces`,
+					'dynamicBindings',
+				) );
 
 			}
 

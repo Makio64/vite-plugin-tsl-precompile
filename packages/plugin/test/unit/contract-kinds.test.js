@@ -8,6 +8,10 @@ import {
 	isBlockedKind,
 	isArtifactCollection,
 	isKnownKind,
+	kindInfo,
+	listRegisteredKinds,
+	registerKind,
+	unregisterKind,
 	validateArtifact,
 } from '@tsl-precompile/contract/kinds';
 import {
@@ -25,6 +29,7 @@ test( 'contract kind registry recognises codegen and runtime texture kinds', () 
 	assert.ok( isKnownKind( 'material.color' ) );
 	assert.ok( isKnownKind( 'material.map' ) );
 	assert.ok( isKnownKind( 'material.map.matrix' ) );
+	assert.ok( isKnownKind( 'object3d.nodeUniform' ) );
 	assert.ok( isKnownKind( 'builtin.dfgLUT' ) );
 	assert.ok( isBlockedKind( 'builtin.dfgLUT' ) );
 	assert.match( blockedKindReason( 'builtin.dfgLUT' ), /DFG LUT/ );
@@ -144,6 +149,10 @@ test( 'contract dynamic binding descriptors document runtime texture and live sl
 	assert.equal( live.target, DYNAMIC_BINDING_TARGET.UNIFORM_SLOT );
 	assert.equal( live.phase, DYNAMIC_BINDING_PHASE.UPDATE_BEFORE );
 
+	const objectUniform = dynamicBindingDescriptor( 'object3d.nodeUniform' );
+	assert.equal( objectUniform.target, DYNAMIC_BINDING_TARGET.UNIFORM_SLOT );
+	assert.equal( objectUniform.owner, 'object3d' );
+
 	const materialMap = dynamicBindingDescriptor( 'material.map' );
 	assert.equal( materialMap.target, DYNAMIC_BINDING_TARGET.SAMPLED_TEXTURE );
 	assert.equal( materialMap.property, 'map' );
@@ -161,6 +170,8 @@ test( 'contract dynamic binding descriptor validation reports missing required f
 
 	assert.deepEqual( validateDynamicBindingSource( { kind: 'object3d.userData', property: 'speed' } ), [] );
 	assert.deepEqual( validateDynamicBindingSource( { kind: 'object3d.userData' } ).map( ( error ) => error.field ), [ 'property' ] );
+	assert.deepEqual( validateDynamicBindingSource( { kind: 'object3d.nodeUniform', property: 'distortionScale' } ), [] );
+	assert.deepEqual( validateDynamicBindingSource( { kind: 'object3d.nodeUniform' } ).map( ( error ) => error.field ), [ 'property' ] );
 	assert.deepEqual( validateDynamicBindingSource( { kind: 'material.map', property: 'map' } ), [] );
 	assert.deepEqual( validateDynamicBindingSource( { kind: 'material.map' } ).map( ( error ) => error.field ), [ 'property' ] );
 
@@ -174,5 +185,78 @@ test( 'contract dynamic binding descriptor validation reports missing required f
 
 	assert.equal( result.ok, false );
 	assert.equal( result.errors.find( ( error ) => error.code === 'dynamic-binding.required' ).path, 'uniformPlan[0].textures[0].source.property' );
+
+} );
+
+test( 'registerKind makes a custom kind resolvable via kindInfo / isKnownKind', () => {
+
+	unregisterKind( 'custom.testFx' );
+	assert.equal( isKnownKind( 'custom.testFx' ), false );
+	const descriptor = registerKind( {
+		kind: 'custom.testFx',
+		status: 'codegen',
+		codegen: 'user-supplied',
+		description: 'unit-test custom kind',
+	} );
+	assert.equal( descriptor.kind, 'custom.testFx' );
+	assert.equal( descriptor.codegen, 'user-supplied' );
+	assert.equal( isKnownKind( 'custom.testFx' ), true );
+	assert.equal( kindInfo( 'custom.testFx' ).status, 'codegen' );
+	assert.ok( listRegisteredKinds().some( ( e ) => e.kind === 'custom.testFx' ) );
+	unregisterKind( 'custom.testFx' );
+
+} );
+
+test( 'registerKind is idempotent on identical descriptors and rejects conflicts', () => {
+
+	unregisterKind( 'custom.idempotent' );
+	const first = registerKind( { kind: 'custom.idempotent', status: 'runtime-texture', runtime: 'user' } );
+	const second = registerKind( { kind: 'custom.idempotent', status: 'runtime-texture', runtime: 'user' } );
+	assert.equal( first, second, 're-registering same descriptor returns the same frozen entry' );
+
+	assert.throws( () => {
+
+		registerKind( { kind: 'custom.idempotent', status: 'codegen', codegen: 'different' } );
+
+	}, /different descriptor/ );
+	unregisterKind( 'custom.idempotent' );
+
+} );
+
+test( 'registerKind rejects malformed entries and built-in overrides', () => {
+
+	assert.throws( () => registerKind( {} ), /entry\.kind/ );
+	assert.throws( () => registerKind( { kind: 'custom.bad' } ), /entry\.status/ );
+	assert.throws( () => registerKind( { kind: 'custom.bad', status: 'mystery' } ), /entry\.status must be one of/ );
+	assert.throws( () => registerKind( { kind: 'material.color', status: 'codegen' } ), /built-in/ );
+
+} );
+
+test( 'unregisterKind removes user entries; returns false for non-user kinds', () => {
+
+	registerKind( { kind: 'custom.removable', status: 'codegen', codegen: 'noop' } );
+	assert.equal( unregisterKind( 'custom.removable' ), true );
+	assert.equal( unregisterKind( 'custom.removable' ), false, 'second unregister is a no-op' );
+	assert.equal( unregisterKind( 'material.color' ), false, 'built-in cannot be unregistered' );
+	assert.equal( isKnownKind( 'custom.removable' ), false );
+
+} );
+
+test( 'validateArtifact accepts artifacts that use a user-registered kind', () => {
+
+	unregisterKind( 'custom.greenLight' );
+	registerKind( { kind: 'custom.greenLight', status: 'codegen', codegen: 'user-supplied' } );
+	const result = validateArtifact( {
+		artifact: {
+			vertexShader: 'v',
+			fragmentShader: 'f',
+			uniformPlan: [ {
+				name: 'object',
+				slots: [ { name: 'fxParams', source: { kind: 'custom.greenLight' } } ],
+			} ],
+		},
+	}, { label: 'custom-kind-fixture' } );
+	assert.equal( result.ok, true, JSON.stringify( result.errors ) );
+	unregisterKind( 'custom.greenLight' );
 
 } );

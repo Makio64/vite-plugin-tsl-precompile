@@ -71,8 +71,35 @@ function extractUpdaterCases( src ) {
 
 }
 
+/**
+ * Literal `'foo.bar'` entries inside any top-level `new Set([ ... ])` initializer
+ * in the updater source. The emit-updater refactor (E1) collapsed ~50 identical-
+ * shape switch cases (material.* color/scalar/vec2, scene.fog.*, scene.* scalar)
+ * into writer-template `Set`s; the drift detector must recognise them too or it
+ * would report freshly-tabled kinds as missing.
+ */
+function extractUpdaterSetEntries( src ) {
+
+	const out = new Set();
+	// Match `new Set( [ ... ] )` blocks — non-greedy across newlines.
+	const setRe = /new Set\(\s*\[([\s\S]*?)\]\s*\)/g;
+	let m;
+	while ( ( m = setRe.exec( src ) ) !== null ) {
+
+		const literalRe = /['"`]([\w][\w.]*)['"`]/g;
+		let l;
+		while ( ( l = literalRe.exec( m[ 1 ] ) ) !== null ) out.add( l[ 1 ] );
+
+	}
+	return out;
+
+}
+
 const extractorKinds = extractLiteralKinds( extractorSrc );
-const updaterCases = extractUpdaterCases( updaterSrc );
+const updaterCases = new Set( [
+	...extractUpdaterCases( updaterSrc ),
+	...extractUpdaterSetEntries( updaterSrc ),
+] );
 const blockedKinds = new Set( Object.keys( BLOCKED_KINDS ) );
 
 test( 'drift — every literal kind the extractor emits is handled or documented-blocked', () => {

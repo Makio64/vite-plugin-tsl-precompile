@@ -1,6 +1,106 @@
 export const MAX_GRAPH_DEPTH = 128;
 
 /**
+ * User-registered material identity overrides. Keys are material constructors;
+ * values are the stable identity string the hasher should use instead of
+ * `constructor.type || constructor.name`.
+ *
+ * Why: when an adopter writes `class MyMaterial extends MeshStandardNodeMaterial {}`
+ * without setting `static type`, the default identity is the class name. After
+ * production minification the class name may change (e.g. `MyMaterial` → `m`),
+ * which silently shifts the artifact hash between dev and prod. Adopters can
+ * call `registerMaterial(MyMaterial, { type: 'MyMaterial' })` once at module
+ * load to pin the identity across builds.
+ *
+ * @type {Map<Function, string>}
+ */
+const USER_MATERIAL_IDENTITIES = new Map();
+
+/**
+ * Register a stable identity for a material constructor so the hasher uses it
+ * instead of `constructor.type || constructor.name`. Pin once per class at
+ * module load:
+ *
+ * ```js
+ * import { registerMaterial } from '@tsl-precompile/contract/graph-normalize';
+ *
+ * class MyMaterial extends THREE.MeshStandardNodeMaterial {}
+ * registerMaterial( MyMaterial, { type: 'MyMaterial' } );
+ * ```
+ *
+ * Idempotent: re-registering the same class with the same identity is a
+ * no-op. Registering with a *different* identity throws — one identity per
+ * class is the invariant the staleness gate relies on.
+ *
+ * @param {Function} MaterialCtor - the material constructor (the class itself)
+ * @param {{ type: string }} descriptor
+ * @return {string} the registered identity
+ */
+export function registerMaterial( MaterialCtor, descriptor ) {
+
+	if ( typeof MaterialCtor !== 'function' ) {
+
+		throw new TypeError( 'registerMaterial: first arg must be the material constructor (class).' );
+
+	}
+	if ( ! descriptor || typeof descriptor !== 'object' ) {
+
+		throw new TypeError( 'registerMaterial: second arg must be a descriptor with a `type` field.' );
+
+	}
+	const type = descriptor.type;
+	if ( typeof type !== 'string' || type.length === 0 ) {
+
+		throw new TypeError( 'registerMaterial: descriptor.type must be a non-empty string.' );
+
+	}
+	const existing = USER_MATERIAL_IDENTITIES.get( MaterialCtor );
+	if ( existing !== undefined ) {
+
+		if ( existing === type ) return existing;
+		throw new Error( `registerMaterial: class is already registered with identity ${ JSON.stringify( existing ) }; cannot change to ${ JSON.stringify( type ) }.` );
+
+	}
+	USER_MATERIAL_IDENTITIES.set( MaterialCtor, type );
+	return type;
+
+}
+
+/**
+ * Test helper / explicit teardown. Returns `true` when an entry was removed.
+ *
+ * @param {Function} MaterialCtor
+ * @return {boolean}
+ */
+export function unregisterMaterial( MaterialCtor ) {
+
+	return USER_MATERIAL_IDENTITIES.delete( MaterialCtor );
+
+}
+
+/**
+ * Resolve a material's stable identity. Checks the user registry first, then
+ * falls back to `constructor.type || constructor.name`.
+ *
+ * Exported so the runtime + plugin can use the same resolution path (e.g. for
+ * diagnostics or inspector views) — the hash itself uses this via
+ * `normalizeMaterialGraph` and `normalizeNode`.
+ *
+ * @param {?Object} material
+ * @return {string}
+ */
+export function materialIdentity( material ) {
+
+	if ( ! material ) return 'UnknownMaterial';
+	const ctor = material.constructor;
+	if ( ! ctor ) return 'UnknownMaterial';
+	const registered = USER_MATERIAL_IDENTITIES.get( ctor );
+	if ( registered !== undefined ) return registered;
+	return ctor.type || ctor.name || 'UnknownMaterial';
+
+}
+
+/**
  * Deterministic string representation of a material's TSL graph.
  *
  * @param {Object} material
@@ -10,7 +110,7 @@ export function normalizeMaterialGraph( material ) {
 
 	if ( ! material ) return '(null-material)';
 
-	const typeTag = material.constructor && ( material.constructor.type || material.constructor.name ) || 'UnknownMaterial';
+	const typeTag = materialIdentity( material );
 	const slots = collectNodeSlots( material );
 
 	const parts = [ `material<${ typeTag }>` ];
