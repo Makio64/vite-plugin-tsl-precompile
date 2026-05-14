@@ -38,6 +38,8 @@
  * can bind the precompiled WGSL for each subpass.
  */
 
+import { attachArtifactTextureRefsWhere } from './artifact-texture-wiring.js';
+
 /** @type {Map<string, Object>} */
 const HANDLERS = new Map();
 
@@ -197,6 +199,30 @@ function walkForEffects( node, out, seen, depth, cap ) {
  * The blur materials read from `_renderTargetBright.texture`. We re-assign
  * the live texture before capture so compileTSL sees the correct binding
  * (without this, the captured `colorTexture` UUID is dead).
+ *
+ * The optional replay hooks below are consumed by
+ * `postprocess-effects-replay.js::prepareEffectNodeForReplay()`:
+ *
+ *   - `forceSetup` runs `bloomNode.setup()` so the internal
+ *     `_highPassFilterMaterial`/`_separableBlurMaterials`/`_compositeMaterial`
+ *     fields actually exist before we try to wrap them. Live BloomNode
+ *     constructs these lazily in its first `updateBefore`.
+ *
+ *   - `wireSubPassUniforms` matches the live `direction`/`invSize`
+ *     uniform nodes to slots in the precompiled aux artifact (blur
+ *     sub-passes only). Without this, the slim runtime renders both
+ *     horizontal and vertical passes with whichever direction is captured
+ *     at compile time, producing a single-axis blur.
+ *
+ *   - `wireSubPassTextures` rebinds the composite material's per-mip
+ *     reads (`_renderTargetsVertical[ i ].texture`) by texture name —
+ *     these are different textures from what was captured but share
+ *     identical names with the artifact's texture-source descriptors.
+ *
+ * `patchUpdateBefore` is intentionally NOT installed at this layer;
+ * the in-process bloom replay loop currently lives in the harness and
+ * Agent B is iterating on it. When that machinery lands as a productized
+ * module it will plug in here without touching detect/subPasses.
  */
 registerEffectHandler( {
 	name: 'bloom',
@@ -257,7 +283,129 @@ registerEffectHandler( {
 		return out;
 
 	},
+	forceSetup( node, ctx ) {
+
+		// Bloom constructs `_highPassFilterMaterial`, `_separableBlurMaterials`,
+		// and `_compositeMaterial` lazily during its first `updateBefore`.
+		// Replay needs them up-front so we can wrap each in a
+		// PrecompiledMaterial. Idempotent — bails when the fields already
+		// exist (subsequent calls are no-ops).
+		if ( ! node ) return;
+		const ready = node._highPassFilterMaterial
+			&& node._compositeMaterial
+			&& Array.isArray( node._separableBlurMaterials )
+			&& node._separableBlurMaterials.length > 0;
+		if ( ready ) return;
+		if ( typeof node.setup !== 'function' ) return;
+		try {
+
+			node.setup( { getSharedContext: () => ( ctx && ctx.sharedContext ) || {} } );
+
+		} catch ( _ ) {
+			// A throwing setup() at this point indicates the live BloomNode
+			// hasn't received enough state to lazy-init (most often missing
+			// `_renderTargetBright`). Let the caller decide whether to retry.
+		}
+
+	},
+	wireSubPassUniforms( subPass, sourceMaterial /* , ctx */ ) {
+
+		// Blur sub-passes only — match `direction` and `invSize` uniform
+		// nodes by dtype + value magnitude to live slots in the captured
+		// artifact. The high-pass and composite sub-passes either have no
+		// vec2 uniforms or already wire through standard live-uniform
+		// sidecars, so they need no special handling here.
+		if ( ! subPass || typeof subPass.shape !== 'string' ) return;
+		if ( ! subPass.shape.startsWith( 'bloom-blur-' ) ) return;
+		const material = subPass.material;
+		const artifact = material && material.precompiledArtifact;
+		if ( ! artifact || ! sourceMaterial ) return;
+		const direction = sourceMaterial.direction;
+		const invSize = sourceMaterial.invSize;
+		if ( ! direction && ! invSize ) return;
+		const vec2Slots = [];
+		for ( const group of artifact.uniformPlan || [] ) {
+
+			for ( const slot of group.slots || [] ) {
+
+				const source = ( slot && slot.source ) || {};
+				if ( source.kind === 'uniform.live' && slot.dtype === 'vec2' ) vec2Slots.push( slot );
+
+			}
+
+		}
+		let directionSlot = null;
+		let invSizeSlot = null;
+		for ( const slot of vec2Slots ) {
+
+			const data = slot.source && slot.source.valueSnapshot && slot.source.valueSnapshot.data;
+			const x = Array.isArray( data ) ? Math.abs( Number( data[ 0 ] ) || 0 ) : 0;
+			const y = Array.isArray( data ) ? Math.abs( Number( data[ 1 ] ) || 0 ) : 0;
+			if ( ! directionSlot && Math.max( x, y ) > 0.25 ) directionSlot = slot;
+			else if ( ! invSizeSlot ) invSizeSlot = slot;
+
+		}
+		if ( ! directionSlot ) directionSlot = vec2Slots[ 0 ] || null;
+		if ( ! invSizeSlot ) invSizeSlot = vec2Slots.find( ( slot ) => slot !== directionSlot ) || null;
+		__setLiveUniformSlot( directionSlot, direction );
+		__setLiveUniformSlot( invSizeSlot, invSize );
+
+	},
+	wireSubPassTextures( subPass, node /* , prepared, ctx */ ) {
+
+		// Composite reads from `_renderTargetsVertical[ i ].texture`,
+		// one per mip. The artifact tagged each texture source with the
+		// original texture name; match on that to rebind to the live
+		// per-frame mip textures.
+		if ( ! subPass || subPass.shape !== 'bloom-composite' ) return;
+		const material = subPass.material;
+		const artifact = material && material.precompiledArtifact;
+		if ( ! artifact || ! node ) return;
+		const targets = Array.isArray( node._renderTargetsVertical ) ? node._renderTargetsVertical : [];
+		for ( const target of targets ) {
+
+			const texture = target && target.texture;
+			if ( ! texture || texture.isTexture !== true ) continue;
+			const name = texture.name || '';
+			__attachArtifactTextureRefsWhere( artifact, texture, ( source ) => source && source.textureName === name );
+
+		}
+
+	},
 } );
+
+// --- bloom replay-hook helpers (kept module-local so the handler can stay
+// declarative and tree-shake naturally if an adopter only uses non-bloom
+// effects).
+function __setLiveUniformSlot( slot, liveNode ) {
+
+	if ( ! slot || ! liveNode ) return;
+	try {
+
+		Object.defineProperty( slot, '_liveNode', {
+			value: liveNode,
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		} );
+
+	} catch ( _ ) {
+		// `_liveNode` is already defined as non-configurable — fall back to a
+		// plain assignment so subsequent matches still take effect.
+		slot._liveNode = liveNode;
+
+	}
+
+}
+
+function __attachArtifactTextureRefsWhere( artifact, texture, predicate ) {
+
+	// Shared helper that updates the canonical `artifact._textureRefs` map
+	// the hydrator reads from — keeping our hook in lockstep with the rest
+	// of the runtime's texture wiring.
+	return attachArtifactTextureRefsWhere( artifact, texture, predicate );
+
+}
 
 /**
  * Outline — `three/addons/tsl/display/OutlineNode.js`.

@@ -232,3 +232,98 @@ test( 'registerEffectHandler replaces an existing handler with the same name', (
 	unregisterEffectHandler( 'replaceable' );
 
 } );
+
+test( 'bloom handler exposes forceSetup hook (no-op when materials already exist)', () => {
+
+	const handler = findEffectHandler( bloomLike() );
+	assert.equal( typeof handler.forceSetup, 'function' );
+	// Pre-populated bloomLike() already carries the internal materials, so
+	// forceSetup must be a no-op (it never calls .setup).
+	let setupCalls = 0;
+	const node = bloomLike();
+	node.setup = () => { setupCalls ++; };
+	handler.forceSetup( node, {} );
+	assert.equal( setupCalls, 0, 'forceSetup is a no-op when materials are already built' );
+
+} );
+
+test( 'bloom handler forceSetup invokes setup() when materials are missing', () => {
+
+	const handler = findEffectHandler( bloomLike() );
+	let setupCalls = 0;
+	const node = {
+		updateBefore: () => {},
+		_renderTargetBright: { texture: {} },
+		_renderTargetsHorizontal: [],
+		_renderTargetsVertical: [],
+		// Lazily-constructed materials missing — mimics live BloomNode before
+		// its first updateBefore.
+		setup() { setupCalls ++; this._highPassFilterMaterial = { name: 'hp' }; this._compositeMaterial = { name: 'comp' }; this._separableBlurMaterials = [ {} ]; },
+	};
+	handler.forceSetup( node, { sharedContext: {} } );
+	assert.equal( setupCalls, 1 );
+	assert.ok( node._highPassFilterMaterial );
+
+} );
+
+test( 'bloom handler wireSubPassUniforms attaches _liveNode to vec2 slots on blur sub-pass', () => {
+
+	const handler = findEffectHandler( bloomLike() );
+	const liveDirection = { isUniformNode: true, name: 'direction', value: { isVector2: true, x: 1, y: 0 } };
+	const liveInvSize = { isUniformNode: true, name: 'invSize', value: { isVector2: true, x: 0.001, y: 0.001 } };
+	const sourceMaterial = { direction: liveDirection, invSize: liveInvSize };
+	const artifact = {
+		uniformPlan: [ {
+			slots: [
+				{ dtype: 'vec2', source: { kind: 'uniform.live', valueSnapshot: { data: [ 1, 0 ] } } },
+				{ dtype: 'vec2', source: { kind: 'uniform.live', valueSnapshot: { data: [ 0.001, 0.001 ] } } },
+			],
+		} ],
+	};
+	const subPass = { shape: 'bloom-blur-0', material: { precompiledArtifact: artifact } };
+	handler.wireSubPassUniforms( subPass, sourceMaterial );
+	const wired = artifact.uniformPlan[ 0 ].slots.filter( ( s ) => s._liveNode );
+	assert.equal( wired.length, 2 );
+
+} );
+
+test( 'bloom handler wireSubPassUniforms is a no-op on non-blur sub-passes', () => {
+
+	const handler = findEffectHandler( bloomLike() );
+	const artifact = {
+		uniformPlan: [ {
+			slots: [
+				{ dtype: 'vec2', source: { kind: 'uniform.live', valueSnapshot: { data: [ 1, 0 ] } } },
+			],
+		} ],
+	};
+	const subPass = { shape: 'bloom-composite', material: { precompiledArtifact: artifact } };
+	handler.wireSubPassUniforms( subPass, { direction: { isUniformNode: true }, invSize: { isUniformNode: true } } );
+	assert.equal( artifact.uniformPlan[ 0 ].slots[ 0 ]._liveNode, undefined );
+
+} );
+
+test( 'bloom handler wireSubPassTextures populates _textureRefs on composite by name match', () => {
+
+	const handler = findEffectHandler( bloomLike() );
+	const liveTexture = { isTexture: true, uuid: 'live-rt-0', name: 'bloom-mip-0' };
+	const node = {
+		_renderTargetsVertical: [ { texture: liveTexture } ],
+	};
+	const artifact = {
+		uniformPlan: [ {
+			textures: [
+				{ source: { kind: 'artifact.texture', textureUuid: 'orig-rt-0', textureName: 'bloom-mip-0' } },
+				{ source: { kind: 'artifact.texture', textureUuid: 'orig-rt-other', textureName: 'unrelated' } },
+			],
+		} ],
+	};
+	const subPass = { shape: 'bloom-composite', material: { precompiledArtifact: artifact } };
+	handler.wireSubPassTextures( subPass, node );
+	const refs = artifact._textureRefs;
+	assert.ok( refs instanceof Map );
+	assert.equal( refs.get( 'orig-rt-0' ), liveTexture );
+	// Non-matching texture name was not rebound.
+	assert.equal( refs.has( 'orig-rt-other' ), false );
+
+} );

@@ -28,6 +28,8 @@ export { createFullRendererFallback } from './slim-support/full-renderer-fallbac
 export { createSlimSceneSupport } from './slim-support/scene-support.js';
 export { setSlimRenderFallback, getSlimRenderFallback } from './slim-support/render-fallback-registry.js';
 export { collectLiveBloomNodes, wireBloomNode, wirePrecompiledPostprocess, findPostprocessAux } from './slim-support/postprocess-wire.js';
+export { registerEffectHandler, unregisterEffectHandler, getEffectHandlers, findEffectHandler, collectEffectNodes } from './slim-support/postprocess-effects.js';
+export { preparePrecompiledPostprocess, prepareEffectNodeForReplay, makePrecompiledAuxMaterial, cloneAuxArtifact, wireLiveNodeSidecarsToArtifact } from './slim-support/postprocess-effects-replay.js';
 export { renderPassWithFullRenderer } from './slim-support/pass-render-fallback.js';
 export { loadInspectorOptional } from './inspector-loader.js';
 export { MaterialVariantSet, createMaterialVariants, applyMaterialVariant } from './material-variants.js';

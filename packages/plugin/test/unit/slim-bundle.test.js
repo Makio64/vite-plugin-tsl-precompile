@@ -40,7 +40,13 @@ const BUNDLE = resolve( HERE, '../../../runtime/build/three.webgpu.slim.js' );
 // post-processing slim support.
 // Bumped from 250 → 252 after reflector render-target metadata and PMREM
 // source-size disambiguation landed; fresh build settled at ~250.5 KB.
-const GATE_KB = 252;
+// Bumped from 252 → 255 for Wedge 1.5-A: the postprocess-effects-replay
+// productization (prepareEffectNodeForReplay + makePrecompiledAuxMaterial +
+// cloneAuxArtifact + wireLiveNodeSidecarsToArtifact + preparePostprocess on
+// scene-support) added ~1.8 KB gzip. The new module replaces ~600 lines of
+// harness-only bloom replay code with a generic, registry-driven adopter
+// API. Fresh build settled at ~253.8 KB.
+const GATE_KB = 255;
 
 const bundleExists = existsSync( BUNDLE );
 

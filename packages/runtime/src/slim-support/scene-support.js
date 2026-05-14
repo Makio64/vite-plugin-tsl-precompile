@@ -38,6 +38,10 @@ import { syncComputeStorageOutputs, computeNodeUsesStorageTexture } from './comp
 import { shareGPUTextureEntry, shareShadowGPUTextureIntoSlim } from './gpu-texture-share.js';
 import { createFullRendererFallback } from './full-renderer-fallback.js';
 import { setSlimRenderFallback } from './render-fallback-registry.js';
+import { wirePrecompiledPostprocess } from './postprocess-wire.js';
+import { preparePrecompiledPostprocess } from './postprocess-effects-replay.js';
+import { loadAux } from '../aux-loader.js';
+import PrecompiledMaterial from '../_vendor-PrecompiledMaterial.js';
 
 const DEFAULT_OPTS = {
 	fullRendererFallback: false,
@@ -209,6 +213,44 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	}
 
+	/**
+	 * Walk a live post-processing graph and prepare every registered effect
+	 * node for slim replay (bloom, outline, ssr, dof, traa, …). This is the
+	 * orchestrator equivalent of calling
+	 * `preparePrecompiledPostprocess({ ..., loadAux, PrecompiledMaterial })`
+	 * directly — it just injects the slim runtime's own `loadAux` and
+	 * `PrecompiledMaterial` references for the caller.
+	 *
+	 * @param {Object} prepArgs - Forwarded to `preparePrecompiledPostprocess`. Pass `{ postProcessing }` or `{ outputNode }`.
+	 * @return {{ effects: number, prepared: Array, missed: Array }}
+	 */
+	function preparePostprocess( prepArgs = {} ) {
+
+		return preparePrecompiledPostprocess( {
+			...prepArgs,
+			loadAux,
+			PrecompiledMaterial,
+			diagnostics: prepArgs.diagnostics || diagnostics.postprocess || ( diagnostics.postprocess = { byHandler: {} } ),
+		} );
+
+	}
+
+	/**
+	 * Lighter-weight companion to `preparePostprocess`. Tags each
+	 * sub-pass's live material with `__tslpAuxShape`/`__tslpAuxConfigHash`
+	 * so the slim hydrator can bind precompiled WGSL at first render time
+	 * instead of physically swapping in `PrecompiledMaterial` instances.
+	 * Use this when an effect's `updateBefore` mutates the materials in
+	 * ways that don't survive a swap.
+	 *
+	 * @param {Object} wireArgs - Forwarded to `wirePrecompiledPostprocess`. Pass `{ postProcessing }` or `{ outputNode }`.
+	 */
+	function wirePostprocess( wireArgs = {} ) {
+
+		return wirePrecompiledPostprocess( wireArgs );
+
+	}
+
 	function dispose() {
 
 		if ( fallbackRegistered ) {
@@ -239,6 +281,8 @@ export function createSlimSceneSupport( opts = {} ) {
 		computeNodeUsesStorageTexture: ( node, source ) => computeNodeUsesStorageTexture( node, source ),
 		shareTexture,
 		shareShadowTexture,
+		preparePostprocess,
+		wirePostprocess,
 		dispose,
 	};
 
