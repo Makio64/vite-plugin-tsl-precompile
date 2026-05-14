@@ -5,7 +5,6 @@
         "webgpu_postprocessing_dof_basic.html",
         "webgpu_postprocessing_godrays.html",
         "webgpu_postprocessing_lensflare.html",
-        "webgpu_postprocessing_outline.html",
         "webgpu_postprocessing_retro.html",
         "webgpu_postprocessing_ssgi.html",
         "webgpu_postprocessing_ssgi_ballpool.html",

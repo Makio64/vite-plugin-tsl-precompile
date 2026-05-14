@@ -3840,6 +3840,13 @@ function __collectGraphTexturesByName( node, byName = new Map(), seen = new Set(
 	}
 	if ( ! __isGraphTraversalCandidate( node ) ) return byName;
 	seen.add( node );
+	// OutlineNode owns 8 render targets (depth, mask, downsample, edge x2, blur
+	// x2, composite). Their textures all default to name='' which collides with
+	// scenePass output in the 'output' bucket and shuffles the wrong texture
+	// into the post-process artifact's UUID-resolved slots. The outline replay
+	// path explicitly binds the composite texture through
+	// __attachOutlineCompositeTextureRefs, so short-circuit traversal here.
+	if ( __isOutlineEffectNode( node ) ) return byName;
 	if ( node.isPassNode === true ) __rememberRenderTargetTextures( byName, node.renderTarget );
 	if ( node.isRTTNode === true ) __rememberRenderTargetTextures( byName, node.renderTarget );
 	try {
@@ -7918,6 +7925,311 @@ function __renderBloomNodesForPipeline( renderer, bloomNodes ) {
 	}
 }
 
+// --------------------------------------------------------------------------
+// Outline-pass replay support (Wedge 1.5-B)
+//
+// OutlineNode (three/addons/tsl/display/OutlineNode.js) builds 7 internal
+// NodeMaterials at setup() time and drives a 7-pass pipeline in
+// updateBefore(): non-selected-depth pre-pass, selected-mask pre-pass,
+// downsample, edge-detection, two separable blur passes (horizontal +
+// vertical at half + quarter resolution), and a final composite. The slim
+// three.webgpu bundle has the node-builder stripped so it cannot compile
+// any of those live materials at replay time; the captured aux artifacts
+// for each shape (outline-depth, outline-depth-sprite, outline-mask,
+// outline-mask-sprite, outline-edge, outline-blur, outline-composite) are
+// present in the registry, but the depth/mask passes call
+// renderer.render(scene, camera) with per-mesh override callbacks — that
+// path needs a working node-builder, which only the full WebGPURenderer
+// has. So like bloom, the slim path can't carry the whole pass.
+//
+// The fix mirrors __renderBloomNodeWithFullRenderer: hand the entire
+// outline updateBefore to the full renderer with source materials swapped
+// back in, then share the resulting _renderTargetComposite.texture into
+// the slim renderer so the post-process artifact samples correct pixels.
+//
+// A subtlety for outline: with empty selectedObjects (the example only
+// adds objects on pointermove and the harness never simulates a hover),
+// the real updateBefore returns immediately without sizing or clearing
+// _renderTargetComposite. The slim post-process artifact then samples a
+// 1x1 uninitialized texture stretched to the canvas — that's the source
+// of the all-white replay frames. We force-size and clear the composite
+// target to (0,0,0,0) before delegating so the post-process composite
+// reads a clean black contribution from the outline term.
+// --------------------------------------------------------------------------
+
+function __isOutlineEffectNode( node ) {
+	if ( ! node || typeof node === 'function' ) return false;
+	const type = node && node.constructor && node.constructor.type || node && node.type || '';
+	if ( type && type !== 'OutlineNode' ) return false;
+	return !! ( node
+		&& typeof node.updateBefore === 'function'
+		&& node._depthMaterial
+		&& node._edgeDetectionMaterial
+		&& node._separableBlurMaterial
+		&& node._compositeMaterial
+		&& node._renderTargetComposite
+		&& node._renderTargetDepthBuffer
+		&& node._renderTargetMaskBuffer );
+}
+
+function __outlineDiagnostics() {
+	const diag = __harnessDiagnostics();
+	if ( ! diag.outline ) {
+		diag.outline = {
+			collected: 0,
+			prepared: 0,
+			rendered: 0,
+			fullRendered: 0,
+			cleared: 0,
+			prepFailed: 0,
+			renderFailed: 0,
+			setupCalls: 0,
+			ctor: '',
+			type: '',
+		};
+	}
+	return diag.outline;
+}
+
+function __collectOutlineNodesInGraph( node, out = [], seen = new Set(), depth = 0 ) {
+	if ( ! node || depth > 24 || seen.has( node ) ) return out;
+	if ( ! __isGraphTraversalCandidate( node ) ) return out;
+	seen.add( node );
+	if ( __isOutlineEffectNode( node ) ) {
+		if ( ! out.includes( node ) ) out.push( node );
+		return out;
+	}
+	const keys = [];
+	try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
+	const skip = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'geometry', 'material', 'domElement' ] );
+	for ( const key of keys ) {
+		if ( skip.has( key ) ) continue;
+		const child = __readGraphOwnValue( node, key );
+		if ( ! child ) continue;
+		if ( Array.isArray( child ) ) {
+			for ( const item of child ) if ( item && ( typeof item === 'object' || typeof item === 'function' ) ) __collectOutlineNodesInGraph( item, out, seen, depth + 1 );
+		} else if ( typeof child === 'object' || typeof child === 'function' ) {
+			__collectOutlineNodesInGraph( child, out, seen, depth + 1 );
+		}
+	}
+	return out;
+}
+
+let __fullOutlineRendererState = null;
+
+function __forceClearOutlineComposite( outlineNode, fullRenderer, drawingSize ) {
+	// Pre-size every render target and clear the composite buffer so post-process
+	// sampling of _renderTargetComposite.texture starts from a clean black slate
+	// rather than an uninitialized 1x1 texture. Mirrors what OutlineNode would do
+	// on the first non-empty selection frame but is also safe for the empty-
+	// selection path (real updateBefore returns early without ever clearing).
+	try {
+		const width = Math.max( 1, drawingSize && drawingSize.width || 1 );
+		const height = Math.max( 1, drawingSize && drawingSize.height || 1 );
+		outlineNode.setSize( width, height );
+	} catch ( _ ) {}
+	try {
+		const prevTarget = typeof fullRenderer.getRenderTarget === 'function' ? fullRenderer.getRenderTarget() : null;
+		const prevAutoClear = fullRenderer.autoClear;
+		try {
+			fullRenderer.setRenderTarget( outlineNode._renderTargetComposite );
+			fullRenderer.setClearColor( 0x000000, 0 );
+			if ( typeof fullRenderer.clear === 'function' ) fullRenderer.clear();
+		} finally {
+			fullRenderer.autoClear = prevAutoClear;
+			try { fullRenderer.setRenderTarget( prevTarget ); } catch ( _ ) {}
+		}
+	} catch ( _ ) {}
+}
+
+function __renderOutlineNodeWithFullRenderer( outlineNode, slimRenderer, fullRenderer, diag ) {
+	if ( ! outlineNode || ! slimRenderer || ! fullRenderer ) return false;
+	const originalUpdateBefore = outlineNode.__tslpOutlineOriginalUpdateBefore;
+	if ( typeof originalUpdateBefore !== 'function' ) return false;
+	try {
+		if ( FullRendererUtils && typeof FullRendererUtils.resetRendererState === 'function' ) {
+			__fullOutlineRendererState = FullRendererUtils.resetRendererState( fullRenderer, __fullOutlineRendererState || undefined );
+		}
+		try {
+			fullRenderer.toneMapping = slimRenderer.toneMapping;
+			fullRenderer.toneMappingExposure = slimRenderer.toneMappingExposure;
+			fullRenderer.outputColorSpace = slimRenderer.outputColorSpace;
+		} catch ( _ ) {}
+		const tmpSize = new FullVector2();
+		const drawingSize = slimRenderer.getDrawingBufferSize( tmpSize );
+		if ( typeof fullRenderer.setSize === 'function' ) fullRenderer.setSize( drawingSize.width, drawingSize.height, false );
+
+		// Guarantee composite target has correct dimensions and is cleared,
+		// covering the empty-selection-from-the-start scenario where the real
+		// updateBefore would return without ever touching the texture.
+		__forceClearOutlineComposite( outlineNode, fullRenderer, drawingSize );
+		diag.cleared ++;
+
+		// Run the real (pre-patch) OutlineNode.updateBefore on the full renderer.
+		// With an empty selection it's effectively a no-op (returns after the
+		// optional clear); with selected objects it drives the 7-pass pipeline
+		// using live node materials, which only the full node-builder can compile.
+		// Calling __tslpOutlineOriginalUpdateBefore directly (rather than the
+		// patched updateBefore) avoids recursion through this same function.
+		const runUpdate = () => originalUpdateBefore.call( outlineNode, { renderer: fullRenderer } );
+		if ( outlineNode.scene && typeof outlineNode.scene.traverse === 'function' ) {
+			__withSourceMaterialsForFullPass( outlineNode.scene, runUpdate );
+		} else {
+			runUpdate();
+		}
+
+		// Hand the final composite texture (and the intermediate buffers, which
+		// the OutlineNode's pass-texture node references through setup()) over
+		// to the slim renderer's GPU resource map so the post-process composite
+		// samples the freshly-rendered pixels.
+		__shareGPUTextureEntry( slimRenderer, fullRenderer, outlineNode._renderTargetComposite.texture );
+		try { __shareGPUTextureEntry( slimRenderer, fullRenderer, outlineNode._renderTargetEdgeBuffer1.texture ); } catch ( _ ) {}
+		try { __shareGPUTextureEntry( slimRenderer, fullRenderer, outlineNode._renderTargetEdgeBuffer2.texture ); } catch ( _ ) {}
+		try { __shareGPUTextureEntry( slimRenderer, fullRenderer, outlineNode._renderTargetMaskBuffer.texture ); } catch ( _ ) {}
+
+		diag.fullRendered ++;
+		diag.rendered ++;
+		return true;
+	} catch ( err ) {
+		diag.fullError = err && ( err.stack || err.message ) || String( err );
+		if ( ! window.__tslpOutlineFullRenderWarned ) {
+			window.__tslpOutlineFullRenderWarned = true;
+			console.warn( '[tslp-e2e] Outline full-renderer replay failed:', diag.fullError );
+		}
+		return false;
+	} finally {
+		try {
+			if ( __fullOutlineRendererState && FullRendererUtils && typeof FullRendererUtils.restoreRendererState === 'function' ) FullRendererUtils.restoreRendererState( fullRenderer, __fullOutlineRendererState );
+		} catch ( _ ) {}
+	}
+}
+
+function __patchOutlineNodeUpdateBefore( outlineNode ) {
+	if ( outlineNode.__tslpOutlineUpdatePatched === true ) return;
+	const originalUpdateBefore = outlineNode.updateBefore;
+	Object.defineProperty( outlineNode, '__tslpOutlineOriginalUpdateBefore', { value: originalUpdateBefore, configurable: true } );
+	outlineNode.updateBefore = function ( frame = {} ) {
+		const slimRenderer = frame && frame.renderer;
+		if ( ! slimRenderer ) return;
+		const diag = __outlineDiagnostics();
+		const currentRenderTarget = typeof slimRenderer.getRenderTarget === 'function' ? slimRenderer.getRenderTarget() : null;
+		const currentMRT = typeof slimRenderer.getMRT === 'function' ? slimRenderer.getMRT() : null;
+		try {
+			if ( __computeRenderer ) {
+				if ( __renderOutlineNodeWithFullRenderer( this, slimRenderer, __computeRenderer, diag ) ) return;
+			}
+			// Fallback: call original updateBefore on the slim renderer. This will
+			// most likely fail because the depth/mask passes require a node-builder,
+			// but we attempt it for completeness so a missing __computeRenderer
+			// doesn't silently swallow the pass.
+			if ( typeof originalUpdateBefore === 'function' ) {
+				originalUpdateBefore.call( this, frame );
+			}
+		} catch ( err ) {
+			diag.renderFailed ++;
+			if ( ! window.__tslpOutlineRenderWarned ) {
+				window.__tslpOutlineRenderWarned = true;
+				console.warn( '[tslp-e2e] Outline replay render failed:', err && err.message || err );
+			}
+		} finally {
+			try { slimRenderer.setRenderTarget( currentRenderTarget ); } catch ( _ ) {}
+			try { if ( typeof slimRenderer.setMRT === 'function' ) slimRenderer.setMRT( currentMRT ); } catch ( _ ) {}
+		}
+	};
+	Object.defineProperty( outlineNode, '__tslpOutlineUpdatePatched', { value: true, configurable: true } );
+}
+
+function __prepareOutlineNodeForReplay( outlineNode, context ) {
+	if ( ! __isOutlineEffectNode( outlineNode ) ) return false;
+	if ( outlineNode.__tslpOutlineReplayReady === true ) return true;
+	try {
+		const diag = __outlineDiagnostics();
+		diag.ctor = outlineNode.constructor && outlineNode.constructor.name || '';
+		diag.type = outlineNode.constructor && outlineNode.constructor.type || outlineNode.type || '';
+		// Force OutlineNode.setup() so its internal materials carry the live
+		// fragmentNodes the full renderer's node-builder will compile during
+		// updateBefore. setup() is idempotent w.r.t. registering needsUpdate.
+		if ( typeof outlineNode.setup === 'function' ) {
+			try {
+				outlineNode.setup( context && typeof context.getSharedContext === 'function' ? context : { getSharedContext: () => context || {} } );
+				diag.setupCalls ++;
+			} catch ( _ ) {}
+		}
+		__patchOutlineNodeUpdateBefore( outlineNode );
+		Object.defineProperty( outlineNode, '__tslpOutlineReplayReady', { value: true, configurable: true } );
+		diag.prepared ++;
+		return true;
+	} catch ( err ) {
+		__outlineDiagnostics().prepFailed ++;
+		if ( ! window.__tslpOutlinePrepWarned ) {
+			window.__tslpOutlinePrepWarned = true;
+			console.warn( '[tslp-e2e] Outline replay prep failed:', err && err.message || err );
+		}
+		return false;
+	}
+}
+
+function __renderOutlineNodesForPipeline( renderer, outlineNodes ) {
+	for ( const outlineNode of outlineNodes || [] ) {
+		if ( __prepareOutlineNodeForReplay( outlineNode, null ) ) outlineNode.updateBefore( { renderer } );
+	}
+}
+
+// After the outline pass has been rendered, explicitly bind the OutlineNode's
+// composite texture (and the scenePass output texture) to the render-output
+// artifact's texture slots. The captured aux stores TWO unnamed texture
+// sources for OutlineNode (texture + sampler pair sharing one UUID) plus
+// TWO 'output' texture sources for scenePass sharing another UUID. Because
+// scenePass.renderTarget.depthTexture has an empty name, it pollutes the
+// 'output' bucket and __attachGraphTextureRefs ends up routing the second
+// 'output' source to the scenePass depth texture instead of the color
+// buffer. Force the correct bindings by UUID-matching against
+// source.textureName: empty → outline composite, 'output' → scenePass color.
+function __attachOutlineCompositeTextureRefs( artifact, outlineNodes, passNodes ) {
+	if ( ! artifact || ! Array.isArray( outlineNodes ) || outlineNodes.length === 0 ) return artifact;
+	const outlineNode = outlineNodes[ 0 ];
+	if ( ! outlineNode || ! outlineNode._renderTargetComposite || ! outlineNode._renderTargetComposite.texture ) return artifact;
+	const compositeTexture = outlineNode._renderTargetComposite.texture;
+	// Locate the scenePass color texture (the named 'output' texture on the
+	// first non-depth pass).
+	let scenePassTexture = null;
+	if ( Array.isArray( passNodes ) ) {
+		for ( const passNode of passNodes ) {
+			const target = passNode && passNode.renderTarget;
+			const candidate = target && target.texture;
+			if ( candidate && candidate.isTexture === true && candidate.isDepthTexture !== true ) {
+				scenePassTexture = candidate;
+				break;
+			}
+		}
+	}
+	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
+	let changed = false;
+	for ( const group of artifact.uniformPlan || [] ) {
+		for ( const entry of group.textures || [] ) {
+			const source = entry && entry.source || {};
+			if ( source.kind !== 'artifact.texture' || ! source.textureUuid ) continue;
+			const name = source.textureName;
+			if ( name == null || name === '' ) {
+				refs.set( source.textureUuid, compositeTexture );
+				changed = true;
+			} else if ( name === 'output' && scenePassTexture ) {
+				refs.set( source.textureUuid, scenePassTexture );
+				changed = true;
+			}
+		}
+	}
+	if ( changed ) {
+		Object.defineProperty( artifact, '_textureRefs', {
+			value: refs,
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		} );
+	}
+	return artifact;
+}
+
 function __neutralizeRTTNodeUpdateBefore( rttNode ) {
 	// Once we've driven the RTT explicitly via our quad / full renderer, the
 	// slim renderer must not re-trigger RTTNode.updateBefore: the RTTNode's
@@ -7970,7 +8282,7 @@ function __nodeOwnsRenderTarget( node ) {
 
 function __isFrameEffectNode( node ) {
 	if ( ! node || typeof node.updateBefore !== 'function' ) return false;
-	if ( node.isPassNode === true || node.isRTTNode === true || __isBloomEffectNode( node ) ) return false;
+	if ( node.isPassNode === true || node.isRTTNode === true || __isBloomEffectNode( node ) || __isOutlineEffectNode( node ) ) return false;
 	const proto = Object.getPrototypeOf( node );
 	const hasSpecialUpdateBefore = Object.prototype.hasOwnProperty.call( node, 'updateBefore' )
 		|| !! ( proto && Object.prototype.hasOwnProperty.call( proto, 'updateBefore' ) );
@@ -8278,6 +8590,8 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				} catch ( _ ) {}
 				const bloomNodes = __collectBloomNodesInGraph( this.outputNode );
 				__bloomDiagnostics().collected += bloomNodes.length;
+				const outlineNodes = __collectOutlineNodesInGraph( this.outputNode );
+				__outlineDiagnostics().collected += outlineNodes.length;
 				const passNode = passNodes[ 0 ] || null;
 				const context = {
 					renderPipeline: this,
@@ -8293,18 +8607,20 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				for ( const node of passNodes ) __preparePassNodeForReplay( this.renderer, node );
 				for ( const node of effectNodes ) __prepareFrameEffectNodeForReplay( node, __computeRenderer, context );
 				for ( const node of bloomNodes ) __prepareBloomNodeForReplay( node, context );
+				for ( const node of outlineNodes ) __prepareOutlineNodeForReplay( node, context );
 				const effectBeforeRenderPipeline = context.onBeforeRenderPipeline;
 				const effectAfterRenderPipeline = context.onAfterRenderPipeline;
 				artifact = __attachGraphTextureRefs( artifact, this.outputNode );
 				artifact = __attachOrderedPassOutputRefs( artifact, passNodes );
 				artifact = __attachPassTextureRefs( artifact, passNodes.length === 1 ? passNode : null );
 				artifact = __attachRTTTextureRefs( artifact, rttNodes );
+				artifact = __attachOutlineCompositeTextureRefs( artifact, outlineNodes, passNodes );
 				const mat = new Slim.PrecompiledMaterial( artifact );
 				mat.needsUpdate = true;
 				this._quadMesh.material = mat;
 				this._quadMesh.frustumCulled = false;
 				// Set up _context so render() can access onBefore/onAfterRenderPipeline.
-				context.onBeforeRenderPipeline = ( passNodes.length > 0 || rttNodes.length > 0 || effectNodes.length > 0 || bloomNodes.length > 0 ) ? () => {
+				context.onBeforeRenderPipeline = ( passNodes.length > 0 || rttNodes.length > 0 || effectNodes.length > 0 || bloomNodes.length > 0 || outlineNodes.length > 0 ) ? () => {
 					if ( typeof effectBeforeRenderPipeline === 'function' ) effectBeforeRenderPipeline();
 					__renderPassNodesForPipeline( this.renderer, passNodes );
 					__renderRTTNodesForPipeline( this.renderer, rttNodes );
@@ -8312,16 +8628,28 @@ export class RenderPipeline extends Slim.RenderPipeline {
 					artifact = __attachOrderedPassOutputRefs( artifact, passNodes );
 					artifact = __attachPassTextureRefs( artifact, passNodes.length === 1 ? passNode : null );
 					artifact = __attachRTTTextureRefs( artifact, rttNodes );
+					artifact = __attachOutlineCompositeTextureRefs( artifact, outlineNodes, passNodes );
 					mat.precompiledArtifact = artifact;
 					__renderFrameEffectNodesForPipeline( this.renderer, passEffectNodes, context );
 					if ( passEffectNodes.length > 0 ) __renderPassNodesForPipeline( this.renderer, passNodes );
 					__renderFrameEffectNodesForPipeline( this.renderer, outputEffectNodes, context );
 					if ( outputEffectNodes.length > 0 ) {
 						artifact = __attachGraphTextureRefs( artifact, this.outputNode );
+						artifact = __attachOutlineCompositeTextureRefs( artifact, outlineNodes, passNodes );
 						mat.precompiledArtifact = artifact;
 						mat.needsUpdate = true;
 					}
 					__renderBloomNodesForPipeline( this.renderer, bloomNodes );
+					__renderOutlineNodesForPipeline( this.renderer, outlineNodes );
+					if ( outlineNodes.length > 0 ) {
+						// Re-attach graph texture refs so the slim post-process artifact
+						// sees the freshly-shared _renderTargetComposite.texture from the
+						// full-renderer pass.
+						artifact = __attachGraphTextureRefs( artifact, this.outputNode );
+						artifact = __attachOutlineCompositeTextureRefs( artifact, outlineNodes, passNodes );
+						mat.precompiledArtifact = artifact;
+						mat.needsUpdate = true;
+					}
 				} : effectBeforeRenderPipeline;
 				context.onAfterRenderPipeline = typeof effectAfterRenderPipeline === 'function' ? () => effectAfterRenderPipeline() : null;
 				this._context = context;
