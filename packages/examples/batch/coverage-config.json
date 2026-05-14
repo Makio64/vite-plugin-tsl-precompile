@@ -8,9 +8,7 @@
         "webgpu_postprocessing_retro.html",
         "webgpu_postprocessing_ssgi.html",
         "webgpu_postprocessing_ssgi_ballpool.html",
-        "webgpu_postprocessing_ssr.html",
-        "webgpu_postprocessing_sss.html",
-        "webgpu_postprocessing_traa.html"
+        "webgpu_postprocessing_sss.html"
       ],
       "volatileCompute": [
         "webgpu_compute_particles.html",
