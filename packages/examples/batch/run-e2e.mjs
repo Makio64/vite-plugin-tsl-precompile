@@ -1105,8 +1105,70 @@ export class Scene extends Original.Scene {
 	}
 }
 
+function __isCaptureTRAAEffectNode( node ) {
+	if ( ! node || typeof node === 'function' ) return false;
+	const type = ( node.constructor && ( node.constructor.type || node.constructor.name ) ) || node.type || '';
+	if ( type && type !== 'TRAANode' ) return false;
+	return !! ( node && typeof node.updateBefore === 'function' && node._resolveMaterial && node._historyRenderTarget && node._resolveRenderTarget );
+}
+
+function __pinCaptureTRAAJitterIndex( traaNode ) {
+	if ( ! traaNode || traaNode.__tslpTRAAJitterPinned === true ) return;
+	const proto = Object.getPrototypeOf( traaNode );
+	const originalSetViewOffset = traaNode.setViewOffset || ( proto && proto.setViewOffset );
+	const originalClearViewOffset = traaNode.clearViewOffset || ( proto && proto.clearViewOffset );
+	if ( typeof originalSetViewOffset === 'function' ) {
+		traaNode.setViewOffset = function ( width, height ) {
+			try { this._jitterIndex = 0; } catch ( _ ) {}
+			return originalSetViewOffset.call( this, width, height );
+		};
+	}
+	if ( typeof originalClearViewOffset === 'function' ) {
+		traaNode.clearViewOffset = function () {
+			try {
+				if ( this.camera && typeof this.camera.clearViewOffset === 'function' ) this.camera.clearViewOffset();
+				if ( this._velocityNode && typeof this._velocityNode.setProjectionMatrix === 'function' ) this._velocityNode.setProjectionMatrix( null );
+			} catch ( _ ) {}
+			try { this._jitterIndex = 0; } catch ( _ ) {}
+		};
+	}
+	try { traaNode._jitterIndex = 0; } catch ( _ ) {}
+	try { Object.defineProperty( traaNode, '__tslpTRAAJitterPinned', { value: true, configurable: true } ); } catch ( _ ) {}
+}
+
+function __scanForCaptureTRAANodes( node, seen = new Set(), depth = 0 ) {
+	if ( ! node || depth > 24 || seen.has( node ) ) return;
+	if ( typeof node !== 'object' && typeof node !== 'function' ) return;
+	seen.add( node );
+	if ( __isCaptureTRAAEffectNode( node ) ) {
+		__pinCaptureTRAAJitterIndex( node );
+		return;
+	}
+	const keys = [];
+	try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
+	const skip = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'geometry', 'material', 'domElement' ] );
+	for ( const key of keys ) {
+		if ( skip.has( key ) ) continue;
+		let child;
+		try { child = node[ key ]; } catch ( _ ) { continue; }
+		if ( ! child ) continue;
+		if ( Array.isArray( child ) ) {
+			for ( const item of child ) if ( item && ( typeof item === 'object' || typeof item === 'function' ) ) __scanForCaptureTRAANodes( item, seen, depth + 1 );
+		} else if ( typeof child === 'object' || typeof child === 'function' ) {
+			__scanForCaptureTRAANodes( child, seen, depth + 1 );
+		}
+	}
+}
+
 function __capturePostProcessing( pipeline ) {
-	if ( pipeline ) __postProcessingPipelines.add( pipeline );
+	if ( pipeline ) {
+		__postProcessingPipelines.add( pipeline );
+		// Pin TRAA jitter to 0 during capture so the snapshot frame matches the
+		// slim replay harness's pin on its side.
+		try {
+			if ( pipeline.outputNode ) __scanForCaptureTRAANodes( pipeline.outputNode );
+		} catch ( _ ) {}
+	}
 }
 
 const __RenderPipelineBase = Original.RenderPipeline || Original.PostProcessing;
@@ -8507,6 +8569,33 @@ function __prepareSSRNodeForReplay( ssrNode, context ) {
 				diag.setupError = err && ( err.stack || err.message ) || String( err );
 			}
 		}
+		// SSRNode._blurRenderTarget is constructed at 1x1 with 5 mip levels pushed
+		// in. If anything (e.g. a sibling SMAA frame-effect whose graph traversal
+		// reaches SSR's RTs through the input chain) tries to share or
+		// initRenderTarget this texture before SSR.updateBefore has had a chance
+		// to call setSize(), WebGPU rejects the allocation with "Texture mip level
+		// count (5) exceeds the maximum (1) for its size". Eagerly call setSize so
+		// the RTs are valid the moment any prior frame effect shares textures
+		// through their subtree.
+		if ( typeof ssrNode.setSize === 'function' ) {
+			try {
+				const tmp = new FullVector2();
+				let width = 0;
+				let height = 0;
+				if ( __computeRenderer && typeof __computeRenderer.getDrawingBufferSize === 'function' ) {
+					__computeRenderer.getDrawingBufferSize( tmp );
+					width = tmp.width | 0;
+					height = tmp.height | 0;
+				}
+				if ( ( width <= 1 || height <= 1 ) && typeof window !== 'undefined' ) {
+					width = Math.max( 1, ( window.innerWidth | 0 ) || 640 );
+					height = Math.max( 1, ( window.innerHeight | 0 ) || 480 );
+				}
+				if ( width > 1 && height > 1 ) ssrNode.setSize( width, height );
+			} catch ( err ) {
+				diag.setSizeError = err && ( err.stack || err.message ) || String( err );
+			}
+		}
 		__patchSSRNodeUpdateBefore( ssrNode );
 		Object.defineProperty( ssrNode, '__tslpSSRReplayReady', { value: true, configurable: true } );
 		diag.prepared ++;
@@ -8809,6 +8898,37 @@ function __patchTRAANodeUpdateBefore( traaNode ) {
 	Object.defineProperty( traaNode, '__tslpTRAAUpdatePatched', { value: true, configurable: true } );
 }
 
+function __pinTRAAJitterIndex( traaNode ) {
+	if ( ! traaNode || traaNode.__tslpTRAAJitterPinned === true ) return;
+	// TRAA's clearViewOffset increments _jitterIndex once per pipeline frame.
+	// Capture and replay both render up to TARGET_TICK frames, but the slim
+	// harness's pipeline wrappers can call setViewOffset/clearViewOffset a
+	// different number of times than capture (e.g. when a sibling effect re-
+	// drives the pipeline). Pin _jitterIndex to 0 on every setViewOffset and
+	// stub the increment in clearViewOffset so both modes sample the SAME
+	// halton offset regardless of pipeline-call count.
+	const proto = Object.getPrototypeOf( traaNode );
+	const originalSetViewOffset = traaNode.setViewOffset || ( proto && proto.setViewOffset );
+	const originalClearViewOffset = traaNode.clearViewOffset || ( proto && proto.clearViewOffset );
+	if ( typeof originalSetViewOffset === 'function' ) {
+		traaNode.setViewOffset = function ( width, height ) {
+			try { this._jitterIndex = 0; } catch ( _ ) {}
+			return originalSetViewOffset.call( this, width, height );
+		};
+	}
+	if ( typeof originalClearViewOffset === 'function' ) {
+		traaNode.clearViewOffset = function () {
+			try {
+				if ( this.camera && typeof this.camera.clearViewOffset === 'function' ) this.camera.clearViewOffset();
+				if ( this._velocityNode && typeof this._velocityNode.setProjectionMatrix === 'function' ) this._velocityNode.setProjectionMatrix( null );
+			} catch ( _ ) {}
+			try { this._jitterIndex = 0; } catch ( _ ) {}
+		};
+	}
+	try { traaNode._jitterIndex = 0; } catch ( _ ) {}
+	try { Object.defineProperty( traaNode, '__tslpTRAAJitterPinned', { value: true, configurable: true } ); } catch ( _ ) {}
+}
+
 function __prepareTRAANodeForReplay( traaNode, context ) {
 	if ( ! __isTRAAEffectNode( traaNode ) ) return false;
 	if ( traaNode.__tslpTRAAReplayReady === true ) return true;
@@ -8816,6 +8936,10 @@ function __prepareTRAANodeForReplay( traaNode, context ) {
 		const diag = __traaDiagnostics();
 		diag.ctor = traaNode.constructor && traaNode.constructor.name || '';
 		diag.type = traaNode.constructor && traaNode.constructor.type || traaNode.type || '';
+		// Pin BEFORE setup() so the setup-registered onBeforeRenderPipeline
+		// closure (which does this.setViewOffset(...) dynamically) picks up the
+		// patched instance methods on every frame.
+		__pinTRAAJitterIndex( traaNode );
 		// TRAA's setup() requires builder.renderer + builder.context.renderPipeline.
 		// Drive setup on the full renderer so the resolveMaterial gets its colorNode.
 		if ( __computeRenderer && typeof traaNode.setup === 'function' ) {
