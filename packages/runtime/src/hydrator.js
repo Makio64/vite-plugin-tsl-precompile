@@ -31,12 +31,12 @@ import { writeUniformGroup } from './hydrate/material-writers.js';
 import { writeSnapshot } from './hydrate/snapshot-writers.js';
 import { installLiveTextureRegistryPatches } from './hydrate/live-texture-registry.js';
 import { createRuntimeBindingFromKind } from './hydrate/kinds/runtime-binding-dispatcher.js';
-import { collectMaterialReflectorBaseNodes, createReflectorTextureRebinder, findReflectorBaseNodeInMaterial } from './hydrate/rebinders/reflector-texture-rebinder.js';
-import { createShadowDepthRebinder } from './hydrate/rebinders/shadow-depth-rebinder.js';
-import { createArtifactTextureRebinder, createMaterialTextureRebinder } from './hydrate/rebinders/texture-rebinders.js';
-import { createViewportTextureRebinder, shouldSkipViewportCopyForZeroThicknessTransmission } from './hydrate/rebinders/viewport-texture-rebinder.js';
+import { classifyDynamicTextureBinding, indexDynamicTextureBindings } from './hydrate/kinds/dynamic-texture-classifier.js';
+import { createDynamicBindingResolvers } from './hydrate/rebinders/dynamic-binding-resolver.js';
+import { collectMaterialReflectorBaseNodes, findReflectorBaseNodeInMaterial } from './hydrate/rebinders/reflector-texture-rebinder.js';
+import { shouldSkipViewportCopyForZeroThicknessTransmission } from './hydrate/rebinders/viewport-texture-rebinder.js';
 import { resolveTypedArrayCtor } from './hydrate/typed-arrays.js';
-import { findPlanTextureSource, inferTextureTypeFromShader, shaderDeclaresDepthTexture } from './hydrate/texture-resolver.js';
+import { inferTextureTypeFromShader, shaderDeclaresDepthTexture } from './hydrate/texture-resolver.js';
 
 export { clearLiveTextureIndex, registerLiveTexture } from './hydrate/live-texture-registry.js';
 
@@ -179,34 +179,24 @@ export function hydrateNodeBuilderState( artifact, material = null ) {
 	// kernel writes into `colors`, the render reads from the same buffer.
 	bindUserStorageBuffersToArtifact( artifact, material );
 
-	const { bindings, uniformBuffers, shadowDepthBindings, materialDepthBindings, artifactTextureBindings, materialTextureBindings, viewportTextureBindings, reflectorTextureBindings, clippingUniformBuffers } = hydrateRuntimeBindings( artifact, material );
+	const runtimeBindings = hydrateRuntimeBindings( artifact, material );
+	const { bindings, uniformBuffers, clippingUniformBuffers } = runtimeBindings;
 	const updateNode = createUniformUpdateNode( artifact, uniformBuffers, material );
 	const clippingUniformUpdateNode = clippingUniformBuffers.length > 0
 		? createClippingUniformUpdateNode( clippingUniformBuffers, material )
 		: null;
-	const shadowRebinderDeps = {
+
+	// One descriptor-driven entry point owns rebinder construction +
+	// ordering. The hydrator just supplies the grouped bindings and the
+	// dependency bag (light-finder + diagnostics + texture resolver). See
+	// `hydrate/rebinders/dynamic-binding-resolver.js` for the descriptor-
+	// to-rebinder mapping.
+	const { earlyUpdateBefore, lateUpdateBefore } = createDynamicBindingResolvers( runtimeBindings, {
+		resolveTextureBinding,
 		findLightBySource,
-		recordDiagnostic: recordShadowBindingDiagnostic,
+		recordShadowDiagnostic: recordShadowBindingDiagnostic,
 		describeLight: lightDiagnosticShape,
-	};
-	const shadowDepthRebinder = shadowDepthBindings.length > 0
-		? createShadowDepthRebinder( shadowDepthBindings, shadowRebinderDeps )
-		: null;
-	const materialDepthRebinder = materialDepthBindings.length > 0
-		? createShadowDepthRebinder( materialDepthBindings, shadowRebinderDeps )
-		: null;
-	const artifactTextureRebinder = artifactTextureBindings.length > 0
-		? createArtifactTextureRebinder( artifactTextureBindings, { resolveTextureBinding } )
-		: null;
-	const materialTextureRebinder = materialTextureBindings.length > 0
-		? createMaterialTextureRebinder( materialTextureBindings, { resolveTextureBinding } )
-		: null;
-	const viewportTextureRebinder = viewportTextureBindings.length > 0
-		? createViewportTextureRebinder( viewportTextureBindings )
-		: null;
-	const reflectorTextureRebinder = reflectorTextureBindings.length > 0
-		? createReflectorTextureRebinder( reflectorTextureBindings )
-		: null;
+	} );
 
 	// In-process flows (dev-server capture → immediate render) carry live
 	// update node instances as non-enumerable sidecars on the artifact. Include
@@ -236,25 +226,18 @@ export function hydrateNodeBuilderState( artifact, material = null ) {
 		// textures, late loader identity matches). Bumping `groupNode.version` here
 		// forces the renderer to rebuild the bind group with the fresh texture.
 		updateBeforeNodes: [
-			...( shadowDepthRebinder ? [ shadowDepthRebinder ] : [] ),
-			...( artifactTextureRebinder ? [ artifactTextureRebinder ] : [] ),
-			...( materialTextureRebinder ? [ materialTextureRebinder ] : [] ),
-			// `viewportTextureRebinder` runs alongside the other rebinders so
-			// transmissive materials (KHR_materials_transmission glass) sample
-			// a freshly-copied framebuffer instead of the 1×1 fallback.
-			...( viewportTextureRebinder ? [ viewportTextureRebinder ] : [] ),
+			// `earlyUpdateBefore` runs first: shadow-depth, artifact-texture,
+			// material-texture, viewport-texture rebinders. Each updates
+			// SampledTexture bindings to live resources before three.js reads
+			// bind-group versions for the upcoming draw.
+			...earlyUpdateBefore,
 			...liveUpdateBeforeNodes,
 			...materialReflectorUpdateBeforeNodes,
-			// Material-graph depth textures include reflector depth nodes. Those
-			// are assigned by ReflectorBaseNode.updateBefore, so they must rebind
-			// after live/material reflector update-before nodes have run.
-			...( materialDepthRebinder ? [ materialDepthRebinder ] : [] ),
-			// `reflectorTextureRebinder` runs LAST: the live ReflectorBaseNode
-			// sidecar (or the replay-side material reflector list) keys its
-			// per-camera RenderTarget during its own `updateBefore`; only
-			// afterwards can we swap the binding to the live
-			// `renderTarget.texture`.
-			...( reflectorTextureRebinder ? [ reflectorTextureRebinder ] : [] ),
+			// `lateUpdateBefore` runs after the live-node + reflector sidecars:
+			// material-graph depth-texture rebinder and reflector-texture
+			// rebinder, both of which depend on those sidecars having already
+			// keyed their per-frame state.
+			...lateUpdateBefore,
 		],
 		updateAfterNodes: [ ...liveUpdateAfterNodes ],
 		observer: createStaticObserver(),
@@ -741,6 +724,26 @@ function hydrateRuntimeBindings( artifact, material ) {
 	// until those resources can be resolved safely.
 	const groups = [];
 
+	// Pre-classified dynamic-texture entries from `artifact.dynamicBindings`,
+	// indexed by `${groupName}::${bindingName}`. Replaces the old per-binding
+	// `findPlanTextureSource(...)` walk with O(1) lookup. The classifier
+	// dispatches each entry to the right typed bag below.
+	const dynamicTextureIndex = indexDynamicTextureBindings( artifact );
+	const classifierContext = {
+		artifact,
+		material,
+		shadowDepthBindings,
+		materialDepthBindings,
+		artifactTextureBindings,
+		materialTextureBindings,
+		viewportTextureBindings,
+		reflectorTextureBindings,
+		recordShadowBindingDiagnostic,
+		findReflectorBaseNodeInMaterial,
+		shaderDeclaresDepthTexture,
+		shouldSkipViewportCopyForZeroThicknessTransmission,
+	};
+
 	for ( const group of bindings ) {
 
 		const runtimeBindings = [];
@@ -766,141 +769,10 @@ function hydrateRuntimeBindings( artifact, material ) {
 
 			}
 
-			// Track depth-texture bindings so the per-frame rebinder can swap
-			// them to the live shadow map. The plan source carries `lightIndex`
-			// and `vsm` flags; we resolve the actual texture at update time
-			// because the renderer's shadow pass hasn't allocated it yet.
-			const planSource = descriptor.kind === 'sampled-texture' || descriptor.kind === 'sampler'
-				? findPlanTextureSource( artifact, group.name, descriptor.name )
-				: null;
-			if ( planSource && planSource.kind === 'depth.texture' ) {
+			if ( descriptor.kind === 'sampled-texture' || descriptor.kind === 'sampler' ) {
 
-				const depthBinding = {
-					binding: runtimeBinding,
-					artifact,
-					bindingName: descriptor.name || '',
-					lightIndex: Number.isInteger( planSource.lightIndex ) ? planSource.lightIndex : 0,
-					lightUuid: typeof planSource.lightUuid === 'string' ? planSource.lightUuid : null,
-					vsm: planSource.vsm === true,
-					// Non-light depth textures (e.g. RenderTarget.depthTexture
-					// sampled via `material.colorNode = texture(depthTexture)`)
-					// have no owning AnalyticLightNode. The plan source signals
-					// this with `lightIndex: -1, fromMaterialGraph: true`. The
-					// rebinder resolves the live DepthTexture by walking the
-					// owning material's node graph instead of `light.shadow.map`.
-					fromMaterialGraph: planSource.fromMaterialGraph === true,
-					textureUuid: typeof planSource.textureUuid === 'string' ? planSource.textureUuid : null,
-					material,
-				};
-				recordShadowBindingDiagnostic( {
-					phase: 'hydrateDepth',
-					bindingName: depthBinding.bindingName,
-					lightIndex: depthBinding.lightIndex,
-					lightUuid: depthBinding.lightUuid,
-					fromMaterialGraph: depthBinding.fromMaterialGraph,
-					vsm: depthBinding.vsm,
-					textureUuid: depthBinding.textureUuid,
-					artifactName: artifact && artifact.name || material && material.name || null,
-					bindingKind: descriptor.kind || null,
-					textureType: descriptor.textureType || null,
-				} );
-				if ( depthBinding.fromMaterialGraph ) materialDepthBindings.push( depthBinding );
-				else shadowDepthBindings.push( depthBinding );
-
-			}
-
-			// Artifact textures: tracked for late relinking and stale GPUTexture fixes.
-			//
-			// (a) Late-arriving live texture: hydration ran before a live texture was
-			//     registered or generated (PMREM/environment maps, loader identity
-			//     matches, compute storage textures), so binding.texture is a 1×1
-			//     fallback. The rebinder re-resolves on each render-before and swaps to
-			//     the real instance once available.
-			//
-			// (b) Stale GPUTexture under the same JS texture: the harness shares
-			//     full's GPUTexture into slim's data map AFTER the bind group was
-			//     built (`slimRenderer.backend.get(tex).texture =
-			//     fullTexData.texture`). The rebinder bumps version + generation
-			//     to force three.js to rebuild the view from the now-shared
-			//     GPUTexture.
-			if ( ( descriptor.kind === 'sampled-texture' || descriptor.kind === 'sampler' )
-				&& ( runtimeBinding.isSampledTexture || runtimeBinding.isSampler )
-				&& planSource && planSource.kind === 'artifact.texture' ) {
-
-				const _planGroup = ( artifact.uniformPlan || [] ).find( ( g ) => g.name === group.name ) || {};
-				const _planTex = ( _planGroup.textures || [] ).find( ( t ) => t.name === descriptor.name ) || {};
-				artifactTextureBindings.push( {
-					binding: runtimeBinding,
-					artifact,
-					groupName: group.name || '',
-					bindingName: descriptor.name || '',
-					source: planSource,
-					textureType: _planTex.textureType || '2d',
-					material,
-				} );
-
-			}
-
-			if ( ( descriptor.kind === 'sampled-texture' || descriptor.kind === 'sampler' )
-				&& ( runtimeBinding.isSampledTexture || runtimeBinding.isSampler )
-				&& planSource && planSource.kind && planSource.kind.startsWith( 'material.' ) ) {
-
-				materialTextureBindings.push( {
-					binding: runtimeBinding,
-					artifact,
-					groupName: group.name || '',
-					bindingName: descriptor.name || '',
-					source: planSource,
-					material,
-				} );
-
-			}
-
-			// TSL `reflector()` bindings: each frame `ReflectorBaseNode.updateBefore`
-			// renders the scene from a mirrored camera into a per-camera RT and
-			// reassigns `textureNode.value`. The captured uuid points at the
-			// module-private `_defaultRT.texture` and is dead at replay; the
-			// artifact's `_liveUpdateBeforeNodes` sidecar is non-enumerable and
-			// lost across the e2e capture→replay JSON boundary, so resolve the
-			// live ReflectorBaseNode by walking the replay-side material's own
-			// node graph — `reflector()` ran on the replay page when the user
-			// HTML was imported, attaching a fresh ReflectorBaseNode to the
-			// material. Each material in the failing examples carries a single
-			// reflector, so the first ReflectorNode in the graph is correct;
-			// `reflectorIndex` is reserved for future multi-reflector support.
-			if ( ( descriptor.kind === 'sampled-texture' || descriptor.kind === 'sampler' )
-				&& ( runtimeBinding.isSampledTexture || runtimeBinding.isSampler )
-				&& planSource && planSource.kind === 'reflector.texture' ) {
-
-				const baseNode = findReflectorBaseNodeInMaterial( material, planSource.reflectorIndex );
-				if ( baseNode ) {
-
-					reflectorTextureBindings.push( {
-						binding: runtimeBinding,
-						baseNode,
-					} );
-
-				}
-
-			}
-
-			// Viewport-texture bindings (transmission FBO etc.): captured WGSL
-			// samples a `viewportMipTexture()` / `viewportTexture()` whose
-			// FramebufferTexture is refreshed each frame. Track here so the
-			// per-frame rebinder can drive the framebuffer copy and swap in
-			// the live texture.
-			if ( descriptor.kind === 'sampled-texture'
-				&& runtimeBinding.isSampledTexture
-				&& planSource && planSource.kind === 'viewport.texture' ) {
-
-				viewportTextureBindings.push( {
-					binding: runtimeBinding,
-					fallbackTexture: runtimeBinding.texture,
-					generateMipmaps: planSource.generateMipmaps !== false,
-					isDepth: planSource.isDepth === true || shaderDeclaresDepthTexture( artifact, descriptor.name || '' ),
-					material,
-					skipZeroThicknessTransmission: shouldSkipViewportCopyForZeroThicknessTransmission( artifact ),
-				} );
+				const dynamicEntry = dynamicTextureIndex.get( `${ group.name || '' }::${ descriptor.name || '' }` );
+				if ( dynamicEntry ) classifyDynamicTextureBinding( dynamicEntry, runtimeBinding, descriptor, classifierContext );
 
 			}
 
