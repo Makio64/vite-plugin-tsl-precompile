@@ -440,7 +440,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "279d9710-76d4-41b8-b5a1-e25873557fb3",
+                "textureUuid": "1d5cb29d-8f7e-40c2-a0b1-4ed615389d0f",
                 "mapping": 301,
                 "wrapS": 1001,
                 "wrapT": 1001,
@@ -460,7 +460,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "279d9710-76d4-41b8-b5a1-e25873557fb3",
+                "textureUuid": "1d5cb29d-8f7e-40c2-a0b1-4ed615389d0f",
                 "mapping": 301,
                 "wrapS": 1001,
                 "wrapT": 1001,
@@ -485,7 +485,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "279d9710-76d4-41b8-b5a1-e25873557fb3",
+                  "textureUuid": "1d5cb29d-8f7e-40c2-a0b1-4ed615389d0f",
                   "mapping": 301,
                   "wrapS": 1001,
                   "wrapT": 1001,
@@ -516,7 +516,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "279d9710-76d4-41b8-b5a1-e25873557fb3",
+                  "textureUuid": "1d5cb29d-8f7e-40c2-a0b1-4ed615389d0f",
                   "mapping": 301,
                   "wrapS": 1001,
                   "wrapT": 1001,
@@ -1008,7 +1008,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "03e4c44a-89a0-48a9-b9a9-fbfc77e2e2ae",
+                "textureUuid": "48643968-1030-4651-b75e-a2b0811d6a3a",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -1029,7 +1029,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "199aa131-962f-4c23-b83a-7f09ea7c8cdd",
+                "textureUuid": "5cb71d71-f185-4d32-89cd-3a79bc18eebd",
                 "textureName": "normal",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -1050,7 +1050,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "0297e344-8fed-4867-8be9-0de1487e4a62",
+                "textureUuid": "e85f93e8-6d20-4ce9-b836-3d262c495619",
                 "textureName": "emissive",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -1071,7 +1071,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "9dea6b03-5ffb-45a7-9cb1-0cfe6c307f70",
+                "textureUuid": "37d240c2-7401-4e76-9292-cceef5d5370b",
                 "textureName": "diffuse",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -1097,7 +1097,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "03e4c44a-89a0-48a9-b9a9-fbfc77e2e2ae",
+                  "textureUuid": "48643968-1030-4651-b75e-a2b0811d6a3a",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -1199,7 +1199,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "199aa131-962f-4c23-b83a-7f09ea7c8cdd",
+                  "textureUuid": "5cb71d71-f185-4d32-89cd-3a79bc18eebd",
                   "textureName": "normal",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -1232,7 +1232,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "0297e344-8fed-4867-8be9-0de1487e4a62",
+                  "textureUuid": "e85f93e8-6d20-4ce9-b836-3d262c495619",
                   "textureName": "emissive",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -1265,7 +1265,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "9dea6b03-5ffb-45a7-9cb1-0cfe6c307f70",
+                  "textureUuid": "37d240c2-7401-4e76-9292-cceef5d5370b",
                   "textureName": "diffuse",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -3748,7 +3748,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "03e4c44a-89a0-48a9-b9a9-fbfc77e2e2ae",
+                "textureUuid": "48643968-1030-4651-b75e-a2b0811d6a3a",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -3769,7 +3769,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "199aa131-962f-4c23-b83a-7f09ea7c8cdd",
+                "textureUuid": "5cb71d71-f185-4d32-89cd-3a79bc18eebd",
                 "textureName": "normal",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -3790,7 +3790,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "0297e344-8fed-4867-8be9-0de1487e4a62",
+                "textureUuid": "e85f93e8-6d20-4ce9-b836-3d262c495619",
                 "textureName": "emissive",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -3811,7 +3811,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "9dea6b03-5ffb-45a7-9cb1-0cfe6c307f70",
+                "textureUuid": "37d240c2-7401-4e76-9292-cceef5d5370b",
                 "textureName": "diffuse",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -3837,7 +3837,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "03e4c44a-89a0-48a9-b9a9-fbfc77e2e2ae",
+                  "textureUuid": "48643968-1030-4651-b75e-a2b0811d6a3a",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -3924,7 +3924,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "199aa131-962f-4c23-b83a-7f09ea7c8cdd",
+                  "textureUuid": "5cb71d71-f185-4d32-89cd-3a79bc18eebd",
                   "textureName": "normal",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -3957,7 +3957,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "0297e344-8fed-4867-8be9-0de1487e4a62",
+                  "textureUuid": "e85f93e8-6d20-4ce9-b836-3d262c495619",
                   "textureName": "emissive",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -3990,7 +3990,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "9dea6b03-5ffb-45a7-9cb1-0cfe6c307f70",
+                  "textureUuid": "37d240c2-7401-4e76-9292-cceef5d5370b",
                   "textureName": "diffuse",
                   "mapping": 300,
                   "wrapS": 1001,
