@@ -512,6 +512,17 @@ registerEffectHandler( {
  * Depth of Field — `three/addons/tsl/display/DepthOfFieldNode.js`.
  *
  * Five materials (CoC, CoC-blurred, blur-64, blur-16, composite).
+ *
+ * `_CoCMaterial` is special: its `outputNode = outputStruct(near, far)` emits
+ * a 2-attachment fragment shader targeting `_CoCRT` which is configured as
+ * `RenderTarget(1, 1, { count: 2, format: RedFormat, type: HalfFloatType })`.
+ * Without a matching `renderTargetHint` on the sub-pass, the capture-side
+ * `compileTSL` falls back to a default RGBA8 single-attachment color target
+ * and WGSL validation fails with "fragment stage has fewer output components
+ * (1) than the color format (RGBA16Float) component count (4)".
+ *
+ * Other DOF sub-passes (blurred, blur64, blur16, composite) target standard
+ * single-attachment HalfFloat RTs and compile cleanly against the default.
  */
 registerEffectHandler( {
 	name: 'dof',
@@ -530,7 +541,12 @@ registerEffectHandler( {
 		const out = [];
 		if ( node._CoCMaterial ) {
 
-			out.push( { material: node._CoCMaterial, shape: 'dof-coc', config: { type: 'dof-coc', dofIndex: index } } );
+			out.push( {
+				material: node._CoCMaterial,
+				shape: 'dof-coc',
+				config: { type: 'dof-coc', dofIndex: index },
+				renderTargetHint: __dofCoCRenderTargetHint( node ),
+			} );
 
 		}
 		if ( node._CoCBlurredMaterial ) {
@@ -557,6 +573,32 @@ registerEffectHandler( {
 
 	},
 } );
+
+/**
+ * Derive a `{ count, format, type }` hint from the live `_CoCRT` so the
+ * capture-side allocator binds a matching texture before `compileTSL`. The
+ * hint is purely informational — `undefined`/missing fields fall back to
+ * three.js defaults at the capture site.
+ *
+ * Returns `null` when the node is missing `_CoCRT` (constructed lazily on
+ * first updateBefore), letting the capture site fall back to the default.
+ *
+ * @param {Object} node
+ * @return {{count:number, format:?number, type:?number}|null}
+ */
+function __dofCoCRenderTargetHint( node ) {
+
+	const rt = node && node._CoCRT;
+	if ( ! rt ) return null;
+	const texArr = Array.isArray( rt.textures ) ? rt.textures : ( rt.texture ? [ rt.texture ] : [] );
+	const first = texArr[ 0 ] || null;
+	return {
+		count: texArr.length || 2,
+		format: first ? first.format : null,
+		type: first ? first.type : null,
+	};
+
+}
 
 /**
  * TRAA — `three/addons/tsl/display/TRAANode.js`. Single resolve material.

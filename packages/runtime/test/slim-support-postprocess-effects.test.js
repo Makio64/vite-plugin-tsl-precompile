@@ -148,6 +148,53 @@ test( 'dof handler subPasses returns CoC+blurred+blur64+blur16+composite', () =>
 
 } );
 
+test( 'dof-coc sub-pass exposes renderTargetHint derived from live _CoCRT', () => {
+
+	// Simulate three.js constants — values don't matter for the test, only
+	// that they're forwarded verbatim from the live RT's first texture.
+	const RedFormat = 1028;
+	const HalfFloatType = 1016;
+
+	const node = {
+		_CoCMaterial: { name: 'CoC' },
+		_CoCBlurredMaterial: { name: 'CoCBlurred' },
+		_blur64Material: { name: 'blur64' },
+		_blur16Material: { name: 'blur16' },
+		_compositeMaterial: { name: 'dof-composite' },
+		_CoCRT: {
+			textures: [
+				{ format: RedFormat, type: HalfFloatType, name: 'DepthOfField.NearField' },
+				{ format: RedFormat, type: HalfFloatType, name: 'DepthOfField.FarField' },
+			],
+		},
+	};
+	const handler = findEffectHandler( node );
+	const sub = handler.subPasses( node, 0 );
+	const coc = sub.find( ( s ) => s.shape === 'dof-coc' );
+	assert.ok( coc, 'dof-coc sub-pass exists' );
+	assert.deepEqual( coc.renderTargetHint, {
+		count: 2,
+		format: RedFormat,
+		type: HalfFloatType,
+	} );
+
+	// Other DOF sub-passes do NOT need a hint — they target standard single-
+	// attachment RTs and compile cleanly against the default.
+	const blurred = sub.find( ( s ) => s.shape === 'dof-coc-blurred' );
+	assert.equal( blurred.renderTargetHint, undefined );
+
+} );
+
+test( 'dof-coc renderTargetHint is null when _CoCRT is absent (lazy-construct case)', () => {
+
+	const handler = findEffectHandler( dofLike() );
+	const sub = handler.subPasses( dofLike(), 0 );
+	const coc = sub.find( ( s ) => s.shape === 'dof-coc' );
+	// dofLike() omits _CoCRT (mirrors a DepthOfFieldNode pre-first-update).
+	assert.equal( coc.renderTargetHint, null );
+
+} );
+
 test( 'traa handler subPasses returns single resolve material', () => {
 
 	const handler = findEffectHandler( traaLike() );

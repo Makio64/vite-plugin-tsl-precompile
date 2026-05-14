@@ -538,7 +538,7 @@ async function captureRegisteredEffectArtifactsLive( renderer, outputNode, opts,
 			try {
 
 				const configHash = hashPlainConfigSync( subPass.config || { type: subPass.shape }, { shape: subPass.shape, ...hashOpts } );
-				const artifact = await captureNodeMaterialAsAuxLive( renderer, subPass.material, opts, compileTSL, subPass.shape );
+				const artifact = await captureNodeMaterialAsAuxLive( renderer, subPass.material, opts, compileTSL, subPass.shape, subPass.renderTargetHint || null );
 				out.push( { shape: subPass.shape, configHash, artifact } );
 
 			} catch ( _ ) {}
@@ -551,17 +551,58 @@ async function captureRegisteredEffectArtifactsLive( renderer, outputNode, opts,
 
 }
 
-async function captureNodeMaterialAsAuxLive( renderer, material, opts, compileTSL, shape ) {
+async function captureNodeMaterialAsAuxLive( renderer, material, opts, compileTSL, shape, renderTargetHint = null ) {
 
 	const three = opts.three || null;
 	const scene = new three.Scene();
 	scene.add( new three.QuadMesh( material ) );
 	const camera = opts.camera || ( three.PerspectiveCamera ? new three.PerspectiveCamera( 45, 1, 0.1, 100 ) : null );
-	const artifacts = await compileTSL( renderer, scene, camera, { noGlobalMRT: true } );
-	const artifact = artifacts.find( ( a ) => a.materialUuid === material.uuid ) || artifacts[ 0 ];
-	if ( ! artifact ) throw new Error( `captureNodeMaterialAsAuxLive: no artifact produced for ${ shape }` );
-	artifact.materialShape = shape;
-	return jsonSafe( artifact );
+
+	// Allocate a matching RenderTarget when the sub-pass declares a non-default
+	// fragment-output shape (DOF's `_CoCMaterial.outputNode = outputStruct(...)`
+	// emits a 2-attachment RedFormat/HalfFloat fragment that the default 1×1
+	// RGBA8 warm-up RT rejects). The hint is `{ count, format, type }`; missing
+	// fields fall back to three.js RenderTarget defaults.
+	const compileOpts = { noGlobalMRT: true };
+	let auxRT = null;
+	if ( renderTargetHint && three && typeof three.RenderTarget === 'function' ) {
+
+		try {
+
+			const rtOpts = { depthBuffer: false };
+			if ( typeof renderTargetHint.count === 'number' && renderTargetHint.count > 0 ) rtOpts.count = renderTargetHint.count;
+			if ( renderTargetHint.format != null ) rtOpts.format = renderTargetHint.format;
+			if ( renderTargetHint.type != null ) rtOpts.type = renderTargetHint.type;
+			auxRT = new three.RenderTarget( 1, 1, rtOpts );
+			compileOpts.renderTargetOverride = auxRT;
+
+		} catch ( _ ) {
+			// Older three.js may reject `count` here; fall through without the
+			// override and let compileTSL fail noisily so we know to update the
+			// adopter's three version rather than silently corrupting capture.
+			auxRT = null;
+
+		}
+
+	}
+
+	try {
+
+		const artifacts = await compileTSL( renderer, scene, camera, compileOpts );
+		const artifact = artifacts.find( ( a ) => a.materialUuid === material.uuid ) || artifacts[ 0 ];
+		if ( ! artifact ) throw new Error( `captureNodeMaterialAsAuxLive: no artifact produced for ${ shape }` );
+		artifact.materialShape = shape;
+		return jsonSafe( artifact );
+
+	} finally {
+
+		if ( auxRT ) {
+
+			try { auxRT.dispose(); } catch ( _ ) { /* ignore */ }
+
+		}
+
+	}
 
 }
 

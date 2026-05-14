@@ -942,6 +942,11 @@ function collectSceneMRTNode( renderer, scene, options ) {
  * @param {Array<Node>} [options.computeNodes] - Compute nodes to precompile.
  * @param {RenderPipeline} [options.renderPipeline] - Post-process pipeline to warm up.
  * @param {Object} [options.mrtNode] - Explicit MRT node to activate during warm-up.
+ * @param {Object} [options.renderTargetOverride] - Pre-allocated three RenderTarget
+ *   to bind during the warm-up render. Used by aux captures whose material emits
+ *   a non-default fragment-output shape (e.g. DOF's `_CoCMaterial` uses
+ *   `outputStruct(near, far)` against a 2-attachment RedFormat/HalfFloat RT).
+ *   When provided, takes precedence over the auto-allocated MRT warm-up RT.
  * @param {boolean} [options.skipWarmupRender=false] - Skip the extra synthetic render after compileAsync.
  * @return {Promise<Array<PrecompiledArtifact>>}
  */
@@ -1061,8 +1066,25 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	// count=1 named RT here would emit a single-`mask` output struct that
 	// the live count=2 RT then rejects. End-to-end MRT-merge handling is
 	// owned by Round 4-H.
+	// Caller-supplied RenderTarget override. Used by aux captures whose
+	// material emits a non-default fragment-output shape — e.g. DOF's
+	// `_CoCMaterial.outputNode = outputStruct(near, far)` produces 2
+	// single-component RedFormat/HalfFloat outputs. Without binding a
+	// matching RT, the WGSL validator complains:
+	//   "fragment stage has fewer output components (1) than the color
+	//    format (RGBA16Float) component count (4)"
+	// because three.js defaults the synthetic compile to a 4-component
+	// RGBA color attachment. The override takes precedence over the
+	// auto-allocated MRT warm-up RT below.
+	const renderTargetOverride = options && options.renderTargetOverride || null;
 	let mrtWarmupRT = null;
-	if ( sceneMRTNode && typeof renderer.setRenderTarget === 'function' ) {
+	if ( renderTargetOverride && typeof renderer.setRenderTarget === 'function' ) {
+
+		mrtWarmupRT = renderTargetOverride;
+		// Mark so we don't dispose() a caller-owned RT in the finally block.
+		mrtWarmupRT.__tslpAuxBorrowed = true;
+
+	} else if ( sceneMRTNode && typeof renderer.setRenderTarget === 'function' ) {
 
 		const outputMap = sceneMRTNode.nodes || sceneMRTNode.outputNodes || null;
 		const outputNames = outputMap ? Object.keys( outputMap ) : [];
@@ -1196,9 +1218,14 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 		}
 
-		if ( mrtWarmupRT ) {
+		if ( mrtWarmupRT && ! mrtWarmupRT.__tslpAuxBorrowed ) {
 
 			try { mrtWarmupRT.dispose(); } catch ( _ ) { /* ignore */ }
+
+		} else if ( mrtWarmupRT && mrtWarmupRT.__tslpAuxBorrowed ) {
+
+			// Caller owns this RT; clear the borrow flag and leave disposal to them.
+			try { delete mrtWarmupRT.__tslpAuxBorrowed; } catch ( _ ) { /* ignore */ }
 
 		}
 
