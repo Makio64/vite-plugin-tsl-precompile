@@ -27,3 +27,8 @@ packages/examples/batch/results/e2e-report-worker-*.json
 # artifacts/*.aux.json live in a subdir and aren't matched by this glob).
 packages/examples/batch/results/*.json
 !packages/examples/batch/results/e2e-report.json
+
+# Agent worktrees (created by Claude Code's isolation: "worktree" option).
+# These live under .claude/ but git treats them as untracked since they're
+# detached worktrees rooted in the main repo.
+.claude/worktrees/
