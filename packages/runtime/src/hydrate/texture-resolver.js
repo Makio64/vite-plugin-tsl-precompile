@@ -6,16 +6,6 @@ export function textureBindingNameForSampler( bindingName ) {
 
 }
 
-export function findPlanTextureSource( artifact, groupName, bindingName ) {
-
-	const plan = Array.isArray( artifact && artifact.uniformPlan ) ? artifact.uniformPlan : [];
-	const group = plan.find( ( item ) => item.name === groupName );
-	if ( ! group ) return null;
-	const texture = ( group.textures || [] ).find( ( item ) => item.name === bindingName );
-	return texture ? texture.source || null : null;
-
-}
-
 function shaderSource( artifact ) {
 
 	return `${ artifact && artifact.vertexShader || '' }\n${ artifact && artifact.fragmentShader || '' }\n${ artifact && artifact.computeShader || '' }`;

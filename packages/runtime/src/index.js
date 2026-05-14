@@ -28,4 +28,5 @@ export { createFullRendererFallback } from './slim-support/full-renderer-fallbac
 export { createSlimSceneSupport } from './slim-support/scene-support.js';
 export { collectLiveBloomNodes, wireBloomNode, wirePrecompiledPostprocess, findPostprocessAux } from './slim-support/postprocess-wire.js';
 export { renderPassWithFullRenderer } from './slim-support/pass-render-fallback.js';
+export { loadInspectorOptional } from './inspector-loader.js';
 export { MaterialVariantSet, createMaterialVariants, applyMaterialVariant } from './material-variants.js';

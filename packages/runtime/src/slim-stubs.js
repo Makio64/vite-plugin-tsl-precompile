@@ -279,6 +279,7 @@ export class PassNode {
 		this._mrt = null;
 		this._cameraNear = { value: 0 };
 		this._cameraFar = { value: 1 };
+		return wrapWithSlimNodeChainFallback( this );
 
 	}
 
@@ -383,6 +384,27 @@ export function warnOnce( msg ) {
  * in the precompiled artifact. This lightweight class preserves graph shape
  * and update metadata without pulling in the real TSL builder.
  */
+// Wrap a Node-like instance so unknown property access — swizzles (`.xy`,
+// `.r`), addon-shader-graph helpers (`.negate()`), and other methods we
+// haven't hand-stubbed — return an inert node stub instead of throwing.
+// Lets addon objects like WaterMesh build their TSL graphs in slim mode
+// without per-method stubs (e.g. `this.sunDirection.negate()` in WaterMesh's
+// constructor).
+function wrapWithSlimNodeChainFallback( instance ) {
+
+	return new Proxy( instance, {
+		get( target, prop, receiver ) {
+
+			if ( typeof prop === 'symbol' ) return Reflect.get( target, prop, target );
+			if ( prop === 'then' ) return undefined;
+			if ( prop in target ) return Reflect.get( target, prop, receiver );
+			return inertNodeStub( [ target ] );
+
+		},
+	} );
+
+}
+
 export class Node {
 
 	constructor( nodeType = null ) {
@@ -397,6 +419,7 @@ export class Node {
 			this.parents = false;
 			this.isNode = true;
 			this._beforeNodes = null;
+			return wrapWithSlimNodeChainFallback( this );
 
 		}
 
@@ -650,6 +673,7 @@ export class LightsNode {
 
 		this.isNode = true;
 		this.isLightsNode = true;
+		return wrapWithSlimNodeChainFallback( this );
 
 	}
 
@@ -665,6 +689,14 @@ export class LightsNode {
 export class RectAreaLightNode {
 
 	static setLTC() {}
+
+	constructor() {
+
+		this.isNode = true;
+		this.isRectAreaLightNode = true;
+		return wrapWithSlimNodeChainFallback( this );
+
+	}
 
 }
 
@@ -940,6 +972,10 @@ export function ivec4( ..._ ) { return inertNodeStub(); }
 export function uvec2( ..._ ) { return inertNodeStub(); }
 export function uvec3( ..._ ) { return inertNodeStub(); }
 export function uvec4( ..._ ) { return inertNodeStub(); }
+export function varyingProperty( ..._ ) { return inertNodeStub(); }
+export function OnMaterialUpdate( ..._ ) { return inertNodeStub(); }
+export function reflect( ...args ) { return inertNodeStub( args ); }
+export function reflector( ..._ ) { return inertNodeStub(); }
 
 /**
  * `renderGroup` — used as a *value* (uniform group identity) in some examples.

@@ -86,6 +86,13 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 
 	}
 
+	// Production short-circuit: probe whether compileTSL can be loaded. The
+	// dynamic import is `/* @vite-ignore */`'d, so it predictably fails in any
+	// production bundle. When it fails, every downstream capture step would
+	// throw — silently no-op the whole call instead so adopters don't need
+	// `if ( import.meta.env.DEV )` guards in their app code.
+	if ( ! opts.compileTSL && ( await lazyLoadCompileTSL() ) === null ) return [];
+
 	if ( typeof opts.threeVersion !== 'string' || opts.threeVersion.length === 0 ) {
 
 		throw new Error( 'precompileAuxiliary: opts.threeVersion is required (>= 184). Pass `threeVersion: String(THREE.REVISION).match(/^\\d+/)[0]` (e.g. "184").' );
@@ -937,12 +944,29 @@ async function capturePMREMLive( renderer, sourceTexture, kind, opts ) {
 }
 
 let cachedCompileTSL = null;
+let compileTSLLoadFailed = false;
 async function lazyLoadCompileTSL() {
 
 	if ( cachedCompileTSL ) return cachedCompileTSL;
-	const mod = await import( /* @vite-ignore */ 'vite-plugin-tsl-precompile/src/vendor/compileTSL.js' );
-	cachedCompileTSL = mod.compileTSL;
-	return cachedCompileTSL;
+	if ( compileTSLLoadFailed ) return null;
+	try {
+
+		const mod = await import( /* @vite-ignore */ 'vite-plugin-tsl-precompile/src/vendor/compileTSL.js' );
+		cachedCompileTSL = mod.compileTSL;
+		return cachedCompileTSL;
+
+	} catch ( err ) {
+
+		// Production bundles never have compileTSL — the bare specifier above
+		// is `/* @vite-ignore */`'d so Vite leaves it for the browser to
+		// resolve, where it predictably fails. Treat as the production signal:
+		// remember the failure so subsequent calls are cheap, and let callers
+		// no-op cleanly instead of throwing into user code.
+		compileTSLLoadFailed = true;
+		logOnce( 'aux-prod-noop', () => console.info( '[tsl-precompile/aux] precompileAuxiliary: production environment detected (compileTSL not bundled); aux capture is a no-op. Run `pnpm dev` to refresh artifacts.' ) );
+		return null;
+
+	}
 
 }
 

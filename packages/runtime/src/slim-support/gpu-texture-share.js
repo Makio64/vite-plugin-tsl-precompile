@@ -96,7 +96,17 @@ export function shareGPUTextureEntry( targetRenderer, sourceRenderer, texture, o
 
 	try {
 
-		const sourceData = sourceRenderer.backend.get( texture );
+		let sourceData = sourceRenderer.backend.get( texture );
+		if ( ( ! sourceData || ! sourceData.texture ) && texture.renderTarget && typeof sourceRenderer.initRenderTarget === 'function' ) {
+
+			try {
+
+				sourceRenderer.initRenderTarget( texture.renderTarget );
+				sourceData = sourceRenderer.backend.get( texture );
+
+			} catch ( _ ) {}
+
+		}
 		if ( ! sourceData ) {
 
 			bump( diagnostics, 'noSourceData' );

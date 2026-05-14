@@ -87,6 +87,53 @@ test( 'writeUniformGroup writes object.normalMatrix from world matrix', () => {
 
 } );
 
+test( 'writeUniformGroup tracks VelocityNode previous camera and object matrices', () => {
+
+	const group = makeGroup( [
+		{ offset: 0, dtype: 'mat4', source: { kind: 'velocity.previousProjectionMatrix' } },
+		{ offset: 64, dtype: 'mat4', source: { kind: 'velocity.previousCameraViewMatrix' } },
+		{ offset: 128, dtype: 'mat4', source: { kind: 'velocity.previousModelWorldMatrix' } },
+	] );
+	const view = makeView();
+	const camera = {
+		projectionMatrix: new Matrix4().makeTranslation( 1, 0, 0 ),
+		matrixWorldInverse: new Matrix4().makeTranslation( 2, 0, 0 ),
+	};
+	const object = { matrixWorld: new Matrix4().makeTranslation( 3, 0, 0 ) };
+
+	writeUniformGroup( group, { frameId: 1, camera, object }, view, null );
+	assert.equal( view.getFloat32( 12 * 4, true ), 1 );
+	assert.equal( view.getFloat32( 64 + 12 * 4, true ), 2 );
+	assert.equal( view.getFloat32( 128 + 12 * 4, true ), 3 );
+
+	camera.projectionMatrix.makeTranslation( 10, 0, 0 );
+	camera.matrixWorldInverse.makeTranslation( 20, 0, 0 );
+	object.matrixWorld.makeTranslation( 30, 0, 0 );
+
+	const sameFrame = makeView();
+	writeUniformGroup( group, { frameId: 1, camera, object }, sameFrame, null );
+	assert.equal( sameFrame.getFloat32( 12 * 4, true ), 1 );
+	assert.equal( sameFrame.getFloat32( 64 + 12 * 4, true ), 2 );
+	assert.equal( sameFrame.getFloat32( 128 + 12 * 4, true ), 3 );
+
+	const nextFrame = makeView();
+	writeUniformGroup( group, { frameId: 2, camera, object }, nextFrame, null );
+	assert.equal( nextFrame.getFloat32( 12 * 4, true ), 1 );
+	assert.equal( nextFrame.getFloat32( 64 + 12 * 4, true ), 2 );
+	assert.equal( nextFrame.getFloat32( 128 + 12 * 4, true ), 3 );
+
+	camera.projectionMatrix.makeTranslation( 100, 0, 0 );
+	camera.matrixWorldInverse.makeTranslation( 200, 0, 0 );
+	object.matrixWorld.makeTranslation( 300, 0, 0 );
+
+	const thirdFrame = makeView();
+	writeUniformGroup( group, { frameId: 3, camera, object }, thirdFrame, null );
+	assert.equal( thirdFrame.getFloat32( 12 * 4, true ), 10 );
+	assert.equal( thirdFrame.getFloat32( 64 + 12 * 4, true ), 20 );
+	assert.equal( thirdFrame.getFloat32( 128 + 12 * 4, true ), 30 );
+
+} );
+
 test( 'writeUniformGroup falls back to snapshot when frame fields are missing', () => {
 
 	const view = makeView();
@@ -168,6 +215,25 @@ test( 'writeUniformGroup writes uniform.live via slot._liveNode when available',
 	const group = makeGroup( [ slot ] );
 	writeUniformGroup( group, {}, view, null );
 	assert.equal( view.getFloat32( 0, true ), 9.5 );
+
+} );
+
+test( 'writeUniformGroup writes object3d.nodeUniform from frame.object[property].value', () => {
+
+	const view = makeView();
+	const group = makeGroup( [
+		{
+			offset: 0,
+			dtype: 'f32',
+			source: { kind: 'object3d.nodeUniform', property: 'distortionScale', valueSnapshot: { type: 'number', data: 3.7 } },
+		},
+	] );
+	writeUniformGroup( group, { object: { distortionScale: { value: 6.25 } } }, view, null );
+	assert.equal( view.getFloat32( 0, true ), 6.25 );
+
+	const fallbackView = makeView();
+	writeUniformGroup( group, { object: {} }, fallbackView, null );
+	assert.equal( fallbackView.getFloat32( 0, true ), Math.fround( 3.7 ) );
 
 } );
 

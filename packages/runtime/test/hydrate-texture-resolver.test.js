@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-	findPlanTextureSource,
 	inferTextureTypeFromShader,
 	resolvePlanTextureTypeHint,
 	selectFallbackTextureForBinding,
@@ -13,7 +12,7 @@ import {
 	textureMatchesShaderBinding,
 } from '../src/hydrate/texture-resolver.js';
 
-test( 'texture resolver finds plan sources and paired sampler texture type hints', () => {
+test( 'texture resolver derives paired sampler texture type hints', () => {
 
 	const artifact = {
 		uniformPlan: [
@@ -29,7 +28,6 @@ test( 'texture resolver finds plan sources and paired sampler texture type hints
 	};
 
 	assert.equal( textureBindingNameForSampler( 'nodeTexture0_sampler' ), 'nodeTexture0' );
-	assert.deepEqual( findPlanTextureSource( artifact, 'group', 'nodeTexture0' ), { kind: 'artifact.texture', textureUuid: 'tex' } );
 	assert.equal( resolvePlanTextureTypeHint( artifact, artifact.uniformPlan[ 0 ], artifact.uniformPlan[ 0 ].textures[ 1 ], artifact.uniformPlan[ 0 ].textures[ 1 ].source, 'nodeTexture0_sampler' ), '2d-array' );
 
 } );

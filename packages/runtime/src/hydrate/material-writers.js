@@ -27,6 +27,71 @@ const _rViewport = new Vector4( 0, 0, 1, 1 );
 const _ovp = new Vector3();
 const _odir = new Vector3();
 const _mwi = new Matrix4();
+const _velocityCameraStates = new WeakMap();
+const _velocityObjectStates = new WeakMap();
+
+function frameKey( frame ) {
+
+	const id = frame && Number.isFinite( frame.frameId ) ? frame.frameId : frame && Number.isFinite( frame.renderId ) ? frame.renderId : 0;
+	return id;
+
+}
+
+function getVelocityCameraState( frame ) {
+
+	const camera = frame && frame.camera;
+	if ( ! camera ) return null;
+	const key = frameKey( frame );
+	let state = _velocityCameraStates.get( camera );
+	if ( ! state ) {
+
+		state = {
+			frameId: key,
+			previousProjectionMatrix: new Matrix4().copy( camera.projectionMatrix ),
+			previousCameraViewMatrix: new Matrix4().copy( camera.matrixWorldInverse ),
+			currentProjectionMatrix: new Matrix4().copy( camera.projectionMatrix ),
+			currentCameraViewMatrix: new Matrix4().copy( camera.matrixWorldInverse ),
+		};
+		_velocityCameraStates.set( camera, state );
+
+	} else if ( state.frameId !== key ) {
+
+		state.frameId = key;
+		state.previousProjectionMatrix.copy( state.currentProjectionMatrix );
+		state.previousCameraViewMatrix.copy( state.currentCameraViewMatrix );
+		state.currentProjectionMatrix.copy( camera.projectionMatrix );
+		state.currentCameraViewMatrix.copy( camera.matrixWorldInverse );
+
+	}
+	return state;
+
+}
+
+function getVelocityObjectState( frame ) {
+
+	const object = frame && frame.object;
+	if ( ! object || ! object.matrixWorld ) return null;
+	const key = frameKey( frame );
+	let state = _velocityObjectStates.get( object );
+	if ( ! state ) {
+
+		state = {
+			frameId: key,
+			previousModelWorldMatrix: new Matrix4().copy( object.matrixWorld ),
+			currentModelWorldMatrix: new Matrix4().copy( object.matrixWorld ),
+		};
+		_velocityObjectStates.set( object, state );
+
+	} else if ( state.frameId !== key ) {
+
+		state.frameId = key;
+		state.previousModelWorldMatrix.copy( state.currentModelWorldMatrix );
+		state.currentModelWorldMatrix.copy( object.matrixWorld );
+
+	}
+	return state;
+
+}
 
 export function writeMaterialValue( view, offset, material, source, kind, dtype ) {
 
@@ -74,6 +139,25 @@ export function writeUniformGroup( group, frame, view, material ) {
 		else if ( kind === 'camera.position' ) writeVec3( view, offset, frame.camera && frame.camera.position, source.valueSnapshot );
 		else if ( kind === 'camera.near' ) writeNumber( view, offset, frame.camera && frame.camera.near, source.valueSnapshot );
 		else if ( kind === 'camera.far' ) writeNumber( view, offset, frame.camera && frame.camera.far, source.valueSnapshot );
+		else if ( kind === 'velocity.previousProjectionMatrix' ) {
+
+			const state = getVelocityCameraState( frame );
+			if ( state ) writeMat4( view, offset, state.previousProjectionMatrix, source.valueSnapshot );
+			else writeSnapshot( view, offset, source.valueSnapshot );
+
+		} else if ( kind === 'velocity.previousCameraViewMatrix' ) {
+
+			const state = getVelocityCameraState( frame );
+			if ( state ) writeMat4( view, offset, state.previousCameraViewMatrix, source.valueSnapshot );
+			else writeSnapshot( view, offset, source.valueSnapshot );
+
+		} else if ( kind === 'velocity.previousModelWorldMatrix' ) {
+
+			const state = getVelocityObjectState( frame );
+			if ( state ) writeMat4( view, offset, state.previousModelWorldMatrix, source.valueSnapshot );
+			else writeSnapshot( view, offset, source.valueSnapshot );
+
+		}
 		else if ( kind === 'frame.time' ) writeNumber( view, offset, frame.time, source.valueSnapshot );
 		else if ( kind === 'frame.deltaTime' ) writeNumber( view, offset, frame.deltaTime, source.valueSnapshot );
 		else if ( kind === 'frame.frameId' ) writeUint( view, offset, frame.frameId, source.valueSnapshot );
@@ -112,6 +196,14 @@ export function writeUniformGroup( group, frame, view, material ) {
 		} else if ( kind === 'object3d.direction' ) {
 
 			if ( frame.object ) { frame.object.getWorldDirection( _odir ); writeVec3( view, offset, _odir ); }
+			else writeSnapshot( view, offset, source.valueSnapshot );
+
+		} else if ( kind === 'object3d.nodeUniform' ) {
+
+			const property = source.property;
+			const owner = frame.object || material && material.__tslpPrecompileObject || null;
+			const node = owner && property != null ? owner[ property ] : null;
+			if ( node && node.value !== undefined && node.value !== null ) writeLiveValue( view, offset, node.value, slot.dtype );
 			else writeSnapshot( view, offset, source.valueSnapshot );
 
 		} else if ( kind === 'object3d.userData' ) {
