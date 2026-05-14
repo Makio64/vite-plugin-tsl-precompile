@@ -97,6 +97,7 @@ export { textureMatchesSource, textureMatchesArtifactSource, artifactHasTextureS
 export { getComputeBindGroups, computeNodeUsesStorageTexture, syncComputeStorageOutputs } from './slim-support/compute-sync.js';
 export { createFullRendererFallback } from './slim-support/full-renderer-fallback.js';
 export { createSlimSceneSupport } from './slim-support/scene-support.js';
+export { setSlimRenderFallback, getSlimRenderFallback } from './slim-support/render-fallback-registry.js';
 export * from './writers.js';
 
 // ---- viewport texture class registration --------------------------------

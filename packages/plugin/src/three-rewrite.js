@@ -790,10 +790,15 @@ function buildHelperStub() {
 
 	const guard = parseFunctionBody( `
 		if ( ! material || ! material.isPrecompiledMaterial ) {
+			const __tslpFallback = getSlimRenderFallback();
+			if ( __tslpFallback ) {
+				const __tslpFallbackResult = __tslpFallback( renderObject );
+				if ( __tslpFallbackResult ) return __tslpFallbackResult;
+			}
 			const materialLabel = material ? ( material.type || ( material.constructor && material.constructor.name ) || 'Material' ) : String( material );
 			const object = renderObject && renderObject.object;
 			const objectLabel = object ? ( object.name || object.type || ( object.constructor && object.constructor.name ) || 'Object3D' ) : 'unknown object';
-			const err = new Error( '[tsl-precompile/slim] only PrecompiledMaterial is supported in the slim bundle. Got material=' + materialLabel + ' object=' + objectLabel + '. Did you forget .precompile() on a material?' );
+			const err = new Error( '[tsl-precompile/slim] only PrecompiledMaterial is supported in the slim bundle. Got material=' + materialLabel + ' object=' + objectLabel + '. Either call .precompile() on the material at capture time, or boot a full-renderer fallback via createSlimSceneSupport({ fullRendererFallback: true }) and call await support.ensureFallback() before rendering.' );
 			err.tslPrecompileSlimOnly = true;
 			throw err;
 		}
@@ -927,7 +932,10 @@ function injectHydratorImport( ast ) {
 	);
 	if ( already ) return;
 	const decl = t.importDeclaration(
-		[ t.importSpecifier( t.identifier( 'hydrateNodeBuilderState' ), t.identifier( 'hydrateNodeBuilderState' ) ) ],
+		[
+			t.importSpecifier( t.identifier( 'hydrateNodeBuilderState' ), t.identifier( 'hydrateNodeBuilderState' ) ),
+			t.importSpecifier( t.identifier( 'getSlimRenderFallback' ), t.identifier( 'getSlimRenderFallback' ) ),
+		],
 		t.stringLiteral( RUNTIME_PACKAGE ),
 	);
 	let insertAt = 0;

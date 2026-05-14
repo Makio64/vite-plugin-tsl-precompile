@@ -37,6 +37,7 @@ import { createPMREMSupport } from './pmrem.js';
 import { syncComputeStorageOutputs, computeNodeUsesStorageTexture } from './compute-sync.js';
 import { shareGPUTextureEntry, shareShadowGPUTextureIntoSlim } from './gpu-texture-share.js';
 import { createFullRendererFallback } from './full-renderer-fallback.js';
+import { setSlimRenderFallback } from './render-fallback-registry.js';
 
 const DEFAULT_OPTS = {
 	fullRendererFallback: false,
@@ -188,8 +189,34 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	}
 
+	// Eagerly boot the full renderer and register a sync `getForRender`
+	// fallback so the slim-rewritten Nodes.js can delegate non-precompiled
+	// materials (Inspector helpers, addon meshes, etc.) instead of throwing.
+	// Idempotent — calling twice is a no-op after the first await resolves.
+	let fallbackRegistered = false;
+	async function ensureFallback() {
+
+		if ( ! fallback ) throw new Error( 'createSlimSceneSupport: ensureFallback() requires `fullRendererFallback: true` at construction.' );
+		if ( fallbackRegistered ) return;
+		const fullRenderer = await fallback.getRenderer();
+		if ( ! fullRenderer || ! fullRenderer.nodes || typeof fullRenderer.nodes.getForRender !== 'function' ) {
+
+			throw new Error( 'createSlimSceneSupport: ensureFallback() booted a full renderer that has no `nodes.getForRender` — three.js bundle layout has shifted.' );
+
+		}
+		setSlimRenderFallback( ( renderObject ) => fullRenderer.nodes.getForRender( renderObject ) );
+		fallbackRegistered = true;
+
+	}
+
 	function dispose() {
 
+		if ( fallbackRegistered ) {
+
+			setSlimRenderFallback( null );
+			fallbackRegistered = false;
+
+		}
 		if ( fallback ) fallback.dispose();
 
 	}
@@ -205,6 +232,7 @@ export function createSlimSceneSupport( opts = {} ) {
 		indexScene,
 		rememberLiveTexture,
 		getFullRenderer,
+		ensureFallback,
 		generatePMREMAsync,
 		setPMREMGenerator,
 		syncComputeOutputs,

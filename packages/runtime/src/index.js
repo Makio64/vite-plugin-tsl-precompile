@@ -26,6 +26,7 @@ export { textureMatchesSource, textureMatchesArtifactSource, artifactHasTextureS
 export { getComputeBindGroups, computeNodeUsesStorageTexture, syncComputeStorageOutputs } from './slim-support/compute-sync.js';
 export { createFullRendererFallback } from './slim-support/full-renderer-fallback.js';
 export { createSlimSceneSupport } from './slim-support/scene-support.js';
+export { setSlimRenderFallback, getSlimRenderFallback } from './slim-support/render-fallback-registry.js';
 export { collectLiveBloomNodes, wireBloomNode, wirePrecompiledPostprocess, findPostprocessAux } from './slim-support/postprocess-wire.js';
 export { renderPassWithFullRenderer } from './slim-support/pass-render-fallback.js';
 export { loadInspectorOptional } from './inspector-loader.js';
