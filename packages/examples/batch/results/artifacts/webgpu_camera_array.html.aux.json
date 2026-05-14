@@ -2,6 +2,7 @@
   {
     "shape": "lights",
     "configHash": "734d428ffa4cefcf369ede03ed8170ebf12d3ccb14da1b10b6a1859994528576",
+    "name": "aux-lights-734d428ffa4c",
     "artifact": {
       "uniformPlan": [],
       "vertexShader": "",
@@ -15,6 +16,7 @@
   {
     "shape": "render-output",
     "configHash": "90a5a84186bcbc44efdd95b20bf6492a0c0d34057e53f1b3ebe0bc95b1236c03",
+    "name": "aux-render-output-90a5a84186bc",
     "artifact": {
       "version": 3,
       "cacheKey": 6674497328608901,
@@ -276,7 +278,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "30da23b0-613c-4a02-a7ab-dd296e015e51",
+                "textureUuid": "a44911e5-af02-4be5-bad2-65df7ef54608",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
@@ -296,7 +298,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "30da23b0-613c-4a02-a7ab-dd296e015e51",
+                "textureUuid": "a44911e5-af02-4be5-bad2-65df7ef54608",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
@@ -321,7 +323,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "30da23b0-613c-4a02-a7ab-dd296e015e51",
+                  "textureUuid": "a44911e5-af02-4be5-bad2-65df7ef54608",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,
@@ -352,7 +354,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "30da23b0-613c-4a02-a7ab-dd296e015e51",
+                  "textureUuid": "a44911e5-af02-4be5-bad2-65df7ef54608",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,

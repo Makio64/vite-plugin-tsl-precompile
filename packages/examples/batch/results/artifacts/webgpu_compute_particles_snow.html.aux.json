@@ -2,6 +2,7 @@
   {
     "shape": "background",
     "configHash": "ac118e805b8190abbb3b78d63b376bf287af101460406160028a38cf485b651e",
+    "name": "aux-background-ac118e805b81",
     "artifact": {
       "version": 3,
       "cacheKey": 7638892183425330,
@@ -404,6 +405,7 @@
   {
     "shape": "post-process",
     "configHash": "85a34f38f9dc7f7e89dddfbc29c67e90fb8416c9cd3bc654db752628b41b4e71",
+    "name": "aux-post-process-85a34f38f9dc",
     "artifact": {
       "version": 3,
       "cacheKey": 2458319930049458,
@@ -1276,6 +1278,7 @@
   {
     "shape": "lights",
     "configHash": "e0b065a4fd6bd65a3f2eb536e2d72929fea3e32c22212d30a397f8d8076c3c3d",
+    "name": "aux-lights-e0b065a4fd6b",
     "artifact": {
       "uniformPlan": [],
       "vertexShader": "",
@@ -1289,6 +1292,7 @@
   {
     "shape": "render-output",
     "configHash": "03944659592153cd65d18f02961db44be60e8485d3c17a072a0d4c235cf4cf53",
+    "name": "aux-render-output-039446595921",
     "artifact": {
       "version": 3,
       "cacheKey": 8083302205846057,

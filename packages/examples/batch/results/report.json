@@ -7,7 +7,7 @@
     {
       "name": "webgpu_animation_retargeting.html",
       "status": "pass",
-      "baseBrightFrac": 0.9902,
+      "baseBrightFrac": 0.9901,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -47,7 +47,7 @@
     {
       "name": "webgpu_camera.html",
       "status": "pass",
-      "baseBrightFrac": 0.5645,
+      "baseBrightFrac": 0.5562,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -71,7 +71,7 @@
     {
       "name": "webgpu_caustics.html",
       "status": "pass",
-      "baseBrightFrac": 0.8498,
+      "baseBrightFrac": 0.8499,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -87,7 +87,7 @@
     {
       "name": "webgpu_clearcoat.html",
       "status": "pass",
-      "baseBrightFrac": 0.9891,
+      "baseBrightFrac": 0.9661,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -95,7 +95,7 @@
     {
       "name": "webgpu_clipping.html",
       "status": "pass",
-      "baseBrightFrac": 0.566,
+      "baseBrightFrac": 0.5408,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -103,7 +103,7 @@
     {
       "name": "webgpu_compute_audio.html",
       "status": "pass",
-      "baseBrightFrac": 0.2032,
+      "baseBrightFrac": 0.1675,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -111,7 +111,7 @@
     {
       "name": "webgpu_compute_birds.html",
       "status": "pass",
-      "baseBrightFrac": 0.9717,
+      "baseBrightFrac": 0.9699,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -151,7 +151,7 @@
     {
       "name": "webgpu_compute_particles_rain.html",
       "status": "pass",
-      "baseBrightFrac": 0.3844,
+      "baseBrightFrac": 0.3793,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -159,7 +159,7 @@
     {
       "name": "webgpu_compute_particles_snow.html",
       "status": "pass",
-      "baseBrightFrac": 0.3524,
+      "baseBrightFrac": 0.3565,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -167,7 +167,7 @@
     {
       "name": "webgpu_compute_points.html",
       "status": "pass",
-      "baseBrightFrac": 0.1327,
+      "baseBrightFrac": 0.1326,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -183,7 +183,7 @@
     {
       "name": "webgpu_compute_sort_bitonic.html",
       "status": "pass",
-      "baseBrightFrac": 0.9926,
+      "baseBrightFrac": 0.9923,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -207,7 +207,7 @@
     {
       "name": "webgpu_compute_texture_pingpong.html",
       "status": "pass",
-      "baseBrightFrac": 0.1531,
+      "baseBrightFrac": 0.1507,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -231,7 +231,7 @@
     {
       "name": "webgpu_cubemap_dynamic.html",
       "status": "pass",
-      "baseBrightFrac": 0.9916,
+      "baseBrightFrac": 0.9915,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -239,7 +239,7 @@
     {
       "name": "webgpu_cubemap_mix.html",
       "status": "pass",
-      "baseBrightFrac": 0.4065,
+      "baseBrightFrac": 0.4095,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -279,7 +279,7 @@
     {
       "name": "webgpu_display_stereo.html",
       "status": "pass",
-      "baseBrightFrac": 0.9906,
+      "baseBrightFrac": 0.9947,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -287,7 +287,7 @@
     {
       "name": "webgpu_equirectangular.html",
       "status": "pass",
-      "baseBrightFrac": 0.9956,
+      "baseBrightFrac": 0.9958,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -311,7 +311,7 @@
     {
       "name": "webgpu_instance_mesh.html",
       "status": "pass",
-      "baseBrightFrac": 0.4653,
+      "baseBrightFrac": 0.4744,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -327,7 +327,7 @@
     {
       "name": "webgpu_instance_points.html",
       "status": "pass",
-      "baseBrightFrac": 0.3277,
+      "baseBrightFrac": 0.3276,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -335,7 +335,7 @@
     {
       "name": "webgpu_instance_sprites.html",
       "status": "pass",
-      "baseBrightFrac": 0.1767,
+      "baseBrightFrac": 0.1733,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -343,7 +343,7 @@
     {
       "name": "webgpu_instance_uniform.html",
       "status": "pass",
-      "baseBrightFrac": 0.1923,
+      "baseBrightFrac": 0.1887,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -367,7 +367,7 @@
     {
       "name": "webgpu_lensflares.html",
       "status": "pass",
-      "baseBrightFrac": 0.8171,
+      "baseBrightFrac": 0.8281,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -391,7 +391,7 @@
     {
       "name": "webgpu_lights_custom.html",
       "status": "pass",
-      "baseBrightFrac": 0.4327,
+      "baseBrightFrac": 0.4661,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -407,7 +407,7 @@
     {
       "name": "webgpu_lights_ies_spotlight.html",
       "status": "pass",
-      "baseBrightFrac": 0.5193,
+      "baseBrightFrac": 0.5198,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -423,7 +423,7 @@
     {
       "name": "webgpu_lights_physical.html",
       "status": "pass",
-      "baseBrightFrac": 0.8018,
+      "baseBrightFrac": 0.8037,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -447,7 +447,7 @@
     {
       "name": "webgpu_lights_rectarealight.html",
       "status": "pass",
-      "baseBrightFrac": 0.4699,
+      "baseBrightFrac": 0.4697,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -471,7 +471,7 @@
     {
       "name": "webgpu_lights_tiled.html",
       "status": "pass",
-      "baseBrightFrac": 0.9772,
+      "baseBrightFrac": 0.9856,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -575,7 +575,7 @@
     {
       "name": "webgpu_materials.html",
       "status": "pass",
-      "baseBrightFrac": 0.2537,
+      "baseBrightFrac": 0.2813,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -599,7 +599,7 @@
     {
       "name": "webgpu_materials_basic.html",
       "status": "pass",
-      "baseBrightFrac": 0.9953,
+      "baseBrightFrac": 0.9954,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -703,7 +703,7 @@
     {
       "name": "webgpu_materialx_noise.html",
       "status": "pass",
-      "baseBrightFrac": 0.9588,
+      "baseBrightFrac": 0.9557,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -799,7 +799,7 @@
     {
       "name": "webgpu_multisampled_renderbuffers.html",
       "status": "pass",
-      "baseBrightFrac": 0.9998,
+      "baseBrightFrac": 1,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -815,7 +815,7 @@
     {
       "name": "webgpu_ocean.html",
       "status": "pass",
-      "baseBrightFrac": 0.7121,
+      "baseBrightFrac": 0.7119,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -847,7 +847,7 @@
     {
       "name": "webgpu_performance_renderbundle.html",
       "status": "pass",
-      "baseBrightFrac": 0.9997,
+      "baseBrightFrac": 0.9998,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -887,7 +887,7 @@
     {
       "name": "webgpu_portal.html",
       "status": "pass",
-      "baseBrightFrac": 0.9929,
+      "baseBrightFrac": 0.9928,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -895,7 +895,7 @@
     {
       "name": "webgpu_postprocessing.html",
       "status": "pass",
-      "baseBrightFrac": 0.1883,
+      "baseBrightFrac": 0.1556,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -913,7 +913,7 @@
     {
       "name": "webgpu_postprocessing_afterimage.html",
       "status": "pass",
-      "baseBrightFrac": 0.2698,
+      "baseBrightFrac": 0.2668,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -937,7 +937,7 @@
     {
       "name": "webgpu_postprocessing_bloom.html",
       "status": "pass",
-      "baseBrightFrac": 0.7778,
+      "baseBrightFrac": 0.7777,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -953,7 +953,7 @@
     {
       "name": "webgpu_postprocessing_bloom_selective.html",
       "status": "pass",
-      "baseBrightFrac": 0.5833,
+      "baseBrightFrac": 0.6014,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -961,7 +961,7 @@
     {
       "name": "webgpu_postprocessing_ca.html",
       "status": "pass",
-      "baseBrightFrac": 0.5703,
+      "baseBrightFrac": 0.5708,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -977,7 +977,7 @@
     {
       "name": "webgpu_postprocessing_dof.html",
       "status": "pass",
-      "baseBrightFrac": 0.6716,
+      "baseBrightFrac": 0.6873,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1017,7 +1017,7 @@
     {
       "name": "webgpu_postprocessing_masking.html",
       "status": "pass",
-      "baseBrightFrac": 0.9923,
+      "baseBrightFrac": 0.9925,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1033,7 +1033,7 @@
     {
       "name": "webgpu_postprocessing_outline.html",
       "status": "pass",
-      "baseBrightFrac": 0.7339,
+      "baseBrightFrac": 0.7729,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1049,7 +1049,7 @@
     {
       "name": "webgpu_postprocessing_radial_blur.html",
       "status": "pass",
-      "baseBrightFrac": 0.7338,
+      "baseBrightFrac": 0.8471,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1081,7 +1081,7 @@
     {
       "name": "webgpu_postprocessing_ssaa.html",
       "status": "pass",
-      "baseBrightFrac": 0.4251,
+      "baseBrightFrac": 0.3993,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1089,7 +1089,7 @@
     {
       "name": "webgpu_postprocessing_ssgi.html",
       "status": "pass",
-      "baseBrightFrac": 0.9909,
+      "baseBrightFrac": 0.9894,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1097,7 +1097,7 @@
     {
       "name": "webgpu_postprocessing_ssgi_ballpool.html",
       "status": "pass",
-      "baseBrightFrac": 0.7765,
+      "baseBrightFrac": 0.7224,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1121,7 +1121,7 @@
     {
       "name": "webgpu_postprocessing_traa.html",
       "status": "pass",
-      "baseBrightFrac": 0.1557,
+      "baseBrightFrac": 0.1556,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1129,7 +1129,7 @@
     {
       "name": "webgpu_postprocessing_transition.html",
       "status": "pass",
-      "baseBrightFrac": 0.7545,
+      "baseBrightFrac": 0.6061,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1145,7 +1145,7 @@
     {
       "name": "webgpu_reflection.html",
       "status": "pass",
-      "baseBrightFrac": 0.9665,
+      "baseBrightFrac": 0.9658,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1153,7 +1153,7 @@
     {
       "name": "webgpu_reflection_blurred.html",
       "status": "pass",
-      "baseBrightFrac": 0.9012,
+      "baseBrightFrac": 0.8977,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1233,7 +1233,7 @@
     {
       "name": "webgpu_shadowmap_array.html",
       "status": "pass",
-      "baseBrightFrac": 0.9981,
+      "baseBrightFrac": 0.998,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1265,7 +1265,7 @@
     {
       "name": "webgpu_shadowmap_progressive.html",
       "status": "pass",
-      "baseBrightFrac": 0.8414,
+      "baseBrightFrac": 0.5753,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1289,7 +1289,7 @@
     {
       "name": "webgpu_skinning_instancing.html",
       "status": "pass",
-      "baseBrightFrac": 0.3044,
+      "baseBrightFrac": 0.3029,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1313,7 +1313,7 @@
     {
       "name": "webgpu_sprites.html",
       "status": "pass",
-      "baseBrightFrac": 0.2246,
+      "baseBrightFrac": 0.2427,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1329,7 +1329,7 @@
     {
       "name": "webgpu_struct_drawindirect.html",
       "status": "pass",
-      "baseBrightFrac": 0.9964,
+      "baseBrightFrac": 0.9979,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1337,7 +1337,7 @@
     {
       "name": "webgpu_test_memory.html",
       "status": "pass",
-      "baseBrightFrac": 0.9705,
+      "baseBrightFrac": 0.9708,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1369,7 +1369,7 @@
     {
       "name": "webgpu_textures_anisotropy.html",
       "status": "pass",
-      "baseBrightFrac": 0.9897,
+      "baseBrightFrac": 0.9931,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1393,7 +1393,7 @@
     {
       "name": "webgpu_tsl_compute_attractors_particles.html",
       "status": "pass",
-      "baseBrightFrac": 0.5804,
+      "baseBrightFrac": 0.5811,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1441,7 +1441,7 @@
     {
       "name": "webgpu_tsl_interoperability.html",
       "status": "pass",
-      "baseBrightFrac": 0.5259,
+      "baseBrightFrac": 0.5258,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1457,7 +1457,7 @@
     {
       "name": "webgpu_tsl_raging_sea.html",
       "status": "pass",
-      "baseBrightFrac": 0.6473,
+      "baseBrightFrac": 0.6465,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1489,7 +1489,7 @@
     {
       "name": "webgpu_tsl_vfx_tornado.html",
       "status": "pass",
-      "baseBrightFrac": 0.8782,
+      "baseBrightFrac": 0.8777,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1521,7 +1521,7 @@
     {
       "name": "webgpu_video_frame.html",
       "status": "pass",
-      "baseBrightFrac": 0.0179,
+      "baseBrightFrac": 0.0152,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1537,7 +1537,7 @@
     {
       "name": "webgpu_volume_caustics.html",
       "status": "pass",
-      "baseBrightFrac": 0.9542,
+      "baseBrightFrac": 0.952,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1553,7 +1553,7 @@
     {
       "name": "webgpu_volume_lighting.html",
       "status": "pass",
-      "baseBrightFrac": 1,
+      "baseBrightFrac": 0.9999,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1569,7 +1569,7 @@
     {
       "name": "webgpu_volume_lighting_traa.html",
       "status": "pass",
-      "baseBrightFrac": 0.9999,
+      "baseBrightFrac": 0.9998,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null
@@ -1585,7 +1585,7 @@
     {
       "name": "webgpu_water.html",
       "status": "pass",
-      "baseBrightFrac": 0.7523,
+      "baseBrightFrac": 0.7531,
       "gpuValidationCount": 0,
       "preErrors": [],
       "error": null

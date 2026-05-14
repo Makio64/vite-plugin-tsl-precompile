@@ -2,6 +2,7 @@
   {
     "shape": "background",
     "configHash": "0f3f030bff13d0ba8e091eaa5c93ce0a35192e31fdb549d4562e96400957daf9",
+    "name": "aux-background-0f3f030bff13",
     "artifact": {
       "version": 3,
       "cacheKey": 7338086866370222,
@@ -704,6 +705,7 @@
   {
     "shape": "pmrem-cubemap",
     "configHash": "3f87fb031f53b280712a3e75afa32dfbebc21f1d23855b20b9fac3ab5f13d8ac",
+    "name": "aux-pmrem-cubemap-3f87fb031f53",
     "artifact": {
       "version": 3,
       "cacheKey": 4052707896805153,
@@ -1203,6 +1205,7 @@
   {
     "shape": "pmrem-equirect",
     "configHash": "3f87fb031f53b280712a3e75afa32dfbebc21f1d23855b20b9fac3ab5f13d8ac",
+    "name": "aux-pmrem-equirect-3f87fb031f53",
     "artifact": {
       "version": 3,
       "cacheKey": 11568621289637062,
@@ -1639,6 +1642,7 @@
   {
     "shape": "pmrem-blur",
     "configHash": "3f87fb031f53b280712a3e75afa32dfbebc21f1d23855b20b9fac3ab5f13d8ac",
+    "name": "aux-pmrem-blur-3f87fb031f53",
     "artifact": {
       "version": 3,
       "cacheKey": 11015761353262500,
@@ -2312,6 +2316,7 @@
   {
     "shape": "pmrem-ggx",
     "configHash": "3f87fb031f53b280712a3e75afa32dfbebc21f1d23855b20b9fac3ab5f13d8ac",
+    "name": "aux-pmrem-ggx-3f87fb031f53",
     "artifact": {
       "version": 3,
       "cacheKey": 3801108037749889,
@@ -2800,6 +2805,7 @@
   {
     "shape": "render-output",
     "configHash": "90a5a84186bcbc44efdd95b20bf6492a0c0d34057e53f1b3ebe0bc95b1236c03",
+    "name": "aux-render-output-90a5a84186bc",
     "artifact": {
       "version": 3,
       "cacheKey": 11519813694183332,
