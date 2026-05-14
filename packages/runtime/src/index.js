@@ -20,7 +20,7 @@ export { hydrateNodeBuilderState, registerLiveTexture, clearLiveTextureIndex } f
 export { getTextureResolutionDebugHook, setTextureResolutionDebugHook } from './hydrate/artifact-texture-resolver.js';
 export { getDFGLUT } from './dfg-lut.js';
 export { createLiveSceneIndex, collectMaterialNodeTextures, textureImageReady, textureImageSrc, healTextureImage } from './slim-support/live-scene-index.js';
-export { PMREM_CUBE_UV_MAPPING, isPMREMTexture, isPMREMArtifactTextureSource, artifactNeedsPMREM, artifactPMREMSourceUuids, attachPMREMRefsByOrder, selectPMREMTexturesForArtifact, createPMREMSupport } from './slim-support/pmrem.js';
+export { PMREM_CUBE_UV_MAPPING, isCubeTextureSource, isEnvironmentTextureSource, isPMREMTexture, isPMREMArtifactTextureSource, artifactNeedsPMREM, artifactPMREMSourceUuids, attachPMREMRefsByOrder, collectPMREMSourceTexturesInNode, collectPMREMSourceTexturesFromMaterial, selectPMREMTexturesForArtifact, createPMREMSupport } from './slim-support/pmrem.js';
 export { clearTextureViewCache, markTextureInitialized, shareGPUTextureEntry, sharePMREMGPUTexture, shareShadowGPUTextureIntoSlim } from './slim-support/gpu-texture-share.js';
 export { textureMatchesSource, textureMatchesArtifactSource, artifactHasTextureSource, countArtifactTextureSources, singleArtifactTextureUuid, attachTextureRefsWhere, attachArtifactTextureRefsWhere } from './slim-support/artifact-texture-wiring.js';
 export { getComputeBindGroups, computeNodeUsesStorageTexture, syncComputeStorageOutputs, syncComputeStorageOutputsPerPass, pingPongInvalidate, shareInstancedAttributeBufferIntoSlim } from './slim-support/compute-sync.js';
