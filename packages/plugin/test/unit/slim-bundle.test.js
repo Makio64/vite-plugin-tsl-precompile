@@ -46,7 +46,11 @@ const BUNDLE = resolve( HERE, '../../../runtime/build/three.webgpu.slim.js' );
 // scene-support) added ~1.8 KB gzip. The new module replaces ~600 lines of
 // harness-only bloom replay code with a generic, registry-driven adopter
 // API. Fresh build settled at ~253.8 KB.
-const GATE_KB = 255;
+// Bumped from 255 → 257 for Wave 5: B2 storage-attribute walker
+// (collectStorageAttributesInOrder + findNthStorageMatchingShape +
+// the version-bump invalidation in bindUserNodeAttributesToArtifact)
+// and B3 'auto' fallback default added ~0.3 KB. Fresh build at 255.1 KB.
+const GATE_KB = 257;
 
 const bundleExists = existsSync( BUNDLE );
 

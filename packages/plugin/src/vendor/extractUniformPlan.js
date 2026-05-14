@@ -135,6 +135,18 @@ function resolveFromUpdateNode( node ) {
 		const known = classifyByIdentity( node );
 		if ( known ) return { uniformNode: node, source: known };
 
+		// Wave 5+ — pattern-detect time-derived `onFrameUpdate(frame => frame.time)`
+		// style callbacks. `UniformNode.onUpdate` wraps the user callback and
+		// auto-assigns its return value to `node.value`, so invoking
+		// `node.update(stubFrame)` with a known `frame.time` value tells us
+		// whether the slot is a pure time passthrough. Lift those to the
+		// `frame.time` / `frame.deltaTime` codegen kinds so the AOT updater
+		// honours `__tslpPinnedClock` at replay (instead of freezing the
+		// captured snapshot value). Lifts custom_fog + animation-drift cluster
+		// without needing a runtime-side callback ledger.
+		const detected = classifyByCallback( node );
+		if ( detected ) return { uniformNode: node, source: detected };
+
 		return { uniformNode: node, source: classifyByName( node.name ) };
 
 	}
@@ -192,6 +204,78 @@ function classifyByIdentity( node ) {
 	// through to `uniform.live` and freezes at extraction-time — animated
 	// exposure ramps never propagate on replay.
 	if ( node === toneMappingExposure ) return { kind: 'renderer.toneMappingExposure' };
+	return null;
+
+}
+
+/**
+ * Wave 5+ — detect `uniform(...).onFrameUpdate( ( frame ) => frame.time )` style
+ * callbacks by INVOKING the registered update function with two stub frames
+ * and checking whether `node.value` tracks `frame.time` (or `frame.deltaTime`).
+ *
+ * Why this works: `UniformNode.onUpdate` overrides `Node.onUpdate` to wrap the
+ * user callback so any return value is auto-assigned to `this.value`. So
+ * after `node.update({ time: 7, ... })`, if `node.value === 7`, the slot is a
+ * pure `frame.time` passthrough — lift it to the `frame.time` kind so the
+ * AOT updater + `__tslpPinnedClock` infrastructure pick it up.
+ *
+ * Detects exact identity (return value === input time). Doesn't try to
+ * recognise scaled / sin / cos / mod transforms — those stay as
+ * `uniform.live` and would need a runtime-side callback ledger to update,
+ * which is a separate workstream.
+ *
+ * Side effects: invokes `node.update(...)` twice during extraction, which can
+ * mutate `node.value`. We save/restore the original value, so the final
+ * captured snapshot is unchanged.
+ *
+ * @param {Object} node - a UniformNode with `.update` and `.updateType` set.
+ * @returns {?{ kind: string }}
+ */
+function classifyByCallback( node ) {
+
+	if ( typeof node.update !== 'function' ) return null;
+	if ( node.updateType !== 'frame' && node.updateType !== 'render' ) return null;
+
+	const originalValue = node.value;
+	try {
+
+		const frameA = { time: 1.0, deltaTime: 0.016, frameId: 1 };
+		const frameB = { time: 2.0, deltaTime: 0.016, frameId: 2 };
+
+		node.update( frameA );
+		const valueA = node.value;
+		node.update( frameB );
+		const valueB = node.value;
+
+		// Restore the captured snapshot value so we don't leak stub data
+		// into the artifact's `valueSnapshot`.
+		node.value = originalValue;
+
+		if ( typeof valueA === 'number' && typeof valueB === 'number' ) {
+
+			// Exact `frame.time` passthrough.
+			if ( valueA === frameA.time && valueB === frameB.time ) {
+
+				return { kind: 'frame.time' };
+
+			}
+			// Exact `frame.deltaTime` passthrough (rare, but seen in some examples).
+			if ( valueA === frameA.deltaTime && valueB === frameB.deltaTime ) {
+
+				return { kind: 'frame.deltaTime' };
+
+			}
+
+		}
+
+	} catch ( _ ) {
+
+		// Restore value on any callback throw. The user callback might
+		// access frame properties we didn't stub or do unexpected things;
+		// we don't want a thrown callback to break extraction.
+		try { node.value = originalValue; } catch ( __ ) {}
+
+	}
 	return null;
 
 }
