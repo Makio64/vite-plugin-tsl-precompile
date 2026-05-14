@@ -68,6 +68,12 @@
       "types": "./types/slim-support/scene-support.d.ts",
       "default": "./src/slim-support/scene-support.js"
     },
+    "./slim-support/postprocess-wire": {
+      "default": "./src/slim-support/postprocess-wire.js"
+    },
+    "./slim-support/pass-render-fallback": {
+      "default": "./src/slim-support/pass-render-fallback.js"
+    },
     "./slim": "./build/three.webgpu.slim.js",
     "./slim-stubs": "./src/slim-stubs.js"
   },
