@@ -91,7 +91,7 @@ test( 'wireBloomNode stamps __tslpAuxShape on each constructed sub-material', ()
 
 } );
 
-test( 'wireBloomNode reports missed shapes when sub-materials not yet constructed', () => {
+test( 'wireBloomNode reports a generic miss when sub-materials not yet constructed', () => {
 
 	__resetAuxRegistryForTests();
 	registerBloomAuxArtifacts();
@@ -99,10 +99,11 @@ test( 'wireBloomNode reports missed shapes when sub-materials not yet constructe
 	const result = wireBloomNode( bloom );
 
 	assert.equal( result.wired.length, 0 );
-	// 1 high-pass + 1 'separable blur materials array missing' + 1 composite.
-	assert.ok( result.missed.length >= 3 );
-	assert.ok( result.missed.some( ( m ) => m.shape === 'bloom-high-pass' ) );
-	assert.ok( result.missed.some( ( m ) => m.shape === 'bloom-composite' ) );
+	// Registry-driven wiring reports a single shape-level miss for the
+	// effect when its handler returns no sub-passes (lazy construction).
+	assert.equal( result.missed.length, 1 );
+	assert.equal( result.missed[ 0 ].shape, 'bloom:*' );
+	assert.match( result.missed[ 0 ].reason, /materials not constructed yet/ );
 
 } );
 
@@ -125,7 +126,7 @@ test( 'wirePrecompiledPostprocess accepts a postProcessing object with outputNod
 	const postProcessing = { outputNode: { colorNode: bloom } };
 
 	const result = wirePrecompiledPostprocess( { postProcessing } );
-	assert.equal( result.bloomNodes, 1 );
+	assert.equal( result.effects, 1 );
 	assert.equal( result.wired.length, 7 );
 	assert.equal( bloom._compositeMaterial.__tslpAuxShape, 'bloom-composite' );
 
@@ -134,7 +135,7 @@ test( 'wirePrecompiledPostprocess accepts a postProcessing object with outputNod
 test( 'wirePrecompiledPostprocess returns a no-outputNode miss when called empty', () => {
 
 	const result = wirePrecompiledPostprocess( {} );
-	assert.equal( result.bloomNodes, 0 );
+	assert.equal( result.effects, 0 );
 	assert.equal( result.missed.length, 1 );
 	assert.equal( result.missed[ 0 ].reason, 'no outputNode passed' );
 
@@ -149,7 +150,7 @@ test( 'wirePrecompiledPostprocess is idempotent', () => {
 
 	const first = wirePrecompiledPostprocess( { postProcessing } );
 	const second = wirePrecompiledPostprocess( { postProcessing } );
-	assert.equal( first.bloomNodes, second.bloomNodes );
+	assert.equal( first.effects, second.effects );
 	assert.equal( first.wired.length, second.wired.length );
 	// Stamping a node a second time does not corrupt the stamp.
 	assert.equal( bloom._compositeMaterial.__tslpAuxShape, 'bloom-composite' );

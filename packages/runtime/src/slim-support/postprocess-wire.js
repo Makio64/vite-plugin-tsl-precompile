@@ -2,172 +2,123 @@
  * @module SlimSupport/PostprocessWire
  *
  * Productized seam for wiring live post-processing node graphs
- * (`PostProcessing`, `bloom()`, `outline()`, `gtao()`, etc.) back to their
- * precompiled aux artifacts at slim-replay time.
+ * (`PostProcessing`, `bloom()`, `outline()`, `ssr()`, `dof()`, `traa()`,
+ * ...) back to their precompiled aux artifacts at slim-replay time.
  *
- * Why this exists: the slim three.js bundle has the node-builder stripped, so
- * code that constructs TSL postprocess helpers like `bloom(scenePass)` at
- * runtime cannot compile their internal materials. We capture those internal
- * materials as aux artifacts during dev (see `aux-marker.js` —
- * `bloom-high-pass`, `bloom-blur-N`, `bloom-composite`). At replay time this
- * module discovers the same live nodes and stamps each internal material with
- * `__tslpAuxShape` / `__tslpAuxConfigHash` so the slim runtime can resolve them
- * through `aux-loader.loadAux(shape, configHash)`.
+ * Why this exists: the slim three.js bundle has the node-builder stripped,
+ * so code that constructs TSL postprocess helpers like `bloom(scenePass)`
+ * at runtime cannot compile their internal materials. We capture those
+ * internal materials as aux artifacts during dev (see `aux-marker.js`
+ * `captureRegisteredEffectArtifactsLive`). At replay time this module
+ * discovers the same live nodes via the shared registry in
+ * `postprocess-effects.js` and stamps each internal material with
+ * `__tslpAuxShape` / `__tslpAuxConfigHash` so the slim runtime can resolve
+ * them through `aux-loader.loadAux(shape, configHash)`.
  *
- * Today this implements the bloom shape (most-requested per BACKLOG). The
- * same pattern generalises to `outline`, `gtao`, `ssr`, etc. — call
- * `wireBloomNodes` from `wirePrecompiledPostprocess` and add sibling discovery
- * helpers when each follow-up shape is unblocked.
+ * Adding a new effect: register a handler in `postprocess-effects.js`. The
+ * capture path AND the replay path pick it up automatically — no edits
+ * needed here.
  */
 
 import { bindAuxConfig, listAux, findAux } from '../aux-loader.js';
-
-const MAX_TRAVERSAL_DEPTH = 32;
+import { collectEffectNodes, getEffectHandlers } from './postprocess-effects.js';
 
 /**
- * Discover bloom effect nodes inside a post-processing graph.
+ * Discover every registered effect node in `outputNode` and wire each
+ * one's internal materials to their precompiled aux artifacts.
  *
- * Mirrors the discovery in `aux-marker.js::collectBloomEffectNodes` so capture
- * and replay agree on what counts as a "bloom effect node" — duck-typed by the
- * pair of `_renderTargetsHorizontal` + `_renderTargetsVertical` arrays and a
- * `_renderTargetBright` render target.
+ * Idempotent: re-wiring a node whose internal materials are already
+ * stamped is a no-op. Safe to call from a resize handler or per-frame
+ * rescan loop.
  *
- * @param {Object|Function} root - typically `postProcessing.outputNode`.
- * @return {Array<Object>} live bloom effect nodes (deduplicated, traversal order)
+ * Materials that don't exist yet at call time (effects can construct
+ * their internal materials lazily during the first `updateBefore`) are
+ * reported in `missed` rather than thrown. Callers can rescan later.
+ *
+ * @param {{ postProcessing?: Object, outputNode?: Object|Function }} args
+ * @return {{ effects: number, wired: Array, missed: Array }}
  */
-export function collectLiveBloomNodes( root ) {
+export function wirePrecompiledPostprocess( args = {} ) {
 
-	const out = [];
-	const seen = new Set();
-	walkBloomCandidates( root, out, seen, 0 );
-	return out;
+	const root = ( args.postProcessing && args.postProcessing.outputNode ) || args.outputNode || null;
+	if ( ! root ) return { effects: 0, wired: [], missed: [ { shape: '*', reason: 'no outputNode passed' } ] };
 
-}
+	const matches = collectEffectNodes( root );
+	const allWired = [];
+	const allMissed = [];
+	const indexByHandler = new Map();
 
-function walkBloomCandidates( node, out, seen, depth ) {
+	for ( const { handler, node } of matches ) {
 
-	if ( ! node || ( typeof node !== 'object' && typeof node !== 'function' ) ) return;
-	if ( depth > MAX_TRAVERSAL_DEPTH || seen.has( node ) ) return;
-	seen.add( node );
+		const effectIndex = indexByHandler.get( handler.name ) || 0;
+		indexByHandler.set( handler.name, effectIndex + 1 );
 
-	if ( isLiveBloomNode( node ) ) {
-
-		if ( ! out.includes( node ) ) out.push( node );
-		return;
-
-	}
-
-	let keys;
-	try { keys = Object.getOwnPropertyNames( node ); } catch ( _ ) { return; }
-	const skip = SKIP_KEYS;
-	for ( const key of keys ) {
-
-		if ( skip.has( key ) ) continue;
-		let child;
-		try { child = node[ key ]; } catch ( _ ) { continue; }
-		if ( ! child ) continue;
-		if ( Array.isArray( child ) ) {
-
-			for ( const item of child ) walkBloomCandidates( item, out, seen, depth + 1 );
-
-		} else {
-
-			walkBloomCandidates( child, out, seen, depth + 1 );
-
-		}
+		const { wired, missed } = wireRegisteredEffectNode( handler, node, effectIndex );
+		allWired.push( ...wired );
+		allMissed.push( ...missed );
 
 	}
 
-}
-
-const SKIP_KEYS = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'geometry', 'material', 'domElement' ] );
-
-function isLiveBloomNode( node ) {
-
-	return !! ( node
-		&& typeof node.updateBefore === 'function'
-		&& node._renderTargetBright
-		&& Array.isArray( node._renderTargetsHorizontal )
-		&& Array.isArray( node._renderTargetsVertical ) );
+	return { effects: matches.length, wired: allWired, missed: allMissed };
 
 }
 
 /**
- * Wire one bloom node's internal materials to their precompiled aux artifacts.
+ * Wire one effect node's internal materials to their precompiled aux
+ * artifacts. Used internally by `wirePrecompiledPostprocess`; exported
+ * for adopters who manage their own walk.
  *
- * For each of `_highPassFilterMaterial`, `_separableBlurMaterials[i]`, and
- * `_compositeMaterial`, look up the matching aux entry by name (the dev-time
- * default is `aux-bloom-<sub>-<hash12>`; the capture also stamps a shape +
- * config), then stamp `__tslpAuxShape` / `__tslpAuxConfigHash` on the material
- * via `bindAuxConfig`. The slim render path uses those properties to resolve
- * the captured WGSL through `aux-loader.loadAux`.
- *
- * Materials that don't exist yet at call time are reported as `missed` rather
- * than thrown; bloom subnodes can construct their internal materials lazily
- * (e.g. during the first `updateBefore`). Callers can `rescan()` later.
- *
- * @param {Object} bloomNode - a node returned by `collectLiveBloomNodes`.
- * @param {{ bloomIndex?: number }} [opts]
- * @return {{ wired: Array<{ shape: string, name?: string, configHash: string }>, missed: Array<{ shape: string, reason: string }> }}
+ * @param {Object} handler - handler from `getEffectHandlers()`
+ * @param {Object} node - live runtime effect node
+ * @param {number} effectIndex - 0-based index among same-handler matches
+ * @return {{ wired: Array<{shape: string, name?: string, configHash: string}>, missed: Array<{shape: string, reason: string}> }}
  */
-export function wireBloomNode( bloomNode, opts = {} ) {
+export function wireRegisteredEffectNode( handler, node, effectIndex = 0 ) {
 
-	const bloomIndex = typeof opts.bloomIndex === 'number' ? opts.bloomIndex : 0;
 	const wired = [];
 	const missed = [];
 
-	const attempts = [];
-	if ( bloomNode._highPassFilterMaterial ) {
+	if ( ! handler || typeof handler.subPasses !== 'function' || ! node ) {
 
-		attempts.push( { material: bloomNode._highPassFilterMaterial, shape: 'bloom-high-pass' } );
-
-	} else {
-
-		missed.push( { shape: 'bloom-high-pass', reason: 'material not constructed yet' } );
-
-	}
-	if ( Array.isArray( bloomNode._separableBlurMaterials ) ) {
-
-		for ( let i = 0; i < bloomNode._separableBlurMaterials.length; i ++ ) {
-
-			const material = bloomNode._separableBlurMaterials[ i ];
-			if ( material ) attempts.push( { material, shape: `bloom-blur-${ i }`, blurIndex: i } );
-			else missed.push( { shape: `bloom-blur-${ i }`, reason: 'material not constructed yet' } );
-
-		}
-
-	} else {
-
-		missed.push( { shape: 'bloom-blur', reason: 'separable blur materials array missing' } );
-
-	}
-	if ( bloomNode._compositeMaterial ) {
-
-		attempts.push( { material: bloomNode._compositeMaterial, shape: 'bloom-composite' } );
-
-	} else {
-
-		missed.push( { shape: 'bloom-composite', reason: 'material not constructed yet' } );
+		missed.push( { shape: '*', reason: 'invalid handler or node' } );
+		return { wired, missed };
 
 	}
 
-	for ( const attempt of attempts ) {
+	let subPasses = [];
+	try { subPasses = handler.subPasses( node, effectIndex ); } catch ( err ) {
 
-		const entry = pickAuxForShape( attempt.shape, bloomIndex );
+		missed.push( { shape: handler.name + ':*', reason: ( err && err.message ) || String( err ) } );
+		return { wired, missed };
+
+	}
+
+	if ( ! Array.isArray( subPasses ) || subPasses.length === 0 ) {
+
+		missed.push( { shape: handler.name + ':*', reason: 'handler returned no sub-passes (materials not constructed yet?)' } );
+		return { wired, missed };
+
+	}
+
+	for ( const subPass of subPasses ) {
+
+		if ( ! subPass || ! subPass.material || typeof subPass.shape !== 'string' ) continue;
+
+		const entry = pickAuxForShape( subPass.shape, effectIndex );
 		if ( ! entry ) {
 
-			missed.push( { shape: attempt.shape, reason: 'no aux artifact registered for shape' } );
+			missed.push( { shape: subPass.shape, reason: 'no aux artifact registered for shape' } );
 			continue;
 
 		}
 		try {
 
-			bindAuxConfig( attempt.material, entry );
+			bindAuxConfig( subPass.material, entry );
 			wired.push( { shape: entry.shape, name: entry.name, configHash: entry.configHash } );
 
 		} catch ( err ) {
 
-			missed.push( { shape: attempt.shape, reason: ( err && err.message ) || String( err ) } );
+			missed.push( { shape: subPass.shape, reason: ( err && err.message ) || String( err ) } );
 
 		}
 
@@ -178,61 +129,26 @@ export function wireBloomNode( bloomNode, opts = {} ) {
 }
 
 /**
- * Pick the best aux entry for a given shape. We prefer an exact friendly name
- * (`aux-<shape>-<hash12>` is the dev default) but fall back to "first known of
- * matching shape" — the same fallback policy as `aux-loader.loadAux`.
+ * Pick the best aux entry for a given shape. We prefer an entry whose
+ * friendly name contains `_${effectIndex}_` (rare but possible when
+ * multiple instances were captured), and fall back to the first known
+ * shape match — the same fallback policy as `aux-loader.loadAux`.
  *
  * @param {string} shape
- * @param {number} bloomIndex
+ * @param {number} effectIndex
  * @return {?{ shape: string, configHash: string, name?: string }}
  */
-function pickAuxForShape( shape, _bloomIndex ) {
+function pickAuxForShape( shape, effectIndex ) {
 
 	const candidates = listAux().filter( ( e ) => e.shape === shape );
 	if ( candidates.length === 0 ) return null;
 
-	// If multiple bloom indices were captured (rare), prefer the one whose
-	// friendly name contains a matching `bloomIndex`. Fall through to the
-	// first candidate when no name-based disambiguation is possible — this
-	// matches `loadAux`'s shape-only fallback (with a one-time warn).
 	for ( const c of candidates ) {
 
-		if ( c.name && c.name.indexOf( `_${ _bloomIndex }_` ) !== -1 ) return c;
+		if ( c.name && c.name.indexOf( `_${ effectIndex }_` ) !== - 1 ) return c;
 
 	}
 	return candidates[ 0 ];
-
-}
-
-/**
- * Discover every bloom effect node in `outputNode` and wire each one.
- *
- * Idempotent: re-wiring a node whose internal materials are already stamped
- * is a no-op (`bindAuxConfig` is itself idempotent). Safe to call from a
- * resize handler or per-frame rescan loop.
- *
- * @param {{ postProcessing?: Object, outputNode?: Object|Function }} args - one of
- *   `postProcessing.outputNode` or a raw `outputNode` reference.
- * @return {{ bloomNodes: number, wired: Array, missed: Array }}
- */
-export function wirePrecompiledPostprocess( args = {} ) {
-
-	const root = ( args.postProcessing && args.postProcessing.outputNode ) || args.outputNode || null;
-	if ( ! root ) return { bloomNodes: 0, wired: [], missed: [ { shape: '*', reason: 'no outputNode passed' } ] };
-
-	const bloomNodes = collectLiveBloomNodes( root );
-	const allWired = [];
-	const allMissed = [];
-
-	for ( let i = 0; i < bloomNodes.length; i ++ ) {
-
-		const { wired, missed } = wireBloomNode( bloomNodes[ i ], { bloomIndex: i } );
-		allWired.push( ...wired );
-		allMissed.push( ...missed );
-
-	}
-
-	return { bloomNodes: bloomNodes.length, wired: allWired, missed: allMissed };
 
 }
 
@@ -247,5 +163,52 @@ export function wirePrecompiledPostprocess( args = {} ) {
 export function findPostprocessAux( shape, nameOrConfigHash ) {
 
 	return findAux( shape, nameOrConfigHash );
+
+}
+
+// ---------------------------------------------------------------------------
+// Back-compat shims
+// ---------------------------------------------------------------------------
+
+/**
+ * Back-compat alias. Use `collectEffectNodes` from `postprocess-effects.js`
+ * instead — it returns `[{ handler, node }, ...]` for every registered
+ * effect handler, not just bloom.
+ *
+ * @deprecated Prefer `collectEffectNodes` from `./postprocess-effects.js`.
+ * @param {*} root
+ * @return {Array<Object>} live bloom effect nodes only (filtered for compat)
+ */
+export function collectLiveBloomNodes( root ) {
+
+	const matches = collectEffectNodes( root );
+	return matches.filter( ( m ) => m.handler.name === 'bloom' ).map( ( m ) => m.node );
+
+}
+
+/**
+ * Back-compat alias. Use `wireRegisteredEffectNode` instead.
+ *
+ * @deprecated Prefer `wireRegisteredEffectNode` from this module.
+ * @param {Object} bloomNode
+ * @param {{ bloomIndex?: number }} [opts]
+ */
+export function wireBloomNode( bloomNode, opts = {} ) {
+
+	const bloomIndex = typeof opts.bloomIndex === 'number' ? opts.bloomIndex : 0;
+	const handler = getEffectHandlerByName( 'bloom' );
+	if ( ! handler ) {
+
+		return { wired: [], missed: [ { shape: 'bloom:*', reason: 'bloom handler not registered' } ] };
+
+	}
+	return wireRegisteredEffectNode( handler, bloomNode, bloomIndex );
+
+}
+
+function getEffectHandlerByName( name ) {
+
+	for ( const h of getEffectHandlers() ) if ( h.name === name ) return h;
+	return null;
 
 }

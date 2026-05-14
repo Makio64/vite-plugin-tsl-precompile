@@ -18,6 +18,7 @@
 
 import { hashNodeGraphSync, hashPlainConfigSync } from './graph-hash.js';
 import { registerAuxArtifact } from './aux-loader.js';
+import { collectEffectNodes } from './slim-support/postprocess-effects.js';
 
 const logged = new Set();
 function logOnce( key, fn ) {
@@ -495,7 +496,7 @@ async function capturePostProcessingLive( renderer, postProcessing, opts, hashOp
 	const artifacts = await compileTSL( renderer, scene, camera, { noGlobalMRT: true } );
 	const artifact = artifacts.find( ( a ) => a.materialUuid === mat.uuid ) || artifacts[ 0 ];
 	if ( ! artifact ) throw new Error( 'capturePostProcessingLive: no artifacts produced' );
-	const extraArtifacts = await captureBloomEffectArtifactsLive( renderer, postProcessing.outputNode, opts, hashOpts || {
+	const extraArtifacts = await captureRegisteredEffectArtifactsLive( renderer, postProcessing.outputNode, opts, hashOpts || {
 		threeVersion: opts.threeVersion,
 		pluginVersion: opts.pluginVersion || '0.0.0',
 	} );
@@ -503,66 +504,42 @@ async function capturePostProcessingLive( renderer, postProcessing, opts, hashOp
 
 }
 
-async function captureBloomEffectArtifactsLive( renderer, outputNode, opts, hashOpts ) {
+/**
+ * Walk a postprocess outputNode for registered effect handlers (bloom,
+ * outline, ssr, dof, traa, ...) and capture each handler's internal
+ * NodeMaterials as aux artifacts. Registry lives in
+ * `slim-support/postprocess-effects.js` and is shared with the replay
+ * wiring in `slim-support/postprocess-wire.js`.
+ */
+async function captureRegisteredEffectArtifactsLive( renderer, outputNode, opts, hashOpts ) {
 
-	const nodes = collectBloomEffectNodes( outputNode );
-	if ( nodes.length === 0 ) return [];
+	const matches = collectEffectNodes( outputNode );
+	if ( matches.length === 0 ) return [];
 
 	const compileTSL = opts.compileTSL || ( await lazyLoadCompileTSL() );
 	const three = opts.three || null;
 	if ( ! three || ! three.Scene || ! three.QuadMesh ) return [];
 
 	const out = [];
-	for ( let bloomIndex = 0; bloomIndex < nodes.length; bloomIndex ++ ) {
+	const indexByHandler = new Map();
+	for ( const { handler, node } of matches ) {
 
-		const node = nodes[ bloomIndex ];
-		const captures = [];
-		if ( node._highPassFilterMaterial ) {
+		const effectIndex = indexByHandler.get( handler.name ) || 0;
+		indexByHandler.set( handler.name, effectIndex + 1 );
 
-			captures.push( {
-				shape: 'bloom-high-pass',
-				config: { type: 'bloom-high-pass', bloomIndex },
-				material: node._highPassFilterMaterial,
-			} );
+		let subPasses = [];
+		try { subPasses = handler.subPasses( node, effectIndex ); } catch ( _ ) { continue; }
+		if ( ! Array.isArray( subPasses ) ) continue;
 
-		}
-		if ( Array.isArray( node._separableBlurMaterials ) ) {
+		for ( const subPass of subPasses ) {
 
-			for ( let i = 0; i < node._separableBlurMaterials.length; i ++ ) {
-
-				const material = node._separableBlurMaterials[ i ];
-				if ( ! material ) continue;
-				try {
-
-					if ( material.colorTexture && node._renderTargetBright && node._renderTargetBright.texture ) material.colorTexture.value = node._renderTargetBright.texture;
-
-				} catch ( _ ) {}
-				captures.push( {
-					shape: `bloom-blur-${ i }`,
-					config: { type: 'bloom-blur', bloomIndex, index: i },
-					material,
-				} );
-
-			}
-
-		}
-		if ( node._compositeMaterial ) {
-
-			captures.push( {
-				shape: 'bloom-composite',
-				config: { type: 'bloom-composite', bloomIndex },
-				material: node._compositeMaterial,
-			} );
-
-		}
-
-		for ( const item of captures ) {
+			if ( ! subPass || ! subPass.material || typeof subPass.shape !== 'string' ) continue;
 
 			try {
 
-				const configHash = hashPlainConfigSync( item.config, { shape: item.shape, ...hashOpts } );
-				const artifact = await captureNodeMaterialAsAuxLive( renderer, item.material, opts, compileTSL, item.shape );
-				out.push( { shape: item.shape, configHash, artifact } );
+				const configHash = hashPlainConfigSync( subPass.config || { type: subPass.shape }, { shape: subPass.shape, ...hashOpts } );
+				const artifact = await captureNodeMaterialAsAuxLive( renderer, subPass.material, opts, compileTSL, subPass.shape );
+				out.push( { shape: subPass.shape, configHash, artifact } );
 
 			} catch ( _ ) {}
 
@@ -585,50 +562,6 @@ async function captureNodeMaterialAsAuxLive( renderer, material, opts, compileTS
 	if ( ! artifact ) throw new Error( `captureNodeMaterialAsAuxLive: no artifact produced for ${ shape }` );
 	artifact.materialShape = shape;
 	return jsonSafe( artifact );
-
-}
-
-function collectBloomEffectNodes( node, out = [], seen = new Set(), depth = 0 ) {
-
-	if ( ! node || ( typeof node !== 'object' && typeof node !== 'function' ) || depth > 32 || seen.has( node ) ) return out;
-	seen.add( node );
-	if ( isBloomEffectNode( node ) ) {
-
-		if ( ! out.includes( node ) ) out.push( node );
-		return out;
-
-	}
-	const keys = [];
-	try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
-	const skip = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'geometry', 'material', 'domElement' ] );
-	for ( const key of keys ) {
-
-		if ( skip.has( key ) ) continue;
-		let child = null;
-		try { child = node[ key ]; } catch ( _ ) { continue; }
-		if ( ! child ) continue;
-		if ( Array.isArray( child ) ) {
-
-			for ( const item of child ) collectBloomEffectNodes( item, out, seen, depth + 1 );
-
-		} else {
-
-			collectBloomEffectNodes( child, out, seen, depth + 1 );
-
-		}
-
-	}
-	return out;
-
-}
-
-function isBloomEffectNode( node ) {
-
-	return !! ( node
-		&& typeof node.updateBefore === 'function'
-		&& node._renderTargetBright
-		&& Array.isArray( node._renderTargetsHorizontal )
-		&& Array.isArray( node._renderTargetsVertical ) );
 
 }
 
