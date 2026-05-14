@@ -804,6 +804,13 @@ function buildHelperStub() {
 		}
 	` ).body[ 0 ];
 
+	// Tier C — pass the live `renderObject.cacheKey` so the hydrator can
+	// select the matching variant from `precompiledArtifact.variants`. The
+	// `this` here is the patched `NodeManager`; `getForRenderCacheKey` is
+	// the fork-internal hashing function that produces the SAME key three.js
+	// itself uses to index `nodeBuilderCache`. When the artifact has no
+	// `variants` field (legacy single-variant capture), the hydrator falls
+	// back to top-level fields, so this is fully back-compat.
 	const hydratedDecl = t.variableDeclaration( 'const', [
 		t.variableDeclarator(
 			hydratedIdent,
@@ -811,6 +818,18 @@ function buildHelperStub() {
 				t.memberExpression( t.cloneNode( materialIdent ), t.identifier( 'precompiledArtifact' ) ),
 				t.cloneNode( materialIdent ),
 					t.memberExpression( t.cloneNode( renderObjectIdent ), t.identifier( 'object' ) ),
+				t.conditionalExpression(
+					t.binaryExpression(
+						'===',
+						t.unaryExpression( 'typeof', t.memberExpression( t.thisExpression(), t.identifier( 'getForRenderCacheKey' ) ) ),
+						t.stringLiteral( 'function' ),
+					),
+					t.callExpression(
+						t.memberExpression( t.thisExpression(), t.identifier( 'getForRenderCacheKey' ) ),
+						[ t.cloneNode( renderObjectIdent ) ],
+					),
+					t.nullLiteral(),
+				),
 			] ),
 		),
 	] );

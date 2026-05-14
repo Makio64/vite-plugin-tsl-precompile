@@ -515,6 +515,46 @@ async function captureMaterialInDev( material, name ) {
 
 		}
 
+		// Tier C — variant-keyed artifact family.
+		//
+		// `extractor` walks the renderer's `nodeBuilderCache` and emits one
+		// artifact per cacheKey. A single user material can produce multiple
+		// cacheKey entries when its render state varies (clipping context,
+		// MRT layout, blending, multiview, shadow signatures, …). Today we
+		// only carry the "preferred" artifact through, which means scenes
+		// whose live `renderObject.cacheKey` doesn't match the captured one
+		// render with the wrong WGSL. Attach all variants on the preferred
+		// artifact so the runtime can pick the right one per render.
+		const variantList = artifacts.byMaterialVariants && artifacts.byMaterialVariants.get( material.uuid );
+		if ( Array.isArray( variantList ) && variantList.length > 1 ) {
+
+			const variants = {};
+			for ( const v of variantList ) {
+
+				if ( ! v || v.cacheKey === undefined || v.cacheKey === null ) continue;
+				// Lightweight per-variant payload — only the fields the
+				// hydrator actually needs to swap. Top-level artifact carries
+				// everything else (textureRefs, mrtOutputCount, captureClock).
+				variants[ String( v.cacheKey ) ] = {
+					cacheKey: v.cacheKey,
+					vertexShader: v.vertexShader,
+					fragmentShader: v.fragmentShader,
+					computeShader: v.computeShader,
+					transforms: v.transforms,
+					attributes: v.attributes,
+					nodeAttributes: v.nodeAttributes,
+					bindings: v.bindings,
+					uniformPlan: v.uniformPlan,
+					mrtOutputCount: v.mrtOutputCount,
+					mrtOutputNames: v.mrtOutputNames,
+					mrtBlendModes: v.mrtBlendModes,
+				};
+
+			}
+			if ( Object.keys( variants ).length > 1 ) artifact.variants = variants;
+
+		}
+
 		const hash = hashMaterialSync( material, {
 			name,
 			threeVersion: normalizeRevision( REVISION ),

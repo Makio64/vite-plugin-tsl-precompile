@@ -47,9 +47,15 @@ installLiveTextureRegistryPatches();
  * Produce a NodeBuilderState-compatible object for a precompiled material.
  *
  * @param {Object} artifact - The `precompiledArtifact` carried on the material.
+ * @param {?Object} [material] - The runtime material (provides live texture/node references).
+ * @param {?Object} [object] - The renderObject's `object` (for instanced/skinned info).
+ * @param {?number} [cacheKey] - The live `renderObject.cacheKey`. When the artifact
+ *   carries a `variants` map (Tier C), the matching variant's shader/uniformPlan/
+ *   attributes/bindings override the top-level fields. Legacy single-variant
+ *   artifacts ignore this and use the top-level fields directly.
  * @return {Object} A plain object with the fields `Pipelines.js` + `RenderObject.js` read.
  */
-export function hydrateNodeBuilderState( artifact, material = null, object = null ) {
+export function hydrateNodeBuilderState( artifact, material = null, object = null, cacheKey = null ) {
 
 	if ( ! artifact ) {
 
@@ -57,21 +63,29 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 
 	}
 
+	// Tier C — variant-keyed artifact family. When the artifact has a
+	// `variants` map AND the live `cacheKey` matches one of them, swap the
+	// shader/uniformPlan/attributes/bindings fields with that variant's
+	// payload. The original artifact identity is preserved (same _textureRefs,
+	// same _liveUpdateNodes, same captureClock, etc.) — we only swap the
+	// fields that depend on the render-state cacheKey.
+	const effective = selectArtifactVariant( artifact, cacheKey );
+
 	// Bind live BufferAttributes from the user's `*Node` material props
 	// (e.g. `material.positionNode = instancedBufferAttribute(buf)`) onto
 	// the artifact's node-attribute entries before hydration walks them.
 	// Idempotent and a no-op when capture didn't record `userPath` or the
 	// material has no matching node tree yet.
-	bindUserNodeAttributesToArtifact( artifact, material );
-	applyCapturedInstancedDrawCount( artifact, object || material && material.__tslpPrecompileObject || null );
+	bindUserNodeAttributesToArtifact( effective, material );
+	applyCapturedInstancedDrawCount( effective, object || material && material.__tslpPrecompileObject || null );
 	// Same trick for compute-storage buffers wired through the user's
 	// `material.colorNode = colors.element( instanceIndex )` etc. — the
 	// kernel writes into `colors`, the render reads from the same buffer.
-	bindUserStorageBuffersToArtifact( artifact, material );
+	bindUserStorageBuffersToArtifact( effective, material );
 
-	const runtimeBindings = hydrateRuntimeBindings( artifact, material );
+	const runtimeBindings = hydrateRuntimeBindings( effective, material );
 	const { bindings, uniformBuffers, clippingUniformBuffers } = runtimeBindings;
-	const updateNode = createUniformUpdateNode( artifact, uniformBuffers, material );
+	const updateNode = createUniformUpdateNode( effective, uniformBuffers, material );
 	const clippingUniformUpdateNode = clippingUniformBuffers.length > 0
 		? createClippingUniformUpdateNode( clippingUniformBuffers, material )
 		: null;
@@ -101,11 +115,11 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 		.filter( ( node ) => ! liveUpdateBeforeNodes.includes( node ) );
 
 	const base = {
-		vertexShader: String( artifact.vertexShader || '' ),
-		fragmentShader: String( artifact.fragmentShader || '' ),
-		computeShader: String( artifact.computeShader || '' ),
-		transforms: artifact.transforms || [],
-		nodeAttributes: hydrateNodeAttributes( artifact.nodeAttributes || artifact.attributes || [] ),
+		vertexShader: String( effective.vertexShader || '' ),
+		fragmentShader: String( effective.fragmentShader || '' ),
+		computeShader: String( effective.computeShader || '' ),
+		transforms: effective.transforms || [],
+		nodeAttributes: hydrateNodeAttributes( effective.nodeAttributes || effective.attributes || [] ),
 		bindings,
 		updateNodes: [ ...liveUpdateNodes, ...( updateNode ? [ updateNode ] : [] ), ...( clippingUniformUpdateNode ? [ clippingUniformUpdateNode ] : [] ) ],
 		// `shadowDepthRebinder` runs FIRST among updateBefore so the SampledTexture
@@ -653,5 +667,68 @@ function createStaticObserver() {
 	// per object per frame, which is what stock three.js does for
 	// non-bundled scenes anyway.
 	return { needsRefresh() { return true; } };
+
+}
+
+/**
+ * Tier C — variant-keyed artifact family lookup.
+ *
+ * When an artifact carries `variants` (a map keyed by capture-time `cacheKey`)
+ * AND the live `cacheKey` matches one of them, return a "view" object that
+ * exposes the variant's render-state fields (vertexShader, fragmentShader,
+ * uniformPlan, bindings, attributes, …) while still forwarding the top-level
+ * sidecars (_textureRefs, _liveUpdateNodes, captureClock, mrtOutputCount, …)
+ * from the artifact.
+ *
+ * Falls back to returning `artifact` unchanged when:
+ *   - the artifact has no `variants` field (legacy single-variant capture)
+ *   - the live `cacheKey` is null/undefined (in-process flows that don't
+ *     route through the patched `Nodes.js:getForRender`)
+ *   - no variant entry matches the live `cacheKey` (render-state diverged
+ *     from anything captured — caller should fall through to a full-renderer
+ *     fallback when this happens, but we still return something usable so
+ *     today's hot path doesn't throw)
+ *
+ * The returned object preserves identity for non-enumerable sidecar access
+ * via property forwarding — `effective._textureRefs` reads from `artifact._textureRefs`,
+ * but `effective.vertexShader` reads from the variant.
+ *
+ * @param {Object} artifact
+ * @param {?number|?string} cacheKey
+ * @returns {Object} `artifact` (when no variant lookup applies) or a merged view
+ */
+function selectArtifactVariant( artifact, cacheKey ) {
+
+	if ( ! artifact || ! artifact.variants || cacheKey === null || cacheKey === undefined ) {
+
+		return artifact;
+
+	}
+
+	const key = String( cacheKey );
+	const variant = artifact.variants[ key ];
+	if ( ! variant ) return artifact;
+
+	// Shallow merge: variant fields override top-level. Object.assign skips
+	// non-enumerable properties (which is what we want — _textureRefs,
+	// _liveUpdateNodes, _generatedUpdateGroup etc. are non-enumerable
+	// sidecars set via Object.defineProperty and accessed by reference
+	// through the original `artifact` in this hydrator). We construct the
+	// merged view from the artifact base so any non-variant enumerable
+	// fields (mrtOutputCount on the parent if not on the variant, name,
+	// __hash, etc.) survive.
+	const merged = Object.assign( Object.create( Object.getPrototypeOf( artifact ) || null ), artifact, variant );
+
+	// Re-attach non-enumerable sidecars by reference so the rebinder and
+	// texture-resolution paths see the same identity. We copy by property
+	// descriptor to preserve writable/configurable flags too.
+	for ( const sidecar of [ '_textureRefs', '_liveUpdateNodes', '_liveUpdateBeforeNodes', '_liveUpdateAfterNodes', '_generatedUpdateGroup', '_unsupportedKinds', '_textureResolutionStrategies' ] ) {
+
+		const desc = Object.getOwnPropertyDescriptor( artifact, sidecar );
+		if ( desc ) Object.defineProperty( merged, sidecar, desc );
+
+	}
+
+	return merged;
 
 }

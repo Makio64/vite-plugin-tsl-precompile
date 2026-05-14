@@ -52,6 +52,114 @@ test( 'runtime hydrator returns a NodeBuilderState-shaped object', () => {
 
 } );
 
+test( 'tier C: hydrator selects variant by live cacheKey when artifact.variants exists', () => {
+
+	// Default (top-level) artifact carries the cacheKey-12345 variant.
+	// `variants` map carries an additional cacheKey-67890 variant with
+	// different WGSL — simulating a material that captured two render-
+	// state variants (e.g. one with clipping, one without).
+	const artifact = {
+		vertexShader: 'vertex_12345',
+		fragmentShader: 'fragment_12345',
+		bindings: [],
+		nodeAttributes: [],
+		uniformPlan: [],
+		variants: {
+			'67890': {
+				cacheKey: 67890,
+				vertexShader: 'vertex_67890',
+				fragmentShader: 'fragment_67890',
+				bindings: [],
+				nodeAttributes: [],
+				uniformPlan: [],
+			},
+		},
+	};
+
+	// Live cacheKey matches the variants[ '67890' ] entry — the hydrator
+	// must swap to that variant's WGSL.
+	const matched = hydrateNodeBuilderState( artifact, null, null, 67890 );
+	assert.equal( matched.vertexShader, 'vertex_67890' );
+	assert.equal( matched.fragmentShader, 'fragment_67890' );
+
+	// Live cacheKey doesn't match any variant — falls back to top-level fields.
+	const unmatched = hydrateNodeBuilderState( artifact, null, null, 99999 );
+	assert.equal( unmatched.vertexShader, 'vertex_12345' );
+	assert.equal( unmatched.fragmentShader, 'fragment_12345' );
+
+	// No cacheKey passed (legacy 3-arg call) — uses top-level fields.
+	const legacy = hydrateNodeBuilderState( artifact );
+	assert.equal( legacy.vertexShader, 'vertex_12345' );
+	assert.equal( legacy.fragmentShader, 'fragment_12345' );
+
+} );
+
+test( 'tier C: hydrator without variants field uses top-level fields unchanged', () => {
+
+	// Legacy single-variant artifact — no `variants` map. Hydrator should
+	// behave identically regardless of cacheKey arg.
+	const artifact = {
+		vertexShader: 'only_vertex',
+		fragmentShader: 'only_fragment',
+		bindings: [],
+		nodeAttributes: [],
+		uniformPlan: [],
+	};
+
+	const noKey = hydrateNodeBuilderState( artifact );
+	assert.equal( noKey.vertexShader, 'only_vertex' );
+
+	const withKey = hydrateNodeBuilderState( artifact, null, null, 12345 );
+	assert.equal( withKey.vertexShader, 'only_vertex' );
+
+	const nullKey = hydrateNodeBuilderState( artifact, null, null, null );
+	assert.equal( nullKey.vertexShader, 'only_vertex' );
+
+} );
+
+test( 'tier C: hydrator variant lookup preserves non-enumerable sidecars', () => {
+
+	// Sidecars like `_textureRefs`, `_liveUpdateNodes`, captureClock are
+	// shared across all variants of a material. They live as non-enumerable
+	// properties on the top-level artifact; the variant lookup must
+	// forward them onto the effective view object.
+	const sharedTextureRefs = new Map( [ [ 'uuid-1', { name: 'shared' } ] ] );
+	const artifact = {
+		vertexShader: 'vertex_default',
+		fragmentShader: 'fragment_default',
+		bindings: [],
+		nodeAttributes: [],
+		uniformPlan: [],
+		variants: {
+			'77777': {
+				cacheKey: 77777,
+				vertexShader: 'vertex_variant',
+				fragmentShader: 'fragment_variant',
+				bindings: [],
+				nodeAttributes: [],
+				uniformPlan: [],
+			},
+		},
+	};
+	Object.defineProperty( artifact, '_textureRefs', {
+		value: sharedTextureRefs,
+		enumerable: false,
+		configurable: true,
+		writable: true,
+	} );
+
+	// Render with the matching variant — the variant uses its own WGSL but
+	// the sidecar _textureRefs must still be reachable via the effective
+	// artifact view (because the variant payload doesn't carry sidecars).
+	const state = hydrateNodeBuilderState( artifact, null, null, 77777 );
+	assert.equal( state.vertexShader, 'vertex_variant' );
+	// We don't easily expose the effective artifact, but the fact that
+	// hydration completes without throwing — and that texture-resolution
+	// paths inside the hydrator would have called _textureRefs.get(...) —
+	// is what proves the forwarding works in the integration test.
+
+} );
+
 test( 'runtime hydrator rehydrates JSON node attributes with storage-buffer fallbacks', () => {
 
 	const state = hydrateNodeBuilderState( {

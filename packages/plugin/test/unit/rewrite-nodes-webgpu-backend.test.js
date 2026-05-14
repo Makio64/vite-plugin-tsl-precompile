@@ -27,7 +27,11 @@ test( 'rewrite/Nodes.js: getForRender bypasses createNodeBuilder for precompiled
 	// Precompile bypass appears.
 	assert.match( out, /material\.isPrecompiledMaterial/ );
 	assert.match( out, /hydrateNodeBuilderState\s*\(\s*material\.precompiledArtifact/ );
-	assert.match( out, /hydrateNodeBuilderState\s*\(\s*material\.precompiledArtifact\s*,\s*material\s*,\s*renderObject\.object\s*\)/ );
+	// Tier C: 4-arg call. 4th arg is the live `renderObject.cacheKey` (or
+	// null when `this.getForRenderCacheKey` is missing). The hydrator uses
+	// it to look up the matching variant in `artifact.variants`.
+	assert.match( out, /hydrateNodeBuilderState\s*\(\s*material\.precompiledArtifact\s*,\s*material\s*,\s*renderObject\.object\s*,\s*typeof\s+this\.getForRenderCacheKey/ );
+	assert.match( out, /this\.getForRenderCacheKey\(\s*renderObject\s*\)/ );
 	assert.match( out, /computeNode\.isPrecompiledCompute/ );
 	assert.match( out, /hydrateNodeBuilderState\s*\(\s*computeNode\.precompiledArtifact/ );
 
