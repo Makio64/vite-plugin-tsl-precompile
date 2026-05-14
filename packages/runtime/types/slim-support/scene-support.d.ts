@@ -1,4 +1,4 @@
-import type { ComputeSyncStats } from './compute-sync.d.ts';
+import type { ComputeSyncStats, ComputeSyncPerPassStats } from './compute-sync.d.ts';
 
 export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	liveSceneIndex: unknown;
@@ -12,6 +12,9 @@ export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	generatePMREMAsync: ( sourceTexture: unknown, generator?: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => Promise<unknown | null>;
 	setPMREMGenerator: ( generator: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => void;
 	syncComputeOutputs: ( computeNode: unknown, fullRenderer: unknown, syncOpts?: Record<string, unknown> ) => ComputeSyncStats;
+	syncComputeOutputsPerPass: ( computeNode: unknown, fullRenderer: unknown, passIndex: number | undefined, syncOpts?: Record<string, unknown> ) => ComputeSyncPerPassStats;
+	pingPongInvalidate: ( textureA: unknown, textureB: unknown, extraRenderer?: unknown ) => boolean;
+	shareInstancedAttributeBuffer: ( attribute: unknown, sourceRenderer: unknown ) => boolean;
 	computeNodeUsesStorageTexture: ( computeNode: unknown, sourceRenderer: unknown ) => boolean;
 	shareTexture: ( sourceRenderer: unknown, texture: unknown ) => boolean;
 	shareShadowTexture: ( texture: unknown, sourceRenderer: unknown ) => boolean;

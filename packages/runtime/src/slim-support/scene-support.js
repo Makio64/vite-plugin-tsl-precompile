@@ -34,7 +34,13 @@
 
 import { createLiveSceneIndex } from './live-scene-index.js';
 import { createPMREMSupport } from './pmrem.js';
-import { syncComputeStorageOutputs, computeNodeUsesStorageTexture } from './compute-sync.js';
+import {
+	syncComputeStorageOutputs,
+	syncComputeStorageOutputsPerPass,
+	pingPongInvalidate,
+	shareInstancedAttributeBufferIntoSlim,
+	computeNodeUsesStorageTexture,
+} from './compute-sync.js';
 import { shareGPUTextureEntry, shareShadowGPUTextureIntoSlim } from './gpu-texture-share.js';
 import { createFullRendererFallback } from './full-renderer-fallback.js';
 import { setSlimRenderFallback } from './render-fallback-registry.js';
@@ -176,6 +182,60 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	}
 
+	/**
+	 * Multi-pass variant of {@link syncComputeOutputs}. Call once per pass of
+	 * a multi-pass compute graph (e.g. bitonic sort, reductions). The same
+	 * sync logic runs, scoped to `passIndex`, and `syncOpts.onPass` (if
+	 * supplied) is invoked with `(passIndex, stats)` after the pass.
+	 *
+	 * When `passIndex` is `undefined`, semantics are identical to
+	 * `syncComputeOutputs` (last-pass-only legacy call).
+	 */
+	function syncComputeOutputsPerPass( computeNode, fullRenderer, passIndex, syncOpts = {} ) {
+
+		if ( ! settings.computeSync ) return { texturesShared: 0, buffersAdopted: 0, buffersCopied: 0, pass: typeof passIndex === 'number' ? passIndex : null };
+		return syncComputeStorageOutputsPerPass( computeNode, fullRenderer, renderer, passIndex, {
+			...syncOpts,
+			onError: ( err ) => {
+
+				if ( syncOpts.onError ) syncOpts.onError( err );
+				if ( onError ) onError( err, { where: 'syncComputeOutputsPerPass' } );
+
+			},
+		} );
+
+	}
+
+	/**
+	 * Invalidate ping-pong storage textures so the slim renderer's bind-group
+	 * cache rebuilds against the freshly-swapped resource on the next render.
+	 * Pass both texture instances and (optionally) the full renderer that
+	 * holds the dispatch-side cache; the slim renderer is always included.
+	 *
+	 * @param {Object} textureA
+	 * @param {Object} textureB
+	 * @param {Object} [extraRenderer] - Additional renderer (typically the full renderer) to invalidate alongside slim.
+	 */
+	function pingPongInvalidateTextures( textureA, textureB, extraRenderer ) {
+
+		const targets = extraRenderer ? [ renderer, extraRenderer ] : [ renderer ];
+		return pingPongInvalidate( textureA, textureB, targets );
+
+	}
+
+	/**
+	 * Adopt the `GPUBuffer` backing a compute-driven `InstancedBufferAttribute`
+	 * (or any `BufferAttribute`) from the full renderer into the slim renderer.
+	 * Mirrors `shareShadowTexture` but for the buffer data path.
+	 *
+	 * Returns `true` on a successful adopt.
+	 */
+	function shareInstancedAttributeBuffer( attribute, sourceRenderer ) {
+
+		return shareInstancedAttributeBufferIntoSlim( attribute, sourceRenderer, renderer );
+
+	}
+
 	function shareTexture( sourceRenderer, texture ) {
 
 		if ( ! settings.textureSharing ) return false;
@@ -278,6 +338,9 @@ export function createSlimSceneSupport( opts = {} ) {
 		generatePMREMAsync,
 		setPMREMGenerator,
 		syncComputeOutputs,
+		syncComputeOutputsPerPass,
+		pingPongInvalidate: pingPongInvalidateTextures,
+		shareInstancedAttributeBuffer,
 		computeNodeUsesStorageTexture: ( node, source ) => computeNodeUsesStorageTexture( node, source ),
 		shareTexture,
 		shareShadowTexture,

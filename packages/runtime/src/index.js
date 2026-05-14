@@ -23,7 +23,7 @@ export { createLiveSceneIndex, collectMaterialNodeTextures, textureImageReady, t
 export { PMREM_CUBE_UV_MAPPING, isPMREMTexture, isPMREMArtifactTextureSource, artifactNeedsPMREM, artifactPMREMSourceUuids, attachPMREMRefsByOrder, selectPMREMTexturesForArtifact, createPMREMSupport } from './slim-support/pmrem.js';
 export { clearTextureViewCache, markTextureInitialized, shareGPUTextureEntry, sharePMREMGPUTexture, shareShadowGPUTextureIntoSlim } from './slim-support/gpu-texture-share.js';
 export { textureMatchesSource, textureMatchesArtifactSource, artifactHasTextureSource, countArtifactTextureSources, singleArtifactTextureUuid, attachTextureRefsWhere, attachArtifactTextureRefsWhere } from './slim-support/artifact-texture-wiring.js';
-export { getComputeBindGroups, computeNodeUsesStorageTexture, syncComputeStorageOutputs } from './slim-support/compute-sync.js';
+export { getComputeBindGroups, computeNodeUsesStorageTexture, syncComputeStorageOutputs, syncComputeStorageOutputsPerPass, pingPongInvalidate, shareInstancedAttributeBufferIntoSlim } from './slim-support/compute-sync.js';
 export { createFullRendererFallback } from './slim-support/full-renderer-fallback.js';
 export { createSlimSceneSupport } from './slim-support/scene-support.js';
 export { setSlimRenderFallback, getSlimRenderFallback } from './slim-support/render-fallback-registry.js';

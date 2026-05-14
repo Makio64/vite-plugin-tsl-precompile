@@ -5,6 +5,9 @@ import {
 	getComputeBindGroups,
 	computeNodeUsesStorageTexture,
 	syncComputeStorageOutputs,
+	syncComputeStorageOutputsPerPass,
+	pingPongInvalidate,
+	shareInstancedAttributeBufferIntoSlim,
 } from '../src/slim-support/compute-sync.js';
 
 function fakeDataMap() {
@@ -102,8 +105,9 @@ test( 'syncComputeStorageOutputs shares storage textures and bumps version', () 
 	full.backend.get( tex ).format = 'rgba16float';
 
 	const slim = fakeRenderer( { bindGroupsForNode: () => [ bindGroup ] } );
+	const seenTextures = [];
 
-	const stats = syncComputeStorageOutputs( 'compute-node', full, slim );
+	const stats = syncComputeStorageOutputs( 'compute-node', full, slim, { onStorageTexture: ( texture, seenBinding ) => seenTextures.push( [ texture, seenBinding ] ) } );
 
 	assert.equal( stats.texturesShared, 1 );
 	assert.equal( stats.buffersAdopted, 0 );
@@ -111,6 +115,24 @@ test( 'syncComputeStorageOutputs shares storage textures and bumps version', () 
 	assert.equal( tex.version, 8, 'JS version bumped by underlying shadow-share' );
 	assert.equal( slim.backend.get( tex ).texture, full.backend.get( tex ).texture );
 	assert.deepEqual( slim.generateMipmapsCalls, [ tex ], 'mipmaps regenerated for storage texture' );
+	assert.deepEqual( seenTextures, [ [ tex, binding ] ] );
+
+} );
+
+test( 'syncComputeStorageOutputs respects storage texture mipmap opt-out', () => {
+
+	const tex = { isTexture: true, isStorageTexture: true, name: 'pingpong-out', version: 0, generateMipmaps: true, mipmapsAutoUpdate: false };
+	const binding = { isSampledTexture: true, texture: tex };
+	const bindGroup = { bindings: [ binding ] };
+
+	const full = fakeRenderer( { bindGroupsForNode: () => [ bindGroup ] } );
+	full.backend.get( tex ).texture = { __gpu: 'pingpong-out' };
+
+	const slim = fakeRenderer( { bindGroupsForNode: () => [ bindGroup ] } );
+	const stats = syncComputeStorageOutputs( 'compute-node', full, slim );
+
+	assert.equal( stats.texturesShared, 1 );
+	assert.deepEqual( slim.generateMipmapsCalls, [] );
 
 } );
 
@@ -188,5 +210,171 @@ test( 'syncComputeStorageOutputs forwards errors to onError', () => {
 
 	assert.deepEqual( stats, { texturesShared: 0, buffersAdopted: 0, buffersCopied: 0 } );
 	assert.deepEqual( errs, [ 'encoder-blown' ] );
+
+} );
+
+test( 'syncComputeStorageOutputsPerPass invokes onPass callback per pass with cumulative stats', () => {
+
+	const attrA = { isBufferAttribute: true, name: 'pass-A' };
+	const attrB = { isBufferAttribute: true, name: 'pass-B' };
+
+	// Pass 0 writes attrA. Pass 1 writes attrB. Same compute node string but
+	// different bind-group output depending on which "pass" the test setup
+	// queries — emulates two dispatches of the same kernel.
+	const groupA = { bindings: [ storageBufferBinding( attrA ) ] };
+	const groupB = { bindings: [ storageBufferBinding( attrB ) ] };
+
+	const full = fakeRenderer( { bindGroupsForNode: ( node ) => node === 'pass0' ? [ groupA ] : [ groupB ] } );
+	full.backend.get( attrA ).buffer = { size: 64 };
+	full.backend.get( attrB ).buffer = { size: 64 };
+
+	const slim = fakeRenderer( { bindGroupsForNode: ( node ) => node === 'pass0' ? [ groupA ] : [ groupB ] } );
+
+	const passes = [];
+	const out0 = syncComputeStorageOutputsPerPass( 'pass0', full, slim, 0, { onPass: ( idx, st ) => passes.push( [ idx, st.buffersAdopted ] ) } );
+	const out1 = syncComputeStorageOutputsPerPass( 'pass1', full, slim, 1, { onPass: ( idx, st ) => passes.push( [ idx, st.buffersAdopted ] ) } );
+
+	assert.equal( out0.pass, 0 );
+	assert.equal( out0.buffersAdopted, 1 );
+	assert.equal( out1.pass, 1 );
+	assert.equal( out1.buffersAdopted, 1 );
+	assert.deepEqual( passes, [ [ 0, 1 ], [ 1, 1 ] ] );
+	assert.equal( slim.backend.get( attrA ).buffer, full.backend.get( attrA ).buffer );
+	assert.equal( slim.backend.get( attrB ).buffer, full.backend.get( attrB ).buffer );
+
+} );
+
+test( 'syncComputeStorageOutputsPerPass with undefined passIndex behaves like the legacy sync', () => {
+
+	const attr = { isBufferAttribute: true };
+	const group = { bindings: [ storageBufferBinding( attr ) ] };
+	const full = fakeRenderer( { bindGroupsForNode: () => [ group ] } );
+	full.backend.get( attr ).buffer = { size: 32 };
+	const slim = fakeRenderer( { bindGroupsForNode: () => [ group ] } );
+
+	let onPassFired = false;
+	const out = syncComputeStorageOutputsPerPass( 'n', full, slim, undefined, { onPass: () => { onPassFired = true; } } );
+
+	assert.equal( out.pass, null );
+	assert.equal( out.buffersAdopted, 1 );
+	assert.equal( onPassFired, false, 'onPass is silent when passIndex is undefined' );
+
+} );
+
+test( 'pingPongInvalidate bumps both texture versions and clears the bind-group cache', () => {
+
+	const texA = { isTexture: true, isStorageTexture: true, version: 3, name: 'A' };
+	const texB = { isTexture: true, isStorageTexture: true, version: 5, name: 'B' };
+	const slim = fakeRenderer();
+	const cachedBindGroup = { bindings: [] };
+	const bindGroupBackend = slim.backend.get( cachedBindGroup );
+	bindGroupBackend.groups = [ {} ];
+	bindGroupBackend.versions = [ 1 ];
+	const txA = slim._textures.get( texA );
+	const txB = slim._textures.get( texB );
+	txA.bindGroups = new Set( [ cachedBindGroup ] );
+	txB.bindGroups = new Set( [ cachedBindGroup ] );
+	// Also seed view cache entries to confirm clearTextureViewCache runs.
+	slim.backend.get( texA )[ 'view-default' ] = { __view: 'A' };
+	slim.backend.get( texB )[ 'view-default' ] = { __view: 'B' };
+
+	const ok = pingPongInvalidate( texA, texB, slim );
+
+	assert.equal( ok, true );
+	assert.equal( texA.version, 4 );
+	assert.equal( texB.version, 6 );
+	assert.equal( slim.backend.get( texA ).version, 4 );
+	assert.equal( slim.backend.get( texB ).version, 6 );
+	assert.equal( slim.backend.get( texA )[ 'view-default' ], undefined, 'view cache cleared on A' );
+	assert.equal( slim.backend.get( texB )[ 'view-default' ], undefined, 'view cache cleared on B' );
+	assert.equal( bindGroupBackend.groups, undefined );
+	assert.equal( bindGroupBackend.versions, undefined );
+	assert.equal( txA.bindGroups.size, 0 );
+	assert.equal( txB.bindGroups.size, 0 );
+
+} );
+
+test( 'pingPongInvalidate accepts an array of renderers and invalidates all of them', () => {
+
+	const texA = { isTexture: true, isStorageTexture: true, version: 0 };
+	const texB = { isTexture: true, isStorageTexture: true, version: 0 };
+	const slim = fakeRenderer();
+	const full = fakeRenderer();
+
+	const ok = pingPongInvalidate( texA, texB, [ slim, full ] );
+
+	assert.equal( ok, true );
+	assert.equal( slim.backend.get( texA ).version, 1 );
+	assert.equal( full.backend.get( texA ).version, 1 );
+	assert.equal( slim.backend.get( texB ).version, 1 );
+	assert.equal( full.backend.get( texB ).version, 1 );
+
+} );
+
+test( 'pingPongInvalidate gracefully no-ops on null / missing args', () => {
+
+	assert.equal( pingPongInvalidate( null, {}, [ fakeRenderer() ] ), false );
+	assert.equal( pingPongInvalidate( {}, null, [ fakeRenderer() ] ), false );
+	assert.equal( pingPongInvalidate( {}, {}, null ), false );
+	assert.equal( pingPongInvalidate( {}, {}, [] ), false );
+
+} );
+
+test( 'shareInstancedAttributeBufferIntoSlim adopts the full buffer and bumps slim attribute version', () => {
+
+	const attr = { isInstancedBufferAttribute: true, name: 'instance-mat4' };
+	const full = fakeRenderer();
+	const slim = fakeRenderer();
+
+	const gpuBuf = { __gpu: 'instance-buf', size: 4096 };
+	full.backend.get( attr ).buffer = gpuBuf;
+
+	const ok = shareInstancedAttributeBufferIntoSlim( attr, full, slim );
+
+	assert.equal( ok, true );
+	assert.equal( slim.backend.get( attr ).buffer, gpuBuf, 'slim now references the full renderer GPU buffer' );
+	assert.equal( slim._attributes.get( attr ).version, 1, 'slim attribute version seeded' );
+
+} );
+
+test( 'shareInstancedAttributeBufferIntoSlim is a no-op when slim already holds the same buffer', () => {
+
+	const attr = { isInstancedBufferAttribute: true };
+	const buf = { __gpu: 'shared' };
+	const full = fakeRenderer();
+	const slim = fakeRenderer();
+	full.backend.get( attr ).buffer = buf;
+	slim.backend.get( attr ).buffer = buf; // already adopted
+
+	const ok = shareInstancedAttributeBufferIntoSlim( attr, full, slim );
+
+	assert.equal( ok, false, 'no-op when slim already references identical GPUBuffer' );
+
+} );
+
+test( 'shareInstancedAttributeBufferIntoSlim refuses to overwrite an existing distinct slim buffer', () => {
+
+	const attr = { isInstancedBufferAttribute: true };
+	const full = fakeRenderer();
+	const slim = fakeRenderer();
+	full.backend.get( attr ).buffer = { __gpu: 'fresh' };
+	const oldSlimBuf = { __gpu: 'older' };
+	slim.backend.get( attr ).buffer = oldSlimBuf;
+
+	const ok = shareInstancedAttributeBufferIntoSlim( attr, full, slim );
+
+	assert.equal( ok, false );
+	assert.equal( slim.backend.get( attr ).buffer, oldSlimBuf, 'existing distinct slim buffer untouched' );
+
+} );
+
+test( 'shareInstancedAttributeBufferIntoSlim returns false on null / missing inputs', () => {
+
+	const renderer = fakeRenderer();
+	assert.equal( shareInstancedAttributeBufferIntoSlim( null, renderer, renderer ), false );
+	assert.equal( shareInstancedAttributeBufferIntoSlim( {}, null, renderer ), false );
+	assert.equal( shareInstancedAttributeBufferIntoSlim( {}, renderer, null ), false );
+	// Full renderer present but has no buffer for the attribute → false.
+	assert.equal( shareInstancedAttributeBufferIntoSlim( { isInstancedBufferAttribute: true }, renderer, renderer ), false );
 
 } );

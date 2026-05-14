@@ -1168,7 +1168,7 @@ import { TSL as FullTSL, TextureNode as FullTextureNode, BlendMode as FullBlendM
 import { createLiveSceneIndex, textureImageReady as __sharedTextureImageReady, textureImageSrc as __sharedTextureImageSrc, newFallbackTextureImage as __sharedNewFallbackTextureImage } from '/__tslp_runtime/slim-support/live-scene-index.js';
 import { artifactNeedsPMREM as __sharedArtifactNeedsPMREM, artifactPMREMSourceUuids as __sharedArtifactPMREMSourceUuids, attachPMREMRefsByOrder as __sharedAttachPMREMRefsByOrder, createPMREMSupport as __sharedCreatePMREMSupport, isPMREMArtifactTextureSource as __sharedIsPMREMArtifactTextureSource, isPMREMTexture as __sharedIsPMREMTexture, selectPMREMTexturesForArtifact as __sharedSelectPMREMTexturesForArtifact, textureListSignature as __sharedTextureListSignature } from '/__tslp_runtime/slim-support/pmrem.js';
 import { clearTextureViewCache as __sharedClearTextureViewCache, markTextureInitialized as __sharedMarkTextureInitialized, shareGPUTextureEntry as __sharedShareGPUTextureEntry, sharePMREMGPUTexture as __sharedSharePMREMGPUTexture, shareShadowGPUTextureIntoSlim as __sharedShareShadowGpuTextureIntoSlim } from '/__tslp_runtime/slim-support/gpu-texture-share.js';
-import { computeNodeUsesStorageTexture as __sharedComputeNodeUsesStorageTexture, syncComputeStorageOutputs as __sharedSyncComputeStorageOutputs } from '/__tslp_runtime/slim-support/compute-sync.js';
+import { computeNodeUsesStorageTexture as __sharedComputeNodeUsesStorageTexture, syncComputeStorageOutputs as __sharedSyncComputeStorageOutputs, syncComputeStorageOutputsPerPass as __sharedSyncComputeStorageOutputsPerPass, pingPongInvalidate as __sharedPingPongInvalidate, shareInstancedAttributeBufferIntoSlim as __sharedShareInstancedAttributeBufferIntoSlim } from '/__tslp_runtime/slim-support/compute-sync.js';
 import { artifactHasTextureSource as __sharedArtifactHasTextureSource, attachArtifactTextureRefsWhere as __sharedAttachArtifactTextureRefsWhere, attachTextureRefsWhere as __sharedAttachTextureRefsWhere, countArtifactTextureSources as __sharedCountArtifactTextureSources, singleArtifactTextureUuid as __sharedSingleArtifactTextureUuid, textureMatchesArtifactSource as __sharedTextureMatchesArtifactSource, textureMatchesSource as __sharedTextureMatchesSource } from '/__tslp_runtime/slim-support/artifact-texture-wiring.js';
 import { createFullRendererFallback as __sharedCreateFullRendererFallback } from '/__tslp_runtime/slim-support/full-renderer-fallback.js';
 import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS } from '/__tslp_contract/texture-props.js';
@@ -5448,11 +5448,68 @@ function __wireSceneComputeAttrsFromFallbacks( scene ) {
 // the storage-texture + storage-buffer copy/adopt logic. The harness still
 // owns the post-sync attribute-fallback wiring and the storage-attr ledger,
 // passed in via opts.
+//
+// Bookkeeping for Wedge 3 productized primitives:
+//   * __computePassByNode tracks pass index per compute node so successive
+//     dispatches of the same kernel (bitonic sort / reduction) call
+//     syncComputeStorageOutputsPerPass with monotonic pass indices.
+//   * __computeStorageTextureLedger tracks the previous storage texture
+//     output(s) per compute node; on a mismatch we run pingPongInvalidate
+//     so slim's bind-group cache rebuilds against the freshly-swapped texture.
+//   * Storage instanced attributes go through
+//     shareInstancedAttributeBufferIntoSlim after the primary sync so slim's
+//     vertex-pull path sees the compute kernel's GPUBuffer.
+const __computePassByNode = new WeakMap();
+const __computeStorageTextureLedger = new WeakMap();
+
 function __syncStorageBuffers( computeNode, fullRenderer, slimRenderer ) {
-	__sharedSyncComputeStorageOutputs( computeNode, fullRenderer, slimRenderer, {
-		onStorageAttr: __rememberComputeStorageAttr,
+	const nodeKey = ( computeNode && typeof computeNode === 'object' ) ? computeNode : null;
+	const passIndex = nodeKey ? ( __computePassByNode.get( nodeKey ) | 0 ) : 0;
+	if ( nodeKey ) __computePassByNode.set( nodeKey, passIndex + 1 );
+
+	const seenStorageTextures = [];
+	const seenStorageAttrs = [];
+
+	__sharedSyncComputeStorageOutputsPerPass( computeNode, fullRenderer, slimRenderer, passIndex, {
+		onStorageAttr: ( attr ) => {
+			__rememberComputeStorageAttr( attr );
+			seenStorageAttrs.push( attr );
+		},
+		onStorageTexture: ( tex ) => { seenStorageTextures.push( tex ); },
 		onError: ( err ) => console.warn( '[tslp-e2e] storage buffer sync failed:', err && err.message || err ),
 	} );
+
+	// Ping-pong texture invalidation: if a previous dispatch wrote to a
+	// different storage texture than this one, invalidate both so slim's
+	// cached bind group rebuilds against the live (just-written) resource.
+	if ( nodeKey && seenStorageTextures.length > 0 ) {
+		const prev = __computeStorageTextureLedger.get( nodeKey );
+		if ( prev && prev.length > 0 ) {
+			for ( const tex of seenStorageTextures ) {
+				for ( const prevTex of prev ) {
+					if ( prevTex && prevTex !== tex ) {
+						try { __sharedPingPongInvalidate( prevTex, tex, [ slimRenderer, fullRenderer ] ); }
+						catch ( _ ) {}
+					}
+				}
+			}
+		}
+		__computeStorageTextureLedger.set( nodeKey, seenStorageTextures.slice() );
+	}
+
+	// Compute-driven instance attributes: when the slim renderer's vertex
+	// pull reads an InstancedBufferAttribute whose underlying GPUBuffer the
+	// full renderer just wrote to, adopt the buffer reference into slim so
+	// the next draw call samples the live compute output rather than a
+	// zeroed stand-in.
+	for ( const attr of seenStorageAttrs ) {
+		if ( ! attr ) continue;
+		if ( attr.isStorageInstancedBufferAttribute === true || attr.isInstancedBufferAttribute === true ) {
+			try { __sharedShareInstancedAttributeBufferIntoSlim( attr, fullRenderer, slimRenderer ); }
+			catch ( _ ) {}
+		}
+	}
+
 	__wireSceneComputeAttrsFromFallbacks( slimRenderer && slimRenderer._lastScene );
 }
 
