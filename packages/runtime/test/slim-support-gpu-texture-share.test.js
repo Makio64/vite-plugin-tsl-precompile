@@ -111,6 +111,29 @@ test( 'shareGPUTextureEntry reports missing source texture into diagnostics.miss
 
 } );
 
+test( 'shareGPUTextureEntry initializes render-target-owned textures before sharing', () => {
+
+	const source = fakeRenderer();
+	const target = fakeRenderer();
+	const tex = fakeTexture( 'postprocess-output' );
+	const rt = { texture: tex };
+	tex.renderTarget = rt;
+	let initializedTarget = null;
+	source.initRenderTarget = ( targetToInit ) => {
+
+		initializedTarget = targetToInit;
+		source.backend.get( tex ).texture = { __gpu: 'late' };
+
+	};
+
+	const ok = shareGPUTextureEntry( target, source, tex );
+
+	assert.equal( ok, true );
+	assert.equal( initializedTarget, rt );
+	assert.equal( target.backend.get( tex ).texture, source.backend.get( tex ).texture );
+
+} );
+
 test( 'shareGPUTextureEntry invalidates pre-existing bind groups on the target', () => {
 
 	const source = fakeRenderer();
