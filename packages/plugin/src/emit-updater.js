@@ -557,6 +557,21 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 			usedWriters.add( 'writeF32' );
 			return `writeF32(view, ${ off }, (typeof globalThis.__tslpPinnedClock === 'number' && Number.isFinite(globalThis.__tslpPinnedClock) ? globalThis.__tslpPinnedClock : frame.time));`;
 
+		// Wave 6 S1: linear-scaled `frame.time` detected by
+		// extractUniformPlan.classifyByCallback (`uniform(...).onFrameUpdate(
+		// f => f.time * k )`). Scale is constant at extraction time and baked
+		// into the writer literal so the slot picks up `__tslpPinnedClock`
+		// like vanilla `frame.time` does — fixes time-drift cluster (custom
+		// fog scattering, raging-sea derivatives) that previously froze on
+		// `uniform.live`.
+		case 'frame.time.scaled': {
+
+			usedWriters.add( 'writeF32' );
+			const scale = Number.isFinite( src.scale ) ? src.scale : 1;
+			return `writeF32(view, ${ off }, (typeof globalThis.__tslpPinnedClock === 'number' && Number.isFinite(globalThis.__tslpPinnedClock) ? globalThis.__tslpPinnedClock : frame.time) * ${ scale });`;
+
+		}
+
 		case 'frame.deltaTime':
 		case 'deltaTime':
 			usedWriters.add( 'writeF32' );

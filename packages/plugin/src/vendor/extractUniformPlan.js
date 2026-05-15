@@ -239,30 +239,61 @@ function classifyByCallback( node ) {
 	const originalValue = node.value;
 	try {
 
+		// Wave 6 S1: invoke the callback with 3 stub frames so we can recognise
+		// not just exact passthrough but also linear scaling (`frame => frame.time * k`).
+		// Linear-detection requires at least two divergent (time, value) pairs;
+		// the third frame guards against false positives from non-linear callbacks
+		// that happen to be linear over the first two samples.
 		const frameA = { time: 1.0, deltaTime: 0.016, frameId: 1 };
 		const frameB = { time: 2.0, deltaTime: 0.016, frameId: 2 };
+		const frameC = { time: 3.0, deltaTime: 0.016, frameId: 3 };
 
 		node.update( frameA );
 		const valueA = node.value;
 		node.update( frameB );
 		const valueB = node.value;
+		node.update( frameC );
+		const valueC = node.value;
 
 		// Restore the captured snapshot value so we don't leak stub data
 		// into the artifact's `valueSnapshot`.
 		node.value = originalValue;
 
-		if ( typeof valueA === 'number' && typeof valueB === 'number' ) {
+		if ( typeof valueA === 'number' && typeof valueB === 'number' && typeof valueC === 'number' ) {
 
 			// Exact `frame.time` passthrough.
-			if ( valueA === frameA.time && valueB === frameB.time ) {
+			if ( valueA === frameA.time && valueB === frameB.time && valueC === frameC.time ) {
 
 				return { kind: 'frame.time' };
 
 			}
-			// Exact `frame.deltaTime` passthrough (rare, but seen in some examples).
-			if ( valueA === frameA.deltaTime && valueB === frameB.deltaTime ) {
+			// Exact `frame.deltaTime` passthrough — the callback returns the
+			// per-frame delta. All three stubs use the same deltaTime, so we
+			// just confirm constancy at that value.
+			if ( valueA === frameA.deltaTime && valueB === frameB.deltaTime && valueC === frameC.deltaTime ) {
 
 				return { kind: 'frame.deltaTime' };
+
+			}
+			// Wave 6 S1: linear-time scaling — `frame => frame.time * k`. Compute
+			// `k = (v2 - v1) / (t2 - t1)` from the first two samples and confirm
+			// the third sample agrees AND that `v = k * t` exactly for each frame.
+			// "Exactly" tolerates float-mul ulp drift via a relative tolerance.
+			const k = ( valueB - valueA ) / ( frameB.time - frameA.time );
+			if ( Number.isFinite( k ) && k !== 0 ) {
+
+				const predictA = k * frameA.time;
+				const predictB = k * frameB.time;
+				const predictC = k * frameC.time;
+				const tol = Math.max( 1e-6, Math.abs( k ) * 1e-6 );
+				const closeA = Math.abs( valueA - predictA ) <= tol;
+				const closeB = Math.abs( valueB - predictB ) <= tol;
+				const closeC = Math.abs( valueC - predictC ) <= tol;
+				if ( closeA && closeB && closeC ) {
+
+					return { kind: 'frame.time.scaled', scale: k };
+
+				}
 
 			}
 

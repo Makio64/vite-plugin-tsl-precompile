@@ -325,7 +325,7 @@ function injectHtml( html, example, mode ) {
 
 	}
 	const pinBoot = pinnedClock !== null
-		? `<script>globalThis.__tslpPinnedClock=${ pinnedClock };</script>`
+		? `<script>globalThis.__tslpPinnedClock=${ pinnedClock };${ process.env.TSLP_DEBUG_CLOCK === '1' ? `console.log('[tslp-clock] replay pin=' + globalThis.__tslpPinnedClock);` : '' }</script>`
 		: '';
 	const boot = `<script>window.__TSLP_E2E=${ jsonScriptLiteral( { example, mode, artifacts: bucket, captureEndpoint, localExamples: !! localExamplesRoot } ) };</script>${ pinBoot }`;
 	const mapped = rewriteImportmap( html, mode );

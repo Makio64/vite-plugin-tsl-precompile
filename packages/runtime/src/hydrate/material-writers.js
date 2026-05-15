@@ -173,6 +173,19 @@ export function writeUniformGroup( group, frame, view, material ) {
 			writeNumber( view, offset, effectiveTime, source.valueSnapshot );
 
 		}
+		else if ( kind === 'frame.time.scaled' ) {
+
+			// Wave 6 S1: classifyByCallback detected `uniform(...).onFrameUpdate(
+			// f => f.time * k )`. We mirror the `frame.time` path and apply the
+			// recorded scale factor — so PSNR replay pins this slot just like
+			// the canonical time slot does (e.g. custom_fog scattering's
+			// scattering noise UV phase, raging-sea waves).
+			const pinnedTime = globalThis.__tslpPinnedClock;
+			const effectiveTime = ( typeof pinnedTime === 'number' && Number.isFinite( pinnedTime ) ) ? pinnedTime : frame.time;
+			const scale = Number.isFinite( source.scale ) ? source.scale : 1;
+			writeNumber( view, offset, effectiveTime * scale, source.valueSnapshot );
+
+		}
 		else if ( kind === 'frame.deltaTime' ) writeNumber( view, offset, frame.deltaTime, source.valueSnapshot );
 		else if ( kind === 'frame.frameId' ) writeUint( view, offset, frame.frameId, source.valueSnapshot );
 		else if ( kind === 'object.worldMatrix' || kind === 'object3d.worldMatrix' ) writeMat4( view, offset, frame.object && frame.object.matrixWorld, source.valueSnapshot );

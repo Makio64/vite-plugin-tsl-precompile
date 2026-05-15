@@ -173,6 +173,27 @@ test( 'emitUpdaterSource — extractor dialect (frame.time, constant with valueS
 
 } );
 
+test( 'emitUpdaterSource — frame.time.scaled bakes scale literal and honours __tslpPinnedClock (Wave 6 S1)', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			slots: [
+				{ offset: 0, source: { kind: 'frame.time.scaled', scale: 0.5 } },
+				{ offset: 4, source: { kind: 'frame.time.scaled', scale: -1.25 } },
+				// Defensive: a missing/NaN scale should fall back to 1 so the slot
+				// still produces a `* 1` writer instead of `* undefined`.
+				{ offset: 8, source: { kind: 'frame.time.scaled' } },
+			],
+		} ],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.deepEqual( unsupportedKinds, [] );
+	assert.match( source, /writeF32\(view, byteOffset \+ 0, \(typeof globalThis\.__tslpPinnedClock === 'number' && Number\.isFinite\(globalThis\.__tslpPinnedClock\) \? globalThis\.__tslpPinnedClock : frame\.time\) \* 0\.5\);/ );
+	assert.match( source, /writeF32\(view, byteOffset \+ 4, \(typeof globalThis\.__tslpPinnedClock === 'number' && Number\.isFinite\(globalThis\.__tslpPinnedClock\) \? globalThis\.__tslpPinnedClock : frame\.time\) \* -1\.25\);/ );
+	assert.match( source, /writeF32\(view, byteOffset \+ 8, \(typeof globalThis\.__tslpPinnedClock === 'number' && Number\.isFinite\(globalThis\.__tslpPinnedClock\) \? globalThis\.__tslpPinnedClock : frame\.time\) \* 1\);/ );
+
+} );
+
 test( 'emitUpdaterSource — uniform.live with valueSnapshot falls back to frozen snapshot, severity=blocked', () => {
 
 	const artifact = {
