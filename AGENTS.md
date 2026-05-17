@@ -6,8 +6,6 @@ This repository is designed for small, verifiable AI-assisted changes. Read this
 
 - Start with `ARCHITECTURE.md` for the pipeline model.
 - Use `ARCHITECTURE_EVOLUTION.md` for structural work and sequencing.
-- Use `BACKLOG.md` for bug-fix tasks; respect each task's listed file scope.
-- Use `STATUS.md` before quoting coverage or support claims.
 - Check `git status --short` before editing. The tree is often dirty with generated screenshots and reports; do not revert unrelated changes.
 
 ## Package Map
@@ -34,7 +32,7 @@ This repository is designed for small, verifiable AI-assisted changes. Read this
 - Codegen/kind/extractor changes: `pnpm test:coverage`.
 - Artifact/manifest changes: `pnpm verify`.
 - Slim-bundle or three.js rewrite changes: `pnpm --filter @tsl-precompile/runtime build:slim`.
-- Visual-runtime changes: start with a focused E2E command from `BACKLOG.md`; use `pnpm test:e2e:tier1` for the configured PR-sized visual gate.
+- Visual-runtime changes: use `pnpm test:e2e:tier1` for the configured PR-sized visual gate.
 
 ## Generated Outputs
 
@@ -44,8 +42,6 @@ This repository is designed for small, verifiable AI-assisted changes. Read this
 
 ## Parallel Work
 
-- Use `MULTI_AGENT.md` for multi-agent coordination.
-- Do not run two tasks in parallel when their `BACKLOG.md` file scopes overlap.
 - In isolated worktrees, verify the worktree base before editing. Stop if it is stale.
 
 ## Release Surface

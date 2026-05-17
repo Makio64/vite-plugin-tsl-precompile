@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for picking this up. Read [ARCHITECTURE.md](./ARCHITECTURE.md) and [ROADMAP.md](./ROADMAP.md) first — the design rationale matters more than the code.
+Thanks for picking this up. Read [ARCHITECTURE.md](./ARCHITECTURE.md) first — the design rationale matters more than the code.
 
 ## Setup
 
@@ -42,8 +42,8 @@ See [packages/plugin/src/vendor/VENDORING.md](packages/plugin/src/vendor/VENDORI
 | 3 — AOT codegen | Done (camera/object/material/time/uniform.constant/uniform.live) |
 | 4 — Build-time rewrite | Done |
 | 5 — Coverage matrix | Fixture coverage exists; expand toward full TSL surface |
-| 6 — 206-example batch harness | Extractor/codegen load-smoke exists; see [STATUS.md](STATUS.md) for current counts |
-| 7 — Slim runtime bundle | Slim load-smoke exists; see [STATUS.md](STATUS.md) for current counts |
+| 6 — 206-example batch harness | Extractor/codegen load-smoke exists |
+| 7 — Slim runtime bundle | Slim load-smoke exists |
 | 8 — Launch | Docs/site exist; needs external adoption |
 
 ## Code style

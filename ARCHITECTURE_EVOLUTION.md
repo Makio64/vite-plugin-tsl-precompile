@@ -1,6 +1,6 @@
 # Architecture Evolution — structural debt & the path to 100% fidelity
 
-Companion to [ARCHITECTURE.md](./ARCHITECTURE.md) (what the system is), [STATUS.md](./STATUS.md) (what works today), [BACKLOG.md](./BACKLOG.md) (per-example bugs), and [IDEAS.md](./IDEAS.md) (the wide design space).
+Companion to [ARCHITECTURE.md](./ARCHITECTURE.md) (what the system is).
 
 This file is the **structural** to-do list: the changes that make the plugins easier to evolve and make 100% visual fidelity *reachable* rather than a per-example grind. The latest generated coverage summary currently reports **163 / 226 graded examples** at PSNR >= 30 dB, and that number moves quickly; refresh `packages/examples/batch/results/coverage-summary.md` before quoting it externally. The remaining work is no longer mostly limited by individual rendering bugs — it is limited by where the fidelity logic lives, how the modules are factored, and how brittle the three.js coupling is. Fix the structure and the per-example work gets cheaper, safer, and shippable to real users.
 
@@ -133,7 +133,7 @@ Wire it so the **plugin build fails** when an artifact has a `source.kind` not i
 **Change.**
 1. A CI **three.js compat probe**: build the slim bundle against `three@latest` nightly and **fail loudly** on any `three-rewrite.js` fallback or any vendor import error.
 2. Extend the existing per-file rewrite shape tests into a compat matrix, so a three.js bump or `three@latest` drift produces a specific CI failure instead of only a local warning.
-3. Evaluate replacing the riskiest text surgery with a **single upstreamed seam** — e.g. a `NodeManager` precompile hook or a `Renderer` extension point in three.js itself (the "sidecar / upstream the marker" direction in [IDEAS.md §5.6](IDEAS.md)). One sanctioned hook beats nine fragile rewrites.
+3. Evaluate replacing the riskiest text surgery with a **single upstreamed seam** — e.g. a `NodeManager` precompile hook or a `Renderer` extension point in three.js itself. One sanctioned hook beats nine fragile rewrites.
 4. Consider splitting the vendored extractor into `@tsl-precompile/three-extract` with its own version-compat matrix, decoupling its release cadence from the plugin.
 
 **Status (2026-05-12).** First wedge landed. [`packages/runtime/rollup.config.js`](packages/runtime/rollup.config.js) now turns rewrite warnings into build errors when `CI=true` or `TSLP_FAIL_ON_REWRITE_WARNING=1`, and [`.github/workflows/three-compat.yml`](.github/workflows/three-compat.yml) runs a nightly/manual locked/latest matrix: per-file rewrite shape tests first, then a strict slim-build probe.
@@ -153,7 +153,7 @@ Wire it so the **plugin build fails** when an artifact has a `source.kind` not i
 **Why it blocks evolution/fidelity.** Every "hard" example (shadows, MRT, reflectors, compute) needs a bespoke harness path because there's no productized policy. Pure-slim fidelity has an undocumented hard ceiling that nobody can plan around.
 
 **Change.** Pick one and write it down:
-- **(A) "Slim + full-renderer fallback" as a first-class runtime mode** — bootstrap a full `WebGPURenderer`, swap to slim for the 95%, keep the full one for shadows/compute/complex passes on the shared device. Cheaper near-term; productizes what the harness already does. ([IDEAS.md §5.7](IDEAS.md).)
+- **(A) "Slim + full-renderer fallback" as a first-class runtime mode** — bootstrap a full `WebGPURenderer`, swap to slim for the 95%, keep the full one for shadows/compute/complex passes on the shared device. Cheaper near-term; productizes what the harness already does.
 - **(B) Extend the aux-artifact machinery** (already used for background / PMREM / post-processing) to also precompile the internal depth/shadow/clipping material *variants*, so pure slim can render them. The right end state; more work.
 
 Likely (A) now, (B) later. Either way, document it as the policy.
@@ -325,9 +325,9 @@ Inspector preview gap also closed via a Vite plugin middleware (`attachInspector
 ### P3.11 — Stub & dead-code hygiene
 - [`slim-stubs.js`](packages/runtime/src/slim-stubs.js): close the PassNode/Node coverage gaps (track via the "[tsl-precompile/slim] X is not available" load-smoke errors). Resolve `ShadowBaseNode`'s inert stub together with P1.6.
 - [`mock-webgpu.js`](packages/plugin/src/mock-webgpu.js): document the no-readback limitation loudly (scenes doing `mapAsync` get zeros and are flagged for real-browser re-render).
-- `emit-updater.js`: the `switch`-after-`default` STATUS entry appears stale now; keep the default-last invariant and remove that note when STATUS.md is refreshed.
-- The `frame.object.viewPosition` / `frame.object.direction` non-standard-property assumption (flagged in STATUS "Known issues") — verify the slim render loop populates `frame.object` before the updater runs, or fix the source.
-- Prune the many untracked `visual-*` / `debug-*` JSON files under `packages/examples/batch/results/` (already flagged in [CONTINUATION_PLAN.md](CONTINUATION_PLAN.md)).
+- `emit-updater.js`: keep the default-last invariant in the `switch`-after-`default` case.
+- The `frame.object.viewPosition` / `frame.object.direction` non-standard-property assumption — verify the slim render loop populates `frame.object` before the updater runs, or fix the source.
+- Prune the many untracked `visual-*` / `debug-*` JSON files under `packages/examples/batch/results/`.
 
 ### P3.12 — Diagnostic-hook formalization
 `__tslpHarnessDiagnostics`, `__TSLP_DEBUG_LIGHT_LINKAGE`, `__TSLP_DEBUG_SHADOW_BINDINGS`, `__TSLP_DEBUG_SHADOW_COVERAGE` etc. are ad-hoc globals with no schema. Fold them into the `slim-support` module's debug API (depends on P0.1) so they're documented, schema'd, and testable.

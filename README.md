@@ -28,8 +28,7 @@ only stubs. **Run the numbers on your own scene before assuming a win.**
 > (`Mesh{Standard,Physical}NodeMaterial` + texture maps + env/PMREM + direct
 > lights + shadows + material uniforms). Focused MRT/render-target guards are
 > green, while compute/storage and broad postprocessing remain deferred.
-> Current visual coverage and the live support matrix live in [STATUS.md](STATUS.md) and
-> [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md).
+> The latest generated coverage table is at [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md).
 
 ## Requirements
 
@@ -244,8 +243,7 @@ across dev capture / build rewrite / runtime hash check.
 Compute and storage shaders are experimental. The focused MRT/render-target
 guard set is green; broad postprocessing beyond focused bloom is deferred.
 
-The live per-example matrix and a category breakdown live in
-[STATUS.md](STATUS.md). The latest generated coverage table is at
+The latest generated coverage table is at
 [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md).
 
 ## Examples in this repo
@@ -288,8 +286,7 @@ pnpm verify               # artifact/manifest integrity check
 ```
 
 Contributing? Start with [AGENTS.md](AGENTS.md) (the AI/human contributor
-guide), then [ARCHITECTURE.md](ARCHITECTURE.md), then [BACKLOG.md](BACKLOG.md)
-for open tasks. [ROADMAP.md](ROADMAP.md) tracks the phase gates.
+guide), then [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## License
 
