@@ -435,7 +435,7 @@ export function extractArtifact( cacheKey, state, material = null, object = null
 				entry.count = liveAttribute.count || 1;
 				entry.itemSize = liveAttribute.itemSize || itemSizeFromAttributeType( a.type );
 				entry.arrayType = liveAttribute.array && liveAttribute.array.constructor && liveAttribute.array.constructor.name || 'Float32Array';
-				entry.instanced = liveAttribute.isInstancedBufferAttribute === true || liveAttribute.isStorageInstancedBufferAttribute === true;
+				entry.instanced = isInstancedAttribute( liveAttribute );
 				entry.storage = liveAttribute.isStorageBufferAttribute === true || liveAttribute.isStorageInstancedBufferAttribute === true;
 				if ( liveAttribute.normalized === true ) entry.normalized = true;
 				if ( typeof liveAttribute.meshPerAttribute === 'number' && liveAttribute.meshPerAttribute !== 1 ) entry.meshPerAttribute = liveAttribute.meshPerAttribute;
@@ -454,9 +454,10 @@ export function extractArtifact( cacheKey, state, material = null, object = null
 
 					entry.userPath = userPath;
 
-				} else if ( liveAttribute.array && ArrayBuffer.isView( liveAttribute.array ) ) {
+				} else {
 
-					entry.arraySnapshot = Array.from( liveAttribute.array );
+					const snapshot = snapshotAttributeArray( liveAttribute );
+					if ( snapshot ) entry.arraySnapshot = snapshot;
 
 				}
 
@@ -563,6 +564,44 @@ function itemSizeFromAttributeType( type ) {
 			return 3;
 
 	}
+
+}
+
+function isInstancedAttribute( attribute ) {
+
+	return attribute && (
+		attribute.isInstancedBufferAttribute === true
+		|| attribute.isStorageInstancedBufferAttribute === true
+		|| attribute.data && attribute.data.isInstancedInterleavedBuffer === true
+	);
+
+}
+
+function snapshotAttributeArray( attribute ) {
+
+	if ( ! attribute || ! attribute.array || ! ArrayBuffer.isView( attribute.array ) ) return null;
+
+	if ( attribute.isInterleavedBufferAttribute === true && attribute.data ) {
+
+		const source = attribute.data.array;
+		const stride = attribute.data.stride || attribute.itemSize || 1;
+		const offset = attribute.offset || 0;
+		const itemSize = attribute.itemSize || 1;
+		const count = attribute.count || 0;
+		if ( ! source || ! Number.isFinite( stride ) || stride <= 0 || ! Number.isFinite( count ) || count <= 0 ) return null;
+
+		const out = [];
+		for ( let i = 0; i < count; i ++ ) {
+
+			const base = i * stride + offset;
+			for ( let c = 0; c < itemSize; c ++ ) out.push( source[ base + c ] );
+
+		}
+		return out;
+
+	}
+
+	return Array.from( attribute.array );
 
 }
 

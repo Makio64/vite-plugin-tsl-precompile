@@ -101,7 +101,10 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 		if ( ! entry || entry.source !== 'node' ) continue;
 		if ( entry._liveAttribute && entry._liveAttribute.isBufferAttribute === true ) continue;
 
-		// Anonymous + snapshot path: try the live storage lookup first.
+		// Anonymous + snapshot path: try the live storage lookup first, then
+		// object-owned instancing attributes. The extractor snapshots anonymous
+		// attributes so offline replay still has data, but in a live replay page
+		// the source InstancedMesh has the authoritative instanceMatrix.
 		if ( ! entry.userPath && entry.arraySnapshot ) {
 
 			collectStorageFromRoots();
@@ -123,6 +126,28 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 				// here so the bind group picks up the live buffer on the
 				// first hydrate.
 				if ( typeof matchingStorage.version === 'number' ) matchingStorage.version = matchingStorage.version + 1;
+
+			}
+
+			if ( ! entry._liveAttribute ) {
+
+				const instancedObjectAttribute = findInstancedObjectAttributeMatchingEntry( sourceObject, entry, entries );
+				if ( instancedObjectAttribute ) {
+
+					Object.defineProperty( entry, '_liveAttribute', {
+						value: instancedObjectAttribute,
+						enumerable: false,
+						configurable: true,
+						writable: true,
+					} );
+					Object.defineProperty( entry, '_liveAttributeSource', {
+						value: 'instancedObject',
+						enumerable: false,
+						configurable: true,
+						writable: true,
+					} );
+
+				}
 
 			}
 			continue;
@@ -507,16 +532,17 @@ export function hydrateNodeAttributes( attributes ) {
 
 		// Wave 5 Phase B2 — when the snapshot fallback would normally fire
 		// (no userPath, has arraySnapshot) but `bindUserNodeAttributesToArtifact`
-		// already wired a LIVE storage attribute (compute-driven case:
-		// webgpu_compute_birds + compute_particles family), prefer the live
-		// one. The compute kernel writes to that buffer every frame; the
-		// snapshot is stale capture-time data.
+		// already wired a trusted live attribute, prefer it. Storage attributes
+		// cover compute-driven cases (the compute kernel keeps writing them);
+		// `instancedObject` covers InstancedMesh.instanceMatrix columns, where
+		// the source object is more authoritative than an anonymous JSON snapshot.
 		const isLiveStorageAttribute = attribute._liveAttribute && (
 			attribute._liveAttribute.isStorageBufferAttribute === true
 			|| attribute._liveAttribute.isStorageInstancedBufferAttribute === true
 		);
+		const isLiveInstancedObjectAttribute = attribute._liveAttributeSource === 'instancedObject';
 		const hasCapturedAnonymousSnapshot = ! attribute.userPath && ( attribute.arraySnapshot || attribute._liveArray );
-		const liveAttribute = ( hasCapturedAnonymousSnapshot && ! isLiveStorageAttribute )
+		const liveAttribute = ( hasCapturedAnonymousSnapshot && ! isLiveStorageAttribute && ! isLiveInstancedObjectAttribute )
 			? null
 			: attribute._liveAttribute || ( attribute.node && attribute.node.attribute );
 		if ( liveAttribute ) return { ...attribute, node: { attribute: liveAttribute } };

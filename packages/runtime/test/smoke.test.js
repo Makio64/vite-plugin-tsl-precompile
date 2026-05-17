@@ -244,6 +244,46 @@ test( 'runtime hydrator prefers anonymous attribute snapshots over shape-only li
 
 } );
 
+test( 'runtime hydrator binds anonymous instanceMatrix snapshots to the live object columns', () => {
+
+	const matrix = new Float32Array( Array.from( { length: 32 }, ( _, i ) => i + 1 ) );
+	const object = {
+		isInstancedMesh: true,
+		count: 2,
+		instanceMatrix: { array: matrix },
+	};
+	const material = {};
+	Object.defineProperty( material, '__tslpPrecompileObject', { value: object, configurable: true } );
+
+	const artifact = {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		attributes: [ 0, 1, 2, 3 ].map( ( i ) => ( {
+			name: `nodeAttribute${ i }`,
+			type: 'vec4',
+			source: 'node',
+			count: 2,
+			itemSize: 4,
+			arrayType: 'Float32Array',
+			instanced: false,
+			storage: false,
+			arraySnapshot: Array.from( matrix ),
+		} ) ),
+		bindings: [],
+		uniformPlan: [],
+	};
+
+	const state = hydrateNodeBuilderState( artifact, material, object );
+	const columns = state.nodeAttributes.map( ( entry ) => entry.node.attribute );
+
+	for ( const column of columns ) assert.equal( column.isInstancedBufferAttribute, true );
+	assert.deepEqual( Array.from( columns[ 0 ].array ), [ 1, 2, 3, 4, 17, 18, 19, 20 ] );
+	assert.deepEqual( Array.from( columns[ 1 ].array ), [ 5, 6, 7, 8, 21, 22, 23, 24 ] );
+	assert.deepEqual( Array.from( columns[ 2 ].array ), [ 9, 10, 11, 12, 25, 26, 27, 28 ] );
+	assert.deepEqual( Array.from( columns[ 3 ].array ), [ 13, 14, 15, 16, 29, 30, 31, 32 ] );
+
+} );
+
 test( 'runtime hydrator restores captured draw count for anonymous instanced snapshots', () => {
 
 	const object = { count: 5, geometry: {} };
