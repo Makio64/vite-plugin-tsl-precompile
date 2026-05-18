@@ -72,6 +72,40 @@ export function markTextureInitialized( renderer, texture ) {
 
 }
 
+function markSharedTextureVersion( renderer, texture, version ) {
+
+	if ( ! renderer || ! texture ) return;
+	if ( renderer.backend && typeof renderer.backend.get === 'function' ) {
+
+		const backendData = renderer.backend.get( texture );
+		if ( backendData ) {
+
+			backendData.version = version;
+			backendData.generation = version;
+			backendData.initialized = true;
+			backendData.isDefaultTexture = false;
+
+		}
+
+	}
+	const textures = renderer._textures;
+	if ( textures && typeof textures.get === 'function' ) {
+
+		const textureData = textures.get( texture );
+		if ( textureData ) {
+
+			textureData.initialized = true;
+			textureData.isDefaultTexture = false;
+			textureData.version = version;
+			textureData.generation = version;
+			if ( ! textureData.bindGroups ) textureData.bindGroups = new Set();
+
+		}
+
+	}
+
+}
+
 /**
  * Copy the backend data record for `texture` from `sourceRenderer` to
  * `targetRenderer`, then mark the target's Textures manager entry as
@@ -149,7 +183,20 @@ export function shareGPUTextureEntry( targetRenderer, sourceRenderer, texture, o
 
 		const targetData = targetRenderer.backend.get( texture );
 		for ( const key of Object.keys( sourceData ) ) targetData[ key ] = sourceData[ key ];
-		markTextureInitialized( targetRenderer, texture );
+		clearTextureViewCache( targetData );
+
+		if ( opts.bumpVersion !== false ) {
+
+			const nextVersion = ( texture.version | 0 ) + 1;
+			texture.version = nextVersion;
+			markSharedTextureVersion( sourceRenderer, texture, nextVersion );
+			markSharedTextureVersion( targetRenderer, texture, nextVersion );
+
+		} else {
+
+			markTextureInitialized( targetRenderer, texture );
+
+		}
 
 		bump( diagnostics, 'success' );
 		if ( diagnostics && Array.isArray( diagnostics.names ) && diagnostics.names.length < 20 ) {

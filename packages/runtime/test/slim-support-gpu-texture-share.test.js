@@ -88,6 +88,9 @@ test( 'shareGPUTextureEntry copies backend data and marks initialised', () => {
 	const targetData = target.backend.get( tex );
 	assert.equal( targetData.texture, sourceData.texture );
 	assert.equal( targetData.format, 'rgba16float' );
+	assert.equal( tex.version, 1 );
+	assert.equal( sourceData.version, 1 );
+	assert.equal( targetData.version, 1 );
 	assert.equal( target._textures.get( tex ).initialized, true );
 	assert.deepEqual( diagnostics.names, [ 'env' ] );
 
@@ -156,6 +159,25 @@ test( 'shareGPUTextureEntry invalidates pre-existing bind groups on the target',
 	assert.equal( bindingsData.groups, undefined );
 	assert.equal( bindingsData.versions, undefined );
 	assert.equal( target._textures.get( tex ).bindGroups.size, 0 );
+
+} );
+
+test( 'shareGPUTextureEntry clears stale target texture views', () => {
+
+	const source = fakeRenderer();
+	const target = fakeRenderer();
+	const tex = fakeTexture();
+
+	source.backend.get( tex ).texture = { __gpu: 'shared' };
+	const targetData = target.backend.get( tex );
+	targetData.texture = { __gpu: 'old' };
+	targetData[ 'view-0' ] = { stale: true };
+
+	const ok = shareGPUTextureEntry( target, source, tex );
+
+	assert.equal( ok, true );
+	assert.equal( targetData.texture, source.backend.get( tex ).texture );
+	assert.equal( targetData[ 'view-0' ], undefined );
 
 } );
 
