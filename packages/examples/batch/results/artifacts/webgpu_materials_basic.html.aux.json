@@ -441,7 +441,7 @@
               "source": {
                 "kind": "artifact.texture",
                 "textureUuid": "5ca6177a-d64f-4464-af99-e5ed9dbfad8b",
-                "imageSrc": "http://localhost:8729/examples/textures/cube/pisa/px.png",
+                "imageSrc": "http://localhost:8731/examples/textures/cube/pisa/px.png",
                 "textureName": "px.png",
                 "mapping": 301,
                 "wrapS": 1001,
@@ -463,7 +463,7 @@
               "source": {
                 "kind": "artifact.texture",
                 "textureUuid": "5ca6177a-d64f-4464-af99-e5ed9dbfad8b",
-                "imageSrc": "http://localhost:8729/examples/textures/cube/pisa/px.png",
+                "imageSrc": "http://localhost:8731/examples/textures/cube/pisa/px.png",
                 "textureName": "px.png",
                 "mapping": 301,
                 "wrapS": 1001,
@@ -490,7 +490,7 @@
                 "source": {
                   "kind": "artifact.texture",
                   "textureUuid": "5ca6177a-d64f-4464-af99-e5ed9dbfad8b",
-                  "imageSrc": "http://localhost:8729/examples/textures/cube/pisa/px.png",
+                  "imageSrc": "http://localhost:8731/examples/textures/cube/pisa/px.png",
                   "textureName": "px.png",
                   "mapping": 301,
                   "wrapS": 1001,
@@ -523,7 +523,7 @@
                 "source": {
                   "kind": "artifact.texture",
                   "textureUuid": "5ca6177a-d64f-4464-af99-e5ed9dbfad8b",
-                  "imageSrc": "http://localhost:8729/examples/textures/cube/pisa/px.png",
+                  "imageSrc": "http://localhost:8731/examples/textures/cube/pisa/px.png",
                   "textureName": "px.png",
                   "mapping": 301,
                   "wrapS": 1001,

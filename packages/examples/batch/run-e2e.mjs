@@ -5918,7 +5918,7 @@ function __buildShadowScene( userScene ) {
 		// pass writes shadow.map onto cloned.shadow — because shadow is the
 		// same LightShadow instance as the original, original.shadow.map is
 		// populated too, and the slim hydrator's rebinder picks it up.
-		if ( o.isLight === true && o.castShadow === true && o.shadow ) {
+		if ( o.isLight === true && o.castShadow === true && o.shadow && o.visible !== false ) {
 			let cloned = null;
 			// Build a fresh light of the same type rather than cloning, to avoid
 			// any inherited internal state that disables shadow allocation.
@@ -5941,6 +5941,7 @@ function __buildShadowScene( userScene ) {
 				}
 			} catch ( _ ) { cloned = null; }
 			if ( cloned ) {
+				cloned.visible = o.visible !== false;
 				cloned.castShadow = true;
 				cloned.shadow = o.shadow;
 				// Copy mapSize/bias/normalBias/radius/camera params from source.shadow
@@ -6021,6 +6022,7 @@ function __buildShadowScene( userScene ) {
 			}
 			standin.castShadow = !! o.castShadow;
 			standin.receiveShadow = !! o.receiveShadow;
+			standin.visible = o.visible !== false;
 			// Decompose world matrix onto local position/quaternion/scale —
 			// matrixAutoUpdate=true (default) ensures matrixWorld is rebuilt
 			// during render's projectObject pass.
@@ -6069,6 +6071,7 @@ function __refreshShadowScene( userScene, shadowScene ) {
 		// does for the selftest scene that successfully sets shadow.map.
 		src.matrixWorld.decompose( clone.position, clone.quaternion, clone.scale );
 		if ( src.layers && clone.layers ) clone.layers.mask = src.layers.mask;
+		clone.visible = src.visible !== false;
 		if ( src.target && clone.target && src.target.matrixWorld ) {
 			src.target.matrixWorld.decompose( clone.target.position, clone.target.quaternion, clone.target.scale );
 			if ( src.target.layers && clone.target.layers ) clone.target.layers.mask = src.target.layers.mask;
@@ -6079,6 +6082,7 @@ function __refreshShadowScene( userScene, shadowScene ) {
 		if ( ! src || ! clone || ! src.matrixWorld ) continue;
 		src.matrixWorld.decompose( clone.position, clone.quaternion, clone.scale );
 		if ( src.layers && clone.layers ) clone.layers.mask = src.layers.mask;
+		clone.visible = src.visible !== false;
 		if ( src.isInstancedMesh === true && clone.isInstancedMesh === true ) {
 			clone.count = src.count || clone.count;
 			if ( src.instanceMatrix && clone.instanceMatrix && clone.instanceMatrix.array !== src.instanceMatrix.array ) {
@@ -6281,11 +6285,11 @@ function __sceneSignature( scene ) {
 	try { scene.updateMatrixWorld( true ); } catch ( _ ) {}
 	scene.traverse( ( o ) => {
 		if ( ! o ) return;
-		if ( o.isLight === true && o.castShadow === true && o.shadow ) {
+		if ( o.isLight === true && o.castShadow === true && o.shadow && o.visible !== false ) {
 			lights ++;
 			parts.push( 'l' + ( o.uuid || o.id || lights ) + ':' + __signatureMatrix( o ) );
 			if ( o.target && o.target.isObject3D ) parts.push( 't' + ( o.target.uuid || o.target.id || lights ) + ':' + __signatureMatrix( o.target ) );
-		} else if ( ( o.isMesh === true || o.isSkinnedMesh === true ) && o.geometry && ( o.castShadow === true || o.receiveShadow === true ) ) {
+		} else if ( ( o.isMesh === true || o.isSkinnedMesh === true ) && o.geometry && o.visible !== false && ( o.castShadow === true || o.receiveShadow === true ) ) {
 			meshes ++;
 			if ( o.castShadow === true ) casters ++;
 			parts.push( 'm' + ( o.uuid || o.id || meshes ) + ':' + ( o.castShadow === true ? 'c' : 'r' ) + ':' + ( o.count || 0 ) + ':' + __signatureMatrix( o ) );
@@ -6853,7 +6857,9 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 		// bind group even though the live full-renderer GPUTexture was shared.
 		try {
 			const previousTarget = typeof _slimRenderer.getRenderTarget === 'function' ? _slimRenderer.getRenderTarget() : null;
+			const previousSuppressShadowKick = _slimRenderer.__tslpSuppressShadowKick === true;
 			try {
+				_slimRenderer.__tslpSuppressShadowKick = true;
 				__updateCustomShadowHelpers( _userScene );
 				if ( typeof _slimRenderer.setRenderTarget === 'function' ) _slimRenderer.setRenderTarget( _replayRenderTarget );
 				_slimRenderer.render( _userScene, _camera );
@@ -6862,8 +6868,11 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 				// once more so the draw consumes the refreshed depth bindings.
 				_slimRenderer.render( _userScene, _camera );
 			} finally {
+				if ( previousSuppressShadowKick ) _slimRenderer.__tslpSuppressShadowKick = true;
+				else delete _slimRenderer.__tslpSuppressShadowKick;
 				if ( typeof _slimRenderer.setRenderTarget === 'function' ) _slimRenderer.setRenderTarget( previousTarget );
 			}
+			if ( needsReplay ) __kickShadowRenderAsync( _slimRenderer, _userScene, _camera );
 		} catch ( e ) { console.warn( '[tslp-shadow] forced re-render failed:', e && e.message || e ); }
 	} );
 }
@@ -7142,7 +7151,7 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 		// Kick off async shadow-map population on the full renderer (slim has
 		// shadow code tree-shaken). On completion the rebinder picks up the
 		// live light.shadow.map.depthTexture and the next slim render shows it.
-		__kickShadowRenderAsync( this, scene, camera );
+		if ( this.__tslpSuppressShadowKick !== true ) __kickShadowRenderAsync( this, scene, camera );
 		__resetRendererPipelineCachesForAttachmentChange( this, scene );
 		const r = super.render( scene, camera );
 		// After the first render, kick off async PMREM generation if not started.
@@ -7543,8 +7552,15 @@ function __renderPassNodesForPipeline( renderer, passNodes ) {
 	for ( const passNode of passNodes || [] ) __renderPassNodeForPipeline( renderer, passNode );
 }
 
+function __isSpecializedEffectCandidate( node ) {
+	return !! ( node
+		&& typeof node !== 'function'
+		&& node.isPassNode !== true
+		&& node.isRTTNode !== true );
+}
+
 function __isBloomEffectNode( node ) {
-	if ( typeof node === 'function' ) return false;
+	if ( ! __isSpecializedEffectCandidate( node ) ) return false;
 	const type = node && node.constructor && node.constructor.type || node && node.type || '';
 	if ( type && type !== 'BloomNode' ) return false;
 	return !! ( node
@@ -7821,7 +7837,7 @@ function __fullBloomStrengthScale( bloomNode ) {
 			if ( name && name !== 'output' && name !== 'depth' ) return 1;
 		}
 	} catch ( _ ) {}
-	return 0.68;
+	return 1;
 }
 
 function __renderBloomNodeWithFullRenderer( bloomNode, slimRenderer, fullRenderer, diag ) {
@@ -8126,7 +8142,7 @@ function __renderBloomNodesForPipeline( renderer, bloomNodes ) {
 // --------------------------------------------------------------------------
 
 function __isOutlineEffectNode( node ) {
-	if ( ! node || typeof node === 'function' ) return false;
+	if ( ! __isSpecializedEffectCandidate( node ) ) return false;
 	const type = node && node.constructor && node.constructor.type || node && node.type || '';
 	if ( type && type !== 'OutlineNode' ) return false;
 	return !! ( node
@@ -8426,7 +8442,7 @@ function __ssrDiagnostics() {
 }
 
 function __isSSREffectNode( node ) {
-	if ( ! node || typeof node === 'function' ) return false;
+	if ( ! __isSpecializedEffectCandidate( node ) ) return false;
 	const type = node && node.constructor && node.constructor.type || node && node.type || '';
 	if ( type && type !== 'SSRNode' ) return false;
 	return !! ( node
@@ -8619,7 +8635,7 @@ function __dofDiagnostics() {
 }
 
 function __isDOFEffectNode( node ) {
-	if ( ! node || typeof node === 'function' ) return false;
+	if ( ! __isSpecializedEffectCandidate( node ) ) return false;
 	const type = node && node.constructor && node.constructor.type || node && node.type || '';
 	if ( type && type !== 'DepthOfFieldNode' ) return false;
 	return !! ( node
@@ -8777,7 +8793,7 @@ function __traaDiagnostics() {
 }
 
 function __isTRAAEffectNode( node ) {
-	if ( ! node || typeof node === 'function' ) return false;
+	if ( ! __isSpecializedEffectCandidate( node ) ) return false;
 	const type = node && node.constructor && node.constructor.type || node && node.type || '';
 	if ( type && type !== 'TRAANode' ) return false;
 	return !! ( node
@@ -10335,6 +10351,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 						|| ( w.__tslpComputePending | 0 ) !== 0
 						|| waitingForRenderableObjects;
 					if ( atTarget && waitingForAsyncWork ) w.__tslpAnimationLoopCalls = 0;
+					if ( atTarget && ( w.__tslpShadowPending | 0 ) !== 0 ) { w.__tslpFrozen = true; return; }
 					if ( atTarget && ( w.__tslpComputePending | 0 ) !== 0 ) return;
 					if ( atTarget && ! waitingForAsyncWork && ( w.__tslpAnimationLoopCalls | 0 ) >= settleFrames ) return;
 					w.__tslpAnimationLoopCalls = ( w.__tslpAnimationLoopCalls | 0 ) + 1;
