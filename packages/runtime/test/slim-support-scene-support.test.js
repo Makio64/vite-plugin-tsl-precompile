@@ -272,6 +272,29 @@ test( 'createSlimSceneSupport renderPassWithFallback renders through a full rend
 
 } );
 
+test( 'createSlimSceneSupport renderPassWithFallback shares MRT color attachments', async () => {
+
+	const slim = fakeRenderer();
+	const full = fakePassFullRenderer();
+	const support = createSlimSceneSupport( { renderer: slim } );
+	const colorA = { isTexture: true, name: 'mrt-output', version: 7 };
+	const colorB = { isTexture: true, name: 'mrt-normal', version: 8 };
+	full.backend.get( colorA ).texture = { gpu: 'mrt-output' };
+	full.backend.get( colorB ).texture = { gpu: 'mrt-normal' };
+	const passNode = {
+		scene: { isScene: true },
+		camera: { isCamera: true },
+		renderTarget: { textures: [ colorA, colorB ] },
+	};
+
+	const stats = await support.renderPassWithFallback( passNode, { fullRenderer: full } );
+
+	assert.deepEqual( stats, { rendered: true, texturesShared: 2, depthShared: false } );
+	assert.equal( slim.backend.get( colorA ).texture, full.backend.get( colorA ).texture );
+	assert.equal( slim.backend.get( colorB ).texture, full.backend.get( colorB ).texture );
+
+} );
+
 test( 'createSlimSceneSupport renderPassWithFallback reports a missing fallback without throwing', async () => {
 
 	const support = createSlimSceneSupport( { renderer: fakeRenderer(), fullRendererFallback: false } );
