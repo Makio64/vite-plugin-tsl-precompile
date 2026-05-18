@@ -7,7 +7,7 @@ three.js bundle entry that ships baked WGSL without the TSL node builder.
 
 ## Status
 
-Experimental — see [STATUS.md](https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/STATUS.md).
+Experimental.
 
 ## Install
 

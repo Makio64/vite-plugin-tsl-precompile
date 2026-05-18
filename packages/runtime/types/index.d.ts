@@ -181,15 +181,50 @@ export type ComputeSyncStats = {
 	buffersAdopted: number;
 	buffersCopied: number;
 };
+export type ComputeSyncPerPassStats = ComputeSyncStats & {
+	pass: number | null;
+};
+export type SharePassRenderTargetTexturesStats = {
+	texturesShared: number;
+	depthShared: boolean;
+};
+export type RenderPassWithFallbackStats = SharePassRenderTargetTexturesStats & {
+	rendered: boolean;
+};
+export type RenderPassWithFallbackOptions = {
+	fullRenderer?: unknown;
+	camera?: unknown;
+	beforeRender?: () => void;
+	shareTextures?: boolean;
+	shareDepth?: boolean;
+	onError?: ( err: unknown, texture?: unknown ) => void;
+};
 export function getComputeBindGroups( computeNode: unknown, fullRenderer: unknown ): unknown[];
 export function computeNodeUsesStorageTexture( computeNode: unknown, fullRenderer: unknown ): boolean;
 export function syncComputeStorageOutputs( computeNode: unknown, fullRenderer: unknown, slimRenderer: unknown, opts?: Record<string, unknown> ): ComputeSyncStats;
+export function syncComputeStorageOutputsPerPass( computeNode: unknown, fullRenderer: unknown, slimRenderer: unknown, passIndex: number | undefined, opts?: Record<string, unknown> ): ComputeSyncPerPassStats;
 export function createFullRendererFallback( opts: Record<string, unknown> ): {
 	getRenderer: () => Promise<unknown | null>;
 	getModule: () => unknown | null;
 	isInitialised: () => boolean;
 	dispose: () => void;
 };
+export function renderPassWithFullRenderer( args: {
+	passNode: unknown;
+	slimRenderer: unknown;
+	fullRenderer: unknown;
+	camera?: unknown;
+	beforeRender?: () => void;
+	onError?: ( err: unknown ) => void;
+} ): boolean;
+export function sharePassRenderTargetTextures( args: {
+	passNode: unknown;
+	slimRenderer: unknown;
+	fullRenderer: unknown;
+	shareDepth?: boolean;
+	diagnostics?: Record<string, unknown>;
+	onError?: ( err: unknown, texture?: unknown ) => void;
+} ): SharePassRenderTargetTexturesStats;
 export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	liveSceneIndex: unknown;
 	pmrem: unknown;
@@ -202,13 +237,21 @@ export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	generatePMREMAsync: ( sourceTexture: unknown, generator?: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => Promise<unknown | null>;
 	setPMREMGenerator: ( generator: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => void;
 	syncComputeOutputs: ( computeNode: unknown, fullRenderer: unknown, syncOpts?: Record<string, unknown> ) => ComputeSyncStats;
+	syncComputeOutputsPerPass: ( computeNode: unknown, fullRenderer: unknown, passIndex: number | undefined, syncOpts?: Record<string, unknown> ) => ComputeSyncPerPassStats;
+	pingPongInvalidate: ( textureA: unknown, textureB: unknown, extraRenderer?: unknown ) => boolean;
+	shareInstancedAttributeBuffer: ( attribute: unknown, sourceRenderer: unknown ) => boolean;
 	computeNodeUsesStorageTexture: ( computeNode: unknown, sourceRenderer: unknown ) => boolean;
 	shareTexture: ( sourceRenderer: unknown, texture: unknown ) => boolean;
 	shareShadowTexture: ( texture: unknown, sourceRenderer: unknown ) => boolean;
 	preparePostprocess: ( prepArgs?: Record<string, unknown> ) => { effects: number; prepared: unknown[]; missed: unknown[] };
 	wirePostprocess: ( wireArgs?: Record<string, unknown> ) => { effects: number; wired: unknown[]; missed: unknown[] };
+	renderPassWithFallback: ( passNode: unknown, passOpts?: RenderPassWithFallbackOptions ) => Promise<RenderPassWithFallbackStats>;
+	pinClock: ( t: number | null | undefined ) => void;
+	unpinClock: () => void;
 	dispose: () => void;
 };
+export function pinClock( t: number | null | undefined ): void;
+export function unpinClock(): void;
 
 export type EffectSubPass = {
 	material?: unknown;

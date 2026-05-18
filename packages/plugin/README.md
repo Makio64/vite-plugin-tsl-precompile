@@ -7,8 +7,7 @@ Pairs with [`@tsl-precompile/runtime`](https://www.npmjs.com/package/@tsl-precom
 
 ## Status
 
-Experimental — see [STATUS.md](https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/STATUS.md)
-for the current support snapshot.
+Experimental.
 
 ## Install
 

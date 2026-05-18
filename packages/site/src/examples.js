@@ -368,7 +368,6 @@ function updateNotes( r ) {
 			The slim runtime is still hardening shadow/depth rebinding, transmission and viewport textures,
 			asynchronous texture-load timing, and broad post-process render-target chains. The shader compiles
 			and runs &mdash; visual output can diverge from live three.js until those clusters land.
-			Track progress in <a href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/ROADMAP.md" rel="noopener">ROADMAP.md</a>.
 		</div>` );
 	}
 	if ( parts.length ) {

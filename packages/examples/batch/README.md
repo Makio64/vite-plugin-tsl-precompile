@@ -1,10 +1,10 @@
 # batch (example harness)
 
-Runs the plugin and slim runtime against the 206 `webgpu_*.html` examples from a local three.js repo. Phase 6/7 gate.
+Runs the plugin and slim runtime against the 206 `webgpu_*.html` examples from a local three.js repo.
 
 ## Target
 
-Keep the extractor/codegen and slim-bundle load-smoke harnesses green enough to catch crashes, then use E2E PSNR for visual correctness. Current pass counts move quickly; use [STATUS.md](../../STATUS.md) for the latest curated snapshot and `packages/examples/batch/results/coverage-summary.md` for a generated visual table.
+Keep the extractor/codegen and slim-bundle load-smoke harnesses green enough to catch crashes, then use E2E PSNR for visual correctness. Current pass counts move quickly; `packages/examples/batch/results/coverage-summary.md` carries the generated visual table.
 
 For the E2E harness, start with focused filters. It automates the real loop for stock examples: clean stock full-three reference, capture pass for auto-marked NodeMaterial artifacts, then slim replay with captured user and aux artifacts. A pass means replay reached a non-empty frame without unexpected browser errors and meets the PSNR pixel-diff threshold (30 dB by default). Use `--no-pixel-gate` for diagnostics when the goal is to inspect load/runtime failures separately from visual correctness. Many examples are expected to fail today; v0.1 beta should prioritize the PBR slice first: shadows, PMREM/environment/reflections, then transmission/viewport/reflector texture paths. Compute/storage remains experimental. Focused bloom/PassNode replay is green, but MRT and broad postprocessing are still not the beta target.
 

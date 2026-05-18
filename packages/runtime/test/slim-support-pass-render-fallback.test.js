@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { renderPassWithFullRenderer } from '../src/slim-support/pass-render-fallback.js';
+import { renderPassWithFullRenderer, sharePassRenderTargetTextures } from '../src/slim-support/pass-render-fallback.js';
 
 function fakeFullRenderer() {
 
@@ -20,6 +20,11 @@ function fakeFullRenderer() {
 		setRenderTarget( t ) { this._target = t; },
 		getMRT() { return this._mrt; },
 		setMRT( m ) { this._mrt = m; },
+		setSize( width, height, updateStyle ) {
+
+			this._lastSize = { width, height, updateStyle };
+
+		},
 		render( scene, camera ) {
 
 			this._renders++;
@@ -47,7 +52,43 @@ function fakePassNode() {
 
 function fakeSlimRenderer() {
 
-	return { toneMapping: 4, toneMappingExposure: 2.0, outputColorSpace: 'srgb-linear' };
+	return {
+		toneMapping: 4,
+		toneMappingExposure: 2.0,
+		outputColorSpace: 'srgb-linear',
+		getDrawingBufferSize( target ) {
+
+			target.set( 640, 360 );
+			return target;
+
+		},
+	};
+
+}
+
+function fakeDataMap() {
+
+	const store = new WeakMap();
+	return {
+		get( key ) {
+
+			let entry = store.get( key );
+			if ( ! entry ) {
+
+				entry = {};
+				store.set( key, entry );
+
+			}
+			return entry;
+
+		},
+	};
+
+}
+
+function fakeTextureRenderer() {
+
+	return { backend: fakeDataMap(), _textures: fakeDataMap() };
 
 }
 
@@ -64,6 +105,7 @@ test( 'renderPassWithFullRenderer forwards slim tone-mapping state to full', () 
 	// The render itself ran with slim's tone-mapping values applied.
 	assert.equal( full._lastRenderedScene, passNode.scene );
 	assert.equal( full._lastRenderedCamera, passNode.camera );
+	assert.deepEqual( full._lastSize, { width: 640, height: 360, updateStyle: false } );
 
 } );
 
@@ -133,5 +175,34 @@ test( 'renderPassWithFullRenderer runs the beforeRender hook with state already 
 	} );
 
 	assert.deepEqual( observed, [ { renderTargetIsPassTarget: true, autoClear: true, transparent: true } ] );
+
+} );
+
+test( 'sharePassRenderTargetTextures shares color MRT and depth textures into slim', () => {
+
+	const slim = fakeTextureRenderer();
+	const full = fakeTextureRenderer();
+	const colorA = { isTexture: true, name: 'color-a', version: 2 };
+	const colorB = { isTexture: true, name: 'color-b', version: 3 };
+	const depth = { isTexture: true, name: 'depth', version: 4 };
+	full.backend.get( colorA ).texture = { gpu: 'a' };
+	full.backend.get( colorB ).texture = { gpu: 'b' };
+	full.backend.get( depth ).texture = { gpu: 'd' };
+
+	const diagnostics = { calls: 0, success: 0, noSourceData: 0, noSourceTexture: 0, names: [], missingNames: [] };
+	const stats = sharePassRenderTargetTextures( {
+		passNode: { renderTarget: { textures: [ colorA, colorB ], depthTexture: depth } },
+		slimRenderer: slim,
+		fullRenderer: full,
+		diagnostics,
+	} );
+
+	assert.deepEqual( stats, { texturesShared: 2, depthShared: true } );
+	assert.equal( slim.backend.get( colorA ).texture, full.backend.get( colorA ).texture );
+	assert.equal( slim.backend.get( colorB ).texture, full.backend.get( colorB ).texture );
+	assert.equal( slim.backend.get( depth ).texture, full.backend.get( depth ).texture );
+	assert.equal( slim._textures.get( colorA ).initialized, true );
+	assert.equal( diagnostics.calls, 3 );
+	assert.equal( diagnostics.success, 3 );
 
 } );

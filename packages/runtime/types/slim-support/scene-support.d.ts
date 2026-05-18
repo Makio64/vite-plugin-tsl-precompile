@@ -1,4 +1,18 @@
 import type { ComputeSyncStats, ComputeSyncPerPassStats } from './compute-sync.d.ts';
+import type { SharePassRenderTargetTexturesStats } from './pass-render-fallback.d.ts';
+
+export type RenderPassWithFallbackOptions = {
+	fullRenderer?: unknown;
+	camera?: unknown;
+	beforeRender?: () => void;
+	shareTextures?: boolean;
+	shareDepth?: boolean;
+	onError?: ( err: unknown, texture?: unknown ) => void;
+};
+
+export type RenderPassWithFallbackStats = SharePassRenderTargetTexturesStats & {
+	rendered: boolean;
+};
 
 export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	liveSceneIndex: unknown;
@@ -20,5 +34,11 @@ export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	shareShadowTexture: ( texture: unknown, sourceRenderer: unknown ) => boolean;
 	preparePostprocess: ( prepArgs?: Record<string, unknown> ) => { effects: number; prepared: unknown[]; missed: unknown[] };
 	wirePostprocess: ( wireArgs?: Record<string, unknown> ) => { effects: number; wired: unknown[]; missed: unknown[] };
+	renderPassWithFallback: ( passNode: unknown, passOpts?: RenderPassWithFallbackOptions ) => Promise<RenderPassWithFallbackStats>;
+	pinClock: ( t: number | null | undefined ) => void;
+	unpinClock: () => void;
 	dispose: () => void;
 };
+
+export function pinClock( t: number | null | undefined ): void;
+export function unpinClock(): void;

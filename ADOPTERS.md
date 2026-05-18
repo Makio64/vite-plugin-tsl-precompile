@@ -9,8 +9,6 @@ in real apps. Listed in chronological order of first verified working build.
   projects, not just demo packages from the monorepo.
 - **Feedback ledger.** Each entry includes the friction the adopter hit so
   maintainers can prioritize fixes against what real users actually need.
-- **Release gate.** [STATUS.md](STATUS.md) Phase 8 closes when this file
-  has its first entry.
 
 ## Becoming listed
 
@@ -45,7 +43,7 @@ _(none yet — be the first; see "Becoming listed" above)_
 
 ## Internal demos (monorepo)
 
-Not counted toward the Phase 8 gate, but useful as reference shapes:
+Not external adopters, but useful as reference shapes:
 
 - [`packages/examples/getting-started`](packages/examples/getting-started) — minimal: torus knot + one marker
 - [`packages/examples/pbr-shadows`](packages/examples/pbr-shadows) — PBR + shadows + two markers

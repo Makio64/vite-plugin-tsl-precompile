@@ -21,6 +21,29 @@ function fakeRenderer( { device = { id: 'gpu-shared' } } = {} ) {
 
 }
 
+function fakePassFullRenderer() {
+
+	const renderer = fakeRenderer();
+	Object.assign( renderer, {
+		autoClear: false,
+		transparent: false,
+		opaque: true,
+		_target: null,
+		_mrt: null,
+		getRenderTarget() { return this._target; },
+		setRenderTarget( target ) { this._target = target; },
+		getMRT() { return this._mrt; },
+		setMRT( mrt ) { this._mrt = mrt; },
+		render( scene, camera ) {
+
+			this._rendered = { scene, camera };
+
+		},
+	} );
+	return renderer;
+
+}
+
 class FakeFullRenderer {
 
 	constructor( options = {} ) {
@@ -222,5 +245,42 @@ test( 'createSlimSceneSupport exposes pinClock/unpinClock that flip the same glo
 		unpinClock();
 
 	}
+
+} );
+
+test( 'createSlimSceneSupport renderPassWithFallback renders through a full renderer and shares pass textures', async () => {
+
+	const slim = fakeRenderer();
+	const full = fakePassFullRenderer();
+	const support = createSlimSceneSupport( { renderer: slim } );
+	const texture = { isTexture: true, name: 'pass-color', version: 5 };
+	const depthTexture = { isTexture: true, name: 'pass-depth', version: 6 };
+	full.backend.get( texture ).texture = { gpu: 'color' };
+	full.backend.get( depthTexture ).texture = { gpu: 'depth' };
+	const passNode = {
+		scene: { isScene: true },
+		camera: { isCamera: true },
+		renderTarget: { texture, depthTexture },
+	};
+
+	const stats = await support.renderPassWithFallback( passNode, { fullRenderer: full } );
+
+	assert.deepEqual( stats, { rendered: true, texturesShared: 1, depthShared: true } );
+	assert.equal( full._rendered.scene, passNode.scene );
+	assert.equal( slim.backend.get( texture ).texture, full.backend.get( texture ).texture );
+	assert.equal( slim.backend.get( depthTexture ).texture, full.backend.get( depthTexture ).texture );
+
+} );
+
+test( 'createSlimSceneSupport renderPassWithFallback reports a missing fallback without throwing', async () => {
+
+	const support = createSlimSceneSupport( { renderer: fakeRenderer(), fullRendererFallback: false } );
+	let message = '';
+	const stats = await support.renderPassWithFallback( { scene: {}, renderTarget: {} }, {
+		onError: ( err ) => { message = err.message; },
+	} );
+
+	assert.deepEqual( stats, { rendered: false, texturesShared: 0, depthShared: false } );
+	assert.match( message, /fullRendererFallback: true/ );
 
 } );

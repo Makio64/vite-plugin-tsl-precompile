@@ -159,7 +159,6 @@ Slim is the right choice for shipping a tightly-controlled scene where you want 
 
 - [README.md](README.md) — full plugin options reference
 - [MIGRATION.md](MIGRATION.md) — version-bump workflow in detail
-- [STATUS.md](STATUS.md) — what's currently green / red in the example sweep
 - [packages/examples/getting-started](packages/examples/getting-started) — minimal copy-paste template
 - [packages/examples/pbr-shadows](packages/examples/pbr-shadows) — PBR + shadows, two markers in one scene
 - [packages/examples/ocean](packages/examples/ocean) — flagship demo with addons + post-processing + Inspector

@@ -44,6 +44,7 @@ import {
 import { shareGPUTextureEntry, shareShadowGPUTextureIntoSlim } from './gpu-texture-share.js';
 import { createFullRendererFallback } from './full-renderer-fallback.js';
 import { setSlimRenderFallback } from './render-fallback-registry.js';
+import { renderPassWithFullRenderer, sharePassRenderTargetTextures } from './pass-render-fallback.js';
 import { wirePrecompiledPostprocess } from './postprocess-wire.js';
 import { preparePrecompiledPostprocess } from './postprocess-effects-replay.js';
 import { loadAux } from '../aux-loader.js';
@@ -326,6 +327,76 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	}
 
+	/**
+	 * Render a live PassNode through the full-renderer fallback and share the
+	 * produced render-target textures back into the slim renderer. This is the
+	 * public orchestrator equivalent of the harness's
+	 * `__renderPassNodeWithFullRenderer` primitive, minus harness-specific
+	 * material-swap policy.
+	 *
+	 * @param {Object} passNode
+	 * @param {Object} [passOpts]
+	 * @param {Object} [passOpts.fullRenderer] - Optional caller-owned full renderer. Defaults to this support object's fallback renderer.
+	 * @param {Object} [passOpts.camera] - Camera override. Defaults to `passNode.camera`.
+	 * @param {Function} [passOpts.beforeRender] - Optional hook run after render-target state is installed and before `fullRenderer.render`.
+	 * @param {boolean} [passOpts.shareTextures=true] - Share color/MRT textures back into slim after a successful render.
+	 * @param {boolean} [passOpts.shareDepth=true] - Share `renderTarget.depthTexture` when present.
+	 * @param {Function} [passOpts.onError] - Per-call error handler.
+	 * @return {Promise<{ rendered: boolean, texturesShared: number, depthShared: boolean }>}
+	 */
+	async function renderPassWithFallback( passNode, passOpts = {} ) {
+
+		passOpts = passOpts || {};
+		const fullRenderer = passOpts.fullRenderer || await getFullRenderer();
+		const stats = { rendered: false, texturesShared: 0, depthShared: false };
+
+		if ( ! fullRenderer ) {
+
+			const err = new Error( 'createSlimSceneSupport: renderPassWithFallback() requires `fullRendererFallback: true` or a `passOpts.fullRenderer`.' );
+			if ( typeof passOpts.onError === 'function' ) passOpts.onError( err );
+			if ( onError ) onError( err, { where: 'renderPassWithFallback' } );
+			return stats;
+
+		}
+
+		stats.rendered = renderPassWithFullRenderer( {
+			passNode,
+			slimRenderer: renderer,
+			fullRenderer,
+			camera: passOpts.camera,
+			beforeRender: passOpts.beforeRender,
+			onError: ( err ) => {
+
+				if ( typeof passOpts.onError === 'function' ) passOpts.onError( err );
+				if ( onError ) onError( err, { where: 'renderPassWithFallback' } );
+
+			},
+		} );
+
+		if ( stats.rendered && passOpts.shareTextures !== false && settings.textureSharing ) {
+
+			const shared = sharePassRenderTargetTextures( {
+				passNode,
+				slimRenderer: renderer,
+				fullRenderer,
+				shareDepth: passOpts.shareDepth !== false,
+				diagnostics: diagnostics.textureShare,
+				onError: ( err, texture ) => {
+
+					if ( typeof passOpts.onError === 'function' ) passOpts.onError( err, texture );
+					if ( onError ) onError( err, { where: 'renderPassWithFallback.shareTexture', texture } );
+
+				},
+			} );
+			stats.texturesShared = shared.texturesShared;
+			stats.depthShared = shared.depthShared;
+
+		}
+
+		return stats;
+
+	}
+
 	function dispose() {
 
 		if ( fallbackRegistered ) {
@@ -361,6 +432,7 @@ export function createSlimSceneSupport( opts = {} ) {
 		shareShadowTexture,
 		preparePostprocess,
 		wirePostprocess,
+		renderPassWithFallback,
 		// Wedge 4: clock alignment helpers (same global the runtime writers
 		// consult). Expose on the support object for instance-style callers;
 		// also exported as standalone functions from `@tsl-precompile/runtime`.

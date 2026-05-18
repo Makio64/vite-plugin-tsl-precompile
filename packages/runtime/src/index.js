@@ -30,6 +30,6 @@ export { setSlimRenderFallback, getSlimRenderFallback } from './slim-support/ren
 export { collectLiveBloomNodes, wireBloomNode, wirePrecompiledPostprocess, findPostprocessAux } from './slim-support/postprocess-wire.js';
 export { registerEffectHandler, unregisterEffectHandler, getEffectHandlers, findEffectHandler, collectEffectNodes } from './slim-support/postprocess-effects.js';
 export { preparePrecompiledPostprocess, prepareEffectNodeForReplay, makePrecompiledAuxMaterial, cloneAuxArtifact, wireLiveNodeSidecarsToArtifact } from './slim-support/postprocess-effects-replay.js';
-export { renderPassWithFullRenderer } from './slim-support/pass-render-fallback.js';
+export { renderPassWithFullRenderer, sharePassRenderTargetTextures } from './slim-support/pass-render-fallback.js';
 export { loadInspectorOptional } from './inspector-loader.js';
 export { MaterialVariantSet, createMaterialVariants, applyMaterialVariant } from './material-variants.js';

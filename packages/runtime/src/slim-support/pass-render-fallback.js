@@ -15,9 +15,9 @@
  *      renderer should handle (we don't try to second-guess this).
  *   2. Call `renderPassWithFullRenderer({ passNode, slimRenderer,
  *      fullRenderer, camera })` to do the actual render.
- *   3. Get the resulting `renderTarget.texture` shared back into the slim
- *      renderer via `gpu-texture-share` — which they can wire directly or
- *      via `createSlimSceneSupport().shareTexture(...)`.
+ *   3. Get the resulting render-target textures shared back into the slim
+ *      renderer via `sharePassRenderTargetTextures(...)` or the higher-level
+ *      `createSlimSceneSupport().renderPassWithFallback(...)`.
  *
  * What this module *does not* do (deliberately):
  *   - Walk the scene to decide "should this pass go to full?"
@@ -29,10 +29,41 @@
  * the broader harness extraction lands.
  */
 
+import { shareGPUTextureEntry } from './gpu-texture-share.js';
+
+function readDrawingBufferSize( renderer ) {
+
+	if ( ! renderer || typeof renderer.getDrawingBufferSize !== 'function' ) return null;
+
+	const size = {
+		width: 0,
+		height: 0,
+		set( width, height ) {
+
+			this.width = width;
+			this.height = height;
+			return this;
+
+		},
+	};
+
+	try {
+
+		return renderer.getDrawingBufferSize( size ) || size;
+
+	} catch ( _ ) {
+
+		return null;
+
+	}
+
+}
+
 /**
  * Render a `PassNode` using a full `WebGPURenderer`, with the slim renderer's
  * tone-mapping / color-space state forwarded and the full renderer's
- * render-target / MRT / autoClear state saved and restored.
+ * drawing-buffer size / render-target / MRT / autoClear state forwarded or
+ * saved and restored.
  *
  * Returns `true` when the render succeeded; `false` otherwise (caller can
  * fall back to whatever).
@@ -60,6 +91,8 @@ export function renderPassWithFullRenderer( args ) {
 		fullRenderer.toneMapping = slimRenderer.toneMapping;
 		fullRenderer.toneMappingExposure = slimRenderer.toneMappingExposure;
 		fullRenderer.outputColorSpace = slimRenderer.outputColorSpace;
+		const size = readDrawingBufferSize( slimRenderer );
+		if ( size && typeof fullRenderer.setSize === 'function' ) fullRenderer.setSize( size.width, size.height, false );
 
 	} catch ( _ ) { /* harmless: full might be missing one of these props */ }
 
@@ -114,5 +147,47 @@ export function renderPassWithFullRenderer( args ) {
 		try { fullRenderer.contextNode = currentContextNode; } catch ( _ ) {}
 
 	}
+
+}
+
+/**
+ * Share every texture produced by a pass render-target from the full renderer
+ * back into the slim renderer's backend data map. Handles ordinary
+ * `renderTarget.texture`, MRT `renderTarget.textures`, and optional
+ * `renderTarget.depthTexture`.
+ *
+ * @param {Object} args
+ * @param {Object} args.passNode
+ * @param {Object} args.slimRenderer
+ * @param {Object} args.fullRenderer
+ * @param {boolean} [args.shareDepth=true]
+ * @param {Object} [args.diagnostics]
+ * @param {Function} [args.onError]
+ * @return {{ texturesShared: number, depthShared: boolean }}
+ */
+export function sharePassRenderTargetTextures( args ) {
+
+	const { passNode, slimRenderer, fullRenderer, shareDepth = true, diagnostics, onError } = args || {};
+	const target = passNode && passNode.renderTarget;
+	const stats = { texturesShared: 0, depthShared: false };
+	if ( ! target || ! slimRenderer || ! fullRenderer ) return stats;
+
+	const textures = Array.isArray( target.textures )
+		? target.textures
+		: target.texture ? [ target.texture ] : [];
+
+	for ( const texture of textures ) {
+
+		if ( shareGPUTextureEntry( slimRenderer, fullRenderer, texture, { diagnostics, onError } ) ) stats.texturesShared ++;
+
+	}
+
+	if ( shareDepth !== false && target.depthTexture ) {
+
+		stats.depthShared = shareGPUTextureEntry( slimRenderer, fullRenderer, target.depthTexture, { diagnostics, onError } );
+
+	}
+
+	return stats;
 
 }

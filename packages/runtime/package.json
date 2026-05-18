@@ -80,6 +80,7 @@
       "default": "./src/slim-support/postprocess-effects-replay.js"
     },
     "./slim-support/pass-render-fallback": {
+      "types": "./types/slim-support/pass-render-fallback.d.ts",
       "default": "./src/slim-support/pass-render-fallback.js"
     },
     "./slim": "./build/three.webgpu.slim.js",
