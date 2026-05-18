@@ -95,6 +95,17 @@ runtime.
 A full runnable copy lives in
 [packages/examples/getting-started](packages/examples/getting-started).
 
+For MRT / `RenderPipeline` projects, enable aux capture and pass the live
+PassNode after you build the pass graph:
+
+```js
+const setup = setupPrecompile( { three: THREE, renderer, scene, camera, aux: true } );
+await setup.ready;
+
+const scenePass = pass( scene, camera ).setMRT( mrt( { output, normal } ) );
+await setup.captureAux( { passNode: scenePass, renderPipeline } );
+```
+
 ## How it works
 
 1. **Dev capture.** `material.precompile('name')` runs in your browser. The
@@ -167,6 +178,23 @@ optimizeDeps: {
 },
 ```
 
+For larger apps that still have non-precompiled helper meshes, Inspector
+overlays, PMREM work, compute outputs, or post-processing passes, use the
+public slim-support entry instead of reaching into runtime internals:
+
+```js
+import * as ThreeFull from 'three/webgpu';
+import { createSlimSceneSupport } from '@tsl-precompile/runtime/slim-support';
+
+const support = createSlimSceneSupport( {
+	renderer,
+	threeFullModule: ThreeFull,
+} );
+
+support.indexScene( scene );
+await support.ensureFallback();
+```
+
 Pairs naturally with `autoMark` if you want to remove the live TSL compiler
 from production on an existing project without manually marking every
 material.
@@ -202,6 +230,11 @@ material.
   You hit a code path that wasn't precompiled in `slim: true` mode. Mark
   that material with `.precompile()` (or enable `autoMark`), re-run dev to
   capture, then rebuild.
+- **Post-processing renders black or samples stale textures in `slim` mode.**
+  Run `precompileAuxiliary(renderer, scene, camera, { three: THREE,
+  postProcessing })` once in dev after creating the `RenderPipeline` /
+  `PostProcessing` graph. The build rewrite now rebinds live pass/effect
+  render-target textures by name for postfx artifacts.
 - **`[tsl-precompile] .precompile('X') was called but no dev endpoint is
   configured`** in production. The Babel transform did not run — check that
   `tslPrecompile()` is in your Vite config and you're running through Vite.

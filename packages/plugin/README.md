@@ -59,6 +59,12 @@ rewrites that call to inject the baked artifact + a generated updater
 function. With `slim: true`, the slim runtime bundle skips the node builder
 entirely at runtime.
 
+Projects that use MRT / `RenderPipeline` should also capture aux artifacts
+after the pass graph is built. `setupPrecompile({ aux: true })` exposes
+`captureAux(extraOpts)`, so a `pass(scene, camera).setMRT(...)` pipeline can
+call `await setup.captureAux({ passNode: scenePass, renderPipeline })` before
+rendering.
+
 ## Options
 
 | Option | Default | Description |

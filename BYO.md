@@ -100,14 +100,17 @@ If your scene has a background node, post-processing, or PMREM environment, thre
 import { precompileAuxiliary } from '@tsl-precompile/runtime';
 
 precompileAuxiliary( renderer, scene, camera, {
-    devEndpoint: '/__tsl-precompile/capture',
-    three: THREE,
-    threeVersion: String( THREE.REVISION ).match( /^\d+/ )[ 0 ],
-    postProcessing,            // optional, only if you have one
+	devEndpoint: '/__tsl-precompile/capture',
+	three: THREE,
+	threeVersion: String( THREE.REVISION ).match( /^\d+/ )[ 0 ],
+	postProcessing,            // RenderPipeline or PostProcessing, if you have one
 } );
 ```
 
-Call this once, after your scene is fully assembled. In production builds it silently no-ops — safe to leave unguarded.
+Call this once, after your scene and post-processing graph are fully assembled.
+For TSL postfx chains it captures the top-level `post-process` artifact plus
+known internal effect materials such as bloom and GTAO. In production builds it
+silently no-ops — safe to leave unguarded.
 
 ## Ship it
 

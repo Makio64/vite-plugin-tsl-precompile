@@ -52,7 +52,44 @@ entry exports a sentinel so the helper short-circuits entirely.
 | `aux` | `true` or an opts object to also enable `captureAux()` for auxiliary passes (background, post-process, lights). Requires `scene` + `camera`. |
 | `scene`, `camera` | Required only when `aux` is truthy. |
 
-Returns `{ ready, captureAux, setRenderer }`.
+Returns `{ ready, captureAux, setRenderer }`. `captureAux(extraOpts)` merges
+per-call options into the setup-level `aux` object, which is useful when a
+project creates pass nodes after startup.
+
+For MRT / RenderPipeline scenes, pass the live `PassNode` when you capture aux
+artifacts so the extractor sees the multi-target layout:
+
+```js
+const setup = setupPrecompile( { three: THREE, renderer, scene, camera, aux: true } );
+await renderer.init();
+await setup.ready;
+
+const scenePass = pass( scene, camera ).setMRT( mrt( { output, normal } ) );
+renderPipeline.outputNode = scenePass.getTextureNode( 'output' );
+
+await setup.captureAux( { passNode: scenePass, renderPipeline } );
+```
+
+## Slim Support
+
+Apps that enable the plugin's `slim: true` mode can use the stable
+`@tsl-precompile/runtime/slim-support` entry when they need real-app fallback
+plumbing: live texture indexing, PMREM caching, compute output sync,
+post-processing replay, pass render fallback, or a full `WebGPURenderer` on
+the same `GPUDevice` for non-precompiled materials.
+
+```js
+import * as ThreeFull from 'three/webgpu';
+import { createSlimSceneSupport } from '@tsl-precompile/runtime/slim-support';
+
+const support = createSlimSceneSupport( {
+	renderer: slimRenderer,
+	threeFullModule: ThreeFull,
+} );
+
+support.indexScene( scene );
+await support.ensureFallback();      // optional: for Inspector/addon meshes
+```
 
 ## Exports
 
@@ -81,7 +118,7 @@ import {
 ```
 
 Subpath entries: `@tsl-precompile/runtime/writers`, `/marker`, `/apply`,
-`/loader`, `/slim`, `/slim-stubs`.
+`/loader`, `/slim-support`, `/slim`, `/slim-stubs`.
 
 ## More
 
