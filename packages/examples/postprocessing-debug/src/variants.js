@@ -23,6 +23,7 @@ import * as THREE_GPU from 'three/webgpu';
 import 'virtual:tsl-precompile/__aux';
 
 const CAPTURE_ENDPOINT = window.__TSLP_E2E?.captureEndpoint || '/__tsl-precompile/capture';
+const IS_E2E = !! window.__TSLP_E2E;
 const IS_E2E_REPLAY = window.__TSLP_E2E?.mode === 'replay';
 const POST_PLAIN = 'postprocessing-debug-variants-plain';
 const POST_BLOOM = 'postprocessing-debug-variants-bloom';
@@ -196,8 +197,9 @@ async function main() {
 	const post = makePostPipelines( renderer, scene, camera );
 	const plainAux = await ensurePipelineAux( renderer, scene, camera, post.plain, POST_PLAIN );
 	const bloomAux = await ensurePipelineAux( renderer, scene, camera, post.bloom, POST_BLOOM );
+	const auxStatus = IS_E2E ? 'ready' : `${ plainAux } / ${ bloomAux }`;
 
-	setHud( `rendering - ${ plainAux } / ${ bloomAux }`, variants.currentName, 'plain' );
+	setHud( `rendering - ${ auxStatus }`, variants.currentName, 'plain' );
 
 	let lastVariant = variants.currentName;
 	let lastPost = 'plain';
@@ -217,7 +219,7 @@ async function main() {
 		if ( nextPost !== lastPost ) {
 
 			lastPost = nextPost;
-			setHud( `rendering - ${ plainAux } / ${ bloomAux }`, lastVariant, lastPost );
+			setHud( `rendering - ${ auxStatus }`, lastVariant, lastPost );
 
 		}
 

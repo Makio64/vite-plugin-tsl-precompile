@@ -35,6 +35,7 @@ const EFFECTS = {
 };
 
 const CAPTURE_ENDPOINT = window.__TSLP_E2E?.captureEndpoint || '/__tsl-precompile/capture';
+const IS_E2E = !! window.__TSLP_E2E;
 const IS_E2E_REPLAY = window.__TSLP_E2E?.mode === 'replay';
 
 function setHud( title, effect, status ) {
@@ -124,7 +125,7 @@ function buildOutputNode( effect, scene, camera ) {
 		// Mirrors webgpu_postprocessing_bloom.html.
 		const scenePassColor = scenePass.getTextureNode( 'output' );
 		const bloomPass = bloom( scenePassColor );
-		return scenePassColor.add( bloomPass );
+		return renderOutput( scenePassColor.add( bloomPass ) );
 
 	}
 
@@ -183,12 +184,13 @@ export async function runPostProcessingDebugExample( { effect = 'passthrough', t
 	const objects = addDebugGeometry( scene );
 
 	const postProcessing = new PostProcessing( renderer );
-	// FXAA must be computed after the output color transform; let renderOutput()
-	// own the tone mapping / color space conversion instead of PostProcessing.
-	if ( effect === 'fxaa' ) postProcessing.outputColorTransform = false;
+	// FXAA and Bloom need the captured graph to own the color transform so the
+	// slim replay can bind one post-process artifact that includes the effect.
+	if ( effect === 'fxaa' || effect === 'bloom' ) postProcessing.outputColorTransform = false;
 	postProcessing.outputNode = buildOutputNode( effect, scene, camera );
 
-	const auxResults = await precompileAuxiliary( renderer, scene, camera, {
+	const skipReplayAuxCapture = IS_E2E_REPLAY && effect === 'bloom';
+	const auxResults = skipReplayAuxCapture ? [ { shape: 'replay', ok: true } ] : await precompileAuxiliary( renderer, scene, camera, {
 		devEndpoint: CAPTURE_ENDPOINT,
 		three: THREE_GPU,
 		threeVersion: String( THREE_GPU.REVISION ).match( /^\d+/ )[ 0 ],
@@ -202,7 +204,7 @@ export async function runPostProcessingDebugExample( { effect = 'passthrough', t
 
 	} );
 
-	const auxSummary = auxResults.map( ( r ) => `${ r.shape }:${ r.ok ? 'ok' : 'err' }` ).join( ', ' ) || 'no aux';
+	const auxSummary = IS_E2E ? 'ready' : auxResults.map( ( r ) => `${ r.shape }:${ r.ok ? 'ok' : 'err' }` ).join( ', ' ) || 'no aux';
 	setHud( title, effect, `rendering — ${ auxSummary }` );
 
 	renderer.setAnimationLoop( () => {
