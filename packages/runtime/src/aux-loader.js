@@ -38,6 +38,8 @@
  * @module AuxLoader
  */
 
+import { registerPrecompiledArtifact, unregisterPrecompiledArtifacts } from './_vendor-PrecompiledArtifactRegistry.js';
+
 /** @type {Map<string, Object>} */
 const REGISTRY = new Map();
 
@@ -70,6 +72,7 @@ export function registerAuxArtifact( shape, configHash, artifact, opts = {} ) {
 	// setupViewportTextureClasses() has been called.
 	wireViewportTextureRefs( artifact );
 	REGISTRY.set( key( shape, configHash ), artifact );
+	if ( isPrecompiledRegistryShape( shape ) ) registerPrecompiledArtifact( artifact );
 
 }
 
@@ -318,6 +321,12 @@ function stampAuxMetadata( artifact, shape, configHash, name = undefined ) {
 		// Frozen/user-provided artifact objects still remain registered; they
 		// simply will not be discoverable by friendly name.
 	}
+
+}
+
+function isPrecompiledRegistryShape( shape ) {
+
+	return shape === 'shadow-depth' || shape === 'render-pipeline' || shape === 'output-transform';
 
 }
 
@@ -806,6 +815,7 @@ export function __resetAuxRegistryForTests() {
 
 	REGISTRY.clear();
 	WARNED_FALLBACKS.clear();
+	unregisterPrecompiledArtifacts();
 
 }
 

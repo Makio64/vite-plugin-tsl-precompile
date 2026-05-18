@@ -215,6 +215,68 @@ function pushArtifactVariant( byMaterialVariants, materialUuid, artifact ) {
 
 }
 
+function artifactVariantPayload( artifact ) {
+
+	return {
+		cacheKey: artifact.cacheKey,
+		materialShape: artifact.materialShape,
+		sourceMaterial: artifact.sourceMaterial,
+		vertexShader: artifact.vertexShader,
+		fragmentShader: artifact.fragmentShader,
+		computeShader: artifact.computeShader,
+		transforms: artifact.transforms,
+		attributes: artifact.attributes,
+		nodeAttributes: artifact.nodeAttributes,
+		bindings: artifact.bindings,
+		uniformPlan: artifact.uniformPlan,
+		mrtOutputCount: artifact.mrtOutputCount,
+		mrtOutputNames: artifact.mrtOutputNames,
+		mrtBlendModes: artifact.mrtBlendModes,
+	};
+
+}
+
+function mergeArtifactTextureRefs( target, source ) {
+
+	const sourceRefs = source && source._textureRefs;
+	if ( ! ( sourceRefs instanceof Map ) || sourceRefs.size === 0 ) return;
+	let refs = target._textureRefs instanceof Map ? new Map( target._textureRefs ) : new Map();
+	let changed = false;
+	for ( const [ uuid, texture ] of sourceRefs ) {
+
+		if ( ! refs.has( uuid ) ) {
+
+			refs.set( uuid, texture );
+			changed = true;
+
+		}
+
+	}
+	if ( ! changed ) return;
+	Object.defineProperty( target, '_textureRefs', {
+		value: refs,
+		enumerable: false,
+		configurable: true,
+		writable: true,
+	} );
+
+}
+
+function attachArtifactVariantFamily( artifact, variantList ) {
+
+	if ( ! artifact || ! Array.isArray( variantList ) || variantList.length <= 1 ) return;
+	const variants = {};
+	for ( const variant of variantList ) {
+
+		if ( ! variant || variant.cacheKey === undefined || variant.cacheKey === null ) continue;
+		variants[ String( variant.cacheKey ) ] = artifactVariantPayload( variant );
+		mergeArtifactTextureRefs( artifact, variant );
+
+	}
+	if ( Object.keys( variants ).length > 1 ) artifact.variants = variants;
+
+}
+
 /**
  * Detect and capture LTC BRDF approximation textures from a built artifact.
  *
@@ -1279,6 +1341,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	const byMesh = new Map();
 	const byMaterialUuid = new Map();
 	const byMaterialVariants = new Map();
+	const byAuxiliaryMaterialVariants = new Map();
 	const byComputeNode = new Map();
 	// Wedge 4: snapshot the renderer's nodeFrame.time at capture so the runtime
 	// can pin it during PSNR-snapshot replay. Without this, time-driven graphs
@@ -1339,6 +1402,11 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 		artifacts.push( artifact );
 		const isAuxiliary = isAuxiliaryArtifactShape( artifact.materialShape );
+		if ( material && isAuxiliary ) {
+
+			pushArtifactVariant( byAuxiliaryMaterialVariants, material.uuid, artifact );
+
+		}
 
 		if ( material && ! isAuxiliary ) {
 
@@ -1370,6 +1438,12 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 			}
 
 		}
+
+	}
+
+	for ( const variantList of byAuxiliaryMaterialVariants.values() ) {
+
+		for ( const artifact of variantList ) attachArtifactVariantFamily( artifact, variantList );
 
 	}
 

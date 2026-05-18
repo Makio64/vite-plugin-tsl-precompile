@@ -341,6 +341,41 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 
 	}
 
+	const shadowLights = lights.filter( ( light ) => light && light.castShadow === true );
+	if ( shadowLights.length > 0 ) {
+
+		const shape = 'shadow-depth';
+		try {
+
+			const artifact = await captureShadowDepthLive( renderer, scene, camera, opts );
+			if ( artifact ) {
+
+				const signature = shadowLights
+					.map( ( l ) => `${ l.type || l.constructor && l.constructor.name || 'Light' }:${ l.shadow && l.shadow.mapSize ? `${ l.shadow.mapSize.width }x${ l.shadow.mapSize.height }` : 'shadow' }` )
+					.sort();
+				const cacheKeys = [ artifact.cacheKey, ...Object.keys( artifact.variants || {} ) ]
+					.filter( ( key ) => key !== undefined && key !== null )
+					.map( ( key ) => String( key ) )
+					.sort();
+				const configHash = hashPlainConfigSync( { signature, cacheKeys }, { shape, ...hashOpts } );
+				trackLocal( shape, configHash, artifact );
+				results.push( await post( opts.devEndpoint, {
+					materialShape: shape,
+					configHash,
+					artifact,
+					name: `aux-${ shape }-${ configHash.slice( 0, 12 ) }`,
+				}, shape, configHash ) );
+
+			}
+
+		} catch ( err ) {
+
+			results.push( { shape, configHash: null, ok: false, error: err && err.message || String( err ) } );
+
+		}
+
+	}
+
 	// PMREM ------------------------------------------------------------------
 	// Discover every (kind, sourceWidth, sourceHeight) signature reachable
 	// from the scene that PMREMGenerator could be invoked on. For each unique
@@ -501,6 +536,24 @@ async function capturePostProcessingLive( renderer, postProcessing, opts, hashOp
 		pluginVersion: opts.pluginVersion || '0.0.0',
 	} );
 	return { artifact: jsonSafe( artifact ), extraArtifacts };
+
+}
+
+async function captureShadowDepthLive( renderer, scene, camera, opts ) {
+
+	const compileTSL = opts.compileTSL || ( await lazyLoadCompileTSL() );
+	if ( ! compileTSL || ! scene || ! camera ) return null;
+	const artifacts = await compileTSL( renderer, scene, camera, { noGlobalMRT: true } );
+	const shadowArtifacts = artifacts.filter( ( artifact ) => artifact && artifact.materialShape === 'shadow-depth' );
+	if ( shadowArtifacts.length === 0 ) return null;
+	shadowArtifacts.sort( ( a, b ) => variantCount( b ) - variantCount( a ) );
+	return jsonSafe( shadowArtifacts[ 0 ] );
+
+}
+
+function variantCount( artifact ) {
+
+	return artifact && artifact.variants && typeof artifact.variants === 'object' ? Object.keys( artifact.variants ).length : 0;
 
 }
 

@@ -40,7 +40,108 @@
  * precompile variants via `registerShadowArtifact( light, artifact )`.
  */
 let _defaultShadowArtifact = null;
-const _shadowByLight = new WeakMap();
+let _shadowByLight = new WeakMap();
+
+const VARIANT_FIELDS = [
+	'cacheKey',
+	'materialShape',
+	'sourceMaterial',
+	'vertexShader',
+	'fragmentShader',
+	'computeShader',
+	'transforms',
+	'attributes',
+	'nodeAttributes',
+	'bindings',
+	'uniformPlan',
+	'mrtOutputCount',
+	'mrtOutputNames',
+	'mrtBlendModes',
+];
+
+function variantPayload( artifact ) {
+
+	const payload = {};
+	for ( const field of VARIANT_FIELDS ) {
+
+		if ( artifact && artifact[ field ] !== undefined ) payload[ field ] = artifact[ field ];
+
+	}
+	return payload;
+
+}
+
+function mergeTextureRefs( target, source ) {
+
+	const sourceRefs = source && source._textureRefs;
+	if ( ! ( sourceRefs instanceof Map ) || sourceRefs.size === 0 ) return;
+	let refs = target._textureRefs instanceof Map ? new Map( target._textureRefs ) : new Map();
+	let changed = false;
+	for ( const [ uuid, texture ] of sourceRefs ) {
+
+		if ( ! refs.has( uuid ) ) {
+
+			refs.set( uuid, texture );
+			changed = true;
+
+		}
+
+	}
+	if ( ! changed ) return;
+	Object.defineProperty( target, '_textureRefs', {
+		value: refs,
+		enumerable: false,
+		configurable: true,
+		writable: true,
+	} );
+
+}
+
+function addVariant( target, artifact ) {
+
+	if ( ! target || ! artifact || artifact.cacheKey === undefined || artifact.cacheKey === null ) return;
+	const variants = target.variants && typeof target.variants === 'object' ? { ...target.variants } : {};
+	variants[ String( artifact.cacheKey ) ] = variantPayload( artifact );
+	Object.defineProperty( target, 'variants', {
+		value: variants,
+		enumerable: true,
+		configurable: true,
+		writable: true,
+	} );
+	mergeTextureRefs( target, artifact );
+
+}
+
+function mergeArtifactFamily( target, artifact ) {
+
+	if ( ! target || ! artifact || target === artifact ) return target;
+	addVariant( target, target );
+	addVariant( target, artifact );
+	if ( artifact.variants && typeof artifact.variants === 'object' ) {
+
+		for ( const variant of Object.values( artifact.variants ) ) addVariant( target, variant );
+
+	}
+	mergeTextureRefs( target, artifact );
+	return target;
+
+}
+
+function registerShadowArtifact( artifact, opts = {} ) {
+
+	if ( opts.light ) {
+
+		const existing = _shadowByLight.get( opts.light );
+		if ( existing ) mergeArtifactFamily( existing, artifact );
+		else _shadowByLight.set( opts.light, artifact );
+		return;
+
+	}
+
+	if ( _defaultShadowArtifact === null ) _defaultShadowArtifact = artifact;
+	else mergeArtifactFamily( _defaultShadowArtifact, artifact );
+
+}
 
 /**
  * Post-process pipeline artifact. RenderPipeline builds a single
@@ -82,8 +183,7 @@ export function registerPrecompiledArtifact( artifact, opts = {} ) {
 
 	if ( shape === 'shadow-depth' ) {
 
-		if ( opts.light ) _shadowByLight.set( opts.light, artifact );
-		else if ( _defaultShadowArtifact === null ) _defaultShadowArtifact = artifact;
+		registerShadowArtifact( artifact, opts );
 
 	} else if ( shape === 'render-pipeline' || shape === 'post-pass' ) {
 
@@ -123,6 +223,7 @@ export function registerPrecompiledArtifacts( artifacts ) {
 export function unregisterPrecompiledArtifacts() {
 
 	_defaultShadowArtifact = null;
+	_shadowByLight = new WeakMap();
 	_defaultPipelineArtifact = null;
 	_defaultOutputArtifact = null;
 	_pipelineArtifactsByKey.clear();
