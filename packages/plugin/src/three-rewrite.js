@@ -16,6 +16,7 @@
  * slim bundle without the rewrite so Vite builds still complete.
  *
  * Current targets include renderer/background/post-processing auxiliaries,
+ * shadow-depth auxiliaries,
  * NodeManager builder bypass, WebGPU backend/pipeline compatibility patches,
  * and CubeRenderTarget helper material rewrites.
  *
@@ -110,6 +111,7 @@ function pickHandler( id ) {
 	if ( /\/three\/src\/renderers\/common\/PostProcessing\.js$/.test( id ) ) return rewritePostProcessing;
 	if ( /\/three\/src\/renderers\/common\/RenderPipeline\.js$/.test( id ) ) return rewritePostProcessing;
 	if ( /\/three\/src\/renderers\/common\/Background\.js$/.test( id ) ) return rewriteBackground;
+	if ( /\/three\/src\/nodes\/lighting\/ShadowFilterNode\.js$/.test( id ) ) return rewriteShadowFilterNode;
 	if ( /\/three\/src\/renderers\/common\/nodes\/Nodes\.js$/.test( id ) ) return rewriteNodesJs;
 	// 0.184+ renamed Nodes.js → NodeManager.js. Same shape; same handler.
 	if ( /\/three\/src\/renderers\/common\/nodes\/NodeManager\.js$/.test( id ) ) return rewriteNodesJs;
@@ -564,6 +566,120 @@ function rewriteBackground( ast, ctx ) {
 
 	injectHashOptsConst( ast, ctx );
 	ctx.touched = true;
+
+}
+
+// -------------------------------------------------------------------------
+// ShadowFilterNode.js handler
+// -------------------------------------------------------------------------
+//
+// Expected shape (three@0.184.0):
+//
+//   export const getShadowMaterial = ( light ) => {
+//     let material = shadowMaterialLib.get( light );
+//     if ( material === undefined ) {
+//       material = new NodeMaterial();
+//       material.colorNode = vec4( 0, 0, 0, 1 );
+//       material.isShadowPassMaterial = true;
+//       material.name = 'ShadowMaterial';
+//       material.blending = NoBlending;
+//       material.fog = false;
+//       shadowMaterialLib.set( light, material );
+//     }
+//     return material;
+//   };
+//
+// Rewritten shape:
+//
+//   const artifact = getShadowArtifact( light );
+//   if ( ! artifact ) throw ...;
+//   material = new PrecompiledMaterial( artifact );
+//
+// The graph assignment (`colorNode`) is dropped because it is baked into the
+// shadow-depth artifact. The material flags stay live so three.js continues
+// to treat this as the special shadow override material.
+
+function rewriteShadowFilterNode( ast, ctx ) {
+
+	let rewrites = 0;
+
+	traverse( ast, {
+		AssignmentExpression( path ) {
+
+			if ( ! t.isIdentifier( path.node.left, { name: 'material' } ) ) return;
+			if ( ! t.isNewExpression( path.node.right ) ) return;
+			if ( ! t.isIdentifier( path.node.right.callee, { name: 'NodeMaterial' } ) ) return;
+
+			const stmt = path.getStatementParent();
+			if ( ! stmt || ! t.isExpressionStatement( stmt.node ) ) throw new Error( 'ShadowFilterNode: material assignment is not an expression statement' );
+			if ( ! isInsideGetShadowMaterial( path ) ) throw new Error( 'ShadowFilterNode: found `material = new NodeMaterial()` outside getShadowMaterial' );
+
+			const block = findEnclosingBlock( path );
+			if ( ! block ) throw new Error( 'ShadowFilterNode: material assignment has no enclosing block' );
+
+			const siblings = findMaterialAssignments( block, 'material' );
+			const colorAssign = siblings.get( 'colorNode' );
+			if ( ! colorAssign ) throw new Error( 'ShadowFilterNode: shape changed (expected material.colorNode = vec4(...))' );
+			for ( const property of [ 'isShadowPassMaterial', 'name', 'blending', 'fog' ] ) {
+
+				if ( ! siblings.has( property ) ) throw new Error( `ShadowFilterNode: shape changed (expected material.${ property } assignment)` );
+
+			}
+			if ( ! blockHasShadowMaterialSet( block ) ) throw new Error( 'ShadowFilterNode: shape changed (expected shadowMaterialLib.set(light, material))' );
+
+			stmt.replaceWithMultiple( parseFunctionBody( `
+				const artifact = getShadowArtifact( light );
+				if ( ! artifact ) {
+					const err = new Error( '[tsl-precompile/slim] no shadow-depth artifact is registered for this shadow light. Run precompile/capture with the shadow-casting scene before using the slim bundle.' );
+					err.tslPrecompileSlimOnly = true;
+					throw err;
+				}
+				material = new PrecompiledMaterial( artifact );
+			` ).body );
+			colorAssign.remove();
+			rewrites ++;
+			path.skip();
+
+		},
+	} );
+
+	if ( rewrites === 0 ) throw new Error( 'ShadowFilterNode: shape changed (no `material = new NodeMaterial()` found)' );
+	if ( rewrites > 1 ) throw new Error( `ShadowFilterNode: expected exactly 1 rewrite, got ${ rewrites }` );
+
+	ctx.touched = true;
+
+}
+
+function isInsideGetShadowMaterial( path ) {
+
+	let p = path;
+	while ( p ) {
+
+		if ( t.isVariableDeclarator( p.node ) && t.isIdentifier( p.node.id, { name: 'getShadowMaterial' } ) ) return true;
+		p = p.parentPath;
+
+	}
+	return false;
+
+}
+
+function blockHasShadowMaterialSet( blockPath ) {
+
+	for ( const stmt of blockPath.get( 'body' ) ) {
+
+		if ( ! t.isExpressionStatement( stmt.node ) ) continue;
+		const expr = stmt.node.expression;
+		if ( ! t.isCallExpression( expr ) ) continue;
+		if ( ! t.isMemberExpression( expr.callee ) ) continue;
+		if ( ! t.isIdentifier( expr.callee.object, { name: 'shadowMaterialLib' } ) ) continue;
+		if ( ! t.isIdentifier( expr.callee.property, { name: 'set' } ) ) continue;
+		if ( expr.arguments.length < 2 ) continue;
+		if ( ! t.isIdentifier( expr.arguments[ 0 ], { name: 'light' } ) ) continue;
+		if ( ! t.isIdentifier( expr.arguments[ 1 ], { name: 'material' } ) ) continue;
+		return true;
+
+	}
+	return false;
 
 }
 
@@ -1659,6 +1775,7 @@ function injectRuntimeImports( ast ) {
 	const runtimeImport = t.importDeclaration(
 		[
 			t.importSpecifier( t.identifier( 'PrecompiledMaterial' ), t.identifier( 'PrecompiledMaterial' ) ),
+			t.importSpecifier( t.identifier( 'getShadowArtifact' ), t.identifier( 'getShadowArtifact' ) ),
 			t.importSpecifier( t.identifier( 'loadAux' ), t.identifier( 'loadAux' ) ),
 			t.importSpecifier( t.identifier( 'attachArtifactTextureRefs' ), t.identifier( 'attachArtifactTextureRefs' ) ),
 			t.importSpecifier( t.identifier( 'attachPostprocessTextureRefs' ), t.identifier( 'attachPostprocessTextureRefs' ) ),
