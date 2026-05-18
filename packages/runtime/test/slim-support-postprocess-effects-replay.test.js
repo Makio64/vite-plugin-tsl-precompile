@@ -235,6 +235,41 @@ test( 'prepareEffectNodeForReplay calls handler hooks when defined', () => {
 
 } );
 
+test( 'prepareEffectNodeForReplay attaches live postprocess textures by name', () => {
+
+	__resetEffectHandlersForTests();
+	const liveTexture = { isTexture: true, name: 'fake-fx-output', uuid: 'live-output' };
+	const fakeMaterial = { name: 'fake-fx-mat', fragmentNode: { isNode: true } };
+	const fakeNode = { __fakeTextureFx: true, _mat: fakeMaterial, _rt: { isRenderTarget: true, texture: liveTexture } };
+
+	registerEffectHandler( {
+		name: 'fake-texture-fx',
+		detect: ( n ) => !! ( n && n.__fakeTextureFx === true ),
+		subPasses: ( n ) => [ { material: n._mat, shape: 'fake-texture-fx', config: {} } ],
+	} );
+
+	const loadAux = () => ( {
+		version: 3,
+		shape: 'fake-texture-fx',
+		uniformPlan: [ {
+			slots: [],
+			textures: [ { source: { kind: 'artifact.texture', textureUuid: 'captured-output', textureName: 'fake-fx-output' } } ],
+		} ],
+		defaults: {},
+		renderState: {},
+		fragmentShader: '',
+		vertexShader: '',
+	} );
+	const handler = findEffectHandler( fakeNode );
+	const result = prepareEffectNodeForReplay( handler, fakeNode, { loadAux, PrecompiledMaterial: StubPrecompiledMaterial } );
+	assert.equal( result.missed.length, 0 );
+	assert.ok( fakeNode._mat instanceof StubPrecompiledMaterial );
+	assert.equal( fakeNode._mat.precompiledArtifact._textureRefs.get( 'captured-output' ), liveTexture );
+
+	unregisterEffectHandler( 'fake-texture-fx' );
+
+} );
+
 test( 'prepareEffectNodeForReplay records missed shapes when aux is absent', () => {
 
 	const loadAux = makeLoadAux( [ 'bloom-high-pass' ] ); // intentionally missing blur + composite

@@ -1,0 +1,92 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import { attachPostprocessTextureRefs, attachPostprocessUpdateBeforeNodes } from '../src/aux-loader.js';
+
+function makeArtifact() {
+
+	return {
+		uniformPlan: [ {
+			textures: [
+				{ source: { kind: 'artifact.texture', textureUuid: 'captured-output', textureName: 'output' } },
+				{ source: { kind: 'artifact.texture', textureUuid: 'captured-normal', textureName: 'normal' } },
+				{ source: { kind: 'artifact.texture', textureUuid: 'captured-ao', textureName: 'GTAONode.AO' } },
+			],
+		} ],
+	};
+
+}
+
+test( 'attachPostprocessTextureRefs binds PassNode and effect render-target textures by name', () => {
+
+	const outputTexture = { isTexture: true, name: 'output', uuid: 'live-output' };
+	const normalTexture = { isTexture: true, name: 'normal', uuid: 'live-normal' };
+	const aoTexture = { isTexture: true, name: 'GTAONode.AO', uuid: 'live-ao' };
+	const outputNode = {
+		pass: {
+			isPassNode: true,
+			_textures: { output: outputTexture, normal: normalTexture },
+			renderTarget: { textures: [ outputTexture, normalTexture ] },
+		},
+		gtao: {
+			_aoRenderTarget: { isRenderTarget: true, texture: aoTexture },
+		},
+	};
+	const artifact = attachPostprocessTextureRefs( makeArtifact(), outputNode );
+
+	assert.ok( artifact._textureRefs instanceof Map );
+	assert.equal( artifact._textureRefs.get( 'captured-output' ), outputTexture );
+	assert.equal( artifact._textureRefs.get( 'captured-normal' ), normalTexture );
+	assert.equal( artifact._textureRefs.get( 'captured-ao' ), aoTexture );
+
+} );
+
+test( 'attachPostprocessTextureRefs updates PassTextureNode values before matching', () => {
+
+	const liveTexture = { isTexture: true, name: 'output', uuid: 'live-output' };
+	const passNode = {
+		getTexture( name ) {
+
+			assert.equal( name, 'output' );
+			return liveTexture;
+
+		},
+	};
+	const textureNode = {
+		isPassTextureNode: true,
+		textureName: 'output',
+		passNode,
+		value: null,
+		updateTexture() { this.value = passNode.getTexture( 'output' ); },
+	};
+	const artifact = attachPostprocessTextureRefs( makeArtifact(), textureNode );
+
+	assert.equal( artifact._textureRefs.get( 'captured-output' ), liveTexture );
+
+} );
+
+test( 'attachPostprocessUpdateBeforeNodes wires pass and in-process effect nodes', () => {
+
+	const passNode = {
+		isPassNode: true,
+		updateBefore() {},
+	};
+	const bloomNode = {
+		constructor: { type: 'BloomNode' },
+		updateBefore() {},
+	};
+	const outlineNode = {
+		constructor: { type: 'OutlineNode' },
+		updateBefore() {},
+	};
+	const artifact = attachPostprocessUpdateBeforeNodes( {
+		_liveUpdateBeforeNodes: [ passNode ],
+		uniformPlan: [],
+	}, {
+		passNode,
+		nested: { bloomNode, outlineNode },
+	} );
+
+	assert.deepEqual( artifact._liveUpdateBeforeNodes, [ passNode, bloomNode ] );
+
+} );

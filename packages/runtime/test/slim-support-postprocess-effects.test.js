@@ -9,6 +9,7 @@ import {
 	collectEffectNodes,
 	__resetEffectHandlersForTests,
 } from '../src/slim-support/postprocess-effects.js';
+import { Node, PassNode } from '../src/slim-stubs.js';
 
 function bloomLike() {
 
@@ -32,6 +33,19 @@ function outlineLike() {
 		_separableBlurMaterial: { name: 'outline-blur' },
 		_compositeMaterial: { name: 'outline-composite' },
 		_prepareMaskMaterial: { name: 'outline-mask' },
+	};
+
+}
+
+function gtaoLike() {
+
+	return {
+		updateBefore: () => {},
+		_aoRenderTarget: { texture: { name: 'GTAONode.AO', format: 1028, type: 1009 } },
+		_material: { name: 'GTAO' },
+		_textureNode: { isPassTextureNode: true },
+		radius: { isUniformNode: true, value: 0.25 },
+		resolution: { isUniformNode: true, value: { isVector2: true } },
 	};
 
 }
@@ -69,10 +83,13 @@ function traaLike() {
 
 }
 
-test( 'built-in handlers detect bloom/outline/ssr/dof/traa', () => {
+test( 'built-in handlers detect bloom/gtao/outline/ssr/dof/traa', () => {
 
 	const bloomHandler = findEffectHandler( bloomLike() );
 	assert.equal( bloomHandler && bloomHandler.name, 'bloom' );
+
+	const gtaoHandler = findEffectHandler( gtaoLike() );
+	assert.equal( gtaoHandler && gtaoHandler.name, 'gtao' );
 
 	const outlineHandler = findEffectHandler( outlineLike() );
 	assert.equal( outlineHandler && outlineHandler.name, 'outline' );
@@ -88,11 +105,52 @@ test( 'built-in handlers detect bloom/outline/ssr/dof/traa', () => {
 
 } );
 
+test( 'gtao handler subPasses returns the AO material with renderTargetHint', () => {
+
+	const handler = findEffectHandler( gtaoLike() );
+	const sub = handler.subPasses( gtaoLike(), 0 );
+	assert.equal( sub.length, 1 );
+	assert.equal( sub[ 0 ].shape, 'gtao' );
+	assert.equal( sub[ 0 ].material.name, 'GTAO' );
+	assert.equal( sub[ 0 ].config.gtaoIndex, 0 );
+	assert.deepEqual( sub[ 0 ].renderTargetHint, { count: 1, format: 1028, type: 1009 } );
+
+} );
+
+test( 'gtao handler forceSetup materializes a missing fragmentNode', () => {
+
+	const handler = findEffectHandler( gtaoLike() );
+	let setupCalls = 0;
+	const node = gtaoLike();
+	node.setup = ( builder ) => {
+
+		setupCalls ++;
+		assert.equal( typeof builder.getSharedContext, 'function' );
+		node._material.fragmentNode = { isNode: true };
+
+	};
+	handler.forceSetup( node, { sharedContext: { post: true } } );
+	assert.equal( setupCalls, 1 );
+	assert.ok( node._material.fragmentNode );
+
+} );
+
 test( 'findEffectHandler returns null for unrelated nodes', () => {
 
 	assert.equal( findEffectHandler( null ), null );
 	assert.equal( findEffectHandler( { isNode: true, nodeType: 'float' } ), null );
 	assert.equal( findEffectHandler( {} ), null );
+
+} );
+
+test( 'built-in handlers ignore slim chain fallbacks and pass nodes', () => {
+
+	const node = new Node();
+	assert.equal( findEffectHandler( node ), null );
+	assert.equal( findEffectHandler( node.someUnstubbedHelper() ), null );
+	assert.equal( findEffectHandler( new PassNode( PassNode.COLOR, {}, {} ) ), null );
+	assert.equal( findEffectHandler( { ...gtaoLike(), isPassNode: true } ), null );
+	assert.equal( findEffectHandler( { ...outlineLike(), isRTTNode: true } ), null );
 
 } );
 
@@ -211,10 +269,11 @@ test( 'collectEffectNodes walks nested graphs and deduplicates', () => {
 	const outputNode = {
 		colorNode: { node: bloom, child: { wrapped: outline } },
 		alsoBloom: bloom, // dedup target
+		gtao: gtaoLike(),
 	};
 	const matches = collectEffectNodes( outputNode );
 	const names = matches.map( ( m ) => m.handler.name ).sort();
-	assert.deepEqual( names, [ 'bloom', 'outline' ] );
+	assert.deepEqual( names, [ 'bloom', 'gtao', 'outline' ] );
 
 } );
 

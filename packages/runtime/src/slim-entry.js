@@ -89,7 +89,7 @@ export { __applyPrecompiled } from './apply-precompiled.js';
 export { registerArtifact, getArtifact } from './artifact-loader.js';
 export { hydrateNodeBuilderState, registerLiveTexture, clearLiveTextureIndex } from './hydrator.js';
 export { getTextureResolutionDebugHook, setTextureResolutionDebugHook } from './hydrate/artifact-texture-resolver.js';
-export { registerAuxArtifact, registerAuxArtifacts, loadAux, hasAux, listAux, findAux, bindAuxConfig, bindAuxByName, attachArtifactTextureRefs, wireViewportTextureRefs, setupViewportTextureClasses } from './aux-loader.js';
+export { registerAuxArtifact, registerAuxArtifacts, loadAux, hasAux, listAux, findAux, bindAuxConfig, bindAuxByName, attachArtifactTextureRefs, attachPostprocessTextureRefs, attachPostprocessUpdateBeforeNodes, wireViewportTextureRefs, setupViewportTextureClasses } from './aux-loader.js';
 export { hashNodeGraphSync } from './graph-hash.js';
 export { MaterialVariantSet, createMaterialVariants, applyMaterialVariant } from './material-variants.js';
 export { clearTextureViewCache, markTextureInitialized, shareGPUTextureEntry, sharePMREMGPUTexture, shareShadowGPUTextureIntoSlim } from './slim-support/gpu-texture-share.js';

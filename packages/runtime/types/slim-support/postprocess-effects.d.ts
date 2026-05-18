@@ -2,6 +2,9 @@ export type EffectSubPass = {
 	material?: unknown;
 	shape: string;
 	config?: Record<string, unknown>;
+	renderTargetHint?: Record<string, unknown> | null;
+	node?: unknown;
+	[ key: string ]: unknown;
 };
 
 export type EffectHandler = {

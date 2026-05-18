@@ -527,6 +527,12 @@ async function captureRegisteredEffectArtifactsLive( renderer, outputNode, opts,
 		const effectIndex = indexByHandler.get( handler.name ) || 0;
 		indexByHandler.set( handler.name, effectIndex + 1 );
 
+		if ( typeof handler.forceSetup === 'function' ) {
+
+			try { handler.forceSetup( node, { renderer, sharedContext: {} } ); } catch ( _ ) {}
+
+		}
+
 		let subPasses = [];
 		try { subPasses = handler.subPasses( node, effectIndex ); } catch ( _ ) { continue; }
 		if ( ! Array.isArray( subPasses ) ) continue;

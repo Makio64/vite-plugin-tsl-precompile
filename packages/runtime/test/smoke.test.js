@@ -1862,7 +1862,7 @@ test( 'hydrator: builtin.ltcTexture caches texture per ltcIndex to avoid re-allo
 } );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Task mrt-pass-aux: PassNode.setMRT + getTexture stubs
+// Task mrt-pass-aux: PassNode.setMRT + getTexture support
 // ─────────────────────────────────────────────────────────────────────────────
 
 test( 'slim-stubs: PassNode.setMRT stores the mrt descriptor and returns this', () => {
@@ -1876,16 +1876,15 @@ test( 'slim-stubs: PassNode.setMRT stores the mrt descriptor and returns this', 
 
 } );
 
-test( 'slim-stubs: PassNode.getTexture returns an inert node stub', () => {
+test( 'slim-stubs: PassNode.getTexture returns a live render-target texture', () => {
 
 	const pass = new PassNode();
 	const tex = pass.getTexture( 'output' );
 
 	assert.ok( tex, 'getTexture must return a value' );
-	// The returned stub must support chaining (node-like property access)
-	assert.ok( tex.isNode, 'stub must have isNode = true' );
-	// Must not throw on further property access
-	assert.doesNotThrow( () => tex.xy, 'chained property access must not throw' );
+	assert.equal( tex.isTexture, true, 'getTexture returns the texture object postprocess artifacts sample' );
+	assert.equal( tex.name, 'output' );
+	assert.equal( pass.getTextureNode( 'output' ).value, tex, 'texture node points at the same live texture' );
 
 } );
 

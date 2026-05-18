@@ -450,7 +450,7 @@ function rewritePostProcessing( ast, ctx ) {
 			path.replaceWith( t.assignmentExpression(
 				'=',
 				t.memberExpression( t.cloneNode( owner ), t.identifier( 'material' ) ),
-				buildPrecompiledExpr( 'post-process', outputNodeExpr ),
+				buildPostProcessExpr( outputNodeExpr ),
 			) );
 			foundAssign = true;
 
@@ -1457,6 +1457,45 @@ function buildPrecompiledExpr( shape, inputExpr, textureRefExpr = null ) {
 
 }
 
+function buildPostProcessExpr( outputNodeExpr ) {
+
+	const hashOpts = t.objectExpression( [
+		t.objectProperty( t.identifier( 'shape' ), t.stringLiteral( 'post-process' ) ),
+		t.spreadElement( t.identifier( '__tslpHashOpts' ) ),
+	] );
+	const hashCall = t.callExpression(
+		t.identifier( 'hashNodeGraphSync' ),
+		[ t.cloneNode( outputNodeExpr ), hashOpts ],
+	);
+	const loadCall = t.callExpression(
+		t.identifier( 'loadAux' ),
+		[ t.stringLiteral( 'post-process' ), hashCall ],
+	);
+	const wiredTextureRefs = t.callExpression(
+		t.identifier( 'attachPostprocessTextureRefs' ),
+		[ loadCall, t.cloneNode( outputNodeExpr ) ],
+	);
+	const artifactExpr = t.callExpression(
+		t.identifier( 'attachPostprocessUpdateBeforeNodes' ),
+		[ wiredTextureRefs, t.cloneNode( outputNodeExpr ) ],
+	);
+	const prepareCall = t.callExpression(
+		t.identifier( 'preparePrecompiledPostprocess' ),
+		[
+			t.objectExpression( [
+				t.objectProperty( t.identifier( 'outputNode' ), t.cloneNode( outputNodeExpr ) ),
+				t.objectProperty( t.identifier( 'loadAux' ), t.identifier( 'loadAux' ) ),
+				t.objectProperty( t.identifier( 'PrecompiledMaterial' ), t.identifier( 'PrecompiledMaterial' ) ),
+			] ),
+		],
+	);
+	return t.sequenceExpression( [
+		prepareCall,
+		t.newExpression( t.identifier( 'PrecompiledMaterial' ), [ artifactExpr ] ),
+	] );
+
+}
+
 /**
  * Build: new PrecompiledMaterial(
  *   attachArtifactTextureRefs(
@@ -1622,6 +1661,9 @@ function injectRuntimeImports( ast ) {
 			t.importSpecifier( t.identifier( 'PrecompiledMaterial' ), t.identifier( 'PrecompiledMaterial' ) ),
 			t.importSpecifier( t.identifier( 'loadAux' ), t.identifier( 'loadAux' ) ),
 			t.importSpecifier( t.identifier( 'attachArtifactTextureRefs' ), t.identifier( 'attachArtifactTextureRefs' ) ),
+			t.importSpecifier( t.identifier( 'attachPostprocessTextureRefs' ), t.identifier( 'attachPostprocessTextureRefs' ) ),
+			t.importSpecifier( t.identifier( 'attachPostprocessUpdateBeforeNodes' ), t.identifier( 'attachPostprocessUpdateBeforeNodes' ) ),
+			t.importSpecifier( t.identifier( 'preparePrecompiledPostprocess' ), t.identifier( 'preparePrecompiledPostprocess' ) ),
 			t.importSpecifier( t.identifier( 'hashNodeGraphSync' ), t.identifier( 'hashNodeGraphSync' ) ),
 			t.importSpecifier( t.identifier( 'hashPlainConfigSync' ), t.identifier( 'hashPlainConfigSync' ) ),
 		],

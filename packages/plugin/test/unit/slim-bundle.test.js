@@ -50,7 +50,10 @@ const BUNDLE = resolve( HERE, '../../../runtime/build/three.webgpu.slim.js' );
 // (collectStorageAttributesInOrder + findNthStorageMatchingShape +
 // the version-bump invalidation in bindUserNodeAttributesToArtifact)
 // and B3 'auto' fallback default added ~0.3 KB. Fresh build at 255.1 KB.
-const GATE_KB = 257;
+// Bumped from 257 → 260 for postfx slim replay: PassNode now owns real
+// RenderTarget textures and post-processing aux artifacts can rebind live
+// pass/effect render-target textures by stable name. Fresh build at ~258.7 KB.
+const GATE_KB = 260;
 
 const bundleExists = existsSync( BUNDLE );
 

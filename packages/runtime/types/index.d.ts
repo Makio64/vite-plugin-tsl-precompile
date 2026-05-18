@@ -46,8 +46,8 @@ export interface SetupPrecompileOptions {
 export interface SetupPrecompileResult {
 	/** Resolves once the marker is installed and the dev renderer is registered. */
 	ready: Promise<void>;
-	/** Capture aux artifacts (background, PMREM, etc.). No-op unless `aux` was truthy. */
-	captureAux: () => Promise<unknown[]>;
+	/** Capture aux artifacts (background, PMREM, MRT pass nodes, etc.). No-op unless `aux` was truthy. */
+	captureAux: ( extraOpts?: Record<string, unknown> ) => Promise<unknown[]>;
 	/** Swap the dev renderer (useful when the renderer is recreated). */
 	setRenderer: ( renderer: unknown ) => void;
 }
@@ -133,6 +133,8 @@ export function findAux( predicate: ( entry: unknown ) => boolean ): unknown;
 export function bindAuxConfig( config: unknown ): unknown;
 export function bindAuxByName( name: string ): unknown;
 export function attachArtifactTextureRefs( artifact: unknown, refs: unknown ): void;
+export function attachPostprocessTextureRefs( artifact: unknown, outputNode: unknown ): unknown;
+export function attachPostprocessUpdateBeforeNodes( artifact: unknown, outputNode: unknown ): unknown;
 export function __resetAuxRegistryForTests(): void;
 
 // ---------- Hydrator ----------
@@ -257,6 +259,9 @@ export type EffectSubPass = {
 	material?: unknown;
 	shape: string;
 	config?: Record<string, unknown>;
+	renderTargetHint?: Record<string, unknown> | null;
+	node?: unknown;
+	[ key: string ]: unknown;
 };
 export type EffectHandler = {
 	name: string;

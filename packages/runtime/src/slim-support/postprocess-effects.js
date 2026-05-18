@@ -30,12 +30,12 @@
  * } );
  * ```
  *
- * Pure-Fn effects (godrays, ssgi, sss, afterimage, denoise, anamorphic,
- * retro, …) don't need a handler — they compose into the parent's
+ * Pure-Fn effects (fxaa, godrays, ssgi, sss, afterimage, denoise,
+ * anamorphic, retro, …) don't need a handler — they compose into the parent's
  * shader inline and are captured as the top-level `aux-post-process`
- * artifact. Effects with multiple separately-compiled internal materials
- * (bloom, outline, ssr, dof, traa) DO need a handler so the slim runtime
- * can bind the precompiled WGSL for each subpass.
+ * artifact. Effects with separately-compiled internal materials (bloom,
+ * GTAO, outline, ssr, dof, traa) DO need a handler so the slim runtime can
+ * bind the precompiled WGSL for each subpass.
  */
 
 import { attachArtifactTextureRefsWhere } from './artifact-texture-wiring.js';
@@ -49,6 +49,22 @@ const SKIP_KEYS = new Set( [
 ] );
 
 const DEFAULT_DEPTH_CAP = 32;
+
+function isEffectCandidate( node ) {
+
+	return !! ( node
+		&& typeof node !== 'function'
+		&& node.isPassNode !== true
+		&& node.isRTTNode !== true );
+
+}
+
+function effectTypeMatches( node, type ) {
+
+	const actual = node && node.constructor && node.constructor.type || node && node.type || '';
+	return actual === '' || actual === type;
+
+}
 
 /**
  * Register a postprocess-effect handler. Idempotent on `name` — re-registering
@@ -228,7 +244,8 @@ registerEffectHandler( {
 	name: 'bloom',
 	detect( node ) {
 
-		return !! ( node
+		return !! ( isEffectCandidate( node )
+			&& effectTypeMatches( node, 'BloomNode' )
 			&& typeof node.updateBefore === 'function'
 			&& node._renderTargetBright
 			&& Array.isArray( node._renderTargetsHorizontal )
@@ -374,6 +391,70 @@ registerEffectHandler( {
 	},
 } );
 
+/**
+ * GTAO — `three/addons/tsl/display/GTAONode.js`.
+ *
+ * Single internal material rendered into `_aoRenderTarget` each frame. The
+ * material targets a one-channel RedFormat render target, so capture declares
+ * a render-target hint just like DOF's CoC pass.
+ */
+registerEffectHandler( {
+	name: 'gtao',
+	detect( node ) {
+
+		return !! ( isEffectCandidate( node )
+			&& effectTypeMatches( node, 'GTAONode' )
+			&& typeof node.updateBefore === 'function'
+			&& node._aoRenderTarget
+			&& node._material
+			&& node._textureNode
+			&& node.radius
+			&& node.resolution );
+
+	},
+	subPasses( node, index ) {
+
+		if ( ! node._material ) return [];
+		return [ {
+			material: node._material,
+			shape: 'gtao',
+			config: { type: 'gtao', gtaoIndex: index },
+			renderTargetHint: __singleRenderTargetHint( node._aoRenderTarget ),
+			node,
+		} ];
+
+	},
+	forceSetup( node, ctx ) {
+
+		if ( ! node || ! node._material || node._material.fragmentNode ) return;
+		if ( typeof node.setup !== 'function' ) return;
+		try {
+
+			node.setup( {
+				renderer: ctx && ctx.renderer || {},
+				getSharedContext: () => ctx && ctx.sharedContext || {},
+			} );
+
+		} catch ( _ ) {
+			// A setup failure usually means the effect graph is still missing a
+			// live pass texture. Capture/replay can retry after the first frame.
+		}
+
+	},
+} );
+
+function __singleRenderTargetHint( target ) {
+
+	if ( ! target ) return null;
+	const texture = Array.isArray( target.textures ) ? target.textures[ 0 ] : target.texture;
+	return {
+		count: Array.isArray( target.textures ) ? Math.max( 1, target.textures.length ) : 1,
+		format: texture ? texture.format : null,
+		type: texture ? texture.type : null,
+	};
+
+}
+
 // --- bloom replay-hook helpers (kept module-local so the handler can stay
 // declarative and tree-shake naturally if an adopter only uses non-bloom
 // effects).
@@ -419,7 +500,8 @@ registerEffectHandler( {
 	name: 'outline',
 	detect( node ) {
 
-		return !! ( node
+		return !! ( isEffectCandidate( node )
+			&& effectTypeMatches( node, 'OutlineNode' )
 			&& node._depthMaterial
 			&& node._edgeDetectionMaterial
 			&& node._separableBlurMaterial
@@ -478,7 +560,8 @@ registerEffectHandler( {
 	name: 'ssr',
 	detect( node ) {
 
-		return !! ( node
+		return !! ( isEffectCandidate( node )
+			&& effectTypeMatches( node, 'SSRNode' )
 			&& node._ssrMaterial
 			&& node._ssrRenderTarget
 			&& node._blurMaterial
@@ -528,7 +611,8 @@ registerEffectHandler( {
 	name: 'dof',
 	detect( node ) {
 
-		return !! ( node
+		return !! ( isEffectCandidate( node )
+			&& effectTypeMatches( node, 'DepthOfFieldNode' )
 			&& node._CoCMaterial
 			&& node._CoCBlurredMaterial
 			&& node._blur64Material
@@ -610,7 +694,8 @@ registerEffectHandler( {
 	name: 'traa',
 	detect( node ) {
 
-		return !! ( node
+		return !! ( isEffectCandidate( node )
+			&& effectTypeMatches( node, 'TRAANode' )
 			&& node._resolveMaterial
 			&& node._historyRenderTarget
 			&& node._resolveRenderTarget );
@@ -636,7 +721,7 @@ registerEffectHandler( {
  */
 export function __resetEffectHandlersForTests() {
 
-	const builtins = [ 'bloom', 'outline', 'ssr', 'dof', 'traa' ];
+	const builtins = [ 'bloom', 'gtao', 'outline', 'ssr', 'dof', 'traa' ];
 	for ( const name of Array.from( HANDLERS.keys() ) ) {
 
 		if ( ! builtins.includes( name ) ) HANDLERS.delete( name );

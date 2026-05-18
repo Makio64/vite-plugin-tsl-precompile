@@ -27,7 +27,11 @@ test( 'rewrite/PostProcessing: bare NodeMaterial → Material sentinel; fragment
 	const out = r.code;
 	assert.doesNotMatch( out, /new NodeMaterial\s*\(/ );
 	assert.match( out, /const\s+material\s*=\s*new\s+Material\s*\(\s*\)/ );
-	assert.match( out, /this\._quadMesh\.material\s*=\s*new PrecompiledMaterial\s*\(/ );
+	assert.match( out, /this\._quadMesh\.material\s*=/ );
+	assert.match( out, /new PrecompiledMaterial\s*\(/ );
+	assert.match( out, /preparePrecompiledPostprocess\s*\(/ );
+	assert.match( out, /attachPostprocessTextureRefs\s*\(/ );
+	assert.match( out, /attachPostprocessUpdateBeforeNodes\s*\(/ );
 	assert.match( out, /loadAux\s*\(\s*["']post-process["']/ );
 	assert.match( out, /hashNodeGraphSync\s*\(\s*this\.outputNode/ );
 	assert.match( out, /shape:\s*["']post-process["']/ );

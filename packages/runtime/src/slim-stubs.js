@@ -17,6 +17,9 @@
  */
 
 import {
+	DepthTexture,
+	FloatType,
+	HalfFloatType,
 	LineBasicMaterial,
 	LineDashedMaterial,
 	Material,
@@ -29,8 +32,11 @@ import {
 	MeshStandardMaterial,
 	MeshToonMaterial,
 	PointsMaterial,
+	RenderTarget,
 	ShadowMaterial,
 	SpriteMaterial,
+	Vector2,
+	Vector4,
 } from 'three/src/Three.Core.js';
 
 function slimMessage( name ) {
@@ -196,8 +202,13 @@ function inertNodeStub( children = [], props = {} ) {
 			if ( prop === Symbol.toPrimitive ) return () => 0;
 			if ( prop === 'toString' ) return () => '[inert slim node]';
 			if ( prop === 'then' ) return undefined;
+			if ( prop === 'isStackTrace' ) return false;
+			if ( prop === 'message' || prop === 'stack' || prop === 'cause' ) return undefined;
 			if ( prop === 'length' ) return ( ...args ) => inertNodeStub( [ proxy, ...args ] );
 			if ( prop in target ) return target[ prop ];
+			if ( prop === 'type' ) return '';
+			if ( isMissingNodeIntrospectionProp( prop ) ) return undefined;
+			if ( isMissingNodeFlagProp( prop ) ) return false;
 			return proxy;
 
 		},
@@ -247,48 +258,89 @@ export class InspectorBase {
 }
 
 /**
- * Post-process `PassNode` stub. The slim runtime cannot author pass graphs,
- * but examples may still instantiate pass objects before RenderPipeline swaps in
- * a precompiled auxiliary material. Keep the object inert and hashable.
+ * Post-process `PassNode` stub. The slim runtime cannot compile pass graphs,
+ * but post-processing pipelines still need live render-target textures so
+ * precompiled artifacts can sample the current scene pass.
  *
  * Task `mrt-pass-aux`: `setMRT(mrtNode)` stores the MRT descriptor so
  * `aux-marker.js` can discover it during precompileAuxiliary; `getTexture(name)`
- * returns an inert node stub for the named MRT output so downstream code that
- * reads pass textures keeps loading without a throw.
+ * returns a real render-target texture for the named MRT output so downstream
+ * postprocess artifacts can rebind by texture name.
  */
 export class PassNode {
 
 	static COLOR = 'color';
 	static DEPTH = 'depth';
 
-	constructor( scope = PassNode.COLOR, scene = null, camera = null ) {
+	constructor( scope = PassNode.COLOR, scene = null, camera = null, options = {} ) {
 
 		this.isNode = true;
 		this.isPassNode = true;
+		this.nodeType = scope === PassNode.DEPTH ? 'float' : 'vec4';
+		this.updateBeforeType = NodeUpdateType.FRAME;
+		this.global = true;
 		this.scope = scope;
 		this.scene = scene;
 		this.camera = camera;
-		this.renderTarget = {
-			width: 1,
-			height: 1,
-			scissorTest: false,
-			scissor: { set() {} },
-			viewport: { set() {} },
+		this.options = options || {};
+		this._pixelRatio = 1;
+		this._width = 1;
+		this._height = 1;
+		this._resolutionScale = 1;
+		this._viewport = null;
+		this._scissor = null;
+		this._layers = null;
+		const depthTexture = new DepthTexture();
+		depthTexture.isRenderTargetTexture = true;
+		depthTexture.name = 'depth';
+
+		const renderTarget = new RenderTarget( 1, 1, { type: HalfFloatType, ...this.options } );
+		renderTarget.texture.name = 'output';
+		renderTarget.depthTexture = depthTexture;
+
+		this.renderTarget = renderTarget;
+		this._textures = {
+			output: renderTarget.texture,
+			depth: depthTexture,
 		};
+		this._textureNodes = {};
 		this._previousTextures = {};
+		this._previousTextureNodes = {};
+		this._linearDepthNodes = {};
+		this._viewZNodes = {};
+		this._cameraNear = uniform( 0 );
+		this._cameraFar = uniform( 1 );
 		this._mrt = null;
-		this._cameraNear = { value: 0 };
-		this._cameraFar = { value: 1 };
+		this.overrideMaterial = null;
+		this.transparent = true;
+		this.opaque = true;
+		this.contextNode = null;
+		this._contextNodeCache = null;
 		return wrapWithSlimNodeChainFallback( this );
 
 	}
 
-	setSize( width = 1, height = 1 ) { this.renderTarget.width = width; this.renderTarget.height = height; return this; }
-	toggleTexture() { return this; }
+	setResolutionScale( resolutionScale ) { this._resolutionScale = resolutionScale || 1; this.setSize( this._width, this._height ); return this; }
+	getResolutionScale() { return this._resolutionScale; }
+	setResolution( resolution ) { return this.setResolutionScale( resolution ); }
+	getResolution() { return this.getResolutionScale(); }
+	setLayers( layers ) { this._layers = layers; return this; }
+	getLayers() { return this._layers; }
 	getUpdateType() { return 'none'; }
+	getUpdateBeforeType() { return NodeUpdateType.FRAME; }
 	updateReference() { return this; }
-	updateBefore() {}
-	setup() { return this; }
+	setup( { renderer } = {} ) {
+
+		if ( renderer ) {
+
+			try { this.renderTarget.samples = this.options.samples === undefined ? renderer.samples : this.options.samples; } catch ( _ ) {}
+			try { if ( typeof renderer.getOutputBufferType === 'function' ) this.renderTarget.texture.type = renderer.getOutputBufferType(); } catch ( _ ) {}
+			try { if ( renderer.reversedDepthBuffer === true ) this.renderTarget.depthTexture.type = FloatType; } catch ( _ ) {}
+
+		}
+		return this.scope === PassNode.DEPTH ? this.getLinearDepthNode() : this.getTextureNode();
+
+	}
 	toVar() { return this; }
 	getCacheKey() { return `slim-pass-node:Object`; }
 
@@ -303,47 +355,275 @@ export class PassNode {
 	setMRT( mrtNode ) {
 
 		this._mrt = mrtNode;
+		syncPassRenderTargetTextures( this, mrtNode );
 		return this;
 
 	}
+	getMRT() { return this._mrt; }
 
 	/**
-	 * Return an inert node stub for the named MRT output texture. In slim mode
-	 * the real texture sampling is handled by the precompiled artifact; this
-	 * stub satisfies any code that reads `passNode.getTexture('output')` at
-	 * setup time without a throw.
+	 * Return the live render-target texture for the named output. The shader is
+	 * still precompiled, but post-processing artifacts need stable texture
+	 * objects to rebind by name at runtime.
 	 *
-	 * @param {string} _name - The MRT output name (e.g. 'output', 'normal').
-	 * @return {Object} An inert chainable node stub.
+	 * @param {string} name - The MRT output name (e.g. 'output', 'normal').
+	 * @return {Object} The live texture object.
 	 */
-	getTexture( _name ) {
+	getTexture( name = 'output' ) {
 
-		return inertNodeStub();
+		let texture = this._textures[ name ];
+		if ( texture === undefined ) {
+
+			const refTexture = this.renderTarget.texture;
+			texture = refTexture && typeof refTexture.clone === 'function' ? refTexture.clone() : refTexture;
+			if ( texture ) {
+
+				texture.name = name;
+				texture.isRenderTargetTexture = true;
+				texture.renderTarget = this.renderTarget;
+
+			}
+			this._textures[ name ] = texture;
+			if ( this.renderTarget && Array.isArray( this.renderTarget.textures ) && texture && ! this.renderTarget.textures.includes( texture ) ) {
+
+				this.renderTarget.textures.push( texture );
+
+			}
+
+		}
+		return texture;
+
+	}
+
+	getPreviousTexture( name = 'output' ) {
+
+		let texture = this._previousTextures[ name ];
+		if ( texture === undefined ) {
+
+			const current = this.getTexture( name );
+			texture = current && typeof current.clone === 'function' ? current.clone() : current;
+			if ( texture ) {
+
+				texture.name = name + '.previous';
+				texture.isRenderTargetTexture = true;
+				texture.renderTarget = this.renderTarget;
+
+			}
+			this._previousTextures[ name ] = texture;
+
+		}
+		return texture;
+
+	}
+
+	toggleTexture( name = 'output' ) {
+
+		const prevTexture = this._previousTextures[ name ];
+		if ( prevTexture === undefined ) return;
+		const texture = this._textures[ name ];
+		if ( this.renderTarget && Array.isArray( this.renderTarget.textures ) ) {
+
+			const index = this.renderTarget.textures.indexOf( texture );
+			if ( index >= 0 ) this.renderTarget.textures[ index ] = prevTexture;
+
+		}
+		this._textures[ name ] = prevTexture;
+		this._previousTextures[ name ] = texture;
+		if ( this._textureNodes[ name ] && typeof this._textureNodes[ name ].updateTexture === 'function' ) this._textureNodes[ name ].updateTexture();
+		if ( this._previousTextureNodes[ name ] && typeof this._previousTextureNodes[ name ].updateTexture === 'function' ) this._previousTextureNodes[ name ].updateTexture();
 
 	}
 
 	getTextureNode( name = 'output' ) {
 
-		return inertNodeStub( [], {
-			isTextureNode: true,
-			isPassTextureNode: true,
-			passNode: this,
-			textureName: name,
-		} );
+		let textureNode = this._textureNodes[ name ];
+		if ( textureNode === undefined ) this._textureNodes[ name ] = textureNode = makePassTextureNode( this, name, false );
+		return textureNode;
 
 	}
 
 	getPreviousTextureNode( name = 'output' ) {
 
-		return inertNodeStub( [], {
-			isTextureNode: true,
-			isPassTextureNode: true,
-			passNode: this,
-			textureName: name,
-			previousTexture: true,
-		} );
+		let textureNode = this._previousTextureNodes[ name ];
+		if ( textureNode === undefined ) this._previousTextureNodes[ name ] = textureNode = makePassTextureNode( this, name, true );
+		return textureNode;
 
 	}
+
+	getViewZNode( name = 'depth' ) {
+
+		if ( this._viewZNodes[ name ] === undefined ) this._viewZNodes[ name ] = inertNodeStub( [ this.getTextureNode( name ), this._cameraNear, this._cameraFar ] );
+		return this._viewZNodes[ name ];
+
+	}
+
+	getLinearDepthNode( name = 'depth' ) {
+
+		if ( this._linearDepthNodes[ name ] === undefined ) this._linearDepthNodes[ name ] = inertNodeStub( [ this.getViewZNode( name ) ] );
+		return this._linearDepthNodes[ name ];
+
+	}
+
+	context( ...args ) { return this.getTextureNode().context( ...args ); }
+
+	updateBefore( frame = {} ) {
+
+		const renderer = frame.renderer;
+		const scene = this.scene;
+		let camera = this.camera;
+		if ( ! renderer || ! scene || ! camera ) return;
+
+		const size = new Vector2( 1, 1 );
+		try {
+
+			if ( typeof renderer.getSize === 'function' ) renderer.getSize( size );
+			else if ( typeof renderer.getDrawingBufferSize === 'function' ) renderer.getDrawingBufferSize( size );
+
+		} catch ( _ ) {}
+		try { this._pixelRatio = typeof renderer.getPixelRatio === 'function' ? renderer.getPixelRatio() : 1; } catch ( _ ) { this._pixelRatio = 1; }
+		this.setSize( size.width || 1, size.height || 1 );
+
+		let currentRenderTarget = null;
+		let currentMRT = null;
+		let currentAutoClear;
+		let currentTransparent;
+		let currentOpaque;
+		let currentMask;
+		let currentOverrideMaterial;
+		try { currentRenderTarget = typeof renderer.getRenderTarget === 'function' ? renderer.getRenderTarget() : null; } catch ( _ ) {}
+		try { currentMRT = typeof renderer.getMRT === 'function' ? renderer.getMRT() : null; } catch ( _ ) {}
+		try { currentAutoClear = renderer.autoClear; } catch ( _ ) {}
+		try { currentTransparent = renderer.transparent; } catch ( _ ) {}
+		try { currentOpaque = renderer.opaque; } catch ( _ ) {}
+		try { currentMask = camera.layers && camera.layers.mask; } catch ( _ ) {}
+		try { currentOverrideMaterial = scene.overrideMaterial; } catch ( _ ) {}
+
+		try { this._cameraNear.value = camera.near || 0; } catch ( _ ) {}
+		try { this._cameraFar.value = camera.far || 1; } catch ( _ ) {}
+		for ( const name in this._previousTextures ) this.toggleTexture( name );
+		try { if ( this._layers !== null && camera.layers ) camera.layers.mask = this._layers.mask; } catch ( _ ) {}
+		try { if ( this.overrideMaterial !== null ) scene.overrideMaterial = this.overrideMaterial; } catch ( _ ) {}
+
+		try {
+
+			if ( typeof renderer.setRenderTarget === 'function' ) renderer.setRenderTarget( this.renderTarget );
+			if ( typeof renderer.setMRT === 'function' ) renderer.setMRT( this._mrt );
+			renderer.autoClear = true;
+			renderer.transparent = this.transparent;
+			renderer.opaque = this.opaque;
+			if ( typeof renderer.render === 'function' ) renderer.render( scene, camera );
+
+		} finally {
+
+			try { scene.overrideMaterial = currentOverrideMaterial; } catch ( _ ) {}
+			try { if ( typeof renderer.setRenderTarget === 'function' ) renderer.setRenderTarget( currentRenderTarget ); } catch ( _ ) {}
+			try { if ( typeof renderer.setMRT === 'function' ) renderer.setMRT( currentMRT ); } catch ( _ ) {}
+			try { renderer.autoClear = currentAutoClear; } catch ( _ ) {}
+			try { renderer.transparent = currentTransparent; } catch ( _ ) {}
+			try { renderer.opaque = currentOpaque; } catch ( _ ) {}
+			try { if ( camera.layers && currentMask !== undefined ) camera.layers.mask = currentMask; } catch ( _ ) {}
+
+		}
+
+	}
+
+	setSize( width = 1, height = 1 ) {
+
+		this._width = width;
+		this._height = height;
+		const scale = this._pixelRatio * this._resolutionScale;
+		const effectiveWidth = Math.max( 1, Math.floor( width * scale ) );
+		const effectiveHeight = Math.max( 1, Math.floor( height * scale ) );
+		if ( this.renderTarget && typeof this.renderTarget.setSize === 'function' ) this.renderTarget.setSize( effectiveWidth, effectiveHeight );
+		if ( this._scissor !== null && this.renderTarget && this.renderTarget.scissor ) {
+
+			this.renderTarget.scissor.copy( this._scissor ).multiplyScalar( scale ).floor();
+			this.renderTarget.scissorTest = true;
+
+		} else if ( this.renderTarget ) {
+
+			this.renderTarget.scissorTest = false;
+
+		}
+		if ( this._viewport !== null && this.renderTarget && this.renderTarget.viewport ) this.renderTarget.viewport.copy( this._viewport ).multiplyScalar( scale ).floor();
+		return this;
+
+	}
+
+	setScissor( x, y, width, height ) {
+
+		if ( x === null ) this._scissor = null;
+		else {
+
+			if ( this._scissor === null ) this._scissor = new Vector4();
+			if ( x && x.isVector4 ) this._scissor.copy( x );
+			else this._scissor.set( x, y, width, height );
+
+		}
+		return this;
+
+	}
+
+	setViewport( x, y, width, height ) {
+
+		if ( x === null ) this._viewport = null;
+		else {
+
+			if ( this._viewport === null ) this._viewport = new Vector4();
+			if ( x && x.isVector4 ) this._viewport.copy( x );
+			else this._viewport.set( x, y, width, height );
+
+		}
+		return this;
+
+	}
+
+	setPixelRatio( pixelRatio ) { this._pixelRatio = pixelRatio || 1; this.setSize( this._width, this._height ); return this; }
+	dispose() { try { if ( this.renderTarget && typeof this.renderTarget.dispose === 'function' ) this.renderTarget.dispose(); } catch ( _ ) {} }
+
+}
+
+function makePassTextureNode( passNode, name, previousTexture ) {
+
+	const node = inertNodeStub( [], {
+		isTextureNode: true,
+		isPassTextureNode: true,
+		isPassMultipleTextureNode: true,
+		passNode,
+		textureName: name,
+		previousTexture: previousTexture === true,
+		value: null,
+		updateTexture() {
+
+			this.value = this.previousTexture ? passNode.getPreviousTexture( name ) : passNode.getTexture( name );
+			return this.value;
+
+		},
+		clone() {
+
+			return makePassTextureNode( passNode, name, previousTexture );
+
+		},
+	} );
+	node.updateTexture();
+	return node;
+
+}
+
+function syncPassRenderTargetTextures( passNode, mrtNode ) {
+
+	if ( ! passNode || ! passNode.renderTarget ) return;
+	const outputNodes = mrtNode && ( mrtNode.outputNodes || mrtNode.outputs );
+	const names = outputNodes && typeof outputNodes === 'object' ? Object.keys( outputNodes ) : [];
+	if ( names.length === 0 ) return;
+	const textures = names.map( ( name ) => passNode.getTexture( name ) ).filter( Boolean );
+	if ( textures.length > 0 ) {
+
+		passNode.renderTarget.textures = textures;
+		passNode.renderTarget.texture = textures[ 0 ];
+
+	}
+
 
 }
 
@@ -397,11 +677,33 @@ function wrapWithSlimNodeChainFallback( instance ) {
 
 			if ( typeof prop === 'symbol' ) return Reflect.get( target, prop, target );
 			if ( prop === 'then' ) return undefined;
+			if ( prop === 'isStackTrace' ) return false;
+			if ( prop === 'message' || prop === 'stack' || prop === 'cause' ) return undefined;
+			if ( prop === 'type' && ! ( prop in target ) ) return '';
 			if ( prop in target ) return Reflect.get( target, prop, receiver );
+			if ( isMissingNodeIntrospectionProp( prop ) ) return undefined;
+			if ( isMissingNodeFlagProp( prop ) ) return false;
 			return inertNodeStub( [ target ] );
 
 		},
 	} );
+
+}
+
+function isMissingNodeIntrospectionProp( prop ) {
+
+	return typeof prop === 'string'
+		&& ( prop.charCodeAt( 0 ) === 95
+			|| prop === 'updateBefore'
+			|| prop === 'updateAfter'
+			|| prop === 'onBeforeRender'
+			|| prop === 'onAfterRender' );
+
+}
+
+function isMissingNodeFlagProp( prop ) {
+
+	return typeof prop === 'string' && /^is[A-Z]/.test( prop );
 
 }
 
@@ -567,15 +869,34 @@ export const NodeUpdateType = Object.freeze( {
  */
 export class TempNode {
 
-	constructor() {
+	constructor( nodeType = null ) {
 
-		return inertNodeStub();
+		this.nodeType = nodeType;
+		this.updateType = NodeUpdateType.NONE;
+		this.updateBeforeType = NodeUpdateType.NONE;
+		this.updateAfterType = NodeUpdateType.NONE;
+		this.version = 0;
+		this.name = '';
+		this.global = false;
+		this.parents = false;
+		this.isNode = true;
+		return wrapWithSlimNodeChainFallback( this );
 
 	}
 
 	getUpdateType() { return 'none'; }
+	getUpdateBeforeType() { return this.updateBeforeType || 'none'; }
+	getUpdateAfterType() { return this.updateAfterType || 'none'; }
+	getNodeType( _builder, output = null ) { return slimOutputType( this, output ); }
+	getHash() { return `slim-temp-node:${ this.constructor && this.constructor.name || 'TempNode' }:${ this.nodeType || 'float' }`; }
+	getCacheKey() { return this.getHash(); }
 	updateReference() { return this; }
-	toVar() { return chainableSlimStub( 'TempNode.toVar' ); }
+	setup() { return null; }
+	build( builder, output = null ) { return this.generate( builder, output ); }
+	generate( builder, output = null ) { return generateSlimConst( builder, slimOutputType( this, output ) ); }
+	dispose() {}
+	traverse( callback ) { traverseSlimNode( this, callback ); }
+	toVar() { return inertNodeStub( [ this ] ); }
 
 }
 
@@ -806,13 +1127,17 @@ export const NodeUtils = new Proxy( {}, {
  */
 export function mrt( _outputs ) {
 
-	return inertNodeStub();
+	return inertNodeStub( [], {
+		isMRTNode: true,
+		outputNodes: _outputs && typeof _outputs === 'object' ? _outputs : {},
+		outputs: _outputs && typeof _outputs === 'object' ? _outputs : {},
+	} );
 
 }
 
-export function pass( scene, camera ) {
+export function pass( scene, camera, options ) {
 
-	return new PassNode( PassNode.COLOR, scene || null, camera || null );
+	return new PassNode( PassNode.COLOR, scene || null, camera || null, options || {} );
 
 }
 

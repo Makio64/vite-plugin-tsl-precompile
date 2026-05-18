@@ -31,7 +31,7 @@
  *     production-relevant.
  */
 
-import { listAux, findAux } from '../aux-loader.js';
+import { listAux, findAux, attachPostprocessTextureRefs } from '../aux-loader.js';
 import {
 	collectEffectNodes,
 	findEffectHandler,
@@ -196,7 +196,10 @@ export function prepareEffectNodeForReplay( handler, node, opts = {} ) {
 		// Let the handler run effect-specific uniform wiring (e.g. bloom's
 		// direction/invSize matching) against the *replacement* material
 		// (so the hooks see `replacement.precompiledArtifact`).
-		const subPassWithReplacement = { material: replacement, shape: subPass.shape, config: subPass.config };
+		wireLiveNodeSidecarsToArtifact( replacement.precompiledArtifact, subPass.material, replacement );
+		attachPostprocessTextureRefs( replacement.precompiledArtifact, node );
+
+		const subPassWithReplacement = { ...subPass, material: replacement };
 		if ( typeof handler.wireSubPassUniforms === 'function' ) {
 
 			try { handler.wireSubPassUniforms( subPassWithReplacement, subPass.material, opts ); } catch ( err ) {
@@ -234,7 +237,7 @@ export function prepareEffectNodeForReplay( handler, node, opts = {} ) {
 
 		for ( const { subPass, replacement } of replacements ) {
 
-			const subPassWithReplacement = { material: replacement, shape: subPass.shape, config: subPass.config };
+			const subPassWithReplacement = { ...subPass, material: replacement };
 			try { handler.wireSubPassTextures( subPassWithReplacement, node, opts ); } catch ( err ) {
 
 				missed.push( { shape: subPass.shape + ':wireSubPassTextures', reason: ( err && err.message ) || String( err ) } );

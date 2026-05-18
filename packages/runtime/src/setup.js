@@ -131,7 +131,7 @@ function queueRendererReady( renderer, onReady ) {
  * @param {boolean|Object} [opts.aux=false] - true → expose captureAux(); object → forwarded as extra opts to precompileAuxiliary.
  * @param {Object} [opts.scene]            - Required only when `aux` is truthy.
  * @param {Object} [opts.camera]           - Required only when `aux` is truthy.
- * @returns {{ ready: Promise<void>, captureAux: () => Promise<Array>, setRenderer: (r: Object) => void }}
+ * @returns {{ ready: Promise<void>, captureAux: (extraOpts?: Object) => Promise<Array>, setRenderer: (r: Object) => void }}
  */
 export function setupPrecompile( opts = {} ) {
 
@@ -207,7 +207,13 @@ export function setupPrecompile( opts = {} ) {
 
 	const auxOptsObject = aux && typeof aux === 'object' ? aux : null;
 	const captureAux = aux
-		? () => {
+		? ( extraOpts = {} ) => {
+
+			if ( extraOpts && typeof extraOpts !== 'object' ) {
+
+				throw new TypeError( 'setupPrecompile.captureAux: extraOpts must be an object when provided.' );
+
+			}
 
 			const threeVersion = deriveThreeVersion( three );
 			return precompileAuxiliary( activeRenderer, scene, camera, {
@@ -216,6 +222,7 @@ export function setupPrecompile( opts = {} ) {
 				threeVersion,
 				pluginVersion: '0.0.0',
 				...( auxOptsObject || {} ),
+				...( extraOpts || {} ),
 			} );
 
 		}

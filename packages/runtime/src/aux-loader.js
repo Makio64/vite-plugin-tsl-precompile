@@ -484,6 +484,257 @@ export function attachArtifactTextureRefs( artifact, texture ) {
 
 }
 
+const POSTPROCESS_TEXTURE_WALK_SKIP_KEYS = new Set( [
+	'parent', 'children', 'scene', 'camera', 'renderer', 'geometry', 'material', 'domElement', '_cache', 'image', 'source',
+] );
+
+/**
+ * Attach live post-processing graph textures to an aux artifact by texture
+ * name. Captured post-process artifacts reference transient PassNode/effect
+ * render-target textures by UUID; in a production replay those UUIDs are new,
+ * but names like `output`, `normal`, `depth`, `GTAONode.AO`, and
+ * `UnrealBloomPass.v0` are stable across capture and replay.
+ *
+ * @param {Object} artifact
+ * @param {Object|Function} root - Usually `RenderPipeline.outputNode`.
+ * @return {Object} The artifact (for chaining).
+ */
+export function attachPostprocessTextureRefs( artifact, root ) {
+
+	if ( ! artifact || ! root ) return artifact;
+
+	const candidates = [];
+	collectPostprocessTextures( root, candidates );
+	if ( candidates.length === 0 ) return artifact;
+
+	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
+	let changed = false;
+
+	for ( const group of artifact.uniformPlan || [] ) {
+
+		for ( const entry of group.textures || [] ) {
+
+			const source = entry && entry.source || {};
+			if ( source.kind !== 'artifact.texture' || ! source.textureUuid ) continue;
+			const wantedNames = [ source.textureName, entry.name ].filter( ( name ) => typeof name === 'string' && name.length > 0 );
+			if ( wantedNames.length === 0 ) continue;
+			const match = candidates.find( ( candidate ) => candidate.texture && candidate.names.some( ( name ) => wantedNames.includes( name ) ) );
+			if ( match && match.texture && match.texture.isTexture === true ) {
+
+				refs.set( source.textureUuid, match.texture );
+				changed = true;
+
+			}
+
+		}
+
+	}
+
+	if ( changed ) {
+
+		Object.defineProperty( artifact, '_textureRefs', {
+			value: refs,
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		} );
+
+	}
+
+	return artifact;
+
+}
+
+/**
+ * Attach live post-processing update-before nodes to an aux artifact.
+ *
+ * Post-process artifacts often sample transient render-target textures owned by
+ * `PassNode` and effect nodes such as `BloomNode`. Texture refs alone are not
+ * enough: those nodes also need their `updateBefore()` hooks driven before the
+ * final precompiled full-screen material renders. The hydrator consumes this
+ * sidecar through `artifact._liveUpdateBeforeNodes`.
+ *
+ * @param {Object} artifact
+ * @param {Object|Function} root - Usually `RenderPipeline.outputNode`.
+ * @return {Object} The artifact (for chaining).
+ */
+export function attachPostprocessUpdateBeforeNodes( artifact, root ) {
+
+	if ( ! artifact || ! root ) return artifact;
+
+	const nodes = [];
+	collectPostprocessUpdateBeforeNodes( root, nodes );
+	if ( nodes.length === 0 ) return artifact;
+
+	const current = Array.isArray( artifact._liveUpdateBeforeNodes )
+		? artifact._liveUpdateBeforeNodes.slice()
+		: [];
+	let changed = false;
+	for ( const node of nodes ) {
+
+		if ( ! node || current.includes( node ) ) continue;
+		current.push( node );
+		changed = true;
+
+	}
+	if ( changed ) {
+
+		Object.defineProperty( artifact, '_liveUpdateBeforeNodes', {
+			value: current,
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		} );
+
+	}
+	return artifact;
+
+}
+
+function collectPostprocessTextures( root, out, seen = new Set(), depth = 0 ) {
+
+	if ( ! root || depth > 32 ) return;
+	if ( typeof root !== 'object' && typeof root !== 'function' ) return;
+	if ( seen.has( root ) ) return;
+	seen.add( root );
+
+	if ( root.isTexture === true ) {
+
+		rememberPostprocessTexture( out, root );
+		return;
+
+	}
+
+	if ( root.isPassTextureNode === true ) {
+
+		try { if ( typeof root.updateTexture === 'function' ) root.updateTexture(); } catch ( _ ) {}
+		const textureName = typeof root.textureName === 'string' ? root.textureName : null;
+		let texture = root.value && root.value.isTexture === true ? root.value : null;
+		if ( ! texture && root.passNode && typeof root.passNode.getTexture === 'function' ) {
+
+			try { texture = root.passNode.getTexture( textureName || 'output' ); } catch ( _ ) { texture = null; }
+
+		}
+		rememberPostprocessTexture( out, texture, [ textureName ] );
+
+	}
+
+	if ( root.isPassNode === true ) {
+
+		collectPassNodeTextures( root, out );
+
+	}
+
+	if ( root.isRenderTarget === true || root.texture && root.texture.isTexture === true && typeof root.setSize === 'function' ) {
+
+		collectRenderTargetTextures( root, out );
+
+	}
+
+	let keys = [];
+	try { keys = Object.getOwnPropertyNames( root ); } catch ( _ ) { return; }
+	for ( const key of keys ) {
+
+		if ( POSTPROCESS_TEXTURE_WALK_SKIP_KEYS.has( key ) ) continue;
+		let value = null;
+		try { value = root[ key ]; } catch ( _ ) { continue; }
+		if ( ! value ) continue;
+		if ( Array.isArray( value ) ) {
+
+			for ( const item of value ) collectPostprocessTextures( item, out, seen, depth + 1 );
+
+		} else {
+
+			collectPostprocessTextures( value, out, seen, depth + 1 );
+
+		}
+
+	}
+
+}
+
+function collectPostprocessUpdateBeforeNodes( root, out, seen = new Set(), depth = 0 ) {
+
+	if ( ! root || depth > 32 ) return;
+	if ( typeof root !== 'object' && typeof root !== 'function' ) return;
+	if ( seen.has( root ) ) return;
+	seen.add( root );
+
+	if ( shouldAttachPostprocessUpdateBeforeNode( root ) && ! out.includes( root ) ) out.push( root );
+
+	let keys = [];
+	try { keys = Object.getOwnPropertyNames( root ); } catch ( _ ) { return; }
+	for ( const key of keys ) {
+
+		if ( POSTPROCESS_TEXTURE_WALK_SKIP_KEYS.has( key ) ) continue;
+		let value = null;
+		try { value = root[ key ]; } catch ( _ ) { continue; }
+		if ( ! value ) continue;
+		if ( Array.isArray( value ) ) {
+
+			for ( const item of value ) collectPostprocessUpdateBeforeNodes( item, out, seen, depth + 1 );
+
+		} else {
+
+			collectPostprocessUpdateBeforeNodes( value, out, seen, depth + 1 );
+
+		}
+
+	}
+
+}
+
+function shouldAttachPostprocessUpdateBeforeNode( node ) {
+
+	if ( ! node || typeof node.updateBefore !== 'function' ) return false;
+	if ( node.isPassNode === true ) return true;
+	const type = node.constructor && node.constructor.type || node.type || '';
+	return type === 'BloomNode' || type === 'GTAONode';
+
+}
+
+function collectPassNodeTextures( passNode, out ) {
+
+	if ( ! passNode ) return;
+	if ( passNode._textures && typeof passNode._textures === 'object' ) {
+
+		for ( const [ name, texture ] of Object.entries( passNode._textures ) ) rememberPostprocessTexture( out, texture, [ name ] );
+
+	}
+	collectRenderTargetTextures( passNode.renderTarget, out );
+
+}
+
+function collectRenderTargetTextures( target, out ) {
+
+	if ( ! target ) return;
+	if ( Array.isArray( target.textures ) ) {
+
+		for ( const texture of target.textures ) rememberPostprocessTexture( out, texture );
+
+	}
+	rememberPostprocessTexture( out, target.texture );
+	rememberPostprocessTexture( out, target.depthTexture, [ 'depth' ] );
+
+}
+
+function rememberPostprocessTexture( out, texture, aliases = [] ) {
+
+	if ( ! texture || texture.isTexture !== true ) return;
+	const names = new Set( aliases.filter( ( name ) => typeof name === 'string' && name.length > 0 ) );
+	if ( typeof texture.name === 'string' && texture.name.length > 0 ) names.add( texture.name );
+	if ( names.size === 0 ) return;
+	const existing = out.find( ( item ) => item.texture === texture );
+	if ( existing ) {
+
+		for ( const name of names ) if ( ! existing.names.includes( name ) ) existing.names.push( name );
+		return;
+
+	}
+	out.push( { texture, names: Array.from( names ) } );
+
+}
+
 /**
  * Attach live MRT render-target textures to an MRT artifact.
  *

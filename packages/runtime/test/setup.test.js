@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 
 import { setupPrecompile } from '../src/setup.js';
 import { __cloneLightsIntoForTests, __resetForTests as resetMarkerForTests } from '../src/precompile-marker.js';
@@ -37,6 +38,41 @@ function freshHarness() {
 	// `installPrecompileMarker` skips re-install when the method already exists
 	// on the prototype, so each test gets its own Material class.
 	return { three: fakeThree() };
+
+}
+
+function createCaptureServer() {
+
+	const posts = [];
+	const server = createServer( ( req, res ) => {
+
+		let body = '';
+		req.setEncoding( 'utf8' );
+		req.on( 'data', ( chunk ) => { body += chunk; } );
+		req.on( 'end', () => {
+
+			try { posts.push( JSON.parse( body ) ); } catch ( _ ) {}
+			res.statusCode = 200;
+			res.end( 'ok' );
+
+		} );
+
+	} );
+
+	return new Promise( ( resolve ) => {
+
+		server.listen( 0, '127.0.0.1', () => {
+
+			const address = server.address();
+			resolve( {
+				posts,
+				url: `http://127.0.0.1:${ address.port }/__tsl-precompile/capture`,
+				close: () => new Promise( ( done ) => server.close( done ) ),
+			} );
+
+		} );
+
+	} );
 
 }
 
@@ -116,6 +152,69 @@ test( 'setupPrecompile short-circuits when the renderer comes from the slim bund
 	await setup.ready;
 	assert.equal( renderer.__tslpRenderWrapped, undefined );
 	assert.equal( three.Material.prototype[ MARKER_METHOD ], undefined );
+
+} );
+
+test( 'setupPrecompile captureAux merges per-call MRT pass options', async () => {
+
+	const { three } = freshHarness();
+	three.PostProcessing = class PostProcessing {
+
+		constructor( renderer ) {
+
+			this.renderer = renderer;
+
+		}
+
+	};
+
+	const renderer = fakeRenderer( { initialised: true } );
+	const scene = {
+		uuid: 'scene-mrt',
+		userData: {},
+		traverse( visitor ) { visitor( this ); },
+	};
+	const camera = { uuid: 'camera-mrt' };
+	const passNode = {
+		isPassNode: true,
+		_mrt: { outputNodes: { output: {}, normal: {} } },
+	};
+	const compileCalls = [];
+	const compileTSL = async ( ...args ) => {
+
+		compileCalls.push( args );
+		return [
+			{ materialShape: 'post-process', vertexShader: '', fragmentShader: '', uniformPlan: [] },
+			{ materialShape: 'output-transform', vertexShader: '', fragmentShader: '', uniformPlan: [] },
+		];
+
+	};
+	const capture = await createCaptureServer();
+
+	try {
+
+		const setup = setupPrecompile( {
+			three,
+			renderer,
+			scene,
+			camera,
+			devEndpoint: capture.url,
+			aux: { compileTSL },
+		} );
+
+		await setup.ready;
+		const results = await setup.captureAux( { passNode } );
+
+		assert.equal( scene.userData.__tslp_mrtNode, passNode._mrt );
+		assert.equal( compileCalls.some( ( call ) => call[ 3 ] && call[ 3 ].mrtNode === passNode._mrt ), true );
+		assert.equal( results.some( ( result ) => result.shape === 'mrt' && result.ok === true ), true );
+		assert.equal( capture.posts.some( ( post ) => post.materialShape === 'mrt' ), true );
+
+	} finally {
+
+		await capture.close();
+
+	}
 
 } );
 

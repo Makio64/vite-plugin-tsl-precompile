@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 
 import {
 	Node,
+	TempNode,
 	uniform,
 	PassNode,
 	LightsNode,
 	RectAreaLightNode,
+	mrt,
 } from '../src/slim-stubs.js';
 
 test( 'slim Node returns inert stub for unknown property access (chain fallback)', () => {
@@ -17,6 +19,22 @@ test( 'slim Node returns inert stub for unknown property access (chain fallback)
 	// Chain stays alive — addons can keep composing.
 	assert.equal( typeof result.add, 'function' );
 	assert.equal( result.add( 1 ).isNode, true );
+
+} );
+
+test( 'slim chain fallback keeps missing detection fields absent', () => {
+
+	const n = new Node();
+	assert.equal( n._depthMaterial, undefined );
+	assert.equal( n.updateBefore, undefined );
+	assert.equal( n.isPassNode, false );
+	assert.equal( n.type, '' );
+
+	const result = n.someMethodWeDontStub();
+	assert.equal( result._depthMaterial, undefined );
+	assert.equal( result.updateBefore, undefined );
+	assert.equal( result.isPassNode, false );
+	assert.equal( result.type, '' );
 
 } );
 
@@ -41,6 +59,42 @@ test( 'slim PassNode falls through unknown property access to inert stub', () =>
 	// Unknown method does not throw.
 	const result = pass.someUserDefinedHelper();
 	assert.equal( result.isNode, true );
+
+} );
+
+test( 'slim TempNode subclasses keep prototype methods for addon postfx nodes', () => {
+
+	class FakeEffectNode extends TempNode {
+
+		constructor() {
+
+			super( 'vec4' );
+			this.payload = 1;
+
+		}
+
+		updateBefore() { this.payload ++; }
+		getTextureNode() { return this.someGeneratedTexture(); }
+
+	}
+
+	const node = new FakeEffectNode();
+	node.updateBefore();
+	assert.equal( node.payload, 2 );
+	assert.equal( node.getTextureNode().isNode, true, 'unknown helper chains still fall back to inert nodes' );
+
+} );
+
+test( 'slim PassNode owns named render-target textures for postprocess rebinding', () => {
+
+	const pass = new PassNode( PassNode.COLOR, {}, {} );
+	assert.equal( pass.renderTarget.texture.name, 'output' );
+	assert.equal( pass.getTextureNode( 'output' ).value, pass.getTexture( 'output' ) );
+
+	pass.setMRT( mrt( { output: {}, normal: {} } ) );
+	assert.equal( pass.getTexture( 'normal' ).name, 'normal' );
+	assert.equal( pass.renderTarget.textures.length, 2 );
+	assert.equal( pass.renderTarget.textures[ 1 ], pass.getTexture( 'normal' ) );
 
 } );
 
