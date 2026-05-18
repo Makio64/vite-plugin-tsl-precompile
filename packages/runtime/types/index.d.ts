@@ -201,6 +201,25 @@ export type RenderPassWithFallbackOptions = {
 	shareDepth?: boolean;
 	onError?: ( err: unknown, texture?: unknown ) => void;
 };
+export type SlimRenderFallbackHandler = ( renderObject: unknown ) => unknown | null;
+export type PostprocessWireMiss = {
+	shape: string;
+	reason: string;
+};
+export type WiredEffectSubPass = {
+	shape: string;
+	name?: string;
+	configHash: string;
+};
+export type WireRegisteredEffectNodeResult = {
+	wired: WiredEffectSubPass[];
+	missed: PostprocessWireMiss[];
+};
+export type WirePrecompiledPostprocessResult = {
+	effects: number;
+	wired: WiredEffectSubPass[];
+	missed: PostprocessWireMiss[];
+};
 export function getComputeBindGroups( computeNode: unknown, fullRenderer: unknown ): unknown[];
 export function computeNodeUsesStorageTexture( computeNode: unknown, fullRenderer: unknown ): boolean;
 export function syncComputeStorageOutputs( computeNode: unknown, fullRenderer: unknown, slimRenderer: unknown, opts?: Record<string, unknown> ): ComputeSyncStats;
@@ -211,6 +230,8 @@ export function createFullRendererFallback( opts: Record<string, unknown> ): {
 	isInitialised: () => boolean;
 	dispose: () => void;
 };
+export function setSlimRenderFallback( handler: SlimRenderFallbackHandler | null | undefined ): void;
+export function getSlimRenderFallback(): SlimRenderFallbackHandler | null;
 export function renderPassWithFullRenderer( args: {
 	passNode: unknown;
 	slimRenderer: unknown;
@@ -227,6 +248,13 @@ export function sharePassRenderTargetTextures( args: {
 	diagnostics?: Record<string, unknown>;
 	onError?: ( err: unknown, texture?: unknown ) => void;
 } ): SharePassRenderTargetTexturesStats;
+export function wirePrecompiledPostprocess( args?: {
+	postProcessing?: { outputNode?: unknown };
+	outputNode?: unknown;
+} ): WirePrecompiledPostprocessResult;
+export function collectLiveBloomNodes( root: unknown ): unknown[];
+export function wireBloomNode( bloomNode: unknown, opts?: { bloomIndex?: number } ): WireRegisteredEffectNodeResult;
+export function findPostprocessAux( shape: string, nameOrConfigHash: string ): unknown;
 export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	liveSceneIndex: unknown;
 	pmrem: unknown;

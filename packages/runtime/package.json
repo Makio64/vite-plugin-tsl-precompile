@@ -40,6 +40,10 @@
       "types": "./types/material-variants.d.ts",
       "default": "./src/material-variants.js"
     },
+    "./slim-support": {
+      "types": "./types/slim-support/index.d.ts",
+      "default": "./src/slim-support/index.js"
+    },
     "./slim-support/live-scene-index": {
       "types": "./types/slim-support/live-scene-index.d.ts",
       "default": "./src/slim-support/live-scene-index.js"
@@ -68,7 +72,12 @@
       "types": "./types/slim-support/scene-support.d.ts",
       "default": "./src/slim-support/scene-support.js"
     },
+    "./slim-support/render-fallback-registry": {
+      "types": "./types/slim-support/render-fallback-registry.d.ts",
+      "default": "./src/slim-support/render-fallback-registry.js"
+    },
     "./slim-support/postprocess-wire": {
+      "types": "./types/slim-support/postprocess-wire.d.ts",
       "default": "./src/slim-support/postprocess-wire.js"
     },
     "./slim-support/postprocess-effects": {
@@ -82,6 +91,10 @@
     "./slim-support/pass-render-fallback": {
       "types": "./types/slim-support/pass-render-fallback.d.ts",
       "default": "./src/slim-support/pass-render-fallback.js"
+    },
+    "./slim-support/diagnostics": {
+      "types": "./types/slim-support/diagnostics.d.ts",
+      "default": "./src/slim-support/diagnostics.js"
     },
     "./slim": "./build/three.webgpu.slim.js",
     "./slim-stubs": "./src/slim-stubs.js"
