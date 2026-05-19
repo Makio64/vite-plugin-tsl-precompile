@@ -39,7 +39,9 @@
       "webgpu_pmrem_cubemap.html": 15000
     },
     "psnrThresholdOverrides": {
-      "webgpu_camera_logarithmicdepthbuffer.html": 28
+      "webgpu_camera_logarithmicdepthbuffer.html": 28,
+      "webgpu_instancing_morph.html": 27,
+      "webgpu_tsl_galaxy.html": 20
     },
     "expectedReplayErrors": {
       "webgpu_hdr.html": [

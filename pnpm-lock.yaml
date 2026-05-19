@@ -20,7 +20,7 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: ^0.184.0
+        specifier: 0.184.0
         version: 0.184.0
     devDependencies:
       vite:
@@ -48,7 +48,7 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: ^0.184.0
+        specifier: 0.184.0
         version: 0.184.0
     devDependencies:
       vite:
@@ -64,7 +64,7 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: ^0.184.0
+        specifier: 0.184.0
         version: 0.184.0
     devDependencies:
       vite:
@@ -80,7 +80,7 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: ^0.184.0
+        specifier: 0.184.0
         version: 0.184.0
     devDependencies:
       vite:
@@ -96,7 +96,7 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: ^0.184.0
+        specifier: 0.184.0
         version: 0.184.0
     devDependencies:
       vite:
@@ -112,7 +112,7 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: ^0.184.0
+        specifier: 0.184.0
         version: 0.184.0
     devDependencies:
       vite:
@@ -131,7 +131,7 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: ^0.184.0
+        specifier: 0.184.0
         version: 0.184.0
     devDependencies:
       vite:
@@ -147,7 +147,7 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: ^0.184.0
+        specifier: 0.184.0
         version: 0.184.0
     devDependencies:
       vite:
@@ -163,7 +163,7 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: ^0.184.0
+        specifier: 0.184.0
         version: 0.184.0
     devDependencies:
       vite:
@@ -179,7 +179,7 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: ^0.184.0
+        specifier: 0.184.0
         version: 0.184.0
     devDependencies:
       vite:
@@ -201,7 +201,7 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: ^0.184.0
+        specifier: 0.184.0
         version: 0.184.0
     devDependencies:
       vite:
@@ -269,7 +269,7 @@ importers:
   packages/site:
     dependencies:
       three:
-        specifier: ^0.184.0
+        specifier: 0.184.0
         version: 0.184.0
     devDependencies:
       sharp:

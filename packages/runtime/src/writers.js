@@ -62,6 +62,10 @@ export function writeColor( view, byteOffset, value ) {
 	view.setFloat32( byteOffset, value.r, LE );
 	view.setFloat32( byteOffset + 4, value.g, LE );
 	view.setFloat32( byteOffset + 8, value.b, LE );
+	if ( typeof globalThis !== 'undefined' && byteOffset === 80 && globalThis.__tslpHarnessDiagnostics ) {
+		const list = globalThis.__tslpHarnessDiagnostics.writerColors || ( globalThis.__tslpHarnessDiagnostics.writerColors = [] );
+		if ( list.length < 32 ) list.push( { byteOffset, r: value && value.r, g: value && value.g, b: value && value.b } );
+	}
 
 }
 

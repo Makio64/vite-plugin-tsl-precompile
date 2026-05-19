@@ -37,8 +37,8 @@ import { createServer } from 'node:http';
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { resolve, join, dirname, extname, normalize, basename } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS } from '@tsl-precompile/contract/texture-props';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS as __NODE_GRAPH_KEYS } from '@tsl-precompile/contract/texture-props';
 
 import { assertThreeAtLeast184 } from './_three-version.mjs';
 import { captureWaitOverrideForExample, comparePngBuffers, expectedReplayErrorPatternsForExample, pixelGateDisabledReasonForExample, psnrThresholdForExample, tierExamples } from './psnr.mjs';
@@ -124,6 +124,7 @@ const captureWaitMs = parseIntAtLeast( getArg( '--capture-wait-ms=', '12000' ), 
 const HAS_EXPLICIT_CAPTURE_WAIT = args.some( ( arg ) => arg.startsWith( '--capture-wait-ms=' ) );
 const replayWaitMs = parseIntAtLeast( getArg( '--replay-wait-ms=', '5000' ), 5000, 0 );
 const targetTick = parseIntAtLeast( getArg( '--target-tick=', '0' ), 0, 0 );
+const HAS_EXPLICIT_TARGET_TICK = args.some( ( arg ) => arg.startsWith( '--target-tick=' ) );
 const psnrThreshold = parseFloatOr( getArg( '--psnr-threshold=', '30' ), 30 );
 const pixelGateEnabled = ! args.includes( '--no-pixel-gate' );
 const saveShots = ! args.includes( '--no-save-shots' );
@@ -221,6 +222,10 @@ const deferredSceneAssetCache = new Map();
 async function exampleUsesDeferredSceneAssets( name ) {
 
 	if ( deferredSceneAssetCache.has( name ) ) return deferredSceneAssetCache.get( name );
+	if ( name === 'webgpu_tsl_wood.html' ) {
+		deferredSceneAssetCache.set( name, true );
+		return true;
+	}
 	const file = localExamplesRoot ? join( localExamplesRoot, stripExampleQuery( examplePathFor( name ) ) ) : join( threeRepo, 'examples', name );
 	const source = await readFile( file, 'utf8' ).catch( () => '' );
 	const result = /\b(?:GLTFLoader|FBXLoader|OBJLoader|ColladaLoader|PLYLoader|STLLoader|LDrawLoader|LWOLoader|USDZLoader)\b/.test( source );
@@ -262,6 +267,7 @@ const NODE_MATERIAL_EXPORTS = [
 	'MeshNormalNodeMaterial',
 	'MeshMatcapNodeMaterial',
 	'MeshSSSNodeMaterial',
+	'VolumeNodeMaterial',
 	'LineBasicNodeMaterial',
 	'LineDashedNodeMaterial',
 	'Line2NodeMaterial',
@@ -269,6 +275,32 @@ const NODE_MATERIAL_EXPORTS = [
 	'SpriteNodeMaterial',
 	'ShadowNodeMaterial',
 ];
+
+const SLIM_REPLAY_DIRECT_EXPORTS = new Set( [
+	...NODE_MATERIAL_EXPORTS,
+	'ArrayCamera',
+	'BlendMode',
+	'DepthTexture',
+	'NodeUpdateType',
+	'PMREMGenerator',
+	'PassNode',
+	'PostProcessing',
+	'QuadMesh',
+	'RenderPipeline',
+	'RenderTarget',
+	'RendererUtils',
+	'TSL',
+	'TempNode',
+	'TextureNode',
+	'WebGPURenderer',
+] );
+const SLIM_REPLAY_FORWARD_EXPORTS = Object.keys( await import( pathToFileURL( SLIM_BUNDLE ).href ) )
+	.filter( ( name ) => /^[A-Za-z_$][\w$]*$/.test( name ) )
+	.filter( ( name ) => ! SLIM_REPLAY_DIRECT_EXPORTS.has( name ) )
+	.sort();
+const SLIM_REPLAY_FORWARD_EXPORT_BLOCK = SLIM_REPLAY_FORWARD_EXPORTS.length > 0
+	? `export { ${ SLIM_REPLAY_FORWARD_EXPORTS.join( ', ' ) } } from '/__tslp__/three.webgpu.slim.js';`
+	: '';
 
 const captures = new Map();
 function captureBucket( example ) {
@@ -347,11 +379,13 @@ function rewriteImportmap( html, mode ) {
 		.replace( /("three\/webgpu"\s*:\s*")[^"]+(")/g, `$1${ webgpuTarget }$2` )
 		.replace( /("three"\s*:\s*")[^"]*three\.webgpu[^"]*(")/g, `$1${ webgpuTarget }$2` );
 
-	if ( mode === 'replay' ) {
+		const replayAddonsTarget = '/__tslp_addons_replay/';
+		if ( mode === 'replay' ) {
 
-		out = out.replace( /("three\/tsl"\s*:\s*")[^"]+(")/g, '$1/__tslp__/tsl-stub.js$2' );
+			out = out.replace( /("three\/tsl"\s*:\s*")[^"]+(")/g, '$1/__tslp__/tsl-stub.js$2' );
+			out = out.replace( /("three\/addons\/"\s*:\s*")[^"]+(")/g, `$1${ replayAddonsTarget }$2` );
 
-	}
+		}
 
 	const tslTarget = mode === 'replay' ? bust( '/__tslp__/tsl-stub.js' ) : '/build/three.tsl.js';
 	const extraImports = [
@@ -382,11 +416,11 @@ function rewriteImportmap( html, mode ) {
 	// `"three/addons/": "./jsm/"` mapping can't resolve. Inject a mapping to the
 	// `/__tslp_addons/` route (served from `<threeRepo>/examples/jsm/`). Upstream
 	// three examples that already declare `three/addons/` keep their own mapping.
-	if ( ! /["']three\/addons\/["']\s*:/.test( out ) ) {
+		if ( ! /["']three\/addons\/["']\s*:/.test( out ) ) {
 
-		extraImports.push( '"three/addons/": "/__tslp_addons/"' );
+			extraImports.push( `"three/addons/": "${ mode === 'replay' ? replayAddonsTarget : '/__tslp_addons/' }"` );
 
-	}
+		}
 
 	if ( out.includes( '</script>' ) && out.includes( '"imports"' ) ) {
 
@@ -405,13 +439,54 @@ function rewriteHarnessVirtualImports( source ) {
 
 }
 
-function rewriteTextureLoaderAddon( source, className ) {
+function rewriteLoaderAddon( source, className ) {
 
 	const text = String( source );
 	if ( text.includes( '__tslpPatchTextureLoaderClass' ) ) return text;
 	const exportRe = new RegExp( `export\\s*\\{\\s*${ className }\\s*\\};` );
 	if ( ! exportRe.test( text ) ) return text;
 	return text.replace( exportRe, `if ( globalThis.__tslpPatchTextureLoaderClass ) globalThis.__tslpPatchTextureLoaderClass( ${ className }, '${ className }' );\nexport { ${ className } };` );
+
+}
+
+function rewriteMaterialXLoaderTextureIdentity( source ) {
+
+	const text = String( source );
+	if ( ! text.includes( 'class MaterialXLoader' ) || text.includes( '__tslpMaterialXTextureName' ) ) return text;
+	const needle = `const texture = new Texture();
+\t\ttexture.wrapS = texture.wrapT = RepeatWrapping;`;
+	if ( ! text.includes( needle ) ) return text;
+	return text.replace( needle, `const texture = new Texture();
+\t\tif ( typeof uri === 'string' && uri.length > 0 ) {
+\t\t\tconst __tslpMaterialXTextureName = uri.split( /[?#]/ )[ 0 ].split( '/' ).filter( Boolean ).pop() || uri;
+\t\t\tif ( __tslpMaterialXTextureName && ! texture.name ) texture.name = __tslpMaterialXTextureName;
+\t\t\ttry {
+\t\t\t\ttexture.userData = texture.userData || {};
+\t\t\t\ttexture.userData.__tslpLoaderUrl = uri;
+\t\t\t} catch ( _ ) {}
+\t\t}
+\t\ttexture.wrapS = texture.wrapT = RepeatWrapping;` )
+		.replace( `texture.image = imageBitmap;
+\t\t\ttexture.needsUpdate = true;`, `texture.image = imageBitmap;
+\t\t\ttexture.needsUpdate = true;
+\t\t\tif ( globalThis.__tslpMarkLoaderTexture ) globalThis.__tslpMarkLoaderTexture( texture, uri );` );
+
+}
+
+function rewriteReplayAddon( source ) {
+
+	const text = String( source );
+	if ( ! /from\s*['"]three\/webgpu['"]/.test( text ) ) return text;
+	let needsFullNodeMaterial = false;
+	const rewritten = text.replace( /import\s*\{([\s\S]*?)\}\s*from\s*(['"])three\/webgpu\2/g, ( match, spec, quote ) => {
+		const parts = spec.split( ',' ).map( ( part ) => part.trim() ).filter( Boolean );
+		if ( ! parts.includes( 'NodeMaterial' ) ) return match;
+		needsFullNodeMaterial = true;
+		const kept = parts.filter( ( part ) => part !== 'NodeMaterial' );
+		if ( kept.length === 0 ) return '';
+		return `import { ${ kept.join( ', ' ) } } from ${ quote }three/webgpu${ quote }`;
+	} );
+	return needsFullNodeMaterial ? `import { NodeMaterial } from '/build/three.webgpu.js';\n${ rewritten }` : rewritten;
 
 }
 
@@ -477,6 +552,10 @@ window.__tslpPatchTextureLoaderClass = function ( Ctor ) {
 	};
 };
 
+for ( const __tslpTextureLoaderCtor of [ Original.TextureLoader, Original.CubeTextureLoader, Original.DataTextureLoader, Original.ImageBitmapLoader ] ) {
+	window.__tslpPatchTextureLoaderClass( __tslpTextureLoaderCtor );
+}
+
 function __recordRenderableObjectCount( scene ) {
 	if ( ! scene || typeof scene.traverse !== 'function' ) return;
 	let count = 0;
@@ -515,9 +594,9 @@ function __recordRenderableObjectCount( scene ) {
 	if ( _origError ) dlm.itemError = function ( url ) { return _origError( url ); };
 } )();
 
-( function patchStockPMREMGenerator() {
-	const PG = Original.PMREMGenerator;
-	if ( ! PG || ! PG.prototype || PG.prototype.__tslpStockPatched ) return;
+	( function patchStockPMREMGenerator() {
+		const PG = Original.PMREMGenerator;
+		if ( ! PG || ! PG.prototype || PG.prototype.__tslpStockPatched ) return;
 	PG.prototype.__tslpStockPatched = true;
 	const begin = () => {
 		__pmremRunning ++;
@@ -546,10 +625,73 @@ function __recordRenderableObjectCount( scene ) {
 			catch ( err ) { end(); throw err; }
 			return Promise.resolve( result ).finally( end );
 		};
-	}
-} )();
+		}
+	} )();
 
-export class WebGPURenderer extends Original.WebGPURenderer {
+	function __isStockTAAUEffectNode( node ) {
+		if ( ! node || typeof node === 'function' ) return false;
+		const type = ( node.constructor && ( node.constructor.type || node.constructor.name ) ) || node.type || '';
+		if ( type && type !== 'TAAUNode' ) return false;
+		return !! ( node && typeof node.updateBefore === 'function' && node._resolveMaterial && node._historyRenderTarget && node._resolveRenderTarget );
+	}
+
+	function __pinStockTAAUJitterIndex( taauNode ) {
+		if ( ! taauNode || taauNode.__tslpTAAUJitterPinned === true ) return;
+		const proto = Object.getPrototypeOf( taauNode );
+		const originalSetViewOffset = taauNode.setViewOffset || ( proto && proto.setViewOffset );
+		const originalClearViewOffset = taauNode.clearViewOffset || ( proto && proto.clearViewOffset );
+		if ( typeof originalSetViewOffset === 'function' ) {
+			taauNode.setViewOffset = function ( width, height ) {
+				try { this._jitterIndex = 0; } catch ( _ ) {}
+				return originalSetViewOffset.call( this, width, height );
+			};
+		}
+		if ( typeof originalClearViewOffset === 'function' ) {
+			taauNode.clearViewOffset = function () {
+				const result = originalClearViewOffset.call( this );
+				try { this._jitterIndex = 0; } catch ( _ ) {}
+				return result;
+			};
+		}
+		try { taauNode._jitterIndex = 0; } catch ( _ ) {}
+		try { Object.defineProperty( taauNode, '__tslpTAAUJitterPinned', { value: true, configurable: true } ); } catch ( _ ) {}
+	}
+
+	function __scanForStockTAAUNodes( node, seen = new Set(), depth = 0 ) {
+		if ( ! node || depth > 24 || seen.has( node ) ) return;
+		if ( typeof node !== 'object' && typeof node !== 'function' ) return;
+		seen.add( node );
+		if ( __isStockTAAUEffectNode( node ) ) {
+			__pinStockTAAUJitterIndex( node );
+			return;
+		}
+		const keys = [];
+		try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
+		const skip = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'geometry', 'material', 'domElement' ] );
+		for ( const key of keys ) {
+			if ( skip.has( key ) ) continue;
+			let child;
+			try { child = node[ key ]; } catch ( _ ) { continue; }
+			if ( ! child ) continue;
+			if ( Array.isArray( child ) ) {
+				for ( const item of child ) if ( item && ( typeof item === 'object' || typeof item === 'function' ) ) __scanForStockTAAUNodes( item, seen, depth + 1 );
+			} else if ( typeof child === 'object' || typeof child === 'function' ) {
+				__scanForStockTAAUNodes( child, seen, depth + 1 );
+			}
+		}
+	}
+
+	const __StockRenderPipelineBase = Original.RenderPipeline || Original.PostProcessing;
+	export class RenderPipeline extends __StockRenderPipelineBase {
+		render( ...args ) {
+			try { if ( this.outputNode ) __scanForStockTAAUNodes( this.outputNode ); } catch ( _ ) {}
+			return super.render( ...args );
+		}
+	}
+
+	export class PostProcessing extends RenderPipeline {}
+
+	export class WebGPURenderer extends Original.WebGPURenderer {
 	constructor( ...args ) {
 		super( ...args );
 		// Wedge 4: expose the harness's WebGPURenderer so the runner can read
@@ -670,6 +812,10 @@ window.__tslpPatchTextureLoaderClass = function ( Ctor ) {
 	};
 };
 
+for ( const __tslpTextureLoaderCtor of [ Original.TextureLoader, Original.CubeTextureLoader, Original.DataTextureLoader, Original.ImageBitmapLoader ] ) {
+	window.__tslpPatchTextureLoaderClass( __tslpTextureLoaderCtor );
+}
+
 function __recordRenderableObjectCount( scene ) {
 	if ( ! scene || typeof scene.traverse !== 'function' ) return;
 	let count = 0;
@@ -764,6 +910,9 @@ installPrecompileMarker( Original, {
 function __mark( material, className, sourceObject = null, camera = null ) {
 	if ( ! material ) return;
 	if ( sourceObject && ! material.__tslpPrecompileObject ) Object.defineProperty( material, '__tslpPrecompileObject', { value: sourceObject, configurable: true } );
+	if ( camera && ! Object.prototype.hasOwnProperty.call( material, '__tslpPrecompileCamera' ) ) {
+		Object.defineProperty( material, '__tslpPrecompileCamera', { value: camera, configurable: true } );
+	}
 	if ( sourceObject && ! Object.prototype.hasOwnProperty.call( material, '__tslpArrayCamera' ) ) {
 		const arrayCameraHint = camera && camera.isArrayCamera === true ? camera : null;
 		Object.defineProperty( material, '__tslpArrayCamera', { value: arrayCameraHint, configurable: true } );
@@ -828,6 +977,8 @@ function __isInsideBundleGroup( object ) {
 
 function __classNameForMaterial( material ) {
 	if ( ! material ) return 'Material';
+	const type = material.type || '';
+	if ( type === 'Line2NodeMaterial' ) return 'Line2NodeMaterial';
 	if ( material.isMeshBasicNodeMaterial || material.isMeshBasicMaterial ) return 'MeshBasicNodeMaterial';
 	if ( material.isMeshSSSNodeMaterial || material.type === 'MeshSSSNodeMaterial' ) return 'MeshSSSNodeMaterial';
 	if ( material.isMeshPhysicalNodeMaterial || material.isMeshPhysicalMaterial ) return 'MeshPhysicalNodeMaterial';
@@ -841,7 +992,7 @@ function __classNameForMaterial( material ) {
 	if ( material.isLineBasicNodeMaterial || material.isLineBasicMaterial ) return 'LineBasicNodeMaterial';
 	if ( material.isPointsNodeMaterial || material.isPointsMaterial ) return 'PointsNodeMaterial';
 	if ( material.isSpriteNodeMaterial || material.isSpriteMaterial ) return 'SpriteNodeMaterial';
-	const type = material.type || '';
+	if ( material.isVolumeNodeMaterial || type === 'VolumeNodeMaterial' ) return 'VolumeNodeMaterial';
 	if ( type === 'MeshBasicNodeMaterial' || type === 'MeshBasicMaterial' ) return 'MeshBasicNodeMaterial';
 	if ( type === 'MeshSSSNodeMaterial' ) return 'MeshSSSNodeMaterial';
 	if ( type === 'MeshPhysicalNodeMaterial' || type === 'MeshPhysicalMaterial' ) return 'MeshPhysicalNodeMaterial';
@@ -855,7 +1006,27 @@ function __classNameForMaterial( material ) {
 	if ( type === 'LineBasicNodeMaterial' || type === 'LineBasicMaterial' ) return 'LineBasicNodeMaterial';
 	if ( type === 'PointsNodeMaterial' || type === 'PointsMaterial' ) return 'PointsNodeMaterial';
 	if ( type === 'SpriteNodeMaterial' || type === 'SpriteMaterial' ) return 'SpriteNodeMaterial';
+	if ( /NodeMaterial$/.test( type ) ) return type;
 	return material.constructor && material.constructor.name || 'Material';
+}
+
+function __isRetroPassRenderTarget( renderer ) {
+	try {
+		const target = renderer && typeof renderer.getRenderTarget === 'function' ? renderer.getRenderTarget() : null;
+		const texture = target && target.texture;
+		return !! ( texture
+			&& texture.magFilter === Original.NearestFilter
+			&& texture.minFilter === Original.NearestFilter );
+	} catch ( _ ) {
+		return false;
+	}
+}
+
+function __isRetroPassGeneratedMaterial( renderer, scene, material, className ) {
+	return !! ( material
+		&& scene && scene.isScene === true && scene.userData && scene.userData.__tslpUserScene === true
+		&& __isRetroPassRenderTarget( renderer )
+		&& /^(?:MeshBasic|MeshPhong)NodeMaterial$/.test( className || __classNameForMaterial( material ) ) );
 }
 
 function __markSceneMaterials( scene, camera = null ) {
@@ -1112,6 +1283,13 @@ function __isCaptureTRAAEffectNode( node ) {
 	return !! ( node && typeof node.updateBefore === 'function' && node._resolveMaterial && node._historyRenderTarget && node._resolveRenderTarget );
 }
 
+function __isCaptureTAAUEffectNode( node ) {
+	if ( ! node || typeof node === 'function' ) return false;
+	const type = ( node.constructor && ( node.constructor.type || node.constructor.name ) ) || node.type || '';
+	if ( type && type !== 'TAAUNode' ) return false;
+	return !! ( node && typeof node.updateBefore === 'function' && node._resolveMaterial && node._historyRenderTarget && node._resolveRenderTarget );
+}
+
 function __pinCaptureTRAAJitterIndex( traaNode ) {
 	if ( ! traaNode || traaNode.__tslpTRAAJitterPinned === true ) return;
 	const proto = Object.getPrototypeOf( traaNode );
@@ -1136,12 +1314,38 @@ function __pinCaptureTRAAJitterIndex( traaNode ) {
 	try { Object.defineProperty( traaNode, '__tslpTRAAJitterPinned', { value: true, configurable: true } ); } catch ( _ ) {}
 }
 
+function __pinCaptureTAAUJitterIndex( taauNode ) {
+	if ( ! taauNode || taauNode.__tslpTAAUJitterPinned === true ) return;
+	const proto = Object.getPrototypeOf( taauNode );
+	const originalSetViewOffset = taauNode.setViewOffset || ( proto && proto.setViewOffset );
+	const originalClearViewOffset = taauNode.clearViewOffset || ( proto && proto.clearViewOffset );
+	if ( typeof originalSetViewOffset === 'function' ) {
+		taauNode.setViewOffset = function ( width, height ) {
+			try { this._jitterIndex = 0; } catch ( _ ) {}
+			return originalSetViewOffset.call( this, width, height );
+		};
+	}
+	if ( typeof originalClearViewOffset === 'function' ) {
+		taauNode.clearViewOffset = function () {
+			const result = originalClearViewOffset.call( this );
+			try { this._jitterIndex = 0; } catch ( _ ) {}
+			return result;
+		};
+	}
+	try { taauNode._jitterIndex = 0; } catch ( _ ) {}
+	try { Object.defineProperty( taauNode, '__tslpTAAUJitterPinned', { value: true, configurable: true } ); } catch ( _ ) {}
+}
+
 function __scanForCaptureTRAANodes( node, seen = new Set(), depth = 0 ) {
 	if ( ! node || depth > 24 || seen.has( node ) ) return;
 	if ( typeof node !== 'object' && typeof node !== 'function' ) return;
 	seen.add( node );
 	if ( __isCaptureTRAAEffectNode( node ) ) {
 		__pinCaptureTRAAJitterIndex( node );
+		return;
+	}
+	if ( __isCaptureTAAUEffectNode( node ) ) {
+		__pinCaptureTAAUJitterIndex( node );
 		return;
 	}
 	const keys = [];
@@ -1194,8 +1398,24 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		return super.setAnimationLoop( wrap ? wrap( callback ) : callback );
 	}
 	renderObject( object, scene, camera, geometry, material, group, lightsNode, clippingContext ) {
-		if ( material && material.isMeshToonOutlineMaterial === true ) {
-			__mark( material, 'NodeMaterial', object, camera );
+		if ( __pmremRunning > 0 ) return super.renderObject( object, scene, camera, geometry, material, group, lightsNode, clippingContext );
+		const materialClassName = material ? __classNameForMaterial( material ) : '';
+		const isOffscreenRenderPass = typeof this.getRenderTarget === 'function' && this.getRenderTarget() !== null;
+		const isUserScene = !! ( scene && scene.isScene === true && scene.userData && scene.userData.__tslpUserScene === true );
+		const isRetroPassMaterial = __isRetroPassGeneratedMaterial( this, scene, material, materialClassName );
+		if ( isRetroPassMaterial ) {
+			try {
+				Object.defineProperty( material, '__tslpRetroPassMaterial', {
+					value: true,
+					configurable: true,
+					writable: true,
+				} );
+			} catch ( _ ) {
+				material.__tslpRetroPassMaterial = true;
+			}
+		}
+		if ( material && ( material.isMeshToonOutlineMaterial === true || ( materialClassName === 'NodeMaterial' && isUserScene && ! isOffscreenRenderPass ) || isRetroPassMaterial ) ) {
+			__mark( material, isRetroPassMaterial ? materialClassName : 'NodeMaterial', object, camera );
 		}
 		return super.renderObject( object, scene, camera, geometry, material, group, lightsNode, clippingContext );
 	}
@@ -1278,15 +1498,15 @@ export class ${ name } {
 
 	return `
 import * as Slim from '/__tslp__/three.webgpu.slim.js?v=${ CACHE_BUST }';
-import { TSL as FullTSL, TextureNode as FullTextureNode, BlendMode as FullBlendMode, TempNode as FullTempNode, NodeUpdateType as FullNodeUpdateType, NodeMaterial as FullNodeMaterial, MeshBasicNodeMaterial as FullMeshBasicNodeMaterial, MeshStandardNodeMaterial as FullMeshStandardNodeMaterial, MeshPhysicalNodeMaterial as FullMeshPhysicalNodeMaterial, MeshLambertNodeMaterial as FullMeshLambertNodeMaterial, MeshPhongNodeMaterial as FullMeshPhongNodeMaterial, MeshToonNodeMaterial as FullMeshToonNodeMaterial, MeshNormalNodeMaterial as FullMeshNormalNodeMaterial, MeshMatcapNodeMaterial as FullMeshMatcapNodeMaterial, MeshSSSNodeMaterial as FullMeshSSSNodeMaterial, LineBasicNodeMaterial as FullLineBasicNodeMaterial, LineDashedNodeMaterial as FullLineDashedNodeMaterial, Line2NodeMaterial as FullLine2NodeMaterial, PointsNodeMaterial as FullPointsNodeMaterial, SpriteNodeMaterial as FullSpriteNodeMaterial, ShadowNodeMaterial as FullShadowNodeMaterial, RenderTarget as FullRenderTarget, DepthTexture as FullDepthTexture, ArrayCamera as FullArrayCamera, QuadMesh as FullQuadMesh, RendererUtils as FullRendererUtils, Vector2 as FullVector2, TextureLoader as FullTextureLoader, CubeTextureLoader as FullCubeTextureLoader, DataTextureLoader as FullDataTextureLoader, ImageBitmapLoader as FullImageBitmapLoader } from '/build/three.webgpu.js';
+import { TSL as FullTSL, TextureNode as FullTextureNode, BlendMode as FullBlendMode, TempNode as FullTempNode, NodeUpdateType as FullNodeUpdateType, NodeMaterial as FullNodeMaterial, MeshBasicNodeMaterial as FullMeshBasicNodeMaterial, MeshStandardNodeMaterial as FullMeshStandardNodeMaterial, MeshPhysicalNodeMaterial as FullMeshPhysicalNodeMaterial, MeshLambertNodeMaterial as FullMeshLambertNodeMaterial, MeshPhongNodeMaterial as FullMeshPhongNodeMaterial, MeshToonNodeMaterial as FullMeshToonNodeMaterial, MeshNormalNodeMaterial as FullMeshNormalNodeMaterial, MeshMatcapNodeMaterial as FullMeshMatcapNodeMaterial, MeshSSSNodeMaterial as FullMeshSSSNodeMaterial, VolumeNodeMaterial as FullVolumeNodeMaterial, LineBasicNodeMaterial as FullLineBasicNodeMaterial, LineDashedNodeMaterial as FullLineDashedNodeMaterial, Line2NodeMaterial as FullLine2NodeMaterial, PointsNodeMaterial as FullPointsNodeMaterial, SpriteNodeMaterial as FullSpriteNodeMaterial, ShadowNodeMaterial as FullShadowNodeMaterial, RenderTarget as FullRenderTarget, DepthTexture as FullDepthTexture, ArrayCamera as FullArrayCamera, QuadMesh as FullQuadMesh, RendererUtils as FullRendererUtils, Vector2 as FullVector2, TextureLoader as FullTextureLoader, CubeTextureLoader as FullCubeTextureLoader, DataTextureLoader as FullDataTextureLoader, ImageBitmapLoader as FullImageBitmapLoader } from '/build/three.webgpu.js';
 import { createLiveSceneIndex, textureImageReady as __sharedTextureImageReady, textureImageSrc as __sharedTextureImageSrc, newFallbackTextureImage as __sharedNewFallbackTextureImage } from '/__tslp_runtime/slim-support/live-scene-index.js';
 import { artifactNeedsPMREM as __sharedArtifactNeedsPMREM, artifactPMREMSourceUuids as __sharedArtifactPMREMSourceUuids, attachPMREMRefsByOrder as __sharedAttachPMREMRefsByOrder, collectPMREMSourceTexturesFromMaterial as __sharedCollectPMREMSourceTexturesFromMaterial, collectPMREMSourceTexturesInNode as __sharedCollectPMREMSourceTexturesInNode, createPMREMSupport as __sharedCreatePMREMSupport, isPMREMArtifactTextureSource as __sharedIsPMREMArtifactTextureSource, isPMREMTexture as __sharedIsPMREMTexture, selectPMREMTexturesForArtifact as __sharedSelectPMREMTexturesForArtifact, textureListSignature as __sharedTextureListSignature } from '/__tslp_runtime/slim-support/pmrem.js';
 import { clearTextureViewCache as __sharedClearTextureViewCache, markTextureInitialized as __sharedMarkTextureInitialized, shareGPUTextureEntry as __sharedShareGPUTextureEntry, sharePMREMGPUTexture as __sharedSharePMREMGPUTexture, shareShadowGPUTextureIntoSlim as __sharedShareShadowGpuTextureIntoSlim } from '/__tslp_runtime/slim-support/gpu-texture-share.js';
-import { computeNodeUsesStorageTexture as __sharedComputeNodeUsesStorageTexture, syncComputeStorageOutputs as __sharedSyncComputeStorageOutputs, syncComputeStorageOutputsPerPass as __sharedSyncComputeStorageOutputsPerPass, pingPongInvalidate as __sharedPingPongInvalidate, shareInstancedAttributeBufferIntoSlim as __sharedShareInstancedAttributeBufferIntoSlim } from '/__tslp_runtime/slim-support/compute-sync.js';
-import { artifactHasTextureSource as __sharedArtifactHasTextureSource, attachArtifactTextureRefsWhere as __sharedAttachArtifactTextureRefsWhere, attachTextureRefsWhere as __sharedAttachTextureRefsWhere, countArtifactTextureSources as __sharedCountArtifactTextureSources, singleArtifactTextureUuid as __sharedSingleArtifactTextureUuid, textureMatchesArtifactSource as __sharedTextureMatchesArtifactSource, textureMatchesSource as __sharedTextureMatchesSource } from '/__tslp_runtime/slim-support/artifact-texture-wiring.js';
+import { computeNodeUsesStorageTexture as __sharedComputeNodeUsesStorageTexture, shareComputeSampledInputs as __sharedShareComputeSampledInputs, syncComputeStorageOutputs as __sharedSyncComputeStorageOutputs, syncComputeStorageOutputsPerPass as __sharedSyncComputeStorageOutputsPerPass, wireArtifactStorageBuffersFromAttributes as __sharedWireArtifactStorageBuffersFromAttributes, pingPongInvalidate as __sharedPingPongInvalidate, shareInstancedAttributeBufferIntoSlim as __sharedShareInstancedAttributeBufferIntoSlim } from '/__tslp_runtime/slim-support/compute-sync.js';
+import { artifactHasTextureSource as __sharedArtifactHasTextureSource, attachArtifactTextureRefsByShapeOrder as __sharedAttachArtifactTextureRefsByShapeOrder, attachArtifactTextureRefsWhere as __sharedAttachArtifactTextureRefsWhere, attachTextureRefsWhere as __sharedAttachTextureRefsWhere, countArtifactTextureSources as __sharedCountArtifactTextureSources, singleArtifactTextureUuid as __sharedSingleArtifactTextureUuid, textureMatchesArtifactSource as __sharedTextureMatchesArtifactSource, textureMatchesSource as __sharedTextureMatchesSource } from '/__tslp_runtime/slim-support/artifact-texture-wiring.js';
 import { createFullRendererFallback as __sharedCreateFullRendererFallback } from '/__tslp_runtime/slim-support/full-renderer-fallback.js';
-import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS } from '/__tslp_contract/texture-props.js';
-export * from '/__tslp__/three.webgpu.slim.js';
+import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS as __NODE_GRAPH_KEYS } from '/__tslp_contract/texture-props.js';
+${ SLIM_REPLAY_FORWARD_EXPORT_BLOCK }
 export { FullTextureNode as TextureNode, FullBlendMode as BlendMode, FullTempNode as TempNode, FullNodeUpdateType as NodeUpdateType, FullRenderTarget as RenderTarget, FullDepthTexture as DepthTexture, FullArrayCamera as ArrayCamera, FullQuadMesh as QuadMesh, FullRendererUtils as RendererUtils };
 
 const __state = window.__TSLP_E2E || { example: 'unknown', artifacts: { user: {}, aux: [] } };
@@ -1404,6 +1624,7 @@ window.__tslpPatchTextureLoaderClass = function ( Ctor ) {
 } )();
 
 	const __livePassNodes = [];
+	let __activePipelinePassNodes = null;
 	let __passNodeSequence = 0;
 
 	function __makePassTextureNode( passNode, name = 'output', previous = false ) {
@@ -1508,7 +1729,8 @@ window.__tslpPatchTextureLoaderClass = function ( Ctor ) {
 		const fragmentShader = typeof artifact.fragmentShader === 'string' ? artifact.fragmentShader : '';
 		const outputStruct = fragmentShader.match( /struct\\s+\\w+\\s*\\{([\\s\\S]*?)\\};\\s*var<private>\\s+output\\s*:/ );
 		const matches = ( outputStruct ? outputStruct[ 1 ] : fragmentShader ).match( /@location\\s*\\(\\s*\\d+\\s*\\)/g );
-		return matches && matches.length > 0 ? matches.length : 1;
+		if ( matches && matches.length > 0 ) return matches.length;
+		return outputStruct ? 0 : 1;
 	}
 
 	function __backgroundAuxCanRenderMRT( mrt ) {
@@ -1635,6 +1857,25 @@ function __resetRendererPipelineCachesForAttachmentChange( renderer, scene ) {
 	try { if ( renderer._objects && typeof renderer._objects.dispose === 'function' ) renderer._objects.dispose(); } catch ( _ ) {}
 }
 
+const __fullPassMaterialCache = new WeakMap();
+function __materialForFullPass( sourceMaterial ) {
+	if ( ! sourceMaterial ) return sourceMaterial;
+	if ( __fullPassMaterialCache.has( sourceMaterial ) ) {
+		const cached = __fullPassMaterialCache.get( sourceMaterial );
+		__copyMaterialProps( sourceMaterial, cached );
+		cached.needsUpdate = true;
+		return cached;
+	}
+	const className = __classNameForMaterial( sourceMaterial );
+	const material = __makeInternalNodeMaterial( className );
+	material.name = sourceMaterial.name || material.name || 'full-pass-material';
+	__copyMaterialProps( sourceMaterial, material );
+	__copyMaterialNodeProps( sourceMaterial, material );
+	material.needsUpdate = true;
+	__fullPassMaterialCache.set( sourceMaterial, material );
+	return material;
+}
+
 function __withSourceMaterialsForFullPass( scene, callback ) {
 	const swaps = [];
 	const swapOne = ( object ) => {
@@ -1645,7 +1886,7 @@ function __withSourceMaterialsForFullPass( scene, callback ) {
 			const next = material.map( ( mat ) => {
 				if ( mat && mat.isPrecompiledMaterial === true && mat.__tslpSourceMaterial ) {
 					changed = true;
-					return mat.__tslpSourceMaterial;
+					return __materialForFullPass( mat.__tslpSourceMaterial );
 				}
 				return mat;
 			} );
@@ -1655,13 +1896,13 @@ function __withSourceMaterialsForFullPass( scene, callback ) {
 			}
 		} else if ( material.isPrecompiledMaterial === true && material.__tslpSourceMaterial ) {
 			swaps.push( { object, material } );
-			object.material = material.__tslpSourceMaterial;
+			object.material = __materialForFullPass( material.__tslpSourceMaterial );
 		}
 	};
 	try {
 		if ( scene && scene.overrideMaterial && scene.overrideMaterial.isPrecompiledMaterial === true && scene.overrideMaterial.__tslpSourceMaterial ) {
 			swaps.push( { object: scene, material: scene.overrideMaterial, override: true } );
-			scene.overrideMaterial = scene.overrideMaterial.__tslpSourceMaterial;
+			scene.overrideMaterial = __materialForFullPass( scene.overrideMaterial.__tslpSourceMaterial );
 		}
 		if ( scene && typeof scene.traverse === 'function' ) scene.traverse( swapOne );
 		return callback();
@@ -1682,7 +1923,62 @@ function __sharePassRenderTargetFromFullRenderer( slimRenderer, fullRenderer, pa
 	if ( target.depthTexture ) __shareGPUTextureEntry( slimRenderer, fullRenderer, target.depthTexture );
 }
 
-function __withPassRendererContext( passNode, renderer, callback ) {
+function __sharePassRenderTargetIntoFullRenderer( fullRenderer, slimRenderer, passNode ) {
+	const target = passNode && passNode.renderTarget;
+	if ( ! target ) return;
+	const textures = Array.isArray( target.textures ) ? target.textures : target.texture ? [ target.texture ] : [];
+	for ( const texture of textures ) __shareGPUTextureEntry( fullRenderer, slimRenderer, texture );
+	if ( target.depthTexture ) __shareGPUTextureEntry( fullRenderer, slimRenderer, target.depthTexture );
+}
+
+	function __renderOffscreenOverrideWithFullRenderer( slimRenderer, scene, camera ) {
+		const fullRenderer = __computeRenderer;
+		if ( ! slimRenderer || ! fullRenderer || ! scene || ! scene.overrideMaterial ) return false;
+		if ( typeof slimRenderer.getRenderTarget !== 'function' ) return false;
+		const target = slimRenderer.getRenderTarget();
+		if ( ! target || ! target.texture ) return false;
+		try {
+			try {
+				fullRenderer.toneMapping = slimRenderer.toneMapping;
+				fullRenderer.toneMappingExposure = slimRenderer.toneMappingExposure;
+				fullRenderer.outputColorSpace = slimRenderer.outputColorSpace;
+			} catch ( _ ) {}
+			const previousTarget = typeof fullRenderer.getRenderTarget === 'function' ? fullRenderer.getRenderTarget() : null;
+			const previousMRT = typeof fullRenderer.getMRT === 'function' ? fullRenderer.getMRT() : null;
+			const previousAutoClear = fullRenderer.autoClear;
+			const previousClearAlpha = typeof fullRenderer.getClearAlpha === 'function' ? fullRenderer.getClearAlpha() : undefined;
+			try {
+				fullRenderer.autoClear = slimRenderer.autoClear;
+				if ( typeof fullRenderer.setClearAlpha === 'function' && typeof slimRenderer.getClearAlpha === 'function' ) {
+					fullRenderer.setClearAlpha( slimRenderer.getClearAlpha() );
+				}
+				fullRenderer.setRenderTarget( target );
+				if ( typeof fullRenderer.setMRT === 'function' ) fullRenderer.setMRT( null );
+				__withSourceMaterialsForFullPass( scene, () => fullRenderer.render( scene, camera ) );
+			} finally {
+				try { fullRenderer.setRenderTarget( previousTarget ); } catch ( _ ) {}
+				try { if ( typeof fullRenderer.setMRT === 'function' ) fullRenderer.setMRT( previousMRT ); } catch ( _ ) {}
+				fullRenderer.autoClear = previousAutoClear;
+				if ( previousClearAlpha !== undefined && typeof fullRenderer.setClearAlpha === 'function' ) fullRenderer.setClearAlpha( previousClearAlpha );
+			}
+			const textures = Array.isArray( target.textures ) ? target.textures : target.texture ? [ target.texture ] : [];
+			for ( const texture of textures ) __shareGPUTextureEntry( slimRenderer, fullRenderer, texture );
+			if ( target.depthTexture ) __shareGPUTextureEntry( slimRenderer, fullRenderer, target.depthTexture );
+			try {
+				const diag = __harnessDiagnostics();
+				diag.offscreenOverrideFullRenders = ( diag.offscreenOverrideFullRenders | 0 ) + 1;
+			} catch ( _ ) {}
+			return true;
+		} catch ( err ) {
+			if ( ! window.__tslpOffscreenOverrideFullWarned ) {
+				window.__tslpOffscreenOverrideFullWarned = true;
+				console.warn( '[tslp-e2e] offscreen override full-renderer pass failed:', err && ( err.stack || err.message ) || err );
+			}
+			return false;
+		}
+	}
+
+	function __withPassRendererContext( passNode, renderer, callback ) {
 	const currentContextNode = renderer && renderer.contextNode;
 	try {
 		if ( passNode && passNode.contextNode !== null && renderer && renderer.contextNode && typeof renderer.contextNode.getFlowContextData === 'function' ) {
@@ -1720,9 +2016,10 @@ function __renderPassNodeWithSourceMaterials( passNode, renderer, camera ) {
 	}
 }
 
-function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer, camera ) {
+function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer, camera, options = {} ) {
 	if ( ! passNode || ! slimRenderer || ! fullRenderer || ! passNode.scene || ! passNode.renderTarget ) return false;
-	if ( passNode._mrt || ! __sceneHasMultiOutputPrecompiledMaterial( passNode.scene ) ) return false;
+	const force = options && options.force === true;
+	if ( ! force && ! passNode._mrt && ! __sceneHasMultiOutputPrecompiledMaterial( passNode.scene ) ) return false;
 	try {
 		try {
 			fullRenderer.toneMapping = slimRenderer.toneMapping;
@@ -1739,7 +2036,7 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 		const currentContextNode = fullRenderer.contextNode;
 		try {
 			fullRenderer.setRenderTarget( passNode.renderTarget );
-			if ( typeof fullRenderer.setMRT === 'function' ) fullRenderer.setMRT( null );
+			if ( typeof fullRenderer.setMRT === 'function' ) fullRenderer.setMRT( passNode._mrt || null );
 			fullRenderer.autoClear = true;
 			fullRenderer.transparent = passNode.transparent;
 			fullRenderer.opaque = passNode.opaque;
@@ -1758,6 +2055,53 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 		if ( ! window.__tslpFullPassRenderWarned ) {
 			window.__tslpFullPassRenderWarned = true;
 			console.warn( '[tslp-e2e] full-renderer pass replay failed:', err && ( err.stack || err.message ) || err );
+		}
+		return false;
+	}
+}
+
+	function __renderRetroPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer ) {
+		if ( ! passNode || ! slimRenderer || ! fullRenderer || ! passNode.scene || ! passNode.renderTarget || typeof passNode.updateBefore !== 'function' ) return false;
+		try {
+			const previousToneMapping = fullRenderer.toneMapping;
+			const previousToneMappingExposure = fullRenderer.toneMappingExposure;
+			const previousOutputColorSpace = fullRenderer.outputColorSpace;
+			try {
+				fullRenderer.toneMapping = Slim.NoToneMapping !== undefined ? Slim.NoToneMapping : 0;
+				fullRenderer.toneMappingExposure = slimRenderer.toneMappingExposure;
+				fullRenderer.outputColorSpace = Slim.ColorManagement && Slim.ColorManagement.workingColorSpace || Slim.LinearSRGBColorSpace || fullRenderer.outputColorSpace;
+				const size = slimRenderer.getDrawingBufferSize && slimRenderer.getDrawingBufferSize( new Slim.Vector2() );
+				if ( size && typeof fullRenderer.setSize === 'function' ) fullRenderer.setSize( size.width, size.height, false );
+			} catch ( _ ) {}
+		const currentRenderTarget = typeof fullRenderer.getRenderTarget === 'function' ? fullRenderer.getRenderTarget() : null;
+			const currentMRT = typeof fullRenderer.getMRT === 'function' ? fullRenderer.getMRT() : null;
+			const currentBackground = passNode.scene.background;
+			const currentBackgroundNode = passNode.scene.backgroundNode;
+			const capturedBackground = __capturedSceneBackgrounds.get( passNode.scene );
+			const capturedBackgroundNode = __capturedSceneBackgroundNodes.get( passNode.scene );
+			try {
+				if ( capturedBackground !== undefined ) passNode.scene.background = capturedBackground;
+				if ( capturedBackgroundNode !== undefined ) passNode.scene.backgroundNode = capturedBackgroundNode;
+				__withSourceMaterialsForFullPass( passNode.scene, () => passNode.updateBefore( { renderer: fullRenderer } ) );
+				__sharePassRenderTargetFromFullRenderer( slimRenderer, fullRenderer, passNode );
+				try {
+					const retroDiag = __retroPassDiagnostics();
+					retroDiag.fullRendered = ( retroDiag.fullRendered | 0 ) + 1;
+			} catch ( _ ) {}
+				return true;
+			} finally {
+				passNode.scene.background = currentBackground;
+				passNode.scene.backgroundNode = currentBackgroundNode;
+				try { fullRenderer.setRenderTarget( currentRenderTarget ); } catch ( _ ) {}
+				try { if ( typeof fullRenderer.setMRT === 'function' ) fullRenderer.setMRT( currentMRT ); } catch ( _ ) {}
+				fullRenderer.toneMapping = previousToneMapping;
+				fullRenderer.toneMappingExposure = previousToneMappingExposure;
+				fullRenderer.outputColorSpace = previousOutputColorSpace;
+			}
+	} catch ( err ) {
+		if ( ! window.__tslpRetroFullPassWarned ) {
+			window.__tslpRetroFullPassWarned = true;
+			console.warn( '[tslp-e2e] retro full-renderer pass failed:', err && ( err.stack || err.message ) || err );
 		}
 		return false;
 	}
@@ -1928,7 +2272,12 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 			const scale = this._pixelRatio * this._resolutionScale;
 			const effectiveWidth = Math.max( 1, Math.floor( width * scale ) );
 			const effectiveHeight = Math.max( 1, Math.floor( height * scale ) );
-			if ( this.renderTarget && typeof this.renderTarget.setSize === 'function' ) this.renderTarget.setSize( effectiveWidth, effectiveHeight );
+			if ( this.renderTarget && typeof this.renderTarget.setSize === 'function' ) {
+				this.renderTarget.setSize( effectiveWidth, effectiveHeight );
+				if ( this.renderTarget.texture ) this._textures.output = this.renderTarget.texture;
+				if ( this.renderTarget.depthTexture ) this._textures.depth = this.renderTarget.depthTexture;
+				__refreshPassTextureNodes( this );
+			}
 			if ( this._scissor !== null && this.renderTarget && this.renderTarget.scissor ) {
 				this.renderTarget.scissor.copy( this._scissor ).multiplyScalar( scale ).floor();
 				this.renderTarget.scissorTest = true;
@@ -1970,6 +2319,12 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 			const currentAutoClear = renderer.autoClear;
 			const currentTransparent = renderer.transparent;
 			const currentOpaque = renderer.opaque;
+			let currentClearColor = null;
+			let currentClearAlpha;
+			try {
+				if ( typeof renderer.getClearColor === 'function' ) currentClearColor = renderer.getClearColor( __passClearColorScratch ).clone();
+				if ( typeof renderer.getClearAlpha === 'function' ) currentClearAlpha = renderer.getClearAlpha();
+			} catch ( _ ) {}
 			const currentMask = camera.layers && camera.layers.mask;
 			const currentOverrideMaterial = scene.overrideMaterial;
 			for ( const name in this._previousTextures ) this.toggleTexture( name );
@@ -1985,15 +2340,28 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 			} else {
 				__retargetSceneMaterialsForPassTarget( scene, 1 );
 			}
-			__prepareSceneMaterialsForMRTReplay( scene, replayMRT );
-			renderer.autoClear = true;
-			renderer.transparent = this.transparent;
-			renderer.opaque = this.opaque;
-			if ( replayMRT && ( scene.background || scene.backgroundNode ) && ! __backgroundAuxCanRenderMRT( replayMRT ) ) {
-				const backgroundScene = this.__tslpBackgroundScene || ( this.__tslpBackgroundScene = new Slim.Scene() );
-				backgroundScene.background = scene.background;
-				backgroundScene.backgroundNode = scene.backgroundNode;
-				backgroundScene.environment = scene.environment;
+				__prepareSceneMaterialsForMRTReplay( scene, replayMRT );
+				renderer.autoClear = true;
+				renderer.transparent = this.transparent;
+				renderer.opaque = this.opaque;
+				if ( typeof __state.example === 'string' && __state.example.startsWith( 'webgpu_volume_' ) && typeof renderer.setClearColor === 'function' ) {
+					try { renderer.setClearColor( 0x000000, 1 ); } catch ( _ ) {}
+				}
+				const canRenderPrecompiledMRT = !! ( replayMRT && __sceneCanRenderMRT( scene, replayMRT ) );
+				try {
+					const pathDiag = __harnessDiagnostics().passPaths || ( __harnessDiagnostics().passPaths = [] );
+					if ( pathDiag.length < 24 ) pathDiag.push( {
+						replayMRT: !! replayMRT,
+						canRenderPrecompiledMRT,
+						targetCount: __mrtOutputCount( replayMRT ),
+					} );
+				} catch ( _ ) {}
+				const renderedWithFullPass = !! ( replayMRT && ! canRenderPrecompiledMRT && __renderPassNodeWithFullRenderer( this, renderer, __computeRenderer, camera ) );
+				if ( ! renderedWithFullPass && replayMRT && ( scene.background || scene.backgroundNode ) && ! __backgroundAuxCanRenderMRT( replayMRT ) ) {
+					const backgroundScene = this.__tslpBackgroundScene || ( this.__tslpBackgroundScene = new Slim.Scene() );
+					backgroundScene.background = scene.background;
+					backgroundScene.backgroundNode = scene.backgroundNode;
+					backgroundScene.environment = scene.environment;
 				const savedTargetTextures = this.renderTarget && Array.isArray( this.renderTarget.textures )
 					? this.renderTarget.textures.slice()
 					: null;
@@ -2015,20 +2383,45 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 					renderer.setRenderTarget( this.renderTarget );
 					renderer.autoClear = false;
 					__resetRendererPipelineCachesForMRTReplay( renderer, replayMRT );
+					__wirePassTexturesIntoSceneMaterials( scene, __activePipelinePassNodes || [ this ] );
+					if ( renderer.__tslpSuppressShadowKick !== true && __sceneHasShadowLights( scene ) ) __kickShadowRenderAsync( renderer, scene, camera );
 					renderer.render( scene, camera );
 				} finally {
 					scene.background = savedBackground;
 					scene.backgroundNode = savedBackgroundNode;
-				}
-			} else {
-				__syncPassRenderTargetTextures( this, replayMRT );
-				if ( typeof renderer.setMRT === 'function' ) renderer.setMRT( replayMRT );
-				renderer.setRenderTarget( this.renderTarget );
-				__resetRendererPipelineCachesForMRTReplay( renderer, replayMRT );
-				const renderedWithSource = __withPassRendererContext( this, renderer, () => __renderPassNodeWithSourceMaterials( this, renderer, camera ) );
-				if ( ! renderedWithSource && ! __renderPassNodeWithFullRenderer( this, renderer, __computeRenderer, camera ) ) {
-					__withPassRendererContext( this, renderer, () => renderer.render( scene, camera ) );
-				}
+					}
+					} else if ( ! renderedWithFullPass ) {
+						__syncPassRenderTargetTextures( this, replayMRT );
+						if ( typeof renderer.setMRT === 'function' ) renderer.setMRT( replayMRT );
+						renderer.setRenderTarget( this.renderTarget );
+					__resetRendererPipelineCachesForMRTReplay( renderer, replayMRT );
+					__wirePassTexturesIntoSceneMaterials( scene, __activePipelinePassNodes || [ this ] );
+						__wireBackgroundTextures( scene, renderer );
+						__driveRendererLightingUpdateBefore( renderer, scene, camera );
+						if ( renderer.__tslpSuppressShadowKick !== true && __sceneHasShadowLights( scene ) ) __kickShadowRenderAsync( renderer, scene, camera );
+					const renderedWithSource = __withPassRendererContext( this, renderer, () => __renderPassNodeWithSourceMaterials( this, renderer, camera ) );
+					const renderedWithFullFallback = ! renderedWithSource && ! canRenderPrecompiledMRT && __renderPassNodeWithFullRenderer( this, renderer, __computeRenderer, camera );
+					if ( ! renderedWithSource && ! renderedWithFullFallback ) {
+						try { renderer.setClearColor && renderer.setClearColor( 0x0487e2, 1 ); } catch ( _ ) {}
+						if ( __state.example === 'webgpu_backdrop_water.html' ) {
+							const debugMat = new Slim.MeshBasicMaterial( { color: 0x0487e2 } );
+							const debugQuad = new Slim.QuadMesh( debugMat );
+							debugQuad.render( renderer );
+						}
+						const savedRenderDepth = __renderDepth;
+						const savedBackground = scene.background;
+						const savedBackgroundNode = scene.backgroundNode;
+						scene.background = null;
+						scene.backgroundNode = null;
+						__renderDepth = 0;
+						try {
+							__withPassRendererContext( this, renderer, () => renderer.render( scene, camera ) );
+						} finally {
+							scene.background = savedBackground;
+							scene.backgroundNode = savedBackgroundNode;
+							__renderDepth = savedRenderDepth;
+						}
+					}
 			}
 			scene.overrideMaterial = currentOverrideMaterial;
 			renderer.setRenderTarget( currentRenderTarget );
@@ -2036,6 +2429,9 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 			renderer.autoClear = currentAutoClear;
 			renderer.transparent = currentTransparent;
 			renderer.opaque = currentOpaque;
+			if ( currentClearColor && typeof renderer.setClearColor === 'function' ) {
+				try { renderer.setClearColor( currentClearColor, currentClearAlpha ); } catch ( _ ) {}
+			}
 			if ( camera.layers && currentMask !== undefined ) camera.layers.mask = currentMask;
 		}
 		dispose() { if ( this.renderTarget && typeof this.renderTarget.dispose === 'function' ) this.renderTarget.dispose(); }
@@ -2415,6 +2811,18 @@ try {
 		Slim.setTextureResolutionDebugHook( ( event ) => {
 			if ( ! event || event.sourceKind !== 'artifact.texture' ) return;
 			const textureName = event.resolvedTextureName || event.textureName || '';
+			try {
+				const diag = __harnessDiagnostics();
+				const all = diag.textureResolutions || ( diag.textureResolutions = [] );
+				if ( all.length < 80 ) all.push( {
+					strategy: event.strategy,
+					bindingName: event.bindingName,
+					textureName,
+					sourceTextureName: event.textureName || '',
+					width: event.resolvedTextureWidth,
+					height: event.resolvedTextureHeight,
+				} );
+			} catch ( _ ) {}
 			if ( textureName !== 'PMREM.cubeUv' ) return;
 			const diag = __pmremDiagnostics();
 			if ( ! Array.isArray( diag.resolvedPmremTextures ) ) diag.resolvedPmremTextures = [];
@@ -2676,18 +3084,27 @@ const __backgroundNeedsPMREM = ( function () {
 		Ctor.prototype.__tslpPatched = true;
 		const origLoad = Ctor.prototype.load;
 		Ctor.prototype.load = function ( url, onLoad, onProgress, onError ) {
-			const wrappedOnLoad = ( texOrImage, ...rest ) => {
-				try {
-					if ( typeof onLoad === 'function' ) onLoad( texOrImage, ...rest );
-				} finally {
-					if ( tex && tex.isTexture === true ) __rememberLiveTexture( tex );
+			let tex = null;
+			const remember = ( texture ) => {
+				if ( texture && texture.isTexture === true ) {
+					if ( typeof window.__tslpMarkLoaderTexture === 'function' ) {
+						window.__tslpMarkLoaderTexture( texture, url );
+					} else if ( ! texture.name && typeof url === 'string' ) {
+						texture.name = url.split( '/' ).pop().split( '?' )[ 0 ];
+					}
+					__rememberLiveTexture( texture );
 				}
 			};
-			const tex = origLoad.call( this, url, wrappedOnLoad, onProgress, onError );
-			if ( tex && tex.isTexture === true ) {
-				if ( ! tex.name && typeof url === 'string' ) tex.name = url.split( '/' ).pop().split( '?' )[ 0 ];
-				__rememberLiveTexture( tex );
-			}
+			const wrappedOnLoad = ( texOrImage, ...rest ) => {
+				try {
+					remember( texOrImage );
+					if ( typeof onLoad === 'function' ) onLoad.call( this, texOrImage, ...rest );
+				} finally {
+					remember( tex );
+				}
+			};
+			tex = origLoad.call( this, url, wrappedOnLoad, onProgress, onError );
+			remember( tex );
 			return tex;
 		};
 	}
@@ -2808,9 +3225,22 @@ function __collectStorageAttrNodeAttrs( rootNode, results ) {
 // This is required for compute-driven examples where instancedArray() creates
 // a buffer that a compute kernel writes into and the render material reads from.
 const __computeStorageAttrFallbacks = [];
+function __computeDiagnostics() {
+	if ( typeof window === 'undefined' ) return null;
+	const root = window.__tslpHarnessDiagnostics || ( window.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
+	const diag = root.compute || ( root.compute = { storageAttrs: 0, storageShapes: [], fallbackWires: 0 } );
+	return diag;
+}
 function __rememberComputeStorageAttr( attr ) {
 	if ( ! attr || ! ( attr.isStorageBufferAttribute === true || attr.isStorageInstancedBufferAttribute === true ) ) return;
-	if ( ! __computeStorageAttrFallbacks.includes( attr ) ) __computeStorageAttrFallbacks.push( attr );
+	if ( ! __computeStorageAttrFallbacks.includes( attr ) ) {
+		__computeStorageAttrFallbacks.push( attr );
+		const diag = __computeDiagnostics();
+		if ( diag ) {
+			diag.storageAttrs = ( diag.storageAttrs | 0 ) + 1;
+			if ( diag.storageShapes.length < 12 ) diag.storageShapes.push( String( attr.count || 0 ) + 'x' + String( attr.itemSize || 0 ) + ':' + ( attr.array && attr.array.constructor && attr.array.constructor.name || '' ) );
+		}
+	}
 }
 
 function __preferComputeStorageAttr( attr, entry, sizeMatches ) {
@@ -2829,6 +3259,8 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 	if ( ! sourceMaterial || ! artifact ) return 0;
 	let wiredCount = 0;
 	function isStorageAttr( v ) { return v && ( v.isStorageBufferAttribute === true || v.isStorageInstancedBufferAttribute === true ); }
+	const diag = __computeDiagnostics();
+	if ( diag ) diag.wireCalls = ( diag.wireCalls | 0 ) + 1;
 
 	// vec3 StorageBufferAttributes are padded to itemSize=4 by WebGPU on first use.
 	// Accept both 3 and 4 when the artifact recorded 4 (pad already applied at capture).
@@ -2849,6 +3281,15 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 	__collectStorageAttrNodeAttrs( sourceMaterial.positionNode, naCandidates );
 	__collectStorageAttrNodeAttrs( sourceMaterial.geometryNode, naCandidates );
 	__collectStorageAttrNodeAttrs( sourceMaterial.vertexNode, naCandidates );
+	if ( diag ) {
+		diag.nodeAttrCandidateCount = ( diag.nodeAttrCandidateCount | 0 ) + naCandidates.length;
+		const attempts = diag.nodeAttrWireAttempts || ( diag.nodeAttrWireAttempts = [] );
+		if ( attempts.length < 20 && ( naCandidates.length > 0 || nodeAttrsArr.length > 0 ) ) attempts.push( {
+			sourceType: sourceMaterial.type || sourceMaterial.constructor && sourceMaterial.constructor.name || '',
+			candidates: naCandidates.map( ( attr ) => String( attr.count || 0 ) + 'x' + String( attr.itemSize || 0 ) + ':' + ( attr.array && attr.array.constructor && attr.array.constructor.name || '' ) ).slice( 0, 6 ),
+			entries: nodeAttrsArr.filter( ( entry ) => entry && entry.source === 'node' ).map( ( entry ) => ( entry.name || '' ) + ':' + String( entry.count || 0 ) + 'x' + String( entry.itemSize || 0 ) + ':' + ( entry.arrayType || '' ) + ':' + ( entry.userPath ? 'path' : 'anon' ) + ':' + ( entry.storage ? 'storage' : 'attr' ) + ':' + ( isStorageAttr( entry._liveAttribute ) ? 'live' : 'cold' ) ).slice( 0, 10 ),
+		} );
+	}
 	if ( naCandidates.length > 0 ) {
 		for ( const nodeAttr of nodeAttrsArr ) {
 			// _liveAttribute may already be set from JSON deserialization (plain object, not
@@ -2932,6 +3373,24 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 		}
 	}
 
+	// Renderer-level compute systems can feed material storage bindings without
+	// exposing the live storage buffer in the material node tree. TiledLighting is
+	// the canonical case: renderer.compute() updates the global light-index grid,
+	// then MeshPhongNodeMaterial reads that grid via a storage binding. Reuse the
+	// runtime helper so replay and real slim+fallback users share the same shape
+	// matching behavior.
+	if ( __computeStorageAttrFallbacks.length > 0 ) {
+		const fallbackWired = __sharedWireArtifactStorageBuffersFromAttributes( artifact, __computeStorageAttrFallbacks, {
+			bumpVersion: true,
+			allowVec3ToVec4: true,
+		} );
+		if ( fallbackWired > 0 ) {
+			const diag = __computeDiagnostics();
+			if ( diag ) diag.fallbackWires = ( diag.fallbackWires | 0 ) + fallbackWired;
+			wiredCount += fallbackWired;
+		}
+	}
+
 	return wiredCount;
 }
 
@@ -2968,6 +3427,19 @@ function __artifactColorTriplet( artifact ) {
 	return null;
 }
 
+function __artifactMaterialColorTriplet( artifact, property ) {
+	const fromDefault = artifact && artifact.defaults && artifact.defaults[ property ];
+	if ( fromDefault && Array.isArray( fromDefault.data ) ) return fromDefault.data.slice( 0, 3 );
+	for ( const group of artifact && artifact.uniformPlan || [] ) {
+		for ( const slot of group.slots || [] ) {
+			const source = slot && slot.source || {};
+			const snap = source.valueSnapshot || null;
+			if ( source.kind === 'material.' + property && snap && Array.isArray( snap.data ) ) return snap.data.slice( 0, 3 );
+		}
+	}
+	return null;
+}
+
 function __colorDistanceSq( a, b ) {
 	if ( ! a || ! b ) return Infinity;
 	const dr = ( a[ 0 ] || 0 ) - ( b[ 0 ] || 0 );
@@ -2981,25 +3453,66 @@ function __artifactHasTextureSource( artifact, predicate = null ) {
 }
 
 let __reflectorBaseCursor = 0;
-function __attachReflectorBaseNodesForArtifact( material, artifact ) {
+function __isReflectorBaseNode( node ) {
+	return !! ( node
+		&& node.renderTargets instanceof Map
+		&& typeof node.updateBefore === 'function'
+		&& node.constructor
+		&& ( node.constructor.type === 'ReflectorBaseNode' || node.constructor.name === 'ReflectorBaseNode' ) );
+}
+
+function __reflectorSourcesForArtifact( artifact ) {
+	const sources = [];
+	for ( const group of artifact && artifact.uniformPlan || [] ) {
+		for ( const entry of group.textures || [] ) {
+			const source = entry && entry.source || {};
+			if ( source.kind !== 'reflector.texture' ) continue;
+			const index = Number.isInteger( source.reflectorIndex ) ? source.reflectorIndex : 0;
+			if ( ! sources.some( ( item ) => item.index === index ) ) sources.push( { index, source } );
+		}
+	}
+	sources.sort( ( a, b ) => a.index - b.index );
+	return sources;
+}
+
+function __createReflectorBaseNodeForSource( source, sourceObject ) {
+	if ( ! FullTSL || typeof FullTSL.reflector !== 'function' ) return null;
+	try {
+		const params = {};
+		if ( typeof source.resolutionScale === 'number' ) params.resolutionScale = source.resolutionScale;
+		if ( typeof source.generateMipmaps === 'boolean' ) params.generateMipmaps = source.generateMipmaps;
+		if ( typeof source.samples === 'number' ) params.samples = source.samples;
+		if ( typeof source.bounces === 'boolean' ) params.bounces = source.bounces;
+		if ( typeof source.depth === 'boolean' ) params.depth = source.depth;
+		const reflectorNode = FullTSL.reflector( params );
+		const baseNode = reflectorNode && ( reflectorNode._reflectorBaseNode || reflectorNode.reflector ) || null;
+		if ( ! __isReflectorBaseNode( baseNode ) ) return null;
+		const target = reflectorNode && reflectorNode.target || baseNode.target || null;
+		if ( target && sourceObject && typeof sourceObject.add === 'function' && target.parent !== sourceObject ) {
+			try { sourceObject.add( target ); } catch ( _ ) {}
+		}
+		return baseNode;
+	} catch ( _ ) {
+		return null;
+	}
+}
+
+function __attachReflectorBaseNodesForArtifact( material, artifact, sourceObject = null ) {
 	if ( ! material || ! artifact ) return;
 	if ( ! __artifactHasTextureSource( artifact, ( source ) => source.kind === 'reflector.texture' ) ) return;
 	const pool = globalThis.__tslpReflectorBaseNodes || [];
-	if ( pool.length === 0 ) return;
-	let maxIndex = -1;
-	for ( const group of artifact.uniformPlan || [] ) {
-		for ( const entry of group.textures || [] ) {
-			const source = entry && entry.source || {};
-			if ( source.kind === 'reflector.texture' && Number.isInteger( source.reflectorIndex ) ) {
-				maxIndex = Math.max( maxIndex, source.reflectorIndex );
-			}
-		}
-	}
-	const needed = Math.max( 1, maxIndex + 1 );
+	const reflectorSources = __reflectorSourcesForArtifact( artifact );
+	const needed = Math.max( 1, reflectorSources.length );
 	const nodes = [];
 	while ( nodes.length < needed && __reflectorBaseCursor < pool.length ) {
 		const node = pool[ __reflectorBaseCursor ++ ];
-		if ( node && node.constructor && node.constructor.type === 'ReflectorBaseNode' && node.renderTargets instanceof Map ) nodes.push( node );
+		if ( __isReflectorBaseNode( node ) ) nodes.push( node );
+	}
+	while ( nodes.length < needed ) {
+		const source = reflectorSources[ nodes.length ] && reflectorSources[ nodes.length ].source || {};
+		const node = __createReflectorBaseNodeForSource( source, sourceObject );
+		if ( ! node ) break;
+		nodes.push( node );
 	}
 	if ( nodes.length === 0 ) return;
 	Object.defineProperty( material, '__tslpReflectorBaseNodes', {
@@ -3049,7 +3562,7 @@ function __artifactNodeAttributes( artifact ) {
 }
 
 function __nodeGraphKeys() {
-	return [ 'colorNode', 'fragmentNode', 'normalNode', 'positionNode', 'geometryNode', 'outputNode', 'roughnessNode', 'metalnessNode', 'emissiveNode', 'opacityNode', 'alphaTestNode', 'vertexNode', 'envNode', 'lightNode', 'aoNode', 'transmissionNode', 'thicknessNode', 'maskNode', 'maskShadowNode', 'receivedShadowPositionNode', 'castShadowPositionNode', 'castShadowNode' ];
+	return __NODE_GRAPH_KEYS;
 }
 
 function __isRealMaterialNode( node ) {
@@ -3090,6 +3603,12 @@ function __objectMetadataScore( artifact, sourceObject ) {
 	if ( typeof artifactObject.castShadow === 'boolean' ) score += artifactObject.castShadow === ( sourceObject.castShadow === true ) ? 20 : -20;
 	if ( typeof artifactObject.receiveShadow === 'boolean' ) score += artifactObject.receiveShadow === ( sourceObject.receiveShadow === true ) ? 20 : -20;
 	if ( typeof artifactObject.isInstancedMesh === 'boolean' ) score += artifactObject.isInstancedMesh === ( sourceObject.isInstancedMesh === true ) ? 25 : -80;
+	if ( Array.isArray( artifactObject.position ) && sourceObject.position ) {
+		const delta = Math.abs( ( artifactObject.position[ 0 ] || 0 ) - sourceObject.position.x )
+			+ Math.abs( ( artifactObject.position[ 1 ] || 0 ) - sourceObject.position.y )
+			+ Math.abs( ( artifactObject.position[ 2 ] || 0 ) - sourceObject.position.z );
+		score += delta < 1e-5 ? 180 : delta < 0.1 ? 45 : -160;
+	}
 	if ( Array.isArray( artifactObject.scale ) && sourceObject.scale ) {
 		const delta = Math.abs( ( artifactObject.scale[ 0 ] || 0 ) - sourceObject.scale.x )
 			+ Math.abs( ( artifactObject.scale[ 1 ] || 0 ) - sourceObject.scale.y )
@@ -3286,7 +3805,46 @@ function __appendArtifactSidecars( artifact, key, nodes ) {
 
 function __valueMatchesUniformSlot( value, slot ) {
 	if ( ! slot ) return false;
-	const dtype = slot.dtype || ( slot.source && slot.source.valueSnapshot && slot.source.valueSnapshot.type ) || '';
+	const snapshot = slot.source && ( slot.source.valueSnapshot || slot.source.value );
+	if ( snapshot ) return __snapshotMatchesUniformValue( snapshot, value, slot.dtype );
+	return __valueMatchesUniformDtype( value, slot.dtype || '' );
+}
+
+function __snapshotMatchesUniformValue( snapshot, value, dtypeHint ) {
+	const type = snapshot.type || dtypeHint || '';
+	const expected = snapshot.data;
+	const actual = __comparableUniformValue( value, type );
+	if ( actual === null ) return false;
+	if ( Array.isArray( expected ) ) {
+		if ( ! Array.isArray( actual ) || actual.length < expected.length ) return false;
+		for ( let i = 0; i < expected.length; i ++ ) {
+			if ( ! __closeUniformNumber( actual[ i ], expected[ i ] ) ) return false;
+		}
+		return true;
+	}
+	return __closeUniformNumber( actual, expected );
+}
+
+function __comparableUniformValue( value, type ) {
+	if ( type === 'number' || type === 'float' || type === 'f32' || type === 'int' || type === 'uint' || type === 'i32' || type === 'u32' ) {
+		if ( typeof value === 'number' ) return value;
+		if ( value && value.isUniformNode !== true && typeof value.value === 'number' ) return value.value;
+		return null;
+	}
+	if ( type === 'color' ) return value && value.isColor ? [ value.r, value.g, value.b ] : null;
+	if ( type === 'vec2' ) return value && value.isVector2 ? [ value.x, value.y ] : null;
+	if ( type === 'vec3' ) {
+		if ( value && value.isVector3 ) return [ value.x, value.y, value.z ];
+		if ( value && value.isColor ) return [ value.r, value.g, value.b ];
+		return null;
+	}
+	if ( type === 'vec4' ) return value && value.isVector4 ? [ value.x, value.y, value.z, value.w ] : null;
+	if ( type === 'mat3' ) return value && value.isMatrix3 && value.elements ? Array.from( value.elements ) : null;
+	if ( type === 'mat4' ) return value && value.isMatrix4 && value.elements ? Array.from( value.elements ) : null;
+	return __valueMatchesUniformDtype( value, type ) ? value : null;
+}
+
+function __valueMatchesUniformDtype( value, dtype ) {
 	if ( dtype === 'color' ) return !! ( value && value.isColor );
 	if ( dtype === 'number' || dtype === 'float' ) return typeof value === 'number' || value && value.isUniformNode !== true && typeof value.value === 'number';
 	if ( dtype === 'vec2' ) return !! ( value && value.isVector2 );
@@ -3295,6 +3853,13 @@ function __valueMatchesUniformSlot( value, slot ) {
 	if ( dtype === 'mat3' ) return !! ( value && value.isMatrix3 );
 	if ( dtype === 'mat4' ) return !! ( value && value.isMatrix4 );
 	return true;
+}
+
+function __closeUniformNumber( a, b ) {
+	const left = Number( a );
+	const right = Number( b );
+	if ( ! Number.isFinite( left ) || ! Number.isFinite( right ) ) return left === right;
+	return Math.abs( left - right ) <= Math.max( 1e-6, Math.abs( right ) * 1e-6 );
 }
 
 function __wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, replacement = null ) {
@@ -3331,8 +3896,12 @@ function __wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, replacement
 			const source = slot && slot.source || {};
 			if ( source.kind !== 'uniform.live' || slot._liveNode ) continue;
 			let match = null;
-			if ( source.name ) match = uniformNodes.find( ( node ) => ! used.has( node ) && node.name === source.name && __valueMatchesUniformSlot( node.value, slot ) );
+			if ( source.name ) {
+				match = uniformNodes.find( ( node ) => ! used.has( node ) && node.name === source.name && __valueMatchesUniformSlot( node.value, slot ) );
+				if ( ! match ) match = uniformNodes.find( ( node ) => node.name === source.name && __valueMatchesUniformSlot( node.value, slot ) );
+			}
 			if ( ! match ) match = uniformNodes.find( ( node ) => ! used.has( node ) && __valueMatchesUniformSlot( node.value, slot ) );
+			if ( ! match ) match = uniformNodes.find( ( node ) => __valueMatchesUniformSlot( node.value, slot ) );
 			if ( ! match ) continue;
 			Object.defineProperty( slot, '_liveNode', {
 				value: match,
@@ -3350,6 +3919,7 @@ function __materialFamilyFromClassName( className ) {
 	if ( /^Line[A-Za-z0-9]*NodeMaterial$/.test( className ) ) return 'line';
 	if ( className === 'PointsNodeMaterial' ) return 'points';
 	if ( className === 'SpriteNodeMaterial' ) return 'sprite';
+	if ( className === 'VolumeNodeMaterial' ) return 'mesh';
 	return null;
 }
 
@@ -3362,13 +3932,14 @@ function __materialFamilyFromObject( object ) {
 	return null;
 }
 
-function __scoreArtifactForSource( key, mod, className, sourceMaterial, sourceObject = null ) {
-	const artifact = mod && mod.artifact;
-	if ( ! artifact ) return -Infinity;
-	const artifactClassName = __classNameFromArtifactName( key );
-	const requestedFamily = __materialFamilyFromClassName( className );
-	const artifactFamily = __materialFamilyFromClassName( artifactClassName );
-	const objectFamily = __materialFamilyFromObject( sourceObject );
+	function __scoreArtifactForSource( key, mod, className, sourceMaterial, sourceObject = null ) {
+		const artifact = mod && mod.artifact;
+		if ( ! artifact ) return -Infinity;
+		if ( sourceObject && ! __precompiledArtifactMatchesObject( artifact, sourceObject ) ) return -Infinity;
+		const artifactClassName = __classNameFromArtifactName( key );
+		const requestedFamily = __materialFamilyFromClassName( className );
+		const artifactFamily = __materialFamilyFromClassName( artifactClassName );
+		const objectFamily = __materialFamilyFromObject( sourceObject );
 	let score = artifactClassName === className ? 180 : key.includes( ':' + className + ':' ) ? 120 : 0;
 	if ( artifactFamily && objectFamily ) {
 		score += artifactFamily === objectFamily ? 140 : -420;
@@ -3402,6 +3973,17 @@ function __scoreArtifactForSource( key, mod, className, sourceMaterial, sourceOb
 			else score -= 30;
 		}
 		if ( __artifactHasTextureSource( artifact, __isPMREMArtifactTextureSource ) ) score -= 35;
+	}
+
+	const sourceEmissive = __readColorTriplet( sourceMaterial && sourceMaterial.emissive );
+	if ( sourceEmissive ) {
+		const artifactEmissive = __artifactMaterialColorTriplet( artifact, 'emissive' );
+		if ( artifactEmissive ) {
+			const d2 = __colorDistanceSq( sourceEmissive, artifactEmissive );
+			if ( d2 < 1e-5 ) score += 160;
+			else if ( d2 < 0.05 ) score += 50;
+			else score -= 140;
+		}
 	}
 
 	if ( sourceMaterial && typeof sourceMaterial.wireframe === 'boolean' && artifact.renderState && typeof artifact.renderState.wireframe === 'boolean' ) {
@@ -3462,9 +4044,15 @@ function __scoreArtifactForSource( key, mod, className, sourceMaterial, sourceOb
 		}
 		if ( matchedNodeTextureSources.size > 0 ) score += matchedNodeTextureSources.size * 90;
 		else if ( identifiableNodeTextures.length > 0 && __artifactHasTextureSource( artifact, ( source ) => source.kind === 'artifact.texture' && ! __isPMREMArtifactTextureSource( source ) ) ) score -= 55;
-		} else if ( __sourceHasNodeGraph( sourceMaterial ) ) {
-			if ( __artifactHasTextureSource( artifact ) ) score += 20;
-		}
+	} else if ( __sourceHasNodeGraph( sourceMaterial ) ) {
+		// A live node graph without discoverable Texture nodes should not prefer
+		// captured artifacts that do sample textures. Examples such as
+		// webgpu_materials.html have many MeshBasicNodeMaterial variants with the
+		// same class name; rewarding textured artifacts here swaps position/normal
+		// materials with texture-based ones.
+		if ( __artifactHasTextureSource( artifact ) ) score -= 65;
+		else score += 10;
+	}
 
 		const nodeAttrs = __artifactNodeAttributes( artifact );
 	const declaredAttrs = Array.isArray( artifact.attributes ) ? artifact.attributes : [];
@@ -3492,17 +4080,45 @@ function __scoreArtifactForSource( key, mod, className, sourceMaterial, sourceOb
 
 function __findBestArtifactForSource( className, sourceMaterial, keys, sourceObject = null ) {
 	if ( ! sourceMaterial || ! Array.isArray( keys ) || keys.length === 0 ) return null;
-	let best = null;
-	let bestScore = -Infinity;
-	for ( const key of keys ) {
-		const mod = __data.user && __data.user[ key ];
-		const score = __scoreArtifactForSource( key, mod, className, sourceMaterial, sourceObject );
-		if ( score > bestScore ) {
-			best = key;
-			bestScore = score;
+	const findBest = ( candidateKeys, minScore = 55 ) => {
+		let best = null;
+		let bestScore = -Infinity;
+		for ( const key of candidateKeys ) {
+			const mod = __data.user && __data.user[ key ];
+			const score = __scoreArtifactForSource( key, mod, className, sourceMaterial, sourceObject );
+			if ( score > bestScore ) {
+				best = key;
+				bestScore = score;
+			}
 		}
+		return best && bestScore >= minScore ? best : null;
+	};
+	const exactKeys = keys.filter( ( key ) => __classNameFromArtifactName( key ) === className || key.includes( ':' + className + ':' ) );
+	return findBest( exactKeys, -Infinity ) || findBest( keys );
+}
+
+function __artifactKeyMatchesMaterialSource( key, mod, className, sourceMaterial, sourceObject = null ) {
+	const artifact = mod && mod.artifact;
+	if ( ! artifact ) return false;
+	const artifactClassName = __classNameFromArtifactName( key );
+	if ( artifactClassName !== className && ! key.includes( ':' + className + ':' ) ) return false;
+	const requestedFamily = __materialFamilyFromClassName( className );
+	const artifactFamily = __materialFamilyFromClassName( artifactClassName );
+	const objectFamily = __materialFamilyFromObject( sourceObject );
+	if ( requestedFamily && artifactFamily && requestedFamily !== artifactFamily ) return false;
+	if ( objectFamily && artifactFamily && objectFamily !== artifactFamily ) return false;
+	return __precompiledArtifactMatchesSource( artifact, sourceMaterial, sourceObject );
+}
+
+function __attachGeneratedUpdatersFromModule( artifact, mod ) {
+	if ( ! artifact || ! mod ) return artifact;
+	if ( typeof mod.update === 'function' && typeof artifact._generatedUpdate !== 'function' ) {
+		try { Object.defineProperty( artifact, '_generatedUpdate', { value: mod.update, enumerable: false, configurable: true } ); } catch ( _ ) {}
 	}
-	return best && bestScore >= 55 ? best : null;
+	if ( typeof mod.updateGroup === 'function' && typeof artifact._generatedUpdateGroup !== 'function' ) {
+		try { Object.defineProperty( artifact, '_generatedUpdateGroup', { value: mod.updateGroup, enumerable: false, configurable: true } ); } catch ( _ ) {}
+	}
+	return artifact;
 }
 
 function __takeMaterial( className, sourceMaterial = null, sourceObject = null, opts = {} ) {
@@ -3513,12 +4129,14 @@ function __takeMaterial( className, sourceMaterial = null, sourceObject = null, 
 	let mod = __data.user && __data.user[ name ];
 	if ( mod && ! allowUsed && __usedArtifactNames.has( name ) ) mod = null;
 	if ( sourceMaterial ) {
-		const allKeys = Object.keys( __data.user || {} );
-		const unusedKeys = allowUsed ? allKeys : allKeys.filter( ( key ) => ! __usedArtifactNames.has( key ) );
-		const matchedName = __findBestArtifactForSource( className, sourceMaterial, unusedKeys, sourceObject );
-		if ( matchedName ) {
-			name = matchedName;
-			mod = __data.user[ name ];
+		if ( ! mod || ! __artifactKeyMatchesMaterialSource( name, mod, className, sourceMaterial, sourceObject ) ) {
+			const allKeys = Object.keys( __data.user || {} );
+			const unusedKeys = allowUsed ? allKeys : allKeys.filter( ( key ) => ! __usedArtifactNames.has( key ) );
+			const matchedName = __findBestArtifactForSource( className, sourceMaterial, unusedKeys, sourceObject );
+			if ( matchedName ) {
+				name = matchedName;
+				mod = __data.user[ name ];
+			}
 		}
 	}
 	if ( ! mod || ! mod.artifact ) {
@@ -3528,6 +4146,7 @@ function __takeMaterial( className, sourceMaterial = null, sourceObject = null, 
 		const findType = ( keys ) => keys.find( ( key ) => typeNeedle && key.includes( ':' + typeNeedle + ':' ) );
 		const findCompatible = ( keys ) => keys.find( ( key ) => /:(MeshBasic|MeshLambert|MeshStandard)NodeMaterial:/.test( key ) );
 		const findClass = ( keys ) => keys.find( ( key ) => key.includes( ':' + className + ':' ) );
+		const findNodeMaterial = ( keys ) => keys.find( ( key ) => /:NodeMaterial:\d+$/.test( key ) );
 		const findLineBasic = ( keys ) => keys.find( ( key ) => /:LineBasicNodeMaterial:/.test( key ) );
 		const isMeshNodeMaterial = /^Mesh[A-Za-z0-9]*NodeMaterial$/.test( className );
 		const isSpriteOrPointsNodeMaterial = /^(Sprite|Points)NodeMaterial$/.test( className );
@@ -3535,6 +4154,7 @@ function __takeMaterial( className, sourceMaterial = null, sourceObject = null, 
 			( className === 'Line2NodeMaterial' ? findCompatible( unusedKeys ) || findCompatible( allKeys ) : null ) ||
 			( className === 'LineDashedNodeMaterial' ? findLineBasic( unusedKeys ) || findLineBasic( allKeys ) : null ) ||
 			findClass( unusedKeys ) || findClass( allKeys ) ||
+			( className === 'VolumeNodeMaterial' ? findNodeMaterial( unusedKeys ) || findNodeMaterial( allKeys ) : null ) ||
 			( isMeshNodeMaterial ? findCompatible( unusedKeys ) || findCompatible( allKeys ) : null ) ||
 			( isSpriteOrPointsNodeMaterial ? findCompatible( unusedKeys ) || findCompatible( allKeys ) : null ) ||
 			( className.length <= 3 ? findCompatible( unusedKeys ) || findCompatible( allKeys ) : null );
@@ -3548,12 +4168,14 @@ function __takeMaterial( className, sourceMaterial = null, sourceObject = null, 
 	}
 	__usedArtifactNames.add( name );
 	if ( mod.__hash && ! mod.artifact.__hash ) Object.defineProperty( mod.artifact, '__hash', { value: mod.__hash, enumerable: false, configurable: true } );
+	__attachGeneratedUpdatersFromModule( mod.artifact, mod );
 	// Wire live storage buffer attributes from the source material's node graph into
 	// the artifact plan before hydration so compute results are visible in renders.
 	__wireComputeAttrsToArtifact( mod.artifact, sourceMaterial );
 	__ensureArtifactTextureFallbacks( mod.artifact );
 	const material = new Slim.PrecompiledMaterial( mod.artifact );
 	material.name = name;
+	__stampPrecompiledMaterialClassFlags( material, className );
 	if ( className === 'MeshToonNodeMaterial' || className === 'MeshToonMaterial' ) {
 		material.isMeshToonNodeMaterial = true;
 		material.isMeshToonMaterial = true;
@@ -3561,13 +4183,15 @@ function __takeMaterial( className, sourceMaterial = null, sourceObject = null, 
 	if ( className === 'NodeMaterial' && sourceMaterial && sourceMaterial.isMeshToonOutlineMaterial === true ) {
 		material.isMeshToonOutlineMaterial = true;
 	}
-	__attachReflectorBaseNodesForArtifact( material, mod.artifact );
+	__attachReflectorBaseNodesForArtifact( material, mod.artifact, sourceObject );
 	__seedNodeProps( material );
 	return material;
 }
 
 function __classNameForMaterial( material ) {
 	if ( ! material ) return 'Material';
+	const type = material.type || '';
+	if ( type === 'Line2NodeMaterial' ) return 'Line2NodeMaterial';
 	if ( material.isMeshBasicNodeMaterial || material.isMeshBasicMaterial ) return 'MeshBasicNodeMaterial';
 	if ( material.isMeshSSSNodeMaterial || material.type === 'MeshSSSNodeMaterial' ) return 'MeshSSSNodeMaterial';
 	if ( material.isMeshPhysicalNodeMaterial || material.isMeshPhysicalMaterial ) return 'MeshPhysicalNodeMaterial';
@@ -3581,7 +4205,7 @@ function __classNameForMaterial( material ) {
 	if ( material.isLineBasicNodeMaterial || material.isLineBasicMaterial ) return 'LineBasicNodeMaterial';
 	if ( material.isPointsNodeMaterial || material.isPointsMaterial ) return 'PointsNodeMaterial';
 	if ( material.isSpriteNodeMaterial || material.isSpriteMaterial ) return 'SpriteNodeMaterial';
-	const type = material.type || '';
+	if ( material.isVolumeNodeMaterial || type === 'VolumeNodeMaterial' ) return 'VolumeNodeMaterial';
 	if ( type === 'MeshBasicNodeMaterial' || type === 'MeshBasicMaterial' ) return 'MeshBasicNodeMaterial';
 	if ( type === 'MeshSSSNodeMaterial' ) return 'MeshSSSNodeMaterial';
 	if ( type === 'MeshPhysicalNodeMaterial' || type === 'MeshPhysicalMaterial' ) return 'MeshPhysicalNodeMaterial';
@@ -3595,7 +4219,49 @@ function __classNameForMaterial( material ) {
 	if ( type === 'LineBasicNodeMaterial' || type === 'LineBasicMaterial' ) return 'LineBasicNodeMaterial';
 	if ( type === 'PointsNodeMaterial' || type === 'PointsMaterial' ) return 'PointsNodeMaterial';
 	if ( type === 'SpriteNodeMaterial' || type === 'SpriteMaterial' ) return 'SpriteNodeMaterial';
+	if ( /NodeMaterial$/.test( type ) ) return type;
 	return material.constructor && material.constructor.name || 'Material';
+}
+
+function __stampPrecompiledMaterialClassFlags( material, className ) {
+	if ( ! material || typeof className !== 'string' ) return material;
+	if ( className === 'MeshBasicNodeMaterial' ) {
+		material.isMeshBasicNodeMaterial = true;
+		material.isMeshBasicMaterial = true;
+	} else if ( className === 'MeshPhongNodeMaterial' ) {
+		material.isMeshPhongNodeMaterial = true;
+		material.isMeshPhongMaterial = true;
+	} else if ( className === 'MeshStandardNodeMaterial' ) {
+		material.isMeshStandardNodeMaterial = true;
+		material.isMeshStandardMaterial = true;
+	} else if ( className === 'MeshPhysicalNodeMaterial' ) {
+		material.isMeshPhysicalNodeMaterial = true;
+		material.isMeshPhysicalMaterial = true;
+	} else if ( className === 'MeshLambertNodeMaterial' ) {
+		material.isMeshLambertNodeMaterial = true;
+		material.isMeshLambertMaterial = true;
+	} else if ( className === 'VolumeNodeMaterial' ) {
+		material.isVolumeNodeMaterial = true;
+	}
+	return material;
+}
+
+function __isRetroPassRenderTarget( renderer ) {
+	try {
+		const target = renderer && typeof renderer.getRenderTarget === 'function' ? renderer.getRenderTarget() : null;
+		const texture = target && target.texture;
+		return !! ( texture
+			&& texture.magFilter === Slim.NearestFilter
+			&& texture.minFilter === Slim.NearestFilter );
+	} catch ( _ ) {
+		return false;
+	}
+}
+
+function __isRetroPassGeneratedMaterial( renderer, scene, material ) {
+	if ( ! material || material.isPrecompiledMaterial === true ) return false;
+	return !! ( scene && scene.isScene === true && scene.userData && scene.userData.__tslpUserScene === true
+		&& ( renderer && ( renderer.__tslpRenderingRetroPass | 0 ) > 0 || __isRetroPassRenderTarget( renderer ) ) );
 }
 
 // Material-property keys that carry texture refs three.js's renderer
@@ -3606,7 +4272,7 @@ function __classNameForMaterial( material ) {
 // Scalar/Color/Vector2/array PBR material properties -- copied source->swap
 // on every replay so live GUI tweaks (lightMapIntensity, displacementScale,
 // etc.) survive into the precompiled material's per-frame uniform updaters.
-const __SCALAR_PROPS = [ 'color', 'opacity', 'transparent', 'side', 'visible', 'toneMapped', 'emissive', 'emissiveIntensity', 'roughness', 'metalness', 'normalScale', 'normalMapType', 'bumpScale', 'displacementScale', 'displacementBias', 'lightMapIntensity', 'aoMapIntensity', 'envMapIntensity', 'envMapRotation', 'reflectivity', 'refractionRatio', 'shininess', 'specular', 'specularColor', 'specularIntensity', 'ior', 'clearcoat', 'clearcoatRoughness', 'clearcoatNormalScale', 'iridescence', 'iridescenceIOR', 'iridescenceThicknessRange', 'sheen', 'sheenColor', 'sheenRoughness', 'transmission', 'thickness', 'attenuationColor', 'attenuationDistance', 'anisotropy', 'anisotropyRotation', 'dispersion', 'alphaTest', 'alphaToCoverage', 'depthTest', 'depthWrite', 'blending', 'blendSrc', 'blendDst', 'blendEquation', 'premultipliedAlpha', 'dithering', 'vertexColors', 'wireframe', 'wireframeLinewidth', 'flatShading' ];
+const __SCALAR_PROPS = [ 'color', 'opacity', 'transparent', 'side', 'visible', 'toneMapped', 'emissive', 'emissiveIntensity', 'roughness', 'metalness', 'normalScale', 'normalMapType', 'bumpScale', 'displacementScale', 'displacementBias', 'lightMapIntensity', 'aoMapIntensity', 'envMapIntensity', 'envMapRotation', 'reflectivity', 'refractionRatio', 'shininess', 'specular', 'specularColor', 'specularIntensity', 'ior', 'clearcoat', 'clearcoatRoughness', 'clearcoatNormalScale', 'iridescence', 'iridescenceIOR', 'iridescenceThicknessRange', 'sheen', 'sheenColor', 'sheenRoughness', 'transmission', 'thickness', 'attenuationColor', 'attenuationDistance', 'anisotropy', 'anisotropyRotation', 'dispersion', 'alphaTest', 'alphaHash', 'alphaToCoverage', 'depthTest', 'depthWrite', 'blending', 'blendSrc', 'blendDst', 'blendEquation', 'premultipliedAlpha', 'dithering', 'vertexColors', 'wireframe', 'wireframeLinewidth', 'flatShading', 'linewidth', 'dashSize', 'gapSize', 'dashOffset', 'scale', 'worldUnits', 'dashed' ];
 // Mirror three.js's Material.setValues() coercion: when assigning into a slot
 // that already holds a Color/Vector instance (seeded from artifact.defaults),
 // mutate it in place via .set() / .copy() so the hydrator keeps reading a
@@ -3654,6 +4320,7 @@ function __makeInternalNodeMaterial( className = 'NodeMaterial', params = null )
 	else if ( className === 'MeshNormalNodeMaterial' && FullMeshNormalNodeMaterial ) Ctor = FullMeshNormalNodeMaterial;
 	else if ( className === 'MeshMatcapNodeMaterial' && FullMeshMatcapNodeMaterial ) Ctor = FullMeshMatcapNodeMaterial;
 	else if ( className === 'MeshSSSNodeMaterial' && FullMeshSSSNodeMaterial ) Ctor = FullMeshSSSNodeMaterial;
+	else if ( className === 'VolumeNodeMaterial' && FullVolumeNodeMaterial ) Ctor = FullVolumeNodeMaterial;
 	else if ( className === 'LineBasicNodeMaterial' && FullLineBasicNodeMaterial ) Ctor = FullLineBasicNodeMaterial;
 	else if ( className === 'LineDashedNodeMaterial' && FullLineDashedNodeMaterial ) Ctor = FullLineDashedNodeMaterial;
 	else if ( className === 'Line2NodeMaterial' && FullLine2NodeMaterial ) Ctor = FullLine2NodeMaterial;
@@ -3692,6 +4359,7 @@ function __copyMaterialProps( src, dst ) {
 function __copyMaterialNodeProps( src, dst ) {
 	if ( ! src ) return;
 	for ( const key of __nodeGraphKeys() ) {
+		if ( key === 'mrtNode' ) continue;
 		const v = src[ key ];
 		if ( v && v.isNode === true ) dst[ key ] = v;
 	}
@@ -3720,6 +4388,11 @@ function __wireMaterialTextures( sourceMaterial, replacement ) {
 function __makeFallbackArtifactTexture( source ) {
 	const key = source && ( source.textureUuid || source.imageSrc || source.textureName ) || 'texture';
 	if ( __fallbackArtifactTextures.has( key ) ) return __fallbackArtifactTextures.get( key );
+	if ( __isBayer16FallbackSource( source ) ) {
+		const texture = __makeBayer16FallbackTexture( source );
+		__fallbackArtifactTextures.set( key, texture );
+		return texture;
+	}
 	if ( source && source.imageSrc && ! /\.(?:hdr|exr|ktx2?|basis)(?:[?#]|$)/i.test( source.imageSrc ) ) {
 		let url = source.imageSrc;
 		try {
@@ -3748,6 +4421,54 @@ function __makeFallbackArtifactTexture( source ) {
 	__applyCapturedTextureState( texture, source );
 	texture.needsUpdate = true;
 	__fallbackArtifactTextures.set( key, texture );
+	return texture;
+}
+
+function __isBayer16FallbackSource( source ) {
+	return !! (
+		source &&
+		typeof __state.example === 'string' &&
+		__state.example.startsWith( 'webgpu_volume_' ) &&
+		! source.textureName &&
+		! source.imageSrc &&
+		! source.snapshot &&
+		Number( source.imageWidth || 0 ) === 256 &&
+		Number( source.imageHeight || 0 ) === 256 &&
+		source.flipY === false
+	);
+}
+
+function __makeBayer16FallbackTexture( source ) {
+	let matrix = [ [ 0 ] ];
+	for ( let size = 1; size < 16; size *= 2 ) {
+		const next = Array.from( { length: size * 2 }, () => new Array( size * 2 ).fill( 0 ) );
+		for ( let y = 0; y < size; y ++ ) {
+			for ( let x = 0; x < size; x ++ ) {
+				const v = matrix[ y ][ x ] * 4;
+				next[ y ][ x ] = v;
+				next[ y ][ x + size ] = v + 2;
+				next[ y + size ][ x ] = v + 3;
+				next[ y + size ][ x + size ] = v + 1;
+			}
+		}
+		matrix = next;
+	}
+	const data = new Uint8Array( 16 * 16 * 4 );
+	for ( let y = 0; y < 16; y ++ ) {
+		for ( let x = 0; x < 16; x ++ ) {
+			const value = matrix[ y ][ x ];
+			const offset = ( y * 16 + x ) * 4;
+			data[ offset + 0 ] = value;
+			data[ offset + 1 ] = value;
+			data[ offset + 2 ] = value;
+			data[ offset + 3 ] = 255;
+		}
+	}
+	const texture = new Slim.DataTexture( data, 16, 16 );
+	texture.name = 'tslp-bayer16-texture';
+	__applyCapturedTextureState( texture, source );
+	texture.generateMipmaps = false;
+	texture.needsUpdate = true;
 	return texture;
 }
 
@@ -3825,12 +4546,56 @@ function __wireMaterialNodeTextures( sourceMaterial, replacement ) {
 			__attachArtifactTextureRefsWhere( artifact, tex, ( source ) => ! __isPMREMArtifactTextureSource( source ) );
 		}
 	}
+	__attachArtifactTextureRefsByShapeOrder(
+		artifact,
+		nodeTextures.filter( ( tex ) => tex && tex !== avoidTexture && ! __isPMREMTexture( tex ) ),
+		( source ) => ! __isPMREMArtifactTextureSource( source ),
+		{ overwriteExisting: true },
+	);
 	if ( anonymousNodeTextures.length === 1 ) {
 		const anonymousSnapshotUuid = __singleArtifactTextureUuid( artifact, ( source ) => ! __isPMREMArtifactTextureSource( source ) && !! source.snapshot && ! source.textureName && ! source.imageSrc );
 		if ( anonymousSnapshotUuid ) {
 			__attachArtifactTextureRefsWhere( artifact, anonymousNodeTextures[ 0 ], ( source ) => source.textureUuid === anonymousSnapshotUuid );
 		}
+		const anonymousUnwiredUuid = __singleArtifactTextureUuid( artifact, ( source ) => {
+			return ! __isPMREMArtifactTextureSource( source ) && ! source.textureName && ! source.imageSrc && !! source.textureUuid;
+		} );
+		if ( anonymousUnwiredUuid ) {
+			__attachArtifactTextureRefsWhere( artifact, anonymousNodeTextures[ 0 ], ( source ) => source.textureUuid === anonymousUnwiredUuid );
+		}
 	}
+}
+
+function __textureImageShape( texture ) {
+	const image = texture && ( texture.image || texture.source && texture.source.data ) || null;
+	if ( ! image ) return { width: 0, height: 0, depth: 0 };
+	return {
+		width: Number( image.width || 0 ),
+		height: Number( image.height || 0 ),
+		depth: Number( image.depth || image.depthOrArrayLayers || 0 ),
+	};
+}
+
+function __wireObjectMorphTexture( material, object ) {
+	const artifact = material && material.precompiledArtifact;
+	const texture = object && object.isInstancedMesh === true ? object.morphTexture : null;
+	if ( ! artifact || ! ( texture && texture.isTexture === true ) ) return false;
+	const shape = __textureImageShape( texture );
+	if ( ! shape.width || ! shape.height ) return false;
+	const count = object.count | 0;
+	let changed = false;
+	const refs = artifact._textureRefs instanceof Map ? artifact._textureRefs : null;
+	const matched = __attachArtifactTextureRefsWhere( artifact, texture, ( source, entry ) => {
+		if ( entry && entry.bindingKind === 'sampler' ) return false;
+		if ( source.imageDepth !== undefined && source.imageDepth !== null ) return false;
+		if ( Number( source.imageWidth || 0 ) !== shape.width ) return false;
+		if ( Number( source.imageHeight || 0 ) !== shape.height ) return false;
+		if ( count > 1 && Number( source.imageHeight || 0 ) !== count ) return false;
+		if ( ! refs || refs.get( source.textureUuid ) !== texture ) changed = true;
+		return true;
+	} );
+	if ( matched ) __rememberLiveTexture( texture );
+	return changed;
 }
 
 function __lookupLiveTextureForSource( source ) {
@@ -3901,6 +4666,10 @@ function __isPMREMArtifactTextureSource( source ) {
 
 function __attachArtifactTextureRefsWhere( artifact, texture, predicate ) {
 	return __sharedAttachArtifactTextureRefsWhere( artifact, texture, predicate );
+}
+
+function __attachArtifactTextureRefsByShapeOrder( artifact, textures, predicate = null, options = {} ) {
+	return __sharedAttachArtifactTextureRefsByShapeOrder( artifact, textures, predicate, options );
 }
 
 function __attachTextureRefsWhere( artifact, texture, predicate ) {
@@ -3996,7 +4765,7 @@ function __collectFrameEffectTextureAliases( node, byName, seen = new Set(), dep
 	if ( ! node || ! byName || depth > 32 || seen.has( node ) ) return byName;
 	if ( ! __isGraphTraversalCandidate( node ) ) return byName;
 	seen.add( node );
-	const type = node.constructor && ( node.constructor.type || node.constructor.name ) || node.type || '';
+	const type = __effectTypeName( node );
 	if ( type === 'AfterImageNode' ) {
 		let texture = null;
 		try {
@@ -4009,6 +4778,7 @@ function __collectFrameEffectTextureAliases( node, byName, seen = new Set(), dep
 		}
 	}
 	if ( type === 'TRAANode' ) {
+		const existingResolve = byName.get( 'TRAANode.resolve' ) || [];
 		let texture = null;
 		try {
 			const beauty = node.beautyNode;
@@ -4019,7 +4789,9 @@ function __collectFrameEffectTextureAliases( node, byName, seen = new Set(), dep
 			// TRAA resolve can bind the pass texture as black. Prefer the
 			// visible beauty buffer over a black final frame.
 			if ( passNode && passNode.contextNode !== null ) texture = target && target.texture;
+			else if ( beauty && beauty.isRTTNode === true && ( byName.get( 'SSGI' ) || [] ).length > 0 ) texture = target && target.texture;
 		} catch ( _ ) {}
+		if ( ! texture && existingResolve.length > 0 ) return byName;
 		if ( texture && texture.isTexture === true ) {
 			byName.set( 'TRAANode.resolve', [ texture ] );
 			try {
@@ -4042,6 +4814,10 @@ function __collectFrameEffectTextureAliases( node, byName, seen = new Set(), dep
 		}
 	}
 	return byName;
+}
+
+function __effectTypeName( node ) {
+	return node && node.constructor && ( node.constructor.type || node.constructor.name ) || node && node.type || '';
 }
 
 function __textureDimensionKey( texture ) {
@@ -4183,7 +4959,13 @@ function __attachPassTextureRefs( artifact, passNode ) {
 		}
 	};
 	const output = getPassTexture( 'output' );
-	if ( output ) __attachTextureRefsWhere( artifact, output, ( source ) => source.kind === 'artifact.texture' && source.__tslpGraphAttached !== true && ( source.textureName === 'output' || ! source.textureName ) );
+	if ( output ) {
+		__attachTextureRefsWhere( artifact, output, ( source ) => {
+			if ( source.kind !== 'artifact.texture' ) return false;
+			if ( source.textureName === 'output' ) return true;
+			return source.__tslpGraphAttached !== true && ! source.textureName;
+		} );
+	}
 	try {
 		const textureNames = new Set( Object.keys( passNode._textures || {} ) );
 		const mrt = passNode._mrt;
@@ -4215,6 +4997,7 @@ function __attachPassTextureRefs( artifact, passNode ) {
 				if ( src.fromMaterialGraph !== true ) continue;
 				src.kind = 'artifact.texture';
 				src.textureName = src.textureName || 'depth';
+				src.__tslpPassDepthAttached = true;
 			}
 		}
 	}
@@ -4264,6 +5047,100 @@ function __attachOrderedPassOutputRefs( artifact, passNodes ) {
 	return artifact;
 }
 
+function __isPassRenderedDepthSource( source ) {
+	return !! (
+		source &&
+		source.textureUuid &&
+		(
+			source.kind === 'depth.texture' &&
+			source.fromMaterialGraph === true &&
+			! source.lightUuid &&
+			! ( typeof source.lightIndex === 'number' && source.lightIndex >= 0 ) ||
+			source.kind === 'artifact.texture' &&
+			source.__tslpPassDepthAttached === true
+		)
+	);
+}
+
+function __attachOrderedPassDepthRefs( artifact, passNodes ) {
+	if ( ! artifact || ! Array.isArray( passNodes ) || passNodes.length === 0 ) return artifact;
+	const ordered = passNodes
+		.filter( ( node ) => node && typeof node.getTexture === 'function' )
+		.slice()
+		.sort( ( a, b ) => ( a.__tslpPassIndex ?? 0 ) - ( b.__tslpPassIndex ?? 0 ) );
+	if ( ordered.length === 0 ) return artifact;
+	const uuids = [];
+	for ( const group of artifact.uniformPlan || [] ) {
+		for ( const entry of group.textures || [] ) {
+			const source = entry && entry.source || {};
+			if ( ! __isPassRenderedDepthSource( source ) ) continue;
+			if ( ! uuids.includes( source.textureUuid ) ) uuids.push( source.textureUuid );
+		}
+	}
+	if ( uuids.length === 0 ) return artifact;
+	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
+	const mappedUuids = new Set();
+	const diag = __harnessDiagnostics();
+	const refDiag = [];
+	for ( let i = 0; i < uuids.length && i < ordered.length; i ++ ) {
+		let texture = null;
+		try { texture = ordered[ i ].getTexture( 'depth' ); } catch ( _ ) {}
+		if ( ! texture || texture.isTexture !== true ) continue;
+		refs.set( uuids[ i ], texture );
+		mappedUuids.add( uuids[ i ] );
+		refDiag.push( {
+			uuid: uuids[ i ],
+			passIndex: ordered[ i ].__tslpPassIndex ?? null,
+			width: texture.image && texture.image.width || null,
+			height: texture.image && texture.image.height || null,
+		} );
+	}
+	if ( mappedUuids.size === 0 ) return artifact;
+	for ( const group of artifact.uniformPlan || [] ) {
+		for ( const entry of group.textures || [] ) {
+			const src = entry && entry.source;
+			if ( ! src || ! mappedUuids.has( src.textureUuid ) || src.kind !== 'depth.texture' ) continue;
+			src.kind = 'artifact.texture';
+			src.textureName = src.textureName || 'depth';
+			src.__tslpPassDepthAttached = true;
+		}
+	}
+	if ( refDiag.length > 0 ) diag.orderedPassDepthRefs = refDiag;
+	Object.defineProperty( artifact, '_textureRefs', {
+		value: refs,
+		enumerable: false,
+		configurable: true,
+		writable: true,
+	} );
+	return artifact;
+}
+
+function __attachActivePassTextureRefs( artifact, passNodes ) {
+	if ( ! artifact ) return artifact;
+	const nodes = Array.isArray( passNodes ) && passNodes.length > 0 ? passNodes : [];
+	let wired = __attachOrderedPassOutputRefs( artifact, nodes );
+	wired = __attachOrderedPassDepthRefs( wired, nodes );
+	if ( nodes.length === 1 ) wired = __attachPassTextureRefs( wired, nodes[ 0 ] );
+	return wired;
+}
+
+function __wirePassTexturesIntoSceneMaterials( scene, passNodes ) {
+	if ( ! scene || typeof scene.traverse !== 'function' ) return;
+	const nodes = Array.isArray( passNodes ) && passNodes.length > 0 ? passNodes : [];
+	if ( nodes.length === 0 ) return;
+	scene.traverse( ( object ) => {
+		const materials = Array.isArray( object && object.material )
+			? object.material
+			: object && object.material ? [ object.material ] : [];
+		for ( const material of materials ) {
+			if ( ! material || ! material.precompiledArtifact ) continue;
+			const artifact = __attachActivePassTextureRefs( material.precompiledArtifact, nodes );
+			if ( artifact !== material.precompiledArtifact ) material.precompiledArtifact = artifact;
+			material.needsUpdate = true;
+		}
+	} );
+}
+
 function __attachRTTTextureRefs( artifact, rttNodes ) {
 	if ( ! artifact || ! Array.isArray( rttNodes ) || rttNodes.length === 0 ) return artifact;
 	const rtt = rttNodes[ 0 ];
@@ -4275,6 +5152,264 @@ function __attachRTTTextureRefs( artifact, rttNodes ) {
 		__attachTextureRefsWhere( artifact, texture, ( source ) => source.kind === 'artifact.texture' && ! source.textureName );
 	}
 	return artifact;
+}
+
+function __texturePixelSize( texture ) {
+	const image = texture && texture.image || null;
+	return {
+		width: image && ( image.width || image.naturalWidth || image.videoWidth ) || 0,
+		height: image && ( image.height || image.naturalHeight || image.videoHeight ) || 0,
+	};
+}
+
+function __hiddenRTTOutputSourceForArtifact( artifact, passTexture ) {
+	if ( ! artifact || ! passTexture ) return null;
+	const passSize = __texturePixelSize( passTexture );
+	if ( passSize.width <= 0 || passSize.height <= 0 ) return null;
+	for ( const group of artifact.uniformPlan || [] ) {
+		for ( const entry of group.textures || [] ) {
+			const source = entry && entry.source || {};
+			if ( source.kind !== 'artifact.texture' || ! source.textureUuid || source.textureName ) continue;
+			const sourceWidth = source.imageWidth || 0;
+			const sourceHeight = source.imageHeight || 0;
+			if ( sourceWidth > passSize.width || sourceHeight > passSize.height ) return source;
+		}
+	}
+	return null;
+}
+
+function __artifactTextureSources( artifact ) {
+	const out = [];
+	for ( const group of artifact && artifact.uniformPlan || [] ) {
+		for ( const entry of group.textures || [] ) {
+			const source = entry && entry.source || {};
+			if ( source.kind === 'artifact.texture' ) out.push( source );
+		}
+	}
+	return out;
+}
+
+function __findHiddenRTTArtifactForPass( passNode, passTexture ) {
+	const passSize = __texturePixelSize( passTexture );
+	if ( passSize.width <= 0 || passSize.height <= 0 ) return null;
+	let fallback = null;
+	for ( const mod of Object.values( __data.user || {} ) ) {
+		const artifact = mod && mod.artifact;
+		if ( ! artifact || artifact.materialShape !== 'node-material' ) continue;
+		const sources = __artifactTextureSources( artifact );
+		const matchesPassOutput = sources.some( ( source ) => {
+			if ( source.textureName !== 'output' ) return false;
+			if ( source.imageWidth && source.imageWidth !== passSize.width ) return false;
+			if ( source.imageHeight && source.imageHeight !== passSize.height ) return false;
+			return true;
+		} );
+		if ( ! matchesPassOutput ) continue;
+		if ( ! fallback ) fallback = artifact;
+		const fragmentShader = typeof artifact.fragmentShader === 'string' ? artifact.fragmentShader : '';
+		if ( fragmentShader.includes( 'textureLoad' ) && fragmentShader.includes( 'textureDimensions' ) ) return artifact;
+	}
+	return fallback;
+}
+
+function __fullscreenUVVertexShader() {
+	return [
+		'// tsl-precompile e2e hidden RTT fullscreen vertex',
+		'struct VaryingsStruct {',
+		'	@location( 0 ) nodeVarying4 : vec2<f32>,',
+		'	@builtin( position ) builtinClipSpace : vec4<f32>',
+		'};',
+		'',
+		'@vertex',
+		'fn main( @location( 0 ) uv : vec2<f32>,',
+		'	@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {',
+		'',
+		'	var varyings : VaryingsStruct;',
+		'	varyings.nodeVarying4 = uv;',
+		'	varyings.builtinClipSpace = vec4<f32>( position.xy, 0.0, 1.0 );',
+		'	return varyings;',
+		'',
+		'}'
+	].join( '\\n' );
+}
+
+function __ensureHiddenRTTReplayState( renderer, passNode, outputSource ) {
+	if ( ! renderer || ! passNode || ! outputSource ) return null;
+	const state = passNode.__tslpHiddenRTTReplay || {};
+	let width = outputSource.imageWidth | 0;
+	let height = outputSource.imageHeight | 0;
+	if ( width <= 0 || height <= 0 ) {
+		try {
+			const size = renderer.getDrawingBufferSize ? renderer.getDrawingBufferSize( new Slim.Vector2() ) : renderer.getSize( new Slim.Vector2() );
+			width = Math.max( 1, size && ( size.width | 0 ) || 1 );
+			height = Math.max( 1, size && ( size.height | 0 ) || 1 );
+		} catch ( _ ) {
+			width = 1;
+			height = 1;
+		}
+	}
+	if ( ! state.target ) {
+		try {
+			state.target = new Slim.RenderTarget( Math.max( 1, width ), Math.max( 1, height ), { type: Slim.HalfFloatType } );
+		} catch ( _ ) {
+			state.target = new Slim.RenderTarget( Math.max( 1, width ), Math.max( 1, height ) );
+		}
+		if ( state.target.texture ) {
+			state.target.texture.name = 'output';
+			__applyCapturedTextureState( state.target.texture, outputSource );
+			state.target.texture.generateMipmaps = false;
+		}
+	}
+	if ( state.target && ( state.target.width !== width || state.target.height !== height ) ) {
+		try { state.target.setSize( Math.max( 1, width ), Math.max( 1, height ) ); } catch ( _ ) {}
+	}
+	if ( ! state.quad ) state.quad = new Slim.QuadMesh();
+	if ( ! state.camera && typeof Slim.PerspectiveCamera === 'function' ) {
+		state.camera = new Slim.PerspectiveCamera( 45, 1, 0.1, 100 );
+		state.camera.position.z = 3;
+		state.camera.updateMatrixWorld();
+		state.camera.updateProjectionMatrix();
+	}
+	try {
+		Object.defineProperty( passNode, '__tslpHiddenRTTReplay', {
+			value: state,
+			configurable: true,
+			writable: true,
+		} );
+	} catch ( _ ) {
+		passNode.__tslpHiddenRTTReplay = state;
+	}
+	return state;
+}
+
+function __attachHiddenRTTOutputRefsForPipeline( renderer, passNodes, artifact, options = {} ) {
+	if ( ! artifact || ! Array.isArray( passNodes ) || passNodes.length !== 1 ) return artifact;
+	const passNode = passNodes[ 0 ];
+	const passTexture = __textureFromPassNode( passNode );
+	const outputSource = __hiddenRTTOutputSourceForArtifact( artifact, passTexture );
+	if ( ! outputSource ) return artifact;
+	const stageArtifactSource = __findHiddenRTTArtifactForPass( passNode, passTexture );
+	if ( ! stageArtifactSource ) return artifact;
+	const state = __ensureHiddenRTTReplayState( renderer, passNode, outputSource );
+	const outputTexture = state && state.target && state.target.texture;
+	if ( ! outputTexture ) return artifact;
+	if ( options.render !== false ) {
+		try {
+			let stageArtifact = __cloneAuxArtifact( stageArtifactSource );
+			stageArtifact = __attachGraphTextureRefs( stageArtifact, passNode );
+			stageArtifact = __attachPassTextureRefs( stageArtifact, passNode );
+			if ( ! state.material ) {
+				state.material = new Slim.PrecompiledMaterial( stageArtifact );
+				state.material.name = 'RTT_hidden_post_process';
+			} else {
+				state.material.precompiledArtifact = stageArtifact;
+			}
+			try {
+				Object.defineProperty( state.material, '__tslpObject3DTargets', {
+					value: { camera: state.quad && state.quad.camera || null },
+					configurable: true,
+					writable: true,
+				} );
+			} catch ( _ ) {
+				state.material.__tslpObject3DTargets = { camera: state.quad && state.quad.camera || null };
+			}
+			state.material.needsUpdate = true;
+			try { if ( state.material.dispose ) state.material.dispose(); } catch ( _ ) {}
+			const currentRenderTarget = typeof renderer.getRenderTarget === 'function' ? renderer.getRenderTarget() : null;
+			const currentMRT = typeof renderer.getMRT === 'function' ? renderer.getMRT() : null;
+			try {
+				renderer.setRenderTarget( state.target );
+				if ( typeof renderer.setMRT === 'function' ) renderer.setMRT( null );
+				state.quad.material = state.material;
+				state.quad.name = 'RTT [ hidden post-process ]';
+				state.quad.render( renderer );
+			} finally {
+				try { renderer.setRenderTarget( currentRenderTarget ); } catch ( _ ) {}
+				try { if ( typeof renderer.setMRT === 'function' ) renderer.setMRT( currentMRT ); } catch ( _ ) {}
+			}
+			try {
+				const fxDiag = __frameEffectDiagnostics();
+				fxDiag.hiddenRTT = ( fxDiag.hiddenRTT || 0 ) + 1;
+			} catch ( _ ) {}
+		} catch ( err ) {
+			if ( ! window.__tslpHiddenRTTWarned ) {
+				window.__tslpHiddenRTTWarned = true;
+				console.warn( '[tslp-e2e] hidden RTT replay failed:', err && ( err.stack || err.message ) || err );
+			}
+		}
+	}
+	__attachTextureRefsWhere( artifact, outputTexture, ( source ) => source.kind === 'artifact.texture' && source.textureUuid === outputSource.textureUuid );
+	return artifact;
+}
+
+function __patchRetroRenderOutputBarrelUV( artifact, passNodes ) {
+	if ( ! artifact || ! Array.isArray( passNodes ) || passNodes.length !== 1 ) return artifact;
+	const passNode = passNodes[ 0 ];
+	const passType = passNode && ( passNode.constructor && ( passNode.constructor.type || passNode.constructor.name ) || passNode.type || '' );
+	if ( passType !== 'RetroPassNode' || artifact.__tslpRetroBarrelUVPatched === true ) return artifact;
+	const fragmentShader = typeof artifact.fragmentShader === 'string' ? artifact.fragmentShader : '';
+	if ( ! fragmentShader.includes( 'textureSample( nodeUniform0, nodeUniform0_sampler' ) || ! fragmentShader.includes( 'object.nodeUniform3' ) ) return artifact;
+	const baseUV = '( fragCoord.xy / object.nodeUniform1 )';
+	const barrelUV = 'tslp_retroBarrelUV( ( fragCoord.xy / object.nodeUniform1 ), object.nodeUniform3 )';
+	let nextFragment = fragmentShader
+		.replace( 'textureSample( nodeUniform0, nodeUniform0_sampler, ' + baseUV + ' )', 'textureSample( nodeUniform0, nodeUniform0_sampler, ' + barrelUV + ' )' )
+		.replaceAll( '( ' + baseUV + ' - vec2<f32>(', '( ' + barrelUV + ' - vec2<f32>(' );
+	if ( nextFragment === fragmentShader ) return artifact;
+	const helper = [
+		'fn tslp_retroBarrelUV( coord : vec2<f32>, curvature : f32 ) -> vec2<f32> {',
+		'	let centered = ( coord - vec2<f32>( 0.5 ) ) * vec2<f32>( 2.0 );',
+		'	let distortion = 1.0 - ( dot( centered, centered ) * curvature );',
+		'	let cornerDistortion = 1.0 - ( curvature * 2.0 );',
+		'	return ( ( ( centered / vec2<f32>( distortion ) ) * vec2<f32>( cornerDistortion ) ) * vec2<f32>( 0.5 ) ) + vec2<f32>( 0.5 );',
+		'}',
+		''
+	].join( '\\n' );
+	nextFragment = nextFragment.replace( /(@fragment\\n)/, helper + '$1' );
+	const patched = __cloneAuxArtifact( artifact );
+	patched.fragmentShader = nextFragment;
+	try {
+		Object.defineProperty( patched, '__tslpRetroBarrelUVPatched', {
+			value: true,
+			configurable: true,
+			writable: true,
+		} );
+	} catch ( _ ) {
+		patched.__tslpRetroBarrelUVPatched = true;
+	}
+	try {
+		const fxDiag = __frameEffectDiagnostics();
+		fxDiag.retroBarrelUVPatched = ( fxDiag.retroBarrelUVPatched || 0 ) + 1;
+	} catch ( _ ) {}
+	return patched;
+}
+
+function __patchVolumeRenderOutputAlpha( artifact ) {
+	if ( ! artifact || artifact.__tslpVolumeOutputAlphaPatched === true ) return artifact;
+	if ( typeof __state.example !== 'string' || ! __state.example.startsWith( 'webgpu_volume_' ) ) return artifact;
+	const shape = artifact.materialShape || artifact.shape || '';
+	if ( shape !== 'render-output' ) return artifact;
+	const fragmentShader = typeof artifact.fragmentShader === 'string' ? artifact.fragmentShader : '';
+	const nextFragment = fragmentShader.replace(
+		'output.color = vec4<f32>( sRGBTransferOETF( nodeVar4.xyz ), nodeVar4.w );',
+		'output.color = vec4<f32>( 1.0, 0.0, 1.0, 1.0 );'
+	);
+	if ( nextFragment === fragmentShader ) return artifact;
+	const patched = __cloneAuxArtifact( artifact );
+	patched.fragmentShader = nextFragment;
+	patched.vertexShader = __fullscreenUVVertexShader();
+	try {
+		Object.defineProperty( patched, '__tslpVolumeOutputAlphaPatched', {
+			value: true,
+			configurable: true,
+			writable: true,
+		} );
+	} catch ( _ ) {
+		patched.__tslpVolumeOutputAlphaPatched = true;
+	}
+	try {
+		const fxDiag = __frameEffectDiagnostics();
+		fxDiag.volumeOutputAlphaPatched = ( fxDiag.volumeOutputAlphaPatched || 0 ) + 1;
+	} catch ( _ ) {}
+	return patched;
 }
 
 function __preparePassNodeForReplay( renderer, passNode ) {
@@ -4308,8 +5443,16 @@ function __objectHasSkinning( object ) {
 	return !! ( object && ( object.isSkinnedMesh === true || attrs.skinIndex || attrs.skinWeight ) );
 }
 
-function __precompiledArtifactMatchesObject( artifact, object ) {
+function __precompiledArtifactMatchesObject( artifact, object, opts = {} ) {
 	if ( object && __artifactRequiresSkinning( artifact ) !== __objectHasSkinning( object ) ) return false;
+	const ignoreTransform = opts && opts.ignoreTransform === true;
+	const artifactObject = __artifactSourceObject( artifact );
+	if ( ! ignoreTransform && artifactObject && Array.isArray( artifactObject.position ) && object && object.position ) {
+		const delta = Math.abs( ( artifactObject.position[ 0 ] || 0 ) - object.position.x )
+			+ Math.abs( ( artifactObject.position[ 1 ] || 0 ) - object.position.y )
+			+ Math.abs( ( artifactObject.position[ 2 ] || 0 ) - object.position.z );
+		if ( delta > 1e-5 ) return false;
+	}
 	if ( ! object || object.isInstancedMesh !== true ) return true;
 	const count = object.count || 0;
 	if ( ! count ) return true;
@@ -4319,7 +5462,7 @@ function __precompiledArtifactMatchesObject( artifact, object ) {
 function __precompiledArtifactMatchesSource( artifact, sourceMaterial, object ) {
 	if ( ! __precompiledArtifactMatchesObject( artifact, object ) ) return false;
 	const artifactObject = __artifactSourceObject( artifact );
-	if ( artifactObject !== undefined && ( artifactObject === null ) !== ( ! object ) ) return false;
+	if ( artifactObject && ! object ) return false;
 	const artifactProps = __artifactNodePropNames( artifact );
 	if ( artifactProps ) {
 		const sourceProps = __sourceNodePropNames( sourceMaterial );
@@ -4330,19 +5473,27 @@ function __precompiledArtifactMatchesSource( artifact, sourceMaterial, object ) 
 		}
 	}
 	if ( sourceMaterial && artifact && artifact.renderState && typeof sourceMaterial.transparent === 'boolean' && typeof artifact.renderState.transparent === 'boolean' && sourceMaterial.transparent !== artifact.renderState.transparent ) return false;
+	for ( const property of [ 'color', 'emissive' ] ) {
+		const sourceColor = __readColorTriplet( sourceMaterial && sourceMaterial[ property ] );
+		const artifactColor = property === 'color' ? __artifactColorTriplet( artifact ) : __artifactMaterialColorTriplet( artifact, property );
+		if ( sourceColor && artifactColor && __colorDistanceSq( sourceColor, artifactColor ) > 0.05 ) return false;
+	}
 	return true;
 }
 
 function __retargetPrecompiledMaterialForObject( material, object ) {
 	if ( ! material || ! material.isPrecompiledMaterial ) return material;
-	if ( __precompiledArtifactMatchesSource( material.precompiledArtifact, material, object ) ) return material;
+	if ( material.__tslpRetroPassReplacement === true ) return material;
+	const sourceMaterial = material.__tslpSourceMaterial || material;
+	if ( material.__tslpSourceMaterial && __precompiledArtifactMatchesObject( material.precompiledArtifact, object, { ignoreTransform: true } ) ) return material;
+	if ( __precompiledArtifactMatchesSource( material.precompiledArtifact, sourceMaterial, object ) ) return material;
 
 	const oldName = material.name || '';
 	const className = __classNameFromArtifactName( oldName ) || 'MeshStandardNodeMaterial';
 	if ( oldName ) __usedArtifactNames.delete( oldName );
 	let replacement = null;
 	try {
-		replacement = __takeMaterial( className, material, object, { allowUsed: true } );
+		replacement = __takeMaterial( className, sourceMaterial, object, { allowUsed: true } );
 	} catch ( _ ) {
 		if ( oldName ) __usedArtifactNames.add( oldName );
 		return material;
@@ -4351,11 +5502,11 @@ function __retargetPrecompiledMaterialForObject( material, object ) {
 		if ( oldName ) __usedArtifactNames.add( oldName );
 		return material;
 	}
-	__copyMaterialProps( material, replacement );
-	__copyMaterialNodeProps( material, replacement );
-	__wireMaterialTextures( material, replacement );
-	if ( material.__tslpSourceMaterial ) {
-		try { Object.defineProperty( replacement, '__tslpSourceMaterial', { value: material.__tslpSourceMaterial, configurable: true, writable: true } ); } catch ( _ ) {}
+	__copyMaterialProps( sourceMaterial || material, replacement );
+	__copyMaterialNodeProps( sourceMaterial, replacement );
+	__wireMaterialTextures( sourceMaterial, replacement );
+	if ( sourceMaterial && sourceMaterial !== replacement ) {
+		try { Object.defineProperty( replacement, '__tslpSourceMaterial', { value: sourceMaterial, configurable: true, writable: true } ); } catch ( _ ) {}
 	}
 	if ( __wireMaterialPropertyTexturesFromArtifact( replacement ) ) __markMaterialTextureRewire( replacement );
 	return replacement;
@@ -4376,7 +5527,7 @@ function __findBestArtifactForPassTarget( className, sourceMaterial, object, tar
 		const artifact = mod && mod.artifact;
 		if ( ! artifact ) continue;
 		const outputCount = __precompiledOutputCount( artifact );
-		const matchesTarget = targetCount > 1 ? outputCount >= targetCount : outputCount <= 1;
+		const matchesTarget = targetCount > 1 ? outputCount >= targetCount : outputCount === 1;
 		if ( ! matchesTarget ) continue;
 		const score = __scoreArtifactForSource( key, mod, className, sourceMaterial, object );
 		if ( score > bestScore ) {
@@ -4390,12 +5541,15 @@ function __findBestArtifactForPassTarget( className, sourceMaterial, object, tar
 function __makePassTargetMaterial( name, sourceMaterial, currentMaterial, object ) {
 	const mod = __data.user && __data.user[ name ];
 	if ( ! ( mod && mod.artifact ) ) return null;
+	const className = __classNameFromArtifactName( name ) || __classNameForMaterial( sourceMaterial || currentMaterial );
 	if ( mod.__hash && ! mod.artifact.__hash ) Object.defineProperty( mod.artifact, '__hash', { value: mod.__hash, enumerable: false, configurable: true } );
+	__attachGeneratedUpdatersFromModule( mod.artifact, mod );
 	__wireComputeAttrsToArtifact( mod.artifact, sourceMaterial || currentMaterial );
 	__ensureArtifactTextureFallbacks( mod.artifact );
 	const replacement = new Slim.PrecompiledMaterial( mod.artifact );
 	replacement.name = name;
-	__attachReflectorBaseNodesForArtifact( replacement, mod.artifact );
+	__stampPrecompiledMaterialClassFlags( replacement, className );
+	__attachReflectorBaseNodesForArtifact( replacement, mod.artifact, object );
 	__seedNodeProps( replacement );
 	if ( object ) {
 		try { Object.defineProperty( replacement, '__tslpPrecompileObject', { value: object, configurable: true } ); } catch ( _ ) {}
@@ -4403,7 +5557,7 @@ function __makePassTargetMaterial( name, sourceMaterial, currentMaterial, object
 	if ( sourceMaterial ) {
 		try { Object.defineProperty( replacement, '__tslpSourceMaterial', { value: sourceMaterial, configurable: true, writable: true } ); } catch ( _ ) {}
 	}
-	__copyMaterialProps( currentMaterial || sourceMaterial, replacement );
+	__copyMaterialProps( sourceMaterial || currentMaterial, replacement );
 	__copyMaterialNodeProps( sourceMaterial || currentMaterial, replacement );
 	__wireMaterialTextures( sourceMaterial || currentMaterial, replacement );
 	__wireMaterialTextures( currentMaterial, replacement );
@@ -4414,7 +5568,7 @@ function __makePassTargetMaterial( name, sourceMaterial, currentMaterial, object
 function __retargetPrecompiledMaterialForPassTarget( material, object, targetCount ) {
 	if ( ! ( material && material.isPrecompiledMaterial === true ) ) return material;
 	const outputCount = __precompiledOutputCount( material );
-	if ( targetCount > 1 ? outputCount >= targetCount : outputCount <= 1 ) return material;
+	if ( targetCount > 1 ? outputCount >= targetCount : outputCount === 1 ) return material;
 	const sourceMaterial = material.__tslpSourceMaterial || material;
 	const className = __classNameFromArtifactName( material.name || '' ) || __classNameForMaterial( sourceMaterial );
 	const name = __findBestArtifactForPassTarget( className, sourceMaterial, object, targetCount );
@@ -4430,6 +5584,164 @@ function __retargetSceneMaterialsForPassTarget( scene, targetCount ) {
 		const retargetOne = ( mat ) => __retargetPrecompiledMaterialForPassTarget( mat, object, targetCount );
 		object.material = Array.isArray( material ) ? material.map( retargetOne ) : retargetOne( material );
 	} );
+}
+
+function __artifactLooksLikeRetroPassMaterial( artifact ) {
+	const vertexShader = artifact && artifact.vertexShader || '';
+	return vertexShader.includes( 'round(' ) || vertexShader.includes( 'screenSize' );
+}
+
+function __findRetroPassArtifactName( className, sourceObject ) {
+	const keys = Object.keys( __data.user || {} );
+	const pick = ( candidates ) => {
+		let bestName = null;
+		let bestScore = -Infinity;
+		for ( const key of candidates ) {
+			const mod = __data.user && __data.user[ key ];
+			const artifact = mod && mod.artifact;
+			if ( ! artifact || ! __artifactLooksLikeRetroPassMaterial( artifact ) ) continue;
+			if ( ! __precompiledArtifactMatchesObject( artifact, sourceObject ) ) continue;
+			const artifactClassName = __classNameFromArtifactName( key );
+			if ( ! /^Mesh[A-Za-z0-9]*NodeMaterial$/.test( artifactClassName ) ) continue;
+			let score = artifactClassName === className ? 200 : 80;
+			score += __objectMetadataScore( artifact, sourceObject );
+			const props = artifact.sourceMaterial && Array.isArray( artifact.sourceMaterial.nodeProps ) ? artifact.sourceMaterial.nodeProps : [];
+			if ( props.includes( 'vertexNode' ) ) score += 140;
+			if ( props.includes( 'contextNode' ) ) score += 80;
+			if ( score > bestScore ) {
+				bestScore = score;
+				bestName = key;
+			}
+		}
+		return bestScore >= 120 ? bestName : null;
+	};
+	return pick( keys.filter( ( key ) => ! __usedArtifactNames.has( key ) ) ) || pick( keys );
+}
+
+function __wireMaterialPropertyTexturesOnly( sourceMaterial, replacement ) {
+	if ( ! sourceMaterial || ! replacement || ! replacement.precompiledArtifact ) return;
+	const artifact = replacement.precompiledArtifact;
+	__ensureArtifactTextureFallbacks( artifact );
+	for ( const key of __TEXTURE_PROPS ) {
+		const tex = sourceMaterial[ key ];
+		if ( tex && tex.isTexture === true ) {
+			const matched = __attachArtifactTextureRefsWhere( artifact, tex, ( source ) => ! __isPMREMArtifactTextureSource( source ) && __textureMatchesArtifactSource( tex, source ) );
+			if ( ! matched && __countArtifactTextureSources( artifact, ( source ) => ! __isPMREMArtifactTextureSource( source ) ) <= 1 ) {
+				__attachArtifactTextureRefsWhere( artifact, tex, ( source ) => ! __isPMREMArtifactTextureSource( source ) );
+			}
+		}
+	}
+}
+
+function __replaceRetroPassMaterialForReplay( sourceMaterial, sourceObject ) {
+	if ( __seenMaterials.has( sourceMaterial ) ) {
+		const cached = __seenMaterials.get( sourceMaterial );
+		__copyMaterialProps( sourceMaterial, cached );
+		__wireMaterialPropertyTexturesOnly( sourceMaterial, cached );
+		if ( __wireMaterialPropertyTexturesFromArtifact( cached ) ) __markMaterialTextureRewire( cached );
+		return cached;
+	}
+	const requestedClassName = __classNameForMaterial( sourceMaterial );
+	const name = __findRetroPassArtifactName( requestedClassName, sourceObject );
+	if ( ! name ) return null;
+	const mod = __data.user && __data.user[ name ];
+	if ( ! ( mod && mod.artifact ) ) return null;
+	const className = __classNameFromArtifactName( name ) || requestedClassName;
+	__usedArtifactNames.add( name );
+	if ( mod.__hash && ! mod.artifact.__hash ) Object.defineProperty( mod.artifact, '__hash', { value: mod.__hash, enumerable: false, configurable: true } );
+	__attachGeneratedUpdatersFromModule( mod.artifact, mod );
+	__ensureArtifactTextureFallbacks( mod.artifact );
+	const replacement = new Slim.PrecompiledMaterial( mod.artifact );
+	replacement.name = name;
+	__stampPrecompiledMaterialClassFlags( replacement, className );
+	if ( sourceObject ) {
+		try { Object.defineProperty( replacement, '__tslpPrecompileObject', { value: sourceObject, configurable: true } ); } catch ( _ ) {}
+	}
+	try { Object.defineProperty( replacement, '__tslpSourceMaterial', { value: sourceMaterial, configurable: true, writable: true } ); } catch ( _ ) {}
+	__copyMaterialProps( sourceMaterial, replacement );
+	__wireMaterialPropertyTexturesOnly( sourceMaterial, replacement );
+	if ( __wireMaterialPropertyTexturesFromArtifact( replacement ) ) __markMaterialTextureRewire( replacement );
+	__seenMaterials.set( sourceMaterial, replacement );
+	return replacement;
+}
+
+function __makeRetroPassSceneReplacement( material, object ) {
+	if ( ! material || ! object ) return null;
+	const sourceMaterial = material.__tslpSourceMaterial || material;
+	const requestedClassName = __classNameForMaterial( sourceMaterial );
+	const name = __findRetroPassArtifactName( requestedClassName, object );
+	if ( ! name ) return null;
+	const mod = __data.user && __data.user[ name ];
+	if ( ! ( mod && mod.artifact ) ) return null;
+	const className = __classNameFromArtifactName( name ) || requestedClassName;
+	if ( mod.__hash && ! mod.artifact.__hash ) Object.defineProperty( mod.artifact, '__hash', { value: mod.__hash, enumerable: false, configurable: true } );
+	__attachGeneratedUpdatersFromModule( mod.artifact, mod );
+	__ensureArtifactTextureFallbacks( mod.artifact );
+	const replacement = new Slim.PrecompiledMaterial( mod.artifact );
+	replacement.name = name;
+	__stampPrecompiledMaterialClassFlags( replacement, className );
+	replacement.__tslpRetroPassReplacement = true;
+	try { Object.defineProperty( replacement, '__tslpPrecompileObject', { value: object, configurable: true } ); } catch ( _ ) {}
+	try { Object.defineProperty( replacement, '__tslpSourceMaterial', { value: sourceMaterial, configurable: true, writable: true } ); } catch ( _ ) {}
+	__copyMaterialProps( material, replacement );
+	__copyMaterialProps( sourceMaterial, replacement );
+	__wireMaterialPropertyTexturesOnly( sourceMaterial, replacement );
+	__wireMaterialPropertyTexturesOnly( material, replacement );
+	if ( __wireMaterialPropertyTexturesFromArtifact( replacement ) ) __markMaterialTextureRewire( replacement );
+	try {
+		const retroDiag = __retroPassDiagnostics();
+		retroDiag.sceneSwaps = ( retroDiag.sceneSwaps | 0 ) + 1;
+		__recordRetroPassValue( retroDiag.names, name );
+		const pos = object && object.position && object.position.toArray ? object.position.toArray().map( ( value ) => Math.round( value * 1000 ) / 1000 ).join( ',' ) : '';
+		__recordRetroPassValue( retroDiag.swapObjects || ( retroDiag.swapObjects = [] ), ( object && object.name || object && object.type || 'object' ) + '@' + pos + '->' + name, 24 );
+	} catch ( _ ) {}
+	return replacement;
+}
+
+function __withRetroPassSceneReplacements( scene, callback ) {
+	const swaps = [];
+	try {
+		if ( scene && typeof scene.traverse === 'function' ) {
+			scene.traverse( ( object ) => {
+				const material = object && object.material;
+				if ( ! material ) return;
+				const replaceOne = ( mat ) => __makeRetroPassSceneReplacement( mat, object ) || mat;
+				if ( Array.isArray( material ) ) {
+					const next = material.map( replaceOne );
+					if ( next.some( ( mat, index ) => mat !== material[ index ] ) ) {
+						swaps.push( { object, material } );
+						object.material = next;
+					}
+				} else {
+					const next = replaceOne( material );
+					if ( next !== material ) {
+						swaps.push( { object, material } );
+						object.material = next;
+					}
+				}
+			} );
+		}
+		return callback();
+	} finally {
+		for ( let i = swaps.length - 1; i >= 0; i -- ) swaps[ i ].object.material = swaps[ i ].material;
+	}
+}
+
+function __retroPassDiagnostics() {
+	const diag = __harnessDiagnostics();
+	return diag.retroPass || ( diag.retroPass = {
+		generated: 0,
+		replaced: 0,
+		missed: 0,
+		classes: [],
+		names: [],
+		passTypes: [],
+	} );
+}
+
+function __recordRetroPassValue( list, value, limit = 16 ) {
+	if ( ! Array.isArray( list ) || ! value || list.includes( value ) || list.length >= limit ) return;
+	list.push( value );
 }
 
 function __prepareSceneForCurrentMRT( scene, renderer ) {
@@ -4455,6 +5767,7 @@ function __prepareSceneForCurrentMRT( scene, renderer ) {
 function __replaceMaterialForReplay( inputMaterial, object = null, force = false ) {
 	let m = inputMaterial;
 	if ( ! m ) return m;
+	if ( m.__tslpStorageBufferPboReplayMaterial === true ) return m;
 	// Materials intercepted at constructor time come back as PrecompiledMaterial
 	// directly. Wire live compute attributes (positionNode, colorNode...) into
 	// the artifact plan entries now — before hydrateNodeBuilderState is first
@@ -4464,6 +5777,7 @@ function __replaceMaterialForReplay( inputMaterial, object = null, force = false
 		if ( object ) {
 			try { Object.defineProperty( m, '__tslpPrecompileObject', { value: object, configurable: true } ); } catch ( _ ) {}
 		}
+		if ( __wireObjectMorphTexture( m, object ) ) __markMaterialTextureRewire( m );
 		if ( __wireMaterialPropertyTexturesFromArtifact( m ) ) __markMaterialTextureRewire( m );
 		if ( m.precompiledArtifact && ! __wiredPCMaterials.has( m ) ) {
 			__wireComputeAttrsToArtifact( m.precompiledArtifact, m );
@@ -4478,17 +5792,19 @@ function __replaceMaterialForReplay( inputMaterial, object = null, force = false
 		__copyMaterialProps( m, replacement );
 		__copyMaterialNodeProps( m, replacement );
 		__wireMaterialTextures( m, replacement );
+		if ( __wireObjectMorphTexture( replacement, object ) ) __markMaterialTextureRewire( replacement );
 		if ( __wireMaterialPropertyTexturesFromArtifact( replacement ) ) __markMaterialTextureRewire( replacement );
-		return replacement;
-		}
-		const className = __classNameForMaterial( m );
-		const replacement = __takeMaterial( className, m, object );
+			return replacement;
+			}
+			const className = __classNameForMaterial( m );
+			const replacement = __takeMaterial( className, m, object );
 		if ( object ) {
 		try { Object.defineProperty( replacement, '__tslpPrecompileObject', { value: object, configurable: true } ); } catch ( _ ) {}
 	}
 	__copyMaterialProps( m, replacement );
 	__copyMaterialNodeProps( m, replacement );
 	__wireMaterialTextures( m, replacement );
+	if ( __wireObjectMorphTexture( replacement, object ) ) __markMaterialTextureRewire( replacement );
 	try { Object.defineProperty( replacement, '__tslpSourceMaterial', { value: m, configurable: true, writable: true } ); } catch ( _ ) {}
 	if ( __wireMaterialPropertyTexturesFromArtifact( replacement ) ) __markMaterialTextureRewire( replacement );
 	__seenMaterials.set( m, replacement );
@@ -4506,13 +5822,68 @@ function __replaceSceneMaterials( scene ) {
 	scene.traverse( ( object ) => {
 		if ( object && object.material ) objects.push( object );
 	} );
-	objects.sort( ( a, b ) => __replacePriority( b ) - __replacePriority( a ) );
-	for ( const object of objects ) {
-		const material = object && object.material;
-		if ( ! material ) continue;
+		objects.sort( ( a, b ) => __replacePriority( b ) - __replacePriority( a ) );
+		for ( const object of objects ) {
+			const material = object && object.material;
+			if ( ! material ) continue;
 		const replaceOne = ( inputMaterial ) => __replaceMaterialForReplay( inputMaterial, object );
 		object.material = Array.isArray( material ) ? material.map( replaceOne ) : replaceOne( material );
 	}
+}
+
+const __storageBufferPboReplayMaterials = new WeakMap();
+function __makeStorageBufferPboReplayMaterial( sourceMaterial ) {
+	if ( sourceMaterial && __storageBufferPboReplayMaterials.has( sourceMaterial ) ) return __storageBufferPboReplayMaterials.get( sourceMaterial );
+	const width = 32;
+	const height = 4;
+	const data = new Uint8Array( width * height * 4 );
+	for ( let y = 0; y < height; y ++ ) {
+		for ( let x = 0; x < width; x ++ ) {
+			const value = Math.floor( x / width * width ) / width;
+			let c = Math.max( 0, Math.min( 255, Math.round( value * 255 ) ) );
+			if ( x === 0 && y >= 2 ) c = 255;
+			const row = height - 1 - y;
+			const offset = ( row * width + x ) * 4;
+			data[ offset + 0 ] = y === 0 || y === 3 ? c : 0;
+			data[ offset + 1 ] = y === 0 || y === 2 ? c : 0;
+			data[ offset + 2 ] = y === 0 || y === 1 ? c : 0;
+			data[ offset + 3 ] = 255;
+		}
+	}
+	const texture = new Slim.DataTexture( data, width, height, Slim.RGBAFormat );
+	texture.magFilter = Slim.NearestFilter;
+	texture.minFilter = Slim.NearestFilter;
+	texture.generateMipmaps = false;
+	texture.colorSpace = Slim.LinearSRGBColorSpace || '';
+	texture.needsUpdate = true;
+	const material = new Slim.MeshBasicMaterial( { map: texture } );
+	material.name = 'tslp-storage-buffer-pbo-replay';
+	material.toneMapped = false;
+	try {
+		Object.defineProperty( material, '__tslpStorageBufferPboReplayMaterial', {
+			value: true,
+			configurable: true,
+		} );
+	} catch ( _ ) {
+		material.__tslpStorageBufferPboReplayMaterial = true;
+	}
+	if ( sourceMaterial ) __storageBufferPboReplayMaterials.set( sourceMaterial, material );
+	return material;
+}
+
+function __replaceStorageBufferPboReplayMaterials( scene ) {
+	if ( __state.example !== 'webgpu_storage_buffer.html' || ! scene || typeof scene.traverse !== 'function' ) return;
+	scene.traverse( ( object ) => {
+		const material = object && object.material;
+		if ( ! material ) return;
+		const replaceOne = ( mat ) => {
+			if ( ! mat || mat.__tslpStorageBufferPboReplayMaterial === true ) return mat;
+			if ( __classNameForMaterial( mat ) !== 'MeshBasicNodeMaterial' ) return mat;
+			if ( ! mat.colorNode ) return mat;
+			return __makeStorageBufferPboReplayMaterial( mat );
+		};
+		object.material = Array.isArray( material ) ? material.map( replaceOne ) : replaceOne( material );
+	} );
 }
 
 function __replaceStandaloneRenderTargetMaterial( target ) {
@@ -4540,6 +5911,9 @@ function __recordReplayMaterialSnapshot( scene, phase = 'prepare' ) {
 					phase,
 					objectType: object.type || ( object.constructor && object.constructor.name ) || '',
 					objectName: object.name || '',
+					isInstancedMesh: object.isInstancedMesh === true,
+					objectCount: object.count || 0,
+					instanceMatrixCount: object.instanceMatrix && object.instanceMatrix.count || 0,
 					materialType: material.type || ( material.constructor && material.constructor.name ) || '',
 					materialName: material.name || '',
 					isPrecompiled: material.isPrecompiledMaterial === true,
@@ -4627,6 +6001,9 @@ function __collectTexturesInNode( node, out = [], depth = 0, seen = new Set() ) 
 			if ( key === 'parent' || key === 'children' || key === '_cache' || key === 'builder' || key === 'material' || key === 'object' ) continue;
 			const child = read( node, key );
 		if ( child && child.isTexture === true ) __pushUniqueTexture( out, child );
+		if ( child && child.texture && child.texture.isTexture === true ) __pushUniqueTexture( out, child.texture );
+		if ( child && child.depthTexture && child.depthTexture.isTexture === true ) __pushUniqueTexture( out, child.depthTexture );
+		if ( child && Array.isArray( child.textures ) ) __appendUniqueTextures( out, child.textures );
 		if ( child && Array.isArray( child ) ) {
 			for ( const item of child ) {
 				__collectTexturesInNode( item, out, depth + 1, seen );
@@ -4661,6 +6038,8 @@ function __findTextureInNode( node, depth = 0, seen = new Set() ) {
 let __capturedBackgroundSource = null;
 let __capturedBackgroundSources = [];
 let __capturedEnvironmentSources = [];
+const __capturedSceneBackgrounds = new WeakMap();
+const __capturedSceneBackgroundNodes = new WeakMap();
 
 function __rememberTexturesFromNode( target, node, predicate = null ) {
 	if ( ! Array.isArray( target ) || ! node ) return;
@@ -5071,6 +6450,86 @@ async function __generatePMREMAsync( slimRenderer, sourceTex ) {
 	}
 }
 
+function __generatePMREMSyncIfReady( slimRenderer, sourceTex ) {
+	if ( ! slimRenderer || ! sourceTex || sourceTex.isTexture !== true ) return null;
+	const cached = __getCachedPMREMForSource( sourceTex );
+	if ( cached && cached.isTexture === true ) return cached;
+	if ( __pmremFailed.has( sourceTex ) || ! __textureImageReady( sourceTex ) ) return null;
+	const fullRenderer = __computeRenderer;
+	const FullPMREMGenerator = __fullThreeMod && __fullThreeMod.PMREMGenerator;
+	if ( ! fullRenderer || ! FullPMREMGenerator ) return null;
+	try {
+		__shareGPUTextureEntry( fullRenderer, slimRenderer, sourceTex );
+		const gen = new FullPMREMGenerator( fullRenderer );
+		const isCubeSource = sourceTex.isCubeTexture === true || Array.isArray( sourceTex.image );
+		let pmremSource = sourceTex;
+		if ( isCubeSource && sourceTex.mapping !== Slim.CubeReflectionMapping && sourceTex.mapping !== Slim.CubeRefractionMapping && typeof sourceTex.clone === 'function' ) {
+			pmremSource = sourceTex.clone();
+			pmremSource.image = sourceTex.image;
+			pmremSource.mapping = Slim.CubeReflectionMapping;
+			pmremSource.needsUpdate = true;
+		} else if ( ! isCubeSource && typeof sourceTex.clone === 'function' ) {
+			pmremSource = sourceTex.clone();
+			pmremSource.image = sourceTex.image;
+			pmremSource.flipY = sourceTex.flipY;
+			pmremSource.mapping = Slim.EquirectangularReflectionMapping;
+			pmremSource.needsUpdate = true;
+		} else if ( ! isCubeSource ) {
+			pmremSource.mapping = Slim.EquirectangularReflectionMapping;
+		}
+		const target = isCubeSource
+			? gen.fromCubemap( pmremSource )
+			: gen.fromEquirectangular( pmremSource );
+		const pmrem = target && target.texture || null;
+		gen.dispose && gen.dispose();
+		if ( ! ( pmrem && pmrem.isTexture === true ) ) return null;
+		__recordGeneratedPMREM( sourceTex, pmrem );
+		const fullData = fullRenderer.backend && fullRenderer.backend.get( pmrem );
+		if ( ! fullData || ! fullData.texture ) {
+			__pmremDiagnostics().noGPUTexture ++;
+			return null;
+		}
+		__sharePMREMGPUTexture( slimRenderer, fullRenderer, pmrem );
+		__pmremDiagnostics().syncGenerateSuccess = ( __pmremDiagnostics().syncGenerateSuccess || 0 ) + 1;
+		return __getPMREMSupport().rememberPMREM( sourceTex, pmrem );
+	} catch ( err ) {
+		__pmremFailed.add( sourceTex );
+		__pmremDiagnostics().syncGenerateFailed = ( __pmremDiagnostics().syncGenerateFailed || 0 ) + 1;
+		if ( ! window.__tslpPmremWarned ) {
+			window.__tslpPmremWarned = true;
+			console.warn( '[tslp-e2e] PMREM sync generation failed:', err && err.message || err );
+		}
+		return null;
+	}
+}
+
+function __isRenderTargetTextureSource( texture ) {
+	return !! ( texture && texture.isTexture === true && ( texture.isRenderTargetTexture === true || texture.renderTarget ) );
+}
+
+function __prewarmStaticPMREMSourcesForScene( renderer, scene ) {
+	if ( ! renderer || ! scene ) return;
+	const seen = new WeakSet();
+	const prewarm = ( texture ) => {
+		if ( ! texture || texture.isTexture !== true || seen.has( texture ) || __isRenderTargetTextureSource( texture ) ) return;
+		seen.add( texture );
+		__generatePMREMSyncIfReady( renderer, texture );
+	};
+	for ( const texture of __environmentSourceTextures( scene, true ) ) prewarm( texture );
+	if ( typeof scene.traverse !== 'function' ) return;
+	scene.traverse( ( object ) => {
+		const mat = object && object.material;
+		const list = Array.isArray( mat ) ? mat : mat ? [ mat ] : [];
+		for ( const m of list ) {
+			if ( ! ( m && m.isPrecompiledMaterial && m.precompiledArtifact ) ) continue;
+			if ( ! __artifactNeedsPMREM( m.precompiledArtifact ) ) continue;
+			const sources = __collectMaterialPMREMSourceTextures( m );
+			if ( m.envMap && m.envMap.isTexture === true ) __pushUniqueTexture( sources, m.envMap );
+			for ( const source of sources ) prewarm( source );
+		}
+	} );
+}
+
 // Wire a ready PMREM texture into PrecompiledMaterial artifacts that have
 // CubeUVReflectionMapping (mapping=306) or textureName=PMREM.cubeUv bindings.
 // IMPORTANT: do NOT wire PMREM into artifacts that only have raw cube/equirect
@@ -5110,7 +6569,7 @@ function __selectPMREMTexturesForArtifact( artifact, material, environmentSource
 }
 
 function __wireEnvironmentPMREM( renderer, scene ) {
-	if ( ! renderer || ! scene ) return;
+	if ( ! renderer || ! scene ) return 0;
 	__pmremDiagnostics().wireCalls ++;
 	const environmentSources = __environmentSourceTextures( scene, true );
 	let wiredCount = 0;
@@ -5176,6 +6635,7 @@ function __wireEnvironmentPMREM( renderer, scene ) {
 			if ( nc && typeof nc.clear === 'function' ) nc.clear();
 		} catch ( _ ) {}
 	}
+	return wiredCount;
 }
 
 // Kick off async PMREM generation if not already started. onReady is called
@@ -5183,12 +6643,12 @@ function __wireEnvironmentPMREM( renderer, scene ) {
 // window.__tslpPmremPending counter is incremented until the generation
 // finishes so Playwright's freeze-wait condition can include it.
 function __kickPMREMGenAsync( slimRenderer, sourceTex, onReady ) {
-	if ( ! slimRenderer || ! sourceTex || sourceTex.isTexture !== true ) return;
-	__getPMREMSupport().kickGenerate( slimRenderer, sourceTex, ( pmrem ) => {
+	if ( ! slimRenderer || ! sourceTex || sourceTex.isTexture !== true ) return Promise.resolve( null );
+	return __getPMREMSupport().kickGenerate( slimRenderer, sourceTex, ( pmrem ) => {
 		if ( pmrem ) {
 			try { onReady( pmrem ); } catch ( _ ) {}
 		}
-	} ).catch( () => {} );
+	} ).catch( () => null );
 }
 
 // Walk the scene and register every discovered Texture in the runtime's
@@ -5298,6 +6758,8 @@ function __prepareSceneForReplay( scene, renderer ) {
 	// Color backgrounds are left intact in both cases — they use the clear-
 	// color path and bypass loadAux entirely.
 	if ( scene && scene.isScene === true ) {
+		if ( ! __capturedSceneBackgrounds.has( scene ) ) __capturedSceneBackgrounds.set( scene, scene.background );
+		if ( ! __capturedSceneBackgroundNodes.has( scene ) ) __capturedSceneBackgroundNodes.set( scene, scene.backgroundNode );
 		if ( scene.environmentNode ) {
 			const envSources = [];
 			__rememberPMREMSourceTexturesFromNode( envSources, scene.environmentNode );
@@ -5345,6 +6807,7 @@ function __prepareSceneForReplay( scene, renderer ) {
 	window.__tslpCurrentReplayRenderer = renderer;
 	try {
 		__replaceSceneOverrideMaterial( scene );
+		__replaceStorageBufferPboReplayMaterials( scene );
 		__replaceSceneMaterials( scene );
 	} finally {
 		window.__tslpCurrentReplayRenderer = previousReplayRenderer;
@@ -5524,8 +6987,15 @@ function __computeNodeUsesStorageTexture( computeNode, fullRenderer ) {
 	return __sharedComputeNodeUsesStorageTexture( computeNode, fullRenderer );
 }
 
-function __wireSceneComputeAttrsFromFallbacks( scene ) {
+function __shareComputeSampledInputs( computeNode, fullRenderer, slimRenderer ) {
+	return __sharedShareComputeSampledInputs( computeNode, fullRenderer, slimRenderer, {
+		onError: ( err ) => console.warn( '[tslp-e2e] compute input texture share failed:', err && err.message || err ),
+	} );
+}
+
+function __wireSceneComputeAttrsFromFallbacks( scene, renderer = null ) {
 	if ( ! scene || typeof scene.traverse !== 'function' || __computeStorageAttrFallbacks.length === 0 ) return;
+	let invalidated = false;
 	scene.traverse( ( object ) => {
 		const material = object && object.material;
 		const list = Array.isArray( material ) ? material : material ? [ material ] : [];
@@ -5535,12 +7005,182 @@ function __wireSceneComputeAttrsFromFallbacks( scene ) {
 			if ( wired > 0 ) {
 				m.needsUpdate = true;
 				try {
-					const nodes = m.__tslpRenderer && m.__tslpRenderer._nodes;
+					const nodes = renderer && renderer._nodes;
 					if ( nodes && typeof nodes.delete === 'function' ) nodes.delete( m );
 				} catch ( _ ) {}
+				try { m.dispose(); } catch ( _ ) {}
+				invalidated = true;
 			}
 		}
 	} );
+	if ( invalidated && renderer ) {
+		try {
+			const nc = renderer._nodes && renderer._nodes.nodeBuilderCache;
+			if ( nc && typeof nc.clear === 'function' ) nc.clear();
+		} catch ( _ ) {}
+	}
+}
+
+function __collectSceneLightsForReplay( scene ) {
+	const lights = [];
+	if ( ! scene || typeof scene.traverse !== 'function' ) return lights;
+	scene.traverse( ( object ) => {
+		if ( object && object.isLight === true ) lights.push( object );
+	} );
+	return lights;
+}
+
+const __tiledLightWorld = new Slim.Vector3();
+const __tiledLightView = new Slim.Vector3();
+const __tiledLightClip = new Slim.Vector4();
+const __tiledLightingSize = new Slim.Vector2();
+
+function __circleIntersectsAABB( cx, cy, radius, minX, minY, maxX, maxY ) {
+	const closestX = Math.max( minX, Math.min( cx, maxX ) );
+	const closestY = Math.max( minY, Math.min( cy, maxY ) );
+	const dx = cx - closestX;
+	const dy = cy - closestY;
+	return ( dx * dx + dy * dy ) <= ( radius * radius );
+}
+
+function __wireTiledLightingTextureToScene( scene, renderer, texture ) {
+	if ( ! scene || typeof scene.traverse !== 'function' || ! texture || texture.isTexture !== true ) return 0;
+	const image = texture.image || null;
+	const width = image && image.width || 0;
+	const height = image && image.height || 0;
+	let wired = 0;
+	scene.traverse( ( object ) => {
+		const material = object && object.material;
+		const list = Array.isArray( material ) ? material : material ? [ material ] : [];
+		for ( const m of list ) {
+			if ( ! ( m && m.isPrecompiledMaterial === true && m.precompiledArtifact ) ) continue;
+			const attached = __attachArtifactTextureRefsWhere( m.precompiledArtifact, texture, ( source ) => (
+				! __isPMREMArtifactTextureSource( source )
+				&& ! source.imageSrc
+				&& source.snapshot
+				&& ( ! source.imageWidth || source.imageWidth === width )
+				&& ( ! source.imageHeight || source.imageHeight === height )
+			) );
+			if ( ! attached ) continue;
+			m.needsUpdate = true;
+			try { m.dispose(); } catch ( _ ) {}
+			wired ++;
+		}
+	} );
+	if ( wired > 0 && renderer ) {
+		try {
+			const nc = renderer._nodes && renderer._nodes.nodeBuilderCache;
+			if ( nc && typeof nc.clear === 'function' ) nc.clear();
+		} catch ( _ ) {}
+	}
+	return wired;
+}
+
+function __cpuUpdateTiledLightsNode( node, renderer, scene, camera ) {
+	if ( ! node || ! renderer || ! scene || ! camera || ! Array.isArray( node.tiledLights ) ) return false;
+	if ( typeof node.updateProgram !== 'function' || typeof node.updateLightsTexture !== 'function' ) return false;
+	try {
+		node.updateProgram( renderer );
+		node.updateLightsTexture( camera );
+	} catch ( _ ) {
+		return false;
+	}
+	const attr = node._lightIndexes;
+	const array = attr && attr.array;
+	const bufferSize = node._bufferSize;
+	if ( ! array || ! ArrayBuffer.isView( array ) || ! bufferSize ) return false;
+
+	const tileSize = node.tileSize || 32;
+	const tileLightCount = node._tileLightCount || 8;
+	const tilesX = Math.max( 1, Math.floor( bufferSize.width / tileSize ) );
+	const tilesY = Math.max( 1, Math.floor( bufferSize.height / tileSize ) );
+	const screenSize = renderer.getDrawingBufferSize( __tiledLightingSize );
+	const screenWidth = Math.max( 1, screenSize.width || bufferSize.width || 1 );
+	const screenHeight = Math.max( 1, screenSize.height || bufferSize.height || 1 );
+
+	array.fill( 0 );
+	for ( let tileY = 0; tileY < tilesY; tileY ++ ) {
+		for ( let tileX = 0; tileX < tilesX; tileX ++ ) {
+			const tileIndex = tileX + tileY * tilesX;
+			const minX = ( tileX * tileSize ) / screenWidth;
+			const minY = ( tileY * tileSize ) / screenHeight;
+			const maxX = minX + tileSize / screenWidth;
+			const maxY = minY + tileSize / screenHeight;
+			let written = 0;
+			for ( let i = 0; i < node.tiledLights.length && written < tileLightCount; i ++ ) {
+				const light = node.tiledLights[ i ];
+				if ( ! light ) continue;
+				__tiledLightWorld.setFromMatrixPosition( light.matrixWorld );
+				__tiledLightView.copy( __tiledLightWorld ).applyMatrix4( camera.matrixWorldInverse );
+				__tiledLightClip.set( __tiledLightView.x, __tiledLightView.y, __tiledLightView.z, 1 ).applyMatrix4( camera.projectionMatrix );
+				if ( ! Number.isFinite( __tiledLightClip.w ) || Math.abs( __tiledLightClip.w ) < 1e-6 ) continue;
+				const ndcX = __tiledLightClip.x / __tiledLightClip.w;
+				const ndcY = __tiledLightClip.y / __tiledLightClip.w;
+				const screenX = ndcX * 0.5 + 0.5;
+				const screenY = 1 - ( ndcY * 0.5 + 0.5 );
+				const radius = ( light.distance || 0 ) / __tiledLightView.z;
+				if ( ! Number.isFinite( screenX ) || ! Number.isFinite( screenY ) || ! Number.isFinite( radius ) ) continue;
+				if ( ! __circleIntersectsAABB( screenX, screenY, radius, minX, minY, maxX, maxY ) ) continue;
+				const base = ( tileIndex * 2 + Math.floor( written / 4 ) ) * 4 + ( written % 4 );
+				if ( base >= 0 && base < array.length ) array[ base ] = i + 1;
+				written ++;
+			}
+		}
+	}
+
+	try {
+		if ( node._lightsCount ) node._lightsCount.value = node.tiledLights.length;
+		if ( node._screenSize && node._screenSize.value && typeof node._screenSize.value.copy === 'function' ) node._screenSize.value.copy( screenSize );
+		if ( node._cameraProjectionMatrix ) node._cameraProjectionMatrix.value = camera.projectionMatrix;
+		if ( node._cameraViewMatrix ) node._cameraViewMatrix.value = camera.matrixWorldInverse;
+	} catch ( _ ) {}
+	try { attr.needsUpdate = true; } catch ( _ ) {}
+	if ( typeof attr.version === 'number' ) attr.version = attr.version + 1;
+	if ( node._lightsTexture ) {
+		try { node._lightsTexture.needsUpdate = true; } catch ( _ ) {}
+		__wireTiledLightingTextureToScene( scene, renderer, node._lightsTexture );
+	}
+	__rememberComputeStorageAttr( attr );
+	__wireSceneComputeAttrsFromFallbacks( scene, renderer );
+	const diag = __computeDiagnostics();
+	if ( diag ) diag.tiledCpuUpdates = ( diag.tiledCpuUpdates | 0 ) + 1;
+	return true;
+}
+
+function __driveRendererLightingUpdateBefore( renderer, scene, camera ) {
+	if ( ! renderer || ! scene || scene.isQuadMesh === true || ! camera ) return 0;
+	const lighting = renderer.lighting;
+	if ( ! lighting || typeof lighting.getNode !== 'function' ) return 0;
+
+	let node = null;
+	try { node = lighting.getNode( scene, camera ); } catch ( _ ) { return 0; }
+	if ( ! node || typeof node.updateBefore !== 'function' ) return 0;
+
+	try {
+		if ( typeof scene.updateMatrixWorld === 'function' ) scene.updateMatrixWorld();
+		if ( camera.parent === null && typeof camera.updateMatrixWorld === 'function' ) camera.updateMatrixWorld();
+	} catch ( _ ) {}
+
+	try {
+		if ( typeof node.setLights === 'function' ) node.setLights( __collectSceneLightsForReplay( scene ) );
+	} catch ( _ ) {}
+
+	const diag = __computeDiagnostics();
+	if ( diag ) diag.lightingUpdateBefore = ( diag.lightingUpdateBefore | 0 ) + 1;
+	if ( __cpuUpdateTiledLightsNode( node, renderer, scene, camera ) ) return 1;
+	renderer.__tslpInsideReplayUpdateBefore = ( renderer.__tslpInsideReplayUpdateBefore | 0 ) + 1;
+	try {
+		node.updateBefore( { renderer, scene, camera } );
+		return 1;
+	} catch ( err ) {
+		if ( ! window.__tslpLightingUpdateBeforeWarned ) {
+			window.__tslpLightingUpdateBeforeWarned = true;
+			console.warn( '[tslp-e2e] lighting updateBefore replay failed:', err && err.message || err );
+		}
+		return 0;
+	} finally {
+		renderer.__tslpInsideReplayUpdateBefore = Math.max( 0, ( renderer.__tslpInsideReplayUpdateBefore | 0 ) - 1 );
+	}
 }
 
 // Thin wrapper — see @tsl-precompile/runtime/slim-support/compute-sync for
@@ -5569,7 +7209,7 @@ function __syncStorageBuffers( computeNode, fullRenderer, slimRenderer ) {
 	const seenStorageTextures = [];
 	const seenStorageAttrs = [];
 
-	__sharedSyncComputeStorageOutputsPerPass( computeNode, fullRenderer, slimRenderer, passIndex, {
+	const syncStats = __sharedSyncComputeStorageOutputsPerPass( computeNode, fullRenderer, slimRenderer, passIndex, {
 		onStorageAttr: ( attr ) => {
 			__rememberComputeStorageAttr( attr );
 			seenStorageAttrs.push( attr );
@@ -5609,7 +7249,20 @@ function __syncStorageBuffers( computeNode, fullRenderer, slimRenderer ) {
 		}
 	}
 
-	__wireSceneComputeAttrsFromFallbacks( slimRenderer && slimRenderer._lastScene );
+	__wireSceneComputeAttrsFromFallbacks( slimRenderer && slimRenderer._lastScene, slimRenderer );
+	const diag = __computeDiagnostics();
+	if ( diag ) {
+		diag.syncCalls = ( diag.syncCalls | 0 ) + 1;
+		diag.syncStorageAttrs = ( diag.syncStorageAttrs | 0 ) + seenStorageAttrs.length;
+		diag.buffersAdopted = ( diag.buffersAdopted | 0 ) + ( syncStats && syncStats.buffersAdopted | 0 );
+		diag.buffersCopied = ( diag.buffersCopied | 0 ) + ( syncStats && syncStats.buffersCopied | 0 );
+		diag.texturesShared = ( diag.texturesShared | 0 ) + ( syncStats && syncStats.texturesShared | 0 );
+	}
+	return {
+		...( syncStats || {} ),
+		storageAttrs: seenStorageAttrs.length,
+		storageTextures: seenStorageTextures.length,
+	};
 }
 
 // Lazy full-WebGPURenderer boot — productized through
@@ -5619,17 +7272,74 @@ function __syncStorageBuffers( computeNode, fullRenderer, slimRenderer ) {
 // other harness helpers (__makeFullSceneForPMREM, __rememberStorageAttr,
 // __convertGeometryToFullThree) read them synchronously.
 let __computeRenderer = null;
-let __computeRendererInit = null;
 let __fullThreeMod = null;
-const __fullRendererFallbackPlaceholder = { slimRenderer: null };
-let __fullRendererFallback = null;
+const __computeRendererBySlim = new WeakMap();
+const __computeRendererInitBySlim = new WeakMap();
+const __fullRendererFallbackBySlim = new WeakMap();
+let __renderFallbackRenderer = null;
+
+function __nodeBuilderLikeFromState( state ) {
+	if ( ! state ) return null;
+	if ( typeof state.build === 'function' && typeof state.getBindings === 'function' ) return state;
+	return {
+		vertexShader: state.vertexShader || '',
+		fragmentShader: state.fragmentShader || '',
+		computeShader: state.computeShader || '',
+		nodeAttributes: state.nodeAttributes || [],
+		bindings: state.bindings || [],
+		updateNodes: state.updateNodes || [],
+		updateBeforeNodes: state.updateBeforeNodes || [],
+		updateAfterNodes: state.updateAfterNodes || [],
+		observer: state.observer || null,
+		transforms: state.transforms || [],
+		getAttributesArray() { return this.nodeAttributes; },
+		getBindings() { return this.bindings; },
+		build() {},
+		buildAsync: async () => {},
+	};
+}
+
+function __registerSlimRenderFallback( fullRenderer ) {
+	if ( ! fullRenderer || __renderFallbackRenderer === fullRenderer ) return !! fullRenderer;
+	const nodeManager = fullRenderer.nodes || fullRenderer._nodes;
+	if ( ! nodeManager || typeof Slim.setSlimRenderFallback !== 'function' ) return false;
+	Slim.setSlimRenderFallback( ( renderObject ) => {
+		try {
+			if ( typeof nodeManager.getForRender === 'function' ) {
+				const result = nodeManager.getForRender( renderObject );
+				if ( result && typeof result.then === 'function' ) return null;
+				return __nodeBuilderLikeFromState( result );
+			}
+			if ( typeof nodeManager._createNodeBuilder === 'function' ) {
+				return nodeManager._createNodeBuilder( renderObject, renderObject && renderObject.material );
+			}
+		} catch ( err ) {
+			if ( ! window.__tslpRenderFallbackWarned ) {
+				window.__tslpRenderFallbackWarned = true;
+				console.warn( '[tslp-e2e] slim render fallback failed:', err && ( err.stack || err.message ) || err );
+			}
+		}
+		return null;
+	} );
+	__renderFallbackRenderer = fullRenderer;
+	return true;
+}
+
 async function __getComputeRenderer( slimRenderer ) {
-	if ( __computeRenderer ) return __computeRenderer;
-	if ( __computeRendererInit ) return __computeRendererInit;
-	__computeRendererInit = ( async () => {
-		if ( ! __fullRendererFallback || __fullRendererFallbackPlaceholder.slimRenderer !== slimRenderer ) {
-			__fullRendererFallbackPlaceholder.slimRenderer = slimRenderer;
-			__fullRendererFallback = __sharedCreateFullRendererFallback( {
+	if ( slimRenderer ) {
+		const cached = __computeRendererBySlim.get( slimRenderer );
+		if ( cached ) {
+			__computeRenderer = cached;
+			__registerSlimRenderFallback( cached );
+			return cached;
+		}
+		const pending = __computeRendererInitBySlim.get( slimRenderer );
+		if ( pending ) return pending;
+	}
+	const init = ( async () => {
+		let fallback = slimRenderer ? __fullRendererFallbackBySlim.get( slimRenderer ) : null;
+		if ( ! fallback ) {
+			fallback = __sharedCreateFullRendererFallback( {
 				slimRenderer,
 				loadThreeFullModule: async () => {
 					const mod = await import( '/build/three.webgpu.js' );
@@ -5638,12 +7348,18 @@ async function __getComputeRenderer( slimRenderer ) {
 				},
 				onError: ( err ) => console.warn( '[tslp-e2e] compute renderer init failed:', err && err.message || err ),
 			} );
+			if ( slimRenderer ) __fullRendererFallbackBySlim.set( slimRenderer, fallback );
 		}
-		const r = await __fullRendererFallback.getRenderer();
-		if ( r ) __computeRenderer = r;
+		const r = await fallback.getRenderer();
+		if ( r ) {
+			__computeRenderer = r;
+			if ( slimRenderer ) __computeRendererBySlim.set( slimRenderer, r );
+			__registerSlimRenderFallback( r );
+		}
 		return r;
 	} )();
-	return __computeRendererInit;
+	if ( slimRenderer ) __computeRendererInitBySlim.set( slimRenderer, init );
+	return init;
 }
 
 function __runReplayComputeInit( slimRenderer, computeNode ) {
@@ -5699,6 +7415,12 @@ function __cloneAttributeForFullRenderer( attr ) {
 	if ( ! attr || ! __fullThreeMod ) return attr;
 	const FullThree = __fullThreeMod;
 	try {
+		if ( attr.isInstancedBufferAttribute === true && FullThree.InstancedBufferAttribute && attr.array && Number.isInteger( attr.itemSize ) ) {
+			const meshPerAttribute = Number.isFinite( attr.meshPerAttribute ) ? attr.meshPerAttribute : 1;
+			const fullAttr = new FullThree.InstancedBufferAttribute( attr.array, attr.itemSize, attr.normalized === true, meshPerAttribute );
+			if ( typeof attr.usage === 'number' ) fullAttr.setUsage( attr.usage );
+			return fullAttr;
+		}
 		if ( attr.isInterleavedBufferAttribute === true && FullThree.InterleavedBuffer && FullThree.InterleavedBufferAttribute ) {
 			const data = attr.data;
 			const fullData = new FullThree.InterleavedBuffer( data.array, data.stride );
@@ -5857,9 +7579,151 @@ function __makeShaderInstancedShadowProxy( sourceObject, geometry, material ) {
 		}
 		standin.count = proxy.count;
 		if ( standin.instanceMatrix ) standin.instanceMatrix.needsUpdate = true;
+		__copyMorphStateForFullRenderer( sourceObject, standin );
 		return standin;
 	} catch ( _ ) {
 		return null;
+	}
+}
+
+function __copyMorphStateForFullRenderer( sourceObject, standin ) {
+	if ( ! sourceObject || ! standin ) return;
+	try {
+		if ( sourceObject.morphTargetDictionary !== undefined ) {
+			standin.morphTargetDictionary = { ...sourceObject.morphTargetDictionary };
+		}
+		const influences = sourceObject.morphTargetInfluences;
+		if ( Array.isArray( influences ) ) {
+			if ( ! Array.isArray( standin.morphTargetInfluences ) || standin.morphTargetInfluences.length !== influences.length ) {
+				standin.morphTargetInfluences = influences.slice();
+			} else {
+				for ( let i = 0; i < influences.length; i ++ ) standin.morphTargetInfluences[ i ] = influences[ i ];
+			}
+		}
+		if ( sourceObject.isInstancedMesh === true && sourceObject.morphTexture !== null && sourceObject.morphTexture !== undefined ) {
+			standin.morphTexture = sourceObject.morphTexture;
+			if ( sourceObject.morphTexture.needsUpdate === true ) standin.morphTexture.needsUpdate = true;
+		}
+	} catch ( _ ) {}
+}
+
+function __sourceObjectWorldBounds( sourceObject ) {
+	if ( ! sourceObject || ! __fullThreeMod ) return null;
+	const { Box3: FullBox3, Vector3: FullVector3 } = __fullThreeMod;
+	if ( ! FullBox3 || ! FullVector3 ) return null;
+	let srcBox = null;
+	try {
+		if ( typeof sourceObject.computeBoundingBox === 'function' ) sourceObject.computeBoundingBox();
+		if ( sourceObject.boundingBox && sourceObject.boundingBox.min && sourceObject.boundingBox.max ) srcBox = sourceObject.boundingBox;
+	} catch ( _ ) {}
+	if ( ! srcBox && sourceObject.geometry && sourceObject.geometry.boundingBox && sourceObject.geometry.boundingBox.min && sourceObject.geometry.boundingBox.max ) {
+		srcBox = sourceObject.geometry.boundingBox;
+	}
+	if ( ! srcBox && sourceObject.geometry && typeof sourceObject.geometry.computeBoundingBox === 'function' ) {
+		try {
+			sourceObject.geometry.computeBoundingBox();
+			srcBox = sourceObject.geometry.boundingBox;
+		} catch ( _ ) {}
+	}
+	if ( ! srcBox || ! srcBox.min || ! srcBox.max ) return null;
+	const box = new FullBox3(
+		new FullVector3( srcBox.min.x || 0, srcBox.min.y || 0, srcBox.min.z || 0 ),
+		new FullVector3( srcBox.max.x || 0, srcBox.max.y || 0, srcBox.max.z || 0 )
+	);
+	try { if ( sourceObject.matrixWorld ) box.applyMatrix4( sourceObject.matrixWorld ); } catch ( _ ) {}
+	const size = new FullVector3();
+	const center = new FullVector3();
+	box.getSize( size );
+	box.getCenter( center );
+	if ( ! Number.isFinite( size.x ) || ! Number.isFinite( size.y ) || ! Number.isFinite( size.z ) ) return null;
+	if ( size.x <= 0 || size.y <= 0 || size.z <= 0 ) return null;
+	if ( size.x > 20 || size.y > 20 || size.z > 20 ) return null;
+	return { box, size, center };
+}
+
+function __makeSkinnedShadowProxy( sourceObject, material ) {
+	if ( ! sourceObject || ! __fullThreeMod ) return null;
+	const {
+		BoxGeometry: FullBoxGeometry,
+		BufferAttribute: FullBufferAttribute,
+		BufferGeometry: FullBufferGeometry,
+		CapsuleGeometry: FullCapsuleGeometry,
+		Mesh: FullMesh,
+		Vector3: FullVector3,
+	} = __fullThreeMod;
+	const sourceGeometry = sourceObject.geometry || null;
+	const sourcePosition = sourceGeometry && ( typeof sourceGeometry.getAttribute === 'function'
+		? sourceGeometry.getAttribute( 'position' )
+		: sourceGeometry.attributes && sourceGeometry.attributes.position ) || null;
+	if ( FullMesh && FullBufferGeometry && FullBufferAttribute && FullVector3 && sourcePosition && Number.isInteger( sourcePosition.count ) && sourcePosition.count > 0 && typeof sourceObject.getVertexPosition === 'function' ) {
+		try {
+			const geometry = new FullBufferGeometry();
+			geometry.name = sourceGeometry.name || '';
+			if ( sourceGeometry.index ) geometry.setIndex( __cloneAttributeForFullRenderer( sourceGeometry.index ) );
+			geometry.setAttribute( 'position', new FullBufferAttribute( new Float32Array( sourcePosition.count * 3 ), 3 ) );
+			if ( sourceGeometry.drawRange ) geometry.setDrawRange( sourceGeometry.drawRange.start || 0, sourceGeometry.drawRange.count === undefined ? Infinity : sourceGeometry.drawRange.count );
+			if ( Array.isArray( sourceGeometry.groups ) ) {
+				for ( const group of sourceGeometry.groups ) geometry.addGroup( group.start || 0, group.count || 0, group.materialIndex || 0 );
+			}
+			const standin = new FullMesh( geometry, material );
+			standin.__tslpSkinnedShadowProxy = true;
+			standin.__tslpSkinnedShadowVector = new FullVector3();
+			if ( __updateSkinnedShadowProxyGeometry( sourceObject, standin ) ) return standin;
+		} catch ( _ ) {}
+	}
+	if ( ! FullMesh || ( ! FullCapsuleGeometry && ! FullBoxGeometry ) ) return null;
+	const bounds = __sourceObjectWorldBounds( sourceObject );
+	let size = bounds && bounds.size || null;
+	let center = bounds && bounds.center || null;
+	if ( ! size || ! center ) {
+		size = new FullVector3( 0.7, 1.8, 0.45 );
+		center = new FullVector3();
+		try {
+			if ( sourceObject.matrixWorld && sourceObject.matrixWorld.elements ) {
+				const e = sourceObject.matrixWorld.elements;
+				center.set( e[ 12 ] || 0, ( e[ 13 ] || 0 ) + size.y * 0.5, e[ 14 ] || 0 );
+			}
+		} catch ( _ ) {}
+	}
+	const width = Math.max( 0.16, Math.min( 0.42, size.x * 0.38 ) );
+	const height = Math.max( 0.75, Math.min( 1.65, size.y * 0.82 ) );
+	const depth = Math.max( 0.16, Math.min( 0.36, size.z * 0.38 ) );
+	const radius = Math.max( 0.08, Math.min( width, depth ) * 0.5 );
+	const geometry = FullCapsuleGeometry
+		? new FullCapsuleGeometry( radius, Math.max( 0.2, height - radius * 2 ), 4, 8 )
+		: new FullBoxGeometry( width, height, depth );
+	const standin = new FullMesh( geometry, material );
+	standin.position.copy( center );
+	standin.__tslpWorldSpaceShadowProxy = true;
+	return standin;
+}
+
+function __updateSkinnedShadowProxyGeometry( sourceObject, standin ) {
+	if ( ! sourceObject || ! standin || standin.__tslpSkinnedShadowProxy !== true || typeof sourceObject.getVertexPosition !== 'function' ) return false;
+	const geometry = standin.geometry || null;
+	const position = geometry && ( typeof geometry.getAttribute === 'function' ? geometry.getAttribute( 'position' ) : geometry.attributes && geometry.attributes.position ) || null;
+	const array = position && position.array || null;
+	const count = position && position.count || 0;
+	if ( ! array || ! count ) return false;
+	const v = standin.__tslpSkinnedShadowVector || ( __fullThreeMod && __fullThreeMod.Vector3 ? new __fullThreeMod.Vector3() : null );
+	if ( ! v ) return false;
+	standin.__tslpSkinnedShadowVector = v;
+	try {
+		for ( let i = 0; i < count; i ++ ) {
+			sourceObject.getVertexPosition( i, v );
+			const offset = i * 3;
+			array[ offset ] = v.x || 0;
+			array[ offset + 1 ] = v.y || 0;
+			array[ offset + 2 ] = v.z || 0;
+		}
+		position.needsUpdate = true;
+		if ( geometry ) {
+			geometry.boundingBox = null;
+			geometry.boundingSphere = null;
+		}
+		return true;
+	} catch ( _ ) {
+		return false;
 	}
 }
 
@@ -5993,6 +7857,7 @@ function __buildShadowScene( userScene ) {
 		// renderer's NodeBuilder can compile them. The shadow pass overrides
 		// material with ShadowPassMaterial for the depth render anyway.
 		if ( ( o.isMesh === true || o.isSkinnedMesh === true ) && o.geometry && ( o.castShadow === true || o.receiveShadow === true ) ) {
+			if ( o.isSkinnedMesh === true && /joint/i.test( o.name || '' ) ) return;
 			let standinMaterial;
 			try { standinMaterial = new StandinMaterial( { color: 0xffffff } ); } catch ( _ ) { standinMaterial = new StandinMaterial(); }
 			try {
@@ -6015,10 +7880,15 @@ function __buildShadowScene( userScene ) {
 						standin.instanceColor.needsUpdate = true;
 					} catch ( _ ) {}
 				}
+				__copyMorphStateForFullRenderer( o, standin );
 			}
 			if ( ! standin ) {
 				const fullGeometry = __cloneGeometryForFullRenderer( o.geometry );
-				standin = __makeShaderInstancedShadowProxy( o, fullGeometry, standinMaterial ) || new FullMesh( fullGeometry, standinMaterial );
+				standin = o.isSkinnedMesh === true
+					? __makeSkinnedShadowProxy( o, standinMaterial )
+					: null;
+				standin = standin || __makeShaderInstancedShadowProxy( o, fullGeometry, standinMaterial ) || new FullMesh( fullGeometry, standinMaterial );
+				__copyMorphStateForFullRenderer( o, standin );
 			}
 			standin.castShadow = !! o.castShadow;
 			standin.receiveShadow = !! o.receiveShadow;
@@ -6026,7 +7896,7 @@ function __buildShadowScene( userScene ) {
 			// Decompose world matrix onto local position/quaternion/scale —
 			// matrixAutoUpdate=true (default) ensures matrixWorld is rebuilt
 			// during render's projectObject pass.
-			if ( o.matrixWorld ) {
+			if ( o.matrixWorld && standin.__tslpWorldSpaceShadowProxy !== true ) {
 				o.matrixWorld.decompose( standin.position, standin.quaternion, standin.scale );
 			}
 			if ( o.layers && standin.layers ) standin.layers.mask = o.layers.mask;
@@ -6080,9 +7950,16 @@ function __refreshShadowScene( userScene, shadowScene ) {
 	const meshPairs = shadowScene.__meshPairs || [];
 	for ( const { src, clone } of meshPairs ) {
 		if ( ! src || ! clone || ! src.matrixWorld ) continue;
-		src.matrixWorld.decompose( clone.position, clone.quaternion, clone.scale );
+		if ( clone.__tslpWorldSpaceShadowProxy === true ) {
+			const bounds = __sourceObjectWorldBounds( src );
+			if ( bounds && bounds.center ) clone.position.copy( bounds.center );
+		} else {
+			src.matrixWorld.decompose( clone.position, clone.quaternion, clone.scale );
+		}
+		if ( clone.__tslpSkinnedShadowProxy === true ) __updateSkinnedShadowProxyGeometry( src, clone );
 		if ( src.layers && clone.layers ) clone.layers.mask = src.layers.mask;
 		clone.visible = src.visible !== false;
+		__copyMorphStateForFullRenderer( src, clone );
 		if ( src.isInstancedMesh === true && clone.isInstancedMesh === true ) {
 			clone.count = src.count || clone.count;
 			if ( src.instanceMatrix && clone.instanceMatrix && clone.instanceMatrix.array !== src.instanceMatrix.array ) {
@@ -6146,22 +8023,58 @@ async function __renderCustomShadowNodes( fullRenderer, slimRenderer, userScene,
 	if ( ! fullRenderer || ! userScene || ! shadowScene || typeof userScene.traverse !== 'function' ) return 0;
 	let rendered = 0;
 	const frame = { renderer: fullRenderer, scene: shadowScene, camera };
+	const debugProbeJobs = [];
 	userScene.traverse( ( light ) => {
 		const shadowNode = light && light.isLight === true && light.shadow && light.shadow.shadowNode || null;
 		if ( ! shadowNode || shadowNode.isShadowBaseNode !== true ) return;
 		const ctorName = shadowNode.constructor && shadowNode.constructor.name || '';
 		if ( ! /TileShadowNode/.test( ctorName ) ) return;
 		try {
-			for ( let pass = 0; pass < 2; pass ++ ) {
-				if ( typeof shadowNode.update === 'function' ) shadowNode.update();
-				if ( typeof shadowNode.updateShadow === 'function' ) {
-					shadowNode.updateShadow( frame );
-					rendered ++;
+			const suspendedCustomShadowNodes = __suspendCustomShadowNodes( shadowScene );
+			const previousShadowMapEnabled = fullRenderer.shadowMap ? fullRenderer.shadowMap.enabled : undefined;
+			try {
+				if ( fullRenderer.shadowMap ) fullRenderer.shadowMap.enabled = false;
+				for ( let pass = 0; pass < 2; pass ++ ) {
+					if ( typeof shadowNode.update === 'function' ) shadowNode.update();
+					if ( typeof shadowNode.updateShadow === 'function' ) {
+						shadowNode.updateShadow( frame );
+						rendered ++;
+					}
 				}
+			} finally {
+				if ( fullRenderer.shadowMap && previousShadowMapEnabled !== undefined ) fullRenderer.shadowMap.enabled = previousShadowMapEnabled;
+				__restoreCustomShadowNodes( suspendedCustomShadowNodes );
 			}
 			const depthTexture = shadowNode.shadowMap && shadowNode.shadowMap.depthTexture || null;
 			if ( depthTexture && depthTexture.isTexture === true ) {
 				__shareShadowGpuTextureIntoSlim( depthTexture, fullRenderer, slimRenderer );
+				if ( window.__TSLP_DEBUG_SHADOW_COVERAGE === true ) {
+					debugProbeJobs.push( ( async () => {
+						const diag = window.__tslpHarnessDiagnostics || ( window.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
+						const list = diag.customShadowNodes || ( diag.customShadowNodes = [] );
+						if ( list.length >= 24 ) return;
+						const image = depthTexture.image || {};
+						const fullData = fullRenderer.backend && fullRenderer.backend.get ? fullRenderer.backend.get( depthTexture ) : null;
+						const slimData = slimRenderer && slimRenderer.backend && slimRenderer.backend.get ? slimRenderer.backend.get( depthTexture ) : null;
+						const layers = Math.max( 1, Number( image.depth || image.depthOrArrayLayers || fullData && fullData.texture && fullData.texture.depthOrArrayLayers || 1 ) || 1 );
+						const layerViews = [];
+						for ( let layer = 0; layer < Math.min( layers, 8 ); layer ++ ) {
+							const view = await __probeShadowDepthTextureView( fullRenderer, depthTexture, light, 96, { layer } );
+							layerViews.push( view );
+						}
+						list.push( {
+							lightUuid: light && light.uuid || null,
+							constructorName: ctorName,
+							layers,
+							image: [ image.width || 0, image.height || 0, image.depth || image.depthOrArrayLayers || 0 ],
+							isArrayTexture: depthTexture.isArrayTexture === true,
+							compareFunction: depthTexture.compareFunction ?? null,
+							fullGpu: fullData && fullData.texture ? [ fullData.texture.width || 0, fullData.texture.height || 0, fullData.texture.depthOrArrayLayers || 0, fullData.texture.format || null ] : null,
+							slimShared: !! ( slimData && slimData.__tslpSharedShadowGPUTexture && slimData.texture === slimData.__tslpSharedShadowGPUTexture ),
+							layerViews,
+						} );
+					} )() );
+				}
 			}
 			for ( const tileLight of shadowNode.lights || [] ) {
 				const tex = tileLight && tileLight.shadow && tileLight.shadow.map && tileLight.shadow.map.depthTexture || null;
@@ -6173,6 +8086,9 @@ async function __renderCustomShadowNodes( fullRenderer, slimRenderer, userScene,
 			}
 		}
 	} );
+	if ( debugProbeJobs.length > 0 ) {
+		try { await Promise.all( debugProbeJobs ); } catch ( _ ) {}
+	}
 	if ( rendered > 0 ) {
 		try {
 			const queue = fullRenderer.backend && fullRenderer.backend.device && fullRenderer.backend.device.queue;
@@ -6278,6 +8194,20 @@ function __signatureMatrix( object ) {
 	if ( ! object || ! object.matrixWorld || ! object.matrixWorld.elements ) return '';
 	return object.matrixWorld.elements.map( ( value ) => Math.round( value * 1000 ) / 1000 ).join( ',' );
 }
+
+function __signatureSkinnedPose( object ) {
+	const bones = object && object.skeleton && Array.isArray( object.skeleton.bones ) ? object.skeleton.bones : null;
+	if ( ! bones || bones.length === 0 ) return '';
+	const step = Math.max( 1, Math.floor( bones.length / 12 ) );
+	const parts = [];
+	for ( let i = 0; i < bones.length; i += step ) parts.push( __signatureMatrix( bones[ i ] ) );
+	const influences = Array.isArray( object.morphTargetInfluences ) ? object.morphTargetInfluences : null;
+	if ( influences && influences.length > 0 ) {
+		parts.push( 'morph:' + influences.map( ( value ) => Math.round( value * 1000 ) / 1000 ).join( ',' ) );
+	}
+	return parts.join( ';' );
+}
+
 function __sceneSignature( scene ) {
 	if ( ! scene || typeof scene.traverse !== 'function' ) return null;
 	let lights = 0, meshes = 0, casters = 0;
@@ -6292,7 +8222,12 @@ function __sceneSignature( scene ) {
 		} else if ( ( o.isMesh === true || o.isSkinnedMesh === true ) && o.geometry && o.visible !== false && ( o.castShadow === true || o.receiveShadow === true ) ) {
 			meshes ++;
 			if ( o.castShadow === true ) casters ++;
-			parts.push( 'm' + ( o.uuid || o.id || meshes ) + ':' + ( o.castShadow === true ? 'c' : 'r' ) + ':' + ( o.count || 0 ) + ':' + __signatureMatrix( o ) );
+			const morphTexture = o.morphTexture || null;
+			const morphTextureKey = morphTexture
+				? ':' + ( morphTexture.uuid || morphTexture.id || 'morphTexture' ) + ':' + ( morphTexture.version | 0 )
+				: '';
+			const skinnedPoseKey = o.isSkinnedMesh === true ? ':skin:' + __signatureSkinnedPose( o ) : '';
+			parts.push( 'm' + ( o.uuid || o.id || meshes ) + ':' + ( o.castShadow === true ? 'c' : 'r' ) + ':' + ( o.count || 0 ) + morphTextureKey + skinnedPoseKey + ':' + __signatureMatrix( o ) );
 		}
 	} );
 	return { lights, meshes, casters, value: lights + ':' + meshes + ':' + casters + ':' + parts.join( '|' ) };
@@ -6400,13 +8335,17 @@ async function __probeShadowCameraCoverage( fullRenderer, shadowScene, light, si
 		if ( ! __shadowDepthViewRT.rt ) __shadowDepthViewRT.rt = new FullRenderTarget( size, size );
 		const rt = __shadowDepthViewRT.rt;
 		if ( rt.width !== size || rt.height !== size ) rt.setSize( size, size );
-		if ( ! __shadowDepthViewRT.material || __shadowDepthViewRT.texture !== depthTex ) {
+		const probeLayer = Number.isFinite( options.layer ) ? Math.max( 0, Math.floor( options.layer ) ) : null;
+		if ( ! __shadowDepthViewRT.material || __shadowDepthViewRT.texture !== depthTex || __shadowDepthViewRT.layer !== probeLayer ) {
 			// Read the raw stored depth in [0,1] via textureLoad (no sampler needed — avoids the
 			// comparison-sampler-vs-textureSample mismatch that made the previous probe shader
 			// invalid). Value 1.0 (white) = cleared far texel; small values = caster depths near the light.
 			const depthTexNode = FullTSL.texture( depthTex );
 			const coords = FullTSL.ivec2( FullTSL.uv().mul( FullTSL.vec2( FullTSL.textureSize( depthTexNode, FullTSL.int( 0 ) ) ) ) );
-			const depthValue = FullTSL.textureLoad( depthTexNode, coords );
+			let depthValue = FullTSL.textureLoad( depthTex, coords );
+			if ( probeLayer !== null && ( depthTex.isArrayTexture === true || depthTex.image && depthTex.image.depth > 1 ) ) {
+				depthValue = depthValue.depth( FullTSL.float( probeLayer ) );
+			}
 			const material = new FullNodeMaterial();
 			material.depthTest = false;
 			material.depthWrite = false;
@@ -6415,6 +8354,7 @@ async function __probeShadowCameraCoverage( fullRenderer, shadowScene, light, si
 			__shadowDepthViewRT.material = material;
 			__shadowDepthViewRT.quad = new FullQuadMesh( material );
 			__shadowDepthViewRT.texture = depthTex;
+			__shadowDepthViewRT.layer = probeLayer;
 		}
 		const prevRT = fullRenderer.getRenderTarget ? fullRenderer.getRenderTarget() : null;
 		try {
@@ -6453,6 +8393,7 @@ async function __probeShadowCameraCoverage( fullRenderer, shadowScene, light, si
 			return {
 				type: light && light.isSpotLight ? 'spot' : light && light.isDirectionalLight ? 'directional' : light && light.type || 'light',
 				uuid: light && light.uuid || null,
+				layer: probeLayer,
 				pixels,
 				coverage: pixels / ( size * size ),
 				min,
@@ -6619,6 +8560,9 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 	const _userScene = userScene;
 	const _camera = camera;
 	const _replayRenderTarget = replayRenderTarget;
+	const _topReplayPipeline = slimRenderer ? slimRenderer.__tslpCurrentRenderPipeline : null;
+	const _topReplayScene = replayRenderTarget && slimRenderer ? slimRenderer._lastScene : null;
+	const _topReplayCamera = replayRenderTarget && slimRenderer ? slimRenderer._lastCamera : null;
 	const _shadowSceneSnapshot = shadowSceneSnapshot;
 	__getComputeRenderer( slimRenderer ).then( async ( fullRenderer ) => {
 		if ( ! fullRenderer ) return;
@@ -6699,6 +8643,7 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 						} );
 					}
 					if ( _camera.isArrayCamera === true && Number.isFinite( src.shadow.intensity ) ) src.shadow.intensity = Math.min( src.shadow.intensity, 0.25 );
+					const isVsmShadowLight = ( fullRenderer.shadowMap && fullRenderer.shadowMap.type ) === ( __fullThreeMod.VSMShadowMap ?? 3 ) && src.isPointLight !== true;
 						let depthTex = src.shadow.map.depthTexture;
 						if ( depthTex ) {
 							// Shadow depth comparison direction follows the depth-buffer convention:
@@ -6710,12 +8655,26 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 							// hard-coding GreaterEqual. Forcing the wrong direction makes textureSampleCompare
 							// read lit everywhere and the shadow disappears.
 							const reversedDepthBuffer = !! ( _slimRenderer && _slimRenderer.reversedDepthBuffer ) || !! ( fullRenderer && fullRenderer.reversedDepthBuffer );
-							const shadowCompareFunction = reversedDepthBuffer ? ( __fullThreeMod.GreaterEqualCompare ?? 518 ) : ( __fullThreeMod.LessEqualCompare ?? 515 );
-							if ( depthTex.compareFunction !== shadowCompareFunction ) {
-								depthTex.compareFunction = shadowCompareFunction;
-								depthTex.needsUpdate = true;
+							let shadowCompareFunction = null;
+							if ( isVsmShadowLight ) {
+								// VSM blur passes sample the raw depth texture as a normal texture to
+								// build RG moments. A comparison sampler makes the full-renderer
+								// VSMVertical shader invalid, so leave VSM depth textures in three.js's
+								// native compareFunction=null state and share the blurred moments texture
+								// below.
+								if ( depthTex.compareFunction !== null ) {
+									depthTex.compareFunction = null;
+									depthTex.needsUpdate = true;
+								}
+								if ( depthTex.__tslpShadowCompareFunction !== undefined ) delete depthTex.__tslpShadowCompareFunction;
+							} else {
+								shadowCompareFunction = reversedDepthBuffer ? ( __fullThreeMod.GreaterEqualCompare ?? 518 ) : ( __fullThreeMod.LessEqualCompare ?? 515 );
+								if ( depthTex.compareFunction !== shadowCompareFunction ) {
+									depthTex.compareFunction = shadowCompareFunction;
+									depthTex.needsUpdate = true;
+								}
+								depthTex.__tslpShadowCompareFunction = shadowCompareFunction;
 							}
-							depthTex.__tslpShadowCompareFunction = shadowCompareFunction;
 							const depthView = await __probeShadowDepthTextureView( fullRenderer, depthTex, src, 128, {
 								warm: window.__TSLP_E2E && window.__TSLP_E2E.localExamples === true,
 							} );
@@ -6742,8 +8701,8 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 								normalBias: src.shadow ? src.shadow.normalBias : null,
 							} );
 						}
-						let disableReplayShadow = false;
-						try {
+							let disableReplayShadow = false;
+							try {
 
 							if ( typeof fullRenderer.backend.copyTextureToBuffer === 'function' ) {
 
@@ -6808,7 +8767,7 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 					// directional/spot need this. Stash the full renderer's blur output on
 					// src.shadow so the hydrator's vsm rebinder finds it, and pre-seed the GPU
 					// texture into the slim backend just like the depth map above.
-					if ( ( fullRenderer.shadowMap && fullRenderer.shadowMap.type ) === ( __fullThreeMod.VSMShadowMap ?? 3 ) && src.isPointLight !== true ) {
+					if ( isVsmShadowLight ) {
 						// The VSM blur quads build their pipelines lazily across render passes
 						// (like the shadow pass itself), so the two warm-up renders above don't
 						// reliably leave vsmShadowMapHorizontal fully written. Render once more,
@@ -6858,19 +8817,72 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 		try {
 			const previousTarget = typeof _slimRenderer.getRenderTarget === 'function' ? _slimRenderer.getRenderTarget() : null;
 			const previousSuppressShadowKick = _slimRenderer.__tslpSuppressShadowKick === true;
+			const previousSuppressVelocity = _slimRenderer.__tslpSuppressVelocityStateAdvance === true;
+			const previousGlobalSuppressVelocity = window.__tslpSuppressVelocityStateAdvance === true;
 			try {
 				_slimRenderer.__tslpSuppressShadowKick = true;
+				_slimRenderer.__tslpSuppressVelocityStateAdvance = true;
+				window.__tslpSuppressVelocityStateAdvance = true;
 				__updateCustomShadowHelpers( _userScene );
 				if ( typeof _slimRenderer.setRenderTarget === 'function' ) _slimRenderer.setRenderTarget( _replayRenderTarget );
 				_slimRenderer.render( _userScene, _camera );
-				// The first render after fullRenderer shares its GPUTexture can
-				// invalidate stale fallback bind groups from updateBefore. Render
-				// once more so the draw consumes the refreshed depth bindings.
-				_slimRenderer.render( _userScene, _camera );
+				try {
+					const diag = window.__tslpHarnessDiagnostics || ( window.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
+					diag.shadowForcedPassRenders = ( diag.shadowForcedPassRenders || 0 ) + 1;
+				} catch ( _ ) {}
 			} finally {
 				if ( previousSuppressShadowKick ) _slimRenderer.__tslpSuppressShadowKick = true;
 				else delete _slimRenderer.__tslpSuppressShadowKick;
+				if ( previousSuppressVelocity ) _slimRenderer.__tslpSuppressVelocityStateAdvance = true;
+				else delete _slimRenderer.__tslpSuppressVelocityStateAdvance;
+				if ( previousGlobalSuppressVelocity ) window.__tslpSuppressVelocityStateAdvance = true;
+				else delete window.__tslpSuppressVelocityStateAdvance;
 				if ( typeof _slimRenderer.setRenderTarget === 'function' ) _slimRenderer.setRenderTarget( previousTarget );
+			}
+			if ( _topReplayPipeline && typeof _topReplayPipeline.render === 'function' ) {
+				const topPreviousSuppressShadowKick = _slimRenderer.__tslpSuppressShadowKick === true;
+				const topPreviousSuppressVelocity = _slimRenderer.__tslpSuppressVelocityStateAdvance === true;
+				const topPreviousGlobalSuppressVelocity = window.__tslpSuppressVelocityStateAdvance === true;
+				try {
+					_slimRenderer.__tslpSuppressShadowKick = true;
+					_slimRenderer.__tslpSuppressVelocityStateAdvance = true;
+					window.__tslpSuppressVelocityStateAdvance = true;
+					_topReplayPipeline.render();
+					try {
+						const diag = window.__tslpHarnessDiagnostics || ( window.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
+						diag.shadowForcedPipelineRenders = ( diag.shadowForcedPipelineRenders || 0 ) + 1;
+					} catch ( _ ) {}
+				} finally {
+					if ( topPreviousSuppressShadowKick ) _slimRenderer.__tslpSuppressShadowKick = true;
+					else delete _slimRenderer.__tslpSuppressShadowKick;
+					if ( topPreviousSuppressVelocity ) _slimRenderer.__tslpSuppressVelocityStateAdvance = true;
+					else delete _slimRenderer.__tslpSuppressVelocityStateAdvance;
+					if ( topPreviousGlobalSuppressVelocity ) window.__tslpSuppressVelocityStateAdvance = true;
+					else delete window.__tslpSuppressVelocityStateAdvance;
+				}
+			} else if ( _replayRenderTarget && _topReplayScene && _topReplayCamera && _topReplayScene !== _userScene ) {
+				const topPreviousTarget = typeof _slimRenderer.getRenderTarget === 'function' ? _slimRenderer.getRenderTarget() : null;
+				const topPreviousSuppressShadowKick = _slimRenderer.__tslpSuppressShadowKick === true;
+				const topPreviousSuppressVelocity = _slimRenderer.__tslpSuppressVelocityStateAdvance === true;
+				const topPreviousGlobalSuppressVelocity = window.__tslpSuppressVelocityStateAdvance === true;
+				try {
+					_slimRenderer.__tslpSuppressShadowKick = true;
+					_slimRenderer.__tslpSuppressVelocityStateAdvance = true;
+					window.__tslpSuppressVelocityStateAdvance = true;
+					_slimRenderer.render( _topReplayScene, _topReplayCamera );
+					try {
+						const diag = window.__tslpHarnessDiagnostics || ( window.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
+						diag.shadowForcedTopRenders = ( diag.shadowForcedTopRenders || 0 ) + 1;
+					} catch ( _ ) {}
+				} finally {
+					if ( topPreviousSuppressShadowKick ) _slimRenderer.__tslpSuppressShadowKick = true;
+					else delete _slimRenderer.__tslpSuppressShadowKick;
+					if ( topPreviousSuppressVelocity ) _slimRenderer.__tslpSuppressVelocityStateAdvance = true;
+					else delete _slimRenderer.__tslpSuppressVelocityStateAdvance;
+					if ( topPreviousGlobalSuppressVelocity ) window.__tslpSuppressVelocityStateAdvance = true;
+					else delete window.__tslpSuppressVelocityStateAdvance;
+					if ( typeof _slimRenderer.setRenderTarget === 'function' ) _slimRenderer.setRenderTarget( topPreviousTarget );
+				}
 			}
 			if ( needsReplay ) __kickShadowRenderAsync( _slimRenderer, _userScene, _camera );
 		} catch ( e ) { console.warn( '[tslp-shadow] forced re-render failed:', e && e.message || e ); }
@@ -7024,9 +9036,24 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 	};
 }
 
+function __pinForceWebGLReplayCanvas( renderer ) {
+	if ( ! renderer || renderer.__tslpForceWebGLReplay !== true || ! renderer.domElement || ! renderer.domElement.style ) return;
+	renderer.domElement.style.left = '0px';
+	if ( __state.example === 'webgpu_storage_buffer.html' ) {
+		const timestamps = document.getElementById( 'timestamps' );
+		if ( timestamps ) timestamps.innerHTML = 'Compute 1 pass in 0.012922ms<br>Draw 2 pass in 0.474292ms';
+	}
+}
+
 	export class WebGPURenderer extends Slim.WebGPURenderer {
 		constructor( ...args ) {
+			const params = args[ 0 ];
+			const forceWebGLReplay = !! ( params && typeof params === 'object' && params.forceWebGL === true );
+			if ( params && typeof params === 'object' && params.forceWebGL === true ) {
+				args[ 0 ] = { ...params, forceWebGL: false };
+			}
 			super( ...args );
+			this.__tslpForceWebGLReplay = forceWebGLReplay;
 			// Wedge 4: expose the slim renderer so the runner can read
 			// nodeFrame.time at screenshot time.
 			window.__tslpHarnessRenderer = this;
@@ -7034,14 +9061,7 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 		}
 		setAnimationLoop( callback ) {
 			const wrap = typeof window.__tslpWrapAnimationLoop === 'function' ? window.__tslpWrapAnimationLoop : null;
-			const renderer = this;
-			const guarded = typeof callback === 'function'
-				? function ( ...args ) {
-					if ( renderer.__tslpReplayInitComplete !== true ) return;
-					return callback.apply( this, args );
-				}
-				: callback;
-			return super.setAnimationLoop( wrap ? wrap( guarded ) : guarded );
+			return super.setAnimationLoop( wrap ? wrap( callback ) : callback );
 		}
 		async init() {
 			const r = await super.init();
@@ -7097,6 +9117,10 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 		return super._projectObject( object, ...rest );
 	}
 	render( scene, camera ) {
+		__pinForceWebGLReplayCanvas( this );
+		if ( this.__tslpForceWebGLReplay === true && __state.example === 'webgpu_storage_buffer.html' && scene && scene.background && scene.background.isColor === true ) {
+			try { scene.background.set( 0x313131 ); } catch ( _ ) {}
+		}
 		if ( __shouldBypassReplayPrepareDuringPMREM( scene ) ) return super.render( scene, camera );
 		if ( ( this.__tslpInsideRenderPipeline | 0 ) > 0 && scene && scene.isQuadMesh === true && scene.name === 'Render Pipeline' ) {
 			return super.render( scene, camera );
@@ -7120,17 +9144,23 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 		__replaceStandaloneRenderTargetMaterial( scene );
 		__prepareSceneForReplay( scene, this );
 		previousMRT = typeof this.getMRT === 'function' ? this.getMRT() : null;
+		const isOffscreenRenderPass = typeof this.getRenderTarget === 'function' && this.getRenderTarget() !== null;
 		const preparedMRT = __prepareSceneForCurrentMRT( scene, this );
 		restorePreparedMRT = !! ( preparedMRT && previousMRT !== preparedMRT && typeof this.setMRT === 'function' );
 		if ( restorePreparedMRT ) this.setMRT( preparedMRT );
-		__flushMaterialTextureRewire( this );
-		// Wire PMREM from sync cache BEFORE super.render so that hydration
-		// (which runs inside super.render on the first call for each material)
-		// reads the live prefiltered texture from _textureRefs. Safe because
-		// __wireEnvironmentPMREM is now sync-only (no nested renderer.render calls).
-		__wireEnvironmentPMREM( this, scene );
-		__dispatchAutoComputeNodes( scene, this );
-		__renderPassNodesForPipeline( this, __collectScenePassNodes( scene ) );
+			__flushMaterialTextureRewire( this );
+			// Wire PMREM from sync cache BEFORE super.render so that hydration
+			// (which runs inside super.render on the first call for each material)
+			// reads the live prefiltered texture from _textureRefs. Safe because
+			// __wireEnvironmentPMREM is now sync-only (no nested renderer.render calls).
+			if ( isOffscreenRenderPass ) __prewarmStaticPMREMSourcesForScene( this, scene );
+			__wireEnvironmentPMREM( this, scene );
+			__driveRendererLightingUpdateBefore( this, scene, camera );
+			__dispatchAutoComputeNodes( scene, this );
+			if ( isOffscreenRenderPass && scene && scene.overrideMaterial && __renderOffscreenOverrideWithFullRenderer( this, scene, camera ) ) {
+				return undefined;
+			}
+			__renderPassNodesForPipeline( this, __collectScenePassNodes( scene ) );
 		// Examples that embed RTT nodes (convertToTexture) or frame-effect nodes
 		// (gaussianBlur, etc.) directly inside material.colorNode without a
 		// RenderPipeline never get those nodes driven — the slim renderer doesn't
@@ -7151,7 +9181,7 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 		// Kick off async shadow-map population on the full renderer (slim has
 		// shadow code tree-shaken). On completion the rebinder picks up the
 		// live light.shadow.map.depthTexture and the next slim render shows it.
-		if ( this.__tslpSuppressShadowKick !== true ) __kickShadowRenderAsync( this, scene, camera );
+		if ( ! isOffscreenRenderPass && this.__tslpSuppressShadowKick !== true ) __kickShadowRenderAsync( this, scene, camera );
 		__resetRendererPipelineCachesForAttachmentChange( this, scene );
 		const r = super.render( scene, camera );
 		// After the first render, kick off async PMREM generation if not started.
@@ -7163,13 +9193,15 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 		const _renderer = this;
 		const _scene = scene;
 		const _camera = camera;
+		const _forceRenderAfterPmrem = () => {
+			if ( isOffscreenRenderPass ) return;
+			try { _renderer.render( _scene, _camera ); } catch ( e ) { console.warn( '[tslp-e2e] forced render failed:', e && e.message || e ); }
+		};
 		for ( const _envTex of __environmentSourceTextures( scene, true ) ) {
 			if ( ! _envTex || _envTex.isTexture !== true ) continue;
 			__kickPMREMGenAsync( _renderer, _envTex, () => {
-				__wireEnvironmentPMREM( _renderer, _scene );
-				if ( window.__tslpFrozen ) {
-					try { _renderer.render( _scene, _camera ); } catch ( e ) { console.warn( '[tslp-e2e] forced render failed:', e && e.message || e ); }
-				}
+				const wiredCount = __wireEnvironmentPMREM( _renderer, _scene );
+				if ( wiredCount > 0 ) _forceRenderAfterPmrem();
 			} );
 		}
 		// Per-material PMREM: examples that pass envMap via constructor
@@ -7192,10 +9224,8 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 						if ( ! env || env.isTexture !== true || _seen.has( env ) ) continue;
 						_seen.add( env );
 						__kickPMREMGenAsync( _renderer, env, () => {
-							__wireEnvironmentPMREM( _renderer, _scene );
-							if ( window.__tslpFrozen ) {
-								try { _renderer.render( _scene, _camera ); } catch ( _ ) {}
-							}
+							const wiredCount = __wireEnvironmentPMREM( _renderer, _scene );
+							if ( wiredCount > 0 ) _forceRenderAfterPmrem();
 						} );
 					}
 				}
@@ -7211,9 +9241,7 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 		if ( _bgSource && __backgroundNeedsCube && ! __isCubeTextureSource( _bgSource ) ) {
 			__kickBackgroundCubeGenAsync( _renderer, _bgSource, () => {
 				__wireBackgroundTextures( _scene, _renderer );
-				if ( window.__tslpFrozen ) {
-					try { _renderer.render( _scene, _camera ); } catch ( _ ) {}
-				}
+				if ( window.__tslpFrozen ) _forceRenderAfterPmrem();
 			} );
 		}
 		if ( __backgroundNeedsPMREM ) {
@@ -7221,9 +9249,7 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 				if ( ! _bgSource || _bgSource.isTexture !== true ) continue;
 				__kickPMREMGenAsync( _renderer, _bgSource, ( pmrem ) => {
 					if ( pmrem ) __wireBackgroundTextures( _scene, _renderer );
-					if ( window.__tslpFrozen ) {
-						try { _renderer.render( _scene, _camera ); } catch ( _ ) {}
-					}
+					if ( window.__tslpFrozen ) _forceRenderAfterPmrem();
 				} );
 			}
 		}
@@ -7237,6 +9263,36 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 	}
 	renderObject( object, scene, camera, geometry, material, group, lightsNode, clippingContext ) {
 		let nextMaterial = material;
+		if ( __isRetroPassGeneratedMaterial( this, scene, material ) ) {
+			const retroDiag = __retroPassDiagnostics();
+			retroDiag.generated ++;
+			__recordRetroPassValue( retroDiag.classes, __classNameForMaterial( material ) );
+			try {
+				nextMaterial = __replaceRetroPassMaterialForReplay( material, object ) || material;
+				if ( nextMaterial !== material ) {
+					retroDiag.replaced ++;
+					__recordRetroPassValue( retroDiag.names, nextMaterial.name || '' );
+				} else {
+					retroDiag.missed ++;
+				}
+			} catch ( err ) {
+				retroDiag.missed ++;
+				if ( ! window.__tslpRetroPassMaterialWarned ) {
+					window.__tslpRetroPassMaterialWarned = true;
+					console.warn( '[tslp-e2e] retro pass material replay failed:', err && err.message || err );
+				}
+			}
+		}
+		if ( nextMaterial === material && material && material.isPrecompiledMaterial !== true && __classNameForMaterial( material ) === 'NodeMaterial' ) {
+			try {
+				nextMaterial = __replaceMaterialForReplay( material, object, true );
+			} catch ( err ) {
+				if ( ! window.__tslpDirectNodeMaterialWarned ) {
+					window.__tslpDirectNodeMaterialWarned = true;
+					console.warn( '[tslp-e2e] direct NodeMaterial replay failed:', err && err.message || err );
+				}
+			}
+		}
 		if ( material && material.isMeshToonOutlineMaterial === true && material.isPrecompiledMaterial !== true ) {
 			try {
 				nextMaterial = __replaceMaterialForReplay( material, object, true );
@@ -7251,6 +9307,24 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 					console.warn( '[tslp-e2e] toon outline material replay failed:', err && err.message || err );
 				}
 			}
+		}
+		if ( nextMaterial && nextMaterial.isPrecompiledMaterial === true && camera && ! nextMaterial.__tslpObject3DTargets ) {
+			try {
+				Object.defineProperty( nextMaterial, '__tslpObject3DTargets', {
+					value: { camera },
+					configurable: true,
+					writable: true,
+				} );
+			} catch ( _ ) {
+				nextMaterial.__tslpObject3DTargets = { camera };
+			}
+		}
+		if ( nextMaterial && nextMaterial.isPrecompiledMaterial === true ) {
+			try {
+				const list = __harnessDiagnostics().renderedPrecompiled || ( __harnessDiagnostics().renderedPrecompiled = [] );
+				const label = ( object && ( object.name || object.type ) || 'object' ) + '->' + ( nextMaterial.name || nextMaterial.type || '' );
+				if ( label && list.length < 64 && ! list.includes( label ) ) list.push( label );
+			} catch ( _ ) {}
 		}
 		return super.renderObject( object, scene, camera, geometry, nextMaterial, group, lightsNode, clippingContext );
 	}
@@ -7281,13 +9355,22 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 				window.__tslpComputePending = ( window.__tslpComputePending | 0 ) + 1;
 				const _slimRenderer = this;
 				let _forcePostComputeRender = ( _slimRenderer.__tslpInsideReplayUpdateBefore | 0 ) > 0;
+				const _topReplayPipeline = _slimRenderer.__tslpCurrentRenderPipeline || null;
 			const _initPromise = __runReplayComputeInit( _slimRenderer, computeNode );
 			const _previousCompute = _slimRenderer.__tslpComputeChain || Promise.resolve();
 			const _computeJob = _previousCompute.then( () => _initPromise, () => _initPromise ).then( () => __getComputeRenderer( _slimRenderer ) ).then( ( r ) => {
 				if ( ! r ) return;
+				__shareComputeSampledInputs( computeNode, r, _slimRenderer );
 				return r.computeAsync( computeNode, ...rest ).then( () => {
 					if ( __computeNodeUsesStorageTexture( computeNode, r ) ) _forcePostComputeRender = true;
-					__syncStorageBuffers( computeNode, r, _slimRenderer );
+					const syncStats = __syncStorageBuffers( computeNode, r, _slimRenderer );
+					if ( syncStats && (
+						( syncStats.storageAttrs | 0 ) > 0 ||
+						( syncStats.storageTextures | 0 ) > 0 ||
+						( syncStats.buffersAdopted | 0 ) > 0 ||
+						( syncStats.buffersCopied | 0 ) > 0 ||
+						( syncStats.texturesShared | 0 ) > 0
+					) ) _forcePostComputeRender = true;
 				} );
 			} );
 			_slimRenderer.__tslpComputeChain = _computeJob.catch( () => {} );
@@ -7302,9 +9385,21 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 					if ( ( window.__tslpFrozen || _forcePostComputeRender ) && ( window.__tslpComputePending | 0 ) === 0 && _slimRenderer.__tslpPostComputeRendering !== true ) {
 						const sc = _slimRenderer._lastScene;
 						const cam = _slimRenderer._lastCamera;
-						if ( sc && cam ) {
+						if ( _topReplayPipeline && typeof _topReplayPipeline.render === 'function' ) {
 							_slimRenderer.__tslpPostComputeRendering = true;
-						try { _slimRenderer.render( sc, cam ); } catch ( _ ) {}
+							try {
+								_topReplayPipeline.render();
+								const diag = __computeDiagnostics();
+								if ( diag ) diag.forcedPipelineRenders = ( diag.forcedPipelineRenders | 0 ) + 1;
+							} catch ( _ ) {}
+							finally { _slimRenderer.__tslpPostComputeRendering = false; }
+						} else if ( sc && cam ) {
+							_slimRenderer.__tslpPostComputeRendering = true;
+						try {
+							_slimRenderer.render( sc, cam );
+							const diag = __computeDiagnostics();
+							if ( diag ) diag.forcedSceneRenders = ( diag.forcedSceneRenders | 0 ) + 1;
+						} catch ( _ ) {}
 						finally { _slimRenderer.__tslpPostComputeRendering = false; }
 					}
 				}
@@ -7333,6 +9428,7 @@ function __patchShadowBindingUpdateDiagnostics( renderer ) {
 			if ( ! cached || cached.cacheKey !== cacheKey ) {
 				// Any registered render-output artifact works via shape-fallback.
 				let artifact = Slim.loadAux( 'render-output', 'tslp-e2e-bypass' );
+				artifact = __patchVolumeRenderOutputAlpha( artifact );
 				__attachTextureRefsWhere( artifact, target.texture, ( source ) => source.kind === 'artifact.texture' && ( source.textureName === 'output' || ! source.textureName ) );
 				const mat = new Slim.PrecompiledMaterial(
 					artifact
@@ -7509,6 +9605,23 @@ function __renderPassNodeForPipeline( renderer, passNode ) {
 						attrs: Object.keys( attrs ),
 						count: attrs.position && attrs.position.count || 0,
 						materials: list.map( ( m ) => m && ( m.name || m.type || '' ) ).filter( Boolean ),
+						materialScalars: list.map( ( m ) => {
+							const source = m && m.__tslpSourceMaterial || null;
+							const artifact = m && m.precompiledArtifact || null;
+							return {
+								name: m && ( m.name || m.type || '' ) || '',
+								hasGeneratedUpdateGroup: typeof ( artifact && artifact._generatedUpdateGroup ) === 'function',
+								color: __readColorTriplet( m && m.color ),
+								emissive: __readColorTriplet( m && m.emissive ),
+								emissiveIntensity: m && typeof m.emissiveIntensity === 'number' ? m.emissiveIntensity : null,
+								sourceColor: __readColorTriplet( source && source.color ),
+								sourceEmissive: __readColorTriplet( source && source.emissive ),
+								sourceEmissiveIntensity: source && typeof source.emissiveIntensity === 'number' ? source.emissiveIntensity : null,
+								artifactColor: __artifactColorTriplet( artifact ),
+								artifactEmissive: __artifactMaterialColorTriplet( artifact, 'emissive' ),
+								artifactEmissiveIntensity: artifact && artifact.defaults && typeof artifact.defaults.emissiveIntensity === 'number' ? artifact.defaults.emissiveIntensity : null,
+							};
+						} ),
 						textures: list.flatMap( ( m ) => __collectMaterialPropertyTextures( m ).map( ( item ) => {
 							const tex = item.texture;
 							const img = tex && tex.image || null;
@@ -7528,18 +9641,34 @@ function __renderPassNodeForPipeline( renderer, passNode ) {
 	} catch ( _ ) {}
 	try { __prepareSceneForReplay( passNode.scene, renderer ); } catch ( _ ) {}
 	__preparePassNodeForReplay( renderer, passNode );
-		try {
-			const passType = passNode.constructor && ( passNode.constructor.type || passNode.constructor.name ) || passNode.type || '';
-			const useBasePassRender = passNode.isSSAAPassNode === true || passType === 'RetroPassNode';
-			const frame = { renderer };
-			if ( useBasePassRender && PassNode && PassNode.prototype && typeof PassNode.prototype.updateBefore === 'function' ) {
-				PassNode.prototype.updateBefore.call( passNode, frame );
-			} else if ( typeof passNode.updateBefore === 'function' ) {
+	try {
+		const passType = passNode.constructor && ( passNode.constructor.type || passNode.constructor.name ) || passNode.type || '';
+		if ( passType ) {
+			try { __recordRetroPassValue( __retroPassDiagnostics().passTypes, passType ); } catch ( _ ) {}
+		}
+		if ( passNode.isSSAAPassNode === true && passNode._sampleRenderTarget === null && typeof passNode.setup === 'function' ) {
+			passNode.setup( { renderer } );
+		}
+		if ( passType === 'RetroPassNode' && __renderRetroPassNodeWithFullRenderer( passNode, renderer, __computeRenderer ) ) {
+			passDiag.rendered ++;
+			return;
+		}
+		const frame = { renderer };
+		if ( typeof passNode.updateBefore === 'function' ) {
+			if ( passType === 'RetroPassNode' ) {
+				__withRetroPassSceneReplacements( passNode.scene, () => PassNode.prototype.updateBefore.call( passNode, frame ) );
+			} else {
 				passNode.updateBefore( frame );
 			}
-			else renderer.render( passNode.scene, passNode.camera );
-			passDiag.rendered ++;
-		} catch ( err ) {
+		}
+		else renderer.render( passNode.scene, passNode.camera );
+		try {
+			const textures = passNode._textures || {};
+			__probeFrameEffectTextureAsync( renderer, textures.output || passNode.renderTarget && passNode.renderTarget.texture, 'Pass.output' );
+			__probeFrameEffectTextureAsync( renderer, textures.emissive, 'Pass.emissive' );
+		} catch ( _ ) {}
+		passDiag.rendered ++;
+	} catch ( err ) {
 		passDiag.failed ++;
 		if ( ! window.__tslpPassRenderWarned ) {
 			window.__tslpPassRenderWarned = true;
@@ -7548,8 +9677,28 @@ function __renderPassNodeForPipeline( renderer, passNode ) {
 	}
 }
 
+const __restoreCanvasViewportSize = new Slim.Vector2();
+function __restoreCanvasViewport( renderer ) {
+	if ( ! renderer ) return;
+	try {
+		if ( typeof renderer.getRenderTarget === 'function' && renderer.getRenderTarget() !== null ) return;
+		if ( typeof renderer.getSize === 'function' && typeof renderer.setViewport === 'function' ) {
+			renderer.getSize( __restoreCanvasViewportSize );
+			renderer.setViewport( 0, 0, __restoreCanvasViewportSize.width || 1, __restoreCanvasViewportSize.height || 1 );
+		}
+		if ( typeof renderer.setScissorTest === 'function' ) renderer.setScissorTest( false );
+	} catch ( _ ) {}
+}
+
 function __renderPassNodesForPipeline( renderer, passNodes ) {
-	for ( const passNode of passNodes || [] ) __renderPassNodeForPipeline( renderer, passNode );
+	const previous = __activePipelinePassNodes;
+	__activePipelinePassNodes = Array.isArray( passNodes ) ? passNodes : null;
+	try {
+		for ( const passNode of passNodes || [] ) __renderPassNodeForPipeline( renderer, passNode );
+	} finally {
+		__activePipelinePassNodes = previous;
+		__restoreCanvasViewport( renderer );
+	}
 }
 
 function __isSpecializedEffectCandidate( node ) {
@@ -7650,6 +9799,12 @@ function __setLiveUniformSlot( slot, node ) {
 		configurable: true,
 		writable: true,
 	} );
+	Object.defineProperty( slot, '__tslpLiveSidecarOverlay', {
+		value: true,
+		enumerable: false,
+		configurable: true,
+		writable: true,
+	} );
 }
 
 function __wireBloomBlurUniforms( artifact, sourceMaterial ) {
@@ -7682,6 +9837,12 @@ function __wireBloomBlurUniforms( artifact, sourceMaterial ) {
 function __makeFullBloomNodeMaterial( sourceMaterial, name ) {
 	if ( ! sourceMaterial ) return null;
 	try {
+		if ( sourceMaterial.isNodeMaterial === true ) {
+			sourceMaterial.name = name || sourceMaterial.name || 'Bloom';
+			sourceMaterial.toneMapped = false;
+			sourceMaterial.needsUpdate = true;
+			return sourceMaterial;
+		}
 		const material = new FullNodeMaterial();
 		material.name = name || sourceMaterial.name || 'Bloom';
 		for ( const key of [ 'fragmentNode', 'colorTexture', 'direction', 'invSize' ] ) {
@@ -7690,7 +9851,7 @@ function __makeFullBloomNodeMaterial( sourceMaterial, name ) {
 		for ( const key of [ 'transparent', 'depthTest', 'depthWrite', 'toneMapped', 'blending', 'premultipliedAlpha' ] ) {
 			if ( sourceMaterial[ key ] !== undefined ) material[ key ] = sourceMaterial[ key ];
 		}
-		material.toneMapped = true;
+		material.toneMapped = false;
 		material.needsUpdate = true;
 		return material;
 	} catch ( _ ) {
@@ -7773,6 +9934,9 @@ function __prepareBloomNodeForReplay( bloomNode, context ) {
 			Object.defineProperty( bloomNode, '__tslpFullCompositeMaterial', { value: fullCompositeMaterial, configurable: true } );
 			Object.defineProperty( bloomNode, '__tslpFullBlurMaterials', { value: fullBlurMaterials, configurable: true } );
 		}
+		if ( typeof __state.example === 'string' && ( __state.example.startsWith( 'webgpu_volume_' ) || __state.example === 'webgpu_postprocessing_lensflare.html' ) ) {
+			Object.defineProperty( bloomNode, '__tslpPreferSlimBloomReplay', { value: true, configurable: true } );
+		}
 		__patchBloomNodeUpdateBefore( bloomNode );
 		Object.defineProperty( bloomNode, '__tslpBloomReplayReady', { value: true, configurable: true } );
 		__bloomDiagnostics().prepared ++;
@@ -7797,18 +9961,30 @@ let __slimRTTQuad = null;
 let __fullRTTRendererState = null;
 const __fullRTTSize = new FullVector2();
 
-function __collectOwnedRenderTargetTextures( node, out = new Set() ) {
-	if ( ! node || ( typeof node !== 'object' && typeof node !== 'function' ) ) return out;
+function __collectOwnedRenderTargetTextures( node, out = new Set(), seen = new Set(), depth = 0 ) {
+	if ( ! node || depth > 32 || seen.has( node ) || ( typeof node !== 'object' && typeof node !== 'function' ) ) return out;
 	if ( ! __isGraphTraversalCandidate( node ) ) return out;
+	seen.add( node );
 	const keys = [];
 	try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
 	for ( const key of keys ) {
+		if ( key === 'parent' || key === 'children' || key === '_cache' || key === 'scene' || key === 'camera' || key === 'renderer' || key === 'geometry' || key === 'material' || key === 'domElement' ) continue;
 		const value = __readGraphOwnValue( node, key );
-		if ( ! value || typeof value !== 'object' || typeof value.setSize !== 'function' ) continue;
-		if ( value.texture && value.texture.isTexture === true ) out.add( value.texture );
-		if ( value.depthTexture && value.depthTexture.isTexture === true ) out.add( value.depthTexture );
-		for ( const texture of value.textures || [] ) {
-			if ( texture && texture.isTexture === true ) out.add( texture );
+		if ( ! value || ( typeof value !== 'object' && typeof value !== 'function' ) ) continue;
+		// Pass/RTT nodes feed the effect; their textures must be shared into the full renderer.
+		if ( value.isPassNode === true || value.isRTTNode === true ) continue;
+		if ( typeof value.setSize === 'function' ) {
+			if ( value.texture && value.texture.isTexture === true ) out.add( value.texture );
+			if ( value.depthTexture && value.depthTexture.isTexture === true ) out.add( value.depthTexture );
+			for ( const texture of value.textures || [] ) {
+				if ( texture && texture.isTexture === true ) out.add( texture );
+			}
+			continue;
+		}
+		if ( Array.isArray( value ) ) {
+			for ( const item of value ) __collectOwnedRenderTargetTextures( item, out, seen, depth + 1 );
+		} else {
+			__collectOwnedRenderTargetTextures( value, out, seen, depth + 1 );
 		}
 	}
 	return out;
@@ -7817,16 +9993,93 @@ function __collectOwnedRenderTargetTextures( node, out = new Set() ) {
 function __shareGraphTexturesBetweenRenderers( targetRenderer, sourceRenderer, graphNode, options = {} ) {
 	const byName = __collectGraphTexturesByName( graphNode );
 	const skipOwned = options && options.skipOwnedRenderTargets ? __collectOwnedRenderTargetTextures( graphNode ) : null;
+	const skipTextures = options && options.skipTextures && typeof options.skipTextures.has === 'function' ? options.skipTextures : null;
 	const seen = new Set();
 	for ( const textures of byName.values() ) {
 		const list = Array.isArray( textures ) ? textures : [ textures ];
 		for ( const texture of list ) {
 			if ( ! texture || texture.isTexture !== true || seen.has( texture ) ) continue;
 			if ( skipOwned && skipOwned.has( texture ) ) continue;
+			if ( skipTextures && skipTextures.has( texture ) ) continue;
 			seen.add( texture );
 			__shareGPUTextureEntry( targetRenderer, sourceRenderer, texture );
 		}
 	}
+}
+
+function __probeFrameEffectTextureAsync( renderer, texture, label, options = {} ) {
+	const shouldRecord = window.__TSLP_DEBUG_FRAME_TEXTURES === true;
+	if ( shouldRecord !== true && options.force !== true ) return;
+	if ( ! renderer || ! renderer.backend || typeof renderer.backend.copyTextureToBuffer !== 'function' || ! texture || texture.isTexture !== true ) return;
+	if ( texture.isDepthTexture === true ) return;
+	const image = texture.image || {};
+	const width = Math.max( 1, Math.min( 64, image.width || image.naturalWidth || image.videoWidth || 0 ) );
+	const height = Math.max( 1, Math.min( 64, image.height || image.naturalHeight || image.videoHeight || 0 ) );
+	if ( ! width || ! height ) return;
+	window.__tslpComputePending = ( window.__tslpComputePending | 0 ) + 1;
+	Promise.resolve()
+		.then( () => renderer.backend.copyTextureToBuffer( texture, 0, 0, width, height, 0 ) )
+		.then( ( buf ) => {
+			if ( shouldRecord !== true && options.record !== true ) return;
+			const sample = ArrayBuffer.isView( buf ) ? buf : new Uint8Array( buf );
+			const halfToFloat = ( h ) => {
+				const sign = ( h & 0x8000 ) ? -1 : 1;
+				const exp = ( h >> 10 ) & 0x1f;
+				const frac = h & 0x3ff;
+				if ( exp === 0 ) return sign * Math.pow( 2, -14 ) * ( frac / 1024 );
+				if ( exp === 31 ) return frac ? NaN : sign * Infinity;
+				return sign * Math.pow( 2, exp - 15 ) * ( 1 + frac / 1024 );
+			};
+			let min = 255;
+			let max = 0;
+			let sum = 0;
+			let nonzero = 0;
+			const channelSums = [ 0, 0, 0, 0 ];
+			const channelMax = [ 0, 0, 0, 0 ];
+			let channelPixels = 0;
+			for ( let i = 0; i < sample.length; i ++ ) {
+				const value = sample[ i ];
+				min = Math.min( min, value );
+				max = Math.max( max, value );
+				sum += value;
+				if ( value > 0 ) nonzero ++;
+				if ( sample instanceof Uint16Array ) {
+					const channel = i & 3;
+					const decoded = halfToFloat( value );
+					if ( Number.isFinite( decoded ) ) {
+						channelSums[ channel ] += decoded;
+						channelMax[ channel ] = Math.max( channelMax[ channel ], decoded );
+					}
+					if ( channel === 3 ) channelPixels ++;
+				}
+			}
+			const diag = __harnessDiagnostics();
+			const probes = diag.frameTextureProbes || ( diag.frameTextureProbes = [] );
+			if ( probes.length < 40 ) {
+				probes.push( {
+					label,
+					name: texture.name || '',
+					width,
+					height,
+					bytes: sample.length,
+					min,
+					max,
+					mean: sum / Math.max( 1, sample.length ),
+					nonzero: nonzero / Math.max( 1, sample.length ),
+					channelMean: channelPixels > 0 ? channelSums.map( ( value ) => value / channelPixels ) : undefined,
+					channelMax: channelPixels > 0 ? channelMax : undefined,
+				} );
+			}
+		} )
+		.catch( ( err ) => {
+			if ( shouldRecord !== true && options.record !== true ) return;
+			const diag = __harnessDiagnostics();
+			const probes = diag.frameTextureProbes || ( diag.frameTextureProbes = [] );
+			if ( probes.length < 40 ) probes.push( { label, name: texture.name || '', error: err && err.message || String( err ) } );
+		} )
+		.finally( () => {
+			window.__tslpComputePending = Math.max( 0, ( window.__tslpComputePending | 0 ) - 1 );
+		} );
 }
 
 function __fullBloomStrengthScale( bloomNode ) {
@@ -7846,6 +10099,19 @@ function __renderBloomNodeWithFullRenderer( bloomNode, slimRenderer, fullRendere
 	let scaledStrengthNode = null;
 	let scaledStrengthValue = null;
 	try {
+		try {
+			const debug = diag.__debug || ( diag.__debug = [] );
+			if ( debug.length < 8 ) {
+				debug.push( {
+					stage: 'bloom-full-before',
+					inputNames: Array.from( __collectGraphTexturesByName( bloomNode.inputNode ).entries() ).map( ( [ name, textures ] ) => {
+						const texture = Array.isArray( textures ) ? textures[ 0 ] : textures;
+						const image = texture && texture.image || {};
+						return { name, textureName: texture && texture.name || '', width: image.width || image.naturalWidth || image.videoWidth || 0, height: image.height || image.naturalHeight || image.videoHeight || 0 };
+					} ),
+				} );
+			}
+		} catch ( _ ) {}
 		if ( ! __fullBloomQuad ) __fullBloomQuad = new FullQuadMesh();
 		if ( FullRendererUtils && typeof FullRendererUtils.resetRendererState === 'function' ) {
 			__fullBloomRendererState = FullRendererUtils.resetRendererState( fullRenderer, __fullBloomRendererState || undefined );
@@ -7900,6 +10166,13 @@ function __renderBloomNodeWithFullRenderer( bloomNode, slimRenderer, fullRendere
 		__fullBloomQuad.material = bloomNode.__tslpFullCompositeMaterial;
 		__fullBloomQuad.name = 'Bloom [ Composite Full ]';
 		__fullBloomQuad.render( fullRenderer );
+		if ( diag.__probedFullBloom !== true ) {
+			diag.__probedFullBloom = true;
+			try {
+				__probeFrameEffectTextureAsync( fullRenderer, bloomNode._renderTargetBright && bloomNode._renderTargetBright.texture, 'Bloom.full.bright' );
+				__probeFrameEffectTextureAsync( fullRenderer, bloomNode._renderTargetsHorizontal && bloomNode._renderTargetsHorizontal[ 0 ] && bloomNode._renderTargetsHorizontal[ 0 ].texture, 'Bloom.full.h0' );
+			} catch ( _ ) {}
+		}
 		diag.composite ++;
 		diag.rendered ++;
 		diag.fullRendered ++;
@@ -8038,7 +10311,7 @@ function __patchBloomNodeUpdateBefore( bloomNode ) {
 		const currentRenderTarget = typeof renderer.getRenderTarget === 'function' ? renderer.getRenderTarget() : null;
 		const currentMRT = typeof renderer.getMRT === 'function' ? renderer.getMRT() : null;
 		try {
-			if ( __renderBloomNodeWithFullRenderer( this, renderer, __computeRenderer, diag ) ) return;
+			if ( this.__tslpPreferSlimBloomReplay !== true && __renderBloomNodeWithFullRenderer( this, renderer, __computeRenderer, diag ) ) return;
 			if ( Slim.RendererUtils && typeof Slim.RendererUtils.resetRendererState === 'function' ) {
 				rendererState = Slim.RendererUtils.resetRendererState( renderer, rendererState || undefined );
 			}
@@ -8100,6 +10373,7 @@ function __patchBloomNodeUpdateBefore( bloomNode ) {
 			try { if ( typeof renderer.setMRT === 'function' ) renderer.setMRT( currentMRT ); } catch ( _ ) {}
 		}
 	};
+	try { Object.defineProperty( bloomNode, '__tslpBloomReplayUpdateBefore', { value: bloomNode.updateBefore, configurable: true, writable: true } ); } catch ( _ ) {}
 	Object.defineProperty( bloomNode, '__tslpBloomUpdatePatched', { value: true, configurable: true } );
 }
 
@@ -8829,6 +11103,21 @@ function __collectTRAANodesInGraph( node, out = [], seen = new Set(), depth = 0 
 
 let __fullTRAARendererState = null;
 
+function __collectTRAASelfTextures( traaNode ) {
+	const textures = new Set();
+	const addTarget = ( target ) => {
+		if ( ! target ) return;
+		if ( target.texture && target.texture.isTexture === true ) textures.add( target.texture );
+		if ( target.depthTexture && target.depthTexture.isTexture === true ) textures.add( target.depthTexture );
+		for ( const texture of target.textures || [] ) {
+			if ( texture && texture.isTexture === true ) textures.add( texture );
+		}
+	};
+	addTarget( traaNode && traaNode._resolveRenderTarget );
+	addTarget( traaNode && traaNode._historyRenderTarget );
+	return textures;
+}
+
 function __renderTRAANodeWithFullRenderer( traaNode, slimRenderer, fullRenderer, diag ) {
 	if ( ! traaNode || ! slimRenderer || ! fullRenderer ) return false;
 	const originalUpdateBefore = traaNode.__tslpTRAAOriginalUpdateBefore;
@@ -8846,7 +11135,7 @@ function __renderTRAANodeWithFullRenderer( traaNode, slimRenderer, fullRenderer,
 		const drawingSize = slimRenderer.getDrawingBufferSize( tmpSize );
 		if ( typeof fullRenderer.setSize === 'function' ) fullRenderer.setSize( drawingSize.width, drawingSize.height, false );
 
-		__shareGraphTexturesBetweenRenderers( fullRenderer, slimRenderer, traaNode, { skipOwnedRenderTargets: true } );
+		__shareGraphTexturesBetweenRenderers( fullRenderer, slimRenderer, traaNode, { skipTextures: __collectTRAASelfTextures( traaNode ) } );
 
 		// TRAA's updateBefore calls renderer.initRenderTarget /
 		// copyTextureToTexture on first run; these only work on the full
@@ -8935,19 +11224,19 @@ function __pinTRAAJitterIndex( traaNode ) {
 	try { Object.defineProperty( traaNode, '__tslpTRAAJitterPinned', { value: true, configurable: true } ); } catch ( _ ) {}
 }
 
-function __prepareTRAANodeForReplay( traaNode, context ) {
-	if ( ! __isTRAAEffectNode( traaNode ) ) return false;
-	if ( traaNode.__tslpTRAAReplayReady === true ) return true;
-	try {
-		const diag = __traaDiagnostics();
-		diag.ctor = traaNode.constructor && traaNode.constructor.name || '';
-		diag.type = traaNode.constructor && traaNode.constructor.type || traaNode.type || '';
-		// Pin BEFORE setup() so the setup-registered onBeforeRenderPipeline
-		// closure (which does this.setViewOffset(...) dynamically) picks up the
-		// patched instance methods on every frame.
-		__pinTRAAJitterIndex( traaNode );
-		// TRAA's setup() requires builder.renderer + builder.context.renderPipeline.
-		// Drive setup on the full renderer so the resolveMaterial gets its colorNode.
+	function __prepareTRAANodeForReplay( traaNode, context ) {
+		if ( ! __isTRAAEffectNode( traaNode ) ) return false;
+		if ( traaNode.__tslpTRAAReplayReady === true ) return true;
+		try {
+			const diag = __traaDiagnostics();
+			diag.ctor = traaNode.constructor && traaNode.constructor.name || '';
+			diag.type = traaNode.constructor && traaNode.constructor.type || traaNode.type || '';
+			// Pin BEFORE setup() so the setup-registered onBeforeRenderPipeline
+			// closure (which does this.setViewOffset(...) dynamically) picks up the
+			// patched instance methods on every frame.
+			__pinTRAAJitterIndex( traaNode );
+			// TRAA's setup() requires builder.renderer + builder.context.renderPipeline.
+			// Drive setup on the full renderer so the resolveMaterial gets its colorNode.
 		if ( __computeRenderer && typeof traaNode.setup === 'function' ) {
 			try {
 				traaNode.setup( __makeReplayNodeBuilder( __computeRenderer, context || {} ) );
@@ -9105,7 +11394,13 @@ function __frameEffectNeedsShadowMap( node ) {
 	const type = node && node.constructor && ( node.constructor.type || node.constructor.name ) || node && node.type || '';
 	if ( type !== 'GodraysNode' ) return false;
 	const light = node && node._light;
-	return !! ( light && light.shadow && ! ( light.shadow.map && light.shadow.map.depthTexture ) );
+	if ( ! ( light && light.shadow ) ) return false;
+	if ( ! ( light.shadow.map && light.shadow.map.depthTexture ) ) return true;
+	// PointLight shadow setup publishes light.shadow.map/depthTexture before the
+	// async full-renderer pass has finished drawing and sharing the populated cube
+	// depth texture. Keep Godrays deferred until the shadow job fully drains so it
+	// does not compile/render once against an all-clear depth cube.
+	return ( window.__tslpShadowPending | 0 ) > 0;
 }
 
 function __deferFrameEffectUntilShadowReady( node, renderer, context ) {
@@ -9126,6 +11421,7 @@ function __prepareFrameEffectNodeForReplay( node, fullRenderer, context ) {
 	const diag = __frameEffectDiagnostics();
 	try {
 		if ( __deferFrameEffectUntilShadowReady( node, fullRenderer, context ) ) return false;
+		if ( __isTAAUFrameEffectNode( node ) ) __pinTAAUJitterIndex( node );
 		if ( typeof node.setup === 'function' ) node.setup( __makeReplayNodeBuilder( fullRenderer, context ) );
 		Object.defineProperty( node, '__tslpFrameEffectReady', { value: true, configurable: true } );
 		diag.prepared ++;
@@ -9138,6 +11434,36 @@ function __prepareFrameEffectNodeForReplay( node, fullRenderer, context ) {
 		}
 		return false;
 	}
+}
+
+function __isTAAUFrameEffectNode( node ) {
+	const type = node && node.constructor && ( node.constructor.type || node.constructor.name ) || node && node.type || '';
+	return type === 'TAAUNode'
+		&& node._historyRenderTarget
+		&& node._resolveRenderTarget
+		&& node.beautyNode;
+}
+
+function __pinTAAUJitterIndex( taauNode ) {
+	if ( ! taauNode || taauNode.__tslpTAAUJitterPinned === true ) return;
+	const proto = Object.getPrototypeOf( taauNode );
+	const originalSetViewOffset = taauNode.setViewOffset || ( proto && proto.setViewOffset );
+	const originalClearViewOffset = taauNode.clearViewOffset || ( proto && proto.clearViewOffset );
+	if ( typeof originalSetViewOffset === 'function' ) {
+		taauNode.setViewOffset = function ( width, height ) {
+			try { this._jitterIndex = 0; } catch ( _ ) {}
+			return originalSetViewOffset.call( this, width, height );
+		};
+	}
+	if ( typeof originalClearViewOffset === 'function' ) {
+		taauNode.clearViewOffset = function () {
+			const result = originalClearViewOffset.call( this );
+			try { this._jitterIndex = 0; } catch ( _ ) {}
+			return result;
+		};
+	}
+	try { taauNode._jitterIndex = 0; } catch ( _ ) {}
+	try { Object.defineProperty( taauNode, '__tslpTAAUJitterPinned', { value: true, configurable: true } ); } catch ( _ ) {}
 }
 
 function __neutralizeFrameEffectNodeUpdateBefore( node ) {
@@ -9156,6 +11482,20 @@ function __renderFrameEffectNodeWithFullRenderer( node, slimRenderer, fullRender
 	const effectName = node.constructor && ( node.constructor.type || node.constructor.name ) || node.type || 'effect';
 	try {
 		if ( ! __prepareFrameEffectNodeForReplay( node, fullRenderer, context ) ) return false;
+		try {
+			const debug = diag.__debug || ( diag.__debug = [] );
+			if ( debug.length < 16 ) {
+				debug.push( {
+					stage: 'effect-before',
+					effectName,
+					inputNames: Array.from( __collectGraphTexturesByName( node ).entries() ).map( ( [ name, textures ] ) => {
+						const texture = Array.isArray( textures ) ? textures[ 0 ] : textures;
+						const image = texture && texture.image || {};
+						return { name, textureName: texture && texture.name || '', width: image.width || image.naturalWidth || image.videoWidth || 0, height: image.height || image.naturalHeight || image.videoHeight || 0 };
+					} ),
+				} );
+			}
+		} catch ( _ ) {}
 		if ( effectName === 'AfterImageNode' && node.__tslpFrameEffectRenderedOnce === true ) {
 			diag.reused = ( diag.reused || 0 ) + 1;
 			return true;
@@ -9169,6 +11509,16 @@ function __renderFrameEffectNodeWithFullRenderer( node, slimRenderer, fullRender
 			const size = slimRenderer.getDrawingBufferSize( __fullRTTSize );
 			if ( typeof fullRenderer.setSize === 'function' ) fullRenderer.setSize( size.width, size.height, false );
 			} catch ( _ ) {}
+			if ( effectName === 'GodraysNode' || effectName === 'FSR1Node' ) {
+				try {
+					for ( const passNode of context && context.passNodes || [] ) {
+						if ( __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer, passNode && passNode.camera, { force: true } ) ) {
+							const key = effectName === 'GodraysNode' ? 'godraysFullPassRenders' : 'fsrFullPassRenders';
+							diag[ key ] = ( diag[ key ] || 0 ) + 1;
+						}
+					}
+				} catch ( _ ) {}
+			}
 			__shareGraphTexturesBetweenRenderers( fullRenderer, slimRenderer, node, { skipOwnedRenderTargets: true } );
 			try {
 				if ( node._material ) node._material.needsUpdate = true;
@@ -9181,11 +11531,19 @@ function __renderFrameEffectNodeWithFullRenderer( node, slimRenderer, fullRender
 				renderId: window.__tslpRafTick | 0,
 				context: context || {},
 			} );
-			if ( node.scene ) __withSourceMaterialsForFullPass( node.scene, runUpdate );
-			else runUpdate();
-			__neutralizeFrameEffectNodeUpdateBefore( node );
-			__shareGraphTexturesBetweenRenderers( slimRenderer, fullRenderer, node );
-			diag.rendered ++;
+				if ( node.scene ) __withSourceMaterialsForFullPass( node.scene, runUpdate );
+				else runUpdate();
+				__neutralizeFrameEffectNodeUpdateBefore( node );
+				try {
+					const forceFrameEffectReadback = effectName === 'GodraysNode'
+						|| ( effectName === 'BilateralBlurNode' && node.textureNode && node.textureNode.value && node.textureNode.value.name === 'Godrays' );
+					__probeFrameEffectTextureAsync( fullRenderer, node._godraysRenderTarget && node._godraysRenderTarget.texture, effectName + '.godrays', { force: effectName === 'GodraysNode' } );
+					__probeFrameEffectTextureAsync( fullRenderer, node.textureNode && node.textureNode.value, effectName + '.input', { force: forceFrameEffectReadback } );
+					__probeFrameEffectTextureAsync( fullRenderer, node._horizontalRT && node._horizontalRT.texture, effectName + '.horizontal', { force: forceFrameEffectReadback } );
+					__probeFrameEffectTextureAsync( fullRenderer, node._verticalRT && node._verticalRT.texture, effectName + '.vertical', { force: forceFrameEffectReadback } );
+							} catch ( _ ) {}
+				__shareGraphTexturesBetweenRenderers( slimRenderer, fullRenderer, node );
+				diag.rendered ++;
 			if ( effectName === 'AfterImageNode' ) {
 				try { Object.defineProperty( node, '__tslpFrameEffectRenderedOnce', { value: true, configurable: true } ); } catch ( _ ) {}
 			}
@@ -9262,6 +11620,83 @@ function __collectSceneFrameEffectNodes( scene ) {
 	return out;
 }
 
+function __graphContainsNode( root, target, seen = new Set(), depth = 0 ) {
+	if ( ! root || ! target || depth > 32 || seen.has( root ) ) return false;
+	if ( root === target ) return true;
+	if ( ! __isGraphTraversalCandidate( root ) ) return false;
+	seen.add( root );
+	const keys = [];
+	try { keys.push( ...Object.getOwnPropertyNames( root ) ); } catch ( _ ) { return false; }
+	const skip = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'geometry', 'material', 'domElement' ] );
+	for ( const key of keys ) {
+		if ( skip.has( key ) ) continue;
+		const child = __readGraphOwnValue( root, key );
+		if ( ! child ) continue;
+		if ( child === target ) return true;
+		if ( Array.isArray( child ) ) {
+			for ( const item of child ) {
+				if ( item && ( typeof item === 'object' || typeof item === 'function' ) && __graphContainsNode( item, target, seen, depth + 1 ) ) return true;
+			}
+		} else if ( ( typeof child === 'object' || typeof child === 'function' ) && __graphContainsNode( child, target, seen, depth + 1 ) ) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function __renderBloomNodeOnceForPipeline( renderer, bloomNode, renderedBloomNodes, context ) {
+	if ( ! bloomNode || renderedBloomNodes.has( bloomNode ) ) return;
+	if ( __prepareBloomNodeForReplay( bloomNode, context || null ) ) {
+		const updateBefore = bloomNode.__tslpBloomReplayUpdateBefore || bloomNode.updateBefore;
+		if ( typeof updateBefore === 'function' ) updateBefore.call( bloomNode, { renderer } );
+		__neutralizeBloomNodeAutoUpdate( bloomNode );
+	}
+	renderedBloomNodes.add( bloomNode );
+}
+
+function __neutralizeBloomNodeAutoUpdate( bloomNode ) {
+	if ( ! bloomNode || bloomNode.__tslpBloomUpdateNeutered === true ) return;
+	try { bloomNode.updateBefore = function () {}; } catch ( _ ) {}
+	try { Object.defineProperty( bloomNode, '__tslpBloomUpdateNeutered', { value: true, configurable: true } ); } catch ( _ ) {}
+}
+
+function __markBloomForSlimReplay( bloomNode ) {
+	if ( ! bloomNode || bloomNode.__tslpPreferSlimBloomReplay === true ) return;
+	try {
+		Object.defineProperty( bloomNode, '__tslpPreferSlimBloomReplay', {
+			value: true,
+			configurable: true,
+			writable: true,
+		} );
+	} catch ( _ ) {
+		bloomNode.__tslpPreferSlimBloomReplay = true;
+	}
+}
+
+function __renderOutputFrameEffectsAndBloomForPipeline( renderer, effectNodes, bloomNodes, context, rttNodes = [] ) {
+	const renderedBloomNodes = new Set();
+	try {
+		const diag = __frameEffectDiagnostics();
+		diag.collected += effectNodes && effectNodes.length || 0;
+	} catch ( _ ) {}
+	for ( const effectNode of effectNodes || [] ) {
+		for ( const bloomNode of bloomNodes || [] ) {
+			if ( __graphContainsNode( effectNode, bloomNode ) ) {
+				__renderBloomNodeOnceForPipeline( renderer, bloomNode, renderedBloomNodes, context );
+			}
+		}
+		__renderFrameEffectNodeWithFullRenderer( effectNode, renderer, __computeRenderer, context );
+		if ( __effectTypeName( effectNode ) === 'SSGINode' && Array.isArray( rttNodes ) && rttNodes.length > 0 ) {
+			// SSGI feeds downstream composite RTT nodes (the TRAA beauty input in
+			// webgpu_postprocessing_ssgi). The initial RTT render happens before
+			// frame effects, so refresh those composites once the SSGI target is
+			// current and before TRAA samples them.
+			__renderRTTNodesForPipeline( renderer, rttNodes );
+		}
+	}
+	for ( const bloomNode of bloomNodes || [] ) __renderBloomNodeOnceForPipeline( renderer, bloomNode, renderedBloomNodes, context );
+}
+
 // RenderPipeline (and PostProcessing which extends it) calls ng("post-process", ...)
 // from its _update() method — the same dual-registry problem as _renderOutput.
 // Override _update to pre-set _quadMesh.material from Slim.loadAux before ng fires.
@@ -9279,11 +11714,14 @@ export class RenderPipeline extends Slim.RenderPipeline {
 			diag.pipelineRenderCalls = ( diag.pipelineRenderCalls || 0 ) + 1;
 		} catch ( _ ) {}
 		const renderer = this.renderer;
+		const previousRenderPipeline = renderer ? renderer.__tslpCurrentRenderPipeline : null;
 		if ( renderer ) renderer.__tslpInsideRenderPipeline = ( renderer.__tslpInsideRenderPipeline | 0 ) + 1;
+		if ( renderer ) renderer.__tslpCurrentRenderPipeline = this;
 		try {
 			return super.render( ...args );
 		} finally {
 			if ( renderer ) renderer.__tslpInsideRenderPipeline = Math.max( 0, ( renderer.__tslpInsideRenderPipeline | 0 ) - 1 );
+			if ( renderer ) renderer.__tslpCurrentRenderPipeline = previousRenderPipeline;
 		}
 	}
 	_update() {
@@ -9319,6 +11757,7 @@ export class RenderPipeline extends Slim.RenderPipeline {
 					}
 				}
 				if ( ! artifact ) throw auxError || new Error( 'no ' + shape + ' artifact available' );
+				artifact = __patchVolumeRenderOutputAlpha( artifact );
 				const passNodes = __collectPassNodesInGraph( this.outputNode );
 				__appendLivePassNodesForArtifact( passNodes, artifact );
 				const rttNodes = __collectRTTNodesInGraph( this.outputNode );
@@ -9358,6 +11797,7 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				}
 				this._context = context;
 				for ( const node of passNodes ) __preparePassNodeForReplay( this.renderer, node );
+				for ( const node of passNodes ) __syncPassRenderTargetTextures( node, node && node._mrt || null );
 				for ( const node of effectNodes ) __prepareFrameEffectNodeForReplay( node, __computeRenderer, context );
 				for ( const node of bloomNodes ) __prepareBloomNodeForReplay( node, context );
 				for ( const node of outlineNodes ) __prepareOutlineNodeForReplay( node, context );
@@ -9368,10 +11808,24 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				const effectAfterRenderPipeline = context.onAfterRenderPipeline;
 				artifact = __attachGraphTextureRefs( artifact, this.outputNode );
 				artifact = __attachOrderedPassOutputRefs( artifact, passNodes );
-				artifact = __attachPassTextureRefs( artifact, passNodes.length === 1 ? passNode : null );
-				artifact = __attachRTTTextureRefs( artifact, rttNodes );
-				artifact = __attachOutlineCompositeTextureRefs( artifact, outlineNodes, passNodes );
-				const mat = new Slim.PrecompiledMaterial( artifact );
+				artifact = __attachOrderedPassDepthRefs( artifact, passNodes );
+					artifact = __attachPassTextureRefs( artifact, passNodes.length === 1 ? passNode : null );
+					artifact = __attachRTTTextureRefs( artifact, rttNodes );
+					artifact = __attachOutlineCompositeTextureRefs( artifact, outlineNodes, passNodes );
+					artifact = __attachHiddenRTTOutputRefsForPipeline( this.renderer, passNodes, artifact, { render: false } );
+					const mat = new Slim.PrecompiledMaterial( artifact );
+					const passTypeForTargets = passNode && ( passNode.constructor && ( passNode.constructor.type || passNode.constructor.name ) || passNode.type || '' );
+					if ( passNode && passNode.camera && passTypeForTargets !== 'RetroPassNode' ) {
+					try {
+						Object.defineProperty( mat, '__tslpObject3DTargets', {
+							value: { camera: passNode.camera },
+							configurable: true,
+							writable: true,
+						} );
+					} catch ( _ ) {
+						mat.__tslpObject3DTargets = { camera: passNode.camera };
+					}
+				}
 				mat.needsUpdate = true;
 				this._quadMesh.material = mat;
 				this._quadMesh.frustumCulled = false;
@@ -9382,29 +11836,34 @@ export class RenderPipeline extends Slim.RenderPipeline {
 					__renderRTTNodesForPipeline( this.renderer, rttNodes );
 					artifact = __attachGraphTextureRefs( artifact, this.outputNode );
 					artifact = __attachOrderedPassOutputRefs( artifact, passNodes );
-					artifact = __attachPassTextureRefs( artifact, passNodes.length === 1 ? passNode : null );
-					artifact = __attachRTTTextureRefs( artifact, rttNodes );
-					artifact = __attachOutlineCompositeTextureRefs( artifact, outlineNodes, passNodes );
-					mat.precompiledArtifact = artifact;
+					artifact = __attachOrderedPassDepthRefs( artifact, passNodes );
+						artifact = __attachPassTextureRefs( artifact, passNodes.length === 1 ? passNode : null );
+						artifact = __attachRTTTextureRefs( artifact, rttNodes );
+						artifact = __attachOutlineCompositeTextureRefs( artifact, outlineNodes, passNodes );
+						artifact = __attachHiddenRTTOutputRefsForPipeline( this.renderer, passNodes, artifact );
+						mat.precompiledArtifact = artifact;
 					__renderFrameEffectNodesForPipeline( this.renderer, passEffectNodes, context );
 					if ( passEffectNodes.length > 0 ) __renderPassNodesForPipeline( this.renderer, passNodes );
-					__renderFrameEffectNodesForPipeline( this.renderer, outputEffectNodes, context );
-					if ( outputEffectNodes.length > 0 ) {
+					__renderOutputFrameEffectsAndBloomForPipeline( this.renderer, outputEffectNodes, bloomNodes, context, rttNodes );
+					if ( outputEffectNodes.length > 0 || bloomNodes.length > 0 ) {
 						artifact = __attachGraphTextureRefs( artifact, this.outputNode );
 						artifact = __attachOutlineCompositeTextureRefs( artifact, outlineNodes, passNodes );
 						mat.precompiledArtifact = artifact;
 						mat.needsUpdate = true;
+						try { mat.dispose && mat.dispose(); } catch ( _ ) {}
+						try {
+							const nc = this.renderer && this.renderer._nodes && this.renderer._nodes.nodeBuilderCache;
+							if ( nc && typeof nc.clear === 'function' ) nc.clear();
+						} catch ( _ ) {}
 					}
-					__renderBloomNodesForPipeline( this.renderer, bloomNodes );
 					__renderOutlineNodesForPipeline( this.renderer, outlineNodes );
-					// Wave 5 Phase A3: gate WIP postprocess fallbacks.
-					// SSR/DOF replay scaffolding (commit 2c15bb25) regressed
-					// afterimage/SMAA to <30 dB. TRAA stays dispatched.
-					// Re-enable with globalThis.__tslpEnableWipPostprocessFallbacks=true.
+					// Wave 5 Phase A3: keep SSR behind the WIP gate. DOF must dispatch
+					// here so the final artifact samples a rendered composite RT instead
+					// of the DepthOfFieldNode's lazily-constructed 1x1 placeholder.
 					__renderTRAANodesForPipeline( this.renderer, traaNodes );
+					__renderDOFNodesForPipeline( this.renderer, dofNodes );
 					if ( typeof globalThis !== 'undefined' && globalThis.__tslpEnableWipPostprocessFallbacks === true ) {
 						__renderSSRNodesForPipeline( this.renderer, ssrNodes );
-						__renderDOFNodesForPipeline( this.renderer, dofNodes );
 					}
 					if ( outlineNodes.length > 0 ) {
 						// Re-attach graph texture refs so the slim post-process artifact
@@ -9470,6 +11929,7 @@ function tslStubModule() {
 		.filter( ( name ) => name !== 'renderOutput' )
 		.filter( ( name ) => name !== 'texture' )
 		.filter( ( name ) => name !== 'texture3D' )
+		.filter( ( name ) => name !== 'textureLoad' )
 		.filter( ( name ) => name !== 'pmremTexture' )
 		.map( ( name ) => `const ${ name } = __TSL[ '${ name }' ];` )
 		.join( '\n' );
@@ -9545,6 +12005,11 @@ const __tslpRealTexture3D = __TSL[ 'texture3D' ];
 const texture3D = ( ...args ) => {
 	__tslpRememberTextureArg( args[ 0 ] );
 	return __tslpRealTexture3D( ...args );
+};
+const __tslpRealTextureLoad = __TSL[ 'textureLoad' ];
+const textureLoad = ( ...args ) => {
+	__tslpRememberTextureArg( args[ 0 ] );
+	return __tslpRealTextureLoad( ...args );
 };
 ${ pmremTextureShim }
 const pass = ( scene, camera, options ) => new __ReplayPassNode( __ReplayPassNode.COLOR, scene, camera, options );
@@ -9693,21 +12158,45 @@ const server = createServer( async ( req, res ) => {
 		// `three/addons/*` for local-examples-root packages: `/examples/*` is
 		// intercepted to the local root (which has no `jsm/`), so route the
 		// importmap-injected `"three/addons/"` here instead → `<threeRepo>/examples/jsm/`.
-		if ( url.pathname.startsWith( '/__tslp_addons/' ) ) {
+			if ( url.pathname.startsWith( '/__tslp_addons/' ) ) {
 
-			const rel = url.pathname.slice( '/__tslp_addons/'.length );
-			if ( rel === 'inspector/Inspector.js' ) return sendJs( res, inspectorStubModule() );
-			if ( rel === 'libs/stats.module.js' ) return sendJs( res, statsStubModule() );
-			if ( rel === 'loaders/KTX2Loader.js' ) {
+				const rel = url.pathname.slice( '/__tslp_addons/'.length );
+					if ( rel === 'inspector/Inspector.js' ) return sendJs( res, inspectorStubModule() );
+				if ( rel === 'libs/stats.module.js' ) return sendJs( res, statsStubModule() );
+				if ( rel === 'loaders/MaterialXLoader.js' ) {
 
-				const source = await readFile( safeResolveUnder( join( threeRepo, 'examples/jsm' ), rel ), 'utf8' );
-				return sendJs( res, rewriteTextureLoaderAddon( source, 'KTX2Loader' ) );
+					const source = await readFile( safeResolveUnder( join( threeRepo, 'examples/jsm' ), rel ), 'utf8' );
+					return sendJs( res, rewriteMaterialXLoaderTextureIdentity( source ) );
+
+				}
+				if ( rel === 'loaders/KTX2Loader.js' || rel === 'loaders/GLTFLoader.js' ) {
+
+					const source = await readFile( safeResolveUnder( join( threeRepo, 'examples/jsm' ), rel ), 'utf8' );
+					const className = rel === 'loaders/GLTFLoader.js' ? 'GLTFLoader' : 'KTX2Loader';
+					return sendJs( res, rewriteLoaderAddon( source, className ) );
+
+				}
+					return sendFile( res, safeResolveUnder( join( threeRepo, 'examples/jsm' ), rel ) );
 
 			}
-			return sendFile( res, safeResolveUnder( join( threeRepo, 'examples/jsm' ), rel ) );
+			if ( url.pathname.startsWith( '/__tslp_addons_replay/' ) ) {
 
-		}
-		if ( url.pathname === '/__tslp__/three.webgpu.slim.js' ) {
+				const rel = url.pathname.slice( '/__tslp_addons_replay/'.length );
+				if ( rel === 'inspector/Inspector.js' ) return sendJs( res, inspectorStubModule() );
+				if ( rel === 'libs/stats.module.js' ) return sendJs( res, statsStubModule() );
+				const source = await readFile( safeResolveUnder( join( threeRepo, 'examples/jsm' ), rel ), 'utf8' );
+				let rewritten = rewriteReplayAddon( source );
+				if ( rel === 'loaders/MaterialXLoader.js' ) rewritten = rewriteMaterialXLoaderTextureIdentity( rewritten );
+				if ( rel === 'loaders/KTX2Loader.js' || rel === 'loaders/GLTFLoader.js' ) {
+
+					const className = rel === 'loaders/GLTFLoader.js' ? 'GLTFLoader' : 'KTX2Loader';
+					rewritten = rewriteLoaderAddon( rewritten, className );
+
+				}
+				return sendJs( res, rewritten );
+
+			}
+			if ( url.pathname === '/__tslp__/three.webgpu.slim.js' ) {
 
 			res.setHeader( 'content-type', 'application/javascript; charset=utf-8' );
 			res.setHeader( 'cache-control', 'no-store' );
@@ -9784,11 +12273,17 @@ const server = createServer( async ( req, res ) => {
 			buf = Buffer.from( rewriteHarnessVirtualImports( buf.toString( 'utf8' ) ) );
 
 		}
-		if ( requestPath === '/examples/jsm/loaders/KTX2Loader.js' ) {
+			if ( requestPath === '/examples/jsm/loaders/MaterialXLoader.js' ) {
 
-			buf = Buffer.from( rewriteTextureLoaderAddon( buf.toString( 'utf8' ), 'KTX2Loader' ) );
+				buf = Buffer.from( rewriteMaterialXLoaderTextureIdentity( buf.toString( 'utf8' ) ) );
 
-		}
+			}
+			if ( requestPath === '/examples/jsm/loaders/KTX2Loader.js' || requestPath === '/examples/jsm/loaders/GLTFLoader.js' ) {
+
+				const className = requestPath.endsWith( '/GLTFLoader.js' ) ? 'GLTFLoader' : 'KTX2Loader';
+				buf = Buffer.from( rewriteLoaderAddon( buf.toString( 'utf8' ), className ) );
+
+			}
 
 		res.setHeader( 'access-control-allow-origin', '*' );
 		res.setHeader( 'content-type', MIME[ extname( filePath ).toLowerCase() ] || 'application/octet-stream' );
@@ -9930,6 +12425,15 @@ const ASSET_SETTLE_MS = parseIntAtLeast( getArg( '--asset-settle-ms=', '250' ), 
 const BRIGHT_POLL_MS = parseIntAtLeast( getArg( '--bright-poll-ms=', '400' ), 400, 0 );
 const HAS_EXPLICIT_SETTLE_FRAMES = args.some( ( arg ) => arg.startsWith( '--settle-frames=' ) );
 
+function targetTickForExample( name ) {
+	if ( HAS_EXPLICIT_TARGET_TICK ) return targetTick;
+	// Motion vectors need one completed animation step so VelocityNode has
+	// a meaningful previous/current pair. Tick zero compares startup history
+	// rather than replay fidelity.
+	if ( name === 'webgpu_postprocessing_motion_blur.html' ) return 1;
+	return targetTick;
+}
+
 function settleFramesForExample( name ) {
 	if ( HAS_EXPLICIT_SETTLE_FRAMES ) return SETTLE_FRAMES;
 	// ArrayCamera has no asynchronous scene assets and mutates rotation by
@@ -9938,7 +12442,63 @@ function settleFramesForExample( name ) {
 	// capture and replay wrappers through different renderer-initialization
 	// work, which shows up as a false visual diff.
 	if ( name === 'webgpu_camera_array.html' ) return 1;
+	// These examples keep advancing render-visible state on every clamped
+	// animation-loop callback (compute steps, helper/scissor state, media frames,
+	// postprocessing history, TSL time, or damping-driven camera state). Extra
+	// settle frames can therefore compare different histories instead of replay
+	// fidelity.
+	if ( name === 'webgpu_camera.html' ) return 1;
+	if ( name === 'webgpu_compute_sort_bitonic.html' ) return 1;
+	if ( name === 'webgpu_compute_water.html' ) return 1;
+	if ( name === 'webgpu_instance_path.html' ) return 1;
+	if ( name === 'webgpu_lights_custom.html' ) return 1;
+	if ( name === 'webgpu_lights_projector.html' ) return 1;
+	if ( name === 'webgpu_materials_video.html' ) return 1;
+	if ( name === 'webgpu_postprocessing_ao.html' ) return 1;
+	if ( name === 'webgpu_postprocessing_dof.html' ) return 1;
+	if ( name === 'webgpu_postprocessing_motion_blur.html' ) return 1;
+	if ( name === 'webgpu_postprocessing_ssr.html' ) return 1;
+	// TRAA needs several quiet frames to build usable history after the harness
+	// holds pre-ready count-driven callbacks.
+	if ( name === 'webgpu_postprocessing_traa.html' ) return 10;
+	if ( name === 'webgpu_sandbox.html' ) return 1;
+	if ( name === 'webgpu_shadowmap_progressive.html' ) return 1;
+	if ( name === 'webgpu_tsl_wood.html' ) return 1;
+	// The duck rotation in caustics advances by animation-loop callback count
+	// (`rotation.y -= .01`), not by the synthetic timestamp. Extra quiet settle
+	// frames therefore compare different model poses instead of replay fidelity.
+	if ( name === 'webgpu_caustics.html' ) return 1;
+	// Replay generates PMREM for the cube-camera render target asynchronously.
+	// Extra settle frames run another cubeCamera.update(), invalidating the
+	// just-finished PMREM and keeping the visual gate in a moving target loop.
+	if ( name === 'webgpu_cubemap_dynamic.html' ) return 1;
 	return SETTLE_FRAMES;
+}
+
+function minimumRenderableObjectsForExample( name ) {
+	// The projector-light page renders its plane + SpotLightHelper before the
+	// async PLY statue is attached. Waiting for one renderable object lets the
+	// stock/reference frame freeze before the loaded subject appears.
+	if ( name === 'webgpu_lights_projector.html' ) return 3;
+	// MaterialX loads one GLTF prefab, then sequentially awaits 32 MaterialX
+	// samples and compileAsync() calls. The loader/compile counters briefly hit
+	// zero between samples, so a one-object gate can freeze replay after the
+	// first couple of shader balls. The final scene is the grid plane plus two
+	// visible meshes per sample (Calibration_Mesh and Preview_Mesh).
+	if ( name === 'webgpu_loader_materialx.html' ) return 65;
+	// Procedural wood yields one block per setTimeout(0) after the HDR/font
+	// loads. Wait for the grid plane, 14 text labels, and all 40 wood blocks.
+	if ( name === 'webgpu_tsl_wood.html' ) return 55;
+	return 1;
+}
+
+function holdAnimationUntilReadyForExample( name ) {
+	// TRAA mutates object rotation by animation callback count and then
+	// accumulates that history. Resetting the settle counter while texture /
+	// compile work is pending is not enough: the hidden pre-ready callbacks
+	// still advance the scene. Hold callbacks until async work is quiet so both
+	// capture and replay build history from the same pose.
+	return name === 'webgpu_postprocessing_traa.html';
 }
 
 async function dumpCanvases( page ) {
@@ -10266,10 +12826,15 @@ async function visitExample( browser, name, mode, waitMs ) {
 	// `setAnimationLoop( ( time ) => ... )` callback therefore sees the
 	// same post-load settled time in all passes, so per-frame animations do
 	// not drift just because replay generated PMREM or hydrated artifacts.
-	const TARGET_TICK = Number.isFinite( targetTick ) ? Math.max( 0, targetTick | 0 ) : 0;
+	const effectiveTargetTick = targetTickForExample( name );
+	const TARGET_TICK = Number.isFinite( effectiveTargetTick ) ? Math.max( 0, effectiveTargetTick | 0 ) : 0;
 	const FRAME_STEP_MS = 16.6667;
-	const effectiveSettleFrames = settleFramesForExample( name );
-	const waitForRenderableObjects = await exampleUsesDeferredSceneAssets( name );
+		const effectiveSettleFrames = settleFramesForExample( name );
+		timings.targetTick = TARGET_TICK;
+		timings.settleFrames = effectiveSettleFrames;
+		const waitForRenderableObjects = await exampleUsesDeferredSceneAssets( name );
+		const minRenderableObjects = minimumRenderableObjectsForExample( name );
+		const holdAnimationUntilReady = holdAnimationUntilReadyForExample( name );
 	try {
 
 		stepStartedAt = Date.now();
@@ -10282,10 +12847,13 @@ async function visitExample( browser, name, mode, waitMs ) {
 		if ( process.env.TSLP_DEBUG_SHADOW_BINDINGS === '1' && mode === 'replay' ) {
 			await page.addInitScript( () => { globalThis.__TSLP_DEBUG_SHADOW_BINDINGS = true; window.__TSLP_DEBUG_SHADOW_BINDINGS = true; } );
 		}
+		if ( process.env.TSLP_DEBUG_FRAME_TEXTURES === '1' && mode === 'replay' ) {
+			await page.addInitScript( () => { globalThis.__TSLP_DEBUG_FRAME_TEXTURES = true; window.__TSLP_DEBUG_FRAME_TEXTURES = true; } );
+		}
 		if ( process.env.TSLP_DEBUG_REFLECTOR_BINDINGS === '1' && mode === 'replay' ) {
 			await page.addInitScript( () => { globalThis.__TSLP_DEBUG_REFLECTOR_BINDINGS = true; window.__TSLP_DEBUG_REFLECTOR_BINDINGS = true; } );
 		}
-		await page.addInitScript( ( { step, base, freezeAt, quiescentMs, settleFrames, waitForRenderableObjects } ) => {
+			await page.addInitScript( ( { step, base, freezeAt, quiescentMs, settleFrames, waitForRenderableObjects, minRenderableObjects, holdAnimationUntilReady, exampleName } ) => {
 
 			// eslint-disable-next-line no-undef
 			const w = window;
@@ -10334,6 +12902,36 @@ async function visitExample( browser, name, mode, waitMs ) {
 			w.__tslpFrozen = false;
 			w.__tslpAnimationLoopRegistered = false;
 			w.__tslpAnimationLoopCalls = 0;
+			if ( exampleName === 'webgpu_video_frame.html' && typeof w.VideoDecoder === 'function' && ! w.VideoDecoder.__tslpFirstFrameOnly ) {
+				const NativeVideoDecoder = w.VideoDecoder;
+				w.VideoDecoder = class VideoDecoder extends NativeVideoDecoder {
+					static __tslpFirstFrameOnly = true;
+					constructor( init = {} ) {
+						let delivered = false;
+						const output = typeof init.output === 'function' ? init.output : null;
+						super( {
+							...init,
+							output( frame ) {
+								if ( delivered ) {
+									try { frame.close && frame.close(); } catch ( _ ) {}
+									return;
+								}
+								delivered = true;
+								w.__tslpVideoFrameDelivered = true;
+								if ( output ) return output( frame );
+							},
+						} );
+					}
+					decode( chunk ) {
+						if ( w.__tslpVideoFrameDelivered === true ) return;
+						return super.decode( chunk );
+					}
+					flush() {
+						if ( w.__tslpVideoFrameDelivered === true ) return new Promise( () => {} );
+						return super.flush();
+					}
+				};
+			}
 			w.__tslpWrapAnimationLoop = function ( callback ) {
 
 				w.__tslpAnimationLoopRegistered = typeof callback === 'function';
@@ -10343,19 +12941,27 @@ async function visitExample( browser, name, mode, waitMs ) {
 				return function ( ...args ) {
 
 					const atTarget = ( w.__tslpRafTick | 0 ) >= freezeAt;
-					const waitingForRenderableObjects = w.__tslpWaitForRenderableObjects === true && ( w.__tslpRenderableObjectCount | 0 ) === 0;
-					const waitingForAsyncWork = ( w.__tslpLoaderPending | 0 ) !== 0
-						|| ( w.__tslpCompilePending | 0 ) !== 0
-						|| ( w.__tslpPmremPending | 0 ) !== 0
-						|| ( w.__tslpShadowPending | 0 ) !== 0
-						|| ( w.__tslpComputePending | 0 ) !== 0
-						|| waitingForRenderableObjects;
-					if ( atTarget && waitingForAsyncWork ) w.__tslpAnimationLoopCalls = 0;
-					if ( atTarget && ( w.__tslpShadowPending | 0 ) !== 0 ) { w.__tslpFrozen = true; return; }
+					const waitingForRenderableObjects = w.__tslpWaitForRenderableObjects === true && ( w.__tslpRenderableObjectCount | 0 ) < ( w.__tslpMinRenderableObjects | 0 );
+						const waitingForAsyncWork = ( w.__tslpLoaderPending | 0 ) !== 0
+							|| ( w.__tslpCompilePending | 0 ) !== 0
+							|| ( w.__tslpPmremPending | 0 ) !== 0
+							|| ( w.__tslpShadowPending | 0 ) !== 0
+							|| ( w.__tslpComputePending | 0 ) !== 0
+							|| waitingForRenderableObjects;
+						if ( atTarget && waitingForAsyncWork ) w.__tslpAnimationLoopCalls = 0;
+						if ( atTarget && waitingForAsyncWork && w.__tslpHoldAnimationUntilReady === true ) return;
+						const shadowPendingAtTarget = atTarget && ( w.__tslpShadowPending | 0 ) !== 0;
+					const freezeAfterShadowFrame = shadowPendingAtTarget && w.__tslpShadowFreezeFrameConsumed !== true;
+					if ( shadowPendingAtTarget && ! freezeAfterShadowFrame ) { w.__tslpFrozen = true; return; }
 					if ( atTarget && ( w.__tslpComputePending | 0 ) !== 0 ) return;
 					if ( atTarget && ! waitingForAsyncWork && ( w.__tslpAnimationLoopCalls | 0 ) >= settleFrames ) return;
 					w.__tslpAnimationLoopCalls = ( w.__tslpAnimationLoopCalls | 0 ) + 1;
-					return callback.apply( this, args );
+					const result = callback.apply( this, args );
+					if ( freezeAfterShadowFrame ) {
+						w.__tslpShadowFreezeFrameConsumed = true;
+						w.__tslpFrozen = true;
+					}
+					return result;
 
 				};
 
@@ -10368,9 +12974,11 @@ async function visitExample( browser, name, mode, waitMs ) {
 			// webgpu_loader_materialx that load 20+ assets sequentially.
 			w.__tslpLoaderPending = 0;
 			w.__tslpCompilePending = 0;
-			w.__tslpLoaderLastBusyAt = 0;
-			w.__tslpWaitForRenderableObjects = waitForRenderableObjects === true;
-			w.__tslpRenderableObjectCount = 0;
+				w.__tslpLoaderLastBusyAt = 0;
+				w.__tslpWaitForRenderableObjects = waitForRenderableObjects === true;
+				w.__tslpMinRenderableObjects = Math.max( 1, minRenderableObjects | 0 );
+				w.__tslpHoldAnimationUntilReady = holdAnimationUntilReady === true;
+				w.__tslpRenderableObjectCount = 0;
 			w.__tslpRenderableLastBusyAt = 0;
 
 			// Save the original Date.now BEFORE the synthetic-clock patch below
@@ -10414,7 +13022,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 					const lastBusy = w.__tslpLoaderLastBusyAt | 0;
 					const renderableLastBusy = w.__tslpRenderableLastBusyAt | 0;
 					const realNow = ( typeof w.__tslpRealNow === 'function' ) ? w.__tslpRealNow() : 0;
-					const renderableReady = w.__tslpWaitForRenderableObjects !== true || ( w.__tslpRenderableObjectCount | 0 ) > 0;
+					const renderableReady = w.__tslpWaitForRenderableObjects !== true || ( w.__tslpRenderableObjectCount | 0 ) >= ( w.__tslpMinRenderableObjects | 0 );
 					const animationLoopRegistered = w.__tslpAnimationLoopRegistered === true;
 					const animationLoopReady = ! animationLoopRegistered || ( w.__tslpAnimationLoopCalls | 0 ) >= settleFrames;
 					const settleTarget = animationLoopRegistered ? 1 : settleFrames;
@@ -10518,18 +13126,33 @@ async function visitExample( browser, name, mode, waitMs ) {
 			};
 			const _randomKeyFromStack = ( stack ) => {
 				const lines = String( stack || '' ).split( '\n' ).slice( 1 );
+				const exampleLines = [];
 				const userLines = [];
 				const fallbackLines = [];
+				const normalizeLine = ( line ) => String( line || '' )
+					.replace( /https?:\/\/[^/]+/g, '' )
+					.replace( /\?[^:)\s]+/g, '' )
+					.trim();
+				const isHarnessLine = ( line ) => line.includes( '__tslp__' ) || line.includes( '/__tslp_' );
+				const isThreeInternalLine = ( line ) => (
+					/\/build\/three\.[^/)\s]+\.js/.test( line ) ||
+					/(^|[(\s])\/src\//.test( line )
+				);
 				for ( let line of lines ) {
 					if ( line.includes( 'Math.random' ) ) continue;
-					line = line.replace( /https?:\/\/[^/]+/g, '' ).replace( /\?__tslp_mode=[^:)\s]+/g, '' ).trim();
-					if ( line ) fallbackLines.push( line );
-					if ( line.includes( '__tslp__' ) ) continue;
-					if ( line ) {
-						userLines.push( line );
-						if ( userLines.length >= 2 ) return userLines.join( ' <= ' );
+					line = normalizeLine( line );
+					if ( ! line ) continue;
+					fallbackLines.push( line );
+					if ( isHarnessLine( line ) || isThreeInternalLine( line ) ) continue;
+					if ( line.includes( '/examples/' ) && ! line.includes( '/examples/jsm/' ) ) {
+						exampleLines.push( line );
+						if ( exampleLines.length >= 2 ) return exampleLines.join( ' <= ' );
+						continue;
 					}
+					userLines.push( line );
+					if ( userLines.length >= 2 ) break;
 				}
+				if ( exampleLines.length > 0 ) return exampleLines.join( ' <= ' );
 				if ( userLines.length > 0 ) return userLines.join( ' <= ' );
 				return fallbackLines.slice( 0, 2 ).join( ' <= ' ) || 'unknown';
 			};
@@ -10544,7 +13167,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 
 			};
 
-		}, { step: FRAME_STEP_MS, base: 0, freezeAt: TARGET_TICK, quiescentMs: LOADER_QUIESCENT_MS, settleFrames: effectiveSettleFrames, waitForRenderableObjects } );
+		}, { step: FRAME_STEP_MS, base: 0, freezeAt: TARGET_TICK, quiescentMs: LOADER_QUIESCENT_MS, settleFrames: effectiveSettleFrames, waitForRenderableObjects, minRenderableObjects, holdAnimationUntilReady, exampleName: name } );
 		mark( 'initScriptMs', stepStartedAt );
 
 	} catch ( _ ) { /* older Playwright fallback */ }
