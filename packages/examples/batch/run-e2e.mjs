@@ -3262,6 +3262,15 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 	const diag = __computeDiagnostics();
 	if ( diag ) diag.wireCalls = ( diag.wireCalls | 0 ) + 1;
 
+	// Drain storage attributes registered by the tsl-stub bridge (instancedArray
+	// / storage / storageBufferAttribute shims) into the fallback list so the
+	// shape-based fallback wiring below sees them BEFORE the first compute
+	// dispatch. Without this seed the first hydration produces empty placeholder
+	// attributes and the compute output never reaches the slim vertex shader.
+	if ( typeof window !== 'undefined' && Array.isArray( window.__tslpPreComputeStorageAttrs ) ) {
+		for ( const attr of window.__tslpPreComputeStorageAttrs ) __rememberComputeStorageAttr( attr );
+	}
+
 	// vec3 StorageBufferAttributes are padded to itemSize=4 by WebGPU on first use.
 	// Accept both 3 and 4 when the artifact recorded 4 (pad already applied at capture).
 	function sizeMatches( liveSize, artifactSize ) {
@@ -3295,6 +3304,13 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 			// _liveAttribute may already be set from JSON deserialization (plain object, not
 			// a live attribute). Only skip if it is already a proper live JS attribute object.
 			if ( ! nodeAttr || nodeAttr.source !== 'node' || isStorageAttr( nodeAttr._liveAttribute ) ) continue;
+			// Skip entries captured as non-storage instanced attributes — these are
+			// object-owned (InstancedMesh.instanceMatrix columns, instanceColor, …)
+			// and must be wired by the runtime's findInstancedObjectAttributeMatchingEntry
+			// path. Without this guard, webgpu_compute_birds' 4 instanceMatrix
+			// nodeAttribute slots greedily consume positionStorage/velocityStorage
+			// by shape match and the bird mesh is smeared by their values.
+			if ( nodeAttr.storage === false ) continue;
 			const matchIdx = naCandidates.findIndex( ( v ) => v.count === nodeAttr.count && sizeMatches( v.itemSize, nodeAttr.itemSize ) );
 			if ( matchIdx === -1 ) continue;
 			const liveAttr = __preferComputeStorageAttr( naCandidates[ matchIdx ], nodeAttr, sizeMatches );
@@ -3315,6 +3331,9 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 		for ( const nodeAttr of nodeAttrsArr ) {
 			if ( ! nodeAttr || nodeAttr.source !== 'node' || isStorageAttr( nodeAttr._liveAttribute ) ) continue;
 			if ( Array.isArray( nodeAttr.userPath ) && nodeAttr.userPath.length > 0 ) continue;
+			// See gate above — only attributes captured as storage-backed (e.g.
+			// `instancedArray(...).toAttribute()`) belong here.
+			if ( nodeAttr.storage === false ) continue;
 			const matches = __computeStorageAttrFallbacks.filter( ( v ) => (
 				v &&
 				v.count === nodeAttr.count &&
@@ -3346,11 +3365,23 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 	// no userPath. Wire those from the live material node graph before hydration.
 	const __useHarnessStorageWire = true;
 	if ( __useHarnessStorageWire && sbCandidates.length > 0 ) {
+		// Same-shape disambiguation: prefer name match on entry.attributeName
+		// (captured from attribute.name at extract time) before falling back to
+		// shape-only matching. Without this, compute_birds wires position and
+		// velocity to each other's bind slots because both are vec3+8192.
+		const findMatch = ( sb ) => {
+			const wantName = typeof sb.attributeName === 'string' ? sb.attributeName : '';
+			let m = wantName
+				? sbCandidates.find( ( c ) => c && c.name === wantName && c.count === sb.count && sizeMatches( c.itemSize, sb.itemSize ) )
+				: null;
+			if ( ! m ) m = sbCandidates.find( ( c ) => c.count === sb.count && sizeMatches( c.itemSize, sb.itemSize ) );
+			return m;
+		};
 		for ( const group of plan ) {
 			// Try explicit storageBuffers list first
 			for ( const sb of ( group.storageBuffers || [] ) ) {
 				if ( isStorageAttr( sb._liveAttribute ) ) continue;
-				const match = sbCandidates.find( ( c ) => c.count === sb.count && sizeMatches( c.itemSize, sb.itemSize ) );
+				const match = findMatch( sb );
 				if ( match ) {
 					Object.defineProperty( sb, '_liveAttribute', { value: match, enumerable: false, writable: true, configurable: true } );
 					wiredCount++;
@@ -3363,7 +3394,7 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 				if ( ! ob || ob.type !== 'storage-buffer' || ! ob.ref ) continue;
 				const sb = ob.ref;
 				if ( isStorageAttr( sb._liveAttribute ) ) continue;
-				const match = sbCandidates.find( ( c ) => c.count === sb.count && sizeMatches( c.itemSize, sb.itemSize ) );
+				const match = findMatch( sb );
 				if ( match ) {
 					Object.defineProperty( sb, '_liveAttribute', { value: match, enumerable: false, writable: true, configurable: true } );
 					wiredCount++;
@@ -3890,6 +3921,7 @@ function __wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, replacement
 	__appendArtifactSidecars( artifact, '_liveUpdateBeforeNodes', updateBeforeNodes );
 	__appendArtifactSidecars( artifact, '_liveUpdateAfterNodes', updateAfterNodes );
 	if ( uniformNodes.length === 0 ) return;
+	const drivenUniformNodes = __collectDrivenUniformNodes( updateNodes, uniformNodes );
 	const used = new Set();
 	for ( const group of artifact.uniformPlan || [] ) {
 		for ( const slot of group.slots || [] ) {
@@ -3902,6 +3934,24 @@ function __wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, replacement
 			}
 			if ( ! match ) match = uniformNodes.find( ( node ) => ! used.has( node ) && __valueMatchesUniformSlot( node.value, slot ) );
 			if ( ! match ) match = uniformNodes.find( ( node ) => __valueMatchesUniformSlot( node.value, slot ) );
+			if ( ! match && ! source.name && drivenUniformNodes.size > 0 ) {
+				// Permissive fallback: per-object update nodes (webgpu_instance_uniform's
+				// InstanceUniformNode) mutate their inner UniformNode.value per draw.
+				// The captured snapshot is from one mesh; replay live values from a
+				// fresh Math.random() won't match it. Match by dtype alone when
+				// exactly one unused driven candidate exists.
+				const dtype = slot.dtype || '';
+				let candidate = null;
+				let candidateCount = 0;
+				for ( const node of drivenUniformNodes ) {
+					if ( used.has( node ) ) continue;
+					if ( ! __valueMatchesUniformDtype( node.value, dtype ) ) continue;
+					candidate = node;
+					candidateCount ++;
+					if ( candidateCount > 1 ) break;
+				}
+				if ( candidateCount === 1 ) match = candidate;
+			}
 			if ( ! match ) continue;
 			Object.defineProperty( slot, '_liveNode', {
 				value: match,
@@ -3909,9 +3959,41 @@ function __wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, replacement
 				configurable: true,
 				writable: true,
 			} );
+			// Mirror the in-process apply-precompiled flow (overlay: true). The UBO
+			// writer at hydrator.js:780 only reads _liveNode.value when
+			// __tslpLiveSidecarOverlay === true; otherwise it falls back to the
+			// frozen capture snapshot, defeating per-object update nodes.
+			Object.defineProperty( slot, '__tslpLiveSidecarOverlay', {
+				value: true,
+				enumerable: false,
+				configurable: true,
+				writable: true,
+			} );
 			used.add( match );
 		}
 	}
+}
+
+const __WIRE_DRIVEN_SKIP_KEYS = new Set( [ 'parent', 'children', 'scene', 'camera', 'renderer', 'geometry', '_cache', 'domElement', 'sourceMaterial', 'material', 'object' ] );
+
+function __collectDrivenUniformNodes( updateNodes, uniformNodes ) {
+	const driven = new Set();
+	if ( ! Array.isArray( updateNodes ) || updateNodes.length === 0 ) return driven;
+	if ( ! Array.isArray( uniformNodes ) || uniformNodes.length === 0 ) return driven;
+	const uniformSet = new Set( uniformNodes );
+	for ( const updateNode of updateNodes ) {
+		if ( ! updateNode || ( typeof updateNode !== 'object' && typeof updateNode !== 'function' ) ) continue;
+		let keys = [];
+		try { keys = Object.getOwnPropertyNames( updateNode ); } catch ( _ ) { continue; }
+		for ( const key of keys ) {
+			if ( __WIRE_DRIVEN_SKIP_KEYS.has( key ) ) continue;
+			let value = null;
+			try { value = updateNode[ key ]; } catch ( _ ) { continue; }
+			if ( ! value ) continue;
+			if ( value.isUniformNode === true && uniformSet.has( value ) ) driven.add( value );
+		}
+	}
+	return driven;
 }
 
 function __materialFamilyFromClassName( className ) {
@@ -6120,6 +6202,95 @@ function __harnessDiagnostics() {
 	return window.__tslpHarnessDiagnostics || ( window.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
 }
 
+// PHASE-1 DIAG (webgpu_backdrop_water replay regression): record meshes whose
+// per-attribute buffer length is too small to satisfy the draw's vertex count.
+// The smoking-gun GPU error reads "buffer size (12) of the vertex buffer at
+// slot 1 with stride 12" for a 3-vert draw — i.e. a vec3 attribute with one
+// vertex's data backing a 3-vertex draw. We don't yet know which mesh; this
+// records every observed anomaly + stashes the latest draw context so the
+// uncapturederror handler can append it to gpuErrors.
+function __recordDrawGeometryHealth( object, geometry, material ) {
+	if ( ! object || ! geometry || ! geometry.attributes ) return;
+	const positionAttr = geometry.attributes.position;
+	if ( ! positionAttr ) return;
+	const expected = geometry.index ? ( geometry.index.count || 0 ) : ( positionAttr.count || 0 );
+	if ( expected <= 0 ) return;
+	const objLabel = ( object.name || object.type || object.constructor && object.constructor.name || 'obj' );
+	const matLabel = ( material && ( material.name || material.type || material.constructor && material.constructor.name ) ) || 'mat';
+	const attrInfo = [];
+	let bad = false;
+	for ( const name in geometry.attributes ) {
+		const attr = geometry.attributes[ name ];
+		if ( ! attr ) continue;
+		const itemSize = attr.itemSize || 1;
+		const bufElements = attr.array ? ( attr.array.length / itemSize ) | 0 : ( attr.count | 0 );
+		const flags = [];
+		if ( attr.isStorageBufferAttribute === true ) flags.push( 'storageBuf' );
+		if ( attr.isStorageInstancedBufferAttribute === true ) flags.push( 'storageInstBuf' );
+		if ( attr.isInstancedBufferAttribute === true ) flags.push( 'instBuf' );
+		attrInfo.push( { name, itemSize, count: attr.count | 0, bufElements, byteLen: attr.array && attr.array.byteLength || 0, flags: flags.join( ',' ) || null } );
+		const expectedForAttr = geometry.index ? Math.max.apply( null, [ ...( geometry.index.array || [ 0 ] ) ] ) + 1 : expected;
+		if ( bufElements < expectedForAttr ) bad = true;
+	}
+	// Also record the precompiledArtifact's attribute entries — these are what
+	// RenderObject.getAttributes iterates over to choose which BufferAttribute
+	// to bind. If any entry has _liveAttribute or node.attribute pointing to
+	// a 1-element buffer, that overrides the geometry lookup.
+	const artifact = material && material.precompiledArtifact || null;
+	const artifactAttrInfo = [];
+	if ( artifact ) {
+		const entries = Array.isArray( artifact.nodeAttributes ) && artifact.nodeAttributes.length > 0
+			? artifact.nodeAttributes
+			: Array.isArray( artifact.attributes ) ? artifact.attributes : [];
+		for ( const entry of entries ) {
+			if ( ! entry ) continue;
+			const live = entry._liveAttribute || ( entry.node && entry.node.attribute ) || null;
+			artifactAttrInfo.push( {
+				name: entry.name || '',
+				type: entry.type || '',
+				source: entry.source || '',
+				count: entry.count | 0,
+				itemSize: entry.itemSize | 0,
+				hasLive: !! live,
+				liveCount: live && live.count | 0,
+				liveItemSize: live && live.itemSize | 0,
+				liveLen: live && live.array && live.array.length | 0,
+				liveByteLen: live && live.array && live.array.byteLength | 0,
+				liveFlags: live ? [
+					live.isStorageBufferAttribute ? 'storageBuf' : null,
+					live.isStorageInstancedBufferAttribute ? 'storageInstBuf' : null,
+					live.isInstancedBufferAttribute ? 'instBuf' : null,
+				].filter( Boolean ).join( ',' ) || null : null,
+			} );
+		}
+	}
+	try {
+		window.__tslpLatestDrawContext = {
+			object: objLabel,
+			material: matLabel,
+			isPrecompiled: !! ( material && material.isPrecompiledMaterial ),
+			artifactShape: artifact && artifact.materialShape || null,
+			expectedVerts: expected,
+			indexed: !! geometry.index,
+			attributes: attrInfo,
+			artifactAttrs: artifactAttrInfo,
+		};
+		window.__tslpDrawContextCount = ( window.__tslpDrawContextCount | 0 ) + 1;
+	} catch ( err ) {
+		window.__tslpDrawContextSetErrors = window.__tslpDrawContextSetErrors || [];
+		if ( window.__tslpDrawContextSetErrors.length < 3 ) window.__tslpDrawContextSetErrors.push( String( err && err.message || err ) );
+	}
+	if ( ! bad ) return;
+	try {
+		const diag = __harnessDiagnostics();
+		const anomalies = diag.vertexBufferAnomalies || ( diag.vertexBufferAnomalies = [] );
+		const key = ( object.uuid || objLabel ) + '|' + matLabel;
+		if ( anomalies.length < 20 && ! anomalies.some( ( a ) => a.key === key ) ) {
+			anomalies.push( { key, object: objLabel, material: matLabel, expectedVerts: expected, indexed: !! geometry.index, attributes: attrInfo, artifactAttrs: artifactAttrInfo } );
+		}
+	} catch ( _ ) {}
+}
+
 function __pmremDiagnostics() {
 	const diag = __harnessDiagnostics();
 	if ( ! diag.pmrem ) {
@@ -6995,7 +7166,6 @@ function __shareComputeSampledInputs( computeNode, fullRenderer, slimRenderer ) 
 
 function __wireSceneComputeAttrsFromFallbacks( scene, renderer = null ) {
 	if ( ! scene || typeof scene.traverse !== 'function' || __computeStorageAttrFallbacks.length === 0 ) return;
-	let invalidated = false;
 	scene.traverse( ( object ) => {
 		const material = object && object.material;
 		const list = Array.isArray( material ) ? material : material ? [ material ] : [];
@@ -7005,20 +7175,12 @@ function __wireSceneComputeAttrsFromFallbacks( scene, renderer = null ) {
 			if ( wired > 0 ) {
 				m.needsUpdate = true;
 				try {
-					const nodes = renderer && renderer._nodes;
+					const nodes = m.__tslpRenderer && m.__tslpRenderer._nodes;
 					if ( nodes && typeof nodes.delete === 'function' ) nodes.delete( m );
 				} catch ( _ ) {}
-				try { m.dispose(); } catch ( _ ) {}
-				invalidated = true;
 			}
 		}
 	} );
-	if ( invalidated && renderer ) {
-		try {
-			const nc = renderer._nodes && renderer._nodes.nodeBuilderCache;
-			if ( nc && typeof nc.clear === 'function' ) nc.clear();
-		} catch ( _ ) {}
-	}
 }
 
 function __collectSceneLightsForReplay( scene ) {
@@ -9262,6 +9424,7 @@ function __pinForceWebGLReplayCanvas( renderer ) {
 		}
 	}
 	renderObject( object, scene, camera, geometry, material, group, lightsNode, clippingContext ) {
+		__recordDrawGeometryHealth( object, geometry, material );
 		let nextMaterial = material;
 		if ( __isRetroPassGeneratedMaterial( this, scene, material ) ) {
 			const retroDiag = __retroPassDiagnostics();
@@ -9354,7 +9517,8 @@ function __pinForceWebGLReplayCanvas( renderer ) {
 				if ( this.__tslpPostComputeRendering === true ) return Promise.resolve();
 				window.__tslpComputePending = ( window.__tslpComputePending | 0 ) + 1;
 				const _slimRenderer = this;
-				let _forcePostComputeRender = ( _slimRenderer.__tslpInsideReplayUpdateBefore | 0 ) > 0;
+				const _wasInUpdateBefore = ( _slimRenderer.__tslpInsideReplayUpdateBefore | 0 ) > 0;
+				let _forcePostComputeRender = _wasInUpdateBefore;
 				const _topReplayPipeline = _slimRenderer.__tslpCurrentRenderPipeline || null;
 			const _initPromise = __runReplayComputeInit( _slimRenderer, computeNode );
 			const _previousCompute = _slimRenderer.__tslpComputeChain || Promise.resolve();
@@ -9382,7 +9546,18 @@ function __pinForceWebGLReplayCanvas( renderer ) {
 				// with the freshly synced storage buffers. Explicit user compute
 				// calls keep the older frozen-only behavior because the app's
 				// animation loop usually renders immediately after scheduling them.
-					if ( ( window.__tslpFrozen || _forcePostComputeRender ) && ( window.__tslpComputePending | 0 ) === 0 && _slimRenderer.__tslpPostComputeRendering !== true ) {
+					// Init-time one-time compute (called before any render, completes
+					// before freeze) leaves _wasInUpdateBefore=0 and __tslpFrozen=false
+					// at .finally() time. Without a forced redraw the rAF squashes on
+					// freeze and the screenshot captures a pre-share frame. Allow the
+					// force render whenever the post-compute sync produced shareable
+					// storage outputs AND the app has already issued at least one
+					// render (so we have a scene/camera to draw).
+					const _hasRenderedOnce = !! ( _slimRenderer._lastScene && _slimRenderer._lastCamera );
+					const _allowForceRender = window.__tslpFrozen
+						? _forcePostComputeRender
+						: ( _wasInUpdateBefore || ( _forcePostComputeRender && _hasRenderedOnce ) );
+					if ( _allowForceRender && ( window.__tslpComputePending | 0 ) === 0 && _slimRenderer.__tslpPostComputeRendering !== true ) {
 						const sc = _slimRenderer._lastScene;
 						const cam = _slimRenderer._lastCamera;
 						if ( _topReplayPipeline && typeof _topReplayPipeline.render === 'function' ) {
@@ -9693,11 +9868,17 @@ function __restoreCanvasViewport( renderer ) {
 function __renderPassNodesForPipeline( renderer, passNodes ) {
 	const previous = __activePipelinePassNodes;
 	__activePipelinePassNodes = Array.isArray( passNodes ) ? passNodes : null;
+	const hasPassNodes = Array.isArray( passNodes ) && passNodes.length > 0;
 	try {
-		for ( const passNode of passNodes || [] ) __renderPassNodeForPipeline( renderer, passNode );
+		if ( hasPassNodes ) for ( const passNode of passNodes ) __renderPassNodeForPipeline( renderer, passNode );
 	} finally {
 		__activePipelinePassNodes = previous;
-		__restoreCanvasViewport( renderer );
+		// Only restore canvas viewport when we actually rendered pass nodes
+		// (whose internal renders may have mutated scissor/viewport on the
+		// renderer). Otherwise we clobber user-set viewport/scissor state
+		// before the subsequent super.render in the parent render() hook —
+		// breaking split-screen examples like webgpu_camera.html.
+		if ( hasPassNodes ) __restoreCanvasViewport( renderer );
 	}
 }
 
@@ -9934,7 +10115,7 @@ function __prepareBloomNodeForReplay( bloomNode, context ) {
 			Object.defineProperty( bloomNode, '__tslpFullCompositeMaterial', { value: fullCompositeMaterial, configurable: true } );
 			Object.defineProperty( bloomNode, '__tslpFullBlurMaterials', { value: fullBlurMaterials, configurable: true } );
 		}
-		if ( typeof __state.example === 'string' && ( __state.example.startsWith( 'webgpu_volume_' ) || __state.example === 'webgpu_postprocessing_lensflare.html' ) ) {
+		if ( typeof __state.example === 'string' && ( __state.example.startsWith( 'webgpu_volume_' ) || __state.example === 'webgpu_postprocessing_lensflare.html' || __state.example === 'webgpu_lights_tiled.html' ) ) {
 			Object.defineProperty( bloomNode, '__tslpPreferSlimBloomReplay', { value: true, configurable: true } );
 		}
 		__patchBloomNodeUpdateBefore( bloomNode );
@@ -11302,6 +11483,14 @@ function __frameEffectDiagnostics() {
 	return diag.frameEffects;
 }
 
+function __postprocessHandlerDiagnostics() {
+	const diag = __harnessDiagnostics();
+	if ( ! diag.postprocessHandler ) {
+		diag.postprocessHandler = { totalCalls: 0, lastPrepared: 0, lastMissed: 0, byHandler: {} };
+	}
+	return diag.postprocessHandler;
+}
+
 function __nodeOwnsRenderTarget( node ) {
 	if ( ! node || ( typeof node !== 'object' && typeof node !== 'function' ) ) return false;
 	if ( ! __isGraphTraversalCandidate( node ) ) return false;
@@ -11319,6 +11508,13 @@ function __isFrameEffectNode( node ) {
 	if ( ! node || typeof node.updateBefore !== 'function' ) return false;
 	if ( node.isPassNode === true || node.isRTTNode === true || __isBloomEffectNode( node ) || __isOutlineEffectNode( node ) ) return false;
 	if ( __isSSREffectNode( node ) || __isDOFEffectNode( node ) || __isTRAAEffectNode( node ) ) return false;
+	// GaussianBlurNode is owned by the slim-runtime postprocess-effects
+	// registry (handler name 'gaussianBlur'). Replay swaps node._material for
+	// a PrecompiledMaterial wrapping the captured 'gaussian-blur' aux artifact,
+	// and the live updateBefore drives the H/V pingpong on the slim renderer.
+	// Routing it through the full-renderer frame-effect fallback both
+	// double-renders and produces fragile cross-renderer texture-share state.
+	if ( node.isGaussianBlurNode === true ) return false;
 	const proto = Object.getPrototypeOf( node );
 	const hasSpecialUpdateBefore = Object.prototype.hasOwnProperty.call( node, 'updateBefore' )
 		|| !! ( proto && Object.prototype.hasOwnProperty.call( proto, 'updateBefore' ) );
@@ -11804,6 +12000,52 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				for ( const node of ssrNodes ) __prepareSSRNodeForReplay( node, context );
 				for ( const node of dofNodes ) __prepareDOFNodeForReplay( node, context );
 				for ( const node of traaNodes ) __prepareTRAANodeForReplay( node, context );
+				// Productized slim-runtime postprocess handler registry: adds
+				// gaussianBlur on top of the in-harness specific paths above.
+				// Swap node._material for a PrecompiledMaterial so the slim
+				// renderer drives the live updateBefore directly instead of
+				// routing through __computeRenderer via __isFrameEffectNode.
+				const slimEffectNodes = [];
+				if ( typeof Slim.preparePrecompiledPostprocess === 'function' ) {
+					try {
+						const pppDiag = __postprocessHandlerDiagnostics();
+						// parentArtifact: project effect-output RTs (gaussianBlur's
+						// _verticalRT.texture) into the outer composite's _textureRefs
+						// so its artifact.texture slot that samples by textureName
+						// "GaussianBlurNode.vertical" resolves. Same JS object becomes
+						// mat.precompiledArtifact below; subsequent __attach* calls
+						// preserve existing _textureRefs entries.
+						const pppResult = Slim.preparePrecompiledPostprocess( {
+							outputNode: this.outputNode,
+							loadAux: Slim.loadAux,
+							PrecompiledMaterial: Slim.PrecompiledMaterial,
+							sharedContext: context,
+							parentArtifact: artifact,
+							diagnostics: pppDiag,
+						} );
+						pppDiag.totalCalls = ( pppDiag.totalCalls || 0 ) + 1;
+						pppDiag.lastPrepared = pppResult && pppResult.prepared && pppResult.prepared.length || 0;
+						pppDiag.lastMissed = pppResult && pppResult.missed && pppResult.missed.length || 0;
+						// Collect the live nodes whose internal material was swapped
+						// to a PrecompiledMaterial; we need to call their updateBefore
+						// on the slim renderer ourselves because the in-harness
+						// frame-effect path is now skipping these (Step 2 of the
+						// fix excludes them via isGaussianBlurNode).
+						if ( typeof Slim.collectEffectNodes === 'function' ) {
+							const matches = Slim.collectEffectNodes( this.outputNode );
+							for ( const { node } of matches ) {
+								if ( node && node.__tslpEffectReplayReady === true && ! slimEffectNodes.includes( node ) ) {
+									slimEffectNodes.push( node );
+								}
+							}
+						}
+					} catch ( err ) {
+						if ( ! window.__tslpPostprocessHandlerWarned ) {
+							window.__tslpPostprocessHandlerWarned = true;
+							console.warn( '[tslp-e2e] preparePrecompiledPostprocess failed:', err && ( err.stack || err.message ) || err );
+						}
+					}
+				}
 				const effectBeforeRenderPipeline = context.onBeforeRenderPipeline;
 				const effectAfterRenderPipeline = context.onAfterRenderPipeline;
 				artifact = __attachGraphTextureRefs( artifact, this.outputNode );
@@ -11931,6 +12173,9 @@ function tslStubModule() {
 		.filter( ( name ) => name !== 'texture3D' )
 		.filter( ( name ) => name !== 'textureLoad' )
 		.filter( ( name ) => name !== 'pmremTexture' )
+		.filter( ( name ) => name !== 'instancedArray' )
+		.filter( ( name ) => name !== 'storage' )
+		.filter( ( name ) => name !== 'storageBufferAttribute' )
 		.map( ( name ) => `const ${ name } = __TSL[ '${ name }' ];` )
 		.join( '\n' );
 	const reflectorShim = unique.includes( 'reflector' )
@@ -12010,6 +12255,53 @@ const __tslpRealTextureLoad = __TSL[ 'textureLoad' ];
 const textureLoad = ( ...args ) => {
 	__tslpRememberTextureArg( args[ 0 ] );
 	return __tslpRealTextureLoad( ...args );
+};
+// Storage attribute shims — instancedArray / storage / storageBufferAttribute
+// create the StorageBufferAttribute that compute kernels write into and vertex
+// shaders read. The slim runtime needs to wire the artifact's storage-buffer
+// entries to these LIVE attributes before first hydration; if we wait for the
+// compute bind-group walk we miss the first frame. Capture the attribute on
+// the returned node's .value and stash it in a global registry the harness
+// drains into __computeStorageAttrFallbacks before each wire pass.
+//
+// Also propagate the node's name (set via .setName('positionStorage')) onto the
+// attribute, so the replay-side wiring can disambiguate same-shape entries by
+// name (e.g. compute_birds positionStorage vs velocityStorage are both vec3+8192).
+const __tslpRememberStorageAttr = ( node ) => {
+	const attr = node && node.value;
+	if ( ! attr || ( attr.isStorageBufferAttribute !== true && attr.isStorageInstancedBufferAttribute !== true ) ) return;
+	if ( node && typeof node.name === 'string' && node.name && ! attr.name ) attr.name = node.name;
+	// Wrap setName so any later .setName() on the node also lands on the attribute.
+	if ( node && ! node.__tslpSetNameWrapped ) {
+		const origSetName = node.setName ? node.setName.bind( node ) : null;
+		node.setName = ( name ) => {
+			if ( origSetName ) origSetName( name );
+			else node.name = name;
+			if ( attr ) attr.name = name;
+			return node;
+		};
+		try { Object.defineProperty( node, '__tslpSetNameWrapped', { value: true, configurable: true } ); } catch ( _ ) {}
+	}
+	const list = globalThis.__tslpPreComputeStorageAttrs || ( globalThis.__tslpPreComputeStorageAttrs = [] );
+	if ( ! list.includes( attr ) ) list.push( attr );
+};
+const __tslpRealInstancedArray = __TSL[ 'instancedArray' ];
+const instancedArray = ( ...args ) => {
+	const node = __tslpRealInstancedArray( ...args );
+	__tslpRememberStorageAttr( node );
+	return node;
+};
+const __tslpRealStorage = __TSL[ 'storage' ];
+const storage = ( ...args ) => {
+	const node = __tslpRealStorage( ...args );
+	__tslpRememberStorageAttr( node );
+	return node;
+};
+const __tslpRealStorageBufferAttribute = __TSL[ 'storageBufferAttribute' ];
+const storageBufferAttribute = ( ...args ) => {
+	const node = __tslpRealStorageBufferAttribute( ...args );
+	__tslpRememberStorageAttr( node );
+	return node;
 };
 ${ pmremTextureShim }
 const pass = ( scene, camera, options ) => new __ReplayPassNode( __ReplayPassNode.COLOR, scene, camera, options );
@@ -12880,7 +13172,20 @@ async function visitExample( browser, name, mode, waitMs ) {
 									device.addEventListener( 'uncapturederror', ( event ) => {
 
 										const message = event && event.error && event.error.message || event && event.message || String( event );
-										diagnostics.gpuErrors.push( message );
+										// PHASE-1 DIAG: append the latest renderObject draw context so
+										// we can identify which mesh / attribute triggered the error.
+										let suffix = '';
+										let ctxRaw = null;
+										try {
+											ctxRaw = w.__tslpLatestDrawContext;
+											if ( ctxRaw ) suffix = '\n[tslp-diag-draw] ' + JSON.stringify( ctxRaw );
+										} catch ( e ) {
+											suffix = '\n[tslp-diag-draw-error] ' + String( e && e.message || e ) + ' ctxTypeof=' + ( typeof ctxRaw );
+										}
+										if ( ! suffix ) {
+											suffix = '\n[tslp-diag-no-ctx] cnt=' + ( w.__tslpDrawContextCount | 0 ) + ' errs=' + JSON.stringify( w.__tslpDrawContextSetErrors || [] );
+										}
+										diagnostics.gpuErrors.push( message + suffix );
 
 									} );
 								} catch ( _ ) {}
@@ -13644,6 +13949,86 @@ function formatPixelGate( gate ) {
 
 }
 
+const REGRESSION_DELTA_DB = 1.0;
+
+function loadPriorReportIndex( path ) {
+
+	const index = new Map();
+	if ( ! existsSync( path ) ) return index;
+	try {
+		const raw = JSON.parse( readFileSync( path, 'utf8' ) );
+		for ( const d of ( raw && raw.details ) || [] ) {
+			if ( ! d || ! d.name ) continue;
+			const psnr = d.pixelGate && d.pixelGate.psnr !== undefined ? d.pixelGate.psnr : null;
+			index.set( d.name, { psnr, status: d.status || null } );
+		}
+	} catch ( err ) {
+		console.warn( `[batch-e2e] could not read prior report at ${ path }: ${ err && err.message || err }` );
+	}
+	return index;
+
+}
+
+function currentPsnrOf( result ) {
+
+	const gate = result && result.pixelGate;
+	if ( ! gate ) return null;
+	if ( gate.skipped ) return null;
+	if ( gate.psnr === undefined ) return null;
+	return gate.psnr;
+
+}
+
+function attachPriorScore( result, priorIndex ) {
+
+	const prior = priorIndex.get( result.name ) || null;
+	result.previousPsnr = prior && prior.psnr !== undefined ? prior.psnr : null;
+	result.previousStatus = prior ? prior.status : null;
+	const cur = currentPsnrOf( result );
+	const finite = ( v ) => typeof v === 'number' && Number.isFinite( v );
+	result.psnrDelta = finite( cur ) && finite( result.previousPsnr )
+		? Math.round( ( cur - result.previousPsnr ) * 100 ) / 100
+		: null;
+	return result;
+
+}
+
+function isRegression( result ) {
+
+	if ( ! result || result.previousStatus == null ) return null;
+	const cur = currentPsnrOf( result );
+	const prev = result.previousPsnr;
+	const priorPassedWithScore = result.previousStatus === 'pass' && typeof prev === 'number' && Number.isFinite( prev );
+	if ( result.previousStatus === 'pass' && result.status === 'fail' ) {
+		return { kind: 'status', prior: prev, current: cur, delta: result.psnrDelta };
+	}
+	if ( result.psnrDelta !== null && result.psnrDelta <= - REGRESSION_DELTA_DB ) {
+		return { kind: 'psnr', prior: prev, current: cur, delta: result.psnrDelta };
+	}
+	if ( priorPassedWithScore && cur === null ) {
+		return { kind: 'coverage', prior: prev, current: cur, delta: null };
+	}
+	return null;
+
+}
+
+function formatRegressionMarker( reg ) {
+
+	if ( ! reg ) return '';
+	if ( reg.kind === 'status' ) {
+		const was = ( typeof reg.prior === 'number' || reg.prior === 'inf' ) ? ` (was ${ reg.prior } dB)` : '';
+		return `regress: pass→fail${ was }`;
+	}
+	if ( reg.kind === 'psnr' ) {
+		return `regress: ${ reg.prior }→${ reg.current } dB (Δ${ reg.delta })`;
+	}
+	if ( reg.kind === 'coverage' ) {
+		return `regress: was ${ reg.prior } dB, now skipped`;
+	}
+	return '';
+
+}
+
 function diagnosticNote( diagnostics ) {
 
 	if ( ! diagnostics ) return '';
@@ -13666,6 +14051,8 @@ function formatResultLine( label, result ) {
 		`replay ${ formatPercent( result.replayBrightFrac ) }`,
 		formatPixelGate( result.pixelGate ),
 	];
+	const reg = isRegression( result );
+	if ( reg ) parts.push( formatRegressionMarker( reg ) );
 	const diag = diagnosticNote( result.replayDiagnostics );
 	if ( diag ) parts.push( diag );
 	if ( result.error ) parts.push( `error: ${ compactText( result.error ) }` );
@@ -13717,6 +14104,24 @@ function printFailureSummary( details, max = 20 ) {
 
 }
 
+function printRegressionSummary( details, max = 20 ) {
+
+	const rows = [];
+	for ( const result of details || [] ) {
+		const reg = isRegression( result );
+		if ( reg ) rows.push( { result, reg } );
+	}
+	if ( rows.length === 0 ) return;
+	const rank = ( r ) => r.kind === 'status' || r.kind === 'coverage' ? - Infinity : ( r.delta == null ? 0 : r.delta );
+	rows.sort( ( a, b ) => rank( a.reg ) - rank( b.reg ) );
+	console.log( '\nRegressions:' );
+	for ( const { result, reg } of rows.slice( 0, max ) ) {
+		console.log( `  - ${ result.name }: ${ formatRegressionMarker( reg ) }` );
+	}
+	if ( rows.length > max ) console.log( `  ... ${ rows.length - max } more regressions in the JSON report` );
+
+}
+
 async function launchBrowser() {
 
 	const b = await chromium.launch( { channel: 'chrome', headless: true, args: BROWSER_ARGS } ).catch( () => null );
@@ -13747,6 +14152,7 @@ const report = { total: candidates.length, pass: 0, fail: 0, skip: allExamples.l
 let runsSinceRestart = 0;
 
 const reportPath = join( OUT, reportFile );
+const priorIndex = loadPriorReportIndex( reportPath );
 
 try {
 
@@ -13767,6 +14173,7 @@ try {
 			const result = await runOne( browser, name );
 			runsSinceRestart ++;
 			if ( result.status === 'pass' ) report.pass ++; else report.fail ++;
+			attachPriorScore( result, priorIndex );
 			report.details.push( result );
 			writeFileSync( reportPath, JSON.stringify( report, null, 2 ) );
 
@@ -13779,7 +14186,9 @@ try {
 		} catch ( err ) {
 
 			report.fail ++;
-			report.details.push( { name, status: 'fail', error: err && err.message || String( err ) } );
+			const failResult = { name, status: 'fail', error: err && err.message || String( err ) };
+			attachPriorScore( failResult, priorIndex );
+			report.details.push( failResult );
 			writeFileSync( reportPath, JSON.stringify( report, null, 2 ) );
 			console.log( `${ label } — FAIL harness-error "${ err && err.message || err }"` );
 
@@ -13810,5 +14219,6 @@ console.log( '\n═══ e2e summary ═══' );
 console.log( `  ${ report.pass } pass, ${ report.fail } fail, ${ report.skip } skip, ${ report.total } candidates` );
 console.log( `  report: ${ reportPath }` );
 printFailureSummary( report.details );
+if ( priorIndex.size > 0 ) printRegressionSummary( report.details );
 
 process.exit( report.fail === 0 ? 0 : 1 );
