@@ -29,6 +29,7 @@ test( 'contract kind registry recognises codegen and runtime texture kinds', () 
 	assert.ok( isKnownKind( 'material.color' ) );
 	assert.ok( isKnownKind( 'material.map' ) );
 	assert.ok( isKnownKind( 'material.map.matrix' ) );
+	assert.ok( isKnownKind( 'object.radius' ) );
 	assert.ok( isKnownKind( 'object3d.nodeUniform' ) );
 	assert.ok( isKnownKind( 'builtin.dfgLUT' ) );
 	assert.ok( isBlockedKind( 'builtin.dfgLUT' ) );

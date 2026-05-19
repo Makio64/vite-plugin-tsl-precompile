@@ -293,6 +293,7 @@ export default function tslPrecompile( userOpts = {} ) {
 			root = config.root;
 			isBuild = config.command === 'build';
 			if ( ! opts.threeVersion ) opts.threeVersion = await detectThreeVersion( root );
+			await warnIfThreeDependencyIsRanged( root, config );
 			await loadManifest();
 
 		},
@@ -667,5 +668,53 @@ async function detectThreeVersion( root ) {
 
 	}
 	throw new Error( `detectThreeVersion: could not locate three/package.json under ${ candidates.join( ' or ' ) }` );
+
+}
+
+async function warnIfThreeDependencyIsRanged( root, config ) {
+
+	const pkgPath = resolve( root, 'package.json' );
+	if ( ! existsSync( pkgPath ) ) return;
+
+	let pkg = null;
+	try {
+
+		pkg = JSON.parse( await readFile( pkgPath, 'utf8' ) );
+
+	} catch ( _ ) {
+
+		return;
+
+	}
+
+	const fieldNames = [ 'dependencies', 'devDependencies', 'optionalDependencies' ];
+	for ( const fieldName of fieldNames ) {
+
+		const deps = pkg && pkg[ fieldName ];
+		const spec = deps && deps.three;
+		if ( typeof spec !== 'string' || isExactThreeVersionSpec( spec ) ) continue;
+
+		const message = `[tsl-precompile] package.json ${ fieldName }.three is ${ JSON.stringify( spec ) }. Captured artifacts are hashed against the installed three.js WGSL emitter; pin three to an exact patch version such as "0.184.0" and recapture artifacts when bumping.`;
+		if ( config && config.logger && typeof config.logger.warn === 'function' ) {
+
+			config.logger.warn( message );
+
+		} else {
+
+			console.warn( message );
+
+		}
+		return;
+
+	}
+
+}
+
+function isExactThreeVersionSpec( spec ) {
+
+	if ( typeof spec !== 'string' ) return false;
+	if ( spec.startsWith( 'npm:three@' ) ) return isExactThreeVersionSpec( spec.slice( 'npm:three@'.length ) );
+	if ( /^(?:file|link|portal|workspace):/.test( spec ) ) return true;
+	return /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test( spec );
 
 }

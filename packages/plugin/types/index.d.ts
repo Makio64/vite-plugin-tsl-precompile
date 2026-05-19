@@ -22,8 +22,8 @@ export interface TslPrecompileOptions {
 	 * Requires every reachable material to be precompiled. Default: `false`.
 	 */
 	slim?: boolean;
-	/** Override the auto-detected three.js version used in rewrite hashes. */
-	threeVersion?: string;
+	/** Override the auto-detected three.js version used in rewrite hashes. Pass `null` to force auto-detect. */
+	threeVersion?: string | null;
 	/**
 	 * Compact WGSL in emitted virtual modules; captured JSON stays readable.
 	 * Default: `true`.

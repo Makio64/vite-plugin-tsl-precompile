@@ -165,7 +165,7 @@ test( 'drift — every updater case corresponds to a real extractor kind (catche
 		'scene.backgroundBlurriness',
 		// object.* and object3d.<scope> — dynamic concat + aliases.
 		'object.worldMatrix', 'object.worldMatrixInverse', 'object.normalMatrix',
-		'object.modelViewMatrix', 'object.scale',
+		'object.modelViewMatrix', 'object.scale', 'object.radius',
 		'object3d.position', 'object3d.scale', 'object3d.viewPosition',
 		'object3d.direction', 'object3d.worldMatrix', 'object3d.normalMatrix',
 		'object3d.modelViewMatrix', 'object3d.radius',

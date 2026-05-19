@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 import tslPrecompile from '../../src/index.js';
 
@@ -101,5 +104,59 @@ test( 'tslPrecompile — `threeVersion: null` is accepted (uses auto-detect)', (
 
 	const plugin = tslPrecompile( { threeVersion: null } );
 	assert.equal( plugin.name, 'vite-plugin-tsl-precompile' );
+
+} );
+
+test( 'tslPrecompile — warns when app package.json ranges three', async () => {
+
+	const root = await mkdtemp( join( tmpdir(), 'tslp-ranged-three-' ) );
+	try {
+
+		await writeFile( join( root, 'package.json' ), JSON.stringify( {
+			dependencies: { three: '^0.184.0' },
+		} ) );
+		const warnings = [];
+		const plugin = tslPrecompile( { threeVersion: '184' } );
+		await plugin.configResolved( {
+			root,
+			command: 'serve',
+			logger: { warn: ( message ) => warnings.push( message ) },
+		} );
+
+		assert.equal( warnings.length, 1 );
+		assert.match( warnings[ 0 ], /dependencies\.three is "\^0\.184\.0"/ );
+		assert.match( warnings[ 0 ], /pin three to an exact patch version/ );
+
+	} finally {
+
+		await rm( root, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'tslPrecompile — accepts exact pinned three package specs without warning', async () => {
+
+	const root = await mkdtemp( join( tmpdir(), 'tslp-exact-three-' ) );
+	try {
+
+		await writeFile( join( root, 'package.json' ), JSON.stringify( {
+			dependencies: { three: '0.184.0' },
+		} ) );
+		const warnings = [];
+		const plugin = tslPrecompile( { threeVersion: '184' } );
+		await plugin.configResolved( {
+			root,
+			command: 'build',
+			logger: { warn: ( message ) => warnings.push( message ) },
+		} );
+
+		assert.deepEqual( warnings, [] );
+
+	} finally {
+
+		await rm( root, { recursive: true, force: true } );
+
+	}
 
 } );

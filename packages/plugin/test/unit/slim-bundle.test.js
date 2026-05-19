@@ -53,7 +53,11 @@ const BUNDLE = resolve( HERE, '../../../runtime/build/three.webgpu.slim.js' );
 // Bumped from 257 → 260 for postfx slim replay: PassNode now owns real
 // RenderTarget textures and post-processing aux artifacts can rebind live
 // pass/effect render-target textures by stable name. Fresh build at ~258.7 KB.
-const GATE_KB = 260;
+// Bumped from 260 → 262 for compute sampled-input sharing plus the full-renderer
+// render-state adapter used by slim scene support. Fresh build at ~261.6 KB.
+// Bumped from 262 → 263 for velocity/shadow replay support in the runtime
+// hydrator and harness-facing slim exports. Fresh build at ~262.3 KB.
+const GATE_KB = 263;
 
 const bundleExists = existsSync( BUNDLE );
 

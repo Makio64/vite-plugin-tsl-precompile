@@ -891,7 +891,7 @@ function collectMaterialRenderState( material ) {
 	if ( ! material ) return {};
 	const out = {};
 	const props = [
-		'transparent', 'opacity', 'alphaTest', 'alphaToCoverage',
+		'transparent', 'opacity', 'alphaTest', 'alphaHash', 'alphaToCoverage',
 		'side', 'depthTest', 'depthWrite', 'depthFunc',
 		'blending', 'blendSrc', 'blendDst', 'blendEquation',
 		'blendSrcAlpha', 'blendDstAlpha', 'blendEquationAlpha',
@@ -1151,6 +1151,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	// fragment stage output but writeMask is not zero"). Save it
 	// unconditionally and restore in the `finally` block.
 	const prevRenderTarget = typeof renderer.getRenderTarget === 'function' ? renderer.getRenderTarget() : null;
+	let frameBufferWarmupRT = null;
 
 	// MRT warm-up render target. NodeMaterial.setup() in three.js gates the
 	// MRT-output path on `renderTarget !== null` — without a bound RT, even
@@ -1225,6 +1226,21 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 	}
 
+	// Canvas renders that need tone/color-space post-processing are built by
+	// Renderer.render() against three.js's internal framebuffer target. Plain
+	// compileAsync() only points _currentRenderContext at that target; it does
+	// not bind it as renderer._renderTarget, so material setup code that reads
+	// renderer.currentSamples (Line2NodeMaterial's alpha-to-coverage branch)
+	// sees 0 samples and captures the non-MSAA shader variant. Borrow the same
+	// private framebuffer target during warm-up so extraction matches live render.
+	if ( ! mrtWarmupRT && ! prevRenderTarget && renderer && renderer.needsFrameBufferTarget === true &&
+		typeof renderer._getFrameBufferTarget === 'function' &&
+		typeof renderer.setRenderTarget === 'function' ) {
+
+		try { frameBufferWarmupRT = renderer._getFrameBufferTarget(); } catch ( _ ) { frameBufferWarmupRT = null; }
+
+	}
+
 	// Always save the renderer's prior MRT and restore at exit so concurrent
 	// aux captures and precompile-marker calls don't observe each other's
 	// transient MRT-clear. When sceneMRTNode is null we set MRT to null for
@@ -1252,6 +1268,10 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		if ( mrtWarmupRT ) {
 
 			renderer.setRenderTarget( mrtWarmupRT );
+
+		} else if ( frameBufferWarmupRT ) {
+
+			renderer.setRenderTarget( frameBufferWarmupRT );
 
 		} else if ( prevRenderTarget && typeof renderer.setRenderTarget === 'function' ) {
 

@@ -28,6 +28,9 @@ In `package.json`, pin three exactly:
 ```
 
 Not `^0.184.0`, not `~0.184.0`. Bumping three is an explicit "re-capture artifacts" decision, not something dependabot does for you.
+The plugin now warns during Vite config resolution when your app's own
+`package.json` uses a ranged `three` dependency, because that can update the
+WGSL emitter without regenerating artifacts.
 
 ## Install
 
