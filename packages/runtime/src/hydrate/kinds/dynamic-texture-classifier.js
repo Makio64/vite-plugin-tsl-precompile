@@ -112,13 +112,15 @@ function classifyViewportTexture( entry, runtimeBinding, descriptor, ctx ) {
 
 	if ( descriptor.kind !== 'sampled-texture' || ! runtimeBinding.isSampledTexture ) return;
 	const source = entry.source || {};
+	const skipZeroThicknessTransmission = ctx.shouldSkipViewportCopyForZeroThicknessTransmission( ctx.artifact );
 	ctx.viewportTextureBindings.push( {
 		binding: runtimeBinding,
 		fallbackTexture: runtimeBinding.texture,
+		forceViewportFallback: skipZeroThicknessTransmission,
 		generateMipmaps: source.generateMipmaps !== false,
 		isDepth: source.isDepth === true || ctx.shaderDeclaresDepthTexture( ctx.artifact, descriptor.name || '' ),
 		material: ctx.material,
-		skipZeroThicknessTransmission: ctx.shouldSkipViewportCopyForZeroThicknessTransmission( ctx.artifact ),
+		skipZeroThicknessTransmission,
 	} );
 
 }

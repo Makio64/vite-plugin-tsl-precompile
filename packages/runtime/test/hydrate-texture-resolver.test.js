@@ -78,6 +78,7 @@ test( 'texture resolver infers shader binding shape and validates live textures'
 	const artifact = {
 		fragmentShader: [
 			'var depthTex: texture_depth_2d;',
+			'var depthArrayTex: texture_depth_2d_array;',
 			'var depthSampler: sampler_comparison;',
 			'var cubeTex: texture_cube<f32>;',
 			'var volumeTex: texture_3d<f32>;',
@@ -90,9 +91,12 @@ test( 'texture resolver infers shader binding shape and validates live textures'
 	assert.equal( shaderDeclaresMultisampledTexture( artifact, 'msTex' ), true );
 	assert.equal( inferTextureTypeFromShader( artifact, 'cubeTex' ), 'cube' );
 	assert.equal( inferTextureTypeFromShader( artifact, 'volumeTex' ), '3d' );
+	assert.equal( inferTextureTypeFromShader( artifact, 'depthArrayTex' ), '2d-array' );
 
 	assert.equal( textureMatchesShaderBinding( artifact, 'depthTex', { isTexture: true, isDepthTexture: true } ), true );
 	assert.equal( textureMatchesShaderBinding( artifact, 'depthTex', { isTexture: true } ), false );
+	assert.equal( textureMatchesShaderBinding( artifact, 'depthArrayTex', { isTexture: true, isDepthTexture: true, image: { depth: 1 } } ), false );
+	assert.equal( textureMatchesShaderBinding( artifact, 'depthArrayTex', { isTexture: true, isDepthTexture: true, image: { depth: 4 } } ), true );
 	assert.equal( textureMatchesShaderBinding( artifact, 'cubeTex', { isTexture: true, isCubeTexture: true } ), true );
 	assert.equal( textureMatchesShaderBinding( artifact, 'cubeTex', { isTexture: true } ), false );
 	assert.equal( textureMatchesShaderBinding( artifact, 'volumeTex', { isTexture: true, isData3DTexture: true } ), true );

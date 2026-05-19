@@ -2,7 +2,7 @@ import { GreaterEqualCompare, LessEqualCompare } from 'three';
 
 import { collectLiveMaterialTextures } from '../../apply-precompiled.js';
 import { collectMaterialNodeTextures } from '../material-node-textures.js';
-import { textureMatchesShaderBinding } from '../texture-resolver.js';
+import { shaderDeclaresArrayTexture, textureMatchesShaderBinding } from '../texture-resolver.js';
 import { collectMaterialReflectorBaseNodes, resolveReflectorRenderTarget } from './reflector-texture-rebinder.js';
 import { invalidateTextureBindingTarget, rebindTextureBindingTargets, textureBindingTargets } from './texture-binding-targets.js';
 
@@ -131,6 +131,18 @@ function resolveLightShadowTexture( light, entry ) {
 
 }
 
+function markLayeredDepthTextureForArrayBinding( texture, artifact, bindingName ) {
+
+	if ( ! texture || texture.isDepthTexture !== true ) return;
+	if ( texture.isArrayTexture === true ) return;
+	if ( ! shaderDeclaresArrayTexture( artifact, bindingName ) ) return;
+	const imageDepth = Number( texture.image && ( texture.image.depth || texture.image.depthOrArrayLayers ) || 0 );
+	if ( imageDepth <= 1 ) return;
+	texture.isArrayTexture = true;
+	texture.image.depth = imageDepth;
+
+}
+
 export function createShadowDepthRebinder( entries, deps = {} ) {
 
 	const findLightBySource = typeof deps.findLightBySource === 'function' ? deps.findLightBySource : () => null;
@@ -189,6 +201,7 @@ export function createShadowDepthRebinder( entries, deps = {} ) {
 				}
 
 				if ( ! liveTexture ) continue;
+				markLayeredDepthTextureForArrayBinding( liveTexture, entry.artifact, entry.bindingName );
 				if ( ! textureMatchesShaderBinding( entry.artifact, entry.bindingName, liveTexture ) ) {
 
 					recordDiagnostic( {

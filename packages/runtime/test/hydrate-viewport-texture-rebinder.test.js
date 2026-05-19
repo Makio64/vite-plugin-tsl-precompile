@@ -31,12 +31,12 @@ function createFrame( renderId = 1 ) {
 
 }
 
-test( 'viewport texture helper skips zero-thickness transmission without thickness maps', () => {
+test( 'viewport texture helper keeps most zero-thickness transmission on live viewport copies', () => {
 
 	assert.equal( shouldSkipViewportCopyForZeroThicknessTransmission( {
 		defaults: { transmission: 1, thickness: 0 },
 		uniformPlan: [ { textures: [] } ],
-	} ), true );
+	} ), false );
 
 	assert.equal( shouldSkipViewportCopyForZeroThicknessTransmission( {
 		defaults: { transmission: 1, thickness: 0.1 },
@@ -45,6 +45,15 @@ test( 'viewport texture helper skips zero-thickness transmission without thickne
 
 	assert.equal( shouldSkipViewportCopyForZeroThicknessTransmission( {
 		defaults: { transmission: 1, thickness: 0 },
+		renderState: { transparent: true },
+		uniformPlan: [ {
+			textures: [ { source: { kind: 'material.alphaMap' } } ],
+		} ],
+	} ), true );
+
+	assert.equal( shouldSkipViewportCopyForZeroThicknessTransmission( {
+		defaults: { transmission: 1, thickness: 0 },
+		renderState: { transparent: true },
 		uniformPlan: [ {
 			textures: [ { source: { kind: 'material.thicknessMap' } } ],
 		} ],
@@ -72,9 +81,16 @@ test( 'viewport texture helper chooses fallback only for zero-thickness color vi
 		material: { transmission: 1, thickness: 0.5 },
 	} ), false );
 
+	assert.equal( shouldUseViewportFallbackForFrame( {
+		forceViewportFallback: true,
+		isDepth: false,
+		skipZeroThicknessTransmission: true,
+		material: { transmission: 1, thickness: 0.5 },
+	} ), true );
+
 } );
 
-test( 'viewport texture rebinder rebinds to fallback for zero-thickness transmission', () => {
+test( 'viewport texture rebinder honors explicit zero-thickness fallback entries', () => {
 
 	const liveTexture = { uuid: 'live', gpuTexture: { label: 'live-gpu' } };
 	const fallbackTexture = { uuid: 'fallback', gpuTexture: { label: 'fallback-gpu' } };
@@ -99,6 +115,49 @@ test( 'viewport texture rebinder rebinds to fallback for zero-thickness transmis
 	rebinder.updateBefore( createFrame() );
 
 	assert.equal( binding.texture, fallbackTexture );
+	assert.equal( binding.groupNode.version, 2 );
+	assert.equal( binding.version, -1 );
+	assert.equal( binding.generation, null );
+
+} );
+
+test( 'viewport texture rebinder drives live viewport copy for zero-thickness transmission', () => {
+
+	const fallbackTexture = { uuid: 'fallback', gpuTexture: { label: 'fallback-gpu' } };
+	const liveTexture = { uuid: 'live', gpuTexture: { label: 'live-gpu' } };
+	const binding = createBinding( fallbackTexture );
+	let factoryCalls = 0;
+	let updateBeforeCalls = 0;
+	const node = {
+		value: liveTexture,
+		updateReference: () => {},
+		updateBefore: () => {
+
+			updateBeforeCalls ++;
+
+		},
+	};
+	const rebinder = createViewportTextureRebinder( [ {
+		binding,
+		fallbackTexture,
+		generateMipmaps: true,
+		isDepth: false,
+		skipZeroThicknessTransmission: false,
+		material: { transmission: 1, thickness: 0 },
+	} ], {
+		viewportMipTexture: () => {
+
+			factoryCalls ++;
+			return node;
+
+		},
+	} );
+
+	rebinder.updateBefore( createFrame() );
+
+	assert.equal( factoryCalls, 1 );
+	assert.equal( updateBeforeCalls, 1 );
+	assert.equal( binding.texture, liveTexture );
 	assert.equal( binding.groupNode.version, 2 );
 	assert.equal( binding.version, -1 );
 	assert.equal( binding.generation, null );

@@ -110,10 +110,17 @@ export function textureMatchesShaderBinding( artifact, bindingName, texture ) {
 	if ( ! textureMatchesShaderMultisample( artifact, bindingName, texture ) ) return false;
 	if ( ! texture ) return true;
 	const wantsDepthTexture = shaderDeclaresDepthTexture( artifact, bindingName );
-	if ( texture.isDepthTexture === true ) return wantsDepthTexture;
-	if ( wantsDepthTexture ) return false;
-	if ( shaderDeclaresCubeTexture( artifact, bindingName ) ) return texture.isCubeTexture === true;
 	const textureType = inferTextureTypeFromShader( artifact, bindingName );
+	if ( wantsDepthTexture ) {
+
+		if ( texture.isDepthTexture !== true ) return false;
+		if ( textureType === 'cube' ) return texture.isCubeTexture === true;
+		if ( textureType === '2d-array' ) return texture.isArrayTexture === true || texture.isDataArrayTexture === true || texture.isCompressedArrayTexture === true || ( texture.image && texture.image.depth > 1 );
+		return true;
+
+	}
+	if ( texture.isDepthTexture === true ) return false;
+	if ( shaderDeclaresCubeTexture( artifact, bindingName ) ) return texture.isCubeTexture === true;
 	if ( textureType === '3d' ) return texture.isData3DTexture === true || texture.isTexture3D === true;
 	if ( textureType === '2d-array' ) return texture.isDataArrayTexture === true || texture.isArrayTexture === true || texture.isCompressedArrayTexture === true || ( texture.isDepthTexture === true && texture.image && texture.image.depth > 1 );
 	return true;

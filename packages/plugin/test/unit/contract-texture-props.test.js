@@ -27,6 +27,8 @@ test( 'contract texture props cover PBR material and node texture slots', () => 
 	assert.ok( MATERIAL_TEXTURE_PROPS.includes( 'sheenColorMap' ) );
 	assert.ok( NODE_GRAPH_TEXTURE_KEYS.includes( 'transmissionNode' ) );
 	assert.ok( NODE_GRAPH_TEXTURE_KEYS.includes( 'mrtNode' ) );
+	assert.ok( NODE_GRAPH_TEXTURE_KEYS.includes( 'offsetNode' ) );
+	assert.ok( NODE_GRAPH_TEXTURE_KEYS.includes( 'scatteringNode' ) );
 	assert.ok( MATERIAL_NODE_TEXTURE_KEYS.includes( 'castShadowNode' ) );
 
 } );

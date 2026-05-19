@@ -58,6 +58,8 @@ export const NODE_GRAPH_TEXTURE_KEYS = Object.freeze( [
 	'thicknessNode',
 	'attenuationDistanceNode',
 	'attenuationColorNode',
+	'offsetNode',
+	'scatteringNode',
 ] );
 
 export const MATERIAL_NODE_TEXTURE_KEYS = Object.freeze( [

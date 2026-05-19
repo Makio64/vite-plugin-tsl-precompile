@@ -123,7 +123,16 @@ test( 'classifier dispatches reflector.texture only when a base node is found', 
 
 test( 'classifier dispatches viewport.texture and forwards isDepth from shader probe when needed', () => {
 
-	const ctx = freshContext( { shaderDeclaresDepthTexture: () => true } );
+	let skipCalls = 0;
+	const ctx = freshContext( {
+		shaderDeclaresDepthTexture: () => true,
+		shouldSkipViewportCopyForZeroThicknessTransmission: () => {
+
+			skipCalls ++;
+			return true;
+
+		},
+	} );
 	const entry = {
 		kind: 'viewport.texture', target: 'sampled-texture', group: 'g', binding: 'vp',
 		source: { kind: 'viewport.texture', generateMipmaps: false },
@@ -131,9 +140,12 @@ test( 'classifier dispatches viewport.texture and forwards isDepth from shader p
 	const runtimeBinding = { isSampledTexture: true, texture: { id: 'fb' } };
 	classifyDynamicTextureBinding( entry, runtimeBinding, { kind: 'sampled-texture', name: 'vp' }, ctx );
 	assert.equal( ctx.viewportTextureBindings.length, 1 );
+	assert.equal( skipCalls, 1 );
+	assert.equal( ctx.viewportTextureBindings[ 0 ].forceViewportFallback, true );
 	assert.equal( ctx.viewportTextureBindings[ 0 ].generateMipmaps, false );
 	assert.equal( ctx.viewportTextureBindings[ 0 ].isDepth, true );
 	assert.equal( ctx.viewportTextureBindings[ 0 ].fallbackTexture.id, 'fb' );
+	assert.equal( ctx.viewportTextureBindings[ 0 ].skipZeroThicknessTransmission, true );
 
 } );
 
