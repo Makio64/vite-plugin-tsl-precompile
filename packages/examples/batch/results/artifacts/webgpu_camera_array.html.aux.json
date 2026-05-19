@@ -14,6 +14,351 @@
     }
   },
   {
+    "shape": "shadow-depth",
+    "configHash": "962f417d3928831f0d10cf611a51bb8c160cc486ad8edf7ba1a3ad4554cf5a15",
+    "name": "aux-shadow-depth-962f417d3928",
+    "artifact": {
+      "version": 3,
+      "cacheKey": 8987218566635734,
+      "materialShape": "shadow-depth",
+      "vertexShader": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : f32,\n\tnodeUniform3 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar1 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform3 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar1 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar1;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
+      "fragmentShader": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n\nstruct objectStruct {\n\tnodeUniform0 : f32,\n\tnodeUniform3 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> nodeVar0 : vec4<f32>;\n\n// codes\n\n\n@fragment\nfn main(  ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tDiffuseColor = vec4<f32>( 0.0, 0.0, 0.0, 1.0 );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform0 );\n\tnodeVar0 = max( vec4<f32>( DiffuseColor.xyz, DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tOutput = nodeVar0;\n\n\t// result\n\n\toutput.color = nodeVar0;\n\n\treturn output;\n\n}\n",
+      "computeShader": "",
+      "attributes": [
+        {
+          "name": "position",
+          "type": "vec3",
+          "source": "geometry"
+        }
+      ],
+      "bindings": [
+        {
+          "name": "render",
+          "bindings": [
+            {
+              "name": "render",
+              "kind": "uniform-buffer",
+              "visibility": 7,
+              "textureType": null,
+              "byteLength": 128,
+              "access": null
+            }
+          ]
+        },
+        {
+          "name": "object",
+          "bindings": [
+            {
+              "name": "object",
+              "kind": "uniform-buffer",
+              "visibility": 7,
+              "textureType": null,
+              "byteLength": 80,
+              "access": null
+            }
+          ]
+        }
+      ],
+      "uniformPlan": [
+        {
+          "name": "render",
+          "shared": true,
+          "visibility": 7,
+          "byteLength": 128,
+          "slots": [
+            {
+              "name": "cameraProjectionMatrix",
+              "offset": 0,
+              "size": 64,
+              "dtype": "mat4",
+              "source": {
+                "kind": "camera.projectionMatrix",
+                "valueSnapshot": {
+                  "type": "mat4",
+                  "data": [
+                    0.8,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0.8,
+                    0,
+                    0,
+                    0,
+                    0,
+                    -0.002002002002002002,
+                    0,
+                    0,
+                    0,
+                    -0.001001001001001001,
+                    1
+                  ]
+                }
+              }
+            },
+            {
+              "name": "cameraViewMatrix",
+              "offset": 64,
+              "size": 64,
+              "dtype": "mat4",
+              "source": {
+                "kind": "camera.viewMatrix",
+                "valueSnapshot": {
+                  "type": "mat4",
+                  "data": [
+                    0.894427190999916,
+                    -0.1825741858350554,
+                    0.408248290463863,
+                    0,
+                    2.7755575615628914e-17,
+                    0.9128709291752768,
+                    0.4082482904638631,
+                    0,
+                    -0.447213595499958,
+                    -0.36514837167011077,
+                    0.8164965809277259,
+                    0,
+                    1.5407439555097887e-33,
+                    6.206335383118183e-17,
+                    -1.224744871391589,
+                    1
+                  ]
+                }
+              }
+            }
+          ],
+          "textures": [],
+          "storageBuffers": [],
+          "orderedBindings": [
+            {
+              "type": "ubo",
+              "name": "render",
+              "byteLength": 128,
+              "visibility": 7,
+              "slots": [
+                {
+                  "name": "cameraProjectionMatrix",
+                  "offset": 0,
+                  "size": 64,
+                  "dtype": "mat4",
+                  "source": {
+                    "kind": "camera.projectionMatrix",
+                    "valueSnapshot": {
+                      "type": "mat4",
+                      "data": [
+                        0.8,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0.8,
+                        0,
+                        0,
+                        0,
+                        0,
+                        -0.002002002002002002,
+                        0,
+                        0,
+                        0,
+                        -0.001001001001001001,
+                        1
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "cameraViewMatrix",
+                  "offset": 64,
+                  "size": 64,
+                  "dtype": "mat4",
+                  "source": {
+                    "kind": "camera.viewMatrix",
+                    "valueSnapshot": {
+                      "type": "mat4",
+                      "data": [
+                        0.894427190999916,
+                        -0.1825741858350554,
+                        0.408248290463863,
+                        0,
+                        2.7755575615628914e-17,
+                        0.9128709291752768,
+                        0.4082482904638631,
+                        0,
+                        -0.447213595499958,
+                        -0.36514837167011077,
+                        0.8164965809277259,
+                        0,
+                        1.5407439555097887e-33,
+                        6.206335383118183e-17,
+                        -1.224744871391589,
+                        1
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "object",
+          "shared": false,
+          "visibility": 7,
+          "byteLength": 80,
+          "slots": [
+            {
+              "name": "nodeUniform0",
+              "offset": 0,
+              "size": 4,
+              "dtype": "number",
+              "source": {
+                "kind": "material.opacity",
+                "property": "opacity",
+                "uniformType": "float",
+                "valueSnapshot": {
+                  "type": "number",
+                  "data": 1
+                }
+              }
+            },
+            {
+              "name": "nodeUniform3",
+              "offset": 16,
+              "size": 64,
+              "dtype": "mat4",
+              "source": {
+                "kind": "object.worldMatrix",
+                "valueSnapshot": {
+                  "type": "mat4",
+                  "data": [
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    -1,
+                    1
+                  ]
+                }
+              }
+            }
+          ],
+          "textures": [],
+          "storageBuffers": [],
+          "orderedBindings": [
+            {
+              "type": "ubo",
+              "name": "object",
+              "byteLength": 80,
+              "visibility": 7,
+              "slots": [
+                {
+                  "name": "nodeUniform0",
+                  "offset": 0,
+                  "size": 4,
+                  "dtype": "number",
+                  "source": {
+                    "kind": "material.opacity",
+                    "property": "opacity",
+                    "uniformType": "float",
+                    "valueSnapshot": {
+                      "type": "number",
+                      "data": 1
+                    }
+                  }
+                },
+                {
+                  "name": "nodeUniform3",
+                  "offset": 16,
+                  "size": 64,
+                  "dtype": "mat4",
+                  "source": {
+                    "kind": "object.worldMatrix",
+                    "valueSnapshot": {
+                      "type": "mat4",
+                      "data": [
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        0,
+                        0,
+                        0,
+                        -1,
+                        1
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "defaults": {
+        "opacity": 1
+      },
+      "renderState": {
+        "opacity": 1,
+        "alphaTest": 0,
+        "alphaHash": false,
+        "alphaToCoverage": false,
+        "side": 0,
+        "depthTest": true,
+        "depthWrite": true,
+        "depthFunc": 3,
+        "blending": 0,
+        "blendSrc": 204,
+        "blendDst": 205,
+        "blendEquation": 100,
+        "colorWrite": true,
+        "premultipliedAlpha": false,
+        "dithering": false,
+        "toneMapped": true,
+        "vertexColors": false,
+        "fog": false,
+        "lights": false,
+        "allowOverride": true,
+        "forceSinglePass": false,
+        "polygonOffset": false,
+        "polygonOffsetFactor": 0,
+        "polygonOffsetUnits": 0,
+        "stencilWrite": false,
+        "stencilWriteMask": 255,
+        "stencilFunc": 519,
+        "stencilRef": 0,
+        "stencilFuncMask": 255,
+        "stencilFail": 7680,
+        "stencilZFail": 7680,
+        "stencilZPass": 7680
+      },
+      "meta": {
+        "updateNodes": 6,
+        "updateBeforeNodes": 0,
+        "updateAfterNodes": 0
+      },
+      "materialUuid": "da8b9479-a549-4799-9ca7-e4583f5468a6",
+      "userMaterialUuid": "027a0596-8f6e-4a9e-a9d8-6770aa55e159",
+      "captureClock": 0
+    }
+  },
+  {
     "shape": "render-output",
     "configHash": "90a5a84186bcbc44efdd95b20bf6492a0c0d34057e53f1b3ebe0bc95b1236c03",
     "name": "aux-render-output-90a5a84186bc",
@@ -92,21 +437,21 @@
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
-                    1,
+                    0.8,
                     0,
                     0,
                     0,
                     0,
-                    1,
+                    0.8,
                     0,
                     0,
                     0,
                     0,
-                    -1,
+                    -0.002002002002002002,
                     0,
                     0,
                     0,
-                    0,
+                    -0.001001001001001001,
                     1
                   ]
                 }
@@ -122,21 +467,21 @@
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
-                    1,
+                    0.894427190999916,
+                    -0.1825741858350554,
+                    0.408248290463863,
                     0,
+                    2.7755575615628914e-17,
+                    0.9128709291752768,
+                    0.4082482904638631,
                     0,
+                    -0.447213595499958,
+                    -0.36514837167011077,
+                    0.8164965809277259,
                     0,
-                    0,
-                    1,
-                    0,
-                    0,
-                    0,
-                    0,
-                    1,
-                    0,
-                    0,
-                    0,
-                    0,
+                    1.5407439555097887e-33,
+                    6.206335383118183e-17,
+                    -1.224744871391589,
                     1
                   ]
                 }
@@ -162,21 +507,21 @@
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
-                        1,
+                        0.8,
                         0,
                         0,
                         0,
                         0,
-                        1,
+                        0.8,
                         0,
                         0,
                         0,
                         0,
-                        -1,
+                        -0.002002002002002002,
                         0,
                         0,
                         0,
-                        0,
+                        -0.001001001001001001,
                         1
                       ]
                     }
@@ -192,21 +537,21 @@
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
-                        1,
+                        0.894427190999916,
+                        -0.1825741858350554,
+                        0.408248290463863,
                         0,
+                        2.7755575615628914e-17,
+                        0.9128709291752768,
+                        0.4082482904638631,
                         0,
+                        -0.447213595499958,
+                        -0.36514837167011077,
+                        0.8164965809277259,
                         0,
-                        0,
-                        1,
-                        0,
-                        0,
-                        0,
-                        0,
-                        1,
-                        0,
-                        0,
-                        0,
-                        0,
+                        1.5407439555097887e-33,
+                        6.206335383118183e-17,
+                        -1.224744871391589,
                         1
                       ]
                     }
@@ -248,17 +593,17 @@
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
-                    1,
+                    0.9999500004166653,
+                    0.0099997083365104,
+                    0.0000499989583412326,
                     0,
+                    -0.009999833334166664,
+                    0.9999375010677004,
+                    0.004999729169817692,
                     0,
-                    0,
-                    0,
-                    1,
-                    0,
-                    0,
-                    0,
-                    0,
-                    1,
+                    3.3881317890172014e-21,
+                    -0.004999979166692709,
+                    0.9999875000260416,
                     0,
                     0,
                     0,
@@ -278,7 +623,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "a44911e5-af02-4be5-bad2-65df7ef54608",
+                "textureUuid": "5ca6177a-d64f-4464-af99-e5ed9dbfad8b",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
@@ -301,7 +646,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "a44911e5-af02-4be5-bad2-65df7ef54608",
+                "textureUuid": "5ca6177a-d64f-4464-af99-e5ed9dbfad8b",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
@@ -329,7 +674,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "a44911e5-af02-4be5-bad2-65df7ef54608",
+                  "textureUuid": "5ca6177a-d64f-4464-af99-e5ed9dbfad8b",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,
@@ -363,7 +708,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "a44911e5-af02-4be5-bad2-65df7ef54608",
+                  "textureUuid": "5ca6177a-d64f-4464-af99-e5ed9dbfad8b",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,
@@ -420,17 +765,17 @@
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
-                        1,
+                        0.9999500004166653,
+                        0.0099997083365104,
+                        0.0000499989583412326,
                         0,
+                        -0.009999833334166664,
+                        0.9999375010677004,
+                        0.004999729169817692,
                         0,
-                        0,
-                        0,
-                        1,
-                        0,
-                        0,
-                        0,
-                        0,
-                        1,
+                        3.3881317890172014e-21,
+                        -0.004999979166692709,
+                        0.9999875000260416,
                         0,
                         0,
                         0,

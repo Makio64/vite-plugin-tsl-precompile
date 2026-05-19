@@ -78,22 +78,22 @@
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
-                    1,
+                    1.071111005056586,
                     0,
                     0,
                     0,
                     0,
-                    1,
+                    1.4281480067421146,
                     0,
                     0,
                     0,
                     0,
+                    -1.0020040080160322,
                     -1,
                     0,
                     0,
-                    0,
-                    0,
-                    1
+                    -0.10020040080160321,
+                    0
                   ]
                 }
               }
@@ -114,15 +114,15 @@
                     0,
                     0,
                     1,
+                    6.123233995736766e-17,
                     0,
                     0,
-                    0,
-                    0,
+                    -6.123233995736766e-17,
                     1,
                     0,
                     0,
                     0,
-                    0,
+                    -4,
                     1
                   ]
                 }
@@ -148,22 +148,22 @@
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
-                        1,
+                        1.071111005056586,
                         0,
                         0,
                         0,
                         0,
-                        1,
+                        1.4281480067421146,
                         0,
                         0,
                         0,
                         0,
+                        -1.0020040080160322,
                         -1,
                         0,
                         0,
-                        0,
-                        0,
-                        1
+                        -0.10020040080160321,
+                        0
                       ]
                     }
                   }
@@ -184,15 +184,15 @@
                         0,
                         0,
                         1,
+                        6.123233995736766e-17,
                         0,
                         0,
-                        0,
-                        0,
+                        -6.123233995736766e-17,
                         1,
                         0,
                         0,
                         0,
-                        0,
+                        -4,
                         1
                       ]
                     }
@@ -264,7 +264,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "1d5cb29d-8f7e-40c2-a0b1-4ed615389d0f",
+                "textureUuid": "332182f3-c9aa-4ca6-8756-63192711feb2",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
@@ -287,7 +287,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "1d5cb29d-8f7e-40c2-a0b1-4ed615389d0f",
+                "textureUuid": "332182f3-c9aa-4ca6-8756-63192711feb2",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
@@ -315,7 +315,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "1d5cb29d-8f7e-40c2-a0b1-4ed615389d0f",
+                  "textureUuid": "332182f3-c9aa-4ca6-8756-63192711feb2",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,
@@ -349,7 +349,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "1d5cb29d-8f7e-40c2-a0b1-4ed615389d0f",
+                  "textureUuid": "332182f3-c9aa-4ca6-8756-63192711feb2",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,

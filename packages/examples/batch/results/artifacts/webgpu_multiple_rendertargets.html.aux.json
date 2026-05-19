@@ -83,22 +83,22 @@
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
-                    1,
+                    1.071111005056586,
                     0,
                     0,
                     0,
                     0,
-                    1,
+                    1.4281480067421146,
                     0,
                     0,
                     0,
                     0,
+                    -1.0020040080160322,
                     -1,
                     0,
                     0,
-                    0,
-                    0,
-                    1
+                    -0.10020040080160321,
+                    0
                   ]
                 }
               }
@@ -119,15 +119,15 @@
                     0,
                     0,
                     1,
+                    6.123233995736766e-17,
                     0,
                     0,
-                    0,
-                    0,
+                    -6.123233995736766e-17,
                     1,
                     0,
                     0,
                     0,
-                    0,
+                    -4,
                     1
                   ]
                 }
@@ -153,22 +153,22 @@
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
-                        1,
+                        1.071111005056586,
                         0,
                         0,
                         0,
                         0,
-                        1,
+                        1.4281480067421146,
                         0,
                         0,
                         0,
                         0,
+                        -1.0020040080160322,
                         -1,
                         0,
                         0,
-                        0,
-                        0,
-                        1
+                        -0.10020040080160321,
+                        0
                       ]
                     }
                   }
@@ -189,15 +189,15 @@
                         0,
                         0,
                         1,
+                        6.123233995736766e-17,
                         0,
                         0,
-                        0,
-                        0,
+                        -6.123233995736766e-17,
                         1,
                         0,
                         0,
                         0,
-                        0,
+                        -4,
                         1
                       ]
                     }
@@ -315,7 +315,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "a44911e5-af02-4be5-bad2-65df7ef54608",
+                "textureUuid": "2ca92686-0a3e-47d4-99a1-cfbaecdb2262",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -339,7 +339,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "8806696c-ab90-4bb2-9e2d-12aa09f9b659",
+                "textureUuid": "98df62fd-8ce6-431d-bf69-f79522b6cf30",
                 "textureName": "normal",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -368,7 +368,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "a44911e5-af02-4be5-bad2-65df7ef54608",
+                  "textureUuid": "2ca92686-0a3e-47d4-99a1-cfbaecdb2262",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -504,7 +504,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "8806696c-ab90-4bb2-9e2d-12aa09f9b659",
+                  "textureUuid": "98df62fd-8ce6-431d-bf69-f79522b6cf30",
                   "textureName": "normal",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -545,8 +545,8 @@
   },
   {
     "shape": "post-process",
-    "configHash": "4d9b9b7f9ef893e6b636029794507637fc8115b0d9e547b8def9571135adfbcd",
-    "name": "aux-post-process-4d9b9b7f9ef8",
+    "configHash": "11102b5bbf97aae09d2509e3c6609dfe970d7c36f871906ad74b970f2c34a600",
+    "name": "aux-post-process-11102b5bbf97",
     "artifact": {
       "version": 3,
       "cacheKey": 7352854927103546,
@@ -627,22 +627,22 @@
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
-                    1,
+                    2.4142135623730954,
                     0,
                     0,
                     0,
                     0,
-                    1,
+                    2.4142135623730954,
                     0,
                     0,
                     0,
                     0,
+                    -1.0010010010010009,
                     -1,
                     0,
                     0,
-                    0,
-                    0,
-                    1
+                    -0.10010010010010009,
+                    0
                   ]
                 }
               }
@@ -697,22 +697,22 @@
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
-                        1,
+                        2.4142135623730954,
                         0,
                         0,
                         0,
                         0,
-                        1,
+                        2.4142135623730954,
                         0,
                         0,
                         0,
                         0,
+                        -1.0010010010010009,
                         -1,
                         0,
                         0,
-                        0,
-                        0,
-                        1
+                        -0.10010010010010009,
+                        0
                       ]
                     }
                   }
@@ -874,7 +874,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "a44911e5-af02-4be5-bad2-65df7ef54608",
+                "textureUuid": "2ca92686-0a3e-47d4-99a1-cfbaecdb2262",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -898,7 +898,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "8806696c-ab90-4bb2-9e2d-12aa09f9b659",
+                "textureUuid": "98df62fd-8ce6-431d-bf69-f79522b6cf30",
                 "textureName": "normal",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -927,7 +927,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "a44911e5-af02-4be5-bad2-65df7ef54608",
+                  "textureUuid": "2ca92686-0a3e-47d4-99a1-cfbaecdb2262",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -1078,7 +1078,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "8806696c-ab90-4bb2-9e2d-12aa09f9b659",
+                  "textureUuid": "98df62fd-8ce6-431d-bf69-f79522b6cf30",
                   "textureName": "normal",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -1114,6 +1114,7 @@
         "transparent": false,
         "opacity": 1,
         "alphaTest": 0,
+        "alphaHash": false,
         "alphaToCoverage": false,
         "side": 0,
         "depthTest": true,
@@ -1149,7 +1150,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "06426c15-267d-4310-b7f5-de9aee3a88e4",
+      "materialUuid": "8f30429c-efaa-4f54-b242-5d319f0962bc",
       "captureClock": 0
     }
   }

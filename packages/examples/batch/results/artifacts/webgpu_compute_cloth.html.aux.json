@@ -142,22 +142,22 @@
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
-                    1,
+                    2.060608064590967,
                     0,
                     0,
                     0,
                     0,
-                    1,
+                    2.7474774194546225,
                     0,
                     0,
                     0,
                     0,
+                    -1.001001001001001,
                     -1,
                     0,
                     0,
-                    0,
-                    0,
-                    1
+                    -0.01001001001001001,
+                    0
                   ]
                 }
               }
@@ -172,21 +172,21 @@
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
+                    -0.7071067811865475,
+                    -1.1275702593849244e-16,
+                    -0.7071067811865476,
+                    0,
+                    -1.232595164407831e-32,
                     1,
+                    -1.5946251533507086e-16,
+                    0,
+                    0.7071067811865476,
+                    -1.127570259384924e-16,
+                    -0.7071067811865475,
                     0,
                     0,
-                    0,
-                    0,
-                    1,
-                    0,
-                    0,
-                    0,
-                    0,
-                    1,
-                    0,
-                    0,
-                    0,
-                    0,
+                    0.1,
+                    -2.262741699796952,
                     1
                   ]
                 }
@@ -271,22 +271,22 @@
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
-                        1,
+                        2.060608064590967,
                         0,
                         0,
                         0,
                         0,
-                        1,
+                        2.7474774194546225,
                         0,
                         0,
                         0,
                         0,
+                        -1.001001001001001,
                         -1,
                         0,
                         0,
-                        0,
-                        0,
-                        1
+                        -0.01001001001001001,
+                        0
                       ]
                     }
                   }
@@ -301,21 +301,21 @@
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
+                        -0.7071067811865475,
+                        -1.1275702593849244e-16,
+                        -0.7071067811865476,
+                        0,
+                        -1.232595164407831e-32,
                         1,
+                        -1.5946251533507086e-16,
+                        0,
+                        0.7071067811865476,
+                        -1.127570259384924e-16,
+                        -0.7071067811865475,
                         0,
                         0,
-                        0,
-                        0,
-                        1,
-                        0,
-                        0,
-                        0,
-                        0,
-                        1,
-                        0,
-                        0,
-                        0,
-                        0,
+                        0.1,
+                        -2.262741699796952,
                         1
                       ]
                     }
@@ -479,7 +479,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "e85f93e8-6d20-4ce9-b836-3d262c495619",
+                "textureUuid": "a44911e5-af02-4be5-bad2-65df7ef54608",
                 "textureName": "PMREM.cubeUv",
                 "mapping": 306,
                 "wrapS": 1001,
@@ -503,7 +503,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "e85f93e8-6d20-4ce9-b836-3d262c495619",
+                "textureUuid": "a44911e5-af02-4be5-bad2-65df7ef54608",
                 "textureName": "PMREM.cubeUv",
                 "mapping": 306,
                 "wrapS": 1001,
@@ -678,7 +678,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "e85f93e8-6d20-4ce9-b836-3d262c495619",
+                  "textureUuid": "a44911e5-af02-4be5-bad2-65df7ef54608",
                   "textureName": "PMREM.cubeUv",
                   "mapping": 306,
                   "wrapS": 1001,
@@ -713,7 +713,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "e85f93e8-6d20-4ce9-b836-3d262c495619",
+                  "textureUuid": "a44911e5-af02-4be5-bad2-65df7ef54608",
                   "textureName": "PMREM.cubeUv",
                   "mapping": 306,
                   "wrapS": 1001,
@@ -749,6 +749,7 @@
         "transparent": false,
         "opacity": 1,
         "alphaTest": 0,
+        "alphaHash": false,
         "alphaToCoverage": false,
         "side": 1,
         "depthTest": false,
@@ -784,7 +785,7 @@
         "updateBeforeNodes": 1,
         "updateAfterNodes": 0
       },
-      "materialUuid": "4f09f506-6995-41b7-9b11-436522c23c87",
+      "materialUuid": "b6b29391-aa63-4dab-92f8-c1c4f10e1ffa",
       "captureClock": 0
     }
   },
@@ -872,22 +873,22 @@
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
-                    1,
+                    2.4142135623730954,
                     0,
                     0,
                     0,
                     0,
-                    1,
+                    2.4142135623730954,
                     0,
                     0,
                     0,
                     0,
+                    -1.0010010010010009,
                     -1,
                     0,
                     0,
-                    0,
-                    0,
-                    1
+                    -0.10010010010010009,
+                    0
                   ]
                 }
               }
@@ -916,7 +917,7 @@
                     0,
                     0,
                     0,
-                    0,
+                    -3,
                     1
                   ]
                 }
@@ -942,22 +943,22 @@
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
-                        1,
+                        2.4142135623730954,
                         0,
                         0,
                         0,
                         0,
-                        1,
+                        2.4142135623730954,
                         0,
                         0,
                         0,
                         0,
+                        -1.0010010010010009,
                         -1,
                         0,
                         0,
-                        0,
-                        0,
-                        1
+                        -0.10010010010010009,
+                        0
                       ]
                     }
                   }
@@ -986,7 +987,7 @@
                         0,
                         0,
                         0,
-                        0,
+                        -3,
                         1
                       ]
                     }
@@ -1249,6 +1250,7 @@
         "transparent": false,
         "opacity": 1,
         "alphaTest": 0,
+        "alphaHash": false,
         "alphaToCoverage": false,
         "side": 0,
         "depthTest": false,
@@ -1284,7 +1286,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "de92d18c-3ff0-49f9-be1d-baa33de9576e",
+      "materialUuid": "df4ef6ff-21dd-4ab4-a9c7-a0dd3520ebc1",
       "captureClock": 0,
       "pmremKind": "cubemap"
     }
@@ -1373,22 +1375,22 @@
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
-                    1,
+                    2.4142135623730954,
                     0,
                     0,
                     0,
                     0,
-                    1,
+                    2.4142135623730954,
                     0,
                     0,
                     0,
                     0,
+                    -1.0010010010010009,
                     -1,
                     0,
                     0,
-                    0,
-                    0,
-                    1
+                    -0.10010010010010009,
+                    0
                   ]
                 }
               }
@@ -1417,7 +1419,7 @@
                     0,
                     0,
                     0,
-                    0,
+                    -3,
                     1
                   ]
                 }
@@ -1443,22 +1445,22 @@
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
-                        1,
+                        2.4142135623730954,
                         0,
                         0,
                         0,
                         0,
-                        1,
+                        2.4142135623730954,
                         0,
                         0,
                         0,
                         0,
+                        -1.0010010010010009,
                         -1,
                         0,
                         0,
-                        0,
-                        0,
-                        1
+                        -0.10010010010010009,
+                        0
                       ]
                     }
                   }
@@ -1487,7 +1489,7 @@
                         0,
                         0,
                         0,
-                        0,
+                        -3,
                         1
                       ]
                     }
@@ -1687,6 +1689,7 @@
         "transparent": false,
         "opacity": 1,
         "alphaTest": 0,
+        "alphaHash": false,
         "alphaToCoverage": false,
         "side": 0,
         "depthTest": false,
@@ -1722,7 +1725,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "1e06b1ca-e068-4e4b-a00c-220dbe1d0c48",
+      "materialUuid": "06382d0b-b1a7-4bef-9339-a3651586a51f",
       "captureClock": 0,
       "pmremKind": "equirect"
     }
@@ -1819,22 +1822,22 @@
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
-                    1,
+                    2.4142135623730954,
                     0,
                     0,
                     0,
                     0,
-                    1,
+                    2.4142135623730954,
                     0,
                     0,
                     0,
                     0,
+                    -1.0010010010010009,
                     -1,
                     0,
                     0,
-                    0,
-                    0,
-                    1
+                    -0.10010010010010009,
+                    0
                   ]
                 }
               }
@@ -1863,7 +1866,7 @@
                     0,
                     0,
                     0,
-                    0,
+                    -3,
                     1
                   ]
                 }
@@ -1889,22 +1892,22 @@
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
-                        1,
+                        2.4142135623730954,
                         0,
                         0,
                         0,
                         0,
-                        1,
+                        2.4142135623730954,
                         0,
                         0,
                         0,
                         0,
+                        -1.0010010010010009,
                         -1,
                         0,
                         0,
-                        0,
-                        0,
-                        1
+                        -0.10010010010010009,
+                        0
                       ]
                     }
                   }
@@ -1933,7 +1936,7 @@
                         0,
                         0,
                         0,
-                        0,
+                        -3,
                         1
                       ]
                     }
@@ -2362,6 +2365,7 @@
         "transparent": false,
         "opacity": 1,
         "alphaTest": 0,
+        "alphaHash": false,
         "alphaToCoverage": false,
         "side": 0,
         "depthTest": false,
@@ -2397,7 +2401,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "6b29a9d1-9a63-4b03-91a3-56f45eb81b6c",
+      "materialUuid": "ed47b6f8-c811-4ee1-9022-4ae25ef65715",
       "captureClock": 0,
       "pmremKind": "blur"
     }
@@ -2486,22 +2490,22 @@
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
-                    1,
+                    2.4142135623730954,
                     0,
                     0,
                     0,
                     0,
-                    1,
+                    2.4142135623730954,
                     0,
                     0,
                     0,
                     0,
+                    -1.0010010010010009,
                     -1,
                     0,
                     0,
-                    0,
-                    0,
-                    1
+                    -0.10010010010010009,
+                    0
                   ]
                 }
               }
@@ -2530,7 +2534,7 @@
                     0,
                     0,
                     0,
-                    0,
+                    -3,
                     1
                   ]
                 }
@@ -2556,22 +2560,22 @@
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
-                        1,
+                        2.4142135623730954,
                         0,
                         0,
                         0,
                         0,
-                        1,
+                        2.4142135623730954,
                         0,
                         0,
                         0,
                         0,
+                        -1.0010010010010009,
                         -1,
                         0,
                         0,
-                        0,
-                        0,
-                        1
+                        -0.10010010010010009,
+                        0
                       ]
                     }
                   }
@@ -2600,7 +2604,7 @@
                         0,
                         0,
                         0,
-                        0,
+                        -3,
                         1
                       ]
                     }
@@ -2852,6 +2856,7 @@
         "transparent": false,
         "opacity": 1,
         "alphaTest": 0,
+        "alphaHash": false,
         "alphaToCoverage": false,
         "side": 0,
         "depthTest": false,
@@ -2887,7 +2892,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "253397e9-3546-4e4a-81b0-748e48ad3e5d",
+      "materialUuid": "60cc53a7-b6ef-4222-be32-ee92edb42eff",
       "captureClock": 0,
       "pmremKind": "ggx"
     }
@@ -2971,22 +2976,22 @@
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
-                    1,
+                    2.060608064590967,
                     0,
                     0,
                     0,
                     0,
-                    1,
+                    2.7474774194546225,
                     0,
                     0,
                     0,
                     0,
+                    -1.001001001001001,
                     -1,
                     0,
                     0,
-                    0,
-                    0,
-                    1
+                    -0.01001001001001001,
+                    0
                   ]
                 }
               }
@@ -3001,21 +3006,21 @@
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
+                    -0.7071067811865475,
+                    -1.1275702593849244e-16,
+                    -0.7071067811865476,
+                    0,
+                    -1.232595164407831e-32,
                     1,
+                    -1.5946251533507086e-16,
+                    0,
+                    0.7071067811865476,
+                    -1.127570259384924e-16,
+                    -0.7071067811865475,
                     0,
                     0,
-                    0,
-                    0,
-                    1,
-                    0,
-                    0,
-                    0,
-                    0,
-                    1,
-                    0,
-                    0,
-                    0,
-                    0,
+                    0.1,
+                    -2.262741699796952,
                     1
                   ]
                 }
@@ -3054,22 +3059,22 @@
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
-                        1,
+                        2.060608064590967,
                         0,
                         0,
                         0,
                         0,
-                        1,
+                        2.7474774194546225,
                         0,
                         0,
                         0,
                         0,
+                        -1.001001001001001,
                         -1,
                         0,
                         0,
-                        0,
-                        0,
-                        1
+                        -0.01001001001001001,
+                        0
                       ]
                     }
                   }
@@ -3084,21 +3089,21 @@
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
+                        -0.7071067811865475,
+                        -1.1275702593849244e-16,
+                        -0.7071067811865476,
+                        0,
+                        -1.232595164407831e-32,
                         1,
+                        -1.5946251533507086e-16,
+                        0,
+                        0.7071067811865476,
+                        -1.127570259384924e-16,
+                        -0.7071067811865475,
                         0,
                         0,
-                        0,
-                        0,
-                        1,
-                        0,
-                        0,
-                        0,
-                        0,
-                        1,
-                        0,
-                        0,
-                        0,
-                        0,
+                        0.1,
+                        -2.262741699796952,
                         1
                       ]
                     }
@@ -3183,7 +3188,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "8806696c-ab90-4bb2-9e2d-12aa09f9b659",
+                "textureUuid": "5ca6177a-d64f-4464-af99-e5ed9dbfad8b",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
@@ -3206,7 +3211,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "8806696c-ab90-4bb2-9e2d-12aa09f9b659",
+                "textureUuid": "5ca6177a-d64f-4464-af99-e5ed9dbfad8b",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
@@ -3234,7 +3239,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "8806696c-ab90-4bb2-9e2d-12aa09f9b659",
+                  "textureUuid": "5ca6177a-d64f-4464-af99-e5ed9dbfad8b",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,
@@ -3268,7 +3273,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "8806696c-ab90-4bb2-9e2d-12aa09f9b659",
+                  "textureUuid": "5ca6177a-d64f-4464-af99-e5ed9dbfad8b",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,

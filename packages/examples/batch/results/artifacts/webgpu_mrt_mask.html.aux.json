@@ -5,7 +5,7 @@
     "name": "aux-background-3cf10ca1d033",
     "artifact": {
       "version": 3,
-      "cacheKey": 9934420495621988,
+      "cacheKey": 7472925861317742,
       "materialShape": "node-material",
       "vertexShader": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tnodeUniform1 : f32,\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec2<f32>,\n\tnodeUniform2 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> nodeVar1 : vec3<f32>;\nvar<private> nodeVar2 : vec4<f32>;\nvar<private> nodeVar3 : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform5 );\n\n\tif ( ( render.cameraProjectionMatrix[ 3u ][ 3u ] == 1.0 ) ) {\n\n\t\tnodeVar1 = ( positionLocal * vec3<f32>( ( ( 1.0 / render.cameraProjectionMatrix[ 1u ][ 1u ] ) * 3.0 ) ) );\n\n\t} else {\n\n\t\tnodeVar1 = positionLocal;\n\n\t}\n\n\tnodeVar2 = ( render.cameraProjectionMatrix * vec4<f32>( ( modelViewMatrix * vec4<f32>( nodeVar1, 0.0 ) ).xyz, 1.0 ) );\n\tnodeVar3 = vec4<f32>( nodeVar2.x, nodeVar2.y, nodeVar2.w, nodeVar2.w );\n\n\t// result\n\n\tvaryings.builtinClipSpace = nodeVar3;\n\n\treturn varyings;\n\n}\n",
       "fragmentShader": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputType {\n\t@location( 0 ) m0 : vec4<f32>,\n\t@location( 1 ) m1 : vec4<f32>,\n\t\n};\nvar<private> output : OutputType;\n\n// uniforms\n\nstruct objectStruct {\n\tnodeUniform0 : vec2<f32>,\n\tnodeUniform2 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tnodeUniform1 : f32,\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> nodeVar0 : vec4<f32>;\n\n// codes\n\n\n@fragment\nfn main( @builtin( position ) fragCoord : vec4<f32> ) -> OutputType {\n\n\t// flow\n\t// code\n\n\tDiffuseColor = ( vec4<f32>( ( mix( vec3<f32>( 0.13286832154414627, 0.4969329950515914, 1.0 ), vec3<f32>( 0.057805430183792694, 0.13286832154414627, 1.0 ), ( fragCoord.xy / object.nodeUniform0 ).y ) * vec3<f32>( 0.05 ) ), 1.0 ) * vec4<f32>( render.nodeUniform1 ) );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform2 );\n\tDiffuseColor.w = 1.0;\n\tOutput = max( vec4<f32>( DiffuseColor.xyz, DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tnodeVar0 = Output;\n\toutput.m0 = nodeVar0;\n\toutput.m1 = vec4<f32>( 0.0, 0.0, 0.0, 0.0 );\n\n\t// result\n\n\treturn output;\n\n}\n",
@@ -364,6 +364,7 @@
         "transparent": false,
         "opacity": 1,
         "alphaTest": 0,
+        "alphaHash": false,
         "alphaToCoverage": false,
         "side": 1,
         "depthTest": false,
@@ -399,7 +400,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "160858d1-aa1f-4cb3-aabe-07e15d44828f",
+      "materialUuid": "6b29a9d1-9a63-4b03-91a3-56f45eb81b6c",
       "captureClock": 0,
       "mrtOutputCount": 2,
       "mrtOutputNames": [
@@ -414,8 +415,8 @@
   },
   {
     "shape": "post-process",
-    "configHash": "158b24ba633445bbd2cf609ad7212e15787005208f932d839959ebcae8d1c6b2",
-    "name": "aux-post-process-158b24ba6334",
+    "configHash": "6cea60a73b2bab2e565ed76ce64e1c043fb42914e85858a62d8b71b7f971a183",
+    "name": "aux-post-process-6cea60a73b2b",
     "artifact": {
       "version": 3,
       "cacheKey": 8461030122698493,
@@ -512,22 +513,22 @@
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
-                    1,
+                    2.4142135623730954,
                     0,
                     0,
                     0,
                     0,
-                    1,
+                    2.4142135623730954,
                     0,
                     0,
                     0,
                     0,
+                    -1.0010010010010009,
                     -1,
                     0,
                     0,
-                    0,
-                    0,
-                    1
+                    -0.10010010010010009,
+                    0
                   ]
                 }
               }
@@ -582,22 +583,22 @@
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
-                        1,
+                        2.4142135623730954,
                         0,
                         0,
                         0,
                         0,
-                        1,
+                        2.4142135623730954,
                         0,
                         0,
                         0,
                         0,
+                        -1.0010010010010009,
                         -1,
                         0,
                         0,
-                        0,
-                        0,
-                        1
+                        -0.10010010010010009,
+                        0
                       ]
                     }
                   }
@@ -697,7 +698,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "8806696c-ab90-4bb2-9e2d-12aa09f9b659",
+                "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -721,7 +722,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "8806696c-ab90-4bb2-9e2d-12aa09f9b659",
+                "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -745,7 +746,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "6450288c-f8f7-48b4-a548-3197bd9dfe66",
+                "textureUuid": "491cf39b-2180-4d4e-8f91-30ec90afb522",
                 "textureName": "GaussianBlurNode.vertical",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -769,7 +770,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "6450288c-f8f7-48b4-a548-3197bd9dfe66",
+                "textureUuid": "491cf39b-2180-4d4e-8f91-30ec90afb522",
                 "textureName": "GaussianBlurNode.vertical",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -798,7 +799,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "8806696c-ab90-4bb2-9e2d-12aa09f9b659",
+                  "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -833,7 +834,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "8806696c-ab90-4bb2-9e2d-12aa09f9b659",
+                  "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -869,7 +870,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "6450288c-f8f7-48b4-a548-3197bd9dfe66",
+                  "textureUuid": "491cf39b-2180-4d4e-8f91-30ec90afb522",
                   "textureName": "GaussianBlurNode.vertical",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -904,7 +905,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "6450288c-f8f7-48b4-a548-3197bd9dfe66",
+                  "textureUuid": "491cf39b-2180-4d4e-8f91-30ec90afb522",
                   "textureName": "GaussianBlurNode.vertical",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -993,6 +994,7 @@
         "transparent": false,
         "opacity": 1,
         "alphaTest": 0,
+        "alphaHash": false,
         "alphaToCoverage": false,
         "side": 0,
         "depthTest": true,
@@ -1028,14 +1030,14 @@
         "updateBeforeNodes": 2,
         "updateAfterNodes": 0
       },
-      "materialUuid": "4b5b33f1-d1cc-44a7-9a06-44fd40d68ebf",
+      "materialUuid": "ab3760b9-55a8-4d20-8d95-5b83f51f80be",
       "captureClock": 0
     }
   },
   {
     "shape": "mrt",
-    "configHash": "4b01d9c0c66e8bf5b461bde40f349fd2b36e3320d826f1258ec2056b0a1bfb09",
-    "name": "aux-mrt-4b01d9c0c66e",
+    "configHash": "6895bf4c80753a10d95afaa4a4b3452a774ecda7c38092a1f28e9d3ca320a1ee",
+    "name": "aux-mrt-6895bf4c8075",
     "artifact": {
       "version": 3,
       "cacheKey": 2403439375331243,
@@ -1328,7 +1330,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "8806696c-ab90-4bb2-9e2d-12aa09f9b659",
+                "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -1352,7 +1354,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "8806696c-ab90-4bb2-9e2d-12aa09f9b659",
+                "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -1376,7 +1378,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "6450288c-f8f7-48b4-a548-3197bd9dfe66",
+                "textureUuid": "491cf39b-2180-4d4e-8f91-30ec90afb522",
                 "textureName": "GaussianBlurNode.vertical",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -1400,7 +1402,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "6450288c-f8f7-48b4-a548-3197bd9dfe66",
+                "textureUuid": "491cf39b-2180-4d4e-8f91-30ec90afb522",
                 "textureName": "GaussianBlurNode.vertical",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -1429,7 +1431,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "8806696c-ab90-4bb2-9e2d-12aa09f9b659",
+                  "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -1464,7 +1466,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "8806696c-ab90-4bb2-9e2d-12aa09f9b659",
+                  "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -1500,7 +1502,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "6450288c-f8f7-48b4-a548-3197bd9dfe66",
+                  "textureUuid": "491cf39b-2180-4d4e-8f91-30ec90afb522",
                   "textureName": "GaussianBlurNode.vertical",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -1535,7 +1537,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "6450288c-f8f7-48b4-a548-3197bd9dfe66",
+                  "textureUuid": "491cf39b-2180-4d4e-8f91-30ec90afb522",
                   "textureName": "GaussianBlurNode.vertical",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -1740,22 +1742,22 @@
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
-                    1,
+                    1.608380190382169,
                     0,
                     0,
                     0,
                     0,
-                    1,
+                    2.1445069205095586,
                     0,
                     0,
                     0,
                     0,
+                    -1.0001000100010002,
                     -1,
                     0,
                     0,
-                    0,
-                    0,
-                    1
+                    -0.010001000100010001,
+                    0
                   ]
                 }
               }
@@ -1770,21 +1772,21 @@
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
-                    1,
+                    0.9486832980505138,
+                    -0.09534625892455927,
+                    0.30151134457776374,
                     0,
+                    1.3877787807814457e-17,
+                    0.9534625892455922,
+                    0.3015113445777637,
                     0,
+                    -0.316227766016838,
+                    -0.28603877677367767,
+                    0.9045340337332909,
                     0,
-                    0,
-                    1,
-                    0,
-                    0,
-                    0,
-                    0,
-                    1,
-                    0,
-                    0,
-                    0,
-                    0,
+                    -1.249000902703301e-16,
+                    -0.9534625892455922,
+                    -3.6181361349331636,
                     1
                   ]
                 }
@@ -1823,22 +1825,22 @@
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
-                        1,
+                        1.608380190382169,
                         0,
                         0,
                         0,
                         0,
-                        1,
+                        2.1445069205095586,
                         0,
                         0,
                         0,
                         0,
+                        -1.0001000100010002,
                         -1,
                         0,
                         0,
-                        0,
-                        0,
-                        1
+                        -0.010001000100010001,
+                        0
                       ]
                     }
                   }
@@ -1853,21 +1855,21 @@
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
-                        1,
+                        0.9486832980505138,
+                        -0.09534625892455927,
+                        0.30151134457776374,
                         0,
+                        1.3877787807814457e-17,
+                        0.9534625892455922,
+                        0.3015113445777637,
                         0,
+                        -0.316227766016838,
+                        -0.28603877677367767,
+                        0.9045340337332909,
                         0,
-                        0,
-                        1,
-                        0,
-                        0,
-                        0,
-                        0,
-                        1,
-                        0,
-                        0,
-                        0,
-                        0,
+                        -1.249000902703301e-16,
+                        -0.9534625892455922,
+                        -3.6181361349331636,
                         1
                       ]
                     }
@@ -1906,17 +1908,17 @@
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
-                    1,
+                    0.009999999776482582,
                     0,
                     0,
                     0,
                     0,
-                    1,
+                    -3.029462621882817e-9,
+                    0.009999999434196888,
                     0,
                     0,
-                    0,
-                    0,
-                    1,
+                    -0.009999999434196888,
+                    -3.029462621882817e-9,
                     0,
                     0,
                     0,
@@ -1936,7 +1938,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "8806696c-ab90-4bb2-9e2d-12aa09f9b659",
+                "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -1960,7 +1962,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "8806696c-ab90-4bb2-9e2d-12aa09f9b659",
+                "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -1984,7 +1986,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "6450288c-f8f7-48b4-a548-3197bd9dfe66",
+                "textureUuid": "491cf39b-2180-4d4e-8f91-30ec90afb522",
                 "textureName": "GaussianBlurNode.vertical",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -2008,7 +2010,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "6450288c-f8f7-48b4-a548-3197bd9dfe66",
+                "textureUuid": "491cf39b-2180-4d4e-8f91-30ec90afb522",
                 "textureName": "GaussianBlurNode.vertical",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -2037,7 +2039,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "8806696c-ab90-4bb2-9e2d-12aa09f9b659",
+                  "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -2072,7 +2074,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "8806696c-ab90-4bb2-9e2d-12aa09f9b659",
+                  "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -2108,7 +2110,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "6450288c-f8f7-48b4-a548-3197bd9dfe66",
+                  "textureUuid": "491cf39b-2180-4d4e-8f91-30ec90afb522",
                   "textureName": "GaussianBlurNode.vertical",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -2143,7 +2145,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "6450288c-f8f7-48b4-a548-3197bd9dfe66",
+                  "textureUuid": "491cf39b-2180-4d4e-8f91-30ec90afb522",
                   "textureName": "GaussianBlurNode.vertical",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -2185,17 +2187,17 @@
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
-                        1,
+                        0.009999999776482582,
                         0,
                         0,
                         0,
                         0,
-                        1,
+                        -3.029462621882817e-9,
+                        0.009999999434196888,
                         0,
                         0,
-                        0,
-                        0,
-                        1,
+                        -0.009999999434196888,
+                        -3.029462621882817e-9,
                         0,
                         0,
                         0,
