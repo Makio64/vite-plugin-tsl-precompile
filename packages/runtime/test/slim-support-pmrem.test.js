@@ -176,7 +176,7 @@ test( 'selectPMREMTexturesForArtifact chooses cached material envNode PMREM sour
 
 test( 'selectPMREMTexturesForArtifact rejects wrong-sized material node PMREMs when the artifact has dimensions', () => {
 
-	const captured = artifact( [ { kind: 'artifact.texture', textureUuid: 'env', mapping: 306, imageWidth: 1536, imageHeight: 2048 } ] );
+	const captured = artifact( [ { kind: 'artifact.texture', textureUuid: 'env', mapping: 306, imageWidth: 1536, imageHeight: 2048, imageDepth: 1 } ] );
 	const staleNodePmrem = texture( { uuid: 'stale-node-pmrem', mapping: 306, image: { width: 256, height: 256 } } );
 	const sceneSource = texture( { uuid: 'scene-source' } );
 	const scenePmrem = texture( { uuid: 'scene-pmrem', mapping: 306, image: { width: 1536, height: 2048 } } );

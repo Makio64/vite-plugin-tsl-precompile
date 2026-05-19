@@ -34,7 +34,10 @@ let _patchesInstalled = false;
 function imageSrcForTexture( texture ) {
 
 	const image = texture && texture.image || null;
-	return image && ( image.src || image.currentSrc || ( Array.isArray( image ) && image[ 0 ] && ( image[ 0 ].src || image[ 0 ].currentSrc ) ) || null );
+	const imageSrc = image && ( image.src || image.currentSrc || ( Array.isArray( image ) && image[ 0 ] && ( image[ 0 ].src || image[ 0 ].currentSrc ) ) || null );
+	if ( imageSrc ) return imageSrc;
+	const loaderSrc = texture && texture.userData && texture.userData.__tslpLoaderUrl;
+	return typeof loaderSrc === 'string' && loaderSrc.length > 0 ? loaderSrc : null;
 
 }
 

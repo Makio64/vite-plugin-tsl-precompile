@@ -151,7 +151,8 @@ function textureMatchesPMREMSourceSize( texture, source ) {
 	if ( ! sourceHasImageSize( source ) ) return true;
 	const image = texture && texture.image || null;
 	if ( ! image || image.width !== source.imageWidth || image.height !== source.imageHeight ) return false;
-	return typeof source.imageDepth !== 'number' || image.depth === source.imageDepth;
+	const imageDepth = typeof image.depth === 'number' ? image.depth : 1;
+	return typeof source.imageDepth !== 'number' || imageDepth === source.imageDepth;
 
 }
 

@@ -30,7 +30,7 @@
  * @module Hydrate.UserAttributes
  */
 
-import { BufferAttribute, InstancedBufferAttribute } from 'three';
+import { BufferAttribute, InstancedBufferAttribute, InstancedInterleavedBuffer, InterleavedBufferAttribute } from 'three';
 import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttribute.js';
 import StorageInstancedBufferAttribute from 'three/src/renderers/common/StorageInstancedBufferAttribute.js';
 
@@ -67,6 +67,7 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 	};
 
 	const sourceObject = sourceMaterial.__tslpPrecompileObject || null;
+	const pathShapeSlots = new Map();
 
 	// Wave 5 Phase B2 — anonymous storage attribute live binding.
 	// Before the snapshot-fallback skip below, also try to find a LIVE
@@ -158,8 +159,9 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 		const path = entry.userPath;
 		if ( Array.isArray( path ) && path.length > 0 ) {
 
+			const slotIdx = nextAttributeShapeSlot( pathShapeSlots, path, entry );
 			const root = sourceMaterial[ path[ 0 ] ];
-			if ( root && root.isNode === true ) live = findFirstAttributeMatchingEntry( root, entry );
+			if ( root && root.isNode === true ) live = findNthAttributeMatchingEntry( root, entry, slotIdx );
 
 		}
 
@@ -193,6 +195,11 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
  * If a fresh replay page procedurally rebuilds a different object.count, the
  * renderer will draw the right buffers with the wrong instance count. Restore
  * the captured count when every captured anonymous instanced attribute agrees.
+ *
+ * Storage-backed attributes are different: their entry count is buffer
+ * capacity, not necessarily draw count. Compute particle examples often keep
+ * 50k slots but draw a live subset with object.count, so those must preserve
+ * the rebuilt object's count.
  *
  * @param {Object} artifact
  * @param {?Object} object
@@ -228,6 +235,7 @@ function capturedAnonymousInstancedCount( artifact ) {
 	for ( const entry of entries ) {
 
 		if ( ! entry || entry.source !== 'node' || entry.instanced !== true ) continue;
+		if ( entry.storage === true ) continue;
 		if ( entry.userPath ) continue;
 		if ( ! entry.arraySnapshot && ! entry._liveArray ) continue;
 		if ( ! Number.isFinite( entry.count ) || entry.count <= 0 ) continue;
@@ -263,6 +271,7 @@ function findInstancedObjectAttributeMatchingEntry( object, entry, entries ) {
 		return size === 4;
 
 	} );
+	if ( matrixEntries.length !== 4 ) return null;
 	const column = matrixEntries.indexOf( entry );
 	if ( column < 0 || column > 3 ) return null;
 
@@ -316,18 +325,35 @@ function getInstancedMatrixColumnAttribute( object, column ) {
 
 function findFirstAttributeMatchingEntry( node, entry ) {
 
+	return findNthAttributeMatchingEntry( node, entry, 0 );
+
+}
+
+function findNthAttributeMatchingEntry( node, entry, slotIdx = 0 ) {
+
+	const matching = collectAttributesMatchingEntry( node, entry );
+	if ( matching.length === 0 ) return null;
+	if ( slotIdx >= matching.length ) return matching[ matching.length - 1 ];
+	return matching[ slotIdx ];
+
+}
+
+function collectAttributesMatchingEntry( node, entry ) {
+
 	const wantSize = entry.itemSize || 0;
 	const wantCount = entry.count || 0;
 	const wantArray = entry.arrayType || '';
 
-	let found = null;
+	const matching = [];
+	const seen = new Set();
 	const probe = ( n ) => {
 
-		if ( found || ! n ) return;
+		if ( ! n ) return;
 		const cands = [ n.attribute, n.value ];
 		for ( const cand of cands ) {
 
 			if ( ! cand || cand.isBufferAttribute !== true ) continue;
+			if ( seen.has( cand ) ) continue;
 			// vec3 storage attributes get padded to itemSize=4 when WebGPU
 			// touches them. Accept (3 → 4) so a freshly-built live attribute
 			// matches an artifact entry recorded after the pad fired.
@@ -338,16 +364,38 @@ function findFirstAttributeMatchingEntry( node, entry ) {
 				&& cand.array
 				&& cand.array.constructor
 				&& cand.array.constructor.name !== wantArray ) continue;
-			found = cand;
-			return;
+			seen.add( cand );
+			matching.push( cand );
 
 		}
 
 	};
 
 	probe( node );
-	if ( ! found && typeof node.traverse === 'function' ) node.traverse( probe );
-	return found;
+	if ( typeof node.traverse === 'function' ) node.traverse( probe );
+	return matching;
+
+}
+
+function nextAttributeShapeSlot( slots, path, entry ) {
+
+	const key = `${ JSON.stringify( path ) }|${ attributeShapeKey( entry ) }`;
+	const slot = slots.get( key ) || 0;
+	slots.set( key, slot + 1 );
+	return slot;
+
+}
+
+function attributeShapeKey( entry ) {
+
+	const itemSize = entry.itemSize || itemSizeFromAttributeType( entry.type );
+	return [
+		itemSize || 0,
+		entry.count || 0,
+		entry.arrayType || '',
+		entry.instanced === true ? 'i' : 'a',
+		entry.storage === true ? 's' : 'b',
+	].join( ':' );
 
 }
 
@@ -526,6 +574,9 @@ export function hydrateNodeAttributes( attributes ) {
 
 	if ( ! Array.isArray( attributes ) ) return [];
 
+	const fallbackGroups = collectInterleavedFallbackGroups( attributes );
+	const interleavedFallbacks = createInterleavedFallbacks( fallbackGroups );
+
 	return attributes.map( ( attribute ) => {
 
 		if ( ! attribute || attribute.source !== 'node' ) return attribute;
@@ -546,6 +597,8 @@ export function hydrateNodeAttributes( attributes ) {
 			? null
 			: attribute._liveAttribute || ( attribute.node && attribute.node.attribute );
 		if ( liveAttribute ) return { ...attribute, node: { attribute: liveAttribute } };
+		const interleavedAttribute = interleavedFallbacks.get( attribute );
+		if ( interleavedAttribute ) return { ...attribute, node: { attribute: interleavedAttribute } };
 
 		const itemSize = attribute.itemSize || itemSizeFromAttributeType( attribute.type );
 		const count = Math.max( 1, attribute.count || 1 );
@@ -561,6 +614,90 @@ export function hydrateNodeAttributes( attributes ) {
 		};
 
 	} );
+
+}
+
+function collectInterleavedFallbackGroups( attributes ) {
+
+	const groups = new Map();
+	for ( const attribute of attributes ) {
+
+		if ( ! isInterleavableFallbackAttribute( attribute ) ) continue;
+		const itemSize = attribute.itemSize || itemSizeFromAttributeType( attribute.type );
+		const count = Math.max( 1, attribute.count || 1 );
+		const key = [
+			count,
+			attribute.arrayType || 'Float32Array',
+			attribute.normalized === true ? 'n' : 'u',
+			attribute.meshPerAttribute || 1,
+			typeof attribute.usage === 'number' ? attribute.usage : '',
+		].join( ':' );
+		const group = groups.get( key ) || [];
+		group.push( { attribute, itemSize, count } );
+		groups.set( key, group );
+
+	}
+	return [ ...groups.values() ].filter( ( group ) => group.length > 1 );
+
+}
+
+function isInterleavableFallbackAttribute( attribute ) {
+
+	if ( ! attribute || attribute.source !== 'node' ) return false;
+	if ( attribute.instanced !== true || attribute.storage === true ) return false;
+	if ( attribute._liveAttribute || attribute.node && attribute.node.attribute ) return false;
+	if ( ! Number.isFinite( attribute.count ) || attribute.count <= 0 ) return false;
+	return true;
+
+}
+
+function createInterleavedFallbacks( groups ) {
+
+	const fallbacks = new WeakMap();
+	for ( const group of groups ) {
+
+		const first = group[ 0 ];
+		const count = first.count;
+		const stride = group.reduce( ( total, entry ) => total + entry.itemSize, 0 );
+		if ( stride <= 0 ) continue;
+		const TypeArray = resolveTypedArrayCtor( first.attribute.arrayType );
+		const data = new InstancedInterleavedBuffer( new TypeArray( count * stride ), stride, first.attribute.meshPerAttribute || 1 );
+		if ( typeof first.attribute.usage === 'number' && typeof data.setUsage === 'function' ) data.setUsage( first.attribute.usage );
+
+		let offset = 0;
+		for ( const entry of group ) {
+
+			copyIntoInterleavedArray( data.array, stride, offset, entry.itemSize, count, entry.attribute.arraySnapshot || entry.attribute._liveArray );
+			const attr = new InterleavedBufferAttribute( data, entry.itemSize, offset, entry.attribute.normalized === true );
+			fallbacks.set( entry.attribute, attr );
+			offset += entry.itemSize;
+
+		}
+		data.needsUpdate = true;
+
+	}
+	return fallbacks;
+
+}
+
+function copyIntoInterleavedArray( target, stride, offset, itemSize, count, sourceArray ) {
+
+	if ( ! target || ! sourceArray ) return;
+	const getValue = ArrayBuffer.isView( sourceArray ) || Array.isArray( sourceArray )
+		? ( index ) => sourceArray[ index ]
+		: ( index ) => sourceArray[ index ];
+	for ( let i = 0; i < count; i ++ ) {
+
+		const srcOffset = i * itemSize;
+		const dstOffset = i * stride + offset;
+		for ( let c = 0; c < itemSize; c ++ ) {
+
+			const value = getValue( srcOffset + c );
+			if ( value !== undefined ) target[ dstOffset + c ] = value;
+
+		}
+
+	}
 
 }
 

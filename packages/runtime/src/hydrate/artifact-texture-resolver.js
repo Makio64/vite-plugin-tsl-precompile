@@ -169,7 +169,8 @@ function textureMatchesCapturedPMREMSize( texture, source ) {
 	if ( ! isPMREMArtifactSource( source ) || typeof source.imageWidth !== 'number' || typeof source.imageHeight !== 'number' ) return true;
 	const image = texture && texture.image || null;
 	if ( ! image || image.width !== source.imageWidth || image.height !== source.imageHeight ) return false;
-	return typeof source.imageDepth !== 'number' || image.depth === source.imageDepth;
+	const imageDepth = typeof image.depth === 'number' ? image.depth : 1;
+	return typeof source.imageDepth !== 'number' || imageDepth === source.imageDepth;
 
 }
 
@@ -184,16 +185,16 @@ export function resolveArtifactTextureBinding( context ) {
 	const deps = context.deps || {};
 	context.wantsDepthTexture = shaderDeclaresDepthTexture( context.artifact, context.bindingName );
 	context.wantsMultisampledTexture = shaderDeclaresMultisampledTexture( context.artifact, context.bindingName );
-	if ( context.wantsDepthTexture && ! context.wantsMultisampledTexture ) {
-
-		return textureResolutionResult( deps.fallbackDepthTexture || null, 'depth-texture-fallback' );
-
-	}
 
 	for ( const strategy of ARTIFACT_TEXTURE_STRATEGIES ) {
 
 		const texture = strategy.resolve( context );
 		if ( texture ) return textureResolutionResult( texture, strategy.name );
+
+	}
+	if ( context.wantsDepthTexture && ! context.wantsMultisampledTexture ) {
+
+		return textureResolutionResult( deps.fallbackDepthTexture || null, 'depth-texture-fallback' );
 
 	}
 	return null;

@@ -50,6 +50,26 @@ test( 'artifact texture resolver reports render-target sidecar refs before gener
 
 } );
 
+test( 'artifact texture resolver uses sidecar refs for pass depth textures before fallback', () => {
+
+	const depthTexture = { isTexture: true, isDepthTexture: true };
+	const fallbackDepthTexture = { isTexture: true, isDepthTexture: true, name: 'fallback-depth' };
+	const artifact = {
+		fragmentShader: 'var passDepth: texture_depth_2d;',
+		_textureRefs: new Map( [ [ 'depth-a', depthTexture ] ] ),
+	};
+	const result = resolveArtifactTextureBinding( {
+		artifact,
+		bindingName: 'passDepth',
+		source: { kind: 'artifact.texture', textureUuid: 'depth-a', textureName: 'depth' },
+		deps: { fallbackDepthTexture },
+	} );
+
+	assert.equal( result.strategy, 'texture-ref' );
+	assert.equal( result.texture, depthTexture );
+
+} );
+
 test( 'artifact texture resolver rejects wrong-sized PMREM material-node candidates', () => {
 
 	const staleNodePMREM = { isTexture: true, name: 'PMREM.cubeUv', mapping: 306, image: { width: 256, height: 256 } };
@@ -68,6 +88,7 @@ test( 'artifact texture resolver rejects wrong-sized PMREM material-node candida
 			mapping: 306,
 			imageWidth: 1536,
 			imageHeight: 2048,
+			imageDepth: 1,
 		},
 		deps: {
 			lookupMaterialNodeTexture() {

@@ -17,6 +17,7 @@ export function textureImageSrc( texture ) {
 	if ( image && typeof image.currentSrc === 'string' ) return image.currentSrc;
 	if ( image && image.image && typeof image.image.src === 'string' ) return image.image.src;
 	if ( texture && texture.source && texture.source.data && typeof texture.source.data.src === 'string' ) return texture.source.data.src;
+	if ( texture && texture.userData && typeof texture.userData.__tslpLoaderUrl === 'string' ) return texture.userData.__tslpLoaderUrl;
 	return '';
 
 }

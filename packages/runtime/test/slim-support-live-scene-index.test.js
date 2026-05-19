@@ -84,3 +84,21 @@ test( 'collectMaterialNodeTextures walks nested node objects', () => {
 	assert.equal( textureImageSrc( texture( { image: { currentSrc: 'https://cdn.test/a.webp', width: 4, height: 4 } } ) ), 'https://cdn.test/a.webp' );
 
 } );
+
+test( 'live-scene-index uses loader URL identity from texture userData', () => {
+
+	const tex = texture( {
+		uuid: 'loader-url-uuid',
+		name: '',
+		userData: { __tslpLoaderUrl: 'textures/materialx/brass_basecolor.png' },
+		image: { width: 16, height: 16 },
+	} );
+	const index = createLiveSceneIndex();
+
+	index.indexTexture( tex );
+
+	assert.equal( textureImageSrc( tex ), 'textures/materialx/brass_basecolor.png' );
+	assert.equal( index.texturesByName.get( 'textures/materialx/brass_basecolor.png' ), tex );
+	assert.equal( index.texturesByName.get( 'brass_basecolor.png' ), tex );
+
+} );

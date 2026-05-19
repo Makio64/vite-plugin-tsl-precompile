@@ -112,6 +112,109 @@ export function singleArtifactTextureUuid( artifact, predicate = null ) {
 
 }
 
+function textureImageShape( texture ) {
+
+	const image = texture && ( texture.image || texture.source && texture.source.data ) || null;
+	if ( ! image ) return null;
+	const width = Number( image.width || image.naturalWidth || image.videoWidth || 0 );
+	const height = Number( image.height || image.naturalHeight || image.videoHeight || 0 );
+	const depth = Number( image.depth || image.depthOrArrayLayers || 0 );
+	if ( ! width || ! height ) return null;
+	return { width, height, depth };
+
+}
+
+function sourceImageShape( source ) {
+
+	const width = Number( source && source.imageWidth || 0 );
+	const height = Number( source && source.imageHeight || 0 );
+	const depth = Number( source && source.imageDepth || 0 );
+	if ( ! width || ! height ) return null;
+	return { width, height, depth };
+
+}
+
+function shapeMatchesSource( texture, source ) {
+
+	const sourceShape = sourceImageShape( source );
+	const textureShape = textureImageShape( texture );
+	if ( ! sourceShape || ! textureShape ) return false;
+	if ( sourceShape.width !== textureShape.width || sourceShape.height !== textureShape.height ) return false;
+	return ! sourceShape.depth || ! textureShape.depth || sourceShape.depth === textureShape.depth;
+
+}
+
+/**
+ * Attach anonymous `artifact.texture` refs by captured image shape and uniform
+ * order. This covers loaders (MaterialX/ImageBitmap-style paths) that produce
+ * fresh Texture UUIDs on reload and no stable URL/name on either side, while
+ * still avoiding named/URL/snapshot sources that the stronger identity
+ * strategies can resolve.
+ *
+ * @param {Object} artifact
+ * @param {Array<Object>} textures - Live textures in source-material graph order.
+ * @param {Function|null} predicate - Optional source filter.
+ * @param {Object} options
+ * @param {boolean} options.overwriteExisting - Replace existing refs, useful
+ *   when a harness installed shape-only fallback textures before live graph
+ *   textures were available.
+ * @return {number} number of texture refs attached
+ */
+export function attachArtifactTextureRefsByShapeOrder( artifact, textures, predicate = null, options = {} ) {
+
+	if ( ! artifact || ! Array.isArray( textures ) || textures.length === 0 ) return 0;
+	const overwriteExisting = options && options.overwriteExisting === true;
+	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
+	const candidates = textures.filter( ( texture ) => texture && texture.isTexture === true );
+	if ( candidates.length === 0 ) return 0;
+
+	const sources = [];
+	const seen = new Set();
+	for ( const group of artifact.uniformPlan || [] ) {
+
+		for ( const entry of group.textures || [] ) {
+
+			if ( ! entry || entry.bindingKind === 'sampler' ) continue;
+			const source = entry.source || {};
+			if ( source.kind !== 'artifact.texture' || ! source.textureUuid ) continue;
+			if ( source.textureName || source.imageSrc || source.snapshot ) continue;
+			if ( predicate && ! predicate( source, entry, group ) ) continue;
+			if ( ! sourceImageShape( source ) ) continue;
+			if ( seen.has( source.textureUuid ) ) continue;
+			seen.add( source.textureUuid );
+			sources.push( source );
+
+		}
+
+	}
+	if ( sources.length === 0 ) return 0;
+
+	let attached = 0;
+	const used = new Set();
+	for ( const source of sources ) {
+
+		if ( ! overwriteExisting && refs.has( source.textureUuid ) ) continue;
+		const texture = candidates.find( ( candidate ) => ! used.has( candidate ) && shapeMatchesSource( candidate, source ) );
+		if ( ! texture ) continue;
+		refs.set( source.textureUuid, texture );
+		used.add( texture );
+		attached ++;
+
+	}
+	if ( attached > 0 ) {
+
+		Object.defineProperty( artifact, '_textureRefs', {
+			value: refs,
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		} );
+
+	}
+	return attached;
+
+}
+
 /**
  * Attach `texture` to every `artifact._textureRefs` entry whose source
  * matches `predicate(source, entry, group)`. Defines `_textureRefs` as a
