@@ -1,4 +1,4 @@
-import type { ComputeSyncStats, ComputeSyncPerPassStats } from './compute-sync.d.ts';
+import type { ComputeInputShareStats, ComputeSyncStats, ComputeSyncPerPassStats } from './compute-sync.d.ts';
 import type { SharePassRenderTargetTexturesStats } from './pass-render-fallback.d.ts';
 
 export type RenderPassWithFallbackOptions = {
@@ -26,6 +26,7 @@ export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	generatePMREMAsync: ( sourceTexture: unknown, generator?: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => Promise<unknown | null>;
 	setPMREMGenerator: ( generator: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => void;
 	syncComputeOutputs: ( computeNode: unknown, fullRenderer: unknown, syncOpts?: Record<string, unknown> ) => ComputeSyncStats;
+	shareComputeInputs: ( computeNode: unknown, fullRenderer: unknown, shareOpts?: Record<string, unknown> ) => ComputeInputShareStats;
 	syncComputeOutputsPerPass: ( computeNode: unknown, fullRenderer: unknown, passIndex: number | undefined, syncOpts?: Record<string, unknown> ) => ComputeSyncPerPassStats;
 	pingPongInvalidate: ( textureA: unknown, textureB: unknown, extraRenderer?: unknown ) => boolean;
 	shareInstancedAttributeBuffer: ( attribute: unknown, sourceRenderer: unknown ) => boolean;

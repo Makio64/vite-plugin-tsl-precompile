@@ -106,6 +106,51 @@ function markSharedTextureVersion( renderer, texture, version ) {
 
 }
 
+function layeredDepth( texture, gpuTexture = null ) {
+
+	const image = texture && texture.image || null;
+	const depth = image && ( image.depth || image.depthOrArrayLayers )
+		|| gpuTexture && gpuTexture.depthOrArrayLayers
+		|| 0;
+	const numericDepth = Number( depth );
+	return Number.isFinite( numericDepth ) ? numericDepth : 0;
+
+}
+
+function markLayeredDepthTextureAsArray( texture, gpuTexture = null ) {
+
+	if ( ! texture || texture.isDepthTexture !== true ) return false;
+	const depth = layeredDepth( texture, gpuTexture );
+	if ( depth <= 1 ) return false;
+
+	texture.isArrayTexture = true;
+	if ( texture.image ) texture.image.depth = depth;
+	return true;
+
+}
+
+function invalidateTextureBindGroups( renderer, texture ) {
+
+	const tx = renderer && renderer._textures;
+	const txData = tx && typeof tx.get === 'function' ? tx.get( texture ) : null;
+	if ( ! txData || ! txData.bindGroups ) return txData;
+
+	for ( const bindGroup of txData.bindGroups ) {
+
+		const bindingsData = renderer.backend && renderer.backend.get ? renderer.backend.get( bindGroup ) : null;
+		if ( bindingsData ) {
+
+			bindingsData.groups = undefined;
+			bindingsData.versions = undefined;
+
+		}
+
+	}
+	txData.bindGroups.clear();
+	return txData;
+
+}
+
 /**
  * Copy the backend data record for `texture` from `sourceRenderer` to
  * `targetRenderer`, then mark the target's Textures manager entry as
@@ -162,24 +207,7 @@ export function shareGPUTextureEntry( targetRenderer, sourceRenderer, texture, o
 		// Invalidate any bind groups the target had built against the
 		// previous (stand-in) texture so the next render rebuilds them
 		// against the shared GPU resource.
-		const tx = targetRenderer._textures;
-		const txData = tx && typeof tx.get === 'function' ? tx.get( texture ) : null;
-		if ( txData && txData.bindGroups ) {
-
-			for ( const bindGroup of txData.bindGroups ) {
-
-				const bindingsData = targetRenderer.backend.get( bindGroup );
-				if ( bindingsData ) {
-
-					bindingsData.groups = undefined;
-					bindingsData.versions = undefined;
-
-				}
-
-			}
-			txData.bindGroups.clear();
-
-		}
+		invalidateTextureBindGroups( targetRenderer, texture );
 
 		const targetData = targetRenderer.backend.get( texture );
 		for ( const key of Object.keys( sourceData ) ) targetData[ key ] = sourceData[ key ];
@@ -273,53 +301,13 @@ export function shareShadowGPUTextureIntoSlim( tex, fullRenderer, slimRenderer )
 
 	if ( ! tex || ! fullRenderer || ! fullRenderer.backend || ! slimRenderer || ! slimRenderer.backend ) return false;
 	const fullData = fullRenderer.backend.get( tex );
+	if ( ! fullData || ! fullData.texture ) return false;
+
+	markLayeredDepthTextureAsArray( tex, fullData.texture );
+
+	if ( ! shareGPUTextureEntry( slimRenderer, fullRenderer, tex ) ) return false;
 	const slimData = slimRenderer.backend.get( tex );
-	if ( ! fullData || ! fullData.texture || ! slimData ) return false;
-
-	clearTextureViewCache( slimData );
-	slimData.texture = fullData.texture;
 	slimData.__tslpSharedShadowGPUTexture = fullData.texture;
-	slimData.format = fullData.format;
-	slimData.initialized = true;
-	slimData.isDefaultTexture = false;
-
-	const nextVersion = ( tex.version | 0 ) + 1;
-	tex.version = nextVersion;
-	slimData.version = nextVersion;
-	slimData.generation = nextVersion;
-	fullData.version = nextVersion;
-	if ( ! slimData.bindGroups ) slimData.bindGroups = new Set();
-
-	const stx = slimRenderer._textures;
-	if ( stx && typeof stx.get === 'function' ) {
-
-		const txData = stx.get( tex );
-		if ( txData ) {
-
-			txData.initialized = true;
-			txData.isDefaultTexture = false;
-			txData.version = nextVersion;
-			txData.generation = nextVersion;
-			if ( ! txData.bindGroups ) txData.bindGroups = new Set();
-
-		}
-
-	}
-
-	const ftx = fullRenderer._textures;
-	if ( ftx && typeof ftx.get === 'function' ) {
-
-		const ftxData = ftx.get( tex );
-		if ( ftxData ) {
-
-			ftxData.initialized = true;
-			ftxData.version = nextVersion;
-			ftxData.generation = nextVersion;
-
-		}
-
-	}
-
 	return true;
 
 }

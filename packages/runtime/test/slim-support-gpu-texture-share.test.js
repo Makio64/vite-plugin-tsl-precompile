@@ -220,10 +220,13 @@ test( 'shareShadowGPUTextureIntoSlim bumps the JS texture version and clears vie
 	const full = fakeRenderer();
 	const depthMap = fakeTexture( 'shadow.depth' );
 	depthMap.version = 5;
+	depthMap.isDepthTexture = true;
+	depthMap.image = { width: 1024, height: 1024, depth: 4 };
 
 	const fullData = full.backend.get( depthMap );
-	fullData.texture = { __gpu: 'depth' };
+	fullData.texture = { __gpu: 'depth', depthOrArrayLayers: 4 };
 	fullData.format = 'depth32float';
+	fullData.textureDescriptorGPU = { format: 'depth32float', size: { width: 1024, height: 1024, depthOrArrayLayers: 4 } };
 
 	const slimData = slim.backend.get( depthMap );
 	slimData[ 'view-0' ] = { stale: true };
@@ -232,14 +235,41 @@ test( 'shareShadowGPUTextureIntoSlim bumps the JS texture version and clears vie
 
 	assert.equal( ok, true );
 	assert.equal( depthMap.version, 6, 'JS version was bumped' );
+	assert.equal( depthMap.isArrayTexture, true, 'layered depth texture was marked array-shaped' );
 	assert.equal( slimData.texture, fullData.texture );
 	assert.equal( slimData.format, 'depth32float' );
+	assert.equal( slimData.textureDescriptorGPU, fullData.textureDescriptorGPU );
 	assert.equal( slimData.__tslpSharedShadowGPUTexture, fullData.texture );
 	assert.equal( slimData[ 'view-0' ], undefined, 'stale view cache cleared' );
 	assert.equal( slimData.version, 6 );
 	assert.equal( fullData.version, 6, 'both renderers see the bumped version' );
 	assert.equal( slim._textures.get( depthMap ).initialized, true );
 	assert.equal( full._textures.get( depthMap ).initialized, true );
+
+} );
+
+test( 'shareShadowGPUTextureIntoSlim invalidates pre-existing slim bind groups', () => {
+
+	const slim = fakeRenderer();
+	const full = fakeRenderer();
+	const depthMap = fakeTexture( 'shadow.depth' );
+	depthMap.isDepthTexture = true;
+	depthMap.image = { width: 512, height: 512, depth: 4 };
+
+	full.backend.get( depthMap ).texture = { __gpu: 'depth', depthOrArrayLayers: 4 };
+	const bindGroup = { id: 'shadow-bg' };
+	const txData = slim._textures.get( depthMap );
+	txData.bindGroups = new Set( [ bindGroup ] );
+	const bindingsData = slim.backend.get( bindGroup );
+	bindingsData.groups = { cached: true };
+	bindingsData.versions = [ 1, 2, 3 ];
+
+	const ok = shareShadowGPUTextureIntoSlim( depthMap, full, slim );
+
+	assert.equal( ok, true );
+	assert.equal( bindingsData.groups, undefined );
+	assert.equal( bindingsData.versions, undefined );
+	assert.equal( txData.bindGroups.size, 0 );
 
 } );
 

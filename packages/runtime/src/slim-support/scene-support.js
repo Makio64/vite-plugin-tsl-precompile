@@ -40,6 +40,7 @@ import {
 	pingPongInvalidate,
 	shareInstancedAttributeBufferIntoSlim,
 	computeNodeUsesStorageTexture,
+	shareComputeSampledInputs,
 } from './compute-sync.js';
 import { shareGPUTextureEntry, shareShadowGPUTextureIntoSlim } from './gpu-texture-share.js';
 import { createFullRendererFallback } from './full-renderer-fallback.js';
@@ -198,6 +199,22 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	}
 
+	function shareComputeInputs( computeNode, fullRenderer, shareOpts = {} ) {
+
+		if ( ! settings.computeSync || ! settings.textureSharing ) return { texturesShared: 0, skippedStorageTextures: 0, missingTextures: 0 };
+		return shareComputeSampledInputs( computeNode, fullRenderer, renderer, {
+			...shareOpts,
+			diagnostics: shareOpts.diagnostics || diagnostics.textureShare,
+			onError: ( err, tex ) => {
+
+				if ( shareOpts.onError ) shareOpts.onError( err, tex );
+				if ( onError ) onError( err, { where: 'shareComputeInputs', texture: tex } );
+
+			},
+		} );
+
+	}
+
 	/**
 	 * Multi-pass variant of {@link syncComputeOutputs}. Call once per pass of
 	 * a multi-pass compute graph (e.g. bitonic sort, reductions). The same
@@ -269,6 +286,57 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	}
 
+	function nodeBuilderLikeFromState( state ) {
+
+		if ( ! state ) return null;
+		if ( typeof state.build === 'function' && typeof state.getBindings === 'function' ) return state;
+
+		return {
+			vertexShader: state.vertexShader || '',
+			fragmentShader: state.fragmentShader || '',
+			computeShader: state.computeShader || '',
+			nodeAttributes: state.nodeAttributes || [],
+			bindings: state.bindings || [],
+			updateNodes: state.updateNodes || [],
+			updateBeforeNodes: state.updateBeforeNodes || [],
+			updateAfterNodes: state.updateAfterNodes || [],
+			observer: state.observer || null,
+			transforms: state.transforms || [],
+			getAttributesArray() { return this.nodeAttributes; },
+			getBindings() { return this.bindings; },
+			build() {},
+			buildAsync: async () => {},
+		};
+
+	}
+
+	function createRenderFallbackHandler( fullRenderer ) {
+
+		const nodeManager = fullRenderer && ( fullRenderer.nodes || fullRenderer._nodes );
+		if ( ! nodeManager ) return null;
+
+		if ( typeof nodeManager.getForRender === 'function' ) {
+
+			return ( renderObject ) => {
+
+				const result = nodeManager.getForRender( renderObject );
+				if ( result && typeof result.then === 'function' ) return null;
+				return nodeBuilderLikeFromState( result );
+
+			};
+
+		}
+
+		if ( typeof nodeManager._createNodeBuilder === 'function' ) {
+
+			return ( renderObject ) => nodeManager._createNodeBuilder( renderObject, renderObject && renderObject.material );
+
+		}
+
+		return null;
+
+	}
+
 	// Eagerly boot the full renderer and register a sync `getForRender`
 	// fallback so the slim-rewritten Nodes.js can delegate non-precompiled
 	// materials (Inspector helpers, addon meshes, etc.) instead of throwing.
@@ -279,12 +347,13 @@ export function createSlimSceneSupport( opts = {} ) {
 		if ( ! fallback ) throw new Error( 'createSlimSceneSupport: ensureFallback() requires `fullRendererFallback: true` at construction.' );
 		if ( fallbackRegistered ) return;
 		const fullRenderer = await fallback.getRenderer();
-		if ( ! fullRenderer || ! fullRenderer.nodes || typeof fullRenderer.nodes.getForRender !== 'function' ) {
+		const handler = createRenderFallbackHandler( fullRenderer );
+		if ( ! handler ) {
 
-			throw new Error( 'createSlimSceneSupport: ensureFallback() booted a full renderer that has no `nodes.getForRender` — three.js bundle layout has shifted.' );
+			throw new Error( 'createSlimSceneSupport: ensureFallback() booted a full renderer that has no node render fallback hook — three.js bundle layout has shifted.' );
 
 		}
-		setSlimRenderFallback( ( renderObject ) => fullRenderer.nodes.getForRender( renderObject ) );
+		setSlimRenderFallback( handler );
 		fallbackRegistered = true;
 
 	}
@@ -423,8 +492,9 @@ export function createSlimSceneSupport( opts = {} ) {
 		ensureFallback,
 		generatePMREMAsync,
 		setPMREMGenerator,
-		syncComputeOutputs,
-		syncComputeOutputsPerPass,
+			syncComputeOutputs,
+			shareComputeInputs,
+			syncComputeOutputsPerPass,
 		pingPongInvalidate: pingPongInvalidateTextures,
 		shareInstancedAttributeBuffer,
 		computeNodeUsesStorageTexture: ( node, source ) => computeNodeUsesStorageTexture( node, source ),

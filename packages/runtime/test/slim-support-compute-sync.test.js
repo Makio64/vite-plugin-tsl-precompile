@@ -4,8 +4,10 @@ import assert from 'node:assert/strict';
 import {
 	getComputeBindGroups,
 	computeNodeUsesStorageTexture,
+	shareComputeSampledInputs,
 	syncComputeStorageOutputs,
 	syncComputeStorageOutputsPerPass,
+	wireArtifactStorageBuffersFromAttributes,
 	pingPongInvalidate,
 	shareInstancedAttributeBufferIntoSlim,
 } from '../src/slim-support/compute-sync.js';
@@ -91,6 +93,61 @@ test( 'computeNodeUsesStorageTexture detects storage texture bindings', () => {
 	const no = fakeRenderer( { bindGroupsForNode: () => [ { bindings: [ storageBufferBinding( { isAttr: true } ) ] } ] } );
 	assert.equal( computeNodeUsesStorageTexture( 'n', yes ), true );
 	assert.equal( computeNodeUsesStorageTexture( 'n', no ), false );
+
+} );
+
+test( 'shareComputeSampledInputs shares sampled render textures from slim into full', () => {
+
+	const tex = { isTexture: true, name: 'collision-map', version: 2 };
+	const binding = { isSampledTexture: true, texture: tex };
+	const bindGroup = { bindings: [ binding ] };
+
+	const slim = fakeRenderer();
+	slim.backend.get( tex ).texture = { __gpu: 'slim-render-target' };
+	slim.backend.get( tex ).format = 'rgba16float';
+
+	const full = fakeRenderer( { bindGroupsForNode: () => [ bindGroup ] } );
+	full.backend.get( tex ).texture = { __gpu: 'full-placeholder' };
+
+	const seen = [];
+	const stats = shareComputeSampledInputs( 'compute-node', full, slim, {
+		onSampledTexture: ( texture, seenBinding ) => seen.push( [ texture, seenBinding ] ),
+	} );
+
+	assert.equal( stats.texturesShared, 1 );
+	assert.equal( stats.skippedStorageTextures, 0 );
+	assert.equal( stats.missingTextures, 0 );
+	assert.equal( full.backend.get( tex ).texture, slim.backend.get( tex ).texture );
+	assert.equal( full.backend.get( tex ).format, 'rgba16float' );
+	assert.equal( tex.version, 3, 'texture version bumps so full compute bind groups rebuild' );
+	assert.deepEqual( seen, [ [ tex, binding ] ] );
+
+} );
+
+test( 'shareComputeSampledInputs skips storage-texture output bindings', () => {
+
+	const storageTex = { isTexture: true, isStorageTexture: true, name: 'compute-out', version: 0 };
+	const normalTex = { isTexture: true, name: 'collision-map', version: 0 };
+	const bindGroup = {
+		bindings: [
+			{ isSampledTexture: true, store: true, texture: storageTex },
+			{ isSampledTexture: true, texture: normalTex },
+		],
+	};
+
+	const slim = fakeRenderer();
+	slim.backend.get( normalTex ).texture = { __gpu: 'slim-input' };
+	slim.backend.get( storageTex ).texture = { __gpu: 'slim-storage' };
+
+	const full = fakeRenderer( { bindGroupsForNode: () => [ bindGroup ] } );
+	full.backend.get( storageTex ).texture = { __gpu: 'full-storage' };
+
+	const stats = shareComputeSampledInputs( 'compute-node', full, slim );
+
+	assert.equal( stats.texturesShared, 1 );
+	assert.equal( stats.skippedStorageTextures, 1 );
+	assert.equal( full.backend.get( normalTex ).texture, slim.backend.get( normalTex ).texture );
+	assert.notEqual( full.backend.get( storageTex ).texture, slim.backend.get( storageTex ).texture );
 
 } );
 
@@ -258,6 +315,73 @@ test( 'syncComputeStorageOutputsPerPass with undefined passIndex behaves like th
 	assert.equal( out.pass, null );
 	assert.equal( out.buffersAdopted, 1 );
 	assert.equal( onPassFired, false, 'onPass is silent when passIndex is undefined' );
+
+} );
+
+test( 'wireArtifactStorageBuffersFromAttributes wires storage plan entries by shape', () => {
+
+	const attr = {
+		isStorageBufferAttribute: true,
+		array: new Int32Array( 19200 * 4 ),
+		count: 19200,
+		itemSize: 4,
+		version: 3,
+	};
+	const artifact = {
+		uniformPlan: [
+			{
+				storageBuffers: [
+					{
+						name: 'lightIndexes',
+						count: 19200,
+						itemSize: 4,
+						arrayType: 'Int32Array',
+						_liveAttribute: { array: [] },
+					},
+				],
+			},
+		],
+	};
+
+	const wired = wireArtifactStorageBuffersFromAttributes( artifact, [ attr ] );
+
+	assert.equal( wired, 1 );
+	assert.equal( artifact.uniformPlan[ 0 ].storageBuffers[ 0 ]._liveAttribute, attr );
+	assert.equal( attr.version, 4, 'live attribute version bumps for bind-group rebuilds' );
+
+} );
+
+test( 'wireArtifactStorageBuffersFromAttributes handles ordered storage-buffer refs and skips live entries', () => {
+
+	const live = {
+		isStorageBufferAttribute: true,
+		array: new Float32Array( 4 ),
+		count: 1,
+		itemSize: 4,
+		version: 1,
+	};
+	const fallback = {
+		isStorageBufferAttribute: true,
+		array: new Float32Array( 4 ),
+		count: 1,
+		itemSize: 4,
+		version: 1,
+	};
+	const ref = { count: 1, itemSize: 4, arrayType: 'Float32Array', _liveAttribute: live };
+	const artifact = {
+		uniformPlan: [
+			{
+				storageBuffers: [],
+				orderedBindings: [ { type: 'storage-buffer', ref } ],
+			},
+		],
+	};
+
+	const wired = wireArtifactStorageBuffersFromAttributes( artifact, [ fallback ] );
+
+	assert.equal( wired, 0 );
+	assert.equal( ref._liveAttribute, live );
+	assert.equal( fallback.version, 1 );
 
 } );
 

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createSlimSceneSupport, pinClock, unpinClock } from '../src/slim-support/scene-support.js';
+import { getSlimRenderFallback, setSlimRenderFallback } from '../src/slim-support/render-fallback-registry.js';
 
 function fakeDataMap() {
 
@@ -58,6 +59,35 @@ class FakeFullRenderer {
 
 }
 
+class FakeFullRendererWithPrivateNodes extends FakeFullRenderer {
+
+	async init() {
+
+		await super.init();
+		this._nodes = {
+			getForRender( renderObject ) {
+
+				return {
+					vertexShader: 'vertex',
+					fragmentShader: 'fragment',
+					computeShader: '',
+					nodeAttributes: [ 'position' ],
+					bindings: [ 'group' ],
+					updateNodes: [ 'update' ],
+					updateBeforeNodes: [ 'before' ],
+					updateAfterNodes: [ 'after' ],
+					observer: 'observer',
+					transforms: [ 'transform' ],
+					renderObject,
+				};
+
+			},
+		};
+
+	}
+
+}
+
 test( 'createSlimSceneSupport requires a renderer', () => {
 
 	assert.throws( () => createSlimSceneSupport( {} ), /opts\.renderer is required/ );
@@ -72,6 +102,7 @@ test( 'createSlimSceneSupport exposes the four sub-helpers by default (no fallba
 	assert.equal( support.fallback, null );
 	assert.equal( typeof support.indexScene, 'function' );
 	assert.equal( typeof support.syncComputeOutputs, 'function' );
+	assert.equal( typeof support.shareComputeInputs, 'function' );
 	assert.equal( typeof support.shareTexture, 'function' );
 	assert.equal( typeof support.shareShadowTexture, 'function' );
 
@@ -91,6 +122,37 @@ test( 'createSlimSceneSupport boots the fallback renderer on demand', async () =
 	assert.ok( full instanceof FakeFullRenderer );
 	assert.equal( full.options.device, slim.backend.device, 'fallback shares the GPU device' );
 	assert.equal( full.initialised, true );
+
+} );
+
+test( 'createSlimSceneSupport ensureFallback registers private _nodes as a slim builder fallback', async () => {
+
+	setSlimRenderFallback( null );
+	const renderObject = { material: { type: 'NodeMaterial' } };
+	const support = createSlimSceneSupport( {
+		renderer: fakeRenderer(),
+		fullRendererFallback: true,
+		threeFullModule: { WebGPURenderer: FakeFullRendererWithPrivateNodes },
+	} );
+
+	try {
+
+		await support.ensureFallback();
+		const fallback = getSlimRenderFallback();
+		assert.equal( typeof fallback, 'function' );
+		const builder = fallback( renderObject );
+		assert.equal( builder.vertexShader, 'vertex' );
+		assert.deepEqual( builder.getAttributesArray(), [ 'position' ] );
+		assert.deepEqual( builder.getBindings(), [ 'group' ] );
+		assert.equal( typeof builder.build, 'function' );
+		assert.equal( typeof builder.buildAsync, 'function' );
+
+	} finally {
+
+		support.dispose();
+		setSlimRenderFallback( null );
+
+	}
 
 } );
 

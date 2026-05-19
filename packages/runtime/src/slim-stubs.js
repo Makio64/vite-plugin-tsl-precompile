@@ -17,6 +17,7 @@
  */
 
 import {
+	BackSide,
 	DepthTexture,
 	FloatType,
 	HalfFloatType,
@@ -38,6 +39,8 @@ import {
 	Vector2,
 	Vector4,
 } from 'three/src/Three.Core.js';
+import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttribute.js';
+import StorageInstancedBufferAttribute from 'three/src/renderers/common/StorageInstancedBufferAttribute.js';
 
 function slimMessage( name ) {
 
@@ -222,6 +225,74 @@ function inertNodeStub( children = [], props = {} ) {
 		construct() { return proxy; },
 	} );
 	return proxy;
+
+}
+
+function itemSizeFromNodeType( type ) {
+
+	if ( typeof type !== 'string' ) return 1;
+	if ( /vec4|mat2/.test( type ) ) return 4;
+	if ( /vec3/.test( type ) ) return 3;
+	if ( /vec2/.test( type ) ) return 2;
+	return 1;
+
+}
+
+function nodeTypeFromAttribute( attribute, fallback = 'float' ) {
+
+	const itemSize = attribute && attribute.itemSize || 0;
+	if ( itemSize === 4 ) return 'vec4';
+	if ( itemSize === 3 ) return 'vec3';
+	if ( itemSize === 2 ) return 'vec2';
+	return fallback;
+
+}
+
+function attributeCarrierNode( attribute, nodeType = null, extraProps = {} ) {
+
+	return inertNodeStub( [], {
+		isBufferAttributeNode: true,
+		attribute,
+		value: attribute,
+		nodeType: nodeType || nodeTypeFromAttribute( attribute ),
+		...extraProps,
+	} );
+
+}
+
+function makeStorageAttribute( source, nodeType = 'float', instanced = true ) {
+
+	if ( source && source.isBufferAttribute === true ) return source;
+	const itemSize = itemSizeFromNodeType( nodeType );
+	const Ctor = instanced ? StorageInstancedBufferAttribute : StorageBufferAttribute;
+	if ( ArrayBuffer.isView( source ) ) return new Ctor( source, itemSize );
+	const count = Math.max( 1, Number.isFinite( source ) ? Math.floor( source ) : 1 );
+	return new Ctor( count, itemSize );
+
+}
+
+function storageCarrierNode( attribute, nodeType = null ) {
+
+	const node = attributeCarrierNode( attribute, nodeType, {
+		isStorageBufferNode: true,
+		isBufferAttributeNode: true,
+	} );
+	node.setName = ( name ) => {
+
+		if ( attribute ) attribute.name = name;
+		node.name = name;
+		return node;
+
+	};
+	node.setPBO = () => node;
+	node.toReadOnly = () => node;
+	node.toAttribute = () => attributeCarrierNode( attribute, node.nodeType );
+	node.element = ( ...args ) => inertNodeStub( [ node, ...args ], {
+		isStorageBufferNode: true,
+		value: attribute,
+		nodeType: node.nodeType,
+	} );
+	return node;
 
 }
 
@@ -942,13 +1013,14 @@ function makeNodeMaterialStub( name, Base = Material ) {
 
 	return class extends Base {
 
-		constructor( params = undefined ) {
+			constructor( params = undefined ) {
 
-			super( params );
-			this.isNodeMaterial = true;
-			this.type = name;
+				super( params );
+				this.isNodeMaterial = true;
+				this[ `is${ name }` ] = true;
+				this.type = name;
 
-		}
+			}
 
 	};
 
@@ -969,6 +1041,27 @@ export const PointsNodeMaterial = makeNodeMaterialStub( 'PointsNodeMaterial', Po
 export const SpriteNodeMaterial = makeNodeMaterialStub( 'SpriteNodeMaterial', SpriteMaterial );
 export const ShadowNodeMaterial = makeNodeMaterialStub( 'ShadowNodeMaterial', ShadowMaterial );
 export const MeshSSSNodeMaterial = makeNodeMaterialStub( 'MeshSSSNodeMaterial', MeshPhysicalMaterial );
+
+export class VolumeNodeMaterial extends NodeMaterial {
+
+	constructor( params = undefined ) {
+
+		super();
+		this.isVolumeNodeMaterial = true;
+		this.type = 'VolumeNodeMaterial';
+		this.steps = 25;
+		this.offsetNode = null;
+		this.scatteringNode = null;
+		this.lights = true;
+		this.transparent = true;
+		this.side = BackSide;
+		this.depthTest = false;
+		this.depthWrite = false;
+		if ( params && typeof params === 'object' ) this.setValues( params );
+
+	}
+
+}
 
 /**
  * `WebGLBackend` stub — slim mode is WebGPU-only, but examples still
@@ -1173,10 +1266,10 @@ export const PI = inertNodeStub();
  * TSL callable stubs — these are called as functions (`mix(a, b, t)`).
  * Each returns an inert node stub.
  */
-export function mix( ..._ ) { return inertNodeStub(); }
-export function step( ..._ ) { return inertNodeStub(); }
-export function texture( source, ..._ ) { return inertNodeStub( [], source && source.isTexture === true ? { isTextureNode: true, value: source } : {} ); }
-export function cubeTexture( source, ..._ ) { return inertNodeStub( [], source && source.isTexture === true ? { isTextureNode: true, value: source } : {} ); }
+export function mix( ...args ) { return inertNodeStub( args ); }
+export function step( ...args ) { return inertNodeStub( args ); }
+export function texture( source, ...args ) { return inertNodeStub( [ source, ...args ], source && source.isTexture === true ? { isTextureNode: true, value: source } : {} ); }
+export function cubeTexture( source, ...args ) { return inertNodeStub( [ source, ...args ], source && source.isTexture === true ? { isTextureNode: true, value: source } : {} ); }
 export function passTexture( passNode, textureValue ) {
 
 	return inertNodeStub( [], {
@@ -1200,14 +1293,14 @@ export function pmremTexture( source, ..._ ) {
 
 }
 export function __getPmremStubSource( stub ) { return __pmremStubSources.get( stub ); }
-export function vec2( ..._ ) { return inertNodeStub(); }
-export function vec3( ..._ ) { return inertNodeStub(); }
-export function vec4( ..._ ) { return inertNodeStub(); }
-export function float( ..._ ) { return inertNodeStub(); }
-export function int( ..._ ) { return inertNodeStub(); }
-export function uint( ..._ ) { return inertNodeStub(); }
-export function bool( ..._ ) { return inertNodeStub(); }
-export function color( ..._ ) { return inertNodeStub(); }
+export function vec2( ...args ) { return inertNodeStub( args ); }
+export function vec3( ...args ) { return inertNodeStub( args ); }
+export function vec4( ...args ) { return inertNodeStub( args ); }
+export function float( ...args ) { return inertNodeStub( args ); }
+export function int( ...args ) { return inertNodeStub( args ); }
+export function uint( ...args ) { return inertNodeStub( args ); }
+export function bool( ...args ) { return inertNodeStub( args ); }
+export function color( ...args ) { return inertNodeStub( args ); }
 export function uniform( value, nodeType = null ) { return new UniformNode( value, nodeType ); }
 export function uniformArray( values = [] ) {
 
@@ -1217,8 +1310,13 @@ export function uniformArray( values = [] ) {
 
 }
 export function nodeObject( value ) { return value && value.isNode === true ? value : inertNodeStub(); }
-export function attribute( ..._ ) { return inertNodeStub(); }
-export function reference( ..._ ) { return inertNodeStub(); }
+export function attribute( ...args ) { return inertNodeStub( args ); }
+export function bufferAttribute( attribute, nodeType = null ) { return attributeCarrierNode( attribute, nodeType ); }
+export function instancedBufferAttribute( attribute, nodeType = null ) { return attributeCarrierNode( attribute, nodeType ); }
+export function storageBufferAttribute( attribute, nodeType = null ) { return storageCarrierNode( attribute, nodeType ); }
+export function instancedArray( source, nodeType = 'float' ) { return storageCarrierNode( makeStorageAttribute( source, nodeType, true ), nodeType ); }
+export function storage( source, nodeType = 'float' ) { return storageCarrierNode( makeStorageAttribute( source, nodeType, false ), nodeType ); }
+export function reference( ...args ) { return inertNodeStub( args ); }
 export function add( ...args ) { return inertNodeStub( args ); }
 export function sub( ...args ) { return inertNodeStub( args ); }
 export function mul( ...args ) { return inertNodeStub( args ); }
@@ -1228,45 +1326,45 @@ export function cross( ...args ) { return inertNodeStub( args ); }
 export function normalize( ...args ) { return inertNodeStub( args ); }
 export function length( ...args ) { return inertNodeStub( args ); }
 export function clamp( ...args ) { return inertNodeStub( args ); }
-export function smoothstep( ..._ ) { return inertNodeStub(); }
+export function smoothstep( ...args ) { return inertNodeStub( args ); }
 export function pow( ...args ) { return inertNodeStub( args ); }
-export function pow2( ..._ ) { return inertNodeStub(); }
-export function pow3( ..._ ) { return inertNodeStub(); }
-export function pow4( ..._ ) { return inertNodeStub(); }
-export function abs( ..._ ) { return inertNodeStub(); }
-export function sign( ..._ ) { return inertNodeStub(); }
-export function floor( ..._ ) { return inertNodeStub(); }
-export function ceil( ..._ ) { return inertNodeStub(); }
-export function fract( ..._ ) { return inertNodeStub(); }
-export function mod( ..._ ) { return inertNodeStub(); }
+export function pow2( ...args ) { return inertNodeStub( args ); }
+export function pow3( ...args ) { return inertNodeStub( args ); }
+export function pow4( ...args ) { return inertNodeStub( args ); }
+export function abs( ...args ) { return inertNodeStub( args ); }
+export function sign( ...args ) { return inertNodeStub( args ); }
+export function floor( ...args ) { return inertNodeStub( args ); }
+export function ceil( ...args ) { return inertNodeStub( args ); }
+export function fract( ...args ) { return inertNodeStub( args ); }
+export function mod( ...args ) { return inertNodeStub( args ); }
 export function min( ...args ) { return inertNodeStub( args ); }
 export function max( ...args ) { return inertNodeStub( args ); }
-export function sin( ..._ ) { return inertNodeStub(); }
-export function cos( ..._ ) { return inertNodeStub(); }
-export function tan( ..._ ) { return inertNodeStub(); }
-export function atan( ..._ ) { return inertNodeStub(); }
-export function atan2( ..._ ) { return inertNodeStub(); }
-export function acos( ..._ ) { return inertNodeStub(); }
-export function sqrt( ..._ ) { return inertNodeStub(); }
-export function exp( ..._ ) { return inertNodeStub(); }
-export function exp2( ..._ ) { return inertNodeStub(); }
-export function log( ..._ ) { return inertNodeStub(); }
-export function log2( ..._ ) { return inertNodeStub(); }
-export function saturate( ..._ ) { return inertNodeStub(); }
-export function oneMinus( ..._ ) { return inertNodeStub(); }
-export function negate( ..._ ) { return inertNodeStub(); }
-export function invert( ..._ ) { return inertNodeStub(); }
-export function dFdx( ..._ ) { return inertNodeStub(); }
-export function dFdy( ..._ ) { return inertNodeStub(); }
-export function fwidth( ..._ ) { return inertNodeStub(); }
-export function select( ..._ ) { return inertNodeStub(); }
-export function cond( ..._ ) { return inertNodeStub(); }
-export function If( ..._ ) { return inertNodeStub(); }
-export function Loop( ..._ ) { return inertNodeStub(); }
-export function Break( ..._ ) { return inertNodeStub(); }
-export function Fn( ..._ ) { return inertNodeStub(); }
-export function context( ..._ ) { return inertNodeStub(); }
-export function renderOutput( ..._ ) { return inertNodeStub(); }
+export function sin( ...args ) { return inertNodeStub( args ); }
+export function cos( ...args ) { return inertNodeStub( args ); }
+export function tan( ...args ) { return inertNodeStub( args ); }
+export function atan( ...args ) { return inertNodeStub( args ); }
+export function atan2( ...args ) { return inertNodeStub( args ); }
+export function acos( ...args ) { return inertNodeStub( args ); }
+export function sqrt( ...args ) { return inertNodeStub( args ); }
+export function exp( ...args ) { return inertNodeStub( args ); }
+export function exp2( ...args ) { return inertNodeStub( args ); }
+export function log( ...args ) { return inertNodeStub( args ); }
+export function log2( ...args ) { return inertNodeStub( args ); }
+export function saturate( ...args ) { return inertNodeStub( args ); }
+export function oneMinus( ...args ) { return inertNodeStub( args ); }
+export function negate( ...args ) { return inertNodeStub( args ); }
+export function invert( ...args ) { return inertNodeStub( args ); }
+export function dFdx( ...args ) { return inertNodeStub( args ); }
+export function dFdy( ...args ) { return inertNodeStub( args ); }
+export function fwidth( ...args ) { return inertNodeStub( args ); }
+export function select( ...args ) { return inertNodeStub( args ); }
+export function cond( ...args ) { return inertNodeStub( args ); }
+export function If( ...args ) { return inertNodeStub( args ); }
+export function Loop( ...args ) { return inertNodeStub( args ); }
+export function Break( ...args ) { return inertNodeStub( args ); }
+export function Fn( ...args ) { return inertNodeStub( args ); }
+export function context( ...args ) { return inertNodeStub( args ); }
+export function renderOutput( ...args ) { return inertNodeStub( args ); }
 export function convertToTexture( node, ..._ ) {
 
 	if ( node && ( node.isSampleNode === true || node.isTextureNode === true ) ) return node;
@@ -1274,33 +1372,33 @@ export function convertToTexture( node, ..._ ) {
 	return inertNodeStub( [ node ] );
 
 }
-export function viewportSharedTexture( ..._ ) { return inertNodeStub(); }
-export function viewportTexture( ..._ ) { return inertNodeStub(); }
-export function cubeMapNode( ..._ ) { return inertNodeStub(); }
-export function equirectUV( ..._ ) { return inertNodeStub(); }
-export function fog( ..._ ) { return inertNodeStub(); }
-export function rangeFogFactor( ..._ ) { return inertNodeStub(); }
-export function densityFogFactor( ..._ ) { return inertNodeStub(); }
-export function logarithmicDepthToViewZ( ..._ ) { return inertNodeStub(); }
-export function viewZToPerspectiveDepth( ..._ ) { return inertNodeStub(); }
-export function getNormalFromDepth( ..._ ) { return inertNodeStub(); }
-export function getScreenPosition( ..._ ) { return inertNodeStub(); }
-export function getViewPosition( ..._ ) { return inertNodeStub(); }
-export function textureSize( ..._ ) { return inertNodeStub(); }
-export function luminance( ..._ ) { return inertNodeStub(); }
-export function builtin( ..._ ) { return inertNodeStub(); }
-export function mat3( ..._ ) { return inertNodeStub(); }
-export function mat4( ..._ ) { return inertNodeStub(); }
-export function ivec2( ..._ ) { return inertNodeStub(); }
-export function ivec3( ..._ ) { return inertNodeStub(); }
-export function ivec4( ..._ ) { return inertNodeStub(); }
-export function uvec2( ..._ ) { return inertNodeStub(); }
-export function uvec3( ..._ ) { return inertNodeStub(); }
-export function uvec4( ..._ ) { return inertNodeStub(); }
-export function varyingProperty( ..._ ) { return inertNodeStub(); }
-export function OnMaterialUpdate( ..._ ) { return inertNodeStub(); }
+export function viewportSharedTexture( ...args ) { return inertNodeStub( args ); }
+export function viewportTexture( ...args ) { return inertNodeStub( args ); }
+export function cubeMapNode( ...args ) { return inertNodeStub( args ); }
+export function equirectUV( ...args ) { return inertNodeStub( args ); }
+export function fog( ...args ) { return inertNodeStub( args ); }
+export function rangeFogFactor( ...args ) { return inertNodeStub( args ); }
+export function densityFogFactor( ...args ) { return inertNodeStub( args ); }
+export function logarithmicDepthToViewZ( ...args ) { return inertNodeStub( args ); }
+export function viewZToPerspectiveDepth( ...args ) { return inertNodeStub( args ); }
+export function getNormalFromDepth( ...args ) { return inertNodeStub( args ); }
+export function getScreenPosition( ...args ) { return inertNodeStub( args ); }
+export function getViewPosition( ...args ) { return inertNodeStub( args ); }
+export function textureSize( ...args ) { return inertNodeStub( args ); }
+export function luminance( ...args ) { return inertNodeStub( args ); }
+export function builtin( ...args ) { return inertNodeStub( args ); }
+export function mat3( ...args ) { return inertNodeStub( args ); }
+export function mat4( ...args ) { return inertNodeStub( args ); }
+export function ivec2( ...args ) { return inertNodeStub( args ); }
+export function ivec3( ...args ) { return inertNodeStub( args ); }
+export function ivec4( ...args ) { return inertNodeStub( args ); }
+export function uvec2( ...args ) { return inertNodeStub( args ); }
+export function uvec3( ...args ) { return inertNodeStub( args ); }
+export function uvec4( ...args ) { return inertNodeStub( args ); }
+export function varyingProperty( ...args ) { return inertNodeStub( args ); }
+export function OnMaterialUpdate( ...args ) { return inertNodeStub( args ); }
 export function reflect( ...args ) { return inertNodeStub( args ); }
-export function reflector( ..._ ) { return inertNodeStub(); }
+export function reflector( ...args ) { return inertNodeStub( args ); }
 
 /**
  * `renderGroup` — used as a *value* (uniform group identity) in some examples.

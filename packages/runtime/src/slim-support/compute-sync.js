@@ -1,13 +1,14 @@
 /**
- * Compute-output synchronisation between two `WebGPURenderer` instances.
+ * Compute input/output synchronisation between two `WebGPURenderer` instances.
  *
  * The slim runtime ships no compute kernel compiler (the node builder is
  * tree-shaken). When a scene declares `material.positionNode = Fn(...)().compute(N)`
  * or runs `renderer.compute(node)`, the slim renderer can't generate the
  * `GPUComputePipeline` itself — it has to borrow a full renderer that does.
- * After the full renderer dispatches the kernel, the slim renderer needs to
- * read the *same* `GPUBuffer` / `GPUTexture` so its draw call sees the
- * compute output rather than a fresh, zeroed stand-in.
+ * Before dispatch, the full renderer may need to sample render-target textures
+ * the slim renderer just rendered. After dispatch, the slim renderer needs to
+ * read the *same* `GPUBuffer` / `GPUTexture` so its draw call sees the compute
+ * output rather than a fresh, zeroed stand-in.
  *
  * This module owns the cross-renderer copy. It does NOT:
  *   - bootstrap the full renderer (callers pass one in);
@@ -22,15 +23,75 @@
  * @module SlimSupportComputeSync
  */
 
-import { shareShadowGPUTextureIntoSlim, clearTextureViewCache } from './gpu-texture-share.js';
+import { shareGPUTextureEntry, shareShadowGPUTextureIntoSlim, clearTextureViewCache } from './gpu-texture-share.js';
 
 function asList( node ) { return Array.isArray( node ) ? node : [ node ]; }
+
+function isStorageAttribute( value ) {
+
+	return value && (
+		value.isStorageBufferAttribute === true
+		|| value.isStorageInstancedBufferAttribute === true
+	);
+
+}
+
+function isLiveStorageAttribute( value ) {
+
+	return isStorageAttribute( value )
+		&& value.array
+		&& ArrayBuffer.isView( value.array );
+
+}
+
+function storageShapeMatches( attribute, entry, allowVec3ToVec4 = true ) {
+
+	if ( ! isStorageAttribute( attribute ) || ! entry ) return false;
+
+	const wantSize = entry.itemSize || 0;
+	const wantCount = entry.count || 0;
+	const wantArray = entry.arrayType || '';
+
+	if ( wantSize && attribute.itemSize !== wantSize
+		&& ! ( allowVec3ToVec4 && attribute.itemSize === 3 && wantSize === 4 ) ) return false;
+	if ( wantCount && attribute.count !== wantCount ) return false;
+	if ( wantArray
+		&& attribute.array
+		&& attribute.array.constructor
+		&& attribute.array.constructor.name !== wantArray ) return false;
+
+	return true;
+
+}
+
+function defineLiveStorageAttribute( entry, attribute, bumpVersion ) {
+
+	Object.defineProperty( entry, '_liveAttribute', {
+		value: attribute,
+		enumerable: false,
+		configurable: true,
+		writable: true,
+	} );
+
+	if ( bumpVersion && typeof attribute.version === 'number' ) attribute.version = attribute.version + 1;
+
+}
 
 function storageTextureFromBinding( binding ) {
 
 	if ( ! binding || ! binding.isSampledTexture ) return null;
 	const texture = binding.texture;
 	return texture && texture.isStorageTexture === true ? texture : null;
+
+}
+
+function sampledInputTextureFromBinding( binding ) {
+
+	if ( ! binding || binding.isSampledTexture !== true ) return null;
+	if ( binding.store === true ) return null;
+	const texture = binding.texture;
+	if ( ! texture || texture.isStorageTexture === true ) return null;
+	return texture;
 
 }
 
@@ -79,6 +140,85 @@ export function computeNodeUsesStorageTexture( computeNode, fullRenderer ) {
 
 	}
 	return false;
+
+}
+
+/**
+ * Share sampled texture inputs for a delegated compute dispatch from the slim
+ * renderer into the full renderer before `fullRenderer.computeAsync()`.
+ *
+ * This covers kernels that sample render-target textures produced by an
+ * immediately previous slim render pass (for example a collision/depth map).
+ * Storage textures are skipped here because they are compute outputs handled by
+ * `syncComputeStorageOutputs()`.
+ *
+ * @param {Object|Array<Object>} computeNode   - Compute node (or list).
+ * @param {Object}               fullRenderer  - Full WebGPURenderer that will dispatch compute.
+ * @param {Object}               slimRenderer  - Slim WebGPURenderer that rendered the sampled inputs.
+ * @param {Object}               [opts]
+ * @param {Object}               [opts.diagnostics] - Optional shareGPUTextureEntry diagnostics bag.
+ * @param {Function}             [opts.onSampledTexture] - `(texture, binding) => void` invoked for each successful share.
+ * @param {Function}             [opts.onError] - `(err, textureOrBinding) => void` error hook.
+ * @returns {{ texturesShared: number, skippedStorageTextures: number, missingTextures: number }}
+ */
+export function shareComputeSampledInputs( computeNode, fullRenderer, slimRenderer, opts = {} ) {
+
+	const stats = { texturesShared: 0, skippedStorageTextures: 0, missingTextures: 0 };
+	if ( ! computeNode || ! fullRenderer || ! slimRenderer || ! fullRenderer.backend || ! slimRenderer.backend ) return stats;
+
+	const seen = new Set();
+	const onSampledTexture = typeof opts.onSampledTexture === 'function' ? opts.onSampledTexture : null;
+
+	try {
+
+		const bindGroups = getComputeBindGroups( computeNode, fullRenderer );
+		for ( const bindGroup of bindGroups ) {
+
+			if ( ! bindGroup || ! bindGroup.bindings ) continue;
+			for ( const binding of bindGroup.bindings ) {
+
+				if ( ! binding || binding.isSampledTexture !== true ) continue;
+				if ( binding.store === true || binding.texture && binding.texture.isStorageTexture === true ) {
+
+					stats.skippedStorageTextures ++;
+					continue;
+
+				}
+
+				const texture = sampledInputTextureFromBinding( binding );
+				if ( ! texture ) {
+
+					stats.missingTextures ++;
+					continue;
+
+				}
+				if ( seen.has( texture ) ) continue;
+				seen.add( texture );
+
+				const shared = shareGPUTextureEntry( fullRenderer, slimRenderer, texture, {
+					diagnostics: opts.diagnostics,
+					onError: opts.onError,
+					bumpVersion: opts.bumpVersion,
+				} );
+				if ( ! shared ) continue;
+				stats.texturesShared ++;
+				if ( onSampledTexture ) {
+
+					try { onSampledTexture( texture, binding ); } catch ( _ ) {}
+
+				}
+
+			}
+
+		}
+
+	} catch ( err ) {
+
+		if ( typeof opts.onError === 'function' ) opts.onError( err, computeNode );
+
+	}
+
+	return stats;
 
 }
 
@@ -233,6 +373,73 @@ export function syncComputeStorageOutputsPerPass( computeNode, fullRenderer, sli
 
 	}
 	return out;
+
+}
+
+/**
+ * Seed precompiled render-artifact storage-buffer entries from compute output
+ * attributes discovered by `syncComputeStorageOutputs(..., { onStorageAttr })`.
+ *
+ * Material-local storage buffers are usually recoverable by walking
+ * `material.colorNode`, `material.vertexNode`, etc. Renderer-owned systems
+ * such as tiled lighting are different: compute writes the live buffer from a
+ * lighting node, while the material shader only sees the final storage binding.
+ * This helper bridges that gap by matching storage-buffer entries by
+ * `count + itemSize + typed-array kind` and storing the live attribute on the
+ * artifact before the next hydrate.
+ *
+ * @param {Object} artifact
+ * @param {Object|Object[]} attributes
+ * @param {Object} [opts]
+ * @param {boolean} [opts.bumpVersion=true] - Bump the live attribute version so cached bind groups rebuild.
+ * @param {boolean} [opts.allowVec3ToVec4=true] - Accept WebGPU vec3 storage padding captured as vec4.
+ * @returns {number} number of artifact entries wired
+ */
+export function wireArtifactStorageBuffersFromAttributes( artifact, attributes, opts = {} ) {
+
+	const plan = artifact && Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : null;
+	if ( ! plan || plan.length === 0 ) return 0;
+
+	const candidates = asList( attributes ).filter( isStorageAttribute );
+	if ( candidates.length === 0 ) return 0;
+
+	const bumpVersion = opts.bumpVersion !== false;
+	const allowVec3ToVec4 = opts.allowVec3ToVec4 !== false;
+	const consumed = new Set();
+	const seenEntries = new Set();
+	let wired = 0;
+
+	const wireEntry = ( entry ) => {
+
+		if ( ! entry || seenEntries.has( entry ) ) return;
+		seenEntries.add( entry );
+		if ( isLiveStorageAttribute( entry._liveAttribute ) ) return;
+
+		const match = candidates.find( ( candidate ) => (
+			! consumed.has( candidate )
+			&& storageShapeMatches( candidate, entry, allowVec3ToVec4 )
+		) );
+		if ( ! match ) return;
+
+		defineLiveStorageAttribute( entry, match, bumpVersion );
+		consumed.add( match );
+		wired ++;
+
+	};
+
+	for ( const group of plan ) {
+
+		for ( const entry of group && group.storageBuffers || [] ) wireEntry( entry );
+		for ( const binding of group && group.orderedBindings || [] ) {
+
+			if ( ! binding || binding.type !== 'storage-buffer' || ! binding.ref ) continue;
+			wireEntry( binding.ref );
+
+		}
+
+	}
+
+	return wired;
 
 }
 

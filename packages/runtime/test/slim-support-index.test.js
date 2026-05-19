@@ -10,6 +10,7 @@ test( 'slim-support package subpath resolves through the public export map', () 
 
 	assert.equal( slimSupport.createSlimSceneSupport, createSlimSceneSupport );
 	assert.equal( slimSupport.createFullRendererFallback, createFullRendererFallback );
+	assert.equal( typeof slimSupport.shareComputeSampledInputs, 'function' );
 	assert.equal( typeof slimSupport.syncComputeStorageOutputs, 'function' );
 	assert.equal( typeof slimSupport.renderPassWithFullRenderer, 'function' );
 	assert.equal( typeof slimSupport.preparePrecompiledPostprocess, 'function' );

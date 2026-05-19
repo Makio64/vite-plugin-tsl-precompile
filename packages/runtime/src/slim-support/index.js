@@ -45,6 +45,7 @@ export {
 	artifactHasTextureSource,
 	countArtifactTextureSources,
 	singleArtifactTextureUuid,
+	attachArtifactTextureRefsByShapeOrder,
 	attachTextureRefsWhere,
 	attachArtifactTextureRefsWhere,
 } from './artifact-texture-wiring.js';
@@ -52,8 +53,10 @@ export {
 export {
 	getComputeBindGroups,
 	computeNodeUsesStorageTexture,
+	shareComputeSampledInputs,
 	syncComputeStorageOutputs,
 	syncComputeStorageOutputsPerPass,
+	wireArtifactStorageBuffersFromAttributes,
 	pingPongInvalidate,
 	shareInstancedAttributeBufferIntoSlim,
 } from './compute-sync.js';
