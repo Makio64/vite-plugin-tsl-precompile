@@ -178,6 +178,29 @@ function emitFromWriterTable( kind, src, off, usedWriters ) {
 
 }
 
+function object3DTargetExpr( source ) {
+
+	return source && source.target === 'camera'
+		? '((material && material.__tslpObject3DTargets && material.__tslpObject3DTargets.camera) || (frame && frame.__tslpObject3DTargets && frame.__tslpObject3DTargets.camera) || null)'
+		: 'frame.object';
+
+}
+
+function vec3SnapshotLiteral( snapshot ) {
+
+	const data = snapshot && Array.isArray( snapshot.data ) ? snapshot.data : null;
+	if ( ! data || data.length < 3 ) return 'null';
+	return `{ x: ${ Number( data[ 0 ] ) || 0 }, y: ${ Number( data[ 1 ] ) || 0 }, z: ${ Number( data[ 2 ] ) || 0 } }`;
+
+}
+
+function numberSnapshotLiteral( snapshot, fallback = 0 ) {
+
+	const value = snapshot ? Number( snapshot.data ) : NaN;
+	return Number.isFinite( value ) ? String( value ) : String( fallback );
+
+}
+
 /**
  * Generate the source text of an updater module for a single artifact.
  *
@@ -245,6 +268,39 @@ export function emitUpdaterSource( artifact, opts = {} ) {
 			decls.push( 'const _rViewport = new Vector4( 0, 0, 1, 1 );' );
 
 		}
+		if ( allHelpers.has( 'size' ) || allHelpers.has( 'viewport' ) ) {
+
+			decls.push( 'function _tslpCurrentRenderTarget(renderer) {' );
+			decls.push( '  if (!renderer || typeof renderer.getRenderTarget !== "function") return null;' );
+			decls.push( '  try { return renderer.getRenderTarget(); } catch (_) { return null; }' );
+			decls.push( '}' );
+
+		}
+		if ( allHelpers.has( 'size' ) ) {
+
+			decls.push( 'function _tslpRendererScreenSize(frame) {' );
+			decls.push( '  const renderer = frame && frame.renderer;' );
+			decls.push( '  const renderTarget = _tslpCurrentRenderTarget(renderer);' );
+			decls.push( '  if (renderTarget !== null && Number.isFinite(renderTarget.width) && Number.isFinite(renderTarget.height)) _rSize.set(renderTarget.width, renderTarget.height);' );
+			decls.push( '  else if (renderer && typeof renderer.getDrawingBufferSize === "function") renderer.getDrawingBufferSize(_rSize);' );
+			decls.push( '  return _rSize;' );
+			decls.push( '}' );
+
+		}
+		if ( allHelpers.has( 'viewport' ) ) {
+
+			decls.push( 'function _tslpRendererViewport(frame) {' );
+			decls.push( '  const renderer = frame && frame.renderer;' );
+			decls.push( '  const renderTarget = _tslpCurrentRenderTarget(renderer);' );
+			decls.push( '  if (renderTarget !== null && renderTarget.viewport) _rViewport.copy(renderTarget.viewport);' );
+			decls.push( '  else if (renderer && typeof renderer.getViewport === "function") {' );
+			decls.push( '    renderer.getViewport(_rViewport);' );
+			decls.push( '    if (typeof renderer.getPixelRatio === "function") _rViewport.multiplyScalar(renderer.getPixelRatio());' );
+			decls.push( '  }' );
+			decls.push( '  return _rViewport;' );
+			decls.push( '}' );
+
+		}
 		if ( allHelpers.has( 'worldMatrixInverse' ) ) {
 
 			threeNames.add( 'Matrix4' );
@@ -293,6 +349,10 @@ export function emitUpdaterSource( artifact, opts = {} ) {
 			decls.push( 'function _tslpFrameKey(frame) {' );
 			decls.push( '  return frame && Number.isFinite(frame.frameId) ? frame.frameId : frame && Number.isFinite(frame.renderId) ? frame.renderId : 0;' );
 			decls.push( '}' );
+			decls.push( 'function _tslpFreezeVelocityState(frame) {' );
+			decls.push( '  const root = typeof globalThis !== "undefined" ? globalThis : null;' );
+			decls.push( '  return !!(root && root.__tslpSuppressVelocityStateAdvance === true || frame && frame.renderer && frame.renderer.__tslpSuppressVelocityStateAdvance === true);' );
+			decls.push( '}' );
 			decls.push( 'function _tslpVelocityCamera(frame) {' );
 			decls.push( '  const camera = frame && frame.camera;' );
 			decls.push( '  if (!camera) return null;' );
@@ -301,7 +361,7 @@ export function emitUpdaterSource( artifact, opts = {} ) {
 			decls.push( '  if (!state) {' );
 			decls.push( '    state = { frameId: key, previousProjectionMatrix: new Matrix4().copy(camera.projectionMatrix), previousCameraViewMatrix: new Matrix4().copy(camera.matrixWorldInverse), currentProjectionMatrix: new Matrix4().copy(camera.projectionMatrix), currentCameraViewMatrix: new Matrix4().copy(camera.matrixWorldInverse) };' );
 			decls.push( '    _tslpVelocityCameraStates.set(camera, state);' );
-			decls.push( '  } else if (state.frameId !== key) {' );
+			decls.push( '  } else if (state.frameId !== key && !_tslpFreezeVelocityState(frame)) {' );
 			decls.push( '    state.frameId = key;' );
 			decls.push( '    state.previousProjectionMatrix.copy(state.currentProjectionMatrix);' );
 			decls.push( '    state.previousCameraViewMatrix.copy(state.currentCameraViewMatrix);' );
@@ -318,7 +378,7 @@ export function emitUpdaterSource( artifact, opts = {} ) {
 			decls.push( '  if (!state) {' );
 			decls.push( '    state = { frameId: key, previousModelWorldMatrix: new Matrix4().copy(object.matrixWorld), currentModelWorldMatrix: new Matrix4().copy(object.matrixWorld) };' );
 			decls.push( '    _tslpVelocityObjectStates.set(object, state);' );
-			decls.push( '  } else if (state.frameId !== key) {' );
+			decls.push( '  } else if (state.frameId !== key && !_tslpFreezeVelocityState(frame)) {' );
 			decls.push( '    state.frameId = key;' );
 			decls.push( '    state.previousModelWorldMatrix.copy(state.currentModelWorldMatrix);' );
 			decls.push( '    state.currentModelWorldMatrix.copy(object.matrixWorld);' );
@@ -443,9 +503,12 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 			return `{ const _v = _tslpVelocityObject(frame); if (_v) writeMat4(view, ${ off }, _v.previousModelWorldMatrix); }`;
 
 		case 'object.worldMatrix':
-		case 'object3d.worldMatrix':
 			usedWriters.add( 'writeMat4' );
 			return `writeMat4(view, ${ off }, frame.object.matrixWorld);`;
+
+		case 'object3d.worldMatrix':
+			usedWriters.add( 'writeMat4' );
+			return `writeMat4(view, ${ off }, ${ object3DTargetExpr( src ) }.matrixWorld);`;
 
 		case 'object.worldMatrixInverse':
 			// modelWorldMatrixInverse = matrixWorld.invert() — must compute on the fly.
@@ -481,29 +544,38 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 		// Object3DNode — `scope` picks which object metric.
 		case 'object3d.position':
 			usedWriters.add( 'writeVec3' );
-			return `writeVec3(view, ${ off }, frame.object.position);`;
+			if ( src.target === 'camera' ) return `{ const _target = ${ object3DTargetExpr( src ) }; writeVec3(view, ${ off }, _target && _target.position ? _target.position : ${ vec3SnapshotLiteral( src.valueSnapshot ) }); }`;
+			return `writeVec3(view, ${ off }, ${ object3DTargetExpr( src ) }.position);`;
 
-		case 'object3d.scale':
 		case 'object.scale':
 			usedWriters.add( 'writeVec3' );
 			return `writeVec3(view, ${ off }, frame.object.scale);`;
+
+		case 'object.radius':
+			// ModelNode radius uses the rendered object's geometry bounds.
+			usedWriters.add( 'writeF32' );
+			return `{ const _g = frame.object && frame.object.geometry; if (_g && !_g.boundingSphere && typeof _g.computeBoundingSphere === 'function') _g.computeBoundingSphere(); writeF32(view, ${ off }, _g && _g.boundingSphere ? _g.boundingSphere.radius : ${ numberSnapshotLiteral( src.valueSnapshot, 0 ) }); }`;
+
+		case 'object3d.scale':
+			usedWriters.add( 'writeVec3' );
+			return `writeVec3(view, ${ off }, ${ object3DTargetExpr( src ) }.scale);`;
 
 		case 'object3d.viewPosition':
 			// World position transformed into camera space.
 			rendererHelpers.add( 'viewPosition' );
 			usedWriters.add( 'writeVec3' );
-			return `_ovp.setFromMatrixPosition(frame.object.matrixWorld).applyMatrix4(frame.camera.matrixWorldInverse); writeVec3(view, ${ off }, _ovp);`;
+			return `_ovp.setFromMatrixPosition(${ object3DTargetExpr( src ) }.matrixWorld).applyMatrix4(frame.camera.matrixWorldInverse); writeVec3(view, ${ off }, _ovp);`;
 
 		case 'object3d.direction':
 			// World direction of the object (forward vector in world space).
 			rendererHelpers.add( 'direction' );
 			usedWriters.add( 'writeVec3' );
-			return `frame.object.getWorldDirection(_odir); writeVec3(view, ${ off }, _odir);`;
+			return `${ object3DTargetExpr( src ) }.getWorldDirection(_odir); writeVec3(view, ${ off }, _odir);`;
 
 		case 'object3d.radius':
 			// Bounding-sphere radius in world space (computed on first access).
 			usedWriters.add( 'writeF32' );
-			return `writeF32(view, ${ off }, frame.object.geometry && frame.object.geometry.boundingSphere ? frame.object.geometry.boundingSphere.radius : 0);`;
+			return `{ const _g = frame.object && frame.object.geometry; if (_g && !_g.boundingSphere && typeof _g.computeBoundingSphere === 'function') _g.computeBoundingSphere(); writeF32(view, ${ off }, _g && _g.boundingSphere ? _g.boundingSphere.radius : ${ numberSnapshotLiteral( src.valueSnapshot, 0 ) }); }`;
 
 		case 'object3d.nodeUniform': {
 
@@ -596,7 +668,7 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 		case 'renderer.size':
 			rendererHelpers.add( 'size' );
 			usedWriters.add( 'writeVec2' );
-			return `if (frame.renderer) frame.renderer.getDrawingBufferSize(_rSize); writeVec2(view, ${ off }, _rSize);`;
+			return `writeVec2(view, ${ off }, _tslpRendererScreenSize(frame));`;
 
 		case 'renderer.halfHeight':
 			rendererHelpers.add( 'size' );
@@ -606,7 +678,7 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 		case 'renderer.viewport':
 			rendererHelpers.add( 'viewport' );
 			usedWriters.add( 'writeVec4' );
-			return `if (frame.renderer) frame.renderer.getViewport(_rViewport); writeVec4(view, ${ off }, _rViewport);`;
+			return `writeVec4(view, ${ off }, _tslpRendererViewport(frame));`;
 
 		case 'renderer.toneMappingExposure':
 			// toneMappingExposure is a bare `uniform()` with onRenderUpdate that reads
@@ -758,13 +830,14 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 			usedWriters.add( 'writeMat4' );
 			const idxShadowM = src.lightIndex | 0;
 			// For non-point lights: refresh `shadow.matrix` via `updateMatrices`
-			// when the shadow map hasn't been built yet (a few frames into init
-			// the matrix can be stale). For point lights: do NOT override
+			// every frame. Slim replay can have a populated shadow map while the
+			// matrix is still stale (e.g. postprocessing pass artifacts compiled
+			// before the renderer's shadow pass). For point lights: do NOT override
 			// `shadow.matrix` — the renderer's shadow pass already sets it to
 			// the correct per-face transform and an unconditional translation
 			// override produces a near-identity matrix that breaks
 			// `webgpu_shadowmap_pointlight.html`.
-			return `{ const _l = _tslpFindLight(frame.scene, ${ idxShadowM }); if (_l && _l.shadow && _l.shadow.matrix) { if (!_l.shadow.map && typeof _l.shadow.updateMatrices === 'function' && _l.isPointLight !== true && _l.shadow.isPointLightShadow !== true) { _l.shadow.updateMatrices(_l); } writeMat4(view, ${ off }, _l.shadow.matrix); } }`;
+			return `{ const _l = _tslpFindLight(frame.scene, ${ idxShadowM }); if (_l && _l.shadow && _l.shadow.matrix) { if (typeof _l.shadow.updateMatrices === 'function' && _l.isPointLight !== true && _l.shadow.isPointLightShadow !== true) { _l.shadow.updateMatrices(_l); } writeMat4(view, ${ off }, _l.shadow.matrix); } }`;
 
 		}
 		case 'light.shadowBias':
@@ -829,6 +902,18 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 				return `(material.${ prop } && material.${ prop }.matrixAutoUpdate && material.${ prop }.updateMatrix()); writeMat3(view, ${ off }, material.${ prop } && material.${ prop }.matrix);`;
 
 			}
+			if ( kind.startsWith( 'material.' ) ) {
+
+				const prop = src.property || kind.slice( 'material.'.length );
+				const writer = inferWriterForValueType( src.valueType || src.uniformType || slot.dtype || src.valueSnapshot && src.valueSnapshot.type );
+				if ( writer ) {
+
+					usedWriters.add( writer );
+					return `${ writer }(view, ${ off }, material[${ JSON.stringify( prop ) }]);`;
+
+				}
+
+			}
 			return emitUnknownOrBlocked( kind, off, unsupportedKinds, byteOffset );
 
 	}
@@ -845,7 +930,7 @@ function emitConstant( slot, off, usedWriters, constants, unsupportedKinds, byte
 	const src = slot.source;
 	// Normalize: legacy → { valueType, value }; extractor → { valueSnapshot: { type, data } }
 	const snap = src.valueSnapshot;
-	const valueType = src.valueType || ( snap && snap.type ) || null;
+	const valueType = src.valueType || src.uniformType || slot.dtype || ( snap && snap.type ) || null;
 	const value = src.value !== undefined ? src.value : ( snap && snap.data );
 
 	if ( valueType === null || value === undefined ) {
@@ -978,7 +1063,7 @@ function emitLive( slot, off, usedWriters, constants, unsupportedKinds, byteOffs
 			isStaticSnapshot: isStaticSnapshot( src.valueSnapshot ),
 		} );
 		return emitConstant(
-			{ source: { kind: 'constant', valueSnapshot: src.valueSnapshot } },
+			{ ...slot, source: { kind: 'constant', valueSnapshot: src.valueSnapshot } },
 			off,
 			usedWriters,
 			constants,
@@ -1010,7 +1095,7 @@ function emitObjectNodeUniform( slot, off, usedWriters, constants, unsupportedKi
 
 	const src = slot.source || {};
 	const prop = src.property;
-	const declaredValueType = src.valueType || src.uniformType || src.valueSnapshot && src.valueSnapshot.type;
+	const declaredValueType = src.valueType || src.uniformType || slot.dtype || src.valueSnapshot && src.valueSnapshot.type;
 	let writer = inferWriterForValueType( declaredValueType );
 	let resolvedValueType = declaredValueType;
 
@@ -1068,7 +1153,7 @@ function emitObjectNodeUniform( slot, off, usedWriters, constants, unsupportedKi
 			? { type: resolvedValueType, data: src.valueSnapshot.data }
 			: src.valueSnapshot;
 		fallbackWrite = emitConstant(
-			{ source: { kind: 'constant', valueSnapshot: resolvedSnapshot } },
+			{ ...slot, source: { kind: 'constant', valueSnapshot: resolvedSnapshot } },
 			off,
 			usedWriters,
 			constants,

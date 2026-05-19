@@ -118,6 +118,44 @@ test( 'emitUpdaterSource — renderer.halfHeight writes half logical renderer he
 
 } );
 
+test( 'emitUpdaterSource — renderer.size follows active render target size', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			name: 'object',
+			slots: [
+				{ byteOffset: 32, dtype: 'vec2', source: { kind: 'renderer.size' } },
+			],
+		} ],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.deepEqual( unsupportedKinds, [] );
+	assert.match( source, /function _tslpRendererScreenSize\(frame\)/ );
+	assert.match( source, /renderTarget\.width/ );
+	assert.match( source, /renderer\.getDrawingBufferSize\(_rSize\)/ );
+	assert.match( source, /writeVec2\(view, byteOffset \+ 32, _tslpRendererScreenSize\(frame\)\)/ );
+
+} );
+
+test( 'emitUpdaterSource — renderer.viewport follows active render target viewport', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			name: 'object',
+			slots: [
+				{ byteOffset: 48, dtype: 'vec4', source: { kind: 'renderer.viewport' } },
+			],
+		} ],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.deepEqual( unsupportedKinds, [] );
+	assert.match( source, /function _tslpRendererViewport\(frame\)/ );
+	assert.match( source, /renderTarget !== null && renderTarget\.viewport/ );
+	assert.match( source, /_rViewport\.multiplyScalar\(renderer\.getPixelRatio\(\)\)/ );
+	assert.match( source, /writeVec4\(view, byteOffset \+ 48, _tslpRendererViewport\(frame\)\)/ );
+
+} );
+
 test( 'emitUpdaterSource — unknown kind → records unsupported, emits throw', () => {
 
 	const artifact = {
@@ -200,14 +238,16 @@ test( 'emitUpdaterSource — uniform.live with valueSnapshot falls back to froze
 		uniformPlan: [ {
 			slots: [
 				{ offset: 0, source: { kind: 'uniform.live', name: 'shadowMatrix', valueSnapshot: { type: 'mat4', data: new Array( 16 ).fill( 0 ).map( ( _, i ) => i ) } } },
+				{ offset: 64, dtype: 'int', source: { kind: 'uniform.live', name: 'dynamicLightCount', valueSnapshot: { type: 'number', data: 2 } } },
 			],
 		} ],
 	};
 	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
-	assert.equal( unsupportedKinds.length, 1 );
+	assert.equal( unsupportedKinds.length, 2 );
 	assert.equal( unsupportedKinds[ 0 ].kind, 'uniform.live' );
 	assert.equal( unsupportedKinds[ 0 ].severity, 'blocked' );
 	assert.match( source, /writeMat4\(view, byteOffset \+ 0, __const0\);/ );
+	assert.match( source, /writeI32\(view, byteOffset \+ 64, __const1\);/ );
 
 } );
 
@@ -227,6 +267,22 @@ test( 'emitUpdaterSource — scene.fog.* + object3d.position', () => {
 	assert.match( source, /writeColor\(view, byteOffset \+ 0, frame\.scene\.fog\.color\);/ );
 	assert.match( source, /writeF32\(view, byteOffset \+ 16, frame\.scene\.fog\.near\);/ );
 	assert.match( source, /writeVec3\(view, byteOffset \+ 32, frame\.object\.position\);/ );
+
+} );
+
+test( 'emitUpdaterSource — object3d.position can target the frame camera', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			slots: [
+				{ offset: 0, source: { kind: 'object3d.position', target: 'camera', valueSnapshot: { type: 'vec3', data: [ 1, 2, 3 ] } } },
+			],
+		} ],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.deepEqual( unsupportedKinds, [] );
+	assert.match( source, /__tslpObject3DTargets && material\.__tslpObject3DTargets\.camera/ );
+	assert.match( source, /writeVec3\(view, byteOffset \+ 0, _target && _target\.position \? _target\.position : \{ x: 1, y: 2, z: 3 \}/ );
 
 } );
 
@@ -288,14 +344,20 @@ test( 'emitUpdaterSource — object.scale and attenuationDistance', () => {
 		uniformPlan: [ {
 			slots: [
 				{ offset: 0, source: { kind: 'object.scale' } },
-				{ offset: 16, source: { kind: 'material.attenuationDistance', property: 'attenuationDistance' } },
+				{ offset: 16, source: { kind: 'object.radius', valueSnapshot: { type: 'number', data: 1.25 } } },
+				{ offset: 20, source: { kind: 'material.attenuationDistance', property: 'attenuationDistance' } },
+				{ offset: 24, source: { kind: 'object3d.radius', valueSnapshot: { type: 'number', data: 2.5 } } },
 			],
 		} ],
 	};
 	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
 	assert.deepEqual( unsupportedKinds, [] );
 	assert.match( source, /writeVec3\(view, byteOffset \+ 0, frame\.object\.scale\);/ );
-	assert.match( source, /writeF32\(view, byteOffset \+ 16, material\.attenuationDistance\);/ );
+	assert.match( source, /const _g = frame\.object && frame\.object\.geometry/ );
+	assert.match( source, /_g\.computeBoundingSphere\(\)/ );
+	assert.match( source, /writeF32\(view, byteOffset \+ 16, _g && _g\.boundingSphere \? _g\.boundingSphere\.radius : 1\.25\);/ );
+	assert.match( source, /writeF32\(view, byteOffset \+ 20, material\.attenuationDistance\);/ );
+	assert.match( source, /writeF32\(view, byteOffset \+ 24, _g && _g\.boundingSphere \? _g\.boundingSphere\.radius : 2\.5\);/ );
 
 } );
 
@@ -339,9 +401,10 @@ test( 'emitUpdaterSource — light.shadowMatrix refreshes non-point lights, leav
 	};
 	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
 	assert.deepEqual( unsupportedKinds, [] );
-	// Non-point lights refresh shadow.matrix via updateMatrices when the
-	// shadow map hasn't been built yet.
+	// Non-point lights refresh shadow.matrix via updateMatrices even when the
+	// shadow map has already been allocated.
 	assert.match( source, /_l\.isPointLight !== true && _l\.shadow\.isPointLightShadow !== true/ );
+	assert.doesNotMatch( source, /!_l\.shadow\.map/ );
 	assert.match( source, /_l\.shadow\.updateMatrices\(_l\)/ );
 	// Point lights keep the renderer-set shadow.matrix untouched — we do NOT
 	// override it with a translation (which broke webgpu_shadowmap_pointlight).

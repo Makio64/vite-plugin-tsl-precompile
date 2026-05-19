@@ -193,7 +193,7 @@ const PREFIX_DESCRIPTORS = Object.freeze( [
 		owner: 'object3d',
 		resolver: 'emit-updater-or-hydrator/object3d',
 		required: [],
-		optional: [ 'property', 'uniformType', 'valueSnapshot' ],
+		optional: [ 'property', 'target', 'uniformType', 'valueSnapshot' ],
 	} ),
 	freezeDescriptor( {
 		prefix: 'frame.',

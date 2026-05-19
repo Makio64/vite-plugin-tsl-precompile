@@ -11,6 +11,12 @@ We vendor instead of depending on the fork as an npm package because the plugin'
 | `compileTSL.js` | `src/nodes/precompile/compileTSL.js` | tsl-precompile @ dc09e30 | Extractor core — walks `renderer._nodes.nodeBuilderCache` and emits JSON artifacts. |
 | `extractUniformPlan.js` | `src/nodes/precompile/extractUniformPlan.js` | tsl-precompile @ dc09e30 | Classifies every TSL update node into a serializable `source` descriptor. |
 
+Local assumption: `Object3DNode` instances with an explicit `object3d.isCamera`
+target are serialized as `object3d.*` sources with `target: "camera"`. This
+preserves TSL like `objectPosition(camera)` in post-processing passes, where
+replay's draw object and render camera are the fullscreen quad rather than the
+source scene camera.
+
 ## Import rewrites
 
 The vendored files originally imported from relative paths inside `three/src/nodes/**`. Those paths don't exist in the stock `three` package the plugin depends on. Rewrites:

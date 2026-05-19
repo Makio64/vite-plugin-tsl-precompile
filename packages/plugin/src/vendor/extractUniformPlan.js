@@ -35,7 +35,28 @@ import { modelNormalMatrix, modelWorldMatrixInverse, time, deltaTime, frameId, b
  * @param {Object} node - A TSL update node pulled from `state.updateNodes`.
  * @return {?{ uniformNode: Object, source: Object }}
  */
-function resolveFromUpdateNode( node ) {
+function object3DSourceForNode( node, context ) {
+
+	const type = node.constructor ? node.constructor.type : null;
+	const prefix = type === 'ModelNode' ? 'object.' : 'object3d.';
+	const scope = node.scope || 'unknown';
+	const explicitObject = type === 'Object3DNode' ? node.object3d : null;
+	const contextObject = context && context.object || null;
+
+	if ( explicitObject && explicitObject !== contextObject && explicitObject.isCamera === true ) {
+
+		return {
+			kind: prefix + scope,
+			target: 'camera',
+		};
+
+	}
+
+	return { kind: prefix + scope };
+
+}
+
+function resolveFromUpdateNode( node, context = null ) {
 
 	const type = node.constructor ? node.constructor.type : null;
 
@@ -119,10 +140,7 @@ function resolveFromUpdateNode( node ) {
 	// is written into the embedded UniformNode each frame.
 	if ( type === 'Object3DNode' || type === 'ModelNode' ) {
 
-		const prefix = type === 'ModelNode' ? 'object.' : 'object3d.';
-		const kind = prefix + ( node.scope || 'unknown' );
-
-		return node.uniformNode ? { uniformNode: node.uniformNode, source: { kind } } : null;
+		return node.uniformNode ? { uniformNode: node.uniformNode, source: object3DSourceForNode( node, context ) } : null;
 
 	}
 
@@ -1120,7 +1138,7 @@ export function extractUniformPlan( state, context = null ) {
 
 	for ( const node of state.updateNodes || [] ) {
 
-		const entry = resolveFromUpdateNode( node );
+		const entry = resolveFromUpdateNode( node, context );
 		if ( ! entry || ! entry.uniformNode ) continue;
 
 		// Don't overwrite a pre-seeded light or shadow source — bare
@@ -1255,6 +1273,7 @@ export function extractUniformPlan( state, context = null ) {
 					if ( tslUniformNode ) {
 
 						Object.defineProperty( slot, '_liveNode', { value: tslUniformNode, enumerable: false, writable: true } );
+						Object.defineProperty( slot, '__tslpLiveSidecarOverlay', { value: true, enumerable: false, writable: true } );
 
 					}
 
@@ -1424,10 +1443,9 @@ export function extractUniformPlan( state, context = null ) {
 
 							}
 
-						} else if ( tex.isFramebufferTexture === true
-							|| ( textureNode && ( textureNode.isViewportTextureNode === true
-								|| textureNode.isOutputTextureNode === true
-								|| ( textureNode.constructor && textureNode.constructor.type === 'ViewportTextureNode' ) ) ) ) {
+						} else if ( textureNode && ( textureNode.isViewportTextureNode === true
+							|| textureNode.isOutputTextureNode === true
+							|| ( textureNode.constructor && textureNode.constructor.type === 'ViewportTextureNode' ) ) ) {
 
 							// `viewportMipTexture()` / `viewportOpaqueMipTexture()` /
 							// `viewportTexture()` produce ViewportTextureNode instances
@@ -1441,6 +1459,11 @@ export function extractUniformPlan( state, context = null ) {
 							// glass renders opaque/black. Tag the binding so the
 							// runtime can drive a real ViewportTextureNode each
 							// frame and rebind to its live FramebufferTexture.
+							// Plain FramebufferTexture instances sampled by a
+							// material graph (e.g. LensflareMesh temp/occlusion
+							// maps) intentionally fall through to artifact.texture
+							// so replay can bind that material's live texture rather
+							// than copying the whole viewport over it.
 							source = {
 								kind: 'viewport.texture',
 								generateMipmaps: !! ( textureNode && textureNode.generateMipmaps ),

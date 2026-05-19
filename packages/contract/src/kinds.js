@@ -33,6 +33,7 @@ const CODEGEN_SLOT_KINDS = [
 	'object.normalMatrix',
 	'object.modelViewMatrix',
 	'object.scale',
+	'object.radius',
 	'object3d.worldMatrix',
 	'object3d.normalMatrix',
 	'object3d.modelViewMatrix',
@@ -194,6 +195,18 @@ function dynamicKindInfo( kind ) {
 	if ( typeof kind !== 'string' || kind.length === 0 ) return null;
 	if ( Object.prototype.hasOwnProperty.call( KINDS, kind ) ) return KINDS[ kind ];
 	if ( USER_KINDS.has( kind ) ) return USER_KINDS.get( kind );
+
+	if ( kind.startsWith( 'material.' ) && ! kind.endsWith( '.matrix' ) ) {
+
+		return Object.freeze( {
+			kind,
+			status: KIND_STATUS.CODEGEN,
+			codegen: 'emit-updater',
+			property: kind.slice( 'material.'.length ),
+			dynamic: true,
+		} );
+
+	}
 
 	if ( kind.startsWith( 'object3d.' ) ) {
 

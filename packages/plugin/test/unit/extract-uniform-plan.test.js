@@ -17,6 +17,37 @@ function makeUniformSlot( node, value ) {
 
 }
 
+function makeVec3UniformSlot( node, value ) {
+
+	return {
+		isVector3Uniform: true,
+		name: 'nodeUniform0',
+		offset: 0,
+		itemSize: 3,
+		nodeUniform: { node },
+		getValue() { return value; },
+	};
+
+}
+
+function makeTextureState( textureNode ) {
+
+	return {
+		updateNodes: [],
+		bindings: [ {
+			name: 'object',
+			bindings: [ {
+				isSampledTexture: true,
+				name: 'nodeUniform0',
+				visibility: 2,
+				textureNode,
+				groupNode: { shared: false },
+			} ],
+		} ],
+	};
+
+}
+
 test( 'extractUniformPlan maps object-owned UniformNode properties', () => {
 
 	const distortionScale = {
@@ -43,6 +74,83 @@ test( 'extractUniformPlan maps object-owned UniformNode properties', () => {
 	assert.equal( plan[ 0 ].slots[ 0 ].source.kind, 'object3d.nodeUniform' );
 	assert.equal( plan[ 0 ].slots[ 0 ].source.property, 'distortionScale' );
 	assert.deepEqual( plan[ 0 ].slots[ 0 ].source.valueSnapshot, { type: 'number', data: 3.7 } );
+
+} );
+
+test( 'extractUniformPlan preserves explicit camera Object3DNode targets', () => {
+
+	const value = { isVector3: true, x: 1, y: 2, z: 3 };
+	const uniformNode = {
+		isUniformNode: true,
+		constructor: { type: 'UniformNode' },
+		nodeType: 'vec3',
+		value,
+	};
+	const objectNode = {
+		constructor: { type: 'Object3DNode' },
+		scope: 'position',
+		object3d: { isCamera: true },
+		uniformNode,
+	};
+	const state = {
+		updateNodes: [ objectNode ],
+		bindings: [ {
+			name: 'object',
+			bindings: [ {
+				isUniformsGroup: true,
+				byteLength: 16,
+				visibility: 2,
+				groupNode: { shared: false },
+				uniforms: [ makeVec3UniformSlot( uniformNode, value ) ],
+			} ],
+		} ],
+	};
+
+	const plan = extractUniformPlan( state, {} );
+	assert.equal( plan[ 0 ].slots[ 0 ].source.kind, 'object3d.position' );
+	assert.equal( plan[ 0 ].slots[ 0 ].source.target, 'camera' );
+	assert.deepEqual( plan[ 0 ].slots[ 0 ].source.valueSnapshot, { type: 'vec3', data: [ 1, 2, 3 ] } );
+
+} );
+
+test( 'extractUniformPlan treats plain FramebufferTexture nodes as artifact textures', () => {
+
+	const textureNode = {
+		constructor: { type: 'TextureNode' },
+		value: {
+			isTexture: true,
+			isFramebufferTexture: true,
+			uuid: 'framebuffer-texture-a',
+			mapping: 300,
+			image: { width: 64, height: 32 },
+		},
+	};
+	const plan = extractUniformPlan( makeTextureState( textureNode ), {} );
+	const source = plan[ 0 ].textures[ 0 ].source;
+	assert.equal( source.kind, 'artifact.texture' );
+	assert.equal( source.textureUuid, 'framebuffer-texture-a' );
+	assert.equal( source.imageWidth, 64 );
+	assert.equal( source.imageHeight, 32 );
+
+} );
+
+test( 'extractUniformPlan keeps ViewportTextureNode bindings on the viewport rebinder path', () => {
+
+	const textureNode = {
+		isViewportTextureNode: true,
+		generateMipmaps: true,
+		constructor: { type: 'ViewportTextureNode' },
+		value: {
+			isTexture: true,
+			isFramebufferTexture: true,
+			uuid: 'viewport-texture-a',
+		},
+	};
+	const plan = extractUniformPlan( makeTextureState( textureNode ), {} );
+	const source = plan[ 0 ].textures[ 0 ].source;
+	assert.equal( source.kind, 'viewport.texture' );
+	assert.equal( source.generateMipmaps, true );
+	assert.equal( source.textureUuid, undefined );
 
 } );
 
