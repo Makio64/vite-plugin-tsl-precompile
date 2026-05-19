@@ -23,6 +23,8 @@
 import { default as PrecompiledMaterial } from './_vendor-PrecompiledMaterial.js';
 import { registerPrecompiledArtifacts } from './_vendor-PrecompiledArtifactRegistry.js';
 import { registerArtifact } from './artifact-loader.js';
+import { attachArtifactTextureRefsByShapeOrder } from './slim-support/artifact-texture-wiring.js';
+import { wireLiveUniformSidecarsToArtifact } from './slim-support/live-node-sidecars.js';
 import {
 	MATERIAL_TEXTURE_PROPS as _TEXTURE_PROPS,
 	NODE_GRAPH_TEXTURE_KEYS as _NODE_GRAPH_KEYS,
@@ -227,6 +229,7 @@ export function catalogueArtifactTextureRefs( artifact, sourceMaterial ) {
 	// the TSL graph fall through to a 1×1 white fallback at hydrator time.
 	const liveByUuid = collectLiveMaterialTextures( sourceMaterial );
 	if ( liveByUuid.size === 0 ) return 0;
+	const liveTextures = Array.from( liveByUuid.values() );
 
 	for ( const group of plan ) {
 
@@ -258,7 +261,9 @@ export function catalogueArtifactTextureRefs( artifact, sourceMaterial ) {
 
 	}
 
-	return added;
+	const shapeOrderAdded = attachArtifactTextureRefsByShapeOrder( artifact, liveTextures );
+
+	return added + shapeOrderAdded;
 
 }
 
@@ -323,6 +328,7 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 	// `material[prop]` is undefined. Cataloguing here means the hydrator's
 	// `_textureRefs.get(uuid)` path resolves to the live Texture instance.
 	catalogueArtifactTextureRefs( artifact, material );
+	wireLiveUniformSidecarsToArtifact( artifact, material );
 
 	// Note: node-sourced attribute leaves (e.g. `material.positionNode =
 	// instancedBufferAttribute(buf)`) cannot be catalogued here — the user
@@ -376,11 +382,12 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 function applyPrecompiledRenderLimitations( artifact, material ) {
 
 	// Three.js builds a distinct back-side render object for DoubleSide
-	// transmissive materials. A single precompiled artifact captures only the
-	// source material's current shader variant, so drawing an extra back-side
-	// pass reuses the wrong viewport-texture path and over-brightens glass.
-	// Until artifacts carry pass variants, prefer the captured/front variant.
+	// transmissive materials. Zero-thickness captures do not need that extra
+	// pass, and reusing the captured viewport-texture path can over-brighten
+	// thin glass. Materials with physical thickness still need the back side
+	// for the volume/refraction path to match the live renderer.
 	if ( artifact && artifact.defaults && artifact.defaults.transmission > 0
+		&& Math.abs( Number.isFinite( artifact.defaults.thickness ) ? artifact.defaults.thickness : 0 ) <= 1e-7
 		&& artifact.renderState && artifact.renderState.side === 2
 		&& material && material.forceSinglePass === false ) {
 
@@ -590,6 +597,7 @@ function copyCommonMaterialProperties( src, dst ) {
 		'visible',
 		'toneMapped',
 		'alphaTest',
+		'alphaHash',
 		'alphaToCoverage',
 		'depthTest',
 		'depthWrite',
@@ -599,12 +607,20 @@ function copyCommonMaterialProperties( src, dst ) {
 		'blendEquation',
 		'premultipliedAlpha',
 		'dithering',
-		'vertexColors',
-		'wireframe',
-		'wireframeLinewidth',
-		'flatShading',
-		// PBR map properties (textures)
-		'map',
+			'vertexColors',
+			'wireframe',
+			'wireframeLinewidth',
+			'flatShading',
+			// Wide-line material properties
+			'linewidth',
+			'dashSize',
+			'gapSize',
+			'dashOffset',
+			'scale',
+			'worldUnits',
+			'dashed',
+			// PBR map properties (textures)
+			'map',
 		'alphaMap',
 		'aoMap',
 		'aoMapIntensity',

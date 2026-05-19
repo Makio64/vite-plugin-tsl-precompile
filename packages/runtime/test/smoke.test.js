@@ -20,11 +20,21 @@ import {
 } from '../src/aux-loader.js';
 import {
 	PassNode,
+	abs,
+	float,
+	instancedArray,
+	instancedBufferAttribute,
 	mrt,
 	mix,
+	mod,
 	step,
+	select,
+	sin,
 	texture,
+	time,
+	vec3,
 	normalWorld,
+	positionLocal,
 	screenUV,
 } from '../src/slim-stubs.js';
 
@@ -201,6 +211,38 @@ test( 'runtime hydrator preserves anonymous instanced node attributes from snaps
 
 } );
 
+test( 'runtime hydrator interleaves anonymous instanced snapshot fallbacks', () => {
+
+	const state = hydrateNodeBuilderState( {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		attributes: [
+			{ name: 'nodeAttribute0', type: 'vec2', source: 'node', count: 2, itemSize: 2, arrayType: 'Float32Array', instanced: true, storage: false, arraySnapshot: [ 1, 2, 3, 4 ] },
+			{ name: 'nodeAttribute1', type: 'float', source: 'node', count: 2, itemSize: 1, arrayType: 'Float32Array', instanced: true, storage: false, arraySnapshot: [ 5, 6 ] },
+			{ name: 'nodeAttribute2', type: 'vec3', source: 'node', count: 2, itemSize: 3, arrayType: 'Float32Array', instanced: true, storage: false, arraySnapshot: [ 7, 8, 9, 10, 11, 12 ] },
+		],
+		bindings: [],
+		uniformPlan: [],
+	} );
+
+	const first = state.nodeAttributes[ 0 ].node.attribute;
+	const second = state.nodeAttributes[ 1 ].node.attribute;
+	const third = state.nodeAttributes[ 2 ].node.attribute;
+
+	assert.equal( first.isInterleavedBufferAttribute, true );
+	assert.equal( second.isInterleavedBufferAttribute, true );
+	assert.equal( third.isInterleavedBufferAttribute, true );
+	assert.equal( first.data, second.data );
+	assert.equal( second.data, third.data );
+	assert.equal( first.data.isInstancedInterleavedBuffer, true );
+	assert.equal( first.data.stride, 6 );
+	assert.equal( first.offset, 0 );
+	assert.equal( second.offset, 2 );
+	assert.equal( third.offset, 3 );
+	assert.deepEqual( Array.from( first.data.array ), [ 1, 2, 5, 7, 8, 9, 3, 4, 6, 10, 11, 12 ] );
+
+} );
+
 test( 'runtime hydrator prefers anonymous attribute snapshots over shape-only live matches', () => {
 
 	const liveAttribute = {
@@ -244,6 +286,61 @@ test( 'runtime hydrator prefers anonymous attribute snapshots over shape-only li
 
 } );
 
+test( 'runtime hydrator disambiguates duplicate userPath attributes by encounter order', () => {
+
+	const timeAttribute = {
+		isBufferAttribute: true,
+		isInstancedBufferAttribute: true,
+		count: 2,
+		itemSize: 1,
+		array: new Float32Array( [ 0.1, 0.2 ] ),
+	};
+	const positionAttribute = {
+		isBufferAttribute: true,
+		isInstancedBufferAttribute: true,
+		count: 2,
+		itemSize: 3,
+		array: new Float32Array( [ 1, 2, 3, 4, 5, 6 ] ),
+	};
+	const seedAttribute = {
+		isBufferAttribute: true,
+		isInstancedBufferAttribute: true,
+		count: 2,
+		itemSize: 1,
+		array: new Float32Array( [ 0.7, 0.8 ] ),
+	};
+	const sourceMaterial = {
+		positionNode: {
+			isNode: true,
+			traverse( visitor ) {
+
+				visitor( { attribute: timeAttribute } );
+				visitor( { attribute: positionAttribute } );
+				visitor( { attribute: seedAttribute } );
+
+			},
+		},
+	};
+	const artifact = {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		attributes: [
+			{ name: 'nodeAttribute0', type: 'float', source: 'node', count: 2, itemSize: 1, arrayType: 'Float32Array', instanced: true, storage: false, userPath: [ 'positionNode' ] },
+			{ name: 'nodeAttribute2', type: 'vec3', source: 'node', count: 2, itemSize: 3, arrayType: 'Float32Array', instanced: true, storage: false, userPath: [ 'positionNode' ] },
+			{ name: 'nodeAttribute3', type: 'float', source: 'node', count: 2, itemSize: 1, arrayType: 'Float32Array', instanced: true, storage: false, userPath: [ 'positionNode' ] },
+		],
+		bindings: [],
+		uniformPlan: [],
+	};
+
+	const state = hydrateNodeBuilderState( artifact, sourceMaterial );
+
+	assert.equal( state.nodeAttributes[ 0 ].node.attribute, timeAttribute );
+	assert.equal( state.nodeAttributes[ 1 ].node.attribute, positionAttribute );
+	assert.equal( state.nodeAttributes[ 2 ].node.attribute, seedAttribute );
+
+} );
+
 test( 'runtime hydrator binds anonymous instanceMatrix snapshots to the live object columns', () => {
 
 	const matrix = new Float32Array( Array.from( { length: 32 }, ( _, i ) => i + 1 ) );
@@ -284,6 +381,60 @@ test( 'runtime hydrator binds anonymous instanceMatrix snapshots to the live obj
 
 } );
 
+test( 'runtime hydrator keeps mixed vec4 snapshots interleaved instead of guessing instanceMatrix columns', () => {
+
+	const matrix = new Float32Array( [
+		1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 10, 20, 30, 1,
+		1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 40, 50, 60, 1,
+	] );
+	const object = {
+		isInstancedMesh: true,
+		count: 2,
+		instanceMatrix: { array: matrix },
+	};
+	const material = {};
+	Object.defineProperty( material, '__tslpPrecompileObject', { value: object, configurable: true } );
+	const matrixColumn = ( column ) => [
+		matrix[ column * 4 + 0 ], matrix[ column * 4 + 1 ], matrix[ column * 4 + 2 ], matrix[ column * 4 + 3 ],
+		matrix[ 16 + column * 4 + 0 ], matrix[ 16 + column * 4 + 1 ], matrix[ 16 + column * 4 + 2 ], matrix[ 16 + column * 4 + 3 ],
+	];
+
+	const state = hydrateNodeBuilderState( {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		attributes: [
+			{ name: 'nodeAttribute0', type: 'vec4', source: 'node', count: 2, itemSize: 4, arrayType: 'Float32Array', instanced: true, storage: false, arraySnapshot: [ 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8 ] },
+			{ name: 'nodeAttribute2', type: 'vec4', source: 'node', count: 2, itemSize: 4, arrayType: 'Float32Array', instanced: true, storage: false, arraySnapshot: [ 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2 ] },
+			... [ 0, 1, 2, 3 ].map( ( column ) => ( {
+				name: `nodeAttribute${ column + 4 }`,
+				type: 'vec4',
+				source: 'node',
+				count: 2,
+				itemSize: 4,
+				arrayType: 'Float32Array',
+				instanced: true,
+				storage: false,
+				arraySnapshot: matrixColumn( column ),
+			} ) ),
+			{ name: 'nodeAttribute15', type: 'vec4', source: 'node', count: 2, itemSize: 4, arrayType: 'Float32Array', instanced: true, storage: false, arraySnapshot: [ 0.11, 0.22, 0.33, 0.44, 0.55, 0.66, 0.77, 0.88 ] },
+		],
+		bindings: [],
+		uniformPlan: [],
+	}, material, object );
+
+	const attrs = state.nodeAttributes.map( ( entry ) => entry.node.attribute );
+	assert.equal( attrs[ 0 ].isInterleavedBufferAttribute, true );
+	assert.equal( attrs[ 1 ].data, attrs[ 0 ].data );
+	for ( const attr of attrs ) {
+
+		assert.equal( attr.isInterleavedBufferAttribute, true );
+		assert.equal( attr.data, attrs[ 0 ].data );
+
+	}
+	assert.equal( attrs[ 0 ].data.stride, 28 );
+
+} );
+
 test( 'runtime hydrator restores captured draw count for anonymous instanced snapshots', () => {
 
 	const object = { count: 5, geometry: {} };
@@ -310,6 +461,23 @@ test( 'runtime hydrator leaves live-path instanced draw counts alone', () => {
 		fragmentShader: 'fragment',
 		attributes: [
 			{ name: 'nodeAttribute0', type: 'vec3', source: 'node', count: 2, itemSize: 3, arrayType: 'Float32Array', instanced: true, storage: false, userPath: [ 'positionNode' ] },
+		],
+		bindings: [],
+		uniformPlan: [],
+	}, null, object );
+
+	assert.equal( object.count, 5 );
+
+} );
+
+test( 'runtime hydrator leaves storage-backed instanced draw counts alone', () => {
+
+	const object = { count: 5, geometry: {} };
+	hydrateNodeBuilderState( {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		attributes: [
+			{ name: 'nodeAttribute0', type: 'vec4', source: 'node', count: 10, itemSize: 4, arrayType: 'Float32Array', instanced: true, storage: true, arraySnapshot: new Array( 40 ).fill( 0 ) },
 		],
 		bindings: [],
 		uniformPlan: [],
@@ -1110,6 +1278,129 @@ test( '__applyPrecompiled wraps a material and preserves common texture slots', 
 
 } );
 
+test( '__applyPrecompiled wires live uniform sidecars by snapshot value', () => {
+
+	const liveFrequency = { isUniformNode: true, value: { isVector2: true, x: 3, y: 1 } };
+	const liveIterations = { isUniformNode: true, value: 3 };
+	const liveMultiplier = { isUniformNode: true, value: 0.15 };
+	const wrongScalar = { isUniformNode: true, value: 99 };
+	const source = {
+		positionNode: {
+			isNode: true,
+			liveFrequency,
+			wrongScalar,
+			liveIterations,
+			liveMultiplier,
+		},
+	};
+	const artifact = {
+		__hash: 'sha256:live',
+		uniformPlan: [ {
+			name: 'object',
+			slots: [
+				{ dtype: 'vec2', source: { kind: 'uniform.live', valueSnapshot: { type: 'vec2', data: [ 3, 1 ] } } },
+				{ dtype: 'number', source: { kind: 'uniform.live', valueSnapshot: { type: 'number', data: 3 } } },
+				{ dtype: 'number', source: { kind: 'uniform.live', valueSnapshot: { type: 'number', data: 0.15 } } },
+				{ dtype: 'number', source: { kind: 'uniform.live', valueSnapshot: { type: 'number', data: 3 } } },
+			],
+		} ],
+		vertexShader: 'v',
+		fragmentShader: 'f',
+	};
+
+	const wrapped = __applyPrecompiled( source, {
+		__hash: 'sha256:live',
+		name: 'live',
+		artifact,
+	}, 'sha256:live' );
+	const slots = wrapped.precompiledArtifact.uniformPlan[ 0 ].slots;
+	assert.equal( slots[ 0 ]._liveNode, liveFrequency );
+	assert.equal( slots[ 1 ]._liveNode, liveIterations );
+	assert.equal( slots[ 2 ]._liveNode, liveMultiplier );
+	assert.equal( slots[ 3 ]._liveNode, liveIterations );
+	assert.equal( slots[ 0 ].__tslpLiveSidecarOverlay, true );
+	assert.equal( slots[ 1 ].__tslpLiveSidecarOverlay, true );
+
+} );
+
+test( '__applyPrecompiled live sidecars feed the hydrated UBO after user mutation', () => {
+
+	const liveMultiplier = { isUniformNode: true, value: 0.15 };
+	const source = {
+		positionNode: {
+			isNode: true,
+			liveMultiplier,
+		},
+	};
+	const artifact = {
+		__hash: 'sha256:live-ubo',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'object', kind: 'uniform-buffer', visibility: 7, byteLength: 16 },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			byteLength: 16,
+			slots: [
+				{ offset: 0, dtype: 'number', source: { kind: 'uniform.live', valueSnapshot: { type: 'number', data: 0.15 } } },
+			],
+		} ],
+		vertexShader: 'v',
+		fragmentShader: 'f',
+	};
+
+	const wrapped = __applyPrecompiled( source, {
+		__hash: 'sha256:live-ubo',
+		name: 'live-ubo',
+		updateGroup( _frame, _material, view ) {
+
+			view.setFloat32( 0, 9.99, true );
+
+		},
+		artifact,
+	}, 'sha256:live-ubo' );
+	liveMultiplier.value = 0.42;
+
+	const state = hydrateNodeBuilderState( wrapped.precompiledArtifact, wrapped );
+	const ub = state.bindings[ 0 ].bindings[ 0 ];
+	state.updateNodes[ state.updateNodes.length - 1 ].update( { time: 0, camera: null, material: wrapped } );
+
+	const view = new DataView( ub.buffer.buffer );
+	assert.ok( Math.abs( view.getFloat32( 0, true ) - 0.42 ) < 0.001 );
+
+} );
+
+test( '__applyPrecompiled only forces single-pass for zero-thickness double-sided transmission', () => {
+
+	const baseModule = {
+		__hash: 'sha256:transmission',
+		name: 'transmission',
+		artifact: {
+			__hash: 'sha256:transmission',
+			uniformPlan: [],
+			vertexShader: 'v',
+			fragmentShader: 'f',
+			renderState: { side: 2, forceSinglePass: false },
+			defaults: { transmission: 1, thickness: 0 },
+		},
+	};
+
+	const thin = __applyPrecompiled( {}, baseModule, 'sha256:transmission' );
+	assert.equal( thin.forceSinglePass, true );
+
+	const thick = __applyPrecompiled( {}, {
+		...baseModule,
+		artifact: {
+			...baseModule.artifact,
+			defaults: { transmission: 1, thickness: 0.25 },
+		},
+	}, 'sha256:transmission' );
+	assert.equal( thick.forceSinglePass, false );
+
+} );
+
 test( '__applyPrecompiled validates artifact source kinds when runtime validation is enabled', () => {
 
 	globalThis.__TSLP_VALIDATE_ARTIFACTS = true;
@@ -1283,6 +1574,44 @@ test( 'runtime hydrator prefers generated per-group updater when attached', () =
 
 } );
 
+test( 'runtime hydrator overlays live sidecars after generated per-group updater', () => {
+
+	const liveNode = { value: 9.5 };
+	const artifact = {
+		vertexShader: '', fragmentShader: '',
+		bindings: [ { name: 'object', bindings: [ { name: 'object', kind: 'uniform-buffer', visibility: 7, byteLength: 16 } ] } ],
+		uniformPlan: [ {
+			name: 'object',
+			shared: false,
+			byteLength: 16,
+			slots: [
+				{ offset: 0, dtype: 'number', source: { kind: 'material.opacity', property: 'opacity', valueSnapshot: { type: 'number', data: 0 } } },
+				{ offset: 4, dtype: 'number', source: { kind: 'uniform.live', valueSnapshot: { type: 'number', data: 0 } } },
+			],
+		} ],
+	};
+	Object.defineProperty( artifact.uniformPlan[ 0 ].slots[ 1 ], '_liveNode', { value: liveNode, enumerable: false } );
+	Object.defineProperty( artifact.uniformPlan[ 0 ].slots[ 1 ], '__tslpLiveSidecarOverlay', { value: true, enumerable: false } );
+	Object.defineProperty( artifact, '_generatedUpdateGroup', {
+		value( frame, material, view, byteOffset ) {
+
+			view.setFloat32( byteOffset, material.opacity, true );
+			view.setFloat32( byteOffset + 4, -1, true );
+
+		},
+		enumerable: false,
+	} );
+
+	const state = hydrateNodeBuilderState( artifact, { opacity: 0.625 } );
+	const ub = state.bindings[ 0 ].bindings[ 0 ];
+	state.updateNodes[ state.updateNodes.length - 1 ].update( { time: 0, camera: null } );
+
+	const view = new DataView( ub.buffer.buffer );
+	assert.equal( view.getFloat32( 0, true ), 0.625 );
+	assert.equal( view.getFloat32( 4, true ), 9.5 );
+
+} );
+
 test( 'PrecompiledComputeNode exposes the slim compute fast-path flags', () => {
 
 	const artifact = { kind: 'compute', computeShader: 'cs', uniformPlan: [], dispatchSize: 32, workgroupSize: [ 8, 4 ] };
@@ -1402,6 +1731,7 @@ test( 'hydrator: uniform.live reads _liveNode.value when present', () => {
 
 	// Attach _liveNode to the slot as the hydrator does for in-process flows
 	Object.defineProperty( artifact.uniformPlan[ 0 ].slots[ 0 ], '_liveNode', { value: liveNode, enumerable: false } );
+	Object.defineProperty( artifact.uniformPlan[ 0 ].slots[ 0 ], '__tslpLiveSidecarOverlay', { value: true, enumerable: false } );
 
 	const state = hydrateNodeBuilderState( artifact );
 	const ub = state.bindings[ 0 ].bindings[ 0 ];
@@ -1462,6 +1792,7 @@ test( 'hydrator: _liveUpdateNodes run before the snapshot updater', () => {
 	};
 
 	Object.defineProperty( artifact.uniformPlan[ 0 ].slots[ 0 ], '_liveNode', { value: liveNode, enumerable: false } );
+	Object.defineProperty( artifact.uniformPlan[ 0 ].slots[ 0 ], '__tslpLiveSidecarOverlay', { value: true, enumerable: false } );
 	Object.defineProperty( artifact, '_liveUpdateNodes', { value: [ liveUpdateNode ], enumerable: false } );
 
 	const state = hydrateNodeBuilderState( artifact );
@@ -1497,6 +1828,55 @@ test( 'hydrator: _textureRefs used for in-process artifact.texture resolution', 
 	const binding = state.bindings[ 0 ].bindings[ 0 ];
 	assert.equal( binding.texture, tex, '_textureRefs UUID lookup must return the in-process texture' );
 	assert.equal( artifact._textureResolutionStrategies.get( 'obj:myTex' ), 'texture-ref' );
+
+} );
+
+test( 'hydrator: variant texture rebinders see sidecars added after hydration', () => {
+
+	const tex = { isTexture: true, uuid: 'late-tex', addEventListener() {}, removeEventListener() {}, version: 0 };
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: '',
+		bindings: [ { name: 'obj', bindings: [ { name: 'myTex', kind: 'sampled-texture', visibility: 2, textureType: '2d' } ] } ],
+		uniformPlan: [ {
+			name: 'obj',
+			shared: false,
+			slots: [],
+			textures: [ { name: 'myTex', source: { kind: 'artifact.texture', textureUuid: 'late-tex' } } ],
+		} ],
+		variants: {
+			'variant-key': {
+				vertexShader: '',
+				fragmentShader: '',
+				bindings: [ { name: 'obj', bindings: [ { name: 'myTex', kind: 'sampled-texture', visibility: 2, textureType: '2d' } ] } ],
+				uniformPlan: [ {
+					name: 'obj',
+					shared: false,
+					slots: [],
+					textures: [ { name: 'myTex', source: { kind: 'artifact.texture', textureUuid: 'late-tex' } } ],
+				} ],
+			},
+		},
+	};
+
+	const state = hydrateNodeBuilderState( artifact, null, null, 'variant-key' );
+	const binding = state.bindings[ 0 ].bindings[ 0 ];
+	assert.notEqual( binding.texture, tex );
+
+	Object.defineProperty( artifact, '_textureRefs', {
+		value: new Map( [ [ 'late-tex', tex ] ] ),
+		enumerable: false,
+		configurable: true,
+		writable: true,
+	} );
+
+	for ( const node of state.updateBeforeNodes ) {
+
+		if ( node && typeof node.updateBefore === 'function' ) node.updateBefore( { renderer: null } );
+
+	}
+
+	assert.equal( binding.texture, tex );
 
 } );
 
@@ -1636,7 +2016,7 @@ test( 'wireViewportTextureRefs: wires FramebufferTexture for texture_2d bindings
 
 } );
 
-test( 'hydrator keeps viewport fallback for zero-thickness transmission', () => {
+test( 'hydrator swaps zero-thickness transmission to a live viewport texture', () => {
 
 	const artifact = {
 		vertexShader: '',
@@ -1660,16 +2040,21 @@ test( 'hydrator keeps viewport fallback for zero-thickness transmission', () => 
 	const state = hydrateNodeBuilderState( artifact, material );
 	const binding = state.bindings[ 0 ].bindings[ 0 ];
 	const fallback = binding.texture;
-	const live = new DataTexture( new Uint8Array( [ 0, 0, 0, 255 ] ), 1, 1 );
-	binding.texture = live;
+	let copiedTexture = null;
+	const renderer = {
+		backend: { get( texture ) { return { texture }; } },
+		getRenderTarget() { return null; },
+		getCanvasTarget() { return null; },
+		getDrawingBufferSize( target ) { target.set( 2, 2 ); },
+		copyFramebufferToTexture( texture ) { copiedTexture = texture; },
+	};
 
-	assert.notEqual( binding.texture, fallback );
-	state.updateBeforeNodes[ 0 ].updateBefore( {
-		renderer: {
-			backend: { get() { return {}; } },
-		},
-	} );
+	assert.equal( state.updateBeforeNodes.length, 1 );
 	assert.equal( binding.texture, fallback );
+	state.updateBeforeNodes[ 0 ].updateBefore( { renderer, renderId: 1 } );
+	assert.ok( copiedTexture, 'viewport rebinder must ask the renderer for a live copy' );
+	assert.equal( binding.texture, copiedTexture );
+	assert.notEqual( binding.texture, fallback );
 
 } );
 
@@ -1763,6 +2148,72 @@ test( 'hydrator: standalone buffer-uniform keeps its own byte length inside rend
 	assert.equal( standalone.buffer.length, 8 );
 	assert.equal( render.buffer.length, 68 );
 	assert.deepEqual( Array.from( standalone.buffer ), [ 1, 2, 3, 4, 5, 6, 7, 8 ] );
+
+} );
+
+test( 'hydrator: duplicate skinned velocity uniform buffers resolve previous and current bone matrices', () => {
+
+	let nextBoneValues = [ 10, 11, 12, 13, 14, 15, 16, 17 ];
+	let updateCount = 0;
+	const skeleton = {
+		boneMatrices: new Float32Array( [ 1, 2, 3, 4, 5, 6, 7, 8 ] ),
+		previousBoneMatrices: null,
+		update() {
+			updateCount ++;
+			this.boneMatrices.set( nextBoneValues );
+		},
+	};
+	const material = {
+		__tslpPrecompileObject: { skeleton },
+		__tslpCurrentFrame: { frameId: 1 },
+	};
+	const artifact = {
+		vertexShader: 'var positionPrevious : vec3<f32>;',
+		fragmentShader: '',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'UniformBuffer_0', kind: 'uniform-buffer', visibility: 1, byteLength: 32 },
+				{ name: 'UniformBuffer_1', kind: 'uniform-buffer', visibility: 1, byteLength: 32 },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			slots: [],
+			orderedBindings: [
+				{ type: 'buffer-uniform', ref: { name: 'UniformBuffer_0', byteLength: 32, valueSnapshot: new Array( 8 ).fill( 0 ) } },
+				{ type: 'buffer-uniform', ref: { name: 'UniformBuffer_1', byteLength: 32, valueSnapshot: new Array( 8 ).fill( 0 ) } },
+			],
+		} ],
+	};
+
+	const state = hydrateNodeBuilderState( artifact, material );
+	const [ previousBones, currentBones ] = state.bindings[ 0 ].bindings;
+	previousBones.update();
+	currentBones.update();
+
+	assert.deepEqual( Array.from( previousBones.buffer ), [ 1, 2, 3, 4, 5, 6, 7, 8 ] );
+	assert.deepEqual( Array.from( currentBones.buffer ), [ 10, 11, 12, 13, 14, 15, 16, 17 ] );
+	assert.deepEqual( Array.from( skeleton.previousBoneMatrices ), [ 1, 2, 3, 4, 5, 6, 7, 8 ] );
+	assert.equal( updateCount, 1 );
+
+	nextBoneValues = [ 20, 21, 22, 23, 24, 25, 26, 27 ];
+	material.__tslpCurrentFrame = { frameId: 2 };
+	previousBones.update();
+	currentBones.update();
+
+	assert.deepEqual( Array.from( previousBones.buffer ), [ 10, 11, 12, 13, 14, 15, 16, 17 ] );
+	assert.deepEqual( Array.from( currentBones.buffer ), [ 20, 21, 22, 23, 24, 25, 26, 27 ] );
+	assert.equal( updateCount, 2 );
+
+	nextBoneValues = [ 30, 31, 32, 33, 34, 35, 36, 37 ];
+	material.__tslpCurrentFrame = { frameId: 3, renderer: { __tslpSuppressVelocityStateAdvance: true } };
+	previousBones.update();
+	currentBones.update();
+
+	assert.deepEqual( Array.from( previousBones.buffer ), [ 10, 11, 12, 13, 14, 15, 16, 17 ] );
+	assert.deepEqual( Array.from( currentBones.buffer ), [ 20, 21, 22, 23, 24, 25, 26, 27 ] );
+	assert.equal( updateCount, 2 );
 
 } );
 
@@ -1930,6 +2381,74 @@ test( 'slim-stubs: texture() returns an inert node stub without throwing', () =>
 
 } );
 
+test( 'slim-stubs: instancedBufferAttribute carriers survive production-style graph traversal', () => {
+
+	const timeAttribute = {
+		isBufferAttribute: true,
+		isInstancedBufferAttribute: true,
+		count: 2,
+		itemSize: 1,
+		array: new Float32Array( [ 0.1, 0.2 ] ),
+	};
+	const positionAttribute = {
+		isBufferAttribute: true,
+		isInstancedBufferAttribute: true,
+		count: 2,
+		itemSize: 3,
+		array: new Float32Array( [ 1, 2, 3, 4, 5, 6 ] ),
+	};
+	const seedAttribute = {
+		isBufferAttribute: true,
+		isInstancedBufferAttribute: true,
+		count: 2,
+		itemSize: 1,
+		array: new Float32Array( [ 0.7, 0.8 ] ),
+	};
+
+	const instancePosition = instancedBufferAttribute( positionAttribute );
+	const instanceSeed = instancedBufferAttribute( seedAttribute );
+	const instanceTime = instancedBufferAttribute( timeAttribute );
+	const localTime = instanceTime.add( time );
+	const modTime = mod( time.mul( 0.4 ), 1 );
+	const s0 = sin( localTime.add( instanceSeed ) ).mul( 0.25 );
+	const dist = abs( instanceTime.sub( modTime ) ).toConst();
+	const wrapDist = select( dist.greaterThan( 0.5 ), dist.oneMinus(), dist ).toConst();
+	const s1 = select( wrapDist.greaterThan( 0.1 ), float( 1 ), wrapDist.remap( 0, 0.1, 3, 1 ) );
+	const offset = vec3( instancePosition.x, instancePosition.y.add( s0 ), instancePosition.z ).toConst( 'offset' );
+
+	const state = hydrateNodeBuilderState( {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		attributes: [
+			{ name: 'nodeAttribute0', type: 'float', source: 'node', count: 2, itemSize: 1, arrayType: 'Float32Array', instanced: true, storage: false, userPath: [ 'positionNode' ] },
+			{ name: 'nodeAttribute2', type: 'vec3', source: 'node', count: 2, itemSize: 3, arrayType: 'Float32Array', instanced: true, storage: false, userPath: [ 'positionNode' ] },
+			{ name: 'nodeAttribute3', type: 'float', source: 'node', count: 2, itemSize: 1, arrayType: 'Float32Array', instanced: true, storage: false, userPath: [ 'positionNode' ] },
+		],
+		bindings: [],
+		uniformPlan: [],
+	}, {
+		positionNode: positionLocal.mul( s1 ).add( offset ),
+	} );
+
+	assert.equal( state.nodeAttributes[ 0 ].node.attribute, timeAttribute );
+	assert.equal( state.nodeAttributes[ 1 ].node.attribute, positionAttribute );
+	assert.equal( state.nodeAttributes[ 2 ].node.attribute, seedAttribute );
+
+} );
+
+test( 'slim-stubs: instancedArray carries a live storage attribute', () => {
+
+	const node = instancedArray( new Float32Array( [ 1, 2, 3, 4, 5, 6 ] ), 'vec3' ).setName( 'positions' );
+	const element = node.element( 0 );
+
+	assert.ok( node.value.isStorageInstancedBufferAttribute );
+	assert.equal( node.value.itemSize, 3 );
+	assert.equal( node.value.count, 2 );
+	assert.equal( node.value.name, 'positions' );
+	assert.equal( element.value, node.value );
+
+} );
+
 test( 'slim-stubs: normalWorld is an inert node stub with isNode=true', () => {
 
 	assert.ok( normalWorld, 'normalWorld must be exported' );
@@ -2047,6 +2566,50 @@ test( 'storage-texture: resolves Storage3DTexture binding by textureName', async
 	assert.ok( binding.isSampledTexture3D, 'isSampledTexture3D must also be true' );
 	assert.equal( binding.texture, cloudTex, 'must resolve to the live Storage3DTexture registered by name' );
 	assert.ok( binding.texture.is3DTexture, 'resolved texture must be a 3D texture' );
+
+	clearLiveTextureIndex();
+
+} );
+
+test( 'hydrator: resolves registered texture by loader URL stored in userData', () => {
+
+	clearLiveTextureIndex();
+
+	const live = new DataTexture( new Uint8Array( [ 255, 255, 255, 255 ] ), 1, 1 );
+	live.name = '';
+	live.userData.__tslpLoaderUrl = 'textures/materialx/brass_basecolor.png';
+	registerLiveTexture( live );
+
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: '@group(1) @binding(0) var nodeUniform0 : texture_2d<f32>;',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'nodeUniform0', kind: 'sampled-texture', visibility: 2, textureType: '2d' },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			slots: [],
+			textures: [
+				{
+					name: 'nodeUniform0',
+					bindingKind: 'sampled-texture',
+					textureType: '2d',
+					source: {
+						kind: 'artifact.texture',
+						textureUuid: 'captured-loader-texture',
+						imageSrc: 'textures/materialx/brass_basecolor.png',
+					},
+				},
+			],
+		} ],
+	};
+
+	const state = hydrateNodeBuilderState( artifact );
+	const binding = state.bindings[ 0 ].bindings[ 0 ];
+	assert.equal( binding.texture, live );
 
 	clearLiveTextureIndex();
 
@@ -2295,6 +2858,29 @@ test( 'collectLiveMaterialTextures: walks TextureNodes buried inside node.traver
 
 } );
 
+test( 'collectLiveMaterialTextures: walks volume material node slots', () => {
+
+	const offsetTex = { isTexture: true, uuid: 'tex-volume-offset' };
+	const scatteringTex = { isTexture: true, uuid: 'tex-volume-scattering' };
+	const sourceMaterial = {
+		offsetNode: { isTextureNode: true, value: offsetTex },
+		scatteringNode: {
+			isNode: true,
+			traverse( cb ) {
+
+				cb( { isTextureNode: true, value: scatteringTex } );
+
+			},
+		},
+	};
+	const out = collectLiveMaterialTextures( sourceMaterial );
+
+	assert.equal( out.size, 2 );
+	assert.equal( out.get( 'tex-volume-offset' ), offsetTex );
+	assert.equal( out.get( 'tex-volume-scattering' ), scatteringTex );
+
+} );
+
 test( 'collectLiveMaterialTextures: deduplicates a texture present in both a property slot and a node graph', () => {
 
 	const tex = { isTexture: true, uuid: 'tex-shared' };
@@ -2334,5 +2920,39 @@ test( 'catalogueArtifactTextureRefs: stamps node-graph TextureNode uuids onto _t
 	assert.ok( artifact._textureRefs instanceof Map );
 	assert.equal( artifact._textureRefs.get( 'uuid-map' ), mapTex );
 	assert.equal( artifact._textureRefs.get( 'uuid-node' ), nodeTex, 'node-graph TextureNode uuid must be catalogued' );
+
+} );
+
+test( 'catalogueArtifactTextureRefs: pairs anonymous node textures by captured shape order', () => {
+
+	const first = { isTexture: true, uuid: 'live-first', image: { width: 4, height: 4 } };
+	const second = { isTexture: true, uuid: 'live-second', image: { width: 8, height: 8 } };
+	const sourceMaterial = {
+		colorNode: {
+			isNode: true,
+			traverse( cb ) {
+
+				cb( { isTextureNode: true, value: first } );
+				cb( { isTextureNode: true, value: second } );
+
+			},
+		},
+	};
+	const artifact = {
+		uniformPlan: [ {
+			name: 'object',
+			textures: [
+				{ bindingKind: 'sampled-texture', name: 'nodeUniform0', source: { kind: 'artifact.texture', textureUuid: 'captured-first', imageWidth: 4, imageHeight: 4 } },
+				{ bindingKind: 'sampled-texture', name: 'nodeUniform1', source: { kind: 'artifact.texture', textureUuid: 'captured-second', imageWidth: 8, imageHeight: 8 } },
+			],
+		} ],
+	};
+
+	const added = catalogueArtifactTextureRefs( artifact, sourceMaterial );
+
+	assert.equal( added, 2 );
+	assert.ok( artifact._textureRefs instanceof Map );
+	assert.equal( artifact._textureRefs.get( 'captured-first' ), first );
+	assert.equal( artifact._textureRefs.get( 'captured-second' ), second );
 
 } );

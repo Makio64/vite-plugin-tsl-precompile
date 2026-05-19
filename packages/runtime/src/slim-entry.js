@@ -67,6 +67,7 @@ export {
 	MeshBasicNodeMaterial, MeshStandardNodeMaterial, MeshPhysicalNodeMaterial,
 	MeshLambertNodeMaterial, MeshPhongNodeMaterial, MeshToonNodeMaterial,
 	MeshNormalNodeMaterial, MeshMatcapNodeMaterial, MeshSSSNodeMaterial,
+	VolumeNodeMaterial,
 	LineBasicNodeMaterial, LineDashedNodeMaterial, Line2NodeMaterial,
 	PointsNodeMaterial, SpriteNodeMaterial, ShadowNodeMaterial,
 	WebGLBackend, LightsNode, LightingModel, ShadowBaseNode, RectAreaLightNode, NodeUtils,
@@ -93,8 +94,8 @@ export { registerAuxArtifact, registerAuxArtifacts, loadAux, hasAux, listAux, fi
 export { hashNodeGraphSync } from './graph-hash.js';
 export { MaterialVariantSet, createMaterialVariants, applyMaterialVariant } from './material-variants.js';
 export { clearTextureViewCache, markTextureInitialized, shareGPUTextureEntry, sharePMREMGPUTexture, shareShadowGPUTextureIntoSlim } from './slim-support/gpu-texture-share.js';
-export { textureMatchesSource, textureMatchesArtifactSource, artifactHasTextureSource, countArtifactTextureSources, singleArtifactTextureUuid, attachTextureRefsWhere, attachArtifactTextureRefsWhere } from './slim-support/artifact-texture-wiring.js';
-export { getComputeBindGroups, computeNodeUsesStorageTexture, syncComputeStorageOutputs } from './slim-support/compute-sync.js';
+export { textureMatchesSource, textureMatchesArtifactSource, artifactHasTextureSource, countArtifactTextureSources, singleArtifactTextureUuid, attachArtifactTextureRefsByShapeOrder, attachTextureRefsWhere, attachArtifactTextureRefsWhere } from './slim-support/artifact-texture-wiring.js';
+export { getComputeBindGroups, computeNodeUsesStorageTexture, shareComputeSampledInputs, syncComputeStorageOutputs } from './slim-support/compute-sync.js';
 export { createFullRendererFallback } from './slim-support/full-renderer-fallback.js';
 export { createSlimSceneSupport } from './slim-support/scene-support.js';
 export { setSlimRenderFallback, getSlimRenderFallback } from './slim-support/render-fallback-registry.js';

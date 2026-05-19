@@ -26,7 +26,7 @@ import UniformBuffer from 'three/src/renderers/common/UniformBuffer.js';
 import { dispatchTextureBinding } from './hydrate/artifact-texture-resolver.js';
 import { findLightBySource, lightDiagnosticShape, recordShadowBindingDiagnostic } from './hydrate/light-writers.js';
 import { writeUniformGroup } from './hydrate/material-writers.js';
-import { writeSnapshot } from './hydrate/snapshot-writers.js';
+import { writeLiveValue, writeSnapshot } from './hydrate/snapshot-writers.js';
 import { installLiveTextureRegistryPatches } from './hydrate/live-texture-registry.js';
 import { createRuntimeBindingFromKind } from './hydrate/kinds/runtime-binding-dispatcher.js';
 import { classifyDynamicTextureBinding, indexDynamicTextureBindings } from './hydrate/kinds/dynamic-texture-classifier.js';
@@ -38,10 +38,13 @@ import { inferTextureTypeFromShader, shaderDeclaresDepthTexture } from './hydrat
 import { textureBindingFallbacks, makeViewportFallback } from './hydrate/fallback-textures.js';
 import { clippingPlaneSetsForFrame, selectClippingPlaneArray } from './hydrate/clipping-planes.js';
 import { applyCapturedInstancedDrawCount, bindUserNodeAttributesToArtifact, bindUserStorageBuffersToArtifact, hydrateNodeAttributes } from './hydrate/user-attributes.js';
+import { updateDynamicLightUniforms } from './hydrate/dynamic-light-buffers.js';
 
 export { clearLiveTextureIndex, registerLiveTexture } from './hydrate/live-texture-registry.js';
 
 installLiveTextureRegistryPatches();
+
+const liveSkeletonBufferStates = new WeakMap();
 
 /**
  * Produce a NodeBuilderState-compatible object for a precompiled material.
@@ -344,20 +347,20 @@ function hydrateRuntimeBindings( artifact, material ) {
 
 }
 
-function createLiveUniformArrayResolver( bindingName, byteLength, material ) {
+function createLiveUniformArrayResolver( bindingName, byteLength, material, artifact = null, groupName = '' ) {
 
 	if ( ! /^UniformBuffer_/.test( bindingName || '' ) ) return null;
 	if ( ! material ) return null;
+	const skeletonRole = skeletonUniformBufferRole( artifact, groupName, bindingName, byteLength );
 	return function resolveLiveUniformArray() {
 
 		const object = material.__tslpPrecompileObject;
 		if ( ! object ) return null;
 
 		const skeleton = object.skeleton;
-		const boneMatrices = skeleton && skeleton.boneMatrices;
+		const boneMatrices = skeleton && resolveLiveSkeletonMatrices( skeleton, byteLength, skeletonRole, material );
 		if ( boneMatrices && boneMatrices.byteLength === byteLength ) {
 
-			if ( typeof skeleton.update === 'function' ) skeleton.update();
 			return boneMatrices;
 
 		}
@@ -368,6 +371,77 @@ function createLiveUniformArrayResolver( bindingName, byteLength, material ) {
 		return null;
 
 	};
+
+}
+
+function skeletonUniformBufferRole( artifact, groupName, bindingName, byteLength ) {
+
+	if ( ! artifact || ! /positionPrevious/.test( artifact.vertexShader || '' ) ) return 'current';
+	const bindingGroups = Array.isArray( artifact.bindings ) ? artifact.bindings : [];
+	const group = bindingGroups.find( ( entry ) => entry && entry.name === groupName );
+	const descriptors = group && Array.isArray( group.bindings ) ? group.bindings : [];
+	const skeletonBuffers = descriptors.filter( ( descriptor ) => (
+		descriptor &&
+		descriptor.kind === 'uniform-buffer' &&
+		/^UniformBuffer_/.test( descriptor.name || '' ) &&
+		( descriptor.byteLength | 0 ) === ( byteLength | 0 )
+	) );
+	if ( skeletonBuffers.length < 2 ) return 'current';
+	return skeletonBuffers[ 0 ] && skeletonBuffers[ 0 ].name === bindingName ? 'previous' : 'current';
+
+}
+
+function liveFrameKeyForMaterial( material ) {
+
+	const frame = material && material.__tslpCurrentFrame || null;
+	if ( frame && Number.isFinite( frame.frameId ) ) return frame.frameId;
+	if ( frame && Number.isFinite( frame.renderId ) ) return frame.renderId;
+	const root = typeof globalThis !== 'undefined' ? globalThis : null;
+	if ( root && Number.isFinite( root.__tslpRafTick ) ) return root.__tslpRafTick;
+	return 0;
+
+}
+
+function shouldFreezeLiveSkeletonState( material ) {
+
+	const frame = material && material.__tslpCurrentFrame || null;
+	const root = typeof globalThis !== 'undefined' ? globalThis : null;
+	return !! ( root && root.__tslpSuppressVelocityStateAdvance === true || frame && frame.renderer && frame.renderer.__tslpSuppressVelocityStateAdvance === true );
+
+}
+
+function resolveLiveSkeletonMatrices( skeleton, byteLength, role, material ) {
+
+	if ( ! skeleton || ! skeleton.boneMatrices || skeleton.boneMatrices.byteLength !== byteLength ) return null;
+	let state = liveSkeletonBufferStates.get( skeleton );
+	if ( ! state ) {
+
+		state = {
+			frameId: null,
+			previousBoneMatrices: new Float32Array( skeleton.boneMatrices ),
+		};
+		liveSkeletonBufferStates.set( skeleton, state );
+
+	}
+	const frameId = liveFrameKeyForMaterial( material );
+	if ( state.frameId !== frameId && ! shouldFreezeLiveSkeletonState( material ) ) {
+
+		state.frameId = frameId;
+		if ( state.previousBoneMatrices.length !== skeleton.boneMatrices.length ) state.previousBoneMatrices = new Float32Array( skeleton.boneMatrices.length );
+		state.previousBoneMatrices.set( skeleton.boneMatrices );
+		if ( typeof skeleton.update === 'function' ) skeleton.update();
+		if ( skeleton.previousBoneMatrices && skeleton.previousBoneMatrices.length === state.previousBoneMatrices.length ) {
+			skeleton.previousBoneMatrices.set( state.previousBoneMatrices );
+		} else {
+			skeleton.previousBoneMatrices = new Float32Array( state.previousBoneMatrices );
+		}
+
+	} else if ( role !== 'previous' && typeof skeleton.update === 'function' && state.frameId === null ) {
+
+		skeleton.update();
+
+	}
+	return role === 'previous' ? state.previousBoneMatrices : skeleton.boneMatrices;
 
 }
 
@@ -428,6 +502,15 @@ function seedUniformBufferSnapshots( artifact, groupName, bindingName, buffer ) 
 		if ( ! snapshot ) continue;
 		writeSnapshot( view, slot.offset ?? slot.byteOffset ?? 0, snapshot );
 
+	}
+	if ( typeof globalThis !== 'undefined' && groupName === 'object' && globalThis.__tslpHarnessDiagnostics ) {
+		const list = globalThis.__tslpHarnessDiagnostics.seededObjectBuffers || ( globalThis.__tslpHarnessDiagnostics.seededObjectBuffers = [] );
+		if ( list.length < 24 ) list.push( {
+			name: artifact && artifact.sourceMaterial && artifact.sourceMaterial.name || artifact && artifact.materialShape || '',
+			color: Array.from( buffer.slice( 0, 3 ) ),
+			emissive: Array.from( buffer.slice( 20, 23 ) ),
+			emissiveIntensity: buffer[ 23 ],
+		} );
 	}
 
 }
@@ -634,20 +717,71 @@ function createUniformUpdateNode( artifact, uniformBuffers, material ) {
 		update( frame ) {
 
 			const frameMaterial = frame.material || material || null;
+			if ( frameMaterial ) frameMaterial.__tslpCurrentFrame = frame;
 			for ( const group of plan ) {
 
 				const binding = uniformBuffers.get( group.name );
 				if ( ! binding ) continue;
 
 				const view = new DataView( binding.buffer.buffer, binding.buffer.byteOffset, binding.buffer.byteLength );
-				if ( generatedUpdateGroup ) generatedUpdateGroup( frame, frameMaterial, view, 0, group.name || '' );
-				else writeUniformGroup( group, frame, view, frameMaterial );
+				if ( generatedUpdateGroup ) {
+
+					generatedUpdateGroup( frame, frameMaterial, view, 0, group.name || '' );
+					writeLiveUniformSidecars( group, view );
+
+				} else {
+
+					writeUniformGroup( group, frame, view, frameMaterial );
+
+				}
+				updateDynamicLightUniforms( artifact, group, view, uniformBuffers, frame );
+				recordUniformUpdateDiagnostic( artifact, group, view );
 				binding.groupNode.version ++;
 
 			}
 
 		},
 	};
+
+}
+
+function recordUniformUpdateDiagnostic( artifact, group, view ) {
+
+	if ( typeof globalThis === 'undefined' || globalThis.__TSLP_DEBUG_FRAME_TEXTURES !== true ) return;
+	if ( ! artifact || artifact.materialShape !== 'mesh-basic' ) return;
+	const diag = globalThis.__tslpHarnessDiagnostics || ( globalThis.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
+	const list = diag.uniformUpdateSamples || ( diag.uniformUpdateSamples = [] );
+	if ( list.length >= 40 ) return;
+	const wanted = new Set( [ 'nodeUniform1', 'nodeUniform2', 'nodeUniform3', 'nodeUniform4', 'nodeUniform8', 'nodeUniform9', 'nodeUniform10', 'nodeUniform11', 'nodeUniform13', 'nodeUniform18', 'nodeUniform19', 'nodeUniform20' ] );
+	const values = {};
+	for ( const slot of group && group.slots || [] ) {
+
+		if ( ! wanted.has( slot.name ) ) continue;
+		const offset = slot.offset ?? slot.byteOffset ?? 0;
+		if ( slot.dtype === 'vec2' ) values[ slot.name ] = [ view.getFloat32( offset, true ), view.getFloat32( offset + 4, true ) ];
+		else if ( slot.dtype === 'vec3' || slot.dtype === 'color' ) values[ slot.name ] = [ view.getFloat32( offset, true ), view.getFloat32( offset + 4, true ), view.getFloat32( offset + 8, true ) ];
+		else if ( slot.dtype === 'number' || slot.dtype === 'float' ) values[ slot.name ] = view.getFloat32( offset, true );
+
+	}
+	if ( Object.keys( values ).length > 0 ) list.push( {
+		name: artifact.name || artifact.sourceMaterial && artifact.sourceMaterial.name || artifact.materialShape || '',
+		group: group && group.name || '',
+		values,
+	} );
+
+}
+
+function writeLiveUniformSidecars( group, view ) {
+
+	for ( const slot of group && group.slots || [] ) {
+
+		const source = slot && slot.source || {};
+		const value = slot && slot._liveNode && slot._liveNode.value;
+		if ( source.kind !== 'uniform.live' || slot.__tslpLiveSidecarOverlay !== true || value === null || value === undefined ) continue;
+		const offset = slot.offset ?? slot.byteOffset ?? 0;
+		writeLiveValue( view, offset, value, slot.dtype );
+
+	}
 
 }
 
@@ -719,13 +853,30 @@ function selectArtifactVariant( artifact, cacheKey ) {
 	// __hash, etc.) survive.
 	const merged = Object.assign( Object.create( Object.getPrototypeOf( artifact ) || null ), artifact, variant );
 
-	// Re-attach non-enumerable sidecars by reference so the rebinder and
-	// texture-resolution paths see the same identity. We copy by property
-	// descriptor to preserve writable/configurable flags too.
+	// Re-attach sidecars through live accessors so late wiring (PMREM,
+	// pass textures, loader matches) added to the canonical artifact after
+	// hydration is still visible to rebinder nodes that captured this view.
 	for ( const sidecar of [ '_textureRefs', '_liveUpdateNodes', '_liveUpdateBeforeNodes', '_liveUpdateAfterNodes', '_generatedUpdateGroup', '_unsupportedKinds', '_textureResolutionStrategies' ] ) {
 
-		const desc = Object.getOwnPropertyDescriptor( artifact, sidecar );
-		if ( desc ) Object.defineProperty( merged, sidecar, desc );
+		Object.defineProperty( merged, sidecar, {
+			get() {
+
+				return artifact[ sidecar ];
+
+			},
+			set( value ) {
+
+				Object.defineProperty( artifact, sidecar, {
+					value,
+					enumerable: false,
+					configurable: true,
+					writable: true,
+				} );
+
+			},
+			enumerable: false,
+			configurable: true,
+		} );
 
 	}
 

@@ -176,6 +176,7 @@ export function textureMatchesArtifactSource( texture: unknown, source: Record<s
 export function artifactHasTextureSource( artifact: unknown, predicate?: ( source: Record<string, unknown>, entry: Record<string, unknown>, group: Record<string, unknown> ) => boolean ): boolean;
 export function countArtifactTextureSources( artifact: unknown, predicate?: ( source: Record<string, unknown>, entry: Record<string, unknown>, group: Record<string, unknown> ) => boolean ): number;
 export function singleArtifactTextureUuid( artifact: unknown, predicate?: ( source: Record<string, unknown>, entry: Record<string, unknown>, group: Record<string, unknown> ) => boolean ): string | null;
+export function attachArtifactTextureRefsByShapeOrder( artifact: unknown, textures: unknown[], predicate?: ( source: Record<string, unknown>, entry: Record<string, unknown>, group: Record<string, unknown> ) => boolean, options?: { overwriteExisting?: boolean } ): number;
 export function attachTextureRefsWhere( artifact: unknown, texture: unknown, predicate: ( source: Record<string, unknown>, entry: Record<string, unknown>, group: Record<string, unknown> ) => boolean ): boolean;
 export function attachArtifactTextureRefsWhere( artifact: unknown, texture: unknown, predicate: ( source: Record<string, unknown>, entry: Record<string, unknown>, group: Record<string, unknown> ) => boolean ): boolean;
 export type ComputeSyncStats = {
@@ -185,6 +186,11 @@ export type ComputeSyncStats = {
 };
 export type ComputeSyncPerPassStats = ComputeSyncStats & {
 	pass: number | null;
+};
+export type ComputeInputShareStats = {
+	texturesShared: number;
+	skippedStorageTextures: number;
+	missingTextures: number;
 };
 export type SharePassRenderTargetTexturesStats = {
 	texturesShared: number;
@@ -222,6 +228,7 @@ export type WirePrecompiledPostprocessResult = {
 };
 export function getComputeBindGroups( computeNode: unknown, fullRenderer: unknown ): unknown[];
 export function computeNodeUsesStorageTexture( computeNode: unknown, fullRenderer: unknown ): boolean;
+export function shareComputeSampledInputs( computeNode: unknown, fullRenderer: unknown, slimRenderer: unknown, opts?: Record<string, unknown> ): ComputeInputShareStats;
 export function syncComputeStorageOutputs( computeNode: unknown, fullRenderer: unknown, slimRenderer: unknown, opts?: Record<string, unknown> ): ComputeSyncStats;
 export function syncComputeStorageOutputsPerPass( computeNode: unknown, fullRenderer: unknown, slimRenderer: unknown, passIndex: number | undefined, opts?: Record<string, unknown> ): ComputeSyncPerPassStats;
 export function createFullRendererFallback( opts: Record<string, unknown> ): {
@@ -267,6 +274,7 @@ export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	generatePMREMAsync: ( sourceTexture: unknown, generator?: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => Promise<unknown | null>;
 	setPMREMGenerator: ( generator: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => void;
 	syncComputeOutputs: ( computeNode: unknown, fullRenderer: unknown, syncOpts?: Record<string, unknown> ) => ComputeSyncStats;
+	shareComputeInputs: ( computeNode: unknown, fullRenderer: unknown, shareOpts?: Record<string, unknown> ) => ComputeInputShareStats;
 	syncComputeOutputsPerPass: ( computeNode: unknown, fullRenderer: unknown, passIndex: number | undefined, syncOpts?: Record<string, unknown> ) => ComputeSyncPerPassStats;
 	pingPongInvalidate: ( textureA: unknown, textureB: unknown, extraRenderer?: unknown ) => boolean;
 	shareInstancedAttributeBuffer: ( attribute: unknown, sourceRenderer: unknown ) => boolean;
