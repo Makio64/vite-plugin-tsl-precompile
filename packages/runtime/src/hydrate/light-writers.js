@@ -342,15 +342,16 @@ export function findShadowMatrixLightForSlot( group, slot, frame ) {
 }
 
 /**
- * Refresh `light.shadow.matrix` for the current frame if three.js hasn't
- * yet — mirrors `LightShadow.updateMatrices()` but is safe to call before
- * the renderer has allocated `light.shadow.map`. Used by `writeLightValue`
- * (`light.shadowMatrix`) and by the shadow-matrix companion slot in
- * `writeUniformGroup` (`uniform.live` mat4).
+ * Refresh `light.shadow.matrix` for the current frame — mirrors
+ * `LightShadow.updateMatrices()` and is safe before or after the renderer has
+ * allocated `light.shadow.map`. Used by `writeLightValue` (`light.shadowMatrix`)
+ * and by the shadow-matrix companion slot in `writeUniformGroup`
+ * (`uniform.live` mat4).
  */
 export function updateLightShadowMatrixForFrame( light, frame ) {
 
-	if ( ! light || ! light.shadow || typeof light.shadow.updateMatrices !== 'function' ) return;
+	if ( ! light || ! light.shadow ) return;
+	if ( typeof light.shadow.updateMatrices !== 'function' ) return;
 	if ( ( light.isPointLight === true || light.shadow.isPointLightShadow === true ) && light.shadow.matrix ) {
 
 		try {
@@ -364,7 +365,6 @@ export function updateLightShadowMatrixForFrame( light, frame ) {
 		return;
 
 	}
-	if ( light.shadow.map && light.shadow.matrix ) return;
 	try {
 
 		const shadowCamera = light.shadow.camera;

@@ -201,6 +201,27 @@ test( 'updateLightShadowMatrixForFrame keeps generic path for non-point shadows'
 
 } );
 
+test( 'updateLightShadowMatrixForFrame refreshes non-point shadows with an allocated map', () => {
+
+	let updateCalls = 0;
+	const matrix = new Matrix4().identity();
+	const light = fakeLight( {
+		isDirectionalLight: true,
+		shadow: {
+			matrix,
+			map: { depthTexture: {} },
+			camera: {},
+			updateMatrices( owner ) {
+				assert.equal( owner, light );
+				updateCalls ++;
+			},
+		},
+	} );
+	updateLightShadowMatrixForFrame( light, {} );
+	assert.equal( updateCalls, 1 );
+
+} );
+
 test( 'writeLightValue: light.shadowMapSize writes vec2', () => {
 
 	const view = makeView();

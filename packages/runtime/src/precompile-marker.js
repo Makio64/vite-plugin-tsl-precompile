@@ -27,6 +27,7 @@ import { MARKER_METHOD_NAME } from './_constants.js';
 import { normalizeRevision } from './_normalize-revision.js';
 import { hashMaterialSync } from './graph-hash.js';
 import { registerArtifact } from './artifact-loader.js';
+import { MATERIAL_NODE_TEXTURE_KEYS } from '@tsl-precompile/contract/texture-props';
 
 let installed = false;
 let devEndpoint = null;
@@ -48,28 +49,8 @@ let lastSeenArrayCamera = null;
 const inflight = new Set();   // names currently being captured (suppresses dup POSTs)
 const sessionDone = new Set();   // names captured this session (suppresses needless re-POST)
 
-const MATERIAL_NODE_PROPS = [
+const LIGHT_NODE_GRAPH_PROPS = [
 	'colorNode',
-	'fragmentNode',
-	'normalNode',
-	'positionNode',
-	'outputNode',
-	'roughnessNode',
-	'metalnessNode',
-	'emissiveNode',
-	'opacityNode',
-	'alphaTestNode',
-	'vertexNode',
-	'envNode',
-	'lightNode',
-	'aoNode',
-	'transmissionNode',
-	'thicknessNode',
-	'maskNode',
-	'maskShadowNode',
-	'receivedShadowPositionNode',
-	'castShadowPositionNode',
-	'castShadowNode',
 ];
 
 function objectSourceMetadata( object ) {
@@ -82,6 +63,7 @@ function objectSourceMetadata( object ) {
 		receiveShadow: object.receiveShadow === true,
 		isInstancedMesh: object.isInstancedMesh === true,
 		isSkinnedMesh: object.isSkinnedMesh === true,
+		position: object.position ? [ object.position.x, object.position.y, object.position.z ] : null,
 		scale: object.scale ? [ object.scale.x, object.scale.y, object.scale.z ] : null,
 	};
 
@@ -92,7 +74,7 @@ function materialSourceMetadata( material, sourceObject = null ) {
 	const nodeProps = [];
 	if ( material ) {
 
-		for ( const key of MATERIAL_NODE_PROPS ) {
+		for ( const key of MATERIAL_NODE_TEXTURE_KEYS ) {
 
 			const value = material[ key ];
 			if ( value && value.isNode === true ) nodeProps.push( key );
@@ -332,6 +314,7 @@ async function captureMaterialInDev( material, name ) {
 		}
 
 		let camera;
+		const sourceCamera = material.__tslpPrecompileCamera || null;
 		if ( sourceArrayCamera ) {
 
 			// Clone the ArrayCamera shell so we don't mutate the live camera, but
@@ -340,6 +323,12 @@ async function captureMaterialInDev( material, name ) {
 			camera = new ArrayCamera( sourceArrayCamera.cameras );
 			camera.position.copy( sourceArrayCamera.position );
 			camera.quaternion.copy( sourceArrayCamera.quaternion );
+			camera.updateMatrixWorld( true );
+
+		} else if ( sourceCamera && typeof sourceCamera.clone === 'function' && ( sourceCamera.isPerspectiveCamera === true || sourceCamera.isOrthographicCamera === true ) ) {
+
+			camera = sourceCamera.clone();
+			if ( typeof camera.updateProjectionMatrix === 'function' ) camera.updateProjectionMatrix();
 			camera.updateMatrixWorld( true );
 
 		} else {
@@ -711,6 +700,7 @@ function cloneLightsInto( sourceScene, destScene ) {
 		}
 		if ( ! cloned ) continue;
 		stripClonedLightChildren( cloned );
+		copyLightNodeGraphProps( light, cloned );
 
 		// Bake world transform into the clone so a light parented under a
 		// moving rig still illuminates from the right place during capture.
@@ -747,6 +737,17 @@ function cloneLightsInto( sourceScene, destScene ) {
 			if ( ! cloned.target.parent ) destScene.add( cloned.target );
 
 		}
+
+	}
+
+}
+
+function copyLightNodeGraphProps( source, target ) {
+
+	if ( ! source || ! target ) return;
+	for ( const key of LIGHT_NODE_GRAPH_PROPS ) {
+
+		if ( source[ key ] !== undefined ) target[ key ] = source[ key ];
 
 	}
 
