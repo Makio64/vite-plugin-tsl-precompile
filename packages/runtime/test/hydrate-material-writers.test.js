@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Color, Matrix3, Matrix4, Vector3 } from 'three';
+import { Color, Matrix3, Matrix4, Vector3, Vector4 } from 'three';
 
 import { writeMaterialValue, writeUniformGroup } from '../src/hydrate/material-writers.js';
 
@@ -44,6 +44,22 @@ test( 'writeUniformGroup writes camera.position', () => {
 	assert.equal( view.getFloat32( 0, true ), 1 );
 	assert.equal( view.getFloat32( 4, true ), 2 );
 	assert.equal( view.getFloat32( 8, true ), 3 );
+
+} );
+
+test( 'writeUniformGroup writes object3d.position from an explicit camera target', () => {
+
+	const view = makeView();
+	const group = makeGroup( [
+		{ offset: 0, dtype: 'vec3', source: { kind: 'object3d.position', target: 'camera' } },
+	] );
+	writeUniformGroup( group, {
+		camera: { position: new Vector3( 4, 5, 6 ) },
+		object: { position: new Vector3( 1, 2, 3 ) },
+	}, view, { __tslpObject3DTargets: { camera: { position: new Vector3( 7, 8, 9 ) } } } );
+	assert.equal( view.getFloat32( 0, true ), 7 );
+	assert.equal( view.getFloat32( 4, true ), 8 );
+	assert.equal( view.getFloat32( 8, true ), 9 );
 
 } );
 
@@ -125,6 +141,39 @@ test( 'writeUniformGroup writes object.normalMatrix from world matrix', () => {
 
 } );
 
+test( 'writeUniformGroup writes object.radius from geometry bounds', () => {
+
+	const view = makeView();
+	let computed = 0;
+	const geometry = {
+		boundingSphere: null,
+		computeBoundingSphere() {
+
+			computed ++;
+			this.boundingSphere = { radius: 4.5 };
+
+		},
+	};
+	const group = makeGroup( [
+		{ offset: 0, dtype: 'f32', source: { kind: 'object.radius' } },
+	] );
+	writeUniformGroup( group, { object: { geometry } }, view, null );
+	assert.equal( view.getFloat32( 0, true ), 4.5 );
+	assert.equal( computed, 1 );
+
+} );
+
+test( 'writeUniformGroup falls back to snapshot for missing object radius bounds', () => {
+
+	const view = makeView();
+	const group = makeGroup( [
+		{ offset: 0, dtype: 'f32', source: { kind: 'object3d.radius', valueSnapshot: { type: 'number', data: 1.25 } } },
+	] );
+	writeUniformGroup( group, { object: { geometry: {} } }, view, null );
+	assert.equal( view.getFloat32( 0, true ), 1.25 );
+
+} );
+
 test( 'writeUniformGroup tracks VelocityNode previous camera and object matrices', () => {
 
 	const group = makeGroup( [
@@ -164,6 +213,17 @@ test( 'writeUniformGroup tracks VelocityNode previous camera and object matrices
 	camera.matrixWorldInverse.makeTranslation( 200, 0, 0 );
 	object.matrixWorld.makeTranslation( 300, 0, 0 );
 
+	const frozenFrame = makeView();
+	try {
+		globalThis.__tslpSuppressVelocityStateAdvance = true;
+		writeUniformGroup( group, { frameId: 3, camera, object }, frozenFrame, null );
+	} finally {
+		delete globalThis.__tslpSuppressVelocityStateAdvance;
+	}
+	assert.equal( frozenFrame.getFloat32( 12 * 4, true ), 1 );
+	assert.equal( frozenFrame.getFloat32( 64 + 12 * 4, true ), 2 );
+	assert.equal( frozenFrame.getFloat32( 128 + 12 * 4, true ), 3 );
+
 	const thirdFrame = makeView();
 	writeUniformGroup( group, { frameId: 3, camera, object }, thirdFrame, null );
 	assert.equal( thirdFrame.getFloat32( 12 * 4, true ), 10 );
@@ -184,6 +244,87 @@ test( 'writeUniformGroup falls back to snapshot when frame fields are missing', 
 	] );
 	writeUniformGroup( group, {}, view, null );
 	assert.equal( view.getFloat32( 0, true ), 7.25 );
+
+} );
+
+test( 'writeUniformGroup writes renderer.size from the active render target', () => {
+
+	const view = makeView();
+	const group = makeGroup( [
+		{ offset: 0, dtype: 'vec2', source: { kind: 'renderer.size' } },
+	] );
+	const renderer = {
+		getRenderTarget() {
+
+			return { width: 320, height: 240 };
+
+		},
+		getDrawingBufferSize() {
+
+			throw new Error( 'drawing buffer should not be read for active render targets' );
+
+		},
+	};
+	writeUniformGroup( group, { renderer }, view, null );
+	assert.equal( view.getFloat32( 0, true ), 320 );
+	assert.equal( view.getFloat32( 4, true ), 240 );
+
+} );
+
+test( 'writeUniformGroup writes renderer.viewport from active render target viewport', () => {
+
+	const view = makeView();
+	const group = makeGroup( [
+		{ offset: 0, dtype: 'vec4', source: { kind: 'renderer.viewport' } },
+	] );
+	const renderer = {
+		getRenderTarget() {
+
+			return { viewport: new Vector4( 2, 4, 160, 120 ) };
+
+		},
+		getViewport() {
+
+			throw new Error( 'canvas viewport should not be read for active render targets' );
+
+		},
+	};
+	writeUniformGroup( group, { renderer }, view, null );
+	assert.equal( view.getFloat32( 0, true ), 2 );
+	assert.equal( view.getFloat32( 4, true ), 4 );
+	assert.equal( view.getFloat32( 8, true ), 160 );
+	assert.equal( view.getFloat32( 12, true ), 120 );
+
+} );
+
+test( 'writeUniformGroup scales renderer.viewport by DPR for canvas renders', () => {
+
+	const view = makeView();
+	const group = makeGroup( [
+		{ offset: 0, dtype: 'vec4', source: { kind: 'renderer.viewport' } },
+	] );
+	const renderer = {
+		getRenderTarget() {
+
+			return null;
+
+		},
+		getViewport( target ) {
+
+			target.set( 1, 2, 300, 200 );
+
+		},
+		getPixelRatio() {
+
+			return 2;
+
+		},
+	};
+	writeUniformGroup( group, { renderer }, view, null );
+	assert.equal( view.getFloat32( 0, true ), 2 );
+	assert.equal( view.getFloat32( 4, true ), 4 );
+	assert.equal( view.getFloat32( 8, true ), 600 );
+	assert.equal( view.getFloat32( 12, true ), 400 );
 
 } );
 
@@ -248,11 +389,42 @@ test( 'writeUniformGroup writes uniform.live via slot._liveNode when available',
 		offset: 0,
 		dtype: 'f32',
 		source: { kind: 'uniform.live' },
+		__tslpLiveSidecarOverlay: true,
 		_liveNode: { value: 9.5 },
 	};
 	const group = makeGroup( [ slot ] );
 	writeUniformGroup( group, {}, view, null );
 	assert.equal( view.getFloat32( 0, true ), 9.5 );
+
+} );
+
+test( 'writeUniformGroup leaves unmarked uniform.live sidecars on the frozen snapshot', () => {
+
+	const view = makeView();
+	const slot = {
+		offset: 0,
+		dtype: 'f32',
+		source: { kind: 'uniform.live', valueSnapshot: { type: 'number', data: 1 } },
+		_liveNode: { value: 9.5 },
+	};
+	const group = makeGroup( [ slot ] );
+	writeUniformGroup( group, {}, view, null );
+	assert.equal( view.getFloat32( 0, true ), 1 );
+
+} );
+
+test( 'writeUniformGroup preserves integer dtype for frozen uniform.live snapshots', () => {
+
+	const view = makeView();
+	const slot = {
+		offset: 0,
+		dtype: 'int',
+		source: { kind: 'uniform.live', valueSnapshot: { type: 'number', data: 2 } },
+	};
+	const group = makeGroup( [ slot ] );
+	writeUniformGroup( group, {}, view, null );
+	assert.equal( view.getInt32( 0, true ), 2 );
+	assert.notEqual( view.getFloat32( 0, true ), 2 );
 
 } );
 

@@ -18,19 +18,20 @@
  * @module hydrate/snapshot-writers
  */
 
-export function writeSnapshot( view, offset, snapshot ) {
+export function writeSnapshot( view, offset, snapshot, dtype = null ) {
 
 	if ( ! snapshot ) return;
 	const { type, data } = snapshot;
-	if ( type === 'number' || type === 'float' || type === 'f32' ) writeNumber( view, offset, data );
-	else if ( type === 'int' || type === 'i32' ) writeInt( view, offset, data );
-	else if ( type === 'uint' || type === 'u32' ) writeUint( view, offset, data );
-	else if ( type === 'color' ) writeColor( view, offset, { r: data[ 0 ], g: data[ 1 ], b: data[ 2 ] } );
-	else if ( type === 'vec2' ) writeVec2( view, offset, { x: data[ 0 ], y: data[ 1 ] } );
-	else if ( type === 'vec3' ) writeVec3( view, offset, { x: data[ 0 ], y: data[ 1 ], z: data[ 2 ] } );
-	else if ( type === 'vec4' ) writeVec4( view, offset, { x: data[ 0 ], y: data[ 1 ], z: data[ 2 ], w: data[ 3 ] } );
-	else if ( type === 'mat3' ) writeMat3( view, offset, { elements: data } );
-	else if ( type === 'mat4' ) writeMat4( view, offset, { elements: data } );
+	const effectiveType = dtype || type;
+	if ( effectiveType === 'number' || effectiveType === 'float' || effectiveType === 'f32' ) writeNumber( view, offset, data );
+	else if ( effectiveType === 'int' || effectiveType === 'i32' ) writeInt( view, offset, data );
+	else if ( effectiveType === 'uint' || effectiveType === 'u32' ) writeUint( view, offset, data );
+	else if ( effectiveType === 'color' ) writeColor( view, offset, { r: data[ 0 ], g: data[ 1 ], b: data[ 2 ] } );
+	else if ( effectiveType === 'vec2' ) writeVec2( view, offset, { x: data[ 0 ], y: data[ 1 ] } );
+	else if ( effectiveType === 'vec3' ) writeVec3( view, offset, { x: data[ 0 ], y: data[ 1 ], z: data[ 2 ] } );
+	else if ( effectiveType === 'vec4' ) writeVec4( view, offset, { x: data[ 0 ], y: data[ 1 ], z: data[ 2 ], w: data[ 3 ] } );
+	else if ( effectiveType === 'mat3' ) writeMat3( view, offset, { elements: data } );
+	else if ( effectiveType === 'mat4' ) writeMat4( view, offset, { elements: data } );
 
 }
 
@@ -61,6 +62,10 @@ export function writeColor( view, offset, value, snapshot ) {
 	view.setFloat32( offset, value && value.r || 0, true );
 	view.setFloat32( offset + 4, value && value.g || 0, true );
 	view.setFloat32( offset + 8, value && value.b || 0, true );
+	if ( typeof globalThis !== 'undefined' && globalThis.__tslpHarnessDiagnostics ) {
+		const list = globalThis.__tslpHarnessDiagnostics.snapshotWriterColors || ( globalThis.__tslpHarnessDiagnostics.snapshotWriterColors = [] );
+		if ( list.length < 32 ) list.push( { offset, r: value && value.r || 0, g: value && value.g || 0, b: value && value.b || 0 } );
+	}
 
 }
 
@@ -127,7 +132,14 @@ export function writeMat4( view, offset, value, snapshot ) {
  */
 export function writeLiveValue( view, offset, value, dtype ) {
 
-	if ( typeof value === 'number' ) { view.setFloat32( offset, value, true ); return; }
+	if ( typeof value === 'number' ) {
+
+		if ( dtype === 'int' || dtype === 'i32' ) view.setInt32( offset, value | 0, true );
+		else if ( dtype === 'uint' || dtype === 'u32' ) view.setUint32( offset, value >>> 0, true );
+		else view.setFloat32( offset, value, true );
+		return;
+
+	}
 	if ( value && value.isColor ) { writeColor( view, offset, value ); return; }
 	if ( value && value.isMatrix4 ) { writeMat4( view, offset, value ); return; }
 	if ( value && value.isMatrix3 ) { writeMat3( view, offset, value ); return; }

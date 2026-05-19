@@ -2,6 +2,7 @@ import UniformBuffer from 'three/src/renderers/common/UniformBuffer.js';
 
 export function createUniformBufferBinding( {
 	artifact,
+	group,
 	groupName,
 	descriptor,
 	name,
@@ -53,7 +54,7 @@ export function createUniformBufferBinding( {
 	const uniformBuffer = new UniformBuffer( name, buffer );
 	uniformBuffer.visibility = descriptor.visibility | 0;
 	uniformBuffer.groupNode = groupNode;
-	const liveArrayResolver = createLiveUniformArrayResolver( name, buffer.byteLength, material );
+	const liveArrayResolver = createLiveUniformArrayResolver( name, buffer.byteLength, material, artifact, group && group.name || groupName );
 	if ( liveArrayResolver ) attachLiveUniformBufferUpdater( uniformBuffer, liveArrayResolver );
 	return uniformBuffer;
 

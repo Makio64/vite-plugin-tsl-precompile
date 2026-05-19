@@ -25,14 +25,15 @@ export function createRuntimeBindingFromKind( {
 
 	const groupName = group && group.name || '';
 	const name = descriptor.name || groupName;
-	return allocator( { artifact, groupName, descriptor, name, material, groupNode, deps } );
+	return allocator( { artifact, group, groupName, descriptor, name, material, groupNode, deps } );
 
 }
 
-function createUniformBufferRuntimeBinding( { artifact, groupName, descriptor, name, material, groupNode, deps } ) {
+function createUniformBufferRuntimeBinding( { artifact, group, groupName, descriptor, name, material, groupNode, deps } ) {
 
 	return createUniformBufferBinding( {
 		artifact,
+		group,
 		groupName,
 		descriptor,
 		name,

@@ -131,6 +131,10 @@ test( 'snapshot writers: writeSnapshot dispatches by type', () => {
 	writeSnapshot( view, 16, { type: 'color', data: [ 0.5, 0.5, 0.5 ] } );
 	assert.ok( Math.abs( view.getFloat32( 16, true ) - 0.5 ) < 1e-6 );
 
+	writeSnapshot( view, 28, { type: 'number', data: 2 }, 'int' );
+	assert.equal( view.getInt32( 28, true ), 2 );
+	assert.notEqual( view.getFloat32( 28, true ), 2 );
+
 	// Unknown / falsy snapshot: no-op (no throw, no write past the float we just made).
 	writeSnapshot( view, 32, null );
 	writeSnapshot( view, 32, { type: 'unknown', data: 0 } );
@@ -143,6 +147,10 @@ test( 'snapshot writers: writeLiveValue dispatches by value isXxx flags', () => 
 	const view = makeView();
 	writeLiveValue( view, 0, 3.5 ); // scalar
 	assert.equal( view.getFloat32( 0, true ), 3.5 );
+
+	writeLiveValue( view, 28, 2, 'int' );
+	assert.equal( view.getInt32( 28, true ), 2 );
+	assert.notEqual( view.getFloat32( 28, true ), 2 );
 
 	writeLiveValue( view, 4, { isColor: true, r: 1, g: 0, b: 0 } );
 	assert.equal( view.getFloat32( 4, true ), 1 );

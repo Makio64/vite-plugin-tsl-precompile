@@ -37,6 +37,13 @@ function frameKey( frame ) {
 
 }
 
+function shouldFreezeVelocityState( frame ) {
+
+	const root = typeof globalThis !== 'undefined' ? globalThis : null;
+	return !! ( root && root.__tslpSuppressVelocityStateAdvance === true || frame && frame.renderer && frame.renderer.__tslpSuppressVelocityStateAdvance === true );
+
+}
+
 function getVelocityCameraState( frame ) {
 
 	const camera = frame && frame.camera;
@@ -54,7 +61,7 @@ function getVelocityCameraState( frame ) {
 		};
 		_velocityCameraStates.set( camera, state );
 
-	} else if ( state.frameId !== key ) {
+	} else if ( state.frameId !== key && ! shouldFreezeVelocityState( frame ) ) {
 
 		state.frameId = key;
 		state.previousProjectionMatrix.copy( state.currentProjectionMatrix );
@@ -82,7 +89,7 @@ function getVelocityObjectState( frame ) {
 		};
 		_velocityObjectStates.set( object, state );
 
-	} else if ( state.frameId !== key ) {
+	} else if ( state.frameId !== key && ! shouldFreezeVelocityState( frame ) ) {
 
 		state.frameId = key;
 		state.previousModelWorldMatrix.copy( state.currentModelWorldMatrix );
@@ -90,6 +97,76 @@ function getVelocityObjectState( frame ) {
 
 	}
 	return state;
+
+}
+
+function object3DTargetForSource( frame, source, material = null ) {
+
+	if ( source && source.target === 'camera' ) {
+
+		return material && material.__tslpObject3DTargets && material.__tslpObject3DTargets.camera
+			|| frame && frame.material && frame.material.__tslpObject3DTargets && frame.material.__tslpObject3DTargets.camera
+			|| frame && frame.__tslpObject3DTargets && frame.__tslpObject3DTargets.camera
+			|| null;
+
+	}
+	return frame && frame.object;
+
+}
+
+function objectGeometryRadius( frame ) {
+
+	const geom = frame && frame.object && frame.object.geometry;
+	if ( geom && ! geom.boundingSphere && typeof geom.computeBoundingSphere === 'function' ) geom.computeBoundingSphere();
+	return geom && geom.boundingSphere ? geom.boundingSphere.radius : null;
+
+}
+
+function currentRenderTarget( renderer ) {
+
+	if ( ! renderer || typeof renderer.getRenderTarget !== 'function' ) return null;
+	try {
+
+		return renderer.getRenderTarget();
+
+	} catch ( _ ) {
+
+		return null;
+
+	}
+
+}
+
+function rendererScreenSize( renderer ) {
+
+	const renderTarget = currentRenderTarget( renderer );
+	if ( renderTarget !== null && Number.isFinite( renderTarget.width ) && Number.isFinite( renderTarget.height ) ) {
+
+		_rSize.set( renderTarget.width, renderTarget.height );
+
+	} else if ( renderer && typeof renderer.getDrawingBufferSize === 'function' ) {
+
+		renderer.getDrawingBufferSize( _rSize );
+
+	}
+	return _rSize;
+
+}
+
+function rendererViewport( renderer ) {
+
+	const renderTarget = currentRenderTarget( renderer );
+	if ( renderTarget !== null && renderTarget.viewport ) {
+
+		_rViewport.copy( renderTarget.viewport );
+
+	} else if ( renderer && typeof renderer.getViewport === 'function' ) {
+
+		renderer.getViewport( _rViewport );
+		if ( typeof renderer.getPixelRatio === 'function' ) _rViewport.multiplyScalar( renderer.getPixelRatio() );
+
+	}
+	return _rViewport;
 
 }
 
@@ -143,19 +220,19 @@ export function writeUniformGroup( group, frame, view, material ) {
 
 			const state = getVelocityCameraState( frame );
 			if ( state ) writeMat4( view, offset, state.previousProjectionMatrix, source.valueSnapshot );
-			else writeSnapshot( view, offset, source.valueSnapshot );
+			else writeSnapshot( view, offset, source.valueSnapshot, slot.dtype );
 
 		} else if ( kind === 'velocity.previousCameraViewMatrix' ) {
 
 			const state = getVelocityCameraState( frame );
 			if ( state ) writeMat4( view, offset, state.previousCameraViewMatrix, source.valueSnapshot );
-			else writeSnapshot( view, offset, source.valueSnapshot );
+			else writeSnapshot( view, offset, source.valueSnapshot, slot.dtype );
 
 		} else if ( kind === 'velocity.previousModelWorldMatrix' ) {
 
 			const state = getVelocityObjectState( frame );
 			if ( state ) writeMat4( view, offset, state.previousModelWorldMatrix, source.valueSnapshot );
-			else writeSnapshot( view, offset, source.valueSnapshot );
+			else writeSnapshot( view, offset, source.valueSnapshot, slot.dtype );
 
 		}
 		else if ( kind === 'frame.time' ) {
@@ -188,42 +265,67 @@ export function writeUniformGroup( group, frame, view, material ) {
 		}
 		else if ( kind === 'frame.deltaTime' ) writeNumber( view, offset, frame.deltaTime, source.valueSnapshot );
 		else if ( kind === 'frame.frameId' ) writeUint( view, offset, frame.frameId, source.valueSnapshot );
-		else if ( kind === 'object.worldMatrix' || kind === 'object3d.worldMatrix' ) writeMat4( view, offset, frame.object && frame.object.matrixWorld, source.valueSnapshot );
+		else if ( kind === 'object.worldMatrix' ) writeMat4( view, offset, frame.object && frame.object.matrixWorld, source.valueSnapshot );
+		else if ( kind === 'object3d.worldMatrix' ) {
+
+			const target = object3DTargetForSource( frame, source, material );
+			writeMat4( view, offset, target && target.matrixWorld, source.valueSnapshot );
+
+		}
 		else if ( kind === 'object.worldMatrixInverse' ) {
 
 			if ( frame.object ) { _mwi.copy( frame.object.matrixWorld ).invert(); writeMat4( view, offset, _mwi ); }
-			else writeSnapshot( view, offset, source.valueSnapshot );
+			else writeSnapshot( view, offset, source.valueSnapshot, slot.dtype );
 
 		} else if ( kind === 'object.normalMatrix' || kind === 'object3d.normalMatrix' ) {
 
 			if ( frame.object && frame.object.normalMatrix && frame.object.matrixWorld ) {
 				frame.object.normalMatrix.getNormalMatrix( frame.object.matrixWorld );
 				writeMat3( view, offset, frame.object.normalMatrix );
-			} else writeSnapshot( view, offset, source.valueSnapshot );
+			} else writeSnapshot( view, offset, source.valueSnapshot, slot.dtype );
 
 		} else if ( kind === 'object.modelViewMatrix' || kind === 'object3d.modelViewMatrix' ) {
 
 			if ( frame.object && frame.object.modelViewMatrix && frame.object.matrixWorld && frame.camera && frame.camera.matrixWorldInverse ) {
 				frame.object.modelViewMatrix.multiplyMatrices( frame.camera.matrixWorldInverse, frame.object.matrixWorld );
 				writeMat4( view, offset, frame.object.modelViewMatrix );
-			} else writeSnapshot( view, offset, source.valueSnapshot );
+			} else writeSnapshot( view, offset, source.valueSnapshot, slot.dtype );
 
 		}
-		else if ( kind === 'object.position' || kind === 'object3d.position' ) writeVec3( view, offset, frame.object && frame.object.position, source.valueSnapshot );
-		else if ( kind === 'object.scale' || kind === 'object3d.scale' ) writeVec3( view, offset, frame.object && frame.object.scale, source.valueSnapshot );
+		else if ( kind === 'object.position' ) writeVec3( view, offset, frame.object && frame.object.position, source.valueSnapshot );
+		else if ( kind === 'object3d.position' ) {
+
+			const target = object3DTargetForSource( frame, source, material );
+			writeVec3( view, offset, target && target.position, source.valueSnapshot );
+
+		}
+		else if ( kind === 'object.scale' ) writeVec3( view, offset, frame.object && frame.object.scale, source.valueSnapshot );
+		else if ( kind === 'object.radius' ) {
+
+			writeNumber( view, offset, objectGeometryRadius( frame ), source.valueSnapshot );
+
+		}
+		else if ( kind === 'object3d.scale' ) {
+
+			const target = object3DTargetForSource( frame, source, material );
+			writeVec3( view, offset, target && target.scale, source.valueSnapshot );
+
+		}
 		else if ( kind === 'object3d.viewPosition' ) {
 
-			if ( frame.object && frame.camera ) {
+			const target = object3DTargetForSource( frame, source, material );
+			if ( target && frame.camera ) {
 
-				_ovp.setFromMatrixPosition( frame.object.matrixWorld ).applyMatrix4( frame.camera.matrixWorldInverse );
+				_ovp.setFromMatrixPosition( target.matrixWorld ).applyMatrix4( frame.camera.matrixWorldInverse );
 				writeVec3( view, offset, _ovp );
 
-			} else writeSnapshot( view, offset, source.valueSnapshot );
+			} else writeSnapshot( view, offset, source.valueSnapshot, slot.dtype );
 
 		} else if ( kind === 'object3d.direction' ) {
 
-			if ( frame.object ) { frame.object.getWorldDirection( _odir ); writeVec3( view, offset, _odir ); }
-			else writeSnapshot( view, offset, source.valueSnapshot );
+			const target = object3DTargetForSource( frame, source, material );
+			if ( target ) { target.getWorldDirection( _odir ); writeVec3( view, offset, _odir ); }
+			else writeSnapshot( view, offset, source.valueSnapshot, slot.dtype );
 
 		} else if ( kind === 'object3d.nodeUniform' ) {
 
@@ -231,7 +333,7 @@ export function writeUniformGroup( group, frame, view, material ) {
 			const owner = frame.object || material && material.__tslpPrecompileObject || null;
 			const node = owner && property != null ? owner[ property ] : null;
 			if ( node && node.value !== undefined && node.value !== null ) writeLiveValue( view, offset, node.value, slot.dtype );
-			else writeSnapshot( view, offset, source.valueSnapshot );
+			else writeSnapshot( view, offset, source.valueSnapshot, slot.dtype );
 
 		} else if ( kind === 'object3d.userData' ) {
 
@@ -249,9 +351,7 @@ export function writeUniformGroup( group, frame, view, material ) {
 
 		} else if ( kind === 'object3d.radius' ) {
 
-			const geom = frame.object && frame.object.geometry;
-			const radius = geom && geom.boundingSphere ? geom.boundingSphere.radius : null;
-			writeNumber( view, offset, radius, source.valueSnapshot );
+			writeNumber( view, offset, objectGeometryRadius( frame ), source.valueSnapshot );
 
 		} else if ( kind === 'renderer.dpr' ) {
 
@@ -259,18 +359,18 @@ export function writeUniformGroup( group, frame, view, material ) {
 
 		} else if ( kind === 'renderer.size' ) {
 
-			if ( frame.renderer ) { frame.renderer.getDrawingBufferSize( _rSize ); writeVec2( view, offset, _rSize ); }
-			else writeSnapshot( view, offset, source.valueSnapshot );
+			if ( frame.renderer ) writeVec2( view, offset, rendererScreenSize( frame.renderer ) );
+			else writeSnapshot( view, offset, source.valueSnapshot, slot.dtype );
 
 		} else if ( kind === 'renderer.halfHeight' ) {
 
 			if ( frame.renderer ) { frame.renderer.getSize( _rSize ); writeNumber( view, offset, 0.5 * _rSize.y, source.valueSnapshot ); }
-			else writeSnapshot( view, offset, source.valueSnapshot );
+			else writeSnapshot( view, offset, source.valueSnapshot, slot.dtype );
 
 		} else if ( kind === 'renderer.viewport' ) {
 
-			if ( frame.renderer ) { frame.renderer.getViewport( _rViewport ); writeVec4( view, offset, _rViewport ); }
-			else writeSnapshot( view, offset, source.valueSnapshot );
+			if ( frame.renderer ) writeVec4( view, offset, rendererViewport( frame.renderer ) );
+			else writeSnapshot( view, offset, source.valueSnapshot, slot.dtype );
 
 		} else if ( kind === 'renderer.toneMappingExposure' ) {
 
@@ -309,7 +409,7 @@ export function writeUniformGroup( group, frame, view, material ) {
 
 		} else if ( kind === 'constant' || kind === 'uniform.constant' ) {
 
-			writeSnapshot( view, offset, source.valueSnapshot || { type: source.valueType, data: source.value } );
+			writeSnapshot( view, offset, source.valueSnapshot || { type: source.valueType, data: source.value }, slot.dtype );
 
 		} else if ( kind === 'uniform.live' ) {
 
@@ -322,13 +422,13 @@ export function writeUniformGroup( group, frame, view, material ) {
 				updateLightShadowMatrixForFrame( shadowMatrixLight, frame );
 				writeMat4( view, offset, shadowMatrixLight.shadow.matrix );
 
-			} else if ( slot._liveNode && slot._liveNode.value !== null && slot._liveNode.value !== undefined ) {
+			} else if ( slot.__tslpLiveSidecarOverlay === true && slot._liveNode && slot._liveNode.value !== null && slot._liveNode.value !== undefined ) {
 
 				writeLiveValue( view, offset, slot._liveNode.value, slot.dtype );
 
 			} else {
 
-				writeSnapshot( view, offset, source.valueSnapshot || { type: source.valueType, data: source.value } );
+				writeSnapshot( view, offset, source.valueSnapshot || { type: source.valueType, data: source.value }, slot.dtype );
 
 			}
 
