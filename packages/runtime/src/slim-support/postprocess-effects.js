@@ -469,11 +469,18 @@ function __setLiveUniformSlot( slot, liveNode ) {
 			configurable: true,
 			writable: true,
 		} );
+		Object.defineProperty( slot, '__tslpLiveSidecarOverlay', {
+			value: true,
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		} );
 
 	} catch ( _ ) {
 		// `_liveNode` is already defined as non-configurable — fall back to a
 		// plain assignment so subsequent matches still take effect.
 		slot._liveNode = liveNode;
+		slot.__tslpLiveSidecarOverlay = true;
 
 	}
 

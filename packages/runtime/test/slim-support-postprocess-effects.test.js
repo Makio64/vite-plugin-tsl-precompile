@@ -390,6 +390,7 @@ test( 'bloom handler wireSubPassUniforms attaches _liveNode to vec2 slots on blu
 	handler.wireSubPassUniforms( subPass, sourceMaterial );
 	const wired = artifact.uniformPlan[ 0 ].slots.filter( ( s ) => s._liveNode );
 	assert.equal( wired.length, 2 );
+	assert.equal( wired.filter( ( s ) => s.__tslpLiveSidecarOverlay === true ).length, 2 );
 
 } );
 

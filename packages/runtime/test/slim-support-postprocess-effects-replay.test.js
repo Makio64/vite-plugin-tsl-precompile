@@ -346,6 +346,41 @@ test( 'wireLiveNodeSidecarsToArtifact matches uniform.live slots by dtype and va
 	const slots = artifact.uniformPlan[ 0 ].slots;
 	const wireNames = slots.map( ( s ) => s._liveNode && s._liveNode.name ).sort();
 	assert.deepEqual( wireNames, [ 'direction', 'invSize' ] );
+	assert.equal( slots[ 0 ].__tslpLiveSidecarOverlay, undefined );
+	assert.equal( slots[ 1 ].__tslpLiveSidecarOverlay, undefined );
+
+} );
+
+test( 'wireLiveNodeSidecarsToArtifact refuses same-dtype anonymous mismatches', () => {
+
+	const artifact = {
+		uniformPlan: [
+			{
+				slots: [
+					{ dtype: 'number', source: { kind: 'uniform.live', valueSnapshot: { type: 'number', data: 3 } } },
+					{ dtype: 'number', source: { kind: 'uniform.live', valueSnapshot: { type: 'number', data: 0.15 } } },
+					{ dtype: 'number', source: { kind: 'uniform.live', valueSnapshot: { type: 'number', data: 3 } } },
+				],
+			},
+		],
+	};
+	const iterations = { isUniformNode: true, value: 3 };
+	const multiplier = { isUniformNode: true, value: 0.15 };
+	const sourceMaterial = {
+		fragmentNode: {
+			isNode: true,
+			wrong: { isUniformNode: true, value: 99 },
+			iterations,
+			multiplier,
+		},
+	};
+
+	const counters = wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial );
+	assert.equal( counters.uniformsMatched, 3 );
+	const slots = artifact.uniformPlan[ 0 ].slots;
+	assert.equal( slots[ 0 ]._liveNode, iterations );
+	assert.equal( slots[ 1 ]._liveNode, multiplier );
+	assert.equal( slots[ 2 ]._liveNode, iterations, 'duplicate snapshots may share the same live UniformNode' );
 
 } );
 
@@ -362,6 +397,7 @@ test( 'bloom handler hooks: wireSubPassUniforms attaches _liveNode to blur direc
 	// Both vec2 slots should now carry a `_liveNode` reference.
 	const wireCount = slots.filter( ( s ) => s._liveNode ).length;
 	assert.equal( wireCount, 2, 'bloom blur handler wired both vec2 uniform slots' );
+	assert.equal( slots.filter( ( s ) => s.__tslpLiveSidecarOverlay === true ).length, 2 );
 
 } );
 
