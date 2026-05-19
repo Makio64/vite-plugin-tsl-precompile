@@ -279,6 +279,31 @@ guard set is green; broad postprocessing beyond focused bloom is deferred.
 The latest generated coverage table is at
 [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md).
 
+## Tested configurations
+
+The matrix below is what CI actually exercises on every PR. Configurations
+outside it are best-effort — they may work but aren't guarded against
+regression.
+
+| Layer | Tested | Notes |
+|---|---|---|
+| **Operating systems (unit tests)** | Ubuntu, macOS, Windows | All three run the plugin + runtime + contract unit suites on every PR. |
+| **Operating systems (visual / e2e)** | Ubuntu only | Tier-1 visual gate, preview-smoke, and fresh-project-smoke run under `xvfb-run` on Linux. macOS/Windows e2e is not gated. |
+| **Browsers** | Chromium (Playwright, SwiftShader Vulkan) | Firefox WebGPU is still flag-gated; Safari is untested in CI. |
+| **Node** | 22 (CI) | Plugin/runtime require `>= 20.19`. |
+| **Vite** | 8.x (CI) | Plugin declares `vite >= 5` as a peer; 5–7 are best-effort. |
+| **three.js** | `0.184.0` (locked) + nightly run against `latest` ([three-compat.yml](.github/workflows/three-compat.yml)) | Artifacts are pinned to a three.js patch — see [MIGRATION.md](MIGRATION.md). |
+| **Publish path** | `npm install` of `pnpm pack` tarballs into a clean temp project ([fresh-project-smoke](packages/examples/fresh-project-smoke)) | Verifies that `exports`, `files`, `peerDependencies`, and `.d.ts` resolve outside the monorepo. |
+| **Bundlers** | Vite only | Plugin is Vite-specific; Rollup/esbuild/webpack are not supported. |
+
+**Known-limited examples.** Sixteen of the 206 stock three.js examples
+have the pixel-diff gate disabled — eight stochastic/PRNG-driven compute
+demos plus seven postprocessing flows whose float drift is too large for
+PSNR. Each carries a per-example justification in
+[coverage-config.json](packages/examples/batch/coverage-config.json) under
+`pixelGate.disabledNotes`. The replay still loads and renders a
+non-trivial frame; only the per-pixel assertion is relaxed.
+
 ## Examples in this repo
 
 - [`packages/examples/getting-started`](packages/examples/getting-started) — minimal copy-paste template

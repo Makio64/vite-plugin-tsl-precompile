@@ -1,0 +1,40 @@
+{
+  "ok": true,
+  "steps": {
+    "pack": {
+      "ok": true,
+      "tarballs": {
+        "@tsl-precompile/contract": "tsl-precompile-contract-0.1.0.tgz",
+        "@tsl-precompile/runtime": "tsl-precompile-runtime-0.1.0.tgz",
+        "vite-plugin-tsl-precompile": "vite-plugin-tsl-precompile-0.1.0.tgz"
+      }
+    },
+    "install": {
+      "ok": true
+    },
+    "typecheck": {
+      "ok": true
+    },
+    "devCapture": {
+      "ok": true,
+      "manifest": {
+        "fresh-project-smoke": {
+          "file": "fresh-project-smoke.b187cf65936c.json",
+          "hash": "b187cf65936c96b88ac3edfe461c95e5a5159117347f10e309afdadf79cdb40b",
+          "capturedAt": "2026-05-19T05:50:36.974Z"
+        }
+      }
+    },
+    "build": {
+      "ok": true
+    },
+    "previewSmoke": {
+      "ok": true,
+      "nonZeroRatio": 0.97,
+      "pageErrors": [],
+      "consoleErrors": [],
+      "failures": []
+    }
+  },
+  "tmpRoot": "/var/folders/5y/895dhjqd4x38z7jmf4hfz0n00000gn/T/tslp-fresh-4r4FDT"
+}

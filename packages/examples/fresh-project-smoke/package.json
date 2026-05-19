@@ -1,0 +1,14 @@
+{
+  "name": "examples-fresh-project-smoke",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end smoke that packs the three publishable packages, installs them into a temp project with npm (not workspace), runs vite dev to capture an artifact, then vite build + vite preview, and asserts the canvas renders. Catches publish-time breakage that workspace:* linking hides.",
+  "scripts": {
+    "test": "node run.mjs",
+    "test:keep": "node run.mjs --keep-tmp"
+  },
+  "devDependencies": {
+    "playwright": "^1.59.1"
+  }
+}

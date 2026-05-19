@@ -34,6 +34,7 @@
     "examples:ui": "pnpm --filter examples-batch ui",
     "verify": "node packages/plugin/src/cli/verify.js artifacts packages/examples/ocean/artifacts packages/examples/getting-started/artifacts packages/examples/pbr-shadows/artifacts packages/examples/shadow-debug/artifacts packages/examples/postprocessing-debug/artifacts packages/examples/pmrem-debug/artifacts packages/examples/mrt-debug/artifacts",
     "pack:dry": "pnpm --filter @tsl-precompile/contract --filter @tsl-precompile/runtime --filter vite-plugin-tsl-precompile pack --pack-gzip-level 0 --pack-destination /tmp",
+    "test:fresh-project": "pnpm --filter examples-fresh-project-smoke test",
     "release:check": "pnpm build && pnpm test && pnpm verify && pnpm pack:dry",
     "dev": "pnpm dev:ocean",
     "dev:getting-started": "pnpm --filter examples-getting-started dev",

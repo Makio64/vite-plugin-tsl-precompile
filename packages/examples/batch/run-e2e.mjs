@@ -1833,6 +1833,31 @@ function __sceneHasMultiOutputPrecompiledMaterial( scene ) {
 	return found;
 }
 
+// VolumeNodeMaterial ray-marching depends on pass-relative depth + 3D
+// noise sampling wired through the full TSL builder. The captured WGSL
+// replays as fully-transparent fragments under slim because the sampled
+// depth/3D-texture state is not reconstructed at the pass level. Routing
+// the pass through the full renderer (which owns the source TSL graph via
+// __tslpSourceMaterial) makes the volumetric mesh contribute correctly.
+function __sceneHasVolumeNodeMaterial( scene ) {
+	let found = false;
+	const visit = ( object ) => {
+		if ( found || ! object ) return;
+		const material = object.material;
+		const list = Array.isArray( material ) ? material : material ? [ material ] : [];
+		for ( const mat of list ) {
+			if ( ! mat ) continue;
+			if ( mat.isVolumeNodeMaterial === true ) { found = true; return; }
+			if ( mat.__tslpSourceMaterial && mat.__tslpSourceMaterial.isVolumeNodeMaterial === true ) { found = true; return; }
+		}
+	};
+	visit( scene );
+	try {
+		if ( ! found && scene && typeof scene.traverse === 'function' ) scene.traverse( visit );
+	} catch ( _ ) {}
+	return found;
+}
+
 function __resetRendererPipelineCachesForAttachmentChange( renderer, scene ) {
 	if ( ! renderer || ! __sceneHasMultiOutputPrecompiledMaterial( scene ) ) return;
 	let renderTarget = null;
@@ -2019,7 +2044,7 @@ function __renderPassNodeWithSourceMaterials( passNode, renderer, camera ) {
 function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer, camera, options = {} ) {
 	if ( ! passNode || ! slimRenderer || ! fullRenderer || ! passNode.scene || ! passNode.renderTarget ) return false;
 	const force = options && options.force === true;
-	if ( ! force && ! passNode._mrt && ! __sceneHasMultiOutputPrecompiledMaterial( passNode.scene ) ) return false;
+	if ( ! force && ! passNode._mrt && ! __sceneHasMultiOutputPrecompiledMaterial( passNode.scene ) && ! __sceneHasVolumeNodeMaterial( passNode.scene ) ) return false;
 	try {
 		try {
 			fullRenderer.toneMapping = slimRenderer.toneMapping;
@@ -2040,6 +2065,17 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 			fullRenderer.autoClear = true;
 			fullRenderer.transparent = passNode.transparent;
 			fullRenderer.opaque = passNode.opaque;
+			// Volumetric ray-march reads earlier-pass depth via material.depthNode.
+			// The earlier pass renders into slim's GPU; share its output+depth
+			// textures into the full renderer before render so sceneDepth samples
+			// hit valid GPU resources.
+			if ( __sceneHasVolumeNodeMaterial( passNode.scene ) ) {
+				const activeNodes = Array.isArray( __activePipelinePassNodes ) ? __activePipelinePassNodes : [];
+				for ( const otherPass of activeNodes ) {
+					if ( ! otherPass || otherPass === passNode ) continue;
+					try { __sharePassRenderTargetIntoFullRenderer( fullRenderer, slimRenderer, otherPass ); } catch ( _ ) {}
+				}
+			}
 			__withPassRendererContext( passNode, fullRenderer, () => __withSourceMaterialsForFullPass( passNode.scene, () => fullRenderer.render( passNode.scene, camera || passNode.camera ) ) );
 			__sharePassRenderTargetFromFullRenderer( slimRenderer, fullRenderer, passNode );
 			return true;
@@ -2402,12 +2438,6 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 					const renderedWithSource = __withPassRendererContext( this, renderer, () => __renderPassNodeWithSourceMaterials( this, renderer, camera ) );
 					const renderedWithFullFallback = ! renderedWithSource && ! canRenderPrecompiledMRT && __renderPassNodeWithFullRenderer( this, renderer, __computeRenderer, camera );
 					if ( ! renderedWithSource && ! renderedWithFullFallback ) {
-						try { renderer.setClearColor && renderer.setClearColor( 0x0487e2, 1 ); } catch ( _ ) {}
-						if ( __state.example === 'webgpu_backdrop_water.html' ) {
-							const debugMat = new Slim.MeshBasicMaterial( { color: 0x0487e2 } );
-							const debugQuad = new Slim.QuadMesh( debugMat );
-							debugQuad.render( renderer );
-						}
 						const savedRenderDepth = __renderDepth;
 						const savedBackground = scene.background;
 						const savedBackgroundNode = scene.backgroundNode;
@@ -3295,6 +3325,11 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 			// _liveAttribute may already be set from JSON deserialization (plain object, not
 			// a live attribute). Only skip if it is already a proper live JS attribute object.
 			if ( ! nodeAttr || nodeAttr.source !== 'node' || isStorageAttr( nodeAttr._liveAttribute ) ) continue;
+			// Object-owned instanced attributes (InstancedMesh.instanceMatrix columns,
+			// instanceColor) are captured with storage:false and must be wired by the
+			// runtime's instanced-object lookup, not shape-matched to storage candidates.
+			// webgpu_compute_birds collapses without this guard.
+			if ( nodeAttr.storage === false ) continue;
 			const matchIdx = naCandidates.findIndex( ( v ) => v.count === nodeAttr.count && sizeMatches( v.itemSize, nodeAttr.itemSize ) );
 			if ( matchIdx === -1 ) continue;
 			const liveAttr = __preferComputeStorageAttr( naCandidates[ matchIdx ], nodeAttr, sizeMatches );
@@ -3315,6 +3350,8 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 		for ( const nodeAttr of nodeAttrsArr ) {
 			if ( ! nodeAttr || nodeAttr.source !== 'node' || isStorageAttr( nodeAttr._liveAttribute ) ) continue;
 			if ( Array.isArray( nodeAttr.userPath ) && nodeAttr.userPath.length > 0 ) continue;
+			// See gate above: skip non-storage instanced attributes (instanceMatrix columns).
+			if ( nodeAttr.storage === false ) continue;
 			const matches = __computeStorageAttrFallbacks.filter( ( v ) => (
 				v &&
 				v.count === nodeAttr.count &&
@@ -9693,11 +9730,18 @@ function __restoreCanvasViewport( renderer ) {
 function __renderPassNodesForPipeline( renderer, passNodes ) {
 	const previous = __activePipelinePassNodes;
 	__activePipelinePassNodes = Array.isArray( passNodes ) ? passNodes : null;
+	const list = Array.isArray( passNodes ) ? passNodes : [];
 	try {
-		for ( const passNode of passNodes || [] ) __renderPassNodeForPipeline( renderer, passNode );
+		for ( const passNode of list ) __renderPassNodeForPipeline( renderer, passNode );
 	} finally {
 		__activePipelinePassNodes = previous;
-		__restoreCanvasViewport( renderer );
+		// Only restore the canvas viewport if a pass node actually ran — pass nodes
+		// can leave the renderer's viewport/scissor pointed at an offscreen target.
+		// When the list is empty (the common case — e.g. webgpu_lines_fat_wireframe)
+		// the user's setViewport/setScissor state is still live and must not be
+		// clobbered here, otherwise the inset minimap render below sees a full-canvas
+		// viewport instead of its 120×120 region.
+		if ( list.length > 0 ) __restoreCanvasViewport( renderer );
 	}
 }
 
@@ -11577,6 +11621,7 @@ function __findUserArtifactByMaterialShape( shape ) {
 	}
 	return null;
 }
+
 
 function __collectScenePassNodes( scene ) {
 	const out = [];

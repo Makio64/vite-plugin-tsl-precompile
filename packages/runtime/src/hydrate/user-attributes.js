@@ -102,31 +102,58 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 		if ( ! entry || entry.source !== 'node' ) continue;
 		if ( entry._liveAttribute && entry._liveAttribute.isBufferAttribute === true ) continue;
 
-		// Anonymous + snapshot path: try the live storage lookup first, then
-		// object-owned instancing attributes. The extractor snapshots anonymous
-		// attributes so offline replay still has data, but in a live replay page
-		// the source InstancedMesh has the authoritative instanceMatrix.
+		// Anonymous + snapshot path: prefer object-owned instancing attributes
+		// (InstancedMesh.instanceMatrix columns) when the entry was captured as
+		// a non-storage instanced attribute; otherwise try the live storage
+		// lookup. webgpu_compute_birds is the canary — its 4 anonymous vec4
+		// entries are the 4 columns of instanceMatrix and shape-match
+		// positionStorage/velocityStorage by accident. Without the storage-flag
+		// gate the bird mesh gets smeared by storage values.
 		if ( ! entry.userPath && entry.arraySnapshot ) {
 
-			collectStorageFromRoots();
-			const shapeKey = entry.itemSize + ':' + entry.count + ':' + ( entry.arrayType || '' );
-			const slotIdx = anonStorageShapeIndex.get( shapeKey ) || 0;
-			anonStorageShapeIndex.set( shapeKey, slotIdx + 1 );
-			const matchingStorage = findNthStorageMatchingShape( anonStorageCandidates, entry, slotIdx );
-			if ( matchingStorage ) {
+			if ( entry.storage === false ) {
 
-				Object.defineProperty( entry, '_liveAttribute', {
-					value: matchingStorage,
-					enumerable: false,
-					configurable: true,
-					writable: true,
-				} );
-				// Force bind-group rebuild: slim's `Bindings._update` only
-				// rebuilds when `binding.version !== attribute.version`. The
-				// compute kernel doesn't bump `version` on its own — bump
-				// here so the bind group picks up the live buffer on the
-				// first hydrate.
-				if ( typeof matchingStorage.version === 'number' ) matchingStorage.version = matchingStorage.version + 1;
+				const instancedObjectAttribute = findInstancedObjectAttributeMatchingEntry( sourceObject, entry, entries );
+				if ( instancedObjectAttribute ) {
+
+					Object.defineProperty( entry, '_liveAttribute', {
+						value: instancedObjectAttribute,
+						enumerable: false,
+						configurable: true,
+						writable: true,
+					} );
+					Object.defineProperty( entry, '_liveAttributeSource', {
+						value: 'instancedObject',
+						enumerable: false,
+						configurable: true,
+						writable: true,
+					} );
+
+				}
+
+			} else {
+
+				collectStorageFromRoots();
+				const shapeKey = entry.itemSize + ':' + entry.count + ':' + ( entry.arrayType || '' );
+				const slotIdx = anonStorageShapeIndex.get( shapeKey ) || 0;
+				anonStorageShapeIndex.set( shapeKey, slotIdx + 1 );
+				const matchingStorage = findNthStorageMatchingShape( anonStorageCandidates, entry, slotIdx );
+				if ( matchingStorage ) {
+
+					Object.defineProperty( entry, '_liveAttribute', {
+						value: matchingStorage,
+						enumerable: false,
+						configurable: true,
+						writable: true,
+					} );
+					// Force bind-group rebuild: slim's `Bindings._update` only
+					// rebuilds when `binding.version !== attribute.version`. The
+					// compute kernel doesn't bump `version` on its own — bump
+					// here so the bind group picks up the live buffer on the
+					// first hydrate.
+					if ( typeof matchingStorage.version === 'number' ) matchingStorage.version = matchingStorage.version + 1;
+
+				}
 
 			}
 

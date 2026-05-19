@@ -21,7 +21,9 @@
       "Bash(node run-e2e.mjs --filter=webgpu_tsl_procedural_terrain)",
       "Bash(node run-e2e.mjs --filter=alphahash --limit=1 --report=results/e2e-tmp-184.json --no-pixel-gate)",
       "Bash(python3 -c ' *)",
-      "Bash(git stash *)",
+      "Bash(git stash push*)",
+      "Bash(git stash show*)",
+      "Bash(git stash list*)",
       "Bash(pnpm --filter @tsl-precompile/runtime build:slim)",
       "Bash(node -e \"const{gzipSync}=require\\('zlib'\\);const{readFileSync,existsSync}=require\\('fs'\\);const p='packages/runtime/dist/slim/index.js';if\\(existsSync\\(p\\)\\){const r=readFileSync\\(p\\);console.log\\('baseline \\(before changes\\):',\\(gzipSync\\(r,{level:9}\\).length/1024\\).toFixed\\(2\\),'KB'\\)}else console.log\\('no bundle'\\);\")",
       "Bash(node -e \"const{gzipSync}=require\\('zlib'\\);const{readFileSync}=require\\('fs'\\);const r=readFileSync\\('packages/runtime/build/three.webgpu.slim.js'\\);console.log\\('baseline gz:',\\(gzipSync\\(r,{level:9}\\).length/1024\\).toFixed\\(2\\),'KB'\\);console.log\\('baseline raw:',\\(r.length/1024\\).toFixed\\(2\\),'KB'\\);\")",
@@ -48,6 +50,19 @@
       "Bash(node -e \"console.log\\(require.resolve\\('three'\\).replace\\(/build.three\\\\.cjs$/,''\\)\\)\")",
       "Bash(node -e ' *)",
       "Bash(git commit -m 'feat\\(plugin\\): minify and dedupe WGSL in emitted virtual modules' -m 'Add `minifyWgsl` and `dedupeWgsl` options \\(both default on\\). The plugin now *)"
+    ],
+    "deny": [
+      "Bash(git commit --amend*)",
+      "Bash(git reset --hard*)",
+      "Bash(git reset --soft*)",
+      "Bash(git reset --mixed*)",
+      "Bash(git rebase*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git checkout *)",
+      "Bash(git switch *)",
+      "Bash(git stash pop*)",
+      "Bash(git stash apply*)"
     ],
     "additionalDirectories": [
       "/Users/davidronai/Desktop/git/vite-plugin-tsl-precompile/packages/examples/batch/results"

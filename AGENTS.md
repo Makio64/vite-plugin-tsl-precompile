@@ -42,7 +42,12 @@ This repository is designed for small, verifiable AI-assisted changes. Read this
 
 ## Parallel Work
 
+- Multiple agents may be running in isolated worktrees under `.claude/worktrees/`. They share this repo's object database, so any history change in one tree is visible to all of them.
 - In isolated worktrees, verify the worktree base before editing. Stop if it is stale.
+- **Do not rewrite commits.** No `git commit --amend`, `git reset --soft|--mixed|--hard <ref>` against existing commits, `git rebase`, `git push --force`, or `git push --force-with-lease`. If a commit needs to change, create a new commit on top.
+- **Do not move HEAD off the assigned branch.** No `git checkout <commit-or-branch>`, `git switch <branch>`, or `git reset --hard <other-rev>` to "test" a different revision. Each worktree must stay on the branch it was created with. To compare against another revision, use `git show`, `git diff <ref>`, or `git worktree add` for a new throwaway tree.
+- **Do not move stashes across branches or worktrees.** Prefer a scratch commit on the current branch over `git stash`. If you must stash, pop it in the same worktree on the same branch you stashed from — never in a sibling worktree.
+- These rules apply to `Bash` commands you issue *and* to anything you delegate to subagents.
 
 ## Release Surface
 
