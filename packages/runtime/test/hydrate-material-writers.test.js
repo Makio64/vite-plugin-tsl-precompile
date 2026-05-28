@@ -441,6 +441,10 @@ test( 'writeUniformGroup writes object3d.nodeUniform from frame.object[property]
 	writeUniformGroup( group, { object: { distortionScale: { value: 6.25 } } }, view, null );
 	assert.equal( view.getFloat32( 0, true ), 6.25 );
 
+	const directView = makeView();
+	writeUniformGroup( group, { object: { distortionScale: 7.5 } }, directView, null );
+	assert.equal( directView.getFloat32( 0, true ), 7.5 );
+
 	const fallbackView = makeView();
 	writeUniformGroup( group, { object: {} }, fallbackView, null );
 	assert.equal( fallbackView.getFloat32( 0, true ), Math.fround( 3.7 ) );
@@ -480,5 +484,16 @@ test( 'writeMaterialValue refreshes texture.matrix when matrixAutoUpdate is on',
 	writeMaterialValue( view, 0, { map: tex }, { kind: 'material.map.matrix' }, 'material.map.matrix', 'mat4' );
 	assert.equal( calls, 1 );
 	assert.equal( view.getFloat32( 0, true ), 9 );
+
+} );
+
+test( 'writeMaterialValue preserves integer dtypes for material scalars', () => {
+
+	const view = makeView();
+	writeMaterialValue( view, 0, { steps: 24 }, { kind: 'material.steps' }, 'material.steps', 'int' );
+	writeMaterialValue( view, 4, { samples: 7 }, { kind: 'material.samples' }, 'material.samples', 'uint' );
+	assert.equal( view.getInt32( 0, true ), 24 );
+	assert.equal( view.getUint32( 4, true ), 7 );
+	assert.notEqual( view.getFloat32( 0, true ), 24 );
 
 } );

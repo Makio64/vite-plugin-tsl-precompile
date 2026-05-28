@@ -24,7 +24,7 @@ import { default as PrecompiledMaterial } from './_vendor-PrecompiledMaterial.js
 import { registerPrecompiledArtifacts } from './_vendor-PrecompiledArtifactRegistry.js';
 import { registerArtifact } from './artifact-loader.js';
 import { attachArtifactTextureRefsByShapeOrder } from './slim-support/artifact-texture-wiring.js';
-import { wireLiveUniformSidecarsToArtifact } from './slim-support/live-node-sidecars.js';
+import { wireLiveNodeSidecarsToArtifact } from './slim-support/live-node-sidecars.js';
 import {
 	MATERIAL_TEXTURE_PROPS as _TEXTURE_PROPS,
 	NODE_GRAPH_TEXTURE_KEYS as _NODE_GRAPH_KEYS,
@@ -328,7 +328,7 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 	// `material[prop]` is undefined. Cataloguing here means the hydrator's
 	// `_textureRefs.get(uuid)` path resolves to the live Texture instance.
 	catalogueArtifactTextureRefs( artifact, material );
-	wireLiveUniformSidecarsToArtifact( artifact, material );
+	wireLiveNodeSidecarsToArtifact( artifact, material, { overlay: true } );
 
 	// Note: node-sourced attribute leaves (e.g. `material.positionNode =
 	// instancedBufferAttribute(buf)`) cannot be catalogued here — the user
@@ -374,6 +374,7 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 		wrapped.mrtNode = material.mrtNode;
 
 	}
+	copyBackdropMarkers( material, wrapped );
 
 	return adoptPrecompiledMaterial( material, wrapped );
 
@@ -392,6 +393,17 @@ function applyPrecompiledRenderLimitations( artifact, material ) {
 		&& material && material.forceSinglePass === false ) {
 
 		material.forceSinglePass = true;
+
+	}
+
+}
+
+function copyBackdropMarkers( src, dst ) {
+
+	for ( const key of [ 'backdropNode', 'backdropAlphaNode' ] ) {
+
+		const node = src && src[ key ];
+		if ( node && node.isNode === true ) dst[ key ] = node;
 
 	}
 

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import { createSlimSceneSupport, pinClock, unpinClock } from '../src/slim-support/scene-support.js';
 import { getSlimRenderFallback, setSlimRenderFallback } from '../src/slim-support/render-fallback-registry.js';
+import { clearLiveTextureIndex } from '../src/hydrator.js';
+import { lookupLiveTextureByIdentity } from '../src/hydrate/live-texture-registry.js';
 
 function fakeDataMap() {
 
@@ -37,7 +39,7 @@ function fakePassFullRenderer() {
 		setMRT( mrt ) { this._mrt = mrt; },
 		render( scene, camera ) {
 
-			this._rendered = { scene, camera };
+			this._rendered = { scene, camera, mrt: this._mrt };
 
 		},
 	} );
@@ -88,6 +90,23 @@ class FakeFullRendererWithPrivateNodes extends FakeFullRenderer {
 
 }
 
+class FakeFullRendererWithCompute extends FakeFullRendererWithPrivateNodes {
+
+	async init() {
+
+		await super.init();
+		this._bindings = { getForCompute: () => [] };
+
+	}
+
+	compute( computeNode, ...rest ) {
+
+		this.computed = { computeNode, rest };
+
+	}
+
+}
+
 test( 'createSlimSceneSupport requires a renderer', () => {
 
 	assert.throws( () => createSlimSceneSupport( {} ), /opts\.renderer is required/ );
@@ -105,6 +124,8 @@ test( 'createSlimSceneSupport exposes the four sub-helpers by default (no fallba
 	assert.equal( typeof support.shareComputeInputs, 'function' );
 	assert.equal( typeof support.shareTexture, 'function' );
 	assert.equal( typeof support.shareShadowTexture, 'function' );
+	assert.equal( typeof support.updateRendererLighting, 'function' );
+	assert.equal( typeof support.renderOffscreenOverrideWithFallback, 'function' );
 
 } );
 
@@ -156,6 +177,44 @@ test( 'createSlimSceneSupport ensureFallback registers private _nodes as a slim 
 
 } );
 
+test( 'createSlimSceneSupport ensureFallback installs raw compute fallback on the slim renderer', async () => {
+
+	const slim = fakeRenderer();
+	let originalComputeNode = null;
+	slim.compute = ( node ) => { originalComputeNode = node; return 'original'; };
+	const support = createSlimSceneSupport( {
+		renderer: slim,
+		fullRendererFallback: true,
+		threeFullModule: { WebGPURenderer: FakeFullRendererWithCompute },
+	} );
+
+	try {
+
+		await support.ensureFallback();
+		const full = await support.getFullRenderer();
+		const rawCompute = { isComputeNode: true };
+		const precompiledCompute = { isComputeNode: true, isPrecompiledCompute: true };
+
+		const stats = slim.compute( rawCompute, 12 );
+		assert.equal( full.computed.computeNode, rawCompute );
+		assert.deepEqual( full.computed.rest, [ 12 ] );
+		assert.equal( stats.pass, 0 );
+
+		assert.equal( slim.compute( precompiledCompute ), 'original' );
+		assert.equal( originalComputeNode, precompiledCompute );
+
+		support.dispose();
+		assert.equal( slim.compute( precompiledCompute ), 'original' );
+
+	} finally {
+
+		support.dispose();
+		setSlimRenderFallback( null );
+
+	}
+
+} );
+
 test( 'createSlimSceneSupport syncComputeOutputs no-ops without throwing on an empty bind-group list', () => {
 
 	const slim = fakeRenderer();
@@ -197,8 +256,9 @@ test( 'createSlimSceneSupport shareTexture forwards diagnostics into the shared 
 
 test( 'createSlimSceneSupport indexScene walks scene.traverse + registers textures', () => {
 
+	clearLiveTextureIndex();
 	const support = createSlimSceneSupport( { renderer: fakeRenderer() } );
-	const tex = { isTexture: true, uuid: 'scene-tex', image: { width: 1, height: 1 } };
+	const tex = { isTexture: true, uuid: 'scene-tex', name: 'scene-color.png', image: { width: 1, height: 1 } };
 	const scene = {
 		background: tex,
 		traverse( visit ) { visit( { material: {} } ); },
@@ -206,6 +266,66 @@ test( 'createSlimSceneSupport indexScene walks scene.traverse + registers textur
 	support.indexScene( scene );
 	const found = support.liveSceneIndex.texturesByUuid.get( 'scene-tex' );
 	assert.equal( found, tex );
+	assert.equal( lookupLiveTextureByIdentity( { textureName: 'scene-color.png' } ), tex );
+	clearLiveTextureIndex();
+
+} );
+
+test( 'createSlimSceneSupport patches provided TextureLoader classes for artifact relinking', () => {
+
+	clearLiveTextureIndex();
+	class FakeTextureLoader {
+
+		load( url, onLoad ) {
+
+			const texture = { isTexture: true, uuid: 'loaded-tex', name: '', userData: {}, image: null };
+			if ( typeof onLoad === 'function' ) onLoad( texture );
+			return texture;
+
+		}
+
+	}
+
+	const support = createSlimSceneSupport( {
+		renderer: fakeRenderer(),
+		threeModule: { TextureLoader: FakeTextureLoader },
+	} );
+	assert.equal( support.diagnostics.loader.patchedClasses, 1 );
+
+	const texture = new FakeTextureLoader().load( 'textures/Caustic_Free.jpg' );
+	assert.equal( texture.userData.__tslpLoaderUrl, 'textures/Caustic_Free.jpg' );
+	assert.equal( texture.name, 'Caustic_Free.jpg' );
+	assert.equal( lookupLiveTextureByIdentity( { imageSrc: 'textures/Caustic_Free.jpg' } ), texture );
+	clearLiveTextureIndex();
+
+} );
+
+test( 'createSlimSceneSupport patches lazy full-module TextureLoader classes after boot', async () => {
+
+	clearLiveTextureIndex();
+	class FakeTextureLoader {
+
+		load( url ) {
+
+			return { isTexture: true, uuid: 'lazy-loaded-tex', name: '', userData: {}, image: null };
+
+		}
+
+	}
+	const support = createSlimSceneSupport( {
+		renderer: fakeRenderer(),
+		fullRendererFallback: true,
+		loadThreeFullModule: async () => ( {
+			WebGPURenderer: FakeFullRenderer,
+			TextureLoader: FakeTextureLoader,
+		} ),
+	} );
+
+	await support.getFullRenderer();
+	const texture = new FakeTextureLoader().load( 'textures/lazy-caustic.jpg' );
+	assert.equal( texture.userData.__tslpLoaderUrl, 'textures/lazy-caustic.jpg' );
+	assert.equal( lookupLiveTextureByIdentity( { textureName: 'lazy-caustic.jpg' } ), texture );
+	clearLiveTextureIndex();
 
 } );
 
@@ -334,6 +454,32 @@ test( 'createSlimSceneSupport renderPassWithFallback renders through a full rend
 
 } );
 
+test( 'createSlimSceneSupport renderOffscreenOverrideWithFallback renders current override target and shares textures', async () => {
+
+	const slim = fakeRenderer();
+	const full = fakePassFullRenderer();
+	const support = createSlimSceneSupport( { renderer: slim } );
+	const texture = { isTexture: true, name: 'override-color', version: 9 };
+	const depthTexture = { isTexture: true, name: 'override-depth', version: 10 };
+	const renderTarget = { texture, depthTexture };
+	const scene = { isScene: true, overrideMaterial: { name: 'depth-override' } };
+	const camera = { isCamera: true };
+	full.backend.get( texture ).texture = { gpu: 'override-color' };
+	full.backend.get( depthTexture ).texture = { gpu: 'override-depth' };
+
+	const stats = await support.renderOffscreenOverrideWithFallback( scene, camera, {
+		fullRenderer: full,
+		renderTarget,
+	} );
+
+	assert.deepEqual( stats, { rendered: true, texturesShared: 1, depthShared: true } );
+	assert.equal( full._rendered.scene, scene );
+	assert.equal( full._rendered.camera, camera );
+	assert.equal( slim.backend.get( texture ).texture, full.backend.get( texture ).texture );
+	assert.equal( slim.backend.get( depthTexture ).texture, full.backend.get( depthTexture ).texture );
+
+} );
+
 test( 'createSlimSceneSupport renderPassWithFallback shares MRT color attachments', async () => {
 
 	const slim = fakeRenderer();
@@ -347,11 +493,13 @@ test( 'createSlimSceneSupport renderPassWithFallback shares MRT color attachment
 		scene: { isScene: true },
 		camera: { isCamera: true },
 		renderTarget: { textures: [ colorA, colorB ] },
+		_mrt: { outputNodes: { output: {}, normal: {} } },
 	};
 
 	const stats = await support.renderPassWithFallback( passNode, { fullRenderer: full } );
 
 	assert.deepEqual( stats, { rendered: true, texturesShared: 2, depthShared: false } );
+	assert.equal( full._rendered.mrt, passNode._mrt );
 	assert.equal( slim.backend.get( colorA ).texture, full.backend.get( colorA ).texture );
 	assert.equal( slim.backend.get( colorB ).texture, full.backend.get( colorB ).texture );
 

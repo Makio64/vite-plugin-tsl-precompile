@@ -294,6 +294,7 @@ function findInstancedObjectAttributeMatchingEntry( object, entry, entries ) {
 
 		if ( ! candidate || candidate.source !== 'node' ) return false;
 		if ( candidate.count !== count ) return false;
+		if ( candidate.storage === true || candidate.userPath ) return false;
 		const size = candidate.itemSize || itemSizeFromAttributeType( candidate.type );
 		return size === 4;
 

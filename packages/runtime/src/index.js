@@ -15,21 +15,23 @@ export {
 	hashArtifactContentSync,
 } from './graph-hash.js';
 export { precompileAuxiliary } from './aux-marker.js';
-export { registerAuxArtifact, registerAuxArtifacts, loadAux, hasAux, listAux, findAux, bindAuxConfig, bindAuxByName, attachArtifactTextureRefs, attachPostprocessTextureRefs, attachPostprocessUpdateBeforeNodes, __resetAuxRegistryForTests } from './aux-loader.js';
-export { hydrateNodeBuilderState, registerLiveTexture, clearLiveTextureIndex } from './hydrator.js';
+export { registerAuxArtifact, registerAuxArtifacts, loadAux, hasAux, listAux, findAux, bindAuxConfig, bindAuxByName, attachArtifactTextureRefs, attachPostprocessTextureRefs, attachPostprocessUpdateBeforeNodes, attachPostprocessObject3DTargets, __resetAuxRegistryForTests } from './aux-loader.js';
+export { hydrateNodeBuilderState, registerLiveTexture, clearLiveTextureIndex, installTextureLoaderTracking } from './hydrator.js';
 export { getTextureResolutionDebugHook, setTextureResolutionDebugHook } from './hydrate/artifact-texture-resolver.js';
 export { getDFGLUT } from './dfg-lut.js';
 export { createLiveSceneIndex, collectMaterialNodeTextures, textureImageReady, textureImageSrc, healTextureImage } from './slim-support/live-scene-index.js';
 export { PMREM_CUBE_UV_MAPPING, isCubeTextureSource, isEnvironmentTextureSource, isPMREMTexture, isPMREMArtifactTextureSource, artifactNeedsPMREM, artifactPMREMSourceUuids, attachPMREMRefsByOrder, collectPMREMSourceTexturesInNode, collectPMREMSourceTexturesFromMaterial, selectPMREMTexturesForArtifact, createPMREMSupport } from './slim-support/pmrem.js';
 export { clearTextureViewCache, markTextureInitialized, shareGPUTextureEntry, sharePMREMGPUTexture, shareShadowGPUTextureIntoSlim } from './slim-support/gpu-texture-share.js';
 export { textureMatchesSource, textureMatchesArtifactSource, artifactHasTextureSource, countArtifactTextureSources, singleArtifactTextureUuid, attachArtifactTextureRefsByShapeOrder, attachTextureRefsWhere, attachArtifactTextureRefsWhere } from './slim-support/artifact-texture-wiring.js';
-export { getComputeBindGroups, computeNodeUsesStorageTexture, shareComputeSampledInputs, syncComputeStorageOutputs, syncComputeStorageOutputsPerPass, pingPongInvalidate, shareInstancedAttributeBufferIntoSlim } from './slim-support/compute-sync.js';
+export { getComputeBindGroups, computeNodeUsesStorageTexture, shareComputeSampledInputs, syncComputeStorageOutputs, syncComputeStorageOutputsPerPass, wireArtifactStorageBuffersFromAttributes, pingPongInvalidate, shareInstancedAttributeBufferIntoSlim } from './slim-support/compute-sync.js';
 export { createFullRendererFallback } from './slim-support/full-renderer-fallback.js';
 export { createSlimSceneSupport, pinClock, unpinClock } from './slim-support/scene-support.js';
+export { collectSceneLights, updateRendererLightingForSlim, wireStorageAttributesToSceneArtifacts, wireTiledLightingTextureToScene } from './slim-support/renderer-lighting.js';
 export { setSlimRenderFallback, getSlimRenderFallback } from './slim-support/render-fallback-registry.js';
 export { collectLiveBloomNodes, wireBloomNode, wirePrecompiledPostprocess, findPostprocessAux } from './slim-support/postprocess-wire.js';
 export { registerEffectHandler, unregisterEffectHandler, getEffectHandlers, findEffectHandler, collectEffectNodes } from './slim-support/postprocess-effects.js';
-export { preparePrecompiledPostprocess, prepareEffectNodeForReplay, makePrecompiledAuxMaterial, cloneAuxArtifact, wireLiveNodeSidecarsToArtifact } from './slim-support/postprocess-effects-replay.js';
-export { renderPassWithFullRenderer, sharePassRenderTargetTextures } from './slim-support/pass-render-fallback.js';
+export { preparePrecompiledPostprocess, prepareEffectNodeForReplay, makePrecompiledAuxMaterial, cloneAuxArtifact, wireLiveNodeSidecarsToArtifact, artifactLooksLikeRetroPassMaterial } from './slim-support/postprocess-effects-replay.js';
+export { TRAA_RESOLVE_TEXTURE_NAME, TRAA_HISTORY_TEXTURE_NAME, TRAA_HISTORY_DEPTH_TEXTURE_NAME, nameTRAATextures, collectTRAASelfTextures, getTRAABeautyTexture, getTRAAVelocityTexture, getTRAACurrentDepthTexture, wireTRAAResolveArtifact } from './slim-support/traa-replay.js';
+export { renderOffscreenOverrideWithFullRenderer, renderPassWithFullRenderer, sharePassRenderTargetTextures, shareRenderTargetTextures } from './slim-support/pass-render-fallback.js';
 export { loadInspectorOptional } from './inspector-loader.js';
 export { MaterialVariantSet, createMaterialVariants, applyMaterialVariant } from './material-variants.js';

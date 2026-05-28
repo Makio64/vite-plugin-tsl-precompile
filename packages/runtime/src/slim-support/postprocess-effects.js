@@ -39,6 +39,7 @@
  */
 
 import { attachArtifactTextureRefsWhere } from './artifact-texture-wiring.js';
+import { wireTRAAResolveArtifact } from './traa-replay.js';
 
 /** @type {Map<string, Object>} */
 const HANDLERS = new Map();
@@ -174,7 +175,6 @@ function walkForEffects( node, out, seen, depth, cap ) {
 	if ( handler ) {
 
 		if ( ! out.some( ( entry ) => entry.node === node ) ) out.push( { handler, node } );
-		return;
 
 	}
 
@@ -337,8 +337,8 @@ registerEffectHandler( {
 		const material = subPass.material;
 		const artifact = material && material.precompiledArtifact;
 		if ( ! artifact || ! sourceMaterial ) return;
-		const direction = sourceMaterial.direction;
-		const invSize = sourceMaterial.invSize;
+		const direction = material && material.direction !== undefined ? material.direction : sourceMaterial.direction;
+		const invSize = material && material.invSize !== undefined ? material.invSize : sourceMaterial.invSize;
 		if ( ! direction && ! invSize ) return;
 		const vec2Slots = [];
 		for ( const group of artifact.uniformPlan || [] ) {
@@ -717,6 +717,15 @@ registerEffectHandler( {
 
 		}
 		return out;
+
+	},
+	wireSubPassTextures( subPass, node, opts ) {
+
+		if ( ! subPass || subPass.shape !== 'traa-resolve' ) return;
+		const material = subPass.material;
+		const artifact = material && material.precompiledArtifact;
+		if ( ! artifact ) return;
+		wireTRAAResolveArtifact( artifact, node, opts || {} );
 
 	},
 } );

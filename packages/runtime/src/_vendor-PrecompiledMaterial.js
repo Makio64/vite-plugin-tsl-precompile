@@ -1,7 +1,11 @@
 // VENDORED from three.js fork branch `tsl-precompile`
 // Source: src/materials/nodes/PrecompiledMaterial.js
 // See packages/plugin/src/vendor/VENDORING.md for upgrade policy.
-import { Material, Color, Vector2, Vector3, Vector4 } from 'three';
+import { Material } from 'three/src/materials/Material.js';
+import { Color } from 'three/src/math/Color.js';
+import { Vector2 } from 'three/src/math/Vector2.js';
+import { Vector3 } from 'three/src/math/Vector3.js';
+import { Vector4 } from 'three/src/math/Vector4.js';
 
 /**
  * A material that carries a precompiled TSL artifact produced by

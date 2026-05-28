@@ -7,6 +7,7 @@ import {
 	makePrecompiledAuxMaterial,
 	cloneAuxArtifact,
 	wireLiveNodeSidecarsToArtifact,
+	artifactLooksLikeRetroPassMaterial,
 } from '../src/slim-support/postprocess-effects-replay.js';
 import {
 	registerEffectHandler,
@@ -14,6 +15,10 @@ import {
 	findEffectHandler,
 	__resetEffectHandlersForTests,
 } from '../src/slim-support/postprocess-effects.js';
+import {
+	collectTRAASelfTextures,
+	wireTRAAResolveArtifact,
+} from '../src/slim-support/traa-replay.js';
 
 // ---------------------------------------------------------------------------
 // Stub PrecompiledMaterial — mirrors the real class's contract: takes an
@@ -92,6 +97,65 @@ function makeBloomLikeNode( opts = {} ) {
 
 }
 
+function makeTRAAResolveArtifact() {
+
+	return {
+		version: 3,
+		shape: 'traa-resolve',
+		uniformPlan: [
+			{
+				slots: [],
+				textures: [
+					{ source: { kind: 'artifact.texture', textureUuid: 'captured-output', textureName: 'output' } },
+					{ source: { kind: 'artifact.texture', textureUuid: 'captured-velocity', textureName: 'velocity' } },
+					{ source: { kind: 'artifact.texture', textureUuid: 'captured-history', textureName: 'TRAANode.history' } },
+					{ source: { kind: 'depth.texture', textureUuid: 'captured-current-depth', fromMaterialGraph: true } },
+					{ source: { kind: 'depth.texture', textureUuid: 'captured-history-depth', fromMaterialGraph: true } },
+				],
+			},
+		],
+		defaults: {},
+		renderState: {},
+		fragmentShader: '',
+		vertexShader: '',
+	};
+
+}
+
+function makeTRAALikeNode() {
+
+	const textures = {
+		output: { isTexture: true, uuid: 'live-output', name: 'output' },
+		velocity: { isTexture: true, uuid: 'live-velocity', name: 'velocity' },
+		currentDepth: { isTexture: true, isDepthTexture: true, uuid: 'live-current-depth', name: 'depth' },
+		resolve: { isTexture: true, uuid: 'live-resolve', name: '' },
+		history: { isTexture: true, uuid: 'live-history', name: '' },
+		historyDepth: { isTexture: true, isDepthTexture: true, uuid: 'live-history-depth', name: '' },
+	};
+	const passNode = {
+		name: 'Pre Pass',
+		__tslpPassIndex: 0,
+		getTexture( name ) {
+
+			if ( name === 'output' ) return textures.output;
+			if ( name === 'velocity' ) return textures.velocity;
+			if ( name === 'depth' ) return textures.currentDepth;
+			return null;
+
+		},
+	};
+	const node = {
+		type: 'TRAANode',
+		_resolveMaterial: { name: 'traa-resolve-source', fragmentNode: { isNode: true } },
+		_resolveRenderTarget: { texture: textures.resolve },
+		_historyRenderTarget: { texture: textures.history, depthTexture: textures.historyDepth },
+		beautyNode: { passNode },
+		depthNode: {},
+	};
+	return { node, passNode, textures };
+
+}
+
 function makeLoadAux( shapes ) {
 
 	const map = new Map();
@@ -118,6 +182,21 @@ test( 'cloneAuxArtifact deep-clones — separate uniformPlan slots and textures'
 
 } );
 
+test( 'artifactLooksLikeRetroPassMaterial uses browser-safe string checks', () => {
+
+	assert.equal( artifactLooksLikeRetroPassMaterial( {
+		vertexShader: 'nodeVar10 = vec4<f32>( round( nodeVar9.xy ), nodeVar9.zw );',
+	} ), true );
+	assert.equal( artifactLooksLikeRetroPassMaterial( {
+		vertexShader: 'let pixel = position.xy * screenSize;',
+	} ), true );
+	assert.equal( artifactLooksLikeRetroPassMaterial( {
+		vertexShader: 'fn main() -> vec4<f32> { return vec4<f32>( 1.0 ); }',
+	} ), false );
+	assert.equal( artifactLooksLikeRetroPassMaterial( null ), false );
+
+} );
+
 test( 'makePrecompiledAuxMaterial returns a PrecompiledMaterial with a cloned artifact and mirrors uniforms', () => {
 
 	const loadAux = makeLoadAux( [ 'bloom-blur-0' ] );
@@ -126,17 +205,25 @@ test( 'makePrecompiledAuxMaterial returns a PrecompiledMaterial with a cloned ar
 		colorTexture: { value: null },
 		direction: { isUniformNode: true, name: 'direction', value: { isVector2: true, x: 1, y: 0 } },
 		invSize: { isUniformNode: true, name: 'invSize', value: { isVector2: true, x: 0.001, y: 0.001 } },
+		toneMapped: true,
 	};
 	const mat = makePrecompiledAuxMaterial( 'bloom-blur-0', source, { loadAux, PrecompiledMaterial: StubPrecompiledMaterial } );
+	const mat2 = makePrecompiledAuxMaterial( 'bloom-blur-0', source, { loadAux, PrecompiledMaterial: StubPrecompiledMaterial } );
 	assert.ok( mat instanceof StubPrecompiledMaterial );
 	assert.equal( mat.name, 'live-blur-0' );
 	assert.equal( mat.precompiledArtifact.shape, 'bloom-blur-0' );
 	// Cloned, not aliased
 	assert.notEqual( mat.precompiledArtifact, loadAux._map.get( 'bloom-blur-0' ) );
-	// Uniforms mirrored
-	assert.equal( mat.colorTexture, source.colorTexture );
-	assert.equal( mat.direction, source.direction );
+	// Mutable blur sidecars are cloned so replay rewiring does not mutate the source material.
+	assert.notEqual( mat.colorTexture, source.colorTexture );
+	assert.deepEqual( mat.colorTexture, source.colorTexture );
+	assert.notEqual( mat.direction, source.direction );
+	assert.deepEqual( mat.direction.value, source.direction.value );
 	assert.equal( mat.invSize, source.invSize );
+	assert.equal( mat.toneMapped, false, 'bloom aux materials render into intermediate targets without tone mapping' );
+	assert.equal( typeof mat.customProgramCacheKey, 'function' );
+	assert.equal( typeof mat2.customProgramCacheKey, 'function' );
+	assert.notEqual( mat.customProgramCacheKey(), mat2.customProgramCacheKey(), 'blur materials with cloned sidecars must not share a node-builder cache key' );
 	assert.equal( mat.needsUpdate, true );
 
 } );
@@ -270,6 +357,75 @@ test( 'prepareEffectNodeForReplay attaches live postprocess textures by name', (
 
 } );
 
+test( 'wireTRAAResolveArtifact attaches output, velocity, history, and depth textures', () => {
+
+	const { node, passNode, textures } = makeTRAALikeNode();
+	const artifact = makeTRAAResolveArtifact();
+	const stats = wireTRAAResolveArtifact( artifact, node, { passNodes: [ passNode ] } );
+
+	assert.deepEqual( stats, { outputAttached: 1, velocityAttached: 1, historyAttached: 1, depthAttached: 2 } );
+	assert.equal( textures.resolve.name, 'TRAANode.resolve' );
+	assert.equal( textures.history.name, 'TRAANode.history' );
+	assert.equal( textures.historyDepth.name, 'TRAANode.history.depth' );
+
+	const refs = artifact._textureRefs;
+	assert.ok( refs instanceof Map, 'TRAA wiring populates _textureRefs' );
+	assert.equal( refs.get( 'captured-output' ), textures.output );
+	assert.equal( refs.get( 'captured-velocity' ), textures.velocity );
+	assert.equal( refs.get( 'captured-history' ), textures.history );
+	assert.equal( refs.get( 'captured-current-depth' ), textures.currentDepth );
+	assert.equal( refs.get( 'captured-history-depth' ), textures.historyDepth );
+
+	const sources = artifact.uniformPlan[ 0 ].textures.map( ( entry ) => entry.source );
+	assert.equal( sources[ 3 ].kind, 'artifact.texture' );
+	assert.equal( sources[ 3 ].textureName, 'depth' );
+	assert.equal( sources[ 3 ].__tslpPassDepthAttached, true );
+	assert.equal( sources[ 4 ].kind, 'artifact.texture' );
+	assert.equal( sources[ 4 ].textureName, 'TRAANode.history.depth' );
+	assert.equal( sources[ 4 ].__tslpPassDepthAttached, true );
+
+} );
+
+test( 'collectTRAASelfTextures excludes upstream pass inputs', () => {
+
+	const { node, textures } = makeTRAALikeNode();
+	const selfTextures = collectTRAASelfTextures( node );
+
+	assert.equal( selfTextures.has( textures.resolve ), true );
+	assert.equal( selfTextures.has( textures.history ), true );
+	assert.equal( selfTextures.has( textures.historyDepth ), true );
+	assert.equal( selfTextures.has( textures.output ), false );
+	assert.equal( selfTextures.has( textures.velocity ), false );
+	assert.equal( selfTextures.has( textures.currentDepth ), false );
+
+} );
+
+test( 'prepareEffectNodeForReplay wires TRAA resolve texture refs for real runtime callers', () => {
+
+	const { node, passNode, textures } = makeTRAALikeNode();
+	const handler = findEffectHandler( node );
+	assert.equal( handler && handler.name, 'traa', 'TRAA handler should match the fake TRAA node' );
+
+	const loadAux = ( shape ) => shape === 'traa-resolve' ? makeTRAAResolveArtifact() : null;
+	const result = prepareEffectNodeForReplay( handler, node, {
+		loadAux,
+		PrecompiledMaterial: StubPrecompiledMaterial,
+		passNodes: [ passNode ],
+	} );
+
+	assert.equal( result.missed.length, 0, 'no misses expected for TRAA resolve: ' + JSON.stringify( result.missed ) );
+	assert.equal( result.prepared.length, 1 );
+	assert.ok( node._resolveMaterial instanceof StubPrecompiledMaterial );
+
+	const refs = node._resolveMaterial.precompiledArtifact._textureRefs;
+	assert.equal( refs.get( 'captured-output' ), textures.output );
+	assert.equal( refs.get( 'captured-velocity' ), textures.velocity );
+	assert.equal( refs.get( 'captured-history' ), textures.history );
+	assert.equal( refs.get( 'captured-current-depth' ), textures.currentDepth );
+	assert.equal( refs.get( 'captured-history-depth' ), textures.historyDepth );
+
+} );
+
 test( 'prepareEffectNodeForReplay records missed shapes when aux is absent', () => {
 
 	const loadAux = makeLoadAux( [ 'bloom-high-pass' ] ); // intentionally missing blur + composite
@@ -307,6 +463,25 @@ test( 'preparePrecompiledPostprocess walks the registry and prepares all matched
 	const handlers = new Set( result.prepared.map( ( p ) => p.handler ) );
 	assert.ok( handlers.has( 'bloom' ) );
 	assert.ok( handlers.has( 'outline' ) );
+
+} );
+
+test( 'preparePrecompiledPostprocess forwards passNodes for TRAA depth replay', () => {
+
+	const { node, passNode, textures } = makeTRAALikeNode();
+	const loadAux = ( shape ) => shape === 'traa-resolve' ? makeTRAAResolveArtifact() : null;
+	const result = preparePrecompiledPostprocess( {
+		outputNode: { post: node },
+		loadAux,
+		PrecompiledMaterial: StubPrecompiledMaterial,
+		passNodes: [ passNode ],
+	} );
+
+	assert.equal( result.effects, 1 );
+	assert.equal( result.missed.length, 0, 'TRAA public prepare path should not miss: ' + JSON.stringify( result.missed ) );
+	const refs = node._resolveMaterial.precompiledArtifact._textureRefs;
+	assert.equal( refs.get( 'captured-current-depth' ), textures.currentDepth );
+	assert.equal( refs.get( 'captured-history-depth' ), textures.historyDepth );
 
 } );
 
@@ -381,6 +556,65 @@ test( 'wireLiveNodeSidecarsToArtifact refuses same-dtype anonymous mismatches', 
 	assert.equal( slots[ 0 ]._liveNode, iterations );
 	assert.equal( slots[ 1 ]._liveNode, multiplier );
 	assert.equal( slots[ 2 ]._liveNode, iterations, 'duplicate snapshots may share the same live UniformNode' );
+
+} );
+
+test( 'wireLiveNodeSidecarsToArtifact does not dtype-wire anonymous captured scalars', () => {
+
+	const artifact = {
+		uniformPlan: [
+			{
+				slots: [
+					{ dtype: 'number', source: { kind: 'uniform.live', valueSnapshot: { type: 'number', data: 0.08 } } },
+				],
+			},
+		],
+	};
+	const sourceMaterial = {
+		fragmentNode: {
+			isNode: true,
+			wrongScalar: { isUniformNode: true, value: 0 },
+		},
+	};
+
+	const counters = wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, { overlay: true } );
+	const slot = artifact.uniformPlan[ 0 ].slots[ 0 ];
+	assert.equal( counters.uniformsMatched, 0 );
+	assert.equal( slot._liveNode, undefined );
+	assert.equal( slot.__tslpLiveSidecarOverlay, undefined );
+
+} );
+
+test( 'wireLiveNodeSidecarsToArtifact wires VolumeNodeMaterial.steps by shader usage', () => {
+
+	const artifact = {
+		uniformPlan: [
+			{
+				slots: [
+					{
+						name: 'steps',
+						dtype: 'int',
+						source: { kind: 'uniform.live', valueSnapshot: { type: 'number', data: 0 } },
+					},
+				],
+			},
+		],
+		fragmentShader: 'let maxSteps = f32( object.steps ); for ( var i = 0; i < object.steps; i ++ ) {}',
+	};
+	const sourceMaterial = {
+		isVolumeNodeMaterial: true,
+		steps: 24,
+	};
+
+	const counters = wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, { overlay: true } );
+	const slot = artifact.uniformPlan[ 0 ].slots[ 0 ];
+	assert.equal( counters.uniformsMatched, 1 );
+	assert.equal( slot._liveNode.value, 24 );
+	assert.equal( slot.__tslpLiveSidecarOverlay, true );
+	assert.deepEqual( slot.source.valueSnapshot, { type: 'int', data: 24 } );
+
+	sourceMaterial.steps = 48;
+	assert.equal( slot._liveNode.value, 48 );
 
 } );
 

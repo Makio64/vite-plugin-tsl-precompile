@@ -197,6 +197,8 @@ export function writeMaterialValue( view, offset, material, source, kind, dtype 
 	else if ( dtype === 'vec4' ) writeVec4( view, offset, value, snapshot );
 	else if ( dtype === 'mat3' ) writeMat3( view, offset, value, snapshot );
 	else if ( dtype === 'mat4' ) writeMat4( view, offset, value, snapshot );
+	else if ( dtype === 'int' || dtype === 'i32' ) writeInt( view, offset, value, snapshot );
+	else if ( dtype === 'uint' || dtype === 'u32' ) writeUint( view, offset, value, snapshot );
 	else writeNumber( view, offset, value, snapshot );
 
 }
@@ -332,7 +334,8 @@ export function writeUniformGroup( group, frame, view, material ) {
 			const property = source.property;
 			const owner = frame.object || material && material.__tslpPrecompileObject || null;
 			const node = owner && property != null ? owner[ property ] : null;
-			if ( node && node.value !== undefined && node.value !== null ) writeLiveValue( view, offset, node.value, slot.dtype );
+			const value = node && node.value !== undefined ? node.value : node;
+			if ( value !== undefined && value !== null ) writeLiveValue( view, offset, value, slot.dtype );
 			else writeSnapshot( view, offset, source.valueSnapshot, slot.dtype );
 
 		} else if ( kind === 'object3d.userData' ) {

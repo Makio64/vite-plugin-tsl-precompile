@@ -39,8 +39,9 @@ import { textureBindingFallbacks, makeViewportFallback } from './hydrate/fallbac
 import { clippingPlaneSetsForFrame, selectClippingPlaneArray } from './hydrate/clipping-planes.js';
 import { applyCapturedInstancedDrawCount, bindUserNodeAttributesToArtifact, bindUserStorageBuffersToArtifact, hydrateNodeAttributes } from './hydrate/user-attributes.js';
 import { updateDynamicLightUniforms } from './hydrate/dynamic-light-buffers.js';
+import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
 
-export { clearLiveTextureIndex, registerLiveTexture } from './hydrate/live-texture-registry.js';
+export { clearLiveTextureIndex, installTextureLoaderTracking, registerLiveTexture } from './hydrate/live-texture-registry.js';
 
 installLiveTextureRegistryPatches();
 
@@ -72,7 +73,7 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 	// payload. The original artifact identity is preserved (same _textureRefs,
 	// same _liveUpdateNodes, same captureClock, etc.) — we only swap the
 	// fields that depend on the render-state cacheKey.
-	const effective = selectArtifactVariant( artifact, cacheKey );
+	const effective = selectArtifactVariant( artifact, cacheKey, material );
 
 	// Bind live BufferAttributes from the user's `*Node` material props
 	// (e.g. `material.positionNode = instancedBufferAttribute(buf)`) onto
@@ -176,6 +177,7 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 		build() { /* no-op: artifact is already baked */ },
 		buildAsync: async () => { /* no-op */ },
 	};
+	recordHydratedAttributeDiagnostic( artifact, effective, base, material, object );
 
 	// Wrap in a Proxy that returns a no-op function for any OTHER method
 	// lookup the renderer might do. Keeps forward-compatibility with
@@ -189,6 +191,48 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 			return () => undefined;
 
 		},
+	} );
+
+}
+
+function recordHydratedAttributeDiagnostic( artifact, effective, state, material, object ) {
+
+	if ( typeof globalThis === 'undefined' || ! globalThis.__tslpHarnessDiagnostics ) return;
+	const diag = globalThis.__tslpHarnessDiagnostics;
+	const list = diag.hydratedNodeAttributes || ( diag.hydratedNodeAttributes = [] );
+	if ( list.length >= 24 ) return;
+	const dataIds = new Map();
+	let nextDataId = 0;
+	const attributes = Array.isArray( state && state.nodeAttributes ) ? state.nodeAttributes : [];
+	list.push( {
+		name: artifact && ( artifact.name || artifact.__name ) || effective && ( effective.name || effective.materialShape ) || '',
+		material: material && ( material.name || material.type ) || '',
+		objectType: object && object.type || '',
+		isInstancedMesh: object && object.isInstancedMesh === true,
+		objectCount: object && object.count,
+		attributes: attributes.map( ( entry ) => {
+
+			const attribute = entry && entry.node && entry.node.attribute || null;
+			const data = attribute && attribute.data || null;
+			let dataId = null;
+			if ( data ) {
+
+				if ( ! dataIds.has( data ) ) dataIds.set( data, ++ nextDataId );
+				dataId = dataIds.get( data );
+
+			}
+			return {
+				name: entry && entry.name || '',
+				count: attribute && attribute.count,
+				itemSize: attribute && attribute.itemSize,
+				interleaved: attribute && attribute.isInterleavedBufferAttribute === true,
+				instanced: attribute && ( attribute.isInstancedBufferAttribute === true || data && data.isInstancedInterleavedBuffer === true ),
+				stride: data && data.stride,
+				offset: attribute && attribute.offset,
+				dataId,
+			};
+
+		} ),
 	} );
 
 }
@@ -727,6 +771,7 @@ function createUniformUpdateNode( artifact, uniformBuffers, material ) {
 				if ( generatedUpdateGroup ) {
 
 					generatedUpdateGroup( frame, frameMaterial, view, 0, group.name || '' );
+					writeFrozenUniformLiveSnapshots( group, view );
 					writeLiveUniformSidecars( group, view );
 
 				} else {
@@ -742,6 +787,25 @@ function createUniformUpdateNode( artifact, uniformBuffers, material ) {
 
 		},
 	};
+
+}
+
+function writeFrozenUniformLiveSnapshots( group, view ) {
+
+	for ( const slot of group && group.slots || [] ) {
+
+		const source = slot && slot.source || {};
+		if ( source.kind !== 'uniform.live' || source.property ) continue;
+		const value = slot && slot._liveNode && slot._liveNode.value;
+		if ( slot.__tslpLiveSidecarOverlay === true && value !== null && value !== undefined ) continue;
+		const snapshot = source.valueSnapshot || ( Object.prototype.hasOwnProperty.call( source, 'value' )
+			? { type: source.valueType, data: source.value }
+			: null );
+		if ( ! snapshot ) continue;
+		const offset = slot.offset ?? slot.byteOffset ?? 0;
+		writeSnapshot( view, offset, snapshot, slot.dtype );
+
+	}
 
 }
 
@@ -814,14 +878,20 @@ function createStaticObserver() {
  * sidecars (_textureRefs, _liveUpdateNodes, captureClock, mrtOutputCount, …)
  * from the artifact.
  *
+ * If the live cache key does not match, MRT replays get a second chance to
+ * select a variant by the material's active attachment count. Precompiled
+ * materials use their own program cache key at replay time, so the stock
+ * capture-time cache key is not always reproducible.
+ *
  * Falls back to returning `artifact` unchanged when:
  *   - the artifact has no `variants` field (legacy single-variant capture)
  *   - the live `cacheKey` is null/undefined (in-process flows that don't
- *     route through the patched `Nodes.js:getForRender`)
- *   - no variant entry matches the live `cacheKey` (render-state diverged
- *     from anything captured — caller should fall through to a full-renderer
- *     fallback when this happens, but we still return something usable so
- *     today's hot path doesn't throw)
+ *     route through the patched `Nodes.js:getForRender`) and no MRT output
+ *     count can be inferred from the material
+ *   - no variant entry matches the live `cacheKey` or requested output count
+ *     (render-state diverged from anything captured — caller should fall
+ *     through to a full-renderer fallback when this happens, but we still
+ *     return something usable so today's hot path doesn't throw)
  *
  * The returned object preserves identity for non-enumerable sidecar access
  * via property forwarding — `effective._textureRefs` reads from `artifact._textureRefs`,
@@ -829,11 +899,20 @@ function createStaticObserver() {
  *
  * @param {Object} artifact
  * @param {?number|?string} cacheKey
+ * @param {?Object} material
  * @returns {Object} `artifact` (when no variant lookup applies) or a merged view
  */
-function selectArtifactVariant( artifact, cacheKey ) {
+function selectArtifactVariant( artifact, cacheKey, material = null ) {
 
 	if ( ! artifact || ! artifact.variants || cacheKey === null || cacheKey === undefined ) {
+
+		const targetCount = materialMRTOutputCount( material );
+		if ( targetCount > 1 ) {
+
+			const variant = selectVariantForOutputCount( artifact, targetCount );
+			if ( variant ) return mergeArtifactVariantView( artifact, variant );
+
+		}
 
 		return artifact;
 
@@ -841,7 +920,51 @@ function selectArtifactVariant( artifact, cacheKey ) {
 
 	const key = String( cacheKey );
 	const variant = artifact.variants[ key ];
-	if ( ! variant ) return artifact;
+	if ( variant ) return mergeArtifactVariantView( artifact, variant );
+
+	const targetCount = materialMRTOutputCount( material );
+	if ( targetCount > 1 ) {
+
+		const outputVariant = selectVariantForOutputCount( artifact, targetCount );
+		if ( outputVariant ) return mergeArtifactVariantView( artifact, outputVariant );
+
+	}
+
+	return artifact;
+
+}
+
+function materialMRTOutputCount( material ) {
+
+	const mrt = material && material.mrtNode;
+	const outputMap = mrt && ( mrt.outputNodes || mrt.nodes );
+	return outputMap && typeof outputMap === 'object' ? Object.keys( outputMap ).length : 0;
+
+}
+
+function selectVariantForOutputCount( artifact, targetCount ) {
+
+	const variants = artifact && artifact.variants && typeof artifact.variants === 'object' ? artifact.variants : null;
+	if ( ! variants || targetCount <= 1 ) return null;
+
+	let best = null;
+	let bestCount = Infinity;
+	for ( const variant of Object.values( variants ) ) {
+
+		const count = countArtifactFragmentOutputs( variant, 1 );
+		if ( count >= targetCount && count < bestCount ) {
+
+			best = variant;
+			bestCount = count;
+
+		}
+
+	}
+	return best;
+
+}
+
+function mergeArtifactVariantView( artifact, variant ) {
 
 	// Shallow merge: variant fields override top-level. Object.assign skips
 	// non-enumerable properties (which is what we want — _textureRefs,

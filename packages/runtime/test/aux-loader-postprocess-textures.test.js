@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { attachPostprocessTextureRefs, attachPostprocessUpdateBeforeNodes } from '../src/aux-loader.js';
+import { attachPostprocessObject3DTargets, attachPostprocessTextureRefs, attachPostprocessUpdateBeforeNodes } from '../src/aux-loader.js';
 
 function makeArtifact() {
 
@@ -88,5 +88,40 @@ test( 'attachPostprocessUpdateBeforeNodes wires pass and in-process effect nodes
 	} );
 
 	assert.deepEqual( artifact._liveUpdateBeforeNodes, [ passNode, bloomNode ] );
+
+} );
+
+test( 'attachPostprocessObject3DTargets binds a PassNode camera to the material', () => {
+
+	const camera = { name: 'pass-camera' };
+	const material = { __tslpObject3DTargets: { previous: true } };
+	const outputNode = {
+		nested: {
+			passNode: {
+				isPassNode: true,
+				camera,
+				constructor: { type: 'PassNode' },
+			},
+		},
+	};
+	const result = attachPostprocessObject3DTargets( material, outputNode );
+
+	assert.equal( result, material );
+	assert.equal( material.__tslpObject3DTargets.camera, camera );
+	assert.equal( material.__tslpObject3DTargets.previous, true );
+	assert.equal( Object.getOwnPropertyDescriptor( material, '__tslpObject3DTargets' ).enumerable, false );
+
+} );
+
+test( 'attachPostprocessObject3DTargets skips RetroPassNode cameras', () => {
+
+	const material = {};
+	attachPostprocessObject3DTargets( material, {
+		isPassNode: true,
+		camera: { name: 'retro-camera' },
+		constructor: { type: 'RetroPassNode' },
+	} );
+
+	assert.equal( material.__tslpObject3DTargets, undefined );
 
 } );

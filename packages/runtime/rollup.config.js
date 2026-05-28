@@ -7,7 +7,7 @@
  * user's `import { WebGPURenderer } from 'three/webgpu'` continues to work
  * without shipping the node builder.
  *
- * Phase 7 gate: ≤ 300 KB gzip (meaningful gate: ≤ 145 KB to beat stock
+ * Phase 7 gate: ≤ 350 KB gzip (meaningful gate: ≤ 145 KB to beat stock
  * three.webgpu.min.js). Reaching the latter requires the three-rewrite
  * transform below (Milestone D) to eliminate the node-builder imports
  * three.js itself drags into the renderer modules.

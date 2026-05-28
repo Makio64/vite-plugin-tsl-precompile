@@ -28,6 +28,7 @@ import { normalizeRevision } from './_normalize-revision.js';
 import { hashMaterialSync } from './graph-hash.js';
 import { registerArtifact } from './artifact-loader.js';
 import { MATERIAL_NODE_TEXTURE_KEYS } from '@tsl-precompile/contract/texture-props';
+import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
 
 let installed = false;
 let devEndpoint = null;
@@ -49,9 +50,120 @@ let lastSeenArrayCamera = null;
 const inflight = new Set();   // names currently being captured (suppresses dup POSTs)
 const sessionDone = new Set();   // names captured this session (suppresses needless re-POST)
 
+function importOptionalModule( specifier ) {
+
+	return import( /* @vite-ignore */ specifier );
+
+}
+
 const LIGHT_NODE_GRAPH_PROPS = [
 	'colorNode',
 ];
+
+function artifactLooksMRT( artifact ) {
+
+	return !! ( artifact && typeof artifact.mrtOutputCount === 'number' && artifact.mrtOutputCount > 0 );
+
+}
+
+function selectPreferredCaptureArtifact( current, candidate ) {
+
+	if ( ! current ) return candidate;
+	if ( ! candidate ) return current;
+
+	const currentUsable = countArtifactFragmentOutputs( current, 1 ) > 0;
+	const candidateUsable = countArtifactFragmentOutputs( candidate, 1 ) > 0;
+	if ( candidateUsable && ! currentUsable ) return candidate;
+
+	if ( candidateUsable && artifactLooksMRT( current ) && ! artifactLooksMRT( candidate ) ) return candidate;
+
+	return current;
+
+}
+
+function artifactVariantPayload( artifact ) {
+
+	return {
+		cacheKey: artifact.cacheKey,
+		materialShape: artifact.materialShape,
+		sourceMaterial: artifact.sourceMaterial,
+		vertexShader: artifact.vertexShader,
+		fragmentShader: artifact.fragmentShader,
+		computeShader: artifact.computeShader,
+		transforms: artifact.transforms,
+		attributes: artifact.attributes,
+		nodeAttributes: artifact.nodeAttributes,
+		bindings: artifact.bindings,
+		uniformPlan: artifact.uniformPlan,
+		mrtOutputCount: artifact.mrtOutputCount,
+		mrtOutputNames: artifact.mrtOutputNames,
+		mrtBlendModes: artifact.mrtBlendModes,
+	};
+
+}
+
+function mergeArtifactTextureRefs( target, source ) {
+
+	const sourceRefs = source && source._textureRefs;
+	if ( ! ( sourceRefs instanceof Map ) || sourceRefs.size === 0 ) return;
+	const existingRefs = target._textureRefs instanceof Map ? target._textureRefs : null;
+	const refs = existingRefs || new Map();
+	let changed = false;
+	for ( const [ uuid, texture ] of sourceRefs ) {
+
+		if ( refs.has( uuid ) ) continue;
+		refs.set( uuid, texture );
+		changed = true;
+
+	}
+	if ( ! changed ) return;
+	if ( existingRefs ) return;
+	Object.defineProperty( target, '_textureRefs', {
+		value: refs,
+		enumerable: false,
+		configurable: true,
+		writable: true,
+	} );
+
+}
+
+function collectMaterialVariantList( artifactSets, materialUuid ) {
+
+	const variants = [];
+	const seen = new Set();
+	for ( const artifacts of artifactSets ) {
+
+		const list = artifacts && artifacts.byMaterialVariants && artifacts.byMaterialVariants.get( materialUuid );
+		if ( ! Array.isArray( list ) ) continue;
+		for ( const variant of list ) {
+
+			if ( ! variant || variant.cacheKey === undefined || variant.cacheKey === null ) continue;
+			const key = String( variant.cacheKey );
+			if ( seen.has( key ) ) continue;
+			seen.add( key );
+			variants.push( variant );
+
+		}
+
+	}
+	return variants;
+
+}
+
+function attachMaterialVariantFamily( artifact, variantList ) {
+
+	if ( ! artifact || ! Array.isArray( variantList ) || variantList.length <= 1 ) return;
+	const variants = {};
+	for ( const variant of variantList ) {
+
+		if ( ! variant || variant.cacheKey === undefined || variant.cacheKey === null ) continue;
+		variants[ String( variant.cacheKey ) ] = artifactVariantPayload( variant );
+		mergeArtifactTextureRefs( artifact, variant );
+
+	}
+	if ( Object.keys( variants ).length > 1 ) artifact.variants = variants;
+
+}
 
 function objectSourceMetadata( object ) {
 
@@ -62,6 +174,7 @@ function objectSourceMetadata( object ) {
 		castShadow: object.castShadow === true,
 		receiveShadow: object.receiveShadow === true,
 		isInstancedMesh: object.isInstancedMesh === true,
+		count: Number.isFinite( object.count ) ? object.count : null,
 		isSkinnedMesh: object.isSkinnedMesh === true,
 		position: object.position ? [ object.position.x, object.position.y, object.position.z ] : null,
 		scale: object.scale ? [ object.scale.x, object.scale.y, object.scale.z ] : null,
@@ -84,6 +197,7 @@ function materialSourceMetadata( material, sourceObject = null ) {
 	}
 	return {
 		type: material && typeof material.type === 'string' ? material.type : null,
+		name: material && typeof material.name === 'string' ? material.name : '',
 		nodeProps,
 		object: objectSourceMetadata( sourceObject ),
 	};
@@ -99,6 +213,7 @@ function materialSourceMetadata( material, sourceObject = null ) {
  * @param {?string} [opts.devEndpoint] - e.g. 'http://localhost:5173/__tsl-precompile/capture'.
  * @param {?Function} [opts.extractor] - `(renderer, scene, camera, options) => Promise<artifacts>`.
  *   Defaults to a dynamic import of `vite-plugin-tsl-precompile/src/vendor/compileTSL.js`.
+ * @param {?Function} [opts.codegen] - Test/advanced override for updater validation.
  */
 export function installPrecompileMarker( three, opts = {} ) {
 
@@ -106,6 +221,7 @@ export function installPrecompileMarker( three, opts = {} ) {
 	devEndpoint = opts.devEndpoint || null;
 	devEndpointDead = false;
 	extractor = opts.extractor || null;
+	codegen = opts.codegen || null;
 
 	if ( installed ) return;
 	installed = true;
@@ -232,7 +348,7 @@ async function autoAttachInspectorPanel( inspector ) {
 		// not statically try to resolve it at dev-server boot. The panel is
 		// optional; consumers without it just hit the catch below at runtime.
 		const inspectorPanelSpecifier = '@tsl-precompile/inspector-panel';
-		const mod = await import( /* @vite-ignore */ inspectorPanelSpecifier );
+		const mod = await importOptionalModule( inspectorPanelSpecifier );
 		if ( typeof mod.attachToInspector === 'function' ) mod.attachToInspector( inspector );
 
 	} catch ( err ) {
@@ -268,17 +384,17 @@ async function captureMaterialInDev( material, name ) {
 
 		if ( ! extractor ) {
 
-			const mod = await import( /* @vite-ignore */ 'vite-plugin-tsl-precompile/src/vendor/compileTSL.js' );
-			extractor = mod.compileTSL;
+				const mod = await import( /* @vite-ignore */ 'vite-plugin-tsl-precompile/src/vendor/compileTSL.js' );
+				extractor = mod.compileTSL;
 
-		}
+			}
 
-		if ( ! codegen ) {
+			if ( ! codegen ) {
 
-			const mod = await import( /* @vite-ignore */ 'vite-plugin-tsl-precompile/src/emit-updater.js' );
-			codegen = mod.emitUpdaterSource;
+				const mod = await import( /* @vite-ignore */ 'vite-plugin-tsl-precompile/src/emit-updater.js' );
+				codegen = mod.emitUpdaterSource;
 
-		}
+			}
 
 		// Build a minimal synthetic scene that drives this single material.
 		// Scene-driven capture can attach a source object so custom update nodes
@@ -399,13 +515,15 @@ async function captureMaterialInDev( material, name ) {
 
 			}
 
-			// A plain Mesh starts with count=1, so the generic property-copy loop
-			// above intentionally skips the InstancedMesh count that Three's
-			// MorphNode uses to select the per-instance morph texture path.
-			// Preserve it explicitly for synthetic capture so instanced morph demos
-			// compile the same shader branch as the live object.
-			if ( sourceObject.isInstancedMesh === true && sourceObject.count > 1 ) mesh.count = sourceObject.count;
+			// A plain Mesh starts with count=1. Preserve explicit draw counts for
+			// both InstancedMesh and shader-instanced Mesh patterns such as
+			// `mesh.count = N` with StorageInstancedBufferAttribute inputs.
+			if ( sourceObject.count > 1 ) mesh.count = sourceObject.count;
+			if ( sourceObject.layers && mesh.layers ) mesh.layers.mask = sourceObject.layers.mask;
 
+		}
+		if ( camera && camera.layers && mesh.layers && ! camera.layers.test( mesh.layers ) ) {
+			mesh.layers.mask = camera.layers.mask;
 		}
 		// Force-disable frustum culling on the throwaway mesh. Even after the
 		// `boundingSphere` skip above, the source object may still have other
@@ -485,15 +603,42 @@ async function captureMaterialInDev( material, name ) {
 		}
 
 		const artifacts = await extractor( devRenderer, scene, camera, extractorOpts );
+		const artifactSets = [ artifacts ];
 
-		let artifact = artifacts.byMaterialUuid && artifacts.byMaterialUuid.get( material.uuid );
-		if ( ! artifact ) {
+		// Pass/global MRT captures can produce a pre-pass shader for the same
+		// material that later renders to the canvas/color target. Capture a
+		// non-MRT sibling variant as part of the same author-facing artifact so
+		// downstream apps get cache-key selection instead of needing the batch
+		// harness' historical `:color` duplicate material name.
+		if ( mrtNode && mrtNode !== materialMRTNode ) {
 
-			for ( const a of artifacts ) {
+			try {
 
-				if ( a.materialUuid === material.uuid ) { artifact = a; break; }
+				const colorArtifacts = await extractor( devRenderer, scene, camera, { noGlobalMRT: true } );
+				artifactSets.push( colorArtifacts );
+
+			} catch ( err ) {
+
+				console.warn( `[tsl-precompile] .precompile(${ JSON.stringify( name ) }): non-MRT variant capture failed; continuing with MRT artifact only.`, err );
 
 			}
+
+		}
+
+		let artifact = null;
+		for ( const set of artifactSets ) {
+
+			let candidate = set.byMaterialUuid && set.byMaterialUuid.get( material.uuid );
+			if ( ! candidate ) {
+
+				for ( const a of set ) {
+
+					if ( a.materialUuid === material.uuid ) { candidate = a; break; }
+
+				}
+
+			}
+			artifact = selectPreferredCaptureArtifact( artifact, candidate );
 
 		}
 
@@ -514,35 +659,7 @@ async function captureMaterialInDev( material, name ) {
 		// whose live `renderObject.cacheKey` doesn't match the captured one
 		// render with the wrong WGSL. Attach all variants on the preferred
 		// artifact so the runtime can pick the right one per render.
-		const variantList = artifacts.byMaterialVariants && artifacts.byMaterialVariants.get( material.uuid );
-		if ( Array.isArray( variantList ) && variantList.length > 1 ) {
-
-			const variants = {};
-			for ( const v of variantList ) {
-
-				if ( ! v || v.cacheKey === undefined || v.cacheKey === null ) continue;
-				// Lightweight per-variant payload — only the fields the
-				// hydrator actually needs to swap. Top-level artifact carries
-				// everything else (textureRefs, mrtOutputCount, captureClock).
-				variants[ String( v.cacheKey ) ] = {
-					cacheKey: v.cacheKey,
-					vertexShader: v.vertexShader,
-					fragmentShader: v.fragmentShader,
-					computeShader: v.computeShader,
-					transforms: v.transforms,
-					attributes: v.attributes,
-					nodeAttributes: v.nodeAttributes,
-					bindings: v.bindings,
-					uniformPlan: v.uniformPlan,
-					mrtOutputCount: v.mrtOutputCount,
-					mrtOutputNames: v.mrtOutputNames,
-					mrtBlendModes: v.mrtBlendModes,
-				};
-
-			}
-			if ( Object.keys( variants ).length > 1 ) artifact.variants = variants;
-
-		}
+		attachMaterialVariantFamily( artifact, collectMaterialVariantList( artifactSets, material.uuid ) );
 
 		const hash = hashMaterialSync( material, {
 			name,

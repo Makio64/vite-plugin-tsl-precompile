@@ -1,4 +1,6 @@
-import { DataArrayTexture, Data3DTexture, DataTexture } from 'three';
+import { DataTexture } from 'three/src/textures/DataTexture.js';
+import { Data3DTexture } from 'three/src/textures/Data3DTexture.js';
+import { DataArrayTexture } from 'three/src/textures/DataArrayTexture.js';
 import StorageTexture from 'three/src/renderers/common/StorageTexture.js';
 import Storage3DTexture from 'three/src/renderers/common/Storage3DTexture.js';
 import StorageArrayTexture from 'three/src/renderers/common/StorageArrayTexture.js';
@@ -30,6 +32,7 @@ const _registeredAnonDataTextures = new WeakSet();
 const _storageNames = new WeakMap();
 
 let _patchesInstalled = false;
+let _bareThreePatchPromise = null;
 
 function imageSrcForTexture( texture ) {
 
@@ -78,6 +81,126 @@ export function registerLiveTexture( texture ) {
 
 }
 
+function normalizeLoaderUrl( url ) {
+
+	if ( typeof url === 'string' ) return url;
+	if ( Array.isArray( url ) ) return url.filter( ( item ) => typeof item === 'string' && item.length > 0 ).join( '|' );
+	return url !== undefined && url !== null ? String( url ) : '';
+
+}
+
+function markLoaderTexture( texture, url ) {
+
+	if ( ! texture || texture.isTexture !== true ) return false;
+	const loaderUrl = normalizeLoaderUrl( url );
+	if ( loaderUrl ) {
+
+		if ( ! texture.userData || typeof texture.userData !== 'object' ) texture.userData = {};
+		if ( typeof texture.userData.__tslpLoaderUrl !== 'string' || texture.userData.__tslpLoaderUrl.length === 0 ) texture.userData.__tslpLoaderUrl = loaderUrl;
+		if ( ! texture.name ) {
+
+			const firstUrl = Array.isArray( url ) ? url.find( ( item ) => typeof item === 'string' && item.length > 0 ) : loaderUrl;
+			const base = basenameFromUrl( firstUrl );
+			if ( base ) texture.name = base;
+
+		}
+
+	}
+	registerLiveTexture( texture );
+	return true;
+
+}
+
+function loaderCtorsFrom( loaders ) {
+
+	if ( ! loaders ) return [];
+	if ( typeof loaders === 'function' ) return [ loaders ];
+	if ( Array.isArray( loaders ) ) return loaders.filter( Boolean );
+	if ( typeof loaders === 'object' ) {
+
+		return [
+			loaders.TextureLoader,
+			loaders.CubeTextureLoader,
+			loaders.DataTextureLoader,
+			loaders.CompressedTextureLoader,
+			loaders.ImageBitmapLoader,
+		].filter( Boolean );
+
+	}
+	return [];
+
+}
+
+/**
+ * Patch three.js texture loader classes so every returned/loaded Texture is
+ * registered in the live texture registry by URL/name. This is product
+ * runtime plumbing for JSON-loaded artifacts whose captured texture UUIDs are
+ * dead in the user's browser session, especially aux/shadow artifacts that do
+ * not have a user material instance to catalogue at `__applyPrecompiled()`
+ * time.
+ *
+ * Accepts a three namespace (`{ TextureLoader, CubeTextureLoader, ... }`), a
+ * single loader constructor, or an array of constructors. Idempotent per
+ * constructor.
+ *
+ * @param {Object|Function|Array<Function>} loaders
+ * @param {{ onTextureLoad?: Function }} [opts]
+ * @return {number} number of constructors newly patched
+ */
+export function installTextureLoaderTracking( loaders, opts = {} ) {
+
+	const ctors = loaderCtorsFrom( loaders );
+	let patched = 0;
+	for ( const Ctor of ctors ) {
+
+		if ( ! Ctor || ! Ctor.prototype || typeof Ctor.prototype.load !== 'function' ) continue;
+		if ( Ctor.prototype.__tslpTextureLoaderTrackingPatched === true ) continue;
+		const originalLoad = Ctor.prototype.load;
+		Object.defineProperty( Ctor.prototype, '__tslpTextureLoaderTrackingPatched', {
+			value: true,
+			enumerable: false,
+			configurable: true,
+		} );
+		Ctor.prototype.load = function ( url, onLoad, onProgress, onError ) {
+
+			let returnedTexture = null;
+			const notify = ( texture ) => {
+
+				if ( ! markLoaderTexture( texture, url ) ) return;
+				if ( typeof opts.onTextureLoad === 'function' ) {
+
+					try { opts.onTextureLoad( texture, { loader: Ctor, url } ); } catch ( _ ) {}
+
+				}
+
+			};
+			const wrappedOnLoad = ( value, ...rest ) => {
+
+				try {
+
+					notify( value && value.isTexture === true ? value : returnedTexture );
+					if ( typeof onLoad === 'function' ) return onLoad.call( this, value, ...rest );
+					return undefined;
+
+				} finally {
+
+					notify( returnedTexture );
+
+				}
+
+			};
+			returnedTexture = originalLoad.call( this, url, wrappedOnLoad, onProgress, onError );
+			notify( returnedTexture );
+			return returnedTexture;
+
+		};
+		patched ++;
+
+	}
+	return patched;
+
+}
+
 export function clearLiveTextureIndex() {
 
 	_liveTexturesBySrc.clear();
@@ -91,16 +214,41 @@ export function clearLiveTextureIndex() {
 
 }
 
-export function installLiveTextureRegistryPatches() {
+function patchRegistryConstructors( namespace ) {
 
-	if ( _patchesInstalled ) return;
-	_patchesInstalled = true;
-	_patchStorageTextureName( StorageTexture );
-	_patchStorageTextureName( Storage3DTexture );
-	_patchStorageTextureName( StorageArrayTexture );
-	_patchDataTextureRegister( DataTexture );
-	_patchDataTextureRegister( Data3DTexture );
-	_patchDataTextureRegister( DataArrayTexture );
+	if ( ! namespace || typeof namespace !== 'object' ) return;
+	_patchStorageTextureName( namespace.StorageTexture );
+	_patchStorageTextureName( namespace.Storage3DTexture );
+	_patchStorageTextureName( namespace.StorageArrayTexture );
+	_patchDataTextureRegister( namespace.DataTexture );
+	_patchDataTextureRegister( namespace.Data3DTexture );
+	_patchDataTextureRegister( namespace.DataArrayTexture );
+
+}
+
+function queueBareThreePatch() {
+
+	if ( _bareThreePatchPromise ) return _bareThreePatchPromise;
+	_bareThreePatchPromise = import( 'three' ).then( patchRegistryConstructors ).catch( () => null );
+	return _bareThreePatchPromise;
+
+}
+
+export function installLiveTextureRegistryPatches( namespace = null ) {
+
+	if ( ! _patchesInstalled ) {
+
+		_patchesInstalled = true;
+		_patchStorageTextureName( StorageTexture );
+		_patchStorageTextureName( Storage3DTexture );
+		_patchStorageTextureName( StorageArrayTexture );
+		_patchDataTextureRegister( DataTexture );
+		_patchDataTextureRegister( Data3DTexture );
+		_patchDataTextureRegister( DataArrayTexture );
+		queueBareThreePatch();
+
+	}
+	patchRegistryConstructors( namespace );
 
 }
 

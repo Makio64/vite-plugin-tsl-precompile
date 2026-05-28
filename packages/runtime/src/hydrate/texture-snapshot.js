@@ -11,9 +11,11 @@ import {
 	RedFormat,
 	RGBAFormat,
 	RGFormat,
-	RGBFormat,
 	UnsignedByteType,
 } from 'three';
+
+const RGBFormat = 1022; // Deprecated and removed in modern Three.js
+
 
 import { inferTextureTypeFromShader } from './texture-resolver.js';
 import { resolveTypedArrayCtor } from './typed-arrays.js';

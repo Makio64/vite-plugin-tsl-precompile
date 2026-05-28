@@ -20,8 +20,9 @@ export function wireLiveUniformSidecarsToArtifact( artifact, sourceMaterial ) {
 
 	if ( ! artifact || ! sourceMaterial ) return 0;
 	const uniformNodes = collectLiveUniformNodes( sourceMaterial );
-	if ( uniformNodes.length === 0 ) return 0;
-	return wireLiveUniformSlots( artifact, uniformNodes, { overlay: true } );
+	const uniformMatches = wireLiveUniformSlots( artifact, uniformNodes, { overlay: true } );
+	const materialMatches = wireVolumeMaterialStepsSlot( artifact, sourceMaterial, { overlay: true } );
+	return uniformMatches + materialMatches;
 
 }
 
@@ -29,11 +30,17 @@ export function wireLiveUniformSidecarsToArtifact( artifact, sourceMaterial ) {
  * Wire the live runtime uniform/update nodes from `sourceMaterial`'s
  * node graph back onto `artifact`'s uniform slots.
  *
+ * `overlay` is reserved for normal user materials whose live UniformNodes are
+ * authoritative at draw time. Aux/postprocess artifacts should still collect
+ * sidecars for update hooks, but leave generic uniform overlays disabled so
+ * effect-specific handlers stay in charge of replay-time uniforms.
+ *
  * @param {Object} artifact
  * @param {Object} sourceMaterial
+ * @param {{ overlay?: boolean }} [opts]
  * @return {{ uniformsMatched: number, updateNodes: number, updateBeforeNodes: number, updateAfterNodes: number }}
  */
-export function wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial ) {
+export function wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, opts = {} ) {
 
 	const counters = { uniformsMatched: 0, updateNodes: 0, updateBeforeNodes: 0, updateAfterNodes: 0 };
 	if ( ! artifact || ! sourceMaterial ) return counters;
@@ -47,7 +54,8 @@ export function wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial ) {
 	counters.updateBeforeNodes = collected.updateBeforeNodes.length;
 	counters.updateAfterNodes = collected.updateAfterNodes.length;
 
-	counters.uniformsMatched = wireLiveUniformSlots( artifact, collected.uniformNodes );
+	counters.uniformsMatched = wireLiveUniformSlots( artifact, collected.uniformNodes, { overlay: opts.overlay === true } );
+	counters.uniformsMatched += wireVolumeMaterialStepsSlot( artifact, sourceMaterial, { overlay: opts.overlay === true } );
 	return counters;
 
 }
@@ -95,15 +103,31 @@ function wireLiveUniformSlots( artifact, uniformNodes, options = {} ) {
 
 			const source = ( slot && slot.source ) || {};
 			if ( source.kind !== 'uniform.live' || slot._liveNode ) continue;
+			const hasCapturedValue = uniformSlotHasCapturedValue( slot );
 			let match = null;
 			if ( source.name ) {
 
 				match = uniformNodes.find( ( node ) => ! used.has( node ) && node.name === source.name && valueMatchesUniformSlot( node.value, slot ) );
 				if ( ! match ) match = uniformNodes.find( ( node ) => node.name === source.name && valueMatchesUniformSlot( node.value, slot ) );
+				if ( ! match ) match = uniformNodes.find( ( node ) => ! used.has( node ) && node.name === source.name && valueMatchesDtype( node.value, slot.dtype || '' ) );
+				if ( ! match ) match = uniformNodes.find( ( node ) => node.name === source.name && valueMatchesDtype( node.value, slot.dtype || '' ) );
 
 			}
 			if ( ! match ) match = uniformNodes.find( ( node ) => ! used.has( node ) && valueMatchesUniformSlot( node.value, slot ) );
 			if ( ! match ) match = uniformNodes.find( ( node ) => valueMatchesUniformSlot( node.value, slot ) );
+			const dtype = slot.dtype || slot.source && slot.source.valueSnapshot && slot.source.valueSnapshot.type || '';
+			if ( ! match && ( ! hasCapturedValue || ! isScalarUniformDtype( dtype ) ) ) {
+
+				const dtypeMatches = uniformNodes.filter( ( node ) => ! used.has( node ) && valueMatchesDtype( node.value, dtype ) );
+				if ( dtypeMatches.length === 1 ) match = dtypeMatches[ 0 ];
+				else {
+
+					const allDtypeMatches = uniformNodes.filter( ( node ) => valueMatchesDtype( node.value, dtype ) );
+					if ( allDtypeMatches.length === 1 ) match = allDtypeMatches[ 0 ];
+
+				}
+
+			}
 			if ( ! match ) continue;
 			Object.defineProperty( slot, '_liveNode', {
 				value: match,
@@ -129,6 +153,87 @@ function wireLiveUniformSlots( artifact, uniformNodes, options = {} ) {
 	}
 
 	return matched;
+
+}
+
+function wireVolumeMaterialStepsSlot( artifact, sourceMaterial, options = {} ) {
+
+	if ( ! artifact || ! isVolumeNodeMaterial( sourceMaterial ) ) return 0;
+	const steps = Number( sourceMaterial.steps );
+	if ( ! Number.isFinite( steps ) || steps <= 0 ) return 0;
+	let matched = 0;
+	for ( const group of artifact.uniformPlan || [] ) {
+
+		for ( const slot of group.slots || [] ) {
+
+			if ( ! isVolumeStepsUniformSlot( artifact, slot ) ) continue;
+			const liveSteps = {};
+			Object.defineProperty( liveSteps, 'value', {
+				get() {
+
+					const current = Number( sourceMaterial.steps );
+					return Number.isFinite( current ) && current > 0 ? current : steps;
+
+				},
+				enumerable: false,
+				configurable: true,
+			} );
+			Object.defineProperty( slot, '_liveNode', {
+				value: liveSteps,
+				enumerable: false,
+				configurable: true,
+				writable: true,
+			} );
+			if ( options.overlay === true ) {
+
+				Object.defineProperty( slot, '__tslpLiveSidecarOverlay', {
+					value: true,
+					enumerable: false,
+					configurable: true,
+					writable: true,
+				} );
+
+			}
+			if ( slot.source && slot.source.valueSnapshot && Number( slot.source.valueSnapshot.data ) <= 0 ) {
+
+				slot.source.valueSnapshot = { type: 'int', data: steps };
+
+			}
+			matched ++;
+
+		}
+
+	}
+	return matched;
+
+}
+
+function isVolumeNodeMaterial( material ) {
+
+	return !! ( material && ( material.isVolumeNodeMaterial === true || material.type === 'VolumeNodeMaterial' || material.constructor && material.constructor.name === 'VolumeNodeMaterial' ) );
+
+}
+
+function volumeStepsShaderSource( artifact ) {
+
+	if ( ! artifact ) return '';
+	return [
+		artifact.fragmentShader,
+		artifact.fragment,
+		artifact.wgsl,
+		artifact.code,
+	].filter( ( value ) => typeof value === 'string' ).join( '\n' );
+
+}
+
+function isVolumeStepsUniformSlot( artifact, slot ) {
+
+	if ( ! artifact || ! slot || ! slot.name ) return false;
+	const source = slot.source || {};
+	if ( source.kind !== 'uniform.live' || slot.dtype !== 'int' ) return false;
+	const shader = volumeStepsShaderSource( artifact );
+	if ( shader === '' ) return false;
+	return shader.includes( `f32( object.${ slot.name } )` ) && shader.includes( `i < object.${ slot.name }` );
 
 }
 
@@ -210,11 +315,29 @@ function appendArtifactSidecars( artifact, key, nodes ) {
 
 }
 
+function isScalarUniformDtype( dtype ) {
+
+	return dtype === 'number' || dtype === 'float' || dtype === 'f32' || dtype === 'int' || dtype === 'uint' || dtype === 'i32' || dtype === 'u32';
+
+}
+
+function uniformSlotHasCapturedValue( slot ) {
+
+	const source = slot && slot.source || {};
+	return !! source.valueSnapshot || Object.prototype.hasOwnProperty.call( source, 'value' );
+
+}
+
 function valueMatchesUniformSlot( value, slot ) {
 
 	if ( ! slot ) return false;
-	const snapshot = slot.source && ( slot.source.valueSnapshot || slot.source.value );
-	if ( snapshot ) return snapshotMatchesValue( snapshot, value, slot.dtype );
+	const source = slot.source || {};
+	if ( source.valueSnapshot ) return snapshotMatchesValue( source.valueSnapshot, value, slot.dtype );
+	if ( Object.prototype.hasOwnProperty.call( source, 'value' ) ) {
+
+		return snapshotMatchesValue( { type: source.valueType || source.uniformType || slot.dtype, data: source.value }, value, slot.dtype );
+
+	}
 	return valueMatchesDtype( value, slot.dtype || '' );
 
 }

@@ -44,6 +44,23 @@ export { wireLiveNodeSidecarsToArtifact } from './live-node-sidecars.js';
 const PREPARED_FLAG = '__tslpEffectReplayReady';
 
 /**
+ * Detect the generated scene material used by three.js's RetroPassNode.
+ *
+ * The replay path needs this in browser-generated modules, so keep it as
+ * simple string checks instead of a regexp that has to survive another
+ * template-literal/codegen escaping layer.
+ *
+ * @param {Object} artifact
+ * @return {boolean}
+ */
+export function artifactLooksLikeRetroPassMaterial( artifact ) {
+
+	const vertexShader = artifact && typeof artifact.vertexShader === 'string' ? artifact.vertexShader : '';
+	return vertexShader.includes( 'round(' ) || vertexShader.includes( 'screenSize' );
+
+}
+
+/**
  * Public entry point. Walks the live post-processing graph rooted at
  * `postProcessing.outputNode` (or `outputNode` directly), finds every
  * registered effect node, and prepares each one for slim replay.
@@ -55,6 +72,7 @@ const PREPARED_FLAG = '__tslpEffectReplayReady';
  * @param {Function} args.PrecompiledMaterial - Class that wraps an aux artifact for the hydrator's fast-path.
  * @param {string}   [args.auxConfigHash='tslp-e2e-bypass'] - Config-hash to request from `loadAux`. Set to the captured hash if you want strict matching; the default lets `loadAux`'s shape-fallback policy pick whichever capture is registered for the shape.
  * @param {Object}   [args.sharedContext]  - Forwarded to `handler.forceSetup` for effects whose `setup()` reads from a context object (e.g. bloom).
+ * @param {Array}    [args.passNodes]      - Optional live PassNode list for effects whose aux artifacts need current pass depth textures (TRAA).
  * @param {Object}   [args.diagnostics]    - Optional bag; per-handler counters are written under `diagnostics.byHandler[ handler.name ]`.
  * @return {{ effects: number, prepared: Array, missed: Array }}
  */
@@ -88,6 +106,7 @@ export function preparePrecompiledPostprocess( args = {} ) {
 			PrecompiledMaterial: args.PrecompiledMaterial,
 			auxConfigHash: args.auxConfigHash || 'tslp-e2e-bypass',
 			sharedContext: args.sharedContext || null,
+			passNodes: Array.isArray( args.passNodes ) ? args.passNodes : null,
 			effectIndex,
 		} );
 
@@ -121,6 +140,7 @@ export function preparePrecompiledPostprocess( args = {} ) {
  * @param {Function} opts.PrecompiledMaterial
  * @param {string}   [opts.auxConfigHash='tslp-e2e-bypass']
  * @param {Object}   [opts.sharedContext]
+ * @param {Array}    [opts.passNodes]
  * @param {number}   [opts.effectIndex=0]
  * @return {{ prepared: Array, missed: Array, alreadyPrepared: boolean }}
  */
@@ -199,7 +219,7 @@ export function prepareEffectNodeForReplay( handler, node, opts = {} ) {
 		// Let the handler run effect-specific uniform wiring (e.g. bloom's
 		// direction/invSize matching) against the *replacement* material
 		// (so the hooks see `replacement.precompiledArtifact`).
-		wireLiveNodeSidecarsToArtifact( replacement.precompiledArtifact, subPass.material, replacement );
+		wireLiveNodeSidecarsToArtifact( replacement.precompiledArtifact, subPass.material );
 		attachPostprocessTextureRefs( replacement.precompiledArtifact, node );
 
 		const subPassWithReplacement = { ...subPass, material: replacement };
@@ -305,6 +325,7 @@ export function makePrecompiledAuxMaterial( shape, sourceMaterial, opts = {} ) {
 	const cloned = cloneAuxArtifact( artifact );
 	const material = new opts.PrecompiledMaterial( cloned );
 	material.name = ( sourceMaterial && sourceMaterial.name ) || shape;
+	isolateClonedSidecarCacheKey( material, shape );
 
 	// Mirror commonly-referenced uniform nodes from the source material so
 	// effect-specific render loops (e.g. bloom's `material.colorTexture`,
@@ -314,11 +335,17 @@ export function makePrecompiledAuxMaterial( shape, sourceMaterial, opts = {} ) {
 
 		if ( sourceMaterial && sourceMaterial[ key ] !== undefined && material[ key ] === undefined ) {
 
-			material[ key ] = sourceMaterial[ key ];
+			material[ key ] = shouldCloneMirrorSidecar( shape, key ) ? cloneLiveUniformSidecar( sourceMaterial[ key ] ) : sourceMaterial[ key ];
 
 		}
 
 	}
+	for ( const key of MATERIAL_RENDER_STATE_KEYS ) {
+
+		if ( sourceMaterial && sourceMaterial[ key ] !== undefined ) material[ key ] = sourceMaterial[ key ];
+
+	}
+	if ( typeof shape === 'string' && shape.startsWith( 'bloom-' ) ) material.toneMapped = false;
 	material.needsUpdate = true;
 	return material;
 
@@ -331,6 +358,39 @@ export function makePrecompiledAuxMaterial( shape, sourceMaterial, opts = {} ) {
  * effect's existing `updateBefore` happy without scanning the node graph.
  */
 const MATERIAL_MIRROR_KEYS = [ 'colorTexture', 'direction', 'invSize', 'depthTexture', 'maskTexture', 'historyTexture' ];
+const MATERIAL_RENDER_STATE_KEYS = [ 'transparent', 'depthTest', 'depthWrite', 'toneMapped', 'blending', 'premultipliedAlpha' ];
+let clonedSidecarMaterialSerial = 0;
+
+function isolateClonedSidecarCacheKey( material, shape ) {
+
+	if ( ! material || typeof shape !== 'string' || ! shape.startsWith( 'bloom-blur-' ) ) return;
+	const base = typeof material.customProgramCacheKey === 'function'
+		? material.customProgramCacheKey()
+		: String( shape );
+	const suffix = ++ clonedSidecarMaterialSerial;
+	material.customProgramCacheKey = () => base + ':tslp-aux-instance:' + suffix;
+
+}
+
+function shouldCloneMirrorSidecar( shape, key ) {
+
+	return typeof shape === 'string' && shape.startsWith( 'bloom-blur-' )
+		&& ( key === 'colorTexture' || key === 'direction' );
+
+}
+
+function cloneLiveUniformSidecar( node ) {
+
+	if ( ! node || typeof node !== 'object' ) return node;
+	const value = node.value;
+	const clonedValue = value && typeof value.clone === 'function'
+		? value.clone()
+		: value && typeof value === 'object'
+			? { ...value }
+			: value;
+	return { value: clonedValue };
+
+}
 
 /**
  * Deep-clone an aux artifact. Used before mutating the artifact (texture

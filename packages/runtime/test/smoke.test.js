@@ -127,6 +127,42 @@ test( 'tier C: hydrator without variants field uses top-level fields unchanged',
 
 } );
 
+test( 'tier C: hydrator falls back to MRT output-count variant when cacheKey diverges', () => {
+
+	const artifact = {
+		vertexShader: 'vertex_single',
+		fragmentShader: 'fragment_single',
+		bindings: [],
+		nodeAttributes: [],
+		uniformPlan: [],
+		variants: {
+			'captured-mrt-key': {
+				cacheKey: 'captured-mrt-key',
+				vertexShader: 'vertex_mrt',
+				fragmentShader: 'fragment_mrt',
+				bindings: [],
+				nodeAttributes: [],
+				uniformPlan: [],
+				mrtOutputCount: 2,
+				mrtOutputNames: [ 'output', 'emissive' ],
+			},
+		},
+	};
+	const material = {
+		mrtNode: {
+			outputNodes: {
+				output: {},
+				emissive: {},
+			},
+		},
+	};
+
+	const state = hydrateNodeBuilderState( artifact, material, null, 'replay-cache-key' );
+	assert.equal( state.vertexShader, 'vertex_mrt' );
+	assert.equal( state.fragmentShader, 'fragment_mrt' );
+
+} );
+
 test( 'tier C: hydrator variant lookup preserves non-enumerable sidecars', () => {
 
 	// Sidecars like `_textureRefs`, `_liveUpdateNodes`, captureClock are
@@ -341,7 +377,7 @@ test( 'runtime hydrator disambiguates duplicate userPath attributes by encounter
 
 } );
 
-test( 'runtime hydrator binds anonymous instanceMatrix snapshots to the live object columns', () => {
+	test( 'runtime hydrator binds anonymous instanceMatrix snapshots to the live object columns', () => {
 
 	const matrix = new Float32Array( Array.from( { length: 32 }, ( _, i ) => i + 1 ) );
 	const object = {
@@ -372,6 +408,50 @@ test( 'runtime hydrator binds anonymous instanceMatrix snapshots to the live obj
 
 	const state = hydrateNodeBuilderState( artifact, material, object );
 	const columns = state.nodeAttributes.map( ( entry ) => entry.node.attribute );
+
+	for ( const column of columns ) assert.equal( column.isInstancedBufferAttribute, true );
+	assert.deepEqual( Array.from( columns[ 0 ].array ), [ 1, 2, 3, 4, 17, 18, 19, 20 ] );
+	assert.deepEqual( Array.from( columns[ 1 ].array ), [ 5, 6, 7, 8, 21, 22, 23, 24 ] );
+	assert.deepEqual( Array.from( columns[ 2 ].array ), [ 9, 10, 11, 12, 25, 26, 27, 28 ] );
+	assert.deepEqual( Array.from( columns[ 3 ].array ), [ 13, 14, 15, 16, 29, 30, 31, 32 ] );
+
+} );
+
+test( 'runtime hydrator still binds instanceMatrix columns beside storage vec4 attributes', () => {
+
+	const matrix = new Float32Array( Array.from( { length: 32 }, ( _, i ) => i + 1 ) );
+	const object = {
+		isInstancedMesh: true,
+		count: 2,
+		instanceMatrix: { array: matrix },
+	};
+	const material = {};
+	Object.defineProperty( material, '__tslpPrecompileObject', { value: object, configurable: true } );
+
+	const artifact = {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		attributes: [
+			{ name: 'nodeAttribute0', type: 'vec4', source: 'node', count: 2, itemSize: 4, arrayType: 'Float32Array', instanced: true, storage: true, userPath: [ 'positionNode' ] },
+			... [ 0, 1, 2, 3 ].map( ( column ) => ( {
+				name: `nodeAttribute${ column + 1 }`,
+				type: 'vec4',
+				source: 'node',
+				count: 2,
+				itemSize: 4,
+				arrayType: 'Float32Array',
+				instanced: true,
+				storage: false,
+				arraySnapshot: Array.from( matrix ),
+			} ) ),
+			{ name: 'nodeAttribute7', type: 'vec4', source: 'node', count: 2, itemSize: 4, arrayType: 'Float32Array', instanced: true, storage: true },
+		],
+		bindings: [],
+		uniformPlan: [],
+	};
+
+	const state = hydrateNodeBuilderState( artifact, material, object );
+	const columns = state.nodeAttributes.slice( 1, 5 ).map( ( entry ) => entry.node.attribute );
 
 	for ( const column of columns ) assert.equal( column.isInstancedBufferAttribute, true );
 	assert.deepEqual( Array.from( columns[ 0 ].array ), [ 1, 2, 3, 4, 17, 18, 19, 20 ] );
@@ -1372,6 +1452,69 @@ test( '__applyPrecompiled live sidecars feed the hydrated UBO after user mutatio
 
 } );
 
+test( '__applyPrecompiled live update sidecars refresh object-scoped uniform.live slots', () => {
+
+	const liveColor = {
+		isColor: true,
+		r: 0,
+		g: 0,
+		b: 0,
+		copy( color ) {
+
+			this.r = color.r;
+			this.g = color.g;
+			this.b = color.b;
+			return this;
+
+		},
+	};
+	const liveUniform = { isUniformNode: true, value: liveColor };
+	const objectColorNode = {
+		isNode: true,
+		uniformNode: liveUniform,
+		update( frame ) {
+
+			this.uniformNode.value.copy( frame.object.color );
+
+		},
+	};
+	const source = { colorNode: objectColorNode };
+	const artifact = {
+		__hash: 'sha256:object-live',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'object', kind: 'uniform-buffer', visibility: 7, byteLength: 16 },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			byteLength: 16,
+			slots: [
+				{ offset: 0, dtype: 'color', source: { kind: 'uniform.live', valueSnapshot: { type: 'color', data: [ 0.1, 0.2, 0.3 ] } } },
+			],
+		} ],
+		vertexShader: 'v',
+		fragmentShader: 'f',
+	};
+
+	const wrapped = __applyPrecompiled( source, {
+		__hash: 'sha256:object-live',
+		name: 'object-live',
+		artifact,
+	}, 'sha256:object-live' );
+	const state = hydrateNodeBuilderState( wrapped.precompiledArtifact, wrapped );
+	const frame = { time: 0, camera: null, material: wrapped, object: { color: { r: 0.8, g: 0.4, b: 0.2 } } };
+	for ( const node of state.updateNodes ) node.update( frame );
+
+	const ub = state.bindings[ 0 ].bindings[ 0 ];
+	const view = new DataView( ub.buffer.buffer );
+	assert.ok( Math.abs( view.getFloat32( 0, true ) - 0.8 ) < 0.001 );
+	assert.ok( Math.abs( view.getFloat32( 4, true ) - 0.4 ) < 0.001 );
+	assert.ok( Math.abs( view.getFloat32( 8, true ) - 0.2 ) < 0.001 );
+
+} );
+
 test( '__applyPrecompiled only forces single-pass for zero-thickness double-sided transmission', () => {
 
 	const baseModule = {
@@ -1517,6 +1660,26 @@ test( '__applyPrecompiled forwards mrtNode from source material when artifact ha
 
 } );
 
+test( '__applyPrecompiled preserves backdrop markers for renderer ordering', () => {
+
+	const backdropNode = { isNode: true, name: 'backdrop' };
+	const backdropAlphaNode = { isNode: true, name: 'backdrop-alpha' };
+	const wrapped = __applyPrecompiled( { name: 'backdrop-mat', backdropNode, backdropAlphaNode }, {
+		__hash: 'sha256:backdrop',
+		name: 'backdrop',
+		artifact: {
+			__hash: 'sha256:backdrop',
+			uniformPlan: [],
+			vertexShader: 'v',
+			fragmentShader: 'f',
+		},
+	}, 'sha256:backdrop' );
+
+	assert.equal( wrapped.backdropNode, backdropNode );
+	assert.equal( wrapped.backdropAlphaNode, backdropAlphaNode );
+
+} );
+
 test( '__applyPrecompiled prefers artifact-driven mrtNode over source.mrtNode', () => {
 
 	const sourceMrt = { isMRTNode: true, id: 'user-mrt', outputNodes: { a: {} } };
@@ -1609,6 +1772,41 @@ test( 'runtime hydrator overlays live sidecars after generated per-group updater
 	const view = new DataView( ub.buffer.buffer );
 	assert.equal( view.getFloat32( 0, true ), 0.625 );
 	assert.equal( view.getFloat32( 4, true ), 9.5 );
+
+} );
+
+test( 'runtime hydrator overlays snapshot-only uniform.live slots after generated per-group updater', () => {
+
+	const artifact = {
+		vertexShader: '', fragmentShader: '',
+		bindings: [ { name: 'object', bindings: [ { name: 'object', kind: 'uniform-buffer', visibility: 7, byteLength: 16 } ] } ],
+		uniformPlan: [ {
+			name: 'object',
+			shared: false,
+			byteLength: 16,
+			slots: [
+				{ offset: 0, dtype: 'number', source: { kind: 'uniform.live', property: 'opacity', valueType: 'number', valueSnapshot: { type: 'number', data: 0 } } },
+				{ offset: 4, dtype: 'number', source: { kind: 'uniform.live', valueSnapshot: { type: 'number', data: 7.77 } } },
+			],
+		} ],
+	};
+	Object.defineProperty( artifact, '_generatedUpdateGroup', {
+		value( frame, material, view, byteOffset ) {
+
+			view.setFloat32( byteOffset, material.opacity, true );
+			view.setFloat32( byteOffset + 4, - 1, true );
+
+		},
+		enumerable: false,
+	} );
+
+	const state = hydrateNodeBuilderState( artifact, { opacity: 0.625 } );
+	const ub = state.bindings[ 0 ].bindings[ 0 ];
+	state.updateNodes[ state.updateNodes.length - 1 ].update( { time: 0, camera: null } );
+
+	const view = new DataView( ub.buffer.buffer );
+	assert.equal( view.getFloat32( 0, true ), 0.625 );
+	assert.ok( Math.abs( view.getFloat32( 4, true ) - 7.77 ) < 0.001 );
 
 } );
 

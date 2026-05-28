@@ -1,5 +1,6 @@
 import { viewportMipTexture, viewportTexture } from 'three/src/nodes/display/ViewportTextureNode.js';
 import { viewportDepthTexture } from 'three/src/nodes/display/ViewportDepthTextureNode.js';
+import { viewportSharedTexture } from 'three/src/nodes/display/ViewportSharedTextureNode.js';
 
 import {
 	invalidateOnTextureResourceChange,
@@ -61,10 +62,12 @@ export function createViewportTextureRebinder( entries, deps = {} ) {
 	const createMipNode = deps.viewportMipTexture || viewportMipTexture;
 	const createPlainNode = deps.viewportTexture || viewportTexture;
 	const createDepthNode = deps.viewportDepthTexture || viewportDepthTexture;
+	const createSharedNode = deps.viewportSharedTexture || viewportSharedTexture;
 	let mipNode = null;
 	let plainNode = null;
 	let depthNode = null;
-	const lastCopyRenderId = { mip: -1, plain: -1, depth: -1 };
+	let sharedNode = null;
+	const lastCopyRenderId = { mip: -1, plain: -1, depth: -1, shared: -1 };
 	const lastSeen = new WeakMap();
 
 	return {
@@ -99,12 +102,13 @@ export function createViewportTextureRebinder( entries, deps = {} ) {
 
 				}
 
-				const variant = entry.isDepth ? 'depth' : entry.generateMipmaps ? 'mip' : 'plain';
-				let node = variant === 'depth' ? depthNode : variant === 'mip' ? mipNode : plainNode;
+				const variant = entry.isDepth ? 'depth' : entry.shared === true && entry.generateMipmaps !== true ? 'shared' : entry.generateMipmaps ? 'mip' : 'plain';
+				let node = variant === 'depth' ? depthNode : variant === 'shared' ? sharedNode : variant === 'mip' ? mipNode : plainNode;
 				if ( ! node ) {
 
-					node = variant === 'depth' ? createDepthNode() : variant === 'mip' ? createMipNode() : createPlainNode();
+					node = variant === 'depth' ? createDepthNode() : variant === 'shared' ? createSharedNode() : variant === 'mip' ? createMipNode() : createPlainNode();
 					if ( variant === 'depth' ) depthNode = node;
+					else if ( variant === 'shared' ) sharedNode = node;
 					else if ( variant === 'mip' ) mipNode = node;
 					else plainNode = node;
 

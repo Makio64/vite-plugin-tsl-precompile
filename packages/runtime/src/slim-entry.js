@@ -24,13 +24,208 @@ export const __TSLP_SLIM__ = true;
 // ---- three.js core (scene graph, math, cameras, geometries, materials,
 //      lights, helpers, loaders, animation) ----------------------------
 // Three.Core.js is the big barrel of all non-TSL / non-renderer exports.
-// It brings ~120 classes. Earlier we tried an allowlist to shrink this,
-// but every real example ends up needing obscure symbols (InterleavedBuffer,
-// EventDispatcher, Controls base, CylinderGeometry, …). The size cost of
-// `export *` here is bounded — tree-shaking still drops classes nobody
-// imports because `Three.Core.js` is ESM-re-export-style.
-export * from 'three/src/Three.Core.js';
-export { warnOnce } from 'three/src/utils.js';
+// Keep this public surface as an allowlist: `export *` makes every core
+// symbol part of the slim bundle's namespace, so Rollup must retain a lot of
+// otherwise-unused classes. The list below is the WebGPU examples surface plus
+// the construction basics covered by the slim smoke tests.
+export {
+	ACESFilmicToneMapping,
+	AdditiveBlending,
+	AgXToneMapping,
+	AnimationClip,
+	AmbientLight,
+	AnimationMixer,
+	ArrayCamera,
+	BackSide,
+	BasicShadowMap,
+	BatchedMesh,
+	Bone,
+	Box2,
+	Box3,
+	BoxGeometry,
+	BoxHelper,
+	BufferAttribute,
+	BufferGeometry,
+	BufferGeometryLoader,
+	CameraHelper,
+	CanvasTexture,
+	CapsuleGeometry,
+	CatmullRomCurve3,
+	CineonToneMapping,
+	CircleGeometry,
+	ClampToEdgeWrapping,
+	Color,
+	ColorManagement,
+	Compatibility,
+	CompressedTexture,
+	ConeGeometry,
+	Controls,
+	CubeCamera,
+	CubeDepthTexture,
+	CubeReflectionMapping,
+	CubeRefractionMapping,
+	CubeTexture,
+	CubeTextureLoader,
+	CylinderGeometry,
+	Data3DTexture,
+	DataArrayTexture,
+	DataTexture,
+	DataTextureLoader,
+	DataUtils,
+	DefaultLoadingManager,
+	DepthFormat,
+	DepthStencilFormat,
+	DepthTexture,
+	DirectionalLight,
+	DirectionalLightHelper,
+	DodecahedronGeometry,
+	DoubleSide,
+	DynamicDrawUsage,
+	EquirectangularReflectionMapping,
+	EquirectangularRefractionMapping,
+	Euler,
+	EventDispatcher,
+	FileLoader,
+	Float32BufferAttribute,
+	FloatType,
+	Fog,
+	FogExp2,
+	FramebufferTexture,
+	FrontSide,
+	Frustum,
+	GLSL3,
+	GreaterEqualCompare,
+	GridHelper,
+	Group,
+	HalfFloatType,
+	HemisphereLight,
+	IcosahedronGeometry,
+	ImageBitmapLoader,
+	InstancedBufferAttribute,
+	InstancedBufferGeometry,
+	InstancedInterleavedBuffer,
+	InstancedMesh,
+	Interpolant,
+	InterpolateDiscrete,
+	InterpolateLinear,
+	InterleavedBuffer,
+	InterleavedBufferAttribute,
+	InterpolationSamplingMode,
+	InterpolationSamplingType,
+	KeyframeTrack,
+	Layers,
+	LessCompare,
+	LessEqualCompare,
+	LightProbe,
+	Line,
+	Line3,
+	LineBasicMaterial,
+	LineDashedMaterial,
+	LineLoop,
+	LineSegments,
+	LinearFilter,
+	LinearMipMapLinearFilter,
+	LinearMipmapLinearFilter,
+	LinearMipmapNearestFilter,
+	LinearSRGBColorSpace,
+	LinearToneMapping,
+	Loader,
+	LoaderUtils,
+	LoadingManager,
+	MOUSE,
+	Material,
+	MathUtils,
+	Matrix3,
+	Matrix4,
+	Mesh,
+	MeshBasicMaterial,
+	MeshLambertMaterial,
+	MeshMatcapMaterial,
+	MeshNormalMaterial,
+	MeshPhongMaterial,
+	MeshPhysicalMaterial,
+	MeshStandardMaterial,
+	MeshToonMaterial,
+	MirroredRepeatWrapping,
+	NearestFilter,
+	NearestMipmapLinearFilter,
+	NearestMipmapNearestFilter,
+	NeutralToneMapping,
+	NoColorSpace,
+	NoToneMapping,
+	NormalBlending,
+	NumberKeyframeTrack,
+	Object3D,
+	ObjectLoader,
+	OctahedronGeometry,
+	OrthographicCamera,
+	PCFShadowMap,
+	PCFSoftShadowMap,
+	Path,
+	PerspectiveCamera,
+	Plane,
+	PlaneGeometry,
+	PointLight,
+	Points,
+	PointsMaterial,
+	PolyhedronGeometry,
+	PropertyBinding,
+	Quaternion,
+	QuaternionKeyframeTrack,
+	REVISION,
+	RGBAFormat,
+	RGFormat,
+	Ray,
+	Raycaster,
+	RectAreaLight,
+	RedFormat,
+	ReinhardToneMapping,
+	RenderTarget,
+	RenderTarget3D,
+	RepeatWrapping,
+	RingGeometry,
+	SRGBColorSpace,
+	Scene,
+	ShadowMaterial,
+	Skeleton,
+	SkeletonHelper,
+	SkinnedMesh,
+	Sphere,
+	SphereGeometry,
+	Spherical,
+	SpotLight,
+	SpotLightHelper,
+	Sprite,
+	StereoCamera,
+	TOUCH,
+	TetrahedronGeometry,
+	Texture,
+	TextureLoader,
+	Timer,
+	TimestampQuery,
+	TorusGeometry,
+	TorusKnotGeometry,
+	TriangleFanDrawMode,
+	TriangleStripDrawMode,
+	TrianglesDrawMode,
+	UVMapping,
+	UniformsGroup,
+	UnsignedByteType,
+	UnsignedIntType,
+	VSMShadowMap,
+	Vector2,
+	Vector3,
+	Vector4,
+	VectorKeyframeTrack,
+	VideoFrameTexture,
+	VideoTexture,
+	WebGLCoordinateSystem,
+	WebGPUCoordinateSystem,
+	WireframeGeometry,
+	error,
+	warn,
+	warnOnce,
+} from 'three/src/Three.Core.js';
 
 // ---- three.js WebGPU renderer + common surface --------------------------
 import WebGPURenderer from 'three/src/renderers/webgpu/WebGPURenderer.js';
@@ -88,18 +283,11 @@ export {
 } from './_vendor-PrecompiledArtifactRegistry.js';
 export { __applyPrecompiled } from './apply-precompiled.js';
 export { registerArtifact, getArtifact } from './artifact-loader.js';
-export { hydrateNodeBuilderState, registerLiveTexture, clearLiveTextureIndex } from './hydrator.js';
+export { hydrateNodeBuilderState, registerLiveTexture, clearLiveTextureIndex, installTextureLoaderTracking } from './hydrator.js';
 export { getTextureResolutionDebugHook, setTextureResolutionDebugHook } from './hydrate/artifact-texture-resolver.js';
-export { registerAuxArtifact, registerAuxArtifacts, loadAux, hasAux, listAux, findAux, bindAuxConfig, bindAuxByName, attachArtifactTextureRefs, attachPostprocessTextureRefs, attachPostprocessUpdateBeforeNodes, wireViewportTextureRefs, setupViewportTextureClasses } from './aux-loader.js';
+export { registerAuxArtifact, registerAuxArtifacts, loadAux, hasAux, listAux, findAux, bindAuxConfig, bindAuxByName, attachArtifactTextureRefs, attachPostprocessTextureRefs, attachPostprocessUpdateBeforeNodes, attachPostprocessObject3DTargets, wireViewportTextureRefs, setupViewportTextureClasses } from './aux-loader.js';
 export { hashNodeGraphSync } from './graph-hash.js';
-export { MaterialVariantSet, createMaterialVariants, applyMaterialVariant } from './material-variants.js';
-export { clearTextureViewCache, markTextureInitialized, shareGPUTextureEntry, sharePMREMGPUTexture, shareShadowGPUTextureIntoSlim } from './slim-support/gpu-texture-share.js';
-export { textureMatchesSource, textureMatchesArtifactSource, artifactHasTextureSource, countArtifactTextureSources, singleArtifactTextureUuid, attachArtifactTextureRefsByShapeOrder, attachTextureRefsWhere, attachArtifactTextureRefsWhere } from './slim-support/artifact-texture-wiring.js';
-export { getComputeBindGroups, computeNodeUsesStorageTexture, shareComputeSampledInputs, syncComputeStorageOutputs } from './slim-support/compute-sync.js';
-export { createFullRendererFallback } from './slim-support/full-renderer-fallback.js';
-export { createSlimSceneSupport } from './slim-support/scene-support.js';
-export { setSlimRenderFallback, getSlimRenderFallback } from './slim-support/render-fallback-registry.js';
-export { renderPassWithFullRenderer, sharePassRenderTargetTextures } from './slim-support/pass-render-fallback.js';
+export { setSlimRenderFallback } from './slim-support/render-fallback-registry.js';
 export * from './writers.js';
 
 // ---- viewport texture class registration --------------------------------
@@ -110,10 +298,12 @@ export * from './writers.js';
 // rollup deduplicates — no additional bundle cost.
 // Called here rather than in aux-loader.js itself to avoid any import of
 // 'three' from aux-loader (which would create a second module instance).
-import { DepthTexture, FramebufferTexture, HalfFloatType, RedFormat, RGBAFormat, UnsignedByteType } from 'three/src/Three.Core.js';
+import { CubeTextureLoader, DataTextureLoader, DepthTexture, FramebufferTexture, HalfFloatType, ImageBitmapLoader, RedFormat, RGBAFormat, TextureLoader, UnsignedByteType } from 'three/src/Three.Core.js';
 import WebGPUTextureUtils from 'three/src/renderers/webgpu/utils/WebGPUTextureUtils.js';
 import { setupViewportTextureClasses as _setupVTC } from './aux-loader.js';
+import { installTextureLoaderTracking as _installTextureLoaderTracking } from './hydrate/live-texture-registry.js';
 _setupVTC( { DepthTexture, FramebufferTexture } );
+_installTextureLoaderTracking( { TextureLoader, CubeTextureLoader, DataTextureLoader, ImageBitmapLoader } );
 
 const _createDefaultTexture = WebGPUTextureUtils.prototype.createDefaultTexture;
 const _createTexture = WebGPUTextureUtils.prototype.createTexture;

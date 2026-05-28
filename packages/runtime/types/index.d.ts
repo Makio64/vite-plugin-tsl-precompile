@@ -135,12 +135,14 @@ export function bindAuxByName( name: string ): unknown;
 export function attachArtifactTextureRefs( artifact: unknown, refs: unknown ): void;
 export function attachPostprocessTextureRefs( artifact: unknown, outputNode: unknown ): unknown;
 export function attachPostprocessUpdateBeforeNodes( artifact: unknown, outputNode: unknown ): unknown;
+export function attachPostprocessObject3DTargets( material: unknown, outputNode: unknown ): unknown;
 export function __resetAuxRegistryForTests(): void;
 
 // ---------- Hydrator ----------
 
 export function hydrateNodeBuilderState( state: unknown, artifact: unknown ): unknown;
-export function registerLiveTexture( key: string, texture: unknown ): void;
+export function registerLiveTexture( texture: unknown ): void;
+export function installTextureLoaderTracking( loaders: unknown, opts?: { onTextureLoad?: ( texture: unknown, info: unknown ) => void } ): number;
 export function clearLiveTextureIndex(): void;
 export function getTextureResolutionDebugHook(): ( ...args: unknown[] ) => void;
 export function setTextureResolutionDebugHook( hook: ( ...args: unknown[] ) => void ): void;
@@ -199,10 +201,40 @@ export type SharePassRenderTargetTexturesStats = {
 export type RenderPassWithFallbackStats = SharePassRenderTargetTexturesStats & {
 	rendered: boolean;
 };
+export type ShareRenderTargetTexturesStats = SharePassRenderTargetTexturesStats;
+export type RenderOffscreenOverrideWithFullRendererStats = SharePassRenderTargetTexturesStats & {
+	rendered: boolean;
+};
+export type WireTRAAResolveArtifactStats = {
+	outputAttached: number;
+	velocityAttached: number;
+	historyAttached: number;
+	depthAttached: number;
+};
+export type WireTRAAResolveArtifactOptions = {
+	passNodes?: unknown[];
+};
+export type RendererLightingStats = {
+	updated: boolean;
+	cpuTiled: boolean;
+	storageAttrs: number;
+	artifactsWired: number;
+	textureRefsWired: number;
+};
 export type RenderPassWithFallbackOptions = {
 	fullRenderer?: unknown;
 	camera?: unknown;
 	beforeRender?: () => void;
+	shareTextures?: boolean;
+	shareDepth?: boolean;
+	onError?: ( err: unknown, texture?: unknown ) => void;
+};
+export type RenderOffscreenOverrideWithFallbackOptions = {
+	fullRenderer?: unknown;
+	renderTarget?: unknown;
+	beforeRender?: () => void;
+	withSourceMaterials?: ( scene: unknown, render: () => void ) => void;
+	materialMapper?: ( material: unknown ) => unknown;
 	shareTextures?: boolean;
 	shareDepth?: boolean;
 	onError?: ( err: unknown, texture?: unknown ) => void;
@@ -231,6 +263,11 @@ export function computeNodeUsesStorageTexture( computeNode: unknown, fullRendere
 export function shareComputeSampledInputs( computeNode: unknown, fullRenderer: unknown, slimRenderer: unknown, opts?: Record<string, unknown> ): ComputeInputShareStats;
 export function syncComputeStorageOutputs( computeNode: unknown, fullRenderer: unknown, slimRenderer: unknown, opts?: Record<string, unknown> ): ComputeSyncStats;
 export function syncComputeStorageOutputsPerPass( computeNode: unknown, fullRenderer: unknown, slimRenderer: unknown, passIndex: number | undefined, opts?: Record<string, unknown> ): ComputeSyncPerPassStats;
+export function wireArtifactStorageBuffersFromAttributes( artifact: unknown, attributes: unknown | unknown[], opts?: Record<string, unknown> ): number;
+export function collectSceneLights( scene: unknown ): unknown[];
+export function wireStorageAttributesToSceneArtifacts( scene: unknown, attributes: unknown | unknown[], opts?: Record<string, unknown> ): number;
+export function wireTiledLightingTextureToScene( scene: unknown, texture: unknown, opts?: Record<string, unknown> ): number;
+export function updateRendererLightingForSlim( renderer: unknown, scene: unknown, camera: unknown, opts?: Record<string, unknown> ): RendererLightingStats;
 export function createFullRendererFallback( opts: Record<string, unknown> ): {
 	getRenderer: () => Promise<unknown | null>;
 	getModule: () => unknown | null;
@@ -247,6 +284,28 @@ export function renderPassWithFullRenderer( args: {
 	beforeRender?: () => void;
 	onError?: ( err: unknown ) => void;
 } ): boolean;
+export function renderOffscreenOverrideWithFullRenderer( args: {
+	scene: unknown;
+	camera: unknown;
+	slimRenderer: unknown;
+	fullRenderer: unknown;
+	renderTarget?: unknown;
+	beforeRender?: () => void;
+	withSourceMaterials?: ( scene: unknown, render: () => void ) => void;
+	materialMapper?: ( material: unknown ) => unknown;
+	shareTextures?: boolean;
+	shareDepth?: boolean;
+	diagnostics?: Record<string, unknown>;
+	onError?: ( err: unknown, texture?: unknown ) => void;
+} ): RenderOffscreenOverrideWithFullRendererStats;
+export function shareRenderTargetTextures( args: {
+	renderTarget: unknown;
+	slimRenderer: unknown;
+	fullRenderer: unknown;
+	shareDepth?: boolean;
+	diagnostics?: Record<string, unknown>;
+	onError?: ( err: unknown, texture?: unknown ) => void;
+} ): ShareRenderTargetTexturesStats;
 export function sharePassRenderTargetTextures( args: {
 	passNode: unknown;
 	slimRenderer: unknown;
@@ -271,6 +330,7 @@ export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	rememberLiveTexture: ( texture: unknown ) => void;
 	getFullRenderer: () => Promise<unknown | null>;
 	ensureFallback: () => Promise<void>;
+	installComputeFallback: () => boolean;
 	generatePMREMAsync: ( sourceTexture: unknown, generator?: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => Promise<unknown | null>;
 	setPMREMGenerator: ( generator: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => void;
 	syncComputeOutputs: ( computeNode: unknown, fullRenderer: unknown, syncOpts?: Record<string, unknown> ) => ComputeSyncStats;
@@ -281,9 +341,11 @@ export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	computeNodeUsesStorageTexture: ( computeNode: unknown, sourceRenderer: unknown ) => boolean;
 	shareTexture: ( sourceRenderer: unknown, texture: unknown ) => boolean;
 	shareShadowTexture: ( texture: unknown, sourceRenderer: unknown ) => boolean;
+	updateRendererLighting: ( scene: unknown, camera: unknown, lightingOpts?: Record<string, unknown> ) => RendererLightingStats;
 	preparePostprocess: ( prepArgs?: Record<string, unknown> ) => { effects: number; prepared: unknown[]; missed: unknown[] };
 	wirePostprocess: ( wireArgs?: Record<string, unknown> ) => { effects: number; wired: unknown[]; missed: unknown[] };
 	renderPassWithFallback: ( passNode: unknown, passOpts?: RenderPassWithFallbackOptions ) => Promise<RenderPassWithFallbackStats>;
+	renderOffscreenOverrideWithFallback: ( scene: unknown, camera: unknown, offscreenOpts?: RenderOffscreenOverrideWithFallbackOptions ) => Promise<RenderPassWithFallbackStats>;
 	pinClock: ( t: number | null | undefined ) => void;
 	unpinClock: () => void;
 	dispose: () => void;
@@ -330,6 +392,7 @@ export type PreparePrecompiledPostprocessArgs = {
 	PrecompiledMaterial: new ( artifact: unknown ) => unknown;
 	auxConfigHash?: string;
 	sharedContext?: unknown;
+	passNodes?: unknown[];
 	diagnostics?: { byHandler?: Record<string, { prepared: number; missed: number }> } & Record<string, unknown>;
 };
 export type PreparePrecompiledPostprocessResult = {
@@ -342,6 +405,7 @@ export type PrepareEffectNodeForReplayOptions = {
 	PrecompiledMaterial: new ( artifact: unknown ) => unknown;
 	auxConfigHash?: string;
 	sharedContext?: unknown;
+	passNodes?: unknown[];
 	effectIndex?: number;
 };
 export type PrepareEffectNodeForReplayResult = {
@@ -365,6 +429,16 @@ export function prepareEffectNodeForReplay( handler: EffectHandler, node: unknow
 export function makePrecompiledAuxMaterial( shape: string, sourceMaterial: unknown, opts: PrepareEffectNodeForReplayOptions ): unknown | null;
 export function cloneAuxArtifact<T = unknown>( artifact: T ): T;
 export function wireLiveNodeSidecarsToArtifact( artifact: unknown, sourceMaterial: unknown, replacement?: unknown ): LiveSidecarWireStats;
+export function artifactLooksLikeRetroPassMaterial( artifact: unknown ): boolean;
+export const TRAA_RESOLVE_TEXTURE_NAME: 'TRAANode.resolve';
+export const TRAA_HISTORY_TEXTURE_NAME: 'TRAANode.history';
+export const TRAA_HISTORY_DEPTH_TEXTURE_NAME: 'TRAANode.history.depth';
+export function nameTRAATextures( traaNode: unknown ): void;
+export function collectTRAASelfTextures( traaNode: unknown ): Set<unknown>;
+export function getTRAABeautyTexture( traaNode: unknown ): unknown | null;
+export function getTRAAVelocityTexture( traaNode: unknown ): unknown | null;
+export function getTRAACurrentDepthTexture( traaNode: unknown, passNodes?: unknown[] ): unknown | null;
+export function wireTRAAResolveArtifact( artifact: unknown, traaNode: unknown, opts?: WireTRAAResolveArtifactOptions ): WireTRAAResolveArtifactStats;
 
 // ---------- Material variants ----------
 

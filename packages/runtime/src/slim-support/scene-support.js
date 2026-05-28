@@ -45,10 +45,16 @@ import {
 import { shareGPUTextureEntry, shareShadowGPUTextureIntoSlim } from './gpu-texture-share.js';
 import { createFullRendererFallback } from './full-renderer-fallback.js';
 import { setSlimRenderFallback } from './render-fallback-registry.js';
-import { renderPassWithFullRenderer, sharePassRenderTargetTextures } from './pass-render-fallback.js';
+import {
+	renderOffscreenOverrideWithFullRenderer,
+	renderPassWithFullRenderer,
+	sharePassRenderTargetTextures,
+} from './pass-render-fallback.js';
+import { updateRendererLightingForSlim } from './renderer-lighting.js';
 import { wirePrecompiledPostprocess } from './postprocess-wire.js';
 import { preparePrecompiledPostprocess } from './postprocess-effects-replay.js';
 import { loadAux } from '../aux-loader.js';
+import { installLiveTextureRegistryPatches, installTextureLoaderTracking, registerLiveTexture } from '../hydrate/live-texture-registry.js';
 import PrecompiledMaterial from '../_vendor-PrecompiledMaterial.js';
 
 const DEFAULT_OPTS = {
@@ -69,8 +75,10 @@ const DEFAULT_OPTS = {
  * @param {Object} opts
  * @param {Object}  opts.renderer                - The slim `WebGPURenderer`. Required.
  * @param {Object}  [opts.threeFullModule]       - The full `three/webgpu` module namespace. Required when `fullRendererFallback: true` (or pass `loadThreeFullModule`).
+ * @param {Object}  [opts.threeModule]           - Optional three namespace used to auto-track TextureLoader/CubeTextureLoader results in the runtime live texture registry.
  * @param {Function} [opts.loadThreeFullModule]  - Async factory for the full-three module, used by the fallback boot.
  * @param {boolean} [opts.fullRendererFallback=false] - Enable the on-the-side full `WebGPURenderer` for compute / shadows / dynamic passes.
+ * @param {boolean} [opts.textureLoaderTracking=true] - Patch loader classes from `threeModule`/`threeFullModule` so async textures can relink JSON-loaded artifacts.
  * @param {boolean} [opts.pmrem=true]            - Build a PMREM support sub-helper (always cheap; disable to opt out of the cache).
  * @param {boolean} [opts.computeSync=true]      - Expose `syncComputeOutputs()` (pure compute output sync; safe to leave on).
  * @param {boolean} [opts.textureSharing=true]   - Expose `shareTexture()` / `shareShadowTexture()` convenience wrappers.
@@ -89,7 +97,28 @@ export function createSlimSceneSupport( opts = {} ) {
 	const onError = typeof settings.onError === 'function' ? settings.onError : null;
 
 	// --- live-scene-index (always on; the cheapest of the helpers) ----------
-	const liveSceneIndex = createLiveSceneIndex();
+	function trackLoaderNamespace( namespace ) {
+
+		if ( settings.textureLoaderTracking === false ) return 0;
+		const loaderDiagnostics = diagnostics.loader || ( diagnostics.loader = { patchedClasses: 0 } );
+		installLiveTextureRegistryPatches( namespace );
+		const patched = installTextureLoaderTracking( namespace );
+		loaderDiagnostics.patchedClasses += patched;
+		return patched;
+
+	}
+
+	const liveSceneIndex = createLiveSceneIndex( { registerLiveTexture } );
+	if ( settings.textureLoaderTracking !== false ) {
+
+		trackLoaderNamespace( settings.threeModule );
+		if ( settings.threeFullModule && settings.threeFullModule !== settings.threeModule ) {
+
+			trackLoaderNamespace( settings.threeFullModule );
+
+		}
+
+	}
 
 	// --- PMREM cache + orchestration ----------------------------------------
 	// `pmremGenerator` is the `(renderer, sourceTex) => Promise<pmremTex>` the
@@ -120,6 +149,7 @@ export function createSlimSceneSupport( opts = {} ) {
 		loadThreeFullModule: settings.loadThreeFullModule,
 		onError: ( err ) => onError && onError( err, { where: 'fullRendererFallback' } ),
 	} ) : null;
+	let cachedFullRenderer = null;
 
 	// --- API surface --------------------------------------------------------
 
@@ -138,7 +168,11 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	async function getFullRenderer() {
 
-		return fallback ? fallback.getRenderer() : null;
+		if ( ! fallback ) return null;
+		const fullRenderer = await fallback.getRenderer();
+		cachedFullRenderer = fullRenderer || null;
+		trackLoaderNamespace( fallback.getModule && fallback.getModule() );
+		return fullRenderer;
 
 	}
 
@@ -286,6 +320,22 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	}
 
+	function updateRendererLighting( scene, camera, lightingOpts = {} ) {
+
+		lightingOpts = lightingOpts || {};
+		return updateRendererLightingForSlim( renderer, scene, camera, {
+			...lightingOpts,
+			diagnostics: lightingOpts.diagnostics || diagnostics.compute,
+			onError: ( err, where ) => {
+
+				if ( typeof lightingOpts.onError === 'function' ) lightingOpts.onError( err, where );
+				if ( onError ) onError( err, { where: 'updateRendererLighting', detail: where } );
+
+			},
+		} );
+
+	}
+
 	function nodeBuilderLikeFromState( state ) {
 
 		if ( ! state ) return null;
@@ -342,11 +392,137 @@ export function createSlimSceneSupport( opts = {} ) {
 	// materials (Inspector helpers, addon meshes, etc.) instead of throwing.
 	// Idempotent — calling twice is a no-op after the first await resolves.
 	let fallbackRegistered = false;
+	let computeFallbackInstalled = false;
+	let restoreComputeFallback = null;
+
+	function syncDelegatedComputeOutputs( computeNode, fullRenderer ) {
+
+		const nodeKey = computeNode && typeof computeNode === 'object' ? computeNode : null;
+		const passIndex = nodeKey ? ( computePassByNode.get( nodeKey ) | 0 ) : 0;
+		if ( nodeKey ) computePassByNode.set( nodeKey, passIndex + 1 );
+
+		const seenStorageTextures = [];
+		const seenStorageAttrs = [];
+		const stats = syncComputeOutputsPerPass( computeNode, fullRenderer, passIndex, {
+			onStorageAttr: ( attr ) => {
+
+				seenStorageAttrs.push( attr );
+
+			},
+			onStorageTexture: ( texture ) => {
+
+				seenStorageTextures.push( texture );
+
+			},
+		} );
+
+		if ( nodeKey && seenStorageTextures.length > 0 ) {
+
+			const prev = computeStorageTextureLedger.get( nodeKey );
+			if ( prev && prev.length > 0 ) {
+
+				for ( const texture of seenStorageTextures ) {
+
+					for ( const prevTexture of prev ) {
+
+						if ( prevTexture && prevTexture !== texture ) pingPongInvalidateTextures( prevTexture, texture, fullRenderer );
+
+					}
+
+				}
+
+			}
+			computeStorageTextureLedger.set( nodeKey, seenStorageTextures.slice() );
+
+		}
+
+		for ( const attr of seenStorageAttrs ) {
+
+			if ( attr && ( attr.isStorageInstancedBufferAttribute === true || attr.isInstancedBufferAttribute === true ) ) {
+
+				shareInstancedAttributeBuffer( attr, fullRenderer );
+
+			}
+
+		}
+
+		return stats;
+
+	}
+
+	const computePassByNode = new WeakMap();
+	const computeStorageTextureLedger = new WeakMap();
+
+	function isRawComputeNode( computeNode ) {
+
+		return computeNode && computeNode.isComputeNode === true && computeNode.isPrecompiledCompute !== true;
+
+	}
+
+	function installComputeFallback() {
+
+		if ( computeFallbackInstalled ) return true;
+		if ( ! fallback ) return false;
+		const originalCompute = typeof renderer.compute === 'function' ? renderer.compute : null;
+		const originalComputeAsync = typeof renderer.computeAsync === 'function' ? renderer.computeAsync : null;
+
+		renderer.compute = function computeWithSlimFallback( computeNode, ...rest ) {
+
+			if ( ! isRawComputeNode( computeNode ) ) return originalCompute ? originalCompute.call( this, computeNode, ...rest ) : undefined;
+			const fullRenderer = cachedFullRenderer;
+			if ( fullRenderer ) {
+
+				shareComputeInputs( computeNode, fullRenderer );
+				const result = typeof fullRenderer.compute === 'function'
+					? fullRenderer.compute( computeNode, ...rest )
+					: fullRenderer.computeAsync( computeNode, ...rest );
+				if ( result && typeof result.then === 'function' ) {
+
+					return result.then( () => syncDelegatedComputeOutputs( computeNode, fullRenderer ) );
+
+				}
+				return syncDelegatedComputeOutputs( computeNode, fullRenderer );
+
+			}
+			return this.computeAsync( computeNode, ...rest );
+
+		};
+
+		renderer.computeAsync = async function computeAsyncWithSlimFallback( computeNode, ...rest ) {
+
+			if ( ! isRawComputeNode( computeNode ) ) {
+
+				if ( originalComputeAsync ) return originalComputeAsync.call( this, computeNode, ...rest );
+				return originalCompute ? originalCompute.call( this, computeNode, ...rest ) : undefined;
+
+			}
+			const fullRenderer = await getFullRenderer();
+			if ( ! fullRenderer ) return undefined;
+			shareComputeInputs( computeNode, fullRenderer );
+			if ( typeof fullRenderer.computeAsync === 'function' ) await fullRenderer.computeAsync( computeNode, ...rest );
+			else if ( typeof fullRenderer.compute === 'function' ) fullRenderer.compute( computeNode, ...rest );
+			return syncDelegatedComputeOutputs( computeNode, fullRenderer );
+
+		};
+
+		restoreComputeFallback = () => {
+
+			if ( originalCompute ) renderer.compute = originalCompute;
+			else delete renderer.compute;
+			if ( originalComputeAsync ) renderer.computeAsync = originalComputeAsync;
+			else delete renderer.computeAsync;
+
+		};
+		computeFallbackInstalled = true;
+		return true;
+
+	}
+
 	async function ensureFallback() {
 
 		if ( ! fallback ) throw new Error( 'createSlimSceneSupport: ensureFallback() requires `fullRendererFallback: true` at construction.' );
 		if ( fallbackRegistered ) return;
-		const fullRenderer = await fallback.getRenderer();
+		const fullRenderer = await getFullRenderer();
 		const handler = createRenderFallbackHandler( fullRenderer );
 		if ( ! handler ) {
 
@@ -354,6 +530,7 @@ export function createSlimSceneSupport( opts = {} ) {
 
 		}
 		setSlimRenderFallback( handler );
+		installComputeFallback();
 		fallbackRegistered = true;
 
 	}
@@ -393,6 +570,13 @@ export function createSlimSceneSupport( opts = {} ) {
 	function wirePostprocess( wireArgs = {} ) {
 
 		return wirePrecompiledPostprocess( wireArgs );
+
+	}
+
+	function defaultFullRendererMaterialMapper( material ) {
+
+		if ( material && material.isPrecompiledMaterial === true && material.__tslpSourceMaterial ) return material.__tslpSourceMaterial;
+		return null;
 
 	}
 
@@ -466,8 +650,71 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	}
 
+	/**
+	 * Render the slim renderer's current offscreen target through the full
+	 * renderer when the scene has an override material, then share the produced
+	 * target textures back into slim. This covers contact-shadow/depth-style
+	 * offscreen passes in real projects using the slim runtime.
+	 *
+	 * @param {Object} scene
+	 * @param {Object} camera
+	 * @param {Object} [offscreenOpts]
+	 * @param {Object} [offscreenOpts.fullRenderer] - Optional caller-owned full renderer. Defaults to this support object's fallback renderer.
+	 * @param {Object} [offscreenOpts.renderTarget] - Optional render target. Defaults to `renderer.getRenderTarget()`.
+	 * @param {Function} [offscreenOpts.beforeRender] - Optional hook run after render-target state is installed and before `fullRenderer.render`.
+	 * @param {Function} [offscreenOpts.withSourceMaterials] - Optional `(scene, render) => void` wrapper for temporary source-material swaps.
+	 * @param {Function} [offscreenOpts.materialMapper] - Optional `(material) => material` mapper for temporary scene material swaps.
+	 * @param {boolean} [offscreenOpts.shareTextures=true] - Share color/MRT textures back into slim after a successful render.
+	 * @param {boolean} [offscreenOpts.shareDepth=true] - Share `renderTarget.depthTexture` when present.
+	 * @param {Function} [offscreenOpts.onError] - Per-call error handler.
+	 * @return {Promise<{ rendered: boolean, texturesShared: number, depthShared: boolean }>}
+	 */
+	async function renderOffscreenOverrideWithFallback( scene, camera, offscreenOpts = {} ) {
+
+		offscreenOpts = offscreenOpts || {};
+		const fullRenderer = offscreenOpts.fullRenderer || await getFullRenderer();
+		const empty = { rendered: false, texturesShared: 0, depthShared: false };
+
+		if ( ! fullRenderer ) {
+
+			const err = new Error( 'createSlimSceneSupport: renderOffscreenOverrideWithFallback() requires `fullRendererFallback: true` or an `offscreenOpts.fullRenderer`.' );
+			if ( typeof offscreenOpts.onError === 'function' ) offscreenOpts.onError( err );
+			if ( onError ) onError( err, { where: 'renderOffscreenOverrideWithFallback' } );
+			return empty;
+
+		}
+
+		return renderOffscreenOverrideWithFullRenderer( {
+			scene,
+			camera,
+			slimRenderer: renderer,
+			fullRenderer,
+			renderTarget: offscreenOpts.renderTarget,
+			beforeRender: offscreenOpts.beforeRender,
+			withSourceMaterials: offscreenOpts.withSourceMaterials,
+			materialMapper: offscreenOpts.materialMapper || defaultFullRendererMaterialMapper,
+			shareTextures: offscreenOpts.shareTextures !== false && settings.textureSharing,
+			shareDepth: offscreenOpts.shareDepth !== false,
+			diagnostics: diagnostics.textureShare,
+			onError: ( err, texture ) => {
+
+				if ( typeof offscreenOpts.onError === 'function' ) offscreenOpts.onError( err, texture );
+				if ( onError ) onError( err, { where: 'renderOffscreenOverrideWithFallback', texture } );
+
+			},
+		} );
+
+	}
+
 	function dispose() {
 
+		if ( restoreComputeFallback ) {
+
+			restoreComputeFallback();
+			restoreComputeFallback = null;
+			computeFallbackInstalled = false;
+
+		}
 		if ( fallbackRegistered ) {
 
 			setSlimRenderFallback( null );
@@ -500,9 +747,12 @@ export function createSlimSceneSupport( opts = {} ) {
 		computeNodeUsesStorageTexture: ( node, source ) => computeNodeUsesStorageTexture( node, source ),
 		shareTexture,
 		shareShadowTexture,
+		updateRendererLighting,
+		installComputeFallback,
 		preparePostprocess,
 		wirePostprocess,
 		renderPassWithFallback,
+		renderOffscreenOverrideWithFallback,
 		// Wedge 4: clock alignment helpers (same global the runtime writers
 		// consult). Expose on the support object for instance-style callers;
 		// also exported as standalone functions from `@tsl-precompile/runtime`.

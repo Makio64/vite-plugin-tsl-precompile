@@ -277,6 +277,21 @@ test( 'collectEffectNodes walks nested graphs and deduplicates', () => {
 
 } );
 
+test( 'collectEffectNodes continues through matched effects to find nested effects', () => {
+
+	const traa = traaLike();
+	traa.beautyNode = {
+		isPassNode: true,
+		contextNode: { ambientOcclusionNode: gtaoLike() },
+	};
+	const matches = collectEffectNodes( traa );
+	assert.deepEqual(
+		matches.map( ( m ) => m.handler.name ),
+		[ 'traa', 'gtao' ]
+	);
+
+} );
+
 test( 'collectEffectNodes is safe against cycles', () => {
 
 	const bloom = bloomLike();
@@ -377,6 +392,8 @@ test( 'bloom handler wireSubPassUniforms attaches _liveNode to vec2 slots on blu
 	const handler = findEffectHandler( bloomLike() );
 	const liveDirection = { isUniformNode: true, name: 'direction', value: { isVector2: true, x: 1, y: 0 } };
 	const liveInvSize = { isUniformNode: true, name: 'invSize', value: { isVector2: true, x: 0.001, y: 0.001 } };
+	const replacementDirection = { isUniformNode: true, name: 'replacementDirection', value: { isVector2: true, x: 0, y: 1 } };
+	const replacementInvSize = { isUniformNode: true, name: 'replacementInvSize', value: { isVector2: true, x: 0.002, y: 0.002 } };
 	const sourceMaterial = { direction: liveDirection, invSize: liveInvSize };
 	const artifact = {
 		uniformPlan: [ {
@@ -386,11 +403,13 @@ test( 'bloom handler wireSubPassUniforms attaches _liveNode to vec2 slots on blu
 			],
 		} ],
 	};
-	const subPass = { shape: 'bloom-blur-0', material: { precompiledArtifact: artifact } };
+	const subPass = { shape: 'bloom-blur-0', material: { precompiledArtifact: artifact, direction: replacementDirection, invSize: replacementInvSize } };
 	handler.wireSubPassUniforms( subPass, sourceMaterial );
 	const wired = artifact.uniformPlan[ 0 ].slots.filter( ( s ) => s._liveNode );
 	assert.equal( wired.length, 2 );
 	assert.equal( wired.filter( ( s ) => s.__tslpLiveSidecarOverlay === true ).length, 2 );
+	assert.equal( artifact.uniformPlan[ 0 ].slots[ 0 ]._liveNode, replacementDirection );
+	assert.equal( artifact.uniformPlan[ 0 ].slots[ 1 ]._liveNode, replacementInvSize );
 
 } );
 

@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 
 import { setupPrecompile } from '../src/setup.js';
-import { __cloneLightsIntoForTests, __resetForTests as resetMarkerForTests } from '../src/precompile-marker.js';
+import {
+	installPrecompileMarker,
+	setDevRenderer,
+	__cloneLightsIntoForTests,
+	__resetForTests as resetMarkerForTests,
+} from '../src/precompile-marker.js';
 
 const MARKER_METHOD = 'precompile';
 
@@ -213,6 +218,297 @@ test( 'setupPrecompile captureAux merges per-call MRT pass options', async () =>
 	} finally {
 
 		await capture.close();
+
+	}
+
+} );
+
+test( 'precompile marker captures a non-MRT material variant for pass-level MRT scenes', async () => {
+
+	resetMarkerForTests();
+
+	class Material {
+
+		constructor() {
+
+			this.uuid = 'mat-pass-mrt';
+
+		}
+
+	}
+	class Scene {
+
+		constructor() {
+
+			this.isScene = true;
+			this.userData = {};
+			this.children = [];
+
+		}
+
+		add( object ) {
+
+			this.children.push( object );
+			object.parent = this;
+
+		}
+
+		traverse( visitor ) {
+
+			for ( const child of this.children ) visitor( child );
+
+		}
+
+	}
+	class Mesh {
+
+		constructor( geometry, material ) {
+
+			this.geometry = geometry;
+			this.material = material;
+			this.layers = { mask: 1, test: () => true };
+
+		}
+
+	}
+	class PerspectiveCamera {
+
+		constructor() {
+
+			this.position = { set() {} };
+			this.layers = { mask: 1, test: () => true };
+
+		}
+
+		lookAt() {}
+
+	}
+	class BoxGeometry {}
+	class Color {}
+
+	const mrtNode = { outputNodes: { output: {} } };
+	const sourceScene = { isScene: true, userData: { __tslp_mrtNode: mrtNode }, traverse() {} };
+	const emptyOutputShader = `
+struct OutputType {
+};
+var<private> output : OutputType;
+@fragment
+fn main( @location( 0 ) uv : vec2<f32> ) -> OutputType {
+	return output;
+}
+`;
+	const colorShader = `
+struct OutputStruct {
+	@location( 0 ) color : vec4<f32>
+};
+var<private> output : OutputStruct;
+@fragment
+fn main( @location( 0 ) uv : vec2<f32> ) -> OutputStruct {
+	output.color = vec4<f32>( uv, 0.0, 1.0 );
+	return output;
+}
+`;
+	const calls = [];
+	const extractor = async ( renderer, scene, camera, opts = {} ) => {
+
+		calls.push( opts );
+		const isColor = opts && opts.noGlobalMRT === true;
+		const artifact = {
+			version: 3,
+			cacheKey: isColor ? 'color-key' : 'mrt-key',
+			materialUuid: 'mat-pass-mrt',
+			materialShape: 'mesh-standard',
+			vertexShader: 'vertex',
+			fragmentShader: isColor ? colorShader : emptyOutputShader,
+			bindings: [],
+			uniformPlan: [],
+			attributes: [],
+			nodeAttributes: [],
+		};
+		if ( ! isColor ) {
+
+			artifact.mrtOutputCount = 1;
+			artifact.mrtOutputNames = [ 'output' ];
+
+		}
+		const artifacts = [ artifact ];
+		artifacts.byMaterialUuid = new Map( [ [ 'mat-pass-mrt', artifact ] ] );
+		artifacts.byMaterialVariants = new Map( [ [ 'mat-pass-mrt', [ artifact ] ] ] );
+		return artifacts;
+
+	};
+	const posts = [];
+	const oldWindow = globalThis.window;
+	const oldFetch = globalThis.fetch;
+	globalThis.window = globalThis;
+	globalThis.fetch = async ( url, init ) => {
+
+		posts.push( JSON.parse( init.body ) );
+		return { ok: true, text: async () => 'ok' };
+
+	};
+
+	try {
+
+		const three = { Material, Scene, Mesh, BoxGeometry, PerspectiveCamera, Color, REVISION: '184' };
+		const renderer = { render() {} };
+		installPrecompileMarker( three, {
+			devEndpoint: 'http://example.test/capture',
+			extractor,
+			codegen: () => ( { unsupportedKinds: [] } ),
+		} );
+		setDevRenderer( renderer );
+
+		const material = new Material();
+		Object.defineProperty( material, '__tslpPrecompileScene', { value: sourceScene, configurable: true } );
+		material.precompile( 'pass-mrt-material' );
+
+		for ( let i = 0; i < 20 && ( globalThis.__tslpPrecompilePending | 0 ) > 0; i ++ ) {
+
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		}
+
+		assert.equal( calls.length, 2 );
+		assert.equal( calls[ 0 ].mrtNode, mrtNode );
+		assert.equal( calls[ 1 ].noGlobalMRT, true );
+		assert.equal( posts.length, 1 );
+		assert.equal( posts[ 0 ].artifact.cacheKey, 'color-key' );
+		assert.equal( Object.keys( posts[ 0 ].artifact.variants ).sort().join( ',' ), 'color-key,mrt-key' );
+
+	} finally {
+
+		resetMarkerForTests();
+		if ( oldWindow === undefined ) delete globalThis.window;
+		else globalThis.window = oldWindow;
+		if ( oldFetch === undefined ) delete globalThis.fetch;
+		else globalThis.fetch = oldFetch;
+		delete globalThis.__tslpPrecompilePending;
+
+	}
+
+} );
+
+test( 'precompile marker records the source material name', async () => {
+
+	resetMarkerForTests();
+
+	class Material {
+
+		constructor() {
+
+			this.uuid = 'named-material-uuid';
+			this.name = 'mat_transmission_only_test';
+			this.type = 'MeshPhysicalNodeMaterial';
+
+		}
+
+	}
+	class Scene {
+
+		constructor() {
+
+			this.isScene = true;
+			this.userData = {};
+			this.children = [];
+
+		}
+
+		add( object ) {
+
+			this.children.push( object );
+			object.parent = this;
+
+		}
+
+	}
+	class Mesh {
+
+		constructor( geometry, material ) {
+
+			this.geometry = geometry;
+			this.material = material;
+			this.layers = { mask: 1, test: () => true };
+
+		}
+
+	}
+	class PerspectiveCamera {
+
+		constructor() {
+
+			this.position = { set() {} };
+			this.layers = { mask: 1, test: () => true };
+
+		}
+
+		lookAt() {}
+
+	}
+	class BoxGeometry {}
+	class Color {}
+
+	const artifact = {
+		version: 3,
+		cacheKey: 'named-material-key',
+		materialUuid: 'named-material-uuid',
+		materialShape: 'mesh-physical',
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		bindings: [],
+		uniformPlan: [],
+		attributes: [],
+		nodeAttributes: [],
+	};
+	const extractor = async () => {
+
+		const artifacts = [ artifact ];
+		artifacts.byMaterialUuid = new Map( [ [ 'named-material-uuid', artifact ] ] );
+		artifacts.byMaterialVariants = new Map( [ [ 'named-material-uuid', [ artifact ] ] ] );
+		return artifacts;
+
+	};
+	const posts = [];
+	const oldWindow = globalThis.window;
+	const oldFetch = globalThis.fetch;
+	globalThis.window = globalThis;
+	globalThis.fetch = async ( url, init ) => {
+
+		posts.push( JSON.parse( init.body ) );
+		return { ok: true, text: async () => 'ok' };
+
+	};
+
+	try {
+
+		const three = { Material, Scene, Mesh, BoxGeometry, PerspectiveCamera, Color, REVISION: '184' };
+		installPrecompileMarker( three, {
+			devEndpoint: 'http://example.test/capture',
+			extractor,
+			codegen: () => ( { unsupportedKinds: [] } ),
+		} );
+		setDevRenderer( { render() {} } );
+
+		new Material().precompile( 'named-material' );
+
+		for ( let i = 0; i < 20 && ( globalThis.__tslpPrecompilePending | 0 ) > 0; i ++ ) {
+
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		}
+
+		assert.equal( posts.length, 1 );
+		assert.equal( posts[ 0 ].artifact.sourceMaterial.name, 'mat_transmission_only_test' );
+		assert.equal( posts[ 0 ].artifact.sourceMaterial.type, 'MeshPhysicalNodeMaterial' );
+
+	} finally {
+
+		resetMarkerForTests();
+		if ( oldWindow === undefined ) delete globalThis.window;
+		else globalThis.window = oldWindow;
+		if ( oldFetch === undefined ) delete globalThis.fetch;
+		else globalThis.fetch = oldFetch;
+		delete globalThis.__tslpPrecompilePending;
 
 	}
 

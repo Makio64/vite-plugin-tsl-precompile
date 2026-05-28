@@ -63,8 +63,10 @@ export {
 
 export { createFullRendererFallback } from './full-renderer-fallback.js';
 export { createSlimSceneSupport, pinClock, unpinClock } from './scene-support.js';
+export { clearLiveTextureIndex, installTextureLoaderTracking, registerLiveTexture } from '../hydrate/live-texture-registry.js';
+export { collectSceneLights, updateRendererLightingForSlim, wireStorageAttributesToSceneArtifacts, wireTiledLightingTextureToScene } from './renderer-lighting.js';
 export { setSlimRenderFallback, getSlimRenderFallback } from './render-fallback-registry.js';
-export { renderPassWithFullRenderer, sharePassRenderTargetTextures } from './pass-render-fallback.js';
+export { renderOffscreenOverrideWithFullRenderer, renderPassWithFullRenderer, sharePassRenderTargetTextures, shareRenderTargetTextures } from './pass-render-fallback.js';
 
 export {
 	collectLiveBloomNodes,
@@ -88,7 +90,20 @@ export {
 	makePrecompiledAuxMaterial,
 	cloneAuxArtifact,
 	wireLiveNodeSidecarsToArtifact,
+	artifactLooksLikeRetroPassMaterial,
 } from './postprocess-effects-replay.js';
+
+export {
+	TRAA_RESOLVE_TEXTURE_NAME,
+	TRAA_HISTORY_TEXTURE_NAME,
+	TRAA_HISTORY_DEPTH_TEXTURE_NAME,
+	nameTRAATextures,
+	collectTRAASelfTextures,
+	getTRAABeautyTexture,
+	getTRAAVelocityTexture,
+	getTRAACurrentDepthTexture,
+	wireTRAAResolveArtifact,
+} from './traa-replay.js';
 
 export {
 	getSlimDiagnosticsBag,

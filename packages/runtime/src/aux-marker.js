@@ -87,19 +87,23 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 
 	}
 
-	// Production short-circuit: probe whether compileTSL can be loaded. The
-	// dynamic import is `/* @vite-ignore */`'d, so it predictably fails in any
-	// production bundle. When it fails, every downstream capture step would
-	// throw — silently no-op the whole call instead so adopters don't need
-	// `if ( import.meta.env.DEV )` guards in their app code.
-	if ( ! opts.compileTSL && ( await lazyLoadCompileTSL() ) === null ) return [];
+	const results = [];
+	if ( typeof window !== 'undefined' ) window.__tslpPrecompilePending = ( window.__tslpPrecompilePending | 0 ) + 1;
+
+	try {
+
+		// Production short-circuit: probe whether compileTSL can be loaded. The
+		// dynamic import is `/* @vite-ignore */`'d, so it predictably fails in any
+		// production bundle. When it fails, every downstream capture step would
+		// throw — silently no-op the whole call instead so adopters don't need
+		// `if ( import.meta.env.DEV )` guards in their app code.
+		if ( ! opts.compileTSL && ( await lazyLoadCompileTSL() ) === null ) return [];
 
 	if ( typeof opts.threeVersion !== 'string' || opts.threeVersion.length === 0 ) {
 
 		throw new Error( 'precompileAuxiliary: opts.threeVersion is required (>= 184). Pass `threeVersion: String(THREE.REVISION).match(/^\\d+/)[0]` (e.g. "184").' );
 
 	}
-	const results = [];
 	const hashOpts = {
 		threeVersion: opts.threeVersion,
 		pluginVersion: opts.pluginVersion || '0.0.0',
@@ -457,6 +461,12 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 			results.push( { shape, configHash: null, ok: false, error: err && err.message || String( err ) } );
 
 		}
+
+	}
+
+	} finally {
+
+		if ( typeof window !== 'undefined' ) window.__tslpPrecompilePending = Math.max( 0, ( window.__tslpPrecompilePending | 0 ) - 1 );
 
 	}
 
@@ -984,8 +994,8 @@ async function lazyLoadCompileTSL() {
 	if ( compileTSLLoadFailed ) return null;
 	try {
 
-		const mod = await import( /* @vite-ignore */ 'vite-plugin-tsl-precompile/src/vendor/compileTSL.js' );
-		cachedCompileTSL = mod.compileTSL;
+			const mod = await import( /* @vite-ignore */ 'vite-plugin-tsl-precompile/src/vendor/compileTSL.js' );
+			cachedCompileTSL = mod.compileTSL;
 		return cachedCompileTSL;
 
 	} catch ( err ) {

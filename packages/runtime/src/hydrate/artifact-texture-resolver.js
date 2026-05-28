@@ -252,8 +252,25 @@ function resolveLiveTextureIdentityStrategy( context ) {
 function resolveTextureRefStrategy( context ) {
 
 	const { artifact, bindingName, source } = context;
-	if ( ! artifact._textureRefs ) return null;
-	const texture = artifact._textureRefs.get( source.textureUuid );
+	let texture = artifact._textureRefs && artifact._textureRefs.get( source.textureUuid );
+	if ( ! texture ) {
+
+		const hostResolver = typeof globalThis !== 'undefined' ? globalThis.__tslpResolveArtifactTextureRef : null;
+		if ( typeof hostResolver === 'function' ) {
+
+			try {
+
+				texture = hostResolver( source, artifact, bindingName ) || null;
+
+			} catch ( _ ) {
+
+				texture = null;
+
+			}
+
+		}
+
+	}
 	if ( texture && artifactTextureMatchesSource( texture, source ) && textureMatchesShaderBinding( artifact, bindingName, texture ) ) {
 
 		return applySourceSettings( context, texture );

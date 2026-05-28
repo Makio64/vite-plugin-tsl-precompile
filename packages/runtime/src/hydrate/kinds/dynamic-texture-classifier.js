@@ -120,6 +120,7 @@ function classifyViewportTexture( entry, runtimeBinding, descriptor, ctx ) {
 		generateMipmaps: source.generateMipmaps !== false,
 		isDepth: source.isDepth === true || ctx.shaderDeclaresDepthTexture( ctx.artifact, descriptor.name || '' ),
 		material: ctx.material,
+		shared: source.shared === true,
 		skipZeroThicknessTransmission,
 	} );
 

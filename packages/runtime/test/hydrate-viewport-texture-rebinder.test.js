@@ -211,3 +211,52 @@ test( 'viewport texture rebinder drives viewport nodes once per render id and re
 	assert.equal( binding.texture, liveTexture );
 
 } );
+
+test( 'viewport texture rebinder uses shared viewport nodes for shared entries', () => {
+
+	const fallbackTexture = { uuid: 'fallback', gpuTexture: { label: 'fallback-gpu' } };
+	const liveTexture = { uuid: 'shared-live', gpuTexture: { label: 'shared-gpu' } };
+	const binding = createBinding( fallbackTexture );
+	let sharedFactoryCalls = 0;
+	let plainFactoryCalls = 0;
+	let updateBeforeCalls = 0;
+	const node = {
+		value: liveTexture,
+		updateReference: () => {},
+		updateBefore: () => {
+
+			updateBeforeCalls ++;
+
+		},
+	};
+	const rebinder = createViewportTextureRebinder( [ {
+		binding,
+		fallbackTexture,
+		generateMipmaps: false,
+		isDepth: false,
+		shared: true,
+		skipZeroThicknessTransmission: false,
+		material: {},
+	} ], {
+		viewportTexture: () => {
+
+			plainFactoryCalls ++;
+			return { value: { uuid: 'plain' }, updateBefore() {} };
+
+		},
+		viewportSharedTexture: () => {
+
+			sharedFactoryCalls ++;
+			return node;
+
+		},
+	} );
+
+	rebinder.updateBefore( createFrame( 9 ) );
+
+	assert.equal( sharedFactoryCalls, 1 );
+	assert.equal( plainFactoryCalls, 0 );
+	assert.equal( updateBeforeCalls, 1 );
+	assert.equal( binding.texture, liveTexture );
+
+} );

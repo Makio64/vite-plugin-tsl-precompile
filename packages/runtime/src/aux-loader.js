@@ -65,6 +65,7 @@ export function registerAuxArtifact( shape, configHash, artifact, opts = {} ) {
 
 	}
 	stampAuxMetadata( artifact, shape, configHash, opts.name );
+	normalizeRenderOutputFrameSizeUniform( artifact, shape );
 
 	// Pre-wire viewport/framebuffer texture fallbacks on registration so
 	// the artifact is ready for the hydrator before the first render frame.
@@ -327,6 +328,44 @@ function stampAuxMetadata( artifact, shape, configHash, name = undefined ) {
 function isPrecompiledRegistryShape( shape ) {
 
 	return shape === 'shadow-depth' || shape === 'render-pipeline' || shape === 'output-transform';
+
+}
+
+function normalizeRenderOutputFrameSizeUniform( artifact, shape ) {
+
+	if ( ! artifact || ! Array.isArray( artifact.uniformPlan ) ) return artifact;
+	const artifactShape = artifact.materialShape || artifact.shape || shape;
+	if ( artifactShape !== 'render-output' && artifactShape !== 'output-transform' ) return artifact;
+
+	const fragmentShader = String( artifact.fragmentShader || '' );
+	for ( const group of artifact.uniformPlan ) {
+
+		if ( group.name !== 'object' ) continue;
+		normalizeRenderOutputFrameSizeSlots( group.slots, fragmentShader );
+		for ( const entry of group.orderedBindings || [] ) {
+
+			if ( entry && entry.type === 'ubo' ) normalizeRenderOutputFrameSizeSlots( entry.slots, fragmentShader );
+
+		}
+
+	}
+	return artifact;
+
+}
+
+function normalizeRenderOutputFrameSizeSlots( slots, fragmentShader ) {
+
+	if ( ! Array.isArray( slots ) ) return;
+	for ( const slot of slots ) {
+
+		const source = slot && slot.source || {};
+		if ( slot.dtype !== 'vec2' || source.kind !== 'uniform.live' || ! slot.name ) continue;
+		const escapedName = String( slot.name ).replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
+		const isFragCoordDivisor = new RegExp( `fragCoord\\.xy\\s*/\\s*object\\.${ escapedName }\\b` ).test( fragmentShader );
+		if ( ! isFragCoordDivisor ) continue;
+		slot.source = { ...source, kind: 'renderer.size' };
+
+	}
 
 }
 
@@ -600,6 +639,47 @@ export function attachPostprocessUpdateBeforeNodes( artifact, root ) {
 
 }
 
+/**
+ * Attach Object3DNode target sidecars needed by post-process artifacts.
+ *
+ * Three.js post-processing graphs commonly use `objectPosition( camera )`
+ * inside the full-screen RenderPipeline material. The extracted slot keeps
+ * `source.target = "camera"`, but the runtime hydrator can only honour that
+ * target when the live `PrecompiledMaterial` points at the current pass
+ * camera. Walk the output graph, find the first non-retro PassNode with a
+ * camera, and stamp it onto the material.
+ *
+ * @param {Object} material - Usually a PrecompiledMaterial.
+ * @param {Object|Function} root - Usually `RenderPipeline.outputNode`.
+ * @return {Object} The material (for chaining).
+ */
+export function attachPostprocessObject3DTargets( material, root ) {
+
+	if ( ! material || ! root ) return material;
+	const camera = findPostprocessPassCamera( root );
+	if ( ! camera ) return material;
+	const current = material.__tslpObject3DTargets && typeof material.__tslpObject3DTargets === 'object'
+		? { ...material.__tslpObject3DTargets }
+		: {};
+	current.camera = camera;
+	try {
+
+		Object.defineProperty( material, '__tslpObject3DTargets', {
+			value: current,
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		} );
+
+	} catch ( _ ) {
+
+		material.__tslpObject3DTargets = current;
+
+	}
+	return material;
+
+}
+
 function collectPostprocessTextures( root, out, seen = new Set(), depth = 0 ) {
 
 	if ( ! root || depth > 32 ) return;
@@ -659,6 +739,51 @@ function collectPostprocessTextures( root, out, seen = new Set(), depth = 0 ) {
 		}
 
 	}
+
+}
+
+function findPostprocessPassCamera( root, seen = new Set(), depth = 0 ) {
+
+	if ( ! root || depth > 32 ) return null;
+	if ( typeof root !== 'object' && typeof root !== 'function' ) return null;
+	if ( seen.has( root ) ) return null;
+	seen.add( root );
+
+	if ( root.isPassNode === true && root.camera && ! isRetroPassNode( root ) ) return root.camera;
+
+	let keys = [];
+	try { keys = Object.getOwnPropertyNames( root ); } catch ( _ ) { return null; }
+	for ( const key of keys ) {
+
+		if ( POSTPROCESS_TEXTURE_WALK_SKIP_KEYS.has( key ) ) continue;
+		let value = null;
+		try { value = root[ key ]; } catch ( _ ) { continue; }
+		if ( ! value ) continue;
+		if ( Array.isArray( value ) ) {
+
+			for ( const item of value ) {
+
+				const camera = findPostprocessPassCamera( item, seen, depth + 1 );
+				if ( camera ) return camera;
+
+			}
+
+		} else {
+
+			const camera = findPostprocessPassCamera( value, seen, depth + 1 );
+			if ( camera ) return camera;
+
+		}
+
+	}
+	return null;
+
+}
+
+function isRetroPassNode( node ) {
+
+	const type = node && node.constructor && ( node.constructor.type || node.constructor.name ) || node && node.type || '';
+	return type === 'RetroPassNode';
 
 }
 

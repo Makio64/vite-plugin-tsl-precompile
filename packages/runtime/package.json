@@ -72,6 +72,10 @@
       "types": "./types/slim-support/scene-support.d.ts",
       "default": "./src/slim-support/scene-support.js"
     },
+    "./slim-support/renderer-lighting": {
+      "types": "./types/slim-support/renderer-lighting.d.ts",
+      "default": "./src/slim-support/renderer-lighting.js"
+    },
     "./slim-support/render-fallback-registry": {
       "types": "./types/slim-support/render-fallback-registry.d.ts",
       "default": "./src/slim-support/render-fallback-registry.js"
@@ -87,6 +91,10 @@
     "./slim-support/postprocess-effects-replay": {
       "types": "./types/slim-support/postprocess-effects-replay.d.ts",
       "default": "./src/slim-support/postprocess-effects-replay.js"
+    },
+    "./slim-support/traa-replay": {
+      "types": "./types/slim-support/traa-replay.d.ts",
+      "default": "./src/slim-support/traa-replay.js"
     },
     "./slim-support/pass-render-fallback": {
       "types": "./types/slim-support/pass-render-fallback.d.ts",

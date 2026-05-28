@@ -145,7 +145,26 @@ test( 'classifier dispatches viewport.texture and forwards isDepth from shader p
 	assert.equal( ctx.viewportTextureBindings[ 0 ].generateMipmaps, false );
 	assert.equal( ctx.viewportTextureBindings[ 0 ].isDepth, true );
 	assert.equal( ctx.viewportTextureBindings[ 0 ].fallbackTexture.id, 'fb' );
+	assert.equal( ctx.viewportTextureBindings[ 0 ].shared, false );
 	assert.equal( ctx.viewportTextureBindings[ 0 ].skipZeroThicknessTransmission, true );
+
+} );
+
+test( 'classifier preserves viewportSharedTexture intent on viewport.texture bindings', () => {
+
+	const ctx = freshContext( {
+		shaderDeclaresDepthTexture: () => false,
+		shouldSkipViewportCopyForZeroThicknessTransmission: () => false,
+	} );
+	const entry = {
+		kind: 'viewport.texture', target: 'sampled-texture', group: 'g', binding: 'vp',
+		source: { kind: 'viewport.texture', generateMipmaps: false, shared: true },
+	};
+	classifyDynamicTextureBinding( entry, { isSampledTexture: true, texture: { id: 'fb' } }, { kind: 'sampled-texture', name: 'vp' }, ctx );
+
+	assert.equal( ctx.viewportTextureBindings.length, 1 );
+	assert.equal( ctx.viewportTextureBindings[ 0 ].shared, true );
+	assert.equal( ctx.viewportTextureBindings[ 0 ].isDepth, false );
 
 } );
 

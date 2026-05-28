@@ -1,7 +1,7 @@
 import { MATERIAL_TEXTURE_PROPS } from '@tsl-precompile/contract/texture-props';
-import { collectMaterialNodeTextures } from '../hydrate/material-node-textures.js';
+import { collectMaterialNodeTextures } from '../hydrate/material-node-texture-collector.js';
 
-export { collectMaterialNodeTextures } from '../hydrate/material-node-textures.js';
+export { collectMaterialNodeTextures } from '../hydrate/material-node-texture-collector.js';
 
 export function textureImageSrc( texture ) {
 
