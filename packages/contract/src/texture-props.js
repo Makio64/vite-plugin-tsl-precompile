@@ -31,6 +31,8 @@ export const NODE_GRAPH_TEXTURE_KEYS = Object.freeze( [
 	'colorNode',
 	'normalNode',
 	'outputNode',
+	'backdropNode',
+	'backdropAlphaNode',
 	'roughnessNode',
 	'metalnessNode',
 	'emissiveNode',

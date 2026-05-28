@@ -108,7 +108,7 @@ const exactDescriptors = {
 		owner: 'renderer',
 		resolver: 'hydrator/viewport-texture-rebinder',
 		required: [],
-		optional: [ 'generateMipmaps', 'isDepth', 'textureType', 'textureDimension' ],
+		optional: [ 'generateMipmaps', 'isDepth', 'shared', 'textureType', 'textureDimension' ],
 	} ),
 	'reflector.texture': freezeDescriptor( {
 		kind: 'reflector.texture',

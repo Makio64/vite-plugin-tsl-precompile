@@ -145,6 +145,7 @@ test( 'contract dynamic binding descriptors document runtime texture and live sl
 	assert.equal( viewport.target, DYNAMIC_BINDING_TARGET.SAMPLED_TEXTURE );
 	assert.equal( viewport.phase, DYNAMIC_BINDING_PHASE.UPDATE_BEFORE );
 	assert.match( viewport.resolver, /viewport-texture/ );
+	assert.ok( viewport.optional.includes( 'shared' ) );
 
 	const live = dynamicBindingDescriptor( 'uniform.live' );
 	assert.equal( live.target, DYNAMIC_BINDING_TARGET.UNIFORM_SLOT );
