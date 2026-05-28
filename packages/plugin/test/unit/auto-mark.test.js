@@ -56,3 +56,17 @@ test( 'autoMark — ignores non-NodeMaterial constructors', () => {
 	assert.equal( injectedNames.length, 0 );
 
 } );
+
+test( 'autoMark — rewrites member expressions ending in NodeMaterial', () => {
+
+	const src = `
+		import * as THREE from 'three/webgpu';
+		const m = new THREE.MeshStandardNodeMaterial();
+		const m2 = new THREE.nodes.MeshPhysicalNodeMaterial();
+	`;
+	const { code, injectedNames } = autoMarkSource( src, { filename: 'example.js' } );
+	assert.equal( injectedNames.length, 2 );
+	assert.match( code, /new THREE\.MeshStandardNodeMaterial\(\)\.precompile\("auto-example-0"\)/ );
+	assert.match( code, /new THREE\.nodes\.MeshPhysicalNodeMaterial\(\)\.precompile\("auto-example-1"\)/ );
+
+} );

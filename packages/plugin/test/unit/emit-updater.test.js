@@ -298,8 +298,24 @@ test( 'emitUpdaterSource — object3d.nodeUniform reads frame.object[property].v
 	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
 	assert.deepEqual( unsupportedKinds, [] );
 	assert.match( source, /frame\.object && frame\.object\["distortionScale"\]/ );
-	assert.match( source, /writeF32\(view, byteOffset \+ 0, _node\.value\);/ );
+	assert.match( source, /const _value = _node && _node\.value !== undefined \? _node\.value : _node; writeF32\(view, byteOffset \+ 0, _value\);/ );
 	assert.match( source, /writeF32\(view, byteOffset \+ 0, __const0\);/ );
+
+} );
+
+test( 'emitUpdaterSource — object3d.nodeUniform reads direct frame.object[property] values', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			slots: [
+				{ offset: 0, dtype: 'color', source: { kind: 'object3d.nodeUniform', property: 'color', valueSnapshot: { type: 'color', data: [ 0.1, 0.2, 0.3 ] } } },
+			],
+		} ],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.deepEqual( unsupportedKinds, [] );
+	assert.match( source, /frame\.object && frame\.object\["color"\]/ );
+	assert.match( source, /const _value = _node && _node\.value !== undefined \? _node\.value : _node; writeColor\(view, byteOffset \+ 0, _value\);/ );
 
 } );
 
@@ -315,7 +331,7 @@ test( 'emitUpdaterSource — object3d.nodeUniform with opaque valueType + numeri
 	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
 	assert.deepEqual( unsupportedKinds, [] );
 	assert.match( source, /frame\.object && frame\.object\["showSunDisc"\]/ );
-	assert.match( source, /writeF32\(view, byteOffset \+ 0, _node\.value\);/ );
+	assert.match( source, /const _value = _node && _node\.value !== undefined \? _node\.value : _node; writeF32\(view, byteOffset \+ 0, _value\);/ );
 
 } );
 

@@ -77,6 +77,47 @@ test( 'extractUniformPlan maps object-owned UniformNode properties', () => {
 
 } );
 
+test( 'extractUniformPlan maps custom object color update nodes to object properties', () => {
+
+	const color = { isColor: true, r: 0.2, g: 0.4, b: 0.6 };
+	const uniformNode = {
+		isUniformNode: true,
+		constructor: { type: 'UniformNode' },
+		nodeType: 'color',
+		value: color,
+	};
+	const updateNode = {
+		constructor: { type: 'InstanceUniformNode' },
+		uniformNode,
+		update( frame ) {
+
+			const mesh = frame.object;
+			const meshColor = mesh.color;
+			this.uniformNode.value.copy( meshColor );
+
+		},
+	};
+	const state = {
+		updateNodes: [ updateNode ],
+		bindings: [ {
+			name: 'object',
+			bindings: [ {
+				isUniformsGroup: true,
+				byteLength: 16,
+				visibility: 2,
+				groupNode: { shared: false },
+				uniforms: [ makeVec3UniformSlot( uniformNode, color ) ],
+			} ],
+		} ],
+	};
+
+	const plan = extractUniformPlan( state, {} );
+	assert.equal( plan[ 0 ].slots[ 0 ].source.kind, 'object3d.nodeUniform' );
+	assert.equal( plan[ 0 ].slots[ 0 ].source.property, 'color' );
+	assert.deepEqual( plan[ 0 ].slots[ 0 ].source.valueSnapshot, { type: 'color', data: [ 0.2, 0.4, 0.6 ] } );
+
+} );
+
 test( 'extractUniformPlan preserves explicit camera Object3DNode targets', () => {
 
 	const value = { isVector3: true, x: 1, y: 2, z: 3 };
@@ -152,9 +193,29 @@ test( 'extractUniformPlan keeps ViewportTextureNode bindings on the viewport reb
 	assert.equal( source.generateMipmaps, true );
 	assert.equal( source.textureUuid, undefined );
 
-} );
+	} );
 
-// Wave 6 S1: classifyByCallback lifts `uniform(...).onFrameUpdate(frame => frame.time * k)`
+	test( 'extractUniformPlan preserves ViewportSharedTextureNode intent for the viewport rebinder', () => {
+
+		const textureNode = {
+			isViewportTextureNode: true,
+			generateMipmaps: false,
+			constructor: { type: 'ViewportSharedTextureNode' },
+			value: {
+				isTexture: true,
+				isFramebufferTexture: true,
+				uuid: 'viewport-shared-texture-a',
+			},
+		};
+		const plan = extractUniformPlan( makeTextureState( textureNode ), {} );
+		const source = plan[ 0 ].textures[ 0 ].source;
+		assert.equal( source.kind, 'viewport.texture' );
+		assert.equal( source.shared, true );
+		assert.equal( source.generateMipmaps, false );
+
+	} );
+
+	// Wave 6 S1: classifyByCallback lifts `uniform(...).onFrameUpdate(frame => frame.time * k)`
 // to a `frame.time.scaled` slot with the recorded scale, so the emit-updater and
 // hydrator honour __tslpPinnedClock instead of freezing on uniform.live.
 test( 'extractUniformPlan detects frame.time passthrough callback as frame.time', () => {

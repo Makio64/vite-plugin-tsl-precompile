@@ -1142,7 +1142,7 @@ function emitObjectNodeUniform( slot, off, usedWriters, constants, unsupportedKi
 
 	usedWriters.add( writer );
 	const nodeExpr = `frame.object && frame.object[${ JSON.stringify( prop ) }]`;
-	const liveWrite = `${ writer }(view, ${ off }, _node.value);`;
+	const liveWrite = `{ const _value = _node && _node.value !== undefined ? _node.value : _node; ${ writer }(view, ${ off }, _value); }`;
 	let fallbackWrite = `/* object3d.nodeUniform "${ prop }" missing; no snapshot */`;
 	if ( src.valueSnapshot && src.valueSnapshot.data !== undefined ) {
 
@@ -1162,7 +1162,7 @@ function emitObjectNodeUniform( slot, off, usedWriters, constants, unsupportedKi
 		);
 
 	}
-	return `{ const _node = ${ nodeExpr }; if (_node && _node.value !== undefined && _node.value !== null) ${ liveWrite } else ${ fallbackWrite } }`;
+	return `{ const _node = ${ nodeExpr }; if (_node !== undefined && _node !== null) ${ liveWrite } else ${ fallbackWrite } }`;
 
 }
 

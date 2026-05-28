@@ -24,6 +24,7 @@
 
 import { extractUniformPlan } from './extractUniformPlan.js';
 import { DataUtils, FloatType, HalfFloatType, RGBAFormat, RenderTarget } from 'three';
+import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
 
 /**
  * Describes a single binding inside a bind group in serializable form.
@@ -195,6 +196,14 @@ function selectPreferredArtifact( current, candidate, expectedShape ) {
 
 	if ( candidateMatches && ! currentMatches ) return candidate;
 
+	const currentUsable = countArtifactFragmentOutputs( current, 1 ) > 0;
+	const candidateUsable = countArtifactFragmentOutputs( candidate, 1 ) > 0;
+	if ( candidateUsable && ! currentUsable ) return candidate;
+
+	const currentMRT = typeof current.mrtOutputCount === 'number' && current.mrtOutputCount > 0;
+	const candidateMRT = typeof candidate.mrtOutputCount === 'number' && candidate.mrtOutputCount > 0;
+	if ( candidateUsable && currentMRT && ! candidateMRT ) return candidate;
+
 	return current;
 
 }
@@ -240,7 +249,8 @@ function mergeArtifactTextureRefs( target, source ) {
 
 	const sourceRefs = source && source._textureRefs;
 	if ( ! ( sourceRefs instanceof Map ) || sourceRefs.size === 0 ) return;
-	let refs = target._textureRefs instanceof Map ? new Map( target._textureRefs ) : new Map();
+	const existingRefs = target._textureRefs instanceof Map ? target._textureRefs : null;
+	const refs = existingRefs || new Map();
 	let changed = false;
 	for ( const [ uuid, texture ] of sourceRefs ) {
 
@@ -253,6 +263,7 @@ function mergeArtifactTextureRefs( target, source ) {
 
 	}
 	if ( ! changed ) return;
+	if ( existingRefs ) return;
 	Object.defineProperty( target, '_textureRefs', {
 		value: refs,
 		enumerable: false,
@@ -553,6 +564,7 @@ export function extractArtifact( cacheKey, state, material = null, object = null
 		Object.defineProperty( artifact, '_textureRefs', {
 			value: textureRefs,
 			enumerable: false,
+			configurable: true,
 			writable: true
 		} );
 
@@ -1389,7 +1401,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 			const outputMap = sceneMRTNode.nodes || sceneMRTNode.outputNodes || null;
 			const outputNames = outputMap ? Object.keys( outputMap ) : [];
 			const outputCount = outputNames.length;
-			if ( outputCount > 1 ) {
+			if ( outputCount > 0 ) {
 
 				artifact.mrtOutputCount = outputCount;
 				// Stamp the per-output names + blend modes so the runtime's

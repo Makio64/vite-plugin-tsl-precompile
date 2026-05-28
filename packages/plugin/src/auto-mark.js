@@ -60,8 +60,17 @@ export function autoMarkSource( source, opts ) {
 		NewExpression( path ) {
 
 			const callee = path.node.callee;
-			if ( ! t.isIdentifier( callee ) ) return;
-			if ( ! /NodeMaterial$/.test( callee.name ) ) return;
+			let calleeName = '';
+			if ( t.isIdentifier( callee ) ) {
+
+				calleeName = callee.name;
+
+			} else if ( t.isMemberExpression( callee ) && ! callee.computed && t.isIdentifier( callee.property ) ) {
+
+				calleeName = callee.property.name;
+
+			}
+			if ( ! calleeName || ! /NodeMaterial$/.test( calleeName ) ) return;
 
 			// If the parent is a MemberExpression with property === 'precompile',
 			// the author already marked this construction; skip.

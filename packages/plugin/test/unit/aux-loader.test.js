@@ -74,6 +74,43 @@ test( 'aux-loader: different shapes with the same hash coexist', () => {
 
 } );
 
+test( 'aux-loader: render-output fragCoord divisor uses live renderer size', () => {
+
+	__resetAuxRegistryForTests();
+	const artifact = {
+		materialShape: 'render-output',
+		vertexShader: '',
+		fragmentShader: 'nodeVar0 = textureSample( nodeUniform0, nodeUniform0_sampler, ( fragCoord.xy / object.nodeUniform1 ) );',
+		uniformPlan: [ {
+			name: 'object',
+			slots: [
+				{
+					name: 'nodeUniform1',
+					dtype: 'vec2',
+					source: { kind: 'uniform.live', valueSnapshot: { type: 'vec2', data: [ 512, 512 ] } },
+				},
+			],
+			orderedBindings: [ {
+				type: 'ubo',
+				slots: [
+					{
+						name: 'nodeUniform1',
+						dtype: 'vec2',
+						source: { kind: 'uniform.live', valueSnapshot: { type: 'vec2', data: [ 512, 512 ] } },
+					},
+				],
+			} ],
+		} ],
+	};
+
+	registerAuxArtifact( 'render-output', 'hash-ro', artifact );
+	const loaded = loadAux( 'render-output', 'hash-ro' );
+
+	assert.equal( loaded.uniformPlan[ 0 ].slots[ 0 ].source.kind, 'renderer.size' );
+	assert.equal( loaded.uniformPlan[ 0 ].orderedBindings[ 0 ].slots[ 0 ].source.kind, 'renderer.size' );
+
+} );
+
 test( 'aux-loader: registerAuxArtifacts (bulk) + listAux', () => {
 
 	__resetAuxRegistryForTests();

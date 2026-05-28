@@ -32,6 +32,7 @@ test( 'rewrite/PostProcessing: bare NodeMaterial → Material sentinel; fragment
 	assert.match( out, /preparePrecompiledPostprocess\s*\(/ );
 	assert.match( out, /attachPostprocessTextureRefs\s*\(/ );
 	assert.match( out, /attachPostprocessUpdateBeforeNodes\s*\(/ );
+	assert.match( out, /attachPostprocessObject3DTargets\s*\(/ );
 	assert.match( out, /loadAux\s*\(\s*["']post-process["']/ );
 	assert.match( out, /hashNodeGraphSync\s*\(\s*this\.outputNode/ );
 	assert.match( out, /shape:\s*["']post-process["']/ );
@@ -41,6 +42,7 @@ test( 'rewrite/PostProcessing: bare NodeMaterial → Material sentinel; fragment
 
 	// Runtime imports + aux side-effect + Material import
 	assert.match( out, /from ['"]@tsl-precompile\/runtime['"]/ );
+	assert.match( out, /attachPostprocessObject3DTargets/ );
 	assert.match( out, /virtual:tsl-precompile\/__aux/ );
 
 } );

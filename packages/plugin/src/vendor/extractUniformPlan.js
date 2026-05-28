@@ -59,6 +59,8 @@ function object3DSourceForNode( node, context ) {
 function resolveFromUpdateNode( node, context = null ) {
 
 	const type = node.constructor ? node.constructor.type : null;
+	const objectPropertyUpdate = resolveObjectPropertyUpdateNode( node );
+	if ( objectPropertyUpdate ) return objectPropertyUpdate;
 
 	// ReferenceNode / MaterialReferenceNode expose the live property on the
 	// referenced object. Their internal `node` field is the TSL UniformNode
@@ -190,6 +192,61 @@ function resolveFromUpdateNode( node, context = null ) {
 	}
 
 	return null;
+
+}
+
+function resolveObjectPropertyUpdateNode( node ) {
+
+	const uniformNode = node && node.uniformNode || null;
+	if ( ! uniformNode || uniformNode.isUniformNode !== true || typeof node.update !== 'function' ) return null;
+
+	let source = '';
+	try { source = Function.prototype.toString.call( node.update ); } catch ( _ ) { return null; }
+	if ( ! /uniformNode\s*\.\s*value\s*(?:\.copy\s*\(|=)/.test( source ) ) return null;
+
+	const objectAliases = new Set( [ 'object' ] );
+	for ( const match of source.matchAll( /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*frame\s*\.\s*object\b/g ) ) {
+
+		objectAliases.add( match[ 1 ] );
+
+	}
+
+	const propertyByVariable = new Map();
+	for ( const alias of objectAliases ) {
+
+		const escaped = alias.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
+		for ( const match of source.matchAll( new RegExp( `\\b(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*${ escaped }\\s*\\.\\s*([A-Za-z_$][\\w$]*)\\b`, 'g' ) ) ) {
+
+			propertyByVariable.set( match[ 1 ], match[ 2 ] );
+
+		}
+
+		const directCopy = source.match( new RegExp( `uniformNode\\s*\\.\\s*value\\s*\\.\\s*copy\\s*\\(\\s*${ escaped }\\s*\\.\\s*([A-Za-z_$][\\w$]*)\\b` ) );
+		if ( directCopy ) return objectPropertyUpdateSource( uniformNode, directCopy[ 1 ] );
+
+	}
+
+	const copyArg = source.match( /uniformNode\s*\.\s*value\s*\.\s*copy\s*\(\s*([A-Za-z_$][\w$]*)\b/ );
+	if ( copyArg && propertyByVariable.has( copyArg[ 1 ] ) ) {
+
+		return objectPropertyUpdateSource( uniformNode, propertyByVariable.get( copyArg[ 1 ] ) );
+
+	}
+
+	return null;
+
+}
+
+function objectPropertyUpdateSource( uniformNode, property ) {
+
+	return {
+		uniformNode,
+		source: {
+			kind: 'object3d.nodeUniform',
+			property,
+			uniformType: uniformNode.nodeType || null,
+		},
+	};
 
 }
 
@@ -1365,11 +1422,13 @@ export function extractUniformPlan( state, context = null ) {
 							// (the depth lives on the shared viewport depth buffer,
 							// not in the material graph), leaving the binding at the
 							// 1×1 fallback and breaking refraction depth checks.
+							const isSharedViewport = textureNode.constructor && textureNode.constructor.type === 'ViewportSharedTextureNode';
 							source = {
 								kind: 'viewport.texture',
 								generateMipmaps: !! ( textureNode && textureNode.generateMipmaps ),
 								isDepth: tex.isDepthTexture === true,
 							};
+							if ( isSharedViewport ) source.shared = true;
 
 						} else if ( tex.isDepthTexture === true || ( ( shadowLightInfo = findLightForDepthTexture( state, tex ) ) && shadowLightInfo.vsm ) ) {
 

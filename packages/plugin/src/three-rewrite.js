@@ -1605,9 +1605,14 @@ function buildPostProcessExpr( outputNodeExpr ) {
 			] ),
 		],
 	);
+	const materialExpr = t.newExpression( t.identifier( 'PrecompiledMaterial' ), [ artifactExpr ] );
+	const targetedMaterialExpr = t.callExpression(
+		t.identifier( 'attachPostprocessObject3DTargets' ),
+		[ materialExpr, t.cloneNode( outputNodeExpr ) ],
+	);
 	return t.sequenceExpression( [
 		prepareCall,
-		t.newExpression( t.identifier( 'PrecompiledMaterial' ), [ artifactExpr ] ),
+		targetedMaterialExpr,
 	] );
 
 }
@@ -1780,6 +1785,7 @@ function injectRuntimeImports( ast ) {
 			t.importSpecifier( t.identifier( 'attachArtifactTextureRefs' ), t.identifier( 'attachArtifactTextureRefs' ) ),
 			t.importSpecifier( t.identifier( 'attachPostprocessTextureRefs' ), t.identifier( 'attachPostprocessTextureRefs' ) ),
 			t.importSpecifier( t.identifier( 'attachPostprocessUpdateBeforeNodes' ), t.identifier( 'attachPostprocessUpdateBeforeNodes' ) ),
+			t.importSpecifier( t.identifier( 'attachPostprocessObject3DTargets' ), t.identifier( 'attachPostprocessObject3DTargets' ) ),
 			t.importSpecifier( t.identifier( 'preparePrecompiledPostprocess' ), t.identifier( 'preparePrecompiledPostprocess' ) ),
 			t.importSpecifier( t.identifier( 'hashNodeGraphSync' ), t.identifier( 'hashNodeGraphSync' ) ),
 			t.importSpecifier( t.identifier( 'hashPlainConfigSync' ), t.identifier( 'hashPlainConfigSync' ) ),
