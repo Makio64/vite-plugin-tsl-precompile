@@ -62,8 +62,34 @@ entirely at runtime.
 Projects that use MRT / `RenderPipeline` should also capture aux artifacts
 after the pass graph is built. `setupPrecompile({ aux: true })` exposes
 `captureAux(extraOpts)`, so a `pass(scene, camera).setMRT(...)` pipeline can
-call `await setup.captureAux({ passNode: scenePass, renderPipeline })` before
 rendering.
+
+## Automated Recapture
+
+To automate the dev-capture process (e.g. during CI or post-upgrade sweeps) without opening a browser manually:
+
+1. Install Playwright in your project:
+   ```sh
+   npm install --save-dev playwright
+   npx playwright install chromium
+   ```
+
+2. Run the recapture tool while your Vite dev server is running:
+   ```sh
+   # Visits the default http://localhost:5173/ and automatically captures all .precompile() markers
+   npx tsl-precompile-recapture
+   ```
+
+### Recapture CLI Options
+
+| Option | Default | Description |
+|---|---|---|
+| `-u, --url <url>` | `http://localhost:5173` | Base URL of the running dev server |
+| `-p, --paths <paths>` | `/` | Comma-separated paths/routes to visit |
+| `-t, --timeout <ms>` | `10000` | Max time to wait per page in milliseconds |
+| `-s, --settle <ms>` | `1000` | Settle delay in milliseconds after all captures finish |
+| `--no-headless` | (headless) | Run the browser in headful mode (visible window) |
+| `-b, --browser <name>` | `chromium` | Browser type: `chromium`, `firefox`, `webkit` |
 
 ## Options
 

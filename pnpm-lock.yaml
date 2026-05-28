@@ -11,6 +11,9 @@ importers:
       '@types/node':
         specifier: ^25.7.0
         version: 25.7.0
+      playwright:
+        specifier: ^1.59.1
+        version: 1.59.1
 
   packages/contract: {}
 
@@ -41,6 +44,9 @@ importers:
       pngjs:
         specifier: ^7.0.0
         version: 7.0.0
+      webgpu-optimizer-report:
+        specifier: file:../../../../WebGPUOptimizerReport
+        version: file:../WebGPUOptimizerReport
 
   packages/examples/bloom:
     dependencies:
@@ -1123,8 +1129,18 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
+  playwright-core@1.60.0:
+    resolution: {integrity: sha512-9bW6zvX/m0lEbgTKJ6YppOKx8H3VOPBMOCFh2irXFOT4BbHgrx5hPjwJYLT40Lu+4qtD36qKc/Hn56StUW57IA==}
+    engines: {node: '>=18'}
+    hasBin: true
+
   playwright@1.59.1:
     resolution: {integrity: sha512-C8oWjPR3F81yljW9o5OxcWzfh6avkVwDD2VYdwIGqTkl+OGFISgypqzfu7dOe4QNLL2aqcWBmI3PMtLIK233lw==}
+    engines: {node: '>=18'}
+    hasBin: true
+
+  playwright@1.60.0:
+    resolution: {integrity: sha512-hheHdokM8cdqCb0lcE3s+zT4t4W+vvjpGxsZlDnikarzx8tSzMebh3UiFtgqwFwnTnjYQcsyMF8ei2mCO/tpeA==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -1283,6 +1299,11 @@ packages:
         optional: true
       yaml:
         optional: true
+
+  webgpu-optimizer-report@file:../WebGPUOptimizerReport:
+    resolution: {directory: ../WebGPUOptimizerReport, type: directory}
+    engines: {node: '>=20'}
+    hasBin: true
 
 snapshots:
 
@@ -1854,9 +1875,17 @@ snapshots:
 
   playwright-core@1.59.1: {}
 
+  playwright-core@1.60.0: {}
+
   playwright@1.59.1:
     dependencies:
       playwright-core: 1.59.1
+    optionalDependencies:
+      fsevents: 2.3.2
+
+  playwright@1.60.0:
+    dependencies:
+      playwright-core: 1.60.0
     optionalDependencies:
       fsevents: 2.3.2
 
@@ -2019,3 +2048,7 @@ snapshots:
       '@types/node': 25.7.0
       fsevents: 2.3.3
       terser: 5.46.1
+
+  webgpu-optimizer-report@file:../WebGPUOptimizerReport:
+    dependencies:
+      playwright: 1.60.0

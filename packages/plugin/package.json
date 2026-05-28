@@ -17,6 +17,9 @@
     "directory": "packages/plugin"
   },
   "main": "./src/index.js",
+  "bin": {
+    "tsl-precompile-recapture": "./src/cli/recapture.js"
+  },
   "types": "./types/index.d.ts",
   "exports": {
     ".": {
@@ -35,6 +38,7 @@
     "test:rewrite": "node --test --test-concurrency=1 'test/unit/rewrite-*.test.js'",
     "test:coverage": "node --test --test-concurrency=1 'test/coverage/*.test.js'",
     "verify": "node src/cli/verify.js",
+    "recapture": "node src/cli/recapture.js",
     "vendor:probe": "node scripts/probe-vendor.mjs",
     "prepublishOnly": "pnpm run test"
   },

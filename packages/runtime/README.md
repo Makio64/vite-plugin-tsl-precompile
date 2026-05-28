@@ -88,8 +88,25 @@ const support = createSlimSceneSupport( {
 } );
 
 support.indexScene( scene );
-await support.ensureFallback();      // optional: for Inspector/addon meshes
+await support.ensureFallback();      // optional: full-renderer + raw compute fallback
 ```
+
+`ensureFallback()` also patches slim `renderer.compute(rawComputeNode)` so raw
+TSL compute is dispatched by the full renderer on the shared `GPUDevice`, then
+storage outputs are synced back into slim. For renderer-owned lighting systems
+such as tiled lighting, call this before the slim render:
+
+```js
+support.updateRendererLighting( scene, camera );
+slimRenderer.render( scene, camera );
+```
+
+If your app performs contact-shadow or depth-style offscreen renders with
+`scene.overrideMaterial`, call
+`support.renderOffscreenOverrideWithFallback( scene, camera )` after the
+fallback renderer has been initialized and while the slim renderer's render
+target is still bound. The helper renders that target with the full renderer
+and shares the resulting color/depth GPU textures back into slim.
 
 ## Exports
 

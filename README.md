@@ -195,6 +195,12 @@ support.indexScene( scene );
 await support.ensureFallback();
 ```
 
+For offscreen override-material renders such as contact shadows or depth
+prepasses, call `support.renderOffscreenOverrideWithFallback( scene, camera )`
+after the fallback renderer has been initialized and while your slim renderer
+has a render target bound. It renders that target with the shared full renderer
+and hands the produced GPU textures back to slim.
+
 Pairs naturally with `autoMark` if you want to remove the live TSL compiler
 from production on an existing project without manually marking every
 material.

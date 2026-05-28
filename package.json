@@ -12,7 +12,6 @@
     "build": "pnpm -r --filter=!examples-* build",
     "test": "pnpm -r --filter=!examples-* test",
     "test:coverage": "pnpm --filter vite-plugin-tsl-precompile test:coverage",
-
     "test:three-rewrite": "pnpm --filter vite-plugin-tsl-precompile test:rewrite",
     "vendor:probe": "pnpm --filter vite-plugin-tsl-precompile vendor:probe",
     "test:batch": "pnpm --filter examples-batch test",
@@ -32,7 +31,7 @@
     "coverage:site": "pnpm coverage && pnpm --filter @tsl-precompile/site data",
     "coverage:retest": "pnpm test:e2e",
     "examples:ui": "pnpm --filter examples-batch ui",
-    "verify": "node packages/plugin/src/cli/verify.js artifacts packages/examples/ocean/artifacts packages/examples/getting-started/artifacts packages/examples/pbr-shadows/artifacts packages/examples/shadow-debug/artifacts packages/examples/postprocessing-debug/artifacts packages/examples/pmrem-debug/artifacts packages/examples/mrt-debug/artifacts",
+    "verify": "node packages/plugin/src/cli/verify.js artifacts packages/examples/ocean/artifacts packages/examples/getting-started/artifacts packages/examples/pbr-shadows/artifacts packages/examples/shadow-debug/artifacts packages/examples/postprocessing-debug/artifacts packages/examples/pmrem-debug/artifacts packages/examples/mrt-debug/artifacts packages/examples/background/artifacts packages/examples/compute-debug/artifacts",
     "pack:dry": "pnpm --filter @tsl-precompile/contract --filter @tsl-precompile/runtime --filter vite-plugin-tsl-precompile pack --pack-gzip-level 0 --pack-destination /tmp",
     "test:fresh-project": "pnpm --filter examples-fresh-project-smoke test",
     "release:check": "pnpm build && pnpm test && pnpm verify && pnpm pack:dry",
@@ -52,6 +51,7 @@
     "build:site": "pnpm --filter @tsl-precompile/site build"
   },
   "devDependencies": {
-    "@types/node": "^25.7.0"
+    "@types/node": "^25.7.0",
+    "playwright": "^1.59.1"
   }
 }
