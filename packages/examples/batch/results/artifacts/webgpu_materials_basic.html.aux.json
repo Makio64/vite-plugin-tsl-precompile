@@ -440,8 +440,8 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "2da6c3d0-2869-452e-aeba-d2bceb81f2ff",
-                "imageSrc": "http://localhost:8729/examples/textures/cube/pisa/px.png",
+                "textureUuid": "e9baefcc-841d-4735-9362-bd2e01e65e3f",
+                "imageSrc": "http://localhost:8730/examples/textures/cube/pisa/px.png",
                 "textureName": "nz.png",
                 "mapping": 301,
                 "wrapS": 1001,
@@ -462,8 +462,8 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "2da6c3d0-2869-452e-aeba-d2bceb81f2ff",
-                "imageSrc": "http://localhost:8729/examples/textures/cube/pisa/px.png",
+                "textureUuid": "e9baefcc-841d-4735-9362-bd2e01e65e3f",
+                "imageSrc": "http://localhost:8730/examples/textures/cube/pisa/px.png",
                 "textureName": "nz.png",
                 "mapping": 301,
                 "wrapS": 1001,
@@ -489,8 +489,8 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "2da6c3d0-2869-452e-aeba-d2bceb81f2ff",
-                  "imageSrc": "http://localhost:8729/examples/textures/cube/pisa/px.png",
+                  "textureUuid": "e9baefcc-841d-4735-9362-bd2e01e65e3f",
+                  "imageSrc": "http://localhost:8730/examples/textures/cube/pisa/px.png",
                   "textureName": "nz.png",
                   "mapping": 301,
                   "wrapS": 1001,
@@ -522,8 +522,8 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "2da6c3d0-2869-452e-aeba-d2bceb81f2ff",
-                  "imageSrc": "http://localhost:8729/examples/textures/cube/pisa/px.png",
+                  "textureUuid": "e9baefcc-841d-4735-9362-bd2e01e65e3f",
+                  "imageSrc": "http://localhost:8730/examples/textures/cube/pisa/px.png",
                   "textureName": "nz.png",
                   "mapping": 301,
                   "wrapS": 1001,
@@ -700,7 +700,7 @@
         "updateBeforeNodes": 1,
         "updateAfterNodes": 0
       },
-      "materialUuid": "fb2a5b03-0457-4ed5-ad22-0fc16eb620bf",
+      "materialUuid": "150233cf-d9f1-4d78-9306-1b62c07a329f",
       "captureClock": 0
     }
   },
@@ -1201,7 +1201,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "125e1ea2-f5b6-4096-96a1-9118e6f134e3",
+      "materialUuid": "d57d1619-192f-45c6-b80e-475855d7e3c5",
       "captureClock": 0,
       "pmremKind": "cubemap"
     }
@@ -1640,7 +1640,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "06426c15-267d-4310-b7f5-de9aee3a88e4",
+      "materialUuid": "2148bae6-ea01-4db5-ab08-298599378e74",
       "captureClock": 0,
       "pmremKind": "equirect"
     }
@@ -2316,7 +2316,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "d9aaa9c3-4c32-4aed-ab13-a0d45a802150",
+      "materialUuid": "2e9b4851-15dc-4e07-8e91-1b200f78c7bb",
       "captureClock": 0,
       "pmremKind": "blur"
     }
@@ -2807,7 +2807,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "12b4d1a3-0346-40aa-b8ab-34c752a9b0ce",
+      "materialUuid": "7d0d6641-ee63-4e5c-bf08-12313584f957",
       "captureClock": 0,
       "pmremKind": "ggx"
     }
@@ -3047,21 +3047,21 @@
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
-                    1.6440043216571212,
+                    1.7033710905816406,
                     0,
                     0,
                     0,
                     0,
-                    1.6440043216571212,
+                    1.7033710905816406,
                     0,
                     0,
                     0,
                     0,
-                    1.6440043216571212,
+                    1.7033710905816406,
                     0,
-                    0.24316750269484558,
-                    -1.0452216417515279,
-                    1.4216809952631593,
+                    1.6708269131538036,
+                    -0.48148957363544936,
+                    1.019829474389553,
                     1
                   ]
                 }
@@ -3219,21 +3219,21 @@
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
-                        1.6440043216571212,
+                        1.7033710905816406,
                         0,
                         0,
                         0,
                         0,
-                        1.6440043216571212,
+                        1.7033710905816406,
                         0,
                         0,
                         0,
                         0,
-                        1.6440043216571212,
+                        1.7033710905816406,
                         0,
-                        0.24316750269484558,
-                        -1.0452216417515279,
-                        1.4216809952631593,
+                        1.6708269131538036,
+                        -0.48148957363544936,
+                        1.019829474389553,
                         1
                       ]
                     }

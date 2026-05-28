@@ -70,22 +70,22 @@
               "valueSnapshot": {
                 "type": "mat4",
                 "data": [
-                  1,
+                  2.4142135623730954,
                   0,
                   0,
                   0,
                   0,
-                  1,
+                  2.4142135623730954,
                   0,
                   0,
                   0,
                   0,
+                  -1.0010010010010009,
                   -1,
                   0,
                   0,
-                  0,
-                  0,
-                  1
+                  -0.10010010010010009,
+                  0
                 ]
               }
             }
@@ -114,7 +114,7 @@
                   0,
                   0,
                   0,
-                  0,
+                  -3,
                   1
                 ]
               }
@@ -140,22 +140,22 @@
                   "valueSnapshot": {
                     "type": "mat4",
                     "data": [
-                      1,
+                      2.4142135623730954,
                       0,
                       0,
                       0,
                       0,
-                      1,
+                      2.4142135623730954,
                       0,
                       0,
                       0,
                       0,
+                      -1.0010010010010009,
                       -1,
                       0,
                       0,
-                      0,
-                      0,
-                      1
+                      -0.10010010010010009,
+                      0
                     ]
                   }
                 }
@@ -184,7 +184,7 @@
                       0,
                       0,
                       0,
-                      0,
+                      -3,
                       1
                     ]
                   }
@@ -497,6 +497,7 @@
       "transparent": false,
       "opacity": 1,
       "alphaTest": 0,
+      "alphaHash": false,
       "alphaToCoverage": false,
       "side": 0,
       "depthTest": true,
@@ -535,8 +536,15 @@
       "updateBeforeNodes": 0,
       "updateAfterNodes": 0
     },
-    "materialUuid": "2341d5da-2d7c-47e9-895e-945633d809a6",
-    "__hash": "3e3c29bf83db06eb7f860c58e65889873dff0e58bebfd3931c5fa9827e68dd88",
-    "__name": "getting-started"
+    "materialUuid": "0c9529f8-14bb-49ad-b529-b082428b3837",
+    "captureClock": 0.5460000000009313,
+    "sourceMaterial": {
+      "type": "MeshStandardNodeMaterial",
+      "name": "",
+      "nodeProps": [
+        "colorNode"
+      ],
+      "object": null
+    }
   }
 }

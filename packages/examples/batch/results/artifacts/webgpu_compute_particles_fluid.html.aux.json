@@ -785,7 +785,7 @@
         "updateBeforeNodes": 1,
         "updateAfterNodes": 0
       },
-      "materialUuid": "06426c15-267d-4310-b7f5-de9aee3a88e4",
+      "materialUuid": "2148bae6-ea01-4db5-ab08-298599378e74",
       "captureClock": 0
     }
   },
@@ -1286,7 +1286,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "d9aaa9c3-4c32-4aed-ab13-a0d45a802150",
+      "materialUuid": "2e9b4851-15dc-4e07-8e91-1b200f78c7bb",
       "captureClock": 0,
       "pmremKind": "cubemap"
     }
@@ -1725,7 +1725,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "12b4d1a3-0346-40aa-b8ab-34c752a9b0ce",
+      "materialUuid": "7d0d6641-ee63-4e5c-bf08-12313584f957",
       "captureClock": 0,
       "pmremKind": "equirect"
     }
@@ -2401,7 +2401,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "b6b29391-aa63-4dab-92f8-c1c4f10e1ffa",
+      "materialUuid": "dc388847-b0ea-431d-80bd-e5a8c3f23048",
       "captureClock": 0,
       "pmremKind": "blur"
     }
@@ -2892,7 +2892,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "df4ef6ff-21dd-4ab4-a9c7-a0dd3520ebc1",
+      "materialUuid": "5a2f797a-79a2-4da4-a0da-7c04fb21012e",
       "captureClock": 0,
       "pmremKind": "ggx"
     }

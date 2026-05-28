@@ -5,7 +5,7 @@
     "name": "aux-background-3cf10ca1d033",
     "artifact": {
       "version": 3,
-      "cacheKey": 7472925861317742,
+      "cacheKey": 5677639064654162,
       "materialShape": "node-material",
       "vertexShader": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tnodeUniform1 : f32,\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec2<f32>,\n\tnodeUniform2 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> nodeVar1 : vec3<f32>;\nvar<private> nodeVar2 : vec4<f32>;\nvar<private> nodeVar3 : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform5 );\n\n\tif ( ( render.cameraProjectionMatrix[ 3u ][ 3u ] == 1.0 ) ) {\n\n\t\tnodeVar1 = ( positionLocal * vec3<f32>( ( ( 1.0 / render.cameraProjectionMatrix[ 1u ][ 1u ] ) * 3.0 ) ) );\n\n\t} else {\n\n\t\tnodeVar1 = positionLocal;\n\n\t}\n\n\tnodeVar2 = ( render.cameraProjectionMatrix * vec4<f32>( ( modelViewMatrix * vec4<f32>( nodeVar1, 0.0 ) ).xyz, 1.0 ) );\n\tnodeVar3 = vec4<f32>( nodeVar2.x, nodeVar2.y, nodeVar2.w, nodeVar2.w );\n\n\t// result\n\n\tvaryings.builtinClipSpace = nodeVar3;\n\n\treturn varyings;\n\n}\n",
       "fragmentShader": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputType {\n\t@location( 0 ) m0 : vec4<f32>,\n\t@location( 1 ) m1 : vec4<f32>,\n\t\n};\nvar<private> output : OutputType;\n\n// uniforms\n\nstruct objectStruct {\n\tnodeUniform0 : vec2<f32>,\n\tnodeUniform2 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tnodeUniform1 : f32,\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> nodeVar0 : vec4<f32>;\n\n// codes\n\n\n@fragment\nfn main( @builtin( position ) fragCoord : vec4<f32> ) -> OutputType {\n\n\t// flow\n\t// code\n\n\tDiffuseColor = ( vec4<f32>( ( mix( vec3<f32>( 0.13286832154414627, 0.4969329950515914, 1.0 ), vec3<f32>( 0.057805430183792694, 0.13286832154414627, 1.0 ), ( fragCoord.xy / object.nodeUniform0 ).y ) * vec3<f32>( 0.05 ) ), 1.0 ) * vec4<f32>( render.nodeUniform1 ) );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform2 );\n\tDiffuseColor.w = 1.0;\n\tOutput = max( vec4<f32>( DiffuseColor.xyz, DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tnodeVar0 = Output;\n\toutput.m0 = nodeVar0;\n\toutput.m1 = vec4<f32>( 0.0, 0.0, 0.0, 0.0 );\n\n\t// result\n\n\treturn output;\n\n}\n",
@@ -400,7 +400,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "6b29a9d1-9a63-4b03-91a3-56f45eb81b6c",
+      "materialUuid": "41edef43-f2ae-494d-8086-6232d56f58a8",
       "captureClock": 0,
       "mrtOutputCount": 2,
       "mrtOutputNames": [
@@ -415,8 +415,8 @@
   },
   {
     "shape": "post-process",
-    "configHash": "6cea60a73b2bab2e565ed76ce64e1c043fb42914e85858a62d8b71b7f971a183",
-    "name": "aux-post-process-6cea60a73b2b",
+    "configHash": "b524442375f783ba96b2b8552497ce9d264aa6aa554b12be1f3f0bdbf2bd451a",
+    "name": "aux-post-process-b524442375f7",
     "artifact": {
       "version": 3,
       "cacheKey": 8461030122698493,
@@ -698,7 +698,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
+                "textureUuid": "2ed97746-63fa-42ab-b371-5c37b96a1664",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -722,7 +722,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
+                "textureUuid": "2ed97746-63fa-42ab-b371-5c37b96a1664",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -799,7 +799,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
+                  "textureUuid": "2ed97746-63fa-42ab-b371-5c37b96a1664",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -834,7 +834,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
+                  "textureUuid": "2ed97746-63fa-42ab-b371-5c37b96a1664",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -1030,14 +1030,14 @@
         "updateBeforeNodes": 2,
         "updateAfterNodes": 0
       },
-      "materialUuid": "ab3760b9-55a8-4d20-8d95-5b83f51f80be",
+      "materialUuid": "ef80c21a-7d0d-4eac-9b3d-314c83df15cd",
       "captureClock": 0
     }
   },
   {
     "shape": "mrt",
-    "configHash": "6895bf4c80753a10d95afaa4a4b3452a774ecda7c38092a1f28e9d3ca320a1ee",
-    "name": "aux-mrt-6895bf4c8075",
+    "configHash": "d0c67c642259a5bd9e580db9f0bff39d64237af174503a8309cee2927d73dabf",
+    "name": "aux-mrt-d0c67c642259",
     "artifact": {
       "version": 3,
       "cacheKey": 2403439375331243,
@@ -1330,7 +1330,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
+                "textureUuid": "2ed97746-63fa-42ab-b371-5c37b96a1664",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -1354,7 +1354,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
+                "textureUuid": "2ed97746-63fa-42ab-b371-5c37b96a1664",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -1431,7 +1431,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
+                  "textureUuid": "2ed97746-63fa-42ab-b371-5c37b96a1664",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -1466,7 +1466,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
+                  "textureUuid": "2ed97746-63fa-42ab-b371-5c37b96a1664",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -1938,7 +1938,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
+                "textureUuid": "2ed97746-63fa-42ab-b371-5c37b96a1664",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -1962,7 +1962,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
+                "textureUuid": "2ed97746-63fa-42ab-b371-5c37b96a1664",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -2039,7 +2039,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
+                  "textureUuid": "2ed97746-63fa-42ab-b371-5c37b96a1664",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -2074,7 +2074,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "53fcc466-675d-4d09-a130-fc2fc7f7b580",
+                  "textureUuid": "2ed97746-63fa-42ab-b371-5c37b96a1664",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,

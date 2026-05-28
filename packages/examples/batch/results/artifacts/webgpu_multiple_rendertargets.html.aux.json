@@ -265,7 +265,7 @@
               "size": 8,
               "dtype": "vec2",
               "source": {
-                "kind": "uniform.live",
+                "kind": "renderer.size",
                 "valueSnapshot": {
                   "type": "vec2",
                   "data": [
@@ -315,7 +315,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "2ca92686-0a3e-47d4-99a1-cfbaecdb2262",
+                "textureUuid": "22344e33-f257-4c8c-8cd6-0a4485238ffd",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -339,7 +339,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "98df62fd-8ce6-431d-bf69-f79522b6cf30",
+                "textureUuid": "0ad3bd2a-a9de-47aa-acff-22f3aeffad9a",
                 "textureName": "normal",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -368,7 +368,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "2ca92686-0a3e-47d4-99a1-cfbaecdb2262",
+                  "textureUuid": "22344e33-f257-4c8c-8cd6-0a4485238ffd",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -452,7 +452,7 @@
                   "size": 8,
                   "dtype": "vec2",
                   "source": {
-                    "kind": "uniform.live",
+                    "kind": "renderer.size",
                     "valueSnapshot": {
                       "type": "vec2",
                       "data": [
@@ -504,7 +504,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "98df62fd-8ce6-431d-bf69-f79522b6cf30",
+                  "textureUuid": "0ad3bd2a-a9de-47aa-acff-22f3aeffad9a",
                   "textureName": "normal",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -545,8 +545,8 @@
   },
   {
     "shape": "post-process",
-    "configHash": "11102b5bbf97aae09d2509e3c6609dfe970d7c36f871906ad74b970f2c34a600",
-    "name": "aux-post-process-11102b5bbf97",
+    "configHash": "24199a8e0613ac989dc0005b446387e09d39a7ece8578ce62478899ac891d5b0",
+    "name": "aux-post-process-24199a8e0613",
     "artifact": {
       "version": 3,
       "cacheKey": 7352854927103546,
@@ -874,7 +874,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "2ca92686-0a3e-47d4-99a1-cfbaecdb2262",
+                "textureUuid": "22344e33-f257-4c8c-8cd6-0a4485238ffd",
                 "textureName": "output",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -898,7 +898,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "98df62fd-8ce6-431d-bf69-f79522b6cf30",
+                "textureUuid": "0ad3bd2a-a9de-47aa-acff-22f3aeffad9a",
                 "textureName": "normal",
                 "mapping": 300,
                 "wrapS": 1001,
@@ -927,7 +927,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "2ca92686-0a3e-47d4-99a1-cfbaecdb2262",
+                  "textureUuid": "22344e33-f257-4c8c-8cd6-0a4485238ffd",
                   "textureName": "output",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -1078,7 +1078,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "98df62fd-8ce6-431d-bf69-f79522b6cf30",
+                  "textureUuid": "0ad3bd2a-a9de-47aa-acff-22f3aeffad9a",
                   "textureName": "normal",
                   "mapping": 300,
                   "wrapS": 1001,
@@ -1150,7 +1150,7 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "8f30429c-efaa-4f54-b242-5d319f0962bc",
+      "materialUuid": "98e7134a-5965-49ce-ae5c-04ce10ab4aad",
       "captureClock": 0
     }
   }

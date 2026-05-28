@@ -33,6 +33,7 @@ const LIGHT_LABELS = {
 };
 
 const CAPTURE_ENDPOINT = window.__TSLP_E2E?.captureEndpoint || '/__tsl-precompile/capture';
+const IS_E2E = !! window.__TSLP_E2E;
 const IS_E2E_REPLAY = window.__TSLP_E2E?.mode === 'replay';
 
 function shadowKindFromLocation( fallback ) {
@@ -223,7 +224,7 @@ export async function runShadowDebugExample( {
 	} );
 
 	const auxSummary = auxResults.map( ( r ) => `${ r.shape }:${ r.ok ? 'ok' : 'err' }` ).join( ', ' ) || 'no aux';
-	setHud( title, shadowKind, `rendering - ${ auxSummary }` );
+	setHud( title, shadowKind, IS_E2E ? 'rendering' : `rendering - ${ auxSummary }` );
 
 	function tick() {
 		casters.rotation.y = 0;

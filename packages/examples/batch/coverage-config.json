@@ -11,8 +11,10 @@
         "webgpu_postprocessing_sss.html"
       ],
       "volatileCompute": [
+        "webgpu_compute_audio.html",
         "webgpu_compute_particles.html",
         "webgpu_compute_particles_rain.html",
+        "webgpu_compute_particles_snow.html",
         "webgpu_compute_reduce.html",
         "webgpu_compute_sort_bitonic.html",
         "webgpu_compute_texture_pingpong.html",
@@ -36,7 +38,8 @@
       "webgpu_materials_envmaps.html": 15000,
       "webgpu_materials_cubemap_mipmaps.html": 15000,
       "webgpu_cubemap_mix.html": 15000,
-      "webgpu_pmrem_cubemap.html": 15000
+      "webgpu_pmrem_cubemap.html": 15000,
+      "webgpu_postprocessing_motion_blur.html": 20000
     },
     "psnrThresholdOverrides": {
       "webgpu_camera_logarithmicdepthbuffer.html": 28,

@@ -71,7 +71,7 @@ const allNames = new Set( [ ...captures.keys(), ...replays.keys() ] );
 function comparePSNR( capPath, repPath ) {
 
 	const name = capPath.split( '/' ).pop().replace( /\.capture\.png$/, '' );
-	const result = comparePngFiles( capPath, repPath, { name, round: false } );
+	const result = comparePngFiles( capPath, repPath, { name } );
 	return {
 		...result,
 		psnr: result.psnr === 'inf' ? Infinity : result.psnr,

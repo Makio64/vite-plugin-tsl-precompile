@@ -353,8 +353,8 @@
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "materialUuid": "da8b9479-a549-4799-9ca7-e4583f5468a6",
-      "userMaterialUuid": "027a0596-8f6e-4a9e-a9d8-6770aa55e159",
+      "materialUuid": "1fce2b77-94c7-4c1f-ab6d-3306f1c7ea61",
+      "userMaterialUuid": "1773cc6c-161d-4379-9e68-36cddd76b67d",
       "captureClock": 0
     }
   },
@@ -573,7 +573,7 @@
               "size": 8,
               "dtype": "vec2",
               "source": {
-                "kind": "uniform.live",
+                "kind": "renderer.size",
                 "valueSnapshot": {
                   "type": "vec2",
                   "data": [
@@ -745,7 +745,7 @@
                   "size": 8,
                   "dtype": "vec2",
                   "source": {
-                    "kind": "uniform.live",
+                    "kind": "renderer.size",
                     "valueSnapshot": {
                       "type": "vec2",
                       "data": [
