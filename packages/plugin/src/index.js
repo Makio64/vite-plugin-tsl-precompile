@@ -23,7 +23,7 @@
 
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { resolve, join, dirname } from 'node:path';
+import { resolve, join, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { transformSource } from './babel-transform.js';
@@ -300,12 +300,17 @@ export default function tslPrecompile( userOpts = {} ) {
 
 		async configureServer( server ) {
 
-			attachDevCapture( server, { artifactsDir: resolve( root, opts.artifactsDir ) } );
+			const artifactsRoot = resolve( root, opts.artifactsDir );
+			attachDevCapture( server, { artifactsDir: artifactsRoot } );
 			attachInspectorExtensionsShim( server );
 
-			// Re-read manifest when capture files change on disk.
-			server.watcher.on( 'add', () => loadManifest() );
-			server.watcher.on( 'change', () => loadManifest() );
+			// Re-read manifest when capture files change on disk. The watcher fires
+			// for every file in the project, so gate on artifact JSON paths — without
+			// this every save anywhere re-reads and re-parses all artifacts.
+			const isArtifactJson = ( file ) =>
+				typeof file === 'string' && file.endsWith( '.json' ) && ( file === artifactsRoot || file.startsWith( artifactsRoot + sep ) );
+			server.watcher.on( 'add', ( file ) => { if ( isArtifactJson( file ) ) loadManifest(); } );
+			server.watcher.on( 'change', ( file ) => { if ( isArtifactJson( file ) ) loadManifest(); } );
 
 		},
 

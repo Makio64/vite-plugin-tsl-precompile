@@ -30,7 +30,7 @@ export function createMaterialTextureRebinder( entries, deps ) {
 				const binding = entry && entry.binding;
 				if ( ! binding ) continue;
 
-				const candidate = resolveTextureBinding( entry.artifact, entry.groupName, entry.bindingName, entry.material );
+				const candidate = resolveTextureBinding( entry.artifact, entry.groupName, entry.bindingName, entry.material, { frame } );
 				if ( candidate ) rebindTextureBindingTargets( binding, candidate );
 
 				for ( const target of textureBindingTargets( binding ) ) {
@@ -80,7 +80,7 @@ export function createArtifactTextureRebinder( entries, deps ) {
 				const binding = entry.binding;
 				if ( ! binding ) continue;
 
-				const candidate = resolveTextureBinding( entry.artifact, entry.groupName, entry.bindingName, entry.material, { avoidTexture } );
+				const candidate = resolveTextureBinding( entry.artifact, entry.groupName, entry.bindingName, entry.material, { avoidTexture, frame } );
 				if ( candidate ) {
 
 					rebindTextureBindingTargets( binding, candidate );

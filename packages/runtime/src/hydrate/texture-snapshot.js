@@ -57,7 +57,9 @@ export function textureFromSnapshot( artifact, uuid, snapshot, bindingName = nul
 		snapshot.depth || snapshot.layers || snapshot.depthOrArrayLayers || inferSnapshotArrayDepth( snapshot ) :
 		1;
 	const dimensionKey = wants3DTexture ? '3d' : wantsArrayTexture ? '2d-array' : '2d';
-	const keyBase = uuid || `${ snapshot.width }x${ snapshot.height }:${ snapshot.data.length }`;
+	// Anonymous snapshots are keyed by object identity, not shape: two distinct
+	// same-shaped snapshots in one artifact must not collide on one cache slot.
+	const keyBase = uuid || snapshotIdentityKey( snapshot );
 	const key = `${ keyBase }:${ dimensionKey }:${ depth }`;
 	const cache = getTextureSnapshotCache( artifact );
 	if ( cache && cache.has( key ) ) return cache.get( key );
@@ -106,6 +108,23 @@ function resolveSnapshotFallback( artifact, bindingName, options ) {
 	const fallbackTextureForBinding = options && options.fallbackTextureForBinding;
 	if ( artifact && bindingName && fallbackTextureForBinding ) return fallbackTextureForBinding( artifact, bindingName );
 	return options && Object.prototype.hasOwnProperty.call( options, 'fallbackTexture' ) ? options.fallbackTexture : null;
+
+}
+
+let _snapshotIdCounter = 0;
+const _snapshotIds = new WeakMap();
+
+function snapshotIdentityKey( snapshot ) {
+
+	let id = _snapshotIds.get( snapshot );
+	if ( id === undefined ) {
+
+		id = ++ _snapshotIdCounter;
+		_snapshotIds.set( snapshot, id );
+
+	}
+
+	return `snap#${ id }`;
 
 }
 

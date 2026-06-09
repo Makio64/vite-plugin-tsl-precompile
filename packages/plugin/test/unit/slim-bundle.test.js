@@ -1,9 +1,11 @@
 /**
  * Slim-bundle size guard. Phase 7 gate: the built
- * `@tsl-precompile/runtime/build/three.webgpu.slim.js` must be ≤ 350 KB gzip.
+ * `@tsl-precompile/runtime/build/three.webgpu.slim.js` must be ≤ GATE_KB gzip
+ * (see the constant + history below).
  *
  * If the bundle hasn't been built yet, skip. `pnpm --filter @tsl-precompile/runtime build:slim`
- * produces it.
+ * produces it. `TSLP_ANALYZE=1 pnpm --filter @tsl-precompile/runtime build:slim`
+ * prints the per-module size breakdown when investigating a regression.
  */
 
 import { test } from 'node:test';
@@ -59,7 +61,16 @@ const BUNDLE = resolve( HERE, '../../../runtime/build/three.webgpu.slim.js' );
 // hydrator and harness-facing slim exports. Fresh build at ~262.3 KB.
 // Raised to 420 to accommodate the newly added fallback rendering, compute fallback,
 // and offscreen override support in the runtime.
-const GATE_KB = 420;
+// Re-tightened 420 → 250 (2026-06-09): the growth was not feature cost. Bare
+// `'three'` imports were double-bundling the prebuilt three.module.js/
+// three.core.js on top of three/src/**, and WebGPURenderer's static
+// WebGLBackend import dragged the whole webgl-fallback (GLSL compiler)
+// subtree into a WebGPU-only bundle. Fixed by `threeBareAlias` +
+// `webglFallbackStub` in runtime/rollup.config.js; strict rebuild measures
+// ~875 KB raw / ~239 KB gzip with fallback/compute/offscreen support
+// included. If this gate trips, run TSLP_ANALYZE=1 build:slim and find the
+// leak before reaching for a bump.
+const GATE_KB = 250;
 
 const bundleExists = existsSync( BUNDLE );
 
@@ -97,7 +108,7 @@ test( 'slim bundle — diagnostic report on node-builder residue', { skip: bundl
 	// would require aliasing `three/src/nodes/**` to empty shims, which
 	// currently breaks WebGPURenderer's internal dispatch. This reports
 	// residual fingerprints so future tree-shake work has a measurable
-	// baseline. The real gate is the 350KB gzip size check above.
+	// baseline. The real gate is the GATE_KB gzip size check above.
 	const src = readFileSync( BUNDLE, 'utf8' );
 	const fingerprints = [ 'OperatorNode', 'TempNode', 'FunctionNode', 'ContextNode' ];
 	const counts = fingerprints.map( ( s ) => ( { s, n: ( src.match( new RegExp( s, 'g' ) ) || [] ).length } ) );

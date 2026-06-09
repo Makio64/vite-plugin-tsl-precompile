@@ -30,7 +30,12 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # Install only the site package + its deps. A full-workspace install
+      # pulls examples/batch, which carries a local-only `file:` dependency
+      # (webgpu-optimizer-report, a sibling of this repo) that does not exist
+      # on a fresh CI checkout and fails `--frozen-lockfile`. The site is
+      # self-contained (three + vite), so scoping the install sidesteps it.
+      - run: pnpm install --frozen-lockfile --filter "@tsl-precompile/site..."
       - run: pnpm build:site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
