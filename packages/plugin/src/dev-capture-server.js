@@ -53,6 +53,29 @@ export function attachDevCapture( server, opts ) {
 	const artifactsDir = resolve( opts.artifactsDir );
 	const manifestPath = join( artifactsDir, 'manifest.json' );
 
+	// Captures arrive as a burst at app startup (one POST per material).
+	// Module invalidation stays immediate, but the websocket pushes are
+	// batched so the client processes one HMR update per burst instead of
+	// one per artifact.
+	const HMR_BATCH_WINDOW_MS = 50;
+	const pendingHmrUpdates = new Map();
+	let hmrFlushTimer = null;
+
+	function queueHmrUpdate( moduleId ) {
+
+		pendingHmrUpdates.set( moduleId, { type: 'js-update', path: moduleId, acceptedPath: moduleId, timestamp: Date.now() } );
+		if ( hmrFlushTimer ) return;
+		hmrFlushTimer = setTimeout( () => {
+
+			hmrFlushTimer = null;
+			const updates = [ ...pendingHmrUpdates.values() ];
+			pendingHmrUpdates.clear();
+			if ( updates.length > 0 ) server.ws.send( { type: 'update', updates } );
+
+		}, HMR_BATCH_WINDOW_MS );
+
+	}
+
 	server.middlewares.use( CAPTURE_PATH, async ( req, res ) => {
 
 		if ( req.method !== 'POST' ) {
@@ -83,7 +106,7 @@ export function attachDevCapture( server, opts ) {
 				if ( mod ) {
 
 					server.moduleGraph.invalidateModule( mod );
-					server.ws.send( { type: 'update', updates: [ { type: 'js-update', path: moduleId, acceptedPath: moduleId, timestamp: Date.now() } ] } );
+					queueHmrUpdate( moduleId );
 
 				}
 

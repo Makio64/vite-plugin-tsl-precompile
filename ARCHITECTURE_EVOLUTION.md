@@ -8,7 +8,23 @@ This file is the **structural** to-do list: the changes that make the plugins ea
 
 Items are ordered **P0 → P3**. Each has: **Symptom** (what's wrong), **Why it blocks evolution/fidelity**, **Change** (target shape), **First step** (a small, low-risk wedge), **Files**.
 
-Last updated: 2026-05-14.
+Last updated: 2026-06-09 (audit refresh; previous full pass 2026-05-14).
+
+---
+
+## 2026-06-09 audit refresh — corrections to the map
+
+A verified architecture+performance audit (56 findings raised, 26 confirmed after adversarial verification) re-measured this document against the tree. Corrections, so later sections are read with current numbers:
+
+- **Metrics drifted.** `hydrator.js` is ~1,075 LOC (doc body still says 656 below — that was accurate for 2026-05-14). [`run-e2e.mjs`](packages/examples/batch/run-e2e.mjs) is **15,542 LOC** (was 9,758), with **417 `__*` helper functions**. `slim-support/` has **17 modules** (the doc body describes 6), `hydrate/` has 26 files.
+- **The hydrator regrowth is feature work, not failed decomposition.** The 656→1,008 growth is Tier C MRT variant selection (`selectArtifactVariant` + merge views, commits `6a15d662`/`0858b65e`) and live-uniform sidecar/skeleton state (`2e1e32cf`). The "shrink hydrator" framing in §P0.2 needs a decision: accept hydrator as orchestrator + variant dispatcher, or extract `hydrate/variants/`. The binding-kind split itself remains open and is unaffected.
+- **§P0.1 is missing 11 of the 17 slim-support modules** (landed after 2026-05-14, no review bar in this doc): `traa-replay` (308 LOC), `postprocess-wire` (214), `postprocess-effects` (747), `postprocess-effects-replay` (462), `renderer-lighting` (491), `pass-render-fallback` (450), `live-node-sidecars` (416), `artifact-texture-wiring` (262), `diagnostics` (145), `index` barrel, plus `render-fallback-registry` (52, covered under §P1.6). Harness extraction follow-through is incomplete — fidelity fixes still land in `run-e2e.mjs` first.
+- **The slim bundle regression is fixed at the bundler, not by budget bumps.** The gate in [`slim-bundle.test.js`](packages/plugin/test/unit/slim-bundle.test.js) had been bumped 263 → 420 KB gzip; the checked-in bundle measured 1.59 MB raw / ~407 KB gzip. The audit's per-module analysis found the growth was **not** feature cost: (1) runtime modules importing from bare `'three'` resolved to the *prebuilt* `three.module.js`/`three.core.js`, bundling ~2 MB of three a second time on top of `three/src/**`; (2) `WebGPURenderer.js`'s static `WebGLBackend` import dragged the whole `webgl-fallback/**` subtree (a second, GLSL shader compiler) into a WebGPU-only bundle. Two rollup wedges landed in [`rollup.config.js`](packages/runtime/rollup.config.js) — `threeBareAlias` (bare `three` → `three/src/Three.Core.js`, deduped by Rollup) and `webglFallbackStub` (redirects `WebGLBackend` to a throwing stub, [`src/slim-stub-webgl-backend.js`](packages/runtime/src/slim-stub-webgl-backend.js)) — plus a `TSLP_ANALYZE=1` per-module size reporter. Strict rebuild: **875 KB raw / 238.8 KB gzip**, fallback rendering/compute/offscreen support included. Gate re-tightened to **250 KB**; stale "≤ 350 KB" comments fixed. Lesson under §P0.5: run the analyzer before bumping a budget — both leaks were single-import-path mistakes invisible from the total.
+- **§P1.8's gap 2 is confirmed closed in code**: aux-artifact injection runs in any production build, not just slim ([`packages/plugin/src/index.js:392-397`](packages/plugin/src/index.js#L392-L397)).
+- **`aux-marker.js` (1,045 LOC) and `aux-loader.js` (951 LOC) had no entry in this document** despite being two of the five largest runtime files — now tracked as §P2.11.
+- **New items from the audit:** §P1.9 (per-render resolution caching — first wedge landed), §P2.11 (aux pipeline doc/convergence), §P2.12 (startup hydration caching — several wedges landed), §P3.13 (bundle surface diet — partially resolved by the gate fix above).
+- **Performance quick wins landed with the audit (2026-06-09):** per-binding `DataView` cache + clipping change-detection + `(group,binding)→planEntry` memo + variant-view memo in [`hydrator.js`](packages/runtime/src/hydrator.js); per-artifact WGSL/regex query cache in [`hydrate/texture-resolver.js`](packages/runtime/src/hydrate/texture-resolver.js); snapshot identity-keyed cache in [`hydrate/texture-snapshot.js`](packages/runtime/src/hydrate/texture-snapshot.js) (fixes a same-shape collision hazard); LTC boxed-array release in [`hydrate/builtin-textures.js`](packages/runtime/src/hydrate/builtin-textures.js); gated shadow-diagnostic payload construction in [`hydrate/rebinders/shadow-depth-rebinder.js`](packages/runtime/src/hydrate/rebinders/shadow-depth-rebinder.js); harness diagnostic removed from `writeColor` in [`writers.js`](packages/runtime/src/writers.js); artifact-path watcher filter + HMR batch window in [`packages/plugin/src/index.js`](packages/plugin/src/index.js) / [`dev-capture-server.js`](packages/plugin/src/dev-capture-server.js).
+- **Deliberate non-changes** (verified intentional; do not "fix"): the serial e2e loop and 2-runs-per-browser recycling (the parallel runner froze machines ~150 examples in — deleted in `ee4ae2e3`; documented at `run-e2e.mjs:13905-13921`); `slim-entry.js`'s aux-loader import (it is exported slim API surface, not a one-call import).
 
 ---
 
@@ -224,7 +240,9 @@ Option (B) — precompiling the internal depth/shadow/clipping material variants
 
 **Change.** Add a `dynamicBindings` section to the artifact: "slot X resolves its GPU resource per render from descriptor D" (descriptor types: `shadow-depth(lightRef)`, `reflector-rt(reflectorRef, camera)`, `viewport-texture`, `framebuffer`, …). One generic `DynamicBindingResolver` keyed by descriptor type replaces the five bespoke rebinders. Pairs naturally with the kinds pipeline (P0.2).
 
-**Status.** First contract wedge landed. [`packages/contract/src/dynamic-bindings.js`](packages/contract/src/dynamic-bindings.js) now describes dynamic binding sources and validates required descriptor fields, but artifacts do not yet emit a first-class `dynamicBindings` section and the runtime still resolves them through the existing rebinder factories.
+**Status.** First contract wedge landed. [`packages/contract/src/dynamic-bindings.js`](packages/contract/src/dynamic-bindings.js) now describes dynamic binding sources and validates required descriptor fields.
+
+**Status update (2026-06-09): partially landed — texture-shaped entries only.** Artifacts now DO emit `dynamicBindings` (`collectArtifactDynamicBindings` in emit-manifest), and the runtime consumes the sampled-texture/sampler entries through [`hydrate/kinds/dynamic-texture-classifier.js`](packages/runtime/src/hydrate/kinds/dynamic-texture-classifier.js) → per-kind rebinders. Still open: uniform-slot UPDATE_BEFORE descriptors and `storage.buffer` dispatch are described in the contract but not consumed; and the light-by-index cache (`findLightInScene`) never invalidates when lights are added/removed mid-session — a confirmed per-frame O(scene) traversal cost, not just maintenance debt. Fold §P1.9's per-render resolution caching into this item's design: both express "this binding resolves its resource per render".
 
 **Current runtime descriptor map.**
 
@@ -267,6 +285,20 @@ Option (B) — precompiling the internal depth/shadow/clipping material variants
 Inspector preview gap also closed via a Vite plugin middleware (`attachInspectorExtensionsShim` in [packages/plugin/src/index.js](packages/plugin/src/index.js)) wired to both `configureServer` and `configurePreviewServer`; intercepts `/extensions/extensions.json` requests and returns `[]`. Ocean now imports Inspector unconditionally — zero adopter-facing boilerplate. §P1.8 is fully resolved.
 
 **Files.** [packages/runtime/src/aux-marker.js](packages/runtime/src/aux-marker.js) (gap 1 production no-op), [packages/plugin/src/index.js:379-385](packages/plugin/src/index.js#L379-L385) (gap 2 un-gate aux injection), upstream three.js Inspector / a doc-only "skip in prod" note (gap 3), [packages/runtime/src/slim-stubs.js](packages/runtime/src/slim-stubs.js) Node class (gap 4 method-chain fallback).
+
+---
+
+### P1.9 — Per-render resolution caching for shared materials (dynamic-binding follow-on)
+
+**Symptom.** Every render object sharing a material gets its own rebinder entry arrays from `hydrateNodeBuilderState()`; `resolveTextureBinding()` re-runs the 9-strategy chain per object per frame ([artifact-texture-resolver.js:189-193](packages/runtime/src/hydrate/artifact-texture-resolver.js)); `textureBindingTargets()` was re-iterated once per rebinder type per frame ([texture-binding-targets.js](packages/runtime/src/hydrate/rebinders/texture-binding-targets.js)); the light-by-index cache never invalidates when lights are added/removed.
+
+**Why it blocks evolution/fidelity.** 200 sprites with one material did 200× identical source→live-texture resolution every frame; rebinders silently go stale; there is no shared model for "resolved this render."
+
+**Change.** Resolution results cached at `(artifact, material, binding)` scoped to the current render, shared across all render objects of that material; light index version-stamped and invalidated on scene mutation; target lists cached at hydration.
+
+**Status (2026-06-09).** First wedge landed: [`hydrate/rebinders/resolution-memo.js`](packages/runtime/src/hydrate/rebinders/resolution-memo.js) (`createFrameScopedResolutionMemo`) wraps the hydrator's `resolveTextureBinding`; the material/artifact texture rebinders thread `options.frame` through, and reuse is keyed on `frame.renderId`/`frameId` + `avoidTexture` identity. Covered by [`test/hydrate-resolution-memo.test.js`](packages/runtime/test/hydrate-resolution-memo.test.js), including the call-count-independent-of-instance-count contract. `textureBindingTargets()` now caches its target array keyed on the add-only clone-set size. Still open: the light-cache invalidation (tracked with §P1.7) and extending the memo to shadow/viewport/reflector rebinders if profiling shows the same duplication there.
+
+**Files.** [resolution-memo.js](packages/runtime/src/hydrate/rebinders/resolution-memo.js), [texture-rebinders.js](packages/runtime/src/hydrate/rebinders/texture-rebinders.js), [texture-binding-targets.js](packages/runtime/src/hydrate/rebinders/texture-binding-targets.js), [hydrator.js](packages/runtime/src/hydrator.js).
 
 ---
 
@@ -320,6 +352,34 @@ Inspector preview gap also closed via a Vite plugin middleware (`attachInspector
 
 ---
 
+### P2.11 — Document & converge the aux artifact pipeline
+
+**Symptom.** Two registration/loading systems: [`precompile-marker.js`](packages/runtime/src/precompile-marker.js) (992 LOC) → `apply-precompiled` for user materials, vs [`aux-marker.js`](packages/runtime/src/aux-marker.js) (1,045) → [`aux-loader.js`](packages/runtime/src/aux-loader.js) (951) + [`aux-capture.js`](packages/plugin/src/aux-capture.js) (476) for three.js internals. aux-loader carries its own texture-wiring predicates (`wireViewportTextureRefs`, `attachPostprocessTextureRefs`, `bindAuxConfig`) overlapping [`slim-support/artifact-texture-wiring.js`](packages/runtime/src/slim-support/artifact-texture-wiring.js) (262 LOC) and [`postprocess-wire.js`](packages/runtime/src/slim-support/postprocess-wire.js) (214 LOC). Neither aux file appeared in this document before 2026-06-09. Shape-fallback warnings fire once per `<shape>:<configHash>` then fall back silently.
+
+**Why it blocks evolution/fidelity.** Two of the five largest runtime files have no documented architecture or review bar; verified genuine duplication is ~150–200 LOC of texture-wiring predicates (the split registration models are intentional), but wiring fixes can land in the wrong copy, and stale-hash bugs are invisible after the first warning.
+
+**Change.** Keep the two registration models; document their contract here; make aux-loader consume the `artifact-texture-wiring` predicates; add an aux debug hook per §P3.12 (mirror `setTextureResolutionDebugHook`).
+
+**First step.** Write the doc section + migrate one duplicated predicate cluster to the shared slim-support module behind existing tests.
+
+**Files.** [aux-marker.js](packages/runtime/src/aux-marker.js), [aux-loader.js](packages/runtime/src/aux-loader.js), [aux-capture.js](packages/plugin/src/aux-capture.js), [artifact-texture-wiring.js](packages/runtime/src/slim-support/artifact-texture-wiring.js), [postprocess-wire.js](packages/runtime/src/slim-support/postprocess-wire.js).
+
+---
+
+### P2.12 — Startup hydration caching pass
+
+**Symptom.** Hydration repeated work per material: WGSL source re-concatenated and regexes recompiled per binding probe; `uniformPlan` re-walked via `Array.find` per uniform-buffer binding; variant selection re-scanned `Object.values(artifact.variants)` per call; snapshot textures cached under a collision-prone shape key; LTC sources retained as boxed JSON arrays after texture build.
+
+**Why it blocks evolution/fidelity.** 100ms-class time-to-first-frame overhead on texture-heavy materials and retained memory in long dev sessions; each future binding kind inherits the same uncached patterns.
+
+**Status (2026-06-09).** Wedges landed with the audit: per-artifact shader-source + query memo ([`hydrate/texture-resolver.js`](packages/runtime/src/hydrate/texture-resolver.js) `cachedShaderQuery`), `(group,binding)→planEntry` memo + variant-view memo keyed on the registry's replace-on-grow `variants` object ([`hydrator.js`](packages/runtime/src/hydrator.js)), snapshot identity key ([`hydrate/texture-snapshot.js`](packages/runtime/src/hydrate/texture-snapshot.js)), LTC typed-array swap ([`hydrate/builtin-textures.js`](packages/runtime/src/hydrate/builtin-textures.js)).
+
+**Next step.** A per-artifact hydration context object built once in `hydrateRuntimeBindings()` to carry these memos explicitly (instead of module-level WeakMaps) when the §P0.2 source/dynamic descriptor table work touches the same files; release/dedupe snapshot JSON arrays after GPU upload (blocked on the `Array.isArray(snapshot.data)` guards spread across hydrate/ and aux paths).
+
+**Files.** [texture-resolver.js](packages/runtime/src/hydrate/texture-resolver.js), [hydrator.js](packages/runtime/src/hydrator.js), [texture-snapshot.js](packages/runtime/src/hydrate/texture-snapshot.js), [builtin-textures.js](packages/runtime/src/hydrate/builtin-textures.js).
+
+---
+
 ## P3 — cleanup (low risk; do alongside the above)
 
 ### P3.11 — Stub & dead-code hygiene
@@ -330,7 +390,17 @@ Inspector preview gap also closed via a Vite plugin middleware (`attachInspector
 - Prune the many untracked `visual-*` / `debug-*` JSON files under `packages/examples/batch/results/`.
 
 ### P3.12 — Diagnostic-hook formalization
-`__tslpHarnessDiagnostics`, `__TSLP_DEBUG_LIGHT_LINKAGE`, `__TSLP_DEBUG_SHADOW_BINDINGS`, `__TSLP_DEBUG_SHADOW_COVERAGE` etc. are ad-hoc globals with no schema. Fold them into the `slim-support` module's debug API (depends on P0.1) so they're documented, schema'd, and testable.
+`__tslpHarnessDiagnostics`, `__TSLP_DEBUG_LIGHT_LINKAGE`, `__TSLP_DEBUG_SHADOW_BINDINGS`, `__TSLP_DEBUG_SHADOW_COVERAGE` etc. are ad-hoc globals with no schema. Fold them into the `slim-support` module's debug API (depends on P0.1) so they're documented, schema'd, and testable. Progress (2026-06-09): the `writeColor` harness probe is removed from [`writers.js`](packages/runtime/src/writers.js); shadow-depth rebinders now accept a `diagnosticsEnabled` predicate so payload construction (not just recording) is gated on `__TSLP_DEBUG_SHADOW_BINDINGS`. The `seedUniformBufferSnapshots` probe in `hydrator.js` still writes to the global bag.
+
+### P3.13 — Bundle surface diet: stubs, core entry, artifact payloads
+
+**Symptom (as found 2026-06-09).** The slim gzip gate had been relaxed 263 → 420 KB against a stale checked-in bundle; [`slim-stubs.js`](packages/runtime/src/slim-stubs.js) (1,430 LOC) always ships — Proxy chains, full Node protocol stub, stateful PassNode stub — via slim-entry; the main barrel [`index.js`](packages/runtime/src/index.js) re-exports dev-only modules (aux-marker, graph-hash) so root-import users pull them in; the runtime package declares no `sideEffects` field; on-disk artifacts are pretty-printed with inline WGSL although [`wgsl-optimize.js`](packages/plugin/src/wgsl-optimize.js) implements minify/dedupe for virtual modules.
+
+**Status (2026-06-09).** The headline regression is resolved at the bundler: the `threeBareAlias` + `webglFallbackStub` rollup wedges (see the audit-refresh bullet at the top of this doc) cut the bundle ~407 → 238.8 KB gzip, and the gate is re-tightened to 250 KB with the stale comments fixed ([`slim-bundle.test.js`](packages/plugin/test/unit/slim-bundle.test.js)). The `TSLP_ANALYZE=1` rollup flag prints a per-module breakdown — use it before any future gate bump. Refuted during verification: lazy-importing aux-loader from slim-entry (it is exported slim API, not a one-call dependency).
+
+**Remaining.** A minimal `core` subpath export (apply + loader + writers) for non-slim adopters importing the root barrel; `sideEffects` annotations in [`packages/runtime/package.json`](packages/runtime/package.json) (careful: `hydrator.js` has a real module-init side effect — `installLiveTextureRegistryPatches()`; list side-effectful files explicitly rather than `false`); lazy TSL/PassNode stub entries if the analyzer shows them dominating; opt-in on-disk artifact minification (low value — dev artifacts are gitignored test fixtures).
+
+**Files.** [slim-stubs.js](packages/runtime/src/slim-stubs.js), [slim-entry.js](packages/runtime/src/slim-entry.js), [package.json](packages/runtime/package.json), [index.js](packages/runtime/src/index.js), [slim-bundle.test.js](packages/plugin/test/unit/slim-bundle.test.js).
 
 ---
 
@@ -349,7 +419,7 @@ P2.8 (codegen)        — parser guard landed; writer table/AST codegen next
 P2.10 (verify) , P3.* — opportunistic
 ```
 
-Suggested order from here: **P0.2 source/dynamic descriptor table + storage-texture decision**, then **P1.7 emitted `dynamicBindings` consumed by runtime**, then **P1.8 production-preview pipeline** (high-leverage because it unlocks the headline "ship the dev capture" workflow on real-world examples), then **P0.1 full-renderer PMREM/compute/pass support + P1.6 policy**, then **P2.10 dev/build extractor convergence**, with P0.5 vendor diagnostics and P2/P3 cleanup folded in as touched areas stabilize.
+Suggested order from here (revised 2026-06-09; P1.8 is resolved and the first P1.9/P2.12 wedges landed with the audit): **P0.2 hydrator-shape decision (orchestrator+variants vs `hydrate/variants/` extraction) + source/dynamic descriptor table + storage-texture decision**, then **P1.7 completion designed together with P1.9** (uniform-slot/storage descriptors + light-cache invalidation + extending the render-scoped memo — the largest verified per-frame payoff), then **P0.1 remaining pass/shadow productization + the §P2.11 aux convergence** (do alongside any aux bugfix, not standalone), then **P2.10 dev/build extractor convergence**, with P0.5 vendor diagnostics, P3.13 remaining bundle work, and P2/P3 cleanup folded in as touched areas stabilize.
 
 ## What "done" looks like
 

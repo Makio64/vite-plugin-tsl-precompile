@@ -32,9 +32,15 @@ export function buildLtcTexture( artifact, source ) {
 	}
 
 	const rawData = ltcArrays[ ltcIndex ];
-	if ( ! Array.isArray( rawData ) || rawData.length !== 64 * 64 * 4 ) return null;
+	const isTyped = rawData instanceof Uint16Array;
+	if ( ! isTyped && ! Array.isArray( rawData ) ) return null;
+	if ( rawData.length !== 64 * 64 * 4 ) return null;
 
-	const halfData = new Uint16Array( rawData );
+	const halfData = isTyped ? rawData : new Uint16Array( rawData );
+	// Replace the boxed JSON array with the typed copy: same rebuild path for
+	// other cache maps (variant views keep their own _ltcTextureCache), a
+	// fraction of the retained memory.
+	if ( ! isTyped ) ltcArrays[ ltcIndex ] = halfData;
 	const tex = new DataTexture( halfData, 64, 64, RGBAFormat, HalfFloatType );
 
 	tex.magFilter = typeof source.magFilter === 'number' ? source.magFilter : LinearFilter;

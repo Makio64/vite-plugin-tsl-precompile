@@ -70,6 +70,10 @@ export function createDynamicBindingResolvers( bindings, deps ) {
 		findLightBySource: deps.findLightBySource,
 		recordDiagnostic: deps.recordShadowDiagnostic,
 		describeLight: deps.describeLight,
+		// The default recorder drops events unless __TSLP_DEBUG_SHADOW_BINDINGS
+		// is set; gate payload construction on the same flag so production
+		// frames skip the per-entry object building and graph walks entirely.
+		diagnosticsEnabled: () => typeof globalThis !== 'undefined' && globalThis.__TSLP_DEBUG_SHADOW_BINDINGS === true,
 	};
 
 	const earlyUpdateBefore = [];

@@ -148,6 +148,10 @@ export function createShadowDepthRebinder( entries, deps = {} ) {
 	const findLightBySource = typeof deps.findLightBySource === 'function' ? deps.findLightBySource : () => null;
 	const recordDiagnostic = typeof deps.recordDiagnostic === 'function' ? deps.recordDiagnostic : noop;
 	const describeLight = typeof deps.describeLight === 'function' ? deps.describeLight : describeNoLight;
+	// Diagnostic payloads are expensive to build (the miss path walks the
+	// material graph) and run per entry per frame — let callers gate the
+	// construction itself, not just the recording.
+	const diagnosticsEnabled = typeof deps.diagnosticsEnabled === 'function' ? deps.diagnosticsEnabled : () => true;
 	const lastSeen = new WeakMap();
 
 	return {
@@ -173,7 +177,7 @@ export function createShadowDepthRebinder( entries, deps = {} ) {
 				if ( entry.fromMaterialGraph ) {
 
 					liveTexture = resolveDepthTextureFromMaterial( entry.material, entry.textureUuid, frame && frame.camera || null );
-					if ( ! liveTexture ) {
+					if ( ! liveTexture && diagnosticsEnabled() ) {
 
 						const graphTextures = collectMaterialNodeTextures( entry.material );
 						recordDiagnostic( {
@@ -204,14 +208,18 @@ export function createShadowDepthRebinder( entries, deps = {} ) {
 				markLayeredDepthTextureForArrayBinding( liveTexture, entry.artifact, entry.bindingName );
 				if ( ! textureMatchesShaderBinding( entry.artifact, entry.bindingName, liveTexture ) ) {
 
-					recordDiagnostic( {
-						phase: 'materialDepthTypeMismatch',
-						bindingName: entry.bindingName,
-						textureUuid: liveTexture.uuid || null,
-						artifactName: entry.artifact && entry.artifact.name || entry.material && entry.material.name || null,
-						isDepthTexture: liveTexture.isDepthTexture === true,
-						image: liveTexture.image ? [ liveTexture.image.width || 0, liveTexture.image.height || 0, liveTexture.image.depth || 0 ] : null,
-					} );
+					if ( diagnosticsEnabled() ) {
+
+						recordDiagnostic( {
+							phase: 'materialDepthTypeMismatch',
+							bindingName: entry.bindingName,
+							textureUuid: liveTexture.uuid || null,
+							artifactName: entry.artifact && entry.artifact.name || entry.material && entry.material.name || null,
+							isDepthTexture: liveTexture.isDepthTexture === true,
+							image: liveTexture.image ? [ liveTexture.image.width || 0, liveTexture.image.height || 0, liveTexture.image.depth || 0 ] : null,
+						} );
+
+					}
 					continue;
 
 				}
@@ -245,23 +253,27 @@ export function createShadowDepthRebinder( entries, deps = {} ) {
 
 				}
 
-				recordDiagnostic( {
-					bindingName: entry.bindingName,
-					lightIndex: entry.lightIndex,
-					lightUuid: entry.lightUuid,
-					light: describeLight( light ),
-					textureUuid: liveTexture.uuid || null,
-					isDepthTexture: liveTexture.isDepthTexture === true,
-					compareFunction: liveTexture.compareFunction ?? null,
-					hasGpuTexture: !! gpuTexture,
-					gpuTexSize: gpuTexture ? [ gpuTexture.width || 0, gpuTexture.height || 0 ] : null,
-					gpuTexFormat: gpuTexture ? ( gpuTexture.format || null ) : null,
-					dataInitialized: !! ( data && data.initialized ),
-					sharedFromFull: !! ( data && data.__tslpSharedShadowGPUTexture && data.__tslpSharedShadowGPUTexture === gpuTexture ),
-					changed,
-					sameBindingTexture: entry.binding.texture === liveTexture,
-					targetCount,
-				} );
+				if ( diagnosticsEnabled() ) {
+
+					recordDiagnostic( {
+						bindingName: entry.bindingName,
+						lightIndex: entry.lightIndex,
+						lightUuid: entry.lightUuid,
+						light: describeLight( light ),
+						textureUuid: liveTexture.uuid || null,
+						isDepthTexture: liveTexture.isDepthTexture === true,
+						compareFunction: liveTexture.compareFunction ?? null,
+						hasGpuTexture: !! gpuTexture,
+						gpuTexSize: gpuTexture ? [ gpuTexture.width || 0, gpuTexture.height || 0 ] : null,
+						gpuTexFormat: gpuTexture ? ( gpuTexture.format || null ) : null,
+						dataInitialized: !! ( data && data.initialized ),
+						sharedFromFull: !! ( data && data.__tslpSharedShadowGPUTexture && data.__tslpSharedShadowGPUTexture === gpuTexture ),
+						changed,
+						sameBindingTexture: entry.binding.texture === liveTexture,
+						targetCount,
+					} );
+
+				}
 
 				if ( changed ) {
 

@@ -86,16 +86,17 @@ test( 'artifact texture rebinder passes the current render-target texture as an 
 		},
 	} );
 
-	rebinder.updateBefore( {
+	const frame = {
 		renderer: {
 			getRenderTarget: () => ( { texture: avoidTexture } ),
 			backend: {
 				get: ( texture ) => ( { texture: { label: texture.uuid } } ),
 			},
 		},
-	} );
+	};
+	rebinder.updateBefore( frame );
 
-	assert.deepEqual( optionsSeen, { avoidTexture } );
+	assert.deepEqual( optionsSeen, { avoidTexture, frame } );
 	assert.equal( binding.texture, textureB );
 
 } );

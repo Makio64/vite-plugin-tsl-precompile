@@ -31,6 +31,7 @@ import { installLiveTextureRegistryPatches } from './hydrate/live-texture-regist
 import { createRuntimeBindingFromKind } from './hydrate/kinds/runtime-binding-dispatcher.js';
 import { classifyDynamicTextureBinding, indexDynamicTextureBindings } from './hydrate/kinds/dynamic-texture-classifier.js';
 import { createDynamicBindingResolvers } from './hydrate/rebinders/dynamic-binding-resolver.js';
+import { createFrameScopedResolutionMemo } from './hydrate/rebinders/resolution-memo.js';
 import { collectMaterialReflectorBaseNodes, findReflectorBaseNodeInMaterial } from './hydrate/rebinders/reflector-texture-rebinder.js';
 import { shouldSkipViewportCopyForZeroThicknessTransmission } from './hydrate/rebinders/viewport-texture-rebinder.js';
 import { resolveTypedArrayCtor } from './hydrate/typed-arrays.js';
@@ -100,7 +101,7 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 	// `hydrate/rebinders/dynamic-binding-resolver.js` for the descriptor-
 	// to-rebinder mapping.
 	const { earlyUpdateBefore, lateUpdateBefore } = createDynamicBindingResolvers( runtimeBindings, {
-		resolveTextureBinding,
+		resolveTextureBinding: memoizedResolveTextureBinding,
 		findLightBySource,
 		recordShadowDiagnostic: recordShadowBindingDiagnostic,
 		describeLight: lightDiagnosticShape,
@@ -581,6 +582,10 @@ function resolveTextureBinding( artifact, groupName, bindingName, material, opti
 
 }
 
+// Module-level so every render object of a material shares one memo — the
+// rebinders thread `options.frame` through, scoping reuse to a single render.
+const memoizedResolveTextureBinding = createFrameScopedResolutionMemo( resolveTextureBinding );
+
 function artifactUsesClippingUniformBuffers( artifact ) {
 
 	const wgsl = `${ artifact && artifact.vertexShader || '' }\n${ artifact && artifact.fragmentShader || '' }`;
@@ -588,10 +593,28 @@ function artifactUsesClippingUniformBuffers( artifact ) {
 
 }
 
+// Per-artifact `(groupName, bindingName) → plan group` memo. The uniform plan
+// is never mutated after load, and hydration probes the same names repeatedly
+// (seeding, byte-length, required-byte-length per binding).
+const _uniformGroupIndex = new WeakMap();
+
 function findUniformGroup( artifact, groupName, bindingName ) {
 
 	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
-	return plan.find( ( group ) => group.name === groupName || group.name === bindingName ) || null;
+	if ( plan.length === 0 ) return null;
+	let cache = _uniformGroupIndex.get( artifact );
+	if ( ! cache ) {
+
+		cache = new Map();
+		_uniformGroupIndex.set( artifact, cache );
+
+	}
+
+	const key = `${ groupName }::${ bindingName }`;
+	if ( cache.has( key ) ) return cache.get( key );
+	const group = plan.find( ( item ) => item.name === groupName || item.name === bindingName ) || null;
+	cache.set( key, group );
+	return group;
 
 }
 
@@ -730,8 +753,32 @@ function createClippingUniformUpdateNode( entries, material ) {
 				const binding = entry && entry.binding;
 				if ( ! binding || ! binding.buffer || typeof binding.buffer.fill !== 'function' ) continue;
 				const values = selectClippingPlaneArray( entry, sets );
-				binding.buffer.fill( 0 );
-				if ( values ) binding.buffer.set( values.subarray ? values.subarray( 0, binding.buffer.length ) : values.slice( 0, binding.buffer.length ) );
+				const buffer = binding.buffer;
+
+				// Bumping groupNode.version forces bind-group revalidation, so only
+				// commit when the plane data actually changed since last frame.
+				const count = values ? Math.min( values.length, buffer.length ) : 0;
+				let changed = false;
+				for ( let i = 0; i < count; i ++ ) {
+
+					if ( buffer[ i ] !== values[ i ] ) { changed = true; break; }
+
+				}
+
+				if ( ! changed ) {
+
+					for ( let i = count; i < buffer.length; i ++ ) {
+
+						if ( buffer[ i ] !== 0 ) { changed = true; break; }
+
+					}
+
+				}
+
+				if ( ! changed ) continue;
+
+				buffer.fill( 0 );
+				if ( values ) buffer.set( values.subarray ? values.subarray( 0, count ) : values.slice( 0, count ) );
 				if ( binding.groupNode ) binding.groupNode.version ++;
 
 			}
@@ -767,7 +814,17 @@ function createUniformUpdateNode( artifact, uniformBuffers, material ) {
 				const binding = uniformBuffers.get( group.name );
 				if ( ! binding ) continue;
 
-				const view = new DataView( binding.buffer.buffer, binding.buffer.byteOffset, binding.buffer.byteLength );
+				// The staging typed array survives across frames; rebuilding a DataView
+				// per group per object per frame is the only allocation that scales with
+				// object count. Cache it until the staging array itself is replaced.
+				let view = binding.__tslpView;
+				if ( ! view || binding.__tslpViewSource !== binding.buffer ) {
+
+					view = new DataView( binding.buffer.buffer, binding.buffer.byteOffset, binding.buffer.byteLength );
+					binding.__tslpView = view;
+					binding.__tslpViewSource = binding.buffer;
+
+				}
 				if ( generatedUpdateGroup ) {
 
 					generatedUpdateGroup( frame, frameMaterial, view, 0, group.name || '' );
@@ -902,27 +959,42 @@ function createStaticObserver() {
  * @param {?Object} material
  * @returns {Object} `artifact` (when no variant lookup applies) or a merged view
  */
+// Memoized variant views, keyed on the `variants` object identity: the
+// registry's `addVariant` replaces `artifact.variants` with a fresh object
+// whenever the family grows, so a stale map can never be observed.
+const _variantViewCache = new WeakMap();
+
 function selectArtifactVariant( artifact, cacheKey, material = null ) {
 
-	if ( ! artifact || ! artifact.variants || cacheKey === null || cacheKey === undefined ) {
+	const variants = artifact && artifact.variants && typeof artifact.variants === 'object' ? artifact.variants : null;
+	if ( ! variants ) return artifact;
 
-		const targetCount = materialMRTOutputCount( material );
-		if ( targetCount > 1 ) {
+	const targetCount = materialMRTOutputCount( material );
+	const key = `${ cacheKey === null || cacheKey === undefined ? '' : String( cacheKey ) }::${ targetCount }`;
+	let cache = _variantViewCache.get( variants );
+	if ( ! cache ) {
 
-			const variant = selectVariantForOutputCount( artifact, targetCount );
-			if ( variant ) return mergeArtifactVariantView( artifact, variant );
-
-		}
-
-		return artifact;
+		cache = new Map();
+		_variantViewCache.set( variants, cache );
 
 	}
 
-	const key = String( cacheKey );
-	const variant = artifact.variants[ key ];
-	if ( variant ) return mergeArtifactVariantView( artifact, variant );
+	if ( cache.has( key ) ) return cache.get( key );
+	const view = computeArtifactVariantView( artifact, variants, cacheKey, targetCount );
+	cache.set( key, view );
+	return view;
 
-	const targetCount = materialMRTOutputCount( material );
+}
+
+function computeArtifactVariantView( artifact, variants, cacheKey, targetCount ) {
+
+	if ( cacheKey !== null && cacheKey !== undefined ) {
+
+		const variant = variants[ String( cacheKey ) ];
+		if ( variant ) return mergeArtifactVariantView( artifact, variant );
+
+	}
+
 	if ( targetCount > 1 ) {
 
 		const outputVariant = selectVariantForOutputCount( artifact, targetCount );
