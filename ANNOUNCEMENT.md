@@ -7,7 +7,8 @@
 > and [CHANGELOG.md](CHANGELOG.md).
 
 To be published when the project hits its v0.1 beta release gate:
-- [x] representative PSNR coverage for the beta support slice (163 / 226 graded; shadows 8/8, lights 8/12, focused bloom green)
+- [x] representative PSNR coverage for the beta support slice (220 / 229 graded match @ ≥30 dB; shadows 8/8, lights 12/12, materials 17/17, focused bloom green)
+- [x] slim bundle smaller than stock (~240 kB gzip vs ~280 kB for three.webgpu + three.core)
 - [x] npm dry-runs for contract / plugin / runtime (now via `pnpm pack:dry`, which rewrites `workspace:*` correctly)
 - [x] productized slim+fallback policy decision (P1.6 — slim is primary, full renderer is opt-in fallback)
 - [x] adopter-facing BYO guide

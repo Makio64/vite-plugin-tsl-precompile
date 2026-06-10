@@ -14,13 +14,14 @@ frame), lower per-frame CPU (AOT updater writes UBO bytes directly — no node
 graph traversal, no closure dispatch), and a five-layer staleness gate that
 fails loudly instead of regressing visuals silently.
 
-**What this is *not*:** a bundle-size silver bullet. Measured on a minimal
-PBR scene, the slim bundle is roughly the same gzip size as stock three.js
-TSL (~220–240 kB gzip either way) — the win is *what runs at runtime*, not
-*what's downloaded*. The bundle-size advantage only shows up on apps that use
-many TSL helpers / postprocessing chains, where stock three.js drags the
-whole node-builder + TSL function library into the bundle while slim ships
-only stubs. **Run the numbers on your own scene before assuming a win.**
+**Bundle size.** The slim runtime bundle ships **~240 kB gzip (~200 kB
+brotli)** versus **~280 kB gzip** for stock `three.webgpu` + `three.core` —
+so slim is modestly *smaller* on the wire, not larger. But the bundle is not
+the headline: the win is *what runs at runtime* (no TSL→WGSL compile on the
+first frame, no node-graph traversal per draw), not *what's downloaded*. The
+download delta widens on apps that pull in many TSL helpers / postprocessing
+chains, where stock three.js drags the whole node-builder + TSL function
+library in while slim ships only stubs. **Run the numbers on your own scene.**
 
 **Site:** https://makio64.github.io/vite-plugin-tsl-precompile/
 
@@ -166,9 +167,9 @@ loud, descriptive errors if any un-precompiled TSL helper is reached.
 - ✅ Removes node-graph data structures from memory.
 - ✅ Catches forgotten `.precompile()` markers as loud runtime errors instead
   of silent live compilation.
-- ⚠️ Gzip bundle size is roughly the same as stock three.js TSL on simple
-  scenes (~220–240 kB gzip either way). The download-size win only appears
-  on scenes that pull in many TSL helpers / postprocessing chains.
+- ✅ Smaller on the wire: the slim bundle is ~240 kB gzip vs ~280 kB for
+  stock `three.webgpu` + `three.core`. The gap widens on scenes that pull in
+  many TSL helpers / postprocessing chains; on a minimal scene it's modest.
 
 **`optimizeDeps` is required** in `vite.config.js` for slim:
 
