@@ -7,10 +7,12 @@
  * user's `import { WebGPURenderer } from 'three/webgpu'` continues to work
  * without shipping the node builder.
  *
- * Phase 7 gate: ≤ 350 KB gzip (meaningful gate: ≤ 145 KB to beat stock
- * three.webgpu.min.js). Reaching the latter requires the three-rewrite
- * transform below (Milestone D) to eliminate the node-builder imports
- * three.js itself drags into the renderer modules.
+ * Phase 7 gate: ≤ 250 KB gzip — enforced by
+ * `packages/plugin/test/unit/slim-bundle.test.js` (meaningful gate: ≤ 145 KB
+ * to beat stock three.webgpu.min.js). Reaching the latter requires the
+ * three-rewrite transform below (Milestone D) to eliminate the node-builder
+ * imports three.js itself drags into the renderer modules.
+ * `TSLP_ANALYZE=1` prints the per-module size breakdown.
  */
 
 import { nodeResolve } from '@rollup/plugin-node-resolve';
@@ -103,12 +105,68 @@ const auxVirtualStub = {
 	},
 };
 
+/**
+ * Sever the WebGL fallback backend from the slim bundle.
+ *
+ * `WebGPURenderer.js` statically imports `WebGLBackend`, which transitively
+ * drags in the entire `renderers/webgl-fallback/**` subtree — a second
+ * (GLSL) shader compiler `GLSLNodeBuilder`, every `WebGL*Utils`, and the
+ * legacy GLSL ShaderChunk strings. slim is WebGPU-only and never instantiates
+ * that backend (it is referenced only under `forceWebGL` / the WebGPU-
+ * unavailable fallback closure). Redirecting the single import entry point to
+ * a throwing stub removes the whole subtree. Must run before `nodeResolve`.
+ */
+const webglFallbackStub = {
+	name: 'tsl-precompile:stub-webgl-fallback',
+	resolveId( id ) {
+
+		if ( /webgl-fallback\/WebGLBackend\.js$/.test( id ) ) {
+
+			return resolve( __dirname, 'src/slim-stub-webgl-backend.js' );
+
+		}
+		return null;
+
+	},
+};
+
+/**
+ * Redirect bare `three` imports to three's tree-shakeable source barrel.
+ *
+ * Several runtime modules (`hydrate/*.js`, `precompiled-compute-node.js`)
+ * import small core symbols (`Vector3`, `Matrix4`, `EventDispatcher`, …) from
+ * bare `'three'`. Under nodeResolve that resolves to three's package main —
+ * the PREBUILT `three.module.js` (the classic WebGL build, ~623 KB) which
+ * pulls `three.core.js` (~1.4 MB) — bundled a SECOND time on top of the
+ * `three/src/**` source the slim entry already includes. Routing bare `three`
+ * to `three/src/Three.Core.js` makes those imports resolve to the same source
+ * modules, so Rollup dedupes them and the ~2 MB of duplicate prebuilt three
+ * disappears. Must run before `nodeResolve`.
+ */
+const threeBareAlias = {
+	name: 'tsl-precompile:three-bare-source-alias',
+	resolveId( id, importer, options ) {
+
+		if ( id === 'three' ) {
+
+			return this.resolve( 'three/src/Three.Core.js', importer, { skipSelf: true, ...options } );
+
+		}
+		return null;
+
+	},
+};
+
 export default {
 	input: 'src/slim-entry.js',
 	output: {
 		file: 'build/three.webgpu.slim.js',
 		format: 'esm',
 		sourcemap: false,
+		// Single-file bundle: three/src has a few dynamic imports (e.g. lazy
+		// codecs) that would otherwise split into sibling chunks. The slim
+		// runtime ships as one file, so inline them.
+		inlineDynamicImports: true,
 		generatedCode: { constBindings: true, objectShorthand: true },
 	},
 	// Dev-only dynamic imports (guarded by `/* @vite-ignore */`) that the
@@ -127,8 +185,39 @@ export default {
 		},
 	},
 	plugins: [
+		( process.env.TSLP_ANALYZE ? {
+			name: 'tslp-analyze',
+			generateBundle( _o, bundle ) {
+
+				for ( const chunk of Object.values( bundle ) ) {
+
+					if ( ! chunk.modules ) continue;
+					const rows = Object.entries( chunk.modules )
+						.map( ( [ id, m ] ) => [ id.replace( /.*\/three\/src\//, 'three/src/' ).replace( /.*\/packages\/runtime\//, 'runtime/' ), m.renderedLength ] )
+						.filter( ( r ) => r[ 1 ] > 0 )
+						.sort( ( a, b ) => b[ 1 ] - a[ 1 ] );
+					let total = 0; for ( const r of rows ) total += r[ 1 ];
+					console.error( `\n=== ${ rows.length } modules, ${ ( total / 1024 ).toFixed( 0 ) } KB rendered ===` );
+					for ( const [ id, len ] of rows.slice( 0, 35 ) ) console.error( `  ${ ( len / 1024 ).toFixed( 1 ).padStart( 7 ) } KB  ${ id }` );
+					// group by top-level three/src subdir
+					const groups = {};
+					for ( const [ id, len ] of rows ) {
+
+						const g = id.startsWith( 'three/src/' ) ? id.split( '/' ).slice( 0, 4 ).join( '/' ) : id.split( '/' ).slice( 0, 2 ).join( '/' );
+						groups[ g ] = ( groups[ g ] || 0 ) + len;
+
+					}
+					console.error( '\n--- by subtree ---' );
+					for ( const [ g, len ] of Object.entries( groups ).sort( ( a, b ) => b[ 1 ] - a[ 1 ] ).slice( 0, 25 ) ) console.error( `  ${ ( len / 1024 ).toFixed( 1 ).padStart( 7 ) } KB  ${ g }` );
+
+				}
+
+			},
+		} : null ),
 		runtimeAliasPlugin,
 		auxVirtualStub,
+		webglFallbackStub,
+		threeBareAlias,
 		nodeResolve( {
 			browser: true,
 			preferBuiltins: false,
