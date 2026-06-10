@@ -1,0 +1,130 @@
+/* Benchmark page — leans on the tokens defined in styles.css (:root). */
+
+.bench-hero {
+	max-width: var(--container);
+	margin: 0 auto;
+	padding: 5rem 1.5rem 2.5rem;
+}
+.bench-hero-inner { max-width: 760px; }
+.bench-hero-title {
+	font-size: clamp(2rem, 5vw, 3.2rem);
+	line-height: 1.05;
+	letter-spacing: -0.02em;
+	margin: 0.5rem 0 1rem;
+}
+.bench-hero-lead { color: var(--text-dim); font-size: 1.075rem; line-height: 1.6; max-width: 64ch; }
+.bench-hero-lead strong { color: var(--text); font-weight: 600; }
+
+.bench-main { max-width: var(--container); margin: 0 auto; padding: 0 1.5rem 6rem; }
+
+/* ---------- three claim cards ---------- */
+.bench-claims {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 1rem;
+	margin-bottom: 3.5rem;
+}
+.bench-card {
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 1.5rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+}
+.bench-card-live { border-color: rgba(34, 211, 238, 0.35); box-shadow: 0 0 50px rgba(34, 211, 238, 0.08); }
+.bench-card-h { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0; font-weight: 600; }
+.bench-card-stat { display: flex; flex-direction: column; gap: 0.15rem; }
+.bench-card-big { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; background: var(--gradient); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.bench-card-sub { font-size: 0.85rem; color: var(--muted); }
+.bench-card-body { font-size: 0.92rem; color: var(--text-dim); line-height: 1.55; margin: 0; }
+.bench-card-body code { font-family: var(--font-mono); font-size: 0.85em; color: var(--text); }
+.bench-card-body a { color: var(--accent-1, #22d3ee); text-decoration: none; }
+.bench-card-body a:hover { text-decoration: underline; }
+
+/* ---------- live measurement ---------- */
+.bench-live { margin-bottom: 2.5rem; }
+.bench-live-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+.bench-live-head h2 { font-size: 1.35rem; margin: 0; }
+
+.bench-btn {
+	font: inherit;
+	font-weight: 600;
+	font-size: 0.95rem;
+	color: #04050a;
+	background: var(--gradient);
+	border: none;
+	border-radius: var(--radius-sm);
+	padding: 0.7rem 1.4rem;
+	cursor: pointer;
+	transition: transform 0.12s ease, opacity 0.12s ease;
+}
+.bench-btn:hover { transform: translateY(-1px); }
+.bench-btn:disabled { opacity: 0.6; cursor: progress; transform: none; }
+
+.bench-note {
+	background: rgba(251, 113, 133, 0.08);
+	border: 1px solid rgba(251, 113, 133, 0.25);
+	border-radius: var(--radius-sm);
+	padding: 0.85rem 1rem;
+	color: var(--text-dim);
+	font-size: 0.9rem;
+	margin: 0 0 1.25rem;
+}
+
+.bench-table {
+	width: 100%;
+	border-collapse: collapse;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	overflow: hidden;
+}
+.bench-table thead th {
+	text-align: right;
+	padding: 0.9rem 1.1rem;
+	font-size: 0.8rem;
+	color: var(--muted);
+	font-weight: 600;
+	border-bottom: 1px solid var(--border);
+	vertical-align: top;
+}
+.bench-table thead th:first-child { text-align: left; }
+.bench-th-sub { display: block; font-weight: 400; font-size: 0.72rem; color: var(--muted); opacity: 0.8; margin-top: 0.2rem; }
+.bench-table tbody th, .bench-table tbody td { padding: 1rem 1.1rem; border-bottom: 1px solid var(--border); }
+.bench-table tbody tr:last-child th, .bench-table tbody tr:last-child td { border-bottom: none; }
+.bench-table tbody th { text-align: left; font-weight: 500; }
+.bench-scene { display: block; color: var(--text); font-weight: 600; }
+.bench-scene-note { display: block; font-size: 0.78rem; color: var(--muted); font-weight: 400; margin-top: 0.2rem; max-width: 38ch; }
+
+.bench-num { text-align: right; font-family: var(--font-mono); font-size: 1.05rem; color: var(--text); white-space: nowrap; }
+.bench-num-bad { color: var(--bad); }
+.bench-num-good { color: var(--good); }
+.bench-saved { color: var(--text); font-weight: 700; }
+.bench-unit { font-size: 0.7rem; color: var(--muted); }
+.bench-empty td { text-align: center; color: var(--muted); padding: 1.6rem; }
+
+/* ---------- methodology ---------- */
+.bench-method { margin-top: 1.25rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-deep); }
+.bench-method summary { cursor: pointer; padding: 0.85rem 1.1rem; font-size: 0.9rem; color: var(--text-dim); list-style: none; }
+.bench-method summary::-webkit-details-marker { display: none; }
+.bench-method summary::before { content: '▸ '; color: var(--muted); }
+.bench-method[open] summary::before { content: '▾ '; }
+.bench-method-body { padding: 0 1.1rem 1.1rem; }
+.bench-method-body p { font-size: 0.88rem; color: var(--text-dim); line-height: 1.6; margin: 0 0 0.75rem; }
+.bench-method-body code { font-family: var(--font-mono); font-size: 0.85em; color: var(--text); }
+.bench-method-caveats { color: var(--muted) !important; }
+
+/* ---------- footer note ---------- */
+.bench-foot { margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--border); }
+.bench-foot p { color: var(--text-dim); font-size: 0.95rem; line-height: 1.6; max-width: 70ch; }
+.bench-foot strong { color: var(--text); }
+.bench-foot a { color: var(--accent-1, #22d3ee); text-decoration: none; }
+.bench-foot a:hover { text-decoration: underline; }
+
+@media (max-width: 760px) {
+	.bench-claims { grid-template-columns: 1fr; }
+	.bench-table { font-size: 0.9rem; }
+	.bench-table thead th, .bench-table tbody th, .bench-table tbody td { padding: 0.7rem 0.6rem; }
+}

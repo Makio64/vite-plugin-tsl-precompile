@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="color-scheme" content="dark">
+	<meta name="description" content="Compiled vs not: the slim runtime is smaller on the wire, pixel-identical, and skips the first-frame TSL→WGSL compile. Measure the compile cost on your own GPU.">
+	<meta property="og:title" content="vite-plugin-tsl-precompile · benchmark">
+	<meta property="og:description" content="Smaller bundle, pixel-identical output, no first-frame compile. Run the first-frame measurement on your own hardware.">
+	<meta property="og:type" content="website">
+	<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+	<title>benchmark — vite-plugin-tsl-precompile</title>
+	<link rel="stylesheet" href="/src/styles.css">
+	<link rel="stylesheet" href="/src/benchmark.css">
+</head>
+<body>
+	<a class="skip-link" href="#bench-main">Skip to benchmark</a>
+
+	<!-- ========== TOP NAV ========== -->
+	<nav class="site-nav" aria-label="Site navigation">
+		<a class="site-nav-brand" href="/">
+			<span class="mono">vite-plugin-</span><span class="accent">tsl-precompile</span>
+		</a>
+		<div class="site-nav-links">
+			<a href="/">Overview</a>
+			<a href="how-it-works.html">How it works</a>
+			<a href="examples.html">Compare</a>
+			<a class="site-nav-current" aria-current="page" href="benchmark.html">Benchmark</a>
+			<a href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">GitHub ↗</a>
+		</div>
+	</nav>
+
+	<!-- ========== HERO ========== -->
+	<header class="bench-hero">
+		<div class="bench-hero-inner">
+			<p class="eyebrow">compiled&nbsp; vs &nbsp;not compiled</p>
+			<h1 class="bench-hero-title">Same pixels. Less work.</h1>
+			<p class="bench-hero-lead">
+				Precompiling doesn't change what you see — it changes what runs. The slim runtime
+				ships the already-compiled WGSL, so it's <strong>smaller on the wire</strong>,
+				<strong>pixel-identical</strong>, and <strong>skips the first-frame compile</strong>
+				that stock three.js pays in the browser. Two of those are measured offline below;
+				the third you can measure on your own GPU.
+			</p>
+		</div>
+	</header>
+
+	<main id="bench-main" class="bench-main">
+
+		<!-- ===== three honest claims (draco.js style) ===== -->
+		<section class="bench-claims">
+
+			<article class="bench-card">
+				<h2 class="bench-card-h">Smaller on the wire</h2>
+				<div class="bench-card-stat">
+					<span class="bench-card-big">~240 KB</span>
+					<span class="bench-card-sub">slim runtime, gzip</span>
+				</div>
+				<p class="bench-card-body">
+					vs <strong>~280 KB</strong> gzip for stock <code>three.webgpu</code> + <code>three.core</code>.
+					~200 KB brotli. The node-builder TSL authoring layer ships as stubs in slim.
+				</p>
+			</article>
+
+			<article class="bench-card">
+				<h2 class="bench-card-h">Pixel-identical</h2>
+				<div class="bench-card-stat">
+					<span class="bench-card-big">220 / 229</span>
+					<span class="bench-card-sub">match @ PSNR ≥ 30 dB</span>
+				</div>
+				<p class="bench-card-body">
+					Every <code>webgpu_*</code> TSL example, captured against live three.js and replayed through
+					the slim runtime. <a href="examples.html">Drag the seam →</a>
+				</p>
+			</article>
+
+			<article class="bench-card bench-card-live">
+				<h2 class="bench-card-h">No first-frame compile</h2>
+				<div class="bench-card-stat">
+					<span class="bench-card-big">run it ↓</span>
+					<span class="bench-card-sub">on your own GPU</span>
+				</div>
+				<p class="bench-card-body">
+					Stock three.js compiles the TSL graph to WGSL on the first render. Precompiled skips it.
+					Measure the difference below.
+				</p>
+			</article>
+
+		</section>
+
+		<!-- ===== live first-frame measurement ===== -->
+		<section class="bench-live">
+			<div class="bench-live-head">
+				<h2>First-frame compile cost — measured here</h2>
+				<button id="bench-run" class="bench-btn" type="button">Run on my hardware</button>
+			</div>
+
+			<p id="bench-status" class="bench-note" hidden></p>
+
+			<table class="bench-table">
+				<thead>
+					<tr>
+						<th scope="col">Scene</th>
+						<th scope="col">First frame<br><span class="bench-th-sub">full three.js (cold, compiles)</span></th>
+						<th scope="col">Steady frame<br><span class="bench-th-sub">≈ precompiled first frame</span></th>
+						<th scope="col">Compile saved<br><span class="bench-th-sub">cold − steady</span></th>
+					</tr>
+				</thead>
+				<tbody id="bench-tbody">
+					<tr class="bench-empty"><td colspan="4">Press <strong>Run on my hardware</strong> to measure on your GPU.</td></tr>
+				</tbody>
+			</table>
+
+			<details class="bench-method">
+				<summary>How this is measured (and what it doesn't measure)</summary>
+				<div class="bench-method-body">
+					<p>
+						For each scene we build the TSL material with stock <code>three/webgpu</code>, then time the
+						<strong>cold first <code>renderAsync</code></strong> — which walks the node graph and compiles the
+						WGSL pipeline — against the <strong>trimmed median of 90 steady-state frames</strong> after a 40-frame
+						warm-up. A precompiled / slim build ships the compiled WGSL, so its <em>first</em> frame costs about the
+						steady-state number; the cold→steady delta is the compile cost it removes.
+					</p>
+					<p class="bench-method-caveats">
+						Caveats: this is JS-side wall time around <code>renderAsync</code>, not isolated GPU time; numbers vary by
+						GPU, driver and thermal state; the steady frame is used as the no-compile floor rather than a separate slim
+						render. It measures the <em>first-frame</em> win — the per-draw win (straight-line UBO writes vs node-graph
+						traversal) is real but smaller and not isolated here. The bundle and pixel-identical numbers above are the
+						hard comparative evidence.
+					</p>
+				</div>
+			</details>
+		</section>
+
+		<section class="bench-foot">
+			<p>
+				The honest tradeoff: the node→WGSL compiler still lives in the bundle today — the win is that it
+				<strong>never runs in production</strong> (no first-frame stall, no per-draw graph traversal), and the
+				output is byte-for-byte the same. <a href="how-it-works.html">How it works →</a>
+			</p>
+		</section>
+
+	</main>
+
+	<script type="module" src="/src/benchmark.js"></script>
+</body>
+</html>

@@ -25,6 +25,7 @@ export default defineConfig( {
 				main: resolve( __dirname, 'index.html' ),
 				howItWorks: resolve( __dirname, 'how-it-works.html' ),
 				examples: resolve( __dirname, 'examples.html' ),
+				benchmark: resolve( __dirname, 'benchmark.html' ),
 			},
 		},
 	},
