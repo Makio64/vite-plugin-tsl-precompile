@@ -289,3 +289,52 @@ test( 'shareGPUTextureEntry catches errors and forwards to onError', () => {
 	assert.deepEqual( errors, [ [ 'kaboom', 'broken' ] ] );
 
 } );
+
+test( 'shareGPUTextureEntry never copies per-backend sampler bookkeeping', () => {
+
+	// `sampler`/`samplerKey` are keyed into the SOURCE backend's private
+	// _samplerCache; copying them poisons the target, whose next
+	// updateSampler transition crashes on `oldSamplerData.usedTimes--`
+	// (the tier1 bloom `usedTimes` TypeError).
+	const source = fakeRenderer();
+	const target = fakeRenderer();
+	const tex = fakeTexture( 'bloom-pass' );
+
+	const sourceData = source.backend.get( tex );
+	sourceData.texture = { __gpu: true };
+	sourceData.format = 'rgba16float';
+	sourceData.sampler = { __gpuSampler: 'source-owned' };
+	sourceData.samplerKey = '1006-1006-1001-1001-0-1-0';
+
+	const targetData = target.backend.get( tex );
+	targetData.sampler = { __gpuSampler: 'target-owned' };
+	targetData.samplerKey = 'target-key';
+
+	const ok = shareGPUTextureEntry( target, source, tex );
+	assert.equal( ok, true );
+	assert.equal( targetData.texture, sourceData.texture, 'GPU texture is shared' );
+	assert.equal( targetData.format, 'rgba16float' );
+	assert.equal( targetData.sampler.__gpuSampler, 'target-owned', 'target keeps its own sampler' );
+	assert.equal( targetData.samplerKey, 'target-key', 'target keeps its own samplerKey' );
+
+} );
+
+test( 'sharePMREMGPUTexture never copies per-backend sampler bookkeeping', () => {
+
+	const full = fakeRenderer();
+	const slim = fakeRenderer();
+	const pmrem = fakeTexture( 'pmrem' );
+
+	const fullData = full.backend.get( pmrem );
+	fullData.texture = { __gpu: true };
+	fullData.sampler = { __gpuSampler: 'full-owned' };
+	fullData.samplerKey = 'full-key';
+
+	const ok = sharePMREMGPUTexture( slim, full, pmrem );
+	assert.equal( ok, true );
+	const slimData = slim.backend.get( pmrem );
+	assert.equal( slimData.texture, fullData.texture );
+	assert.equal( slimData.sampler, undefined, 'slim must create its own sampler' );
+	assert.equal( slimData.samplerKey, undefined );
+
+} );

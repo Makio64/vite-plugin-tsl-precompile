@@ -373,6 +373,8 @@ export function clearDevRenderer() {
 
 async function captureMaterialInDev( material, name ) {
 
+	let guardedRender = null;
+
 	try {
 
 		if ( ! devRenderer ) {
@@ -395,6 +397,39 @@ async function captureMaterialInDev( material, name ) {
 				codegen = mod.emitUpdaterSource;
 
 			}
+
+		// Suspend app-initiated renders for the span of this capture. The
+		// synthetic warm-up (and the non-MRT sibling pass) mutate renderer-level
+		// MRT and render-target state across await points; a live animation
+		// frame interleaving into that window builds pipelines against
+		// mismatched state — e.g. a per-material mrt() resolves its output
+		// names against an unnamed canvas target, emits an empty output struct,
+		// and the node build fails with "Cannot read properties of undefined
+		// (reading 'type')" — and the broken NodeBuilderState lands in the
+		// renderer's shared cache. Renders performed BY the capture itself are
+		// recognised via the __tslpSyntheticRenderActive flag set around
+		// compileTSL's warm-up renders.
+		//
+		// Skipped frames are DROPPED, not replayed: a render call can rely on
+		// synchronous renderer state its caller set around it (PassNode binds
+		// its RT/MRT before its inner render and restores after), so replaying
+		// it later re-renders against the wrong state. The app's next animation
+		// frame repaints; captures only trigger from materials seen in a render,
+		// so even no-loop apps have already drawn. Reentrancy: overlapping
+		// captures leave the outer guard in charge.
+		if ( typeof devRenderer.render === 'function' && devRenderer.render.__tslpCaptureGuard !== true ) {
+
+			guardedRender = devRenderer.render;
+			const captureRenderGuard = function ( ...args ) {
+
+				if ( ( globalThis.__tslpSyntheticRenderActive | 0 ) > 0 ) return guardedRender.apply( this, args );
+				return undefined;
+
+			};
+			captureRenderGuard.__tslpCaptureGuard = true;
+			devRenderer.render = captureRenderGuard;
+
+		}
 
 		// Build a minimal synthetic scene that drives this single material.
 		// Scene-driven capture can attach a source object so custom update nodes
@@ -610,7 +645,16 @@ async function captureMaterialInDev( material, name ) {
 		// non-MRT sibling variant as part of the same author-facing artifact so
 		// downstream apps get cache-key selection instead of needing the batch
 		// harness' historical `:color` duplicate material name.
-		if ( mrtNode && mrtNode !== materialMRTNode ) {
+		//
+		// Skip it when the material carries its OWN mrtNode: `noGlobalMRT`
+		// only clears the pass/global descriptor, so the warm-up would build
+		// the material's mrt() outputs against an unnamed single-attachment
+		// canvas target — MRTNode.setup() resolves each output name to index
+		// -1, emits an empty output struct, and the node build fails with
+		// "Cannot read properties of undefined (reading 'type')"
+		// (webgpu_postprocessing_bloom_selective). A material-level mrtNode
+		// is inherently MRT-bound; it has no meaningful color-target variant.
+		if ( mrtNode && mrtNode !== materialMRTNode && ! materialMRTNode ) {
 
 			try {
 
@@ -740,6 +784,10 @@ async function captureMaterialInDev( material, name ) {
 			console.error( `[tsl-precompile] .precompile(${ JSON.stringify( name ) }) threw during capture:`, err );
 
 		}
+
+	} finally {
+
+		if ( guardedRender ) devRenderer.render = guardedRender;
 
 	}
 

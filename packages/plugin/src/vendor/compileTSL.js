@@ -1107,6 +1107,41 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	// the extraction pass below.
 	const sceneMRTNode = collectSceneMRTNode( renderer, scene, options );
 
+	// Materials carrying their OWN mrt() node cannot build against the
+	// single-output canvas/framebuffer warm-up target used when no
+	// pass/global MRT is active: MRTNode.setup() resolves each output name
+	// against the bound render target's texture names, gets index -1, and
+	// emits an empty output struct — the node build then dies with "Cannot
+	// read properties of undefined (reading 'type')" and three silently
+	// swaps in a blank NodeMaterial (webgpu_postprocessing_bloom_selective).
+	// These no-MRT compiles (aux background/lights captures over the live
+	// scene, non-MRT sibling variants) don't want those materials' MRT
+	// variants anyway — strip the node for the duration and restore on exit.
+	// `needsUpdate` is deliberately NOT touched: if the render cache already
+	// holds the MRT variant it's simply reused (no rebuild, no crash) and
+	// the app's live pipelines stay valid.
+	const strippedMRTMaterials = [];
+	if ( ! sceneMRTNode && scene && typeof scene.traverse === 'function' ) {
+
+		scene.traverse( ( object ) => {
+
+			const material = object && object.material;
+			const list = Array.isArray( material ) ? material : material ? [ material ] : [];
+			for ( const mat of list ) {
+
+				if ( mat && mat.mrtNode ) {
+
+					strippedMRTMaterials.push( [ mat, mat.mrtNode ] );
+					mat.mrtNode = null;
+
+				}
+
+			}
+
+		} );
+
+	}
+
 	// Temporarily wrap NodeManager.getForRender so we can see every
 	// renderObject that flows through the build path during compileAsync.
 	// For each one, record (cacheKey → material, mesh) so the artifacts we
@@ -1260,6 +1295,29 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	// frag shader for an aux scene that targets the canvas.
 	const prevMRT = typeof renderer.getMRT === 'function' ? renderer.getMRT() : null;
 
+	// The synthetic warm-up owns renderer-level MRT/RT state across the await
+	// points below. If the app's animation loop renders inside that window,
+	// its pipelines build against mismatched MRT-vs-RT state — e.g. a
+	// per-material `mrt()` resolves its output names against the wrong bound
+	// render target, emits an empty output struct, and the node build fails
+	// with "Cannot read properties of undefined (reading 'type')" — and the
+	// broken NodeBuilderState lands in the shared cache. Drop app-initiated
+	// renders for the duration (no replay: a render call can rely on
+	// synchronous renderer state its caller set around it, e.g. PassNode's
+	// RT/MRT binding, so replaying later re-renders against the wrong state).
+	const origRender = typeof renderer.render === 'function' ? renderer.render : null;
+	let internalRenderDepth = 0;
+	if ( origRender ) {
+
+		renderer.render = function ( ...args ) {
+
+			if ( internalRenderDepth > 0 ) return origRender.apply( this, args );
+			return undefined;
+
+		};
+
+	}
+
 	try {
 
 		// Activate (or clear) MRT on the renderer before the warm-up so
@@ -1316,14 +1374,31 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		if ( renderPipeline ) {
 
 			// RenderPipeline.render() is sync but requires the renderer to
-			// be initialised (compileAsync already guaranteed that).
-			renderPipeline.render();
+			// be initialised (compileAsync already guaranteed that). It
+			// drives renderer.render internally — lift the deferral gate for
+			// the duration. The global flag lets outer capture-scoped render
+			// guards (precompile-marker) recognise synthetic renders too.
+			internalRenderDepth ++;
+			globalThis.__tslpSyntheticRenderActive = ( globalThis.__tslpSyntheticRenderActive | 0 ) + 1;
+			try { renderPipeline.render(); } finally {
+
+				internalRenderDepth --;
+				globalThis.__tslpSyntheticRenderActive = ( globalThis.__tslpSyntheticRenderActive | 0 ) - 1;
+
+			}
 
 		} else if ( ! options.skipWarmupRender ) {
 
 			// renderer.render() is the non-deprecated entry; compileAsync
 			// above already ran `init` so the sync form is safe.
-			renderer.render( scene, camera );
+			internalRenderDepth ++;
+			globalThis.__tslpSyntheticRenderActive = ( globalThis.__tslpSyntheticRenderActive | 0 ) + 1;
+			try { renderer.render( scene, camera ); } finally {
+
+				internalRenderDepth --;
+				globalThis.__tslpSyntheticRenderActive = ( globalThis.__tslpSyntheticRenderActive | 0 ) - 1;
+
+			}
 
 		}
 
@@ -1351,6 +1426,10 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 		}
 
+		// Reinstate the app's render entry point. Dropped frames are not
+		// replayed — the app's next animation frame repaints.
+		if ( origRender ) renderer.render = origRender;
+
 		if ( mrtWarmupRT && ! mrtWarmupRT.__tslpAuxBorrowed ) {
 
 			try { mrtWarmupRT.dispose(); } catch ( _ ) { /* ignore */ }
@@ -1363,6 +1442,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		}
 
 		manager.getForRender = origGetForRender;
+		for ( const [ mat, node ] of strippedMRTMaterials ) mat.mrtNode = node;
 
 	}
 

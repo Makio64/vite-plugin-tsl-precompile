@@ -27,6 +27,25 @@
 
 const VIEW_KEY_PREFIX = 'view-';
 
+// Per-backend sampler bookkeeping. `WebGPUTextureUtils.updateSampler` keys
+// `samplerKey` into that backend's private `_samplerCache`; copying these
+// fields across renderers leaves the target pointing at a key its own cache
+// has never seen, and its next sampler transition crashes on
+// `oldSamplerData.usedTimes--` (undefined). Samplers are cheap per-backend
+// objects — let the target create its own.
+const BACKEND_LOCAL_KEYS = new Set( [ 'sampler', 'samplerKey' ] );
+
+function copySharedBackendData( targetData, sourceData ) {
+
+	for ( const key of Object.keys( sourceData ) ) {
+
+		if ( BACKEND_LOCAL_KEYS.has( key ) ) continue;
+		targetData[ key ] = sourceData[ key ];
+
+	}
+
+}
+
 function bump( diagnostics, key ) {
 
 	if ( ! diagnostics || ! key ) return;
@@ -210,7 +229,7 @@ export function shareGPUTextureEntry( targetRenderer, sourceRenderer, texture, o
 		invalidateTextureBindGroups( targetRenderer, texture );
 
 		const targetData = targetRenderer.backend.get( texture );
-		for ( const key of Object.keys( sourceData ) ) targetData[ key ] = sourceData[ key ];
+		copySharedBackendData( targetData, sourceData );
 		clearTextureViewCache( targetData );
 
 		if ( opts.bumpVersion !== false ) {
@@ -270,7 +289,7 @@ export function sharePMREMGPUTexture( slimRenderer, fullRenderer, pmrem, opts = 
 		}
 
 		const slimData = slimRenderer.backend.get( pmrem );
-		for ( const key of Object.keys( fullData ) ) slimData[ key ] = fullData[ key ];
+		copySharedBackendData( slimData, fullData );
 		markTextureInitialized( slimRenderer, pmrem );
 		bump( diagnostics, 'shareSuccess' );
 		return true;

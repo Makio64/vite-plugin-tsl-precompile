@@ -3379,11 +3379,29 @@ function __findVsmBlurTexture( fullRenderer, shadowScene, shadowRenderCamera, cl
 		const lightsNode = lightsNode0 && lightsNode0.node ? lightsNode0.node : lightsNode0;
 		let lightNodes = lightsNode && Array.isArray( lightsNode._lightNodes ) ? lightsNode._lightNodes : null;
 		if ( ! lightNodes && lightsNode && typeof lightsNode.getLightNodes === 'function' ) {
-			// RenderList.begin() calls lightsNode.setLights() each frame, which nulls
-			// _lightNodes; getLightNodes() rebuilds it (reusing the cached AnalyticLightNodes
-			// from LightsNode's module-level WeakMap, and therefore their already-allocated
-			// ShadowNode + vsmShadowMapHorizontal render target).
-			try { lightNodes = lightsNode.getLightNodes( { renderer: fullRenderer } ); } catch ( _ ) {}
+			// getLightNodes(builder) rebuilds the per-light node list, reusing the
+			// cached AnalyticLightNodes from LightsNode's module-level WeakMap —
+			// and therefore the already-allocated ShadowNode +
+			// vsmShadowMapHorizontal render target from the real shadow render.
+			// The fork's implementation caches per-builder via
+			// builder.getDataFromNode(node) and reads builder.context
+			// .materialLightings, so the fake builder must satisfy that contract
+			// (a bare { renderer } throws "builder.getDataFromNode is not a
+			// function" and silently kills the whole VSM share).
+			try {
+				if ( ! lightsNode.__tslpFakeBuilderData ) lightsNode.__tslpFakeBuilderData = new WeakMap();
+				const dataMap = lightsNode.__tslpFakeBuilderData;
+				const fakeBuilder = {
+					renderer: fullRenderer,
+					context: { materialLightings: [] },
+					getDataFromNode( node ) {
+						let data = dataMap.get( node );
+						if ( ! data ) { data = {}; dataMap.set( node, data ); }
+						return data;
+					},
+				};
+				lightNodes = lightsNode.getLightNodes( fakeBuilder );
+			} catch ( _ ) {}
 		}
 		if ( Array.isArray( lightNodes ) ) {
 			for ( const ln of lightNodes ) {
