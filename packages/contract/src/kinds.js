@@ -1,5 +1,5 @@
 import { MATERIAL_TEXTURE_PROPS } from './texture-props.js';
-import { collectArtifactDynamicBindings, validateDynamicBindingSource } from './dynamic-bindings.js';
+import { collectArtifactDynamicBindings, dynamicBindingDescriptor, validateDynamicBindingSource } from './dynamic-bindings.js';
 
 export const KIND_STATUS = Object.freeze( {
 	CODEGEN: 'codegen',
@@ -8,6 +8,18 @@ export const KIND_STATUS = Object.freeze( {
 	BLOCKED: 'blocked',
 	ALIAS: 'alias',
 } );
+
+// Serializable binding descriptors that the runtime hydrator can allocate.
+// Keep this list in lockstep with hydrate/kinds/runtime-binding-dispatcher.js;
+// validation must reject a descriptor the runtime would otherwise skip.
+export const RUNTIME_BINDING_KINDS = Object.freeze( [
+	'uniform-buffer',
+	'sampled-texture',
+	'sampler',
+	'storage-buffer',
+] );
+
+const RUNTIME_BINDING_KIND_SET = new Set( RUNTIME_BINDING_KINDS );
 
 export const BLOCKED_KINDS = Object.freeze( {
 	'builtin.dfgLUT': 'IBL DFG LUT — resolved by the hydrator (getDFGLUT()). Not a UBO slot kind.',
@@ -405,6 +417,203 @@ function validationError( code, message, path = '' ) {
 
 }
 
+function validateRuntimeBindings( artifact, label, errors ) {
+
+	if ( artifact.bindings === undefined ) return;
+	if ( ! Array.isArray( artifact.bindings ) ) {
+
+		errors.push( validationError( 'artifact.bindings', `${ label}: artifact.bindings must be an array when present`, 'bindings' ) );
+		return;
+
+	}
+	for ( let groupIndex = 0; groupIndex < artifact.bindings.length; groupIndex ++ ) {
+
+		const group = artifact.bindings[ groupIndex ];
+		const groupPath = `bindings[${ groupIndex }]`;
+		if ( ! group || typeof group !== 'object' || Array.isArray( group ) ) {
+
+			errors.push( validationError( 'bindings.group', `${ label}: ${ groupPath } must be an object`, groupPath ) );
+			continue;
+
+		}
+		if ( ! Array.isArray( group.bindings ) ) {
+
+			errors.push( validationError( 'bindings.entries', `${ label}: ${ groupPath }.bindings must be an array`, `${ groupPath }.bindings` ) );
+			continue;
+
+		}
+		for ( let bindingIndex = 0; bindingIndex < group.bindings.length; bindingIndex ++ ) {
+
+			const binding = group.bindings[ bindingIndex ];
+			const bindingPath = `${ groupPath }.bindings[${ bindingIndex }]`;
+			if ( ! binding || typeof binding !== 'object' || Array.isArray( binding ) ) {
+
+				errors.push( validationError( 'bindings.entry', `${ label}: ${ bindingPath } must be an object`, bindingPath ) );
+				continue;
+
+			}
+			if ( typeof binding.kind !== 'string' || binding.kind.length === 0 ) {
+
+				errors.push( validationError( 'binding.kind.type', `${ label}: ${ bindingPath }.kind must be a non-empty string`, `${ bindingPath }.kind` ) );
+			} else if ( ! RUNTIME_BINDING_KIND_SET.has( binding.kind ) ) {
+
+				errors.push( validationError(
+					'binding.kind.unknown',
+					`${ label}: unsupported runtime binding kind "${ binding.kind }" at ${ bindingPath }.kind; expected one of ${ RUNTIME_BINDING_KINDS.join( ', ' ) }`,
+					`${ bindingPath }.kind`,
+				) );
+
+			}
+
+		}
+
+	}
+
+}
+
+function dynamicBindingKey( entry ) {
+
+	return `${ entry && entry.kind }|${ entry && entry.group }|${ entry && entry.binding }`;
+
+}
+
+function stableSerializableValue( value, seen = new Set() ) {
+
+	if ( value === null || typeof value !== 'object' ) return JSON.stringify( value );
+	if ( seen.has( value ) ) return '<cycle>';
+	seen.add( value );
+	let result;
+	if ( Array.isArray( value ) ) {
+
+		result = `[${ value.map( ( item ) => stableSerializableValue( item, seen ) ).join( ',' ) }]`;
+
+	} else {
+
+		result = `{${ Object.keys( value ).sort().map( ( key ) => `${ JSON.stringify( key ) }:${ stableSerializableValue( value[ key ], seen ) }` ).join( ',' ) }}`;
+
+	}
+	seen.delete( value );
+	return result;
+
+}
+
+function validateDynamicBindingEntry( entry, index, label, errors ) {
+
+	const path = `dynamicBindings[${ index }]`;
+	if ( ! entry || typeof entry !== 'object' || Array.isArray( entry ) ) {
+
+		errors.push( validationError( 'dynamicBindings.entry', `${ label }: ${ path } must be an object`, path ) );
+		return false;
+
+	}
+	for ( const field of [ 'kind', 'target', 'phase', 'owner', 'resolver', 'group' ] ) {
+
+		if ( typeof entry[ field ] !== 'string' || entry[ field ].length === 0 ) {
+
+			errors.push( validationError( 'dynamicBindings.field', `${ label }: ${ path }.${ field } must be a non-empty string`, `${ path }.${ field }` ) );
+
+		}
+
+	}
+	if ( ! Object.prototype.hasOwnProperty.call( entry, 'binding' ) || ( entry.binding !== null && typeof entry.binding !== 'string' ) ) {
+
+		errors.push( validationError( 'dynamicBindings.field', `${ label }: ${ path }.binding must be a string or null`, `${ path }.binding` ) );
+
+	}
+	if ( ! entry.source || typeof entry.source !== 'object' || Array.isArray( entry.source ) ) {
+
+		errors.push( validationError( 'dynamicBindings.source', `${ label }: ${ path }.source must be an object`, `${ path }.source` ) );
+
+	} else if ( entry.source.kind !== entry.kind ) {
+
+		errors.push( validationError( 'dynamicBindings.source-kind', `${ label }: ${ path }.source.kind must match ${ path }.kind`, `${ path }.source.kind` ) );
+
+	}
+	if ( entry.source && typeof entry.source === 'object' && ! Array.isArray( entry.source ) ) {
+
+		for ( const dynamicError of validateDynamicBindingSource( entry.source ) ) {
+
+			errors.push( validationError(
+				dynamicError.code,
+				`${ label }: ${ dynamicError.message } at ${ path }.source`,
+				`${ path }.source.${ dynamicError.field }`,
+			) );
+
+		}
+
+	}
+	if ( entry.target === 'uniform-slot' ) {
+
+		if ( ! Object.prototype.hasOwnProperty.call( entry, 'offset' ) || ( entry.offset !== null && ! Number.isFinite( entry.offset ) ) ) {
+
+			errors.push( validationError( 'dynamicBindings.offset', `${ label }: ${ path }.offset must be a finite number or null for a uniform slot`, `${ path }.offset` ) );
+
+		}
+
+	} else if ( entry.target === 'sampled-texture' || entry.target === 'sampler' || entry.target === 'storage-texture' ) {
+
+		if ( ! Object.prototype.hasOwnProperty.call( entry, 'textureType' ) || ( entry.textureType !== null && typeof entry.textureType !== 'string' ) ) {
+
+			errors.push( validationError( 'dynamicBindings.textureType', `${ label }: ${ path }.textureType must be a string or null for a texture binding`, `${ path }.textureType` ) );
+
+		}
+
+	}
+
+	const descriptor = dynamicBindingDescriptor( entry.kind );
+	if ( ! descriptor ) {
+
+		errors.push( validationError( 'dynamicBindings.kind.unknown', `${ label }: ${ path }.kind is not a registered dynamic binding kind`, `${ path }.kind` ) );
+
+	} else {
+
+		for ( const field of [ 'target', 'phase', 'owner', 'resolver' ] ) {
+
+			if ( entry[ field ] !== descriptor[ field ] ) {
+
+				errors.push( validationError(
+					'dynamicBindings.descriptor',
+					`${ label }: ${ path }.${ field } must be ${ JSON.stringify( descriptor[ field ] ) } for kind ${ JSON.stringify( entry.kind ) }`,
+					`${ path }.${ field }`,
+				) );
+
+			}
+
+		}
+
+	}
+	return true;
+
+}
+
+function compareDynamicBindingEntry( stored, computed, index, label, errors ) {
+
+	const path = `dynamicBindings[${ index }]`;
+	for ( const field of [ 'kind', 'target', 'phase', 'owner', 'resolver', 'group', 'binding', 'offset', 'textureType' ] ) {
+
+		if ( Object.prototype.hasOwnProperty.call( computed, field ) && stored[ field ] !== computed[ field ] ) {
+
+			errors.push( validationError(
+				'dynamicBindings.mismatch',
+				`${ label }: ${ path }.${ field } does not match the descriptor implied by uniformPlan`,
+				`${ path }.${ field }`,
+			) );
+
+		}
+
+	}
+	if ( stableSerializableValue( stored.source ) !== stableSerializableValue( computed.source ) ) {
+
+		errors.push( validationError(
+			'dynamicBindings.mismatch',
+			`${ label }: ${ path }.source does not match the source descriptor implied by uniformPlan`,
+			`${ path }.source`,
+		) );
+
+	}
+
+}
+
 export function isArtifactModule( value ) {
 
 	return !! ( value && typeof value === 'object' && ! Array.isArray( value ) && value.artifact && typeof value.artifact === 'object' );
@@ -468,22 +677,30 @@ export function validateArtifact( input, opts = {} ) {
 
 	}
 
-	const isCompute = artifact.kind === 'compute' || typeof artifact.computeShader === 'string';
+	const hasComputeShader = typeof artifact.computeShader === 'string' && artifact.computeShader.trim().length > 0;
+	const isCompute = artifact.kind === 'compute' || hasComputeShader;
 	if ( isCompute ) {
 
-		if ( typeof artifact.computeShader !== 'string' ) errors.push( validationError( 'artifact.computeShader', `${ label}: compute artifact is missing computeShader`, 'computeShader' ) );
+		if ( ! hasComputeShader ) errors.push( validationError( 'artifact.computeShader', `${ label}: compute artifact is missing a non-empty computeShader`, 'computeShader' ) );
 
 	} else {
 
+		if ( 'computeShader' in artifact && typeof artifact.computeShader !== 'string' ) errors.push( validationError( 'artifact.computeShader', `${ label}: computeShader must be a string when present`, 'computeShader' ) );
 		if ( 'vertexShader' in artifact && typeof artifact.vertexShader !== 'string' ) errors.push( validationError( 'artifact.vertexShader', `${ label}: vertexShader must be a string`, 'vertexShader' ) );
 		if ( 'fragmentShader' in artifact && typeof artifact.fragmentShader !== 'string' ) errors.push( validationError( 'artifact.fragmentShader', `${ label}: fragmentShader must be a string`, 'fragmentShader' ) );
-		if ( !( 'vertexShader' in artifact ) && !( 'fragmentShader' in artifact ) && opts.requireShaders === true ) {
+		if ( opts.requireShaders === true && ( typeof artifact.vertexShader !== 'string' || artifact.vertexShader.trim().length === 0 ) ) {
 
-			errors.push( validationError( 'artifact.shaders', `${ label}: artifact is missing vertexShader/fragmentShader`, '' ) );
+			errors.push( validationError( 'artifact.vertexShader', `${ label}: render artifact is missing a non-empty vertexShader`, 'vertexShader' ) );
+
+		}
+		if ( opts.requireShaders === true && ( typeof artifact.fragmentShader !== 'string' || artifact.fragmentShader.trim().length === 0 ) ) {
+
+			errors.push( validationError( 'artifact.fragmentShader', `${ label}: render artifact is missing a non-empty fragmentShader`, 'fragmentShader' ) );
 
 		}
 
 	}
+	validateRuntimeBindings( artifact, label, errors );
 
 	const sourceKinds = [];
 	if ( Array.isArray( artifact.uniformPlan ) ) {
@@ -552,6 +769,17 @@ export function validateArtifact( input, opts = {} ) {
 
 	}
 
+	if ( artifact.dynamicBindings !== undefined && ! Array.isArray( artifact.dynamicBindings ) ) {
+
+		errors.push( validationError( 'artifact.dynamicBindings', `${ label }: artifact.dynamicBindings must be an array when present`, 'dynamicBindings' ) );
+
+	}
+	if ( Array.isArray( artifact.dynamicBindings ) ) {
+
+		for ( let index = 0; index < artifact.dynamicBindings.length; index ++ ) validateDynamicBindingEntry( artifact.dynamicBindings[ index ], index, label, errors );
+
+	}
+
 	// Convergence guard: if the artifact ships a frozen `dynamicBindings`
 	// section, assert it matches the live collector. This is the dev↔build
 	// extractor convergence canary — when a node-harness re-extraction
@@ -561,13 +789,28 @@ export function validateArtifact( input, opts = {} ) {
 	if ( Array.isArray( artifact.uniformPlan ) && Array.isArray( artifact.dynamicBindings ) && opts.strictDynamicBindings !== false ) {
 
 		const computed = collectArtifactDynamicBindings( artifact );
-		const storedKey = ( e ) => `${ e.kind }|${ e.group }|${ e.binding }`;
-		const storedKeys = new Set( artifact.dynamicBindings.map( storedKey ) );
-		const computedKeys = new Set( computed.map( storedKey ) );
+		const storedByKey = new Map();
+		const computedByKey = new Map( computed.map( ( entry ) => [ dynamicBindingKey( entry ), entry ] ) );
+		for ( let index = 0; index < artifact.dynamicBindings.length; index ++ ) {
 
-		for ( const key of computedKeys ) {
+			const entry = artifact.dynamicBindings[ index ];
+			if ( ! entry || typeof entry !== 'object' || Array.isArray( entry ) ) continue;
+			const key = dynamicBindingKey( entry );
+			if ( storedByKey.has( key ) ) {
 
-			if ( ! storedKeys.has( key ) ) {
+				errors.push( validationError( 'dynamicBindings.duplicate', `${ label }: dynamicBindings has duplicate entry "${ key }"`, `dynamicBindings[${ index }]` ) );
+
+			} else {
+
+				storedByKey.set( key, { entry, index } );
+
+			}
+
+		}
+
+		for ( const [ key, computedEntry ] of computedByKey ) {
+
+			if ( ! storedByKey.has( key ) ) {
 
 				errors.push( validationError(
 					'dynamicBindings.missing',
@@ -575,12 +818,17 @@ export function validateArtifact( input, opts = {} ) {
 					'dynamicBindings',
 				) );
 
+			} else {
+
+				const stored = storedByKey.get( key );
+				compareDynamicBindingEntry( stored.entry, computedEntry, stored.index, label, errors );
+
 			}
 
 		}
-		for ( const key of storedKeys ) {
+		for ( const key of storedByKey.keys() ) {
 
-			if ( ! computedKeys.has( key ) ) {
+			if ( ! computedByKey.has( key ) ) {
 
 				errors.push( validationError(
 					'dynamicBindings.stale',

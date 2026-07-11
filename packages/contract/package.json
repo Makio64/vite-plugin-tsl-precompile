@@ -15,12 +15,17 @@
   },
   "main": "./src/index.js",
   "exports": {
-    ".": "./src/index.js",
+		".": "./src/index.js",
+		"./artifact-content": "./src/artifact-content.js",
+		"./artifact-shape": "./src/artifact-shape.js",
     "./dynamic-bindings": "./src/dynamic-bindings.js",
     "./fragment-outputs": "./src/fragment-outputs.js",
     "./graph-normalize": "./src/graph-normalize.js",
     "./kinds": "./src/kinds.js",
-    "./texture-props": "./src/texture-props.js"
+    "./render-context": "./src/render-context.js",
+    "./texture-props": "./src/texture-props.js",
+    "./virtual-modules": "./src/virtual-modules.js",
+    "./versions": "./src/versions.js"
   },
   "files": [
     "src"
