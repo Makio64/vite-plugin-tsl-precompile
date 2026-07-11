@@ -187,8 +187,7 @@ folderClouds.add( sky.cloudElevation, 'value', 0, 1, 0.01 ).name( 'elevation' );
 precompileAuxiliary( renderer, scene, camera, {
 	devEndpoint: '/__tsl-precompile/capture',
 	three: THREE,
-	threeVersion: String( THREE.REVISION ).match( /^\d+/ )[ 0 ],
-	pluginVersion: '0.0.0',
+	threeVersion: globalThis.__TSLP_THREE_PACKAGE_VERSION__ || String( THREE.REVISION ).match( /^\d+/ )[ 0 ],
 } ).then( ( results ) => {
 
 	const summary = results.map( ( r ) => `${ r.shape }:${ r.ok ? 'ok' : 'err ' + r.error }` ).join( ', ' );

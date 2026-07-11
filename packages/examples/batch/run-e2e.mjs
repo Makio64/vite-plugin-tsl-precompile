@@ -33,7 +33,6 @@
  */
 
 import { chromium } from 'playwright';
-import { FastCDPHarness } from 'webgpu-optimizer-report';
 import { createServer } from 'node:http';
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
@@ -62,7 +61,7 @@ if ( ! existsSync( SLIM_BUNDLE ) ) {
 }
 
 // The slim bundle bakes in the threeVersion used to produce its hashes at
-// build time (e.g. { threeVersion: "184", pluginVersion: "0.0.0" }). The
+// build time (e.g. { threeVersion: "0.184.0", pluginVersion: "0.1.0" }). The
 // capture pass must use the SAME threeVersion so that
 // hashPlainConfigSync(config, { shape, threeVersion, pluginVersion }) produces
 // matching configHashes for render-output, background, etc. artifacts.
@@ -1299,7 +1298,11 @@ function __markSceneMaterials( scene, camera = null ) {
 	if ( scene.userData && scene.userData.__tslpSyntheticCaptureScene ) return;
 	if ( camera && camera.isArrayCamera === true && scene.overrideMaterial ) return;
 	if ( scene.overrideMaterial && scene.overrideMaterial.visible !== false ) {
-		__mark( scene.overrideMaterial, __classNameForMaterial( scene.overrideMaterial ), null, camera );
+		let representative = null;
+		scene.traverse( ( object ) => {
+			if ( ! representative && object && object.geometry && object.visible !== false ) representative = object;
+		} );
+		__mark( scene.overrideMaterial, __classNameForMaterial( scene.overrideMaterial ), representative, camera );
 	}
 	scene.traverse( ( object ) => {
 		const material = object && object.material;
@@ -1366,6 +1369,7 @@ async function __flush() {
 			try {
 				if ( item.material.__tslpPrecompileScene ) Object.defineProperty( colorMaterial, '__tslpPrecompileScene', { value: item.material.__tslpPrecompileScene, configurable: true } );
 				if ( item.material.__tslpPrecompileObject ) Object.defineProperty( colorMaterial, '__tslpPrecompileObject', { value: item.material.__tslpPrecompileObject, configurable: true } );
+				if ( item.material.__tslpPrecompileCamera ) Object.defineProperty( colorMaterial, '__tslpPrecompileCamera', { value: item.material.__tslpPrecompileCamera, configurable: true } );
 				if ( Object.prototype.hasOwnProperty.call( item.material, '__tslpArrayCamera' ) ) Object.defineProperty( colorMaterial, '__tslpArrayCamera', { value: item.material.__tslpArrayCamera, configurable: true } );
 			} catch ( _ ) {}
 			try {
@@ -1374,7 +1378,12 @@ async function __flush() {
 				colorMaterial.needsUpdate = true;
 				if ( typeof __renderer.setMRT === 'function' ) __renderer.setMRT( null );
 				const pendingBefore = window.__tslpPrecompilePending | 0;
-				colorMaterial.precompile( item.name + ':color' );
+				colorMaterial.precompile( item.name + ':color', {
+					__tslpAutoMark: true,
+					scene: colorMaterial.__tslpPrecompileScene || null,
+					camera: colorMaterial.__tslpPrecompileCamera || null,
+					object: colorMaterial.__tslpPrecompileObject || null,
+				} );
 				await __waitForPrecompilePendingAtMost( pendingBefore );
 			} catch ( err ) {
 				console.error( '[tslp-e2e] non-MRT precompile failed:', err );
@@ -1384,14 +1393,22 @@ async function __flush() {
 			}
 		}
 		try {
-			const pendingBefore = window.__tslpPrecompilePending | 0;
 			item.material.needsUpdate = true;
-			item.material.precompile( item.name );
-			await __waitForPrecompilePendingAtMost( pendingBefore );
+			item.material.precompile( item.name, {
+				__tslpAutoMark: true,
+				scene: item.material.__tslpPrecompileScene || null,
+				camera: item.material.__tslpPrecompileCamera || null,
+				object: item.material.__tslpPrecompileObject || null,
+			} );
 		} catch ( err ) {
 			console.error( '[tslp-e2e] precompile failed:', err );
 		}
 	}
+	// Material extraction is deliberately serialized by the runtime because
+	// compileTSL mutates renderer-global MRT/cache state. Enqueue the full burst
+	// first, then wait once; per-item "return to previous counter" waits become
+	// invalid when earlier captures finish while later ones are being queued.
+	await __waitForPrecompilePendingAtMost( 0, 120000 );
 }
 
 function __trackAuxCapture( promise, label ) {
@@ -15439,36 +15456,27 @@ function printFailureSummary( details, max = 20 ) {
 
 }
 
-let currentCdpHarness = null;
-
 async function launchBrowser() {
 
-	if ( currentCdpHarness ) {
+	// Prefer system Chrome (better WebGPU), fall back to Playwright Chromium.
+	// Matches run.mjs / run-slim.mjs — no sibling-repo CDP harness required.
+	let browser = await chromium.launch( {
+		channel: 'chrome',
+		headless: true,
+		args: BROWSER_ARGS,
+	} ).catch( () => null );
+	if ( ! browser ) {
 
-		try { await currentCdpHarness.close(); } catch ( _ ) {}
-		currentCdpHarness = null;
+		browser = await chromium.launch( { headless: true, args: BROWSER_ARGS } );
 
 	}
-
-	currentCdpHarness = await FastCDPHarness.launch( {
-		headful: false,
-		viewport: '640x480',
-		chromiumArgs: BROWSER_ARGS
-	} );
-
-	return await chromium.connectOverCDP( currentCdpHarness.launch.webSocketUrl );
+	return browser;
 
 }
 
 async function recycleBrowser( current ) {
 
 	try { await current?.close(); } catch ( _ ) {}
-	if ( currentCdpHarness ) {
-
-		try { await currentCdpHarness.close(); } catch ( _ ) {}
-		currentCdpHarness = null;
-
-	}
 	// Give the OS a beat to reclaim Chromium's GPU process before we spawn a
 	// fresh one — without this delay the new browser's GPU process overlaps
 	// with the dying one and unified-memory pressure spikes on Apple Silicon.
@@ -15541,11 +15549,6 @@ try {
 } finally {
 
 	await browser.close().catch( () => {} );
-	if ( currentCdpHarness ) {
-
-		await currentCdpHarness.close().catch( () => {} );
-
-	}
 	server.close();
 
 }

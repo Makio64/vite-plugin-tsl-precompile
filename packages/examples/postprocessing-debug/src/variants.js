@@ -107,8 +107,7 @@ async function ensurePipelineAux( renderer, scene, camera, postProcessing, name 
 	const results = await precompileAuxiliary( renderer, scene, camera, {
 		devEndpoint: CAPTURE_ENDPOINT,
 		three: THREE_GPU,
-		threeVersion: String( THREE_GPU.REVISION ).match( /^\d+/ )[ 0 ],
-		pluginVersion: '0.0.0',
+		threeVersion: globalThis.__TSLP_THREE_PACKAGE_VERSION__ || String( THREE_GPU.REVISION ).match( /^\d+/ )[ 0 ],
 		postProcessing,
 		postProcessingName: name,
 		renderPipeline: postProcessing,

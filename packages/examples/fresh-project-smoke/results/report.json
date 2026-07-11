@@ -19,9 +19,10 @@
       "ok": true,
       "manifest": {
         "fresh-project-smoke": {
-          "file": "fresh-project-smoke.b187cf65936c.json",
-          "hash": "b187cf65936c96b88ac3edfe461c95e5a5159117347f10e309afdadf79cdb40b",
-          "capturedAt": "2026-05-19T05:50:36.974Z"
+          "file": "fresh-project-smoke.99518865c6d9.json",
+          "hash": "99518865c6d9583b1c7129fb1adfec815ee2ea54034e09bebc6b9d4eb0efd73b",
+          "sourceIdentity": "3f4b29c622ac8492f41bb05f2f98c3ff419b992d8ef02d20c0e723af218532cb",
+          "capturedAt": "2026-07-11T01:36:28.818Z"
         }
       }
     },
@@ -30,11 +31,11 @@
     },
     "previewSmoke": {
       "ok": true,
-      "nonZeroRatio": 0.97,
+      "nonZeroRatio": 0.9696,
       "pageErrors": [],
       "consoleErrors": [],
       "failures": []
     }
   },
-  "tmpRoot": "/var/folders/5y/895dhjqd4x38z7jmf4hfz0n00000gn/T/tslp-fresh-4r4FDT"
+  "tmpRoot": "/var/folders/5y/895dhjqd4x38z7jmf4hfz0n00000gn/T/tslp-fresh-U8qPDr"
 }

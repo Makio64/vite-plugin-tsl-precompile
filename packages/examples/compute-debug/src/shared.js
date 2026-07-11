@@ -77,8 +77,7 @@ export async function runAux( renderer, scene, camera ) {
 	const auxResults = await precompileAuxiliary( renderer, scene, camera, {
 		devEndpoint: CAPTURE_ENDPOINT,
 		three: THREE,
-		threeVersion: String( THREE.REVISION ).match( /^\d+/ )[ 0 ],
-		pluginVersion: '0.0.0',
+		threeVersion: globalThis.__TSLP_THREE_PACKAGE_VERSION__ || String( THREE.REVISION ).match( /^\d+/ )[ 0 ],
 	} ).catch( ( err ) => {
 		console.warn( '[compute-debug] auxiliary capture failed:', err );
 		return [ { shape: 'aux', ok: false, error: err && err.message || String( err ) } ];

@@ -20,7 +20,6 @@
   "devDependencies": {
     "@tsl-precompile/contract": "workspace:*",
     "playwright": "^1.59.1",
-    "pngjs": "^7.0.0",
-    "webgpu-optimizer-report": "file:../../../../WebGPUOptimizerReport"
+    "pngjs": "^7.0.0"
   }
 }

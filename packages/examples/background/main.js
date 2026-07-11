@@ -104,8 +104,7 @@ scene.add( sphere );
 await precompileAuxiliary( renderer, scene, camera, {
 	devEndpoint: '/__tsl-precompile/capture',
 	three: THREE,
-	threeVersion: String( THREE.REVISION ).match( /^\d+/ )[ 0 ],
-	pluginVersion: '0.0.0',
+	threeVersion: globalThis.__TSLP_THREE_PACKAGE_VERSION__ || String( THREE.REVISION ).match( /^\d+/ )[ 0 ],
 } );
 setStatus( 'aux captured' );
 

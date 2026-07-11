@@ -193,8 +193,7 @@ export async function runPostProcessingDebugExample( { effect = 'passthrough', t
 	const auxResults = skipReplayAuxCapture ? [ { shape: 'replay', ok: true } ] : await precompileAuxiliary( renderer, scene, camera, {
 		devEndpoint: CAPTURE_ENDPOINT,
 		three: THREE_GPU,
-		threeVersion: String( THREE_GPU.REVISION ).match( /^\d+/ )[ 0 ],
-		pluginVersion: '0.0.0',
+		threeVersion: globalThis.__TSLP_THREE_PACKAGE_VERSION__ || String( THREE_GPU.REVISION ).match( /^\d+/ )[ 0 ],
 		postProcessing,
 		renderPipeline: postProcessing,
 	} ).catch( ( err ) => {
