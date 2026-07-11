@@ -47,7 +47,7 @@
   },
   "peerDependencies": {
     "three": ">=0.184.0",
-    "vite": ">=5"
+    "vite": ">=6.4.3"
   },
   "peerDependenciesMeta": {
     "three": { "optional": false },

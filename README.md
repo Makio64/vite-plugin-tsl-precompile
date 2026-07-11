@@ -38,7 +38,7 @@ library in while slim ships only stubs. **Run the numbers on your own scene.**
 | **Renderer** | `WebGPURenderer` only — no WebGL fallback |
 | **Browser** | WebGPU-capable: Chrome/Edge 113+, Safari 18+ (or Safari Technology Preview) |
 | **three.js** | `>= 0.184.0`, **pinned to an exact patch** in `package.json` (e.g. `"three": "0.184.0"`, not `"^0.184.0"`). Artifacts are versioned against the exact WGSL-emitter package. The checked-in slim bundle currently requires exactly `0.184.0`. See [MIGRATION.md](MIGRATION.md) for the re-capture workflow when bumping deliberately. |
-| **Vite** | `>= 5` |
+| **Vite** | `>= 6.4.3` |
 | **Node** | `>= 20.19` (build tooling only; not a runtime requirement) |
 
 > **Adopting this on your own project?** Start at [BYO.md](BYO.md) — a 5-minute walkthrough covering install, first capture, day-2 workflow, and the common pitfalls.
@@ -325,7 +325,7 @@ regression.
 | **Operating systems (visual / e2e)** | Ubuntu only | Tier-1 visual gate, preview-smoke, and fresh-project-smoke run under `xvfb-run` on Linux. macOS/Windows e2e is not gated. |
 | **Browsers** | Chromium (Playwright, SwiftShader Vulkan) | Firefox WebGPU is still flag-gated; Safari is untested in CI. |
 | **Node** | 22 (CI) | Plugin/runtime require `>= 20.19`. |
-| **Vite** | 8.x (CI) | Plugin declares `vite >= 5` as a peer; 5–7 are best-effort. |
+| **Vite** | 8.x (CI) | Plugin declares `vite >= 6.4.3` as a peer; 6.4.3–7 are best-effort. |
 | **three.js** | `0.184.0` (locked) + nightly run against `latest` ([three-compat.yml](.github/workflows/three-compat.yml)) | Artifacts are pinned to a three.js patch — see [MIGRATION.md](MIGRATION.md). |
 | **Publish path** | `npm install` of `pnpm pack` tarballs into a clean temp project ([fresh-project-smoke](packages/examples/fresh-project-smoke)) | Verifies that `exports`, `files`, `peerDependencies`, and `.d.ts` resolve outside the monorepo. |
 | **Bundlers** | Vite only | Plugin is Vite-specific; Rollup/esbuild/webpack are not supported. |
