@@ -11,7 +11,7 @@ author markers, offline shader compilation, dumb runtime.
 
 **What you get:** predictable cold start (no TSL→WGSL compile blocking first
 frame), lower per-frame CPU (AOT updater writes UBO bytes directly — no node
-graph traversal, no closure dispatch), and a five-layer staleness gate that
+graph traversal, no closure dispatch), and a layered staleness gate that
 fails loudly instead of regressing visuals silently.
 
 **Bundle size.** The slim runtime bundle ships **~240 kB gzip (~200 kB
@@ -37,7 +37,7 @@ library in while slim ships only stubs. **Run the numbers on your own scene.**
 |---|---|
 | **Renderer** | `WebGPURenderer` only — no WebGL fallback |
 | **Browser** | WebGPU-capable: Chrome/Edge 113+, Safari 18+ (or Safari Technology Preview) |
-| **three.js** | `>= 0.184.0`, **pinned to an exact patch** in `package.json` (e.g. `"three": "0.184.0"`, not `"^0.184.0"`). Artifacts are versioned against the WGSL emitter; a silent patch bump invalidates them. See [MIGRATION.md](MIGRATION.md) for the re-capture workflow when bumping deliberately. |
+| **three.js** | `>= 0.184.0`, **pinned to an exact patch** in `package.json` (e.g. `"three": "0.184.0"`, not `"^0.184.0"`). Artifacts are versioned against the exact WGSL-emitter package. The checked-in slim bundle currently requires exactly `0.184.0`. See [MIGRATION.md](MIGRATION.md) for the re-capture workflow when bumping deliberately. |
 | **Vite** | `>= 5` |
 | **Node** | `>= 20.19` (build tooling only; not a runtime requirement) |
 
@@ -86,12 +86,20 @@ await setup.ready;          // ← registers this renderer with the marker
 const material = new MeshStandardNodeMaterial();
 material.colorNode = mix( color( '#224' ), color( '#88c' ), uv().y );
 material.precompile( 'my-material' );    // ← the one line you add
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera( 45, innerWidth / innerHeight, 0.1, 100 );
+camera.position.z = 3;
+scene.add( new THREE.Mesh( new THREE.SphereGeometry(), material ) );
+renderer.setAnimationLoop( () => renderer.render( scene, camera ) );
 ```
 
 Run `vite` once. The plugin captures the live material and writes
 `./artifacts/my-material.<hash>.json`. Commit the artifact, then `vite build`
 ships precompiled WGSL plus a generated UBO updater — no TSL builder at
-runtime.
+runtime. Capture begins only after the marker is observed in a real render,
+so lights, shadows, fog, camera type, geometry attributes, instancing/skinning,
+clipping, and MRT state select the correct shader variant.
 
 A full runnable copy lives in
 [packages/examples/getting-started](packages/examples/getting-started).
@@ -109,22 +117,24 @@ await setup.captureAux( { passNode: scenePass, renderPipeline } );
 
 ## How it works
 
-1. **Dev capture.** `material.precompile('name')` runs in your browser. The
-   runtime borrows the active `WebGPURenderer`, drives the real three.js
-   extractor against a synthetic scene containing the material, and POSTs
-   the resulting WGSL + uniform plan to the plugin's dev-only capture endpoint.
+1. **Dev capture.** `material.precompile('name')` queues the material in your
+   browser. On its first real `renderer.render(scene, camera)`, the runtime
+   records the owning object and render context, then borrows that renderer for
+   an isolated extraction pass and POSTs the resulting WGSL + uniform plan to
+   the plugin's dev-only capture endpoint.
    The plugin writes `./artifacts/<name>.<hash>.json`.
 2. **Build rewrite.** A Babel pass replaces `material.precompile('name')` with
    `__applyPrecompiled(material, virtualArtifactModule, expectedHash)` and
    hoists `import * as __tsl_art_<name> from 'virtual:tsl-precompile/<name>'`.
    The plugin's `load()` hook resolves that virtual module to the captured
    artifact JSON + a generated `updater.js` that writes UBOs per frame.
-3. **Slim runtime (optional).** With `slim: true`, the plugin also aliases
+3. **Slim runtime (optional).** With `slim: true`, production builds alias
    `three/webgpu` to `@tsl-precompile/runtime/slim` — a three.js bundle with
-   the node builder stripped out. Only materials reached through a
-   precompiled artifact work in slim mode. The bundle is roughly the same
-   gzip size as stock three.js TSL on a minimal scene; the win is runtime
-   (no JIT shader compile, no node-graph traversal), not download.
+   the node builder stripped out. Dev/serve deliberately keeps the full entry
+   so capture can generate WGSL. Only materials reached through a precompiled
+   artifact work in slim mode. The bundle is roughly the same gzip size as
+   stock three.js TSL on a minimal scene; the win is runtime (no JIT shader
+   compile, no node-graph traversal), not download.
 
 ## Adoption modes
 
@@ -137,6 +147,8 @@ material.precompile( 'water' );
 ```
 
 Predictable, reviewable, names survive refactors.
+Names are project-global artifact IDs: keep them unique and use only letters,
+digits, `.`, `_`, and `-` (no path segments or `..`).
 
 ### 2. `autoMark` — zero source edits
 
@@ -157,9 +169,15 @@ reshuffles names, which invalidates the on-disk artifacts.
 tslPrecompile( { slim: true } );
 ```
 
-The plugin aliases `three/webgpu` → `@tsl-precompile/runtime/slim` (the
-node-builder-stripped bundle) and `three/tsl` → a stub module that throws
-loud, descriptive errors if any un-precompiled TSL helper is reached.
+In production builds the plugin aliases `three/webgpu` →
+`@tsl-precompile/runtime/slim` (the node-builder-stripped bundle) and
+`three/tsl` → a stub module that throws loud, descriptive errors if any
+un-precompiled TSL helper is reached. `vite dev` keeps both full three.js
+entries so `.precompile()` and aux capture still have a node builder.
+
+The published slim bundle is currently built against exactly three `0.184.0`.
+A slim build fails early when the consumer resolves another patch instead of
+combining incompatible renderer internals.
 
 **What slim mode actually changes:**
 - ✅ Eliminates the TSL→WGSL compiler from production runtime (no JIT shader
@@ -184,17 +202,22 @@ overlays, PMREM work, compute outputs, or post-processing passes, use the
 public slim-support entry instead of reaching into runtime internals:
 
 ```js
-import * as ThreeFull from 'three/webgpu';
 import { createSlimSceneSupport } from '@tsl-precompile/runtime/slim-support';
 
 const support = createSlimSceneSupport( {
 	renderer,
-	threeFullModule: ThreeFull,
+	loadThreeFullModule: () => import( 'virtual:tsl-precompile/full-three' ),
+	fullRendererFallback: true,
 } );
 
 support.indexScene( scene );
 await support.ensureFallback();
 ```
+
+Load the virtual full-three entry dynamically for fallback code so it stays
+in a separate lazy chunk. A direct production
+import from `three/webgpu` intentionally resolves to slim and is rejected by
+the fallback helper.
 
 For offscreen override-material renders such as contact shadows or depth
 prepasses, call `support.renderOffscreenOverrideWithFallback( scene, camera )`
@@ -214,10 +237,10 @@ material.
 | `fail` | `'error'` | Use `'warn'` to keep building when a named artifact is missing. |
 | `autoMark` | `false` | Chain `.precompile('auto-<n>')` onto every `new *NodeMaterial(...)` automatically. |
 | `autoMarkPrefix` | `'auto'` | Prefix used by `autoMark` to name artifacts. |
-| `slim` | `false` | Alias `three/webgpu` → the slim runtime bundle. |
+| `slim` | `false` | Alias `three/webgpu` → the slim runtime bundle in production only; dev keeps full three for capture. |
 | `minifyWgsl` | `true` | Compact WGSL only in emitted virtual modules; captured JSON stays readable. |
 | `dedupeWgsl` | `true` | Hoist repeated WGSL strings into `virtual:tsl-precompile/__wgsl` for tree-shakeable reuse. |
-| `threeVersion` | auto-detect | Override the three.js version used in rewrite hashes (rarely needed). |
+| `threeVersion` | auto-detect | Override the exact three.js package version used in rewrite hashes. It must match the installed package (rarely needed). |
 
 ## Troubleshooting
 
@@ -237,6 +260,10 @@ material.
   You hit a code path that wasn't precompiled in `slim: true` mode. Mark
   that material with `.precompile()` (or enable `autoMark`), re-run dev to
   capture, then rebuild.
+- **`slim build refused: ... built against three 0.184.0`**
+  The installed three.js patch does not match this release's checked-in slim
+  renderer. Pin three to `0.184.0`, or disable `slim` until a matching runtime
+  slim bundle is published.
 - **Post-processing renders black or samples stale textures in `slim` mode.**
   Run `precompileAuxiliary(renderer, scene, camera, { three: THREE,
   postProcessing })` once in dev after creating the `RenderPipeline` /
@@ -294,7 +321,7 @@ regression.
 
 | Layer | Tested | Notes |
 |---|---|---|
-| **Operating systems (unit tests)** | Ubuntu, macOS, Windows | All three run the plugin + runtime + contract unit suites on every PR. |
+| **Operating systems (unit tests)** | Ubuntu, macOS, Windows | All three run the fast plugin + runtime suite on every PR; Linux additionally runs extractor, rewrite, slim, and coverage tests through `pnpm test:full`. |
 | **Operating systems (visual / e2e)** | Ubuntu only | Tier-1 visual gate, preview-smoke, and fresh-project-smoke run under `xvfb-run` on Linux. macOS/Windows e2e is not gated. |
 | **Browsers** | Chromium (Playwright, SwiftShader Vulkan) | Firefox WebGPU is still flag-gated; Safari is untested in CI. |
 | **Node** | 22 (CI) | Plugin/runtime require `>= 20.19`. |
@@ -343,7 +370,9 @@ pnpm dev:background       # background / PMREM demo
 pnpm dev:compute          # compute-shader demo
 pnpm dev:shadow-debug     # minimal shadow repro pages
 pnpm dev:site             # docs site
-pnpm test                 # unit tests per package
+pnpm test                 # fast default checks (heavy generation/rewrite suites excluded)
+pnpm test:generation      # extractor and artifact-generation tests only
+pnpm test:full            # complete release suite
 pnpm test:coverage        # coverage-matrix fixtures
 pnpm test:e2e -- --filter=webgpu_clearcoat
                           # focused capture/replay against one three.js example

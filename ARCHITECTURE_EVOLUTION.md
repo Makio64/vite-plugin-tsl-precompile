@@ -8,7 +8,36 @@ This file is the **structural** to-do list: the changes that make the plugins ea
 
 Items are ordered **P0 → P3**. Each has: **Symptom** (what's wrong), **Why it blocks evolution/fidelity**, **Change** (target shape), **First step** (a small, low-risk wedge), **Files**.
 
-Last updated: 2026-06-09 (audit refresh; previous full pass 2026-05-14).
+Last updated: 2026-07-11 (capture/identity spike; previous full audit 2026-06-09).
+
+---
+
+## 2026-07-11 capture/identity spike — staged direction
+
+The real-render observation added in July exposed a simpler target than
+reconstructing every render context in a throwaway scene. A mock-WebGPU
+generation test now harvests the `NodeBuilderState` produced by one ordinary
+render and extracts complete WGSL plus light, shadow, depth-texture, and fog
+sources without a second compile. The private Three seam is centralized in
+[`packages/plugin/src/vendor/render-object-observer.js`](packages/plugin/src/vendor/render-object-observer.js), which uses a Symbol-backed subscriber registry; `compileTSL` consumes that adapter instead of replacing `NodeManager.getForRender` itself.
+
+The production marker has **not** switched to direct harvest yet. The next safe
+wedge is to aggregate every observed cache key for a material during one render
+epoch, stamp MRT metadata from the real `RenderObject`, and fall back to the
+synthetic compiler only for an unavailable/incomplete observation or a missing
+required sibling variant. Until those parity tests exist, synthetic capture
+remains the default compatibility path.
+
+Identity is now split in the first useful way: `__hash` is derived from runtime
+artifact content (shaders, binding/layout data, uniform plans, render state, and
+variants), while `sourceGraphHash` remains source provenance. Dev captures also
+record stable call-site owners and a conservative whole-module revision; build
+rejects a changed or unobserved owner. `autoMark` relies on that build-time gate
+because it rewrites the constructor before later `*Node` assignments, making an
+adoption-time graph comparison inherently too early. Still open: extend module
+revision to a transitive local-import closure, and use render-context
+fingerprints only for live variant selection rather than treating stored
+context as source freshness.
 
 ---
 
@@ -344,11 +373,13 @@ Inspector preview gap also closed via a Vite plugin middleware (`attachInspector
 
 **Change.** Have `pnpm verify` (or a dedicated check) diff dev-captured vs build-re-extracted artifacts across the example corpus and fail on shape divergence; document explicitly which scene properties are *allowed* to differ.
 
-**Status.** Not done yet. `pnpm verify` validates artifact shape/source-kind contract coverage, but it does not yet diff dev-captured artifacts against build-re-extracted artifacts.
+**Status.** First wedge landed (2026-07-10). [`packages/contract/src/artifact-shape.js`](packages/contract/src/artifact-shape.js) exports `fingerprintArtifactShape` / `diffArtifactShapes` (uniform-plan group/slot/texture/kind rows, ignoring WGSL). [`packages/plugin/test/unit/extractor-convergence.test.js`](packages/plugin/test/unit/extractor-convergence.test.js) asserts the Node harness is shape-stable across two extracts of the same factory. `pnpm verify` now fingerprints each checked artifact and reports empty-shape counts. Full browser-capture vs Node re-extract diffs across the example corpus are still outstanding.
 
-**First step.** Add the diff step to [`packages/plugin/src/cli/verify.js`](packages/plugin/src/cli/verify.js).
+**First step (done).** Shared shape fingerprint + Node stability guard + verify wiring.
 
-**Files.** `packages/plugin/src/cli/verify.js`; `packages/plugin/src/node-harness.js`.
+**Next step.** Diff committed browser-captured example artifacts against Node re-extracts for a small fixture set inside `verify.js` (or a dedicated `pnpm verify:convergence`), documenting which scene properties are allowed to differ.
+
+**Files.** [`packages/contract/src/artifact-shape.js`](packages/contract/src/artifact-shape.js); `packages/plugin/src/cli/verify.js`; `packages/plugin/src/node-harness.js`; `packages/plugin/test/unit/extractor-convergence.test.js`.
 
 ---
 

@@ -29,6 +29,8 @@ This repository is designed for small, verifiable AI-assisted changes. Read this
 ## Test Tiers
 
 - Small code changes: `pnpm test`.
+- Extractor/artifact-generation changes: `pnpm test:generation` while iterating.
+- Release or broad cross-package changes: `pnpm test:full` once before handoff; do not run it after every edit.
 - Codegen/kind/extractor changes: `pnpm test:coverage`.
 - Artifact/manifest changes: `pnpm verify`.
 - Slim-bundle or three.js rewrite changes: `pnpm --filter @tsl-precompile/runtime build:slim`.

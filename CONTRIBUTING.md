@@ -8,7 +8,9 @@ Thanks for picking this up. Read [ARCHITECTURE.md](./ARCHITECTURE.md) first — 
 git clone https://github.com/Makio64/vite-plugin-tsl-precompile.git
 cd vite-plugin-tsl-precompile
 pnpm install
-pnpm test                # package tests
+pnpm test                # fast package checks for normal iteration
+pnpm test:generation     # extractor and artifact-generation tests
+pnpm test:full           # complete release suite
 pnpm test:coverage       # coverage-matrix fixtures
 pnpm test:slim           # slim-bundle load-smoke, requires ../three.js
 pnpm dev:ocean           # open the ocean demo
@@ -57,7 +59,8 @@ See [packages/plugin/src/vendor/VENDORING.md](packages/plugin/src/vendor/VENDORI
 ## Pull request checklist
 
 - [ ] Tests added or updated
-- [ ] `pnpm test` passes
+- [ ] `pnpm test` passes while iterating
+- [ ] `pnpm test:full` passes before release
 - [ ] `pnpm test:coverage` passes
 - [ ] If touching `emit-updater.js`, the matrix is still 100% covered or documented-blocked
 - [ ] If vendored files changed, `VENDORING.md` updated

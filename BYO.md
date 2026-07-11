@@ -76,7 +76,9 @@ water.colorNode = /* your TSL graph */;
 water.precompile( 'water' );      // ← one line per material
 ```
 
-The name is the filename of the artifact on disk. Pick something stable — renaming the marker after capture is a re-capture event.
+The name is the project-global artifact ID and part of the filename on disk.
+Pick something unique and stable, using only letters, digits, `.`, `_`, and
+`-` (no paths or `..`). Renaming the marker is a re-capture event.
 
 ## First capture (dev mode)
 
@@ -87,9 +89,10 @@ pnpm vite                # or whatever you use to start dev
 Open the app in a WebGPU-capable browser. The runtime will:
 
 1. Detect each `.precompile('name')` call,
-2. Run the real three.js extractor against a synthetic scene that has only that material,
-3. POST the captured WGSL + uniform plan to `/__tsl-precompile/capture`,
-4. The plugin writes `./artifacts/<name>.<hash>.json`.
+2. Wait until the material is observed in a real `renderer.render(scene, camera)` call,
+3. Preserve its owning object, lights, shadows, camera, geometry, clipping, and MRT context in an isolated extraction pass,
+4. POST the captured WGSL + uniform plan to `/__tsl-precompile/capture`,
+5. Write `./artifacts/<name>.<hash>.json` from the plugin endpoint.
 
 **Commit `./artifacts/` to git.** These JSON files are part of your build inputs, like a lockfile.
 
@@ -100,14 +103,15 @@ Repeat for every material you want precompiled. The dev server hot-recaptures on
 If your scene has a background node, post-processing, or PMREM environment, three.js builds extra internal materials at runtime. The slim runtime won't have a TSL builder to recompile them. Capture them too:
 
 ```js
-import { precompileAuxiliary } from '@tsl-precompile/runtime';
-
-precompileAuxiliary( renderer, scene, camera, {
-	devEndpoint: '/__tsl-precompile/capture',
+const setup = setupPrecompile( {
 	three: THREE,
-	threeVersion: String( THREE.REVISION ).match( /^\d+/ )[ 0 ],
-	postProcessing,            // RenderPipeline or PostProcessing, if you have one
+	renderer,
+	scene,
+	camera,
+	aux: true,
 } );
+await setup.ready;
+await setup.captureAux( { postProcessing } );
 ```
 
 Call this once, after your scene and post-processing graph are fully assembled.
@@ -133,7 +137,10 @@ The Babel transform rewrites every `material.precompile('name')` call into a has
 | Bumped `vite-plugin-tsl-precompile` or `@tsl-precompile/runtime` | Build may fail if the artifact schema changed | Same as a three.js bump — re-capture. |
 | Added a new material | Build fails: no artifact for the new marker | Run dev once to capture it |
 
-The five-layer staleness gate (content hash, dev hot-recapture, build mismatch error, runtime assertion, `pnpm verify` CI check) is designed so silent visual regressions are not possible. Loud failure with a clear next step is the only failure mode.
+The layered staleness gate combines artifact-content identity, call-site/module
+revision checks, dev hot-recapture, exact toolchain checks, runtime validation,
+and `pnpm verify`. A changed source module must be observed in dev again before
+the next production build accepts its artifact.
 
 ## Optional: `slim: true` (no TSL compiler at runtime, harder mode)
 
@@ -150,6 +157,12 @@ Slim is the right choice for shipping a tightly-controlled scene where you want 
 ## Common questions
 
 **Can I use Webpack/Rollup/esbuild instead of Vite?** Not today. The dev-capture endpoint is mounted as Vite middleware. Production replay (the runtime side) is bundler-agnostic, but the capture flow assumes Vite.
+
+**What about Vue, Astro, or Svelte?** Plain JS/TS modules and Vue/Astro script
+subrequests are transformed. Svelte compiles its raw `.svelte` ID after this
+plugin's strict pre-transform, so put marked material construction in an
+imported `.js`/`.ts` module for now; raw Svelte component scripts are not
+rewritten directly.
 
 **What if my project doesn't use TSL — just classic three.js materials?** The plugin is a no-op on non-`NodeMaterial` materials. You only get value if your scene uses TSL.
 

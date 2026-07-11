@@ -3,7 +3,7 @@
 ## Mental model
 
 - Author marks materials with `material.precompile('name')`.
-- In dev, the marker fires the real three.js node builder on the live material and saves an artifact (shader + bindings + uniform plan).
+- In dev, the marker waits for a real render, records the material's Scene/Camera/Object context, then fires the real three.js node builder and saves an artifact (shader + bindings + uniform plan).
 - In prod, a Vite/Babel transform rewrites the marker to load the baked artifact + a generated updater function.
 - Runtime is a slim three.js build with no node builder — just bind-group setup + typed-array writes per frame.
 
@@ -46,7 +46,10 @@ Inspired by Unreal's Material Compiler (`FMaterialUniformExpressionSet` generate
 │   · wgsl (vertex + fragment)
 │   · bindings (bind-group layout)
 │   · uniformPlan (descriptor list)
-│   · __hash (content hash, 3-layer gated)
+│   · sourceGraphHash + exact Three/toolchain versions
+│   · renderContextSignature (topology only)
+│   · __hash (artifact-content/module identity gate)
+│   · source owners + conservative module revisions
 └─────────────────────────────────────────────┘
          │
          ▼  (codegen, phase 3)
@@ -86,6 +89,7 @@ The Vite plugin. Runs at build time.
 Shared extractor/codegen/runtime contract helpers.
 
 - `src/graph-normalize.js` — one graph-normalization implementation imported by plugin and runtime hashers.
+- `src/render-context.js` — canonical shader-topology signature for renderer, scene, camera, object, geometry, clipping, and MRT state.
 - `src/kinds.js` — shared `source.kind` registry, blocked-kind reasons, artifact payload/aggregate validation, and source-kind collection.
 - `src/texture-props.js` — canonical material texture slots and node-graph texture keys.
 
@@ -108,13 +112,15 @@ Integration testbeds: ocean, bloom, compute, background, shadow-debug, compute-d
 
 ## Staleness gates
 
-Five layered; any single failure stops the build:
+Layered so payload drift, ordinary source edits, and toolchain drift fail loudly:
 
-1. Content hash (sha256 over normalized TSL graph + three version + plugin version).
-2. Hot re-extract in dev on file save.
-3. Build-time hash mismatch → hard error.
-4. Runtime hash assertion at app init.
-5. `pnpm verify` CI gate: committed artifact metadata, schema, and source-kind validation.
+1. Artifact content hash over emitted shaders, bindings, uniform plan, render state, and variants (`__hash`).
+2. Stable call-site ownership + conservative whole-module revision check at build time.
+3. Hot re-extract in dev on file save.
+4. Build-time exact Three/toolchain metadata mismatch → hard error.
+5. Virtual-module content-identity mismatch → hard error.
+6. Runtime source-graph recomputation before manual material adoption (`autoMark` uses the call-site gate because it rewrites the constructor before later graph assignments).
+7. `pnpm verify` CI gate: committed artifact metadata, schema, and source-kind validation.
 
 ## Evolution / structural debt
 
