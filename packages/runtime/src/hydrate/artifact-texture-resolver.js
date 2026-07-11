@@ -22,6 +22,11 @@ let textureResolutionDebugHook = null;
  * way through to a shape-only fallback texture. Surfaces the silent-1×1
  * white-texture case the original review flagged as the biggest hidden
  * fidelity loss.
+ *
+ * Set `globalThis.__TSLP_STRICT_TEXTURE_MISS = true` (or env
+ * `TSLP_STRICT_TEXTURE_MISS=1`) to throw instead of binding the shape
+ * fallback — useful for CI / adopter debugging. Default remains warn +
+ * fallback so production beta apps keep rendering.
  */
 function warnTextureMissEnabled() {
 
@@ -35,14 +40,23 @@ function warnTextureMissEnabled() {
 
 }
 
+function strictTextureMissEnabled() {
+
+	const root = typeof globalThis !== 'undefined' ? globalThis : null;
+	if ( ! root ) return false;
+	if ( root.__TSLP_STRICT_TEXTURE_MISS === true ) return true;
+	if ( root.__TSLP_STRICT_TEXTURE_MISS === false ) return false;
+	const env = root.process && root.process.env;
+	if ( env && env.TSLP_STRICT_TEXTURE_MISS === '1' ) return true;
+	return false;
+
+}
+
 const _warnedMissKeys = new Set();
 function warnTextureMiss( artifact, groupName, bindingName, source, details, strategiesTried ) {
 
-	if ( ! warnTextureMissEnabled() ) return;
 	const artifactName = artifact && artifact.name || artifact && artifact.materialShape || '<unnamed>';
 	const key = `${ artifactName }::${ groupName }::${ bindingName }`;
-	if ( _warnedMissKeys.has( key ) ) return;
-	_warnedMissKeys.add( key );
 	const tried = Array.isArray( strategiesTried ) && strategiesTried.length > 0
 		? strategiesTried.join( ', ' )
 		: '<none>';
@@ -51,10 +65,19 @@ function warnTextureMiss( artifact, groupName, bindingName, source, details, str
 	const textureName = source && source.textureName || 'n/a';
 	const imageSrc = source && source.imageSrc || 'n/a';
 	const detailSuffix = details && details.resolvedTextureType ? ` resolved=${ details.resolvedTextureType }` : '';
+	const message = `[tsl-precompile/hydrator] no live texture matched binding '${ bindingName }' (group '${ groupName }', artifact '${ artifactName }', source.kind=${ kind }, uuid=${ uuid }, name=${ textureName }, imageSrc=${ imageSrc }${ detailSuffix }). Falling back to shape-only texture. Strategies tried: ${ tried }.`;
+
+	if ( strictTextureMissEnabled() ) {
+
+		throw new Error( message.replace( 'Falling back to shape-only texture.', 'Strict texture miss is enabled; refusing shape-only fallback.' ) );
+
+	}
+
+	if ( ! warnTextureMissEnabled() ) return;
+	if ( _warnedMissKeys.has( key ) ) return;
+	_warnedMissKeys.add( key );
 	// eslint-disable-next-line no-console
-	console.warn(
-		`[tsl-precompile/hydrator] no live texture matched binding '${ bindingName }' (group '${ groupName }', artifact '${ artifactName }', source.kind=${ kind }, uuid=${ uuid }, name=${ textureName }, imageSrc=${ imageSrc }${ detailSuffix }). Falling back to shape-only texture. Strategies tried: ${ tried }.`
-	);
+	console.warn( message );
 
 }
 

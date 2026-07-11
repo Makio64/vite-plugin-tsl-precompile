@@ -115,8 +115,10 @@
   "scripts": {
     "build:slim": "rollup -c rollup.config.js",
     "build": "rollup -c rollup.config.js",
-    "test": "node --test 'test/**/*.test.js'",
-    "prepublishOnly": "TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm run build && pnpm run test"
+    "test": "node --test --test-concurrency=2 --test-reporter=dot 'test/**/*.test.js'",
+    "test:quick": "node --test --test-concurrency=2 --test-reporter=dot 'test/**/*.test.js'",
+    "test:full": "node --test --test-concurrency=2 'test/**/*.test.js'",
+    "prepublishOnly": "TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm run build && pnpm run test:full"
   },
   "dependencies": {
     "@tsl-precompile/contract": "workspace:*"

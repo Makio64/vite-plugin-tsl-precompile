@@ -26,6 +26,7 @@
 
 import { installPrecompileMarker, setDevRenderer } from './precompile-marker.js';
 import { precompileAuxiliary } from './aux-marker.js';
+import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 
 const DEFAULT_DEV_ENDPOINT = '/__tsl-precompile/capture';
 const INIT_WRAPPED_FLAG = '__tslpSetupInitWrapped';
@@ -34,14 +35,32 @@ const INIT_READY_CALLBACKS = '__tslpSetupReadyCallbacks';
 function isInitialised( renderer ) {
 
 	if ( ! renderer ) return false;
-	// Across r184→latest, an initialised WebGPURenderer always has a `backend`
-	// reference. `_initialized` is an older internal flag; check both for
-	// belt-and-braces detection without poking at private internals harder.
-	return Boolean( renderer.backend || renderer._initialized );
+	// WebGPURenderer constructs its backend eagerly, before init(), so backend
+	// presence is not a readiness signal. Prefer Three's public probes and keep
+	// the private flag only as a compatibility fallback.
+	if ( typeof renderer.hasInitialized === 'function' ) {
+
+		try { return renderer.hasInitialized() === true; } catch ( _ ) {}
+
+	}
+	try {
+
+		if ( renderer.initialized !== undefined ) return renderer.initialized === true;
+
+	} catch ( _ ) {}
+	return renderer._initialized === true;
 
 }
 
 function deriveThreeVersion( three ) {
+
+	// Vite injects the exact package version resolved by the plugin. REVISION
+	// only carries the release integer (for example "184"), so it cannot
+	// distinguish npm patch releases that may emit different WGSL.
+	const injected = typeof globalThis !== 'undefined'
+		? globalThis.__TSLP_THREE_PACKAGE_VERSION__
+		: null;
+	if ( typeof injected === 'string' && injected.length > 0 ) return injected;
 
 	const rev = three && three.REVISION;
 	if ( typeof rev === 'string' || typeof rev === 'number' ) {
@@ -64,19 +83,25 @@ function isSlimNamespace( three, renderer ) {
 
 }
 
-function flushInitReadyCallbacks( renderer ) {
+function flushInitReadyCallbacks( renderer, error = null ) {
 
 	const callbacks = renderer && renderer[ INIT_READY_CALLBACKS ];
 	if ( ! Array.isArray( callbacks ) || callbacks.length === 0 ) return;
-	callbacks.splice( 0 ).forEach( ( callback ) => {
+	callbacks.splice( 0 ).forEach( ( entry ) => {
 
-		try { callback( renderer ); } catch ( _ ) {}
+		// Keep the function form compatible with renderers that were wrapped by
+		// an older copy of the runtime before HMR loaded this module.
+		const callback = typeof entry === 'function'
+			? ( error === null ? entry : null )
+			: ( error === null ? entry.onReady : entry.onError );
+		if ( typeof callback !== 'function' ) return;
+		try { callback( error === null ? renderer : error ); } catch ( _ ) {}
 
 	} );
 
 }
 
-function queueRendererReady( renderer, onReady ) {
+function queueRendererReady( renderer, onReady, onError ) {
 
 	if ( ! renderer ) return;
 	if ( isInitialised( renderer ) ) {
@@ -101,7 +126,20 @@ function queueRendererReady( renderer, onReady ) {
 		} );
 
 	}
-	renderer[ INIT_READY_CALLBACKS ].push( onReady );
+	renderer[ INIT_READY_CALLBACKS ].push( { onReady, onError } );
+
+	// Three stores the shared initialization promise on the renderer. Reusing
+	// it covers setupPrecompile() being called while init() is already in
+	// flight, before this module had an opportunity to wrap the method.
+	const activeInit = renderer._initPromise;
+	if ( activeInit && typeof activeInit.then === 'function' ) {
+
+		Promise.resolve( activeInit ).then(
+			() => flushInitReadyCallbacks( renderer ),
+			( error ) => flushInitReadyCallbacks( renderer, error ),
+		);
+
+	}
 
 	if ( renderer[ INIT_WRAPPED_FLAG ] ) return;
 
@@ -113,9 +151,18 @@ function queueRendererReady( renderer, onReady ) {
 
 	renderer.init = async function initWithPrecompileSetup( ...args ) {
 
-		const result = await originalInit( ...args );
-		flushInitReadyCallbacks( this );
-		return result;
+		try {
+
+			const result = await originalInit( ...args );
+			flushInitReadyCallbacks( this );
+			return result;
+
+		} catch ( error ) {
+
+			flushInitReadyCallbacks( this, error );
+			throw error;
+
+		}
 
 	};
 
@@ -189,21 +236,34 @@ export function setupPrecompile( opts = {} ) {
 
 	let activeRenderer = renderer;
 	let resolveReady;
-	let didResolveReady = false;
-	const ready = new Promise( ( resolve ) => { resolveReady = resolve; } );
+	let rejectReady;
+	let didSettleReady = false;
+	const ready = new Promise( ( resolve, reject ) => {
+
+		resolveReady = resolve;
+		rejectReady = reject;
+
+	} );
 	const registerReadyRenderer = ( readyRenderer ) => {
 
 		if ( readyRenderer !== activeRenderer ) return;
-		setDevRenderer( readyRenderer );
-		if ( ! didResolveReady ) {
+		setDevRenderer( readyRenderer, three );
+		if ( ! didSettleReady ) {
 
-			didResolveReady = true;
+			didSettleReady = true;
 			resolveReady();
 
 		}
 
 	};
-	queueRendererReady( activeRenderer, registerReadyRenderer );
+	const rejectForRenderer = ( failedRenderer ) => ( error ) => {
+
+		if ( failedRenderer !== activeRenderer || didSettleReady ) return;
+		didSettleReady = true;
+		rejectReady( error );
+
+	};
+	queueRendererReady( activeRenderer, registerReadyRenderer, rejectForRenderer( activeRenderer ) );
 
 	const auxOptsObject = aux && typeof aux === 'object' ? aux : null;
 	const captureAux = aux
@@ -220,7 +280,7 @@ export function setupPrecompile( opts = {} ) {
 				devEndpoint,
 				three,
 				threeVersion,
-				pluginVersion: '0.0.0',
+				pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
 				...( auxOptsObject || {} ),
 				...( extraOpts || {} ),
 			} );
@@ -232,7 +292,7 @@ export function setupPrecompile( opts = {} ) {
 
 		if ( ! nextRenderer ) return;
 		activeRenderer = nextRenderer;
-		queueRendererReady( nextRenderer, registerReadyRenderer );
+		queueRendererReady( nextRenderer, registerReadyRenderer, rejectForRenderer( nextRenderer ) );
 
 	};
 

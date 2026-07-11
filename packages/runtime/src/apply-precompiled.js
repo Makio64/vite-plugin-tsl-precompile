@@ -30,6 +30,8 @@ import {
 	NODE_GRAPH_TEXTURE_KEYS as _NODE_GRAPH_KEYS,
 } from '@tsl-precompile/contract/texture-props';
 import { validateArtifact } from '@tsl-precompile/contract/kinds';
+import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
+import { hashMaterialSync } from './graph-hash.js';
 
 const _NODE_TEXTURE_FIELDS = [ 'value', 'texture', '_value', '_texture', '_pmrem', 'renderTarget' ];
 
@@ -57,6 +59,87 @@ function validateArtifactInDev( artifact, label ) {
 	if ( result.ok ) return;
 	const summary = result.errors.map( ( error ) => `  - ${ error.message }` ).join( '\n' );
 	throw new Error( `[tsl-precompile] invalid artifact "${ label || '<unnamed>' }":\n${ summary }` );
+
+}
+
+const SOURCE_HASH_FIELDS = Object.freeze( [
+	'sourceGraphHash',
+	'sourceHashVersion',
+	'sourceThreeVersion',
+	'renderContextSignature',
+] );
+
+/**
+ * Recompute the captured material-source fingerprint before mutating or
+ * adopting the source material. Artifacts captured before source-hash metadata
+ * existed remain compatible and continue to use the outer module-hash gate.
+ * Once any metadata field is present, however, the record must be complete —
+ * silently accepting a partial record would recreate the stale-source hole.
+ */
+function assertCapturedSourceIsFresh( material, artifactModule, artifact, name ) {
+
+	const metadataSource = SOURCE_HASH_FIELDS.some( ( key ) => artifact && artifact[ key ] !== undefined )
+		? artifact
+		: SOURCE_HASH_FIELDS.some( ( key ) => artifactModule && artifactModule[ key ] !== undefined )
+			? artifactModule
+			: null;
+	if ( metadataSource === null ) return; // Explicit legacy policy.
+
+	const sourceGraphHash = metadataSource.sourceGraphHash;
+	const sourceHashVersion = metadataSource.sourceHashVersion;
+	const sourceThreeVersion = metadataSource.sourceThreeVersion;
+	const renderContextSignature = metadataSource.renderContextSignature;
+
+	if ( typeof sourceGraphHash !== 'string' || ! /^[a-f0-9]{64}$/i.test( sourceGraphHash ) ) {
+
+		throw new Error( `[tsl-precompile] artifact "${ name || '<unnamed>' }" has incomplete source-hash metadata: sourceGraphHash must be a 64-character SHA-256 hex string. Recapture it with the current toolchain.` );
+
+	}
+	if ( sourceHashVersion !== ARTIFACT_TOOLCHAIN_VERSION ) {
+
+		throw new Error( `[tsl-precompile] artifact "${ name || '<unnamed>' }" was captured with source-hash/toolchain version ${ sourceHashVersion || '<missing>' }, but this runtime requires ${ ARTIFACT_TOOLCHAIN_VERSION }. Recapture the artifact.` );
+
+	}
+	if ( typeof sourceThreeVersion !== 'string' || sourceThreeVersion.length === 0 ) {
+
+		throw new Error( `[tsl-precompile] artifact "${ name || '<unnamed>' }" has incomplete source-hash metadata: sourceThreeVersion is missing. Recapture it with the current toolchain.` );
+
+	}
+	if ( typeof name !== 'string' || name.length === 0 ) {
+
+		throw new Error( '[tsl-precompile] source-hash validation requires the captured artifact name. Recapture the unnamed artifact.' );
+
+	}
+
+	const detectedThreeVersion = typeof globalThis !== 'undefined' && typeof globalThis.__TSLP_THREE_PACKAGE_VERSION__ === 'string'
+		? globalThis.__TSLP_THREE_PACKAGE_VERSION__
+		: '';
+	if ( detectedThreeVersion && detectedThreeVersion !== sourceThreeVersion ) {
+
+		throw new Error( `[tsl-precompile] artifact "${ name }" was captured with three ${ sourceThreeVersion }, but this bundle uses three ${ detectedThreeVersion }. Recapture it with the installed three version.` );
+
+	}
+	if ( metadataSource.sourceValidationMode === 'callsite' ) {
+
+		// autoMark is rewritten at `new *NodeMaterial()`, before subsequent
+		// assignments configure the graph. The plugin validates its captured
+		// module/call-site revision at build time; recomputing here would compare
+		// a bare constructor against the fully configured dev material.
+		return;
+
+	}
+
+	const currentSourceGraphHash = hashMaterialSync( material, {
+		name,
+		threeVersion: detectedThreeVersion || sourceThreeVersion,
+		toolchainVersion: ARTIFACT_TOOLCHAIN_VERSION,
+		renderContextSignature,
+	} );
+	if ( currentSourceGraphHash !== sourceGraphHash ) {
+
+		throw new Error( `[tsl-precompile] stale source graph detected for "${ name }": capture recorded ${ sourceGraphHash }, current material source is ${ currentSourceGraphHash }. Recapture the artifact before building.` );
+
+	}
 
 }
 
@@ -293,6 +376,7 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 
 	const artifact = artifactModule.artifact || artifactModule;
 	const name = artifactModule.name || artifact.__name;
+	assertCapturedSourceIsFresh( material, artifactModule, artifact, name );
 	validateArtifactInDev( artifact, name );
 	if ( artifactModule.__hash && ! artifact.__hash ) {
 

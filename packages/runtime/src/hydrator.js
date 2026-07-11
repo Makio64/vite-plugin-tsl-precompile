@@ -90,9 +90,10 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 
 	const runtimeBindings = hydrateRuntimeBindings( effective, material );
 	const { bindings, uniformBuffers, clippingUniformBuffers } = runtimeBindings;
-	const updateNode = createUniformUpdateNode( effective, uniformBuffers, material );
+	const uniformBufferTargets = createUniformBufferTargets( uniformBuffers );
+	const updateNode = createUniformUpdateNode( effective, uniformBuffers, material, uniformBufferTargets );
 	const clippingUniformUpdateNode = clippingUniformBuffers.length > 0
-		? createClippingUniformUpdateNode( clippingUniformBuffers, material )
+		? createClippingUniformUpdateNode( clippingUniformBuffers, material, uniformBufferTargets )
 		: null;
 
 	// One descriptor-driven entry point owns rebinder construction +
@@ -162,7 +163,9 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 		// keep the same instance.
 		createBindings() {
 
-			return cloneBindingsForObject( this.bindings, artifact, material );
+			const objectBindings = cloneBindingsForObject( this.bindings, artifact, material );
+			uniformBufferTargets.registerCurrentObject( objectBindings );
+			return objectBindings;
 
 		},
 		getAttributesArray() {
@@ -310,6 +313,66 @@ function cloneBinding( binding ) {
 
 }
 
+/**
+ * NodeBuilderState instances are cache-shared, but non-shared bind groups are
+ * cloned by RenderObject. Keep an object-keyed index of those clones so the
+ * cache-shared update node writes into the exact buffers that the current
+ * render object will upload. The first update for a render object happens
+ * before RenderObject calls createBindings(); in that one pass the base
+ * buffers are updated and then cloned, after which every update goes directly
+ * to the registered clones.
+ */
+function createUniformBufferTargets( baseUniformBuffers ) {
+
+	const perObject = new WeakMap();
+	let currentObject = null;
+
+	return {
+		forFrame( frame ) {
+
+			const object = frame && frame.object;
+			currentObject = isObjectKey( object ) ? object : null;
+			return currentObject && perObject.get( currentObject ) || baseUniformBuffers;
+
+		},
+		registerCurrentObject( bindings ) {
+
+			if ( ! currentObject ) return;
+			perObject.set( currentObject, indexUniformBuffers( bindings ) );
+
+		},
+	};
+
+}
+
+function isObjectKey( value ) {
+
+	return value !== null && ( typeof value === 'object' || typeof value === 'function' );
+
+}
+
+function indexUniformBuffers( bindings ) {
+
+	const out = new Map();
+	for ( const group of Array.isArray( bindings ) ? bindings : [] ) {
+
+		let firstUniformBuffer = null;
+		for ( const binding of group && Array.isArray( group.bindings ) ? group.bindings : [] ) {
+
+			if ( ! binding || binding.isUniformBuffer !== true ) continue;
+			if ( ! firstUniformBuffer ) firstUniformBuffer = binding;
+			if ( binding.name ) out.set( binding.name, binding );
+
+		}
+		// Uniform plans address their primary UBO by group name. Standalone
+		// NodeUniformBuffers in the same group retain their own binding names.
+		if ( group && group.name && ! out.has( group.name ) && firstUniformBuffer ) out.set( group.name, firstUniformBuffer );
+
+	}
+	return out;
+
+}
+
 function hydrateRuntimeBindings( artifact, material ) {
 
 	const uniformBuffers = new Map();
@@ -369,6 +432,7 @@ function hydrateRuntimeBindings( artifact, material ) {
 
 				clippingUniformBuffers.push( {
 					binding: runtimeBinding,
+					bindingName: descriptor.name || group.name || '',
 					byteLength: runtimeBinding.buffer ? runtimeBinding.buffer.byteLength : descriptor.byteLength || 0,
 					visibility: descriptor.visibility | 0,
 				} );
@@ -399,7 +463,7 @@ function createLiveUniformArrayResolver( bindingName, byteLength, material, arti
 	const skeletonRole = skeletonUniformBufferRole( artifact, groupName, bindingName, byteLength );
 	return function resolveLiveUniformArray() {
 
-		const object = material.__tslpPrecompileObject;
+		const object = material.__tslpCurrentFrame && material.__tslpCurrentFrame.object || material.__tslpPrecompileObject;
 		if ( ! object ) return null;
 
 		const skeleton = object.skeleton;
@@ -732,7 +796,7 @@ function findUniformGroupShared( artifact, groupName, bindingName ) {
 
 }
 
-function createClippingUniformUpdateNode( entries, material ) {
+function createClippingUniformUpdateNode( entries, material, uniformBufferTargets ) {
 
 	return {
 		getUpdateType() {
@@ -748,9 +812,10 @@ function createClippingUniformUpdateNode( entries, material ) {
 		update( frame ) {
 
 			const sets = clippingPlaneSetsForFrame( frame, frame && frame.material || material );
+			const frameUniformBuffers = uniformBufferTargets.forFrame( frame );
 			for ( const entry of entries ) {
 
-				const binding = entry && entry.binding;
+				const binding = entry && ( frameUniformBuffers.get( entry.bindingName ) || entry.binding );
 				if ( ! binding || ! binding.buffer || typeof binding.buffer.fill !== 'function' ) continue;
 				const values = selectClippingPlaneArray( entry, sets );
 				const buffer = binding.buffer;
@@ -788,7 +853,7 @@ function createClippingUniformUpdateNode( entries, material ) {
 
 }
 
-function createUniformUpdateNode( artifact, uniformBuffers, material ) {
+function createUniformUpdateNode( artifact, uniformBuffers, material, uniformBufferTargets ) {
 
 	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
 	if ( plan.length === 0 || uniformBuffers.size === 0 ) return null;
@@ -809,9 +874,10 @@ function createUniformUpdateNode( artifact, uniformBuffers, material ) {
 
 			const frameMaterial = frame.material || material || null;
 			if ( frameMaterial ) frameMaterial.__tslpCurrentFrame = frame;
+			const frameUniformBuffers = uniformBufferTargets.forFrame( frame );
 			for ( const group of plan ) {
 
-				const binding = uniformBuffers.get( group.name );
+				const binding = frameUniformBuffers.get( group.name );
 				if ( ! binding ) continue;
 
 				// The staging typed array survives across frames; rebuilding a DataView
@@ -836,7 +902,7 @@ function createUniformUpdateNode( artifact, uniformBuffers, material ) {
 					writeUniformGroup( group, frame, view, frameMaterial );
 
 				}
-				updateDynamicLightUniforms( artifact, group, view, uniformBuffers, frame );
+				updateDynamicLightUniforms( artifact, group, view, frameUniformBuffers, frame );
 				recordUniformUpdateDiagnostic( artifact, group, view );
 				binding.groupNode.version ++;
 

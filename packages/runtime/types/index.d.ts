@@ -13,7 +13,16 @@
  * material variants, slim-support helpers, etc.).
  */
 
-/** Module augmentation: adds the dynamically-installed `.precompile(name)` method to three.js `Material`. */
+export interface PrecompileCaptureContext {
+	/** Scene used to build render-context-dependent shader state (lights, fog, shadows, clipping, MRT). */
+	scene?: unknown;
+	/** Camera used for capture. */
+	camera?: unknown;
+	/** Object that owns the material during capture. */
+	object?: unknown;
+}
+
+/** Module augmentation: adds the dynamically-installed `.precompile(name, context?)` method to three.js `Material`. */
 declare module 'three' {
 	interface Material {
 		/**
@@ -22,7 +31,7 @@ declare module 'three' {
 		 * captured artifact to the plugin's dev-server endpoint. In production
 		 * builds, the call is rewritten away by `vite-plugin-tsl-precompile`.
 		 */
-		precompile( name: string ): this;
+		precompile( name: string, context?: PrecompileCaptureContext ): this;
 	}
 }
 
@@ -63,7 +72,7 @@ export interface InstallPrecompileMarkerOptions {
 }
 
 export function installPrecompileMarker( three: unknown, opts?: InstallPrecompileMarkerOptions ): void;
-export function setDevRenderer( renderer: unknown ): void;
+export function setDevRenderer( renderer: unknown, three?: unknown ): void;
 export function clearDevRenderer(): void;
 
 // ---------- Apply (used by the plugin's build-time rewrite) ----------
@@ -73,9 +82,14 @@ export function __applyPrecompiled( material: unknown, artifactModule: unknown, 
 
 // ---------- Artifact loader ----------
 
-export function registerArtifact( name: string, artifact: unknown ): void;
-export function getArtifact( name: string ): unknown;
-export function listUserArtifacts(): string[];
+export interface UserArtifactEntry<TArtifactModule = unknown> {
+	name: string;
+	artifact: TArtifactModule;
+}
+
+export function registerArtifact<TArtifactModule = unknown>( name: string, artifactModule: TArtifactModule ): void;
+export function getArtifact<TArtifactModule = unknown>( name: string ): TArtifactModule | null;
+export function listUserArtifacts<TArtifactModule = unknown>(): UserArtifactEntry<TArtifactModule>[];
 
 // ---------- Material classes ----------
 
@@ -84,13 +98,27 @@ export const PrecompiledComputeNode: new ( ...args: unknown[] ) => unknown;
 
 // ---------- Precompiled artifact registry (vendor) ----------
 
-export function registerPrecompiledArtifact( key: string, artifact: unknown ): void;
-export function registerPrecompiledArtifacts( entries: Iterable<[ string, unknown ]> ): void;
+export interface PrecompiledArtifactRegistrationOptions {
+	light?: unknown;
+	pipelineKey?: string;
+	outputKey?: string;
+}
+
+export interface PrecompiledRegistrySnapshot {
+	defaultShadow: unknown | null;
+	defaultPipeline: unknown | null;
+	defaultOutput: unknown | null;
+	pipelineKeys: string[];
+	outputKeys: string[];
+}
+
+export function registerPrecompiledArtifact( artifact: unknown, opts?: PrecompiledArtifactRegistrationOptions ): void;
+export function registerPrecompiledArtifacts( artifacts: unknown[] ): void;
 export function unregisterPrecompiledArtifacts(): void;
-export function getShadowArtifact( key: string ): unknown;
-export function getPipelineArtifact( key: string ): unknown;
-export function getOutputArtifact( key: string ): unknown;
-export function dumpPrecompiledRegistry(): Record<string, unknown>;
+export function getShadowArtifact( light?: unknown ): unknown | null;
+export function getPipelineArtifact( key?: string | null ): unknown | null;
+export function getOutputArtifact( key?: string | null ): unknown | null;
+export function dumpPrecompiledRegistry(): PrecompiledRegistrySnapshot;
 
 // ---------- UBO writers ----------
 
@@ -109,43 +137,91 @@ export function writeBytes( view: DataView, byteOffset: number, source: ArrayBuf
 
 // ---------- Hashing helpers ----------
 
-export function hashNodeGraph( graph: unknown ): Promise<string>;
-export function hashNodeGraphSync( graph: unknown ): string;
-export function hashPlainConfigSync( config: unknown ): string;
+export interface HashVersionOptions {
+	shape: string;
+	threeVersion: string;
+	pluginVersion: string;
+}
+
+export interface MaterialHashOptions {
+	name: string;
+	threeVersion: string;
+	/** Backward-compatible spelling for the artifact toolchain version. */
+	pluginVersion?: string;
+	toolchainVersion?: string;
+	renderContextSignature?: string | Record<string, unknown>;
+}
+
+export function hashNodeGraph( graph: unknown, opts: HashVersionOptions ): Promise<string>;
+export function hashNodeGraphSync( graph: unknown, opts: HashVersionOptions ): string;
+export function hashPlainConfigSync( config: unknown, opts: HashVersionOptions ): string;
 export function normalizeMaterialGraph( graph: unknown ): unknown;
-export function hashMaterialSync( material: unknown ): string;
-export function hashArtifactContentSync( artifact: unknown ): string;
+export function hashMaterialSync( material: unknown, opts: MaterialHashOptions ): string;
+export function hashArtifactContentSync( artifact: unknown, opts: HashVersionOptions ): string;
 
 // ---------- Aux (background, PMREM, postprocessing) ----------
+
+export interface AuxCaptureOptions extends Record<string, unknown> {
+	devEndpoint?: string;
+	postProcessing?: unknown;
+	three?: unknown;
+	threeVersion?: string;
+	pluginVersion?: string;
+}
+
+export interface AuxCaptureResult {
+	shape: string;
+	configHash: string | null;
+	ok: boolean;
+	error?: string;
+}
+
+export interface AuxArtifactRegistration<TArtifact = unknown> {
+	shape: string;
+	configHash: string;
+	artifact: TArtifact;
+	name?: string;
+}
+
+export interface AuxArtifactSummary {
+	shape: string;
+	configHash: string;
+	name: string | null;
+}
+
+export interface AuxArtifactEntry<TArtifact = unknown> extends AuxArtifactSummary {
+	artifact: TArtifact;
+}
 
 export function precompileAuxiliary(
 	renderer: unknown,
 	scene: unknown,
 	camera: unknown,
-	opts?: Record<string, unknown>,
-): Promise<unknown[]>;
-export function registerAuxArtifact( entry: unknown ): void;
-export function registerAuxArtifacts( entries: Iterable<unknown> ): void;
-export function loadAux( shape: string, configHash: string ): unknown;
+	opts?: AuxCaptureOptions,
+): Promise<AuxCaptureResult[]>;
+export function registerAuxArtifact<TArtifact = unknown>( shape: string, configHash: string, artifact: TArtifact, opts?: { name?: string } ): void;
+export function registerAuxArtifacts<TArtifact = unknown>( entries: Iterable<AuxArtifactRegistration<TArtifact>> ): void;
+export function loadAux<TArtifact = unknown>( shape: string, configHash: string ): TArtifact;
 export function hasAux( shape: string, configHash: string ): boolean;
-export function listAux(): unknown[];
-export function findAux( predicate: ( entry: unknown ) => boolean ): unknown;
-export function bindAuxConfig( config: unknown ): unknown;
-export function bindAuxByName( name: string ): unknown;
-export function attachArtifactTextureRefs( artifact: unknown, refs: unknown ): void;
-export function attachPostprocessTextureRefs( artifact: unknown, outputNode: unknown ): unknown;
-export function attachPostprocessUpdateBeforeNodes( artifact: unknown, outputNode: unknown ): unknown;
-export function attachPostprocessObject3DTargets( material: unknown, outputNode: unknown ): unknown;
+export function listAux(): AuxArtifactSummary[];
+export function findAux<TArtifact = unknown>( shape: string, nameOrConfigHash: string ): AuxArtifactEntry<TArtifact> | null;
+export function bindAuxConfig<TNode = unknown>( node: TNode, shapeOrEntry: string | Pick<AuxArtifactSummary, 'shape' | 'configHash'>, configHash?: string ): TNode;
+export function bindAuxByName<TNode = unknown>( node: TNode, shape: string, nameOrConfigHash: string ): TNode;
+export function attachArtifactTextureRefs<TArtifact = unknown>( artifact: TArtifact, texture: unknown ): TArtifact;
+export function attachPostprocessTextureRefs<TArtifact = unknown>( artifact: TArtifact, outputNode: unknown ): TArtifact;
+export function attachPostprocessUpdateBeforeNodes<TArtifact = unknown>( artifact: TArtifact, outputNode: unknown ): TArtifact;
+export function attachPostprocessObject3DTargets<TMaterial = unknown>( material: TMaterial, outputNode: unknown ): TMaterial;
 export function __resetAuxRegistryForTests(): void;
 
 // ---------- Hydrator ----------
 
-export function hydrateNodeBuilderState( state: unknown, artifact: unknown ): unknown;
+export function hydrateNodeBuilderState( artifact: unknown, material?: unknown, object?: unknown, cacheKey?: number | string | null ): unknown;
 export function registerLiveTexture( texture: unknown ): void;
 export function installTextureLoaderTracking( loaders: unknown, opts?: { onTextureLoad?: ( texture: unknown, info: unknown ) => void } ): number;
 export function clearLiveTextureIndex(): void;
-export function getTextureResolutionDebugHook(): ( ...args: unknown[] ) => void;
-export function setTextureResolutionDebugHook( hook: ( ...args: unknown[] ) => void ): void;
+export type TextureResolutionDebugHook = ( event: unknown ) => void;
+export function getTextureResolutionDebugHook(): TextureResolutionDebugHook | null;
+export function setTextureResolutionDebugHook( hook: TextureResolutionDebugHook | null | undefined ): TextureResolutionDebugHook | null;
 export function getDFGLUT(): unknown;
 
 // ---------- Slim-support helpers ----------
@@ -264,6 +340,8 @@ export function shareComputeSampledInputs( computeNode: unknown, fullRenderer: u
 export function syncComputeStorageOutputs( computeNode: unknown, fullRenderer: unknown, slimRenderer: unknown, opts?: Record<string, unknown> ): ComputeSyncStats;
 export function syncComputeStorageOutputsPerPass( computeNode: unknown, fullRenderer: unknown, slimRenderer: unknown, passIndex: number | undefined, opts?: Record<string, unknown> ): ComputeSyncPerPassStats;
 export function wireArtifactStorageBuffersFromAttributes( artifact: unknown, attributes: unknown | unknown[], opts?: Record<string, unknown> ): number;
+export function pingPongInvalidate( textureA: unknown, textureB: unknown, renderers: unknown | unknown[] ): boolean;
+export function shareInstancedAttributeBufferIntoSlim( attribute: unknown, fullRenderer: unknown, slimRenderer: unknown ): boolean;
 export function collectSceneLights( scene: unknown ): unknown[];
 export function wireStorageAttributesToSceneArtifacts( scene: unknown, attributes: unknown | unknown[], opts?: Record<string, unknown> ): number;
 export function wireTiledLightingTextureToScene( scene: unknown, texture: unknown, opts?: Record<string, unknown> ): number;
@@ -440,8 +518,28 @@ export function getTRAAVelocityTexture( traaNode: unknown ): unknown | null;
 export function getTRAACurrentDepthTexture( traaNode: unknown, passNodes?: unknown[] ): unknown | null;
 export function wireTRAAResolveArtifact( artifact: unknown, traaNode: unknown, opts?: WireTRAAResolveArtifactOptions ): WireTRAAResolveArtifactStats;
 
+/** Load the optional three.js Inspector addon in dev; resolves to null in production-like environments. */
+export function loadInspectorOptional(): Promise<unknown | null>;
+
 // ---------- Material variants ----------
 
-export const MaterialVariantSet: new ( ...args: unknown[] ) => unknown;
-export function createMaterialVariants( base: unknown, variants: unknown ): unknown;
-export function applyMaterialVariant( material: unknown, variant: unknown ): unknown;
+export type MaterialVariantEntry<TMaterial = unknown> = readonly [ string, TMaterial ] | { name: string; material: TMaterial };
+export type MaterialVariantInput<TMaterial = unknown> =
+	| Readonly<Record<string, TMaterial>>
+	| ReadonlyMap<string, TMaterial>
+	| ReadonlyArray<MaterialVariantEntry<TMaterial>>;
+
+export class MaterialVariantSet<TMaterial = unknown> {
+	constructor( variants: MaterialVariantInput<TMaterial>, initialName?: string );
+	currentName: string;
+	current: TMaterial;
+	names(): string[];
+	has( name: string ): boolean;
+	get( name?: string ): TMaterial | null;
+	select( name: string, target?: unknown ): TMaterial;
+	apply( target: unknown ): TMaterial;
+	cycle( target?: unknown, step?: number ): TMaterial;
+}
+
+export function createMaterialVariants<TMaterial = unknown>( variants: MaterialVariantInput<TMaterial>, initialName?: string ): MaterialVariantSet<TMaterial>;
+export function applyMaterialVariant<TMaterial = unknown>( target: unknown | unknown[], material: TMaterial ): TMaterial;

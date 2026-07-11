@@ -223,3 +223,32 @@ test( 'dispatchTextureBinding records the strategy onto _textureResolutionStrate
 	assert.equal( strategies.get( 'render:nodeTexture0' ), 'texture-ref' );
 
 } );
+
+test( 'dispatchTextureBinding throws when TSLP_STRICT_TEXTURE_MISS is on', () => {
+
+	const artifact = makeArtifact( { kind: 'artifact.texture', textureUuid: 'unknown-uuid' }, 'strict-test' );
+	const fallbacks = makeFallbacks();
+	const originalStrict = globalThis.__TSLP_STRICT_TEXTURE_MISS;
+	const originalWarn = globalThis.__TSLP_WARN_TEXTURE_MISS;
+	globalThis.__TSLP_STRICT_TEXTURE_MISS = true;
+	globalThis.__TSLP_WARN_TEXTURE_MISS = false;
+	_resetTextureMissWarnings();
+	try {
+
+		assert.throws( () => dispatchTextureBinding( {
+			artifact,
+			groupName: 'render',
+			bindingName: 'nodeTexture0',
+			material: null,
+			deps: { fallbacks, makeViewportFallback: () => null },
+		} ), /Strict texture miss is enabled/ );
+
+	} finally {
+
+		globalThis.__TSLP_STRICT_TEXTURE_MISS = originalStrict;
+		globalThis.__TSLP_WARN_TEXTURE_MISS = originalWarn;
+		_resetTextureMissWarnings();
+
+	}
+
+} );

@@ -19,6 +19,7 @@
 import { hashNodeGraphSync, hashPlainConfigSync } from './graph-hash.js';
 import { registerAuxArtifact } from './aux-loader.js';
 import { collectEffectNodes } from './slim-support/postprocess-effects.js';
+import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 
 const logged = new Set();
 function logOnce( key, fn ) {
@@ -75,7 +76,7 @@ function collectAuxPassNodes( opts ) {
  * @param {?Object} [opts.postProcessing] - An optional PostProcessing instance whose `outputNode` should be captured.
  * @param {?Object} [opts.three] - The three module (fallback to scene's constructor's module).
  * @param {string} [opts.threeVersion='unknown']
- * @param {string} [opts.pluginVersion='0.0.0']
+ * @param {string} [opts.pluginVersion=ARTIFACT_TOOLCHAIN_VERSION]
  * @return {Promise<Array<{ shape: string, configHash: string, ok: boolean, error?: string }>>}
  */
 export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) {
@@ -106,7 +107,7 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 	}
 	const hashOpts = {
 		threeVersion: opts.threeVersion,
-		pluginVersion: opts.pluginVersion || '0.0.0',
+		pluginVersion: opts.pluginVersion || ARTIFACT_TOOLCHAIN_VERSION,
 	};
 
 	// Register an aux artifact both on the dev server (via POST) AND in the
@@ -543,7 +544,7 @@ async function capturePostProcessingLive( renderer, postProcessing, opts, hashOp
 	if ( ! artifact ) throw new Error( 'capturePostProcessingLive: no artifacts produced' );
 	const extraArtifacts = await captureRegisteredEffectArtifactsLive( renderer, postProcessing.outputNode, opts, hashOpts || {
 		threeVersion: opts.threeVersion,
-		pluginVersion: opts.pluginVersion || '0.0.0',
+		pluginVersion: opts.pluginVersion || ARTIFACT_TOOLCHAIN_VERSION,
 	} );
 	return { artifact: jsonSafe( artifact ), extraArtifacts };
 

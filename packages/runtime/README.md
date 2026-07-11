@@ -15,7 +15,9 @@ Experimental.
 pnpm add @tsl-precompile/runtime
 ```
 
-Peer dep: `three >= 0.184.0`.
+Peer dep: `three >= 0.184.0`. Pin it to an exact patch. The checked-in slim
+bundle currently requires exactly `three@0.184.0`; non-slim capture/build can
+use newer supported versions after recapturing artifacts.
 
 ## Use
 
@@ -35,6 +37,19 @@ await setup.ready;          // ← registers this renderer with the marker
 const material = new MeshStandardNodeMaterial();
 // …configure colorNode…
 material.precompile( 'my-material' );
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera();
+scene.add( new THREE.Mesh( new THREE.SphereGeometry(), material ) );
+renderer.setAnimationLoop( () => renderer.render( scene, camera ) );
+```
+
+The marker queues capture until the material appears in a real render. This is
+required for correct light/shadow, camera, object, geometry, clipping, and MRT
+shader variants. A one-shot app may instead provide the complete context:
+
+```js
+material.precompile( 'my-material', { scene, camera, object: mesh } );
 ```
 
 In a production build the Vite plugin has already rewritten every
@@ -72,6 +87,20 @@ await setup.captureAux( { passNode: scenePass, renderPipeline } );
 
 ## Slim Support
 
+The supported production mode for v0.1+ is **slim + opt-in full-renderer
+fallback**. The slim bundle is the primary renderer for precompiled materials
+(~240 KB gzip). Features that still need live TSL compilation boot a full
+`WebGPURenderer` on the **same `GPUDevice`** and share GPU textures/buffers
+back into slim.
+
+| Feature | Why slim alone can't | Fallback path |
+|---|---|---|
+| Compute kernels | No node-graph compiler | Full renderer dispatches; `syncComputeOutputs` copies storage back |
+| Shadow maps | Depth materials need the builder | Full renderer renders shadows; depth GPUTexture is shared |
+| PMREM generation | Blur passes need the builder | Full `PMREMGenerator`, then slim-support cache wiring |
+| Live PassNode WGSL | Slim can't emit new pass shaders | Full renderer renders the pass; texture shared back |
+| Clipping context | Live `clipShadows` rebuild | Planes baked into artifacts; ancestry honoured at runtime |
+
 Apps that enable the plugin's `slim: true` mode can use the stable
 `@tsl-precompile/runtime/slim-support` entry when they need real-app fallback
 plumbing: live texture indexing, PMREM caching, compute output sync,
@@ -79,17 +108,24 @@ post-processing replay, pass render fallback, or a full `WebGPURenderer` on
 the same `GPUDevice` for non-precompiled materials.
 
 ```js
-import * as ThreeFull from 'three/webgpu';
 import { createSlimSceneSupport } from '@tsl-precompile/runtime/slim-support';
 
 const support = createSlimSceneSupport( {
 	renderer: slimRenderer,
-	threeFullModule: ThreeFull,
+	loadThreeFullModule: () => import( 'virtual:tsl-precompile/full-three' ),
+	fullRendererFallback: true, // opt-in; omit for pure-slim PBR-only apps
 } );
 
 support.indexScene( scene );
-await support.ensureFallback();      // optional: full-renderer + raw compute fallback
+await support.getFullRenderer(); // lazy boot on shared GPUDevice
 ```
+
+The Vite plugin aliases `three/webgpu` to slim only during production builds;
+dev keeps full three.js so shader capture works. In production, import the
+fallback namespace lazily through `virtual:tsl-precompile/full-three` as above. That
+virtual entry resolves directly to the consumer's physical full WebGPU entry
+and bypasses the slim alias. Passing the slim namespace or a slim-marked
+constructor to the fallback throws a configuration error.
 
 `ensureFallback()` also patches slim `renderer.compute(rawComputeNode)` so raw
 TSL compute is dispatched by the full renderer on the shared `GPUDevice`, then
@@ -108,6 +144,14 @@ fallback renderer has been initialized and while the slim renderer's render
 target is still bound. The helper renders that target with the full renderer
 and shares the resulting color/depth GPU textures back into slim.
 
+### Texture miss diagnostics
+
+When a binding cannot resolve a live texture, the hydrator falls back to a
+shape-appropriate 1×1 texture so WebGPU validation still passes. To surface
+those misses:
+
+- `globalThis.__TSLP_WARN_TEXTURE_MISS = true` (or `TSLP_WARN_TEXTURE_MISS=1`) — warn once per binding
+- `globalThis.__TSLP_STRICT_TEXTURE_MISS = true` (or `TSLP_STRICT_TEXTURE_MISS=1`) — throw instead of falling back (CI / debugging)
 ## Exports
 
 ```js

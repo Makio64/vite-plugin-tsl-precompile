@@ -16,12 +16,11 @@
  * the methods they actually use.
  *
  * ```js
- * import * as ThreeFull from 'three/webgpu';
  * import { createSlimSceneSupport } from '@tsl-precompile/runtime';
  *
  * const support = createSlimSceneSupport( {
  *   renderer: slimRenderer,
- *   threeFullModule: ThreeFull,   // only needed if any *Fallback option is on
+ *   loadThreeFullModule: () => import('virtual:tsl-precompile/full-three'),
  *   fullRendererFallback: true,
  * } );
  *

@@ -125,6 +125,40 @@ test( 'createFullRendererFallback returns null and calls onError when init fails
 
 } );
 
+test( 'createFullRendererFallback retries after a transient boot failure', async () => {
+
+	const slim = fakeSlimRenderer();
+	let attempts = 0;
+	class FlakyFull {
+
+		constructor() {
+
+			this.shadowMap = { enabled: false };
+
+		}
+		async init() {
+
+			attempts ++;
+			if ( attempts === 1 ) throw new Error( 'transient-init' );
+
+		}
+		dispose() {}
+
+	}
+	const errors = [];
+	const fallback = createFullRendererFallback( {
+		slimRenderer: slim,
+		WebGPURendererClass: FlakyFull,
+		onError: ( error ) => errors.push( error.message ),
+	} );
+
+	assert.equal( await fallback.getRenderer(), null );
+	assert.ok( await fallback.getRenderer(), 'second call should retry the boot' );
+	assert.equal( attempts, 2 );
+	assert.deepEqual( errors, [ 'transient-init' ] );
+
+} );
+
 test( 'createFullRendererFallback lazily loads the three module via loadThreeFullModule', async () => {
 
 	const slim = fakeSlimRenderer();
@@ -162,6 +196,32 @@ test( 'createFullRendererFallback dispose() clears the booted renderer', async (
 
 } );
 
+test( 'createFullRendererFallback dispose() cancels an in-flight boot without resurrection', async () => {
+
+	const slim = fakeSlimRenderer();
+	const constructed = [];
+	const { FakeFull, getInstances } = makeFullRendererClass( {
+		initDelayMs: 10,
+		onConstruct: ( renderer ) => constructed.push( renderer ),
+	} );
+	const fallback = createFullRendererFallback( {
+		slimRenderer: slim,
+		WebGPURendererClass: FakeFull,
+	} );
+
+	const pending = fallback.getRenderer();
+	fallback.dispose();
+	assert.equal( await pending, null );
+	assert.equal( constructed[ 0 ].disposed, true );
+	assert.equal( fallback.isInitialised(), false );
+
+	const next = await fallback.getRenderer();
+	assert.ok( next );
+	assert.equal( getInstances(), 2 );
+	assert.equal( fallback.isInitialised(), true );
+
+} );
+
 test( 'createFullRendererFallback throws synchronously when slimRenderer missing', () => {
 
 	assert.throws( () => createFullRendererFallback( {} ), /opts\.slimRenderer is required/ );
@@ -180,5 +240,44 @@ test( 'createFullRendererFallback returns null when no module source supplied', 
 	assert.equal( r, null );
 	assert.equal( errs.length, 1 );
 	assert.match( errs[ 0 ], /no full-three module available/ );
+
+} );
+
+test( 'createFullRendererFallback rejects an eagerly supplied slim namespace', () => {
+
+	const slim = fakeSlimRenderer();
+	const { FakeFull } = makeFullRendererClass();
+	assert.throws( () => createFullRendererFallback( {
+		slimRenderer: slim,
+		threeFullModule: { __TSLP_SLIM__: true, WebGPURenderer: FakeFull },
+	} ), /virtual:tsl-precompile\/full-three/ );
+
+} );
+
+test( 'createFullRendererFallback rejects a constructor marked as slim', () => {
+
+	const slim = fakeSlimRenderer();
+	const { FakeFull } = makeFullRendererClass();
+	FakeFull.__TSLP_SLIM__ = true;
+	assert.throws( () => createFullRendererFallback( {
+		slimRenderer: slim,
+		WebGPURendererClass: FakeFull,
+	} ), /WebGPURendererClass is the slim renderer/ );
+
+} );
+
+test( 'createFullRendererFallback refuses a lazily loaded slim namespace', async () => {
+
+	const slim = fakeSlimRenderer();
+	const { FakeFull } = makeFullRendererClass();
+	const errs = [];
+	const fallback = createFullRendererFallback( {
+		slimRenderer: slim,
+		loadThreeFullModule: async () => ( { __TSLP_SLIM__: true, WebGPURenderer: FakeFull } ),
+		onError: ( err ) => errs.push( err.message ),
+	} );
+	assert.equal( await fallback.getRenderer(), null );
+	assert.equal( fallback.isInitialised(), false );
+	assert.match( errs[ 0 ], /loadThreeFullModule\(\) result is the slim renderer/ );
 
 } );

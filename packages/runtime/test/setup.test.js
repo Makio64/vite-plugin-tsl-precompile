@@ -23,16 +23,19 @@ function fakeThree() {
 function fakeRenderer( { initialised = false, withInit = false } = {} ) {
 
 	const renderer = {
+		// Real WebGPURenderer owns a backend before init() resolves.
+		backend: {},
+		_initialized: initialised,
+		get initialized() { return this._initialized; },
 		render() {},
 	};
 	if ( withInit ) {
 		renderer.init = async () => {
 			await Promise.resolve();
-			renderer.backend = {};
+			renderer._initialized = true;
 			return renderer;
 		};
 	}
-	if ( initialised ) renderer.backend = {};
 	return renderer;
 
 }
@@ -93,6 +96,7 @@ test( 'setupPrecompile installs marker and resolves ready after init', async () 
 	assert.ok( setup && typeof setup.ready.then === 'function', 'returns { ready }' );
 	assert.equal( typeof setup.captureAux, 'function' );
 	assert.equal( renderer.__tslpRenderWrapped, undefined, 'renderer is not registered before init resolves' );
+	assert.ok( renderer.backend, 'backend may exist before init without resolving setup.ready' );
 
 	await renderer.init();
 	await setup.ready;
@@ -111,6 +115,37 @@ test( 'setupPrecompile registers immediately when the renderer is already initia
 	// resolved promise.
 	assert.equal( renderer.__tslpRenderWrapped, true );
 	await setup.ready; // does not hang
+
+} );
+
+test( 'setupPrecompile ready rejects when renderer initialization fails', async () => {
+
+	const { three } = freshHarness();
+	const renderer = fakeRenderer();
+	const failure = new Error( 'backend unavailable' );
+	renderer.init = async () => { throw failure; };
+
+	const setup = setupPrecompile( { three, renderer } );
+
+	await assert.rejects( renderer.init(), failure );
+	await assert.rejects( setup.ready, failure );
+
+} );
+
+test( 'setupPrecompile observes an initialization already in flight', async () => {
+
+	const { three } = freshHarness();
+	const renderer = fakeRenderer();
+	let finishInit;
+	renderer._initPromise = new Promise( ( resolve ) => { finishInit = resolve; } );
+	renderer.init = () => renderer._initPromise;
+
+	const setup = setupPrecompile( { three, renderer } );
+	renderer._initialized = true;
+	finishInit( renderer );
+
+	await setup.ready;
+	assert.equal( renderer.__tslpRenderWrapped, true );
 
 } );
 
@@ -255,6 +290,7 @@ test( 'precompile marker captures a non-MRT material variant for pass-level MRT 
 
 		traverse( visitor ) {
 
+			visitor( this );
 			for ( const child of this.children ) visitor( child );
 
 		}
@@ -287,7 +323,8 @@ test( 'precompile marker captures a non-MRT material variant for pass-level MRT 
 	class Color {}
 
 	const mrtNode = { outputNodes: { output: {} } };
-	const sourceScene = { isScene: true, userData: { __tslp_mrtNode: mrtNode }, traverse() {} };
+	const sourceScene = new Scene();
+	sourceScene.userData.__tslp_mrtNode = mrtNode;
 	const emptyOutputShader = `
 struct OutputType {
 };
@@ -360,8 +397,9 @@ fn main( @location( 0 ) uv : vec2<f32> ) -> OutputStruct {
 		setDevRenderer( renderer );
 
 		const material = new Material();
-		Object.defineProperty( material, '__tslpPrecompileScene', { value: sourceScene, configurable: true } );
+		sourceScene.add( new Mesh( new BoxGeometry(), material ) );
 		material.precompile( 'pass-mrt-material' );
+		renderer.render( sourceScene, new PerspectiveCamera() );
 
 		for ( let i = 0; i < 20 && ( globalThis.__tslpPrecompilePending | 0 ) > 0; i ++ ) {
 
@@ -487,9 +525,16 @@ test( 'precompile marker records the source material name', async () => {
 			extractor,
 			codegen: () => ( { unsupportedKinds: [] } ),
 		} );
-		setDevRenderer( { render() {} } );
+		const renderer = { render() {} };
+		setDevRenderer( renderer );
 
-		new Material().precompile( 'named-material' );
+		const material = new Material();
+		const sourceScene = new Scene();
+		const sourceObject = new Mesh( new BoxGeometry(), material );
+		sourceScene.add( sourceObject );
+		material.precompile( 'named-material' );
+		assert.equal( posts.length, 0, 'capture waits for the real render context' );
+		renderer.render( sourceScene, new PerspectiveCamera() );
 
 		for ( let i = 0; i < 20 && ( globalThis.__tslpPrecompilePending | 0 ) > 0; i ++ ) {
 
@@ -500,6 +545,16 @@ test( 'precompile marker records the source material name', async () => {
 		assert.equal( posts.length, 1 );
 		assert.equal( posts[ 0 ].artifact.sourceMaterial.name, 'mat_transmission_only_test' );
 		assert.equal( posts[ 0 ].artifact.sourceMaterial.type, 'MeshPhysicalNodeMaterial' );
+		assert.equal( posts[ 0 ].artifact.sourceMaterial.object.type, 'Mesh' );
+
+		material.precompile( 'named-material' );
+		renderer.render( sourceScene, new PerspectiveCamera() );
+		for ( let i = 0; i < 20 && ( globalThis.__tslpPrecompilePending | 0 ) > 0; i ++ ) {
+
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		}
+		assert.equal( posts.length, 2, 'a later HMR-style marker call may refresh the same capture' );
 
 	} finally {
 

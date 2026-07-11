@@ -18,12 +18,11 @@
  * Typical wiring:
  *
  * ```js
- * import * as ThreeFull from 'three/webgpu';                      // full bundle
  * import { createFullRendererFallback } from '@tsl-precompile/runtime';
  *
  * const fallback = createFullRendererFallback( {
  *   slimRenderer,
- *   threeFullModule: ThreeFull,
+ *   loadThreeFullModule: () => import('virtual:tsl-precompile/full-three'),
  * } );
  * const full = await fallback.getRenderer();      // shared GPUDevice, init() resolved
  * await full.compute( computeNode );              // node-graph compute kernel
@@ -33,15 +32,33 @@
  * @module SlimSupportFullRendererFallback
  */
 
+import { VIRTUAL_FULL_THREE_MODULE_ID } from '@tsl-precompile/contract/virtual-modules';
+
 const DEFAULT_OPTS = {
 	shadowMapEnabled: true,
 	reuseDevice: true,
 };
 
+function hasSlimSentinel( value ) {
+
+	return Boolean(
+		value && value.__TSLP_SLIM__ === true ||
+		value && value.prototype && value.prototype.__TSLP_SLIM__ === true
+	);
+
+}
+
+function assertFullThreeSource( value, label ) {
+
+	if ( ! hasSlimSentinel( value ) ) return;
+	throw new Error( `createFullRendererFallback: ${ label } is the slim renderer, not a full three/webgpu implementation. Import the fallback namespace from ${ JSON.stringify( VIRTUAL_FULL_THREE_MODULE_ID ) }; importing it from \"three/webgpu\" in a slim production build resolves back to slim.` );
+
+}
+
 /**
  * @param {Object} opts
  * @param {Object}  opts.slimRenderer       - The slim `WebGPURenderer` (used to source the shared device).
- * @param {Object}  [opts.threeFullModule]  - The *full* three/webgpu module namespace (provides `WebGPURenderer`). Required unless `opts.WebGPURendererClass` is supplied.
+ * @param {Object}  [opts.threeFullModule]  - Eager full three/webgpu namespace. Prefer `loadThreeFullModule` in production so the full renderer remains a lazy chunk.
  * @param {Function} [opts.WebGPURendererClass] - Direct full-WebGPURenderer constructor. Overrides `threeFullModule.WebGPURenderer` when provided (useful for test injection).
  * @param {Function} [opts.loadThreeFullModule] - Async factory returning the full-three module. Called once on first `getRenderer()` if `threeFullModule` is absent.
  * @param {boolean} [opts.shadowMapEnabled=true] - Enables `r.shadowMap.enabled` on the booted full renderer so shadow passes can fire.
@@ -58,18 +75,27 @@ export function createFullRendererFallback( opts = {} ) {
 
 	if ( ! opts || typeof opts !== 'object' ) throw new TypeError( 'createFullRendererFallback: opts object is required.' );
 	if ( ! opts.slimRenderer ) throw new Error( 'createFullRendererFallback: opts.slimRenderer is required.' );
+	assertFullThreeSource( opts.threeFullModule, 'opts.threeFullModule' );
+	assertFullThreeSource( opts.WebGPURendererClass, 'opts.WebGPURendererClass' );
 
 	const settings = { ...DEFAULT_OPTS, ...opts };
 	let fullRenderer = null;
 	let initPromise = null;
 	let resolvedModule = settings.threeFullModule || null;
+	let generation = 0;
 
 	async function loadModule() {
 
-		if ( resolvedModule ) return resolvedModule;
+		if ( resolvedModule ) {
+
+			assertFullThreeSource( resolvedModule, 'threeFullModule' );
+			return resolvedModule;
+
+		}
 		if ( typeof settings.loadThreeFullModule === 'function' ) {
 
 			resolvedModule = await settings.loadThreeFullModule();
+			assertFullThreeSource( resolvedModule, 'loadThreeFullModule() result' );
 			return resolvedModule;
 
 		}
@@ -79,8 +105,18 @@ export function createFullRendererFallback( opts = {} ) {
 
 	function pickRendererClass( mod ) {
 
-		if ( typeof settings.WebGPURendererClass === 'function' ) return settings.WebGPURendererClass;
-		if ( mod && typeof mod.WebGPURenderer === 'function' ) return mod.WebGPURenderer;
+		if ( typeof settings.WebGPURendererClass === 'function' ) {
+
+			assertFullThreeSource( settings.WebGPURendererClass, 'WebGPURendererClass' );
+			return settings.WebGPURendererClass;
+
+		}
+		if ( mod && typeof mod.WebGPURenderer === 'function' ) {
+
+			assertFullThreeSource( mod.WebGPURenderer, 'threeFullModule.WebGPURenderer' );
+			return mod.WebGPURenderer;
+
+		}
 		return null;
 
 	}
@@ -103,8 +139,9 @@ export function createFullRendererFallback( opts = {} ) {
 
 	}
 
-	async function bootOnce() {
+	async function bootOnce( bootGeneration ) {
 
+		let r = null;
 		try {
 
 			// Prefer a directly-injected renderer class (test seam) — skip module
@@ -117,15 +154,32 @@ export function createFullRendererFallback( opts = {} ) {
 
 			}
 			if ( ! Ctor ) throw new Error( 'createFullRendererFallback: threeFullModule has no WebGPURenderer export.' );
+			assertFullThreeSource( Ctor, 'selected WebGPURenderer constructor' );
 
-			const r = new Ctor( buildOptions( settings.slimRenderer ) );
+			r = new Ctor( buildOptions( settings.slimRenderer ) );
+			assertFullThreeSource( r, 'constructed renderer' );
 			if ( typeof r.init === 'function' ) await r.init();
+			if ( bootGeneration !== generation ) {
+
+				if ( typeof r.dispose === 'function' ) {
+
+					try { r.dispose(); } catch ( _ ) {}
+
+				}
+				return null;
+
+			}
 			if ( settings.shadowMapEnabled && r.shadowMap ) r.shadowMap.enabled = true;
 			fullRenderer = r;
 			return r;
 
 		} catch ( err ) {
 
+			if ( r && typeof r.dispose === 'function' ) {
+
+				try { r.dispose(); } catch ( _ ) {}
+
+			}
 			if ( typeof settings.onError === 'function' ) settings.onError( err );
 			return null;
 
@@ -137,13 +191,22 @@ export function createFullRendererFallback( opts = {} ) {
 
 		if ( fullRenderer ) return Promise.resolve( fullRenderer );
 		if ( initPromise ) return initPromise;
-		initPromise = bootOnce();
-		return initPromise;
+		const promise = bootOnce( generation );
+		initPromise = promise;
+		void promise.then( ( renderer ) => {
+
+			// A failed or superseded boot is retryable. Do not let an older boot
+			// clear a newer generation's promise after dispose()+getRenderer().
+			if ( initPromise === promise && renderer === null ) initPromise = null;
+
+		} );
+		return promise;
 
 	}
 
 	function dispose() {
 
+		generation ++;
 		const r = fullRenderer;
 		fullRenderer = null;
 		initPromise = null;

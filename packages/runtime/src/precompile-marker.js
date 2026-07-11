@@ -2,9 +2,9 @@
  * `material.precompile(name)` — the only author-facing API.
  *
  * Dev-mode behaviour:
- *   - Borrows the active WebGPURenderer (registered via `setDevRenderer`)
- *     and runs the extractor on this material against a synthetic minimal
- *     scene.
+ *   - Waits until the material appears in a real render, then borrows the
+ *     active WebGPURenderer (registered via `setDevRenderer`) and runs the
+ *     extractor with that Scene, Camera, and owning Object as context.
  *   - POSTs the artifact JSON to the dev-capture endpoint.
  *   - Returns the material itself (chainable).
  *   - If the dev endpoint is unreachable, logs once and becomes a no-op for
@@ -25,34 +25,407 @@
 
 import { MARKER_METHOD_NAME } from './_constants.js';
 import { normalizeRevision } from './_normalize-revision.js';
-import { hashMaterialSync } from './graph-hash.js';
+import { hashArtifactContentSync, hashMaterialSync } from './graph-hash.js';
 import { registerArtifact } from './artifact-loader.js';
 import { MATERIAL_NODE_TEXTURE_KEYS } from '@tsl-precompile/contract/texture-props';
 import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
+import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
+import { createRenderContextSignature } from '@tsl-precompile/contract/render-context';
+import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
 
-let installed = false;
-let devEndpoint = null;
-let devEndpointDead = false;
-let threeModule = null;
+const MARKER_STATE_SYMBOL = Symbol.for( '@tsl-precompile/runtime/precompile-marker-state' );
+const DEFAULT_OBSERVE_TIMEOUT_MS = 30_000;
+const DEFAULT_AUTO_FALLBACK_DELAY_MS = 250;
+
+let installations = new WeakMap();
+let installationSet = new Set();
 let devRenderer = null;
-let extractor = null;
-// `hasher` was a dynamic import of plugin/hash.js; replaced by direct
-// `hashMaterialSync` import above (node:crypto-free, browser-safe).
-let codegen = null;   // emitUpdaterSource — used to check for unknown kinds at capture time.
+let registeredRenderers = new Set();
+let lastArrayCameraByRenderer = new WeakMap();
+let lastRenderContextByRenderer = new WeakMap();
 
-// Last ArrayCamera seen in a devRenderer.render() call. Used to auto-detect
-// ArrayCamera captures: when the user renders with an ArrayCamera the
-// synthetic capture scene must also use one, otherwise three.js's Camera.js
-// nodes emit the scalar `cameraViewMatrix` uniform path instead of the
-// per-element `cameraViewMatrices[cameraIndex]` path.
-let lastSeenArrayCamera = null;
-
-const inflight = new Set();   // names currently being captured (suppresses dup POSTs)
-const sessionDone = new Set();   // names captured this session (suppresses needless re-POST)
+// `.precompile()` is author syntax, but a correct shader variant depends on
+// the real RenderObject + Scene + Camera. Calls without an explicit context
+// wait here until the material is observed by a registered renderer. A Map is
+// intentional: pending entries must be enumerable while walking a scene; they
+// are deleted as soon as capture starts so this does not retain materials for
+// the lifetime of the app.
+let pendingCaptures = new Map(); // Material -> Map<name, PendingCapture>
+let inflightCaptures = new Map(); // Material -> Map<name, activeCount>
+let captureQueue = [];
+let captureQueueRunning = false;
 
 function importOptionalModule( specifier ) {
 
 	return import( /* @vite-ignore */ specifier );
+
+}
+
+function exactThreePackageVersion( revision ) {
+
+	const injected = typeof globalThis.__TSLP_THREE_PACKAGE_VERSION__ === 'string'
+		? globalThis.__TSLP_THREE_PACKAGE_VERSION__
+		: '';
+	return injected || normalizeRevision( revision );
+
+}
+
+function isBrowserOrWorkerRuntime() {
+
+	return typeof window !== 'undefined' || (
+		typeof self !== 'undefined' &&
+		typeof WorkerGlobalScope !== 'undefined' &&
+		self instanceof WorkerGlobalScope
+	);
+
+}
+
+function captureCounterRoot() {
+
+	if ( typeof window !== 'undefined' ) return window;
+	if ( typeof self !== 'undefined' ) return self;
+	return globalThis;
+
+}
+
+function adjustPendingCaptureCount( delta ) {
+
+	const root = captureCounterRoot();
+	root.__tslpPrecompilePending = Math.max( 0, ( root.__tslpPrecompilePending | 0 ) + delta );
+
+}
+
+function captureNamesFor( map, material, create = false ) {
+
+	let names = map.get( material );
+	if ( ! names && create ) {
+
+		names = new Map();
+		map.set( material, names );
+
+	}
+	return names || null;
+
+}
+
+function normalizeCaptureContext( material, context ) {
+
+	const explicit = context || {};
+	const scene = explicit.scene || material.__tslpPrecompileScene || null;
+	const object = explicit.object || material.__tslpPrecompileObject || findMaterialOwner( scene, material );
+	return {
+		scene: scene || findParentScene( object ),
+		camera: explicit.camera || material.__tslpPrecompileCamera || null,
+		object,
+	};
+
+}
+
+function hasUsableCaptureContext( context ) {
+
+	return !! ( context && context.object && context.scene && context.camera );
+
+}
+
+function findMaterialOwner( scene, material ) {
+
+	if ( ! scene || ! material ) return null;
+	let owner = null;
+	const visit = ( object ) => {
+
+		const materials = Array.isArray( object && object.material ) ? object.material : [ object && object.material ];
+		if ( ! materials.includes( material ) ) return;
+		if ( ! owner || captureObjectScore( object ) > captureObjectScore( owner ) ) owner = object;
+
+	};
+	if ( typeof scene.traverse === 'function' ) scene.traverse( visit );
+	else if ( Array.isArray( scene.children ) ) {
+
+		for ( const child of scene.children ) visit( child );
+
+	}
+	return owner;
+
+}
+
+function queueMaterialCapture( material, name, installation, context, sourceIdentity = null, sourceRevision = null ) {
+
+	const queuedNames = captureNamesFor( pendingCaptures, material, true );
+	const alreadyQueued = queuedNames.get( name );
+	if ( alreadyQueued ) {
+
+		const nextContext = normalizeCaptureContext( material, context );
+		for ( const key of [ 'scene', 'camera', 'object' ] ) alreadyQueued.context[ key ] = nextContext[ key ] || alreadyQueued.context[ key ];
+		alreadyQueued.allowAutoFallback = alreadyQueued.allowAutoFallback || context && context.__tslpAutoMark === true;
+		alreadyQueued.sourceIdentity = sourceIdentity || alreadyQueued.sourceIdentity;
+		alreadyQueued.sourceRevision = sourceRevision || alreadyQueued.sourceRevision;
+		return;
+
+	}
+
+	const normalizedContext = normalizeCaptureContext( material, context );
+	const renderer = installation.renderer || ( installationSet.size === 1 ? devRenderer : null );
+	const lastRender = renderer && lastRenderContextByRenderer.get( renderer );
+	if ( ! normalizedContext.camera && lastRender && normalizedContext.scene === lastRender.scene ) normalizedContext.camera = lastRender.camera;
+	const entry = {
+		material,
+		name,
+		installation,
+		context: normalizedContext,
+		renderer,
+		started: false,
+		observeTimer: null,
+		autoFallbackTimer: null,
+		allowAutoFallback: context && context.__tslpAutoMark === true,
+		sourceIdentity,
+		sourceRevision,
+	};
+	queuedNames.set( name, entry );
+	adjustPendingCaptureCount( 1 );
+	armCaptureObservationTimeout( entry );
+
+	// Explicit/legacy sidecar context is already sufficient to preserve the
+	// render-dependent shader shape. Context-free markers deliberately wait for
+	// the material to appear in a real render (see setDevRenderer below).
+	if ( entry.renderer && hasUsableCaptureContext( entry.context ) ) startQueuedCapture( entry );
+	else if ( entry.allowAutoFallback && entry.renderer && lastRender ) scheduleAutoFallbackEntry( entry, lastRender.scene, lastRender.camera );
+
+}
+
+function armCaptureObservationTimeout( entry ) {
+
+	const configured = Number( globalThis.__TSLP_PRECOMPILE_OBSERVE_TIMEOUT_MS__ );
+	const timeoutMs = Number.isFinite( configured ) && configured > 0 ? configured : DEFAULT_OBSERVE_TIMEOUT_MS;
+	entry.observeTimer = setTimeout( () => {
+
+		if ( entry.started ) return;
+		const queuedNames = captureNamesFor( pendingCaptures, entry.material );
+		if ( ! queuedNames || queuedNames.get( entry.name ) !== entry ) return;
+		queuedNames.delete( entry.name );
+		if ( queuedNames.size === 0 ) pendingCaptures.delete( entry.material );
+		adjustPendingCaptureCount( - 1 );
+		console.error( `[tsl-precompile] .precompile(${ JSON.stringify( entry.name ) }) was not observed in a real renderer.render(scene, camera) call within ${ timeoutMs }ms. Mount the material before rendering, or pass { scene, camera, object } as the second argument.` );
+
+	}, timeoutMs );
+	if ( entry.observeTimer && typeof entry.observeTimer.unref === 'function' ) entry.observeTimer.unref();
+
+}
+
+function startQueuedCapture( entry ) {
+
+	if ( ! entry || entry.started || ! entry.renderer ) return;
+	entry.started = true;
+	if ( entry.observeTimer ) clearTimeout( entry.observeTimer );
+	if ( entry.autoFallbackTimer ) clearTimeout( entry.autoFallbackTimer );
+
+	const queuedNames = captureNamesFor( pendingCaptures, entry.material );
+	if ( queuedNames ) {
+
+		queuedNames.delete( entry.name );
+		if ( queuedNames.size === 0 ) pendingCaptures.delete( entry.material );
+
+	}
+
+	const activeNames = captureNamesFor( inflightCaptures, entry.material, true );
+	activeNames.set( entry.name, ( activeNames.get( entry.name ) || 0 ) + 1 );
+
+	// compileTSL temporarily mutates renderer-wide MRT/render-target state.
+	// Serialize captures even when one frame reveals many marked materials;
+	// parallel extraction can poison three.js's shared NodeBuilder cache. Real
+	// observed/manual captures are selected ahead of delayed auto-mark fallbacks
+	// so a burst of unused helper materials cannot block the visible scene.
+	captureQueue.push( entry );
+	void drainCaptureQueue();
+
+}
+
+async function drainCaptureQueue() {
+
+	if ( captureQueueRunning ) return;
+	captureQueueRunning = true;
+	try {
+
+		while ( captureQueue.length > 0 ) {
+
+			let index = captureQueue.findIndex( ( candidate ) => ! candidate.allowAutoFallback || candidate.context.object );
+			if ( index === - 1 ) index = 0;
+			const [ entry ] = captureQueue.splice( index, 1 );
+			try {
+
+				await captureMaterialInDev( entry );
+
+			} finally {
+
+				finishCapture( entry );
+
+			}
+
+		}
+
+	} finally {
+
+		captureQueueRunning = false;
+		if ( captureQueue.length > 0 ) void drainCaptureQueue();
+
+	}
+
+}
+
+function finishCapture( entry ) {
+
+	const names = captureNamesFor( inflightCaptures, entry.material );
+	if ( names ) {
+
+		const remaining = ( names.get( entry.name ) || 1 ) - 1;
+		if ( remaining > 0 ) names.set( entry.name, remaining );
+		else names.delete( entry.name );
+		if ( names.size === 0 ) inflightCaptures.delete( entry.material );
+
+	}
+	adjustPendingCaptureCount( - 1 );
+
+}
+
+function captureObjectScore( object ) {
+
+	if ( ! object ) return - 1;
+	let score = 0;
+	if ( object.receiveShadow ) score += 8;
+	if ( object.castShadow ) score += 4;
+	if ( object.isSkinnedMesh ) score += 4;
+	if ( object.isInstancedMesh || object.count > 1 ) score += 3;
+	if ( object.geometry ) score += 1;
+	return score;
+
+}
+
+function bindPendingCapturesFromRender( renderer, scene, camera ) {
+
+	if ( pendingCaptures.size === 0 || ! scene ) return [];
+	const ready = new Set();
+	const visit = ( object ) => {
+
+		const materials = Array.isArray( object && object.material ) ? [ ...object.material ] : [ object && object.material ];
+		if ( scene.overrideMaterial && object && object.geometry && ! materials.includes( scene.overrideMaterial ) ) materials.push( scene.overrideMaterial );
+		for ( const material of materials ) {
+
+			if ( ! material ) continue;
+			const entries = captureNamesFor( pendingCaptures, material );
+			if ( ! entries ) continue;
+			for ( const entry of entries.values() ) {
+
+				entry.renderer = renderer;
+				entry.context.scene = entry.context.scene || scene;
+				entry.context.camera = entry.context.camera || camera || null;
+				if ( ! entry.context.object || captureObjectScore( object ) > captureObjectScore( entry.context.object ) ) {
+
+					entry.context.object = object;
+
+				}
+				ready.add( entry );
+
+			}
+
+		}
+
+	};
+
+	if ( typeof scene.traverse === 'function' ) scene.traverse( visit );
+	else {
+
+		visit( scene );
+		if ( Array.isArray( scene.children ) ) {
+
+			for ( const child of scene.children ) visit( child );
+
+		}
+
+	}
+	return [ ...ready ];
+
+}
+
+function scheduleAutoFallbackCaptures( renderer, scene, camera ) {
+
+	for ( const entries of pendingCaptures.values() ) {
+
+		for ( const entry of entries.values() ) {
+
+			if ( ! entry.allowAutoFallback || entry.started || entry.autoFallbackTimer ) continue;
+			if ( entry.installation.renderer && entry.installation.renderer !== renderer ) continue;
+			entry.renderer = renderer;
+			scheduleAutoFallbackEntry( entry, scene, camera );
+
+		}
+
+	}
+
+}
+
+function scheduleAutoFallbackEntry( entry, scene, camera ) {
+
+	if ( ! entry || entry.started || entry.autoFallbackTimer ) return;
+	const configured = Number( globalThis.__TSLP_AUTO_FALLBACK_DELAY_MS__ );
+	const delayMs = Number.isFinite( configured ) && configured >= 0 ? configured : DEFAULT_AUTO_FALLBACK_DELAY_MS;
+	entry.autoFallbackTimer = setTimeout( () => {
+
+		const queued = captureNamesFor( pendingCaptures, entry.material );
+		if ( entry.started || ! queued || queued.get( entry.name ) !== entry ) return;
+		entry.context.scene = entry.context.scene || scene;
+		entry.context.camera = entry.context.camera || camera;
+		logOnce( 'auto-context-fallback:' + entry.name, () => console.warn( `[tsl-precompile] auto-marked material ${ JSON.stringify( entry.name ) } was not observed on a render object; capturing it with the latest Scene/Camera and a generic mesh fallback.` ) );
+		startQueuedCapture( entry );
+
+	}, delayMs );
+	if ( entry.autoFallbackTimer && typeof entry.autoFallbackTimer.unref === 'function' ) entry.autoFallbackTimer.unref();
+
+}
+
+function startExplicitPendingCaptures( renderer, installation = null ) {
+
+	for ( const entries of pendingCaptures.values() ) {
+
+		for ( const entry of entries.values() ) {
+
+			if ( installation && entry.installation !== installation ) continue;
+			if ( ! installation && entry.installation.renderer && entry.installation.renderer !== renderer ) continue;
+			if ( ! hasUsableCaptureContext( entry.context ) ) continue;
+			entry.renderer = renderer;
+			startQueuedCapture( entry );
+
+		}
+
+	}
+
+}
+
+function rendererIsAssigned( renderer ) {
+
+	for ( const installation of installationSet ) {
+
+		if ( installation.renderer === renderer ) return true;
+
+	}
+	return false;
+
+}
+
+function unregisterRendererIfUnused( renderer ) {
+
+	if ( ! renderer || rendererIsAssigned( renderer ) || renderer === devRenderer ) return;
+	registeredRenderers.delete( renderer );
+
+}
+
+function associateRenderer( installation, renderer ) {
+
+	if ( ! installation || ! renderer ) return;
+	const previous = installation.renderer;
+	installation.renderer = renderer;
+	registeredRenderers.add( renderer );
+	wrapDevRenderer( renderer );
+	if ( previous && previous !== renderer ) unregisterRendererIfUnused( previous );
+	startExplicitPendingCaptures( renderer, installation );
 
 }
 
@@ -204,6 +577,16 @@ function materialSourceMetadata( material, sourceObject = null ) {
 
 }
 
+function updateInstallation( installation, three, opts ) {
+
+	installation.three = three;
+	installation.devEndpoint = opts.devEndpoint || null;
+	installation.devEndpointDead = false;
+	installation.extractor = opts.extractor || null;
+	installation.codegen = opts.codegen || null;
+
+}
+
 /**
  * Install `.precompile(name)` on the three.js Material prototype. Safe to call
  * multiple times; subsequent calls update the dev endpoint.
@@ -217,15 +600,6 @@ function materialSourceMetadata( material, sourceObject = null ) {
  */
 export function installPrecompileMarker( three, opts = {} ) {
 
-	threeModule = three;
-	devEndpoint = opts.devEndpoint || null;
-	devEndpointDead = false;
-	extractor = opts.extractor || null;
-	codegen = opts.codegen || null;
-
-	if ( installed ) return;
-	installed = true;
-
 	const Material = three.Material;
 	if ( ! Material || ! Material.prototype ) {
 
@@ -233,7 +607,41 @@ export function installPrecompileMarker( three, opts = {} ) {
 
 	}
 
-	if ( typeof Material.prototype[ MARKER_METHOD_NAME ] === 'function' ) return; // already installed (e.g. duplicate bundle)
+	const prototype = Material.prototype;
+	let installation = installations.get( prototype );
+	if ( installation ) {
+
+		updateInstallation( installation, three, opts );
+		return;
+
+	}
+
+	const sharedState = prototype[ MARKER_STATE_SYMBOL ];
+	if ( sharedState && sharedState.version === 1 && typeof sharedState.update === 'function' ) {
+
+		sharedState.update( three, opts );
+		installation = sharedState.installation;
+		installations.set( prototype, installation );
+		installationSet.add( installation );
+		return;
+
+	}
+	if ( typeof prototype[ MARKER_METHOD_NAME ] === 'function' ) {
+
+		throw new Error( `[tsl-precompile] Material.prototype.${ MARKER_METHOD_NAME } is already defined by an incompatible runtime copy or another library.` );
+
+	}
+
+	installation = {
+		three,
+		devEndpoint: opts.devEndpoint || null,
+		devEndpointDead: false,
+		extractor: opts.extractor || null,
+		codegen: opts.codegen || null,
+		renderer: null,
+	};
+	installations.set( prototype, installation );
+	installationSet.add( installation );
 
 	// PassNode.setMRT hook: `pass(scene, cam).setMRT(mrtNode)` (the dominant
 	// MRT pattern in three.js examples) doesn't write `material.mrtNode` until
@@ -260,39 +668,60 @@ export function installPrecompileMarker( three, opts = {} ) {
 
 	}
 
-	Material.prototype[ MARKER_METHOD_NAME ] = function precompile( name ) {
+	prototype[ MARKER_METHOD_NAME ] = function precompile( name, context = null, sourceIdentity = null, sourceRevision = null ) {
 
 		if ( typeof name !== 'string' || name.length === 0 ) {
 
 			throw new TypeError( `[tsl-precompile] material.precompile(name): "name" must be a non-empty string; got ${ typeof name }` );
 
 		}
+		if ( context !== null && ( typeof context !== 'object' || Array.isArray( context ) ) ) {
+
+			throw new TypeError( '[tsl-precompile] material.precompile(name, context): context must be an object when provided.' );
+
+		}
+		if ( sourceIdentity !== null && ( typeof sourceIdentity !== 'string' || sourceIdentity.length === 0 ) ) {
+
+			throw new TypeError( '[tsl-precompile] internal marker source identity must be a non-empty string when provided.' );
+
+		}
+		if ( sourceRevision !== null && ( typeof sourceRevision !== 'string' || ! /^[a-f0-9]{64}$/i.test( sourceRevision ) ) ) {
+
+			throw new TypeError( '[tsl-precompile] internal marker source revision must be a 64-character hexadecimal SHA-256 hash when provided.' );
+
+		}
 
 		// Prod fallback path — transform should have replaced this call.
-		if ( typeof window === 'undefined' || ! devEndpoint ) {
+		if ( ! isBrowserOrWorkerRuntime() || ! installation.devEndpoint ) {
 
 			logOnce( 'no-endpoint:' + name, () => console.warn( `[tsl-precompile] .precompile(${ JSON.stringify( name ) }) was called but no dev endpoint is configured. If this is production, the Babel transform did not run — check your Vite config.` ) );
 			return this;
 
 		}
 
-		if ( devEndpointDead ) return this;
-		if ( sessionDone.has( name ) || inflight.has( name ) ) return this;
-
-		inflight.add( name );
-		if ( typeof window !== 'undefined' ) window.__tslpPrecompilePending = ( window.__tslpPrecompilePending | 0 ) + 1;
-		// Defer to microtask so the user's first render isn't blocked on the
-		// extractor — the marker must always return synchronously.
-		Promise.resolve().then( () => captureMaterialInDev( this, name ) ).finally( () => {
-
-			inflight.delete( name );
-			if ( typeof window !== 'undefined' ) window.__tslpPrecompilePending = Math.max( 0, ( window.__tslpPrecompilePending | 0 ) - 1 );
-
-		} );
+		if ( installation.devEndpointDead ) return this;
+		queueMaterialCapture( this, name, installation, context, sourceIdentity, sourceRevision );
 
 		return this;
 
 	};
+
+	Object.defineProperty( prototype, MARKER_STATE_SYMBOL, {
+		value: {
+			version: 1,
+			installation,
+			update: ( nextThree, nextOpts = {} ) => updateInstallation( installation, nextThree, nextOpts ),
+			setRenderer: ( renderer ) => associateRenderer( installation, renderer ),
+			clearRenderer: () => {
+
+				const previous = installation.renderer;
+				installation.renderer = null;
+				unregisterRendererIfUnused( previous );
+
+			},
+		},
+		configurable: true,
+	} );
 
 }
 
@@ -307,28 +736,69 @@ export function installPrecompileMarker( three, opts = {} ) {
  * explicit control can import `attachToInspector` directly.
  *
  * @param {Object} renderer
+ * @param {Object} [three] - Optional three namespace; recommended when more than one renderer/three copy is active.
  */
-export function setDevRenderer( renderer ) {
+export function setDevRenderer( renderer, three = null ) {
 
 	devRenderer = renderer || null;
 	if ( renderer && renderer.inspector ) autoAttachInspectorPanel( renderer.inspector );
+	if ( ! renderer ) return;
 
-	// Intercept renderer.render() to track when an ArrayCamera is in use.
-	// This lets the synthetic capture scene mirror the array-camera shader
-	// path without requiring the harness to explicitly tag each material.
+	const sharedState = three && three.Material && three.Material.prototype && three.Material.prototype[ MARKER_STATE_SYMBOL ];
+	if ( sharedState && typeof sharedState.setRenderer === 'function' ) {
+
+		sharedState.setRenderer( renderer );
+		return;
+
+	}
+	if ( installationSet.size === 1 ) {
+
+		const installation = installationSet.values().next().value;
+		const prototype = installation.three && installation.three.Material && installation.three.Material.prototype;
+		const state = prototype && prototype[ MARKER_STATE_SYMBOL ];
+		if ( state && typeof state.setRenderer === 'function' ) state.setRenderer( renderer );
+		else associateRenderer( installation, renderer );
+		return;
+
+	}
+
+	registeredRenderers.add( renderer );
+	wrapDevRenderer( renderer );
+
+}
+
+function wrapDevRenderer( renderer ) {
+
+	// Intercept renderer.render() to observe the actual Scene, Camera, and
+	// RenderObject that select a material's shader shape. Capture starts only
+	// after that real render completes, so three.js has populated its normal
+	// renderer caches before the extractor borrows the renderer.
 	// We only wrap once per renderer instance (guard via __tslpRenderWrapped).
-	if ( renderer && typeof renderer.render === 'function' && ! renderer.__tslpRenderWrapped ) {
+	if ( typeof renderer.render === 'function' && ! renderer.__tslpRenderWrapped ) {
 
 		renderer.__tslpRenderWrapped = true;
 		const _originalRender = renderer.render.bind( renderer );
 		renderer.render = function ( scene, camera, ...rest ) {
 
+			if ( ! registeredRenderers.has( renderer ) ) return _originalRender( scene, camera, ...rest );
 			if ( camera && camera.isArrayCamera && camera.cameras && camera.cameras.length > 0 ) {
 
-				lastSeenArrayCamera = camera;
+				lastArrayCameraByRenderer.set( renderer, camera );
 
 			}
-			return _originalRender( scene, camera, ...rest );
+			const synthetic = ( globalThis.__tslpSyntheticRenderActive | 0 ) > 0;
+			if ( ! synthetic ) lastRenderContextByRenderer.set( renderer, { scene, camera } );
+			const ready = synthetic ? [] : bindPendingCapturesFromRender( renderer, scene, camera );
+			const result = _originalRender( scene, camera, ...rest );
+			const startReady = () => {
+
+				for ( const entry of ready ) startQueuedCapture( entry );
+				if ( ! synthetic ) scheduleAutoFallbackCaptures( renderer, scene, camera );
+
+			};
+			if ( result && typeof result.then === 'function' ) result.then( startReady, () => {} );
+			else startReady();
+			return result;
 
 		};
 
@@ -367,17 +837,33 @@ async function autoAttachInspectorPanel( inspector ) {
  */
 export function clearDevRenderer() {
 
+	for ( const installation of installationSet ) {
+
+		const prototype = installation.three && installation.three.Material && installation.three.Material.prototype;
+		const sharedState = prototype && prototype[ MARKER_STATE_SYMBOL ];
+		if ( sharedState && sharedState.installation === installation && typeof sharedState.clearRenderer === 'function' ) sharedState.clearRenderer();
+		else installation.renderer = null;
+
+	}
+	registeredRenderers.clear();
 	devRenderer = null;
 
 }
 
-async function captureMaterialInDev( material, name ) {
+async function captureMaterialInDev( entry ) {
 
 	let guardedRender = null;
+	let installedRenderGuard = null;
+	const { material, name, installation } = entry;
+	const threeModule = installation.three;
+	const captureRenderer = entry.renderer;
+	const devEndpoint = installation.devEndpoint;
+	let extractor = installation.extractor;
+	let codegen = installation.codegen;
 
 	try {
 
-		if ( ! devRenderer ) {
+		if ( ! captureRenderer ) {
 
 			logOnce( 'no-renderer:' + name, () => console.warn( `[tsl-precompile] .precompile(${ JSON.stringify( name ) }): no dev renderer registered. Call setDevRenderer(renderer) once after renderer.init() so the marker can borrow it for extraction.` ) );
 			return;
@@ -386,17 +872,19 @@ async function captureMaterialInDev( material, name ) {
 
 		if ( ! extractor ) {
 
-				const mod = await import( /* @vite-ignore */ 'vite-plugin-tsl-precompile/src/vendor/compileTSL.js' );
-				extractor = mod.compileTSL;
+			const mod = await import( /* @vite-ignore */ 'vite-plugin-tsl-precompile/src/vendor/compileTSL.js' );
+			extractor = mod.compileTSL;
+			installation.extractor = extractor;
 
-			}
+		}
 
-			if ( ! codegen ) {
+		if ( ! codegen ) {
 
-				const mod = await import( /* @vite-ignore */ 'vite-plugin-tsl-precompile/src/emit-updater.js' );
-				codegen = mod.emitUpdaterSource;
+			const mod = await import( /* @vite-ignore */ 'vite-plugin-tsl-precompile/src/emit-updater.js' );
+			codegen = mod.emitUpdaterSource;
+			installation.codegen = codegen;
 
-			}
+		}
 
 		// Suspend app-initiated renders for the span of this capture. The
 		// synthetic warm-up (and the non-MRT sibling pass) mutate renderer-level
@@ -417,9 +905,9 @@ async function captureMaterialInDev( material, name ) {
 		// frame repaints; captures only trigger from materials seen in a render,
 		// so even no-loop apps have already drawn. Reentrancy: overlapping
 		// captures leave the outer guard in charge.
-		if ( typeof devRenderer.render === 'function' && devRenderer.render.__tslpCaptureGuard !== true ) {
+		if ( typeof captureRenderer.render === 'function' && captureRenderer.render.__tslpCaptureGuard !== true ) {
 
-			guardedRender = devRenderer.render;
+			guardedRender = captureRenderer.render;
 			const captureRenderGuard = function ( ...args ) {
 
 				if ( ( globalThis.__tslpSyntheticRenderActive | 0 ) > 0 ) return guardedRender.apply( this, args );
@@ -427,7 +915,8 @@ async function captureMaterialInDev( material, name ) {
 
 			};
 			captureRenderGuard.__tslpCaptureGuard = true;
-			devRenderer.render = captureRenderGuard;
+			installedRenderGuard = captureRenderGuard;
+			captureRenderer.render = captureRenderGuard;
 
 		}
 
@@ -440,17 +929,23 @@ async function captureMaterialInDev( material, name ) {
 		scene.userData.__tslpSyntheticCaptureScene = true;
 
 		// Determine the capture camera. Priority order:
-		//   1. material.__tslpArrayCamera — explicit hint set by user or harness
-		//   2. lastSeenArrayCamera — auto-detected from the last devRenderer.render() call
-		//   3. Fallback: plain PerspectiveCamera (pre-existing behaviour)
+		//   1. The camera observed for this material's real render
+		//   2. material.__tslpArrayCamera — explicit legacy hint
+		//   3. The last ArrayCamera seen by this same renderer (legacy sidecar flow)
+		//   4. Fallback: plain PerspectiveCamera (pre-existing behaviour)
 		//
 		// Using an ArrayCamera with at least one sub-camera causes three.js's
 		// Camera.js TSL nodes to emit the `cameraViewMatrices[cameraIndex]`
 		// array-uniform path instead of the scalar `cameraViewMatrix` path.
 		// Without this, all 36 cells of webgpu_camera_array render the same
 		// view because the precompiled WGSL bakes the scalar path.
+		const captureContext = entry.context || {};
 		let sourceArrayCamera = null;
-		if ( Object.prototype.hasOwnProperty.call( material, '__tslpArrayCamera' ) ) {
+		if ( captureContext.camera && captureContext.camera.isArrayCamera ) {
+
+			sourceArrayCamera = captureContext.camera;
+
+		} else if ( Object.prototype.hasOwnProperty.call( material, '__tslpArrayCamera' ) ) {
 
 			if ( material.__tslpArrayCamera && material.__tslpArrayCamera.isArrayCamera ) {
 
@@ -458,14 +953,14 @@ async function captureMaterialInDev( material, name ) {
 
 			}
 
-		} else if ( lastSeenArrayCamera ) {
+		} else if ( ! captureContext.camera && lastArrayCameraByRenderer.has( captureRenderer ) ) {
 
-			sourceArrayCamera = lastSeenArrayCamera;
+			sourceArrayCamera = lastArrayCameraByRenderer.get( captureRenderer );
 
 		}
 
 		let camera;
-		const sourceCamera = material.__tslpPrecompileCamera || null;
+		const sourceCamera = captureContext.camera || material.__tslpPrecompileCamera || null;
 		if ( sourceArrayCamera ) {
 
 			// Clone the ArrayCamera shell so we don't mutate the live camera, but
@@ -489,7 +984,7 @@ async function captureMaterialInDev( material, name ) {
 			camera.lookAt( 0, 0, 0 );
 
 		}
-		const sourceObject = material.__tslpPrecompileObject || null;
+		const sourceObject = captureContext.object || material.__tslpPrecompileObject || null;
 
 		// Inherit scene-level state that drives PBR shader binding
 		// generation. Without this, MeshStandard/MeshPhysical materials
@@ -499,7 +994,22 @@ async function captureMaterialInDev( material, name ) {
 		// scene-level fields (environment, fog, background); we do NOT
 		// reparent lights, since `Object3D.add()` would detach them from
 		// the user's actual scene and break their real render pass.
-		const sourceScene = material.__tslpPrecompileScene || findParentScene( sourceObject );
+		const sourceScene = captureContext.scene || material.__tslpPrecompileScene || findParentScene( sourceObject );
+		let renderContextMRT = sourceScene && sourceScene.userData && sourceScene.userData.__tslp_mrtNode || null;
+		if ( ! renderContextMRT && typeof captureRenderer.getMRT === 'function' ) {
+
+			try { renderContextMRT = captureRenderer.getMRT(); } catch ( _ ) {}
+
+		}
+		const sourceThreeVersion = exactThreePackageVersion( REVISION );
+		const renderContextSignature = createRenderContextSignature( {
+			renderer: captureRenderer,
+			scene: sourceScene,
+			camera: sourceCamera,
+			object: sourceObject,
+			material,
+			mrt: renderContextMRT,
+		} );
 		if ( sourceScene ) {
 
 			scene.environment = sourceScene.environment || null;
@@ -530,7 +1040,7 @@ async function captureMaterialInDev( material, name ) {
 
 		}
 
-		const mesh = new Mesh( sourceObject && sourceObject.geometry || new BoxGeometry( 1, 1, 1 ), material );
+		const mesh = createCaptureObject( Mesh, BoxGeometry, sourceObject, material );
 		if ( sourceObject ) {
 
 			for ( const key of Object.keys( sourceObject ) ) {
@@ -545,7 +1055,7 @@ async function captureMaterialInDev( material, name ) {
 				// throws during `compileAsync` projection. Skip them — frustum
 				// culling on the throwaway scene is meaningless anyway.
 				if ( key === 'boundingSphere' || key === 'boundingBox' ) continue;
-				if ( key in mesh && key !== 'color' ) continue;
+				if ( key in mesh && mesh[ key ] !== undefined && key !== 'color' ) continue;
 				mesh[ key ] = sourceObject[ key ];
 
 			}
@@ -622,9 +1132,9 @@ async function captureMaterialInDev( material, name ) {
 			mrtNode = sourceScene.userData.__tslp_mrtNode;
 
 		}
-		if ( ! mrtNode && ! isFullscreenQuad && typeof devRenderer.getMRT === 'function' ) {
+		if ( ! mrtNode && ! isFullscreenQuad && typeof captureRenderer.getMRT === 'function' ) {
 
-			mrtNode = devRenderer.getMRT();
+			mrtNode = captureRenderer.getMRT();
 
 		}
 		if ( ! mrtNode ) mrtNode = materialMRTNode;
@@ -637,7 +1147,7 @@ async function captureMaterialInDev( material, name ) {
 
 		}
 
-		const artifacts = await extractor( devRenderer, scene, camera, extractorOpts );
+		const artifacts = await extractor( captureRenderer, scene, camera, extractorOpts );
 		const artifactSets = [ artifacts ];
 
 		// Pass/global MRT captures can produce a pre-pass shader for the same
@@ -658,7 +1168,7 @@ async function captureMaterialInDev( material, name ) {
 
 			try {
 
-				const colorArtifacts = await extractor( devRenderer, scene, camera, { noGlobalMRT: true } );
+				const colorArtifacts = await extractor( captureRenderer, scene, camera, { noGlobalMRT: true } );
 				artifactSets.push( colorArtifacts );
 
 			} catch ( err ) {
@@ -705,10 +1215,11 @@ async function captureMaterialInDev( material, name ) {
 		// artifact so the runtime can pick the right one per render.
 		attachMaterialVariantFamily( artifact, collectMaterialVariantList( artifactSets, material.uuid ) );
 
-		const hash = hashMaterialSync( material, {
+		const sourceGraphHash = hashMaterialSync( material, {
 			name,
-			threeVersion: normalizeRevision( REVISION ),
-			pluginVersion: '0.0.0',
+			threeVersion: sourceThreeVersion,
+			toolchainVersion: ARTIFACT_TOOLCHAIN_VERSION,
+			renderContextSignature,
 		} );
 
 		// Phase 2 gate: any `severity: 'unknown'` kind in the codegen means we
@@ -733,8 +1244,22 @@ async function captureMaterialInDev( material, name ) {
 
 		// Strip non-serialisable side-cars before POST; dev capture only needs
 		// the JSON-safe portion of the artifact.
+		artifact.sourceGraphHash = sourceGraphHash;
+		artifact.sourceHashVersion = ARTIFACT_TOOLCHAIN_VERSION;
+		artifact.sourceThreeVersion = sourceThreeVersion;
+		artifact.renderContextSignature = renderContextSignature;
+		artifact.artifactContentHashVersion = ARTIFACT_CONTENT_HASH_VERSION;
+		// autoMark runs at the constructor expression, before user code assigns
+		// later *Node fields. Its build-time material cannot be graph-validated at
+		// adoption time; the plugin-owned call-site revision is the correct gate.
+		artifact.sourceValidationMode = entry.allowAutoFallback ? 'callsite' : 'runtime-graph';
 		const sanitized = jsonSafeArtifact( artifact );
 		sanitized.sourceMaterial = materialSourceMetadata( material, sourceObject );
+		const hash = hashArtifactContentSync( sanitized, {
+			shape: `material:${ name }`,
+			threeVersion: sourceThreeVersion,
+			pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
+		} );
 
 		// Also register the artifact in the runtime's in-memory registry
 		// so the inspector panel (and any other local consumer) can see
@@ -756,7 +1281,13 @@ async function captureMaterialInDev( material, name ) {
 		const response = await fetch( devEndpoint, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify( { name, hash, artifact: sanitized } ),
+			body: JSON.stringify( {
+				name,
+				hash,
+				artifact: sanitized,
+				...( entry.sourceIdentity ? { sourceIdentity: entry.sourceIdentity } : {} ),
+				...( entry.sourceRevision ? { sourceRevision: entry.sourceRevision } : {} ),
+			} ),
 		} );
 
 		if ( ! response.ok ) {
@@ -767,7 +1298,6 @@ async function captureMaterialInDev( material, name ) {
 
 		}
 
-		sessionDone.add( name );
 		console.info( `[tsl-precompile] captured "${ name }" (hash ${ hash.slice( 0, 12 ) })` );
 
 	} catch ( err ) {
@@ -776,7 +1306,7 @@ async function captureMaterialInDev( material, name ) {
 		const msg = err && err.message ? err.message : String( err );
 		if ( /fetch|ECONN|NetworkError|Failed to fetch/i.test( msg ) ) {
 
-			devEndpointDead = true;
+			installation.devEndpointDead = true;
 			console.warn( `[tsl-precompile] dev capture endpoint ${ devEndpoint } unreachable (${ msg }). Further .precompile() calls in this session will be silent.` );
 
 		} else {
@@ -787,7 +1317,7 @@ async function captureMaterialInDev( material, name ) {
 
 	} finally {
 
-		if ( guardedRender ) devRenderer.render = guardedRender;
+		if ( guardedRender && captureRenderer.render === installedRenderGuard ) captureRenderer.render = guardedRender;
 
 	}
 
@@ -1005,6 +1535,58 @@ function findParentScene( obj ) {
 
 }
 
+function createCaptureObject( Mesh, BoxGeometry, sourceObject, material ) {
+
+	if ( sourceObject && typeof sourceObject.clone === 'function' ) {
+
+		try {
+
+			const cloned = sourceObject.clone( false );
+			if ( cloned && cloned !== sourceObject ) {
+
+				cloned.parent = null;
+				if ( Array.isArray( cloned.children ) && cloned.children.length > 0 ) cloned.children.length = 0;
+				cloned.material = Array.isArray( sourceObject.material ) ? sourceObject.material : material;
+				return cloned;
+
+			}
+
+		} catch ( _ ) {
+
+			// Custom Object3D subclasses sometimes require constructor arguments
+			// and do not implement clone(). Fall through to a conservative Mesh
+			// surrogate while mirroring renderer-dispatch flags below.
+
+		}
+
+	}
+
+	const fallback = new Mesh( sourceObject && sourceObject.geometry || new BoxGeometry( 1, 1, 1 ), material );
+	if ( sourceObject ) {
+
+		for ( const key of [
+			'isSkinnedMesh', 'isInstancedMesh', 'isBatchedMesh', 'isSprite',
+			'isLine', 'isLineSegments', 'isPoints', 'isQuadMesh',
+		] ) {
+
+			if ( sourceObject[ key ] === true ) fallback[ key ] = true;
+
+		}
+		for ( const key of [
+			'skeleton', 'bindMatrix', 'bindMatrixInverse', 'instanceMatrix',
+			'instanceColor', 'morphTargetInfluences', 'morphTargetDictionary',
+			'_matricesTexture', '_colorsTexture', 'count',
+		] ) {
+
+			if ( sourceObject[ key ] !== undefined ) fallback[ key ] = sourceObject[ key ];
+
+		}
+
+	}
+	return fallback;
+
+}
+
 const logged = new Set();
 function logOnce( key, fn ) {
 
@@ -1019,17 +1601,29 @@ function logOnce( key, fn ) {
  */
 export function __resetForTests() {
 
-	installed = false;
-	devEndpoint = null;
-	devEndpointDead = false;
-	threeModule = null;
+	for ( const entries of pendingCaptures.values() ) {
+
+		for ( const entry of entries.values() ) {
+
+			if ( entry.observeTimer ) clearTimeout( entry.observeTimer );
+			if ( entry.autoFallbackTimer ) clearTimeout( entry.autoFallbackTimer );
+
+		}
+
+	}
+	installations = new WeakMap();
+	installationSet = new Set();
 	devRenderer = null;
-	extractor = null;
-	codegen = null;
-	lastSeenArrayCamera = null;
+	registeredRenderers = new Set();
+	lastArrayCameraByRenderer = new WeakMap();
+	lastRenderContextByRenderer = new WeakMap();
 	logged.clear();
-	sessionDone.clear();
-	inflight.clear();
+	pendingCaptures = new Map();
+	inflightCaptures = new Map();
+	captureQueue = [];
+	captureQueueRunning = false;
+	const root = captureCounterRoot();
+	if ( root && Object.prototype.hasOwnProperty.call( root, '__tslpPrecompilePending' ) ) root.__tslpPrecompilePending = 0;
 
 }
 

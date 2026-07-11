@@ -21,7 +21,12 @@
  * @module GraphHash
  */
 
-import { normalizeMaterialGraph, normalizeNode } from '@tsl-precompile/contract/graph-normalize';
+import {
+	createMaterialSourceHashPayload,
+	normalizeMaterialGraph,
+	normalizeNode,
+} from '@tsl-precompile/contract/graph-normalize';
+import { createArtifactContentHashPayload } from '@tsl-precompile/contract/artifact-content';
 
 export { normalizeMaterialGraph, normalizeNode };
 
@@ -211,34 +216,23 @@ function stableStringify( v ) {
  * externalised by Vite in browser builds).
  *
  * @param {Object} material
- * @param {{ name: string, threeVersion: string, pluginVersion: string }} opts
+ * @param {{ name: string, threeVersion: string, pluginVersion?: string, toolchainVersion?: string, renderContextSignature?: string|Object }} opts - renderContextSignature is accepted for compatibility but not source-hashed.
  * @return {string} hex-encoded sha256, 64 chars
  */
-export function hashMaterialSync( material, { name, threeVersion, pluginVersion } ) {
+export function hashMaterialSync( material, opts = {} ) {
 
-	if ( typeof name !== 'string' || name.length === 0 ) {
-
-		throw new TypeError( `hashMaterialSync: "name" must be a non-empty string; got ${ typeof name }` );
-
-	}
-	assertVersion( 'hashMaterialSync', threeVersion, pluginVersion );
-
-	const normalized = normalizeMaterialGraph( material );
-	const payload = [
-		'v1',
-		name,
-		threeVersion,
-		pluginVersion,
-		normalized,
-	].join( '\n' );
+	const payload = createMaterialSourceHashPayload( material, opts );
 
 	return sha256HexSync( payload );
 
 }
 
+// Explicit metadata-facing spelling; retained alias keeps current public API.
+export const hashMaterialSourceSync = hashMaterialSync;
+
 /**
  * Browser-safe counterpart to `packages/plugin/src/hash.js::computeArtifactContentHash`.
- * Hashes an extracted artifact's content (WGSL + uniformPlan + snapshots).
+ * Hashes an extracted artifact's canonical runtime content.
  *
  * @param {Object} artifact
  * @param {{ shape: string, threeVersion: string, pluginVersion: string }} opts
@@ -253,48 +247,13 @@ export function hashArtifactContentSync( artifact, { shape, threeVersion, plugin
 	}
 	assertVersion( 'hashArtifactContentSync', threeVersion, pluginVersion );
 
-	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
-	const payload = [
-		'artifact-v1',
+	const payload = createArtifactContentHashPayload( artifact, {
 		shape,
 		threeVersion,
-		pluginVersion,
-		String( artifact.vertexShader || '' ),
-		String( artifact.fragmentShader || '' ),
-		normaliseUniformPlanLocal( plan ),
-	].join( '\n' );
+		toolchainVersion: pluginVersion,
+	} );
 
 	return sha256HexSync( payload );
-
-}
-
-/**
- * Mirror of `packages/plugin/src/hash.js::normaliseUniformPlan` — keep in
- * sync by structure. Named `*Local` to avoid any export collision.
- */
-function normaliseUniformPlanLocal( plan ) {
-
-	const parts = [];
-	for ( const group of plan ) {
-
-		parts.push( `group<${ group.name || '' }>byteLength=${ group.byteLength | 0 }` );
-		for ( const slot of ( group.slots || [] ) ) {
-
-			const src = slot.source || {};
-			const snap = src.valueSnapshot;
-			const snapStr = snap ? `${ snap.type }:[${ Array.isArray( snap.data ) ? snap.data.join( ',' ) : snap.data }]` : '';
-			parts.push( `  slot ${ slot.name || '' } off=${ slot.offset | 0 } size=${ slot.size | 0 } dtype=${ slot.dtype || '' } kind=${ src.kind || '' } prop=${ src.property || '' } snap=${ snapStr }` );
-
-		}
-		for ( const tex of ( group.textures || [] ) ) {
-
-			const src = tex.source || {};
-			parts.push( `  tex ${ tex.name || '' } type=${ tex.textureType } kind=${ src.kind || '' } uuid=${ src.textureUuid || '' }` );
-
-		}
-
-	}
-	return parts.join( '\n' );
 
 }
 
