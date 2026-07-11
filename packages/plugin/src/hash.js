@@ -9,28 +9,28 @@
  *
  * Any mismatch stops the build — see ARCHITECTURE.md "Staleness gates".
  *
- * The hash is sha256 over a stable string representation:
- *
- *     `${name}\n${threeVersion}\n${pluginVersion}\n${normalizedGraph}`
- *
- * `normalizedGraph` is produced by `normalizeMaterialGraph()` — a depth-first
- * walk of the material's node tree emitting a canonical tag per node. The walk
- * is deterministic: we sort object keys, inline uniform values, and stamp
- * every node with `constructor.type || constructor.name` so subclass renames
- * invalidate the hash.
+ * `normalizedGraph` is produced by `normalizeMaterialGraph()` — a canonical
+ * walk of the node tree plus topology-forming material state. Object keys are
+ * sorted and nodes are stamped with stable type tags.
  *
  * Intentionally NOT hashed:
- *   - memory addresses, instance uuids, or anything tied to a specific run;
- *   - live Texture pixel data (bind by uuid; pixel drift is out of scope);
- *   - scene state (lights / fog) — those are captured in the *artifact*, not
- *     the source hash. A new scene with the same material source is
- *     deliberately cache-compatible.
+ *   - memory addresses, instance/node/texture UUIDs, clocks, and cache ids;
+ *   - live uniform values or Texture pixel data;
+ *   - continuous material inputs such as color, opacity, and roughness.
+ *
+ * Render-context topology is deliberately stored separately on the artifact;
+ * it selects runtime variants and is not source identity.
  *
  * @module Hash
  */
 
 import { createHash } from 'node:crypto';
-import { normalizeMaterialGraph, normalizeNode } from '@tsl-precompile/contract/graph-normalize';
+import {
+	createMaterialSourceHashPayload,
+	normalizeMaterialGraph,
+	normalizeNode,
+} from '@tsl-precompile/contract/graph-normalize';
+import { createArtifactContentHashPayload } from '@tsl-precompile/contract/artifact-content';
 
 function assertVersion( fn, threeVersion, pluginVersion ) {
 
@@ -48,17 +48,15 @@ function assertVersion( fn, threeVersion, pluginVersion ) {
 }
 
 /**
- * Hash an already-extracted artifact by its RUNTIME content — WGSL strings,
- * binding shape, uniformPlan kinds, and captured value snapshots.
+ * Hash an already-extracted artifact by its canonical RUNTIME content — WGSL,
+ * bindings, uniform plans, render state, attributes, and captured variants.
  *
  * Use this for auxiliary-pass artifacts (Background, PMREM, PostProcessing)
  * where the source material is internal to three.js and the author-facing
  * hash signal has to come from the extracted output, not from walking a
  * material that doesn't exist at the call site.
  *
- * Two artifacts with identical WGSL + identical uniformPlan + identical
- * snapshot values hash identically — which is exactly the runtime-lookup
- * semantic we want.
+ * Capture-only provenance is excluded by the shared contract payload builder.
  *
  * @param {Object} artifact - Output of `compileTSL` / `extractArtifact`.
  * @param {Object} opts
@@ -76,44 +74,13 @@ export function computeArtifactContentHash( artifact, { shape, threeVersion, plu
 	}
 	assertVersion( 'computeArtifactContentHash', threeVersion, pluginVersion );
 
-	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
-	const payload = [
-		'artifact-v1',
+	const payload = createArtifactContentHashPayload( artifact, {
 		shape,
 		threeVersion,
-		pluginVersion,
-		String( artifact.vertexShader || '' ),
-		String( artifact.fragmentShader || '' ),
-		normaliseUniformPlan( plan ),
-	].join( '\n' );
+		toolchainVersion: pluginVersion,
+	} );
 
 	return createHash( 'sha256' ).update( payload ).digest( 'hex' );
-
-}
-
-function normaliseUniformPlan( plan ) {
-
-	const parts = [];
-	for ( const group of plan ) {
-
-		parts.push( `group<${ group.name || '' }>byteLength=${ group.byteLength | 0 }` );
-		for ( const slot of ( group.slots || [] ) ) {
-
-			const src = slot.source || {};
-			const snap = src.valueSnapshot;
-			const snapStr = snap ? `${ snap.type }:[${ Array.isArray( snap.data ) ? snap.data.join( ',' ) : snap.data }]` : '';
-			parts.push( `  slot ${ slot.name || '' } off=${ slot.offset | 0 } size=${ slot.size | 0 } dtype=${ slot.dtype || '' } kind=${ src.kind || '' } prop=${ src.property || '' } snap=${ snapStr }` );
-
-		}
-		for ( const tex of ( group.textures || [] ) ) {
-
-			const src = tex.source || {};
-			parts.push( `  tex ${ tex.name || '' } type=${ tex.textureType } kind=${ src.kind || '' } uuid=${ src.textureUuid || '' }` );
-
-		}
-
-	}
-	return parts.join( '\n' );
 
 }
 
@@ -124,30 +91,22 @@ function normaliseUniformPlan( plan ) {
  * @param {Object} opts
  * @param {string} opts.name
  * @param {string} opts.threeVersion
- * @param {string} opts.pluginVersion
+ * @param {string} [opts.pluginVersion] - Compatibility spelling for toolchainVersion.
+ * @param {string} [opts.toolchainVersion]
+ * @param {string|Object} [opts.renderContextSignature] - Compatibility-only; context is stored separately and not source-hashed.
  * @return {string} hex-encoded sha256, 64 chars
  */
-export function computeArtifactHash( material, { name, threeVersion, pluginVersion } ) {
+export function computeArtifactHash( material, opts = {} ) {
 
-	if ( typeof name !== 'string' || name.length === 0 ) {
-
-		throw new TypeError( `computeArtifactHash: "name" must be a non-empty string; got ${ typeof name }` );
-
-	}
-	assertVersion( 'computeArtifactHash', threeVersion, pluginVersion );
-
-	const normalized = normalizeMaterialGraph( material );
-	const payload = [
-		'v1',
-		name,
-		threeVersion,
-		pluginVersion,
-		normalized,
-	].join( '\n' );
+	const payload = createMaterialSourceHashPayload( material, opts );
 
 	return createHash( 'sha256' ).update( payload ).digest( 'hex' );
 
 }
+
+// Explicit name for metadata stampers. `computeArtifactHash` remains the
+// backwards-compatible public API used by existing capture code.
+export const computeSourceGraphHash = computeArtifactHash;
 
 /**
  * Hash an INPUT TSL node graph — the structural fingerprint of a node tree

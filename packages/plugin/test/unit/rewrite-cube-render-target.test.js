@@ -18,6 +18,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parse } from '@babel/parser';
+import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 
 import { rewriteThreeSource } from '../../src/three-rewrite.js';
 import { THREE_SRC } from '../_three-src.js';
@@ -70,6 +71,18 @@ test( 'rewrite/CubeRenderTarget: output parses as valid ESM', () => {
 	const result = rewriteThreeSource( source, CUBE_RT_PATH, { threeVersion: '175', pluginVersion: '0.0.0' } );
 	assert.ok( result && result.code );
 	assert.doesNotThrow( () => parse( result.code, { sourceType: 'module', plugins: [ 'importAttributes' ] } ) );
+
+} );
+
+test( 'rewrite/CubeRenderTarget: defaults hashes to the shared artifact toolchain version', () => {
+
+	const source = readFileSync( CUBE_RT_PATH, 'utf8' );
+	const result = rewriteThreeSource( source, CUBE_RT_PATH, { threeVersion: '0.184.0' } );
+	assert.ok( result && result.code );
+	assert.match(
+		result.code,
+		new RegExp( `pluginVersion:\\s*["']${ ARTIFACT_TOOLCHAIN_VERSION.replaceAll( '.', '\\.' ) }["']` ),
+	);
 
 } );
 

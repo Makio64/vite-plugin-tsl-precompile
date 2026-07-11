@@ -128,7 +128,7 @@ test( 'validateArtifact flags stored dynamicBindings that drift from the compute
 			} ],
 			// Stale: declares a depth.texture entry that the uniformPlan doesn't have.
 			dynamicBindings: [
-				{ kind: 'depth.texture', group: 'render', binding: 'fake', target: 'sampled-texture', phase: 'update-before', owner: 'light-or-material-graph', resolver: 'hydrator/shadow-depth-rebinder', source: { kind: 'depth.texture' } },
+				{ kind: 'depth.texture', group: 'render', binding: 'fake', target: 'sampled-texture', phase: 'update-before', owner: 'light-or-material-graph', resolver: 'hydrator/shadow-depth-rebinder', textureType: null, source: { kind: 'depth.texture' } },
 			],
 		},
 	};
@@ -144,7 +144,7 @@ test( 'validateArtifact flags stored dynamicBindings that drift from the compute
 test( 'validateArtifact accepts a dynamicBindings section that matches the computed view', async () => {
 
 	const { validateArtifact } = await import( '@tsl-precompile/contract/kinds' );
-	const planSlot = { kind: 'frame.time', group: 'render', binding: 'time', target: 'uniform-slot', phase: 'codegen-update', owner: 'frame', resolver: 'emit-updater/frame', source: { kind: 'frame.time' } };
+	const planSlot = { kind: 'frame.time', group: 'render', binding: 'time', offset: 0, target: 'uniform-slot', phase: 'codegen-update', owner: 'frame', resolver: 'emit-updater/frame', source: { kind: 'frame.time' } };
 	const artifact = {
 		__name: 'match-test',
 		artifact: {
@@ -159,6 +159,57 @@ test( 'validateArtifact accepts a dynamicBindings section that matches the compu
 	};
 	const result = validateArtifact( artifact, { label: 'match-test' } );
 	assert.deepEqual( result.errors, [] );
+
+} );
+
+test( 'validateArtifact checks the complete stored dynamic binding descriptor', async () => {
+
+	const { validateArtifact } = await import( '@tsl-precompile/contract/kinds' );
+	const artifact = {
+		vertexShader: 'void main(){}',
+		fragmentShader: 'void main(){}',
+		uniformPlan: [ {
+			name: 'render',
+			slots: [ {
+				name: 'time',
+				offset: 16,
+				source: { kind: 'frame.time', valueSnapshot: { type: 'float', data: 1 } },
+			} ],
+		} ],
+		dynamicBindings: [
+			{
+				kind: 'frame.time',
+				target: 'sampled-texture',
+				phase: 'update-before',
+				owner: 'renderer',
+				resolver: 'hydrator/not-real',
+				group: 'render',
+				binding: 'time',
+				textureType: '2d',
+				source: { kind: 'frame.time', valueSnapshot: { type: 'float', data: 2 } },
+			},
+			{
+				kind: 'material.map',
+				target: 'sampled-texture',
+				phase: 'late-rebind',
+				owner: 'material',
+				resolver: 'hydrator/material-texture',
+				group: 'render',
+				binding: 'map',
+				textureType: '2d',
+				source: { kind: 'material.map' },
+			},
+		],
+	};
+	const result = validateArtifact( artifact, { label: 'full-shape' } );
+
+	assert.equal( result.ok, false );
+	const codes = result.errors.map( ( error ) => error.code );
+	assert.ok( codes.includes( 'dynamicBindings.descriptor' ) );
+	assert.ok( codes.includes( 'dynamicBindings.mismatch' ) );
+	assert.ok( codes.includes( 'dynamic-binding.required' ) );
+	assert.ok( result.errors.some( ( error ) => error.path === 'dynamicBindings[0].source' ) );
+	assert.ok( result.errors.some( ( error ) => error.path === 'dynamicBindings[1].source.property' ) );
 
 } );
 

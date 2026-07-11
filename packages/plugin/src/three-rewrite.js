@@ -27,6 +27,7 @@ import { parse } from '@babel/parser';
 import _traverse from '@babel/traverse';
 import _generate from '@babel/generator';
 import * as t from '@babel/types';
+import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 
 const traverse = _traverse.default || _traverse;
 const generate = _generate.default || _generate;
@@ -68,7 +69,7 @@ export function rewriteThreeSource( code, id, opts ) {
 		const ctx = {
 			id,
 			threeVersion: opts.threeVersion,
-			pluginVersion: opts.pluginVersion || '0.0.0',
+			pluginVersion: opts.pluginVersion || ARTIFACT_TOOLCHAIN_VERSION,
 			touched: false,
 		};
 
@@ -96,10 +97,28 @@ export function rewriteThreeSource( code, id, opts ) {
 }
 
 /**
+ * Whether a resolved module id has a registered slim rewrite handler.
+ * Exported so Vite's node_modules carve-out and the actual dispatcher use
+ * one routing table; a duplicated regex list previously omitted
+ * RenderObject/ShadowFilterNode and incorrectly included PMREMGenerator.
+ *
+ * @param {string} id
+ * @returns {boolean}
+ */
+export function isThreeRewriteTarget( id ) {
+
+	if ( typeof id !== 'string' || id.startsWith( '\0' ) ) return false;
+	return pickHandler( id ) !== null;
+
+}
+
+/**
  * @param {string} id
  * @return {?(ast: Object, ctx: Object) => void}
  */
 function pickHandler( id ) {
+
+	id = String( id ).replace( /\\/g, '/' ).split( /[?#]/, 1 )[ 0 ];
 
 	if ( /\/three\/src\/renderers\/common\/CubeRenderTarget\.js$/.test( id ) ) return rewriteCubeRenderTarget;
 	if ( /\/three\/src\/renderers\/common\/Renderer\.js$/.test( id ) ) return rewriteRenderer;

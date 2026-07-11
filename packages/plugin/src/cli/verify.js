@@ -5,18 +5,29 @@
  * This is intentionally narrower than a full re-extract staleness audit:
  * it validates committed artifact files and manifests so CI can catch
  * corrupt JSON, missing manifest references, and unknown unsupported kinds.
+ *
+ * Shape fingerprints (`fingerprintArtifactShape`) are computed for every
+ * checked artifact so CI logs can spot empty/malformed plans early. Full
+ * browser-capture vs Node re-extract convergence remains §P2.10 follow-up;
+ * see `packages/plugin/test/unit/extractor-convergence.test.js` for the
+ * Node-path stability guard that landed first.
  */
 
 import { access, readFile, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 
+import { fingerprintArtifactShape } from '@tsl-precompile/contract/artifact-shape';
 import { isArtifactCollection, validateArtifact } from '@tsl-precompile/contract/kinds';
+import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
+import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
+import { computeArtifactContentHash } from '../hash.js';
 
 const args = process.argv.slice( 2 );
 const dirs = args.length > 0 ? args : [ 'artifacts' ];
 const issues = [];
 let checked = 0;
+let emptyShapes = 0;
 
 for ( const dirArg of dirs ) {
 
@@ -51,7 +62,7 @@ if ( issues.length > 0 ) {
 
 }
 
-console.log( `[tsl-precompile] verify ok (${ checked } artifact file${ checked === 1 ? '' : 's' } checked).` );
+console.log( `[tsl-precompile] verify ok (${ checked } artifact file${ checked === 1 ? '' : 's' } checked${ emptyShapes > 0 ? `, ${ emptyShapes } empty shape fingerprint(s)` : '' }).` );
 
 async function readManifest( dir ) {
 
@@ -63,7 +74,7 @@ async function readManifest( dir ) {
 
 	} catch ( err ) {
 
-		issues.push( `${ path}: invalid JSON (${ err.message })` );
+		issues.push( `${ path }: invalid JSON (${ err.message })` );
 		return null;
 
 	}
@@ -77,7 +88,7 @@ async function validateManifest( dir, manifest ) {
 		if ( name === '__aux' ) continue;
 		if ( ! entry || typeof entry.file !== 'string' ) {
 
-			issues.push( `${ join( dir, 'manifest.json' )}: manifest entry "${ name }" is missing file` );
+			issues.push( `${ join( dir, 'manifest.json' ) }: manifest entry "${ name }" is missing file` );
 			continue;
 
 		}
@@ -92,7 +103,7 @@ async function validateManifest( dir, manifest ) {
 
 			if ( ! entry || typeof entry.file !== 'string' ) {
 
-				issues.push( `${ join( dir, 'manifest.json' )}: aux entry "${ key }" is missing file` );
+				issues.push( `${ join( dir, 'manifest.json' ) }: aux entry "${ key }" is missing file` );
 				continue;
 
 			}
@@ -114,7 +125,7 @@ async function validateArtifactFile( dir, file ) {
 
 	} catch ( err ) {
 
-		issues.push( `${ path}: invalid JSON (${ err.message })` );
+		issues.push( `${ path }: invalid JSON (${ err.message })` );
 		return;
 
 	}
@@ -124,20 +135,26 @@ async function validateArtifactFile( dir, file ) {
 	if ( isCollection ) {
 
 		const validation = validateArtifact( parsed, { label: path, allowEmptyCollection } );
-		for ( const error of validation.errors ) issues.push( `${ path}: ${ error.message }` );
+		for ( const error of validation.errors ) issues.push( `${ path }: ${ error.message }` );
+		const shape = fingerprintArtifactShape( parsed );
+		if ( shape.length === 0 && ! allowEmptyCollection ) emptyShapes ++;
 		return;
 
 	}
 
 	const isUser = typeof parsed.__name === 'string' && parsed.__name.length > 0;
 	const isAux = typeof parsed.__materialShape === 'string' && typeof parsed.__configHash === 'string';
-	if ( ! isUser && ! isAux ) issues.push( `${ path}: expected __name or __materialShape/__configHash metadata` );
-	if ( typeof parsed.__hash !== 'string' || parsed.__hash.length === 0 ) issues.push( `${ path}: missing __hash` );
-	if ( ! parsed.artifact || typeof parsed.artifact !== 'object' ) issues.push( `${ path}: missing artifact object` );
+	if ( ! isUser && ! isAux ) issues.push( `${ path }: expected __name or __materialShape/__configHash metadata` );
+	if ( typeof parsed.__hash !== 'string' || parsed.__hash.length === 0 ) issues.push( `${ path }: missing __hash` );
+	if ( ! parsed.artifact || typeof parsed.artifact !== 'object' ) issues.push( `${ path }: missing artifact object` );
 	else {
 
 		const validation = validateArtifact( parsed, { label: path } );
-		for ( const error of validation.errors ) issues.push( `${ path}: ${ error.message }` );
+		for ( const error of validation.errors ) issues.push( `${ path }: ${ error.message }` );
+		validateSourceHashMetadata( parsed.artifact, path );
+		validateArtifactContentHash( parsed, path );
+		const shape = fingerprintArtifactShape( parsed );
+		if ( shape.length === 0 ) emptyShapes ++;
 
 	}
 
@@ -146,9 +163,57 @@ async function validateArtifactFile( dir, file ) {
 
 		if ( item && item.severity === 'unknown' ) {
 
-			issues.push( `${ path}: unsupported kind "${ item.kind || '<unknown>' }" has severity "unknown"` );
+			issues.push( `${ path }: unsupported kind "${ item.kind || '<unknown>' }" has severity "unknown"` );
 
 		}
+
+	}
+
+}
+
+function validateArtifactContentHash( envelope, path ) {
+
+	const artifact = envelope && envelope.artifact;
+	if ( ! artifact || artifact.artifactContentHashVersion === undefined ) return;
+	if ( artifact.artifactContentHashVersion !== ARTIFACT_CONTENT_HASH_VERSION ) {
+
+		issues.push( `${ path }: artifactContentHashVersion must be ${ ARTIFACT_CONTENT_HASH_VERSION }` );
+		return;
+
+	}
+	if ( typeof envelope.__name !== 'string' || typeof envelope.__hash !== 'string' ||
+		typeof artifact.sourceThreeVersion !== 'string' || typeof artifact.sourceHashVersion !== 'string' ) return;
+	const computed = computeArtifactContentHash( artifact, {
+		shape: `material:${ envelope.__name }`,
+		threeVersion: artifact.sourceThreeVersion,
+		pluginVersion: artifact.sourceHashVersion,
+	} );
+	if ( computed !== envelope.__hash ) issues.push( `${ path }: stored __hash does not match artifact runtime content` );
+
+}
+
+function validateSourceHashMetadata( artifact, path ) {
+
+	const fields = [ 'sourceGraphHash', 'sourceHashVersion', 'sourceThreeVersion', 'renderContextSignature' ];
+	if ( ! fields.some( ( key ) => artifact[ key ] !== undefined ) ) return; // Legacy artifact.
+	if ( typeof artifact.sourceGraphHash !== 'string' || ! /^[a-f0-9]{64}$/i.test( artifact.sourceGraphHash ) ) {
+
+		issues.push( `${ path }: sourceGraphHash must be a 64-character SHA-256 hex string` );
+
+	}
+	if ( artifact.sourceHashVersion !== ARTIFACT_TOOLCHAIN_VERSION ) {
+
+		issues.push( `${ path }: sourceHashVersion must be ${ ARTIFACT_TOOLCHAIN_VERSION }` );
+
+	}
+	if ( typeof artifact.sourceThreeVersion !== 'string' || artifact.sourceThreeVersion.length === 0 ) {
+
+		issues.push( `${ path }: sourceThreeVersion must be a non-empty exact Three package version` );
+
+	}
+	if ( artifact.renderContextSignature !== undefined && typeof artifact.renderContextSignature !== 'string' ) {
+
+		issues.push( `${ path }: renderContextSignature must be a canonical string when present` );
 
 	}
 
@@ -162,7 +227,7 @@ async function assertExists( path, label ) {
 
 	} catch ( _ ) {
 
-		issues.push( `${ label} references missing file ${ path }` );
+		issues.push( `${ label } references missing file ${ path }` );
 
 	}
 

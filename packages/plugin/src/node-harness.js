@@ -22,9 +22,12 @@
  */
 
 import { installMockWebGPU, createMockGPUCanvasContext } from './mock-webgpu.js';
-import { computeArtifactHash } from './hash.js';
+import { computeArtifactContentHash, computeArtifactHash } from './hash.js';
 import { normalizeRevision } from './_shared/normalize-revision.js';
 import { compileTSL, extractArtifact } from './vendor/compileTSL.js';
+import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
+import { createRenderContextSignature } from '@tsl-precompile/contract/render-context';
+import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
 
 let initialised = false;
 
@@ -64,7 +67,7 @@ async function importThree() {
  * @param {() => ({ material: Object, name: string, objects?: Array<Object>, camera?: Object })} factory
  * @param {Object} [opts]
  * @param {string} [opts.threeVersion] - Overrides `three.REVISION` in the hash.
- * @param {string} [opts.pluginVersion='0.0.0']
+ * @param {string} [opts.pluginVersion=ARTIFACT_TOOLCHAIN_VERSION]
  * @return {Promise<{ artifact: Object, hash: string, wgslVertex: string, wgslFragment: string }>}
  */
 export async function extractMaterial( factory, opts = {} ) {
@@ -91,6 +94,7 @@ export async function extractMaterial( factory, opts = {} ) {
 	}
 
 	const scene = new core.Scene();
+	let sourceObject = null;
 	// Minimal renderable to drive the material through the extractor: unless
 	// the user supplied their own objects, attach a unit mesh.
 	if ( objects.length === 0 ) {
@@ -98,10 +102,17 @@ export async function extractMaterial( factory, opts = {} ) {
 		const geom = new core.BoxGeometry( 1, 1, 1 );
 		const mesh = new core.Mesh( geom, material );
 		scene.add( mesh );
+		sourceObject = mesh;
 
 	} else {
 
 		for ( const obj of objects ) scene.add( obj );
+		sourceObject = objects.find( ( object ) => {
+
+			const materials = Array.isArray( object && object.material ) ? object.material : [ object && object.material ];
+			return materials.includes( material );
+
+		} ) || objects[ 0 ] || null;
 
 	}
 
@@ -131,10 +142,32 @@ export async function extractMaterial( factory, opts = {} ) {
 
 	}
 
-	const hash = computeArtifactHash( material, {
+	const threeVersion = opts.threeVersion || normalizeRevision( core.REVISION );
+	const toolchainVersion = opts.pluginVersion || ARTIFACT_TOOLCHAIN_VERSION;
+	const renderContextSignature = createRenderContextSignature( {
+		renderer,
+		scene,
+		camera,
+		object: sourceObject,
+		material,
+		mrt: typeof renderer.getMRT === 'function' ? renderer.getMRT() : null,
+	} );
+	const sourceGraphHash = computeArtifactHash( material, {
 		name,
-		threeVersion: opts.threeVersion || normalizeRevision( core.REVISION ),
-		pluginVersion: opts.pluginVersion || '0.0.0',
+		threeVersion,
+		pluginVersion: toolchainVersion,
+		renderContextSignature,
+	} );
+	artifact.sourceGraphHash = sourceGraphHash;
+	artifact.sourceHashVersion = toolchainVersion;
+	artifact.sourceThreeVersion = threeVersion;
+	artifact.renderContextSignature = renderContextSignature;
+	artifact.sourceValidationMode = 'runtime-graph';
+	artifact.artifactContentHashVersion = ARTIFACT_CONTENT_HASH_VERSION;
+	const hash = computeArtifactContentHash( artifact, {
+		shape: `material:${ name }`,
+		threeVersion,
+		pluginVersion: toolchainVersion,
 	} );
 
 	artifact.__hash = hash;

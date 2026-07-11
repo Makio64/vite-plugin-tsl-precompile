@@ -38,7 +38,7 @@ test( 'tslPrecompile — accepts every known option', () => {
 		autoMark: true,
 		autoMarkPrefix: 'demo',
 		slim: true,
-		threeVersion: '184',
+		threeVersion: '0.184.0',
 		minifyWgsl: false,
 		dedupeWgsl: false,
 	} );
@@ -116,7 +116,7 @@ test( 'tslPrecompile — warns when app package.json ranges three', async () => 
 			dependencies: { three: '^0.184.0' },
 		} ) );
 		const warnings = [];
-		const plugin = tslPrecompile( { threeVersion: '184' } );
+		const plugin = tslPrecompile( { threeVersion: '0.184.0' } );
 		await plugin.configResolved( {
 			root,
 			command: 'serve',
@@ -144,7 +144,7 @@ test( 'tslPrecompile — accepts exact pinned three package specs without warnin
 			dependencies: { three: '0.184.0' },
 		} ) );
 		const warnings = [];
-		const plugin = tslPrecompile( { threeVersion: '184' } );
+		const plugin = tslPrecompile( { threeVersion: '0.184.0' } );
 		await plugin.configResolved( {
 			root,
 			command: 'build',

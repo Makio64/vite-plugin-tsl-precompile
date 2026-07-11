@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
 	BLOCKED_KINDS,
 	KINDS,
+	RUNTIME_BINDING_KINDS,
 	blockedKindReason,
 	isBlockedKind,
 	isArtifactCollection,
@@ -90,6 +91,59 @@ test( 'contract artifact validation accepts known slot and texture kinds', () =>
 
 	assert.equal( result.ok, true );
 	assert.deepEqual( result.errors, [] );
+
+} );
+
+test( 'contract artifact validation distinguishes empty render computeShader from compute artifacts', () => {
+
+	const render = validateArtifact( {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		computeShader: '',
+		uniformPlan: [],
+	}, { label: 'render', requireShaders: true } );
+	assert.equal( render.ok, true, JSON.stringify( render.errors ) );
+
+	const missingRenderShaders = validateArtifact( {
+		computeShader: '',
+		uniformPlan: [],
+	}, { label: 'missing-render-shaders', requireShaders: true } );
+	assert.equal( missingRenderShaders.ok, false );
+	assert.deepEqual(
+		missingRenderShaders.errors.map( ( error ) => error.code ).sort(),
+		[ 'artifact.fragmentShader', 'artifact.vertexShader' ],
+	);
+
+	const emptyCompute = validateArtifact( {
+		kind: 'compute',
+		computeShader: '',
+		uniformPlan: [],
+	}, { label: 'empty-compute', requireShaders: true } );
+	assert.equal( emptyCompute.ok, false );
+	assert.equal( emptyCompute.errors[ 0 ].code, 'artifact.computeShader' );
+
+} );
+
+test( 'contract artifact validation rejects runtime binding kinds the hydrator cannot allocate', () => {
+
+	assert.deepEqual( RUNTIME_BINDING_KINDS, [ 'uniform-buffer', 'sampled-texture', 'sampler', 'storage-buffer' ] );
+	const result = validateArtifact( {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		uniformPlan: [],
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'object', kind: 'uniform-buffer' },
+				{ name: 'futureTexture', kind: 'storage-texture' },
+			],
+		} ],
+	}, { label: 'runtime-bindings' } );
+
+	assert.equal( result.ok, false );
+	const error = result.errors.find( ( item ) => item.code === 'binding.kind.unknown' );
+	assert.equal( error.path, 'bindings[0].bindings[1].kind' );
+	assert.match( error.message, /storage-texture/ );
 
 } );
 

@@ -11,11 +11,12 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, existsSync, readdirSync, rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { attachDevCapture } from '../../src/dev-capture-server.js';
+import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
 
 function makeFakeViteServer() {
 
@@ -90,7 +91,7 @@ test( 'dev-capture: user-material payload writes <name>.<hash>.json + manifest',
 
 		const r = await postJSON( port, '/__tsl-precompile/capture', {
 			name: 'ocean-water',
-			hash: 'abcdef1234567890aaaa',
+			hash: 'a'.repeat( 64 ),
 			artifact: { uniformPlan: [], vertexShader: 'v', fragmentShader: 'f' },
 		} );
 		assert.equal( r.status, 200 );
@@ -104,7 +105,7 @@ test( 'dev-capture: user-material payload writes <name>.<hash>.json + manifest',
 
 		const manifest = JSON.parse( readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' ) );
 		assert.ok( manifest[ 'ocean-water' ], 'manifest should key user capture by name' );
-		assert.equal( manifest[ 'ocean-water' ].hash, 'abcdef1234567890aaaa' );
+		assert.equal( manifest[ 'ocean-water' ].hash, 'a'.repeat( 64 ) );
 		assert.equal( manifest.__aux, undefined );
 
 	} finally {
@@ -130,7 +131,7 @@ test( 'dev-capture: aux background payload writes aux-<shape>-<hash>.json + mani
 		const r = await postJSON( port, '/__tsl-precompile/capture', {
 			materialShape: 'background',
 			configHash,
-			hash: 'artifacthashxxxx',
+			hash: 'f'.repeat( 64 ),
 			artifact: { uniformPlan: [], vertexShader: 'v', fragmentShader: 'f', materialShape: 'background' },
 			name: 'aux-background-test',
 		} );
@@ -211,6 +212,306 @@ test( 'dev-capture: two aux captures with different configHashes co-exist in man
 		assert.ok( manifest.__aux[ `background:${ hashA }` ] );
 		assert.ok( manifest.__aux[ `background:${ hashB }` ] );
 		assert.notEqual( manifest.__aux[ `background:${ hashA }` ].file, manifest.__aux[ `background:${ hashB }` ].file );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: rejects path traversal, slash, reserved, and non-canonical names', async () => {
+
+	const parentDir = mkdtempSync( join( tmpdir(), 'tslp-dc-safe-' ) );
+	const artifactsDir = join( parentDir, 'artifacts' );
+	mkdirSync( artifactsDir );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+
+	try {
+
+		for ( const name of [ '../escape', 'folder/name', 'folder\\name', '__aux', '__wgsl', 'manifest', 'CON', 'name..segment' ] ) {
+
+			const r = await postJSON( port, '/__tsl-precompile/capture', {
+				name,
+				hash: 'a'.repeat( 64 ),
+				artifact: { uniformPlan: [] },
+			} );
+			assert.equal( r.status, 400, `${ name } should be rejected: ${ r.text }` );
+
+		}
+		assert.equal( existsSync( join( parentDir, 'escape.' + 'a'.repeat( 12 ) + '.json' ) ), false );
+		assert.deepEqual( readdirSync( artifactsDir ), [] );
+
+	} finally {
+
+		http.close();
+		rmSync( parentDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: rejects unsafe hash text before it reaches a filename', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-' ) );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+
+	try {
+
+		const r = await postJSON( port, '/__tsl-precompile/capture', {
+			name: 'safe-name',
+			hash: '../../outside',
+			artifact: { uniformPlan: [] },
+		} );
+		assert.equal( r.status, 400 );
+		assert.deepEqual( readdirSync( artifactsDir ), [] );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: rejects a mismatched declared artifact-content hash', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-content-hash-' ) );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+
+	try {
+
+		const response = await postJSON( port, '/__tsl-precompile/capture', {
+			name: 'content-mismatch',
+			hash: 'a'.repeat( 64 ),
+			artifact: {
+				artifactContentHashVersion: ARTIFACT_CONTENT_HASH_VERSION,
+				sourceThreeVersion: '0.184.0',
+				sourceHashVersion: '0.1.0',
+				vertexShader: 'vertex',
+				fragmentShader: 'fragment',
+				uniformPlan: [],
+			},
+		} );
+		assert.equal( response.status, 400 );
+		assert.match( response.json.error, /does not match.*runtime content/ );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: 30 concurrent user and aux captures survive one atomic manifest queue', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-concurrent-' ) );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+
+	try {
+
+		const requests = [];
+		for ( let i = 0; i < 20; i ++ ) {
+
+			requests.push( postJSON( port, '/__tsl-precompile/capture', {
+				name: `material-${ i }`,
+				hash: i.toString( 16 ).padStart( 64, '0' ),
+				artifact: { uniformPlan: [], vertexShader: `v${ i }`, fragmentShader: `f${ i }` },
+			} ) );
+
+		}
+		for ( let i = 20; i < 30; i ++ ) {
+
+			requests.push( postJSON( port, '/__tsl-precompile/capture', {
+				materialShape: 'background',
+				configHash: i.toString( 16 ).padStart( 64, '0' ),
+				artifact: { uniformPlan: [], vertexShader: `av${ i }`, fragmentShader: `af${ i }` },
+			} ) );
+
+		}
+
+		const responses = await Promise.all( requests );
+		assert.deepEqual( responses.map( ( r ) => r.status ), Array( 30 ).fill( 200 ) );
+
+		const manifestText = readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' );
+		const manifest = JSON.parse( manifestText );
+		for ( let i = 0; i < 20; i ++ ) assert.ok( manifest[ `material-${ i }` ] );
+		for ( let i = 20; i < 30; i ++ ) assert.ok( manifest.__aux[ `background:${ i.toString( 16 ).padStart( 64, '0' ) }` ] );
+		assert.equal( Object.keys( manifest ).filter( ( key ) => key !== '__aux' ).length, 20 );
+		assert.equal( Object.keys( manifest.__aux ).length, 10 );
+		assert.equal( readdirSync( artifactsDir ).some( ( file ) => file.includes( '.tmp-' ) ), false );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: same name with conflicting hash/source identity returns 409 without overwrite', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-conflict-' ) );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+
+	try {
+
+		const first = await postJSON( port, '/__tsl-precompile/capture', {
+			name: 'shared-name',
+			hash: 'a'.repeat( 64 ),
+			artifact: {
+				uniformPlan: [], vertexShader: 'first', fragmentShader: 'first',
+				sourceMaterial: { type: 'MeshStandardNodeMaterial', name: 'first-material', nodeProps: [] },
+			},
+		} );
+		const conflict = await postJSON( port, '/__tsl-precompile/capture', {
+			name: 'shared-name',
+			hash: 'b'.repeat( 64 ),
+			artifact: {
+				uniformPlan: [], vertexShader: 'second', fragmentShader: 'second',
+				sourceMaterial: { type: 'MeshStandardNodeMaterial', name: 'second-material', nodeProps: [] },
+			},
+		} );
+
+		assert.equal( first.status, 200 );
+		assert.equal( conflict.status, 409 );
+		assert.match( conflict.json.error, /different hash\/source identity/ );
+		const manifest = JSON.parse( readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' ) );
+		assert.equal( manifest[ 'shared-name' ].hash, 'a'.repeat( 64 ) );
+		assert.equal( readdirSync( artifactsDir ).some( ( file ) => file.startsWith( `shared-name.${ 'b'.repeat( 12 ) }` ) ), false );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: same source identity can refresh a changed hash', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-refresh-' ) );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+
+	try {
+
+		for ( const hash of [ 'a'.repeat( 64 ), 'b'.repeat( 64 ) ] ) {
+
+			const changed = hash.startsWith( 'b' );
+			const sourceMaterial = {
+				type: 'MeshStandardNodeMaterial',
+				name: 'editable',
+				nodeProps: changed ? [ 'colorNode', 'normalNode' ] : [ 'colorNode' ],
+				object: { type: 'Mesh', receiveShadow: changed, castShadow: changed },
+			};
+			const r = await postJSON( port, '/__tsl-precompile/capture', {
+				name: 'editable-material', hash,
+				artifact: { uniformPlan: [], vertexShader: hash, fragmentShader: hash, sourceMaterial },
+			} );
+			assert.equal( r.status, 200, r.text );
+
+		}
+		const manifest = JSON.parse( readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' ) );
+		assert.equal( manifest[ 'editable-material' ].hash, 'b'.repeat( 64 ) );
+		assert.equal( readdirSync( artifactsDir ).some( ( file ) => file.startsWith( `editable-material.${ 'a'.repeat( 12 ) }` ) ), false );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: identical artifacts can record multiple call-site owners', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-owners-' ) );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+	const hash = 'd'.repeat( 64 );
+	const revision = 'e'.repeat( 64 );
+
+	try {
+
+		for ( const sourceIdentity of [ 'src/first.js:precompile:0', 'src/second.js:precompile:0' ] ) {
+
+			const response = await postJSON( port, '/__tsl-precompile/capture', {
+				name: 'shared-identical',
+				hash,
+				sourceIdentity,
+				sourceRevision: revision,
+				artifact: { uniformPlan: [], vertexShader: 'same', fragmentShader: 'same' },
+			} );
+			assert.equal( response.status, 200, response.text );
+
+		}
+
+		const manifest = JSON.parse( readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' ) );
+		assert.deepEqual(
+			manifest[ 'shared-identical' ].sourceOwners.map( ( owner ) => owner.identity ),
+			[ 'src/first.js:precompile:0', 'src/second.js:precompile:0' ],
+		);
+		const stored = JSON.parse( readFileSync( join( artifactsDir, manifest[ 'shared-identical' ].file ), 'utf8' ) );
+		assert.deepEqual( stored.__sourceOwners, manifest[ 'shared-identical' ].sourceOwners );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: call-site identity upgrades legacy captures and then prevents collisions', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-callsite-' ) );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+
+	try {
+
+		const legacy = await postJSON( port, '/__tsl-precompile/capture', {
+			name: 'migrating', hash: 'a'.repeat( 64 ),
+			artifact: { sourceMaterial: { type: 'OldMaterial', name: '' }, uniformPlan: [] },
+		} );
+		const migrated = await postJSON( port, '/__tsl-precompile/capture', {
+			name: 'migrating', hash: 'b'.repeat( 64 ), sourceIdentity: 'src/material.js:10:2',
+			artifact: { sourceMaterial: { type: 'NewMaterial', name: '' }, uniformPlan: [] },
+		} );
+		const collision = await postJSON( port, '/__tsl-precompile/capture', {
+			name: 'migrating', hash: 'c'.repeat( 64 ), sourceIdentity: 'src/other.js:4:0',
+			artifact: { sourceMaterial: { type: 'NewMaterial', name: '' }, uniformPlan: [] },
+		} );
+
+		assert.equal( legacy.status, 200 );
+		assert.equal( migrated.status, 200, migrated.text );
+		assert.equal( collision.status, 409 );
+		const manifest = JSON.parse( readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' ) );
+		assert.equal( manifest.migrating.hash, 'b'.repeat( 64 ) );
+		assert.equal( manifest.migrating.sourceIdentityKind, 'callsite' );
 
 	} finally {
 

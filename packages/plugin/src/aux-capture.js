@@ -29,6 +29,7 @@ import { installMockWebGPU, createMockGPUCanvasContext } from './mock-webgpu.js'
 import { computeArtifactContentHash, computeNodeGraphHash, computePlainConfigHash } from './hash.js';
 import { normalizeRevision } from './_shared/normalize-revision.js';
 import { compileTSL } from './vendor/compileTSL.js';
+import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 
 let initialised = false;
 
@@ -58,7 +59,7 @@ function threeVersion( core, opts ) {
 
 function pluginVersion( opts ) {
 
-	return opts.pluginVersion || '0.0.0';
+	return opts.pluginVersion || ARTIFACT_TOOLCHAIN_VERSION;
 
 }
 

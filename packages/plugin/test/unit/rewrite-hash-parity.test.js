@@ -114,6 +114,32 @@ test( 'parity: computeArtifactHash (plugin, Node) === hashMaterialSync (runtime,
 
 } );
 
+test( 'parity: material source hash excludes the separate render-context signature', () => {
+
+	const material = {
+		side: 2,
+		transparent: true,
+		map: { isTexture: true, uuid: 'capture-only-id', colorSpace: 'srgb', channel: 0 },
+		colorNode: { isUniformNode: true, value: { isColor: true, r: 0.25, g: 0.5, b: 1 } },
+	};
+	const pluginOpts = {
+		name: 'contextual-material',
+		threeVersion: '0.184.0',
+		toolchainVersion: '0.1.0',
+		renderContextSignature: { shadows: [ 'Directional:pcf' ], fog: 'FogExp2', mrt: [ 'color', 'normal' ] },
+	};
+	const runtimeOpts = {
+		...pluginOpts,
+		renderContextSignature: { mrt: [ 'color', 'normal' ], fog: 'FogExp2', shadows: [ 'Directional:pcf' ] },
+	};
+	assert.equal( computeArtifactHash( material, pluginOpts ), hashMaterialSync( material, runtimeOpts ) );
+	assert.equal(
+		computeArtifactHash( material, pluginOpts ),
+		computeArtifactHash( material, { ...pluginOpts, renderContextSignature: { fog: null, mrt: [] } } ),
+	);
+
+} );
+
 test( 'parity: computeArtifactContentHash (plugin) === hashArtifactContentSync (runtime)', () => {
 
 	const artifact = {
@@ -131,6 +157,18 @@ test( 'parity: computeArtifactContentHash (plugin) === hashArtifactContentSync (
 		computeArtifactContentHash( artifact, opts ),
 		hashArtifactContentSync( artifact, opts ),
 		'plugin + runtime artifact-content hashers must agree byte-for-byte',
+	);
+	const withVariant = {
+		...artifact,
+		variants: {
+			color: { vertexShader: artifact.vertexShader, fragmentShader: artifact.fragmentShader, bindings: [], uniformPlan: [] },
+		},
+	};
+	assert.notEqual( computeArtifactContentHash( artifact, opts ), computeArtifactContentHash( withVariant, opts ) );
+	assert.equal(
+		computeArtifactContentHash( { ...artifact, sourceGraphHash: 'a'.repeat( 64 ) }, opts ),
+		computeArtifactContentHash( { ...artifact, sourceGraphHash: 'b'.repeat( 64 ) }, opts ),
+		'capture provenance is not part of runtime content identity',
 	);
 
 } );

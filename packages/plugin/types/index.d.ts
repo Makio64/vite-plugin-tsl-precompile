@@ -1,3 +1,5 @@
+/// <reference path="./virtual-modules.d.ts" />
+
 import type { Plugin } from 'vite';
 
 export interface TslPrecompileOptions {
@@ -10,19 +12,21 @@ export interface TslPrecompileOptions {
 	 */
 	fail?: 'error' | 'warn';
 	/**
-	 * Chain `.precompile('<prefix>-<slug>-<n>')` onto every `new *NodeMaterial(...)`
-	 * automatically. Artifact names become positional; reordering source reshuffles them.
+	 * Chain `.precompile('<prefix>-<slug>-<module-hash>-<n>')` onto every `new *NodeMaterial(...)`
+	 * automatically. Framework script subresources get distinct module hashes; the final
+	 * per-module ordinal remains positional, so reordering constructors can reshuffle it.
 	 * Default: `false`.
 	 */
 	autoMark?: boolean;
 	/** Prefix used by `autoMark` to name artifacts. Default: `'auto'`. */
 	autoMarkPrefix?: string;
 	/**
-	 * Alias `three/webgpu` to the slim runtime bundle (no TSL builder).
-	 * Requires every reachable material to be precompiled. Default: `false`.
+	 * Alias `three/webgpu` to the slim runtime bundle in production builds
+	 * (serve/dev keeps full three for capture). Requires every reachable
+	 * material to be precompiled. Default: `false`.
 	 */
 	slim?: boolean;
-	/** Override the auto-detected three.js version used in rewrite hashes. Pass `null` to force auto-detect. */
+	/** Override the auto-detected exact three.js package version used in rewrite hashes. Must match the installed package (for example `0.184.0`). Pass `null` to force auto-detect. */
 	threeVersion?: string | null;
 	/**
 	 * Compact WGSL in emitted virtual modules; captured JSON stays readable.

@@ -2,8 +2,13 @@
  * Shared constants across the plugin's modules.
  */
 
-export const PLUGIN_VERSION = '0.0.0';
-export const HASH_SCHEMA_VERSION = 'v1';
+import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
+
+// Backwards-compatible names for plugin internals. Both intentionally point to
+// the shared contract version so capture, codegen, and runtime cannot drift.
+export const PLUGIN_VERSION = ARTIFACT_TOOLCHAIN_VERSION;
+export const HASH_SCHEMA_VERSION = ARTIFACT_TOOLCHAIN_VERSION;
+export { ARTIFACT_TOOLCHAIN_VERSION };
 
 // Author-facing API name. If we ever rename `.precompile()` (don't), grep for this constant.
 export const MARKER_METHOD_NAME = 'precompile';

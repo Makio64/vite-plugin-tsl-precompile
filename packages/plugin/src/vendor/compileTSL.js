@@ -23,6 +23,7 @@
  */
 
 import { extractUniformPlan } from './extractUniformPlan.js';
+import { observeRenderObjects } from './render-object-observer.js';
 import { DataUtils, FloatType, HalfFloatType, RGBAFormat, RenderTarget } from 'three';
 import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
 
@@ -1149,10 +1150,9 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	// single-material fallback.
 	const materialByCacheKey = new Map();
 	const meshesByCacheKey = new Map();
-	const origGetForRender = manager.getForRender.bind( manager );
-	manager.getForRender = function ( renderObject, useAsync ) {
+	const recordRenderObject = ( { renderObject, cacheKey } ) => {
 
-		const cacheKey = this.getForRenderCacheKey( renderObject );
+		if ( cacheKey === null || cacheKey === undefined ) return;
 
 		// Record BOTH the node material (which the extractor introspects
 		// for shape + defaults) AND the user-facing material on the object
@@ -1183,8 +1183,6 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		let list = meshesByCacheKey.get( cacheKey );
 		if ( ! list ) meshesByCacheKey.set( cacheKey, list = [] );
 		if ( renderObject.object && ! list.includes( renderObject.object ) ) list.push( renderObject.object );
-
-		return origGetForRender( renderObject, useAsync );
 
 	};
 
@@ -1318,6 +1316,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 	}
 
+	const stopObservingRenderObjects = observeRenderObjects( renderer, recordRenderObject );
 	try {
 
 		// Activate (or clear) MRT on the renderer before the warm-up so
@@ -1441,7 +1440,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 		}
 
-		manager.getForRender = origGetForRender;
+		stopObservingRenderObjects();
 		for ( const [ mat, node ] of strippedMRTMaterials ) mat.mrtNode = node;
 
 	}

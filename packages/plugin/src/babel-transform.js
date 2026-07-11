@@ -6,13 +6,13 @@
  *              with `import * as __art_ocean_water from 'virtual:tsl-precompile/ocean-water'`
  *              + `import { __applyPrecompiled } from '@tsl-precompile/runtime/apply'` hoisted.
  *
- * Dev-mode (not yet implemented here — Phase 2b):  leave the call alone so
- * the runtime marker in `@tsl-precompile/runtime/marker` fires and the
- * dev-capture server writes the artifact.
+ * Dev mode: leave the call in place, but append a private stable source
+ * identity so the capture server can reject duplicate artifact names.
  *
  * Scope:
  *   - Looks for CallExpression nodes whose callee is a MemberExpression
- *     named exactly `precompile` with a single string-literal argument.
+ *     named exactly `precompile` with a string-literal name and an optional
+ *     explicit dev-capture context argument.
  *   - Computed member access (`material['precompile']('x')`) is intentionally
  *     NOT matched. Authors write `.precompile(...)` — the marker is literal
  *     syntax, not a dynamic property.
@@ -27,9 +27,9 @@ import { parse } from '@babel/parser';
 import _traverse from '@babel/traverse';
 import _generate from '@babel/generator';
 import * as t from '@babel/types';
-import MagicString from 'magic-string';
 
 import { MARKER_METHOD_NAME, VIRTUAL_MODULE_PREFIX } from './_shared/constants.js';
+import { canonicalModuleIdentity, markerSourceRevision } from './_shared/module-identity.js';
 
 // ESM default-interop nits: Babel's generator/traverse ship CJS defaults.
 const traverse = _traverse.default || _traverse;
@@ -37,6 +37,66 @@ const generate = _generate.default || _generate;
 
 const APPLY_IMPORT_SPECIFIER = '@tsl-precompile/runtime/apply';
 const APPLY_FN_NAME = '__applyPrecompiled';
+const PARSER_PLUGINS = [
+	'jsx',
+	'typescript',
+	'decorators-legacy',
+	'importAttributes',
+	'deprecatedImportAssert',
+	'topLevelAwait',
+];
+/**
+ * Stamp dev-only marker calls with a stable call-site identity. The runtime
+ * forwards it to the capture server so two different files cannot silently
+ * overwrite the same artifact name. Production builds start from the original
+ * source and use transformSource(), so this private third argument never
+ * becomes author-facing API.
+ */
+export function annotateDevMarkerSources( source, { filename, root = process.cwd() } ) {
+
+	if ( ! source.includes( '.' + MARKER_METHOD_NAME ) ) return { code: source, map: null, touched: false };
+	const ast = parse( source, {
+		sourceType: 'module',
+		sourceFilename: filename,
+		plugins: PARSER_PLUGINS,
+		errorRecovery: false,
+	} );
+	const { moduleIdentity } = canonicalModuleIdentity( filename, root );
+	const sourceRevision = markerSourceRevision( source );
+	const callIndexesByName = new Map();
+	let touched = false;
+
+	traverse( ast, {
+		CallExpression( path ) {
+
+			const callee = path.node.callee;
+			if ( ! t.isMemberExpression( callee ) || callee.computed || ! t.isIdentifier( callee.property, { name: MARKER_METHOD_NAME } ) ) return;
+			if ( path.node.arguments.length < 1 || path.node.arguments.length > 2 ) return;
+			// Line/column coordinates are deliberately excluded: inserting an
+			// unrelated line above a marker must not turn the next capture into a
+			// false name collision. Artifact names are manifest keys, so an ordinal
+			// among calls using the same literal name is enough to distinguish two
+			// competing call sites in one file while remaining stable as code moves.
+			const nameArg = path.node.arguments[ 0 ];
+			const nameKey = t.isStringLiteral( nameArg ) ? `literal:${ nameArg.value }` : 'dynamic';
+			const callIndex = callIndexesByName.get( nameKey ) || 0;
+			callIndexesByName.set( nameKey, callIndex + 1 );
+			// Keep the private arguments positional. Without an author context,
+			// insert null so the source identity remains the third argument.
+			if ( path.node.arguments.length === 1 ) path.node.arguments.push( t.nullLiteral() );
+			path.node.arguments.push(
+				t.stringLiteral( `${ moduleIdentity }:precompile:${ callIndex }` ),
+				t.stringLiteral( sourceRevision ),
+			);
+			touched = true;
+
+		},
+	} );
+	if ( ! touched ) return { code: source, map: null, touched: false };
+	const output = generate( ast, { sourceMaps: true, sourceFileName: filename }, source );
+	return { code: output.code, map: output.map, touched: true };
+
+}
 
 /**
  * Transform a single source file.
@@ -52,7 +112,7 @@ const APPLY_FN_NAME = '__applyPrecompiled';
  */
 export function transformSource( source, opts ) {
 
-	const { filename, resolveArtifact } = opts;
+	const { filename, resolveArtifact, root = process.cwd() } = opts;
 
 	// Cheap early-out: skip files that don't mention the marker name.
 	if ( ! source.includes( '.' + MARKER_METHOD_NAME ) ) {
@@ -64,12 +124,17 @@ export function transformSource( source, opts ) {
 	const ast = parse( source, {
 		sourceType: 'module',
 		sourceFilename: filename,
-		plugins: [ 'jsx', 'typescript', 'importAttributes', 'topLevelAwait' ],
+		plugins: PARSER_PLUGINS,
 		errorRecovery: false,
 	} );
 
 	const touchedNames = [];
-	const neededImports = [];   // [{ identifier, specifier }]
+	const neededImports = new Map(); // raw artifact name → { identifier, specifier }
+	const occupiedIdentifiers = collectBindingNames( ast );
+	const applyFnName = allocateIdentifier( APPLY_FN_NAME, 'runtime-apply', occupiedIdentifiers );
+	const { moduleIdentity } = canonicalModuleIdentity( filename, root );
+	const sourceRevision = markerSourceRevision( source );
+	const callIndexesByName = new Map();
 
 	traverse( ast, {
 		CallExpression( path ) {
@@ -80,9 +145,9 @@ export function transformSource( source, opts ) {
 			if ( ! t.isIdentifier( callee.property, { name: MARKER_METHOD_NAME } ) ) return;
 
 			const args = path.node.arguments;
-			if ( args.length !== 1 ) {
+			if ( args.length < 1 || args.length > 2 ) {
 
-				throwBuildError( filename, path, `.precompile(name) takes exactly one argument, got ${ args.length }.` );
+				throwBuildError( filename, path, `.precompile(name, context?) takes one or two arguments, got ${ args.length }.` );
 
 			}
 
@@ -94,32 +159,74 @@ export function transformSource( source, opts ) {
 			}
 
 			const name = nameArg.value;
+			const nameKey = `literal:${ name }`;
+			const callIndex = callIndexesByName.get( nameKey ) || 0;
+			callIndexesByName.set( nameKey, callIndex + 1 );
+			const sourceIdentity = `${ moduleIdentity }:precompile:${ callIndex }`;
 			const artifact = resolveArtifact( name );
 			if ( ! artifact ) {
 
 				throwBuildError( filename, path, `.precompile(${ JSON.stringify( name ) }): no captured artifact found. Run dev mode once to capture it, then rebuild.` );
 
 			}
+			if ( Array.isArray( artifact.sourceOwners ) && artifact.sourceOwners.length > 0 ) {
+
+				const owner = artifact.sourceOwners.find( ( candidate ) => candidate && candidate.identity === sourceIdentity );
+				if ( ! owner ) {
+
+					throwBuildError( filename, path, `.precompile(${ JSON.stringify( name ) }) was not captured from this call site (${ sourceIdentity }). Run dev mode once, or use a unique project-global artifact name.` );
+
+				}
+				if ( owner.revision !== sourceRevision ) {
+
+					throwBuildError( filename, path, `.precompile(${ JSON.stringify( name ) }) source changed since capture. Run dev mode once to refresh the artifact before building.` );
+
+				}
+
+			}
 
 			const materialExpr = callee.object;
-			const artifactIdentName = `__tsl_art_${ sanitizeIdent( name ) }`;
 			const specifier = VIRTUAL_MODULE_PREFIX + name;
+			let artifactImport = neededImports.get( name );
 
-			if ( ! neededImports.some( ( x ) => x.identifier === artifactIdentName ) ) {
+			if ( ! artifactImport ) {
 
-				neededImports.push( { identifier: artifactIdentName, specifier } );
+				const artifactIdentName = allocateIdentifier( `__tsl_art_${ sanitizeIdent( name ) }`, `artifact:${ name }`, occupiedIdentifiers );
+				artifactImport = { identifier: artifactIdentName, specifier };
+				neededImports.set( name, artifactImport );
 
 			}
 
 			// Replace the CallExpression with __applyPrecompiled(materialExpr, __tsl_art_<name>, '<hash>').
-			path.replaceWith( t.callExpression(
-				t.identifier( APPLY_FN_NAME ),
-				[
-					materialExpr,
-					t.identifier( artifactIdentName ),
-					t.stringLiteral( artifact.hash ),
-				],
-			) );
+			const createApplyCall = ( materialValue ) => t.callExpression(
+				t.identifier( applyFnName ),
+				[ materialValue, t.identifier( artifactImport.identifier ), t.stringLiteral( artifact.hash ) ],
+			);
+
+			if ( args.length === 2 ) {
+
+				const contextArg = args[ 1 ];
+				if ( t.isSpreadElement( contextArg ) || t.isArgumentPlaceholder( contextArg ) ) {
+
+					throwBuildError( filename, path, '.precompile(name, context) requires a normal expression for context, not a spread argument.' );
+
+				}
+				// Production hydration does not consume capture context, but the original
+				// member call evaluates its receiver before its arguments. A tiny arrow
+				// wrapper preserves that order and evaluates a side-effectful receiver
+				// exactly once.
+				const materialParam = t.identifier( '__tslp_material' );
+				const contextParam = t.identifier( '__tslp_context' );
+				path.replaceWith( t.callExpression(
+					t.arrowFunctionExpression( [ materialParam, contextParam ], createApplyCall( materialParam ) ),
+					[ materialExpr, contextArg ],
+				) );
+
+			} else {
+
+				path.replaceWith( createApplyCall( materialExpr ) );
+
+			}
 
 			touchedNames.push( name );
 
@@ -135,10 +242,10 @@ export function transformSource( source, opts ) {
 	// Hoist required imports to the top.
 	const importNodes = [];
 	importNodes.push( t.importDeclaration(
-		[ t.importSpecifier( t.identifier( APPLY_FN_NAME ), t.identifier( APPLY_FN_NAME ) ) ],
+		[ t.importSpecifier( t.identifier( applyFnName ), t.identifier( APPLY_FN_NAME ) ) ],
 		t.stringLiteral( APPLY_IMPORT_SPECIFIER ),
 	) );
-	for ( const { identifier, specifier } of neededImports ) {
+	for ( const { identifier, specifier } of neededImports.values() ) {
 
 		importNodes.push( t.importDeclaration(
 			[ t.importNamespaceSpecifier( t.identifier( identifier ) ) ],
@@ -161,6 +268,58 @@ export function transformSource( source, opts ) {
 function sanitizeIdent( name ) {
 
 	return name.replace( /[^a-zA-Z0-9_]/g, '_' );
+
+}
+
+function collectBindingNames( ast ) {
+
+	const names = new Set();
+	const seenScopes = new Set();
+	traverse( ast, {
+		enter( path ) {
+
+			if ( ! path.scope || seenScopes.has( path.scope ) || ! path.scope.bindings ) return;
+			seenScopes.add( path.scope );
+			for ( const name of Object.keys( path.scope.bindings ) ) names.add( name );
+
+		},
+	} );
+	return names;
+
+}
+
+function allocateIdentifier( preferred, stableKey, occupied ) {
+
+	if ( ! occupied.has( preferred ) ) {
+
+		occupied.add( preferred );
+		return preferred;
+
+	}
+
+	// The raw artifact name participates in the suffix, while the Set makes
+	// the result strictly collision-free even if two suffixes ever coincide.
+	const suffix = stableIdentifierSuffix( stableKey );
+	let candidate = `${ preferred }_${ suffix }`;
+	let counter = 2;
+	while ( occupied.has( candidate ) ) candidate = `${ preferred }_${ suffix }_${ counter ++ }`;
+	occupied.add( candidate );
+	return candidate;
+
+}
+
+function stableIdentifierSuffix( value ) {
+
+	// 64-bit FNV-1a is deterministic across Node versions and requires no
+	// crypto/runtime dependency in this hot transform module.
+	let hash = 0xcbf29ce484222325n;
+	for ( const byte of Buffer.from( value, 'utf8' ) ) {
+
+		hash ^= BigInt( byte );
+		hash = BigInt.asUintN( 64, hash * 0x100000001b3n );
+
+	}
+	return hash.toString( 16 ).padStart( 16, '0' );
 
 }
 

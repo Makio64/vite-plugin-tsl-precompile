@@ -33,14 +33,17 @@
     "types"
   ],
   "scripts": {
-    "test": "node --test --test-concurrency=1 'test/unit/*.test.js' 'test/coverage/*.test.js'",
-    "test:unit": "node --test 'test/unit/*.test.js'",
-    "test:rewrite": "node --test --test-concurrency=1 'test/unit/rewrite-*.test.js'",
-    "test:coverage": "node --test --test-concurrency=1 'test/coverage/*.test.js'",
+    "test": "node test/run-tier.mjs quick",
+    "test:quick": "node test/run-tier.mjs quick",
+    "test:unit": "node test/run-tier.mjs unit",
+    "test:full": "node test/run-tier.mjs full",
+    "test:generation": "node test/run-tier.mjs generation",
+    "test:rewrite": "node test/run-tier.mjs rewrite",
+    "test:coverage": "node test/run-tier.mjs coverage",
     "verify": "node src/cli/verify.js",
     "recapture": "node src/cli/recapture.js",
     "vendor:probe": "node scripts/probe-vendor.mjs",
-    "prepublishOnly": "pnpm run test"
+    "prepublishOnly": "pnpm run test:full"
   },
   "peerDependencies": {
     "three": ">=0.184.0",
@@ -55,8 +58,7 @@
     "@babel/parser": "^7.29.2",
     "@babel/traverse": "^7.29.0",
     "@babel/generator": "^7.29.1",
-    "@babel/types": "^7.29.0",
-    "magic-string": "^0.30.21"
+    "@babel/types": "^7.29.0"
   },
   "keywords": [
     "vite-plugin",
