@@ -1,16 +1,9 @@
-// Benchmark page.
+// Browser evidence page.
 //
-// Measures, on the visitor's own GPU, the first-frame TSL→WGSL compile cost
-// that precompiling removes: a cold first render (which compiles the shader)
-// versus the steady-state frame time after warm-up. A precompiled / slim app
-// ships the already-compiled WGSL, so its first frame costs ~the steady-state
-// number — the cold→warm delta is what you save.
-//
-// Honest framing (draco.js style): the bundle and pixel-identical numbers are
-// the hard comparative evidence; this live measurement shows the runtime win
-// on the visitor's hardware. No fragile slim/artifact wiring — the full path
-// pays the compile cost by definition, and the warm frame is the no-compile
-// floor a precompiled build hits on frame one.
+// This experiment intentionally measures only stock Three.js cold-versus-warm
+// wall time. The delta includes TSL→WGSL generation, pipeline creation, driver
+// work, resource initialization, and other one-time costs. It is useful as a
+// cold-path envelope, but it is not presented as time saved by precompilation.
 
 const WARM_FRAMES = 40;
 const MEASURE_FRAMES = 90;
@@ -109,8 +102,8 @@ async function measureScene( mods, THREE, sceneDef ) {
 
 	const { scene, camera, mesh } = sceneDef.build( mods, THREE );
 
-	// Cold first frame — this is where three.js walks the TSL graph and
-	// compiles the WGSL pipeline. A precompiled build skips this entirely.
+	// Cold first render includes both the JavaScript TSL path and WebGPU/driver
+	// initialization work. Precompilation removes only part of this envelope.
 	const t0 = performance.now();
 	await renderer.renderAsync( scene, camera );
 	const coldMs = performance.now() - t0;
@@ -123,7 +116,8 @@ async function measureScene( mods, THREE, sceneDef ) {
 
 	}
 
-	// Steady-state frames — the no-compile floor a precompiled first frame hits.
+	// Warm stock frames provide context for the size of the cold envelope. They
+	// are not a proxy for a cold precompiled render.
 	const samples = [];
 	for ( let i = 0; i < MEASURE_FRAMES; i ++ ) {
 
@@ -141,8 +135,8 @@ async function measureScene( mods, THREE, sceneDef ) {
 	renderer.dispose();
 	canvas.width = canvas.height = 0;
 
-	const compileMs = Math.max( 0, coldMs - warmMs );
-	return { coldMs, warmMs, compileMs };
+	const coldOverheadMs = Math.max( 0, coldMs - warmMs );
+	return { coldMs, warmMs, coldOverheadMs };
 
 }
 
@@ -158,7 +152,7 @@ function rowHtml( label, note, r ) {
 			<th scope="row"><span class="bench-scene">${ label }</span><span class="bench-scene-note">${ note }</span></th>
 			<td class="bench-num bench-num-bad">${ fmt( r.coldMs ) } <span class="bench-unit">ms</span></td>
 			<td class="bench-num bench-num-good">${ fmt( r.warmMs ) } <span class="bench-unit">ms</span></td>
-			<td class="bench-num bench-saved">−${ fmt( r.compileMs ) } <span class="bench-unit">ms</span></td>
+			<td class="bench-num bench-saved">+${ fmt( r.coldOverheadMs ) } <span class="bench-unit">ms</span></td>
 		</tr>`;
 
 }
@@ -229,3 +223,26 @@ export function initBenchmark() {
 }
 
 initBenchmark();
+
+async function hydrateGeneratedEvidence() {
+
+	const targets = document.querySelectorAll( '[data-bench-stat]' );
+	if ( targets.length === 0 ) return;
+
+	try {
+
+		const response = await fetch( new URL( 'examples.json', document.baseURI ) );
+		if ( ! response.ok ) return;
+		const data = await response.json();
+		for ( const target of targets ) {
+
+			const value = data && data.totals && data.totals[ target.dataset.benchStat ];
+			if ( typeof value === 'number' && Number.isFinite( value ) ) target.textContent = value.toLocaleString( 'en-US' );
+
+		}
+
+	} catch ( _ ) {}
+
+}
+
+hydrateGeneratedEvidence();

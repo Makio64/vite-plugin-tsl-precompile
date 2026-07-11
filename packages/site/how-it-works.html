@@ -4,514 +4,294 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta name="color-scheme" content="dark">
-	<meta name="description" content="A scroll-driven walkthrough of vite-plugin-tsl-precompile. The problem, the fix, the benefits, and the eight files that do the work.">
+	<meta name="description" content="How vite-plugin-tsl-precompile turns a three.js TSL material into a validated WGSL artifact and reconnects it to live scene data in production.">
+	<meta property="og:title" content="How TSL precompilation works">
+	<meta property="og:description" content="From real render context to a content-addressed artifact, Vite rewrite, and production hydration.">
+	<meta property="og:type" content="website">
+	<meta property="og:image" content="https://makio64.github.io/vite-plugin-tsl-precompile/og.png">
+	<meta name="twitter:card" content="summary_large_image">
 	<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 	<title>How it works — vite-plugin-tsl-precompile</title>
 	<link rel="stylesheet" href="/src/styles.css">
 	<link rel="stylesheet" href="/src/explain.css">
 </head>
 <body class="explain-page">
-	<a class="skip-link" href="#cast">Skip to the file reference</a>
+	<a class="skip-link" href="#explain-main">Skip to explanation</a>
 
-	<nav class="explain-nav explain-nav-fixed">
-		<a class="explain-back" href="/">← back to main</a>
-		<div class="explain-nav-right">
-			<a href="examples.html">Examples</a>
-			<a href="benchmark.html">Benchmark</a>
-			<a class="explain-gh" href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">GitHub</a>
+	<nav class="site-nav" aria-label="Site navigation">
+		<a class="site-nav-brand" href="index.html">
+			<span class="mono">vite-plugin-</span><span class="accent">tsl-precompile</span>
+		</a>
+		<div class="site-nav-links">
+			<a href="index.html">Overview</a>
+			<a class="site-nav-current" aria-current="page" href="how-it-works.html">How it works</a>
+			<a href="examples.html">Compatibility</a>
+			<a href="benchmark.html">Evidence</a>
+			<a href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">GitHub ↗</a>
 		</div>
 	</nav>
 
-	<main>
-
-		<!-- ========== 1. HOOK ========== -->
-		<section class="hook reveal" id="hook">
-			<div class="hook-inner">
-				<span class="chip">a quiet little plugin</span>
-				<h1 class="hook-title">
-					Why does the browser <br>
-					<span class="accent">compile your shaders?</span>
-				</h1>
-				<p class="hook-sub">
-					We did it on your machine instead. One line of code.
+	<header class="explain-hero">
+		<div class="explain-grid" aria-hidden="true"></div>
+		<div class="explain-hero-inner">
+			<div class="explain-hero-copy">
+				<p class="eyebrow">the mental model</p>
+				<h1>TSL is the authoring format.<br><span class="accent">The artifact is the deployment format.</span></h1>
+				<p>
+					A material starts as a live JavaScript graph. Development captures the shader contract for the scene where that material is used. Vite verifies and embeds it. Production reconnects the embedded shader to live values.
 				</p>
-			</div>
-			<div class="hook-scroll" aria-hidden="true"><span></span></div>
-		</section>
-
-		<!-- ========== 2. THE PROBLEM (sticky reveal) ========== -->
-		<section class="problem" id="problem">
-			<div class="problem-sticky">
-				<div class="problem-inner reveal">
-					<p class="eyebrow">today</p>
-					<h2 class="problem-title">Every visitor waits for the shader to compile.</h2>
-
-					<div class="problem-vis" aria-hidden="true">
-						<div class="problem-screen">
-							<div class="problem-bar"></div>
-							<div class="problem-mesh"></div>
-							<div class="problem-spinner">
-								<div class="problem-spinner-ring"></div>
-								<span class="problem-spinner-text">compiling shader…</span>
-							</div>
-						</div>
-					</div>
-
-					<div class="problem-stats reveal-stagger">
-						<div class="problem-stat">
-							<strong>~2 MB</strong>
-							<span>three.js bundle, including the shader builder</span>
-						</div>
-						<div class="problem-stat">
-							<strong>first-frame</strong>
-							<span>stall while the GPU pipeline gets built</span>
-						</div>
-					</div>
-				</div>
-			</div>
-		</section>
-
-		<!-- ========== 3. THE FIX (chapter break) ========== -->
-		<section class="fix reveal" id="fix">
-			<p class="eyebrow">the fix</p>
-			<h2 class="fix-statement">
-				We move the work <br>
-				<span class="accent">from the user's browser</span> <br>
-				to <span class="accent">your build</span>.
-			</h2>
-		</section>
-
-		<!-- ========== 4. THE FLOW ========== -->
-		<section class="flow-section reveal" id="flow">
-			<p class="eyebrow">the flow</p>
-			<h2>One piece of work, four stages.</h2>
-
-			<div class="bigpic">
-				<div class="bigpic-stage">
-					<div class="bigpic-icon">
-						<svg viewBox="0 0 80 80" aria-hidden="true">
-							<rect class="bp-doc" x="14" y="10" width="52" height="60" rx="6"/>
-							<line class="bp-line" x1="22" y1="24" x2="58" y2="24"/>
-							<line class="bp-line" x1="22" y1="34" x2="50" y2="34"/>
-							<line class="bp-line bp-mark" x1="22" y1="48" x2="58" y2="48"/>
-							<line class="bp-line" x1="22" y1="58" x2="42" y2="58"/>
-						</svg>
-					</div>
-					<h3>You write</h3>
-					<p><code>.precompile('ocean')</code> on a normal material.</p>
-				</div>
-
-				<div class="bigpic-arrow" aria-hidden="true"><span class="bigpic-dot"></span></div>
-
-				<div class="bigpic-stage">
-					<div class="bigpic-icon">
-						<svg viewBox="0 0 80 80" aria-hidden="true">
-							<rect class="bp-folder" x="8" y="26" width="64" height="42" rx="6"/>
-							<path class="bp-folder-tab" d="M8 26 L8 18 Q8 14 12 14 L34 14 Q38 14 40 18 L42 22 L72 22 L72 32"/>
-							<rect class="bp-json" x="26" y="-4" width="28" height="36" rx="4"/>
-							<text class="bp-json-text" x="40" y="20" text-anchor="middle">JSON</text>
-						</svg>
-					</div>
-					<h3>Dev bakes</h3>
-					<p>Open the page once. The shader gets saved to disk.</p>
-				</div>
-
-				<div class="bigpic-arrow" aria-hidden="true"><span class="bigpic-dot"></span></div>
-
-				<div class="bigpic-stage">
-					<div class="bigpic-icon">
-						<svg viewBox="0 0 80 80" aria-hidden="true">
-							<rect class="bp-pkg" x="12" y="20" width="56" height="44" rx="6"/>
-							<line class="bp-pkg-l" x1="40" y1="20" x2="40" y2="64"/>
-							<line class="bp-pkg-l" x1="12" y1="36" x2="68" y2="36"/>
-							<circle class="bp-spark" cx="58" cy="14" r="4"/>
-							<circle class="bp-spark bp-spark-2" cx="22" cy="14" r="3"/>
-						</svg>
-					</div>
-					<h3>Build packs</h3>
-					<p>The saved shader goes into your bundle.</p>
-				</div>
-
-				<div class="bigpic-arrow" aria-hidden="true"><span class="bigpic-dot"></span></div>
-
-				<div class="bigpic-stage">
-					<div class="bigpic-icon">
-						<svg viewBox="0 0 80 80" aria-hidden="true">
-							<rect class="bp-screen" x="10" y="14" width="60" height="44" rx="4"/>
-							<rect class="bp-screen-bar" x="10" y="14" width="60" height="8" rx="4"/>
-							<polygon class="bp-screen-tri" points="34,30 34,52 54,41"/>
-							<line class="bp-screen-stand" x1="40" y1="58" x2="40" y2="66"/>
-							<line class="bp-screen-base" x1="28" y1="66" x2="52" y2="66"/>
-						</svg>
-					</div>
-					<h3>User runs</h3>
-					<p>No shader compile, smaller bundle.</p>
+				<div class="explain-actions">
+					<a class="btn btn-primary" href="#journey">Follow one material</a>
+					<a class="btn btn-ghost" href="index.html#quickstart">Jump to setup</a>
 				</div>
 			</div>
 
-			<p class="flow-caption">From your editor to the user's GPU. Each stage is a small file you'll meet below.</p>
-		</section>
-
-		<!-- ========== 5. BENEFITS ========== -->
-		<section class="benefits reveal" id="benefits">
-			<p class="eyebrow">what you get</p>
-			<h2>Three concrete benefits.</h2>
-
-			<div class="benefit-list reveal-stagger">
-
-				<article class="benefit-row">
-					<div class="benefit-vis" aria-hidden="true">
-						<div class="bar-stack">
-							<div class="bar bar-before">
-								<span class="bar-label">full three.js</span>
-								<span class="bar-value">~2 MB</span>
-							</div>
-							<div class="bar bar-after">
-								<span class="bar-label">slim runtime</span>
-								<span class="bar-value">≤ 350 KB</span>
-							</div>
-						</div>
+			<div class="model-stack" aria-label="Authoring graph becomes an artifact and then a hydrated production material">
+				<div class="model-card model-author">
+					<div class="model-card-head"><span>01</span><strong>AUTHOR</strong><small>JavaScript / TSL</small></div>
+					<div class="node-cloud" aria-hidden="true">
+						<i class="node node-a">uv</i><i class="node node-b">mix</i><i class="node node-c">color</i><i class="node node-d">time</i><i class="node node-e">PBR</i>
+						<b class="edge edge-a"></b><b class="edge edge-b"></b><b class="edge edge-c"></b><b class="edge edge-d"></b>
 					</div>
-					<div class="benefit-text">
-						<h3>Smaller bundle</h3>
-						<p>The shader builder is the heavy part of three.js. We don't ship it — only the slim bits that play back the saved shader.</p>
-					</div>
+				</div>
+				<div class="model-arrow" aria-hidden="true"><span>capture</span><i>↓</i></div>
+				<div class="model-card model-artifact">
+					<div class="model-card-head"><span>02</span><strong>ARTIFACT</strong><small>checked-in JSON</small></div>
+					<div class="artifact-lines" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+					<div class="artifact-tags"><span>WGSL</span><span>bindings</span><span>updates</span><span>variants</span></div>
+				</div>
+				<div class="model-arrow" aria-hidden="true"><span>hydrate</span><i>↓</i></div>
+				<div class="model-card model-runtime">
+					<div class="model-card-head"><span>03</span><strong>RUNTIME</strong><small>WebGPU</small></div>
+					<div class="runtime-readout"><b>static WGSL</b><span>+</span><b>live resources</b><em>pipeline ready for creation</em></div>
+				</div>
+			</div>
+		</div>
+	</header>
+
+	<main id="explain-main">
+		<section class="explain-section layer-section reveal">
+			<div class="explain-heading">
+				<p class="eyebrow">three layers, separate jobs</p>
+				<h2>Move code generation earlier.<br>Keep scene values live.</h2>
+				<p>Precompilation does not turn a material into a screenshot. It stores the stable program and a plan for reconnecting dynamic values.</p>
+			</div>
+
+			<div class="layer-grid">
+				<article>
+					<span class="layer-num">01 / AUTHOR</span>
+					<h3>Write normal TSL</h3>
+					<p>Build material graphs with the same Three.js APIs. The marker is metadata for the build pipeline, not a new shader language.</p>
+					<pre><code>water.<span class="tok-fn">precompile</span>(<span class="tok-str">'ocean-water'</span>);</code></pre>
 				</article>
-
-				<article class="benefit-row">
-					<div class="benefit-vis" aria-hidden="true">
-						<div class="clock">
-							<div class="clock-face">
-								<div class="clock-tick clock-tick-12"></div>
-								<div class="clock-tick clock-tick-3"></div>
-								<div class="clock-tick clock-tick-6"></div>
-								<div class="clock-tick clock-tick-9"></div>
-								<div class="clock-hand"></div>
-								<div class="clock-center"></div>
-							</div>
-							<div class="clock-cross">no compile</div>
-						</div>
-					</div>
-					<div class="benefit-text">
-						<h3>Faster first frame</h3>
-						<p>The expensive walk through your TSL graph happens once on your machine. Users see the result instantly.</p>
-					</div>
+				<article>
+					<span class="layer-num">02 / CAPTURE</span>
+					<h3>Generate a contract</h3>
+					<p>Development records the program, resource layout, variants, render state, and the update plan needed by production.</p>
+					<div class="mini-tags"><span>WGSL</span><span>UBO plan</span><span>context</span></div>
 				</article>
-
-				<article class="benefit-row">
-					<div class="benefit-vis" aria-hidden="true">
-						<div class="fingerprint">
-							<svg viewBox="0 0 80 80">
-								<circle class="fp-ring" cx="40" cy="40" r="28"/>
-								<circle class="fp-ring fp-ring-2" cx="40" cy="40" r="20"/>
-								<circle class="fp-ring fp-ring-3" cx="40" cy="40" r="12"/>
-								<path class="fp-check" d="M28 42 L36 50 L54 30"/>
-							</svg>
-						</div>
-					</div>
-					<div class="benefit-text">
-						<h3>Safer deploys</h3>
-						<p>Every saved shader has a fingerprint. If your code drifts from the saved file, the build stops. No silent breakage.</p>
-					</div>
+				<article>
+					<span class="layer-num">03 / PLAYBACK</span>
+					<h3>Reconnect live inputs</h3>
+					<p>The hydrator maps cameras, lights, textures, skeletons, and material properties back onto the captured bindings.</p>
+					<div class="mini-tags"><span>camera</span><span>lights</span><span>textures</span></div>
 				</article>
-
 			</div>
 		</section>
 
-		<!-- ========== 6. ONE LINE PAYOFF ========== -->
-		<section class="oneline reveal" id="oneline">
-			<p class="eyebrow">the catch</p>
-			<h2>It's literally one line.</h2>
-
-			<pre class="oneline-code"><code><span class="ol-line tok-com">// your normal three.js TSL material</span>
-<span class="ol-line"><span class="tok-key">const</span> water = <span class="tok-key">new</span> <span class="tok-fn">MeshStandardNodeMaterial</span>();</span>
-<span class="ol-line">water.colorNode = <span class="tok-fn">mix</span>(<span class="tok-fn">color</span>(<span class="tok-str">'#002'</span>), <span class="tok-fn">color</span>(<span class="tok-str">'#4af'</span>), <span class="tok-fn">uv</span>().y);</span>
-<span class="ol-line ol-highlight">water.<span class="tok-fn">precompile</span>(<span class="tok-str">'ocean'</span>);  <span class="tok-com">// ← the only addition</span></span>
-<span class="ol-line">mesh.material = water;</span></code></pre>
-
-			<p class="oneline-promise">No other change. No new APIs. Same three.js.</p>
-		</section>
-
-		<!-- ========== 7. THE CAST ========== -->
-		<section class="cast-section reveal" id="cast">
-			<p class="eyebrow">behind the scenes</p>
-			<h2>Which file does what?</h2>
-			<p class="cast-intro">
-				Eight little files do the whole job. Four run on your machine while you develop.
-				Four travel with your app to the user.
-			</p>
-
-			<h3 class="cast-group">While you develop</h3>
-			<div class="cast-rows reveal-stagger">
-
-				<article class="cast-row">
-					<div class="cast-mini" aria-hidden="true">
-						<svg viewBox="0 0 120 80">
-							<rect class="m-mat" x="34" y="24" width="44" height="36" rx="6"/>
-							<g class="m-tag">
-								<path d="M86 18 L106 18 L114 26 L106 34 L86 34 Z"/>
-								<circle cx="92" cy="26" r="2.5"/>
-							</g>
-						</svg>
-					</div>
-					<div class="cast-body">
-						<h4><code>precompile-marker.js</code></h4>
-						<p>Adds <code>.precompile('name')</code> to materials. The one line you write.</p>
-					</div>
-				</article>
-
-				<article class="cast-row">
-					<div class="cast-mini" aria-hidden="true">
-						<svg viewBox="0 0 120 80">
-							<rect class="d-folder" x="14" y="32" width="92" height="36" rx="5"/>
-							<path class="d-folder-tab" d="M14 32 L14 22 Q14 18 18 18 L42 18 L48 26 L106 26 L106 36"/>
-							<rect class="d-json" x="50" y="-2" width="30" height="22" rx="3"/>
-							<text class="d-json-text" x="65" y="13" text-anchor="middle">.json</text>
-						</svg>
-					</div>
-					<div class="cast-body">
-						<h4><code>dev-capture-server.js</code></h4>
-						<p>In dev, saves the baked shader to <code>artifacts/&lt;name&gt;.&lt;hash&gt;.json</code>.</p>
-					</div>
-				</article>
-
-				<article class="cast-row">
-					<div class="cast-mini" aria-hidden="true">
-						<svg viewBox="0 0 120 80">
-							<g class="r-before">
-								<rect x="8" y="20" width="44" height="40" rx="4"/>
-								<text x="30" y="44" text-anchor="middle">.precompile()</text>
-							</g>
-							<path class="r-arrow" d="M58 40 L82 40 M76 34 L82 40 L76 46"/>
-							<g class="r-after">
-								<rect x="68" y="20" width="44" height="40" rx="4"/>
-								<text x="90" y="44" text-anchor="middle">__apply…</text>
-							</g>
-						</svg>
-					</div>
-					<div class="cast-body">
-						<h4><code>three-rewrite.js</code></h4>
-						<p>At build, swaps each <code>.precompile('ocean')</code> for "load the saved file."</p>
-					</div>
-				</article>
-
-				<article class="cast-row">
-					<div class="cast-mini" aria-hidden="true">
-						<svg viewBox="0 0 120 80">
-							<g class="e-cog">
-								<circle cx="40" cy="40" r="14"/>
-								<g class="e-cog-teeth">
-									<rect x="38" y="20" width="4" height="6"/>
-									<rect x="38" y="54" width="4" height="6"/>
-									<rect x="20" y="38" width="6" height="4"/>
-									<rect x="54" y="38" width="6" height="4"/>
-								</g>
-							</g>
-							<g class="e-bytes">
-								<rect x="76" y="22" width="36" height="6" rx="2"/>
-								<rect x="76" y="34" width="28" height="6" rx="2"/>
-								<rect x="76" y="46" width="32" height="6" rx="2"/>
-								<rect x="76" y="58" width="22" height="6" rx="2"/>
-							</g>
-						</svg>
-					</div>
-					<div class="cast-body">
-						<h4><code>emit-updater.js</code></h4>
-						<p>Generates a tiny per-material function that pushes its values to the GPU.</p>
-					</div>
-				</article>
-
+		<section class="explain-section journey-section reveal" id="journey">
+			<div class="explain-heading explain-heading-side">
+				<div>
+					<p class="eyebrow">the journey of one material</p>
+					<h2>From <code>water</code><br>to a production shader.</h2>
+				</div>
+				<p>Each boundary has one owner. The browser supplies scene facts, the plugin owns persistence and rewriting, and the runtime owns hydration.</p>
 			</div>
 
-			<h3 class="cast-group">While users use it</h3>
-			<div class="cast-rows reveal-stagger">
-
-				<article class="cast-row">
-					<div class="cast-mini" aria-hidden="true">
-						<svg viewBox="0 0 120 80">
-							<rect class="a-mat" x="42" y="24" width="36" height="36" rx="5"/>
-							<rect class="a-wrap a-wrap-l" x="22" y="14" width="76" height="56" rx="8"/>
-							<path class="a-check" d="M50 42 L58 50 L72 32"/>
-						</svg>
+			<ol class="journey-list">
+				<li class="journey-item">
+					<div class="journey-rail"><span>01</span><i></i></div>
+					<div class="journey-env">SOURCE</div>
+					<div class="journey-body">
+						<h3>The marker declares intent</h3>
+						<p><code>water.precompile('ocean-water')</code> gives the artifact a project-global name. With <code>autoMark: true</code>, the transform can add generated names instead.</p>
 					</div>
-					<div class="cast-body">
-						<h4><code>apply-precompiled.js</code></h4>
-						<p>At startup, plugs the saved shader in. Build fails loudly if the fingerprint is stale.</p>
-					</div>
-				</article>
-
-				<article class="cast-row">
-					<div class="cast-mini" aria-hidden="true">
-						<svg viewBox="0 0 120 80">
-							<rect class="p-mat" x="34" y="20" width="52" height="40" rx="6"/>
-							<g class="p-badge">
-								<circle cx="86" cy="22" r="10"/>
-								<text x="86" y="26" text-anchor="middle">✓</text>
-							</g>
-						</svg>
-					</div>
-					<div class="cast-body">
-						<h4><code>PrecompiledMaterial</code></h4>
-						<p>Drop-in material that tells three.js "shader's already done — skip building."</p>
-					</div>
-				</article>
-
-				<article class="cast-row">
-					<div class="cast-mini" aria-hidden="true">
-						<svg viewBox="0 0 120 80">
-							<g class="w-floats">
-								<circle cx="14" cy="28" r="3"/>
-								<circle cx="14" cy="40" r="3"/>
-								<circle cx="14" cy="52" r="3"/>
-							</g>
-							<g class="w-arrows">
-								<path d="M22 28 L60 28"/>
-								<path d="M22 40 L60 40"/>
-								<path d="M22 52 L60 52"/>
-							</g>
-							<rect class="w-buffer" x="64" y="18" width="44" height="44" rx="4"/>
-							<g class="w-cells">
-								<line x1="64" y1="28" x2="108" y2="28"/>
-								<line x1="64" y1="40" x2="108" y2="40"/>
-								<line x1="64" y1="52" x2="108" y2="52"/>
-							</g>
-						</svg>
-					</div>
-					<div class="cast-body">
-						<h4><code>writers.js</code></h4>
-						<p>Each frame, pushes the changing values (camera, time, color) to the GPU.</p>
-					</div>
-				</article>
-
-				<article class="cast-row">
-					<div class="cast-mini" aria-hidden="true">
-						<svg viewBox="0 0 120 80">
-							<rect class="s-fat" x="10" y="20" width="40" height="40" rx="4"/>
-							<path class="s-arrow" d="M56 40 L72 40 M66 34 L72 40 L66 46"/>
-							<rect class="s-slim" x="80" y="28" width="28" height="24" rx="3"/>
-						</svg>
-					</div>
-					<div class="cast-body">
-						<h4><code>slim-entry.js</code></h4>
-						<p>A three.js without the shader-builder. Smaller bundle, less to parse.</p>
-					</div>
-				</article>
-
-			</div>
-		</section>
-
-		<!-- ========== 8. JOURNEY (timeline) ========== -->
-		<section class="journey-section reveal" id="journey">
-			<p class="eyebrow">the journey of one material</p>
-			<h2>Five steps. In order.</h2>
-
-			<ol class="timeline">
-				<li class="timeline-step">
-					<span class="timeline-num">1</span>
-					<div class="timeline-body">
-						<h3>You add the marker</h3>
-						<p><code>water.precompile('ocean')</code>. Everything else stays normal.</p>
-					</div>
+					<div class="journey-output"><span>name</span><strong>ocean-water</strong></div>
 				</li>
-				<li class="timeline-step">
-					<span class="timeline-num">2</span>
-					<div class="timeline-body">
-						<h3>Dev bakes it once</h3>
-						<p>Open the page. The marker hands the finished shader to the helper.</p>
+
+				<li class="journey-item">
+					<div class="journey-rail"><span>02</span><i></i></div>
+					<div class="journey-env">DEV BROWSER</div>
+					<div class="journey-body">
+						<h3>A real render supplies context</h3>
+						<p>The marker waits until the material is actually rendered. That identifies the owning object and scene topology before an isolated extraction produces the artifact variants.</p>
 					</div>
+					<div class="journey-output journey-output-tags"><span>object</span><span>camera</span><span>lights</span><span>MRT</span></div>
 				</li>
-				<li class="timeline-step">
-					<span class="timeline-num">3</span>
-					<div class="timeline-body">
-						<h3>A new file appears</h3>
-						<p><code>artifacts/ocean.&lt;hash&gt;.json</code> shows up. Commit it.</p>
+
+				<li class="journey-item">
+					<div class="journey-rail"><span>03</span><i></i></div>
+					<div class="journey-env">DEV SERVER</div>
+					<div class="journey-body">
+						<h3>The plugin persists generated source</h3>
+						<p>The capture endpoint validates the request, applies collision rules, writes an immutable content-addressed file, and updates the manifest.</p>
 					</div>
+					<div class="journey-output"><span>file</span><strong>ocean-water.&lt;hash&gt;.json</strong></div>
 				</li>
-				<li class="timeline-step">
-					<span class="timeline-num">4</span>
-					<div class="timeline-body">
-						<h3>Build inlines it</h3>
-						<p>The plugin swaps your line for "load the saved file" and packs the shader into your bundle.</p>
+
+				<li class="journey-item">
+					<div class="journey-rail"><span>04</span><i></i></div>
+					<div class="journey-env">VITE BUILD</div>
+					<div class="journey-body">
+						<h3>Validation runs before rewriting</h3>
+						<p>Content, call-site ownership, source revision, and exact Three/toolchain versions must agree. Then Babel replaces the marker with <code>__applyPrecompiled</code> and a virtual artifact import.</p>
 					</div>
+					<div class="journey-output journey-pass"><span>gate</span><strong>validated ✓</strong></div>
 				</li>
-				<li class="timeline-step">
-					<span class="timeline-num">5</span>
-					<div class="timeline-body">
-						<h3>Users get fast frames</h3>
-						<p>The browser sees "shader's done" and skips compiling. First render is instant.</p>
+
+				<li class="journey-item journey-item-last">
+					<div class="journey-rail"><span>05</span></div>
+					<div class="journey-env">PRODUCTION</div>
+					<div class="journey-body">
+						<h3>The runtime hydrates, then WebGPU takes over</h3>
+						<p>The embedded shader receives live resources and generated value updates. WebGPU still creates the pipeline and the driver still compiles WGSL to native code.</p>
 					</div>
+					<div class="journey-output"><span>network</span><strong>no artifact request</strong></div>
 				</li>
 			</ol>
 		</section>
 
-		<!-- ========== 9. TRY IT ========== -->
-		<section class="try-section reveal" id="try">
-			<p class="eyebrow">try it</p>
-			<h2>Four small steps.</h2>
-			<p class="try-intro">Once. Then it's just <code>.precompile('name')</code> on each material you want baked.</p>
+		<section class="context-section reveal">
+			<div class="context-inner">
+				<div class="context-copy">
+					<p class="eyebrow">why capture waits for a render</p>
+					<h2>A material alone is not a shader variant.</h2>
+					<p>Three's generated program depends on where the material is rendered. Capturing only the constructor would miss facts that change WGSL, bindings, or render state.</p>
+					<div class="context-note"><span>Important</span><p>Direct live <code>NodeBuilderState</code> harvesting is a tested architecture direction, not the default shipped capture path yet. Today, real rendering selects context and an isolated compatibility pass performs extraction.</p></div>
+				</div>
+				<div class="context-map" aria-label="Scene context inputs that can select a shader variant">
+					<div class="context-center"><strong>material</strong><small>ocean-water</small></div>
+					<span class="context-chip chip-object">object + geometry</span>
+					<span class="context-chip chip-camera">camera type</span>
+					<span class="context-chip chip-light">lights + shadows</span>
+					<span class="context-chip chip-fog">fog + environment</span>
+					<span class="context-chip chip-clip">clipping + skinning</span>
+					<span class="context-chip chip-mrt">render target / MRT</span>
+				</div>
+			</div>
+		</section>
 
-			<ol class="try-steps reveal-stagger">
+		<section class="explain-section identity-section reveal">
+			<div class="explain-heading">
+				<p class="eyebrow">four identities, four questions</p>
+				<h2>“Is this still valid?”<br>is not one comparison.</h2>
+				<p>The architecture separates what ships, where it came from, where it renders, and which emitter produced it.</p>
+			</div>
 
-				<li class="try-step">
-					<header>
-						<span class="try-num">1</span>
-						<h3>Install the packages</h3>
-					</header>
-					<pre class="try-code"><code>pnpm add -D vite-plugin-tsl-precompile @tsl-precompile/runtime</code></pre>
-				</li>
+			<div class="identity-table" role="table" aria-label="Artifact identity responsibilities">
+				<div class="identity-row identity-header" role="row">
+					<span role="columnheader">identity</span><span role="columnheader">question answered</span><span role="columnheader">failure means</span>
+				</div>
+				<div class="identity-row" role="row">
+					<div role="cell"><b>01</b><strong>Content hash</strong></div>
+					<p role="cell">Are the WGSL, bindings, updater plan, state, and variants exactly what was captured?</p>
+					<span role="cell">tampered or corrupt artifact</span>
+				</div>
+				<div class="identity-row" role="row">
+					<div role="cell"><b>02</b><strong>Source owner + revision</strong></div>
+					<p role="cell">Was this build call site observed from this version of its module?</p>
+					<span role="cell">recapture this source owner</span>
+				</div>
+				<div class="identity-row" role="row">
+					<div role="cell"><b>03</b><strong>Render context</strong></div>
+					<p role="cell">Which geometry, scene, camera, lighting, and target topology selected this variant?</p>
+					<span role="cell">capture another variant</span>
+				</div>
+				<div class="identity-row" role="row">
+					<div role="cell"><b>04</b><strong>Exact versions</strong></div>
+					<p role="cell">Did the same Three.js WGSL emitter and artifact toolchain produce this contract?</p>
+					<span role="cell">upgrade deliberately, then recapture</span>
+				</div>
+			</div>
+		</section>
 
-				<li class="try-step">
-					<header>
-						<span class="try-num">2</span>
-						<h3>Register the plugin in <code>vite.config.js</code></h3>
-					</header>
-					<pre class="try-code"><code><span class="tok-key">import</span> { defineConfig } <span class="tok-key">from</span> <span class="tok-str">'vite'</span>;
-<span class="tok-key">import</span> tslPrecompile <span class="tok-key">from</span> <span class="tok-str">'vite-plugin-tsl-precompile'</span>;
+		<section class="explain-section runtime-section reveal">
+			<div class="runtime-split">
+				<article class="runtime-column runtime-precompiled">
+					<p class="eyebrow">what precompilation handles</p>
+					<h2>Stable program,<br>live inputs.</h2>
+					<ul>
+						<li><span>✓</span><div><strong>Static shader source</strong><p>Captured WGSL is embedded in the production chunk.</p></div></li>
+						<li><span>✓</span><div><strong>Resource reconstruction</strong><p>Bindings reconnect textures, samplers, lights, camera buffers, and other live resources.</p></div></li>
+						<li><span>✓</span><div><strong>Generated updates</strong><p>Supported dynamic values are written through a generated plan instead of rebuilding the graph.</p></div></li>
+						<li><span>✓</span><div><strong>Optional slim runtime</strong><p>Once every path is covered, <code>slim: true</code> removes the runtime NodeBuilder.</p></div></li>
+					</ul>
+				</article>
 
-<span class="tok-key">export default</span> <span class="tok-fn">defineConfig</span>({
-  plugins: [ <span class="tok-fn">tslPrecompile</span>({ artifactsDir: <span class="tok-str">'./artifacts'</span> }) ],
-});</code></pre>
-				</li>
+				<article class="runtime-column runtime-webgpu">
+					<p class="eyebrow">what WebGPU still handles</p>
+					<h2>The GPU work<br>still happens.</h2>
+					<ul>
+						<li><span>→</span><div><strong>Pipeline creation</strong><p>The browser creates a pipeline for the supplied WGSL and render state.</p></div></li>
+						<li><span>→</span><div><strong>Driver compilation</strong><p>The GPU driver translates WGSL into hardware-native instructions.</p></div></li>
+						<li><span>→</span><div><strong>Resource uploads</strong><p>Textures, buffers, uniforms, and geometry still reach the GPU normally.</p></div></li>
+						<li><span>→</span><div><strong>Rendering</strong><p>Draw submission and GPU execution are unchanged.</p></div></li>
+					</ul>
+				</article>
+			</div>
+		</section>
 
-				<li class="try-step">
-					<header>
-						<span class="try-num">3</span>
-						<h3>Mark a material</h3>
-					</header>
-					<pre class="try-code"><code>water.<span class="tok-fn">precompile</span>(<span class="tok-str">'ocean'</span>);  <span class="tok-com">// the rest of your three.js code stays the same</span></code></pre>
-				</li>
+		<section class="explain-section failure-section reveal">
+			<div class="explain-heading explain-heading-side">
+				<div>
+					<p class="eyebrow">failure is a feature</p>
+					<h2>Change the shader.<br>The old artifact stops the build.</h2>
+				</div>
+				<p>The pipeline prefers a loud recapture request over silently pairing current source with stale WGSL.</p>
+			</div>
 
-				<li class="try-step">
-					<header>
-						<span class="try-num">4</span>
-						<h3>Bake, then ship</h3>
-					</header>
-					<pre class="try-code"><code>pnpm dev    <span class="tok-com"># open the page once — saves artifacts/ocean.&lt;hash&gt;.json</span>
-pnpm build  <span class="tok-com"># inlines the saved shader into your bundle</span></code></pre>
-				</li>
+			<div class="failure-flow">
+				<div class="failure-step"><span>01</span><strong>Edit TSL source</strong><small>module revision changes</small></div>
+				<i aria-hidden="true">→</i>
+				<div class="failure-step failure-stop"><span>02</span><strong>Build refuses reuse</strong><small>owner or content gate fails</small></div>
+				<i aria-hidden="true">→</i>
+				<div class="failure-step"><span>03</span><strong>Run dev + render</strong><small>new artifact is captured</small></div>
+				<i aria-hidden="true">→</i>
+				<div class="failure-step failure-pass"><span>04</span><strong>Build turns green</strong><small>new contract is embedded</small></div>
+			</div>
+		</section>
 
-			</ol>
+		<section class="explain-section adoption-section reveal">
+			<div class="explain-heading">
+				<p class="eyebrow">a safe adoption order</p>
+				<h2>Capture first.<br>Slim down last.</h2>
+			</div>
+			<div class="adoption-steps">
+				<article><span>1</span><h3>Prove one explicit material</h3><p>Install the base pipeline, capture a representative PBR material, and inspect its generated artifact.</p></article>
+				<article><span>2</span><h3>Expand observed coverage</h3><p>Visit relevant routes and states. Use explicit names for control or <code>autoMark</code> for a broad trial.</p></article>
+				<article><span>3</span><h3>Verify compatibility</h3><p>Run the artifact checks and visual/runtime gates appropriate for your scene before changing the renderer bundle.</p></article>
+				<article><span>4</span><h3>Enable <code>slim: true</code></h3><p>Remove the NodeBuilder only when every reachable material path is captured or covered by the lazy full-renderer fallback.</p></article>
+			</div>
+		</section>
 
-			<p class="try-note">
-				Commit the <code>artifacts/</code> folder. Treat it like generated source — the build needs it.
-			</p>
-
-			<div class="cta-row">
-				<a class="btn btn-primary" href="/#get-started">Full setup guide</a>
-				<a class="btn btn-ghost" href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/ARCHITECTURE.md" rel="noopener">Deeper dive</a>
+		<section class="explain-cta reveal">
+			<p class="eyebrow">ready to see the files?</p>
+			<h2>Precompile one material.<br>Then inspect exactly what changed.</h2>
+			<div class="explain-actions">
+				<a class="btn btn-primary" href="index.html#quickstart">Open the working quickstart</a>
+				<a class="btn btn-ghost" href="examples.html">Browse compatibility evidence</a>
+				<a class="btn btn-ghost" href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/ARCHITECTURE.md" rel="noopener">Read the architecture</a>
 			</div>
 		</section>
 	</main>
 
 	<footer class="footer">
 		<div class="footer-inner">
-			<div>
-				<strong class="mono">vite-plugin-tsl-precompile</strong>
-				<span class="footer-sep">·</span>
-				<span class="muted">MIT</span>
-			</div>
-			<nav class="footer-nav">
-				<a href="/">Main</a>
+			<div><strong class="mono">vite-plugin-tsl-precompile</strong><span class="footer-sep">·</span><span class="muted">Experimental · MIT</span></div>
+			<nav class="footer-nav" aria-label="Footer navigation">
+				<a href="index.html">Overview</a>
+				<a href="examples.html">Compatibility</a>
+				<a href="benchmark.html">Evidence</a>
 				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">GitHub</a>
 			</nav>
 		</div>

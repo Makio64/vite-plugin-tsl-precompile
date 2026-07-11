@@ -1,5 +1,3 @@
-import { startHeroShader } from './shader-bg.js';
-
 const reduceMotion = matchMedia( '(prefers-reduced-motion: reduce)' ).matches;
 
 /* ---------- scroll reveal ---------- */
@@ -39,12 +37,36 @@ document.querySelectorAll( '[data-copy]' ).forEach( ( btn ) => {
 	} );
 } );
 
-/* ---------- hero shader background ---------- */
-if ( ! reduceMotion ) {
-	startHeroShader().catch( ( err ) => {
-		// Fallback CSS gradient is already painted by .hero-fallback —
-		// quietly log and move on. The page must never visibly break on
-		// non-WebGPU browsers.
-		console.info( '[site] hero shader skipped:', err?.message ?? err );
-	} );
+/* ---------- generated compatibility evidence ---------- */
+async function hydrateEvidence() {
+
+	const targets = document.querySelectorAll( '[data-stat]' );
+	if ( targets.length === 0 ) return;
+
+	try {
+
+		const response = await fetch( new URL( 'examples.json', document.baseURI ) );
+		if ( ! response.ok ) return;
+		const data = await response.json();
+		const totals = data && data.totals;
+		if ( ! totals || typeof totals !== 'object' ) return;
+
+		targets.forEach( ( target ) => {
+
+			const key = target.dataset.stat;
+			const value = totals[ key ];
+			if ( typeof value !== 'number' || ! Number.isFinite( value ) ) return;
+			target.textContent = key === 'smokePassRate' ? value.toFixed( 1 ) : value.toLocaleString( 'en-US' );
+
+		} );
+
+	} catch ( _ ) {
+
+		// The checked-in fallback values remain visible when evidence data is
+		// unavailable (for example when the HTML is opened directly from disk).
+
+	}
+
 }
+
+hydrateEvidence();
