@@ -20,7 +20,9 @@
     "src"
   ],
   "scripts": {
-    "test": "node --test 'test/*.test.js'"
+    "test": "node --test --test-concurrency=2 --test-reporter=dot 'test/*.test.js'",
+    "test:quick": "node --test --test-concurrency=2 --test-reporter=dot 'test/*.test.js'",
+    "test:full": "node --test --test-concurrency=2 'test/*.test.js'"
   },
   "peerDependencies": {
     "@tsl-precompile/runtime": "workspace:*",

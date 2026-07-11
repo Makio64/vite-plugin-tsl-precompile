@@ -22,21 +22,12 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test
-
-  coverage:
-    name: Coverage matrix (Phase 5)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm test:coverage
-        continue-on-error: true  # TODO: remove once Phase 5 fixtures are populated
+      - name: Fast cross-platform suite
+        if: runner.os != 'Linux'
+        run: pnpm test
+      - name: Complete suite (single CI lane)
+        if: runner.os == 'Linux'
+        run: pnpm test:full
 
   verify:
     name: Staleness audit

@@ -20,5 +20,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: npx playwright install chromium
+      # Needs a local three.js examples checkout (`--three-repo`); install is
+      # green without sibling deps, but the harness itself is still opt-in until
+      # CI vendors/clones three.js examples and a pass threshold is locked.
       - run: pnpm test:batch
         continue-on-error: true  # TODO: enforce threshold once Phase 6 lands
