@@ -12,8 +12,8 @@
 		"smokePass": 197,
 		"smokePassRate": 99.5,
 		"pixelMatchCount": 155,
-		"visualMatchCount": 7,
-		"rendersCount": 63,
+		"visualMatchCount": 8,
+		"rendersCount": 62,
 		"captureOnlyCount": 0
 	},
 	"categories": [
@@ -7285,7 +7285,7 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 16.32,
+				"psnr": 21.96,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
@@ -7306,7 +7306,7 @@
 			],
 			"notes": "",
 			"thumbHealth": "ok",
-			"badge": "renders"
+			"badge": "visual-match"
 		},
 		{
 			"basename": "webgpu_backdrop",
