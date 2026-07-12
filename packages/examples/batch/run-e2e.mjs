@@ -3550,7 +3550,7 @@ const __backgroundNeedsPMREM = ( function () {
 		const materials = __shadowSourceMaterials( material );
 		for ( const mat of materials ) {
 			if ( ! mat ) continue;
-			for ( const key of [ 'castShadowNode', 'castShadowPositionNode', 'maskShadowNode', 'maskNode', 'alphaTestNode', 'opacityNode' ] ) {
+			for ( const key of [ 'positionNode', 'castShadowNode', 'castShadowPositionNode', 'maskShadowNode', 'maskNode', 'alphaTestNode', 'opacityNode' ] ) {
 				const textures = __collectTexturesInNode( mat[ key ] );
 				for ( const candidate of textures ) {
 					if ( candidate === texture ) return true;
@@ -8763,7 +8763,7 @@ function __buildShadowScene( userScene ) {
 				}
 				if ( sourceMaterial.alphaTest ) standin.material.alphaTest = sourceMaterial.alphaTest;
 				if ( sourceMaterial.alphaMap ) standin.material.alphaMap = sourceMaterial.alphaMap;
-				for ( const key of [ 'alphaTestNode', 'maskNode', 'maskShadowNode', 'castShadowPositionNode', 'castShadowNode' ] ) {
+				for ( const key of [ 'positionNode', 'alphaTestNode', 'maskNode', 'maskShadowNode', 'castShadowPositionNode', 'castShadowNode' ] ) {
 					if ( sourceMaterial[ key ] && sourceMaterial[ key ].isNode === true ) standin.material[ key ] = sourceMaterial[ key ];
 				}
 			}
@@ -9089,7 +9089,7 @@ function __shadowCasterTextureSignature( object ) {
 	const textures = [];
 	for ( const material of materials ) {
 		if ( ! material ) continue;
-		for ( const key of [ 'castShadowNode', 'castShadowPositionNode', 'maskShadowNode', 'maskNode', 'alphaTestNode', 'opacityNode' ] ) {
+		for ( const key of [ 'positionNode', 'castShadowNode', 'castShadowPositionNode', 'maskShadowNode', 'maskNode', 'alphaTestNode', 'opacityNode' ] ) {
 			__appendUniqueTextures( textures, __collectTexturesInNode( material[ key ] ) );
 		}
 		for ( const key of [ 'alphaMap', 'map' ] ) {
