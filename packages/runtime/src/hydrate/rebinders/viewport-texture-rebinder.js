@@ -9,40 +9,12 @@ import {
 	textureBindingTargets,
 } from './texture-binding-targets.js';
 
-function hasTextureSourceKind( artifact, kind ) {
+export function shouldSkipViewportCopyForZeroThicknessTransmission( _artifact ) {
 
-	const plan = artifact && artifact.uniformPlan;
-	if ( ! Array.isArray( plan ) ) return false;
-
-	for ( const group of plan ) {
-
-		const textures = group && group.textures;
-		if ( ! Array.isArray( textures ) ) continue;
-
-		for ( const texture of textures ) {
-
-			if ( texture && texture.source && texture.source.kind === kind ) return true;
-
-		}
-
-	}
-
+	// The fallback texture only exists to satisfy bind-group validation before
+	// the first render. Keeping thin alpha-masked transmission on that 1x1
+	// texture makes the glass disappear instead of sampling the opaque viewport.
 	return false;
-
-}
-
-export function shouldSkipViewportCopyForZeroThicknessTransmission( artifact ) {
-
-	const defaults = artifact && artifact.defaults;
-	if ( ! defaults || ! ( defaults.transmission > 0 ) ) return false;
-	if ( defaults.thickness !== 0 ) return false;
-	if ( hasTextureSourceKind( artifact, 'material.thicknessMap' ) ) return false;
-
-	// Alpha-masked, transparent zero-thickness glass feeds its own framebuffer
-	// copy back through the transmission pass. Keep those entries on the
-	// captured fallback while leaving procedural water on live viewport copies.
-	const renderState = artifact && artifact.renderState || {};
-	return renderState.transparent === true && hasTextureSourceKind( artifact, 'material.alphaMap' );
 
 }
 

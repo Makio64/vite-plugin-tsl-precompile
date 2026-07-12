@@ -1147,33 +1147,56 @@ async function captureMaterialInDev( entry ) {
 
 		}
 
-		const artifacts = await extractor( captureRenderer, scene, camera, extractorOpts );
-		const artifactSets = [ artifacts ];
+		const forceSinglePassForCapture = material && material.transmission > 0
+			&& Math.abs( Number.isFinite( material.thickness ) ? material.thickness : 0 ) <= 1e-7
+			&& material.side === 2
+			&& material.forceSinglePass === false;
+		if ( forceSinglePassForCapture ) {
 
-		// Pass/global MRT captures can produce a pre-pass shader for the same
-		// material that later renders to the canvas/color target. Capture a
-		// non-MRT sibling variant as part of the same author-facing artifact so
-		// downstream apps get cache-key selection instead of needing the batch
-		// harness' historical `:color` duplicate material name.
-		//
-		// Skip it when the material carries its OWN mrtNode: `noGlobalMRT`
-		// only clears the pass/global descriptor, so the warm-up would build
-		// the material's mrt() outputs against an unnamed single-attachment
-		// canvas target — MRTNode.setup() resolves each output name to index
-		// -1, emits an empty output struct, and the node build fails with
-		// "Cannot read properties of undefined (reading 'type')"
-		// (webgpu_postprocessing_bloom_selective). A material-level mrtNode
-		// is inherently MRT-bound; it has no meaningful color-target variant.
-		if ( mrtNode && mrtNode !== materialMRTNode && ! materialMRTNode ) {
+			material.forceSinglePass = true;
+			material.needsUpdate = true;
 
-			try {
+		}
+		const artifactSets = [];
+		try {
 
-				const colorArtifacts = await extractor( captureRenderer, scene, camera, { noGlobalMRT: true } );
-				artifactSets.push( colorArtifacts );
+			artifactSets.push( await extractor( captureRenderer, scene, camera, extractorOpts ) );
 
-			} catch ( err ) {
+			// Pass/global MRT captures can produce a pre-pass shader for the same
+			// material that later renders to the canvas/color target. Capture a
+			// non-MRT sibling variant as part of the same author-facing artifact so
+			// downstream apps get cache-key selection instead of needing the batch
+			// harness' historical `:color` duplicate material name.
+			//
+			// Skip it when the material carries its OWN mrtNode: `noGlobalMRT`
+			// only clears the pass/global descriptor, so the warm-up would build
+			// the material's mrt() outputs against an unnamed single-attachment
+			// canvas target — MRTNode.setup() resolves each output name to index
+			// -1, emits an empty output struct, and the node build fails with
+			// "Cannot read properties of undefined (reading 'type')"
+			// (webgpu_postprocessing_bloom_selective). A material-level mrtNode
+			// is inherently MRT-bound; it has no meaningful color-target variant.
+			if ( mrtNode && mrtNode !== materialMRTNode && ! materialMRTNode ) {
 
-				console.warn( `[tsl-precompile] .precompile(${ JSON.stringify( name ) }): non-MRT variant capture failed; continuing with MRT artifact only.`, err );
+				try {
+
+					const colorArtifacts = await extractor( captureRenderer, scene, camera, { noGlobalMRT: true } );
+					artifactSets.push( colorArtifacts );
+
+				} catch ( err ) {
+
+					console.warn( `[tsl-precompile] .precompile(${ JSON.stringify( name ) }): non-MRT variant capture failed; continuing with MRT artifact only.`, err );
+
+				}
+
+			}
+
+		} finally {
+
+			if ( forceSinglePassForCapture ) {
+
+				material.forceSinglePass = false;
+				material.needsUpdate = true;
 
 			}
 

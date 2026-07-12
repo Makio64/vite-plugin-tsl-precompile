@@ -425,7 +425,6 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 	// `mat.opacity`, etc. continues to work.
 	const wrapped = new PrecompiledMaterial( artifact );
 	copyCommonMaterialProperties( material, wrapped );
-	applyPrecompiledRenderLimitations( artifact, wrapped );
 
 	// Live ReflectorBaseNode handles for the runtime hydrator's reflector
 	// rebinder. PrecompiledMaterial drops every `*Node` property; the
@@ -461,24 +460,6 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 	copyBackdropMarkers( material, wrapped );
 
 	return adoptPrecompiledMaterial( material, wrapped );
-
-}
-
-function applyPrecompiledRenderLimitations( artifact, material ) {
-
-	// Three.js builds a distinct back-side render object for DoubleSide
-	// transmissive materials. Zero-thickness captures do not need that extra
-	// pass, and reusing the captured viewport-texture path can over-brighten
-	// thin glass. Materials with physical thickness still need the back side
-	// for the volume/refraction path to match the live renderer.
-	if ( artifact && artifact.defaults && artifact.defaults.transmission > 0
-		&& Math.abs( Number.isFinite( artifact.defaults.thickness ) ? artifact.defaults.thickness : 0 ) <= 1e-7
-		&& artifact.renderState && artifact.renderState.side === 2
-		&& material && material.forceSinglePass === false ) {
-
-		material.forceSinglePass = true;
-
-	}
 
 }
 

@@ -31,7 +31,7 @@ function createFrame( renderId = 1 ) {
 
 }
 
-test( 'viewport texture helper keeps most zero-thickness transmission on live viewport copies', () => {
+test( 'viewport texture helper keeps zero-thickness transmission on live viewport copies', () => {
 
 	assert.equal( shouldSkipViewportCopyForZeroThicknessTransmission( {
 		defaults: { transmission: 1, thickness: 0 },
@@ -49,7 +49,7 @@ test( 'viewport texture helper keeps most zero-thickness transmission on live vi
 		uniformPlan: [ {
 			textures: [ { source: { kind: 'material.alphaMap' } } ],
 		} ],
-	} ), true );
+	} ), false );
 
 	assert.equal( shouldSkipViewportCopyForZeroThicknessTransmission( {
 		defaults: { transmission: 1, thickness: 0 },

@@ -103,6 +103,16 @@ class PrecompiledMaterial extends Material {
 		// renderState carries transparent=false; coerce here.
 		if ( artifact.defaults && typeof artifact.defaults.transmission === 'number' && artifact.defaults.transmission > 0 ) this.transparent = true;
 
+		// Three.js normally renders transparent DoubleSide material once for the
+		// back faces and once for the front faces. A zero-thickness transmission
+		// artifact is captured from one shader side, so replay it once as well;
+		// otherwise the first pass is fed back through the live viewport copy and
+		// the glass becomes an opaque reflective shell.
+		if ( artifact.defaults && artifact.defaults.transmission > 0
+			&& Math.abs( Number.isFinite( artifact.defaults.thickness ) ? artifact.defaults.thickness : 0 ) <= 1e-7
+			&& artifact.renderState && artifact.renderState.side === 2
+			&& this.forceSinglePass === false ) this.forceSinglePass = true;
+
 		// MRT stub — when the captured fragment shader emits multiple
 		// `@location(N)` outputs (because compileTSL warmed up with an
 		// MRT node active), `artifact.mrtOutputCount` is N. The slim

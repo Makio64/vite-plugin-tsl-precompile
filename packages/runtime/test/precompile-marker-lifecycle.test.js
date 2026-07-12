@@ -578,3 +578,32 @@ test( 'capture cleanup does not overwrite a render function replaced mid-capture
 	} );
 
 } );
+
+test( 'captures thin double-sided transmission as one pass and restores the source material', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree();
+		const material = new three.Material();
+		material.transmission = 1;
+		material.thickness = 0;
+		material.side = 2;
+		material.forceSinglePass = false;
+		const context = mount( three, material );
+		const renderer = { render() {} };
+		let capturedForceSinglePass = null;
+		install( three, async () => {
+
+			capturedForceSinglePass = material.forceSinglePass;
+			return artifactSet( material );
+
+		} );
+		setDevRenderer( renderer, three );
+		material.precompile( 'thin-transmission', context );
+		await waitFor( () => posts.length === 1, 'thin transmission capture' );
+		assert.equal( capturedForceSinglePass, true );
+		assert.equal( material.forceSinglePass, false );
+
+	} );
+
+} );

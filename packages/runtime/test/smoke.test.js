@@ -1515,7 +1515,7 @@ test( '__applyPrecompiled live update sidecars refresh object-scoped uniform.liv
 
 } );
 
-test( '__applyPrecompiled only forces single-pass for zero-thickness double-sided transmission', () => {
+test( 'PrecompiledMaterial only forces single-pass for zero-thickness double-sided transmission', () => {
 
 	const baseModule = {
 		__hash: 'sha256:transmission',
@@ -1529,6 +1529,8 @@ test( '__applyPrecompiled only forces single-pass for zero-thickness double-side
 			defaults: { transmission: 1, thickness: 0 },
 		},
 	};
+	const direct = new PrecompiledMaterial( baseModule.artifact );
+	assert.equal( direct.forceSinglePass, true );
 
 	const thin = __applyPrecompiled( {}, baseModule, 'sha256:transmission' );
 	assert.equal( thin.forceSinglePass, true );
@@ -2220,6 +2222,7 @@ test( 'hydrator swaps zero-thickness transmission to a live viewport texture', (
 		vertexShader: '',
 		fragmentShader: '@group(1) @binding(0) var viewportTex : texture_2d<f32>;',
 		defaults: { transmission: 1, thickness: 0 },
+		renderState: { transparent: true },
 		bindings: [ {
 			name: 'object',
 			bindings: [
@@ -2230,6 +2233,7 @@ test( 'hydrator swaps zero-thickness transmission to a live viewport texture', (
 			name: 'object',
 			slots: [],
 			textures: [
+				{ name: 'alphaMap', source: { kind: 'material.alphaMap', property: 'alphaMap' } },
 				{ name: 'viewportTex', source: { kind: 'viewport.texture', generateMipmaps: true, isDepth: false } },
 			],
 		} ],
