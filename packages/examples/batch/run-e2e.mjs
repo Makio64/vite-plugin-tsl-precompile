@@ -3907,6 +3907,12 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 	if ( ! sourceMaterial || ! artifact ) return 0;
 	let wiredCount = 0;
 	function isStorageAttr( v ) { return v && ( v.isStorageBufferAttribute === true || v.isStorageInstancedBufferAttribute === true ); }
+	function bumpBeforeComputeOwnsBuffer( attr ) {
+		// After delegated compute adopts the GPU buffer, a CPU version bump makes
+		// the next render upload the zeroed backing array over the compute result.
+		if ( ! attr || __computeStorageAttrFallbacks.includes( attr ) ) return;
+		if ( typeof attr.version === 'number' ) attr.version = attr.version + 1;
+	}
 
 	// vec3 StorageBufferAttributes are padded to itemSize=4 by WebGPU on first use.
 	// Accept both 3 and 4 when the artifact recorded 4 (pad already applied at capture).
@@ -3950,7 +3956,7 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 			if ( matchIdx === -1 ) continue;
 			const liveAttr = __preferComputeStorageAttr( naCandidates[ matchIdx ], nodeAttr, sizeMatches );
 			Object.defineProperty( nodeAttr, '_liveAttribute', { value: liveAttr, enumerable: false, writable: true, configurable: true } );
-			if ( liveAttr && typeof liveAttr.version === 'number' ) liveAttr.version = liveAttr.version + 1;
+			bumpBeforeComputeOwnsBuffer( liveAttr );
 			wiredCount++;
 			naCandidates.splice( matchIdx, 1 );
 		}
@@ -3980,7 +3986,7 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 			const match = matches[ 2 ] || matches[ 1 ] || matches[ 0 ];
 			if ( ! match ) continue;
 			Object.defineProperty( nodeAttr, '_liveAttribute', { value: match, enumerable: false, writable: true, configurable: true } );
-			if ( typeof match.version === 'number' ) match.version = match.version + 1;
+			bumpBeforeComputeOwnsBuffer( match );
 			wiredCount++;
 		}
 	}
@@ -4044,7 +4050,7 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 			wiredCount += snapshotWired;
 		}
 		const fallbackWired = __sharedWireArtifactStorageBuffersFromAttributes( artifact, __computeStorageAttrFallbacks, {
-			bumpVersion: true,
+			bumpVersion: false,
 			allowVec3ToVec4: true,
 		} );
 		if ( fallbackWired > 0 ) {
