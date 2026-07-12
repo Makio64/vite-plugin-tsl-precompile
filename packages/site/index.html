@@ -41,12 +41,16 @@
 		<div class="hero-orb hero-orb-magenta" aria-hidden="true"></div>
 
 		<div class="launch-hero-inner">
-			<div class="hero-copy">
+			<div class="hero-headline">
 				<div class="hero-kicker">
 					<span class="signal-dot" aria-hidden="true"></span>
 					AOT tooling for three.js WebGPU + TSL
 				</div>
-				<h1>Author TSL.<br><span class="accent">Ship pre-generated WGSL.</span></h1>
+				<h1>Author TSL.<br><span class="accent">Ship WGSL.</span></h1>
+				<p class="hero-product-name">vite-plugin-tsl-precompile</p>
+			</div>
+
+			<div class="hero-pitch">
 				<p class="hero-lead">
 					Capture selected materials with the scene context they actually render in. Vite validates and bundles their WGSL, binding layout, render variants, and generated uniform updater for production.
 				</p>
@@ -66,44 +70,52 @@
 				</ul>
 			</div>
 
-			<div class="hero-product" aria-label="Source material transformed into a production artifact">
-				<div class="product-window">
-					<div class="window-bar">
+			<div class="hero-product" aria-label="A TSL source material becomes a validated artifact and then a production WebGPU program">
+				<article class="hero-stage hero-stage-source">
+					<header>
 						<div class="window-dots" aria-hidden="true"><span></span><span></span><span></span></div>
-						<span class="window-title">material.ts</span>
-						<span class="window-state"><i></i> capture ready</span>
+						<span>material.ts</span>
+						<small>AUTHOR</small>
+					</header>
+					<div class="stage-code" aria-hidden="true">
+						<span class="code-short"></span><span class="code-cyan"></span><span class="code-mid"></span>
+						<span class="code-tiny"></span><span class="code-blue"></span><span class="code-long"></span>
+						<span class="code-mid"></span><span class="code-magenta"></span><span class="code-short"></span>
+						<span class="code-tiny"></span><span class="code-purple"></span><span class="code-long"></span>
 					</div>
-					<pre class="product-code"><code><span class="line muted-code">01</span> <span class="tok-key">const</span> water = <span class="tok-key">new</span> <span class="tok-fn">MeshStandardNodeMaterial</span>();
-<span class="line muted-code">02</span> water.colorNode = <span class="tok-fn">mix</span>( deep, foam, wave );
-<span class="line muted-code">03</span> water.roughnessNode = <span class="tok-fn">mix</span>( .18, .72, wave );
-<span class="line">04</span> <span class="product-highlight">water.<span class="tok-fn">precompile</span>(<span class="tok-str">'ocean-water'</span>);</span></code></pre>
+					<div class="stage-command"><code>water.precompile(<span>'ocean-water'</span>)</code></div>
+				</article>
 
-					<div class="product-flow" aria-label="Capture pipeline">
-						<div class="product-flow-step">
-							<span class="flow-status">01</span>
-							<div><strong>Observe real render</strong><small>mesh · camera · lights · fog · MRT</small></div>
-							<span class="flow-check" aria-hidden="true">✓</span>
-						</div>
-						<div class="product-flow-step">
-							<span class="flow-status">02</span>
-							<div><strong>Bake + fingerprint</strong><small>WGSL · bindings · uniform plan · variants</small></div>
-							<span class="flow-check" aria-hidden="true">✓</span>
-						</div>
-						<div class="product-flow-step">
-							<span class="flow-status">03</span>
-							<div><strong>Inline at build</strong><small>virtual module · generated updater</small></div>
-							<span class="flow-check" aria-hidden="true">✓</span>
-						</div>
-					</div>
+				<div class="hero-pipe" aria-hidden="true"><i></i><span>✓</span><i></i><small>CAPTURE</small></div>
 
-					<div class="product-output">
-						<span class="output-label">production</span>
-						<strong>static WGSL</strong>
-						<span>+</span>
-						<strong>live values</strong>
-						<span class="output-pill">no artifact fetch</span>
+				<article class="hero-stage hero-stage-artifact">
+					<header>
+						<div class="stage-file-icon" aria-hidden="true"></div>
+						<span>ocean-water.76d9…json</span>
+						<small>VALIDATE</small>
+					</header>
+					<div class="artifact-visual" aria-hidden="true">
+						<div class="artifact-matrix">
+							<span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+						</div>
+						<div class="artifact-hash"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
 					</div>
-				</div>
+					<ul class="artifact-pills" aria-label="Artifact contents"><li>WGSL</li><li>bindings</li><li>updates</li><li>variants</li></ul>
+				</article>
+
+				<div class="hero-pipe hero-pipe-magenta" aria-hidden="true"><i></i><span>✓</span><i></i><small>INLINE</small></div>
+
+				<article class="hero-stage hero-stage-production">
+					<header>
+						<span class="stage-live-dot" aria-hidden="true"></span>
+						<span>production / WebGPU</span>
+						<small>SHIP</small>
+					</header>
+					<div class="production-cubes" aria-hidden="true">
+						<span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+					</div>
+					<div class="production-readout"><b>static WGSL</b><span>+</span><b>live values</b></div>
+				</article>
 			</div>
 		</div>
 	</header>
