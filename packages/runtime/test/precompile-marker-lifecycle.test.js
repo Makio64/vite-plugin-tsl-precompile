@@ -59,6 +59,7 @@ function makeThree( prefix = 'fixture' ) {
 			this.material = material;
 			this.children = [];
 			this.parent = null;
+			this.visible = true;
 			this.layers = { mask: 1, test: () => true };
 			this.position = { x: 0, y: 0, z: 0 };
 			this.scale = { x: 1, y: 1, z: 1 };
@@ -509,7 +510,7 @@ test( 'worker-only environments can capture marked materials', async () => {
 
 } );
 
-test( 'preserves the source object subclass during synthetic warmup', async () => {
+test( 'preserves the source object subclass while forcing synthetic visibility', async () => {
 
 	await withBrowser( async ( posts ) => {
 
@@ -525,11 +526,18 @@ test( 'preserves the source object subclass during synthetic warmup', async () =
 
 			}
 
-			clone() { return new SkinnedInstancedMesh( this.geometry, this.material ); }
+			clone() {
+
+				const cloned = new SkinnedInstancedMesh( this.geometry, this.material );
+				cloned.visible = this.visible;
+				return cloned;
+
+			}
 
 		}
 		const material = new three.Material();
 		const context = mount( three, material, SkinnedInstancedMesh );
+		context.object.visible = false;
 		const renderer = { render() {} };
 		let capturedObject = null;
 		install( three, async ( _renderer, scene ) => {
@@ -549,6 +557,7 @@ test( 'preserves the source object subclass during synthetic warmup', async () =
 		assert.ok( capturedObject instanceof SkinnedInstancedMesh );
 		assert.equal( capturedObject.isSkinnedMesh, true );
 		assert.equal( capturedObject.isInstancedMesh, true );
+		assert.equal( capturedObject.visible, true );
 
 	} );
 

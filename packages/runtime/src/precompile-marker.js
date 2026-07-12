@@ -1041,6 +1041,10 @@ async function captureMaterialInDev( entry ) {
 		}
 
 		const mesh = createCaptureObject( Mesh, BoxGeometry, sourceObject, material );
+		// Synthetic extraction must compile marked materials even when their live
+		// object is currently dormant. Object3D.clone() preserves `visible`, which
+		// otherwise makes helpers that become visible later impossible to replay.
+		mesh.visible = true;
 		if ( sourceObject ) {
 
 			for ( const key of Object.keys( sourceObject ) ) {
