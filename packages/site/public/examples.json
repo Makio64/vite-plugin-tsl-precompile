@@ -11,8 +11,8 @@
 		"smokeTotal": 198,
 		"smokePass": 197,
 		"smokePassRate": 99.5,
-		"pixelMatchCount": 138,
-		"visualMatchCount": 20,
+		"pixelMatchCount": 139,
+		"visualMatchCount": 19,
 		"rendersCount": 67,
 		"captureOnlyCount": 0
 	},
@@ -5863,7 +5863,7 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 28.91,
+				"psnr": 40.36,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
@@ -5885,7 +5885,7 @@
 			],
 			"notes": "",
 			"thumbHealth": "ok",
-			"badge": "visual-match"
+			"badge": "pixel-match"
 		},
 		{
 			"basename": "webgpu_instance_points",
