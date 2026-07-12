@@ -11,9 +11,9 @@
 		"smokeTotal": 198,
 		"smokePass": 197,
 		"smokePassRate": 99.5,
-		"pixelMatchCount": 145,
-		"visualMatchCount": 13,
-		"rendersCount": 67,
+		"pixelMatchCount": 148,
+		"visualMatchCount": 12,
+		"rendersCount": 65,
 		"captureOnlyCount": 0
 	},
 	"categories": [
@@ -5826,8 +5826,8 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 28.93,
-				"identical": false,
+				"psnr": null,
+				"identical": true,
 				"threshold": 30,
 				"captured": true,
 				"replayed": true
@@ -5846,7 +5846,7 @@
 			],
 			"notes": "",
 			"thumbHealth": "ok",
-			"badge": "visual-match"
+			"badge": "pixel-match"
 		},
 		{
 			"basename": "webgpu_postprocessing_dof_basic",
@@ -7487,8 +7487,8 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 15.38,
-				"identical": false,
+				"psnr": null,
+				"identical": true,
 				"threshold": 30,
 				"captured": true,
 				"replayed": true
@@ -7509,7 +7509,7 @@
 			],
 			"notes": "",
 			"thumbHealth": "ok",
-			"badge": "renders"
+			"badge": "pixel-match"
 		},
 		{
 			"basename": "webgpu_postprocessing_godrays",
@@ -8559,8 +8559,8 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 11.57,
-				"identical": false,
+				"psnr": null,
+				"identical": true,
 				"threshold": 30,
 				"captured": true,
 				"replayed": true
@@ -8581,7 +8581,7 @@
 			],
 			"notes": "",
 			"thumbHealth": "ok",
-			"badge": "renders"
+			"badge": "pixel-match"
 		},
 		{
 			"basename": "bloom",
