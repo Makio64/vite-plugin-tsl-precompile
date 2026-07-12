@@ -13719,7 +13719,12 @@ const server = createServer( async ( req, res ) => {
 				const rel = url.pathname.slice( '/__tslp_addons_replay/'.length );
 				if ( rel === 'inspector/Inspector.js' ) return sendJs( res, inspectorStubModule() );
 				if ( rel === 'libs/stats.module.js' ) return sendJs( res, statsStubModule() );
-				const source = await readFile( safeResolveUnder( join( threeRepo, 'examples/jsm' ), rel ), 'utf8' );
+				const addonFile = safeResolveUnder( join( threeRepo, 'examples/jsm' ), rel );
+				// Decoder workers resolve WASM and other binary assets relative to the
+				// rewritten addon URL. Preserve those bytes; decoding every replay addon
+				// as UTF-8 JavaScript corrupts Draco before the scene can render.
+				if ( ! /\.(?:mjs|js)$/.test( rel ) ) return sendFile( res, addonFile );
+				const source = await readFile( addonFile, 'utf8' );
 				let rewritten = rewriteReplayAddon( source );
 				if ( rel === 'loaders/MaterialXLoader.js' ) rewritten = rewriteMaterialXLoaderTextureIdentity( rewritten );
 					if ( rel === 'loaders/KTX2Loader.js' || rel === 'loaders/GLTFLoader.js' ) {

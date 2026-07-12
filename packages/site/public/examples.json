@@ -6141,7 +6141,7 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 24.45,
+				"psnr": 25.91,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
