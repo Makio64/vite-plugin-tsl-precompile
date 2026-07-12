@@ -1357,9 +1357,16 @@ async function __waitForPrecompilePendingAtMost( limit, timeoutMs = 20000 ) {
 
 async function __flush() {
 	if ( ! __renderer ) return;
+	const pendingItems = [];
 	for ( const item of __pending ) {
 		if ( item.done ) continue;
 		item.done = true;
+		pendingItems.push( item );
+	}
+	// Capture every explicit color sibling first. Interleaving a queued main
+	// capture with the next item's temporary MRT removal races on the shared
+	// scene.userData descriptor and can silently lose that main MRT variant.
+	for ( const item of pendingItems ) {
 		const scene = item.material && item.material.__tslpPrecompileScene || null;
 		const sceneUserData = scene && scene.userData;
 		const sceneMRT = sceneUserData && sceneUserData.__tslp_mrtNode || null;
@@ -1392,6 +1399,9 @@ async function __flush() {
 				if ( typeof __renderer.setMRT === 'function' ) __renderer.setMRT( currentMRT );
 			}
 		}
+	}
+	// With every shared scene MRT restored, enqueue the main artifact burst.
+	for ( const item of pendingItems ) {
 		try {
 			item.material.needsUpdate = true;
 			item.material.precompile( item.name, {
@@ -2452,6 +2462,7 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 		try {
 			if ( capturedBackground !== undefined ) passNode.scene.background = capturedBackground;
 				if ( capturedBackgroundNode !== undefined ) passNode.scene.backgroundNode = capturedBackgroundNode;
+				__syncPassRenderTargetTextures( passNode, passNode._mrt || null );
 				__sharePassRenderTargetIntoFullRenderer( fullRenderer, slimRenderer, passNode );
 				fullRenderer.setRenderTarget( passNode.renderTarget );
 			if ( typeof fullRenderer.setMRT === 'function' ) fullRenderer.setMRT( passNode._mrt || null );
@@ -2728,7 +2739,7 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 						// precompiled path whenever every scene material can render the
 						// requested MRT shape, and reserve the full renderer for missing
 						// artifact coverage.
-							const needsFullMRTPass = !! ( replayMRT && ( ! canRenderPrecompiledMRT || this.__tslpFeedsTRAA === true ) );
+							const needsFullMRTPass = !! ( replayMRT && ! canRenderPrecompiledMRT );
 				const renderedWithFullPass = !! ( needsFullMRTPass && __renderPassNodeWithFullRenderer( this, renderer, __computeRenderer, camera ) );
 				if ( ! renderedWithFullPass && replayMRT && ( scene.background || scene.backgroundNode ) && ! __backgroundAuxCanRenderMRT( replayMRT ) ) {
 					const backgroundScene = this.__tslpBackgroundScene || ( this.__tslpBackgroundScene = new Slim.Scene() );
@@ -5640,14 +5651,12 @@ function __collectFrameEffectTextureAliases( node, byName, seen = new Set(), dep
 			const beauty = node.beautyNode;
 			const passNode = beauty && beauty.passNode;
 			const target = beauty && beauty.isRTTNode ? beauty.renderTarget : passNode && passNode.renderTarget;
-			// Context-sensitive beauty passes (AO, SSGI-style compositions)
-			// currently produce a correct beauty texture while the full-renderer
-			// TRAA resolve can bind the pass texture as black. Prefer the
-			// visible beauty buffer over a black final frame.
+			// Context-sensitive volume passes can still need their visible beauty
+			// buffer when a compatible precompiled TRAA resolve is unavailable.
 			if ( __useTRAAPrecompiledResolve( node ) ) texture = node._resolveRenderTarget && node._resolveRenderTarget.texture;
 			else if ( __useTRAABeautyFallback( node ) ) texture = __traaBeautyFallbackTexture( node );
 			else if ( passNode && passNode.contextNode !== null ) texture = target && target.texture;
-			else if ( beauty && beauty.isRTTNode === true && ( byName.get( 'SSGI' ) || [] ).length > 0 ) texture = target && target.texture;
+			else if ( beauty && beauty.isRTTNode === true && ( byName.get( 'SSGI' ) || [] ).length > 0 ) texture = node._resolveRenderTarget && node._resolveRenderTarget.texture;
 		} catch ( _ ) {}
 		if ( ! texture && existingResolve.length > 0 ) return byName;
 		if ( texture && texture.isTexture === true ) {
@@ -6342,6 +6351,12 @@ function __retargetPrecompiledMaterialForObject( material, object ) {
 		return artifact;
 	}
 
+	function __artifactSupportsPassTarget( artifact, targetCount ) {
+		const selected = __selectArtifactForPassTarget( artifact, targetCount );
+		const outputCount = __precompiledOwnOutputCount( selected );
+		return targetCount > 1 ? outputCount >= targetCount : outputCount === 1;
+	}
+
 	function __findBestArtifactForPassTarget( className, sourceMaterial, object, targetCount ) {
 		const keys = Object.keys( __data.user || {} );
 		let bestName = null;
@@ -6351,9 +6366,7 @@ function __retargetPrecompiledMaterialForObject( material, object ) {
 		const mod = __data.user && __data.user[ key ];
 		const artifact = mod && mod.artifact;
 		if ( ! artifact ) continue;
-		const outputCount = __precompiledOutputCount( artifact );
-		const matchesTarget = targetCount > 1 ? outputCount >= targetCount : outputCount === 1;
-		if ( ! matchesTarget ) continue;
+		if ( ! __artifactSupportsPassTarget( artifact, targetCount ) ) continue;
 		const score = __scoreArtifactForSource( key, mod, className, sourceMaterial, object );
 		if ( score > bestScore ) {
 			bestScore = score;
@@ -6397,7 +6410,11 @@ function __retargetPrecompiledMaterialForObject( material, object ) {
 		if ( targetCount > 1 ? outputCount >= targetCount : outputCount === 1 ) return material;
 		const sourceMaterial = material.__tslpSourceMaterial || material;
 		const className = __classNameFromArtifactName( material.name || '' ) || __classNameForMaterial( sourceMaterial );
-		const name = __findBestArtifactForPassTarget( className, sourceMaterial, object, targetCount );
+		const currentMod = __data.user && __data.user[ material.name || '' ];
+		const currentSupportsTarget = !! ( currentMod && __artifactSupportsPassTarget( currentMod.artifact, targetCount ) );
+		const name = currentSupportsTarget
+			? material.name
+			: __findBestArtifactForPassTarget( className, sourceMaterial, object, targetCount );
 		if ( ! name ) return material;
 		return __makePassTargetMaterial( name, sourceMaterial, material, object, targetCount ) || material;
 	}
