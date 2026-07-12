@@ -175,7 +175,7 @@ async function run( button, tbody, statusEl ) {
 	} catch ( err ) {
 
 		statusEl.hidden = false;
-		statusEl.textContent = 'WebGPU is not available in this browser, so the live measurement can\'t run. Try Chrome/Edge 113+ or Safari 18+. The bundle and pixel-identical numbers above are measured offline.';
+		statusEl.textContent = 'WebGPU is not available in this browser, so the cold-path explorer cannot run here. The bundle and compatibility evidence above were generated offline.';
 		button.hidden = true;
 		return;
 
@@ -213,7 +213,7 @@ export function initBenchmark() {
 	if ( ! ( 'gpu' in navigator ) && statusEl ) {
 
 		statusEl.hidden = false;
-		statusEl.textContent = 'WebGPU is not available in this browser. The bundle and pixel-identical numbers are measured offline; the live first-frame measurement needs Chrome/Edge 113+ or Safari 18+.';
+		statusEl.textContent = 'WebGPU is not available in this browser. The bundle and compatibility evidence were generated offline; the cold-path explorer needs a browser with working WebGPU support.';
 		button.disabled = true;
 
 	}

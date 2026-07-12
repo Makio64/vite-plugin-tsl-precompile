@@ -4,12 +4,14 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta name="color-scheme" content="dark">
-	<meta name="description" content="Side-by-side: live three.js vs the slim runtime replay. Every webgpu_* TSL example, precompiled and pixel-diffed.">
+	<meta name="description" content="Generated side-by-side evidence from the tracked Three.js WebGPU suite: live Three.js capture versus the precompiled slim-runtime replay.">
 	<meta property="og:title" content="vite-plugin-tsl-precompile · live vs replay">
 	<meta property="og:description" content="Drag the slider. Watch live three.js and the slim precompiled runtime overlap pixel-for-pixel — or not.">
 	<meta property="og:type" content="website">
+	<meta property="og:image" content="https://makio64.github.io/vite-plugin-tsl-precompile/og.png">
+	<meta name="twitter:card" content="summary_large_image">
 	<link rel="icon" type="image/svg+xml" href="/favicon.svg">
-	<title>compare — vite-plugin-tsl-precompile</title>
+	<title>Compatibility lab — vite-plugin-tsl-precompile</title>
 	<link rel="stylesheet" href="/src/styles.css">
 	<link rel="stylesheet" href="/src/examples.css">
 </head>
@@ -18,14 +20,14 @@
 
 	<!-- ========== TOP NAV ========== -->
 	<nav class="site-nav" aria-label="Site navigation">
-		<a class="site-nav-brand" href="/">
+		<a class="site-nav-brand" href="index.html">
 			<span class="mono">vite-plugin-</span><span class="accent">tsl-precompile</span>
 		</a>
 		<div class="site-nav-links">
-			<a href="/">Overview</a>
+			<a href="index.html">Overview</a>
 			<a href="how-it-works.html">How it works</a>
-			<a class="site-nav-current" aria-current="page" href="examples.html">Compare</a>
-			<a href="benchmark.html">Benchmark</a>
+			<a class="site-nav-current" aria-current="page" href="examples.html">Compatibility</a>
+			<a href="benchmark.html">Evidence</a>
 			<a href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">GitHub ↗</a>
 		</div>
 	</nav>
@@ -38,8 +40,8 @@
 				Drag the seam. See the diff.
 			</h1>
 			<p class="ex-hero-lead">
-				Every <code>webgpu_*</code> TSL example, captured against live three.js and replayed through
-				the precompiled slim runtime. Pick an example, slide the handle, and read the PSNR.
+				The tracked <code>webgpu_*</code> suite, captured against live Three.js and replayed through
+				the precompiled slim runtime. Pick an example, slide the handle, and inspect the generated status.
 			</p>
 
 			<!-- Tier breakdown stacked bar -->
@@ -184,7 +186,7 @@
 				<li>Each three.js <code>webgpu_*</code> TSL example is loaded in headless Chrome with a deterministic <code>requestAnimationFrame</code> shim.</li>
 				<li>The <strong>capture</strong> screenshot is taken against live three.js running the full TSL node builder — this is the golden reference.</li>
 				<li>The same scene is replayed against <code>three/webgpu/slim</code> using the artifact emitted by this plugin — <em>no node builder ships</em>.</li>
-				<li>Capture and replay are diffed pixel-for-pixel; PSNR ≥ 30 dB is the “visually identical” gate.</li>
+				<li>Capture and replay are image-diffed; PSNR ≥ 30 dB is the generated pixel-match gate.</li>
 				<li>The <em>load-smoke</em> rate counts every example that runs to first frame without throwing — whether the pixels match or not.</li>
 			</ol>
 			<p class="muted">
@@ -203,11 +205,11 @@
 				<span class="muted">MIT</span>
 			</div>
 			<nav class="footer-nav">
-				<a href="/">Overview</a>
+				<a href="index.html">Overview</a>
 				<a href="how-it-works.html">How it works</a>
 				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">GitHub</a>
 				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/ARCHITECTURE.md" rel="noopener">Architecture</a>
-				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/ROADMAP.md" rel="noopener">Roadmap</a>
+				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/ARCHITECTURE_EVOLUTION.md" rel="noopener">Evolution</a>
 			</nav>
 		</div>
 	</footer>

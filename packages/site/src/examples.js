@@ -366,8 +366,8 @@ function updateNotes( r ) {
 		parts.push( `<div class="ex-stage-note-block">
 			<strong>Why doesn&rsquo;t this match pixel-perfect?</strong>
 			The slim runtime is still hardening shadow/depth rebinding, transmission and viewport textures,
-			asynchronous texture-load timing, and broad post-process render-target chains. The shader compiles
-			and runs &mdash; visual output can diverge from live three.js until those clusters land.
+			asynchronous texture-load timing, and broad post-process render-target chains. The captured program
+			runs, but visual output can diverge from live Three.js until those clusters land.
 		</div>` );
 	}
 	if ( parts.length ) {

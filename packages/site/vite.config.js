@@ -17,8 +17,8 @@ export default defineConfig( {
 		include: [ 'three', 'three/webgpu', 'three/tsl' ],
 	},
 	build: {
-		// three/webgpu is ~635 KB minified on its own chunk and is already
-		// dynamically imported from shader-bg.js — nothing to code-split further.
+		// The evidence page loads three/webgpu only after the visitor starts the
+		// optional cold-path explorer, so keep its lazy chunk intact.
 		chunkSizeWarningLimit: 1000,
 		rollupOptions: {
 			input: {
