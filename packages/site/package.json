@@ -7,7 +7,8 @@
   "scripts": {
     "data": "node scripts/build-examples-data.mjs",
     "dev": "vite",
-    "build": "vite build",
+    "check:content": "node scripts/check-content.mjs",
+    "build": "vite build && pnpm check:content",
     "preview": "vite preview"
   },
   "dependencies": {

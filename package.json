@@ -50,6 +50,7 @@
     "dev:pmrem-debug": "pnpm --filter examples-pmrem-debug dev",
     "dev:compute-debug": "pnpm --filter examples-compute-debug dev",
     "dev:mrt-debug": "pnpm --filter examples-mrt-debug dev",
+    "site": "pnpm --filter @tsl-precompile/site dev",
     "dev:site": "pnpm --filter @tsl-precompile/site dev",
     "build:site": "pnpm --filter @tsl-precompile/site build"
   },

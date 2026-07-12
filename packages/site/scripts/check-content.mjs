@@ -1,0 +1,109 @@
+import { readFile, readdir, stat } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const siteDir = resolve( fileURLToPath( new URL( '..', import.meta.url ) ) );
+const pages = [ 'index.html', 'how-it-works.html', 'examples.html', 'benchmark.html' ];
+const failures = [];
+
+function fail( message ) {
+
+	failures.push( message );
+
+}
+
+const bannedClaims = [
+	{ pattern: /\bno shader compile\b/i, label: '"no shader compile" overclaim' },
+	{ pattern: /\bfirst render is instant\b/i, label: '"first render is instant" overclaim' },
+	{ pattern: /\bprecompiled first frame\s*(?:≈|~=|is about|costs about)\s*steady/i, label: 'warm-frame proxy presented as precompiled evidence' },
+	{ pattern: /ROADMAP\.md/, label: 'removed ROADMAP.md link' },
+];
+
+for ( const page of pages ) {
+
+	const source = await readFile( resolve( siteDir, page ), 'utf8' );
+	if ( source.includes( 'href="/"' ) ) fail( `${ page }: root-relative home link breaks the GitHub Pages base path` );
+	if ( ! source.includes( 'og:image' ) ) fail( `${ page }: missing social preview metadata` );
+	for ( const { pattern, label } of bannedClaims ) {
+
+		if ( pattern.test( source ) ) fail( `${ page }: ${ label }` );
+
+	}
+
+}
+
+const index = await readFile( resolve( siteDir, 'index.html' ), 'utf8' );
+for ( const required of [
+	'pnpm add -D vite-plugin-tsl-precompile',
+	'pnpm add @tsl-precompile/runtime',
+	'setupPrecompile',
+	'await</span> setup.ready',
+] ) {
+
+	if ( ! index.includes( required ) ) fail( `index.html: working quickstart is missing ${ JSON.stringify( required ) }` );
+
+}
+
+const evidence = JSON.parse( await readFile( resolve( siteDir, 'public/examples.json' ), 'utf8' ) );
+for ( const key of [ 'materialsBaked', 'artifactsCaptured', 'smokePassRate', 'runtimeNodeBuilderCalls' ] ) {
+
+	const match = index.match( new RegExp( `data-stat="${ key }"[^>]*>([^<]+)<` ) );
+	if ( ! match ) {
+
+		fail( `index.html: missing generated evidence target for ${ key }` );
+		continue;
+
+	}
+	const fallback = Number( match[ 1 ].replaceAll( ',', '' ) );
+	if ( fallback !== evidence.totals[ key ] ) {
+
+		fail( `index.html: fallback ${ key }=${ fallback } differs from public/examples.json (${ evidence.totals[ key ] })` );
+
+	}
+
+}
+
+const mainSource = await readFile( resolve( siteDir, 'src/main.js' ), 'utf8' );
+if ( /shader-bg|three\/webgpu|from ['"]three/.test( mainSource ) ) {
+
+	fail( 'src/main.js: the overview must not load Three.js for decoration' );
+
+}
+
+const ogPath = resolve( siteDir, 'public/og.png' );
+try {
+
+	const og = await stat( ogPath );
+	if ( og.size < 50_000 ) fail( 'public/og.png: social preview looks unexpectedly small' );
+
+} catch {
+
+	fail( 'public/og.png: missing social preview asset' );
+
+}
+
+const distDir = resolve( siteDir, 'dist' );
+const distFiles = await readdir( distDir );
+for ( const page of pages ) {
+
+	if ( ! distFiles.includes( page ) ) {
+
+		fail( `dist/${ page }: missing from multi-page build` );
+		continue;
+
+	}
+	const built = await readFile( resolve( distDir, page ), 'utf8' );
+	if ( built.includes( 'href="/"' ) ) fail( `dist/${ page }: root-relative home link survived the build` );
+
+}
+
+if ( failures.length > 0 ) {
+
+	console.error( `[site-check] ${ failures.length } issue(s):\n- ${ failures.join( '\n- ' ) }` );
+	process.exitCode = 1;
+
+} else {
+
+	console.log( `[site-check] ${ pages.length } pages, generated evidence, quickstart, and lightweight overview verified.` );
+
+}
