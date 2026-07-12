@@ -47,6 +47,7 @@ export { clearLiveTextureIndex, installTextureLoaderTracking, registerLiveTextur
 installLiveTextureRegistryPatches();
 
 const liveSkeletonBufferStates = new WeakMap();
+const skinnedBindMatrixSlots = new WeakMap();
 
 /**
  * Produce a NodeBuilderState-compatible object for a precompiled material.
@@ -560,6 +561,9 @@ function attachLiveUniformBufferUpdater( uniformBuffer, liveArrayResolver ) {
 	Object.defineProperty( uniformBuffer, '__tslpLiveArrayResolver', {
 		value: liveArrayResolver,
 		configurable: true,
+		// NodeBuilderState.createBindings() clones bindings with Object.assign.
+		// Keep the resolver enumerable so the final per-render clone retains it.
+		enumerable: true,
 	} );
 	uniformBuffer.update = function updateLiveUniformBuffer() {
 
@@ -902,6 +906,7 @@ function createUniformUpdateNode( artifact, uniformBuffers, material, uniformBuf
 					writeUniformGroup( group, frame, view, frameMaterial );
 
 				}
+				writeSkinnedBindMatrices( artifact, group, view, frame );
 				updateDynamicLightUniforms( artifact, group, view, frameUniformBuffers, frame );
 				recordUniformUpdateDiagnostic( artifact, group, view );
 				binding.groupNode.version ++;
@@ -910,6 +915,39 @@ function createUniformUpdateNode( artifact, uniformBuffers, material, uniformBuf
 
 		},
 	};
+
+}
+
+function resolveSkinnedBindMatrixSlots( artifact ) {
+
+	let cached = skinnedBindMatrixSlots.get( artifact );
+	if ( cached !== undefined ) return cached;
+	const shader = artifact && artifact.vertexShader || '';
+	const bindMatch = /\b\w+\s*=\s*\(\s*object\.(\w+)\s*\*\s*vec4<f32>\(\s*positionLocal\b/.exec( shader );
+	const inverseMatch = /\bpositionLocal\s*=\s*\(\s*object\.(\w+)\s*\*[^;]*\bskinWeight\b/.exec( shader );
+	cached = bindMatch && inverseMatch && bindMatch[ 1 ] !== inverseMatch[ 1 ]
+		? { bindMatrix: bindMatch[ 1 ], bindMatrixInverse: inverseMatch[ 1 ] }
+		: null;
+	skinnedBindMatrixSlots.set( artifact, cached );
+	return cached;
+
+}
+
+function writeSkinnedBindMatrices( artifact, group, view, frame ) {
+
+	if ( ! group || group.name !== 'object' ) return;
+	const object = frame && frame.object;
+	if ( ! object || object.isSkinnedMesh !== true ) return;
+	const names = resolveSkinnedBindMatrixSlots( artifact );
+	if ( ! names ) return;
+	for ( const [ property, name ] of Object.entries( names ) ) {
+
+		const matrix = object[ property ];
+		const slot = ( group.slots || [] ).find( item => item && item.name === name );
+		if ( ! matrix || ! matrix.elements || ! slot || slot.dtype !== 'mat4' || slot.source && slot.source.kind !== 'uniform.live' ) continue;
+		writeSnapshot( view, slot.offset ?? slot.byteOffset ?? 0, { type: 'mat4', data: matrix.elements }, 'mat4' );
+
+	}
 
 }
 

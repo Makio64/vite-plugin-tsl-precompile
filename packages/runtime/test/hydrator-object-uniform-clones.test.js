@@ -68,6 +68,8 @@ test( 'shared material updates each render object\'s cloned generated and live U
 	const generatedA = bindingByName( bindingsA, 'object' );
 	const liveA = bindingByName( bindingsA, 'UniformBuffer_0' );
 	liveA.update();
+	const renderCloneA = liveA.clone();
+	renderCloneA.update();
 
 	updater.update( { object: objectB, material } );
 	const bindingsB = state.createBindings();
@@ -77,6 +79,8 @@ test( 'shared material updates each render object\'s cloned generated and live U
 
 	assert.notEqual( generatedA, generatedB );
 	assert.notEqual( liveA, liveB );
+	assert.equal( typeof renderCloneA.__tslpLiveArrayResolver, 'function' );
+	assert.deepEqual( Array.from( renderCloneA.buffer ), [ 1, 2, 3, 4 ] );
 	assert.equal( generatedA.buffer[ 0 ], 0.25 );
 	assert.equal( generatedB.buffer[ 0 ], 0.75 );
 	assert.deepEqual( Array.from( liveA.buffer ), [ 1, 2, 3, 4 ] );
@@ -104,5 +108,45 @@ test( 'shared material updates each render object\'s cloned generated and live U
 	assert.equal( generatedB.buffer[ 0 ], 1 );
 	assert.deepEqual( Array.from( liveA.buffer ), [ 9, 10, 11, 12 ] );
 	assert.deepEqual( Array.from( liveB.buffer ), [ 13, 14, 15, 16 ] );
+
+} );
+
+test( 'skinned object UBOs use each live bind matrix instead of identity snapshots', () => {
+
+	const identity = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ];
+	const artifact = {
+		vertexShader: `
+			nodeVar0 = ( object.bindSlot * vec4<f32>( positionLocal, 1.0 ) );
+			positionLocal = ( object.inverseSlot * ( skinWeight.x * NodeBuffer.value[ skinIndex.x ] * nodeVar0 ) ).xyz;
+		`,
+		fragmentShader: '',
+		bindings: [ {
+			name: 'object',
+			bindings: [ { name: 'object', kind: 'uniform-buffer', byteLength: 128, visibility: 3 } ],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			shared: false,
+			byteLength: 128,
+			slots: [
+				{ name: 'inverseSlot', offset: 0, dtype: 'mat4', source: { kind: 'uniform.live', valueSnapshot: { type: 'mat4', data: identity } } },
+				{ name: 'bindSlot', offset: 64, dtype: 'mat4', source: { kind: 'uniform.live', valueSnapshot: { type: 'mat4', data: identity } } },
+			],
+		} ],
+	};
+	const matrix = base => ( { elements: Array.from( { length: 16 }, ( _, index ) => base + index ) } );
+	const object = {
+		isSkinnedMesh: true,
+		bindMatrix: matrix( 20 ),
+		bindMatrixInverse: matrix( 40 ),
+	};
+	const state = hydrateNodeBuilderState( artifact, {} );
+	const updater = state.updateNodes.find( node => node.getUpdateType() === 'object' );
+
+	updater.update( { object, material: {} } );
+	const binding = bindingByName( state.createBindings(), 'object' );
+
+	assert.deepEqual( Array.from( binding.buffer.slice( 0, 16 ) ), object.bindMatrixInverse.elements );
+	assert.deepEqual( Array.from( binding.buffer.slice( 16, 32 ) ), object.bindMatrix.elements );
 
 } );
