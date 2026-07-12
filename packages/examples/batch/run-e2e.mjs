@@ -14013,10 +14013,11 @@ function settleFramesForExample( name ) {
 	if ( name === 'webgpu_sandbox.html' ) return 1;
 	if ( name === 'webgpu_shadowmap_progressive.html' ) return 1;
 	if ( name === 'webgpu_tsl_wood.html' ) return 1;
-	// The duck rotation in caustics advances by animation-loop callback count
-	// (`rotation.y -= .01`), not by the synthetic timestamp. Extra quiet settle
-	// frames therefore compare different model poses instead of replay fidelity.
-	if ( name === 'webgpu_caustics.html' ) return 1;
+	// The transmitted shadow needs several completed renders before its projected
+	// caustic texture is usable. A single quiet frame freezes the reference while
+	// the duck and floor are still nearly black. The deterministic rAF wrapper
+	// keeps the eight callback-count rotations aligned across all three passes.
+	if ( name === 'webgpu_caustics.html' ) return 8;
 	// Replay generates PMREM for the cube-camera render target asynchronously.
 	// Extra settle frames run another cubeCamera.update(), invalidating the
 	// just-finished PMREM and keeping the visual gate in a moving target loop.
