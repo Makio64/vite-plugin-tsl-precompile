@@ -51,6 +51,19 @@ function gtaoLike() {
 
 }
 
+function sssLike() {
+
+	return {
+		type: 'SSSNode',
+		updateBefore: () => {},
+		_sssRenderTarget: { texture: { name: 'SSS', format: 1028, type: 1009 } },
+		_material: { name: 'SSS' },
+		_textureNode: { isPassTextureNode: true },
+		depthNode: { isTextureNode: true },
+	};
+
+}
+
 function ssrLike() {
 
 	return {
@@ -84,13 +97,16 @@ function traaLike() {
 
 }
 
-test( 'built-in handlers detect bloom/gtao/outline/ssr/dof/traa', () => {
+test( 'built-in handlers detect bloom/gtao/sss/outline/ssr/dof/traa', () => {
 
 	const bloomHandler = findEffectHandler( bloomLike() );
 	assert.equal( bloomHandler && bloomHandler.name, 'bloom' );
 
 	const gtaoHandler = findEffectHandler( gtaoLike() );
 	assert.equal( gtaoHandler && gtaoHandler.name, 'gtao' );
+
+	const sssHandler = findEffectHandler( sssLike() );
+	assert.equal( sssHandler && sssHandler.name, 'sss' );
 
 	const outlineHandler = findEffectHandler( outlineLike() );
 	assert.equal( outlineHandler && outlineHandler.name, 'outline' );
@@ -103,6 +119,37 @@ test( 'built-in handlers detect bloom/gtao/outline/ssr/dof/traa', () => {
 
 	const traaHandler = findEffectHandler( traaLike() );
 	assert.equal( traaHandler && traaHandler.name, 'traa' );
+
+} );
+
+test( 'sss handler captures one live-uniform sub-pass with its target shape', () => {
+
+	const node = sssLike();
+	const handler = findEffectHandler( node );
+	const sub = handler.subPasses( node, 2 );
+	assert.equal( sub.length, 1 );
+	assert.equal( sub[ 0 ].shape, 'sss' );
+	assert.equal( sub[ 0 ].material, node._material );
+	assert.deepEqual( sub[ 0 ].config, { type: 'sss', sssIndex: 2 } );
+	assert.deepEqual( sub[ 0 ].renderTargetHint, { count: 1, format: 1028, type: 1009 } );
+	assert.equal( sub[ 0 ].liveUniformOverlay, true );
+
+} );
+
+test( 'sss handler forceSetup receives the replay renderer', () => {
+
+	const node = sssLike();
+	const renderer = { logarithmicDepthBuffer: false };
+	let setupCalls = 0;
+	node.setup = ( builder ) => {
+
+		setupCalls ++;
+		assert.equal( builder.renderer, renderer );
+		node._material.fragmentNode = { isNode: true };
+
+	};
+	findEffectHandler( node ).forceSetup( node, { renderer, sharedContext: {} } );
+	assert.equal( setupCalls, 1 );
 
 } );
 
@@ -263,15 +310,20 @@ test( 'traa handler subPasses returns single resolve material', () => {
 
 } );
 
-test( 'gtao and traa handlers declare conservative execution placement', () => {
+test( 'gtao, sss, and traa handlers declare conservative execution placement', () => {
 
 	const producerPass = {};
 	const gtao = gtaoLike();
 	gtao.depthNode = { passNode: producerPass };
 	const gtaoHandler = findEffectHandler( gtao );
+	const sss = sssLike();
+	sss.depthNode = { passNode: producerPass };
+	const sssHandler = findEffectHandler( sss );
 	const traaHandler = findEffectHandler( traaLike() );
 	assert.equal( gtaoHandler.execution.phase, 'pass-context' );
 	assert.deepEqual( gtaoHandler.execution.getProducerPasses( gtao ), [ producerPass ] );
+	assert.equal( sssHandler.execution.phase, 'pass-context' );
+	assert.deepEqual( sssHandler.execution.getProducerPasses( sss ), [ producerPass ] );
 	assert.equal( traaHandler.execution.phase, 'terminal' );
 
 } );

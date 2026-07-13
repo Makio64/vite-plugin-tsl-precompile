@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { annotateDevMarkerSources, transformSource } from '../../src/babel-transform.js';
+import { annotateDevMarkerSources, instrumentLiveContextDependencies, transformSource } from '../../src/babel-transform.js';
 import { markerSourceRevision } from '../../src/_shared/module-identity.js';
 
 function resolveArtifactStub( table ) {
@@ -9,6 +9,36 @@ function resolveArtifactStub( table ) {
 	return ( name ) => table[ name ] ? { hash: table[ name ] } : null;
 
 }
+
+test( 'babel — live context imports retain closure-hidden AO and shadow dependencies', () => {
+
+	const source = `
+		import { builtinAOContext, builtinShadowContext as shadowContext, vec3 } from 'three/tsl';
+		const ao = builtinAOContext( aoNode );
+		const shadow = shadowContext( shadowNode, light );
+	`;
+	const result = instrumentLiveContextDependencies( source, { filename: '/project/src/effects.js' } );
+	assert.equal( result.touched, true );
+	assert.match( result.code, /attachLiveNodeDependency as __tslpAttachLiveNodeDependency/ );
+	assert.match( result.code, /builtinAOContext as __tslp_builtinAOContext/ );
+	assert.match( result.code, /builtinShadowContext as __tslp_builtinShadowContext/ );
+	assert.match( result.code, /const builtinAOContext = \(\.\.\.__tslp_context_args\) =>/ );
+	assert.match( result.code, /const shadowContext = \(\.\.\.__tslp_context_args/ );
+	assert.match( result.code, /role: "ambient-occlusion"/ );
+	assert.match( result.code, /role: "shadow",\s*light: __tslp_context_args/ );
+	assert.match( result.code, /const ao = builtinAOContext\(aoNode\)/ );
+	assert.match( result.code, /const shadow = shadowContext\(shadowNode, light\)/ );
+
+} );
+
+test( 'babel — live context dependency transform leaves namespace and unrelated imports unchanged', () => {
+
+	const namespace = `import * as TSL from 'three/tsl';\nTSL.builtinAOContext( aoNode );\n`;
+	const unrelated = `import { builtinAOContext } from './local-tsl.js';\nbuiltinAOContext( aoNode );\n`;
+	assert.equal( instrumentLiveContextDependencies( namespace, { filename: 'namespace.js' } ).touched, false );
+	assert.equal( instrumentLiveContextDependencies( unrelated, { filename: 'local.js' } ).touched, false );
+
+} );
 
 test( 'babel — simple .precompile call is rewritten', () => {
 

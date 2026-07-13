@@ -20,6 +20,7 @@ export type PreparePrecompiledPostprocessArgs = {
 	PrecompiledMaterial: new ( artifact: unknown ) => unknown;
 	auxConfigHash?: string;
 	sharedContext?: unknown;
+	renderer?: unknown;
 	passNodes?: unknown[];
 	diagnostics?: { byHandler?: Record<string, { prepared: number; missed: number }> } & Record<string, unknown>;
 };
@@ -35,6 +36,7 @@ export type PrepareEffectNodeForReplayOptions = {
 	PrecompiledMaterial: new ( artifact: unknown ) => unknown;
 	auxConfigHash?: string;
 	sharedContext?: unknown;
+	renderer?: unknown;
 	passNodes?: unknown[];
 	effectIndex?: number;
 };
@@ -56,7 +58,7 @@ export function preparePrecompiledPostprocess( args: PreparePrecompiledPostproce
 export function prepareEffectNodeForReplay( handler: EffectHandler, node: unknown, opts: PrepareEffectNodeForReplayOptions ): PrepareEffectNodeForReplayResult;
 export function makePrecompiledAuxMaterial( shape: string, sourceMaterial: unknown, opts: PrepareEffectNodeForReplayOptions ): unknown | null;
 export function cloneAuxArtifact<T = unknown>( artifact: T ): T;
-export function wireLiveNodeSidecarsToArtifact( artifact: unknown, sourceMaterial: unknown, replacement?: unknown ): LiveSidecarWireStats;
+export function wireLiveNodeSidecarsToArtifact( artifact: unknown, sourceMaterial: unknown, opts?: { overlay?: boolean } ): LiveSidecarWireStats;
 export function artifactLooksLikeRetroPassMaterial( artifact: unknown ): boolean;
 
 export { listAux, findAux } from '../index';

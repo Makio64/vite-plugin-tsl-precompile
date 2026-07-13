@@ -3,6 +3,7 @@ export type EffectSubPass = {
 	shape: string;
 	config?: Record<string, unknown>;
 	renderTargetHint?: Record<string, unknown> | null;
+	liveUniformOverlay?: boolean;
 	node?: unknown;
 	[ key: string ]: unknown;
 };

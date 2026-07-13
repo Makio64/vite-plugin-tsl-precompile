@@ -30,7 +30,7 @@
  * } );
  * ```
  *
- * Pure-Fn effects (fxaa, godrays, ssgi, sss, afterimage, denoise,
+ * Pure-Fn effects (fxaa, godrays, ssgi, afterimage, denoise,
  * anamorphic, retro, …) don't need a handler — they compose into the parent's
  * shader inline and are captured as the top-level `aux-post-process`
  * artifact. Effects with separately-compiled internal materials (bloom,
@@ -40,6 +40,7 @@
 
 import { attachArtifactTextureRefsWhere } from './artifact-texture-wiring.js';
 import { wireTRAAResolveArtifact } from './traa-replay.js';
+import { wireSSSArtifact } from './sss-replay.js';
 import { getLiveNodeDependencies } from './node-dependencies.js';
 
 /** @type {Map<string, Object>} */
@@ -466,6 +467,73 @@ registerEffectHandler( {
 	},
 } );
 
+/**
+ * Screen-Space Shadows — `three/addons/tsl/display/SSSNode.js`.
+ *
+ * SSS owns one RedFormat render target/material and samples a live pre-pass
+ * depth texture. Its camera, light, quality, and temporal uniforms must remain
+ * live after the internal material is replaced.
+ */
+registerEffectHandler( {
+	name: 'sss',
+	execution: {
+		phase: 'pass-context',
+		getProducerPasses( node ) {
+
+			const passNode = node && node.depthNode && node.depthNode.passNode;
+			return passNode ? [ passNode ] : [];
+
+		},
+	},
+	detect( node ) {
+
+		return !! ( isEffectCandidate( node )
+			&& effectTypeMatches( node, 'SSSNode' )
+			&& typeof node.updateBefore === 'function'
+			&& node._sssRenderTarget
+			&& node._material
+			&& node._textureNode
+			&& node.depthNode );
+
+	},
+	subPasses( node, index ) {
+
+		if ( ! node._material ) return [];
+		return [ {
+			material: node._material,
+			shape: 'sss',
+			config: { type: 'sss', sssIndex: index },
+			renderTargetHint: __singleRenderTargetHint( node._sssRenderTarget ),
+			liveUniformOverlay: true,
+			node,
+		} ];
+
+	},
+	forceSetup( node, ctx ) {
+
+		if ( ! node || ! node._material || node._material.fragmentNode ) return;
+		if ( typeof node.setup !== 'function' ) return;
+		try {
+
+			node.setup( {
+				renderer: ctx && ctx.renderer || {},
+				getSharedContext: () => ctx && ctx.sharedContext || {},
+			} );
+
+		} catch ( _ ) {
+			// Retry once the live depth input and renderer context are available.
+		}
+
+	},
+	wireSubPassTextures( subPass, node, opts ) {
+
+		if ( ! subPass || subPass.shape !== 'sss' ) return;
+		const artifact = subPass.material && subPass.material.precompiledArtifact;
+		if ( artifact ) wireSSSArtifact( artifact, node, opts || {} );
+
+	},
+} );
+
 function __singleRenderTargetHint( target ) {
 
 	if ( ! target ) return null;
@@ -761,7 +829,7 @@ registerEffectHandler( {
  */
 export function __resetEffectHandlersForTests() {
 
-	const builtins = [ 'bloom', 'gtao', 'outline', 'ssr', 'dof', 'traa' ];
+	const builtins = [ 'bloom', 'gtao', 'sss', 'outline', 'ssr', 'dof', 'traa' ];
 	for ( const name of Array.from( HANDLERS.keys() ) ) {
 
 		if ( ! builtins.includes( name ) ) HANDLERS.delete( name );

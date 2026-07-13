@@ -108,6 +108,13 @@ test( 'precompileAuxiliary captures effects observed only through live update no
 		constructor( material ) { this.material = material; }
 
 	}
+	class RenderTarget {
+
+		constructor( _width, _height, options ) { RenderTarget.options.push( options ); }
+		dispose() {}
+
+	}
+	RenderTarget.options = [];
 
 	const gtao = {
 		updateBefore: () => {},
@@ -116,6 +123,14 @@ test( 'precompileAuxiliary captures effects observed only through live update no
 		_textureNode: { isPassTextureNode: true },
 		radius: { isUniformNode: true, value: 0.25 },
 		resolution: { isUniformNode: true, value: { isVector2: true } },
+	};
+	const sss = {
+		type: 'SSSNode',
+		updateBefore: () => {},
+		_sssRenderTarget: { texture: { name: 'SSS', format: 1028, type: 1009 } },
+		_material: new NodeMaterial(),
+		_textureNode: { isPassTextureNode: true },
+		depthNode: { isTextureNode: true },
 	};
 	const outputNode = { isNode: true };
 	let compileCalls = 0;
@@ -129,7 +144,7 @@ test( 'precompileAuxiliary captures effects observed only through live update no
 			vertexShader: '',
 			fragmentShader: '',
 		};
-		if ( compileCalls === 1 ) Object.defineProperty( artifact, '_liveUpdateBeforeNodes', { value: [ gtao ] } );
+		if ( compileCalls === 1 ) Object.defineProperty( artifact, '_liveUpdateBeforeNodes', { value: [ gtao, sss ] } );
 		return [ artifact ];
 
 	};
@@ -149,11 +164,15 @@ test( 'precompileAuxiliary captures effects observed only through live update no
 			threeVersion: '184',
 			compileTSL,
 			postProcessing: { outputNode },
-			three: { NodeMaterial, Scene, QuadMesh },
+			three: { NodeMaterial, Scene, QuadMesh, RenderTarget },
 		} );
-		assert.equal( compileCalls, 3, 'captures the output, hidden GTAO, and renderer-output materials' );
-		assert.deepEqual( results.map( ( result ) => result.shape ), [ 'post-process', 'gtao', 'render-output' ] );
-		assert.deepEqual( payloads.map( ( payload ) => payload.materialShape ), [ 'post-process', 'gtao' ] );
+		assert.equal( compileCalls, 4, 'captures the output, hidden GTAO/SSS, and renderer-output materials' );
+		assert.deepEqual( results.map( ( result ) => result.shape ), [ 'post-process', 'gtao', 'sss', 'render-output' ] );
+		assert.deepEqual( payloads.map( ( payload ) => payload.materialShape ), [ 'post-process', 'gtao', 'sss' ] );
+		assert.deepEqual( RenderTarget.options, [
+			{ depthBuffer: false, count: 1, format: 1028, type: 1009 },
+			{ depthBuffer: false, count: 1, format: 1028, type: 1009 },
+		] );
 
 	} finally {
 

@@ -471,7 +471,11 @@ function rewriteImportmap( html, mode ) {
 
 		}
 
-	const tslTarget = mode === 'replay' ? bust( '/__tslp__/tsl-stub.js' ) : '/build/three.tsl.js';
+	const tslTarget = mode === 'replay'
+		? bust( '/__tslp__/tsl-stub.js' )
+		: mode === 'capture'
+			? bust( '/__tslp__/tsl-capture.js' )
+			: '/build/three.tsl.js';
 	const extraImports = {
 		three: webgpuTarget,
 		'three/webgpu': webgpuTarget,
@@ -1831,7 +1835,8 @@ import { computeNodeUsesStorageTexture as __sharedComputeNodeUsesStorageTexture,
 import { artifactHasTextureSource as __sharedArtifactHasTextureSource, attachArtifactTextureRefsByShapeOrder as __sharedAttachArtifactTextureRefsByShapeOrder, attachArtifactTextureRefsWhere as __sharedAttachArtifactTextureRefsWhere, attachTextureRefsWhere as __sharedAttachTextureRefsWhere, countArtifactTextureSources as __sharedCountArtifactTextureSources, singleArtifactTextureUuid as __sharedSingleArtifactTextureUuid, textureMatchesArtifactSource as __sharedTextureMatchesArtifactSource, textureMatchesSource as __sharedTextureMatchesSource } from '/__tslp_runtime/slim-support/artifact-texture-wiring.js';
 import { createFullRendererFallback as __sharedCreateFullRendererFallback } from '/__tslp_runtime/slim-support/full-renderer-fallback.js';
 import { updateRendererLightingForSlim as __sharedUpdateRendererLightingForSlim } from '/__tslp_runtime/slim-support/renderer-lighting.js';
-import { artifactLooksLikeRetroPassMaterial as __sharedArtifactLooksLikeRetroPassMaterial } from '/__tslp_runtime/slim-support/postprocess-effects-replay.js';
+import { artifactLooksLikeRetroPassMaterial as __sharedArtifactLooksLikeRetroPassMaterial, prepareEffectNodeForReplay as __sharedPrepareEffectNodeForReplay } from '/__tslp_runtime/slim-support/postprocess-effects-replay.js';
+import { findEffectHandler as __sharedFindEffectHandler } from '/__tslp_runtime/slim-support/postprocess-effects.js';
 import { wireLiveUniformSidecarsToArtifact as __sharedWireLiveUniformSidecarsToArtifact } from '/__tslp_runtime/slim-support/live-node-sidecars.js';
 import { getTemporalFrameState as __sharedGetTemporalFrameState, withTemporalFrame as __sharedWithTemporalFrame } from '/__tslp_runtime/slim-support/temporal-frame.js';
 import { getLiveNodeDependencies as __sharedGetLiveNodeDependencies } from '/__tslp_runtime/slim-support/node-dependencies.js';
@@ -12773,7 +12778,32 @@ function __prepareFrameEffectNodeForReplay( node, fullRenderer, context ) {
 	try {
 		if ( __deferFrameEffectUntilShadowReady( node, fullRenderer, context ) ) return false;
 		if ( __isTAAUFrameEffectNode( node ) ) __pinTAAUJitterIndex( node );
-		if ( typeof node.setup === 'function' ) node.setup( __makeReplayNodeBuilder( fullRenderer, context ) );
+		const effectType = __effectTypeName( node );
+		if ( effectType === 'SSSNode' ) {
+
+			const handler = __sharedFindEffectHandler( node );
+			const result = __sharedPrepareEffectNodeForReplay( handler, node, {
+				loadAux: ( shape ) => Slim.loadAux( shape, 'tslp-e2e-bypass' ),
+				PrecompiledMaterial: Slim.PrecompiledMaterial,
+				renderer: fullRenderer,
+				sharedContext: context || {},
+				passNodes: context && context.passNodes || [],
+			} );
+			if ( ! ( result.alreadyPrepared || result.prepared.length > 0 ) ) {
+
+				throw new Error( 'SSS precompiled replay preparation missed: ' + JSON.stringify( result.missed ) );
+
+			}
+			Object.defineProperty( node, '__tslpUseSlimEffectReplay', { value: true, configurable: true } );
+			const sssDiag = diag.sss || ( diag.sss = { prepared: 0, renderedPrecompiled: 0, missed: 0 } );
+			sssDiag.prepared += result.prepared.length;
+			sssDiag.missed += result.missed.length;
+
+		} else if ( typeof node.setup === 'function' ) {
+
+			node.setup( __makeReplayNodeBuilder( fullRenderer, context ) );
+
+		}
 		Object.defineProperty( node, '__tslpFrameEffectReady', { value: true, configurable: true } );
 		diag.prepared ++;
 		return true;
@@ -12911,6 +12941,8 @@ function __renderFrameEffectNodeWithFullRenderer( node, slimRenderer, fullRender
 	const effectName = node.constructor && ( node.constructor.type || node.constructor.name ) || node.type || 'effect';
 	try {
 		if ( ! __prepareFrameEffectNodeForReplay( node, fullRenderer, context ) ) return false;
+		const useSlimEffectReplay = node.__tslpUseSlimEffectReplay === true;
+		const effectRenderer = useSlimEffectReplay ? slimRenderer : fullRenderer;
 		try {
 			const debug = diag.__debug || ( diag.__debug = [] );
 			if ( debug.length < 16 ) {
@@ -12929,12 +12961,12 @@ function __renderFrameEffectNodeWithFullRenderer( node, slimRenderer, fullRender
 			diag.reused = ( diag.reused || 0 ) + 1;
 			return true;
 		}
-		try {
+		if ( ! useSlimEffectReplay ) try {
 			fullRenderer.toneMapping = slimRenderer.toneMapping;
 			fullRenderer.toneMappingExposure = slimRenderer.toneMappingExposure;
 			fullRenderer.outputColorSpace = slimRenderer.outputColorSpace;
 		} catch ( _ ) {}
-		try {
+		if ( ! useSlimEffectReplay ) try {
 			const size = slimRenderer.getDrawingBufferSize( __fullRTTSize );
 			if ( typeof fullRenderer.setSize === 'function' ) fullRenderer.setSize( size.width, size.height, false );
 		} catch ( _ ) {}
@@ -12949,8 +12981,8 @@ function __renderFrameEffectNodeWithFullRenderer( node, slimRenderer, fullRender
 			} catch ( _ ) {}
 		}
 		const lensflareInputTexture = __retargetLensflareInputTexture( node );
-		__shareGraphTexturesBetweenRenderers( fullRenderer, slimRenderer, node, { skipOwnedRenderTargets: 'direct' } );
-		if ( lensflareInputTexture ) __shareGPUTextureEntry( fullRenderer, slimRenderer, lensflareInputTexture );
+		if ( ! useSlimEffectReplay ) __shareGraphTexturesBetweenRenderers( fullRenderer, slimRenderer, node, { skipOwnedRenderTargets: 'direct' } );
+		if ( ! useSlimEffectReplay && lensflareInputTexture ) __shareGPUTextureEntry( fullRenderer, slimRenderer, lensflareInputTexture );
 		try {
 			if ( node._material ) node._material.needsUpdate = true;
 			if ( node._resolveMaterial ) node._resolveMaterial.needsUpdate = true;
@@ -12958,7 +12990,7 @@ function __renderFrameEffectNodeWithFullRenderer( node, slimRenderer, fullRender
 			__retargetGaussianBlurInputTexture( node );
 			const updateBefore = node.__tslpFrameEffectOriginalUpdateBefore || node.updateBefore;
 			const runUpdate = () => updateBefore.call( node, {
-				renderer: fullRenderer,
+				renderer: effectRenderer,
 				frameId: __frameEffectFrameId(),
 				renderId: __frameEffectFrameId(),
 				context: context || {},
@@ -12969,13 +13001,19 @@ function __renderFrameEffectNodeWithFullRenderer( node, slimRenderer, fullRender
 		try {
 			const forceFrameEffectReadback = effectName === 'GodraysNode'
 				|| ( effectName === 'BilateralBlurNode' && node.textureNode && node.textureNode.value && node.textureNode.value.name === 'Godrays' );
-			__probeFrameEffectTextureAsync( fullRenderer, node._godraysRenderTarget && node._godraysRenderTarget.texture, effectName + '.godrays', { force: effectName === 'GodraysNode' } );
-			__probeFrameEffectTextureAsync( fullRenderer, node.textureNode && node.textureNode.value, effectName + '.input', { force: forceFrameEffectReadback } );
-			__probeFrameEffectTextureAsync( fullRenderer, node._horizontalRT && node._horizontalRT.texture, effectName + '.horizontal', { force: forceFrameEffectReadback } );
-			__probeFrameEffectTextureAsync( fullRenderer, node._verticalRT && node._verticalRT.texture, effectName + '.vertical', { force: forceFrameEffectReadback } );
+			__probeFrameEffectTextureAsync( effectRenderer, node._godraysRenderTarget && node._godraysRenderTarget.texture, effectName + '.godrays', { force: effectName === 'GodraysNode' } );
+			__probeFrameEffectTextureAsync( effectRenderer, node.textureNode && node.textureNode.value, effectName + '.input', { force: forceFrameEffectReadback } );
+			__probeFrameEffectTextureAsync( effectRenderer, node._horizontalRT && node._horizontalRT.texture, effectName + '.horizontal', { force: forceFrameEffectReadback } );
+			__probeFrameEffectTextureAsync( effectRenderer, node._verticalRT && node._verticalRT.texture, effectName + '.vertical', { force: forceFrameEffectReadback } );
 		} catch ( _ ) {}
-		__shareDirectOwnedRenderTargetTexturesBetweenRenderers( slimRenderer, fullRenderer, node );
+		if ( ! useSlimEffectReplay ) __shareDirectOwnedRenderTargetTexturesBetweenRenderers( slimRenderer, fullRenderer, node );
 		diag.rendered ++;
+		if ( useSlimEffectReplay ) {
+
+			const sssDiag = diag.sss || ( diag.sss = { prepared: 0, renderedPrecompiled: 0, missed: 0 } );
+			sssDiag.renderedPrecompiled ++;
+
+		}
 		try { Object.defineProperty( node, '__tslpFrameEffectRenderedOnce', { value: true, configurable: true } ); } catch ( _ ) {}
 		if ( diag.names.length < 20 ) diag.names.push( effectName );
 		return true;
@@ -13538,6 +13576,45 @@ export const TSL = __TSL;
 
 }
 
+function tslCaptureModule() {
+
+	// Capture uses the full TSL implementation, but wraps context constructors
+	// so closure-only AO/SSS inputs are visible to the product aux collector.
+	// Real Vite adopters receive the equivalent wrapper from the plugin's source
+	// transform; this module keeps the custom batch server on the same contract.
+	const src = readFileSync( join( threeRepo, 'build/three.tsl.js' ), 'utf8' );
+	const match = src.match( /export\s*\{([\s\S]*?)\};?\s*$/m );
+	const names = match
+		? match[ 1 ].split( ',' ).map( ( x ) => x.trim().split( /\s+as\s+/ ).pop().trim() ).filter( Boolean )
+		: [];
+	const unique = Array.from( new Set( names ) ).filter( ( name ) => /^[A-Za-z_$][\w$]*$/.test( name ) && name !== 'TSL' );
+	const consts = unique
+		.filter( ( name ) => name !== 'builtinAOContext' && name !== 'builtinShadowContext' )
+		.map( ( name ) => `const ${ name } = __TSL[ '${ name }' ];` )
+		.join( '\n' );
+	const exportList = unique.join( ', ' );
+	return `
+import { TSL as __TSL } from '/build/three.webgpu.js';
+import { attachLiveNodeDependency as __attachLiveNodeDependency } from '/__tslp_runtime/slim-support/node-dependencies.js';
+${ consts }
+const __realBuiltinAOContext = __TSL[ 'builtinAOContext' ];
+const builtinAOContext = ( aoNode, node = null ) => {
+	const contextNode = __realBuiltinAOContext( aoNode, node );
+	__attachLiveNodeDependency( contextNode, aoNode, { role: 'ambient-occlusion' } );
+	return contextNode;
+};
+const __realBuiltinShadowContext = __TSL[ 'builtinShadowContext' ];
+const builtinShadowContext = ( shadowNode, light, node = null ) => {
+	const contextNode = __realBuiltinShadowContext( shadowNode, light, node );
+	__attachLiveNodeDependency( contextNode, shadowNode, { role: 'shadow', light } );
+	return contextNode;
+};
+export { ${ exportList } };
+export const TSL = __TSL;
+`;
+
+}
+
 function inspectorStubModule() {
 
 	return `
@@ -13670,6 +13747,7 @@ const server = createServer( async ( req, res ) => {
 		if ( url.pathname === '/__tslp__/full-webgpu-auto.js' ) return sendJs( res, fullWebgpuAutoModule() );
 		if ( url.pathname === '/__tslp__/slim-webgpu-replay.js' ) return sendJs( res, slimWebgpuReplayModule() );
 		if ( url.pathname === '/__tslp__/tsl-stub.js' ) return sendJs( res, tslStubModule() );
+		if ( url.pathname === '/__tslp__/tsl-capture.js' ) return sendJs( res, tslCaptureModule() );
 		if ( url.pathname === '/__tslp__/aux-virtual.js' ) return sendJs( res, auxVirtualModule() );
 		if ( url.pathname === '/examples/jsm/inspector/Inspector.js' ) return sendJs( res, inspectorStubModule() );
 		if ( url.pathname === '/examples/jsm/libs/stats.module.js' ) return sendJs( res, statsStubModule() );

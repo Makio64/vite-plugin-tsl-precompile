@@ -72,6 +72,7 @@ export function artifactLooksLikeRetroPassMaterial( artifact ) {
  * @param {Function} args.PrecompiledMaterial - Class that wraps an aux artifact for the hydrator's fast-path.
  * @param {string}   [args.auxConfigHash='tslp-e2e-bypass'] - Config-hash to request from `loadAux`. Set to the captured hash if you want strict matching; the default lets `loadAux`'s shape-fallback policy pick whichever capture is registered for the shape.
  * @param {Object}   [args.sharedContext]  - Forwarded to `handler.forceSetup` for effects whose `setup()` reads from a context object (e.g. bloom).
+ * @param {Object}   [args.renderer]       - Renderer forwarded to effect setup hooks (required by SSS when material setup is still lazy).
  * @param {Array}    [args.passNodes]      - Optional live PassNode list for effects whose aux artifacts need current pass depth textures (TRAA).
  * @param {Object}   [args.diagnostics]    - Optional bag; per-handler counters are written under `diagnostics.byHandler[ handler.name ]`.
  * @return {{ effects: number, prepared: Array, missed: Array }}
@@ -106,6 +107,7 @@ export function preparePrecompiledPostprocess( args = {} ) {
 			PrecompiledMaterial: args.PrecompiledMaterial,
 			auxConfigHash: args.auxConfigHash || 'tslp-e2e-bypass',
 			sharedContext: args.sharedContext || null,
+			renderer: args.renderer || null,
 			passNodes: Array.isArray( args.passNodes ) ? args.passNodes : null,
 			effectIndex,
 		} );
@@ -140,6 +142,7 @@ export function preparePrecompiledPostprocess( args = {} ) {
  * @param {Function} opts.PrecompiledMaterial
  * @param {string}   [opts.auxConfigHash='tslp-e2e-bypass']
  * @param {Object}   [opts.sharedContext]
+ * @param {Object}   [opts.renderer]
  * @param {Array}    [opts.passNodes]
  * @param {number}   [opts.effectIndex=0]
  * @return {{ prepared: Array, missed: Array, alreadyPrepared: boolean }}
@@ -169,7 +172,7 @@ export function prepareEffectNodeForReplay( handler, node, opts = {} ) {
 	// usually don't, but we always offer the hook.
 	if ( typeof handler.forceSetup === 'function' ) {
 
-		try { handler.forceSetup( node, { sharedContext: opts.sharedContext || null } ); } catch ( err ) {
+		try { handler.forceSetup( node, { renderer: opts.renderer || null, sharedContext: opts.sharedContext || null } ); } catch ( err ) {
 
 			missed.push( { shape: handler.name + ':forceSetup', reason: ( err && err.message ) || String( err ) } );
 
@@ -219,7 +222,7 @@ export function prepareEffectNodeForReplay( handler, node, opts = {} ) {
 		// Let the handler run effect-specific uniform wiring (e.g. bloom's
 		// direction/invSize matching) against the *replacement* material
 		// (so the hooks see `replacement.precompiledArtifact`).
-		wireLiveNodeSidecarsToArtifact( replacement.precompiledArtifact, subPass.material );
+		wireLiveNodeSidecarsToArtifact( replacement.precompiledArtifact, subPass.material, { overlay: subPass.liveUniformOverlay === true } );
 		attachPostprocessTextureRefs( replacement.precompiledArtifact, node );
 
 		const subPassWithReplacement = { ...subPass, material: replacement };

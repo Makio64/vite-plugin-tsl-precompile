@@ -99,6 +99,21 @@ logic/performance fault but is not the remaining AO fidelity cause. This is
 not a general render DAG; the next safe extensions are explicit target/input
 ownership and per-logical-frame execution semantics.
 
+**Closure-backed SSS product path (2026-07-13).** Named imports of
+`builtinAOContext` and `builtinShadowContext` are now wrapped by the plugin in
+dev and build so the real full-Three context constructors attach the same live
+dependency edges as the slim stubs. This closes the capture gap that an
+extractor-only fix cannot see: the context's `getAO`/`getShadow` functions keep
+their effect inputs solely in JavaScript closures. The SSS handler captures its
+single RedFormat material, opts into live uniform overlays, declares pre-pass
+producer/context-consumer placement, and rewires captured material-graph depth
+to the current pass depth. The focused SSS canary captures an `sss` aux shape,
+selects the planned `prePass -> SSS -> scenePass -> TRAA` wave, prepares one
+precompiled SSS material, and renders it 33/33 times on the slim renderer with
+zero misses, warnings, or replay errors (66 pass renders for 33 pipeline calls).
+Its disabled-gate diagnostic remains 4.57 dB, so missing SSS capture/execution
+is closed while the example's larger visual mismatch remains independent.
+
 ---
 
 ## 2026-06-09 audit refresh — corrections to the map

@@ -27,7 +27,7 @@ import { resolve, join, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
-import { annotateDevMarkerSources, transformSource } from './babel-transform.js';
+import { annotateDevMarkerSources, instrumentLiveContextDependencies, transformSource } from './babel-transform.js';
 import { autoMarkSource } from './auto-mark.js';
 import { emitArtifactModule } from './emit-manifest.js';
 import { createWgslStringPool, emitOptimizedJsonExpression, getExternalWgslRefIdentifiers } from './wgsl-optimize.js';
@@ -451,6 +451,9 @@ export default function tslPrecompile( userOpts = {} ) {
 
 			}
 
+			const contextDependencies = instrumentLiveContextDependencies( code, { filename: id } );
+			if ( contextDependencies.touched ) code = contextDependencies.code;
+
 			// Dev mode: leave `.precompile()` calls in place so the runtime
 			// marker fires and POSTs to the capture endpoint. Build mode:
 			// rewrite to `__applyPrecompiled`.
@@ -458,7 +461,7 @@ export default function tslPrecompile( userOpts = {} ) {
 
 				const annotated = annotateDevMarkerSources( code, { filename: id, root } );
 				if ( annotated.touched ) return { code: annotated.code, map: annotated.map };
-				return autoMarked ? { code, map: null } : null;
+				return autoMarked || contextDependencies.touched ? { code, map: contextDependencies.map } : null;
 
 			}
 
@@ -471,7 +474,7 @@ export default function tslPrecompile( userOpts = {} ) {
 					} );
 
 				let outputCode = result.code;
-				let touched = result.touchedNames.length > 0;
+				let touched = result.touchedNames.length > 0 || contextDependencies.touched;
 				// Inject the aux-artifact registry virtual module in any production build,
 				// not just slim mode. Without this, captured background / PMREM / post-process
 				// artifacts on disk are never registered in the bundle, and the precompiled

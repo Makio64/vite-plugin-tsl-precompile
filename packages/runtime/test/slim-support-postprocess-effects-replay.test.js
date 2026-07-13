@@ -126,6 +126,50 @@ function makeTRAAResolveArtifact() {
 
 }
 
+function makeSSSArtifact() {
+
+	return {
+		version: 3,
+		shape: 'sss',
+		uniformPlan: [ {
+			slots: [ {
+				dtype: 'float',
+				source: { kind: 'uniform.live', name: 'maxDistance', valueSnapshot: { type: 'float', data: 0.1 } },
+			} ],
+			textures: [ {
+				source: { kind: 'depth.texture', textureUuid: 'captured-sss-depth', fromMaterialGraph: true },
+			} ],
+		} ],
+		defaults: {},
+		renderState: {},
+		fragmentShader: '',
+		vertexShader: '',
+	};
+
+}
+
+function makeSSSLikeNode() {
+
+	const depth = { isTexture: true, isDepthTexture: true, uuid: 'live-sss-depth', name: 'depth' };
+	const passNode = { getTexture: ( name ) => name === 'depth' ? depth : null };
+	const maxDistance = { isUniformNode: true, name: 'maxDistance', value: 0.1 };
+	const material = {
+		name: 'SSS',
+		fragmentNode: { isNode: true, maxDistance },
+		maxDistance,
+	};
+	const node = {
+		type: 'SSSNode',
+		updateBefore: () => {},
+		_sssRenderTarget: { texture: { isTexture: true, uuid: 'live-sss-output', name: 'SSS' } },
+		_material: material,
+		_textureNode: { isPassTextureNode: true },
+		depthNode: { passNode },
+	};
+	return { node, passNode, depth, maxDistance };
+
+}
+
 function makeTRAALikeNode() {
 
 	const textures = {
@@ -358,6 +402,33 @@ test( 'prepareEffectNodeForReplay attaches live postprocess textures by name', (
 	assert.equal( fakeNode._mat.precompiledArtifact._textureRefs.get( 'captured-output' ), liveTexture );
 
 	unregisterEffectHandler( 'fake-texture-fx' );
+
+} );
+
+test( 'prepareEffectNodeForReplay wires SSS live uniforms and pre-pass depth', () => {
+
+	const { node, passNode, depth, maxDistance } = makeSSSLikeNode();
+	const artifact = makeSSSArtifact();
+	const handler = findEffectHandler( node );
+	assert.equal( handler && handler.name, 'sss' );
+	const result = prepareEffectNodeForReplay( handler, node, {
+		loadAux: ( shape ) => shape === 'sss' ? artifact : null,
+		PrecompiledMaterial: StubPrecompiledMaterial,
+		passNodes: [ passNode ],
+		renderer: { logarithmicDepthBuffer: false },
+	} );
+
+	assert.equal( result.missed.length, 0, JSON.stringify( result.missed ) );
+	assert.equal( result.prepared.length, 1 );
+	assert.ok( node._material instanceof StubPrecompiledMaterial );
+	const preparedArtifact = node._material.precompiledArtifact;
+	const slot = preparedArtifact.uniformPlan[ 0 ].slots[ 0 ];
+	const depthSource = preparedArtifact.uniformPlan[ 0 ].textures[ 0 ].source;
+	assert.equal( slot._liveNode, maxDistance );
+	assert.equal( slot.__tslpLiveSidecarOverlay, true );
+	assert.equal( depthSource.kind, 'artifact.texture' );
+	assert.equal( depthSource.textureName, 'depth' );
+	assert.equal( preparedArtifact._textureRefs.get( 'captured-sss-depth' ), depth );
 
 } );
 

@@ -37,6 +37,8 @@ const generate = _generate.default || _generate;
 
 const APPLY_IMPORT_SPECIFIER = '@tsl-precompile/runtime/apply';
 const APPLY_FN_NAME = '__applyPrecompiled';
+const NODE_DEPENDENCY_IMPORT_SPECIFIER = '@tsl-precompile/runtime/slim-support/node-dependencies';
+const ATTACH_NODE_DEPENDENCY_FN_NAME = 'attachLiveNodeDependency';
 const PARSER_PLUGINS = [
 	'jsx',
 	'typescript',
@@ -45,6 +47,82 @@ const PARSER_PLUGINS = [
 	'deprecatedImportAssert',
 	'topLevelAwait',
 ];
+
+/**
+ * Preserve inputs hidden inside three.js's builtin AO/shadow context closures.
+ * The wrapper keeps the user's local binding name and renames only the imported
+ * implementation, so every existing call site gains a non-serializable live
+ * dependency edge without source-level API changes.
+ */
+export function instrumentLiveContextDependencies( source, { filename } ) {
+
+	if ( ! source.includes( 'three/tsl' ) ) return { code: source, map: null, touched: false };
+	if ( ! source.includes( 'builtinAOContext' ) && ! source.includes( 'builtinShadowContext' ) ) return { code: source, map: null, touched: false };
+	const ast = parse( source, {
+		sourceType: 'module',
+		sourceFilename: filename,
+		plugins: PARSER_PLUGINS,
+		errorRecovery: false,
+	} );
+	const occupiedIdentifiers = collectBindingNames( ast );
+	const wrappers = [];
+	let attachName = null;
+
+	for ( const statement of ast.program.body ) {
+
+		if ( ! t.isImportDeclaration( statement ) || statement.source.value !== 'three/tsl' ) continue;
+		for ( const specifier of statement.specifiers ) {
+
+			if ( ! t.isImportSpecifier( specifier ) || ! t.isIdentifier( specifier.imported ) ) continue;
+			const importedName = specifier.imported.name;
+			if ( importedName !== 'builtinAOContext' && importedName !== 'builtinShadowContext' ) continue;
+
+			if ( attachName === null ) attachName = allocateIdentifier( '__tslpAttachLiveNodeDependency', 'live-context-dependency', occupiedIdentifiers );
+			const publicLocalName = specifier.local.name;
+			const implementationName = allocateIdentifier( `__tslp_${ importedName }`, `live-context:${ publicLocalName }`, occupiedIdentifiers );
+			specifier.local = t.identifier( implementationName );
+
+			const argsName = allocateIdentifier( '__tslp_context_args', `live-context-args:${ publicLocalName }`, occupiedIdentifiers );
+			const resultName = allocateIdentifier( '__tslp_context_node', `live-context-result:${ publicLocalName }`, occupiedIdentifiers );
+			const args = t.identifier( argsName );
+			const result = t.identifier( resultName );
+			const metadataProperties = [ t.objectProperty( t.identifier( 'role' ), t.stringLiteral( importedName === 'builtinAOContext' ? 'ambient-occlusion' : 'shadow' ) ) ];
+			if ( importedName === 'builtinShadowContext' ) {
+
+				metadataProperties.push( t.objectProperty( t.identifier( 'light' ), t.memberExpression( args, t.numericLiteral( 1 ), true ) ) );
+
+			}
+			wrappers.push( t.variableDeclaration( 'const', [
+				t.variableDeclarator(
+					t.identifier( publicLocalName ),
+					t.arrowFunctionExpression( [ t.restElement( args ) ], t.blockStatement( [
+						t.variableDeclaration( 'const', [ t.variableDeclarator( result, t.callExpression( t.identifier( implementationName ), [ t.spreadElement( args ) ] ) ) ] ),
+						t.expressionStatement( t.callExpression( t.identifier( attachName ), [
+							result,
+							t.memberExpression( args, t.numericLiteral( 0 ), true ),
+							t.objectExpression( metadataProperties ),
+						] ) ),
+						t.returnStatement( result ),
+					] ) ),
+				),
+			] ) );
+
+		}
+
+	}
+
+	if ( wrappers.length === 0 ) return { code: source, map: null, touched: false };
+	ast.program.body.unshift( t.importDeclaration( [
+		t.importSpecifier( t.identifier( attachName ), t.identifier( ATTACH_NODE_DEPENDENCY_FN_NAME ) ),
+	], t.stringLiteral( NODE_DEPENDENCY_IMPORT_SPECIFIER ) ) );
+	let insertAt = 0;
+	while ( insertAt < ast.program.body.length && t.isImportDeclaration( ast.program.body[ insertAt ] ) ) insertAt ++;
+	ast.program.body.splice( insertAt, 0, ...wrappers );
+
+	const output = generate( ast, { sourceMaps: true, sourceFileName: filename }, source );
+	return { code: output.code, map: output.map, touched: true };
+
+}
 /**
  * Stamp dev-only marker calls with a stable call-site identity. The runtime
  * forwards it to the capture server so two different files cannot silently
