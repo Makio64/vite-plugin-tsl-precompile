@@ -1,29 +1,20 @@
 /**
- * Temporary live-graph compatibility island for scene-owned nodes.
+ * Graph-free scene topology state for compiler-free replay.
  *
- * Environment/fog cache keys remain as a temporary compatibility island.
- * Background and output passes own dedicated replay adapters and therefore no
- * longer construct live TSL graphs here.
+ * Captured render artifacts already contain environment and fog WGSL. The
+ * slim renderer therefore needs only a semantic invalidation key; constructing
+ * TextureNode/FogNode graphs here would retain the TSL runtime without
+ * producing any shader code.
  */
 
-import {
-	cubeTexture,
-	densityFogFactor,
-	fog,
-	rangeFogFactor,
-	reference,
-	renderGroup,
-	texture,
-} from 'three/src/nodes/TSL.js';
-import { hashArray } from 'three/src/nodes/core/NodeUtils.js';
-import { error } from 'three/src/utils.js';
-
-const cacheKeyValues = [];
+import { createSceneRenderTopologySelector } from '@tsl-precompile/contract/render-selector';
+import { hashArray, hashString } from 'three/src/nodes/core/NodeUtils.js';
 
 export function createReplaySceneNodeCompatibility( manager ) {
 
 	const cacheLib = {};
 	const callHashCache = new WeakMap();
+	const observedCustomNodes = new WeakMap();
 	const nullLightsKey = {};
 
 	function getCacheNode( type, object, callback, forceUpdate = false ) {
@@ -40,95 +31,66 @@ export function createReplaySceneNodeCompatibility( manager ) {
 
 	}
 
-	function updateFog( scene ) {
+	function observeCustomNode( scene, property ) {
 
-		const sceneData = manager.get( scene );
-		const sceneFog = scene.fog;
-		if ( sceneFog ) {
+		if ( ! scene ) return null;
+		const node = scene[ property ] || null;
+		if ( ! node ) return null;
+		let observed = observedCustomNodes.get( scene );
+		if ( observed === undefined ) {
 
-			if ( sceneData.fog !== sceneFog ) {
-
-				const fogNode = getCacheNode( 'fog', sceneFog, () => {
-
-					if ( sceneFog.isFogExp2 ) {
-
-						const color = reference( 'color', 'color', sceneFog ).setGroup( renderGroup );
-						const density = reference( 'density', 'float', sceneFog ).setGroup( renderGroup );
-						return fog( color, densityFogFactor( density ) );
-
-					}
-					if ( sceneFog.isFog ) {
-
-						const color = reference( 'color', 'color', sceneFog ).setGroup( renderGroup );
-						const near = reference( 'near', 'float', sceneFog ).setGroup( renderGroup );
-						const far = reference( 'far', 'float', sceneFog ).setGroup( renderGroup );
-						return fog( color, rangeFogFactor( near, far ) );
-
-					}
-					error( 'Renderer: Unsupported fog configuration.', sceneFog );
-					return undefined;
-
-				} );
-				sceneData.fogNode = fogNode;
-				sceneData.fog = sceneFog;
-
-			}
-
-		} else {
-
-			delete sceneData.fogNode;
-			delete sceneData.fog;
+			observed = {};
+			observedCustomNodes.set( scene, observed );
 
 		}
+		const previous = observed[ property ];
+		if ( previous && previous !== node ) {
+
+			throw new Error(
+				`[tsl-precompile/slim] scene.${ property } was replaced after replay started. ` +
+				'Custom scene-node topology is captured WGSL and cannot be inferred from an inert slim node. ' +
+				'Recapture the scene for the new graph or keep one node instance and update only its live values.',
+			);
+
+		}
+		observed[ property ] = node;
+		return node;
+
+	}
+
+	function updateFog( scene ) {
+
+		observeCustomNode( scene, 'fogNode' );
 
 	}
 
 	function updateEnvironment( scene ) {
 
-		const sceneData = manager.get( scene );
-		const environment = scene.environment;
-		if ( environment ) {
-
-			if ( sceneData.environment !== environment ) {
-
-				const environmentNode = getCacheNode( 'environment', environment, () => {
-
-					if ( environment.isCubeTexture === true ) return cubeTexture( environment );
-					if ( environment.isTexture === true ) return texture( environment );
-					error( 'Nodes: Unsupported environment configuration.', environment );
-					return undefined;
-
-				} );
-				sceneData.environmentNode = environmentNode;
-				sceneData.environment = environment;
-
-			}
-
-		} else if ( sceneData.environmentNode ) {
-
-			delete sceneData.environmentNode;
-			delete sceneData.environment;
-
-		}
+		observeCustomNode( scene, 'environmentNode' );
 
 	}
 
 	function getEnvironmentNode( scene ) {
 
 		updateEnvironment( scene );
-		if ( scene.environmentNode && scene.environmentNode.isNode ) return scene.environmentNode;
-		return manager.get( scene ).environmentNode || null;
+		const node = scene && scene.environmentNode;
+		return node && node.isNode === true ? node : null;
 
 	}
 
 	function getFogNode( scene ) {
 
 		updateFog( scene );
-		return scene.fogNode || manager.get( scene ).fogNode || null;
+		return scene && scene.fogNode || null;
 
 	}
 
 	function getCacheKey( scene, lightsNode ) {
+
+		// Observe explicit custom graphs on every request so an identity swap
+		// cannot hide behind the per-draw cache below.
+		updateEnvironment( scene );
+		updateFog( scene );
 
 		let byLights = callHashCache.get( scene );
 		if ( byLights === undefined ) {
@@ -142,11 +104,9 @@ export function createReplaySceneNodeCompatibility( manager ) {
 		const cacheKeyData = byLights.get( lightsKey ) || {};
 		if ( cacheKeyData.callId !== callId ) {
 
-			const environmentNode = getEnvironmentNode( scene );
-			const fogNode = getFogNode( scene );
+			const cacheKeyValues = [];
 			if ( lightsNode ) cacheKeyValues.push( lightsNode.getCacheKey( true ) );
-			if ( environmentNode ) cacheKeyValues.push( environmentNode.getCacheKey() );
-			if ( fogNode ) cacheKeyValues.push( fogNode.getCacheKey() );
+			cacheKeyValues.push( hashString( createSceneRenderTopologySelector( scene ) ) );
 			const outputTarget = manager.renderer.getOutputRenderTarget();
 			cacheKeyValues.push( outputTarget && outputTarget.multiview ? 1 : 0 );
 			cacheKeyValues.push( manager.renderer.shadowMap.enabled ? 1 : 0 );
@@ -154,7 +114,6 @@ export function createReplaySceneNodeCompatibility( manager ) {
 			cacheKeyData.callId = callId;
 			cacheKeyData.cacheKey = hashArray( cacheKeyValues );
 			byLights.set( lightsKey, cacheKeyData );
-			cacheKeyValues.length = 0;
 
 		}
 		return cacheKeyData.cacheKey;

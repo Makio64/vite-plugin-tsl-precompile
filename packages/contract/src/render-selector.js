@@ -33,7 +33,7 @@ export function describeRenderObjectContext( renderObject, renderer = renderObje
 		renderer: describeRenderer( renderer ),
 		target: describeTarget( context, renderer ),
 		mrt: describeMRT( context ),
-		scene: describeScene( scene ),
+		scene: describeSceneRenderTopology( scene ),
 		lights: describeLights( safeRead( renderObject, 'lightsNode' ), scene, camera ),
 		camera: describeCamera( camera, renderer ),
 		object: describeObject( object ),
@@ -54,6 +54,50 @@ export function createRenderObjectContextSelector( renderObject, renderer = rend
 
 	const descriptor = describeRenderObjectContext( renderObject, renderer );
 	return descriptor ? stableJsonStringify( descriptor, 'renderObjectSelector' ) : '';
+
+}
+
+/**
+ * Describe scene-owned shader topology without retaining or traversing a TSL
+ * graph. Fog scalar values and texture identities are live runtime data; only
+ * the branches and resource shapes that can select different captured WGSL
+ * belong in this descriptor.
+ *
+ * @param {?Object} scene
+ * @return {Object|null}
+ */
+export function describeSceneRenderTopology( scene ) {
+
+	if ( ! scene ) return null;
+	const fog = safeRead( scene, 'fog' );
+	const overrideMaterial = safeRead( scene, 'overrideMaterial' );
+	return compactObject( {
+		fog: safeRead( scene, 'fogNode' )
+			? 'node'
+			: fog
+				? safeRead( fog, 'isFogExp2' ) === true ? 'FogExp2' : safeRead( fog, 'isFog' ) === true ? 'Fog' : 'node'
+				: null,
+		environment: resourceShape( safeRead( scene, 'environment' ), { sampler: true } ),
+		environmentNode: nodePresence( safeRead( scene, 'environmentNode' ) ),
+		overrideMaterial: overrideMaterial ? compactObject( {
+			present: true,
+			shadowPass: safeRead( overrideMaterial, 'isShadowPassMaterial' ) === true,
+		} ) : null,
+	} );
+
+}
+
+/**
+ * Return the canonical scene-topology string used by compiler-free replay's
+ * RenderObject invalidation key. Artifact variants use the same descriptor as
+ * part of their full render-object selector.
+ *
+ * @param {?Object} scene
+ * @return {string}
+ */
+export function createSceneRenderTopologySelector( scene ) {
+
+	return stableJsonStringify( describeSceneRenderTopology( scene ), 'sceneRenderTopology' );
 
 }
 
@@ -160,27 +204,6 @@ function describeMRT( context ) {
 
 }
 
-function describeScene( scene ) {
-
-	if ( ! scene ) return null;
-	const fog = safeRead( scene, 'fog' );
-	const overrideMaterial = safeRead( scene, 'overrideMaterial' );
-	return compactObject( {
-		fog: safeRead( scene, 'fogNode' )
-			? 'node'
-			: fog
-				? safeRead( fog, 'isFogExp2' ) === true ? 'FogExp2' : safeRead( fog, 'isFog' ) === true ? 'Fog' : 'node'
-				: null,
-		environment: resourceShape( safeRead( scene, 'environment' ), { sampler: true } ),
-		environmentNode: nodePresence( safeRead( scene, 'environmentNode' ) ),
-		overrideMaterial: overrideMaterial ? compactObject( {
-			present: true,
-			shadowPass: safeRead( overrideMaterial, 'isShadowPassMaterial' ) === true,
-		} ) : null,
-	} );
-
-}
-
 function describeLights( lightsNode, scene, camera ) {
 
 	let lights = safeCall( lightsNode, 'getLights' );
@@ -196,7 +219,19 @@ function describeLights( lightsNode, scene, camera ) {
 		} );
 
 	}
-	return lights.map( ( light ) => describeLight( light, camera ) );
+	// Three orders analytic light nodes by Object3D.id while building WGSL, but
+	// those process-local ids are intentionally absent from persisted selectors.
+	// Canonicalize the semantic multiset as well: capture may expose traversal
+	// order while replay exposes id order, and that implementation detail changed
+	// between Three revisions without changing the resulting light topology.
+	return lights
+		.map( ( light ) => describeLight( light, camera ) )
+		.map( ( descriptor ) => ( {
+			descriptor,
+			key: stableJsonStringify( descriptor, 'renderObjectLight' ),
+		} ) )
+		.sort( ( a, b ) => a.key < b.key ? - 1 : a.key > b.key ? 1 : 0 )
+		.map( ( entry ) => entry.descriptor );
 
 }
 

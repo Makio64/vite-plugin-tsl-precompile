@@ -1,7 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import { findRenderedSlimCompilerModules, findRenderedSlimStockAdapterModules } from '../rollup.config.js';
+
+test( 'scene replay adapter cannot regain the broad TSL construction barrel', () => {
+
+	const source = readFileSync( new URL( '../src/slim-replay-scene-nodes.js', import.meta.url ), 'utf8' );
+	assert.doesNotMatch( source, /three\/src\/nodes\/TSL\.js/ );
+
+} );
 
 test( 'slim compiler classifier delegates NodeBuilderState to the replay-adapter policy', () => {
 
@@ -18,7 +26,7 @@ test( 'slim compiler classifier delegates NodeBuilderState to the replay-adapter
 
 } );
 
-test( 'slim replay-adapter policy rejects stock lighting and manager residue', () => {
+test( 'slim replay-adapter policy rejects stock lighting, scene graph, and manager residue', () => {
 
 	const found = findRenderedSlimStockAdapterModules( {
 		'three.webgpu.slim.js': {
@@ -26,6 +34,7 @@ test( 'slim replay-adapter policy rejects stock lighting and manager residue', (
 				'/three/src/renderers/common/Lighting.js': { renderedLength: 400 },
 				'/three/src/renderers/common/Background.js': { renderedLength: 700 },
 				'/three/src/nodes/lighting/LightsNode.js': { renderedLength: 900 },
+				'/three/src/nodes/fog/Fog.js': { renderedLength: 650 },
 				'/three/src/renderers/common/nodes/NodeManager.js': { renderedLength: 800 },
 				'/three/src/renderers/common/nodes/NodeBuilderState.js': { renderedLength: 600 },
 				'/three/src/renderers/common/Lighting-unused.js': { renderedLength: 0 },
@@ -33,7 +42,7 @@ test( 'slim replay-adapter policy rejects stock lighting and manager residue', (
 		},
 	} );
 
-	assert.deepEqual( found.map( ( item ) => item.label ), [ 'stock LightsNode', 'stock NodeManager', 'stock Background', 'stock NodeBuilderState', 'stock Lighting' ] );
+	assert.deepEqual( found.map( ( item ) => item.label ), [ 'stock LightsNode', 'stock NodeManager', 'stock Background', 'stock scene Fog graph', 'stock NodeBuilderState', 'stock Lighting' ] );
 
 } );
 

@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+	createSceneRenderTopologySelector,
 	createRenderObjectContextSelector,
+	describeSceneRenderTopology,
 	describeRenderObjectContext,
 	projectRenderObjectContextSelector,
 } from '@tsl-precompile/contract/render-selector';
@@ -23,6 +25,32 @@ test( 'render selector uses active attachments and public selective-light topolo
 
 	renderObject.context.sampleCount = 1;
 	assert.notEqual( createRenderObjectContextSelector( renderObject ), selector );
+
+} );
+
+test( 'render selector canonicalizes process-local analytic light ordering', () => {
+
+	const capture = fixture();
+	const replay = fixture();
+	const directional = replay.lightsNode.getLights()[ 0 ];
+	const ambient = {
+		isLight: true,
+		type: 'AmbientLight',
+		castShadow: false,
+		map: null,
+		colorNode: null,
+		shadow: null,
+	};
+	capture.lightsNode = { getLights: () => [ directional, ambient ] };
+	replay.lightsNode = { getLights: () => [ ambient, directional ] };
+	const canonical = createRenderObjectContextSelector( capture );
+	assert.equal(
+		canonical,
+		createRenderObjectContextSelector( replay ),
+		'capture traversal order and replay Object3D.id order describe one topology',
+	);
+	ambient.castShadow = true;
+	assert.notEqual( createRenderObjectContextSelector( replay ), canonical, 'per-light shader topology remains signed' );
 
 } );
 
@@ -56,6 +84,71 @@ test( 'render selector is graph-free and ignores axes absent from Three shader r
 
 	full.material.transmission = 0.5;
 	assert.notEqual( createRenderObjectContextSelector( full ), createRenderObjectContextSelector( slim ) );
+
+} );
+
+test( 'scene render topology separates shader branches from live fog and environment values', () => {
+
+	const scene = {
+		fog: { isFog: true, color: { r: 1, g: 0, b: 0 }, near: 1, far: 20 },
+		fogNode: null,
+		environment: {
+			isTexture: true,
+			isCubeTexture: true,
+			uuid: 'capture-texture',
+			image: { src: 'capture.hdr' },
+			mapping: 301,
+			format: 1023,
+			type: 1016,
+			colorSpace: 'srgb-linear',
+			magFilter: 1006,
+			minFilter: 1008,
+			wrapS: 1001,
+			wrapT: 1001,
+		},
+		environmentNode: null,
+		overrideMaterial: null,
+	};
+	const descriptor = describeSceneRenderTopology( scene );
+	const selector = createSceneRenderTopologySelector( scene );
+	assert.equal( descriptor.fog, 'Fog' );
+	assert.equal( descriptor.environment.kind, 'cube' );
+
+	// Scalar values and resource identity are updated through live writers and
+	// rebinders; changing them must not select different WGSL.
+	scene.fog.color = { r: 0, g: 1, b: 0 };
+	scene.fog.near = 4;
+	scene.fog.far = 40;
+	scene.environment.uuid = 'replay-texture';
+	scene.environment.image = { src: 'replay.hdr' };
+	assert.equal( createSceneRenderTopologySelector( scene ), selector );
+	scene.environment.mapping = 306;
+	assert.notEqual( createSceneRenderTopologySelector( scene ), selector );
+	scene.environment.mapping = 301;
+	scene.environment.format = 1022;
+	assert.notEqual( createSceneRenderTopologySelector( scene ), selector );
+	scene.environment.format = 1023;
+
+	// Replacing live objects with the same semantic shape is also stable.
+	scene.fog = { isFog: true, color: {}, near: 2, far: 80 };
+	scene.environment = { ...scene.environment, uuid: 'third-texture' };
+	assert.equal( createSceneRenderTopologySelector( scene ), selector );
+
+	scene.fog = { isFogExp2: true, color: {}, density: 0.1 };
+	assert.notEqual( createSceneRenderTopologySelector( scene ), selector );
+	scene.fog = null;
+	scene.fogNode = Object.assign( function inertFog() {}, { isNode: true } );
+	const customFog = createSceneRenderTopologySelector( scene );
+	assert.equal( describeSceneRenderTopology( scene ).fog, 'node' );
+	scene.fogNode = { constructor: { name: 'FogNode' }, isNode: true };
+	assert.equal( createSceneRenderTopologySelector( scene ), customFog, 'full and inert custom nodes share presence topology' );
+	scene.environmentNode = { isNode: true };
+	assert.notEqual( createSceneRenderTopologySelector( scene ), customFog );
+	scene.environmentNode = null;
+
+	const cubeSelector = createSceneRenderTopologySelector( scene );
+	scene.environment = { ...scene.environment, isCubeTexture: false };
+	assert.notEqual( createSceneRenderTopologySelector( scene ), cubeSelector );
 
 } );
 

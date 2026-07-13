@@ -270,6 +270,33 @@ remaining Node/TSL runtime stays at 92 modules / 396.9 KiB rendered. Explicit
 constructor injection is the model for optional full-runtime compatibility;
 slim internals must not recover broad package namespaces dynamically.
 
+**Replay-native environment/fog topology (2026-07-13).** The final live
+scene-node construction island is removed. `render-selector.js` now exports
+the canonical scene topology descriptor already embedded in signed material
+selectors, and the slim NodeManager hashes that same descriptor together with
+light, shadow, and multiview state for RenderObject invalidation. Built-in
+`Fog`, `FogExp2`, 2D/cube environments, and their live scalar/texture values
+no longer cause `slim-replay-scene-nodes.js` to import the TSL barrel or build
+temporary `reference()`, `fog()`, `texture()`, or `cubeTexture()` graphs.
+Custom `scene.fogNode` and `scene.environmentNode` remain presence-compatible
+with inert slim stubs; replacing an already observed custom node fails closed
+because compiler-free replay cannot infer whether the opaque graph still
+matches captured WGSL. A Rollup residue guard now rejects Three's stock fog
+graph if it becomes reachable again. Custom graph topology must remain
+immutable during replay; only its captured live values/resources may change.
+Analytic-light descriptors are canonicalized as a semantic multiset so
+selector signing is stable across Three revisions that expose traversal order
+versus process-local `Object3D.id` order at different points in node setup.
+Focused selector, scene-state, NodeManager, and build-policy tests pass. The
+custom height-fog visual canary replays exactly (infinite PSNR). The strict analyzed bundle moves
+from 414 to 388 rendered modules and from 853,932 raw / 230,578 gzip bytes to
+827,464 raw / 222,801 gzip-9 bytes. Retained Node/TSL runtime falls from 92
+modules / 396.9 KiB rendered to 66 modules / 302.7 KiB; compiler-only modules
+remain zero. Dynamic cubemap verification remains assigned to the later
+cube/XR/PMREM adapter stage because its current miss is target topology
+(captured multisampled 2D versus replay single-sample cube), not scene graph
+construction.
+
 ---
 
 ## 2026-06-09 audit refresh — corrections to the map

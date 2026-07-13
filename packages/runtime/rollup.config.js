@@ -48,6 +48,7 @@ export const SLIM_REPLAY_ADAPTER_RULES = Object.freeze( [
 	[ 'stock Background', /\/three\/src\/renderers\/common\/Background\.js$/ ],
 	[ 'stock Lighting', /\/three\/src\/renderers\/common\/Lighting\.js$/ ],
 	[ 'stock LightsNode', /\/three\/src\/nodes\/lighting\/LightsNode\.js$/ ],
+	[ 'stock scene Fog graph', /\/three\/src\/nodes\/fog\/Fog\.js$/ ],
 	[ 'stock NodeManager', /\/three\/src\/renderers\/common\/nodes\/NodeManager\.js$/ ],
 	[ 'stock NodeBuilderState', /\/three\/src\/renderers\/common\/nodes\/NodeBuilderState\.js$/ ],
 ] );
