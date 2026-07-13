@@ -456,9 +456,9 @@ plugin/runtime guarded-source handshake advances to `slim-three-policy@5`.
 Stock `_getShadowNodes()` construction deliberately remains until every shadow
 artifact family survives aux registration and selection; removing that graph
 closure is the next independent wedge. The final strict build is 841,535 raw /
-230,502 gzip-9 bytes with the structural graph unchanged at 395 modules, zero
-compiler/stock-adapter residue, and 65 retained Node/TSL modules / 302,240
-rendered bytes. The production budget therefore moves only the crossed raw
+230,502 gzip-9 bytes; the graph grows from 393 to 395 modules while retaining
+zero compiler/stock-adapter residue and 65 Node/TSL modules / 302,240 rendered
+bytes. The production budget therefore moves only the crossed raw
 ceiling from 840,000 to 843,000 bytes and the minimal source gzip ceiling from
 158,000 to 161,000 bytes (measured 159,878); prebuilt gzip, advanced-source,
 compiler, adapter, identity, and graph ceilings stay fixed.
