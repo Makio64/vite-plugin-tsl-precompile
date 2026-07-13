@@ -40,6 +40,7 @@ import {
 	resolveSlimSourceAdapter,
 	slimRuntimeEntryForMode,
 } from './slim-source.js';
+import { verifySlimPrebuiltBundle } from './slim-prebuilt-provenance.js';
 import { VIRTUAL_MODULE_PREFIX, VIRTUAL_AUX_MODULE_ID, VIRTUAL_WGSL_POOL_MODULE_ID, PLUGIN_VERSION } from './_shared/constants.js';
 import { VIRTUAL_FULL_THREE_MODULE_ID } from '@tsl-precompile/contract/virtual-modules';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
@@ -338,6 +339,15 @@ export default function tslPrecompile( userOpts = {} ) {
 
 	}
 
+	async function verifyConfiguredSlimPrebuilt( configRoot, detected ) {
+
+		// Vite invokes `config` once in normal builds. Reverify on every explicit
+		// hook call as well so programmatic reuse cannot retain a fulfilled
+		// promise after the bundle, sidecar, or installed sources change.
+		return verifySlimPrebuiltBundle( { root: configRoot, threeInstallation: detected } );
+
+	}
+
 	return {
 		name: 'vite-plugin-tsl-precompile',
 		enforce: 'pre',
@@ -346,6 +356,15 @@ export default function tslPrecompile( userOpts = {} ) {
 
 			const configRoot = resolve( process.cwd(), userConfig.root || '.' );
 			const detected = await configureThreeInstallation( configRoot, env.command );
+			// Vite always runs `config` before resolving aliases. Verify here so a
+			// missing, modified, or stale checked bundle fails before it can enter
+			// the module graph. `configResolved` still supports direct hook tests,
+			// but does not repeat this filesystem-wide fingerprint.
+			if ( opts.slim === 'prebuilt' && env.command === 'build' ) {
+
+				await verifyConfiguredSlimPrebuilt( configRoot, detected );
+
+			}
 			isBuild = env.command === 'build';
 
 			// The runtime's dev-mode `.precompile()` and aux-capture paths do

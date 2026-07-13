@@ -15,6 +15,7 @@ import {
 	SLIM_REPLAY_ADAPTER_RULES,
 	findRenderedSlimCompilerModules,
 	findRenderedSlimStockAdapterModules,
+	threeRewritePlugin,
 } from '../rollup.config.js';
 
 test( 'scene replay adapter cannot regain the broad TSL construction barrel', () => {
@@ -28,6 +29,21 @@ test( 'Rollup consumes the shared compiler and replay-adapter rule objects', () 
 
 	assert.equal( SLIM_COMPILER_MODULE_RULES, SLIM_THREE_COMPILER_MODULES );
 	assert.equal( SLIM_REPLAY_ADAPTER_RULES, SLIM_THREE_REPLAY_ADAPTER_MODULES );
+
+} );
+
+test( 'checked slim builds reject rewrite drift without a warning fallback', () => {
+
+	const id = '/repo/node_modules/three/src/renderers/common/Renderer.js';
+	assert.throws(
+		() => threeRewritePlugin.transform.call( {
+			error( message ) { throw new Error( message ); },
+			warn() { assert.fail( 'rewrite drift must not fall back through a warning' ); },
+		}, 'export const driftedRenderer = true;\n', id ),
+		/slim rewrite disabled/,
+	);
+	const configSource = readFileSync( new URL( '../rollup.config.js', import.meta.url ), 'utf8' );
+	assert.doesNotMatch( configSource, /TSL_PRECOMPILE_THREE_VERSION/, 'the transform and provenance stamp share one Three identity' );
 
 } );
 

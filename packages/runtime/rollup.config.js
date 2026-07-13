@@ -19,20 +19,50 @@
 
 import { nodeResolve } from '@rollup/plugin-node-resolve';
 import terser from '@rollup/plugin-terser';
+import { createRequire } from 'node:module';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { rewriteThreeSource } from '../plugin/src/three-rewrite.js';
 import {
+	SLIM_BUNDLE_FILE_NAME,
+	SLIM_BUNDLE_METADATA_FILE_NAME,
+	computeSlimBundleSourceFingerprint,
+	createSlimBundleMetadata,
+	createSlimBundleSourceInputs,
+	createSlimBundleVersionIdentity,
+	formatSlimBundleStamp,
+	serializeSlimBundleMetadata,
+} from '@tsl-precompile/contract/slim-bundle-provenance-node';
+import {
 	SLIM_THREE_COMPILER_MODULES,
 	SLIM_THREE_PACKAGE_VERSION,
+	SLIM_THREE_POLICY_VERSION,
 	SLIM_THREE_REPLAY_ADAPTER_MODULES,
 	getSlimThreeCompilerModule,
 	getSlimThreeReplayAdapterModule,
 	getSlimThreeRewriteTarget,
 } from '@tsl-precompile/contract/slim-three-policy';
+import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 
 const __dirname = dirname( fileURLToPath( import.meta.url ) );
+const requireFromRuntime = createRequire( import.meta.url );
+const threePackageRoot = dirname( dirname( requireFromRuntime.resolve( 'three/src/constants.js' ) ) );
+const contractPackageRoot = dirname( dirname( requireFromRuntime.resolve( '@tsl-precompile/contract/slim-three-policy' ) ) );
+const pluginPackageRoot = resolve( __dirname, '../plugin' );
+
+export const SLIM_BUNDLE_VERSIONS = createSlimBundleVersionIdentity( {
+	threeVersion: SLIM_THREE_PACKAGE_VERSION,
+	policyVersion: SLIM_THREE_POLICY_VERSION,
+	artifactToolchainVersion: ARTIFACT_TOOLCHAIN_VERSION,
+} );
+
+export const SLIM_BUNDLE_SOURCE_INPUTS = createSlimBundleSourceInputs( {
+	threePackageRoot,
+	runtimePackageRoot: __dirname,
+	contractPackageRoot,
+	pluginPackageRoot,
+} );
 
 /**
  * Modules that belong to runtime shader compilation rather than replay.
@@ -106,25 +136,21 @@ const stockAdapterResidueGuard = {
 
 /**
  * Rollup plugin that routes specific three.js source files through our
- * Milestone D AST rewriter. On shape-drift the handler throws; we emit a
- * Rollup warning and return null so the untransformed source bundles.
+ * Milestone D AST rewriter. A checked prebuilt must never fall back to stock
+ * source after shape drift: doing so would mint valid provenance around a
+ * renderer that no longer satisfies the replay policy.
  */
-const threeRewritePlugin = {
+export const threeRewritePlugin = {
 	name: 'tsl-precompile:three-rewrite',
 	transform( code, id ) {
 
 		const r = rewriteThreeSource( code, id, {
-			threeVersion: process.env.TSL_PRECOMPILE_THREE_VERSION || SLIM_THREE_PACKAGE_VERSION,
+			threeVersion: SLIM_THREE_PACKAGE_VERSION,
 		} );
 		if ( ! r ) return null;
 		if ( r.warning ) {
 
-			if ( process.env.CI === 'true' || process.env.TSLP_FAIL_ON_REWRITE_WARNING === '1' ) {
-
-				this.error( r.warning );
-
-			}
-			this.warn( r.warning );
+			this.error( r.warning );
 			return null;
 
 		}
@@ -320,6 +346,96 @@ const threeBareAlias = {
 	},
 };
 
+/**
+ * Add a source-input stamp after minification, then emit the SHA-256 of that
+ * final stamped chunk in an adjacent sidecar. The final hash cannot be
+ * embedded in the chunk without becoming self-referential, so the stamp and
+ * sidecar cross-check the shared source fingerprint instead.
+ *
+ * `source` is injectable for focused in-memory Rollup tests. Production builds
+ * lazily hash the exact shared input scope above and never write intermediate
+ * provenance state to disk.
+ */
+export function createSlimBundleProvenancePlugin( {
+	source = null,
+	sourceInputs = SLIM_BUNDLE_SOURCE_INPUTS,
+	versions = SLIM_BUNDLE_VERSIONS,
+	bundleFile = SLIM_BUNDLE_FILE_NAME,
+	metadataFile = SLIM_BUNDLE_METADATA_FILE_NAME,
+} = {} ) {
+
+	let sourcePromise = null;
+	const getSource = () => {
+
+		if ( ! sourcePromise ) sourcePromise = source
+			? Promise.resolve( source )
+			: computeSlimBundleSourceFingerprint( sourceInputs, versions );
+		return sourcePromise;
+
+	};
+
+	return {
+		name: 'tsl-precompile:slim-bundle-provenance',
+		buildStart() {
+
+			return getSource();
+
+		},
+		renderChunk: {
+			order: 'post',
+			async handler( code, chunk ) {
+
+				if ( ! chunk.isEntry ) return null;
+				const sourceDescriptor = await getSource();
+				const stamp = formatSlimBundleStamp( {
+					sourceFingerprint: sourceDescriptor.fingerprint,
+					versions,
+				} );
+				return { code: `${ stamp }\n${ code }`, map: null };
+
+			},
+		},
+		generateBundle: {
+			order: 'post',
+			async handler( _options, bundle ) {
+
+				const entries = Object.values( bundle ).filter( ( output ) => output.type === 'chunk' && output.isEntry );
+				if ( entries.length !== 1 ) {
+
+					this.error( `Slim provenance expected exactly one entry chunk, found ${ entries.length }.` );
+
+				}
+				const entry = entries[ 0 ];
+				if ( entry.fileName !== bundleFile ) {
+
+					this.error( `Slim provenance expected entry ${ JSON.stringify( bundleFile ) }, received ${ JSON.stringify( entry.fileName ) }.` );
+
+				}
+				if ( bundle[ metadataFile ] ) {
+
+					this.error( `Slim provenance sidecar ${ JSON.stringify( metadataFile ) } already exists.` );
+
+				}
+
+				const sourceDescriptor = await getSource();
+				const metadata = createSlimBundleMetadata( {
+					bundleSource: entry.code,
+					bundleFile,
+					source: sourceDescriptor,
+					versions,
+				} );
+				this.emitFile( {
+					type: 'asset',
+					fileName: metadataFile,
+					source: serializeSlimBundleMetadata( metadata ),
+				} );
+
+			},
+		},
+	};
+
+}
+
 export default {
 	input: 'src/slim-entry.js',
 	output: {
@@ -407,6 +523,7 @@ export default {
 			mangle: true,
 			format: { comments: false },
 		} ),
+		createSlimBundleProvenancePlugin(),
 	],
 	// Silence noisy warnings from three.js's circular imports within its
 	// own core — they're intentional and harmless.

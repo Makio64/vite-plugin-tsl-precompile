@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { build as viteBuild } from 'vite';
@@ -11,17 +11,37 @@ import { annotateDevMarkerSources } from '../../src/babel-transform.js';
 import { isThreeRewriteTarget } from '../../src/three-rewrite.js';
 import { computeArtifactContentHash } from '../../src/hash.js';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
-import { getSlimThreeCompilerModule, getSlimThreeReplayAdapterModule } from '@tsl-precompile/contract/slim-three-policy';
+import {
+	computeSlimBundleSourceFingerprint,
+	createSlimBundleMetadata,
+	createSlimBundleSourceInputs,
+	createSlimBundleVersionIdentity,
+	formatSlimBundleStamp,
+	serializeSlimBundleMetadata,
+} from '@tsl-precompile/contract/slim-bundle-provenance-node';
+import {
+	SLIM_THREE_POLICY_VERSION,
+	getSlimThreeCompilerModule,
+	getSlimThreeReplayAdapterModule,
+} from '@tsl-precompile/contract/slim-three-policy';
+import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 
-async function makeProject( threeVersion = '0.184.0' ) {
+const CONTRACT_PACKAGE_ROOT = await realpath( new URL( '../../../contract', import.meta.url ) );
+const PLUGIN_PACKAGE_ROOT = await realpath( new URL( '../..', import.meta.url ) );
+
+async function makeProject( threeVersion = '0.184.0', { provenance = false } = {} ) {
 
 	const root = await mkdtemp( join( tmpdir(), 'tslp-slim-lifecycle-' ) );
 	const threeRoot = join( root, 'node_modules/three' );
 	const webgpuEntry = join( threeRoot, 'build/three.webgpu.js' );
 	const runtimeRoot = join( root, 'node_modules/@tsl-precompile/runtime' );
 	const runtimeSourceDir = join( runtimeRoot, 'src' );
+	const runtimeBundleFile = join( runtimeRoot, 'build/three.webgpu.slim.js' );
+	const runtimeMetadataFile = join( runtimeRoot, 'build/three.webgpu.slim.meta.json' );
 	await mkdir( join( threeRoot, 'build' ), { recursive: true } );
+	await mkdir( join( threeRoot, 'src' ), { recursive: true } );
 	await mkdir( runtimeSourceDir, { recursive: true } );
+	await mkdir( join( runtimeRoot, 'build' ), { recursive: true } );
 	await writeFile( join( root, 'package.json' ), JSON.stringify( {
 		name: 'fixture',
 		private: true,
@@ -34,14 +54,55 @@ async function makeProject( threeVersion = '0.184.0' ) {
 		exports: { './webgpu': './build/three.webgpu.js' },
 	} ) );
 	await writeFile( webgpuEntry, 'export const REVISION = "fixture";\n' );
+	await writeFile( join( threeRoot, 'src/constants.js' ), `export const REVISION = ${ JSON.stringify( threeVersion ) };\n` );
 	await writeFile( join( runtimeRoot, 'package.json' ), JSON.stringify( {
 		name: '@tsl-precompile/runtime',
 		version: '0.1.0',
 		type: 'module',
-		exports: { './slim/source': './src/slim-source-entry.js' },
+		exports: {
+			'./slim': './build/three.webgpu.slim.js',
+			'./slim/source': './src/slim-source-entry.js',
+		},
 	} ) );
 	await writeFile( join( runtimeSourceDir, 'slim-source-entry.js' ), 'export const __TSLP_SLIM__ = true;\n' );
-	return { root, threeRoot, webgpuEntry, runtimeRoot, runtimeSourceDir };
+	await writeFile( join( runtimeRoot, 'rollup.config.js' ), 'export default {};\n' );
+	await writeFile( runtimeBundleFile, 'export const __TSLP_SLIM__ = true;\n' );
+	await symlink( CONTRACT_PACKAGE_ROOT, join( root, 'node_modules/@tsl-precompile/contract' ), 'junction' );
+
+	const fixture = {
+		root,
+		threeVersion,
+		threeRoot,
+		webgpuEntry,
+		runtimeRoot,
+		runtimeSourceDir,
+		runtimeBundleFile,
+		runtimeMetadataFile,
+	};
+	if ( provenance ) await writeFixtureProvenance( fixture );
+	return fixture;
+
+}
+
+async function writeFixtureProvenance( fixture ) {
+
+	const versions = createSlimBundleVersionIdentity( {
+		threeVersion: fixture.threeVersion,
+		policyVersion: SLIM_THREE_POLICY_VERSION,
+		artifactToolchainVersion: ARTIFACT_TOOLCHAIN_VERSION,
+	} );
+	const inputs = createSlimBundleSourceInputs( {
+		threePackageRoot: fixture.threeRoot,
+		runtimePackageRoot: fixture.runtimeRoot,
+		contractPackageRoot: CONTRACT_PACKAGE_ROOT,
+		pluginPackageRoot: PLUGIN_PACKAGE_ROOT,
+	} );
+	const source = await computeSlimBundleSourceFingerprint( inputs, versions );
+	const stamp = formatSlimBundleStamp( { sourceFingerprint: source.fingerprint, versions } );
+	const bundleSource = `${ stamp }\nexport const __TSLP_SLIM__ = true;\n`;
+	const metadata = createSlimBundleMetadata( { bundleSource, source, versions } );
+	await writeFile( fixture.runtimeBundleFile, bundleSource );
+	await writeFile( fixture.runtimeMetadataFile, serializeSlimBundleMetadata( metadata ) );
 
 }
 
@@ -88,7 +149,7 @@ test( 'slim serve keeps full three.js for capture and injects the exact package 
 
 test( 'slim build aliases public three entries but full-three bypasses the alias', async () => {
 
-	const fixture = await makeProject();
+	const fixture = await makeProject( '0.184.0', { provenance: true } );
 	try {
 
 		const plugin = tslPrecompile( { slim: true } );
@@ -105,6 +166,70 @@ test( 'slim build aliases public three entries but full-three bypasses the alias
 		} );
 		assert.equal( plugin.resolveId( 'virtual:tsl-precompile/full-three' ), fixture.webgpuEntry );
 		assert.notEqual( plugin.resolveId( 'virtual:tsl-precompile/full-three' ), webgpuAlias.replacement );
+
+	} finally {
+
+		await rm( fixture.root, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'slim build refuses a missing prebuilt bundle or provenance sidecar', async () => {
+
+	for ( const missing of [ 'bundle', 'sidecar' ] ) {
+
+		const fixture = await makeProject( '0.184.0', { provenance: true } );
+		try {
+
+			await rm( missing === 'bundle' ? fixture.runtimeBundleFile : fixture.runtimeMetadataFile );
+			const plugin = tslPrecompile( { slim: true } );
+			await assert.rejects(
+				plugin.config( { root: fixture.root }, { command: 'build' } ),
+				/required prebuilt slim provenance is missing[\s\S]*(?:missing or unreadable|could not resolve)/,
+			);
+
+		} finally {
+
+			await rm( fixture.root, { recursive: true, force: true } );
+
+		}
+
+	}
+
+} );
+
+test( 'slim build refuses a prebuilt bundle whose final bytes were modified', async () => {
+
+	const fixture = await makeProject( '0.184.0', { provenance: true } );
+	try {
+
+		await appendFile( fixture.runtimeBundleFile, '// tampered\n' );
+		const plugin = tslPrecompile( { slim: true } );
+		await assert.rejects(
+			plugin.config( { root: fixture.root }, { command: 'build' } ),
+			/the prebuilt slim bundle integrity does not match its sidecar[\s\S]*SHA-256/,
+		);
+
+	} finally {
+
+		await rm( fixture.root, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'slim build refuses a prebuilt bundle after a hashed source input changes', async () => {
+
+	const fixture = await makeProject( '0.184.0', { provenance: true } );
+	try {
+
+		await writeFile( join( fixture.runtimeSourceDir, 'slim-source-entry.js' ), 'export const __TSLP_SLIM__ = "changed";\n' );
+		const plugin = tslPrecompile( { slim: true } );
+		await assert.rejects(
+			plugin.config( { root: fixture.root }, { command: 'build' } ),
+			/the prebuilt slim bundle is stale for the installed source inputs[\s\S]*source fingerprint/,
+		);
 
 	} finally {
 
@@ -337,7 +462,7 @@ test( 'plugin passes the resolved project root into autoMarkSource', async () =>
 
 test( 'slim production fails closed when a registered three rewrite reports drift', async () => {
 
-	const fixture = await makeProject();
+	const fixture = await makeProject( '0.184.0', { provenance: true } );
 	try {
 
 		const plugin = tslPrecompile( { slim: true } );

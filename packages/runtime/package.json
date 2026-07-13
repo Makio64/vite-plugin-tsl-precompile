@@ -145,7 +145,8 @@
   "files": [
     "src",
     "build",
-    "types"
+    "types",
+    "rollup.config.js"
   ],
   "scripts": {
     "build:slim": "rollup -c rollup.config.js",
