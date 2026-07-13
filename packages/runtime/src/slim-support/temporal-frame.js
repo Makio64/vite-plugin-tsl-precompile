@@ -10,6 +10,18 @@
 
 const TEMPORAL_FRAME_STATE = Symbol.for( '@tsl-precompile/runtime/temporal-frame@1' );
 
+export class TemporalFrameIdentityError extends Error {
+
+	constructor( message ) {
+
+		super( message );
+		this.name = 'TemporalFrameIdentityError';
+		this.code = 'TSLP_TEMPORAL_FRAME_IDENTITY_MISSING';
+
+	}
+
+}
+
 function rendererFrom( value ) {
 
 	if ( value && value.renderer ) return value.renderer;
@@ -49,11 +61,40 @@ export function shouldAdvanceTemporalState( frame ) {
 }
 
 /**
+ * Build the canonical frame object passed to TSL `updateBefore()` handlers.
+ * Logical IDs always come from the renderer's active temporal scope; callers
+ * may only supply live time/context values for the node invocation itself.
+ *
+ * @param {Object} renderer
+ * @param {{ time?: number|null, context?: Object }} overrides
+ * @return {{ renderer:Object, frameId:number|string, renderId:number|string, time:number|null, context:Object }}
+ */
+export function createTemporalNodeFrame( renderer, overrides = {} ) {
+
+	const state = getTemporalFrameState( renderer );
+	const frameId = state && state.frameId;
+	const renderId = state && state.renderId;
+	if ( frameId === undefined || frameId === null || renderId === undefined || renderId === null ) {
+
+		throw new TemporalFrameIdentityError( 'createTemporalNodeFrame: an active temporal scope with both frameId and renderId is required.' );
+
+	}
+	return {
+		renderer,
+		frameId,
+		renderId,
+		time: overrides.time !== undefined ? overrides.time : state.time,
+		context: overrides && overrides.context && typeof overrides.context === 'object' ? overrides.context : {},
+	};
+
+}
+
+/**
  * Run sync or async fallback work under one logical temporal frame.
  * Renderer state is restored exactly, including nested scopes and failures.
  *
  * @param {Object|Object[]} renderers
- * @param {{ frameId?: number|string, time?: number, advance?: boolean }} options
+ * @param {{ frameId?: number|string, renderId?: number|string, time?: number, advance?: boolean }} options
  * @param {Function} callback
  * @return {*|Promise<*>}
  */
@@ -64,6 +105,7 @@ export function withTemporalFrame( renderers, options = {}, callback ) {
 		.filter( ( renderer, index, all ) => renderer && ( typeof renderer === 'object' || typeof renderer === 'function' ) && all.indexOf( renderer ) === index );
 	const state = {
 		frameId: options.frameId,
+		renderId: options.renderId !== undefined && options.renderId !== null ? options.renderId : options.frameId,
 		time: Number.isFinite( options.time ) ? options.time : null,
 		advance: options.advance !== false,
 	};

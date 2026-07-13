@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+	TemporalFrameIdentityError,
+	createTemporalNodeFrame,
 	getTemporalFrameState,
 	logicalFrameKey,
 	shouldAdvanceTemporalState,
@@ -17,6 +19,14 @@ test( 'withTemporalFrame shares one logical frame across renderers and restores 
 		assert.equal( getTemporalFrameState( slim ), state );
 		assert.equal( getTemporalFrameState( full ), state );
 		assert.equal( logicalFrameKey( { renderer: slim, frameId: 99 } ), 12 );
+		assert.equal( state.renderId, 12 );
+		assert.deepEqual( createTemporalNodeFrame( slim, { context: { pass: true } } ), {
+			renderer: slim,
+			frameId: 12,
+			renderId: 12,
+			time: 0.5,
+			context: { pass: true },
+		} );
 		assert.equal( shouldAdvanceTemporalState( { renderer: full } ), true );
 		return 'ok';
 
@@ -24,6 +34,31 @@ test( 'withTemporalFrame shares one logical frame across renderers and restores 
 	assert.equal( result, 'ok' );
 	assert.equal( getTemporalFrameState( slim ), null );
 	assert.equal( getTemporalFrameState( full ), null );
+
+} );
+
+test( 'createTemporalNodeFrame preserves explicit render identity and only merges live overrides', () => {
+
+	const renderer = {};
+	withTemporalFrame( renderer, { frameId: 'frame', renderId: 'render', time: 1 }, () => {
+
+		const nodeFrame = createTemporalNodeFrame( renderer, {
+			frameId: 'ignored',
+			renderId: 'ignored',
+			time: 2,
+			context: { effect: true },
+			camera: { ignored: true },
+		} );
+		assert.deepEqual( nodeFrame, {
+			renderer,
+			frameId: 'frame',
+			renderId: 'render',
+			time: 2,
+			context: { effect: true },
+		} );
+
+	} );
+	assert.throws( () => createTemporalNodeFrame( renderer ), TemporalFrameIdentityError );
 
 } );
 

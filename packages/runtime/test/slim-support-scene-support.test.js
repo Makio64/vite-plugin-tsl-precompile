@@ -695,7 +695,7 @@ test( 'createSlimSceneSupport exposes clock and logical-frame scopes', () => {
 		assert.equal( typeof support.withTemporalFrame, 'function' );
 		support.withTemporalFrame( { frameId: 4, advance: false }, () => {
 
-			assert.deepEqual( getTemporalFrameState( renderer ), { frameId: 4, time: null, advance: false } );
+			assert.deepEqual( getTemporalFrameState( renderer ), { frameId: 4, renderId: 4, time: null, advance: false } );
 
 		} );
 		assert.equal( getTemporalFrameState( renderer ), null );

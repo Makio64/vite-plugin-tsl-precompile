@@ -1850,9 +1850,10 @@ import { updateRendererLightingForSlim as __sharedUpdateRendererLightingForSlim 
 import { artifactLooksLikeRetroPassMaterial as __sharedArtifactLooksLikeRetroPassMaterial, prepareEffectNodeForReplay as __sharedPrepareEffectNodeForReplay } from '/__tslp_runtime/slim-support/postprocess-effects-replay.js';
 import { findEffectHandler as __sharedFindEffectHandler } from '/__tslp_runtime/slim-support/postprocess-effects.js';
 import { wireLiveUniformSidecarsToArtifact as __sharedWireLiveUniformSidecarsToArtifact } from '/__tslp_runtime/slim-support/live-node-sidecars.js';
-import { getTemporalFrameState as __sharedGetTemporalFrameState, withTemporalFrame as __sharedWithTemporalFrame } from '/__tslp_runtime/slim-support/temporal-frame.js';
+import { createTemporalNodeFrame as __sharedCreateTemporalNodeFrame, getTemporalFrameState as __sharedGetTemporalFrameState, withTemporalFrame as __sharedWithTemporalFrame } from '/__tslp_runtime/slim-support/temporal-frame.js';
+import { POSTPROCESS_FRAME_ROLES as __POSTPROCESS_FRAME_ROLES, createPostprocessFrameScheduler as __sharedCreatePostprocessFrameScheduler } from '/__tslp_runtime/slim-support/postprocess-frame-scheduler.js';
 import { getLiveNodeDependencies as __sharedGetLiveNodeDependencies } from '/__tslp_runtime/slim-support/node-dependencies.js';
-import { createPostprocessExecutionPlan as __sharedCreatePostprocessExecutionPlan } from '/__tslp_runtime/slim-support/postprocess-execution-plan.js';
+import { createPostprocessExecutionPlan as __sharedCreatePostprocessExecutionPlan, postprocessGraphContains as __sharedPostprocessGraphContains } from '/__tslp_runtime/slim-support/postprocess-execution-plan.js';
 import { renderOffscreenOverrideWithFullRenderer as __sharedRenderOffscreenOverrideWithFullRenderer } from '/__tslp_runtime/slim-support/pass-render-fallback.js';
 import { findAux as __runtimeFindAux } from '/__tslp_runtime/aux-loader.js';
 import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS as __NODE_GRAPH_KEYS } from '/__tslp_contract/texture-props.js';
@@ -10432,7 +10433,7 @@ function __textureFromPassNode( passNode ) {
 	}
 }
 
-function __renderPassNodeForPipeline( renderer, passNode ) {
+function __renderPassNodeForPipeline( renderer, passNode, nodeFrame = null ) {
 	const diag = __harnessDiagnostics();
 	const passDiag = diag.pass || ( diag.pass = { attempts: 0, skipped: 0, rendered: 0, failed: 0, objects: [], materials: [], objectDetails: [] } );
 	passDiag.attempts ++;
@@ -10448,7 +10449,7 @@ function __renderPassNodeForPipeline( renderer, passNode ) {
 	} catch ( _ ) {}
 	if ( ! renderer || ! passNode || ! passNode.scene || ! passNode.camera ) {
 		passDiag.skipped ++;
-		return;
+		return false;
 	}
 	try {
 		let objectCount = 0;
@@ -10518,7 +10519,7 @@ function __renderPassNodeForPipeline( renderer, passNode ) {
 		if ( passNode.isSSAAPassNode === true && passNode._sampleRenderTarget === null && typeof passNode.setup === 'function' ) {
 			passNode.setup( { renderer } );
 		}
-		const frame = { renderer };
+		const frame = nodeFrame || { renderer };
 		if ( typeof passNode.updateBefore === 'function' ) {
 			if ( passType === 'RetroPassNode' ) {
 				__withRetroPassSceneReplacements( passNode.scene, () => PassNode.prototype.updateBefore.call( passNode, frame ) );
@@ -10533,12 +10534,14 @@ function __renderPassNodeForPipeline( renderer, passNode ) {
 					__probeFrameEffectTextureAsync( renderer, textures.emissive, 'Pass.emissive' );
 				} catch ( _ ) {}
 		passDiag.rendered ++;
+		return true;
 	} catch ( err ) {
 		passDiag.failed ++;
 		if ( ! window.__tslpPassRenderWarned ) {
 			window.__tslpPassRenderWarned = true;
 			console.warn( '[tslp-e2e] RenderPipeline pass render failed:', err && ( err.stack || err.message ) || err );
 		}
+		return false;
 	}
 }
 
@@ -10555,14 +10558,23 @@ function __restoreCanvasViewport( renderer ) {
 	} catch ( _ ) {}
 }
 
-function __renderPassNodesForPipeline( renderer, passNodes ) {
+function __renderPassNodesForPipeline( renderer, passNodes, schedule = null, role = null, dependenciesFor = null ) {
 	const previous = __activePipelinePassNodes;
 	__activePipelinePassNodes = Array.isArray( passNodes ) ? passNodes : null;
 	const list = Array.isArray( passNodes )
 		? passNodes.slice().sort( ( a, b ) => ( __passDepthSortRank( a ) - __passDepthSortRank( b ) ) || ( ( a.__tslpPassIndex ?? 0 ) - ( b.__tslpPassIndex ?? 0 ) ) )
 		: [];
+	let succeeded = true;
 	try {
-		for ( const passNode of list ) __renderPassNodeForPipeline( renderer, passNode );
+		for ( const passNode of list ) {
+			const render = ( nodeFrame = null ) => __renderPassNodeForPipeline( renderer, passNode, nodeFrame );
+			const result = schedule && role
+				? schedule.run( passNode, role, render, {
+					dependsOn: typeof dependenciesFor === 'function' ? dependenciesFor( passNode ) : [],
+				} )
+				: render();
+			if ( result === false ) succeeded = false;
+		}
 	} finally {
 		__activePipelinePassNodes = previous;
 		// Only restore the canvas viewport if a pass node actually ran — pass nodes
@@ -10573,6 +10585,7 @@ function __renderPassNodesForPipeline( renderer, passNodes ) {
 		// viewport instead of its 120×120 region.
 		if ( list.length > 0 ) __restoreCanvasViewport( renderer );
 	}
+	return succeeded;
 }
 
 function __isSpecializedEffectCandidate( node ) {
@@ -12504,13 +12517,22 @@ function __pinTRAAJitterIndex( traaNode ) {
 	}
 }
 
-function __renderTRAANodesForPipeline( renderer, traaNodes, passNodes ) {
+function __renderTRAANodesForPipeline( renderer, traaNodes, passNodes, schedule = null, dependsOn = [] ) {
+	let succeeded = true;
 	for ( const traaNode of traaNodes || [] ) {
-		if ( ! __prepareTRAANodeForReplay( traaNode, null ) ) continue;
-		const diag = __traaDiagnostics();
-		if ( __renderTRAANodeWithPrecompiledSlim( traaNode, renderer, passNodes, diag ) ) continue;
-		traaNode.updateBefore( { renderer } );
+		const render = ( nodeFrame = null ) => {
+			if ( ! __prepareTRAANodeForReplay( traaNode, null ) ) return false;
+			const diag = __traaDiagnostics();
+			if ( __renderTRAANodeWithPrecompiledSlim( traaNode, renderer, passNodes, diag ) ) return true;
+			traaNode.updateBefore( nodeFrame || { renderer } );
+			return true;
+		};
+		const result = schedule
+			? schedule.run( traaNode, __POSTPROCESS_FRAME_ROLES.TERMINAL_EFFECT, render, { dependsOn } )
+			: render();
+		if ( result === false ) succeeded = false;
 	}
+	return succeeded;
 }
 
 function __neutralizeRTTNodeUpdateBefore( rttNode ) {
@@ -12526,20 +12548,42 @@ function __neutralizeRTTNodeUpdateBefore( rttNode ) {
 	try { Object.defineProperty( rttNode, '__tslpRTTUpdateNeutered', { value: true, configurable: true } ); } catch ( _ ) {}
 }
 
-function __renderRTTNodesForPipeline( renderer, rttNodes ) {
+function __renderRTTNodesForPipeline( renderer, rttNodes, schedule = null, role = null, dependenciesFor = null ) {
 	try {
 		const diag = __harnessDiagnostics();
 		diag.rtt = diag.rtt || { collected: 0, rendered: 0, failed: 0 };
 		diag.rtt.collected += rttNodes && rttNodes.length || 0;
 	} catch ( _ ) {}
+	let succeeded = true;
 	for ( const rttNode of rttNodes || [] ) {
-		if ( __renderRTTNodeWithFullRenderer( rttNode, renderer, __computeRenderer ) ) {
-			__neutralizeRTTNodeUpdateBefore( rttNode );
-			try { __harnessDiagnostics().rtt.rendered ++; } catch ( _ ) {}
-		} else {
+		const render = () => {
+			if ( __renderRTTNodeWithFullRenderer( rttNode, renderer, __computeRenderer ) ) {
+				__neutralizeRTTNodeUpdateBefore( rttNode );
+				try { __harnessDiagnostics().rtt.rendered ++; } catch ( _ ) {}
+				return true;
+			}
 			try { __harnessDiagnostics().rtt.failed ++; } catch ( _ ) {}
-		}
+			return false;
+		};
+		const rendered = schedule && role
+			? schedule.run( rttNode, role, render, {
+				dependsOn: typeof dependenciesFor === 'function' ? dependenciesFor( rttNode ) : [],
+			} )
+			: render();
+		if ( rendered === false ) succeeded = false;
 	}
+	return succeeded;
+}
+
+function __rttNodeDependsOnEffect( rttNode, effectNode ) {
+	if ( ! rttNode || ! effectNode ) return false;
+	const node = rttNode._rttNode || rttNode.node || rttNode;
+	return __sharedPostprocessGraphContains( rttNode, effectNode )
+		|| __sharedPostprocessGraphContains( node, effectNode );
+}
+
+function __effectDependenciesForRTT( rttNode, effectNodes ) {
+	return ( effectNodes || [] ).filter( ( effectNode ) => __rttNodeDependsOnEffect( rttNode, effectNode ) );
 }
 
 function __rttNodeDependsOnBloom( rttNode, bloomNodes ) {
@@ -12557,16 +12601,17 @@ function __filterRTTNodesByBloomDependency( rttNodes, bloomNodes, wantDependent 
 	return rttNodes.filter( ( rttNode ) => __rttNodeDependsOnBloom( rttNode, bloomNodes ) === wantDependent );
 }
 
-function __renderBloomDependentRTTNodesForPipeline( renderer, rttNodes, bloomNodes ) {
+function __renderBloomDependentRTTNodesForPipeline( renderer, rttNodes, bloomNodes, schedule = null ) {
 	if ( ! Array.isArray( rttNodes ) || rttNodes.length === 0 || ! Array.isArray( bloomNodes ) || bloomNodes.length === 0 ) return 0;
-	let rendered = 0;
-	for ( const rttNode of rttNodes ) {
-		if ( ! __rttNodeDependsOnBloom( rttNode, bloomNodes ) ) continue;
-		if ( __renderRTTNodeWithFullRenderer( rttNode, renderer, __computeRenderer ) ) {
-			__neutralizeRTTNodeUpdateBefore( rttNode );
-			rendered ++;
-		}
-	}
+	const dependent = rttNodes.filter( ( rttNode ) => __rttNodeDependsOnBloom( rttNode, bloomNodes ) );
+	const ok = __renderRTTNodesForPipeline(
+		renderer,
+		dependent,
+		schedule,
+		__POSTPROCESS_FRAME_ROLES.CONSUMER,
+		( rttNode ) => bloomNodes.filter( ( bloomNode ) => __rttNodeDependsOnBloom( rttNode, [ bloomNode ] ) ),
+	);
+	const rendered = ok === false ? 0 : dependent.length;
 	if ( rendered > 0 ) {
 		try {
 			const diag = __harnessDiagnostics();
@@ -12927,7 +12972,7 @@ function __neutralizeFrameEffectNodeUpdateBefore( node ) {
 	try { Object.defineProperty( node, '__tslpFrameEffectUpdateNeutered', { value: true, configurable: true } ); } catch ( _ ) {}
 }
 
-function __renderFrameEffectNodeWithFullRenderer( node, slimRenderer, fullRenderer, context ) {
+function __renderFrameEffectNodeWithFullRenderer( node, slimRenderer, fullRenderer, context, scheduledNodeFrame = null ) {
 	if ( ! __isFrameEffectNode( node ) || ! slimRenderer || ! fullRenderer ) return false;
 	const diag = __frameEffectDiagnostics();
 	const effectName = node.constructor && ( node.constructor.type || node.constructor.name ) || node.type || 'effect';
@@ -12949,7 +12994,7 @@ function __renderFrameEffectNodeWithFullRenderer( node, slimRenderer, fullRender
 				} );
 			}
 		} catch ( _ ) {}
-		if ( effectName === 'AfterImageNode' && node.__tslpFrameEffectRenderedOnce === true ) {
+		if ( scheduledNodeFrame === null && effectName === 'AfterImageNode' && node.__tslpFrameEffectRenderedOnce === true ) {
 			diag.reused = ( diag.reused || 0 ) + 1;
 			return true;
 		}
@@ -12981,12 +13026,15 @@ function __renderFrameEffectNodeWithFullRenderer( node, slimRenderer, fullRender
 		} catch ( _ ) {}
 			__retargetGaussianBlurInputTexture( node );
 			const updateBefore = node.__tslpFrameEffectOriginalUpdateBefore || node.updateBefore;
-			const runUpdate = () => updateBefore.call( node, {
-				renderer: effectRenderer,
-				frameId: __frameEffectFrameId(),
-				renderId: __frameEffectFrameId(),
-				context: context || {},
-			} );
+			const effectFrame = scheduledNodeFrame
+				? __sharedCreateTemporalNodeFrame( effectRenderer, { time: scheduledNodeFrame.time, context: context || {} } )
+				: {
+					renderer: effectRenderer,
+					frameId: __frameEffectFrameId(),
+					renderId: __frameEffectFrameId(),
+					context: context || {},
+				};
+			const runUpdate = () => updateBefore.call( node, effectFrame );
 			if ( node.scene ) __withSourceMaterialsForFullPass( node.scene, runUpdate );
 			else runUpdate();
 		__neutralizeFrameEffectNodeUpdateBefore( node );
@@ -13006,7 +13054,9 @@ function __renderFrameEffectNodeWithFullRenderer( node, slimRenderer, fullRender
 			sssDiag.renderedPrecompiled ++;
 
 		}
-		try { Object.defineProperty( node, '__tslpFrameEffectRenderedOnce', { value: true, configurable: true } ); } catch ( _ ) {}
+		if ( scheduledNodeFrame === null ) {
+			try { Object.defineProperty( node, '__tslpFrameEffectRenderedOnce', { value: true, configurable: true } ); } catch ( _ ) {}
+		}
 		if ( diag.names.length < 20 ) diag.names.push( effectName );
 		return true;
 	} catch ( err ) {
@@ -13019,14 +13069,22 @@ function __renderFrameEffectNodeWithFullRenderer( node, slimRenderer, fullRender
 	}
 }
 
-function __renderFrameEffectNodesForPipeline( renderer, effectNodes, context ) {
+function __renderFrameEffectNodesForPipeline( renderer, effectNodes, context, schedule = null, role = null, dependenciesFor = null ) {
 	try {
 		const diag = __frameEffectDiagnostics();
 		diag.collected += effectNodes && effectNodes.length || 0;
 	} catch ( _ ) {}
+	let succeeded = true;
 	for ( const node of effectNodes || [] ) {
-		__renderFrameEffectNodeWithFullRenderer( node, renderer, __computeRenderer, context );
+		const render = ( nodeFrame = null ) => __renderFrameEffectNodeWithFullRenderer( node, renderer, __computeRenderer, context, nodeFrame );
+		const result = schedule && role
+			? schedule.run( node, role, render, {
+				dependsOn: typeof dependenciesFor === 'function' ? dependenciesFor( node ) : [],
+			} )
+			: render();
+		if ( result === false ) succeeded = false;
 	}
+	return succeeded;
 }
 
 function __findUserArtifactByMaterialShape( shape ) {
@@ -13114,14 +13172,20 @@ function __sameNodeSet( first, second ) {
 	return a.length === b.length && a.every( ( node ) => b.includes( node ) );
 }
 
-function __renderBloomNodeOnceForPipeline( renderer, bloomNode, renderedBloomNodes, context ) {
-	if ( ! bloomNode || renderedBloomNodes.has( bloomNode ) ) return;
-	if ( __prepareBloomNodeForReplay( bloomNode, context || null ) ) {
+function __renderBloomNodeOnceForPipeline( renderer, bloomNode, renderedBloomNodes, context, schedule = null ) {
+	if ( ! bloomNode || renderedBloomNodes.has( bloomNode ) ) return true;
+	const render = ( nodeFrame = null ) => {
+		if ( ! __prepareBloomNodeForReplay( bloomNode, context || null ) ) return false;
 		const updateBefore = bloomNode.__tslpBloomReplayUpdateBefore || bloomNode.updateBefore;
-		if ( typeof updateBefore === 'function' ) updateBefore.call( bloomNode, { renderer } );
+		if ( typeof updateBefore === 'function' ) updateBefore.call( bloomNode, nodeFrame || { renderer } );
 		__neutralizeBloomNodeAutoUpdate( bloomNode );
-	}
-	renderedBloomNodes.add( bloomNode );
+		return true;
+	};
+	const result = schedule
+		? schedule.run( bloomNode, __POSTPROCESS_FRAME_ROLES.EFFECT, render )
+		: render();
+	if ( result !== false ) renderedBloomNodes.add( bloomNode );
+	return result !== false;
 }
 
 function __neutralizeBloomNodeAutoUpdate( bloomNode ) {
@@ -13143,8 +13207,37 @@ function __markBloomForSlimReplay( bloomNode ) {
 	}
 }
 
-function __renderOutputFrameEffectsAndBloomForPipeline( renderer, effectNodes, bloomNodes, context, rttNodes = [] ) {
+function __renderOutputFrameEffectsAndBloomForPipeline( renderer, effectNodes, bloomNodes, context, rttNodes = [], schedule = null, dependencyEffectNodes = effectNodes ) {
 	const renderedBloomNodes = new Set();
+	const allEffectNodes = Array.from( new Set( [ ...( dependencyEffectNodes || [] ), ...( effectNodes || [] ) ] ) );
+	const renderedEffectNodes = new Set( allEffectNodes.filter( ( effectNode ) => schedule && schedule.hasSucceeded( effectNode ) ) );
+	const renderedDependentRTTNodes = new Set();
+	let succeeded = true;
+	const bloomReadyRTTNodes = () => ( rttNodes || [] ).filter( ( rttNode ) => {
+		const dependencies = __effectDependenciesForRTT( rttNode, allEffectNodes );
+		return dependencies.every( ( effectNode ) => renderedEffectNodes.has( effectNode ) );
+	} );
+	const renderReadyEffectRTTNodes = () => {
+		const ready = [];
+		for ( const rttNode of rttNodes || [] ) {
+			if ( renderedDependentRTTNodes.has( rttNode ) ) continue;
+			const dependencies = __effectDependenciesForRTT( rttNode, allEffectNodes );
+			if ( dependencies.length === 0 || ! dependencies.every( ( effectNode ) => renderedEffectNodes.has( effectNode ) ) ) continue;
+			ready.push( rttNode );
+		}
+		if ( ready.length === 0 ) return;
+		const rendered = __renderRTTNodesForPipeline(
+			renderer,
+			ready,
+			schedule,
+			__POSTPROCESS_FRAME_ROLES.CONSUMER,
+			( rttNode ) => __effectDependenciesForRTT( rttNode, allEffectNodes ),
+		);
+		if ( rendered === false ) succeeded = false;
+		for ( const rttNode of ready ) {
+			if ( ! schedule || schedule.hasSucceeded( rttNode, __POSTPROCESS_FRAME_ROLES.CONSUMER ) ) renderedDependentRTTNodes.add( rttNode );
+		}
+	};
 	try {
 		const diag = __frameEffectDiagnostics();
 		diag.collected += effectNodes && effectNodes.length || 0;
@@ -13153,22 +13246,24 @@ function __renderOutputFrameEffectsAndBloomForPipeline( renderer, effectNodes, b
 		let renderedBloomForEffect = false;
 		for ( const bloomNode of bloomNodes || [] ) {
 			if ( __graphContainsNode( effectNode, bloomNode ) ) {
-				__renderBloomNodeOnceForPipeline( renderer, bloomNode, renderedBloomNodes, context );
-				renderedBloomForEffect = true;
+				renderedBloomForEffect = __renderBloomNodeOnceForPipeline( renderer, bloomNode, renderedBloomNodes, context, schedule ) || renderedBloomForEffect;
 			}
 		}
-		if ( renderedBloomForEffect ) __renderBloomDependentRTTNodesForPipeline( renderer, rttNodes, bloomNodes );
-		__renderFrameEffectNodeWithFullRenderer( effectNode, renderer, __computeRenderer, context );
-		if ( __effectTypeName( effectNode ) === 'SSGINode' && Array.isArray( rttNodes ) && rttNodes.length > 0 ) {
-			// SSGI feeds downstream composite RTT nodes (the TRAA beauty input in
-			// webgpu_postprocessing_ssgi). The initial RTT render happens before
-			// frame effects, so refresh those composites once the SSGI target is
-			// current and before TRAA samples them.
-			__renderRTTNodesForPipeline( renderer, rttNodes );
-		}
+		if ( renderedBloomForEffect ) __renderBloomDependentRTTNodesForPipeline( renderer, bloomReadyRTTNodes(), bloomNodes, schedule );
+		const render = ( nodeFrame = null ) => __renderFrameEffectNodeWithFullRenderer( effectNode, renderer, __computeRenderer, context, nodeFrame );
+		const rendered = schedule
+			? schedule.run( effectNode, __POSTPROCESS_FRAME_ROLES.EFFECT, render )
+			: render();
+		if ( rendered === false ) succeeded = false;
+		else renderedEffectNodes.add( effectNode );
+		renderReadyEffectRTTNodes();
 	}
-	for ( const bloomNode of bloomNodes || [] ) __renderBloomNodeOnceForPipeline( renderer, bloomNode, renderedBloomNodes, context );
-	if ( renderedBloomNodes.size > 0 ) __renderBloomDependentRTTNodesForPipeline( renderer, rttNodes, bloomNodes );
+	renderReadyEffectRTTNodes();
+	for ( const bloomNode of bloomNodes || [] ) {
+		if ( ! __renderBloomNodeOnceForPipeline( renderer, bloomNode, renderedBloomNodes, context, schedule ) ) succeeded = false;
+	}
+	if ( renderedBloomNodes.size > 0 ) __renderBloomDependentRTTNodesForPipeline( renderer, bloomReadyRTTNodes(), bloomNodes, schedule );
+	return succeeded;
 }
 
 // RenderPipeline (and PostProcessing which extends it) calls ng("post-process", ...)
@@ -13177,6 +13272,7 @@ function __renderOutputFrameEffectsAndBloomForPipeline( renderer, effectNodes, b
 export class RenderPipeline extends Slim.RenderPipeline {
 	constructor( ...args ) {
 		super( ...args );
+		this.__tslpPostprocessFrameScheduler = __sharedCreatePostprocessFrameScheduler( this );
 		try {
 			const diag = __frameEffectDiagnostics();
 			diag.pipelineConstructed = ( diag.pipelineConstructed || 0 ) + 1;
@@ -13196,6 +13292,7 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				const inheritedTemporalFrame = __sharedGetTemporalFrameState( renderer );
 				const temporalFrame = inheritedTemporalFrame || {
 					frameId: __frameEffectFrameId(),
+					renderId: __frameEffectFrameId(),
 					time: Number.isFinite( globalThis.__tslpPinnedClock ) ? globalThis.__tslpPinnedClock : null,
 					advance: true,
 				};
@@ -13255,10 +13352,12 @@ export class RenderPipeline extends Slim.RenderPipeline {
 					const bloomNodes = __collectBloomNodesInGraph( this.outputNode );
 					__bloomDiagnostics().collected += bloomNodes.length;
 					const preBloomRTTNodes = __filterRTTNodesByBloomDependency( rttNodes, bloomNodes, false );
+					const preEffectRTTNodes = preBloomRTTNodes.filter( ( rttNode ) => __effectDependenciesForRTT( rttNode, effectNodes ).length === 0 );
 					try {
 						const rttDiag = __harnessDiagnostics();
 						rttDiag.rtt = rttDiag.rtt || { collected: 0, rendered: 0, failed: 0 };
 						rttDiag.rtt.bloomDependentDeferred = rttNodes.length - preBloomRTTNodes.length;
+						rttDiag.rtt.effectDependentDeferred = preBloomRTTNodes.length - preEffectRTTNodes.length;
 					} catch ( _ ) {}
 					const outlineNodes = __collectOutlineNodesInGraph( this.outputNode );
 				__outlineDiagnostics().collected += outlineNodes.length;
@@ -13317,8 +13416,16 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				for ( const node of ssrNodes ) __prepareSSRNodeForReplay( node, context );
 				for ( const node of dofNodes ) __prepareDOFNodeForReplay( node, context );
 				for ( const node of traaNodes ) __prepareTRAANodeForReplay( node, context );
-				const effectBeforeRenderPipeline = context.onBeforeRenderPipeline;
-				const effectAfterRenderPipeline = context.onAfterRenderPipeline;
+					const effectBeforeRenderPipeline = context.onBeforeRenderPipeline;
+					const effectAfterRenderPipeline = context.onAfterRenderPipeline;
+					const contextEffectMatchByNode = new Map( passExecutionPlan.contextEffects.map( ( match ) => [ match.node, match ] ) );
+					const producerDependenciesForEffect = ( effectNode ) => {
+						const match = contextEffectMatchByNode.get( effectNode );
+						return match ? match.producerPasses : [];
+					};
+					const effectDependenciesForConsumer = ( passNode ) => passExecutionPlan.contextEffects
+						.filter( ( match ) => match.consumerPasses.includes( passNode ) )
+						.map( ( match ) => match.node );
 				artifact = __attachGraphTextureRefs( artifact, this.outputNode );
 				artifact = __attachOrderedPassOutputRefs( artifact, passNodes );
 				artifact = __attachOrderedPassDepthRefs( artifact, passNodes );
@@ -13334,13 +13441,19 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				this._quadMesh.material = mat;
 				this._quadMesh.frustumCulled = false;
 				// Set up _context so render() can access onBefore/onAfterRenderPipeline.
-				context.onBeforeRenderPipeline = ( passNodes.length > 0 || rttNodes.length > 0 || effectNodes.length > 0 || bloomNodes.length > 0 || outlineNodes.length > 0 || ssrNodes.length > 0 || dofNodes.length > 0 || traaNodes.length > 0 ) ? () => {
-					const pipelineRenderTarget = typeof this.renderer.getRenderTarget === 'function' ? this.renderer.getRenderTarget() : null;
-					const pipelineMRT = typeof this.renderer.getMRT === 'function' ? this.renderer.getMRT() : null;
-						try {
-						if ( typeof effectBeforeRenderPipeline === 'function' ) effectBeforeRenderPipeline();
-						__renderPassNodesForPipeline( this.renderer, passInputNodes );
-						__renderRTTNodesForPipeline( this.renderer, preBloomRTTNodes );
+					context.onBeforeRenderPipeline = ( passNodes.length > 0 || rttNodes.length > 0 || effectNodes.length > 0 || bloomNodes.length > 0 || outlineNodes.length > 0 || ssrNodes.length > 0 || dofNodes.length > 0 || traaNodes.length > 0 ) ? () => {
+						const pipelineRenderTarget = typeof this.renderer.getRenderTarget === 'function' ? this.renderer.getRenderTarget() : null;
+						const pipelineMRT = typeof this.renderer.getMRT === 'function' ? this.renderer.getMRT() : null;
+						const frameSchedule = this.__tslpPostprocessFrameScheduler.begin( this.renderer, { context } );
+							try {
+							if ( typeof effectBeforeRenderPipeline === 'function' ) effectBeforeRenderPipeline();
+							__renderPassNodesForPipeline(
+								this.renderer,
+								passInputNodes,
+								usePlannedPassWave ? frameSchedule : null,
+								__POSTPROCESS_FRAME_ROLES.PRODUCER,
+							);
+							__renderRTTNodesForPipeline( this.renderer, preEffectRTTNodes, frameSchedule, __POSTPROCESS_FRAME_ROLES.PRODUCER );
 					artifact = __attachGraphTextureRefs( artifact, this.outputNode );
 					artifact = __attachOrderedPassOutputRefs( artifact, passNodes );
 					artifact = __attachOrderedPassDepthRefs( artifact, passNodes );
@@ -13356,9 +13469,22 @@ export class RenderPipeline extends Slim.RenderPipeline {
 							const nc = this.renderer && this.renderer._nodes && this.renderer._nodes.nodeBuilderCache;
 							if ( nc && typeof nc.clear === 'function' ) nc.clear();
 						} catch ( _ ) {}
-					__renderFrameEffectNodesForPipeline( this.renderer, passEffectNodes, context );
-					if ( passConsumerNodes.length > 0 ) __renderPassNodesForPipeline( this.renderer, passConsumerNodes );
-					__renderOutputFrameEffectsAndBloomForPipeline( this.renderer, outputEffectNodes, bloomNodes, context, rttNodes );
+						__renderFrameEffectNodesForPipeline(
+							this.renderer,
+							passEffectNodes,
+							context,
+							frameSchedule,
+							usePlannedPassWave ? __POSTPROCESS_FRAME_ROLES.CONTEXT_EFFECT : __POSTPROCESS_FRAME_ROLES.EFFECT,
+							usePlannedPassWave ? producerDependenciesForEffect : null,
+						);
+						if ( passConsumerNodes.length > 0 ) __renderPassNodesForPipeline(
+							this.renderer,
+							passConsumerNodes,
+							usePlannedPassWave ? frameSchedule : null,
+							__POSTPROCESS_FRAME_ROLES.CONSUMER,
+							effectDependenciesForConsumer,
+						);
+						__renderOutputFrameEffectsAndBloomForPipeline( this.renderer, outputEffectNodes, bloomNodes, context, rttNodes, frameSchedule, effectNodes );
 							if ( outputEffectNodes.length > 0 || bloomNodes.length > 0 ) {
 								artifact = __attachGraphTextureRefs( artifact, this.outputNode );
 								artifact = __attachRTTTextureRefs( artifact, rttNodes );
@@ -13380,7 +13506,12 @@ export class RenderPipeline extends Slim.RenderPipeline {
 					// Wave 5 Phase A3: keep SSR behind the WIP gate. DOF must dispatch
 					// here so the final artifact samples a rendered composite RT instead
 					// of the DepthOfFieldNode's lazily-constructed 1x1 placeholder.
-					__renderTRAANodesForPipeline( this.renderer, traaNodes, passNodes );
+						const traaDependencies = Array.from( new Set( [
+							...outputEffectNodes,
+							...rttNodes.filter( ( rttNode ) => __effectDependenciesForRTT( rttNode, effectNodes ).length > 0 ),
+							...( usePlannedPassWave ? passConsumerNodes : [] ),
+						] ) );
+						__renderTRAANodesForPipeline( this.renderer, traaNodes, passNodes, frameSchedule, traaDependencies );
 					__renderDOFNodesForPipeline( this.renderer, dofNodes );
 					if ( typeof globalThis !== 'undefined' && globalThis.__tslpEnableWipPostprocessFallbacks === true ) {
 						__renderSSRNodesForPipeline( this.renderer, ssrNodes );

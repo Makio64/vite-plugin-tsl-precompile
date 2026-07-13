@@ -80,6 +80,10 @@
       "types": "./types/slim-support/temporal-frame.d.ts",
       "default": "./src/slim-support/temporal-frame.js"
     },
+    "./slim-support/postprocess-frame-scheduler": {
+      "types": "./types/slim-support/postprocess-frame-scheduler.d.ts",
+      "default": "./src/slim-support/postprocess-frame-scheduler.js"
+    },
     "./slim-support/node-dependencies": {
       "types": "./types/slim-support/node-dependencies.d.ts",
       "default": "./src/slim-support/node-dependencies.js"

@@ -506,20 +506,28 @@ export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	renderOffscreenOverrideWithFallback: ( scene: unknown, camera: unknown, offscreenOpts?: RenderOffscreenOverrideWithFallbackOptions ) => Promise<RenderPassWithFallbackStats>;
 	pinClock: ( t: number | null | undefined ) => void;
 	unpinClock: () => void;
-	withTemporalFrame: <T>( options: { frameId?: number | string; time?: number; advance?: boolean }, callback: ( state: TemporalFrameState ) => T, extraRenderers?: unknown | unknown[] ) => T;
+	withTemporalFrame: <T>( options: { frameId?: number | string; renderId?: number | string; time?: number; advance?: boolean }, callback: ( state: TemporalFrameState ) => T, extraRenderers?: unknown | unknown[] ) => T;
 	dispose: () => Promise<void>;
 };
 export function pinClock( t: number | null | undefined ): void;
 export function unpinClock(): void;
 export type TemporalFrameState = {
 	frameId?: number | string;
+	renderId?: number | string;
 	time: number | null;
 	advance: boolean;
 };
+export class TemporalFrameIdentityError extends Error { code: 'TSLP_TEMPORAL_FRAME_IDENTITY_MISSING' }
 export function getTemporalFrameState( value: unknown ): TemporalFrameState | null;
 export function logicalFrameKey( frame: unknown, fallback?: number | string ): number | string;
 export function shouldAdvanceTemporalState( frame: unknown ): boolean;
-export function withTemporalFrame<T>( renderers: unknown | unknown[], options: { frameId?: number | string; time?: number; advance?: boolean }, callback: ( state: TemporalFrameState ) => T ): T;
+export function createTemporalNodeFrame( renderer: object, overrides?: { time?: number | null; context?: Record<string, unknown> } ): { renderer: object; frameId: number | string; renderId: number | string; time: number | null; context: Record<string, unknown> };
+export function withTemporalFrame<T>( renderers: unknown | unknown[], options: { frameId?: number | string; renderId?: number | string; time?: number; advance?: boolean }, callback: ( state: TemporalFrameState ) => T ): T;
+export const POSTPROCESS_FRAME_ROLES: Readonly<{ PRODUCER: 'producer'; CONTEXT_EFFECT: 'context-effect'; CONSUMER: 'consumer'; EFFECT: 'effect'; TERMINAL_EFFECT: 'terminal-effect' }>;
+export type PostprocessFrameClaimStatus = { status: 'missing' | 'unclaimed' | 'pending' | 'succeeded' | 'failed' | 'blocked'; role: string | null; attempts: number; value?: unknown; error?: unknown; reason?: string | null; blockedBy?: Array<{ identity: unknown; status: string; role: string | null }>; promise?: Promise<unknown> | null };
+export type PostprocessFrameScope = { frameId: number | string; renderId: number | string; nodeFrame: { renderer: object; frameId: number | string; renderId: number | string; time: number | null; context: Record<string, unknown> }; run<T>( identity: unknown, role: string, callback: ( nodeFrame: PostprocessFrameScope['nodeFrame'] ) => T, options?: { dependsOn?: unknown[] } ): T | false; getStatus( identity: unknown ): PostprocessFrameClaimStatus; hasSucceeded( identity: unknown, role?: string ): boolean; getConflicts(): Array<{ identity: unknown; claimedRole: string; requestedRole: string }> };
+export type PostprocessFrameScheduler = { owner: object | Function; begin( renderer: object, overrides?: { time?: number | null; context?: Record<string, unknown> } ): PostprocessFrameScope; clear(): void };
+export function createPostprocessFrameScheduler( owner: object | Function, options?: { maxFrames?: number } ): PostprocessFrameScheduler;
 export type LiveNodeDependency = { node: unknown; metadata: unknown };
 export function attachLiveNodeDependency<T>( owner: T, dependency: unknown, metadata?: unknown ): T;
 export function getLiveNodeDependencies( owner: unknown ): LiveNodeDependency[];

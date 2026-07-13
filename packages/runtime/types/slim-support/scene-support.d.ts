@@ -62,7 +62,7 @@ export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	renderOffscreenOverrideWithFallback: ( scene: unknown, camera: unknown, offscreenOpts?: RenderOffscreenOverrideWithFallbackOptions ) => Promise<RenderPassWithFallbackStats>;
 	pinClock: ( t: number | null | undefined ) => void;
 	unpinClock: () => void;
-	withTemporalFrame: <T>( options: { frameId?: number | string; time?: number; advance?: boolean }, callback: ( state: TemporalFrameState ) => T, extraRenderers?: unknown | unknown[] ) => T;
+	withTemporalFrame: <T>( options: { frameId?: number | string; renderId?: number | string; time?: number; advance?: boolean }, callback: ( state: TemporalFrameState ) => T, extraRenderers?: unknown | unknown[] ) => T;
 	dispose: () => Promise<void>;
 };
 
