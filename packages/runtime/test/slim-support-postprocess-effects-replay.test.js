@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
 	preparePrecompiledPostprocess,
 	prepareEffectNodeForReplay,
+	refreshPreparedPostprocessResources,
 	makePrecompiledAuxMaterial,
 	cloneAuxArtifact,
 	wireLiveNodeSidecarsToArtifact,
@@ -211,6 +212,62 @@ function makeLoadAux( shapes ) {
 	const fn = ( shape /* , configHash */ ) => map.get( shape ) || null;
 	fn._map = map;
 	return fn;
+
+}
+
+function makeResourceDataMap() {
+
+	const store = new WeakMap();
+	return {
+		get( key ) {
+
+			let value = store.get( key );
+			if ( ! value ) {
+
+				value = {};
+				store.set( key, value );
+
+			}
+			return value;
+
+		},
+		has: ( key ) => store.has( key ),
+		delete: ( key ) => store.delete( key ),
+	};
+
+}
+
+function makeResourceRenderer() {
+
+	return { backend: makeResourceDataMap(), _textures: makeResourceDataMap() };
+
+}
+
+function makeRenderTargetTexture( name, width, height, extra = {} ) {
+
+	return {
+		isTexture: true,
+		name,
+		uuid: name + '-uuid',
+		version: 0,
+		image: { width, height, depth: 1 },
+		...extra,
+	};
+
+}
+
+function makeEffectRenderTarget( color, depth, width = 1, height = 1 ) {
+
+	return {
+		isRenderTarget: true,
+		width,
+		height,
+		depth: 1,
+		texture: color,
+		textures: [ color ],
+		depthTexture: depth,
+		setSize() {},
+	};
 
 }
 
@@ -429,6 +486,130 @@ test( 'prepareEffectNodeForReplay wires SSS live uniforms and pre-pass depth', (
 	assert.equal( depthSource.kind, 'artifact.texture' );
 	assert.equal( depthSource.textureName, 'depth' );
 	assert.equal( preparedArtifact._textureRefs.get( 'captured-sss-depth' ), depth );
+
+} );
+
+test( 'postprocess resource refresh invalidates unchanged JS textures after 1x1 and 0x0 backend replacement', () => {
+
+	const renderer = makeResourceRenderer();
+	const color = makeRenderTargetTexture( 'SSGI', 1, 1 );
+	const depth = makeRenderTargetTexture( 'SSGI.depth', 0, 0, { isDepthTexture: true } );
+	const target = makeEffectRenderTarget( color, depth );
+	const node = {
+		type: 'SSGINode',
+		_ssgiRenderTarget: target,
+		_textureNode: { value: color },
+	};
+	const oldColorGPU = { width: 1, height: 1, depthOrArrayLayers: 1 };
+	const oldDepthGPU = { width: 0, height: 0, depthOrArrayLayers: 1 };
+	renderer.backend.get( color ).texture = oldColorGPU;
+	renderer.backend.get( depth ).texture = oldDepthGPU;
+	const colorBindGroup = { id: 'color-group' };
+	const depthBindGroup = { id: 'depth-group' };
+	renderer._textures.get( color ).bindGroups = new Set( [ colorBindGroup ] );
+	renderer._textures.get( depth ).bindGroups = new Set( [ depthBindGroup ] );
+	renderer.backend.get( colorBindGroup ).groups = { cached: true };
+	renderer.backend.get( colorBindGroup ).versions = [ 1 ];
+	renderer.backend.get( depthBindGroup ).groups = { cached: true };
+	renderer.backend.get( depthBindGroup ).versions = [ 1 ];
+
+	const before = refreshPreparedPostprocessResources( node, { phase: 'before-update', renderer } );
+	assert.equal( before.ready, true );
+	assert.equal( before.resources, 2 );
+	assert.equal( before.changed, 0 );
+
+	// Mirrors RenderTarget.setSize(): keep JS Texture identities, dispose both
+	// renderer DataMap entries, and allocate new GPUTextures at viewport size.
+	target.width = 640;
+	target.height = 480;
+	color.image.width = 640;
+	color.image.height = 480;
+	depth.image.width = 640;
+	depth.image.height = 480;
+	color.version ++;
+	depth.version ++;
+	renderer.backend.delete( color );
+	renderer.backend.delete( depth );
+	renderer._textures.delete( color );
+	renderer._textures.delete( depth );
+	const newColorData = renderer.backend.get( color );
+	newColorData.texture = { width: 640, height: 480, depthOrArrayLayers: 1 };
+	newColorData[ 'view-0' ] = { stale: true };
+	const newDepthData = renderer.backend.get( depth );
+	newDepthData.texture = { width: 640, height: 480, depthOrArrayLayers: 1 };
+	newDepthData[ 'view-0' ] = { stale: true };
+
+	const after = refreshPreparedPostprocessResources( node, { phase: 'after-update', renderer } );
+	assert.equal( after.ready, true, after.reasons.join( '; ' ) );
+	assert.equal( after.changed, 2, 'both color and formerly-0x0 depth resources changed' );
+	assert.equal( after.invalidated, 2 );
+	assert.equal( newColorData[ 'view-0' ], undefined );
+	assert.equal( newDepthData[ 'view-0' ], undefined );
+	assert.equal( renderer.backend.get( colorBindGroup ).groups, undefined, 'bind group captured before DataMap disposal is invalidated' );
+	assert.equal( renderer.backend.get( depthBindGroup ).versions, undefined, 'depth bind group captured before DataMap disposal is invalidated' );
+	assert.equal( node._textureNode.value, color, 'same JS texture identity is preserved' );
+
+} );
+
+test( 'postprocess resource refresh relinks replaced textures and reruns SSS depth wiring', () => {
+
+	const renderer = makeResourceRenderer();
+	const { node, passNode } = makeSSSLikeNode();
+	const oldOutput = makeRenderTargetTexture( 'SSS', 1, 1 );
+	const target = makeEffectRenderTarget( oldOutput, null );
+	node._sssRenderTarget = target;
+	node._textureNode.value = oldOutput;
+	const handler = findEffectHandler( node );
+	const result = prepareEffectNodeForReplay( handler, node, {
+		loadAux: ( shape ) => shape === 'sss' ? makeSSSArtifact() : null,
+		PrecompiledMaterial: StubPrecompiledMaterial,
+		passNodes: [ passNode ],
+		renderer,
+	} );
+	const artifact = result.prepared[ 0 ].replacement.precompiledArtifact;
+	Object.defineProperty( artifact, '_textureRefs', {
+		value: new Map( [ ...artifact._textureRefs, [ 'sss-output', oldOutput ] ] ),
+		configurable: true,
+	} );
+	refreshPreparedPostprocessResources( node, { phase: 'before-update', renderer, passNodes: [ passNode ] } );
+
+	const replacementOutput = makeRenderTargetTexture( 'SSS', 640, 480 );
+	target.texture = replacementOutput;
+	target.textures = [ replacementOutput ];
+	target.width = 640;
+	target.height = 480;
+	renderer.backend.get( replacementOutput ).texture = { width: 640, height: 480, depthOrArrayLayers: 1 };
+	const replacementDepth = makeRenderTargetTexture( 'depth', 640, 480, { isDepthTexture: true } );
+	passNode.getTexture = ( name ) => name === 'depth' ? replacementDepth : null;
+
+	const after = refreshPreparedPostprocessResources( node, { phase: 'after-update', renderer, passNodes: [ passNode ] } );
+	assert.equal( after.ready, true, after.reasons.join( '; ' ) );
+	assert.ok( after.relinked >= 2, 'artifact ref and PassTextureNode are both relinked' );
+	assert.equal( artifact._textureRefs.get( 'sss-output' ), replacementOutput );
+	assert.equal( artifact._textureRefs.get( 'captured-sss-depth' ), replacementDepth, 'SSS handler rewires the current pass depth after update' );
+	assert.equal( node._textureNode.value, replacementOutput );
+
+} );
+
+test( 'postprocess resource refresh fails closed until changed texture caches can be invalidated', () => {
+
+	const renderer = makeResourceRenderer();
+	const texture = makeRenderTargetTexture( 'effect', 1, 1 );
+	const target = makeEffectRenderTarget( texture, null );
+	const node = { _renderTarget: target };
+	refreshPreparedPostprocessResources( node, { phase: 'before-update', renderer } );
+	target.width = 2;
+	target.height = 2;
+	texture.image.width = 2;
+	texture.image.height = 2;
+
+	const failed = refreshPreparedPostprocessResources( node, { phase: 'after-update' } );
+	assert.equal( failed.ready, false );
+	assert.match( failed.reasons.join( ' ' ), /cannot invalidate/ );
+
+	const retried = refreshPreparedPostprocessResources( node, { phase: 'after-update', renderer } );
+	assert.equal( retried.ready, true, retried.reasons.join( '; ' ) );
+	assert.equal( retried.changed, 1, 'failed refresh keeps its old baseline for retry' );
 
 } );
 

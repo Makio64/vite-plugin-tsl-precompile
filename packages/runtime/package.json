@@ -112,6 +112,10 @@
       "types": "./types/slim-support/postprocess-effects-replay.d.ts",
       "default": "./src/slim-support/postprocess-effects-replay.js"
     },
+    "./slim-support/postprocess-resource-refresh": {
+      "types": "./types/slim-support/postprocess-resource-refresh.d.ts",
+      "default": "./src/slim-support/postprocess-resource-refresh.js"
+    },
     "./slim-support/traa-replay": {
       "types": "./types/slim-support/traa-replay.d.ts",
       "default": "./src/slim-support/traa-replay.js"

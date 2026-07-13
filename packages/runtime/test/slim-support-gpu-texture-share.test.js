@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
 	clearTextureViewCache,
+	invalidateTextureResourceBindings,
 	markTextureInitialized,
 	shareGPUTextureEntry,
 	sharePMREMGPUTexture,
@@ -66,6 +67,35 @@ test( 'markTextureInitialized sets the Textures DataMap flags', () => {
 	assert.equal( entry.version, 3 );
 	assert.equal( entry.generation, 3 );
 	assert.ok( entry.bindGroups instanceof Set );
+
+} );
+
+test( 'invalidateTextureResourceBindings clears views and every cached bind group', () => {
+
+	const renderer = fakeRenderer();
+	const texture = fakeTexture( 'resized-effect' );
+	const bindGroup = { id: 'effect-bind-group' };
+	const backendData = renderer.backend.get( texture );
+	backendData.texture = { id: 'replacement-gpu-texture' };
+	backendData[ 'view-0' ] = { id: 'stale-view' };
+	const textureData = renderer._textures.get( texture );
+	textureData.bindGroups = new Set( [ bindGroup ] );
+	const bindingData = renderer.backend.get( bindGroup );
+	bindingData.groups = { id: 'cached-group' };
+	bindingData.versions = [ 1 ];
+
+	assert.equal( invalidateTextureResourceBindings( renderer, texture ), true );
+	assert.equal( backendData[ 'view-0' ], undefined );
+	assert.equal( textureData.bindGroups.size, 0 );
+	assert.equal( bindingData.groups, undefined );
+	assert.equal( bindingData.versions, undefined );
+
+} );
+
+test( 'invalidateTextureResourceBindings fails closed without renderer cache APIs', () => {
+
+	assert.equal( invalidateTextureResourceBindings( { backend: { get() {} } }, fakeTexture() ), false );
+	assert.equal( invalidateTextureResourceBindings( null, fakeTexture() ), false );
 
 } );
 

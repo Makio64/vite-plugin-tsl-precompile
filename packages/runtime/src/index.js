@@ -22,7 +22,7 @@ export { getTextureResolutionDebugHook, setTextureResolutionDebugHook } from './
 export { getDFGLUT } from './dfg-lut.js';
 export { createLiveSceneIndex, collectMaterialNodeTextures, textureImageReady, textureImageSrc, healTextureImage } from './slim-support/live-scene-index.js';
 export { PMREM_CUBE_UV_MAPPING, isCubeTextureSource, isEnvironmentTextureSource, isPMREMTexture, isPMREMArtifactTextureSource, artifactNeedsPMREM, artifactPMREMSourceUuids, attachPMREMRefsByOrder, collectPMREMSourceTexturesInNode, collectPMREMSourceTexturesFromMaterial, selectPMREMTexturesForArtifact, createPMREMSupport } from './slim-support/pmrem.js';
-export { clearTextureViewCache, markTextureInitialized, shareGPUTextureEntry, sharePMREMGPUTexture, shareShadowGPUTextureIntoSlim } from './slim-support/gpu-texture-share.js';
+export { clearTextureViewCache, invalidateTextureResourceBindings, markTextureInitialized, shareGPUTextureEntry, sharePMREMGPUTexture, shareShadowGPUTextureIntoSlim } from './slim-support/gpu-texture-share.js';
 export { textureMatchesSource, textureMatchesArtifactSource, artifactHasTextureSource, countArtifactTextureSources, singleArtifactTextureUuid, attachArtifactTextureRefsByShapeOrder, attachTextureRefsWhere, attachArtifactTextureRefsWhere } from './slim-support/artifact-texture-wiring.js';
 export { getComputeBindGroups, computeNodeUsesStorageTexture, shareComputeSampledInputs, syncComputeStorageOutputs, syncComputeStorageOutputsPerPass, wireArtifactStorageBuffersFromAttributes, pingPongInvalidate, shareInstancedAttributeBufferIntoSlim } from './slim-support/compute-sync.js';
 export { createFullRendererFallback } from './slim-support/full-renderer-fallback.js';
@@ -35,7 +35,7 @@ export { setSlimRenderFallback, getSlimRenderFallback } from './slim-support/ren
 export { collectLiveBloomNodes, wireBloomNode, wirePrecompiledPostprocess, findPostprocessAux } from './slim-support/postprocess-wire.js';
 export { registerEffectHandler, unregisterEffectHandler, getEffectHandlers, findEffectHandler, collectEffectNodes } from './slim-support/postprocess-effects.js';
 export { createPostprocessExecutionPlan, postprocessGraphContains } from './slim-support/postprocess-execution-plan.js';
-export { preparePrecompiledPostprocess, prepareEffectNodeForReplay, makePrecompiledAuxMaterial, cloneAuxArtifact, wireLiveNodeSidecarsToArtifact, artifactLooksLikeRetroPassMaterial } from './slim-support/postprocess-effects-replay.js';
+export { preparePrecompiledPostprocess, prepareEffectNodeForReplay, refreshPreparedPostprocessResources, makePrecompiledAuxMaterial, cloneAuxArtifact, wireLiveNodeSidecarsToArtifact, artifactLooksLikeRetroPassMaterial } from './slim-support/postprocess-effects-replay.js';
 export { TRAA_RESOLVE_TEXTURE_NAME, TRAA_HISTORY_TEXTURE_NAME, TRAA_HISTORY_DEPTH_TEXTURE_NAME, nameTRAATextures, collectTRAASelfTextures, getTRAABeautyTexture, getTRAAVelocityTexture, getTRAACurrentDepthTexture, wireTRAAResolveArtifact } from './slim-support/traa-replay.js';
 export { renderOffscreenOverrideWithFullRenderer, renderPassWithFullRenderer, sharePassRenderTargetTextures, shareRenderTargetTextures } from './slim-support/pass-render-fallback.js';
 export { disposeShadowMapsWithFullRenderer, populateShadowMapsWithFullRenderer } from './slim-support/shadow-fallback.js';

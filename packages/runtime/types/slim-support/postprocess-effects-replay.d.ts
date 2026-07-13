@@ -56,6 +56,8 @@ export type LiveSidecarWireStats = {
 
 export function preparePrecompiledPostprocess( args: PreparePrecompiledPostprocessArgs ): PreparePrecompiledPostprocessResult;
 export function prepareEffectNodeForReplay( handler: EffectHandler, node: unknown, opts: PrepareEffectNodeForReplayOptions ): PrepareEffectNodeForReplayResult;
+export { refreshPreparedPostprocessResources } from './postprocess-resource-refresh.d.ts';
+export type { RefreshPreparedPostprocessResourcesOptions, RefreshPreparedPostprocessResourcesResult } from './postprocess-resource-refresh.d.ts';
 export function makePrecompiledAuxMaterial( shape: string, sourceMaterial: unknown, opts: PrepareEffectNodeForReplayOptions ): unknown | null;
 export function cloneAuxArtifact<T = unknown>( artifact: T ): T;
 export function wireLiveNodeSidecarsToArtifact( artifact: unknown, sourceMaterial: unknown, opts?: { overlay?: boolean } ): LiveSidecarWireStats;

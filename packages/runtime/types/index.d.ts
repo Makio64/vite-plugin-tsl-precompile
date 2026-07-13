@@ -282,6 +282,7 @@ export function collectPMREMSourceTexturesFromMaterial( material: unknown, opts?
 export function selectPMREMTexturesForArtifact( artifact: unknown, opts?: Record<string, unknown> ): unknown[];
 export function createPMREMSupport( opts?: Record<string, unknown> ): unknown;
 export function clearTextureViewCache( textureData: unknown ): void;
+export function invalidateTextureResourceBindings( renderer: unknown, texture: unknown, opts?: { bindGroups?: Iterable<unknown> } ): boolean;
 export function markTextureInitialized( renderer: unknown, texture: unknown ): void;
 export function shareGPUTextureEntry( targetRenderer: unknown, sourceRenderer: unknown, texture: unknown, opts?: Record<string, unknown> ): boolean;
 export function sharePMREMGPUTexture( slimRenderer: unknown, fullRenderer: unknown, pmrem: unknown, opts?: Record<string, unknown> ): boolean;
@@ -615,6 +616,17 @@ export function findEffectHandler( node: unknown ): EffectHandler | null;
 export function collectEffectNodes( root: unknown, opts?: { depthCap?: number; extraRoots?: unknown[] } ): EffectNodeMatch[];
 export function preparePrecompiledPostprocess( args: PreparePrecompiledPostprocessArgs ): PreparePrecompiledPostprocessResult;
 export function prepareEffectNodeForReplay( handler: EffectHandler, node: unknown, opts: PrepareEffectNodeForReplayOptions ): PrepareEffectNodeForReplayResult;
+export type RefreshPreparedPostprocessResourcesResult = {
+	phase: 'before-update' | 'after-update';
+	ready: boolean;
+	changed: number;
+	invalidated: number;
+	relinked: number;
+	rewired: number;
+	resources: number;
+	reasons: string[];
+};
+export function refreshPreparedPostprocessResources( node: unknown, opts?: { phase?: 'before-update' | 'after-update'; frame?: { renderer?: unknown; context?: { passNodes?: unknown[] } }; renderer?: unknown; passNodes?: unknown[] } ): RefreshPreparedPostprocessResourcesResult;
 export function makePrecompiledAuxMaterial( shape: string, sourceMaterial: unknown, opts: PrepareEffectNodeForReplayOptions ): unknown | null;
 export function cloneAuxArtifact<T = unknown>( artifact: T ): T;
 export function wireLiveNodeSidecarsToArtifact( artifact: unknown, sourceMaterial: unknown, opts?: { overlay?: boolean } ): LiveSidecarWireStats;

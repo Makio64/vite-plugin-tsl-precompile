@@ -50,6 +50,8 @@ test( 'slim-support package subpath resolves through the public export map', () 
 	assert.equal( typeof slimSupport.populateShadowMapsWithFullRenderer, 'function' );
 	assert.equal( typeof slimSupport.disposeShadowMapsWithFullRenderer, 'function' );
 	assert.equal( typeof slimSupport.preparePrecompiledPostprocess, 'function' );
+	assert.equal( typeof slimSupport.refreshPreparedPostprocessResources, 'function' );
+	assert.equal( typeof slimSupport.invalidateTextureResourceBindings, 'function' );
 	assert.equal( typeof slimSupport.createPostprocessExecutionPlan, 'function' );
 	assert.equal( typeof slimSupport.createPostprocessFrameScheduler, 'function' );
 	assert.equal( typeof slimSupport.artifactLooksLikeRetroPassMaterial, 'function' );
@@ -66,6 +68,8 @@ test( 'runtime package re-exports user-facing compute wiring helpers', () => {
 	assert.equal( runtime.populateShadowMapsWithFullRenderer, slimSupport.populateShadowMapsWithFullRenderer );
 	assert.equal( runtime.disposeShadowMapsWithFullRenderer, slimSupport.disposeShadowMapsWithFullRenderer );
 	assert.equal( runtime.artifactLooksLikeRetroPassMaterial, slimSupport.artifactLooksLikeRetroPassMaterial );
+	assert.equal( runtime.refreshPreparedPostprocessResources, slimSupport.refreshPreparedPostprocessResources );
+	assert.equal( runtime.invalidateTextureResourceBindings, slimSupport.invalidateTextureResourceBindings );
 	assert.equal( runtime.createPostprocessExecutionPlan, slimSupport.createPostprocessExecutionPlan );
 	assert.equal( runtime.createPostprocessFrameScheduler, slimSupport.createPostprocessFrameScheduler );
 	assert.equal( runtime.wireTRAAResolveArtifact, slimSupport.wireTRAAResolveArtifact );
@@ -135,6 +139,7 @@ test( 'runtime package exports the stable slim-support barrel with types', () =>
 	assert.equal( pkg.exports[ './slim-support/diagnostics' ].types, './types/slim-support/diagnostics.d.ts' );
 	assert.equal( pkg.exports[ './slim-support/postprocess-execution-plan' ].types, './types/slim-support/postprocess-execution-plan.d.ts' );
 	assert.equal( pkg.exports[ './slim-support/postprocess-frame-scheduler' ].types, './types/slim-support/postprocess-frame-scheduler.d.ts' );
+	assert.equal( pkg.exports[ './slim-support/postprocess-resource-refresh' ].types, './types/slim-support/postprocess-resource-refresh.d.ts' );
 	assert.deepEqual( pkg.exports[ './slim-support/shadow-fallback' ], {
 		types: './types/slim-support/shadow-fallback.d.ts',
 		default: './src/slim-support/shadow-fallback.js',

@@ -16,6 +16,7 @@ export * from './postprocess-wire.d.ts';
 export * from './postprocess-effects.d.ts';
 export * from './postprocess-execution-plan.d.ts';
 export * from './postprocess-effects-replay.d.ts';
+export * from './postprocess-resource-refresh.d.ts';
 export * from './traa-replay.d.ts';
 export * from './diagnostics.d.ts';
 export { clearLiveTextureIndex, installTextureLoaderTracking, registerLiveTexture } from '../index.d.ts';

@@ -1,5 +1,6 @@
 export {
 	clearTextureViewCache,
+	invalidateTextureResourceBindings,
 	markTextureInitialized,
 	shareGPUTextureEntry,
 	sharePMREMGPUTexture,

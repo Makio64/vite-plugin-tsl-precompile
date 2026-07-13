@@ -33,6 +33,7 @@ export {
 
 export {
 	clearTextureViewCache,
+	invalidateTextureResourceBindings,
 	markTextureInitialized,
 	shareGPUTextureEntry,
 	sharePMREMGPUTexture,
@@ -92,6 +93,7 @@ export { createPostprocessExecutionPlan, postprocessGraphContains } from './post
 export {
 	preparePrecompiledPostprocess,
 	prepareEffectNodeForReplay,
+	refreshPreparedPostprocessResources,
 	makePrecompiledAuxMaterial,
 	cloneAuxArtifact,
 	wireLiveNodeSidecarsToArtifact,

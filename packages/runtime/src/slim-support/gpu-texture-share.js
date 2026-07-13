@@ -148,25 +148,79 @@ function markLayeredDepthTextureAsArray( texture, gpuTexture = null ) {
 
 }
 
-function invalidateTextureBindGroups( renderer, texture ) {
+/**
+ * Invalidate every renderer cache that can retain a view of `texture`'s
+ * current GPU resource.
+ *
+ * RenderTarget resize keeps the JavaScript Texture object but disposes and
+ * recreates its backing GPUTexture. Texture identity/version checks alone are
+ * therefore insufficient: an already-built bind group can still reference a
+ * view of the destroyed GPUTexture. This helper clears both the backend's
+ * `view-*` cache and every bind group registered by the renderer's Textures
+ * manager.
+ *
+ * Returns `false` when the renderer does not expose the cache APIs required to
+ * invalidate safely. Callers that observed an actual resource replacement can
+ * then fail closed instead of rendering with a stale view.
+ *
+ * @param {Object} renderer
+ * @param {Object} texture
+ * @param {Object} [opts]
+ * @param {Iterable<Object>} [opts.bindGroups] - Bind groups captured before a
+ *   RenderTarget disposal removed the texture-manager entry.
+ * @returns {boolean}
+ */
+export function invalidateTextureResourceBindings( renderer, texture, opts = {} ) {
 
-	const tx = renderer && renderer._textures;
-	const txData = tx && typeof tx.get === 'function' ? tx.get( texture ) : null;
-	if ( ! txData || ! txData.bindGroups ) return txData;
+	if ( ! renderer || ! texture ) return false;
+	const backend = renderer.backend;
+	const textures = renderer._textures;
+	if ( ! backend || typeof backend.get !== 'function' || ! textures || typeof textures.get !== 'function' ) return false;
 
-	for ( const bindGroup of txData.bindGroups ) {
+	try {
 
-		const bindingsData = renderer.backend && renderer.backend.get ? renderer.backend.get( bindGroup ) : null;
-		if ( bindingsData ) {
+		const backendData = typeof backend.has !== 'function' || backend.has( texture )
+			? backend.get( texture )
+			: null;
+		if ( backendData ) clearTextureViewCache( backendData );
 
-			bindingsData.groups = undefined;
-			bindingsData.versions = undefined;
+		const textureData = typeof textures.has !== 'function' || textures.has( texture )
+			? textures.get( texture )
+			: null;
+		const bindGroups = new Set();
+		const currentBindGroups = textureData && textureData.bindGroups;
+		if ( currentBindGroups !== undefined && currentBindGroups !== null ) {
+
+			if ( typeof currentBindGroups[ Symbol.iterator ] !== 'function' || typeof currentBindGroups.clear !== 'function' ) return false;
+			for ( const bindGroup of currentBindGroups ) bindGroups.add( bindGroup );
 
 		}
+		if ( opts.bindGroups !== undefined && opts.bindGroups !== null ) {
+
+			if ( typeof opts.bindGroups[ Symbol.iterator ] !== 'function' ) return false;
+			for ( const bindGroup of opts.bindGroups ) bindGroups.add( bindGroup );
+
+		}
+		for ( const bindGroup of bindGroups ) {
+
+			const bindingsData = backend.get( bindGroup );
+			if ( bindingsData ) {
+
+				bindingsData.groups = undefined;
+				bindingsData.versions = undefined;
+
+			}
+
+		}
+		if ( currentBindGroups ) currentBindGroups.clear();
+
+		return true;
+
+	} catch ( _ ) {
+
+		return false;
 
 	}
-	txData.bindGroups.clear();
-	return txData;
 
 }
 
@@ -226,7 +280,7 @@ export function shareGPUTextureEntry( targetRenderer, sourceRenderer, texture, o
 		// Invalidate any bind groups the target had built against the
 		// previous (stand-in) texture so the next render rebuilds them
 		// against the shared GPU resource.
-		invalidateTextureBindGroups( targetRenderer, texture );
+		invalidateTextureResourceBindings( targetRenderer, texture );
 
 		const targetData = targetRenderer.backend.get( texture );
 		copySharedBackendData( targetData, sourceData );

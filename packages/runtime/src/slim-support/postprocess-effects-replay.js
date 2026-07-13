@@ -12,11 +12,13 @@
  * Adopters running the slim three.js bundle with `PostProcessing` +
  * `bloom()` / `outline()` / `ssr()` / `dof()` / `traa()` graph helpers
  * call `preparePrecompiledPostprocess({ postProcessing, loadAux,
- * PrecompiledMaterial })` once after building their graph (and after each
- * resize). The function walks the registry, calls the effect handler's
+ * PrecompiledMaterial })` once after building their graph. The function walks
+ * the registry, calls the effect handler's
  * optional `forceSetup`/`wireSubPassUniforms`/`wireSubPassTextures`
  * hooks, and returns a `prepared` record describing exactly what was
- * swapped — useful for diagnostics and re-wiring after textures change.
+ * swapped. Call `refreshPreparedPostprocessResources()` around later effect
+ * updates so target resize/replacement is rebound without rebuilding the
+ * materials.
  *
  * What this module deliberately does NOT do:
  *   - It does not patch `updateBefore` to run the effect inline with the
@@ -38,8 +40,10 @@ import {
 	getEffectHandlers,
 } from './postprocess-effects.js';
 import { wireLiveNodeSidecarsToArtifact } from './live-node-sidecars.js';
+import { rememberPreparedPostprocessResources } from './postprocess-resource-refresh.js';
 
 export { wireLiveNodeSidecarsToArtifact } from './live-node-sidecars.js';
+export { refreshPreparedPostprocessResources } from './postprocess-resource-refresh.js';
 
 const PREPARED_FLAG = '__tslpEffectReplayReady';
 
@@ -295,6 +299,7 @@ export function prepareEffectNodeForReplay( handler, node, opts = {} ) {
 			enumerable: false,
 			writable: true,
 		} );
+		rememberPreparedPostprocessResources( node, { handler, entries: replacements, opts } );
 
 	}
 

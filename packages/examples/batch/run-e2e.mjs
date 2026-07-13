@@ -1848,6 +1848,7 @@ import { artifactHasTextureSource as __sharedArtifactHasTextureSource, attachArt
 import { createFullRendererFallback as __sharedCreateFullRendererFallback } from '/__tslp_runtime/slim-support/full-renderer-fallback.js';
 import { updateRendererLightingForSlim as __sharedUpdateRendererLightingForSlim } from '/__tslp_runtime/slim-support/renderer-lighting.js';
 import { artifactLooksLikeRetroPassMaterial as __sharedArtifactLooksLikeRetroPassMaterial, prepareEffectNodeForReplay as __sharedPrepareEffectNodeForReplay } from '/__tslp_runtime/slim-support/postprocess-effects-replay.js';
+import { refreshPreparedPostprocessResources as __sharedRefreshPreparedPostprocessResources } from '/__tslp_runtime/slim-support/postprocess-resource-refresh.js';
 import { findEffectHandler as __sharedFindEffectHandler } from '/__tslp_runtime/slim-support/postprocess-effects.js';
 import { wireLiveUniformSidecarsToArtifact as __sharedWireLiveUniformSidecarsToArtifact } from '/__tslp_runtime/slim-support/live-node-sidecars.js';
 import { createTemporalNodeFrame as __sharedCreateTemporalNodeFrame, getTemporalFrameState as __sharedGetTemporalFrameState, withTemporalFrame as __sharedWithTemporalFrame } from '/__tslp_runtime/slim-support/temporal-frame.js';
@@ -13034,9 +13035,25 @@ function __renderFrameEffectNodeWithFullRenderer( node, slimRenderer, fullRender
 					renderId: __frameEffectFrameId(),
 					context: context || {},
 				};
+			const beforeResourceRefresh = __sharedRefreshPreparedPostprocessResources( node, {
+				phase: 'before-update',
+				frame: effectFrame,
+				passNodes: context && context.passNodes || [],
+			} );
+			if ( beforeResourceRefresh.ready !== true ) {
+				throw new Error( 'Postprocess resource refresh failed before update: ' + beforeResourceRefresh.reasons.join( '; ' ) );
+			}
 			const runUpdate = () => updateBefore.call( node, effectFrame );
 			if ( node.scene ) __withSourceMaterialsForFullPass( node.scene, runUpdate );
 			else runUpdate();
+			const afterResourceRefresh = __sharedRefreshPreparedPostprocessResources( node, {
+				phase: 'after-update',
+				frame: effectFrame,
+				passNodes: context && context.passNodes || [],
+			} );
+			if ( afterResourceRefresh.ready !== true ) {
+				throw new Error( 'Postprocess resource refresh failed after update: ' + afterResourceRefresh.reasons.join( '; ' ) );
+			}
 		__neutralizeFrameEffectNodeUpdateBefore( node );
 		try {
 			const forceFrameEffectReadback = effectName === 'GodraysNode'
