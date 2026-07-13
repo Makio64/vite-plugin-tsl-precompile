@@ -91,7 +91,7 @@ Shared extractor/codegen/runtime contract helpers.
 
 - `src/graph-normalize.js` — one graph-normalization implementation imported by plugin and runtime hashers.
 - `src/render-context.js` — canonical shader-topology signature for renderer, scene, camera, object, geometry, clipping, and MRT state.
-- `src/render-selector.js` — graph-free, canonical RenderObject topology used to select a captured variant in compiler-free replay; its exported scene descriptor is also the sole environment/fog invalidation vocabulary.
+- `src/render-selector.js` — graph-free, canonical RenderObject topology used to select a captured variant in compiler-free replay; its exported scene descriptor is also the sole environment/fog invalidation vocabulary. Shadow-depth selectors describe the effective source-caster branches (map/color/mask, depth, position, and alpha) rather than the shared override material alone.
 - `src/output-config.js` — versioned renderer-output and RenderPipeline topology descriptors shared by capture, rewrites, and replay; live exposure is intentionally excluded.
 - `src/artifact-variants.js` — the shared variant-local payload field list used by capture, registries, codegen, and runtime.
 - `src/stable-json.js` — deterministic JSON encoding for persisted selectors and payload comparisons.

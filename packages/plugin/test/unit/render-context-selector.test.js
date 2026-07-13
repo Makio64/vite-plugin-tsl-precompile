@@ -194,6 +194,53 @@ test( 'background selector projection ignores scene lighting, fog, environment, 
 
 } );
 
+test( 'shadow-depth selector mirrors effective source-material shadow branches', () => {
+
+	const plain = shadowFixture();
+	const custom = shadowFixture();
+	custom.object.material.castShadowNode = { isNode: true, constructor: { name: 'OperatorNode' } };
+	custom.object.material.castShadowPositionNode = { isNode: true, constructor: { name: 'OperatorNode' } };
+
+	const plainSelector = createRenderObjectContextSelector( plain );
+	const customSelector = createRenderObjectContextSelector( custom );
+	assert.notEqual( customSelector, plainSelector, 'custom color/position shadow branches select another artifact' );
+
+	custom.object.material.castShadowNode = Object.assign( function inertCastShadow() {}, { isNode: true } );
+	custom.object.material.castShadowPositionNode = Object.assign( function inertShadowPosition() {}, { isNode: true } );
+	assert.equal(
+		createRenderObjectContextSelector( custom ),
+		customSelector,
+		'full TSL nodes and compiler-free inert nodes share branch topology',
+	);
+
+	custom.object.material.castShadowPositionNode = null;
+	custom.object.material.positionNode = Object.assign( function inertPosition() {}, { isNode: true } );
+	assert.notEqual( createRenderObjectContextSelector( custom ), customSelector, 'cast-shadow position precedence remains signed' );
+
+} );
+
+test( 'shadow-depth projection ignores scene consumers but retains caster topology', () => {
+
+	const capture = shadowFixture();
+	const replay = shadowFixture();
+	replay.scene.fog = null;
+	replay.scene.environment = { isTexture: true, isCubeTexture: true, mapping: 301 };
+	replay.lightsNode = { getLights: () => [] };
+	assert.notEqual( createRenderObjectContextSelector( capture ), createRenderObjectContextSelector( replay ) );
+	assert.equal(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'shadow-depth' ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'shadow-depth' ),
+	);
+
+	replay.object.material.castShadowNode = Object.assign( function inertCastShadow() {}, { isNode: true } );
+	assert.notEqual(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'shadow-depth' ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'shadow-depth' ),
+		'caster branches remain signed after projection',
+	);
+
+} );
+
 test( 'render selector captures clipping, interleaved layout, morph, and instancing branches', () => {
 
 	const base = fixture();
@@ -312,5 +359,27 @@ function fixture() {
 		},
 		context,
 	};
+
+}
+
+function shadowFixture() {
+
+	const renderObject = fixture();
+	const sourceMaterial = renderObject.object.material;
+	const shadowMaterial = {
+		isNodeMaterial: true,
+		isShadowPassMaterial: true,
+		side: 1,
+		shadowSide: null,
+		fog: false,
+		sizeAttenuation: true,
+		transmission: 0,
+		clippingPlanes: [],
+		colorNode: { isNode: true },
+	};
+	renderObject.material = shadowMaterial;
+	renderObject.object.material = sourceMaterial;
+	renderObject.scene.overrideMaterial = shadowMaterial;
+	return renderObject;
 
 }

@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { validateArtifact } from '@tsl-precompile/contract/kinds';
 import { installMockWebGPU, createMockGPUCanvasContext } from '../../src/mock-webgpu.js';
 import { compileTSL } from '../../src/vendor/compileTSL.js';
+import { selectArtifactVariant } from '../../../runtime/src/hydrate/variants/artifact-variant-selector.js';
 
 let initialized = false;
 
@@ -109,12 +111,34 @@ test( 'compileTSL: shadow-depth aux artifacts retain custom shadow variants', as
 		const shadowArtifacts = artifacts.filter( ( artifact ) => artifact.materialShape === 'shadow-depth' );
 		const family = shadowArtifacts.find( ( artifact ) => artifact.variants && Object.keys( artifact.variants ).length > 1 );
 		assert.ok( family, `expected a shadow-depth variant family; saw ${ shadowArtifacts.length } shadow artifact(s)` );
+		const validation = validateArtifact( family, { label: 'shadow-depth family' } );
+		assert.equal( validation.ok, true, validation.errors.map( ( error ) => error.message ).join( '\n' ) );
 
 		const variants = Object.values( family.variants );
 		assert.ok( variants.every( ( variant ) => Array.isArray( variant.renderContextSelectors ) && variant.renderContextSelectors.length > 0 ), 'expected every shadow variant to carry one or more semantic render-context selectors' );
 		const customVariant = variants.find( ( variant ) => String( variant.fragmentShader || '' ).includes( 'texture' ) );
 		assert.ok( customVariant, 'expected a custom shadow variant that samples the castShadowNode texture' );
 		assert.ok( artifactTextureSources( customVariant ).length > 0, 'expected custom shadow variant to carry its texture binding source' );
+		const plainVariant = variants.find( ( variant ) => variant !== customVariant );
+		assert.ok( plainVariant, 'expected a plain shadow-caster variant' );
+
+		const customSelectors = customVariant.renderContextSelectors;
+		const plainSelectors = plainVariant.renderContextSelectors;
+		const customSelector = customSelectors.find( ( selector ) => ! plainSelectors.includes( selector ) );
+		const plainSelector = plainSelectors.find( ( selector ) => ! customSelectors.includes( selector ) );
+		assert.ok( customSelector, 'expected custom shadow topology to have an exclusive selector' );
+		assert.ok( plainSelector, 'expected plain shadow topology to have an exclusive selector' );
+
+		const selectedCustom = selectArtifactVariant( family, {
+			renderContextSelector: customSelector,
+			renderContextSelectorProfile: 'shadow-depth',
+		} );
+		const selectedPlain = selectArtifactVariant( family, {
+			renderContextSelector: plainSelector,
+			renderContextSelectorProfile: 'shadow-depth',
+		} );
+		assert.equal( String( selectedCustom.cacheKey ), String( customVariant.cacheKey ), 'custom caster selects custom shadow WGSL' );
+		assert.equal( String( selectedPlain.cacheKey ), String( plainVariant.cacheKey ), 'plain caster selects plain shadow WGSL' );
 
 	} finally {
 

@@ -142,6 +142,39 @@ test( 'replay NodeManager applies the background selector profile from aux metad
 
 } );
 
+test( 'replay NodeManager applies the shadow-depth selector profile from artifact shape metadata', () => {
+
+	const sourceRenderer = fakeRenderer();
+	const signed = artifact( { materialShape: 'shadow-depth' } );
+	const shadowMaterial = material( signed );
+	shadowMaterial.isShadowPassMaterial = true;
+	const casterMaterial = {
+		map: null,
+		alphaMap: null,
+		alphaTest: 0,
+		castShadowNode: Object.assign( function inertCastShadow() {}, { isNode: true } ),
+		castShadowPositionNode: null,
+		positionNode: null,
+		depthNode: null,
+	};
+	const live = renderObject( sourceRenderer, shadowMaterial, {
+		object: { material: casterMaterial },
+		scene: {
+			fog: { isFogExp2: true },
+			environment: { isTexture: true, isCubeTexture: true, mapping: 301 },
+			traverse() {},
+		},
+	} );
+	const captureDescriptor = JSON.parse( createRenderObjectContextSelector( live, sourceRenderer ) );
+	captureDescriptor.scene = { fog: null, environment: null };
+	captureDescriptor.lights = [ { type: 'DirectionalLight', castShadow: true } ];
+	signed.renderContextSelectors = [ JSON.stringify( captureDescriptor ) ];
+
+	const manager = new ReplayNodeManager( sourceRenderer, sourceRenderer.backend );
+	assert.doesNotThrow( () => manager.getForRender( live ) );
+
+} );
+
 test( 'replay NodeManager supports compute, update scheduling, groups, and disposal', async () => {
 
 	const renderer = fakeRenderer();

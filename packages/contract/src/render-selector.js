@@ -28,6 +28,7 @@ export function describeRenderObjectContext( renderObject, renderer = renderObje
 	const camera = safeRead( renderObject, 'camera' ) || null;
 	const object = safeRead( renderObject, 'object' ) || null;
 	const material = safeRead( renderObject, 'material' ) || safeRead( object, 'material' ) || null;
+	const shadowCaster = describeShadowCaster( renderObject, object, material );
 	return {
 		version: 'render-object-selector@1',
 		renderer: describeRenderer( renderer ),
@@ -39,6 +40,7 @@ export function describeRenderObjectContext( renderObject, renderer = renderObje
 		object: describeObject( object ),
 		material: describeMaterial( material ),
 		clipping: describeClipping( material, safeRead( renderObject, 'clippingContext' ) ),
+		...( shadowCaster ? { shadowCaster } : {} ),
 	};
 
 }
@@ -106,9 +108,10 @@ export function createSceneRenderTopologySelector( scene ) {
  * renderer-owned auxiliary pass.
  *
  * Background materials explicitly disable lights and fog and do not consume
- * the scene environment. Keeping those fields in their signed selector makes
- * a capture from the minimal auxiliary scene impossible to replay in the
- * user's real scene even though the generated sky WGSL is identical.
+ * the scene environment. Shadow-depth materials likewise consume caster,
+ * target, camera, clipping, and renderer topology rather than scene lighting,
+ * fog, or environment. Keeping those unused fields in a signed auxiliary
+ * selector makes equivalent capture and replay passes fail to match.
  *
  * Unknown profiles are returned unchanged so callers can opt in one adapter
  * at a time without weakening ordinary material selection.
@@ -120,7 +123,7 @@ export function createSceneRenderTopologySelector( scene ) {
 export function projectRenderObjectContextSelector( selector, profile ) {
 
 	if ( typeof selector !== 'string' ) return '';
-	if ( profile !== 'background' || selector.length === 0 ) return selector;
+	if ( ( profile !== 'background' && profile !== 'shadow-depth' ) || selector.length === 0 ) return selector;
 	let descriptor;
 	try {
 
@@ -135,7 +138,7 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 
 	const projected = { ...descriptor, lights: [] };
 	delete projected.scene;
-	if ( projected.renderer && typeof projected.renderer === 'object' ) {
+	if ( profile === 'background' && projected.renderer && typeof projected.renderer === 'object' ) {
 
 		projected.renderer = { ...projected.renderer };
 		delete projected.renderer.shadowMap;
@@ -143,6 +146,58 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 
 	}
 	return stableJsonStringify( projected, 'renderObjectSelector' );
+
+}
+
+/**
+ * Describe the source-material branches that Three copies into its shared
+ * shadow override material for the current object. The active RenderObject
+ * material alone is insufficient here: `getShadowMaterial()` always owns a
+ * color node, while `Renderer._getShadowNodes()` temporarily replaces that
+ * node for map/custom-shadow casters. The original material remains reachable
+ * through `renderObject.object.material` during both capture and replay.
+ *
+ * Keep this descriptor branch-shaped and graph-free so full TSL nodes and the
+ * compiler-free runtime's inert node stubs produce the same selector.
+ */
+function describeShadowCaster( renderObject, object, activeMaterial ) {
+
+	if ( safeRead( activeMaterial, 'isShadowPassMaterial' ) !== true ) return null;
+	const sourceMaterial = resolveShadowSourceMaterial( renderObject, object );
+	if ( ! sourceMaterial ) return null;
+
+	const map = safeRead( sourceMaterial, 'map' );
+	const colorNode = isNode( safeRead( sourceMaterial, 'colorNode' ) );
+	const castShadowNode = isNode( safeRead( sourceMaterial, 'castShadowNode' ) );
+	const maskShadowNode = isNode( safeRead( sourceMaterial, 'maskShadowNode' ) );
+	const maskNode = isNode( safeRead( sourceMaterial, 'maskNode' ) );
+	const castShadowPositionNode = isNode( safeRead( sourceMaterial, 'castShadowPositionNode' ) );
+	const positionNode = isNode( safeRead( sourceMaterial, 'positionNode' ) );
+
+	return compactObject( {
+		color: map || colorNode || castShadowNode || maskShadowNode || maskNode
+			? compactObject( {
+				map: resourceShape( map, { sampler: true } ),
+				colorNode,
+				castShadowNode,
+				mask: maskShadowNode ? 'maskShadowNode' : maskNode ? 'maskNode' : null,
+			} )
+			: null,
+		depthNode: isNode( safeRead( sourceMaterial, 'depthNode' ) ),
+		positionNode: castShadowPositionNode ? 'castShadowPositionNode' : positionNode ? 'positionNode' : null,
+		alphaMap: resourceShape( safeRead( sourceMaterial, 'alphaMap' ), { sampler: true } ),
+		alphaTest: Number( safeRead( sourceMaterial, 'alphaTest' ) ) > 0,
+	} );
+
+}
+
+function resolveShadowSourceMaterial( renderObject, object ) {
+
+	const material = safeRead( object, 'material' );
+	if ( ! Array.isArray( material ) ) return material || null;
+	const group = safeRead( renderObject, 'group' );
+	const materialIndex = Number( safeRead( group, 'materialIndex' ) );
+	return Number.isInteger( materialIndex ) && materialIndex >= 0 ? material[ materialIndex ] || null : null;
 
 }
 
@@ -380,6 +435,12 @@ function describeClipping( material, clippingContext ) {
 function nodePresence( node ) {
 
 	return !! node;
+
+}
+
+function isNode( node ) {
+
+	return safeRead( node, 'isNode' ) === true;
 
 }
 
