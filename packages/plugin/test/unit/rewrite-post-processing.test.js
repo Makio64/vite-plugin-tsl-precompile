@@ -36,6 +36,9 @@ test( 'rewrite/PostProcessing: bare NodeMaterial → Material sentinel; fragment
 	assert.match( out, /loadAux\s*\(\s*["']post-process["']/ );
 	assert.match( out, /hashNodeGraphSync\s*\(\s*this\.outputNode/ );
 	assert.match( out, /shape:\s*["']post-process["']/ );
+	assert.doesNotMatch( out, /outputNode\s*=\s*renderOutput\s*\(/ );
+	assert.doesNotMatch( out, /import\s*\{[^}]*renderOutput[^}]*\}\s*from/ );
+	assert.doesNotMatch( out, /nodes\/TSL\.js/ );
 
 	// Original fragmentNode assignment LHS should be gone.
 	assert.doesNotMatch( out, /\.material\.fragmentNode\s*=/ );

@@ -450,6 +450,19 @@ function rewritePostProcessing( ast, ctx ) {
 		CallExpression( path ) {
 
 			const callee = path.node.callee;
+			if (
+				t.isIdentifier( callee, { name: 'renderOutput' } )
+				&& t.isIdentifier( path.node.arguments[ 0 ], { name: 'outputNode' } )
+			) {
+
+				// The fragmentNode assignment below is replaced with an aux-backed
+				// PrecompiledMaterial built from `this.outputNode`. Keeping this
+				// wrapper would construct a real TSL graph whose result is never
+				// consumed, retaining the broad nodes/TSL.js barrel in slim.
+				path.replaceWith( t.identifier( 'outputNode' ) );
+				return;
+
+			}
 			if ( ! t.isMemberExpression( callee ) ) return;
 			if ( ! t.isIdentifier( callee.object, { name: 'outputNode' } ) ) return;
 			if ( ! t.isIdentifier( callee.property, { name: 'context' } ) ) return;
