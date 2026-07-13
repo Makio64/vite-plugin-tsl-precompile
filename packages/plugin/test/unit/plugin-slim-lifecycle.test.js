@@ -55,6 +55,7 @@ async function makeProject( threeVersion = '0.184.0', { provenance = false } = {
 	} ) );
 	await writeFile( webgpuEntry, 'export const REVISION = "fixture";\n' );
 	await writeFile( join( threeRoot, 'src/constants.js' ), `export const REVISION = ${ JSON.stringify( threeVersion ) };\n` );
+	await writeFile( join( threeRoot, 'src/Three.Core.js' ), 'export class Scene {}\nexport class Vector3 {}\n' );
 	await writeFile( join( runtimeRoot, 'package.json' ), JSON.stringify( {
 		name: '@tsl-precompile/runtime',
 		version: '0.1.0',
@@ -121,6 +122,46 @@ function context() {
 
 }
 
+async function buildRealSlimSourceFixture( mainSource ) {
+
+	const root = await realpath( await mkdtemp( join( tmpdir(), 'tslp-source-vite-' ) ) );
+	try {
+
+		const runtimeRoot = await realpath( new URL( '../../../runtime', import.meta.url ) );
+		const threeRoot = await realpath( new URL( '../../../runtime/node_modules/three', import.meta.url ) );
+		await mkdir( join( root, 'node_modules/@tsl-precompile' ), { recursive: true } );
+		await symlink( runtimeRoot, join( root, 'node_modules/@tsl-precompile/runtime' ), 'junction' );
+		await symlink( threeRoot, join( root, 'node_modules/three' ), 'junction' );
+		await writeFile( join( root, 'package.json' ), JSON.stringify( {
+			name: 'source-build-fixture',
+			private: true,
+			type: 'module',
+			dependencies: { three: '0.184.0', '@tsl-precompile/runtime': '0.1.0' },
+		} ) );
+		await writeFile( join( root, 'index.html' ), '<script type="module" src="/src/main.js"></script>\n' );
+		await mkdir( join( root, 'src' ), { recursive: true } );
+		await writeFile( join( root, 'src/main.js' ), mainSource );
+
+		const result = await viteBuild( {
+			root,
+			configFile: false,
+			logLevel: 'silent',
+			plugins: [ tslPrecompile( { slim: 'source' } ) ],
+			build: { write: false, minify: false, target: 'esnext' },
+		} );
+		const output = Array.isArray( result ) ? result.flatMap( ( item ) => item.output || [] ) : result.output;
+		const chunks = output.filter( ( item ) => item.type === 'chunk' );
+		return { root, moduleIds: chunks.flatMap( ( chunk ) => Object.keys( chunk.modules || {} ) ) };
+
+	} catch ( error ) {
+
+		await rm( root, { recursive: true, force: true } );
+		throw error;
+
+	}
+
+}
+
 test( 'slim serve keeps full three.js for capture and injects the exact package version', async () => {
 
 	const fixture = await makeProject();
@@ -130,6 +171,7 @@ test( 'slim serve keeps full three.js for capture and injects the exact package 
 		const config = await plugin.config( { root: fixture.root }, { command: 'serve' } );
 		assert.equal( config.resolve.alias.some( ( alias ) => aliasMatches( alias, 'three/webgpu' ) ), false );
 		assert.equal( config.resolve.alias.some( ( alias ) => aliasMatches( alias, 'three/tsl' ) ), false );
+		assert.equal( config.resolve.alias.some( ( alias ) => aliasMatches( alias, 'three' ) ), false );
 		assert.equal( config.define[ 'globalThis.__TSLP_THREE_PACKAGE_VERSION__' ], '"0.184.0"' );
 
 		await plugin.configResolved( {
@@ -158,6 +200,7 @@ test( 'slim build aliases public three entries but full-three bypasses the alias
 		const tslAlias = config.resolve.alias.find( ( alias ) => aliasMatches( alias, 'three/tsl' ) );
 		assert.equal( webgpuAlias.replacement, '@tsl-precompile/runtime/slim' );
 		assert.equal( tslAlias.replacement, '@tsl-precompile/runtime/slim-stubs' );
+		assert.equal( config.resolve.alias.some( ( alias ) => aliasMatches( alias, 'three' ) ), false );
 
 		await plugin.configResolved( {
 			root: fixture.root,
@@ -252,8 +295,10 @@ test( 'source slim build aliases the tree-shaken entry and routes private Three 
 		const config = await plugin.config( { root: fixture.root }, { command: 'build' } );
 		const webgpuAlias = config.resolve.alias.find( ( alias ) => aliasMatches( alias, 'three/webgpu' ) );
 		const tslAlias = config.resolve.alias.find( ( alias ) => aliasMatches( alias, 'three/tsl' ) );
+		const coreAlias = config.resolve.alias.find( ( alias ) => aliasMatches( alias, 'three' ) );
 		assert.equal( webgpuAlias.replacement, '@tsl-precompile/runtime/slim/source' );
 		assert.equal( tslAlias.replacement, '@tsl-precompile/runtime/slim-stubs' );
+		assert.equal( coreAlias.replacement, join( fixture.threeRoot, 'src/Three.Core.js' ) );
 
 		const rendererId = join( fixture.threeRoot, 'src/renderers/common/Renderer.js' );
 		const resolvedRuntimeSourceDir = await realpath( fixture.runtimeSourceDir );
@@ -340,38 +385,14 @@ test( 'source slim final bundle guard rejects compiler and stock-adapter residue
 
 test( 'source slim completes a real Vite build with guard, rewrites, and adapters', async () => {
 
-	const root = await realpath( await mkdtemp( join( tmpdir(), 'tslp-source-vite-' ) ) );
+	const fixture = await buildRealSlimSourceFixture( [
+		"import { WebGPURenderer, Scene, PerspectiveCamera, Mesh, BoxGeometry, PrecompiledMaterial } from 'three/webgpu';",
+		'globalThis.__sourceFixture = [ WebGPURenderer, Scene, PerspectiveCamera, Mesh, BoxGeometry, PrecompiledMaterial ];',
+		'',
+	].join( '\n' ) );
 	try {
 
-		const runtimeRoot = await realpath( new URL( '../../../runtime', import.meta.url ) );
-		const threeRoot = await realpath( new URL( '../../../runtime/node_modules/three', import.meta.url ) );
-		await mkdir( join( root, 'node_modules/@tsl-precompile' ), { recursive: true } );
-		await symlink( runtimeRoot, join( root, 'node_modules/@tsl-precompile/runtime' ), 'junction' );
-		await symlink( threeRoot, join( root, 'node_modules/three' ), 'junction' );
-		await writeFile( join( root, 'package.json' ), JSON.stringify( {
-			name: 'source-build-fixture',
-			private: true,
-			type: 'module',
-			dependencies: { three: '0.184.0', '@tsl-precompile/runtime': '0.1.0' },
-		} ) );
-		await writeFile( join( root, 'index.html' ), '<script type="module" src="/src/main.js"></script>\n' );
-		await mkdir( join( root, 'src' ), { recursive: true } );
-		await writeFile( join( root, 'src/main.js' ), [
-			"import { WebGPURenderer, Scene, PerspectiveCamera, Mesh, BoxGeometry, PrecompiledMaterial } from 'three/webgpu';",
-			'globalThis.__sourceFixture = [ WebGPURenderer, Scene, PerspectiveCamera, Mesh, BoxGeometry, PrecompiledMaterial ];',
-			'',
-		].join( '\n' ) );
-
-		const result = await viteBuild( {
-			root,
-			configFile: false,
-			logLevel: 'silent',
-			plugins: [ tslPrecompile( { slim: 'source' } ) ],
-			build: { write: false, minify: false, target: 'esnext' },
-		} );
-		const output = Array.isArray( result ) ? result.flatMap( ( item ) => item.output || [] ) : result.output;
-		const chunks = output.filter( ( item ) => item.type === 'chunk' );
-		const moduleIds = chunks.flatMap( ( chunk ) => Object.keys( chunk.modules || {} ) );
+		const { moduleIds } = fixture;
 
 		assert.ok( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-source-entry.js' ) ) );
 		assert.ok( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-bootstrap.js' ) ) );
@@ -386,12 +407,36 @@ test( 'source slim completes a real Vite build with guard, rewrites, and adapter
 		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-support/sss-replay.js' ) ), false );
 		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/runtime/build/three.webgpu.slim.js' ) ), false );
 		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/three/src/Three.Core.js' ) ), false );
+		assert.equal( moduleIds.some( ( id ) => /\/three\/build\/three(?:\.module|\.core)\.js$/.test( id ) ), false );
 		assert.deepEqual( moduleIds.filter( ( id ) => getSlimThreeCompilerModule( id ) ), [] );
 		assert.deepEqual( moduleIds.filter( ( id ) => getSlimThreeReplayAdapterModule( id ) ), [] );
 
 	} finally {
 
-		await rm( root, { recursive: true, force: true } );
+		await rm( fixture.root, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'source slim unifies mixed bare-three and WebGPU constructor identity', async () => {
+
+	const fixture = await buildRealSlimSourceFixture( [
+		"import { Scene } from 'three/webgpu';",
+		"import { Scene as CoreScene, Vector3 } from 'three';",
+		'globalThis.__sourceIdentity = [ Scene, CoreScene, Scene === CoreScene, Vector3 ];',
+		'',
+	].join( '\n' ) );
+	try {
+
+		const { moduleIds } = fixture;
+		assert.equal( moduleIds.some( ( id ) => /\/three\/build\/three(?:\.module|\.core)\.js$/.test( id ) ), false );
+		assert.equal( moduleIds.filter( ( id ) => id.endsWith( '/three/src/scenes/Scene.js' ) ).length, 1 );
+		assert.equal( moduleIds.filter( ( id ) => id.endsWith( '/three/src/math/Vector3.js' ) ).length, 1 );
+
+	} finally {
+
+		await rm( fixture.root, { recursive: true, force: true } );
 
 	}
 

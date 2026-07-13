@@ -390,6 +390,21 @@ export default function tslPrecompile( userOpts = {} ) {
 					{ find: /^three\/webgpu$/, replacement: slimRuntimeEntryForMode( opts.slim ) },
 					{ find: /^three\/tsl$/, replacement: SLIM_THREE_RUNTIME_ENTRIES.STUBS },
 				);
+				if ( opts.slim === 'source' ) {
+
+					const threeCoreSource = resolve( detected.packageRoot, 'src/Three.Core.js' );
+					if ( ! existsSync( threeCoreSource ) ) {
+
+						throw new Error( `[tsl-precompile] slim source build requires ${ threeCoreSource } so bare "three" and "three/webgpu" share one constructor graph.` );
+
+					}
+					// Source mode exposes Three's private source graph to the consumer
+					// bundler. Route the exact bare entry into that same graph as well;
+					// otherwise Three's package main adds build/three.module.js beside
+					// three/src/** and identical classes fail instanceof/identity checks.
+					alias.push( { find: /^three$/, replacement: threeCoreSource } );
+
+				}
 
 			}
 
