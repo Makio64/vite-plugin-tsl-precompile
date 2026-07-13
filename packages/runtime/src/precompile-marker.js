@@ -307,8 +307,10 @@ function bindPendingCapturesFromRender( renderer, scene, camera ) {
 	const ready = new Set();
 	const visit = ( object ) => {
 
-		const materials = Array.isArray( object && object.material ) ? [ ...object.material ] : [ object && object.material ];
-		if ( scene.overrideMaterial && object && object.geometry && ! materials.includes( scene.overrideMaterial ) ) materials.push( scene.overrideMaterial );
+		const objectMaterial = object && object.material;
+		const materials = scene.overrideMaterial && object && object.geometry
+			? [ scene.overrideMaterial ]
+			: Array.isArray( objectMaterial ) ? [ ...objectMaterial ] : [ objectMaterial ];
 		for ( const material of materials ) {
 
 			if ( ! material ) continue;

@@ -1301,12 +1301,18 @@ function __markSceneMaterials( scene, camera = null ) {
 	if ( ! scene.userData || scene.userData.__tslpUserScene !== true ) return;
 	if ( scene.userData && scene.userData.__tslpSyntheticCaptureScene ) return;
 	if ( camera && camera.isArrayCamera === true && scene.overrideMaterial ) return;
-	if ( scene.overrideMaterial && scene.overrideMaterial.visible !== false ) {
-		let representative = null;
-		scene.traverse( ( object ) => {
-			if ( ! representative && object && object.geometry && object.visible !== false ) representative = object;
-		} );
-		__mark( scene.overrideMaterial, __classNameForMaterial( scene.overrideMaterial ), representative, camera );
+	if ( scene.overrideMaterial ) {
+		if ( scene.overrideMaterial.visible !== false ) {
+			let representative = null;
+			scene.traverse( ( object ) => {
+				if ( ! representative && object && object.geometry && object.visible !== false ) representative = object;
+			} );
+			__mark( scene.overrideMaterial, __classNameForMaterial( scene.overrideMaterial ), representative, camera );
+		}
+		// Renderer.overrideMaterial replaces every object's own material for
+		// this pass. Leave the originals unmarked until a pass actually uses
+		// them so their camera/lights/target selector comes from real topology.
+		return;
 	}
 	scene.traverse( ( object ) => {
 		const material = object && object.material;

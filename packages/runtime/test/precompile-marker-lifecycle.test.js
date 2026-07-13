@@ -441,6 +441,46 @@ test( 'scene override materials bind to a representative rendered object', async
 
 } );
 
+test( 'scene override passes leave object materials pending for their main pass', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree();
+		const overrideMaterial = new three.Material();
+		const objectMaterial = new three.Material();
+		const context = mount( three, objectMaterial );
+		context.scene.overrideMaterial = overrideMaterial;
+		const renderer = { render() {} };
+		install( three, async ( _renderer, scene ) => {
+
+			let capturedMaterial = null;
+			scene.traverse( ( object ) => {
+
+				if ( object.material ) capturedMaterial = object.material;
+
+			} );
+			return artifactSet( capturedMaterial );
+
+		} );
+		setDevRenderer( renderer, three );
+		overrideMaterial.precompile( 'override-material' );
+		objectMaterial.precompile( 'object-material' );
+
+		renderer.render( context.scene, context.camera );
+		await waitFor( () => posts.length === 1, 'override-only capture' );
+		assert.equal( posts[ 0 ].name, 'override-material' );
+		assert.equal( globalThis.__tslpPrecompilePending, 1 );
+
+		context.scene.overrideMaterial = null;
+		renderer.render( context.scene, context.camera );
+		await waitFor( () => posts.length === 2, 'main-pass object capture' );
+		assert.deepEqual( posts.map( ( post ) => post.name ), [ 'override-material', 'object-material' ] );
+		assert.equal( globalThis.__tslpPrecompilePending, 0 );
+
+	} );
+
+} );
+
 test( 'only auto-marked unobserved helpers receive a delayed generic fallback', async () => {
 
 	await withBrowser( async ( posts ) => {
