@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Score every paired capture/replay PNG in `results/shots/` and emit a
+ * Score every paired capture/replay PNG in the configured results root and emit a
  * categorized markdown summary. Answers the question: "for which three.js
  * webgpu_* examples does the slim runtime produce the same pixels as live
  * three.js right now?"
@@ -16,7 +16,7 @@
  * example that doesn't have a paired PNG on disk, so the table doesn't
  * lose information when shots get pruned.
  *
- * Output: results/coverage-summary.md (overwritten each run).
+ * Output: <output-root>/coverage-summary.md (overwritten each run).
  *
  *   node packages/examples/batch/run-coverage-summary.mjs
  *   node packages/examples/batch/run-coverage-summary.mjs --threshold=25
@@ -26,14 +26,16 @@ import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve, dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { resolveE2EOutputRoot } from './e2e-report-diagnostics.mjs';
 import { comparePngFiles, pixelGateDisabledReasonForExample, psnrThresholdForExample } from './psnr.mjs';
 
 const SELF = dirname( fileURLToPath( import.meta.url ) );
-const SHOTS = resolve( SELF, 'results/shots' );
-const E2E_REPORT = resolve( SELF, 'results/e2e-report.json' );
-const OUT = resolve( SELF, 'results/coverage-summary.md' );
-
 const args = process.argv.slice( 2 );
+const RESULTS = resolveE2EOutputRoot( { selfDir: SELF, args } );
+const SHOTS = join( RESULTS, 'shots' );
+const E2E_REPORT = join( RESULTS, 'e2e-report.json' );
+const OUT = join( RESULTS, 'coverage-summary.md' );
+
 function getArg( prefix, def ) {
 
 	const a = args.find( ( x ) => x.startsWith( prefix ) );
@@ -83,7 +85,7 @@ function resolveReportPath( value ) {
 
 	if ( ! value ) return null;
 	if ( isAbsolute( value ) ) return value;
-	return resolve( SELF, 'results', value );
+	return resolve( RESULTS, value );
 
 }
 

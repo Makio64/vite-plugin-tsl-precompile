@@ -15,7 +15,8 @@
     "run:e2e:tier2": "node run-e2e-with-coverage.mjs --tier=tier2 --report=tier2-report.json",
     "run:e2e:tier3": "node run-e2e-with-coverage.mjs --tier=tier3 --report=tier3-report.json",
     "run:e2e:raw": "node run-e2e.mjs",
-    "run:coverage-summary": "node run-coverage-summary.mjs"
+    "run:coverage-summary": "node run-coverage-summary.mjs",
+    "test:diagnostics": "node --test test/e2e-report-diagnostics.test.mjs"
   },
   "devDependencies": {
     "@tsl-precompile/contract": "workspace:*",

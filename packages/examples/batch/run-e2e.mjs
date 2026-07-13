@@ -30,6 +30,7 @@
  *   node packages/examples/batch/run-e2e.mjs --filter=ocean --port=8729 --port-retries=20
  *   node packages/examples/batch/run-e2e.mjs --filter=ocean --target-tick=60
  *   node packages/examples/batch/run-e2e.mjs --filter=ocean --timings
+ *   TSLP_E2E_OUT=/tmp/tslp-ocean node packages/examples/batch/run-e2e.mjs --filter=ocean --reuse-reference-shot --no-save-shots
  */
 
 import { chromium } from 'playwright';
@@ -41,11 +42,20 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS as __NODE_GRAPH_KEYS } from '@tsl-precompile/contract/texture-props';
 
 import { assertThreeAtLeast184 } from './_three-version.mjs';
+import { enrichRenderSelectorDiagnostics, resolveE2ERoots, summarizeArtifactRenderSelectors } from './e2e-report-diagnostics.mjs';
 import { captureWaitOverrideForExample, comparePngBuffers, expectedReplayErrorPatternsForExample, pixelGateDisabledReasonForExample, psnrThresholdForExample, tierExamples } from './psnr.mjs';
 
 const SELF = dirname( fileURLToPath( import.meta.url ) );
 const REPO = resolve( SELF, '../../..' );
-const OUT = resolve( SELF, 'results' );
+const args = process.argv.slice( 2 );
+function getArg( prefix, def ) {
+
+	const a = args.find( ( x ) => x.startsWith( prefix ) );
+	return a ? a.slice( prefix.length ) : def;
+
+}
+
+const { canonicalRoot: CANONICAL_RESULTS, outputRoot: OUT, inputRoot: INPUT_ROOT } = resolveE2ERoots( { selfDir: SELF, args } );
 const RUNTIME_SRC = resolve( REPO, 'packages/runtime/src' );
 const PLUGIN_SRC = resolve( REPO, 'packages/plugin/src' );
 const CONTRACT_SRC = resolve( REPO, 'packages/contract/src' );
@@ -88,14 +98,8 @@ const SLIM_HASH_OPTS = ( () => {
 
 } )();
 console.log( `[batch-e2e] slim bundle hash opts: threeVersion=${ SLIM_HASH_OPTS.threeVersion } pluginVersion=${ SLIM_HASH_OPTS.pluginVersion }` );
-
-const args = process.argv.slice( 2 );
-function getArg( prefix, def ) {
-
-	const a = args.find( ( x ) => x.startsWith( prefix ) );
-	return a ? a.slice( prefix.length ) : def;
-
-}
+console.log( `[batch-e2e] evidence input: ${ INPUT_ROOT }` );
+console.log( `[batch-e2e] output root: ${ OUT }${ OUT === CANONICAL_RESULTS ? '' : ' (isolated)' }` );
 
 function parseIntAtLeast( value, fallback, min ) {
 
@@ -14509,7 +14513,7 @@ function emptyVisitResult( overrides = {} ) {
 
 function loadSavedReferenceShot( name ) {
 
-	const shotPath = join( OUT, 'shots', `${ safeExampleName( name ) }.capture.png` );
+	const shotPath = join( INPUT_ROOT, 'shots', `${ safeExampleName( name ) }.capture.png` );
 	if ( ! existsSync( shotPath ) ) {
 
 		return emptyVisitResult( {
@@ -14524,7 +14528,7 @@ function loadSavedReferenceShot( name ) {
 function loadSavedArtifacts( name ) {
 
 	const safe = safeExampleName( name );
-	const artifactsDir = join( OUT, 'artifacts' );
+	const artifactsDir = join( INPUT_ROOT, 'artifacts' );
 	const userPath = join( artifactsDir, `${ safe }.user.json` );
 	const auxPath = join( artifactsDir, `${ safe }.aux.json` );
 	if ( ! existsSync( userPath ) || ! existsSync( auxPath ) ) {
@@ -14773,7 +14777,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 		if ( process.env.TSLP_DEBUG_REFLECTOR_BINDINGS === '1' && mode === 'replay' ) {
 			await page.addInitScript( () => { globalThis.__TSLP_DEBUG_REFLECTOR_BINDINGS = true; window.__TSLP_DEBUG_REFLECTOR_BINDINGS = true; } );
 		}
-			await page.addInitScript( ( { step, base, freezeAt, quiescentMs, settleFrames, waitForRenderableObjects, minRenderableObjects, holdAnimationUntilReady, exampleName } ) => {
+			await page.addInitScript( ( { step, base, freezeAt, quiescentMs, settleFrames, waitForRenderableObjects, minRenderableObjects, holdAnimationUntilReady, exampleName, mode } ) => {
 
 			// eslint-disable-next-line no-undef
 			const w = window;
@@ -14816,6 +14820,39 @@ async function visitExample( browser, name, mode, waitMs ) {
 				}
 
 			} catch ( _ ) {}
+			const recordRenderSelectorMismatch = ( error, origin ) => {
+
+				try {
+
+					const details = error && error.details && typeof error.details === 'object' ? error.details : {};
+					const message = String( error && error.message || error || '' );
+					const code = typeof error?.code === 'string' ? error.code : null;
+					if ( error?.tslPrecompileVariantSelection !== true && ! /^TSLP_VARIANT_SELECTOR_/.test( code || '' ) && ! /captured artifact variant matches/i.test( message ) ) return;
+					const selector = typeof details.selector === 'string' ? details.selector : null;
+					const availableSelectors = Array.isArray( details.availableSelectors )
+						? details.availableSelectors.filter( ( value ) => typeof value === 'string' )
+						: [];
+					const activeHashMatch = message.match( /\((selector:[a-z0-9]+)\)/i );
+					const record = {
+						phase: mode,
+						origin,
+						code,
+						message,
+						selector,
+						activeHash: activeHashMatch ? activeHashMatch[ 1 ] : null,
+						availableSelectors,
+						cacheKeys: Array.isArray( details.cacheKeys ) ? details.cacheKeys : null,
+						selectorCount: Number.isFinite( details.selectorCount ) ? details.selectorCount : null,
+					};
+					const list = diagnostics.renderSelectorMismatches || ( diagnostics.renderSelectorMismatches = [] );
+					const identity = JSON.stringify( [ record.code, record.selector, record.activeHash, record.availableSelectors ] );
+					if ( list.length < 20 && ! list.some( ( item ) => item && item.identity === identity ) ) list.push( { ...record, identity } );
+
+				} catch ( _ ) {}
+
+			};
+			w.addEventListener( 'error', ( event ) => recordRenderSelectorMismatch( event && ( event.error || event.message ), 'error' ) );
+			w.addEventListener( 'unhandledrejection', ( event ) => recordRenderSelectorMismatch( event && event.reason, 'unhandledrejection' ) );
 			if ( w.__tslpRafShimInstalled ) return;
 			w.__tslpRafShimInstalled = true;
 				w.__tslpRafTick = 0;
@@ -15099,7 +15136,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 
 			};
 
-		}, { step: FRAME_STEP_MS, base: 0, freezeAt: TARGET_TICK, quiescentMs: LOADER_QUIESCENT_MS, settleFrames: effectiveSettleFrames, waitForRenderableObjects, minRenderableObjects, holdAnimationUntilReady, exampleName: name } );
+		}, { step: FRAME_STEP_MS, base: 0, freezeAt: TARGET_TICK, quiescentMs: LOADER_QUIESCENT_MS, settleFrames: effectiveSettleFrames, waitForRenderableObjects, minRenderableObjects, holdAnimationUntilReady, exampleName: name, mode } );
 		mark( 'initScriptMs', stepStartedAt );
 
 	} catch ( _ ) { /* older Playwright fallback */ }
@@ -15305,6 +15342,7 @@ function mergeDiagnostics( ...items ) {
 	if ( present.length === 0 ) return null;
 	const merged = { colorTransferFallbacks: {}, healedNullTextureImages: 0 };
 	const frameTextureSnapshot = [];
+	const renderSelectorMismatches = [];
 	for ( const item of present ) {
 
 		merged.healedNullTextureImages += item.healedNullTextureImages | 0;
@@ -15314,9 +15352,11 @@ function mergeDiagnostics( ...items ) {
 
 		}
 		if ( Array.isArray( item.frameTextureSnapshot ) ) frameTextureSnapshot.push( ...item.frameTextureSnapshot );
+		if ( Array.isArray( item.renderSelectorMismatches ) ) renderSelectorMismatches.push( ...item.renderSelectorMismatches );
 
 	}
 	if ( frameTextureSnapshot.length > 0 ) merged.frameTextureSnapshot = frameTextureSnapshot;
+	if ( renderSelectorMismatches.length > 0 ) merged.renderSelectorMismatches = renderSelectorMismatches;
 	return merged;
 
 }
@@ -15419,6 +15459,8 @@ async function runOne( browser, name ) {
 	if ( ! examplePixelGateEnabled && pixelGate && pixelGate.pass === false ) pixelGate.disabled = true;
 	const pixelGateOk = ! examplePixelGateEnabled || pixelGate.pass !== false;
 	const pass = ( userCount > 0 || auxCount > 0 ) && blockingCaptureErrors.length === 0 && replay.bright > 0.005 && blockingReplayErrors.length === 0 && pixelGateOk;
+	const captureDiagnostics = enrichRenderSelectorDiagnostics( mergeDiagnostics( capture.diagnostics, artifactCapture.diagnostics ), captureErrors );
+	const replayDiagnostics = enrichRenderSelectorDiagnostics( replay.diagnostics || null, replay.errors );
 
 	// Release everything that won't make it into the report: TSL artifact
 	// buckets (many MB on heavy scenes) and the capture/replay screenshot
@@ -15443,8 +15485,8 @@ async function runOne( browser, name ) {
 		replayErrors: replay.errors,
 		captureWarnings,
 		replayWarnings: replay.warnings || [],
-		captureDiagnostics: mergeDiagnostics( capture.diagnostics, artifactCapture.diagnostics ),
-		replayDiagnostics: replay.diagnostics || null,
+		captureDiagnostics,
+		replayDiagnostics,
 		timings: passTimings,
 		artifactSummaries,
 		auxSummaries,
@@ -15463,6 +15505,7 @@ function summarizeArtifacts( bucket ) {
 			hash: entry.__hash || null,
 			cacheKey: artifact.cacheKey,
 			shape: artifact.materialShape,
+			renderSelectors: summarizeArtifactRenderSelectors( artifact ),
 			vertexSnippet: String( artifact.vertexShader || '' ).slice( 0, 1200 ),
 			fragmentSnippet: String( artifact.fragmentShader || '' ).slice( 0, 1200 ),
 			attributes: ( artifact.attributes || [] ).map( ( attribute ) => ( {
@@ -15500,6 +15543,7 @@ function summarizeAuxArtifacts( bucket ) {
 			configHash: entry.configHash,
 			artifactShape: artifact.materialShape,
 			cacheKey: artifact.cacheKey,
+			renderSelectors: summarizeArtifactRenderSelectors( artifact ),
 			attributes: ( artifact.attributes || [] ).map( ( attribute ) => ( {
 				name: attribute.name,
 				type: attribute.type,
@@ -15695,7 +15739,15 @@ async function recycleBrowser( current ) {
 
 let browser = await launchBrowser();
 
-const report = { total: candidates.length, pass: 0, fail: 0, skip: allExamples.length - candidates.length, details: [] };
+const report = {
+	total: candidates.length,
+	pass: 0,
+	fail: 0,
+	skip: allExamples.length - candidates.length,
+	evidenceInputRoot: INPUT_ROOT,
+	outputRoot: OUT,
+	details: [],
+};
 let runsSinceRestart = 0;
 
 const reportPath = join( OUT, reportFile );

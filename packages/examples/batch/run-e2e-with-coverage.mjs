@@ -14,6 +14,7 @@ const forwarded = args.filter( ( arg ) =>
 	arg !== '--'
 );
 const reportArg = forwarded.find( ( arg ) => arg.startsWith( '--report=' ) );
+const outputRootArg = forwarded.find( ( arg ) => arg.startsWith( '--output-root=' ) );
 
 function signalExitCode( signal ) {
 
@@ -64,7 +65,7 @@ if ( coverageEnabled ) {
 	coverageStatus = await runNode(
 		'refreshing coverage summary',
 		'run-coverage-summary.mjs',
-		reportArg ? [ reportArg ] : []
+		[ reportArg, outputRootArg ].filter( Boolean )
 	);
 
 }

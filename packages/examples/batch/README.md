@@ -16,6 +16,14 @@ Use `--timings` while tuning slow examples. The harness now caps the unreliable 
 
 The E2E runner prints concise per-example progress by default and writes full details to `packages/examples/batch/results/e2e-report.json`. It honors `--filter`, `--limit`, and `--offset`, so `pnpm test:e2e -- --limit=12` is a quick partial visual sweep.
 
+For a narrow diagnostic that must not modify canonical evidence, set `TSLP_E2E_OUT` or pass `--output-root=<absolute-path>`. Reports, screenshots, artifact dumps, and the optional coverage summary all stay under that root. Saved reference shots and replay-only artifacts are still read from canonical `results/` by default, so `--reuse-reference-shot` remains useful with an empty temporary output directory. Override that read location separately with `TSLP_E2E_INPUT` or `--input-root=<absolute-path>` when replaying evidence from another root.
+
+```sh
+TSLP_E2E_OUT=/tmp/tslp-backdrop-canary pnpm --filter examples-batch run:e2e:raw -- --filter=webgpu_backdrop.html --reuse-reference-shot --no-save-shots --report=backdrop.json
+```
+
+Selector failures in the JSON report include the replay-active selector hash/topology, every captured candidate hash/topology, and ranked field-level differences. Artifact summaries label selectors by root artifact or variant source; exact selection still fails closed when no captured topology matches.
+
 The runner recycles Chromium every two examples by default to avoid long WebGPU process lifetimes. Override with `--max-runs-per-browser=<n>` / `TSLP_E2E_MAX_RUNS_PER_BROWSER` and `TSLP_E2E_BROWSER_RESPAWN_DELAY_MS` only when investigating harness performance or browser behavior. Pass `--verbose` or set `TSLP_E2E_VERBOSE=1` to forward page warnings/logs while debugging harness internals.
 
 The E2E server automatically falls forward to the next free port when the requested port is occupied. Use `--port=<n>` to choose the first port and `--port-retries=<n>` to cap the retry window.
@@ -57,6 +65,7 @@ pnpm coverage:site
 node packages/examples/batch/run.mjs --three-repo=/path/to/three.js --filter=webgpu_backdrop
 node packages/examples/batch/run-slim.mjs --three-repo=/path/to/three.js --filter=webgpu_backdrop
 node packages/examples/batch/run-e2e.mjs --three-repo=/path/to/three.js --filter=webgpu_lights_custom
+node packages/examples/batch/run-e2e.mjs --filter=webgpu_backdrop --output-root=/tmp/tslp-backdrop
 node packages/examples/batch/run-e2e.mjs --local-examples-root=/path/to/local/pages --filter=directional
 ```
 
