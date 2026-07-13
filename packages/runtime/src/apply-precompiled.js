@@ -425,6 +425,11 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 	// `mat.opacity`, etc. continues to work.
 	const wrapped = new PrecompiledMaterial( artifact );
 	copyCommonMaterialProperties( material, wrapped );
+	// The source material can legitimately report transparent=false for
+	// KHR_materials_transmission. PrecompiledMaterial enables blending because
+	// replay composites transmission in the fragment; property copying above
+	// must not undo that artifact-required pipeline state.
+	if ( artifact.defaults && typeof artifact.defaults.transmission === 'number' && artifact.defaults.transmission > 0 ) wrapped.transparent = true;
 
 	// Live ReflectorBaseNode handles for the runtime hydrator's reflector
 	// rebinder. PrecompiledMaterial drops every `*Node` property; the

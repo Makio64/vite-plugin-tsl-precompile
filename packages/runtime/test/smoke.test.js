@@ -1569,15 +1569,17 @@ test( 'PrecompiledMaterial only forces single-pass for zero-thickness double-sid
 			uniformPlan: [],
 			vertexShader: 'v',
 			fragmentShader: 'f',
-			renderState: { side: 2, forceSinglePass: false },
+			renderState: { side: 2, forceSinglePass: false, transparent: false },
 			defaults: { transmission: 1, thickness: 0 },
 		},
 	};
 	const direct = new PrecompiledMaterial( baseModule.artifact );
 	assert.equal( direct.forceSinglePass, true );
+	assert.equal( direct.transparent, true );
 
-	const thin = __applyPrecompiled( {}, baseModule, 'sha256:transmission' );
+	const thin = __applyPrecompiled( { transmission: 1, thickness: 0, transparent: false }, baseModule, 'sha256:transmission' );
 	assert.equal( thin.forceSinglePass, true );
+	assert.equal( thin.transparent, true );
 
 	const thick = __applyPrecompiled( {}, {
 		...baseModule,
