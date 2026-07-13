@@ -167,6 +167,18 @@ slim-bundle checks pass. The correctness metadata adds about 5.4 KiB gzip to
 the prebuilt bundle (892,844 raw / 243,077 gzip bytes); the next manager-adapter
 stage is expected to recover that cost and then reduce the retained graph.
 
+**Replay-native Lighting wedge (2026-07-13).** Three's stock `Lighting` and
+real `LightsNode` are replaced in slim builds by a graph-free per-scene
+registry. Its state retains the public light list, numeric cache-key inputs,
+ID ordering used by captured light uniform indices, subclassing, and the slim
+node-chain compatibility surface, without constructing a lighting TSL graph.
+A bundle guard now fails if either stock module contributes bytes. The focused
+`webgpu_lights_selective` capture/replay passes at 46.9 dB, and the checked
+bundle moves from 892,994 raw / 243,126 gzip bytes (after the transmission and
+clipping adoption fixes) to 886,948 raw / 241,103 gzip bytes. NodeManager is
+the next boundary; Background remains a temporary live-graph island until its
+own replay adapter can replace graph-hash-based auxiliary lookup.
+
 ---
 
 ## 2026-06-09 audit refresh — corrections to the map

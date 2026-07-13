@@ -232,7 +232,7 @@ import WebGPURenderer from 'three/src/renderers/webgpu/WebGPURenderer.js';
 WebGPURenderer.__TSLP_SLIM__ = true;
 WebGPURenderer.prototype.__TSLP_SLIM__ = true;
 export { WebGPURenderer };
-export { default as Lighting } from 'three/src/renderers/common/Lighting.js';
+export { default as Lighting } from './slim-replay-lighting.js';
 export { default as QuadMesh } from 'three/src/renderers/common/QuadMesh.js';
 export { default as PostProcessing } from 'three/src/renderers/common/PostProcessing.js';
 export { default as RenderPipeline } from 'three/src/renderers/common/RenderPipeline.js';

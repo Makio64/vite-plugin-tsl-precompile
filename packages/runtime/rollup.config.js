@@ -44,6 +44,11 @@ export const SLIM_COMPILER_MODULE_RULES = Object.freeze( [
 	[ 'PMREMGenerator compiler path', /\/three\/src\/renderers\/common\/extras\/PMREMGenerator\.js$/ ],
 ] );
 
+export const SLIM_REPLAY_ADAPTER_RULES = Object.freeze( [
+	[ 'stock Lighting', /\/three\/src\/renderers\/common\/Lighting\.js$/ ],
+	[ 'stock LightsNode', /\/three\/src\/nodes\/lighting\/LightsNode\.js$/ ],
+] );
+
 export function findRenderedSlimCompilerModules( bundle ) {
 
 	const found = new Map();
@@ -68,6 +73,28 @@ export function findRenderedSlimCompilerModules( bundle ) {
 
 }
 
+export function findRenderedSlimStockAdapterModules( bundle ) {
+
+	const found = [];
+	for ( const chunk of Object.values( bundle || {} ) ) {
+
+		for ( const [ id, module ] of Object.entries( chunk && chunk.modules || {} ) ) {
+
+			if ( ! module || module.renderedLength <= 0 ) continue;
+			const normalized = id.replace( /\\/g, '/' );
+			for ( const [ label, pattern ] of SLIM_REPLAY_ADAPTER_RULES ) {
+
+				if ( pattern.test( normalized ) ) found.push( { id: normalized, label, renderedLength: module.renderedLength } );
+
+			}
+
+		}
+
+	}
+	return found.sort( ( a, b ) => b.renderedLength - a.renderedLength || a.id.localeCompare( b.id ) );
+
+}
+
 const compilerResidueGuard = {
 	name: 'tsl-precompile:compiler-residue-guard',
 	generateBundle( _options, bundle ) {
@@ -76,6 +103,18 @@ const compilerResidueGuard = {
 		if ( residue.length === 0 ) return;
 		const detail = residue.map( ( item ) => `${ item.label } (${ item.renderedLength } B): ${ item.id }` ).join( '\n  ' );
 		this.error( `Slim bundle retained runtime compiler modules:\n  ${ detail }` );
+
+	},
+};
+
+const stockAdapterResidueGuard = {
+	name: 'tsl-precompile:stock-adapter-residue-guard',
+	generateBundle( _options, bundle ) {
+
+		const residue = findRenderedSlimStockAdapterModules( bundle );
+		if ( residue.length === 0 ) return;
+		const detail = residue.map( ( item ) => `${ item.label } (${ item.renderedLength } B): ${ item.id }` ).join( '\n  ' );
+		this.error( `Slim bundle retained stock modules replaced by replay adapters:\n  ${ detail }` );
 
 	},
 };
@@ -209,6 +248,24 @@ const pmremGeneratorStub = {
 	},
 };
 
+/** Replace Three's graph-building Lighting/LightsNode pair with replay state. */
+const replayLightingAdapter = {
+	name: 'tsl-precompile:replay-lighting',
+	resolveId( id, importer ) {
+
+		const normalizedId = id.replace( /\\/g, '/' );
+		const normalizedImporter = typeof importer === 'string' ? importer.replace( /\\/g, '/' ) : '';
+		if ( /\/renderers\/common\/Lighting\.js$/.test( normalizedId )
+			|| ( normalizedId === './Lighting.js' && /\/renderers\/common\/Renderer\.js$/.test( normalizedImporter ) ) ) {
+
+			return resolve( __dirname, 'src/slim-replay-lighting.js' );
+
+		}
+		return null;
+
+	},
+};
+
 /**
  * Redirect bare `three` imports to three's tree-shakeable source barrel.
  *
@@ -301,10 +358,12 @@ export default {
 			},
 		} : null ),
 		compilerResidueGuard,
+		stockAdapterResidueGuard,
 		runtimeAliasPlugin,
 		auxVirtualStub,
 		webglFallbackStub,
 		pmremGeneratorStub,
+		replayLightingAdapter,
 		threeBareAlias,
 		nodeResolve( {
 			browser: true,

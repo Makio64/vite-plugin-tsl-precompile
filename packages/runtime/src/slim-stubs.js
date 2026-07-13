@@ -41,6 +41,7 @@ import {
 } from 'three/src/Three.Core.js';
 import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttribute.js';
 import StorageInstancedBufferAttribute from 'three/src/renderers/common/StorageInstancedBufferAttribute.js';
+import { hashArray } from 'three/src/nodes/core/NodeUtils.js';
 import { registerLiveUniformNode } from './slim-support/live-uniform-registry.js';
 import { attachLiveNodeDependency } from './slim-support/node-dependencies.js';
 
@@ -1085,22 +1086,69 @@ export class WebGLBackend {
  * `LightsNode` + `ShadowBaseNode` — more TSL base classes referenced by
  * example light/shadow customisations.
  */
-export class LightsNode {
+const lightsNodeHashData = [];
+
+export class LightsNode extends Node {
 
 	constructor() {
 
+		super( 'vec3' );
 		this.isNode = true;
 		this.isLightsNode = true;
-		return wrapWithSlimNodeChainFallback( this );
+		this.global = true;
+		this._lights = [];
+		this._lightNodes = null;
+		this._lightNodesHash = null;
 
 	}
 
-	setLights() { return this; }
-	getHash() { return 'slim-lights-node'; }
-	getCacheKey() { return 'slim-lights-node'; }
+	setLights( lights = [] ) {
+
+		this._lights = Array.isArray( lights ) ? lights : [];
+		this._lights.sort( ( a, b ) => numericLightId( a ) - numericLightId( b ) );
+		this._lightNodes = null;
+		this._lightNodesHash = null;
+		return this;
+
+	}
+
+	getLights() { return this._lights; }
+
+	get hasLights() { return this._lights.length > 0; }
+
+	customCacheKey() {
+
+		for ( const light of this._lights ) {
+
+			lightsNodeHashData.push( numericLightId( light ) );
+			lightsNodeHashData.push( light && light.castShadow === true ? 1 : 0 );
+			if ( light && light.isSpotLight === true ) {
+
+				lightsNodeHashData.push( light.map && Number.isFinite( light.map.id ) ? light.map.id : - 1 );
+				lightsNodeHashData.push( light.colorNode && typeof light.colorNode.getCacheKey === 'function'
+					? Number( light.colorNode.getCacheKey() ) || 0
+					: - 1 );
+
+			}
+
+		}
+		const cacheKey = hashArray( lightsNodeHashData );
+		lightsNodeHashData.length = 0;
+		return cacheKey;
+
+	}
+
+	getHash() { return this._lights.length === 0 ? 'slim-lights-node' : `slim-lights-node:${ this.customCacheKey() }`; }
+	getCacheKey() { return this.customCacheKey(); }
 	setup() { return this; }
 	build() { return ''; }
 	updateReference() { return this; }
+
+}
+
+function numericLightId( light ) {
+
+	return light && Number.isFinite( light.id ) ? light.id : 0;
 
 }
 
