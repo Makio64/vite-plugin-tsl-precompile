@@ -24,6 +24,7 @@ test( 'rewrite/RenderObject: missing geometry attributes do not read attribute.i
 	assert.match( r.code, /if \(attribute === undefined\)/ );
 	assert.match( r.code, /new BufferAttribute\(new Float32Array\(__tslpAttributeItemSize\(nodeAttribute\.type\)\), __tslpAttributeItemSize\(nodeAttribute\.type\)\)/ );
 	assert.match( r.code, /attributesId\[nodeAttribute\.name\] = attribute\.id/ );
+	assert.doesNotMatch( r.code, /__slim-rewrite-runtime\//, 'pure RenderObject rewrite must not add a runtime edge' );
 	assert.doesNotThrow( () => parse( r.code, { sourceType: 'module', plugins: [ 'importAttributes' ] } ) );
 
 } );

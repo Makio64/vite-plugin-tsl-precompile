@@ -32,6 +32,10 @@ test( 'rewrite/Background: NodeMaterial → PrecompiledMaterial(loadAux(backgrou
 	assert.match( out, /loadAux\s*\(\s*["']background["']/ );
 	assert.match( out, /hashNodeGraphSync\s*\(\s*backgroundNode/ );
 	assert.match( out, /shape:\s*["']background["']/ );
+	assert.match( out, /import PrecompiledMaterial from ["']virtual:tsl-precompile\/__slim-rewrite-runtime\/precompiled-material["']/ );
+	assert.match( out, /__slim-rewrite-runtime\/aux-loader/ );
+	assert.match( out, /__slim-rewrite-runtime\/graph-hash/ );
+	assert.doesNotMatch( out, /@tsl-precompile\/runtime['"]/ );
 
 	// Graph assignments gone.
 	assert.doesNotMatch( out, /nodeMaterial\.colorNode\s*=/ );

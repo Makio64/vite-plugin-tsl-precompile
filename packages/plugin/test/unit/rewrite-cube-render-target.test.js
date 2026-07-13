@@ -9,7 +9,7 @@
  *   c. The `material.colorNode = TSL_Texture(...)` assignment is gone.
  *   d. Unused imports from `../../nodes/utils/EquirectUVNode.js` etc. are dropped
  *      (only if unused after rewrite — `equirectUV` stays because `uvNode = equirectUV(...)` still references it).
- *   e. Runtime imports + the aux side-effect import are present.
+ *   e. Exact private runtime-owner imports are present.
  *   f. Output parses as valid ESM.
  */
 
@@ -54,9 +54,12 @@ test( 'rewrite/CubeRenderTarget: replaces new NodeMaterial with PrecompiledMater
 	// `equirectUV` is STILL used (we hash uvNode which was defined via equirectUV(...))
 	assert.match( out, /equirectUV/ );
 
-	// (e) runtime imports injected
-	assert.match( out, /from ['"]@tsl-precompile\/runtime['"]/ );
-	assert.match( out, /virtual:tsl-precompile\/__aux/ );
+	// (e) only exact runtime owners are imported.
+	assert.match( out, /import PrecompiledMaterial from ["']virtual:tsl-precompile\/__slim-rewrite-runtime\/precompiled-material["']/ );
+	assert.match( out, /import\s*\{\s*loadAux\s*\}\s*from\s*["']virtual:tsl-precompile\/__slim-rewrite-runtime\/aux-loader["']/ );
+	assert.match( out, /import\s*\{\s*hashNodeGraphSync\s*\}\s*from\s*["']virtual:tsl-precompile\/__slim-rewrite-runtime\/graph-hash["']/ );
+	assert.doesNotMatch( out, /@tsl-precompile\/runtime['"]/ );
+	assert.doesNotMatch( out, /virtual:tsl-precompile\/__aux/ );
 
 	// __tslpHashOpts constant (versions only; shape inlined at call sites)
 	assert.match( out, /const __tslpHashOpts\s*=\s*\{/ );

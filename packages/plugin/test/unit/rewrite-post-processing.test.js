@@ -37,10 +37,11 @@ test( 'rewrite/PostProcessing: bare NodeMaterial → Material sentinel; fragment
 	// Original fragmentNode assignment LHS should be gone.
 	assert.doesNotMatch( out, /\.material\.fragmentNode\s*=/ );
 
-	// Runtime imports + aux side-effect + Material import
-	assert.match( out, /from ['"]@tsl-precompile\/runtime['"]/ );
-	assert.match( out, /createReplayRenderPipelineMaterial/ );
-	assert.match( out, /virtual:tsl-precompile\/__aux/ );
+	// RenderPipeline imports only its exact replay owner.
+	assert.match( out, /import\s*\{\s*createReplayRenderPipelineMaterial\s*\}\s*from\s*["']virtual:tsl-precompile\/__slim-rewrite-runtime\/render-pipeline["']/ );
+	assert.doesNotMatch( out, /@tsl-precompile\/runtime['"]/ );
+	assert.doesNotMatch( out, /__slim-rewrite-runtime\/renderer-output/ );
+	assert.doesNotMatch( out, /virtual:tsl-precompile\/__aux/ );
 
 } );
 

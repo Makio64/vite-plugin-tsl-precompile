@@ -35,6 +35,7 @@ test( 'rewrite/WebGPURenderer: swaps StandardNodeLibrary import for NodeLibrary 
 	// WebGL fallback is gone: no import, no construction, no getFallback wiring.
 	assert.doesNotMatch( out, /import\s+WebGLBackend\s+from/ );
 	assert.doesNotMatch( out, /parameters\.getFallback\s*=/ );
+	assert.doesNotMatch( out, /__slim-rewrite-runtime\//, 'pure WebGPURenderer rewrite must not add a runtime edge' );
 
 } );
 

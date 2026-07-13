@@ -32,11 +32,12 @@ import { autoMarkSource } from './auto-mark.js';
 import { emitArtifactModule } from './emit-manifest.js';
 import { createWgslStringPool, emitOptimizedJsonExpression, getExternalWgslRefIdentifiers } from './wgsl-optimize.js';
 import { attachDevCapture } from './dev-capture-server.js';
-import { isThreeRewriteTarget, rewriteThreeSource } from './three-rewrite.js';
+import { getSlimRewriteRuntimeModuleRule, isThreeRewriteTarget, rewriteThreeSource } from './three-rewrite.js';
 import { computeArtifactContentHash } from './hash.js';
 import {
 	findRenderedSlimSourceResidue,
 	normalizeSlimMode,
+	resolveSlimRewriteRuntimeModule,
 	resolveSlimSourceAdapter,
 	slimRuntimeEntryForMode,
 } from './slim-source.js';
@@ -562,8 +563,19 @@ export default function tslPrecompile( userOpts = {} ) {
 			}
 			if ( opts.slim === 'source' && isBuild && slimSourceRuntime ) {
 
+				const rewriteRuntime = resolveSlimRewriteRuntimeModule( id, slimSourceRuntime.sourceDir );
+				if ( rewriteRuntime ) return rewriteRuntime;
 				const adapter = resolveSlimSourceAdapter( id, importer, slimSourceRuntime.sourceDir );
 				if ( adapter ) return adapter;
+
+			}
+			if ( getSlimRewriteRuntimeModuleRule( id ) ) {
+
+				throw new Error(
+					`[tsl-precompile] private Three source rewrite helper ${ JSON.stringify( id ) } cannot be resolved in the prebuilt slim build. ` +
+					'Import the renderer from "three/webgpu", or use tslPrecompile({ slim: \'source\' }) when directly importing three/src renderer internals. ' +
+					'Mixing prebuilt and source Three internals would split constructor identity.'
+				);
 
 			}
 			if ( id === VIRTUAL_FULL_THREE_MODULE_ID ) {

@@ -8,7 +8,7 @@ import { build as viteBuild } from 'vite';
 import tslPrecompile from '../../src/index.js';
 import { autoMarkSource } from '../../src/auto-mark.js';
 import { annotateDevMarkerSources } from '../../src/babel-transform.js';
-import { isThreeRewriteTarget } from '../../src/three-rewrite.js';
+import { SLIM_REWRITE_RUNTIME_MODULE_RULES, isThreeRewriteTarget } from '../../src/three-rewrite.js';
 import { computeArtifactContentHash } from '../../src/hash.js';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
 import {
@@ -166,6 +166,10 @@ test( 'slim build aliases public three entries but full-three bypasses the alias
 		} );
 		assert.equal( plugin.resolveId( 'virtual:tsl-precompile/full-three' ), fixture.webgpuEntry );
 		assert.notEqual( plugin.resolveId( 'virtual:tsl-precompile/full-three' ), webgpuAlias.replacement );
+		assert.throws(
+			() => plugin.resolveId( SLIM_REWRITE_RUNTIME_MODULE_RULES[ 0 ].virtualId, join( fixture.threeRoot, 'src/renderers/common/Renderer.js' ) ),
+			/private Three source rewrite helper[\s\S]*three\/webgpu[\s\S]*slim: 'source'[\s\S]*constructor identity/,
+		);
 
 	} finally {
 
@@ -253,6 +257,15 @@ test( 'source slim build aliases the tree-shaken entry and routes private Three 
 
 		const rendererId = join( fixture.threeRoot, 'src/renderers/common/Renderer.js' );
 		const resolvedRuntimeSourceDir = await realpath( fixture.runtimeSourceDir );
+		for ( const rule of SLIM_REWRITE_RUNTIME_MODULE_RULES ) {
+
+			assert.equal(
+				plugin.resolveId( rule.virtualId, rendererId ),
+				join( resolvedRuntimeSourceDir, rule.runtimeFile ),
+				rule.id,
+			);
+
+		}
 		assert.equal(
 			plugin.resolveId( './nodes/NodeManager.js', rendererId ),
 			join( resolvedRuntimeSourceDir, 'slim-replay-node-manager.js' ),
@@ -365,6 +378,12 @@ test( 'source slim completes a real Vite build with guard, rewrites, and adapter
 		assert.ok( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-replay-node-manager.js' ) ) );
 		assert.ok( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-replay-node-frame.js' ) ) );
 		assert.ok( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-replay-xr-manager.js' ) ) );
+		assert.ok( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-replay-renderer-output.js' ) ) );
+		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/index.js' ) ), false );
+		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-replay-render-pipeline.js' ) ), false );
+		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-support/postprocess-effects.js' ) ), false );
+		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-support/traa-replay.js' ) ), false );
+		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-support/sss-replay.js' ) ), false );
 		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/runtime/build/three.webgpu.slim.js' ) ), false );
 		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/three/src/Three.Core.js' ) ), false );
 		assert.deepEqual( moduleIds.filter( ( id ) => getSlimThreeCompilerModule( id ) ), [] );

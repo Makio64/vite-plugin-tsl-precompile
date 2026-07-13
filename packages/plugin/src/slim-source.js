@@ -15,6 +15,7 @@ import {
 	getSlimThreeReplayAdapterModule,
 	getSlimThreeRewriteTarget,
 } from '@tsl-precompile/contract/slim-three-policy';
+import { getSlimRewriteRuntimeModuleRule } from './three-rewrite.js';
 
 const SOURCE_ADAPTER_FILES = Object.freeze( {
 	'webgl-backend': 'slim-stub-webgl-backend.js',
@@ -56,6 +57,15 @@ export function resolveSlimSourceAdapter( id, importer, runtimeSourceDir ) {
 		|| getSlimThreeReplayAdapterModule( id, importer );
 	const file = rule && SOURCE_ADAPTER_FILES[ rule.id ];
 	return file ? resolve( runtimeSourceDir, file ) : null;
+
+}
+
+/** Resolve a rewrite-only helper virtual ID to its exact runtime owner. */
+export function resolveSlimRewriteRuntimeModule( id, runtimeSourceDir ) {
+
+	if ( typeof runtimeSourceDir !== 'string' || runtimeSourceDir.length === 0 ) return null;
+	const rule = getSlimRewriteRuntimeModuleRule( id );
+	return rule ? resolve( runtimeSourceDir, rule.runtimeFile ) : null;
 
 }
 

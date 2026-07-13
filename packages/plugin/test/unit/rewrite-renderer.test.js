@@ -40,10 +40,11 @@ test( 'rewrite/Renderer: NodeMaterial replaced with Material sentinel + fragment
 	// Material import added (named specifier, matches three's named export).
 	assert.match( out, /import\s*\{[^}]*\bMaterial\b[^}]*\}\s*from\s*["'][^"']*\/Material\.js["']/ );
 
-	// Runtime imports + aux side-effect
-	assert.match( out, /from ['"]@tsl-precompile\/runtime['"]/ );
-	assert.match( out, /createReplayRenderOutputMaterial/ );
-	assert.match( out, /virtual:tsl-precompile\/__aux/ );
+	// Renderer output imports only its exact replay owner.
+	assert.match( out, /import\s*\{[^}]*getReplayRenderOutputCacheKey[^}]*createReplayRenderOutputMaterial[^}]*\}\s*from\s*["']virtual:tsl-precompile\/__slim-rewrite-runtime\/renderer-output["']/ );
+	assert.doesNotMatch( out, /@tsl-precompile\/runtime['"]/ );
+	assert.doesNotMatch( out, /__slim-rewrite-runtime\/render-pipeline/ );
+	assert.doesNotMatch( out, /virtual:tsl-precompile\/__aux/ );
 
 } );
 

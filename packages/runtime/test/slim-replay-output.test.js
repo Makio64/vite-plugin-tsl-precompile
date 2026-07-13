@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import { DataArrayTexture, Material, Texture } from 'three';
 import {
@@ -93,6 +94,20 @@ function registerPipeline( pipeline, artifact ) {
 }
 
 test.afterEach( () => __resetAuxRegistryForTests() );
+
+test( 'renderer output adapter does not retain RenderPipeline postprocess dependencies', () => {
+
+	const rendererSource = readFileSync( new URL( '../src/slim-replay-renderer-output.js', import.meta.url ), 'utf8' );
+	const pipelineSource = readFileSync( new URL( '../src/slim-replay-render-pipeline.js', import.meta.url ), 'utf8' );
+	const compatibilitySource = readFileSync( new URL( '../src/slim-replay-output.js', import.meta.url ), 'utf8' );
+
+	assert.doesNotMatch( rendererSource, /postprocess-effects-replay|attachPostprocess|createRenderPipelineConfig|hashNodeGraphSync/ );
+	assert.match( pipelineSource, /postprocess-effects-replay/ );
+	assert.match( pipelineSource, /createRenderPipelineConfig/ );
+	assert.match( compatibilitySource, /slim-replay-renderer-output\.js/ );
+	assert.match( compatibilitySource, /slim-replay-render-pipeline\.js/ );
+
+} );
 
 test( 'renderer output selection is exact, per-target, and exposure-independent', () => {
 

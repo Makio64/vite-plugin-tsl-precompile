@@ -33,8 +33,55 @@ import { SLIM_THREE_REWRITE_TARGETS, getSlimThreeRewriteTarget } from '@tsl-prec
 const traverse = _traverse.default || _traverse;
 const generate = _generate.default || _generate;
 
-const RUNTIME_PACKAGE = '@tsl-precompile/runtime';
-const AUX_VIRTUAL_MODULE = 'virtual:tsl-precompile/__aux';
+const SLIM_REWRITE_RUNTIME_PREFIX = 'virtual:tsl-precompile/__slim-rewrite-runtime/';
+
+/**
+ * Private runtime owners used by rewritten Three source.
+ *
+ * Both the standalone slim Rollup build and `slim: 'source'` resolve these
+ * virtual IDs straight to the owning runtime source file. This keeps helper
+ * imports out of the broad public runtime barrel without adding package API.
+ */
+export const SLIM_REWRITE_RUNTIME_MODULE_RULES = Object.freeze( [
+	{ id: 'precompiled-material', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'precompiled-material', runtimeFile: '_vendor-PrecompiledMaterial.js' },
+	{ id: 'artifact-registry', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'artifact-registry', runtimeFile: '_vendor-PrecompiledArtifactRegistry.js' },
+	{ id: 'aux-loader', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'aux-loader', runtimeFile: 'aux-loader.js' },
+	{ id: 'graph-hash', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'graph-hash', runtimeFile: 'graph-hash.js' },
+	{ id: 'renderer-output', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'renderer-output', runtimeFile: 'slim-replay-renderer-output.js' },
+	{ id: 'render-pipeline', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'render-pipeline', runtimeFile: 'slim-replay-render-pipeline.js' },
+	{ id: 'postprocess-replay', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'postprocess-replay', runtimeFile: 'slim-support/postprocess-effects-replay.js' },
+	{ id: 'hydrator', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'hydrator', runtimeFile: 'hydrator.js' },
+	{ id: 'render-fallback-registry', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'render-fallback-registry', runtimeFile: 'slim-support/render-fallback-registry.js' },
+].map( ( rule ) => Object.freeze( rule ) ) );
+
+const SLIM_REWRITE_RUNTIME_MODULES_BY_ID = new Map(
+	SLIM_REWRITE_RUNTIME_MODULE_RULES.map( ( rule ) => [ rule.virtualId, rule ] ),
+);
+
+const SLIM_REWRITE_RUNTIME_HELPERS = Object.freeze( {
+	PrecompiledMaterial: Object.freeze( { moduleId: 'precompiled-material', kind: 'default' } ),
+	getShadowArtifact: Object.freeze( { moduleId: 'artifact-registry', kind: 'named' } ),
+	loadAux: Object.freeze( { moduleId: 'aux-loader', kind: 'named' } ),
+	attachArtifactTextureRefs: Object.freeze( { moduleId: 'aux-loader', kind: 'named' } ),
+	attachPostprocessTextureRefs: Object.freeze( { moduleId: 'aux-loader', kind: 'named' } ),
+	attachPostprocessUpdateBeforeNodes: Object.freeze( { moduleId: 'aux-loader', kind: 'named' } ),
+	attachPostprocessObject3DTargets: Object.freeze( { moduleId: 'aux-loader', kind: 'named' } ),
+	hashNodeGraphSync: Object.freeze( { moduleId: 'graph-hash', kind: 'named' } ),
+	hashPlainConfigSync: Object.freeze( { moduleId: 'graph-hash', kind: 'named' } ),
+	getReplayRenderOutputCacheKey: Object.freeze( { moduleId: 'renderer-output', kind: 'named' } ),
+	createReplayRenderOutputMaterial: Object.freeze( { moduleId: 'renderer-output', kind: 'named' } ),
+	createReplayRenderPipelineMaterial: Object.freeze( { moduleId: 'render-pipeline', kind: 'named' } ),
+	preparePrecompiledPostprocess: Object.freeze( { moduleId: 'postprocess-replay', kind: 'named' } ),
+	hydrateNodeBuilderState: Object.freeze( { moduleId: 'hydrator', kind: 'named' } ),
+	getSlimRenderFallback: Object.freeze( { moduleId: 'render-fallback-registry', kind: 'named' } ),
+} );
+
+/** Return the private runtime owner for a rewrite virtual module ID. */
+export function getSlimRewriteRuntimeModuleRule( id ) {
+
+	return SLIM_REWRITE_RUNTIME_MODULES_BY_ID.get( id ) || null;
+
+}
 
 const REWRITE_HANDLERS_BY_FAMILY = Object.freeze( {
 	'cube-render-target': rewriteCubeRenderTarget,
@@ -112,8 +159,8 @@ export function rewriteThreeSource( code, id, opts ) {
 
 		}
 
-		// After any per-file rewrite: inject our runtime imports + aux-side-
-		// effect import, then drop now-unused TSL / NodeMaterial imports.
+		// After any per-file rewrite: inject only referenced private runtime
+		// owners, then drop now-unused TSL / NodeMaterial imports.
 		injectRuntimeImports( ast );
 		stripUnusedTSLImports( ast );
 
@@ -809,7 +856,6 @@ function rewriteNodesJs( ast, ctx ) {
 	if ( helperMethod ) {
 
 		helperMethod.body = buildHelperStub();
-		injectHydratorImport( ast );
 		ctx.touched = true;
 		return;
 
@@ -850,7 +896,6 @@ function rewriteNodesJs( ast, ctx ) {
 
 	}
 
-	injectHydratorImport( ast );
 	ctx.touched = true;
 
 }
@@ -1195,31 +1240,6 @@ function buildPrecompileBypass() {
 		elseBlock,
 	);
 	return [ ifStmt ];
-
-}
-
-function injectHydratorImport( ast ) {
-
-	const already = ast.program.body.some(
-		( n ) => t.isImportDeclaration( n )
-			&& n.source.value === RUNTIME_PACKAGE
-			&& n.specifiers.some( ( s ) => t.isImportSpecifier( s ) && s.imported && s.imported.name === 'hydrateNodeBuilderState' ),
-	);
-	if ( already ) return;
-	const decl = t.importDeclaration(
-		[
-			t.importSpecifier( t.identifier( 'hydrateNodeBuilderState' ), t.identifier( 'hydrateNodeBuilderState' ) ),
-			t.importSpecifier( t.identifier( 'getSlimRenderFallback' ), t.identifier( 'getSlimRenderFallback' ) ),
-		],
-		t.stringLiteral( RUNTIME_PACKAGE ),
-	);
-	let insertAt = 0;
-	for ( let i = 0; i < ast.program.body.length; i ++ ) {
-
-		if ( t.isImportDeclaration( ast.program.body[ i ] ) ) insertAt = i + 1;
-
-	}
-	ast.program.body.splice( insertAt, 0, decl );
 
 }
 
@@ -1820,36 +1840,35 @@ function findMaterialAssignments( blockPath, objName ) {
 }
 
 /**
- * Add at the top of the file (after existing imports):
- *   import { PrecompiledMaterial, loadAux, hashNodeGraphSync } from '@tsl-precompile/runtime';
- *   import 'virtual:tsl-precompile/__aux';
+ * Import only the helpers referenced by the rewritten AST, grouped by their
+ * private runtime owner. Pure compatibility rewrites therefore add no runtime
+ * edge, while renderer output never evaluates RenderPipeline replay support.
  */
 function injectRuntimeImports( ast ) {
 
-	const already = ast.program.body.some(
-		( n ) => t.isImportDeclaration( n ) && n.source.value === RUNTIME_PACKAGE,
-	);
-	if ( already ) return;
+	const referenced = new Set();
+	traverse( ast, {
+		Identifier( path ) {
 
-	const runtimeImport = t.importDeclaration(
-		[
-			t.importSpecifier( t.identifier( 'PrecompiledMaterial' ), t.identifier( 'PrecompiledMaterial' ) ),
-			t.importSpecifier( t.identifier( 'getShadowArtifact' ), t.identifier( 'getShadowArtifact' ) ),
-			t.importSpecifier( t.identifier( 'loadAux' ), t.identifier( 'loadAux' ) ),
-			t.importSpecifier( t.identifier( 'attachArtifactTextureRefs' ), t.identifier( 'attachArtifactTextureRefs' ) ),
-			t.importSpecifier( t.identifier( 'attachPostprocessTextureRefs' ), t.identifier( 'attachPostprocessTextureRefs' ) ),
-			t.importSpecifier( t.identifier( 'attachPostprocessUpdateBeforeNodes' ), t.identifier( 'attachPostprocessUpdateBeforeNodes' ) ),
-			t.importSpecifier( t.identifier( 'attachPostprocessObject3DTargets' ), t.identifier( 'attachPostprocessObject3DTargets' ) ),
-			t.importSpecifier( t.identifier( 'preparePrecompiledPostprocess' ), t.identifier( 'preparePrecompiledPostprocess' ) ),
-			t.importSpecifier( t.identifier( 'hashNodeGraphSync' ), t.identifier( 'hashNodeGraphSync' ) ),
-			t.importSpecifier( t.identifier( 'hashPlainConfigSync' ), t.identifier( 'hashPlainConfigSync' ) ),
-			t.importSpecifier( t.identifier( 'getReplayRenderOutputCacheKey' ), t.identifier( 'getReplayRenderOutputCacheKey' ) ),
-			t.importSpecifier( t.identifier( 'createReplayRenderOutputMaterial' ), t.identifier( 'createReplayRenderOutputMaterial' ) ),
-			t.importSpecifier( t.identifier( 'createReplayRenderPipelineMaterial' ), t.identifier( 'createReplayRenderPipelineMaterial' ) ),
-		],
-		t.stringLiteral( RUNTIME_PACKAGE ),
-	);
-	const auxSideEffect = t.importDeclaration( [], t.stringLiteral( AUX_VIRTUAL_MODULE ) );
+			if ( ! path.isReferencedIdentifier() ) return;
+			if ( SLIM_REWRITE_RUNTIME_HELPERS[ path.node.name ] ) referenced.add( path.node.name );
+
+		},
+	} );
+	if ( referenced.size === 0 ) return;
+
+	const runtimeImports = [];
+	for ( const moduleRule of SLIM_REWRITE_RUNTIME_MODULE_RULES ) {
+
+		const helpers = Object.entries( SLIM_REWRITE_RUNTIME_HELPERS )
+			.filter( ( [ name, helper ] ) => referenced.has( name ) && helper.moduleId === moduleRule.id );
+		if ( helpers.length === 0 ) continue;
+		const specifiers = helpers.map( ( [ name, helper ] ) => helper.kind === 'default'
+			? t.importDefaultSpecifier( t.identifier( name ) )
+			: t.importSpecifier( t.identifier( name ), t.identifier( name ) ) );
+		runtimeImports.push( t.importDeclaration( specifiers, t.stringLiteral( moduleRule.virtualId ) ) );
+
+	}
 
 	// Insert at position after the last existing import (keeps relative
 	// ordering predictable).
@@ -1859,7 +1878,7 @@ function injectRuntimeImports( ast ) {
 		if ( t.isImportDeclaration( ast.program.body[ i ] ) ) insertAt = i + 1;
 
 	}
-	ast.program.body.splice( insertAt, 0, runtimeImport, auxSideEffect );
+	ast.program.body.splice( insertAt, 0, ...runtimeImports );
 
 }
 

@@ -38,8 +38,10 @@ test( 'rewrite/ShadowFilterNode: shadow material uses registered precompiled art
 	assert.match( out, /shadowMaterialLib\.set\s*\(\s*light\s*,\s*material\s*\)/ );
 	assert.match( out, /no shadow-depth artifact is registered/ );
 
-	assert.match( out, /import\s*\{[^}]*\bPrecompiledMaterial\b[^}]*\bgetShadowArtifact\b[^}]*\}\s*from\s*['"]@tsl-precompile\/runtime['"]/ );
-	assert.match( out, /virtual:tsl-precompile\/__aux/ );
+	assert.match( out, /import PrecompiledMaterial from ["']virtual:tsl-precompile\/__slim-rewrite-runtime\/precompiled-material["']/ );
+	assert.match( out, /import\s*\{\s*getShadowArtifact\s*\}\s*from\s*["']virtual:tsl-precompile\/__slim-rewrite-runtime\/artifact-registry["']/ );
+	assert.doesNotMatch( out, /@tsl-precompile\/runtime['"]/ );
+	assert.doesNotMatch( out, /virtual:tsl-precompile\/__aux/ );
 
 } );
 

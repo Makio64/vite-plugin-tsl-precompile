@@ -23,7 +23,7 @@ import { createRequire } from 'node:module';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { rewriteThreeSource } from '../plugin/src/three-rewrite.js';
+import { getSlimRewriteRuntimeModuleRule, rewriteThreeSource } from '../plugin/src/three-rewrite.js';
 import {
 	SLIM_BUNDLE_FILE_NAME,
 	SLIM_BUNDLE_METADATA_FILE_NAME,
@@ -206,6 +206,17 @@ const auxVirtualStub = {
 
 		}
 		return null;
+
+	},
+};
+
+/** Resolve rewrite-only virtual imports directly to their runtime owners. */
+const slimRewriteRuntimeModules = {
+	name: 'tsl-precompile:slim-rewrite-runtime-modules',
+	resolveId( id ) {
+
+		const rule = getSlimRewriteRuntimeModuleRule( id );
+		return rule ? resolve( __dirname, 'src', rule.runtimeFile ) : null;
 
 	},
 };
@@ -503,6 +514,7 @@ export default {
 		compilerResidueGuard,
 		stockAdapterResidueGuard,
 		runtimeAliasPlugin,
+		slimRewriteRuntimeModules,
 		auxVirtualStub,
 		webglFallbackStub,
 		pmremGeneratorStub,

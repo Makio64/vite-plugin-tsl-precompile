@@ -41,8 +41,10 @@ test( 'rewrite/Nodes.js: getForRender bypasses createNodeBuilder for precompiled
 	assert.match( out, /only PrecompiledMaterial is supported in the slim bundle/ );
 	assert.match( out, /only PrecompiledComputeNode is supported in the slim bundle/ );
 
-	// Hydrator import from the runtime.
-	assert.match( out, /import\s*\{[^}]*hydrateNodeBuilderState[^}]*\}\s*from\s*["']@tsl-precompile\/runtime["']/ );
+	// Hydration and fallback import their exact private owners.
+	assert.match( out, /import\s*\{\s*hydrateNodeBuilderState\s*\}\s*from\s*["']virtual:tsl-precompile\/__slim-rewrite-runtime\/hydrator["']/ );
+	assert.match( out, /import\s*\{\s*getSlimRenderFallback\s*\}\s*from\s*["']virtual:tsl-precompile\/__slim-rewrite-runtime\/render-fallback-registry["']/ );
+	assert.doesNotMatch( out, /@tsl-precompile\/runtime['"]/ );
 
 	// A slim hydration failure cannot recover through the compiler: the
 	// backend builder is deliberately absent. Keep NodeFrame for live updater
@@ -87,6 +89,7 @@ test( 'rewrite/WebGPUBackend.js: drops WGSLNodeBuilder import + stubs createNode
 	assert.match( out, /this\.createBindings\(bindGroup, bindings, 0\)/ );
 	assert.match( out, /cameraIndex &&/ );
 	assert.match( out, /__tslpPreservedBindingGroups/ );
+	assert.doesNotMatch( out, /__slim-rewrite-runtime\//, 'pure backend rewrite must not add a runtime edge' );
 
 } );
 
