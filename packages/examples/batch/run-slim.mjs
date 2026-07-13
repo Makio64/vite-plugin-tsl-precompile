@@ -44,8 +44,8 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 
-import { assertThreeAtLeast184 } from './_three-version.mjs';
-import { loadSlimBundle, slimBundleReportProvenance } from './slim-bundle-provenance.mjs';
+import { assertThreeCheckoutMatchesVersion } from './_three-version.mjs';
+import { loadSlimBundle, slimBundleHashOptions, slimBundleReportProvenance } from './slim-bundle-provenance.mjs';
 
 const SELF = dirname( fileURLToPath( import.meta.url ) );
 const OUT = resolve( SELF, 'results' );
@@ -76,6 +76,17 @@ try {
 const SLIM_BUNDLE = slimBundle.absolutePath;
 const SLIM_BUNDLE_BYTES = slimBundle.bytes;
 const SLIM_BUNDLE_PROVENANCE = slimBundleReportProvenance( slimBundle );
+let slimHashOptions;
+try {
+
+	slimHashOptions = slimBundleHashOptions( slimBundle );
+
+} catch ( error ) {
+
+	console.error( `[batch-slim] could not read hash-domain versions from slim bundle ${ SLIM_BUNDLE }: ${ error && error.message || error }. Rebuild it with \`pnpm --filter @tsl-precompile/runtime build:slim\`.` );
+	process.exit( 2 );
+
+}
 console.log( `[batch-slim] slim bundle: ${ SLIM_BUNDLE } (sha256:${ slimBundle.shortSha256 })` );
 
 const threeRepo = resolve( getArg( '--three-repo=', resolve( SELF, '../../../../three.js' ) ) );
@@ -92,7 +103,16 @@ if ( ! existsSync( join( threeRepo, 'examples' ) ) ) {
 
 }
 
-assertThreeAtLeast184( threeRepo, 'batch-slim' );
+try {
+
+	assertThreeCheckoutMatchesVersion( threeRepo, slimHashOptions.threeVersion, 'batch-slim' );
+
+} catch ( error ) {
+
+	console.error( error && error.message || error );
+	process.exit( 2 );
+
+}
 
 // ---- Pixel-gate mode --------------------------------------------------------
 // Opt-in via `--pixel-gate`. Runs a curated list of examples through the e2e

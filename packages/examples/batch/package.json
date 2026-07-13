@@ -16,7 +16,7 @@
     "run:e2e:tier3": "node run-e2e-with-coverage.mjs --tier=tier3 --report=tier3-report.json",
     "run:e2e:raw": "node run-e2e.mjs",
     "run:coverage-summary": "node run-coverage-summary.mjs",
-    "test:diagnostics": "node --test test/e2e-render-selector-recorder.test.mjs test/e2e-report-diagnostics.test.mjs test/e2e-settle-policy.test.mjs test/slim-bundle-provenance.test.mjs"
+    "test:diagnostics": "node --test test/e2e-render-selector-recorder.test.mjs test/e2e-report-diagnostics.test.mjs test/e2e-settle-policy.test.mjs test/slim-bundle-provenance.test.mjs test/three-version.test.mjs"
   },
   "devDependencies": {
     "@tsl-precompile/contract": "workspace:*",

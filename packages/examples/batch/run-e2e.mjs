@@ -42,7 +42,7 @@ import { resolve, join, dirname, extname, normalize, basename } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS as __NODE_GRAPH_KEYS } from '@tsl-precompile/contract/texture-props';
 
-import { assertThreeAtLeast184 } from './_three-version.mjs';
+import { assertThreeCheckoutMatchesVersion } from './_three-version.mjs';
 import { installRenderSelectorMismatchRecorder } from './e2e-render-selector-recorder.mjs';
 import { enrichRenderSelectorDiagnostics, resolveE2ERoots, summarizeArtifactRenderSelectors } from './e2e-report-diagnostics.mjs';
 import { installAnimationLoopSettleTransition, minimumRenderableObjectsForExample } from './e2e-settle-policy.mjs';
@@ -158,7 +158,16 @@ if ( localExamplesRoot && ! existsSync( localExamplesRoot ) ) {
 
 }
 
-assertThreeAtLeast184( threeRepo, 'batch-e2e' );
+try {
+
+	assertThreeCheckoutMatchesVersion( threeRepo, SLIM_HASH_OPTS.threeVersion, 'batch-e2e' );
+
+} catch ( error ) {
+
+	console.error( error && error.message || error );
+	process.exit( 2 );
+
+}
 
 const SKIP_PREFIXES = [
 	'webxr_', 'vr_', 'ar_', 'webgpu_xr_', 'webgpu_webxr_',
