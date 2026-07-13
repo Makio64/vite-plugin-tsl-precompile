@@ -18,6 +18,7 @@ test( 'cell: deltaTime + frameId', () => {
 		{ byteOffset: 4, source: { kind: 'frameId' } },
 	] } ] } );
 	assertGenerates( r, 'writeF32(view, byteOffset + 0, frame.deltaTime)' );
-	assertGenerates( r, 'writeU32(view, byteOffset + 4, frame.frameId)' );
+	assertGenerates( r, 'Symbol.for("@tsl-precompile/runtime/temporal-frame@1")' );
+	assertGenerates( r, 'Number.isFinite(_s.frameId) ? _s.frameId : frame.frameId' );
 
 } );
