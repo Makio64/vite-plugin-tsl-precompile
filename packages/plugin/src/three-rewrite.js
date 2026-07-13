@@ -49,6 +49,7 @@ export const SLIM_REWRITE_RUNTIME_MODULE_RULES = Object.freeze( [
 	{ id: 'graph-hash', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'graph-hash', runtimeFile: 'graph-hash.js' },
 	{ id: 'renderer-context', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'renderer-context', runtimeFile: 'slim-replay-renderer-context.js' },
 	{ id: 'renderer-output', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'renderer-output', runtimeFile: 'slim-replay-renderer-output.js' },
+	{ id: 'cube-render-target', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'cube-render-target', runtimeFile: 'slim-replay-cube-render-target.js' },
 	{ id: 'shadow-material', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'shadow-material', runtimeFile: 'slim-replay-shadow-material.js' },
 	{ id: 'render-pipeline', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'render-pipeline', runtimeFile: 'slim-replay-render-pipeline.js' },
 	{ id: 'postprocess-replay', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'postprocess-replay', runtimeFile: 'slim-support/postprocess-effects-replay.js' },
@@ -75,6 +76,7 @@ const SLIM_REWRITE_RUNTIME_HELPERS = Object.freeze( {
 	getReplayRendererHighPrecision: Object.freeze( { moduleId: 'renderer-context', kind: 'named' } ),
 	getReplayRenderOutputCacheKey: Object.freeze( { moduleId: 'renderer-output', kind: 'named' } ),
 	createReplayRenderOutputMaterial: Object.freeze( { moduleId: 'renderer-output', kind: 'named' } ),
+	createReplayCubeRenderTargetMaterial: Object.freeze( { moduleId: 'cube-render-target', kind: 'named' } ),
 	createReplayShadowMaterial: Object.freeze( { moduleId: 'shadow-material', kind: 'named' } ),
 	getReplayRenderCallbackMaterial: Object.freeze( { moduleId: 'shadow-material', kind: 'named' } ),
 	createReplayRenderPipelineMaterial: Object.freeze( { moduleId: 'render-pipeline', kind: 'named' } ),
@@ -316,7 +318,7 @@ function ensureRenderObjectFallbackHelper( ast ) {
 // CubeRenderTarget handler
 // -------------------------------------------------------------------------
 //
-// Expected shape (three@0.175.0):
+// Expected shape (three@0.184.0):
 //
 //   const uvNode = equirectUV( positionWorldDirection );
 //
@@ -327,19 +329,32 @@ function ensureRenderObjectFallbackHelper( ast ) {
 //
 // Rewritten shape:
 //
-//   const uvNode = equirectUV( positionWorldDirection );
-//
-//   const material = new PrecompiledMaterial(
-//     loadAux( 'cube-render-target',
-//       hashNodeGraphSync( uvNode, __tslpHashOpts )
-//     )
-//   );
+//   const replayMaterial = createReplayCubeRenderTargetMaterial( texture, this );
+//   // ... stock source/target setup ...
+//   const material = replayMaterial;
 //   material.side = BackSide;
 //   material.blending = NoBlending;
 //
-// The `.colorNode = TSL_Texture(...)` assignment is DROPPED — that graph
-// is already baked into the artifact. The other assignments (.side,
-// .blending) are preserved because PrecompiledMaterial honours them.
+// The graph declaration and `.colorNode = TSL_Texture(...)` assignment are
+// dropped completely. Capture owns the exact r184 graph; replay selects its
+// artifact from a plain source-texture descriptor and attaches the live
+// texture. The lookup is deliberately hoisted ahead of Three's first source
+// mutation/allocation, so a missing or stale artifact fails without leaking
+// texture state or geometry. The non-graph material state stays in Three's
+// method.
+
+const CUBE_RENDER_TARGET_METHOD_BODY = '{const currentMinFilter=texture.minFilter;const currentGenerateMipmaps=texture.generateMipmaps;texture.generateMipmaps=true;this.texture.type=texture.type;this.texture.colorSpace=texture.colorSpace;this.texture.generateMipmaps=texture.generateMipmaps;this.texture.minFilter=texture.minFilter;this.texture.magFilter=texture.magFilter;const geometry=new BoxGeometry(5,5,5);const uvNode=equirectUV(positionWorldDirection);const material=new NodeMaterial();material.colorNode=TSL_Texture(texture,uvNode,0);material.side=BackSide;material.blending=NoBlending;const mesh=new Mesh(geometry,material);const scene=new Scene();scene.add(mesh);if(texture.minFilter===LinearMipmapLinearFilter)texture.minFilter=LinearFilter;const camera=new CubeCamera(1,10,this);const currentMRT=renderer.getMRT();renderer.setMRT(null);camera.update(renderer,scene);renderer.setMRT(currentMRT);texture.minFilter=currentMinFilter;texture.generateMipmaps=currentGenerateMipmaps;mesh.geometry.dispose();mesh.material.dispose();return this;}';
+
+function assertCubeRenderTargetMethodShape( block ) {
+
+	const actual = generate( block.node, { compact: true, comments: false } ).code;
+	if ( actual !== CUBE_RENDER_TARGET_METHOD_BODY ) {
+
+		throw new Error( 'CubeRenderTarget: fromEquirectangularTexture lifecycle shape changed' );
+
+	}
+
+}
 
 function rewriteCubeRenderTarget( ast, ctx ) {
 
@@ -348,19 +363,41 @@ function rewriteCubeRenderTarget( ast, ctx ) {
 	traverse( ast, {
 		VariableDeclarator( path ) {
 
-			// Match: const material = new NodeMaterial();
+			// Match the exact r184 seam: const material = new NodeMaterial();
 			if ( ! t.isIdentifier( path.node.id, { name: 'material' } ) ) return;
 			if ( ! t.isNewExpression( path.node.init ) ) return;
 			if ( ! t.isIdentifier( path.node.init.callee, { name: 'NodeMaterial' } ) ) return;
+			if ( path.node.init.arguments.length !== 0 ) {
 
-			// Scan the enclosing BlockStatement for the sibling assignments
-			// we expect. The shape gate asserts we see ALL of:
-			//   - material.colorNode = <expr>            (must be TSL_Texture(...))
-			//   - material.side = BackSide
-			//   - material.blending = NoBlending
-			const parentBlock = path.getFunctionParent() || path.scope.block;
+				throw new Error( `CubeRenderTarget: shape changed (expected new NodeMaterial() with zero arguments, got ${ path.node.init.arguments.length })` );
+
+			}
+
 			const block = findEnclosingBlock( path );
 			if ( ! block ) throw new Error( 'CubeRenderTarget: material declarator has no enclosing block' );
+			assertCubeRenderTargetMethodShape( block );
+			const body = block.get( 'body' );
+			const uvDeclarations = body.filter( ( statement ) => {
+
+				if ( ! statement.isVariableDeclaration() ) return false;
+				return statement.node.declarations.some( ( declaration ) => t.isIdentifier( declaration.id, { name: 'uvNode' } ) );
+
+			} );
+			if ( uvDeclarations.length !== 1 || uvDeclarations[ 0 ].node.declarations.length !== 1 ) {
+
+				throw new Error( `CubeRenderTarget: shape changed (expected one standalone uvNode declaration, got ${ uvDeclarations.length })` );
+
+			}
+			const uvDeclaration = uvDeclarations[ 0 ];
+			const uvDeclarator = uvDeclaration.node.declarations[ 0 ];
+			if ( ! t.isCallExpression( uvDeclarator.init )
+				|| ! t.isIdentifier( uvDeclarator.init.callee, { name: 'equirectUV' } )
+				|| uvDeclarator.init.arguments.length !== 1
+				|| ! t.isIdentifier( uvDeclarator.init.arguments[ 0 ], { name: 'positionWorldDirection' } ) ) {
+
+				throw new Error( `CubeRenderTarget: shape changed (expected const uvNode = equirectUV( positionWorldDirection ), got ${ generate( uvDeclaration.node ).code })` );
+
+			}
 
 			const siblings = findMaterialAssignments( block, 'material' );
 			const colorAssign = siblings.get( 'colorNode' );
@@ -370,31 +407,46 @@ function rewriteCubeRenderTarget( ast, ctx ) {
 
 			}
 			const colorCall = colorAssign.node.expression.right;
-			const texCalleeName = t.isIdentifier( colorCall.callee ) ? colorCall.callee.name : null;
-			if ( texCalleeName !== 'TSL_Texture' && texCalleeName !== 'texture' ) {
+			if ( ! t.isIdentifier( colorCall.callee, { name: 'TSL_Texture' } )
+				|| colorCall.arguments.length !== 3
+				|| ! t.isIdentifier( colorCall.arguments[ 0 ], { name: 'texture' } )
+				|| ! t.isIdentifier( colorCall.arguments[ 1 ], { name: 'uvNode' } )
+				|| ! t.isNumericLiteral( colorCall.arguments[ 2 ], { value: 0 } ) ) {
 
-				throw new Error( `CubeRenderTarget: shape changed (expected TSL_Texture call for colorNode, got callee "${ texCalleeName }")` );
+				throw new Error( `CubeRenderTarget: shape changed (expected TSL_Texture( texture, uvNode, 0 ), got ${ generate( colorCall ).code })` );
+
+			}
+			const sideAssign = siblings.get( 'side' );
+			if ( ! sideAssign || ! t.isIdentifier( sideAssign.node.expression.right, { name: 'BackSide' } ) ) {
+
+				throw new Error( `CubeRenderTarget: shape changed (expected material.side = BackSide, got ${ sideAssign ? generate( sideAssign.node ).code : '<missing>' })` );
+
+			}
+			const blendingAssign = siblings.get( 'blending' );
+			if ( ! blendingAssign || ! t.isIdentifier( blendingAssign.node.expression.right, { name: 'NoBlending' } ) ) {
+
+				throw new Error( `CubeRenderTarget: shape changed (expected material.blending = NoBlending, got ${ blendingAssign ? generate( blendingAssign.node ).code : '<missing>' })` );
 
 			}
 
-			// colorCall arguments: (texture, uvNode, 0). The second is the
-			// structural input we hash over — it contains equirectUV and the
-			// worldDirection node, which are the only things that change the
-			// graph shape. Texture identity flows in through the texture
-			// input and is captured in the artifact's sampler binding, so we
-			// don't hash it here.
-			if ( colorCall.arguments.length < 2 ) {
+			const replayMaterialName = 'replayMaterial';
+			if ( block.scope.hasBinding( replayMaterialName ) ) {
 
-				throw new Error( `CubeRenderTarget: shape changed (expected >= 2 args to TSL_Texture, got ${ colorCall.arguments.length })` );
+				throw new Error( `CubeRenderTarget: shape changed (${ replayMaterialName } is already bound)` );
 
 			}
-			const uvArg = colorCall.arguments[ 1 ];
+			block.unshiftContainer( 'body', t.variableDeclaration( 'const', [
+				t.variableDeclarator(
+					t.identifier( replayMaterialName ),
+					t.callExpression( t.identifier( 'createReplayCubeRenderTargetMaterial' ), [ t.identifier( 'texture' ), t.thisExpression() ] ),
+				),
+			] ) );
+			path.node.init = t.identifier( replayMaterialName );
 
-			// new PrecompiledMaterial( loadAux( 'cube-render-target', hashNodeGraphSync( uvArg, { shape: 'cube-render-target', ...__tslpHashOpts } ) ) )
-			path.node.init = buildPrecompiledExpr( 'cube-render-target', uvArg );
-
-			// Drop the `.colorNode = ...` assignment — graph is baked.
+			// Capture owns this graph. Removing both statements makes all four
+			// EquirectUV/Texture/Position/NodeMaterial imports unreachable.
 			colorAssign.remove();
+			uvDeclaration.remove();
 
 			rewrites ++;
 
@@ -411,10 +463,6 @@ function rewriteCubeRenderTarget( ast, ctx ) {
 		throw new Error( `CubeRenderTarget: expected exactly 1 rewrite, got ${ rewrites }` );
 
 	}
-
-	// Inject a shape-agnostic version-only `__tslpHashOpts` const. Each
-	// rewrite call site inlines its `shape` via `{ shape: '...', ...__tslpHashOpts }`.
-	injectHashOptsConst( ast, ctx );
 
 	ctx.touched = true;
 

@@ -19,6 +19,7 @@
  *
  *   - `background`       → `extractBackgroundArtifact`
  *   - `post-process`     → `extractPostProcessingArtifact`
+ *   - `cube-render-target` → `extractCubeRenderTargetArtifact`
  *   - `pmrem`            → `extractPMREMArtifact`
  *   - `lights`           → `extractLightingArtifact`
  *
@@ -31,6 +32,10 @@ import { normalizeRevision } from './_shared/normalize-revision.js';
 import { compileTSL } from './vendor/compileTSL.js';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { createRenderPipelineConfig } from '@tsl-precompile/contract/output-config';
+import {
+	assertCubeRenderTargetTextureEvidence,
+	createCubeRenderTargetAuxConfig,
+} from '@tsl-precompile/contract/cube-render-target';
 
 let initialised = false;
 
@@ -55,6 +60,13 @@ async function importThree() {
 function threeVersion( core, opts ) {
 
 	return opts.threeVersion || normalizeRevision( core.REVISION );
+
+}
+
+function cubeRenderTargetThreeVersion( core, opts ) {
+
+	if ( opts.threeVersion ) return opts.threeVersion;
+	return `0.${ normalizeRevision( core.REVISION ) }.0`;
 
 }
 
@@ -235,6 +247,142 @@ export async function extractPostProcessingArtifact( factory, opts = {} ) {
 	stamp( artifact, 'post-process', configHash, name, core, opts );
 	if ( typeof renderer.dispose === 'function' ) renderer.dispose();
 	return { artifact, configHash, materialShape: 'post-process', hash: artifact.__hash };
+
+}
+
+// -------------------------------------------------------------------------
+// CubeRenderTarget.fromEquirectangularTexture
+// -------------------------------------------------------------------------
+
+/**
+ * Extract Three r184's fixed equirectangular-to-cube blit material.
+ *
+ * The material graph deliberately matches CubeRenderTarget.js rather than
+ * hashing only its equirect UV helper. The source texture remains a live
+ * binding, while replayConfig signs the complete 2D texture/binding topology
+ * shared with the rewritten runtime call site.
+ *
+ * @param {({webgpu, core, tsl}) => ({ sourceTexture: Object, targetOptions?: Object, name?: string })} factory
+ * @param {Object} [opts]
+ * @return {Promise<{ artifact, configHash, materialShape: 'cube-render-target', hash: string }>}
+ */
+export async function extractCubeRenderTargetArtifact( factory, opts = {} ) {
+
+	const { webgpu, core, tsl } = await importThree();
+	const renderer = makeRenderer( webgpu );
+	let geometry = null;
+	let material = null;
+	let cubeTarget = null;
+	let sourceTexture = null;
+	let sourceState = null;
+
+	try {
+
+		await renderer.init();
+		const input = await factory( { webgpu, core, tsl } );
+		sourceTexture = input && input.sourceTexture;
+		const name = input && input.name || 'cube-render-target-aux';
+		if ( ! sourceTexture ) {
+
+			throw new Error( 'extractCubeRenderTargetArtifact: factory must return { sourceTexture: <2D Texture> }' );
+
+		}
+
+		const targetOptions = input && input.targetOptions;
+		if ( targetOptions !== undefined && targetOptions !== null && ( typeof targetOptions !== 'object' || Array.isArray( targetOptions ) ) ) {
+
+			throw new TypeError( 'extractCubeRenderTargetArtifact: targetOptions must be a plain options object' );
+
+		}
+
+		// Mirror CubeRenderTarget.fromEquirectangularTexture() exactly. The
+		// destination inherits source output topology before the source's pole
+		// filter is temporarily narrowed for the six cube draws.
+		cubeTarget = new webgpu.CubeRenderTarget( 1, cloneCubeTargetOptions( targetOptions, 'extractCubeRenderTargetArtifact' ) );
+		cubeTarget.texture.type = sourceTexture.type;
+		cubeTarget.texture.colorSpace = sourceTexture.colorSpace;
+		cubeTarget.texture.generateMipmaps = true;
+		cubeTarget.texture.minFilter = sourceTexture.minFilter;
+		cubeTarget.texture.magFilter = sourceTexture.magFilter;
+
+		const replayConfig = createCubeRenderTargetAuxConfig( sourceTexture, cubeTarget );
+		const captureOpts = {
+			...opts,
+			threeVersion: cubeRenderTargetThreeVersion( core, opts ),
+		};
+		const configHash = computePlainConfigHash( replayConfig, {
+			shape: 'cube-render-target',
+			threeVersion: captureOpts.threeVersion,
+			pluginVersion: pluginVersion( captureOpts ),
+		} );
+
+		sourceState = {
+			generateMipmaps: sourceTexture.generateMipmaps,
+			minFilter: sourceTexture.minFilter,
+		};
+		sourceTexture.generateMipmaps = true;
+		if ( sourceTexture.minFilter === core.LinearMipmapLinearFilter ) sourceTexture.minFilter = core.LinearFilter;
+
+		const uvNode = tsl.equirectUV( tsl.positionWorldDirection );
+		material = new webgpu.NodeMaterial();
+		material.name = 'CubeRenderTarget.equirectangular';
+		material.colorNode = tsl.texture( sourceTexture, uvNode, 0 );
+		material.side = core.BackSide;
+		material.blending = core.NoBlending;
+
+		geometry = new core.BoxGeometry( 5, 5, 5 );
+		const mesh = new core.Mesh( geometry, material );
+		const scene = new core.Scene();
+		scene.add( mesh );
+		const cubeCamera = new core.CubeCamera( 1, 10, cubeTarget );
+		if (
+			renderer.coordinateSystem !== undefined &&
+			cubeCamera.coordinateSystem !== renderer.coordinateSystem &&
+			typeof cubeCamera.updateCoordinateSystem === 'function'
+		) {
+
+			cubeCamera.coordinateSystem = renderer.coordinateSystem;
+			cubeCamera.updateCoordinateSystem();
+
+		}
+		const camera = cubeCamera.children && cubeCamera.children[ 0 ];
+		if ( ! camera || camera.isPerspectiveCamera !== true ) {
+
+			throw new Error( 'extractCubeRenderTargetArtifact: CubeCamera did not expose its perspective face cameras' );
+
+		}
+
+		const artifacts = await compileTSL( renderer, scene, camera, {
+			renderTargetOverride: cubeTarget,
+			noGlobalMRT: true,
+		} );
+		const artifact = artifacts.byMaterialUuid && artifacts.byMaterialUuid.get( material.uuid )
+			|| artifacts.find( ( candidate ) => candidate.materialUuid === material.uuid );
+		if ( ! artifact ) {
+
+			throw new Error( `extractCubeRenderTargetArtifact: could not locate the conversion material among ${ artifacts.length } artifact(s)` );
+
+		}
+
+		wireExactSourceTextureEvidence( artifact, sourceTexture );
+		artifact.replayConfig = replayConfig;
+		stamp( artifact, 'cube-render-target', configHash, name, core, captureOpts );
+		return { artifact, configHash, materialShape: 'cube-render-target', hash: artifact.__hash };
+
+	} finally {
+
+		if ( sourceTexture && sourceState ) {
+
+			try { sourceTexture.minFilter = sourceState.minFilter; } catch ( _ ) {}
+			try { sourceTexture.generateMipmaps = sourceState.generateMipmaps; } catch ( _ ) {}
+
+		}
+		disposeSafely( geometry );
+		disposeSafely( material );
+		disposeSafely( cubeTarget );
+		disposeSafely( renderer );
+
+	}
 
 }
 
@@ -437,6 +585,57 @@ export async function extractLightingArtifact( factory, opts = {} ) {
 // -------------------------------------------------------------------------
 // helpers
 // -------------------------------------------------------------------------
+
+function wireExactSourceTextureEvidence( artifact, texture ) {
+
+	const uuid = texture && texture.uuid;
+	assertCubeRenderTargetTextureEvidence( artifact, texture, 'extractCubeRenderTargetArtifact' );
+
+	const refs = artifact._textureRefs instanceof Map ? artifact._textureRefs : new Map();
+	const existing = refs.get( uuid );
+	if ( existing && existing !== texture ) {
+
+		throw new Error( 'extractCubeRenderTargetArtifact: captured source texture identity is ambiguous' );
+
+	}
+	refs.set( uuid, texture );
+	if ( artifact._textureRefs !== refs ) {
+
+		Object.defineProperty( artifact, '_textureRefs', {
+			value: refs,
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		} );
+
+	}
+
+}
+
+function disposeSafely( resource ) {
+
+	if ( ! resource || typeof resource.dispose !== 'function' ) return;
+	try { resource.dispose(); } catch ( _ ) {}
+
+}
+
+function cloneCubeTargetOptions( options, owner ) {
+
+	if ( ! options ) return {};
+	const cloned = { ...options };
+	if ( options.depthTexture != null ) {
+
+		if ( typeof options.depthTexture.clone !== 'function' ) {
+
+			throw new TypeError( `${ owner }: targetOptions.depthTexture must expose clone()` );
+
+		}
+		cloned.depthTexture = options.depthTexture.clone();
+
+	}
+	return cloned;
+
+}
 
 function makeFakeCanvas( width = 256, height = 256 ) {
 

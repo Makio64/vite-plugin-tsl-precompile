@@ -511,6 +511,48 @@ shadow pass. The remaining closure is now dominated by reusable node protocol,
 compute, and output/color-transform dependencies rather than shadow graph
 construction.
 
+**Graph-free CubeRenderTarget conversion (2026-07-13).** Closure analysis
+showed that Three's fixed `CubeRenderTarget.fromEquirectangularTexture()`
+material retained 49 of the remaining 51 Node/TSL modules. The shared
+`cube-render-target@1` contract now signs the sampled 2D source, r184's
+effective mipmap/pole-filter state, and the destination format, attachment,
+MSAA, depth/stencil, and multiview topology. Capture supports matching custom
+`targetOptions` / `cubeRenderTargetOptions`, rejects color-incompatible source
+families, uses CubeCamera's exact perspective face camera, waits for the
+renderer compile queue before temporarily mutating sampler state, and requires
+every artifact variant to retain exactly one source-texture identity. Offline
+capture, browser capture, and replay share that evidence validator and the
+exact `0.184.0` hash domain.
+
+The guarded r184 rewrite verifies the complete conversion lifecycle, removes
+the equirect UV/texture graph and all four graph imports, and preflights the
+exact replay material before Three mutates the caller texture or allocates its
+box geometry. Replay clones the selected registry template, wires only the
+validated sampled-texture domain, and fails closed on uncaptured source or
+destination topology. Cube selector projection removes scene/lights,
+compatibility mode, target debug labels, mutable face, and mip identity while
+retaining shader/pipeline target axes; ReplayNodeManager applies that
+projection before its cache key so all six faces share one hydrated state.
+The source/runtime handshake advances to `slim-three-policy@7`.
+
+The strict prebuilt falls from 825,688 raw / 226,395 gzip-9 bytes, 381 modules,
+and 51 retained Node modules / 239,415 rendered bytes to 767,947 raw / 209,741
+gzip-9 bytes, 333 modules, and 2 retained Node modules / 2,293 rendered bytes.
+Minimal and advanced `slim: 'source'` fixtures measure 489,972 raw / 136,788
+gzip and 519,492 raw / 144,715 gzip respectively; both retain 2 Node modules /
+1,190 rendered bytes. Production caps are tightened to 770,000 raw / 212,000
+gzip, 2 prebuilt Node modules / 2,500 rendered bytes, 139,000 and 147,000 source
+gzip, and 2 source Node modules / 1,536 rendered bytes. Compiler, stock-adapter,
+and duplicate bare-Three identity counts remain zero. The direct
+`webgpu_materials_envmaps_groundprojected` capture/replay canary is
+pixel-identical (infinite PSNR, 20 material plus 2 auxiliary artifacts).
+
+The canary also exposed two independent harness faults, fixed separately: the
+hash domain is now read from the signed slim provenance stamp rather than an
+incidental minified object literal, and replay's wrapper forwards exports from
+the same cache-busted bundle URL it imports, preserving one ESM module and one
+aux registry identity.
+
 ---
 
 ## 2026-06-09 audit refresh — corrections to the map
@@ -864,9 +906,18 @@ Inspector preview gap also closed via a Vite plugin middleware (`attachInspector
 
 **Change.** Keep the two registration models; document their contract here; make aux-loader consume the `artifact-texture-wiring` predicates; add an aux debug hook per §P3.12 (mirror `setTextureResolutionDebugHook`).
 
+**Status (2026-07-13).** The CubeRenderTarget wedge puts shared hashing and
+texture-evidence vocabulary in `@tsl-precompile/contract`, while the dev-only
+temporary graph, CubeCamera, compile-lock, restoration, and disposal lifecycle
+live in the named
+[`auxiliary/cube-render-target-capture.js`](packages/runtime/src/auxiliary/cube-render-target-capture.js)
+module. `aux-marker.js` only discovers inputs, requests capture, registers, and
+persists results for this shape. This is the first shape-specific extraction
+from that orchestrator; the broader texture-wiring convergence remains open.
+
 **First step.** Write the doc section + migrate one duplicated predicate cluster to the shared slim-support module behind existing tests.
 
-**Files.** [aux-marker.js](packages/runtime/src/aux-marker.js), [aux-loader.js](packages/runtime/src/aux-loader.js), [aux-capture.js](packages/plugin/src/aux-capture.js), [artifact-texture-wiring.js](packages/runtime/src/slim-support/artifact-texture-wiring.js), [postprocess-wire.js](packages/runtime/src/slim-support/postprocess-wire.js).
+**Files.** [aux-marker.js](packages/runtime/src/aux-marker.js), [cube-render-target-capture.js](packages/runtime/src/auxiliary/cube-render-target-capture.js), [aux-loader.js](packages/runtime/src/aux-loader.js), [aux-capture.js](packages/plugin/src/aux-capture.js), [artifact-texture-wiring.js](packages/runtime/src/slim-support/artifact-texture-wiring.js), [postprocess-wire.js](packages/runtime/src/slim-support/postprocess-wire.js).
 
 ---
 
@@ -902,7 +953,7 @@ Inspector preview gap also closed via a Vite plugin middleware (`attachInspector
 
 **Status (2026-06-09).** The headline regression is resolved at the bundler: the `threeBareAlias` + `webglFallbackStub` rollup wedges (see the audit-refresh bullet at the top of this doc) cut the bundle ~407 → 238.8 KB gzip, and the gate is re-tightened to 250 KB with the stale comments fixed ([`slim-bundle.test.js`](packages/plugin/test/unit/slim-bundle.test.js)). The `TSLP_ANALYZE=1` rollup flag prints a per-module breakdown — use it before any future gate bump. Refuted during verification: lazy-importing aux-loader from slim-entry (it is exported slim API, not a one-call dependency).
 
-**Status (2026-07-13).** The single gzip constant is replaced by the machine-readable [`slim-budget.json`](packages/runtime/build-tools/slim-budget.json) and shared [`slim-bundle-analysis.js`](packages/runtime/build-tools/slim-bundle-analysis.js). The dedicated `pnpm test:slim:budget` gate performs one strict prebuilt Rollup build plus minimal and advanced production `slim: 'source'` Vite builds; it caps raw/gzip bytes, compiler residue, stock-adapter residue, retained Node module count/bytes for every profile, and split bare-Three identity. `pnpm analyze:slim` emits deterministic JSON for CI or trend tooling. Current observations are 825,688 raw / 226,395 gzip bytes and 51 retained Node modules / 239,415 rendered bytes for prebuilt. Minimal and advanced source are 136,671 and 144,603 gzip bytes; both retain only 2 Node modules / 1,190 rendered bytes. All compiler, stock-adapter, and duplicate-identity counts are zero. The expensive three-build check stays outside the quick unit tier and runs once in Linux CI and `release:check`.
+**Status (2026-07-13).** The single gzip constant is replaced by the machine-readable [`slim-budget.json`](packages/runtime/build-tools/slim-budget.json) and shared [`slim-bundle-analysis.js`](packages/runtime/build-tools/slim-bundle-analysis.js). The dedicated `pnpm test:slim:budget` gate performs one strict prebuilt Rollup build plus minimal and advanced production `slim: 'source'` Vite builds; it caps raw/gzip bytes, compiler residue, stock-adapter residue, retained Node module count/bytes for every profile, and split bare-Three identity. `pnpm analyze:slim` emits deterministic JSON for CI or trend tooling. After the graph-free shadow and CubeRenderTarget wedges, current observations are 768,161 raw / 209,773 gzip bytes and 2 retained Node modules / 2,293 rendered bytes for prebuilt. Minimal and advanced source are 136,793 and 144,719 gzip bytes; both retain only 2 Node modules / 1,190 rendered bytes. All compiler, stock-adapter, and duplicate-identity counts are zero. The expensive three-build check stays outside the quick unit tier and runs once in Linux CI and `release:check`.
 
 **Remaining.** A minimal `core` subpath export (apply + loader + writers) for non-slim adopters importing the root barrel; `sideEffects` annotations in [`packages/runtime/package.json`](packages/runtime/package.json) (careful: `hydrator.js` has a real module-init side effect — `installLiveTextureRegistryPatches()`; list side-effectful files explicitly rather than `false`); lazy TSL/PassNode stub entries if the analyzer shows them dominating; opt-in on-disk artifact minification (low value — dev artifacts are gitignored test fixtures).
 

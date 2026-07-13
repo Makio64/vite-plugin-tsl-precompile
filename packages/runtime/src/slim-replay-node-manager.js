@@ -8,7 +8,12 @@
  */
 
 import DataMap from 'three/src/renderers/common/DataMap.js';
-import { createRenderObjectContextSelector, RENDER_BINDING_OWNER_KINDS, resolveRenderObjectBindingOwner } from '@tsl-precompile/contract/render-selector';
+import {
+	createRenderObjectContextSelector,
+	projectRenderObjectContextSelector,
+	RENDER_BINDING_OWNER_KINDS,
+	resolveRenderObjectBindingOwner,
+} from '@tsl-precompile/contract/render-selector';
 import { hydrateNodeBuilderState } from './hydrator.js';
 import ReplayNodeFrame from './slim-replay-node-frame.js';
 import { getSlimRenderFallback } from './slim-support/render-fallback-registry.js';
@@ -185,13 +190,20 @@ class ReplayNodeManager extends DataMap {
 		const selector = createRenderObjectContextSelector( renderObject, renderObject.renderer || this.renderer );
 		const artifact = renderObject.material && renderObject.material.precompiledArtifact;
 		const auxShape = artifact && ( artifact.__tslpAuxShape || artifact.materialShape );
+		const selectorProfile = auxShape === 'background' || auxShape === 'shadow-depth' || auxShape === 'post-process' || auxShape === 'cube-render-target'
+			? auxShape
+			: null;
 		return {
 			cacheKey: this.getForRenderCacheKey( renderObject ),
 			bindingMaterial: bindingOwner.kind === RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER ? bindingOwner.material : null,
 			bindingOwnerKind: bindingOwner.kind,
 			renderObject,
-			renderContextSelector: selector,
-			renderContextSelectorProfile: auxShape === 'background' || auxShape === 'shadow-depth' || auxShape === 'post-process' ? auxShape : null,
+			// Project before both cache identity and variant selection. Cube faces
+			// and mip levels share one fixed conversion shader; retaining their raw
+			// values here would hydrate six equivalent states before the selector
+			// layer projects them away.
+			renderContextSelector: projectRenderObjectContextSelector( selector, selectorProfile ),
+			renderContextSelectorProfile: selectorProfile,
 		};
 
 	}

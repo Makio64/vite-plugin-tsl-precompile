@@ -13,12 +13,14 @@ import assert from 'node:assert/strict';
 import {
 	extractBackgroundArtifact,
 	extractPostProcessingArtifact,
+	extractCubeRenderTargetArtifact,
 	extractPMREMArtifact,
 	extractLightingArtifact,
 } from '../../src/aux-capture.js';
 import { emitUpdaterSource } from '../../src/emit-updater.js';
 import { computeNodeGraphHash, computePlainConfigHash } from '../../src/hash.js';
 import { hashNodeGraphSync, hashPlainConfigSync } from '../../../runtime/src/graph-hash.js';
+import { createCubeRenderTargetAuxConfig } from '@tsl-precompile/contract/cube-render-target';
 
 // -------- Background --------
 
@@ -92,6 +94,85 @@ test( 'aux/post-process: captures Three output transform instead of the raw colo
 		true,
 		'exposure remains a live renderer uniform rather than a captured variant key',
 	);
+
+} );
+
+// -------- CubeRenderTarget --------
+
+test( 'aux/cube-render-target: captures the exact r184 equirectangular conversion graph', async () => {
+
+	let sourceTexture;
+	const r = await extractCubeRenderTargetArtifact( ( { core } ) => {
+
+		sourceTexture = new core.DataTexture( new Uint8Array( 8 ), 2, 1 );
+		sourceTexture.mapping = core.EquirectangularReflectionMapping;
+		sourceTexture.colorSpace = core.LinearSRGBColorSpace;
+		sourceTexture.minFilter = core.LinearMipmapLinearFilter;
+		sourceTexture.magFilter = core.LinearFilter;
+		sourceTexture.generateMipmaps = false;
+		sourceTexture.needsUpdate = true;
+		return { sourceTexture, name: 'cube-equirect' };
+
+	} );
+
+	assert.equal( r.materialShape, 'cube-render-target' );
+	assert.equal( r.artifact.materialShape, 'cube-render-target' );
+	assert.equal( r.artifact.__configHash, r.configHash );
+	assert.deepEqual( r.artifact.replayConfig, createCubeRenderTargetAuxConfig( sourceTexture ) );
+	assert.equal( r.artifact.replayConfig.sampler.generateMipmaps, true );
+	assert.equal( r.artifact.replayConfig.sampler.minFilter, 1006 );
+	assert.equal( sourceTexture.generateMipmaps, false, 'factory-owned source state is restored after capture' );
+	assert.equal( sourceTexture.minFilter, 1008, 'temporary pole filter is restored after capture' );
+	assert.equal( r.artifact._textureRefs.get( sourceTexture.uuid ), sourceTexture, 'artifact keeps the exact source texture sidecar' );
+	assert.equal(
+		r.artifact.uniformPlan.some( ( group ) => ( group.textures || [] ).some( ( binding ) =>
+			binding.source && binding.source.kind === 'artifact.texture' && binding.source.textureUuid === sourceTexture.uuid
+		) ),
+		true,
+		'uniform plan retains serializable evidence for the same source texture',
+	);
+	assert.match( r.artifact.fragmentShader, /textureSampleLevel/ );
+	assert.equal( r.artifact.renderState.side, 1 );
+	assert.equal( r.artifact.renderState.blending, 0 );
+
+	const candidates = [ r.artifact, ...Object.values( r.artifact.variants || {} ) ];
+	const selectors = candidates.flatMap( ( artifact ) => artifact.renderContextSelectors || [] );
+	assert.equal(
+		selectors.some( ( selector ) => JSON.parse( selector ).target.surface === 'offscreen-cube' ),
+		true,
+		'conversion graph is compiled against a real CubeRenderTarget override',
+	);
+
+	sourceTexture.dispose();
+
+} );
+
+test( 'aux/cube-render-target: captures custom destination pipeline topology', async () => {
+
+	let sourceTexture;
+	const r = await extractCubeRenderTargetArtifact( ( { core } ) => {
+
+		sourceTexture = new core.DataTexture( new Uint8Array( 8 ), 2, 1 );
+		sourceTexture.needsUpdate = true;
+		return {
+			sourceTexture,
+			targetOptions: {
+				format: core.RGFormat,
+				internalFormat: 'rg16float',
+				samples: 4,
+			},
+			name: 'cube-custom-target',
+		};
+
+	} );
+
+	assert.equal( r.artifact.replayConfig.target.format, 1030 );
+	assert.equal( r.artifact.replayConfig.target.internalFormat, 'rg16float' );
+	assert.equal( r.artifact.replayConfig.target.sampleCount, 4 );
+	assert.equal( r.artifact.replayConfig.target.depth, true );
+	assert.equal( r.artifact.replayConfig.target.stencil, false );
+	assert.match( r.artifact.fragmentShader, /texture(?:SampleLevel|Load)/ );
+	sourceTexture.dispose();
 
 } );
 

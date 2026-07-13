@@ -293,6 +293,47 @@ test( 'replay NodeManager applies the post-process selector profile from artifac
 
 } );
 
+test( 'replay NodeManager shares one cube conversion state across faces and mips', () => {
+
+	const renderer = fakeRenderer();
+	const cubeArtifact = artifact( { materialShape: 'cube-render-target' } );
+	const replayMaterial = material( cubeArtifact );
+	const texture = {
+		isTexture: true,
+		isCubeTexture: true,
+		isRenderTargetTexture: true,
+		format: 1023,
+		type: 1009,
+		colorSpace: 'srgb-linear',
+	};
+	const target = {
+		isCubeRenderTarget: true,
+		texture,
+		textures: [ texture ],
+		depthBuffer: true,
+		stencilBuffer: false,
+		samples: 0,
+	};
+	const atFace = ( activeCubeFace, activeMipmapLevel ) => renderObject( renderer, replayMaterial, {
+		context: {
+			renderTarget: target,
+			textures: [ texture ],
+			activeCubeFace,
+			activeMipmapLevel,
+			sampleCount: 1,
+		},
+	} );
+	const manager = new ReplayNodeManager( renderer, renderer.backend );
+	const firstState = manager.getForRender( atFace( 0, 0 ) );
+	const sixthFaceState = manager.getForRender( atFace( 5, 0 ) );
+	const mipState = manager.getForRender( atFace( 2, 3 ) );
+
+	assert.equal( sixthFaceState, firstState );
+	assert.equal( mipState, firstState );
+	assert.equal( manager.nodeBuilderCache.size, 1 );
+
+} );
+
 test( 'replay NodeManager supports compute, update scheduling, groups, and disposal', async () => {
 
 	const renderer = fakeRenderer();

@@ -170,7 +170,15 @@ export interface AuxCaptureOptions extends Record<string, unknown> {
 	renderPipelineName?: string;
 	postProcessing?: unknown;
 	postProcessingName?: string;
+	/** One equirectangular 2D Texture used by `CubeRenderTarget.fromEquirectangularTexture()`. */
+	cubeRenderTargetTexture?: unknown;
+	/** Additional equirectangular 2D Textures. Identities repeated here or on the scene are captured once. */
+	cubeRenderTargetTextures?: readonly unknown[];
+	/** CubeRenderTarget constructor options whose format/MSAA/depth topology should be captured. */
+	cubeRenderTargetOptions?: Record<string, unknown>;
 	three?: unknown;
+	/** Optional `three/tsl` namespace; loaded lazily during dev capture when omitted. */
+	tsl?: unknown;
 	threeVersion?: string;
 	pluginVersion?: string;
 }
@@ -244,7 +252,7 @@ export interface HydrateVariantSelection {
 	/** Precomputed canonical selector for non-Three integrations and tests. */
 	renderContextSelector?: string | null;
 	/** Renderer-owned auxiliary topology profile. */
-	renderContextSelectorProfile?: 'background' | 'shadow-depth' | 'post-process' | null;
+	renderContextSelectorProfile?: 'background' | 'shadow-depth' | 'post-process' | 'cube-render-target' | null;
 	/** Optional material override for MRT attachment-count compatibility. */
 	material?: unknown;
 }

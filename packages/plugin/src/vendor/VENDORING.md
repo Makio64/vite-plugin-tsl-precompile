@@ -98,6 +98,22 @@ call site. All removal counts and the original method's TSL construction shape
 are strict gates so an upstream Renderer drift cannot silently retain or skip
 part of the stock graph closure.
 
+`CubeRenderTarget.fromEquirectangularTexture()` is another exact r184 slim
+rewrite seam. Capture builds the stock
+`texture( source, equirectUV( positionWorldDirection ), 0 )` graph once and
+keys it by the shared plain source-texture plus destination-target descriptor.
+Replay preflights the private cube-render-target adapter before the method's
+first source mutation/allocation, replaces the local `NodeMaterial` with that
+validated result, then removes the now-unused UV declaration and all four graph
+imports. The rewrite strictly verifies the entire method body: constructor,
+texture/UV/level call, `BackSide`, `NoBlending`, CubeCamera's six renders, MRT
+save/restore, temporary min-filter/mipmap changes, both disposals, and return.
+Its selector profile deliberately ignores active cube face, mip, compatibility
+mode, and attachment debug names because those do not change this helper
+shader; format, samples, depth/stencil, and attachment topology remain signed.
+Update the rewrite fixture, capture helper, descriptor contract, and direct
+cubemap canary together if upstream changes this method.
+
 Local assumption: `Object3DNode` instances with an explicit `object3d.isCamera`
 target are serialized as `object3d.*` sources with `target: "camera"`. This
 preserves TSL like `objectPosition(camera)` in post-processing passes, where

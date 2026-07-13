@@ -65,6 +65,7 @@ test( 'public declarations track the runtime signatures that previously drifted'
 	assert.match( source, /hashPlainConfigSync\( config: unknown, opts: HashVersionOptions \): string;/ );
 	assert.match( source, /hashMaterialSync\( material: unknown, opts: MaterialHashOptions \): string;/ );
 	assert.match( source, /hashArtifactContentSync\( artifact: unknown, opts: HashVersionOptions \): string;/ );
+	assert.match( source, /cubeRenderTargetOptions\?: Record<string, unknown>;/ );
 
 	assert.match( source, /registerAuxArtifact<TArtifact = unknown>\( shape: string, configHash: string, artifact: TArtifact, opts\?: \{ name\?: string; threeVersion\?: string; pluginVersion\?: string \} \): void;/ );
 	assert.match( source, /findAux<TArtifact = unknown>\( shape: string, nameOrConfigHash: string \): AuxArtifactEntry<TArtifact> \| null;/ );
@@ -72,7 +73,7 @@ test( 'public declarations track the runtime signatures that previously drifted'
 	assert.match( source, /bindAuxByName<TNode = unknown>\( node: TNode, shape: string, nameOrConfigHash: string \): TNode;/ );
 
 	assert.match( source, /hydrateNodeBuilderState\( artifact: unknown, material\?: unknown, object\?: unknown, variantSelection\?: number \| string \| HydrateVariantSelection \| null, \): unknown;/ );
-	assert.match( source, /renderContextSelectorProfile\?: 'background' \| 'shadow-depth' \| 'post-process' \| null;/ );
+	assert.match( source, /renderContextSelectorProfile\?: 'background' \| 'shadow-depth' \| 'post-process' \| 'cube-render-target' \| null;/ );
 	assert.match( source, /interface SlimRenderFallbackHandler \{ \( renderObject: unknown \): unknown \| null; release\?\( renderObject: unknown \): void; \}/ );
 	assert.match( source, /class MaterialVariantSet<TMaterial = unknown>/ );
 	assert.match( source, /createMaterialVariants<TMaterial = unknown>\( variants: MaterialVariantInput<TMaterial>, initialName\?: string \): MaterialVariantSet<TMaterial>;/ );

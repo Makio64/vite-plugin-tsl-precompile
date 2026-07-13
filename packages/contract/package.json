@@ -27,6 +27,7 @@
     "./render-context": "./src/render-context.js",
     "./render-selector": "./src/render-selector.js",
     "./output-config": "./src/output-config.js",
+    "./cube-render-target": "./src/cube-render-target.js",
     "./stable-json": "./src/stable-json.js",
     "./slim-bundle-provenance-node": "./src/slim-bundle-provenance-node.js",
     "./slim-three-policy": "./src/slim-three-policy.js",

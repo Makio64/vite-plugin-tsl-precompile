@@ -221,6 +221,78 @@ test( 'background selector projection ignores scene lighting, fog, environment, 
 
 } );
 
+test( 'cube-render-target projection ignores scene and face identity while retaining target topology', () => {
+
+	const descriptor = {
+		version: 'render-object-selector@1',
+		renderer: {
+		backend: { kind: 'webgpu', compatibilityMode: false },
+		highPrecision: true,
+		shadowMap: { enabled: true, type: 1 },
+		contextNode: { cacheKey: 'capture-only-shadow-context' },
+		},
+		target: {
+			surface: 'offscreen-cube',
+			activeCubeFace: 0,
+			activeMipmapLevel: 0,
+			sampleCount: 1,
+			colors: [ { kind: 'cube', format: 1023, dataType: 1016, name: 'capture-only-debug-label' } ],
+		},
+		scene: { fog: 'FogExp2', environment: { kind: 'cube' } },
+		lights: [ { type: 'DirectionalLight', castShadow: true } ],
+		camera: { projection: 'perspective' },
+		object: { instanced: false },
+		material: { side: 1 },
+	};
+	const projected = JSON.parse( projectRenderObjectContextSelector( JSON.stringify( descriptor ), 'cube-render-target' ) );
+	assert.equal( 'scene' in projected, false );
+	assert.deepEqual( projected.lights, [] );
+	assert.equal( 'activeCubeFace' in projected.target, false );
+	assert.equal( 'activeMipmapLevel' in projected.target, false );
+	assert.equal( projected.target.surface, 'offscreen-cube' );
+	assert.equal( projected.target.sampleCount, 1 );
+	assert.equal( 'name' in projected.target.colors[ 0 ], false );
+	assert.equal( 'compatibilityMode' in projected.renderer.backend, false );
+	assert.equal( 'shadowMap' in projected.renderer, false );
+	assert.equal( 'contextNode' in projected.renderer, false );
+
+	const compatibilityModeVariant = structuredClone( descriptor );
+	compatibilityModeVariant.renderer.backend.compatibilityMode = true;
+	assert.equal(
+		projectRenderObjectContextSelector( JSON.stringify( compatibilityModeVariant ), 'cube-render-target' ),
+		projectRenderObjectContextSelector( JSON.stringify( descriptor ), 'cube-render-target' ),
+		'fixed color-2D graph is invariant across WebGPU compatibility modes',
+	);
+
+	const shadowStateVariant = structuredClone( descriptor );
+	shadowStateVariant.renderer.shadowMap = { enabled: false, type: 0 };
+	shadowStateVariant.renderer.contextNode = { cacheKey: 'runtime-shadow-context' };
+	assert.equal(
+		projectRenderObjectContextSelector( JSON.stringify( shadowStateVariant ), 'cube-render-target' ),
+		projectRenderObjectContextSelector( JSON.stringify( descriptor ), 'cube-render-target' ),
+		'fixed unlit blit is invariant across shadow-only renderer state',
+	);
+
+	const otherFaceAndScene = structuredClone( descriptor );
+	otherFaceAndScene.target.activeCubeFace = 5;
+	otherFaceAndScene.target.activeMipmapLevel = 3;
+	otherFaceAndScene.target.colors[ 0 ].name = 'runtime-label';
+	otherFaceAndScene.scene = null;
+	otherFaceAndScene.lights = [ { type: 'PointLight', castShadow: false } ];
+	assert.equal(
+		projectRenderObjectContextSelector( JSON.stringify( otherFaceAndScene ), 'cube-render-target' ),
+		projectRenderObjectContextSelector( JSON.stringify( descriptor ), 'cube-render-target' ),
+	);
+
+	otherFaceAndScene.target.sampleCount = 4;
+	assert.notEqual(
+		projectRenderObjectContextSelector( JSON.stringify( otherFaceAndScene ), 'cube-render-target' ),
+		projectRenderObjectContextSelector( JSON.stringify( descriptor ), 'cube-render-target' ),
+		'only face and mip are removed from target topology',
+	);
+
+} );
+
 test( 'post-process projection ignores private output attachments but retains pipeline and precision topology', () => {
 
 	const capture = fixture();

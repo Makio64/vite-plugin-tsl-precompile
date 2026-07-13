@@ -19,6 +19,10 @@
 import { hashNodeGraphSync, hashPlainConfigSync } from './graph-hash.js';
 import { registerAuxArtifact } from './aux-loader.js';
 import { cloneRenderTargetForCapture } from './capture-render-target.js';
+import {
+	assertCubeRenderTargetSourceTexture,
+	captureCubeRenderTargetLive,
+} from './auxiliary/cube-render-target-capture.js';
 import { collectEffectNodes } from './slim-support/postprocess-effects.js';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { createRenderPipelineConfig } from '@tsl-precompile/contract/output-config';
@@ -80,7 +84,13 @@ function collectAuxPassNodes( opts ) {
  * @param {?string} [opts.renderPipelineName] - Friendly name for the RenderPipeline capture.
  * @param {?Object} [opts.postProcessing] - Backward-compatible alias for `renderPipeline`.
  * @param {?string} [opts.postProcessingName] - Backward-compatible alias for `renderPipelineName`.
+ * @param {?Object} [opts.cubeRenderTargetTexture] - One equirectangular 2D texture to capture for CubeRenderTarget conversion.
+ * @param {?Array<Object>} [opts.cubeRenderTargetTextures] - Additional equirectangular 2D textures to capture.
+ * @param {?Object} [opts.cubeRenderTargetOptions] - Destination options used
+ *   when the application constructs its CubeRenderTarget. Format/MSAA/depth
+ *   topology participates in the capture hash.
  * @param {?Object} [opts.three] - The three module (fallback to scene's constructor's module).
+ * @param {?Object} [opts.tsl] - The `three/tsl` namespace. Loaded lazily when omitted.
  * @param {string} [opts.threeVersion='unknown']
  * @param {string} [opts.pluginVersion=ARTIFACT_TOOLCHAIN_VERSION]
  * @return {Promise<Array<{ shape: string, configHash: string, ok: boolean, error?: string }>>}
@@ -393,6 +403,51 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 		} catch ( err ) {
 
 			results.push( { shape, configHash: null, ok: false, error: err && err.message || String( err ) } );
+
+		}
+
+	}
+
+	// CubeRenderTarget equirectangular conversion ---------------------------
+	// CubeRenderTarget.fromEquirectangularTexture() creates a private
+	// NodeMaterial at call time. Capture the exact r184 material graph once for
+	// every live source texture so the slim source rewrite can replace that
+	// private compiler path with a precompiled artifact. Explicit options and
+	// scene-level discovery share one identity set: the same Texture referenced
+	// from background, environment, and opts is compiled and POSTed only once.
+	{
+
+		const shape = 'cube-render-target';
+		const sourceTextures = collectCubeRenderTargetTextures( scene, opts );
+		for ( const sourceTexture of sourceTextures ) {
+
+			let configHash = null;
+			try {
+
+				assertCubeRenderTargetSourceTexture( sourceTexture );
+				const artifact = await captureCubeRenderTargetLive( renderer, sourceTexture, {
+					...opts,
+					compileTSL: opts.compileTSL || ( await lazyLoadCompileTSL() ),
+					tsl: await resolveCubeRenderTargetTSL( opts ),
+					serializeArtifact: jsonSafe,
+				}, ( replayConfig ) => {
+
+					configHash = hashPlainConfigSync( replayConfig, { shape, ...hashOpts } );
+
+				} );
+				trackLocal( shape, configHash, artifact );
+				results.push( await post( opts.devEndpoint, {
+					materialShape: shape,
+					configHash,
+					artifact,
+					name: `aux-${ shape }-${ configHash.slice( 0, 12 ) }`,
+				}, shape, configHash ) );
+
+			} catch ( err ) {
+
+				results.push( { shape, configHash, ok: false, error: err && err.message || String( err ) } );
+
+			}
 
 		}
 
@@ -864,6 +919,96 @@ async function captureMRTLive( renderer, passNode, scene, camera, opts ) {
 	artifact.mrt = { outputNames };
 
 	return jsonSafe( artifact );
+
+}
+
+/**
+ * Collect source textures for CubeRenderTarget.fromEquirectangularTexture().
+ * Explicit entries are retained even when unsupported so each requested
+ * candidate produces an actionable failure result instead of disappearing.
+ * Automatic scene discovery is deliberately narrower: only non-cube Texture
+ * identities are candidates.
+ *
+ * @param {?Object} scene
+ * @param {Object} opts
+ * @return {Array<*>}
+ */
+function collectCubeRenderTargetTextures( scene, opts ) {
+
+	const textures = [];
+	const seen = new Set();
+	const push = ( texture ) => {
+
+		if ( texture == null || seen.has( texture ) ) return;
+		seen.add( texture );
+		textures.push( texture );
+
+	};
+
+	push( opts && opts.cubeRenderTargetTexture );
+	if ( opts && opts.cubeRenderTargetTextures !== undefined ) {
+
+		if ( Array.isArray( opts.cubeRenderTargetTextures ) ) {
+
+			for ( const texture of opts.cubeRenderTargetTextures ) push( texture );
+
+		} else {
+
+			// Preserve a malformed explicit collection as one candidate. The
+			// per-candidate validator below reports it without blocking valid
+			// scene or singular-option captures.
+			push( opts.cubeRenderTargetTextures );
+
+		}
+
+	}
+
+	for ( const texture of [ scene && scene.background, scene && scene.environment ] ) {
+
+		if ( texture && texture.isTexture === true && texture.isCubeTexture !== true ) push( texture );
+
+	}
+
+	return textures;
+
+}
+
+let cachedCubeRenderTargetTSL = null;
+async function resolveCubeRenderTargetTSL( opts ) {
+
+	let tsl = opts.tsl || null;
+	// Some applications already pass a merged `three/webgpu` + `three/tsl`
+	// namespace. Keep that ergonomic path without pretending the stock
+	// `three/webgpu` entry exports TSL graph primitives.
+	if ( ! tsl && opts.three && typeof opts.three.equirectUV === 'function' ) tsl = opts.three;
+	if ( ! tsl ) {
+
+		if ( ! cachedCubeRenderTargetTSL ) {
+
+			try {
+
+				cachedCubeRenderTargetTSL = await import( 'three/tsl' );
+
+			} catch ( err ) {
+
+				throw new Error( `captureCubeRenderTargetLive: could not load three/tsl; pass opts.tsl (${ err && err.message || err })` );
+
+			}
+
+		}
+		tsl = cachedCubeRenderTargetTSL;
+
+	}
+	const missing = [];
+	if ( typeof tsl.equirectUV !== 'function' ) missing.push( 'equirectUV' );
+	if ( ! tsl.positionWorldDirection ) missing.push( 'positionWorldDirection' );
+	if ( typeof tsl.texture !== 'function' ) missing.push( 'texture' );
+	if ( missing.length > 0 ) {
+
+		throw new Error( `captureCubeRenderTargetLive: opts.tsl must expose ${ missing.join( '/' ) }` );
+
+	}
+	return tsl;
 
 }
 

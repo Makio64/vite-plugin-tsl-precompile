@@ -161,7 +161,10 @@ export function createSceneRenderTopologySelector( scene ) {
  * Background materials explicitly disable lights and fog and do not consume
  * the scene environment. Shadow-depth materials likewise consume caster,
  * target, camera, clipping, and renderer topology rather than scene lighting,
- * fog, or environment. The final post-process quad is captured on Three's
+ * fog, or environment. CubeRenderTarget's fixed equirectangular blit is also
+ * scene/light independent, and one shader serves every mutable cube face and
+ * mip while retaining the rest of the target topology. The final post-process
+ * quad is captured on Three's
  * private output-intermediate target but replayed directly to the default
  * surface; its persisted WGSL does not depend on that adapter-owned target's
  * attachment descriptors or on NodeMaterial's fog default. Keeping those
@@ -178,7 +181,7 @@ export function createSceneRenderTopologySelector( scene ) {
 export function projectRenderObjectContextSelector( selector, profile ) {
 
 	if ( typeof selector !== 'string' ) return '';
-	const sceneIndependent = profile === 'background' || profile === 'shadow-depth';
+	const sceneIndependent = profile === 'background' || profile === 'shadow-depth' || profile === 'cube-render-target';
 	const postProcess = profile === 'post-process';
 	if ( ( ! sceneIndependent && ! postProcess ) || selector.length === 0 ) return selector;
 	let descriptor;
@@ -221,6 +224,38 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 
 	const projected = { ...descriptor, lights: [] };
 	delete projected.scene;
+	if ( profile === 'cube-render-target' && projected.renderer && typeof projected.renderer === 'object' ) {
+
+		projected.renderer = { ...projected.renderer };
+		delete projected.renderer.shadowMap;
+		delete projected.renderer.contextNode;
+		if ( projected.renderer.backend && typeof projected.renderer.backend === 'object' ) {
+
+			projected.renderer.backend = { ...projected.renderer.backend };
+			delete projected.renderer.backend.compatibilityMode;
+
+		}
+
+	}
+	if ( profile === 'cube-render-target' && projected.target && typeof projected.target === 'object' ) {
+
+		projected.target = { ...projected.target };
+		delete projected.target.activeCubeFace;
+		delete projected.target.activeMipmapLevel;
+		if ( Array.isArray( projected.target.colors ) ) {
+
+			projected.target.colors = projected.target.colors.map( ( color ) => {
+
+				if ( ! color || typeof color !== 'object' ) return color;
+				const attachment = { ...color };
+				delete attachment.name;
+				return attachment;
+
+			} );
+
+		}
+
+	}
 	if ( profile === 'background' && projected.renderer && typeof projected.renderer === 'object' ) {
 
 		projected.renderer = { ...projected.renderer };
