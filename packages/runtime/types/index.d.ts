@@ -181,6 +181,8 @@ export interface AuxArtifactRegistration<TArtifact = unknown> {
 	configHash: string;
 	artifact: TArtifact;
 	name?: string;
+	threeVersion?: string;
+	pluginVersion?: string;
 }
 
 export interface AuxArtifactSummary {
@@ -199,7 +201,7 @@ export function precompileAuxiliary(
 	camera: unknown,
 	opts?: AuxCaptureOptions,
 ): Promise<AuxCaptureResult[]>;
-export function registerAuxArtifact<TArtifact = unknown>( shape: string, configHash: string, artifact: TArtifact, opts?: { name?: string } ): void;
+export function registerAuxArtifact<TArtifact = unknown>( shape: string, configHash: string, artifact: TArtifact, opts?: { name?: string; threeVersion?: string; pluginVersion?: string } ): void;
 export function registerAuxArtifacts<TArtifact = unknown>( entries: Iterable<AuxArtifactRegistration<TArtifact>> ): void;
 export function loadAux<TArtifact = unknown>( shape: string, configHash: string ): TArtifact;
 export function hasAux( shape: string, configHash: string ): boolean;
@@ -222,6 +224,8 @@ export interface HydrateVariantSelection {
 	renderObject?: unknown;
 	/** Precomputed canonical selector for non-Three integrations and tests. */
 	renderContextSelector?: string | null;
+	/** Renderer-owned auxiliary topology profile, currently `background`. */
+	renderContextSelectorProfile?: 'background' | null;
 	/** Optional material override for MRT attachment-count compatibility. */
 	material?: unknown;
 }

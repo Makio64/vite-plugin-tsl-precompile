@@ -182,10 +182,13 @@ class ReplayNodeManager extends DataMap {
 	_createReplaySelection( renderObject ) {
 
 		const selector = createRenderObjectContextSelector( renderObject, renderObject.renderer || this.renderer );
+		const artifact = renderObject.material && renderObject.material.precompiledArtifact;
+		const auxShape = artifact && artifact.__tslpAuxShape;
 		return {
 			cacheKey: this.getForRenderCacheKey( renderObject ),
 			renderObject,
 			renderContextSelector: selector,
+			renderContextSelectorProfile: auxShape === 'background' ? 'background' : null,
 		};
 
 	}
@@ -204,11 +207,9 @@ class ReplayNodeManager extends DataMap {
 	}
 
 	getEnvironmentNode( scene ) { return this._sceneNodes.getEnvironmentNode( scene ); }
-	getBackgroundNode( scene ) { return this._sceneNodes.getBackgroundNode( scene ); }
 	getFogNode( scene ) { return this._sceneNodes.getFogNode( scene ); }
 	getCacheKey( scene, lightsNode ) { return this._sceneNodes.getCacheKey( scene, lightsNode ); }
 	getCacheNode( type, object, callback, forceUpdate = false ) { return this._sceneNodes.getCacheNode( type, object, callback, forceUpdate ); }
-	updateBackground( scene ) { return this._sceneNodes.updateBackground( scene ); }
 	updateFog( scene ) { return this._sceneNodes.updateFog( scene ); }
 	updateEnvironment( scene ) { return this._sceneNodes.updateEnvironment( scene ); }
 

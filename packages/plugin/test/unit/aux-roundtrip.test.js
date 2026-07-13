@@ -252,6 +252,8 @@ test( 'slim build: virtual aux module registers into the slim runtime registry',
 		const source = await plugin.load.call( makePluginContext(), id );
 		assert.match( source, /import \{ registerAuxArtifacts \} from "@tsl-precompile\/runtime\/slim";/ );
 		assert.match( source, /"configHash"\s*:\s*"abc123"/ );
+		assert.match( source, /"threeVersion"\s*:\s*"0\.184\.0"/ );
+		assert.match( source, /"pluginVersion"\s*:\s*"0\.1\.0"/ );
 		assert.match( source, /registerAuxArtifacts\( __auxEntries \);/ );
 
 	} finally {

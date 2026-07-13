@@ -114,7 +114,15 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 	// local runtime registry so the inspector panel sees captures live.
 	const trackLocal = ( shape, configHash, artifact, name = undefined ) => {
 
-		try { registerAuxArtifact( shape, configHash, artifact, { name } ); } catch ( _ ) { /* tolerate duplicates */ }
+		try {
+
+			registerAuxArtifact( shape, configHash, artifact, {
+				name,
+				threeVersion: hashOpts.threeVersion,
+				pluginVersion: hashOpts.pluginVersion,
+			} );
+
+		} catch ( _ ) { /* tolerate duplicates */ }
 
 	};
 

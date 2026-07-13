@@ -45,6 +45,7 @@ export const SLIM_COMPILER_MODULE_RULES = Object.freeze( [
 ] );
 
 export const SLIM_REPLAY_ADAPTER_RULES = Object.freeze( [
+	[ 'stock Background', /\/three\/src\/renderers\/common\/Background\.js$/ ],
 	[ 'stock Lighting', /\/three\/src\/renderers\/common\/Lighting\.js$/ ],
 	[ 'stock LightsNode', /\/three\/src\/nodes\/lighting\/LightsNode\.js$/ ],
 	[ 'stock NodeManager', /\/three\/src\/renderers\/common\/nodes\/NodeManager\.js$/ ],
@@ -286,6 +287,24 @@ const replayNodeManagerAdapter = {
 	},
 };
 
+/** Replay captured background passes without retaining Three's sky TSL graph. */
+const replayBackgroundAdapter = {
+	name: 'tsl-precompile:replay-background',
+	resolveId( id, importer ) {
+
+		const normalizedId = id.replace( /\\/g, '/' );
+		const normalizedImporter = typeof importer === 'string' ? importer.replace( /\\/g, '/' ) : '';
+		if ( /\/renderers\/common\/Background\.js$/.test( normalizedId )
+			|| ( normalizedId === './Background.js' && /\/renderers\/common\/Renderer\.js$/.test( normalizedImporter ) ) ) {
+
+			return resolve( __dirname, 'src/slim-replay-background.js' );
+
+		}
+		return null;
+
+	},
+};
+
 /**
  * Redirect bare `three` imports to three's tree-shakeable source barrel.
  *
@@ -383,6 +402,7 @@ export default {
 		auxVirtualStub,
 		webglFallbackStub,
 		pmremGeneratorStub,
+		replayBackgroundAdapter,
 		replayLightingAdapter,
 		replayNodeManagerAdapter,
 		threeBareAlias,

@@ -51,6 +51,7 @@ const REGISTRY = new Map();
  * @param {string} shape - e.g. 'background', 'post-process', 'pmrem', 'lights'.
  * @param {string} configHash - 64-char hex produced by `hashNodeGraphSync` or `hashPlainConfigSync`.
  * @param {Object} artifact - The artifact object (uniformPlan + WGSL + bindings).
+ * @param {{ name?: string, threeVersion?: string, pluginVersion?: string }} [opts]
  */
 export function registerAuxArtifact( shape, configHash, artifact, opts = {} ) {
 
@@ -64,7 +65,7 @@ export function registerAuxArtifact( shape, configHash, artifact, opts = {} ) {
 		throw new TypeError( 'registerAuxArtifact: configHash must be a non-empty string' );
 
 	}
-	stampAuxMetadata( artifact, shape, configHash, opts.name );
+	stampAuxMetadata( artifact, shape, configHash, opts );
 	normalizeRenderOutputFrameSizeUniform( artifact, shape );
 
 	// Pre-wire viewport/framebuffer texture fallbacks on registration so
@@ -81,11 +82,15 @@ export function registerAuxArtifact( shape, configHash, artifact, opts = {} ) {
  * Bulk-register from a flat table. Generated virtual modules prefer this
  * over many individual calls.
  *
- * @param {Array<{ shape: string, configHash: string, artifact: Object }>} entries
+ * @param {Array<{ shape: string, configHash: string, artifact: Object, name?: string, threeVersion?: string, pluginVersion?: string }>} entries
  */
 export function registerAuxArtifacts( entries ) {
 
-	for ( const e of entries ) registerAuxArtifact( e.shape, e.configHash, e.artifact, { name: e.name } );
+	for ( const e of entries ) registerAuxArtifact( e.shape, e.configHash, e.artifact, {
+		name: e.name,
+		threeVersion: e.threeVersion,
+		pluginVersion: e.pluginVersion,
+	} );
 
 }
 
@@ -153,6 +158,189 @@ export function loadAux( shape, configHash ) {
 		`Known ${ shape } configHashes in this bundle: ${ known.length === 0 ? '(none)' : known.map( ( x ) => x.slice( shape.length + 1 ) ).join( ', ' ) }. ` +
 		`Run dev mode on this scene so precompileAuxiliary() captures this config, then rebuild.`
 	);
+
+}
+
+/**
+ * Resolve the captured artifact for a runtime-owned auxiliary input without
+ * ever guessing between multiple captures.
+ *
+ * This is the replay-adapter counterpart to `loadAux()`: legacy rewritten
+ * Three modules may use shape fallback, while compiler-free adapters need a
+ * deterministic answer. An input bound with `bindAuxConfig()` is always
+ * resolved exactly. An unbound input is accepted only when the bundle has a
+ * single capture for the requested shape.
+ *
+ * @private
+ * @param {string} shape
+ * @param {Object|Function|null} input
+ * @param {{ computeConfigHash?: Function, defaultHashOptions?: { threeVersion: string, pluginVersion: string } }} [options]
+ * @return {{ shape: string, configHash: string, name: ?string, artifact: Object }}
+ */
+export function resolveAuxArtifactForInput( shape, input, options = {} ) {
+
+	if ( typeof shape !== 'string' || shape.length === 0 ) {
+
+		throw new TypeError( 'resolveAuxArtifactForInput: shape must be a non-empty string.' );
+
+	}
+
+	const boundShape = readAuxMetadataString( input, '__tslpAuxShape' );
+	const boundHash = readAuxMetadataString( input, '__tslpAuxConfigHash' );
+	if ( boundShape && boundShape !== shape ) {
+
+		throw auxSelectionError(
+			'AUX_ARTIFACT_SHAPE_MISMATCH',
+			`[tsl-precompile/aux] the runtime input is bound to ${ JSON.stringify( boundShape ) }, ` +
+				`but the ${ JSON.stringify( shape ) } replay adapter received it.`,
+			shape,
+			boundHash,
+			[],
+		);
+
+	}
+
+	const entries = registeredAuxEntries( shape );
+	if ( boundHash ) {
+
+		const artifact = REGISTRY.get( key( shape, boundHash ) );
+		if ( artifact ) return auxEntry( shape, boundHash, artifact );
+		throw auxSelectionError(
+			'AUX_ARTIFACT_NOT_FOUND',
+			`[tsl-precompile/aux] no exact ${ JSON.stringify( shape ) } artifact exists for the bound configHash ` +
+				`${ JSON.stringify( boundHash ) }. Known captures: ${ formatAuxEntries( entries ) }. ` +
+				`Capture this configuration again or bind the input to an existing capture with bindAuxByName().`,
+			shape,
+			boundHash,
+			entries,
+		);
+
+	}
+
+	if ( typeof options.computeConfigHash === 'function' ) {
+
+		const hashDomains = new Map();
+		for ( const entry of entries ) {
+
+			const hashOptions = entry.hashOptions || options.defaultHashOptions || null;
+			if ( ! validAuxHashOptions( hashOptions ) ) continue;
+			hashDomains.set( `${ hashOptions.threeVersion }\u0000${ hashOptions.pluginVersion }`, hashOptions );
+
+		}
+		if ( hashDomains.size === 0 && validAuxHashOptions( options.defaultHashOptions ) ) {
+
+			const hashOptions = options.defaultHashOptions;
+			hashDomains.set( `${ hashOptions.threeVersion }\u0000${ hashOptions.pluginVersion }`, hashOptions );
+
+		}
+		for ( const hashOptions of hashDomains.values() ) {
+
+			let computedHash = null;
+			try { computedHash = options.computeConfigHash( input, { shape, ...hashOptions } ); } catch ( _ ) { computedHash = null; }
+			if ( typeof computedHash !== 'string' || computedHash.length === 0 ) continue;
+			const artifact = REGISTRY.get( key( shape, computedHash ) );
+			if ( artifact ) return auxEntry( shape, computedHash, artifact );
+
+		}
+
+	}
+
+	if ( entries.length === 1 ) return entries[ 0 ];
+	if ( entries.length === 0 ) {
+
+		throw auxSelectionError(
+			'AUX_ARTIFACT_NOT_FOUND',
+			`[tsl-precompile/aux] no ${ JSON.stringify( shape ) } artifact is registered. ` +
+				`Run dev capture for this scene, then rebuild the slim bundle.`,
+			shape,
+			null,
+			entries,
+		);
+
+	}
+
+	throw auxSelectionError(
+		'AUX_ARTIFACT_AMBIGUOUS',
+		`[tsl-precompile/aux] ${ entries.length } ${ JSON.stringify( shape ) } artifacts are registered, ` +
+			`so an unbound runtime input cannot be selected safely. Known captures: ${ formatAuxEntries( entries ) }. ` +
+			`Call bindAuxByName(input, ${ JSON.stringify( shape ) }, captureName) or bindAuxConfig(input, ${ JSON.stringify( shape ) }, configHash).`,
+		shape,
+		null,
+		entries,
+	);
+
+}
+
+function registeredAuxEntries( shape ) {
+
+	const prefix = shape + ':';
+	const entries = [];
+	for ( const [ registryKey, artifact ] of REGISTRY ) {
+
+		if ( ! registryKey.startsWith( prefix ) ) continue;
+		entries.push( auxEntry( shape, registryKey.slice( prefix.length ), artifact ) );
+
+	}
+	return entries;
+
+}
+
+function auxEntry( shape, configHash, artifact ) {
+
+	const threeVersion = readAuxMetadataString( artifact, '__tslpAuxThreeVersion' );
+	const pluginVersion = readAuxMetadataString( artifact, '__tslpAuxPluginVersion' );
+	return {
+		shape,
+		configHash,
+		name: artifact && ( artifact.__tslpAuxName || artifact.__name || artifact.name ) || null,
+		artifact,
+		hashOptions: threeVersion && pluginVersion ? { threeVersion, pluginVersion } : null,
+	};
+
+}
+
+function validAuxHashOptions( options ) {
+
+	return !! options && typeof options.threeVersion === 'string' && options.threeVersion.length > 0
+		&& typeof options.pluginVersion === 'string' && options.pluginVersion.length > 0;
+
+}
+
+function readAuxMetadataString( input, property ) {
+
+	if ( ! input || ( typeof input !== 'object' && typeof input !== 'function' ) ) return null;
+	try {
+
+		const value = input[ property ];
+		return typeof value === 'string' && value.length > 0 ? value : null;
+
+	} catch ( _ ) {
+
+		return null;
+
+	}
+
+}
+
+function formatAuxEntries( entries ) {
+
+	if ( entries.length === 0 ) return '(none)';
+	return entries.map( ( entry ) => entry.name ? `${ entry.name } (${ entry.configHash })` : entry.configHash ).join( ', ' );
+
+}
+
+function auxSelectionError( code, message, shape, configHash, entries ) {
+
+	const selectionError = new Error( message );
+	selectionError.name = 'AuxArtifactSelectionError';
+	selectionError.code = code;
+	selectionError.shape = shape;
+	selectionError.configHash = configHash;
+	selectionError.knownCaptures = entries.map( ( entry ) => ( {
+		configHash: entry.configHash,
+		name: entry.name,
+	} ) );
+	return selectionError;
 
 }
 
@@ -308,15 +496,25 @@ export function bindAuxByName( node, shape, nameOrConfigHash ) {
 
 }
 
-function stampAuxMetadata( artifact, shape, configHash, name = undefined ) {
+function stampAuxMetadata( artifact, shape, configHash, opts = {} ) {
 
 	if ( ! artifact || typeof artifact !== 'object' ) return;
-	const auxName = name || artifact.__tslpAuxName || artifact.__name || artifact.name || null;
+	const auxName = opts.name || artifact.__tslpAuxName || artifact.__name || artifact.name || null;
 	try {
 
 		Object.defineProperty( artifact, '__tslpAuxShape', { value: shape, enumerable: false, configurable: true, writable: true } );
 		Object.defineProperty( artifact, '__tslpAuxConfigHash', { value: configHash, enumerable: false, configurable: true, writable: true } );
 		if ( auxName ) Object.defineProperty( artifact, '__tslpAuxName', { value: auxName, enumerable: false, configurable: true, writable: true } );
+		if ( typeof opts.threeVersion === 'string' && opts.threeVersion.length > 0 ) {
+
+			Object.defineProperty( artifact, '__tslpAuxThreeVersion', { value: opts.threeVersion, enumerable: false, configurable: true, writable: true } );
+
+		}
+		if ( typeof opts.pluginVersion === 'string' && opts.pluginVersion.length > 0 ) {
+
+			Object.defineProperty( artifact, '__tslpAuxPluginVersion', { value: opts.pluginVersion, enumerable: false, configurable: true, writable: true } );
+
+		}
 
 	} catch ( _ ) {
 		// Frozen/user-provided artifact objects still remain registered; they

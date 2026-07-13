@@ -13,6 +13,7 @@ import {
 	listAux,
 	findAux,
 	bindAuxByName,
+	resolveAuxArtifactForInput,
 	__resetAuxRegistryForTests,
 } from '../../../runtime/src/aux-loader.js';
 
@@ -141,6 +142,27 @@ test( 'aux-loader: named aux captures can be found and bound to a node', () => {
 	bindAuxByName( node, 'post-process', 'scene-bloom' );
 	assert.equal( node.__tslpAuxConfigHash, 'hash-pp' );
 	assert.equal( node.__tslpAuxShape, 'post-process' );
+
+} );
+
+test( 'aux-loader: deterministic resolver tries each registered hash domain before reporting ambiguity', () => {
+
+	__resetAuxRegistryForTests();
+	const first = {};
+	const second = {};
+	registerAuxArtifact( 'background', 'hash-old', first, { threeVersion: '0.184.0', pluginVersion: '0.1.0' } );
+	registerAuxArtifact( 'background', 'hash-new', second, { threeVersion: '0.185.0', pluginVersion: '0.1.0' } );
+	const domains = [];
+	const selected = resolveAuxArtifactForInput( 'background', { isNode: true }, {
+		computeConfigHash( _input, options ) {
+
+			domains.push( options.threeVersion );
+			return options.threeVersion === '0.185.0' ? 'hash-new' : 'miss';
+
+		},
+	} );
+	assert.equal( selected.artifact, second );
+	assert.deepEqual( domains, [ '0.184.0', '0.185.0' ] );
 
 } );
 

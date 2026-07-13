@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import ReplayNodeManager from '../src/slim-replay-node-manager.js';
 import { setSlimRenderFallback } from '../src/slim-support/render-fallback-registry.js';
+import { createRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
 
 function fakeRenderer() {
 
@@ -114,6 +115,30 @@ test( 'replay NodeManager stale deletion cannot evict a newer state at the same 
 	manager.delete( staleObject );
 	assert.equal( manager.nodeBuilderCache.size, 1 );
 	assert.equal( manager.getForRender( liveObject ), liveState );
+
+} );
+
+test( 'replay NodeManager applies the background selector profile from aux metadata', () => {
+
+	const sourceRenderer = fakeRenderer();
+	const unsigned = artifact();
+	const sourceMaterial = material( unsigned );
+	const live = renderObject( sourceRenderer, sourceMaterial, {
+		scene: {
+			fog: { isFogExp2: true },
+			environment: { isTexture: true, isCubeTexture: true, mapping: 301 },
+			traverse() {},
+		},
+	} );
+	const captureDescriptor = JSON.parse( createRenderObjectContextSelector( live, sourceRenderer ) );
+	captureDescriptor.scene = { fog: null, environment: null };
+	captureDescriptor.lights = [];
+	captureDescriptor.renderer.shadowMap = { enabled: false, type: 0 };
+	unsigned.renderContextSelectors = [ JSON.stringify( captureDescriptor ) ];
+	Object.defineProperty( unsigned, '__tslpAuxShape', { value: 'background' } );
+
+	const manager = new ReplayNodeManager( sourceRenderer, sourceRenderer.backend );
+	assert.doesNotThrow( () => manager.getForRender( live ) );
 
 } );
 

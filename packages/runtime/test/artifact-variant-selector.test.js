@@ -68,6 +68,52 @@ test( 'signed singleton artifacts also fail on an uncaptured topology', () => {
 
 } );
 
+test( 'signed background artifacts ignore scene-only topology but retain target topology', () => {
+
+	const captureSelector = JSON.stringify( {
+		version: 'render-object-selector@1',
+		renderer: { backend: { kind: 'webgpu' }, shadowMap: { enabled: false, type: 0 } },
+		target: { sampleCount: 1, colors: [ { kind: 'render-target', format: 1023 } ] },
+		scene: { fog: null, environment: null },
+		lights: [],
+		camera: { array: false },
+	} );
+	const replaySelector = JSON.stringify( {
+		version: 'render-object-selector@1',
+		renderer: { backend: { kind: 'webgpu' }, shadowMap: { enabled: true, type: 1 } },
+		target: { sampleCount: 1, colors: [ { kind: 'render-target', format: 1023 } ] },
+		scene: { fog: 'FogExp2', environment: { kind: 'cube' } },
+		lights: [ { type: 'DirectionalLight', castShadow: true } ],
+		camera: { array: false },
+	} );
+	const artifact = {
+		cacheKey: 'background',
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		uniformPlan: [],
+		bindings: [],
+		renderContextSelectors: [ captureSelector ],
+	};
+	assert.throws(
+		() => selectArtifactVariant( artifact, { renderContextSelector: replaySelector } ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+	);
+	assert.equal( selectArtifactVariant( artifact, {
+		renderContextSelector: replaySelector,
+		renderContextSelectorProfile: 'background',
+	} ), artifact );
+
+	const wrongTarget = JSON.stringify( { ...JSON.parse( replaySelector ), target: { sampleCount: 4 } } );
+	assert.throws(
+		() => selectArtifactVariant( artifact, {
+			renderContextSelector: wrongTarget,
+			renderContextSelectorProfile: 'background',
+		} ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+	);
+
+} );
+
 test( 'signed families reject unsigned siblings instead of falling through', () => {
 
 	const artifact = family();

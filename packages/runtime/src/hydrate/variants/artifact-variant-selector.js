@@ -1,6 +1,6 @@
 import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
 import { createArtifactVariantPayload } from '@tsl-precompile/contract/artifact-variants';
-import { createRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
+import { createRenderObjectContextSelector, projectRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
 
 // The registry replaces `artifact.variants` whenever a family grows, so a
@@ -33,6 +33,7 @@ export class ArtifactVariantSelectionError extends Error {
  *   cacheKey?: number|string|null,
  *   renderObject?: Object|null,
  *   renderContextSelector?: string|null,
+ *   renderContextSelectorProfile?: string|null,
  * }} [selection]
  * @return {Object}
  */
@@ -44,8 +45,9 @@ export function selectArtifactVariant( artifact, selection = {} ) {
 	const material = selection.material || null;
 	const cacheKey = selection.cacheKey ?? null;
 	const targetCount = renderObjectOutputCount( selection.renderObject ) || materialMRTOutputCount( material );
-	const selector = resolveSelector( selection );
-	const memoKey = `${ selector }::${ cacheKey === null ? '' : String( cacheKey ) }::${ targetCount }`;
+	const profile = selection.renderContextSelectorProfile || null;
+	const selector = projectRenderObjectContextSelector( resolveSelector( selection ), profile );
+	const memoKey = `${ profile || '' }::${ selector }::${ cacheKey === null ? '' : String( cacheKey ) }::${ targetCount }`;
 	let cacheState = variantViewCache.get( artifact );
 	if ( ! cacheState || cacheState.variants !== variants ) {
 
@@ -56,7 +58,7 @@ export function selectArtifactVariant( artifact, selection = {} ) {
 	const cache = cacheState.views;
 	if ( cache.has( memoKey ) ) return cache.get( memoKey );
 
-	const candidate = computeArtifactVariant( artifact, variants, { selector, cacheKey, targetCount } );
+	const candidate = computeArtifactVariant( artifact, variants, { selector, cacheKey, targetCount, profile } );
 	const view = candidate && candidate !== artifact ? mergeArtifactVariantView( artifact, candidate ) : artifact;
 	cache.set( memoKey, view );
 	return view;
@@ -66,11 +68,12 @@ export function selectArtifactVariant( artifact, selection = {} ) {
 function selectSingletonArtifact( artifact, selection ) {
 
 	if ( ! hasSelectors( artifact ) ) return artifact;
-	const selector = resolveSelector( selection );
+	const profile = selection.renderContextSelectorProfile || null;
+	const selector = projectRenderObjectContextSelector( resolveSelector( selection ), profile );
 	if ( selector ) {
 
-		if ( artifact.renderContextSelectors.includes( selector ) ) return artifact;
-		throw selectorMiss( selector, [ artifact ] );
+		if ( candidateSelectors( artifact, profile ).includes( selector ) ) return artifact;
+		throw selectorMiss( selector, [ artifact ], profile );
 
 	}
 	throw new ArtifactVariantSelectionError(
@@ -101,7 +104,7 @@ function resolveSelector( selection ) {
 
 function computeArtifactVariant( artifact, variants, selection ) {
 
-	const { selector, cacheKey, targetCount } = selection;
+	const { selector, cacheKey, targetCount, profile } = selection;
 	const candidates = collectCandidates( artifact, variants );
 	const signedCandidates = candidates.filter( hasSelectors );
 
@@ -119,8 +122,8 @@ function computeArtifactVariant( artifact, variants, selection ) {
 
 		if ( selector ) {
 
-			const matches = signedCandidates.filter( ( candidate ) => candidate.renderContextSelectors.includes( selector ) );
-			if ( matches.length === 0 ) throw selectorMiss( selector, signedCandidates );
+			const matches = signedCandidates.filter( ( candidate ) => candidateSelectors( candidate, profile ).includes( selector ) );
+			if ( matches.length === 0 ) throw selectorMiss( selector, signedCandidates, profile );
 			return chooseSemanticCandidate( matches, targetCount, selector );
 
 		}
@@ -128,7 +131,7 @@ function computeArtifactVariant( artifact, variants, selection ) {
 		throw new ArtifactVariantSelectionError(
 			'TSLP_VARIANT_SELECTOR_UNAVAILABLE',
 			'[tsl-precompile/slim] This material has multiple signed render variants, but the active RenderObject could not be described. Recapture it with the current toolchain.',
-			{ selectorCount: uniqueSelectors( signedCandidates ).length },
+			{ selectorCount: uniqueSelectors( signedCandidates, profile ).length },
 		);
 
 	}
@@ -245,9 +248,9 @@ function variantPayloadFingerprint( candidate ) {
 
 }
 
-function selectorMiss( selector, candidates ) {
+function selectorMiss( selector, candidates, profile = null ) {
 
-	const selectors = uniqueSelectors( candidates );
+	const selectors = uniqueSelectors( candidates, profile );
 	return new ArtifactVariantSelectionError(
 		'TSLP_VARIANT_SELECTOR_MISS',
 		`[tsl-precompile/slim] No captured artifact variant matches the active render topology (${ shortSelector( selector ) }). Captured ${ selectors.length } topology selector(s). Recapture this material with the missing topology.`,
@@ -256,9 +259,18 @@ function selectorMiss( selector, candidates ) {
 
 }
 
-function uniqueSelectors( candidates ) {
+function uniqueSelectors( candidates, profile = null ) {
 
-	return [ ...new Set( candidates.flatMap( ( candidate ) => Array.isArray( candidate.renderContextSelectors ) ? candidate.renderContextSelectors : [] ) ) ].sort();
+	return [ ...new Set( candidates.flatMap( ( candidate ) => candidateSelectors( candidate, profile ) ) ) ].sort();
+
+}
+
+function candidateSelectors( candidate, profile ) {
+
+	if ( ! candidate || ! Array.isArray( candidate.renderContextSelectors ) ) return [];
+	return candidate.renderContextSelectors
+		.filter( ( selector ) => typeof selector === 'string' && selector.length > 0 )
+		.map( ( selector ) => projectRenderObjectContextSelector( selector, profile ) );
 
 }
 

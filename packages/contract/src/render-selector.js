@@ -57,6 +57,51 @@ export function createRenderObjectContextSelector( renderObject, renderer = rend
 
 }
 
+/**
+ * Project a general render-object selector onto topology that can affect a
+ * renderer-owned auxiliary pass.
+ *
+ * Background materials explicitly disable lights and fog and do not consume
+ * the scene environment. Keeping those fields in their signed selector makes
+ * a capture from the minimal auxiliary scene impossible to replay in the
+ * user's real scene even though the generated sky WGSL is identical.
+ *
+ * Unknown profiles are returned unchanged so callers can opt in one adapter
+ * at a time without weakening ordinary material selection.
+ *
+ * @param {string} selector
+ * @param {string|null|undefined} profile
+ * @return {string}
+ */
+export function projectRenderObjectContextSelector( selector, profile ) {
+
+	if ( typeof selector !== 'string' ) return '';
+	if ( profile !== 'background' || selector.length === 0 ) return selector;
+	let descriptor;
+	try {
+
+		descriptor = JSON.parse( selector );
+
+	} catch ( _ ) {
+
+		return selector;
+
+	}
+	if ( ! descriptor || typeof descriptor !== 'object' || descriptor.version !== 'render-object-selector@1' ) return selector;
+
+	const projected = { ...descriptor, lights: [] };
+	delete projected.scene;
+	if ( projected.renderer && typeof projected.renderer === 'object' ) {
+
+		projected.renderer = { ...projected.renderer };
+		delete projected.renderer.shadowMap;
+		delete projected.renderer.contextNode;
+
+	}
+	return stableJsonStringify( projected, 'renderObjectSelector' );
+
+}
+
 function describeRenderer( renderer ) {
 
 	if ( ! renderer ) return null;

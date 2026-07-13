@@ -1,20 +1,16 @@
 /**
  * Temporary live-graph compatibility island for scene-owned nodes.
  *
- * The replay NodeManager itself is compiler-free, but Three's stock
- * Background still asks it to turn texture backgrounds into TSL nodes. Keep
- * that exact behavior isolated here until Background gets its own replay
- * adapter. Environment/fog cache keys and the private output-node method are
- * retained for compatibility with older unsigned artifacts and Three's
- * private renderer surface.
+ * Environment/fog cache keys and the private output-node method are retained
+ * for compatibility with older unsigned artifacts and Three's private
+ * renderer surface. Background owns a dedicated artifact replay adapter and
+ * therefore no longer constructs any live TSL graph here.
  */
 
-import { cubeMapNode } from 'three/src/nodes/utils/CubeMapNode.js';
 import {
 	cubeTexture,
 	densityFogFactor,
 	fog,
-	pmremTexture,
 	rangeFogFactor,
 	reference,
 	renderGroup,
@@ -22,11 +18,6 @@ import {
 	texture,
 } from 'three/src/nodes/TSL.js';
 import { builtin } from 'three/src/nodes/accessors/BuiltinNode.js';
-import {
-	CubeUVReflectionMapping,
-	EquirectangularReflectionMapping,
-	EquirectangularRefractionMapping,
-} from 'three/src/constants.js';
 import { hashArray } from 'three/src/nodes/core/NodeUtils.js';
 import { error } from 'three/src/utils.js';
 
@@ -49,53 +40,6 @@ export function createReplaySceneNodeCompatibility( manager ) {
 
 		}
 		return node;
-
-	}
-
-	function updateBackground( scene ) {
-
-		const sceneData = manager.get( scene );
-		const background = scene.background;
-		if ( background ) {
-
-			const forceUpdate = ( scene.backgroundBlurriness === 0 && sceneData.backgroundBlurriness > 0 )
-				|| ( scene.backgroundBlurriness > 0 && sceneData.backgroundBlurriness === 0 );
-			if ( sceneData.background !== background || forceUpdate ) {
-
-				const backgroundNode = getCacheNode( 'background', background, () => {
-
-					if ( background.isCubeTexture === true || (
-						background.mapping === EquirectangularReflectionMapping
-						|| background.mapping === EquirectangularRefractionMapping
-						|| background.mapping === CubeUVReflectionMapping
-					) ) {
-
-						if ( scene.backgroundBlurriness > 0 || background.mapping === CubeUVReflectionMapping ) {
-
-							return pmremTexture( background );
-
-						}
-						const envMap = background.isCubeTexture === true ? cubeTexture( background ) : texture( background );
-						return cubeMapNode( envMap );
-
-					}
-					if ( background.isTexture === true ) return texture( background, screenUV.flipY() ).setUpdateMatrix( true );
-					if ( background.isColor !== true ) error( 'WebGPUNodes: Unsupported background configuration.', background );
-					return undefined;
-
-				}, forceUpdate );
-				sceneData.backgroundNode = backgroundNode;
-				sceneData.background = background;
-				sceneData.backgroundBlurriness = scene.backgroundBlurriness;
-
-			}
-
-		} else if ( sceneData.backgroundNode ) {
-
-			delete sceneData.backgroundNode;
-			delete sceneData.background;
-
-		}
 
 	}
 
@@ -180,14 +124,6 @@ export function createReplaySceneNodeCompatibility( manager ) {
 
 	}
 
-	function getBackgroundNode( scene ) {
-
-		updateBackground( scene );
-		if ( scene.backgroundNode && scene.backgroundNode.isNode ) return scene.backgroundNode;
-		return manager.get( scene ).backgroundNode || null;
-
-	}
-
 	function getFogNode( scene ) {
 
 		updateFog( scene );
@@ -239,13 +175,11 @@ export function createReplaySceneNodeCompatibility( manager ) {
 
 	return {
 		cacheLib,
-		getBackgroundNode,
 		getCacheKey,
 		getCacheNode,
 		getEnvironmentNode,
 		getFogNode,
 		getOutputNode,
-		updateBackground,
 		updateEnvironment,
 		updateFog,
 	};

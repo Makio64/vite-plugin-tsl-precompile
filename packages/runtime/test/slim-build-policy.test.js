@@ -24,6 +24,7 @@ test( 'slim replay-adapter policy rejects stock lighting and manager residue', (
 		'three.webgpu.slim.js': {
 			modules: {
 				'/three/src/renderers/common/Lighting.js': { renderedLength: 400 },
+				'/three/src/renderers/common/Background.js': { renderedLength: 700 },
 				'/three/src/nodes/lighting/LightsNode.js': { renderedLength: 900 },
 				'/three/src/renderers/common/nodes/NodeManager.js': { renderedLength: 800 },
 				'/three/src/renderers/common/nodes/NodeBuilderState.js': { renderedLength: 600 },
@@ -32,7 +33,7 @@ test( 'slim replay-adapter policy rejects stock lighting and manager residue', (
 		},
 	} );
 
-	assert.deepEqual( found.map( ( item ) => item.label ), [ 'stock LightsNode', 'stock NodeManager', 'stock NodeBuilderState', 'stock Lighting' ] );
+	assert.deepEqual( found.map( ( item ) => item.label ), [ 'stock LightsNode', 'stock NodeManager', 'stock Background', 'stock NodeBuilderState', 'stock Lighting' ] );
 
 } );
 

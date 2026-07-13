@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
 	createRenderObjectContextSelector,
 	describeRenderObjectContext,
+	projectRenderObjectContextSelector,
 } from '@tsl-precompile/contract/render-selector';
 
 test( 'render selector uses active attachments and public selective-light topology', () => {
@@ -73,6 +74,30 @@ test( 'render selector distinguishes material shader-branch flags and enums', ()
 		assert.notEqual( createRenderObjectContextSelector( base ), selector, property );
 
 	}
+
+} );
+
+test( 'background selector projection ignores scene lighting, fog, environment, and shadow state', () => {
+
+	const capture = fixture();
+	const replay = fixture();
+	replay.scene.fog = null;
+	replay.scene.environment = { isTexture: true, mapping: 306, format: 1023 };
+	const replayLights = replay.lightsNode.getLights();
+	replay.lightsNode = { getLights: () => [ ...replayLights, { isLight: true, type: 'PointLight', castShadow: false } ] };
+	replay.renderer.shadowMap = { enabled: false, type: 0 };
+	assert.notEqual( createRenderObjectContextSelector( capture ), createRenderObjectContextSelector( replay ) );
+	assert.equal(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'background' ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'background' ),
+	);
+
+	replay.context.sampleCount = 1;
+	assert.notEqual(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'background' ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'background' ),
+		'target topology remains signed',
+	);
 
 } );
 

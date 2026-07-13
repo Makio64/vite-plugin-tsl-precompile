@@ -6831,6 +6831,27 @@ function __environmentSourceTextures( scene, includeBackgroundFallback = false )
 // already cached bindings against fallbackCubeTexture.
 const __lastWiredBgTex = new WeakMap();
 
+function __backgroundArtifactRefsMatch( artifact, texture, pmremTextures = null ) {
+	if ( pmremTextures ) {
+		const sourceUuids = __artifactPMREMSourceUuids( artifact );
+		if ( sourceUuids.length === 0 ) return true;
+		if ( pmremTextures.length < sourceUuids.length ) return false;
+		const refs = artifact && artifact._textureRefs instanceof Map ? artifact._textureRefs : null;
+		if ( ! refs ) return false;
+		return sourceUuids.every( ( uuid, index ) => refs.get( uuid ) === pmremTextures[ index ] );
+	}
+	const sourceUuids = new Set();
+	for ( const group of artifact && artifact.uniformPlan || [] ) {
+		for ( const entry of group.textures || [] ) {
+			const source = entry && entry.source || {};
+			if ( source.kind === 'artifact.texture' && source.textureUuid ) sourceUuids.add( source.textureUuid );
+		}
+	}
+	if ( sourceUuids.size === 0 ) return true;
+	const refs = artifact && artifact._textureRefs instanceof Map ? artifact._textureRefs : null;
+	return !! refs && [ ...sourceUuids ].every( ( uuid ) => refs.get( uuid ) === texture );
+}
+
 function __registerArtifactTextureRefOverride( sourceUuid, texture ) {
 	if ( ! sourceUuid || ! texture || texture.isTexture !== true ) return;
 	const root = typeof globalThis !== 'undefined' ? globalThis : window;
@@ -7010,13 +7031,19 @@ function __wireBackgroundTextures( scene, renderer ) {
 					? 'pmrem:' + __textureListSignature( pmremTextures, __artifactPMREMSourceUuids( artifact ).length )
 					: texToWire;
 				if ( __lastWiredBgTex.get( artifact ) !== key ) {
-					if ( pmremTextures ) {
-						if ( ! __attachPMREMRefsByOrder( artifact, pmremTextures ) ) continue;
-					} else {
-						Slim.attachArtifactTextureRefs( artifact, texToWire );
+					const refsAlreadyMatch = __backgroundArtifactRefsMatch( artifact, texToWire, pmremTextures );
+					if ( ! refsAlreadyMatch ) {
+						if ( pmremTextures ) {
+							if ( ! __attachPMREMRefsByOrder( artifact, pmremTextures ) ) continue;
+						} else {
+							Slim.attachArtifactTextureRefs( artifact, texToWire );
+						}
 					}
 					__lastWiredBgTex.set( artifact, key );
-					changed = true;
+					// Registry artifacts are seed templates once ReplayBackground owns a
+					// per-scene clone. Updating a template must not dispose an already
+					// correct active mesh; only a changed active clone needs rehydration.
+					if ( ! refsAlreadyMatch && ( ! cachedBackgroundArtifact || artifact === cachedBackgroundArtifact ) ) changed = true;
 					try {
 						if ( __backgroundNeedsCube ) {
 							const diag = __backgroundCubeDiagnostics();

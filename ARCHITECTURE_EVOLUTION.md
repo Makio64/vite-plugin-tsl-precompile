@@ -202,6 +202,28 @@ missing particles are a capture/topology parity issue rather than compute
 state hydration; that mismatch remains a separate fix rather than a reason to
 weaken signed variant selection.
 
+**Replay-native Background wedge (2026-07-13).** Slim builds now redirect
+Three's stock `Background` to a captured-pass adapter and prohibit the stock
+module from contributing bytes. This fixes a real selection-boundary mismatch:
+capture hashes raw `scene.backgroundNode || scene.background`, while the old
+runtime re-hashed a generated Texture/Cube/PMREM node wrapper and then silently
+fell back to the first background capture. Replay now resolves an explicitly
+bound hash exactly, hashes raw inputs against the version domain recorded with
+each capture, auto-selects only when one background artifact exists, and throws
+a typed ambiguity error otherwise. Signed background selectors intentionally
+exclude lights, fog, environment, and shadow state that the sky material cannot
+consume while retaining target/MRT topology. Each scene gets an artifact-local
+texture-ref map and its own precompiled sky material; compatible direct textures
+are wired without replacing CubeUV/PMREM resources with raw sources.
+Clear colors, forced color clears, XR blend overrides, alpha premultiplication,
+sky geometry/state, replacement, and disposal retain Three's behavior. The
+background graph was removed from the temporary scene-node island, cutting the
+strict bundle to 92 Node/TSL modules / 396.9 KiB rendered and 887,050 raw /
+239,966 gzip bytes. Focused replay canaries pass at 52.81 dB
+(`webgpu_custom_fog_background`) and 30.45 dB (`webgpu_cubemap_dynamic`). PMREM
+generation remains the next resource adapter rather than being folded into
+background selection.
+
 ---
 
 ## 2026-06-09 audit refresh — corrections to the map

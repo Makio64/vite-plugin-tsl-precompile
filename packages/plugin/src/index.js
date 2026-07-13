@@ -561,7 +561,14 @@ export default function tslPrecompile( userOpts = {} ) {
 
 					const artifact = e.entry && e.entry.artifact ? e.entry.artifact : e.entry;
 					const name = e.entry && ( e.entry.__name || e.entry.name ) || artifact && ( artifact.__name || artifact.name ) || null;
-					return { shape: e.shape, configHash: e.configHash, name, artifact };
+					return {
+						shape: e.shape,
+						configHash: e.configHash,
+						name,
+						threeVersion: opts.threeVersion,
+						pluginVersion: PLUGIN_VERSION,
+						artifact,
+					};
 
 				} );
 				const {
