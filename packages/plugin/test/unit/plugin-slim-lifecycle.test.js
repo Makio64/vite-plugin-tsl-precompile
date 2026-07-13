@@ -153,7 +153,17 @@ async function buildRealSlimSourceFixture( mainSource ) {
 		} );
 		const output = Array.isArray( result ) ? result.flatMap( ( item ) => item.output || [] ) : result.output;
 		const chunks = output.filter( ( item ) => item.type === 'chunk' );
-		return { root, moduleIds: chunks.flatMap( ( chunk ) => Object.keys( chunk.modules || {} ) ) };
+		const renderedModuleLengths = new Map();
+		for ( const chunk of chunks ) {
+
+			for ( const [ id, module ] of Object.entries( chunk.modules || {} ) ) {
+
+				renderedModuleLengths.set( id, ( renderedModuleLengths.get( id ) || 0 ) + Number( module.renderedLength || 0 ) );
+
+			}
+
+		}
+		return { root, moduleIds: [ ...renderedModuleLengths.keys() ], renderedModuleLengths };
 
 	} catch ( error ) {
 
@@ -327,7 +337,7 @@ test( 'source slim build aliases the tree-shaken entry and routes private Three 
 		);
 		const guardId = plugin.resolveId( 'virtual:tsl-precompile/__slim-source' );
 		assert.equal( guardId, '\0virtual:tsl-precompile/__slim-source' );
-		assert.match( await plugin.load( guardId ), /slim-three-policy@7/ );
+		assert.match( await plugin.load( guardId ), /slim-three-policy@8/ );
 
 	} finally {
 
@@ -394,7 +404,7 @@ test( 'source slim completes a real Vite build with guard, rewrites, and adapter
 	].join( '\n' ) );
 	try {
 
-		const { moduleIds } = fixture;
+		const { moduleIds, renderedModuleLengths } = fixture;
 
 		assert.ok( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-source-entry.js' ) ) );
 		assert.ok( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-bootstrap.js' ) ) );
@@ -411,7 +421,11 @@ test( 'source slim completes a real Vite build with guard, rewrites, and adapter
 		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/three/src/Three.Core.js' ) ), false );
 		assert.equal( moduleIds.some( ( id ) => /\/three\/build\/three(?:\.module|\.core)\.js$/.test( id ) ), false );
 		assert.deepEqual( moduleIds.filter( ( id ) => getSlimThreeCompilerModule( id ) ), [] );
-		assert.deepEqual( moduleIds.filter( ( id ) => getSlimThreeReplayAdapterModule( id ) ), [] );
+		assert.deepEqual(
+			moduleIds.filter( ( id ) => renderedModuleLengths.get( id ) > 0 && getSlimThreeReplayAdapterModule( id ) ),
+			[],
+			'rewrite shells may remain in Rollup metadata, but stock adapter source must render zero bytes',
+		);
 
 	} finally {
 

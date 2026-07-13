@@ -114,6 +114,20 @@ shader; format, samples, depth/stencil, and attachment topology remain signed.
 Update the rewrite fixture, capture helper, descriptor contract, and direct
 cubemap canary together if upstream changes this method.
 
+The last retained Three Node-core owners have exact whole-module r184 seams.
+`nodes/core/NodeUtils.js` is replaced by pure named re-exports of only `hash`,
+`hashArray`, and `hashString`; `nodes/core/constants.js` is replaced by only
+`NodeAccess`. Their implementation lives in the private
+`node-core-primitives` rewrite runtime module so the slim graph does not retain
+the stock modules' unused math, stack-trace, type-construction, and node-stage
+exports. Each gate fingerprints the complete comment-free compact AST, not raw
+source formatting. Any import, declaration, expression, or export drift rejects
+the rewrite. If a future retained Three path consumes one of the deliberately
+omitted exports, ESM linking must fail; do not grow the private primitive
+surface until the new consumer and its slim-runtime need are reviewed. Update
+both fingerprints, the four-export fixture, the residue policy, and focused
+bundle metrics together when upgrading Three.
+
 Local assumption: `Object3DNode` instances with an explicit `object3d.isCamera`
 target are serialized as `object3d.*` sources with `target: "camera"`. This
 preserves TSL like `objectPosition(camera)` in post-processing passes, where

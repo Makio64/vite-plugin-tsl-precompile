@@ -6,14 +6,14 @@
     "maxGzipBytes": 212000,
     "maxCompilerModules": 0,
     "maxStockAdapterModules": 0,
-    "maxRetainedNodeModules": 2,
-    "maxRetainedNodeRenderedBytes": 2500
+    "maxRetainedNodeModules": 0,
+    "maxRetainedNodeRenderedBytes": 0
   },
   "source": {
     "maxCompilerModules": 0,
     "maxStockAdapterModules": 0,
-    "maxRetainedNodeModules": 2,
-    "maxRetainedNodeRenderedBytes": 1536,
+    "maxRetainedNodeModules": 0,
+    "maxRetainedNodeRenderedBytes": 0,
     "maxBareThreeIdentityModules": 0,
     "fixtures": {
       "minimal": { "maxGzipBytes": 139000 },

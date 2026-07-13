@@ -18,10 +18,13 @@
  * Current targets include renderer/background/post-processing auxiliaries,
  * shadow-depth auxiliaries,
  * NodeManager builder bypass, WebGPU backend/pipeline compatibility patches,
- * and CubeRenderTarget helper material rewrites.
+ * CubeRenderTarget helper material rewrites, and exact whole-module Node core
+ * primitive replacements.
  *
  * @module ThreeRewrite
  */
+
+import { createHash } from 'node:crypto';
 
 import { parse } from '@babel/parser';
 import _traverse from '@babel/traverse';
@@ -34,6 +37,8 @@ const traverse = _traverse.default || _traverse;
 const generate = _generate.default || _generate;
 
 const SLIM_REWRITE_RUNTIME_PREFIX = 'virtual:tsl-precompile/__slim-rewrite-runtime/';
+const NODE_CORE_PRIMITIVES_RUNTIME_MODULE_ID = 'node-core-primitives';
+const NODE_CORE_PRIMITIVES_VIRTUAL_ID = SLIM_REWRITE_RUNTIME_PREFIX + NODE_CORE_PRIMITIVES_RUNTIME_MODULE_ID;
 
 /**
  * Private runtime owners used by rewritten Three source.
@@ -55,6 +60,7 @@ export const SLIM_REWRITE_RUNTIME_MODULE_RULES = Object.freeze( [
 	{ id: 'postprocess-replay', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'postprocess-replay', runtimeFile: 'slim-support/postprocess-effects-replay.js' },
 	{ id: 'hydrator', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'hydrator', runtimeFile: 'hydrator.js' },
 	{ id: 'render-fallback-registry', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'render-fallback-registry', runtimeFile: 'slim-support/render-fallback-registry.js' },
+	{ id: NODE_CORE_PRIMITIVES_RUNTIME_MODULE_ID, virtualId: NODE_CORE_PRIMITIVES_VIRTUAL_ID, runtimeFile: 'slim-replay-node-core-primitives.js' },
 ].map( ( rule ) => Object.freeze( rule ) ) );
 
 const SLIM_REWRITE_RUNTIME_MODULES_BY_ID = new Map(
@@ -93,6 +99,8 @@ export function getSlimRewriteRuntimeModuleRule( id ) {
 }
 
 const REWRITE_HANDLERS_BY_FAMILY = Object.freeze( {
+	'node-utils': rewriteNodeUtils,
+	'node-core-constants': rewriteNodeCoreConstants,
 	'cube-render-target': rewriteCubeRenderTarget,
 	renderer: rewriteRenderer,
 	'render-object': rewriteRenderObject,
@@ -211,6 +219,69 @@ function pickHandler( id ) {
 
 	const target = getSlimThreeRewriteTarget( id );
 	return target ? REWRITE_HANDLERS_BY_FAMILY[ target.rewriteFamily ] || null : null;
+
+}
+
+// -------------------------------------------------------------------------
+// Node core primitive whole-module handlers
+// -------------------------------------------------------------------------
+//
+// The slim graph retains only Three's stable hash helpers and the storage
+// access enum. Keeping their stock owner modules also keeps every import and
+// otherwise-unused export in those modules alive because Three does not mark
+// its source as side-effect-free. These handlers replace the complete r184
+// modules with narrow re-export shells owned by the runtime.
+//
+// A compact AST fingerprint deliberately ignores comments and formatting but
+// covers every import, declaration, expression, and export in the installed
+// source. Any semantic upstream drift rejects the whole rewrite. If another
+// retained Three module starts consuming one of the exports we intentionally
+// omit, Rollup's ESM linker fails instead of silently growing the Node graph.
+
+const NODE_UTILS_R184_AST_SHA256 = '6265ad8b2e2337d625ffa0691b9b949fbfef25ee5a6b7034be26dd2f241f1ab7';
+const NODE_CORE_CONSTANTS_R184_AST_SHA256 = 'fe34fd8c46b2a1c9629c137f9eae342f51627602c25abfe6696716458d866c24';
+
+function compactAstFingerprint( ast ) {
+
+	const source = generate( ast, { compact: true, comments: false } ).code;
+	return createHash( 'sha256' ).update( source ).digest( 'hex' );
+
+}
+
+function assertExactModuleShape( ast, label, expectedFingerprint ) {
+
+	const actualFingerprint = compactAstFingerprint( ast );
+	if ( actualFingerprint !== expectedFingerprint ) {
+
+		throw new Error( `${ label }: complete r184 module AST changed (expected ${ expectedFingerprint }, got ${ actualFingerprint })` );
+
+	}
+
+}
+
+function replaceWithNamedRuntimeReExports( ast, names ) {
+
+	ast.program.body = [ t.exportNamedDeclaration(
+		null,
+		names.map( ( name ) => t.exportSpecifier( t.identifier( name ), t.identifier( name ) ) ),
+		t.stringLiteral( NODE_CORE_PRIMITIVES_VIRTUAL_ID ),
+	) ];
+
+}
+
+function rewriteNodeUtils( ast, ctx ) {
+
+	assertExactModuleShape( ast, 'NodeUtils', NODE_UTILS_R184_AST_SHA256 );
+	replaceWithNamedRuntimeReExports( ast, [ 'hash', 'hashArray', 'hashString' ] );
+	ctx.touched = true;
+
+}
+
+function rewriteNodeCoreConstants( ast, ctx ) {
+
+	assertExactModuleShape( ast, 'nodes/core/constants', NODE_CORE_CONSTANTS_R184_AST_SHA256 );
+	replaceWithNamedRuntimeReExports( ast, [ 'NodeAccess' ] );
+	ctx.touched = true;
 
 }
 

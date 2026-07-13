@@ -46,12 +46,12 @@ test( 'guarded and prebuilt slim entries share one exact source surface', () => 
 
 test( 'source entry fails closed when plugin and runtime policy revisions differ', () => {
 
-	assert.equal( RUNTIME_SLIM_THREE_POLICY_VERSION, 'slim-three-policy@7' );
+	assert.equal( RUNTIME_SLIM_THREE_POLICY_VERSION, 'slim-three-policy@8' );
 	assert.equal( RUNTIME_SLIM_THREE_POLICY_VERSION, SLIM_THREE_POLICY_VERSION, 'bump the runtime-owned handshake with the shared policy' );
-	assert.doesNotThrow( () => assertSlimSourcePolicyCompatibility( 'slim-three-policy@7' ) );
+	assert.doesNotThrow( () => assertSlimSourcePolicyCompatibility( 'slim-three-policy@8' ) );
 	assert.throws(
-		() => assertSlimSourcePolicyCompatibility( 'slim-three-policy@6' ),
-		/slim source policy mismatch[\s\S]*runtime expects slim-three-policy@7[\s\S]*plugin provided slim-three-policy@6/,
+		() => assertSlimSourcePolicyCompatibility( 'slim-three-policy@7' ),
+		/slim source policy mismatch[\s\S]*runtime expects slim-three-policy@8[\s\S]*plugin provided slim-three-policy@7/,
 	);
 
 } );
@@ -59,11 +59,11 @@ test( 'source entry fails closed when plugin and runtime policy revisions differ
 test( 'slim source surface preserves the prebuilt named compatibility allowlist', () => {
 
 	const exports = namedExports( common );
-	assert.equal( exports.size, 286 );
+	assert.equal( exports.size, 287 );
 	for ( const name of [
 		'WebGPURenderer', 'Scene', 'PerspectiveCamera', 'Mesh', 'BoxGeometry',
 		'MeshStandardMaterial', 'PrecompiledMaterial', 'PrecompiledComputeNode',
-		'PostProcessing', 'RenderPipeline', 'TSL', 'hydrateNodeBuilderState',
+		'PostProcessing', 'RenderPipeline', 'TSL', 'NodeAccess', 'NodeUtils', 'hydrateNodeBuilderState',
 		'registerAuxArtifacts', '__TSLP_SLIM__',
 	] ) assert.equal( exports.has( name ), true, name );
 

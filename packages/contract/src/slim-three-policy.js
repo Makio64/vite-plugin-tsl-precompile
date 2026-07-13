@@ -7,7 +7,7 @@
  * replaced by replay adapters, or rejected as runtime compiler residue.
  */
 
-export const SLIM_THREE_POLICY_VERSION = 'slim-three-policy@7';
+export const SLIM_THREE_POLICY_VERSION = 'slim-three-policy@8';
 
 /** Exact Three package patch used to build the published prebuilt slim file. */
 export const SLIM_THREE_PACKAGE_VERSION = '0.184.0';
@@ -36,6 +36,8 @@ function freezeRules( rules ) {
 
 /** Three source files with an AST rewrite implementation in the plugin. */
 export const SLIM_THREE_REWRITE_TARGETS = freezeRules( [
+	{ id: 'node-utils', sourcePath: 'nodes/core/NodeUtils.js', rewriteFamily: 'node-utils', role: SLIM_THREE_MODULE_ROLES.REWRITE },
+	{ id: 'node-core-constants', sourcePath: 'nodes/core/constants.js', rewriteFamily: 'node-core-constants', role: SLIM_THREE_MODULE_ROLES.REWRITE },
 	{ id: 'cube-render-target', sourcePath: 'renderers/common/CubeRenderTarget.js', rewriteFamily: 'cube-render-target', role: SLIM_THREE_MODULE_ROLES.REWRITE },
 	{ id: 'renderer', sourcePath: 'renderers/common/Renderer.js', rewriteFamily: 'renderer', role: SLIM_THREE_MODULE_ROLES.REWRITE },
 	{ id: 'render-object', sourcePath: 'renderers/common/RenderObject.js', rewriteFamily: 'render-object', role: SLIM_THREE_MODULE_ROLES.REWRITE },
@@ -67,6 +69,8 @@ export const SLIM_THREE_COMPILER_MODULES = freezeRules( [
 
 /** Stock modules whose runtime behavior is owned by slim replay adapters. */
 export const SLIM_THREE_REPLAY_ADAPTER_MODULES = freezeRules( [
+	{ id: 'node-utils', label: 'stock NodeUtils', sourcePath: 'nodes/core/NodeUtils.js', role: SLIM_THREE_MODULE_ROLES.REPLAY_ADAPTER },
+	{ id: 'node-core-constants', label: 'stock node constants', sourcePath: 'nodes/core/constants.js', role: SLIM_THREE_MODULE_ROLES.REPLAY_ADAPTER },
 	{ id: 'background', label: 'stock Background', sourcePath: 'renderers/common/Background.js', role: SLIM_THREE_MODULE_ROLES.REPLAY_ADAPTER },
 	{ id: 'lighting', label: 'stock Lighting', sourcePath: 'renderers/common/Lighting.js', role: SLIM_THREE_MODULE_ROLES.REPLAY_ADAPTER },
 	{ id: 'lights-node', label: 'stock LightsNode', sourcePath: 'nodes/lighting/LightsNode.js', role: SLIM_THREE_MODULE_ROLES.REPLAY_ADAPTER },

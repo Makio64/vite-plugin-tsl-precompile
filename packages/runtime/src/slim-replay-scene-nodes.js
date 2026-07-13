@@ -8,7 +8,7 @@
  */
 
 import { createSceneRenderTopologySelector } from '@tsl-precompile/contract/render-selector';
-import { hashArray, hashString } from 'three/src/nodes/core/NodeUtils.js';
+import { hashArray, hashString } from './slim-replay-node-core-primitives.js';
 
 export function createReplaySceneNodeCompatibility( manager ) {
 

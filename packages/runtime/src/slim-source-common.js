@@ -247,7 +247,7 @@ export {
 	VolumeNodeMaterial,
 	LineBasicNodeMaterial, LineDashedNodeMaterial, Line2NodeMaterial,
 	PointsNodeMaterial, SpriteNodeMaterial, ShadowNodeMaterial,
-	WebGLBackend, LightsNode, LightingModel, ShadowBaseNode, RectAreaLightNode, NodeUtils,
+	WebGLBackend, LightsNode, LightingModel, ShadowBaseNode, RectAreaLightNode, NodeAccess, NodeUtils,
 	R11_EAC_Format, RG11_EAC_Format, R_EAC_Signed_Format, RG_EAC_Signed_Format,
 } from './slim-stubs.js';
 

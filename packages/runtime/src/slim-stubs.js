@@ -37,7 +37,7 @@ import { Vector2 } from 'three/src/math/Vector2.js';
 import { Vector4 } from 'three/src/math/Vector4.js';
 import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttribute.js';
 import StorageInstancedBufferAttribute from 'three/src/renderers/common/StorageInstancedBufferAttribute.js';
-import { hashArray } from 'three/src/nodes/core/NodeUtils.js';
+import { NodeAccess, hash, hashArray, hashString } from './slim-replay-node-core-primitives.js';
 import { registerLiveUniformNode } from './slim-support/live-uniform-registry.js';
 import { attachLiveNodeDependency } from './slim-support/node-dependencies.js';
 
@@ -296,16 +296,16 @@ function storageCarrierNode( attribute, nodeType = null ) {
 }
 
 /**
- * A Proxy that pretends to be the full TSL namespace. Every property access
- * returns a function that throws with a helpful message naming the accessed
- * field. Suitable for satisfying module-load-time imports without actually
- * providing any TSL functionality.
+ * A Proxy that pretends to be the full TSL namespace. The graph-free
+ * NodeAccess enum remains usable; unsupported builder properties return a
+ * function that throws with a helpful message naming the accessed field.
  */
-export const TSL = new Proxy( {}, {
-	get( _target, prop ) {
+export const TSL = new Proxy( Object.freeze( { NodeAccess } ), {
+	get( target, prop ) {
 
 		if ( prop === Symbol.toPrimitive ) return () => '[TSL slim-stub]';
 		if ( prop === 'toString' ) return () => '[TSL slim-stub]';
+		if ( Reflect.has( target, prop ) ) return Reflect.get( target, prop );
 		// Common introspection-friendly fallthroughs.
 		if ( prop === '__esModule' ) return true;
 		if ( prop === 'builtinAOContext' ) return builtinAOContext;
@@ -1232,17 +1232,21 @@ export class CanvasTarget {
 }
 
 /**
- * `NodeUtils` — namespace of TSL utility helpers. Same Proxy-throw pattern.
+ * `NodeUtils` — the r184 graph-free hash surface remains usable by addons;
+ * compiler/type-construction helpers retain the loud Proxy-throw behavior.
  */
-export const NodeUtils = new Proxy( {}, {
-	get( _target, prop ) {
+export const NodeUtils = new Proxy( Object.freeze( { hash, hashArray, hashString } ), {
+	get( target, prop ) {
 
 		if ( prop === Symbol.toPrimitive || prop === 'toString' ) return () => '[NodeUtils slim-stub]';
 		if ( prop === '__esModule' ) return true;
+		if ( Reflect.has( target, prop ) ) return Reflect.get( target, prop );
 		return throwSlim( `NodeUtils.${ String( prop ) }` );
 
 	},
 } );
+
+export { NodeAccess };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TSL function stubs — Task `mrt-tsl-stub-leak`

@@ -91,7 +91,7 @@ test( 'hash options come from the authoritative minification-safe bundle stamp',
 		sourceFingerprint: 'a'.repeat( 64 ),
 		versions: {
 			three: '0.184.0',
-			policy: 'slim-three-policy@7',
+			policy: 'slim-three-policy@8',
 			artifactToolchain: '0.1.0',
 			buildToolchain: 'tslp-slim-rollup@1',
 		},

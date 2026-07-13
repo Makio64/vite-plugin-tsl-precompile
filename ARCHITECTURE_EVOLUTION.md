@@ -520,7 +520,7 @@ MSAA, depth/stencil, and multiview topology. Capture supports matching custom
 `targetOptions` / `cubeRenderTargetOptions`, rejects color-incompatible source
 families, uses CubeCamera's exact perspective face camera, waits for the
 renderer compile queue before temporarily mutating sampler state, and requires
-every artifact variant to retain exactly one source-texture identity. Offline
+the complete artifact family to retain exactly one source-texture identity. Offline
 capture, browser capture, and replay share that evidence validator and the
 exact `0.184.0` hash domain.
 
@@ -536,10 +536,10 @@ projection before its cache key so all six faces share one hydrated state.
 The source/runtime handshake advances to `slim-three-policy@7`.
 
 The strict prebuilt falls from 825,688 raw / 226,395 gzip-9 bytes, 381 modules,
-and 51 retained Node modules / 239,415 rendered bytes to 767,947 raw / 209,741
+and 51 retained Node modules / 239,415 rendered bytes to 768,161 raw / 209,773
 gzip-9 bytes, 333 modules, and 2 retained Node modules / 2,293 rendered bytes.
-Minimal and advanced `slim: 'source'` fixtures measure 489,972 raw / 136,788
-gzip and 519,492 raw / 144,715 gzip respectively; both retain 2 Node modules /
+Minimal and advanced `slim: 'source'` fixtures measure 490,030 raw / 136,793
+gzip and 519,550 raw / 144,719 gzip respectively; both retain 2 Node modules /
 1,190 rendered bytes. Production caps are tightened to 770,000 raw / 212,000
 gzip, 2 prebuilt Node modules / 2,500 rendered bytes, 139,000 and 147,000 source
 gzip, and 2 source Node modules / 1,536 rendered bytes. Compiler, stock-adapter,
@@ -552,6 +552,30 @@ hash domain is now read from the signed slim provenance stamp rather than an
 incidental minified object literal, and replay's wrapper forwards exports from
 the same cache-busted bundle URL it imports, preserving one ESM module and one
 aux registry identity.
+
+**Zero stock Node/TSL runtime (2026-07-13).** The final retained Three Node
+owners were `nodes/core/NodeUtils.js` (only `hash`, `hashArray`, and
+`hashString` remained live) and `nodes/core/constants.js` (only `NodeAccess`).
+The private runtime owner `slim-replay-node-core-primitives.js` now preserves
+the exact r184 cyrb53 arithmetic and access strings. Runtime-owned consumers
+import it directly; complete comment-free compact-AST SHA gates rewrite the
+two Three modules to pure four-symbol re-export shells. Both modules are also
+classified as forbidden stock-adapter residue, so semantic drift rejects the
+rewrite and any rendered stock byte fails the build. A new consumer of an
+omitted export fails at ESM link time instead of silently expanding the shim.
+
+The safe primitives remain useful to developers: `NodeUtils.hash*`, the named
+`NodeAccess` export, and `TSL.NodeAccess` now work in slim mode, while compiler
+and type-construction helpers still fail loudly. The source/runtime handshake
+advances to `slim-three-policy@8`, and retained-Node budgets are locked to zero
+modules / zero bytes for every profile. The strict prebuilt measures 768,403
+raw / 210,865 gzip-9 bytes, 332 modules, and zero retained Node/TSL modules.
+Minimal and advanced `slim: 'source'` fixtures measure 490,175 raw / 137,680
+gzip and 519,695 raw / 145,631 gzip respectively, also with zero Node/TSL,
+compiler, stock-adapter, or duplicate bare-Three identity residue. The narrow
+storage `webgpu_compute_reduce` canary passes with no replay errors; the
+ordinary `webgpu_materials_envmaps_groundprojected` canary remains
+pixel-identical (infinite PSNR, 20 material plus 2 auxiliary artifacts).
 
 ---
 
@@ -953,7 +977,7 @@ from that orchestrator; the broader texture-wiring convergence remains open.
 
 **Status (2026-06-09).** The headline regression is resolved at the bundler: the `threeBareAlias` + `webglFallbackStub` rollup wedges (see the audit-refresh bullet at the top of this doc) cut the bundle ~407 → 238.8 KB gzip, and the gate is re-tightened to 250 KB with the stale comments fixed ([`slim-bundle.test.js`](packages/plugin/test/unit/slim-bundle.test.js)). The `TSLP_ANALYZE=1` rollup flag prints a per-module breakdown — use it before any future gate bump. Refuted during verification: lazy-importing aux-loader from slim-entry (it is exported slim API, not a one-call dependency).
 
-**Status (2026-07-13).** The single gzip constant is replaced by the machine-readable [`slim-budget.json`](packages/runtime/build-tools/slim-budget.json) and shared [`slim-bundle-analysis.js`](packages/runtime/build-tools/slim-bundle-analysis.js). The dedicated `pnpm test:slim:budget` gate performs one strict prebuilt Rollup build plus minimal and advanced production `slim: 'source'` Vite builds; it caps raw/gzip bytes, compiler residue, stock-adapter residue, retained Node module count/bytes for every profile, and split bare-Three identity. `pnpm analyze:slim` emits deterministic JSON for CI or trend tooling. After the graph-free shadow and CubeRenderTarget wedges, current observations are 768,161 raw / 209,773 gzip bytes and 2 retained Node modules / 2,293 rendered bytes for prebuilt. Minimal and advanced source are 136,793 and 144,719 gzip bytes; both retain only 2 Node modules / 1,190 rendered bytes. All compiler, stock-adapter, and duplicate-identity counts are zero. The expensive three-build check stays outside the quick unit tier and runs once in Linux CI and `release:check`.
+**Status (2026-07-13).** The single gzip constant is replaced by the machine-readable [`slim-budget.json`](packages/runtime/build-tools/slim-budget.json) and shared [`slim-bundle-analysis.js`](packages/runtime/build-tools/slim-bundle-analysis.js). The dedicated `pnpm test:slim:budget` gate performs one strict prebuilt Rollup build plus minimal and advanced production `slim: 'source'` Vite builds; it caps raw/gzip bytes, compiler residue, stock-adapter residue, retained Node module count/bytes for every profile, and split bare-Three identity. `pnpm analyze:slim` emits deterministic JSON for CI or trend tooling. After the graph-free shadow, CubeRenderTarget, and Node-core wedges, current observations are 768,403 raw / 210,865 gzip bytes and zero retained Node modules / zero rendered bytes for prebuilt. Minimal and advanced source are 137,680 and 145,631 gzip bytes, also with zero Node residue. All compiler, stock-adapter, and duplicate-identity counts are zero. The expensive three-build check stays outside the quick unit tier and runs once in Linux CI and `release:check`.
 
 **Remaining.** A minimal `core` subpath export (apply + loader + writers) for non-slim adopters importing the root barrel; `sideEffects` annotations in [`packages/runtime/package.json`](packages/runtime/package.json) (careful: `hydrator.js` has a real module-init side effect — `installLiveTextureRegistryPatches()`; list side-effectful files explicitly rather than `false`); lazy TSL/PassNode stub entries if the analyzer shows them dominating; opt-in on-disk artifact minification (low value — dev artifacts are gitignored test fixtures).
 
