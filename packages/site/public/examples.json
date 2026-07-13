@@ -11,9 +11,9 @@
 		"smokeTotal": 198,
 		"smokePass": 197,
 		"smokePassRate": 99.5,
-		"pixelMatchCount": 184,
+		"pixelMatchCount": 185,
 		"visualMatchCount": 9,
-		"rendersCount": 32,
+		"rendersCount": 31,
 		"captureOnlyCount": 0
 	},
 	"categories": [
@@ -8212,8 +8212,8 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 12.4,
-				"identical": false,
+				"psnr": null,
+				"identical": true,
 				"threshold": 30,
 				"captured": true,
 				"replayed": true
@@ -8232,7 +8232,7 @@
 			],
 			"notes": "",
 			"thumbHealth": "ok",
-			"badge": "renders"
+			"badge": "pixel-match"
 		},
 		{
 			"basename": "webgpu_lights_projector",
