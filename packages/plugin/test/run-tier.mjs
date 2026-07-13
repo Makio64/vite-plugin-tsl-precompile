@@ -17,6 +17,7 @@ const generationTests = new Set( [
 	'extractor-convergence.test.js',
 	'ltc-capture.test.js',
 	'live-render-harvest.test.js',
+	'live-uniform-node-path.test.js',
 ] );
 
 const generationImportMarkers = [
