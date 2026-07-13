@@ -12,8 +12,8 @@
 		"smokePass": 197,
 		"smokePassRate": 99.5,
 		"pixelMatchCount": 206,
-		"visualMatchCount": 13,
-		"rendersCount": 5,
+		"visualMatchCount": 14,
+		"rendersCount": 4,
 		"captureOnlyCount": 1
 	},
 	"categories": [
@@ -7365,7 +7365,7 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 15.7,
+				"psnr": 29.66,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
@@ -7388,9 +7388,9 @@
 				"output-transform",
 				"render-output"
 			],
-			"notes": "",
+			"notes": "Visual match: temporal motion-vector history remains 0.34 dB below the strict pixel gate.",
 			"thumbHealth": "ok",
-			"badge": "renders"
+			"badge": "visual-match"
 		},
 		{
 			"basename": "webgpu_pmrem_scene",
