@@ -11,9 +11,9 @@
 		"smokeTotal": 198,
 		"smokePass": 197,
 		"smokePassRate": 99.5,
-		"pixelMatchCount": 173,
+		"pixelMatchCount": 174,
 		"visualMatchCount": 9,
-		"rendersCount": 43,
+		"rendersCount": 42,
 		"captureOnlyCount": 0
 	},
 	"categories": [
@@ -6707,8 +6707,8 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 19.72,
-				"identical": false,
+				"psnr": null,
+				"identical": true,
 				"threshold": 30,
 				"captured": true,
 				"replayed": true
@@ -6728,7 +6728,7 @@
 			],
 			"notes": "",
 			"thumbHealth": "ok",
-			"badge": "renders"
+			"badge": "pixel-match"
 		},
 		{
 			"basename": "webgpu_animation_retargeting",
