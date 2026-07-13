@@ -18,6 +18,7 @@
 
 import { hashNodeGraphSync, hashPlainConfigSync } from './graph-hash.js';
 import { registerAuxArtifact } from './aux-loader.js';
+import { cloneRenderTargetForCapture } from './capture-render-target.js';
 import { collectEffectNodes } from './slim-support/postprocess-effects.js';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { createRenderPipelineConfig } from '@tsl-precompile/contract/output-config';
@@ -800,10 +801,9 @@ async function captureBackdropLive( renderer, material, scene, camera, opts ) {
  * full pass render as an artifact with the MRT output names so the slim
  * runtime knows how many and what attachment slots were compiled.
  *
- * The capture uses a minimal PostProcessing pipeline to drive the pass:
- *   const pp = new PostProcessing(renderer);
- *   pp.outputNode = scenePassNode;
- *   compileTSL renders it and we locate the `post-process`-shaped artifact.
+ * Extraction binds a structural 1x1 clone of the live PassNode target. This
+ * preserves mixed MRT attachment formats without clearing or mutating the
+ * application's live pass textures.
  *
  * @param {Object} renderer - Active WebGPURenderer.
  * @param {Object} passNode - A PassNode with `_mrt` set.
@@ -824,8 +824,8 @@ async function captureMRTLive( renderer, passNode, scene, camera, opts ) {
 	}
 
 	const mrtNode = passNode._mrt;
-	const outputNames = mrtNode && mrtNode.outputNodes
-		? Object.keys( mrtNode.outputNodes ).sort()
+	const declaredOutputNames = mrtNode && mrtNode.outputNodes
+		? Object.keys( mrtNode.outputNodes )
 		: [];
 
 	// Build a PostProcessing pipeline whose outputNode is the pass node.
@@ -837,7 +837,30 @@ async function captureMRTLive( renderer, passNode, scene, camera, opts ) {
 	// MRT topology even when the renderer/material haven't observed the pass
 	// yet. Without this, the synthetic compile emits a single-output fragment
 	// against a multi-attachment RT.
-	const artifacts = await compileTSL( renderer, scene, camera, { mrtNode } );
+	const renderTargetOverride = cloneRenderTargetForCapture( passNode.renderTarget, declaredOutputNames );
+	// The target's attachment order determines shader locations. Three resolves
+	// MRT outputs by texture name, so this may intentionally differ from the
+	// declaration order in mrtNode.outputNodes.
+	const outputNames = renderTargetOverride && Array.isArray( renderTargetOverride.textures )
+		? renderTargetOverride.textures.map( ( texture ) => texture.name )
+		: declaredOutputNames;
+	let artifacts;
+	try {
+
+		artifacts = await compileTSL( renderer, scene, camera, {
+			mrtNode,
+			...( renderTargetOverride ? { renderTargetOverride } : {} ),
+		} );
+
+	} finally {
+
+		if ( renderTargetOverride ) {
+
+			try { renderTargetOverride.dispose(); } catch ( _ ) {}
+
+		}
+
+	}
 	const artifact = artifacts.find( ( a ) => a.materialShape === 'post-process' )
 		|| artifacts.find( ( a ) => a.materialShape === 'output-transform' )
 		|| artifacts[ 0 ];

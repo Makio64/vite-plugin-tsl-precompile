@@ -268,18 +268,26 @@ export function describeRenderTargetTopology( context, renderer = null ) {
 
 	if ( ! context ) return null;
 	const observedRenderTarget = safeRead( context, 'renderTarget' );
-	const renderTarget = observedRenderTarget === undefined
-		? safeCall( renderer, 'getRenderTarget' )
-		: observedRenderTarget;
 
 	// These values are mutated in-place for every cube face / array layer and
 	// mip render. Read them before renderer callbacks such as
 	// getOutputRenderTarget() and copy only finite primitives into the result.
 	const observedActiveCubeFace = safeRead( context, 'activeCubeFace' );
 	const observedActiveMipmapLevel = safeRead( context, 'activeMipmapLevel' );
-	const activeCubeFace = resolveActiveTargetIndex( observedActiveCubeFace, renderTarget, 'activeCubeFace', '_activeCubeFace', renderer, '_activeCubeFace', 'getActiveCubeFace' );
-	const activeMipmapLevel = resolveActiveTargetIndex( observedActiveMipmapLevel, renderTarget, 'activeMipmapLevel', '_activeMipmapLevel', renderer, '_activeMipmapLevel', 'getActiveMipmapLevel' );
 	let textures = safeRead( context, 'textures' );
+	const activeRendererTarget = observedRenderTarget === undefined || observedRenderTarget === null
+		? safeCall( renderer, 'getRenderTarget' )
+		: null;
+	// Three r184 compileAsync() fills RenderContext.textures but leaves its
+	// renderTarget field at the initial null. Recover the explicitly bound
+	// target only when every observed texture is the exact attachment owned by
+	// renderer.getRenderTarget(); a real default surface cannot pass this check.
+	const inferredCompileTarget = observedRenderTarget === null && renderTargetOwnsTextures( activeRendererTarget, textures );
+	const renderTarget = observedRenderTarget === undefined
+		? activeRendererTarget
+		: inferredCompileTarget ? activeRendererTarget : observedRenderTarget;
+	const activeCubeFace = resolveActiveTargetIndex( inferredCompileTarget ? undefined : observedActiveCubeFace, renderTarget, 'activeCubeFace', '_activeCubeFace', renderer, '_activeCubeFace', 'getActiveCubeFace' );
+	const activeMipmapLevel = resolveActiveTargetIndex( inferredCompileTarget ? undefined : observedActiveMipmapLevel, renderTarget, 'activeMipmapLevel', '_activeMipmapLevel', renderer, '_activeMipmapLevel', 'getActiveMipmapLevel' );
 	if ( ! Array.isArray( textures ) ) {
 
 		textures = Array.isArray( safeRead( renderTarget, 'textures' ) )
@@ -301,6 +309,16 @@ export function describeRenderTargetTopology( context, renderer = null ) {
 		colors: textures.map( describeColorAttachment ),
 		depthTexture: resourceShape( safeRead( context, 'depthTexture' ) || safeRead( renderTarget, 'depthTexture' ) ),
 	} );
+
+}
+
+function renderTargetOwnsTextures( renderTarget, observedTextures ) {
+
+	if ( ! renderTarget || ! Array.isArray( observedTextures ) || observedTextures.length === 0 ) return false;
+	const targetTextureList = safeRead( renderTarget, 'textures' );
+	const targetTexture = safeRead( renderTarget, 'texture' );
+	const targetTextures = Array.isArray( targetTextureList ) ? targetTextureList : targetTexture ? [ targetTexture ] : [];
+	return targetTextures.length === observedTextures.length && observedTextures.every( ( texture, index ) => texture === targetTextures[ index ] );
 
 }
 

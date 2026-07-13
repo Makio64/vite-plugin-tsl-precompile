@@ -58,6 +58,110 @@ test( 'compileTSL binds the renderer framebuffer target during canvas warm-up', 
 
 } );
 
+test( 'compileTSL borrows caller render targets without mutation or disposal', async () => {
+
+	const previousTarget = { label: 'previous' };
+	let currentRenderTarget = previousTarget;
+	let disposeCalls = 0;
+	let shouldThrow = false;
+	const override = Object.preventExtensions( {
+		label: 'borrowed',
+		textures: [],
+		dispose() { disposeCalls ++; },
+	} );
+	const manager = {
+		nodeBuilderCache: new Map(),
+		getForRenderCacheKey() { return 'unused'; },
+		getForRender() { return null; },
+	};
+	const renderer = {
+		_nodes: manager,
+		getRenderTarget() { return currentRenderTarget; },
+		setRenderTarget( target ) { currentRenderTarget = target; },
+		getMRT() { return null; },
+		setMRT() {},
+		async compileAsync() {
+
+			assert.equal( currentRenderTarget, override );
+			if ( shouldThrow ) throw new Error( 'borrowed compile failure' );
+
+		},
+		render() {},
+	};
+	const scene = { userData: {}, traverse() {} };
+
+	await compileTSL( renderer, scene, {}, { renderTargetOverride: override, skipWarmupRender: true } );
+	assert.equal( currentRenderTarget, previousTarget );
+	assert.equal( disposeCalls, 0 );
+
+	shouldThrow = true;
+	await assert.rejects(
+		compileTSL( renderer, scene, {}, { renderTargetOverride: override, skipWarmupRender: true } ),
+		/borrowed compile failure/,
+	);
+	assert.equal( currentRenderTarget, previousTarget, 'failure restores the caller target' );
+	assert.equal( disposeCalls, 0, 'failure leaves borrowed target ownership with the caller' );
+
+} );
+
+test( 'compileTSL signs the mixed attachment topology of a borrowed PassNode target', async () => {
+
+	installMockWebGPU();
+	const webgpu = await import( 'three/webgpu' );
+	const tsl = await import( 'three/tsl' );
+	const core = await import( 'three' );
+	const renderer = new webgpu.WebGPURenderer( { canvas: makeCanvas(), antialias: false } );
+	await renderer.init();
+
+	const scene = new core.Scene();
+	const camera = new core.PerspectiveCamera( 45, 1, 0.1, 10 );
+	camera.position.z = 3;
+	const material = new webgpu.MeshBasicNodeMaterial();
+	scene.add( new core.Mesh( new core.BoxGeometry(), material ) );
+
+	const mrtNode = tsl.mrt( {
+		output: tsl.output,
+		diffuseColor: tsl.diffuseColor,
+		normal: tsl.normalView,
+		velocity: tsl.velocity,
+	} );
+	const renderTarget = new core.RenderTarget( 4, 4, { count: 4 } );
+	const names = [ 'output', 'diffuseColor', 'normal', 'velocity' ];
+	renderTarget.textures.forEach( ( texture, index ) => { texture.name = names[ index ]; } );
+	renderTarget.textures[ 0 ].type = core.HalfFloatType;
+	renderTarget.textures[ 1 ].type = core.UnsignedByteType;
+	renderTarget.textures[ 2 ].type = core.UnsignedByteType;
+	renderTarget.textures[ 3 ].type = core.HalfFloatType;
+
+	try {
+
+		const artifacts = await compileTSL( renderer, scene, camera, {
+			mrtNode,
+			renderTargetOverride: renderTarget,
+			skipWarmupRender: true,
+		} );
+		const artifact = artifacts.byMaterialUuid.get( material.uuid )
+			|| artifacts.find( ( candidate ) => candidate.materialUuid === material.uuid );
+		const selectors = ( artifact.renderContextSelectors || [] ).map( JSON.parse );
+
+		assert.equal( selectors.length, 1 );
+		assert.equal( selectors[ 0 ].target.surface, 'offscreen-2d' );
+		assert.deepEqual( selectors[ 0 ].target.colors.map( ( color ) => color.dataType ), [
+			core.HalfFloatType,
+			core.UnsignedByteType,
+			core.UnsignedByteType,
+			core.HalfFloatType,
+		] );
+
+	} finally {
+
+		renderTarget.dispose();
+		renderer.dispose();
+
+	}
+
+} );
+
 test( 'compileTSL correlates the active renderer output across stale caches and restores an offscreen target', async () => {
 
 	installMockWebGPU();

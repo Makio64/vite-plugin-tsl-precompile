@@ -1432,11 +1432,10 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	// auto-allocated MRT warm-up RT below.
 	const renderTargetOverride = options && options.renderTargetOverride || null;
 	let mrtWarmupRT = null;
+	let ownsMRTWarmupRT = false;
 	if ( renderTargetOverride && typeof renderer.setRenderTarget === 'function' ) {
 
 		mrtWarmupRT = renderTargetOverride;
-		// Mark so we don't dispose() a caller-owned RT in the finally block.
-		mrtWarmupRT.__tslpAuxBorrowed = true;
 
 	} else if ( sceneMRTNode && typeof renderer.setRenderTarget === 'function' ) {
 
@@ -1449,6 +1448,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 			try {
 
 				mrtWarmupRT = new RenderTarget( 1, 1, { count: outputCount } );
+				ownsMRTWarmupRT = true;
 				// Match three.js MRTNode.setup()'s `getTextureIndex(textures,
 				// name)` lookup: tag each attachment with the matching output
 				// name from the captured MRT graph. Without this, the
@@ -1676,14 +1676,9 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		// replayed — the app's next animation frame repaints.
 		if ( origRender ) renderer.render = origRender;
 
-		if ( mrtWarmupRT && ! mrtWarmupRT.__tslpAuxBorrowed ) {
+		if ( mrtWarmupRT && ownsMRTWarmupRT ) {
 
 			try { mrtWarmupRT.dispose(); } catch ( _ ) { /* ignore */ }
-
-		} else if ( mrtWarmupRT && mrtWarmupRT.__tslpAuxBorrowed ) {
-
-			// Caller owns this RT; clear the borrow flag and leave disposal to them.
-			try { delete mrtWarmupRT.__tslpAuxBorrowed; } catch ( _ ) { /* ignore */ }
 
 		}
 

@@ -337,6 +337,46 @@ test( 'render target topology classifies default, output, intermediate, and offs
 
 } );
 
+test( 'render target topology recovers Three compileAsync targets only from exact attachment identity', () => {
+
+	const colors = [
+		texture( { name: 'output', type: 1016 } ),
+		texture( { name: 'normal', type: 1009 } ),
+	];
+	const target = renderTarget( colors[ 0 ], { textures: colors } );
+	const renderer = {
+		backend: { isWebGPUBackend: true },
+		_activeCubeFace: 4,
+		_activeMipmapLevel: 2,
+		getRenderTarget: () => target,
+		getOutputRenderTarget: () => null,
+	};
+	const compileContext = targetContext( null, {
+		textures: colors,
+		activeCubeFace: 0,
+		activeMipmapLevel: 0,
+	} );
+	const recovered = describeRenderTargetTopology( compileContext, renderer );
+
+	assert.equal( recovered.surface, 'offscreen-2d' );
+	assert.deepEqual( recovered.colors.map( ( color ) => color.dataType ), [ 1016, 1009 ] );
+	assert.equal( recovered.activeCubeFace, 4, 'compileAsync defaults do not hide the renderer target face' );
+	assert.equal( recovered.activeMipmapLevel, 2, 'compileAsync defaults do not hide the renderer target mip' );
+
+	for ( const mismatchedTextures of [
+		[ colors[ 0 ], { ...colors[ 1 ] } ],
+		[ colors[ 1 ], colors[ 0 ] ],
+		[ colors[ 0 ] ],
+	] ) {
+
+		const descriptor = describeRenderTargetTopology( targetContext( null, { textures: mismatchedTextures } ), renderer );
+		assert.equal( descriptor.surface, 'default', 'same-shaped, reordered, and partial attachments are not inferred' );
+
+	}
+	assert.equal( describeRenderTargetTopology( targetContext( null ), renderer ).surface, 'default', 'a real default context ignores a stale renderer target' );
+
+} );
+
 test( 'render target topology snapshots observed cube face and mip before renderer mutation', () => {
 
 	const target = renderTarget( texture( { isCubeTexture: true } ) );

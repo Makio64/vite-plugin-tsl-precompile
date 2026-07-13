@@ -27,6 +27,7 @@ import { MARKER_METHOD_NAME } from './_constants.js';
 import { normalizeRevision } from './_normalize-revision.js';
 import { hashArtifactContentSync, hashMaterialSync } from './graph-hash.js';
 import { registerArtifact } from './artifact-loader.js';
+import { cloneRenderTargetForCapture, getMRTCaptureRenderTarget, rememberMRTCaptureRenderTarget } from './capture-render-target.js';
 import { installLiveTextureRegistryPatches } from './hydrate/live-texture-registry.js';
 import { MATERIAL_NODE_TEXTURE_KEYS } from '@tsl-precompile/contract/texture-props';
 import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
@@ -330,7 +331,7 @@ function captureObjectScore( object ) {
 
 }
 
-function bindPendingCapturesFromRender( renderer, scene, camera ) {
+function bindPendingCapturesFromRender( renderer, scene, camera, renderTopology = null ) {
 
 	if ( pendingCaptures.size === 0 || ! scene ) return [];
 	const ready = new Set();
@@ -348,6 +349,12 @@ function bindPendingCapturesFromRender( renderer, scene, camera ) {
 			for ( const entry of entries.values() ) {
 
 				entry.renderer = renderer;
+				if ( ! entry.mrtRenderTarget && renderTopology && renderTopology.mrtNode && renderTopology.renderTarget ) {
+
+					entry.mrtNode = renderTopology.mrtNode;
+					entry.mrtRenderTarget = renderTopology.renderTarget;
+
+				}
 				entry.context.scene = entry.context.scene || scene;
 				entry.context.camera = entry.context.camera || camera || null;
 				if ( ! entry.context.object || captureObjectScore( object ) > captureObjectScore( entry.context.object ) ) {
@@ -701,6 +708,7 @@ export function installPrecompileMarker( three, opts = {} ) {
 
 				this.scene.userData = this.scene.userData || {};
 				this.scene.userData.__tslp_mrtNode = mrtNode;
+				rememberMRTCaptureRenderTarget( this.scene, this.renderTarget, mrtNode );
 
 			}
 			return ret;
@@ -926,6 +934,25 @@ function wrapDevRenderer( renderer ) {
 		renderer.render = function ( scene, camera, ...rest ) {
 
 			if ( ! registeredRenderers.has( renderer ) ) return _originalRender( scene, camera, ...rest );
+			let activeMRT = null;
+			let activeRenderTarget = null;
+			// PassNode binds its private render target and MRT immediately before
+			// renderer.render(scene, camera). Remember that exact target topology
+			// before Three restores the previous target. Keep the target out of
+			// Scene.userData because RenderTarget has circular texture backrefs.
+			if ( scene && scene.isScene === true && typeof renderer.getMRT === 'function' && typeof renderer.getRenderTarget === 'function' ) {
+
+				try { activeMRT = renderer.getMRT(); } catch ( _ ) {}
+				try { activeRenderTarget = renderer.getRenderTarget(); } catch ( _ ) {}
+				if ( activeMRT && activeRenderTarget ) {
+
+					scene.userData = scene.userData || {};
+					scene.userData.__tslp_mrtNode = activeMRT;
+					rememberMRTCaptureRenderTarget( scene, activeRenderTarget, activeMRT );
+
+				}
+
+			}
 			if ( camera && camera.isArrayCamera && camera.cameras && camera.cameras.length > 0 ) {
 
 				lastArrayCameraByRenderer.set( renderer, camera );
@@ -933,7 +960,7 @@ function wrapDevRenderer( renderer ) {
 			}
 			const synthetic = ( globalThis.__tslpSyntheticRenderActive | 0 ) > 0;
 			if ( ! synthetic ) lastRenderContextByRenderer.set( renderer, { scene, camera } );
-			const ready = synthetic ? [] : bindPendingCapturesFromRender( renderer, scene, camera );
+			const ready = synthetic ? [] : bindPendingCapturesFromRender( renderer, scene, camera, { mrtNode: activeMRT, renderTarget: activeRenderTarget } );
 			// Open the plugin-owned RenderObject observer before the first real
 			// request. Closing is deferred to a microtask, so every synchronous
 			// render in the current application burst (cube faces, depth/color
@@ -1331,12 +1358,17 @@ async function captureMaterialInDev( entry ) {
 		// empty `OutputType { }` struct and crash WGSL.
 		const materialMRTNode = material && material.mrtNode || null;
 		let mrtNode = null;
+		let captureRenderTarget = null;
 		const isFullscreenQuad = sourceObject && ( sourceObject.isQuadMesh || sourceObject.constructor && sourceObject.constructor.name === 'QuadMesh' );
 		// PassNode-driven MRT (`pass(scene, cam).setMRT(...)`): aux-marker
 		// stamps the descriptor on `scene.userData.__tslp_mrtNode` because the
 		// PassNode only writes `material.mrtNode` during a live render — after
 		// our synthetic warm-up runs.
-		if ( ! isFullscreenQuad && sourceScene && sourceScene.userData && sourceScene.userData.__tslp_mrtNode ) {
+		if ( ! isFullscreenQuad && entry.mrtNode ) {
+
+			mrtNode = entry.mrtNode;
+
+		} else if ( ! isFullscreenQuad && sourceScene && sourceScene.userData && sourceScene.userData.__tslp_mrtNode ) {
 
 			mrtNode = sourceScene.userData.__tslp_mrtNode;
 
@@ -1353,7 +1385,10 @@ async function captureMaterialInDev( entry ) {
 			extractorOpts ||= {};
 			extractorOpts.mrtNode = mrtNode;
 			const mrtOutputs = mrtNode.nodes || mrtNode.outputNodes || null;
-			if ( mrtOutputs && Object.keys( mrtOutputs ).length > 1 ) extractorOpts.skipWarmupRender = true;
+			const mrtOutputNames = mrtOutputs ? Object.keys( mrtOutputs ) : [];
+			captureRenderTarget = cloneRenderTargetForCapture( entry.mrtRenderTarget || getMRTCaptureRenderTarget( sourceScene, mrtNode ), mrtOutputNames );
+			if ( captureRenderTarget ) extractorOpts.renderTargetOverride = captureRenderTarget;
+			if ( mrtOutputNames.length > 1 ) extractorOpts.skipWarmupRender = true;
 
 		}
 
@@ -1403,6 +1438,11 @@ async function captureMaterialInDev( entry ) {
 
 		} finally {
 
+			if ( captureRenderTarget ) {
+
+				try { captureRenderTarget.dispose(); } catch ( _ ) {}
+
+			}
 			if ( forceSinglePassForCapture ) {
 
 				material.forceSinglePass = false;

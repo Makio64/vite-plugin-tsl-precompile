@@ -215,9 +215,26 @@ test( 'setupPrecompile captureAux merges per-call MRT pass options', async () =>
 		traverse( visitor ) { visitor( this ); },
 	};
 	const camera = { uuid: 'camera-mrt' };
+	const captureTarget = {
+		width: 320,
+		height: 240,
+		textures: [ { name: 'normal' }, { name: 'output' } ],
+		disposed: false,
+		setSize( width, height ) {
+
+			this.width = width;
+			this.height = height;
+
+		},
+		dispose() { this.disposed = true; },
+	};
 	const passNode = {
 		isPassNode: true,
 		_mrt: { outputNodes: { output: {}, normal: {} } },
+		renderTarget: {
+			textures: [ { name: 'normal' }, { name: 'output' } ],
+			clone: () => captureTarget,
+		},
 	};
 	const compileCalls = [];
 	const compileTSL = async ( ...args ) => {
@@ -247,8 +264,13 @@ test( 'setupPrecompile captureAux merges per-call MRT pass options', async () =>
 
 		assert.equal( scene.userData.__tslp_mrtNode, passNode._mrt );
 		assert.equal( compileCalls.some( ( call ) => call[ 3 ] && call[ 3 ].mrtNode === passNode._mrt ), true );
+		assert.equal( compileCalls.some( ( call ) => call[ 3 ] && call[ 3 ].renderTargetOverride === captureTarget ), true );
+		assert.deepEqual( [ captureTarget.width, captureTarget.height ], [ 1, 1 ] );
+		assert.equal( captureTarget.disposed, true );
 		assert.equal( results.some( ( result ) => result.shape === 'mrt' && result.ok === true ), true );
-		assert.equal( capture.posts.some( ( post ) => post.materialShape === 'mrt' ), true );
+		const postedMRT = capture.posts.find( ( post ) => post.materialShape === 'mrt' );
+		assert.ok( postedMRT );
+		assert.deepEqual( postedMRT.artifact.mrt.outputNames, [ 'normal', 'output' ], 'MRT metadata retains attachment-index order' );
 
 	} finally {
 
@@ -322,9 +344,32 @@ test( 'precompile marker captures a non-MRT material variant for pass-level MRT 
 	class BoxGeometry {}
 	class Color {}
 
-	const mrtNode = { outputNodes: { output: {} } };
+	const mrtNode = { outputNodes: { output: {}, velocity: {} } };
 	const sourceScene = new Scene();
 	sourceScene.userData.__tslp_mrtNode = mrtNode;
+	const clonedRenderTarget = {
+		width: 640,
+		height: 480,
+		depthTexture: { image: { width: 640, height: 480 } },
+		disposed: false,
+		setSize( width, height ) {
+
+			this.width = width;
+			this.height = height;
+
+		},
+		dispose() { this.disposed = true; },
+	};
+	const liveRenderTarget = {
+		cloneCalls: 0,
+		textures: [ { name: 'output' }, { name: 'velocity' } ],
+		clone() {
+
+			this.cloneCalls ++;
+			return clonedRenderTarget;
+
+		},
+	};
 	const emptyOutputShader = `
 struct OutputType {
 };
@@ -364,8 +409,8 @@ fn main( @location( 0 ) uv : vec2<f32> ) -> OutputStruct {
 		};
 		if ( ! isColor ) {
 
-			artifact.mrtOutputCount = 1;
-			artifact.mrtOutputNames = [ 'output' ];
+			artifact.mrtOutputCount = 2;
+			artifact.mrtOutputNames = [ 'output', 'velocity' ];
 
 		}
 		const artifacts = [ artifact ];
@@ -388,7 +433,11 @@ fn main( @location( 0 ) uv : vec2<f32> ) -> OutputStruct {
 	try {
 
 		const three = { Material, Scene, Mesh, BoxGeometry, PerspectiveCamera, Color, REVISION: '184' };
-		const renderer = { render() {} };
+		const renderer = {
+			render() {},
+			getMRT: () => mrtNode,
+			getRenderTarget: () => liveRenderTarget,
+		};
 		installPrecompileMarker( three, {
 			devEndpoint: 'http://example.test/capture',
 			extractor,
@@ -409,7 +458,14 @@ fn main( @location( 0 ) uv : vec2<f32> ) -> OutputStruct {
 
 		assert.equal( calls.length, 2 );
 		assert.equal( calls[ 0 ].mrtNode, mrtNode );
+		assert.equal( calls[ 0 ].renderTargetOverride, clonedRenderTarget );
+		assert.equal( calls[ 0 ].skipWarmupRender, true );
 		assert.equal( calls[ 1 ].noGlobalMRT, true );
+		assert.equal( calls[ 1 ].renderTargetOverride, undefined );
+		assert.equal( liveRenderTarget.cloneCalls, 1 );
+		assert.deepEqual( [ clonedRenderTarget.width, clonedRenderTarget.height ], [ 1, 1 ] );
+		assert.deepEqual( clonedRenderTarget.depthTexture.image, { width: 1, height: 1 } );
+		assert.equal( clonedRenderTarget.disposed, true );
 		assert.equal( posts.length, 1 );
 		assert.equal( posts[ 0 ].artifact.cacheKey, 'color-key' );
 		assert.equal( Object.keys( posts[ 0 ].artifact.variants ).sort().join( ',' ), 'color-key,mrt-key' );
