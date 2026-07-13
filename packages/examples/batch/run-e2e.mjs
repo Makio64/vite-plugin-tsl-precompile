@@ -14089,11 +14089,14 @@ function holdAnimationUntilReadyForExample( name ) {
 	return false;
 }
 
-async function dumpCanvases( page ) {
+async function dumpCanvases( page, name = '' ) {
 
 	const canvases = await page.$$( 'canvas' );
 	const shots = [];
-	for ( let i = canvases.length - 1; i >= 0; i -- ) {
+	const indices = name === 'webgpu_texturegrad.html'
+		? Array.from( canvases.keys() )
+		: Array.from( canvases.keys() ).reverse();
+	for ( const i of indices ) {
 
 		const box = await canvases[ i ].boundingBox();
 		if ( ! box || box.width <= 0 || box.height <= 0 ) continue;
@@ -14137,18 +14140,18 @@ async function canvasBrightFractionInPage( page ) {
 
 }
 
-async function dumpBrightestCanvas( page ) {
+async function dumpBrightestCanvas( page, name = '' ) {
 
-	const shots = await dumpCanvases( page );
+	const shots = await dumpCanvases( page, name );
 	const bright = await canvasBrightFractionInPage( page );
 	const best = shots.length > 0 ? shots[ 0 ] : null;
 	return { shot: best, bright: +bright.toFixed( 4 ) };
 
 }
 
-async function dumpCanvas( page ) {
+async function dumpCanvas( page, name = '' ) {
 
-	const result = await dumpBrightestCanvas( page );
+	const result = await dumpBrightestCanvas( page, name );
 	return result.shot;
 
 }
@@ -15023,7 +15026,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 			}
 
 		stepStartedAt = Date.now();
-		const shot = await dumpCanvas( page );
+		const shot = await dumpCanvas( page, name );
 		mark( 'screenshotMs', stepStartedAt );
 		// Re-measure bright from the final screenshot PNG — WebGPU canvas pixels
 		// are often not readable via 2D-context drawImage during the animation loop
