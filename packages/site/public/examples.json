@@ -11,9 +11,9 @@
 		"smokeTotal": 198,
 		"smokePass": 197,
 		"smokePassRate": 99.5,
-		"pixelMatchCount": 205,
+		"pixelMatchCount": 206,
 		"visualMatchCount": 13,
-		"rendersCount": 6,
+		"rendersCount": 5,
 		"captureOnlyCount": 1
 	},
 	"categories": [
@@ -7985,8 +7985,8 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 14.29,
-				"identical": false,
+				"psnr": null,
+				"identical": true,
 				"threshold": 30,
 				"captured": true,
 				"replayed": true
@@ -8004,9 +8004,9 @@
 			"materialShapes": [
 				"render-output"
 			],
-			"notes": "",
+			"notes": "Pixel-exact replay; post-screenshot capture flush still reports a LensflareMesh command-encoder validation warning.",
 			"thumbHealth": "ok",
-			"badge": "renders"
+			"badge": "pixel-match"
 		},
 		{
 			"basename": "webgpu_lights_custom",
