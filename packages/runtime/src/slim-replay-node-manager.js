@@ -3,14 +3,14 @@
  *
  * Shader compilation is absent: render/compute states are hydrated directly
  * from captured artifacts. The class keeps Three's renderer-facing lifecycle
- * and NodeFrame scheduler while avoiding NodeBuilderState, ChainMap, build
- * queues, and every builder recovery path.
+ * and a replay-owned frame scheduler while avoiding NodeFrame,
+ * NodeBuilderState, ChainMap, build queues, and every builder recovery path.
  */
 
 import DataMap from 'three/src/renderers/common/DataMap.js';
-import NodeFrame from 'three/src/nodes/core/NodeFrame.js';
 import { createRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
 import { hydrateNodeBuilderState } from './hydrator.js';
+import ReplayNodeFrame from './slim-replay-node-frame.js';
 import { getSlimRenderFallback } from './slim-support/render-fallback-registry.js';
 import { normalizeSlimRenderFallbackState } from './slim-support/render-fallback-state.js';
 import { createReplaySceneNodeCompatibility } from './slim-replay-scene-nodes.js';
@@ -22,7 +22,7 @@ class ReplayNodeManager extends DataMap {
 		super();
 		this.renderer = renderer;
 		this.backend = backend;
-		this.nodeFrame = new NodeFrame();
+		this.nodeFrame = new ReplayNodeFrame();
 		this.nodeBuilderCache = new Map();
 		this.groupsData = new WeakMap();
 		this._materialIds = new WeakMap();
@@ -288,7 +288,7 @@ class ReplayNodeManager extends DataMap {
 	dispose() {
 
 		super.dispose();
-		this.nodeFrame = new NodeFrame();
+		this.nodeFrame = new ReplayNodeFrame();
 		this.nodeBuilderCache = new Map();
 		this.groupsData = new WeakMap();
 		this._materialIds = new WeakMap();

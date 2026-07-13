@@ -71,6 +71,10 @@ test( 'shared Three source paths normalize Vite queries and Windows ids exactly'
 		getSlimThreeReplayAdapterModule( './XRManager.js', threeRoot + 'renderers/common/Renderer.js' )?.id,
 		'xr-manager',
 	);
+	assert.equal(
+		getSlimThreeReplayAdapterModule( '../../../nodes/core/NodeFrame.js', threeRoot + 'renderers/common/nodes/NodeManager.js' )?.id,
+		'node-frame',
+	);
 	assert.equal( normalizeSlimThreeSourceModuleId( '/repo/not-three/src/nodes/core/NodeBuilder.js' ), null );
 	assert.equal( normalizeSlimThreeSourceModuleId( '\0virtual:three/src/nodes/core/NodeBuilder.js' ), null );
 
@@ -125,13 +129,14 @@ test( 'slim replay-adapter policy rejects stock lighting, scene graph, and manag
 				'/three/src/nodes/lighting/LightsNode.js': { renderedLength: 900 },
 				'/three/src/nodes/fog/Fog.js': { renderedLength: 650 },
 				'/three/src/renderers/common/nodes/NodeManager.js': { renderedLength: 800 },
+				'/three/src/nodes/core/NodeFrame.js': { renderedLength: 850 },
 				'/three/src/renderers/common/nodes/NodeBuilderState.js': { renderedLength: 600 },
 				'/three/src/renderers/common/Lighting-unused.js': { renderedLength: 0 },
 			},
 		},
 	} );
 
-	assert.deepEqual( found.map( ( item ) => item.label ), [ 'stock LightsNode', 'stock NodeManager', 'stock Background', 'stock scene Fog graph', 'stock NodeBuilderState', 'stock Lighting' ] );
+	assert.deepEqual( found.map( ( item ) => item.label ), [ 'stock LightsNode', 'stock NodeFrame', 'stock NodeManager', 'stock Background', 'stock scene Fog graph', 'stock NodeBuilderState', 'stock Lighting' ] );
 
 } );
 

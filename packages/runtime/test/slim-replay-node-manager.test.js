@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import ReplayNodeManager from '../src/slim-replay-node-manager.js';
+import ReplayNodeFrame from '../src/slim-replay-node-frame.js';
 import { setSlimRenderFallback } from '../src/slim-support/render-fallback-registry.js';
 import { createRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
 
@@ -78,6 +79,12 @@ test( 'replay NodeManager exposes the renderer active-light list on its NodeFram
 	const manager = new ReplayNodeManager( renderer, renderer.backend );
 	const live = renderObject( renderer, material() );
 	const frame = manager.getNodeFrameForRender( live );
+	assert.ok( frame instanceof ReplayNodeFrame );
+	assert.equal( frame.renderer, renderer );
+	assert.equal( frame.scene, live.scene );
+	assert.equal( frame.object, live.object );
+	assert.equal( frame.camera, live.camera );
+	assert.equal( frame.material, live.material );
 	assert.equal( frame.lightsNode, live.lightsNode );
 	assert.equal( frame.renderObject, live );
 
