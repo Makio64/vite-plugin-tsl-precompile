@@ -190,7 +190,7 @@ class ReplayNodeManager extends DataMap {
 		const selector = createRenderObjectContextSelector( renderObject, renderObject.renderer || this.renderer );
 		const artifact = renderObject.material && renderObject.material.precompiledArtifact;
 		const auxShape = artifact && ( artifact.__tslpAuxShape || artifact.materialShape );
-		const selectorProfile = auxShape === 'background' || auxShape === 'shadow-depth' || auxShape === 'post-process' || auxShape === 'render-output' || auxShape === 'cube-render-target'
+		const selectorProfile = auxShape === 'background' || auxShape === 'shadow-depth' || auxShape === 'post-process' || auxShape === 'render-output' || auxShape === 'cube-render-target' || auxShape === 'mesh-basic'
 			? auxShape
 			: null;
 		return {

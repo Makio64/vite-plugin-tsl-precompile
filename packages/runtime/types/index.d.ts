@@ -253,8 +253,8 @@ export interface HydrateVariantSelection {
 	bindingMaterial?: unknown;
 	/** Precomputed canonical selector for non-Three integrations and tests. */
 	renderContextSelector?: string | null;
-	/** Renderer-owned auxiliary topology profile. */
-	renderContextSelectorProfile?: 'background' | 'shadow-depth' | 'post-process' | 'render-output' | 'cube-render-target' | null;
+	/** Artifact topology projection profile. */
+	renderContextSelectorProfile?: 'background' | 'shadow-depth' | 'post-process' | 'render-output' | 'cube-render-target' | 'mesh-basic' | null;
 	/** Optional material override for MRT attachment-count compatibility. */
 	material?: unknown;
 }

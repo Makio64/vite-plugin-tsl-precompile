@@ -162,6 +162,34 @@ test( 'replay NodeManager applies the background selector profile from aux metad
 
 } );
 
+test( 'replay NodeManager applies the mesh-basic selector profile from material shape metadata', () => {
+
+	const renderer = fakeRenderer();
+	const signed = artifact( { materialShape: 'mesh-basic' } );
+	const sourceMaterial = material( signed );
+	const live = renderObject( renderer, sourceMaterial, {
+		scene: { fog: { isFogExp2: true }, environment: null, environmentNode: null, traverse() {} },
+	} );
+	const captureDescriptor = JSON.parse( createRenderObjectContextSelector( live, renderer ) );
+	captureDescriptor.scene.environment = { kind: '2d', mapping: 303, colorSpace: 'srgb-linear' };
+	captureDescriptor.scene.environmentNode = true;
+	signed.renderContextSelectors = [ JSON.stringify( captureDescriptor ) ];
+
+	const manager = new ReplayNodeManager( renderer, renderer.backend );
+	assert.doesNotThrow( () => manager.getForRender( live ) );
+
+	const physical = artifact( {
+		materialShape: 'mesh-physical',
+		renderContextSelectors: signed.renderContextSelectors,
+	} );
+	assert.throws(
+		() => new ReplayNodeManager( renderer, renderer.backend ).getForRender( renderObject( renderer, material( physical ), { scene: live.scene } ) ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+		'PBR material families keep strict scene environment selection',
+	);
+
+} );
+
 test( 'replay NodeManager applies the shadow-depth selector profile from artifact shape metadata', () => {
 
 	const sourceRenderer = fakeRenderer();

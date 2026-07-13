@@ -92,6 +92,38 @@ test( 'render selector is graph-free and ignores axes absent from Three shader r
 
 } );
 
+test( 'mesh-basic projection ignores only its unused scene environment topology', () => {
+
+	const capture = fixture();
+	const replay = fixture();
+	capture.scene.environment = texture( { mapping: 303, colorSpace: 'srgb-linear' } );
+	assert.notEqual(
+		createRenderObjectContextSelector( capture ),
+		createRenderObjectContextSelector( replay ),
+		'ordinary selectors retain scene environment topology',
+	);
+	assert.equal(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'mesh-basic' ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'mesh-basic' ),
+		'MeshBasic candidate and active selectors ignore the scene environment',
+	);
+
+	replay.scene.fog = null;
+	assert.notEqual(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'mesh-basic' ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'mesh-basic' ),
+		'fog topology remains signed',
+	);
+	replay.scene.fog = capture.scene.fog;
+	replay.context.sampleCount = 1;
+	assert.notEqual(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'mesh-basic' ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'mesh-basic' ),
+		'target topology remains signed',
+	);
+
+} );
+
 test( 'render selector signs enabled renderer high precision without splitting the default', () => {
 
 	const capture = fixture();

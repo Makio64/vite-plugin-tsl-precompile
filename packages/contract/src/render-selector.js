@@ -172,6 +172,9 @@ export function createSceneRenderTopologySelector( scene ) {
  * replay passes fail to match. Render-output is likewise a fixed one-color
  * shader that can target the canvas or an offscreen RTT; attachment identity
  * belongs to pipeline state, while sample count remains signed here.
+ * MeshBasic materials can consume an explicit envMap/envNode but never
+ * Scene.environment, so their profile removes only those two scene axes while
+ * retaining fog, override-material, target, object, and material topology.
  *
  * Unknown profiles are returned unchanged so callers can opt in one adapter
  * at a time without weakening ordinary material selection.
@@ -186,7 +189,8 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 	const renderOutput = profile === 'render-output';
 	const sceneIndependent = profile === 'background' || profile === 'shadow-depth' || renderOutput || profile === 'cube-render-target';
 	const postProcess = profile === 'post-process';
-	if ( ( ! sceneIndependent && ! postProcess ) || selector.length === 0 ) return selector;
+	const meshBasic = profile === 'mesh-basic';
+	if ( ( ! sceneIndependent && ! postProcess && ! meshBasic ) || selector.length === 0 ) return selector;
 	let descriptor;
 	try {
 
@@ -198,6 +202,20 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 
 	}
 	if ( ! descriptor || typeof descriptor !== 'object' || descriptor.version !== 'render-object-selector@1' ) return selector;
+
+	if ( meshBasic ) {
+
+		const projected = { ...descriptor };
+		if ( projected.scene && typeof projected.scene === 'object' ) {
+
+			projected.scene = { ...projected.scene };
+			delete projected.scene.environment;
+			delete projected.scene.environmentNode;
+
+		}
+		return stableJsonStringify( projected, 'renderObjectSelector' );
+
+	}
 
 	if ( postProcess || renderOutput ) {
 
