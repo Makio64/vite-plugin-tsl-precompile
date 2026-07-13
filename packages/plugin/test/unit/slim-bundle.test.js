@@ -1,7 +1,7 @@
 /**
- * Slim-bundle size guard. Phase 7 gate: the built
- * `@tsl-precompile/runtime/build/three.webgpu.slim.js` must be ≤ GATE_KB gzip
- * (see the constant + history below).
+ * Fast checked-file guard for the prebuilt slim bundle. Reviewable byte and
+ * graph thresholds live in runtime/build-tools/slim-budget.json; production
+ * source-profile builds run through the dedicated slim budget command.
  *
  * If the bundle hasn't been built yet, skip. `pnpm --filter @tsl-precompile/runtime build:slim`
  * produces it. `TSLP_ANALYZE=1 pnpm --filter @tsl-precompile/runtime build:slim`
@@ -16,61 +16,11 @@ import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
 const HERE = dirname( fileURLToPath( import.meta.url ) );
-const BUNDLE = resolve( HERE, '../../../runtime/build/three.webgpu.slim.js' );
-
-// Phase 7 gate. Three relevant benchmarks:
-//   - `three.webgpu.min.js` (0.175) ships at 145 KB gzip — our slim targets
-//     beating this with a minimal API allowlist.
-//   - With the compat allowlist (`export * from Three.Core.js`, 0.184)
-//     we ship ~217 KB, which still beats three.webgpu.nodes.min.js.
-//   - Three.js 0.184 core is larger than 0.175 core — adjust gate accordingly.
-// The cap is intentionally tight enough to catch regressions while leaving
-// a little room for three-version and runtime-support churn.
-// Bumped from 225 → 228 to make room for MRT support (Phase A–C of the
-// MRT triage plan): scene→MRT registry stamp in precompile-marker, MRT
-// shape special-case in graph-hash, per-output blend modes in createInertMRTStub.
-// Bumped from 228 → 230 after the current built baseline settled at 229.7 KB.
-// Bumped from 230 → 232 after the runtime hydrator's GPU-texture-identity
-// rebind + material-graph depth compareFunction handling landed; fresh build
-// settled at ~230.6 KB.
-// Bumped from 232 → 235 after viewport-depth, clipping-group UBO, 3D texture
-// fallback support, and MRT/pass-texture replay support landed; fresh build
-// settled at ~233.8 KB.
-// Bumped from 235 → 236 after production-slim NodeMaterial constructor shells
-// and post-processing stub exports landed; fresh build settled at ~235.8 KB.
-// Bumped from 236 → 250 to set the current release budget for compute and
-// post-processing slim support.
-// Bumped from 250 → 252 after reflector render-target metadata and PMREM
-// source-size disambiguation landed; fresh build settled at ~250.5 KB.
-// Bumped from 252 → 255 for Wedge 1.5-A: the postprocess-effects-replay
-// productization (prepareEffectNodeForReplay + makePrecompiledAuxMaterial +
-// cloneAuxArtifact + wireLiveNodeSidecarsToArtifact + preparePostprocess on
-// scene-support) added ~1.8 KB gzip. The new module replaces ~600 lines of
-// harness-only bloom replay code with a generic, registry-driven adopter
-// API. Fresh build settled at ~253.8 KB.
-// Bumped from 255 → 257 for Wave 5: B2 storage-attribute walker
-// (collectStorageAttributesInOrder + findNthStorageMatchingShape +
-// the version-bump invalidation in bindUserNodeAttributesToArtifact)
-// and B3 'auto' fallback default added ~0.3 KB. Fresh build at 255.1 KB.
-// Bumped from 257 → 260 for postfx slim replay: PassNode now owns real
-// RenderTarget textures and post-processing aux artifacts can rebind live
-// pass/effect render-target textures by stable name. Fresh build at ~258.7 KB.
-// Bumped from 260 → 262 for compute sampled-input sharing plus the full-renderer
-// render-state adapter used by slim scene support. Fresh build at ~261.6 KB.
-// Bumped from 262 → 263 for velocity/shadow replay support in the runtime
-// hydrator and harness-facing slim exports. Fresh build at ~262.3 KB.
-// Raised to 420 to accommodate the newly added fallback rendering, compute fallback,
-// and offscreen override support in the runtime.
-// Re-tightened 420 → 250 (2026-06-09): the growth was not feature cost. Bare
-// `'three'` imports were double-bundling the prebuilt three.module.js/
-// three.core.js on top of three/src/**, and WebGPURenderer's static
-// WebGLBackend import dragged the whole webgl-fallback (GLSL compiler)
-// subtree into a WebGPU-only bundle. Fixed by `threeBareAlias` +
-// `webglFallbackStub` in runtime/rollup.config.js; strict rebuild measures
-// ~875 KB raw / ~239 KB gzip with fallback/compute/offscreen support
-// included. If this gate trips, run TSLP_ANALYZE=1 build:slim and find the
-// leak before reaching for a bump.
-const GATE_KB = 250;
+const checkedBuildDir = process.env.TSLP_TEST_CHECKED_SLIM_DIR
+	? resolve( process.env.TSLP_TEST_CHECKED_SLIM_DIR )
+	: resolve( HERE, '../../../runtime/build' );
+const BUNDLE = resolve( checkedBuildDir, 'three.webgpu.slim.js' );
+const BUDGET = JSON.parse( readFileSync( resolve( HERE, '../../../runtime/build-tools/slim-budget.json' ), 'utf8' ) );
 
 const bundleExists = existsSync( BUNDLE );
 
@@ -80,13 +30,15 @@ test( 'slim bundle — exists after pnpm build:slim', { skip: bundleExists ? fal
 
 } );
 
-test( 'slim bundle — gzip size within Phase 7 gate', { skip: bundleExists ? false : 'bundle not built' }, () => {
+test( 'slim bundle — raw and gzip bytes stay within the machine budget', { skip: bundleExists ? false : 'bundle not built' }, () => {
 
 	const raw = readFileSync( BUNDLE );
-	const gz = gzipSync( raw, { level: 9 } );
+	const gz = gzipSync( raw, { level: BUDGET.gzipLevel } );
 	const kb = gz.length / 1024;
 	console.log( `    bundle: ${ ( raw.length / 1024 ).toFixed( 1 ) } KB raw, ${ kb.toFixed( 1 ) } KB gzip` );
-	assert.ok( kb <= GATE_KB, `slim bundle is ${ kb.toFixed( 1 ) } KB gzip, over the ${ GATE_KB } KB gate. Check for node-builder leakage via grep NodeBuilder.` );
+	assert.equal( BUDGET.schema, 'tslp-slim-budget@1' );
+	assert.ok( raw.length <= BUDGET.prebuilt.maxRawBytes, `slim bundle is ${ raw.length } raw bytes, over the ${ BUDGET.prebuilt.maxRawBytes } byte budget` );
+	assert.ok( gz.length <= BUDGET.prebuilt.maxGzipBytes, `slim bundle is ${ gz.length } gzip bytes, over the ${ BUDGET.prebuilt.maxGzipBytes } byte budget` );
 
 } );
 

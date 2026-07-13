@@ -145,6 +145,7 @@
   "files": [
     "src",
     "build",
+    "build-tools",
     "types",
     "rollup.config.js"
   ],

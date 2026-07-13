@@ -63,6 +63,10 @@ test( 'slim source fingerprint is path-independent, order-independent, and byte-
 			first.groups.find( ( group ) => group.name === 'rollup/recipe' ).sha256,
 		);
 		await writeFile( join( secondRoot, 'runtime/rollup.config.js' ), 'export default {};\n' );
+		await writeFile( join( secondRoot, 'runtime/build-tools/slim-bundle-analysis.js' ), 'export const analysis = 2;\n' );
+		const changedGuard = await computeSlimBundleSourceFingerprint( secondInputs, VERSIONS );
+		assert.notEqual( changedGuard.fingerprint, first.fingerprint );
+		await writeFile( join( secondRoot, 'runtime/build-tools/slim-bundle-analysis.js' ), 'export const analysis = 1;\n' );
 
 		await writeFile( join( secondRoot, 'runtime/src/runtime.js' ), 'export const runtime = 2;\n' );
 		const changed = await computeSlimBundleSourceFingerprint( secondInputs, VERSIONS );
@@ -210,6 +214,7 @@ async function writeSourceFixture( root ) {
 	for ( const directory of [
 		join( threeRoot, 'src/math' ),
 		join( runtimeRoot, 'src' ),
+		join( runtimeRoot, 'build-tools' ),
 		join( contractRoot, 'src' ),
 		join( pluginRoot, 'src/vendor' ),
 	] ) await mkdir( directory, { recursive: true } );
@@ -222,6 +227,7 @@ async function writeSourceFixture( root ) {
 		writeFile( join( pluginRoot, 'src/three-rewrite.js' ), 'export const rewrite = 1;\n' ),
 		writeFile( join( pluginRoot, 'src/vendor/vendor.js' ), 'export const vendor = 1;\n' ),
 		writeFile( join( runtimeRoot, 'rollup.config.js' ), 'export default {};\n' ),
+		writeFile( join( runtimeRoot, 'build-tools/slim-bundle-analysis.js' ), 'export const analysis = 1;\n' ),
 		writeFile( join( runtimeRoot, 'package.json' ), '{"name":"@tsl-precompile/runtime"}\n' ),
 		writeFile( join( contractRoot, 'package.json' ), '{"name":"@tsl-precompile/contract"}\n' ),
 		writeFile( join( pluginRoot, 'package.json' ), '{"name":"vite-plugin-tsl-precompile"}\n' ),

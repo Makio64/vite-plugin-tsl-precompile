@@ -28,6 +28,9 @@ jobs:
       - name: Complete suite (single CI lane)
         if: runner.os == 'Linux'
         run: pnpm test:full
+      - name: Slim production budgets
+        if: runner.os == 'Linux'
+        run: pnpm test:slim:budget
 
   verify:
     name: Staleness audit

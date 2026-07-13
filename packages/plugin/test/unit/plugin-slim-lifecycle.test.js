@@ -42,6 +42,7 @@ async function makeProject( threeVersion = '0.184.0', { provenance = false } = {
 	await mkdir( join( threeRoot, 'src' ), { recursive: true } );
 	await mkdir( runtimeSourceDir, { recursive: true } );
 	await mkdir( join( runtimeRoot, 'build' ), { recursive: true } );
+	await mkdir( join( runtimeRoot, 'build-tools' ), { recursive: true } );
 	await writeFile( join( root, 'package.json' ), JSON.stringify( {
 		name: 'fixture',
 		private: true,
@@ -67,6 +68,7 @@ async function makeProject( threeVersion = '0.184.0', { provenance = false } = {
 	} ) );
 	await writeFile( join( runtimeSourceDir, 'slim-source-entry.js' ), 'export const __TSLP_SLIM__ = true;\n' );
 	await writeFile( join( runtimeRoot, 'rollup.config.js' ), 'export default {};\n' );
+	await writeFile( join( runtimeRoot, 'build-tools/slim-bundle-analysis.js' ), 'export const analysis = true;\n' );
 	await writeFile( runtimeBundleFile, 'export const __TSLP_SLIM__ = true;\n' );
 	await symlink( CONTRACT_PACKAGE_ROOT, join( root, 'node_modules/@tsl-precompile/contract' ), 'junction' );
 

@@ -9,19 +9,18 @@
  * user's `import { WebGPURenderer } from 'three/webgpu'` continues to work
  * without shipping the node builder.
  *
- * Phase 7 gate: ≤ 250 KB gzip — enforced by
- * `packages/plugin/test/unit/slim-bundle.test.js` (meaningful gate: ≤ 145 KB
- * to beat stock three.webgpu.min.js). Reaching the latter requires the
- * three-rewrite transform below (Milestone D) to eliminate the node-builder
- * imports three.js itself drags into the renderer modules.
- * `TSLP_ANALYZE=1` prints the per-module size breakdown.
+ * Reviewable byte/graph budgets live in `build-tools/slim-budget.json`.
+ * `TSLP_ANALYZE=1` prints the per-module size breakdown and
+ * `TSLP_ANALYZE_JSON=/path/report.json` writes deterministic build metrics.
  */
 
 import { nodeResolve } from '@rollup/plugin-node-resolve';
 import terser from '@rollup/plugin-terser';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
 
 import { getSlimRewriteRuntimeModuleRule, rewriteThreeSource } from '../plugin/src/three-rewrite.js';
 import {
@@ -44,6 +43,14 @@ import {
 	getSlimThreeRewriteTarget,
 } from '@tsl-precompile/contract/slim-three-policy';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
+import {
+	SLIM_BUNDLE_ANALYSIS_REPORT_SCHEMA,
+	analyzeSlimBundle,
+	findRenderedSlimCompilerModules,
+	findRenderedSlimStockAdapterModules,
+} from './build-tools/slim-bundle-analysis.js';
+
+export { findRenderedSlimCompilerModules, findRenderedSlimStockAdapterModules } from './build-tools/slim-bundle-analysis.js';
 
 const __dirname = dirname( fileURLToPath( import.meta.url ) );
 const requireFromRuntime = createRequire( import.meta.url );
@@ -71,44 +78,6 @@ export const SLIM_BUNDLE_SOURCE_INPUTS = createSlimBundleSourceInputs( {
  */
 export const SLIM_COMPILER_MODULE_RULES = SLIM_THREE_COMPILER_MODULES;
 export const SLIM_REPLAY_ADAPTER_RULES = SLIM_THREE_REPLAY_ADAPTER_MODULES;
-
-export function findRenderedSlimCompilerModules( bundle ) {
-
-	const found = new Map();
-	for ( const chunk of Object.values( bundle || {} ) ) {
-
-		for ( const [ id, module ] of Object.entries( chunk && chunk.modules || {} ) ) {
-
-			if ( ! module || module.renderedLength <= 0 ) continue;
-			const normalized = id.replace( /\\/g, '/' );
-			const rule = getSlimThreeCompilerModule( normalized );
-			if ( rule ) found.set( normalized, { id: normalized, label: rule.label, renderedLength: module.renderedLength } );
-
-		}
-
-	}
-	return [ ...found.values() ].sort( ( a, b ) => b.renderedLength - a.renderedLength || a.id.localeCompare( b.id ) );
-
-}
-
-export function findRenderedSlimStockAdapterModules( bundle ) {
-
-	const found = [];
-	for ( const chunk of Object.values( bundle || {} ) ) {
-
-		for ( const [ id, module ] of Object.entries( chunk && chunk.modules || {} ) ) {
-
-			if ( ! module || module.renderedLength <= 0 ) continue;
-			const normalized = id.replace( /\\/g, '/' );
-			const rule = getSlimThreeReplayAdapterModule( normalized );
-			if ( rule ) found.push( { id: normalized, label: rule.label, renderedLength: module.renderedLength } );
-
-		}
-
-	}
-	return found.sort( ( a, b ) => b.renderedLength - a.renderedLength || a.id.localeCompare( b.id ) );
-
-}
 
 const compilerResidueGuard = {
 	name: 'tsl-precompile:compiler-residue-guard',
@@ -475,19 +444,17 @@ export default {
 		},
 	},
 	plugins: [
-		( process.env.TSLP_ANALYZE ? {
+		compilerResidueGuard,
+		stockAdapterResidueGuard,
+		( process.env.TSLP_ANALYZE || process.env.TSLP_ANALYZE_JSON ? {
 			name: 'tslp-analyze',
 			generateBundle( _o, bundle ) {
 
-				for ( const chunk of Object.values( bundle ) ) {
+				const analysis = analyzeSlimBundle( bundle );
+				const rows = analysis.modules.map( ( module ) => [ module.id, module.renderedLength ] );
+				if ( process.env.TSLP_ANALYZE ) {
 
-					if ( ! chunk.modules ) continue;
-					const rows = Object.entries( chunk.modules )
-						.map( ( [ id, m ] ) => [ id.replace( /.*\/three\/src\//, 'three/src/' ).replace( /.*\/packages\/runtime\//, 'runtime/' ), m.renderedLength ] )
-						.filter( ( r ) => r[ 1 ] > 0 )
-						.sort( ( a, b ) => b[ 1 ] - a[ 1 ] );
-					let total = 0; for ( const r of rows ) total += r[ 1 ];
-					console.error( `\n=== ${ rows.length } modules, ${ ( total / 1024 ).toFixed( 0 ) } KB rendered ===` );
+					console.error( `\n=== ${ rows.length } modules, ${ ( analysis.renderedBytes / 1024 ).toFixed( 0 ) } KB rendered ===` );
 					for ( const [ id, len ] of rows.slice( 0, 35 ) ) console.error( `  ${ ( len / 1024 ).toFixed( 1 ).padStart( 7 ) } KB  ${ id }` );
 					// group by top-level three/src subdir
 					const groups = {};
@@ -500,19 +467,32 @@ export default {
 					console.error( '\n--- by subtree ---' );
 					for ( const [ g, len ] of Object.entries( groups ).sort( ( a, b ) => b[ 1 ] - a[ 1 ] ).slice( 0, 25 ) ) console.error( `  ${ ( len / 1024 ).toFixed( 1 ).padStart( 7 ) } KB  ${ g }` );
 
-					const nodeRuntime = rows.filter( ( [ id ] ) => id.startsWith( 'three/src/nodes/' ) || id.startsWith( 'three/src/materials/nodes/' ) );
-					const nodeRuntimeBytes = nodeRuntime.reduce( ( total, row ) => total + row[ 1 ], 0 );
-					const compilerResidue = findRenderedSlimCompilerModules( bundle );
 					console.error( `\n--- compiler boundary ---` );
-					console.error( `  compiler-only modules: ${ compilerResidue.length } (zero enforced)` );
-					console.error( `  retained Node/TSL runtime: ${ nodeRuntime.length } modules, ${ ( nodeRuntimeBytes / 1024 ).toFixed( 1 ) } KB rendered` );
+					console.error( `  compiler-only modules: ${ analysis.compiler.count } (zero enforced)` );
+					console.error( `  stock replay adapters: ${ analysis.stockAdapters.count } (zero enforced)` );
+					console.error( `  retained Node/TSL runtime: ${ analysis.retainedNodeRuntime.count } modules, ${ ( analysis.retainedNodeRuntime.renderedBytes / 1024 ).toFixed( 1 ) } KB rendered` );
+
+				}
+				if ( process.env.TSLP_ANALYZE_JSON ) {
+
+					const chunks = Object.values( bundle ).filter( ( chunk ) => chunk && chunk.type === 'chunk' );
+					const rawBytes = chunks.reduce( ( total, chunk ) => total + Buffer.byteLength( chunk.code || '' ), 0 );
+					const gzipLevel = 9;
+					const gzipBytes = chunks.reduce( ( total, chunk ) => total + gzipSync( Buffer.from( chunk.code || '' ), { level: gzipLevel } ).length, 0 );
+					const report = {
+						schema: SLIM_BUNDLE_ANALYSIS_REPORT_SCHEMA,
+						gzipLevel,
+						output: { chunkCount: chunks.length, rawBytes, gzipBytes },
+						graph: analysis,
+					};
+					const reportFile = resolve( process.env.TSLP_ANALYZE_JSON );
+					mkdirSync( dirname( reportFile ), { recursive: true } );
+					writeFileSync( reportFile, JSON.stringify( report, null, 2 ) + '\n' );
 
 				}
 
 			},
 		} : null ),
-		compilerResidueGuard,
-		stockAdapterResidueGuard,
 		runtimeAliasPlugin,
 		slimRewriteRuntimeModules,
 		auxVirtualStub,

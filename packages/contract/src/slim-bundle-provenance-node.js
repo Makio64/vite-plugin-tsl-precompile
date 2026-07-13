@@ -83,6 +83,7 @@ export function createSlimBundleSourceInputs( {
 		// Three/policy/artifact/build-toolchain identities are framed separately.
 		rollupRecipeFiles: [
 			{ name: 'runtime/rollup.config.js', file: resolve( runtimePackageRoot, 'rollup.config.js' ) },
+			{ name: 'runtime/build-tools/slim-bundle-analysis.js', file: resolve( runtimePackageRoot, 'build-tools/slim-bundle-analysis.js' ) },
 		],
 	};
 
