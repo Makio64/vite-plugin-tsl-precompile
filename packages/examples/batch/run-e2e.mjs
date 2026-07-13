@@ -1225,7 +1225,9 @@ function __mark( material, className, sourceObject = null, camera = null ) {
 	material.name = material.name || name;
 	__seenMaterials.set( material, name );
 	if ( bundleKey ) __bundleSharedNames.set( bundleKey, name );
-	__pending.push( { material, name, done: false } );
+	let renderTarget = null;
+	try { renderTarget = __renderer && typeof __renderer.getRenderTarget === 'function' ? __renderer.getRenderTarget() : null; } catch ( _ ) {}
+	__pending.push( { material, name, renderTarget, done: false } );
 	// Do NOT __flush() here. precompile() must run AFTER the example
 	// has finished setting up the scene (background, environment,
 	// lights). Many examples create materials inside an async loader
@@ -1443,6 +1445,7 @@ async function __flush() {
 				scene: item.material.__tslpPrecompileScene || null,
 				camera: item.material.__tslpPrecompileCamera || null,
 				object: item.material.__tslpPrecompileObject || null,
+				renderTarget: item.renderTarget || null,
 			} );
 		} catch ( err ) {
 			console.error( '[tslp-e2e] precompile failed:', err );

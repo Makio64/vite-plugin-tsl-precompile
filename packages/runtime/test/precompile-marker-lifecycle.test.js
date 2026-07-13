@@ -618,6 +618,64 @@ test( 'only auto-marked unobserved helpers receive a delayed generic fallback', 
 
 } );
 
+test( 'auto-mark capture preserves an active non-MRT pass render target', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'pass-target' );
+		const material = new three.Material();
+		const context = mount( three, material );
+		const clonedTarget = {
+			width: 640,
+			height: 360,
+			depthTexture: { image: { width: 640, height: 360 } },
+			disposed: false,
+			setSize( width, height ) {
+
+				this.width = width;
+				this.height = height;
+
+			},
+			dispose() { this.disposed = true; },
+		};
+		const passTarget = {
+			cloneCalls: 0,
+			clone() {
+
+				this.cloneCalls ++;
+				return clonedTarget;
+
+			},
+		};
+		const renderer = {
+			render() {},
+			getMRT: () => null,
+			// Delayed auto-mark flush runs after PassNode restored the canvas.
+			getRenderTarget: () => null,
+		};
+		let extractorOptions = null;
+		install( three, async ( _renderer, _scene, _camera, options ) => {
+
+			extractorOptions = options;
+			return artifactSet( material );
+
+		} );
+		setDevRenderer( renderer, three );
+
+		material.precompile( 'pass-target-material', { ...context, renderTarget: passTarget, __tslpAutoMark: true } );
+		await waitFor( () => posts.length === 1, 'non-MRT pass-target capture' );
+
+		assert.equal( extractorOptions.renderTargetOverride, clonedTarget );
+		assert.equal( extractorOptions.mrtNode, undefined );
+		assert.equal( passTarget.cloneCalls, 1 );
+		assert.deepEqual( [ clonedTarget.width, clonedTarget.height ], [ 1, 1 ] );
+		assert.deepEqual( clonedTarget.depthTexture.image, { width: 1, height: 1 } );
+		assert.equal( clonedTarget.disposed, true );
+
+	} );
+
+} );
+
 test( 'coalesces a trailing HMR recapture while extraction is inflight', async () => {
 
 	await withBrowser( async ( posts ) => {

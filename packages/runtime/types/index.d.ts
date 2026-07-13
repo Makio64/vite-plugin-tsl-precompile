@@ -20,6 +20,8 @@ export interface PrecompileCaptureContext {
 	camera?: unknown;
 	/** Object that owns the material during capture. */
 	object?: unknown;
+	/** Render target whose attachment topology selects the shader variant. */
+	renderTarget?: unknown;
 }
 
 /** Module augmentation: adds the dynamically-installed `.precompile(name, context?)` method to three.js `Material`. */

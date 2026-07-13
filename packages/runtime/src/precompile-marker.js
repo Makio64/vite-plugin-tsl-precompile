@@ -149,6 +149,7 @@ function normalizeCaptureContext( material, context ) {
 		scene: scene || findParentScene( object ),
 		camera: explicit.camera || material.__tslpPrecompileCamera || null,
 		object,
+		renderTarget: explicit.renderTarget || material.__tslpPrecompileRenderTarget || null,
 	};
 
 }
@@ -187,8 +188,13 @@ function queueMaterialCapture( material, name, installation, context, sourceIden
 	if ( alreadyQueued ) {
 
 		const nextContext = normalizeCaptureContext( material, context );
-		for ( const key of [ 'scene', 'camera', 'object' ] ) alreadyQueued.context[ key ] = nextContext[ key ] || alreadyQueued.context[ key ];
+		for ( const key of [ 'scene', 'camera', 'object', 'renderTarget' ] ) alreadyQueued.context[ key ] = nextContext[ key ] || alreadyQueued.context[ key ];
 		alreadyQueued.allowAutoFallback = alreadyQueued.allowAutoFallback || context && context.__tslpAutoMark === true;
+		if ( hasUsableCaptureContext( alreadyQueued.context ) && ! alreadyQueued.observedRenderTarget ) {
+
+			alreadyQueued.observedRenderTarget = alreadyQueued.context.renderTarget || activeRenderTarget( alreadyQueued.renderer );
+
+		}
 		alreadyQueued.sourceIdentity = sourceIdentity || alreadyQueued.sourceIdentity;
 		alreadyQueued.sourceRevision = sourceRevision || alreadyQueued.sourceRevision;
 		return;
@@ -209,9 +215,20 @@ function queueMaterialCapture( material, name, installation, context, sourceIden
 		observeTimer: null,
 		autoFallbackTimer: null,
 		allowAutoFallback: context && context.__tslpAutoMark === true,
+		observedRenderTarget: normalizedContext.renderTarget || null,
 		sourceIdentity,
 		sourceRevision,
 	};
+	// Auto-mark instrumentation may carry the target observed during an earlier
+	// render, while ordinary markers can be invoked inside the active pass.
+	// Preserve either source before PassNode restores the canvas; otherwise the
+	// synthetic compile falls back to Three's private output-intermediate target
+	// and signs the wrong topology.
+	if ( ! entry.observedRenderTarget && hasUsableCaptureContext( entry.context ) ) {
+
+		entry.observedRenderTarget = activeRenderTarget( renderer );
+
+	}
 	queuedNames.set( name, entry );
 	adjustPendingCaptureCount( 1 );
 	armCaptureObservationTimeout( entry );
@@ -221,6 +238,21 @@ function queueMaterialCapture( material, name, installation, context, sourceIden
 	// the material to appear in a real render (see setDevRenderer below).
 	if ( entry.renderer && hasUsableCaptureContext( entry.context ) ) startQueuedCapture( entry );
 	else if ( entry.allowAutoFallback && entry.renderer && lastRender ) scheduleAutoFallbackEntry( entry, lastRender.scene, lastRender.camera );
+
+}
+
+function activeRenderTarget( renderer ) {
+
+	if ( ! renderer || typeof renderer.getRenderTarget !== 'function' ) return null;
+	try {
+
+		return renderer.getRenderTarget() || null;
+
+	} catch ( _ ) {
+
+		return null;
+
+	}
 
 }
 
@@ -349,6 +381,11 @@ function bindPendingCapturesFromRender( renderer, scene, camera, renderTopology 
 			for ( const entry of entries.values() ) {
 
 				entry.renderer = renderer;
+				if ( ! entry.observedRenderTarget && renderTopology && renderTopology.renderTarget ) {
+
+					entry.observedRenderTarget = renderTopology.renderTarget;
+
+				}
 				if ( ! entry.mrtRenderTarget && renderTopology && renderTopology.mrtNode && renderTopology.renderTarget ) {
 
 					entry.mrtNode = renderTopology.mrtNode;
@@ -1382,9 +1419,19 @@ async function captureMaterialInDev( entry ) {
 			extractorOpts.mrtNode = mrtNode;
 			const mrtOutputs = mrtNode.nodes || mrtNode.outputNodes || null;
 			const mrtOutputNames = mrtOutputs ? Object.keys( mrtOutputs ) : [];
-			captureRenderTarget = cloneRenderTargetForCapture( entry.mrtRenderTarget || getMRTCaptureRenderTarget( sourceScene, mrtNode ), mrtOutputNames );
+			captureRenderTarget = cloneRenderTargetForCapture( entry.mrtRenderTarget || entry.observedRenderTarget || getMRTCaptureRenderTarget( sourceScene, mrtNode ), mrtOutputNames );
 			if ( captureRenderTarget ) extractorOpts.renderTargetOverride = captureRenderTarget;
 			if ( mrtOutputNames.length > 1 ) extractorOpts.skipWarmupRender = true;
+
+		} else if ( entry.observedRenderTarget ) {
+
+			captureRenderTarget = cloneRenderTargetForCapture( entry.observedRenderTarget );
+			if ( captureRenderTarget ) {
+
+				extractorOpts ||= {};
+				extractorOpts.renderTargetOverride = captureRenderTarget;
+
+			}
 
 		}
 
