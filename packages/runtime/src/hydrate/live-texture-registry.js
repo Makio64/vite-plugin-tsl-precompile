@@ -32,7 +32,6 @@ const _registeredAnonDataTextures = new WeakSet();
 const _storageNames = new WeakMap();
 
 let _patchesInstalled = false;
-let _bareThreePatchPromise = null;
 
 function imageSrcForTexture( texture ) {
 
@@ -226,14 +225,19 @@ function patchRegistryConstructors( namespace ) {
 
 }
 
-function queueBareThreePatch() {
-
-	if ( _bareThreePatchPromise ) return _bareThreePatchPromise;
-	_bareThreePatchPromise = import( 'three' ).then( patchRegistryConstructors ).catch( () => null );
-	return _bareThreePatchPromise;
-
-}
-
+/**
+ * Install registry hooks on the runtime-owned source constructors and, when
+ * provided, on an application Three namespace as well.
+ *
+ * The namespace must be injected by the caller. Importing bare `three` from
+ * here would make the single-file slim build retain the complete Three.Core
+ * namespace through Rollup's `inlineDynamicImports`, even though slim already
+ * owns the exact Data/Storage texture constructors it needs. The recommended
+ * full-runtime setup and `createSlimSceneSupport({ threeModule })` both pass
+ * their namespace explicitly.
+ *
+ * @param {?Object} namespace - Optional `three` / `three/webgpu` namespace.
+ */
 export function installLiveTextureRegistryPatches( namespace = null ) {
 
 	if ( ! _patchesInstalled ) {
@@ -245,7 +249,6 @@ export function installLiveTextureRegistryPatches( namespace = null ) {
 		_patchDataTextureRegister( DataTexture );
 		_patchDataTextureRegister( Data3DTexture );
 		_patchDataTextureRegister( DataArrayTexture );
-		queueBareThreePatch();
 
 	}
 	patchRegistryConstructors( namespace );

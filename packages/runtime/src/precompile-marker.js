@@ -27,6 +27,7 @@ import { MARKER_METHOD_NAME } from './_constants.js';
 import { normalizeRevision } from './_normalize-revision.js';
 import { hashArtifactContentSync, hashMaterialSync } from './graph-hash.js';
 import { registerArtifact } from './artifact-loader.js';
+import { installLiveTextureRegistryPatches } from './hydrate/live-texture-registry.js';
 import { MATERIAL_NODE_TEXTURE_KEYS } from '@tsl-precompile/contract/texture-props';
 import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
@@ -604,6 +605,11 @@ export function installPrecompileMarker( three, opts = {} ) {
 		throw new Error( '[tsl-precompile] installPrecompileMarker requires the three.Material class on the passed module.' );
 
 	}
+
+	// `three` and `three/src/**` can be separate module instances in a full
+	// runtime build. Patch the namespace the author actually passed instead of
+	// making the slim hydrator dynamically import the entire bare-three barrel.
+	installLiveTextureRegistryPatches( three );
 
 	const prototype = Material.prototype;
 	let installation = installations.get( prototype );

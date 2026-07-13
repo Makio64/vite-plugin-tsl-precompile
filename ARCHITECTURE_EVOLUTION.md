@@ -257,6 +257,19 @@ The strict bundle retains 92 Node/TSL modules / 396.9 KiB rendered and measures
 890,831 raw / 241,080 gzip bytes. Environment/fog scene topology is now the
 remaining live scene-node island before XR and resource adapters.
 
+**Explicit texture-constructor ownership (2026-07-13).** The live texture
+registry no longer dynamically imports the bare `three` namespace. The slim
+runtime already owns direct imports for all six Data/Storage texture classes;
+full-runtime marker setup and scene support now patch the exact Three namespace
+supplied by the application. Direct hydrator tests now inject that application
+namespace explicitly as well. This removes an accidental Rollup
+`inlineDynamicImports` retention root without changing configured lookup behavior:
+the strict bundle drops from 444 to 414 modules and from 890,831 to 853,932 raw
+bytes (about 10.6 KiB gzip), while compiler-only modules remain zero and the
+remaining Node/TSL runtime stays at 92 modules / 396.9 KiB rendered. Explicit
+constructor injection is the model for optional full-runtime compatibility;
+slim internals must not recover broad package namespaces dynamically.
+
 ---
 
 ## 2026-06-09 audit refresh — corrections to the map

@@ -7,6 +7,7 @@ import { registerArtifact, getArtifact } from '../src/artifact-loader.js';
 import { getDFGLUT } from '../src/dfg-lut.js';
 import { hydrateNodeBuilderState, registerLiveTexture, clearLiveTextureIndex } from '../src/hydrator.js';
 import { setTextureResolutionDebugHook } from '../src/hydrate/artifact-texture-resolver.js';
+import { installLiveTextureRegistryPatches } from '../src/hydrate/live-texture-registry.js';
 import { __applyPrecompiled, catalogueArtifactTextureRefs, collectLiveMaterialTextures } from '../src/apply-precompiled.js';
 import PrecompiledMaterial from '../src/_vendor-PrecompiledMaterial.js';
 import { PrecompiledComputeNode } from '../src/precompiled-compute-node.js';
@@ -2960,11 +2961,19 @@ test( 'storage-texture: falls back to blank Storage3DTexture when not registered
 // of matching shape exists; the hydrator should bind the live one.
 // ─────────────────────────────────────────────────────────────────────────────
 
+async function loadPatchedApplicationThree() {
+
+	const three = await import( 'three' );
+	installLiveTextureRegistryPatches( three );
+	return three;
+
+}
+
 test( 'hydrator: anonymous DataTexture by shape replaces trivial-zeros snapshot', async () => {
 
 	clearLiveTextureIndex();
 
-	const { DataTexture, RedFormat, UnsignedByteType } = await import( 'three' );
+	const { DataTexture, RedFormat, UnsignedByteType } = await loadPatchedApplicationThree();
 	const live = new DataTexture( new Uint8Array( 1024 ), 1024, 1, RedFormat, UnsignedByteType );
 	live.needsUpdate = true;
 
@@ -3010,7 +3019,7 @@ test( 'hydrator: anonymous DataTexture fallback skipped when snapshot has real d
 
 	clearLiveTextureIndex();
 
-	const { DataTexture, RedFormat, UnsignedByteType } = await import( 'three' );
+	const { DataTexture, RedFormat, UnsignedByteType } = await loadPatchedApplicationThree();
 	const live = new DataTexture( new Uint8Array( 4 ), 2, 1, RedFormat, UnsignedByteType );
 	live.needsUpdate = true;
 	await new Promise( resolve => setTimeout( resolve, 0 ) );
@@ -3055,7 +3064,7 @@ test( 'hydrator: anonymous DataTexture fallback bails on shape ambiguity', async
 
 	clearLiveTextureIndex();
 
-	const { DataTexture, RedFormat, UnsignedByteType } = await import( 'three' );
+	const { DataTexture, RedFormat, UnsignedByteType } = await loadPatchedApplicationThree();
 	const liveA = new DataTexture( new Uint8Array( 1024 ), 1024, 1, RedFormat, UnsignedByteType );
 	liveA.needsUpdate = true;
 	const liveB = new DataTexture( new Uint8Array( 1024 ), 1024, 1, RedFormat, UnsignedByteType );
