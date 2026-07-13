@@ -12,8 +12,8 @@
 		"smokePass": 197,
 		"smokePassRate": 99.5,
 		"pixelMatchCount": 205,
-		"visualMatchCount": 11,
-		"rendersCount": 8,
+		"visualMatchCount": 12,
+		"rendersCount": 7,
 		"captureOnlyCount": 1
 	},
 	"categories": [
@@ -7767,7 +7767,7 @@
 			],
 			"notes": "",
 			"thumbHealth": "ok",
-			"badge": "renders"
+			"badge": "visual-match"
 		},
 		{
 			"basename": "webgpu_refraction",
