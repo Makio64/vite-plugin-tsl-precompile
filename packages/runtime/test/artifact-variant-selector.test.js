@@ -114,6 +114,58 @@ test( 'signed background artifacts ignore scene-only topology but retain target 
 
 } );
 
+test( 'signed post-process artifacts ignore adapter-owned output attachments but retain pipeline topology', () => {
+
+	const captureSelector = JSON.stringify( {
+		version: 'render-object-selector@1',
+		renderer: { backend: { kind: 'webgpu' } },
+		target: {
+			surface: 'output-intermediate',
+			sampleCount: 1,
+			colors: [ { kind: 'render-target', format: 1023 } ],
+			depthTexture: { kind: 'depth', format: 1026 },
+		},
+		camera: { array: false },
+		material: { fog: true, transparent: false },
+	} );
+	const replaySelector = JSON.stringify( {
+		version: 'render-object-selector@1',
+		renderer: { backend: { kind: 'webgpu' } },
+		target: { surface: 'default', sampleCount: 1, colors: [], depthTexture: null },
+		camera: { array: false },
+		material: { fog: false, transparent: false },
+	} );
+	const artifact = {
+		cacheKey: 'post-process',
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		uniformPlan: [],
+		bindings: [],
+		renderContextSelectors: [ captureSelector ],
+	};
+	assert.throws(
+		() => selectArtifactVariant( artifact, { renderContextSelector: replaySelector } ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+	);
+	assert.equal( selectArtifactVariant( artifact, {
+		renderContextSelector: replaySelector,
+		renderContextSelectorProfile: 'post-process',
+	} ), artifact );
+
+	const wrongSampleCount = JSON.stringify( {
+		...JSON.parse( replaySelector ),
+		target: { ...JSON.parse( replaySelector ).target, sampleCount: 4 },
+	} );
+	assert.throws(
+		() => selectArtifactVariant( artifact, {
+			renderContextSelector: wrongSampleCount,
+			renderContextSelectorProfile: 'post-process',
+		} ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+	);
+
+} );
+
 test( 'signed families reject unsigned siblings instead of falling through', () => {
 
 	const artifact = family();

@@ -188,7 +188,7 @@ class ReplayNodeManager extends DataMap {
 			cacheKey: this.getForRenderCacheKey( renderObject ),
 			renderObject,
 			renderContextSelector: selector,
-			renderContextSelectorProfile: auxShape === 'background' || auxShape === 'shadow-depth' ? auxShape : null,
+			renderContextSelectorProfile: auxShape === 'background' || auxShape === 'shadow-depth' || auxShape === 'post-process' ? auxShape : null,
 		};
 
 	}

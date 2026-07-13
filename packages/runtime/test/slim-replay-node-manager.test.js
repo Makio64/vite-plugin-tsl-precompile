@@ -186,6 +186,28 @@ test( 'replay NodeManager applies the shadow-depth selector profile from artifac
 
 } );
 
+test( 'replay NodeManager applies the post-process selector profile from artifact shape metadata', () => {
+
+	const sourceRenderer = fakeRenderer();
+	const signed = artifact( { materialShape: 'post-process' } );
+	const replayMaterial = material( signed );
+	replayMaterial.fog = false;
+	const live = renderObject( sourceRenderer, replayMaterial );
+	const captureDescriptor = JSON.parse( createRenderObjectContextSelector( live, sourceRenderer ) );
+	captureDescriptor.material.fog = true;
+	captureDescriptor.target = {
+		...captureDescriptor.target,
+		surface: 'output-intermediate',
+		colors: [ { kind: 'render-target', format: 1023 } ],
+		depthTexture: { kind: 'depth', format: 1026 },
+	};
+	signed.renderContextSelectors = [ JSON.stringify( captureDescriptor ) ];
+
+	const manager = new ReplayNodeManager( sourceRenderer, sourceRenderer.backend );
+	assert.doesNotThrow( () => manager.getForRender( live ) );
+
+} );
+
 test( 'replay NodeManager supports compute, update scheduling, groups, and disposal', async () => {
 
 	const renderer = fakeRenderer();

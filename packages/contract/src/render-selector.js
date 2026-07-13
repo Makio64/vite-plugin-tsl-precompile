@@ -114,8 +114,12 @@ export function createSceneRenderTopologySelector( scene ) {
  * Background materials explicitly disable lights and fog and do not consume
  * the scene environment. Shadow-depth materials likewise consume caster,
  * target, camera, clipping, and renderer topology rather than scene lighting,
- * fog, or environment. Keeping those unused fields in a signed auxiliary
- * selector makes equivalent capture and replay passes fail to match.
+ * fog, or environment. The final post-process quad is captured on Three's
+ * private output-intermediate target but replayed directly to the default
+ * surface; its persisted WGSL does not depend on that adapter-owned target's
+ * attachment descriptors or on NodeMaterial's fog default. Keeping those
+ * unused fields in a signed auxiliary selector makes equivalent capture and
+ * replay passes fail to match.
  *
  * Unknown profiles are returned unchanged so callers can opt in one adapter
  * at a time without weakening ordinary material selection.
@@ -127,7 +131,9 @@ export function createSceneRenderTopologySelector( scene ) {
 export function projectRenderObjectContextSelector( selector, profile ) {
 
 	if ( typeof selector !== 'string' ) return '';
-	if ( ( profile !== 'background' && profile !== 'shadow-depth' ) || selector.length === 0 ) return selector;
+	const sceneIndependent = profile === 'background' || profile === 'shadow-depth';
+	const postProcess = profile === 'post-process';
+	if ( ( ! sceneIndependent && ! postProcess ) || selector.length === 0 ) return selector;
 	let descriptor;
 	try {
 
@@ -139,6 +145,27 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 
 	}
 	if ( ! descriptor || typeof descriptor !== 'object' || descriptor.version !== 'render-object-selector@1' ) return selector;
+
+	if ( postProcess ) {
+
+		const projected = { ...descriptor };
+		if ( projected.material && typeof projected.material === 'object' ) {
+
+			projected.material = { ...projected.material };
+			delete projected.material.fog;
+
+		}
+		if ( projected.target && typeof projected.target === 'object' ) {
+
+			projected.target = { ...projected.target };
+			delete projected.target.surface;
+			delete projected.target.colors;
+			delete projected.target.depthTexture;
+
+		}
+		return stableJsonStringify( projected, 'renderObjectSelector' );
+
+	}
 
 	const projected = { ...descriptor, lights: [] };
 	delete projected.scene;

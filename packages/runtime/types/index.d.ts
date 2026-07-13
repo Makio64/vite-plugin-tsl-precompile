@@ -241,8 +241,8 @@ export interface HydrateVariantSelection {
 	renderObject?: unknown;
 	/** Precomputed canonical selector for non-Three integrations and tests. */
 	renderContextSelector?: string | null;
-	/** Renderer-owned auxiliary topology profile, currently `background`. */
-	renderContextSelectorProfile?: 'background' | null;
+	/** Renderer-owned auxiliary topology profile. */
+	renderContextSelectorProfile?: 'background' | 'shadow-depth' | 'post-process' | null;
 	/** Optional material override for MRT attachment-count compatibility. */
 	material?: unknown;
 }

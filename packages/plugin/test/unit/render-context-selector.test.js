@@ -195,6 +195,41 @@ test( 'background selector projection ignores scene lighting, fog, environment, 
 
 } );
 
+test( 'post-process projection ignores private output attachments but retains pipeline topology', () => {
+
+	const capture = fixture();
+	const replay = fixture();
+	capture.context.renderTarget = {
+		isRenderTarget: true,
+		isPostProcessingRenderTarget: true,
+		textures: capture.context.textures,
+		depthTexture: capture.context.depthTexture,
+		depthBuffer: true,
+		stencilBuffer: false,
+		samples: 1,
+	};
+	capture.context.sampleCount = 1;
+	capture.material.fog = true;
+	replay.context.renderTarget = null;
+	replay.context.textures = [];
+	replay.context.depthTexture = null;
+	replay.context.sampleCount = 1;
+	replay.material.fog = false;
+	assert.notEqual( createRenderObjectContextSelector( capture ), createRenderObjectContextSelector( replay ) );
+	assert.equal(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'post-process' ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'post-process' ),
+	);
+
+	replay.context.sampleCount = 4;
+	assert.notEqual(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'post-process' ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'post-process' ),
+		'sample count remains signed',
+	);
+
+} );
+
 test( 'shadow-depth selector mirrors effective source-material shadow branches', () => {
 
 	const plain = shadowFixture();
