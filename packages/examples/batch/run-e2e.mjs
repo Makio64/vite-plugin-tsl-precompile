@@ -9399,8 +9399,10 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 	const signature = __sceneSignature( userScene );
 	if ( ! signature || signature.lights === 0 || signature.meshes === 0 || signature.casters === 0 ) return;
 	let replayRenderTarget = null;
+	let replayMRT = null;
 	try {
 		replayRenderTarget = slimRenderer && typeof slimRenderer.getRenderTarget === 'function' ? slimRenderer.getRenderTarget() : null;
+		replayMRT = slimRenderer && typeof slimRenderer.getMRT === 'function' ? slimRenderer.getMRT() : null;
 	} catch ( _ ) {}
 	const sig = signature.value;
 	let st = __shadowState.get( userScene );
@@ -9426,6 +9428,7 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 	const _userScene = userScene;
 	const _camera = camera;
 	const _replayRenderTarget = replayRenderTarget;
+	const _replayMRT = replayMRT;
 	const _topReplayPipeline = slimRenderer ? ( slimRenderer.__tslpCurrentRenderPipeline || window.__tslpLastRenderPipeline || null ) : null;
 	const _topReplayScene = replayRenderTarget && slimRenderer ? slimRenderer._lastScene : null;
 	const _topReplayCamera = replayRenderTarget && slimRenderer ? slimRenderer._lastCamera : null;
@@ -9682,6 +9685,7 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 		// bind group even though the live full-renderer GPUTexture was shared.
 		try {
 			const previousTarget = typeof _slimRenderer.getRenderTarget === 'function' ? _slimRenderer.getRenderTarget() : null;
+			const previousMRT = typeof _slimRenderer.getMRT === 'function' ? _slimRenderer.getMRT() : null;
 			const previousSuppressShadowKick = _slimRenderer.__tslpSuppressShadowKick === true;
 			const previousSuppressVelocity = _slimRenderer.__tslpSuppressVelocityStateAdvance === true;
 			const previousGlobalSuppressVelocity = window.__tslpSuppressVelocityStateAdvance === true;
@@ -9693,6 +9697,7 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 				// __tslpSuppressShadowKick prevents recursive shadow production without
 				// changing the signed renderer selector from shadow-enabled to disabled.
 				__updateCustomShadowHelpers( _userScene );
+				if ( typeof _slimRenderer.setMRT === 'function' ) _slimRenderer.setMRT( _replayMRT );
 				if ( typeof _slimRenderer.setRenderTarget === 'function' ) _slimRenderer.setRenderTarget( _replayRenderTarget );
 				const suspendedReplayShadowNodes = __suspendCustomShadowNodes( _userScene );
 				try {
@@ -9712,6 +9717,7 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 				if ( previousGlobalSuppressVelocity ) window.__tslpSuppressVelocityStateAdvance = true;
 				else delete window.__tslpSuppressVelocityStateAdvance;
 				if ( typeof _slimRenderer.setRenderTarget === 'function' ) _slimRenderer.setRenderTarget( previousTarget );
+				if ( typeof _slimRenderer.setMRT === 'function' ) _slimRenderer.setMRT( previousMRT );
 			}
 			if ( _topReplayPipeline && typeof _topReplayPipeline.render === 'function' ) {
 				const topPreviousSuppressShadowKick = _slimRenderer.__tslpSuppressShadowKick === true;
