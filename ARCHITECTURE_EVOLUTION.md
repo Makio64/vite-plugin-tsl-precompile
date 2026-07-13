@@ -129,8 +129,13 @@ replay still completes through that adapter. Together these cuts moved the
 checked bundle from 916,965 raw / ~249,100 gzip bytes to 876,647 raw / 238,462
 gzip bytes (the standard test reports 856.1 / 232.9 KiB).
 
-The builder is therefore no longer the remaining bundle problem. The analyzer
-still reports **101 Three Node/TSL runtime modules / 440.0 KiB rendered before
+The builder is therefore no longer the remaining bundle problem. A follow-up
+removed RenderPipeline's unused live `renderOutput()` wrapper and replaced the
+viewport rebinder's three real `Viewport*TextureNode` dependencies with a
+replay-native framebuffer-copy source. The focused AO diagnostic stayed at
+28.51 dB and the transmission canary passes at 38.71 dB. The latter extraction
+moves the bundle to 877,831 raw / 237,527 gzip bytes and leaves **100 Three
+Node/TSL runtime modules / 437.5 KiB rendered before
 minification**, rooted mainly in NodeManager scene topology, Background,
 RenderPipeline, renderer output/shadow helpers, viewport texture nodes, and XR.
 Disposable graph experiments put the next ceiling near 189 KiB gzip for the

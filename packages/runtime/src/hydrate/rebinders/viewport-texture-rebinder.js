@@ -1,6 +1,9 @@
-import { viewportMipTexture, viewportTexture } from 'three/src/nodes/display/ViewportTextureNode.js';
-import { viewportDepthTexture } from 'three/src/nodes/display/ViewportDepthTextureNode.js';
-import { viewportSharedTexture } from 'three/src/nodes/display/ViewportSharedTextureNode.js';
+import {
+	viewportDepthTexture,
+	viewportMipTexture,
+	viewportSharedTexture,
+	viewportTexture,
+} from './viewport-copy-source.js';
 
 import {
 	invalidateOnTextureResourceChange,
