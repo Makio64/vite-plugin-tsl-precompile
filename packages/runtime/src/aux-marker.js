@@ -22,6 +22,7 @@ import { cloneRenderTargetForCapture } from './capture-render-target.js';
 import { collectEffectNodes } from './slim-support/postprocess-effects.js';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { createRenderPipelineConfig } from '@tsl-precompile/contract/output-config';
+import { collectArtifactVariantCandidates, mergeArtifactVariantFamily } from '@tsl-precompile/contract/artifact-variants';
 
 const logged = new Set();
 function logOnce( key, fn ) {
@@ -373,7 +374,8 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 				const signature = shadowLights
 					.map( ( l ) => `${ l.type || l.constructor && l.constructor.name || 'Light' }:${ l.shadow && l.shadow.mapSize ? `${ l.shadow.mapSize.width }x${ l.shadow.mapSize.height }` : 'shadow' }` )
 					.sort();
-				const cacheKeys = [ artifact.cacheKey, ...Object.keys( artifact.variants || {} ) ]
+				const cacheKeys = collectArtifactVariantCandidates( artifact )
+					.map( ( candidate ) => candidate.cacheKey )
 					.filter( ( key ) => key !== undefined && key !== null )
 					.map( ( key ) => String( key ) )
 					.sort();
@@ -562,14 +564,16 @@ async function captureShadowDepthLive( renderer, scene, camera, opts ) {
 	const artifacts = await compileTSL( renderer, scene, camera, { noGlobalMRT: true } );
 	const shadowArtifacts = artifacts.filter( ( artifact ) => artifact && artifact.materialShape === 'shadow-depth' );
 	if ( shadowArtifacts.length === 0 ) return null;
-	shadowArtifacts.sort( ( a, b ) => variantCount( b ) - variantCount( a ) );
-	return jsonSafe( shadowArtifacts[ 0 ] );
+	shadowArtifacts.sort( ( a, b ) => variantCount( b ) - variantCount( a ) || String( a.cacheKey ).localeCompare( String( b.cacheKey ) ) );
+	const artifact = shadowArtifacts[ 0 ];
+	mergeArtifactVariantFamily( artifact, shadowArtifacts );
+	return jsonSafe( artifact );
 
 }
 
 function variantCount( artifact ) {
 
-	return artifact && artifact.variants && typeof artifact.variants === 'object' ? Object.keys( artifact.variants ).length : 0;
+	return collectArtifactVariantCandidates( artifact ).length;
 
 }
 

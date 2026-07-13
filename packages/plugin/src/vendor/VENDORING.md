@@ -67,6 +67,16 @@ exposes a compatible resource at the same public node path; otherwise capture
 omits it and replay uses its owner-local snapshot/shape fallback. Source-local
 `render-material` live uniforms continue to resolve paths against the override.
 
+Shadow material cache keys are local to each renderer-owned per-light material
+family; r184 can reuse the same numeric key for equivalent directional and
+point-shadow payloads even though their render-target selectors differ. Aux
+capture must merge every observed shadow family through the shared artifact
+variant contract. Equivalent same-key payloads canonical-union their semantic
+selectors; divergent same-key payloads fail closed because the serialized
+`variants` map cannot represent both without a contract migration. Never use a
+last-writer-wins cache-key assignment here: it silently drops cube-face point
+shadow coverage.
+
 Slim replay has a separate build-time AST seam at r184's direct
 `material = overrideMaterial` assignment. At that expression the right-hand
 `material` is still the exact selected caster (including an array/group

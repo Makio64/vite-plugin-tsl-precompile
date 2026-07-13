@@ -463,6 +463,25 @@ ceiling from 840,000 to 843,000 bytes and the minimal source gzip ceiling from
 158,000 to 161,000 bytes (measured 159,878); prebuilt gzip, advanced-source,
 compiler, adapter, identity, and graph ceilings stay fixed.
 
+**Complete shadow artifact-family preservation (2026-07-13).** Aux capture
+no longer sorts shadow-depth artifacts and serializes only the largest
+renderer-owned material family. A real directional + point-light fixture
+proved the old path retained only 2 of 6 semantic selectors and dropped every
+point-shadow cube-face topology. The shared artifact-variant contract now
+flattens nested families and treats Three cache keys as family-local: when the
+same key identifies an equivalent shader/binding payload, capture and the
+runtime registry canonical-union every render-context selector while keeping
+the original root identity stable; a divergent same-key payload throws the
+typed `TSLP_ARTIFACT_VARIANT_CACHE_KEY_COLLISION` error instead of overwriting
+one family. Browser aux capture emits one JSON-safe aggregate, persistence
+keeps the existing `<shape>:<configHash>` model, and semantic replay selection
+uses the same authoritative candidate helper as contract validation. The
+strict bundle is 842,964 raw / 230,884 gzip-9 bytes with the graph unchanged at
+395 modules, zero compiler/stock-adapter residue, and 65 retained Node/TSL
+modules / 302,240 rendered bytes. All production budgets pass unchanged. With
+every observed shadow family now durable, removing stock
+`Renderer._getShadowNodes()` construction is the next independent wedge.
+
 ---
 
 ## 2026-06-09 audit refresh — corrections to the map

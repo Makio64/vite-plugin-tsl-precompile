@@ -34,7 +34,7 @@ import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { createRenderContextSignature } from '@tsl-precompile/contract/render-context';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
-import { createArtifactVariantPayload } from '@tsl-precompile/contract/artifact-variants';
+import { mergeArtifactVariantFamily } from '@tsl-precompile/contract/artifact-variants';
 
 const MARKER_STATE_SYMBOL = Symbol.for( '@tsl-precompile/runtime/precompile-marker-state' );
 const DEFAULT_OBSERVE_TIMEOUT_MS = 30_000;
@@ -549,9 +549,8 @@ function collectMaterialVariantList( artifactSets, materialUuid ) {
 		for ( const variant of list ) {
 
 			if ( ! variant || variant.cacheKey === undefined || variant.cacheKey === null ) continue;
-			const key = String( variant.cacheKey );
-			if ( seen.has( key ) ) continue;
-			seen.add( key );
+			if ( seen.has( variant ) ) continue;
+			seen.add( variant );
 			variants.push( variant );
 
 		}
@@ -564,15 +563,12 @@ function collectMaterialVariantList( artifactSets, materialUuid ) {
 function attachMaterialVariantFamily( artifact, variantList ) {
 
 	if ( ! artifact || ! Array.isArray( variantList ) || variantList.length <= 1 ) return;
-	const variants = {};
 	for ( const variant of variantList ) {
 
-		if ( ! variant || variant.cacheKey === undefined || variant.cacheKey === null ) continue;
-		variants[ String( variant.cacheKey ) ] = createArtifactVariantPayload( variant );
 		mergeArtifactTextureRefs( artifact, variant );
 
 	}
-	if ( Object.keys( variants ).length > 1 ) artifact.variants = variants;
+	mergeArtifactVariantFamily( artifact, variantList );
 
 }
 

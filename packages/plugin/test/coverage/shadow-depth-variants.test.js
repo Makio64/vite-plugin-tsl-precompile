@@ -6,6 +6,11 @@ import { installMockWebGPU, createMockGPUCanvasContext } from '../../src/mock-we
 import { compileTSL } from '../../src/vendor/compileTSL.js';
 import { selectArtifactVariant } from '../../../runtime/src/hydrate/variants/artifact-variant-selector.js';
 import { RENDER_BINDING_OWNER_KINDS } from '@tsl-precompile/contract/render-selector';
+import {
+	collectArtifactVariantCandidates,
+	createArtifactVariantPayloadFingerprint,
+	mergeArtifactVariantFamily,
+} from '@tsl-precompile/contract/artifact-variants';
 
 let initialized = false;
 
@@ -96,6 +101,10 @@ test( 'compileTSL: shadow-depth aux artifacts retain custom shadow variants', as
 		light.castShadow = true;
 		light.position.set( 4, 6, 3 );
 		scene.add( light );
+		const pointLight = new core.PointLight( 0xffffff, 1.5 );
+		pointLight.castShadow = true;
+		pointLight.position.set( - 3, 4, 2 );
+		scene.add( pointLight );
 
 		const textureData = new Uint8Array( [ 255, 128, 64, 255 ] );
 		const causticMap = new core.DataTexture( textureData, 1, 1 );
@@ -221,6 +230,42 @@ test( 'compileTSL: shadow-depth aux artifacts retain custom shadow variants', as
 		} );
 		assert.equal( String( selectedCustom.cacheKey ), String( customVariant.cacheKey ), 'custom caster selects custom shadow WGSL' );
 		assert.equal( String( selectedPlain.cacheKey ), String( plainVariant.cacheKey ), 'plain caster selects plain shadow WGSL' );
+
+		const candidatesBeforeMerge = shadowArtifacts.flatMap( ( artifact ) => collectArtifactVariantCandidates( artifact ) );
+		const selectorsBeforeMerge = [ ...new Set( candidatesBeforeMerge.flatMap( ( candidate ) => candidate.renderContextSelectors || [] ) ) ];
+		assert.ok( selectorsBeforeMerge.some( ( selector ) => selector.includes( '"surface":"offscreen-2d"' ) ), 'directional shadow family was captured' );
+		assert.ok( selectorsBeforeMerge.some( ( selector ) => selector.includes( '"surface":"offscreen-cube"' ) ), 'point shadow family was captured' );
+		const membersByCacheKey = new Map();
+		for ( const candidate of candidatesBeforeMerge ) {
+
+			const key = String( candidate.cacheKey );
+			const members = membersByCacheKey.get( key ) || [];
+			members.push( candidate );
+			membersByCacheKey.set( key, members );
+
+		}
+		const equivalentCollision = [ ...membersByCacheKey.entries() ].find( ( [ , members ] ) =>
+			members.length > 1 && new Set( members.map( createArtifactVariantPayloadFingerprint ) ).size === 1
+		);
+		assert.ok( equivalentCollision, 'expected a private shadow cache key shared across light material families' );
+		const [ collisionKey, collisionMembers ] = equivalentCollision;
+		const expectedCollisionSelectors = [ ...new Set( collisionMembers.flatMap( ( candidate ) => candidate.renderContextSelectors || [] ) ) ].sort();
+
+		const aggregate = mergeArtifactVariantFamily( shadowArtifacts[ 0 ], shadowArtifacts );
+		const aggregateValidation = validateArtifact( aggregate, { label: 'aggregate shadow-depth family' } );
+		assert.equal( aggregateValidation.ok, true, aggregateValidation.errors.map( ( error ) => error.message ).join( '\n' ) );
+		const aggregateCandidates = collectArtifactVariantCandidates( aggregate );
+		assert.ok( aggregateCandidates.every( ( candidate ) => candidate.bindingOwner === RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER ) );
+		const aggregateSelectors = [ ...new Set( aggregateCandidates.flatMap( ( candidate ) => candidate.renderContextSelectors || [] ) ) ];
+		assert.deepEqual( aggregateSelectors.slice().sort(), selectorsBeforeMerge.slice().sort(), 'aggregate retains every light/caster selector' );
+		const collisionCandidate = aggregateCandidates.find( ( candidate ) => String( candidate.cacheKey ) === collisionKey );
+		assert.deepEqual( collisionCandidate.renderContextSelectors, expectedCollisionSelectors, 'equivalent cache-key collision unions selectors' );
+		const pointSelector = aggregateSelectors.find( ( selector ) => selector.includes( '"surface":"offscreen-cube"' ) );
+		const selectedPoint = selectArtifactVariant( aggregate, {
+			renderContextSelector: pointSelector,
+			renderContextSelectorProfile: 'shadow-depth',
+		} );
+		assert.ok( selectedPoint.renderContextSelectors.includes( pointSelector ), 'aggregate semantically selects a point-shadow variant' );
 
 	} finally {
 

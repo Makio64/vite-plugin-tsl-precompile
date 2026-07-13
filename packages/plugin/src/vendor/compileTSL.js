@@ -28,7 +28,7 @@ export { beginRenderObjectHarvest };
 import { DataUtils, FloatType, HalfFloatType, RGBAFormat, RenderTarget } from 'three';
 import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
 import { createRenderObjectContextSelector, RENDER_BINDING_OWNER_KINDS } from '@tsl-precompile/contract/render-selector';
-import { createArtifactVariantPayload } from '@tsl-precompile/contract/artifact-variants';
+import { mergeArtifactVariantFamily } from '@tsl-precompile/contract/artifact-variants';
 import { normalizeArtifactLightIdentities } from '@tsl-precompile/contract/light-identities';
 import { createRendererOutputConfig } from '@tsl-precompile/contract/output-config';
 
@@ -261,15 +261,12 @@ function mergeArtifactTextureRefs( target, source ) {
 function attachArtifactVariantFamily( artifact, variantList ) {
 
 	if ( ! artifact || ! Array.isArray( variantList ) || variantList.length <= 1 ) return;
-	const variants = {};
 	for ( const variant of variantList ) {
 
-		if ( ! variant || variant.cacheKey === undefined || variant.cacheKey === null ) continue;
-		variants[ String( variant.cacheKey ) ] = createArtifactVariantPayload( variant );
 		mergeArtifactTextureRefs( artifact, variant );
 
 	}
-	if ( Object.keys( variants ).length > 1 ) artifact.variants = variants;
+	mergeArtifactVariantFamily( artifact, variantList );
 
 }
 

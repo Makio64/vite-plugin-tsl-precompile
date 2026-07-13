@@ -1,6 +1,6 @@
 import { MATERIAL_TEXTURE_PROPS } from './texture-props.js';
 import { collectArtifactDynamicBindings, dynamicBindingDescriptor, validateDynamicBindingSource } from './dynamic-bindings.js';
-import { createArtifactVariantPayload } from './artifact-variants.js';
+import { collectArtifactVariantCandidates, createArtifactVariantPayloadFingerprint } from './artifact-variants.js';
 import { validateArtifactLightIdentities } from './light-identities.js';
 import { RENDER_BINDING_OWNER_KINDS, isRenderBindingOwnerKind } from './render-selector.js';
 import { stableJsonStringify } from './stable-json.js';
@@ -993,7 +993,7 @@ export function validateArtifact( input, opts = {} ) {
 
 function validateSignedArtifactFamily( artifact, label, errors ) {
 
-	const candidates = [ artifact, ...Object.values( artifact.variants ) ].filter( ( candidate ) => candidate && typeof candidate === 'object' );
+	const candidates = collectArtifactVariantCandidates( artifact );
 	const signed = candidates.filter( ( candidate ) => Array.isArray( candidate.renderContextSelectors ) && candidate.renderContextSelectors.length > 0 );
 	if ( signed.length === 0 ) return;
 	if ( signed.length !== candidates.length ) {
@@ -1006,20 +1006,13 @@ function validateSignedArtifactFamily( artifact, label, errors ) {
 
 	}
 
-	const rootKey = artifact.cacheKey === undefined || artifact.cacheKey === null ? null : String( artifact.cacheKey );
-	const collisionCandidates = rootKey !== null && artifact.variants[ rootKey ]
-		? signed.filter( ( candidate ) => candidate !== artifact )
-		: signed;
 	const selectorPayloads = new Map();
-	for ( const candidate of collisionCandidates ) {
+	for ( const candidate of signed ) {
 
-		const payload = createArtifactVariantPayload( candidate );
-		delete payload.cacheKey;
-		delete payload.renderContextSelectors;
 		let fingerprint;
 		try {
 
-			fingerprint = stableJsonStringify( payload, 'artifactVariant' );
+			fingerprint = createArtifactVariantPayloadFingerprint( candidate );
 
 		} catch ( error ) {
 

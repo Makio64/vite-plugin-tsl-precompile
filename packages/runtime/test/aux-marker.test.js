@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { precompileAuxiliary } from '../src/aux-marker.js';
+import { __resetAuxRegistryForTests } from '../src/aux-loader.js';
 
 function silentInfo() {
 
@@ -231,6 +232,83 @@ test( 'precompileAuxiliary captures effects observed only through live update no
 
 	} finally {
 
+		globalThis.fetch = originalFetch;
+
+	}
+
+} );
+
+test( 'precompileAuxiliary preserves every shadow material family and unions equivalent cache-key selectors', async () => {
+
+	const shadowArtifact = ( cacheKey, selector, fragmentShader ) => ( {
+		materialShape: 'shadow-depth',
+		bindingOwner: 'shadow-caster',
+		cacheKey,
+		renderContextSelectors: [ selector ],
+		vertexShader: `vertex:${ fragmentShader }`,
+		fragmentShader,
+		bindings: [],
+		uniformPlan: [],
+	} );
+	const directionalSelector = '{"target":{"surface":"offscreen-2d"}}';
+	const pointSelector = '{"target":{"surface":"offscreen-cube"}}';
+	const directionalOnly = '{"shadowCaster":{"customDepth":true}}';
+	const pointOnly = '{"shadowCaster":{"map":true},"target":{"surface":"offscreen-cube"}}';
+	const sharedDirectional = shadowArtifact( 'shared-key', directionalSelector, 'shared-shadow' );
+	const sharedPoint = shadowArtifact( 'shared-key', pointSelector, 'shared-shadow' );
+	const directional = shadowArtifact( 'directional-key', directionalOnly, 'directional-shadow' );
+	const point = shadowArtifact( 'point-key', pointOnly, 'point-shadow' );
+	sharedDirectional.variants = {
+		'shared-key': { ...sharedDirectional },
+		'directional-key': { ...directional },
+	};
+	sharedPoint.variants = {
+		'shared-key': { ...sharedPoint },
+		'point-key': { ...point },
+	};
+
+	const compileTSL = async ( _renderer, _scene, _camera, options = {} ) => {
+
+		if ( options.captureRendererOutput ) throw new Error( 'no renderer output in focused shadow fixture' );
+		return [ sharedDirectional, directional, sharedPoint, point ];
+
+	};
+	const lights = [
+		{ isLight: true, type: 'DirectionalLight', castShadow: true, shadow: { mapSize: { width: 512, height: 512 } } },
+		{ isLight: true, type: 'PointLight', castShadow: true, shadow: { mapSize: { width: 256, height: 256 } } },
+	];
+	const scene = {
+		background: null,
+		backgroundNode: null,
+		userData: {},
+		traverse( callback ) { lights.forEach( callback ); },
+	};
+	const originalFetch = globalThis.fetch;
+	const payloads = [];
+	globalThis.fetch = async ( _endpoint, request ) => {
+
+		payloads.push( JSON.parse( request.body ) );
+		return { ok: true };
+
+	};
+	__resetAuxRegistryForTests();
+	try {
+
+		await precompileAuxiliary( {}, scene, {}, {
+			devEndpoint: '/capture',
+			threeVersion: '184',
+			compileTSL,
+		} );
+		const payload = payloads.find( ( candidate ) => candidate.materialShape === 'shadow-depth' );
+		assert.ok( payload, 'expected one aggregate shadow-depth POST' );
+		assert.deepEqual( Object.keys( payload.artifact.variants ).sort(), [ 'directional-key', 'point-key', 'shared-key' ] );
+		assert.deepEqual( payload.artifact.variants[ 'shared-key' ].renderContextSelectors, [ directionalSelector, pointSelector ].sort() );
+		assert.equal( payload.artifact.variants[ 'directional-key' ].fragmentShader, 'directional-shadow' );
+		assert.equal( payload.artifact.variants[ 'point-key' ].fragmentShader, 'point-shadow' );
+
+	} finally {
+
+		__resetAuxRegistryForTests();
 		globalThis.fetch = originalFetch;
 
 	}

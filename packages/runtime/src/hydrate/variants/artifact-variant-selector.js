@@ -1,5 +1,5 @@
 import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
-import { createArtifactVariantPayload } from '@tsl-precompile/contract/artifact-variants';
+import { collectArtifactVariantCandidates, createArtifactVariantPayloadFingerprint } from '@tsl-precompile/contract/artifact-variants';
 import { createRenderObjectContextSelector, projectRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
 
@@ -105,7 +105,7 @@ function resolveSelector( selection ) {
 function computeArtifactVariant( artifact, variants, selection ) {
 
 	const { selector, cacheKey, targetCount, profile } = selection;
-	const candidates = collectCandidates( artifact, variants );
+	const candidates = collectCandidates( artifact );
 	const signedCandidates = candidates.filter( hasSelectors );
 
 	if ( signedCandidates.length > 0 ) {
@@ -149,14 +149,9 @@ function computeArtifactVariant( artifact, variants, selection ) {
 
 }
 
-function collectCandidates( artifact, variants ) {
+function collectCandidates( artifact ) {
 
-	const candidates = Object.values( variants ).filter( Boolean );
-	const rootKey = artifact && artifact.cacheKey;
-	const rootAlreadyPresent = rootKey !== undefined && rootKey !== null
-		&& candidates.some( ( candidate ) => String( candidate.cacheKey ) === String( rootKey ) );
-	if ( ! rootAlreadyPresent ) candidates.unshift( artifact );
-	return candidates;
+	return collectArtifactVariantCandidates( artifact );
 
 }
 
@@ -233,12 +228,9 @@ function variantsEquivalent( candidates ) {
 
 function variantPayloadFingerprint( candidate ) {
 
-	const payload = createArtifactVariantPayload( candidate );
-	delete payload.cacheKey;
-	delete payload.renderContextSelectors;
 	try {
 
-		return stableJsonStringify( payload, 'artifactVariant' );
+		return createArtifactVariantPayloadFingerprint( candidate );
 
 	} catch ( _ ) {
 
