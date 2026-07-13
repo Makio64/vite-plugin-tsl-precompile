@@ -1592,6 +1592,31 @@ test( 'PrecompiledMaterial only forces single-pass for zero-thickness double-sid
 
 } );
 
+test( '__applyPrecompiled preserves source clipping controls during adoption', () => {
+
+	const clippingPlanes = [ { normal: { x: 1, y: 0, z: 0 }, constant: - 1 } ];
+	const source = {
+		clippingPlanes,
+		clipIntersection: true,
+		clipShadows: true,
+	};
+	const material = __applyPrecompiled( source, {
+		__hash: 'sha256:clipping-adoption',
+		name: 'clipping-adoption',
+		artifact: {
+			__hash: 'sha256:clipping-adoption',
+			uniformPlan: [],
+			vertexShader: 'v',
+			fragmentShader: 'f',
+		},
+	}, 'sha256:clipping-adoption' );
+
+	assert.equal( material.clippingPlanes, clippingPlanes );
+	assert.equal( material.clipIntersection, true );
+	assert.equal( material.clipShadows, true );
+
+} );
+
 test( '__applyPrecompiled validates artifact source kinds when runtime validation is enabled', () => {
 
 	globalThis.__TSLP_VALIDATE_ARTIFACTS = true;
