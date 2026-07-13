@@ -101,6 +101,7 @@ back into slim.
 | PMREM generation | Blur passes need the builder | Full `PMREMGenerator`, then slim-support cache wiring |
 | Live PassNode WGSL | Slim can't emit new pass shaders | Full renderer renders the pass; texture shared back |
 | Clipping context | Live `clipShadows` rebuild | Planes baked into artifacts; ancestry honoured at runtime |
+| WebXR sessions | Three r184 supports XR only through its WebGL 2 backend | Use the full Three renderer with `{ forceWebGL: true }`; slim fails with `TSLP_SLIM_XR_UNSUPPORTED` before claiming a session |
 
 Apps that enable either plugin slim mode can use the stable
 `@tsl-precompile/runtime/slim-support` entry when they need real-app fallback

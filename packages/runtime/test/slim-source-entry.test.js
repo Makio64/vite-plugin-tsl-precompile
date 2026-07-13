@@ -46,12 +46,12 @@ test( 'guarded and prebuilt slim entries share one exact source surface', () => 
 
 test( 'source entry fails closed when plugin and runtime policy revisions differ', () => {
 
-	assert.equal( RUNTIME_SLIM_THREE_POLICY_VERSION, 'slim-three-policy@1' );
+	assert.equal( RUNTIME_SLIM_THREE_POLICY_VERSION, 'slim-three-policy@2' );
 	assert.equal( RUNTIME_SLIM_THREE_POLICY_VERSION, SLIM_THREE_POLICY_VERSION, 'bump the runtime-owned handshake with the shared policy' );
-	assert.doesNotThrow( () => assertSlimSourcePolicyCompatibility( 'slim-three-policy@1' ) );
+	assert.doesNotThrow( () => assertSlimSourcePolicyCompatibility( 'slim-three-policy@2' ) );
 	assert.throws(
-		() => assertSlimSourcePolicyCompatibility( 'slim-three-policy@2' ),
-		/slim source policy mismatch[\s\S]*runtime expects slim-three-policy@1[\s\S]*plugin provided slim-three-policy@2/,
+		() => assertSlimSourcePolicyCompatibility( 'slim-three-policy@1' ),
+		/slim source policy mismatch[\s\S]*runtime expects slim-three-policy@2[\s\S]*plugin provided slim-three-policy@1/,
 	);
 
 } );

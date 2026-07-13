@@ -133,12 +133,16 @@ test( 'source slim build aliases the tree-shaken entry and routes private Three 
 			join( resolvedRuntimeSourceDir, 'slim-replay-node-manager.js' ),
 		);
 		assert.equal(
+			plugin.resolveId( './XRManager.js', rendererId ),
+			join( resolvedRuntimeSourceDir, 'slim-replay-xr-manager.js' ),
+		);
+		assert.equal(
 			plugin.resolveId( '../webgl-fallback/WebGLBackend.js', join( fixture.threeRoot, 'src/renderers/webgpu/WebGPURenderer.js' ) ),
 			join( resolvedRuntimeSourceDir, 'slim-stub-webgl-backend.js' ),
 		);
 		const guardId = plugin.resolveId( 'virtual:tsl-precompile/__slim-source' );
 		assert.equal( guardId, '\0virtual:tsl-precompile/__slim-source' );
-		assert.match( await plugin.load( guardId ), /slim-three-policy@1/ );
+		assert.match( await plugin.load( guardId ), /slim-three-policy@2/ );
 
 	} finally {
 
@@ -182,9 +186,10 @@ test( 'source slim final bundle guard rejects compiler and stock-adapter residue
 				modules: {
 					[ join( fixture.threeRoot, 'src/nodes/core/NodeBuilder.js' ) ]: { renderedLength: 1200 },
 					[ join( fixture.threeRoot, 'src/renderers/common/Lighting.js' ) ]: { renderedLength: 400 },
+					[ join( fixture.threeRoot, 'src/renderers/common/XRRenderTarget.js' ) ]: { renderedLength: 300 },
 				},
 			},
-		} ), /slim source build retained forbidden Three modules[\s\S]*NodeBuilder[\s\S]*stock Lighting/ );
+		} ), /slim source build retained forbidden Three modules[\s\S]*NodeBuilder[\s\S]*stock Lighting[\s\S]*stock XRRenderTarget/ );
 
 	} finally {
 
@@ -232,6 +237,7 @@ test( 'source slim completes a real Vite build with guard, rewrites, and adapter
 		assert.ok( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-source-entry.js' ) ) );
 		assert.ok( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-bootstrap.js' ) ) );
 		assert.ok( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-replay-node-manager.js' ) ) );
+		assert.ok( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-replay-xr-manager.js' ) ) );
 		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/runtime/build/three.webgpu.slim.js' ) ), false );
 		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/three/src/Three.Core.js' ) ), false );
 		assert.deepEqual( moduleIds.filter( ( id ) => getSlimThreeCompilerModule( id ) ), [] );

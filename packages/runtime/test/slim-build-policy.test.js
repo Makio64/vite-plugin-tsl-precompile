@@ -51,6 +51,10 @@ test( 'shared Three source paths normalize Vite queries and Windows ids exactly'
 		getSlimThreeReplayAdapterModule( './Lighting.js', threeRoot + 'renderers/common/Renderer.js' )?.id,
 		'lighting',
 	);
+	assert.equal(
+		getSlimThreeReplayAdapterModule( './XRManager.js', threeRoot + 'renderers/common/Renderer.js' )?.id,
+		'xr-manager',
+	);
 	assert.equal( normalizeSlimThreeSourceModuleId( '/repo/not-three/src/nodes/core/NodeBuilder.js' ), null );
 	assert.equal( normalizeSlimThreeSourceModuleId( '\0virtual:three/src/nodes/core/NodeBuilder.js' ), null );
 
@@ -112,6 +116,22 @@ test( 'slim replay-adapter policy rejects stock lighting, scene graph, and manag
 	} );
 
 	assert.deepEqual( found.map( ( item ) => item.label ), [ 'stock LightsNode', 'stock NodeManager', 'stock Background', 'stock scene Fog graph', 'stock NodeBuilderState', 'stock Lighting' ] );
+
+} );
+
+test( 'slim replay-adapter policy rejects the complete dedicated XR closure', () => {
+
+	const found = findRenderedSlimStockAdapterModules( {
+		'three.webgpu.slim.js': {
+			modules: {
+				'/three/src/renderers/common/XRManager.js': { renderedLength: 1200 },
+				'/three/src/renderers/webxr/WebXRController.js': { renderedLength: 900 },
+				'/three/src/renderers/common/XRRenderTarget.js': { renderedLength: 600 },
+			},
+		},
+	} );
+
+	assert.deepEqual( found.map( ( item ) => item.label ), [ 'stock XRManager', 'stock WebXRController', 'stock XRRenderTarget' ] );
 
 } );
 

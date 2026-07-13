@@ -22,6 +22,7 @@ const SOURCE_ADAPTER_FILES = Object.freeze( {
 	background: 'slim-replay-background.js',
 	lighting: 'slim-replay-lighting.js',
 	'node-manager': 'slim-replay-node-manager.js',
+	'xr-manager': 'slim-replay-xr-manager.js',
 } );
 
 export function normalizeSlimMode( value ) {

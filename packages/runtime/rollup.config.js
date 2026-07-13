@@ -263,6 +263,21 @@ const replayNodeManagerAdapter = {
 	},
 };
 
+/** Keep Renderer XR state inert without retaining Three's unusable WebGL-only XR closure. */
+const replayXRManagerAdapter = {
+	name: 'tsl-precompile:replay-xr-manager',
+	resolveId( id, importer ) {
+
+		if ( getSlimThreeReplayAdapterModule( id, importer )?.id === 'xr-manager' ) {
+
+			return resolve( __dirname, 'src/slim-replay-xr-manager.js' );
+
+		}
+		return null;
+
+	},
+};
+
 /** Replay captured background passes without retaining Three's sky TSL graph. */
 const replayBackgroundAdapter = {
 	name: 'tsl-precompile:replay-background',
@@ -378,6 +393,7 @@ export default {
 		replayBackgroundAdapter,
 		replayLightingAdapter,
 		replayNodeManagerAdapter,
+		replayXRManagerAdapter,
 		threeBareAlias,
 		nodeResolve( {
 			browser: true,
