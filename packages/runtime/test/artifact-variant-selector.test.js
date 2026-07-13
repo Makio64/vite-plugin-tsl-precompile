@@ -114,6 +114,60 @@ test( 'signed background artifacts ignore scene-only topology but retain target 
 
 } );
 
+test( 'signed render-output artifacts ignore host and attachment identity but retain sample topology', () => {
+
+	const captureSelector = JSON.stringify( {
+		version: 'render-object-selector@1',
+		renderer: { backend: { kind: 'webgpu' } },
+		target: { surface: 'default', sampleCount: 1, colors: [], depthTexture: null },
+		scene: { environment: { kind: '2d', colorSpace: 'srgb-linear' } },
+		lights: [ { type: 'DirectionalLight', castShadow: true } ],
+		camera: { array: false },
+	} );
+	const replaySelector = JSON.stringify( {
+		version: 'render-object-selector@1',
+		renderer: { backend: { kind: 'webgpu' } },
+		target: {
+			surface: 'offscreen-2d',
+			sampleCount: 1,
+			colors: [ { kind: 'render-target', format: 1023, dataType: 1016 } ],
+			depthTexture: { kind: 'depth', format: 1026 },
+		},
+		scene: null,
+		lights: [],
+		camera: { array: false },
+	} );
+	const artifact = {
+		cacheKey: 'render-output',
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		uniformPlan: [],
+		bindings: [],
+		renderContextSelectors: [ captureSelector ],
+	};
+	assert.throws(
+		() => selectArtifactVariant( artifact, { renderContextSelector: replaySelector } ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+	);
+	assert.equal( selectArtifactVariant( artifact, {
+		renderContextSelector: replaySelector,
+		renderContextSelectorProfile: 'render-output',
+	} ), artifact );
+
+	const wrongTarget = JSON.stringify( {
+		...JSON.parse( replaySelector ),
+		target: { ...JSON.parse( replaySelector ).target, sampleCount: 4 },
+	} );
+	assert.throws(
+		() => selectArtifactVariant( artifact, {
+			renderContextSelector: wrongTarget,
+			renderContextSelectorProfile: 'render-output',
+		} ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+	);
+
+} );
+
 test( 'signed post-process artifacts ignore adapter-owned output attachments but retain pipeline topology', () => {
 
 	const captureSelector = JSON.stringify( {

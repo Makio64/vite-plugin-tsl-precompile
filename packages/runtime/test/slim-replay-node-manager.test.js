@@ -293,6 +293,22 @@ test( 'replay NodeManager applies the post-process selector profile from artifac
 
 } );
 
+test( 'replay NodeManager applies the scene-independent render-output selector profile', () => {
+
+	const renderer = fakeRenderer();
+	const signed = artifact( { materialShape: 'render-output' } );
+	const replayMaterial = material( signed );
+	const live = renderObject( renderer, replayMaterial );
+	const captureDescriptor = JSON.parse( createRenderObjectContextSelector( live, renderer ) );
+	captureDescriptor.scene = { environment: { kind: '2d', colorSpace: 'srgb-linear' } };
+	captureDescriptor.lights = [ { type: 'DirectionalLight', castShadow: true } ];
+	signed.renderContextSelectors = [ JSON.stringify( captureDescriptor ) ];
+
+	const manager = new ReplayNodeManager( renderer, renderer.backend );
+	assert.doesNotThrow( () => manager.getForRender( live ) );
+
+} );
+
 test( 'replay NodeManager shares one cube conversion state across faces and mips', () => {
 
 	const renderer = fakeRenderer();

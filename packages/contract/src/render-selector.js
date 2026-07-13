@@ -161,15 +161,17 @@ export function createSceneRenderTopologySelector( scene ) {
  * Background materials explicitly disable lights and fog and do not consume
  * the scene environment. Shadow-depth materials likewise consume caster,
  * target, camera, clipping, and renderer topology rather than scene lighting,
- * fog, or environment. CubeRenderTarget's fixed equirectangular blit is also
- * scene/light independent, and one shader serves every mutable cube face and
- * mip while retaining the rest of the target topology. The final post-process
- * quad is captured on Three's
- * private output-intermediate target but replayed directly to the default
- * surface; its persisted WGSL does not depend on that adapter-owned target's
- * attachment descriptors or on NodeMaterial's fog default. Keeping those
+ * fog, or environment. Render-output and CubeRenderTarget's fixed conversion
+ * blits are also scene/light independent; the cube shader serves every mutable
+ * face and mip while retaining the rest of the target topology. The final
+ * post-process quad is captured on Three's private output-intermediate target
+ * but replayed directly to the default surface; its persisted WGSL does not
+ * depend on that adapter-owned target's attachment descriptors or on
+ * NodeMaterial's fog default. Keeping those
  * unused fields in a signed auxiliary selector makes equivalent capture and
- * replay passes fail to match.
+ * replay passes fail to match. Render-output is likewise a fixed one-color
+ * shader that can target the canvas or an offscreen RTT; attachment identity
+ * belongs to pipeline state, while sample count remains signed here.
  *
  * Unknown profiles are returned unchanged so callers can opt in one adapter
  * at a time without weakening ordinary material selection.
@@ -181,7 +183,8 @@ export function createSceneRenderTopologySelector( scene ) {
 export function projectRenderObjectContextSelector( selector, profile ) {
 
 	if ( typeof selector !== 'string' ) return '';
-	const sceneIndependent = profile === 'background' || profile === 'shadow-depth' || profile === 'cube-render-target';
+	const renderOutput = profile === 'render-output';
+	const sceneIndependent = profile === 'background' || profile === 'shadow-depth' || renderOutput || profile === 'cube-render-target';
 	const postProcess = profile === 'post-process';
 	if ( ( ! sceneIndependent && ! postProcess ) || selector.length === 0 ) return selector;
 	let descriptor;
@@ -196,7 +199,7 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 	}
 	if ( ! descriptor || typeof descriptor !== 'object' || descriptor.version !== 'render-object-selector@1' ) return selector;
 
-	if ( postProcess ) {
+	if ( postProcess || renderOutput ) {
 
 		const projected = { ...descriptor };
 		if ( projected.renderer && typeof projected.renderer === 'object' ) {
@@ -218,7 +221,8 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 			delete projected.target.depthTexture;
 
 		}
-		return stableJsonStringify( projected, 'renderObjectSelector' );
+		if ( postProcess ) return stableJsonStringify( projected, 'renderObjectSelector' );
+		descriptor = projected;
 
 	}
 

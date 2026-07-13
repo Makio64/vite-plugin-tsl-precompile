@@ -11325,6 +11325,7 @@ function __renderRTTNodeWithPrecompiledSlim( rttNode, renderer ) {
 		}
 		return true;
 	} catch ( err ) {
+		try { window.__tslpRecordRenderSelectorMismatch && window.__tslpRecordRenderSelectorMismatch( err, 'caught-rtt-render' ); } catch ( _ ) {}
 		if ( ! window.__tslpRTTPrecompiledWarned ) {
 			window.__tslpRTTPrecompiledWarned = true;
 			console.warn( '[tslp-e2e] RTT precompiled replay failed:', err && ( err.stack || err.message ) || err );
