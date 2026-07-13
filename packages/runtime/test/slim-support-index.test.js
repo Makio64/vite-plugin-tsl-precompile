@@ -48,6 +48,7 @@ test( 'slim-support package subpath resolves through the public export map', () 
 	assert.equal( typeof slimSupport.renderOffscreenOverrideWithFullRenderer, 'function' );
 	assert.equal( typeof slimSupport.shareRenderTargetTextures, 'function' );
 	assert.equal( typeof slimSupport.preparePrecompiledPostprocess, 'function' );
+	assert.equal( typeof slimSupport.createPostprocessExecutionPlan, 'function' );
 	assert.equal( typeof slimSupport.artifactLooksLikeRetroPassMaterial, 'function' );
 	assert.equal( typeof slimSupport.wireTRAAResolveArtifact, 'function' );
 	assert.equal( typeof slimSupport.recordDiagnostic, 'function' );
@@ -60,6 +61,7 @@ test( 'runtime package re-exports user-facing compute wiring helpers', () => {
 	assert.equal( runtime.renderOffscreenOverrideWithFullRenderer, slimSupport.renderOffscreenOverrideWithFullRenderer );
 	assert.equal( runtime.shareRenderTargetTextures, slimSupport.shareRenderTargetTextures );
 	assert.equal( runtime.artifactLooksLikeRetroPassMaterial, slimSupport.artifactLooksLikeRetroPassMaterial );
+	assert.equal( runtime.createPostprocessExecutionPlan, slimSupport.createPostprocessExecutionPlan );
 	assert.equal( runtime.wireTRAAResolveArtifact, slimSupport.wireTRAAResolveArtifact );
 
 } );
@@ -125,5 +127,6 @@ test( 'runtime package exports the stable slim-support barrel with types', () =>
 	assert.equal( pkg.exports[ './slim-support/traa-replay' ].types, './types/slim-support/traa-replay.d.ts' );
 	assert.equal( pkg.exports[ './slim-support/render-fallback-registry' ].types, './types/slim-support/render-fallback-registry.d.ts' );
 	assert.equal( pkg.exports[ './slim-support/diagnostics' ].types, './types/slim-support/diagnostics.d.ts' );
+	assert.equal( pkg.exports[ './slim-support/postprocess-execution-plan' ].types, './types/slim-support/postprocess-execution-plan.d.ts' );
 
 } );

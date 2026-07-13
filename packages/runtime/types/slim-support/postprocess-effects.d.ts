@@ -9,6 +9,10 @@ export type EffectSubPass = {
 
 export type EffectHandler = {
 	name: string;
+	execution?: {
+		phase: 'pass-context' | 'terminal';
+		getProducerPasses?: ( node: unknown ) => unknown[];
+	};
 	detect: ( node: unknown ) => boolean;
 	subPasses: ( node: unknown, index: number ) => EffectSubPass[];
 	forceSetup?: ( node: unknown, context?: Record<string, unknown> ) => void;
@@ -26,4 +30,4 @@ export function registerEffectHandler( handler: EffectHandler ): void;
 export function unregisterEffectHandler( name: string ): boolean;
 export function getEffectHandlers(): EffectHandler[];
 export function findEffectHandler( node: unknown ): EffectHandler | null;
-export function collectEffectNodes( root: unknown, opts?: { depthCap?: number } ): EffectNodeMatch[];
+export function collectEffectNodes( root: unknown, opts?: { depthCap?: number; extraRoots?: unknown[] } ): EffectNodeMatch[];

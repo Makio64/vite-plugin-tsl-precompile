@@ -81,8 +81,23 @@ artifact, and the replay frame-effect walker follows the same edges. The narrow
 visual canaries complete without replay errors (AO 28.59
 dB; SSS remains a disabled-gate diagnostic at 4.57 dB), so this closes effect
 visibility, not execution fidelity. The next boundary is an explicit effect
-execution plan: producer/consumer placement, renderer ownership, owned targets,
-inputs, and once-per-logical-frame scheduling.
+execution plan; renderer ownership, owned targets, inputs, and
+once-per-logical-frame scheduling remain after that first plan wedge.
+
+**Single context-wave execution-plan wedge (2026-07-13).**
+[`slim-support/postprocess-execution-plan.js`](packages/runtime/src/slim-support/postprocess-execution-plan.js)
+now recognizes one deliberately limited pass order from handler metadata.
+GTAO declares its input pass and `pass-context` placement; TRAA declares
+terminal placement. The planner follows explicit dependency edges to identify
+the AO-consuming scene pass and refuses the optimized path when a pass is
+unplaced or a legacy effect is not represented. The e2e caller then executes
+`prePass -> GTAO -> scenePass -> TRAA`, retaining the old path for unsupported
+graphs. The focused AO run confirms 25 pipeline calls now perform 50 pass
+renders instead of 100 while GTAO and TRAA remain at 25 each. PSNR remains
+effectively unchanged at 28.51 dB, so duplicate pass execution is closed as a
+logic/performance fault but is not the remaining AO fidelity cause. This is
+not a general render DAG; the next safe extensions are explicit target/input
+ownership and per-logical-frame execution semantics.
 
 ---
 

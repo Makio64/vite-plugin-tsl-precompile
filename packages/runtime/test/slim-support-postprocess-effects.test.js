@@ -263,6 +263,19 @@ test( 'traa handler subPasses returns single resolve material', () => {
 
 } );
 
+test( 'gtao and traa handlers declare conservative execution placement', () => {
+
+	const producerPass = {};
+	const gtao = gtaoLike();
+	gtao.depthNode = { passNode: producerPass };
+	const gtaoHandler = findEffectHandler( gtao );
+	const traaHandler = findEffectHandler( traaLike() );
+	assert.equal( gtaoHandler.execution.phase, 'pass-context' );
+	assert.deepEqual( gtaoHandler.execution.getProducerPasses( gtao ), [ producerPass ] );
+	assert.equal( traaHandler.execution.phase, 'terminal' );
+
+} );
+
 test( 'collectEffectNodes walks nested graphs and deduplicates', () => {
 
 	const bloom = bloomLike();

@@ -443,6 +443,9 @@ export function withTemporalFrame<T>( renderers: unknown | unknown[], options: {
 export type LiveNodeDependency = { node: unknown; metadata: unknown };
 export function attachLiveNodeDependency<T>( owner: T, dependency: unknown, metadata?: unknown ): T;
 export function getLiveNodeDependencies( owner: unknown ): LiveNodeDependency[];
+export type PostprocessExecutionPlan = { mode: 'single-context-wave'; supported: boolean; producerPasses: unknown[]; contextEffects: Array<{ handler: unknown; node: unknown; producerPasses: unknown[]; consumerPasses: unknown[] }>; consumerPasses: unknown[]; terminalEffects: Array<{ handler: unknown; node: unknown }>; unplacedPasses: unknown[]; issues: string[] };
+export function postprocessGraphContains( root: unknown, target: unknown, options?: { depthCap?: number } ): boolean;
+export function createPostprocessExecutionPlan( options?: { passNodes?: unknown[]; outputNode?: unknown; collectEffects?: ( root: unknown ) => Array<{ handler: unknown; node: unknown }> } ): PostprocessExecutionPlan;
 
 export type EffectSubPass = {
 	material?: unknown;
@@ -454,6 +457,7 @@ export type EffectSubPass = {
 };
 export type EffectHandler = {
 	name: string;
+	execution?: { phase: 'pass-context' | 'terminal'; getProducerPasses?: ( node: unknown ) => unknown[] };
 	detect: ( node: unknown ) => boolean;
 	subPasses: ( node: unknown, index: number ) => EffectSubPass[];
 	forceSetup?: ( node: unknown, context?: Record<string, unknown> ) => void;
@@ -514,7 +518,7 @@ export function registerEffectHandler( handler: EffectHandler ): void;
 export function unregisterEffectHandler( name: string ): boolean;
 export function getEffectHandlers(): EffectHandler[];
 export function findEffectHandler( node: unknown ): EffectHandler | null;
-export function collectEffectNodes( root: unknown, opts?: { depthCap?: number } ): EffectNodeMatch[];
+export function collectEffectNodes( root: unknown, opts?: { depthCap?: number; extraRoots?: unknown[] } ): EffectNodeMatch[];
 export function preparePrecompiledPostprocess( args: PreparePrecompiledPostprocessArgs ): PreparePrecompiledPostprocessResult;
 export function prepareEffectNodeForReplay( handler: EffectHandler, node: unknown, opts: PrepareEffectNodeForReplayOptions ): PrepareEffectNodeForReplayResult;
 export function makePrecompiledAuxMaterial( shape: string, sourceMaterial: unknown, opts: PrepareEffectNodeForReplayOptions ): unknown | null;

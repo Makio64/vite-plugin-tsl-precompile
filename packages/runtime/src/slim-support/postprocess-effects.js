@@ -411,6 +411,18 @@ registerEffectHandler( {
  */
 registerEffectHandler( {
 	name: 'gtao',
+	execution: {
+		phase: 'pass-context',
+		getProducerPasses( node ) {
+
+			const candidates = [
+				node && node.depthNode && node.depthNode.passNode,
+				node && node.normalNode && node.normalNode.passNode,
+			];
+			return candidates.filter( ( passNode, index ) => passNode && candidates.indexOf( passNode ) === index );
+
+		},
+	},
 	detect( node ) {
 
 		return !! ( isEffectCandidate( node )
@@ -710,6 +722,7 @@ function __dofCoCRenderTargetHint( node ) {
  */
 registerEffectHandler( {
 	name: 'traa',
+	execution: { phase: 'terminal' },
 	detect( node ) {
 
 		return !! ( isEffectCandidate( node )

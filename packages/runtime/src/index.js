@@ -32,6 +32,7 @@ export { collectSceneLights, updateRendererLightingForSlim, wireStorageAttribute
 export { setSlimRenderFallback, getSlimRenderFallback } from './slim-support/render-fallback-registry.js';
 export { collectLiveBloomNodes, wireBloomNode, wirePrecompiledPostprocess, findPostprocessAux } from './slim-support/postprocess-wire.js';
 export { registerEffectHandler, unregisterEffectHandler, getEffectHandlers, findEffectHandler, collectEffectNodes } from './slim-support/postprocess-effects.js';
+export { createPostprocessExecutionPlan, postprocessGraphContains } from './slim-support/postprocess-execution-plan.js';
 export { preparePrecompiledPostprocess, prepareEffectNodeForReplay, makePrecompiledAuxMaterial, cloneAuxArtifact, wireLiveNodeSidecarsToArtifact, artifactLooksLikeRetroPassMaterial } from './slim-support/postprocess-effects-replay.js';
 export { TRAA_RESOLVE_TEXTURE_NAME, TRAA_HISTORY_TEXTURE_NAME, TRAA_HISTORY_DEPTH_TEXTURE_NAME, nameTRAATextures, collectTRAASelfTextures, getTRAABeautyTexture, getTRAAVelocityTexture, getTRAACurrentDepthTexture, wireTRAAResolveArtifact } from './slim-support/traa-replay.js';
 export { renderOffscreenOverrideWithFullRenderer, renderPassWithFullRenderer, sharePassRenderTargetTextures, shareRenderTargetTextures } from './slim-support/pass-render-fallback.js';

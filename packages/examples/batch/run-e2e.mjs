@@ -1835,6 +1835,7 @@ import { artifactLooksLikeRetroPassMaterial as __sharedArtifactLooksLikeRetroPas
 import { wireLiveUniformSidecarsToArtifact as __sharedWireLiveUniformSidecarsToArtifact } from '/__tslp_runtime/slim-support/live-node-sidecars.js';
 import { getTemporalFrameState as __sharedGetTemporalFrameState, withTemporalFrame as __sharedWithTemporalFrame } from '/__tslp_runtime/slim-support/temporal-frame.js';
 import { getLiveNodeDependencies as __sharedGetLiveNodeDependencies } from '/__tslp_runtime/slim-support/node-dependencies.js';
+import { createPostprocessExecutionPlan as __sharedCreatePostprocessExecutionPlan } from '/__tslp_runtime/slim-support/postprocess-execution-plan.js';
 import { renderOffscreenOverrideWithFullRenderer as __sharedRenderOffscreenOverrideWithFullRenderer } from '/__tslp_runtime/slim-support/pass-render-fallback.js';
 import { findAux as __runtimeFindAux } from '/__tslp_runtime/aux-loader.js';
 import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS as __NODE_GRAPH_KEYS } from '/__tslp_contract/texture-props.js';
@@ -13077,6 +13078,12 @@ function __graphContainsNode( root, target, seen = new Set(), depth = 0 ) {
 	return false;
 }
 
+function __sameNodeSet( first, second ) {
+	const a = Array.isArray( first ) ? first : [];
+	const b = Array.isArray( second ) ? second : [];
+	return a.length === b.length && a.every( ( node ) => b.includes( node ) );
+}
+
 function __renderBloomNodeOnceForPipeline( renderer, bloomNode, renderedBloomNodes, context ) {
 	if ( ! bloomNode || renderedBloomNodes.has( bloomNode ) ) return;
 	if ( __prepareBloomNodeForReplay( bloomNode, context || null ) ) {
@@ -13209,6 +13216,10 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				for ( const node of passNodes ) __collectFrameEffectNodesInGraph( node, passEffectNodes );
 				const outputEffectNodes = __collectFrameEffectNodesInGraph( this.outputNode ).filter( ( node ) => ! passEffectNodes.includes( node ) );
 				const effectNodes = [ ...passEffectNodes, ...outputEffectNodes ];
+				const passExecutionPlan = __sharedCreatePostprocessExecutionPlan( {
+					passNodes,
+					outputNode: this.outputNode,
+				} );
 				try {
 					const fxDiag = __frameEffectDiagnostics();
 					fxDiag.pipelineUpdates = ( fxDiag.pipelineUpdates || 0 ) + 1;
@@ -13234,6 +13245,28 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				__dofDiagnostics().collected += dofNodes.length;
 				const traaNodes = __collectTRAANodesInGraph( this.outputNode );
 				__traaDiagnostics().collected += traaNodes.length;
+				const plannedPassEffects = passExecutionPlan.contextEffects.map( ( match ) => match.node );
+				const plannedTRAANodes = passExecutionPlan.terminalEffects
+					.filter( ( match ) => match.handler && match.handler.name === 'traa' )
+					.map( ( match ) => match.node );
+				const usePlannedPassWave = passExecutionPlan.supported
+					&& __sameNodeSet( passEffectNodes, plannedPassEffects )
+					&& __sameNodeSet( traaNodes, plannedTRAANodes );
+				const passInputNodes = usePlannedPassWave ? passExecutionPlan.producerPasses : passNodes;
+				const passConsumerNodes = usePlannedPassWave
+					? passExecutionPlan.consumerPasses
+					: passEffectNodes.length > 0 ? passNodes : [];
+				try {
+					const fxDiag = __frameEffectDiagnostics();
+					fxDiag.executionPlan = {
+						mode: passExecutionPlan.mode,
+						supported: passExecutionPlan.supported,
+						used: usePlannedPassWave,
+						producerPasses: passInputNodes.length,
+						consumerPasses: passConsumerNodes.length,
+						issues: passExecutionPlan.issues,
+					};
+				} catch ( _ ) {}
 				const passNode = passNodes[ 0 ] || null;
 				const context = {
 					renderPipeline: this,
@@ -13283,7 +13316,7 @@ export class RenderPipeline extends Slim.RenderPipeline {
 					const pipelineMRT = typeof this.renderer.getMRT === 'function' ? this.renderer.getMRT() : null;
 						try {
 						if ( typeof effectBeforeRenderPipeline === 'function' ) effectBeforeRenderPipeline();
-						__renderPassNodesForPipeline( this.renderer, passNodes );
+						__renderPassNodesForPipeline( this.renderer, passInputNodes );
 						__renderRTTNodesForPipeline( this.renderer, preBloomRTTNodes );
 					artifact = __attachGraphTextureRefs( artifact, this.outputNode );
 					artifact = __attachOrderedPassOutputRefs( artifact, passNodes );
@@ -13301,7 +13334,7 @@ export class RenderPipeline extends Slim.RenderPipeline {
 							if ( nc && typeof nc.clear === 'function' ) nc.clear();
 						} catch ( _ ) {}
 					__renderFrameEffectNodesForPipeline( this.renderer, passEffectNodes, context );
-					if ( passEffectNodes.length > 0 ) __renderPassNodesForPipeline( this.renderer, passNodes );
+					if ( passConsumerNodes.length > 0 ) __renderPassNodesForPipeline( this.renderer, passConsumerNodes );
 					__renderOutputFrameEffectsAndBloomForPipeline( this.renderer, outputEffectNodes, bloomNodes, context, rttNodes );
 							if ( outputEffectNodes.length > 0 || bloomNodes.length > 0 ) {
 								artifact = __attachGraphTextureRefs( artifact, this.outputNode );

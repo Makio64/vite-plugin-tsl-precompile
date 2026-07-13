@@ -85,6 +85,7 @@ export {
 	findEffectHandler,
 	collectEffectNodes,
 } from './postprocess-effects.js';
+export { createPostprocessExecutionPlan, postprocessGraphContains } from './postprocess-execution-plan.js';
 
 export {
 	preparePrecompiledPostprocess,

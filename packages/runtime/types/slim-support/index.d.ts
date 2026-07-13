@@ -12,6 +12,7 @@ export * from './render-fallback-registry.d.ts';
 export * from './pass-render-fallback.d.ts';
 export * from './postprocess-wire.d.ts';
 export * from './postprocess-effects.d.ts';
+export * from './postprocess-execution-plan.d.ts';
 export * from './postprocess-effects-replay.d.ts';
 export * from './traa-replay.d.ts';
 export * from './diagnostics.d.ts';
