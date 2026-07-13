@@ -33,11 +33,19 @@ the whole material family fall back to synthetic extraction.
 one Vite-aliased dev module instead of introducing another private-source alias.
 
 `RenderObjects.get()` returns before Renderer assigns the current geometry
-group to `renderObject.group`. The request snapshot therefore preserves the
-group already present on the RenderObject (normally the cached group) but does
-not infer a new group from private renderer call-stack state. If upstream adds
-the group to `RenderObjects.get()` arguments, capture it here rather than
-patching NodeManager or Renderer at another site.
+group to `renderObject.group`, and shadow rendering has already replaced the
+caster material by then. The adapter therefore also owns one Symbol-shared
+`renderer.renderObject(...)` wrapper. A nested synchronous dispatch stack lets
+the inner `RenderObjects.get()` snapshot copy the exact pre-override object,
+selected material, geometry, and group scalars. Requests emitted outside that
+dispatch (including some synthetic compile paths) remain explicitly inexact;
+they may preserve compatibility evidence but cannot stamp durable
+`shadow-caster` binding ownership. Keep this as the only Renderer call-site
+patch so duplicate plugin copies and HMR cannot stack competing wrappers.
+An active legacy v1 request wrapper is reused rather than replaced during an
+HMR handoff; its requests remain ownership-incomplete until that bounded
+capture epoch finishes, which fails closed instead of creating a second
+private-method wrapper or guessing caster ownership.
 
 Local assumption: `Object3DNode` instances with an explicit `object3d.isCamera`
 target are serialized as `object3d.*` sources with `target: "camera"`. This

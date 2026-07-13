@@ -5,7 +5,9 @@ import {
 	beginRenderObjectHarvest,
 	observeRenderObjectRequests,
 	observeRenderObjects,
+	snapshotRenderObjectRequest,
 } from '../../src/vendor/render-object-observer.js';
+import { RENDER_BINDING_OWNER_KINDS } from '@tsl-precompile/contract/render-selector';
 
 function fixture() {
 
@@ -184,6 +186,127 @@ test( 'render-object request observer sees cached state and shares one wrapper',
 
 } );
 
+test( 'render dispatch captures the exact pre-shadow material, geometry, and group', async () => {
+
+	const { renderer, renderObjects } = fixture();
+	const firstMaterial = { uuid: 'first-caster' };
+	const selectedMaterial = { uuid: 'selected-caster', castShadowNode: { isNode: true } };
+	const materialSet = [ firstMaterial, selectedMaterial ];
+	const staleGeometry = { attributes: { position: { itemSize: 3 } }, morphAttributes: {} };
+	const selectedGeometry = {
+		attributes: {
+			position: { itemSize: 3 },
+			color: { itemSize: 4 },
+		},
+		morphAttributes: {},
+	};
+	const object = { material: materialSet, geometry: staleGeometry };
+	const staleGroup = { start: 90, count: 3, materialIndex: 0 };
+	const selectedGroup = { start: 6, count: 12, materialIndex: 1 };
+	const shadowMaterial = { uuid: 'shadow-pass', isShadowPassMaterial: true };
+	const renderObject = {
+		cacheKey: 71,
+		material: shadowMaterial,
+		object,
+		group: staleGroup,
+		context: {},
+		_nodeBuilderState: { vertexShader: 'shadow' },
+	};
+	const originalRenderObject = function () { return renderObjects.get( renderObject ); };
+	renderer.renderObject = originalRenderObject;
+	const requestEvents = [];
+	const session = beginRenderObjectHarvest( renderer, {
+		onRequest: ( event ) => requestEvents.push( event ),
+	} );
+	assert.equal(
+		renderer.renderObject( object, { uuid: 'scene' }, { uuid: 'camera' }, selectedGeometry, selectedMaterial, selectedGroup ),
+		renderObject,
+	);
+	selectedGroup.start = 999;
+	selectedGroup.materialIndex = 0;
+	const harvest = await session.finish();
+
+	assert.equal( renderer.renderObject, originalRenderObject, 'last observer restores the renderer entry point' );
+	const snapshot = requestEvents[ 0 ].requestSnapshot;
+	assert.equal( snapshot.sourceObject, object );
+	assert.equal( snapshot.sourceMaterial, selectedMaterial );
+	assert.equal( snapshot.userMaterial, selectedMaterial );
+	assert.equal( snapshot.sourceMaterialSet, materialSet );
+	assert.equal( Array.isArray( snapshot.sourceMaterial ), false, 'selected owner is never the material array' );
+	assert.equal( snapshot.sourceGeometry, selectedGeometry );
+	assert.equal( snapshot.sourceGroup, selectedGroup, 'live group remains harvest-only evidence' );
+	assert.notEqual( snapshot.group, selectedGroup );
+	assert.deepEqual( snapshot.group, { start: 6, count: 12, materialIndex: 1 }, 'selector uses copied request-time scalars' );
+	assert.equal( snapshot.bindingOwnerKind, RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER );
+	assert.equal( snapshot.bindingOwnerExact, true );
+	const selector = JSON.parse( snapshot.renderContextSelector );
+	assert.equal( selector.shadowCaster.color.castShadowNode, true );
+	assert.deepEqual( selector.object.geometry.attributes.map( ( entry ) => entry[ 0 ] ), [ 'color', 'position' ] );
+
+	const variant = harvest.familiesByMaterial.get( shadowMaterial ).variants[ 0 ];
+	assert.deepEqual( variant.sourceMaterials, [ selectedMaterial ] );
+	assert.deepEqual( variant.userMaterials, [ selectedMaterial ] );
+	assert.equal( variant.sourceOwnerRequests.length, 1 );
+	assert.equal( variant.sourceOwnerRequests[ 0 ], snapshot );
+
+} );
+
+test( 'nested render dispatches keep exact ownership scoped to the innermost call', () => {
+
+	const { renderer, renderObjects } = fixture();
+	const outerMaterial = { uuid: 'outer' };
+	const innerMaterial = { uuid: 'inner' };
+	const outerObject = { material: outerMaterial };
+	const innerObject = { material: innerMaterial };
+	const shadowMaterial = { uuid: 'shared-shadow', isShadowPassMaterial: true };
+	const renderObjectBySource = new Map( [
+		[ outerObject, { cacheKey: 1, material: shadowMaterial, object: outerObject, context: {} } ],
+		[ innerObject, { cacheKey: 2, material: shadowMaterial, object: innerObject, context: {} } ],
+	] );
+	renderer.renderObject = function ( object, scene, camera, geometry, material, group ) {
+
+		if ( object === outerObject ) renderer.renderObject( innerObject, scene, camera, geometry, innerMaterial, group );
+		return renderObjects.get( renderObjectBySource.get( object ) );
+
+	};
+	const events = [];
+	const stop = observeRenderObjectRequests( renderer, ( event ) => events.push( event ) );
+	renderer.renderObject( outerObject, {}, {}, {}, outerMaterial, null );
+	stop();
+
+	assert.deepEqual( events.map( ( event ) => event.requestSnapshot.sourceMaterial ), [ innerMaterial, outerMaterial ] );
+	assert.deepEqual( events.map( ( event ) => event.requestSnapshot.sourceObject ), [ innerObject, outerObject ] );
+
+} );
+
+test( 'shadow snapshots reject mismatched dispatches and never treat the override as caster fallback', () => {
+
+	const shadowMaterial = { uuid: 'shadow-pass', isShadowPassMaterial: true };
+	const sourceObject = { material: null };
+	const wrongMaterial = { uuid: 'wrong-caster' };
+	const wrongObject = { material: wrongMaterial };
+	const renderObject = { material: shadowMaterial, object: sourceObject, group: null, context: {} };
+	const mismatched = snapshotRenderObjectRequest( renderObject, {}, 4, {
+		object: wrongObject,
+		scene: {},
+		camera: {},
+		geometry: {},
+		material: wrongMaterial,
+		group: { materialIndex: 0 },
+	} );
+
+	assert.equal( mismatched.sourceObject, sourceObject );
+	assert.equal( mismatched.sourceMaterial, null );
+	assert.equal( mismatched.userMaterial, null );
+	assert.equal( mismatched.bindingOwnerExact, false );
+	assert.equal( mismatched.bindingOwnerKind, RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER );
+
+	const missingCaster = snapshotRenderObjectRequest( renderObject, {}, 4 );
+	assert.equal( missingCaster.sourceMaterial, null, 'active renderer-owned shadow material is not a caster binding owner' );
+	assert.equal( missingCaster.bindingOwnerExact, false );
+
+} );
+
 test( 'render-object request observer deactivates inside an external wrapper', () => {
 
 	const { renderObjects, renderer } = fixture();
@@ -199,6 +322,72 @@ test( 'render-object request observer deactivates inside an external wrapper', (
 	renderObjects.get( { cacheKey: 2 } );
 	assert.equal( calls.length, 1, 'the retained wrapper no longer owns the completed capture listener' );
 	assert.equal( renderObjects.get, replacement, 'cleanup preserves the external replacement' );
+
+} );
+
+test( 'render dispatch observer preserves an external replacement and stays single-delivery on resubscribe', () => {
+
+	const { renderObjects, renderer } = fixture();
+	const material = { uuid: 'dispatch-material' };
+	const object = { material };
+	const renderObject = { cacheKey: 3, material, object, context: {} };
+	const originalRenderObject = function () { return renderObjects.get( renderObject ); };
+	renderer.renderObject = originalRenderObject;
+	const firstEvents = [];
+	const stopFirst = observeRenderObjectRequests( renderer, ( event ) => firstEvents.push( event ) );
+	const observedDispatch = renderer.renderObject;
+	const external = function ( ...args ) { return observedDispatch.apply( this, args ); };
+	renderer.renderObject = external;
+	renderer.renderObject( object, {}, {}, {}, material, null );
+	assert.equal( firstEvents.length, 1 );
+	stopFirst();
+	assert.equal( renderer.renderObject, external, 'cleanup never overwrites the external replacement' );
+	renderer.renderObject( object, {}, {}, {}, material, null );
+	assert.equal( firstEvents.length, 1, 'the retained inner wrapper is inert after cleanup' );
+
+	const secondEvents = [];
+	const stopSecond = observeRenderObjectRequests( renderer, ( event ) => secondEvents.push( event ) );
+	renderer.renderObject( object, {}, {}, {}, material, null );
+	assert.equal( secondEvents.length, 1, 'a later capture still receives one request' );
+	assert.equal( secondEvents[ 0 ].requestSnapshot.bindingOwnerExact, true );
+	stopSecond();
+	assert.equal( renderer.renderObject, external );
+
+} );
+
+test( 'request observer reuses an active legacy HMR wrapper in fail-closed mode', () => {
+
+	const { renderObjects, renderer } = fixture();
+	const registry = Symbol.for( '@tsl-precompile/plugin/render-object-request-observer@1' );
+	const original = renderObjects.get;
+	let legacyCalls = 0;
+	const legacyState = {
+		version: 1,
+		original,
+		listeners: new Set( [ () => { legacyCalls ++; } ] ),
+		wrapper: null,
+	};
+	legacyState.wrapper = function ( ...args ) {
+
+		const renderObject = legacyState.original.apply( this, args );
+		const event = { renderObject, cacheKey: renderObject.cacheKey, nodeBuilderState: null, requestSnapshot: null };
+		for ( const listener of [ ...legacyState.listeners ] ) listener( event );
+		return renderObject;
+
+	};
+	Object.defineProperty( renderObjects, registry, { value: legacyState, configurable: true } );
+	renderObjects.get = legacyState.wrapper;
+	const events = [];
+	const stop = observeRenderObjectRequests( renderer, ( event ) => events.push( event ) );
+	assert.equal( renderObjects.get, legacyState.wrapper, 'HMR handoff does not stack another private-method wrapper' );
+	renderObjects.get( { cacheKey: 8 } );
+	assert.equal( legacyCalls, 1 );
+	assert.equal( events.length, 1 );
+	stop();
+	assert.equal( renderObjects.get, legacyState.wrapper, 'the active legacy listener still owns its wrapper' );
+	legacyState.listeners.clear();
+	renderObjects.get = original;
+	delete renderObjects[ registry ];
 
 } );
 

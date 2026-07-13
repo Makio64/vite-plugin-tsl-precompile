@@ -1,6 +1,11 @@
 import { MATERIAL_TEXTURE_PROPS } from './texture-props.js';
 import { stableJsonStringify } from './stable-json.js';
 
+export const RENDER_BINDING_OWNER_KINDS = Object.freeze( {
+	MATERIAL: 'render-material',
+	SHADOW_CASTER: 'shadow-caster',
+} );
+
 const POSITIVE_MATERIAL_FEATURES = Object.freeze( [
 	'alphaTest',
 	'anisotropy',
@@ -27,6 +32,7 @@ export function describeRenderObjectContext( renderObject, renderer = renderObje
 	const scene = safeRead( renderObject, 'scene' ) || null;
 	const camera = safeRead( renderObject, 'camera' ) || null;
 	const object = safeRead( renderObject, 'object' ) || null;
+	const sourceGeometry = safeRead( renderObject, 'sourceGeometry' ) || safeRead( object, 'geometry' ) || null;
 	const material = safeRead( renderObject, 'material' ) || safeRead( object, 'material' ) || null;
 	const shadowCaster = describeShadowCaster( renderObject, object, material );
 	// RenderContext instances are mutable and reused by Three. Snapshot target
@@ -41,7 +47,7 @@ export function describeRenderObjectContext( renderObject, renderer = renderObje
 		scene: describeSceneRenderTopology( scene ),
 		lights: describeLights( safeRead( renderObject, 'lightsNode' ), scene, camera ),
 		camera: describeCamera( camera, renderer ),
-		object: describeObject( object ),
+		object: describeObject( object, sourceGeometry ),
 		material: describeMaterial( material ),
 		clipping: describeClipping( material, safeRead( renderObject, 'clippingContext' ) ),
 		...( shadowCaster ? { shadowCaster } : {} ),
@@ -199,7 +205,7 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 function describeShadowCaster( renderObject, object, activeMaterial ) {
 
 	if ( safeRead( activeMaterial, 'isShadowPassMaterial' ) !== true ) return null;
-	const sourceMaterial = resolveShadowSourceMaterial( renderObject, object );
+	const sourceMaterial = resolveRenderObjectBindingOwner( renderObject ).material;
 	if ( ! sourceMaterial ) return null;
 
 	const map = safeRead( sourceMaterial, 'map' );
@@ -227,13 +233,53 @@ function describeShadowCaster( renderObject, object, activeMaterial ) {
 
 }
 
-function resolveShadowSourceMaterial( renderObject, object ) {
+/**
+ * Resolve the material whose live values/resources own a RenderObject's
+ * bindings. Renderer-owned shadow materials own the captured shader, but the
+ * exact pre-override caster material owns every `material.*` binding.
+ *
+ * Capture supplies `renderObject.sourceMaterial` from Renderer.renderObject's
+ * exact selected-material argument. Replay adapters should do the same. The
+ * group lookup is a compatibility fallback for stock RenderObjects that do not
+ * expose that pre-override dispatch evidence.
+ *
+ * @param {?Object} renderObject
+ * @param {?Object} [exactSourceMaterial]
+ * @return {{kind: string, material: Object|null, object: Object|null, group: Object|null, materialIndex: number|null, sourceMaterialSet: *}}
+ */
+export function resolveRenderObjectBindingOwner( renderObject, exactSourceMaterial = null ) {
 
-	const material = safeRead( object, 'material' );
-	if ( ! Array.isArray( material ) ) return material || null;
+	const object = safeRead( renderObject, 'object' ) || null;
+	const activeMaterial = safeRead( renderObject, 'material' ) || null;
 	const group = safeRead( renderObject, 'group' );
-	const materialIndex = Number( safeRead( group, 'materialIndex' ) );
-	return Number.isInteger( materialIndex ) && materialIndex >= 0 ? material[ materialIndex ] || null : null;
+	const rawMaterialIndex = safeRead( group, 'materialIndex' );
+	const materialIndex = Number.isInteger( rawMaterialIndex ) && rawMaterialIndex >= 0 ? rawMaterialIndex : null;
+	const sourceMaterialSet = safeRead( object, 'material' );
+	const isShadowCaster = safeRead( activeMaterial, 'isShadowPassMaterial' ) === true;
+	let material = exactSourceMaterial || safeRead( renderObject, 'sourceMaterial' ) || null;
+	if ( ! material ) {
+
+		if ( isShadowCaster ) {
+
+			material = Array.isArray( sourceMaterialSet )
+				? materialIndex !== null ? sourceMaterialSet[ materialIndex ] || null : null
+				: sourceMaterialSet || null;
+
+		} else {
+
+			material = activeMaterial;
+
+		}
+
+	}
+	return {
+		kind: isShadowCaster ? RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER : RENDER_BINDING_OWNER_KINDS.MATERIAL,
+		material,
+		object,
+		group: group || null,
+		materialIndex,
+		sourceMaterialSet,
+	};
 
 }
 
@@ -492,11 +538,10 @@ function describeCamera( camera, renderer ) {
 
 }
 
-function describeObject( object ) {
+function describeObject( object, sourceGeometry = safeRead( object, 'geometry' ) ) {
 
 	if ( ! object ) return null;
 	const skeleton = safeRead( object, 'skeleton' );
-	const geometry = safeRead( object, 'geometry' );
 	return compactObject( {
 		receiveShadow: safeRead( object, 'receiveShadow' ) === true,
 		skinned: safeRead( object, 'isSkinnedMesh' ) === true,
@@ -507,7 +552,7 @@ function describeObject( object ) {
 		instanceMatrix: !! safeRead( object, 'instanceMatrix' ),
 		instanceColor: !! safeRead( object, 'instanceColor' ),
 		batchColors: !! safeRead( object, '_colorsTexture' ),
-		geometry: describeGeometry( geometry ),
+		geometry: describeGeometry( sourceGeometry ),
 	} );
 
 }

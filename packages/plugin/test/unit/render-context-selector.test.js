@@ -8,6 +8,8 @@ import {
 	describeSceneRenderTopology,
 	describeRenderObjectContext,
 	projectRenderObjectContextSelector,
+	RENDER_BINDING_OWNER_KINDS,
+	resolveRenderObjectBindingOwner,
 } from '@tsl-precompile/contract/render-selector';
 
 test( 'render selector uses active attachments and public selective-light topology', () => {
@@ -282,6 +284,53 @@ test( 'shadow-depth selector mirrors effective source-material shadow branches',
 	custom.object.material.castShadowPositionNode = null;
 	custom.object.material.positionNode = Object.assign( function inertPosition() {}, { isNode: true } );
 	assert.notEqual( createRenderObjectContextSelector( custom ), customSelector, 'cast-shadow position precedence remains signed' );
+
+} );
+
+test( 'shadow binding ownership prefers exact selected material and geometry over stale group state', () => {
+
+	const renderObject = shadowFixture();
+	const firstMaterial = { alphaTest: 0 };
+	const selectedMaterial = { castShadowNode: { isNode: true } };
+	const staleGeometry = { attributes: { position: { itemSize: 3 } }, morphAttributes: {} };
+	const selectedGeometry = {
+		attributes: {
+			position: { itemSize: 3 },
+			color: { itemSize: 4 },
+		},
+		morphAttributes: {},
+	};
+	renderObject.object.material = [ firstMaterial, selectedMaterial ];
+	renderObject.object.geometry = staleGeometry;
+	renderObject.group = { materialIndex: 0 };
+	renderObject.sourceMaterial = selectedMaterial;
+	renderObject.sourceGeometry = selectedGeometry;
+
+	const owner = resolveRenderObjectBindingOwner( renderObject );
+	assert.equal( owner.kind, RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER );
+	assert.equal( owner.material, selectedMaterial, 'exact selected material wins over stale materialIndex' );
+	assert.equal( owner.sourceMaterialSet, renderObject.object.material );
+
+	const descriptor = describeRenderObjectContext( renderObject );
+	assert.equal( descriptor.shadowCaster.color.castShadowNode, true );
+	assert.deepEqual( descriptor.object.geometry.attributes.map( ( entry ) => entry[ 0 ] ), [ 'color', 'position' ] );
+	delete renderObject.sourceMaterial;
+	renderObject.group.materialIndex = null;
+	assert.equal( resolveRenderObjectBindingOwner( renderObject ).material, null, 'null is not coerced to material index zero' );
+	renderObject.group.materialIndex = '1';
+	assert.equal( resolveRenderObjectBindingOwner( renderObject ).material, null, 'string indices are not accepted as exact group evidence' );
+	assert.equal( resolveRenderObjectBindingOwner( renderObject, selectedMaterial ).material, selectedMaterial, 'explicit dispatch evidence wins without a usable group' );
+	renderObject.group.materialIndex = 1;
+	assert.equal( resolveRenderObjectBindingOwner( renderObject ).material, selectedMaterial );
+
+	const ordinaryMaterial = { uuid: 'ordinary' };
+	const ordinaryOwner = resolveRenderObjectBindingOwner( {
+		material: ordinaryMaterial,
+		object: { material: [ firstMaterial, selectedMaterial ] },
+		group: { materialIndex: 1 },
+	} );
+	assert.equal( ordinaryOwner.kind, RENDER_BINDING_OWNER_KINDS.MATERIAL );
+	assert.equal( ordinaryOwner.material, ordinaryMaterial, 'ordinary draws bind against their active material' );
 
 } );
 

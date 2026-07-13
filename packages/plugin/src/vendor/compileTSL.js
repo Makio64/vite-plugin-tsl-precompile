@@ -27,7 +27,7 @@ import { beginRenderObjectHarvest } from './render-object-observer.js';
 export { beginRenderObjectHarvest };
 import { DataUtils, FloatType, HalfFloatType, RGBAFormat, RenderTarget } from 'three';
 import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
-import { createRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
+import { createRenderObjectContextSelector, RENDER_BINDING_OWNER_KINDS } from '@tsl-precompile/contract/render-selector';
 import { createArtifactVariantPayload } from '@tsl-precompile/contract/artifact-variants';
 import { normalizeArtifactLightIdentities } from '@tsl-precompile/contract/light-identities';
 import { createRendererOutputConfig } from '@tsl-precompile/contract/output-config';
@@ -1713,7 +1713,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	const familyOwners = ( family ) => {
 
 		const owners = new Set( family && family.material ? [ family.material ] : [] );
-		for ( const variant of family && family.variants || [] ) for ( const userMaterial of variant.userMaterials || [] ) owners.add( userMaterial );
+		for ( const variant of family && family.variants || [] ) for ( const sourceMaterial of variant.sourceMaterials || variant.userMaterials || [] ) owners.add( sourceMaterial );
 		return owners;
 
 	};
@@ -1759,6 +1759,8 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 				cacheKey: variant.cacheKey,
 				state,
 				material: family.material || null,
+				sourceMaterials: variant.sourceMaterials || variant.userMaterials || [],
+				sourceOwnerRequests: variant.sourceOwnerRequests || [],
 				userMaterials: variant.userMaterials || [],
 				meshes: variant.objects || [],
 				renderContextSelectors: variant.renderContextSelectors || [],
@@ -1831,6 +1833,8 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 			cacheKey,
 			state,
 			material,
+			sourceMaterials: userMaterial ? [ userMaterial ] : [],
+			sourceOwnerRequests: [],
 			userMaterials: userMaterial ? [ userMaterial ] : [],
 			meshes: meshesByCacheKey.get( cacheKey ) || [],
 			renderContextSelectors: [ ...new Set( [ ...( scopedSelectors || [] ), ...( unscopedSelectors || [] ) ] ) ].sort(),
@@ -1849,12 +1853,31 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	for ( const entry of extractionEntries ) {
 
 		const { cacheKey, state, material, meshes } = entry;
-		const userMaterials = [ ...new Set( entry.userMaterials || [] ) ];
+		const sourceMaterials = [ ...new Set( entry.sourceMaterials || entry.userMaterials || [] ) ];
+		const userMaterialCandidates = entry.userMaterials && entry.userMaterials.length > 0 ? entry.userMaterials : sourceMaterials;
+		const userMaterials = [ ...new Set( userMaterialCandidates ) ];
 		const userMaterial = userMaterials[ 0 ] || null;
 		const artifact = extractArtifact( cacheKey, state, material, meshes[ 0 ] || null );
+		const exactShadowCasterRequests = artifact.materialShape === 'shadow-depth'
+			? ( entry.sourceOwnerRequests || [] ).filter( ( request ) =>
+				request && request.bindingOwnerExact === true &&
+				request.bindingOwnerKind === RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER &&
+				request.sourceMaterial && request.material === material && request.cacheKey === cacheKey
+			)
+			: [];
+		if ( exactShadowCasterRequests.length > 0 ) {
+
+			artifact.bindingOwner = RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER;
+			Object.defineProperty( artifact, '_shadowCasterRequests', {
+				value: Object.freeze( exactShadowCasterRequests.slice() ),
+				enumerable: false,
+				configurable: true,
+			} );
+
+		}
 		if ( entry.renderContextSelectors && entry.renderContextSelectors.length > 0 ) artifact.renderContextSelectors = [ ...entry.renderContextSelectors ].sort();
 		if ( material && material.uuid ) artifact.materialUuid = material.uuid;
-		if ( userMaterial && userMaterial.uuid ) artifact.userMaterialUuid = userMaterial.uuid;
+		if ( userMaterial && userMaterial.uuid && ! isAuxiliaryArtifactShape( artifact.materialShape ) ) artifact.userMaterialUuid = userMaterial.uuid;
 		const artifactCaptureClock = Number.isFinite( entry.captureClock ) ? entry.captureClock : captureClock;
 		if ( artifactCaptureClock !== null ) artifact.captureClock = artifactCaptureClock;
 

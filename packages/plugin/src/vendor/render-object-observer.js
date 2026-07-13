@@ -7,11 +7,82 @@
  * replacements. The original return value is passed through unchanged.
  */
 
-import { createRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
+import { createRenderObjectContextSelector, resolveRenderObjectBindingOwner } from '@tsl-precompile/contract/render-selector';
 
 const OBSERVER_STATE = Symbol.for( '@tsl-precompile/plugin/render-object-observer@1' );
 const REQUEST_OBSERVER_STATE = Symbol.for( '@tsl-precompile/plugin/render-object-request-observer@1' );
+const RENDER_DISPATCH_STATE = Symbol.for( '@tsl-precompile/plugin/render-object-dispatch-observer@1' );
 let nextHarvestEpoch = 1;
+
+function observeRenderDispatches( renderer ) {
+
+	if ( ! renderer || typeof renderer.renderObject !== 'function' ) return null;
+	let state = renderer[ RENDER_DISPATCH_STATE ];
+	if ( state && state.version === 1 && renderer.renderObject === state.wrapper ) {
+
+		state.references ++;
+		return state;
+
+	}
+	const original = renderer.renderObject;
+	const hadOwnRenderObject = Object.prototype.hasOwnProperty.call( renderer, 'renderObject' );
+	const originalDescriptor = hadOwnRenderObject ? Object.getOwnPropertyDescriptor( renderer, 'renderObject' ) : null;
+	state = {
+		version: 1,
+		original,
+		hadOwnRenderObject,
+		originalDescriptor,
+		wrapper: null,
+		stack: [],
+		references: 1,
+	};
+	state.wrapper = function observedRenderObjectDispatch( object, scene, camera, geometry, material, group, ...args ) {
+
+		state.stack.push( { object, scene, camera, geometry, material, group: group || null } );
+		try {
+
+			return state.original.call( this, object, scene, camera, geometry, material, group, ...args );
+
+		} finally {
+
+			state.stack.pop();
+
+		}
+
+	};
+	Object.defineProperty( renderer, RENDER_DISPATCH_STATE, {
+		value: state,
+		configurable: true,
+	} );
+	renderer.renderObject = state.wrapper;
+	return state;
+
+}
+
+function releaseRenderDispatches( renderer, state ) {
+
+	if ( ! state ) return;
+	state.references --;
+	if ( state.references > 0 ) return;
+	if ( renderer.renderObject === state.wrapper ) {
+
+		if ( state.hadOwnRenderObject && state.originalDescriptor ) Object.defineProperty( renderer, 'renderObject', state.originalDescriptor );
+		else delete renderer.renderObject;
+
+	}
+	if ( renderer[ RENDER_DISPATCH_STATE ] === state ) {
+
+		try { delete renderer[ RENDER_DISPATCH_STATE ]; } catch ( _ ) {}
+
+	}
+
+}
+
+function currentRenderDispatch( state ) {
+
+	return state && state.stack.length > 0 ? state.stack[ state.stack.length - 1 ] : null;
+
+}
 
 /**
  * @param {Object} renderer
@@ -100,12 +171,14 @@ export function observeRenderObjectRequests( renderer, listener ) {
 		! manager || typeof manager.getForRenderCacheKey !== 'function' ) return () => {};
 
 	let state = renderObjects[ REQUEST_OBSERVER_STATE ];
-	if ( ! state || state.version !== 1 || renderObjects.get !== state.wrapper ) {
+	if ( ! state || ( state.version !== 1 && state.version !== 2 ) || renderObjects.get !== state.wrapper ) {
 
 		const original = renderObjects.get;
+		const dispatchState = observeRenderDispatches( renderer );
 		state = {
-			version: 1,
+			version: 2,
 			original,
+			dispatchState,
 			listeners: new Set(),
 			wrapper: null,
 		};
@@ -121,7 +194,7 @@ export function observeRenderObjectRequests( renderer, listener ) {
 				try { nodeBuilderState = manager.nodeBuilderCache.get( cacheKey ) || null; } catch ( _ ) {}
 
 			}
-			const requestSnapshot = snapshotRenderObjectRequest( renderObject, renderer, cacheKey );
+			const requestSnapshot = snapshotRenderObjectRequest( renderObject, renderer, cacheKey, currentRenderDispatch( state.dispatchState ) );
 			const event = {
 				kind: 'render-object-request',
 				renderObject,
@@ -154,6 +227,7 @@ export function observeRenderObjectRequests( renderer, listener ) {
 		state.listeners.delete( listener );
 		if ( state.listeners.size > 0 ) return;
 		if ( renderObjects.get === state.wrapper ) renderObjects.get = state.original;
+		releaseRenderDispatches( renderer, state.dispatchState );
 		if ( renderObjects[ REQUEST_OBSERVER_STATE ] === state ) {
 
 			try { delete renderObjects[ REQUEST_OBSERVER_STATE ]; } catch ( _ ) {}
@@ -177,20 +251,32 @@ export function observeRenderObjectRequests( renderer, listener ) {
  * @param {?Object} renderObject
  * @param {?Object} renderer
  * @param {*} cacheKey
+ * @param {?{object: Object, scene: Object, camera: Object, geometry: Object, material: Object, group: Object}} renderDispatch
  * @returns {Object|null}
  */
-export function snapshotRenderObjectRequest( renderObject, renderer, cacheKey = null ) {
+export function snapshotRenderObjectRequest( renderObject, renderer, cacheKey = null, renderDispatch = null ) {
 
 	if ( ! renderObject ) return null;
 	const context = safeRead( renderObject, 'context' ) || null;
 	const snapshotRenderer = safeRead( renderObject, 'renderer' ) || renderer || null;
-	const snapshotObject = safeRead( renderObject, 'object' ) || null;
+	const renderObjectObject = safeRead( renderObject, 'object' ) || null;
+	const matchingDispatch = renderDispatch && ( ! renderObjectObject || renderObjectObject === renderDispatch.object ) ? renderDispatch : null;
+	const snapshotObject = matchingDispatch && matchingDispatch.object || renderObjectObject;
 	const snapshotMaterial = safeRead( renderObject, 'material' ) || null;
-	const snapshotScene = safeRead( renderObject, 'scene' ) || null;
-	const snapshotCamera = safeRead( renderObject, 'camera' ) || null;
+	const snapshotScene = matchingDispatch && matchingDispatch.scene || safeRead( renderObject, 'scene' ) || null;
+	const snapshotCamera = matchingDispatch && matchingDispatch.camera || safeRead( renderObject, 'camera' ) || null;
 	const snapshotLightsNode = safeRead( renderObject, 'lightsNode' ) || null;
 	const snapshotClippingContext = safeRead( renderObject, 'clippingContext' ) || null;
-	const snapshotGroup = safeRead( renderObject, 'group' ) || null;
+	const liveGroup = matchingDispatch ? matchingDispatch.group : safeRead( renderObject, 'group' ) || null;
+	const snapshotGroup = copyRenderGroup( liveGroup );
+	const sourceMaterialSet = safeRead( snapshotObject, 'material' ) || null;
+	const fallbackMaterialIndex = safeRead( snapshotGroup, 'materialIndex' );
+	const fallbackSourceMaterial = Array.isArray( sourceMaterialSet )
+		? Number.isInteger( fallbackMaterialIndex ) && fallbackMaterialIndex >= 0 ? sourceMaterialSet[ fallbackMaterialIndex ] || null : null
+		: sourceMaterialSet;
+	const isShadowPass = safeRead( snapshotMaterial, 'isShadowPassMaterial' ) === true;
+	const sourceMaterial = matchingDispatch && matchingDispatch.material || fallbackSourceMaterial || ( isShadowPass ? null : snapshotMaterial );
+	const sourceGeometry = matchingDispatch && matchingDispatch.geometry || safeRead( snapshotObject, 'geometry' ) || null;
 	// Read reused RenderContext primitives before *any* renderer callback. A
 	// custom getter is allowed to trigger nested work and mutate this context.
 	const observedRenderTarget = safeRead( context, 'renderTarget' );
@@ -240,8 +326,11 @@ export function snapshotRenderObjectRequest( renderObject, renderer, cacheKey = 
 		lightsNode: snapshotLightsNode,
 		clippingContext: snapshotClippingContext,
 		group: snapshotGroup,
+		sourceMaterial,
+		sourceGeometry,
 		context: renderContext,
 	};
+	const bindingOwner = resolveRenderObjectBindingOwner( snapshotRenderObject, sourceMaterial );
 	let renderContextSelector = '';
 	try { renderContextSelector = createRenderObjectContextSelector( snapshotRenderObject, renderer ); } catch ( _ ) {}
 
@@ -251,7 +340,16 @@ export function snapshotRenderObjectRequest( renderObject, renderer, cacheKey = 
 		renderObject,
 		object,
 		material: snapshotRenderObject.material,
-		userMaterial: object && safeRead( object, 'material' ) || null,
+		sourceObject: snapshotObject,
+		sourceMaterial: bindingOwner.material,
+		sourceMaterialSet,
+		sourceGeometry,
+		sourceGroup: liveGroup,
+		bindingOwnerKind: bindingOwner.kind,
+		bindingOwnerExact: !! ( matchingDispatch && matchingDispatch.material ),
+		// Backward-compatible harvest alias. Unlike the old value this is the
+		// exact selected material and never the full object.material array.
+		userMaterial: bindingOwner.material,
 		scene: snapshotRenderObject.scene,
 		camera: snapshotRenderObject.camera,
 		lightsNode: snapshotRenderObject.lightsNode,
@@ -410,11 +508,16 @@ function buildHarvestResult( epoch, supported, renderer, requests, pairsByMateri
 		if ( requestedPairs.length === 0 ) continue;
 		const variants = requestedPairs.map( ( pair ) => {
 
-			const selectors = [ ...new Set( pair.requests.map( ( request ) => request.renderContextSelector ).filter( Boolean ) ) ].sort();
-			const objects = [ ...new Set( pair.requests.map( ( request ) => request.object ).filter( Boolean ) ) ];
-			const userMaterials = [ ...new Set( pair.requests.map( ( request ) => request.userMaterial ).filter( Boolean ) ) ];
-			const captureClocks = [ ...new Set( pair.requests.map( ( request ) => request.captureClock ).filter( Number.isFinite ) ) ];
-			const missingSelector = pair.requests.some( ( request ) => ! request.renderContextSelector );
+			const exactRequests = pair.requests.filter( ( request ) => request.bindingOwnerExact );
+			const authoritativeRequests = exactRequests.length > 0 ? exactRequests : pair.requests;
+			const selectors = [ ...new Set( authoritativeRequests.map( ( request ) => request.renderContextSelector ).filter( Boolean ) ) ].sort();
+			const objects = [ ...new Set( authoritativeRequests.map( ( request ) => request.object ).filter( Boolean ) ) ];
+			const sourceOwnerRequests = authoritativeRequests.filter( ( request ) => request.sourceMaterial || request.userMaterial );
+			const sourceMaterials = [ ...new Set( sourceOwnerRequests.map( ( request ) =>
+				request.sourceMaterial || ( ! Array.isArray( request.userMaterial ) ? request.userMaterial : null )
+			).filter( Boolean ) ) ];
+			const captureClocks = [ ...new Set( authoritativeRequests.map( ( request ) => request.captureClock ).filter( Number.isFinite ) ) ];
+			const missingSelector = authoritativeRequests.some( ( request ) => ! request.renderContextSelector );
 			const complete = pair.cacheKey !== null && pair.cacheKey !== undefined &&
 				pair.nodeBuilderState !== null && pair.ambiguousState === false &&
 				pair.stateErrors.length === 0 && missingSelector === false;
@@ -423,9 +526,11 @@ function buildHarvestResult( epoch, supported, renderer, requests, pairsByMateri
 				nodeBuilderState: pair.nodeBuilderState,
 				complete,
 				requestCount: pair.requests.length,
-				renderObjects: Object.freeze( [ ...new Set( pair.requests.map( ( request ) => request.renderObject ).filter( Boolean ) ) ] ),
+				renderObjects: Object.freeze( [ ...new Set( authoritativeRequests.map( ( request ) => request.renderObject ).filter( Boolean ) ) ] ),
 				objects: Object.freeze( objects ),
-				userMaterials: Object.freeze( userMaterials ),
+				sourceMaterials: Object.freeze( sourceMaterials ),
+				sourceOwnerRequests: Object.freeze( sourceOwnerRequests.slice() ),
+				userMaterials: Object.freeze( sourceMaterials ),
 				captureClocks: Object.freeze( captureClocks ),
 				renderContextSelectors: Object.freeze( selectors ),
 				requests: Object.freeze( pair.requests.slice() ),
@@ -451,6 +556,17 @@ function buildHarvestResult( epoch, supported, renderer, requests, pairsByMateri
 		requests: Object.freeze( requests.slice() ),
 		familiesByMaterial,
 		familiesByMaterialUuid,
+	} );
+
+}
+
+function copyRenderGroup( group ) {
+
+	if ( ! group || typeof group !== 'object' ) return null;
+	return Object.freeze( {
+		start: safeRead( group, 'start' ),
+		count: safeRead( group, 'count' ),
+		materialIndex: safeRead( group, 'materialIndex' ),
 	} );
 
 }

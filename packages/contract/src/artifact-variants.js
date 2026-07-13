@@ -8,6 +8,7 @@ export const ARTIFACT_VARIANT_FIELDS = Object.freeze( [
 	'cacheKey',
 	'renderContextSelectors',
 	'materialShape',
+	'bindingOwner',
 	'sourceMaterial',
 	'vertexShader',
 	'fragmentShader',

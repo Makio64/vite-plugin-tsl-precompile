@@ -4,6 +4,7 @@ import test from 'node:test';
 import { compileTSL } from '../../src/vendor/compileTSL.js';
 import { createMockGPUCanvasContext, installMockWebGPU } from '../../src/mock-webgpu.js';
 import { beginRenderObjectHarvest } from '../../src/vendor/render-object-observer.js';
+import { RENDER_BINDING_OWNER_KINDS } from '@tsl-precompile/contract/render-selector';
 
 test( 'compileTSL binds the renderer framebuffer target during canvas warm-up', async () => {
 
@@ -516,6 +517,78 @@ test( 'compileTSL discards an incomplete supplied family and uses the whole synt
 	assert.equal( variants.length, 2 );
 	assert.deepEqual( variants.map( ( artifact ) => artifact.vertexShader ).sort(), [ 'synthetic-first-vertex', 'synthetic-second-vertex' ] );
 	assert.equal( variants.some( ( artifact ) => /real-first/.test( artifact.vertexShader ) ), false );
+
+} );
+
+test( 'compileTSL stamps shadow-caster ownership only from exact dispatch evidence', async () => {
+
+	const cacheKey = 'exact-shadow-owner';
+	const shadowMaterial = { uuid: 'private-shadow-material', isShadowPassMaterial: true };
+	const casterMaterial = { uuid: 'process-local-caster-material' };
+	const object = { material: casterMaterial };
+	const state = makeMinimalState( 'shadow-owner' );
+	const manager = {
+		nodeBuilderCache: new Map(),
+		getForRenderCacheKey( renderObject ) { return renderObject.cacheKey; },
+		getForRender() { return null; },
+	};
+	const renderer = makeHarvestRenderer( manager );
+	const scene = { userData: {}, traverse() {} };
+	const compile = async ( bindingOwnerExact ) => {
+
+		const request = Object.freeze( {
+			cacheKey,
+			material: shadowMaterial,
+			sourceMaterial: casterMaterial,
+			bindingOwnerExact,
+			bindingOwnerKind: RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER,
+		} );
+		const variant = Object.freeze( {
+			cacheKey,
+			nodeBuilderState: state,
+			complete: true,
+			objects: Object.freeze( [ object ] ),
+			sourceMaterials: Object.freeze( [ casterMaterial ] ),
+			sourceOwnerRequests: Object.freeze( [ request ] ),
+			userMaterials: Object.freeze( [ casterMaterial ] ),
+			captureClocks: Object.freeze( [] ),
+			renderContextSelectors: Object.freeze( [] ),
+			requests: Object.freeze( [ request ] ),
+		} );
+		const family = Object.freeze( {
+			material: shadowMaterial,
+			complete: true,
+			variants: Object.freeze( [ variant ] ),
+		} );
+		return compileTSL( renderer, scene, {}, {
+			noGlobalMRT: true,
+			skipWarmupRender: true,
+			renderObjectHarvest: Object.freeze( {
+				renderer,
+				familiesByMaterial: new Map( [ [ shadowMaterial, family ] ] ),
+			} ),
+		} );
+
+	};
+
+	const exactArtifacts = await compile( true );
+	assert.equal( exactArtifacts.length, 1 );
+	const exact = exactArtifacts[ 0 ];
+	assert.equal( exact.bindingOwner, RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER );
+	assert.equal( exact.userMaterialUuid, undefined, 'auxiliary artifacts do not persist caster UUIDs' );
+	assert.equal( Object.isFrozen( exact._shadowCasterRequests ), true );
+	assert.equal( exact._shadowCasterRequests.length, 1 );
+	assert.equal( exact._shadowCasterRequests[ 0 ].sourceMaterial, casterMaterial );
+	assert.equal( Object.getOwnPropertyDescriptor( exact, '_shadowCasterRequests' ).enumerable, false );
+	const serialized = JSON.parse( JSON.stringify( exact ) );
+	assert.equal( serialized.bindingOwner, RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER );
+	assert.equal( serialized.userMaterialUuid, undefined );
+	assert.equal( serialized._shadowCasterRequests, undefined );
+
+	const inexactArtifacts = await compile( false );
+	assert.equal( inexactArtifacts.length, 1 );
+	assert.equal( inexactArtifacts[ 0 ].bindingOwner, undefined );
+	assert.equal( inexactArtifacts[ 0 ]._shadowCasterRequests, undefined );
 
 } );
 

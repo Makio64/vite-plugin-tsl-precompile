@@ -383,6 +383,27 @@ renderer shadow-node construction path experimentally drops the closure to 51
 Node/TSL modules / 239,415 rendered bytes, but it must land only with exact
 per-caster binding ownership and artifact-family coverage.
 
+**Exact shadow-caster ownership capture (2026-07-13).** The extractor now
+distinguishes the renderer-owned shadow material that owns captured WGSL from
+the exact pre-override caster material that owns its live bindings. The shared
+render-object observer keeps one Symbol-scoped, nested `renderer.renderObject`
+dispatch stack because `RenderObjects.get()` sees the shadow override before
+it sees the current geometry group. Request snapshots copy exact object,
+selected material, geometry, and group scalars; stale or mismatched dispatches
+remain explicitly inexact. Only exact shadow requests may serialize the
+variant-local `bindingOwner: "shadow-caster"` contract. Caster UUIDs and live
+object/material/group references remain non-enumerable harvest evidence and
+never enter artifact JSON. Exact requests also replace synthetic selector
+evidence for the same cache pair, so stale cached groups cannot split shadow
+topology. This wedge intentionally stops before runtime hydration: the next
+stages classify `material.*` bindings against that owner, install owner-local
+replay overlays, and preserve every shadow artifact family through aux
+serialization and registry merging before the stock shadow-node construction
+closure can be removed. The strict graph remains 393 modules with 65 retained
+Node/TSL modules / 302,240 rendered bytes; the added contract and selector
+logic moves the bundle from 828,280 raw / 226,734 gzip-9 bytes to 829,290 raw /
+227,045 gzip-9 bytes.
+
 ---
 
 ## 2026-06-09 audit refresh — corrections to the map

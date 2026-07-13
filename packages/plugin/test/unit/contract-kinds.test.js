@@ -23,6 +23,7 @@ import {
 	isDynamicBindingKind,
 	validateDynamicBindingSource,
 } from '@tsl-precompile/contract/dynamic-bindings';
+import { createArtifactVariantPayload } from '@tsl-precompile/contract/artifact-variants';
 
 test( 'contract kind registry recognises codegen and runtime texture kinds', () => {
 
@@ -104,6 +105,37 @@ test( 'contract artifact validation accepts known slot and texture kinds', () =>
 
 	assert.equal( result.ok, true );
 	assert.deepEqual( result.errors, [] );
+
+} );
+
+test( 'contract validates and preserves render binding ownership', () => {
+
+	const shadow = {
+		materialShape: 'shadow-depth',
+		bindingOwner: 'shadow-caster',
+		vertexShader: 'v',
+		fragmentShader: 'f',
+		uniformPlan: [],
+	};
+	assert.equal( validateArtifact( shadow ).ok, true );
+	assert.equal( createArtifactVariantPayload( shadow ).bindingOwner, 'shadow-caster' );
+
+	const wrongShape = validateArtifact( { ...shadow, materialShape: 'mesh-standard' } );
+	assert.equal( wrongShape.ok, false );
+	assert.equal( wrongShape.errors.find( ( error ) => error.code === 'artifact.bindingOwner.materialShape' ).path, 'bindingOwner' );
+
+	const unknown = validateArtifact( { ...shadow, bindingOwner: 'captured-object' } );
+	assert.equal( unknown.ok, false );
+	assert.equal( unknown.errors.find( ( error ) => error.code === 'artifact.bindingOwner' ).path, 'bindingOwner' );
+
+	const compute = validateArtifact( {
+		kind: 'compute',
+		computeShader: 'compute',
+		bindingOwner: 'render-material',
+		uniformPlan: [],
+	} );
+	assert.equal( compute.ok, false );
+	assert.equal( compute.errors.find( ( error ) => error.code === 'artifact.bindingOwner.compute' ).path, 'bindingOwner' );
 
 } );
 
