@@ -88,6 +88,20 @@ test( 'render selector is graph-free and ignores axes absent from Three shader r
 
 } );
 
+test( 'render selector signs enabled renderer high precision without splitting the default', () => {
+
+	const capture = fixture();
+	const replay = fixture();
+	const defaultSelector = createRenderObjectContextSelector( capture );
+	replay.renderer.highPrecision = false;
+	assert.equal( createRenderObjectContextSelector( replay ), defaultSelector );
+	replay.renderer.highPrecision = true;
+	assert.notEqual( createRenderObjectContextSelector( replay ), defaultSelector );
+	capture.renderer.highPrecision = true;
+	assert.equal( createRenderObjectContextSelector( replay ), createRenderObjectContextSelector( capture ) );
+
+} );
+
 test( 'scene render topology separates shader branches from live fog and environment values', () => {
 
 	const scene = {
@@ -171,7 +185,7 @@ test( 'render selector distinguishes material shader-branch flags and enums', ()
 
 } );
 
-test( 'background selector projection ignores scene lighting, fog, environment, and shadow state', () => {
+test( 'background selector projection ignores scene lighting, fog, environment, and shadow state but retains precision', () => {
 
 	const capture = fixture();
 	const replay = fixture();
@@ -186,6 +200,14 @@ test( 'background selector projection ignores scene lighting, fog, environment, 
 		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'background' ),
 	);
 
+	replay.renderer.highPrecision = true;
+	assert.notEqual(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'background' ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'background' ),
+		'background vertices consume the high-precision model-view topology',
+	);
+	replay.renderer.highPrecision = false;
+
 	replay.context.sampleCount = 1;
 	assert.notEqual(
 		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'background' ),
@@ -195,7 +217,7 @@ test( 'background selector projection ignores scene lighting, fog, environment, 
 
 } );
 
-test( 'post-process projection ignores private output attachments but retains pipeline topology', () => {
+test( 'post-process projection ignores private output attachments but retains pipeline and precision topology', () => {
 
 	const capture = fixture();
 	const replay = fixture();
@@ -220,6 +242,14 @@ test( 'post-process projection ignores private output attachments but retains pi
 		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'post-process' ),
 		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'post-process' ),
 	);
+
+	replay.renderer.highPrecision = true;
+	assert.notEqual(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'post-process' ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'post-process' ),
+		'fullscreen vertices consume the high-precision model-view topology',
+	);
+	replay.renderer.highPrecision = false;
 
 	replay.context.sampleCount = 4;
 	assert.notEqual(
@@ -267,6 +297,13 @@ test( 'shadow-depth projection ignores scene consumers but retains caster topolo
 		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'shadow-depth' ),
 		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'shadow-depth' ),
 	);
+	replay.renderer.highPrecision = true;
+	assert.notEqual(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'shadow-depth' ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'shadow-depth' ),
+		'high-precision caster matrices remain signed after projection',
+	);
+	replay.renderer.highPrecision = false;
 
 	replay.object.material.castShadowNode = Object.assign( function inertCastShadow() {}, { isNode: true } );
 	assert.notEqual(

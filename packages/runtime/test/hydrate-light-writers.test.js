@@ -371,6 +371,30 @@ test( 'writeLightValue: light.shadowMatrix writes light.shadow.matrix', () => {
 
 } );
 
+test( 'writeLightValue: light.shadowModelMatrix multiplies live shadow and model matrices', () => {
+
+	const view = makeView();
+	const shadowMatrix = new Matrix4().makeTranslation( 2, 3, 4 );
+	const matrixWorld = new Matrix4().makeScale( 2, 3, 4 );
+	const expected = new Matrix4().multiplyMatrices( shadowMatrix, matrixWorld );
+	const shadow = { matrix: shadowMatrix };
+	const light = fakeLight( { uuid: 'a', shadow } );
+	const scene = fakeScene( [ light ] );
+	writeLightValue(
+		view,
+		0,
+		'light.shadowModelMatrix',
+		{ kind: 'light.shadowModelMatrix', lightUuid: 'a' },
+		{ scene, object: { matrixWorld } },
+	);
+	for ( let index = 0; index < 16; index ++ ) {
+
+		assert.ok( Math.abs( view.getFloat32( index * 4, true ) - Math.fround( expected.elements[ index ] ) ) < 1e-6 );
+
+	}
+
+} );
+
 test( 'updateLightShadowMatrixForFrame uses point-light translation semantics', () => {
 
 	let updateCalls = 0;

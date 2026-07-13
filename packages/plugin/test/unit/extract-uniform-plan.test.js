@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { Matrix3, Matrix4 } from 'three';
+import { UniformNode } from 'three/webgpu';
 
 import { extractUniformPlan } from '../../src/vendor/extractUniformPlan.js';
 
@@ -24,6 +26,19 @@ function makeVec3UniformSlot( node, value ) {
 		name: 'nodeUniform0',
 		offset: 0,
 		itemSize: 3,
+		nodeUniform: { node },
+		getValue() { return value; },
+	};
+
+}
+
+function makeMatrixUniformSlot( node, value, type ) {
+
+	return {
+		[ type === 'mat3' ? 'isMatrix3Uniform' : 'isMatrix4Uniform' ]: true,
+		name: 'nodeUniform0',
+		offset: 0,
+		itemSize: type === 'mat3' ? 12 : 16,
 		nodeUniform: { node },
 		getValue() { return value; },
 	};
@@ -185,6 +200,91 @@ test( 'extractUniformPlan structurally maps renderer tone-mapping exposure refer
 	const plan = extractUniformPlan( state, {} );
 	assert.equal( plan[ 0 ].slots[ 0 ].source.kind, 'renderer.toneMappingExposure' );
 	assert.deepEqual( plan[ 0 ].slots[ 0 ].source.valueSnapshot, { type: 'number', data: 1.25 } );
+
+} );
+
+test( 'extractUniformPlan lifts anonymous high-precision model matrix callbacks', () => {
+
+	const viewValue = new Matrix4();
+	const normalValue = new Matrix3();
+	const shadowModelValue = new Matrix4();
+	const shadowMatrix = { value: new Matrix4() };
+	const light = {
+		isLight: true,
+		type: 'DirectionalLight',
+		uuid: 'highp-shadow-light',
+		castShadow: true,
+		shadow: { matrix: shadowMatrix.value },
+	};
+	const modelViewNode = new UniformNode( viewValue, 'mat4' ).onObjectUpdate( ( { object, camera } ) => {
+
+		return object.modelViewMatrix.multiplyMatrices( camera.matrixWorldInverse, object.matrixWorld );
+
+	} );
+	const isHighPrecisionModelViewMatrix = true;
+	const modelNormalViewNode = new UniformNode( normalValue, 'mat3' ).onObjectUpdate( ( { object, camera } ) => {
+
+		if ( isHighPrecisionModelViewMatrix !== true ) {
+
+			object.modelViewMatrix.multiplyMatrices( camera.matrixWorldInverse, object.matrixWorld );
+
+		}
+
+		return object.normalMatrix.getNormalMatrix( object.modelViewMatrix );
+
+	} );
+	const shadowModelNode = new UniformNode( shadowModelValue, 'mat4' ).onObjectUpdate( ( { object }, self ) => {
+
+		return self.value.multiplyMatrices( shadowMatrix.value, object.matrixWorld );
+
+	} );
+	let customCallbackCalls = 0;
+	const customValue = new Matrix4();
+	const customNode = new UniformNode( customValue, 'mat4' ).onObjectUpdate( ( { object } ) => {
+
+		customCallbackCalls ++;
+		customValue.elements[ 0 ] = 99;
+		return object.matrixWorld;
+
+	} );
+	const state = {
+		updateNodes: [
+			{ isAnalyticLightNode: true, light },
+			modelViewNode,
+			modelNormalViewNode,
+			shadowModelNode,
+			customNode,
+		],
+		bindings: [ {
+			name: 'object',
+			bindings: [ {
+				isUniformsGroup: true,
+				byteLength: 128,
+				visibility: 3,
+				groupNode: { shared: false },
+				uniforms: [
+					makeMatrixUniformSlot( modelViewNode, viewValue, 'mat4' ),
+					makeMatrixUniformSlot( modelNormalViewNode, normalValue, 'mat3' ),
+					makeMatrixUniformSlot( shadowModelNode, shadowModelValue, 'mat4' ),
+					makeMatrixUniformSlot( customNode, customValue, 'mat4' ),
+				],
+			} ],
+		} ],
+	};
+
+	const plan = extractUniformPlan( state, {} );
+	assert.deepEqual( plan[ 0 ].slots.map( ( slot ) => slot.source.kind ), [
+		'object.modelViewMatrix',
+		'object.modelNormalViewMatrix',
+		'light.shadowModelMatrix',
+		'uniform.live',
+	] );
+	assert.equal( plan[ 0 ].slots[ 2 ].source.lightUuid, 'highp-shadow-light' );
+	assert.equal( modelViewNode.value, viewValue, 'classification never replaces the mat4 value' );
+	assert.equal( modelNormalViewNode.value, normalValue, 'classification never replaces the mat3 value' );
+	assert.equal( shadowModelNode.value, shadowModelValue, 'shadow classification uses a detached result matrix' );
+	assert.equal( customCallbackCalls, 0, 'extractor never invokes an arbitrary object callback' );
+	assert.equal( customValue.elements[ 0 ], 1, 'arbitrary callback state stays untouched' );
 
 } );
 

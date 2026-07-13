@@ -363,6 +363,26 @@ cube/XR/PMREM adapter stage because its current miss is target topology
 (captured multisampled 2D versus replay single-sample cube), not scene graph
 construction.
 
+**Replay-owned renderer context and precision topology (2026-07-13).** The
+slim renderer no longer constructs its default context-cache carrier through
+Three's `ContextNode`; `slim-replay-renderer-context.js` owns the stable node
+identity, versioning, flow-context compatibility, and high-precision state
+that `RenderObject` actually consumes. `renderer.highPrecision` is now an
+explicit captured selector/signature axis for ordinary, background,
+post-process, and shadow-depth profiles, rather than a graph mutation that
+replay could silently ignore. The shared contract also names the complete CPU-derived matrix family:
+`object.modelViewMatrix`, `object.modelNormalViewMatrix`, and
+`light.shadowModelMatrix`. Extraction classifies those callback-backed inputs,
+generated and hydrated updaters refresh them from the live object/camera/light,
+and a real mock-WebGPU directional-shadow fixture guards the full capture path.
+The strict closure still contains 65 Node/TSL modules because other retained
+Three paths reference `ContextNode`; this wedge reduces `ModelNode` from 3,493
+to 2,218 rendered bytes and retained Node/TSL bytes from 303,515 to 302,240.
+The next material reduction is the shadow ownership seam: removing the stock
+renderer shadow-node construction path experimentally drops the closure to 51
+Node/TSL modules / 239,415 rendered bytes, but it must land only with exact
+per-caster binding ownership and artifact-family coverage.
+
 ---
 
 ## 2026-06-09 audit refresh — corrections to the map
@@ -754,7 +774,7 @@ Inspector preview gap also closed via a Vite plugin middleware (`attachInspector
 
 **Status (2026-06-09).** The headline regression is resolved at the bundler: the `threeBareAlias` + `webglFallbackStub` rollup wedges (see the audit-refresh bullet at the top of this doc) cut the bundle ~407 → 238.8 KB gzip, and the gate is re-tightened to 250 KB with the stale comments fixed ([`slim-bundle.test.js`](packages/plugin/test/unit/slim-bundle.test.js)). The `TSLP_ANALYZE=1` rollup flag prints a per-module breakdown — use it before any future gate bump. Refuted during verification: lazy-importing aux-loader from slim-entry (it is exported slim API, not a one-call dependency).
 
-**Status (2026-07-13).** The single gzip constant is replaced by the machine-readable [`slim-budget.json`](packages/runtime/build-tools/slim-budget.json) and shared [`slim-bundle-analysis.js`](packages/runtime/build-tools/slim-bundle-analysis.js). The dedicated `pnpm test:slim:budget` gate performs one strict prebuilt Rollup build plus minimal and advanced production `slim: 'source'` Vite builds; it caps raw/gzip bytes, compiler residue, stock-adapter residue, retained Node module count/bytes, and split bare-Three identity. `pnpm analyze:slim` emits deterministic JSON for CI or trend tooling. Current observations are 827,171 raw / 226,494 gzip bytes and 65 retained Node modules / 303,515 rendered bytes for prebuilt, 153,971 gzip bytes for minimal source, and 164,087 gzip bytes for advanced mixed-import source; all compiler, stock-adapter, and duplicate-identity counts are zero. The expensive three-build check stays outside the quick unit tier and runs once in Linux CI and `release:check`.
+**Status (2026-07-13).** The single gzip constant is replaced by the machine-readable [`slim-budget.json`](packages/runtime/build-tools/slim-budget.json) and shared [`slim-bundle-analysis.js`](packages/runtime/build-tools/slim-bundle-analysis.js). The dedicated `pnpm test:slim:budget` gate performs one strict prebuilt Rollup build plus minimal and advanced production `slim: 'source'` Vite builds; it caps raw/gzip bytes, compiler residue, stock-adapter residue, retained Node module count/bytes, and split bare-Three identity. `pnpm analyze:slim` emits deterministic JSON for CI or trend tooling. Current observations are 828,280 raw / 226,734 gzip bytes and 65 retained Node modules / 302,240 rendered bytes for prebuilt, 150.6 KiB gzip for minimal source, and 160.5 KiB gzip for advanced mixed-import source; all compiler, stock-adapter, and duplicate-identity counts are zero. The expensive three-build check stays outside the quick unit tier and runs once in Linux CI and `release:check`.
 
 **Remaining.** A minimal `core` subpath export (apply + loader + writers) for non-slim adopters importing the root barrel; `sideEffects` annotations in [`packages/runtime/package.json`](packages/runtime/package.json) (careful: `hydrator.js` has a real module-init side effect — `installLiveTextureRegistryPatches()`; list side-effectful files explicitly rather than `false`); lazy TSL/PassNode stub entries if the analyzer shows them dominating; opt-in on-disk artifact minification (low value — dev artifacts are gitignored test fixtures).
 

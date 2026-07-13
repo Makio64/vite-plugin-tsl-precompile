@@ -553,6 +553,12 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 			// `camera.matrixWorldInverse * matrixWorld`.
 			return `if (frame.object && frame.object.modelViewMatrix && frame.object.matrixWorld && frame.camera && frame.camera.matrixWorldInverse && frame.object.isSkinnedMesh !== true && frame.object.isInstancedMesh !== true && (!frame.object.material || frame.object.material.isPointsNodeMaterial !== true)) frame.object.modelViewMatrix.multiplyMatrices(frame.camera.matrixWorldInverse, frame.object.matrixWorld); writeMat4(view, ${ off }, frame.object && frame.object.modelViewMatrix);`;
 
+		case 'object.modelNormalViewMatrix':
+			usedWriters.add( 'writeMat3' );
+			// CPU/high-precision normal matrices are derived from view * model,
+			// not directly from matrixWorld like the ordinary normalMatrix kind.
+			return `if (frame.object && frame.object.normalMatrix && frame.object.modelViewMatrix && frame.object.matrixWorld && frame.camera && frame.camera.matrixWorldInverse) { frame.object.modelViewMatrix.multiplyMatrices(frame.camera.matrixWorldInverse, frame.object.matrixWorld); frame.object.normalMatrix.getNormalMatrix(frame.object.modelViewMatrix); } writeMat3(view, ${ off }, frame.object && frame.object.normalMatrix);`;
+
 		// Object3DNode — `scope` picks which object metric.
 		case 'object3d.position':
 			usedWriters.add( 'writeVec3' );

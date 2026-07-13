@@ -7,7 +7,7 @@
  * replaced by replay adapters, or rejected as runtime compiler residue.
  */
 
-export const SLIM_THREE_POLICY_VERSION = 'slim-three-policy@3';
+export const SLIM_THREE_POLICY_VERSION = 'slim-three-policy@4';
 
 /** Exact Three package patch used to build the published prebuilt slim file. */
 export const SLIM_THREE_PACKAGE_VERSION = '0.184.0';

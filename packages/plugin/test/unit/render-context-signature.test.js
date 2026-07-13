@@ -45,6 +45,17 @@ test( 'render-context signature covers light/shadow, object, geometry, clipping,
 
 } );
 
+test( 'render-context signature signs enabled renderer high precision only', () => {
+
+	const base = fixture();
+	const signature = createRenderContextSignature( base );
+	base.renderer.highPrecision = false;
+	assert.equal( createRenderContextSignature( base ), signature );
+	base.renderer.highPrecision = true;
+	assert.notEqual( createRenderContextSignature( base ), signature );
+
+} );
+
 test( 'render-context descriptor is JSON-safe and deterministic', () => {
 
 	const descriptor = describeRenderContext( fixture() );

@@ -56,7 +56,7 @@ async function loadEmittedModule( source ) {
 
 }
 
-async function captureWithDirectionalLight() {
+async function captureWithDirectionalLight( { highPrecision = false } = {} ) {
 
 	return generateForMaterial( ( { webgpu, core } ) => {
 
@@ -100,6 +100,7 @@ async function captureWithDirectionalLight() {
 				// `reference('bias', 'float', shadow)` calls never end up in
 				// state.updateNodes — defeating the whole point of the test.
 				renderer.shadowMap.enabled = true;
+				renderer.highPrecision = highPrecision;
 
 			},
 		};
@@ -252,6 +253,34 @@ test( 'shadow live: ShadowNode.bias / normalBias / radius / intensity / mapSize 
 			seen.has( kind ),
 			`expected at least one slot with kind=${ kind }; saw kinds=${ Array.from( seen ).sort().join( ',' ) || '<none>' }`,
 		);
+
+	}
+
+} );
+
+test( 'shadow live: high precision lifts every CPU-derived object matrix', async () => {
+
+	const result = await captureWithDirectionalLight( { highPrecision: true } );
+	assertNoUnknownKinds( result, 'shadow-live-high-precision' );
+	const objectMatrixSlots = result.artifact.uniformPlan
+		.filter( ( group ) => group.name === 'object' )
+		.flatMap( ( group ) => group.slots )
+		.filter( ( slot ) => slot.dtype === 'mat3' || slot.dtype === 'mat4' );
+	const kinds = new Set( objectMatrixSlots.map( ( slot ) => slot.source && slot.source.kind ) );
+	for ( const kind of [
+		'object.modelNormalViewMatrix',
+		'object.modelViewMatrix',
+		'light.shadowModelMatrix',
+	] ) assert.equal( kinds.has( kind ), true, `missing ${ kind } in ${ JSON.stringify( [ ...kinds ] ) }` );
+	assert.deepEqual(
+		objectMatrixSlots.filter( ( slot ) => slot.source && slot.source.kind === 'uniform.live' ),
+		[],
+		'an offline high-precision artifact cannot freeze anonymous matrix callbacks',
+	);
+	assert.ok( result.artifact.renderContextSelectors.length > 0 );
+	for ( const selector of result.artifact.renderContextSelectors ) {
+
+		assert.equal( JSON.parse( selector ).renderer.highPrecision, true );
 
 	}
 

@@ -149,6 +149,30 @@ test( 'writeUniformGroup writes object.normalMatrix from world matrix', () => {
 
 } );
 
+test( 'writeUniformGroup writes high-precision normal matrix from view * model', () => {
+
+	const view = makeView();
+	const matrixWorld = new Matrix4().makeScale( 2, 3, 4 );
+	const matrixWorldInverse = new Matrix4().makeRotationY( Math.PI / 4 );
+	const modelViewMatrix = new Matrix4();
+	const normalMatrix = new Matrix3();
+	const expectedModelView = new Matrix4().multiplyMatrices( matrixWorldInverse, matrixWorld );
+	const expectedNormal = new Matrix3().getNormalMatrix( expectedModelView );
+	const group = makeGroup( [
+		{ offset: 0, dtype: 'mat3', source: { kind: 'object.modelNormalViewMatrix' } },
+	] );
+	writeUniformGroup( group, {
+		object: { matrixWorld, modelViewMatrix, normalMatrix },
+		camera: { matrixWorldInverse },
+	}, view, null );
+	for ( const [ byteOffset, elementIndex ] of [ [ 0, 0 ], [ 4, 1 ], [ 8, 2 ], [ 16, 3 ], [ 20, 4 ], [ 24, 5 ], [ 32, 6 ], [ 36, 7 ], [ 40, 8 ] ] ) {
+
+		assert.ok( Math.abs( view.getFloat32( byteOffset, true ) - Math.fround( expectedNormal.elements[ elementIndex ] ) ) < 1e-6 );
+
+	}
+
+} );
+
 test( 'writeUniformGroup writes object.radius from geometry bounds', () => {
 
 	const view = makeView();

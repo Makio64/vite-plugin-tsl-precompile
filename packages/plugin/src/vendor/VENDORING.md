@@ -51,6 +51,16 @@ normalizes them into one variant-local `lightIdentities` table. The public
 `Light`, `LightShadow`, and shadow-camera properties are read for matching
 evidence; process-local `Object3D.id` is never persisted as durable identity.
 
+Local assumption: stock Three exports `UniformNode` from `three/webgpu`, and
+the high-precision model-view, normal-view, and shadow-model UniformNodes are
+created lazily after `extractUniformPlan.js` loads. The extractor installs one
+identity-scoped `UniformNode.onUpdate` wrapper that retains original callbacks
+in a WeakMap. It classifies only exact r184 callback shapes; it never executes
+arbitrary object-update callbacks. The exact stock shadow callback may be
+evaluated once against a detached result matrix to recover its closed-over
+light-shadow matrix identity. Update the callback-shape fixtures whenever an
+upstream Three bump changes these bodies.
+
 ## Import rewrites
 
 The vendored files originally imported from relative paths inside `three/src/nodes/**`. Those paths don't exist in the stock `three` package the plugin depends on. Rewrites:

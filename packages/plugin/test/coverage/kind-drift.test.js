@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
-import { BLOCKED_KINDS, KINDS } from '@tsl-precompile/contract/kinds';
+import { BLOCKED_KINDS, KINDS, LIGHT_SLOT_KINDS } from '@tsl-precompile/contract/kinds';
 
 const HERE = dirname( fileURLToPath( import.meta.url ) );
 const PLUGIN_SRC = resolve( HERE, '../../src' );
@@ -99,6 +99,7 @@ const extractorKinds = extractLiteralKinds( extractorSrc );
 const updaterCases = new Set( [
 	...extractUpdaterCases( updaterSrc ),
 	...extractUpdaterSetEntries( updaterSrc ),
+	...LIGHT_SLOT_KINDS,
 ] );
 const blockedKinds = new Set( Object.keys( BLOCKED_KINDS ) );
 
@@ -165,7 +166,7 @@ test( 'drift — every updater case corresponds to a real extractor kind (catche
 		'scene.backgroundBlurriness',
 		// object.* and object3d.<scope> — dynamic concat + aliases.
 		'object.worldMatrix', 'object.worldMatrixInverse', 'object.normalMatrix',
-		'object.modelViewMatrix', 'object.scale', 'object.radius',
+		'object.modelViewMatrix', 'object.modelNormalViewMatrix', 'object.scale', 'object.radius',
 		'object3d.position', 'object3d.scale', 'object3d.viewPosition',
 		'object3d.direction', 'object3d.worldMatrix', 'object3d.normalMatrix',
 		'object3d.modelViewMatrix', 'object3d.radius',

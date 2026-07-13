@@ -853,6 +853,15 @@ export function writeLightValue( view, offset, kind, source, frame ) {
 
 			} else writeSnapshot( view, offset, source.valueSnapshot );
 			return;
+		case 'light.shadowModelMatrix':
+			if ( light.shadow && light.shadow.matrix && frame.object && frame.object.matrixWorld ) {
+
+				updateLightShadowMatrixForFrame( light, frame );
+				_mwi.multiplyMatrices( light.shadow.matrix, frame.object.matrixWorld );
+				writeMat4( view, offset, _mwi );
+
+			} else writeSnapshot( view, offset, source.valueSnapshot );
+			return;
 		case 'light.shadowBias':
 			writeNumber( view, offset, light.shadow ? light.shadow.bias : null, source.valueSnapshot );
 			return;

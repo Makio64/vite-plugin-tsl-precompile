@@ -6,6 +6,8 @@
  *     `new QuadMesh(new Material())`.
  *   - Output cache/material ownership delegates to the graph-free replay
  *     adapter, including sampled texture topology and safe disposal.
+ *   - Renderer context identity and high-precision state delegate to a
+ *     graph-free replay carrier.
  */
 
 import { test } from 'node:test';
@@ -46,6 +48,15 @@ test( 'rewrite/Renderer: NodeMaterial replaced with Material sentinel + fragment
 	assert.doesNotMatch( out, /__slim-rewrite-runtime\/render-pipeline/ );
 	assert.doesNotMatch( out, /virtual:tsl-precompile\/__aux/ );
 
+	// Renderer cache identity and high-precision selection no longer retain
+	// ContextNode or the highp ModelNode graph in compiler-free replay.
+	assert.match( out, /this\.contextNode\s*=\s*createReplayRendererContext\s*\(\s*\)/ );
+	assert.match( out, /setReplayRendererHighPrecision\s*\(\s*this\s*,\s*value\s*\)/ );
+	assert.match( out, /return getReplayRendererHighPrecision\s*\(\s*this\s*\)/ );
+	assert.match( out, /from\s*["']virtual:tsl-precompile\/__slim-rewrite-runtime\/renderer-context["']/ );
+	assert.doesNotMatch( out, /nodes\/core\/ContextNode\.js/ );
+	assert.doesNotMatch( out, /\bhighpModel(?:Normal)?ViewMatrix\b/ );
+
 } );
 
 test( 'rewrite/Renderer: output parses as valid ESM', () => {
@@ -66,5 +77,41 @@ test( 'rewrite/Renderer: shape-gate fails loudly when late assignment is missing
 	assert.ok( r );
 	assert.equal( r.code, null );
 	assert.match( r.warning, /shape changed/ );
+
+} );
+
+test( 'rewrite/Renderer: shape-gate fails loudly when renderer context construction drifts', () => {
+
+	const src = readFileSync( PATH, 'utf8' )
+		.replace( 'this.contextNode = context();', 'this.contextNode = null;' );
+	const r = rewriteThreeSource( src, PATH, { threeVersion: '175', pluginVersion: '0.0.0' } );
+	assert.ok( r );
+	assert.equal( r.code, null );
+	assert.match( r.warning, /contextNode.*shape changed|shape changed.*contextNode/ );
+
+} );
+
+test( 'rewrite/Renderer: shape-gate fails loudly when highPrecision semantics drift', () => {
+
+	const src = readFileSync( PATH, 'utf8' )
+		.replace(
+			'contextNodeData.modelViewMatrix = highpModelViewMatrix;',
+			'contextNodeData.modelViewMatrix = null;',
+		);
+	const r = rewriteThreeSource( src, PATH, { threeVersion: '175', pluginVersion: '0.0.0' } );
+	assert.ok( r );
+	assert.equal( r.code, null );
+	assert.match( r.warning, /highPrecision setter shape changed/ );
+
+} );
+
+test( 'rewrite/Renderer: ignores unrelated highPrecision accessors', () => {
+
+	const src = readFileSync( PATH, 'utf8' ) + '\nclass ForeignPrecision { set highPrecision(value) { this.value = value; } get highPrecision() { return "foreign"; } }\n';
+	const r = rewriteThreeSource( src, PATH, { threeVersion: '175', pluginVersion: '0.0.0' } );
+	assert.ok( r && r.code );
+	assert.match( r.code, /class ForeignPrecision/ );
+	assert.match( r.code, /return ["']foreign["']/ );
+	assert.match( r.code, /this\.value\s*=\s*value/ );
 
 } );

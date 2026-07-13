@@ -47,6 +47,7 @@ export const SLIM_REWRITE_RUNTIME_MODULE_RULES = Object.freeze( [
 	{ id: 'artifact-registry', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'artifact-registry', runtimeFile: '_vendor-PrecompiledArtifactRegistry.js' },
 	{ id: 'aux-loader', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'aux-loader', runtimeFile: 'aux-loader.js' },
 	{ id: 'graph-hash', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'graph-hash', runtimeFile: 'graph-hash.js' },
+	{ id: 'renderer-context', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'renderer-context', runtimeFile: 'slim-replay-renderer-context.js' },
 	{ id: 'renderer-output', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'renderer-output', runtimeFile: 'slim-replay-renderer-output.js' },
 	{ id: 'render-pipeline', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'render-pipeline', runtimeFile: 'slim-replay-render-pipeline.js' },
 	{ id: 'postprocess-replay', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'postprocess-replay', runtimeFile: 'slim-support/postprocess-effects-replay.js' },
@@ -68,6 +69,9 @@ const SLIM_REWRITE_RUNTIME_HELPERS = Object.freeze( {
 	attachPostprocessObject3DTargets: Object.freeze( { moduleId: 'aux-loader', kind: 'named' } ),
 	hashNodeGraphSync: Object.freeze( { moduleId: 'graph-hash', kind: 'named' } ),
 	hashPlainConfigSync: Object.freeze( { moduleId: 'graph-hash', kind: 'named' } ),
+	createReplayRendererContext: Object.freeze( { moduleId: 'renderer-context', kind: 'named' } ),
+	setReplayRendererHighPrecision: Object.freeze( { moduleId: 'renderer-context', kind: 'named' } ),
+	getReplayRendererHighPrecision: Object.freeze( { moduleId: 'renderer-context', kind: 'named' } ),
 	getReplayRenderOutputCacheKey: Object.freeze( { moduleId: 'renderer-output', kind: 'named' } ),
 	createReplayRenderOutputMaterial: Object.freeze( { moduleId: 'renderer-output', kind: 'named' } ),
 	createReplayRenderPipelineMaterial: Object.freeze( { moduleId: 'render-pipeline', kind: 'named' } ),
@@ -430,13 +434,67 @@ function rewriteCubeRenderTarget( ast, ctx ) {
 // The sentinel Material is disposed by the adapter after a valid precompiled
 // replacement exists. The sibling `.needsUpdate = true` remains valid.
 
+const RENDERER_HIGH_PRECISION_SETTER_BODY = '{const contextNodeData=this.contextNode.value;if(value===true){contextNodeData.modelViewMatrix=highpModelViewMatrix;contextNodeData.modelNormalViewMatrix=highpModelNormalViewMatrix;}else if(this.highPrecision){delete contextNodeData.modelViewMatrix;delete contextNodeData.modelNormalViewMatrix;}}';
+const RENDERER_HIGH_PRECISION_GETTER_BODY = '{const contextNodeData=this.contextNode.value;return contextNodeData.modelViewMatrix===highpModelViewMatrix&&contextNodeData.modelNormalViewMatrix===highpModelNormalViewMatrix;}';
+
+function isRendererClassMethod( path ) {
+
+	const classPath = path.parentPath && path.parentPath.parentPath;
+	return !! classPath
+		&& t.isClassDeclaration( classPath.node )
+		&& t.isIdentifier( classPath.node.id, { name: 'Renderer' } );
+
+}
+
+function assertRendererHighPrecisionAccessorShape( method, kind ) {
+
+	const actual = generate( method.body, { compact: true, comments: false } ).code;
+	const expected = kind === 'set'
+		? RENDERER_HIGH_PRECISION_SETTER_BODY
+		: RENDERER_HIGH_PRECISION_GETTER_BODY;
+	if ( actual !== expected ) throw new Error( `Renderer: highPrecision ${ kind === 'set' ? 'setter' : 'getter' } shape changed` );
+
+}
+
 function rewriteRenderer( ast, ctx ) {
 
 	let foundConstruct = false;
 	let foundAssign = false;
 	let foundCacheKey = false;
+	let foundContext = false;
+	let foundHighPrecisionSetter = false;
+	let foundHighPrecisionGetter = false;
 
 	traverse( ast, {
+		ClassMethod( path ) {
+
+			if ( ! isRendererClassMethod( path ) ) return;
+			if ( ! t.isIdentifier( path.node.key, { name: 'highPrecision' } ) ) return;
+			if ( path.node.kind === 'set' ) {
+
+				if ( path.node.params.length !== 1 || ! t.isIdentifier( path.node.params[ 0 ], { name: 'value' } ) ) throw new Error( 'Renderer: highPrecision setter shape changed' );
+				assertRendererHighPrecisionAccessorShape( path.node, 'set' );
+				path.node.body = t.blockStatement( [
+					t.expressionStatement( t.callExpression( t.identifier( 'setReplayRendererHighPrecision' ), [
+						t.thisExpression(),
+						t.identifier( 'value' ),
+					] ) ),
+				] );
+				foundHighPrecisionSetter = true;
+				return;
+
+			}
+			if ( path.node.kind === 'get' ) {
+
+				assertRendererHighPrecisionAccessorShape( path.node, 'get' );
+				path.node.body = t.blockStatement( [
+					t.returnStatement( t.callExpression( t.identifier( 'getReplayRendererHighPrecision' ), [ t.thisExpression() ] ) ),
+				] );
+				foundHighPrecisionGetter = true;
+
+			}
+
+		},
 		NewExpression( path ) {
 
 			// Match: new NodeMaterial() with zero arguments.
@@ -476,6 +534,20 @@ function rewriteRenderer( ast, ctx ) {
 		},
 		AssignmentExpression( path ) {
 
+			if (
+				t.isMemberExpression( path.node.left )
+				&& t.isThisExpression( path.node.left.object )
+				&& t.isIdentifier( path.node.left.property, { name: 'contextNode' } )
+				&& t.isCallExpression( path.node.right )
+				&& t.isIdentifier( path.node.right.callee, { name: 'context' } )
+				&& path.node.right.arguments.length === 0
+			) {
+
+				path.node.right = t.callExpression( t.identifier( 'createReplayRendererContext' ), [] );
+				foundContext = true;
+				return;
+
+			}
 			if ( ! matchFragmentNodeAssign( path.node ) ) return;
 			const owner = path.node.left.object.object;   // e.g. `quad`
 			const rhs = path.node.right;
@@ -494,6 +566,8 @@ function rewriteRenderer( ast, ctx ) {
 	if ( ! foundConstruct ) throw new Error( 'Renderer: shape changed (no `new NodeMaterial()` found)' );
 	if ( ! foundAssign ) throw new Error( 'Renderer: shape changed (no `<X>.material.fragmentNode = <Y>` assignment found)' );
 	if ( ! foundCacheKey ) throw new Error( 'Renderer: shape changed (no NodeManager output cache-key call found)' );
+	if ( ! foundContext ) throw new Error( 'Renderer: shape changed (no default `contextNode = context()` assignment found)' );
+	if ( ! foundHighPrecisionSetter || ! foundHighPrecisionGetter ) throw new Error( 'Renderer: shape changed (highPrecision accessors not found)' );
 
 	injectMaterialImport( ast );
 	ctx.touched = true;

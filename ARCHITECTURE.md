@@ -106,6 +106,7 @@ Ships with the user's bundle. Runtime only.
 
 - `src/precompile-marker.js` — `Material.prototype.precompile`. In dev, calls the extractor + POSTs artifact. In prod, replaced by transform.
 - `src/apply-precompiled.js` — `__applyPrecompiled` helper injected by transform.
+- `src/slim-replay-renderer-context.js` — graph-free renderer context/cache identity and explicit high-precision state for replay; it preserves the narrow `RenderObject` invalidation protocol without constructing a TSL `ContextNode`.
 - `src/slim-replay-lighting.js` — graph-free per-scene light state used by RenderList and semantic variant selection.
 - `src/slim-replay-node-manager.js` — compiler-free render/compute state manager; hydrates artifacts directly and caches by material identity plus semantic topology.
 - `src/slim-replay-background.js` — compiler-free background pass; selects a captured artifact from the raw scene input, isolates texture refs per scene, and preserves Three's clear/XR/sky-mesh behavior.

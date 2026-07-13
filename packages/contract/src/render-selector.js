@@ -149,6 +149,11 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 	if ( postProcess ) {
 
 		const projected = { ...descriptor };
+		if ( projected.renderer && typeof projected.renderer === 'object' ) {
+
+			projected.renderer = { ...projected.renderer };
+
+		}
 		if ( projected.material && typeof projected.material === 'object' ) {
 
 			projected.material = { ...projected.material };
@@ -246,6 +251,7 @@ function describeRenderer( renderer ) {
 		} ) : null,
 		coordinateSystem: scalar( safeRead( renderer, 'coordinateSystem' ) ),
 		logarithmicDepthBuffer: scalar( safeRead( renderer, 'logarithmicDepthBuffer' ) ),
+		highPrecision: safeRead( renderer, 'highPrecision' ) === true ? true : null,
 		shadowMap: shadowMap ? compactObject( {
 			enabled: safeRead( shadowMap, 'enabled' ) === true,
 			type: scalar( safeRead( shadowMap, 'type' ) ),

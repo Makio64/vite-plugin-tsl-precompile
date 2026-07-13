@@ -32,3 +32,12 @@ test( 'cell: object.modelViewMatrix → writeMat4', () => {
 	assertGenerates( r, 'frame.object.material.isPointsNodeMaterial !== true' );
 
 } );
+
+test( 'cell: object.modelNormalViewMatrix → writeMat3 from view * model', () => {
+
+	const r = generateForPlan( { groups: [ { slots: [ { byteOffset: 0, source: { kind: 'object.modelNormalViewMatrix' } } ] } ] } );
+	assertGenerates( r, 'frame.object.modelViewMatrix.multiplyMatrices(frame.camera.matrixWorldInverse, frame.object.matrixWorld)' );
+	assertGenerates( r, 'frame.object.normalMatrix.getNormalMatrix(frame.object.modelViewMatrix)' );
+	assertGenerates( r, 'writeMat3(view, byteOffset + 0, frame.object && frame.object.normalMatrix)' );
+
+} );

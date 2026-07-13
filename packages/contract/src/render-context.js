@@ -69,6 +69,7 @@ function describeRenderer( renderer ) {
 		coordinateSystem: topologyScalar( safeRead( renderer, 'coordinateSystem' ) ),
 		depth: topologyScalar( safeRead( renderer, 'depth' ) ),
 		logarithmicDepthBuffer: topologyScalar( safeRead( renderer, 'logarithmicDepthBuffer' ) ),
+		highPrecision: safeRead( renderer, 'highPrecision' ) === true ? true : null,
 		outputColorSpace: topologyScalar( safeRead( renderer, 'outputColorSpace' ) ),
 		toneMapping: topologyScalar( safeRead( renderer, 'toneMapping' ) ),
 		transparent: topologyScalar( safeRead( renderer, 'transparent' ) ),

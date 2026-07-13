@@ -300,6 +300,14 @@ export function writeUniformGroup( group, frame, view, material ) {
 				writeMat4( view, offset, frame.object.modelViewMatrix );
 			} else writeSnapshot( view, offset, source.valueSnapshot, slot.dtype );
 
+		} else if ( kind === 'object.modelNormalViewMatrix' ) {
+
+			if ( frame.object && frame.object.normalMatrix && frame.object.modelViewMatrix && frame.object.matrixWorld && frame.camera && frame.camera.matrixWorldInverse ) {
+				frame.object.modelViewMatrix.multiplyMatrices( frame.camera.matrixWorldInverse, frame.object.matrixWorld );
+				frame.object.normalMatrix.getNormalMatrix( frame.object.modelViewMatrix );
+				writeMat3( view, offset, frame.object.normalMatrix );
+			} else writeSnapshot( view, offset, source.valueSnapshot, slot.dtype );
+
 		}
 		else if ( kind === 'object.position' ) writeVec3( view, offset, frame.object && frame.object.position, source.valueSnapshot );
 		else if ( kind === 'object3d.position' ) {

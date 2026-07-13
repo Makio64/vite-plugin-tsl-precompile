@@ -72,3 +72,10 @@ test( 'cell: light.shadowMatrix → delegates to the canonical writer', () => {
 	assertGenerates( r, '_tslpWriteLightValue(view, byteOffset + 64, "light.shadowMatrix", __lightSource0, frame)' );
 
 } );
+
+test( 'cell: light.shadowModelMatrix → delegates to the canonical writer', () => {
+
+	const r = generateForPlan( { groups: [ { slots: [ { byteOffset: 64, source: { kind: 'light.shadowModelMatrix', lightIndex: 3 } } ] } ] } );
+	assertGenerates( r, '_tslpWriteLightValue(view, byteOffset + 64, "light.shadowModelMatrix", __lightSource0, frame)' );
+
+} );

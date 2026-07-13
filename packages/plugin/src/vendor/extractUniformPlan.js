@@ -22,7 +22,55 @@
 // If a future three.js release drops them from 'three/tsl', bump the vendor
 // version in VENDORING.md and add a compat shim in _shared/three-compat.js.
 import { modelNormalMatrix, modelWorldMatrixInverse, time, deltaTime, frameId, backgroundBlurriness, backgroundIntensity, backgroundRotation, toneMappingExposure, lightPosition, lightTargetPosition, lightViewPosition, lightShadowMatrix } from 'three/tsl';
+import { UniformNode } from 'three/webgpu';
 import { createLightSourceIdentityMetadata } from '@tsl-precompile/contract/light-identities';
+
+// UniformNode binds update callbacks twice, so `node.update.toString()` is
+// native code and cannot identify Three's lazy high-precision callbacks.
+// Capture the original callback in a WeakMap before the lazy ModelNode and
+// ShadowNode graphs are built. The wrapper preserves Three's exact behavior,
+// installs once per Three class identity, and never annotates user nodes.
+const UNIFORM_UPDATE_CAPTURE = Symbol.for( '@tsl-precompile/uniform-update-callback-capture' );
+
+function installUniformUpdateCallbackCapture() {
+
+	const prototype = UniformNode && UniformNode.prototype;
+	if ( ! prototype || typeof prototype.onUpdate !== 'function' ) throw new Error( 'extractUniformPlan: Three UniformNode.onUpdate is unavailable' );
+	const installed = prototype[ UNIFORM_UPDATE_CAPTURE ];
+	if ( installed && installed.callbacks instanceof WeakMap ) return installed.callbacks;
+
+	const callbacks = new WeakMap();
+	const originalOnUpdate = prototype.onUpdate;
+	Object.defineProperty( prototype, UNIFORM_UPDATE_CAPTURE, {
+		value: { callbacks, originalOnUpdate },
+		configurable: false,
+		enumerable: false,
+		writable: false,
+	} );
+	prototype.onUpdate = function captureUniformUpdateCallback( callback, updateType ) {
+
+		callbacks.set( this, callback );
+		return originalOnUpdate.call( this, callback, updateType );
+
+	};
+	return callbacks;
+
+}
+
+const capturedUniformUpdateCallbacks = installUniformUpdateCallbackCapture();
+const STOCK_HIGHP_MODEL_VIEW_CALLBACK = '({object,camera})=>{returnobject.modelViewMatrix.multiplyMatrices(camera.matrixWorldInverse,object.matrixWorld);}';
+const STOCK_HIGHP_MODEL_NORMAL_VIEW_CALLBACK = '({object,camera})=>{if(isHighPrecisionModelViewMatrix!==true){object.modelViewMatrix.multiplyMatrices(camera.matrixWorldInverse,object.matrixWorld);}returnobject.normalMatrix.getNormalMatrix(object.modelViewMatrix);}';
+const STOCK_HIGHP_SHADOW_MODEL_CALLBACK = '({object},self)=>{returnself.value.multiplyMatrices(shadowMatrix.value,object.matrixWorld);}';
+
+function capturedUniformUpdateSource( node ) {
+
+	const callback = capturedUniformUpdateCallbacks.get( node );
+	if ( typeof callback !== 'function' ) return { callback: null, source: '' };
+	let source = '';
+	try { source = Function.prototype.toString.call( callback ).replace( /\s+/g, '' ); } catch ( _ ) { /* ignored */ }
+	return { callback, source };
+
+}
 
 /**
  * Resolve a TSL update node to a `source` descriptor for the uniform slot
@@ -169,6 +217,8 @@ function resolveFromUpdateNode( node, context = null ) {
 
 		const known = classifyByIdentity( node );
 		if ( known ) return { uniformNode: node, source: known };
+		const objectMatrix = classifyObjectMatrixCallback( node );
+		if ( objectMatrix ) return { uniformNode: node, source: objectMatrix };
 
 		// Wave 5+ — pattern-detect time-derived `onFrameUpdate(frame => frame.time)`
 		// style callbacks. `UniformNode.onUpdate` wraps the user callback and
@@ -206,6 +256,30 @@ function resolveFromUpdateNode( node, context = null ) {
 
 	}
 
+	return null;
+
+}
+
+/**
+ * Detect Three's CPU/high-precision model-view matrix callbacks without
+ * retaining ModelNode singleton identity. The high-precision uniforms are
+ * created inside a cached Fn during builder setup, so they are anonymous
+ * object-update UniformNodes by the time extraction sees them.
+ *
+ * Match only the original stock callback captured before UniformNode binds
+ * it. Never execute object-update callbacks during extraction: user callbacks
+ * may mutate their matrix or application state even when their return value is
+ * restored afterward.
+ */
+function classifyObjectMatrixCallback( node ) {
+
+	if ( node.updateType !== 'object' || typeof node.update !== 'function' ) return null;
+	if ( node.nodeType !== 'mat3' && node.nodeType !== 'mat4' ) return null;
+	const originalValue = node.value;
+	if ( ! originalValue || ( node.nodeType === 'mat3' ? originalValue.isMatrix3 !== true : originalValue.isMatrix4 !== true ) ) return null;
+	const { source } = capturedUniformUpdateSource( node );
+	if ( node.nodeType === 'mat3' && source === STOCK_HIGHP_MODEL_NORMAL_VIEW_CALLBACK ) return { kind: 'object.modelNormalViewMatrix' };
+	if ( node.nodeType === 'mat4' && source === STOCK_HIGHP_MODEL_VIEW_CALLBACK ) return { kind: 'object.modelViewMatrix' };
 	return null;
 
 }
@@ -736,6 +810,86 @@ function collectShadowUniformSources( state ) {
 }
 
 /**
+ * Lift ShadowNode's anonymous high-precision object callback:
+ * `light.shadow.matrix * object.matrixWorld`.
+ *
+ * The callback closes over the light-owned `lightShadowMatrix()` UniformNode,
+ * so its source cannot be recovered from the anonymous result UniformNode by
+ * name. Only after the captured original callback exactly matches Three's
+ * stock callback do we evaluate it against a detached result matrix to expose
+ * the closed-over shadow matrix. Arbitrary user callbacks are never invoked.
+ */
+function collectHighPrecisionShadowModelMatrixSources( state ) {
+
+	const out = new Map();
+	if ( ! state || ! Array.isArray( state.updateNodes ) ) return out;
+	const shadowMatrices = new Map();
+	let lightIndex = 0;
+	for ( const node of state.updateNodes ) {
+
+		if ( ! node || node.isAnalyticLightNode !== true ) continue;
+		const light = node.light;
+		if ( light && light.shadow ) {
+
+			const base = createLightSourceIdentityMetadata( light, lightIndex );
+			if ( light.shadow.matrix ) shadowMatrices.set( light.shadow.matrix, base );
+			try {
+
+				const shadowMatrixNode = lightShadowMatrix( light );
+				if ( shadowMatrixNode && shadowMatrixNode.value ) shadowMatrices.set( shadowMatrixNode.value, base );
+
+			} catch ( _ ) { /* malformed/custom lights can omit shadow infrastructure */ }
+
+		}
+		lightIndex ++;
+
+	}
+	if ( shadowMatrices.size === 0 ) return out;
+	for ( const node of state.updateNodes ) {
+
+		const type = node && node.constructor ? node.constructor.type : null;
+		if ( type !== 'UniformNode' || node.nodeType !== 'mat4' || node.updateType !== 'object' || typeof node.update !== 'function' ) continue;
+		const originalValue = node.value;
+		if ( ! originalValue || originalValue.isMatrix4 !== true ) continue;
+		const { callback, source } = capturedUniformUpdateSource( node );
+		if ( ! callback || source !== STOCK_HIGHP_SHADOW_MODEL_CALLBACK ) continue;
+		const matrixWorld = { __tslpProbe: 'matrixWorld' };
+		let leftOperand = null;
+		let rightOperand = null;
+		let multiplyCalls = 0;
+		const resultMatrix = {
+			multiplyMatrices( left, right ) {
+
+				leftOperand = left;
+				rightOperand = right;
+				multiplyCalls ++;
+				return this;
+
+			},
+		};
+		let updatedValue;
+		try {
+
+			updatedValue = callback( { object: { matrixWorld } }, { value: resultMatrix } );
+
+		} catch ( _ ) {
+
+			continue;
+
+		}
+		const base = shadowMatrices.get( leftOperand );
+		if ( base && rightOperand === matrixWorld && multiplyCalls === 1 && updatedValue === resultMatrix ) {
+
+			out.set( node, { kind: 'light.shadowModelMatrix', ...base } );
+
+		}
+
+	}
+	return out;
+
+}
+
+/**
  * PointLight shadows use two anonymous render-group UniformNodes for
  * `shadow.camera.near` / `shadow.camera.far` inside PointShadowNode. Those
  * nodes are not reachable through ReferenceNode, so probe the live update
@@ -1135,6 +1289,7 @@ export function extractUniformPlan( state, context = null ) {
 	// because we strip the AnalyticLightNode container).
 	const lightUniformSources = collectLightUniformSources( state );
 	const shadowUniformSources = collectShadowUniformSources( state );
+	const highPrecisionShadowModelMatrixSources = collectHighPrecisionShadowModelMatrixSources( state );
 	const pointShadowCameraUniformSources = collectPointShadowCameraUniformSources( state );
 	const objectUniformSources = collectObjectUniformSources( context && context.object || null );
 	const velocityUniformSources = collectVelocityUniformSources( state );
@@ -1159,6 +1314,16 @@ export function extractUniformPlan( state, context = null ) {
 	// classification (which would otherwise bail out and leave the slot as
 	// `uniform.live`) doesn't run for these nodes.
 	for ( const [ uniformNode, source ] of shadowUniformSources ) {
+
+		if ( ! uniformNodeToSource.has( uniformNode ) ) {
+
+			uniformNodeToSource.set( uniformNode, source );
+
+		}
+
+	}
+
+	for ( const [ uniformNode, source ] of highPrecisionShadowModelMatrixSources ) {
 
 		if ( ! uniformNodeToSource.has( uniformNode ) ) {
 
@@ -1209,6 +1374,7 @@ export function extractUniformPlan( state, context = null ) {
 		// `light.shadow<Prop>` mapping we just built.
 		if ( lightUniformSources.has( entry.uniformNode ) ) continue;
 		if ( shadowUniformSources.has( entry.uniformNode ) ) continue;
+		if ( highPrecisionShadowModelMatrixSources.has( entry.uniformNode ) ) continue;
 		if ( pointShadowCameraUniformSources.has( entry.uniformNode ) ) continue;
 		if ( objectUniformSources.has( entry.uniformNode ) ) continue;
 		if ( velocityUniformSources.has( entry.uniformNode ) ) continue;

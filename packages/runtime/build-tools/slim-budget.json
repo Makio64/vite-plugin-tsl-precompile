@@ -7,7 +7,7 @@
     "maxCompilerModules": 0,
     "maxStockAdapterModules": 0,
     "maxRetainedNodeModules": 65,
-    "maxRetainedNodeRenderedBytes": 310272
+    "maxRetainedNodeRenderedBytes": 307200
   },
   "source": {
     "maxCompilerModules": 0,
