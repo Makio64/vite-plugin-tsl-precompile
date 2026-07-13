@@ -68,4 +68,3 @@ function cloneFallbackBindings( bindings ) {
 	return out;
 
 }
-
