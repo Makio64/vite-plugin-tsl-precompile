@@ -10,6 +10,7 @@ export * from './node-dependencies.d.ts';
 export * from './renderer-lighting.d.ts';
 export * from './render-fallback-registry.d.ts';
 export * from './pass-render-fallback.d.ts';
+export * from './shadow-fallback.d.ts';
 export * from './postprocess-wire.d.ts';
 export * from './postprocess-effects.d.ts';
 export * from './postprocess-execution-plan.d.ts';

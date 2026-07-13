@@ -112,6 +112,10 @@
       "types": "./types/slim-support/pass-render-fallback.d.ts",
       "default": "./src/slim-support/pass-render-fallback.js"
     },
+    "./slim-support/shadow-fallback": {
+      "types": "./types/slim-support/shadow-fallback.d.ts",
+      "default": "./src/slim-support/shadow-fallback.js"
+    },
     "./slim-support/diagnostics": {
       "types": "./types/slim-support/diagnostics.d.ts",
       "default": "./src/slim-support/diagnostics.js"

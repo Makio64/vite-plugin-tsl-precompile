@@ -315,6 +315,36 @@ export type ShareRenderTargetTexturesStats = SharePassRenderTargetTexturesStats;
 export type RenderOffscreenOverrideWithFullRendererStats = SharePassRenderTargetTexturesStats & {
 	rendered: boolean;
 };
+export type ShadowFallbackUnsupported = {
+	kind: string;
+	reason: string;
+	uuid: string | null;
+	name: string;
+	type: string;
+	detail?: string;
+};
+export type ShadowFallbackResult = {
+	rendered: boolean;
+	complete: boolean;
+	reused: boolean;
+	proxyReused: boolean;
+	lightsConsidered: number;
+	lightsPopulated: number;
+	castersMirrored: number;
+	receiversMirrored: number;
+	texturesShared: number;
+	unsupported: ShadowFallbackUnsupported[];
+};
+export type PopulateShadowMapsOptions = {
+	fullRenderer?: unknown;
+	threeFullModule?: Record<string, unknown>;
+	resolveShadowMaterial?: ( material: unknown, object: unknown, context: { threeFullModule: Record<string, unknown>; originalMaterial: unknown } ) => unknown;
+	cache?: WeakMap<object, unknown> | Map<object, unknown>;
+	renderTarget?: unknown;
+	discardSize?: number;
+	onUnsupported?: ( unsupported: ShadowFallbackUnsupported, value: unknown ) => void;
+	onError?: ( err: unknown, detail: { where: string } ) => void;
+};
 export type WireTRAAResolveArtifactStats = {
 	outputAttached: number;
 	velocityAttached: number;
@@ -429,6 +459,13 @@ export function sharePassRenderTargetTextures( args: {
 	diagnostics?: Record<string, unknown>;
 	onError?: ( err: unknown, texture?: unknown ) => void;
 } ): SharePassRenderTargetTexturesStats;
+export function populateShadowMapsWithFullRenderer( args: PopulateShadowMapsOptions & {
+	scene: unknown;
+	camera: unknown;
+	slimRenderer: unknown;
+	fullRenderer: unknown;
+	threeFullModule: Record<string, unknown>;
+} ): Promise<ShadowFallbackResult>;
 export function wirePrecompiledPostprocess( args?: {
 	postProcessing?: { outputNode?: unknown };
 	outputNode?: unknown;
@@ -456,6 +493,7 @@ export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	computeNodeUsesStorageTexture: ( computeNode: unknown, sourceRenderer: unknown ) => boolean;
 	shareTexture: ( sourceRenderer: unknown, texture: unknown ) => boolean;
 	shareShadowTexture: ( texture: unknown, sourceRenderer: unknown ) => boolean;
+	populateShadowMaps: ( scene: unknown, camera: unknown, shadowOpts?: PopulateShadowMapsOptions ) => Promise<ShadowFallbackResult>;
 	updateRendererLighting: ( scene: unknown, camera: unknown, lightingOpts?: Record<string, unknown> ) => RendererLightingStats;
 	preparePostprocess: ( prepArgs?: Record<string, unknown> ) => { effects: number; prepared: unknown[]; missed: unknown[] };
 	wirePostprocess: ( wireArgs?: Record<string, unknown> ) => { effects: number; wired: unknown[]; missed: unknown[] };

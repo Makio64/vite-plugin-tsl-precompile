@@ -2,6 +2,7 @@ import type { ComputeInputShareStats, ComputeSyncStats, ComputeSyncPerPassStats 
 import type { SharePassRenderTargetTexturesStats } from './pass-render-fallback.d.ts';
 import type { RendererLightingOptions, RendererLightingStats } from './renderer-lighting.d.ts';
 import type { TemporalFrameState } from './temporal-frame.d.ts';
+import type { PopulateShadowMapsWithFullRendererOptions, ShadowFallbackResult } from './shadow-fallback.d.ts';
 
 export type RenderPassWithFallbackOptions = {
 	fullRenderer?: unknown;
@@ -27,6 +28,11 @@ export type RenderPassWithFallbackStats = SharePassRenderTargetTexturesStats & {
 	rendered: boolean;
 };
 
+export type PopulateShadowMapsOptions = Omit<PopulateShadowMapsWithFullRendererOptions, 'scene' | 'camera' | 'slimRenderer' | 'fullRenderer' | 'threeFullModule'> & {
+	fullRenderer?: unknown;
+	threeFullModule?: Record<string, unknown>;
+};
+
 export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	liveSceneIndex: unknown;
 	pmrem: unknown;
@@ -47,6 +53,7 @@ export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	computeNodeUsesStorageTexture: ( computeNode: unknown, sourceRenderer: unknown ) => boolean;
 	shareTexture: ( sourceRenderer: unknown, texture: unknown ) => boolean;
 	shareShadowTexture: ( texture: unknown, sourceRenderer: unknown ) => boolean;
+	populateShadowMaps: ( scene: unknown, camera: unknown, shadowOpts?: PopulateShadowMapsOptions ) => Promise<ShadowFallbackResult>;
 	updateRendererLighting: ( scene: unknown, camera: unknown, lightingOpts?: RendererLightingOptions ) => RendererLightingStats;
 	preparePostprocess: ( prepArgs?: Record<string, unknown> ) => { effects: number; prepared: unknown[]; missed: unknown[] };
 	wirePostprocess: ( wireArgs?: Record<string, unknown> ) => { effects: number; wired: unknown[]; missed: unknown[] };

@@ -1,6 +1,6 @@
 /**
  * `createSlimSceneSupport()` — the public, opt-in orchestrator that ties
- * the four primitive `slim-support` modules into one entry point for slim-
+ * the focused `slim-support` modules into one entry point for slim-
  * runtime adopters.
  *
  * The slim three.js bundle ships no node-graph compiler, so a real-world
@@ -26,6 +26,7 @@
  *
  * support.indexScene( scene );
  * const stats = support.syncComputeOutputs( computeNode, fullRenderer );
+ * await support.populateShadowMaps( scene, camera );
  * ```
  *
  * @module SlimSupportSceneSupport
@@ -50,6 +51,7 @@ import {
 	renderPassWithFullRenderer,
 	sharePassRenderTargetTextures,
 } from './pass-render-fallback.js';
+import { populateShadowMapsWithFullRenderer } from './shadow-fallback.js';
 import { updateRendererLightingForSlim } from './renderer-lighting.js';
 import { wirePrecompiledPostprocess } from './postprocess-wire.js';
 import { preparePrecompiledPostprocess } from './postprocess-effects-replay.js';
@@ -321,6 +323,58 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	}
 
+	/**
+	 * Populate standard Directional/Spot/Point shadow maps through the lazy full
+	 * renderer and share their depth textures back into slim. Transmitted/VSM,
+	 * custom, skinned/batched, and morphing cases fail closed with structured
+	 * `unsupported` entries; callers can map a retained full node material
+	 * through `resolveShadowMaterial`.
+	 *
+	 * @param {Object} scene
+	 * @param {Object} camera
+	 * @param {Object} [shadowOpts]
+	 * @return {Promise<Object>}
+	 */
+	async function populateShadowMaps( scene, camera, shadowOpts = {} ) {
+
+		shadowOpts = shadowOpts || {};
+		const fullRenderer = shadowOpts.fullRenderer || await getFullRenderer();
+		const threeFullModule = shadowOpts.threeFullModule
+			|| fallback && fallback.getModule && fallback.getModule()
+			|| settings.threeFullModule
+			|| null;
+		if ( ! fullRenderer || ! threeFullModule ) {
+
+			const err = new Error( 'createSlimSceneSupport: populateShadowMaps() requires a full renderer and its three/webgpu module. Enable `fullRendererFallback` or pass both in shadowOpts.' );
+			if ( typeof shadowOpts.onError === 'function' ) shadowOpts.onError( err, { where: 'populateShadowMaps' } );
+			if ( onError ) onError( err, { where: 'populateShadowMaps' } );
+
+		}
+		const result = await populateShadowMapsWithFullRenderer( {
+			...shadowOpts,
+			scene,
+			camera,
+			slimRenderer: renderer,
+			fullRenderer,
+			threeFullModule,
+			resolveShadowMaterial: shadowOpts.resolveShadowMaterial || defaultFullRendererMaterialMapper,
+			onError: ( err, detail ) => {
+
+				if ( typeof shadowOpts.onError === 'function' ) shadowOpts.onError( err, detail );
+				if ( onError ) onError( err, { where: 'populateShadowMaps', detail } );
+
+			},
+		} );
+		const shadowDiagnostics = diagnostics.shadow || ( diagnostics.shadow = { calls: 0, rendered: 0, complete: 0, texturesShared: 0, unsupported: 0 } );
+		shadowDiagnostics.calls ++;
+		if ( result.rendered ) shadowDiagnostics.rendered ++;
+		if ( result.complete ) shadowDiagnostics.complete ++;
+		shadowDiagnostics.texturesShared += result.texturesShared || 0;
+		shadowDiagnostics.unsupported += result.unsupported && result.unsupported.length || 0;
+		return result;
+
+	}
+
 	function updateRendererLighting( scene, camera, lightingOpts = {} ) {
 
 		lightingOpts = lightingOpts || {};
@@ -564,9 +618,11 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	}
 
-	function defaultFullRendererMaterialMapper( material ) {
+	function defaultFullRendererMaterialMapper( material, _object, context ) {
 
 		if ( material && material.isPrecompiledMaterial === true && material.__tslpSourceMaterial ) return material.__tslpSourceMaterial;
+		const originalMaterial = context && context.originalMaterial;
+		if ( originalMaterial && originalMaterial.isPrecompiledMaterial === true && originalMaterial.__tslpSourceMaterial === material ) return material;
 		return null;
 
 	}
@@ -738,6 +794,7 @@ export function createSlimSceneSupport( opts = {} ) {
 		computeNodeUsesStorageTexture: ( node, source ) => computeNodeUsesStorageTexture( node, source ),
 		shareTexture,
 		shareShadowTexture,
+		populateShadowMaps,
 		updateRendererLighting,
 		installComputeFallback,
 		preparePostprocess,

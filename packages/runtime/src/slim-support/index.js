@@ -69,6 +69,7 @@ export { clearLiveTextureIndex, installTextureLoaderTracking, registerLiveTextur
 export { collectSceneLights, updateRendererLightingForSlim, wireStorageAttributesToSceneArtifacts, wireTiledLightingTextureToScene } from './renderer-lighting.js';
 export { setSlimRenderFallback, getSlimRenderFallback } from './render-fallback-registry.js';
 export { renderOffscreenOverrideWithFullRenderer, renderPassWithFullRenderer, sharePassRenderTargetTextures, shareRenderTargetTextures } from './pass-render-fallback.js';
+export { populateShadowMapsWithFullRenderer } from './shadow-fallback.js';
 
 export {
 	collectLiveBloomNodes,

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as Three from 'three';
 
 import { createSlimSceneSupport, pinClock, unpinClock } from '../src/slim-support/scene-support.js';
 import { getSlimRenderFallback, setSlimRenderFallback } from '../src/slim-support/render-fallback-registry.js';
@@ -152,8 +153,80 @@ test( 'createSlimSceneSupport exposes the four sub-helpers by default (no fallba
 	assert.equal( typeof support.shareComputeInputs, 'function' );
 	assert.equal( typeof support.shareTexture, 'function' );
 	assert.equal( typeof support.shareShadowTexture, 'function' );
+	assert.equal( typeof support.populateShadowMaps, 'function' );
 	assert.equal( typeof support.updateRendererLighting, 'function' );
 	assert.equal( typeof support.renderOffscreenOverrideWithFallback, 'function' );
+
+} );
+
+test( 'createSlimSceneSupport reports missing shadow fallback configuration without throwing', async () => {
+
+	const errors = [];
+	const support = createSlimSceneSupport( {
+		renderer: fakeRenderer(),
+		onError: ( error, detail ) => errors.push( { error, detail } ),
+	} );
+	const result = await support.populateShadowMaps( {}, {} );
+
+	assert.equal( result.rendered, false );
+	assert.equal( result.complete, false );
+	assert.equal( errors.length, 1 );
+	assert.equal( errors[ 0 ].detail.where, 'populateShadowMaps' );
+	assert.equal( support.diagnostics.shadow.calls, 1 );
+
+} );
+
+test( 'createSlimSceneSupport maps a retained source material into the shadow fallback by default', async () => {
+
+	const slim = fakeRenderer();
+	slim.shadowMap = { enabled: true, type: Three.PCFShadowMap, transmitted: false };
+	const full = fakeRenderer();
+	full.backend.device = slim.backend.device;
+	Object.assign( full, {
+		shadowMap: { enabled: false, type: Three.PCFShadowMap, transmitted: false },
+		_target: null,
+		getRenderTarget() { return this._target; },
+		setRenderTarget( target ) { this._target = target; },
+		async render( scene ) {
+
+			this.renderedScene = scene;
+			scene.traverse( ( light ) => {
+
+				if ( light.isLight !== true || light.castShadow !== true || light.shadow.map ) return;
+				const depthTexture = new Three.DepthTexture( 16, 16 );
+				light.shadow.map = { depthTexture };
+				this.backend.get( depthTexture ).texture = { label: 'retained-source-shadow-depth' };
+
+			} );
+
+		},
+	} );
+
+	const sourceMaterial = new Three.MeshLambertMaterial();
+	sourceMaterial.positionNode = { isNode: true, label: 'retained-position-node' };
+	const replayMaterial = { isPrecompiledMaterial: true, __tslpSourceMaterial: sourceMaterial };
+	const scene = new Three.Scene();
+	const mesh = new Three.Mesh( new Three.BoxGeometry( 1, 1, 1 ), replayMaterial );
+	mesh.castShadow = true;
+	const light = new Three.DirectionalLight();
+	light.castShadow = true;
+	scene.add( mesh, light, light.target );
+	const camera = new Three.PerspectiveCamera( 50, 1, 0.1, 10 );
+	scene.add( camera );
+
+	const support = createSlimSceneSupport( { renderer: slim, threeFullModule: Three, fullRendererFallback: false } );
+	const result = await support.populateShadowMaps( scene, camera, { fullRenderer: full, threeFullModule: Three, cache: new WeakMap() } );
+
+	assert.equal( result.complete, true );
+	let proxyMaterial = null;
+	full.renderedScene.traverse( ( object ) => {
+
+		if ( object.isMesh === true && object.castShadow === true ) proxyMaterial = object.material;
+
+	} );
+	assert.equal( proxyMaterial, sourceMaterial );
+	assert.equal( support.diagnostics.shadow.complete, 1 );
+	assert.equal( slim.backend.get( light.shadow.map.depthTexture ).texture.label, 'retained-source-shadow-depth' );
 
 } );
 
