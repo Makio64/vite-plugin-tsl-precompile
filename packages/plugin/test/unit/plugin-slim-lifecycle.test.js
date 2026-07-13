@@ -327,7 +327,7 @@ test( 'source slim build aliases the tree-shaken entry and routes private Three 
 		);
 		const guardId = plugin.resolveId( 'virtual:tsl-precompile/__slim-source' );
 		assert.equal( guardId, '\0virtual:tsl-precompile/__slim-source' );
-		assert.match( await plugin.load( guardId ), /slim-three-policy@5/ );
+		assert.match( await plugin.load( guardId ), /slim-three-policy@6/ );
 
 	} finally {
 

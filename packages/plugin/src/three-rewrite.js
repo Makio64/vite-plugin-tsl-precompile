@@ -439,6 +439,7 @@ function rewriteCubeRenderTarget( ast, ctx ) {
 
 const RENDERER_HIGH_PRECISION_SETTER_BODY = '{const contextNodeData=this.contextNode.value;if(value===true){contextNodeData.modelViewMatrix=highpModelViewMatrix;contextNodeData.modelNormalViewMatrix=highpModelNormalViewMatrix;}else if(this.highPrecision){delete contextNodeData.modelViewMatrix;delete contextNodeData.modelNormalViewMatrix;}}';
 const RENDERER_HIGH_PRECISION_GETTER_BODY = '{const contextNodeData=this.contextNode.value;return contextNodeData.modelViewMatrix===highpModelViewMatrix&&contextNodeData.modelNormalViewMatrix===highpModelNormalViewMatrix;}';
+const RENDERER_SHADOW_TRANSMISSION_WARNING = 'Renderer: `shadowMap.transmitted` needs to be set to `true` when using `material.castShadowNode`.';
 
 function isRendererClassMethod( path ) {
 
@@ -528,6 +529,220 @@ function assertRendererHighPrecisionAccessorShape( method, kind ) {
 
 }
 
+function isRendererShadowCacheInitializer( statement ) {
+
+	const expression = t.isExpressionStatement( statement ) ? statement.expression : null;
+	return t.isAssignmentExpression( expression, { operator: '=' } )
+		&& t.isMemberExpression( expression.left )
+		&& t.isThisExpression( expression.left.object )
+		&& t.isIdentifier( expression.left.property, { name: '_cacheShadowNodes' } )
+		&& t.isNewExpression( expression.right )
+		&& t.isIdentifier( expression.right.callee, { name: 'WeakMap' } )
+		&& expression.right.arguments.length === 0;
+
+}
+
+function removeRendererShadowCacheInitializer( method ) {
+
+	if ( method.node.kind !== 'constructor' ) return 0;
+	let removed = 0;
+	method.node.body.body = method.node.body.body.filter( ( statement ) => {
+
+		if ( ! isRendererShadowCacheInitializer( statement ) ) return true;
+		removed ++;
+		return false;
+
+	} );
+	return removed;
+
+}
+
+function assertRendererShadowNodesMethodShape( method ) {
+
+	if ( method.node.params.length !== 1 || ! t.isIdentifier( method.node.params[ 0 ], { name: 'material' } ) ) {
+
+		throw new Error( 'Renderer: _getShadowNodes() parameter shape changed' );
+
+	}
+	const counts = {
+		cacheGet: 0,
+		cacheSet: 0,
+		warning: 0,
+		reference: 0,
+		vec3: 0,
+		float: 0,
+		vec4: 0,
+		Fn: 0,
+		transmittedTest: 0,
+		returnCache: 0,
+	};
+	method.traverse( {
+		CallExpression( path ) {
+
+			const { callee, arguments: args } = path.node;
+			if ( t.isMemberExpression( callee )
+				&& t.isMemberExpression( callee.object )
+				&& t.isThisExpression( callee.object.object )
+				&& t.isIdentifier( callee.object.property, { name: '_cacheShadowNodes' } ) ) {
+
+				if ( t.isIdentifier( callee.property, { name: 'get' } )
+					&& args.length === 1 && t.isIdentifier( args[ 0 ], { name: 'material' } ) ) counts.cacheGet ++;
+				if ( t.isIdentifier( callee.property, { name: 'set' } )
+					&& args.length === 2 && t.isIdentifier( args[ 0 ], { name: 'material' } ) && t.isIdentifier( args[ 1 ], { name: 'cache' } ) ) counts.cacheSet ++;
+
+			}
+			if ( t.isIdentifier( callee, { name: 'warnOnce' } )
+				&& args.length === 1 && t.isStringLiteral( args[ 0 ], { value: RENDERER_SHADOW_TRANSMISSION_WARNING } ) ) counts.warning ++;
+			if ( t.isIdentifier( callee, { name: 'reference' } )
+				&& args.length === 3
+				&& t.isStringLiteral( args[ 0 ], { value: 'map' } )
+				&& t.isStringLiteral( args[ 1 ], { value: 'texture' } )
+				&& t.isIdentifier( args[ 2 ], { name: 'material' } ) ) counts.reference ++;
+			for ( const name of [ 'vec3', 'float', 'vec4', 'Fn' ] ) if ( t.isIdentifier( callee, { name } ) ) counts[ name ] ++;
+
+		},
+		BinaryExpression( path ) {
+
+			const node = path.node;
+			if ( node.operator !== '!==' || ! t.isBooleanLiteral( node.right, { value: true } ) || ! t.isMemberExpression( node.left ) ) return;
+			const shadowMap = node.left.object;
+			if ( t.isIdentifier( node.left.property, { name: 'transmitted' } )
+				&& t.isMemberExpression( shadowMap )
+				&& t.isThisExpression( shadowMap.object )
+				&& t.isIdentifier( shadowMap.property, { name: 'shadowMap' } ) ) counts.transmittedTest ++;
+
+		},
+		ReturnStatement( path ) {
+
+			if ( t.isIdentifier( path.node.argument, { name: 'cache' } ) ) counts.returnCache ++;
+
+		},
+	} );
+	const expected = {
+		cacheGet: 1,
+		cacheSet: 1,
+		warning: 1,
+		reference: 1,
+		vec3: 1,
+		float: 1,
+		vec4: 1,
+		Fn: 1,
+		transmittedTest: 1,
+		returnCache: 1,
+	};
+	for ( const [ name, count ] of Object.entries( expected ) ) if ( counts[ name ] !== count ) {
+
+		throw new Error( `Renderer: _getShadowNodes() shape changed (${ name }: expected ${ count }, got ${ counts[ name ] })` );
+
+	}
+
+}
+
+function isRendererShadowPassTest( node ) {
+
+	return t.isMemberExpression( node )
+		&& t.isIdentifier( node.object, { name: 'overrideMaterial' } )
+		&& t.isIdentifier( node.property, { name: 'isShadowPassMaterial' } );
+
+}
+
+function isRendererShadowNodesDeclaration( statement ) {
+
+	if ( ! t.isVariableDeclaration( statement, { kind: 'const' } ) || statement.declarations.length !== 1 ) return false;
+	const declaration = statement.declarations[ 0 ];
+	if ( ! t.isObjectPattern( declaration.id ) || declaration.id.properties.length !== 3 ) return false;
+	const names = declaration.id.properties.map( ( property ) =>
+		t.isObjectProperty( property )
+			&& t.isIdentifier( property.key )
+			&& t.isIdentifier( property.value, { name: property.key.name } )
+			? property.key.name
+			: null
+	).sort();
+	if ( names.includes( null ) || names.join( ',' ) !== 'colorNode,depthNode,positionNode' ) return false;
+	const init = declaration.init;
+	return t.isCallExpression( init )
+		&& t.isMemberExpression( init.callee )
+		&& t.isThisExpression( init.callee.object )
+		&& t.isIdentifier( init.callee.property, { name: '_getShadowNodes' } )
+		&& init.arguments.length === 1
+		&& t.isIdentifier( init.arguments[ 0 ], { name: 'material' } );
+
+}
+
+function rendererShadowNodeAssignmentProperty( statement ) {
+
+	if ( ! t.isIfStatement( statement ) || statement.alternate !== null ) return null;
+	const test = statement.test;
+	if ( ! t.isBinaryExpression( test, { operator: '!==' } )
+		|| ! t.isIdentifier( test.left )
+		|| ! t.isNullLiteral( test.right )
+		|| ! t.isExpressionStatement( statement.consequent ) ) return null;
+	const assignment = statement.consequent.expression;
+	if ( ! t.isAssignmentExpression( assignment, { operator: '=' } )
+		|| ! t.isMemberExpression( assignment.left )
+		|| ! t.isIdentifier( assignment.left.object, { name: 'overrideMaterial' } )
+		|| ! t.isIdentifier( assignment.left.property, { name: test.left.name } )
+		|| ! t.isIdentifier( assignment.right, { name: test.left.name } ) ) return null;
+	return [ 'colorNode', 'depthNode', 'positionNode' ].includes( test.left.name ) ? test.left.name : null;
+
+}
+
+function buildRendererShadowTransmissionWarning() {
+
+	const castShadowNode = t.memberExpression( t.identifier( 'material' ), t.identifier( 'castShadowNode' ) );
+	const transmitted = t.memberExpression(
+		t.memberExpression( t.thisExpression(), t.identifier( 'shadowMap' ) ),
+		t.identifier( 'transmitted' ),
+	);
+	return t.ifStatement(
+		t.logicalExpression( '&&',
+			t.logicalExpression( '&&',
+				t.cloneNode( castShadowNode ),
+				t.memberExpression( t.cloneNode( castShadowNode ), t.identifier( 'isNode' ) ),
+			),
+			t.binaryExpression( '!==', transmitted, t.booleanLiteral( true ) ),
+		),
+		t.blockStatement( [
+			t.expressionStatement( t.callExpression( t.identifier( 'warnOnce' ), [ t.stringLiteral( RENDERER_SHADOW_TRANSMISSION_WARNING ) ] ) ),
+		] ),
+	);
+
+}
+
+function rewriteRendererShadowPassBranch( path ) {
+
+	if ( ! isRendererRenderObjectPath( path ) || ! isRendererShadowPassTest( path.node.test ) ) return null;
+	if ( ! t.isBlockStatement( path.node.consequent ) ) throw new Error( 'Renderer: shadow pass branch shape changed' );
+	const statements = path.node.consequent.body;
+	if ( statements.length !== 5 ) throw new Error( `Renderer: shadow pass shape changed (expected 5 statements, got ${ statements.length })` );
+	const declarationIndexes = [];
+	const assignments = [];
+	for ( let index = 0; index < statements.length; index ++ ) {
+
+		if ( isRendererShadowNodesDeclaration( statements[ index ] ) ) declarationIndexes.push( index );
+		const property = rendererShadowNodeAssignmentProperty( statements[ index ] );
+		if ( property ) assignments.push( { index, property } );
+
+	}
+	if ( declarationIndexes.length !== 1 ) throw new Error( `Renderer: shadow pass shape changed (expected 1 _getShadowNodes() call, got ${ declarationIndexes.length })` );
+	const assignmentNames = assignments.map( ( entry ) => entry.property ).sort();
+	if ( assignments.length !== 3 || assignmentNames.join( ',' ) !== 'colorNode,depthNode,positionNode' ) {
+
+		throw new Error( `Renderer: shadow pass shape changed (expected color/depth/position assignments, got ${ assignmentNames.join( ',' ) || 'none' })` );
+
+	}
+	const declarationIndex = declarationIndexes[ 0 ];
+	const assignmentIndexes = new Set( assignments.map( ( entry ) => entry.index ) );
+	path.node.consequent.body = statements.flatMap( ( statement, index ) => {
+
+		if ( index === declarationIndex ) return [ buildRendererShadowTransmissionWarning() ];
+		return assignmentIndexes.has( index ) ? [] : [ statement ];
+
+	} );
+	return { calls: 1, assignments: 3, warnings: 1 };
+
+}
+
 function rewriteRenderer( ast, ctx ) {
 
 	let foundConstruct = false;
@@ -538,11 +753,25 @@ function rewriteRenderer( ast, ctx ) {
 	let foundHighPrecisionGetter = false;
 	let shadowOverrideAssignments = 0;
 	let afterRenderCallbacks = 0;
+	let shadowNodeMethods = 0;
+	let shadowCacheInitializers = 0;
+	let shadowNodeCalls = 0;
+	let shadowNodeAssignments = 0;
+	let shadowWarnings = 0;
 
 	traverse( ast, {
 		ClassMethod( path ) {
 
 			if ( ! isRendererClassMethod( path ) ) return;
+			shadowCacheInitializers += removeRendererShadowCacheInitializer( path );
+			if ( t.isIdentifier( path.node.key, { name: '_getShadowNodes' } ) ) {
+
+				assertRendererShadowNodesMethodShape( path );
+				path.remove();
+				shadowNodeMethods ++;
+				return;
+
+			}
 			if ( ! t.isIdentifier( path.node.key, { name: 'highPrecision' } ) ) return;
 			if ( path.node.kind === 'set' ) {
 
@@ -567,6 +796,15 @@ function rewriteRenderer( ast, ctx ) {
 				foundHighPrecisionGetter = true;
 
 			}
+
+		},
+		IfStatement( path ) {
+
+			const rewritten = rewriteRendererShadowPassBranch( path );
+			if ( ! rewritten ) return;
+			shadowNodeCalls += rewritten.calls;
+			shadowNodeAssignments += rewritten.assignments;
+			shadowWarnings += rewritten.warnings;
 
 		},
 		NewExpression( path ) {
@@ -663,6 +901,11 @@ function rewriteRenderer( ast, ctx ) {
 	if ( ! foundHighPrecisionSetter || ! foundHighPrecisionGetter ) throw new Error( 'Renderer: shape changed (highPrecision accessors not found)' );
 	if ( shadowOverrideAssignments !== 1 ) throw new Error( `Renderer: shape changed (expected 1 shadow override handoff, got ${ shadowOverrideAssignments })` );
 	if ( afterRenderCallbacks !== 1 ) throw new Error( `Renderer: shape changed (expected 1 onAfterRender callback, got ${ afterRenderCallbacks })` );
+	if ( shadowNodeMethods !== 1 ) throw new Error( `Renderer: shape changed (expected 1 _getShadowNodes() method, got ${ shadowNodeMethods })` );
+	if ( shadowCacheInitializers !== 1 ) throw new Error( `Renderer: shape changed (expected 1 _cacheShadowNodes initializer, got ${ shadowCacheInitializers })` );
+	if ( shadowNodeCalls !== 1 ) throw new Error( `Renderer: shape changed (expected 1 _getShadowNodes() call, got ${ shadowNodeCalls })` );
+	if ( shadowNodeAssignments !== 3 ) throw new Error( `Renderer: shape changed (expected 3 shadow-node assignments, got ${ shadowNodeAssignments })` );
+	if ( shadowWarnings !== 1 ) throw new Error( `Renderer: shape changed (expected 1 graph-free shadow warning, got ${ shadowWarnings })` );
 
 	injectMaterialImport( ast );
 	ctx.touched = true;

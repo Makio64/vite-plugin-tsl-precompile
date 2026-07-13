@@ -164,6 +164,8 @@ function evaluateBudgets( budget, observed ) {
 		addMaximumViolation( violations, `source:${ name }`, 'gzipBytes', source.output.gzipBytes, budget.source.fixtures[ name ].maxGzipBytes );
 		addMaximumViolation( violations, `source:${ name }`, 'compilerModules', source.graph.compiler.count, budget.source.maxCompilerModules );
 		addMaximumViolation( violations, `source:${ name }`, 'stockAdapterModules', source.graph.stockAdapters.count, budget.source.maxStockAdapterModules );
+		addMaximumViolation( violations, `source:${ name }`, 'retainedNodeModules', source.graph.retainedNodeRuntime.count, budget.source.maxRetainedNodeModules );
+		addMaximumViolation( violations, `source:${ name }`, 'retainedNodeRenderedBytes', source.graph.retainedNodeRuntime.renderedBytes, budget.source.maxRetainedNodeRenderedBytes );
 		addMaximumViolation( violations, `source:${ name }`, 'bareThreeIdentityModules', source.graph.bareThreeIdentity.count, budget.source.maxBareThreeIdentityModules );
 
 	}
@@ -174,19 +176,18 @@ function evaluateBudgets( budget, observed ) {
 function printHumanReport( report ) {
 
 	console.log( 'Slim production budgets' );
-	console.log( 'profile          raw KiB  gzip KiB  modules  compiler  stock  node/bare' );
+	console.log( 'profile          raw KiB  gzip KiB  modules  compiler  stock  node  node KiB  bare' );
 	const rows = [
-		[ 'prebuilt', report.observed.prebuilt, 'node' ],
-		[ 'source:minimal', report.observed.source.minimal, 'bare' ],
-		[ 'source:advanced', report.observed.source.advanced, 'bare' ],
+		[ 'prebuilt', report.observed.prebuilt ],
+		[ 'source:minimal', report.observed.source.minimal ],
+		[ 'source:advanced', report.observed.source.advanced ],
 	];
-	for ( const [ name, profile, tail ] of rows ) {
+	for ( const [ name, profile ] of rows ) {
 
-		const last = tail === 'node' ? profile.graph.retainedNodeRuntime.count : profile.graph.bareThreeIdentity.count;
-		console.log( `${ name.padEnd( 16 ) }${ ( profile.output.rawBytes / 1024 ).toFixed( 1 ).padStart( 8 ) }${ ( profile.output.gzipBytes / 1024 ).toFixed( 1 ).padStart( 10 ) }${ String( profile.graph.moduleCount ).padStart( 9 ) }${ String( profile.graph.compiler.count ).padStart( 10 ) }${ String( profile.graph.stockAdapters.count ).padStart( 7 ) }${ String( last ).padStart( 11 ) }` );
+		console.log( `${ name.padEnd( 16 ) }${ ( profile.output.rawBytes / 1024 ).toFixed( 1 ).padStart( 8 ) }${ ( profile.output.gzipBytes / 1024 ).toFixed( 1 ).padStart( 10 ) }${ String( profile.graph.moduleCount ).padStart( 9 ) }${ String( profile.graph.compiler.count ).padStart( 10 ) }${ String( profile.graph.stockAdapters.count ).padStart( 7 ) }${ String( profile.graph.retainedNodeRuntime.count ).padStart( 6 ) }${ ( profile.graph.retainedNodeRuntime.renderedBytes / 1024 ).toFixed( 1 ).padStart( 10 ) }${ String( profile.graph.bareThreeIdentity.count ).padStart( 6 ) }` );
 
 	}
-	if ( report.ok ) console.log( 'PASS: every byte, compiler, replay-adapter, and identity budget is within its cap.' );
+	if ( report.ok ) console.log( 'PASS: every byte, compiler, replay-adapter, retained-node, and identity budget is within its cap.' );
 	else for ( const violation of report.violations ) console.error( `FAIL ${ violation.profile } ${ violation.metric }: ${ violation.actual } > ${ violation.maximum }` );
 
 }

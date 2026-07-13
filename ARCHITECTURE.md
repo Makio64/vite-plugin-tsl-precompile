@@ -84,6 +84,7 @@ The Vite plugin. Runs at build time.
 - `src/emit-manifest.js` — artifact JSON → virtual module source.
 - `src/wgsl-optimize.js` — build-output-only WGSL minify/dedupe support, including the shared `virtual:tsl-precompile/__wgsl` pool.
 - `src/hash.js` — artifact hash wrapper around the shared graph normalizer from `@tsl-precompile/contract`.
+- `src/three-rewrite.js` — strict, version-locked AST rewrites for the compiler-free Three closure. The r184 Renderer rewrite installs the exact-caster replay-material handoff and removes the now-redundant `_getShadowNodes()` cache/method/call plus its color/depth/position graph assignments, while preserving alpha/render state, VSM side selection, callback identity, and the transmitted-shadow warning. Any upstream shape drift fails the slim build instead of partially applying the cut.
 - `src/vendor/` — vendored files from the three.js fork (compileTSL, extractUniformPlan, …), plus the centralized private RenderObject observer. A bounded observer epoch snapshots reused render contexts and supplies complete real-render variant families to extraction; incomplete families fall back atomically to synthetic compilation.
 
 ### `@tsl-precompile/contract`
@@ -109,7 +110,7 @@ Ships with the user's bundle. Runtime only.
 - `src/slim-replay-renderer-context.js` — graph-free renderer context/cache identity and explicit high-precision state for replay; it preserves the narrow `RenderObject` invalidation protocol without constructing a TSL `ContextNode`.
 - `src/slim-replay-lighting.js` — graph-free per-scene light state used by RenderList and semantic variant selection.
 - `src/slim-replay-node-manager.js` — compiler-free render/compute state manager; hydrates artifacts directly and caches by material identity plus semantic topology.
-- `src/slim-replay-shadow-material.js` — graph-free, per-caster shadow replay identity created at Renderer’s exact override handoff. It keeps the shared captured shadow artifact, carries the exact caster through a non-serializable contract sidecar, mirrors Three’s per-draw alpha/render state, unwraps callback-visible material identity, and turns canonical caster-topology changes into Three-compatible material/program invalidation without inheriting shared alpha-test version churn.
+- `src/slim-replay-shadow-material.js` — graph-free, per-caster shadow replay identity created at Renderer’s exact override handoff. It keeps the shared captured shadow artifact, carries the exact caster through a non-serializable contract sidecar, mirrors Three’s per-draw alpha/render state, unwraps callback-visible material identity, and turns canonical caster-topology changes into Three-compatible material/program invalidation without inheriting shared alpha-test version churn. Because complete shadow families are registered before replay, the slim Renderer never constructs Three's stock color/depth/position shadow-node graph.
 - `src/slim-replay-background.js` — compiler-free background pass; selects a captured artifact from the raw scene input, isolates texture refs per scene, and preserves Three's clear/XR/sky-mesh behavior.
 - `src/slim-replay-output.js` — graph-free renderer-output and RenderPipeline material adapter; selects exact topology, isolates texture refs per owner, validates 2D/array sampling, and disposes replacements safely.
 - `src/slim-replay-scene-nodes.js` — graph-free environment/fog topology state; hashes the shared semantic descriptor, preserves Three's invalidation axes, and fails closed when an opaque custom scene graph is replaced.
@@ -124,7 +125,7 @@ Ships with the user's bundle. Runtime only.
 - `src/writers.js` — `writeMat4 / writeVec4 / writeF32 / writeColor`.
 - `src/artifact-loader.js` — manifest resolver.
 - `build/three.webgpu.slim.js` — prebuilt slim three.js (no node builder).
-- `build-tools/slim-bundle-analysis.js` / `slim-budget.json` — deterministic Rollup graph metrics and reviewable caps shared by the prebuilt, minimal-source, and advanced-source production gates. Run `pnpm test:slim:budget`; use `pnpm analyze:slim` for JSON output.
+- `build-tools/slim-bundle-analysis.js` / `slim-budget.json` — deterministic Rollup graph metrics and reviewable caps shared by the prebuilt, minimal-source, and advanced-source production gates. Every profile enforces compiler/stock-adapter absence and retained Node/TSL module count plus rendered bytes; source profiles additionally reject split bare-Three identity. Run `pnpm test:slim:budget`; use `pnpm analyze:slim` for JSON output.
 
 ### `packages/examples/*`
 

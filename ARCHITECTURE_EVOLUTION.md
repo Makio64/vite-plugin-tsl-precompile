@@ -482,6 +482,35 @@ modules / 302,240 rendered bytes. All production budgets pass unchanged. With
 every observed shadow family now durable, removing stock
 `Renderer._getShadowNodes()` construction is the next independent wedge.
 
+**Graph-free Renderer shadow dispatch (2026-07-13).** The guarded r184
+Renderer rewrite now removes the stock `_cacheShadowNodes` initializer,
+`_getShadowNodes()` method, its single shadow-pass call, and the three
+color/depth/position override assignments. Complete captured shadow families
+and exact-caster replay materials now own those branches. The rewrite retains
+Three's copied alpha/render state, VSM versus non-VSM side selection, the exact
+replay-material handoff, and callback-visible shared-override identity. Its
+`castShadowNode` / `shadowMap.transmitted` warning is relocated to the same
+dispatch branch as a graph-free `warnOnce` condition. Exact method, cache,
+call, assignment, and warning shapes are independently gated; drift rejects
+the rewrite rather than leaving a partial graph path. The source/runtime
+handshake advances to `slim-three-policy@6`.
+
+The production closure falls from 395 to 381 modules and from 842,964 raw /
+230,884 gzip-9 bytes to 825,688 raw / 226,395 gzip-9 bytes. Retained Three
+Node/TSL runtime falls from 65 modules / 302,240 rendered bytes to 51 /
+239,415. Minimal and advanced `slim: 'source'` fixtures measure 136,671 and
+144,603 gzip-9 bytes respectively, each with only 2 retained Node modules /
+1,190 rendered bytes. Production caps are tightened to 828,000 raw / 228,000
+gzip, 51 prebuilt Node modules / 242,000 rendered bytes, 139,000 and 147,000
+source gzip, and 2 source Node modules / 1,536 rendered bytes. The human budget
+report now exposes retained-node count and size for every profile. Focused
+standard-mask and point-alpha shadow canaries remain pixel-identical; the
+custom/transmitted canary passes at 67.32 dB. All three replay the rebuilt
+bundle with zero errors, captured shadow-depth artifacts, and one forced
+shadow pass. The remaining closure is now dominated by reusable node protocol,
+compute, and output/color-transform dependencies rather than shadow graph
+construction.
+
 ---
 
 ## 2026-06-09 audit refresh — corrections to the map
@@ -873,7 +902,7 @@ Inspector preview gap also closed via a Vite plugin middleware (`attachInspector
 
 **Status (2026-06-09).** The headline regression is resolved at the bundler: the `threeBareAlias` + `webglFallbackStub` rollup wedges (see the audit-refresh bullet at the top of this doc) cut the bundle ~407 → 238.8 KB gzip, and the gate is re-tightened to 250 KB with the stale comments fixed ([`slim-bundle.test.js`](packages/plugin/test/unit/slim-bundle.test.js)). The `TSLP_ANALYZE=1` rollup flag prints a per-module breakdown — use it before any future gate bump. Refuted during verification: lazy-importing aux-loader from slim-entry (it is exported slim API, not a one-call dependency).
 
-**Status (2026-07-13).** The single gzip constant is replaced by the machine-readable [`slim-budget.json`](packages/runtime/build-tools/slim-budget.json) and shared [`slim-bundle-analysis.js`](packages/runtime/build-tools/slim-bundle-analysis.js). The dedicated `pnpm test:slim:budget` gate performs one strict prebuilt Rollup build plus minimal and advanced production `slim: 'source'` Vite builds; it caps raw/gzip bytes, compiler residue, stock-adapter residue, retained Node module count/bytes, and split bare-Three identity. `pnpm analyze:slim` emits deterministic JSON for CI or trend tooling. Current observations are 828,280 raw / 226,734 gzip bytes and 65 retained Node modules / 302,240 rendered bytes for prebuilt, 150.6 KiB gzip for minimal source, and 160.5 KiB gzip for advanced mixed-import source; all compiler, stock-adapter, and duplicate-identity counts are zero. The expensive three-build check stays outside the quick unit tier and runs once in Linux CI and `release:check`.
+**Status (2026-07-13).** The single gzip constant is replaced by the machine-readable [`slim-budget.json`](packages/runtime/build-tools/slim-budget.json) and shared [`slim-bundle-analysis.js`](packages/runtime/build-tools/slim-bundle-analysis.js). The dedicated `pnpm test:slim:budget` gate performs one strict prebuilt Rollup build plus minimal and advanced production `slim: 'source'` Vite builds; it caps raw/gzip bytes, compiler residue, stock-adapter residue, retained Node module count/bytes for every profile, and split bare-Three identity. `pnpm analyze:slim` emits deterministic JSON for CI or trend tooling. Current observations are 825,688 raw / 226,395 gzip bytes and 51 retained Node modules / 239,415 rendered bytes for prebuilt. Minimal and advanced source are 136,671 and 144,603 gzip bytes; both retain only 2 Node modules / 1,190 rendered bytes. All compiler, stock-adapter, and duplicate-identity counts are zero. The expensive three-build check stays outside the quick unit tier and runs once in Linux CI and `release:check`.
 
 **Remaining.** A minimal `core` subpath export (apply + loader + writers) for non-slim adopters importing the root barrel; `sideEffects` annotations in [`packages/runtime/package.json`](packages/runtime/package.json) (careful: `hydrator.js` has a real module-init side effect — `installLiveTextureRegistryPatches()`; list side-effectful files explicitly rather than `false`); lazy TSL/PassNode stub entries if the analyzer shows them dominating; opt-in on-disk artifact minification (low value — dev artifacts are gitignored test fixtures).
 

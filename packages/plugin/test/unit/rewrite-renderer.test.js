@@ -39,6 +39,13 @@ test( 'rewrite/Renderer: NodeMaterial replaced with Material sentinel + fragment
 	assert.doesNotMatch( out, /this\._nodes\.getOutputCacheKey/ );
 	assert.match( out, /material\s*=\s*createReplayShadowMaterial\s*\(\s*overrideMaterial\s*,\s*material\s*\)/ );
 	assert.match( out, /getReplayRenderCallbackMaterial\s*\(\s*material\s*\)/ );
+	assert.doesNotMatch( out, /_getShadowNodes|_cacheShadowNodes/ );
+	assert.doesNotMatch( out, /overrideMaterial\.(?:colorNode|depthNode|positionNode)\s*=\s*(?:colorNode|depthNode|positionNode)/ );
+	assert.match( out, /material\.castShadowNode\s*&&\s*material\.castShadowNode\.isNode/ );
+	assert.match( out, /shadowMap\.transmitted\s*!==\s*true/ );
+	assert.match( out, /shadowMap\.transmitted.*material\.castShadowNode/ );
+	assert.match( out, /this\.shadowMap\.type\s*===\s*VSMShadowMap/ );
+	assert.match( out, /_shadowSide\s*\[\s*material\.side\s*\]/ );
 
 	// Original fragmentNode assignment LHS should be gone.
 	assert.doesNotMatch( out, /\.material\.fragmentNode\s*=/ );
@@ -61,6 +68,47 @@ test( 'rewrite/Renderer: NodeMaterial replaced with Material sentinel + fragment
 	assert.match( out, /import\s*\{[^}]*createReplayShadowMaterial[^}]*getReplayRenderCallbackMaterial[^}]*\}\s*from\s*["']virtual:tsl-precompile\/__slim-rewrite-runtime\/shadow-material["']/ );
 	assert.doesNotMatch( out, /nodes\/core\/ContextNode\.js/ );
 	assert.doesNotMatch( out, /\bhighpModel(?:Normal)?ViewMatrix\b/ );
+	assert.doesNotMatch( out, /nodes\/tsl\/TSLCore\.js/ );
+	assert.doesNotMatch( out, /nodes\/accessors\/ReferenceNode\.js/ );
+
+} );
+
+const SHADOW_CUT_DRIFTS = [
+	{
+		name: '_getShadowNodes method',
+		mutate: ( source ) => source.replace( '_getShadowNodes( material ) {', '_collectShadowNodes( material ) {' ),
+	},
+	{
+		name: '_cacheShadowNodes initializer',
+		mutate: ( source ) => source.replace( 'this._cacheShadowNodes = new WeakMap();', 'this._cacheShadowNodes = new Map();' ),
+	},
+	{
+		name: '_getShadowNodes call',
+		mutate: ( source ) => source.replace(
+			'const { colorNode, depthNode, positionNode } = this._getShadowNodes( material );',
+			'const { colorNode, depthNode, positionNode } = this._getShadowNodes( scene.overrideMaterial );',
+		),
+	},
+	{
+		name: 'shadow-node assignment',
+		mutate: ( source ) => source.replace( 'overrideMaterial.colorNode = colorNode;', 'overrideMaterial.colorNode = material.colorNode;' ),
+	},
+	{
+		name: 'shadow transmission warning',
+		mutate: ( source ) => source.replace(
+			'Renderer: `shadowMap.transmitted` needs to be set to `true` when using `material.castShadowNode`.',
+			'Renderer: shadow transmission warning changed.',
+		),
+	},
+];
+
+for ( const drift of SHADOW_CUT_DRIFTS ) test( `rewrite/Renderer: shape-gate fails when ${ drift.name } drifts`, () => {
+
+	const src = drift.mutate( readFileSync( PATH, 'utf8' ) );
+	const r = rewriteThreeSource( src, PATH, { threeVersion: '175', pluginVersion: '0.0.0' } );
+	assert.ok( r );
+	assert.equal( r.code, null );
+	assert.match( r.warning, /shadow|_getShadowNodes|_cacheShadowNodes|shape changed/ );
 
 } );
 

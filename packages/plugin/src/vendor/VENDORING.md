@@ -87,6 +87,17 @@ only the `onAfterRender` material argument. Keep both shapes gated exactly
 once; do not move ownership recovery into `_renderObjectDirect()`, where
 `RenderObject` has already been keyed by the shared override.
 
+The same Renderer rewrite removes r184's `_getShadowNodes()` method, its
+constructor WeakMap, the one shadow-pass call, and the three override node
+assignments. The precompiled shadow artifact already owns those color/depth/
+position branches, and complete directional/point/custom families are merged
+before registration. Preserve the VSM/non-VSM `side` selection, copied alpha
+state, replay-material handoff, and the `castShadowNode` transmitted warning;
+the warning is re-emitted as a graph-free material flag check at the removed
+call site. All removal counts and the original method's TSL construction shape
+are strict gates so an upstream Renderer drift cannot silently retain or skip
+part of the stock graph closure.
+
 Local assumption: `Object3DNode` instances with an explicit `object3d.isCamera`
 target are serialized as `object3d.*` sources with `target: "camera"`. This
 preserves TSL like `objectPosition(camera)` in post-processing passes, where
