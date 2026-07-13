@@ -259,6 +259,7 @@ export { ClippingGroup } from 'three/src/objects/ClippingGroup.js';
 export {
 	TSL, PassNode, NodeMaterial,
 	Node, NodeUpdateType, TempNode, CubeMapNode, RendererUtils,
+	builtinAOContext, builtinShadowContext,
 	MeshBasicNodeMaterial, MeshStandardNodeMaterial, MeshPhysicalNodeMaterial,
 	MeshLambertNodeMaterial, MeshPhongNodeMaterial, MeshToonNodeMaterial,
 	MeshNormalNodeMaterial, MeshMatcapNodeMaterial, MeshSSSNodeMaterial,

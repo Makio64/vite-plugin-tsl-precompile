@@ -8,7 +8,7 @@ This file is the **structural** to-do list: the changes that make the plugins ea
 
 Items are ordered **P0 → P3**. Each has: **Symptom** (what's wrong), **Why it blocks evolution/fidelity**, **Change** (target shape), **First step** (a small, low-risk wedge), **Files**.
 
-Last updated: 2026-07-11 (capture/identity spike; previous full audit 2026-06-09).
+Last updated: 2026-07-13 (capture/identity/temporal/effect-dependency wedges; previous full audit 2026-06-09).
 
 ---
 
@@ -67,6 +67,21 @@ not materially change (`motion_blur` 29.65 dB, AO 28.39 dB), which narrows their
 remaining issue further: the harness still executes too many pass stages per
 logical frame (AO's producer/consumer order and motion blur's four pipeline
 renders), rather than merely keying history to the wrong renderer frame ID.
+
+**Explicit live-effect dependency wedge (2026-07-13).** Closure-backed TSL
+contexts are now a first-class live graph plane instead of harness-only object
+properties. [`slim-support/node-dependencies.js`](packages/runtime/src/slim-support/node-dependencies.js)
+attaches deduplicated, non-enumerable Symbol sidecars with optional role
+metadata; effect discovery follows those edges and may also start from the
+extractor-observed `_liveUpdateBeforeNodes` before JSON removes the live
+sidecar. Slim `builtinAOContext()` / `builtinShadowContext()` stubs and the e2e
+TSL facade use the same product helper. Focused capture coverage proves that a
+GTAO node absent from the reflected output graph still emits its auxiliary
+artifact. The narrow visual canaries complete without replay errors (AO 28.52
+dB; SSS remains a disabled-gate diagnostic at 4.57 dB), so this closes effect
+visibility, not execution fidelity. The next boundary is an explicit effect
+execution plan: producer/consumer placement, renderer ownership, owned targets,
+inputs, and once-per-logical-frame scheduling.
 
 ---
 

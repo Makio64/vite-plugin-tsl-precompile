@@ -440,6 +440,9 @@ export function getTemporalFrameState( value: unknown ): TemporalFrameState | nu
 export function logicalFrameKey( frame: unknown, fallback?: number | string ): number | string;
 export function shouldAdvanceTemporalState( frame: unknown ): boolean;
 export function withTemporalFrame<T>( renderers: unknown | unknown[], options: { frameId?: number | string; time?: number; advance?: boolean }, callback: ( state: TemporalFrameState ) => T ): T;
+export type LiveNodeDependency = { node: unknown; metadata: unknown };
+export function attachLiveNodeDependency<T>( owner: T, dependency: unknown, metadata?: unknown ): T;
+export function getLiveNodeDependencies( owner: unknown ): LiveNodeDependency[];
 
 export type EffectSubPass = {
 	material?: unknown;

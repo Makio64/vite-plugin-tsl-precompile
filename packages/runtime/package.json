@@ -76,6 +76,10 @@
       "types": "./types/slim-support/temporal-frame.d.ts",
       "default": "./src/slim-support/temporal-frame.js"
     },
+    "./slim-support/node-dependencies": {
+      "types": "./types/slim-support/node-dependencies.d.ts",
+      "default": "./src/slim-support/node-dependencies.js"
+    },
     "./slim-support/renderer-lighting": {
       "types": "./types/slim-support/renderer-lighting.d.ts",
       "default": "./src/slim-support/renderer-lighting.js"

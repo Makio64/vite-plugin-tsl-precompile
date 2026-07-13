@@ -42,6 +42,7 @@ import {
 import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttribute.js';
 import StorageInstancedBufferAttribute from 'three/src/renderers/common/StorageInstancedBufferAttribute.js';
 import { registerLiveUniformNode } from './slim-support/live-uniform-registry.js';
+import { attachLiveNodeDependency } from './slim-support/node-dependencies.js';
 
 function slimMessage( name ) {
 
@@ -310,6 +311,8 @@ export const TSL = new Proxy( {}, {
 		if ( prop === 'toString' ) return () => '[TSL slim-stub]';
 		// Common introspection-friendly fallthroughs.
 		if ( prop === '__esModule' ) return true;
+		if ( prop === 'builtinAOContext' ) return builtinAOContext;
+		if ( prop === 'builtinShadowContext' ) return builtinShadowContext;
 		return chainableSlimStub( `TSL.${ String( prop ) }` );
 
 	},
@@ -1388,6 +1391,16 @@ export function getViewPosition( ...args ) { return inertNodeStub( args ); }
 export function textureSize( ...args ) { return inertNodeStub( args ); }
 export function luminance( ...args ) { return inertNodeStub( args ); }
 export function builtin( ...args ) { return inertNodeStub( args ); }
+export function builtinAOContext( aoNode, node = null ) {
+
+	return attachLiveNodeDependency( inertNodeStub( node ? [ node ] : [] ), aoNode, { role: 'ambient-occlusion' } );
+
+}
+export function builtinShadowContext( shadowNode, light = null, node = null ) {
+
+	return attachLiveNodeDependency( inertNodeStub( node ? [ node ] : [] ), shadowNode, { role: 'shadow', light } );
+
+}
 export function mat3( ...args ) { return inertNodeStub( args ); }
 export function mat4( ...args ) { return inertNodeStub( args ); }
 export function ivec2( ...args ) { return inertNodeStub( args ); }

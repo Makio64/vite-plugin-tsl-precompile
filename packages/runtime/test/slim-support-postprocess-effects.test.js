@@ -9,6 +9,7 @@ import {
 	collectEffectNodes,
 	__resetEffectHandlersForTests,
 } from '../src/slim-support/postprocess-effects.js';
+import { attachLiveNodeDependency } from '../src/slim-support/node-dependencies.js';
 import { Node, PassNode } from '../src/slim-stubs.js';
 
 function bloomLike() {
@@ -298,6 +299,35 @@ test( 'collectEffectNodes is safe against cycles', () => {
 	bloom._cycle = bloom;
 	const matches = collectEffectNodes( bloom );
 	assert.equal( matches.length, 1 );
+
+} );
+
+test( 'collectEffectNodes follows explicit closure-hidden dependencies', () => {
+
+	const contextNode = {};
+	const gtao = gtaoLike();
+	attachLiveNodeDependency( contextNode, gtao, { role: 'ambient-occlusion' } );
+
+	const matches = collectEffectNodes( { contextNode } );
+	assert.deepEqual( matches.map( ( match ) => match.handler.name ), [ 'gtao' ] );
+
+} );
+
+test( 'collectEffectNodes includes extra roots without duplicating effects', () => {
+
+	const gtao = gtaoLike();
+	const matches = collectEffectNodes( { nested: gtao }, { extraRoots: [ gtao ] } );
+	assert.deepEqual( matches.map( ( match ) => match.handler.name ), [ 'gtao' ] );
+
+} );
+
+test( 'collectEffectNodes tolerates cycles through explicit dependencies', () => {
+
+	const owner = {};
+	const bloom = bloomLike();
+	attachLiveNodeDependency( owner, bloom );
+	attachLiveNodeDependency( bloom, owner );
+	assert.deepEqual( collectEffectNodes( owner ).map( ( match ) => match.handler.name ), [ 'bloom' ] );
 
 } );
 

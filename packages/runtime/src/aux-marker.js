@@ -545,7 +545,7 @@ async function capturePostProcessingLive( renderer, postProcessing, opts, hashOp
 	const extraArtifacts = await captureRegisteredEffectArtifactsLive( renderer, postProcessing.outputNode, opts, hashOpts || {
 		threeVersion: opts.threeVersion,
 		pluginVersion: opts.pluginVersion || ARTIFACT_TOOLCHAIN_VERSION,
-	} );
+	}, artifact._liveUpdateBeforeNodes );
 	return { artifact: jsonSafe( artifact ), extraArtifacts };
 
 }
@@ -575,9 +575,9 @@ function variantCount( artifact ) {
  * `slim-support/postprocess-effects.js` and is shared with the replay
  * wiring in `slim-support/postprocess-wire.js`.
  */
-async function captureRegisteredEffectArtifactsLive( renderer, outputNode, opts, hashOpts ) {
+async function captureRegisteredEffectArtifactsLive( renderer, outputNode, opts, hashOpts, extraRoots = [] ) {
 
-	const matches = collectEffectNodes( outputNode );
+	const matches = collectEffectNodes( outputNode, { extraRoots } );
 	if ( matches.length === 0 ) return [];
 
 	const compileTSL = opts.compileTSL || ( await lazyLoadCompileTSL() );

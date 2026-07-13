@@ -40,6 +40,7 @@
 
 import { attachArtifactTextureRefsWhere } from './artifact-texture-wiring.js';
 import { wireTRAAResolveArtifact } from './traa-replay.js';
+import { getLiveNodeDependencies } from './node-dependencies.js';
 
 /** @type {Map<string, Object>} */
 const HANDLERS = new Map();
@@ -152,7 +153,7 @@ export function findEffectHandler( node ) {
  * this so they always agree on what counts as an effect node.
  *
  * @param {*} root
- * @param {{ depthCap?: number }} [opts]
+ * @param {{ depthCap?: number, extraRoots?: Array<any> }} [opts]
  * @return {Array<{ handler: Object, node: any }>}
  */
 export function collectEffectNodes( root, opts = {} ) {
@@ -161,6 +162,11 @@ export function collectEffectNodes( root, opts = {} ) {
 	const seen = new Set();
 	const cap = typeof opts.depthCap === 'number' ? opts.depthCap : DEFAULT_DEPTH_CAP;
 	walkForEffects( root, out, seen, 0, cap );
+	for ( const extraRoot of Array.isArray( opts.extraRoots ) ? opts.extraRoots : [] ) {
+
+		walkForEffects( extraRoot, out, seen, 0, cap );
+
+	}
 	return out;
 
 }
@@ -175,6 +181,11 @@ function walkForEffects( node, out, seen, depth, cap ) {
 	if ( handler ) {
 
 		if ( ! out.some( ( entry ) => entry.node === node ) ) out.push( { handler, node } );
+
+	}
+	for ( const dependency of getLiveNodeDependencies( node ) ) {
+
+		walkForEffects( dependency.node, out, seen, depth + 1, cap );
 
 	}
 

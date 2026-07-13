@@ -13415,7 +13415,7 @@ const reflector = ( ...args ) => {
 const __tslpRealBuiltinAOContext = __TSL[ 'builtinAOContext' ];
 const builtinAOContext = ( aoNode, node = null ) => {
 	const contextNode = __tslpRealBuiltinAOContext( aoNode, node );
-	try { Object.defineProperty( contextNode, '__tslpAOInputNode', { value: aoNode, configurable: true } ); } catch ( _ ) {}
+	__sharedAttachLiveNodeDependency( contextNode, aoNode, { role: 'ambient-occlusion' } );
 	return contextNode;
 };
 `
@@ -13425,8 +13425,7 @@ const builtinAOContext = ( aoNode, node = null ) => {
 const __tslpRealBuiltinShadowContext = __TSL[ 'builtinShadowContext' ];
 const builtinShadowContext = ( shadowNode, light, node = null ) => {
 	const contextNode = __tslpRealBuiltinShadowContext( shadowNode, light, node );
-	try { Object.defineProperty( contextNode, '__tslpShadowInputNode', { value: shadowNode, configurable: true, enumerable: true } ); } catch ( _ ) {}
-	try { Object.defineProperty( contextNode, '__tslpShadowLight', { value: light, configurable: true } ); } catch ( _ ) {}
+	__sharedAttachLiveNodeDependency( contextNode, shadowNode, { role: 'shadow', light } );
 	return contextNode;
 };
 `
@@ -13458,6 +13457,7 @@ const pmremTexture = ( ...args ) => {
 import { TSL as __TSL } from '/build/three.webgpu.js';
 import { PassNode as __ReplayPassNode, registerLiveTexture as __tslpRegisterLiveTexture } from '/__tslp__/slim-webgpu-replay.js?v=${ CACHE_BUST }';
 import { registerLiveUniformNode as __tslpRegisterLiveUniformNode } from '/__tslp_runtime/slim-support/live-uniform-registry.js';
+import { attachLiveNodeDependency as __sharedAttachLiveNodeDependency } from '/__tslp_runtime/slim-support/node-dependencies.js';
 
 // Re-expose every named TSL export so compute kernels (Fn, instancedArray, ...)
 // receive genuine TSL node objects whose isComputeNode flag is set correctly.

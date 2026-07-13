@@ -64,6 +64,7 @@ export {
 export { createFullRendererFallback } from './full-renderer-fallback.js';
 export { createSlimSceneSupport, pinClock, unpinClock } from './scene-support.js';
 export { getTemporalFrameState, logicalFrameKey, shouldAdvanceTemporalState, withTemporalFrame } from './temporal-frame.js';
+export { attachLiveNodeDependency, getLiveNodeDependencies } from './node-dependencies.js';
 export { clearLiveTextureIndex, installTextureLoaderTracking, registerLiveTexture } from '../hydrate/live-texture-registry.js';
 export { collectSceneLights, updateRendererLightingForSlim, wireStorageAttributesToSceneArtifacts, wireTiledLightingTextureToScene } from './renderer-lighting.js';
 export { setSlimRenderFallback, getSlimRenderFallback } from './render-fallback-registry.js';

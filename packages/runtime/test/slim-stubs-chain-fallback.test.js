@@ -9,7 +9,11 @@ import {
 	LightsNode,
 	RectAreaLightNode,
 	mrt,
+	builtinAOContext,
+	builtinShadowContext,
+	TSL,
 } from '../src/slim-stubs.js';
+import { getLiveNodeDependencies } from '../src/slim-support/node-dependencies.js';
 
 test( 'slim Node returns inert stub for unknown property access (chain fallback)', () => {
 
@@ -118,6 +122,23 @@ test( 'slim RectAreaLightNode instance supports chain fallback while keeping sta
 	const node = new RectAreaLightNode();
 	assert.equal( node.isRectAreaLightNode, true );
 	assert.equal( node.someAddonHelper().isNode, true );
+
+} );
+
+test( 'slim AO and shadow context stubs retain closure-hidden dependencies', () => {
+
+	const ao = { isNode: true };
+	const shadow = { isNode: true };
+	const light = { isLight: true };
+	assert.deepEqual( getLiveNodeDependencies( builtinAOContext( ao ) ), [
+		{ node: ao, metadata: { role: 'ambient-occlusion' } },
+	] );
+	assert.deepEqual( getLiveNodeDependencies( builtinShadowContext( shadow, light ) ), [
+		{ node: shadow, metadata: { role: 'shadow', light } },
+	] );
+
+	assert.equal( getLiveNodeDependencies( TSL.builtinAOContext( ao ) )[ 0 ].node, ao );
+	assert.equal( getLiveNodeDependencies( TSL.builtinShadowContext( shadow, light ) )[ 0 ].node, shadow );
 
 } );
 

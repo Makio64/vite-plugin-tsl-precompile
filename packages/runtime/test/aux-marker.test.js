@@ -78,3 +78,87 @@ test( 'precompileAuxiliary prod no-op fires before fetch is attempted', async ()
 	}
 
 } );
+
+test( 'precompileAuxiliary captures effects observed only through live update nodes', async () => {
+
+	class NodeMaterial {
+
+		constructor() {
+
+			this.uuid = `material-${ NodeMaterial.nextId ++ }`;
+
+		}
+
+	}
+	NodeMaterial.nextId = 1;
+	class Scene {
+
+		constructor() {
+
+			this.children = [];
+			this.userData = {};
+
+		}
+		add( object ) { this.children.push( object ); }
+		traverse( callback ) { this.children.forEach( callback ); }
+
+	}
+	class QuadMesh {
+
+		constructor( material ) { this.material = material; }
+
+	}
+
+	const gtao = {
+		updateBefore: () => {},
+		_aoRenderTarget: { texture: { name: 'GTAONode.AO', format: 1028, type: 1009 } },
+		_material: new NodeMaterial(),
+		_textureNode: { isPassTextureNode: true },
+		radius: { isUniformNode: true, value: 0.25 },
+		resolution: { isUniformNode: true, value: { isVector2: true } },
+	};
+	const outputNode = { isNode: true };
+	let compileCalls = 0;
+	const compileTSL = async ( _renderer, captureScene ) => {
+
+		compileCalls ++;
+		const material = captureScene.children[ 0 ].material;
+		const artifact = {
+			materialUuid: material.uuid,
+			uniformPlan: [],
+			vertexShader: '',
+			fragmentShader: '',
+		};
+		if ( compileCalls === 1 ) Object.defineProperty( artifact, '_liveUpdateBeforeNodes', { value: [ gtao ] } );
+		return [ artifact ];
+
+	};
+
+	const originalFetch = globalThis.fetch;
+	const payloads = [];
+	globalThis.fetch = async ( _endpoint, request ) => {
+
+		payloads.push( JSON.parse( request.body ) );
+		return { ok: true };
+
+	};
+	try {
+
+		const results = await precompileAuxiliary( {}, { traverse: () => {} }, {}, {
+			devEndpoint: '/capture',
+			threeVersion: '184',
+			compileTSL,
+			postProcessing: { outputNode },
+			three: { NodeMaterial, Scene, QuadMesh },
+		} );
+		assert.equal( compileCalls, 3, 'captures the output, hidden GTAO, and renderer-output materials' );
+		assert.deepEqual( results.map( ( result ) => result.shape ), [ 'post-process', 'gtao', 'render-output' ] );
+		assert.deepEqual( payloads.map( ( payload ) => payload.materialShape ), [ 'post-process', 'gtao' ] );
+
+	} finally {
+
+		globalThis.fetch = originalFetch;
+
+	}
+
+} );

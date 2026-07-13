@@ -6,6 +6,7 @@ export * from './compute-sync.d.ts';
 export * from './full-renderer-fallback.d.ts';
 export * from './scene-support.d.ts';
 export * from './temporal-frame.d.ts';
+export * from './node-dependencies.d.ts';
 export * from './renderer-lighting.d.ts';
 export * from './render-fallback-registry.d.ts';
 export * from './pass-render-fallback.d.ts';
