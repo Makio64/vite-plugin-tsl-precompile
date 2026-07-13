@@ -11,9 +11,9 @@
 		"smokeTotal": 198,
 		"smokePass": 197,
 		"smokePassRate": 99.5,
-		"pixelMatchCount": 189,
+		"pixelMatchCount": 190,
 		"visualMatchCount": 9,
-		"rendersCount": 27,
+		"rendersCount": 26,
 		"captureOnlyCount": 0
 	},
 	"categories": [
@@ -6785,7 +6785,7 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 18.64,
+				"psnr": 30.45,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
@@ -6815,7 +6815,7 @@
 			],
 			"notes": "",
 			"thumbHealth": "ok",
-			"badge": "renders"
+			"badge": "pixel-match"
 		},
 		{
 			"basename": "webgpu_water",
