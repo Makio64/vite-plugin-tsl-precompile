@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -106,5 +106,15 @@ test( 'hash options come from the authoritative minification-safe bundle stamp',
 		() => slimBundleHashOptions( { bytes: Buffer.from( 'const threeVersion = "0.184.0";' ) } ),
 		/does not begin with its required embedded provenance stamp/,
 	);
+
+} );
+
+test( 'replay imports and forwarded exports share one cache-busted slim module identity', () => {
+
+	const source = readFileSync( new URL( '../run-e2e.mjs', import.meta.url ), 'utf8' );
+	assert.match( source, /const SLIM_BUNDLE_BROWSER_MODULE = `\/__tslp__\/three\.webgpu\.slim\.js\?v=\$\{ CACHE_BUST \}`/ );
+	assert.match( source, /export \{ \$\{ SLIM_REPLAY_FORWARD_EXPORTS\.join\( ', ' \) \} \} from \$\{ JSON\.stringify\( SLIM_BUNDLE_BROWSER_MODULE \) \}/ );
+	assert.match( source, /import \* as Slim from \$\{ JSON\.stringify\( SLIM_BUNDLE_BROWSER_MODULE \) \}/ );
+	assert.doesNotMatch( source, /from '\/__tslp__\/three\.webgpu\.slim\.js';/ );
 
 } );

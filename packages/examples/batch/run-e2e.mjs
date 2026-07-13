@@ -65,6 +65,7 @@ const PLUGIN_SRC = resolve( REPO, 'packages/plugin/src' );
 const CONTRACT_SRC = resolve( REPO, 'packages/contract/src' );
 const DEFAULT_SLIM_BUNDLE = resolve( REPO, 'packages/runtime/build/three.webgpu.slim.js' );
 const CACHE_BUST = Date.now().toString( 36 );
+const SLIM_BUNDLE_BROWSER_MODULE = `/__tslp__/three.webgpu.slim.js?v=${ CACHE_BUST }`;
 
 if ( ! existsSync( OUT ) ) mkdirSync( OUT, { recursive: true } );
 let slimBundle;
@@ -323,7 +324,7 @@ const SLIM_REPLAY_FORWARD_EXPORTS = SLIM_REPLAY_SLIM_EXPORTS
 	.filter( ( name ) => ! SLIM_REPLAY_DIRECT_EXPORTS.has( name ) )
 	.sort();
 const SLIM_REPLAY_FORWARD_EXPORT_BLOCK = SLIM_REPLAY_FORWARD_EXPORTS.length > 0
-	? `export { ${ SLIM_REPLAY_FORWARD_EXPORTS.join( ', ' ) } } from '/__tslp__/three.webgpu.slim.js';`
+	? `export { ${ SLIM_REPLAY_FORWARD_EXPORTS.join( ', ' ) } } from ${ JSON.stringify( SLIM_BUNDLE_BROWSER_MODULE ) };`
 	: '';
 const SLIM_REPLAY_FULL_FALLBACK_EXPORTS = SLIM_REPLAY_FULL_EXPORTS
 	.filter( ( name ) => /^[A-Za-z_$][\w$]*$/.test( name ) )
@@ -1852,7 +1853,7 @@ export class ${ name } {
 ` ).join( '\n' );
 
 	return `
-import * as Slim from '/__tslp__/three.webgpu.slim.js?v=${ CACHE_BUST }';
+import * as Slim from ${ JSON.stringify( SLIM_BUNDLE_BROWSER_MODULE ) };
 import { TSL as FullTSL, TextureNode as FullTextureNode, BlendMode as FullBlendMode, TempNode as FullTempNode, NodeUpdateType as FullNodeUpdateType, NodeMaterial as FullNodeMaterial, MeshBasicNodeMaterial as FullMeshBasicNodeMaterial, MeshStandardNodeMaterial as FullMeshStandardNodeMaterial, MeshPhysicalNodeMaterial as FullMeshPhysicalNodeMaterial, MeshLambertNodeMaterial as FullMeshLambertNodeMaterial, MeshPhongNodeMaterial as FullMeshPhongNodeMaterial, MeshToonNodeMaterial as FullMeshToonNodeMaterial, MeshNormalNodeMaterial as FullMeshNormalNodeMaterial, MeshMatcapNodeMaterial as FullMeshMatcapNodeMaterial, MeshSSSNodeMaterial as FullMeshSSSNodeMaterial, VolumeNodeMaterial as FullVolumeNodeMaterial, LineBasicNodeMaterial as FullLineBasicNodeMaterial, LineDashedNodeMaterial as FullLineDashedNodeMaterial, Line2NodeMaterial as FullLine2NodeMaterial, PointsNodeMaterial as FullPointsNodeMaterial, SpriteNodeMaterial as FullSpriteNodeMaterial, ShadowNodeMaterial as FullShadowNodeMaterial, RenderTarget as FullRenderTarget, DepthTexture as FullDepthTexture, ArrayCamera as FullArrayCamera, Controls as FullControls, MOUSE as FullMOUSE, MathUtils as FullMathUtils, Plane as FullPlane, Quaternion as FullQuaternion, Ray as FullRay, Spherical as FullSpherical, TOUCH as FullTOUCH, QuadMesh as FullQuadMesh, RendererUtils as FullRendererUtils, Vector2 as FullVector2, Vector3 as FullVector3, CubeRenderTarget as FullCubeRenderTarget, TextureLoader as FullTextureLoader, CubeTextureLoader as FullCubeTextureLoader, DataTextureLoader as FullDataTextureLoader, ImageBitmapLoader as FullImageBitmapLoader } from '/build/three.webgpu.js';
 import { createLiveSceneIndex, textureImageReady as __sharedTextureImageReady, textureImageSrc as __sharedTextureImageSrc, newFallbackTextureImage as __sharedNewFallbackTextureImage } from '/__tslp_runtime/slim-support/live-scene-index.js';
 import { artifactNeedsPMREM as __sharedArtifactNeedsPMREM, artifactPMREMSourceUuids as __sharedArtifactPMREMSourceUuids, attachPMREMRefsByOrder as __sharedAttachPMREMRefsByOrder, collectPMREMSourceTexturesFromMaterial as __sharedCollectPMREMSourceTexturesFromMaterial, collectPMREMSourceTexturesInNode as __sharedCollectPMREMSourceTexturesInNode, createPMREMSupport as __sharedCreatePMREMSupport, isPMREMArtifactTextureSource as __sharedIsPMREMArtifactTextureSource, isPMREMTexture as __sharedIsPMREMTexture, selectPMREMTexturesForArtifact as __sharedSelectPMREMTexturesForArtifact, textureListSignature as __sharedTextureListSignature } from '/__tslp_runtime/slim-support/pmrem.js';
