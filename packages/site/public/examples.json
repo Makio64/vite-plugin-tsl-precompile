@@ -12,8 +12,8 @@
 		"smokePass": 197,
 		"smokePassRate": 99.5,
 		"pixelMatchCount": 198,
-		"visualMatchCount": 9,
-		"rendersCount": 18,
+		"visualMatchCount": 10,
+		"rendersCount": 17,
 		"captureOnlyCount": 0
 	},
 	"categories": [
@@ -8712,7 +8712,7 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 11.18,
+				"psnr": 16.52,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
@@ -8733,7 +8733,7 @@
 			],
 			"notes": "",
 			"thumbHealth": "ok",
-			"badge": "renders"
+			"badge": "visual-match"
 		},
 		{
 			"basename": "webgpu_compute_texture_pingpong",
