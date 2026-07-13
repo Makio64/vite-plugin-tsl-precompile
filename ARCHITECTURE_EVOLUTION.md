@@ -114,6 +114,36 @@ zero misses, warnings, or replay errors (66 pass renders for 33 pipeline calls).
 Its disabled-gate diagnostic remains 4.57 dB, so missing SSS capture/execution
 is closed while the example's larger visual mismatch remains independent.
 
+**Compiler-free slim closure audit (2026-07-13).** The important boundary is
+now measured from Rollup module IDs instead of minified string fingerprints.
+`WGSLNodeBuilder`, `GLSLNodeBuilder`, `NodeBuilder`, their parsers,
+`StandardNodeLibrary`, real `NodeMaterial`, and Three's runtime-compiling
+`PMREMGenerator` are hard build failures when they contribute rendered bytes;
+`NodeBuilderState` remains intentionally because slim hydrates that renderer
+data carrier from artifacts. Two dead paths were removed immediately:
+NodeManager no longer catches hydration failure by constructing a generic
+NodeMaterial after the backend builder has already been stripped, and the slim
+PMREM export is now a constructible compatibility shell which directs actual
+generation to the documented full-renderer adapter. A focused PMREM equirect
+replay still completes through that adapter. Together these cuts moved the
+checked bundle from 916,965 raw / ~249,100 gzip bytes to 876,647 raw / 238,462
+gzip bytes (the standard test reports 856.1 / 232.9 KiB).
+
+The builder is therefore no longer the remaining bundle problem. The analyzer
+still reports **101 Three Node/TSL runtime modules / 440.0 KiB rendered before
+minification**, rooted mainly in NodeManager scene topology, Background,
+RenderPipeline, renderer output/shadow helpers, viewport texture nodes, and XR.
+Disposable graph experiments put the next ceiling near 189 KiB gzip for the
+same prebuilt public surface, and near 140 KiB for a selective tree-shakeable
+source entry; those are directional upper bounds, not committed budgets. The
+safe sequence is: (1) give each artifact variant a semantic render-context
+selector rather than relying only on Three's private numeric cache key, (2)
+replace NodeManager/Lighting and renderer auxiliaries with runtime-owned slim
+state adapters, then (3) expose an experimental source entry so applications
+pay only for the core/geometry/loaders they import. Dropping those modules
+before semantic variant selection risks silently choosing the wrong
+lights/fog/environment/shadow WGSL.
+
 ---
 
 ## 2026-06-09 audit refresh — corrections to the map

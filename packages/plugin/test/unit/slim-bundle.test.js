@@ -102,13 +102,12 @@ test( 'slim bundle — exports the promised slim surface', { skip: bundleExists 
 
 } );
 
-test( 'slim bundle — diagnostic report on node-builder residue', { skip: bundleExists ? false : 'bundle not built' }, () => {
+test( 'slim bundle — diagnostic report on retained runtime Node/TSL DSL', { skip: bundleExists ? false : 'bundle not built' }, () => {
 
-	// Diagnostic only — NOT a hard gate. Fully stripping the node builder
-	// would require aliasing `three/src/nodes/**` to empty shims, which
-	// currently breaks WebGPURenderer's internal dispatch. This reports
-	// residual fingerprints so future tree-shake work has a measurable
-	// baseline. The real gate is the GATE_KB gzip size check above.
+	// Compiler-only module IDs are a hard Rollup graph gate in
+	// runtime/rollup.config.js. These strings report the separate runtime Node
+	// DSL still retained by renderer auxiliaries so the next adapter cuts stay
+	// measurable without confusing them with NodeBuilder leakage.
 	const src = readFileSync( BUNDLE, 'utf8' );
 	const fingerprints = [ 'OperatorNode', 'TempNode', 'FunctionNode', 'ContextNode' ];
 	const counts = fingerprints.map( ( s ) => ( { s, n: ( src.match( new RegExp( s, 'g' ) ) || [] ).length } ) );

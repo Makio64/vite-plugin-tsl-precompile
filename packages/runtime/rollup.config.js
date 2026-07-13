@@ -1,8 +1,10 @@
 /**
  * Slim runtime bundle.
  *
- * Rolls up three.js's ESM source (`three/src/**`) minus `src/nodes/**` plus
- * our precompile layer, producing `build/three.webgpu.slim.js`. The Vite
+ * Rolls up three.js's ESM source (`three/src/**`) with compiler-only modules
+ * excluded plus our precompile layer, producing
+ * `build/three.webgpu.slim.js`. Some Node/TSL runtime carriers still remain
+ * until renderer-owned auxiliaries move behind slim adapters. The Vite
  * plugin, when `slim: true`, aliases `three/webgpu` to this bundle so the
  * user's `import { WebGPURenderer } from 'three/webgpu'` continues to work
  * without shipping the node builder.
@@ -23,6 +25,60 @@ import { fileURLToPath } from 'node:url';
 import { rewriteThreeSource } from '../plugin/src/three-rewrite.js';
 
 const __dirname = dirname( fileURLToPath( import.meta.url ) );
+
+/**
+ * Modules that belong to runtime shader compilation rather than replay.
+ * NodeBuilderState is intentionally absent: slim hydrates that renderer data
+ * carrier from artifacts and still needs it at runtime.
+ */
+export const SLIM_COMPILER_MODULE_RULES = Object.freeze( [
+	[ 'NodeBuilder', /\/nodes\/core\/NodeBuilder\.js$/ ],
+	[ 'NodeParser', /\/nodes\/core\/NodeParser\.js$/ ],
+	[ 'WGSLNodeBuilder', /\/renderers\/webgpu\/nodes\/WGSLNodeBuilder\.js$/ ],
+	[ 'WGSLNodeParser', /\/renderers\/webgpu\/nodes\/WGSLNodeParser\.js$/ ],
+	[ 'GLSLNodeBuilder', /\/renderers\/webgl-fallback\/nodes\/GLSLNodeBuilder\.js$/ ],
+	[ 'GLSLNodeParser', /\/renderers\/webgl-fallback\/nodes\/GLSLNodeParser\.js$/ ],
+	[ 'StandardNodeLibrary', /\/renderers\/common\/nodes\/StandardNodeLibrary\.js$/ ],
+	[ 'NodeMaterial', /\/materials\/nodes\/NodeMaterial\.js$/ ],
+	[ 'NodeMaterialObserver', /\/materials\/nodes\/manager\/NodeMaterialObserver\.js$/ ],
+	[ 'PMREMGenerator compiler path', /\/three\/src\/renderers\/common\/extras\/PMREMGenerator\.js$/ ],
+] );
+
+export function findRenderedSlimCompilerModules( bundle ) {
+
+	const found = new Map();
+	for ( const chunk of Object.values( bundle || {} ) ) {
+
+		for ( const [ id, module ] of Object.entries( chunk && chunk.modules || {} ) ) {
+
+			if ( ! module || module.renderedLength <= 0 ) continue;
+			const normalized = id.replace( /\\/g, '/' );
+			for ( const [ label, pattern ] of SLIM_COMPILER_MODULE_RULES ) {
+
+				if ( ! pattern.test( normalized ) ) continue;
+				found.set( normalized, { id: normalized, label, renderedLength: module.renderedLength } );
+				break;
+
+			}
+
+		}
+
+	}
+	return [ ...found.values() ].sort( ( a, b ) => b.renderedLength - a.renderedLength || a.id.localeCompare( b.id ) );
+
+}
+
+const compilerResidueGuard = {
+	name: 'tsl-precompile:compiler-residue-guard',
+	generateBundle( _options, bundle ) {
+
+		const residue = findRenderedSlimCompilerModules( bundle );
+		if ( residue.length === 0 ) return;
+		const detail = residue.map( ( item ) => `${ item.label } (${ item.renderedLength } B): ${ item.id }` ).join( '\n  ' );
+		this.error( `Slim bundle retained runtime compiler modules:\n  ${ detail }` );
+
+	},
+};
 
 /**
  * Rollup plugin that routes specific three.js source files through our
@@ -233,10 +289,18 @@ export default {
 					console.error( '\n--- by subtree ---' );
 					for ( const [ g, len ] of Object.entries( groups ).sort( ( a, b ) => b[ 1 ] - a[ 1 ] ).slice( 0, 25 ) ) console.error( `  ${ ( len / 1024 ).toFixed( 1 ).padStart( 7 ) } KB  ${ g }` );
 
+					const nodeRuntime = rows.filter( ( [ id ] ) => id.startsWith( 'three/src/nodes/' ) || id.startsWith( 'three/src/materials/nodes/' ) );
+					const nodeRuntimeBytes = nodeRuntime.reduce( ( total, row ) => total + row[ 1 ], 0 );
+					const compilerResidue = findRenderedSlimCompilerModules( bundle );
+					console.error( `\n--- compiler boundary ---` );
+					console.error( `  compiler-only modules: ${ compilerResidue.length } (zero enforced)` );
+					console.error( `  retained Node/TSL runtime: ${ nodeRuntime.length } modules, ${ ( nodeRuntimeBytes / 1024 ).toFixed( 1 ) } KB rendered` );
+
 				}
 
 			},
 		} : null ),
+		compilerResidueGuard,
 		runtimeAliasPlugin,
 		auxVirtualStub,
 		webglFallbackStub,
