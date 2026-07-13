@@ -44,6 +44,7 @@ import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS a
 
 import { assertThreeAtLeast184 } from './_three-version.mjs';
 import { enrichRenderSelectorDiagnostics, resolveE2ERoots, summarizeArtifactRenderSelectors } from './e2e-report-diagnostics.mjs';
+import { installAnimationLoopSettleTransition } from './e2e-settle-policy.mjs';
 import { captureWaitOverrideForExample, comparePngBuffers, expectedReplayErrorPatternsForExample, pixelGateDisabledReasonForExample, psnrThresholdForExample, tierExamples } from './psnr.mjs';
 import { loadSlimBundle, slimBundleReportProvenance } from './slim-bundle-provenance.mjs';
 
@@ -14791,6 +14792,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 		if ( process.env.TSLP_DEBUG_REFLECTOR_BINDINGS === '1' && mode === 'replay' ) {
 			await page.addInitScript( () => { globalThis.__TSLP_DEBUG_REFLECTOR_BINDINGS = true; window.__TSLP_DEBUG_REFLECTOR_BINDINGS = true; } );
 		}
+			await page.addInitScript( installAnimationLoopSettleTransition );
 			await page.addInitScript( ( { step, base, freezeAt, quiescentMs, settleFrames, waitForRenderableObjects, minRenderableObjects, holdAnimationUntilReady, exampleName, mode } ) => {
 
 			// eslint-disable-next-line no-undef
@@ -14906,6 +14908,8 @@ async function visitExample( browser, name, mode, waitMs ) {
 			}
 			w.__tslpWrapAnimationLoop = function ( callback ) {
 
+				const transitionAnimationLoopSettle = w.__tslpTransitionAnimationLoopSettle;
+				if ( typeof transitionAnimationLoopSettle !== 'function' ) throw new Error( '[batch-e2e] animation-loop settle transition was not installed' );
 				w.__tslpAnimationLoopRegistered = typeof callback === 'function';
 				w.__tslpAnimationLoopCalls = 0;
 				w.__tslpSettleTicks = 0;
@@ -14920,21 +14924,20 @@ async function visitExample( browser, name, mode, waitMs ) {
 						|| ( w.__tslpShadowPending | 0 ) !== 0
 						|| ( w.__tslpComputePending | 0 ) !== 0;
 					const waitingForAsyncWork = waitingForAsyncCounters || waitingForRenderableObjects;
-					if ( atTarget && waitingForAsyncWork ) w.__tslpAnimationLoopCalls = 0;
-					if ( atTarget && waitingForAsyncCounters && w.__tslpHoldAnimationUntilReady === true ) return;
-					const shadowPendingAtTarget = atTarget && ( w.__tslpShadowPending | 0 ) !== 0;
-					const freezeAfterShadowFrame = shadowPendingAtTarget && w.__tslpShadowFreezeFrameConsumed !== true;
-					if ( shadowPendingAtTarget && ! freezeAfterShadowFrame ) { w.__tslpFrozen = true; return; }
-					if ( atTarget && ( w.__tslpComputePending | 0 ) !== 0 ) return;
-					if ( atTarget && ! waitingForAsyncWork && ( w.__tslpAnimationLoopCalls | 0 ) >= settleFrames ) return;
-					w.__tslpAnimationLoopCalls = ( w.__tslpAnimationLoopCalls | 0 ) + 1;
+					const transition = transitionAnimationLoopSettle( {
+						animationLoopCalls: w.__tslpAnimationLoopCalls,
+						atTarget,
+						computePending: ( w.__tslpComputePending | 0 ) !== 0,
+						holdAnimationUntilReady: w.__tslpHoldAnimationUntilReady === true,
+						settleFrames,
+						shadowPending: ( w.__tslpShadowPending | 0 ) !== 0,
+						waitingForAsyncCounters,
+						waitingForAsyncWork,
+					} );
+					w.__tslpAnimationLoopCalls = transition.animationLoopCalls;
+					if ( ! transition.runCallback ) return;
 					w.__tslpFrameCallbackCount = ( w.__tslpFrameCallbackCount | 0 ) + 1;
-					const result = callback.apply( this, args );
-					if ( freezeAfterShadowFrame ) {
-						w.__tslpShadowFreezeFrameConsumed = true;
-						w.__tslpFrozen = true;
-					}
-					return result;
+					return callback.apply( this, args );
 
 				};
 
