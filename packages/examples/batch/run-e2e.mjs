@@ -1832,6 +1832,7 @@ import { artifactHasTextureSource as __sharedArtifactHasTextureSource, attachArt
 import { createFullRendererFallback as __sharedCreateFullRendererFallback } from '/__tslp_runtime/slim-support/full-renderer-fallback.js';
 import { updateRendererLightingForSlim as __sharedUpdateRendererLightingForSlim } from '/__tslp_runtime/slim-support/renderer-lighting.js';
 import { artifactLooksLikeRetroPassMaterial as __sharedArtifactLooksLikeRetroPassMaterial } from '/__tslp_runtime/slim-support/postprocess-effects-replay.js';
+import { wireLiveUniformSidecarsToArtifact as __sharedWireLiveUniformSidecarsToArtifact } from '/__tslp_runtime/slim-support/live-node-sidecars.js';
 import { renderOffscreenOverrideWithFullRenderer as __sharedRenderOffscreenOverrideWithFullRenderer } from '/__tslp_runtime/slim-support/pass-render-fallback.js';
 import { findAux as __runtimeFindAux } from '/__tslp_runtime/aux-loader.js';
 import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS as __NODE_GRAPH_KEYS } from '/__tslp_contract/texture-props.js';
@@ -4549,65 +4550,6 @@ function __appendArtifactSidecars( artifact, key, nodes ) {
 	}
 }
 
-function __valueMatchesUniformSlot( value, slot ) {
-	if ( ! slot ) return false;
-	const snapshot = slot.source && ( slot.source.valueSnapshot || slot.source.value );
-	if ( snapshot ) return __snapshotMatchesUniformValue( snapshot, value, slot.dtype );
-	return __valueMatchesUniformDtype( value, slot.dtype || '' );
-}
-
-function __snapshotMatchesUniformValue( snapshot, value, dtypeHint ) {
-	const type = snapshot.type || dtypeHint || '';
-	const expected = snapshot.data;
-	const actual = __comparableUniformValue( value, type );
-	if ( actual === null ) return false;
-	if ( Array.isArray( expected ) ) {
-		if ( ! Array.isArray( actual ) || actual.length < expected.length ) return false;
-		for ( let i = 0; i < expected.length; i ++ ) {
-			if ( ! __closeUniformNumber( actual[ i ], expected[ i ] ) ) return false;
-		}
-		return true;
-	}
-	return __closeUniformNumber( actual, expected );
-}
-
-function __comparableUniformValue( value, type ) {
-	if ( type === 'number' || type === 'float' || type === 'f32' || type === 'int' || type === 'uint' || type === 'i32' || type === 'u32' ) {
-		if ( typeof value === 'number' ) return value;
-		if ( value && value.isUniformNode !== true && typeof value.value === 'number' ) return value.value;
-		return null;
-	}
-	if ( type === 'color' ) return value && value.isColor ? [ value.r, value.g, value.b ] : null;
-	if ( type === 'vec2' ) return value && value.isVector2 ? [ value.x, value.y ] : null;
-	if ( type === 'vec3' ) {
-		if ( value && value.isVector3 ) return [ value.x, value.y, value.z ];
-		if ( value && value.isColor ) return [ value.r, value.g, value.b ];
-		return null;
-	}
-	if ( type === 'vec4' ) return value && value.isVector4 ? [ value.x, value.y, value.z, value.w ] : null;
-	if ( type === 'mat3' ) return value && value.isMatrix3 && value.elements ? Array.from( value.elements ) : null;
-	if ( type === 'mat4' ) return value && value.isMatrix4 && value.elements ? Array.from( value.elements ) : null;
-	return __valueMatchesUniformDtype( value, type ) ? value : null;
-}
-
-function __valueMatchesUniformDtype( value, dtype ) {
-	if ( dtype === 'color' ) return !! ( value && value.isColor );
-	if ( dtype === 'number' || dtype === 'float' ) return typeof value === 'number' || value && value.isUniformNode !== true && typeof value.value === 'number';
-	if ( dtype === 'vec2' ) return !! ( value && value.isVector2 );
-	if ( dtype === 'vec3' ) return !! ( value && ( value.isVector3 || value.isColor ) );
-	if ( dtype === 'vec4' ) return !! ( value && value.isVector4 );
-	if ( dtype === 'mat3' ) return !! ( value && value.isMatrix3 );
-	if ( dtype === 'mat4' ) return !! ( value && value.isMatrix4 );
-	return true;
-}
-
-function __closeUniformNumber( a, b ) {
-	const left = Number( a );
-	const right = Number( b );
-	if ( ! Number.isFinite( left ) || ! Number.isFinite( right ) ) return left === right;
-	return Math.abs( left - right ) <= Math.max( 1e-6, Math.abs( right ) * 1e-6 );
-}
-
 function __isVolumeNodeMaterial( material ) {
 	return !! ( material && ( material.isVolumeNodeMaterial === true || material.type === 'VolumeNodeMaterial' || material.constructor && material.constructor.name === 'VolumeNodeMaterial' ) );
 }
@@ -4686,12 +4628,10 @@ function __wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, replacement
 		// transient internals, so keep the captured PMREM constants for replay.
 		return;
 	}
-	const uniformNodes = [];
 	const updateNodes = [];
 	const updateBeforeNodes = [];
 	const updateAfterNodes = [];
 	__walkMaterialNodeGraph( sourceMaterial, ( node ) => {
-		if ( node.isUniformNode === true && ! uniformNodes.includes( node ) ) uniformNodes.push( node );
 		if ( typeof node.update === 'function' && __nodeUpdateKind( node, 'update' ) !== 'none' && ! updateNodes.includes( node ) ) updateNodes.push( node );
 		if ( typeof node.updateBefore === 'function' && __shouldReplayLiveUpdateBeforeNode( node ) && __nodeUpdateKind( node, 'before' ) !== 'none' && ! updateBeforeNodes.includes( node ) ) updateBeforeNodes.push( node );
 		if ( typeof node.updateAfter === 'function' && __nodeUpdateKind( node, 'after' ) !== 'none' && ! updateAfterNodes.includes( node ) ) updateAfterNodes.push( node );
@@ -4703,46 +4643,7 @@ function __wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, replacement
 	__appendArtifactSidecars( artifact, '_liveUpdateNodes', updateNodes );
 	__appendArtifactSidecars( artifact, '_liveUpdateBeforeNodes', updateBeforeNodes );
 	__appendArtifactSidecars( artifact, '_liveUpdateAfterNodes', updateAfterNodes );
-	if ( uniformNodes.length > 0 ) {
-		const used = new Set();
-			for ( const group of artifact.uniformPlan || [] ) {
-			for ( const slot of group.slots || [] ) {
-				const source = slot && slot.source || {};
-				if ( source.kind !== 'uniform.live' || slot._liveNode ) continue;
-				if ( __state.mode === 'replay' && ! source.name && source.valueSnapshot ) continue;
-				let match = null;
-				if ( source.name ) {
-					match = uniformNodes.find( ( node ) => ! used.has( node ) && node.name === source.name && __valueMatchesUniformSlot( node.value, slot ) );
-					if ( ! match ) match = uniformNodes.find( ( node ) => node.name === source.name && __valueMatchesUniformSlot( node.value, slot ) );
-				}
-				if ( ! match ) match = uniformNodes.find( ( node ) => ! used.has( node ) && __valueMatchesUniformSlot( node.value, slot ) );
-				if ( ! match ) match = uniformNodes.find( ( node ) => __valueMatchesUniformSlot( node.value, slot ) );
-				if ( ! match ) {
-					const dtype = slot.dtype || slot.source && slot.source.valueSnapshot && slot.source.valueSnapshot.type || '';
-					const dtypeMatches = uniformNodes.filter( ( node ) => ! used.has( node ) && __valueMatchesUniformDtype( node.value, dtype ) );
-					if ( dtypeMatches.length === 1 ) match = dtypeMatches[ 0 ];
-					else {
-						const allDtypeMatches = uniformNodes.filter( ( node ) => __valueMatchesUniformDtype( node.value, dtype ) );
-						if ( allDtypeMatches.length === 1 ) match = allDtypeMatches[ 0 ];
-					}
-				}
-				if ( ! match ) continue;
-				Object.defineProperty( slot, '_liveNode', {
-					value: match,
-					enumerable: false,
-					configurable: true,
-					writable: true,
-				} );
-				Object.defineProperty( slot, '__tslpLiveSidecarOverlay', {
-					value: true,
-					enumerable: false,
-					configurable: true,
-					writable: true,
-				} );
-				used.add( match );
-			}
-		}
-	}
+	__sharedWireLiveUniformSidecarsToArtifact( artifact, sourceMaterial );
 	__repairVolumeMaterialStepsUniform( artifact, sourceMaterial );
 }
 
@@ -13477,6 +13378,7 @@ function tslStubModule() {
 		.filter( ( name ) => name !== 'builtinAOContext' )
 		.filter( ( name ) => name !== 'builtinShadowContext' )
 		.filter( ( name ) => name !== 'renderOutput' )
+		.filter( ( name ) => name !== 'uniform' )
 		.filter( ( name ) => name !== 'texture' )
 		.filter( ( name ) => name !== 'texture3D' )
 		.filter( ( name ) => name !== 'textureLoad' )
@@ -13544,6 +13446,7 @@ const pmremTexture = ( ...args ) => {
 // import-map (which redirects 'three/webgpu' to the slim bundle) is bypassed.
 import { TSL as __TSL } from '/build/three.webgpu.js';
 import { PassNode as __ReplayPassNode, registerLiveTexture as __tslpRegisterLiveTexture } from '/__tslp__/slim-webgpu-replay.js?v=${ CACHE_BUST }';
+import { registerLiveUniformNode as __tslpRegisterLiveUniformNode } from '/__tslp_runtime/slim-support/live-uniform-registry.js';
 
 // Re-expose every named TSL export so compute kernels (Fn, instancedArray, ...)
 // receive genuine TSL node objects whose isComputeNode flag is set correctly.
@@ -13552,6 +13455,8 @@ ${ reflectorShim }
 ${ builtinAOContextShim }
 ${ builtinShadowContextShim }
 ${ renderOutputShim }
+const __tslpRealUniform = __TSL[ 'uniform' ];
+const uniform = ( ...args ) => __tslpRegisterLiveUniformNode( __tslpRealUniform( ...args ) );
 const __tslpRememberTextureArg = ( value ) => {
 	if ( ! value || value.isTexture !== true ) return;
 	const list = globalThis.__tslpTslTextureArgs || ( globalThis.__tslpTslTextureArgs = [] );

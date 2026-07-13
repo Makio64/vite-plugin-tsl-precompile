@@ -41,6 +41,7 @@ import {
 } from 'three/src/Three.Core.js';
 import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttribute.js';
 import StorageInstancedBufferAttribute from 'three/src/renderers/common/StorageInstancedBufferAttribute.js';
+import { registerLiveUniformNode } from './slim-support/live-uniform-registry.js';
 
 function slimMessage( name ) {
 
@@ -1301,7 +1302,7 @@ export function int( ...args ) { return inertNodeStub( args ); }
 export function uint( ...args ) { return inertNodeStub( args ); }
 export function bool( ...args ) { return inertNodeStub( args ); }
 export function color( ...args ) { return inertNodeStub( args ); }
-export function uniform( value, nodeType = null ) { return new UniformNode( value, nodeType ); }
+export function uniform( value, nodeType = null ) { return registerLiveUniformNode( new UniformNode( value, nodeType ) ); }
 export function uniformArray( values = [] ) {
 
 	const node = inertNodeStub( [], { values: Array.isArray( values ) ? values : [] } );

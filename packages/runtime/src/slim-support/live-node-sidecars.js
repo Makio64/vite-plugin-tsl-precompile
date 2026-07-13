@@ -8,6 +8,8 @@
  * keeps flowing into the hydrated UBO writer.
  */
 
+import { listLiveUniformNodes } from './live-uniform-registry.js';
+
 /**
  * Wire live runtime UniformNode instances from `sourceMaterial`'s node graph
  * back onto `artifact`'s `uniform.live` slots.
@@ -20,7 +22,8 @@ export function wireLiveUniformSidecarsToArtifact( artifact, sourceMaterial ) {
 
 	if ( ! artifact || ! sourceMaterial ) return 0;
 	const uniformNodes = collectLiveUniformNodes( sourceMaterial );
-	const uniformMatches = wireLiveUniformSlots( artifact, uniformNodes, { overlay: true } );
+	appendRegisteredUniformCandidates( artifact, uniformNodes );
+	const uniformMatches = wireLiveUniformSlots( artifact, uniformNodes, { overlay: true, sourceMaterial } );
 	const materialMatches = wireVolumeMaterialStepsSlot( artifact, sourceMaterial, { overlay: true } );
 	return uniformMatches + materialMatches;
 
@@ -46,6 +49,7 @@ export function wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, opts =
 	if ( ! artifact || ! sourceMaterial ) return counters;
 
 	const collected = collectLiveSidecarNodes( sourceMaterial );
+	appendRegisteredUniformCandidates( artifact, collected.uniformNodes );
 
 	appendArtifactSidecars( artifact, '_liveUpdateNodes', collected.updateNodes );
 	appendArtifactSidecars( artifact, '_liveUpdateBeforeNodes', collected.updateBeforeNodes );
@@ -54,7 +58,7 @@ export function wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, opts =
 	counters.updateBeforeNodes = collected.updateBeforeNodes.length;
 	counters.updateAfterNodes = collected.updateAfterNodes.length;
 
-	counters.uniformsMatched = wireLiveUniformSlots( artifact, collected.uniformNodes, { overlay: opts.overlay === true } );
+	counters.uniformsMatched = wireLiveUniformSlots( artifact, collected.uniformNodes, { overlay: opts.overlay === true, sourceMaterial } );
 	counters.uniformsMatched += wireVolumeMaterialStepsSlot( artifact, sourceMaterial, { overlay: opts.overlay === true } );
 	return counters;
 
@@ -91,62 +95,100 @@ function collectLiveSidecarNodes( sourceMaterial ) {
 
 }
 
+function appendRegisteredUniformCandidates( artifact, uniformNodes ) {
+
+	const hasSerializedIdentity = artifactPlanOwners( artifact ).some( ( owner ) => ( owner.uniformPlan || [] ).some( ( group ) =>
+		( group.slots || [] ).some( ( slot ) => slot && slot.source && Number.isInteger( slot.source.liveNodeId ) )
+	) );
+	if ( ! hasSerializedIdentity ) return;
+	for ( const node of listLiveUniformNodes() ) {
+
+		if ( node && ! uniformNodes.includes( node ) ) uniformNodes.push( node );
+
+	}
+
+}
+
+function artifactPlanOwners( artifact ) {
+
+	if ( ! artifact || typeof artifact !== 'object' ) return [];
+	const owners = [];
+	const seenPlans = new Set();
+	const append = ( owner ) => {
+
+		if ( ! owner || ! Array.isArray( owner.uniformPlan ) || seenPlans.has( owner.uniformPlan ) ) return;
+		seenPlans.add( owner.uniformPlan );
+		owners.push( owner );
+
+	};
+	append( artifact );
+	for ( const variant of Object.values( artifact.variants || {} ) ) append( variant );
+	return owners;
+
+}
+
 function wireLiveUniformSlots( artifact, uniformNodes, options = {} ) {
 
 	if ( ! Array.isArray( uniformNodes ) || uniformNodes.length === 0 ) return 0;
 
-	const used = new Set();
 	let matched = 0;
-	for ( const group of artifact.uniformPlan || [] ) {
+	for ( const owner of artifactPlanOwners( artifact ) ) {
 
-		for ( const slot of group.slots || [] ) {
+		const used = new Set();
+		const identityMatches = resolveSerializedIdentityMatches( owner, uniformNodes, options.sourceMaterial );
+		for ( const group of owner.uniformPlan || [] ) {
 
-			const source = ( slot && slot.source ) || {};
-			if ( source.kind !== 'uniform.live' || slot._liveNode ) continue;
-			const hasCapturedValue = uniformSlotHasCapturedValue( slot );
-			let match = null;
-			if ( source.name ) {
+			for ( const slot of group.slots || [] ) {
 
-				match = uniformNodes.find( ( node ) => ! used.has( node ) && node.name === source.name && valueMatchesUniformSlot( node.value, slot ) );
-				if ( ! match ) match = uniformNodes.find( ( node ) => node.name === source.name && valueMatchesUniformSlot( node.value, slot ) );
-				if ( ! match ) match = uniformNodes.find( ( node ) => ! used.has( node ) && node.name === source.name && valueMatchesDtype( node.value, slot.dtype || '' ) );
-				if ( ! match ) match = uniformNodes.find( ( node ) => node.name === source.name && valueMatchesDtype( node.value, slot.dtype || '' ) );
+				const source = ( slot && slot.source ) || {};
+				if ( source.kind !== 'uniform.live' || slot._liveNode ) continue;
+				const hasCapturedValue = uniformSlotHasCapturedValue( slot );
+				let match = Number.isInteger( source.liveNodeId ) ? identityMatches.get( source.liveNodeId ) || null : null;
+				if ( ! match ) match = resolveLiveNodePath( options.sourceMaterial, source.nodePath );
+				if ( match && ! valueMatchesDtype( match.value, slot.dtype || '' ) ) match = null;
+				if ( ! match && source.name ) {
 
-			}
-			if ( ! match ) match = uniformNodes.find( ( node ) => ! used.has( node ) && valueMatchesUniformSlot( node.value, slot ) );
-			if ( ! match ) match = uniformNodes.find( ( node ) => valueMatchesUniformSlot( node.value, slot ) );
-			const dtype = slot.dtype || slot.source && slot.source.valueSnapshot && slot.source.valueSnapshot.type || '';
-			if ( ! match && ( ! hasCapturedValue || ! isScalarUniformDtype( dtype ) ) ) {
-
-				const dtypeMatches = uniformNodes.filter( ( node ) => ! used.has( node ) && valueMatchesDtype( node.value, dtype ) );
-				if ( dtypeMatches.length === 1 ) match = dtypeMatches[ 0 ];
-				else {
-
-					const allDtypeMatches = uniformNodes.filter( ( node ) => valueMatchesDtype( node.value, dtype ) );
-					if ( allDtypeMatches.length === 1 ) match = allDtypeMatches[ 0 ];
+					match = uniformNodes.find( ( node ) => ! used.has( node ) && node.name === source.name && valueMatchesUniformSlot( node.value, slot ) );
+					if ( ! match ) match = uniformNodes.find( ( node ) => node.name === source.name && valueMatchesUniformSlot( node.value, slot ) );
+					if ( ! match ) match = uniformNodes.find( ( node ) => ! used.has( node ) && node.name === source.name && valueMatchesDtype( node.value, slot.dtype || '' ) );
+					if ( ! match ) match = uniformNodes.find( ( node ) => node.name === source.name && valueMatchesDtype( node.value, slot.dtype || '' ) );
 
 				}
+				if ( ! match ) match = uniformNodes.find( ( node ) => ! used.has( node ) && valueMatchesUniformSlot( node.value, slot ) );
+				if ( ! match ) match = uniformNodes.find( ( node ) => valueMatchesUniformSlot( node.value, slot ) );
+				const dtype = slot.dtype || slot.source && slot.source.valueSnapshot && slot.source.valueSnapshot.type || '';
+				if ( ! match && ( ! hasCapturedValue || ! isScalarUniformDtype( dtype ) ) ) {
 
-			}
-			if ( ! match ) continue;
-			Object.defineProperty( slot, '_liveNode', {
-				value: match,
-				enumerable: false,
-				configurable: true,
-				writable: true,
-			} );
-			if ( options.overlay === true ) {
+					const dtypeMatches = uniformNodes.filter( ( node ) => ! used.has( node ) && valueMatchesDtype( node.value, dtype ) );
+					if ( dtypeMatches.length === 1 ) match = dtypeMatches[ 0 ];
+					else {
 
-				Object.defineProperty( slot, '__tslpLiveSidecarOverlay', {
-					value: true,
+						const allDtypeMatches = uniformNodes.filter( ( node ) => valueMatchesDtype( node.value, dtype ) );
+						if ( allDtypeMatches.length === 1 ) match = allDtypeMatches[ 0 ];
+
+					}
+				}
+				if ( ! match ) continue;
+				Object.defineProperty( slot, '_liveNode', {
+					value: match,
 					enumerable: false,
 					configurable: true,
 					writable: true,
 				} );
+				if ( options.overlay === true ) {
+
+					Object.defineProperty( slot, '__tslpLiveSidecarOverlay', {
+						value: true,
+						enumerable: false,
+						configurable: true,
+						writable: true,
+					} );
+
+				}
+				used.add( match );
+				matched ++;
 
 			}
-			used.add( match );
-			matched ++;
 
 		}
 
@@ -156,50 +198,132 @@ function wireLiveUniformSlots( artifact, uniformNodes, options = {} ) {
 
 }
 
+function resolveSerializedIdentityMatches( artifact, uniformNodes, sourceMaterial ) {
+
+	const matches = new Map();
+	const representativeById = new Map();
+	for ( const group of artifact.uniformPlan || [] ) {
+
+		for ( const slot of group.slots || [] ) {
+
+			const source = slot && slot.source || {};
+			if ( source.kind !== 'uniform.live' || ! Number.isInteger( source.liveNodeId ) ) continue;
+			if ( ! representativeById.has( source.liveNodeId ) ) representativeById.set( source.liveNodeId, slot );
+			const pathMatch = resolveLiveNodePath( sourceMaterial, source.nodePath );
+			if ( pathMatch && valueMatchesDtype( pathMatch.value, slot.dtype || '' ) ) matches.set( source.liveNodeId, pathMatch );
+
+		}
+
+	}
+
+	const usedNodes = new Set( matches.values() );
+	const groupsBySignature = new Map();
+	for ( const [ liveNodeId, slot ] of representativeById ) {
+
+		if ( matches.has( liveNodeId ) ) continue;
+		const signature = uniformIdentitySignature( slot );
+		let group = groupsBySignature.get( signature );
+		if ( ! group ) groupsBySignature.set( signature, group = [] );
+		group.push( { liveNodeId, slot } );
+
+	}
+
+	for ( const group of groupsBySignature.values() ) {
+
+		group.sort( ( a, b ) => a.liveNodeId - b.liveNodeId );
+		const candidates = uniformNodes.filter( ( node ) => ! usedNodes.has( node ) && valueMatchesUniformSlot( node.value, group[ 0 ].slot ) );
+		// Only resolve when the candidate cardinality proves the mapping. If
+		// another equal-valued uniform exists elsewhere, retain the old
+		// name/value fallback instead of silently claiming a false identity.
+		if ( candidates.length !== group.length ) continue;
+		for ( let i = 0; i < group.length; i ++ ) {
+
+			matches.set( group[ i ].liveNodeId, candidates[ i ] );
+			usedNodes.add( candidates[ i ] );
+
+		}
+
+	}
+	return matches;
+
+}
+
+function uniformIdentitySignature( slot ) {
+
+	const source = slot && slot.source || {};
+	const snapshot = source.valueSnapshot || ( Object.prototype.hasOwnProperty.call( source, 'value' ) ? source.value : null );
+	let serialized = '';
+	try { serialized = JSON.stringify( snapshot ); } catch ( _ ) {}
+	return `${ source.name || '' }|${ slot && slot.dtype || '' }|${ serialized }`;
+
+}
+
+const UNSAFE_NODE_PATH_SEGMENTS = new Set( [ '__proto__', 'prototype', 'constructor' ] );
+
+function resolveLiveNodePath( sourceMaterial, nodePath ) {
+
+	if ( ! sourceMaterial || ! Array.isArray( nodePath ) || nodePath.length === 0 ) return null;
+	let current = sourceMaterial;
+	for ( const segment of nodePath ) {
+
+		if ( typeof segment !== 'string' || segment.length === 0 || UNSAFE_NODE_PATH_SEGMENTS.has( segment ) ) return null;
+		if ( ! current || ( typeof current !== 'object' && typeof current !== 'function' ) ) return null;
+		if ( ! Object.prototype.hasOwnProperty.call( current, segment ) ) return null;
+		try { current = current[ segment ]; } catch ( _ ) { return null; }
+
+	}
+	return current && current.isUniformNode === true ? current : null;
+
+}
+
 function wireVolumeMaterialStepsSlot( artifact, sourceMaterial, options = {} ) {
 
 	if ( ! artifact || ! isVolumeNodeMaterial( sourceMaterial ) ) return 0;
 	const steps = Number( sourceMaterial.steps );
 	if ( ! Number.isFinite( steps ) || steps <= 0 ) return 0;
 	let matched = 0;
-	for ( const group of artifact.uniformPlan || [] ) {
+	for ( const owner of artifactPlanOwners( artifact ) ) {
 
-		for ( const slot of group.slots || [] ) {
+		for ( const group of owner.uniformPlan || [] ) {
 
-			if ( ! isVolumeStepsUniformSlot( artifact, slot ) ) continue;
-			const liveSteps = {};
-			Object.defineProperty( liveSteps, 'value', {
-				get() {
+			for ( const slot of group.slots || [] ) {
 
-					const current = Number( sourceMaterial.steps );
-					return Number.isFinite( current ) && current > 0 ? current : steps;
+				if ( ! isVolumeStepsUniformSlot( owner, slot ) ) continue;
+				const liveSteps = {};
+				Object.defineProperty( liveSteps, 'value', {
+					get() {
 
-				},
-				enumerable: false,
-				configurable: true,
-			} );
-			Object.defineProperty( slot, '_liveNode', {
-				value: liveSteps,
-				enumerable: false,
-				configurable: true,
-				writable: true,
-			} );
-			if ( options.overlay === true ) {
+						const current = Number( sourceMaterial.steps );
+						return Number.isFinite( current ) && current > 0 ? current : steps;
 
-				Object.defineProperty( slot, '__tslpLiveSidecarOverlay', {
-					value: true,
+					},
+					enumerable: false,
+					configurable: true,
+				} );
+				Object.defineProperty( slot, '_liveNode', {
+					value: liveSteps,
 					enumerable: false,
 					configurable: true,
 					writable: true,
 				} );
+				if ( options.overlay === true ) {
+
+					Object.defineProperty( slot, '__tslpLiveSidecarOverlay', {
+						value: true,
+						enumerable: false,
+						configurable: true,
+						writable: true,
+					} );
+
+				}
+				if ( slot.source && slot.source.valueSnapshot && Number( slot.source.valueSnapshot.data ) <= 0 ) {
+
+					slot.source.valueSnapshot = { type: 'int', data: steps };
+
+				}
+				matched ++;
 
 			}
-			if ( slot.source && slot.source.valueSnapshot && Number( slot.source.valueSnapshot.data ) <= 0 ) {
-
-				slot.source.valueSnapshot = { type: 'int', data: steps };
-
-			}
-			matched ++;
 
 		}
 

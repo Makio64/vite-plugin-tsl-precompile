@@ -461,6 +461,7 @@ export function extractArtifact( cacheKey, state, material = null, object = null
 	}
 	const uniformPlan = extractUniformPlan( state, { material, object } );
 	patchMaterialSpecificUniformPlan( uniformPlan, materialShape );
+	annotateLiveUniformIdentities( uniformPlan, material );
 	// For each compute-storage buffer the user wired through a material
 	// `*Node` slot (e.g. `material.colorNode = uv().mul( colors.element( i ) )`),
 	// record `userPath` so the hydrator can rebind the live attribute in a
@@ -712,6 +713,115 @@ function findAttributePathOnMaterial( material, target ) {
 	}
 
 	return null;
+
+}
+
+const NODE_PATH_SKIP_KEYS = new Set( [
+	'parent', 'children', 'scene', 'camera', 'renderer', 'geometry', '_cache',
+	'domElement', 'sourceMaterial', 'constructor', '__proto__', 'prototype',
+] );
+const MAX_NODE_PATH_DEPTH = 24;
+
+/**
+ * Find an exact, serializable property path from a material's public `*Node`
+ * roots to a live TSL node. Unlike snapshot/name matching, the path remains
+ * unambiguous when several anonymous UniformNodes have the same type/value or
+ * when animation has already changed their values before replay hydration.
+ *
+ * @param {?Object} material
+ * @param {Object} target
+ * @return {?Array<string>}
+ */
+function findLiveNodePathOnMaterial( material, target ) {
+
+	if ( ! material || ! target || typeof material !== 'object' ) return null;
+	const rootKeys = Object.keys( material ).filter( ( key ) => key.endsWith( 'Node' ) ).sort();
+	for ( const rootKey of rootKeys ) {
+
+		let root = null;
+		try { root = material[ rootKey ]; } catch ( _ ) { continue; }
+		if ( ! root || ( typeof root !== 'object' && typeof root !== 'function' ) ) continue;
+		const suffix = findObjectPath( root, target );
+		if ( suffix ) return [ rootKey, ...suffix ];
+
+	}
+	return null;
+
+}
+
+function findObjectPath( root, target ) {
+
+	if ( root === target ) return [];
+	const seen = new Set();
+
+	function visit( value, depth ) {
+
+		if ( value === target ) return [];
+		if ( ! value || ( typeof value !== 'object' && typeof value !== 'function' ) ) return null;
+		if ( seen.has( value ) || depth >= MAX_NODE_PATH_DEPTH ) return null;
+		seen.add( value );
+
+		let keys = [];
+		try { keys = Object.getOwnPropertyNames( value ).sort(); } catch ( _ ) { return null; }
+		for ( const key of keys ) {
+
+			if ( NODE_PATH_SKIP_KEYS.has( key ) || key === 'length' ) continue;
+			let child = null;
+			try { child = value[ key ]; } catch ( _ ) { continue; }
+			if ( child === target ) return [ key ];
+			if ( ! child || ( typeof child !== 'object' && typeof child !== 'function' ) ) continue;
+			const suffix = visit( child, depth + 1 );
+			if ( suffix ) return [ key, ...suffix ];
+
+		}
+		return null;
+
+	}
+
+	return visit( root, 0 );
+
+}
+
+/**
+ * Stamp artifact-local object identity onto serializable `uniform.live`
+ * sources, plus an exact material-graph path when one exists. The in-process
+ * `_liveNode` remains authoritative; this metadata is for the JSON/build
+ * boundary where object identity would otherwise be lost.
+ *
+ * @param {Array} uniformPlan
+ * @param {?Object} material
+ */
+function annotateLiveUniformIdentities( uniformPlan, material ) {
+
+	if ( ! Array.isArray( uniformPlan ) ) return;
+	const pathByNode = new Map();
+	const idByNode = new Map();
+	for ( const group of uniformPlan ) {
+
+		for ( const slot of group && Array.isArray( group.slots ) ? group.slots : [] ) {
+
+			const source = slot && slot.source;
+			const liveNode = slot && slot._liveNode;
+			if ( ! source || source.kind !== 'uniform.live' || ! liveNode ) continue;
+			let liveNodeId = idByNode.get( liveNode );
+			if ( liveNodeId === undefined ) {
+
+				liveNodeId = idByNode.size;
+				idByNode.set( liveNode, liveNodeId );
+
+			}
+			let nodePath = pathByNode.get( liveNode );
+			if ( nodePath === undefined && material ) {
+
+				nodePath = findLiveNodePathOnMaterial( material, liveNode );
+				pathByNode.set( liveNode, nodePath );
+
+			}
+			slot.source = nodePath ? { ...source, liveNodeId, nodePath } : { ...source, liveNodeId };
+
+		}
+
+	}
 
 }
 

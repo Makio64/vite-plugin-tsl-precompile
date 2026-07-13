@@ -1,5 +1,7 @@
 import { MATERIAL_TEXTURE_PROPS } from './texture-props.js';
 
+const UNSAFE_NODE_PATH_SEGMENTS = new Set( [ '__proto__', 'prototype', 'constructor' ] );
+
 export const DYNAMIC_BINDING_TARGET = Object.freeze( {
 	UNIFORM_SLOT: 'uniform-slot',
 	SAMPLED_TEXTURE: 'sampled-texture',
@@ -63,7 +65,7 @@ const exactDescriptors = {
 		owner: 'material',
 		resolver: 'hydrator/live-node',
 		required: [],
-		optional: [ 'name', 'property', 'valueType', 'valueSnapshot' ],
+		optional: [ 'name', 'property', 'nodePath', 'liveNodeId', 'valueType', 'valueSnapshot' ],
 	} ),
 	'object3d.nodeUniform': freezeDescriptor( {
 		kind: 'object3d.nodeUniform',
@@ -279,6 +281,33 @@ export function validateDynamicBindingSource( source ) {
 			} );
 
 		}
+
+	}
+	if ( kind === 'uniform.live' && source.nodePath !== undefined ) {
+
+		const validPath = Array.isArray( source.nodePath )
+			&& source.nodePath.length > 0
+			&& source.nodePath.every( ( segment ) => typeof segment === 'string' && segment.length > 0 && ! UNSAFE_NODE_PATH_SEGMENTS.has( segment ) );
+		if ( ! validPath ) {
+
+			errors.push( {
+				code: 'dynamic-binding.node-path',
+				kind,
+				field: 'nodePath',
+				message: `${ kind } source "nodePath" must be a non-empty array of non-empty property names`,
+			} );
+
+		}
+
+	}
+	if ( kind === 'uniform.live' && source.liveNodeId !== undefined && ( ! Number.isInteger( source.liveNodeId ) || source.liveNodeId < 0 ) ) {
+
+		errors.push( {
+			code: 'dynamic-binding.live-node-id',
+			kind,
+			field: 'liveNodeId',
+			message: `${ kind } source "liveNodeId" must be a non-negative integer`,
+		} );
 
 	}
 	return errors;

@@ -19,6 +19,10 @@ import {
 	collectTRAASelfTextures,
 	wireTRAAResolveArtifact,
 } from '../src/slim-support/traa-replay.js';
+import {
+	clearLiveUniformRegistryForTests,
+	registerLiveUniformNode,
+} from '../src/slim-support/live-uniform-registry.js';
 
 // ---------------------------------------------------------------------------
 // Stub PrecompiledMaterial — mirrors the real class's contract: takes an
@@ -556,6 +560,124 @@ test( 'wireLiveNodeSidecarsToArtifact refuses same-dtype anonymous mismatches', 
 	assert.equal( slots[ 0 ]._liveNode, iterations );
 	assert.equal( slots[ 1 ]._liveNode, multiplier );
 	assert.equal( slots[ 2 ]._liveNode, iterations, 'duplicate snapshots may share the same live UniformNode' );
+
+} );
+
+test( 'wireLiveNodeSidecarsToArtifact resolves animated anonymous uniforms by nodePath', () => {
+
+	const effectorA = { isUniformNode: true, value: 0.75 };
+	const effectorB = { isUniformNode: true, value: 1.1 };
+	const sourceMaterial = {
+		positionNode: {
+			isNode: true,
+			branchB: { isNode: true, effector: effectorB },
+			branchA: { isNode: true, effector: effectorA },
+		},
+	};
+	const artifact = {
+		uniformPlan: [ {
+			slots: [
+				{
+					dtype: 'number',
+					source: {
+						kind: 'uniform.live',
+						valueSnapshot: { type: 'number', data: - 0.2 },
+						nodePath: [ 'positionNode', 'branchA', 'effector' ],
+					},
+				},
+				{
+					dtype: 'number',
+					source: {
+						kind: 'uniform.live',
+						valueSnapshot: { type: 'number', data: - 0.2 },
+						nodePath: [ 'positionNode', 'branchB', 'effector' ],
+					},
+				},
+				{
+					dtype: 'number',
+					source: {
+						kind: 'uniform.live',
+						valueSnapshot: { type: 'number', data: - 0.2 },
+						nodePath: [ 'positionNode', 'branchA', 'effector' ],
+					},
+				},
+				{
+					dtype: 'number',
+					source: {
+						kind: 'uniform.live',
+						valueSnapshot: { type: 'number', data: - 0.2 },
+						nodePath: [ 'positionNode', 'branchB', 'effector' ],
+					},
+				},
+			],
+		} ],
+	};
+
+	const counters = wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, { overlay: true } );
+	const slots = artifact.uniformPlan[ 0 ].slots;
+	assert.equal( counters.uniformsMatched, 4 );
+	assert.equal( slots[ 0 ]._liveNode, effectorA );
+	assert.equal( slots[ 1 ]._liveNode, effectorB );
+	assert.equal( slots[ 2 ]._liveNode, effectorA );
+	assert.equal( slots[ 3 ]._liveNode, effectorB );
+	assert.equal( slots[ 0 ].__tslpLiveSidecarOverlay, true );
+
+} );
+
+test( 'wireLiveNodeSidecarsToArtifact falls back when a serialized nodePath is stale', () => {
+
+	const liveNode = { isUniformNode: true, value: 3 };
+	const sourceMaterial = { colorNode: { isNode: true, liveNode } };
+	const artifact = {
+		uniformPlan: [ {
+			slots: [ {
+				dtype: 'number',
+				source: {
+					kind: 'uniform.live',
+					valueSnapshot: { type: 'number', data: 3 },
+					nodePath: [ 'positionNode', 'removedNode' ],
+				},
+			} ],
+		} ],
+	};
+
+	const counters = wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial );
+	assert.equal( counters.uniformsMatched, 1 );
+	assert.equal( artifact.uniformPlan[ 0 ].slots[ 0 ]._liveNode, liveNode );
+
+} );
+
+test( 'wireLiveNodeSidecarsToArtifact restores closure-only A/B/A/B identity from the live registry', () => {
+
+	clearLiveUniformRegistryForTests();
+	const effectorA = registerLiveUniformNode( { isUniformNode: true, value: - 0.2 } );
+	const effectorB = registerLiveUniformNode( { isUniformNode: true, value: - 0.2 } );
+	const makeSlots = () => [ 0, 1, 0, 1 ].map( ( liveNodeId ) => ( {
+		dtype: 'number',
+		source: {
+			kind: 'uniform.live',
+			liveNodeId,
+			valueSnapshot: { type: 'number', data: - 0.2 },
+		},
+	} ) );
+	const artifact = {
+		uniformPlan: [ {
+			slots: makeSlots(),
+		} ],
+		variants: {
+			'mrt-variant': { uniformPlan: [ { slots: makeSlots() } ] },
+		},
+	};
+	// Models Fn()-closure uniforms: no property path from the material reaches
+	// either node, but the slim TSL uniform factory registered both creations.
+	const sourceMaterial = { positionNode: { isNode: true } };
+
+	const counters = wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, { overlay: true } );
+	const slots = artifact.uniformPlan[ 0 ].slots;
+	assert.equal( counters.uniformsMatched, 8 );
+	assert.deepEqual( slots.map( ( slot ) => slot._liveNode ), [ effectorA, effectorB, effectorA, effectorB ] );
+	assert.deepEqual( artifact.variants[ 'mrt-variant' ].uniformPlan[ 0 ].slots.map( ( slot ) => slot._liveNode ), [ effectorA, effectorB, effectorA, effectorB ] );
+	clearLiveUniformRegistryForTests();
 
 } );
 

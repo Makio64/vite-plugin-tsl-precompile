@@ -39,6 +39,20 @@ revision to a transitive local-import closure, and use render-context
 fingerprints only for live variant selection rather than treating stored
 context as source freshness.
 
+**Live uniform identity wedge (2026-07-13).** Anonymous `uniform.live` slots now
+serialize artifact-local `liveNodeId` identity, plus an exact `nodePath` when the
+UniformNode is reachable from a material `*Node` root. The slim TSL `uniform()`
+facade registers runtime UniformNodes in a weak, Symbol-backed ledger, and
+`live-node-sidecars.js` reconnects repeated identities across the top-level
+artifact and every variant before falling back to name/value heuristics. This
+preserves graphs such as reflection's two equal-valued effectors reused as
+`A/B/A/B`; JSON previously reduced all four slots to indistinguishable `-0.2`
+snapshots. The e2e harness now calls the product helper instead of carrying a
+second matcher. Focused reflection still remains below the visual gate: the
+identity ledger updates correctly at later ticks, but its animation clock and
+the capture clock are not yet the same logical frame. That remaining issue is
+temporal scheduling/clock ownership, not uniform identity.
+
 ---
 
 ## 2026-06-09 audit refresh — corrections to the map

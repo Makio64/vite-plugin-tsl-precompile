@@ -60,6 +60,37 @@ test( 'validateDynamicBindingSource enforces required fields for material.* text
 
 } );
 
+test( 'validateDynamicBindingSource accepts only serializable uniform.live node paths', () => {
+
+	assert.equal( validateDynamicBindingSource( {
+		kind: 'uniform.live',
+		nodePath: [ 'positionNode', 'leftNode', 'valueNode' ],
+	} ).length, 0 );
+	for ( const nodePath of [ [], [ '' ], [ 'positionNode', 0 ], [ 'positionNode', '__proto__' ], [ 'constructor' ], 'positionNode' ] ) {
+
+		const errors = validateDynamicBindingSource( { kind: 'uniform.live', nodePath } );
+		assert.equal( errors.length, 1 );
+		assert.equal( errors[ 0 ].code, 'dynamic-binding.node-path' );
+		assert.equal( errors[ 0 ].field, 'nodePath' );
+
+	}
+
+} );
+
+test( 'validateDynamicBindingSource accepts only non-negative uniform.live identity ids', () => {
+
+	assert.equal( validateDynamicBindingSource( { kind: 'uniform.live', liveNodeId: 0 } ).length, 0 );
+	assert.equal( validateDynamicBindingSource( { kind: 'uniform.live', liveNodeId: 7 } ).length, 0 );
+	for ( const liveNodeId of [ - 1, 1.5, '1', null ] ) {
+
+		const errors = validateDynamicBindingSource( { kind: 'uniform.live', liveNodeId } );
+		assert.equal( errors.length, 1 );
+		assert.equal( errors[ 0 ].code, 'dynamic-binding.live-node-id' );
+
+	}
+
+} );
+
 test( 'collectArtifactDynamicBindings emits one entry per uniformPlan slot with a known source.kind', () => {
 
 	const artifact = {
