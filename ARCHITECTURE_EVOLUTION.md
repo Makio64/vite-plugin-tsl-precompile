@@ -224,6 +224,39 @@ strict bundle to 92 Node/TSL modules / 396.9 KiB rendered and 887,050 raw /
 generation remains the next resource adapter rather than being folded into
 background selection.
 
+**Replay-native output wedge (2026-07-13).** Renderer output and
+`RenderPipeline` now share versioned topology descriptors from the contract.
+The renderer-output key covers tone mapping, the active color space, sampled
+texture dimension (`2d` versus `2d-array`), and multiview; exposure is removed
+from identity because extraction/runtime already update it through the live
+`renderer.toneMappingExposure` uniform. The Three rewrite delegates cache-key,
+selection, texture-role validation, cloning, replacement, and disposal to
+`slim-replay-output.js`, and no longer calls `NodeManager.getOutputNode()` or
+mutates a registry artifact across render targets. Renderer-output replay
+rejects even a single mismatched configuration instead of falling back by
+shape. Dev capture drives the real renderer output pass and correlates the
+active private quad by both material UUID and NodeManager cache key before the
+caller render target is restored; it never scans the accumulated cache, so an
+older target/config cannot be mislabeled and an offscreen caller cannot leak
+its working color space into the output hash. RenderPipeline honors
+explicit/exact graph hashes; a sole capture is accepted only after its
+versioned transform/tone/color metadata exists and matches, while multiple
+unresolved graphs remain a typed ambiguity. RenderPipeline
+capture now compiles its real internal `fragmentNode`, including the context
+wrapper and implicit `renderOutput()` transform when enabled; hashes include
+the user graph, transform flag, tone mapper, and output color space. The public
+`renderPipeline` capture option now works directly, with `postProcessing` kept
+as an alias. The batch renderer's private `_renderOutput` fallback was deleted,
+so the focused `webgpu_tonemapping` fresh capture/replay exercises the product
+adapter and passes at infinite PSNR. Focused extraction proves transform-on WGSL
+contains the tone/color conversion while transform-off does not. The broader
+`webgpu_postprocessing` canary reaches the new captured pipeline but still
+fails closed on the pre-existing signed user-material pass-topology mismatch;
+that is the next semantic capture issue, not an output-artifact fallback.
+The strict bundle retains 92 Node/TSL modules / 396.9 KiB rendered and measures
+890,831 raw / 241,080 gzip bytes. Environment/fog scene topology is now the
+remaining live scene-node island before XR and resource adapters.
+
 ---
 
 ## 2026-06-09 audit refresh — corrections to the map

@@ -25,6 +25,7 @@
     "./kinds": "./src/kinds.js",
     "./render-context": "./src/render-context.js",
     "./render-selector": "./src/render-selector.js",
+    "./output-config": "./src/output-config.js",
     "./stable-json": "./src/stable-json.js",
     "./texture-props": "./src/texture-props.js",
     "./virtual-modules": "./src/virtual-modules.js",

@@ -93,6 +93,20 @@ function resolveFromUpdateNode( node, context = null ) {
 
 	}
 
+	// RendererReferenceNode is implemented on top of ReferenceBaseNode rather
+	// than ReferenceNode, so it does not enter the generic reference branch
+	// below. Match its stable public shape instead of relying on the imported
+	// `toneMappingExposure` singleton: extraction and compilation can resolve
+	// different three.js module entry points, making singleton identity differ.
+	if ( type === 'RendererReferenceNode' && node.property === 'toneMappingExposure' ) {
+
+		return node.node ? {
+			uniformNode: node.node,
+			source: { kind: 'renderer.toneMappingExposure' },
+		} : null;
+
+	}
+
 	if ( type === 'ReferenceNode' || type === 'MaterialReferenceNode' ) {
 
 		// Route by target identity. Material + scene + fog references

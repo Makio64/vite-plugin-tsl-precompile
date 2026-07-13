@@ -4,12 +4,8 @@
  * Expected rewrite:
  *   - Construction `new QuadMesh(new NodeMaterial())` becomes
  *     `new QuadMesh(new Material())`.
- *   - Late `quad.material.fragmentNode = this._nodes.getOutputNode(renderTarget.texture)`
- *     becomes `quad.material = new PrecompiledMaterial(attachArtifactTextureRefs(loadAux('render-output',
- *     hashPlainConfigSync({ toneMapping: this.toneMapping, toneMappingExposure: this.toneMappingExposure,
- *     outputColorSpace: this.outputColorSpace }, { shape: 'render-output', ...__tslpHashOpts })), renderTarget.texture))`.
- *   NOTE: render-output uses hashPlainConfigSync (config-based) not hashNodeGraphSync (graph-based)
- *   so the slim loadAux call matches the aux-marker registration hash.
+ *   - Output cache/material ownership delegates to the graph-free replay
+ *     adapter, including sampled texture topology and safe disposal.
  */
 
 import { test } from 'node:test';
@@ -32,19 +28,11 @@ test( 'rewrite/Renderer: NodeMaterial replaced with Material sentinel + fragment
 	const out = r.code;
 	assert.doesNotMatch( out, /new NodeMaterial\s*\(/ );
 	assert.match( out, /new QuadMesh\s*\(\s*new Material\s*\(\s*\)\s*\)/ );
-	assert.match( out, /\.material\s*=\s*new PrecompiledMaterial\s*\(/ );
-	assert.match( out, /loadAux\s*\(\s*["']render-output["']/ );
-	assert.match( out, /attachArtifactTextureRefs\s*\(/ );
+	assert.match( out, /\.material\s*=\s*createReplayRenderOutputMaterial\s*\(/ );
+	assert.match( out, /getReplayRenderOutputCacheKey\s*\(\s*this\s*,\s*renderTarget\.texture\s*\)/ );
 	assert.match( out, /renderTarget\.texture/ );
-	// render-output now uses hashPlainConfigSync (config-based), not hashNodeGraphSync (graph-based),
-	// to match the aux-marker registration.
-	assert.match( out, /hashPlainConfigSync\s*\(/ );
-	assert.doesNotMatch( out, /hashNodeGraphSync\s*\(\s*this\._nodes\.getOutputNode/ );
-	assert.match( out, /toneMapping:\s*this\.toneMapping/ );
-	assert.match( out, /toneMappingExposure:\s*this\.toneMappingExposure/ );
-	assert.match( out, /outputColorSpace:\s*this\.outputColorSpace/ );
-	assert.match( out, /shape:\s*["']render-output["']/ );
-	assert.match( out, /\.\.\.__tslpHashOpts/ );
+	assert.doesNotMatch( out, /this\._nodes\.getOutputNode/ );
+	assert.doesNotMatch( out, /this\._nodes\.getOutputCacheKey/ );
 
 	// Original fragmentNode assignment LHS should be gone.
 	assert.doesNotMatch( out, /\.material\.fragmentNode\s*=/ );
@@ -54,6 +42,7 @@ test( 'rewrite/Renderer: NodeMaterial replaced with Material sentinel + fragment
 
 	// Runtime imports + aux side-effect
 	assert.match( out, /from ['"]@tsl-precompile\/runtime['"]/ );
+	assert.match( out, /createReplayRenderOutputMaterial/ );
 	assert.match( out, /virtual:tsl-precompile\/__aux/ );
 
 } );

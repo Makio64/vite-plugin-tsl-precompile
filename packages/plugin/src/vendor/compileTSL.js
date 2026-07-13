@@ -23,11 +23,12 @@
  */
 
 import { extractUniformPlan } from './extractUniformPlan.js';
-import { observeRenderObjects } from './render-object-observer.js';
+import { observeRenderObjectRequests, observeRenderObjects } from './render-object-observer.js';
 import { DataUtils, FloatType, HalfFloatType, RGBAFormat, RenderTarget } from 'three';
 import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
 import { createRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
 import { createArtifactVariantPayload } from '@tsl-precompile/contract/artifact-variants';
+import { createRendererOutputConfig } from '@tsl-precompile/contract/output-config';
 
 /**
  * Describes a single binding inside a bind group in serializable form.
@@ -1169,6 +1170,10 @@ function sceneMaterialOwnsMRTNode( scene, mrtNode ) {
  *   a non-default fragment-output shape (e.g. DOF's `_CoCMaterial` uses
  *   `outputStruct(near, far)` against a 2-attachment RedFormat/HalfFloat RT).
  *   When provided, takes precedence over the auto-allocated MRT warm-up RT.
+ * @param {boolean} [options.captureRendererOutput=false] - Drive the real
+ *   renderer output pass, correlate its active private quad to the exact
+ *   observed NodeManager cache entry, and expose the artifact/config pair on
+ *   the returned array's non-enumerable `renderOutputCapture` sidecar.
  * @param {boolean} [options.skipWarmupRender=false] - Skip the extra synthetic render after compileAsync.
  * @return {Promise<Array<PrecompiledArtifact>>}
  */
@@ -1208,6 +1213,9 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 	const computeNodes = Array.isArray( options.computeNodes ) ? options.computeNodes : [];
 	const renderPipeline = options.renderPipeline || null;
+	const captureRendererOutput = options.captureRendererOutput === true;
+	const renderOutputObservations = [];
+	let renderOutputIdentity = null;
 
 	// Detect the MRT node to activate during warm-up. Resolved POST-lock so
 	// we observe the renderer's MRT in a quiescent moment (no concurrent aux
@@ -1262,6 +1270,21 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	const recordRenderObject = ( { renderObject, cacheKey } ) => {
 
 		if ( cacheKey === null || cacheKey === undefined ) return;
+		const observedMaterial = renderObject && renderObject.material || null;
+		// Record every observed material and correlate only after the render,
+		// when Renderer._quadCache tells us which private quad was active. Do
+		// not pre-filter by Three's private material name: downstream wrappers
+		// and version changes may rename it while preserving UUID ownership.
+		if ( captureRendererOutput && observedMaterial ) {
+
+			const materialUuid = observedMaterial.uuid || null;
+			if ( materialUuid && ! renderOutputObservations.some( ( entry ) => entry.cacheKey === cacheKey && entry.materialUuid === materialUuid ) ) {
+
+				renderOutputObservations.push( { cacheKey, materialUuid } );
+
+			}
+
+		}
 		let selector = '';
 		try {
 
@@ -1324,6 +1347,19 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	// fragment stage output but writeMask is not zero"). Save it
 	// unconditionally and restore in the `finally` block.
 	const prevRenderTarget = typeof renderer.getRenderTarget === 'function' ? renderer.getRenderTarget() : null;
+	const prevActiveCubeFace = typeof renderer.getActiveCubeFace === 'function' ? renderer.getActiveCubeFace() : 0;
+	const prevActiveMipmapLevel = typeof renderer.getActiveMipmapLevel === 'function' ? renderer.getActiveMipmapLevel() : 0;
+	const rendererStateSnapshot = {
+		hasAutoClear: !! renderer && 'autoClear' in renderer,
+		autoClear: renderer && renderer.autoClear,
+		xr: renderer && renderer.xr || null,
+		hasXREnabled: !! ( renderer && renderer.xr ) && 'enabled' in renderer.xr,
+		xrEnabled: renderer && renderer.xr && renderer.xr.enabled,
+		hasToneMapping: !! renderer && 'toneMapping' in renderer,
+		toneMapping: renderer && renderer.toneMapping,
+		hasOutputColorSpace: !! renderer && 'outputColorSpace' in renderer,
+		outputColorSpace: renderer && renderer.outputColorSpace,
+	};
 	let frameBufferWarmupRT = null;
 
 	// MRT warm-up render target. NodeMaterial.setup() in three.js gates the
@@ -1407,7 +1443,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	// renderer.currentSamples (Line2NodeMaterial's alpha-to-coverage branch)
 	// sees 0 samples and captures the non-MSAA shader variant. Borrow the same
 	// private framebuffer target during warm-up so extraction matches live render.
-	if ( ! mrtWarmupRT && ! prevRenderTarget && renderer && renderer.needsFrameBufferTarget === true &&
+	if ( ! captureRendererOutput && ! mrtWarmupRT && ! prevRenderTarget && renderer && renderer.needsFrameBufferTarget === true &&
 		typeof renderer._getFrameBufferTarget === 'function' &&
 		typeof renderer.setRenderTarget === 'function' ) {
 
@@ -1446,6 +1482,9 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	}
 
 	const stopObservingRenderObjects = observeRenderObjects( renderer, recordRenderObject );
+	const stopObservingRenderObjectRequests = captureRendererOutput
+		? observeRenderObjectRequests( renderer, recordRenderObject )
+		: () => {};
 	try {
 
 		// Activate (or clear) MRT on the renderer before the warm-up so
@@ -1530,6 +1569,12 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 		}
 
+		if ( captureRendererOutput ) {
+
+			renderOutputIdentity = captureActiveRendererOutputIdentity( renderer, renderOutputObservations );
+
+		}
+
 	} finally {
 
 		// Restore the renderer's MRT to whatever the host app had set before
@@ -1550,7 +1595,31 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		// compileAsync round-trip.
 		if ( typeof renderer.setRenderTarget === 'function' ) {
 
-			try { renderer.setRenderTarget( prevRenderTarget ); } catch ( _ ) { /* ignore */ }
+			try { renderer.setRenderTarget( prevRenderTarget, prevActiveCubeFace, prevActiveMipmapLevel ); } catch ( _ ) { /* ignore */ }
+
+		}
+
+		// RenderPipeline and the renderer-owned output pass temporarily mutate
+		// these properties. Treat capture as a transaction even when a nested
+		// render throws, so dev extraction cannot leak state into the app.
+		if ( rendererStateSnapshot.hasAutoClear ) {
+
+			try { renderer.autoClear = rendererStateSnapshot.autoClear; } catch ( _ ) { /* ignore */ }
+
+		}
+		if ( rendererStateSnapshot.xr && rendererStateSnapshot.hasXREnabled ) {
+
+			try { rendererStateSnapshot.xr.enabled = rendererStateSnapshot.xrEnabled; } catch ( _ ) { /* ignore */ }
+
+		}
+		if ( rendererStateSnapshot.hasToneMapping ) {
+
+			try { renderer.toneMapping = rendererStateSnapshot.toneMapping; } catch ( _ ) { /* ignore */ }
+
+		}
+		if ( rendererStateSnapshot.hasOutputColorSpace ) {
+
+			try { renderer.outputColorSpace = rendererStateSnapshot.outputColorSpace; } catch ( _ ) { /* ignore */ }
 
 		}
 
@@ -1569,6 +1638,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 		}
 
+		stopObservingRenderObjectRequests();
 		stopObservingRenderObjects();
 		for ( const [ mat, node ] of strippedMRTMaterials ) mat.mrtNode = node;
 
@@ -1713,8 +1783,64 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	artifacts.byMaterialUuid = byMaterialUuid;
 	artifacts.byMaterialVariants = byMaterialVariants;
 	artifacts.byComputeNode = byComputeNode;
+	if ( captureRendererOutput ) {
+
+		const artifact = renderOutputIdentity && artifacts.find( ( candidate ) =>
+			candidate.cacheKey === renderOutputIdentity.cacheKey &&
+			candidate.materialUuid === renderOutputIdentity.materialUuid
+		);
+		if ( ! artifact ) {
+
+			throw new Error(
+				'compileTSL: the active renderer output pass could not be correlated to its extracted artifact. ' +
+				'Do not select an output-transform artifact from the accumulated NodeManager cache.',
+			);
+
+		}
+		Object.defineProperty( artifacts, 'renderOutputCapture', {
+			value: { artifact, replayConfig: renderOutputIdentity.replayConfig },
+			enumerable: false,
+			configurable: true,
+		});
+
+	}
 
 	return artifacts;
+
+}
+
+function captureActiveRendererOutputIdentity( renderer, observations ) {
+
+	if ( ! renderer || typeof renderer._getFrameBufferTarget !== 'function' ) {
+
+		throw new Error( 'compileTSL: captureRendererOutput requires Renderer._getFrameBufferTarget().' );
+
+	}
+	const frameBufferTarget = renderer._getFrameBufferTarget();
+	const texture = frameBufferTarget && ( frameBufferTarget.texture || frameBufferTarget.textures && frameBufferTarget.textures[ 0 ] );
+	const quadData = texture && renderer._quadCache && typeof renderer._quadCache.get === 'function'
+		? renderer._quadCache.get( texture )
+		: null;
+	const material = quadData && quadData.quad && quadData.quad.material || null;
+	const materialUuid = material && material.uuid || null;
+	const matches = materialUuid
+		? observations.filter( ( entry ) => entry.materialUuid === materialUuid )
+		: [];
+	if ( ! texture || ! materialUuid || matches.length !== 1 ) {
+
+		throw new Error(
+			`compileTSL: expected one observed active renderer output pass, found ${ matches.length }. ` +
+			`Observed ${ observations.length } render material(s); framebuffer=${ texture ? 'yes' : 'no' }, ` +
+			`quad=${ quadData ? 'yes' : 'no' }, material=${ materialUuid || '(none)' }. ` +
+			'The output transform may be disabled or Three\'s private output-quad shape may have changed.',
+		);
+
+	}
+	return {
+		cacheKey: matches[ 0 ].cacheKey,
+		materialUuid,
+		replayConfig: createRendererOutputConfig( renderer, texture ),
+	};
 
 }
 

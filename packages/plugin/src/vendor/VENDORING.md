@@ -12,9 +12,10 @@ We vendor instead of depending on the fork as an npm package because the plugin'
 | `extractUniformPlan.js` | `src/nodes/precompile/extractUniformPlan.js` | tsl-precompile @ dc09e30 | Classifies every TSL update node into a serializable `source` descriptor. |
 
 `render-object-observer.js` is a local dev-only adapter, not an upstream copy.
-It is the single owner of the private `renderer._nodes.getForRender` tap used
-by extraction. Keep new live-capture subscribers on that adapter so HMR and
-duplicate plugin copies cannot stack independent wrappers.
+It is the single owner of the private `renderer._nodes.getForRender` build tap
+and `renderer._objects.get` cached-request tap used by extraction. Keep new
+live-capture subscribers on that adapter so HMR and duplicate plugin copies
+cannot stack independent wrappers.
 
 Local assumption: `Object3DNode` instances with an explicit `object3d.isCamera`
 target are serialized as `object3d.*` sources with `target: "camera"`. This

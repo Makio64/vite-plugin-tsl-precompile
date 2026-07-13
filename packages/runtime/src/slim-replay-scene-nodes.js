@@ -1,10 +1,9 @@
 /**
  * Temporary live-graph compatibility island for scene-owned nodes.
  *
- * Environment/fog cache keys and the private output-node method are retained
- * for compatibility with older unsigned artifacts and Three's private
- * renderer surface. Background owns a dedicated artifact replay adapter and
- * therefore no longer constructs any live TSL graph here.
+ * Environment/fog cache keys remain as a temporary compatibility island.
+ * Background and output passes own dedicated replay adapters and therefore no
+ * longer construct live TSL graphs here.
  */
 
 import {
@@ -14,10 +13,8 @@ import {
 	rangeFogFactor,
 	reference,
 	renderGroup,
-	screenUV,
 	texture,
 } from 'three/src/nodes/TSL.js';
-import { builtin } from 'three/src/nodes/accessors/BuiltinNode.js';
 import { hashArray } from 'three/src/nodes/core/NodeUtils.js';
 import { error } from 'three/src/utils.js';
 
@@ -164,22 +161,12 @@ export function createReplaySceneNodeCompatibility( manager ) {
 
 	}
 
-	function getOutputNode( outputTarget ) {
-
-		const renderer = manager.renderer;
-		return outputTarget.isArrayTexture
-			? texture( outputTarget, screenUV ).depth( builtin( 'gl_ViewID_OVR' ) ).renderOutput( renderer.toneMapping, renderer.currentColorSpace )
-			: texture( outputTarget, screenUV ).renderOutput( renderer.toneMapping, renderer.currentColorSpace );
-
-	}
-
 	return {
 		cacheLib,
 		getCacheKey,
 		getCacheNode,
 		getEnvironmentNode,
 		getFogNode,
-		getOutputNode,
 		updateEnvironment,
 		updateFog,
 	};

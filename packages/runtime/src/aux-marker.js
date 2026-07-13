@@ -4,7 +4,7 @@
  * Dev-time companion to `extractBackgroundArtifact` etc. in the plugin.
  * The author calls `precompileAuxiliary(renderer, scene, camera, opts)`
  * once after scene setup; the marker walks the live aux-pass inputs
- * (`scene.backgroundNode`, a passed `postProcessing.outputNode`,
+ * (`scene.backgroundNode`, a passed `renderPipeline.outputNode`,
  * `scene.children` for lights), hashes each via the runtime graph-hasher,
  * runs extraction in-browser against a throwaway scene, and POSTs each
  * captured artifact to the dev-capture endpoint tagged with its aux shape.
@@ -20,6 +20,7 @@ import { hashNodeGraphSync, hashPlainConfigSync } from './graph-hash.js';
 import { registerAuxArtifact } from './aux-loader.js';
 import { collectEffectNodes } from './slim-support/postprocess-effects.js';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
+import { createRenderPipelineConfig } from '@tsl-precompile/contract/output-config';
 
 const logged = new Set();
 function logOnce( key, fn ) {
@@ -73,7 +74,10 @@ function collectAuxPassNodes( opts ) {
  * @param {Object} camera - A camera valid for the scene.
  * @param {Object} opts
  * @param {string} opts.devEndpoint - e.g. '/__tsl-precompile/capture'.
- * @param {?Object} [opts.postProcessing] - An optional PostProcessing instance whose `outputNode` should be captured.
+ * @param {?Object} [opts.renderPipeline] - A RenderPipeline whose real final material should be captured.
+ * @param {?string} [opts.renderPipelineName] - Friendly name for the RenderPipeline capture.
+ * @param {?Object} [opts.postProcessing] - Backward-compatible alias for `renderPipeline`.
+ * @param {?string} [opts.postProcessingName] - Backward-compatible alias for `renderPipelineName`.
  * @param {?Object} [opts.three] - The three module (fallback to scene's constructor's module).
  * @param {string} [opts.threeVersion='unknown']
  * @param {string} [opts.pluginVersion=ARTIFACT_TOOLCHAIN_VERSION]
@@ -160,15 +164,17 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 
 	}
 
-	// PostProcessing --------------------------------------------------------
-	if ( opts.postProcessing && opts.postProcessing.outputNode && opts.postProcessing.outputNode.isNode ) {
+	// RenderPipeline / legacy PostProcessing -------------------------------
+	const renderPipeline = opts.renderPipeline || opts.postProcessing || null;
+	if ( renderPipeline && renderPipeline.outputNode && renderPipeline.outputNode.isNode ) {
 
 		const shape = 'post-process';
 		try {
 
-			const configHash = hashNodeGraphSync( opts.postProcessing.outputNode, { shape, ...hashOpts } );
-			const captureName = opts.postProcessingName || `aux-${ shape }-${ configHash.slice( 0, 12 ) }`;
-			const captured = await capturePostProcessingLive( renderer, opts.postProcessing, opts, hashOpts );
+			const replayConfig = createRenderPipelineConfig( renderPipeline );
+			const configHash = hashNodeGraphSync( replayConfig, { shape, ...hashOpts } );
+			const captureName = opts.renderPipelineName || opts.postProcessingName || `aux-${ shape }-${ configHash.slice( 0, 12 ) }`;
+			const captured = await capturePostProcessingLive( renderer, renderPipeline, scene, camera, opts, hashOpts );
 			const artifact = captured && captured.artifact ? captured.artifact : captured;
 			const extraArtifacts = captured && Array.isArray( captured.extraArtifacts ) ? captured.extraArtifacts : [];
 			trackLocal( shape, configHash, artifact, captureName );
@@ -443,20 +449,9 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 		const shape = 'render-output';
 		try {
 
-			// `toneMappingExposure` belongs in the hash because three.js bakes
-			// the exposure into a `uniform.live` UniformNode whose snapshot is
-			// captured at extraction time. Two scenes with the same tone-mapper
-			// + colour-space but different exposure produce visually different
-			// frames yet, without exposure in the hash, share a registry slot —
-			// so whichever artifact is registered first wins for the other and
-			// the second scene replays at the wrong exposure. Including
-			// exposure here partitions the registry per-exposure.
-			const configHash = hashPlainConfigSync( {
-				toneMapping: renderer && renderer.toneMapping,
-				toneMappingExposure: renderer && renderer.toneMappingExposure,
-				outputColorSpace: renderer && renderer.outputColorSpace,
-			}, { shape, ...hashOpts } );
-			const artifact = await captureRenderOutputLive( renderer, scene, camera, opts );
+			const captured = await captureRenderOutputLive( renderer, scene, camera, opts );
+			const artifact = captured.artifact;
+			const configHash = hashPlainConfigSync( captured.replayConfig, { shape, ...hashOpts } );
 			trackLocal( shape, configHash, artifact );
 			results.push( await post( opts.devEndpoint, {
 				materialShape: shape,
@@ -522,35 +517,36 @@ async function captureBackgroundLive( renderer, scene, camera, opts ) {
 
 }
 
-async function capturePostProcessingLive( renderer, postProcessing, opts, hashOpts = null ) {
+async function capturePostProcessingLive( renderer, renderPipeline, scene, camera, opts, hashOpts = null ) {
 
 	const three = opts.three || null;
 	const compileTSL = opts.compileTSL || ( await lazyLoadCompileTSL() );
 
-	// PostProcessing exposes its outputNode but not the internal material
-	// directly. The simplest capture path is to build a tiny scene whose
-	// geometry is a fullscreen quad carrying a NodeMaterial with colorNode =
-	// outputNode. compileTSL extracts it like any other material.
-	if ( ! three || ! three.NodeMaterial || ! three.Scene || ! three.QuadMesh ) {
+	// Compile through the real pipeline so the artifact includes Three's
+	// context wrapper and implicit renderOutput(toneMapping, colorSpace) pass.
+	if ( ! three || ! three.Scene ) {
 
-		throw new Error( 'capturePostProcessingLive: opts.three must expose NodeMaterial/Scene/QuadMesh' );
+		throw new Error( 'capturePostProcessingLive: opts.three must expose Scene' );
 
 	}
-	const mat = new three.NodeMaterial();
-	mat.name = 'PostProcessing.material';
-	mat.colorNode = postProcessing.outputNode;
-	const scene = new three.Scene();
-	scene.add( new three.QuadMesh( mat ) );
-	const camera = opts.camera || ( three.PerspectiveCamera ? new three.PerspectiveCamera( 45, 1, 0.1, 100 ) : null );
+	const captureScene = new three.Scene();
+	const captureCamera = camera || opts.camera || ( three.PerspectiveCamera ? new three.PerspectiveCamera( 45, 1, 0.1, 100 ) : null );
+	// A pipeline may already have rendered before capture. Force `_update()` so
+	// a recently changed outputNode/transform flag cannot reuse stale WGSL.
+	renderPipeline.needsUpdate = true;
 
 	// Isolate this aux capture from any global MRT the host might have set
 	// (e.g. webgpu_multiple_rendertargets's `renderer.setMRT(...)` in init).
 	// Otherwise compileTSL would inherit it and emit a multi-output fragment
 	// for our single-output post-process material, crashing WGSL validation.
-	const artifacts = await compileTSL( renderer, scene, camera, { noGlobalMRT: true } );
-	const artifact = artifacts.find( ( a ) => a.materialUuid === mat.uuid ) || artifacts[ 0 ];
-	if ( ! artifact ) throw new Error( 'capturePostProcessingLive: no artifacts produced' );
-	const extraArtifacts = await captureRegisteredEffectArtifactsLive( renderer, postProcessing.outputNode, opts, hashOpts || {
+	const artifacts = await compileTSL( renderer, captureScene, captureCamera, { renderPipeline, noGlobalMRT: true } );
+	const pipelineMaterial = renderPipeline._quadMesh && renderPipeline._quadMesh.material;
+	const artifact = artifacts.find( ( a ) => pipelineMaterial && a.materialUuid === pipelineMaterial.uuid )
+		|| artifacts.find( ( a ) => a.materialShape === 'render-pipeline' );
+	if ( ! artifact ) throw new Error( 'capturePostProcessingLive: no RenderPipeline artifact produced' );
+	artifact.materialShape = 'post-process';
+	artifact.replayConfig = renderPipelineReplayMetadata( createRenderPipelineConfig( renderPipeline ) );
+	const extraArtifacts = await captureRegisteredEffectArtifactsLive( renderer, renderPipeline.outputNode, opts, hashOpts || {
 		threeVersion: opts.threeVersion,
 		pluginVersion: opts.pluginVersion || ARTIFACT_TOOLCHAIN_VERSION,
 	}, artifact._liveUpdateBeforeNodes );
@@ -687,11 +683,57 @@ async function captureNodeMaterialAsAuxLive( renderer, material, opts, compileTS
 async function captureRenderOutputLive( renderer, scene, camera, opts ) {
 
 	const compileTSL = opts.compileTSL || ( await lazyLoadCompileTSL() );
-	const artifacts = await compileTSL( renderer, scene, camera, { noGlobalMRT: true } );
-	const artifact = artifacts.find( ( a ) => a.materialShape === 'output-transform' || a.materialShape === 'render-output' );
-	if ( ! artifact ) throw new Error( 'captureRenderOutputLive: no output-transform artifact produced' );
+	const artifacts = await compileTSL( renderer, scene, camera, { noGlobalMRT: true, captureRendererOutput: true } );
+	const captured = artifacts && artifacts.renderOutputCapture;
+	const artifact = captured && captured.artifact;
+	const replayConfig = captured && captured.replayConfig;
+	if ( ! artifact || ! replayConfig || replayConfig.schema !== 'renderer-output@1' ) {
+
+		throw new Error( 'captureRenderOutputLive: compileTSL did not return an exact active renderer-output capture' );
+
+	}
 	artifact.materialShape = 'render-output';
-	return jsonSafe( artifact );
+	const sampledTexture = inferRenderOutputSampledTexture( artifact );
+	if ( replayConfig.sampledTexture !== sampledTexture ) {
+
+		throw new Error(
+			`captureRenderOutputLive: active output config samples ${ replayConfig.sampledTexture }, ` +
+			`but the correlated artifact samples ${ sampledTexture }`,
+		);
+
+	}
+	artifact.replayConfig = replayConfig;
+	return { artifact: jsonSafe( artifact ), replayConfig };
+
+}
+
+function inferRenderOutputSampledTexture( artifact ) {
+
+	for ( const group of artifact.uniformPlan || [] ) {
+
+		for ( const entry of group.textures || [] ) {
+
+			if ( ! entry || entry.bindingKind === 'sampler' ) continue;
+			const source = entry.source || {};
+			if ( source.kind !== 'artifact.texture' || source.mapping !== 300 ) continue;
+			const type = String( entry.textureType || '' ).toLowerCase().replace( /_/g, '-' );
+			return type === '2d-array' || type === 'array' ? '2d-array' : '2d';
+
+		}
+
+	}
+	throw new Error( 'captureRenderOutputLive: output artifact has no framebuffer sampled texture' );
+
+}
+
+function renderPipelineReplayMetadata( config ) {
+
+	return {
+		schema: config.schema,
+		outputColorTransform: config.outputColorTransform,
+		toneMapping: config.toneMapping,
+		outputColorSpace: config.outputColorSpace,
+	};
 
 }
 

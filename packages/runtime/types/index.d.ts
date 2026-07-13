@@ -163,7 +163,10 @@ export function hashArtifactContentSync( artifact: unknown, opts: HashVersionOpt
 
 export interface AuxCaptureOptions extends Record<string, unknown> {
 	devEndpoint?: string;
+	renderPipeline?: unknown;
+	renderPipelineName?: string;
 	postProcessing?: unknown;
+	postProcessingName?: string;
 	three?: unknown;
 	threeVersion?: string;
 	pluginVersion?: string;
@@ -195,6 +198,10 @@ export interface AuxArtifactEntry<TArtifact = unknown> extends AuxArtifactSummar
 	artifact: TArtifact;
 }
 
+export interface ResolvedAuxArtifactEntry<TArtifact = unknown> extends AuxArtifactEntry<TArtifact> {
+	matchedBy: 'binding' | 'hash' | 'unique';
+}
+
 export function precompileAuxiliary(
 	renderer: unknown,
 	scene: unknown,
@@ -209,10 +216,17 @@ export function listAux(): AuxArtifactSummary[];
 export function findAux<TArtifact = unknown>( shape: string, nameOrConfigHash: string ): AuxArtifactEntry<TArtifact> | null;
 export function bindAuxConfig<TNode = unknown>( node: TNode, shapeOrEntry: string | Pick<AuxArtifactSummary, 'shape' | 'configHash'>, configHash?: string ): TNode;
 export function bindAuxByName<TNode = unknown>( node: TNode, shape: string, nameOrConfigHash: string ): TNode;
+export function resolveAuxArtifactForInput<TArtifact = unknown>( shape: string, input: unknown, options?: { computeConfigHash?: ( input: unknown, options: HashVersionOptions ) => string; defaultHashOptions?: Omit<HashVersionOptions, 'shape'>; allowUniqueFallback?: boolean } ): ResolvedAuxArtifactEntry<TArtifact>;
+export function cloneAuxArtifactForReplay<TArtifact = unknown>( artifact: TArtifact ): TArtifact;
 export function attachArtifactTextureRefs<TArtifact = unknown>( artifact: TArtifact, texture: unknown ): TArtifact;
 export function attachPostprocessTextureRefs<TArtifact = unknown>( artifact: TArtifact, outputNode: unknown ): TArtifact;
 export function attachPostprocessUpdateBeforeNodes<TArtifact = unknown>( artifact: TArtifact, outputNode: unknown ): TArtifact;
 export function attachPostprocessObject3DTargets<TMaterial = unknown>( material: TMaterial, outputNode: unknown ): TMaterial;
+
+// Internal helpers used by rewritten Three renderer modules.
+export function getReplayRenderOutputCacheKey( renderer: unknown, outputTexture: unknown ): string;
+export function createReplayRenderOutputMaterial( renderer: unknown, outputTexture: unknown, previousMaterial?: unknown ): PrecompiledMaterial;
+export function createReplayRenderPipelineMaterial( pipeline: unknown, previousMaterial?: unknown ): PrecompiledMaterial;
 export function __resetAuxRegistryForTests(): void;
 
 // ---------- Hydrator ----------

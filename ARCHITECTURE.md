@@ -92,6 +92,7 @@ Shared extractor/codegen/runtime contract helpers.
 - `src/graph-normalize.js` — one graph-normalization implementation imported by plugin and runtime hashers.
 - `src/render-context.js` — canonical shader-topology signature for renderer, scene, camera, object, geometry, clipping, and MRT state.
 - `src/render-selector.js` — graph-free, canonical RenderObject topology used to select a captured variant in compiler-free replay.
+- `src/output-config.js` — versioned renderer-output and RenderPipeline topology descriptors shared by capture, rewrites, and replay; live exposure is intentionally excluded.
 - `src/artifact-variants.js` — the shared variant-local payload field list used by capture, registries, codegen, and runtime.
 - `src/stable-json.js` — deterministic JSON encoding for persisted selectors and payload comparisons.
 - `src/kinds.js` — shared `source.kind` registry, blocked-kind reasons, artifact payload/aggregate validation, and source-kind collection.
@@ -106,7 +107,8 @@ Ships with the user's bundle. Runtime only.
 - `src/slim-replay-lighting.js` — graph-free per-scene light state used by RenderList and semantic variant selection.
 - `src/slim-replay-node-manager.js` — compiler-free render/compute state manager; hydrates artifacts directly and caches by material identity plus semantic topology.
 - `src/slim-replay-background.js` — compiler-free background pass; selects a captured artifact from the raw scene input, isolates texture refs per scene, and preserves Three's clear/XR/sky-mesh behavior.
-- `src/slim-replay-scene-nodes.js` — temporary compatibility island for environment/fog/output node construction; removed stage-by-stage as renderer auxiliaries gain replay adapters.
+- `src/slim-replay-output.js` — graph-free renderer-output and RenderPipeline material adapter; selects exact topology, isolates texture refs per owner, validates 2D/array sampling, and disposes replacements safely.
+- `src/slim-replay-scene-nodes.js` — temporary compatibility island for environment/fog node construction; removed stage-by-stage as renderer auxiliaries gain replay adapters.
 - `src/hydrate/*` — runtime hydration modules: static binding allocation, texture/source resolution, built-in texture reconstruction, live texture registry, and per-frame texture rebinders.
 - `src/hydrate/variants/artifact-variant-selector.js` — exact semantic variant selection; signed artifacts fail closed on an uncaptured topology while old unsigned artifacts retain cache-key/MRT compatibility.
 - `src/slim-support/live-scene-index.js` — first productized slim-support helper for live texture indexing and null-image healing.

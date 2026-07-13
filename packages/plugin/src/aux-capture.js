@@ -30,6 +30,7 @@ import { computeArtifactContentHash, computeNodeGraphHash, computePlainConfigHas
 import { normalizeRevision } from './_shared/normalize-revision.js';
 import { compileTSL } from './vendor/compileTSL.js';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
+import { createRenderPipelineConfig } from '@tsl-precompile/contract/output-config';
 
 let initialised = false;
 
@@ -185,60 +186,38 @@ export async function extractPostProcessingArtifact( factory, opts = {} ) {
 	const renderer = makeRenderer( webgpu );
 	await renderer.init();
 
-	const { outputNode, name = 'post-process-aux' } = await factory( { webgpu, core, tsl } );
+	const {
+		outputNode,
+		name = 'post-process-aux',
+		outputColorTransform = true,
+		toneMapping,
+		outputColorSpace,
+	} = await factory( { webgpu, core, tsl } );
 	if ( ! outputNode ) throw new Error( 'extractPostProcessingArtifact: factory must return { outputNode: <TSL node> }' );
+	if ( toneMapping !== undefined ) renderer.toneMapping = toneMapping;
+	if ( outputColorSpace !== undefined ) renderer.outputColorSpace = outputColorSpace;
 
-	const configHash = hashInput( 'post-process', outputNode, core, opts );
-
-	// Drive the PostProcessing path: three.js exposes PostProcessing as
-	// a renderer-level class. It builds an internal fullscreen NodeMaterial
-	// whose colorNode is the `outputNode`. compileTSL walks it via the scene
-	// render pass.
+	// Drive Three's real renderer-level pipeline. Its internal fragmentNode
+	// includes context and optional output transform semantics that a throwaway
+	// NodeMaterial.colorNode cannot reproduce.
 	const scene = new core.Scene();
 	const camera = new core.PerspectiveCamera( 45, 1, 0.1, 100 );
 	camera.position.set( 0, 0, 3 );
 
-	const PP = webgpu.PostProcessing;
-	if ( ! PP ) throw new Error( 'extractPostProcessingArtifact: three/webgpu does not export PostProcessing' );
+	const PP = webgpu.RenderPipeline || webgpu.PostProcessing;
+	if ( ! PP ) throw new Error( 'extractPostProcessingArtifact: three/webgpu does not export RenderPipeline/PostProcessing' );
 	const pp = new PP( renderer );
 	pp.outputNode = outputNode;
+	pp.outputColorTransform = outputColorTransform === true;
+	const replayConfig = createRenderPipelineConfig( pp );
+	const configHash = hashInput( 'post-process', replayConfig, core, opts );
 
-	// `compileTSL` runs `renderer.compileAsync` internally, which walks the
-	// render list. For post-process, compileAsync of the scene isn't enough —
-	// we have to explicitly compile the pp pass via `pp.render()`-adjacent
-	// machinery. Easiest: compileTSL returns whatever artifacts flowed; the
-	// post-process material will be the one whose vertexNode equals the
-	// fullscreen-quad transform AND colorNode references the outputNode.
-	// If none matches, we fall back to a direct compileAsync.
-	const preArtifacts = await compileTSL( renderer, scene, camera );
-	let artifact = null;
-	for ( const a of preArtifacts ) {
-
-		if ( a.materialName === 'PostProcessing.material' || a.name === 'PostProcessing.material' ) { artifact = a; break; }
-		if ( a.materialShape === 'post-process' || a.materialShape === 'output-transform' ) { artifact = a; break; }
-
-	}
-
-	if ( ! artifact ) {
-
-		// Direct path: build a tiny scene with a QuadMesh carrying the
-		// outputNode. compileTSL will extract it as a regular material.
-		const { QuadMesh } = webgpu;
-		const mat = new webgpu.NodeMaterial();
-		mat.name = 'PostProcessing.material';
-		mat.vertexNode = null;   // default fullscreen
-		mat.colorNode = outputNode;
-		const quad = new QuadMesh ? new QuadMesh( mat ) : null;
-		if ( quad ) {
-
-			const ppScene = new core.Scene();
-			ppScene.add( quad );
-			const ppArtifacts = await compileTSL( renderer, ppScene, camera );
-			artifact = ppArtifacts.find( ( a ) => a.materialUuid === mat.uuid ) || ppArtifacts[ 0 ];
-
-		}
-
-	}
+	// `compileAsync(scene)` alone cannot build the final full-screen pass;
+	// compileTSL's renderPipeline option drives pp.render() and records it.
+	const preArtifacts = await compileTSL( renderer, scene, camera, { renderPipeline: pp, noGlobalMRT: true } );
+	const pipelineMaterial = pp._quadMesh && pp._quadMesh.material;
+	const artifact = preArtifacts.find( ( a ) => pipelineMaterial && a.materialUuid === pipelineMaterial.uuid )
+		|| preArtifacts.find( ( a ) => a.materialShape === 'render-pipeline' );
 
 	if ( ! artifact ) {
 
@@ -246,6 +225,13 @@ export async function extractPostProcessingArtifact( factory, opts = {} ) {
 
 	}
 
+	artifact.materialShape = 'post-process';
+	artifact.replayConfig = {
+		schema: replayConfig.schema,
+		outputColorTransform: replayConfig.outputColorTransform,
+		toneMapping: replayConfig.toneMapping,
+		outputColorSpace: replayConfig.outputColorSpace,
+	};
 	stamp( artifact, 'post-process', configHash, name, core, opts );
 	if ( typeof renderer.dispose === 'function' ) renderer.dispose();
 	return { artifact, configHash, materialShape: 'post-process', hash: artifact.__hash };

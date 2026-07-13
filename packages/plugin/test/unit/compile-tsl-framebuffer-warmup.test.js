@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { compileTSL } from '../../src/vendor/compileTSL.js';
+import { createMockGPUCanvasContext, installMockWebGPU } from '../../src/mock-webgpu.js';
 
 test( 'compileTSL binds the renderer framebuffer target during canvas warm-up', async () => {
 
@@ -53,6 +54,129 @@ test( 'compileTSL binds the renderer framebuffer target during canvas warm-up', 
 	assert.deepEqual( calls.find( ( call ) => call[ 0 ] === 'compileAsync' ), [ 'compileAsync', framebufferTarget ] );
 	assert.deepEqual( calls.find( ( call ) => call[ 0 ] === 'render' ), [ 'render', framebufferTarget ] );
 	assert.equal( currentRenderTarget, null, 'compileTSL restores the prior canvas render target' );
+
+} );
+
+test( 'compileTSL correlates the active renderer output across stale caches and restores an offscreen target', async () => {
+
+	installMockWebGPU();
+	const webgpu = await import( 'three/webgpu' );
+	const core = await import( 'three' );
+	const renderer = new webgpu.WebGPURenderer( { canvas: makeCanvas(), antialias: false } );
+	await renderer.init();
+
+	const scene = new core.Scene();
+	const camera = new core.PerspectiveCamera( 45, 1, 0.1, 10 );
+	camera.position.z = 3;
+	scene.add( new core.Mesh( new core.BoxGeometry(), new webgpu.MeshBasicNodeMaterial() ) );
+	const firstOutput = new core.RenderTarget( 16, 16 );
+	const secondOutput = new core.RenderTarget( 16, 16 );
+	const offscreen = new core.RenderTarget( 4, 4 );
+
+	try {
+
+		renderer.setOutputRenderTarget( firstOutput );
+		renderer.toneMapping = core.ReinhardToneMapping;
+		renderer.render( scene, camera );
+		const first = await compileTSL( renderer, scene, camera, {
+			noGlobalMRT: true,
+			captureRendererOutput: true,
+		} );
+		assert.ok( first.renderOutputCapture, 'fresh capture produces an exact renderer-output sidecar' );
+		assert.match( first.renderOutputCapture.artifact.fragmentShader, /reinhardToneMapping/i );
+
+		renderer.setOutputRenderTarget( secondOutput );
+		renderer.toneMapping = core.NeutralToneMapping;
+		renderer.render( scene, camera );
+		renderer.setRenderTarget( offscreen, 3, 2 );
+		const second = await compileTSL( renderer, scene, camera, {
+			noGlobalMRT: true,
+			captureRendererOutput: true,
+		} );
+
+		const outputArtifacts = second.filter( ( artifact ) => artifact.materialShape === 'output-transform' );
+		assert.equal( outputArtifacts.length, 2, 'the accumulated cache still contains the stale first output' );
+		assert.match( outputArtifacts[ 0 ].fragmentShader, /reinhardToneMapping/i );
+		assert.match( second.renderOutputCapture.artifact.fragmentShader, /neutralToneMapping/i );
+		assert.equal( second.renderOutputCapture.artifact.materialUuid, renderer._quadCache.get( renderer._frameBufferTargets.get( secondOutput ).texture ).quad.material.uuid );
+		assert.equal( renderer.getRenderTarget(), offscreen, 'capture restores the caller-owned offscreen target' );
+		assert.equal( renderer.getActiveCubeFace(), 3, 'capture restores the caller-owned cube face' );
+		assert.equal( renderer.getActiveMipmapLevel(), 2, 'capture restores the caller-owned mip level' );
+		assert.equal( renderer.currentColorSpace, core.ColorManagement.workingColorSpace );
+		assert.equal( second.renderOutputCapture.replayConfig.currentColorSpace, renderer.outputColorSpace );
+
+	} finally {
+
+		firstOutput.dispose();
+		secondOutput.dispose();
+		offscreen.dispose();
+		renderer.dispose();
+
+	}
+
+} );
+
+test( 'compileTSL restores renderer state when a nested render pipeline throws', async () => {
+
+	const target = { label: 'caller-target' };
+	let currentTarget = target;
+	let activeCubeFace = 4;
+	let activeMipmapLevel = 2;
+	const originalRender = () => {};
+	const originalRenderObjectRequest = ( renderObject ) => renderObject;
+	const renderer = {
+		autoClear: true,
+		xr: { enabled: true },
+		toneMapping: 3,
+		outputColorSpace: 'display-p3',
+		render: originalRender,
+		_nodes: {
+			nodeBuilderCache: new Map(),
+			getForRenderCacheKey( renderObject ) { return renderObject && renderObject.cacheKey || 'unused'; },
+			getForRender() { return null; },
+		},
+		_objects: { get: originalRenderObjectRequest },
+		getRenderTarget() { return currentTarget; },
+		getActiveCubeFace() { return activeCubeFace; },
+		getActiveMipmapLevel() { return activeMipmapLevel; },
+		setRenderTarget( nextTarget, nextCubeFace = 0, nextMipmapLevel = 0 ) {
+
+			currentTarget = nextTarget;
+			activeCubeFace = nextCubeFace;
+			activeMipmapLevel = nextMipmapLevel;
+
+		},
+		getMRT() { return null; },
+		setMRT() {},
+		async compileAsync() {},
+	};
+	const scene = { userData: {}, traverse() {} };
+	const renderPipeline = {
+		render() {
+
+			renderer.autoClear = false;
+			renderer.xr.enabled = false;
+			renderer.toneMapping = 0;
+			renderer.outputColorSpace = 'working';
+			renderer._objects.get( { cacheKey: 'pipeline-output', material: { uuid: 'pipeline-output' } } );
+			throw new Error( 'nested output failure' );
+
+		},
+	};
+
+	await assert.rejects(
+		compileTSL( renderer, scene, {}, { renderPipeline, captureRendererOutput: true } ),
+		/nested output failure/,
+	);
+	assert.equal( currentTarget, target );
+	assert.equal( activeCubeFace, 4 );
+	assert.equal( activeMipmapLevel, 2 );
+	assert.equal( renderer.autoClear, true );
+	assert.equal( renderer.xr.enabled, true );
+	assert.equal( renderer.toneMapping, 3 );
+	assert.equal( renderer.outputColorSpace, 'display-p3' );
+	assert.equal( renderer.render, originalRender );
+	assert.equal( renderer._objects.get, originalRenderObjectRequest, 'failure cleanup restores the cached-request observer seam' );
 
 } );
 
@@ -178,3 +302,30 @@ test( 'compileTSL leaves material-owned single-output MRTs on the surrounding ta
 	assert.equal( currentRenderTarget, null );
 
 } );
+
+function makeCanvas( width = 16, height = 16 ) {
+
+	let context = null;
+	return {
+		width,
+		height,
+		clientWidth: width,
+		clientHeight: height,
+		style: {},
+		getContext( kind ) {
+
+			if ( kind !== 'webgpu' ) return null;
+			if ( ! context ) context = createMockGPUCanvasContext();
+			return context;
+
+		},
+		addEventListener() {},
+		removeEventListener() {},
+		getBoundingClientRect() {
+
+			return { left: 0, top: 0, width, height, right: width, bottom: height, x: 0, y: 0 };
+
+		},
+	};
+
+}

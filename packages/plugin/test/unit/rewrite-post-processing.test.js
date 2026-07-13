@@ -3,8 +3,8 @@
  *
  * Expected rewrite:
  *   - `const material = new NodeMaterial()` becomes `const material = new Material()`.
- *   - `this._quadMesh.material.fragmentNode = <expr>` becomes
- *     `this._quadMesh.material = new PrecompiledMaterial(loadAux('render-output', hashNodeGraphSync(<expr>, { shape: 'render-output', ...__tslpHashOpts })))`.
+ *   - `this._quadMesh.material.fragmentNode = <expr>` delegates to the
+ *     graph-free replay adapter, which selects the captured real pipeline.
  */
 
 import { test } from 'node:test';
@@ -28,14 +28,7 @@ test( 'rewrite/PostProcessing: bare NodeMaterial → Material sentinel; fragment
 	assert.doesNotMatch( out, /new NodeMaterial\s*\(/ );
 	assert.match( out, /const\s+material\s*=\s*new\s+Material\s*\(\s*\)/ );
 	assert.match( out, /this\._quadMesh\.material\s*=/ );
-	assert.match( out, /new PrecompiledMaterial\s*\(/ );
-	assert.match( out, /preparePrecompiledPostprocess\s*\(/ );
-	assert.match( out, /attachPostprocessTextureRefs\s*\(/ );
-	assert.match( out, /attachPostprocessUpdateBeforeNodes\s*\(/ );
-	assert.match( out, /attachPostprocessObject3DTargets\s*\(/ );
-	assert.match( out, /loadAux\s*\(\s*["']post-process["']/ );
-	assert.match( out, /hashNodeGraphSync\s*\(\s*this\.outputNode/ );
-	assert.match( out, /shape:\s*["']post-process["']/ );
+	assert.match( out, /createReplayRenderPipelineMaterial\s*\(\s*this\s*,\s*this\._quadMesh\.material\s*\)/ );
 	assert.doesNotMatch( out, /outputNode\s*=\s*renderOutput\s*\(/ );
 	assert.doesNotMatch( out, /import\s*\{[^}]*renderOutput[^}]*\}\s*from/ );
 	assert.doesNotMatch( out, /nodes\/TSL\.js/ );
@@ -45,7 +38,7 @@ test( 'rewrite/PostProcessing: bare NodeMaterial → Material sentinel; fragment
 
 	// Runtime imports + aux side-effect + Material import
 	assert.match( out, /from ['"]@tsl-precompile\/runtime['"]/ );
-	assert.match( out, /attachPostprocessObject3DTargets/ );
+	assert.match( out, /createReplayRenderPipelineMaterial/ );
 	assert.match( out, /virtual:tsl-precompile\/__aux/ );
 
 } );

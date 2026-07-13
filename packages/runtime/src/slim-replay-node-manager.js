@@ -244,12 +244,6 @@ class ReplayNodeManager extends DataMap {
 
 	}
 
-	getOutputNode( outputTarget ) {
-
-		return this._sceneNodes.getOutputNode( outputTarget );
-
-	}
-
 	updateBefore( renderObject ) {
 
 		const state = renderObject.getNodeBuilderState();

@@ -14,7 +14,7 @@ import { BackSide, CubeUVReflectionMapping, REVISION } from 'three/src/constants
 import { error } from 'three/src/utils.js';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import PrecompiledMaterial from './_vendor-PrecompiledMaterial.js';
-import { resolveAuxArtifactForInput } from './aux-loader.js';
+import { cloneAuxArtifactForReplay, resolveAuxArtifactForInput } from './aux-loader.js';
 import { hashNodeGraphSync } from './graph-hash.js';
 
 const _clearColor = /*@__PURE__*/ new Color4();
@@ -220,18 +220,7 @@ function ensureBackgroundMesh( sceneData, background, selection ) {
 
 function cloneBackgroundArtifact( sourceArtifact, background ) {
 
-	const descriptors = Object.getOwnPropertyDescriptors( sourceArtifact );
-	if ( sourceArtifact._textureRefs instanceof Map ) {
-
-		descriptors._textureRefs = {
-			value: new Map( sourceArtifact._textureRefs ),
-			enumerable: false,
-			configurable: true,
-			writable: true,
-		};
-
-	}
-	const artifact = Object.defineProperties( {}, descriptors );
+	const artifact = cloneAuxArtifactForReplay( sourceArtifact );
 	wireDirectBackgroundTexture( artifact, background );
 	return artifact;
 

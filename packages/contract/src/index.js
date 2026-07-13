@@ -9,5 +9,6 @@ export * from './artifact-variants.js';
 export * from './versions.js';
 export * from './render-context.js';
 export * from './render-selector.js';
+export * from './output-config.js';
 export * from './stable-json.js';
 export * from './virtual-modules.js';

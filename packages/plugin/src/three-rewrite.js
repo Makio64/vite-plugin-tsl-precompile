@@ -359,19 +359,19 @@ function rewriteCubeRenderTarget( ast, ctx ) {
 //           -> inner `new NodeMaterial()` becomes `new Material()` (plain
 //              vanilla Material from three core) as a sentinel.
 //   L1458: quad.material.fragmentNode = this._nodes.getOutputNode( renderTarget.texture );
-//           -> `quad.material = new PrecompiledMaterial( loadAux( 'render-output',
-//                hashNodeGraphSync( this._nodes.getOutputNode( renderTarget.texture ),
-//                                   { shape: 'render-output', ...__tslpHashOpts } ) ) );`
+//           -> `quad.material = createReplayRenderOutputMaterial(
+//                this, renderTarget.texture, quad.material );`
+// The adjacent NodeManager cache-key call is redirected to the same adapter so
+// sampled texture dimension and multiview participate in replacement identity.
 //
-// The sentinel Material carries `.name` until the late assignment swaps it
-// for the PrecompiledMaterial. PrecompiledMaterial honours `.needsUpdate`,
-// so the sibling `quad.material.needsUpdate = true` on L1459 stays valid
-// after the swap.
+// The sentinel Material is disposed by the adapter after a valid precompiled
+// replacement exists. The sibling `.needsUpdate = true` remains valid.
 
 function rewriteRenderer( ast, ctx ) {
 
 	let foundConstruct = false;
 	let foundAssign = false;
+	let foundCacheKey = false;
 
 	traverse( ast, {
 		NewExpression( path ) {
@@ -396,16 +396,32 @@ function rewriteRenderer( ast, ctx ) {
 			path.replaceWith( t.identifier( 'outputNode' ) );
 
 		},
+		VariableDeclarator( path ) {
+
+			if ( ! t.isIdentifier( path.node.id, { name: 'cacheKey' } ) ) return;
+			const init = path.node.init;
+			if ( ! t.isCallExpression( init ) || ! t.isMemberExpression( init.callee ) ) return;
+			if ( ! t.isMemberExpression( init.callee.object ) ) return;
+			if ( ! t.isThisExpression( init.callee.object.object ) || ! t.isIdentifier( init.callee.object.property, { name: '_nodes' } ) ) return;
+			if ( ! t.isIdentifier( init.callee.property, { name: 'getOutputCacheKey' } ) ) return;
+			path.node.init = t.callExpression( t.identifier( 'getReplayRenderOutputCacheKey' ), [
+				t.thisExpression(),
+				t.memberExpression( t.identifier( 'renderTarget' ), t.identifier( 'texture' ) ),
+			] );
+			foundCacheKey = true;
+
+		},
 		AssignmentExpression( path ) {
 
 			if ( ! matchFragmentNodeAssign( path.node ) ) return;
 			const owner = path.node.left.object.object;   // e.g. `quad`
 			const rhs = path.node.right;
 			const textureRef = extractRenderOutputTextureExpr( rhs );
+			if ( ! textureRef ) throw new Error( 'Renderer: shape changed (output fragmentNode no longer samples getOutputNode(texture))' );
 			path.replaceWith( t.assignmentExpression(
 				'=',
 				t.memberExpression( t.cloneNode( owner ), t.identifier( 'material' ) ),
-				buildRenderOutputExpr( textureRef ),
+				buildRenderOutputExpr( textureRef, owner ),
 			) );
 			foundAssign = true;
 
@@ -414,8 +430,8 @@ function rewriteRenderer( ast, ctx ) {
 
 	if ( ! foundConstruct ) throw new Error( 'Renderer: shape changed (no `new NodeMaterial()` found)' );
 	if ( ! foundAssign ) throw new Error( 'Renderer: shape changed (no `<X>.material.fragmentNode = <Y>` assignment found)' );
+	if ( ! foundCacheKey ) throw new Error( 'Renderer: shape changed (no NodeManager output cache-key call found)' );
 
-	injectHashOptsConst( ast, ctx );
 	injectMaterialImport( ast );
 	ctx.touched = true;
 
@@ -473,18 +489,15 @@ function rewritePostProcessing( ast, ctx ) {
 
 			if ( ! matchFragmentNodeAssign( path.node ) ) return;
 			const owner = path.node.left.object.object;   // `this._quadMesh`
-			// Hash only the USER-provided input (`this.outputNode`), not the
-			// tone-mapping/color-space wrap on the RHS. That way the rewritten
-			// file stops calling `renderOutput(...)` and the TSL import of
-			// renderOutput becomes unused → Rollup can drop it.
-			const outputNodeExpr = t.memberExpression(
-				t.thisExpression(),
-				t.identifier( 'outputNode' ),
-			);
+			// The runtime adapter hashes the user graph together with Three's
+			// output-transform state and replays the captured real pipeline.
 			path.replaceWith( t.assignmentExpression(
 				'=',
 				t.memberExpression( t.cloneNode( owner ), t.identifier( 'material' ) ),
-				buildPostProcessExpr( outputNodeExpr ),
+				t.callExpression( t.identifier( 'createReplayRenderPipelineMaterial' ), [
+					t.thisExpression(),
+					t.memberExpression( t.cloneNode( owner ), t.identifier( 'material' ) ),
+				] ),
 			) );
 			foundAssign = true;
 
@@ -517,7 +530,6 @@ function rewritePostProcessing( ast, ctx ) {
 	if ( ! foundConstruct ) throw new Error( 'PostProcessing: shape changed (no `new NodeMaterial()` found)' );
 	if ( ! foundAssign ) throw new Error( 'PostProcessing: shape changed (no `<X>.material.fragmentNode = <Y>` assignment found)' );
 
-	injectHashOptsConst( ast, ctx );
 	injectMaterialImport( ast );
 	ctx.touched = true;
 
@@ -1657,98 +1669,17 @@ function buildPrecompiledExpr( shape, inputExpr, textureRefExpr = null ) {
 
 }
 
-function buildPostProcessExpr( outputNodeExpr ) {
-
-	const hashOpts = t.objectExpression( [
-		t.objectProperty( t.identifier( 'shape' ), t.stringLiteral( 'post-process' ) ),
-		t.spreadElement( t.identifier( '__tslpHashOpts' ) ),
-	] );
-	const hashCall = t.callExpression(
-		t.identifier( 'hashNodeGraphSync' ),
-		[ t.cloneNode( outputNodeExpr ), hashOpts ],
-	);
-	const loadCall = t.callExpression(
-		t.identifier( 'loadAux' ),
-		[ t.stringLiteral( 'post-process' ), hashCall ],
-	);
-	const wiredTextureRefs = t.callExpression(
-		t.identifier( 'attachPostprocessTextureRefs' ),
-		[ loadCall, t.cloneNode( outputNodeExpr ) ],
-	);
-	const artifactExpr = t.callExpression(
-		t.identifier( 'attachPostprocessUpdateBeforeNodes' ),
-		[ wiredTextureRefs, t.cloneNode( outputNodeExpr ) ],
-	);
-	const prepareCall = t.callExpression(
-		t.identifier( 'preparePrecompiledPostprocess' ),
-		[
-			t.objectExpression( [
-				t.objectProperty( t.identifier( 'outputNode' ), t.cloneNode( outputNodeExpr ) ),
-				t.objectProperty( t.identifier( 'loadAux' ), t.identifier( 'loadAux' ) ),
-				t.objectProperty( t.identifier( 'PrecompiledMaterial' ), t.identifier( 'PrecompiledMaterial' ) ),
-			] ),
-		],
-	);
-	const materialExpr = t.newExpression( t.identifier( 'PrecompiledMaterial' ), [ artifactExpr ] );
-	const targetedMaterialExpr = t.callExpression(
-		t.identifier( 'attachPostprocessObject3DTargets' ),
-		[ materialExpr, t.cloneNode( outputNodeExpr ) ],
-	);
-	return t.sequenceExpression( [
-		prepareCall,
-		targetedMaterialExpr,
-	] );
-
-}
-
 /**
- * Build: new PrecompiledMaterial(
- *   attachArtifactTextureRefs(
- *     loadAux( 'render-output',
- *       hashPlainConfigSync(
- *         { toneMapping: this.toneMapping, toneMappingExposure: this.toneMappingExposure, outputColorSpace: this.outputColorSpace },
- *         { shape: 'render-output', ...__tslpHashOpts }
- *       )
- *     ),
- *     <textureRefExpr>
- *   )
- * )
- *
- * When textureRefExpr is null, omits the attachArtifactTextureRefs wrapper.
+ * Delegate output artifact selection, texture-role validation, cloning, and
+ * material disposal to the runtime replay adapter.
  */
-function buildRenderOutputExpr( textureRefExpr = null ) {
+function buildRenderOutputExpr( textureRefExpr, ownerExpr ) {
 
-	const hashOpts = t.objectExpression( [
-		t.objectProperty( t.identifier( 'shape' ), t.stringLiteral( 'render-output' ) ),
-		t.spreadElement( t.identifier( '__tslpHashOpts' ) ),
+	return t.callExpression( t.identifier( 'createReplayRenderOutputMaterial' ), [
+		t.thisExpression(),
+		t.cloneNode( textureRefExpr ),
+		t.memberExpression( t.cloneNode( ownerExpr ), t.identifier( 'material' ) ),
 	] );
-	const configObj = t.objectExpression( [
-		t.objectProperty(
-			t.identifier( 'toneMapping' ),
-			t.memberExpression( t.thisExpression(), t.identifier( 'toneMapping' ) ),
-		),
-		t.objectProperty(
-			t.identifier( 'toneMappingExposure' ),
-			t.memberExpression( t.thisExpression(), t.identifier( 'toneMappingExposure' ) ),
-		),
-		t.objectProperty(
-			t.identifier( 'outputColorSpace' ),
-			t.memberExpression( t.thisExpression(), t.identifier( 'outputColorSpace' ) ),
-		),
-	] );
-	const hashCall = t.callExpression(
-		t.identifier( 'hashPlainConfigSync' ),
-		[ configObj, hashOpts ],
-	);
-	const loadCall = t.callExpression(
-		t.identifier( 'loadAux' ),
-		[ t.stringLiteral( 'render-output' ), hashCall ],
-	);
-	const artifactExpr = textureRefExpr ? t.callExpression(
-		t.identifier( 'attachArtifactTextureRefs' ),
-		[ loadCall, t.cloneNode( textureRefExpr ) ],
-	) : loadCall;
-	return t.newExpression( t.identifier( 'PrecompiledMaterial' ), [ artifactExpr ] );
 
 }
 
@@ -1873,6 +1804,9 @@ function injectRuntimeImports( ast ) {
 			t.importSpecifier( t.identifier( 'preparePrecompiledPostprocess' ), t.identifier( 'preparePrecompiledPostprocess' ) ),
 			t.importSpecifier( t.identifier( 'hashNodeGraphSync' ), t.identifier( 'hashNodeGraphSync' ) ),
 			t.importSpecifier( t.identifier( 'hashPlainConfigSync' ), t.identifier( 'hashPlainConfigSync' ) ),
+			t.importSpecifier( t.identifier( 'getReplayRenderOutputCacheKey' ), t.identifier( 'getReplayRenderOutputCacheKey' ) ),
+			t.importSpecifier( t.identifier( 'createReplayRenderOutputMaterial' ), t.identifier( 'createReplayRenderOutputMaterial' ) ),
+			t.importSpecifier( t.identifier( 'createReplayRenderPipelineMaterial' ), t.identifier( 'createReplayRenderPipelineMaterial' ) ),
 		],
 		t.stringLiteral( RUNTIME_PACKAGE ),
 	);

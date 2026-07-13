@@ -174,8 +174,8 @@ export function loadAux( shape, configHash ) {
  * @private
  * @param {string} shape
  * @param {Object|Function|null} input
- * @param {{ computeConfigHash?: Function, defaultHashOptions?: { threeVersion: string, pluginVersion: string } }} [options]
- * @return {{ shape: string, configHash: string, name: ?string, artifact: Object }}
+ * @param {{ computeConfigHash?: Function, defaultHashOptions?: { threeVersion: string, pluginVersion: string }, allowUniqueFallback?: boolean }} [options]
+ * @return {{ shape: string, configHash: string, name: ?string, artifact: Object, matchedBy: 'binding'|'hash'|'unique' }}
  */
 export function resolveAuxArtifactForInput( shape, input, options = {} ) {
 
@@ -204,7 +204,7 @@ export function resolveAuxArtifactForInput( shape, input, options = {} ) {
 	if ( boundHash ) {
 
 		const artifact = REGISTRY.get( key( shape, boundHash ) );
-		if ( artifact ) return auxEntry( shape, boundHash, artifact );
+		if ( artifact ) return resolvedAuxEntry( shape, boundHash, artifact, 'binding' );
 		throw auxSelectionError(
 			'AUX_ARTIFACT_NOT_FOUND',
 			`[tsl-precompile/aux] no exact ${ JSON.stringify( shape ) } artifact exists for the bound configHash ` +
@@ -217,6 +217,7 @@ export function resolveAuxArtifactForInput( shape, input, options = {} ) {
 
 	}
 
+	const attemptedHashes = [];
 	if ( typeof options.computeConfigHash === 'function' ) {
 
 		const hashDomains = new Map();
@@ -238,14 +239,19 @@ export function resolveAuxArtifactForInput( shape, input, options = {} ) {
 			let computedHash = null;
 			try { computedHash = options.computeConfigHash( input, { shape, ...hashOptions } ); } catch ( _ ) { computedHash = null; }
 			if ( typeof computedHash !== 'string' || computedHash.length === 0 ) continue;
+			attemptedHashes.push( computedHash );
 			const artifact = REGISTRY.get( key( shape, computedHash ) );
-			if ( artifact ) return auxEntry( shape, computedHash, artifact );
+			if ( artifact ) return resolvedAuxEntry( shape, computedHash, artifact, 'hash' );
 
 		}
 
 	}
 
-	if ( entries.length === 1 ) return entries[ 0 ];
+	if ( entries.length === 1 && options.allowUniqueFallback !== false ) {
+
+		return { ...entries[ 0 ], matchedBy: 'unique' };
+
+	}
 	if ( entries.length === 0 ) {
 
 		throw auxSelectionError(
@@ -254,6 +260,19 @@ export function resolveAuxArtifactForInput( shape, input, options = {} ) {
 				`Run dev capture for this scene, then rebuild the slim bundle.`,
 			shape,
 			null,
+			entries,
+		);
+
+	}
+	if ( entries.length === 1 ) {
+
+		throw auxSelectionError(
+			'AUX_ARTIFACT_NOT_FOUND',
+			`[tsl-precompile/aux] the active ${ JSON.stringify( shape ) } configuration does not match the captured artifact. ` +
+			`Computed configHash${ attemptedHashes.length === 1 ? '' : 'es' }: ${ attemptedHashes.length === 0 ? '(unavailable)' : attemptedHashes.join( ', ' ) }. ` +
+			`Known capture: ${ formatAuxEntries( entries ) }. Recapture this configuration; exact replay adapters do not guess by shape.`,
+			shape,
+			attemptedHashes[ 0 ] || null,
 			entries,
 		);
 
@@ -296,6 +315,12 @@ function auxEntry( shape, configHash, artifact ) {
 		artifact,
 		hashOptions: threeVersion && pluginVersion ? { threeVersion, pluginVersion } : null,
 	};
+
+}
+
+function resolvedAuxEntry( shape, configHash, artifact, matchedBy ) {
+
+	return { ...auxEntry( shape, configHash, artifact ), matchedBy };
 
 }
 
@@ -402,7 +427,8 @@ export function listAux() {
 /**
  * Find an aux artifact by shape and either its friendly capture name or its
  * config hash. Friendly names come from `precompileAuxiliary(..., {
- * postProcessingName })` or from the generated `aux-<shape>-<hash>` default.
+ * renderPipelineName })` (legacy: `postProcessingName`) or from the generated
+ * `aux-<shape>-<hash>` default.
  *
  * @param {string} shape
  * @param {string} nameOrConfigHash
@@ -727,6 +753,43 @@ export function attachArtifactTextureRefs( artifact, texture ) {
 	} );
 
 	return artifact;
+
+}
+
+/**
+ * Clone an aux artifact for one replay owner while preserving immutable
+ * shader/plan data and isolating mutable live sidecars. Registry artifacts are
+ * process-wide templates; renderer targets, scenes, and post-process pipelines
+ * must never share `_textureRefs` or live update arrays.
+ *
+ * @param {Object} sourceArtifact
+ * @return {Object}
+ */
+export function cloneAuxArtifactForReplay( sourceArtifact ) {
+
+	if ( ! sourceArtifact || typeof sourceArtifact !== 'object' ) return sourceArtifact;
+	const descriptors = Object.getOwnPropertyDescriptors( sourceArtifact );
+	if ( sourceArtifact._textureRefs instanceof Map ) {
+
+		descriptors._textureRefs = {
+			value: new Map( sourceArtifact._textureRefs ),
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		};
+
+	}
+	if ( Array.isArray( sourceArtifact._liveUpdateBeforeNodes ) ) {
+
+		descriptors._liveUpdateBeforeNodes = {
+			value: sourceArtifact._liveUpdateBeforeNodes.slice(),
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		};
+
+	}
+	return Object.defineProperties( {}, descriptors );
 
 }
 

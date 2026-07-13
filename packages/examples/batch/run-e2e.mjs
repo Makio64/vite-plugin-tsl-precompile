@@ -1429,6 +1429,12 @@ function __trackAuxCapture( promise, label ) {
 	window.__tslpAuxCapturePending = ( window.__tslpAuxCapturePending | 0 ) + 1;
 	let tracked;
 	tracked = Promise.resolve( promise )
+		.then( ( results ) => {
+			for ( const result of Array.isArray( results ) ? results : [] ) {
+				if ( result && result.ok === false ) console.warn( '[tslp-e2e] ' + label + ' result failed:', result.shape, result.error );
+			}
+			return results;
+		} )
 		.catch( ( err ) => console.warn( '[tslp-e2e] ' + label + ' failed:', err && err.message || err ) )
 		.finally( () => {
 			window.__tslpAuxCapturePending = Math.max( 0, ( window.__tslpAuxCapturePending | 0 ) - 1 );
@@ -10309,53 +10315,6 @@ function __trackDebugShaderAsync( renderer ) {
 		try { return await super.getArrayBufferAsync( attribute, ...rest ); }
 		catch ( _ ) { return new Float32Array( 1 ).buffer; }
 	}
-	_renderOutput( target ) {
-		// The slim bundle's internal loadAux (ng) reads from a private Map (rg)
-		// that has no exported setter and is always empty at runtime. Pre-populate
-		// this._quadCache (which super._renderOutput checks BEFORE calling ng) with
-		// a PrecompiledMaterial obtained from Slim.loadAux — the exported registry
-		// that Slim.registerAuxArtifacts() correctly populates.
-		//
-		// Slim.loadAux uses shape-fallback: if any 'render-output' artifact is
-		// registered it returns it (regardless of hash) with a console.warn. This
-		// means the correct artifact is served as long as one was captured.
-		try {
-			const cacheKey = this._nodes && this._nodes.getOutputCacheKey ? this._nodes.getOutputCacheKey() : '';
-			const cached = this._quadCache && this._quadCache.get( target.texture );
-			if ( ! cached || cached.cacheKey !== cacheKey ) {
-				// Any registered render-output artifact works via shape-fallback.
-				let artifact = Slim.loadAux( 'render-output', 'tslp-e2e-bypass' );
-				artifact = __patchVolumeRenderOutputAlpha( artifact, { fullscreenVertex: true, outputColorTransform: true } );
-				__attachTextureRefsWhere( artifact, target.texture, ( source ) => source.kind === 'artifact.texture' && ! source.snapshot && ( source.textureName === 'output' || ! source.textureName ) );
-				const mat = new Slim.PrecompiledMaterial(
-					artifact
-				);
-				mat.name = 'outputColorTransform';
-				const quad = new Slim.QuadMesh( mat );
-				quad.name = 'Output Color Transform';
-				if ( ! this._quadCache ) this._quadCache = new Map();
-				const entry = { quad, cacheKey };
-				this._quadCache.set( target.texture, entry );
-				const cleanup = () => {
-					mat.dispose();
-					if ( this._quadCache ) this._quadCache.delete( target.texture );
-					target.texture.removeEventListener( 'dispose', cleanup );
-				};
-				target.texture.addEventListener( 'dispose', cleanup );
-			}
-		} catch ( err ) {
-			if ( ! Array.isArray( __data.aux ) || ! __data.aux.some( ( entry ) => entry && entry.shape === 'render-output' ) ) {
-				try {
-					const diag = window.__tslpHarnessDiagnostics || ( window.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
-					diag.renderOutputBypassNoAux = ( diag.renderOutputBypassNoAux | 0 ) + 1;
-				} catch ( _ ) {}
-				return;
-			}
-			// No compatible render-output artifact registered — let super throw loadAux error.
-			console.warn( '[tslp-e2e] _renderOutput pre-populate failed:', err && err.message || err );
-		}
-		return super._renderOutput( target );
-	}
 }
 
 function __findPassNodeInGraph( node, depth = 0, seen = new Set() ) {
@@ -13253,9 +13212,9 @@ export class RenderPipeline extends Slim.RenderPipeline {
 		}
 		if ( this.needsUpdate ) {
 			try {
-				// Shape-fallback loads the generic output artifact first, then prefers
-				// a captured render-pipeline artifact when the example provided one.
-					const shape = this.outputColorTransform === true ? 'render-output' : 'post-process';
+				// The post-process capture is now the real RenderPipeline material,
+				// including Three's implicit output transform when enabled.
+				const shape = 'post-process';
 				let artifact = null;
 				let auxError = null;
 				let usedUserPipelineArtifact = false;
@@ -13264,13 +13223,6 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				} catch ( err ) {
 					auxError = err;
 				}
-						if ( this.outputColorTransform !== true ) {
-							const userPipelineArtifact = __findUserArtifactByMaterialShape( 'render-pipeline' );
-							if ( userPipelineArtifact ) {
-								artifact = userPipelineArtifact;
-							usedUserPipelineArtifact = true;
-						}
-					}
 				if ( ! artifact ) throw auxError || new Error( 'no ' + shape + ' artifact available' );
 				artifact = __cloneAuxArtifact( artifact );
 				artifact = __patchVolumeRenderOutputAlpha( artifact );

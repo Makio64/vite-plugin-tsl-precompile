@@ -133,18 +133,70 @@ test( 'precompileAuxiliary captures effects observed only through live update no
 		depthNode: { isTextureNode: true },
 	};
 	const outputNode = { isNode: true };
+	const renderPipeline = {
+		outputNode,
+		outputColorTransform: true,
+		renderer: { toneMapping: 4, outputColorSpace: 'srgb' },
+		_quadMesh: { material: { uuid: 'render-pipeline-material' } },
+	};
 	let compileCalls = 0;
-	const compileTSL = async ( _renderer, captureScene ) => {
+	const compileTSL = async ( _renderer, captureScene, _camera, options = {} ) => {
 
 		compileCalls ++;
-		const material = captureScene.children[ 0 ].material;
+		if ( options.renderPipeline ) {
+
+			const artifact = {
+				materialUuid: options.renderPipeline._quadMesh.material.uuid,
+				materialShape: 'render-pipeline',
+				uniformPlan: [],
+				vertexShader: '',
+				fragmentShader: '',
+			};
+			Object.defineProperty( artifact, '_liveUpdateBeforeNodes', { value: [ gtao, sss ] } );
+			return [ artifact ];
+
+		}
+		const material = captureScene.children && captureScene.children[ 0 ] && captureScene.children[ 0 ].material;
+		if ( ! material ) {
+
+			assert.equal( options.captureRendererOutput, true );
+			const stale = {
+				materialShape: 'output-transform',
+				uniformPlan: [],
+				vertexShader: '',
+				fragmentShader: 'stale-output',
+			};
+			const active = {
+				materialUuid: 'active-output-material',
+				materialShape: 'output-transform',
+				uniformPlan: [ { name: 'object', textures: [ {
+					bindingKind: 'sampled-texture',
+					textureType: '2d',
+					source: { kind: 'artifact.texture', textureUuid: 'output', mapping: 300 },
+				} ] } ],
+				vertexShader: '',
+				fragmentShader: 'active-output',
+			};
+			const artifacts = [ stale, active ];
+			Object.defineProperty( artifacts, 'renderOutputCapture', { value: {
+				artifact: active,
+				replayConfig: {
+					schema: 'renderer-output@1',
+					toneMapping: 4,
+					currentColorSpace: 'srgb',
+					sampledTexture: '2d',
+					multiview: false,
+				},
+			} } );
+			return artifacts;
+
+		}
 		const artifact = {
 			materialUuid: material.uuid,
 			uniformPlan: [],
 			vertexShader: '',
 			fragmentShader: '',
 		};
-		if ( compileCalls === 1 ) Object.defineProperty( artifact, '_liveUpdateBeforeNodes', { value: [ gtao, sss ] } );
 		return [ artifact ];
 
 	};
@@ -163,12 +215,15 @@ test( 'precompileAuxiliary captures effects observed only through live update no
 			devEndpoint: '/capture',
 			threeVersion: '184',
 			compileTSL,
-			postProcessing: { outputNode },
+			renderPipeline,
 			three: { NodeMaterial, Scene, QuadMesh, RenderTarget },
 		} );
 		assert.equal( compileCalls, 4, 'captures the output, hidden GTAO/SSS, and renderer-output materials' );
 		assert.deepEqual( results.map( ( result ) => result.shape ), [ 'post-process', 'gtao', 'sss', 'render-output' ] );
-		assert.deepEqual( payloads.map( ( payload ) => payload.materialShape ), [ 'post-process', 'gtao', 'sss' ] );
+		assert.deepEqual( payloads.map( ( payload ) => payload.materialShape ), [ 'post-process', 'gtao', 'sss', 'render-output' ] );
+		assert.equal( payloads[ 0 ].artifact.replayConfig.outputColorTransform, true );
+		assert.equal( payloads[ 3 ].artifact.fragmentShader, 'active-output' );
+		assert.equal( payloads[ 3 ].artifact.replayConfig.currentColorSpace, 'srgb' );
 		assert.deepEqual( RenderTarget.options, [
 			{ depthBuffer: false, count: 1, format: 1028, type: 1009 },
 			{ depthBuffer: false, count: 1, format: 1028, type: 1009 },

@@ -154,6 +154,40 @@ test( 'extractUniformPlan preserves explicit camera Object3DNode targets', () =>
 
 } );
 
+test( 'extractUniformPlan structurally maps renderer tone-mapping exposure references', () => {
+
+	const uniformNode = {
+		isUniformNode: true,
+		constructor: { type: 'UniformNode' },
+		nodeType: 'float',
+		value: 1.25,
+	};
+	const rendererReferenceNode = {
+		constructor: { type: 'RendererReferenceNode' },
+		property: 'toneMappingExposure',
+		uniformType: 'float',
+		node: uniformNode,
+	};
+	const state = {
+		updateNodes: [ rendererReferenceNode ],
+		bindings: [ {
+			name: 'render',
+			bindings: [ {
+				isUniformsGroup: true,
+				byteLength: 16,
+				visibility: 2,
+				groupNode: { shared: false },
+				uniforms: [ makeUniformSlot( uniformNode, uniformNode.value ) ],
+			} ],
+		} ],
+	};
+
+	const plan = extractUniformPlan( state, {} );
+	assert.equal( plan[ 0 ].slots[ 0 ].source.kind, 'renderer.toneMappingExposure' );
+	assert.deepEqual( plan[ 0 ].slots[ 0 ].source.valueSnapshot, { type: 'number', data: 1.25 } );
+
+} );
+
 test( 'extractUniformPlan treats plain FramebufferTexture nodes as artifact textures', () => {
 
 	const textureNode = {

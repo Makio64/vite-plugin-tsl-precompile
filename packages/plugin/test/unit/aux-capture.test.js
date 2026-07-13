@@ -69,6 +69,32 @@ test( 'aux/post-process: two different outputNodes produce distinct configHashes
 
 } );
 
+test( 'aux/post-process: captures Three output transform instead of the raw color graph', async () => {
+
+	const transformed = await extractPostProcessingArtifact( ( { tsl, core } ) => ( {
+		outputNode: tsl.vec4( 0.25, 0.5, 1, 1 ),
+		outputColorTransform: true,
+		toneMapping: core.NeutralToneMapping,
+	} ) );
+	const raw = await extractPostProcessingArtifact( ( { tsl, core } ) => ( {
+		outputNode: tsl.vec4( 0.25, 0.5, 1, 1 ),
+		outputColorTransform: false,
+		toneMapping: core.NeutralToneMapping,
+	} ) );
+
+	assert.notEqual( transformed.configHash, raw.configHash );
+	assert.equal( transformed.artifact.replayConfig.outputColorTransform, true );
+	assert.equal( raw.artifact.replayConfig.outputColorTransform, false );
+	assert.match( transformed.artifact.fragmentShader, /neutralToneMapping|sRGBTransferOETF/ );
+	assert.doesNotMatch( raw.artifact.fragmentShader, /neutralToneMapping|sRGBTransferOETF/ );
+	assert.equal(
+		transformed.artifact.uniformPlan.some( ( group ) => ( group.slots || [] ).some( ( slot ) => slot.source && slot.source.kind === 'renderer.toneMappingExposure' ) ),
+		true,
+		'exposure remains a live renderer uniform rather than a captured variant key',
+	);
+
+} );
+
 // -------- PMREM --------
 
 test( 'aux/pmrem: equirect input produces a stamped artifact', async () => {

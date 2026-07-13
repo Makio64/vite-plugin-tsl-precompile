@@ -14,6 +14,7 @@ import {
 	findAux,
 	bindAuxByName,
 	resolveAuxArtifactForInput,
+	cloneAuxArtifactForReplay,
 	__resetAuxRegistryForTests,
 } from '../../../runtime/src/aux-loader.js';
 
@@ -162,7 +163,54 @@ test( 'aux-loader: deterministic resolver tries each registered hash domain befo
 		},
 	} );
 	assert.equal( selected.artifact, second );
+	assert.equal( selected.matchedBy, 'hash' );
 	assert.deepEqual( domains, [ '0.184.0', '0.185.0' ] );
+
+} );
+
+test( 'aux-loader: resolver reports binding and unique-fallback provenance', () => {
+
+	__resetAuxRegistryForTests();
+	const artifact = {};
+	registerAuxArtifact( 'post-process', 'captured', artifact, { threeVersion: '0.184.0', pluginVersion: '0.1.0' } );
+	const unbound = resolveAuxArtifactForInput( 'post-process', {}, { computeConfigHash: () => 'miss' } );
+	assert.equal( unbound.matchedBy, 'unique' );
+
+	const node = {};
+	bindAuxByName( node, 'post-process', 'captured' );
+	const bound = resolveAuxArtifactForInput( 'post-process', node );
+	assert.equal( bound.matchedBy, 'binding' );
+
+} );
+
+test( 'aux-loader: exact adapters can reject a mismatched single capture', () => {
+
+	__resetAuxRegistryForTests();
+	registerAuxArtifact( 'render-output', 'captured', {}, { threeVersion: '0.184.0', pluginVersion: '0.1.0' } );
+	assert.throws(
+		() => resolveAuxArtifactForInput( 'render-output', {}, {
+			computeConfigHash: () => 'active',
+			allowUniqueFallback: false,
+		} ),
+		( error ) => error.code === 'AUX_ARTIFACT_NOT_FOUND' && /do not guess by shape/.test( error.message ),
+	);
+
+} );
+
+test( 'aux-loader: replay clones isolate mutable sidecars', () => {
+
+	const texture = {};
+	const artifact = {};
+	Object.defineProperty( artifact, '_textureRefs', { value: new Map( [ [ 'a', texture ] ] ), configurable: true } );
+	Object.defineProperty( artifact, '_liveUpdateBeforeNodes', { value: [ { id: 1 } ], configurable: true } );
+	const clone = cloneAuxArtifactForReplay( artifact );
+	assert.notEqual( clone, artifact );
+	assert.notEqual( clone._textureRefs, artifact._textureRefs );
+	assert.notEqual( clone._liveUpdateBeforeNodes, artifact._liveUpdateBeforeNodes );
+	clone._textureRefs.set( 'b', {} );
+	clone._liveUpdateBeforeNodes.push( { id: 2 } );
+	assert.equal( artifact._textureRefs.has( 'b' ), false );
+	assert.equal( artifact._liveUpdateBeforeNodes.length, 1 );
 
 } );
 

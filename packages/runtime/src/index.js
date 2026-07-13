@@ -15,7 +15,8 @@ export {
 	hashArtifactContentSync,
 } from './graph-hash.js';
 export { precompileAuxiliary } from './aux-marker.js';
-export { registerAuxArtifact, registerAuxArtifacts, loadAux, hasAux, listAux, findAux, bindAuxConfig, bindAuxByName, attachArtifactTextureRefs, attachPostprocessTextureRefs, attachPostprocessUpdateBeforeNodes, attachPostprocessObject3DTargets, __resetAuxRegistryForTests } from './aux-loader.js';
+export { registerAuxArtifact, registerAuxArtifacts, loadAux, hasAux, listAux, findAux, bindAuxConfig, bindAuxByName, resolveAuxArtifactForInput, cloneAuxArtifactForReplay, attachArtifactTextureRefs, attachPostprocessTextureRefs, attachPostprocessUpdateBeforeNodes, attachPostprocessObject3DTargets, __resetAuxRegistryForTests } from './aux-loader.js';
+export { getReplayRenderOutputCacheKey, createReplayRenderOutputMaterial, createReplayRenderPipelineMaterial } from './slim-replay-output.js';
 export { hydrateNodeBuilderState, registerLiveTexture, clearLiveTextureIndex, installTextureLoaderTracking } from './hydrator.js';
 export { getTextureResolutionDebugHook, setTextureResolutionDebugHook } from './hydrate/artifact-texture-resolver.js';
 export { getDFGLUT } from './dfg-lut.js';
