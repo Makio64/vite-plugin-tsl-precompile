@@ -43,6 +43,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS as __NODE_GRAPH_KEYS } from '@tsl-precompile/contract/texture-props';
 
 import { assertThreeAtLeast184 } from './_three-version.mjs';
+import { installRenderSelectorMismatchRecorder } from './e2e-render-selector-recorder.mjs';
 import { enrichRenderSelectorDiagnostics, resolveE2ERoots, summarizeArtifactRenderSelectors } from './e2e-report-diagnostics.mjs';
 import { installAnimationLoopSettleTransition } from './e2e-settle-policy.mjs';
 import { captureWaitOverrideForExample, comparePngBuffers, expectedReplayErrorPatternsForExample, pixelGateDisabledReasonForExample, psnrThresholdForExample, tierExamples } from './psnr.mjs';
@@ -9758,7 +9759,10 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 					}
 				}
 				if ( needsReplay ) __kickShadowRenderAsync( _slimRenderer, _userScene, _camera );
-			} catch ( e ) { console.warn( '[tslp-shadow] forced re-render failed:', e && e.message || e ); }
+			} catch ( e ) {
+				try { window.__tslpRecordRenderSelectorMismatch && window.__tslpRecordRenderSelectorMismatch( e, 'caught-shadow-render' ); } catch ( _ ) {}
+				console.warn( '[tslp-shadow] forced re-render failed:', e && e.message || e );
+			}
 		} );
 	}
 
@@ -10558,6 +10562,7 @@ function __renderPassNodeForPipeline( renderer, passNode, nodeFrame = null ) {
 		return true;
 	} catch ( err ) {
 		passDiag.failed ++;
+		try { window.__tslpRecordRenderSelectorMismatch && window.__tslpRecordRenderSelectorMismatch( err, 'caught-pass-render' ); } catch ( _ ) {}
 		if ( ! window.__tslpPassRenderWarned ) {
 			window.__tslpPassRenderWarned = true;
 			console.warn( '[tslp-e2e] RenderPipeline pass render failed:', err && ( err.stack || err.message ) || err );
@@ -14793,6 +14798,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 			await page.addInitScript( () => { globalThis.__TSLP_DEBUG_REFLECTOR_BINDINGS = true; window.__TSLP_DEBUG_REFLECTOR_BINDINGS = true; } );
 		}
 			await page.addInitScript( installAnimationLoopSettleTransition );
+			await page.addInitScript( installRenderSelectorMismatchRecorder, { phase: mode } );
 			await page.addInitScript( ( { step, base, freezeAt, quiescentMs, settleFrames, waitForRenderableObjects, minRenderableObjects, holdAnimationUntilReady, exampleName, mode } ) => {
 
 			// eslint-disable-next-line no-undef
@@ -14836,39 +14842,6 @@ async function visitExample( browser, name, mode, waitMs ) {
 				}
 
 			} catch ( _ ) {}
-			const recordRenderSelectorMismatch = ( error, origin ) => {
-
-				try {
-
-					const details = error && error.details && typeof error.details === 'object' ? error.details : {};
-					const message = String( error && error.message || error || '' );
-					const code = typeof error?.code === 'string' ? error.code : null;
-					if ( error?.tslPrecompileVariantSelection !== true && ! /^TSLP_VARIANT_SELECTOR_/.test( code || '' ) && ! /captured artifact variant matches/i.test( message ) ) return;
-					const selector = typeof details.selector === 'string' ? details.selector : null;
-					const availableSelectors = Array.isArray( details.availableSelectors )
-						? details.availableSelectors.filter( ( value ) => typeof value === 'string' )
-						: [];
-					const activeHashMatch = message.match( /\((selector:[a-z0-9]+)\)/i );
-					const record = {
-						phase: mode,
-						origin,
-						code,
-						message,
-						selector,
-						activeHash: activeHashMatch ? activeHashMatch[ 1 ] : null,
-						availableSelectors,
-						cacheKeys: Array.isArray( details.cacheKeys ) ? details.cacheKeys : null,
-						selectorCount: Number.isFinite( details.selectorCount ) ? details.selectorCount : null,
-					};
-					const list = diagnostics.renderSelectorMismatches || ( diagnostics.renderSelectorMismatches = [] );
-					const identity = JSON.stringify( [ record.code, record.selector, record.activeHash, record.availableSelectors ] );
-					if ( list.length < 20 && ! list.some( ( item ) => item && item.identity === identity ) ) list.push( { ...record, identity } );
-
-				} catch ( _ ) {}
-
-			};
-			w.addEventListener( 'error', ( event ) => recordRenderSelectorMismatch( event && ( event.error || event.message ), 'error' ) );
-			w.addEventListener( 'unhandledrejection', ( event ) => recordRenderSelectorMismatch( event && event.reason, 'unhandledrejection' ) );
 			if ( w.__tslpRafShimInstalled ) return;
 			w.__tslpRafShimInstalled = true;
 				w.__tslpRafTick = 0;
