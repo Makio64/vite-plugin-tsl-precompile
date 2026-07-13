@@ -6,6 +6,39 @@ export const RENDER_BINDING_OWNER_KINDS = Object.freeze( {
 	SHADOW_CASTER: 'shadow-caster',
 } );
 
+const RENDER_BINDING_OWNER_KIND_SET = new Set( Object.values( RENDER_BINDING_OWNER_KINDS ) );
+
+export function isRenderBindingOwnerKind( value ) {
+
+	return RENDER_BINDING_OWNER_KIND_SET.has( value );
+
+}
+
+/**
+ * Resolve material-binding ownership with the source-local exception taking
+ * precedence over the artifact-wide default. Callers apply this only to
+ * descriptors whose logical owner is material.
+ */
+export function resolveArtifactSourceBindingOwner( artifact, source ) {
+
+	if ( source && isRenderBindingOwnerKind( source.bindingOwner ) ) return source.bindingOwner;
+	if ( artifact && isRenderBindingOwnerKind( artifact.bindingOwner ) ) return artifact.bindingOwner;
+	return RENDER_BINDING_OWNER_KINDS.MATERIAL;
+
+}
+
+// Renderer.renderObject copies these source-material properties onto its
+// shared shadow override before NodeMaterial builds/updates the pass. They
+// therefore keep caster ownership even though the resulting
+// MaterialReferenceNode has no explicit source-material target.
+//
+// `map` is intentionally absent: Three's shadow path creates an explicit
+// `reference( 'map', 'texture', sourceMaterial )` instead of copying it.
+export const SHADOW_CASTER_COPIED_BINDING_PROPERTIES = Object.freeze( [
+	'alphaMap',
+	'alphaTest',
+] );
+
 const POSITIVE_MATERIAL_FEATURES = Object.freeze( [
 	'alphaTest',
 	'anisotropy',
@@ -241,7 +274,10 @@ function describeShadowCaster( renderObject, object, activeMaterial ) {
  * Capture supplies `renderObject.sourceMaterial` from Renderer.renderObject's
  * exact selected-material argument. Replay adapters should do the same. The
  * group lookup is a compatibility fallback for stock RenderObjects that do not
- * expose that pre-override dispatch evidence.
+ * expose that pre-override dispatch evidence. Artifact-level ownership makes
+ * that alternate material available; individual `material.*` sources opt into
+ * it with a source-local `bindingOwner` exception when ownership differs from
+ * the artifact default.
  *
  * @param {?Object} renderObject
  * @param {?Object} [exactSourceMaterial]

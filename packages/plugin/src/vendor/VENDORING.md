@@ -47,6 +47,18 @@ HMR handoff; its requests remain ownership-incomplete until that bounded
 capture epoch finishes, which fails closed instead of creating a second
 private-method wrapper or guessing caster ownership.
 
+Local assumption: Three r184's `Renderer._getShadowNodes()` represents a
+caster `map` with a plain `ReferenceNode` whose stable `.object` is the exact
+source material. `Renderer.renderObject()` instead copies `alphaMap` and
+`alphaTest` onto the shared shadow override before its implicit
+`MaterialReferenceNode`s run; it does not copy `opacity`. Extraction therefore
+uses the full exact-owner identity set, never texture UUIDs or the mutable
+`.reference` field. The artifact's `shadow-caster` owner is the compact
+default, while shader-owned material inputs such as opacity serialize a
+source-local `render-material` exception. Update both the copied-property
+contract and the real shadow fixture if an upstream Three bump changes this
+call-site behavior.
+
 Local assumption: `Object3DNode` instances with an explicit `object3d.isCamera`
 target are serialized as `object3d.*` sources with `target: "camera"`. This
 preserves TSL like `objectPosition(camera)` in post-processing passes, where

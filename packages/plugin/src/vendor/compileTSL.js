@@ -399,9 +399,11 @@ function captureLtcTextures( artifact ) {
  *     the artifact with a shape the runtime hydrator can consume.
  * @param {?Object3D} [object=null] - Optional source object; used to map
  *     object-owned UniformNode properties such as WaterMesh.distortionScale.
+ * @param {?Object} [extractionContext=null] - Optional process-local
+ *     provenance such as exact material binding owners. Never serialized.
  * @return {PrecompiledArtifact}
  */
-export function extractArtifact( cacheKey, state, material = null, object = null ) {
+export function extractArtifact( cacheKey, state, material = null, object = null, extractionContext = null ) {
 
 	const bindings = ( state.bindings || [] ).map( describeBindGroup );
 	let materialShape = classifyMaterialShape( material );
@@ -443,7 +445,9 @@ export function extractArtifact( cacheKey, state, material = null, object = null
 		}
 
 	}
-	const uniformPlan = extractUniformPlan( state, { material, object } );
+	const uniformPlan = extractUniformPlan( state, extractionContext && typeof extractionContext === 'object'
+		? { ...extractionContext, material, object }
+		: { material, object } );
 	patchMaterialSpecificUniformPlan( uniformPlan, materialShape );
 	annotateLiveUniformIdentities( uniformPlan, material );
 	// For each compute-storage buffer the user wired through a material
@@ -459,7 +463,7 @@ export function extractArtifact( cacheKey, state, material = null, object = null
 	// PrecompiledMaterial reads these to populate its own color/opacity/etc.
 	// so the hydrator can read from the material even before the user sets
 	// anything.
-	const defaults = collectMaterialDefaults( uniformPlan, material );
+	const defaults = collectMaterialDefaults( uniformPlan, material, extractionContext && extractionContext.bindingOwnerKind );
 	// Capture material render-state flags (transparent, side, depthWrite,
 	// blending, etc.). These drive pipeline state in three.js and aren't
 	// covered by the uniformPlan walk above. Without them sprites lose
@@ -932,7 +936,7 @@ function collectTextureRefs( state ) {
 
 }
 
-function collectMaterialDefaults( uniformPlan, material ) {
+function collectMaterialDefaults( uniformPlan, material, bindingOwnerKind = RENDER_BINDING_OWNER_KINDS.MATERIAL ) {
 
 	if ( ! material ) return {};
 
@@ -943,6 +947,8 @@ function collectMaterialDefaults( uniformPlan, material ) {
 
 			const kind = slot.source && slot.source.kind;
 			if ( typeof kind !== 'string' || ! kind.startsWith( 'material.' ) ) continue;
+			const sourceBindingOwner = slot.source.bindingOwner || bindingOwnerKind;
+			if ( sourceBindingOwner === RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER ) continue;
 
 			const property = slot.source.property;
 			if ( ! property || property in defaults ) continue;
@@ -1857,15 +1863,19 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		const userMaterialCandidates = entry.userMaterials && entry.userMaterials.length > 0 ? entry.userMaterials : sourceMaterials;
 		const userMaterials = [ ...new Set( userMaterialCandidates ) ];
 		const userMaterial = userMaterials[ 0 ] || null;
-		const artifact = extractArtifact( cacheKey, state, material, meshes[ 0 ] || null );
-		const exactShadowCasterRequests = artifact.materialShape === 'shadow-depth'
+		const exactShadowCasterRequests = classifyMaterialShape( material ) === 'shadow-depth'
 			? ( entry.sourceOwnerRequests || [] ).filter( ( request ) =>
 				request && request.bindingOwnerExact === true &&
 				request.bindingOwnerKind === RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER &&
 				request.sourceMaterial && request.material === material && request.cacheKey === cacheKey
 			)
 			: [];
-		if ( exactShadowCasterRequests.length > 0 ) {
+		const materialBindingOwners = new Set( exactShadowCasterRequests.map( ( request ) => request.sourceMaterial ) );
+		const artifact = extractArtifact( cacheKey, state, material, meshes[ 0 ] || null, exactShadowCasterRequests.length > 0 ? {
+			bindingOwnerKind: RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER,
+			materialBindingOwners,
+		} : null );
+		if ( exactShadowCasterRequests.length > 0 && artifact.materialShape === 'shadow-depth' ) {
 
 			artifact.bindingOwner = RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER;
 			Object.defineProperty( artifact, '_shadowCasterRequests', {

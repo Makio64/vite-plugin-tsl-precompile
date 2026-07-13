@@ -60,6 +60,19 @@ function artifactTextureSources( artifact ) {
 
 }
 
+function planSources( artifact ) {
+
+	const out = [];
+	for ( const group of artifact.uniformPlan || [] ) {
+
+		for ( const entry of group.slots || [] ) if ( entry && entry.source ) out.push( entry.source );
+		for ( const entry of group.textures || [] ) if ( entry && entry.source ) out.push( entry.source );
+
+	}
+	return out;
+
+}
+
 test( 'compileTSL: shadow-depth aux artifacts retain custom shadow variants', async () => {
 
 	ensureWebGPU();
@@ -86,20 +99,43 @@ test( 'compileTSL: shadow-depth aux artifacts retain custom shadow variants', as
 
 		const textureData = new Uint8Array( [ 255, 128, 64, 255 ] );
 		const causticMap = new core.DataTexture( textureData, 1, 1 );
+		causticMap.name = 'custom-shadow-graph-texture';
 		causticMap.needsUpdate = true;
 
 		const customMaterial = new webgpu.MeshStandardNodeMaterial();
-		customMaterial.castShadowNode = tsl.texture( causticMap, tsl.uv() ).rgb;
+		customMaterial.castShadowNode = tsl.texture( causticMap, tsl.uv() );
 		customMaterial.castShadowPositionNode = tsl.positionLocal.add( tsl.vec3( 0.05, 0, 0 ) );
 
 		const customCaster = new core.Mesh( new core.BoxGeometry( 1, 1, 1 ), customMaterial );
 		customCaster.castShadow = true;
-		customCaster.position.x = - 0.75;
+		customCaster.position.x = - 1.5;
 		scene.add( customCaster );
+
+		const mapTexture = new core.DataTexture( new Uint8Array( [ 255, 255, 255, 128 ] ), 1, 1 );
+		mapTexture.name = 'exact-caster-map-texture';
+		mapTexture.needsUpdate = true;
+		const mapMaterial = new webgpu.MeshStandardNodeMaterial();
+		mapMaterial.map = mapTexture;
+		mapMaterial.alphaTest = 0.31;
+		const mapCaster = new core.Mesh( new core.BoxGeometry( 1, 1, 1 ), mapMaterial );
+		mapCaster.castShadow = true;
+		mapCaster.position.x = - 0.5;
+		scene.add( mapCaster );
+
+		const alphaTexture = new core.DataTexture( new Uint8Array( [ 255, 128, 255, 255 ] ), 1, 1 );
+		alphaTexture.name = 'copied-caster-alpha-texture';
+		alphaTexture.needsUpdate = true;
+		const alphaMaterial = new webgpu.MeshStandardNodeMaterial();
+		alphaMaterial.alphaMap = alphaTexture;
+		alphaMaterial.alphaTest = 0.47;
+		const alphaCaster = new core.Mesh( new core.BoxGeometry( 1, 1, 1 ), alphaMaterial );
+		alphaCaster.castShadow = true;
+		alphaCaster.position.x = 0.5;
+		scene.add( alphaCaster );
 
 		const plainCaster = new core.Mesh( new core.BoxGeometry( 1, 1, 1 ), new webgpu.MeshStandardNodeMaterial() );
 		plainCaster.castShadow = true;
-		plainCaster.position.x = 0.75;
+		plainCaster.position.x = 1.5;
 		scene.add( plainCaster );
 
 		const receiver = new core.Mesh( new core.PlaneGeometry( 6, 6 ), new webgpu.MeshStandardNodeMaterial() );
@@ -126,6 +162,32 @@ test( 'compileTSL: shadow-depth aux artifacts retain custom shadow variants', as
 			assert.equal( JSON.parse( JSON.stringify( artifact ) )._shadowCasterRequests, undefined );
 
 		}
+		const customArtifact = shadowArtifacts.find( ( artifact ) => artifact._shadowCasterRequests.some( ( request ) => request.sourceMaterial === customMaterial ) );
+		const mapArtifact = shadowArtifacts.find( ( artifact ) => artifact._shadowCasterRequests.some( ( request ) => request.sourceMaterial === mapMaterial ) );
+		const alphaArtifact = shadowArtifacts.find( ( artifact ) => artifact._shadowCasterRequests.some( ( request ) => request.sourceMaterial === alphaMaterial ) );
+		const plainArtifact = shadowArtifacts.find( ( artifact ) => artifact._shadowCasterRequests.some( ( request ) => request.sourceMaterial === plainCaster.material ) );
+		assert.ok( customArtifact );
+		assert.ok( mapArtifact );
+		assert.ok( alphaArtifact );
+		assert.ok( plainArtifact );
+
+		const mapSources = planSources( mapArtifact );
+		assert.ok( mapSources.some( ( source ) => source.kind === 'material.map' && source.textureUuid === mapTexture.uuid ) );
+		assert.ok( mapSources.some( ( source ) => source.kind === 'material.map.matrix' ) );
+		assert.ok( mapSources.some( ( source ) => source.kind === 'material.alphaTest' ) );
+		assert.ok( ! artifactTextureSources( mapArtifact ).some( ( source ) => source.textureUuid === mapTexture.uuid ) );
+
+		const alphaSources = planSources( alphaArtifact );
+		assert.ok( alphaSources.some( ( source ) => source.kind === 'material.alphaMap' && source.textureUuid === alphaTexture.uuid ) );
+		assert.ok( alphaSources.some( ( source ) => source.kind === 'material.alphaMap.matrix' ) );
+		assert.ok( alphaSources.some( ( source ) => source.kind === 'material.alphaTest' ) );
+		assert.ok( ! artifactTextureSources( alphaArtifact ).some( ( source ) => source.textureUuid === alphaTexture.uuid ) );
+
+		assert.ok( artifactTextureSources( customArtifact ).some( ( source ) => source.textureUuid === causticMap.uuid ), 'direct castShadowNode textures stay graph-owned' );
+		assert.ok( planSources( plainArtifact ).some( ( source ) =>
+			source.kind === 'material.opacity' && source.bindingOwner === RENDER_BINDING_OWNER_KINDS.MATERIAL
+		), 'shadow override opacity explicitly opts out of the caster default' );
+
 		const family = shadowArtifacts.find( ( artifact ) => artifact.variants && Object.keys( artifact.variants ).length > 1 );
 		assert.ok( family, `expected a shadow-depth variant family; saw ${ shadowArtifacts.length } shadow artifact(s)` );
 		const validation = validateArtifact( family, { label: 'shadow-depth family' } );
@@ -134,15 +196,11 @@ test( 'compileTSL: shadow-depth aux artifacts retain custom shadow variants', as
 		const variants = Object.values( family.variants );
 		assert.ok( variants.every( ( variant ) => Array.isArray( variant.renderContextSelectors ) && variant.renderContextSelectors.length > 0 ), 'expected every shadow variant to carry one or more semantic render-context selectors' );
 		assert.ok( variants.every( ( variant ) => variant.bindingOwner === RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER ), 'variant-local payload retains binding ownership' );
-		const customVariant = variants.find( ( variant ) => String( variant.fragmentShader || '' ).includes( 'texture' ) );
+		const customVariant = variants.find( ( variant ) => String( variant.cacheKey ) === String( customArtifact.cacheKey ) );
 		assert.ok( customVariant, 'expected a custom shadow variant that samples the castShadowNode texture' );
 		assert.ok( artifactTextureSources( customVariant ).length > 0, 'expected custom shadow variant to carry its texture binding source' );
-		const plainVariant = variants.find( ( variant ) => variant !== customVariant );
+		const plainVariant = variants.find( ( variant ) => String( variant.cacheKey ) === String( plainArtifact.cacheKey ) );
 		assert.ok( plainVariant, 'expected a plain shadow-caster variant' );
-		const customArtifact = shadowArtifacts.find( ( artifact ) => String( artifact.cacheKey ) === String( customVariant.cacheKey ) );
-		const plainArtifact = shadowArtifacts.find( ( artifact ) => String( artifact.cacheKey ) === String( plainVariant.cacheKey ) );
-		assert.ok( customArtifact );
-		assert.ok( plainArtifact );
 		assert.ok( customArtifact._shadowCasterRequests.some( ( request ) => request.sourceMaterial === customMaterial ) );
 		assert.ok( plainArtifact._shadowCasterRequests.some( ( request ) => request.sourceMaterial === plainCaster.material ) );
 

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Matrix3, Matrix4 } from 'three';
 import { UniformNode } from 'three/webgpu';
+import { RENDER_BINDING_OWNER_KINDS } from '@tsl-precompile/contract/render-selector';
 
 import { extractUniformPlan } from '../../src/vendor/extractUniformPlan.js';
 
@@ -285,6 +286,151 @@ test( 'extractUniformPlan lifts anonymous high-precision model matrix callbacks'
 	assert.equal( shadowModelNode.value, shadowModelValue, 'shadow classification uses a detached result matrix' );
 	assert.equal( customCallbackCalls, 0, 'extractor never invokes an arbitrary object callback' );
 	assert.equal( customValue.elements[ 0 ], 1, 'arbitrary callback state stays untouched' );
+
+} );
+
+test( 'extractUniformPlan classifies exact shadow-caster map references without scanning texture identity', () => {
+
+	const caster = { uuid: 'exact-caster' };
+	const shadowMaterial = { uuid: 'shadow-override', isShadowPassMaterial: true };
+	const texture = { isTexture: true, uuid: 'caster-map-texture' };
+	const matrixNode = {
+		isUniformNode: true,
+		constructor: { type: 'UniformNode' },
+		nodeType: 'mat3',
+		value: new Matrix3(),
+	};
+	const textureNode = {
+		constructor: { type: 'TextureNode' },
+		value: texture,
+		_matrixUniform: matrixNode,
+	};
+	const referenceNode = {
+		constructor: { type: 'ReferenceNode' },
+		property: 'map',
+		uniformType: 'texture',
+		object: caster,
+		reference: caster,
+		node: textureNode,
+	};
+	const state = {
+		updateNodes: [ referenceNode ],
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{
+					isUniformsGroup: true,
+					byteLength: 48,
+					visibility: 2,
+					groupNode: { shared: false },
+					uniforms: [ makeMatrixUniformSlot( matrixNode, matrixNode.value, 'mat3' ) ],
+				},
+				{
+					isSampledTexture: true,
+					name: 'nodeUniform1',
+					visibility: 2,
+					textureNode,
+					groupNode: { shared: false },
+				},
+			],
+		} ],
+	};
+	const plan = extractUniformPlan( state, {
+		material: shadowMaterial,
+		bindingOwnerKind: RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER,
+		materialBindingOwners: new Set( [ caster ] ),
+	} );
+
+	assert.equal( plan[ 0 ].textures[ 0 ].source.kind, 'material.map' );
+	assert.equal( plan[ 0 ].textures[ 0 ].source.textureUuid, texture.uuid );
+	assert.equal( plan[ 0 ].textures[ 0 ].source.bindingOwner, undefined, 'artifact shadow-caster ownership is the compact default' );
+	assert.equal( plan[ 0 ].slots[ 0 ].source.kind, 'material.map.matrix' );
+	assert.equal( plan[ 0 ].slots[ 0 ].source.bindingOwner, undefined );
+
+	const inexactPlan = extractUniformPlan( state, {
+		material: shadowMaterial,
+		bindingOwnerKind: RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER,
+		materialBindingOwners: new Set(),
+	} );
+	assert.equal( inexactPlan[ 0 ].textures[ 0 ].source.kind, 'artifact.texture', 'inexact capture fails closed' );
+	assert.equal( inexactPlan[ 0 ].slots[ 0 ].source.kind, 'uniform.live' );
+
+	// Texture identity alone is not ownership evidence: without the explicit
+	// ReferenceNode, even the exact same caster.map remains artifact-owned.
+	const directPlan = extractUniformPlan( makeTextureState( textureNode ), {
+		material: shadowMaterial,
+		bindingOwnerKind: RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER,
+		materialBindingOwners: new Set( [ { ...caster, map: texture } ] ),
+	} );
+	assert.equal( directPlan[ 0 ].textures[ 0 ].source.kind, 'artifact.texture' );
+
+} );
+
+test( 'extractUniformPlan uses stable shadow reference targets and records mixed material owners', () => {
+
+	const caster = { uuid: 'exact-caster' };
+	const foreign = { uuid: 'foreign-material' };
+	const shadowMaterial = { uuid: 'shadow-override', isShadowPassMaterial: true };
+	const foreignUniform = { isUniformNode: true, constructor: { type: 'UniformNode' }, nodeType: 'float', value: 0.25 };
+	const alphaTestUniform = { isUniformNode: true, constructor: { type: 'UniformNode' }, nodeType: 'float', value: 0.4 };
+	const opacityUniform = { isUniformNode: true, constructor: { type: 'UniformNode' }, nodeType: 'float', value: 1 };
+	const state = {
+		updateNodes: [
+			{
+				constructor: { type: 'MaterialReferenceNode' },
+				property: 'roughness',
+				uniformType: 'float',
+				material: foreign,
+				object: foreign,
+				reference: caster,
+				node: foreignUniform,
+			},
+			{
+				constructor: { type: 'MaterialReferenceNode' },
+				property: 'alphaTest',
+				uniformType: 'float',
+				material: null,
+				object: null,
+				reference: shadowMaterial,
+				node: alphaTestUniform,
+			},
+			{
+				constructor: { type: 'MaterialReferenceNode' },
+				property: 'opacity',
+				uniformType: 'float',
+				material: null,
+				object: null,
+				reference: shadowMaterial,
+				node: opacityUniform,
+			},
+		],
+		bindings: [ {
+			name: 'object',
+			bindings: [ {
+				isUniformsGroup: true,
+				byteLength: 48,
+				visibility: 2,
+				groupNode: { shared: false },
+				uniforms: [
+					makeUniformSlot( foreignUniform, foreignUniform.value ),
+					makeUniformSlot( alphaTestUniform, alphaTestUniform.value ),
+					makeUniformSlot( opacityUniform, opacityUniform.value ),
+				],
+			} ],
+		} ],
+	};
+	const plan = extractUniformPlan( state, {
+		material: shadowMaterial,
+		bindingOwnerKind: RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER,
+		materialBindingOwners: new Set( [ caster ] ),
+	} );
+	const [ foreignSource, alphaTestSource, opacitySource ] = plan[ 0 ].slots.map( ( slot ) => slot.source );
+
+	assert.equal( foreignSource.kind, 'uniform.live', 'mutable reference never overrides the stable foreign material target' );
+	assert.equal( alphaTestSource.kind, 'material.alphaTest' );
+	assert.equal( alphaTestSource.bindingOwner, undefined, 'copied alphaTest inherits the caster artifact default' );
+	assert.equal( opacitySource.kind, 'material.opacity' );
+	assert.equal( opacitySource.bindingOwner, RENDER_BINDING_OWNER_KINDS.MATERIAL, 'shadow override opacity opts out of caster ownership' );
 
 } );
 

@@ -24,6 +24,10 @@ import {
 	validateDynamicBindingSource,
 } from '@tsl-precompile/contract/dynamic-bindings';
 import { createArtifactVariantPayload } from '@tsl-precompile/contract/artifact-variants';
+import {
+	RENDER_BINDING_OWNER_KINDS,
+	resolveArtifactSourceBindingOwner,
+} from '@tsl-precompile/contract/render-selector';
 
 test( 'contract kind registry recognises codegen and runtime texture kinds', () => {
 
@@ -110,15 +114,24 @@ test( 'contract artifact validation accepts known slot and texture kinds', () =>
 
 test( 'contract validates and preserves render binding ownership', () => {
 
+	const mapSource = { kind: 'material.map', property: 'map' };
+	const opacitySource = { kind: 'material.opacity', property: 'opacity', bindingOwner: 'render-material' };
 	const shadow = {
 		materialShape: 'shadow-depth',
 		bindingOwner: 'shadow-caster',
 		vertexShader: 'v',
 		fragmentShader: 'f',
-		uniformPlan: [],
+		uniformPlan: [ {
+			name: 'object',
+			slots: [ { source: opacitySource } ],
+			textures: [ { source: mapSource } ],
+		} ],
 	};
 	assert.equal( validateArtifact( shadow ).ok, true );
 	assert.equal( createArtifactVariantPayload( shadow ).bindingOwner, 'shadow-caster' );
+	assert.equal( createArtifactVariantPayload( shadow ).uniformPlan[ 0 ].slots[ 0 ].source.bindingOwner, 'render-material' );
+	assert.equal( resolveArtifactSourceBindingOwner( shadow, mapSource ), RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER );
+	assert.equal( resolveArtifactSourceBindingOwner( shadow, opacitySource ), RENDER_BINDING_OWNER_KINDS.MATERIAL );
 
 	const wrongShape = validateArtifact( { ...shadow, materialShape: 'mesh-standard' } );
 	assert.equal( wrongShape.ok, false );
@@ -136,6 +149,22 @@ test( 'contract validates and preserves render binding ownership', () => {
 	} );
 	assert.equal( compute.ok, false );
 	assert.equal( compute.errors.find( ( error ) => error.code === 'artifact.bindingOwner.compute' ).path, 'bindingOwner' );
+
+	const wrongSourceShape = validateArtifact( {
+		...shadow,
+		bindingOwner: 'render-material',
+		materialShape: 'mesh-standard',
+		uniformPlan: [ {
+			name: 'object',
+			slots: [ { source: { ...opacitySource, bindingOwner: 'shadow-caster' } } ],
+		} ],
+	} );
+	assert.equal( wrongSourceShape.ok, false );
+	assert.equal( wrongSourceShape.errors.find( ( error ) => error.code === 'source.bindingOwner.materialShape' ).path, 'uniformPlan[0].slots[0].source.bindingOwner' );
+
+	assert.equal( validateDynamicBindingSource( { kind: 'material.opacity', property: 'opacity', bindingOwner: 'render-material' } ).length, 0 );
+	assert.equal( validateDynamicBindingSource( { kind: 'camera.position', bindingOwner: 'render-material' } )[ 0 ].code, 'dynamic-binding.binding-owner-target' );
+	assert.equal( validateDynamicBindingSource( { kind: 'material.opacity', property: 'opacity', bindingOwner: 'captured-object' } )[ 0 ].code, 'dynamic-binding.binding-owner' );
 
 } );
 

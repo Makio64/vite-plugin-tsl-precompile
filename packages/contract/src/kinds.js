@@ -2,7 +2,7 @@ import { MATERIAL_TEXTURE_PROPS } from './texture-props.js';
 import { collectArtifactDynamicBindings, dynamicBindingDescriptor, validateDynamicBindingSource } from './dynamic-bindings.js';
 import { createArtifactVariantPayload } from './artifact-variants.js';
 import { validateArtifactLightIdentities } from './light-identities.js';
-import { RENDER_BINDING_OWNER_KINDS } from './render-selector.js';
+import { RENDER_BINDING_OWNER_KINDS, isRenderBindingOwnerKind } from './render-selector.js';
 import { stableJsonStringify } from './stable-json.js';
 
 export const KIND_STATUS = Object.freeze( {
@@ -24,7 +24,6 @@ export const RUNTIME_BINDING_KINDS = Object.freeze( [
 ] );
 
 const RUNTIME_BINDING_KIND_SET = new Set( RUNTIME_BINDING_KINDS );
-const RENDER_BINDING_OWNER_KIND_SET = new Set( Object.values( RENDER_BINDING_OWNER_KINDS ) );
 
 export const BLOCKED_KINDS = Object.freeze( {
 	'builtin.dfgLUT': 'IBL DFG LUT — resolved by the hydrator (getDFGLUT()). Not a UBO slot kind.',
@@ -685,11 +684,11 @@ export function validateArtifact( input, opts = {} ) {
 	if ( artifact.bindingOwner !== undefined ) {
 
 		const bindingOwnerOnCompute = artifact.kind === 'compute' || typeof artifact.computeShader === 'string' && artifact.computeShader.trim().length > 0;
-		if ( ! RENDER_BINDING_OWNER_KIND_SET.has( artifact.bindingOwner ) ) {
+		if ( ! isRenderBindingOwnerKind( artifact.bindingOwner ) ) {
 
 			errors.push( validationError(
 				'artifact.bindingOwner',
-				`${ label }: bindingOwner must be one of ${ [ ...RENDER_BINDING_OWNER_KIND_SET ].join( ', ' ) }`,
+				`${ label }: bindingOwner must be one of ${ Object.values( RENDER_BINDING_OWNER_KINDS ).join( ', ' ) }`,
 				'bindingOwner',
 			) );
 
@@ -847,6 +846,26 @@ export function validateArtifact( input, opts = {} ) {
 							dynamicError.code,
 							`${ label}: ${ dynamicError.message } at ${ sourcePath }`,
 							`${ sourcePath }.${ dynamicError.field }`
+						) );
+
+					}
+					const sourceBindingOwnerOnCompute = artifact.kind === 'compute' || typeof artifact.computeShader === 'string' && artifact.computeShader.trim().length > 0;
+					if ( source.bindingOwner !== undefined && sourceBindingOwnerOnCompute ) {
+
+						const sourcePath = `${ groupPath }.${ listName }[${ itemIndex }].source.bindingOwner`;
+						errors.push( validationError(
+							'source.bindingOwner.compute',
+							`${ label }: source binding ownership is only valid on render artifacts`,
+							sourcePath,
+						) );
+
+					} else if ( source.bindingOwner === RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER && artifact.materialShape !== 'shadow-depth' ) {
+
+						const sourcePath = `${ groupPath }.${ listName }[${ itemIndex }].source.bindingOwner`;
+						errors.push( validationError(
+							'source.bindingOwner.materialShape',
+							`${ label }: shadow-caster source ownership is only valid for materialShape "shadow-depth"`,
+							sourcePath,
 						) );
 
 					}

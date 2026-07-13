@@ -1,4 +1,5 @@
 import { MATERIAL_TEXTURE_PROPS } from './texture-props.js';
+import { isRenderBindingOwnerKind } from './render-selector.js';
 
 const UNSAFE_NODE_PATH_SEGMENTS = new Set( [ '__proto__', 'prototype', 'constructor' ] );
 
@@ -36,7 +37,7 @@ function textureDescriptor( kind, property ) {
 		owner: 'material',
 		resolver: 'hydrator/material-texture',
 		required: [ 'property' ],
-		optional: [ 'textureUuid', 'textureName', 'imageSrc', 'snapshot', 'matrix' ],
+		optional: [ 'bindingOwner', 'textureUuid', 'textureName', 'imageSrc', 'snapshot', 'matrix' ],
 		property,
 	} );
 
@@ -51,7 +52,7 @@ function materialMatrixDescriptor( kind, property ) {
 		owner: 'material',
 		resolver: 'emit-updater/material-texture-matrix',
 		required: [ 'property' ],
-		optional: [ 'valueSnapshot' ],
+		optional: [ 'bindingOwner', 'valueSnapshot' ],
 		property,
 	} );
 
@@ -65,7 +66,7 @@ const exactDescriptors = {
 		owner: 'material',
 		resolver: 'hydrator/live-node',
 		required: [],
-		optional: [ 'name', 'property', 'nodePath', 'liveNodeId', 'valueType', 'valueSnapshot' ],
+		optional: [ 'bindingOwner', 'name', 'property', 'nodePath', 'liveNodeId', 'valueType', 'valueSnapshot' ],
 	} ),
 	'object3d.nodeUniform': freezeDescriptor( {
 		kind: 'object3d.nodeUniform',
@@ -240,7 +241,7 @@ const PREFIX_DESCRIPTORS = Object.freeze( [
 		owner: 'material',
 		resolver: 'emit-updater/material',
 		required: [ 'property' ],
-		optional: [ 'valueSnapshot' ],
+		optional: [ 'bindingOwner', 'valueSnapshot' ],
 	} ),
 ] );
 
@@ -267,8 +268,27 @@ export function validateDynamicBindingSource( source ) {
 
 	const kind = source && source.kind;
 	const descriptor = dynamicBindingDescriptor( kind );
-	if ( ! descriptor ) return [];
 	const errors = [];
+	if ( source && source.bindingOwner !== undefined && ! isRenderBindingOwnerKind( source.bindingOwner ) ) {
+
+		errors.push( {
+			code: 'dynamic-binding.binding-owner',
+			kind,
+			field: 'bindingOwner',
+			message: `${ kind } source "bindingOwner" must be a known render binding owner`,
+		} );
+
+	} else if ( source && source.bindingOwner !== undefined && descriptor && descriptor.owner !== 'material' ) {
+
+		errors.push( {
+			code: 'dynamic-binding.binding-owner-target',
+			kind,
+			field: 'bindingOwner',
+			message: `${ kind } source "bindingOwner" is only valid for material-owned bindings`,
+		} );
+
+	}
+	if ( ! descriptor ) return errors;
 	for ( const field of descriptor.required ) {
 
 		if ( source[ field ] === undefined || source[ field ] === null || source[ field ] === '' ) {

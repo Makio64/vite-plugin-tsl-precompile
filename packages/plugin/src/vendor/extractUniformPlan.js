@@ -24,6 +24,9 @@
 import { modelNormalMatrix, modelWorldMatrixInverse, time, deltaTime, frameId, backgroundBlurriness, backgroundIntensity, backgroundRotation, toneMappingExposure, lightPosition, lightTargetPosition, lightViewPosition, lightShadowMatrix } from 'three/tsl';
 import { UniformNode } from 'three/webgpu';
 import { createLightSourceIdentityMetadata } from '@tsl-precompile/contract/light-identities';
+import { RENDER_BINDING_OWNER_KINDS, SHADOW_CASTER_COPIED_BINDING_PROPERTIES } from '@tsl-precompile/contract/render-selector';
+
+const SHADOW_CASTER_COPIED_BINDING_PROPERTY_SET = new Set( SHADOW_CASTER_COPIED_BINDING_PROPERTIES );
 
 // UniformNode binds update callbacks twice, so `node.update.toString()` is
 // native code and cannot identify Three's lazy high-precision callbacks.
@@ -105,6 +108,61 @@ function object3DSourceForNode( node, context ) {
 
 }
 
+function materialReferenceSource( node, type, context ) {
+
+	const shadowCasterContext = context && context.bindingOwnerKind === RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER;
+	const materialBindingOwners = context && context.materialBindingOwners;
+	const hasExactOwners = shadowCasterContext && materialBindingOwners instanceof Set && materialBindingOwners.size > 0;
+
+	if ( type === 'ReferenceNode' ) {
+
+		// Plain ReferenceNode targets are heterogeneous. Only a stable explicit
+		// `.object` identity from Three's reference( ..., sourceMaterial ) call
+		// can prove caster ownership. `.reference` is mutable and may already
+		// point at a later draw when cached update nodes are inspected.
+		if ( hasExactOwners && node.object && materialBindingOwners.has( node.object ) ) {
+
+			return {};
+
+		}
+		return null;
+
+	}
+
+	// MaterialReferenceNode.material is the stable explicit target. A null
+	// target means "the active shader material"; for shadow passes only the
+	// properties Renderer.renderObject copies from the caster may opt into the
+	// alternate owner. Other dynamic material references (notably opacity)
+	// remain owned by the renderer's shared shadow material.
+	const explicitMaterial = node.material || node.object || null;
+	if ( hasExactOwners ) {
+
+		if ( explicitMaterial ) {
+
+			if ( materialBindingOwners.has( explicitMaterial ) ) return {};
+			if ( explicitMaterial !== context.material ) return null;
+			return { bindingOwner: RENDER_BINDING_OWNER_KINDS.MATERIAL };
+
+		} else if ( SHADOW_CASTER_COPIED_BINDING_PROPERTY_SET.has( node.property ) ) {
+
+			return {};
+
+		}
+		return { bindingOwner: RENDER_BINDING_OWNER_KINDS.MATERIAL };
+
+	} else if ( explicitMaterial && context && context.material && explicitMaterial !== context.material ) {
+
+		// Reading an explicitly different material through frame.material would
+		// be incorrect. Preserve the live-node/snapshot fallback until the
+		// contract grows a generic external-reference owner.
+		return null;
+
+	}
+
+	return {};
+
+}
+
 function resolveFromUpdateNode( node, context = null ) {
 
 	const type = node.constructor ? node.constructor.type : null;
@@ -167,15 +225,18 @@ function resolveFromUpdateNode( node, context = null ) {
 		// the preserved state.updateNodes' ReferenceNode.update() keeps
 		// refreshed from the live `this.reference` object.
 		let prefix = null;
-		if ( type === 'MaterialReferenceNode' ) {
+		let bindingOwner = null;
+		const materialSource = materialReferenceSource( node, type, context );
+		if ( materialSource ) {
 
 			prefix = 'material';
+			bindingOwner = materialSource.bindingOwner || null;
 
-		} else if ( node.reference && ( node.reference.isFog || node.reference.isFogExp2 ) ) {
+		} else if ( type === 'ReferenceNode' && node.reference && ( node.reference.isFog || node.reference.isFogExp2 ) ) {
 
 			prefix = 'scene.fog';
 
-		} else if ( node.reference && node.reference.isScene ) {
+		} else if ( type === 'ReferenceNode' && node.reference && node.reference.isScene ) {
 
 			prefix = 'scene';
 
@@ -188,6 +249,7 @@ function resolveFromUpdateNode( node, context = null ) {
 			property: node.property,
 			uniformType: node.uniformType || null
 		};
+		if ( bindingOwner ) source.bindingOwner = bindingOwner;
 
 		return node.node ? { uniformNode: node.node, source } : null;
 
@@ -1405,7 +1467,8 @@ export function extractUniformPlan( state, context = null ) {
 			uniformNodeToSource.set( textureNode._matrixUniform, {
 				kind: source.kind + '.matrix',
 				property: source.property,
-				uniformType: 'mat3'
+				uniformType: 'mat3',
+				...( source.bindingOwner ? { bindingOwner: source.bindingOwner } : {} )
 			} );
 
 		}

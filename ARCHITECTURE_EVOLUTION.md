@@ -404,6 +404,26 @@ Node/TSL modules / 302,240 rendered bytes; the added contract and selector
 logic moves the bundle from 828,280 raw / 226,734 gzip-9 bytes to 829,290 raw /
 227,045 gzip-9 bytes.
 
+**Owner-qualified shadow binding extraction (2026-07-13).** Exact dispatch
+evidence now reaches uniform-plan extraction as a process-local Set of every
+source material that shares the harvested shadow state. Three r184's explicit
+caster `ReferenceNode( "map" )` becomes `material.map`, including its texture
+matrix, only when the node's stable `.object` belongs to that Set; direct graph
+textures remain `artifact.texture`, and mutable `.reference` values never
+prove ownership. The shared contract also records that r184 copies `alphaMap`
+and `alphaTest`, but not `opacity`, onto its shadow override. Artifact-level
+`bindingOwner: "shadow-caster"` is the compact default, while mixed inputs use
+the canonical `source.bindingOwner ?? artifact.bindingOwner ??
+"render-material"` precedence; shadow-material opacity therefore carries an
+explicit `render-material` exception. Caster identities remain process-local,
+and stale shared-override values are not promoted into caster defaults. A real
+mock-WebGPU fixture covers map, alpha-map/test, direct custom shadow texture,
+and plain caster branches. Runtime owner-local hydration is the next wedge;
+this extraction commit deliberately does not redirect live bindings yet. The
+strict graph remains 393 modules with zero compiler/stock-adapter residue and
+65 retained Node/TSL modules / 302,240 rendered bytes; contract and provenance
+metadata move the bundle to 830,311 raw / 227,181 gzip-9 bytes.
+
 ---
 
 ## 2026-06-09 audit refresh — corrections to the map
