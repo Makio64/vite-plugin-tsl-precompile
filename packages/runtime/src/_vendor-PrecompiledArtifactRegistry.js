@@ -39,37 +39,10 @@
  * first one we see as the default; callers can opt into per-light
  * precompile variants via `registerShadowArtifact( light, artifact )`.
  */
+import { createArtifactVariantPayload } from '@tsl-precompile/contract/artifact-variants';
+
 let _defaultShadowArtifact = null;
 let _shadowByLight = new WeakMap();
-
-const VARIANT_FIELDS = [
-	'cacheKey',
-	'materialShape',
-	'sourceMaterial',
-	'vertexShader',
-	'fragmentShader',
-	'computeShader',
-	'transforms',
-	'attributes',
-	'nodeAttributes',
-	'bindings',
-	'uniformPlan',
-	'mrtOutputCount',
-	'mrtOutputNames',
-	'mrtBlendModes',
-];
-
-function variantPayload( artifact ) {
-
-	const payload = {};
-	for ( const field of VARIANT_FIELDS ) {
-
-		if ( artifact && artifact[ field ] !== undefined ) payload[ field ] = artifact[ field ];
-
-	}
-	return payload;
-
-}
 
 function mergeTextureRefs( target, source ) {
 
@@ -101,7 +74,7 @@ function addVariant( target, artifact ) {
 
 	if ( ! target || ! artifact || artifact.cacheKey === undefined || artifact.cacheKey === null ) return;
 	const variants = target.variants && typeof target.variants === 'object' ? { ...target.variants } : {};
-	variants[ String( artifact.cacheKey ) ] = variantPayload( artifact );
+	variants[ String( artifact.cacheKey ) ] = createArtifactVariantPayload( artifact );
 	Object.defineProperty( target, 'variants', {
 		value: variants,
 		enumerable: true,

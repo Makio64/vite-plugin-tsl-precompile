@@ -80,6 +80,40 @@ test( 'emitArtifactModule emits WGSL constants before the artifact literal', () 
 
 } );
 
+test( 'emitArtifactModule derives bindings and validates updater kinds for every variant', () => {
+
+	const slot = ( kind, byteOffset = 0 ) => ( {
+		name: kind,
+		type: 'float',
+		byteOffset,
+		source: { kind, valueSnapshot: 0 },
+	} );
+	const artifact = {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		computeShader: '',
+		uniformPlan: [ { name: 'root', slots: [ slot( 'material.opacity' ) ] } ],
+		variants: {
+			variant: {
+				cacheKey: 'variant',
+				vertexShader: 'vertex-variant',
+				fragmentShader: 'fragment-variant',
+				computeShader: '',
+				uniformPlan: [ { name: 'variant', slots: [ slot( 'future.variant.kind', 16 ) ] } ],
+			},
+		},
+	};
+	const { source, unsupportedKinds } = emitArtifactModule(
+		{ hash: 'variant-hash', name: 'variant-bindings' },
+		{ artifact },
+	);
+
+	assert.equal( ( source.match( /"dynamicBindings"/g ) || [] ).length, 2 );
+	assert.ok( unsupportedKinds.some( ( entry ) => entry.kind === 'future.variant.kind' && entry.variantCacheKey === 'variant' ) );
+	assert.doesNotThrow( () => parse( source, { sourceType: 'module' } ) );
+
+} );
+
 test( 'createWgslStringPool pools repeated WGSL across separate artifacts', () => {
 
 	const shader = '@fragment fn main(  ) -> @location( 0 ) vec4<f32> { return vec4<f32>( 1.0 ); }';

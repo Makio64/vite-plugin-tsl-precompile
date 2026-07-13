@@ -215,7 +215,23 @@ export function __resetAuxRegistryForTests(): void;
 
 // ---------- Hydrator ----------
 
-export function hydrateNodeBuilderState( artifact: unknown, material?: unknown, object?: unknown, cacheKey?: number | string | null ): unknown;
+export interface HydrateVariantSelection {
+	/** Legacy Three cache key; used only for unsigned artifacts. */
+	cacheKey?: number | string | null;
+	/** Active Three RenderObject used to derive a stable render-topology selector. */
+	renderObject?: unknown;
+	/** Precomputed canonical selector for non-Three integrations and tests. */
+	renderContextSelector?: string | null;
+	/** Optional material override for MRT attachment-count compatibility. */
+	material?: unknown;
+}
+
+export function hydrateNodeBuilderState(
+	artifact: unknown,
+	material?: unknown,
+	object?: unknown,
+	variantSelection?: number | string | HydrateVariantSelection | null,
+): unknown;
 export function registerLiveTexture( texture: unknown ): void;
 export function installTextureLoaderTracking( loaders: unknown, opts?: { onTextureLoad?: ( texture: unknown, info: unknown ) => void } ): number;
 export function clearLiveTextureIndex(): void;

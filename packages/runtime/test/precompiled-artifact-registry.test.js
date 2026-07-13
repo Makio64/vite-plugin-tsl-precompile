@@ -14,6 +14,7 @@ function artifact( cacheKey, fragmentShader ) {
 	return {
 		materialShape: 'shadow-depth',
 		cacheKey,
+		renderContextSelectors: [ JSON.stringify( { version: 'render-object-selector@1', cacheKey } ) ],
 		vertexShader: `vertex:${ fragmentShader }`,
 		fragmentShader,
 		bindings: [],
@@ -27,6 +28,7 @@ test( 'precompiled registry: shadow-depth artifacts merge cache-key variants', (
 	unregisterPrecompiledArtifacts();
 	const base = artifact( 'base-key', 'base-shadow' );
 	const custom = artifact( 'custom-key', 'custom-shadow' );
+	custom.ltcTextures = { float: 'ltc-float', half: 'ltc-half' };
 	const texture = { isTexture: true, uuid: 'tex-1' };
 	Object.defineProperty( custom, '_textureRefs', {
 		value: new Map( [ [ 'tex-1', texture ] ] ),
@@ -41,6 +43,8 @@ test( 'precompiled registry: shadow-depth artifacts merge cache-key variants', (
 	assert.equal( registered, base );
 	assert.equal( registered.variants[ 'base-key' ].fragmentShader, 'base-shadow' );
 	assert.equal( registered.variants[ 'custom-key' ].fragmentShader, 'custom-shadow' );
+	assert.equal( registered.variants[ 'custom-key' ].renderContextSelectors[ 0 ], custom.renderContextSelectors[ 0 ] );
+	assert.deepEqual( registered.variants[ 'custom-key' ].ltcTextures, custom.ltcTextures );
 	assert.equal( registered._textureRefs.get( 'tex-1' ), texture );
 
 } );

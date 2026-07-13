@@ -945,7 +945,7 @@ function findClassMethod( ast, methodName ) {
  *     throw new Error('…slim-only…');
  *   }
  *   const artifact = material.precompiledArtifact;
- *   const hydrated = hydrateNodeBuilderState( artifact, material, renderObject.object );
+ *   const hydrated = hydrateNodeBuilderState( artifact, material, renderObject.object, { renderObject, cacheKey } );
  *   return {
  *     material, scene: renderObject.scene, camera: renderObject.camera,
  *     vertexShader: hydrated.vertexShader,
@@ -999,32 +999,34 @@ function buildHelperStub() {
 		}
 	` ).body[ 0 ];
 
-	// Tier C — pass the live `renderObject.cacheKey` so the hydrator can
-	// select the matching variant from `precompiledArtifact.variants`. The
-	// `this` here is the patched `NodeManager`; `getForRenderCacheKey` is
-	// the fork-internal hashing function that produces the SAME key three.js
-	// itself uses to index `nodeBuilderCache`. When the artifact has no
-	// `variants` field (legacy single-variant capture), the hydrator falls
-	// back to top-level fields, so this is fully back-compat.
+	// Pass the complete RenderObject for semantic variant selection. Keep the
+	// private cache key in the options bag as a compatibility fallback for
+	// artifacts captured before render-context signatures were persisted.
 	const hydratedDecl = t.variableDeclaration( 'const', [
 		t.variableDeclarator(
 			hydratedIdent,
 			t.callExpression( t.identifier( 'hydrateNodeBuilderState' ), [
 				t.memberExpression( t.cloneNode( materialIdent ), t.identifier( 'precompiledArtifact' ) ),
 				t.cloneNode( materialIdent ),
-					t.memberExpression( t.cloneNode( renderObjectIdent ), t.identifier( 'object' ) ),
-				t.conditionalExpression(
-					t.binaryExpression(
-						'===',
-						t.unaryExpression( 'typeof', t.memberExpression( t.thisExpression(), t.identifier( 'getForRenderCacheKey' ) ) ),
-						t.stringLiteral( 'function' ),
+				t.memberExpression( t.cloneNode( renderObjectIdent ), t.identifier( 'object' ) ),
+				t.objectExpression( [
+					t.objectProperty(
+						t.identifier( 'cacheKey' ),
+						t.conditionalExpression(
+							t.binaryExpression(
+								'===',
+								t.unaryExpression( 'typeof', t.memberExpression( t.thisExpression(), t.identifier( 'getForRenderCacheKey' ) ) ),
+								t.stringLiteral( 'function' ),
+							),
+							t.callExpression(
+								t.memberExpression( t.thisExpression(), t.identifier( 'getForRenderCacheKey' ) ),
+								[ t.cloneNode( renderObjectIdent ) ],
+							),
+							t.nullLiteral(),
+						),
 					),
-					t.callExpression(
-						t.memberExpression( t.thisExpression(), t.identifier( 'getForRenderCacheKey' ) ),
-						[ t.cloneNode( renderObjectIdent ) ],
-					),
-					t.nullLiteral(),
-				),
+					t.objectProperty( t.identifier( 'renderObject' ), t.cloneNode( renderObjectIdent ) ),
+				] ),
 			] ),
 		),
 	] );
@@ -1117,6 +1119,9 @@ function buildPrecompileBypass() {
 				artifactExpr,
 				materialExpr,
 				t.memberExpression( t.identifier( 'renderObject' ), t.identifier( 'object' ) ),
+				t.objectExpression( [
+					t.objectProperty( t.identifier( 'renderObject' ), t.identifier( 'renderObject' ) ),
+				] ),
 			] ),
 		) ),
 	] );

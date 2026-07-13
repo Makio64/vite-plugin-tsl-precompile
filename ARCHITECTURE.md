@@ -47,7 +47,8 @@ Inspired by Unreal's Material Compiler (`FMaterialUniformExpressionSet` generate
 │   · bindings (bind-group layout)
 │   · uniformPlan (descriptor list)
 │   · sourceGraphHash + exact Three/toolchain versions
-│   · renderContextSignature (topology only)
+│   · renderContextSignature (source/provenance topology)
+│   · renderContextSelectors (replay-reproducible shader variants)
 │   · __hash (artifact-content/module identity gate)
 │   · source owners + conservative module revisions
 └─────────────────────────────────────────────┘
@@ -90,6 +91,9 @@ Shared extractor/codegen/runtime contract helpers.
 
 - `src/graph-normalize.js` — one graph-normalization implementation imported by plugin and runtime hashers.
 - `src/render-context.js` — canonical shader-topology signature for renderer, scene, camera, object, geometry, clipping, and MRT state.
+- `src/render-selector.js` — graph-free, canonical RenderObject topology used to select a captured variant in compiler-free replay.
+- `src/artifact-variants.js` — the shared variant-local payload field list used by capture, registries, codegen, and runtime.
+- `src/stable-json.js` — deterministic JSON encoding for persisted selectors and payload comparisons.
 - `src/kinds.js` — shared `source.kind` registry, blocked-kind reasons, artifact payload/aggregate validation, and source-kind collection.
 - `src/texture-props.js` — canonical material texture slots and node-graph texture keys.
 
@@ -100,6 +104,7 @@ Ships with the user's bundle. Runtime only.
 - `src/precompile-marker.js` — `Material.prototype.precompile`. In dev, calls the extractor + POSTs artifact. In prod, replaced by transform.
 - `src/apply-precompiled.js` — `__applyPrecompiled` helper injected by transform.
 - `src/hydrate/*` — runtime hydration modules: static binding allocation, texture/source resolution, built-in texture reconstruction, live texture registry, and per-frame texture rebinders.
+- `src/hydrate/variants/artifact-variant-selector.js` — exact semantic variant selection; signed artifacts fail closed on an uncaptured topology while old unsigned artifacts retain cache-key/MRT compatibility.
 - `src/slim-support/live-scene-index.js` — first productized slim-support helper for live texture indexing and null-image healing.
 - `src/slim-support/pmrem.js` — productized PMREM support helpers for artifact/source detection, cache orchestration, and `_textureRefs` wiring; the harness still supplies the full-renderer generator.
 - `src/writers.js` — `writeMat4 / writeVec4 / writeF32 / writeColor`.

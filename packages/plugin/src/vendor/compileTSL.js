@@ -26,6 +26,8 @@ import { extractUniformPlan } from './extractUniformPlan.js';
 import { observeRenderObjects } from './render-object-observer.js';
 import { DataUtils, FloatType, HalfFloatType, RGBAFormat, RenderTarget } from 'three';
 import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
+import { createRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
+import { createArtifactVariantPayload } from '@tsl-precompile/contract/artifact-variants';
 
 /**
  * Describes a single binding inside a bind group in serializable form.
@@ -225,27 +227,6 @@ function pushArtifactVariant( byMaterialVariants, materialUuid, artifact ) {
 
 }
 
-function artifactVariantPayload( artifact ) {
-
-	return {
-		cacheKey: artifact.cacheKey,
-		materialShape: artifact.materialShape,
-		sourceMaterial: artifact.sourceMaterial,
-		vertexShader: artifact.vertexShader,
-		fragmentShader: artifact.fragmentShader,
-		computeShader: artifact.computeShader,
-		transforms: artifact.transforms,
-		attributes: artifact.attributes,
-		nodeAttributes: artifact.nodeAttributes,
-		bindings: artifact.bindings,
-		uniformPlan: artifact.uniformPlan,
-		mrtOutputCount: artifact.mrtOutputCount,
-		mrtOutputNames: artifact.mrtOutputNames,
-		mrtBlendModes: artifact.mrtBlendModes,
-	};
-
-}
-
 function mergeArtifactTextureRefs( target, source ) {
 
 	const sourceRefs = source && source._textureRefs;
@@ -281,7 +262,7 @@ function attachArtifactVariantFamily( artifact, variantList ) {
 	for ( const variant of variantList ) {
 
 		if ( ! variant || variant.cacheKey === undefined || variant.cacheKey === null ) continue;
-		variants[ String( variant.cacheKey ) ] = artifactVariantPayload( variant );
+		variants[ String( variant.cacheKey ) ] = createArtifactVariantPayload( variant );
 		mergeArtifactTextureRefs( artifact, variant );
 
 	}
@@ -1021,7 +1002,8 @@ function collectMaterialRenderState( material ) {
 		'colorWrite', 'premultipliedAlpha', 'dithering', 'toneMapped',
 		'vertexColors', 'wireframe', 'wireframeLinewidth',
 		'flatShading', 'fog', 'lights', 'allowOverride',
-		'forceSinglePass', 'polygonOffset', 'polygonOffsetFactor',
+		'forceSinglePass', 'sizeAttenuation', 'dashed', 'shadowSide',
+		'polygonOffset', 'polygonOffsetFactor',
 		'polygonOffsetUnits', 'stencilWrite', 'stencilWriteMask',
 		'stencilFunc', 'stencilRef', 'stencilFuncMask',
 		'stencilFail', 'stencilZFail', 'stencilZPass',
@@ -1276,9 +1258,29 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	// single-material fallback.
 	const materialByCacheKey = new Map();
 	const meshesByCacheKey = new Map();
+	const renderContextSelectorsByCacheKey = new Map();
 	const recordRenderObject = ( { renderObject, cacheKey } ) => {
 
 		if ( cacheKey === null || cacheKey === undefined ) return;
+		let selector = '';
+		try {
+
+			selector = createRenderObjectContextSelector( renderObject, renderer );
+
+		} catch ( _ ) {
+
+			// A custom/proxied RenderObject may refuse reflection. Keep material
+			// attribution intact; this cache entry remains an unsigned legacy
+			// variant and is rejected by the family validator if siblings are signed.
+
+		}
+		if ( selector ) {
+
+			let selectors = renderContextSelectorsByCacheKey.get( cacheKey );
+			if ( ! selectors ) renderContextSelectorsByCacheKey.set( cacheKey, selectors = new Set() );
+			selectors.add( selector );
+
+		}
 
 		// Record BOTH the node material (which the extractor introspects
 		// for shape + defaults) AND the user-facing material on the object
@@ -1593,6 +1595,8 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		const userMaterial = materialByCacheKey.get( cacheKey + ':user' ) || null;
 		const meshes = meshesByCacheKey.get( cacheKey ) || [];
 		const artifact = extractArtifact( cacheKey, state, material, meshes[ 0 ] || null );
+		const renderContextSelectors = renderContextSelectorsByCacheKey.get( cacheKey );
+		if ( renderContextSelectors && renderContextSelectors.size > 0 ) artifact.renderContextSelectors = [ ...renderContextSelectors ].sort();
 		if ( material && material.uuid ) artifact.materialUuid = material.uuid;
 		if ( userMaterial && userMaterial.uuid ) artifact.userMaterialUuid = userMaterial.uuid;
 		if ( captureClock !== null ) artifact.captureClock = captureClock;

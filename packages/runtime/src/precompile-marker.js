@@ -32,6 +32,7 @@ import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { createRenderContextSignature } from '@tsl-precompile/contract/render-context';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
+import { createArtifactVariantPayload } from '@tsl-precompile/contract/artifact-variants';
 
 const MARKER_STATE_SYMBOL = Symbol.for( '@tsl-precompile/runtime/precompile-marker-state' );
 const DEFAULT_OBSERVE_TIMEOUT_MS = 30_000;
@@ -454,24 +455,21 @@ function selectPreferredCaptureArtifact( current, candidate ) {
 
 }
 
-function artifactVariantPayload( artifact ) {
+function collectCodegenUnsupportedKinds( artifact, codegen ) {
 
-	return {
-		cacheKey: artifact.cacheKey,
-		materialShape: artifact.materialShape,
-		sourceMaterial: artifact.sourceMaterial,
-		vertexShader: artifact.vertexShader,
-		fragmentShader: artifact.fragmentShader,
-		computeShader: artifact.computeShader,
-		transforms: artifact.transforms,
-		attributes: artifact.attributes,
-		nodeAttributes: artifact.nodeAttributes,
-		bindings: artifact.bindings,
-		uniformPlan: artifact.uniformPlan,
-		mrtOutputCount: artifact.mrtOutputCount,
-		mrtOutputNames: artifact.mrtOutputNames,
-		mrtBlendModes: artifact.mrtBlendModes,
-	};
+	const unsupported = [];
+	const rootKey = artifact.cacheKey === undefined || artifact.cacheKey === null ? null : String( artifact.cacheKey );
+	const variants = Object.values( artifact.variants || {} ).filter( ( variant ) => rootKey === null || String( variant && variant.cacheKey ) !== rootKey );
+	for ( const candidate of [ artifact, ...variants ] ) {
+
+		const result = codegen( candidate );
+		for ( const entry of result.unsupportedKinds || [] ) unsupported.push( {
+			...entry,
+			...( candidate === artifact ? {} : { variantCacheKey: candidate.cacheKey ?? null } ),
+		} );
+
+	}
+	return unsupported;
 
 }
 
@@ -530,7 +528,7 @@ function attachMaterialVariantFamily( artifact, variantList ) {
 	for ( const variant of variantList ) {
 
 		if ( ! variant || variant.cacheKey === undefined || variant.cacheKey === null ) continue;
-		variants[ String( variant.cacheKey ) ] = artifactVariantPayload( variant );
+		variants[ String( variant.cacheKey ) ] = createArtifactVariantPayload( variant );
 		mergeArtifactTextureRefs( artifact, variant );
 
 	}
@@ -1254,7 +1252,7 @@ async function captureMaterialInDev( entry ) {
 		// developer sees the kind name next to their `.precompile()` call
 		// (surfaces as an unhandled rejection in the console). Blocked kinds
 		// are tolerated — they're known-deferred and get a warning instead.
-		const { unsupportedKinds } = codegen( artifact );
+		const unsupportedKinds = collectCodegenUnsupportedKinds( artifact, codegen );
 		const unknowns = unsupportedKinds.filter( ( u ) => u.severity === 'unknown' );
 		if ( unknowns.length > 0 ) {
 

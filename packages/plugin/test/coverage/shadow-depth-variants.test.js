@@ -111,6 +111,7 @@ test( 'compileTSL: shadow-depth aux artifacts retain custom shadow variants', as
 		assert.ok( family, `expected a shadow-depth variant family; saw ${ shadowArtifacts.length } shadow artifact(s)` );
 
 		const variants = Object.values( family.variants );
+		assert.ok( variants.every( ( variant ) => Array.isArray( variant.renderContextSelectors ) && variant.renderContextSelectors.length > 0 ), 'expected every shadow variant to carry one or more semantic render-context selectors' );
 		const customVariant = variants.find( ( variant ) => String( variant.fragmentShader || '' ).includes( 'texture' ) );
 		assert.ok( customVariant, 'expected a custom shadow variant that samples the castShadowNode texture' );
 		assert.ok( artifactTextureSources( customVariant ).length > 0, 'expected custom shadow variant to carry its texture binding source' );

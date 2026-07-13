@@ -9,6 +9,7 @@ import {
 	isDynamicBindingKind,
 	validateDynamicBindingSource,
 } from '@tsl-precompile/contract/dynamic-bindings';
+import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
 
 test( 'dynamicBindingDescriptor resolves exact kinds', () => {
 
@@ -190,6 +191,64 @@ test( 'validateArtifact accepts a dynamicBindings section that matches the compu
 	};
 	const result = validateArtifact( artifact, { label: 'match-test' } );
 	assert.deepEqual( result.errors, [] );
+
+} );
+
+test( 'validateArtifact recursively validates variant-local plans', async () => {
+
+	const { validateArtifact } = await import( '@tsl-precompile/contract/kinds' );
+	const result = validateArtifact( {
+		uniformPlan: [],
+		variants: {
+			variant: {
+				uniformPlan: [ {
+					name: 'variant',
+					slots: [ { source: { kind: 'future.variant.kind' } } ],
+				} ],
+			},
+		},
+	} );
+
+	assert.equal( result.ok, false );
+	assert.ok( result.errors.some( ( error ) => error.code === 'source.kind.unknown' && error.path.startsWith( 'variants.variant.' ) ) );
+
+} );
+
+test( 'validateArtifact enforces canonical, complete semantic variant families', async () => {
+
+	const { validateArtifact } = await import( '@tsl-precompile/contract/kinds' );
+	const selector = stableJsonStringify( { version: 'render-object-selector@1', topology: 'shared' } );
+	const variant = ( cacheKey, fragmentShader, selectors = [ selector ] ) => ( {
+		cacheKey,
+		vertexShader: 'vertex',
+		fragmentShader,
+		uniformPlan: [],
+		renderContextSelectors: selectors,
+	} );
+
+	const collision = validateArtifact( {
+		...variant( 'a', 'fragment-a' ),
+		variants: {
+			a: variant( 'a', 'fragment-a' ),
+			b: variant( 'b', 'fragment-b' ),
+		},
+	} );
+	assert.ok( collision.errors.some( ( error ) => error.code === 'artifact.renderContextSelector.collision' ) );
+
+	const partial = validateArtifact( {
+		...variant( 'a', 'fragment-a' ),
+		variants: {
+			a: variant( 'a', 'fragment-a' ),
+			b: variant( 'wrong-key', 'fragment-b', null ),
+		},
+	} );
+	assert.ok( partial.errors.some( ( error ) => error.code === 'artifact.variant.cacheKey' ) );
+	assert.ok( partial.errors.some( ( error ) => error.code === 'artifact.renderContextSelectors.partial-family' ) );
+
+	const nonCanonical = validateArtifact( {
+		...variant( 'single', 'fragment', [ JSON.stringify( { version: 'render-object-selector@1', topology: 'shared' } ) ] ),
+	} );
+	assert.ok( nonCanonical.errors.some( ( error ) => error.code === 'artifact.renderContextSelector.canonical' ) );
 
 } );
 

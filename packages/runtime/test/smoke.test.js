@@ -105,6 +105,49 @@ test( 'tier C: hydrator selects variant by live cacheKey when artifact.variants 
 
 } );
 
+test( 'tier C: hydrator prefers a signed semantic variant over private cache identity', () => {
+
+	const selectorA = JSON.stringify( { version: 'render-object-selector@1', topology: 'a' } );
+	const selectorB = JSON.stringify( { version: 'render-object-selector@1', topology: 'b' } );
+	const artifact = {
+		cacheKey: 'capture-a',
+		vertexShader: 'vertex_a',
+		fragmentShader: 'fragment_a',
+		bindings: [],
+		nodeAttributes: [],
+		uniformPlan: [],
+		renderContextSelectors: [ selectorA ],
+		variants: {
+			'capture-a': {
+				cacheKey: 'capture-a',
+				vertexShader: 'vertex_a',
+				fragmentShader: 'fragment_a',
+				bindings: [],
+				nodeAttributes: [],
+				uniformPlan: [],
+				renderContextSelectors: [ selectorA ],
+			},
+			'capture-b': {
+				cacheKey: 'capture-b',
+				vertexShader: 'vertex_b',
+				fragmentShader: 'fragment_b',
+				bindings: [],
+				nodeAttributes: [],
+				uniformPlan: [],
+				renderContextSelectors: [ selectorB ],
+			},
+		},
+	};
+
+	const state = hydrateNodeBuilderState( artifact, null, null, {
+		cacheKey: 'capture-a',
+		renderContextSelector: selectorB,
+	} );
+	assert.equal( state.vertexShader, 'vertex_b' );
+	assert.equal( state.fragmentShader, 'fragment_b' );
+
+} );
+
 test( 'tier C: hydrator without variants field uses top-level fields unchanged', () => {
 
 	// Legacy single-variant artifact — no `variants` map. Hydrator should

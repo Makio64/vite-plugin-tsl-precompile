@@ -32,19 +32,10 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 	const hash = artifactJson.__hash || artifact.__hash || manifestEntry.hash;
 	const name = artifactJson.__name || artifact.__name || manifestEntry.name || '';
 
-	// Compute the dynamic-binding section once over the artifact's
-	// uniformPlan. P1.7's descriptor-driven resolver reads this directly;
-	// emitting it here keeps the contract registry as the single source of
-	// truth — extractor records `source.kind`, the contract registry resolves
-	// it to a descriptor, the runtime consumes the resolved list. Idempotent;
-	// only attaches a shallow copy when not already present so re-runs over
-	// the same artifact don't double-write.
-	const dynamicBindings = Array.isArray( artifact.dynamicBindings )
-		? artifact.dynamicBindings
-		: collectArtifactDynamicBindings( artifact );
-	const artifactForEmission = artifact.dynamicBindings === dynamicBindings
-		? artifact
-		: { ...artifact, dynamicBindings };
+	// Every variant owns its own uniformPlan, so it must also own the derived
+	// dynamic-binding descriptor table. Inheriting the root table can pair the
+	// selected shader with offsets/bindings from a different topology.
+	const artifactForEmission = attachDynamicBindingsDeep( artifact );
 
 	const {
 		declarations: wgslDeclarations,
@@ -54,7 +45,8 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 
 	// Generate the per-frame update function. Writers resolve at Vite bundle
 	// time via the runtime's package export.
-	const { source: updaterSource, unsupportedKinds } = emitUpdaterSource( artifact );
+	const { source: updaterSource, unsupportedKinds: rootUnsupportedKinds } = emitUpdaterSource( artifactForEmission );
+	const unsupportedKinds = collectVariantUnsupportedKinds( artifactForEmission, rootUnsupportedKinds );
 
 	// The updater module declares `export function update(...)` AND
 	// `export const __unsupportedKinds = [...]`. Rename it to `__generatedUpdate`
@@ -91,5 +83,58 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 	);
 
 	return { source: lines.join( '\n' ), unsupportedKinds };
+
+}
+
+function attachDynamicBindingsDeep( artifact ) {
+
+	if ( ! artifact || typeof artifact !== 'object' ) return artifact;
+	let changed = false;
+	let variants = artifact.variants;
+	if ( variants && typeof variants === 'object' ) {
+
+		const nextVariants = {};
+		for ( const [ key, variant ] of Object.entries( variants ) ) {
+
+			const next = attachDynamicBindingsDeep( variant );
+			nextVariants[ key ] = next;
+			if ( next !== variant ) changed = true;
+
+		}
+		if ( changed ) variants = nextVariants;
+
+	}
+	const dynamicBindings = Array.isArray( artifact.dynamicBindings )
+		? artifact.dynamicBindings
+		: collectArtifactDynamicBindings( artifact );
+	if ( dynamicBindings !== artifact.dynamicBindings ) changed = true;
+	if ( ! changed ) return artifact;
+	return { ...artifact, dynamicBindings, ...( variants !== artifact.variants ? { variants } : {} ) };
+
+}
+
+function collectVariantUnsupportedKinds( artifact, rootUnsupportedKinds ) {
+
+	const unsupported = [ ...rootUnsupportedKinds ];
+	const rootKey = artifact.cacheKey === undefined || artifact.cacheKey === null ? null : String( artifact.cacheKey );
+	for ( const variant of Object.values( artifact.variants || {} ) ) {
+
+		if ( rootKey !== null && String( variant && variant.cacheKey ) === rootKey ) continue;
+		const result = emitUpdaterSource( variant );
+		for ( const entry of result.unsupportedKinds ) unsupported.push( {
+			...entry,
+			variantCacheKey: variant.cacheKey ?? null,
+		} );
+
+	}
+	const seen = new Set();
+	return unsupported.filter( ( entry ) => {
+
+		const key = JSON.stringify( [ entry.kind, entry.severity, entry.reason, entry.byteOffset, entry.variantCacheKey ?? null ] );
+		if ( seen.has( key ) ) return false;
+		seen.add( key );
+		return true;
+
+	} );
 
 }

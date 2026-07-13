@@ -1,5 +1,7 @@
 import { MATERIAL_TEXTURE_PROPS } from './texture-props.js';
 import { collectArtifactDynamicBindings, dynamicBindingDescriptor, validateDynamicBindingSource } from './dynamic-bindings.js';
+import { createArtifactVariantPayload } from './artifact-variants.js';
+import { stableJsonStringify } from './stable-json.js';
 
 export const KIND_STATUS = Object.freeze( {
 	CODEGEN: 'codegen',
@@ -677,6 +679,49 @@ export function validateArtifact( input, opts = {} ) {
 
 	}
 
+	if ( artifact.renderContextSelectors !== undefined ) {
+
+		if ( ! Array.isArray( artifact.renderContextSelectors ) ) {
+
+			errors.push( validationError( 'artifact.renderContextSelectors', `${ label }: renderContextSelectors must be an array when present`, 'renderContextSelectors' ) );
+
+		} else {
+
+			if ( artifact.renderContextSelectors.length === 0 ) errors.push( validationError( 'artifact.renderContextSelectors.empty', `${ label }: renderContextSelectors must not be empty when present`, 'renderContextSelectors' ) );
+			const seenSelectors = new Set();
+			let previousSelector = null;
+			for ( let index = 0; index < artifact.renderContextSelectors.length; index ++ ) {
+
+				const selector = artifact.renderContextSelectors[ index ];
+				const path = `renderContextSelectors[${ index }]`;
+				if ( typeof selector !== 'string' || selector.length === 0 ) {
+
+					errors.push( validationError( 'artifact.renderContextSelector', `${ label }: ${ path } must be a non-empty canonical string`, path ) );
+					continue;
+
+				}
+				if ( seenSelectors.has( selector ) ) errors.push( validationError( 'artifact.renderContextSelector.duplicate', `${ label }: ${ path } duplicates an earlier selector`, path ) );
+				if ( previousSelector !== null && selector < previousSelector ) errors.push( validationError( 'artifact.renderContextSelector.order', `${ label }: renderContextSelectors must be sorted canonically`, path ) );
+				seenSelectors.add( selector );
+				try {
+
+					const descriptor = JSON.parse( selector );
+					if ( ! descriptor || descriptor.version !== 'render-object-selector@1' ) throw new Error( 'version' );
+					if ( stableJsonStringify( descriptor, path ) !== selector ) errors.push( validationError( 'artifact.renderContextSelector.canonical', `${ label }: ${ path } is not canonical stable JSON`, path ) );
+
+				} catch ( _ ) {
+
+					errors.push( validationError( 'artifact.renderContextSelector.format', `${ label }: ${ path } must encode a render-object-selector@1 descriptor`, path ) );
+
+				}
+				previousSelector = selector;
+
+			}
+
+		}
+
+	}
+
 	const hasComputeShader = typeof artifact.computeShader === 'string' && artifact.computeShader.trim().length > 0;
 	const isCompute = artifact.kind === 'compute' || hasComputeShader;
 	if ( isCompute ) {
@@ -842,12 +887,103 @@ export function validateArtifact( input, opts = {} ) {
 
 	}
 
+	if ( artifact.variants !== undefined ) {
+
+		if ( ! artifact.variants || typeof artifact.variants !== 'object' || Array.isArray( artifact.variants ) ) {
+
+			errors.push( validationError( 'artifact.variants', `${ label }: variants must be an object when present`, 'variants' ) );
+
+		} else {
+
+			for ( const [ key, variant ] of Object.entries( artifact.variants ) ) {
+
+				const variantPath = `variants.${ key }`;
+				if ( ! variant || variant.cacheKey === undefined || variant.cacheKey === null || String( variant.cacheKey ) !== key ) {
+
+					errors.push( validationError( 'artifact.variant.cacheKey', `${ label}: ${ variantPath }.cacheKey must match its family key`, `${ variantPath }.cacheKey` ) );
+
+				}
+				const result = validateArtifact( variant, { ...opts, label: `${ label}.${ variantPath }` } );
+				for ( const error of result.errors ) errors.push( {
+					...error,
+					path: error.path ? `${ variantPath }.${ error.path }` : variantPath,
+				} );
+				for ( const warning of result.warnings ) warnings.push( warning );
+				for ( const kind of result.sourceKinds ) sourceKinds.push( kind );
+
+			}
+			validateSignedArtifactFamily( artifact, label, errors );
+
+		}
+
+	}
+
 	return {
 		ok: errors.length === 0,
 		errors,
 		warnings,
 		sourceKinds: Object.freeze( [ ...new Set( sourceKinds ) ].sort() ),
 	};
+
+}
+
+function validateSignedArtifactFamily( artifact, label, errors ) {
+
+	const candidates = [ artifact, ...Object.values( artifact.variants ) ].filter( ( candidate ) => candidate && typeof candidate === 'object' );
+	const signed = candidates.filter( ( candidate ) => Array.isArray( candidate.renderContextSelectors ) && candidate.renderContextSelectors.length > 0 );
+	if ( signed.length === 0 ) return;
+	if ( signed.length !== candidates.length ) {
+
+		errors.push( validationError(
+			'artifact.renderContextSelectors.partial-family',
+			`${ label }: signed artifact families require renderContextSelectors on the root and every variant`,
+			'variants',
+		) );
+
+	}
+
+	const rootKey = artifact.cacheKey === undefined || artifact.cacheKey === null ? null : String( artifact.cacheKey );
+	const collisionCandidates = rootKey !== null && artifact.variants[ rootKey ]
+		? signed.filter( ( candidate ) => candidate !== artifact )
+		: signed;
+	const selectorPayloads = new Map();
+	for ( const candidate of collisionCandidates ) {
+
+		const payload = createArtifactVariantPayload( candidate );
+		delete payload.cacheKey;
+		delete payload.renderContextSelectors;
+		let fingerprint;
+		try {
+
+			fingerprint = stableJsonStringify( payload, 'artifactVariant' );
+
+		} catch ( error ) {
+
+			errors.push( validationError( 'artifact.variant.serializable', `${ label}: signed variant payload is not serializable (${ error.message })`, 'variants' ) );
+			continue;
+
+		}
+		for ( const selector of candidate.renderContextSelectors ) {
+
+			if ( typeof selector !== 'string' || selector.length === 0 ) continue;
+			const existing = selectorPayloads.get( selector );
+			if ( existing !== undefined && existing !== fingerprint ) {
+
+				errors.push( validationError(
+					'artifact.renderContextSelector.collision',
+					`${ label}: one renderContextSelector identifies divergent variant payloads`,
+					'variants',
+				) );
+
+			} else {
+
+				selectorPayloads.set( selector, fingerprint );
+
+			}
+
+		}
+
+	}
 
 }
 

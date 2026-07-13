@@ -40,7 +40,7 @@ import { textureBindingFallbacks, makeViewportFallback } from './hydrate/fallbac
 import { clippingPlaneSetsForFrame, selectClippingPlaneArray } from './hydrate/clipping-planes.js';
 import { applyCapturedInstancedDrawCount, bindUserNodeAttributesToArtifact, bindUserStorageBuffersToArtifact, hydrateNodeAttributes } from './hydrate/user-attributes.js';
 import { updateDynamicLightUniforms } from './hydrate/dynamic-light-buffers.js';
-import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
+import { selectArtifactVariant } from './hydrate/variants/artifact-variant-selector.js';
 import { logicalFrameKey, shouldAdvanceTemporalState } from './slim-support/temporal-frame.js';
 
 export { clearLiveTextureIndex, installTextureLoaderTracking, registerLiveTexture } from './hydrate/live-texture-registry.js';
@@ -56,13 +56,12 @@ const skinnedBindMatrixSlots = new WeakMap();
  * @param {Object} artifact - The `precompiledArtifact` carried on the material.
  * @param {?Object} [material] - The runtime material (provides live texture/node references).
  * @param {?Object} [object] - The renderObject's `object` (for instanced/skinned info).
- * @param {?number} [cacheKey] - The live `renderObject.cacheKey`. When the artifact
- *   carries a `variants` map (Tier C), the matching variant's shader/uniformPlan/
- *   attributes/bindings override the top-level fields. Legacy single-variant
- *   artifacts ignore this and use the top-level fields directly.
+ * @param {?number|?string|Object} [variantSelection] - A legacy live cache key,
+ *   or `{ cacheKey, renderObject, renderContextSelector }`. Semantic render
+ *   context is preferred when present; private cache keys remain compatible.
  * @return {Object} A plain object with the fields `Pipelines.js` + `RenderObject.js` read.
  */
-export function hydrateNodeBuilderState( artifact, material = null, object = null, cacheKey = null ) {
+export function hydrateNodeBuilderState( artifact, material = null, object = null, variantSelection = null ) {
 
 	if ( ! artifact ) {
 
@@ -76,7 +75,10 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 	// payload. The original artifact identity is preserved (same _textureRefs,
 	// same _liveUpdateNodes, same captureClock, etc.) — we only swap the
 	// fields that depend on the render-state cacheKey.
-	const effective = selectArtifactVariant( artifact, cacheKey, material );
+	const selection = variantSelection && typeof variantSelection === 'object'
+		? { ...variantSelection, material: variantSelection.material || material }
+		: { cacheKey: variantSelection, material };
+	const effective = selectArtifactVariant( artifact, selection );
 
 	// Bind live BufferAttributes from the user's `*Node` material props
 	// (e.g. `material.positionNode = instancedBufferAttribute(buf)`) onto
@@ -1024,159 +1026,5 @@ function createStaticObserver() {
 	// per object per frame, which is what stock three.js does for
 	// non-bundled scenes anyway.
 	return { needsRefresh() { return true; } };
-
-}
-
-/**
- * Tier C — variant-keyed artifact family lookup.
- *
- * When an artifact carries `variants` (a map keyed by capture-time `cacheKey`)
- * AND the live `cacheKey` matches one of them, return a "view" object that
- * exposes the variant's render-state fields (vertexShader, fragmentShader,
- * uniformPlan, bindings, attributes, …) while still forwarding the top-level
- * sidecars (_textureRefs, _liveUpdateNodes, captureClock, mrtOutputCount, …)
- * from the artifact.
- *
- * If the live cache key does not match, MRT replays get a second chance to
- * select a variant by the material's active attachment count. Precompiled
- * materials use their own program cache key at replay time, so the stock
- * capture-time cache key is not always reproducible.
- *
- * Falls back to returning `artifact` unchanged when:
- *   - the artifact has no `variants` field (legacy single-variant capture)
- *   - the live `cacheKey` is null/undefined (in-process flows that don't
- *     route through the patched `Nodes.js:getForRender`) and no MRT output
- *     count can be inferred from the material
- *   - no variant entry matches the live `cacheKey` or requested output count
- *     (render-state diverged from anything captured — caller should fall
- *     through to a full-renderer fallback when this happens, but we still
- *     return something usable so today's hot path doesn't throw)
- *
- * The returned object preserves identity for non-enumerable sidecar access
- * via property forwarding — `effective._textureRefs` reads from `artifact._textureRefs`,
- * but `effective.vertexShader` reads from the variant.
- *
- * @param {Object} artifact
- * @param {?number|?string} cacheKey
- * @param {?Object} material
- * @returns {Object} `artifact` (when no variant lookup applies) or a merged view
- */
-// Memoized variant views, keyed on the `variants` object identity: the
-// registry's `addVariant` replaces `artifact.variants` with a fresh object
-// whenever the family grows, so a stale map can never be observed.
-const _variantViewCache = new WeakMap();
-
-function selectArtifactVariant( artifact, cacheKey, material = null ) {
-
-	const variants = artifact && artifact.variants && typeof artifact.variants === 'object' ? artifact.variants : null;
-	if ( ! variants ) return artifact;
-
-	const targetCount = materialMRTOutputCount( material );
-	const key = `${ cacheKey === null || cacheKey === undefined ? '' : String( cacheKey ) }::${ targetCount }`;
-	let cache = _variantViewCache.get( variants );
-	if ( ! cache ) {
-
-		cache = new Map();
-		_variantViewCache.set( variants, cache );
-
-	}
-
-	if ( cache.has( key ) ) return cache.get( key );
-	const view = computeArtifactVariantView( artifact, variants, cacheKey, targetCount );
-	cache.set( key, view );
-	return view;
-
-}
-
-function computeArtifactVariantView( artifact, variants, cacheKey, targetCount ) {
-
-	if ( cacheKey !== null && cacheKey !== undefined ) {
-
-		const variant = variants[ String( cacheKey ) ];
-		if ( variant ) return mergeArtifactVariantView( artifact, variant );
-
-	}
-
-	if ( targetCount > 1 ) {
-
-		const outputVariant = selectVariantForOutputCount( artifact, targetCount );
-		if ( outputVariant ) return mergeArtifactVariantView( artifact, outputVariant );
-
-	}
-
-	return artifact;
-
-}
-
-function materialMRTOutputCount( material ) {
-
-	const mrt = material && material.mrtNode;
-	const outputMap = mrt && ( mrt.outputNodes || mrt.nodes );
-	return outputMap && typeof outputMap === 'object' ? Object.keys( outputMap ).length : 0;
-
-}
-
-function selectVariantForOutputCount( artifact, targetCount ) {
-
-	const variants = artifact && artifact.variants && typeof artifact.variants === 'object' ? artifact.variants : null;
-	if ( ! variants || targetCount <= 1 ) return null;
-
-	let best = null;
-	let bestCount = Infinity;
-	for ( const variant of Object.values( variants ) ) {
-
-		const count = countArtifactFragmentOutputs( variant, 1 );
-		if ( count >= targetCount && count < bestCount ) {
-
-			best = variant;
-			bestCount = count;
-
-		}
-
-	}
-	return best;
-
-}
-
-function mergeArtifactVariantView( artifact, variant ) {
-
-	// Shallow merge: variant fields override top-level. Object.assign skips
-	// non-enumerable properties (which is what we want — _textureRefs,
-	// _liveUpdateNodes, _generatedUpdateGroup etc. are non-enumerable
-	// sidecars set via Object.defineProperty and accessed by reference
-	// through the original `artifact` in this hydrator). We construct the
-	// merged view from the artifact base so any non-variant enumerable
-	// fields (mrtOutputCount on the parent if not on the variant, name,
-	// __hash, etc.) survive.
-	const merged = Object.assign( Object.create( Object.getPrototypeOf( artifact ) || null ), artifact, variant );
-
-	// Re-attach sidecars through live accessors so late wiring (PMREM,
-	// pass textures, loader matches) added to the canonical artifact after
-	// hydration is still visible to rebinder nodes that captured this view.
-	for ( const sidecar of [ '_textureRefs', '_liveUpdateNodes', '_liveUpdateBeforeNodes', '_liveUpdateAfterNodes', '_generatedUpdateGroup', '_unsupportedKinds', '_textureResolutionStrategies' ] ) {
-
-		Object.defineProperty( merged, sidecar, {
-			get() {
-
-				return artifact[ sidecar ];
-
-			},
-			set( value ) {
-
-				Object.defineProperty( artifact, sidecar, {
-					value,
-					enumerable: false,
-					configurable: true,
-					writable: true,
-				} );
-
-			},
-			enumerable: false,
-			configurable: true,
-		} );
-
-	}
-
-	return merged;
 
 }

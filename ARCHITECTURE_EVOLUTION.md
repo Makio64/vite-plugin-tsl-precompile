@@ -149,6 +149,24 @@ pay only for the core/geometry/loaders they import. Dropping those modules
 before semantic variant selection risks silently choosing the wrong
 lights/fog/environment/shadow WGSL.
 
+**Semantic render-variant wedge (2026-07-13).** The first prerequisite is now
+implemented. Capture records one or more canonical `render-object-selector@1`
+descriptors for every observed cache entry, using only topology that a
+compiler-free RenderObject can reproduce: active attachment formats/count,
+MRT outputs, selected lights and shadow kinds, fog/environment presence,
+geometry layout, material feature buckets, clipping, instancing/skinning, and
+the few renderer/camera modes that change generated shaders. Runtime selects
+an exact signed variant before considering Three's private cache identity;
+uncaptured, ambiguous, or partially signed families throw typed recapture
+errors. Unsigned legacy artifacts keep the old cache-key and MRT-count path.
+Variant payload vocabulary is centralized in the contract (including LTC
+textures), dynamic-binding descriptors are derived recursively, and a root
+generated updater is reused only when the selected uniform plan is identical.
+Focused selector, validator, registry, hydrator, shadow-family, rewrite, and
+slim-bundle checks pass. The correctness metadata adds about 5.4 KiB gzip to
+the prebuilt bundle (892,844 raw / 243,077 gzip bytes); the next manager-adapter
+stage is expected to recover that cost and then reduce the retained graph.
+
 ---
 
 ## 2026-06-09 audit refresh — corrections to the map
