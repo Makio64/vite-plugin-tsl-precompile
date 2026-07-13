@@ -9656,12 +9656,13 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 			const previousSuppressShadowKick = _slimRenderer.__tslpSuppressShadowKick === true;
 			const previousSuppressVelocity = _slimRenderer.__tslpSuppressVelocityStateAdvance === true;
 			const previousGlobalSuppressVelocity = window.__tslpSuppressVelocityStateAdvance === true;
-			const previousShadowMapEnabled = _slimRenderer.shadowMap ? _slimRenderer.shadowMap.enabled : undefined;
 			try {
 				_slimRenderer.__tslpSuppressShadowKick = true;
 				_slimRenderer.__tslpSuppressVelocityStateAdvance = true;
 				window.__tslpSuppressVelocityStateAdvance = true;
-				if ( _slimRenderer.shadowMap ) _slimRenderer.shadowMap.enabled = false;
+				// Keep the captured shadow topology active for the presentation pass.
+				// __tslpSuppressShadowKick prevents recursive shadow production without
+				// changing the signed renderer selector from shadow-enabled to disabled.
 				__updateCustomShadowHelpers( _userScene );
 				if ( typeof _slimRenderer.setRenderTarget === 'function' ) _slimRenderer.setRenderTarget( _replayRenderTarget );
 				const suspendedReplayShadowNodes = __suspendCustomShadowNodes( _userScene );
@@ -9681,7 +9682,6 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 				else delete _slimRenderer.__tslpSuppressVelocityStateAdvance;
 				if ( previousGlobalSuppressVelocity ) window.__tslpSuppressVelocityStateAdvance = true;
 				else delete window.__tslpSuppressVelocityStateAdvance;
-				if ( _slimRenderer.shadowMap && previousShadowMapEnabled !== undefined ) _slimRenderer.shadowMap.enabled = previousShadowMapEnabled;
 				if ( typeof _slimRenderer.setRenderTarget === 'function' ) _slimRenderer.setRenderTarget( previousTarget );
 			}
 			if ( _topReplayPipeline && typeof _topReplayPipeline.render === 'function' ) {
