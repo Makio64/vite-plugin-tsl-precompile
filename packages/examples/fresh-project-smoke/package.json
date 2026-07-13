@@ -6,6 +6,7 @@
   "description": "End-to-end smoke that packs the three publishable packages, installs them into a temp project with npm (not workspace), runs vite dev to capture an artifact, then vite build + vite preview, and asserts the canvas renders. Catches publish-time breakage that workspace:* linking hides.",
   "scripts": {
     "test": "node run.mjs",
+    "test:core": "node run.mjs --core-only",
     "test:keep": "node run.mjs --keep-tmp"
   },
   "devDependencies": {

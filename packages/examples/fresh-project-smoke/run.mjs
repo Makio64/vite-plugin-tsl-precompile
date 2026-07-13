@@ -37,7 +37,7 @@ import { chromium } from 'playwright';
 
 const SELF = dirname( fileURLToPath( import.meta.url ) );
 const REPO_ROOT = resolve( SELF, '../../..' );
-const RESULTS_DIR = resolve( SELF, 'results' );
+const RESULTS_DIR = resolve( process.env.TSLP_FRESH_RESULTS || resolve( SELF, 'results' ) );
 mkdirSync( RESULTS_DIR, { recursive: true } );
 
 const argv = process.argv.slice( 2 );
@@ -48,6 +48,7 @@ const flag = ( prefix, def ) => {
 	return a.slice( prefix.length + 1 );
 };
 const KEEP_TMP = !! flag( '--keep-tmp', false );
+const CORE_ONLY = !! flag( '--core-only', false );
 const PREVIEW_PORT = parseInt( flag( '--port', '4181' ), 10 );
 const DEV_PORT = parseInt( flag( '--dev-port', '4180' ), 10 );
 
@@ -225,6 +226,13 @@ const TYPES_TEST = `import type {
 	SetupPrecompileResult,
 } from '@tsl-precompile/runtime';
 import { setupPrecompile, writeF32 } from '@tsl-precompile/runtime';
+import {
+	__applyPrecompiled as applyPrecompiledCore,
+	getArtifact as getCoreArtifact,
+	listUserArtifacts as listCoreArtifacts,
+	registerArtifact as registerCoreArtifact,
+	writeF32 as writeCoreF32,
+} from '@tsl-precompile/runtime/core';
 
 const opts: SetupPrecompileOptions = { three: {}, renderer: {} };
 const _r: SetupPrecompileResult = setupPrecompile( opts );
@@ -232,6 +240,86 @@ void _r;
 
 const view = new DataView( new ArrayBuffer( 4 ) );
 writeF32( view, 0, 1.5 );
+writeCoreF32( view, 0, 1.5 );
+void applyPrecompiledCore;
+void getCoreArtifact;
+void listCoreArtifacts;
+void registerCoreArtifact;
+`;
+
+// `/core` is deliberately type-isolated from the root runtime barrel. This
+// stricter NodeNext fixture imports only the subpath and keeps library checks
+// enabled so extension errors or the root Material augmentation cannot hide.
+const CORE_TYPES_TEST = `import {
+	__applyPrecompiled,
+	getArtifact,
+	listUserArtifacts,
+	registerArtifact,
+	writeF32,
+} from '@tsl-precompile/runtime/core';
+import type { Material } from 'three';
+
+const view = new DataView( new ArrayBuffer( 4 ) );
+writeF32( view, 0, 1.5 );
+registerArtifact( 'core-type-probe', { ok: true } );
+void getArtifact( 'core-type-probe' );
+void listUserArtifacts();
+void __applyPrecompiled;
+
+declare const material: Material;
+// @ts-expect-error importing /core must not install the root entry's dev-only augmentation
+material.precompile( 'core-must-stay-type-isolated' );
+`;
+
+const CORE_TSCONFIG = JSON.stringify( {
+	compilerOptions: {
+		target: 'ES2022',
+		module: 'NodeNext',
+		moduleResolution: 'NodeNext',
+		strict: true,
+		noEmit: true,
+		skipLibCheck: false,
+		types: [],
+	},
+	include: [ 'core-types-test.mts', 'core-three-stub.d.ts' ],
+}, null, 2 );
+
+// three.js publishes JavaScript without declarations. A deliberately tiny
+// ambient module lets the isolated `/core` probe detect whether the runtime's
+// root-only Material augmentation leaked into this type graph.
+const CORE_THREE_STUB = `declare module 'three' {
+	export interface Material {
+		name: string;
+	}
+}
+`;
+
+const CORE_RUNTIME_TEST = `import * as core from '@tsl-precompile/runtime/core';
+
+const expected = [
+	'__applyPrecompiled',
+	'getArtifact',
+	'listUserArtifacts',
+	'registerArtifact',
+	'writeBytes',
+	'writeColor',
+	'writeColorRGBA',
+	'writeF32',
+	'writeI32',
+	'writeMat3',
+	'writeMat4',
+	'writeMat4FromEuler',
+	'writeU32',
+	'writeVec2',
+	'writeVec3',
+	'writeVec4',
+];
+const actual = Object.keys( core ).sort();
+if ( JSON.stringify( actual ) !== JSON.stringify( expected ) ) {
+	throw new Error( \`unexpected packed /core exports: \${ JSON.stringify( actual ) }\` );
+}
+core.registerArtifact( 'core-runtime-probe', { ok: true } );
+if ( core.getArtifact( 'core-runtime-probe' )?.ok !== true ) throw new Error( 'packed /core registry is not functional' );
 `;
 
 // --- pack + scaffold helpers --------------------------------------------
@@ -278,6 +366,10 @@ function scaffoldProject( projectDir, tarballs ) {
 	writeFileSync( resolve( projectDir, 'main.js' ), MAIN_JS );
 	writeFileSync( resolve( projectDir, 'tsconfig.json' ), TSCONFIG );
 	writeFileSync( resolve( projectDir, 'types-test.ts' ), TYPES_TEST );
+	writeFileSync( resolve( projectDir, 'core-tsconfig.json' ), CORE_TSCONFIG );
+	writeFileSync( resolve( projectDir, 'core-types-test.mts' ), CORE_TYPES_TEST );
+	writeFileSync( resolve( projectDir, 'core-three-stub.d.ts' ), CORE_THREE_STUB );
+	writeFileSync( resolve( projectDir, 'core-runtime-test.mjs' ), CORE_RUNTIME_TEST );
 }
 
 // --- probe helpers (mirror packages/examples/preview-smoke/run.mjs) ------
@@ -347,7 +439,7 @@ async function probePage( url, label, resultsSubdir, opts = {} ) {
 async function main() {
 	const report = { ok: false, steps: {} };
 
-	buildSlimBundle();
+	if ( ! CORE_ONLY ) buildSlimBundle();
 
 	const tmpRoot = mkdtempSync( resolve( tmpdir(), 'tslp-fresh-' ) );
 	log( `temp dir: ${ tmpRoot }` );
@@ -370,9 +462,26 @@ async function main() {
 		await runChild( 'npm', [ 'install', '--no-audit', '--no-fund', '--loglevel=error' ], { cwd: tmpRoot } );
 		report.steps.install = { ok: true };
 
+		log( 'node import against packed runtime /core export…' );
+		await runChild( 'node', [ 'core-runtime-test.mjs' ], { cwd: tmpRoot } );
+		report.steps.coreRuntimeImport = { ok: true };
+
 		log( 'tsc --noEmit against published .d.ts…' );
 		await runChild( 'npx', [ '--no-install', 'tsc', '--noEmit', '-p', 'tsconfig.json' ], { cwd: tmpRoot } );
 		report.steps.typecheck = { ok: true };
+
+		log( 'tsc --noEmit for isolated NodeNext /core declarations…' );
+		await runChild( 'npx', [ '--no-install', 'tsc', '--noEmit', '-p', 'core-tsconfig.json' ], { cwd: tmpRoot } );
+		report.steps.coreTypecheck = { ok: true };
+
+		if ( CORE_ONLY ) {
+
+			report.ok = true;
+			writeFileSync( resolve( RESULTS_DIR, 'report.json' ), JSON.stringify( report, null, 2 ) );
+			console.log( JSON.stringify( { ok: true, error: null, steps: Object.keys( report.steps ) } ) );
+			return;
+
+		}
 
 		// ---- dev capture ----
 		log( `vite dev on :${ DEV_PORT } (artifact capture)…` );

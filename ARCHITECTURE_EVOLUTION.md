@@ -979,9 +979,19 @@ from that orchestrator; the broader texture-wiring convergence remains open.
 
 **Status (2026-07-13).** The single gzip constant is replaced by the machine-readable [`slim-budget.json`](packages/runtime/build-tools/slim-budget.json) and shared [`slim-bundle-analysis.js`](packages/runtime/build-tools/slim-bundle-analysis.js). The dedicated `pnpm test:slim:budget` gate performs one strict prebuilt Rollup build plus minimal and advanced production `slim: 'source'` Vite builds; it caps raw/gzip bytes, compiler residue, stock-adapter residue, retained Node module count/bytes for every profile, and split bare-Three identity. `pnpm analyze:slim` emits deterministic JSON for CI or trend tooling. After the graph-free shadow, CubeRenderTarget, and Node-core wedges, current observations are 768,403 raw / 210,865 gzip bytes and zero retained Node modules / zero rendered bytes for prebuilt. Minimal and advanced source are 137,680 and 145,631 gzip bytes, also with zero Node residue. All compiler, stock-adapter, and duplicate-identity counts are zero. The expensive three-build check stays outside the quick unit tier and runs once in Linux CI and `release:check`.
 
-**Remaining.** A minimal `core` subpath export (apply + loader + writers) for non-slim adopters importing the root barrel; `sideEffects` annotations in [`packages/runtime/package.json`](packages/runtime/package.json) (careful: `hydrator.js` has a real module-init side effect — `installLiveTextureRegistryPatches()`; list side-effectful files explicitly rather than `false`); lazy TSL/PassNode stub entries if the analyzer shows them dominating; opt-in on-disk artifact minification (low value — dev artifacts are gitignored test fixtures).
+**Core entry wedge (2026-07-13).** `@tsl-precompile/runtime/core` now exposes
+one explicit additive AOT surface: `__applyPrecompiled`, the three public user-
+artifact registry operations, and the twelve uniform writers. It does not
+re-export the dev marker, auxiliary capture, hydrator, slim-support, internal
+apply helpers, or registry test reset. Generated modules remain on the narrower
+`/apply`, `/loader`, and `/writers` entries. Its declarations are self-contained
+and do not import the root barrel's dev-only `three.Material` augmentation.
+Focused identity, shared-registry, declaration-isolation, packed-runtime,
+NodeNext type-resolution, and Rollup closure tests lock that boundary.
 
-**Files.** [slim-stubs.js](packages/runtime/src/slim-stubs.js), [slim-entry.js](packages/runtime/src/slim-entry.js), [package.json](packages/runtime/package.json), [index.js](packages/runtime/src/index.js), [slim-bundle.test.js](packages/plugin/test/unit/slim-bundle.test.js).
+**Remaining.** `sideEffects` annotations in [`packages/runtime/package.json`](packages/runtime/package.json) (careful: `hydrator.js` has a real module-init side effect — `installLiveTextureRegistryPatches()`; list side-effectful files explicitly rather than `false`); lazy TSL/PassNode stub entries if the analyzer shows them dominating; opt-in on-disk artifact minification (low value — dev artifacts are gitignored test fixtures).
+
+**Files.** [core.js](packages/runtime/src/core.js), [core.d.ts](packages/runtime/types/core.d.ts), [core-entry.test.js](packages/runtime/test/core-entry.test.js), [package.json](packages/runtime/package.json), [slim-stubs.js](packages/runtime/src/slim-stubs.js), [slim-entry.js](packages/runtime/src/slim-entry.js), [index.js](packages/runtime/src/index.js), [slim-bundle.test.js](packages/plugin/test/unit/slim-bundle.test.js).
 
 ---
 

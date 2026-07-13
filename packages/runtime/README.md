@@ -187,8 +187,13 @@ import {
 } from '@tsl-precompile/runtime';
 ```
 
-Subpath entries: `@tsl-precompile/runtime/writers`, `/marker`, `/apply`,
-`/loader`, `/slim-support`, `/slim`, `/slim-stubs`.
+Subpath entries: `@tsl-precompile/runtime/core`, `/writers`, `/marker`,
+`/apply`, `/loader`, `/slim-support`, `/slim`, `/slim-stubs`.
+
+`/core` combines only artifact application, the user-artifact registry, and
+the uniform writers for advanced AOT integrations. Plugin-generated modules
+continue to import the narrower `/apply`, `/loader`, and `/writers` entries so
+applications do not pay for unused parts of the combined convenience surface.
 
 ## More
 

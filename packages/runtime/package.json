@@ -20,6 +20,10 @@
       "types": "./types/index.d.ts",
       "default": "./src/index.js"
     },
+    "./core": {
+      "types": "./types/core.d.ts",
+      "default": "./src/core.js"
+    },
     "./writers": {
       "types": "./types/writers.d.ts",
       "default": "./src/writers.js"
