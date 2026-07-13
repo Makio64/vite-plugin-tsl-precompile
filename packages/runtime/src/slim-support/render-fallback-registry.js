@@ -8,16 +8,18 @@
  * delegate those calls to a *full* `WebGPURenderer` running on the same
  * GPU device — the §P1.6 "slim + full-renderer fallback" mode.
  *
- * The contract: a single sync handler `(renderObject) => nodeBuilderLike`.
- * Returning `null` (or throwing) signals the original loud-failure path
- * should fire. Setting `null` clears the registration.
+ * The contract: a single sync handler `(renderObject) => nodeBuilderStateLike`.
+ * Returning `null` signals the original loud-failure path should fire;
+ * thrown errors propagate. A handler may expose `release(renderObject)` so
+ * the replay manager can release full-renderer state when its RenderObject is
+ * deleted. Setting `null` clears the registration.
  *
  * Wiring is one-way: `createSlimSceneSupport({ fullRendererFallback: true })`
  * (in `scene-support.js`) eagerly boots the full renderer and registers a
- * handler that proxies to the full renderer's node manager and adapts the
- * returned state into the node-builder shape the slim rewrite expects.
- * The slim `Nodes.js:getForRender` rewrite calls `getSlimRenderFallback()`
- * before throwing.
+ * handler that proxies to the full renderer's node manager and exposes both
+ * state (`createBindings`) and legacy builder (`getBindings`/`build`) methods.
+ * The replay-native NodeManager calls `getSlimRenderFallback()` before
+ * throwing.
  *
  * @module SlimSupport.RenderFallbackRegistry
  */
@@ -29,7 +31,7 @@ let _handler = null;
  * clear (e.g. when disposing the scene-support orchestrator).
  *
  * @param {?function(Object): Object} handler
- *   `(renderObject) => nodeBuilderLike`. Return `null` to skip the fallback
+ *   `(renderObject) => nodeBuilderStateLike`. Return `null` to skip the fallback
  *   for this material and let slim's loud-failure throw.
  */
 export function setSlimRenderFallback( handler ) {

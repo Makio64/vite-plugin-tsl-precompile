@@ -28,8 +28,8 @@ const __dirname = dirname( fileURLToPath( import.meta.url ) );
 
 /**
  * Modules that belong to runtime shader compilation rather than replay.
- * NodeBuilderState is intentionally absent: slim hydrates that renderer data
- * carrier from artifacts and still needs it at runtime.
+ * Hydrated replay state is runtime-owned; Three's NodeBuilderState is guarded
+ * separately as stock-manager residue below.
  */
 export const SLIM_COMPILER_MODULE_RULES = Object.freeze( [
 	[ 'NodeBuilder', /\/nodes\/core\/NodeBuilder\.js$/ ],
@@ -47,6 +47,8 @@ export const SLIM_COMPILER_MODULE_RULES = Object.freeze( [
 export const SLIM_REPLAY_ADAPTER_RULES = Object.freeze( [
 	[ 'stock Lighting', /\/three\/src\/renderers\/common\/Lighting\.js$/ ],
 	[ 'stock LightsNode', /\/three\/src\/nodes\/lighting\/LightsNode\.js$/ ],
+	[ 'stock NodeManager', /\/three\/src\/renderers\/common\/nodes\/NodeManager\.js$/ ],
+	[ 'stock NodeBuilderState', /\/three\/src\/renderers\/common\/nodes\/NodeBuilderState\.js$/ ],
 ] );
 
 export function findRenderedSlimCompilerModules( bundle ) {
@@ -266,6 +268,24 @@ const replayLightingAdapter = {
 	},
 };
 
+/** Hydrate captured state directly instead of retaining Three's builder manager. */
+const replayNodeManagerAdapter = {
+	name: 'tsl-precompile:replay-node-manager',
+	resolveId( id, importer ) {
+
+		const normalizedId = id.replace( /\\/g, '/' );
+		const normalizedImporter = typeof importer === 'string' ? importer.replace( /\\/g, '/' ) : '';
+		if ( /\/renderers\/common\/nodes\/NodeManager\.js$/.test( normalizedId )
+			|| ( normalizedId === './nodes/NodeManager.js' && /\/renderers\/common\/Renderer\.js$/.test( normalizedImporter ) ) ) {
+
+			return resolve( __dirname, 'src/slim-replay-node-manager.js' );
+
+		}
+		return null;
+
+	},
+};
+
 /**
  * Redirect bare `three` imports to three's tree-shakeable source barrel.
  *
@@ -364,6 +384,7 @@ export default {
 		webglFallbackStub,
 		pmremGeneratorStub,
 		replayLightingAdapter,
+		replayNodeManagerAdapter,
 		threeBareAlias,
 		nodeResolve( {
 			browser: true,

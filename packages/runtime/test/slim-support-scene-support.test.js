@@ -70,7 +70,7 @@ class FakeFullRendererWithPrivateNodes extends FakeFullRenderer {
 		this._nodes = {
 			getForRender( renderObject ) {
 
-				return {
+				const state = {
 					vertexShader: 'vertex',
 					fragmentShader: 'fragment',
 					computeShader: '',
@@ -83,8 +83,11 @@ class FakeFullRendererWithPrivateNodes extends FakeFullRenderer {
 					transforms: [ 'transform' ],
 					renderObject,
 				};
+				state.createBindings = () => [ { cloneFor: renderObject } ];
+				return state;
 
 			},
+			delete( renderObject ) { this.released = renderObject; },
 		};
 
 	}
@@ -103,6 +106,30 @@ class FakeFullRendererWithCompute extends FakeFullRendererWithPrivateNodes {
 	compute( computeNode, ...rest ) {
 
 		this.computed = { computeNode, rest };
+
+	}
+
+}
+
+class FakeFullRendererWithBuilderOnly extends FakeFullRenderer {
+
+	async init() {
+
+		await super.init();
+		this._nodes = {
+			_createNodeBuilder( renderObject ) {
+
+				return {
+					vertexShader: '', fragmentShader: '', computeShader: '',
+					build() { this.vertexShader = 'built-vertex'; this.fragmentShader = 'built-fragment'; },
+					getAttributesArray: () => [ 'position' ],
+					getBindings: () => [],
+					updateNodes: [],
+					renderObject,
+				};
+
+			},
+		};
 
 	}
 
@@ -166,8 +193,37 @@ test( 'createSlimSceneSupport ensureFallback registers private _nodes as a slim 
 		assert.equal( builder.vertexShader, 'vertex' );
 		assert.deepEqual( builder.getAttributesArray(), [ 'position' ] );
 		assert.deepEqual( builder.getBindings(), [ 'group' ] );
+		assert.deepEqual( builder.createBindings(), [ { cloneFor: renderObject } ] );
 		assert.equal( typeof builder.build, 'function' );
 		assert.equal( typeof builder.buildAsync, 'function' );
+		fallback.release( renderObject );
+		assert.equal( ( await support.getFullRenderer() )._nodes.released, renderObject );
+
+	} finally {
+
+		support.dispose();
+		setSlimRenderFallback( null );
+
+	}
+
+} );
+
+test( 'createSlimSceneSupport builds legacy private node builders before fallback replay', async () => {
+
+	setSlimRenderFallback( null );
+	const support = createSlimSceneSupport( {
+		renderer: fakeRenderer(),
+		fullRendererFallback: true,
+		threeFullModule: { WebGPURenderer: FakeFullRendererWithBuilderOnly },
+	} );
+	try {
+
+		await support.ensureFallback();
+		const state = getSlimRenderFallback()( { material: { type: 'LegacyNodeMaterial' } } );
+		assert.equal( state.vertexShader, 'built-vertex' );
+		assert.equal( state.fragmentShader, 'built-fragment' );
+		assert.deepEqual( state.getAttributesArray(), [ 'position' ] );
+		assert.deepEqual( state.createBindings(), [] );
 
 	} finally {
 

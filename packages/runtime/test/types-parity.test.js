@@ -71,7 +71,8 @@ test( 'public declarations track the runtime signatures that previously drifted'
 	assert.match( source, /bindAuxConfig<TNode = unknown>\( node: TNode, shapeOrEntry:/ );
 	assert.match( source, /bindAuxByName<TNode = unknown>\( node: TNode, shape: string, nameOrConfigHash: string \): TNode;/ );
 
-	assert.match( source, /hydrateNodeBuilderState\( artifact: unknown, material\?: unknown, object\?: unknown, cacheKey\?: number \| string \| null \): unknown;/ );
+	assert.match( source, /hydrateNodeBuilderState\( artifact: unknown, material\?: unknown, object\?: unknown, variantSelection\?: number \| string \| HydrateVariantSelection \| null, \): unknown;/ );
+	assert.match( source, /interface SlimRenderFallbackHandler \{ \( renderObject: unknown \): unknown \| null; release\?\( renderObject: unknown \): void; \}/ );
 	assert.match( source, /class MaterialVariantSet<TMaterial = unknown>/ );
 	assert.match( source, /createMaterialVariants<TMaterial = unknown>\( variants: MaterialVariantInput<TMaterial>, initialName\?: string \): MaterialVariantSet<TMaterial>;/ );
 	assert.match( source, /applyMaterialVariant<TMaterial = unknown>\( target: unknown \| unknown\[\], material: TMaterial \): TMaterial;/ );

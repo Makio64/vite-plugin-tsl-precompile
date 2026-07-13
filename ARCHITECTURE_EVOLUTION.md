@@ -119,8 +119,9 @@ now measured from Rollup module IDs instead of minified string fingerprints.
 `WGSLNodeBuilder`, `GLSLNodeBuilder`, `NodeBuilder`, their parsers,
 `StandardNodeLibrary`, real `NodeMaterial`, and Three's runtime-compiling
 `PMREMGenerator` are hard build failures when they contribute rendered bytes;
-`NodeBuilderState` remains intentionally because slim hydrates that renderer
-data carrier from artifacts. Two dead paths were removed immediately:
+`NodeBuilderState` was initially retained as a renderer data carrier; the
+replay-native manager described below now replaces it with runtime-owned
+hydrated state. Two dead paths were removed immediately:
 NodeManager no longer catches hydration failure by constructing a generic
 NodeMaterial after the backend builder has already been stripped, and the slim
 PMREM export is now a constructible compatibility shell which directs actual
@@ -178,6 +179,28 @@ bundle moves from 892,994 raw / 243,126 gzip bytes (after the transmission and
 clipping adoption fixes) to 886,948 raw / 241,103 gzip bytes. NodeManager is
 the next boundary; Background remains a temporary live-graph island until its
 own replay adapter can replace graph-hash-based auxiliary lookup.
+
+**Replay-native NodeManager wedge (2026-07-13).** Slim builds now redirect
+Three's stock `NodeManager` to a runtime-owned manager that returns the
+hydrator's state directly, preserving its per-object `createBindings()` UBO
+clones. Replay cache identity is material-scoped and includes both Three's
+initial cache key and the canonical semantic selector, so material-bound
+rebinders cannot leak across instances or captured topologies. Synchronous,
+async, deferred, compute, update scheduling, ref-count deletion, and full-
+renderer fallback lifecycles remain available without `ChainMap`, build
+queues, or `NodeBuilderState`; fallback release delegates back into the full
+manager. A shared fallback-state adapter also builds legacy raw builders and
+clones their non-shared bind groups. Hydrated Proxy states explicitly reject
+Promise `.then` probing, fixing a latent `compileAsync()` hang. Stock
+background/environment/fog/output node construction is isolated in
+`slim-replay-scene-nodes.js` for the next auxiliary-adapter stage. The strict
+bundle retains 96 Node/TSL modules / 417.2 KiB rendered and measures 887,942
+raw / 240,534 gzip bytes (about 0.6 KiB gzip below the Lighting baseline).
+The selective-light canary remains green at 46.9 dB. Compute rain still fails
+closed on a captured-vs-replay semantic selector mismatch, confirming its
+missing particles are a capture/topology parity issue rather than compute
+state hydration; that mismatch remains a separate fix rather than a reason to
+weaken signed variant selection.
 
 ---
 

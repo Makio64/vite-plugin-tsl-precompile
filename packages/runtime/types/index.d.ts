@@ -331,7 +331,10 @@ export type RenderOffscreenOverrideWithFallbackOptions = {
 	shareDepth?: boolean;
 	onError?: ( err: unknown, texture?: unknown ) => void;
 };
-export type SlimRenderFallbackHandler = ( renderObject: unknown ) => unknown | null;
+export interface SlimRenderFallbackHandler {
+	( renderObject: unknown ): unknown | null;
+	release?( renderObject: unknown ): void;
+}
 export type PostprocessWireMiss = {
 	shape: string;
 	reason: string;

@@ -44,6 +44,7 @@ import {
 import { shareGPUTextureEntry, shareShadowGPUTextureIntoSlim } from './gpu-texture-share.js';
 import { createFullRendererFallback } from './full-renderer-fallback.js';
 import { setSlimRenderFallback } from './render-fallback-registry.js';
+import { normalizeSlimRenderFallbackState } from './render-fallback-state.js';
 import {
 	renderOffscreenOverrideWithFullRenderer,
 	renderPassWithFullRenderer,
@@ -336,30 +337,6 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	}
 
-	function nodeBuilderLikeFromState( state ) {
-
-		if ( ! state ) return null;
-		if ( typeof state.build === 'function' && typeof state.getBindings === 'function' ) return state;
-
-		return {
-			vertexShader: state.vertexShader || '',
-			fragmentShader: state.fragmentShader || '',
-			computeShader: state.computeShader || '',
-			nodeAttributes: state.nodeAttributes || [],
-			bindings: state.bindings || [],
-			updateNodes: state.updateNodes || [],
-			updateBeforeNodes: state.updateBeforeNodes || [],
-			updateAfterNodes: state.updateAfterNodes || [],
-			observer: state.observer || null,
-			transforms: state.transforms || [],
-			getAttributesArray() { return this.nodeAttributes; },
-			getBindings() { return this.bindings; },
-			build() {},
-			buildAsync: async () => {},
-		};
-
-	}
-
 	function createRenderFallbackHandler( fullRenderer ) {
 
 		const nodeManager = fullRenderer && ( fullRenderer.nodes || fullRenderer._nodes );
@@ -367,19 +344,33 @@ export function createSlimSceneSupport( opts = {} ) {
 
 		if ( typeof nodeManager.getForRender === 'function' ) {
 
-			return ( renderObject ) => {
+			const handler = ( renderObject ) => {
 
 				const result = nodeManager.getForRender( renderObject );
 				if ( result && typeof result.then === 'function' ) return null;
-				return nodeBuilderLikeFromState( result );
+				return normalizeSlimRenderFallbackState( result );
 
 			};
+			handler.release = ( renderObject ) => {
+
+				if ( typeof nodeManager.delete === 'function' ) nodeManager.delete( renderObject );
+
+			};
+			return handler;
 
 		}
 
 		if ( typeof nodeManager._createNodeBuilder === 'function' ) {
 
-			return ( renderObject ) => nodeManager._createNodeBuilder( renderObject, renderObject && renderObject.material );
+			const handler = ( renderObject ) => normalizeSlimRenderFallbackState(
+				nodeManager._createNodeBuilder( renderObject, renderObject && renderObject.material ),
+			);
+			handler.release = ( renderObject ) => {
+
+				if ( typeof nodeManager.delete === 'function' ) nodeManager.delete( renderObject );
+
+			};
+			return handler;
 
 		}
 

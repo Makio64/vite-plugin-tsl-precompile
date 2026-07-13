@@ -194,6 +194,10 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 		get( target, prop ) {
 
 			if ( prop in target ) return target[ prop ];
+			// Promise resolution probes `.then`. Treating that lookup as one of
+			// the generic no-op methods makes every hydrated state an unresolved
+			// thenable, which breaks compileAsync/getForRenderAsync.
+			if ( prop === 'then' ) return undefined;
 			// Unknown property: return a no-op function. Common for
 			// renderer helpers that probe for optional methods.
 			return () => undefined;

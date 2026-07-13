@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { findRenderedSlimCompilerModules, findRenderedSlimStockAdapterModules } from '../rollup.config.js';
 
-test( 'slim compiler policy ignores runtime NodeBuilderState carriers', () => {
+test( 'slim compiler classifier delegates NodeBuilderState to the replay-adapter policy', () => {
 
 	const found = findRenderedSlimCompilerModules( {
 		'three.webgpu.slim.js': {
@@ -18,19 +18,21 @@ test( 'slim compiler policy ignores runtime NodeBuilderState carriers', () => {
 
 } );
 
-test( 'slim replay-adapter policy rejects stock lighting graph residue', () => {
+test( 'slim replay-adapter policy rejects stock lighting and manager residue', () => {
 
 	const found = findRenderedSlimStockAdapterModules( {
 		'three.webgpu.slim.js': {
 			modules: {
 				'/three/src/renderers/common/Lighting.js': { renderedLength: 400 },
 				'/three/src/nodes/lighting/LightsNode.js': { renderedLength: 900 },
+				'/three/src/renderers/common/nodes/NodeManager.js': { renderedLength: 800 },
+				'/three/src/renderers/common/nodes/NodeBuilderState.js': { renderedLength: 600 },
 				'/three/src/renderers/common/Lighting-unused.js': { renderedLength: 0 },
 			},
 		},
 	} );
 
-	assert.deepEqual( found.map( ( item ) => item.label ), [ 'stock LightsNode', 'stock Lighting' ] );
+	assert.deepEqual( found.map( ( item ) => item.label ), [ 'stock LightsNode', 'stock NodeManager', 'stock NodeBuilderState', 'stock Lighting' ] );
 
 } );
 
