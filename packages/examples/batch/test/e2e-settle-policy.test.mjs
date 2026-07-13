@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 
-import { installAnimationLoopSettleTransition } from '../e2e-settle-policy.mjs';
+import { installAnimationLoopSettleTransition, minimumRenderableObjectsForExample } from '../e2e-settle-policy.mjs';
 
 function transitionForTest() {
 
@@ -81,5 +81,16 @@ test( 'shadow completion requires exactly the configured 1/8/32 quiet callbacks'
 		assert.equal( state.animationLoopCalls, settleFrames, `settle=${ settleFrames } retained count` );
 
 	}
+
+} );
+
+test( 'deferred subjects must be present before an example can freeze', () => {
+
+	assert.equal( minimumRenderableObjectsForExample( 'webgpu_backdrop.html' ), 9 );
+	assert.equal( minimumRenderableObjectsForExample( 'webgpu_lights_projector.html' ), 3 );
+	assert.equal( minimumRenderableObjectsForExample( 'webgpu_postprocessing_retro.html' ), 2 );
+	assert.equal( minimumRenderableObjectsForExample( 'webgpu_loader_materialx.html' ), 65 );
+	assert.equal( minimumRenderableObjectsForExample( 'webgpu_tsl_wood.html' ), 55 );
+	assert.equal( minimumRenderableObjectsForExample( 'webgpu_materials.html' ), 1 );
 
 } );

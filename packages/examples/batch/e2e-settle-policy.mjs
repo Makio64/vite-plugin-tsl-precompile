@@ -45,3 +45,36 @@ export function installAnimationLoopSettleTransition( target = globalThis ) {
 	return transitionAnimationLoopSettle;
 
 }
+
+/**
+ * Minimum visible scene population required before the capture loop may
+ * become quiet. Some examples attach a placeholder synchronously and their
+ * real subjects in a later loader callback, so a generic one-object gate can
+ * freeze a structurally incomplete frame.
+ */
+export function minimumRenderableObjectsForExample( name ) {
+
+	// Backdrop creates its eight portal meshes synchronously, then attaches the
+	// GLTF subject. Freezing at eight makes the stock and replay sphere ordering
+	// appear different even though the renderer state is equivalent.
+	if ( name === 'webgpu_backdrop.html' ) return 9;
+	// The projector-light page renders its plane + SpotLightHelper before the
+	// async PLY statue is attached. Waiting for one renderable object lets the
+	// stock/reference frame freeze before the loaded subject appears.
+	if ( name === 'webgpu_lights_projector.html' ) return 3;
+	// Retro starts with the procedural smoke plane, then async-loads the coffee
+	// mug scene. A one-object gate can freeze stock before the model appears,
+	// while replay captures it after loader settle.
+	if ( name === 'webgpu_postprocessing_retro.html' ) return 2;
+	// MaterialX loads one GLTF prefab, then sequentially awaits 32 MaterialX
+	// samples and compileAsync() calls. The loader/compile counters briefly hit
+	// zero between samples, so a one-object gate can freeze replay after the
+	// first couple of shader balls. The final scene is the grid plane plus two
+	// visible meshes per sample (Calibration_Mesh and Preview_Mesh).
+	if ( name === 'webgpu_loader_materialx.html' ) return 65;
+	// Procedural wood yields one block per setTimeout(0) after the HDR/font
+	// loads. Wait for the grid plane, 14 text labels, and all 40 wood blocks.
+	if ( name === 'webgpu_tsl_wood.html' ) return 55;
+	return 1;
+
+}
