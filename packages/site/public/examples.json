@@ -13,8 +13,8 @@
 		"smokePassRate": 99.5,
 		"pixelMatchCount": 205,
 		"visualMatchCount": 11,
-		"rendersCount": 9,
-		"captureOnlyCount": 0
+		"rendersCount": 8,
+		"captureOnlyCount": 1
 	},
 	"categories": [
 		{
@@ -8101,13 +8101,13 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 13.49,
+				"psnr": null,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
-				"replayed": true
+				"replayed": false
 			},
-			"hasReplay": true,
+			"hasReplay": false,
 			"hasCapture": true,
 			"materialCount": 14,
 			"artifactCount": 15,
@@ -8146,9 +8146,9 @@
 				"bloom-blur-9",
 				"bloom-composite"
 			],
-			"notes": "",
+			"notes": "Capture only: removed upstream with Three.js TiledLighting removal (8a03dbdfb8).",
 			"thumbHealth": "ok",
-			"badge": "renders"
+			"badge": "capture-only"
 		},
 		{
 			"basename": "webgpu_loader_gltf_anisotropy",
