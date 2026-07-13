@@ -2356,14 +2356,6 @@ function __sharePassRenderTargetFromFullRenderer( slimRenderer, fullRenderer, pa
 	if ( target.depthTexture ) __shareGPUTextureEntry( slimRenderer, fullRenderer, target.depthTexture );
 }
 
-function __sharePassRenderTargetIntoFullRenderer( fullRenderer, slimRenderer, passNode ) {
-	const target = passNode && passNode.renderTarget;
-	if ( ! target ) return;
-	const textures = Array.isArray( target.textures ) ? target.textures : target.texture ? [ target.texture ] : [];
-	for ( const texture of textures ) __shareGPUTextureEntry( fullRenderer, slimRenderer, texture );
-	if ( target.depthTexture ) __shareGPUTextureEntry( fullRenderer, slimRenderer, target.depthTexture );
-}
-
 function __renderOffscreenOverrideWithFullRenderer( slimRenderer, scene, camera ) {
 	const fullRenderer = __computeRenderer;
 	if ( ! slimRenderer || ! fullRenderer || ! scene || ! scene.overrideMaterial ) return false;
@@ -2463,7 +2455,6 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 			if ( capturedBackground !== undefined ) passNode.scene.background = capturedBackground;
 				if ( capturedBackgroundNode !== undefined ) passNode.scene.backgroundNode = capturedBackgroundNode;
 				__syncPassRenderTargetTextures( passNode, passNode._mrt || null );
-				__sharePassRenderTargetIntoFullRenderer( fullRenderer, slimRenderer, passNode );
 				fullRenderer.setRenderTarget( passNode.renderTarget );
 			if ( typeof fullRenderer.setMRT === 'function' ) fullRenderer.setMRT( passNode._mrt || null );
 			fullRenderer.autoClear = true;
