@@ -29,10 +29,14 @@ export function describeRenderObjectContext( renderObject, renderer = renderObje
 	const object = safeRead( renderObject, 'object' ) || null;
 	const material = safeRead( renderObject, 'material' ) || safeRead( object, 'material' ) || null;
 	const shadowCaster = describeShadowCaster( renderObject, object, material );
+	// RenderContext instances are mutable and reused by Three. Snapshot target
+	// topology before reading any other renderer-owned state so a nested render
+	// cannot relabel the observed face or mip level underneath this descriptor.
+	const target = describeRenderTargetTopology( context, renderer );
 	return {
 		version: 'render-object-selector@1',
 		renderer: describeRenderer( renderer ),
-		target: describeTarget( context, renderer ),
+		target,
 		mrt: describeMRT( context ),
 		scene: describeSceneRenderTopology( scene ),
 		lights: describeLights( safeRead( renderObject, 'lightsNode' ), scene, camera ),
@@ -224,10 +228,30 @@ function describeRenderer( renderer ) {
 
 }
 
-function describeTarget( context, renderer ) {
+/**
+ * Describe the active render surface without retaining target, texture, or
+ * node-graph identity. Dimensions are deliberately excluded: resizing a
+ * target changes live viewport state, not its shader/pipeline topology.
+ *
+ * @param {?Object} context
+ * @param {?Object} renderer
+ * @return {Object|null}
+ */
+export function describeRenderTargetTopology( context, renderer = null ) {
 
 	if ( ! context ) return null;
-	const renderTarget = safeRead( context, 'renderTarget' );
+	const observedRenderTarget = safeRead( context, 'renderTarget' );
+	const renderTarget = observedRenderTarget === undefined
+		? safeCall( renderer, 'getRenderTarget' )
+		: observedRenderTarget;
+
+	// These values are mutated in-place for every cube face / array layer and
+	// mip render. Read them before renderer callbacks such as
+	// getOutputRenderTarget() and copy only finite primitives into the result.
+	const observedActiveCubeFace = safeRead( context, 'activeCubeFace' );
+	const observedActiveMipmapLevel = safeRead( context, 'activeMipmapLevel' );
+	const activeCubeFace = resolveActiveTargetIndex( observedActiveCubeFace, renderTarget, 'activeCubeFace', '_activeCubeFace', renderer, '_activeCubeFace', 'getActiveCubeFace' );
+	const activeMipmapLevel = resolveActiveTargetIndex( observedActiveMipmapLevel, renderTarget, 'activeMipmapLevel', '_activeMipmapLevel', renderer, '_activeMipmapLevel', 'getActiveMipmapLevel' );
 	let textures = safeRead( context, 'textures' );
 	if ( ! Array.isArray( textures ) ) {
 
@@ -237,14 +261,86 @@ function describeTarget( context, renderer ) {
 
 	}
 	const outputTarget = safeCall( renderer, 'getOutputRenderTarget' );
+	const surface = classifyRenderSurface( renderTarget, outputTarget, textures );
 	return compactObject( {
-		color: scalar( safeRead( context, 'color' ) ),
-		depth: scalar( safeRead( context, 'depth' ) ),
-		stencil: scalar( safeRead( context, 'stencil' ) ),
-		sampleCount: scalar( safeRead( context, 'sampleCount' ) ?? safeRead( renderTarget, 'samples' ) ),
-		multiview: safeRead( renderTarget, 'multiview' ) === true || safeRead( outputTarget, 'multiview' ) === true,
-		colors: textures.map( resourceShape ),
+		surface,
+		activeCubeFace,
+		activeMipmapLevel,
+		color: scalar( safeRead( context, 'color' ) ?? ( textures.length > 0 ) ),
+		depth: scalar( safeRead( context, 'depth' ) ?? safeRead( renderTarget, 'depthBuffer' ) ),
+		stencil: scalar( safeRead( context, 'stencil' ) ?? safeRead( renderTarget, 'stencilBuffer' ) ),
+		sampleCount: effectiveSampleCount( context, renderTarget, renderer, textures ),
+		multiview: safeRead( context, 'multiview' ) === true || safeRead( renderTarget, 'multiview' ) === true,
+		colors: textures.map( describeColorAttachment ),
 		depthTexture: resourceShape( safeRead( context, 'depthTexture' ) || safeRead( renderTarget, 'depthTexture' ) ),
+	} );
+
+}
+
+function resolveActiveTargetIndex( observedValue, renderTarget, targetKey, targetPrivateKey, renderer, rendererPrivateKey, rendererMethod ) {
+
+	if ( typeof observedValue === 'number' && Number.isFinite( observedValue ) ) return observedValue;
+	const targetValue = safeRead( renderTarget, targetKey );
+	if ( typeof targetValue === 'number' && Number.isFinite( targetValue ) ) return targetValue;
+	const targetPrivateValue = safeRead( renderTarget, targetPrivateKey );
+	if ( typeof targetPrivateValue === 'number' && Number.isFinite( targetPrivateValue ) ) return targetPrivateValue;
+	const rendererPrivateValue = safeRead( renderer, rendererPrivateKey );
+	if ( typeof rendererPrivateValue === 'number' && Number.isFinite( rendererPrivateValue ) ) return rendererPrivateValue;
+	const methodValue = safeCall( renderer, rendererMethod );
+	return typeof methodValue === 'number' && Number.isFinite( methodValue ) ? methodValue : 0;
+
+}
+
+function classifyRenderSurface( renderTarget, outputTarget, textures ) {
+
+	if ( ! renderTarget ) return 'default';
+	if ( safeRead( renderTarget, 'isPostProcessingRenderTarget' ) === true ) return 'output-intermediate';
+	if ( renderTarget === outputTarget || safeRead( renderTarget, 'isOutputRenderTarget' ) === true || safeRead( renderTarget, 'isXRRenderTarget' ) === true ) return 'output';
+
+	const texture = textures[ 0 ] || safeRead( renderTarget, 'texture' ) || null;
+	if ( safeRead( renderTarget, 'isRenderTarget3D' ) === true || safeRead( renderTarget, 'isWebGL3DRenderTarget' ) === true || safeRead( texture, 'isData3DTexture' ) === true ) return 'offscreen-3d';
+	if (
+		safeRead( renderTarget, 'isWebGLArrayRenderTarget' ) === true ||
+		safeRead( renderTarget, 'isRenderTargetArray' ) === true ||
+		safeRead( texture, 'isDataArrayTexture' ) === true ||
+		safeRead( texture, 'isCompressedArrayTexture' ) === true ||
+		safeRead( texture, 'isArrayTexture' ) === true
+	) return 'offscreen-array';
+	if (
+		safeRead( renderTarget, 'isCubeRenderTarget' ) === true ||
+		safeRead( renderTarget, 'isWebGLCubeRenderTarget' ) === true ||
+		safeRead( texture, 'isCubeTexture' ) === true ||
+		safeRead( texture, 'isCompressedCubeTexture' ) === true
+	) return 'offscreen-cube';
+	return 'offscreen-2d';
+
+}
+
+function effectiveSampleCount( context, renderTarget, renderer, textures ) {
+
+	const backend = safeRead( renderer, 'backend' );
+	const backendUtils = safeRead( backend, 'utils' );
+	const backendValue = safeCall( backendUtils, 'getSampleCountRenderContext', context );
+	if ( typeof backendValue === 'number' && Number.isFinite( backendValue ) && backendValue > 0 ) return backendValue;
+
+	const hasTargetAttachments = renderTarget != null || textures.length > 0;
+	const value = hasTargetAttachments
+		? firstFiniteNumber( [ safeRead( context, 'sampleCount' ), safeRead( renderTarget, 'samples' ) ], 1 )
+		: firstFiniteNumber( [ safeRead( renderer, 'currentSamples' ), safeRead( renderer, 'samples' ), safeRead( context, 'sampleCount' ) ], 1 );
+
+	// Match WebGPUUtils.getSampleCount(): WebGPU pipelines support the effective
+	// counts 1 and 4 even when a caller requested another raw value. WebGL and
+	// custom backends keep the positive count reported by their context.
+	if ( safeRead( backend, 'isWebGPUBackend' ) === true ) return value >= 4 ? 4 : 1;
+	return value > 0 ? value : 1;
+
+}
+
+function describeColorAttachment( texture ) {
+
+	return compactObject( {
+		...resourceShape( texture ),
+		name: scalar( safeRead( texture, 'name' ) ),
 	} );
 
 }
@@ -255,7 +351,27 @@ function describeMRT( context ) {
 	if ( ! mrt ) return null;
 	const outputs = safeRead( mrt, 'outputNodes' ) || safeRead( mrt, 'nodes' );
 	const names = outputs && typeof outputs === 'object' ? Object.keys( outputs ) : [];
-	return { count: names.length, names };
+	const configuredBlendModes = safeRead( mrt, 'blendModes' );
+	const blendModes = Object.fromEntries( names.map( ( name ) => {
+
+		const fromMethod = safeCall( mrt, 'getBlendMode', name );
+		const mode = fromMethod == null ? safeRead( configuredBlendModes, name ) : fromMethod;
+		return [ name, describeBlendMode( mode ) ];
+
+	} ) );
+	return { count: names.length, names, blendModes };
+
+}
+
+function describeBlendMode( mode ) {
+
+	// Replay's inert MRT surface persists the effective Three blending enum in
+	// artifact.mrtBlendModes. Custom factor fields are not independently
+	// reproducible there, so signing them would make capture and replay diverge
+	// even though both select the same persisted mode.
+	if ( typeof mode === 'number' && Number.isFinite( mode ) ) return mode;
+	if ( ! mode ) return null;
+	return scalar( safeRead( mode, 'blending' ) ) ?? null;
 
 }
 
@@ -564,17 +680,28 @@ function scalar( value ) {
 
 }
 
+function firstFiniteNumber( values, fallback ) {
+
+	for ( const value of values ) {
+
+		if ( typeof value === 'number' && Number.isFinite( value ) ) return value;
+
+	}
+	return fallback;
+
+}
+
 function compactObject( object ) {
 
 	return Object.fromEntries( Object.entries( object ).filter( ( [ , value ] ) => value !== undefined ) );
 
 }
 
-function safeCall( object, method ) {
+function safeCall( object, method, ...args ) {
 
 	try {
 
-		return object && typeof object[ method ] === 'function' ? object[ method ]() : null;
+		return object && typeof object[ method ] === 'function' ? object[ method ]( ...args ) : null;
 
 	} catch ( _ ) {
 

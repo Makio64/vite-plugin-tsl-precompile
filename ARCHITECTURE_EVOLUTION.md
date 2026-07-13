@@ -79,6 +79,17 @@ scene or all scenes, and waits for an in-flight shadow render to settle before
 disposing its full-renderer fallback. A tombstone also makes an immediate
 repopulation wait for that cleanup instead of overlapping the old renderer.
 
+**Exact render-target topology wedge (2026-07-13).** The shared graph-free
+selector now describes the actual render surface rather than only a loose list
+of attachments. It distinguishes default, output, renderer-owned output
+intermediate, and offscreen 2D/cube/array/3D targets; snapshots the active cube
+face and mip before Three reuses the mutable `RenderContext`; normalizes the
+effective sample count; and records attachment names/formats plus ordered MRT
+names and replayable blend modes. Width and height remain live resource state,
+so target resize does not manufacture a shader variant. This is the contract
+prerequisite for harvesting every real RenderObject family, especially the six
+faces of a dynamic cubemap.
+
 **Logical temporal-frame wedge (2026-07-13).**
 [`slim-support/temporal-frame.js`](packages/runtime/src/slim-support/temporal-frame.js)
 now gives slim and full fallback renderers one explicit application-frame key

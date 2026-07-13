@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
 	createSceneRenderTopologySelector,
 	createRenderObjectContextSelector,
+	describeRenderTargetTopology,
 	describeSceneRenderTopology,
 	describeRenderObjectContext,
 	projectRenderObjectContextSelector,
@@ -273,6 +274,215 @@ test( 'render selector captures clipping, interleaved layout, morph, and instanc
 	assert.notEqual( createRenderObjectContextSelector( indexed16 ), createRenderObjectContextSelector( indexed32 ) );
 
 } );
+
+test( 'render target topology classifies default, output, intermediate, and offscreen dimensions', () => {
+
+	const outputTarget = renderTarget( texture( { isRenderTargetTexture: true } ) );
+	const renderer = {
+		backend: { isWebGPUBackend: true },
+		getOutputRenderTarget: () => outputTarget,
+	};
+	assert.equal( describeRenderTargetTopology( targetContext( null ), renderer ).surface, 'default' );
+	assert.equal( describeRenderTargetTopology( targetContext( outputTarget ), renderer ).surface, 'output' );
+
+	const intermediate = renderTarget( texture() );
+	intermediate.isPostProcessingRenderTarget = true;
+	assert.equal( describeRenderTargetTopology( targetContext( intermediate ), renderer ).surface, 'output-intermediate' );
+
+	const target2d = renderTarget( texture() );
+	const targetCube = renderTarget( texture( { isCubeTexture: true } ) );
+	targetCube.isCubeRenderTarget = true;
+	const targetArray = renderTarget( texture( { isDataArrayTexture: true, isArrayTexture: true } ) );
+	const target3d = renderTarget( texture( { isData3DTexture: true } ) );
+	target3d.isRenderTarget3D = true;
+	assert.equal( describeRenderTargetTopology( targetContext( target2d ), renderer ).surface, 'offscreen-2d' );
+	assert.equal( describeRenderTargetTopology( targetContext( targetCube ), renderer ).surface, 'offscreen-cube' );
+	assert.equal( describeRenderTargetTopology( targetContext( targetArray ), renderer ).surface, 'offscreen-array' );
+	assert.equal( describeRenderTargetTopology( targetContext( target3d ), renderer ).surface, 'offscreen-3d' );
+
+} );
+
+test( 'render target topology snapshots observed cube face and mip before renderer mutation', () => {
+
+	const target = renderTarget( texture( { isCubeTexture: true } ) );
+	target.isCubeRenderTarget = true;
+	const context = targetContext( target, { activeCubeFace: 5, activeMipmapLevel: 3 } );
+	let fallbackCalls = 0;
+	const renderer = {
+		backend: { isWebGPUBackend: true },
+		_activeCubeFace: 2,
+		_activeMipmapLevel: 1,
+		getActiveCubeFace() { fallbackCalls ++; return 1; },
+		getActiveMipmapLevel() { fallbackCalls ++; return 1; },
+		getOutputRenderTarget() {
+
+			context.activeCubeFace = 0;
+			context.activeMipmapLevel = 0;
+			return null;
+
+		},
+	};
+	const descriptor = describeRenderTargetTopology( context, renderer );
+	assert.equal( descriptor.surface, 'offscreen-cube', 'face zero is still classified by target dimension' );
+	assert.equal( descriptor.activeCubeFace, 5 );
+	assert.equal( descriptor.activeMipmapLevel, 3 );
+	assert.equal( fallbackCalls, 0, 'renderer active-state methods are true fallbacks' );
+	assert.equal( describeRenderTargetTopology( context, renderer ).activeCubeFace, 0 );
+	assert.equal( descriptor.activeCubeFace, 5, 'returned descriptor is detached from the reused context' );
+
+	delete context.activeCubeFace;
+	delete context.activeMipmapLevel;
+	renderer._activeCubeFace = 4;
+	renderer._activeMipmapLevel = 2;
+	const fallback = describeRenderTargetTopology( context, { ...renderer, getOutputRenderTarget: () => null } );
+	assert.equal( fallback.activeCubeFace, 4 );
+	assert.equal( fallback.activeMipmapLevel, 2 );
+
+} );
+
+test( 'render target topology records effective samples and attachment state', () => {
+
+	const color = texture( { name: 'output', format: 1023, type: 1016 } );
+	const depthTexture = texture( { isDepthTexture: true, format: 1026, type: 1014 } );
+	const target = renderTarget( color, {
+		depthBuffer: true,
+		stencilBuffer: true,
+		depthTexture,
+		multiview: true,
+		samples: 8,
+	} );
+	const context = targetContext( target, {
+		color: true,
+		depth: true,
+		stencil: true,
+		sampleCount: 8,
+		depthTexture,
+	} );
+	const descriptor = describeRenderTargetTopology( context, {
+		backend: { isWebGPUBackend: true },
+		getOutputRenderTarget: () => null,
+	} );
+	assert.equal( descriptor.sampleCount, 4, 'requested WebGPU samples are normalized to the pipeline count' );
+	assert.equal( descriptor.color, true );
+	assert.equal( descriptor.depth, true );
+	assert.equal( descriptor.stencil, true );
+	assert.equal( descriptor.multiview, true );
+	assert.equal( descriptor.colors[ 0 ].name, 'output' );
+	assert.equal( descriptor.depthTexture.kind, 'depth' );
+
+	const unmultisampled = renderTarget( texture(), { samples: 0 } );
+	assert.equal( describeRenderTargetTopology( targetContext( unmultisampled, { sampleCount: undefined } ), {
+		backend: { isWebGPUBackend: true },
+		getOutputRenderTarget: () => null,
+	} ).sampleCount, 1 );
+	assert.equal( describeRenderTargetTopology( targetContext( null, { sampleCount: 1 } ), {
+		backend: { isWebGPUBackend: true },
+		currentSamples: 8,
+		getOutputRenderTarget: () => null,
+	} ).sampleCount, 4, 'default surface uses renderer samples instead of RenderContext default' );
+
+} );
+
+test( 'render selector records ordered MRT names and exact blend modes', () => {
+
+	const renderObject = fixture();
+	const modes = {
+		output: {
+			blending: 1,
+			blendSrc: 204,
+			blendDst: 205,
+			blendEquation: 100,
+			blendSrcAlpha: null,
+			blendDstAlpha: null,
+			blendEquationAlpha: null,
+			premultiplyAlpha: false,
+		},
+		normal: { blending: 0, premultiplyAlpha: false },
+		emissive: { blending: 2, premultiplyAlpha: true },
+	};
+	renderObject.context.mrt = {
+		outputNodes: { output: {}, normal: {}, emissive: {} },
+		getBlendMode: ( name ) => modes[ name ],
+	};
+	const descriptor = describeRenderObjectContext( renderObject );
+	assert.equal( descriptor.mrt.count, 3 );
+	assert.deepEqual( descriptor.mrt.names, [ 'output', 'normal', 'emissive' ] );
+	assert.deepEqual( descriptor.mrt.blendModes, { output: 1, normal: 0, emissive: 2 } );
+
+	const selector = createRenderObjectContextSelector( renderObject );
+	modes.output.blendSrc = 999;
+	assert.equal( createRenderObjectContextSelector( renderObject ), selector, 'unpersisted custom factors stay outside replay topology' );
+	modes.emissive.blending = 0;
+	assert.notEqual( createRenderObjectContextSelector( renderObject ), selector, 'per-output blend changes are signed' );
+
+} );
+
+test( 'render target topology is stable across target resize', () => {
+
+	const color = texture( { image: { width: 256, height: 128, depth: 1 } } );
+	const target = renderTarget( color, { width: 256, height: 128 } );
+	const context = targetContext( target, { width: 256, height: 128 } );
+	const renderer = { backend: { isWebGPUBackend: true }, getOutputRenderTarget: () => null };
+	const before = describeRenderTargetTopology( context, renderer );
+
+	target.width = 2048;
+	target.height = 1024;
+	color.image.width = 2048;
+	color.image.height = 1024;
+	context.width = 2048;
+	context.height = 1024;
+	assert.deepEqual( describeRenderTargetTopology( context, renderer ), before );
+	assert.equal( 'width' in before, false );
+	assert.equal( 'height' in before, false );
+
+} );
+
+function texture( overrides = {} ) {
+
+	return {
+		isTexture: true,
+		isRenderTargetTexture: true,
+		format: 1023,
+		type: 1016,
+		...overrides,
+	};
+
+}
+
+function renderTarget( colorTexture, overrides = {} ) {
+
+	return {
+		isRenderTarget: true,
+		width: 64,
+		height: 64,
+		textures: [ colorTexture ],
+		texture: colorTexture,
+		depthBuffer: true,
+		stencilBuffer: false,
+		depthTexture: null,
+		multiview: false,
+		samples: 0,
+		...overrides,
+	};
+
+}
+
+function targetContext( target, overrides = {} ) {
+
+	return {
+		renderTarget: target,
+		textures: target ? target.textures : null,
+		depthTexture: target ? target.depthTexture : null,
+		color: true,
+		depth: target ? target.depthBuffer : true,
+		stencil: target ? target.stencilBuffer : false,
+		sampleCount: target ? ( target.samples > 0 ? target.samples : 1 ) : 1,
+		activeCubeFace: 0,
+		activeMipmapLevel: 0,
+		...overrides,
+	};
+
+}
 
 function fixture() {
 
