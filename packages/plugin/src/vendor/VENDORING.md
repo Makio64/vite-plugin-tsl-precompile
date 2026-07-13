@@ -17,6 +17,26 @@ and `renderer._objects.get` cached-request tap used by extraction. Keep new
 live-capture subscribers on that adapter so HMR and duplicate plugin copies
 cannot stack independent wrappers.
 
+The adapter also owns the direct-harvest compatibility seam. The installed
+Three revision reuses each `RenderContext` and mutates its `renderTarget`,
+`activeCubeFace`, `activeMipmapLevel`, attachment, sample, and MRT fields
+between requests, so the adapter copies those fields and creates the canonical
+render-object selector synchronously when `RenderObjects.get()` returns. A
+cached RenderObject may skip `NodeManager.getForRender`; in that case the
+adapter reads `renderer._nodes.nodeBuilderCache.get(cacheKey)`. New/async
+states are correlated later by the pair `(renderObject.material, cacheKey)`.
+`beginRenderObjectHarvest(renderer)` exposes one bounded epoch whose completed
+families can be passed to `compileTSL(..., { renderObjectHarvest })`. Consumers
+must adopt a complete family atomically; an unavailable state or selector makes
+the whole material family fall back to synthetic extraction.
+
+`RenderObjects.get()` returns before Renderer assigns the current geometry
+group to `renderObject.group`. The request snapshot therefore preserves the
+group already present on the RenderObject (normally the cached group) but does
+not infer a new group from private renderer call-stack state. If upstream adds
+the group to `RenderObjects.get()` arguments, capture it here rather than
+patching NodeManager or Renderer at another site.
+
 Local assumption: `Object3DNode` instances with an explicit `object3d.isCamera`
 target are serialized as `object3d.*` sources with `target: "camera"`. This
 preserves TSL like `objectPosition(camera)` in post-processing passes, where

@@ -21,12 +21,16 @@ render and extracts complete WGSL plus light, shadow, depth-texture, and fog
 sources without a second compile. The private Three seam is centralized in
 [`packages/plugin/src/vendor/render-object-observer.js`](packages/plugin/src/vendor/render-object-observer.js), which uses a Symbol-backed subscriber registry; `compileTSL` consumes that adapter instead of replacing `NodeManager.getForRender` itself.
 
-The production marker has **not** switched to direct harvest yet. The next safe
-wedge is to aggregate every observed cache key for a material during one render
-epoch, stamp MRT metadata from the real `RenderObject`, and fall back to the
-synthetic compiler only for an unavailable/incomplete observation or a missing
-required sibling variant. Until those parity tests exist, synthetic capture
-remains the default compatibility path.
+`compileTSL` can now consume a completed real-render harvest. The observer
+freezes request-time target/face/mip/MRT state, joins cached or newly built
+`NodeBuilderState` objects by material plus Three cache key, and exposes one
+atomic family per material. Extraction prefers a supplied complete family and
+falls back to the whole synthetic family when any requested sibling is
+incomplete; it never mixes a partial real family with synthetic siblings. The
+production marker has **not** switched to handing this harvest across its real
+render yet, so synthetic capture remains its default compatibility path. That
+marker handoff is the next adoption wedge, especially for multi-call epochs
+such as the six CubeCamera faces.
 
 Identity is now split in the first useful way: `__hash` is derived from runtime
 artifact content (shaders, binding/layout data, uniform plans, render state, and
@@ -135,6 +139,20 @@ effectively unchanged at 28.51 dB, so duplicate pass execution is closed as a
 logic/performance fault but is not the remaining AO fidelity cause. This is
 not a general render DAG; the next safe extensions are explicit target/input
 ownership and per-logical-frame execution semantics.
+
+**Owner-scoped postprocess-frame scheduler wedge (2026-07-13).**
+[`slim-support/postprocess-frame-scheduler.js`](packages/runtime/src/slim-support/postprocess-frame-scheduler.js)
+now keeps successful work claims on a durable pipeline owner and keys them by
+the explicit `(frameId, renderId)` pair, so repeated pipeline calls and separate
+slim/full temporal scopes cannot advance the same pass or effect twice. Role
+conflicts and missing identities fail closed; false, thrown, and rejected work
+releases its claim for retry; concurrent async callers share one in-flight
+Promise; and consumers can inspect or declare failed producer dependencies.
+The batch pipeline maps planned producer/context-effect/consumer/TRAA work onto
+those roles. RTT composites that contain a live effect dependency are deferred
+until that effect succeeds, replacing the SSGI-specific render-again heuristic
+with graph-derived ordering. Target ownership and resize-triggered resource
+rebinding remain the next separate stage.
 
 **Closure-backed SSS product path (2026-07-13).** Named imports of
 `builtinAOContext` and `builtinShadowContext` are now wrapped by the plugin in

@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { compileTSL } from '../../src/vendor/compileTSL.js';
 import { createMockGPUCanvasContext, installMockWebGPU } from '../../src/mock-webgpu.js';
+import { beginRenderObjectHarvest } from '../../src/vendor/render-object-observer.js';
 
 test( 'compileTSL binds the renderer framebuffer target during canvas warm-up', async () => {
 
@@ -302,6 +303,151 @@ test( 'compileTSL leaves material-owned single-output MRTs on the surrounding ta
 	assert.equal( currentRenderTarget, null );
 
 } );
+
+test( 'compileTSL prefers a caller-supplied completed multi-face harvest over synthetic states', async () => {
+
+	const material = { uuid: 'real-cube-material', isMeshStandardMaterial: true };
+	const object = { material };
+	const realState = makeMinimalState( 'real-cube' );
+	const syntheticState = makeMinimalState( 'synthetic-cube' );
+	const stateByObject = new Map();
+	const manager = {
+		nodeBuilderCache: new Map(),
+		getForRenderCacheKey( renderObject ) { return renderObject.cacheKey; },
+		getForRender( renderObject ) { return stateByObject.get( renderObject ) || null; },
+	};
+	const renderer = makeHarvestRenderer( manager );
+	const cubeTexture = { isCubeTexture: true, format: 1023 };
+	const cubeTarget = { isCubeRenderTarget: true, texture: cubeTexture, textures: [ cubeTexture ] };
+	const realSession = beginRenderObjectHarvest( renderer );
+	for ( const activeCubeFace of [ 0, 5 ] ) {
+
+		const renderObject = {
+			cacheKey: 'shared-cube-key',
+			material,
+			object,
+			context: { renderTarget: cubeTarget, textures: [ cubeTexture ], activeCubeFace, activeMipmapLevel: 2, sampleCount: 1 },
+		};
+		stateByObject.set( renderObject, realState );
+		renderer._objects.get( renderObject );
+		manager.getForRender( renderObject );
+
+	}
+	const realHarvest = await realSession.finish();
+	assert.equal( realHarvest.familiesByMaterial.get( material ).variants[ 0 ].renderContextSelectors.length, 2 );
+
+	manager.nodeBuilderCache.set( 'shared-cube-key', syntheticState );
+	renderer.compileAsync = async () => {
+
+		const renderObject = {
+			cacheKey: 'shared-cube-key',
+			material,
+			object,
+			context: { renderTarget: null, activeCubeFace: 0, activeMipmapLevel: 0, sampleCount: 1 },
+		};
+		stateByObject.set( renderObject, syntheticState );
+		renderer._objects.get( renderObject );
+		manager.getForRender( renderObject );
+
+	};
+	const scene = { userData: {}, traverse() {} };
+	const artifacts = await compileTSL( renderer, scene, {}, {
+		noGlobalMRT: true,
+		renderObjectHarvest: realHarvest,
+	} );
+	const selected = artifacts.byMaterialUuid.get( material.uuid );
+
+	assert.match( selected.vertexShader, /real-cube/ );
+	assert.doesNotMatch( selected.vertexShader, /synthetic-cube/ );
+	const faces = selected.renderContextSelectors.map( ( selector ) => JSON.parse( selector ).target.activeCubeFace ).sort();
+	assert.deepEqual( faces, [ 0, 5 ] );
+
+} );
+
+test( 'compileTSL discards an incomplete supplied family and uses the whole synthetic family', async () => {
+
+	const material = { uuid: 'incomplete-real-material', isMeshStandardMaterial: true };
+	const object = { material };
+	const realFirstState = makeMinimalState( 'real-first' );
+	const syntheticFirstState = makeMinimalState( 'synthetic-first' );
+	const syntheticSecondState = makeMinimalState( 'synthetic-second' );
+	const stateByObject = new Map();
+	const manager = {
+		nodeBuilderCache: new Map(),
+		getForRenderCacheKey( renderObject ) { return renderObject.cacheKey; },
+		getForRender( renderObject ) { return stateByObject.get( renderObject ) || null; },
+	};
+	const renderer = makeHarvestRenderer( manager );
+	const realSession = beginRenderObjectHarvest( renderer );
+	const realFirst = { cacheKey: 'first-key', material, object, context: {} };
+	const missingSibling = { cacheKey: 'second-key', material, object, context: {} };
+	stateByObject.set( realFirst, realFirstState );
+	renderer._objects.get( realFirst );
+	manager.getForRender( realFirst );
+	renderer._objects.get( missingSibling );
+	const realHarvest = await realSession.finish();
+	assert.equal( realHarvest.familiesByMaterial.get( material ).complete, false );
+
+	manager.nodeBuilderCache.set( 'first-key', syntheticFirstState );
+	manager.nodeBuilderCache.set( 'second-key', syntheticSecondState );
+	renderer.compileAsync = async () => {
+
+		for ( const [ cacheKey, state ] of manager.nodeBuilderCache ) {
+
+			const renderObject = { cacheKey, material, object, context: {} };
+			stateByObject.set( renderObject, state );
+			renderer._objects.get( renderObject );
+			manager.getForRender( renderObject );
+
+		}
+
+	};
+	const scene = { userData: {}, traverse() {} };
+	const artifacts = await compileTSL( renderer, scene, {}, {
+		noGlobalMRT: true,
+		renderObjectHarvest: realHarvest,
+	} );
+	const variants = artifacts.byMaterialVariants.get( material.uuid );
+
+	assert.equal( variants.length, 2 );
+	assert.deepEqual( variants.map( ( artifact ) => artifact.vertexShader ).sort(), [ 'synthetic-first-vertex', 'synthetic-second-vertex' ] );
+	assert.equal( variants.some( ( artifact ) => /real-first/.test( artifact.vertexShader ) ), false );
+
+} );
+
+function makeHarvestRenderer( manager ) {
+
+	let renderTarget = null;
+	return {
+		_nodes: manager,
+		_objects: { get( renderObject ) { return renderObject; } },
+		getRenderTarget() { return renderTarget; },
+		setRenderTarget( target ) { renderTarget = target; },
+		getMRT() { return null; },
+		setMRT() {},
+		async compileAsync() {},
+		render() {},
+	};
+
+}
+
+function makeMinimalState( label ) {
+
+	return {
+		vertexShader: `${ label }-vertex`,
+		fragmentShader: `
+struct OutputStruct { @location( 0 ) color : vec4<f32> };
+@fragment fn main() -> OutputStruct {
+\tvar output : OutputStruct;
+\toutput.color = vec4<f32>( 1.0 );
+\treturn output;
+}`,
+		computeShader: '',
+		bindings: [],
+		nodeAttributes: [],
+	};
+
+}
 
 function makeCanvas( width = 16, height = 16 ) {
 

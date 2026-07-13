@@ -23,7 +23,7 @@
  */
 
 import { extractUniformPlan } from './extractUniformPlan.js';
-import { observeRenderObjectRequests, observeRenderObjects } from './render-object-observer.js';
+import { beginRenderObjectHarvest } from './render-object-observer.js';
 import { DataUtils, FloatType, HalfFloatType, RGBAFormat, RenderTarget } from 'three';
 import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
 import { createRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
@@ -1175,6 +1175,10 @@ function sceneMaterialOwnsMRTNode( scene, mrtNode ) {
  *   renderer output pass, correlate its active private quad to the exact
  *   observed NodeManager cache entry, and expose the artifact/config pair on
  *   the returned array's non-enumerable `renderOutputCapture` sidecar.
+ * @param {Object|Promise<Object>} [options.renderObjectHarvest] - Completed
+ *   beginRenderObjectHarvest() result (or its session/Promise) from the
+ *   application's real render. Complete material families are preferred
+ *   atomically over synthetic extraction.
  * @param {boolean} [options.skipWarmupRender=false] - Skip the extra synthetic render after compileAsync.
  * @return {Promise<Array<PrecompiledArtifact>>}
  */
@@ -1210,11 +1214,27 @@ export async function compileTSL( renderer, scene, camera, options = {} ) {
 
 }
 
+async function resolveRenderObjectHarvest( value, renderer ) {
+
+	if ( ! value ) return null;
+	let resolved = value;
+	if ( typeof resolved.finish === 'function' ) resolved = resolved.finish();
+	resolved = await resolved;
+	if ( ! resolved || ! ( resolved.familiesByMaterial instanceof Map ) ) return null;
+	return ! resolved.renderer || resolved.renderer === renderer ? resolved : null;
+
+}
+
 async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 	const computeNodes = Array.isArray( options.computeNodes ) ? options.computeNodes : [];
 	const renderPipeline = options.renderPipeline || null;
 	const captureRendererOutput = options.captureRendererOutput === true;
+	// A marker may bracket the application's completed real render with
+	// beginRenderObjectHarvest() and hand the immutable result in here. Prefer
+	// those exact RenderObjects later; this synthetic compile remains available
+	// as an all-or-nothing fallback for an incomplete real family.
+	const suppliedRenderObjectHarvest = await resolveRenderObjectHarvest( options.renderObjectHarvest, renderer );
 	const renderOutputObservations = [];
 	let renderOutputIdentity = null;
 
@@ -1267,11 +1287,30 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	// single-material fallback.
 	const materialByCacheKey = new Map();
 	const meshesByCacheKey = new Map();
-	const renderContextSelectorsByCacheKey = new Map();
-	const recordRenderObject = ( { renderObject, cacheKey } ) => {
+	const renderContextSelectorsByMaterial = new Map();
+	const renderContextSelectorsWithoutMaterial = new Map();
+	const selectorsFor = ( material, cacheKey, create = false ) => {
+
+		if ( ! material ) {
+
+			let selectors = renderContextSelectorsWithoutMaterial.get( cacheKey );
+			if ( ! selectors && create ) renderContextSelectorsWithoutMaterial.set( cacheKey, selectors = new Set() );
+			return selectors || null;
+
+		}
+		let byCacheKey = renderContextSelectorsByMaterial.get( material );
+		if ( ! byCacheKey && create ) renderContextSelectorsByMaterial.set( material, byCacheKey = new Map() );
+		if ( ! byCacheKey ) return null;
+		let selectors = byCacheKey.get( cacheKey );
+		if ( ! selectors && create ) byCacheKey.set( cacheKey, selectors = new Set() );
+		return selectors || null;
+
+	};
+	const recordRenderObject = ( { renderObject, cacheKey, requestSnapshot = null } ) => {
 
 		if ( cacheKey === null || cacheKey === undefined ) return;
-		const observedMaterial = renderObject && renderObject.material || null;
+		const observedMaterial = requestSnapshot && requestSnapshot.material || renderObject && renderObject.material || null;
+		const observedObject = requestSnapshot && requestSnapshot.object || renderObject && renderObject.object || null;
 		// Record every observed material and correlate only after the render,
 		// when Renderer._quadCache tells us which private quad was active. Do
 		// not pre-filter by Three's private material name: downstream wrappers
@@ -1286,23 +1325,25 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 			}
 
 		}
-		let selector = '';
-		try {
+		let selector = requestSnapshot && requestSnapshot.renderContextSelector || '';
+		if ( ! selector && ! selectorsFor( observedMaterial, cacheKey ) ) {
 
-			selector = createRenderObjectContextSelector( renderObject, renderer );
+			try {
 
-		} catch ( _ ) {
+				selector = createRenderObjectContextSelector( renderObject, renderer );
 
-			// A custom/proxied RenderObject may refuse reflection. Keep material
-			// attribution intact; this cache entry remains an unsigned legacy
-			// variant and is rejected by the family validator if siblings are signed.
+			} catch ( _ ) {
+
+				// A custom/proxied RenderObject may refuse reflection. Keep material
+				// attribution intact; this cache entry remains an unsigned legacy
+				// variant and is rejected by the family validator if siblings are signed.
+
+			}
 
 		}
 		if ( selector ) {
 
-			let selectors = renderContextSelectorsByCacheKey.get( cacheKey );
-			if ( ! selectors ) renderContextSelectorsByCacheKey.set( cacheKey, selectors = new Set() );
-			selectors.add( selector );
+			selectorsFor( observedMaterial, cacheKey, true ).add( selector );
 
 		}
 
@@ -1311,9 +1352,9 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		// (which hydrateScene looks up via obj.material.uuid). For
 		// MeshPhysicalMaterial and friends wrapped in node variants at
 		// render time, these two are different instances.
-		if ( renderObject.material && ! materialByCacheKey.has( cacheKey ) ) {
+		if ( observedMaterial && ! materialByCacheKey.has( cacheKey ) ) {
 
-			materialByCacheKey.set( cacheKey, renderObject.material );
+			materialByCacheKey.set( cacheKey, observedMaterial );
 
 		}
 
@@ -1321,12 +1362,12 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		// lookups. hydrateScene walks the scene and reads obj.material.uuid —
 		// that may be the pre-wrap material (e.g. MeshPhysicalMaterial)
 		// when three.js internally wraps it in MeshPhysicalNodeMaterial.
-		if ( renderObject.object && renderObject.object.material &&
-			renderObject.object.material !== renderObject.material ) {
+		if ( observedObject && observedObject.material &&
+			observedObject.material !== observedMaterial ) {
 
 			if ( ! materialByCacheKey.has( cacheKey + ':user' ) ) {
 
-				materialByCacheKey.set( cacheKey + ':user', renderObject.object.material );
+				materialByCacheKey.set( cacheKey + ':user', observedObject.material );
 
 			}
 
@@ -1334,7 +1375,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 		let list = meshesByCacheKey.get( cacheKey );
 		if ( ! list ) meshesByCacheKey.set( cacheKey, list = [] );
-		if ( renderObject.object && ! list.includes( renderObject.object ) ) list.push( renderObject.object );
+		if ( observedObject && ! list.includes( observedObject ) ) list.push( observedObject );
 
 	};
 
@@ -1482,10 +1523,11 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 	}
 
-	const stopObservingRenderObjects = observeRenderObjects( renderer, recordRenderObject );
-	const stopObservingRenderObjectRequests = captureRendererOutput
-		? observeRenderObjectRequests( renderer, recordRenderObject )
-		: () => {};
+	let renderObjectHarvest = null;
+	const renderObjectHarvestSession = beginRenderObjectHarvest( renderer, {
+		onRequest: recordRenderObject,
+		onState: recordRenderObject,
+	} );
 	try {
 
 		// Activate (or clear) MRT on the renderer before the warm-up so
@@ -1578,6 +1620,11 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 	} finally {
 
+		// Stop request/state observation before renderer restoration mutates the
+		// shared RenderContext again. `finish()` also waits for any async
+		// NodeBuilderState Promise without changing the Promise Three returned.
+		const renderObjectHarvestPromise = renderObjectHarvestSession.finish();
+
 		// Restore the renderer's MRT to whatever the host app had set before
 		// our warm-up. Without this restoration, the user's next real render
 		// would see `renderer.getMRT() === null` and re-build the pipeline
@@ -1639,9 +1686,8 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 		}
 
-		stopObservingRenderObjectRequests();
-		stopObservingRenderObjects();
 		for ( const [ mat, node ] of strippedMRTMaterials ) mat.mrtNode = node;
+		renderObjectHarvest = await renderObjectHarvestPromise;
 
 	}
 
@@ -1660,26 +1706,171 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	// velocity*time) drift by 1–2 animation ticks because capture and replay
 	// freeze nodeFrame at slightly different t values.
 	const captureClock = ( renderer && renderer._nodes && renderer._nodes.nodeFrame && Number.isFinite( renderer._nodes.nodeFrame.time ) ) ? renderer._nodes.nodeFrame.time : null;
+	const extractionEntries = [];
+	const suppliedCompleteOwners = new Set();
+	const suppliedCompleteOwnerUuids = new Set();
+	const selectedCompleteOwners = new Set();
+	const selectedCompleteOwnerUuids = new Set();
+	const handledPairsByMaterial = new Map();
+	const selectedCacheKeys = new Set();
+
+	const familyOwners = ( family ) => {
+
+		const owners = new Set( family && family.material ? [ family.material ] : [] );
+		for ( const variant of family && family.variants || [] ) for ( const userMaterial of variant.userMaterials || [] ) owners.add( userMaterial );
+		return owners;
+
+	};
+	const ownerUuid = ( owner ) => owner && owner.uuid || null;
+	const familyOverlaps = ( family, owners, ownerUuids ) => {
+
+		for ( const owner of familyOwners( family ) ) {
+
+			if ( owners.has( owner ) ) return true;
+			const uuid = ownerUuid( owner );
+			if ( uuid && ownerUuids.has( uuid ) ) return true;
+
+		}
+		return false;
+
+	};
+	const markFamilyOwners = ( family, owners, ownerUuids ) => {
+
+		for ( const owner of familyOwners( family ) ) {
+
+			owners.add( owner );
+			const uuid = ownerUuid( owner );
+			if ( uuid ) ownerUuids.add( uuid );
+
+		}
+
+	};
+	const markHandledPair = ( material, cacheKey ) => {
+
+		let keys = handledPairsByMaterial.get( material );
+		if ( ! keys ) handledPairsByMaterial.set( material, keys = new Set() );
+		keys.add( cacheKey );
+
+	};
+	const addFamilyEntries = ( family, useHarvestedState ) => {
+
+		for ( const variant of family.variants ) {
+
+			const state = useHarvestedState ? variant.nodeBuilderState : cache.get( variant.cacheKey );
+			if ( ! state ) continue;
+			const firstRequest = variant.requests && variant.requests[ 0 ] || null;
+			extractionEntries.push( {
+				cacheKey: variant.cacheKey,
+				state,
+				material: family.material || null,
+				userMaterials: variant.userMaterials || [],
+				meshes: variant.objects || [],
+				renderContextSelectors: variant.renderContextSelectors || [],
+				captureClock: variant.captureClocks && variant.captureClocks.length > 0 ? variant.captureClocks[ 0 ] : null,
+				mrtNode: firstRequest && firstRequest.renderContext ? firstRequest.renderContext.mrt : null,
+				hasObservedMRT: !! ( firstRequest && firstRequest.renderContext ),
+			} );
+			selectedCacheKeys.add( variant.cacheKey );
+			markHandledPair( family.material || null, variant.cacheKey );
+
+		}
+
+	};
+	const completeFamilies = ( harvest ) => harvest && harvest.familiesByMaterial instanceof Map
+		? [ ...new Set( harvest.familiesByMaterial.values() ) ].filter( ( family ) => family && family.complete && family.material )
+		: [];
+
+	// Caller-supplied real-render families have first priority. Select every
+	// complete family from that one epoch before considering synthetic data so
+	// cube faces and pass siblings remain an atomic set.
+	for ( const family of completeFamilies( suppliedRenderObjectHarvest ) ) {
+
+		addFamilyEntries( family, true );
+		markFamilyOwners( family, suppliedCompleteOwners, suppliedCompleteOwnerUuids );
+		markFamilyOwners( family, selectedCompleteOwners, selectedCompleteOwnerUuids );
+
+	}
+	// The compile-local real RenderObjects are the next preference. Do not mix
+	// them into a supplied family belonging to the same active/user material.
+	for ( const family of completeFamilies( renderObjectHarvest ) ) {
+
+		if ( familyOverlaps( family, suppliedCompleteOwners, suppliedCompleteOwnerUuids ) ) continue;
+		addFamilyEntries( family, true );
+		markFamilyOwners( family, selectedCompleteOwners, selectedCompleteOwnerUuids );
+
+	}
+	// A local family with one missing sibling must not contribute its other
+	// harvested siblings. Re-enter through the pre-existing synthetic cache for
+	// that whole material, retaining exact material attribution from requests.
+	if ( renderObjectHarvest && renderObjectHarvest.familiesByMaterial instanceof Map ) {
+
+		for ( const family of new Set( renderObjectHarvest.familiesByMaterial.values() ) ) {
+
+			if ( ! family || family.complete || ! family.material ) continue;
+			if ( familyOverlaps( family, selectedCompleteOwners, selectedCompleteOwnerUuids ) ) continue;
+			addFamilyEntries( family, false );
+
+		}
+
+	}
+	// Keep accumulated-cache extraction for old/custom renderers that do not
+	// expose RenderObjects.get, plus stale auxiliary entries intentionally used
+	// by existing capture workflows. Observed pairs above never rely on this
+	// cacheKey -> first material attribution path.
 	for ( const [ cacheKey, state ] of cache ) {
 
 		const material = materialByCacheKey.get( cacheKey ) || null;
 		const userMaterial = materialByCacheKey.get( cacheKey + ':user' ) || null;
-		const meshes = meshesByCacheKey.get( cacheKey ) || [];
+		const materialUuid = ownerUuid( material );
+		const userMaterialUuid = ownerUuid( userMaterial );
+		if ( selectedCompleteOwners.has( material ) || selectedCompleteOwners.has( userMaterial ) ||
+			materialUuid && selectedCompleteOwnerUuids.has( materialUuid ) ||
+			userMaterialUuid && selectedCompleteOwnerUuids.has( userMaterialUuid ) ) continue;
+		const handledKeys = handledPairsByMaterial.get( material );
+		if ( handledKeys && handledKeys.has( cacheKey ) ) continue;
+		if ( ! material && selectedCacheKeys.has( cacheKey ) ) continue;
+		const scopedSelectors = selectorsFor( material, cacheKey );
+		const unscopedSelectors = renderContextSelectorsWithoutMaterial.get( cacheKey );
+		extractionEntries.push( {
+			cacheKey,
+			state,
+			material,
+			userMaterials: userMaterial ? [ userMaterial ] : [],
+			meshes: meshesByCacheKey.get( cacheKey ) || [],
+			renderContextSelectors: [ ...new Set( [ ...( scopedSelectors || [] ), ...( unscopedSelectors || [] ) ] ) ].sort(),
+			captureClock,
+			mrtNode: sceneMRTNode,
+			hasObservedMRT: false,
+		} );
+
+	}
+	// Preserve the historical accumulated-cache order for callers that inspect
+	// the flat array, while still allowing one cache key to be attributed to
+	// multiple observed materials in the richer side maps.
+	const cacheOrder = new Map( [ ...cache.keys() ].map( ( cacheKey, index ) => [ cacheKey, index ] ) );
+	extractionEntries.sort( ( a, b ) => ( cacheOrder.get( a.cacheKey ) ?? Number.MAX_SAFE_INTEGER ) - ( cacheOrder.get( b.cacheKey ) ?? Number.MAX_SAFE_INTEGER ) );
+
+	for ( const entry of extractionEntries ) {
+
+		const { cacheKey, state, material, meshes } = entry;
+		const userMaterials = [ ...new Set( entry.userMaterials || [] ) ];
+		const userMaterial = userMaterials[ 0 ] || null;
 		const artifact = extractArtifact( cacheKey, state, material, meshes[ 0 ] || null );
-		const renderContextSelectors = renderContextSelectorsByCacheKey.get( cacheKey );
-		if ( renderContextSelectors && renderContextSelectors.size > 0 ) artifact.renderContextSelectors = [ ...renderContextSelectors ].sort();
+		if ( entry.renderContextSelectors && entry.renderContextSelectors.length > 0 ) artifact.renderContextSelectors = [ ...entry.renderContextSelectors ].sort();
 		if ( material && material.uuid ) artifact.materialUuid = material.uuid;
 		if ( userMaterial && userMaterial.uuid ) artifact.userMaterialUuid = userMaterial.uuid;
-		if ( captureClock !== null ) artifact.captureClock = captureClock;
+		const artifactCaptureClock = Number.isFinite( entry.captureClock ) ? entry.captureClock : captureClock;
+		if ( artifactCaptureClock !== null ) artifact.captureClock = artifactCaptureClock;
 
 		// Stamp mrtOutputCount when the warm-up ran with an MRT node active.
 		// Three.js keys the pipeline by the number of color attachments — the
 		// replay side needs this count to size the render target correctly and
 		// validate the pipeline descriptor. Accept both `.nodes` (MRTNode) and
 		// `.outputNodes` (PassNode-style) property names for robustness.
-		if ( sceneMRTNode ) {
+		const artifactMRTNode = entry.hasObservedMRT ? entry.mrtNode : sceneMRTNode;
+		if ( artifactMRTNode ) {
 
-			const outputMap = sceneMRTNode.nodes || sceneMRTNode.outputNodes || null;
+			const outputMap = artifactMRTNode.nodes || artifactMRTNode.outputNodes || null;
 			const outputNames = outputMap ? Object.keys( outputMap ) : [];
 			const outputCount = outputNames.length;
 			if ( outputCount > 0 ) {
@@ -1692,14 +1883,14 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 				// emissive MRT slot). Skip silently if the source MRTNode
 				// doesn't expose `getBlendMode`.
 				artifact.mrtOutputNames = outputNames.slice();
-				if ( typeof sceneMRTNode.getBlendMode === 'function' ) {
+				if ( typeof artifactMRTNode.getBlendMode === 'function' ) {
 
 					const blendModes = {};
 					for ( const name of outputNames ) {
 
 						try {
 
-							const mode = sceneMRTNode.getBlendMode( name );
+							const mode = artifactMRTNode.getBlendMode( name );
 							if ( mode && mode.blending != null ) blendModes[ name ] = mode.blending;
 
 						} catch ( _ ) { /* tolerate missing per-name blend mode */ }
@@ -1733,11 +1924,11 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		// Without this, hydrateScene can't find the artifact for
 		// SkinnedMesh + MeshPhysicalMaterial pairs that skip the node-
 		// material class.
-		if ( ! isAuxiliary && userMaterial && userMaterial.uuid !== ( material && material.uuid ) ) {
+		for ( const observedUserMaterial of userMaterials ) if ( ! isAuxiliary && observedUserMaterial && observedUserMaterial.uuid !== ( material && material.uuid ) ) {
 
-			pushArtifactVariant( byMaterialVariants, userMaterial.uuid, artifact );
-			const expectedShape = classifyMaterialShape( userMaterial );
-			byMaterialUuid.set( userMaterial.uuid, selectPreferredArtifact( byMaterialUuid.get( userMaterial.uuid ), artifact, expectedShape ) );
+			pushArtifactVariant( byMaterialVariants, observedUserMaterial.uuid, artifact );
+			const expectedShape = classifyMaterialShape( observedUserMaterial );
+			byMaterialUuid.set( observedUserMaterial.uuid, selectPreferredArtifact( byMaterialUuid.get( observedUserMaterial.uuid ), artifact, expectedShape ) );
 
 		}
 

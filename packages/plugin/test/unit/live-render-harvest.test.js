@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { installMockWebGPU, createMockGPUCanvasContext } from '../../src/mock-webgpu.js';
 import { extractArtifact } from '../../src/vendor/compileTSL.js';
-import { observeRenderObjects } from '../../src/vendor/render-object-observer.js';
+import { beginRenderObjectHarvest } from '../../src/vendor/render-object-observer.js';
 
 installMockWebGPU();
 
@@ -31,18 +31,16 @@ test( 'a real render exposes a directly harvestable material artifact', async ()
 	const camera = new THREE.PerspectiveCamera( 45, 1, 0.1, 100 );
 	camera.position.z = 3;
 
-	const observed = [];
-	const stop = observeRenderObjects( renderer, ( event ) => {
-
-		if ( event.renderObject.object === mesh && event.renderObject.material === material ) observed.push( event );
-
-	} );
+	const session = beginRenderObjectHarvest( renderer );
 	renderer.render( scene, camera );
-	stop();
+	const harvest = await session.finish();
 
-	assert.ok( observed.length > 0, 'the visible material flowed through NodeManager.getForRender' );
-	const record = observed[ 0 ];
-	const artifact = extractArtifact( record.cacheKey, record.nodeBuilderState, material, mesh );
+	const family = harvest.familiesByMaterial.get( material );
+	assert.ok( family, 'the visible material flowed through the direct render-object harvest' );
+	assert.equal( family.complete, true );
+	const variant = family.variants.find( ( candidate ) => candidate.objects.includes( mesh ) );
+	assert.ok( variant );
+	const artifact = extractArtifact( variant.cacheKey, variant.nodeBuilderState, material, mesh );
 	const kinds = new Set( artifact.uniformPlan.flatMap( ( group ) => [
 		...( group.slots || [] ),
 		...( group.textures || [] ),

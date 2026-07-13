@@ -84,7 +84,7 @@ The Vite plugin. Runs at build time.
 - `src/emit-manifest.js` — artifact JSON → virtual module source.
 - `src/wgsl-optimize.js` — build-output-only WGSL minify/dedupe support, including the shared `virtual:tsl-precompile/__wgsl` pool.
 - `src/hash.js` — artifact hash wrapper around the shared graph normalizer from `@tsl-precompile/contract`.
-- `src/vendor/` — vendored files from the three.js fork (compileTSL, extractUniformPlan, …).
+- `src/vendor/` — vendored files from the three.js fork (compileTSL, extractUniformPlan, …), plus the centralized private RenderObject observer. A bounded observer epoch snapshots reused render contexts and supplies complete real-render variant families to extraction; incomplete families fall back atomically to synthetic compilation.
 
 ### `@tsl-precompile/contract`
 
@@ -116,6 +116,7 @@ Ships with the user's bundle. Runtime only.
 - `src/slim-support/live-scene-index.js` — first productized slim-support helper for live texture indexing and null-image healing.
 - `src/slim-support/pmrem.js` — productized PMREM support helpers for artifact/source detection, cache orchestration, and `_textureRefs` wiring; the harness still supplies the full-renderer generator.
 - `src/slim-support/shadow-fallback.js` — fail-closed standard Directional/Spot/Point depth-shadow population through a shared-device full renderer, including proxy-scene caching, depth-texture sharing, and lifecycle-safe disposal. The cache owns only its cloned geometry, stand-in materials, cloned shadows, and internal discard targets; public disposal restores source shadow references by identity and serializes cleanup with in-flight GPU work. Transmitted/VSM/custom/skinned/morph families remain explicit adapters rather than silent approximations.
+- `src/slim-support/postprocess-frame-scheduler.js` — owner-scoped once-per-logical-frame claims for pass producers, context effects, consumers, and terminal effects. Separate renderer scopes share work through the explicit `(frameId, renderId)` identity; failed work releases its claim and downstream dependencies fail closed.
 - `src/writers.js` — `writeMat4 / writeVec4 / writeF32 / writeColor`.
 - `src/artifact-loader.js` — manifest resolver.
 - `build/three.webgpu.slim.js` — prebuilt slim three.js (no node builder).

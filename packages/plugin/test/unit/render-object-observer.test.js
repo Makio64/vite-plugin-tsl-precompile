@@ -1,12 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { observeRenderObjectRequests, observeRenderObjects } from '../../src/vendor/render-object-observer.js';
+import {
+	beginRenderObjectHarvest,
+	observeRenderObjectRequests,
+	observeRenderObjects,
+} from '../../src/vendor/render-object-observer.js';
 
 function fixture() {
 
 	const stateByObject = new Map();
 	const manager = {
+		nodeBuilderCache: new Map(),
 		getForRenderCacheKey: ( renderObject ) => renderObject.cacheKey,
 		getForRender( renderObject ) {
 
@@ -44,6 +49,115 @@ test( 'render-object observer shares one wrapper and preserves the original resu
 	assert.equal( manager.getForRender, wrapper, 'remaining subscriber keeps observation active' );
 	stopSecond();
 	assert.equal( manager.getForRender, original, 'last subscriber restores the original method' );
+
+} );
+
+test( 'render-object requests freeze cube face and mip before renderer getters can mutate context', () => {
+
+	const { renderer, renderObjects } = fixture();
+	const context = {
+		renderTarget: undefined,
+		activeCubeFace: 2,
+		activeMipmapLevel: 3,
+		sampleCount: 4,
+		textures: [ { isCubeTexture: true, format: 1023 } ],
+	};
+	const target = { isCubeRenderTarget: true, texture: context.textures[ 0 ] };
+	renderer.getRenderTarget = () => {
+
+		context.activeCubeFace = 5;
+		context.activeMipmapLevel = 8;
+		context.sampleCount = 1;
+		return target;
+
+	};
+	const events = [];
+	const stop = observeRenderObjectRequests( renderer, ( event ) => events.push( event ) );
+	renderObjects.get( {
+		cacheKey: 14,
+		context,
+		material: { uuid: 'cube-material' },
+		object: { material: null },
+	} );
+	stop();
+
+	const snapshot = events[ 0 ].requestSnapshot;
+	assert.equal( snapshot.renderContext.activeCubeFace, 2 );
+	assert.equal( snapshot.renderContext.activeMipmapLevel, 3 );
+	assert.equal( snapshot.renderContext.sampleCount, 4 );
+	const selector = JSON.parse( snapshot.renderContextSelector );
+	assert.equal( selector.target.surface, 'offscreen-cube' );
+	assert.equal( selector.target.activeCubeFace, 2 );
+	assert.equal( selector.target.activeMipmapLevel, 3 );
+	assert.equal( selector.target.sampleCount, 4 );
+
+} );
+
+test( 'harvest includes repeated request-only cache hits as one complete material variant', async () => {
+
+	const { manager, renderer, renderObjects } = fixture();
+	const state = { vertexShader: 'cached-vertex', fragmentShader: 'cached-fragment' };
+	manager.nodeBuilderCache.set( 91, state );
+	const material = { uuid: 'cached-material' };
+	const renderObject = {
+		cacheKey: 91,
+		material,
+		object: { material },
+		context: { renderTarget: null, activeCubeFace: 0, activeMipmapLevel: 0, sampleCount: 1 },
+	};
+	const session = beginRenderObjectHarvest( renderer );
+	renderObjects.get( renderObject );
+	renderObjects.get( renderObject );
+	const harvest = await session.finish();
+	const family = harvest.familiesByMaterial.get( material );
+
+	assert.equal( harvest.requests.length, 2, 'every cached RenderObjects.get request is retained' );
+	assert.equal( family.complete, true );
+	assert.equal( family.variants.length, 1 );
+	assert.equal( family.variants[ 0 ].requestCount, 2 );
+	assert.equal( family.variants[ 0 ].nodeBuilderState, state );
+
+} );
+
+test( 'harvest correlates equal Three cache keys independently per material', async () => {
+
+	const { manager, renderer, renderObjects, stateByObject } = fixture();
+	const firstMaterial = { uuid: 'first-material' };
+	const secondMaterial = { uuid: 'second-material' };
+	const first = { cacheKey: 7, material: firstMaterial, object: { material: firstMaterial }, context: {} };
+	const second = { cacheKey: 7, material: secondMaterial, object: { material: secondMaterial }, context: {} };
+	const firstState = { vertexShader: 'first' };
+	const secondState = { vertexShader: 'second' };
+	stateByObject.set( first, firstState );
+	stateByObject.set( second, secondState );
+	const session = beginRenderObjectHarvest( renderer );
+	renderObjects.get( first );
+	manager.getForRender( first );
+	renderObjects.get( second );
+	manager.getForRender( second );
+	const harvest = await session.finish();
+
+	assert.equal( harvest.familiesByMaterial.get( firstMaterial ).variants[ 0 ].nodeBuilderState, firstState );
+	assert.equal( harvest.familiesByMaterial.get( secondMaterial ).variants[ 0 ].nodeBuilderState, secondState );
+
+} );
+
+test( 'harvest resolves async NodeBuilderState without replacing Three\'s returned Promise', async () => {
+
+	const { manager, renderer, renderObjects, stateByObject } = fixture();
+	const material = { uuid: 'async-material' };
+	const renderObject = { cacheKey: 33, material, object: { material }, context: {} };
+	const state = { vertexShader: 'async-state' };
+	const statePromise = Promise.resolve( state );
+	stateByObject.set( renderObject, statePromise );
+	const session = beginRenderObjectHarvest( renderer );
+	renderObjects.get( renderObject );
+	const returned = manager.getForRender( renderObject );
+	assert.equal( returned, statePromise );
+	const harvest = await session.finish();
+
+	assert.equal( harvest.familiesByMaterial.get( material ).complete, true );
+	assert.equal( harvest.familiesByMaterial.get( material ).variants[ 0 ].nodeBuilderState, state );
 
 } );
 
