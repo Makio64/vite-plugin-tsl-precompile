@@ -45,6 +45,8 @@ let devRenderer = null;
 let registeredRenderers = new Set();
 let lastArrayCameraByRenderer = new WeakMap();
 let lastRenderContextByRenderer = new WeakMap();
+let renderCaptureEpochByRenderer = new WeakMap();
+let renderCaptureEpochs = new Set();
 
 // `.precompile()` is author syntax, but a correct shader variant depends on
 // the real RenderObject + Scene + Camera. Calls without an explicit context
@@ -60,6 +62,33 @@ let captureQueueRunning = false;
 function importOptionalModule( specifier ) {
 
 	return import( /* @vite-ignore */ specifier );
+
+}
+
+function prepareRenderObjectHarvester( installation ) {
+
+	if ( ! installation ) return Promise.resolve( null );
+	if ( typeof installation.beginRenderObjectHarvest === 'function' ) {
+
+		return Promise.resolve( installation.beginRenderObjectHarvest );
+
+	}
+	if ( installation.renderObjectHarvesterPromise ) return installation.renderObjectHarvesterPromise;
+
+	// Keep the only private Three seam in the plugin's vendored adapter. The
+	// runtime owns the public renderer.render() epoch, but it must not grow a
+	// second NodeManager/RenderObjects wrapper that can drift from compileTSL.
+	installation.renderObjectHarvesterPromise = import( /* @vite-ignore */ 'vite-plugin-tsl-precompile/src/vendor/compileTSL.js' ).then(
+		( module ) => {
+
+			const begin = module && module.beginRenderObjectHarvest;
+			if ( typeof begin === 'function' ) installation.beginRenderObjectHarvest = begin;
+			return typeof begin === 'function' ? begin : null;
+
+		},
+		() => null,
+	);
+	return installation.renderObjectHarvesterPromise;
 
 }
 
@@ -423,13 +452,14 @@ function unregisterRendererIfUnused( renderer ) {
 
 function associateRenderer( installation, renderer ) {
 
-	if ( ! installation || ! renderer ) return;
+	if ( ! installation || ! renderer ) return Promise.resolve();
 	const previous = installation.renderer;
 	installation.renderer = renderer;
 	registeredRenderers.add( renderer );
 	wrapDevRenderer( renderer );
 	if ( previous && previous !== renderer ) unregisterRendererIfUnused( previous );
 	startExplicitPendingCaptures( renderer, installation );
+	return prepareRenderObjectHarvester( installation ).then( () => undefined );
 
 }
 
@@ -585,6 +615,8 @@ function updateInstallation( installation, three, opts ) {
 	installation.devEndpointDead = false;
 	installation.extractor = opts.extractor || null;
 	installation.codegen = opts.codegen || null;
+	if ( typeof opts.beginRenderObjectHarvest === 'function' ) installation.beginRenderObjectHarvest = opts.beginRenderObjectHarvest;
+	if ( installation.devEndpoint ) void prepareRenderObjectHarvester( installation );
 
 }
 
@@ -598,6 +630,7 @@ function updateInstallation( installation, three, opts ) {
  * @param {?Function} [opts.extractor] - `(renderer, scene, camera, options) => Promise<artifacts>`.
  *   Defaults to a dynamic import of `vite-plugin-tsl-precompile/src/vendor/compileTSL.js`.
  * @param {?Function} [opts.codegen] - Test/advanced override for updater validation.
+ * @param {?Function} [opts.beginRenderObjectHarvest] - Test/advanced override for the plugin-owned real RenderObject observer.
  */
 export function installPrecompileMarker( three, opts = {} ) {
 
@@ -644,10 +677,13 @@ export function installPrecompileMarker( three, opts = {} ) {
 		devEndpointDead: false,
 		extractor: opts.extractor || null,
 		codegen: opts.codegen || null,
+		beginRenderObjectHarvest: typeof opts.beginRenderObjectHarvest === 'function' ? opts.beginRenderObjectHarvest : null,
+		renderObjectHarvesterPromise: null,
 		renderer: null,
 	};
 	installations.set( prototype, installation );
 	installationSet.add( installation );
+	if ( installation.devEndpoint ) void prepareRenderObjectHarvester( installation );
 
 	// PassNode.setMRT hook: `pass(scene, cam).setMRT(mrtNode)` (the dominant
 	// MRT pattern in three.js examples) doesn't write `material.mrtNode` until
@@ -743,18 +779,18 @@ export function installPrecompileMarker( three, opts = {} ) {
  *
  * @param {Object} renderer
  * @param {Object} [three] - Optional three namespace; recommended when more than one renderer/three copy is active.
+ * @returns {Promise<void>} Resolves once the optional real-render harvester is ready; callers may ignore it and retain synthetic fallback behavior.
  */
 export function setDevRenderer( renderer, three = null ) {
 
 	devRenderer = renderer || null;
 	if ( renderer && renderer.inspector ) autoAttachInspectorPanel( renderer.inspector );
-	if ( ! renderer ) return;
+	if ( ! renderer ) return Promise.resolve();
 
 	const sharedState = three && three.Material && three.Material.prototype && three.Material.prototype[ MARKER_STATE_SYMBOL ];
 	if ( sharedState && typeof sharedState.setRenderer === 'function' ) {
 
-		sharedState.setRenderer( renderer );
-		return;
+		return Promise.resolve( sharedState.setRenderer( renderer ) ).then( () => undefined );
 
 	}
 	if ( installationSet.size === 1 ) {
@@ -762,14 +798,117 @@ export function setDevRenderer( renderer, three = null ) {
 		const installation = installationSet.values().next().value;
 		const prototype = installation.three && installation.three.Material && installation.three.Material.prototype;
 		const state = prototype && prototype[ MARKER_STATE_SYMBOL ];
-		if ( state && typeof state.setRenderer === 'function' ) state.setRenderer( renderer );
-		else associateRenderer( installation, renderer );
-		return;
+		if ( state && typeof state.setRenderer === 'function' ) return Promise.resolve( state.setRenderer( renderer ) ).then( () => undefined );
+		return associateRenderer( installation, renderer );
 
 	}
 
 	registeredRenderers.add( renderer );
 	wrapDevRenderer( renderer );
+	return Promise.resolve();
+
+}
+
+function beginSynchronousRenderCaptureEpoch( renderer, ready ) {
+
+	let epoch = renderCaptureEpochByRenderer.get( renderer );
+	if ( epoch && epoch.closed === false ) return epoch;
+
+	let beginHarvest = null;
+	for ( const entry of ready ) {
+
+		const candidate = entry && entry.installation && entry.installation.beginRenderObjectHarvest;
+		if ( typeof candidate === 'function' ) {
+
+			beginHarvest = candidate;
+			break;
+
+		}
+
+	}
+
+	let harvestSession = null;
+	if ( beginHarvest ) {
+
+		try {
+
+			harvestSession = beginHarvest( renderer );
+
+		} catch ( _ ) {
+
+			harvestSession = null;
+
+		}
+
+	}
+	epoch = {
+		renderer,
+		harvestSession,
+		entries: new Set(),
+		pendingAsyncRenders: 0,
+		closeScheduled: false,
+		closed: false,
+	};
+	renderCaptureEpochByRenderer.set( renderer, epoch );
+	renderCaptureEpochs.add( epoch );
+	return epoch;
+
+}
+
+function completeRenderCaptureCall( epoch, ready ) {
+
+	if ( ! epoch || epoch.closed ) return;
+	for ( const entry of ready ) epoch.entries.add( entry );
+	scheduleRenderCaptureEpochClose( epoch );
+
+}
+
+function scheduleRenderCaptureEpochClose( epoch ) {
+
+	if ( ! epoch || epoch.closed || epoch.closeScheduled ) return;
+	epoch.closeScheduled = true;
+	Promise.resolve().then( () => {
+
+		epoch.closeScheduled = false;
+		if ( epoch.closed || epoch.pendingAsyncRenders > 0 ) return;
+		closeRenderCaptureEpoch( epoch );
+
+	} );
+
+}
+
+function closeRenderCaptureEpoch( epoch, startCaptures = true ) {
+
+	if ( ! epoch || epoch.closed ) return;
+	epoch.closed = true;
+	if ( renderCaptureEpochByRenderer.get( epoch.renderer ) === epoch ) renderCaptureEpochByRenderer.delete( epoch.renderer );
+	renderCaptureEpochs.delete( epoch );
+
+	let renderObjectHarvest = Promise.resolve( null );
+	if ( epoch.harvestSession && typeof epoch.harvestSession.finish === 'function' ) {
+
+		try {
+
+			renderObjectHarvest = Promise.resolve( epoch.harvestSession.finish() ).catch( () => null );
+
+		} catch ( _ ) {
+
+			renderObjectHarvest = Promise.resolve( null );
+
+		}
+
+	}
+
+	// Claim all materials before yielding to the harvester's asynchronous state
+	// joins. A later application frame must not open a second observer epoch for
+	// the same pending marker while this immutable result is being completed.
+	if ( ! startCaptures ) return;
+	for ( const entry of epoch.entries ) {
+
+		entry.renderObjectHarvest = renderObjectHarvest;
+		startQueuedCapture( entry );
+
+	}
 
 }
 
@@ -795,14 +934,54 @@ function wrapDevRenderer( renderer ) {
 			const synthetic = ( globalThis.__tslpSyntheticRenderActive | 0 ) > 0;
 			if ( ! synthetic ) lastRenderContextByRenderer.set( renderer, { scene, camera } );
 			const ready = synthetic ? [] : bindPendingCapturesFromRender( renderer, scene, camera );
-			const result = _originalRender( scene, camera, ...rest );
+			// Open the plugin-owned RenderObject observer before the first real
+			// request. Closing is deferred to a microtask, so every synchronous
+			// render in the current application burst (cube faces, depth/color
+			// siblings, offscreen/main passes) contributes to one atomic family.
+			const openCaptureEpoch = renderCaptureEpochByRenderer.get( renderer );
+			const captureEpoch = openCaptureEpoch && openCaptureEpoch.closed === false
+				? openCaptureEpoch
+				: ready.length > 0 ? beginSynchronousRenderCaptureEpoch( renderer, ready ) : null;
+			let result;
+			try {
+
+				result = _originalRender( scene, camera, ...rest );
+
+			} catch ( error ) {
+
+				if ( captureEpoch ) scheduleRenderCaptureEpochClose( captureEpoch );
+				throw error;
+
+			}
 			const startReady = () => {
 
-				for ( const entry of ready ) startQueuedCapture( entry );
+				if ( captureEpoch ) completeRenderCaptureCall( captureEpoch, ready );
 				if ( ! synthetic ) scheduleAutoFallbackCaptures( renderer, scene, camera );
 
 			};
-			if ( result && typeof result.then === 'function' ) result.then( startReady, () => {} );
+			if ( result && typeof result.then === 'function' ) {
+
+				if ( captureEpoch ) captureEpoch.pendingAsyncRenders ++;
+				Promise.resolve( result ).then(
+					() => {
+
+						if ( captureEpoch ) captureEpoch.pendingAsyncRenders --;
+						startReady();
+
+					},
+					() => {
+
+						if ( captureEpoch ) {
+
+							captureEpoch.pendingAsyncRenders --;
+							scheduleRenderCaptureEpochClose( captureEpoch );
+
+						}
+
+					},
+				);
+
+			}
 			else startReady();
 			return result;
 
@@ -843,6 +1022,8 @@ async function autoAttachInspectorPanel( inspector ) {
  */
 export function clearDevRenderer() {
 
+	for ( const epoch of [ ...renderCaptureEpochs ] ) closeRenderCaptureEpoch( epoch, false );
+
 	for ( const installation of installationSet ) {
 
 		const prototype = installation.three && installation.three.Material && installation.three.Material.prototype;
@@ -866,6 +1047,7 @@ async function captureMaterialInDev( entry ) {
 	const devEndpoint = installation.devEndpoint;
 	let extractor = installation.extractor;
 	let codegen = installation.codegen;
+	let renderObjectHarvest = null;
 
 	try {
 
@@ -873,6 +1055,23 @@ async function captureMaterialInDev( entry ) {
 
 			logOnce( 'no-renderer:' + name, () => console.warn( `[tsl-precompile] .precompile(${ JSON.stringify( name ) }): no dev renderer registered. Call setDevRenderer(renderer) once after renderer.init() so the marker can borrow it for extraction.` ) );
 			return;
+
+		}
+
+		try {
+
+			const resolvedHarvest = entry.renderObjectHarvest ? await entry.renderObjectHarvest : null;
+			if ( resolvedHarvest && resolvedHarvest.familiesByMaterial instanceof Map &&
+				( ! resolvedHarvest.renderer || resolvedHarvest.renderer === captureRenderer ) ) {
+
+				renderObjectHarvest = resolvedHarvest;
+
+			}
+
+		} catch ( _ ) {
+
+			// Observer loading and state resolution are an optional fidelity path.
+			// compileTSL's existing synthetic family remains the safe fallback.
 
 		}
 
@@ -1148,10 +1347,11 @@ async function captureMaterialInDev( entry ) {
 
 		}
 		if ( ! mrtNode ) mrtNode = materialMRTNode;
-		let extractorOpts = undefined;
+		let extractorOpts = renderObjectHarvest ? { renderObjectHarvest } : undefined;
 		if ( mrtNode ) {
 
-			extractorOpts = { mrtNode };
+			extractorOpts ||= {};
+			extractorOpts.mrtNode = mrtNode;
 			const mrtOutputs = mrtNode.nodes || mrtNode.outputNodes || null;
 			if ( mrtOutputs && Object.keys( mrtOutputs ).length > 1 ) extractorOpts.skipWarmupRender = true;
 
@@ -1651,6 +1851,8 @@ function logOnce( key, fn ) {
  */
 export function __resetForTests() {
 
+	for ( const epoch of [ ...renderCaptureEpochs ] ) closeRenderCaptureEpoch( epoch, false );
+
 	for ( const entries of pendingCaptures.values() ) {
 
 		for ( const entry of entries.values() ) {
@@ -1667,6 +1869,8 @@ export function __resetForTests() {
 	registeredRenderers = new Set();
 	lastArrayCameraByRenderer = new WeakMap();
 	lastRenderContextByRenderer = new WeakMap();
+	renderCaptureEpochByRenderer = new WeakMap();
+	renderCaptureEpochs = new Set();
 	logged.clear();
 	pendingCaptures = new Map();
 	inflightCaptures = new Map();

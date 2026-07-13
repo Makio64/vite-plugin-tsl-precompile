@@ -69,10 +69,13 @@ export function setupPrecompile( opts: SetupPrecompileOptions ): SetupPrecompile
 export interface InstallPrecompileMarkerOptions {
 	/** Custom dev-capture endpoint. Default: `'/__tsl-precompile/capture'`. */
 	devEndpoint?: string;
+	/** Advanced override for the plugin-owned real RenderObject observer. */
+	beginRenderObjectHarvest?: ( renderer: unknown ) => { finish: () => unknown | Promise<unknown> };
 }
 
 export function installPrecompileMarker( three: unknown, opts?: InstallPrecompileMarkerOptions ): void;
-export function setDevRenderer( renderer: unknown, three?: unknown ): void;
+/** Register the dev renderer and resolve once real-render harvesting is ready. */
+export function setDevRenderer( renderer: unknown, three?: unknown ): Promise<void>;
 export function clearDevRenderer(): void;
 
 // ---------- Apply (used by the plugin's build-time rewrite) ----------

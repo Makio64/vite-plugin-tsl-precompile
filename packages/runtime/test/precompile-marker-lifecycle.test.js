@@ -8,6 +8,7 @@ import {
 	__resetForTests,
 	__createCaptureObjectForTests,
 } from '../src/precompile-marker.js';
+import { beginRenderObjectHarvest } from '../../plugin/src/vendor/render-object-observer.js';
 
 test( 'capture clones retain BatchedMesh runtime textures', () => {
 
@@ -282,15 +283,120 @@ async function withBrowser( run, { worker = false } = {} ) {
 
 }
 
-function install( three, extractor ) {
+function install( three, extractor, options = {} ) {
 
 	installPrecompileMarker( three, {
 		devEndpoint: '/__tsl-precompile/capture',
 		extractor,
 		codegen: () => ( { unsupportedKinds: [] } ),
+		...options,
 	} );
 
 }
+
+test( 'aggregates a synchronous real-render burst before handing the complete harvest to extraction', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'real-burst' );
+		const material = new three.Material();
+		const context = mount( three, material );
+		const cubeTexture = { isCubeTexture: true, format: 1023 };
+		const cubeTarget = { isCubeRenderTarget: true, texture: cubeTexture, textures: [ cubeTexture ] };
+		const renderContext = {
+			renderTarget: cubeTarget,
+			textures: [ cubeTexture ],
+			activeCubeFace: 0,
+			activeMipmapLevel: 0,
+			sampleCount: 1,
+		};
+		const nodeBuilderState = { vertexShader: 'real-vertex', fragmentShader: 'real-fragment' };
+		const renderObject = {
+			cacheKey: 'real-cube-family',
+			material,
+			object: context.object,
+			scene: context.scene,
+			camera: context.camera,
+			context: renderContext,
+			_nodeBuilderState: nodeBuilderState,
+		};
+		const manager = {
+			nodeBuilderCache: new Map( [ [ renderObject.cacheKey, nodeBuilderState ] ] ),
+			getForRenderCacheKey: ( object ) => object.cacheKey,
+			getForRender: ( object ) => object._nodeBuilderState,
+		};
+		let extractorCalls = 0;
+		let receivedHarvest = null;
+		const renderer = {
+			_nodes: manager,
+			_objects: { get: () => renderObject },
+			getRenderTarget: () => cubeTarget,
+			getActiveCubeFace: () => renderContext.activeCubeFace,
+			getActiveMipmapLevel: () => renderContext.activeMipmapLevel,
+			getMRT: () => null,
+			render( scene, camera, activeCubeFace ) {
+
+				renderContext.activeCubeFace = activeCubeFace;
+				renderObject.scene = scene;
+				renderObject.camera = camera;
+				this._objects.get( renderObject );
+
+			},
+		};
+		install( three, async ( _renderer, _scene, _camera, options ) => {
+
+			extractorCalls ++;
+			receivedHarvest = options && options.renderObjectHarvest;
+			return artifactSet( material );
+
+		}, { beginRenderObjectHarvest } );
+		await setDevRenderer( renderer, three );
+		material.precompile( 'real-render-burst' );
+
+		for ( let face = 0; face < 6; face ++ ) renderer.render( context.scene, context.camera, face );
+		assert.equal( extractorCalls, 0, 'capture starts after the whole synchronous burst, not after face zero' );
+		await waitFor( () => posts.length === 1, 'real-render-burst capture' );
+
+		const family = receivedHarvest && receivedHarvest.familiesByMaterial.get( material );
+		assert.ok( family, 'the exact marked material family reaches the extractor' );
+		assert.equal( family.complete, true );
+		assert.equal( family.variants.length, 1 );
+		assert.equal( family.variants[ 0 ].requestCount, 6 );
+		const faces = family.variants[ 0 ].renderContextSelectors
+			.map( ( selector ) => JSON.parse( selector ).target.activeCubeFace )
+			.sort( ( a, b ) => a - b );
+		assert.deepEqual( faces, [ 0, 1, 2, 3, 4, 5 ], 'request-time snapshots survive mutable RenderContext reuse' );
+
+	} );
+
+} );
+
+test( 'an unsupported real-render observer preserves synthetic marker capture', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'unsupported-harvest' );
+		const material = new three.Material();
+		const context = mount( three, material );
+		const renderer = { render() {} };
+		let suppliedHarvest = 'not-called';
+		install( three, async ( _renderer, _scene, _camera, options ) => {
+
+			suppliedHarvest = options && options.renderObjectHarvest || null;
+			return artifactSet( material );
+
+		}, { beginRenderObjectHarvest } );
+		await setDevRenderer( renderer, three );
+		material.precompile( 'unsupported-harvest' );
+		renderer.render( context.scene, context.camera );
+		await waitFor( () => posts.length === 1, 'unsupported observer fallback capture' );
+
+		assert.equal( suppliedHarvest && suppliedHarvest.supported, false );
+		assert.equal( suppliedHarvest.familiesByMaterial.size, 0 );
+
+	} );
+
+} );
 
 test( 'associates each Three installation with its own renderer', async () => {
 

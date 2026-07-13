@@ -24,6 +24,7 @@
 
 import { extractUniformPlan } from './extractUniformPlan.js';
 import { beginRenderObjectHarvest } from './render-object-observer.js';
+export { beginRenderObjectHarvest };
 import { DataUtils, FloatType, HalfFloatType, RGBAFormat, RenderTarget } from 'three';
 import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
 import { createRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';

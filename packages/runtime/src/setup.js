@@ -247,13 +247,13 @@ export function setupPrecompile( opts = {} ) {
 	const registerReadyRenderer = ( readyRenderer ) => {
 
 		if ( readyRenderer !== activeRenderer ) return;
-		setDevRenderer( readyRenderer, three );
-		if ( ! didSettleReady ) {
+		Promise.resolve( setDevRenderer( readyRenderer, three ) ).then( () => {
 
+			if ( readyRenderer !== activeRenderer || didSettleReady ) return;
 			didSettleReady = true;
 			resolveReady();
 
-		}
+		}, rejectForRenderer( readyRenderer ) );
 
 	};
 	const rejectForRenderer = ( failedRenderer ) => ( error ) => {

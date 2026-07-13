@@ -29,6 +29,8 @@ states are correlated later by the pair `(renderObject.material, cacheKey)`.
 families can be passed to `compileTSL(..., { renderObjectHarvest })`. Consumers
 must adopt a complete family atomically; an unavailable state or selector makes
 the whole material family fall back to synthetic extraction.
+`compileTSL.js` re-exports that factory so the browser marker can preload the
+one Vite-aliased dev module instead of introducing another private-source alias.
 
 `RenderObjects.get()` returns before Renderer assigns the current geometry
 group to `renderObject.group`. The request snapshot therefore preserves the
