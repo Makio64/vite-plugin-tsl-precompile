@@ -37,6 +37,7 @@ import { computeArtifactContentHash } from './hash.js';
 import { VIRTUAL_MODULE_PREFIX, VIRTUAL_AUX_MODULE_ID, VIRTUAL_WGSL_POOL_MODULE_ID, PLUGIN_VERSION } from './_shared/constants.js';
 import { VIRTUAL_FULL_THREE_MODULE_ID } from '@tsl-precompile/contract/virtual-modules';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
+import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
 
 const VIRTUAL_RESOLVE_PREFIX = '\0' + VIRTUAL_MODULE_PREFIX;
 
@@ -45,7 +46,6 @@ const VIRTUAL_RESOLVE_PREFIX = '\0' + VIRTUAL_MODULE_PREFIX;
 // patch with core classes from another, even when both report the same
 // integer REVISION. Bump this only together with a strict slim rebuild and
 // its rewrite/compatibility tests.
-const SLIM_THREE_PACKAGE_VERSION = '0.184.0';
 const THREE_PACKAGE_VERSION_GLOBAL = 'globalThis.__TSLP_THREE_PACKAGE_VERSION__';
 
 // Absolute path to this file's directory — used to alias the runtime's
@@ -954,7 +954,7 @@ async function warnIfThreeDependencyIsRanged( root, config ) {
 		const spec = deps && deps.three;
 		if ( typeof spec !== 'string' || isExactThreeVersionSpec( spec ) ) continue;
 
-		const message = `[tsl-precompile] package.json ${ fieldName }.three is ${ JSON.stringify( spec ) }. Captured artifacts are hashed against the installed three.js WGSL emitter; pin three to an exact patch version such as "0.184.0" and recapture artifacts when bumping.`;
+		const message = `[tsl-precompile] package.json ${ fieldName }.three is ${ JSON.stringify( spec ) }. Captured artifacts are hashed against the installed three.js WGSL emitter; pin three to an exact patch version such as "${ SLIM_THREE_PACKAGE_VERSION }" and recapture artifacts when bumping.`;
 		if ( config && config.logger && typeof config.logger.warn === 'function' ) {
 
 			config.logger.warn( message );

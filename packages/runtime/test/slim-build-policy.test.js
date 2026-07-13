@@ -2,12 +2,81 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import { findRenderedSlimCompilerModules, findRenderedSlimStockAdapterModules } from '../rollup.config.js';
+import {
+	SLIM_THREE_COMPILER_MODULES,
+	SLIM_THREE_REPLAY_ADAPTER_MODULES,
+	getSlimThreeCompilerModule,
+	getSlimThreeReplayAdapterModule,
+	getSlimThreeRewriteTarget,
+	normalizeSlimThreeSourceModuleId,
+} from '@tsl-precompile/contract/slim-three-policy';
+import {
+	SLIM_COMPILER_MODULE_RULES,
+	SLIM_REPLAY_ADAPTER_RULES,
+	findRenderedSlimCompilerModules,
+	findRenderedSlimStockAdapterModules,
+} from '../rollup.config.js';
 
 test( 'scene replay adapter cannot regain the broad TSL construction barrel', () => {
 
 	const source = readFileSync( new URL( '../src/slim-replay-scene-nodes.js', import.meta.url ), 'utf8' );
 	assert.doesNotMatch( source, /three\/src\/nodes\/TSL\.js/ );
+
+} );
+
+test( 'Rollup consumes the shared compiler and replay-adapter rule objects', () => {
+
+	assert.equal( SLIM_COMPILER_MODULE_RULES, SLIM_THREE_COMPILER_MODULES );
+	assert.equal( SLIM_REPLAY_ADAPTER_RULES, SLIM_THREE_REPLAY_ADAPTER_MODULES );
+
+} );
+
+test( 'shared Three source paths normalize Vite queries and Windows ids exactly', () => {
+
+	assert.equal(
+		normalizeSlimThreeSourceModuleId( 'C:\\repo\\node_modules\\three\\src\\nodes\\core\\NodeBuilder.js?v=184#x' ),
+		'nodes/core/NodeBuilder.js',
+	);
+	assert.equal( getSlimThreeCompilerModule( 'three/src/nodes/core/NodeBuilder.js' )?.id, 'node-builder' );
+	const threeRoot = '/repo/node_modules/three/src/';
+	assert.equal(
+		getSlimThreeRewriteTarget( '../webgl-fallback/WebGLBackend.js', threeRoot + 'renderers/webgpu/WebGPURenderer.js' )?.id,
+		'webgl-backend',
+	);
+	assert.equal(
+		getSlimThreeCompilerModule( './renderers/common/extras/PMREMGenerator.js', threeRoot + 'Three.WebGPU.js' )?.id,
+		'pmrem-generator',
+	);
+	assert.equal(
+		getSlimThreeReplayAdapterModule( './Lighting.js', threeRoot + 'renderers/common/Renderer.js' )?.id,
+		'lighting',
+	);
+	assert.equal( normalizeSlimThreeSourceModuleId( '/repo/not-three/src/nodes/core/NodeBuilder.js' ), null );
+	assert.equal( normalizeSlimThreeSourceModuleId( '\0virtual:three/src/nodes/core/NodeBuilder.js' ), null );
+
+} );
+
+test( 'Rollup residue guards cover every module declared by the shared policy', () => {
+
+	const compilerModules = Object.fromEntries( SLIM_THREE_COMPILER_MODULES.map( ( rule, index ) => [
+		`/repo/node_modules/three/src/${ rule.sourcePath }`,
+		{ renderedLength: index + 1 },
+	] ) );
+	const replayModules = Object.fromEntries( SLIM_THREE_REPLAY_ADAPTER_MODULES.map( ( rule, index ) => [
+		`/repo/node_modules/three/src/${ rule.sourcePath }`,
+		{ renderedLength: index + 1 },
+	] ) );
+	const compilerFound = findRenderedSlimCompilerModules( { chunk: { modules: compilerModules } } );
+	const replayFound = findRenderedSlimStockAdapterModules( { chunk: { modules: replayModules } } );
+
+	assert.deepEqual(
+		new Set( compilerFound.map( ( item ) => item.label ) ),
+		new Set( SLIM_THREE_COMPILER_MODULES.map( ( rule ) => rule.label ) ),
+	);
+	assert.deepEqual(
+		new Set( replayFound.map( ( item ) => item.label ) ),
+		new Set( SLIM_THREE_REPLAY_ADAPTER_MODULES.map( ( rule ) => rule.label ) ),
+	);
 
 } );
 

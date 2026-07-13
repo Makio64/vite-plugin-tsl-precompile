@@ -13,3 +13,4 @@ export * from './render-selector.js';
 export * from './output-config.js';
 export * from './stable-json.js';
 export * from './virtual-modules.js';
+export * from './slim-three-policy.js';

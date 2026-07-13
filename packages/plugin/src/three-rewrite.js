@@ -28,12 +28,42 @@ import _traverse from '@babel/traverse';
 import _generate from '@babel/generator';
 import * as t from '@babel/types';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
+import { SLIM_THREE_REWRITE_TARGETS, getSlimThreeRewriteTarget } from '@tsl-precompile/contract/slim-three-policy';
 
 const traverse = _traverse.default || _traverse;
 const generate = _generate.default || _generate;
 
 const RUNTIME_PACKAGE = '@tsl-precompile/runtime';
 const AUX_VIRTUAL_MODULE = 'virtual:tsl-precompile/__aux';
+
+const REWRITE_HANDLERS_BY_FAMILY = Object.freeze( {
+	'cube-render-target': rewriteCubeRenderTarget,
+	renderer: rewriteRenderer,
+	'render-object': rewriteRenderObject,
+	'post-processing': rewritePostProcessing,
+	background: rewriteBackground,
+	'shadow-filter-node': rewriteShadowFilterNode,
+	nodes: rewriteNodesJs,
+	'webgpu-renderer': rewriteWebGPURenderer,
+	'webgpu-backend': rewriteWebGPUBackend,
+	'webgpu-pipeline-utils': rewriteWebGPUPipelineUtils,
+	'webgl-backend': rewriteWebGLBackend,
+} );
+
+const MISSING_REWRITE_FAMILIES = SLIM_THREE_REWRITE_TARGETS
+	.filter( ( target ) => typeof REWRITE_HANDLERS_BY_FAMILY[ target.rewriteFamily ] !== 'function' )
+	.map( ( target ) => `${ target.id } (${ target.rewriteFamily })` );
+const POLICY_REWRITE_FAMILIES = new Set( SLIM_THREE_REWRITE_TARGETS.map( ( target ) => target.rewriteFamily ) );
+const UNDECLARED_REWRITE_FAMILIES = Object.keys( REWRITE_HANDLERS_BY_FAMILY )
+	.filter( ( family ) => ! POLICY_REWRITE_FAMILIES.has( family ) );
+if ( MISSING_REWRITE_FAMILIES.length > 0 || UNDECLARED_REWRITE_FAMILIES.length > 0 ) {
+
+	const details = [];
+	if ( MISSING_REWRITE_FAMILIES.length > 0 ) details.push( `missing implementations: ${ MISSING_REWRITE_FAMILIES.join( ', ' ) }` );
+	if ( UNDECLARED_REWRITE_FAMILIES.length > 0 ) details.push( `undeclared implementations: ${ UNDECLARED_REWRITE_FAMILIES.join( ', ' ) }` );
+	throw new Error( `Slim Three rewrite policy drift (${ details.join( '; ' ) })` );
+
+}
 
 /**
  * Dispatch to the per-file handler for a resolved three.js source path.
@@ -118,27 +148,8 @@ export function isThreeRewriteTarget( id ) {
  */
 function pickHandler( id ) {
 
-	id = String( id ).replace( /\\/g, '/' ).split( /[?#]/, 1 )[ 0 ];
-
-	if ( /\/three\/src\/renderers\/common\/CubeRenderTarget\.js$/.test( id ) ) return rewriteCubeRenderTarget;
-	if ( /\/three\/src\/renderers\/common\/Renderer\.js$/.test( id ) ) return rewriteRenderer;
-	if ( /\/three\/src\/renderers\/common\/RenderObject\.js$/.test( id ) ) return rewriteRenderObject;
-	// PostProcessing.js is the 0.175 name; since 0.183 it's a thin wrapper
-	// around RenderPipeline.js which carries the actual NodeMaterial. Both
-	// files share the same rewrite shape (bare NodeMaterial + late
-	// fragmentNode assignment).
-	if ( /\/three\/src\/renderers\/common\/PostProcessing\.js$/.test( id ) ) return rewritePostProcessing;
-	if ( /\/three\/src\/renderers\/common\/RenderPipeline\.js$/.test( id ) ) return rewritePostProcessing;
-	if ( /\/three\/src\/renderers\/common\/Background\.js$/.test( id ) ) return rewriteBackground;
-	if ( /\/three\/src\/nodes\/lighting\/ShadowFilterNode\.js$/.test( id ) ) return rewriteShadowFilterNode;
-	if ( /\/three\/src\/renderers\/common\/nodes\/Nodes\.js$/.test( id ) ) return rewriteNodesJs;
-	// 0.184+ renamed Nodes.js → NodeManager.js. Same shape; same handler.
-	if ( /\/three\/src\/renderers\/common\/nodes\/NodeManager\.js$/.test( id ) ) return rewriteNodesJs;
-	if ( /\/three\/src\/renderers\/webgpu\/WebGPURenderer\.js$/.test( id ) ) return rewriteWebGPURenderer;
-	if ( /\/three\/src\/renderers\/webgpu\/WebGPUBackend\.js$/.test( id ) ) return rewriteWebGPUBackend;
-	if ( /\/three\/src\/renderers\/webgpu\/utils\/WebGPUPipelineUtils\.js$/.test( id ) ) return rewriteWebGPUPipelineUtils;
-	if ( /\/three\/src\/renderers\/webgl-fallback\/WebGLBackend\.js$/.test( id ) ) return rewriteWebGLBackend;
-	return null;
+	const target = getSlimThreeRewriteTarget( id );
+	return target ? REWRITE_HANDLERS_BY_FAMILY[ target.rewriteFamily ] || null : null;
 
 }
 

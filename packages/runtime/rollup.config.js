@@ -23,6 +23,14 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { rewriteThreeSource } from '../plugin/src/three-rewrite.js';
+import {
+	SLIM_THREE_COMPILER_MODULES,
+	SLIM_THREE_PACKAGE_VERSION,
+	SLIM_THREE_REPLAY_ADAPTER_MODULES,
+	getSlimThreeCompilerModule,
+	getSlimThreeReplayAdapterModule,
+	getSlimThreeRewriteTarget,
+} from '@tsl-precompile/contract/slim-three-policy';
 
 const __dirname = dirname( fileURLToPath( import.meta.url ) );
 
@@ -31,27 +39,8 @@ const __dirname = dirname( fileURLToPath( import.meta.url ) );
  * Hydrated replay state is runtime-owned; Three's NodeBuilderState is guarded
  * separately as stock-manager residue below.
  */
-export const SLIM_COMPILER_MODULE_RULES = Object.freeze( [
-	[ 'NodeBuilder', /\/nodes\/core\/NodeBuilder\.js$/ ],
-	[ 'NodeParser', /\/nodes\/core\/NodeParser\.js$/ ],
-	[ 'WGSLNodeBuilder', /\/renderers\/webgpu\/nodes\/WGSLNodeBuilder\.js$/ ],
-	[ 'WGSLNodeParser', /\/renderers\/webgpu\/nodes\/WGSLNodeParser\.js$/ ],
-	[ 'GLSLNodeBuilder', /\/renderers\/webgl-fallback\/nodes\/GLSLNodeBuilder\.js$/ ],
-	[ 'GLSLNodeParser', /\/renderers\/webgl-fallback\/nodes\/GLSLNodeParser\.js$/ ],
-	[ 'StandardNodeLibrary', /\/renderers\/common\/nodes\/StandardNodeLibrary\.js$/ ],
-	[ 'NodeMaterial', /\/materials\/nodes\/NodeMaterial\.js$/ ],
-	[ 'NodeMaterialObserver', /\/materials\/nodes\/manager\/NodeMaterialObserver\.js$/ ],
-	[ 'PMREMGenerator compiler path', /\/three\/src\/renderers\/common\/extras\/PMREMGenerator\.js$/ ],
-] );
-
-export const SLIM_REPLAY_ADAPTER_RULES = Object.freeze( [
-	[ 'stock Background', /\/three\/src\/renderers\/common\/Background\.js$/ ],
-	[ 'stock Lighting', /\/three\/src\/renderers\/common\/Lighting\.js$/ ],
-	[ 'stock LightsNode', /\/three\/src\/nodes\/lighting\/LightsNode\.js$/ ],
-	[ 'stock scene Fog graph', /\/three\/src\/nodes\/fog\/Fog\.js$/ ],
-	[ 'stock NodeManager', /\/three\/src\/renderers\/common\/nodes\/NodeManager\.js$/ ],
-	[ 'stock NodeBuilderState', /\/three\/src\/renderers\/common\/nodes\/NodeBuilderState\.js$/ ],
-] );
+export const SLIM_COMPILER_MODULE_RULES = SLIM_THREE_COMPILER_MODULES;
+export const SLIM_REPLAY_ADAPTER_RULES = SLIM_THREE_REPLAY_ADAPTER_MODULES;
 
 export function findRenderedSlimCompilerModules( bundle ) {
 
@@ -62,13 +51,8 @@ export function findRenderedSlimCompilerModules( bundle ) {
 
 			if ( ! module || module.renderedLength <= 0 ) continue;
 			const normalized = id.replace( /\\/g, '/' );
-			for ( const [ label, pattern ] of SLIM_COMPILER_MODULE_RULES ) {
-
-				if ( ! pattern.test( normalized ) ) continue;
-				found.set( normalized, { id: normalized, label, renderedLength: module.renderedLength } );
-				break;
-
-			}
+			const rule = getSlimThreeCompilerModule( normalized );
+			if ( rule ) found.set( normalized, { id: normalized, label: rule.label, renderedLength: module.renderedLength } );
 
 		}
 
@@ -86,11 +70,8 @@ export function findRenderedSlimStockAdapterModules( bundle ) {
 
 			if ( ! module || module.renderedLength <= 0 ) continue;
 			const normalized = id.replace( /\\/g, '/' );
-			for ( const [ label, pattern ] of SLIM_REPLAY_ADAPTER_RULES ) {
-
-				if ( pattern.test( normalized ) ) found.push( { id: normalized, label, renderedLength: module.renderedLength } );
-
-			}
+			const rule = getSlimThreeReplayAdapterModule( normalized );
+			if ( rule ) found.push( { id: normalized, label: rule.label, renderedLength: module.renderedLength } );
 
 		}
 
@@ -133,7 +114,7 @@ const threeRewritePlugin = {
 	transform( code, id ) {
 
 		const r = rewriteThreeSource( code, id, {
-			threeVersion: process.env.TSL_PRECOMPILE_THREE_VERSION || '0.184.0',
+			threeVersion: process.env.TSL_PRECOMPILE_THREE_VERSION || SLIM_THREE_PACKAGE_VERSION,
 		} );
 		if ( ! r ) return null;
 		if ( r.warning ) {
@@ -216,9 +197,9 @@ const auxVirtualStub = {
  */
 const webglFallbackStub = {
 	name: 'tsl-precompile:stub-webgl-fallback',
-	resolveId( id ) {
+	resolveId( id, importer ) {
 
-		if ( /webgl-fallback\/WebGLBackend\.js$/.test( id ) ) {
+		if ( getSlimThreeRewriteTarget( id, importer )?.id === 'webgl-backend' ) {
 
 			return resolve( __dirname, 'src/slim-stub-webgl-backend.js' );
 
@@ -240,9 +221,9 @@ const webglFallbackStub = {
  */
 const pmremGeneratorStub = {
 	name: 'tsl-precompile:stub-pmrem-generator',
-	resolveId( id ) {
+	resolveId( id, importer ) {
 
-		if ( /renderers\/common\/extras\/PMREMGenerator\.js$/.test( id ) ) {
+		if ( getSlimThreeCompilerModule( id, importer )?.id === 'pmrem-generator' ) {
 
 			return resolve( __dirname, 'src/slim-stub-pmrem-generator.js' );
 
@@ -257,10 +238,7 @@ const replayLightingAdapter = {
 	name: 'tsl-precompile:replay-lighting',
 	resolveId( id, importer ) {
 
-		const normalizedId = id.replace( /\\/g, '/' );
-		const normalizedImporter = typeof importer === 'string' ? importer.replace( /\\/g, '/' ) : '';
-		if ( /\/renderers\/common\/Lighting\.js$/.test( normalizedId )
-			|| ( normalizedId === './Lighting.js' && /\/renderers\/common\/Renderer\.js$/.test( normalizedImporter ) ) ) {
+		if ( getSlimThreeReplayAdapterModule( id, importer )?.id === 'lighting' ) {
 
 			return resolve( __dirname, 'src/slim-replay-lighting.js' );
 
@@ -275,10 +253,7 @@ const replayNodeManagerAdapter = {
 	name: 'tsl-precompile:replay-node-manager',
 	resolveId( id, importer ) {
 
-		const normalizedId = id.replace( /\\/g, '/' );
-		const normalizedImporter = typeof importer === 'string' ? importer.replace( /\\/g, '/' ) : '';
-		if ( /\/renderers\/common\/nodes\/NodeManager\.js$/.test( normalizedId )
-			|| ( normalizedId === './nodes/NodeManager.js' && /\/renderers\/common\/Renderer\.js$/.test( normalizedImporter ) ) ) {
+		if ( getSlimThreeReplayAdapterModule( id, importer )?.id === 'node-manager' ) {
 
 			return resolve( __dirname, 'src/slim-replay-node-manager.js' );
 
@@ -293,10 +268,7 @@ const replayBackgroundAdapter = {
 	name: 'tsl-precompile:replay-background',
 	resolveId( id, importer ) {
 
-		const normalizedId = id.replace( /\\/g, '/' );
-		const normalizedImporter = typeof importer === 'string' ? importer.replace( /\\/g, '/' ) : '';
-		if ( /\/renderers\/common\/Background\.js$/.test( normalizedId )
-			|| ( normalizedId === './Background.js' && /\/renderers\/common\/Renderer\.js$/.test( normalizedImporter ) ) ) {
+		if ( getSlimThreeReplayAdapterModule( id, importer )?.id === 'background' ) {
 
 			return resolve( __dirname, 'src/slim-replay-background.js' );
 
