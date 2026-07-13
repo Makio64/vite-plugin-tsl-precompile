@@ -53,6 +53,20 @@ identity ledger updates correctly at later ticks, but its animation clock and
 the capture clock are not yet the same logical frame. That remaining issue is
 temporal scheduling/clock ownership, not uniform identity.
 
+**Shared light identity wedge (2026-07-13).** Light, shadow, and owned shadow-
+depth sources now reference one variant-local `light-identity@1` table instead
+of matching every scalar/vector slot independently. Capture records durable
+UUID/application-key/name/type metadata plus complete world-space and light-
+property evidence; process-local `Object3D.id` remains only an ordering input
+and is never serialized. Generated and generic updaters use the same resolver,
+prefer Three's active render-light list, enforce one-to-one claims, and share
+those claims with shadow-depth and anonymous shadow-matrix consumers even when
+generated and parsed tables are distinct objects. Legacy UUID/snapshot/index
+descriptors remain supported. This closes the scalar-first and reordered-light
+failure mode behind selective lighting and multi-light shadow replay; remaining
+target/pass mismatches belong to real RenderObject
+topology capture rather than light-slot heuristics.
+
 **Logical temporal-frame wedge (2026-07-13).**
 [`slim-support/temporal-frame.js`](packages/runtime/src/slim-support/temporal-frame.js)
 now gives slim and full fallback renderers one explicit application-frame key

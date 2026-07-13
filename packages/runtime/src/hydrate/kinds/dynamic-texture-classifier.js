@@ -30,6 +30,7 @@ function classifyDepthTexture( entry, runtimeBinding, descriptor, ctx ) {
 		binding: runtimeBinding,
 		artifact: ctx.artifact,
 		bindingName: descriptor.name || '',
+		source,
 		lightIndex: Number.isInteger( source.lightIndex ) ? source.lightIndex : 0,
 		lightUuid: typeof source.lightUuid === 'string' ? source.lightUuid : null,
 		vsm: source.vsm === true,

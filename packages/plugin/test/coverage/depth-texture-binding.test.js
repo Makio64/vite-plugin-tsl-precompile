@@ -124,6 +124,8 @@ test( 'depth-texture/extractor: SampledTexture wrapping DepthTexture is tagged k
 		'lightIndex should be 0 for the only AnalyticLightNode in updateNodes' );
 	assert.equal( shadowEntry.source.lightUuid, dirLight.uuid,
 		'lightUuid should match the captured directional light' );
+	assert.equal( artifact.lightIdentities[ shadowEntry.source.lightIdentity ].captureUuid, dirLight.uuid,
+		'depth texture should share the owning light identity record' );
 	assert.equal( shadowEntry.source.vsm, false,
 		'standard shadow path (not VSM) — vsm flag should be false' );
 

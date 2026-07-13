@@ -46,6 +46,7 @@ Inspired by Unreal's Material Compiler (`FMaterialUniformExpressionSet` generate
 │   · wgsl (vertex + fragment)
 │   · bindings (bind-group layout)
 │   · uniformPlan (descriptor list)
+│   · lightIdentities (variant-local shared light records)
 │   · sourceGraphHash + exact Three/toolchain versions
 │   · renderContextSignature (source/provenance topology)
 │   · renderContextSelectors (replay-reproducible shader variants)
@@ -94,6 +95,7 @@ Shared extractor/codegen/runtime contract helpers.
 - `src/render-selector.js` — graph-free, canonical RenderObject topology used to select a captured variant in compiler-free replay; its exported scene descriptor is also the sole environment/fog invalidation vocabulary. Shadow-depth selectors describe the effective source-caster branches (map/color/mask, depth, position, and alpha) rather than the shared override material alone.
 - `src/output-config.js` — versioned renderer-output and RenderPipeline topology descriptors shared by capture, rewrites, and replay; live exposure is intentionally excluded.
 - `src/artifact-variants.js` — the shared variant-local payload field list used by capture, registries, codegen, and runtime.
+- `src/light-identities.js` — shared capture normalization and validation for variant-local light identity tables; slots retain legacy fields but resolve through one complete record per light.
 - `src/stable-json.js` — deterministic JSON encoding for persisted selectors and payload comparisons.
 - `src/kinds.js` — shared `source.kind` registry, blocked-kind reasons, artifact payload/aggregate validation, and source-kind collection.
 - `src/texture-props.js` — canonical material texture slots and node-graph texture keys.
@@ -109,7 +111,7 @@ Ships with the user's bundle. Runtime only.
 - `src/slim-replay-background.js` — compiler-free background pass; selects a captured artifact from the raw scene input, isolates texture refs per scene, and preserves Three's clear/XR/sky-mesh behavior.
 - `src/slim-replay-output.js` — graph-free renderer-output and RenderPipeline material adapter; selects exact topology, isolates texture refs per owner, validates 2D/array sampling, and disposes replacements safely.
 - `src/slim-replay-scene-nodes.js` — graph-free environment/fog topology state; hashes the shared semantic descriptor, preserves Three's invalidation axes, and fails closed when an opaque custom scene graph is replaced.
-- `src/hydrate/*` — runtime hydration modules: static binding allocation, texture/source resolution, built-in texture reconstruction, live texture registry, and per-frame texture rebinders.
+- `src/hydrate/*` — runtime hydration modules: static binding allocation, texture/source resolution, built-in texture reconstruction, live texture registry, shared light identity resolution, and per-frame texture rebinders.
 - `src/hydrate/variants/artifact-variant-selector.js` — exact semantic variant selection; signed artifacts fail closed on an uncaptured topology while old unsigned artifacts retain cache-key/MRT compatibility.
 - `src/slim-support/live-scene-index.js` — first productized slim-support helper for live texture indexing and null-image healing.
 - `src/slim-support/pmrem.js` — productized PMREM support helpers for artifact/source detection, cache orchestration, and `_textureRefs` wiring; the harness still supplies the full-renderer generator.

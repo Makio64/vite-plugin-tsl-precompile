@@ -23,6 +23,12 @@ preserves TSL like `objectPosition(camera)` in post-processing passes, where
 replay's draw object and render camera are the fullscreen quad rather than the
 source scene camera.
 
+Local assumption: analytic-light sources carry a Symbol-keyed capture record
+from `@tsl-precompile/contract/light-identities` until `extractArtifact()`
+normalizes them into one variant-local `lightIdentities` table. The public
+`Light`, `LightShadow`, and shadow-camera properties are read for matching
+evidence; process-local `Object3D.id` is never persisted as durable identity.
+
 ## Import rewrites
 
 The vendored files originally imported from relative paths inside `three/src/nodes/**`. Those paths don't exist in the stock `three` package the plugin depends on. Rewrites:

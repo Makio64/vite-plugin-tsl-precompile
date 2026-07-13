@@ -227,6 +227,25 @@ test( 'variant-local plan drops the root updater while preserving live sidecars'
 
 } );
 
+test( 'variant-local light identity tables gate root generated updater forwarding', () => {
+
+	const mismatched = family();
+	mismatched.lightIdentities = [ { captureUuid: 'root-light', captureIndex: 0 } ];
+	mismatched.variants[ 'capture-b' ].uniformPlan = mismatched.uniformPlan;
+	mismatched.variants[ 'capture-b' ].lightIdentities = [ { captureUuid: 'variant-light', captureIndex: 0 } ];
+	const updateGroup = () => {};
+	Object.defineProperty( mismatched, '_generatedUpdateGroup', { value: updateGroup, configurable: true } );
+	assert.equal( selectArtifactVariant( mismatched, { renderContextSelector: SELECTOR_B } )._generatedUpdateGroup, undefined );
+
+	const equivalent = family();
+	equivalent.lightIdentities = [ { captureUuid: 'shared-light', captureIndex: 0 } ];
+	equivalent.variants[ 'capture-b' ].uniformPlan = equivalent.uniformPlan;
+	equivalent.variants[ 'capture-b' ].lightIdentities = [ { captureUuid: 'shared-light', captureIndex: 0 } ];
+	Object.defineProperty( equivalent, '_generatedUpdateGroup', { value: updateGroup, configurable: true } );
+	assert.equal( selectArtifactVariant( equivalent, { renderContextSelector: SELECTOR_B } )._generatedUpdateGroup, updateGroup );
+
+} );
+
 function family() {
 
 	const planA = [ { name: 'material', slots: [ { source: { kind: 'material.opacity' }, byteOffset: 0 } ] } ];

@@ -199,7 +199,7 @@ export function createShadowDepthRebinder( entries, deps = {} ) {
 				} else {
 
 					if ( ! scene ) continue;
-					light = findLightBySource( scene, entry );
+					light = findLightBySource( scene, entry.source || entry, frame );
 					liveTexture = resolveLightShadowTexture( light, entry );
 
 				}

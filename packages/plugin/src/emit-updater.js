@@ -36,6 +36,7 @@
  */
 
 import { BLOCKED_KINDS, LIGHT_SLOT_KINDS, blockedKindReason, isBlockedKind } from '@tsl-precompile/contract/kinds';
+import { normalizeArtifactLightIdentities } from '@tsl-precompile/contract/light-identities';
 
 // Back-compat export for older tests/callers. The canonical registry now lives
 // in @tsl-precompile/contract/kinds.
@@ -210,8 +211,22 @@ function generatedLightSourceRef( source, constants, lightSourceRefs ) {
 	if ( ref ) return ref;
 	ref = `__lightSource${ lightSourceRefs.size }`;
 	lightSourceRefs.set( literal, ref );
-	constants.push( `const ${ ref } = Object.freeze(${ literal });` );
+	constants.push( `const ${ ref } = Object.freeze(${ literal });\n_tslpLinkLightIdentitySource(${ ref }, __lightIdentityTable);` );
 	return ref;
+
+}
+
+function frozenLightIdentityTableDeclaration( lightIdentities ) {
+
+	return `const __lightIdentityTable = ${ frozenJsonLiteral( lightIdentities || [] ) };`;
+
+}
+
+function frozenJsonLiteral( value ) {
+
+	if ( Array.isArray( value ) ) return `Object.freeze([${ value.map( frozenJsonLiteral ).join( ',' ) }])`;
+	if ( value && typeof value === 'object' ) return `Object.freeze({${ Object.entries( value ).map( ( [ key, item ] ) => `${ JSON.stringify( key ) }:${ frozenJsonLiteral( item ) }` ).join( ',' ) }})`;
+	return JSON.stringify( value );
 
 }
 
@@ -228,7 +243,8 @@ export function emitUpdaterSource( artifact, opts = {} ) {
 
 	const writersImport = opts.writersImport || '@tsl-precompile/runtime/writers';
 	const lightWriterImport = opts.lightWriterImport || '@tsl-precompile/runtime/generated/light-writer';
-	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
+	const normalizedArtifact = normalizeArtifactLightIdentities( artifact );
+	const plan = Array.isArray( normalizedArtifact.uniformPlan ) ? normalizedArtifact.uniformPlan : [];
 
 	const lines = [];
 	const usedWriters = new Set();
@@ -258,13 +274,16 @@ export function emitUpdaterSource( artifact, opts = {} ) {
 	}
 
 	const writerImports = Array.from( usedWriters ).sort();
-	const constantDecls = constants.length > 0 ? constants.join( '\n' ) + '\n\n' : '';
+	const identityTableDecl = lightSourceRefs.size > 0
+		? frozenLightIdentityTableDeclaration( normalizedArtifact.lightIdentities ) + '\n'
+		: '';
+	const constantDecls = constants.length > 0 ? identityTableDecl + constants.join( '\n' ) + '\n\n' : '';
 
 	const header = writerImports.length > 0
 		? `import { ${ writerImports.join( ', ' ) } } from ${ JSON.stringify( writersImport ) };\n\n`
 		: '';
 	const lightWriterHeader = lightSourceRefs.size > 0
-		? `import { writeGeneratedLightValue as _tslpWriteLightValue } from ${ JSON.stringify( lightWriterImport ) };\n\n`
+		? `import { linkGeneratedLightIdentitySource as _tslpLinkLightIdentitySource, writeGeneratedLightValue as _tslpWriteLightValue } from ${ JSON.stringify( lightWriterImport ) };\n\n`
 		: '';
 
 	// Emit scratch Vector2 / Vector4 / Vector3 / Matrix4 module-level constants

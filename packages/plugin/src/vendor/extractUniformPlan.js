@@ -22,6 +22,7 @@
 // If a future three.js release drops them from 'three/tsl', bump the vendor
 // version in VENDORING.md and add a compat shim in _shared/three-compat.js.
 import { modelNormalMatrix, modelWorldMatrixInverse, time, deltaTime, frameId, backgroundBlurriness, backgroundIntensity, backgroundRotation, toneMappingExposure, lightPosition, lightTargetPosition, lightViewPosition, lightShadowMatrix } from 'three/tsl';
+import { createLightSourceIdentityMetadata } from '@tsl-precompile/contract/light-identities';
 
 /**
  * Resolve a TSL update node to a `source` descriptor for the uniform slot
@@ -538,8 +539,7 @@ function collectLightUniformSources( state ) {
 		const light = node.light;
 		if ( ! light ) continue;
 
-		const lightUuid = typeof light.uuid === 'string' ? light.uuid : null;
-		const base = { lightIndex, lightUuid };
+		const base = createLightSourceIdentityMetadata( light, lightIndex );
 
 		// `colorNode` is `uniform(this.color)` — `this.color` is the
 		// AnalyticLightNode's internal Color that `update()` sets to
@@ -681,10 +681,7 @@ function collectShadowUniformSources( state ) {
 		const light = node.light;
 		if ( light && light.shadow ) {
 
-			shadowToBase.set( light.shadow, {
-				lightIndex,
-				lightUuid: typeof light.uuid === 'string' ? light.uuid : null,
-			} );
+			shadowToBase.set( light.shadow, createLightSourceIdentityMetadata( light, lightIndex ) );
 
 		}
 		lightIndex ++;
@@ -762,8 +759,7 @@ function collectPointShadowCameraUniformSources( state ) {
 
 			pointLights.push( {
 				light,
-				lightIndex,
-				lightUuid: typeof light.uuid === 'string' ? light.uuid : null,
+				...createLightSourceIdentityMetadata( light, lightIndex ),
 			} );
 
 		}
@@ -789,6 +785,7 @@ function collectPointShadowCameraUniformSources( state ) {
 	for ( let i = 0; i < pointLights.length; i ++ ) {
 
 		const base = pointLights[ i ];
+		const identity = createLightSourceIdentityMetadata( base.light, base.lightIndex );
 		const camera = base.light.shadow.camera;
 		const previousNear = camera.near;
 		const previousFar = camera.far;
@@ -814,8 +811,7 @@ function collectPointShadowCameraUniformSources( state ) {
 							kind: 'light.shadowCameraNear',
 							property: 'camera.near',
 							uniformType: 'float',
-							lightIndex: base.lightIndex,
-							lightUuid: base.lightUuid,
+							...identity,
 						} );
 
 					} else if ( candidate.value === sentinelFar ) {
@@ -824,8 +820,7 @@ function collectPointShadowCameraUniformSources( state ) {
 							kind: 'light.shadowCameraFar',
 							property: 'camera.far',
 							uniformType: 'float',
-							lightIndex: base.lightIndex,
-							lightUuid: base.lightUuid,
+							...identity,
 						} );
 
 					}
@@ -942,8 +937,7 @@ function findLightForDepthTexture( state, depthTexture ) {
 				if ( map.depthTexture === depthTexture ) {
 
 					return {
-						lightIndex,
-						lightUuid: typeof light.uuid === 'string' ? light.uuid : null,
+						...createLightSourceIdentityMetadata( light, lightIndex ),
 						vsm: false,
 					};
 
@@ -951,8 +945,7 @@ function findLightForDepthTexture( state, depthTexture ) {
 				if ( map.texture === depthTexture ) {
 
 					return {
-						lightIndex,
-						lightUuid: typeof light.uuid === 'string' ? light.uuid : null,
+						...createLightSourceIdentityMetadata( light, lightIndex ),
 						vsm: true,
 					};
 
@@ -968,8 +961,7 @@ function findLightForDepthTexture( state, depthTexture ) {
 				if ( sn.vsmShadowMapHorizontal && sn.vsmShadowMapHorizontal.texture === depthTexture ) {
 
 					return {
-						lightIndex,
-						lightUuid: typeof light.uuid === 'string' ? light.uuid : null,
+						...createLightSourceIdentityMetadata( light, lightIndex ),
 						vsm: true,
 					};
 
@@ -977,8 +969,7 @@ function findLightForDepthTexture( state, depthTexture ) {
 				if ( sn.vsmShadowMapVertical && sn.vsmShadowMapVertical.texture === depthTexture ) {
 
 					return {
-						lightIndex,
-						lightUuid: typeof light.uuid === 'string' ? light.uuid : null,
+						...createLightSourceIdentityMetadata( light, lightIndex ),
 						vsm: true,
 					};
 
@@ -1468,8 +1459,7 @@ export function extractUniformPlan( state, context = null ) {
 							source = lightInfo ? {
 								kind: 'depth.texture',
 								textureUuid: tex.uuid,
-								lightIndex: lightInfo.lightIndex,
-								lightUuid: lightInfo.lightUuid,
+								...lightInfo,
 								// `vsm` indicates a VSM blur-output texture (RG colour)
 								// rather than a raw depth texture; the runtime resolves
 								// the live VSM blur output instead of `shadow.map.depthTexture`.

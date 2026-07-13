@@ -28,6 +28,7 @@ import { DataUtils, FloatType, HalfFloatType, RGBAFormat, RenderTarget } from 't
 import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
 import { createRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
 import { createArtifactVariantPayload } from '@tsl-precompile/contract/artifact-variants';
+import { normalizeArtifactLightIdentities } from '@tsl-precompile/contract/light-identities';
 import { createRendererOutputConfig } from '@tsl-precompile/contract/output-config';
 
 /**
@@ -563,7 +564,7 @@ export function extractArtifact( cacheKey, state, material = null, object = null
 	// float32-filterable linear sampling.
 	captureLtcTextures( artifact );
 
-	return artifact;
+	return normalizeArtifactLightIdentities( artifact );
 
 }
 
@@ -1890,7 +1891,7 @@ export function extractComputeArtifact( cacheKey, state, computeNode ) {
 
 	attachLiveUpdateSidecars( artifact, state );
 
-	return artifact;
+	return normalizeArtifactLightIdentities( artifact );
 
 }
 

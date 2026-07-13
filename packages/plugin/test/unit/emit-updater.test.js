@@ -3,14 +3,17 @@ import assert from 'node:assert/strict';
 import { parse } from '@babel/parser';
 
 import { emitUpdaterSource } from '../../src/emit-updater.js';
-import { writeGeneratedLightValue } from '../../../runtime/src/generated/light-writer.js';
+import { linkGeneratedLightIdentitySource, writeGeneratedLightValue } from '../../../runtime/src/generated/light-writer.js';
 
 function executeLightOnlyUpdater( source ) {
 
 	const executable = source
 		.replace( /^import .*generated\/light-writer.*;\n?/gm, '' )
 		.replace( /export /g, '' );
-	return Function( '_tslpWriteLightValue', `${ executable }\nreturn { update, updateGroup };` )( writeGeneratedLightValue );
+	return Function( '_tslpLinkLightIdentitySource', '_tslpWriteLightValue', `${ executable }\nreturn { update, updateGroup };` )(
+		linkGeneratedLightIdentitySource,
+		writeGeneratedLightValue,
+	);
 
 }
 
@@ -446,8 +449,12 @@ test( 'emitUpdaterSource — light slots delegate to the canonical generated lig
 	};
 	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
 	assert.deepEqual( unsupportedKinds, [] );
+	assert.match( source, /linkGeneratedLightIdentitySource as _tslpLinkLightIdentitySource/ );
 	assert.match( source, /writeGeneratedLightValue as _tslpWriteLightValue/ );
+	assert.match( source, /const __lightIdentityTable = Object\.freeze\(\[Object\.freeze/ );
 	assert.match( source, /const __lightSource0 = Object\.freeze\(\{"kind":"light\.shadowMatrix","lightIndex":1,"lightUuid":"captured-light"/ );
+	assert.match( source, /"lightIdentity":0/ );
+	assert.match( source, /_tslpLinkLightIdentitySource\(__lightSource0, __lightIdentityTable\)/ );
 	assert.match( source, /_tslpWriteLightValue\(view, byteOffset \+ 240, "light\.shadowMatrix", __lightSource0, frame\)/ );
 
 } );

@@ -4,10 +4,10 @@
  * Carved out of `hydrator.js` so the hydrator stays orchestration and the
  * light-binding model is testable on its own. Three responsibilities:
  *
- *  1. **Identity** — given a captured `source` (lightUuid / lightIndex /
- *     value snapshot), find the live `Light` on the runtime scene. The
- *     resolution order is uuid → snapshot match → traversal index. Hits
- *     populate a per-scene uuid remap so subsequent lookups are O(1).
+ *  1. **Identity** — resolve a variant-local shared light identity against
+ *     Three's active render-light list. Complete capture evidence is scored
+ *     once for all slots, with one-to-one claims per table and topology.
+ *     Legacy sources retain uuid → slot snapshot → index behavior.
  *
  *  2. **Diagnostics** — append events to `globalThis.__tslpHarnessDiagnostics`
  *     when the matching debug flags are set. Off by default; cost is a
@@ -23,6 +23,7 @@
  */
 
 import { Matrix4, Vector3, WebGPUCoordinateSystem } from 'three';
+import { linkedLightIdentityForSource } from './light-identities.js';
 import { writeMat4, writeNumber, writeSnapshot, writeVec2, writeVec3 } from './snapshot-writers.js';
 
 // Module-scoped scratch — reused per frame to avoid GC pressure. These are
@@ -32,6 +33,9 @@ const _lvec = new Vector3();
 const _lightMatchVec = new Vector3();
 const _mwi = new Matrix4();
 const _m4rot = new Matrix4();
+const lightIdentitySceneCaches = new WeakMap();
+const lightIdentityTableKeys = new WeakMap();
+const identitySnapshotFields = [ 'position', 'targetPosition', 'color', 'intensity', 'distance', 'decay', 'angle', 'penumbra', 'width', 'height', 'castShadow', 'shadowType', 'cameraType' ];
 
 /**
  * Return lights in the same order used by Three's current render object.
@@ -133,6 +137,334 @@ function colorDistanceSq( light, data ) {
 
 }
 
+function normalizedLightType( value ) {
+
+	if ( typeof value !== 'string' ) return '';
+	return value.toLowerCase().replace( /[\s_-]/g, '' ).replace( /light$/, '' );
+
+}
+
+function liveLightType( light ) {
+
+	if ( ! light ) return '';
+	if ( light.isDirectionalLight === true ) return 'directional';
+	if ( light.isSpotLight === true ) return 'spot';
+	if ( light.isPointLight === true ) return 'point';
+	if ( light.isRectAreaLight === true ) return 'rectarea';
+	if ( light.isHemisphereLight === true ) return 'hemisphere';
+	if ( light.isAmbientLight === true ) return 'ambient';
+	return normalizedLightType( light.type || '' );
+
+}
+
+function identityTypeMatches( light, record ) {
+
+	const capturedType = normalizedLightType( record && record.type || '' );
+	return capturedType === '' || capturedType === liveLightType( light );
+
+}
+
+function topologyMatches( cachedLights, lights ) {
+
+	if ( ! cachedLights || cachedLights.length !== lights.length ) return false;
+	for ( let index = 0; index < lights.length; index ++ ) {
+
+		if ( cachedLights[ index ] !== lights[ index ] ) return false;
+
+	}
+	return true;
+
+}
+
+function identityTableKey( table ) {
+
+	if ( ! Array.isArray( table ) ) return table;
+	let key = lightIdentityTableKeys.get( table );
+	if ( key !== undefined ) return key;
+	key = JSON.stringify( table.map( ( record ) => [
+		record && record.schema || null,
+		record && record.captureUuid || null,
+		( record && record.captureIndex ) ?? null,
+		record && record.type || null,
+		record && record.explicitKey || null,
+		record && record.name || null,
+		...identitySnapshotFields.map( ( field ) => ( record && record.snapshot && record.snapshot[ field ] ) ?? null ),
+	] ) );
+	lightIdentityTableKeys.set( table, key );
+	return key;
+
+}
+
+function identityTableState( scene, lights, table ) {
+
+	let sceneState = lightIdentitySceneCaches.get( scene );
+	if ( ! sceneState || ! topologyMatches( sceneState.lights, lights ) ) {
+
+		sceneState = { lights: lights.slice(), tables: new Map() };
+		lightIdentitySceneCaches.set( scene, sceneState );
+
+	}
+	const tableKey = identityTableKey( table );
+	let tableState = sceneState.tables.get( tableKey );
+	if ( ! tableState ) {
+
+		tableState = { mappings: new Map(), claims: new Map() };
+		sceneState.tables.set( tableKey, tableState );
+
+	}
+	return tableState;
+
+}
+
+function canClaimLight( state, identity, light ) {
+
+	const owner = state.claims.get( light );
+	return owner === undefined || owner === identity;
+
+}
+
+function claimLight( state, identity, light ) {
+
+	if ( ! light || ! canClaimLight( state, identity, light ) ) return null;
+	const previous = state.mappings.get( identity );
+	if ( previous && previous !== light && state.claims.get( previous ) === identity ) state.claims.delete( previous );
+	state.mappings.set( identity, light );
+	state.claims.set( light, identity );
+	return light;
+
+}
+
+function recordCaptureUuid( record, source ) {
+
+	for ( const value of [ record.captureUuid, record.lightUuid, record.uuid, source.lightUuid ] ) {
+
+		if ( typeof value === 'string' && value.length > 0 ) return value;
+
+	}
+	return '';
+
+}
+
+function recordCaptureIndex( record, source ) {
+
+	for ( const value of [ record.captureIndex, record.lightIndex, record.index, source.lightIndex ] ) {
+
+		if ( Number.isInteger( value ) && value >= 0 ) return value;
+
+	}
+	return 0;
+
+}
+
+function recordExplicitKey( record ) {
+
+	for ( const value of [ record.explicitKey, record.tslPrecompileId ] ) {
+
+		if ( typeof value === 'string' && value.length > 0 ) return value;
+
+	}
+	return '';
+
+}
+
+function vectorComponents( value ) {
+
+	if ( value && typeof value === 'object' && Array.isArray( value.data ) ) value = value.data;
+	if ( Array.isArray( value ) && value.length >= 3 ) {
+
+		const components = [ Number( value[ 0 ] ), Number( value[ 1 ] ), Number( value[ 2 ] ) ];
+		return components.every( Number.isFinite ) ? components : null;
+
+	}
+	if ( value && typeof value === 'object' && Number.isFinite( value.x ) && Number.isFinite( value.y ) && Number.isFinite( value.z ) ) return [ value.x, value.y, value.z ];
+	return null;
+
+}
+
+function colorComponents( value ) {
+
+	if ( value && typeof value === 'object' && Array.isArray( value.data ) ) value = value.data;
+	if ( Array.isArray( value ) && value.length >= 3 ) {
+
+		const components = [ Number( value[ 0 ] ), Number( value[ 1 ] ), Number( value[ 2 ] ) ];
+		return components.every( Number.isFinite ) ? components : null;
+
+	}
+	if ( value && typeof value === 'object' && Number.isFinite( value.r ) && Number.isFinite( value.g ) && Number.isFinite( value.b ) ) return [ value.r, value.g, value.b ];
+	return null;
+
+}
+
+function numericSnapshotValue( value ) {
+
+	if ( value && typeof value === 'object' && value.data !== undefined ) value = value.data;
+	return Number.isFinite( value ) ? Number( value ) : null;
+
+}
+
+function worldPositionComponents( object ) {
+
+	if ( ! object ) return null;
+	const elements = object.matrixWorld && object.matrixWorld.elements;
+	if ( elements && elements.length >= 16 ) return [ elements[ 12 ], elements[ 13 ], elements[ 14 ] ];
+	return vectorComponents( object.position );
+
+}
+
+function normalizedVectorError( live, captured ) {
+
+	if ( ! live || ! captured ) return null;
+	const dx = live[ 0 ] - captured[ 0 ];
+	const dy = live[ 1 ] - captured[ 1 ];
+	const dz = live[ 2 ] - captured[ 2 ];
+	const scale = 1 + captured[ 0 ] * captured[ 0 ] + captured[ 1 ] * captured[ 1 ] + captured[ 2 ] * captured[ 2 ];
+	return ( dx * dx + dy * dy + dz * dz ) / scale;
+
+}
+
+function normalizedNumberError( live, captured ) {
+
+	if ( ! Number.isFinite( live ) || ! Number.isFinite( captured ) ) return null;
+	const difference = live - captured;
+	return difference * difference / ( 1 + captured * captured );
+
+}
+
+function completeSnapshotScore( light, record ) {
+
+	const snapshot = record && record.snapshot;
+	if ( ! snapshot || typeof snapshot !== 'object' ) return null;
+	let score = 0;
+	let evidence = 0;
+	let comparedEvidence = 0;
+	const addError = ( error, weight = 1 ) => {
+
+		if ( error === null ) score += weight * 16;
+		else {
+
+			score += error * weight;
+			comparedEvidence += weight;
+
+		}
+		evidence += weight;
+
+	};
+
+	if ( snapshot.position !== undefined ) addError( normalizedVectorError( worldPositionComponents( light ), vectorComponents( snapshot.position ) ), 4 );
+	if ( snapshot.targetPosition !== undefined ) addError( normalizedVectorError( worldPositionComponents( light && light.target ), vectorComponents( snapshot.targetPosition ) ), 4 );
+	if ( snapshot.color !== undefined ) addError( normalizedVectorError( colorComponents( light && light.color ), colorComponents( snapshot.color ) ), 3 );
+	for ( const property of [ 'intensity', 'distance', 'decay', 'angle', 'penumbra', 'width', 'height' ] ) {
+
+		if ( snapshot[ property ] !== undefined ) addError( normalizedNumberError( light && light[ property ], numericSnapshotValue( snapshot[ property ] ) ) );
+
+	}
+	if ( snapshot.castShadow !== undefined ) {
+
+		score += ( light && light.castShadow === true ) === ( snapshot.castShadow === true ) ? 0 : 8;
+		evidence += 1;
+		comparedEvidence += 1;
+
+	}
+	if ( snapshot.shadowType !== undefined ) {
+
+		const liveShadowType = normalizedLightType( light && light.shadow && ( light.shadow.type || light.shadow.constructor && light.shadow.constructor.name ) || '' );
+		score += liveShadowType === normalizedLightType( String( snapshot.shadowType ) ) ? 0 : 8;
+		evidence += 1;
+		comparedEvidence += 1;
+
+	}
+	if ( snapshot.cameraType !== undefined ) {
+
+		const liveCameraType = normalizedLightType( light && light.shadow && light.shadow.camera && ( light.shadow.camera.type || light.shadow.camera.constructor && light.shadow.camera.constructor.name ) || '' );
+		score += liveCameraType === normalizedLightType( String( snapshot.cameraType ) ) ? 0 : 8;
+		evidence += 1;
+		comparedEvidence += 1;
+
+	}
+	return evidence > 0 && comparedEvidence > 0 ? score / evidence : null;
+
+}
+
+function capturedKeyIsUnique( table, record, key, value ) {
+
+	if ( ! Array.isArray( table ) ) return true;
+	const type = normalizedLightType( record && record.type || '' );
+	let matches = 0;
+	for ( const candidate of table ) {
+
+		if ( ! candidate || normalizedLightType( candidate.type || '' ) !== type ) continue;
+		const candidateValue = key === 'explicitKey' ? recordExplicitKey( candidate ) : candidate.name;
+		if ( candidateValue === value ) matches ++;
+
+	}
+	return matches === 1;
+
+}
+
+function resolveSharedLightIdentity( scene, source, link, frame ) {
+
+	const lights = getSceneLights( scene, frame );
+	if ( lights.length === 0 ) return null;
+	const { record, table } = link;
+	const state = identityTableState( scene, lights, table );
+	const identity = Number.isInteger( source.lightIdentity ) && source.lightIdentity >= 0
+		? `identity:${ source.lightIdentity }`
+		: record;
+	const captureUuid = recordCaptureUuid( record, source );
+	if ( captureUuid ) {
+
+		const exact = lights.find( ( light ) => light && light.uuid === captureUuid && canClaimLight( state, identity, light ) ) || null;
+		if ( exact ) return claimLight( state, identity, exact );
+
+	}
+
+	const cached = state.mappings.get( identity );
+	if ( cached && lights.includes( cached ) && canClaimLight( state, identity, cached ) ) return claimLight( state, identity, cached );
+
+	const explicitKey = recordExplicitKey( record );
+	if ( explicitKey && capturedKeyIsUnique( table, record, 'explicitKey', explicitKey ) ) {
+
+		const explicitMatches = lights.filter( ( light ) => identityTypeMatches( light, record )
+			&& light && light.userData && String( light.userData.tslPrecompileId ?? '' ) === explicitKey );
+		if ( explicitMatches.length === 1 && canClaimLight( state, identity, explicitMatches[ 0 ] ) ) return claimLight( state, identity, explicitMatches[ 0 ] );
+
+	}
+
+	if ( typeof record.name === 'string' && record.name.length > 0 && capturedKeyIsUnique( table, record, 'name', record.name ) ) {
+
+		const nameMatches = lights.filter( ( light ) => identityTypeMatches( light, record )
+			&& light && light.name === record.name );
+		if ( nameMatches.length === 1 && canClaimLight( state, identity, nameMatches[ 0 ] ) ) return claimLight( state, identity, nameMatches[ 0 ] );
+
+	}
+
+	let best = null;
+	let bestScore = Infinity;
+	for ( const light of lights ) {
+
+		if ( ! identityTypeMatches( light, record ) || ! canClaimLight( state, identity, light ) ) continue;
+		const score = completeSnapshotScore( light, record );
+		if ( score !== null && score < bestScore ) {
+
+			best = light;
+			bestScore = score;
+
+		}
+
+	}
+	if ( best ) return claimLight( state, identity, best );
+
+	const captureIndex = recordCaptureIndex( record, source );
+	const indexed = lights[ captureIndex ] || null;
+	const hasCapturedType = normalizedLightType( record && record.type || '' ) !== '';
+	if ( indexed && ( ! hasCapturedType || identityTypeMatches( indexed, record ) ) && canClaimLight( state, identity, indexed ) ) return claimLight( state, identity, indexed );
+	const remainingTypeMatch = lights.find( ( light ) => identityTypeMatches( light, record ) && canClaimLight( state, identity, light ) ) || null;
+	if ( remainingTypeMatch ) return claimLight( state, identity, remainingTypeMatch );
+	if ( hasCapturedType ) return null;
+	return claimLight( state, identity, lights.find( ( light ) => canClaimLight( state, identity, light ) ) || null );
+
+}
+
 export function findLightBySnapshot( scene, source, frame = null ) {
 
 	const lights = getSceneLights( scene, frame );
@@ -202,6 +534,8 @@ export function findLightBySnapshot( scene, source, frame = null ) {
 export function findLightBySource( scene, source, frame = null ) {
 
 	if ( ! scene || ! source ) return null;
+	const identityLink = linkedLightIdentityForSource( source );
+	if ( identityLink ) return resolveSharedLightIdentity( scene, source, identityLink, frame );
 	const lights = getSceneLights( scene, frame );
 	if ( source.lightUuid ) {
 
@@ -301,17 +635,26 @@ export function findShadowMatrixLightForSlot( group, slot, frame ) {
 	if ( ! group || ! frame || ! frame.scene ) return null;
 	const source = slot && slot.source || {};
 	if ( source.kind !== 'uniform.live' || source.name ) return null;
+	if ( linkedLightIdentityForSource( source ) ) {
+
+		const light = findLightBySource( frame.scene, source, frame );
+		if ( light ) return light;
+
+	}
 
 	const slots = Array.isArray( group.slots ) ? group.slots : [];
 	const shadowGroups = [];
-	const seenLightIndices = new Set();
+	const seenLightIdentities = new Set();
 	for ( const sibling of slots ) {
 
 		const siblingSource = sibling && sibling.source || {};
-		if ( siblingSource.kind && siblingSource.kind.startsWith( 'light.shadow' ) && Number.isInteger( siblingSource.lightIndex ) && ! seenLightIndices.has( siblingSource.lightIndex ) ) {
+		const identityLink = linkedLightIdentityForSource( siblingSource );
+		const identityKey = identityLink && identityLink.record || ( siblingSource.lightUuid ? `uuid:${ siblingSource.lightUuid }` : Number.isInteger( siblingSource.lightIndex ) ? `index:${ siblingSource.lightIndex }` : null );
+		if ( siblingSource.kind && siblingSource.kind.startsWith( 'light.shadow' ) && identityKey !== null && ! seenLightIdentities.has( identityKey ) ) {
 
-			seenLightIndices.add( siblingSource.lightIndex );
+			seenLightIdentities.add( identityKey );
 			shadowGroups.push( {
+				source: siblingSource,
 				lightIndex: siblingSource.lightIndex,
 				lightUuid: siblingSource.lightUuid || null,
 				offset: sibling.offset ?? sibling.byteOffset ?? Number.POSITIVE_INFINITY,
@@ -335,7 +678,7 @@ export function findShadowMatrixLightForSlot( group, slot, frame ) {
 	const matrixIndex = liveShadowMatrices.indexOf( slot );
 	if ( matrixIndex >= 0 && shadowGroups.length >= liveShadowMatrices.length ) {
 
-		const light = findLightBySource( frame.scene, shadowGroups[ matrixIndex ] );
+		const light = findLightBySource( frame.scene, shadowGroups[ matrixIndex ].source, frame );
 		recordLightLinkDiagnostic( {
 			kind: 'light.shadowMatrix',
 			slotOffset: slot.offset ?? slot.byteOffset ?? 0,
@@ -351,7 +694,7 @@ export function findShadowMatrixLightForSlot( group, slot, frame ) {
 	const nextShadowGroup = shadowGroups.find( ( entry ) => entry.offset > slotOffset );
 	if ( nextShadowGroup ) {
 
-		const light = findLightBySource( frame.scene, nextShadowGroup );
+		const light = findLightBySource( frame.scene, nextShadowGroup.source, frame );
 		recordLightLinkDiagnostic( {
 			kind: 'light.shadowMatrix',
 			slotOffset,

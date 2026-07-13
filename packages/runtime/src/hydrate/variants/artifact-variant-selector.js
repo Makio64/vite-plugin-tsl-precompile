@@ -315,20 +315,28 @@ function mergeArtifactVariantView( artifact, variant ) {
 
 	}
 
-	// The generated updater is compiled from the root uniformPlan. Forward it
-	// only when the selected variant has the same plan; otherwise the hydrator's
-	// descriptor-driven generic writer is the correct safe path.
-	if ( sameUniformPlan( artifact, variant ) ) forwardSidecar( merged, artifact, '_generatedUpdateGroup' );
+	// The generated updater closes over both the root uniformPlan sources and
+	// their module-level light identity table. Forward it only when both inputs
+	// match the selected variant; otherwise the hydrator's descriptor-driven
+	// generic writer is the correct safe path.
+	if ( sameGeneratedUpdaterInputs( artifact, variant ) ) forwardSidecar( merged, artifact, '_generatedUpdateGroup' );
 	return merged;
 
 }
 
-function sameUniformPlan( artifact, variant ) {
+function sameGeneratedUpdaterInputs( artifact, variant ) {
 
-	if ( artifact.uniformPlan === variant.uniformPlan ) return true;
+	return sameSerializedField( artifact.uniformPlan, variant.uniformPlan, 'uniformPlan' )
+		&& sameSerializedField( artifact.lightIdentities, variant.lightIdentities, 'lightIdentities' );
+
+}
+
+function sameSerializedField( rootValue, variantValue, label ) {
+
+	if ( rootValue === variantValue ) return true;
 	try {
 
-		return stableJsonStringify( artifact.uniformPlan || [], 'rootUniformPlan' ) === stableJsonStringify( variant.uniformPlan || [], 'variantUniformPlan' );
+		return stableJsonStringify( rootValue || [], `root${ label }` ) === stableJsonStringify( variantValue || [], `variant${ label }` );
 
 	} catch ( _ ) {
 

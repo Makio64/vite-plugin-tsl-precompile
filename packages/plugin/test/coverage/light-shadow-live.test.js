@@ -61,6 +61,8 @@ async function captureWithDirectionalLight() {
 	return generateForMaterial( ( { webgpu, core } ) => {
 
 		const light = new core.DirectionalLight( 0xffffff, 1.5 );
+		light.name = 'coverage-key-light';
+		light.userData.tslPrecompileId = 'coverage:key';
 		light.castShadow = true;
 		light.shadow.bias = - 0.0042;
 		light.shadow.normalBias = 0.123;
@@ -219,6 +221,13 @@ test( 'shadow live: ShadowNode.bias / normalBias / radius / intensity / mapSize 
 
 	const seen = new Set();
 	const slots = findSlotsByKind( result.artifact, ( k ) => k && k.startsWith( 'light.shadow' ) );
+	const identity = result.artifact.lightIdentities.find( ( record ) => record.explicitKey === 'coverage:key' );
+	assert.ok( identity, 'extractArtifact should aggregate the keyed light into the variant-local identity table' );
+	assert.equal( identity.name, 'coverage-key-light' );
+	assert.equal( identity.type, 'DirectionalLight' );
+	assert.deepEqual( identity.snapshot.position, [ 5, 10, 7 ] );
+	assert.equal( identity.snapshot.intensity, 1.5 );
+	assert.equal( identity.snapshot.castShadow, true );
 
 	for ( const slot of slots ) {
 
@@ -228,6 +237,7 @@ test( 'shadow live: ShadowNode.bias / normalBias / radius / intensity / mapSize 
 			true,
 			`expected ${ slot.source.kind } slot to carry a numeric lightIndex; got ${ JSON.stringify( slot.source ) }`,
 		);
+		assert.equal( result.artifact.lightIdentities[ slot.source.lightIdentity ], identity );
 		assert.equal(
 			typeof slot.source.property,
 			'string',

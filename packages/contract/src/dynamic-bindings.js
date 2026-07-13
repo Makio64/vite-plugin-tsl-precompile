@@ -101,7 +101,7 @@ const exactDescriptors = {
 		owner: 'light-or-material-graph',
 		resolver: 'hydrator/shadow-depth-rebinder',
 		required: [],
-		optional: [ 'lightIndex', 'lightUuid', 'textureUuid', 'fromMaterialGraph', 'vsm' ],
+		optional: [ 'lightIdentity', 'lightIndex', 'lightUuid', 'textureUuid', 'fromMaterialGraph', 'vsm' ],
 	} ),
 	'viewport.texture': freezeDescriptor( {
 		kind: 'viewport.texture',
@@ -231,7 +231,7 @@ const PREFIX_DESCRIPTORS = Object.freeze( [
 		owner: 'light',
 		resolver: 'emit-updater/light',
 		required: [],
-		optional: [ 'lightIndex', 'lightUuid', 'property', 'valueSnapshot' ],
+		optional: [ 'lightIdentity', 'lightIndex', 'lightUuid', 'property', 'valueSnapshot' ],
 	} ),
 	freezeDescriptor( {
 		prefix: 'material.',

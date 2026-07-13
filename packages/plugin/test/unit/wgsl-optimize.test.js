@@ -114,6 +114,40 @@ test( 'emitArtifactModule derives bindings and validates updater kinds for every
 
 } );
 
+test( 'emitArtifactModule derives variant-local light tables before dynamic bindings', () => {
+
+	const lightSlot = ( uuid, lightIndex ) => ( {
+		name: 'distance',
+		offset: 0,
+		source: { kind: 'light.distance', lightUuid: uuid, lightIndex, valueSnapshot: { type: 'number', data: 7 } },
+	} );
+	const artifact = {
+		cacheKey: 'root',
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		uniformPlan: [ { name: 'root', slots: [ lightSlot( 'root-light', 0 ) ] } ],
+		variants: {
+			variant: {
+				cacheKey: 'variant',
+				vertexShader: 'variant-vertex',
+				fragmentShader: 'variant-fragment',
+				uniformPlan: [ { name: 'variant', slots: [ lightSlot( 'variant-light', 3 ) ] } ],
+			},
+		},
+	};
+	const { source } = emitArtifactModule(
+		{ hash: 'light-table-hash', name: 'variant-lights' },
+		{ artifact },
+	);
+
+	assert.equal( ( source.match( /"lightIdentities"/g ) || [] ).length, 2 );
+	assert.match( source, /"captureUuid":"root-light","captureIndex":0/ );
+	assert.match( source, /"captureUuid":"variant-light","captureIndex":3/ );
+	assert.ok( ( source.match( /"lightIdentity":0/g ) || [] ).length >= 4, 'uniform plans and derived dynamic descriptors retain the table reference' );
+	assert.doesNotThrow( () => parse( source, { sourceType: 'module' } ) );
+
+} );
+
 test( 'createWgslStringPool pools repeated WGSL across separate artifacts', () => {
 
 	const shader = '@fragment fn main(  ) -> @location( 0 ) vec4<f32> { return vec4<f32>( 1.0 ); }';

@@ -22,6 +22,8 @@ test( 'a real render exposes a directly harvestable material artifact', async ()
 	scene.fog = new THREE.Fog( 0x000000, 1, 10 );
 	scene.add( mesh );
 	const light = new THREE.DirectionalLight( 0xffffff, 2 );
+	light.name = 'harvest-key-light';
+	light.userData.tslPrecompileId = 'harvest:key';
 	light.castShadow = true;
 	light.position.set( 2, 3, 4 );
 	scene.add( light );
@@ -52,6 +54,18 @@ test( 'a real render exposes a directly harvestable material artifact', async ()
 	assert.ok( kinds.has( 'light.shadowMatrix' ) );
 	assert.ok( kinds.has( 'depth.texture' ) );
 	assert.ok( kinds.has( 'scene.fog.color' ) );
+	const lightIdentity = artifact.lightIdentities.find( ( identity ) => identity.explicitKey === 'harvest:key' );
+	assert.ok( lightIdentity, 'directly harvested plans aggregate the live light identity sidecar' );
+	assert.equal( lightIdentity.name, 'harvest-key-light' );
+	assert.deepEqual( lightIdentity.snapshot.position, [ 2, 3, 4 ] );
+	for ( const group of artifact.uniformPlan ) for ( const entry of [ ...( group.slots || [] ), ...( group.textures || [] ) ] ) {
+
+		if ( entry.source && ( entry.source.kind.startsWith( 'light.' ) || entry.source.kind === 'depth.texture' ) ) assert.equal(
+			artifact.lightIdentities[ entry.source.lightIdentity ],
+			lightIdentity,
+		);
+
+	}
 
 	renderer.dispose();
 

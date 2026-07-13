@@ -6,4 +6,13 @@
  * snapshot hydration from growing different identity or shadow semantics.
  */
 
+import { linkLightIdentitySource } from '../hydrate/light-identities.js';
+
 export { writeLightValue as writeGeneratedLightValue } from '../hydrate/light-writers.js';
+
+export function linkGeneratedLightIdentitySource( source, lightIdentities ) {
+
+	linkLightIdentitySource( source, lightIdentities );
+	return source;
+
+}

@@ -24,6 +24,7 @@
 import BindGroup from 'three/src/renderers/common/BindGroup.js';
 import UniformBuffer from 'three/src/renderers/common/UniformBuffer.js';
 import { dispatchTextureBinding } from './hydrate/artifact-texture-resolver.js';
+import { linkArtifactLightIdentities } from './hydrate/light-identities.js';
 import { findLightBySource, lightDiagnosticShape, recordShadowBindingDiagnostic } from './hydrate/light-writers.js';
 import { writeUniformGroup } from './hydrate/material-writers.js';
 import { writeLiveValue, writeSnapshot } from './hydrate/snapshot-writers.js';
@@ -79,6 +80,7 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 		? { ...variantSelection, material: variantSelection.material || material }
 		: { cacheKey: variantSelection, material };
 	const effective = selectArtifactVariant( artifact, selection );
+	linkArtifactLightIdentities( effective );
 
 	// Bind live BufferAttributes from the user's `*Node` material props
 	// (e.g. `material.positionNode = instancedBufferAttribute(buf)`) onto

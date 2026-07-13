@@ -12,6 +12,7 @@ import {
 	updateLightShadowMatrixForFrame,
 	writeLightValue,
 } from '../src/hydrate/light-writers.js';
+import { linkLightIdentitySource } from '../src/hydrate/light-identities.js';
 
 function makeView( size = 64 ) {
 
@@ -29,9 +30,17 @@ function fakeLight( opts = {} ) {
 		matrixWorld: new Matrix4(),
 	};
 	if ( opts.id !== undefined ) light.id = opts.id;
+	if ( opts.type !== undefined ) light.type = opts.type;
+	if ( opts.name !== undefined ) light.name = opts.name;
+	if ( opts.userData !== undefined ) light.userData = opts.userData;
 	if ( opts.isSpotLight ) light.isSpotLight = true;
 	if ( opts.isDirectionalLight ) light.isDirectionalLight = true;
 	if ( opts.isPointLight ) light.isPointLight = true;
+	for ( const property of [ 'distance', 'decay', 'angle', 'penumbra', 'width', 'height', 'castShadow' ] ) {
+
+		if ( opts[ property ] !== undefined ) light[ property ] = opts[ property ];
+
+	}
 	if ( opts.shadow ) light.shadow = opts.shadow;
 	if ( opts.position ) light.matrixWorld.setPosition( opts.position.x || 0, opts.position.y || 0, opts.position.z || 0 );
 	if ( opts.target ) {
@@ -158,6 +167,165 @@ test( 'findLightBySource snapshot-matches by world position when uuid is unknown
 	// And the uuid remap caches it for next lookup
 	const second = findLightBySource( scene, source );
 	assert.equal( second, lights[ 1 ] );
+
+} );
+
+test( 'shared identity uses complete evidence when a scalar slot is encountered first', () => {
+
+	const table = [
+		{
+			captureUuid: 'captured-a',
+			captureIndex: 0,
+			type: 'PointLight',
+			snapshot: { position: [ 1, 0, 0 ], color: [ 1, 0, 0 ], intensity: 2, distance: 10 },
+		},
+		{
+			captureUuid: 'captured-b',
+			captureIndex: 1,
+			type: 'PointLight',
+			snapshot: { position: [ 9, 0, 0 ], color: [ 0, 0, 1 ], intensity: 2, distance: 10 },
+		},
+	];
+	const sourceA = { kind: 'light.distance', lightIdentity: 0, lightUuid: 'captured-a', lightIndex: 0 };
+	const sourceB = { kind: 'light.distance', lightIdentity: 1, lightUuid: 'captured-b', lightIndex: 1 };
+	linkLightIdentitySource( sourceA, table );
+	linkLightIdentitySource( sourceB, table );
+
+	const liveB = fakeLight( { uuid: 'runtime-b', isPointLight: true, position: { x: 9, y: 0, z: 0 }, color: new Color( 0, 0, 1 ), intensity: 2, distance: 10 } );
+	const liveA = fakeLight( { uuid: 'runtime-a', isPointLight: true, position: { x: 1, y: 0, z: 0 }, color: new Color( 1, 0, 0 ), intensity: 2, distance: 10 } );
+	const scene = fakeScene( [ liveB, liveA ] );
+	const frame = { lightsNode: { getLights: () => [ liveB, liveA ] } };
+
+	assert.equal( findLightBySource( scene, sourceA, frame ), liveA );
+	assert.equal( findLightBySource( scene, sourceB, frame ), liveB );
+
+} );
+
+test( 'shared identity prefers explicit application keys with a type gate', () => {
+
+	const table = [ {
+		captureUuid: 'old-uuid',
+		captureIndex: 0,
+		type: 'SpotLight',
+		explicitKey: 'key-light',
+		snapshot: { position: [ 50, 0, 0 ] },
+	} ];
+	const source = { kind: 'light.colorScaled', lightIdentity: 0, lightUuid: 'old-uuid', lightIndex: 0 };
+	linkLightIdentitySource( source, table );
+	const wrongType = fakeLight( { uuid: 'wrong', isPointLight: true, userData: { tslPrecompileId: 'key-light' } } );
+	const keyed = fakeLight( { uuid: 'keyed', isSpotLight: true, userData: { tslPrecompileId: 'key-light' } } );
+	const scene = fakeScene( [ wrongType, keyed ] );
+	assert.equal( findLightBySource( scene, source ), keyed );
+
+} );
+
+test( 'duplicate captured names and explicit keys defer to complete snapshots', () => {
+
+	const table = [
+		{
+			captureIndex: 0,
+			type: 'PointLight',
+			name: 'duplicate-name',
+			explicitKey: 'duplicate-key',
+			snapshot: { position: [ 0, 0, 0 ] },
+		},
+		{
+			captureIndex: 1,
+			type: 'PointLight',
+			name: 'duplicate-name',
+			explicitKey: 'duplicate-key',
+			snapshot: { position: [ 9, 0, 0 ] },
+		},
+	];
+	const source = { kind: 'light.distance', lightIdentity: 1, lightIndex: 1 };
+	linkLightIdentitySource( source, table );
+	const temptingName = fakeLight( {
+		isPointLight: true,
+		name: 'duplicate-name',
+		userData: { tslPrecompileId: 'duplicate-key' },
+		position: { x: 0, y: 0, z: 0 },
+	} );
+	const snapshotMatch = fakeLight( { isPointLight: true, position: { x: 9, y: 0, z: 0 } } );
+	assert.equal( findLightBySource( fakeScene( [ temptingName, snapshotMatch ] ), source ), snapshotMatch );
+
+} );
+
+test( 'typed capture-index fallback skips reordered lights of another type and fails closed', () => {
+
+	const table = [ { captureIndex: 0, type: 'SpotLight', snapshot: {} } ];
+	const source = { kind: 'light.distance', lightIdentity: 0, lightIndex: 0 };
+	linkLightIdentitySource( source, table );
+	const point = fakeLight( { isPointLight: true } );
+	const spot = fakeLight( { isSpotLight: true } );
+	assert.equal( findLightBySource( fakeScene( [ point, spot ] ), source ), spot );
+
+	const secondTable = [ { captureIndex: 0, type: 'SpotLight', snapshot: {} } ];
+	const missingSource = { kind: 'light.distance', lightIdentity: 0, lightIndex: 0 };
+	linkLightIdentitySource( missingSource, secondTable );
+	assert.equal( findLightBySource( fakeScene( [ point ] ), missingSource ), null );
+
+} );
+
+test( 'shared identity claims are one-to-one and stable across all slots', () => {
+
+	const snapshot = { position: [ 0, 0, 0 ], intensity: 1 };
+	const table = [
+		{ captureIndex: 0, type: 'PointLight', snapshot },
+		{ captureIndex: 1, type: 'PointLight', snapshot },
+	];
+	const sourceA = { kind: 'light.intensity', lightIdentity: 0, lightIndex: 0 };
+	const sourceB = { kind: 'light.intensity', lightIdentity: 1, lightIndex: 1 };
+	const sourceASecondSlot = { kind: 'light.distance', lightIdentity: 0, lightIndex: 0 };
+	for ( const source of [ sourceA, sourceB, sourceASecondSlot ] ) linkLightIdentitySource( source, table );
+	const liveA = fakeLight( { isPointLight: true } );
+	const liveB = fakeLight( { isPointLight: true } );
+	const scene = fakeScene( [ liveA, liveB ] );
+
+	assert.equal( findLightBySource( scene, sourceA ), liveA );
+	assert.equal( findLightBySource( scene, sourceB ), liveB );
+	assert.equal( findLightBySource( scene, sourceASecondSlot ), liveA );
+
+} );
+
+test( 'equivalent generated and artifact tables share one-to-one claims', () => {
+
+	const records = [
+		{ schema: 'light-identity@1', captureIndex: 0, type: 'PointLight', snapshot: { position: [ 0, 0, 0 ] } },
+		{ schema: 'light-identity@1', captureIndex: 1, type: 'PointLight', snapshot: { position: [ 0, 0, 0 ] } },
+	];
+	const generatedTable = records.map( ( record ) => ( { ...record, snapshot: { ...record.snapshot } } ) );
+	const artifactTable = records.map( ( record ) => ( { ...record, snapshot: { ...record.snapshot } } ) );
+	const generatedSource = { kind: 'light.distance', lightIdentity: 0, lightIndex: 0 };
+	const artifactMirrorSource = { kind: 'depth.texture', lightIdentity: 0, lightIndex: 0 };
+	const artifactSource = { kind: 'depth.texture', lightIdentity: 1, lightIndex: 1 };
+	linkLightIdentitySource( generatedSource, generatedTable );
+	linkLightIdentitySource( artifactMirrorSource, artifactTable );
+	linkLightIdentitySource( artifactSource, artifactTable );
+	const liveA = fakeLight( { isPointLight: true } );
+	const liveB = fakeLight( { isPointLight: true } );
+	const scene = fakeScene( [ liveA, liveB ] );
+
+	assert.equal( findLightBySource( scene, generatedSource ), liveA );
+	assert.equal( findLightBySource( scene, artifactMirrorSource ), liveA );
+	assert.equal( findLightBySource( scene, artifactSource ), liveB );
+
+} );
+
+test( 'shared identity cache invalidates when active light topology changes', () => {
+
+	const table = [ { captureIndex: 0, type: 'PointLight', snapshot: { position: [ 3, 0, 0 ] } } ];
+	const source = { kind: 'light.position', lightIdentity: 0, lightIndex: 0 };
+	linkLightIdentitySource( source, table );
+	const first = fakeLight( { isPointLight: true, position: { x: 3, y: 0, z: 0 } } );
+	const other = fakeLight( { isPointLight: true, position: { x: 8, y: 0, z: 0 } } );
+	const replacement = fakeLight( { isPointLight: true, position: { x: 3, y: 0, z: 0 } } );
+	let active = [ first, other ];
+	const scene = fakeScene( [ first, other, replacement ] );
+	const frame = { lightsNode: { getLights: () => active } };
+
+	assert.equal( findLightBySource( scene, source, frame ), first );
+	active = [ other, replacement ];
+	assert.equal( findLightBySource( scene, source, frame ), replacement );
 
 } );
 
@@ -348,5 +516,19 @@ test( 'findShadowMatrixLightForSlot pairs anonymous mat4 slots with shadow group
 	const scene = fakeScene( lights );
 	assert.equal( findShadowMatrixLightForSlot( group, matrixSlotA, { scene } ), lights[ 0 ] );
 	assert.equal( findShadowMatrixLightForSlot( group, matrixSlotB, { scene } ), lights[ 1 ] );
+
+} );
+
+test( 'findShadowMatrixLightForSlot preserves the sibling shared identity', () => {
+
+	const table = [ { captureUuid: 'captured', captureIndex: 0, type: 'SpotLight', explicitKey: 'shadow-owner', snapshot: {} } ];
+	const shadowSource = { kind: 'light.shadowBias', lightIdentity: 0, lightIndex: 0, lightUuid: 'captured' };
+	linkLightIdentitySource( shadowSource, table );
+	const matrixSlot = { dtype: 'mat4', offset: 64, source: { kind: 'uniform.live' } };
+	const group = { slots: [ matrixSlot, { offset: 16, source: shadowSource } ] };
+	const decoy = fakeLight( { uuid: 'decoy', isSpotLight: true } );
+	const owner = fakeLight( { uuid: 'runtime-owner', isSpotLight: true, userData: { tslPrecompileId: 'shadow-owner' } } );
+	const scene = fakeScene( [ decoy, owner ] );
+	assert.equal( findShadowMatrixLightForSlot( group, matrixSlot, { scene } ), owner );
 
 } );

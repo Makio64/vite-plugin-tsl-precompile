@@ -13,6 +13,7 @@
  */
 
 import { collectArtifactDynamicBindings } from '@tsl-precompile/contract/dynamic-bindings';
+import { normalizeArtifactLightIdentitiesDeep } from '@tsl-precompile/contract/light-identities';
 import { emitUpdaterSource } from './emit-updater.js';
 import { VIRTUAL_WGSL_POOL_MODULE_ID } from './_shared/constants.js';
 import { emitOptimizedJsonExpression, getExternalWgslRefIdentifiers } from './wgsl-optimize.js';
@@ -32,10 +33,10 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 	const hash = artifactJson.__hash || artifact.__hash || manifestEntry.hash;
 	const name = artifactJson.__name || artifact.__name || manifestEntry.name || '';
 
-	// Every variant owns its own uniformPlan, so it must also own the derived
-	// dynamic-binding descriptor table. Inheriting the root table can pair the
-	// selected shader with offsets/bindings from a different topology.
-	const artifactForEmission = attachDynamicBindingsDeep( artifact );
+	// Every variant owns its own uniformPlan, light identity table, and derived
+	// dynamic-binding descriptors. Inheriting any of them can pair the selected
+	// shader with light evidence or offsets from a different topology.
+	const artifactForEmission = attachDynamicBindingsDeep( normalizeArtifactLightIdentitiesDeep( artifact ) );
 
 	const {
 		declarations: wgslDeclarations,
@@ -104,9 +105,9 @@ function attachDynamicBindingsDeep( artifact ) {
 		if ( changed ) variants = nextVariants;
 
 	}
-	const dynamicBindings = Array.isArray( artifact.dynamicBindings )
-		? artifact.dynamicBindings
-		: collectArtifactDynamicBindings( artifact );
+	// Always derive after light normalization so `source.lightIdentity` is part
+	// of the frozen descriptor and strict implied-descriptor validation.
+	const dynamicBindings = collectArtifactDynamicBindings( artifact );
 	if ( dynamicBindings !== artifact.dynamicBindings ) changed = true;
 	if ( ! changed ) return artifact;
 	return { ...artifact, dynamicBindings, ...( variants !== artifact.variants ? { variants } : {} ) };

@@ -1,6 +1,7 @@
 import { MATERIAL_TEXTURE_PROPS } from './texture-props.js';
 import { collectArtifactDynamicBindings, dynamicBindingDescriptor, validateDynamicBindingSource } from './dynamic-bindings.js';
 import { createArtifactVariantPayload } from './artifact-variants.js';
+import { validateArtifactLightIdentities } from './light-identities.js';
 import { stableJsonStringify } from './stable-json.js';
 
 export const KIND_STATUS = Object.freeze( {
@@ -750,6 +751,11 @@ export function validateArtifact( input, opts = {} ) {
 
 	}
 	validateRuntimeBindings( artifact, label, errors );
+	for ( const lightIdentityError of validateArtifactLightIdentities( artifact ) ) errors.push( validationError(
+		lightIdentityError.code,
+		`${ label }: ${ lightIdentityError.message }`,
+		lightIdentityError.path,
+	) );
 
 	const sourceKinds = [];
 	if ( Array.isArray( artifact.uniformPlan ) ) {

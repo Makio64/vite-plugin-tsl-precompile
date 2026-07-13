@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import { LessEqualCompare } from 'three';
 
+import { linkLightIdentitySource } from '../src/hydrate/light-identities.js';
+import { findLightBySource } from '../src/hydrate/light-writers.js';
 import {
 	createShadowDepthRebinder,
 	resolveDepthTextureFromMaterial,
@@ -148,5 +150,49 @@ test( 'shadow depth rebinder resolves material-graph depth textures', () => {
 	assert.equal( liveTexture.compareFunction, null );
 	assert.equal( diagnostics.length, 1 );
 	assert.equal( diagnostics[ 0 ].bindingName, 'materialDepthTex' );
+
+} );
+
+test( 'shadow depth rebinder resolves through the shared light identity source', () => {
+
+	const fallbackTexture = { uuid: 'fallback' };
+	const liveTexture = { uuid: 'shared-depth', isDepthTexture: true, compareFunction: null };
+	const binding = createBinding( fallbackTexture );
+	const source = { kind: 'depth.texture', lightIdentity: 0, lightIndex: 0, lightUuid: 'captured-uuid' };
+	const table = [ {
+		captureUuid: 'captured-uuid',
+		captureIndex: 0,
+		type: 'DirectionalLight',
+		explicitKey: 'sun',
+		snapshot: {},
+	} ];
+	linkLightIdentitySource( source, table );
+	const decoy = { isLight: true, isDirectionalLight: true, uuid: 'decoy', userData: {} };
+	const light = {
+		isLight: true,
+		isDirectionalLight: true,
+		uuid: 'runtime-sun',
+		userData: { tslPrecompileId: 'sun' },
+		shadow: { map: { depthTexture: liveTexture } },
+	};
+	const scene = { traverse( fn ) { fn( decoy ); fn( light ); } };
+	const rebinder = createShadowDepthRebinder( [ {
+		artifact: createArtifact(),
+		binding,
+		bindingName: 'shadowTex',
+		source,
+		lightIndex: 0,
+		lightUuid: 'captured-uuid',
+		vsm: false,
+	} ], {
+		findLightBySource,
+		diagnosticsEnabled: () => false,
+	} );
+
+	rebinder.updateBefore( {
+		scene,
+		renderer: { reversedDepthBuffer: false, backend: { get: () => ( { texture: { label: 'gpu-depth' }, initialized: true } ) } },
+	} );
+	assert.equal( binding.texture, liveTexture );
 
 } );
