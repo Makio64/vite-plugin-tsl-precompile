@@ -3,6 +3,16 @@ import assert from 'node:assert/strict';
 import { parse } from '@babel/parser';
 
 import { emitUpdaterSource } from '../../src/emit-updater.js';
+import { writeGeneratedLightValue } from '../../../runtime/src/generated/light-writer.js';
+
+function executeLightOnlyUpdater( source ) {
+
+	const executable = source
+		.replace( /^import .*generated\/light-writer.*;\n?/gm, '' )
+		.replace( /export /g, '' );
+	return Function( '_tslpWriteLightValue', `${ executable }\nreturn { update, updateGroup };` )( writeGeneratedLightValue );
+
+}
 
 test( 'emitUpdaterSource — empty plan → empty update body', () => {
 
@@ -424,53 +434,64 @@ test( 'emitUpdaterSource — object matrices recompute from live frame object', 
 
 } );
 
-test( 'emitUpdaterSource — light.shadowMatrix refreshes non-point lights, leaves point-light matrix untouched', () => {
+test( 'emitUpdaterSource — light slots delegate to the canonical generated light writer', () => {
 
 	const artifact = {
 		uniformPlan: [ {
 			name: 'render',
 			slots: [
-				{ offset: 240, source: { kind: 'light.shadowMatrix', lightIndex: 1 } },
+				{ offset: 240, source: { kind: 'light.shadowMatrix', lightIndex: 1, lightUuid: 'captured-light', valueSnapshot: { type: 'mat4', data: [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ] } } },
 			],
 		} ],
 	};
 	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
 	assert.deepEqual( unsupportedKinds, [] );
-	// Non-point lights refresh shadow.matrix via updateMatrices even when the
-	// shadow map has already been allocated.
-	assert.match( source, /_l\.isPointLight !== true && _l\.shadow\.isPointLightShadow !== true/ );
-	assert.doesNotMatch( source, /!_l\.shadow\.map/ );
-	assert.match( source, /_l\.shadow\.updateMatrices\(_l\)/ );
-	// Point lights keep the renderer-set shadow.matrix untouched — we do NOT
-	// override it with a translation (which broke webgpu_shadowmap_pointlight).
-	assert.doesNotMatch( source, /makeTranslation/ );
-	assert.match( source, /writeMat4\(view, byteOffset \+ 240, _l\.shadow\.matrix\)/ );
+	assert.match( source, /writeGeneratedLightValue as _tslpWriteLightValue/ );
+	assert.match( source, /const __lightSource0 = Object\.freeze\(\{"kind":"light\.shadowMatrix","lightIndex":1,"lightUuid":"captured-light"/ );
+	assert.match( source, /_tslpWriteLightValue\(view, byteOffset \+ 240, "light\.shadowMatrix", __lightSource0, frame\)/ );
 
 } );
 
-test( 'emitUpdaterSource — indexed light lookup sorts traversed lights by numeric id', () => {
+test( 'emitUpdaterSource — duplicate light source descriptors share one frozen literal', () => {
 
 	const artifact = {
 		uniformPlan: [ {
 			name: 'render',
 			slots: [
-				{ offset: 0, source: { kind: 'light.distance', lightIndex: 0 } },
+				{ offset: 0, source: { kind: 'light.distance', lightIndex: 0, lightUuid: 'same' } },
+				{ offset: 4, source: { kind: 'light.distance', lightIndex: 0, lightUuid: 'same' } },
 			],
 		} ],
 	};
 	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
 	assert.deepEqual( unsupportedKinds, [] );
-	assert.match( source, /cache\.lights\.sort\(\(a, b\) => \(Number\.isFinite\(a && a\.id\) \? a\.id : 0\) - \(Number\.isFinite\(b && b\.id\) \? b\.id : 0\)\)/ );
+	assert.equal( source.match( /const __lightSource0 =/g ).length, 1 );
+	assert.doesNotMatch( source, /__lightSource1/ );
+	assert.equal( source.match( /__lightSource0, frame\)/g ).length, 2 );
 
-	const helperStart = source.indexOf( 'function _tslpFindLight' );
-	const helperEnd = source.indexOf( '\n\nexport function update', helperStart );
-	const helperSource = source.slice( helperStart, helperEnd );
-	const findLight = Function( `${ helperSource }\nreturn _tslpFindLight;` )();
-	const earlier = { isLight: true, id: 3, label: 'earlier' };
-	const later = { isLight: true, id: 19, label: 'later' };
-	const scene = { traverse( visit ) { visit( later ); visit( earlier ); } };
-	assert.equal( findLight( scene, 0 ), earlier );
-	assert.equal( findLight( scene, 1 ), later );
+} );
+
+test( 'emitUpdaterSource — generated and hydrated missing-light writes are byte-identical', () => {
+
+	const sourceDescriptor = {
+		kind: 'light.distance',
+		lightIndex: 7,
+		lightUuid: 'missing-live-light',
+		valueSnapshot: { type: 'f32', data: 91.5 },
+	};
+	const { source } = emitUpdaterSource( {
+		uniformPlan: [ { name: 'render', slots: [ { offset: 0, source: sourceDescriptor } ] } ],
+	} );
+	const generated = executeLightOnlyUpdater( source );
+	const frame = { scene: { traverse() {} } };
+	const generatedView = new DataView( new ArrayBuffer( 4 ) );
+	const hydratedView = new DataView( new ArrayBuffer( 4 ) );
+
+	generated.updateGroup( frame, null, generatedView, 0, 'render' );
+	writeGeneratedLightValue( hydratedView, 0, sourceDescriptor.kind, sourceDescriptor, frame );
+
+	assert.deepEqual( new Uint8Array( generatedView.buffer ), new Uint8Array( hydratedView.buffer ) );
+	assert.equal( generatedView.getFloat32( 0, true ), 91.5 );
 
 } );
 

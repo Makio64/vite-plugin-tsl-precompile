@@ -72,6 +72,17 @@ function renderObject( renderer, sourceMaterial, overrides = {} ) {
 
 }
 
+test( 'replay NodeManager exposes the renderer active-light list on its NodeFrame', () => {
+
+	const renderer = fakeRenderer();
+	const manager = new ReplayNodeManager( renderer, renderer.backend );
+	const live = renderObject( renderer, material() );
+	const frame = manager.getNodeFrameForRender( live );
+	assert.equal( frame.lightsNode, live.lightsNode );
+	assert.equal( frame.renderObject, live );
+
+} );
+
 test( 'replay NodeManager returns direct hydrated state and material-scoped semantic caches', () => {
 
 	const renderer = fakeRenderer();

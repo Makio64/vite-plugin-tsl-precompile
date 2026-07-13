@@ -18,6 +18,7 @@ import { emitUpdaterSource } from '../../src/emit-updater.js';
 import { extractMaterial } from '../../src/node-harness.js';
 
 const RUNTIME_WRITERS_URL = new URL( '../../../runtime/src/writers.js', import.meta.url ).href;
+const RUNTIME_LIGHT_WRITER_URL = new URL( '../../../runtime/src/generated/light-writer.js', import.meta.url ).href;
 
 /**
  * @param {{ groups?: Array<Object> }} plan
@@ -51,10 +52,15 @@ export async function generateForMaterial( factory ) {
  */
 export function patchGeneratedUpdaterImports( source ) {
 
-	return String( source ).replace(
-		/from\s+["']@tsl-precompile\/runtime\/writers["']/g,
-		`from ${ JSON.stringify( RUNTIME_WRITERS_URL ) }`,
-	);
+	return String( source )
+		.replace(
+			/from\s+["']@tsl-precompile\/runtime\/writers["']/g,
+			`from ${ JSON.stringify( RUNTIME_WRITERS_URL ) }`,
+		)
+		.replace(
+			/from\s+["']@tsl-precompile\/runtime\/generated\/light-writer["']/g,
+			`from ${ JSON.stringify( RUNTIME_LIGHT_WRITER_URL ) }`,
+		);
 
 }
 

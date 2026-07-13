@@ -227,13 +227,18 @@ class ReplayNodeManager extends DataMap {
 		nodeFrame.object = object;
 		nodeFrame.camera = camera;
 		nodeFrame.material = material;
+		nodeFrame.lightsNode = null;
+		nodeFrame.renderObject = null;
 		return nodeFrame;
 
 	}
 
 	getNodeFrameForRender( renderObject ) {
 
-		return this.getNodeFrame( renderObject.renderer, renderObject.scene, renderObject.object, renderObject.camera, renderObject.material );
+		const nodeFrame = this.getNodeFrame( renderObject.renderer, renderObject.scene, renderObject.object, renderObject.camera, renderObject.material );
+		nodeFrame.lightsNode = renderObject.lightsNode || null;
+		nodeFrame.renderObject = renderObject;
+		return nodeFrame;
 
 	}
 

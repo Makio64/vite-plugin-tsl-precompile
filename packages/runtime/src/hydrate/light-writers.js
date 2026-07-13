@@ -34,29 +34,58 @@ const _mwi = new Matrix4();
 const _m4rot = new Matrix4();
 
 /**
- * Find the Nth light in a scene by numeric Object3D id. Mirrors the cache
- * strategy emit-updater.js bakes into AOT modules — both the AOT and
- * snapshot-based hydration paths use this as a fallback when a captured
- * light UUID is unavailable.
+ * Return lights in the same order used by Three's current render object.
+ * Generated and hydrated updaters both call this implementation, so exact
+ * UUID, snapshot, and index fallbacks share one identity model.
  *
- * The cache key is the Scene instance; lights added/removed mid-session
- * won't invalidate the cache. That's acceptable for now: scene-graph
- * lighting changes are rare and the alternative (per-frame retraversal)
- * would tax every UBO update for materials with many light-driven slots.
+ * Outside an active render object, fall back to a visible, camera-layer-
+ * filtered scene traversal sorted by numeric Object3D id. That fallback is
+ * cached by the explicit scene light version, camera/layers, and frame id.
  */
-export function getSceneLights( scene ) {
+function activeFrameLights( frame ) {
+
+	const lightsNode = frame && ( frame.lightsNode || frame.renderObject && frame.renderObject.lightsNode );
+	if ( ! lightsNode || typeof lightsNode.getLights !== 'function' ) return null;
+	const lights = lightsNode.getLights();
+	return Array.isArray( lights ) ? lights : null;
+
+}
+
+function isVisibleToCamera( object, camera ) {
+
+	let current = object;
+	while ( current ) {
+
+		if ( current.visible === false ) return false;
+		current = current.parent;
+
+	}
+	if ( ! camera || ! camera.layers || ! object.layers ) return true;
+	if ( typeof object.layers.test === 'function' ) return object.layers.test( camera.layers );
+	return ( ( object.layers.mask ?? 1 ) & ( camera.layers.mask ?? 1 ) ) !== 0;
+
+}
+
+export function getSceneLights( scene, frame = null ) {
 
 	if ( ! scene ) return [];
+	const activeLights = activeFrameLights( frame );
+	if ( activeLights ) return activeLights;
+	const version = scene._tslpLightCacheVersion || 0;
+	const camera = frame && frame.camera || null;
+	const cameraLayerMask = camera && camera.layers ? camera.layers.mask : null;
+	const frameKey = frame && ( frame.renderId ?? frame.frameId ?? null );
 	let cache = scene._tslpLightCache;
-	if ( ! cache || cache.scene !== scene ) {
+	if ( ! cache || cache.scene !== scene || cache.version !== version || cache.camera !== camera || cache.cameraLayerMask !== cameraLayerMask || frameKey !== null && cache.frameKey !== frameKey ) {
 
-		cache = { scene, lights: [] };
+		cache = { scene, version, camera, cameraLayerMask, frameKey, lights: [] };
 		scene._tslpLightCache = cache;
-		if ( typeof scene.traverse === 'function' ) {
+		const traverseScene = typeof scene.traverseVisible === 'function' ? scene.traverseVisible.bind( scene ) : typeof scene.traverse === 'function' ? scene.traverse.bind( scene ) : null;
+		if ( traverseScene ) {
 
-			scene.traverse( ( o ) => {
+			traverseScene( ( o ) => {
 
-				if ( o && o.isLight === true ) cache.lights.push( o );
+				if ( o && o.isLight === true && isVisibleToCamera( o, camera ) ) cache.lights.push( o );
 
 			} );
 			cache.lights.sort( ( a, b ) => ( Number.isFinite( a && a.id ) ? a.id : 0 ) - ( Number.isFinite( b && b.id ) ? b.id : 0 ) );
@@ -68,9 +97,9 @@ export function getSceneLights( scene ) {
 
 }
 
-export function findLightInScene( scene, index ) {
+export function findLightInScene( scene, index, frame = null ) {
 
-	const lights = getSceneLights( scene );
+	const lights = getSceneLights( scene, frame );
 	return lights[ index ] || null;
 
 }
@@ -106,7 +135,7 @@ function colorDistanceSq( light, data ) {
 
 export function findLightBySnapshot( scene, source, frame = null ) {
 
-	const lights = getSceneLights( scene );
+	const lights = getSceneLights( scene, frame );
 	if ( lights.length === 0 || ! source ) return null;
 	let best = null;
 	let bestScore = Infinity;
@@ -173,15 +202,10 @@ export function findLightBySnapshot( scene, source, frame = null ) {
 export function findLightBySource( scene, source, frame = null ) {
 
 	if ( ! scene || ! source ) return null;
-	if ( source.lightUuid && typeof scene.traverse === 'function' ) {
+	const lights = getSceneLights( scene, frame );
+	if ( source.lightUuid ) {
 
-		let found = null;
-		scene.traverse( ( o ) => {
-
-			if ( found ) return;
-			if ( o && o.isLight === true && o.uuid === source.lightUuid ) found = o;
-
-		} );
+		const found = lights.find( ( light ) => light && light.uuid === source.lightUuid ) || null;
 		if ( found ) return found;
 		const remap = scene._tslpLightUuidRemap;
 		if ( remap && remap.has( source.lightUuid ) ) return remap.get( source.lightUuid );
@@ -206,7 +230,7 @@ export function findLightBySource( scene, source, frame = null ) {
 
 	}
 	const lightIndex = Number.isInteger( source.lightIndex ) ? source.lightIndex : 0;
-	return findLightInScene( scene, lightIndex );
+	return findLightInScene( scene, lightIndex, frame );
 
 }
 
@@ -492,6 +516,9 @@ export function writeLightValue( view, offset, kind, source, frame ) {
 			return;
 		case 'light.shadowRadius':
 			writeNumber( view, offset, light.shadow ? light.shadow.radius : null, source.valueSnapshot );
+			return;
+		case 'light.shadowBlurSamples':
+			writeNumber( view, offset, light.shadow ? light.shadow.blurSamples : null, source.valueSnapshot );
 			return;
 		case 'light.shadowCameraNear':
 			writeNumber( view, offset, light.shadow && light.shadow.camera ? light.shadow.camera.near : null, source.valueSnapshot );

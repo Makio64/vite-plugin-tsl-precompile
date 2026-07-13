@@ -35,11 +35,13 @@
  * @module EmitUpdater
  */
 
-import { BLOCKED_KINDS, blockedKindReason, isBlockedKind } from '@tsl-precompile/contract/kinds';
+import { BLOCKED_KINDS, LIGHT_SLOT_KINDS, blockedKindReason, isBlockedKind } from '@tsl-precompile/contract/kinds';
 
 // Back-compat export for older tests/callers. The canonical registry now lives
 // in @tsl-precompile/contract/kinds.
 export const DOCUMENTED_BLOCKED_KINDS = BLOCKED_KINDS;
+
+const GENERATED_LIGHT_SLOT_KINDS = new Set( LIGHT_SLOT_KINDS );
 
 // --- Writer-template tables ---------------------------------------------------
 //
@@ -201,23 +203,38 @@ function numberSnapshotLiteral( snapshot, fallback = 0 ) {
 
 }
 
+function generatedLightSourceRef( source, constants, lightSourceRefs ) {
+
+	const literal = JSON.stringify( source || {} );
+	let ref = lightSourceRefs.get( literal );
+	if ( ref ) return ref;
+	ref = `__lightSource${ lightSourceRefs.size }`;
+	lightSourceRefs.set( literal, ref );
+	constants.push( `const ${ ref } = Object.freeze(${ literal });` );
+	return ref;
+
+}
+
 /**
  * Generate the source text of an updater module for a single artifact.
  *
  * @param {Object} artifact - Output of the vendored `extractArtifact()`.
  * @param {Object} [opts]
  * @param {string} [opts.writersImport='@tsl-precompile/runtime/writers'] - Import specifier for the writers module.
+ * @param {string} [opts.lightWriterImport='@tsl-precompile/runtime/generated/light-writer'] - Import specifier for canonical generated light writes.
  * @return {{ source: string, unsupportedKinds: Array<{ kind: string, severity: 'unknown' | 'blocked', reason: string, byteOffset: number }> }}
  */
 export function emitUpdaterSource( artifact, opts = {} ) {
 
 	const writersImport = opts.writersImport || '@tsl-precompile/runtime/writers';
+	const lightWriterImport = opts.lightWriterImport || '@tsl-precompile/runtime/generated/light-writer';
 	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
 
 	const lines = [];
 	const usedWriters = new Set();
 	const unsupportedKinds = [];
 	const constants = [];
+	const lightSourceRefs = new Map();
 	// Tracks which three.js classes need to be imported and scratched for
 	// renderer-side uniforms (screen size / viewport / DPR).
 	const rendererHelpers = new Set();
@@ -232,7 +249,7 @@ export function emitUpdaterSource( artifact, opts = {} ) {
 
 		for ( const slot of group.slots ) {
 
-			const writer = emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, rendererHelpers );
+			const writer = emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, rendererHelpers, lightSourceRefs );
 			lines.push( '    ' + writer );
 
 		}
@@ -245,6 +262,9 @@ export function emitUpdaterSource( artifact, opts = {} ) {
 
 	const header = writerImports.length > 0
 		? `import { ${ writerImports.join( ', ' ) } } from ${ JSON.stringify( writersImport ) };\n\n`
+		: '';
+	const lightWriterHeader = lightSourceRefs.size > 0
+		? `import { writeGeneratedLightValue as _tslpWriteLightValue } from ${ JSON.stringify( lightWriterImport ) };\n\n`
 		: '';
 
 	// Emit scratch Vector2 / Vector4 / Vector3 / Matrix4 module-level constants
@@ -319,28 +339,6 @@ export function emitUpdaterSource( artifact, opts = {} ) {
 			decls.push( 'const _odir = new Vector3();' );
 
 		}
-		// Light helpers — direct lights need scratch Color (for live
-		// `color * intensity` product) and Vector3 (for view-space and
-		// target world position writes). Both are reused across slots
-		// in the same module so per-frame GC stays flat.
-		if ( allHelpers.has( 'lightColor' ) ) {
-
-			threeNames.add( 'Color' );
-			decls.push( 'const _lcol = new Color();' );
-
-		}
-		if ( allHelpers.has( 'lightVec' ) ) {
-
-			threeNames.add( 'Vector3' );
-			decls.push( 'const _lvec = new Vector3();' );
-
-		}
-		if ( allHelpers.has( 'm4rot' ) ) {
-
-			threeNames.add( 'Matrix4' );
-			decls.push( 'const _m4rot = new Matrix4();' );
-
-		}
 		if ( allHelpers.has( 'velocity' ) ) {
 
 			threeNames.add( 'Matrix4' );
@@ -396,35 +394,13 @@ export function emitUpdaterSource( artifact, opts = {} ) {
 			decls.push( '}' );
 
 		}
-		// Per-call light cache — keyed by `frame.scene` and rebuilt when
-		// `frame.scene._tslpLightCacheVersion` changes (e.g. lights added/
-		// removed). Without caching, every slot write would re-traverse the
-		// scene to find the indexed light; with caching, the traversal cost
-		// amortises over all light-uniform writes in the same frame.
-		if ( allHelpers.has( 'lightLookup' ) ) {
-
-			decls.push( '' );
-			decls.push( 'function _tslpFindLight(scene, index) {' );
-			decls.push( '  if (!scene) return null;' );
-			decls.push( '  let cache = scene._tslpLightCache;' );
-			decls.push( '  if (!cache || cache.scene !== scene) {' );
-			decls.push( '    cache = { scene, lights: [] };' );
-			decls.push( '    scene._tslpLightCache = cache;' );
-			decls.push( '    if (typeof scene.traverse === \'function\') {' );
-			decls.push( '      scene.traverse((o) => { if (o && o.isLight === true) cache.lights.push(o); });' );
-			decls.push( '      cache.lights.sort((a, b) => (Number.isFinite(a && a.id) ? a.id : 0) - (Number.isFinite(b && b.id) ? b.id : 0));' );
-			decls.push( '    }' );
-			decls.push( '  }' );
-			decls.push( '  return cache.lights[index] || null;' );
-			decls.push( '}' );
-
-		}
 		rendererHelperDecls = `import { ${ Array.from( threeNames ).join( ', ' ) } } from 'three';\n` + decls.join( '\n' ) + '\n\n';
 
 	}
 
 	const body = [
 		header,
+		lightWriterHeader,
 		rendererHelperDecls,
 		constantDecls,
 		`export function update(frame, material, view, byteOffset) {\n`,
@@ -448,9 +424,10 @@ export function emitUpdaterSource( artifact, opts = {} ) {
  * @param {Array<string>} constants - Mutated with any top-of-file const declarations needed.
  * @param {Array<{ kind: string, severity: string, reason: string, byteOffset: number }>} unsupportedKinds - Mutated with kinds we can't emit.
  * @param {Set<string>} [rendererHelpers] - Mutated with scratch vars needed ('size','viewport','worldMatrixInverse','viewPosition','direction').
+ * @param {Map<string,string>} [lightSourceRefs] - De-duplicated frozen source literals used by canonical light writes.
  * @return {string}
  */
-function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, rendererHelpers = new Set() ) {
+function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, rendererHelpers = new Set(), lightSourceRefs = new Map() ) {
 
 	// The extractor emits `offset` (byte-offset, `uniform.offset * 4`). Hand-
 	// written synthetic plans (used by the unit tests) emit `byteOffset`.
@@ -460,6 +437,12 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 	const kind = src.kind || 'unknown';
 
 	const off = `byteOffset + ${ byteOffset }`;
+	if ( GENERATED_LIGHT_SLOT_KINDS.has( kind ) ) {
+
+		const sourceRef = generatedLightSourceRef( src, constants, lightSourceRefs );
+		return `_tslpWriteLightValue(view, ${ off }, ${ JSON.stringify( kind ) }, ${ sourceRef }, frame);`;
+
+	}
 
 	// Writer-template tables first — collapse ~50 identical-shape cases
 	// (material.* color/scalar/vec2, scene.fog.* scalar, scene.* scalar) into
@@ -720,170 +703,6 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 
 			usedWriters.add( 'writeMat4FromEuler' );
 			return `writeMat4FromEuler(view, ${ off }, frame.scene && frame.scene.backgroundRotation, frame.scene && frame.scene.background);`;
-
-		}
-
-		// Direct light uniforms — three.js's `LightNode` instances build
-		// anonymous `uniform()` calls + `update(frame)` closures that copy
-		// `light.color * light.intensity`, `light.distance`, etc. into the
-		// embedded UniformNodes once per frame. The slim runtime doesn't
-		// run those node closures, so without explicit per-frame writes
-		// here the captured values stay frozen at extraction time.
-		// Each light-kind case looks up `frame.scene.children[...]` (via a
-		// per-frame traversal cache) for the Nth light by traversal order.
-		// `lightIndex` is baked into the source descriptor at extract time.
-		case 'light.colorScaled': {
-
-			rendererHelpers.add( 'lightLookup' );
-			rendererHelpers.add( 'lightColor' );
-			usedWriters.add( 'writeColor' );
-			const idx = src.lightIndex | 0;
-			// Live recompute mirrors AnalyticLightNode.update(): copy the
-			// light's Color and multiply by the current intensity scalar.
-			return `{ const _l = _tslpFindLight(frame.scene, ${ idx }); if (_l) { _lcol.copy(_l.color).multiplyScalar(_l.intensity || 0); writeColor(view, ${ off }, _lcol); } }`;
-
-		}
-		case 'light.distance': {
-
-			rendererHelpers.add( 'lightLookup' );
-			usedWriters.add( 'writeF32' );
-			const idx = src.lightIndex | 0;
-			return `{ const _l = _tslpFindLight(frame.scene, ${ idx }); if (_l) writeF32(view, ${ off }, _l.distance || 0); }`;
-
-		}
-		case 'light.decay': {
-
-			rendererHelpers.add( 'lightLookup' );
-			usedWriters.add( 'writeF32' );
-			const idx = src.lightIndex | 0;
-			return `{ const _l = _tslpFindLight(frame.scene, ${ idx }); if (_l) writeF32(view, ${ off }, _l.decay != null ? _l.decay : 2); }`;
-
-		}
-		case 'light.coneCos': {
-
-			rendererHelpers.add( 'lightLookup' );
-			usedWriters.add( 'writeF32' );
-			const idx = src.lightIndex | 0;
-			return `{ const _l = _tslpFindLight(frame.scene, ${ idx }); if (_l) writeF32(view, ${ off }, Math.cos(_l.angle || 0)); }`;
-
-		}
-		case 'light.penumbraCos': {
-
-			rendererHelpers.add( 'lightLookup' );
-			usedWriters.add( 'writeF32' );
-			const idx = src.lightIndex | 0;
-			return `{ const _l = _tslpFindLight(frame.scene, ${ idx }); if (_l) writeF32(view, ${ off }, Math.cos((_l.angle || 0) * (1 - (_l.penumbra || 0)))); }`;
-
-		}
-		case 'light.position': {
-
-			rendererHelpers.add( 'lightLookup' );
-			rendererHelpers.add( 'lightVec' );
-			usedWriters.add( 'writeVec3' );
-			const idx = src.lightIndex | 0;
-			return `{ const _l = _tslpFindLight(frame.scene, ${ idx }); if (_l) { _lvec.setFromMatrixPosition(_l.matrixWorld); writeVec3(view, ${ off }, _lvec); } }`;
-
-		}
-		case 'light.viewPosition': {
-
-			rendererHelpers.add( 'lightLookup' );
-			rendererHelpers.add( 'lightVec' );
-			usedWriters.add( 'writeVec3' );
-			const idx = src.lightIndex | 0;
-			// View-space light position — mirrors three.js's Lights.js
-			// onRenderUpdate: world position * camera.matrixWorldInverse.
-			return `{ const _l = _tslpFindLight(frame.scene, ${ idx }); if (_l && frame.camera) { _lvec.setFromMatrixPosition(_l.matrixWorld); _lvec.applyMatrix4(frame.camera.matrixWorldInverse); writeVec3(view, ${ off }, _lvec); } }`;
-
-		}
-		case 'light.targetPosition': {
-
-			rendererHelpers.add( 'lightLookup' );
-			rendererHelpers.add( 'lightVec' );
-			usedWriters.add( 'writeVec3' );
-			const idx = src.lightIndex | 0;
-			return `{ const _l = _tslpFindLight(frame.scene, ${ idx }); if (_l && _l.target) { _lvec.setFromMatrixPosition(_l.target.matrixWorld); writeVec3(view, ${ off }, _lvec); } }`;
-
-		}
-		case 'light.halfWidth': {
-
-			rendererHelpers.add( 'lightLookup' );
-			rendererHelpers.add( 'lightVec' );
-			rendererHelpers.add( 'worldMatrixInverse' );
-			rendererHelpers.add( 'm4rot' );
-			usedWriters.add( 'writeVec3' );
-			const halfWidthIdx = src.lightIndex || 0;
-			return `{ const _l = _tslpFindLight(frame.scene, ${ halfWidthIdx }); if (_l && frame.camera) { _mwi.copy(_l.matrixWorld).premultiply(frame.camera.matrixWorldInverse); _m4rot.extractRotation(_mwi); _lvec.set(_l.width * 0.5, 0, 0).applyMatrix4(_m4rot); writeVec3(view, ${ off }, _lvec); } }`;
-
-		}
-		case 'light.halfHeight': {
-
-			rendererHelpers.add( 'lightLookup' );
-			rendererHelpers.add( 'lightVec' );
-			rendererHelpers.add( 'worldMatrixInverse' );
-			rendererHelpers.add( 'm4rot' );
-			usedWriters.add( 'writeVec3' );
-			const halfHeightIdx = src.lightIndex || 0;
-			return `{ const _l = _tslpFindLight(frame.scene, ${ halfHeightIdx }); if (_l && frame.camera) { _mwi.copy(_l.matrixWorld).premultiply(frame.camera.matrixWorldInverse); _m4rot.extractRotation(_mwi); _lvec.set(0, _l.height * 0.5, 0).applyMatrix4(_m4rot); writeVec3(view, ${ off }, _lvec); } }`;
-
-		}
-
-		// LightShadow uniforms — `ShadowNode.setupShadow()` builds anonymous
-		// `reference('bias' | 'normalBias' | 'radius' | 'intensity' |
-		// 'blurSamples' | 'mapSize' | 'matrix', …, light.shadow)` calls. Without these
-		// per-frame writes the slim runtime would freeze each shadow tweakable
-		// at extraction-time — animated `light.shadow.bias` ramps never propagate.
-		// The extractor seeds `lightIndex` so we walk the same scene cache used
-		// for `light.colorScaled` / `light.position` etc.
-		case 'light.shadowMatrix': {
-
-			rendererHelpers.add( 'lightLookup' );
-			usedWriters.add( 'writeMat4' );
-			const idxShadowM = src.lightIndex | 0;
-			// For non-point lights: refresh `shadow.matrix` via `updateMatrices`
-			// every frame. Slim replay can have a populated shadow map while the
-			// matrix is still stale (e.g. postprocessing pass artifacts compiled
-			// before the renderer's shadow pass). For point lights: do NOT override
-			// `shadow.matrix` — the renderer's shadow pass already sets it to
-			// the correct per-face transform and an unconditional translation
-			// override produces a near-identity matrix that breaks
-			// `webgpu_shadowmap_pointlight.html`.
-			return `{ const _l = _tslpFindLight(frame.scene, ${ idxShadowM }); if (_l && _l.shadow && _l.shadow.matrix) { if (typeof _l.shadow.updateMatrices === 'function' && _l.isPointLight !== true && _l.shadow.isPointLightShadow !== true) { _l.shadow.updateMatrices(_l); } writeMat4(view, ${ off }, _l.shadow.matrix); } }`;
-
-		}
-		case 'light.shadowBias':
-		case 'light.shadowNormalBias':
-		case 'light.shadowRadius':
-		case 'light.shadowIntensity':
-		case 'light.shadowBlurSamples': {
-
-			rendererHelpers.add( 'lightLookup' );
-			usedWriters.add( 'writeF32' );
-			const idxShadowF = src.lightIndex | 0;
-			const propShadowF = src.property || kind.replace( 'light.shadow', '' ).replace( /^./, ( c ) => c.toLowerCase() );
-			// Default values mirror three.js's LightShadow constructor:
-			//   bias=0, normalBias=0, radius=1, intensity=1, blurSamples=8.
-			let defaultLit = '0';
-			if ( kind === 'light.shadowRadius' || kind === 'light.shadowIntensity' ) defaultLit = '1';
-			else if ( kind === 'light.shadowBlurSamples' ) defaultLit = '8';
-			return `{ const _l = _tslpFindLight(frame.scene, ${ idxShadowF }); if (_l && _l.shadow) writeF32(view, ${ off }, Number.isFinite(_l.shadow.${ propShadowF }) ? _l.shadow.${ propShadowF } : ${ defaultLit }); }`;
-
-		}
-		case 'light.shadowCameraNear':
-		case 'light.shadowCameraFar': {
-
-			rendererHelpers.add( 'lightLookup' );
-			usedWriters.add( 'writeF32' );
-			const idxShadowCamera = src.lightIndex | 0;
-			const propShadowCamera = kind === 'light.shadowCameraNear' ? 'near' : 'far';
-			return `{ const _l = _tslpFindLight(frame.scene, ${ idxShadowCamera }); if (_l && _l.shadow && _l.shadow.camera) writeF32(view, ${ off }, Number.isFinite(_l.shadow.camera.${ propShadowCamera }) ? _l.shadow.camera.${ propShadowCamera } : 0); }`;
-
-		}
-		case 'light.shadowMapSize': {
-
-			rendererHelpers.add( 'lightLookup' );
-			usedWriters.add( 'writeVec2' );
-			const idxShadowV = src.lightIndex | 0;
-			return `{ const _l = _tslpFindLight(frame.scene, ${ idxShadowV }); if (_l && _l.shadow && _l.shadow.mapSize) writeVec2(view, ${ off }, _l.shadow.mapSize); }`;
 
 		}
 

@@ -10,8 +10,8 @@
  *      non-null `lightIndex`. (Anything else means the `ShadowNode` closures
  *      fell back to `uniform.live` and would freeze on replay.)
  *
- *   2. The emitted updater reads `_l.shadow.bias` (etc.) live from the
- *      indexed light at render time — no inlined snapshot literal.
+ *   2. The emitted updater delegates each complete source descriptor to the
+ *      canonical runtime light writer — no inlined snapshot-only behavior.
  *
  *   3. `LightNode.intensity` propagates via the existing `light.colorScaled`
  *      path: changing `light.intensity` between extraction and replay
@@ -281,12 +281,12 @@ test( 'point shadow live: camera near/far → light.shadowCamera* with lightInde
 
 	}
 
-	assert.match( result.source, /_l\.shadow\.camera\.near/ );
-	assert.match( result.source, /_l\.shadow\.camera\.far/ );
+	assert.match( result.source, /"light\.shadowCameraNear"/ );
+	assert.match( result.source, /"light\.shadowCameraFar"/ );
 
 } );
 
-test( 'shadow live: emitted updater reads _l.shadow.<prop> at render time', async () => {
+test( 'shadow live: emitted updater delegates full shadow sources at render time', async () => {
 
 	const result = await captureWithDirectionalLight();
 
@@ -294,14 +294,12 @@ test( 'shadow live: emitted updater reads _l.shadow.<prop> at render time', asyn
 	// property dynamically — no inlined `0.0042` etc. literals. (blurSamples
 	// is VSM-only and not exercised by this fixture; covered separately by
 	// the synthetic-plan test in uniform-kinds.test.js.)
-	assert.match( result.source, /_l\.shadow\.bias/ );
-	assert.match( result.source, /_l\.shadow\.normalBias/ );
-	assert.match( result.source, /_l\.shadow\.radius/ );
-	assert.match( result.source, /_l\.shadow\.intensity/ );
-	assert.match( result.source, /_l\.shadow\.mapSize/ );
-
-	// Light-cache lookup must be present.
-	assert.match( result.source, /_tslpFindLight\(frame\.scene/ );
+	assert.match( result.source, /"kind":"light\.shadowBias"/ );
+	assert.match( result.source, /"kind":"light\.shadowNormalBias"/ );
+	assert.match( result.source, /"kind":"light\.shadowRadius"/ );
+	assert.match( result.source, /"kind":"light\.shadowIntensity"/ );
+	assert.match( result.source, /"kind":"light\.shadowMapSize"/ );
+	assert.match( result.source, /writeGeneratedLightValue as _tslpWriteLightValue/ );
 
 } );
 

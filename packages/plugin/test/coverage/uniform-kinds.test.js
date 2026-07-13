@@ -32,16 +32,15 @@ test( 'cell: uniform.live vec3 → reads property', () => {
 
 } );
 
-test( 'cell: light.shadowBias → reads _l.shadow.bias from indexed light', () => {
+test( 'cell: light.shadowBias → delegates its full source to the canonical writer', () => {
 
-	const r = generateForPlan( { groups: [ { slots: [ { byteOffset: 16, source: { kind: 'light.shadowBias', property: 'bias', lightIndex: 0 } } ] } ] } );
-	assertGenerates( r, '_l.shadow.bias' );
-	assertGenerates( r, '_tslpFindLight(frame.scene, 0)' );
-	assertGenerates( r, 'writeF32(view, byteOffset + 16,' );
+	const r = generateForPlan( { groups: [ { slots: [ { byteOffset: 16, source: { kind: 'light.shadowBias', property: 'bias', lightIndex: 0, lightUuid: 'capture-a' } } ] } ] } );
+	assertGenerates( r, '"kind":"light.shadowBias","property":"bias","lightIndex":0,"lightUuid":"capture-a"' );
+	assertGenerates( r, '_tslpWriteLightValue(view, byteOffset + 16, "light.shadowBias", __lightSource0, frame)' );
 
 } );
 
-test( 'cell: light.shadowNormalBias / Radius / Intensity / BlurSamples → all writeF32', () => {
+test( 'cell: light.shadow scalar families → all delegate to the canonical writer', () => {
 
 	const r = generateForPlan( { groups: [ { slots: [
 		{ byteOffset: 0, source: { kind: 'light.shadowNormalBias', property: 'normalBias', lightIndex: 1 } },
@@ -51,29 +50,25 @@ test( 'cell: light.shadowNormalBias / Radius / Intensity / BlurSamples → all w
 		{ byteOffset: 16, source: { kind: 'light.shadowCameraNear', property: 'camera.near', lightIndex: 1 } },
 		{ byteOffset: 20, source: { kind: 'light.shadowCameraFar', property: 'camera.far', lightIndex: 1 } },
 	] } ] } );
-	assertGenerates( r, '_l.shadow.normalBias' );
-	assertGenerates( r, '_l.shadow.radius' );
-	assertGenerates( r, '_l.shadow.intensity' );
-	assertGenerates( r, '_l.shadow.blurSamples' );
-	assertGenerates( r, '_l.shadow.camera.near' );
-	assertGenerates( r, '_l.shadow.camera.far' );
-	assertGenerates( r, '_tslpFindLight(frame.scene, 1)' );
+	assertGenerates( r, '"light.shadowNormalBias", __lightSource0, frame' );
+	assertGenerates( r, '"light.shadowRadius", __lightSource1, frame' );
+	assertGenerates( r, '"light.shadowIntensity", __lightSource2, frame' );
+	assertGenerates( r, '"light.shadowBlurSamples", __lightSource3, frame' );
+	assertGenerates( r, '"light.shadowCameraNear", __lightSource4, frame' );
+	assertGenerates( r, '"light.shadowCameraFar", __lightSource5, frame' );
 
 } );
 
-test( 'cell: light.shadowMapSize → writeVec2 from _l.shadow.mapSize', () => {
+test( 'cell: light.shadowMapSize → delegates to the canonical writer', () => {
 
 	const r = generateForPlan( { groups: [ { slots: [ { byteOffset: 32, source: { kind: 'light.shadowMapSize', property: 'mapSize', lightIndex: 2 } } ] } ] } );
-	assertGenerates( r, '_l.shadow.mapSize' );
-	assertGenerates( r, 'writeVec2(view, byteOffset + 32, _l.shadow.mapSize)' );
+	assertGenerates( r, '_tslpWriteLightValue(view, byteOffset + 32, "light.shadowMapSize", __lightSource0, frame)' );
 
 } );
 
-test( 'cell: light.shadowMatrix → writeMat4 from _l.shadow.matrix', () => {
+test( 'cell: light.shadowMatrix → delegates to the canonical writer', () => {
 
 	const r = generateForPlan( { groups: [ { slots: [ { byteOffset: 64, source: { kind: 'light.shadowMatrix', property: 'matrix', lightIndex: 3 } } ] } ] } );
-	assertGenerates( r, '_l.shadow.matrix' );
-	assertGenerates( r, '_tslpFindLight(frame.scene, 3)' );
-	assertGenerates( r, 'writeMat4(view, byteOffset + 64, _l.shadow.matrix)' );
+	assertGenerates( r, '_tslpWriteLightValue(view, byteOffset + 64, "light.shadowMatrix", __lightSource0, frame)' );
 
 } );

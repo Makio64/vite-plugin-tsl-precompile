@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
 	BLOCKED_KINDS,
 	KINDS,
+	LIGHT_SLOT_KINDS,
 	RUNTIME_BINDING_KINDS,
 	blockedKindReason,
 	isBlockedKind,
@@ -36,6 +37,18 @@ test( 'contract kind registry recognises codegen and runtime texture kinds', () 
 	assert.ok( isBlockedKind( 'builtin.dfgLUT' ) );
 	assert.match( blockedKindReason( 'builtin.dfgLUT' ), /DFG LUT/ );
 	assert.equal( isKnownKind( 'totally.new.kind' ), false );
+
+} );
+
+test( 'contract owns the canonical generated light slot vocabulary', () => {
+
+	assert.ok( LIGHT_SLOT_KINDS.length > 0 );
+	for ( const kind of LIGHT_SLOT_KINDS ) {
+
+		assert.ok( kind.startsWith( 'light.' ) );
+		assert.ok( KINDS[ kind ], `${ kind } missing from KINDS` );
+
+	}
 
 } );
 

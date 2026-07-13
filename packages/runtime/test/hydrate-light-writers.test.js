@@ -85,6 +85,34 @@ test( 'getSceneLights sorts traversal results by numeric light id', () => {
 
 } );
 
+test( 'getSceneLights prefers the renderer active-light list over scene traversal', () => {
+
+	const inactive = fakeLight( { id: 1 } );
+	const activeB = fakeLight( { id: 8 } );
+	const activeA = fakeLight( { id: 3 } );
+	const scene = fakeScene( [ inactive, activeA, activeB ] );
+	const frame = { lightsNode: { getLights: () => [ activeA, activeB ] } };
+	assert.deepEqual( getSceneLights( scene, frame ), [ activeA, activeB ] );
+	assert.equal( findLightBySource( scene, { lightIndex: 0 }, frame ), activeA );
+
+} );
+
+test( 'getSceneLights fallback excludes invisible and camera-layer-mismatched lights', () => {
+
+	const visible = fakeLight( { id: 7 } );
+	visible.visible = true;
+	visible.layers = { mask: 1, test: ( cameraLayers ) => ( cameraLayers.mask & 1 ) !== 0 };
+	const hidden = fakeLight( { id: 2 } );
+	hidden.visible = false;
+	const otherLayer = fakeLight( { id: 3 } );
+	otherLayer.visible = true;
+	otherLayer.layers = { mask: 2, test: ( cameraLayers ) => ( cameraLayers.mask & 2 ) !== 0 };
+	const scene = fakeScene( [ hidden, otherLayer, visible ] );
+	const frame = { frameId: 1, camera: { layers: { mask: 1 } } };
+	assert.deepEqual( getSceneLights( scene, frame ), [ visible ] );
+
+} );
+
 test( 'findLightInScene returns the indexed light', () => {
 
 	const lights = [ fakeLight(), fakeLight() ];
@@ -243,6 +271,15 @@ test( 'writeLightValue: light.shadowMapSize writes vec2', () => {
 	writeLightValue( view, 0, 'light.shadowMapSize', { kind: 'light.shadowMapSize', lightUuid: 'a' }, { scene } );
 	assert.equal( view.getFloat32( 0, true ), 1024 );
 	assert.equal( view.getFloat32( 4, true ), 512 );
+
+} );
+
+test( 'writeLightValue: light.shadowBlurSamples writes the live shadow scalar', () => {
+
+	const view = makeView();
+	const light = fakeLight( { uuid: 'a', shadow: { blurSamples: 13 } } );
+	writeLightValue( view, 0, 'light.shadowBlurSamples', { kind: 'light.shadowBlurSamples', lightUuid: 'a' }, { scene: fakeScene( [ light ] ) } );
+	assert.equal( view.getFloat32( 0, true ), 13 );
 
 } );
 

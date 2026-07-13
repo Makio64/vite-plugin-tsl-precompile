@@ -24,6 +24,10 @@
       "types": "./types/writers.d.ts",
       "default": "./src/writers.js"
     },
+    "./generated/light-writer": {
+      "types": "./types/generated/light-writer.d.ts",
+      "default": "./src/generated/light-writer.js"
+    },
     "./marker": {
       "types": "./types/precompile-marker.d.ts",
       "default": "./src/precompile-marker.js"
