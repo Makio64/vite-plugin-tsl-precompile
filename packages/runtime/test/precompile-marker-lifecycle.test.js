@@ -6,7 +6,37 @@ import {
 	setDevRenderer,
 	clearDevRenderer,
 	__resetForTests,
+	__createCaptureObjectForTests,
 } from '../src/precompile-marker.js';
+
+test( 'capture clones retain BatchedMesh runtime textures', () => {
+
+	class Mesh {}
+	class BoxGeometry {}
+	const matricesTexture = { name: 'matrices' };
+	const colorsTexture = { name: 'colors' };
+	const cloned = { children: [ {} ], parent: {} };
+	const source = {
+		material: {},
+		_matricesTexture: matricesTexture,
+		_colorsTexture: colorsTexture,
+		count: 512,
+		clone() {
+
+			return cloned;
+
+		},
+	};
+	const captureObject = __createCaptureObjectForTests( Mesh, BoxGeometry, source, {} );
+
+	assert.equal( captureObject, cloned );
+	assert.equal( captureObject._matricesTexture, matricesTexture );
+	assert.equal( captureObject._colorsTexture, colorsTexture );
+	assert.equal( captureObject.count, 512 );
+	assert.deepEqual( captureObject.children, [] );
+	assert.equal( captureObject.parent, null );
+
+} );
 
 function makeThree( prefix = 'fixture' ) {
 

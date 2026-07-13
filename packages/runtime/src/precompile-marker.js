@@ -1574,6 +1574,7 @@ function createCaptureObject( Mesh, BoxGeometry, sourceObject, material ) {
 				cloned.parent = null;
 				if ( Array.isArray( cloned.children ) && cloned.children.length > 0 ) cloned.children.length = 0;
 				cloned.material = Array.isArray( sourceObject.material ) ? sourceObject.material : material;
+				mirrorCaptureObjectRuntimeProperties( cloned, sourceObject );
 				return cloned;
 
 			}
@@ -1599,18 +1600,24 @@ function createCaptureObject( Mesh, BoxGeometry, sourceObject, material ) {
 			if ( sourceObject[ key ] === true ) fallback[ key ] = true;
 
 		}
-		for ( const key of [
-			'skeleton', 'bindMatrix', 'bindMatrixInverse', 'instanceMatrix',
-			'instanceColor', 'morphTargetInfluences', 'morphTargetDictionary',
-			'_matricesTexture', '_colorsTexture', 'count',
-		] ) {
-
-			if ( sourceObject[ key ] !== undefined ) fallback[ key ] = sourceObject[ key ];
-
-		}
+		mirrorCaptureObjectRuntimeProperties( fallback, sourceObject );
 
 	}
 	return fallback;
+
+}
+
+function mirrorCaptureObjectRuntimeProperties( target, sourceObject ) {
+
+	for ( const key of [
+		'skeleton', 'bindMatrix', 'bindMatrixInverse', 'instanceMatrix',
+		'instanceColor', 'morphTargetInfluences', 'morphTargetDictionary',
+		'_matricesTexture', '_colorsTexture', 'count',
+	] ) {
+
+		if ( sourceObject[ key ] !== undefined ) target[ key ] = sourceObject[ key ];
+
+	}
 
 }
 
@@ -1657,5 +1664,11 @@ export function __resetForTests() {
 export function __cloneLightsIntoForTests( sourceScene, destScene ) {
 
 	return cloneLightsInto( sourceScene, destScene );
+
+}
+
+export function __createCaptureObjectForTests( Mesh, BoxGeometry, sourceObject, material ) {
+
+	return createCaptureObject( Mesh, BoxGeometry, sourceObject, material );
 
 }
