@@ -130,6 +130,30 @@ const webglFallbackStub = {
 };
 
 /**
+ * Sever Three's runtime PMREM compiler path from the slim bundle.
+ *
+ * PMREMGenerator constructs four internal NodeMaterials and compiles them on
+ * demand. A precompiled-only renderer cannot execute that path; real users
+ * run PMREM on the lazily loaded full renderer through slim-support. Keep a
+ * small API-compatible shell so application wrappers can still construct or
+ * subclass PMREMGenerator, while removing the unreachable materials/compiler
+ * subtree from the shipped bundle. Must run before nodeResolve.
+ */
+const pmremGeneratorStub = {
+	name: 'tsl-precompile:stub-pmrem-generator',
+	resolveId( id ) {
+
+		if ( /renderers\/common\/extras\/PMREMGenerator\.js$/.test( id ) ) {
+
+			return resolve( __dirname, 'src/slim-stub-pmrem-generator.js' );
+
+		}
+		return null;
+
+	},
+};
+
+/**
  * Redirect bare `three` imports to three's tree-shakeable source barrel.
  *
  * Several runtime modules (`hydrate/*.js`, `precompiled-compute-node.js`)
@@ -216,6 +240,7 @@ export default {
 		runtimeAliasPlugin,
 		auxVirtualStub,
 		webglFallbackStub,
+		pmremGeneratorStub,
 		threeBareAlias,
 		nodeResolve( {
 			browser: true,
