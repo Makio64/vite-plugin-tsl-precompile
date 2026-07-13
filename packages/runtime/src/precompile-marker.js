@@ -1575,6 +1575,7 @@ function createCaptureObject( Mesh, BoxGeometry, sourceObject, material ) {
 				if ( Array.isArray( cloned.children ) && cloned.children.length > 0 ) cloned.children.length = 0;
 				cloned.material = Array.isArray( sourceObject.material ) ? sourceObject.material : material;
 				mirrorCaptureObjectRuntimeProperties( cloned, sourceObject );
+				normalizeDetachedVisualHelper( cloned, sourceObject, Mesh );
 				return cloned;
 
 			}
@@ -1604,6 +1605,15 @@ function createCaptureObject( Mesh, BoxGeometry, sourceObject, material ) {
 
 	}
 	return fallback;
+
+}
+
+function normalizeDetachedVisualHelper( target, sourceObject, Mesh ) {
+
+	const helperType = sourceObject && ( sourceObject.type || sourceObject.constructor && sourceObject.constructor.name ) || '';
+	if ( sourceObject && sourceObject.isHelper !== true && ! /Helper$/.test( helperType ) ) return;
+	const baseUpdateMatrixWorld = Mesh && Mesh.prototype && Mesh.prototype.updateMatrixWorld;
+	if ( typeof baseUpdateMatrixWorld === 'function' ) target.updateMatrixWorld = baseUpdateMatrixWorld;
 
 }
 

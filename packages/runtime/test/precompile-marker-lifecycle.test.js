@@ -38,6 +38,44 @@ test( 'capture clones retain BatchedMesh runtime textures', () => {
 
 } );
 
+test( 'detached helper capture clones use the base matrix updater', () => {
+
+	class Mesh {
+
+		updateMatrixWorld() {
+
+			this.baseUpdaterCalled = true;
+
+		}
+
+	}
+	class BoxGeometry {}
+	const cloned = {
+		children: [ { material: {} } ],
+		updateMatrixWorld() {
+
+			this.children[ 0 ].material.needsUpdate = true;
+
+		},
+	};
+	const source = {
+		isHelper: true,
+		type: 'RectAreaLightHelper',
+		material: {},
+		clone() {
+
+			return cloned;
+
+		},
+	};
+	const captureObject = __createCaptureObjectForTests( Mesh, BoxGeometry, source, {} );
+
+	assert.doesNotThrow( () => captureObject.updateMatrixWorld() );
+	assert.equal( captureObject.baseUpdaterCalled, true );
+	assert.deepEqual( captureObject.children, [] );
+
+} );
+
 function makeThree( prefix = 'fixture' ) {
 
 	let nextUuid = 1;
