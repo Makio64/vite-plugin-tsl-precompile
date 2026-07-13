@@ -9,20 +9,14 @@
 import { DepthTexture } from 'three/src/textures/DepthTexture.js';
 import { FramebufferTexture } from 'three/src/textures/FramebufferTexture.js';
 import { LinearMipmapLinearFilter } from 'three/src/constants.js';
+import { Vector2 } from 'three/src/math/Vector2.js';
 
-const size = {
-	x: 0,
-	y: 0,
-	width: 0,
-	height: 0,
-	set( width, height ) {
-
-		this.x = this.width = width;
-		this.y = this.height = height;
-		return this;
-
-	},
-};
+// Renderer.getDrawingBufferSize() accepts a Vector2, not merely a structural
+// `{ set() }` target. CanvasTarget chains `.set(...).floor()`, which surfaced
+// when viewport transmission copied the default framebuffer during MaterialX
+// replay. Keep the real Three value object so every renderer target can honor
+// the same contract.
+const size = new Vector2();
 
 let sharedDepthTexture = null;
 let sharedFramebufferTexture = null;

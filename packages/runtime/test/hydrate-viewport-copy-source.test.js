@@ -61,6 +61,35 @@ test( 'viewport mip source resizes and enables mipmaps only during the copy', ()
 
 } );
 
+test( 'viewport copy passes a full Vector2 to CanvasTarget drawing-buffer sizing', () => {
+
+	const source = viewportTexture();
+	let copied = null;
+	const canvasTarget = {
+		getDrawingBufferSize( target ) {
+
+			assert.equal( target.isVector2, true );
+			return target.set( 96.75, 48.5 ).floor();
+
+		},
+	};
+	const frame = {
+		renderer: {
+			getRenderTarget: () => null,
+			getCanvasTarget: () => canvasTarget,
+			copyFramebufferToTexture: ( texture ) => { copied = texture; },
+		},
+	};
+
+	source.updateReference( frame );
+	source.updateBefore( frame );
+
+	assert.equal( copied, source.value );
+	assert.equal( copied.image.width, 96 );
+	assert.equal( copied.image.height, 48 );
+
+} );
+
 test( 'viewport depth and shared sources preserve Three resource semantics', () => {
 
 	const depthA = viewportDepthTexture();
