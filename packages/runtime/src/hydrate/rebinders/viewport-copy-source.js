@@ -6,11 +6,9 @@
  * the sampling shader, so replay only needs the copy/resource lifecycle.
  */
 
-import {
-	DepthTexture,
-	FramebufferTexture,
-	LinearMipmapLinearFilter,
-} from 'three';
+import { DepthTexture } from 'three/src/textures/DepthTexture.js';
+import { FramebufferTexture } from 'three/src/textures/FramebufferTexture.js';
+import { LinearMipmapLinearFilter } from 'three/src/constants.js';
 
 const size = {
 	x: 0,

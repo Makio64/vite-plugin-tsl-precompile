@@ -5,7 +5,7 @@
  * `precompiledArtifact` directly, so compute dispatch does not need the TSL
  * ComputeNode / NodeBuilder graph at runtime.
  */
-import { EventDispatcher } from 'three';
+import { EventDispatcher } from 'three/src/core/EventDispatcher.js';
 
 export class PrecompiledComputeNode extends EventDispatcher {
 

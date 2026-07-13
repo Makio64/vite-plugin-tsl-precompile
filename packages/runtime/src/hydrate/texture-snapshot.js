@@ -1,7 +1,7 @@
+import { DataArrayTexture } from 'three/src/textures/DataArrayTexture.js';
+import { Data3DTexture } from 'three/src/textures/Data3DTexture.js';
+import { DataTexture } from 'three/src/textures/DataTexture.js';
 import {
-	DataArrayTexture,
-	Data3DTexture,
-	DataTexture,
 	LinearFilter,
 	LinearMipmapLinearFilter,
 	LinearMipmapNearestFilter,
@@ -12,7 +12,7 @@ import {
 	RGBAFormat,
 	RGFormat,
 	UnsignedByteType,
-} from 'three';
+} from 'three/src/constants.js';
 
 const RGBFormat = 1022; // Deprecated and removed in modern Three.js
 

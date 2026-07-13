@@ -17,7 +17,10 @@
  * @module hydrate/material-writers
  */
 
-import { Matrix4, Vector2, Vector3, Vector4 } from 'three';
+import { Matrix4 } from 'three/src/math/Matrix4.js';
+import { Vector2 } from 'three/src/math/Vector2.js';
+import { Vector3 } from 'three/src/math/Vector3.js';
+import { Vector4 } from 'three/src/math/Vector4.js';
 import { findShadowMatrixLightForSlot, updateLightShadowMatrixForFrame, writeLightValue } from './light-writers.js';
 import { writeColor, writeInt, writeLiveValue, writeMat3, writeMat4, writeNumber, writeSnapshot, writeUint, writeVec2, writeVec3, writeVec4 } from './snapshot-writers.js';
 import { logicalFrameKey, shouldAdvanceTemporalState } from '../slim-support/temporal-frame.js';

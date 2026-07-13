@@ -16,7 +16,8 @@
  * @module Hydrate.ClippingPlanes
  */
 
-import { Matrix3, Plane } from 'three';
+import { Matrix3 } from 'three/src/math/Matrix3.js';
+import { Plane } from 'three/src/math/Plane.js';
 
 const _clipPlane = new Plane();
 const _clipNormalMatrix = new Matrix3();

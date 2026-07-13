@@ -325,6 +325,17 @@ remaining Node/TSL runtime stays at 92 modules / 396.9 KiB rendered. Explicit
 constructor injection is the model for optional full-runtime compatibility;
 slim internals must not recover broad package namespaces dynamically.
 
+**Direct slim-source import prerequisite (2026-07-13).** The replay closure no
+longer imports the bare `three` barrel for texture constructors, math helpers,
+attributes, constants, or `EventDispatcher`. Those eleven runtime modules now
+reference exact `three/src/**` files, preserving source-module identity and
+allowing a future named-import source entry to tree-shake away `Three.Core`,
+`ObjectLoader`, `BatchedMesh`, and unused geometry exports. A focused policy
+test bans regressions to the bare/Core barrels and imports every path against
+the installed Three version so private filename drift fails in compatibility
+CI. This changes dependency roots only; the guarded source entry and shared
+rewrite policy remain separate stages.
+
 **Replay-native environment/fog topology (2026-07-13).** The final live
 scene-node construction island is removed. `render-selector.js` now exports
 the canonical scene topology descriptor already embedded in signed material

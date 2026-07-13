@@ -30,7 +30,10 @@
  * @module Hydrate.UserAttributes
  */
 
-import { BufferAttribute, InstancedBufferAttribute, InstancedInterleavedBuffer, InterleavedBufferAttribute } from 'three';
+import { BufferAttribute } from 'three/src/core/BufferAttribute.js';
+import { InstancedBufferAttribute } from 'three/src/core/InstancedBufferAttribute.js';
+import { InstancedInterleavedBuffer } from 'three/src/core/InstancedInterleavedBuffer.js';
+import { InterleavedBufferAttribute } from 'three/src/core/InterleavedBufferAttribute.js';
 import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttribute.js';
 import StorageInstancedBufferAttribute from 'three/src/renderers/common/StorageInstancedBufferAttribute.js';
 

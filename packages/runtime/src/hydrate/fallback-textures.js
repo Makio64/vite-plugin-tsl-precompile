@@ -12,21 +12,21 @@
  * @module Hydrate.FallbackTextures
  */
 
+import { CubeDepthTexture } from 'three/src/textures/CubeDepthTexture.js';
+import { CubeTexture } from 'three/src/textures/CubeTexture.js';
+import { Data3DTexture } from 'three/src/textures/Data3DTexture.js';
+import { DataArrayTexture } from 'three/src/textures/DataArrayTexture.js';
+import { DataTexture } from 'three/src/textures/DataTexture.js';
+import { DepthTexture } from 'three/src/textures/DepthTexture.js';
+import { FramebufferTexture } from 'three/src/textures/FramebufferTexture.js';
 import {
-	CubeDepthTexture,
-	CubeTexture,
-	Data3DTexture,
-	DataArrayTexture,
-	DataTexture,
 	DepthFormat,
-	DepthTexture,
-	FramebufferTexture,
 	LessEqualCompare,
 	LinearMipmapLinearFilter,
 	RGBAFormat,
 	UnsignedByteType,
 	UnsignedIntType,
-} from 'three';
+} from 'three/src/constants.js';
 
 import { shaderDeclaresDepthTexture } from './texture-resolver.js';
 

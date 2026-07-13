@@ -22,7 +22,9 @@
  * @module hydrate/light-writers
  */
 
-import { Matrix4, Vector3, WebGPUCoordinateSystem } from 'three';
+import { Matrix4 } from 'three/src/math/Matrix4.js';
+import { Vector3 } from 'three/src/math/Vector3.js';
+import { WebGPUCoordinateSystem } from 'three/src/constants.js';
 import { linkedLightIdentityForSource } from './light-identities.js';
 import { writeMat4, writeNumber, writeSnapshot, writeVec2, writeVec3 } from './snapshot-writers.js';
 

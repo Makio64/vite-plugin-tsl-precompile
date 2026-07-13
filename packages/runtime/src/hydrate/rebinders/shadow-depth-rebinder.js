@@ -1,4 +1,4 @@
-import { GreaterEqualCompare, LessEqualCompare } from 'three';
+import { GreaterEqualCompare, LessEqualCompare } from 'three/src/constants.js';
 
 import { collectLiveMaterialTextures } from '../../apply-precompiled.js';
 import { collectMaterialNodeTextures } from '../material-node-textures.js';

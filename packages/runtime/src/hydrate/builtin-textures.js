@@ -1,11 +1,11 @@
+import { DataTexture } from 'three/src/textures/DataTexture.js';
 import {
 	ClampToEdgeWrapping,
-	DataTexture,
 	HalfFloatType,
 	LinearFilter,
 	NearestFilter,
 	RGBAFormat,
-} from 'three';
+} from 'three/src/constants.js';
 
 import { getDFGLUT } from '../dfg-lut.js';
 
