@@ -22,6 +22,21 @@ For a narrow diagnostic that must not modify canonical evidence, set `TSLP_E2E_O
 TSLP_E2E_OUT=/tmp/tslp-backdrop-canary pnpm --filter examples-batch run:e2e:raw -- --filter=webgpu_backdrop.html --reuse-reference-shot --no-save-shots --report=backdrop.json
 ```
 
+To test a freshly built slim bundle without replacing the checked
+`packages/runtime/build/three.webgpu.slim.js`, pass
+`--slim-bundle=<absolute-or-relative-path>` or set
+`TSLP_E2E_SLIM_BUNDLE` (or the general `TSLP_SLIM_BUNDLE` alias). Both runners
+use the same precedence: CLI, `TSLP_E2E_SLIM_BUNDLE`, `TSLP_SLIM_BUNDLE`, then
+the checked default. `run-slim.mjs` forwards the resolved override to its
+pixel-gate child runs. Relative paths resolve from the harness process working
+directory. Every E2E/slim report records the resolved absolute path and full
+SHA-256; the startup log prints the path and a short hash so visual evidence
+can be tied to the exact bundle bytes.
+
+```sh
+TSLP_E2E_OUT=/tmp/tslp-backdrop-canary pnpm --filter examples-batch run:e2e:raw -- --filter=webgpu_backdrop.html --slim-bundle=/tmp/three.webgpu.slim.js --reuse-reference-shot --no-save-shots
+```
+
 Selector failures in the JSON report include the replay-active selector hash/topology, every captured candidate hash/topology, and ranked field-level differences. Artifact summaries label selectors by root artifact or variant source; exact selection still fails closed when no captured topology matches.
 
 The runner recycles Chromium every two examples by default to avoid long WebGPU process lifetimes. Override with `--max-runs-per-browser=<n>` / `TSLP_E2E_MAX_RUNS_PER_BROWSER` and `TSLP_E2E_BROWSER_RESPAWN_DELAY_MS` only when investigating harness performance or browser behavior. Pass `--verbose` or set `TSLP_E2E_VERBOSE=1` to forward page warnings/logs while debugging harness internals.

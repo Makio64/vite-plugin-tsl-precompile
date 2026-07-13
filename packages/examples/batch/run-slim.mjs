@@ -32,6 +32,7 @@
  *
  *   node packages/examples/batch/run-slim.mjs --three-repo=<path>
  *                                             [--filter=<substr>] [--limit=<n>]
+ *                                             [--slim-bundle=<path>]
  *   node packages/examples/batch/run-slim.mjs --pixel-gate [--port=<base>]
  */
 
@@ -44,18 +45,10 @@ import { readFile, stat } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 
 import { assertThreeAtLeast184 } from './_three-version.mjs';
+import { loadSlimBundle, slimBundleReportProvenance } from './slim-bundle-provenance.mjs';
 
 const SELF = dirname( fileURLToPath( import.meta.url ) );
 const OUT = resolve( SELF, 'results' );
-const SLIM_BUNDLE = resolve( SELF, '../../runtime/build/three.webgpu.slim.js' );
-if ( ! existsSync( OUT ) ) mkdirSync( OUT, { recursive: true } );
-if ( ! existsSync( SLIM_BUNDLE ) ) {
-
-	console.error( `[batch-slim] slim bundle not found: ${ SLIM_BUNDLE }\nRun \`pnpm --filter @tsl-precompile/runtime build:slim\` first.` );
-	process.exit( 2 );
-
-}
-
 const args = process.argv.slice( 2 );
 function getArg( prefix, def ) {
 
@@ -63,6 +56,27 @@ function getArg( prefix, def ) {
 	return a ? a.slice( prefix.length ) : def;
 
 }
+
+const DEFAULT_SLIM_BUNDLE = resolve( SELF, '../../runtime/build/three.webgpu.slim.js' );
+if ( ! existsSync( OUT ) ) mkdirSync( OUT, { recursive: true } );
+let slimBundle;
+try {
+
+	slimBundle = loadSlimBundle( {
+		defaultPath: DEFAULT_SLIM_BUNDLE,
+		args,
+	} );
+
+} catch ( error ) {
+
+	console.error( `[batch-slim] ${ error.message }\nRun \`pnpm --filter @tsl-precompile/runtime build:slim\` first or pass --slim-bundle=<path>.` );
+	process.exit( 2 );
+
+}
+const SLIM_BUNDLE = slimBundle.absolutePath;
+const SLIM_BUNDLE_BYTES = slimBundle.bytes;
+const SLIM_BUNDLE_PROVENANCE = slimBundleReportProvenance( slimBundle );
+console.log( `[batch-slim] slim bundle: ${ SLIM_BUNDLE } (sha256:${ slimBundle.shortSha256 })` );
 
 const threeRepo = resolve( getArg( '--three-repo=', resolve( SELF, '../../../../three.js' ) ) );
 const filter = getArg( '--filter=', '' );
@@ -147,6 +161,7 @@ if ( pixelGate ) {
 		const childArgs = [
 			RUN_E2E,
 			`--three-repo=${ threeRepo }`,
+			`--slim-bundle=${ SLIM_BUNDLE }`,
 			`--filter=${ name }`,
 			`--port=${ childPort }`,
 			'--no-pixel-gate',
@@ -212,7 +227,7 @@ if ( pixelGate ) {
 	const failed = results.filter( ( r ) => r.status !== 'pass' );
 	const passed = results.length - failed.length;
 	const reportPath = join( OUT, 'slim-pixel-gate-report.json' );
-	writeFileSync( reportPath, JSON.stringify( { total: results.length, pass: passed, fail: failed.length, threshold: PIXEL_GATE_BRIGHT_MIN, details: results }, null, 2 ) );
+	writeFileSync( reportPath, JSON.stringify( { total: results.length, pass: passed, fail: failed.length, threshold: PIXEL_GATE_BRIGHT_MIN, slimBundle: SLIM_BUNDLE_PROVENANCE, details: results }, null, 2 ) );
 
 	console.log( '\n═══ pixel-gate summary ═══' );
 	console.log( `  ${ passed } pass, ${ failed.length } fail of ${ results.length } curated examples` );
@@ -297,10 +312,9 @@ const server = createServer( async ( req, res ) => {
 		// Serve the slim bundle at a stable path.
 		if ( url.pathname === SLIM_URL ) {
 
-			const buf = await readFile( SLIM_BUNDLE );
 			res.setHeader( 'access-control-allow-origin', '*' );
 			res.setHeader( 'content-type', 'application/javascript; charset=utf-8' );
-			res.end( buf );
+			res.end( SLIM_BUNDLE_BYTES );
 			return;
 
 		}
@@ -386,7 +400,7 @@ async function runOne( browser, name ) {
 let browser = await chromium.launch( { channel: 'chrome', headless: true, args: BROWSER_ARGS } ).catch( () => null );
 if ( ! browser ) browser = await chromium.launch( { headless: true, args: BROWSER_ARGS } );
 
-const report = { total: candidates.length, pass: 0, fail: 0, skip: allExamples.length - candidates.length, categories: {}, details: [] };
+const report = { total: candidates.length, pass: 0, fail: 0, skip: allExamples.length - candidates.length, slimBundle: SLIM_BUNDLE_PROVENANCE, categories: {}, details: [] };
 let runsSinceRestart = 0;
 
 try {

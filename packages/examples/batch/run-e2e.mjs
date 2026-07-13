@@ -30,6 +30,7 @@
  *   node packages/examples/batch/run-e2e.mjs --filter=ocean --port=8729 --port-retries=20
  *   node packages/examples/batch/run-e2e.mjs --filter=ocean --target-tick=60
  *   node packages/examples/batch/run-e2e.mjs --filter=ocean --timings
+ *   node packages/examples/batch/run-e2e.mjs --filter=ocean --slim-bundle=/tmp/three.webgpu.slim.js
  *   TSLP_E2E_OUT=/tmp/tslp-ocean node packages/examples/batch/run-e2e.mjs --filter=ocean --reuse-reference-shot --no-save-shots
  */
 
@@ -44,6 +45,7 @@ import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS a
 import { assertThreeAtLeast184 } from './_three-version.mjs';
 import { enrichRenderSelectorDiagnostics, resolveE2ERoots, summarizeArtifactRenderSelectors } from './e2e-report-diagnostics.mjs';
 import { captureWaitOverrideForExample, comparePngBuffers, expectedReplayErrorPatternsForExample, pixelGateDisabledReasonForExample, psnrThresholdForExample, tierExamples } from './psnr.mjs';
+import { loadSlimBundle, slimBundleReportProvenance } from './slim-bundle-provenance.mjs';
 
 const SELF = dirname( fileURLToPath( import.meta.url ) );
 const REPO = resolve( SELF, '../../..' );
@@ -59,16 +61,24 @@ const { canonicalRoot: CANONICAL_RESULTS, outputRoot: OUT, inputRoot: INPUT_ROOT
 const RUNTIME_SRC = resolve( REPO, 'packages/runtime/src' );
 const PLUGIN_SRC = resolve( REPO, 'packages/plugin/src' );
 const CONTRACT_SRC = resolve( REPO, 'packages/contract/src' );
-const SLIM_BUNDLE = resolve( REPO, 'packages/runtime/build/three.webgpu.slim.js' );
+const DEFAULT_SLIM_BUNDLE = resolve( REPO, 'packages/runtime/build/three.webgpu.slim.js' );
 const CACHE_BUST = Date.now().toString( 36 );
 
 if ( ! existsSync( OUT ) ) mkdirSync( OUT, { recursive: true } );
-if ( ! existsSync( SLIM_BUNDLE ) ) {
+let slimBundle;
+try {
 
-	console.error( `[batch-e2e] slim bundle not found: ${ SLIM_BUNDLE }\nRun \`pnpm --filter @tsl-precompile/runtime build:slim\` first.` );
+	slimBundle = loadSlimBundle( { defaultPath: DEFAULT_SLIM_BUNDLE, args } );
+
+} catch ( error ) {
+
+	console.error( `[batch-e2e] ${ error.message }\nRun \`pnpm --filter @tsl-precompile/runtime build:slim\` first or pass --slim-bundle=<path>.` );
 	process.exit( 2 );
 
 }
+const SLIM_BUNDLE = slimBundle.absolutePath;
+const SLIM_BUNDLE_SOURCE = slimBundle.bytes.toString( 'utf8' );
+const SLIM_BUNDLE_PROVENANCE = slimBundleReportProvenance( slimBundle );
 
 // The slim bundle bakes in the threeVersion used to produce its hashes at
 // build time (e.g. { threeVersion: "0.184.0", pluginVersion: "0.1.0" }). The
@@ -78,7 +88,7 @@ if ( ! existsSync( SLIM_BUNDLE ) ) {
 // Extract it from the bundle rather than hard-coding it.
 const SLIM_HASH_OPTS = ( () => {
 
-	const src = readFileSync( SLIM_BUNDLE, 'utf8' );
+	const src = SLIM_BUNDLE_SOURCE;
 	const m = src.match( /\{threeVersion:\s*"([^"]+)"[^}]*pluginVersion:\s*"([^"]+)"/ ) ||
 		src.match( /\{pluginVersion:\s*"([^"]+)"[^}]*threeVersion:\s*"([^"]+)"/ );
 	if ( m ) {
@@ -97,6 +107,7 @@ const SLIM_HASH_OPTS = ( () => {
 	process.exit( 2 );
 
 } )();
+console.log( `[batch-e2e] slim bundle: ${ SLIM_BUNDLE } (sha256:${ slimBundle.shortSha256 })` );
 console.log( `[batch-e2e] slim bundle hash opts: threeVersion=${ SLIM_HASH_OPTS.threeVersion } pluginVersion=${ SLIM_HASH_OPTS.pluginVersion }` );
 console.log( `[batch-e2e] evidence input: ${ INPUT_ROOT }` );
 console.log( `[batch-e2e] output root: ${ OUT }${ OUT === CANONICAL_RESULTS ? '' : ' (isolated)' }` );
@@ -306,7 +317,11 @@ const SLIM_REPLAY_DIRECT_EXPORTS = new Set( [
 	'Vector3',
 	'WebGPURenderer',
 ] );
-const SLIM_REPLAY_SLIM_EXPORTS = Object.keys( await import( pathToFileURL( SLIM_BUNDLE ).href ) );
+// A diagnostic bundle can live in /tmp, where a `.js` file has no enclosing
+// `type: module` package. Import the exact hashed bytes as ESM so export
+// discovery is independent of the alternate path's package boundary.
+const SLIM_BUNDLE_MODULE_URL = `data:text/javascript;base64,${ slimBundle.bytes.toString( 'base64' ) }`;
+const SLIM_REPLAY_SLIM_EXPORTS = Object.keys( await import( SLIM_BUNDLE_MODULE_URL ) );
 const SLIM_REPLAY_FULL_EXPORTS = Object.keys( await import( pathToFileURL( join( threeRepo, 'build/three.webgpu.js' ) ).href ) );
 const SLIM_REPLAY_FORWARD_EXPORTS = SLIM_REPLAY_SLIM_EXPORTS
 	.filter( ( name ) => /^[A-Za-z_$][\w$]*$/.test( name ) )
@@ -13934,12 +13949,11 @@ const server = createServer( async ( req, res ) => {
 					return sendJs( res, rewritten );
 
 			}
-				if ( url.pathname === '/__tslp__/three.webgpu.slim.js' ) {
+			if ( url.pathname === '/__tslp__/three.webgpu.slim.js' ) {
 
 				res.setHeader( 'content-type', 'application/javascript; charset=utf-8' );
 				res.setHeader( 'cache-control', 'no-store' );
-				const slimSource = await readFile( SLIM_BUNDLE, 'utf8' );
-				res.end( rewriteSlimDeterministicObjectIds( slimSource ) );
+				res.end( rewriteSlimDeterministicObjectIds( SLIM_BUNDLE_SOURCE ) );
 				return;
 
 		}
@@ -15746,6 +15760,7 @@ const report = {
 	skip: allExamples.length - candidates.length,
 	evidenceInputRoot: INPUT_ROOT,
 	outputRoot: OUT,
+	slimBundle: SLIM_BUNDLE_PROVENANCE,
 	details: [],
 };
 let runsSinceRestart = 0;
