@@ -12,8 +12,8 @@
 		"smokePass": 197,
 		"smokePassRate": 99.5,
 		"pixelMatchCount": 205,
-		"visualMatchCount": 12,
-		"rendersCount": 7,
+		"visualMatchCount": 13,
+		"rendersCount": 6,
 		"captureOnlyCount": 1
 	},
 	"categories": [
@@ -7243,7 +7243,7 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 17.04,
+				"psnr": 17.58,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
@@ -7268,7 +7268,7 @@
 			],
 			"notes": "",
 			"thumbHealth": "ok",
-			"badge": "renders"
+			"badge": "visual-match"
 		},
 		{
 			"basename": "webgpu_compute_particles_rain",

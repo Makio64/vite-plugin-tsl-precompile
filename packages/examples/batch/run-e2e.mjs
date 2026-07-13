@@ -13475,6 +13475,7 @@ function tslStubModule() {
 	const consts = unique
 		.filter( ( name ) => name !== 'reflector' )
 		.filter( ( name ) => name !== 'builtinAOContext' )
+		.filter( ( name ) => name !== 'builtinShadowContext' )
 		.filter( ( name ) => name !== 'renderOutput' )
 		.filter( ( name ) => name !== 'texture' )
 		.filter( ( name ) => name !== 'texture3D' )
@@ -13502,6 +13503,17 @@ const __tslpRealBuiltinAOContext = __TSL[ 'builtinAOContext' ];
 const builtinAOContext = ( aoNode, node = null ) => {
 	const contextNode = __tslpRealBuiltinAOContext( aoNode, node );
 	try { Object.defineProperty( contextNode, '__tslpAOInputNode', { value: aoNode, configurable: true } ); } catch ( _ ) {}
+	return contextNode;
+};
+`
+		: '';
+	const builtinShadowContextShim = unique.includes( 'builtinShadowContext' )
+		? `
+const __tslpRealBuiltinShadowContext = __TSL[ 'builtinShadowContext' ];
+const builtinShadowContext = ( shadowNode, light, node = null ) => {
+	const contextNode = __tslpRealBuiltinShadowContext( shadowNode, light, node );
+	try { Object.defineProperty( contextNode, '__tslpShadowInputNode', { value: shadowNode, configurable: true, enumerable: true } ); } catch ( _ ) {}
+	try { Object.defineProperty( contextNode, '__tslpShadowLight', { value: light, configurable: true } ); } catch ( _ ) {}
 	return contextNode;
 };
 `
@@ -13538,6 +13550,7 @@ import { PassNode as __ReplayPassNode, registerLiveTexture as __tslpRegisterLive
 ${ consts }
 ${ reflectorShim }
 ${ builtinAOContextShim }
+${ builtinShadowContextShim }
 ${ renderOutputShim }
 const __tslpRememberTextureArg = ( value ) => {
 	if ( ! value || value.isTexture !== true ) return;
