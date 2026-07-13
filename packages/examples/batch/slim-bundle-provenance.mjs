@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { parseSlimBundleStamp } from '@tsl-precompile/contract/slim-bundle-provenance-node';
 
 function argumentValue( args, prefix ) {
 
@@ -70,6 +71,18 @@ export function slimBundleReportProvenance( bundle ) {
 	return {
 		absolutePath: bundle.absolutePath,
 		sha256: bundle.sha256,
+	};
+
+}
+
+/** Read artifact hash-domain versions from the bundle's signed build stamp. */
+export function slimBundleHashOptions( bundle ) {
+
+	if ( ! bundle || ! bundle.bytes ) throw new TypeError( 'A loaded slim bundle is required.' );
+	const stamp = parseSlimBundleStamp( bundle.bytes );
+	return {
+		threeVersion: stamp.versions.three,
+		pluginVersion: stamp.versions.artifactToolchain,
 	};
 
 }

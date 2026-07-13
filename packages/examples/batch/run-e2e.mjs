@@ -47,7 +47,7 @@ import { installRenderSelectorMismatchRecorder } from './e2e-render-selector-rec
 import { enrichRenderSelectorDiagnostics, resolveE2ERoots, summarizeArtifactRenderSelectors } from './e2e-report-diagnostics.mjs';
 import { installAnimationLoopSettleTransition, minimumRenderableObjectsForExample } from './e2e-settle-policy.mjs';
 import { captureWaitOverrideForExample, comparePngBuffers, expectedReplayErrorPatternsForExample, pixelGateDisabledReasonForExample, psnrThresholdForExample, tierExamples } from './psnr.mjs';
-import { loadSlimBundle, slimBundleReportProvenance } from './slim-bundle-provenance.mjs';
+import { loadSlimBundle, slimBundleHashOptions, slimBundleReportProvenance } from './slim-bundle-provenance.mjs';
 
 const SELF = dirname( fileURLToPath( import.meta.url ) );
 const REPO = resolve( SELF, '../../..' );
@@ -82,31 +82,24 @@ const SLIM_BUNDLE = slimBundle.absolutePath;
 const SLIM_BUNDLE_SOURCE = slimBundle.bytes.toString( 'utf8' );
 const SLIM_BUNDLE_PROVENANCE = slimBundleReportProvenance( slimBundle );
 
-// The slim bundle bakes in the threeVersion used to produce its hashes at
-// build time (e.g. { threeVersion: "0.184.0", pluginVersion: "0.1.0" }). The
-// capture pass must use the SAME threeVersion so that
+// The capture pass must use the same versions that stamped the slim bundle so
+// that
 // hashPlainConfigSync(config, { shape, threeVersion, pluginVersion }) produces
 // matching configHashes for render-output, background, etc. artifacts.
-// Extract it from the bundle rather than hard-coding it.
+// Read the authoritative provenance stamp rather than depending on incidental
+// unminified runtime object literals surviving tree-shaking.
 const SLIM_HASH_OPTS = ( () => {
 
-	const src = SLIM_BUNDLE_SOURCE;
-	const m = src.match( /\{threeVersion:\s*"([^"]+)"[^}]*pluginVersion:\s*"([^"]+)"/ ) ||
-		src.match( /\{pluginVersion:\s*"([^"]+)"[^}]*threeVersion:\s*"([^"]+)"/ );
-	if ( m ) {
+	try {
 
-		// First pattern: threeVersion first
-		if ( src.match( /\{threeVersion:\s*"([^"]+)"/ ) ) {
+		return slimBundleHashOptions( slimBundle );
 
-			return { threeVersion: m[ 1 ], pluginVersion: m[ 2 ] };
+	} catch ( error ) {
 
-		}
-		// Second pattern: pluginVersion first
-		return { threeVersion: m[ 2 ], pluginVersion: m[ 1 ] };
+		console.error( `[batch-e2e] could not read hash-domain versions from slim bundle ${ SLIM_BUNDLE }: ${ error && error.message || error }. Rebuild it with \`pnpm --filter @tsl-precompile/runtime build:slim\`.` );
+		process.exit( 2 );
 
 	}
-	console.error( `[batch-e2e] could not extract threeVersion from slim bundle ${ SLIM_BUNDLE }. Rebuild it with \`pnpm --filter @tsl-precompile/runtime build:slim\`.` );
-	process.exit( 2 );
 
 } )();
 console.log( `[batch-e2e] slim bundle: ${ SLIM_BUNDLE } (sha256:${ slimBundle.shortSha256 })` );

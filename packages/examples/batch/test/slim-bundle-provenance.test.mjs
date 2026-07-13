@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { loadSlimBundle, slimBundleReportProvenance } from '../slim-bundle-provenance.mjs';
+import { formatSlimBundleStamp } from '@tsl-precompile/contract/slim-bundle-provenance-node';
+import { loadSlimBundle, slimBundleHashOptions, slimBundleReportProvenance } from '../slim-bundle-provenance.mjs';
 
 function fixture() {
 
@@ -79,6 +80,31 @@ test( 'bundle validation rejects missing paths and directories at startup', () =
 	assert.throws(
 		() => loadSlimBundle( { defaultPath: '.', env: {}, cwd: root } ),
 		/Slim bundle path is not a file:/,
+	);
+
+} );
+
+test( 'hash options come from the authoritative minification-safe bundle stamp', () => {
+
+	const root = fixture();
+	const stamp = formatSlimBundleStamp( {
+		sourceFingerprint: 'a'.repeat( 64 ),
+		versions: {
+			three: '0.184.0',
+			policy: 'slim-three-policy@7',
+			artifactToolchain: '0.1.0',
+			buildToolchain: 'tslp-slim-rollup@1',
+		},
+	} );
+	writeFileSync( join( root, 'stamped.js' ), `${ stamp }\nconst a={};` );
+	const bundle = loadSlimBundle( { defaultPath: 'stamped.js', env: {}, cwd: root } );
+	assert.deepEqual( slimBundleHashOptions( bundle ), {
+		threeVersion: '0.184.0',
+		pluginVersion: '0.1.0',
+	} );
+	assert.throws(
+		() => slimBundleHashOptions( { bytes: Buffer.from( 'const threeVersion = "0.184.0";' ) } ),
+		/does not begin with its required embedded provenance stamp/,
 	);
 
 } );
