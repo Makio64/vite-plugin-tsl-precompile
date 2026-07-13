@@ -239,6 +239,8 @@ export interface HydrateVariantSelection {
 	cacheKey?: number | string | null;
 	/** Active Three RenderObject used to derive a stable render-topology selector. */
 	renderObject?: unknown;
+	/** Exact pre-override material that owns signed shadow-caster bindings. */
+	bindingMaterial?: unknown;
 	/** Precomputed canonical selector for non-Three integrations and tests. */
 	renderContextSelector?: string | null;
 	/** Renderer-owned auxiliary topology profile. */

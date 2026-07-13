@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import ReplayNodeManager from '../src/slim-replay-node-manager.js';
 import ReplayNodeFrame from '../src/slim-replay-node-frame.js';
+import PrecompiledMaterial from '../src/_vendor-PrecompiledMaterial.js';
+import { createReplayShadowMaterial } from '../src/slim-replay-shadow-material.js';
 import { setSlimRenderFallback } from '../src/slim-support/render-fallback-registry.js';
 import { createRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
 
@@ -190,6 +192,82 @@ test( 'replay NodeManager applies the shadow-depth selector profile from artifac
 
 	const manager = new ReplayNodeManager( sourceRenderer, sourceRenderer.backend );
 	assert.doesNotThrow( () => manager.getForRender( live ) );
+
+} );
+
+test( 'replay NodeManager isolates shared shadow replay state by exact caster identity', () => {
+
+	const renderer = fakeRenderer();
+	const signed = artifact( { materialShape: 'shadow-depth', bindingOwner: 'shadow-caster' } );
+	const shadowMaterial = material( signed );
+	shadowMaterial.isShadowPassMaterial = true;
+	const casterA = { map: null, alphaMap: null, alphaTest: 0 };
+	const casterB = { map: null, alphaMap: null, alphaTest: 0 };
+	const firstA = renderObject( renderer, shadowMaterial, { object: { material: casterA } } );
+	const secondA = renderObject( renderer, shadowMaterial, { object: { material: casterA } } );
+	const firstB = renderObject( renderer, shadowMaterial, { object: { material: casterB } } );
+	const manager = new ReplayNodeManager( renderer, renderer.backend );
+	const stateA = manager.getForRender( firstA );
+	assert.equal( manager.getForRender( secondA ), stateA, 'the same caster shares hydrated shadow state' );
+	assert.notEqual( manager.getForRender( firstB ), stateA, 'same-topology caster instances cannot alias live binding state' );
+
+} );
+
+test( 'replay NodeManager does not reuse hydration after a material cache-key invalidation', () => {
+
+	const renderer = fakeRenderer();
+	const sourceMaterial = material();
+	const manager = new ReplayNodeManager( renderer, renderer.backend );
+	const first = renderObject( renderer, sourceMaterial );
+	const firstState = manager.getForRender( first );
+	const second = renderObject( renderer, sourceMaterial, { initialCacheKey: 43 } );
+	assert.notEqual( manager.getForRender( second ), firstState );
+
+} );
+
+test( 'shadow topology invalidation reselects a signed artifact variant for the same caster overlay', () => {
+
+	const renderer = fakeRenderer();
+	const family = artifact( {
+		cacheKey: 'without-map',
+		materialShape: 'shadow-depth',
+		bindingOwner: 'shadow-caster',
+		fragmentShader: 'fragment-without-map',
+	} );
+	const base = new PrecompiledMaterial( family );
+	base.isShadowPassMaterial = true;
+	const caster = { version: 0, map: null, alphaMap: null, alphaTest: 0 };
+	const overlay = createReplayShadowMaterial( base, caster );
+	const makeRenderObject = ( initialCacheKey ) => renderObject( renderer, overlay, {
+		initialCacheKey,
+		object: { material: caster },
+	} );
+	const withoutMapSelector = createRenderObjectContextSelector( makeRenderObject( 100 ), renderer );
+	const map = { isTexture: true, mapping: 300, magFilter: 1006, minFilter: 1008, wrapS: 1001, wrapT: 1001 };
+	caster.map = map;
+	createReplayShadowMaterial( base, caster );
+	const withMapSelector = createRenderObjectContextSelector( makeRenderObject( 101 ), renderer );
+	family.renderContextSelectors = [ withoutMapSelector ];
+	family.variants = {
+		'with-map': artifact( {
+			cacheKey: 'with-map',
+			materialShape: 'shadow-depth',
+			bindingOwner: 'shadow-caster',
+			fragmentShader: 'fragment-with-map',
+			renderContextSelectors: [ withMapSelector ],
+		} ),
+	};
+
+	const manager = new ReplayNodeManager( renderer, renderer.backend );
+	caster.map = null;
+	createReplayShadowMaterial( base, caster );
+	const withoutMapState = manager.getForRender( makeRenderObject( 102 ) );
+	assert.equal( withoutMapState.fragmentShader, 'fragment-without-map' );
+	caster.map = map;
+	createReplayShadowMaterial( base, caster );
+	const withMapState = manager.getForRender( makeRenderObject( 103 ) );
+	assert.equal( withMapState.fragmentShader, 'fragment-with-map' );
+	assert.notEqual( withMapState, withoutMapState );
 
 } );
 

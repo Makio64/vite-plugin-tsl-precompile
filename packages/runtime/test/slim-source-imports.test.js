@@ -9,11 +9,13 @@ const SLIM_REPLAY_SOURCE_CLOSURE = [
 	'../src/hydrate/dynamic-light-buffers.js',
 	'../src/hydrate/fallback-textures.js',
 	'../src/hydrate/light-writers.js',
+	'../src/hydrate/material-binding-owner.js',
 	'../src/hydrate/material-writers.js',
 	'../src/hydrate/rebinders/shadow-depth-rebinder.js',
 	'../src/hydrate/rebinders/viewport-copy-source.js',
 	'../src/hydrate/texture-snapshot.js',
 	'../src/hydrate/user-attributes.js',
+	'../src/slim-replay-shadow-material.js',
 ];
 
 const BARE_THREE_IMPORT_RE = /(?:\bfrom\s+|^\s*import\s+|\bimport\s*\(\s*)['"]three['"]/m;

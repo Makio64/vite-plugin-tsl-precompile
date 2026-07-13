@@ -27,6 +27,7 @@ import { dispatchTextureBinding } from './hydrate/artifact-texture-resolver.js';
 import { linkArtifactLightIdentities } from './hydrate/light-identities.js';
 import { findLightBySource, lightDiagnosticShape, recordShadowBindingDiagnostic } from './hydrate/light-writers.js';
 import { writeUniformGroup } from './hydrate/material-writers.js';
+import { artifactRequiresShadowCasterBinding, createMaterialBindingOwnerContext } from './hydrate/material-binding-owner.js';
 import { writeLiveValue, writeSnapshot } from './hydrate/snapshot-writers.js';
 import { installLiveTextureRegistryPatches } from './hydrate/live-texture-registry.js';
 import { createRuntimeBindingFromKind } from './hydrate/kinds/runtime-binding-dispatcher.js';
@@ -39,10 +40,11 @@ import { resolveTypedArrayCtor } from './hydrate/typed-arrays.js';
 import { inferTextureTypeFromShader, shaderDeclaresDepthTexture } from './hydrate/texture-resolver.js';
 import { textureBindingFallbacks, makeViewportFallback } from './hydrate/fallback-textures.js';
 import { clippingPlaneSetsForFrame, selectClippingPlaneArray } from './hydrate/clipping-planes.js';
-import { applyCapturedInstancedDrawCount, bindUserNodeAttributesToArtifact, bindUserStorageBuffersToArtifact, hydrateNodeAttributes } from './hydrate/user-attributes.js';
+import { applyCapturedInstancedDrawCount, bindUserNodeAttributesToArtifact, bindUserStorageBuffersToArtifact, createHydrationBindingArtifactView, hydrateNodeAttributes } from './hydrate/user-attributes.js';
 import { updateDynamicLightUniforms } from './hydrate/dynamic-light-buffers.js';
 import { selectArtifactVariant } from './hydrate/variants/artifact-variant-selector.js';
 import { logicalFrameKey, shouldAdvanceTemporalState } from './slim-support/temporal-frame.js';
+import { wireLiveNodeSidecarsToArtifact } from './slim-support/live-node-sidecars.js';
 
 export { clearLiveTextureIndex, installTextureLoaderTracking, registerLiveTexture } from './hydrate/live-texture-registry.js';
 
@@ -58,8 +60,10 @@ const skinnedBindMatrixSlots = new WeakMap();
  * @param {?Object} [material] - The runtime material (provides live texture/node references).
  * @param {?Object} [object] - The renderObject's `object` (for instanced/skinned info).
  * @param {?number|?string|Object} [variantSelection] - A legacy live cache key,
- *   or `{ cacheKey, renderObject, renderContextSelector }`. Semantic render
- *   context is preferred when present; private cache keys remain compatible.
+ *   or `{ cacheKey, renderObject, bindingMaterial, renderContextSelector }`.
+ *   `bindingMaterial` is the exact pre-override material for integrations that
+ *   cannot provide a Three RenderObject. Semantic render context is preferred
+ *   when present; private cache keys remain compatible.
  * @return {Object} A plain object with the fields `Pipelines.js` + `RenderObject.js` read.
  */
 export function hydrateNodeBuilderState( artifact, material = null, object = null, variantSelection = null ) {
@@ -79,25 +83,57 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 	const selection = variantSelection && typeof variantSelection === 'object'
 		? { ...variantSelection, material: variantSelection.material || material }
 		: { cacheKey: variantSelection, material };
-	const effective = selectArtifactVariant( artifact, selection );
+	const selectedArtifact = selectArtifactVariant( artifact, selection );
+	const requiresShadowCaster = artifactRequiresShadowCasterBinding( selectedArtifact );
+	const effective = createHydrationBindingArtifactView( selectedArtifact, { resetLiveNodeSidecars: requiresShadowCaster } );
+	// Frozen serialized sources are linked through a WeakMap because they
+	// cannot accept non-enumerable sidecars. Link the state-local view after
+	// cloning so those process-local identity records follow the exact slots
+	// that the updater will read.
 	linkArtifactLightIdentities( effective );
+	const materialBindingOwner = createMaterialBindingOwnerContext( effective, {
+		renderMaterial: material,
+		bindingMaterial: selection.bindingMaterial || null,
+		renderObject: selection.renderObject || null,
+	} );
+	const graphMaterial = materialBindingOwner.materialForArtifactGraph();
+	if ( requiresShadowCaster || material && material.isShadowPassMaterial === true ) {
+
+		const sidecarMaterials = collectOwnedLiveSidecarMaterials( effective, materialBindingOwner, graphMaterial );
+		let replaceUpdateNodes = requiresShadowCaster;
+		for ( const sourceMaterial of sidecarMaterials ) {
+
+			wireLiveNodeSidecarsToArtifact( effective, sourceMaterial, {
+				includeRegisteredUniforms: ! requiresShadowCaster,
+				includeVariants: false,
+				overlay: true,
+				replaceUpdateNodes,
+				slotFilter: ( slot ) => materialBindingOwner.materialForSource( slot && slot.source ) === sourceMaterial,
+			} );
+			replaceUpdateNodes = false;
+
+		}
+
+	}
 
 	// Bind live BufferAttributes from the user's `*Node` material props
 	// (e.g. `material.positionNode = instancedBufferAttribute(buf)`) onto
 	// the artifact's node-attribute entries before hydration walks them.
 	// Idempotent and a no-op when capture didn't record `userPath` or the
 	// material has no matching node tree yet.
-	bindUserNodeAttributesToArtifact( effective, material );
+	bindUserNodeAttributesToArtifact( effective, graphMaterial );
 	applyCapturedInstancedDrawCount( effective, object || material && material.__tslpPrecompileObject || null );
 	// Same trick for compute-storage buffers wired through the user's
 	// `material.colorNode = colors.element( instanceIndex )` etc. — the
 	// kernel writes into `colors`, the render reads from the same buffer.
-	bindUserStorageBuffersToArtifact( effective, material );
+	bindUserStorageBuffersToArtifact( effective, graphMaterial );
 
-	const runtimeBindings = hydrateRuntimeBindings( effective, material );
+	const resolveInitialTextureBinding = createOwnedTextureBindingResolver( materialBindingOwner, resolveTextureBinding );
+	const resolveLiveTextureBinding = createOwnedTextureBindingResolver( materialBindingOwner, memoizedResolveTextureBinding );
+	const runtimeBindings = hydrateRuntimeBindings( effective, material, graphMaterial, resolveInitialTextureBinding );
 	const { bindings, uniformBuffers, clippingUniformBuffers } = runtimeBindings;
 	const uniformBufferTargets = createUniformBufferTargets( uniformBuffers );
-	const updateNode = createUniformUpdateNode( effective, uniformBuffers, material, uniformBufferTargets );
+	const updateNode = createUniformUpdateNode( effective, uniformBuffers, material, uniformBufferTargets, materialBindingOwner );
 	const clippingUniformUpdateNode = clippingUniformBuffers.length > 0
 		? createClippingUniformUpdateNode( clippingUniformBuffers, material, uniformBufferTargets )
 		: null;
@@ -108,7 +144,7 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 	// `hydrate/rebinders/dynamic-binding-resolver.js` for the descriptor-
 	// to-rebinder mapping.
 	const { earlyUpdateBefore, lateUpdateBefore } = createDynamicBindingResolvers( runtimeBindings, {
-		resolveTextureBinding: memoizedResolveTextureBinding,
+		resolveTextureBinding: resolveLiveTextureBinding,
 		findLightBySource,
 		recordShadowDiagnostic: recordShadowBindingDiagnostic,
 		describeLight: lightDiagnosticShape,
@@ -120,10 +156,10 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 	// / onRenderUpdate closures write fresh values into _liveNode.value before
 	// the snapshot writer reads them. In JSON-loaded flows these are absent and
 	// the snapshot-only path is used instead.
-	const liveUpdateNodes = Array.isArray( artifact._liveUpdateNodes ) ? artifact._liveUpdateNodes : [];
-	const liveUpdateBeforeNodes = Array.isArray( artifact._liveUpdateBeforeNodes ) ? artifact._liveUpdateBeforeNodes : [];
-	const liveUpdateAfterNodes = Array.isArray( artifact._liveUpdateAfterNodes ) ? artifact._liveUpdateAfterNodes : [];
-	const materialReflectorUpdateBeforeNodes = collectMaterialReflectorBaseNodes( material )
+	const liveUpdateNodes = Array.isArray( effective._liveUpdateNodes ) ? effective._liveUpdateNodes : [];
+	const liveUpdateBeforeNodes = Array.isArray( effective._liveUpdateBeforeNodes ) ? effective._liveUpdateBeforeNodes : [];
+	const liveUpdateAfterNodes = Array.isArray( effective._liveUpdateAfterNodes ) ? effective._liveUpdateAfterNodes : [];
+	const materialReflectorUpdateBeforeNodes = collectMaterialReflectorBaseNodes( graphMaterial )
 		.filter( ( node ) => ! liveUpdateBeforeNodes.includes( node ) );
 
 	const base = {
@@ -187,7 +223,7 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 		build() { /* no-op: artifact is already baked */ },
 		buildAsync: async () => { /* no-op */ },
 	};
-	recordHydratedAttributeDiagnostic( artifact, effective, base, material, object );
+	recordHydratedAttributeDiagnostic( artifact, selectedArtifact, base, material, object );
 
 	// Wrap in a Proxy that returns a no-op function for any OTHER method
 	// lookup the renderer might do. Keeps forward-compatibility with
@@ -206,6 +242,30 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 
 		},
 	} );
+
+}
+
+function collectOwnedLiveSidecarMaterials( artifact, materialBindingOwner, graphMaterial ) {
+
+	const materials = [];
+	const add = ( candidate ) => {
+
+		if ( candidate && ! materials.includes( candidate ) ) materials.push( candidate );
+
+	};
+	add( graphMaterial );
+	for ( const group of artifact && Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [] ) {
+
+		for ( const slot of Array.isArray( group.slots ) ? group.slots : [] ) {
+
+			const source = slot && slot.source || {};
+			if ( source.kind !== 'uniform.live' || source.property ) continue;
+			add( materialBindingOwner.materialForSource( source ) );
+
+		}
+
+	}
+	return materials;
 
 }
 
@@ -383,7 +443,7 @@ function indexUniformBuffers( bindings ) {
 
 }
 
-function hydrateRuntimeBindings( artifact, material ) {
+function hydrateRuntimeBindings( artifact, material, graphMaterial, textureResolver ) {
 
 	const uniformBuffers = new Map();
 	const shadowDepthBindings = [];
@@ -411,6 +471,7 @@ function hydrateRuntimeBindings( artifact, material ) {
 	const classifierContext = {
 		artifact,
 		material,
+		graphMaterial,
 		shadowDepthBindings,
 		materialDepthBindings,
 		artifactTextureBindings,
@@ -433,7 +494,7 @@ function hydrateRuntimeBindings( artifact, material ) {
 
 		for ( const descriptor of group.bindings || [] ) {
 
-			const runtimeBinding = createRuntimeBinding( artifact, group, descriptor, material, groupNode );
+			const runtimeBinding = createRuntimeBinding( artifact, group, descriptor, material, groupNode, textureResolver );
 			if ( ! runtimeBinding ) continue;
 
 			runtimeBindings.push( runtimeBinding );
@@ -585,7 +646,7 @@ function attachLiveUniformBufferUpdater( uniformBuffer, liveArrayResolver ) {
 
 }
 
-function createRuntimeBinding( artifact, group, descriptor, material, groupNode ) {
+function createRuntimeBinding( artifact, group, descriptor, material, groupNode, textureResolver = resolveTextureBinding ) {
 
 	return createRuntimeBindingFromKind( {
 		artifact,
@@ -601,7 +662,7 @@ function createRuntimeBinding( artifact, group, descriptor, material, groupNode 
 			inferTextureTypeFromShader,
 			resolvePlanBufferUniform,
 			resolvePlanStorageBuffer,
-			resolveTextureBinding,
+			resolveTextureBinding: textureResolver,
 			seedUniformBufferSnapshots,
 		},
 	} );
@@ -656,6 +717,32 @@ function resolveTextureBinding( artifact, groupName, bindingName, material, opti
 
 }
 
+function createOwnedTextureBindingResolver( ownerContext, resolve ) {
+
+	return function resolveOwnedTextureBinding( artifact, groupName, bindingName, material, options = null ) {
+
+		const source = findUniformTextureSource( artifact, groupName, bindingName );
+		const frame = options && options.frame || null;
+		let bindingMaterial = material;
+		if ( source && source.kind && source.kind.startsWith( 'material.' ) ) {
+
+			bindingMaterial = ownerContext.materialForSource( source, frame );
+
+		} else if ( source && (
+			source.kind === 'artifact.texture'
+			|| source.kind === 'reflector.texture'
+			|| source.kind === 'depth.texture' && source.fromMaterialGraph === true
+		) ) {
+
+			bindingMaterial = ownerContext.materialForArtifactGraph( frame );
+
+		}
+		return resolve( artifact, groupName, bindingName, bindingMaterial, options );
+
+	};
+
+}
+
 // Module-level so every render object of a material shares one memo — the
 // rebinders thread `options.frame` through, scoping reuse to a single render.
 const memoizedResolveTextureBinding = createFrameScopedResolutionMemo( resolveTextureBinding );
@@ -689,6 +776,16 @@ function findUniformGroup( artifact, groupName, bindingName ) {
 	const group = plan.find( ( item ) => item.name === groupName || item.name === bindingName ) || null;
 	cache.set( key, group );
 	return group;
+
+}
+
+function findUniformTextureSource( artifact, groupName, bindingName ) {
+
+	const group = findUniformGroup( artifact, groupName, bindingName );
+	const texture = group && Array.isArray( group.textures )
+		? group.textures.find( ( item ) => item && item.name === bindingName )
+		: null;
+	return texture && texture.source || null;
 
 }
 
@@ -863,7 +960,7 @@ function createClippingUniformUpdateNode( entries, material, uniformBufferTarget
 
 }
 
-function createUniformUpdateNode( artifact, uniformBuffers, material, uniformBufferTargets ) {
+function createUniformUpdateNode( artifact, uniformBuffers, material, uniformBufferTargets, materialBindingOwner ) {
 
 	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
 	if ( plan.length === 0 || uniformBuffers.size === 0 ) return null;
@@ -883,7 +980,10 @@ function createUniformUpdateNode( artifact, uniformBuffers, material, uniformBuf
 		update( frame ) {
 
 			const frameMaterial = frame.material || material || null;
-			if ( frameMaterial ) frameMaterial.__tslpCurrentFrame = frame;
+			materialBindingOwner.stampFrame( frame );
+			const generatedMaterial = generatedUpdateGroup
+				? materialBindingOwner.materialForGeneratedUpdater( frame )
+				: null;
 			const frameUniformBuffers = uniformBufferTargets.forFrame( frame );
 			for ( const group of plan ) {
 
@@ -901,15 +1001,15 @@ function createUniformUpdateNode( artifact, uniformBuffers, material, uniformBuf
 					binding.__tslpViewSource = binding.buffer;
 
 				}
-				if ( generatedUpdateGroup ) {
+				if ( generatedUpdateGroup && generatedMaterial ) {
 
-					generatedUpdateGroup( frame, frameMaterial, view, 0, group.name || '' );
+					generatedUpdateGroup( frame, generatedMaterial, view, 0, group.name || '' );
 					writeFrozenUniformLiveSnapshots( group, view );
 					writeLiveUniformSidecars( group, view );
 
 				} else {
 
-					writeUniformGroup( group, frame, view, frameMaterial );
+					writeUniformGroup( group, frame, view, frameMaterial, materialBindingOwner );
 
 				}
 				writeSkinnedBindMatrices( artifact, group, view, frame );
@@ -1008,7 +1108,7 @@ function writeLiveUniformSidecars( group, view ) {
 
 		const source = slot && slot.source || {};
 		const value = slot && slot._liveNode && slot._liveNode.value;
-		if ( source.kind !== 'uniform.live' || slot.__tslpLiveSidecarOverlay !== true || value === null || value === undefined ) continue;
+		if ( source.kind !== 'uniform.live' || source.property || slot.__tslpLiveSidecarOverlay !== true || value === null || value === undefined ) continue;
 		const offset = slot.offset ?? slot.byteOffset ?? 0;
 		writeLiveValue( view, offset, value, slot.dtype );
 

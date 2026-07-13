@@ -42,7 +42,7 @@ function classifyDepthTexture( entry, runtimeBinding, descriptor, ctx ) {
 		// instead of `light.shadow.map`.
 		fromMaterialGraph: source.fromMaterialGraph === true,
 		textureUuid: typeof source.textureUuid === 'string' ? source.textureUuid : null,
-		material: ctx.material,
+		material: ctx.graphMaterial || ctx.material,
 	};
 	if ( typeof ctx.recordShadowBindingDiagnostic === 'function' ) {
 
@@ -77,7 +77,7 @@ function classifyArtifactTexture( entry, runtimeBinding, descriptor, ctx ) {
 		bindingName: descriptor.name || '',
 		source: entry.source,
 		textureType: planTex.textureType || '2d',
-		material: ctx.material,
+		material: ctx.graphMaterial || ctx.material,
 	} );
 
 }
@@ -99,7 +99,7 @@ function classifyMaterialTexture( entry, runtimeBinding, descriptor, ctx ) {
 function classifyReflectorTexture( entry, runtimeBinding, descriptor, ctx ) {
 
 	if ( ! isSampledTextureOrSampler( runtimeBinding ) ) return;
-	const baseNode = ctx.findReflectorBaseNodeInMaterial( ctx.material, entry.source && entry.source.reflectorIndex );
+	const baseNode = ctx.findReflectorBaseNodeInMaterial( ctx.graphMaterial || ctx.material, entry.source && entry.source.reflectorIndex );
 	if ( ! baseNode ) return;
 	ctx.reflectorTextureBindings.push( {
 		binding: runtimeBinding,

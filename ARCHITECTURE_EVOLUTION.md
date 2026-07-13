@@ -424,6 +424,45 @@ strict graph remains 393 modules with zero compiler/stock-adapter residue and
 65 retained Node/TSL modules / 302,240 rendered bytes; contract and provenance
 metadata move the bundle to 830,311 raw / 227,181 gzip-9 bytes.
 
+**Owner-local shadow replay hydration (2026-07-13).** Slim Renderer rewriting
+now intercepts the exact `material = overrideMaterial` handoff after Three has
+copied the current caster's alpha/render state. A stable replay material per
+`(shadow override, exact caster)` gives `RenderObjects` distinct material
+identity for different casters and carries the caster on a non-serializable
+contract Symbol; `onAfterRender` still observes Three's original shared
+override. A shared contract topology projection advances the stable overlay's
+program key when one caster changes map/custom shadow/depth/position branches;
+normalizing the base revision excludes the shared override's expected
+alpha-test setter churn. Hydration constructs one named owner context only after semantic
+variant selection. Generic UBO writers resolve each material source through
+`source.bindingOwner ?? artifact.bindingOwner`, sampled textures and samplers
+memoize against the actual owner, and custom `artifact.texture` graph probes,
+user attributes/storage, material-depth inputs, and reflectors walk the caster
+graph. Mutable attribute/storage entries, `uniform.live` slots, and graph
+update-phase lists are descriptor-preserving per-hydration views; exact caster
+node paths replace artifact-global in-process sidecars without mutating the
+shared variant. Capture records caster-owned uniform, attribute, and storage
+paths only when every exact caster proves the same compatible public path;
+frozen state-local light sources are relinked after cloning, and unscoped
+process-global closure uniforms fail closed to snapshots for signed shadow
+artifacts. Mixed caster/render-material live uniforms are wired separately and
+their update phases are unioned. Generated updaters keep their AOT path through a read-only owner overlay
+and fall back to per-slot generic writes only if the same property has
+conflicting owners. Newly signed shadow artifacts fail closed without an exact
+caster; unsigned artifacts unwrap to Three's temporary shared override for the
+old graph/material behavior. Overlay, base, and caster identities all receive
+the live frame so skeleton/instance buffer resolvers remain valid. The
+plugin/runtime guarded-source handshake advances to `slim-three-policy@5`.
+Stock `_getShadowNodes()` construction deliberately remains until every shadow
+artifact family survives aux registration and selection; removing that graph
+closure is the next independent wedge. The final strict build is 841,535 raw /
+230,502 gzip-9 bytes with the structural graph unchanged at 395 modules, zero
+compiler/stock-adapter residue, and 65 retained Node/TSL modules / 302,240
+rendered bytes. The production budget therefore moves only the crossed raw
+ceiling from 840,000 to 843,000 bytes and the minimal source gzip ceiling from
+158,000 to 161,000 bytes (measured 159,878); prebuilt gzip, advanced-source,
+compiler, adapter, identity, and graph ceilings stay fixed.
+
 ---
 
 ## 2026-06-09 audit refresh — corrections to the map

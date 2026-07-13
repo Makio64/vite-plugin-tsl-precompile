@@ -8,6 +8,8 @@
  *     adapter, including sampled texture topology and safe disposal.
  *   - Renderer context identity and high-precision state delegate to a
  *     graph-free replay carrier.
+ *   - Shadow overrides retain the exact caster through a stable per-caster
+ *     replay material without changing callback-visible material identity.
  */
 
 import { test } from 'node:test';
@@ -35,6 +37,8 @@ test( 'rewrite/Renderer: NodeMaterial replaced with Material sentinel + fragment
 	assert.match( out, /renderTarget\.texture/ );
 	assert.doesNotMatch( out, /this\._nodes\.getOutputNode/ );
 	assert.doesNotMatch( out, /this\._nodes\.getOutputCacheKey/ );
+	assert.match( out, /material\s*=\s*createReplayShadowMaterial\s*\(\s*overrideMaterial\s*,\s*material\s*\)/ );
+	assert.match( out, /getReplayRenderCallbackMaterial\s*\(\s*material\s*\)/ );
 
 	// Original fragmentNode assignment LHS should be gone.
 	assert.doesNotMatch( out, /\.material\.fragmentNode\s*=/ );
@@ -54,8 +58,34 @@ test( 'rewrite/Renderer: NodeMaterial replaced with Material sentinel + fragment
 	assert.match( out, /setReplayRendererHighPrecision\s*\(\s*this\s*,\s*value\s*\)/ );
 	assert.match( out, /return getReplayRendererHighPrecision\s*\(\s*this\s*\)/ );
 	assert.match( out, /from\s*["']virtual:tsl-precompile\/__slim-rewrite-runtime\/renderer-context["']/ );
+	assert.match( out, /import\s*\{[^}]*createReplayShadowMaterial[^}]*getReplayRenderCallbackMaterial[^}]*\}\s*from\s*["']virtual:tsl-precompile\/__slim-rewrite-runtime\/shadow-material["']/ );
 	assert.doesNotMatch( out, /nodes\/core\/ContextNode\.js/ );
 	assert.doesNotMatch( out, /\bhighpModel(?:Normal)?ViewMatrix\b/ );
+
+} );
+
+test( 'rewrite/Renderer: shape-gate fails loudly when shadow override handoff drifts', () => {
+
+	const src = readFileSync( PATH, 'utf8' )
+		.replace( 'material = overrideMaterial;', 'material = scene.overrideMaterial;' );
+	const r = rewriteThreeSource( src, PATH, { threeVersion: '175', pluginVersion: '0.0.0' } );
+	assert.ok( r );
+	assert.equal( r.code, null );
+	assert.match( r.warning, /shadow override handoff|shape changed/ );
+
+} );
+
+test( 'rewrite/Renderer: shape-gate fails loudly when onAfterRender material identity drifts', () => {
+
+	const src = readFileSync( PATH, 'utf8' )
+		.replace(
+			'object.onAfterRender( this, scene, camera, geometry, material, group );',
+			'object.onAfterRender( this, scene, camera, geometry, scene.overrideMaterial, group );',
+		);
+	const r = rewriteThreeSource( src, PATH, { threeVersion: '175', pluginVersion: '0.0.0' } );
+	assert.ok( r );
+	assert.equal( r.code, null );
+	assert.match( r.warning, /onAfterRender callback|shape changed/ );
 
 } );
 

@@ -1517,6 +1517,8 @@ test( '__applyPrecompiled live update sidecars refresh object-scoped uniform.liv
 	const objectColorNode = {
 		isNode: true,
 		uniformNode: liveUniform,
+		getUpdateType() { return 'object'; },
+		updateReference() { return this; },
 		update( frame ) {
 
 			this.uniformNode.value.copy( frame.object.color );
@@ -1864,6 +1866,8 @@ test( 'runtime hydrator overlays snapshot-only uniform.live slots after generate
 			],
 		} ],
 	};
+	Object.defineProperty( artifact.uniformPlan[ 0 ].slots[ 0 ], '_liveNode', { value: { value: 99 }, enumerable: false } );
+	Object.defineProperty( artifact.uniformPlan[ 0 ].slots[ 0 ], '__tslpLiveSidecarOverlay', { value: true, enumerable: false } );
 	Object.defineProperty( artifact, '_generatedUpdateGroup', {
 		value( frame, material, view, byteOffset ) {
 

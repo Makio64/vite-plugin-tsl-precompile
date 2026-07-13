@@ -8,7 +8,7 @@
  */
 
 import DataMap from 'three/src/renderers/common/DataMap.js';
-import { createRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
+import { createRenderObjectContextSelector, RENDER_BINDING_OWNER_KINDS, resolveRenderObjectBindingOwner } from '@tsl-precompile/contract/render-selector';
 import { hydrateNodeBuilderState } from './hydrator.js';
 import ReplayNodeFrame from './slim-replay-node-frame.js';
 import { getSlimRenderFallback } from './slim-support/render-fallback-registry.js';
@@ -181,11 +181,14 @@ class ReplayNodeManager extends DataMap {
 
 	_createReplaySelection( renderObject ) {
 
+		const bindingOwner = resolveRenderObjectBindingOwner( renderObject );
 		const selector = createRenderObjectContextSelector( renderObject, renderObject.renderer || this.renderer );
 		const artifact = renderObject.material && renderObject.material.precompiledArtifact;
 		const auxShape = artifact && ( artifact.__tslpAuxShape || artifact.materialShape );
 		return {
 			cacheKey: this.getForRenderCacheKey( renderObject ),
+			bindingMaterial: bindingOwner.kind === RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER ? bindingOwner.material : null,
+			bindingOwnerKind: bindingOwner.kind,
 			renderObject,
 			renderContextSelector: selector,
 			renderContextSelectorProfile: auxShape === 'background' || auxShape === 'shadow-depth' || auxShape === 'post-process' ? auxShape : null,
@@ -195,6 +198,16 @@ class ReplayNodeManager extends DataMap {
 
 	_createReplayCacheKey( material, selection ) {
 
+		const materialId = this._getMaterialId( material );
+		const bindingMaterialId = selection.bindingMaterial && selection.bindingMaterial !== material
+			? this._getMaterialId( selection.bindingMaterial )
+			: null;
+		return JSON.stringify( [ materialId, bindingMaterialId, selection.cacheKey ?? null, selection.renderContextSelector || '' ] );
+
+	}
+
+	_getMaterialId( material ) {
+
 		let materialId = this._materialIds.get( material );
 		if ( materialId === undefined ) {
 
@@ -202,7 +215,7 @@ class ReplayNodeManager extends DataMap {
 			this._materialIds.set( material, materialId );
 
 		}
-		return JSON.stringify( [ materialId, selection.cacheKey ?? null, selection.renderContextSelector || '' ] );
+		return materialId;
 
 	}
 

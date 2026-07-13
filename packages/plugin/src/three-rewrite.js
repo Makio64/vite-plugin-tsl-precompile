@@ -49,6 +49,7 @@ export const SLIM_REWRITE_RUNTIME_MODULE_RULES = Object.freeze( [
 	{ id: 'graph-hash', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'graph-hash', runtimeFile: 'graph-hash.js' },
 	{ id: 'renderer-context', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'renderer-context', runtimeFile: 'slim-replay-renderer-context.js' },
 	{ id: 'renderer-output', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'renderer-output', runtimeFile: 'slim-replay-renderer-output.js' },
+	{ id: 'shadow-material', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'shadow-material', runtimeFile: 'slim-replay-shadow-material.js' },
 	{ id: 'render-pipeline', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'render-pipeline', runtimeFile: 'slim-replay-render-pipeline.js' },
 	{ id: 'postprocess-replay', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'postprocess-replay', runtimeFile: 'slim-support/postprocess-effects-replay.js' },
 	{ id: 'hydrator', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'hydrator', runtimeFile: 'hydrator.js' },
@@ -74,6 +75,8 @@ const SLIM_REWRITE_RUNTIME_HELPERS = Object.freeze( {
 	getReplayRendererHighPrecision: Object.freeze( { moduleId: 'renderer-context', kind: 'named' } ),
 	getReplayRenderOutputCacheKey: Object.freeze( { moduleId: 'renderer-output', kind: 'named' } ),
 	createReplayRenderOutputMaterial: Object.freeze( { moduleId: 'renderer-output', kind: 'named' } ),
+	createReplayShadowMaterial: Object.freeze( { moduleId: 'shadow-material', kind: 'named' } ),
+	getReplayRenderCallbackMaterial: Object.freeze( { moduleId: 'shadow-material', kind: 'named' } ),
 	createReplayRenderPipelineMaterial: Object.freeze( { moduleId: 'render-pipeline', kind: 'named' } ),
 	preparePrecompiledPostprocess: Object.freeze( { moduleId: 'postprocess-replay', kind: 'named' } ),
 	hydrateNodeBuilderState: Object.freeze( { moduleId: 'hydrator', kind: 'named' } ),
@@ -446,6 +449,75 @@ function isRendererClassMethod( path ) {
 
 }
 
+function isRendererRenderObjectPath( path ) {
+
+	const method = path.isClassMethod && path.isClassMethod()
+		? path
+		: path.findParent( ( parent ) => parent.isClassMethod && parent.isClassMethod() );
+	return !! method
+		&& isRendererClassMethod( method )
+		&& t.isIdentifier( method.node.key, { name: 'renderObject' } );
+
+}
+
+function isRendererShadowOverrideAssignment( path ) {
+
+	const node = path.node;
+	if ( ! isRendererRenderObjectPath( path )
+		|| ! path.parentPath.isExpressionStatement()
+		|| node.operator !== '='
+		|| ! t.isIdentifier( node.left, { name: 'material' } )
+		|| ! t.isIdentifier( node.right, { name: 'overrideMaterial' } ) ) return false;
+	const branch = path.findParent( ( parent ) => parent.isIfStatement && parent.isIfStatement() );
+	if ( ! branch || ! matchesRendererOverrideTest( branch.node.test ) ) {
+
+		throw new Error( 'Renderer: shadow override assignment moved outside the material override branch' );
+
+	}
+	const binding = path.scope.getBinding( 'overrideMaterial' );
+	const declarator = binding && binding.path && binding.path.node;
+	if ( ! t.isVariableDeclarator( declarator )
+		|| ! t.isMemberExpression( declarator.init )
+		|| ! t.isIdentifier( declarator.init.object, { name: 'scene' } )
+		|| ! t.isIdentifier( declarator.init.property, { name: 'overrideMaterial' } ) ) {
+
+		throw new Error( 'Renderer: shadow override owner binding shape changed' );
+
+	}
+	return true;
+
+}
+
+function matchesRendererOverrideTest( node ) {
+
+	return t.isLogicalExpression( node, { operator: '&&' } )
+		&& t.isBinaryExpression( node.left, { operator: '===' } )
+		&& t.isMemberExpression( node.left.left )
+		&& t.isIdentifier( node.left.left.object, { name: 'material' } )
+		&& t.isIdentifier( node.left.left.property, { name: 'allowOverride' } )
+		&& t.isBooleanLiteral( node.left.right, { value: true } )
+		&& t.isBinaryExpression( node.right, { operator: '!==' } )
+		&& t.isMemberExpression( node.right.left )
+		&& t.isIdentifier( node.right.left.object, { name: 'scene' } )
+		&& t.isIdentifier( node.right.left.property, { name: 'overrideMaterial' } )
+		&& t.isNullLiteral( node.right.right );
+
+}
+
+function isRendererAfterRenderCall( path ) {
+
+	const node = path.node;
+	if ( ! isRendererRenderObjectPath( path ) || ! t.isMemberExpression( node.callee ) ) return false;
+	if ( ! t.isIdentifier( node.callee.object, { name: 'object' } )
+		|| ! t.isIdentifier( node.callee.property, { name: 'onAfterRender' } )
+		|| node.arguments.length !== 6 ) return false;
+	return t.isThisExpression( node.arguments[ 0 ] )
+		&& [ 'scene', 'camera', 'geometry', 'material', 'group' ].every(
+			( name, index ) => t.isIdentifier( node.arguments[ index + 1 ], { name } )
+		);
+
+}
+
 function assertRendererHighPrecisionAccessorShape( method, kind ) {
 
 	const actual = generate( method.body, { compact: true, comments: false } ).code;
@@ -464,6 +536,8 @@ function rewriteRenderer( ast, ctx ) {
 	let foundContext = false;
 	let foundHighPrecisionSetter = false;
 	let foundHighPrecisionGetter = false;
+	let shadowOverrideAssignments = 0;
+	let afterRenderCallbacks = 0;
 
 	traverse( ast, {
 		ClassMethod( path ) {
@@ -510,6 +584,14 @@ function rewriteRenderer( ast, ctx ) {
 		},
 		CallExpression( path ) {
 
+			if ( isRendererAfterRenderCall( path ) ) {
+
+				path.node.arguments[ 4 ] = t.callExpression( t.identifier( 'getReplayRenderCallbackMaterial' ), [ t.identifier( 'material' ) ] );
+				afterRenderCallbacks ++;
+				return;
+
+			}
+
 			const callee = path.node.callee;
 			if ( ! t.isMemberExpression( callee ) ) return;
 			if ( ! t.isIdentifier( callee.object, { name: 'outputNode' } ) ) return;
@@ -533,6 +615,17 @@ function rewriteRenderer( ast, ctx ) {
 
 		},
 		AssignmentExpression( path ) {
+
+			if ( isRendererShadowOverrideAssignment( path ) ) {
+
+				path.node.right = t.callExpression( t.identifier( 'createReplayShadowMaterial' ), [
+					t.identifier( 'overrideMaterial' ),
+					t.identifier( 'material' ),
+				] );
+				shadowOverrideAssignments ++;
+				return;
+
+			}
 
 			if (
 				t.isMemberExpression( path.node.left )
@@ -568,6 +661,8 @@ function rewriteRenderer( ast, ctx ) {
 	if ( ! foundCacheKey ) throw new Error( 'Renderer: shape changed (no NodeManager output cache-key call found)' );
 	if ( ! foundContext ) throw new Error( 'Renderer: shape changed (no default `contextNode = context()` assignment found)' );
 	if ( ! foundHighPrecisionSetter || ! foundHighPrecisionGetter ) throw new Error( 'Renderer: shape changed (highPrecision accessors not found)' );
+	if ( shadowOverrideAssignments !== 1 ) throw new Error( `Renderer: shape changed (expected 1 shadow override handoff, got ${ shadowOverrideAssignments })` );
+	if ( afterRenderCallbacks !== 1 ) throw new Error( `Renderer: shape changed (expected 1 onAfterRender callback, got ${ afterRenderCallbacks })` );
 
 	injectMaterialImport( ast );
 	ctx.touched = true;

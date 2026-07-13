@@ -17,10 +17,10 @@
  *      render side reads via `material.colorNode = colors.element( i )`.
  *
  * Both are idempotent and a no-op when capture didn't record `userPath` or
- * the material has no matching node tree yet. They mutate the artifact's
- * `attributes[i]._liveAttribute` / `storageBuffers[i]._liveAttribute` via
- * non-enumerable `Object.defineProperty` so JSON serialisation doesn't pick
- * them up.
+ * the material has no matching node tree yet. The hydrator first calls
+ * `createHydrationBindingArtifactView()` so their non-enumerable
+ * `_liveAttribute` sidecars are always state-local rather than leaking from
+ * one material/caster hydration into another.
  *
  * `hydrateNodeAttributes()` then materialises a fresh per-render array from
  * those entries: bound live attribute → reuse it; missing → allocate a fresh
@@ -38,6 +38,188 @@ import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttr
 import StorageInstancedBufferAttribute from 'three/src/renderers/common/StorageInstancedBufferAttribute.js';
 
 import { resolveTypedArrayCtor } from './typed-arrays.js';
+
+/**
+ * Clone only artifact records that acquire live graph-resource sidecars while
+ * one NodeBuilderState is hydrated. Variant payloads are memoized and shared;
+ * writing `_liveAttribute` on those records would make the first material (or
+ * shadow caster) win every later hydration of the same artifact.
+ *
+ * Existing non-enumerable sidecars are preserved by default because compute
+ * synchronisation can install them deliberately before hydration. Signed
+ * owner-local views clear unproven attribute/live-node sidecars and rebind
+ * them from the exact material instead. Attribute-list aliases and
+ * storage-buffer `orderedBindings[].ref` aliases remain intact.
+ *
+ * @param {Object} artifact
+ * @param {{ resetLiveNodeSidecars?: boolean }} [options]
+ * @returns {Object}
+ */
+export function createHydrationBindingArtifactView( artifact, options = {} ) {
+
+	if ( ! artifact || typeof artifact !== 'object' || ! hasLocalBindingRecords( artifact, options.resetLiveNodeSidecars === true ) ) return artifact;
+
+	const clonedRecords = new WeakMap();
+	const clonedSources = new WeakMap();
+	const clonedLists = new WeakMap();
+	const resetOwnerLocalSidecars = options.resetLiveNodeSidecars === true;
+	const cloneList = ( list ) => {
+
+		if ( ! Array.isArray( list ) ) return list;
+		let clone = clonedLists.get( list );
+		if ( clone ) return clone;
+		clone = list.map( ( entry ) => {
+
+			const record = cloneRecordOnce( entry, clonedRecords );
+			if ( resetOwnerLocalSidecars ) clearOwnerLocalBindingSidecars( record );
+			return record;
+
+		} );
+		clonedLists.set( list, clone );
+		return clone;
+
+	};
+	const cloneSlotList = ( list ) => {
+
+		if ( ! Array.isArray( list ) ) return list;
+		let clone = clonedLists.get( list );
+		if ( clone ) return clone;
+		clone = list.map( ( slot ) => {
+
+			if ( ! slot || typeof slot !== 'object' ) return slot;
+			let slotClone = clonedRecords.get( slot );
+			if ( slotClone ) return slotClone;
+			const source = slot.source && typeof slot.source === 'object'
+				? cloneRecordOnce( slot.source, clonedSources )
+				: slot.source;
+			slotClone = cloneRecord( slot, source === slot.source ? null : { source }, true );
+			clonedRecords.set( slot, slotClone );
+			return slotClone;
+
+		} );
+		clonedLists.set( list, clone );
+		return clone;
+
+	};
+	const replacements = {};
+	if ( Array.isArray( artifact.attributes ) ) replacements.attributes = cloneList( artifact.attributes );
+	if ( Array.isArray( artifact.nodeAttributes ) ) replacements.nodeAttributes = cloneList( artifact.nodeAttributes );
+
+	if ( Array.isArray( artifact.uniformPlan ) ) {
+
+		replacements.uniformPlan = artifact.uniformPlan.map( ( group ) => {
+
+			if ( ! group || typeof group !== 'object' ) return group;
+			const groupReplacements = {};
+			if ( Array.isArray( group.slots ) ) {
+
+				const slots = cloneSlotList( group.slots );
+				if ( resetOwnerLocalSidecars ) for ( const slot of slots ) {
+
+					if ( ! slot || typeof slot !== 'object' ) continue;
+					delete slot._liveNode;
+					delete slot.__tslpLiveSidecarOverlay;
+
+				}
+				groupReplacements.slots = slots;
+
+			}
+			const storageBuffers = Array.isArray( group.storageBuffers )
+				? cloneList( group.storageBuffers )
+				: group.storageBuffers;
+			if ( Array.isArray( group.storageBuffers ) ) groupReplacements.storageBuffers = storageBuffers;
+
+			if ( Array.isArray( group.orderedBindings ) ) {
+
+				groupReplacements.orderedBindings = group.orderedBindings.map( ( binding ) => {
+
+					if ( ! binding || typeof binding !== 'object' ) return binding;
+					if ( binding.type === 'storage-buffer' && binding.ref && typeof binding.ref === 'object' ) {
+
+						const ref = cloneRecordOnce( binding.ref, clonedRecords );
+						if ( resetOwnerLocalSidecars ) clearOwnerLocalBindingSidecars( ref );
+						return cloneRecord( binding, { ref } );
+
+					}
+					return cloneRecord( binding );
+
+				} );
+
+			}
+			return cloneRecord( group, groupReplacements );
+
+		} );
+
+	}
+	for ( const sidecar of [ '_liveUpdateNodes', '_liveUpdateBeforeNodes', '_liveUpdateAfterNodes' ] ) {
+
+		const current = Array.isArray( artifact[ sidecar ] ) ? artifact[ sidecar ] : [];
+		replacements[ sidecar ] = resetOwnerLocalSidecars ? [] : current.slice();
+
+	}
+	return cloneRecord( artifact, replacements );
+
+}
+
+function clearOwnerLocalBindingSidecars( record ) {
+
+	if ( ! record || typeof record !== 'object' ) return;
+	delete record._liveAttribute;
+	delete record._liveAttributeSource;
+
+}
+
+function hasLocalBindingRecords( artifact, force = false ) {
+
+	if ( force ) return true;
+	if ( Array.isArray( artifact.attributes ) && artifact.attributes.length > 0 ) return true;
+	if ( Array.isArray( artifact.nodeAttributes ) && artifact.nodeAttributes.length > 0 ) return true;
+	for ( const group of Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [] ) {
+
+		if ( group && Array.isArray( group.storageBuffers ) && group.storageBuffers.length > 0 ) return true;
+		if ( group && Array.isArray( group.orderedBindings ) && group.orderedBindings.some( ( binding ) => binding && binding.type === 'storage-buffer' && binding.ref ) ) return true;
+		if ( group && Array.isArray( group.slots ) && group.slots.some( ( slot ) => slot && slot.source && slot.source.kind === 'uniform.live' ) ) return true;
+
+	}
+	return false;
+
+}
+
+function cloneRecordOnce( record, clones ) {
+
+	if ( ! record || typeof record !== 'object' ) return record;
+	let clone = clones.get( record );
+	if ( clone ) return clone;
+	clone = cloneRecord( record, null, true );
+	clones.set( record, clone );
+	return clone;
+
+}
+
+function cloneRecord( record, replacements = null, mutableLiveSidecars = false ) {
+
+	const descriptors = Object.getOwnPropertyDescriptors( record );
+	if ( mutableLiveSidecars ) {
+
+		for ( const property of [ '_liveAttribute', '_liveAttributeSource', '_liveNode', '__tslpLiveSidecarOverlay' ] ) {
+
+			const descriptor = descriptors[ property ];
+			if ( descriptor && 'value' in descriptor ) descriptors[ property ] = { ...descriptor, configurable: true, writable: true };
+
+		}
+
+	}
+	for ( const [ property, value ] of Object.entries( replacements || {} ) ) {
+
+		const descriptor = descriptors[ property ];
+		descriptors[ property ] = descriptor && 'value' in descriptor
+			? { ...descriptor, value, ...( property.startsWith( '_liveUpdate' ) ? { configurable: true, writable: true } : {} ) }
+			: { value, enumerable: true, configurable: true, writable: true };
+
+	}
+	return Object.create( Object.getPrototypeOf( record ), descriptors );
+
+}
 
 /**
  * Walk every `attributes[]` / `nodeAttributes[]` entry in the artifact and
@@ -103,7 +285,8 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 	for ( const entry of entries ) {
 
 		if ( ! entry || entry.source !== 'node' ) continue;
-		if ( entry._liveAttribute && entry._liveAttribute.isBufferAttribute === true ) continue;
+		if ( entry._liveAttribute && entry._liveAttribute.isBufferAttribute === true
+			&& ! ( Array.isArray( entry.userPath ) && entry.userPath.length > 0 ) ) continue;
 
 		// Anonymous + snapshot path: prefer object-owned instancing attributes
 		// (InstancedMesh.instanceMatrix columns) when the entry was captured as
@@ -543,14 +726,15 @@ export function bindUserStorageBuffersToArtifact( artifact, sourceMaterial ) {
 
 	for ( const group of plan ) {
 
-		const entries = group && Array.isArray( group.storageBuffers ) ? group.storageBuffers : null;
-		if ( ! entries || entries.length === 0 ) continue;
+		const entries = collectStorageBufferEntries( group );
+		if ( entries.length === 0 ) continue;
 		for ( const entry of entries ) {
 
 			if ( ! entry ) continue;
 			if ( entry._liveAttribute
 				&& entry._liveAttribute.array
-				&& ArrayBuffer.isView( entry._liveAttribute.array ) ) continue;
+				&& ArrayBuffer.isView( entry._liveAttribute.array )
+				&& ! ( Array.isArray( entry.userPath ) && entry.userPath.length > 0 ) ) continue;
 
 			let live = null;
 			const path = entry.userPath;
@@ -588,6 +772,28 @@ export function bindUserStorageBuffersToArtifact( artifact, sourceMaterial ) {
 		}
 
 	}
+
+}
+
+function collectStorageBufferEntries( group ) {
+
+	if ( ! group || typeof group !== 'object' ) return [];
+	const entries = [];
+	const seen = new Set();
+	const add = ( entry ) => {
+
+		if ( ! entry || seen.has( entry ) ) return;
+		seen.add( entry );
+		entries.push( entry );
+
+	};
+	for ( const entry of Array.isArray( group.storageBuffers ) ? group.storageBuffers : [] ) add( entry );
+	for ( const binding of Array.isArray( group.orderedBindings ) ? group.orderedBindings : [] ) {
+
+		if ( binding && binding.type === 'storage-buffer' ) add( binding.ref );
+
+	}
+	return entries;
 
 }
 

@@ -4,10 +4,12 @@ import assert from 'node:assert/strict';
 import {
 	createSceneRenderTopologySelector,
 	createRenderObjectContextSelector,
+	createShadowCasterTopologySelector,
 	describeRenderTargetTopology,
 	describeSceneRenderTopology,
 	describeRenderObjectContext,
 	projectRenderObjectContextSelector,
+	RENDER_BINDING_OWNER_MATERIAL,
 	RENDER_BINDING_OWNER_KINDS,
 	resolveRenderObjectBindingOwner,
 } from '@tsl-precompile/contract/render-selector';
@@ -322,6 +324,12 @@ test( 'shadow binding ownership prefers exact selected material and geometry ove
 	assert.equal( resolveRenderObjectBindingOwner( renderObject, selectedMaterial ).material, selectedMaterial, 'explicit dispatch evidence wins without a usable group' );
 	renderObject.group.materialIndex = 1;
 	assert.equal( resolveRenderObjectBindingOwner( renderObject ).material, selectedMaterial );
+	const sidecarMaterial = { alphaTest: 0.5 };
+	Object.defineProperty( renderObject.material, RENDER_BINDING_OWNER_MATERIAL, { value: sidecarMaterial } );
+	renderObject.group.materialIndex = 0;
+	assert.equal( resolveRenderObjectBindingOwner( renderObject ).material, sidecarMaterial, 'non-serializable renderer handoff wins over stale group evidence' );
+	renderObject.sourceMaterial = selectedMaterial;
+	assert.equal( resolveRenderObjectBindingOwner( renderObject ).material, selectedMaterial, 'explicit capture dispatch evidence wins over the replay sidecar' );
 
 	const ordinaryMaterial = { uuid: 'ordinary' };
 	const ordinaryOwner = resolveRenderObjectBindingOwner( {
@@ -331,6 +339,20 @@ test( 'shadow binding ownership prefers exact selected material and geometry ove
 	} );
 	assert.equal( ordinaryOwner.kind, RENDER_BINDING_OWNER_KINDS.MATERIAL );
 	assert.equal( ordinaryOwner.material, ordinaryMaterial, 'ordinary draws bind against their active material' );
+
+} );
+
+test( 'shadow caster topology selector tracks capture branches without graph identity', () => {
+
+	const caster = { map: null, alphaMap: null, alphaTest: 0, castShadowNode: null };
+	const empty = createShadowCasterTopologySelector( caster );
+	caster.castShadowNode = { isNode: true, uuid: 'first-process-local-node' };
+	const custom = createShadowCasterTopologySelector( caster );
+	assert.notEqual( custom, empty );
+	caster.castShadowNode = { isNode: true, uuid: 'second-process-local-node' };
+	assert.equal( createShadowCasterTopologySelector( caster ), custom, 'node identity is not persisted in semantic topology' );
+	caster.map = { isTexture: true, mapping: 300, magFilter: 1006, minFilter: 1008, wrapS: 1001, wrapT: 1001 };
+	assert.notEqual( createShadowCasterTopologySelector( caster ), custom );
 
 } );
 

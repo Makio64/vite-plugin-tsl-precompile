@@ -1,6 +1,6 @@
 /** Runtime-owned half of the plugin/source-entry compatibility handshake. */
 
-export const RUNTIME_SLIM_THREE_POLICY_VERSION = 'slim-three-policy@4';
+export const RUNTIME_SLIM_THREE_POLICY_VERSION = 'slim-three-policy@5';
 
 export function assertSlimSourcePolicyCompatibility( pluginPolicyVersion ) {
 

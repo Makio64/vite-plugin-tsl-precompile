@@ -3,7 +3,7 @@
  *
  * Carved out of `hydrator.js` so the writer dispatch table is browsable and
  * unit-testable. The single export `writeUniformGroup(group, frame, view,
- * material)` iterates a uniform plan group's slots and writes each one to
+ * material, materialBindingOwner)` iterates a uniform plan group's slots and writes each one to
  * the staging UBO via the appropriate snapshot-aware writer. The big
  * `source.kind` switch lives here (camera / object / renderer / scene
  * material / constant / uniform.live); `light.*` slots delegate to
@@ -205,7 +205,7 @@ export function writeMaterialValue( view, offset, material, source, kind, dtype 
 
 }
 
-export function writeUniformGroup( group, frame, view, material ) {
+export function writeUniformGroup( group, frame, view, material, materialBindingOwner = null ) {
 
 	for ( const slot of group.slots || [] ) {
 
@@ -395,7 +395,14 @@ export function writeUniformGroup( group, frame, view, material ) {
 			view.setFloat32( offset, frame.renderer ? frame.renderer.toneMappingExposure : ( source.valueSnapshot ? Number( source.valueSnapshot.data ) : 1 ), true );
 
 		}
-		else if ( kind.startsWith( 'material.' ) ) writeMaterialValue( view, offset, frame.material || material, source, kind, slot.dtype );
+		else if ( kind.startsWith( 'material.' ) ) {
+
+			const ownerMaterial = materialBindingOwner
+				? materialBindingOwner.materialForSource( source, frame )
+				: frame.material || material;
+			writeMaterialValue( view, offset, ownerMaterial, source, kind, slot.dtype );
+
+		}
 		else if ( kind === 'scene.fog.color' ) writeColor( view, offset, frame.scene && frame.scene.fog && frame.scene.fog.color, source.valueSnapshot );
 		else if ( kind === 'scene.fog.near' || kind === 'scene.fog.far' || kind === 'scene.fog.density' ) {
 
@@ -439,6 +446,15 @@ export function writeUniformGroup( group, frame, view, material ) {
 
 				updateLightShadowMatrixForFrame( shadowMatrixLight, frame );
 				writeMat4( view, offset, shadowMatrixLight.shadow.matrix );
+
+			} else if ( source.property ) {
+
+				const ownerMaterial = materialBindingOwner
+					? materialBindingOwner.materialForSource( source, frame )
+					: frame.material || material;
+				const value = ownerMaterial && ownerMaterial[ source.property ];
+				if ( value !== undefined && value !== null ) writeLiveValue( view, offset, value, slot.dtype );
+				else writeSnapshot( view, offset, source.valueSnapshot || { type: source.valueType, data: source.value }, slot.dtype );
 
 			} else if ( slot.__tslpLiveSidecarOverlay === true && slot._liveNode && slot._liveNode.value !== null && slot._liveNode.value !== undefined ) {
 

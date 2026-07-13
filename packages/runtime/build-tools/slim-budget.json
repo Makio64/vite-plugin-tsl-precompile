@@ -2,7 +2,7 @@
   "schema": "tslp-slim-budget@1",
   "gzipLevel": 9,
   "prebuilt": {
-    "maxRawBytes": 840000,
+    "maxRawBytes": 843000,
     "maxGzipBytes": 231000,
     "maxCompilerModules": 0,
     "maxStockAdapterModules": 0,
@@ -14,7 +14,7 @@
     "maxStockAdapterModules": 0,
     "maxBareThreeIdentityModules": 0,
     "fixtures": {
-      "minimal": { "maxGzipBytes": 158000 },
+      "minimal": { "maxGzipBytes": 161000 },
       "advanced": { "maxGzipBytes": 169000 }
     }
   }

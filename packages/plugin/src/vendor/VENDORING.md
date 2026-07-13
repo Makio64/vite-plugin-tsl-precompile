@@ -59,6 +59,24 @@ source-local `render-material` exception. Update both the copied-property
 contract and the real shadow fixture if an upstream Three bump changes this
 call-site behavior.
 
+Exact shadow ownership also qualifies serialized graph paths. A
+caster-owned `uniform.live.nodePath`, node-attribute `userPath`, or storage
+buffer `userPath` is recorded relative to the process-local exact caster Set,
+never the shared shadow override. A path is serialized only when every caster
+exposes a compatible resource at the same public node path; otherwise capture
+omits it and replay uses its owner-local snapshot/shape fallback. Source-local
+`render-material` live uniforms continue to resolve paths against the override.
+
+Slim replay has a separate build-time AST seam at r184's direct
+`material = overrideMaterial` assignment. At that expression the right-hand
+`material` is still the exact selected caster (including an array/group
+selection), while the override already holds Three's copied `alphaTest`,
+`alphaMap`, `transparent`, and `side`. The rewrite replaces only that handoff
+with `createReplayShadowMaterial( overrideMaterial, material )` and unwraps
+only the `onAfterRender` material argument. Keep both shapes gated exactly
+once; do not move ownership recovery into `_renderObjectDirect()`, where
+`RenderObject` has already been keyed by the shared override.
+
 Local assumption: `Object3DNode` instances with an explicit `object3d.isCamera`
 target are serialized as `object3d.*` sources with `target: "camera"`. This
 preserves TSL like `objectPosition(camera)` in post-processing passes, where

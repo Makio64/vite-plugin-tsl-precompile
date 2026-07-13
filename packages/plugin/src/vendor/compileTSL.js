@@ -449,7 +449,7 @@ export function extractArtifact( cacheKey, state, material = null, object = null
 		? { ...extractionContext, material, object }
 		: { material, object } );
 	patchMaterialSpecificUniformPlan( uniformPlan, materialShape );
-	annotateLiveUniformIdentities( uniformPlan, material );
+	annotateLiveUniformIdentities( uniformPlan, material, extractionContext );
 	// For each compute-storage buffer the user wired through a material
 	// `*Node` slot (e.g. `material.colorNode = uv().mul( colors.element( i ) )`),
 	// record `userPath` so the hydrator can rebind the live attribute in a
@@ -457,7 +457,7 @@ export function extractArtifact( cacheKey, state, material = null, object = null
 	// this the `StorageBuffer_*` plan entry has no link back to the live
 	// buffer that the compute kernel writes into, and the render path
 	// allocates a fresh empty buffer.
-	annotateStorageBufferUserPaths( uniformPlan, material );
+	annotateStorageBufferUserPaths( uniformPlan, material, extractionContext );
 
 	// Seed runtime defaults for the material properties the plan references.
 	// PrecompiledMaterial reads these to populate its own color/opacity/etc.
@@ -512,7 +512,7 @@ export function extractArtifact( cacheKey, state, material = null, object = null
 				// reference is lost. The path lets the apply-side rewalk
 				// the user's freshly-constructed node tree and rebind the
 				// live BufferAttribute the user code created.
-				const userPath = findAttributePathOnMaterial( material, liveAttribute );
+				const userPath = findOwnerQualifiedAttributePath( material, liveAttribute, extractionContext );
 				if ( userPath ) {
 
 					entry.userPath = userPath;
@@ -704,6 +704,39 @@ function findAttributePathOnMaterial( material, target ) {
 
 }
 
+function findOwnerQualifiedAttributePath( material, target, extractionContext ) {
+
+	const bindingOwner = extractionContext && extractionContext.bindingOwnerKind || RENDER_BINDING_OWNER_KINDS.MATERIAL;
+	return bindingOwner === RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER
+		? findSharedCasterAttributePath( extractionContext, target )
+		: findAttributePathOnMaterial( material, target );
+
+}
+
+function findSharedCasterAttributePath( extractionContext, target ) {
+
+	const owners = extractionContext && extractionContext.materialBindingOwners;
+	if ( ! ( owners instanceof Set ) || owners.size === 0 ) return null;
+	let sharedPath = null;
+	for ( const owner of owners ) {
+
+		const candidate = findAttributePathOnMaterial( owner, target );
+		if ( ! candidate ) continue;
+		if ( sharedPath && ! sameNodePath( sharedPath, candidate ) ) return null;
+		sharedPath = candidate;
+
+	}
+	if ( ! sharedPath ) return null;
+	for ( const owner of owners ) {
+
+		const root = resolveLiveNodePathOnMaterial( owner, sharedPath );
+		if ( ! root || root.isNode !== true || ! nodeTreeContainsCompatibleAttribute( root, target ) ) return null;
+
+	}
+	return sharedPath;
+
+}
+
 const NODE_PATH_SKIP_KEYS = new Set( [
 	'parent', 'children', 'scene', 'camera', 'renderer', 'geometry', '_cache',
 	'domElement', 'sourceMaterial', 'constructor', '__proto__', 'prototype',
@@ -778,11 +811,12 @@ function findObjectPath( root, target ) {
  *
  * @param {Array} uniformPlan
  * @param {?Object} material
+ * @param {?Object} extractionContext
  */
-function annotateLiveUniformIdentities( uniformPlan, material ) {
+function annotateLiveUniformIdentities( uniformPlan, material, extractionContext = null ) {
 
 	if ( ! Array.isArray( uniformPlan ) ) return;
-	const pathByNode = new Map();
+	const pathByOwnerAndNode = new Map();
 	const idByNode = new Map();
 	for ( const group of uniformPlan ) {
 
@@ -798,18 +832,84 @@ function annotateLiveUniformIdentities( uniformPlan, material ) {
 				idByNode.set( liveNode, liveNodeId );
 
 			}
+			const bindingOwner = source.bindingOwner
+				|| extractionContext && extractionContext.bindingOwnerKind
+				|| RENDER_BINDING_OWNER_KINDS.MATERIAL;
+			let pathByNode = pathByOwnerAndNode.get( bindingOwner );
+			if ( ! pathByNode ) pathByOwnerAndNode.set( bindingOwner, pathByNode = new Map() );
 			let nodePath = pathByNode.get( liveNode );
-			if ( nodePath === undefined && material ) {
+			if ( nodePath === undefined ) {
 
-				nodePath = findLiveNodePathOnMaterial( material, liveNode );
+				nodePath = bindingOwner === RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER
+					? findSharedCasterLiveNodePath( extractionContext, liveNode )
+					: findLiveNodePathOnMaterial( material, liveNode );
 				pathByNode.set( liveNode, nodePath );
 
 			}
-			slot.source = nodePath ? { ...source, liveNodeId, nodePath } : { ...source, liveNodeId };
+			const { nodePath: _staleNodePath, ...sourceWithoutPath } = source;
+			slot.source = nodePath ? { ...sourceWithoutPath, liveNodeId, nodePath } : { ...sourceWithoutPath, liveNodeId };
 
 		}
 
 	}
+
+}
+
+function findSharedCasterLiveNodePath( extractionContext, liveNode ) {
+
+	const owners = extractionContext && extractionContext.materialBindingOwners;
+	if ( ! ( owners instanceof Set ) || owners.size === 0 ) return null;
+	let sharedPath = null;
+	for ( const owner of owners ) {
+
+		const candidate = findLiveNodePathOnMaterial( owner, liveNode );
+		if ( ! candidate ) continue;
+		if ( sharedPath && ! sameNodePath( sharedPath, candidate ) ) return null;
+		sharedPath = candidate;
+
+	}
+	if ( ! sharedPath ) return null;
+	for ( const owner of owners ) {
+
+		const candidate = resolveLiveNodePathOnMaterial( owner, sharedPath );
+		if ( ! compatibleUniformNode( candidate, liveNode ) ) return null;
+
+	}
+	return sharedPath;
+
+}
+
+function resolveLiveNodePathOnMaterial( material, nodePath ) {
+
+	if ( ! material || ! Array.isArray( nodePath ) || nodePath.length === 0 ) return null;
+	let current = material;
+	for ( const segment of nodePath ) {
+
+		if ( typeof segment !== 'string' || segment.length === 0 || NODE_PATH_SKIP_KEYS.has( segment ) ) return null;
+		if ( ! current || ( typeof current !== 'object' && typeof current !== 'function' ) ) return null;
+		if ( ! Object.prototype.hasOwnProperty.call( current, segment ) ) return null;
+		try { current = current[ segment ]; } catch ( _ ) { return null; }
+
+	}
+	return current;
+
+}
+
+function compatibleUniformNode( candidate, captured ) {
+
+	if ( candidate === captured ) return true;
+	if ( ! candidate || candidate.isUniformNode !== true || ! captured || captured.isUniformNode !== true ) return false;
+	const candidateType = candidate.nodeType || candidate.constructor && candidate.constructor.type || null;
+	const capturedType = captured.nodeType || captured.constructor && captured.constructor.type || null;
+	return candidateType === null || capturedType === null || candidateType === capturedType;
+
+}
+
+function sameNodePath( first, second ) {
+
+	if ( first.length !== second.length ) return false;
+	for ( let index = 0; index < first.length; index ++ ) if ( first[ index ] !== second[ index ] ) return false;
+	return true;
 
 }
 
@@ -828,9 +928,9 @@ function annotateLiveUniformIdentities( uniformPlan, material ) {
  * @param {Array} uniformPlan
  * @param {?Object} material
  */
-function annotateStorageBufferUserPaths( uniformPlan, material ) {
+function annotateStorageBufferUserPaths( uniformPlan, material, extractionContext = null ) {
 
-	if ( ! Array.isArray( uniformPlan ) || ! material ) return;
+	if ( ! Array.isArray( uniformPlan ) ) return;
 
 	for ( const group of uniformPlan ) {
 
@@ -839,7 +939,7 @@ function annotateStorageBufferUserPaths( uniformPlan, material ) {
 		for ( const sb of entries ) {
 
 			if ( ! sb || ! sb._liveAttribute ) continue;
-			const path = findAttributePathOnMaterial( material, sb._liveAttribute );
+			const path = findOwnerQualifiedAttributePath( material, sb._liveAttribute, extractionContext );
 			if ( path ) sb.userPath = path;
 
 		}
@@ -862,6 +962,34 @@ function nodeTreeContainsAttribute( node, target ) {
 
 	} );
 	return found;
+
+}
+
+function nodeTreeContainsCompatibleAttribute( node, target ) {
+
+	if ( ! node || ! target ) return false;
+	if ( compatibleAttribute( node.attribute, target ) || compatibleAttribute( node.value, target ) ) return true;
+	if ( typeof node.traverse !== 'function' ) return false;
+	let found = false;
+	node.traverse( ( child ) => {
+
+		if ( found || ! child ) return;
+		if ( compatibleAttribute( child.attribute, target ) || compatibleAttribute( child.value, target ) ) found = true;
+
+	} );
+	return found;
+
+}
+
+function compatibleAttribute( candidate, captured ) {
+
+	if ( candidate === captured ) return true;
+	if ( ! candidate || ! captured || ! candidate.array || ! captured.array ) return false;
+	if ( candidate.itemSize !== captured.itemSize ) return false;
+	if ( candidate.array.constructor !== captured.array.constructor ) return false;
+	const candidateStorage = candidate.isStorageBufferAttribute === true || candidate.isStorageInstancedBufferAttribute === true;
+	const capturedStorage = captured.isStorageBufferAttribute === true || captured.isStorageInstancedBufferAttribute === true;
+	return candidateStorage === capturedStorage;
 
 }
 

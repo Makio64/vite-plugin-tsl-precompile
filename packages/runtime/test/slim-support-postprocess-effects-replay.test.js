@@ -933,6 +933,27 @@ test( 'wireLiveNodeSidecarsToArtifact restores closure-only A/B/A/B identity fro
 
 } );
 
+test( 'wireLiveNodeSidecarsToArtifact does not broad-match ambiguous global registry candidates', () => {
+
+	clearLiveUniformRegistryForTests();
+	registerLiveUniformNode( { isUniformNode: true, value: 4 } );
+	registerLiveUniformNode( { isUniformNode: true, value: 4 } );
+	const slot = {
+		dtype: 'number',
+		source: {
+			kind: 'uniform.live',
+			liveNodeId: 0,
+			valueSnapshot: { type: 'number', data: 4 },
+		},
+	};
+	const artifact = { uniformPlan: [ { slots: [ slot ] } ] };
+	const counters = wireLiveNodeSidecarsToArtifact( artifact, { positionNode: { isNode: true } }, { overlay: true } );
+	assert.equal( counters.uniformsMatched, 0 );
+	assert.equal( slot._liveNode, undefined );
+	clearLiveUniformRegistryForTests();
+
+} );
+
 test( 'wireLiveNodeSidecarsToArtifact does not dtype-wire anonymous captured scalars', () => {
 
 	const artifact = {

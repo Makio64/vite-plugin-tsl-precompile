@@ -21,10 +21,16 @@ import { listLiveUniformNodes } from './live-uniform-registry.js';
 export function wireLiveUniformSidecarsToArtifact( artifact, sourceMaterial ) {
 
 	if ( ! artifact || ! sourceMaterial ) return 0;
-	const uniformNodes = collectLiveUniformNodes( sourceMaterial );
-	appendRegisteredUniformCandidates( artifact, uniformNodes );
-	const uniformMatches = wireLiveUniformSlots( artifact, uniformNodes, { overlay: true, sourceMaterial } );
-	const materialMatches = wireVolumeMaterialStepsSlot( artifact, sourceMaterial, { overlay: true } );
+	const graphUniformNodes = collectLiveUniformNodes( sourceMaterial );
+	const identityUniformNodes = graphUniformNodes.slice();
+	appendRegisteredUniformCandidates( artifact, identityUniformNodes, true );
+	const uniformMatches = wireLiveUniformSlots( artifact, identityUniformNodes, {
+		fallbackUniformNodes: graphUniformNodes,
+		overlay: true,
+		sourceMaterial,
+		includeVariants: true,
+	} );
+	const materialMatches = wireVolumeMaterialStepsSlot( artifact, sourceMaterial, { overlay: true, includeVariants: true } );
 	return uniformMatches + materialMatches;
 
 }
@@ -40,7 +46,7 @@ export function wireLiveUniformSidecarsToArtifact( artifact, sourceMaterial ) {
  *
  * @param {Object} artifact
  * @param {Object} sourceMaterial
- * @param {{ overlay?: boolean }} [opts]
+ * @param {{ overlay?: boolean, replaceUpdateNodes?: boolean, includeVariants?: boolean, includeRegisteredUniforms?: boolean, slotFilter?: Function }} [opts]
  * @return {{ uniformsMatched: number, updateNodes: number, updateBeforeNodes: number, updateAfterNodes: number }}
  */
 export function wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, opts = {} ) {
@@ -49,17 +55,30 @@ export function wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, opts =
 	if ( ! artifact || ! sourceMaterial ) return counters;
 
 	const collected = collectLiveSidecarNodes( sourceMaterial );
-	appendRegisteredUniformCandidates( artifact, collected.uniformNodes );
+	const includeVariants = opts.includeVariants !== false;
+	const identityUniformNodes = collected.uniformNodes.slice();
+	if ( opts.includeRegisteredUniforms !== false ) appendRegisteredUniformCandidates( artifact, identityUniformNodes, includeVariants, opts.slotFilter );
 
-	appendArtifactSidecars( artifact, '_liveUpdateNodes', collected.updateNodes );
-	appendArtifactSidecars( artifact, '_liveUpdateBeforeNodes', collected.updateBeforeNodes );
-	appendArtifactSidecars( artifact, '_liveUpdateAfterNodes', collected.updateAfterNodes );
+	const attachUpdateNodes = opts.replaceUpdateNodes === true ? replaceArtifactSidecars : appendArtifactSidecars;
+	attachUpdateNodes( artifact, '_liveUpdateNodes', collected.updateNodes );
+	attachUpdateNodes( artifact, '_liveUpdateBeforeNodes', collected.updateBeforeNodes );
+	attachUpdateNodes( artifact, '_liveUpdateAfterNodes', collected.updateAfterNodes );
 	counters.updateNodes = collected.updateNodes.length;
 	counters.updateBeforeNodes = collected.updateBeforeNodes.length;
 	counters.updateAfterNodes = collected.updateAfterNodes.length;
 
-	counters.uniformsMatched = wireLiveUniformSlots( artifact, collected.uniformNodes, { overlay: opts.overlay === true, sourceMaterial } );
-	counters.uniformsMatched += wireVolumeMaterialStepsSlot( artifact, sourceMaterial, { overlay: opts.overlay === true } );
+	counters.uniformsMatched = wireLiveUniformSlots( artifact, identityUniformNodes, {
+		fallbackUniformNodes: collected.uniformNodes,
+		includeVariants,
+		overlay: opts.overlay === true,
+		slotFilter: opts.slotFilter,
+		sourceMaterial,
+	} );
+	counters.uniformsMatched += wireVolumeMaterialStepsSlot( artifact, sourceMaterial, {
+		includeVariants,
+		overlay: opts.overlay === true,
+		slotFilter: opts.slotFilter,
+	} );
 	return counters;
 
 }
@@ -86,19 +105,39 @@ function collectLiveSidecarNodes( sourceMaterial ) {
 	walkMaterialNodeGraph( sourceMaterial, ( node ) => {
 
 		if ( node.isUniformNode === true && ! uniformNodes.includes( node ) ) uniformNodes.push( node );
-		if ( typeof node.update === 'function' && ! updateNodes.includes( node ) ) updateNodes.push( node );
-		if ( typeof node.updateBefore === 'function' && ! updateBeforeNodes.includes( node ) ) updateBeforeNodes.push( node );
-		if ( typeof node.updateAfter === 'function' && ! updateAfterNodes.includes( node ) ) updateAfterNodes.push( node );
+		if ( hasReplayNodeLifecycle( node, 'getUpdateType', 'update' ) && ! updateNodes.includes( node ) ) updateNodes.push( node );
+		if ( hasReplayNodeLifecycle( node, 'getUpdateBeforeType', 'updateBefore' ) && ! updateBeforeNodes.includes( node ) ) updateBeforeNodes.push( node );
+		if ( hasReplayNodeLifecycle( node, 'getUpdateAfterType', 'updateAfter' ) && ! updateAfterNodes.includes( node ) ) updateAfterNodes.push( node );
 
 	} );
 	return { uniformNodes, updateNodes, updateBeforeNodes, updateAfterNodes };
 
 }
 
-function appendRegisteredUniformCandidates( artifact, uniformNodes ) {
+function hasReplayNodeLifecycle( node, typeMethod, updateMethod ) {
 
-	const hasSerializedIdentity = artifactPlanOwners( artifact ).some( ( owner ) => ( owner.uniformPlan || [] ).some( ( group ) =>
-		( group.slots || [] ).some( ( slot ) => slot && slot.source && Number.isInteger( slot.source.liveNodeId ) )
+	if ( ! node
+		|| typeof node[ typeMethod ] !== 'function'
+		|| typeof node.updateReference !== 'function'
+		|| typeof node[ updateMethod ] !== 'function' ) return false;
+	try {
+
+		const type = node[ typeMethod ]();
+		return type === 'object' || type === 'render' || type === 'frame';
+
+	} catch ( _ ) {
+
+		return false;
+
+	}
+
+}
+
+function appendRegisteredUniformCandidates( artifact, uniformNodes, includeVariants, slotFilter = null ) {
+
+	const hasSerializedIdentity = artifactPlanOwners( artifact, includeVariants ).some( ( owner ) => ( owner.uniformPlan || [] ).some( ( group ) =>
+		( group.slots || [] ).some( ( slot ) => ( ! slotFilter || slotFilter( slot, owner ) )
+			&& slot && slot.source && Number.isInteger( slot.source.liveNodeId ) )
 	) );
 	if ( ! hasSerializedIdentity ) return;
 	for ( const node of listLiveUniformNodes() ) {
@@ -109,7 +148,7 @@ function appendRegisteredUniformCandidates( artifact, uniformNodes ) {
 
 }
 
-function artifactPlanOwners( artifact ) {
+function artifactPlanOwners( artifact, includeVariants = true ) {
 
 	if ( ! artifact || typeof artifact !== 'object' ) return [];
 	const owners = [];
@@ -122,7 +161,7 @@ function artifactPlanOwners( artifact ) {
 
 	};
 	append( artifact );
-	for ( const variant of Object.values( artifact.variants || {} ) ) append( variant );
+	if ( includeVariants ) for ( const variant of Object.values( artifact.variants || {} ) ) append( variant );
 	return owners;
 
 }
@@ -132,38 +171,41 @@ function wireLiveUniformSlots( artifact, uniformNodes, options = {} ) {
 	if ( ! Array.isArray( uniformNodes ) || uniformNodes.length === 0 ) return 0;
 
 	let matched = 0;
-	for ( const owner of artifactPlanOwners( artifact ) ) {
+	for ( const owner of artifactPlanOwners( artifact, options.includeVariants !== false ) ) {
 
 		const used = new Set();
-		const identityMatches = resolveSerializedIdentityMatches( owner, uniformNodes, options.sourceMaterial );
+		const fallbackUniformNodes = Array.isArray( options.fallbackUniformNodes ) ? options.fallbackUniformNodes : uniformNodes;
+		const identityMatches = resolveSerializedIdentityMatches( owner, uniformNodes, options.sourceMaterial, options.slotFilter );
 		for ( const group of owner.uniformPlan || [] ) {
 
 			for ( const slot of group.slots || [] ) {
 
+				if ( options.slotFilter && ! options.slotFilter( slot, owner ) ) continue;
 				const source = ( slot && slot.source ) || {};
-				if ( source.kind !== 'uniform.live' || slot._liveNode ) continue;
+				if ( source.kind !== 'uniform.live' || source.property ) continue;
 				const hasCapturedValue = uniformSlotHasCapturedValue( slot );
-				let match = Number.isInteger( source.liveNodeId ) ? identityMatches.get( source.liveNodeId ) || null : null;
-				if ( ! match ) match = resolveLiveNodePath( options.sourceMaterial, source.nodePath );
+				const pathMatch = resolveLiveNodePath( options.sourceMaterial, source.nodePath );
+				if ( slot._liveNode && ! pathMatch ) continue;
+				let match = pathMatch || ( Number.isInteger( source.liveNodeId ) ? identityMatches.get( source.liveNodeId ) || null : null );
 				if ( match && ! valueMatchesDtype( match.value, slot.dtype || '' ) ) match = null;
 				if ( ! match && source.name ) {
 
-					match = uniformNodes.find( ( node ) => ! used.has( node ) && node.name === source.name && valueMatchesUniformSlot( node.value, slot ) );
-					if ( ! match ) match = uniformNodes.find( ( node ) => node.name === source.name && valueMatchesUniformSlot( node.value, slot ) );
-					if ( ! match ) match = uniformNodes.find( ( node ) => ! used.has( node ) && node.name === source.name && valueMatchesDtype( node.value, slot.dtype || '' ) );
-					if ( ! match ) match = uniformNodes.find( ( node ) => node.name === source.name && valueMatchesDtype( node.value, slot.dtype || '' ) );
+					match = fallbackUniformNodes.find( ( node ) => ! used.has( node ) && node.name === source.name && valueMatchesUniformSlot( node.value, slot ) );
+					if ( ! match ) match = fallbackUniformNodes.find( ( node ) => node.name === source.name && valueMatchesUniformSlot( node.value, slot ) );
+					if ( ! match ) match = fallbackUniformNodes.find( ( node ) => ! used.has( node ) && node.name === source.name && valueMatchesDtype( node.value, slot.dtype || '' ) );
+					if ( ! match ) match = fallbackUniformNodes.find( ( node ) => node.name === source.name && valueMatchesDtype( node.value, slot.dtype || '' ) );
 
 				}
-				if ( ! match ) match = uniformNodes.find( ( node ) => ! used.has( node ) && valueMatchesUniformSlot( node.value, slot ) );
-				if ( ! match ) match = uniformNodes.find( ( node ) => valueMatchesUniformSlot( node.value, slot ) );
+				if ( ! match ) match = fallbackUniformNodes.find( ( node ) => ! used.has( node ) && valueMatchesUniformSlot( node.value, slot ) );
+				if ( ! match ) match = fallbackUniformNodes.find( ( node ) => valueMatchesUniformSlot( node.value, slot ) );
 				const dtype = slot.dtype || slot.source && slot.source.valueSnapshot && slot.source.valueSnapshot.type || '';
 				if ( ! match && ( ! hasCapturedValue || ! isScalarUniformDtype( dtype ) ) ) {
 
-					const dtypeMatches = uniformNodes.filter( ( node ) => ! used.has( node ) && valueMatchesDtype( node.value, dtype ) );
+					const dtypeMatches = fallbackUniformNodes.filter( ( node ) => ! used.has( node ) && valueMatchesDtype( node.value, dtype ) );
 					if ( dtypeMatches.length === 1 ) match = dtypeMatches[ 0 ];
 					else {
 
-						const allDtypeMatches = uniformNodes.filter( ( node ) => valueMatchesDtype( node.value, dtype ) );
+						const allDtypeMatches = fallbackUniformNodes.filter( ( node ) => valueMatchesDtype( node.value, dtype ) );
 						if ( allDtypeMatches.length === 1 ) match = allDtypeMatches[ 0 ];
 
 					}
@@ -198,7 +240,7 @@ function wireLiveUniformSlots( artifact, uniformNodes, options = {} ) {
 
 }
 
-function resolveSerializedIdentityMatches( artifact, uniformNodes, sourceMaterial ) {
+function resolveSerializedIdentityMatches( artifact, uniformNodes, sourceMaterial, slotFilter = null ) {
 
 	const matches = new Map();
 	const representativeById = new Map();
@@ -206,6 +248,7 @@ function resolveSerializedIdentityMatches( artifact, uniformNodes, sourceMateria
 
 		for ( const slot of group.slots || [] ) {
 
+			if ( slotFilter && ! slotFilter( slot, artifact ) ) continue;
 			const source = slot && slot.source || {};
 			if ( source.kind !== 'uniform.live' || ! Number.isInteger( source.liveNodeId ) ) continue;
 			if ( ! representativeById.has( source.liveNodeId ) ) representativeById.set( source.liveNodeId, slot );
@@ -282,12 +325,13 @@ function wireVolumeMaterialStepsSlot( artifact, sourceMaterial, options = {} ) {
 	const steps = Number( sourceMaterial.steps );
 	if ( ! Number.isFinite( steps ) || steps <= 0 ) return 0;
 	let matched = 0;
-	for ( const owner of artifactPlanOwners( artifact ) ) {
+	for ( const owner of artifactPlanOwners( artifact, options.includeVariants !== false ) ) {
 
 		for ( const group of owner.uniformPlan || [] ) {
 
 			for ( const slot of group.slots || [] ) {
 
+				if ( options.slotFilter && ! options.slotFilter( slot, owner ) ) continue;
 				if ( ! isVolumeStepsUniformSlot( owner, slot ) ) continue;
 				const liveSteps = {};
 				Object.defineProperty( liveSteps, 'value', {
@@ -366,7 +410,7 @@ function isVolumeStepsUniformSlot( artifact, slot ) {
 // shape so replay and product runtime bind the same live nodes.
 // ---------------------------------------------------------------------------
 
-const WALK_SKIP_KEYS = new Set( [ 'parent', 'children', 'scene', 'camera', 'renderer', 'geometry', '_cache', 'domElement', 'sourceMaterial' ] );
+const WALK_SKIP_KEYS = new Set( [ 'parent', 'children', 'scene', 'camera', 'renderer', 'geometry', '_cache', 'domElement', 'sourceMaterial', 'precompiledArtifact' ] );
 const DEFAULT_WALK_DEPTH = 24;
 const VALUE_EPSILON = 1e-6;
 
@@ -436,6 +480,18 @@ function appendArtifactSidecars( artifact, key, nodes ) {
 		} );
 
 	}
+
+}
+
+function replaceArtifactSidecars( artifact, key, nodes ) {
+
+	if ( ! artifact || ! Array.isArray( nodes ) ) return;
+	Object.defineProperty( artifact, key, {
+		value: [ ...new Set( nodes.filter( Boolean ) ) ],
+		enumerable: false,
+		configurable: true,
+		writable: true,
+	} );
 
 }
 

@@ -6,6 +6,14 @@ export const RENDER_BINDING_OWNER_KINDS = Object.freeze( {
 	SHADOW_CASTER: 'shadow-caster',
 } );
 
+// Non-serializable handoff used by the slim renderer rewrite. A shadow pass
+// replaces the selected caster material before RenderObject exists, so the
+// exact selected material cannot be recovered reliably from an array/group
+// lookup later. Keeping it on the active replay material avoids adding
+// process-local identity to persisted selectors while preserving the exact
+// per-draw owner for runtime hydration.
+export const RENDER_BINDING_OWNER_MATERIAL = Symbol.for( '@tsl-precompile/render-binding-owner-material' );
+
 const RENDER_BINDING_OWNER_KIND_SET = new Set( Object.values( RENDER_BINDING_OWNER_KINDS ) );
 
 export function isRenderBindingOwnerKind( value ) {
@@ -67,7 +75,7 @@ export function describeRenderObjectContext( renderObject, renderer = renderObje
 	const object = safeRead( renderObject, 'object' ) || null;
 	const sourceGeometry = safeRead( renderObject, 'sourceGeometry' ) || safeRead( object, 'geometry' ) || null;
 	const material = safeRead( renderObject, 'material' ) || safeRead( object, 'material' ) || null;
-	const shadowCaster = describeShadowCaster( renderObject, object, material );
+	const shadowCaster = describeShadowCaster( renderObject, material );
 	// RenderContext instances are mutable and reused by Three. Snapshot target
 	// topology before reading any other renderer-owned state so a nested render
 	// cannot relabel the observed face or mip level underneath this descriptor.
@@ -235,10 +243,25 @@ export function projectRenderObjectContextSelector( selector, profile ) {
  * Keep this descriptor branch-shaped and graph-free so full TSL nodes and the
  * compiler-free runtime's inert node stubs produce the same selector.
  */
-function describeShadowCaster( renderObject, object, activeMaterial ) {
+function describeShadowCaster( renderObject, activeMaterial ) {
 
 	if ( safeRead( activeMaterial, 'isShadowPassMaterial' ) !== true ) return null;
 	const sourceMaterial = resolveRenderObjectBindingOwner( renderObject ).material;
+	if ( ! sourceMaterial ) return null;
+	return describeShadowCasterMaterial( sourceMaterial );
+
+}
+
+/**
+ * Describe only source-material topology that can change Three's shadow pass.
+ * Replay uses the same projection to invalidate a stable per-caster shadow
+ * material without retaining or comparing live TSL graph identity.
+ *
+ * @param {?Object} sourceMaterial
+ * @return {Object|null}
+ */
+export function describeShadowCasterMaterial( sourceMaterial ) {
+
 	if ( ! sourceMaterial ) return null;
 
 	const map = safeRead( sourceMaterial, 'map' );
@@ -263,6 +286,13 @@ function describeShadowCaster( renderObject, object, activeMaterial ) {
 		alphaMap: resourceShape( safeRead( sourceMaterial, 'alphaMap' ), { sampler: true } ),
 		alphaTest: Number( safeRead( sourceMaterial, 'alphaTest' ) ) > 0,
 	} );
+
+}
+
+/** Return the canonical topology key shared by capture and replay. */
+export function createShadowCasterTopologySelector( sourceMaterial ) {
+
+	return stableJsonStringify( describeShadowCasterMaterial( sourceMaterial ), 'shadowCasterTopology' );
 
 }
 
@@ -292,7 +322,10 @@ export function resolveRenderObjectBindingOwner( renderObject, exactSourceMateri
 	const materialIndex = Number.isInteger( rawMaterialIndex ) && rawMaterialIndex >= 0 ? rawMaterialIndex : null;
 	const sourceMaterialSet = safeRead( object, 'material' );
 	const isShadowCaster = safeRead( activeMaterial, 'isShadowPassMaterial' ) === true;
-	let material = exactSourceMaterial || safeRead( renderObject, 'sourceMaterial' ) || null;
+	let material = exactSourceMaterial
+		|| safeRead( renderObject, 'sourceMaterial' )
+		|| safeRead( activeMaterial, RENDER_BINDING_OWNER_MATERIAL )
+		|| null;
 	if ( ! material ) {
 
 		if ( isShadowCaster ) {
