@@ -211,6 +211,25 @@ test( 'emitUpdaterSource — extractor dialect (frame.time, constant with valueS
 
 } );
 
+test( 'emitUpdaterSource — temporal frame scope drives frameId and velocity history', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			slots: [
+				{ offset: 0, source: { kind: 'frame.frameId' } },
+				{ offset: 16, source: { kind: 'velocity.previousProjectionMatrix' } },
+			],
+		} ],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.deepEqual( unsupportedKinds, [] );
+	assert.match( source, /Symbol\.for\("@tsl-precompile\/runtime\/temporal-frame@1"\)/ );
+	assert.match( source, /temporal\.advance === false/ );
+	assert.match( source, /temporal\.frameId !== undefined/ );
+	assert.match( source, /Number\.isFinite\(_s\.frameId\) \? _s\.frameId : frame\.frameId/ );
+
+} );
+
 test( 'emitUpdaterSource — frame.time.scaled bakes scale literal and honours __tslpPinnedClock (Wave 6 S1)', () => {
 
 	const artifact = {

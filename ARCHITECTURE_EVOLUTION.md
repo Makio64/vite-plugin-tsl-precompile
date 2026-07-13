@@ -53,6 +53,21 @@ identity ledger updates correctly at later ticks, but its animation clock and
 the capture clock are not yet the same logical frame. That remaining issue is
 temporal scheduling/clock ownership, not uniform identity.
 
+**Logical temporal-frame wedge (2026-07-13).**
+[`slim-support/temporal-frame.js`](packages/runtime/src/slim-support/temporal-frame.js)
+now gives slim and full fallback renderers one explicit application-frame key
+and an `advance: false` maintenance-render mode. Velocity camera/object writers
+and skinned previous/current bone buffers consume that key before falling back
+to Three's per-render `frameId`; nested sync/async scopes restore renderer state
+on success or failure. `createSlimSceneSupport()` exposes the scope, and the e2e
+RenderPipeline shares it with its full fallback while loader-forced renders are
+non-advancing. Focused runtime tests cover multi-renderer sharing, nesting,
+failures, velocity matrices, and skinned buffers. The two visual canaries did
+not materially change (`motion_blur` 29.65 dB, AO 28.39 dB), which narrows their
+remaining issue further: the harness still executes too many pass stages per
+logical frame (AO's producer/consumer order and motion blur's four pipeline
+renders), rather than merely keying history to the wrong renderer frame ID.
+
 ---
 
 ## 2026-06-09 audit refresh — corrections to the map

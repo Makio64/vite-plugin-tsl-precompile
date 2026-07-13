@@ -20,6 +20,7 @@
 import { Matrix4, Vector2, Vector3, Vector4 } from 'three';
 import { findShadowMatrixLightForSlot, updateLightShadowMatrixForFrame, writeLightValue } from './light-writers.js';
 import { writeColor, writeInt, writeLiveValue, writeMat3, writeMat4, writeNumber, writeSnapshot, writeUint, writeVec2, writeVec3, writeVec4 } from './snapshot-writers.js';
+import { logicalFrameKey, shouldAdvanceTemporalState } from '../slim-support/temporal-frame.js';
 
 // Module-scoped scratch — reused per frame to avoid GC pressure.
 const _rSize = new Vector2( 1, 1 );
@@ -32,15 +33,13 @@ const _velocityObjectStates = new WeakMap();
 
 function frameKey( frame ) {
 
-	const id = frame && Number.isFinite( frame.frameId ) ? frame.frameId : frame && Number.isFinite( frame.renderId ) ? frame.renderId : 0;
-	return id;
+	return logicalFrameKey( frame, 0 );
 
 }
 
 function shouldFreezeVelocityState( frame ) {
 
-	const root = typeof globalThis !== 'undefined' ? globalThis : null;
-	return !! ( root && root.__tslpSuppressVelocityStateAdvance === true || frame && frame.renderer && frame.renderer.__tslpSuppressVelocityStateAdvance === true );
+	return ! shouldAdvanceTemporalState( frame );
 
 }
 
@@ -266,7 +265,12 @@ export function writeUniformGroup( group, frame, view, material ) {
 
 		}
 		else if ( kind === 'frame.deltaTime' ) writeNumber( view, offset, frame.deltaTime, source.valueSnapshot );
-		else if ( kind === 'frame.frameId' ) writeUint( view, offset, frame.frameId, source.valueSnapshot );
+		else if ( kind === 'frame.frameId' ) {
+
+			const temporalFrameId = logicalFrameKey( frame, frame.frameId );
+			writeUint( view, offset, Number.isFinite( temporalFrameId ) ? temporalFrameId : frame.frameId, source.valueSnapshot );
+
+		}
 		else if ( kind === 'object.worldMatrix' ) writeMat4( view, offset, frame.object && frame.object.matrixWorld, source.valueSnapshot );
 		else if ( kind === 'object3d.worldMatrix' ) {
 

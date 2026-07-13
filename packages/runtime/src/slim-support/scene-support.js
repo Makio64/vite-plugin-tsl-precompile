@@ -55,6 +55,7 @@ import { preparePrecompiledPostprocess } from './postprocess-effects-replay.js';
 import { loadAux } from '../aux-loader.js';
 import { installLiveTextureRegistryPatches, installTextureLoaderTracking, registerLiveTexture } from '../hydrate/live-texture-registry.js';
 import PrecompiledMaterial from '../_vendor-PrecompiledMaterial.js';
+import { withTemporalFrame as runWithTemporalFrame } from './temporal-frame.js';
 
 const DEFAULT_OPTS = {
 	// Wave 5 Phase B3 — default to `'auto'` so any three.js project that
@@ -757,6 +758,11 @@ export function createSlimSceneSupport( opts = {} ) {
 		// also exported as standalone functions from `@tsl-precompile/runtime`.
 		pinClock,
 		unpinClock,
+		withTemporalFrame: ( options, callback, extraRenderers = [] ) => runWithTemporalFrame(
+			[ renderer, cachedFullRenderer, ...( Array.isArray( extraRenderers ) ? extraRenderers : [ extraRenderers ] ) ],
+			options,
+			callback,
+		),
 		dispose,
 	};
 

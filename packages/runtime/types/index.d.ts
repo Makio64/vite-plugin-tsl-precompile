@@ -426,10 +426,20 @@ export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	renderOffscreenOverrideWithFallback: ( scene: unknown, camera: unknown, offscreenOpts?: RenderOffscreenOverrideWithFallbackOptions ) => Promise<RenderPassWithFallbackStats>;
 	pinClock: ( t: number | null | undefined ) => void;
 	unpinClock: () => void;
+	withTemporalFrame: <T>( options: { frameId?: number | string; time?: number; advance?: boolean }, callback: ( state: TemporalFrameState ) => T, extraRenderers?: unknown | unknown[] ) => T;
 	dispose: () => void;
 };
 export function pinClock( t: number | null | undefined ): void;
 export function unpinClock(): void;
+export type TemporalFrameState = {
+	frameId?: number | string;
+	time: number | null;
+	advance: boolean;
+};
+export function getTemporalFrameState( value: unknown ): TemporalFrameState | null;
+export function logicalFrameKey( frame: unknown, fallback?: number | string ): number | string;
+export function shouldAdvanceTemporalState( frame: unknown ): boolean;
+export function withTemporalFrame<T>( renderers: unknown | unknown[], options: { frameId?: number | string; time?: number; advance?: boolean }, callback: ( state: TemporalFrameState ) => T ): T;
 
 export type EffectSubPass = {
 	material?: unknown;

@@ -26,6 +26,7 @@ export { textureMatchesSource, textureMatchesArtifactSource, artifactHasTextureS
 export { getComputeBindGroups, computeNodeUsesStorageTexture, shareComputeSampledInputs, syncComputeStorageOutputs, syncComputeStorageOutputsPerPass, wireArtifactStorageBuffersFromAttributes, pingPongInvalidate, shareInstancedAttributeBufferIntoSlim } from './slim-support/compute-sync.js';
 export { createFullRendererFallback } from './slim-support/full-renderer-fallback.js';
 export { createSlimSceneSupport, pinClock, unpinClock } from './slim-support/scene-support.js';
+export { getTemporalFrameState, logicalFrameKey, shouldAdvanceTemporalState, withTemporalFrame } from './slim-support/temporal-frame.js';
 export { collectSceneLights, updateRendererLightingForSlim, wireStorageAttributesToSceneArtifacts, wireTiledLightingTextureToScene } from './slim-support/renderer-lighting.js';
 export { setSlimRenderFallback, getSlimRenderFallback } from './slim-support/render-fallback-registry.js';
 export { collectLiveBloomNodes, wireBloomNode, wirePrecompiledPostprocess, findPostprocessAux } from './slim-support/postprocess-wire.js';

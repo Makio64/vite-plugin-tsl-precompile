@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { Color, Matrix3, Matrix4, Vector3, Vector4 } from 'three';
 
 import { writeMaterialValue, writeUniformGroup } from '../src/hydrate/material-writers.js';
+import { withTemporalFrame } from '../src/slim-support/temporal-frame.js';
 
 function makeView( size = 256 ) {
 
@@ -73,6 +74,13 @@ test( 'writeUniformGroup writes frame.time and frame.frameId', () => {
 	writeUniformGroup( group, { time: 1.5, frameId: 42 }, view, null );
 	assert.equal( view.getFloat32( 0, true ), 1.5 );
 	assert.equal( view.getUint32( 4, true ), 42 );
+	const renderer = {};
+	withTemporalFrame( renderer, { frameId: 7 }, () => {
+
+		writeUniformGroup( group, { renderer, time: 1.5, frameId: 99 }, view, null );
+
+	} );
+	assert.equal( view.getUint32( 4, true ), 7 );
 
 } );
 
@@ -229,6 +237,41 @@ test( 'writeUniformGroup tracks VelocityNode previous camera and object matrices
 	assert.equal( thirdFrame.getFloat32( 12 * 4, true ), 10 );
 	assert.equal( thirdFrame.getFloat32( 64 + 12 * 4, true ), 20 );
 	assert.equal( thirdFrame.getFloat32( 128 + 12 * 4, true ), 30 );
+
+} );
+
+test( 'writeUniformGroup keys velocity history to an explicit logical frame', () => {
+
+	const group = makeGroup( [
+		{ offset: 0, dtype: 'mat4', source: { kind: 'velocity.previousProjectionMatrix' } },
+		{ offset: 64, dtype: 'mat4', source: { kind: 'velocity.previousModelWorldMatrix' } },
+	] );
+	const renderer = {};
+	const camera = { projectionMatrix: new Matrix4().makeTranslation( 1, 0, 0 ), matrixWorldInverse: new Matrix4() };
+	const object = { matrixWorld: new Matrix4().makeTranslation( 2, 0, 0 ) };
+	withTemporalFrame( renderer, { frameId: 10 }, () => {
+
+		writeUniformGroup( group, { renderer, frameId: 100, camera, object }, makeView(), null );
+
+	} );
+	camera.projectionMatrix.makeTranslation( 11, 0, 0 );
+	object.matrixWorld.makeTranslation( 12, 0, 0 );
+	const maintenanceView = makeView();
+	withTemporalFrame( renderer, { frameId: 10, advance: false }, () => {
+
+		writeUniformGroup( group, { renderer, frameId: 101, camera, object }, maintenanceView, null );
+
+	} );
+	assert.equal( maintenanceView.getFloat32( 12 * 4, true ), 1 );
+	assert.equal( maintenanceView.getFloat32( 64 + 12 * 4, true ), 2 );
+	const nextView = makeView();
+	withTemporalFrame( renderer, { frameId: 11 }, () => {
+
+		writeUniformGroup( group, { renderer, frameId: 102, camera, object }, nextView, null );
+
+	} );
+	assert.equal( nextView.getFloat32( 12 * 4, true ), 1 );
+	assert.equal( nextView.getFloat32( 64 + 12 * 4, true ), 2 );
 
 } );
 

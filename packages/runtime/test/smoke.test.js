@@ -37,6 +37,7 @@ import {
 	positionLocal,
 	screenUV,
 } from '../src/slim-stubs.js';
+import { withTemporalFrame } from '../src/slim-support/temporal-frame.js';
 
 test( 'runtime artifact registry round-trips a module', () => {
 
@@ -2416,6 +2417,28 @@ test( 'hydrator: duplicate skinned velocity uniform buffers resolve previous and
 	assert.deepEqual( Array.from( previousBones.buffer ), [ 10, 11, 12, 13, 14, 15, 16, 17 ] );
 	assert.deepEqual( Array.from( currentBones.buffer ), [ 20, 21, 22, 23, 24, 25, 26, 27 ] );
 	assert.equal( updateCount, 2 );
+
+	const renderer = {};
+	material.__tslpCurrentFrame = { frameId: 400, renderer };
+	withTemporalFrame( renderer, { frameId: 2, advance: false }, () => {
+
+		previousBones.update();
+		currentBones.update();
+
+	} );
+	assert.deepEqual( Array.from( previousBones.buffer ), [ 10, 11, 12, 13, 14, 15, 16, 17 ] );
+	assert.deepEqual( Array.from( currentBones.buffer ), [ 20, 21, 22, 23, 24, 25, 26, 27 ] );
+	assert.equal( updateCount, 2 );
+
+	withTemporalFrame( renderer, { frameId: 3 }, () => {
+
+		previousBones.update();
+		currentBones.update();
+
+	} );
+	assert.deepEqual( Array.from( previousBones.buffer ), [ 20, 21, 22, 23, 24, 25, 26, 27 ] );
+	assert.deepEqual( Array.from( currentBones.buffer ), [ 30, 31, 32, 33, 34, 35, 36, 37 ] );
+	assert.equal( updateCount, 3 );
 
 } );
 

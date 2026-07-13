@@ -1833,6 +1833,7 @@ import { createFullRendererFallback as __sharedCreateFullRendererFallback } from
 import { updateRendererLightingForSlim as __sharedUpdateRendererLightingForSlim } from '/__tslp_runtime/slim-support/renderer-lighting.js';
 import { artifactLooksLikeRetroPassMaterial as __sharedArtifactLooksLikeRetroPassMaterial } from '/__tslp_runtime/slim-support/postprocess-effects-replay.js';
 import { wireLiveUniformSidecarsToArtifact as __sharedWireLiveUniformSidecarsToArtifact } from '/__tslp_runtime/slim-support/live-node-sidecars.js';
+import { getTemporalFrameState as __sharedGetTemporalFrameState, withTemporalFrame as __sharedWithTemporalFrame } from '/__tslp_runtime/slim-support/temporal-frame.js';
 import { renderOffscreenOverrideWithFullRenderer as __sharedRenderOffscreenOverrideWithFullRenderer } from '/__tslp_runtime/slim-support/pass-render-fallback.js';
 import { findAux as __runtimeFindAux } from '/__tslp_runtime/aux-loader.js';
 import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS as __NODE_GRAPH_KEYS } from '/__tslp_contract/texture-props.js';
@@ -3474,7 +3475,11 @@ const __backgroundNeedsPMREM = ( function () {
 		Promise.resolve().then( () => {
 			pipeline.__tslpLoaderForceRenderQueued = false;
 			try {
-				pipeline.render();
+				__sharedWithTemporalFrame(
+					[ pipeline.renderer, __computeRenderer ],
+					{ frameId: __frameEffectFrameId(), advance: false },
+					() => pipeline.render(),
+				);
 				const diag = window.__tslpHarnessDiagnostics || ( window.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
 				diag.loaderForcedPipelineRenders = ( diag.loaderForcedPipelineRenders || 0 ) + 1;
 			} catch ( e ) {
@@ -13144,7 +13149,13 @@ export class RenderPipeline extends Slim.RenderPipeline {
 			if ( renderer ) renderer.__tslpCurrentRenderPipeline = this;
 			try { window.__tslpLastRenderPipeline = this; } catch ( _ ) {}
 			try {
-				return super.render( ...args );
+				const inheritedTemporalFrame = __sharedGetTemporalFrameState( renderer );
+				const temporalFrame = inheritedTemporalFrame || {
+					frameId: __frameEffectFrameId(),
+					time: Number.isFinite( globalThis.__tslpPinnedClock ) ? globalThis.__tslpPinnedClock : null,
+					advance: true,
+				};
+				return __sharedWithTemporalFrame( [ renderer, __computeRenderer ], temporalFrame, () => super.render( ...args ) );
 			} finally {
 			if ( renderer ) renderer.__tslpInsideRenderPipeline = Math.max( 0, ( renderer.__tslpInsideRenderPipeline | 0 ) - 1 );
 			if ( renderer ) renderer.__tslpCurrentRenderPipeline = previousRenderPipeline;

@@ -41,6 +41,7 @@ import { clippingPlaneSetsForFrame, selectClippingPlaneArray } from './hydrate/c
 import { applyCapturedInstancedDrawCount, bindUserNodeAttributesToArtifact, bindUserStorageBuffersToArtifact, hydrateNodeAttributes } from './hydrate/user-attributes.js';
 import { updateDynamicLightUniforms } from './hydrate/dynamic-light-buffers.js';
 import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
+import { logicalFrameKey, shouldAdvanceTemporalState } from './slim-support/temporal-frame.js';
 
 export { clearLiveTextureIndex, installTextureLoaderTracking, registerLiveTexture } from './hydrate/live-texture-registry.js';
 
@@ -504,19 +505,16 @@ function skeletonUniformBufferRole( artifact, groupName, bindingName, byteLength
 function liveFrameKeyForMaterial( material ) {
 
 	const frame = material && material.__tslpCurrentFrame || null;
-	if ( frame && Number.isFinite( frame.frameId ) ) return frame.frameId;
-	if ( frame && Number.isFinite( frame.renderId ) ) return frame.renderId;
 	const root = typeof globalThis !== 'undefined' ? globalThis : null;
-	if ( root && Number.isFinite( root.__tslpRafTick ) ) return root.__tslpRafTick;
-	return 0;
+	const fallback = root && Number.isFinite( root.__tslpRafTick ) ? root.__tslpRafTick : 0;
+	return logicalFrameKey( frame, fallback );
 
 }
 
 function shouldFreezeLiveSkeletonState( material ) {
 
 	const frame = material && material.__tslpCurrentFrame || null;
-	const root = typeof globalThis !== 'undefined' ? globalThis : null;
-	return !! ( root && root.__tslpSuppressVelocityStateAdvance === true || frame && frame.renderer && frame.renderer.__tslpSuppressVelocityStateAdvance === true );
+	return ! shouldAdvanceTemporalState( frame );
 
 }
 

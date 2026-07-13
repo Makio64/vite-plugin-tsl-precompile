@@ -346,10 +346,19 @@ export function emitUpdaterSource( artifact, opts = {} ) {
 			threeNames.add( 'Matrix4' );
 			decls.push( 'const _tslpVelocityCameraStates = new WeakMap();' );
 			decls.push( 'const _tslpVelocityObjectStates = new WeakMap();' );
+			decls.push( 'const _tslpTemporalFrameState = Symbol.for("@tsl-precompile/runtime/temporal-frame@1");' );
+			decls.push( 'function _tslpTemporalState(frame) {' );
+			decls.push( '  const renderer = frame && frame.renderer;' );
+			decls.push( '  return renderer && renderer[_tslpTemporalFrameState] || null;' );
+			decls.push( '}' );
 			decls.push( 'function _tslpFrameKey(frame) {' );
+			decls.push( '  const temporal = _tslpTemporalState(frame);' );
+			decls.push( '  if (temporal && temporal.frameId !== undefined && temporal.frameId !== null) return temporal.frameId;' );
 			decls.push( '  return frame && Number.isFinite(frame.frameId) ? frame.frameId : frame && Number.isFinite(frame.renderId) ? frame.renderId : 0;' );
 			decls.push( '}' );
 			decls.push( 'function _tslpFreezeVelocityState(frame) {' );
+			decls.push( '  const temporal = _tslpTemporalState(frame);' );
+			decls.push( '  if (temporal && temporal.advance === false) return true;' );
 			decls.push( '  const root = typeof globalThis !== "undefined" ? globalThis : null;' );
 			decls.push( '  return !!(root && root.__tslpSuppressVelocityStateAdvance === true || frame && frame.renderer && frame.renderer.__tslpSuppressVelocityStateAdvance === true);' );
 			decls.push( '}' );
@@ -652,7 +661,7 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 		case 'frame.frameId':
 		case 'frameId':
 			usedWriters.add( 'writeU32' );
-			return `writeU32(view, ${ off }, frame.frameId);`;
+			return `{ const _s = frame && frame.renderer && frame.renderer[Symbol.for("@tsl-precompile/runtime/temporal-frame@1")]; writeU32(view, ${ off }, _s && Number.isFinite(_s.frameId) ? _s.frameId : frame.frameId); }`;
 
 		// Renderer-scoped uniforms — ScreenNode drives these from the live
 		// renderer each frame. The slim runtime runs a full WebGPURenderer,

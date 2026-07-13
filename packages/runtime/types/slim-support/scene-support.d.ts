@@ -1,6 +1,7 @@
 import type { ComputeInputShareStats, ComputeSyncStats, ComputeSyncPerPassStats } from './compute-sync.d.ts';
 import type { SharePassRenderTargetTexturesStats } from './pass-render-fallback.d.ts';
 import type { RendererLightingOptions, RendererLightingStats } from './renderer-lighting.d.ts';
+import type { TemporalFrameState } from './temporal-frame.d.ts';
 
 export type RenderPassWithFallbackOptions = {
 	fullRenderer?: unknown;
@@ -53,6 +54,7 @@ export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	renderOffscreenOverrideWithFallback: ( scene: unknown, camera: unknown, offscreenOpts?: RenderOffscreenOverrideWithFallbackOptions ) => Promise<RenderPassWithFallbackStats>;
 	pinClock: ( t: number | null | undefined ) => void;
 	unpinClock: () => void;
+	withTemporalFrame: <T>( options: { frameId?: number | string; time?: number; advance?: boolean }, callback: ( state: TemporalFrameState ) => T, extraRenderers?: unknown | unknown[] ) => T;
 	dispose: () => void;
 };
 

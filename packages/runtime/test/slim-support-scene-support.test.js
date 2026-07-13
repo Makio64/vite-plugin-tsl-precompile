@@ -5,6 +5,7 @@ import { createSlimSceneSupport, pinClock, unpinClock } from '../src/slim-suppor
 import { getSlimRenderFallback, setSlimRenderFallback } from '../src/slim-support/render-fallback-registry.js';
 import { clearLiveTextureIndex } from '../src/hydrator.js';
 import { lookupLiveTextureByIdentity } from '../src/hydrate/live-texture-registry.js';
+import { getTemporalFrameState } from '../src/slim-support/temporal-frame.js';
 
 function fakeDataMap() {
 
@@ -410,9 +411,10 @@ test( 'unpinClock() clears the pin', () => {
 
 } );
 
-test( 'createSlimSceneSupport exposes pinClock/unpinClock that flip the same global', () => {
+test( 'createSlimSceneSupport exposes clock and logical-frame scopes', () => {
 
-	const support = createSlimSceneSupport( { renderer: fakeRenderer() } );
+	const renderer = fakeRenderer();
+	const support = createSlimSceneSupport( { renderer } );
 	try {
 
 		assert.equal( typeof support.pinClock, 'function' );
@@ -421,6 +423,13 @@ test( 'createSlimSceneSupport exposes pinClock/unpinClock that flip the same glo
 		assert.equal( globalThis.__tslpPinnedClock, 0.5 );
 		support.unpinClock();
 		assert.equal( globalThis.__tslpPinnedClock, null );
+		assert.equal( typeof support.withTemporalFrame, 'function' );
+		support.withTemporalFrame( { frameId: 4, advance: false }, () => {
+
+			assert.deepEqual( getTemporalFrameState( renderer ), { frameId: 4, time: null, advance: false } );
+
+		} );
+		assert.equal( getTemporalFrameState( renderer ), null );
 
 	} finally {
 
