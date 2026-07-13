@@ -34,7 +34,7 @@ const _mwi = new Matrix4();
 const _m4rot = new Matrix4();
 
 /**
- * Find the Nth light in a scene by traversal order. Mirrors the cache
+ * Find the Nth light in a scene by numeric Object3D id. Mirrors the cache
  * strategy emit-updater.js bakes into AOT modules — both the AOT and
  * snapshot-based hydration paths use this as a fallback when a captured
  * light UUID is unavailable.
@@ -59,6 +59,7 @@ export function getSceneLights( scene ) {
 				if ( o && o.isLight === true ) cache.lights.push( o );
 
 			} );
+			cache.lights.sort( ( a, b ) => ( Number.isFinite( a && a.id ) ? a.id : 0 ) - ( Number.isFinite( b && b.id ) ? b.id : 0 ) );
 
 		}
 

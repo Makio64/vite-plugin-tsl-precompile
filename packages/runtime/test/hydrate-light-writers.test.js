@@ -28,6 +28,7 @@ function fakeLight( opts = {} ) {
 		color: opts.color || new Color( 1, 1, 1 ),
 		matrixWorld: new Matrix4(),
 	};
+	if ( opts.id !== undefined ) light.id = opts.id;
 	if ( opts.isSpotLight ) light.isSpotLight = true;
 	if ( opts.isDirectionalLight ) light.isDirectionalLight = true;
 	if ( opts.isPointLight ) light.isPointLight = true;
@@ -70,6 +71,17 @@ test( 'getSceneLights walks once and caches the result', () => {
 test( 'getSceneLights returns [] for null scene', () => {
 
 	assert.deepEqual( getSceneLights( null ), [] );
+
+} );
+
+test( 'getSceneLights sorts traversal results by numeric light id', () => {
+
+	const byId19 = fakeLight( { id: 19 } );
+	const byId3 = fakeLight( { id: 3 } );
+	const byId11 = fakeLight( { id: 11 } );
+	const scene = fakeScene( [ byId19, byId3, byId11 ] );
+	assert.deepEqual( getSceneLights( scene ), [ byId3, byId11, byId19 ] );
+	assert.equal( findLightInScene( scene, 1 ), byId11 );
 
 } );
 

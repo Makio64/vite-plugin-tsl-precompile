@@ -412,6 +412,7 @@ export function emitUpdaterSource( artifact, opts = {} ) {
 			decls.push( '    scene._tslpLightCache = cache;' );
 			decls.push( '    if (typeof scene.traverse === \'function\') {' );
 			decls.push( '      scene.traverse((o) => { if (o && o.isLight === true) cache.lights.push(o); });' );
+			decls.push( '      cache.lights.sort((a, b) => (Number.isFinite(a && a.id) ? a.id : 0) - (Number.isFinite(b && b.id) ? b.id : 0));' );
 			decls.push( '    }' );
 			decls.push( '  }' );
 			decls.push( '  return cache.lights[index] || null;' );

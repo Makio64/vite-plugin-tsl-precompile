@@ -448,6 +448,32 @@ test( 'emitUpdaterSource — light.shadowMatrix refreshes non-point lights, leav
 
 } );
 
+test( 'emitUpdaterSource — indexed light lookup sorts traversed lights by numeric id', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			name: 'render',
+			slots: [
+				{ offset: 0, source: { kind: 'light.distance', lightIndex: 0 } },
+			],
+		} ],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.deepEqual( unsupportedKinds, [] );
+	assert.match( source, /cache\.lights\.sort\(\(a, b\) => \(Number\.isFinite\(a && a\.id\) \? a\.id : 0\) - \(Number\.isFinite\(b && b\.id\) \? b\.id : 0\)\)/ );
+
+	const helperStart = source.indexOf( 'function _tslpFindLight' );
+	const helperEnd = source.indexOf( '\n\nexport function update', helperStart );
+	const helperSource = source.slice( helperStart, helperEnd );
+	const findLight = Function( `${ helperSource }\nreturn _tslpFindLight;` )();
+	const earlier = { isLight: true, id: 3, label: 'earlier' };
+	const later = { isLight: true, id: 19, label: 'later' };
+	const scene = { traverse( visit ) { visit( later ); visit( earlier ); } };
+	assert.equal( findLight( scene, 0 ), earlier );
+	assert.equal( findLight( scene, 1 ), later );
+
+} );
+
 test( 'emitUpdaterSource — object3d.userData float reads frame.object.userData[property]', () => {
 
 	const artifact = {
