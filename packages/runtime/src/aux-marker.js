@@ -814,24 +814,12 @@ async function captureBackdropLive( renderer, material, scene, camera, opts ) {
  */
 async function captureMRTLive( renderer, passNode, scene, camera, opts ) {
 
-	const three = opts.three || null;
 	const compileTSL = opts.compileTSL || ( await lazyLoadCompileTSL() );
-
-	if ( ! three || ! three.PostProcessing ) {
-
-		throw new Error( 'captureMRTLive: opts.three must expose PostProcessing' );
-
-	}
 
 	const mrtNode = passNode._mrt;
 	const declaredOutputNames = mrtNode && mrtNode.outputNodes
 		? Object.keys( mrtNode.outputNodes )
 		: [];
-
-	// Build a PostProcessing pipeline whose outputNode is the pass node.
-	// This mirrors how real MRT examples set up their render pipeline.
-	const pp = new three.PostProcessing( renderer );
-	pp.outputNode = passNode;
 
 	// Pass `mrtNode` explicitly so compileTSL's warm-up activates the right
 	// MRT topology even when the renderer/material haven't observed the pass

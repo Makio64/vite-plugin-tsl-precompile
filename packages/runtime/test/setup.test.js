@@ -198,16 +198,6 @@ test( 'setupPrecompile short-circuits when the renderer comes from the slim bund
 test( 'setupPrecompile captureAux merges per-call MRT pass options', async () => {
 
 	const { three } = freshHarness();
-	three.PostProcessing = class PostProcessing {
-
-		constructor( renderer ) {
-
-			this.renderer = renderer;
-
-		}
-
-	};
-
 	const renderer = fakeRenderer( { initialised: true } );
 	const scene = {
 		uuid: 'scene-mrt',
