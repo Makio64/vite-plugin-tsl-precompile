@@ -335,7 +335,8 @@ function cloneBindingsForObject( bindings, artifact, material ) {
 
 		if ( ! bg ) { out.push( bg ); continue; }
 		if ( isBindGroupShared( bg ) ) { out.push( bg ); continue; }
-		const clonedBindings = ( bg.bindings || [] ).map( ( b ) => cloneBinding( b ) );
+		const groupNode = { shared: false, version: 0 };
+		const clonedBindings = ( bg.bindings || [] ).map( ( b ) => cloneBinding( b, groupNode ) );
 		const newGroup = new BindGroup( bg.name || '', clonedBindings );
 		out.push( newGroup );
 
@@ -356,7 +357,7 @@ function isBindGroupShared( bg ) {
 
 }
 
-function cloneBinding( binding ) {
+function cloneBinding( binding, groupNode ) {
 
 	if ( ! binding ) return binding;
 	// UniformBuffer: clone the underlying Float32Array so each
@@ -370,16 +371,18 @@ function cloneBinding( binding ) {
 		const newBuffer = view ? new view.constructor( view ) : new Float32Array( 0 );
 		const cloned = new UniformBuffer( binding.name, newBuffer );
 		cloned.visibility = binding.visibility | 0;
-		cloned.groupNode = { shared: false, version: 0 };
+		cloned.groupNode = groupNode;
 		if ( binding.__tslpLiveArrayResolver ) attachLiveUniformBufferUpdater( cloned, binding.__tslpLiveArrayResolver );
 		return cloned;
 
 	}
-	// SampledTexture / Sampler / StorageBuffer share their resources
-	// across objects (textures are global; storage buffers are
-	// compute-shared). Reuse instances to keep the renderer's
-	// resource cache hot.
-	return binding;
+	// Match NodeBuilderState.createBindings(): each render object owns its
+	// binding wrappers, while the wrapped GPU resources remain shared. Every
+	// wrapper in the cloned bind group must also reference the same groupNode;
+	// Bindings._update() gates texture/storage refresh through that identity.
+	const cloned = binding.clone();
+	cloned.groupNode = groupNode;
+	return cloned;
 
 }
 
