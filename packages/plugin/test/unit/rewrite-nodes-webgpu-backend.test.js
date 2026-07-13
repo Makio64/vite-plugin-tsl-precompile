@@ -42,6 +42,16 @@ test( 'rewrite/Nodes.js: getForRender bypasses createNodeBuilder for precompiled
 	// Hydrator import from the runtime.
 	assert.match( out, /import\s*\{[^}]*hydrateNodeBuilderState[^}]*\}\s*from\s*["']@tsl-precompile\/runtime["']/ );
 
+	// A slim hydration failure cannot recover through the compiler: the
+	// backend builder is deliberately absent. Keep NodeFrame for live updater
+	// scheduling, but sever the broad node barrel and generic NodeMaterial
+	// fallback completely.
+	assert.doesNotMatch( out, /new NodeMaterial\s*\(/ );
+	assert.doesNotMatch( out, /materials\/nodes\/NodeMaterial\.js/ );
+	assert.doesNotMatch( out, /nodes\/Nodes\.js/ );
+	assert.match( out, /nodes\/core\/NodeFrame\.js/ );
+	assert.doesNotMatch( out, /new StackTrace\s*\(/ );
+
 } );
 
 test( 'rewrite/Nodes.js: output parses as valid ESM', () => {

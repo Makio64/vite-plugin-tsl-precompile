@@ -739,7 +739,8 @@ function rewriteNodesJs( ast, ctx ) {
 
 	const patchedCompute = rewriteGetForCompute( ast );
 	const helperMethod = findClassMethod( ast, '_createNodeBuilder' );
-	patchSlimOnlyCatchRethrow( ast );
+	replaceImpossibleBuilderFallbacks( ast );
+	narrowNodeFrameImport( ast );
 
 	if ( helperMethod ) {
 
@@ -790,6 +791,80 @@ function rewriteNodesJs( ast, ctx ) {
 
 }
 
+/**
+ * A hydrated slim state is the only legal render state in this build. The
+ * stock NodeManager catches builder failures by constructing a fresh
+ * NodeMaterial and compiling it as a generic fallback. That recovery path can
+ * never succeed after WebGPUBackend.createNodeBuilder() has been stripped, but
+ * retaining it keeps the real NodeMaterial/runtime compiler graph reachable.
+ *
+ * Replace only catches that actually construct NodeMaterial; unrelated
+ * NodeManager error handling is left intact.
+ */
+function replaceImpossibleBuilderFallbacks( ast ) {
+
+	let patched = 0;
+	traverse( ast, {
+		CatchClause( path ) {
+
+			const param = path.node.param;
+			if ( ! t.isIdentifier( param ) ) return;
+
+			let constructsNodeMaterial = false;
+			path.traverse( {
+				NewExpression( child ) {
+
+					if ( t.isIdentifier( child.node.callee, { name: 'NodeMaterial' } ) ) constructsNodeMaterial = true;
+
+				},
+			} );
+			if ( ! constructsNodeMaterial ) return;
+
+			path.node.body.body = [ t.throwStatement( t.cloneNode( param ) ) ];
+			patched ++;
+
+		},
+	} );
+
+	return patched;
+
+}
+
+/**
+ * NodeManager only needs NodeFrame from the very broad nodes/Nodes.js barrel
+ * once its StackTrace-based compiler fallback is removed. Importing the class
+ * directly keeps the runtime update scheduler while making the compiler seam
+ * explicit in the module graph.
+ */
+function narrowNodeFrameImport( ast ) {
+
+	for ( let i = 0; i < ast.program.body.length; i ++ ) {
+
+		const declaration = ast.program.body[ i ];
+		if ( ! t.isImportDeclaration( declaration ) ) continue;
+		if ( ! /\/nodes\/Nodes\.js$/.test( declaration.source.value ) ) continue;
+
+		const nodeFrame = declaration.specifiers.find( ( specifier ) => (
+			t.isImportSpecifier( specifier )
+			&& t.isIdentifier( specifier.imported, { name: 'NodeFrame' } )
+		) );
+		if ( ! nodeFrame ) continue;
+
+		declaration.specifiers = declaration.specifiers.filter( ( specifier ) => specifier !== nodeFrame );
+		const source = declaration.source.value.replace( /Nodes\.js$/, 'core/NodeFrame.js' );
+		const directImport = t.importDeclaration(
+			[ t.importDefaultSpecifier( t.identifier( nodeFrame.local.name ) ) ],
+			t.stringLiteral( source ),
+		);
+		ast.program.body.splice( i, 0, directImport );
+		return true;
+
+	}
+
+	return false;
+
+}
+
 function rewriteGetForCompute( ast ) {
 
 	const method = findClassMethod( ast, 'getForCompute' );
@@ -816,34 +891,6 @@ function rewriteGetForCompute( ast ) {
 	` );
 
 	return true;
-
-}
-
-function patchSlimOnlyCatchRethrow( ast ) {
-
-	let patched = 0;
-
-	traverse( ast, {
-		CatchClause( path ) {
-
-			const param = path.node.param;
-			if ( ! t.isIdentifier( param ) ) return;
-			if ( path.node.body.body.some( ( stmt ) => generate( stmt ).code.includes( 'tslPrecompileSlimOnly' ) ) ) return;
-
-			path.node.body.body.unshift( t.ifStatement(
-				t.logicalExpression(
-					'&&',
-					t.cloneNode( param ),
-					t.memberExpression( t.cloneNode( param ), t.identifier( 'tslPrecompileSlimOnly' ) ),
-				),
-				t.blockStatement( [ t.throwStatement( t.cloneNode( param ) ) ] ),
-			) );
-			patched ++;
-
-		},
-	} );
-
-	return patched;
 
 }
 
