@@ -622,7 +622,7 @@ test( 'render target topology records effective samples and attachment state', (
 	assert.equal( descriptor.depth, true );
 	assert.equal( descriptor.stencil, true );
 	assert.equal( descriptor.multiview, true );
-	assert.equal( descriptor.colors[ 0 ].name, 'output' );
+	assert.equal( 'name' in descriptor.colors[ 0 ], false, 'non-MRT texture labels do not select shader topology' );
 	assert.equal( descriptor.depthTexture.kind, 'depth' );
 
 	const unmultisampled = renderTarget( texture(), { samples: 0 } );
@@ -635,6 +635,23 @@ test( 'render target topology records effective samples and attachment state', (
 		currentSamples: 8,
 		getOutputRenderTarget: () => null,
 	} ).sampleCount, 4, 'default surface uses renderer samples instead of RenderContext default' );
+
+} );
+
+test( 'render selector ignores non-MRT attachment labels', () => {
+
+	const capture = fixture();
+	const replay = fixture();
+	const captureColor = texture( { name: 'output' } );
+	const replayColor = texture( { name: '' } );
+	capture.context = targetContext( renderTarget( captureColor ), { mrt: null } );
+	replay.context = targetContext( renderTarget( replayColor ), { mrt: null } );
+
+	assert.equal(
+		createRenderObjectContextSelector( capture ),
+		createRenderObjectContextSelector( replay ),
+		'debug/resource labels do not split an otherwise identical single-output pipeline',
+	);
 
 } );
 

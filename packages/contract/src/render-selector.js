@@ -453,6 +453,7 @@ export function describeRenderTargetTopology( context, renderer = null ) {
 	}
 	const outputTarget = safeCall( renderer, 'getOutputRenderTarget' );
 	const surface = classifyRenderSurface( renderTarget, outputTarget, textures );
+	const includeAttachmentNames = safeRead( context, 'mrt' ) != null;
 	return compactObject( {
 		surface,
 		activeCubeFace,
@@ -462,7 +463,7 @@ export function describeRenderTargetTopology( context, renderer = null ) {
 		stencil: scalar( safeRead( context, 'stencil' ) ?? safeRead( renderTarget, 'stencilBuffer' ) ),
 		sampleCount: effectiveSampleCount( context, renderTarget, renderer, textures ),
 		multiview: safeRead( context, 'multiview' ) === true || safeRead( renderTarget, 'multiview' ) === true,
-		colors: textures.map( describeColorAttachment ),
+		colors: textures.map( ( texture ) => describeColorAttachment( texture, includeAttachmentNames ) ),
 		depthTexture: resourceShape( safeRead( context, 'depthTexture' ) || safeRead( renderTarget, 'depthTexture' ) ),
 	} );
 
@@ -537,11 +538,11 @@ function effectiveSampleCount( context, renderTarget, renderer, textures ) {
 
 }
 
-function describeColorAttachment( texture ) {
+function describeColorAttachment( texture, includeName = false ) {
 
 	return compactObject( {
 		...resourceShape( texture ),
-		name: scalar( safeRead( texture, 'name' ) ),
+		...( includeName ? { name: scalar( safeRead( texture, 'name' ) ) } : {} ),
 	} );
 
 }
