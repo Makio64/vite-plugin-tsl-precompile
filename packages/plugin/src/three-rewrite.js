@@ -75,7 +75,7 @@ if ( MISSING_REWRITE_FAMILIES.length > 0 || UNDECLARED_REWRITE_FAMILIES.length >
  * @param {Object} opts
  * @param {string} opts.threeVersion
  * @param {string} opts.pluginVersion
- * @return {?{ code: string, map: ?Object, warning: ?string }}
+ * @return {?{ code: string, map: ?Object, warning: ?string, noop?: boolean }}
  */
 export function rewriteThreeSource( code, id, opts ) {
 
@@ -105,7 +105,12 @@ export function rewriteThreeSource( code, id, opts ) {
 
 		handler( ast, ctx );
 
-		if ( ! ctx.touched ) return null;
+		if ( ! ctx.touched ) {
+
+			if ( ctx.safeNoop === true ) return { code, map: null, warning: null, noop: true };
+			return null;
+
+		}
 
 		// After any per-file rewrite: inject our runtime imports + aux-side-
 		// effect import, then drop now-unused TSL / NodeMaterial imports.
@@ -464,8 +469,21 @@ function rewritePostProcessing( ast, ctx ) {
 
 	let foundConstruct = false;
 	let foundAssign = false;
+	let legacyWrapper = false;
 
 	traverse( ast, {
+		ClassDeclaration( path ) {
+
+			if ( ! t.isIdentifier( path.node.id, { name: 'PostProcessing' } ) ) return;
+			if ( ! t.isIdentifier( path.node.superClass, { name: 'RenderPipeline' } ) ) return;
+			const constructor = path.node.body.body.find( ( member ) => t.isClassMethod( member, { kind: 'constructor' } ) );
+			legacyWrapper = !! ( constructor && constructor.body.body.some( ( statement ) =>
+				t.isExpressionStatement( statement )
+				&& t.isCallExpression( statement.expression )
+				&& t.isSuper( statement.expression.callee )
+			) );
+
+		},
 		NewExpression( path ) {
 
 			if ( ! t.isIdentifier( path.node.callee, { name: 'NodeMaterial' } ) ) return;
@@ -533,7 +551,17 @@ function rewritePostProcessing( ast, ctx ) {
 	// which our picker also routes here. Detect this shape and no-op.
 	if ( ! foundConstruct && ! foundAssign ) {
 
-		ctx.touched = false;
+		const importsRenderPipeline = ast.program.body.some( ( statement ) =>
+			t.isImportDeclaration( statement )
+			&& statement.source.value === './RenderPipeline.js'
+			&& statement.specifiers.some( ( specifier ) => t.isImportDefaultSpecifier( specifier ) && specifier.local.name === 'RenderPipeline' )
+		);
+		if ( ! importsRenderPipeline || ! legacyWrapper ) {
+
+			throw new Error( 'PostProcessing: shape changed (expected the RenderPipeline compatibility wrapper)' );
+
+		}
+		ctx.safeNoop = true;
 		return;
 
 	}

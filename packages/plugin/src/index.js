@@ -34,10 +34,21 @@ import { createWgslStringPool, emitOptimizedJsonExpression, getExternalWgslRefId
 import { attachDevCapture } from './dev-capture-server.js';
 import { isThreeRewriteTarget, rewriteThreeSource } from './three-rewrite.js';
 import { computeArtifactContentHash } from './hash.js';
+import {
+	findRenderedSlimSourceResidue,
+	normalizeSlimMode,
+	resolveSlimSourceAdapter,
+	slimRuntimeEntryForMode,
+} from './slim-source.js';
 import { VIRTUAL_MODULE_PREFIX, VIRTUAL_AUX_MODULE_ID, VIRTUAL_WGSL_POOL_MODULE_ID, PLUGIN_VERSION } from './_shared/constants.js';
 import { VIRTUAL_FULL_THREE_MODULE_ID } from '@tsl-precompile/contract/virtual-modules';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
-import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
+import {
+	SLIM_THREE_PACKAGE_VERSION,
+	SLIM_THREE_POLICY_VERSION,
+	SLIM_THREE_RUNTIME_ENTRIES,
+	SLIM_THREE_SOURCE_GUARD_MODULE_ID,
+} from '@tsl-precompile/contract/slim-three-policy';
 
 const VIRTUAL_RESOLVE_PREFIX = '\0' + VIRTUAL_MODULE_PREFIX;
 
@@ -124,7 +135,13 @@ function validateOptions( userOpts ) {
 
 	}
 
-	for ( const key of [ 'autoMark', 'slim', 'minifyWgsl', 'dedupeWgsl' ] ) {
+	if ( userOpts.slim !== undefined && typeof userOpts.slim !== 'boolean' && userOpts.slim !== 'source' ) {
+
+		throw new TypeError( `[tsl-precompile] \`slim\` must be a boolean or 'source', received ${ JSON.stringify( userOpts.slim ) }.` );
+
+	}
+
+	for ( const key of [ 'autoMark', 'minifyWgsl', 'dedupeWgsl' ] ) {
 
 		if ( userOpts[ key ] !== undefined && typeof userOpts[ key ] !== 'boolean' ) {
 
@@ -142,7 +159,7 @@ function validateOptions( userOpts ) {
  * @param {'error' | 'warn'} [userOpts.fail='error']
  * @param {boolean} [userOpts.autoMark=false] - Auto-mark every `new *NodeMaterial(...)` with `.precompile('<prefix>-<slug>-<n>')` so unmodified three.js demos flow through the AOT pipeline.
  * @param {string}  [userOpts.autoMarkPrefix='auto'] - Prefix used by auto-mark names.
- * @param {boolean} [userOpts.slim=false] - Alias `three/webgpu` to the slim bundle in production builds (dev/serve keeps full three for capture).
+ * @param {boolean | 'source'} [userOpts.slim=false] - Alias `three/webgpu` to the checked prebuilt slim bundle, or use `'source'` for the guarded tree-shaken entry. Dev/serve keeps full three for capture.
  * @param {string}  [userOpts.threeVersion] - Override the auto-detected exact three.js package version used in artifact hashes.
  * @param {boolean} [userOpts.minifyWgsl=true] - Compact WGSL in emitted virtual modules; captured JSON stays untouched.
  * @param {boolean} [userOpts.dedupeWgsl=true] - Hoist repeated WGSL strings inside emitted virtual modules.
@@ -158,7 +175,7 @@ export default function tslPrecompile( userOpts = {} ) {
 		fail: userOpts.fail || 'error',
 		autoMark: !! userOpts.autoMark,
 		autoMarkPrefix: userOpts.autoMarkPrefix || 'auto',
-		slim: !! userOpts.slim,
+		slim: normalizeSlimMode( userOpts.slim ),
 		threeVersion: userOpts.threeVersion || null,
 		minifyWgsl: userOpts.minifyWgsl !== false,
 		dedupeWgsl: userOpts.dedupeWgsl !== false,
@@ -167,6 +184,7 @@ export default function tslPrecompile( userOpts = {} ) {
 	let root = process.cwd();
 	let isBuild = false;
 	let installedThree = null; // { version, packageRoot, webgpuEntry }
+	let slimSourceRuntime = null; // { entry, sourceDir }
 	let manifest = null;   // { [name]: { file, hash, entry, mtime } }
 	let auxManifest = null; // { [`<shape>:<configHash>`]: { file, hash, entry, mtime } }
 	let wgslPool = null;    // { strings: string[], refs: Map<string, string> }
@@ -300,9 +318,19 @@ export default function tslPrecompile( userOpts = {} ) {
 
 		}
 
-		if ( opts.slim && command === 'build' && detected.version !== SLIM_THREE_PACKAGE_VERSION ) {
+		if ( opts.slim === 'prebuilt' && command === 'build' && detected.version !== SLIM_THREE_PACKAGE_VERSION ) {
 
 			throw new Error( `[tsl-precompile] slim build refused: this release's checked-in slim bundle was built against three ${ SLIM_THREE_PACKAGE_VERSION }, but the project resolves three ${ detected.version } from ${ detected.packageRoot }. Pin \"three\": \"${ SLIM_THREE_PACKAGE_VERSION }\" or rebuild/publish a matching @tsl-precompile/runtime slim bundle before enabling \`slim: true\`.` );
+
+		}
+
+		if ( opts.slim === 'source' && command === 'build' ) {
+
+			slimSourceRuntime = detectSlimSourceRuntime( configRoot );
+
+		} else {
+
+			slimSourceRuntime = null;
 
 		}
 
@@ -331,18 +359,16 @@ export default function tslPrecompile( userOpts = {} ) {
 				{ find: 'vite-plugin-tsl-precompile/src/emit-updater.js', replacement: resolve( PLUGIN_SRC_DIR, 'emit-updater.js' ) },
 			];
 
-			// Alias `three/webgpu` → slim bundle only for production builds.
+			// Alias `three/webgpu` → the selected slim entry only for production builds.
 			// Dev must retain full three.js because `.precompile()` capture needs
-			// the live node builder. Users' `import { WebGPURenderer } from 'three/webgpu'`
-			// resolves to our 239 KB-gzip bundle instead of the 800 KB-gzip
-			// full build with node-builder. The slim bundle exports the same
-			// symbol surface minus *NodeMaterial / TSL / Nodes; any code path
-			// that touched those must have been precompiled away.
+			// the live node builder. Production can use the checked single-file
+			// runtime or expose the same compiler-free source surface to the app
+			// bundler. Any removed NodeMaterial/TSL path must be precompiled.
 			if ( opts.slim && env.command === 'build' ) {
 
 				alias.push(
-					{ find: /^three\/webgpu$/, replacement: '@tsl-precompile/runtime/slim' },
-					{ find: /^three\/tsl$/, replacement: '@tsl-precompile/runtime/slim-stubs' },
+					{ find: /^three\/webgpu$/, replacement: slimRuntimeEntryForMode( opts.slim ) },
+					{ find: /^three\/tsl$/, replacement: SLIM_THREE_RUNTIME_ENTRIES.STUBS },
 				);
 
 			}
@@ -502,9 +528,25 @@ export default function tslPrecompile( userOpts = {} ) {
 
 		},
 
-		resolveId( id ) {
+		resolveId( id, importer ) {
 
 			if ( PLUGIN_BARE_SOURCES[ id ] ) return PLUGIN_BARE_SOURCES[ id ];
+			if ( id === SLIM_THREE_SOURCE_GUARD_MODULE_ID ) {
+
+				if ( opts.slim !== 'source' || ! isBuild ) {
+
+					throw new Error( `[tsl-precompile] ${ SLIM_THREE_RUNTIME_ENTRIES.SOURCE } is a build-only entry and requires tslPrecompile({ slim: 'source' }).` );
+
+				}
+				return '\0' + id;
+
+			}
+			if ( opts.slim === 'source' && isBuild && slimSourceRuntime ) {
+
+				const adapter = resolveSlimSourceAdapter( id, importer, slimSourceRuntime.sourceDir );
+				if ( adapter ) return adapter;
+
+			}
 			if ( id === VIRTUAL_FULL_THREE_MODULE_ID ) {
 
 				if ( ! installedThree || ! installedThree.webgpuEntry ) {
@@ -529,6 +571,11 @@ export default function tslPrecompile( userOpts = {} ) {
 
 		async load( id ) {
 
+			if ( id === '\0' + SLIM_THREE_SOURCE_GUARD_MODULE_ID ) {
+
+				return `export const slimThreePolicyVersion = ${ JSON.stringify( SLIM_THREE_POLICY_VERSION ) };\n`;
+
+			}
 			if ( ! id.startsWith( VIRTUAL_RESOLVE_PREFIX ) ) return null;
 
 			const name = id.slice( VIRTUAL_RESOLVE_PREFIX.length );
@@ -580,7 +627,7 @@ export default function tslPrecompile( userOpts = {} ) {
 				} );
 				const usedWgslPoolRefs = getExternalWgslRefIdentifiers( auxEntriesLiteral );
 				const lines = [];
-				const runtimeModule = opts.slim ? '@tsl-precompile/runtime/slim' : '@tsl-precompile/runtime';
+				const runtimeModule = slimRuntimeEntryForMode( opts.slim );
 				lines.push( `import { registerAuxArtifacts } from ${ JSON.stringify( runtimeModule ) };` );
 				if ( usedWgslPoolRefs.length > 0 ) lines.push( `import { ${ usedWgslPoolRefs.join( ', ' ) } } from ${ JSON.stringify( VIRTUAL_WGSL_POOL_MODULE_ID ) };` );
 				lines.push( '' );
@@ -601,7 +648,7 @@ export default function tslPrecompile( userOpts = {} ) {
 				return null;
 
 			}
-				assertManifestEntryCompatibility( name, entry );
+			assertManifestEntryCompatibility( name, entry );
 			const { source, unsupportedKinds } = emitArtifactModule( entry, entry.entry, {
 				...opts,
 				externalWgslRefs: buildWgslPool().refs,
@@ -651,6 +698,22 @@ export default function tslPrecompile( userOpts = {} ) {
 			}
 
 			return source;
+
+		},
+
+		generateBundle( _outputOptions, bundle ) {
+
+			if ( opts.slim !== 'source' || ! isBuild ) return;
+			const residue = findRenderedSlimSourceResidue( bundle );
+			const found = [
+				...residue.compiler.map( ( item ) => `compiler ${ item.label } (${ item.renderedLength } B): ${ item.id }` ),
+				...residue.stockAdapters.map( ( item ) => `stock adapter ${ item.label } (${ item.renderedLength } B): ${ item.id }` ),
+			];
+			if ( found.length > 0 ) {
+
+				this.error( `[tsl-precompile] slim source build retained forbidden Three modules:\n  ${ found.join( '\n  ' ) }` );
+
+			}
 
 		},
 
@@ -800,6 +863,31 @@ function injectSlimAuxImport( code ) {
 	}
 
 	return { code: importLine + code, touched: true };
+
+}
+
+function detectSlimSourceRuntime( root ) {
+
+	const attempted = [];
+	for ( const requireFrom of [
+		createRequire( resolve( root, 'package.json' ) ),
+		createRequire( import.meta.url ),
+	] ) {
+
+		try {
+
+			const entry = requireFrom.resolve( SLIM_THREE_RUNTIME_ENTRIES.SOURCE );
+			return { entry, sourceDir: dirname( entry ) };
+
+		} catch ( error ) {
+
+			attempted.push( error && error.message ? error.message : String( error ) );
+
+		}
+
+	}
+
+	throw new Error( `[tsl-precompile] slim source build could not resolve ${ JSON.stringify( SLIM_THREE_RUNTIME_ENTRIES.SOURCE ) } from ${ root }. Install a matching @tsl-precompile/runtime release before enabling \`slim: 'source'\`. Resolver details: ${ attempted.join( ' | ' ) }` );
 
 }
 

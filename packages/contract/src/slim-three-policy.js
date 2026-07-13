@@ -12,6 +12,16 @@ export const SLIM_THREE_POLICY_VERSION = 'slim-three-policy@1';
 /** Exact Three package patch used to build the published prebuilt slim file. */
 export const SLIM_THREE_PACKAGE_VERSION = '0.184.0';
 
+/** Public runtime entries selected by the Vite plugin's slim modes. */
+export const SLIM_THREE_RUNTIME_ENTRIES = Object.freeze( {
+	PREBUILT: '@tsl-precompile/runtime/slim',
+	SOURCE: '@tsl-precompile/runtime/slim/source',
+	STUBS: '@tsl-precompile/runtime/slim-stubs',
+} );
+
+/** Build-only handshake imported by the guarded tree-shaken source entry. */
+export const SLIM_THREE_SOURCE_GUARD_MODULE_ID = 'virtual:tsl-precompile/__slim-source';
+
 export const SLIM_THREE_MODULE_ROLES = Object.freeze( {
 	REWRITE: 'rewrite',
 	COMPILER: 'compiler',

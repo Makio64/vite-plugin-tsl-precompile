@@ -16,6 +16,7 @@ import { parse } from '@babel/parser';
 import { rewriteThreeSource } from '../../src/three-rewrite.js';
 import { THREE_SRC } from '../_three-src.js';
 const PATH = resolve( THREE_SRC, 'renderers/common/RenderPipeline.js' );
+const WRAPPER_PATH = resolve( THREE_SRC, 'renderers/common/PostProcessing.js' );
 
 test( 'rewrite/PostProcessing: bare NodeMaterial → Material sentinel; fragmentNode swap', () => {
 
@@ -49,6 +50,16 @@ test( 'rewrite/PostProcessing: output parses as valid ESM', () => {
 	const r = rewriteThreeSource( src, PATH, { threeVersion: '175', pluginVersion: '0.0.0' } );
 	assert.ok( r && r.code );
 	assert.doesNotThrow( () => parse( r.code, { sourceType: 'module', plugins: [ 'importAttributes' ] } ) );
+
+} );
+
+test( 'rewrite/PostProcessing: verified RenderPipeline wrapper is an explicit safe no-op', () => {
+
+	const source = readFileSync( WRAPPER_PATH, 'utf8' );
+	const result = rewriteThreeSource( source, WRAPPER_PATH, { threeVersion: '175', pluginVersion: '0.0.0' } );
+	assert.equal( result.noop, true );
+	assert.equal( result.code, source );
+	assert.equal( result.warning, null );
 
 } );
 

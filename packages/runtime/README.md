@@ -16,8 +16,8 @@ pnpm add @tsl-precompile/runtime
 ```
 
 Peer dep: `three >= 0.184.0`. Pin it to an exact patch. The checked-in slim
-bundle currently requires exactly `three@0.184.0`; non-slim capture/build can
-use newer supported versions after recapturing artifacts.
+bundle currently requires exactly `three@0.184.0`; non-slim and source-slim
+capture/build can use newer supported versions after recapturing artifacts.
 
 ## Use
 
@@ -54,8 +54,9 @@ material.precompile( 'my-material', { scene, camera, object: mesh } );
 
 In a production build the Vite plugin has already rewritten every
 `.precompile('name')` call to `__applyPrecompiled(...)`, and
-`setupPrecompile()` becomes a harmless no-op. In `slim:true` builds the slim
-entry exports a sentinel so the helper short-circuits entirely.
+`setupPrecompile()` becomes a harmless no-op. Both `slim: true` and
+`slim: 'source'` entries export a sentinel so the helper short-circuits
+entirely.
 
 `setupPrecompile()` accepts:
 
@@ -101,7 +102,7 @@ back into slim.
 | Live PassNode WGSL | Slim can't emit new pass shaders | Full renderer renders the pass; texture shared back |
 | Clipping context | Live `clipShadows` rebuild | Planes baked into artifacts; ancestry honoured at runtime |
 
-Apps that enable the plugin's `slim: true` mode can use the stable
+Apps that enable either plugin slim mode can use the stable
 `@tsl-precompile/runtime/slim-support` entry when they need real-app fallback
 plumbing: live texture indexing, PMREM caching, compute output sync,
 post-processing replay, pass render fallback, or a full `WebGPURenderer` on
@@ -126,6 +127,13 @@ fallback namespace lazily through `virtual:tsl-precompile/full-three` as above. 
 virtual entry resolves directly to the consumer's physical full WebGPU entry
 and bypasses the slim alias. Passing the slim namespace or a slim-marked
 constructor to the fallback throws a configuration error.
+
+Choose `slim: true` for the checked, single-file prebuilt renderer. Choose
+`slim: 'source'` when the application bundler should discard unused Three and
+runtime exports. The guarded source entry cannot be imported without the
+plugin, verifies the plugin/runtime slim-policy revision, and rejects final
+chunks that retain compiler or stock replay-owned modules. Capture and build
+must use the same exact Three patch in both modes.
 
 `ensureFallback()` also patches slim `renderer.compute(rawComputeNode)` so raw
 TSL compute is dispatched by the full renderer on the shared `GPUDevice`, then

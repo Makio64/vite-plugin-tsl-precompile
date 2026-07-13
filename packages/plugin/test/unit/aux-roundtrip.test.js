@@ -264,6 +264,44 @@ test( 'slim build: virtual aux module registers into the slim runtime registry',
 
 } );
 
+test( 'source slim build registers aux artifacts into the source runtime instance', async () => {
+
+	const root = mkdtempSync( join( tmpdir(), 'tslp-source-rt-' ) );
+	const artifactsDir = join( root, 'artifacts' );
+	const runtimeRoot = join( root, 'node_modules/@tsl-precompile/runtime' );
+	mkdirSync( join( runtimeRoot, 'src' ), { recursive: true } );
+	mkdirSync( artifactsDir, { recursive: true } );
+	writeFileSync( join( runtimeRoot, 'package.json' ), JSON.stringify( {
+		name: '@tsl-precompile/runtime',
+		version: '0.1.0',
+		type: 'module',
+		exports: { './slim/source': './src/slim-source-entry.js' },
+	} ) );
+	writeFileSync( join( runtimeRoot, 'src/slim-source-entry.js' ), 'export const __TSLP_SLIM__ = true;\n' );
+	writeFileSync( join( artifactsDir, 'aux-post-process-source.json' ), JSON.stringify( {
+		__materialShape: 'post-process',
+		__configHash: 'source123',
+		__hash: 'source123',
+		artifact: { version: 3, materialShape: 'post-process', uniformPlan: [] },
+	} ) );
+
+	const plugin = tslPrecompile( { artifactsDir: 'artifacts', slim: 'source' } );
+	await plugin.configResolved( { root, command: 'build', logger: { warn() {} } } );
+	try {
+
+		const id = plugin.resolveId( VIRTUAL_AUX_MODULE_ID );
+		const source = await plugin.load.call( makePluginContext(), id );
+		assert.match( source, /import \{ registerAuxArtifacts \} from "@tsl-precompile\/runtime\/slim\/source";/ );
+		assert.doesNotMatch( source, /from "@tsl-precompile\/runtime\/slim";/ );
+
+	} finally {
+
+		rmSync( root, { recursive: true, force: true } );
+
+	}
+
+} );
+
 /**
  * Same shape as the generator in `packages/plugin/src/index.js` — inlined
  * here to keep the test self-contained (the plugin's load() hook is

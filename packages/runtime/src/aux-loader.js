@@ -597,17 +597,14 @@ function normalizeRenderOutputFrameSizeSlots( slots, fragmentShader ) {
  * Injected three.js texture constructors + constants. Set by
  * `setupViewportTextureClasses()` before the first `wireViewportTextureRefs`
  * call. Kept as a separate indirection so `aux-loader.js` does NOT import
- * directly from `'three'` — an import of `'three'` resolves to the pre-built
- * `three/build/three.module.js` (per the package.json `exports` field) rather
- * than to the same source files that `slim-entry.js` uses
- * (`three/src/Three.Core.js`). That causes rollup to inline a duplicate copy
- * of the three.js bundle alongside the source-file tree, adding ~26 KB and
- * (critically) causing the aux-loader REGISTRY Map to be renamed in a way
- * that breaks the slim replay's `registerAuxArtifacts` / `loadAux` pairing.
+ * directly from `'three'` — that bare import resolves to the pre-built
+ * `three/build/three.module.js` rather than the exact `three/src/**` modules
+ * shared by both slim entries. Mixing those paths can inline a duplicate
+ * Three instance and split the aux registry used by
+ * `registerAuxArtifacts()` / `loadAux()`.
  *
- * The PrecompiledMaterial constructor — which imports from `'three'` only via
- * `Material` which is already in the bundle — calls
- * `setupViewportTextureClasses(...)` on module load.
+ * `slim-bootstrap.js` installs these constructors once for both the prebuilt
+ * and guarded source entries.
  */
 let _DepthTextureCtor = null;
 let _FramebufferTextureCtor = null;

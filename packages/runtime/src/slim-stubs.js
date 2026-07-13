@@ -16,29 +16,25 @@
  * @module SlimStubs
  */
 
-import {
-	BackSide,
-	DepthTexture,
-	FloatType,
-	HalfFloatType,
-	LineBasicMaterial,
-	LineDashedMaterial,
-	Material,
-	MeshBasicMaterial,
-	MeshLambertMaterial,
-	MeshMatcapMaterial,
-	MeshNormalMaterial,
-	MeshPhongMaterial,
-	MeshPhysicalMaterial,
-	MeshStandardMaterial,
-	MeshToonMaterial,
-	PointsMaterial,
-	RenderTarget,
-	ShadowMaterial,
-	SpriteMaterial,
-	Vector2,
-	Vector4,
-} from 'three/src/Three.Core.js';
+import { BackSide, FloatType, HalfFloatType } from 'three/src/constants.js';
+import { DepthTexture } from 'three/src/textures/DepthTexture.js';
+import { LineBasicMaterial } from 'three/src/materials/LineBasicMaterial.js';
+import { LineDashedMaterial } from 'three/src/materials/LineDashedMaterial.js';
+import { Material } from 'three/src/materials/Material.js';
+import { MeshBasicMaterial } from 'three/src/materials/MeshBasicMaterial.js';
+import { MeshLambertMaterial } from 'three/src/materials/MeshLambertMaterial.js';
+import { MeshMatcapMaterial } from 'three/src/materials/MeshMatcapMaterial.js';
+import { MeshNormalMaterial } from 'three/src/materials/MeshNormalMaterial.js';
+import { MeshPhongMaterial } from 'three/src/materials/MeshPhongMaterial.js';
+import { MeshPhysicalMaterial } from 'three/src/materials/MeshPhysicalMaterial.js';
+import { MeshStandardMaterial } from 'three/src/materials/MeshStandardMaterial.js';
+import { MeshToonMaterial } from 'three/src/materials/MeshToonMaterial.js';
+import { PointsMaterial } from 'three/src/materials/PointsMaterial.js';
+import { ShadowMaterial } from 'three/src/materials/ShadowMaterial.js';
+import { SpriteMaterial } from 'three/src/materials/SpriteMaterial.js';
+import { RenderTarget } from 'three/src/core/RenderTarget.js';
+import { Vector2 } from 'three/src/math/Vector2.js';
+import { Vector4 } from 'three/src/math/Vector4.js';
 import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttribute.js';
 import StorageInstancedBufferAttribute from 'three/src/renderers/common/StorageInstancedBufferAttribute.js';
 import { hashArray } from 'three/src/nodes/core/NodeUtils.js';

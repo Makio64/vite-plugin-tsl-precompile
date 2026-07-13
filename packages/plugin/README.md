@@ -56,8 +56,11 @@ water.precompile( 'ocean-water' );      // <-- the only thing you add
 In dev, `.precompile('ocean-water')` runs the real extractor on the live
 material and writes `artifacts/ocean-water.<hash>.json`. In build, the plugin
 rewrites that call to inject the baked artifact + a generated updater
-function. With `slim: true`, the slim runtime bundle skips the node builder
-entirely at runtime.
+function. With `slim: true`, the checked slim runtime bundle skips the node
+builder entirely at runtime. Use `slim: 'source'` to expose the same guarded,
+compiler-free surface to the application bundler for finer tree-shaking.
+Source mode is production-only, checks the plugin/runtime policy revision, and
+fails the build if compiler or stock replay modules remain reachable.
 
 Projects that use MRT / `RenderPipeline` should also capture aux artifacts
 after the pass graph is built. `setupPrecompile({ aux: true })` exposes
@@ -99,7 +102,7 @@ To automate the dev-capture process (e.g. during CI or post-upgrade sweeps) with
 | `fail` | `'error'` | Use `'warn'` to keep building when a named artifact is missing. |
 | `autoMark` | `false` | Auto-chain `.precompile('auto-<n>')` onto every `new *NodeMaterial(...)` — zero source edits. |
 | `autoMarkPrefix` | `'auto'` | Prefix used by `autoMark`. |
-| `slim` | `false` | Alias `three/webgpu` → the node-builder-stripped slim runtime. Removes the TSL→WGSL compiler from production. Gzip bundle size is ~equal to stock three.js TSL on simple scenes; the win is runtime behavior, not download. |
+| `slim` | `false` | `true` aliases `three/webgpu` to the checked prebuilt runtime; `'source'` lets Vite tree-shake the guarded compiler-free source entry. Dev keeps full Three for capture. |
 | `minifyWgsl` | `true` | Compact WGSL only in emitted virtual modules; captured artifact JSON stays readable. |
 | `dedupeWgsl` | `true` | Hoist repeated WGSL strings into `virtual:tsl-precompile/__wgsl` for tree-shakeable reuse. |
 | `threeVersion` | auto-detect | Override the three.js version used in rewrite hashes. |

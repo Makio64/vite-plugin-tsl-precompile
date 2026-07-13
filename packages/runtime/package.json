@@ -132,7 +132,14 @@
       "types": "./types/slim-support/diagnostics.d.ts",
       "default": "./src/slim-support/diagnostics.js"
     },
-    "./slim": "./build/three.webgpu.slim.js",
+    "./slim": {
+      "types": "./types/slim-source.d.ts",
+      "default": "./build/three.webgpu.slim.js"
+    },
+    "./slim/source": {
+      "types": "./types/slim-source.d.ts",
+      "default": "./src/slim-source-entry.js"
+    },
     "./slim-stubs": "./src/slim-stubs.js"
   },
   "files": [

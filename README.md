@@ -128,13 +128,11 @@ await setup.captureAux( { passNode: scenePass, renderPipeline } );
    hoists `import * as __tsl_art_<name> from 'virtual:tsl-precompile/<name>'`.
    The plugin's `load()` hook resolves that virtual module to the captured
    artifact JSON + a generated `updater.js` that writes UBOs per frame.
-3. **Slim runtime (optional).** With `slim: true`, production builds alias
-   `three/webgpu` to `@tsl-precompile/runtime/slim` — a three.js bundle with
-   the node builder stripped out. Dev/serve deliberately keeps the full entry
-   so capture can generate WGSL. Only materials reached through a precompiled
-   artifact work in slim mode. The bundle is roughly the same gzip size as
-   stock three.js TSL on a minimal scene; the win is runtime (no JIT shader
-   compile, no node-graph traversal), not download.
+3. **Slim runtime (optional).** Production builds can use the checked prebuilt
+   runtime (`slim: true`) or the guarded application-tree-shaken entry
+   (`slim: 'source'`). Both strip the node builder; dev/serve deliberately
+   keeps full Three so capture can generate WGSL. Only paths represented by
+   precompiled artifacts or explicit replay/fallback adapters work in slim.
 
 ## Adoption modes
 
@@ -169,15 +167,31 @@ reshuffles names, which invalidates the on-disk artifacts.
 tslPrecompile( { slim: true } );
 ```
 
-In production builds the plugin aliases `three/webgpu` →
-`@tsl-precompile/runtime/slim` (the node-builder-stripped bundle) and
-`three/tsl` → a stub module that throws loud, descriptive errors if any
-un-precompiled TSL helper is reached. `vite dev` keeps both full three.js
-entries so `.precompile()` and aux capture still have a node builder.
+Production has two compiler-free delivery modes:
+
+```js
+tslPrecompile( { slim: true } );       // checked, prebuilt runtime
+tslPrecompile( { slim: 'source' } );   // application-tree-shaken source
+```
+
+Both alias `three/tsl` to fail-loud replay stubs. `slim: true` aliases
+`three/webgpu` to the checked `@tsl-precompile/runtime/slim` file.
+`slim: 'source'` aliases it to a guarded source entry so the application
+bundler can discard unused Three constructors and runtime exports. A minimal
+WebGPU renderer build measured 162,508 bytes gzip in source mode versus
+223,943 bytes for the current prebuilt file (61,435 bytes, or 27.4%, smaller).
+
+The source entry is build-only: importing it without a matching plugin fails,
+plugin/runtime policy revisions are checked, and the final bundle is rejected
+if a Three node compiler or stock replay-owned adapter survives. `vite dev`
+keeps the full Three entries in either mode so `.precompile()` and auxiliary
+capture still have a node builder.
 
 The published slim bundle is currently built against exactly three `0.184.0`.
 A slim build fails early when the consumer resolves another patch instead of
-combining incompatible renderer internals.
+combining incompatible renderer internals. Source mode uses the consumer's
+installed Three source, but capture and production build must still resolve
+the same exact patch; artifacts from another patch are rejected.
 
 **What slim mode actually changes:**
 - ✅ Eliminates the TSL→WGSL compiler from production runtime (no JIT shader
@@ -237,7 +251,7 @@ material.
 | `fail` | `'error'` | Use `'warn'` to keep building when a named artifact is missing. |
 | `autoMark` | `false` | Chain `.precompile('auto-<n>')` onto every `new *NodeMaterial(...)` automatically. |
 | `autoMarkPrefix` | `'auto'` | Prefix used by `autoMark` to name artifacts. |
-| `slim` | `false` | Alias `three/webgpu` → the slim runtime bundle in production only; dev keeps full three for capture. |
+| `slim` | `false` | `true` uses the checked prebuilt slim runtime; `'source'` lets the application bundler tree-shake the guarded compiler-free source entry. Production only; dev keeps full Three for capture. |
 | `minifyWgsl` | `true` | Compact WGSL only in emitted virtual modules; captured JSON stays readable. |
 | `dedupeWgsl` | `true` | Hoist repeated WGSL strings into `virtual:tsl-precompile/__wgsl` for tree-shakeable reuse. |
 | `threeVersion` | auto-detect | Override the exact three.js package version used in rewrite hashes. It must match the installed package (rarely needed). |
@@ -264,6 +278,9 @@ material.
   The installed three.js patch does not match this release's checked-in slim
   renderer. Pin three to `0.184.0`, or disable `slim` until a matching runtime
   slim bundle is published.
+- **`slim source policy mismatch`**
+  The plugin and runtime packages came from incompatible releases. Install
+  matching `vite-plugin-tsl-precompile` and `@tsl-precompile/runtime` versions.
 - **Post-processing renders black or samples stale textures in `slim` mode.**
   Run `precompileAuxiliary(renderer, scene, camera, { three: THREE,
   postProcessing })` once in dev after creating the `RenderPipeline` /

@@ -46,6 +46,13 @@ test( 'tslPrecompile — accepts every known option', () => {
 
 } );
 
+test( 'tslPrecompile — accepts the guarded source slim mode', () => {
+
+	const plugin = tslPrecompile( { slim: 'source' } );
+	assert.equal( plugin.name, 'vite-plugin-tsl-precompile' );
+
+} );
+
 test( 'tslPrecompile — rejects unknown option keys', () => {
 
 	assert.throws(
@@ -87,7 +94,8 @@ test( 'tslPrecompile — rejects wrong types for typed options', () => {
 	assert.throws( () => tslPrecompile( { autoMarkPrefix: 5 } ), /`autoMarkPrefix` must be a string/ );
 	assert.throws( () => tslPrecompile( { threeVersion: 184 } ), /`threeVersion` must be a string/ );
 	assert.throws( () => tslPrecompile( { autoMark: 'yes' } ), /`autoMark` must be a boolean/ );
-	assert.throws( () => tslPrecompile( { slim: 1 } ), /`slim` must be a boolean/ );
+	assert.throws( () => tslPrecompile( { slim: 1 } ), /`slim` must be a boolean or 'source'/ );
+	assert.throws( () => tslPrecompile( { slim: 'tree-shaken' } ), /`slim` must be a boolean or 'source'/ );
 	assert.throws( () => tslPrecompile( { minifyWgsl: 'no' } ), /`minifyWgsl` must be a boolean/ );
 	assert.throws( () => tslPrecompile( { dedupeWgsl: 'no' } ), /`dedupeWgsl` must be a boolean/ );
 

@@ -21,11 +21,13 @@ export interface TslPrecompileOptions {
 	/** Prefix used by `autoMark` to name artifacts. Default: `'auto'`. */
 	autoMarkPrefix?: string;
 	/**
-	 * Alias `three/webgpu` to the slim runtime bundle in production builds
-	 * (serve/dev keeps full three for capture). Requires every reachable
-	 * material to be precompiled. Default: `false`.
+	 * Alias `three/webgpu` to a compiler-free runtime in production builds.
+	 * `true` uses the checked prebuilt bundle; `'source'` lets the application
+	 * bundler tree-shake exact Three source modules. Serve/dev keeps full Three
+	 * for capture. Requires every reachable material to be precompiled.
+	 * Default: `false`.
 	 */
-	slim?: boolean;
+	slim?: boolean | 'source';
 	/** Override the auto-detected exact three.js package version used in rewrite hashes. Must match the installed package (for example `0.184.0`). Pass `null` to force auto-detect. */
 	threeVersion?: string | null;
 	/**

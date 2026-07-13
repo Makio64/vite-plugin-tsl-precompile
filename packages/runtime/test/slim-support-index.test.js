@@ -29,10 +29,19 @@ function runtimeSourceFiles( dir = RUNTIME_SRC ) {
 
 function slimEntryCoreExports() {
 
-	const source = readFileSync( resolve( RUNTIME_SRC, 'slim-entry.js' ), 'utf8' );
-	const match = source.match( /export\s*\{([\s\S]*?)\}\s*from 'three\/src\/Three\.Core\.js'/ );
-	assert.ok( match, 'slim-entry.js must expose its Three.Core allowlist as a named export block' );
-	return new Set( match[ 1 ].split( ',' ).map( ( name ) => name.trim() ).filter( Boolean ) );
+	const source = readFileSync( resolve( RUNTIME_SRC, 'slim-source-common.js' ), 'utf8' );
+	const exported = new Set();
+	for ( const match of source.matchAll( /export\s*\{([\s\S]*?)\}\s*from 'three\/src\/[^']+\.js'/g ) ) {
+
+		for ( const rawName of match[ 1 ].split( ',' ) ) {
+
+			const name = rawName.trim().split( /\s+as\s+/ ).at( - 1 );
+			if ( name ) exported.add( name );
+
+		}
+
+	}
+	return exported;
 
 }
 
@@ -98,7 +107,7 @@ test( 'public slim-support initialization path avoids bare three imports', () =>
 
 } );
 
-test( 'slim entry exports every bare-three runtime import used during replay', () => {
+test( 'slim source surface exports every bare-three runtime import used during replay', () => {
 
 	const exported = slimEntryCoreExports();
 	const missing = [];
