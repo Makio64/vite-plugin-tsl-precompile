@@ -1027,6 +1027,22 @@ function collectSceneMRTNode( renderer, scene, options ) {
 
 }
 
+function sceneMaterialOwnsMRTNode( scene, mrtNode ) {
+
+	if ( ! scene || ! mrtNode || typeof scene.traverse !== 'function' ) return false;
+	let found = false;
+	scene.traverse( ( object ) => {
+
+		if ( found ) return;
+		const material = object && object.material;
+		const materials = Array.isArray( material ) ? material : material ? [ material ] : [];
+		found = materials.some( mat => mat && mat.mrtNode === mrtNode );
+
+	} );
+	return found;
+
+}
+
 /**
  * Precompile every node material reachable via `renderer.compileAsync` and
  * return an array of serializable artifacts (one per unique cache key).
@@ -1236,7 +1252,8 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		const outputMap = sceneMRTNode.nodes || sceneMRTNode.outputNodes || null;
 		const outputNames = outputMap ? Object.keys( outputMap ) : [];
 		const outputCount = outputNames.length;
-		if ( outputCount > 1 ) {
+		const materialOwnedSingleOutput = outputCount === 1 && sceneMaterialOwnsMRTNode( scene, sceneMRTNode );
+		if ( outputCount > 1 || ( outputCount === 1 && ! materialOwnedSingleOutput ) ) {
 
 			try {
 

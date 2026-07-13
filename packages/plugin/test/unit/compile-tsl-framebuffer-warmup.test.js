@@ -113,3 +113,68 @@ fn main( @location( 0 ) uv : vec2<f32> ) -> OutputStruct {
 	assert.equal( selected.fragmentShader, colorShader );
 
 } );
+
+test( 'compileTSL names a warm-up target for a pass-owned single-output MRT', async () => {
+
+	let currentRenderTarget = null;
+	let compiledTarget = null;
+	const manager = {
+		nodeBuilderCache: new Map(),
+		getForRenderCacheKey() { return 'unused'; },
+		getForRender() { return null; },
+	};
+	const renderer = {
+		_nodes: manager,
+		getRenderTarget() { return currentRenderTarget; },
+		setRenderTarget( target ) { currentRenderTarget = target; },
+		getMRT() { return null; },
+		setMRT() {},
+		async compileAsync() {
+
+			compiledTarget = currentRenderTarget;
+
+		},
+		render() {},
+	};
+	const scene = { userData: {}, traverse() {} };
+	const mrtNode = { outputNodes: { output: {} } };
+
+	await compileTSL( renderer, scene, {}, { mrtNode } );
+
+	assert.ok( compiledTarget );
+	assert.equal( compiledTarget.textures.length, 1 );
+	assert.equal( compiledTarget.textures[ 0 ].name, 'output' );
+	assert.equal( currentRenderTarget, null );
+
+} );
+
+test( 'compileTSL leaves material-owned single-output MRTs on the surrounding target', async () => {
+
+	let currentRenderTarget = null;
+	let compiledTarget = 'not-called';
+	const mrtNode = { outputNodes: { mask: {} } };
+	const material = { mrtNode };
+	const renderer = {
+		_nodes: {
+			nodeBuilderCache: new Map(),
+			getForRenderCacheKey() { return 'unused'; },
+			getForRender() { return null; },
+		},
+		getRenderTarget() { return currentRenderTarget; },
+		setRenderTarget( target ) { currentRenderTarget = target; },
+		getMRT() { return null; },
+		setMRT() {},
+		async compileAsync() { compiledTarget = currentRenderTarget; },
+		render() {},
+	};
+	const scene = {
+		userData: {},
+		traverse( visit ) { visit( { material } ); },
+	};
+
+	await compileTSL( renderer, scene, {} );
+
+	assert.equal( compiledTarget, null );
+	assert.equal( currentRenderTarget, null );
+
+} );
