@@ -1001,12 +1001,13 @@ import * as Original from '/build/three.webgpu.js';
 export * from '/build/three.webgpu.js';
 import { installPrecompileMarker, setDevRenderer } from '/__tslp_runtime/precompile-marker.js';
 import { precompileAuxiliary } from '/__tslp_runtime/aux-marker.js';
+import { createRenderContextSignature as __createRenderContextSignature } from '/__tslp_contract/render-context.js';
+import { createMaterialContextKey as __createMaterialContextKey, getMaterialContextMap as __getMaterialContextMap } from '/__tslp_batch/material-context-cache.mjs';
 
 const __state = window.__TSLP_E2E || { example: 'unknown' };
 const __counts = Object.create( null );
 const __pending = [];
-const __seenMaterials = new WeakMap();
-const __bundleSharedNames = new Map();
+const __seenMaterialContexts = new WeakMap();
 const __postProcessingPipelines = new Set();
 const __auxPromises = new Set();
 const __auxScenes = new Map();
@@ -1213,21 +1214,32 @@ function __mark( material, className, sourceObject = null, camera = null ) {
 		const shouldSetScene = ! currentScene || ( __countSceneLights( currentScene ) === 0 && __countSceneLights( sourceScene ) > 0 );
 		if ( shouldSetScene ) Object.defineProperty( material, '__tslpPrecompileScene', { value: sourceScene, configurable: true } );
 	}
-	if ( __seenMaterials.has( material ) ) return;
-	const bundleKey = __isInsideBundleGroup( sourceObject ) ? className : null;
-	if ( bundleKey && __bundleSharedNames.has( bundleKey ) ) {
-		__seenMaterials.set( material, __bundleSharedNames.get( bundleKey ) );
-		return;
-	}
+	let renderTarget = null;
+	let mrt = null;
+	try { renderTarget = __renderer && typeof __renderer.getRenderTarget === 'function' ? __renderer.getRenderTarget() : null; } catch ( _ ) {}
+	try { mrt = __renderer && typeof __renderer.getMRT === 'function' ? __renderer.getMRT() : null; } catch ( _ ) {}
+	const captureScene = sourceScene || material.__tslpPrecompileScene || null;
+	const captureCamera = nextCameraSeesObject ? camera : material.__tslpPrecompileCamera || camera || null;
+	const captureObject = sourceObject || material.__tslpPrecompileObject || null;
+	if ( ! mrt && captureScene && captureScene.userData ) mrt = captureScene.userData.__tslp_mrtNode || null;
+	const contextKey = __createMaterialContextKey( __createRenderContextSignature, { object: captureObject, material } );
+	const seenContexts = __getMaterialContextMap( __seenMaterialContexts, material, true );
+	if ( seenContexts.has( contextKey ) ) return;
 	const n = ( __counts[ className ] || 0 ) + 1;
 	__counts[ className ] = n;
 	const name = __state.example + ':' + className + ':' + n;
 	material.name = material.name || name;
-	__seenMaterials.set( material, name );
-	if ( bundleKey ) __bundleSharedNames.set( bundleKey, name );
-	let renderTarget = null;
-	try { renderTarget = __renderer && typeof __renderer.getRenderTarget === 'function' ? __renderer.getRenderTarget() : null; } catch ( _ ) {}
-	__pending.push( { material, name, renderTarget, done: false } );
+	seenContexts.set( contextKey, name );
+	__pending.push( {
+		material,
+		name,
+		scene: captureScene,
+		camera: captureCamera,
+		object: captureObject,
+		renderTarget,
+		mrt,
+		done: false,
+	} );
 	// Do NOT __flush() here. precompile() must run AFTER the example
 	// has finished setting up the scene (background, environment,
 	// lights). Many examples create materials inside an async loader
@@ -1256,15 +1268,6 @@ function __countSceneLights( scene ) {
 		} );
 	} catch ( _ ) {}
 	return count;
-}
-
-function __isInsideBundleGroup( object ) {
-	let current = object;
-	while ( current ) {
-		if ( current.isBundleGroup === true ) return true;
-		current = current.parent || null;
-	}
-	return false;
 }
 
 function __classNameForMaterial( material ) {
@@ -1403,16 +1406,14 @@ async function __flush() {
 	// capture with the next item's temporary MRT removal races on the shared
 	// scene.userData descriptor and can silently lose that main MRT variant.
 	for ( const item of pendingItems ) {
-		const scene = item.material && item.material.__tslpPrecompileScene || null;
-		const sceneUserData = scene && scene.userData;
-		const sceneMRT = sceneUserData && sceneUserData.__tslp_mrtNode || null;
+		const sceneMRT = item.mrt;
 		if ( sceneMRT ) {
 			const currentMRT = typeof __renderer.getMRT === 'function' ? __renderer.getMRT() : null;
 			const colorMaterial = item.material && typeof item.material.clone === 'function' ? item.material.clone() : item.material;
 			try {
-				if ( item.material.__tslpPrecompileScene ) Object.defineProperty( colorMaterial, '__tslpPrecompileScene', { value: item.material.__tslpPrecompileScene, configurable: true } );
-				if ( item.material.__tslpPrecompileObject ) Object.defineProperty( colorMaterial, '__tslpPrecompileObject', { value: item.material.__tslpPrecompileObject, configurable: true } );
-				if ( item.material.__tslpPrecompileCamera ) Object.defineProperty( colorMaterial, '__tslpPrecompileCamera', { value: item.material.__tslpPrecompileCamera, configurable: true } );
+				if ( item.scene ) Object.defineProperty( colorMaterial, '__tslpPrecompileScene', { value: item.scene, configurable: true } );
+				if ( item.object ) Object.defineProperty( colorMaterial, '__tslpPrecompileObject', { value: item.object, configurable: true } );
+				if ( item.camera ) Object.defineProperty( colorMaterial, '__tslpPrecompileCamera', { value: item.camera, configurable: true } );
 				if ( Object.prototype.hasOwnProperty.call( item.material, '__tslpArrayCamera' ) ) Object.defineProperty( colorMaterial, '__tslpArrayCamera', { value: item.material.__tslpArrayCamera, configurable: true } );
 			} catch ( _ ) {}
 			try {
@@ -1423,9 +1424,10 @@ async function __flush() {
 				const pendingBefore = window.__tslpPrecompilePending | 0;
 				colorMaterial.precompile( item.name + ':color', {
 					__tslpAutoMark: true,
-					scene: colorMaterial.__tslpPrecompileScene || null,
-					camera: colorMaterial.__tslpPrecompileCamera || null,
-					object: colorMaterial.__tslpPrecompileObject || null,
+					scene: item.scene || null,
+					camera: item.camera || null,
+					object: item.object || null,
+					mrt: null,
 				} );
 				await __waitForPrecompilePendingAtMost( pendingBefore );
 			} catch ( err ) {
@@ -1442,10 +1444,11 @@ async function __flush() {
 			item.material.needsUpdate = true;
 			item.material.precompile( item.name, {
 				__tslpAutoMark: true,
-				scene: item.material.__tslpPrecompileScene || null,
-				camera: item.material.__tslpPrecompileCamera || null,
-				object: item.material.__tslpPrecompileObject || null,
+				scene: item.scene || null,
+				camera: item.camera || null,
+				object: item.object || null,
 				renderTarget: item.renderTarget || null,
+				mrt: item.mrt || null,
 			} );
 		} catch ( err ) {
 			console.error( '[tslp-e2e] precompile failed:', err );
@@ -1886,6 +1889,8 @@ import { renderOffscreenOverrideWithFullRenderer as __sharedRenderOffscreenOverr
 import { findAux as __runtimeFindAux } from '/__tslp_runtime/aux-loader.js';
 import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS as __NODE_GRAPH_KEYS } from '/__tslp_contract/texture-props.js';
 import { countArtifactFragmentOutputCapacity as __sharedCountArtifactFragmentOutputCapacity, countArtifactFragmentOutputs as __sharedCountArtifactFragmentOutputs } from '/__tslp_contract/fragment-outputs.js';
+import { createRenderContextSignature as __createRenderContextSignature } from '/__tslp_contract/render-context.js';
+import { createMaterialContextKey as __createMaterialContextKey, getMaterialContextMap as __getMaterialContextMap } from '/__tslp_batch/material-context-cache.mjs';
 ${ SLIM_REPLAY_FORWARD_EXPORT_BLOCK }
 ${ SLIM_REPLAY_FULL_FALLBACK_EXPORT_BLOCK }
 export { FullTextureNode as TextureNode, FullBlendMode as BlendMode, FullTempNode as TempNode, FullNodeUpdateType as NodeUpdateType, FullArrayCamera as ArrayCamera, FullControls as Controls, FullMOUSE as MOUSE, FullMathUtils as MathUtils, FullPlane as Plane, FullQuaternion as Quaternion, FullRay as Ray, FullSpherical as Spherical, FullTOUCH as TOUCH, FullQuadMesh as QuadMesh, FullRendererUtils as RendererUtils, FullVector2 as Vector2, FullVector3 as Vector3 };
@@ -2856,6 +2861,7 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 const __counts = Object.create( null );
 const __usedArtifactNames = new Set();
 const __seenMaterials = new WeakMap();
+const __seenMaterialContexts = new WeakMap();
 const __fallbackArtifactTextures = new Map();
 const __liveSceneIndex = createLiveSceneIndex( {
 	registerLiveTexture: ( texture ) => Slim.registerLiveTexture( texture ),
@@ -6557,6 +6563,15 @@ function __prepareSceneForCurrentMRT( scene, renderer ) {
 	return mrt;
 }
 
+function __replayMaterialContextKey( material, object ) {
+
+	return __createMaterialContextKey( __createRenderContextSignature, {
+		material,
+		object,
+	} );
+
+}
+
 function __replaceMaterialForReplay( inputMaterial, object = null, force = false ) {
 	let m = inputMaterial;
 	if ( ! m ) return m;
@@ -6580,8 +6595,10 @@ function __replaceMaterialForReplay( inputMaterial, object = null, force = false
 		return m;
 	}
 	if ( ! force && m.visible === false ) return m;
-	if ( __seenMaterials.has( m ) ) {
-		const replacement = __seenMaterials.get( m );
+	const contextKey = __replayMaterialContextKey( m, object );
+	const seenContexts = __getMaterialContextMap( __seenMaterialContexts, m, true );
+	if ( seenContexts.has( contextKey ) ) {
+		const replacement = seenContexts.get( contextKey );
 		__copyMaterialProps( m, replacement );
 		__copyMaterialNodeProps( m, replacement );
 		__wireMaterialNodeTextures( m, replacement );
@@ -6602,7 +6619,7 @@ function __replaceMaterialForReplay( inputMaterial, object = null, force = false
 	if ( __wireObjectMorphTexture( replacement, object ) ) __markMaterialTextureRewire( replacement );
 	try { Object.defineProperty( replacement, '__tslpSourceMaterial', { value: m, configurable: true, writable: true } ); } catch ( _ ) {}
 	if ( __wireMaterialPropertyTexturesFromArtifact( replacement ) ) __markMaterialTextureRewire( replacement );
-	__seenMaterials.set( m, replacement );
+	seenContexts.set( contextKey, replacement );
 	return replacement;
 }
 
@@ -13919,6 +13936,7 @@ const server = createServer( async ( req, res ) => {
 		if ( url.pathname === '/__tslp__/tsl-stub.js' ) return sendJs( res, tslStubModule() );
 		if ( url.pathname === '/__tslp__/tsl-capture.js' ) return sendJs( res, tslCaptureModule() );
 		if ( url.pathname === '/__tslp__/aux-virtual.js' ) return sendJs( res, auxVirtualModule() );
+		if ( url.pathname === '/__tslp_batch/material-context-cache.mjs' ) return sendFile( res, join( SELF, 'material-context-cache.mjs' ) );
 		if ( url.pathname === '/examples/jsm/inspector/Inspector.js' ) return sendJs( res, inspectorStubModule() );
 		if ( url.pathname === '/examples/jsm/libs/stats.module.js' ) return sendJs( res, statsStubModule() );
 		// `three/addons/*` for local-examples-root packages: `/examples/*` is

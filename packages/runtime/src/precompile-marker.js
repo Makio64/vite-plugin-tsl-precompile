@@ -150,6 +150,7 @@ function normalizeCaptureContext( material, context ) {
 		camera: explicit.camera || material.__tslpPrecompileCamera || null,
 		object,
 		renderTarget: explicit.renderTarget || material.__tslpPrecompileRenderTarget || null,
+		...( Object.prototype.hasOwnProperty.call( explicit, 'mrt' ) ? { mrt: explicit.mrt } : {} ),
 	};
 
 }
@@ -189,6 +190,7 @@ function queueMaterialCapture( material, name, installation, context, sourceIden
 
 		const nextContext = normalizeCaptureContext( material, context );
 		for ( const key of [ 'scene', 'camera', 'object', 'renderTarget' ] ) alreadyQueued.context[ key ] = nextContext[ key ] || alreadyQueued.context[ key ];
+		if ( Object.prototype.hasOwnProperty.call( nextContext, 'mrt' ) ) alreadyQueued.context.mrt = nextContext.mrt;
 		alreadyQueued.allowAutoFallback = alreadyQueued.allowAutoFallback || context && context.__tslpAutoMark === true;
 		if ( hasUsableCaptureContext( alreadyQueued.context ) && ! alreadyQueued.observedRenderTarget ) {
 
@@ -1260,8 +1262,11 @@ async function captureMaterialInDev( entry ) {
 		// reparent lights, since `Object3D.add()` would detach them from
 		// the user's actual scene and break their real render pass.
 		const sourceScene = captureContext.scene || material.__tslpPrecompileScene || findParentScene( sourceObject );
-		let renderContextMRT = sourceScene && sourceScene.userData && sourceScene.userData.__tslp_mrtNode || null;
-		if ( ! renderContextMRT && typeof captureRenderer.getMRT === 'function' ) {
+		const hasExplicitMRT = Object.prototype.hasOwnProperty.call( captureContext, 'mrt' );
+		let renderContextMRT = hasExplicitMRT
+			? captureContext.mrt
+			: sourceScene && sourceScene.userData && sourceScene.userData.__tslp_mrtNode || null;
+		if ( ! hasExplicitMRT && ! renderContextMRT && typeof captureRenderer.getMRT === 'function' ) {
 
 			try { renderContextMRT = captureRenderer.getMRT(); } catch ( _ ) {}
 
@@ -1397,7 +1402,11 @@ async function captureMaterialInDev( entry ) {
 		// stamps the descriptor on `scene.userData.__tslp_mrtNode` because the
 		// PassNode only writes `material.mrtNode` during a live render — after
 		// our synthetic warm-up runs.
-		if ( ! isFullscreenQuad && entry.mrtNode ) {
+		if ( ! isFullscreenQuad && hasExplicitMRT ) {
+
+			mrtNode = captureContext.mrt;
+
+		} else if ( ! isFullscreenQuad && entry.mrtNode ) {
 
 			mrtNode = entry.mrtNode;
 

@@ -676,6 +676,41 @@ test( 'auto-mark capture preserves an active non-MRT pass render target', async 
 
 } );
 
+test( 'explicit marker context preserves observed MRT topology after renderer state changes', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'mrt-context' );
+		const material = new three.Material();
+		const context = mount( three, material );
+		const observedMRT = { outputNodes: { output: {} } };
+		const laterMRT = { outputNodes: { normal: {} } };
+		material.mrtNode = observedMRT;
+		context.scene.userData.__tslp_mrtNode = laterMRT;
+		const renderer = {
+			render() {},
+			getMRT: () => laterMRT,
+			getRenderTarget: () => null,
+		};
+		let extractorOptions = null;
+		install( three, async ( _renderer, _scene, _camera, options ) => {
+
+			extractorOptions = options;
+			return artifactSet( material );
+
+		} );
+		setDevRenderer( renderer, three );
+
+		material.precompile( 'mrt-context-material', { ...context, mrt: observedMRT, __tslpAutoMark: true } );
+		await waitFor( () => posts.length === 1, 'item-scoped MRT capture' );
+
+		assert.equal( extractorOptions.mrtNode, observedMRT );
+		assert.notEqual( extractorOptions.mrtNode, laterMRT );
+
+	} );
+
+} );
+
 test( 'coalesces a trailing HMR recapture while extraction is inflight', async () => {
 
 	await withBrowser( async ( posts ) => {
