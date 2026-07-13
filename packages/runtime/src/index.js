@@ -37,6 +37,6 @@ export { createPostprocessExecutionPlan, postprocessGraphContains } from './slim
 export { preparePrecompiledPostprocess, prepareEffectNodeForReplay, makePrecompiledAuxMaterial, cloneAuxArtifact, wireLiveNodeSidecarsToArtifact, artifactLooksLikeRetroPassMaterial } from './slim-support/postprocess-effects-replay.js';
 export { TRAA_RESOLVE_TEXTURE_NAME, TRAA_HISTORY_TEXTURE_NAME, TRAA_HISTORY_DEPTH_TEXTURE_NAME, nameTRAATextures, collectTRAASelfTextures, getTRAABeautyTexture, getTRAAVelocityTexture, getTRAACurrentDepthTexture, wireTRAAResolveArtifact } from './slim-support/traa-replay.js';
 export { renderOffscreenOverrideWithFullRenderer, renderPassWithFullRenderer, sharePassRenderTargetTextures, shareRenderTargetTextures } from './slim-support/pass-render-fallback.js';
-export { populateShadowMapsWithFullRenderer } from './slim-support/shadow-fallback.js';
+export { disposeShadowMapsWithFullRenderer, populateShadowMapsWithFullRenderer } from './slim-support/shadow-fallback.js';
 export { loadInspectorOptional } from './inspector-loader.js';
 export { MaterialVariantSet, createMaterialVariants, applyMaterialVariant } from './material-variants.js';

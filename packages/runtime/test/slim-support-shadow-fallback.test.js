@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as Three from 'three';
 
-import { populateShadowMapsWithFullRenderer } from '../src/slim-support/shadow-fallback.js';
+import { disposeShadowMapsWithFullRenderer, populateShadowMapsWithFullRenderer } from '../src/slim-support/shadow-fallback.js';
 
 const TEST_GPU_DEVICE = { queue: { onSubmittedWorkDone: async () => {} } };
 
@@ -87,6 +87,35 @@ function makeShadowScene( material = new Three.MeshLambertMaterial() ) {
 	scene.add( camera );
 	scene.updateMatrixWorld( true );
 	return { scene, mesh, light, camera };
+
+}
+
+function trackDispose( value ) {
+
+	let calls = 0;
+	const original = value && typeof value.dispose === 'function' ? value.dispose.bind( value ) : null;
+	value.dispose = () => {
+
+		calls ++;
+		if ( original ) original();
+
+	};
+	return () => calls;
+
+}
+
+function proxyResources( fullRenderer ) {
+
+	const proxyScene = fullRenderer.renderCalls[ 0 ].scene;
+	let mesh = null;
+	let light = null;
+	proxyScene.traverse( ( object ) => {
+
+		if ( object.isMesh === true && ! mesh ) mesh = object;
+		if ( object.isLight === true && object.castShadow === true && ! light ) light = object;
+
+	} );
+	return { proxyScene, mesh, light, renderTarget: fullRenderer.renderCalls[ 0 ].target };
 
 }
 
@@ -192,6 +221,170 @@ test( 'populateShadowMapsWithFullRenderer de-duplicates unchanged state and inva
 
 } );
 
+test( 'shadow fallback disposes the previous owned proxy on topology rebuild and restores source shadow references', async () => {
+
+	const { scene, mesh, light, camera } = makeShadowScene();
+	const original = {
+		map: light.shadow.map,
+		camera: light.shadow.camera,
+		matrix: light.shadow.matrix,
+	};
+	const full = fakeRenderer( { populateShadows: true } );
+	const cache = new Map();
+	const opts = { scene, camera, slimRenderer: fakeRenderer(), fullRenderer: full, threeFullModule: Three, cache };
+
+	await populateShadowMapsWithFullRenderer( opts );
+	const first = proxyResources( full );
+	const geometryDisposes = trackDispose( first.mesh.geometry );
+	const materialDisposes = trackDispose( first.mesh.material );
+	const shadowDisposes = trackDispose( first.light.shadow );
+	const targetDisposes = trackDispose( first.renderTarget );
+
+	mesh.material.transparent = true;
+	mesh.material.opacity = 0.5;
+	await populateShadowMapsWithFullRenderer( opts );
+
+	assert.equal( geometryDisposes(), 1 );
+	assert.equal( materialDisposes(), 1 );
+	assert.equal( shadowDisposes(), 1 );
+	assert.equal( targetDisposes(), 1 );
+	assert.notEqual( full.renderCalls[ 2 ].target, first.renderTarget );
+
+	assert.equal( disposeShadowMapsWithFullRenderer( { scene, cache } ), true );
+	assert.equal( light.shadow.map, original.map );
+	assert.equal( light.shadow.camera, original.camera );
+	assert.equal( light.shadow.matrix, original.matrix );
+	assert.equal( disposeShadowMapsWithFullRenderer( { scene, cache } ), false, 'disposal is idempotent after cache removal' );
+
+} );
+
+test( 'shadow fallback never disposes caller-mapped materials or caller-owned render targets', async () => {
+
+	const source = new Three.MeshLambertMaterial();
+	source.positionNode = { isNode: true };
+	const mapped = new Three.MeshLambertMaterial();
+	mapped.positionNode = source.positionNode;
+	const mappedDisposes = trackDispose( mapped );
+	const callerTarget = new Three.RenderTarget( 8, 8 );
+	const targetDisposes = trackDispose( callerTarget );
+	const { scene, light, camera } = makeShadowScene( source );
+	const external = {
+		map: { external: 'map' },
+		camera: { external: 'camera' },
+		matrix: { external: 'matrix' },
+	};
+	const cache = new Map();
+	await populateShadowMapsWithFullRenderer( {
+		scene,
+		camera,
+		slimRenderer: fakeRenderer(),
+		fullRenderer: fakeRenderer( { populateShadows: true } ),
+		threeFullModule: Three,
+		resolveShadowMaterial: () => mapped,
+		renderTarget: callerTarget,
+		cache,
+	} );
+
+	light.shadow.map = external.map;
+	light.shadow.camera = external.camera;
+	light.shadow.matrix = external.matrix;
+	assert.equal( disposeShadowMapsWithFullRenderer( { scene, cache } ), true );
+	assert.equal( mappedDisposes(), 0 );
+	assert.equal( targetDisposes(), 0 );
+	assert.equal( light.shadow.map, external.map, 'caller replacement is not overwritten during cleanup' );
+	assert.equal( light.shadow.camera, external.camera );
+	assert.equal( light.shadow.matrix, external.matrix );
+
+} );
+
+test( 'shadow fallback releases cached ownership when the full renderer or module changes', async () => {
+
+	const { scene, camera } = makeShadowScene();
+	const slim = fakeRenderer();
+	const firstFull = fakeRenderer( { populateShadows: true } );
+	const cache = new Map();
+	await populateShadowMapsWithFullRenderer( { scene, camera, slimRenderer: slim, fullRenderer: firstFull, threeFullModule: Three, cache } );
+	const first = proxyResources( firstFull );
+	const geometryDisposes = trackDispose( first.mesh.geometry );
+	const shadowDisposes = trackDispose( first.light.shadow );
+	const targetDisposes = trackDispose( first.renderTarget );
+	const secondFull = fakeRenderer( { populateShadows: true } );
+	const secondModule = { ...Three };
+
+	const result = await populateShadowMapsWithFullRenderer( {
+		scene,
+		camera,
+		slimRenderer: slim,
+		fullRenderer: secondFull,
+		threeFullModule: secondModule,
+		cache,
+	} );
+
+	assert.equal( result.complete, true );
+	assert.equal( geometryDisposes(), 1 );
+	assert.equal( shadowDisposes(), 1 );
+	assert.equal( targetDisposes(), 1 );
+
+} );
+
+test( 'shadow fallback cleans resources allocated before a partial proxy-build failure', async () => {
+
+	const geometries = [];
+	const materials = [];
+	const shadows = [];
+	class TrackingGeometry extends Three.BufferGeometry {
+
+		constructor() { super(); this.disposeCalls = 0; geometries.push( this ); }
+		dispose() { this.disposeCalls ++; super.dispose(); }
+
+	}
+	class TrackingMaterial extends Three.MeshLambertMaterial {
+
+		constructor( ...args ) { super( ...args ); this.disposeCalls = 0; materials.push( this ); }
+		dispose() { this.disposeCalls ++; super.dispose(); }
+
+	}
+	class TrackingDirectionalLight extends Three.DirectionalLight {
+
+		constructor( ...args ) {
+
+			super( ...args );
+			const originalDispose = this.shadow.dispose.bind( this.shadow );
+			this.shadow.disposeCalls = 0;
+			this.shadow.dispose = () => { this.shadow.disposeCalls ++; originalDispose(); };
+			shadows.push( this.shadow );
+
+		}
+
+	}
+	const Full = { ...Three, BufferGeometry: TrackingGeometry, MeshLambertMaterial: TrackingMaterial, DirectionalLight: TrackingDirectionalLight };
+	const { scene, camera } = makeShadowScene();
+	const invalid = new Three.Mesh( new Three.BufferGeometry(), new Three.MeshLambertMaterial() );
+	invalid.geometry.setAttribute( 'position', { itemSize: 3, array: null } );
+	invalid.castShadow = true;
+	scene.add( invalid );
+	const full = fakeRenderer( { populateShadows: true } );
+
+	const result = await populateShadowMapsWithFullRenderer( {
+		scene,
+		camera,
+		slimRenderer: fakeRenderer(),
+		fullRenderer: full,
+		threeFullModule: Full,
+		cache: new Map(),
+	} );
+
+	assert.equal( result.complete, false );
+	assert.equal( full.renderCalls.length, 0 );
+	assert.ok( geometries.length >= 2 );
+	assert.ok( geometries.every( ( geometry ) => geometry.disposeCalls === 1 ) );
+	assert.ok( materials.length >= 2 );
+	assert.ok( materials.every( ( material ) => material.disposeCalls === 1 ) );
+	assert.equal( shadows.length, 1 );
+	assert.equal( shadows[ 0 ].disposeCalls, 1 );
+
+} );
+
 test( 'populateShadowMapsWithFullRenderer refreshes auto-updating shadows even when object state is unchanged', async () => {
 
 	const { scene, camera } = makeShadowScene();
@@ -207,6 +400,61 @@ test( 'populateShadowMapsWithFullRenderer refreshes auto-updating shadows even w
 	assert.equal( second.reused, false );
 	assert.equal( second.proxyReused, true );
 	assert.equal( full.renderCalls.length, 4, 'autoUpdate preserves per-call shadow rendering for dynamic uniforms' );
+
+} );
+
+test( 'dispose during an in-flight populate serializes immediate repopulation behind cleanup', async () => {
+
+	const { scene, camera } = makeShadowScene();
+	const slim = fakeRenderer();
+	const full = fakeRenderer( { populateShadows: true } );
+	const cache = new Map();
+	const originalRender = full.render.bind( full );
+	let releaseFirstRender = null;
+	let announceFirstRender = null;
+	const firstRenderEntered = new Promise( ( resolve ) => { announceFirstRender = resolve; } );
+	const firstRenderGate = new Promise( ( resolve ) => { releaseFirstRender = resolve; } );
+	let renderInvocations = 0;
+	let activeRenders = 0;
+	let maxActiveRenders = 0;
+	full.render = async ( ...args ) => {
+
+		renderInvocations ++;
+		activeRenders ++;
+		maxActiveRenders = Math.max( maxActiveRenders, activeRenders );
+		if ( renderInvocations === 1 ) {
+
+			announceFirstRender();
+			await firstRenderGate;
+
+		}
+		try {
+
+			return await originalRender( ...args );
+
+		} finally {
+
+			activeRenders --;
+
+		}
+
+	};
+	const opts = { scene, camera, slimRenderer: slim, fullRenderer: full, threeFullModule: Three, cache };
+	const firstPopulate = populateShadowMapsWithFullRenderer( opts );
+	await firstRenderEntered;
+	const disposal = disposeShadowMapsWithFullRenderer( { scene, cache } );
+	assert.ok( disposal && typeof disposal.then === 'function' );
+	const repopulate = populateShadowMapsWithFullRenderer( opts );
+	await Promise.resolve();
+	assert.equal( renderInvocations, 1, 'the replacement state cannot start while the disposed state is rendering' );
+
+	releaseFirstRender();
+	const [ first, disposed, replacement ] = await Promise.all( [ firstPopulate, disposal, repopulate ] );
+	assert.equal( first.complete, false );
+	assert.equal( disposed, true );
+	assert.equal( replacement.complete, true );
+	assert.equal( maxActiveRenders, 1 );
+	assert.equal( renderInvocations, 4, 'two warm-up renders finish before the replacement performs its two renders' );
 
 } );
 

@@ -63,6 +63,94 @@ class FakeFullRenderer {
 
 }
 
+class DeferredShadowFullRenderer extends FakeFullRenderer {
+
+	constructor( options = {} ) {
+
+		super( options );
+		this.backend = fakeDataMap();
+		this.backend.device = options.device;
+		if ( this.backend.device && this.backend.device.queue && typeof this.backend.device.queue.onSubmittedWorkDone !== 'function' ) {
+
+			this.backend.device.queue.onSubmittedWorkDone = async () => {};
+
+		}
+		this._textures = fakeDataMap();
+		this.shadowMap = { enabled: false, type: Three.PCFShadowMap, transmitted: false };
+		this._target = null;
+		this.renderCount = 0;
+		this.events = [];
+		this._pause = null;
+
+	}
+
+	pauseNextRender() {
+
+		let release = null;
+		let entered = null;
+		const enteredPromise = new Promise( ( resolve ) => { entered = resolve; } );
+		const gate = new Promise( ( resolve ) => { release = resolve; } );
+		this._pause = { entered, gate };
+		return { entered: enteredPromise, release };
+
+	}
+
+	getRenderTarget() { return this._target; }
+	setRenderTarget( target ) { this._target = target; }
+
+	async render( scene ) {
+
+		this.renderCount ++;
+		if ( this._pause ) {
+
+			const pause = this._pause;
+			this._pause = null;
+			scene.traverse( ( object ) => {
+
+				if ( object.isLight !== true || ! object.shadow || object.shadow.__trackedDispose ) return;
+				object.shadow.__trackedDispose = true;
+				const originalDispose = object.shadow.dispose.bind( object.shadow );
+				object.shadow.dispose = () => { this.events.push( 'shadow' ); originalDispose(); };
+
+			} );
+			pause.entered();
+			await pause.gate;
+
+		}
+		scene.traverse( ( light ) => {
+
+			if ( light.isLight !== true || light.castShadow !== true || ! light.shadow || light.shadow.map ) return;
+			const depthTexture = new Three.DepthTexture( 16, 16 );
+			light.shadow.map = new Three.RenderTarget( 16, 16 );
+			light.shadow.map.depthTexture = depthTexture;
+			this.backend.get( depthTexture ).texture = { label: `deferred-shadow-${ this.renderCount }` };
+
+		} );
+
+	}
+
+	dispose() {
+
+		this.events.push( 'renderer' );
+		super.dispose();
+
+	}
+
+}
+
+function makeSupportShadowScene() {
+
+	const scene = new Three.Scene();
+	const mesh = new Three.Mesh( new Three.BoxGeometry( 1, 1, 1 ), new Three.MeshLambertMaterial() );
+	mesh.castShadow = true;
+	const light = new Three.DirectionalLight();
+	light.castShadow = true;
+	const camera = new Three.PerspectiveCamera( 50, 1, 0.1, 10 );
+	scene.add( mesh, light, light.target, camera );
+	return { scene, light, camera };
+
+}
+
 class FakeFullRendererWithPrivateNodes extends FakeFullRenderer {
 
 	async init() {
@@ -366,6 +454,58 @@ test( 'createSlimSceneSupport dispose() tears the fallback renderer down', async
 	support.dispose();
 	assert.equal( full.disposed, true );
 	assert.equal( support.fallback.isInitialised(), false );
+
+} );
+
+test( 'createSlimSceneSupport owns an iterable shadow cache and can dispose one scene or all scenes', async () => {
+
+	const slim = fakeRenderer();
+	slim.shadowMap = { enabled: true, type: Three.PCFShadowMap, transmitted: false };
+	const full = new DeferredShadowFullRenderer( { device: slim.backend.device } );
+	await full.init();
+	const Full = { ...Three, WebGPURenderer: DeferredShadowFullRenderer };
+	const first = makeSupportShadowScene();
+	const second = makeSupportShadowScene();
+	const firstOriginalCamera = first.light.shadow.camera;
+	const secondOriginalCamera = second.light.shadow.camera;
+	const support = createSlimSceneSupport( { renderer: slim, fullRendererFallback: false } );
+
+	assert.equal( ( await support.populateShadowMaps( first.scene, first.camera, { fullRenderer: full, threeFullModule: Full } ) ).complete, true );
+	assert.equal( ( await support.populateShadowMaps( second.scene, second.camera, { fullRenderer: full, threeFullModule: Full } ) ).complete, true );
+	assert.notEqual( first.light.shadow.camera, firstOriginalCamera );
+	assert.notEqual( second.light.shadow.camera, secondOriginalCamera );
+	assert.equal( await support.disposeShadowMaps( first.scene ), 1 );
+	assert.equal( first.light.shadow.camera, firstOriginalCamera );
+	assert.equal( await support.disposeShadowMaps( first.scene ), 0 );
+	assert.equal( await support.disposeShadowMaps(), 1 );
+	assert.equal( second.light.shadow.camera, secondOriginalCamera );
+	await support.dispose();
+
+} );
+
+test( 'createSlimSceneSupport waits for in-flight shadow cleanup before disposing its fallback renderer', async () => {
+
+	const slim = fakeRenderer();
+	slim.shadowMap = { enabled: true, type: Three.PCFShadowMap, transmitted: false };
+	const Full = { ...Three, WebGPURenderer: DeferredShadowFullRenderer };
+	const support = createSlimSceneSupport( {
+		renderer: slim,
+		fullRendererFallback: true,
+		threeFullModule: Full,
+	} );
+	const full = await support.getFullRenderer();
+	const pause = full.pauseNextRender();
+	const { scene, camera } = makeSupportShadowScene();
+	const populate = support.populateShadowMaps( scene, camera );
+	await pause.entered;
+	const disposal = support.dispose();
+
+	assert.equal( full.disposed, undefined, 'fallback renderer remains alive while its shadow render owns proxy resources' );
+	pause.release();
+	const [ result ] = await Promise.all( [ populate, disposal ] );
+	assert.equal( result.complete, false );
+	assert.equal( full.disposed, true );
+	assert.deepEqual( full.events.slice( -2 ), [ 'shadow', 'renderer' ] );
 
 } );
 

@@ -319,13 +319,14 @@ function cloneAttribute( attribute, Full ) {
 
 }
 
-function cloneGeometry( geometry, Full, geometryCache ) {
+function cloneGeometry( geometry, Full, geometryCache, ownedGeometries ) {
 
 	if ( geometryCache.has( geometry ) ) return geometryCache.get( geometry );
 	if ( ! Full.BufferGeometry ) return null;
 	try {
 
 		const cloned = new Full.BufferGeometry();
+		ownedGeometries.add( cloned );
 		if ( geometry.index ) {
 
 			const index = cloneAttribute( geometry.index, Full );
@@ -424,7 +425,7 @@ function copyLightSettings( source, target ) {
 
 }
 
-function makeLightClone( source, Full ) {
+function makeLightClone( source, Full, ownedShadows ) {
 
 	const color = source.color && typeof source.color.getHex === 'function' ? source.color.getHex() : source.color || 0xffffff;
 	const intensity = source.intensity ?? 1;
@@ -433,6 +434,7 @@ function makeLightClone( source, Full ) {
 	else if ( source.isSpotLight === true && Full.SpotLight ) clone = new Full.SpotLight( color, intensity, source.distance, source.angle, source.penumbra, source.decay );
 	else if ( source.isPointLight === true && Full.PointLight ) clone = new Full.PointLight( color, intensity, source.distance, source.decay );
 	if ( ! clone || ! clone.shadow ) return null;
+	ownedShadows.add( clone.shadow );
 	clone.castShadow = true;
 	clone.map = source.map || null;
 	copyShadowSettings( source.shadow, clone.shadow );
@@ -441,12 +443,13 @@ function makeLightClone( source, Full ) {
 
 }
 
-function makeStandinMaterial( source, Full ) {
+function makeStandinMaterial( source, Full, ownedMaterials ) {
 
 	const Material = Full.MeshLambertNodeMaterial || Full.MeshLambertMaterial;
 	if ( ! Material ) return null;
 	let material = null;
 	try { material = new Material( { color: 0xffffff } ); } catch ( _ ) { material = new Material(); }
+	ownedMaterials.add( material );
 	for ( const key of SHADOW_MATERIAL_KEYS ) {
 
 		if ( source && source[ key ] !== undefined ) material[ key ] = source[ key ];
@@ -456,7 +459,7 @@ function makeStandinMaterial( source, Full ) {
 
 }
 
-function resolveProxyMaterials( object, Full, opts, result, unsupportedSeen ) {
+function resolveProxyMaterials( object, Full, opts, result, unsupportedSeen, ownedMaterials ) {
 
 	const inputs = rawMaterialList( object.material );
 	if ( inputs.length === 0 ) {
@@ -491,7 +494,7 @@ function resolveProxyMaterials( object, Full, opts, result, unsupportedSeen ) {
 			return null;
 
 		}
-		const material = mapped || makeStandinMaterial( source, Full );
+		const material = mapped || makeStandinMaterial( source, Full, ownedMaterials );
 		if ( ! material ) {
 
 			pushUnsupported( result, unsupportedSeen, opts, 'material', 'full-material-unavailable', source );
@@ -516,9 +519,15 @@ function buildShadowScene( scene, Full, opts, state, result, unsupportedSeen ) {
 	const shadowScene = new Full.Scene();
 	const lightPairs = [];
 	const objectPairs = [];
+	const ownedGeometries = new Set();
+	const ownedMaterials = new Set();
+	const ownedShadows = new Set();
+	const proxy = { scene: shadowScene, lightPairs, objectPairs, ownedGeometries, ownedMaterials, ownedShadows, disposed: false };
 	let fatal = false;
 	try { scene.updateMatrixWorld( true ); } catch ( _ ) {}
-	traverse( scene, ( object ) => {
+	try {
+
+		traverse( scene, ( object ) => {
 
 		if ( fatal || ! object || ! isEffectivelyVisible( object ) ) return;
 		if ( object.isLight === true && object.castShadow === true && object.shadow ) {
@@ -531,7 +540,7 @@ function buildShadowScene( scene, Full, opts, state, result, unsupportedSeen ) {
 				return;
 
 			}
-			const clone = makeLightClone( object, Full );
+			const clone = makeLightClone( object, Full, ownedShadows );
 			if ( ! clone ) {
 
 				pushUnsupported( result, unsupportedSeen, opts, 'light', 'unsupported-shadow-light', object );
@@ -605,14 +614,14 @@ function buildShadowScene( scene, Full, opts, state, result, unsupportedSeen ) {
 			return;
 
 		}
-		const material = resolveProxyMaterials( object, Full, opts, result, unsupportedSeen );
+		const material = resolveProxyMaterials( object, Full, opts, result, unsupportedSeen, ownedMaterials );
 		if ( ! material ) {
 
 			if ( object.castShadow === true ) fatal = true;
 			return;
 
 		}
-		const geometry = cloneGeometry( object.geometry, Full, state.geometryCache );
+		const geometry = cloneGeometry( object.geometry, Full, state.geometryCache, ownedGeometries );
 		if ( ! geometry ) {
 
 			pushUnsupported( result, unsupportedSeen, opts, 'object', 'geometry-clone-failed', object );
@@ -655,9 +664,110 @@ function buildShadowScene( scene, Full, opts, state, result, unsupportedSeen ) {
 		if ( clone.castShadow ) result.castersMirrored ++;
 		if ( clone.receiveShadow ) result.receiversMirrored ++;
 
-	} );
-	if ( fatal || lightPairs.length === 0 || result.castersMirrored === 0 ) return null;
-	return { scene: shadowScene, lightPairs, objectPairs };
+		} );
+
+	} catch ( error ) {
+
+		reportError( opts, error, 'buildShadowScene' );
+		fatal = true;
+
+	}
+	if ( fatal || lightPairs.length === 0 || result.castersMirrored === 0 ) {
+
+		disposeShadowProxy( proxy );
+		return null;
+
+	}
+	return proxy;
+
+}
+
+function safelyDispose( value ) {
+
+	if ( ! value || typeof value.dispose !== 'function' ) return;
+	try { value.dispose(); } catch ( _ ) {}
+
+}
+
+function restoreSourceShadow( pair ) {
+
+	const restoration = pair && pair.sourceShadowRestoration;
+	if ( ! restoration || ! pair.source || pair.source.shadow !== restoration.shadow ) return;
+	const shadow = restoration.shadow;
+	if ( shadow.map === restoration.proxyMap ) shadow.map = restoration.map;
+	if ( shadow.camera === restoration.proxyCamera ) shadow.camera = restoration.camera;
+	if ( shadow.matrix === restoration.proxyMatrix ) shadow.matrix = restoration.matrix;
+
+}
+
+function disposeShadowProxy( proxy ) {
+
+	if ( ! proxy || proxy.disposed === true ) return false;
+	proxy.disposed = true;
+	for ( const pair of proxy.lightPairs || [] ) {
+
+		restoreSourceShadow( pair );
+
+	}
+	for ( const shadow of proxy.ownedShadows || [] ) safelyDispose( shadow );
+	for ( const material of proxy.ownedMaterials || [] ) safelyDispose( material );
+	for ( const geometry of proxy.ownedGeometries || [] ) safelyDispose( geometry );
+	if ( proxy.scene && typeof proxy.scene.clear === 'function' ) {
+
+		try { proxy.scene.clear(); } catch ( _ ) {}
+
+	}
+	return true;
+
+}
+
+function resetStateResources( state ) {
+
+	if ( ! state ) return false;
+	let disposed = disposeShadowProxy( state.proxy );
+	state.proxy = null;
+	state.geometryCache = new WeakMap();
+	if ( state.ownsRenderTarget === true && state.renderTarget ) {
+
+		safelyDispose( state.renderTarget );
+		disposed = true;
+
+	}
+	state.renderTarget = null;
+	state.ownsRenderTarget = false;
+	state.topologySignature = '';
+	state.signature = '';
+	state.lastResult = null;
+	return disposed;
+
+}
+
+function createShadowState() {
+
+	return {
+		geometryCache: new WeakMap(),
+		proxy: null,
+		topologySignature: '',
+		signature: '',
+		lastResult: null,
+		inflight: null,
+		inflightSignature: '',
+		renderTarget: null,
+		ownsRenderTarget: false,
+		fullRenderer: null,
+		threeFullModule: null,
+		disposeRequested: false,
+		disposalPromise: null,
+		disposed: false,
+	};
+
+}
+
+function deleteCachedState( cache, scene, state ) {
+
+	if ( ! cache || cache.get( scene ) !== state ) return;
+	if ( typeof cache.delete === 'function' ) cache.delete( scene );
+	else if ( typeof cache.set === 'function' ) cache.set( scene, null );
 
 }
 
@@ -715,6 +825,7 @@ async function populateOnce( opts, state, signatures ) {
 	const { scene, camera, slimRenderer, fullRenderer, threeFullModule: Full } = opts;
 	const result = emptyResult();
 	const unsupportedSeen = new Set();
+	if ( state.disposeRequested === true ) return result;
 	const slimDevice = slimRenderer.backend && slimRenderer.backend.device;
 	const fullDevice = fullRenderer.backend && fullRenderer.backend.device;
 	if ( slimDevice && fullDevice && slimDevice !== fullDevice ) {
@@ -754,7 +865,7 @@ async function populateOnce( opts, state, signatures ) {
 	if ( ! proxy || state.topologySignature !== signatures.topology ) {
 
 		result.proxyReused = false;
-		state.geometryCache = new WeakMap();
+		resetStateResources( state );
 		proxy = buildShadowScene( scene, Full, opts, state, result, unsupportedSeen );
 		if ( ! proxy ) return result;
 		state.proxy = proxy;
@@ -781,6 +892,7 @@ async function populateOnce( opts, state, signatures ) {
 
 		discardTarget = new Full.RenderTarget( opts.discardSize || 256, opts.discardSize || 256 );
 		state.renderTarget = discardTarget;
+		state.ownsRenderTarget = true;
 
 	}
 	if ( ! discardTarget || typeof fullRenderer.setRenderTarget !== 'function' || typeof fullRenderer.render !== 'function' ) {
@@ -809,6 +921,7 @@ async function populateOnce( opts, state, signatures ) {
 		await fullRenderer.render( proxy.scene, fullCamera );
 		const queue = fullRenderer.backend && fullRenderer.backend.device && fullRenderer.backend.device.queue;
 		if ( queue && typeof queue.onSubmittedWorkDone === 'function' ) await queue.onSubmittedWorkDone();
+		if ( state.disposeRequested === true ) return result;
 		result.rendered = true;
 
 	} catch ( error ) {
@@ -830,6 +943,7 @@ async function populateOnce( opts, state, signatures ) {
 	}
 	for ( const pair of proxy.lightPairs ) {
 
+		if ( state.disposeRequested === true ) return result;
 		const sourceShadow = pair.source.shadow;
 		const cloneShadow = pair.clone.shadow;
 		const map = cloneShadow && cloneShadow.map;
@@ -840,9 +954,26 @@ async function populateOnce( opts, state, signatures ) {
 			continue;
 
 		}
-		sourceShadow.map = map;
-		sourceShadow.camera = cloneShadow.camera;
-		sourceShadow.matrix = cloneShadow.matrix;
+		if ( ! pair.sourceShadowRestoration ) {
+
+			pair.sourceShadowRestoration = {
+				shadow: sourceShadow,
+				map: sourceShadow.map,
+				camera: sourceShadow.camera,
+				matrix: sourceShadow.matrix,
+				proxyMap: null,
+				proxyCamera: null,
+				proxyMatrix: null,
+			};
+
+		}
+		const restoration = pair.sourceShadowRestoration;
+		restoration.proxyMap = map;
+		restoration.proxyCamera = cloneShadow.camera;
+		restoration.proxyMatrix = cloneShadow.matrix;
+		sourceShadow.map = restoration.proxyMap;
+		sourceShadow.camera = restoration.proxyCamera;
+		sourceShadow.matrix = restoration.proxyMatrix;
 		sourceShadow.needsUpdate = false;
 		result.lightsPopulated ++;
 		if ( shareShadowGPUTextureIntoSlim( depthTexture, fullRenderer, slimRenderer ) ) result.texturesShared ++;
@@ -881,22 +1012,18 @@ export function populateShadowMapsWithFullRenderer( opts = {} ) {
 	if ( ! scene || ! camera || ! slimRenderer || ! fullRenderer || ! threeFullModule ) return Promise.resolve( emptyResult() );
 	const cache = opts.cache && typeof opts.cache.get === 'function' && typeof opts.cache.set === 'function' ? opts.cache : DEFAULT_CACHE;
 	let state = cache.get( scene );
-	if ( ! state ) {
+	if ( state && state.disposeRequested === true ) {
 
-		state = { geometryCache: new WeakMap(), proxy: null, topologySignature: '', signature: '', lastResult: null, inflight: null, inflightSignature: '', renderTarget: null };
-		cache.set( scene, state );
+		const disposal = state.disposalPromise || state.inflight;
+		if ( disposal ) return Promise.resolve( disposal ).then( () => populateShadowMapsWithFullRenderer( opts ) );
+		deleteCachedState( cache, scene, state );
+		state = null;
 
 	}
-	if ( state.fullRenderer !== fullRenderer || state.threeFullModule !== threeFullModule ) {
+	if ( ! state || state.disposed === true ) {
 
-		state.geometryCache = new WeakMap();
-		state.proxy = null;
-		state.topologySignature = '';
-		state.signature = '';
-		state.lastResult = null;
-		state.renderTarget = null;
-		state.fullRenderer = fullRenderer;
-		state.threeFullModule = threeFullModule;
+		state = createShadowState();
+		cache.set( scene, state );
 
 	}
 	const sceneState = sceneSignatures( scene, camera, slimRenderer );
@@ -916,10 +1043,17 @@ export function populateShadowMapsWithFullRenderer( opts = {} ) {
 		return state.inflight.then( () => populateShadowMapsWithFullRenderer( opts ) );
 
 	}
+	if ( state.fullRenderer !== fullRenderer || state.threeFullModule !== threeFullModule ) {
+
+		resetStateResources( state );
+		state.fullRenderer = fullRenderer;
+		state.threeFullModule = threeFullModule;
+
+	}
 	state.inflightSignature = signatures.frame;
 	const promise = populateOnce( opts, state, signatures ).then( ( result ) => {
 
-		if ( result.complete ) {
+		if ( result.complete && state.disposeRequested !== true ) {
 
 			const completedSceneState = sceneSignatures( scene, camera, slimRenderer );
 			state.signature = `${ ownerSignature }:${ completedSceneState.frame }`;
@@ -932,6 +1066,12 @@ export function populateShadowMapsWithFullRenderer( opts = {} ) {
 
 		if ( state.inflight === promise ) {
 
+			if ( state.disposeRequested === true ) {
+
+				resetStateResources( state );
+				state.disposed = true;
+
+			}
 			state.inflight = null;
 			state.inflightSignature = '';
 
@@ -940,5 +1080,53 @@ export function populateShadowMapsWithFullRenderer( opts = {} ) {
 	} );
 	state.inflight = promise;
 	return promise;
+
+}
+
+/**
+ * Dispose the cached proxy state for a scene.
+ *
+ * Disposal is synchronous when no shadow render is active. If a render is in
+ * flight, an unusable cache tombstone serializes replacement work until that
+ * render settles and its owned resources have been released.
+ *
+ * @param {Object} opts
+ * @param {Object} opts.scene
+ * @param {WeakMap|Map} [opts.cache]
+ * @returns {boolean|Promise<boolean>} whether cached state was found
+ */
+export function disposeShadowMapsWithFullRenderer( opts = {} ) {
+
+	const scene = opts && opts.scene;
+	if ( ! scene ) return false;
+	const cache = opts.cache && typeof opts.cache.get === 'function' ? opts.cache : DEFAULT_CACHE;
+	const state = cache.get( scene );
+	if ( ! state ) return false;
+	if ( state.disposeRequested === true ) return state.disposalPromise || false;
+	state.disposeRequested = true;
+	state.signature = '';
+	state.lastResult = null;
+	if ( state.inflight ) {
+
+		const disposal = state.inflight.then( () => true, () => true ).then( ( disposed ) => {
+
+			if ( state.disposed !== true ) {
+
+				resetStateResources( state );
+				state.disposed = true;
+
+			}
+			deleteCachedState( cache, scene, state );
+			return disposed;
+
+		} );
+		state.disposalPromise = disposal;
+		return disposal;
+
+	}
+	resetStateResources( state );
+	state.disposed = true;
+	deleteCachedState( cache, scene, state );
+	return true;
 
 }

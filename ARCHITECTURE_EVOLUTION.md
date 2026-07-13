@@ -67,6 +67,18 @@ failure mode behind selective lighting and multi-light shadow replay; remaining
 target/pass mismatches belong to real RenderObject
 topology capture rather than light-slot heuristics.
 
+**Shadow fallback lifecycle wedge (2026-07-13).** The public standard-shadow
+fallback now has explicit ownership and disposal rather than relying on an
+opaque `WeakMap` lifetime. Proxy geometry, generated stand-in materials,
+cloned `LightShadow` maps, and internal discard targets are released on
+topology/renderer changes and explicit teardown; application-supplied
+materials and targets are never owned. Source shadow map/camera/matrix
+references are restored only when they still point at the proxy resources.
+`createSlimSceneSupport()` uses an iterable private cache, can dispose one
+scene or all scenes, and waits for an in-flight shadow render to settle before
+disposing its full-renderer fallback. A tombstone also makes an immediate
+repopulation wait for that cleanup instead of overlapping the old renderer.
+
 **Logical temporal-frame wedge (2026-07-13).**
 [`slim-support/temporal-frame.js`](packages/runtime/src/slim-support/temporal-frame.js)
 now gives slim and full fallback renderers one explicit application-frame key

@@ -35,3 +35,7 @@ export type PopulateShadowMapsWithFullRendererOptions = {
 };
 
 export function populateShadowMapsWithFullRenderer( options: PopulateShadowMapsWithFullRendererOptions ): Promise<ShadowFallbackResult>;
+export function disposeShadowMapsWithFullRenderer( options: {
+	scene: object;
+	cache?: WeakMap<object, unknown> | Map<object, unknown>;
+} ): boolean | Promise<boolean>;

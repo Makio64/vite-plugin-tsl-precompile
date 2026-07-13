@@ -48,6 +48,7 @@ test( 'slim-support package subpath resolves through the public export map', () 
 	assert.equal( typeof slimSupport.renderOffscreenOverrideWithFullRenderer, 'function' );
 	assert.equal( typeof slimSupport.shareRenderTargetTextures, 'function' );
 	assert.equal( typeof slimSupport.populateShadowMapsWithFullRenderer, 'function' );
+	assert.equal( typeof slimSupport.disposeShadowMapsWithFullRenderer, 'function' );
 	assert.equal( typeof slimSupport.preparePrecompiledPostprocess, 'function' );
 	assert.equal( typeof slimSupport.createPostprocessExecutionPlan, 'function' );
 	assert.equal( typeof slimSupport.artifactLooksLikeRetroPassMaterial, 'function' );
@@ -62,6 +63,7 @@ test( 'runtime package re-exports user-facing compute wiring helpers', () => {
 	assert.equal( runtime.renderOffscreenOverrideWithFullRenderer, slimSupport.renderOffscreenOverrideWithFullRenderer );
 	assert.equal( runtime.shareRenderTargetTextures, slimSupport.shareRenderTargetTextures );
 	assert.equal( runtime.populateShadowMapsWithFullRenderer, slimSupport.populateShadowMapsWithFullRenderer );
+	assert.equal( runtime.disposeShadowMapsWithFullRenderer, slimSupport.disposeShadowMapsWithFullRenderer );
 	assert.equal( runtime.artifactLooksLikeRetroPassMaterial, slimSupport.artifactLooksLikeRetroPassMaterial );
 	assert.equal( runtime.createPostprocessExecutionPlan, slimSupport.createPostprocessExecutionPlan );
 	assert.equal( runtime.wireTRAAResolveArtifact, slimSupport.wireTRAAResolveArtifact );

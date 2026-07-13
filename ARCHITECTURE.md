@@ -115,7 +115,7 @@ Ships with the user's bundle. Runtime only.
 - `src/hydrate/variants/artifact-variant-selector.js` — exact semantic variant selection; signed artifacts fail closed on an uncaptured topology while old unsigned artifacts retain cache-key/MRT compatibility.
 - `src/slim-support/live-scene-index.js` — first productized slim-support helper for live texture indexing and null-image healing.
 - `src/slim-support/pmrem.js` — productized PMREM support helpers for artifact/source detection, cache orchestration, and `_textureRefs` wiring; the harness still supplies the full-renderer generator.
-- `src/slim-support/shadow-fallback.js` — fail-closed standard Directional/Spot/Point depth-shadow population through a shared-device full renderer, including proxy-scene caching and depth-texture sharing. Transmitted/VSM/custom/skinned/morph families remain explicit adapters rather than silent approximations.
+- `src/slim-support/shadow-fallback.js` — fail-closed standard Directional/Spot/Point depth-shadow population through a shared-device full renderer, including proxy-scene caching, depth-texture sharing, and lifecycle-safe disposal. The cache owns only its cloned geometry, stand-in materials, cloned shadows, and internal discard targets; public disposal restores source shadow references by identity and serializes cleanup with in-flight GPU work. Transmitted/VSM/custom/skinned/morph families remain explicit adapters rather than silent approximations.
 - `src/writers.js` — `writeMat4 / writeVec4 / writeF32 / writeColor`.
 - `src/artifact-loader.js` — manifest resolver.
 - `build/three.webgpu.slim.js` — prebuilt slim three.js (no node builder).

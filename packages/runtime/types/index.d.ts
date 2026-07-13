@@ -466,6 +466,10 @@ export function populateShadowMapsWithFullRenderer( args: PopulateShadowMapsOpti
 	fullRenderer: unknown;
 	threeFullModule: Record<string, unknown>;
 } ): Promise<ShadowFallbackResult>;
+export function disposeShadowMapsWithFullRenderer( args: {
+	scene: object;
+	cache?: WeakMap<object, unknown> | Map<object, unknown>;
+} ): boolean | Promise<boolean>;
 export function wirePrecompiledPostprocess( args?: {
 	postProcessing?: { outputNode?: unknown };
 	outputNode?: unknown;
@@ -494,6 +498,7 @@ export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	shareTexture: ( sourceRenderer: unknown, texture: unknown ) => boolean;
 	shareShadowTexture: ( texture: unknown, sourceRenderer: unknown ) => boolean;
 	populateShadowMaps: ( scene: unknown, camera: unknown, shadowOpts?: PopulateShadowMapsOptions ) => Promise<ShadowFallbackResult>;
+	disposeShadowMaps: ( scene?: object ) => Promise<number>;
 	updateRendererLighting: ( scene: unknown, camera: unknown, lightingOpts?: Record<string, unknown> ) => RendererLightingStats;
 	preparePostprocess: ( prepArgs?: Record<string, unknown> ) => { effects: number; prepared: unknown[]; missed: unknown[] };
 	wirePostprocess: ( wireArgs?: Record<string, unknown> ) => { effects: number; wired: unknown[]; missed: unknown[] };
@@ -502,7 +507,7 @@ export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	pinClock: ( t: number | null | undefined ) => void;
 	unpinClock: () => void;
 	withTemporalFrame: <T>( options: { frameId?: number | string; time?: number; advance?: boolean }, callback: ( state: TemporalFrameState ) => T, extraRenderers?: unknown | unknown[] ) => T;
-	dispose: () => void;
+	dispose: () => Promise<void>;
 };
 export function pinClock( t: number | null | undefined ): void;
 export function unpinClock(): void;

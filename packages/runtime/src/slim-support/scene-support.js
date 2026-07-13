@@ -51,7 +51,7 @@ import {
 	renderPassWithFullRenderer,
 	sharePassRenderTargetTextures,
 } from './pass-render-fallback.js';
-import { populateShadowMapsWithFullRenderer } from './shadow-fallback.js';
+import { disposeShadowMapsWithFullRenderer, populateShadowMapsWithFullRenderer } from './shadow-fallback.js';
 import { updateRendererLightingForSlim } from './renderer-lighting.js';
 import { wirePrecompiledPostprocess } from './postprocess-wire.js';
 import { preparePrecompiledPostprocess } from './postprocess-effects-replay.js';
@@ -153,6 +153,9 @@ export function createSlimSceneSupport( opts = {} ) {
 		onError: ( err ) => onError && onError( err, { where: 'fullRendererFallback' } ),
 	} ) : null;
 	let cachedFullRenderer = null;
+	const shadowCache = new Map();
+	const shadowDisposals = new Set();
+	let activeDispose = null;
 
 	// --- API surface --------------------------------------------------------
 
@@ -357,6 +360,7 @@ export function createSlimSceneSupport( opts = {} ) {
 			slimRenderer: renderer,
 			fullRenderer,
 			threeFullModule,
+			cache: shadowCache,
 			resolveShadowMaterial: shadowOpts.resolveShadowMaterial || defaultFullRendererMaterialMapper,
 			onError: ( err, detail ) => {
 
@@ -372,6 +376,47 @@ export function createSlimSceneSupport( opts = {} ) {
 		shadowDiagnostics.texturesShared += result.texturesShared || 0;
 		shadowDiagnostics.unsupported += result.unsupported && result.unsupported.length || 0;
 		return result;
+
+	}
+
+	function requestShadowMapDisposals( scene ) {
+
+		const scenes = scene === undefined ? Array.from( shadowCache.keys() ) : [ scene ];
+		let immediate = 0;
+		const pending = [];
+		for ( const targetScene of scenes ) {
+
+			const result = disposeShadowMapsWithFullRenderer( { scene: targetScene, cache: shadowCache } );
+			if ( result && typeof result.then === 'function' ) {
+
+				const tracked = Promise.resolve( result ).then( ( disposed ) => disposed ? 1 : 0 );
+				shadowDisposals.add( tracked );
+				void tracked.finally( () => shadowDisposals.delete( tracked ) );
+				pending.push( tracked );
+
+			} else if ( result ) {
+
+				immediate ++;
+
+			}
+
+		}
+		return { immediate, pending };
+
+	}
+
+	/**
+	 * Dispose one scene's cached shadow proxy, or every proxy owned by this
+	 * support object when `scene` is omitted.
+	 *
+	 * @param {Object} [scene]
+	 * @returns {Promise<number>} number of cached scene states disposed
+	 */
+	function disposeShadowMaps( scene ) {
+
+		const { immediate, pending } = requestShadowMapDisposals( scene );
+		if ( pending.length === 0 ) return Promise.resolve( immediate );
+		return Promise.all( pending ).then( ( counts ) => immediate + counts.reduce( ( total, count ) => total + count, 0 ) );
 
 	}
 
@@ -755,6 +800,8 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	function dispose() {
 
+		if ( activeDispose ) return activeDispose;
+
 		if ( restoreComputeFallback ) {
 
 			restoreComputeFallback();
@@ -768,7 +815,26 @@ export function createSlimSceneSupport( opts = {} ) {
 			fallbackRegistered = false;
 
 		}
-		if ( fallback ) fallback.dispose();
+		requestShadowMapDisposals();
+		const pendingShadowDisposals = Array.from( shadowDisposals );
+		const finish = () => {
+
+			if ( fallback ) fallback.dispose();
+			cachedFullRenderer = null;
+
+		};
+		if ( pendingShadowDisposals.length === 0 ) {
+
+			finish();
+			return Promise.resolve();
+
+		}
+		activeDispose = Promise.allSettled( pendingShadowDisposals ).then( finish ).finally( () => {
+
+			activeDispose = null;
+
+		} );
+		return activeDispose;
 
 	}
 
@@ -795,6 +861,7 @@ export function createSlimSceneSupport( opts = {} ) {
 		shareTexture,
 		shareShadowTexture,
 		populateShadowMaps,
+		disposeShadowMaps,
 		updateRendererLighting,
 		installComputeFallback,
 		preparePostprocess,
