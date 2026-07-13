@@ -1834,6 +1834,7 @@ import { updateRendererLightingForSlim as __sharedUpdateRendererLightingForSlim 
 import { artifactLooksLikeRetroPassMaterial as __sharedArtifactLooksLikeRetroPassMaterial } from '/__tslp_runtime/slim-support/postprocess-effects-replay.js';
 import { wireLiveUniformSidecarsToArtifact as __sharedWireLiveUniformSidecarsToArtifact } from '/__tslp_runtime/slim-support/live-node-sidecars.js';
 import { getTemporalFrameState as __sharedGetTemporalFrameState, withTemporalFrame as __sharedWithTemporalFrame } from '/__tslp_runtime/slim-support/temporal-frame.js';
+import { getLiveNodeDependencies as __sharedGetLiveNodeDependencies } from '/__tslp_runtime/slim-support/node-dependencies.js';
 import { renderOffscreenOverrideWithFullRenderer as __sharedRenderOffscreenOverrideWithFullRenderer } from '/__tslp_runtime/slim-support/pass-render-fallback.js';
 import { findAux as __runtimeFindAux } from '/__tslp_runtime/aux-loader.js';
 import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS as __NODE_GRAPH_KEYS } from '/__tslp_contract/texture-props.js';
@@ -12637,6 +12638,9 @@ function __collectFrameEffectNodesInGraph( node, out = [], seen = new Set(), dep
 	if ( ! node || depth > 32 || seen.has( node ) ) return out;
 	if ( ! __isGraphTraversalCandidate( node ) ) return out;
 	seen.add( node );
+	for ( const dependency of __sharedGetLiveNodeDependencies( node ) ) {
+		__collectFrameEffectNodesInGraph( dependency.node, out, seen, depth + 1 );
+	}
 	const keys = [];
 	try { keys.push( ...Object.getOwnPropertyNames( node ) ); } catch ( _ ) {}
 	const skip = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'geometry', 'material', 'domElement', 'renderTarget', '_aoRenderTarget', '_ssgiRenderTarget', '_ssrRenderTarget', '_blurRenderTarget', '_renderTarget', '_compRT', '_oldRT', '_CoCRT', '_CoCBlurredRT', '_blur64RT', '_blur16NearRT', '_blur16FarRT', '_compositeRT' ] );
@@ -13051,6 +13055,9 @@ function __graphContainsNode( root, target, seen = new Set(), depth = 0 ) {
 	if ( root === target ) return true;
 	if ( ! __isGraphTraversalCandidate( root ) ) return false;
 	seen.add( root );
+	for ( const dependency of __sharedGetLiveNodeDependencies( root ) ) {
+		if ( __graphContainsNode( dependency.node, target, seen, depth + 1 ) ) return true;
+	}
 	const keys = [];
 	try { keys.push( ...Object.getOwnPropertyNames( root ) ); } catch ( _ ) { return false; }
 	const skip = new Set( [ 'parent', 'children', '_cache', 'scene', 'camera', 'renderer', 'geometry', 'material', 'domElement' ] );

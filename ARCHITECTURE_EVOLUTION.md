@@ -77,7 +77,8 @@ extractor-observed `_liveUpdateBeforeNodes` before JSON removes the live
 sidecar. Slim `builtinAOContext()` / `builtinShadowContext()` stubs and the e2e
 TSL facade use the same product helper. Focused capture coverage proves that a
 GTAO node absent from the reflected output graph still emits its auxiliary
-artifact. The narrow visual canaries complete without replay errors (AO 28.52
+artifact, and the replay frame-effect walker follows the same edges. The narrow
+visual canaries complete without replay errors (AO 28.59
 dB; SSS remains a disabled-gate diagnostic at 4.57 dB), so this closes effect
 visibility, not execution fidelity. The next boundary is an explicit effect
 execution plan: producer/consumer placement, renderer ownership, owned targets,
