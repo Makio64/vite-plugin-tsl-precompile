@@ -11,9 +11,9 @@
 		"smokeTotal": 198,
 		"smokePass": 197,
 		"smokePassRate": 99.5,
-		"pixelMatchCount": 171,
+		"pixelMatchCount": 172,
 		"visualMatchCount": 9,
-		"rendersCount": 45,
+		"rendersCount": 44,
 		"captureOnlyCount": 0
 	},
 	"categories": [
@@ -9171,7 +9171,7 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 8.75,
+				"psnr": 49.81,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
@@ -9194,7 +9194,7 @@
 			],
 			"notes": "",
 			"thumbHealth": "ok",
-			"badge": "renders"
+			"badge": "pixel-match"
 		},
 		{
 			"basename": "webgpu_compute_particles_snow",
