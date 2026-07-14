@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
 	getComputeBindGroups,
 	computeNodeUsesStorageTexture,
+	computeSyncNeedsPresentation,
 	shareComputeSampledInputs,
 	syncComputeStorageOutputs,
 	syncComputeStorageOutputsPerPass,
@@ -96,6 +97,15 @@ test( 'computeNodeUsesStorageTexture detects storage texture bindings', () => {
 
 } );
 
+test( 'computeSyncNeedsPresentation recognizes shared in-place output mutations', () => {
+
+	assert.equal( computeSyncNeedsPresentation( null ), false );
+	assert.equal( computeSyncNeedsPresentation( { texturesShared: 0, storageAttrs: 0, buffersAdopted: 0, buffersCopied: 0 } ), false );
+	assert.equal( computeSyncNeedsPresentation( { storageAttrs: 1, buffersAdopted: 0, buffersCopied: 0 } ), true );
+	assert.equal( computeSyncNeedsPresentation( { storageTextures: 1, texturesShared: 0 } ), true );
+
+} );
+
 test( 'shareComputeSampledInputs shares sampled render textures from slim into full', () => {
 
 	const tex = { isTexture: true, name: 'collision-map', version: 2 };
@@ -167,6 +177,7 @@ test( 'syncComputeStorageOutputs shares storage textures and bumps version', () 
 	const stats = syncComputeStorageOutputs( 'compute-node', full, slim, { onStorageTexture: ( texture, seenBinding ) => seenTextures.push( [ texture, seenBinding ] ) } );
 
 	assert.equal( stats.texturesShared, 1 );
+	assert.equal( stats.storageAttrs, 0 );
 	assert.equal( stats.buffersAdopted, 0 );
 	assert.equal( stats.buffersCopied, 0 );
 	assert.equal( tex.version, 8, 'JS version bumped by underlying shadow-share' );
@@ -209,11 +220,31 @@ test( 'syncComputeStorageOutputs adopts the full buffer when slim has none', () 
 	const stats = syncComputeStorageOutputs( 'n', full, slim, { onStorageAttr: ( a ) => remembered.push( a ) } );
 
 	assert.equal( stats.buffersAdopted, 1 );
+	assert.equal( stats.storageAttrs, 1 );
 	assert.equal( stats.buffersCopied, 0 );
 	assert.equal( slim.backend.get( attr ).buffer, fullBuf );
 	assert.equal( slimAttrEntry.version, 1 );
 	assert.deepEqual( remembered, [ attr ] );
 	assert.equal( slim.submittedCommandBuffers.length, 0, 'adopt path enqueues no copy' );
+
+} );
+
+test( 'already-shared compute buffers still require a presentation draw', () => {
+
+	const attr = { isBufferAttribute: true };
+	const bindGroup = { bindings: [ storageBufferBinding( attr ) ] };
+	const full = fakeRenderer( { bindGroupsForNode: () => [ bindGroup ] } );
+	full.backend.get( attr ).buffer = { size: 1024 };
+	const slim = fakeRenderer( { bindGroupsForNode: () => [ bindGroup ] } );
+
+	const first = syncComputeStorageOutputs( 'n', full, slim );
+	const second = syncComputeStorageOutputs( 'n', full, slim );
+
+	assert.equal( first.buffersAdopted, 1 );
+	assert.equal( second.buffersAdopted, 0 );
+	assert.equal( second.buffersCopied, 0 );
+	assert.equal( second.storageAttrs, 1, 'the shared GPUBuffer was still mutated by the later dispatch' );
+	assert.equal( computeSyncNeedsPresentation( second ), true );
 
 } );
 
@@ -232,6 +263,7 @@ test( 'syncComputeStorageOutputs copies buffer-to-buffer when slim already has i
 	const stats = syncComputeStorageOutputs( 'n', full, slim );
 
 	assert.equal( stats.buffersCopied, 1 );
+	assert.equal( stats.storageAttrs, 1 );
 	assert.equal( stats.buffersAdopted, 0 );
 	assert.equal( slim.copyCalls.length, 1 );
 	const call = slim.copyCalls[ 0 ];
@@ -247,7 +279,7 @@ test( 'syncComputeStorageOutputs gracefully handles missing slim device', () => 
 	const slim = fakeRenderer();
 	slim.backend.device = null;
 	const stats = syncComputeStorageOutputs( 'n', fakeRenderer(), slim );
-	assert.deepEqual( stats, { texturesShared: 0, buffersAdopted: 0, buffersCopied: 0 } );
+	assert.deepEqual( stats, { texturesShared: 0, storageAttrs: 0, buffersAdopted: 0, buffersCopied: 0 } );
 
 } );
 
@@ -265,7 +297,7 @@ test( 'syncComputeStorageOutputs forwards errors to onError', () => {
 	const errs = [];
 	const stats = syncComputeStorageOutputs( 'n', full, slim, { onError: ( err ) => errs.push( err.message ) } );
 
-	assert.deepEqual( stats, { texturesShared: 0, buffersAdopted: 0, buffersCopied: 0 } );
+	assert.deepEqual( stats, { texturesShared: 0, storageAttrs: 0, buffersAdopted: 0, buffersCopied: 0 } );
 	assert.deepEqual( errs, [ 'encoder-blown' ] );
 
 } );

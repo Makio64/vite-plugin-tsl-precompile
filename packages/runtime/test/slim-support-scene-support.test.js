@@ -439,7 +439,7 @@ test( 'createSlimSceneSupport syncComputeOutputs no-ops without throwing on an e
 	const fullSrc = fakeRenderer();
 	const support = createSlimSceneSupport( { renderer: slim } );
 	const stats = support.syncComputeOutputs( 'compute-node', fullSrc );
-	assert.deepEqual( stats, { texturesShared: 0, buffersAdopted: 0, buffersCopied: 0 } );
+	assert.deepEqual( stats, { texturesShared: 0, storageAttrs: 0, buffersAdopted: 0, buffersCopied: 0 } );
 
 } );
 

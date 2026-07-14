@@ -313,6 +313,7 @@ export function attachTextureRefsWhere( artifact: unknown, texture: unknown, pre
 export function attachArtifactTextureRefsWhere( artifact: unknown, texture: unknown, predicate: ( source: Record<string, unknown>, entry: Record<string, unknown>, group: Record<string, unknown> ) => boolean ): boolean;
 export type ComputeSyncStats = {
 	texturesShared: number;
+	storageAttrs: number;
 	buffersAdopted: number;
 	buffersCopied: number;
 };
@@ -423,6 +424,7 @@ export type WirePrecompiledPostprocessResult = {
 };
 export function getComputeBindGroups( computeNode: unknown, fullRenderer: unknown ): unknown[];
 export function computeNodeUsesStorageTexture( computeNode: unknown, fullRenderer: unknown ): boolean;
+export function computeSyncNeedsPresentation( stats: Partial<ComputeSyncStats> & { storageTextures?: number } | null | undefined ): boolean;
 export function shareComputeSampledInputs( computeNode: unknown, fullRenderer: unknown, slimRenderer: unknown, opts?: Record<string, unknown> ): ComputeInputShareStats;
 export function syncComputeStorageOutputs( computeNode: unknown, fullRenderer: unknown, slimRenderer: unknown, opts?: Record<string, unknown> ): ComputeSyncStats;
 export function syncComputeStorageOutputsPerPass( computeNode: unknown, fullRenderer: unknown, slimRenderer: unknown, passIndex: number | undefined, opts?: Record<string, unknown> ): ComputeSyncPerPassStats;

@@ -144,6 +144,36 @@ export function computeNodeUsesStorageTexture( computeNode, fullRenderer ) {
 }
 
 /**
+ * Whether a delegated compute dispatch changed resources that a slim draw can
+ * consume. Callers use this after `syncComputeStorageOutputs()` to decide if a
+ * presentation render is required.
+ *
+ * `storageAttrs` is intentionally part of the decision even when neither
+ * `buffersAdopted` nor `buffersCopied` changed. After the first dispatch both
+ * renderers can already reference the same `GPUBuffer`; later dispatches mutate
+ * that shared buffer in place, so the sync is a zero-copy no-op but the canvas
+ * still needs another draw to present the new values.
+ *
+ * The texture and legacy copy/adopt counters keep this helper compatible with
+ * callers that enrich or persist older compute-sync diagnostics.
+ *
+ * @param {Object|null|undefined} stats
+ * @returns {boolean}
+ */
+export function computeSyncNeedsPresentation( stats ) {
+
+	if ( ! stats || typeof stats !== 'object' ) return false;
+	return [
+		stats.storageAttrs,
+		stats.storageTextures,
+		stats.texturesShared,
+		stats.buffersAdopted,
+		stats.buffersCopied,
+	].some( ( value ) => Number.isFinite( value ) && value > 0 );
+
+}
+
+/**
  * Share sampled texture inputs for a delegated compute dispatch from the slim
  * renderer into the full renderer before `fullRenderer.computeAsync()`.
  *
@@ -241,11 +271,11 @@ export function shareComputeSampledInputs( computeNode, fullRenderer, slimRender
  * Errors are caught and surfaced through `opts.onError(err)`; one bad
  * binding never breaks the whole sync.
  *
- * @returns {{ texturesShared: number, buffersAdopted: number, buffersCopied: number }}
+ * @returns {{ texturesShared: number, storageAttrs: number, buffersAdopted: number, buffersCopied: number }}
  */
 export function syncComputeStorageOutputs( computeNode, fullRenderer, slimRenderer, opts = {} ) {
 
-	const stats = { texturesShared: 0, buffersAdopted: 0, buffersCopied: 0 };
+	const stats = { texturesShared: 0, storageAttrs: 0, buffersAdopted: 0, buffersCopied: 0 };
 	if ( ! computeNode || ! fullRenderer || ! slimRenderer || ! slimRenderer.backend ) return stats;
 	const device = slimRenderer.backend.device;
 	if ( ! device ) return stats;
@@ -307,6 +337,7 @@ export function syncComputeStorageOutputs( computeNode, fullRenderer, slimRender
 					slimBufData.buffer = fullBuf;
 					const slimAttr = slimRenderer._attributes && typeof slimRenderer._attributes.get === 'function' ? slimRenderer._attributes.get( attr ) : null;
 					if ( slimAttr && slimAttr.version === undefined ) slimAttr.version = 1;
+					stats.storageAttrs ++;
 					stats.buffersAdopted ++;
 
 				} else if ( slimBufData.buffer !== fullBuf ) {
@@ -317,9 +348,17 @@ export function syncComputeStorageOutputs( computeNode, fullRenderer, slimRender
 
 						if ( ! commandEncoder ) commandEncoder = device.createCommandEncoder();
 						commandEncoder.copyBufferToBuffer( fullBuf, 0, slimBuf, 0, copySize );
+						stats.storageAttrs ++;
 						stats.buffersCopied ++;
 
 					}
+
+				} else {
+
+					// Both renderers already use the same GPUBuffer. The dispatch still
+					// mutated its contents, so callers must present another draw even
+					// though no adopt/copy work was necessary.
+					stats.storageAttrs ++;
 
 				}
 
@@ -360,7 +399,7 @@ export function syncComputeStorageOutputs( computeNode, fullRenderer, slimRender
  * @param {number|undefined}     passIndex     - Zero-based pass index, or `undefined` for legacy single-call semantics.
  * @param {Object}               [opts]
  * @param {Function}             [opts.onPass] - `(passIndex, stats) => void` invoked after the per-pass sync.
- * @returns {{ texturesShared: number, buffersAdopted: number, buffersCopied: number, pass: number|null }}
+ * @returns {{ texturesShared: number, storageAttrs: number, buffersAdopted: number, buffersCopied: number, pass: number|null }}
  */
 export function syncComputeStorageOutputsPerPass( computeNode, fullRenderer, slimRenderer, passIndex, opts = {} ) {
 

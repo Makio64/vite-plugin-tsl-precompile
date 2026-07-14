@@ -54,6 +54,7 @@ export {
 export {
 	getComputeBindGroups,
 	computeNodeUsesStorageTexture,
+	computeSyncNeedsPresentation,
 	shareComputeSampledInputs,
 	syncComputeStorageOutputs,
 	syncComputeStorageOutputsPerPass,

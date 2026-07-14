@@ -1883,7 +1883,7 @@ import { TSL as FullTSL, TextureNode as FullTextureNode, BlendMode as FullBlendM
 import { createLiveSceneIndex, textureImageReady as __sharedTextureImageReady, textureImageSrc as __sharedTextureImageSrc, newFallbackTextureImage as __sharedNewFallbackTextureImage } from '/__tslp_runtime/slim-support/live-scene-index.js';
 import { artifactNeedsPMREM as __sharedArtifactNeedsPMREM, artifactPMREMSourceUuids as __sharedArtifactPMREMSourceUuids, attachPMREMRefsByOrder as __sharedAttachPMREMRefsByOrder, collectPMREMSourceTexturesFromMaterial as __sharedCollectPMREMSourceTexturesFromMaterial, collectPMREMSourceTexturesInNode as __sharedCollectPMREMSourceTexturesInNode, createPMREMSupport as __sharedCreatePMREMSupport, isPMREMArtifactTextureSource as __sharedIsPMREMArtifactTextureSource, isPMREMTexture as __sharedIsPMREMTexture, selectPMREMTexturesForArtifact as __sharedSelectPMREMTexturesForArtifact, textureListSignature as __sharedTextureListSignature } from '/__tslp_runtime/slim-support/pmrem.js';
 import { clearTextureViewCache as __sharedClearTextureViewCache, markTextureInitialized as __sharedMarkTextureInitialized, shareGPUTextureEntry as __sharedShareGPUTextureEntry, sharePMREMGPUTexture as __sharedSharePMREMGPUTexture, shareShadowGPUTextureIntoSlim as __sharedShareShadowGpuTextureIntoSlim } from '/__tslp_runtime/slim-support/gpu-texture-share.js';
-import { computeNodeUsesStorageTexture as __sharedComputeNodeUsesStorageTexture, shareComputeSampledInputs as __sharedShareComputeSampledInputs, syncComputeStorageOutputs as __sharedSyncComputeStorageOutputs, syncComputeStorageOutputsPerPass as __sharedSyncComputeStorageOutputsPerPass, wireArtifactStorageBuffersFromAttributes as __sharedWireArtifactStorageBuffersFromAttributes, pingPongInvalidate as __sharedPingPongInvalidate, shareInstancedAttributeBufferIntoSlim as __sharedShareInstancedAttributeBufferIntoSlim } from '/__tslp_runtime/slim-support/compute-sync.js';
+import { computeNodeUsesStorageTexture as __sharedComputeNodeUsesStorageTexture, computeSyncNeedsPresentation as __sharedComputeSyncNeedsPresentation, shareComputeSampledInputs as __sharedShareComputeSampledInputs, syncComputeStorageOutputs as __sharedSyncComputeStorageOutputs, syncComputeStorageOutputsPerPass as __sharedSyncComputeStorageOutputsPerPass, wireArtifactStorageBuffersFromAttributes as __sharedWireArtifactStorageBuffersFromAttributes, pingPongInvalidate as __sharedPingPongInvalidate, shareInstancedAttributeBufferIntoSlim as __sharedShareInstancedAttributeBufferIntoSlim } from '/__tslp_runtime/slim-support/compute-sync.js';
 import { artifactHasTextureSource as __sharedArtifactHasTextureSource, attachArtifactTextureRefsByShapeOrder as __sharedAttachArtifactTextureRefsByShapeOrder, attachArtifactTextureRefsWhere as __sharedAttachArtifactTextureRefsWhere, attachTextureRefsWhere as __sharedAttachTextureRefsWhere, countArtifactTextureSources as __sharedCountArtifactTextureSources, singleArtifactTextureUuid as __sharedSingleArtifactTextureUuid, textureMatchesArtifactSource as __sharedTextureMatchesArtifactSource, textureMatchesSource as __sharedTextureMatchesSource } from '/__tslp_runtime/slim-support/artifact-texture-wiring.js';
 import { createFullRendererFallback as __sharedCreateFullRendererFallback } from '/__tslp_runtime/slim-support/full-renderer-fallback.js';
 import { updateRendererLightingForSlim as __sharedUpdateRendererLightingForSlim } from '/__tslp_runtime/slim-support/renderer-lighting.js';
@@ -8105,7 +8105,7 @@ function __syncStorageBuffers( computeNode, fullRenderer, slimRenderer ) {
 	}
 	return {
 		...( syncStats || {} ),
-		storageAttrs: seenStorageAttrs.length,
+		storageAttrs: syncStats && Number.isFinite( syncStats.storageAttrs ) ? syncStats.storageAttrs : seenStorageAttrs.length,
 		storageTextures: seenStorageTextures.length,
 	};
 }
@@ -10348,15 +10348,9 @@ function __trackDebugShaderAsync( renderer ) {
 					return r.computeAsync( computeNode, ...rest ).then( () => {
 						if ( __computeNodeUsesStorageTexture( computeNode, r ) ) _forcePostComputeRender = true;
 						const syncStats = __syncStorageBuffers( computeNode, r, _slimRenderer );
-						if ( syncStats && (
-							( syncStats.storageTextures | 0 ) > 0 ||
-							( syncStats.texturesShared | 0 ) > 0
-						) ) _forcePostComputeRender = true;
-						if ( syncStats && ! _hadRenderedSceneBeforeCompute && _slimRenderer.__tslpInitialStorageComputeRendered !== true && (
-							( syncStats.storageAttrs | 0 ) > 0 ||
-							( syncStats.buffersAdopted | 0 ) > 0 ||
-							( syncStats.buffersCopied | 0 ) > 0
-						) ) {
+						const syncedOutputsNeedPresentation = __sharedComputeSyncNeedsPresentation( syncStats );
+						if ( syncedOutputsNeedPresentation ) _forcePostComputeRender = true;
+						if ( syncedOutputsNeedPresentation && ! _hadRenderedSceneBeforeCompute && _slimRenderer.__tslpInitialStorageComputeRendered !== true ) {
 							_forcePostComputeRender = true;
 							_markInitialStorageRender = true;
 							if ( ! ( _slimRenderer._lastScene && _slimRenderer._lastCamera ) ) _slimRenderer.__tslpPendingInitialStorageComputeRender = true;
@@ -10368,10 +10362,10 @@ function __trackDebugShaderAsync( renderer ) {
 					console.warn( '[tslp-e2e] compute dispatch failed:', err && err.message || err );
 				} ).finally( () => {
 					window.__tslpComputePending = Math.max( 0, ( window.__tslpComputePending | 0 ) - 1 );
-					// Once an update-before or storage-texture compute drains, draw one display frame
-					// with the freshly synced storage buffers. Explicit user compute
-					// calls keep the older frozen-only behavior because the app's
-					// animation loop usually renders immediately after scheduling them.
+					// Once delegated compute drains, draw one display frame with the
+					// freshly synced outputs. A raw compute dispatch is asynchronous in
+					// replay, so the app's immediately-following render otherwise sees the
+					// previous buffer contents and the final update is never presented.
 					if ( _forcePostComputeRender && ( window.__tslpComputePending | 0 ) === 0 && _slimRenderer.__tslpPostComputeRendering !== true ) {
 						const sc = _slimRenderer._lastScene;
 						const cam = _slimRenderer._lastCamera;
@@ -10391,7 +10385,11 @@ function __trackDebugShaderAsync( renderer ) {
 						} else if ( sc && cam ) {
 							_slimRenderer.__tslpPostComputeRendering = true;
 							try {
-								_slimRenderer.render( sc, cam );
+								__sharedWithTemporalFrame(
+									[ _slimRenderer, __computeRenderer ],
+									__maintenanceTemporalFrame( 'compute' ),
+									() => _slimRenderer.render( sc, cam ),
+								);
 								const diag = __computeDiagnostics();
 								if ( diag ) diag.forcedSceneRenders = ( diag.forcedSceneRenders | 0 ) + 1;
 								if ( _markInitialStorageRender ) _slimRenderer.__tslpInitialStorageComputeRendered = true;

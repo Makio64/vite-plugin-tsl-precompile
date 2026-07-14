@@ -1,5 +1,6 @@
 export type ComputeSyncStats = {
 	texturesShared: number;
+	storageAttrs: number;
 	buffersAdopted: number;
 	buffersCopied: number;
 };
@@ -39,6 +40,7 @@ export type WireArtifactStorageBufferOptions = {
 
 export function getComputeBindGroups( computeNode: unknown, fullRenderer: unknown ): unknown[];
 export function computeNodeUsesStorageTexture( computeNode: unknown, fullRenderer: unknown ): boolean;
+export function computeSyncNeedsPresentation( stats: Partial<ComputeSyncStats> & { storageTextures?: number } | null | undefined ): boolean;
 export function shareComputeSampledInputs(
 	computeNode: unknown,
 	fullRenderer: unknown,

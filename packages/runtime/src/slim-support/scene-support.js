@@ -226,7 +226,7 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	function syncComputeOutputs( computeNode, fullRenderer, syncOpts = {} ) {
 
-		if ( ! settings.computeSync ) return { texturesShared: 0, buffersAdopted: 0, buffersCopied: 0 };
+		if ( ! settings.computeSync ) return { texturesShared: 0, storageAttrs: 0, buffersAdopted: 0, buffersCopied: 0 };
 		return syncComputeStorageOutputs( computeNode, fullRenderer, renderer, {
 			...syncOpts,
 			onError: ( err ) => {
@@ -266,7 +266,7 @@ export function createSlimSceneSupport( opts = {} ) {
 	 */
 	function syncComputeOutputsPerPass( computeNode, fullRenderer, passIndex, syncOpts = {} ) {
 
-		if ( ! settings.computeSync ) return { texturesShared: 0, buffersAdopted: 0, buffersCopied: 0, pass: typeof passIndex === 'number' ? passIndex : null };
+		if ( ! settings.computeSync ) return { texturesShared: 0, storageAttrs: 0, buffersAdopted: 0, buffersCopied: 0, pass: typeof passIndex === 'number' ? passIndex : null };
 		return syncComputeStorageOutputsPerPass( computeNode, fullRenderer, renderer, passIndex, {
 			...syncOpts,
 			onError: ( err ) => {
@@ -852,9 +852,9 @@ export function createSlimSceneSupport( opts = {} ) {
 		ensureFallback,
 		generatePMREMAsync,
 		setPMREMGenerator,
-			syncComputeOutputs,
-			shareComputeInputs,
-			syncComputeOutputsPerPass,
+		syncComputeOutputs,
+		shareComputeInputs,
+		syncComputeOutputsPerPass,
 		pingPongInvalidate: pingPongInvalidateTextures,
 		shareInstancedAttributeBuffer,
 		computeNodeUsesStorageTexture: ( node, source ) => computeNodeUsesStorageTexture( node, source ),

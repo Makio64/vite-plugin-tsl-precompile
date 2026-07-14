@@ -64,3 +64,16 @@ test( 'full-renderer shadow fallback does not double-apply captured position-nod
 	assert.ok( countRefresh >= 0 && countRefresh < trueInstancedBranch, 'plain Mesh node-instancing count must refresh outside the InstancedMesh-only branch' );
 
 } );
+
+test( 'delegated compute outputs receive a non-advancing presentation render', () => {
+
+	assert.match( source, /computeSyncNeedsPresentation as __sharedComputeSyncNeedsPresentation/ );
+	const start = source.indexOf( 'computeAsync( computeNode, ...rest ) {' );
+	const end = source.indexOf( 'async getArrayBufferAsync( attribute, ...rest ) {', start );
+	assert.ok( start >= 0 && end > start, 'expected the replay compute fallback' );
+	const compute = source.slice( start, end );
+	assert.match( compute, /const syncedOutputsNeedPresentation = __sharedComputeSyncNeedsPresentation\( syncStats \);/ );
+	assert.match( compute, /if \( syncedOutputsNeedPresentation \) _forcePostComputeRender = true;/ );
+	assert.match( compute, /__maintenanceTemporalFrame\( 'compute' \)[\s\S]*\(\) => _slimRenderer\.render\( sc, cam \)/ );
+
+} );

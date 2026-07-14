@@ -50,6 +50,7 @@ test( 'slim-support package subpath resolves through the public export map', () 
 	assert.equal( slimSupport.createSlimSceneSupport, createSlimSceneSupport );
 	assert.equal( slimSupport.createFullRendererFallback, createFullRendererFallback );
 	assert.equal( typeof slimSupport.shareComputeSampledInputs, 'function' );
+	assert.equal( typeof slimSupport.computeSyncNeedsPresentation, 'function' );
 	assert.equal( typeof slimSupport.syncComputeStorageOutputs, 'function' );
 	assert.equal( typeof slimSupport.wireArtifactStorageBuffersFromAttributes, 'function' );
 	assert.equal( typeof slimSupport.updateRendererLightingForSlim, 'function' );
@@ -72,6 +73,7 @@ test( 'slim-support package subpath resolves through the public export map', () 
 test( 'runtime package re-exports user-facing compute wiring helpers', () => {
 
 	assert.equal( runtime.wireArtifactStorageBuffersFromAttributes, slimSupport.wireArtifactStorageBuffersFromAttributes );
+	assert.equal( runtime.computeSyncNeedsPresentation, slimSupport.computeSyncNeedsPresentation );
 	assert.equal( runtime.renderOffscreenOverrideWithFullRenderer, slimSupport.renderOffscreenOverrideWithFullRenderer );
 	assert.equal( runtime.shareRenderTargetTextures, slimSupport.shareRenderTargetTextures );
 	assert.equal( runtime.populateShadowMapsWithFullRenderer, slimSupport.populateShadowMapsWithFullRenderer );
