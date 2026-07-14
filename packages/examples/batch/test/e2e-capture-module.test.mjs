@@ -28,3 +28,16 @@ test( 'forced pipeline maintenance renders receive distinct non-advancing identi
 	assert.match( source, /advance: false,/ );
 
 } );
+
+test( 'capture module never queues Three renderer-owned shadow overrides as user materials', () => {
+
+	const start = source.indexOf( 'function __markSceneMaterials( scene, camera = null )' );
+	const end = source.indexOf( '// QuadMesh.render(renderer)', start );
+	assert.ok( start >= 0 && end > start, 'expected the scene material marker' );
+	const marker = source.slice( start, end );
+	const shadowGuard = marker.indexOf( 'scene.overrideMaterial.isShadowPassMaterial === true' );
+	const overrideCapture = marker.indexOf( 'if ( scene.overrideMaterial ) {' );
+	assert.ok( shadowGuard >= 0, 'expected the renderer-owned shadow override guard' );
+	assert.ok( overrideCapture > shadowGuard, 'shadow overrides must be rejected before generic override capture' );
+
+} );

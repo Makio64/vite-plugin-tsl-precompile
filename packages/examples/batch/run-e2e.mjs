@@ -1330,6 +1330,10 @@ function __markSceneMaterials( scene, camera = null ) {
 	if ( ! scene.userData || scene.userData.__tslpUserScene !== true ) return;
 	if ( scene.userData && scene.userData.__tslpSyntheticCaptureScene ) return;
 	if ( camera && camera.isArrayCamera === true && scene.overrideMaterial ) return;
+	// Three reuses this renderer-owned override for shadow passes and clears its
+	// caster-specific positionNode after the pass. Capturing it later as a user
+	// material freezes the cleared topology instead of the real shadow artifact.
+	if ( scene.overrideMaterial && scene.overrideMaterial.isShadowPassMaterial === true ) return;
 	if ( scene.overrideMaterial ) {
 		if ( scene.overrideMaterial.visible !== false ) {
 			let representative = null;
