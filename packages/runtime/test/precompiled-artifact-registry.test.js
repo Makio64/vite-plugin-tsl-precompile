@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { registerAuxArtifact, __resetAuxRegistryForTests } from '../src/aux-loader.js';
+import { loadAux, registerAuxArtifact, __resetAuxRegistryForTests } from '../src/aux-loader.js';
 import { selectArtifactVariant } from '../src/hydrate/variants/artifact-variant-selector.js';
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
 import {
@@ -99,6 +99,23 @@ test( 'aux loader: shadow-depth aux entries populate the shadow registry', () =>
 
 	assert.equal( getShadowArtifact(), shadowArtifact );
 	assert.equal( dumpPrecompiledRegistry().defaultShadow, shadowArtifact );
+	__resetAuxRegistryForTests();
+
+} );
+
+test( 'aux loader: rejected shadow family replacement leaves both registries unchanged', () => {
+
+	__resetAuxRegistryForTests();
+	const first = artifact( 'collision-key', 'first-shadow' );
+	const divergent = artifact( 'collision-key', 'different-shadow' );
+	registerAuxArtifact( 'shadow-depth', 'shared-config', first );
+
+	assert.throws(
+		() => registerAuxArtifact( 'shadow-depth', 'shared-config', divergent ),
+		( error ) => error && error.code === 'TSLP_ARTIFACT_VARIANT_CACHE_KEY_COLLISION',
+	);
+	assert.equal( getShadowArtifact(), first );
+	assert.equal( loadAux( 'shadow-depth', 'shared-config' ), first );
 	__resetAuxRegistryForTests();
 
 } );

@@ -73,8 +73,8 @@ export function registerAuxArtifact( shape, configHash, artifact, opts = {} ) {
 	// wireViewportTextureRefs is idempotent and silently no-ops until
 	// setupViewportTextureClasses() has been called.
 	wireViewportTextureRefs( artifact );
-	REGISTRY.set( key( shape, configHash ), artifact );
 	if ( isPrecompiledRegistryShape( shape ) ) registerPrecompiledArtifact( artifact );
+	REGISTRY.set( key( shape, configHash ), artifact );
 
 }
 
