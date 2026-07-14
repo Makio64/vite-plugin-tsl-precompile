@@ -236,8 +236,10 @@ test( 'createSlimSceneSupport exposes the four sub-helpers by default (no fallba
 	assert.ok( support.liveSceneIndex );
 	assert.ok( support.pmrem );
 	assert.equal( support.fallback, null );
+	assert.ok( support.materialCompute );
 	assert.equal( typeof support.indexScene, 'function' );
 	assert.equal( typeof support.syncComputeOutputs, 'function' );
+	assert.equal( typeof support.dispatchMaterialComputes, 'function' );
 	assert.equal( typeof support.shareComputeInputs, 'function' );
 	assert.equal( typeof support.shareTexture, 'function' );
 	assert.equal( typeof support.shareShadowTexture, 'function' );
@@ -430,6 +432,112 @@ test( 'createSlimSceneSupport ensureFallback installs raw compute fallback on th
 		setSlimRenderFallback( null );
 
 	}
+
+} );
+
+test( 'createSlimSceneSupport dispatches retained material compute and presents shared storage', async () => {
+
+	const slim = fakeRenderer();
+	const full = fakeRenderer();
+	full.backend.device = slim.backend.device;
+	const attribute = {
+		isBufferAttribute: true,
+		isStorageBufferAttribute: true,
+		array: new Float32Array( 12 ),
+		count: 4,
+		itemSize: 3,
+	};
+	const binding = { isStorageBuffer: true, access: 'readWrite', attribute };
+	const computeNode = {
+		isNode: true,
+		isComputeNode: true,
+		traverse( visitor ) { visitor( this ); },
+	};
+	const initComputeNode = { isComputeNode: true };
+	computeNode.onInitFunction = async ( { renderer } ) => {
+
+		assert.equal( renderer, slim, 'material compute initialization keeps the app renderer identity' );
+		await renderer.computeAsync( initComputeNode );
+
+	};
+	full._nodes = { getForCompute: () => ( { bindings: [ { bindings: [ binding ] } ] } ) };
+	full._bindings = { getForCompute: () => [ { bindings: [ binding ] } ] };
+	full.backend.get( attribute ).buffer = { size: attribute.array.byteLength };
+	const dispatchedNodes = [];
+	full.computeAsync = async ( node ) => {
+
+		dispatchedNodes.push( node );
+
+	};
+	const material = {
+		isPrecompiledMaterial: true,
+		precompiledArtifact: {
+			attributes: [ {
+				name: 'nodeAttribute0',
+				source: 'node',
+				storage: true,
+				count: 4,
+				itemSize: 4,
+				arrayType: 'Float32Array',
+			} ],
+		},
+		positionNode: computeNode,
+		disposeCalls: 0,
+		dispose() { this.disposeCalls ++; },
+	};
+	const scene = { traverse( visitor ) { visitor( { material } ); } };
+	const support = createSlimSceneSupport( { renderer: slim, fullRendererFallback: false } );
+
+	try {
+
+		const stats = await support.dispatchMaterialComputes( scene, { fullRenderer: full } );
+		assert.equal( stats.owners, 1 );
+		assert.equal( stats.dispatched, 1 );
+		assert.equal( stats.attributesPrepared, 1 );
+		assert.equal( stats.storageAttrs, 1 );
+		assert.equal( stats.buffersAdopted, 0, 'the awaited initialization kernel already adopted the shared buffer' );
+		assert.equal( stats.presentationNeeded, true );
+		assert.deepEqual( dispatchedNodes, [ initComputeNode, computeNode ], 'async nested initialization completes before the owner kernel' );
+		assert.equal( material.disposeCalls, 1 );
+		assert.equal( slim.backend.get( attribute ).buffer, full.backend.get( attribute ).buffer );
+
+		const nested = { isComputeNode: true };
+		await slim.computeAsync( nested );
+		assert.deepEqual( dispatchedNodes, [ initComputeNode, computeNode, nested ], 'an installed caller-owned renderer handles nested async kernels' );
+
+	} finally {
+
+		await support.dispose();
+
+	}
+
+} );
+
+test( 'createSlimSceneSupport normalizes empty material-compute stats', async () => {
+
+	const support = createSlimSceneSupport( { renderer: fakeRenderer() } );
+	const stats = await support.dispatchMaterialComputes( { traverse() {} } );
+	assert.deepEqual( stats, {
+		owners: 0,
+		nodes: 0,
+		dispatched: 0,
+		attributesPrepared: 0,
+		invalidated: 0,
+		pending: 0,
+		ambiguous: 0,
+		incomplete: 0,
+		irrelevant: 0,
+		skipped: 0,
+		errors: 0,
+		dispatchResults: [],
+		inputTexturesShared: 0,
+		texturesShared: 0,
+		storageAttrs: 0,
+		buffersAdopted: 0,
+		buffersCopied: 0,
+		presentationNeeded: false,
+	} );
+	await support.dispose();
 
 } );
 

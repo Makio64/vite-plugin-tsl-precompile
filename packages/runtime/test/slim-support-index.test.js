@@ -8,6 +8,7 @@ import * as runtime from '@tsl-precompile/runtime';
 import * as slimSupport from '@tsl-precompile/runtime/slim-support';
 import { createSlimSceneSupport } from '../src/slim-support/scene-support.js';
 import { createFullRendererFallback } from '../src/slim-support/full-renderer-fallback.js';
+import { createAutoComputeDispatcher } from '../src/slim-support/auto-compute.js';
 
 const RUNTIME_SRC = resolve( dirname( fileURLToPath( import.meta.url ) ), '../src' );
 const BARE_THREE_IMPORT_RE = /^\s*(?:import|export)\b[^\n]*\bfrom\s+['"]three['"]/m;
@@ -49,6 +50,7 @@ test( 'slim-support package subpath resolves through the public export map', () 
 
 	assert.equal( slimSupport.createSlimSceneSupport, createSlimSceneSupport );
 	assert.equal( slimSupport.createFullRendererFallback, createFullRendererFallback );
+	assert.equal( slimSupport.createAutoComputeDispatcher, createAutoComputeDispatcher );
 	assert.equal( typeof slimSupport.shareComputeSampledInputs, 'function' );
 	assert.equal( typeof slimSupport.computeSyncNeedsPresentation, 'function' );
 	assert.equal( typeof slimSupport.syncComputeStorageOutputs, 'function' );
@@ -73,6 +75,7 @@ test( 'slim-support package subpath resolves through the public export map', () 
 test( 'runtime package re-exports user-facing compute wiring helpers', () => {
 
 	assert.equal( runtime.wireArtifactStorageBuffersFromAttributes, slimSupport.wireArtifactStorageBuffersFromAttributes );
+	assert.equal( runtime.createAutoComputeDispatcher, slimSupport.createAutoComputeDispatcher );
 	assert.equal( runtime.computeSyncNeedsPresentation, slimSupport.computeSyncNeedsPresentation );
 	assert.equal( runtime.renderOffscreenOverrideWithFullRenderer, slimSupport.renderOffscreenOverrideWithFullRenderer );
 	assert.equal( runtime.shareRenderTargetTextures, slimSupport.shareRenderTargetTextures );
@@ -151,6 +154,10 @@ test( 'runtime package exports the stable slim-support barrel with types', () =>
 	assert.equal( pkg.exports[ './slim-support/postprocess-execution-plan' ].types, './types/slim-support/postprocess-execution-plan.d.ts' );
 	assert.equal( pkg.exports[ './slim-support/postprocess-frame-scheduler' ].types, './types/slim-support/postprocess-frame-scheduler.d.ts' );
 	assert.equal( pkg.exports[ './slim-support/postprocess-resource-refresh' ].types, './types/slim-support/postprocess-resource-refresh.d.ts' );
+	assert.deepEqual( pkg.exports[ './slim-support/auto-compute' ], {
+		types: './types/slim-support/auto-compute.d.ts',
+		default: './src/slim-support/auto-compute.js',
+	} );
 	assert.deepEqual( pkg.exports[ './slim-support/shadow-fallback' ], {
 		types: './types/slim-support/shadow-fallback.d.ts',
 		default: './src/slim-support/shadow-fallback.js',

@@ -13,6 +13,24 @@
  * Everything else is for power users (custom artifact loaders, aux passes,
  * material variants, slim-support helpers, etc.).
  */
+export type {
+	MaterialComputeBinding,
+	AutoComputeCandidateContext,
+	AutoComputeCandidateResolver,
+	AutoComputeDispatchStats,
+	AutoComputeDispatchOptions,
+} from './slim-support/auto-compute.d.ts';
+export type { DispatchMaterialComputesOptions, MaterialComputeDispatchStats } from './slim-support/scene-support.d.ts';
+export const AUTO_COMPUTE_MATERIAL_PROPERTIES: typeof import('./slim-support/auto-compute.d.ts').AUTO_COMPUTE_MATERIAL_PROPERTIES;
+export const MATERIAL_COMPUTE_BINDINGS: typeof import('./slim-support/auto-compute.d.ts').MATERIAL_COMPUTE_BINDINGS;
+export const AutoComputeBindingError: typeof import('./slim-support/auto-compute.d.ts').AutoComputeBindingError;
+export const collectMaterialComputeBindings: typeof import('./slim-support/auto-compute.d.ts').collectMaterialComputeBindings;
+export const collectWritableComputeStorageAttributes: typeof import('./slim-support/auto-compute.d.ts').collectWritableComputeStorageAttributes;
+export const artifactHasUnwiredAnonymousComputeAttribute: typeof import('./slim-support/auto-compute.d.ts').artifactHasUnwiredAnonymousComputeAttribute;
+export const prepareMaterialComputeAttributes: typeof import('./slim-support/auto-compute.d.ts').prepareMaterialComputeAttributes;
+export const applyMaterialComputeAttributeBindings: typeof import('./slim-support/auto-compute.d.ts').applyMaterialComputeAttributeBindings;
+export const invalidateMaterialComputeBindings: typeof import('./slim-support/auto-compute.d.ts').invalidateMaterialComputeBindings;
+export const createAutoComputeDispatcher: typeof import('./slim-support/auto-compute.d.ts').createAutoComputeDispatcher;
 
 export interface PrecompileCaptureContext {
 	/** Scene used to build render-context-dependent shader state (lights, fog, shadows, clipping, MRT). */
@@ -503,15 +521,17 @@ export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	liveSceneIndex: unknown;
 	pmrem: unknown;
 	fallback: unknown;
+	materialCompute: ReturnType<typeof import('./slim-support/auto-compute.d.ts').createAutoComputeDispatcher>;
 	diagnostics: Record<string, unknown>;
 	indexScene: ( scene: unknown ) => void;
 	rememberLiveTexture: ( texture: unknown ) => void;
 	getFullRenderer: () => Promise<unknown | null>;
 	ensureFallback: () => Promise<void>;
-	installComputeFallback: () => boolean;
+	installComputeFallback: ( sourceRenderer?: unknown ) => boolean;
 	generatePMREMAsync: ( sourceTexture: unknown, generator?: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => Promise<unknown | null>;
 	setPMREMGenerator: ( generator: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => void;
 	syncComputeOutputs: ( computeNode: unknown, fullRenderer: unknown, syncOpts?: Record<string, unknown> ) => ComputeSyncStats;
+	dispatchMaterialComputes: ( scene: unknown, computeOpts?: import('./slim-support/scene-support.d.ts').DispatchMaterialComputesOptions ) => Promise<import('./slim-support/scene-support.d.ts').MaterialComputeDispatchStats>;
 	shareComputeInputs: ( computeNode: unknown, fullRenderer: unknown, shareOpts?: Record<string, unknown> ) => ComputeInputShareStats;
 	syncComputeOutputsPerPass: ( computeNode: unknown, fullRenderer: unknown, passIndex: number | undefined, syncOpts?: Record<string, unknown> ) => ComputeSyncPerPassStats;
 	pingPongInvalidate: ( textureA: unknown, textureB: unknown, extraRenderer?: unknown ) => boolean;

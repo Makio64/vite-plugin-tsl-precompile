@@ -3,6 +3,7 @@ export * from './pmrem.d.ts';
 export * from './gpu-texture-share.d.ts';
 export * from './artifact-texture-wiring.d.ts';
 export * from './compute-sync.d.ts';
+export * from './auto-compute.d.ts';
 export * from './full-renderer-fallback.d.ts';
 export * from './scene-support.d.ts';
 export * from './temporal-frame.d.ts';

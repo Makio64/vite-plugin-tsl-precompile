@@ -40,8 +40,10 @@ import {
 	pingPongInvalidate,
 	shareInstancedAttributeBufferIntoSlim,
 	computeNodeUsesStorageTexture,
+	computeSyncNeedsPresentation,
 	shareComputeSampledInputs,
 } from './compute-sync.js';
+import { collectMaterialComputeBindings, createAutoComputeDispatcher } from './auto-compute.js';
 import { shareGPUTextureEntry, shareShadowGPUTextureIntoSlim } from './gpu-texture-share.js';
 import { createFullRendererFallback } from './full-renderer-fallback.js';
 import { setSlimRenderFallback } from './render-fallback-registry.js';
@@ -98,6 +100,10 @@ export function createSlimSceneSupport( opts = {} ) {
 	const settings = { ...DEFAULT_OPTS, ...opts };
 	const diagnostics = settings.diagnostics || { pmrem: {}, textureShare: { calls: 0, success: 0, noSourceData: 0, noSourceTexture: 0, names: [], missingNames: [] }, compute: {} };
 	const onError = typeof settings.onError === 'function' ? settings.onError : null;
+	const materialCompute = createAutoComputeDispatcher( {
+		renderer,
+		onError: ( err, detail ) => onError && onError( err, { where: 'materialCompute', detail } ),
+	} );
 
 	// --- live-scene-index (always on; the cheapest of the helpers) ----------
 	function trackLoaderNamespace( namespace ) {
@@ -174,6 +180,7 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	async function getFullRenderer() {
 
+		if ( cachedFullRenderer ) return cachedFullRenderer;
 		if ( ! fallback ) return null;
 		const fullRenderer = await fallback.getRenderer();
 		cachedFullRenderer = fullRenderer || null;
@@ -485,7 +492,7 @@ export function createSlimSceneSupport( opts = {} ) {
 	let computeFallbackInstalled = false;
 	let restoreComputeFallback = null;
 
-	function syncDelegatedComputeOutputs( computeNode, fullRenderer ) {
+	function syncDelegatedComputeOutputs( computeNode, fullRenderer, syncOpts = {} ) {
 
 		const nodeKey = computeNode && typeof computeNode === 'object' ? computeNode : null;
 		const passIndex = nodeKey ? ( computePassByNode.get( nodeKey ) | 0 ) : 0;
@@ -494,14 +501,17 @@ export function createSlimSceneSupport( opts = {} ) {
 		const seenStorageTextures = [];
 		const seenStorageAttrs = [];
 		const stats = syncComputeOutputsPerPass( computeNode, fullRenderer, passIndex, {
+			...syncOpts,
 			onStorageAttr: ( attr ) => {
 
 				seenStorageAttrs.push( attr );
+				if ( typeof syncOpts.onStorageAttr === 'function' ) syncOpts.onStorageAttr( attr );
 
 			},
 			onStorageTexture: ( texture ) => {
 
 				seenStorageTextures.push( texture );
+				if ( typeof syncOpts.onStorageTexture === 'function' ) syncOpts.onStorageTexture( texture );
 
 			},
 		} );
@@ -542,6 +552,7 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	const computePassByNode = new WeakMap();
 	const computeStorageTextureLedger = new WeakMap();
+	const initializedMaterialComputeNodes = new WeakSet();
 
 	function isRawComputeNode( computeNode ) {
 
@@ -549,10 +560,11 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	}
 
-	function installComputeFallback() {
+	function installComputeFallback( sourceRenderer = null ) {
 
+		if ( sourceRenderer ) cachedFullRenderer = sourceRenderer;
 		if ( computeFallbackInstalled ) return true;
-		if ( ! fallback ) return false;
+		if ( ! fallback && ! cachedFullRenderer ) return false;
 		const originalCompute = typeof renderer.compute === 'function' ? renderer.compute : null;
 		const originalComputeAsync = typeof renderer.computeAsync === 'function' ? renderer.computeAsync : null;
 
@@ -586,7 +598,7 @@ export function createSlimSceneSupport( opts = {} ) {
 				return originalCompute ? originalCompute.call( this, computeNode, ...rest ) : undefined;
 
 			}
-			const fullRenderer = await getFullRenderer();
+			const fullRenderer = cachedFullRenderer || await getFullRenderer();
 			if ( ! fullRenderer ) return undefined;
 			shareComputeInputs( computeNode, fullRenderer );
 			if ( typeof fullRenderer.computeAsync === 'function' ) await fullRenderer.computeAsync( computeNode, ...rest );
@@ -605,6 +617,150 @@ export function createSlimSceneSupport( opts = {} ) {
 		};
 		computeFallbackInstalled = true;
 		return true;
+
+	}
+
+	function finalizeMaterialComputeStats( stats ) {
+
+		stats.inputTexturesShared = 0;
+		stats.texturesShared = 0;
+		stats.storageAttrs = 0;
+		stats.buffersAdopted = 0;
+		stats.buffersCopied = 0;
+		stats.presentationNeeded = false;
+		for ( const result of stats.dispatchResults ) {
+
+			if ( ! result || typeof result !== 'object' ) continue;
+			stats.inputTexturesShared += result.inputTexturesShared || 0;
+			stats.texturesShared += result.texturesShared || 0;
+			stats.storageAttrs += result.storageAttrs || 0;
+			stats.buffersAdopted += result.buffersAdopted || 0;
+			stats.buffersCopied += result.buffersCopied || 0;
+			if ( computeSyncNeedsPresentation( result ) ) stats.presentationNeeded = true;
+
+		}
+		return stats;
+
+	}
+
+	async function initializeMaterialComputeNode( computeNode ) {
+
+		const onInit = computeNode && computeNode.onInitFunction;
+		if ( typeof onInit !== 'function' || initializedMaterialComputeNodes.has( computeNode ) ) return;
+		initializedMaterialComputeNodes.add( computeNode );
+		// Three invokes this callback without awaiting it and exposes the full
+		// renderer. In hybrid mode the application owns the slim renderer, so
+		// preserve that public identity and await nested initialization kernels.
+		try { computeNode.onInitFunction = null; } catch ( _ ) {}
+		await onInit.call( computeNode, { renderer } );
+
+	}
+
+	async function rejectMaterialComputeDispatch( scene, computeOpts, bindings, error ) {
+
+		if ( typeof computeOpts.onError === 'function' ) computeOpts.onError( error, { where: 'dispatchMaterialComputes' } );
+		if ( onError ) onError( error, { where: 'dispatchMaterialComputes' } );
+		const stats = await materialCompute.dispatch( scene, {
+			...computeOpts,
+			bindings,
+			fullRenderer: null,
+			shouldDispatch: () => false,
+		} );
+		stats.errors ++;
+		return finalizeMaterialComputeStats( stats );
+
+	}
+
+	/**
+	 * Dispatch raw ComputeNodes owned by precompiled material slots, then
+	 * reconnect their writable storage attributes to the selected artifact
+	 * variant. Rendering stays explicit so applications control presentation:
+	 * `await support.dispatchMaterialComputes(scene); renderer.render(...)`.
+	 *
+	 * This hybrid path requires the real ComputeNode graph to remain reachable
+	 * from `material.__tslpSourceMaterial` (or the material itself) and a full
+	 * renderer capable of compiling it.
+	 */
+	async function dispatchMaterialComputes( scene, computeOpts = {} ) {
+
+		computeOpts = computeOpts || {};
+		const bindings = Array.isArray( computeOpts.bindings )
+			? computeOpts.bindings
+			: collectMaterialComputeBindings( scene, computeOpts );
+		if ( bindings.length === 0 ) return finalizeMaterialComputeStats( await materialCompute.dispatch( scene, { ...computeOpts, bindings } ) );
+		if ( ! settings.computeSync ) {
+
+			return rejectMaterialComputeDispatch( scene, computeOpts, bindings, new Error( 'createSlimSceneSupport: dispatchMaterialComputes() requires `computeSync: true` so delegated outputs can be adopted by the slim renderer.' ) );
+
+		}
+
+		const fullRenderer = computeOpts.fullRenderer || await getFullRenderer();
+		if ( ! fullRenderer ) {
+
+			return rejectMaterialComputeDispatch( scene, computeOpts, bindings, new Error( 'createSlimSceneSupport: dispatchMaterialComputes() requires a full renderer. Enable `fullRendererFallback` or pass `computeOpts.fullRenderer`.' ) );
+
+		}
+		const slimDevice = renderer.backend && renderer.backend.device;
+		const fullDevice = fullRenderer.backend && fullRenderer.backend.device;
+		if ( slimDevice && fullDevice && slimDevice !== fullDevice ) {
+
+			return rejectMaterialComputeDispatch( scene, computeOpts, bindings, new Error( 'createSlimSceneSupport: dispatchMaterialComputes() requires slim and full renderers to share the same GPUDevice.' ) );
+
+		}
+
+		// Material compute `onInit()` callbacks can call the app's slim
+		// renderer. Route those nested raw kernels through this same full
+		// renderer while the explicit owner dispatch is active.
+		installComputeFallback( fullRenderer );
+		let resourceErrors = 0;
+		const reportResourceError = ( error, detail ) => {
+
+			resourceErrors ++;
+			if ( typeof computeOpts.onError === 'function' ) computeOpts.onError( error, detail );
+
+		};
+		const stats = await materialCompute.dispatch( scene, {
+			...computeOpts,
+			bindings,
+			fullRenderer,
+			dispatchNode: async ( computeNode, owners ) => {
+
+				await initializeMaterialComputeNode( computeNode );
+				const shareOptions = computeOpts.shareOptions || {};
+				const inputStats = shareComputeInputs( computeNode, fullRenderer, {
+					...shareOptions,
+					onError: ( error, resource ) => {
+
+						if ( typeof shareOptions.onError === 'function' ) shareOptions.onError( error, resource );
+						reportResourceError( error, { where: 'dispatchMaterialComputes.shareInputs', resource } );
+
+					},
+				} );
+				const args = typeof computeOpts.computeArgs === 'function'
+					? computeOpts.computeArgs( computeNode, owners )
+					: computeOpts.computeArgs;
+				const rest = Array.isArray( args ) ? args : [];
+				if ( typeof fullRenderer.computeAsync === 'function' ) await fullRenderer.computeAsync( computeNode, ...rest );
+				else if ( typeof fullRenderer.compute === 'function' ) await fullRenderer.compute( computeNode, ...rest );
+				else throw new Error( 'createSlimSceneSupport: the full renderer exposes neither computeAsync() nor compute().' );
+				return {
+					...syncDelegatedComputeOutputs( computeNode, fullRenderer, {
+						...( computeOpts.syncOptions || {} ),
+						onError: ( error ) => {
+
+							if ( typeof computeOpts.syncOptions?.onError === 'function' ) computeOpts.syncOptions.onError( error );
+							reportResourceError( error, { where: 'dispatchMaterialComputes.syncOutputs' } );
+
+						},
+					} ),
+					inputTexturesShared: inputStats.texturesShared || 0,
+				};
+
+			},
+		} );
+
+		stats.errors += resourceErrors;
+		return finalizeMaterialComputeStats( stats );
 
 	}
 
@@ -843,6 +999,7 @@ export function createSlimSceneSupport( opts = {} ) {
 		liveSceneIndex,
 		pmrem,
 		fallback,
+		materialCompute,
 		diagnostics,
 
 		// Convenience methods
@@ -853,6 +1010,7 @@ export function createSlimSceneSupport( opts = {} ) {
 		generatePMREMAsync,
 		setPMREMGenerator,
 		syncComputeOutputs,
+		dispatchMaterialComputes,
 		shareComputeInputs,
 		syncComputeOutputsPerPass,
 		pingPongInvalidate: pingPongInvalidateTextures,

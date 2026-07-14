@@ -77,3 +77,24 @@ test( 'delegated compute outputs receive a non-advancing presentation render', (
 	assert.match( compute, /__maintenanceTemporalFrame\( 'compute' \)[\s\S]*\(\) => _slimRenderer\.render\( sc, cam \)/ );
 
 } );
+
+test( 'material-owned compute delegates matching and retries to slim-support', () => {
+
+	assert.match( source, /AUTO_COMPUTE_MATERIAL_PROPERTIES as __AUTO_COMPUTE_SLOTS, createAutoComputeDispatcher as __sharedCreateAutoComputeDispatcher/ );
+	assert.doesNotMatch( source, /function __wireAutoComputeAttrsToArtifact/ );
+	const start = source.indexOf( '// Material-owned compute discovery and artifact wiring live in the runtime.' );
+	const end = source.indexOf( '// Lazy full-three.js compute renderer', start );
+	assert.ok( start >= 0 && end > start, 'expected the thin material-compute harness adapter' );
+	const adapter = source.slice( start, end );
+	assert.match( adapter, /fullRenderer: __computeRendererBySlim\.get\( slimRenderer \) \|\| null/ );
+	assert.match( adapter, /shouldDispatch: \(\) => slimRenderer\.__tslpPostComputeRendering !== true/ );
+	assert.match( adapter, /dispatchOnce: frozen \? __frozenDispatchedAutoComputeNodes : undefined/ );
+	assert.match( adapter, /dispatchNode\( node \) \{ return slimRenderer\.compute\( node \); \}/ );
+	assert.match( adapter, /\} \)\.catch\(/ );
+
+	const dispatch = source.indexOf( '__dispatchAutoComputeNodes( scene, this );' );
+	const passRender = source.indexOf( '__renderPassNodesForPipeline( this,', dispatch );
+	const mainRender = source.indexOf( 'const r = super.render( scene, camera );', dispatch );
+	assert.ok( dispatch >= 0 && dispatch < passRender && passRender < mainRender, 'material compute must start before pass and main presentation renders' );
+
+} );

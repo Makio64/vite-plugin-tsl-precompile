@@ -80,6 +80,10 @@
       "types": "./types/slim-support/compute-sync.d.ts",
       "default": "./src/slim-support/compute-sync.js"
     },
+    "./slim-support/auto-compute": {
+      "types": "./types/slim-support/auto-compute.d.ts",
+      "default": "./src/slim-support/auto-compute.js"
+    },
     "./slim-support/full-renderer-fallback": {
       "types": "./types/slim-support/full-renderer-fallback.d.ts",
       "default": "./src/slim-support/full-renderer-fallback.js"

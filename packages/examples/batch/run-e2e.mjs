@@ -512,6 +512,7 @@ function rewriteImportmap( html, mode ) {
 		'@tsl-precompile/runtime/slim-support/pmrem': '/__tslp_runtime/slim-support/pmrem.js',
 		'@tsl-precompile/runtime/slim-support/gpu-texture-share': '/__tslp_runtime/slim-support/gpu-texture-share.js',
 		'@tsl-precompile/runtime/slim-support/compute-sync': '/__tslp_runtime/slim-support/compute-sync.js',
+		'@tsl-precompile/runtime/slim-support/auto-compute': '/__tslp_runtime/slim-support/auto-compute.js',
 		'@tsl-precompile/contract': '/__tslp_contract/index.js',
 		'@tsl-precompile/contract/dynamic-bindings': '/__tslp_contract/dynamic-bindings.js',
 		'@tsl-precompile/contract/fragment-outputs': '/__tslp_contract/fragment-outputs.js',
@@ -1884,6 +1885,7 @@ import { createLiveSceneIndex, textureImageReady as __sharedTextureImageReady, t
 import { artifactNeedsPMREM as __sharedArtifactNeedsPMREM, artifactPMREMSourceUuids as __sharedArtifactPMREMSourceUuids, attachPMREMRefsByOrder as __sharedAttachPMREMRefsByOrder, collectPMREMSourceTexturesFromMaterial as __sharedCollectPMREMSourceTexturesFromMaterial, collectPMREMSourceTexturesInNode as __sharedCollectPMREMSourceTexturesInNode, createPMREMSupport as __sharedCreatePMREMSupport, isPMREMArtifactTextureSource as __sharedIsPMREMArtifactTextureSource, isPMREMTexture as __sharedIsPMREMTexture, selectPMREMTexturesForArtifact as __sharedSelectPMREMTexturesForArtifact, textureListSignature as __sharedTextureListSignature } from '/__tslp_runtime/slim-support/pmrem.js';
 import { clearTextureViewCache as __sharedClearTextureViewCache, markTextureInitialized as __sharedMarkTextureInitialized, shareGPUTextureEntry as __sharedShareGPUTextureEntry, sharePMREMGPUTexture as __sharedSharePMREMGPUTexture, shareShadowGPUTextureIntoSlim as __sharedShareShadowGpuTextureIntoSlim } from '/__tslp_runtime/slim-support/gpu-texture-share.js';
 import { computeNodeUsesStorageTexture as __sharedComputeNodeUsesStorageTexture, computeSyncNeedsPresentation as __sharedComputeSyncNeedsPresentation, shareComputeSampledInputs as __sharedShareComputeSampledInputs, syncComputeStorageOutputs as __sharedSyncComputeStorageOutputs, syncComputeStorageOutputsPerPass as __sharedSyncComputeStorageOutputsPerPass, wireArtifactStorageBuffersFromAttributes as __sharedWireArtifactStorageBuffersFromAttributes, pingPongInvalidate as __sharedPingPongInvalidate, shareInstancedAttributeBufferIntoSlim as __sharedShareInstancedAttributeBufferIntoSlim } from '/__tslp_runtime/slim-support/compute-sync.js';
+import { AUTO_COMPUTE_MATERIAL_PROPERTIES as __AUTO_COMPUTE_SLOTS, createAutoComputeDispatcher as __sharedCreateAutoComputeDispatcher } from '/__tslp_runtime/slim-support/auto-compute.js';
 import { artifactHasTextureSource as __sharedArtifactHasTextureSource, attachArtifactTextureRefsByShapeOrder as __sharedAttachArtifactTextureRefsByShapeOrder, attachArtifactTextureRefsWhere as __sharedAttachArtifactTextureRefsWhere, attachTextureRefsWhere as __sharedAttachTextureRefsWhere, countArtifactTextureSources as __sharedCountArtifactTextureSources, singleArtifactTextureUuid as __sharedSingleArtifactTextureUuid, textureMatchesArtifactSource as __sharedTextureMatchesArtifactSource, textureMatchesSource as __sharedTextureMatchesSource } from '/__tslp_runtime/slim-support/artifact-texture-wiring.js';
 import { createFullRendererFallback as __sharedCreateFullRendererFallback } from '/__tslp_runtime/slim-support/full-renderer-fallback.js';
 import { updateRendererLightingForSlim as __sharedUpdateRendererLightingForSlim } from '/__tslp_runtime/slim-support/renderer-lighting.js';
@@ -7773,186 +7775,27 @@ function __prepareSceneForReplay( scene, renderer ) {
 	__recordReplayMaterialSnapshot( scene, 'prepare' );
 }
 
-// Auto-compute dispatch for material *Node slots that hold a raw TSL ComputeNode.
-// In stock three.js, NodeMaterial.setup() registers each ComputeNode-shaped slot
-// (e.g. webgpu_skinning_points: material.positionNode = Fn(...)().compute(N).onInit(...))
-// for updateBefore, which calls renderer.compute(this) ahead of every draw so
-// the storage buffer feeding .toAttribute() is fresh. The slim renderer bypasses
-// NodeMaterial.setup, so updateBefore never fires and the buffer stays zeroed —
-// 16k skinned points collapse to a single dot at origin.
-//
-// Walking the scene per-frame and routing each ComputeNode through this.compute()
-// reuses the existing full-renderer + __syncStorageBuffers path (same one the
-// .compute() wrapper drives for explicit user dispatches like webgpu_compute_birds).
-const __AUTO_COMPUTE_SLOTS = [ 'positionNode', 'vertexNode', 'colorNode', 'outputNode' ];
-const __wiredAutoComputeMaterials = new WeakSet();
-// Build the auto-compute's NodeBuilderState on the full renderer just to populate
-// its bind groups, then walk those bindings to find the live storage attributes
-// (pointPositionArray, pointSpeedArray, ...) the kernel writes to. Match each
-// unwired artifact.attributes[i] (vertex stage) by count + itemSize so the slim
-// hydrator reads from the same GPU buffer the compute is updating. Without this,
-// the artifact's nodeAttribute0 ends up bound to a fresh zero-filled
-// StorageBufferAttribute and the compute output is invisible to render.
-function __wireAutoComputeAttrsToArtifact( material, computeNode ) {
-	let wiredCount = 0;
-	if ( ! material || ! material.precompiledArtifact || ! computeNode ) return 0;
-	if ( ! __computeRenderer ) return 0;
-	let nodeBuilderState;
-	try { nodeBuilderState = __computeRenderer._nodes.getForCompute( computeNode ); }
-	catch ( err ) { console.warn( '[tslp-e2e] auto-compute getForCompute failed:', err && err.message || err ); return 0; }
-	const bindings = nodeBuilderState && nodeBuilderState.bindings;
-	if ( ! bindings ) return 0;
-	// Keep only read-write storage attrs — those are the buffers the user's kernel
-	// outputs to (pointPositionArray, pointSpeedArray). Skip readOnly inputs like
-	// SkinningNode's internal position/skinIndex/skinWeight storage, which the
-	// kernel only samples from.
-	const candidates = [];
-	for ( const bg of bindings ) {
-		if ( ! bg || ! bg.bindings ) continue;
-		for ( const b of bg.bindings ) {
-			if ( ! b || ! b.isStorageBuffer || ! b.attribute ) continue;
-			if ( b.access && b.access !== 'readWrite' && b.access !== 'writeOnly' ) continue;
-			const attr = b.attribute;
-			if ( ! ( attr.isStorageBufferAttribute === true || attr.isStorageInstancedBufferAttribute === true ) ) continue;
-			if ( ! candidates.includes( attr ) ) candidates.push( attr );
-		}
-	}
-	if ( candidates.length === 0 ) return 0;
-	// Exclude storage attrs already referenced by other *Node slots — those are
-	// wired by the runtime hydrator via userPath. Without this, autowire might
-	// consume pointSpeedArray for nodeAttribute0 and leave pointPositionArray
-	// orphaned, swapping the position and color channels.
-	const usedByOtherSlots = new Set();
-	const collectStorageLeavesViaTraverse = ( node, out ) => {
-		// __collectStorageAttrNodeAttrs uses __walkNodeSafely, which only follows
-		// _children / array-shaped getChildren(); three.js getChildren() is a
-		// generator, so it walks nothing for real nodes. Use Node.traverse instead.
-		if ( ! node || typeof node.traverse !== 'function' ) return;
-		const seen = new Set();
-		try {
-			node.traverse( ( n ) => {
-				if ( ! n || seen.has( n ) ) return;
-				seen.add( n );
-				const v = n.value;
-				if ( v && ( v.isStorageBufferAttribute === true || v.isStorageInstancedBufferAttribute === true ) && ! out.includes( v ) ) out.push( v );
-				const a = n.attribute;
-				if ( a && ( a.isStorageBufferAttribute === true || a.isStorageInstancedBufferAttribute === true ) && ! out.includes( a ) ) out.push( a );
-			} );
-		} catch ( _ ) {}
-	};
-	for ( const slot of [ 'colorNode', 'vertexNode', 'normalNode', 'outputNode', 'emissiveNode', 'opacityNode' ] ) {
-		if ( ! material[ slot ] ) continue;
-		const found = [];
-		collectStorageLeavesViaTraverse( material[ slot ], found );
-		for ( const f of found ) usedByOtherSlots.add( f );
-	}
-	const artifact = material.precompiledArtifact;
-	const nodeAttrsArr = artifact.attributes || artifact.nodeAttributes || [];
-	const wired = new Set();
-	for ( const na of nodeAttrsArr ) {
-		if ( na && na._liveAttribute && na._liveAttribute.isBufferAttribute === true ) wired.add( na._liveAttribute );
-	}
-	const remaining = candidates.filter( ( c ) => ! wired.has( c ) && ! usedByOtherSlots.has( c ) );
-	for ( const na of nodeAttrsArr ) {
-		if ( ! na || na.source !== 'node' ) continue;
-		if ( na._liveAttribute && na._liveAttribute.isBufferAttribute === true ) continue;
-		// Skip entries with userPath — the runtime hydrator wires those via the
-		// recorded node-tree path. Autowire only fills entries with NO userPath,
-		// where the live attribute is buried inside a Fn closure (the compute
-		// body) that the runtime walk can't reach.
-		if ( Array.isArray( na.userPath ) && na.userPath.length > 0 ) continue;
-		// Match on count + itemSize + array constructor. The compute's bind groups
-		// usually include several storage buffers (positions, speeds, skinIndices,
-		// skinWeights, ...) with the same count; without the arrayType check we'd
-		// wire a uint skin-index buffer to a float vertex attribute and the WebGPU
-		// validator rejects the pipeline.
-		const idx = remaining.findIndex( ( c ) => {
-			if ( c.count !== na.count ) return false;
-			if ( ! ( c.itemSize === na.itemSize || ( c.itemSize === 3 && na.itemSize === 4 ) ) ) return false;
-			if ( na.arrayType && c.array && c.array.constructor && c.array.constructor.name !== na.arrayType ) return false;
-			return true;
+// Material-owned compute discovery and artifact wiring live in the runtime.
+// The harness retains only its frozen-screenshot dispatch policy.
+const __autoComputeDispatcherByRenderer = new WeakMap();
+const __frozenDispatchedAutoComputeNodes = new Set();
+function __dispatchAutoComputeNodes( scene, slimRenderer ) {
+	if ( ! scene || typeof scene.traverse !== 'function' || ! slimRenderer ) return;
+	let dispatcher = __autoComputeDispatcherByRenderer.get( slimRenderer );
+	if ( ! dispatcher ) {
+		dispatcher = __sharedCreateAutoComputeDispatcher( {
+			renderer: slimRenderer,
+			onError: ( err ) => console.warn( '[tslp-e2e] auto-compute failed:', err && err.message || err ),
 		} );
-		if ( idx === -1 ) continue;
-		Object.defineProperty( na, '_liveAttribute', { value: remaining[ idx ], enumerable: false, writable: true, configurable: true } );
-		remaining.splice( idx, 1 );
-		wiredCount ++;
+		__autoComputeDispatcherByRenderer.set( slimRenderer, dispatcher );
 	}
-	return wiredCount;
-}
-	const __dispatchedAutoComputeMaterials = new WeakSet();
-	const __frozenDispatchedAutoComputeNodes = new Set();
-	function __artifactHasUnwiredAnonymousNodeAttribute( artifact ) {
-		const attrs = artifact && ( artifact.attributes || artifact.nodeAttributes ) || [];
-		return attrs.some( ( entry ) => entry
-			&& entry.source === 'node'
-			&& entry.storage !== false
-			&& ! ( Array.isArray( entry.userPath ) && entry.userPath.length > 0 )
-			&& ! ( entry._liveAttribute && ( entry._liveAttribute.isStorageBufferAttribute === true || entry._liveAttribute.isStorageInstancedBufferAttribute === true ) ) );
-	}
-	function __invalidateAutoComputeMaterialBindings( material, renderer ) {
-		if ( ! material ) return;
-		material.needsUpdate = true;
-		try {
-			const nodes = renderer && renderer._nodes;
-			if ( nodes && typeof nodes.delete === 'function' ) nodes.delete( material );
-			const nc = nodes && nodes.nodeBuilderCache;
-			if ( nc && typeof nc.clear === 'function' ) nc.clear();
-		} catch ( _ ) {}
-		try { material.dispose(); } catch ( _ ) {}
-	}
-	function __dispatchAutoComputeNodes( scene, slimRenderer ) {
-		if ( ! scene || typeof scene.traverse !== 'function' ) return;
-	// Once the animation loop has self-frozen, the compute() wrapper forces an
-	// extra render each time the pending-compute count drains to 0 so the GPU
-	// buffer write is visible before the screenshot. Re-dispatching the kernel
-	// on those forced renders would keep the count oscillating 0→1→0 forever
-	// (compute → forced render → compute → …). Dispatch each node at most once
-	// during the frozen phase: the first forced render carries the final pose
-	// into the buffer; subsequent forced renders are no-ops here.
 	const frozen = typeof window !== 'undefined' && window.__tslpFrozen === true;
-	const seen = new Set();
-	scene.traverse( ( object ) => {
-		const material = object && object.material;
-		const list = Array.isArray( material ) ? material : material ? [ material ] : [];
-		for ( const m of list ) {
-			if ( ! m ) continue;
-			for ( const key of __AUTO_COMPUTE_SLOTS ) {
-				const node = m[ key ];
-				if ( ! node || node.isComputeNode !== true || node.isPrecompiledCompute === true ) continue;
-					if ( seen.has( node ) ) continue;
-					seen.add( node );
-					if ( ! __wiredAutoComputeMaterials.has( m ) ) {
-					// Only re-dispatch this kernel every frame if its output buffer
-					// actually feeds an unwired vertex attribute on this precompiled
-					// material (the webgpu_skinning_points pattern). When nothing
-					// wires up, the kernel result is never read by the precompiled
-					// render path, so dispatching is pointless — and risks breaking
-					// examples whose ComputeNode-shaped material slot is unrelated to
-					// the precompiled vertex layout (e.g. webgpu_skinning_instancing).
-						const wired = __wireAutoComputeAttrsToArtifact( m, node ) | 0;
-						if ( wired > 0 ) {
-							__dispatchedAutoComputeMaterials.add( m );
-							__invalidateAutoComputeMaterialBindings( m, slimRenderer );
-							__wiredAutoComputeMaterials.add( m );
-						} else if ( ! __computeRenderer && __artifactHasUnwiredAnonymousNodeAttribute( m.precompiledArtifact ) ) {
-							// First top-level render often reaches this before the shared full
-							// compute renderer exists. Dispatch once to boot it, then let the
-							// forced post-compute render retry the precise bind-group wiring.
-							__dispatchedAutoComputeMaterials.add( m );
-						} else {
-							__wiredAutoComputeMaterials.add( m );
-						}
-					}
-					if ( ! __dispatchedAutoComputeMaterials.has( m ) ) continue;
-				if ( frozen ) {
-					if ( __frozenDispatchedAutoComputeNodes.has( node ) ) continue;
-					__frozenDispatchedAutoComputeNodes.add( node );
-				}
-				try { slimRenderer.compute( node ); }
-				catch ( err ) { console.warn( '[tslp-e2e] auto-compute dispatch failed:', err && err.message || err ); }
-			}
-		}
-	} );
+	void dispatcher.dispatch( scene, {
+		fullRenderer: __computeRendererBySlim.get( slimRenderer ) || null,
+		shouldDispatch: () => slimRenderer.__tslpPostComputeRendering !== true,
+		dispatchOnce: frozen ? __frozenDispatchedAutoComputeNodes : undefined,
+		dispatchNode( node ) { return slimRenderer.compute( node ); },
+	} ).catch( ( err ) => console.warn( '[tslp-e2e] auto-compute dispatch failed:', err && err.message || err ) );
 }
 
 // Lazy full-three.js compute renderer that shares the slim renderer's GPU

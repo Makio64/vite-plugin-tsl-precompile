@@ -63,6 +63,19 @@ export {
 	shareInstancedAttributeBufferIntoSlim,
 } from './compute-sync.js';
 
+export {
+	AUTO_COMPUTE_MATERIAL_PROPERTIES,
+	MATERIAL_COMPUTE_BINDINGS,
+	AutoComputeBindingError,
+	collectMaterialComputeBindings,
+	collectWritableComputeStorageAttributes,
+	artifactHasUnwiredAnonymousComputeAttribute,
+	prepareMaterialComputeAttributes,
+	applyMaterialComputeAttributeBindings,
+	invalidateMaterialComputeBindings,
+	createAutoComputeDispatcher,
+} from './auto-compute.js';
+
 export { createFullRendererFallback } from './full-renderer-fallback.js';
 export { createSlimSceneSupport, pinClock, unpinClock } from './scene-support.js';
 export { TemporalFrameIdentityError, createTemporalNodeFrame, getTemporalFrameState, logicalFrameKey, shouldAdvanceTemporalState, withTemporalFrame } from './temporal-frame.js';

@@ -45,6 +45,7 @@ import { updateDynamicLightUniforms } from './hydrate/dynamic-light-buffers.js';
 import { selectArtifactVariant } from './hydrate/variants/artifact-variant-selector.js';
 import { logicalFrameKey, shouldAdvanceTemporalState } from './slim-support/temporal-frame.js';
 import { wireLiveNodeSidecarsToArtifact } from './slim-support/live-node-sidecars.js';
+import { applyMaterialComputeAttributeBindings } from './hydrate/material-compute-bindings.js';
 
 export { clearLiveTextureIndex, installTextureLoaderTracking, registerLiveTexture } from './hydrate/live-texture-registry.js';
 
@@ -116,11 +117,18 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 
 	}
 
+	// Material-owned ComputeNodes can expose writable attributes only through
+	// their compiled bind groups. Apply the dispatcher-discovered owner-local
+	// mapping immediately after exact variant selection. This proven mapping
+	// must precede the generic anonymous-node heuristic below; otherwise a
+	// same-shape render input (for example particle speed) can steal the compute
+	// output's position slot. A shared artifact still never retains the first
+	// material instance's GPU resource because `effective` is state-local.
+	applyMaterialComputeAttributeBindings( effective, material );
 	// Bind live BufferAttributes from the user's `*Node` material props
 	// (e.g. `material.positionNode = instancedBufferAttribute(buf)`) onto
-	// the artifact's node-attribute entries before hydration walks them.
-	// Idempotent and a no-op when capture didn't record `userPath` or the
-	// material has no matching node tree yet.
+	// remaining artifact node-attribute entries before hydration walks them.
+	// Explicit userPath entries are outside auto-compute eligibility.
 	bindUserNodeAttributesToArtifact( effective, graphMaterial );
 	applyCapturedInstancedDrawCount( effective, object || material && material.__tslpPrecompileObject || null );
 	// Same trick for compute-storage buffers wired through the user's
