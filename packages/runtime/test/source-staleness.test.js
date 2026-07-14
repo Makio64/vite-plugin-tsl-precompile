@@ -60,6 +60,26 @@ test( '__applyPrecompiled defers auto-marked graph freshness to the build call-s
 
 } );
 
+test( '__applyPrecompiled honors a generated source-slim call-site validation override', () => {
+
+	withDetectedThreeVersion( THREE_VERSION, () => {
+
+		const capturedMaterial = fakeMaterial();
+		const module = capturedModule( capturedMaterial, 'source-slim' );
+		module.artifact.sourceValidationMode = 'runtime-graph';
+		module.__sourceValidationMode = 'callsite';
+		const stubbedMaterial = fakeMaterial();
+		stubbedMaterial.colorNode = {
+			isNode: true,
+			constructor: { type: 'SlimInertNode' },
+		};
+
+		assert.doesNotThrow( () => __applyPrecompiled( stubbedMaterial, module, module.__hash ) );
+
+	} );
+
+} );
+
 test( '__applyPrecompiled rejects incomplete or old source-hash metadata', () => {
 
 	const material = fakeMaterial();

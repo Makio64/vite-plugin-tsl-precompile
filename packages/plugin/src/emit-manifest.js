@@ -32,6 +32,15 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 	const artifact = artifactJson.artifact || artifactJson;
 	const hash = artifactJson.__hash || artifact.__hash || manifestEntry.hash;
 	const name = artifactJson.__name || artifact.__name || manifestEntry.name || '';
+	// Source slim intentionally replaces application TSL nodes with inert
+	// runtime carriers, so a browser-side graph re-hash cannot equal the full
+	// graph captured in dev. Only opt into the call-site validation policy when
+	// the capture envelope contains the owners that the Babel transform already
+	// verified for this build.
+	const sourceValidationMode = opts.slim === 'source' &&
+		Array.isArray( artifactJson.__sourceOwners ) && artifactJson.__sourceOwners.length > 0
+		? 'callsite'
+		: null;
 
 	// Every variant owns its own uniformPlan, light identity table, and derived
 	// dynamic-binding descriptors. Inheriting any of them can pair the selected
@@ -72,6 +81,7 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 		'',
 		`export const __hash = ${ JSON.stringify( hash ) };`,
 		`export const name = ${ JSON.stringify( name ) };`,
+		`export const __sourceValidationMode = ${ JSON.stringify( sourceValidationMode ) };`,
 		...wgslDeclarations,
 		`export const artifact = ${ artifactLiteral };`,
 		`export const update = __generatedUpdate;`,
@@ -79,7 +89,7 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 		`export const __unsupportedKinds = ${ JSON.stringify( unsupportedKinds ) };`,
 		`export const dynamicBindings = artifact.dynamicBindings;`,
 		'',
-		`export default { __hash, name, artifact, update, updateGroup, __unsupportedKinds, dynamicBindings };`,
+		`export default { __hash, name, __sourceValidationMode, artifact, update, updateGroup, __unsupportedKinds, dynamicBindings };`,
 		'',
 	);
 

@@ -61,6 +61,7 @@ function assertCapturedSourceIsFresh( material, artifactModule, artifact, name )
 	const sourceHashVersion = metadataSource.sourceHashVersion;
 	const sourceThreeVersion = metadataSource.sourceThreeVersion;
 	const renderContextSignature = metadataSource.renderContextSignature;
+	const sourceValidationMode = artifactModule && artifactModule.__sourceValidationMode || metadataSource.sourceValidationMode;
 
 	if ( typeof sourceGraphHash !== 'string' || ! /^[a-f0-9]{64}$/i.test( sourceGraphHash ) ) {
 
@@ -91,12 +92,13 @@ function assertCapturedSourceIsFresh( material, artifactModule, artifact, name )
 		throw new Error( `[tsl-precompile] artifact "${ name }" was captured with three ${ sourceThreeVersion }, but this bundle uses three ${ detectedThreeVersion }. Recapture it with the installed three version.` );
 
 	}
-	if ( metadataSource.sourceValidationMode === 'callsite' ) {
+	if ( sourceValidationMode === 'callsite' ) {
 
 		// autoMark is rewritten at `new *NodeMaterial()`, before subsequent
-		// assignments configure the graph. The plugin validates its captured
-		// module/call-site revision at build time; recomputing here would compare
-		// a bare constructor against the fully configured dev material.
+		// assignments configure the graph. Source slim also replaces application
+		// TSL nodes with inert carriers. In both cases the plugin has already
+		// validated the captured module/call-site revision at build time, while a
+		// runtime graph comparison would necessarily inspect a different shape.
 		return;
 
 	}

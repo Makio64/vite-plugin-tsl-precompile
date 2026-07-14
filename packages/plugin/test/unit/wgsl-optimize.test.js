@@ -80,6 +80,26 @@ test( 'emitArtifactModule emits WGSL constants before the artifact literal', () 
 
 } );
 
+test( 'source slim emits a call-site freshness policy only for owned captures', () => {
+
+	const artifact = {
+		__hash: 'owned-hash',
+		__name: 'owned',
+		__sourceOwners: [ { identity: 'src/main.js:precompile:0', revision: 'a'.repeat( 64 ) } ],
+		artifact: {
+			uniformPlan: [],
+			vertexShader: 'vertex',
+			fragmentShader: 'fragment',
+		},
+	};
+	const owned = emitArtifactModule( { hash: artifact.__hash }, artifact, { slim: 'source' } ).source;
+	const legacy = emitArtifactModule( { hash: artifact.__hash }, { ...artifact, __sourceOwners: undefined }, { slim: 'source' } ).source;
+
+	assert.match( owned, /export const __sourceValidationMode = "callsite";/ );
+	assert.match( legacy, /export const __sourceValidationMode = null;/ );
+
+} );
+
 test( 'emitArtifactModule derives bindings and validates updater kinds for every variant', () => {
 
 	const slot = ( kind, byteOffset = 0 ) => ( {
