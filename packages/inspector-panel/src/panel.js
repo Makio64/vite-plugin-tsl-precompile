@@ -15,6 +15,7 @@
 
 import { Extension } from 'three/addons/inspector/Extension.js';
 import { listAllCaptures, summarise } from './data-source.js';
+import { captureRenderKey } from './render-key.js';
 
 const ICON_SVG = '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M2 3h12v2H2V3zm0 4h8v2H2V7zm0 4h12v2H2v-2z"/></svg>';
 
@@ -85,7 +86,7 @@ export class PrecompilePanel extends Extension {
 	_render() {
 
 		const captures = listAllCaptures();
-		const ids = captures.map( ( c ) => c.id + ':' + c.vertexBytes + ':' + c.fragmentBytes ).join( '|' );
+		const ids = captures.map( captureRenderKey ).join( '|' );
 
 		// Fast path: nothing changed, skip DOM work.
 		if ( this._lastRender.total === captures.length && this._lastRender.ids === ids ) return;
