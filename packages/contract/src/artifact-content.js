@@ -70,19 +70,36 @@ function canonicalArtifactContent( artifact ) {
 	const candidates = collectArtifactVariantCandidates( artifact );
 	if ( candidates.length === 0 || candidates.some( ( candidate ) => ! hasSemanticSelectors( candidate ) ) ) return artifact;
 
-	const groups = new Map();
-	for ( const candidate of candidates ) {
+	const records = candidates.map( ( candidate ) => {
 
 		// Variant views inherit omitted fields from the family root at runtime.
 		// Hash that same effective payload so compact and expanded captures agree.
-		let effective = createArtifactVariantPayload( { ...artifact, ...candidate } );
+		const effective = createArtifactVariantPayload( { ...artifact, ...candidate } );
 		delete effective.cacheKey;
 		delete effective.renderContextSelectors;
 		// sourceMaterial describes the author-facing capture owner, not a
 		// variant payload. It is root metadata and can differ between equivalent
 		// instances observed at the same callsite.
 		delete effective.sourceMaterial;
-		effective = remapEphemeralIdentityReferences( effective );
+		const selectors = [ ...new Set( candidate.renderContextSelectors.filter( ( selector ) => typeof selector === 'string' && selector.length > 0 ) ) ].sort();
+		const localPayload = remapEphemeralIdentityReferences( effective );
+		return {
+			effective,
+			selectors,
+			sortKey: `${ stableArtifactValue( localPayload, new Set() ) }\n${ stableArtifactValue( selectors, new Set() ) }`,
+		};
+
+	} );
+	records.sort( ( left, right ) => left.sortKey < right.sortKey ? - 1 : left.sortKey > right.sortKey ? 1 : 0 );
+
+	// Token allocation is shared across the deterministically ordered family.
+	// This preserves whether two variants reference one resource or distinct
+	// resources while remaining independent of capture-session UUID spelling.
+	const identityState = createIdentityRemapState();
+	const groups = new Map();
+	for ( const record of records ) {
+
+		const effective = remapEphemeralIdentityReferences( record.effective, identityState );
 		const fingerprint = stableArtifactValue( effective, new Set() );
 		let group = groups.get( fingerprint );
 		if ( group === undefined ) {
@@ -91,11 +108,7 @@ function canonicalArtifactContent( artifact ) {
 			groups.set( fingerprint, group );
 
 		}
-		for ( const selector of candidate.renderContextSelectors ) {
-
-			if ( typeof selector === 'string' && selector.length > 0 ) group.selectors.add( selector );
-
-		}
+		for ( const selector of record.selectors ) group.selectors.add( selector );
 
 	}
 
@@ -128,10 +141,15 @@ function canonicalArtifactContent( artifact ) {
  * preserving relational identity. Repeated references to one light/texture
  * retain one token; two distinct resources retain distinct tokens.
  */
-function remapEphemeralIdentityReferences( value ) {
+function createIdentityRemapState() {
 
-	const identities = new Map();
-	const nextByKind = new Map();
+	return { identities: new Map(), nextByKind: new Map() };
+
+}
+
+function remapEphemeralIdentityReferences( value, state = createIdentityRemapState() ) {
+
+	const { identities, nextByKind } = state;
 	const seen = new Map();
 	const visit = ( current, field = null ) => {
 

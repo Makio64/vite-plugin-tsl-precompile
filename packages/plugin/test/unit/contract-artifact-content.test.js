@@ -108,6 +108,40 @@ test( 'signed artifact content identity remaps ephemeral resource UUIDs relation
 
 } );
 
+test( 'signed artifact content identity preserves resource sharing across variants', () => {
+
+	const withTexture = ( cacheKey, selector, textureUuid ) => {
+
+		const capture = variant( cacheKey, 'shared-shader', [ selector ] );
+		capture.uniformPlan = [ {
+			textures: [ { source: { kind: 'artifact.texture', textureUuid } } ],
+		} ];
+		return capture;
+
+	};
+	const sharedA = withTexture( 'shared-a', SELECTOR_A, 'shared-texture' );
+	const sharedB = withTexture( 'shared-b', SELECTOR_B, 'shared-texture' );
+	const sharedFamily = family( sharedA, [ sharedA, sharedB ] );
+	const renamedA = withTexture( 'renamed-a', SELECTOR_A, 'renamed-shared-texture' );
+	const renamedB = withTexture( 'renamed-b', SELECTOR_B, 'renamed-shared-texture' );
+	const renamedSharedFamily = family( renamedB, [ renamedB, renamedA ] );
+	const distinctA = withTexture( 'distinct-a', SELECTOR_A, 'first-texture' );
+	const distinctB = withTexture( 'distinct-b', SELECTOR_B, 'second-texture' );
+	const distinctFamily = family( distinctA, [ distinctA, distinctB ] );
+
+	assert.equal(
+		createArtifactContentHashPayload( sharedFamily, OPTIONS ),
+		createArtifactContentHashPayload( renamedSharedFamily, OPTIONS ),
+		'family-scoped UUID renaming is deterministic across root and member order',
+	);
+	assert.notEqual(
+		createArtifactContentHashPayload( sharedFamily, OPTIONS ),
+		createArtifactContentHashPayload( distinctFamily, OPTIONS ),
+		'shared versus distinct resources across variants remain content-significant',
+	);
+
+} );
+
 test( 'signed artifact content identity retains selector-to-payload ownership', () => {
 
 	const red = variant( 'red-key', 'red', [ SELECTOR_A ] );
