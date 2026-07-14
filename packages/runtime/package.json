@@ -20,6 +20,12 @@
       "types": "./types/index.d.ts",
       "default": "./src/index.js"
     },
+    "./setup": {
+      "types": "./types/setup.d.ts",
+      "development": "./src/setup-development.js",
+      "production": "./src/setup-production.js",
+      "default": "./src/setup-production.js"
+    },
     "./core": {
       "types": "./types/core.d.ts",
       "default": "./src/core.js"

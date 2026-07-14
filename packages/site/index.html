@@ -368,18 +368,18 @@ pnpm add @tsl-precompile/runtime</code></pre>
 					<header><span>03</span><div><h3>Register the renderer, then mark a material</h3><p>The marker captures only after that material participates in a real render.</p></div></header>
 					<div class="code-block">
 						<button class="copy-btn" data-copy type="button" aria-label="Copy runtime setup">copy</button>
-						<pre><code><span class="tok-key">import</span> * <span class="tok-key">as</span> THREE <span class="tok-key">from</span> <span class="tok-str">'three/webgpu'</span>;
-<span class="tok-key">import</span> { setupPrecompile } <span class="tok-key">from</span> <span class="tok-str">'@tsl-precompile/runtime'</span>;
+						<pre><code><span class="tok-key">import</span> { WebGPURenderer, MeshStandardNodeMaterial, Mesh } <span class="tok-key">from</span> <span class="tok-str">'three/webgpu'</span>;
+<span class="tok-key">import</span> { setupPrecompile } <span class="tok-key">from</span> <span class="tok-str">'@tsl-precompile/runtime/setup'</span>;
 
-<span class="tok-key">const</span> renderer = <span class="tok-key">new</span> THREE.<span class="tok-fn">WebGPURenderer</span>();
-<span class="tok-key">const</span> setup = <span class="tok-fn">setupPrecompile</span>({ three: THREE, renderer });
+<span class="tok-key">const</span> renderer = <span class="tok-key">new</span> <span class="tok-fn">WebGPURenderer</span>();
+<span class="tok-key">const</span> setup = <span class="tok-fn">setupPrecompile</span>({ renderer });
 <span class="tok-key">await</span> renderer.<span class="tok-fn">init</span>();
 <span class="tok-key">await</span> setup.ready;
 
-<span class="tok-key">const</span> water = <span class="tok-key">new</span> THREE.<span class="tok-fn">MeshStandardNodeMaterial</span>();
+<span class="tok-key">const</span> water = <span class="tok-key">new</span> <span class="tok-fn">MeshStandardNodeMaterial</span>();
 water.colorNode = waterGraph;
 water.<span class="tok-fn">precompile</span>(<span class="tok-str">'ocean-water'</span>);
-scene.<span class="tok-fn">add</span>( <span class="tok-key">new</span> THREE.<span class="tok-fn">Mesh</span>( geometry, water ) );</code></pre>
+scene.<span class="tok-fn">add</span>( <span class="tok-key">new</span> <span class="tok-fn">Mesh</span>( geometry, water ) );</code></pre>
 					</div>
 				</article>
 

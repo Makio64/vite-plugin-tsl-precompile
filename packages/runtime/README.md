@@ -25,12 +25,11 @@ One call wires the marker + dev-capture renderer, with no init() ordering
 footgun:
 
 ```js
-import * as THREE from 'three/webgpu';
-import { WebGPURenderer, MeshStandardNodeMaterial } from 'three/webgpu';
-import { setupPrecompile } from '@tsl-precompile/runtime';
+import { WebGPURenderer, MeshStandardNodeMaterial, Scene, PerspectiveCamera, Mesh, SphereGeometry } from 'three/webgpu';
+import { setupPrecompile } from '@tsl-precompile/runtime/setup';
 
 const renderer = new WebGPURenderer();
-const setup = setupPrecompile( { three: THREE, renderer } );
+const setup = setupPrecompile( { renderer } );
 await renderer.init();
 await setup.ready;          // ← registers this renderer with the marker
 
@@ -38,9 +37,9 @@ const material = new MeshStandardNodeMaterial();
 // …configure colorNode…
 material.precompile( 'my-material' );
 
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera();
-scene.add( new THREE.Mesh( new THREE.SphereGeometry(), material ) );
+const scene = new Scene();
+const camera = new PerspectiveCamera();
+scene.add( new Mesh( new SphereGeometry(), material ) );
 renderer.setAnimationLoop( () => renderer.render( scene, camera ) );
 ```
 
@@ -53,17 +52,21 @@ material.precompile( 'my-material', { scene, camera, object: mesh } );
 ```
 
 In a production build the Vite plugin has already rewritten every
-`.precompile('name')` call to `__applyPrecompiled(...)`, and
-`setupPrecompile()` becomes a harmless no-op. Both `slim: true` and
-`slim: 'source'` entries export a sentinel so the helper short-circuits
-entirely.
+`.precompile('name')` call to `__applyPrecompiled(...)`. The conditional
+`/setup` entry resolves to a tiny no-op, so the development marker, auxiliary
+capture code, broad Three namespace, TSL graph, and node builder are not part
+of the production closure.
+
+The entry uses Vite's standard `development|production` export condition. If
+you override `resolve.conditions`, retain that condition; the package default
+intentionally selects the production no-op so unknown bundlers fail closed.
 
 `setupPrecompile()` accepts:
 
 | Option | Description |
 |---|---|
-| `three` | The `three/webgpu` namespace (e.g. `import * as THREE from 'three/webgpu'`). |
 | `renderer` | The `WebGPURenderer` instance — pass it before or after `init()`. |
+| `three` | Optional advanced namespace override. The active `three/webgpu` namespace is injected automatically. |
 | `devEndpoint` | Dev capture URL. Defaults to `'/__tsl-precompile/capture'` (the plugin's endpoint). |
 | `aux` | `true` or an opts object to also enable `captureAux()` for auxiliary passes (background, post-process, lights). Requires `scene` + `camera`. |
 | `scene`, `camera` | Required only when `aux` is truthy. |
@@ -76,7 +79,7 @@ For MRT / RenderPipeline scenes, pass the live `PassNode` when you capture aux
 artifacts so the extractor sees the multi-target layout:
 
 ```js
-const setup = setupPrecompile( { three: THREE, renderer, scene, camera, aux: true } );
+const setup = setupPrecompile( { renderer, scene, camera, aux: true } );
 await renderer.init();
 await setup.ready;
 
@@ -164,10 +167,10 @@ those misses:
 ## Exports
 
 ```js
-import {
-	// One-call setup (recommended)
-	setupPrecompile,
+// Recommended one-call boundary: development capture / production no-op.
+import { setupPrecompile } from '@tsl-precompile/runtime/setup';
 
+import {
 	// Lower-level pieces (kept stable for advanced callers)
 	installPrecompileMarker,
 	setDevRenderer,

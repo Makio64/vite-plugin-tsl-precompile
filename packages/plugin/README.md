@@ -38,13 +38,12 @@ export default defineConfig( {
 
 ```js
 // app entry
-import * as THREE from 'three/webgpu';
 import { WebGPURenderer, MeshStandardNodeMaterial } from 'three/webgpu';
 import { color, mix, uv } from 'three/tsl';
-import { setupPrecompile } from '@tsl-precompile/runtime';
+import { setupPrecompile } from '@tsl-precompile/runtime/setup';
 
 const renderer = new WebGPURenderer();
-const setup = setupPrecompile( { three: THREE, renderer } );
+const setup = setupPrecompile( { renderer } );
 await renderer.init();
 await setup.ready;
 

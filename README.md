@@ -73,13 +73,12 @@ export default defineConfig( {
 **App entry:**
 
 ```js
-import * as THREE from 'three/webgpu';
-import { WebGPURenderer, MeshStandardNodeMaterial } from 'three/webgpu';
+import { WebGPURenderer, MeshStandardNodeMaterial, Scene, PerspectiveCamera, Mesh, SphereGeometry } from 'three/webgpu';
 import { color, mix, uv } from 'three/tsl';
-import { setupPrecompile } from '@tsl-precompile/runtime';
+import { setupPrecompile } from '@tsl-precompile/runtime/setup';
 
 const renderer = new WebGPURenderer();
-const setup = setupPrecompile( { three: THREE, renderer } );
+const setup = setupPrecompile( { renderer } );
 await renderer.init();
 await setup.ready;          // ← registers this renderer with the marker
 
@@ -87,10 +86,10 @@ const material = new MeshStandardNodeMaterial();
 material.colorNode = mix( color( '#224' ), color( '#88c' ), uv().y );
 material.precompile( 'my-material' );    // ← the one line you add
 
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera( 45, innerWidth / innerHeight, 0.1, 100 );
+const scene = new Scene();
+const camera = new PerspectiveCamera( 45, innerWidth / innerHeight, 0.1, 100 );
 camera.position.z = 3;
-scene.add( new THREE.Mesh( new THREE.SphereGeometry(), material ) );
+scene.add( new Mesh( new SphereGeometry(), material ) );
 renderer.setAnimationLoop( () => renderer.render( scene, camera ) );
 ```
 
@@ -108,7 +107,7 @@ For MRT / `RenderPipeline` projects, enable aux capture and pass the live
 PassNode after you build the pass graph:
 
 ```js
-const setup = setupPrecompile( { three: THREE, renderer, scene, camera, aux: true } );
+const setup = setupPrecompile( { renderer, scene, camera, aux: true } );
 await setup.ready;
 
 const scenePass = pass( scene, camera ).setMRT( mrt( { output, normal } ) );

@@ -989,6 +989,22 @@ and do not import the root barrel's dev-only `three.Material` augmentation.
 Focused identity, shared-registry, declaration-isolation, packed-runtime,
 NodeNext type-resolution, and Rollup closure tests lock that boundary.
 
+**Conditional setup entry wedge (2026-07-13).** The recommended
+`@tsl-precompile/runtime/setup` subpath now has explicit Vite development and
+production halves. Development imports the resolved `three/webgpu` namespace
+inside the package and preserves synchronous marker installation, so app code
+uses named Three imports and calls `setupPrecompile({ renderer })`. Production
+resolves to a single inert module and never imports `setup.js`,
+`precompile-marker.js`, `aux-marker.js`, Three, TSL, or any builder path. The
+default condition also resolves to production, so unsupported/custom bundler
+condition sets fail closed instead of accidentally retaining the dev closure.
+The legacy root export remains unchanged for compatibility, but the canonical
+docs, runnable examples, site snippet, and fresh packed-project fixture now use
+the conditional subpath. Focused resolution, synchronous-dev behavior,
+production-contract, package-contents, declaration, Vite-build, and Rollup
+closure checks lock the boundary; the production microbundle is capped at
+4 KiB raw / 1.5 KiB gzip and currently measures 759 B raw / 432 B gzip.
+
 **Remaining.** `sideEffects` annotations in [`packages/runtime/package.json`](packages/runtime/package.json) (careful: `hydrator.js` has a real module-init side effect — `installLiveTextureRegistryPatches()`; list side-effectful files explicitly rather than `false`); lazy TSL/PassNode stub entries if the analyzer shows them dominating; opt-in on-disk artifact minification (low value — dev artifacts are gitignored test fixtures).
 
 **Files.** [core.js](packages/runtime/src/core.js), [core.d.ts](packages/runtime/types/core.d.ts), [core-entry.test.js](packages/runtime/test/core-entry.test.js), [package.json](packages/runtime/package.json), [slim-stubs.js](packages/runtime/src/slim-stubs.js), [slim-entry.js](packages/runtime/src/slim-entry.js), [index.js](packages/runtime/src/index.js), [slim-bundle.test.js](packages/plugin/test/unit/slim-bundle.test.js).

@@ -157,10 +157,9 @@ const INDEX_HTML = `<!doctype html>
 
 // Minimal TSL graph copied conceptually from packages/examples/getting-started.
 // Kept simple to keep the artifact small and stable.
-const MAIN_JS = `import * as THREE from 'three/webgpu';
-import { Scene, PerspectiveCamera, Mesh, TorusKnotGeometry, DirectionalLight, HemisphereLight, WebGPURenderer, MeshStandardNodeMaterial } from 'three/webgpu';
+const MAIN_JS = `import { Scene, PerspectiveCamera, Mesh, TorusKnotGeometry, DirectionalLight, HemisphereLight, WebGPURenderer, MeshStandardNodeMaterial } from 'three/webgpu';
 import { color, mix, uv } from 'three/tsl';
-import { setupPrecompile } from '@tsl-precompile/runtime';
+import { setupPrecompile } from '@tsl-precompile/runtime/setup';
 
 const status = document.getElementById( 'status' );
 const setStatus = ( msg ) => { if ( status ) status.textContent = msg; };
@@ -173,7 +172,7 @@ renderer.setPixelRatio( Math.min( 2, window.devicePixelRatio || 1 ) );
 renderer.setClearColor( 0x101418 );
 document.body.appendChild( renderer.domElement );
 
-const setup = setupPrecompile( { three: THREE, renderer } );
+const setup = setupPrecompile( { renderer } );
 await renderer.init();
 await setup.ready;
 setStatus( 'renderer ready' );
@@ -224,8 +223,9 @@ const TSCONFIG = JSON.stringify( {
 const TYPES_TEST = `import type {
 	SetupPrecompileOptions,
 	SetupPrecompileResult,
-} from '@tsl-precompile/runtime';
-import { setupPrecompile, writeF32 } from '@tsl-precompile/runtime';
+} from '@tsl-precompile/runtime/setup';
+import { setupPrecompile } from '@tsl-precompile/runtime/setup';
+import { writeF32 } from '@tsl-precompile/runtime';
 import {
 	__applyPrecompiled as applyPrecompiledCore,
 	getArtifact as getCoreArtifact,
@@ -234,7 +234,7 @@ import {
 	writeF32 as writeCoreF32,
 } from '@tsl-precompile/runtime/core';
 
-const opts: SetupPrecompileOptions = { three: {}, renderer: {} };
+const opts: SetupPrecompileOptions = { renderer: {} };
 const _r: SetupPrecompileResult = setupPrecompile( opts );
 void _r;
 

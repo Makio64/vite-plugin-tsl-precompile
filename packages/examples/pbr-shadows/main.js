@@ -12,12 +12,11 @@
  *   3. `pnpm build` — both materials ship as precompiled WGSL + UBO updaters.
  */
 
-import * as THREE from 'three/webgpu';
 import {
 	Scene, PerspectiveCamera, Mesh, SphereGeometry, PlaneGeometry,
 	DirectionalLight, HemisphereLight, WebGPURenderer, MeshStandardNodeMaterial,
 } from 'three/webgpu';
-import { setupPrecompile } from '@tsl-precompile/runtime';
+import { setupPrecompile } from '@tsl-precompile/runtime/setup';
 
 const status = document.getElementById( 'status' );
 const setStatus = ( msg ) => { status.textContent = msg; console.info( '[pbr-shadows]', msg ); };
@@ -31,7 +30,7 @@ renderer.setClearColor( 0x0a0d10 );
 renderer.shadowMap.enabled = true;
 document.body.appendChild( renderer.domElement );
 
-const setup = setupPrecompile( { three: THREE, renderer } );
+const setup = setupPrecompile( { renderer } );
 await renderer.init();
 await setup.ready;
 setStatus( 'renderer ready' );

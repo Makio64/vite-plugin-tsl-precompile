@@ -5,7 +5,8 @@
  * site at build time, so most exports here are only used in dev. The public API
  * surface a typical app needs is:
  *
- *   - `setupPrecompile({ three, renderer })` — one-call dev wiring (recommended).
+ *   - `setupPrecompile({ three, renderer })` — legacy root wiring. Prefer the
+ *     conditional `@tsl-precompile/runtime/setup` entry with `{ renderer }`.
  *   - `installPrecompileMarker(three, opts?)` + `setDevRenderer(renderer)` —
  *     manual wiring, for apps that need fine-grained control.
  *
@@ -63,7 +64,10 @@ export interface SetupPrecompileResult {
 	setRenderer: ( renderer: unknown ) => void;
 }
 
-/** One-call wiring for `.precompile()` dev capture. Idempotent and slim-mode-safe. */
+/**
+ * One-call wiring for `.precompile()` dev capture. Idempotent and slim-mode-safe.
+ * @deprecated Import `setupPrecompile` from `@tsl-precompile/runtime/setup` so production builds exclude development capture code.
+ */
 export function setupPrecompile( opts: SetupPrecompileOptions ): SetupPrecompileResult;
 
 // ---------- Marker (manual wiring) ----------

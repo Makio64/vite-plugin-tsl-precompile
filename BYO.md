@@ -55,11 +55,11 @@ export default defineConfig( {
 ## Wire the runtime once at app boot
 
 ```js
-import * as THREE from 'three/webgpu';
-import { setupPrecompile } from '@tsl-precompile/runtime';
+import { WebGPURenderer, MeshStandardNodeMaterial } from 'three/webgpu';
+import { setupPrecompile } from '@tsl-precompile/runtime/setup';
 
-const renderer = new THREE.WebGPURenderer();
-const setup = setupPrecompile( { three: THREE, renderer } );
+const renderer = new WebGPURenderer();
+const setup = setupPrecompile( { renderer } );
 await renderer.init();
 await setup.ready;     // registers this renderer with the .precompile() marker
 ```
@@ -71,7 +71,7 @@ await setup.ready;     // registers this renderer with the .precompile() marker
 For each material whose WGSL you want frozen:
 
 ```js
-const water = new THREE.MeshStandardNodeMaterial();
+const water = new MeshStandardNodeMaterial();
 water.colorNode = /* your TSL graph */;
 water.precompile( 'water' );      // ← one line per material
 ```
@@ -104,7 +104,6 @@ If your scene has a background node, post-processing, or PMREM environment, thre
 
 ```js
 const setup = setupPrecompile( {
-	three: THREE,
 	renderer,
 	scene,
 	camera,

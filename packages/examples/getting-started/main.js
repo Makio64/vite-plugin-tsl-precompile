@@ -12,10 +12,9 @@
  *      `__applyPrecompiled(...)` and ship the precompiled WGSL.
  */
 
-import * as THREE from 'three/webgpu';
 import { Scene, PerspectiveCamera, Mesh, TorusKnotGeometry, DirectionalLight, HemisphereLight, WebGPURenderer, MeshStandardNodeMaterial } from 'three/webgpu';
 import { color, mix, uv } from 'three/tsl';
-import { setupPrecompile } from '@tsl-precompile/runtime';
+import { setupPrecompile } from '@tsl-precompile/runtime/setup';
 
 const status = document.getElementById( 'status' );
 const setStatus = ( msg ) => { status.textContent = msg; console.info( '[getting-started]', msg ); };
@@ -32,7 +31,7 @@ document.body.appendChild( renderer.domElement );
 // renderer with the dev-capture flow once init() has resolved. In a prod
 // build the babel transform has already replaced .precompile() calls and
 // this helper becomes a harmless no-op.
-const setup = setupPrecompile( { three: THREE, renderer } );
+const setup = setupPrecompile( { renderer } );
 await renderer.init();
 await setup.ready;
 setStatus( 'renderer ready' );
