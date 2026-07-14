@@ -291,6 +291,110 @@ test( 'precompileAuxiliary prod no-op fires before fetch is attempted', async ()
 
 } );
 
+test( 'precompileAuxiliary captures a PassNode background against a disposable target clone', async () => {
+
+	let targetClone = null;
+	const liveTarget = {
+		depth: 3,
+		depthTexture: { image: { width: 640, height: 480 } },
+		disposed: false,
+		cloneCalls: 0,
+		clone() {
+
+			this.cloneCalls ++;
+			targetClone = {
+				depth: this.depth,
+				depthTexture: { image: { ...this.depthTexture.image } },
+				disposed: false,
+				setSizeCalls: [],
+				setSize( width, height, depth ) {
+
+					this.setSizeCalls.push( [ width, height, depth ] );
+
+				},
+				dispose() { this.disposed = true; },
+			};
+			return targetClone;
+
+		},
+		dispose() { this.disposed = true; },
+	};
+	const background = { __tslpAuxConfigHash: 'background-pass-target' };
+	const scene = {
+		background,
+		backgroundNode: null,
+		userData: {},
+		traverse() {},
+	};
+	const passNode = { isPassNode: true, scene, renderTarget: liveTarget };
+	let backgroundCompile = null;
+	const compileTSL = async ( _renderer, captureScene, _camera, options = {} ) => {
+
+		if ( options.captureRendererOutput ) {
+
+			const artifact = {
+				materialShape: 'output-transform',
+				uniformPlan: [ { textures: [ {
+					bindingKind: 'sampled-texture',
+					textureType: '2d',
+					source: { kind: 'artifact.texture', mapping: 300 },
+				} ] } ],
+				vertexShader: '',
+				fragmentShader: 'output',
+			};
+			const artifacts = [ artifact ];
+			Object.defineProperty( artifacts, 'renderOutputCapture', { value: {
+				artifact,
+				replayConfig: {
+					schema: 'renderer-output@1',
+					toneMapping: 0,
+					currentColorSpace: 'srgb',
+					sampledTexture: '2d',
+					multiview: false,
+				},
+			} } );
+			return artifacts;
+
+		}
+		backgroundCompile = { captureScene, options, cloneDisposedDuringCompile: targetClone && targetClone.disposed };
+		return [ {
+			materialShape: 'background',
+			uniformPlan: [],
+			vertexShader: '',
+			fragmentShader: 'background',
+		} ];
+
+	};
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = async () => ( { ok: true } );
+	__resetAuxRegistryForTests();
+	try {
+
+		const results = await precompileAuxiliary( {}, scene, {}, {
+			devEndpoint: '/capture',
+			threeVersion: '184',
+			compileTSL,
+			passNode,
+		} );
+		assert.equal( results.find( ( result ) => result.shape === 'background' ).ok, true );
+		assert.equal( liveTarget.cloneCalls, 1 );
+		assert.equal( backgroundCompile.options.noGlobalMRT, true );
+		assert.equal( backgroundCompile.options.renderTargetOverride, targetClone );
+		assert.equal( backgroundCompile.cloneDisposedDuringCompile, false );
+		assert.deepEqual( targetClone.setSizeCalls, [ [ 1, 1, 3 ] ] );
+		assert.deepEqual( targetClone.depthTexture.image, { width: 1, height: 1 } );
+		assert.equal( targetClone.disposed, true, 'capture clone is released' );
+		assert.equal( liveTarget.disposed, false, 'live pass target remains caller-owned' );
+
+	} finally {
+
+		__resetAuxRegistryForTests();
+		globalThis.fetch = originalFetch;
+
+	}
+
+} );
+
 test( 'precompileAuxiliary captures effects observed only through live update nodes', async () => {
 
 	class NodeMaterial {

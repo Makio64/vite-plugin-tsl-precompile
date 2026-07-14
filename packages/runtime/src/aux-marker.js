@@ -556,11 +556,31 @@ async function captureBackgroundLive( renderer, scene, camera, opts ) {
 	aux.background = scene.background;
 
 	const mrtNode = opts.mrtNode || scene && scene.userData && scene.userData.__tslp_mrtNode || null;
+	const passNode = opts.passNode && opts.passNode.isPassNode && opts.passNode.scene === scene ? opts.passNode : null;
+	const renderTargetOverride = cloneRenderTargetForCapture( passNode && passNode.renderTarget );
 
 	// Plain aux scenes must not inherit a global MRT from the host renderer,
 	// but PassNode MRT backgrounds do need the explicit pass descriptor so the
-	// sky material emits the same multi-output fragment as the live pass.
-	const artifacts = await compileTSL( renderer, aux, camera, mrtNode ? { mrtNode } : { noGlobalMRT: true } );
+	// sky material emits the same multi-output fragment as the live pass. A
+	// background rendered by a non-MRT PassNode still owns an offscreen target;
+	// compile against a structural clone so its target selector and output
+	// format match without clearing or disposing the live pass resources.
+	const compileOpts = mrtNode ? { mrtNode } : { noGlobalMRT: true };
+	if ( renderTargetOverride ) compileOpts.renderTargetOverride = renderTargetOverride;
+	let artifacts;
+	try {
+
+		artifacts = await compileTSL( renderer, aux, camera, compileOpts );
+
+	} finally {
+
+		if ( renderTargetOverride ) {
+
+			try { renderTargetOverride.dispose(); } catch ( _ ) {}
+
+		}
+
+	}
 	const mesh = renderer._background && typeof renderer._background.get === 'function' ? renderer._background.get( aux ).backgroundMesh : null;
 	let artifact = null;
 	for ( const a of artifacts ) {
