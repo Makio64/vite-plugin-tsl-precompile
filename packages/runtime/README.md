@@ -197,6 +197,9 @@ Subpath entries: `@tsl-precompile/runtime/core`, `/writers`, `/marker`,
 the uniform writers for advanced AOT integrations. Plugin-generated modules
 continue to import the narrower `/apply`, `/loader`, and `/writers` entries so
 applications do not pay for unused parts of the combined convenience surface.
+The `/apply` entry selects the shared artifact-schema validator in development;
+production retains the artifact-hash and source-graph freshness checks without
+shipping the schema registry.
 
 ## More
 

@@ -108,7 +108,7 @@ Ships with the user's bundle. Runtime only.
 
 - `src/precompile-marker.js` — `Material.prototype.precompile`. In dev, calls the extractor + POSTs artifact. In prod, replaced by transform.
 - `src/auxiliary/cube-render-target-capture.js` — isolated dev-only owner for CubeRenderTarget's temporary graph, exact face camera, compile-lock coordination, source-state restoration, and capture-resource disposal; `aux-marker.js` remains discovery/registration/persistence orchestration.
-- `src/apply-precompiled.js` — `__applyPrecompiled` helper injected by transform.
+- `src/apply-precompiled.js` / `src/apply-precompiled-development.js` — conditional `__applyPrecompiled` boundary injected by the transform. Production keeps hash and live source-graph freshness gates; development additionally loads the shared artifact-schema validator.
 - `src/slim-replay-renderer-context.js` — graph-free renderer context/cache identity and explicit high-precision state for replay; it preserves the narrow `RenderObject` invalidation protocol without constructing a TSL `ContextNode`.
 - `src/slim-replay-lighting.js` — graph-free per-scene light state used by RenderList and semantic variant selection.
 - `src/slim-replay-node-manager.js` — compiler-free render/compute state manager; hydrates artifacts directly and caches by material identity plus semantic topology.

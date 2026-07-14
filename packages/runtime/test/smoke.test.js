@@ -9,6 +9,7 @@ import { hydrateNodeBuilderState, registerLiveTexture, clearLiveTextureIndex } f
 import { setTextureResolutionDebugHook } from '../src/hydrate/artifact-texture-resolver.js';
 import { installLiveTextureRegistryPatches } from '../src/hydrate/live-texture-registry.js';
 import { __applyPrecompiled, catalogueArtifactTextureRefs, collectLiveMaterialTextures } from '../src/apply-precompiled.js';
+import { __applyPrecompiled as applyPrecompiledDevelopment } from '../src/apply-precompiled-development.js';
 import PrecompiledMaterial from '../src/_vendor-PrecompiledMaterial.js';
 import { PrecompiledComputeNode } from '../src/precompiled-compute-node.js';
 import {
@@ -1620,30 +1621,21 @@ test( '__applyPrecompiled preserves source clipping controls during adoption', (
 
 } );
 
-test( '__applyPrecompiled validates artifact source kinds when runtime validation is enabled', () => {
+test( 'development apply entry validates artifact source kinds', () => {
 
-	globalThis.__TSLP_VALIDATE_ARTIFACTS = true;
-	try {
-
-		assert.throws( () => __applyPrecompiled( { name: 'bad' }, {
+	assert.throws( () => applyPrecompiledDevelopment( { name: 'bad' }, {
+		__hash: 'sha256:bad',
+		name: 'bad',
+		artifact: {
 			__hash: 'sha256:bad',
-			name: 'bad',
-			artifact: {
-				__hash: 'sha256:bad',
-				uniformPlan: [ {
-					name: 'object',
-					slots: [ { source: { kind: 'mystery.kind' } } ],
-				} ],
-				vertexShader: 'v',
-				fragmentShader: 'f',
-			},
-		}, 'sha256:bad' ), /unknown source\.kind "mystery\.kind"/ );
-
-	} finally {
-
-		delete globalThis.__TSLP_VALIDATE_ARTIFACTS;
-
-	}
+			uniformPlan: [ {
+				name: 'object',
+				slots: [ { source: { kind: 'mystery.kind' } } ],
+			} ],
+			vertexShader: 'v',
+			fragmentShader: 'f',
+		},
+	}, 'sha256:bad' ), /unknown source\.kind "mystery\.kind"/ );
 
 } );
 

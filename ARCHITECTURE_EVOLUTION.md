@@ -684,7 +684,7 @@ Earlier wedges. [`packages/runtime/src/hydrate/texture-resolver.js`](packages/ru
 
 Wire it so the **plugin build fails** when an artifact has a `source.kind` not in `KINDS`, and the **runtime validates artifacts on load in dev mode**.
 
-**Status (2026-05-12).** Contract wedge landed. [`packages/contract/src/texture-props.js`](packages/contract/src/texture-props.js) now exports `MATERIAL_TEXTURE_PROPS`, `NODE_GRAPH_TEXTURE_KEYS`, and `MATERIAL_NODE_TEXTURE_KEYS`; runtime, hydrator, and the E2E harness import the shared arrays. [`packages/contract/src/kinds.js`](packages/contract/src/kinds.js) now exports `KINDS`, `BLOCKED_KINDS`, kind lookup helpers, `collectArtifactSourceKinds()`, and `validateArtifact()`. [`packages/contract/src/dynamic-bindings.js`](packages/contract/src/dynamic-bindings.js) now describes live/dynamic source descriptors and `validateArtifact()` enforces required descriptor fields. `emit-updater` imports the blocked-kind reasons from the shared registry, root `pnpm verify` validates the checked-in example artifact payloads against the registry, and `__applyPrecompiled` can validate artifacts in dev / `__TSLP_VALIDATE_ARTIFACTS` mode. The validator currently cross-checks 45 checked-in package artifact JSON files plus 464 batch artifact JSON files with zero schema/source-kind failures.
+**Status (2026-05-12; production boundary tightened 2026-07-13).** Contract wedge landed. [`packages/contract/src/texture-props.js`](packages/contract/src/texture-props.js) now exports `MATERIAL_TEXTURE_PROPS`, `NODE_GRAPH_TEXTURE_KEYS`, and `MATERIAL_NODE_TEXTURE_KEYS`; runtime, hydrator, and the E2E harness import the shared arrays. [`packages/contract/src/kinds.js`](packages/contract/src/kinds.js) now exports `KINDS`, `BLOCKED_KINDS`, kind lookup helpers, `collectArtifactSourceKinds()`, and `validateArtifact()`. [`packages/contract/src/dynamic-bindings.js`](packages/contract/src/dynamic-bindings.js) now describes live/dynamic source descriptors and `validateArtifact()` enforces required descriptor fields. `emit-updater` imports the blocked-kind reasons from the shared registry, root `pnpm verify` validates the checked-in example artifact payloads against the registry, and the conditional runtime `/apply` entry performs the same broad schema validation in development. Production keeps the artifact hash and live source-graph freshness gates but excludes the `contract/kinds` schema closure. The validator currently cross-checks 45 checked-in package artifact JSON files plus 464 batch artifact JSON files with zero schema/source-kind failures.
 
 **Next step.** Push the dynamic descriptor registry deeper into extractor/runtime internals: emit explicit artifact-level dynamic bindings, then make the hydrator binding-kind split (P0.2) consume those descriptors instead of local string branches.
 
@@ -1004,6 +1004,17 @@ the conditional subpath. Focused resolution, synchronous-dev behavior,
 production-contract, package-contents, declaration, Vite-build, and Rollup
 closure checks lock the boundary; the production microbundle is capped at
 4 KiB raw / 1.5 KiB gzip and currently measures 759 B raw / 432 B gzip.
+
+**Conditional apply entry wedge (2026-07-13).** The transform-owned
+`@tsl-precompile/runtime/apply` subpath now resolves to a development wrapper
+that runs the shared artifact-schema validator and a production/default entry
+that omits that registry. The production implementation still enforces the
+module hash and recomputes the captured source-graph hash; only the generic
+schema pass that is already exercised during development and repository
+verification is split away; plugin code generation keeps its existing
+fail-closed kind gates. On the real getting-started source build this removes
+about 23.8 KiB raw / 6.0 KiB gzip while retaining zero compiler,
+stock-adapter, or Node-runtime modules.
 
 **Remaining.** `sideEffects` annotations in [`packages/runtime/package.json`](packages/runtime/package.json) (careful: `hydrator.js` has a real module-init side effect — `installLiveTextureRegistryPatches()`; list side-effectful files explicitly rather than `false`); lazy TSL/PassNode stub entries if the analyzer shows them dominating; opt-in on-disk artifact minification (low value — dev artifacts are gitignored test fixtures).
 

@@ -44,6 +44,8 @@
     },
     "./apply": {
       "types": "./types/apply-precompiled.d.ts",
+      "development": "./src/apply-precompiled-development.js",
+      "production": "./src/apply-precompiled.js",
       "default": "./src/apply-precompiled.js"
     },
     "./loader": {

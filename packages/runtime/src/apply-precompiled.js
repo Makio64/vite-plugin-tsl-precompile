@@ -29,38 +29,10 @@ import {
 	MATERIAL_TEXTURE_PROPS as _TEXTURE_PROPS,
 	NODE_GRAPH_TEXTURE_KEYS as _NODE_GRAPH_KEYS,
 } from '@tsl-precompile/contract/texture-props';
-import { validateArtifact } from '@tsl-precompile/contract/kinds';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { hashMaterialSync } from './graph-hash.js';
 
 const _NODE_TEXTURE_FIELDS = [ 'value', 'texture', '_value', '_texture', '_pmrem', 'renderTarget' ];
-
-function shouldValidateArtifact() {
-
-	const globalFlag = typeof globalThis !== 'undefined' ? globalThis.__TSLP_VALIDATE_ARTIFACTS : undefined;
-	if ( globalFlag === true ) return true;
-	if ( globalFlag === false ) return false;
-	try {
-
-		return import.meta && import.meta.env && import.meta.env.DEV === true;
-
-	} catch ( _ ) {
-
-		return false;
-
-	}
-
-}
-
-function validateArtifactInDev( artifact, label ) {
-
-	if ( ! shouldValidateArtifact() ) return;
-	const result = validateArtifact( artifact, { label } );
-	if ( result.ok ) return;
-	const summary = result.errors.map( ( error ) => `  - ${ error.message }` ).join( '\n' );
-	throw new Error( `[tsl-precompile] invalid artifact "${ label || '<unnamed>' }":\n${ summary }` );
-
-}
 
 const SOURCE_HASH_FIELDS = Object.freeze( [
 	'sourceGraphHash',
@@ -361,6 +333,26 @@ export function catalogueArtifactTextureRefs( artifact, sourceMaterial ) {
  */
 export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 
+	return applyPrecompiled( material, artifactModule, expectedHash, null );
+
+}
+
+/**
+ * Internal bridge used only by the conditional development entry. Keeping
+ * this separate preserves the public three-argument apply contract and lets
+ * production tree-shake the schema-validation hook entirely.
+ *
+ * @internal
+ */
+export function __applyPrecompiledWithValidation( material, artifactModule, expectedHash, validateArtifactHook ) {
+
+	if ( typeof validateArtifactHook !== 'function' ) throw new TypeError( '__applyPrecompiledWithValidation: validation hook must be a function.' );
+	return applyPrecompiled( material, artifactModule, expectedHash, validateArtifactHook );
+
+}
+
+function applyPrecompiled( material, artifactModule, expectedHash, validateArtifactHook ) {
+
 	if ( ! artifactModule || typeof artifactModule !== 'object' ) {
 
 		throw new Error( '[tsl-precompile] __applyPrecompiled: artifactModule is missing. Did the virtual module resolver run?' );
@@ -377,7 +369,7 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 	const artifact = artifactModule.artifact || artifactModule;
 	const name = artifactModule.name || artifact.__name;
 	assertCapturedSourceIsFresh( material, artifactModule, artifact, name );
-	validateArtifactInDev( artifact, name );
+	if ( validateArtifactHook ) validateArtifactHook( artifact, name );
 	if ( artifactModule.__hash && ! artifact.__hash ) {
 
 		Object.defineProperty( artifact, '__hash', { value: artifactModule.__hash, enumerable: false, configurable: true } );

@@ -6,9 +6,11 @@ import { join, resolve } from 'node:path';
 
 import { build as viteBuild, createServer } from 'vite';
 
+import tslPrecompile from '../../src/index.js';
+
 const EXAMPLE_ROOT = resolve( new URL( '../../../examples/getting-started', import.meta.url ).pathname );
 
-test( 'Vite resolves runtime setup to development capture only while serving', async () => {
+test( 'Vite resolves runtime setup and apply entries to development only while serving', async () => {
 
 	const cacheDir = await mkdtemp( join( tmpdir(), 'tslp-setup-vite-dev-' ) );
 	const originalNodeEnv = process.env.NODE_ENV;
@@ -33,10 +35,59 @@ test( 'Vite resolves runtime setup to development capture only while serving', a
 		);
 		assert.ok( resolved );
 		assert.match( resolved.id, /\/src\/setup-development\.js$/ );
+		const resolvedApply = await container.resolveId(
+			'@tsl-precompile/runtime/apply',
+			resolve( EXAMPLE_ROOT, 'main.js' ),
+		);
+		assert.ok( resolvedApply );
+		assert.match( resolvedApply.id, /\/src\/apply-precompiled-development\.js$/ );
 
 	} finally {
 
 		if ( server ) await server.close();
+		if ( originalNodeEnv === undefined ) delete process.env.NODE_ENV;
+		else process.env.NODE_ENV = originalNodeEnv;
+		await rm( cacheDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'Vite slim-source production excludes development apply schema validation', async () => {
+
+	const cacheDir = await mkdtemp( join( tmpdir(), 'tslp-apply-vite-build-' ) );
+	const originalNodeEnv = process.env.NODE_ENV;
+	delete process.env.NODE_ENV;
+	try {
+
+		const result = await viteBuild( {
+			configFile: false,
+			root: EXAMPLE_ROOT,
+			cacheDir,
+			logLevel: 'silent',
+			plugins: [ tslPrecompile( { artifactsDir: './artifacts', slim: 'source' } ) ],
+			build: {
+				write: false,
+				target: 'esnext',
+				minify: false,
+			},
+		} );
+		const outputs = Array.isArray( result )
+			? result.flatMap( ( item ) => item.output || [] )
+			: result.output;
+		const chunks = outputs.filter( ( item ) => item.type === 'chunk' );
+		const moduleIds = chunks.flatMap( ( chunk ) => Object.entries( chunk.modules || {} )
+			.filter( ( [ , info ] ) => info.renderedLength > 0 )
+			.map( ( [ id ] ) => id.replaceAll( '\\', '/' ) ) );
+
+		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/src/apply-precompiled.js' ) ), true );
+		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/src/apply-precompiled-development.js' ) ), false );
+		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/packages/contract/src/kinds.js' ) ), false );
+		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/src/graph-hash.js' ) ), true, 'source freshness must stay in production' );
+		assert.equal( moduleIds.some( ( id ) => /\/three\/build\/three\.(?:webgpu|core|tsl)\.js$/.test( id ) ), false );
+
+	} finally {
+
 		if ( originalNodeEnv === undefined ) delete process.env.NODE_ENV;
 		else process.env.NODE_ENV = originalNodeEnv;
 		await rm( cacheDir, { recursive: true, force: true } );
