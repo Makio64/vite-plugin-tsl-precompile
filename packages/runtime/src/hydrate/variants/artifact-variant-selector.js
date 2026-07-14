@@ -73,6 +73,7 @@ function selectSingletonArtifact( artifact, selection ) {
 	if ( selector ) {
 
 		if ( candidateSelectors( artifact, profile ).includes( selector ) ) return artifact;
+		if ( transparentDoubleSideSiblingCandidates( selector, [ artifact ], profile ).length === 1 ) return artifact;
 		throw selectorMiss( selector, [ artifact ], profile );
 
 	}
@@ -123,8 +124,10 @@ function computeArtifactVariant( artifact, variants, selection ) {
 		if ( selector ) {
 
 			const matches = signedCandidates.filter( ( candidate ) => candidateSelectors( candidate, profile ).includes( selector ) );
-			if ( matches.length === 0 ) throw selectorMiss( selector, signedCandidates, profile );
-			return chooseSemanticCandidate( matches, targetCount, selector );
+			if ( matches.length > 0 ) return chooseSemanticCandidate( matches, targetCount, selector );
+			const siblingMatches = transparentDoubleSideSiblingCandidates( selector, signedCandidates, profile );
+			if ( siblingMatches.length > 0 ) return chooseSemanticCandidate( siblingMatches, targetCount, selector );
+			throw selectorMiss( selector, signedCandidates, profile );
 
 		}
 
@@ -263,6 +266,52 @@ function candidateSelectors( candidate, profile ) {
 	return candidate.renderContextSelectors
 		.filter( ( selector ) => typeof selector === 'string' && selector.length > 0 )
 		.map( ( selector ) => projectRenderObjectContextSelector( selector, profile ) );
+
+}
+
+/**
+ * Three's transparent DoubleSide compile path builds the actual FrontSide and
+ * BackSide RenderObjects asynchronously. compileAsync can restore the live
+ * material to DoubleSide before those queued objects are described, even
+ * though the captured payload is valid for both real draw passes. Treat that
+ * restored state as an alias only when one payload proves both exact siblings;
+ * every other selector axis remains byte-for-byte identical and fail-closed.
+ */
+function transparentDoubleSideSiblingCandidates( selector, candidates, profile ) {
+
+	const siblings = transparentDoubleSideSiblingSelectors( selector );
+	if ( ! siblings ) return [];
+	return candidates.filter( ( candidate ) => {
+
+		const available = new Set( candidateSelectors( candidate, profile ) );
+		return siblings.every( ( sibling ) => available.has( sibling ) );
+
+	} );
+
+}
+
+function transparentDoubleSideSiblingSelectors( selector ) {
+
+	let descriptor;
+	try {
+
+		descriptor = JSON.parse( selector );
+		if ( stableJsonStringify( descriptor, 'renderObjectSelector' ) !== selector ) return null;
+
+	} catch ( _ ) {
+
+		return null;
+
+	}
+	const material = descriptor && ! Array.isArray( descriptor ) && descriptor.version === 'render-object-selector@1' && descriptor.material;
+	if ( ! material || typeof material !== 'object' || Array.isArray( material )
+		|| material.side !== 2
+		|| material.transparent !== true
+		|| material.forceSinglePass !== false ) return null;
+	return [ 0, 1 ].map( ( side ) => stableJsonStringify( {
+		...descriptor,
+		material: { ...material, side },
+	}, 'renderObjectSelector' ) );
 
 }
 

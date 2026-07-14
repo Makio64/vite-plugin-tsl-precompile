@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
+
 import {
 	ArtifactVariantSelectionError,
 	selectArtifactVariant,
@@ -64,6 +66,102 @@ test( 'signed singleton artifacts also fail on an uncaptured topology', () => {
 	assert.throws(
 		() => selectArtifactVariant( artifact, { cacheKey: 'single' } ),
 		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_UNAVAILABLE',
+	);
+
+} );
+
+test( 'transparent DoubleSide compile selectors accept one payload with both draw-side aliases', () => {
+
+	const front = transparentSideSelector( 0 );
+	const back = transparentSideSelector( 1 );
+	const double = transparentSideSelector( 2 );
+	const artifact = signedArtifact( [ front, back ] );
+	assert.equal( selectArtifactVariant( artifact, { renderContextSelector: double } ), artifact );
+
+} );
+
+test( 'transparent DoubleSide compile selectors require complete sibling proof', () => {
+
+	const front = transparentSideSelector( 0 );
+	const back = transparentSideSelector( 1 );
+	const double = transparentSideSelector( 2 );
+	assert.throws(
+		() => selectArtifactVariant( signedArtifact( [ front ] ), { renderContextSelector: double } ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+		'a singleton with only one real draw side is insufficient',
+	);
+
+	const split = signedArtifact( [ front ], {
+		variants: {
+			front: signedArtifact( [ front ], { cacheKey: 'front', fragmentShader: 'front' } ),
+			back: signedArtifact( [ back ], { cacheKey: 'back', fragmentShader: 'back' } ),
+		},
+	} );
+	assert.throws(
+		() => selectArtifactVariant( split, { renderContextSelector: double } ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+		'aliases split across divergent payloads do not prove one reusable shader',
+	);
+	assert.throws(
+		() => selectArtifactVariant( signedArtifact( [ '{ malformed', front ] ), { renderContextSelector: double } ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+		'malformed captured aliases fail as a typed selector miss',
+	);
+
+} );
+
+test( 'transparent DoubleSide compile selectors retain every unrelated topology axis', () => {
+
+	const artifact = signedArtifact( [ transparentSideSelector( 0 ), transparentSideSelector( 1 ) ] );
+	assert.throws(
+		() => selectArtifactVariant( artifact, {
+			renderContextSelector: transparentSideSelector( 2, { target: { surface: 'default', sampleCount: 1 } } ),
+		} ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+	);
+	assert.throws(
+		() => selectArtifactVariant( artifact, { renderContextSelector: transparentSideSelector( 2, { material: { transparent: false } } ) } ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+		'opaque DoubleSide is not the transparent two-pass compile race',
+	);
+	assert.throws(
+		() => selectArtifactVariant( artifact, { renderContextSelector: transparentSideSelector( 2, { material: { forceSinglePass: true } } ) } ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+		'forced single-pass DoubleSide has no front/back sibling pair',
+	);
+
+} );
+
+test( 'transparent DoubleSide compile selectors reject divergent payloads with the same sibling aliases', () => {
+
+	const selectors = [ transparentSideSelector( 0 ), transparentSideSelector( 1 ) ];
+	const artifact = signedArtifact( selectors, {
+		variants: {
+			first: signedArtifact( selectors, { cacheKey: 'first', fragmentShader: 'first' } ),
+			second: signedArtifact( selectors, { cacheKey: 'second', fragmentShader: 'second' } ),
+		},
+	} );
+	assert.throws(
+		() => selectArtifactVariant( artifact, { renderContextSelector: transparentSideSelector( 2 ) } ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_AMBIGUOUS',
+	);
+
+} );
+
+test( 'transparent DoubleSide compile selectors accept equivalent sibling-owning candidates', () => {
+
+	const selectors = [ transparentSideSelector( 0 ), transparentSideSelector( 1 ) ];
+	const first = signedArtifact( selectors, { cacheKey: 'first' } );
+	const artifact = {
+		...first,
+		variants: {
+			first,
+			second: { ...first, cacheKey: 'second' },
+		},
+	};
+	assert.equal(
+		selectArtifactVariant( artifact, { renderContextSelector: transparentSideSelector( 2 ) } ).fragmentShader,
+		'fragment',
 	);
 
 } );
@@ -383,6 +481,36 @@ function family() {
 				dynamicBindings: [ { kind: 'variant-b' } ],
 			},
 		},
+	};
+
+}
+
+function transparentSideSelector( side, overrides = {} ) {
+
+	const descriptor = {
+		version: 'render-object-selector@1',
+		target: { surface: 'offscreen-2d', sampleCount: 1 },
+		object: { instanced: false },
+		material: { side, transparent: true, forceSinglePass: false },
+	};
+	return stableJsonStringify( {
+		...descriptor,
+		...overrides,
+		material: { ...descriptor.material, ...( overrides.material || {} ) },
+	}, 'renderObjectSelector' );
+
+}
+
+function signedArtifact( renderContextSelectors, overrides = {} ) {
+
+	return {
+		cacheKey: 'single',
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		uniformPlan: [],
+		bindings: [],
+		renderContextSelectors,
+		...overrides,
 	};
 
 }
