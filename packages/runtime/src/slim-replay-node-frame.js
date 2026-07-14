@@ -5,13 +5,16 @@
  * its frame/render/object update cadence plus the live renderer context, so
  * this class preserves that lifecycle without retaining Three's node core.
  */
+
+import { getTemporalFrameState } from './slim-support/temporal-frame.js';
+
 class ReplayNodeFrame {
 
 	constructor() {
 
-		this.time = 0;
+		this.t = 0;
 		this.deltaTime = 0;
-		this.frameId = 0;
+		this.f = 0;
 		this.renderId = 0;
 		this.updateMap = new WeakMap();
 		this.updateBeforeMap = new WeakMap();
@@ -24,10 +27,34 @@ class ReplayNodeFrame {
 
 	}
 
-	_getMaps( referenceMap, nodeRef ) {
+	get time() {
+
+		return getTemporalFrameState( this )?.time ?? this.t;
+
+	}
+
+	set time( value ) {
+
+		this.t = value;
+
+	}
+
+	get frameId() {
+
+		return getTemporalFrameState( this )?.frameId ?? this.f;
+
+	}
+
+	set frameId( value ) {
+
+		this.f = value;
+
+	}
+
+	_maps( referenceMap, nodeRef ) {
 
 		let maps = referenceMap.get( nodeRef );
-		if ( maps === undefined ) {
+		if ( ! maps ) {
 
 			maps = { renderId: 0, frameId: 0 };
 			referenceMap.set( nodeRef, maps );
@@ -37,31 +64,31 @@ class ReplayNodeFrame {
 
 	}
 
-	_runUpdate( node, typeMethod, method, referenceMap, stampBefore ) {
+	_run( node, typeMethod, method, referenceMap, stampBefore ) {
 
 		const updateType = node[ typeMethod ]();
 		const reference = node.updateReference( this );
 		if ( updateType === 'object' ) {
 
-			node[ method ]( this );
-			return;
+			return node[ method ]( this );
 
 		}
 
-		const stamp = updateType === 'frame' ? 'frameId' : updateType === 'render' ? 'renderId' : null;
-		if ( stamp === null ) return;
-		const maps = this._getMaps( referenceMap, reference );
-		if ( maps[ stamp ] === this[ stamp ] ) return;
+		const stamp = updateType === 'frame' ? 'frameId' : updateType === 'render' ? 'renderId' : '';
+		if ( ! stamp ) return;
+		const maps = this._maps( referenceMap, reference );
+		const stampValue = this[ stamp ];
+		if ( maps[ stamp ] === stampValue ) return;
 
 		if ( stampBefore ) {
 
 			const previous = maps[ stamp ];
-			maps[ stamp ] = this[ stamp ];
+			maps[ stamp ] = stampValue;
 			if ( node[ method ]( this ) === false ) maps[ stamp ] = previous;
 
 		} else if ( node[ method ]( this ) !== false ) {
 
-			maps[ stamp ] = this[ stamp ];
+			maps[ stamp ] = stampValue;
 
 		}
 
@@ -69,29 +96,33 @@ class ReplayNodeFrame {
 
 	updateBeforeNode( node ) {
 
-		this._runUpdate( node, 'getUpdateBeforeType', 'updateBefore', this.updateBeforeMap, true );
+		this._run( node, 'getUpdateBeforeType', 'updateBefore', this.updateBeforeMap, true );
 
 	}
 
 	updateAfterNode( node ) {
 
-		this._runUpdate( node, 'getUpdateAfterType', 'updateAfter', this.updateAfterMap, false );
+		this._run( node, 'getUpdateAfterType', 'updateAfter', this.updateAfterMap, false );
 
 	}
 
 	updateNode( node ) {
 
-		this._runUpdate( node, 'getUpdateType', 'update', this.updateMap, false );
+		this._run( node, 'getUpdateType', 'update', this.updateMap, false );
 
 	}
 
 	update() {
 
-		this.frameId ++;
-		if ( this.lastTime === undefined ) this.lastTime = performance.now();
-		this.deltaTime = ( performance.now() - this.lastTime ) / 1000;
-		this.lastTime = performance.now();
-		this.time += this.deltaTime;
+		// Never increment through the public accessors: an active temporal scope
+		// may expose a string frame ID and a pinned logical time. Three still owns
+		// this physical RAF clock, which becomes visible again after the scope.
+		this.f ++;
+		const now = performance.now();
+		if ( this.lastTime === undefined ) this.lastTime = now;
+		this.deltaTime = ( now - this.lastTime ) / 1000;
+		this.lastTime = now;
+		this.t += this.deltaTime;
 
 	}
 

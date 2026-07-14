@@ -511,7 +511,7 @@ export default {
 		threeRewritePlugin,
 		terser( {
 			ecma: 2020,
-			compress: { passes: 2, pure_getters: true },
+			compress: { passes: 3, pure_getters: true },
 			mangle: true,
 			format: { comments: false },
 		} ),

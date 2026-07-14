@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import ReplayNodeFrame from '../src/slim-replay-node-frame.js';
+import { shouldAdvanceTemporalState, withTemporalFrame } from '../src/slim-support/temporal-frame.js';
 
 const PHASES = Object.freeze( [
 	{ dispatch: 'updateBeforeNode', type: 'getUpdateBeforeType', callback: 'updateBefore' },
@@ -164,5 +165,70 @@ test( 'replay NodeFrame advances elapsed time and frame identity', () => {
 	assert.ok( Number.isFinite( frame.lastTime ) );
 	assert.ok( frame.deltaTime >= 0 );
 	assert.equal( frame.time, frame.deltaTime );
+
+} );
+
+test( 'replay NodeFrame exposes logical frame identity and time without replacing its physical clock', () => {
+
+	const renderer = {};
+	const frame = new ReplayNodeFrame();
+	frame.renderer = renderer;
+	frame.frameId = 91;
+	frame.renderId = 17;
+	frame.time = 1.25;
+
+	withTemporalFrame( renderer, { frameId: 'logical-frame', renderId: 'scheduled-pass', time: 8.5 }, () => {
+
+		assert.equal( frame.frameId, 'logical-frame' );
+		assert.equal( frame.renderId, 17, 'render cadence remains owned by the physical renderer' );
+		assert.equal( frame.time, 8.5 );
+		frame.update();
+		assert.equal( frame.frameId, 'logical-frame', 'physical RAF updates stay hidden inside the logical scope' );
+		assert.equal( frame.time, 8.5 );
+
+	} );
+
+	assert.equal( frame.frameId, 92 );
+	assert.equal( frame.renderId, 17 );
+	assert.ok( frame.time >= 1.25 && frame.time < 8.5, 'physical time continues instead of accumulating from the logical pin' );
+
+} );
+
+test( 'replay NodeFrame deduplicates FRAME work logically while preserving every physical RENDER update', () => {
+
+	const renderer = {};
+	const frame = new ReplayNodeFrame();
+	frame.renderer = renderer;
+	let frameCalls = 0;
+	const renderCalls = [];
+	const frameNode = updateNode( PHASES[ 1 ], 'frame', () => frameCalls ++ );
+	const renderNode = updateNode( PHASES[ 1 ], 'render', ( currentFrame ) => renderCalls.push( {
+		renderId: currentFrame.renderId,
+		advance: shouldAdvanceTemporalState( currentFrame ),
+	} ) );
+
+	for ( const [ renderId, advance ] of [ [ 10, true ], [ 11, true ], [ 12, false ] ] ) {
+
+		frame.renderId = renderId;
+		withTemporalFrame( renderer, {
+			frameId: 'shared-logical-frame',
+			renderId: 'scheduler-' + renderId,
+			time: 2,
+			advance,
+		}, () => {
+
+			frame.updateNode( frameNode );
+			frame.updateNode( renderNode );
+
+		} );
+
+	}
+
+	assert.equal( frameCalls, 1 );
+	assert.deepEqual( renderCalls, [
+		{ renderId: 10, advance: true },
+		{ renderId: 11, advance: true },
+		{ renderId: 12, advance: false },
+	] );
 
 } );

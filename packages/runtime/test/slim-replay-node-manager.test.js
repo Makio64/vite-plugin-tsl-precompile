@@ -6,6 +6,7 @@ import ReplayNodeFrame from '../src/slim-replay-node-frame.js';
 import PrecompiledMaterial from '../src/_vendor-PrecompiledMaterial.js';
 import { createReplayShadowMaterial } from '../src/slim-replay-shadow-material.js';
 import { setSlimRenderFallback } from '../src/slim-support/render-fallback-registry.js';
+import { shouldAdvanceTemporalState, withTemporalFrame } from '../src/slim-support/temporal-frame.js';
 import { createRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
 
 function fakeRenderer() {
@@ -89,6 +90,32 @@ test( 'replay NodeManager exposes the renderer active-light list on its NodeFram
 	assert.equal( frame.material, live.material );
 	assert.equal( frame.lightsNode, live.lightsNode );
 	assert.equal( frame.renderObject, live );
+
+} );
+
+test( 'replay NodeManager projects an active temporal scope onto live update callbacks', () => {
+
+	const renderer = fakeRenderer();
+	const manager = new ReplayNodeManager( renderer, renderer.backend );
+	const live = renderObject( renderer, material() );
+	const physicalFrame = manager.getNodeFrameForRender( live );
+	physicalFrame.frameId = 41;
+	physicalFrame.renderId = 7;
+	physicalFrame.time = 1;
+
+	withTemporalFrame( renderer, { frameId: 'logical', renderId: 'scheduler', time: 8.5, advance: false }, () => {
+
+		const frame = manager.getNodeFrameForRender( live );
+		assert.equal( frame.frameId, 'logical' );
+		assert.equal( frame.time, 8.5 );
+		assert.equal( frame.renderId, 7 );
+		assert.equal( shouldAdvanceTemporalState( frame ), false );
+
+	} );
+
+	assert.equal( physicalFrame.frameId, 41 );
+	assert.equal( physicalFrame.time, 1 );
+	assert.equal( physicalFrame.renderId, 7 );
 
 } );
 
