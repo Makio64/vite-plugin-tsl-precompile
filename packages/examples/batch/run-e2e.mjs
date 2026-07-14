@@ -8720,6 +8720,15 @@ function __buildShadowScene( userScene ) {
 			try {
 				if ( standinMaterial.color && typeof standinMaterial.color.setHex === 'function' ) standinMaterial.color.setHex( 0xffffff );
 			} catch ( _ ) {}
+			const shadowMaterials = __shadowSourceMaterials( o.material );
+			const sourceMaterial = shadowMaterials.find( ( mat ) => mat && mat.__tslpSourceMaterial === undefined ) || shadowMaterials[ 0 ] || null;
+			const exactPositionNode = sourceMaterial && (
+				sourceMaterial.castShadowPositionNode && sourceMaterial.castShadowPositionNode.isNode === true
+					? sourceMaterial.castShadowPositionNode
+					: sourceMaterial.positionNode && sourceMaterial.positionNode.isNode === true
+						? sourceMaterial.positionNode
+						: null
+			);
 			let standin = null;
 			if ( o.isInstancedMesh === true && FullInstancedMesh ) {
 				const count = o.count || o.instanceMatrix && o.instanceMatrix.count || 1;
@@ -8744,9 +8753,16 @@ function __buildShadowScene( userScene ) {
 				standin = o.isSkinnedMesh === true
 					? __makeSkinnedShadowProxy( o, standinMaterial )
 					: null;
-				standin = standin || __makeShaderInstancedShadowProxy( o, fullGeometry, standinMaterial ) || new FullMesh( fullGeometry, standinMaterial );
+				// A captured position graph that reads instanced node attributes is
+				// already the exact instancing transform. Keep it on a plain Mesh:
+				// synthesizing an InstancedMesh would apply instanceMatrix first and
+				// then apply the graph's offsets a second time in NodeMaterial.
+				standin = standin || ( exactPositionNode
+					? new FullMesh( fullGeometry, standinMaterial )
+					: __makeShaderInstancedShadowProxy( o, fullGeometry, standinMaterial ) || new FullMesh( fullGeometry, standinMaterial ) );
 				__copyMorphStateForFullRenderer( o, standin );
 			}
+			if ( o.count !== undefined ) standin.count = o.count;
 			standin.castShadow = !! o.castShadow;
 			standin.receiveShadow = !! o.receiveShadow;
 			standin.visible = o.visible !== false;
@@ -8759,8 +8775,6 @@ function __buildShadowScene( userScene ) {
 			if ( o.layers && standin.layers ) standin.layers.mask = o.layers.mask;
 			standin.frustumCulled = false;
 			// Carry alpha-related fields that the depth pass uses.
-			const shadowMaterials = __shadowSourceMaterials( o.material );
-			const sourceMaterial = shadowMaterials.find( ( mat ) => mat && mat.__tslpSourceMaterial === undefined ) || shadowMaterials[ 0 ] || null;
 			if ( sourceMaterial ) {
 				for ( const key of [ 'side', 'shadowSide', 'alphaTest', 'transparent', 'opacity', 'depthTest', 'depthWrite', 'clipShadows', 'clippingPlanes' ] ) {
 					if ( sourceMaterial[ key ] !== undefined ) standin.material[ key ] = sourceMaterial[ key ];
@@ -8819,8 +8833,8 @@ function __refreshShadowScene( userScene, shadowScene ) {
 		if ( src.layers && clone.layers ) clone.layers.mask = src.layers.mask;
 		clone.visible = src.visible !== false;
 		__copyMorphStateForFullRenderer( src, clone );
+		if ( src.count !== undefined ) clone.count = src.count;
 		if ( src.isInstancedMesh === true && clone.isInstancedMesh === true ) {
-			clone.count = src.count || clone.count;
 			if ( src.instanceMatrix && clone.instanceMatrix && clone.instanceMatrix.array !== src.instanceMatrix.array ) {
 				try {
 					clone.instanceMatrix.array.set( src.instanceMatrix.array );
