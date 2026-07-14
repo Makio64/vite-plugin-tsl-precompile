@@ -361,7 +361,7 @@ async function writeArtifact( artifactsDir, manifestPath, payload ) {
 		...( sourceIdentity ? { sourceIdentity: sourceIdentity.value, sourceIdentityKind: sourceIdentity.kind } : {} ),
 		...( sourceOwners.length > 0 ? { sourceOwners } : {} ),
 	};
-	if ( await captureJsonFileMatches( filepath, storedArtifact ) && captureManifestEntryMatches( existing, manifestEntry ) ) {
+	if ( await captureJsonFileMatches( filepath, storedArtifact, { contentShape: `material:${ payload.name }` } ) && captureManifestEntryMatches( existing, manifestEntry ) ) {
 
 		await pruneStaleCaptures( artifactsDir, payload.name, filename );
 		return { name: payload.name, hash: payload.hash, file: filename, changed: false };
@@ -502,13 +502,39 @@ async function atomicWriteFile( filepath, body ) {
 
 }
 
-async function captureJsonFileMatches( filepath, value ) {
+async function captureJsonFileMatches( filepath, value, opts = {} ) {
 
 	if ( ! existsSync( filepath ) ) return false;
 	try {
 
 		const stored = JSON.parse( await readFile( filepath, 'utf8' ) );
-		return stableJsonStringify( stored, 'stored capture' ) === stableJsonStringify( value, 'incoming capture' );
+		if ( stableJsonStringify( stored, 'stored capture' ) === stableJsonStringify( value, 'incoming capture' ) ) return true;
+		if ( typeof opts.contentShape !== 'string' || opts.contentShape.length === 0 ) return false;
+
+		// Fully signed artifact families can be semantically identical while
+		// Three's private cache keys and capture-session UUIDs differ. The current
+		// content hash proves payload equivalence; compare the wrapper separately
+		// so source-owner additions still update the stored envelope.
+		const storedArtifact = stored && stored.artifact;
+		const incomingArtifact = value && value.artifact;
+		if ( ! storedArtifact || ! incomingArtifact ) return false;
+		if ( storedArtifact.artifactContentHashVersion !== ARTIFACT_CONTENT_HASH_VERSION ||
+			incomingArtifact.artifactContentHashVersion !== ARTIFACT_CONTENT_HASH_VERSION ) return false;
+		const storedEnvelope = { ...stored };
+		const incomingEnvelope = { ...value };
+		delete storedEnvelope.artifact;
+		delete incomingEnvelope.artifact;
+		if ( stableJsonStringify( storedEnvelope, 'stored capture envelope' ) !== stableJsonStringify( incomingEnvelope, 'incoming capture envelope' ) ) return false;
+
+		const threeVersion = storedArtifact.sourceThreeVersion;
+		const toolchainVersion = storedArtifact.sourceHashVersion;
+		if ( typeof threeVersion !== 'string' || typeof toolchainVersion !== 'string' ) return false;
+		if ( incomingArtifact.sourceThreeVersion !== threeVersion || incomingArtifact.sourceHashVersion !== toolchainVersion ) return false;
+		return computeArtifactContentHash( storedArtifact, {
+			shape: opts.contentShape,
+			threeVersion,
+			pluginVersion: toolchainVersion,
+		} ) === value.__hash;
 
 	} catch ( _ ) {
 

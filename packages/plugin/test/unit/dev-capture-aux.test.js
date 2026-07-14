@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { attachDevCapture } from '../../src/dev-capture-server.js';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
+import { computeArtifactContentHash } from '../../src/hash.js';
 
 function makeFakeViteServer( options = {} ) {
 
@@ -163,6 +164,82 @@ test( 'dev-capture: identical user recapture is a file and HMR no-op', async () 
 		assert.equal( readFileSync( join( artifactsDir, artifactFile ), 'utf8' ), artifactBefore );
 		assert.equal( readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' ), manifestBefore );
 		assert.equal( vite._invalidated.length, 1, 'only the first capture invalidates the virtual module' );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: equivalent signed recapture ignores private cache and UUID churn', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-semantic-user-' ) );
+	const moduleId = '\0virtual:tsl-precompile/signed-repeatable';
+	const vite = makeFakeViteServer( { moduleId } );
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+	const sourceRevision = 'e'.repeat( 64 );
+	const selector = '{"version":"render-object-selector@1","target":{"surface":"default"}}';
+	const makeArtifact = ( cacheKey, textureUuid ) => ( {
+		version: 3,
+		cacheKey,
+		materialShape: 'node-material',
+		renderContextSelectors: [ selector ],
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		bindings: [],
+		uniformPlan: [ { textures: [ { source: { kind: 'artifact.texture', textureUuid } } ] } ],
+		artifactContentHashVersion: ARTIFACT_CONTENT_HASH_VERSION,
+		sourceGraphHash: 'f'.repeat( 64 ),
+		sourceHashVersion: '0.1.0',
+		sourceThreeVersion: '0.184.0',
+		renderContextSignature: selector,
+		sourceValidationMode: 'runtime-graph',
+	} );
+
+	try {
+
+		const firstArtifact = makeArtifact( 'private-cache-a', 'capture-texture-a' );
+		const firstHash = computeArtifactContentHash( firstArtifact, {
+			shape: 'material:signed-repeatable',
+			threeVersion: '0.184.0',
+			pluginVersion: '0.1.0',
+		} );
+		const first = await postJSON( port, '/__tsl-precompile/capture', {
+			name: 'signed-repeatable',
+			hash: firstHash,
+			sourceIdentity: 'src/material.js:precompile:0',
+			sourceRevision,
+			artifact: firstArtifact,
+		} );
+		assert.equal( first.status, 200 );
+		assert.equal( first.json.changed, true );
+		const artifactBefore = readFileSync( join( artifactsDir, first.json.file ), 'utf8' );
+		const manifestBefore = readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' );
+
+		const repeatedArtifact = makeArtifact( 'private-cache-b', 'capture-texture-b' );
+		const repeatedHash = computeArtifactContentHash( repeatedArtifact, {
+			shape: 'material:signed-repeatable',
+			threeVersion: '0.184.0',
+			pluginVersion: '0.1.0',
+		} );
+		assert.equal( repeatedHash, firstHash );
+		const repeated = await postJSON( port, '/__tsl-precompile/capture', {
+			name: 'signed-repeatable',
+			hash: repeatedHash,
+			sourceIdentity: 'src/material.js:precompile:0',
+			sourceRevision,
+			artifact: repeatedArtifact,
+		} );
+
+		assert.equal( repeated.status, 200 );
+		assert.equal( repeated.json.changed, false );
+		assert.equal( readFileSync( join( artifactsDir, first.json.file ), 'utf8' ), artifactBefore );
+		assert.equal( readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' ), manifestBefore );
+		assert.equal( vite._invalidated.length, 1 );
 
 	} finally {
 

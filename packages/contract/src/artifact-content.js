@@ -1,3 +1,9 @@
+import {
+	ARTIFACT_VARIANT_FIELDS,
+	collectArtifactVariantCandidates,
+	createArtifactVariantPayload,
+} from './artifact-variants.js';
+
 const ROOT_METADATA_FIELDS = new Set( [
 	'__hash',
 	'__name',
@@ -10,7 +16,15 @@ const ROOT_METADATA_FIELDS = new Set( [
 	'userMaterialUuid',
 ] );
 
-export const ARTIFACT_CONTENT_HASH_VERSION = 'artifact-content@2';
+const ARTIFACT_FAMILY_FIELDS = new Set( [ ...ARTIFACT_VARIANT_FIELDS, 'variants' ] );
+const SIGNED_ROOT_ROUTING_FIELDS = new Set( [ 'renderContextSignature' ] );
+const EPHEMERAL_IDENTITY_FIELDS = Object.freeze( {
+	captureUuid: 'light',
+	lightUuid: 'light',
+	textureUuid: 'texture',
+} );
+
+export const ARTIFACT_CONTENT_HASH_VERSION = 'artifact-content@3';
 
 /**
  * Canonical payload for the hard artifact identity gate.
@@ -34,8 +48,135 @@ export function createArtifactContentHashPayload( artifact, opts = {} ) {
 		`shape=${ JSON.stringify( shape ) }`,
 		`three=${ JSON.stringify( threeVersion ) }`,
 		`toolchain=${ JSON.stringify( toolchainVersion ) }`,
-		stableArtifactValue( artifact, new Set() ),
+		stableArtifactValue( canonicalArtifactContent( artifact ), new Set() ),
 	].join( '\n' );
+
+}
+
+/**
+ * Signed families route by reproducible render-context selectors, not Three's
+ * process-private cache keys. Represent them as an ordered set of effective
+ * semantic payloads, merging selector aliases for equivalent payloads. This
+ * makes singleton/family layout, cache-key spelling, and duplicate captures
+ * irrelevant without losing the selector-to-shader relationship.
+ *
+ * Unsigned and partially-signed artifacts retain their legacy representation:
+ * runtime selection still depends on cacheKey for those families, and invalid
+ * partial families must not accidentally acquire a signed identity.
+ */
+function canonicalArtifactContent( artifact ) {
+
+	if ( ! artifact || typeof artifact !== 'object' || Array.isArray( artifact ) ) return artifact;
+	const candidates = collectArtifactVariantCandidates( artifact );
+	if ( candidates.length === 0 || candidates.some( ( candidate ) => ! hasSemanticSelectors( candidate ) ) ) return artifact;
+
+	const groups = new Map();
+	for ( const candidate of candidates ) {
+
+		// Variant views inherit omitted fields from the family root at runtime.
+		// Hash that same effective payload so compact and expanded captures agree.
+		let effective = createArtifactVariantPayload( { ...artifact, ...candidate } );
+		delete effective.cacheKey;
+		delete effective.renderContextSelectors;
+		// sourceMaterial describes the author-facing capture owner, not a
+		// variant payload. It is root metadata and can differ between equivalent
+		// instances observed at the same callsite.
+		delete effective.sourceMaterial;
+		effective = remapEphemeralIdentityReferences( effective );
+		const fingerprint = stableArtifactValue( effective, new Set() );
+		let group = groups.get( fingerprint );
+		if ( group === undefined ) {
+
+			group = { payload: effective, selectors: new Set() };
+			groups.set( fingerprint, group );
+
+		}
+		for ( const selector of candidate.renderContextSelectors ) {
+
+			if ( typeof selector === 'string' && selector.length > 0 ) group.selectors.add( selector );
+
+		}
+
+	}
+
+	const variants = [ ...groups.values() ].map( ( { payload, selectors } ) => ( {
+		...payload,
+		renderContextSelectors: [ ...selectors ].sort(),
+	} ) );
+	variants.sort( ( left, right ) => {
+
+		const leftValue = stableArtifactValue( left, new Set() );
+		const rightValue = stableArtifactValue( right, new Set() );
+		return leftValue < rightValue ? - 1 : leftValue > rightValue ? 1 : 0;
+
+	} );
+
+	const canonical = {};
+	for ( const key of Object.keys( artifact ) ) {
+
+		if ( ARTIFACT_FAMILY_FIELDS.has( key ) || SIGNED_ROOT_ROUTING_FIELDS.has( key ) ) continue;
+		canonical[ key ] = artifact[ key ];
+
+	}
+	canonical.variants = variants;
+	return canonical;
+
+}
+
+/**
+ * Replace capture-session UUIDs with deterministic per-payload tokens while
+ * preserving relational identity. Repeated references to one light/texture
+ * retain one token; two distinct resources retain distinct tokens.
+ */
+function remapEphemeralIdentityReferences( value ) {
+
+	const identities = new Map();
+	const nextByKind = new Map();
+	const seen = new Map();
+	const visit = ( current, field = null ) => {
+
+		const kind = field && EPHEMERAL_IDENTITY_FIELDS[ field ];
+		if ( kind && typeof current === 'string' && current.length > 0 ) {
+
+			const identityKey = `${ kind }\0${ current }`;
+			let token = identities.get( identityKey );
+			if ( token === undefined ) {
+
+				const next = nextByKind.get( kind ) || 0;
+				nextByKind.set( kind, next + 1 );
+				token = `<${ kind }-identity:${ next }>`;
+				identities.set( identityKey, token );
+
+			}
+			return token;
+
+		}
+		if ( current === null || typeof current !== 'object' ) return current;
+		if ( seen.has( current ) ) return seen.get( current );
+		const clone = Array.isArray( current ) ? [] : {};
+		seen.set( current, clone );
+		if ( Array.isArray( current ) ) {
+
+			for ( const item of current ) clone.push( visit( item ) );
+
+		} else {
+
+			// Sorted traversal makes first-reference token assignment independent
+			// of object insertion order while array/binding order stays semantic.
+			for ( const key of Object.keys( current ).sort() ) clone[ key ] = visit( current[ key ], key );
+
+		}
+		return clone;
+
+	};
+	return visit( value );
+
+}
+
+function hasSemanticSelectors( candidate ) {
+
+	return !! candidate && Array.isArray( candidate.renderContextSelectors )
+		&& candidate.renderContextSelectors.some( ( selector ) => typeof selector === 'string' && selector.length > 0 );
 
 }
 
