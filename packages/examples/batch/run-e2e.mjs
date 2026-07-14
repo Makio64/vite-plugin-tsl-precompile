@@ -1406,10 +1406,12 @@ async function __flush() {
 	// capture with the next item's temporary MRT removal races on the shared
 	// scene.userData descriptor and can silently lose that main MRT variant.
 	for ( const item of pendingItems ) {
+		const sceneUserData = item.scene && item.scene.userData;
 		const sceneMRT = item.mrt;
 		if ( sceneMRT ) {
 			const currentMRT = typeof __renderer.getMRT === 'function' ? __renderer.getMRT() : null;
 			const colorMaterial = item.material && typeof item.material.clone === 'function' ? item.material.clone() : item.material;
+			let removedSceneMRT = false;
 			try {
 				if ( item.scene ) Object.defineProperty( colorMaterial, '__tslpPrecompileScene', { value: item.scene, configurable: true } );
 				if ( item.object ) Object.defineProperty( colorMaterial, '__tslpPrecompileObject', { value: item.object, configurable: true } );
@@ -1417,7 +1419,10 @@ async function __flush() {
 				if ( Object.prototype.hasOwnProperty.call( item.material, '__tslpArrayCamera' ) ) Object.defineProperty( colorMaterial, '__tslpArrayCamera', { value: item.material.__tslpArrayCamera, configurable: true } );
 			} catch ( _ ) {}
 			try {
-				delete sceneUserData.__tslp_mrtNode;
+				if ( sceneUserData && sceneUserData.__tslp_mrtNode === sceneMRT ) {
+					delete sceneUserData.__tslp_mrtNode;
+					removedSceneMRT = true;
+				}
 				colorMaterial.mrtNode = null;
 				colorMaterial.needsUpdate = true;
 				if ( typeof __renderer.setMRT === 'function' ) __renderer.setMRT( null );
@@ -1433,7 +1438,7 @@ async function __flush() {
 			} catch ( err ) {
 				console.error( '[tslp-e2e] non-MRT precompile failed:', err );
 			} finally {
-				sceneUserData.__tslp_mrtNode = sceneMRT;
+				if ( removedSceneMRT && sceneUserData.__tslp_mrtNode === undefined ) sceneUserData.__tslp_mrtNode = sceneMRT;
 				if ( typeof __renderer.setMRT === 'function' ) __renderer.setMRT( currentMRT );
 			}
 		}
