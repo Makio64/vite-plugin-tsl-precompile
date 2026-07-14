@@ -11,7 +11,6 @@ export const ARTIFACT_VARIANT_FIELDS = Object.freeze( [
 	'renderContextSelectors',
 	'materialShape',
 	'bindingOwner',
-	'sourceMaterial',
 	'vertexShader',
 	'fragmentShader',
 	'computeShader',
@@ -134,10 +133,10 @@ export function mergeArtifactVariantFamily( target, artifacts ) {
 	for ( const input of inputs ) {
 
 		if ( ! input || typeof input !== 'object' ) continue;
-		const nested = input.variants && typeof input.variants === 'object' && ! Array.isArray( input.variants )
-			? Object.values( input.variants )
-			: [];
-		for ( const candidate of [ input, ...nested ] ) addFamilyCandidate( records, candidate );
+		// A family map contains the authoritative payload for its represented
+		// root cache key. Do not also merge the root envelope: it can carry
+		// capture-only metadata that is intentionally absent from variants.
+		for ( const candidate of collectArtifactVariantCandidates( input ) ) addFamilyCandidate( records, candidate );
 
 	}
 	if ( records.size === 0 ) return target;

@@ -68,6 +68,23 @@ test( 'artifact variant family order is independent of capture arrival order', (
 
 } );
 
+test( 'represented roots self-merge without treating capture metadata as variant payload', () => {
+
+	const root = artifact( 'root', 'root-shadow', [ '{}' ] );
+	const sibling = artifact( 'sibling', 'sibling-shadow', [ '{"sibling":true}' ] );
+	root.variants = {
+		root: createArtifactVariantPayload( root ),
+		sibling: createArtifactVariantPayload( sibling ),
+	};
+	root.sourceMaterial = { type: 'MeshStandardNodeMaterial', object: { castShadow: true } };
+
+	assert.doesNotThrow( () => mergeArtifactVariantFamily( root, root ) );
+	assert.deepEqual( Object.keys( root.variants ), [ 'root', 'sibling' ] );
+	assert.deepEqual( root.sourceMaterial, { type: 'MeshStandardNodeMaterial', object: { castShadow: true } } );
+	assert.equal( createArtifactVariantPayload( root ).sourceMaterial, undefined );
+
+} );
+
 test( 'artifact variant family fails closed when one cache key identifies divergent payloads', () => {
 
 	const first = artifact( 7, 'first', [ '{}' ] );
