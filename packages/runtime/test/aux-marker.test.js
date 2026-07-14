@@ -4,6 +4,11 @@ import assert from 'node:assert/strict';
 import { precompileAuxiliary } from '../src/aux-marker.js';
 import { hashPlainConfigSync } from '../src/graph-hash.js';
 import { __resetAuxRegistryForTests, hasAux } from '../src/aux-loader.js';
+import {
+	__resetRenderObjectHarvestHandoffForTests,
+	publishRenderObjectHarvest,
+	takeRenderObjectHarvest,
+} from '../src/auxiliary/render-object-harvest-handoff.js';
 import { createCubeRenderTargetAuxConfig } from '@tsl-precompile/contract/cube-render-target';
 
 function silentInfo() {
@@ -582,9 +587,11 @@ test( 'precompileAuxiliary preserves every shadow material family and unions equ
 		'point-key': { ...point },
 	};
 
+	let receivedHarvest = null;
 	const compileTSL = async ( _renderer, _scene, _camera, options = {} ) => {
 
 		if ( options.captureRendererOutput ) throw new Error( 'no renderer output in focused shadow fixture' );
+		receivedHarvest = options.renderObjectHarvest;
 		return [ sharedDirectional, directional, sharedPoint, point ];
 
 	};
@@ -600,6 +607,9 @@ test( 'precompileAuxiliary preserves every shadow material family and unions equ
 	};
 	const originalFetch = globalThis.fetch;
 	const payloads = [];
+	const renderer = {};
+	const resolvedRenderObjectHarvest = { supported: true, familiesByMaterial: new Map() };
+	const renderObjectHarvest = Promise.resolve( resolvedRenderObjectHarvest );
 	globalThis.fetch = async ( _endpoint, request ) => {
 
 		payloads.push( JSON.parse( request.body ) );
@@ -607,13 +617,17 @@ test( 'precompileAuxiliary preserves every shadow material family and unions equ
 
 	};
 	__resetAuxRegistryForTests();
+	__resetRenderObjectHarvestHandoffForTests();
+	publishRenderObjectHarvest( renderer, scene, renderObjectHarvest );
 	try {
 
-		await precompileAuxiliary( {}, scene, {}, {
+		await precompileAuxiliary( renderer, scene, {}, {
 			devEndpoint: '/capture',
 			threeVersion: '184',
 			compileTSL,
 		} );
+		assert.equal( receivedHarvest, resolvedRenderObjectHarvest, 'shadow capture consumes the resolved staged real-render harvest' );
+		assert.equal( takeRenderObjectHarvest( renderer, scene ), null, 'the staged harvest is one-shot' );
 		const payload = payloads.find( ( candidate ) => candidate.materialShape === 'shadow-depth' );
 		assert.ok( payload, 'expected one aggregate shadow-depth POST' );
 		assert.deepEqual( Object.keys( payload.artifact.variants ).sort(), [ 'directional-key', 'point-key', 'shared-key' ] );
@@ -624,6 +638,7 @@ test( 'precompileAuxiliary preserves every shadow material family and unions equ
 	} finally {
 
 		__resetAuxRegistryForTests();
+		__resetRenderObjectHarvestHandoffForTests();
 		globalThis.fetch = originalFetch;
 
 	}

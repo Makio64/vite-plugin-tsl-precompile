@@ -35,6 +35,10 @@ import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { createRenderContextSignature } from '@tsl-precompile/contract/render-context';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
 import { mergeArtifactVariantFamily } from '@tsl-precompile/contract/artifact-variants';
+import {
+	__resetRenderObjectHarvestHandoffForTests,
+	publishRenderObjectHarvest,
+} from './auxiliary/render-object-harvest-handoff.js';
 
 const MARKER_STATE_SYMBOL = Symbol.for( '@tsl-precompile/runtime/precompile-marker-state' );
 const DEFAULT_OBSERVE_TIMEOUT_MS = 30_000;
@@ -888,6 +892,7 @@ function beginSynchronousRenderCaptureEpoch( renderer, ready ) {
 		renderer,
 		harvestSession,
 		entries: new Set(),
+		scenes: new Set(),
 		pendingAsyncRenders: 0,
 		closeScheduled: false,
 		closed: false,
@@ -898,9 +903,14 @@ function beginSynchronousRenderCaptureEpoch( renderer, ready ) {
 
 }
 
-function completeRenderCaptureCall( epoch, ready ) {
+function completeRenderCaptureCall( epoch, ready, scene = null ) {
 
 	if ( ! epoch || epoch.closed ) return;
+	// Renderer output quads and other standalone Object3D renders are part of
+	// the same synchronous burst but are not independent scene owners. Only a
+	// single real Scene is safe to hand to aux capture until the harvest
+	// contract can project multi-scene families by request provenance.
+	if ( scene && scene.isScene === true ) epoch.scenes.add( scene );
 	for ( const entry of ready ) epoch.entries.add( entry );
 	scheduleRenderCaptureEpochClose( epoch );
 
@@ -946,6 +956,11 @@ function closeRenderCaptureEpoch( epoch, startCaptures = true ) {
 	// joins. A later application frame must not open a second observer epoch for
 	// the same pending marker while this immutable result is being completed.
 	if ( ! startCaptures ) return;
+	if ( epoch.scenes.size === 1 ) {
+
+		publishRenderObjectHarvest( epoch.renderer, epoch.scenes.values().next().value, renderObjectHarvest );
+
+	}
 	for ( const entry of epoch.entries ) {
 
 		entry.renderObjectHarvest = renderObjectHarvest;
@@ -1017,7 +1032,7 @@ function wrapDevRenderer( renderer ) {
 			}
 			const startReady = () => {
 
-				if ( captureEpoch ) completeRenderCaptureCall( captureEpoch, ready );
+				if ( captureEpoch ) completeRenderCaptureCall( captureEpoch, ready, scene );
 				if ( ! synthetic ) scheduleAutoFallbackCaptures( renderer, scene, camera );
 
 			};
@@ -1963,6 +1978,7 @@ export function __resetForTests() {
 	lastRenderContextByRenderer = new WeakMap();
 	renderCaptureEpochByRenderer = new WeakMap();
 	renderCaptureEpochs = new Set();
+	__resetRenderObjectHarvestHandoffForTests();
 	logged.clear();
 	pendingCaptures = new Map();
 	inflightCaptures = new Map();

@@ -23,6 +23,7 @@ import {
 	assertCubeRenderTargetSourceTexture,
 	captureCubeRenderTargetLive,
 } from './auxiliary/cube-render-target-capture.js';
+import { takeRenderObjectHarvest } from './auxiliary/render-object-harvest-handoff.js';
 import { collectEffectNodes } from './slim-support/postprocess-effects.js';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { createRenderPipelineConfig } from '@tsl-precompile/contract/output-config';
@@ -636,7 +637,28 @@ async function captureShadowDepthLive( renderer, scene, camera, opts ) {
 
 	const compileTSL = opts.compileTSL || ( await lazyLoadCompileTSL() );
 	if ( ! compileTSL || ! scene || ! camera ) return null;
-	const artifacts = await compileTSL( renderer, scene, camera, { noGlobalMRT: true } );
+	const hasExplicitHarvest = Object.prototype.hasOwnProperty.call( opts, 'renderObjectHarvest' );
+	const stagedRenderObjectHarvest = hasExplicitHarvest
+		? opts.renderObjectHarvest
+		: takeRenderObjectHarvest( renderer, scene );
+	let renderObjectHarvest = null;
+	if ( stagedRenderObjectHarvest ) {
+
+		try {
+
+			renderObjectHarvest = await Promise.resolve( stagedRenderObjectHarvest );
+
+		} catch ( _ ) {
+
+			renderObjectHarvest = null;
+
+		}
+
+	}
+	const artifacts = await compileTSL( renderer, scene, camera, {
+		noGlobalMRT: true,
+		...( renderObjectHarvest ? { renderObjectHarvest } : {} ),
+	} );
 	const shadowArtifacts = artifacts.filter( ( artifact ) => artifact && artifact.materialShape === 'shadow-depth' );
 	if ( shadowArtifacts.length === 0 ) return null;
 	shadowArtifacts.sort( ( a, b ) => variantCount( b ) - variantCount( a ) || String( a.cacheKey ).localeCompare( String( b.cacheKey ) ) );

@@ -8,6 +8,7 @@ import {
 	__resetForTests,
 	__createCaptureObjectForTests,
 } from '../src/precompile-marker.js';
+import { takeRenderObjectHarvest } from '../src/auxiliary/render-object-harvest-handoff.js';
 import { beginRenderObjectHarvest } from '../../plugin/src/vendor/render-object-observer.js';
 
 test( 'capture clones retain BatchedMesh runtime textures', () => {
@@ -366,6 +367,57 @@ test( 'aggregates a synchronous real-render burst before handing the complete ha
 			.map( ( selector ) => JSON.parse( selector ).target.activeCubeFace )
 			.sort( ( a, b ) => a - b );
 		assert.deepEqual( faces, [ 0, 1, 2, 3, 4, 5 ], 'request-time snapshots survive mutable RenderContext reuse' );
+
+	} );
+
+} );
+
+test( 'publishes a single-scene real-render harvest for one auxiliary consumer', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'single-scene-handoff' );
+		const material = new three.Material();
+		const context = mount( three, material );
+		const harvest = { supported: true, familiesByMaterial: new Map() };
+		const renderer = { render() {} };
+		install( three, async () => artifactSet( material ), {
+			beginRenderObjectHarvest: () => ( { finish: () => harvest } ),
+		} );
+		await setDevRenderer( renderer, three );
+		material.precompile( 'single-scene-handoff' );
+		renderer.render( context.scene, context.camera );
+		await waitFor( () => posts.length === 1, 'single-scene handoff capture' );
+
+		const staged = takeRenderObjectHarvest( renderer, context.scene );
+		assert.ok( staged, 'the exact renderer and scene expose the completed epoch once' );
+		assert.equal( await staged, harvest );
+		assert.equal( takeRenderObjectHarvest( renderer, context.scene ), null );
+
+	} );
+
+} );
+
+test( 'does not publish a mixed multi-scene real-render harvest', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'multi-scene-handoff' );
+		const material = new three.Material();
+		const first = mount( three, material );
+		const second = mount( three, material );
+		const renderer = { render() {} };
+		install( three, async () => artifactSet( material ), {
+			beginRenderObjectHarvest: () => ( { finish: () => ( { supported: true, familiesByMaterial: new Map() } ) } ),
+		} );
+		await setDevRenderer( renderer, three );
+		material.precompile( 'multi-scene-handoff' );
+		renderer.render( first.scene, first.camera );
+		renderer.render( second.scene, second.camera );
+		await waitFor( () => posts.length === 1, 'multi-scene handoff capture' );
+
+		assert.equal( takeRenderObjectHarvest( renderer, first.scene ), null );
+		assert.equal( takeRenderObjectHarvest( renderer, second.scene ), null );
 
 	} );
 
