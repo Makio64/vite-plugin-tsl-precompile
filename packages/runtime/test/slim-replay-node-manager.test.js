@@ -163,6 +163,24 @@ test( 'replay NodeManager applies the background selector profile from aux metad
 
 } );
 
+test( 'replay NodeManager reuses an opaque material artifact across live MSAA targets', () => {
+
+	const renderer = fakeRenderer();
+	const signed = artifact( { materialShape: 'mesh-standard' } );
+	const sourceMaterial = material( signed );
+	sourceMaterial.alphaToCoverage = false;
+	const live = renderObject( renderer, sourceMaterial, {
+		context: { sampleCount: 1 },
+	} );
+	const captureDescriptor = JSON.parse( createRenderObjectContextSelector( live, renderer ) );
+	captureDescriptor.target.sampleCount = 4;
+	signed.renderContextSelectors = [ JSON.stringify( captureDescriptor ) ];
+
+	const manager = new ReplayNodeManager( renderer, renderer.backend );
+	assert.doesNotThrow( () => manager.getForRender( live ) );
+
+} );
+
 test( 'replay NodeManager applies the mesh-basic selector profile from material shape metadata', () => {
 
 	const renderer = fakeRenderer();

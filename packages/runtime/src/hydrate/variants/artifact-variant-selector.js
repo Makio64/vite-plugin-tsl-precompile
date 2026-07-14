@@ -74,6 +74,7 @@ function selectSingletonArtifact( artifact, selection ) {
 
 		if ( candidateSelectors( artifact, profile ).includes( selector ) ) return artifact;
 		if ( transparentDoubleSideSiblingCandidates( selector, [ artifact ], profile ).length === 1 ) return artifact;
+		if ( pipelineSampleCountSiblingCandidates( selector, [ artifact ], profile ).length === 1 ) return artifact;
 		throw selectorMiss( selector, [ artifact ], profile );
 
 	}
@@ -127,6 +128,8 @@ function computeArtifactVariant( artifact, variants, selection ) {
 			if ( matches.length > 0 ) return chooseSemanticCandidate( matches, targetCount, selector );
 			const siblingMatches = transparentDoubleSideSiblingCandidates( selector, signedCandidates, profile );
 			if ( siblingMatches.length > 0 ) return chooseSemanticCandidate( siblingMatches, targetCount, selector );
+			const sampleCountMatches = pipelineSampleCountSiblingCandidates( selector, signedCandidates, profile );
+			if ( sampleCountMatches.length > 0 ) return chooseSemanticCandidate( sampleCountMatches, targetCount, selector );
 			throw selectorMiss( selector, signedCandidates, profile );
 
 		}
@@ -312,6 +315,53 @@ function transparentDoubleSideSiblingSelectors( selector ) {
 		...descriptor,
 		material: { ...material, side },
 	}, 'renderObjectSelector' ) );
+
+}
+
+/**
+ * WebGPU owns output MSAA in the live render pipeline; it is not part of a
+ * hydrated shader or binding layout. Three's one stock node-graph exception is
+ * the alpha-to-coverage shape path, which branches on renderer.currentSamples
+ * while building WGSL. Alias an otherwise exact 1x/4x selector only when that
+ * branch is explicitly disabled. Specialized auxiliary profiles keep their
+ * own target policies (background already projects samples deliberately).
+ */
+function pipelineSampleCountSiblingCandidates( selector, candidates, profile ) {
+
+	if ( profile !== null && profile !== 'mesh-basic' ) return [];
+	const projected = projectPipelineSampleCount( selector );
+	if ( projected === null ) return [];
+	return candidates.filter( ( candidate ) => candidateSelectors( candidate, profile ).some( ( capturedSelector ) => (
+		projectPipelineSampleCount( capturedSelector ) === projected
+	) ) );
+
+}
+
+function projectPipelineSampleCount( selector ) {
+
+	let descriptor;
+	try {
+
+		descriptor = JSON.parse( selector );
+		if ( stableJsonStringify( descriptor, 'renderObjectSelector' ) !== selector ) return null;
+
+	} catch ( _ ) {
+
+		return null;
+
+	}
+	const material = descriptor && ! Array.isArray( descriptor ) && descriptor.version === 'render-object-selector@1'
+		? descriptor.material
+		: null;
+	const target = descriptor && descriptor.target;
+	const backend = descriptor && descriptor.renderer && descriptor.renderer.backend;
+	if ( ! material || typeof material !== 'object' || Array.isArray( material ) || material.alphaToCoverage !== false
+		|| ! target || typeof target !== 'object' || Array.isArray( target )
+		|| ( target.sampleCount !== 1 && target.sampleCount !== 4 )
+		|| ! backend || backend.kind !== 'webgpu' ) return null;
+	const projectedTarget = { ...target };
+	delete projectedTarget.sampleCount;
+	return stableJsonStringify( { ...descriptor, target: projectedTarget }, 'renderObjectSelector' );
 
 }
 

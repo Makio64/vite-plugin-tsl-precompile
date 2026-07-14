@@ -166,6 +166,51 @@ test( 'transparent DoubleSide compile selectors accept equivalent sibling-owning
 
 } );
 
+test( 'signed material artifacts alias pipeline-only sample counts when alpha-to-coverage is disabled', () => {
+
+	const captured = opaqueSelector( 4 );
+	const replay = opaqueSelector( 1 );
+	const artifact = signedArtifact( [ captured ], { materialShape: 'mesh-standard' } );
+	assert.equal( selectArtifactVariant( artifact, { renderContextSelector: replay } ), artifact );
+
+	assert.throws(
+		() => selectArtifactVariant( artifact, {
+			renderContextSelector: opaqueSelector( 1, { target: { colors: [ { format: 1022 } ] } } ),
+		} ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+		'attachment topology remains signed',
+	);
+
+} );
+
+test( 'signed material artifacts retain sample counts for alpha-to-coverage shader branches', () => {
+
+	const artifact = signedArtifact( [ opaqueSelector( 4, { material: { alphaToCoverage: true } } ) ] );
+	assert.throws(
+		() => selectArtifactVariant( artifact, {
+			renderContextSelector: opaqueSelector( 1, { material: { alphaToCoverage: true } } ),
+		} ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+	);
+
+} );
+
+test( 'pipeline-only sample aliases retain fail-closed family ambiguity', () => {
+
+	const captured = opaqueSelector( 4 );
+	const artifact = signedArtifact( [ captured ], {
+		variants: {
+			first: signedArtifact( [ captured ], { cacheKey: 'first', fragmentShader: 'first' } ),
+			second: signedArtifact( [ captured ], { cacheKey: 'second', fragmentShader: 'second' } ),
+		},
+	} );
+	assert.throws(
+		() => selectArtifactVariant( artifact, { renderContextSelector: opaqueSelector( 1 ) } ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_AMBIGUOUS',
+	);
+
+} );
+
 test( 'signed background artifacts ignore scene and target samples but retain attachment topology', () => {
 
 	const captureSelector = JSON.stringify( {
@@ -509,6 +554,24 @@ function transparentSideSelector( side, overrides = {} ) {
 	return stableJsonStringify( {
 		...descriptor,
 		...overrides,
+		material: { ...descriptor.material, ...( overrides.material || {} ) },
+	}, 'renderObjectSelector' );
+
+}
+
+function opaqueSelector( sampleCount, overrides = {} ) {
+
+	const descriptor = {
+		version: 'render-object-selector@1',
+		renderer: { backend: { kind: 'webgpu' } },
+		target: { surface: 'offscreen-2d', sampleCount, colors: [ { format: 1023 } ] },
+		object: { instanced: true },
+		material: { side: 0, transparent: false, forceSinglePass: false, alphaToCoverage: false },
+	};
+	return stableJsonStringify( {
+		...descriptor,
+		...overrides,
+		target: { ...descriptor.target, ...( overrides.target || {} ) },
 		material: { ...descriptor.material, ...( overrides.material || {} ) },
 	}, 'renderObjectSelector' );
 
