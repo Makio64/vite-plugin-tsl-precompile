@@ -166,7 +166,7 @@ test( 'transparent DoubleSide compile selectors accept equivalent sibling-owning
 
 } );
 
-test( 'signed background artifacts ignore scene-only topology but retain target topology', () => {
+test( 'signed background artifacts ignore scene and target samples but retain attachment topology', () => {
 
 	const captureSelector = JSON.stringify( {
 		version: 'render-object-selector@1',
@@ -201,7 +201,20 @@ test( 'signed background artifacts ignore scene-only topology but retain target 
 		renderContextSelectorProfile: 'background',
 	} ), artifact );
 
-	const wrongTarget = JSON.stringify( { ...JSON.parse( replaySelector ), target: { sampleCount: 4 } } );
+	const replayDescriptor = JSON.parse( replaySelector );
+	const otherSampleCount = JSON.stringify( {
+		...replayDescriptor,
+		target: { ...replayDescriptor.target, sampleCount: 4 },
+	} );
+	assert.equal( selectArtifactVariant( artifact, {
+		renderContextSelector: otherSampleCount,
+		renderContextSelectorProfile: 'background',
+	} ), artifact );
+
+	const wrongTarget = JSON.stringify( {
+		...replayDescriptor,
+		target: { ...replayDescriptor.target, colors: [ { kind: 'render-target', format: 1022 } ] },
+	} );
 	assert.throws(
 		() => selectArtifactVariant( artifact, {
 			renderContextSelector: wrongTarget,

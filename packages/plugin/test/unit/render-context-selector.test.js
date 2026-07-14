@@ -221,7 +221,7 @@ test( 'render selector distinguishes material shader-branch flags and enums', ()
 
 } );
 
-test( 'background selector projection ignores scene lighting, fog, environment, and shadow state but retains precision', () => {
+test( 'background selector projection ignores scene state and target samples but retains precision and attachments', () => {
 
 	const capture = fixture();
 	const replay = fixture();
@@ -245,10 +245,16 @@ test( 'background selector projection ignores scene lighting, fog, environment, 
 	replay.renderer.highPrecision = false;
 
 	replay.context.sampleCount = 1;
+	assert.equal(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'background' ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'background' ),
+		'one background shader serves MSAA scene passes and single-sample reflectors',
+	);
+	replay.context.textures[ 0 ].format = 1022;
 	assert.notEqual(
 		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'background' ),
 		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'background' ),
-		'target topology remains signed',
+		'attachment format topology remains signed',
 	);
 
 } );

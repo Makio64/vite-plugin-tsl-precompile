@@ -154,6 +154,7 @@ test( 'replay NodeManager applies the background selector profile from aux metad
 	captureDescriptor.scene = { fog: null, environment: null };
 	captureDescriptor.lights = [];
 	captureDescriptor.renderer.shadowMap = { enabled: false, type: 0 };
+	captureDescriptor.target.sampleCount = 4;
 	unsigned.renderContextSelectors = [ JSON.stringify( captureDescriptor ) ];
 	Object.defineProperty( unsigned, '__tslpAuxShape', { value: 'background' } );
 

@@ -178,6 +178,10 @@ export function createSceneRenderTopologySelector( scene ) {
  *
  * Unknown profiles are returned unchanged so callers can opt in one adapter
  * at a time without weakening ordinary material selection.
+ * Background WGSL is invariant across the output target's MSAA count: Three
+ * binds sample count when it creates the render pipeline, not in the shader or
+ * hydrated bindings. A single background artifact may therefore render both a
+ * multisampled scene pass and a single-sample reflector target in one frame.
  *
  * @param {string} selector
  * @param {string|null|undefined} profile
@@ -283,6 +287,12 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 		projected.renderer = { ...projected.renderer };
 		delete projected.renderer.shadowMap;
 		delete projected.renderer.contextNode;
+
+	}
+	if ( profile === 'background' && projected.target && typeof projected.target === 'object' ) {
+
+		projected.target = { ...projected.target };
+		delete projected.target.sampleCount;
 
 	}
 	return stableJsonStringify( projected, 'renderObjectSelector' );
