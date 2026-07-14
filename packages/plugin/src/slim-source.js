@@ -14,6 +14,9 @@ import {
 	getSlimThreeCompilerModule,
 	getSlimThreeReplayAdapterModule,
 	getSlimThreeRewriteTarget,
+	isSlimThreeBareBuildModule,
+	isSlimThreeRetainedNodeRuntimeModule,
+	isSlimThreeSourceModule,
 } from '@tsl-precompile/contract/slim-three-policy';
 import { getSlimRewriteRuntimeModuleRule } from './three-rewrite.js';
 
@@ -69,21 +72,19 @@ export function resolveSlimRewriteRuntimeModule( id, runtimeSourceDir ) {
 
 }
 
-function renderedThreePolicyModules( bundle, classifier ) {
+function collectRenderedModules( bundle ) {
 
 	const found = new Map();
 	for ( const chunk of Object.values( bundle || {} ) ) {
 
 		for ( const [ id, module ] of Object.entries( chunk && chunk.modules || {} ) ) {
 
-			if ( ! module || module.renderedLength <= 0 ) continue;
+			const renderedLength = Number( module && module.renderedLength );
+			if ( ! Number.isFinite( renderedLength ) || renderedLength <= 0 ) continue;
 			const normalized = id.replace( /\\/g, '/' );
-			const rule = classifier( normalized );
-			if ( rule ) found.set( normalized, {
-				id: normalized,
-				label: rule.label || rule.id,
-				renderedLength: module.renderedLength,
-			} );
+			const previous = found.get( normalized );
+			if ( previous ) previous.renderedLength += renderedLength;
+			else found.set( normalized, { id: normalized, renderedLength } );
 
 		}
 
@@ -93,11 +94,28 @@ function renderedThreePolicyModules( bundle, classifier ) {
 
 }
 
+function classifiedModules( modules, classifier ) {
+
+	const found = [];
+	for ( const module of modules ) {
+
+		const rule = classifier( module.id );
+		if ( rule ) found.push( { ...module, label: rule.label || rule.id } );
+
+	}
+	return found;
+
+}
+
 export function findRenderedSlimSourceResidue( bundle ) {
 
+	const modules = collectRenderedModules( bundle );
+	const hasThreeSource = modules.some( ( module ) => isSlimThreeSourceModule( module.id ) );
 	return {
-		compiler: renderedThreePolicyModules( bundle, getSlimThreeCompilerModule ),
-		stockAdapters: renderedThreePolicyModules( bundle, getSlimThreeReplayAdapterModule ),
+		compiler: classifiedModules( modules, getSlimThreeCompilerModule ),
+		stockAdapters: classifiedModules( modules, getSlimThreeReplayAdapterModule ),
+		retainedNodeRuntime: modules.filter( ( module ) => isSlimThreeRetainedNodeRuntimeModule( module.id ) ),
+		bareThreeIdentity: hasThreeSource ? modules.filter( ( module ) => isSlimThreeBareBuildModule( module.id ) ) : [],
 	};
 
 }

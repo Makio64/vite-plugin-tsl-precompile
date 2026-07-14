@@ -760,6 +760,8 @@ export default function tslPrecompile( userOpts = {} ) {
 			const found = [
 				...residue.compiler.map( ( item ) => `compiler ${ item.label } (${ item.renderedLength } B): ${ item.id }` ),
 				...residue.stockAdapters.map( ( item ) => `stock adapter ${ item.label } (${ item.renderedLength } B): ${ item.id }` ),
+				...residue.retainedNodeRuntime.map( ( item ) => `retained Node/TSL runtime (${ item.renderedLength } B): ${ item.id }` ),
+				...residue.bareThreeIdentity.map( ( item ) => `split bare Three identity (${ item.renderedLength } B): ${ item.id }` ),
 			];
 			if ( found.length > 0 ) {
 

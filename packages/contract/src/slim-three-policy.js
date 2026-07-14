@@ -60,8 +60,8 @@ export const SLIM_THREE_COMPILER_MODULES = freezeRules( [
 	{ id: 'wgsl-node-builder', label: 'WGSLNodeBuilder', sourcePath: 'renderers/webgpu/nodes/WGSLNodeBuilder.js', role: SLIM_THREE_MODULE_ROLES.COMPILER },
 	{ id: 'wgsl-node-parser', label: 'WGSLNodeParser', sourcePath: 'renderers/webgpu/nodes/WGSLNodeParser.js', role: SLIM_THREE_MODULE_ROLES.COMPILER },
 	{ id: 'glsl-node-builder', label: 'GLSLNodeBuilder', sourcePath: 'renderers/webgl-fallback/nodes/GLSLNodeBuilder.js', role: SLIM_THREE_MODULE_ROLES.COMPILER },
-	{ id: 'glsl-node-parser', label: 'GLSLNodeParser', sourcePath: 'renderers/webgl-fallback/nodes/GLSLNodeParser.js', role: SLIM_THREE_MODULE_ROLES.COMPILER },
-	{ id: 'standard-node-library', label: 'StandardNodeLibrary', sourcePath: 'renderers/common/nodes/StandardNodeLibrary.js', role: SLIM_THREE_MODULE_ROLES.COMPILER },
+	{ id: 'glsl-node-parser', label: 'GLSLNodeParser', sourcePath: 'nodes/parsers/GLSLNodeParser.js', role: SLIM_THREE_MODULE_ROLES.COMPILER },
+	{ id: 'standard-node-library', label: 'StandardNodeLibrary', sourcePath: 'renderers/webgpu/nodes/StandardNodeLibrary.js', role: SLIM_THREE_MODULE_ROLES.COMPILER },
 	{ id: 'node-material', label: 'NodeMaterial', sourcePath: 'materials/nodes/NodeMaterial.js', role: SLIM_THREE_MODULE_ROLES.COMPILER },
 	{ id: 'node-material-observer', label: 'NodeMaterialObserver', sourcePath: 'materials/nodes/manager/NodeMaterialObserver.js', role: SLIM_THREE_MODULE_ROLES.COMPILER },
 	{ id: 'pmrem-generator', label: 'PMREMGenerator compiler path', sourcePath: 'renderers/common/extras/PMREMGenerator.js', role: SLIM_THREE_MODULE_ROLES.COMPILER },
@@ -126,6 +126,33 @@ export function normalizeSlimThreeSourceModuleId( id ) {
 	if ( markerIndex >= 0 ) return normalized.slice( markerIndex + marker.length );
 	if ( normalized.startsWith( 'three/src/' ) ) return normalized.slice( 'three/src/'.length );
 	return null;
+
+}
+
+/** True for any resolved module from Three's tree-shakeable `src/` graph. */
+export function isSlimThreeSourceModule( id ) {
+
+	return normalizeSlimThreeSourceModuleId( id ) !== null;
+
+}
+
+/**
+ * Broad safety net for graph-building Node/TSL runtime that is not yet named
+ * by the exact compiler or replay-adapter policy tables.
+ */
+export function isSlimThreeRetainedNodeRuntimeModule( id ) {
+
+	const sourcePath = normalizeSlimThreeSourceModuleId( id );
+	return sourcePath !== null && ( sourcePath.startsWith( 'nodes/' ) || sourcePath.startsWith( 'materials/nodes/' ) );
+
+}
+
+/** True for Three's prebuilt core/module barrels, which split source identity. */
+export function isSlimThreeBareBuildModule( id ) {
+
+	if ( typeof id !== 'string' || id.length === 0 || id.startsWith( '\0' ) ) return false;
+	const normalized = id.replace( /\\/g, '/' ).split( /[?#]/, 1 )[ 0 ];
+	return /(?:^|\/)three\/build\/three\.(?:module|core)(?:\.min)?\.js$/.test( normalized );
 
 }
 

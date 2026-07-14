@@ -1,6 +1,9 @@
 import {
 	getSlimThreeCompilerModule,
 	getSlimThreeReplayAdapterModule,
+	isSlimThreeBareBuildModule,
+	isSlimThreeRetainedNodeRuntimeModule,
+	isSlimThreeSourceModule,
 } from '@tsl-precompile/contract/slim-three-policy';
 
 export const SLIM_BUNDLE_ANALYSIS_SCHEMA = 'tslp-slim-graph-analysis@1';
@@ -99,29 +102,11 @@ function classifiedModules( modules, classifier ) {
 
 }
 
-function isThreeSourceModule( module ) {
-
-	return module.id.startsWith( 'three/src/' );
-
-}
-
-function isRetainedNodeRuntime( module ) {
-
-	return module.id.startsWith( 'three/src/nodes/' ) || module.id.startsWith( 'three/src/materials/nodes/' );
-
-}
-
-function isBareThreeBuildModule( module ) {
-
-	return /^three\/build\/three\.(?:module|core)(?:\.min)?\.js$/.test( module.id );
-
-}
-
 /** Collect the graph metrics shared by Rollup guards and source-build budgets. */
 export function analyzeSlimBundle( bundle ) {
 
 	const modules = collectRenderedModules( bundle );
-	const hasThreeSource = modules.some( isThreeSourceModule );
+	const hasThreeSource = modules.some( ( module ) => isSlimThreeSourceModule( module.physicalId ) );
 	return {
 		schema: SLIM_BUNDLE_ANALYSIS_SCHEMA,
 		moduleCount: modules.length,
@@ -129,8 +114,8 @@ export function analyzeSlimBundle( bundle ) {
 		modules: modules.map( ( { id, renderedLength } ) => ( { id, renderedLength } ) ),
 		compiler: summarizeModules( classifiedModules( modules, getSlimThreeCompilerModule ) ),
 		stockAdapters: summarizeModules( classifiedModules( modules, getSlimThreeReplayAdapterModule ) ),
-		retainedNodeRuntime: summarizeModules( modules.filter( isRetainedNodeRuntime ) ),
-		bareThreeIdentity: summarizeModules( hasThreeSource ? modules.filter( isBareThreeBuildModule ) : [] ),
+		retainedNodeRuntime: summarizeModules( modules.filter( ( module ) => isSlimThreeRetainedNodeRuntimeModule( module.physicalId ) ) ),
+		bareThreeIdentity: summarizeModules( hasThreeSource ? modules.filter( ( module ) => isSlimThreeBareBuildModule( module.physicalId ) ) : [] ),
 	};
 
 }

@@ -4,8 +4,12 @@ import assert from 'node:assert/strict';
 import {
 	SLIM_THREE_PACKAGE_VERSION,
 	SLIM_THREE_REWRITE_TARGETS,
+	getSlimThreeCompilerModule,
 	getSlimThreeReplayAdapterModule,
 	getSlimThreeRewriteTarget,
+	isSlimThreeBareBuildModule,
+	isSlimThreeRetainedNodeRuntimeModule,
+	isSlimThreeSourceModule,
 } from '@tsl-precompile/contract/slim-three-policy';
 import { isThreeRewriteTarget } from '../../src/three-rewrite.js';
 
@@ -36,6 +40,24 @@ test( 'Node core primitive rewrites are also hard stock-residue guards', () => {
 		assert.equal( getSlimThreeReplayAdapterModule( id )?.label, label );
 
 	}
+
+} );
+
+test( 'compiler and broad source-residue classifiers match the installed Three layout', () => {
+
+	assert.equal(
+		getSlimThreeCompilerModule( '/project/node_modules/three/src/renderers/webgpu/nodes/StandardNodeLibrary.js' )?.label,
+		'StandardNodeLibrary',
+	);
+	assert.equal(
+		getSlimThreeCompilerModule( 'C:\\project\\node_modules\\three\\src\\nodes\\parsers\\GLSLNodeParser.js?source' )?.label,
+		'GLSLNodeParser',
+	);
+	assert.equal( isSlimThreeSourceModule( '/project/node_modules/three/src/math/Vector3.js' ), true );
+	assert.equal( isSlimThreeRetainedNodeRuntimeModule( '/project/node_modules/three/src/nodes/math/MathNode.js' ), true );
+	assert.equal( isSlimThreeRetainedNodeRuntimeModule( '/project/node_modules/three/src/renderers/common/nodes/NodeLibrary.js' ), false );
+	assert.equal( isSlimThreeBareBuildModule( '/project/node_modules/three/build/three.module.js' ), true );
+	assert.equal( isSlimThreeBareBuildModule( '/project/node_modules/three/build/three.webgpu.js' ), false );
 
 } );
 

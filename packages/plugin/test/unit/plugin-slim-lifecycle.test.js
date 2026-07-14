@@ -388,7 +388,7 @@ test( 'source slim uses the consumer Three patch while artifact compatibility re
 
 } );
 
-test( 'source slim final bundle guard rejects compiler and stock-adapter residue', async () => {
+test( 'source slim final bundle guard rejects every compiler-free source-boundary violation', async () => {
 
 	const fixture = await makeProject();
 	try {
@@ -402,9 +402,11 @@ test( 'source slim final bundle guard rejects compiler and stock-adapter residue
 					[ join( fixture.threeRoot, 'src/renderers/common/Lighting.js' ) ]: { renderedLength: 400 },
 					[ join( fixture.threeRoot, 'src/nodes/core/NodeFrame.js' ) ]: { renderedLength: 350 },
 					[ join( fixture.threeRoot, 'src/renderers/common/XRRenderTarget.js' ) ]: { renderedLength: 300 },
+					[ join( fixture.threeRoot, 'src/nodes/math/MathNode.js' ) ]: { renderedLength: 250 },
+					[ join( fixture.threeRoot, 'build/three.module.js' ) ]: { renderedLength: 2000 },
 				},
 			},
-		} ), /slim source build retained forbidden Three modules[\s\S]*NodeBuilder[\s\S]*stock Lighting[\s\S]*stock NodeFrame[\s\S]*stock XRRenderTarget/ );
+		} ), /slim source build retained forbidden Three modules[\s\S]*NodeBuilder[\s\S]*stock Lighting[\s\S]*stock NodeFrame[\s\S]*stock XRRenderTarget[\s\S]*retained Node\/TSL runtime[\s\S]*MathNode[\s\S]*split bare Three identity[\s\S]*three\.module/ );
 
 	} finally {
 
