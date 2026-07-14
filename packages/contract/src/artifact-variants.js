@@ -153,7 +153,8 @@ export function mergeArtifactVariantFamily( target, artifacts ) {
 	if ( records.size > 1 ) {
 
 		const variants = {};
-		for ( const [ cacheKey, record ] of records ) variants[ cacheKey ] = record.payload;
+		const orderedRecords = [ ...records.entries() ].sort( ( [ left ], [ right ] ) => left < right ? - 1 : left > right ? 1 : 0 );
+		for ( const [ cacheKey, record ] of orderedRecords ) variants[ cacheKey ] = record.payload;
 		target.variants = variants;
 
 	} else if ( target.variants !== undefined ) {

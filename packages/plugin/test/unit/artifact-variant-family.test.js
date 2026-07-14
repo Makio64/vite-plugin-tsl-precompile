@@ -52,6 +52,22 @@ test( 'artifact variant family flattens nested members and canonicalizes equival
 
 } );
 
+test( 'artifact variant family order is independent of capture arrival order', () => {
+
+	const forward = artifact( 'root', 'root-shadow', [ '{}' ] );
+	const reverse = artifact( 'root', 'root-shadow', [ '{}' ] );
+	const left = artifact( 'left', 'left-shadow', [ '{"left":true}' ] );
+	const right = artifact( 'right', 'right-shadow', [ '{"right":true}' ] );
+
+	mergeArtifactVariantFamily( forward, [ forward, right, left ] );
+	mergeArtifactVariantFamily( reverse, [ reverse, left, right ] );
+
+	assert.deepEqual( Object.keys( forward.variants ), [ 'left', 'right', 'root' ] );
+	assert.deepEqual( Object.keys( reverse.variants ), [ 'left', 'right', 'root' ] );
+	assert.equal( JSON.stringify( forward.variants ), JSON.stringify( reverse.variants ) );
+
+} );
+
 test( 'artifact variant family fails closed when one cache key identifies divergent payloads', () => {
 
 	const first = artifact( 7, 'first', [ '{}' ] );
