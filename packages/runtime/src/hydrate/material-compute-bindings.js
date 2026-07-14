@@ -103,7 +103,9 @@ export function applyMaterialComputeAttributeBindings( artifactView, material ) 
 	for ( const [ index, attribute ] of proposed ) {
 
 		const entry = entries[ index ];
-		if ( isLiveStorageAttribute( entry._liveAttribute ) ) continue;
+		// The compute bind group is authoritative ownership evidence. Replace any
+		// earlier shape/DFS heuristic so same-shaped render inputs cannot retain an
+		// anonymous output slot (for example speed stealing skinned-point position).
 		Object.defineProperty( entry, '_liveAttribute', {
 			value: attribute,
 			enumerable: false,

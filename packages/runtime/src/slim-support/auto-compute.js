@@ -260,13 +260,18 @@ function hasUserPath( entry ) {
 
 }
 
-function isEligibleAnonymousEntry( entry ) {
+function isAnonymousComputeEntry( entry ) {
 
 	return !! entry
 		&& entry.source === 'node'
 		&& entry.storage === true
-		&& ! hasUserPath( entry )
-		&& ! isLiveStorageAttribute( entry._liveAttribute );
+		&& ! hasUserPath( entry );
+
+}
+
+function isEligibleAnonymousEntry( entry ) {
+
+	return isAnonymousComputeEntry( entry ) && ! isLiveStorageAttribute( entry._liveAttribute );
 
 }
 
@@ -275,7 +280,7 @@ function uniqueAssignment( entries, candidates, options = {} ) {
 	const eligible = [];
 	for ( let index = 0; index < entries.length; index ++ ) {
 
-		if ( isEligibleAnonymousEntry( entries[ index ] ) ) eligible.push( { entry: entries[ index ], index } );
+		if ( isAnonymousComputeEntry( entries[ index ] ) ) eligible.push( { entry: entries[ index ], index } );
 
 	}
 	if ( eligible.length === 0 ) return { status: 'irrelevant', assignments: [] };
@@ -379,6 +384,12 @@ function identityListsEqual( left, right ) {
 export function artifactHasUnwiredAnonymousComputeAttribute( artifact ) {
 
 	return collectArtifactVariantCandidates( artifact ).some( ( candidate ) => attributeEntries( candidate ).some( isEligibleAnonymousEntry ) );
+
+}
+
+function artifactNeedsAnonymousComputeOwnership( artifact ) {
+
+	return collectArtifactVariantCandidates( artifact ).some( ( candidate ) => attributeEntries( candidate ).some( isAnonymousComputeEntry ) );
 
 }
 
@@ -635,7 +646,7 @@ export function createAutoComputeDispatcher( options = {} ) {
 
 				} else if ( result.retryable ) {
 
-					if ( artifactHasUnwiredAnonymousComputeAttribute( owner.material.precompiledArtifact ) ) retryOwners.push( { owner, pair, revision } );
+					if ( artifactNeedsAnonymousComputeOwnership( owner.material.precompiledArtifact ) ) retryOwners.push( { owner, pair, revision } );
 					stats.pending ++;
 
 				} else {

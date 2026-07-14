@@ -167,6 +167,61 @@ test( 'owner-local preparation excludes other render slots and applies after var
 
 } );
 
+test( 'proven compute ownership replaces an earlier same-shape heuristic binding', async () => {
+
+	const position = storageAttribute();
+	const speed = storageAttribute();
+	const compute = computeNode();
+	const entry = artifactEntry( { arraySnapshot: new Array( 16 ).fill( 0 ) } );
+	Object.defineProperty( entry, '_liveAttribute', {
+		value: speed,
+		enumerable: false,
+		configurable: true,
+		writable: true,
+	} );
+	Object.defineProperty( entry, '_liveAttributeSource', {
+		value: 'heuristic',
+		enumerable: false,
+		configurable: true,
+		writable: true,
+	} );
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: '',
+		bindings: [],
+		uniformPlan: [],
+		attributes: [ entry ],
+	};
+	const material = precompiledMaterial( artifact, {
+		positionNode: compute,
+		colorNode: nodeWithAttribute( speed ),
+	} );
+
+	assert.equal( artifactHasUnwiredAnonymousComputeAttribute( artifact ), false, 'the public unwired predicate keeps its literal semantics' );
+	let dispatches = 0;
+	const dispatcher = createAutoComputeDispatcher();
+	const dispatchNode = () => { dispatches ++; };
+	const bootstrap = await dispatcher.dispatch( sceneWith( material ), { dispatchNode } );
+	assert.equal( bootstrap.pending, 1 );
+	assert.equal( bootstrap.dispatched, 1, 'anonymous ownership is bootstrapped despite a provisional live sidecar' );
+	const options = {
+		fullRenderer: fullRendererFor( [ storageBinding( position ), storageBinding( speed ) ] ),
+		dispatchNode,
+	};
+	const prepared = await dispatcher.dispatch( sceneWith( material ), options );
+	assert.equal( prepared.attributesPrepared, 1 );
+	assert.equal( prepared.invalidated, 1 );
+	const repeated = await dispatcher.dispatch( sceneWith( material ), options );
+	assert.equal( repeated.attributesPrepared, 0 );
+	assert.equal( repeated.invalidated, 0 );
+	assert.equal( dispatches, 3 );
+	const hydrated = hydrateNodeBuilderState( artifact, material );
+
+	assert.equal( artifact.attributes[ 0 ]._liveAttribute, speed, 'shared artifact retains the legacy sidecar without owner leakage' );
+	assert.equal( hydrated.nodeAttributes[ 0 ].node.attribute, position, 'authoritative compute output replaces the heuristic in the state-local view' );
+
+} );
+
 test( 'attribute matching accepts live vec3 to captured vec4 and rejects unsafe entries', () => {
 
 	const compute = computeNode();
