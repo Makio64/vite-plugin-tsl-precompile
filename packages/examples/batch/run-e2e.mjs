@@ -3536,7 +3536,7 @@ const __backgroundNeedsPMREM = ( function () {
 			try {
 				__sharedWithTemporalFrame(
 					[ pipeline.renderer, __computeRenderer ],
-					{ frameId: __frameEffectFrameId(), advance: false },
+					__maintenanceTemporalFrame( 'loader' ),
 					() => pipeline.render(),
 				);
 				const diag = window.__tslpHarnessDiagnostics || ( window.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
@@ -9755,7 +9755,11 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 					_slimRenderer.__tslpSuppressShadowKick = true;
 					_slimRenderer.__tslpSuppressVelocityStateAdvance = true;
 					window.__tslpSuppressVelocityStateAdvance = true;
-					_topReplayPipeline.render();
+					__sharedWithTemporalFrame(
+						[ _slimRenderer, __computeRenderer ],
+						__maintenanceTemporalFrame( 'shadow' ),
+						() => _topReplayPipeline.render(),
+					);
 					try {
 						const diag = window.__tslpHarnessDiagnostics || ( window.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
 						diag.shadowForcedPipelineRenders = ( diag.shadowForcedPipelineRenders || 0 ) + 1;
@@ -10355,7 +10359,11 @@ function __trackDebugShaderAsync( renderer ) {
 						if ( _topReplayPipeline && typeof _topReplayPipeline.render === 'function' ) {
 							_slimRenderer.__tslpPostComputeRendering = true;
 							try {
-								_topReplayPipeline.render();
+								__sharedWithTemporalFrame(
+									[ _slimRenderer, __computeRenderer ],
+									__maintenanceTemporalFrame( 'compute' ),
+									() => _topReplayPipeline.render(),
+								);
 								const diag = __computeDiagnostics();
 								if ( diag ) diag.forcedPipelineRenders = ( diag.forcedPipelineRenders | 0 ) + 1;
 								if ( _markInitialStorageRender ) _slimRenderer.__tslpInitialStorageComputeRendered = true;
@@ -12697,6 +12705,17 @@ function __frameEffectFrameId() {
 	const loopCalls = window.__tslpAnimationLoopCalls | 0;
 	if ( loopCalls > 0 ) return loopCalls;
 	return window.__tslpRafTick | 0;
+}
+
+let __maintenanceRenderSequence = 0;
+
+function __maintenanceTemporalFrame( kind ) {
+	const frameId = __frameEffectFrameId();
+	return {
+		frameId,
+		renderId: 'maintenance:' + kind + ':' + frameId + ':' + ( ++ __maintenanceRenderSequence ),
+		advance: false,
+	};
 }
 
 function __nodeOwnsRenderTarget( node ) {

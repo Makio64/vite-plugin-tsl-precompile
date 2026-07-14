@@ -17,3 +17,14 @@ test( 'capture module removes and restores only the matching scene MRT', () => {
 	assert.match( flush, /removedSceneMRT && sceneUserData\.__tslp_mrtNode === undefined/ );
 
 } );
+
+test( 'forced pipeline maintenance renders receive distinct non-advancing identities', () => {
+
+	assert.match( source, /function __maintenanceTemporalFrame\( kind \)/ );
+	assert.match( source, /renderId: 'maintenance:' \+ kind \+ ':' \+ frameId \+ ':' \+ \( \+\+ __maintenanceRenderSequence \)/ );
+	assert.match( source, /__maintenanceTemporalFrame\( 'loader' \)/ );
+	assert.match( source, /__maintenanceTemporalFrame\( 'shadow' \)/ );
+	assert.match( source, /__maintenanceTemporalFrame\( 'compute' \)/ );
+	assert.match( source, /advance: false,/ );
+
+} );

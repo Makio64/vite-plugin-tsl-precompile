@@ -7,6 +7,7 @@ import {
 } from '../src/slim-support/postprocess-frame-scheduler.js';
 import {
 	TemporalFrameIdentityError,
+	shouldAdvanceTemporalState,
 	withTemporalFrame,
 } from '../src/slim-support/temporal-frame.js';
 
@@ -60,6 +61,27 @@ test( 'claims persist across separate temporal scopes with the same frame and re
 
 	} );
 	assert.equal( calls, 2 );
+
+} );
+
+test( 'maintenance render IDs rerun scheduled work without advancing temporal state', () => {
+
+	const renderer = {};
+	const scheduler = createPostprocessFrameScheduler( {} );
+	const effect = {};
+	let calls = 0;
+	const run = ( renderId ) => inFrame( renderer, { frameId: 8, renderId, advance: false }, () => {
+
+		assert.equal( shouldAdvanceTemporalState( { renderer } ), false );
+		return scheduler.begin( renderer ).run( effect, POSTPROCESS_FRAME_ROLES.EFFECT, () => ++ calls );
+
+	} );
+
+	assert.equal( run( 8 ), 1 );
+	assert.equal( run( 8 ), 1, 'the same maintenance entry remains deduplicated' );
+	assert.equal( run( 'maintenance:loader:1' ), 2 );
+	assert.equal( run( 'maintenance:shadow:2' ), 3 );
+	assert.equal( calls, 3 );
 
 } );
 
