@@ -479,6 +479,14 @@ function adoptPrecompiledMaterial( target, wrapped ) {
 
 		for ( const key of Reflect.ownKeys( wrapped ) ) {
 
+			// Three gives every Material an own, non-configurable `id`. The
+			// author-created material already owns that identity, so attempting to
+			// replace it with the wrapper's id throws before the prototype swap and
+			// leaves standalone transformed calls holding a NodeMaterial stub.
+			// Preserve every immutable target descriptor; the existing object is
+			// the identity callers, meshes, and renderer caches already reference.
+			const existingDescriptor = Object.getOwnPropertyDescriptor( target, key );
+			if ( existingDescriptor && existingDescriptor.configurable === false ) continue;
 			const descriptor = Object.getOwnPropertyDescriptor( wrapped, key );
 			if ( descriptor ) Object.defineProperty( target, key, descriptor );
 

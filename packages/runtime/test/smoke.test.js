@@ -1404,6 +1404,38 @@ test( '__applyPrecompiled wraps a material and preserves common texture slots', 
 
 } );
 
+test( '__applyPrecompiled adopts onto a material with immutable identity', () => {
+
+	const source = { name: 'immutable-material' };
+	Object.defineProperty( source, 'id', {
+		value: 17,
+		enumerable: false,
+		writable: false,
+		configurable: false,
+	} );
+	const artifactModule = {
+		__hash: 'sha256:immutable-material',
+		name: 'immutable-material',
+		artifact: {
+			__hash: 'sha256:immutable-material',
+			uniformPlan: [],
+			vertexShader: 'v',
+			fragmentShader: 'f',
+		},
+	};
+
+	// The Babel transform emits this as a standalone call. Adoption therefore
+	// has to mutate the object already held by the mesh; its return value is not
+	// required for correctness.
+	__applyPrecompiled( source, artifactModule, artifactModule.__hash );
+
+	assert.equal( source.id, 17 );
+	assert.equal( source.isPrecompiledMaterial, true );
+	assert.equal( Object.getPrototypeOf( source ), PrecompiledMaterial.prototype );
+	assert.equal( source.precompiledArtifact, artifactModule.artifact );
+
+} );
+
 test( '__applyPrecompiled wires live uniform sidecars by snapshot value', () => {
 
 	const liveFrequency = { isUniformNode: true, value: { isVector2: true, x: 3, y: 1 } };
