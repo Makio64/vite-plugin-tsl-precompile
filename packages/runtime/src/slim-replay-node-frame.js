@@ -12,18 +12,11 @@ class ReplayNodeFrame {
 
 	constructor() {
 
-		this.t = 0;
-		this.deltaTime = 0;
-		this.f = 0;
-		this.renderId = 0;
+		this.t = this.deltaTime = this.f = this.renderId = 0;
 		this.updateMap = new WeakMap();
 		this.updateBeforeMap = new WeakMap();
 		this.updateAfterMap = new WeakMap();
-		this.renderer = null;
-		this.material = null;
-		this.camera = null;
-		this.object = null;
-		this.scene = null;
+		this.renderer = this.material = this.camera = this.object = this.scene = null;
 
 	}
 
@@ -51,36 +44,27 @@ class ReplayNodeFrame {
 
 	}
 
-	_maps( referenceMap, nodeRef ) {
+	u( node, suffix = '' ) {
 
-		let maps = referenceMap.get( nodeRef );
+		const method = 'update' + suffix;
+		const updateType = node[ 'getUpdate' + suffix + 'Type' ]();
+		const reference = node.updateReference( this );
+		if ( updateType === 'object' ) return node[ method ]( this );
+		if ( updateType !== 'frame' && updateType !== 'render' ) return;
+
+		const stamp = updateType + 'Id';
+		const referenceMap = this[ method + 'Map' ];
+		let maps = referenceMap.get( reference );
 		if ( ! maps ) {
 
 			maps = { renderId: 0, frameId: 0 };
-			referenceMap.set( nodeRef, maps );
+			referenceMap.set( reference, maps );
 
 		}
-		return maps;
-
-	}
-
-	_run( node, typeMethod, method, referenceMap, stampBefore ) {
-
-		const updateType = node[ typeMethod ]();
-		const reference = node.updateReference( this );
-		if ( updateType === 'object' ) {
-
-			return node[ method ]( this );
-
-		}
-
-		const stamp = updateType === 'frame' ? 'frameId' : updateType === 'render' ? 'renderId' : '';
-		if ( ! stamp ) return;
-		const maps = this._maps( referenceMap, reference );
 		const stampValue = this[ stamp ];
 		if ( maps[ stamp ] === stampValue ) return;
 
-		if ( stampBefore ) {
+		if ( suffix === 'Before' ) {
 
 			const previous = maps[ stamp ];
 			maps[ stamp ] = stampValue;
@@ -96,19 +80,19 @@ class ReplayNodeFrame {
 
 	updateBeforeNode( node ) {
 
-		this._run( node, 'getUpdateBeforeType', 'updateBefore', this.updateBeforeMap, true );
+		this.u( node, 'Before' );
 
 	}
 
 	updateAfterNode( node ) {
 
-		this._run( node, 'getUpdateAfterType', 'updateAfter', this.updateAfterMap, false );
+		this.u( node, 'After' );
 
 	}
 
 	updateNode( node ) {
 
-		this._run( node, 'getUpdateType', 'update', this.updateMap, false );
+		this.u( node );
 
 	}
 
