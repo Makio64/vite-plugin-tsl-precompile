@@ -43,6 +43,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS as __NODE_GRAPH_KEYS } from '@tsl-precompile/contract/texture-props';
 
 import { assertThreeCheckoutMatchesVersion } from './_three-version.mjs';
+import { isolateCanvasForScreenshot, restoreCanvasAfterScreenshot } from './e2e-canvas-screenshot.mjs';
 import { installRenderSelectorMismatchRecorder } from './e2e-render-selector-recorder.mjs';
 import { enrichRenderSelectorDiagnostics, resolveE2ERoots, summarizeArtifactRenderSelectors } from './e2e-report-diagnostics.mjs';
 import { installAnimationLoopSettleTransition, minimumRenderableObjectsForExample } from './e2e-settle-policy.mjs';
@@ -14352,7 +14353,20 @@ async function dumpCanvases( page, name = '' ) {
 
 		const box = await canvases[ i ].boundingBox();
 		if ( ! box || box.width <= 0 || box.height <= 0 ) continue;
-		try { shots.push( await canvases[ i ].screenshot( { timeout: 3000 } ) ); } catch ( _ ) { /* ignore this canvas */ }
+		try {
+
+			await page.evaluate( isolateCanvasForScreenshot, canvases[ i ] );
+			// Let the compositor observe the visibility change before Playwright
+			// clips the page for its element screenshot.
+			await page.waitForTimeout( 16 );
+			shots.push( await canvases[ i ].screenshot( { timeout: 3000 } ) );
+
+		} catch ( _ ) { /* ignore this canvas */ }
+		finally {
+
+			try { await page.evaluate( restoreCanvasAfterScreenshot, canvases[ i ] ); } catch ( _ ) {}
+
+		}
 
 	}
 	return shots;
