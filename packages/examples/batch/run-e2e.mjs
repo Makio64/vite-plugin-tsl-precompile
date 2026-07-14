@@ -11242,13 +11242,18 @@ function __renderBloomNodeWithFullRenderer( bloomNode, slimRenderer, fullRendere
 
 function __renderRTTNodeWithFullRenderer( rttNode, slimRenderer, fullRenderer ) {
 	if ( ! __isRTTNode( rttNode ) || ! slimRenderer || ! fullRenderer ) return false;
-	if ( __rttPrecompiledShape( rttNode ) === 'render-output' ) return __renderRTTNodeWithPrecompiledSlim( rttNode, slimRenderer );
 	try {
 		if ( ! __fullRTTQuad ) __fullRTTQuad = new FullQuadMesh();
 		if ( ! rttNode.__tslpFullRTTMaterial ) {
 			const material = new FullNodeMaterial();
 			material.name = 'RTT_full';
-			material.fragmentNode = rttNode._rttNode || rttNode.node;
+			const fragmentNode = rttNode._rttNode || rttNode.node;
+			material.fragmentNode = __rttPrecompiledShape( rttNode ) === 'render-output' && fragmentNode && typeof fragmentNode.context === 'function'
+				? fragmentNode.context( {
+					toneMapping: slimRenderer.toneMapping,
+					outputColorSpace: slimRenderer.outputColorSpace,
+				} )
+				: fragmentNode;
 			material.needsUpdate = true;
 			Object.defineProperty( rttNode, '__tslpFullRTTMaterial', { value: material, configurable: true } );
 		}
