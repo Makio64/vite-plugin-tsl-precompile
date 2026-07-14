@@ -8,6 +8,7 @@ import {
 	__resetForTests,
 	__createCaptureObjectForTests,
 } from '../src/precompile-marker.js';
+import { __resetRegistry, getArtifact } from '../src/artifact-loader.js';
 import { takeRenderObjectHarvest } from '../src/auxiliary/render-object-harvest-handoff.js';
 import { beginRenderObjectHarvest } from '../../plugin/src/vendor/render-object-observer.js';
 
@@ -233,6 +234,7 @@ async function waitFor( predicate, label = 'condition' ) {
 async function withBrowser( run, { worker = false } = {} ) {
 
 	__resetForTests();
+	__resetRegistry();
 	const saved = {
 		window: globalThis.window,
 		self: globalThis.self,
@@ -270,6 +272,7 @@ async function withBrowser( run, { worker = false } = {} ) {
 
 		clearDevRenderer();
 		__resetForTests();
+		__resetRegistry();
 		for ( const [ key, value ] of Object.entries( saved ) ) {
 
 			const globalKey = key === 'version'
@@ -283,6 +286,84 @@ async function withBrowser( run, { worker = false } = {} ) {
 	}
 
 }
+
+test( 'accepted recaptures replace the live inspector artifact', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'accepted-recapture' );
+		const material = new three.Material();
+		const context = mount( three, material );
+		const renderer = { render() {} };
+		let revision = 0;
+		install( three, async () => {
+
+			const artifacts = artifactSet( material );
+			artifacts[ 0 ].fragmentShader = `fragment-${ ++ revision }`;
+			return artifacts;
+
+		} );
+		setDevRenderer( renderer, three );
+
+		material.precompile( 'live-recapture', context );
+		await waitFor( () => posts.length === 1 && getArtifact( 'live-recapture' )?.__hash === posts[ 0 ].hash, 'first live artifact' );
+		const firstHash = posts[ 0 ].hash;
+
+		material.precompile( 'live-recapture', context );
+		await waitFor( () => posts.length === 2 && getArtifact( 'live-recapture' )?.__hash === posts[ 1 ].hash, 'replacement live artifact' );
+		assert.notEqual( posts[ 1 ].hash, firstHash );
+
+	} );
+
+} );
+
+test( 'rejected recaptures do not replace the live inspector artifact', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'rejected-recapture' );
+		const material = new three.Material();
+		const context = mount( three, material );
+		const renderer = { render() {} };
+		let revision = 0;
+		let rejectedBodyRead = false;
+		install( three, async () => {
+
+			const artifacts = artifactSet( material );
+			artifacts[ 0 ].fragmentShader = `fragment-${ ++ revision }`;
+			return artifacts;
+
+		} );
+		setDevRenderer( renderer, three );
+
+		material.precompile( 'rejected-live-recapture', context );
+		await waitFor( () => posts.length === 1 && getArtifact( 'rejected-live-recapture' )?.__hash === posts[ 0 ].hash, 'accepted live artifact' );
+		const acceptedHash = posts[ 0 ].hash;
+		globalThis.fetch = async ( _url, init ) => {
+
+			posts.push( JSON.parse( init.body ) );
+			return {
+				ok: false,
+				status: 409,
+				text: async () => {
+
+					rejectedBodyRead = true;
+					return 'source revision conflict';
+
+				},
+			};
+
+		};
+		material.precompile( 'rejected-live-recapture', context );
+		await waitFor( () => rejectedBodyRead, 'rejected capture response' );
+
+		assert.equal( posts.length, 2 );
+		assert.notEqual( posts[ 1 ].hash, acceptedHash );
+		assert.equal( getArtifact( 'rejected-live-recapture' ).__hash, acceptedHash );
+
+	} );
+
+} );
 
 function install( three, extractor, options = {} ) {
 

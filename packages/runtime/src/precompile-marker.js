@@ -26,7 +26,7 @@
 import { MARKER_METHOD_NAME } from './_constants.js';
 import { normalizeRevision } from './_normalize-revision.js';
 import { hashArtifactContentSync, hashMaterialSync } from './graph-hash.js';
-import { registerArtifact } from './artifact-loader.js';
+import { __upsertArtifactForDev } from './artifact-loader.js';
 import { cloneRenderTargetForCapture, getMRTCaptureRenderTarget, rememberMRTCaptureRenderTarget } from './capture-render-target.js';
 import { installLiveTextureRegistryPatches } from './hydrate/live-texture-registry.js';
 import { MATERIAL_NODE_TEXTURE_KEYS } from '@tsl-precompile/contract/texture-props';
@@ -1607,23 +1607,6 @@ async function captureMaterialInDev( entry ) {
 			pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
 		} );
 
-		// Also register the artifact in the runtime's in-memory registry
-		// so the inspector panel (and any other local consumer) can see
-		// captures live — in DEV the disk write happens async via the POST
-		// below; the panel would stay empty if we only wrote to disk.
-		try {
-
-			registerArtifact( name, {
-				__hash: hash,
-				__name: name,
-				artifact: sanitized,
-				__unsupportedKinds: unsupportedKinds,
-			} );
-
-		} catch ( _ ) {
-			/* double-registration with a different hash throws; tolerate it in dev. */
-		}
-
 		const response = await fetch( devEndpoint, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
@@ -1643,6 +1626,16 @@ async function captureMaterialInDev( entry ) {
 			return;
 
 		}
+
+		// Publish only artifacts accepted by the capture endpoint. Development
+		// recaptures intentionally replace the earlier inspector entry; production
+		// registrations continue to reject divergent hashes in registerArtifact().
+		__upsertArtifactForDev( name, {
+			__hash: hash,
+			__name: name,
+			artifact: sanitized,
+			__unsupportedKinds: unsupportedKinds,
+		} );
 
 		console.info( `[tsl-precompile] captured "${ name }" (hash ${ hash.slice( 0, 12 ) })` );
 

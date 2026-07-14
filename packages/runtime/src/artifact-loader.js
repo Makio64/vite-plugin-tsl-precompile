@@ -34,6 +34,18 @@ export function registerArtifact( name, artifactModule ) {
 
 }
 
+/**
+ * Replace a live development capture after the capture endpoint accepts it.
+ * Production registrations remain fail-closed through registerArtifact().
+ *
+ * @internal
+ */
+export function __upsertArtifactForDev( name, artifactModule ) {
+
+	registry.set( name, artifactModule );
+
+}
+
 export function getArtifact( name ) {
 
 	return registry.get( name ) || null;
