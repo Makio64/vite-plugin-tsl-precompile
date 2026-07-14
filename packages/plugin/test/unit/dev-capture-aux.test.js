@@ -18,16 +18,22 @@ import { createServer } from 'node:http';
 import { attachDevCapture } from '../../src/dev-capture-server.js';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
 
-function makeFakeViteServer() {
+function makeFakeViteServer( options = {} ) {
 
 	const handlers = [];
+	const invalidated = [];
+	const module = options.moduleId ? { id: options.moduleId } : null;
 	return {
 		middlewares: {
 			use: ( path, fn ) => handlers.push( { path, fn } ),
 		},
-		moduleGraph: { getModuleById: () => null, invalidateModule: () => {} },
+		moduleGraph: {
+			getModuleById: ( id ) => module && id === options.moduleId ? module : null,
+			invalidateModule: ( value ) => invalidated.push( value ),
+		},
 		ws: { send: () => {} },
 		_handlers: handlers,
+		_invalidated: invalidated,
 	};
 
 }
@@ -107,6 +113,100 @@ test( 'dev-capture: user-material payload writes <name>.<hash>.json + manifest',
 		assert.ok( manifest[ 'ocean-water' ], 'manifest should key user capture by name' );
 		assert.equal( manifest[ 'ocean-water' ].hash, 'a'.repeat( 64 ) );
 		assert.equal( manifest.__aux, undefined );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: identical user recapture is a file and HMR no-op', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-idempotent-user-' ) );
+	const moduleId = '\0virtual:tsl-precompile/repeatable';
+	const vite = makeFakeViteServer( { moduleId } );
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+	const digest = 'd'.repeat( 64 );
+	const sourceRevision = 'e'.repeat( 64 );
+
+	try {
+
+		const first = await postJSON( port, '/__tsl-precompile/capture', {
+			name: 'repeatable',
+			hash: `SHA256:${ digest.toUpperCase() }`,
+			sourceIdentity: 'src/material.js:precompile:0',
+			sourceRevision: sourceRevision.toUpperCase(),
+			artifact: { uniformPlan: [], vertexShader: 'v', fragmentShader: 'f' },
+		} );
+		assert.equal( first.status, 200 );
+		assert.equal( first.json.changed, true );
+		assert.equal( first.json.hash, digest );
+		const artifactFile = first.json.file;
+		const artifactBefore = readFileSync( join( artifactsDir, artifactFile ), 'utf8' );
+		const manifestBefore = readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' );
+
+		const repeated = await postJSON( port, '/__tsl-precompile/capture', {
+			name: 'repeatable',
+			hash: digest,
+			sourceIdentity: 'src/material.js:precompile:0',
+			sourceRevision,
+			// Deliberately change key insertion order; JSON semantics are identical.
+			artifact: { fragmentShader: 'f', vertexShader: 'v', uniformPlan: [] },
+		} );
+
+		assert.equal( repeated.status, 200 );
+		assert.equal( repeated.json.changed, false );
+		assert.equal( readFileSync( join( artifactsDir, artifactFile ), 'utf8' ), artifactBefore );
+		assert.equal( readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' ), manifestBefore );
+		assert.equal( vite._invalidated.length, 1, 'only the first capture invalidates the virtual module' );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: identical auxiliary recapture preserves artifact and manifest bytes', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-idempotent-aux-' ) );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+	const configHash = 'c'.repeat( 64 );
+	const contentHash = 'b'.repeat( 64 );
+
+	try {
+
+		const first = await postJSON( port, '/__tsl-precompile/capture', {
+			materialShape: 'background',
+			configHash: configHash.toUpperCase(),
+			hash: `sha256:${ contentHash.toUpperCase() }`,
+			artifact: { uniformPlan: [], vertexShader: 'v', fragmentShader: 'f' },
+		} );
+		assert.equal( first.status, 200 );
+		assert.equal( first.json.changed, true );
+		assert.equal( first.json.configHash, configHash );
+		const artifactBefore = readFileSync( join( artifactsDir, first.json.file ), 'utf8' );
+		const manifestBefore = readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' );
+
+		const repeated = await postJSON( port, '/__tsl-precompile/capture', {
+			materialShape: 'background',
+			configHash,
+			hash: contentHash,
+			artifact: { fragmentShader: 'f', vertexShader: 'v', uniformPlan: [] },
+		} );
+
+		assert.equal( repeated.status, 200 );
+		assert.equal( repeated.json.changed, false );
+		assert.equal( readFileSync( join( artifactsDir, first.json.file ), 'utf8' ), artifactBefore );
+		assert.equal( readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' ), manifestBefore );
 
 	} finally {
 

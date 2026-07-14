@@ -78,7 +78,7 @@ The Vite plugin. Runs at build time.
 
 - `src/index.js` — plugin entry; exports `tslPrecompile(options)`.
 - `src/babel-transform.js` — finds `.precompile('name')` call sites; rewrites them.
-- `src/dev-capture-server.js` — POST endpoint for the runtime marker in dev mode.
+- `src/dev-capture-server.js` — POST endpoint for the runtime marker in dev mode. User and auxiliary writes share one atomic queue; semantically identical recaptures preserve artifact/manifest bytes and skip redundant HMR invalidation.
 - `src/node-harness.js` — headless three.js + mock WebGPU, for CI verify.
 - `src/emit-updater.js` — descriptor → static updater.js codegen.
 - `src/emit-manifest.js` — artifact JSON → virtual module source.

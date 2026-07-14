@@ -28,10 +28,14 @@
  *   → manifest entry: __aux["<shape>:<configHash>"] = { file, hash, capturedAt }
  *
  * Response:
- *   200 { "ok": true, ... }
+ *   200 { "ok": true, "changed": boolean, ... }
  *   400 { "error": "..." }  // malformed payload
  *   409 { "error": "..." }  // same name, conflicting source identity
  *   500 { "error": "..." }  // disk write failure
+ *
+ * Semantically identical recaptures are true no-ops: artifact and manifest
+ * bytes (including `capturedAt`) stay stable, and user modules are not HMR-
+ * invalidated again.
  *
  * @module DevCaptureServer
  */
@@ -42,6 +46,7 @@ import { resolve, join, dirname, relative, isAbsolute, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import { computeArtifactContentHash } from './hash.js';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
+import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
 
 const CAPTURE_PATH = '/__tsl-precompile/capture';
 const RESERVED_ARTIFACT_NAMES = new Set( [
@@ -115,6 +120,7 @@ export function attachDevCapture( server, opts ) {
 			const body = await readBody( req );
 			const payload = JSON.parse( body );
 
+			canonicalizeCaptureHashes( payload );
 			validatePayload( payload );
 
 			const written = await enqueueCaptureWrite( () => isAuxPayload( payload )
@@ -123,7 +129,7 @@ export function attachDevCapture( server, opts ) {
 
 			// Trigger HMR for user captures — aux captures don't have a
 			// per-name virtual module today (they're keyed by shape+configHash).
-			if ( ! isAuxPayload( payload ) ) {
+			if ( ! isAuxPayload( payload ) && written.changed !== false ) {
 
 				const moduleId = `virtual:tsl-precompile/${ payload.name }`;
 				const mod = server.moduleGraph.getModuleById( '\0' + moduleId );
@@ -254,6 +260,15 @@ function validatePayload( payload ) {
 
 }
 
+function canonicalizeCaptureHashes( payload ) {
+
+	if ( ! payload || typeof payload !== 'object' ) return;
+	if ( typeof payload.hash === 'string' ) payload.hash = payload.hash.replace( /^sha256:/i, '' ).toLowerCase();
+	if ( typeof payload.configHash === 'string' ) payload.configHash = payload.configHash.toLowerCase();
+	if ( typeof payload.sourceRevision === 'string' ) payload.sourceRevision = payload.sourceRevision.toLowerCase();
+
+}
+
 function assertCanonicalArtifactName( name, field ) {
 
 	if ( typeof name !== 'string' || name.length === 0 ) throw einval( `${ field } must be a non-empty string` );
@@ -334,29 +349,40 @@ async function writeArtifact( artifactsDir, manifestPath, payload ) {
 
 	}
 
-	await mkdir( dirname( filepath ), { recursive: true } );
-
-	const body = JSON.stringify( {
+	const storedArtifact = {
 		__hash: payload.hash,
 		__name: payload.name,
 		...( sourceOwners.length > 0 ? { __sourceOwners: sourceOwners } : {} ),
 		artifact: payload.artifact,
-	}, null, 2 );
-
-	await atomicWriteFile( filepath, body );
-
-	manifest[ payload.name ] = {
+	};
+	const manifestEntry = {
 		file: filename,
 		hash: payload.hash,
 		...( sourceIdentity ? { sourceIdentity: sourceIdentity.value, sourceIdentityKind: sourceIdentity.kind } : {} ),
 		...( sourceOwners.length > 0 ? { sourceOwners } : {} ),
+	};
+	if ( await captureJsonFileMatches( filepath, storedArtifact ) && captureManifestEntryMatches( existing, manifestEntry ) ) {
+
+		await pruneStaleCaptures( artifactsDir, payload.name, filename );
+		return { name: payload.name, hash: payload.hash, file: filename, changed: false };
+
+	}
+
+	await mkdir( dirname( filepath ), { recursive: true } );
+
+	const body = JSON.stringify( storedArtifact, null, 2 );
+
+	await atomicWriteFile( filepath, body );
+
+	manifest[ payload.name ] = {
+		...manifestEntry,
 		capturedAt: new Date().toISOString(),
 	};
 	await atomicWriteFile( manifestPath, JSON.stringify( manifest, null, 2 ) );
 
 	await pruneStaleCaptures( artifactsDir, payload.name, filename );
 
-	return { name: payload.name, hash: payload.hash, file: filename };
+	return { name: payload.name, hash: payload.hash, file: filename, changed: true };
 
 }
 
@@ -388,26 +414,32 @@ async function writeAuxArtifact( artifactsDir, manifestPath, payload ) {
 	const filename = `aux-${ shape }-${ shortHash( configHash ) }.json`;
 	const filepath = containedArtifactPath( artifactsDir, filename );
 
-	await mkdir( dirname( filepath ), { recursive: true } );
-
-	const body = JSON.stringify( {
+	const storedArtifact = {
 		__materialShape: shape,
 		__configHash: configHash,
 		__hash: payload.hash || configHash,
 		__name: payload.name || `aux-${ shape }`,
 		artifact: payload.artifact,
-	}, null, 2 );
-
-	await atomicWriteFile( filepath, body );
+	};
 
 	const manifest = await readManifest( manifestPath );
 	if ( ! manifest.__aux || typeof manifest.__aux !== 'object' || Array.isArray( manifest.__aux ) ) manifest.__aux = {};
 	const key = `${ shape }:${ configHash }`;
-	manifest.__aux[ key ] = { file: filename, shape, configHash, hash: payload.hash || null, capturedAt: new Date().toISOString() };
+	const manifestEntry = { file: filename, shape, configHash, hash: payload.hash || null };
+	if ( await captureJsonFileMatches( filepath, storedArtifact ) && captureManifestEntryMatches( manifest.__aux[ key ], manifestEntry ) ) {
+
+		return { materialShape: shape, configHash, file: filename, changed: false };
+
+	}
+
+	await mkdir( dirname( filepath ), { recursive: true } );
+	await atomicWriteFile( filepath, JSON.stringify( storedArtifact, null, 2 ) );
+
+	manifest.__aux[ key ] = { ...manifestEntry, capturedAt: new Date().toISOString() };
 
 	await atomicWriteFile( manifestPath, JSON.stringify( manifest, null, 2 ) );
 
-	return { materialShape: shape, configHash, file: filename };
+	return { materialShape: shape, configHash, file: filename, changed: true };
 
 }
 
@@ -470,6 +502,31 @@ async function atomicWriteFile( filepath, body ) {
 
 }
 
+async function captureJsonFileMatches( filepath, value ) {
+
+	if ( ! existsSync( filepath ) ) return false;
+	try {
+
+		const stored = JSON.parse( await readFile( filepath, 'utf8' ) );
+		return stableJsonStringify( stored, 'stored capture' ) === stableJsonStringify( value, 'incoming capture' );
+
+	} catch ( _ ) {
+
+		return false;
+
+	}
+
+}
+
+function captureManifestEntryMatches( existing, expected ) {
+
+	if ( ! existing || typeof existing !== 'object' || Array.isArray( existing ) ) return false;
+	const semantic = { ...existing };
+	delete semantic.capturedAt;
+	return stableJsonStringify( semantic, 'stored manifest entry' ) === stableJsonStringify( expected, 'incoming manifest entry' );
+
+}
+
 function captureSourceIdentity( payload ) {
 
 	if ( typeof payload.sourceIdentity === 'string' ) return { value: digestIdentity( `explicit:${ payload.sourceIdentity }` ), kind: 'callsite' };
@@ -491,7 +548,7 @@ function sourceIdentityFromArtifact( artifact ) {
 		type: source.type || null,
 		name: source.name || '',
 	};
-	return digestIdentity( stableStringify( identity ) );
+	return digestIdentity( stableJsonStringify( identity, 'capture source identity' ) );
 
 }
 
@@ -549,13 +606,5 @@ function sanitizeSourceOwners( owners ) {
 function digestIdentity( value ) {
 
 	return createHash( 'sha256' ).update( value ).digest( 'hex' );
-
-}
-
-function stableStringify( value ) {
-
-	if ( value === null || typeof value !== 'object' ) return JSON.stringify( value );
-	if ( Array.isArray( value ) ) return `[${ value.map( stableStringify ).join( ',' ) }]`;
-	return `{${ Object.keys( value ).sort().map( ( key ) => `${ JSON.stringify( key ) }:${ stableStringify( value[ key ] ) }` ).join( ',' ) }}`;
 
 }
