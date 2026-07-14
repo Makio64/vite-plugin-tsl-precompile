@@ -1307,6 +1307,10 @@ function sceneMaterialOwnsMRTNode( scene, mrtNode ) {
  *   renderer output pass, correlate its active private quad to the exact
  *   observed NodeManager cache entry, and expose the artifact/config pair on
  *   the returned array's non-enumerable `renderOutputCapture` sidecar.
+ * @param {Object} [options.rendererOutputConfig] - Renderer-output topology
+ *   observed by the caller. Tone mapping and output color space are restored
+ *   transactionally inside the renderer compile lock so a short-lived output
+ *   mode queued behind another capture is still extracted exactly.
  * @param {Object|Promise<Object>} [options.renderObjectHarvest] - Completed
  *   beginRenderObjectHarvest() result (or its session/Promise) from the
  *   application's real render. Complete material families are preferred
@@ -1362,6 +1366,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	const computeNodes = Array.isArray( options.computeNodes ) ? options.computeNodes : [];
 	const renderPipeline = options.renderPipeline || null;
 	const captureRendererOutput = options.captureRendererOutput === true;
+	const rendererOutputConfig = captureRendererOutput && options.rendererOutputConfig || null;
 	// A marker may bracket the application's completed real render with
 	// beginRenderObjectHarvest() and hand the immutable result in here. Prefer
 	// those exact RenderObjects later; this synthetic compile remains available
@@ -1661,6 +1666,25 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		onState: recordRenderObject,
 	} );
 	try {
+
+		// Automatic output capture may have queued behind another compile after
+		// observing a short-lived tone/color-space topology. Apply that immutable
+		// descriptor only after acquiring the per-renderer lock, then let the
+		// existing finally block restore the host renderer transactionally.
+		if ( rendererOutputConfig ) {
+
+			if ( rendererStateSnapshot.hasToneMapping && rendererOutputConfig.toneMapping !== null ) {
+
+				try { renderer.toneMapping = rendererOutputConfig.toneMapping; } catch ( _ ) { /* ignore */ }
+
+			}
+			if ( rendererStateSnapshot.hasOutputColorSpace && rendererOutputConfig.currentColorSpace !== null ) {
+
+				try { renderer.outputColorSpace = rendererOutputConfig.currentColorSpace; } catch ( _ ) { /* ignore */ }
+
+			}
+
+		}
 
 		// Activate (or clear) MRT on the renderer before the warm-up so
 		// three.js emits the right output struct. Without this, the pipeline

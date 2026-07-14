@@ -73,6 +73,92 @@ function collectAuxPassNodes( opts ) {
 
 }
 
+function trackLocalArtifact( shape, configHash, artifact, hashOpts, name = undefined ) {
+
+	try {
+
+		registerAuxArtifact( shape, configHash, artifact, {
+			name,
+			threeVersion: hashOpts.threeVersion,
+			pluginVersion: hashOpts.pluginVersion,
+		} );
+
+	} catch ( _ ) { /* tolerate duplicates */ }
+
+}
+
+async function captureAndPublishRendererOutput( renderer, scene, camera, opts, hashOpts ) {
+
+	const shape = 'render-output';
+	try {
+
+		const captured = await captureRenderOutputLive( renderer, scene, camera, opts );
+		const artifact = captured.artifact;
+		const configHash = hashPlainConfigSync( captured.replayConfig, { shape, ...hashOpts } );
+		trackLocalArtifact( shape, configHash, artifact, hashOpts );
+		return post( opts.devEndpoint, {
+			materialShape: shape,
+			configHash,
+			artifact,
+			name: `aux-${ shape }-${ configHash.slice( 0, 12 ) }`,
+		}, shape, configHash );
+
+	} catch ( err ) {
+
+		return { shape, configHash: null, ok: false, error: err && err.message || String( err ) };
+
+	}
+
+}
+
+/**
+ * Capture only the renderer-owned output color transform.
+ *
+ * Unlike `precompileAuxiliary()`, this narrow path does not inspect scene
+ * backgrounds, lights, shadows, PMREM inputs, or post-processing graphs. It
+ * exists so slim-mode setup can capture the one renderer-internal material
+ * every canvas render requires without turning first render into a broad
+ * auxiliary sweep.
+ *
+ * @param {Object} renderer
+ * @param {Object} scene
+ * @param {Object} camera
+ * @param {Object} opts
+ * @return {Promise<Array<{ shape: 'render-output', configHash: ?string, ok: boolean, error?: string }>>}
+ */
+export async function precompileRendererOutput( renderer, scene, camera, opts = {} ) {
+
+	if ( ! opts.devEndpoint ) {
+
+		logOnce( 'no-render-output-endpoint', () => console.warn( '[tsl-precompile/aux] precompileRendererOutput: no devEndpoint configured; output capture is a no-op.' ) );
+		return [];
+
+	}
+
+	if ( typeof window !== 'undefined' ) window.__tslpPrecompilePending = ( window.__tslpPrecompilePending | 0 ) + 1;
+
+	try {
+
+		if ( ! opts.compileTSL && ( await lazyLoadCompileTSL() ) === null ) return [];
+		if ( typeof opts.threeVersion !== 'string' || opts.threeVersion.length === 0 ) {
+
+			throw new Error( 'precompileRendererOutput: opts.threeVersion is required.' );
+
+		}
+		const hashOpts = {
+			threeVersion: opts.threeVersion,
+			pluginVersion: opts.pluginVersion || ARTIFACT_TOOLCHAIN_VERSION,
+		};
+		return [ await captureAndPublishRendererOutput( renderer, scene, camera, opts, hashOpts ) ];
+
+	} finally {
+
+		if ( typeof window !== 'undefined' ) window.__tslpPrecompilePending = Math.max( 0, ( window.__tslpPrecompilePending | 0 ) - 1 );
+
+	}
+
+}
+
 /**
  * Drive auxiliary-pass captures for a scene.
  *
@@ -131,15 +217,7 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 	// local runtime registry so the inspector panel sees captures live.
 	const trackLocal = ( shape, configHash, artifact, name = undefined ) => {
 
-		try {
-
-			registerAuxArtifact( shape, configHash, artifact, {
-				name,
-				threeVersion: hashOpts.threeVersion,
-				pluginVersion: hashOpts.pluginVersion,
-			} );
-
-		} catch ( _ ) { /* tolerate duplicates */ }
+		trackLocalArtifact( shape, configHash, artifact, hashOpts, name );
 
 	};
 
@@ -503,29 +581,7 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 	}
 
 	// Renderer output transform ---------------------------------------------
-	{
-
-		const shape = 'render-output';
-		try {
-
-			const captured = await captureRenderOutputLive( renderer, scene, camera, opts );
-			const artifact = captured.artifact;
-			const configHash = hashPlainConfigSync( captured.replayConfig, { shape, ...hashOpts } );
-			trackLocal( shape, configHash, artifact );
-			results.push( await post( opts.devEndpoint, {
-				materialShape: shape,
-				configHash,
-				artifact,
-				name: `aux-${ shape }-${ configHash.slice( 0, 12 ) }`,
-			}, shape, configHash ) );
-
-		} catch ( err ) {
-
-			results.push( { shape, configHash: null, ok: false, error: err && err.message || String( err ) } );
-
-		}
-
-	}
+	results.push( await captureAndPublishRendererOutput( renderer, scene, camera, opts, hashOpts ) );
 
 	} finally {
 
@@ -785,7 +841,9 @@ async function captureNodeMaterialAsAuxLive( renderer, material, opts, compileTS
 async function captureRenderOutputLive( renderer, scene, camera, opts ) {
 
 	const compileTSL = opts.compileTSL || ( await lazyLoadCompileTSL() );
-	const artifacts = await compileTSL( renderer, scene, camera, { noGlobalMRT: true, captureRendererOutput: true } );
+	const compileOpts = { noGlobalMRT: true, captureRendererOutput: true };
+	if ( opts.rendererOutputConfig ) compileOpts.rendererOutputConfig = opts.rendererOutputConfig;
+	const artifacts = await compileTSL( renderer, scene, camera, compileOpts );
 	const captured = artifacts && artifacts.renderOutputCapture;
 	const artifact = captured && captured.artifact;
 	const replayConfig = captured && captured.replayConfig;

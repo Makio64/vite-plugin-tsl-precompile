@@ -257,9 +257,14 @@ test( 'compileTSL restores renderer state when a nested render pipeline throws',
 		async compileAsync() {},
 	};
 	const scene = { userData: {}, traverse() {} };
+	let overrideAtRender = null;
 	const renderPipeline = {
 		render() {
 
+			overrideAtRender = {
+				toneMapping: renderer.toneMapping,
+				outputColorSpace: renderer.outputColorSpace,
+			};
 			renderer.autoClear = false;
 			renderer.xr.enabled = false;
 			renderer.toneMapping = 0;
@@ -271,9 +276,20 @@ test( 'compileTSL restores renderer state when a nested render pipeline throws',
 	};
 
 	await assert.rejects(
-		compileTSL( renderer, scene, {}, { renderPipeline, captureRendererOutput: true } ),
+		compileTSL( renderer, scene, {}, {
+			renderPipeline,
+			captureRendererOutput: true,
+			rendererOutputConfig: {
+				schema: 'renderer-output@1',
+				toneMapping: 4,
+				currentColorSpace: 'srgb',
+				sampledTexture: '2d',
+				multiview: false,
+			},
+		} ),
 		/nested output failure/,
 	);
+	assert.deepEqual( overrideAtRender, { toneMapping: 4, outputColorSpace: 'srgb' } );
 	assert.equal( currentTarget, target );
 	assert.equal( activeCubeFace, 4 );
 	assert.equal( activeMipmapLevel, 2 );

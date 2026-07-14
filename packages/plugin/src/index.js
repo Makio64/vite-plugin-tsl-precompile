@@ -60,6 +60,7 @@ const VIRTUAL_RESOLVE_PREFIX = '\0' + VIRTUAL_MODULE_PREFIX;
 // integer REVISION. Bump this only together with a strict slim rebuild and
 // its rewrite/compatibility tests.
 const THREE_PACKAGE_VERSION_GLOBAL = 'globalThis.__TSLP_THREE_PACKAGE_VERSION__';
+const AUTO_CAPTURE_RENDER_OUTPUT_GLOBAL = 'globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__';
 
 // Absolute path to this file's directory — used to alias the runtime's
 // bare-specifier dynamic imports (`vite-plugin-tsl-precompile/src/...`) to
@@ -416,6 +417,11 @@ export default function tslPrecompile( userOpts = {} ) {
 				// time so marker/setup code can use the same hash input as build.
 				define: {
 					[ THREE_PACKAGE_VERSION_GLOBAL ]: JSON.stringify( detected.version ),
+					// Dev keeps full Three even for slim builds. Tell the conditional
+					// setup entry to capture mandatory renderer-output topologies after
+					// successful real renders, without enabling a broad aux sweep or
+					// burdening non-slim apps with an unused artifact.
+					[ AUTO_CAPTURE_RENDER_OUTPUT_GLOBAL ]: JSON.stringify( Boolean( opts.slim ) ),
 				},
 			};
 

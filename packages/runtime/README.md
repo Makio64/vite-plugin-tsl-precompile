@@ -75,6 +75,15 @@ Returns `{ ready, captureAux, setRenderer }`. `captureAux(extraOpts)` merges
 per-call options into the setup-level `aux` object, which is useful when a
 project creates pass nodes after startup.
 
+When the Vite plugin is configured with `slim: true` or `slim: 'source'`, the
+development setup hook also captures the renderer's output transform after
+successful real renders. It keys captures by tone mapping, color space,
+sampled-texture dimension, and multiview, so repeated frames deduplicate while
+a newly observed topology gets its own artifact. It uses the observed
+Scene/Camera only for this mandatory output material and does not trigger the
+broader background, shadow, PMREM, or pass capture paths. The production
+conditional setup entry remains a compiler-free no-op.
+
 For MRT / RenderPipeline scenes, pass the live `PassNode` when you capture aux
 artifacts so the extractor sees the multi-target layout:
 

@@ -186,6 +186,15 @@ if a Three node compiler or stock replay-owned adapter survives. `vite dev`
 keeps the full Three entries in either mode so `.precompile()` and auxiliary
 capture still have a node builder.
 
+When either slim mode is configured, the development `setupPrecompile()`
+hook also observes successful real renders and captures each renderer-output
+topology required for tone mapping and color-space replay. Repeated renders
+of the same topology are deduplicated; changes such as tone mapping, output
+color space, array sampling, or multiview produce another exact artifact.
+This narrow path does not trigger an automatic background / shadow / PMREM /
+post-processing sweep; those feature-specific captures stay explicit through
+`captureAux()`.
+
 The published slim bundle is currently built against exactly three `0.184.0`.
 A slim build fails early when the consumer resolves another patch instead of
 combining incompatible renderer internals. Source mode uses the consumer's

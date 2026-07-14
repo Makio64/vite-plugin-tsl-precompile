@@ -25,12 +25,17 @@
  */
 
 import { installPrecompileMarker, setDevRenderer } from './precompile-marker.js';
-import { precompileAuxiliary } from './aux-marker.js';
+import { precompileAuxiliary, precompileRendererOutput } from './aux-marker.js';
+import { observeDevRendererRenders } from './dev-render-observers.js';
+import { hashPlainConfigSync } from './graph-hash.js';
+import { createRendererOutputConfig } from '@tsl-precompile/contract/output-config';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 
 const DEFAULT_DEV_ENDPOINT = '/__tsl-precompile/capture';
 const INIT_WRAPPED_FLAG = '__tslpSetupInitWrapped';
 const INIT_READY_CALLBACKS = '__tslpSetupReadyCallbacks';
+const AUTO_OUTPUT_CAPTURE_STATE = Symbol.for( '@tsl-precompile/runtime/auto-output-capture-state' );
+const MAX_AUTO_OUTPUT_CAPTURE_ATTEMPTS = 3;
 
 function isInitialised( renderer ) {
 
@@ -80,6 +85,159 @@ function isSlimNamespace( three, renderer ) {
 		renderer && renderer.__TSLP_SLIM__ ||
 		renderer && renderer.constructor && renderer.constructor.__TSLP_SLIM__
 	);
+
+}
+
+function shouldAutoCaptureRendererOutput() {
+
+	return typeof globalThis !== 'undefined' && globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__ === true;
+
+}
+
+function rendererOutputCaptureDescriptor( renderer, threeVersion ) {
+
+	let frameBufferTarget = null;
+	try {
+
+		frameBufferTarget = typeof renderer._getFrameBufferTarget === 'function'
+			? renderer._getFrameBufferTarget()
+			: null;
+
+	} catch ( _ ) {}
+	const outputTexture = frameBufferTarget &&
+		( frameBufferTarget.texture || frameBufferTarget.textures && frameBufferTarget.textures[ 0 ] ) || null;
+	const config = createRendererOutputConfig( renderer, outputTexture );
+	const configHash = hashPlainConfigSync( config, {
+		shape: 'render-output',
+		threeVersion,
+		pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
+	} );
+	return { config, configHash };
+
+}
+
+function installAutomaticRendererOutputCapture( renderer, three, devEndpoint, extraOpts = null ) {
+
+	if ( ! shouldAutoCaptureRendererOutput() || ! renderer ) return;
+	const threeVersion = deriveThreeVersion( three );
+	let state = renderer[ AUTO_OUTPUT_CAPTURE_STATE ];
+	if ( ! state ) {
+
+		state = {
+			captured: new Set(),
+			failures: new Map(),
+			inFlight: new Set(),
+			pending: new Map(),
+			observe: null,
+			capture: null,
+			describe: null,
+			drain: null,
+			pendingContext: null,
+			flushScheduled: false,
+		};
+		Object.defineProperty( renderer, AUTO_OUTPUT_CAPTURE_STATE, {
+			value: state,
+			configurable: true,
+		} );
+
+	} else {
+
+		// A fresh setup call (normally HMR or an explicit retry) re-enables any
+		// topology that exhausted its bounded automatic attempts.
+		for ( const [ configHash, attempts ] of state.failures ) {
+
+			if ( attempts >= MAX_AUTO_OUTPUT_CAPTURE_ATTEMPTS ) state.failures.delete( configHash );
+
+		}
+
+	}
+
+	state.describe = () => rendererOutputCaptureDescriptor( renderer, threeVersion );
+	state.capture = async ( context, configHash, config ) => {
+
+		state.inFlight.add( configHash );
+		try {
+
+			const results = await precompileRendererOutput( renderer, context.scene, context.camera, {
+				...( extraOpts || {} ),
+				devEndpoint,
+				three,
+				threeVersion,
+				pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
+				rendererOutputConfig: config,
+			} );
+			const captured = results.find( ( result ) => result && result.shape === 'render-output' && result.ok === true );
+			if ( ! captured || typeof captured.configHash !== 'string' ) {
+
+				const failure = results.find( ( result ) => result && result.ok === false );
+				throw new Error( failure && failure.error || 'renderer-output capture returned no successful artifact' );
+
+			}
+			state.captured.add( captured.configHash );
+			if ( captured.configHash !== configHash ) {
+
+				throw new Error( `renderer-output capture returned ${ captured.configHash }, expected observed topology ${ configHash }` );
+
+			}
+			state.failures.delete( configHash );
+
+		} catch ( error ) {
+
+			const attempts = ( state.failures.get( configHash ) || 0 ) + 1;
+			state.failures.set( configHash, attempts );
+			const retry = attempts < MAX_AUTO_OUTPUT_CAPTURE_ATTEMPTS
+				? `; retrying on the next real render (${ attempts }/${ MAX_AUTO_OUTPUT_CAPTURE_ATTEMPTS })`
+				: `; automatic retries exhausted (${ attempts }/${ MAX_AUTO_OUTPUT_CAPTURE_ATTEMPTS })`;
+			console.error( `[tsl-precompile] automatic renderer-output capture failed: ${ error && error.message || String( error ) }${ retry }` );
+
+		} finally {
+
+			state.inFlight.delete( configHash );
+			queueMicrotask( () => state.drain() );
+
+		}
+
+	};
+	state.drain = () => {
+
+		if ( state.inFlight.size > 0 ) return;
+		for ( const [ configHash, entry ] of state.pending ) {
+
+			state.pending.delete( configHash );
+			if ( state.captured.has( configHash ) ) continue;
+			if ( ( state.failures.get( configHash ) || 0 ) >= MAX_AUTO_OUTPUT_CAPTURE_ATTEMPTS ) continue;
+			void state.capture( entry.context, configHash, entry.config );
+			return;
+
+		}
+
+	};
+
+	if ( state.observe ) return;
+	state.observe = observeDevRendererRenders( renderer, ( context ) => {
+
+		// PassNode/RenderPipeline can issue nested offscreen renderer.render()
+		// calls and restore the canvas target only after that inner call returns.
+		// Coalesce the synchronous render wave so topology is keyed from the
+		// restored output target rather than a transient working-space pass.
+		state.pendingContext = context;
+		if ( state.flushScheduled ) return;
+		state.flushScheduled = true;
+		queueMicrotask( () => {
+
+			state.flushScheduled = false;
+			const pendingContext = state.pendingContext;
+			state.pendingContext = null;
+			if ( ! pendingContext ) return;
+			const { config, configHash } = state.describe();
+			if ( state.captured.has( configHash ) ) return;
+			if ( ( state.failures.get( configHash ) || 0 ) >= MAX_AUTO_OUTPUT_CAPTURE_ATTEMPTS ) return;
+			state.pending.set( configHash, { config, context: pendingContext } );
+			state.drain();
+
+		} );
+
+	} );
 
 }
 
@@ -235,6 +393,7 @@ export function setupPrecompile( opts = {} ) {
 	installPrecompileMarker( three, { devEndpoint } );
 
 	let activeRenderer = renderer;
+	const auxOptsObject = aux && typeof aux === 'object' ? aux : null;
 	let resolveReady;
 	let rejectReady;
 	let didSettleReady = false;
@@ -249,7 +408,9 @@ export function setupPrecompile( opts = {} ) {
 		if ( readyRenderer !== activeRenderer ) return;
 		Promise.resolve( setDevRenderer( readyRenderer, three ) ).then( () => {
 
-			if ( readyRenderer !== activeRenderer || didSettleReady ) return;
+			if ( readyRenderer !== activeRenderer ) return;
+			installAutomaticRendererOutputCapture( readyRenderer, three, devEndpoint, auxOptsObject );
+			if ( didSettleReady ) return;
 			didSettleReady = true;
 			resolveReady();
 
@@ -265,7 +426,6 @@ export function setupPrecompile( opts = {} ) {
 	};
 	queueRendererReady( activeRenderer, registerReadyRenderer, rejectForRenderer( activeRenderer ) );
 
-	const auxOptsObject = aux && typeof aux === 'object' ? aux : null;
 	const captureAux = aux
 		? ( extraOpts = {} ) => {
 

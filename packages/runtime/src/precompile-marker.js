@@ -39,6 +39,7 @@ import {
 	__resetRenderObjectHarvestHandoffForTests,
 	publishRenderObjectHarvest,
 } from './auxiliary/render-object-harvest-handoff.js';
+import { notifyDevRendererObservers } from './dev-render-observers.js';
 
 const MARKER_STATE_SYMBOL = Symbol.for( '@tsl-precompile/runtime/precompile-marker-state' );
 const DEFAULT_OBSERVE_TIMEOUT_MS = 30_000;
@@ -1033,7 +1034,12 @@ function wrapDevRenderer( renderer ) {
 			const startReady = () => {
 
 				if ( captureEpoch ) completeRenderCaptureCall( captureEpoch, ready, scene );
-				if ( ! synthetic ) scheduleAutoFallbackCaptures( renderer, scene, camera );
+				if ( ! synthetic ) {
+
+					scheduleAutoFallbackCaptures( renderer, scene, camera );
+					notifyDevRendererObservers( renderer, scene, camera );
+
+				}
 
 			};
 			if ( result && typeof result.then === 'function' ) {

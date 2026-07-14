@@ -61,10 +61,15 @@ compiler-free surface to the application bundler for finer tree-shaking.
 Source mode is production-only, checks the plugin/runtime policy revision, and
 fails the build if compiler or stock replay modules remain reachable.
 
+In either slim mode, `setupPrecompile()` automatically captures the exact
+renderer-output transform after successful real renders in dev. It deduplicates
+each tone-mapping/color-space/sampled-texture/multiview topology and captures a
+new one when that topology changes. Other auxiliary features remain opt-in.
+
 Projects that use MRT / `RenderPipeline` should also capture aux artifacts
 after the pass graph is built. `setupPrecompile({ aux: true })` exposes
 `captureAux(extraOpts)`, so a `pass(scene, camera).setMRT(...)` pipeline can
-rendering.
+be captured with its real target topology.
 
 ## Automated Recapture
 

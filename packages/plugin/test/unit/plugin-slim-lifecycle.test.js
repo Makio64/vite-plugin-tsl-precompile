@@ -174,6 +174,23 @@ async function buildRealSlimSourceFixture( mainSource ) {
 
 }
 
+test( 'non-slim serve does not request an unused renderer-output capture', async () => {
+
+	const fixture = await makeProject();
+	try {
+
+		const plugin = tslPrecompile();
+		const config = await plugin.config( { root: fixture.root }, { command: 'serve' } );
+		assert.equal( config.define[ 'globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__' ], 'false' );
+
+	} finally {
+
+		await rm( fixture.root, { recursive: true, force: true } );
+
+	}
+
+} );
+
 test( 'slim serve keeps full three.js for capture and injects the exact package version', async () => {
 
 	const fixture = await makeProject();
@@ -185,6 +202,7 @@ test( 'slim serve keeps full three.js for capture and injects the exact package 
 		assert.equal( config.resolve.alias.some( ( alias ) => aliasMatches( alias, 'three/tsl' ) ), false );
 		assert.equal( config.resolve.alias.some( ( alias ) => aliasMatches( alias, 'three' ) ), false );
 		assert.equal( config.define[ 'globalThis.__TSLP_THREE_PACKAGE_VERSION__' ], '"0.184.0"' );
+		assert.equal( config.define[ 'globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__' ], 'true' );
 
 		await plugin.configResolved( {
 			root: fixture.root,
@@ -311,6 +329,7 @@ test( 'source slim build aliases the tree-shaken entry and routes private Three 
 		assert.equal( webgpuAlias.replacement, '@tsl-precompile/runtime/slim/source' );
 		assert.equal( tslAlias.replacement, '@tsl-precompile/runtime/slim-stubs' );
 		assert.equal( coreAlias.replacement, join( fixture.threeRoot, 'src/Three.Core.js' ) );
+		assert.equal( config.define[ 'globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__' ], 'true' );
 
 		const rendererId = join( fixture.threeRoot, 'src/renderers/common/Renderer.js' );
 		const resolvedRuntimeSourceDir = await realpath( fixture.runtimeSourceDir );

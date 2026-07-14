@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { precompileAuxiliary } from '../src/aux-marker.js';
+import { precompileAuxiliary, precompileRendererOutput } from '../src/aux-marker.js';
 import { hashPlainConfigSync } from '../src/graph-hash.js';
 import { __resetAuxRegistryForTests, hasAux } from '../src/aux-loader.js';
 import {
@@ -10,6 +10,7 @@ import {
 	takeRenderObjectHarvest,
 } from '../src/auxiliary/render-object-harvest-handoff.js';
 import { createCubeRenderTargetAuxConfig } from '@tsl-precompile/contract/cube-render-target';
+import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 
 function silentInfo() {
 
@@ -291,6 +292,86 @@ test( 'precompileAuxiliary prod no-op fires before fetch is attempted', async ()
 
 		globalThis.fetch = originalFetch;
 		restore();
+
+	}
+
+} );
+
+test( 'precompileRendererOutput captures exactly the active output transform without traversing auxiliary inputs', async () => {
+
+	__resetAuxRegistryForTests();
+	const originalFetch = globalThis.fetch;
+	const posts = [];
+	const replayConfig = {
+		schema: 'renderer-output@1',
+		toneMapping: 4,
+		currentColorSpace: 'srgb',
+		sampledTexture: '2d',
+		multiview: false,
+	};
+	const artifact = {
+		materialShape: 'output-transform',
+		vertexShader: 'output-vertex',
+		fragmentShader: 'output-fragment',
+		uniformPlan: [ { name: 'object', textures: [ {
+			bindingKind: 'sampled-texture',
+			textureType: '2d',
+			source: { kind: 'artifact.texture', textureUuid: 'output-texture', mapping: 300 },
+		} ] } ],
+	};
+	const observedScene = {
+		traverse() { throw new Error( 'narrow output capture must not traverse the scene' ); },
+	};
+	const observedCamera = { name: 'observed-camera' };
+	let compileCalls = 0;
+	const compileTSL = async ( renderer, scene, camera, options ) => {
+
+		compileCalls ++;
+		assert.equal( renderer.name, 'renderer' );
+		assert.equal( scene, observedScene );
+		assert.equal( camera, observedCamera );
+		assert.deepEqual( options, { noGlobalMRT: true, captureRendererOutput: true } );
+		const artifacts = [ artifact ];
+		Object.defineProperty( artifacts, 'renderOutputCapture', {
+			value: { artifact, replayConfig },
+		} );
+		return artifacts;
+
+	};
+	globalThis.fetch = async ( endpoint, request ) => {
+
+		posts.push( { endpoint, payload: JSON.parse( request.body ) } );
+		return { ok: true, text: async () => '' };
+
+	};
+
+	try {
+
+		const results = await precompileRendererOutput( { name: 'renderer' }, observedScene, observedCamera, {
+			devEndpoint: '/capture',
+			threeVersion: '0.184.0',
+			compileTSL,
+		} );
+		const configHash = hashPlainConfigSync( replayConfig, {
+			shape: 'render-output',
+			threeVersion: '0.184.0',
+			pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
+		} );
+
+		assert.equal( compileCalls, 1 );
+		assert.deepEqual( results, [ { shape: 'render-output', configHash, ok: true } ] );
+		assert.equal( posts.length, 1 );
+		assert.equal( posts[ 0 ].endpoint, '/capture' );
+		assert.equal( posts[ 0 ].payload.materialShape, 'render-output' );
+		assert.equal( posts[ 0 ].payload.configHash, configHash );
+		assert.equal( posts[ 0 ].payload.artifact.fragmentShader, 'output-fragment' );
+		assert.deepEqual( posts[ 0 ].payload.artifact.replayConfig, replayConfig );
+		assert.equal( hasAux( 'render-output', configHash ), true );
+
+	} finally {
+
+		globalThis.fetch = originalFetch;
+		__resetAuxRegistryForTests();
 
 	}
 

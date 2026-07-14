@@ -26,7 +26,11 @@ function fakeRenderer( { initialised = false, withInit = false } = {} ) {
 		// Real WebGPURenderer owns a backend before init() resolves.
 		backend: {},
 		_initialized: initialised,
+		_frameBufferTarget: { texture: { isArrayTexture: false } },
+		outputColorSpace: 'srgb',
+		toneMapping: 0,
 		get initialized() { return this._initialized; },
+		_getFrameBufferTarget() { return this._frameBufferTarget; },
 		render() {},
 	};
 	if ( withInit ) {
@@ -162,6 +166,395 @@ test( 'setupPrecompile is idempotent under double-call', async () => {
 	assert.equal( renderer.__tslpRenderWrapped, true );
 	// Marker method still single; calling install twice should not throw.
 	assert.equal( typeof three.Material.prototype[ MARKER_METHOD ], 'function' );
+
+} );
+
+test( 'slim-mode setup captures renderer output once per successful real-render topology', async () => {
+
+	const { three } = freshHarness();
+	const renderer = fakeRenderer( { initialised: true } );
+	let renderFailure = true;
+	renderer.render = () => {
+
+		if ( renderFailure ) throw new Error( 'render failed' );
+
+	};
+	const setupScene = { name: 'setup-scene', traverse() {} };
+	const setupCamera = { name: 'setup-camera' };
+	const observedScene = { name: 'observed-scene', isScene: true };
+	const observedCamera = { name: 'observed-camera' };
+	const baseReplayConfig = {
+		schema: 'renderer-output@1',
+		currentColorSpace: 'srgb',
+		sampledTexture: '2d',
+		multiview: false,
+	};
+	const outputArtifact = {
+		materialShape: 'output-transform',
+		vertexShader: 'output-vertex',
+		fragmentShader: 'output-fragment',
+		uniformPlan: [ { name: 'object', textures: [ {
+			bindingKind: 'sampled-texture',
+			textureType: '2d',
+			source: { kind: 'artifact.texture', textureUuid: 'output-texture', mapping: 300 },
+		} ] } ],
+	};
+	const compileCalls = [];
+	const compileTSL = async ( activeRenderer, scene, camera, options ) => {
+
+		compileCalls.push( { activeRenderer, scene, camera, options } );
+		const artifacts = [ outputArtifact ];
+		Object.defineProperty( artifacts, 'renderOutputCapture', {
+			value: {
+				artifact: outputArtifact,
+				replayConfig: {
+					...baseReplayConfig,
+					toneMapping: activeRenderer.toneMapping,
+					currentColorSpace: activeRenderer.outputColorSpace,
+				},
+			},
+		} );
+		return artifacts;
+
+	};
+	const originalFetch = globalThis.fetch;
+	const originalAutoCapture = globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__;
+	const originalThreeVersion = globalThis.__TSLP_THREE_PACKAGE_VERSION__;
+	const originalSynthetic = globalThis.__tslpSyntheticRenderActive;
+	const posts = [];
+	globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__ = true;
+	globalThis.__TSLP_THREE_PACKAGE_VERSION__ = '0.184.0';
+	globalThis.fetch = async ( endpoint, request ) => {
+
+		posts.push( { endpoint, payload: JSON.parse( request.body ) } );
+		return { ok: true, text: async () => '' };
+
+	};
+
+	try {
+
+		const opts = {
+			three,
+			renderer,
+			scene: setupScene,
+			camera: setupCamera,
+			devEndpoint: '/capture',
+			aux: { compileTSL },
+		};
+		const first = setupPrecompile( opts );
+		const second = setupPrecompile( opts );
+		await Promise.all( [ first.ready, second.ready ] );
+
+		globalThis.__tslpSyntheticRenderActive = 1;
+		assert.throws( () => renderer.render( observedScene, observedCamera ), /render failed/ );
+		globalThis.__tslpSyntheticRenderActive = 0;
+		assert.throws( () => renderer.render( observedScene, observedCamera ), /render failed/ );
+		assert.equal( compileCalls.length, 0, 'synthetic and failed renders do not trigger output capture' );
+
+		renderFailure = false;
+		renderer.render( observedScene, observedCamera );
+		renderer.render( observedScene, observedCamera );
+		for ( let i = 0; i < 20 && posts.length === 0; i ++ ) await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		assert.equal( compileCalls.length, 1 );
+		assert.equal( compileCalls[ 0 ].activeRenderer, renderer );
+		assert.equal( compileCalls[ 0 ].scene, observedScene );
+		assert.equal( compileCalls[ 0 ].camera, observedCamera );
+		assert.deepEqual( compileCalls[ 0 ].options, {
+			noGlobalMRT: true,
+			captureRendererOutput: true,
+			rendererOutputConfig: {
+				schema: 'renderer-output@1',
+				toneMapping: 0,
+				currentColorSpace: 'srgb',
+				sampledTexture: '2d',
+				multiview: false,
+			},
+		} );
+		assert.equal( posts.length, 1, 'double setup and later renders reuse the first output capture' );
+		assert.equal( posts[ 0 ].endpoint, '/capture' );
+		assert.equal( posts[ 0 ].payload.materialShape, 'render-output' );
+
+		renderer.render( observedScene, observedCamera );
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+		assert.equal( compileCalls.length, 1, 'an already captured topology is ignored' );
+
+		renderer.toneMapping = 4;
+		renderer.render( observedScene, observedCamera );
+		for ( let i = 0; i < 20 && posts.length < 2; i ++ ) await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+		assert.equal( compileCalls.length, 2, 'a new output topology is captured independently' );
+		assert.equal( posts.length, 2 );
+		assert.notEqual( posts[ 0 ].payload.configHash, posts[ 1 ].payload.configHash );
+
+	} finally {
+
+		resetMarkerForTests();
+		globalThis.fetch = originalFetch;
+		if ( originalAutoCapture === undefined ) delete globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__;
+		else globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__ = originalAutoCapture;
+		if ( originalThreeVersion === undefined ) delete globalThis.__TSLP_THREE_PACKAGE_VERSION__;
+		else globalThis.__TSLP_THREE_PACKAGE_VERSION__ = originalThreeVersion;
+		if ( originalSynthetic === undefined ) delete globalThis.__tslpSyntheticRenderActive;
+		else globalThis.__tslpSyntheticRenderActive = originalSynthetic;
+
+	}
+
+} );
+
+test( 'slim-mode renderer-output capture retries a failed publish on a later real render', async () => {
+
+	const { three } = freshHarness();
+	const renderer = fakeRenderer( { initialised: true } );
+	const scene = { isScene: true };
+	const camera = {};
+	const artifact = {
+		materialShape: 'output-transform',
+		vertexShader: 'output-vertex',
+		fragmentShader: 'output-fragment',
+		uniformPlan: [ { name: 'object', textures: [ {
+			bindingKind: 'sampled-texture',
+			textureType: '2d',
+			source: { kind: 'artifact.texture', textureUuid: 'output-texture', mapping: 300 },
+		} ] } ],
+	};
+	let compileCalls = 0;
+	const compileTSL = async () => {
+
+		compileCalls ++;
+		const artifacts = [ artifact ];
+		Object.defineProperty( artifacts, 'renderOutputCapture', {
+			value: {
+				artifact,
+				replayConfig: {
+					schema: 'renderer-output@1',
+					toneMapping: renderer.toneMapping,
+					currentColorSpace: renderer.outputColorSpace,
+					sampledTexture: '2d',
+					multiview: false,
+				},
+			},
+		} );
+		return artifacts;
+
+	};
+	const originalFetch = globalThis.fetch;
+	const originalAutoCapture = globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__;
+	const originalThreeVersion = globalThis.__TSLP_THREE_PACKAGE_VERSION__;
+	const originalConsoleError = console.error;
+	let posts = 0;
+	const errors = [];
+	globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__ = true;
+	globalThis.__TSLP_THREE_PACKAGE_VERSION__ = '0.184.0';
+	globalThis.fetch = async () => {
+
+		posts ++;
+		return posts === 1
+			? { ok: false, status: 503, text: async () => 'try again' }
+			: { ok: true, text: async () => '' };
+
+	};
+	console.error = ( ...args ) => errors.push( args.join( ' ' ) );
+
+	try {
+
+		const setup = setupPrecompile( { three, renderer, aux: { compileTSL }, scene, camera } );
+		await setup.ready;
+		renderer.render( scene, camera );
+		for ( let i = 0; i < 20 && posts < 1; i ++ ) await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+		assert.equal( posts, 1 );
+		assert.match( errors.join( '\n' ), /retrying on the next real render/ );
+
+		renderer.render( scene, camera );
+		for ( let i = 0; i < 20 && posts < 2; i ++ ) await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+		assert.equal( posts, 2 );
+		assert.equal( compileCalls, 2 );
+
+		renderer.render( scene, camera );
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+		assert.equal( posts, 2, 'successful retry terminally dedupes the topology' );
+
+	} finally {
+
+		resetMarkerForTests();
+		globalThis.fetch = originalFetch;
+		console.error = originalConsoleError;
+		if ( originalAutoCapture === undefined ) delete globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__;
+		else globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__ = originalAutoCapture;
+		if ( originalThreeVersion === undefined ) delete globalThis.__TSLP_THREE_PACKAGE_VERSION__;
+		else globalThis.__TSLP_THREE_PACKAGE_VERSION__ = originalThreeVersion;
+
+	}
+
+} );
+
+test( 'slim-mode output capture keys nested offscreen waves after canvas state is restored', async () => {
+
+	const { three } = freshHarness();
+	const renderer = fakeRenderer( { initialised: true } );
+	const outputTarget = { texture: { isArrayTexture: false } };
+	const outerScene = { isScene: true, name: 'outer' };
+	const offscreenScene = { isScene: true, name: 'offscreen' };
+	const camera = {};
+	let insideOffscreen = false;
+	Object.defineProperty( renderer, 'currentColorSpace', {
+		configurable: true,
+		get() { return insideOffscreen ? 'srgb-linear' : renderer.outputColorSpace; },
+	} );
+	renderer._getFrameBufferTarget = () => insideOffscreen ? null : outputTarget;
+	renderer.render = () => {
+
+		if ( insideOffscreen ) return;
+		insideOffscreen = true;
+		renderer.render( offscreenScene, camera );
+		insideOffscreen = false;
+
+	};
+	const artifact = {
+		materialShape: 'output-transform',
+		vertexShader: 'output-vertex',
+		fragmentShader: 'output-fragment',
+		uniformPlan: [ { name: 'object', textures: [ {
+			bindingKind: 'sampled-texture',
+			textureType: '2d',
+			source: { kind: 'artifact.texture', textureUuid: 'output-texture', mapping: 300 },
+		} ] } ],
+	};
+	let compileCalls = 0;
+	const compileTSL = async () => {
+
+		compileCalls ++;
+		const artifacts = [ artifact ];
+		Object.defineProperty( artifacts, 'renderOutputCapture', {
+			value: {
+				artifact,
+				replayConfig: {
+					schema: 'renderer-output@1',
+					toneMapping: renderer.toneMapping,
+					currentColorSpace: renderer.outputColorSpace,
+					sampledTexture: '2d',
+					multiview: false,
+				},
+			},
+		} );
+		return artifacts;
+
+	};
+	const originalFetch = globalThis.fetch;
+	const originalAutoCapture = globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__;
+	const originalThreeVersion = globalThis.__TSLP_THREE_PACKAGE_VERSION__;
+	let posts = 0;
+	globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__ = true;
+	globalThis.__TSLP_THREE_PACKAGE_VERSION__ = '0.184.0';
+	globalThis.fetch = async () => {
+
+		posts ++;
+		return { ok: true, text: async () => '' };
+
+	};
+
+	try {
+
+		const setup = setupPrecompile( { three, renderer, aux: { compileTSL }, scene: outerScene, camera } );
+		await setup.ready;
+		renderer.render( outerScene, camera );
+		for ( let i = 0; i < 20 && posts < 1; i ++ ) await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+		renderer.render( outerScene, camera );
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+		assert.equal( compileCalls, 1, 'offscreen and outer renders share the restored canvas topology' );
+
+		renderer.outputColorSpace = 'display-p3';
+		renderer.render( outerScene, camera );
+		for ( let i = 0; i < 20 && posts < 2; i ++ ) await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+		assert.equal( compileCalls, 2, 'a later canvas output-color topology remains observable' );
+		assert.equal( posts, 2 );
+
+	} finally {
+
+		resetMarkerForTests();
+		globalThis.fetch = originalFetch;
+		if ( originalAutoCapture === undefined ) delete globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__;
+		else globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__ = originalAutoCapture;
+		if ( originalThreeVersion === undefined ) delete globalThis.__TSLP_THREE_PACKAGE_VERSION__;
+		else globalThis.__TSLP_THREE_PACKAGE_VERSION__ = originalThreeVersion;
+
+	}
+
+} );
+
+test( 'slim-mode output capture queues a distinct topology observed during a slow capture', async () => {
+
+	const { three } = freshHarness();
+	const renderer = fakeRenderer( { initialised: true } );
+	const scene = { isScene: true };
+	const camera = {};
+	const artifact = {
+		materialShape: 'output-transform',
+		vertexShader: 'output-vertex',
+		fragmentShader: 'output-fragment',
+		uniformPlan: [ { name: 'object', textures: [ {
+			bindingKind: 'sampled-texture',
+			textureType: '2d',
+			source: { kind: 'artifact.texture', textureUuid: 'output-texture', mapping: 300 },
+		} ] } ],
+	};
+	let releaseFirst;
+	const firstCaptureGate = new Promise( ( resolve ) => { releaseFirst = resolve; } );
+	const capturedConfigs = [];
+	const compileTSL = async ( _renderer, _scene, _camera, options ) => {
+
+		const index = capturedConfigs.length;
+		capturedConfigs.push( options.rendererOutputConfig );
+		if ( index === 0 ) await firstCaptureGate;
+		const artifacts = [ artifact ];
+		Object.defineProperty( artifacts, 'renderOutputCapture', {
+			value: { artifact, replayConfig: options.rendererOutputConfig },
+		} );
+		return artifacts;
+
+	};
+	const originalFetch = globalThis.fetch;
+	const originalAutoCapture = globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__;
+	const originalThreeVersion = globalThis.__TSLP_THREE_PACKAGE_VERSION__;
+	const posts = [];
+	globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__ = true;
+	globalThis.__TSLP_THREE_PACKAGE_VERSION__ = '0.184.0';
+	globalThis.fetch = async ( _endpoint, request ) => {
+
+		posts.push( JSON.parse( request.body ) );
+		return { ok: true, text: async () => '' };
+
+	};
+
+	try {
+
+		const setup = setupPrecompile( { three, renderer, aux: { compileTSL }, scene, camera } );
+		await setup.ready;
+		renderer.render( scene, camera );
+		for ( let i = 0; i < 20 && capturedConfigs.length < 1; i ++ ) await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		renderer.toneMapping = 4;
+		renderer.render( scene, camera );
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+		renderer.toneMapping = 0;
+		releaseFirst();
+		for ( let i = 0; i < 20 && posts.length < 2; i ++ ) await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		assert.equal( capturedConfigs.length, 2 );
+		assert.deepEqual( capturedConfigs.map( ( config ) => config.toneMapping ), [ 0, 4 ] );
+		assert.equal( posts.length, 2 );
+		assert.notEqual( posts[ 0 ].configHash, posts[ 1 ].configHash );
+
+	} finally {
+
+		releaseFirst();
+		resetMarkerForTests();
+		globalThis.fetch = originalFetch;
+		if ( originalAutoCapture === undefined ) delete globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__;
+		else globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__ = originalAutoCapture;
+		if ( originalThreeVersion === undefined ) delete globalThis.__TSLP_THREE_PACKAGE_VERSION__;
+		else globalThis.__TSLP_THREE_PACKAGE_VERSION__ = originalThreeVersion;
+
+	}
 
 } );
 

@@ -5,7 +5,9 @@
  *   1. `pnpm dev` — runs Vite with the plugin. `setupPrecompile()` wires the
  *      dev-capture endpoint; the first time `.precompile('getting-started')`
  *      runs, the live extractor walks the material and POSTs the artifact
- *      to `./artifacts/getting-started.<hash>.json`.
+ *      to `./artifacts/getting-started.<hash>.json`. Because this example
+ *      enables slim source mode, setup also captures each renderer-output
+ *      topology observed after a successful real render.
  *   2. Commit `./artifacts/` so other developers (and CI) can `build`
  *      without re-running dev capture.
  *   3. `pnpm build` — Vite + the plugin rewrite `.precompile('...')` into
@@ -30,7 +32,8 @@ document.body.appendChild( renderer.domElement );
 // One-call setup: installs the .precompile() marker and registers this
 // renderer with the dev-capture flow once init() has resolved. In a prod
 // build the babel transform has already replaced .precompile() calls and
-// this helper becomes a harmless no-op.
+// this helper becomes a harmless no-op. Slim mode also uses this same real
+// render observation to capture only the renderer-output transform in dev.
 const setup = setupPrecompile( { renderer } );
 await renderer.init();
 await setup.ready;
