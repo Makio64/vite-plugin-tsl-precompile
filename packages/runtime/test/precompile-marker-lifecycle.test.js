@@ -645,6 +645,37 @@ test( 'aggregates a synchronous real-render burst before handing the complete ha
 
 } );
 
+test( 'auto-mark context waits for a real render when output target topology is implicit', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'auto-real-render' );
+		const material = new three.Material();
+		const context = mount( three, material );
+		const harvest = { supported: true, familiesByMaterial: new Map( [ [ material, { complete: true, variants: [] } ] ] ) };
+		const renderer = { render() {}, getRenderTarget: () => null, getMRT: () => null };
+		let extractorCalls = 0;
+		let suppliedHarvest = null;
+		install( three, async ( _renderer, _scene, _camera, options ) => {
+
+			extractorCalls ++;
+			suppliedHarvest = options && options.renderObjectHarvest || null;
+			return artifactSet( material );
+
+		}, { beginRenderObjectHarvest: () => ( { finish: () => harvest } ) } );
+		await setDevRenderer( renderer, three );
+		material.precompile( 'auto-real-render', { ...context, __tslpAutoMark: true } );
+		assert.equal( extractorCalls, 0, 'implicit output topology must not start a synthetic capture immediately' );
+
+		renderer.render( context.scene, context.camera );
+		await waitFor( () => posts.length === 1, 'auto-mark real-render capture' );
+		assert.equal( extractorCalls, 1 );
+		assert.equal( suppliedHarvest, harvest );
+
+	} );
+
+} );
+
 test( 'publishes a single-scene real-render harvest for one auxiliary consumer', async () => {
 
 	await withBrowser( async ( posts ) => {

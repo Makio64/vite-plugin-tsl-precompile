@@ -243,7 +243,15 @@ function queueMaterialCapture( material, name, installation, context, sourceIden
 	// Explicit/legacy sidecar context is already sufficient to preserve the
 	// render-dependent shader shape. Context-free markers deliberately wait for
 	// the material to appear in a real render (see setDevRenderer below).
-	if ( entry.renderer && hasUsableCaptureContext( entry.context ) ) startQueuedCapture( entry );
+	const autoCaptureHasExplicitTarget = entry.allowAutoFallback && (
+		entry.context.renderTarget || Object.prototype.hasOwnProperty.call( entry.context, 'mrt' ) && entry.context.mrt
+	);
+	// Auto-mark instrumentation supplies Scene/Camera/Object hints before the
+	// material's first real draw. Unless it also observed an explicit RT/MRT,
+	// wait for the renderer wrapper to collect the exact RenderObject family;
+	// starting immediately would sign the extractor's synthetic offscreen target
+	// instead of the renderer-owned output-intermediate topology.
+	if ( entry.renderer && hasUsableCaptureContext( entry.context ) && ( ! entry.allowAutoFallback || autoCaptureHasExplicitTarget ) ) startQueuedCapture( entry );
 	else if ( entry.allowAutoFallback && entry.renderer && lastRender ) scheduleAutoFallbackEntry( entry, lastRender.scene, lastRender.camera );
 
 }
