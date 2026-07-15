@@ -225,6 +225,7 @@ function queueMaterialCapture( material, name, installation, context, sourceIden
 		observedRenderTarget: normalizedContext.renderTarget || null,
 		sourceIdentity,
 		sourceRevision,
+		sourceMaterialNodeProps: materialNodeProps( material ),
 	};
 	// Auto-mark instrumentation may carry the target observed during an earlier
 	// render, while ordinary markers can be invoked inside the active pass.
@@ -430,6 +431,11 @@ function bindPendingCapturesFromRender( renderer, scene, camera, renderTopology 
 					entry.context.object = object;
 
 				}
+				// Snapshot the author-visible graph before Three's real render calls
+				// NodeMaterial.setup(), which can populate internal *Node properties.
+				// Those builder-owned nodes describe the captured shader, but they are
+				// not present yet when compiler-free replay selects an artifact.
+				entry.sourceMaterialNodeProps = materialNodeProps( material );
 				ready.add( entry );
 
 			}
@@ -487,6 +493,7 @@ function scheduleAutoFallbackEntry( entry, scene, camera ) {
 		// extraction invent a generic offscreen-2d surface.
 		if ( ! entry.observedRenderTarget ) entry.observedRenderTarget =
 			activeRenderTarget( entry.renderer ) || activeOutputIntermediateTarget( entry.renderer );
+		entry.sourceMaterialNodeProps = materialNodeProps( entry.material );
 		logOnce( 'auto-context-fallback:' + entry.name, () => console.warn( `[tsl-precompile] auto-marked material ${ JSON.stringify( entry.name ) } was not observed on a render object; capturing it with the latest Scene/Camera and a generic mesh fallback.` ) );
 		startQueuedCapture( entry );
 
@@ -663,23 +670,38 @@ function objectSourceMetadata( object ) {
 
 }
 
-function materialSourceMetadata( material, sourceObject = null ) {
+function materialNodeProps( material ) {
 
 	const nodeProps = [];
+	// Line2NodeMaterial.setup() builds these roots from the public wide-line
+	// controls on every compile. They are compiler output, not author graph
+	// inputs, and compiler-free replay never runs setup() before artifact
+	// selection. Keep the actual author inputs (lineColorNode, offsetNode, dash
+	// nodes, etc.) while excluding the generated roots from source matching.
+	const setupOwnedNodeProps = material && ( material.isLine2NodeMaterial === true || material.type === 'Line2NodeMaterial' )
+		? new Set( [ 'vertexNode', 'colorNode', 'outputNode' ] )
+		: null;
 	if ( material ) {
 
 		for ( const key of MATERIAL_NODE_TEXTURE_KEYS ) {
 
+			if ( setupOwnedNodeProps && setupOwnedNodeProps.has( key ) ) continue;
 			const value = material[ key ];
 			if ( value && value.isNode === true ) nodeProps.push( key );
 
 		}
 
 	}
+	return nodeProps;
+
+}
+
+function materialSourceMetadata( material, sourceObject = null ) {
+
 	return {
 		type: material && typeof material.type === 'string' ? material.type : null,
 		name: material && typeof material.name === 'string' ? material.name : '',
-		nodeProps,
+		nodeProps: materialNodeProps( material ),
 		object: objectSourceMetadata( sourceObject ),
 	};
 
@@ -1630,7 +1652,9 @@ async function captureMaterialInDev( entry ) {
 		// adoption time; the plugin-owned call-site revision is the correct gate.
 		artifact.sourceValidationMode = entry.allowAutoFallback ? 'callsite' : 'runtime-graph';
 		const sanitized = jsonSafeArtifact( artifact );
-		sanitized.sourceMaterial = materialSourceMetadata( material, sourceObject );
+		const sourceMetadata = materialSourceMetadata( material, sourceObject );
+		if ( Array.isArray( entry.sourceMaterialNodeProps ) ) sourceMetadata.nodeProps = entry.sourceMaterialNodeProps.slice();
+		sanitized.sourceMaterial = sourceMetadata;
 		const hash = hashArtifactContentSync( sanitized, {
 			shape: `material:${ name }`,
 			threeVersion: sourceThreeVersion,
