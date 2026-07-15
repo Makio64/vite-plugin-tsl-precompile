@@ -111,6 +111,7 @@ export function settleFramesForExample( name, defaultSettleFrames = 8, hasExplic
 	if ( name === 'webgpu_lights_custom.html' ) return 1;
 	if ( name === 'webgpu_lights_projector.html' ) return 1;
 	if ( name === 'webgpu_materials_video.html' ) return 1;
+	if ( name === 'webgpu_textures_anisotropy.html' ) return 1;
 	if ( name === 'webgpu_postprocessing_dof.html' ) return 1;
 	if ( name === 'webgpu_postprocessing_retro.html' ) return 1;
 	if ( name === 'webgpu_postprocessing_smaa.html' ) return 1;

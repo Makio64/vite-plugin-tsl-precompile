@@ -110,6 +110,7 @@ test( 'temporal examples freeze only after their required history is available',
 	assert.equal( settleFramesForExample( 'webgpu_postprocessing_ao.html' ), 16 );
 	assert.equal( settleFramesForExample( 'webgpu_postprocessing_traa.html' ), 80 );
 	assert.equal( settleFramesForExample( 'webgpu_camera_array.html' ), 1 );
+	assert.equal( settleFramesForExample( 'webgpu_textures_anisotropy.html' ), 1 );
 	assert.equal( settleFramesForExample( 'webgpu_materials.html', 12 ), 12 );
 	assert.equal( settleFramesForExample( 'webgpu_postprocessing_motion_blur.html', 5, true ), 5 );
 
