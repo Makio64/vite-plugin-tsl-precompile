@@ -665,7 +665,29 @@ export function createSlimSceneSupport( opts = {} ) {
 		// renderer. In hybrid mode the application owns the slim renderer, so
 		// preserve that public identity and await nested initialization kernels.
 		try { computeNode.onInitFunction = null; } catch ( _ ) {}
-		await onInit.call( computeNode, { renderer } );
+		if ( computeNode.onInitFunction !== null ) {
+
+			initializedMaterialComputeNodes.delete( computeNode );
+			const error = new Error( 'createSlimSceneSupport: material compute onInitFunction must be temporarily writable so initialization can be awaited exactly once.' );
+			error.code = 'TSLP_MATERIAL_COMPUTE_ON_INIT_IMMUTABLE';
+			throw error;
+
+		}
+		try {
+
+			await onInit.call( computeNode, { renderer } );
+
+		} catch ( error ) {
+
+			initializedMaterialComputeNodes.delete( computeNode );
+			try {
+
+				if ( computeNode.onInitFunction === null ) computeNode.onInitFunction = onInit;
+
+			} catch ( _ ) { /* the next transaction will fail closed as immutable */ }
+			throw error;
+
+		}
 
 	}
 
@@ -875,6 +897,19 @@ export function createSlimSceneSupport( opts = {} ) {
 		// renderer. Route those nested raw kernels through this same full
 		// renderer while the explicit owner dispatch is active.
 		installComputeFallback( fullRenderer );
+		try {
+
+			// Initialization can mutate the kernel graph and its bind groups. It
+			// must complete before auto-compute asks `_nodes.getForCompute()` to
+			// prepare output ownership, otherwise a failed/partial onInit can be
+			// cached as if it were the final kernel.
+			for ( const computeNode of includedNodes ) await initializeMaterialComputeNode( computeNode );
+
+		} catch ( error ) {
+
+			return rejectMaterialComputeDispatch( scene, computeOpts, bindings, error );
+
+		}
 		let resourceErrors = 0;
 		const dispatchedNodes = new Set();
 		const dispatchedHybridNodes = new Set();

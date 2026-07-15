@@ -761,6 +761,66 @@ test( 'createSlimSceneSupport claims hybrid compute only after forced full dispa
 
 } );
 
+test( 'createSlimSceneSupport retries failed material compute initialization before building or dispatching', async () => {
+
+	const slim = fakeRenderer();
+	const full = fakeRenderer();
+	full.backend.device = slim.backend.device;
+	let initCalls = 0;
+	let stateRequests = 0;
+	let dispatches = 0;
+	const raw = {
+		isNode: true,
+		isComputeNode: true,
+		traverse( visitor ) { visitor( this ); },
+		async onInitFunction() {
+
+			initCalls ++;
+			if ( initCalls === 1 ) throw new Error( 'transient init failure' );
+
+		},
+	};
+	const artifact = contractComputeArtifact();
+	const material = {
+		isPrecompiledMaterial: true,
+		precompiledArtifact: artifact,
+		positionNode: raw,
+	};
+	const scene = { traverse( visitor ) { visitor( { material } ); } };
+	full._nodes = { getForCompute: () => { stateRequests ++; return { bindings: [] }; } };
+	full._bindings = { getForCompute: () => [] };
+	full.computeAsync = async () => { dispatches ++; };
+	const support = createSlimSceneSupport( { renderer: slim, fullRendererFallback: false } );
+
+	try {
+
+		const failed = await support.dispatchMaterialComputes( scene, { fullRenderer: full } );
+		assert.equal( failed.errors, 1 );
+		assert.equal( initCalls, 1 );
+		assert.equal( stateRequests, 0, 'a failed graph-mutating initializer cannot be built early' );
+		assert.equal( dispatches, 0 );
+		assert.equal( typeof raw.onInitFunction, 'function', 'the original callback remains retryable' );
+		assert.throws(
+			() => hydrateNodeBuilderState( artifact, material ),
+			( error ) => error.code === 'TSLP_MATERIAL_COMPUTE_HYBRID_REQUIRED',
+		);
+
+		const recovered = await support.dispatchMaterialComputes( scene, { fullRenderer: full } );
+		assert.equal( recovered.errors, 0 );
+		assert.equal( initCalls, 2 );
+		assert.equal( stateRequests > 0, true );
+		assert.equal( dispatches, 1 );
+		assert.equal( raw.onInitFunction, null );
+		assert.equal( hydrateNodeBuilderState( artifact, material ).updateBeforeNodes.length, 1 );
+
+	} finally {
+
+		await support.dispose();
+
+	}
+
+} );
+
 test( 'createSlimSceneSupport keeps hybrid hydration closed when a contracted output was not synchronized', async () => {
 
 	const slim = fakeRenderer();
