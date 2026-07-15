@@ -1870,10 +1870,15 @@ export function extractUniformPlan( state, context = null ) {
 					// reference on the plan for the in-process path so the
 					// demo flow doesn't need separate serialisation.
 					count: attr && typeof attr.count === 'number' ? attr.count : ( array ? array.length : 0 ),
-					itemSize: attr && typeof attr.itemSize === 'number' ? attr.itemSize : 1,
-					_liveArray: array,
-					_liveAttribute: attr
+					itemSize: attr && typeof attr.itemSize === 'number' ? attr.itemSize : 1
 				};
+				// These process-local identities must never become artifact data.
+				// Define them before the entry is nested into orderedBindings so
+				// every serializer observes the same non-enumerable ownership seam.
+				Object.defineProperties( sbEntry, {
+					_liveArray: { value: array, enumerable: false, configurable: true, writable: true },
+					_liveAttribute: { value: attr, enumerable: false, configurable: true, writable: true }
+				} );
 				groupEntry.storageBuffers.push( sbEntry );
 				groupEntry.orderedBindings.push( { type: 'storage-buffer', ref: sbEntry } );
 

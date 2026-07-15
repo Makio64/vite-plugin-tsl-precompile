@@ -619,3 +619,39 @@ test( 'extractUniformPlan leaves non-linear time callbacks as uniform.live', () 
 	assert.equal( plan[ 0 ].slots[ 0 ].source.kind, 'uniform.live' );
 
 } );
+
+test( 'extractUniformPlan keeps nested storage ownership sidecars live but out of JSON', () => {
+
+	const attribute = {
+		isStorageBufferAttribute: true,
+		array: new Float32Array( [ 1, 2, 3, 4 ] ),
+		count: 1,
+		itemSize: 4,
+	};
+	const plan = extractUniformPlan( {
+		updateNodes: [],
+		bindings: [ {
+			name: 'compute',
+			bindings: [ {
+				isStorageBuffer: true,
+				name: 'positions',
+				access: 'readWrite',
+				visibility: 4,
+				attribute,
+			} ],
+		} ],
+	}, {} );
+	const entry = plan[ 0 ].storageBuffers[ 0 ];
+
+	assert.equal( entry._liveArray, attribute.array );
+	assert.equal( entry._liveAttribute, attribute );
+	assert.equal( plan[ 0 ].orderedBindings[ 0 ].ref, entry, 'ordered binding retains the same nested entry' );
+	assert.equal( Object.prototype.propertyIsEnumerable.call( entry, '_liveArray' ), false );
+	assert.equal( Object.prototype.propertyIsEnumerable.call( entry, '_liveAttribute' ), false );
+	const serialized = JSON.parse( JSON.stringify( plan ) );
+	assert.equal( serialized[ 0 ].storageBuffers[ 0 ]._liveArray, undefined );
+	assert.equal( serialized[ 0 ].storageBuffers[ 0 ]._liveAttribute, undefined );
+	assert.equal( serialized[ 0 ].orderedBindings[ 0 ].ref._liveArray, undefined );
+	assert.equal( serialized[ 0 ].orderedBindings[ 0 ].ref._liveAttribute, undefined );
+
+} );
