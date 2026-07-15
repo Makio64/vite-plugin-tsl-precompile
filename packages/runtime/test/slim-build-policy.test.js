@@ -131,12 +131,13 @@ test( 'slim replay-adapter policy rejects stock lighting, scene graph, and manag
 				'/three/src/renderers/common/nodes/NodeManager.js': { renderedLength: 800 },
 				'/three/src/nodes/core/NodeFrame.js': { renderedLength: 850 },
 				'/three/src/renderers/common/nodes/NodeBuilderState.js': { renderedLength: 600 },
+				'/three/src/renderers/common/nodes/NodeLibrary.js': { renderedLength: 550 },
 				'/three/src/renderers/common/Lighting-unused.js': { renderedLength: 0 },
 			},
 		},
 	} );
 
-	assert.deepEqual( found.map( ( item ) => item.label ), [ 'stock LightsNode', 'stock NodeFrame', 'stock NodeManager', 'stock Background', 'stock scene Fog graph', 'stock NodeBuilderState', 'stock Lighting' ] );
+	assert.deepEqual( found.map( ( item ) => item.label ), [ 'stock LightsNode', 'stock NodeFrame', 'stock NodeManager', 'stock Background', 'stock scene Fog graph', 'stock NodeBuilderState', 'stock NodeLibrary', 'stock Lighting' ] );
 
 } );
 

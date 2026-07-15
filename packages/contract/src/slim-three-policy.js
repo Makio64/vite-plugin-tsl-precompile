@@ -7,7 +7,7 @@
  * replaced by replay adapters, or rejected as runtime compiler residue.
  */
 
-export const SLIM_THREE_POLICY_VERSION = 'slim-three-policy@8';
+export const SLIM_THREE_POLICY_VERSION = 'slim-three-policy@9';
 
 /** Exact Three package patch used to build the published prebuilt slim file. */
 export const SLIM_THREE_PACKAGE_VERSION = '0.184.0';
@@ -78,6 +78,7 @@ export const SLIM_THREE_REPLAY_ADAPTER_MODULES = freezeRules( [
 	{ id: 'node-manager', label: 'stock NodeManager', sourcePath: 'renderers/common/nodes/NodeManager.js', role: SLIM_THREE_MODULE_ROLES.REPLAY_ADAPTER },
 	{ id: 'node-frame', label: 'stock NodeFrame', sourcePath: 'nodes/core/NodeFrame.js', role: SLIM_THREE_MODULE_ROLES.REPLAY_ADAPTER },
 	{ id: 'node-builder-state', label: 'stock NodeBuilderState', sourcePath: 'renderers/common/nodes/NodeBuilderState.js', role: SLIM_THREE_MODULE_ROLES.REPLAY_ADAPTER },
+	{ id: 'node-library', label: 'stock NodeLibrary', sourcePath: 'renderers/common/nodes/NodeLibrary.js', role: SLIM_THREE_MODULE_ROLES.REPLAY_ADAPTER },
 	{ id: 'xr-manager', label: 'stock XRManager', sourcePath: 'renderers/common/XRManager.js', role: SLIM_THREE_MODULE_ROLES.REPLAY_ADAPTER },
 	{ id: 'xr-render-target', label: 'stock XRRenderTarget', sourcePath: 'renderers/common/XRRenderTarget.js', role: SLIM_THREE_MODULE_ROLES.REPLAY_ADAPTER },
 	{ id: 'webxr-controller', label: 'stock WebXRController', sourcePath: 'renderers/webxr/WebXRController.js', role: SLIM_THREE_MODULE_ROLES.REPLAY_ADAPTER },

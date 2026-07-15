@@ -2,9 +2,8 @@
  * Snapshot tests for the WebGPURenderer.js three.js-source rewrite.
  *
  * This is the load-bearing patch — swapping `StandardNodeLibrary` for the
- * base `NodeLibrary` eliminates the ≈100 KB barrel of `*NodeMaterial` +
- * `*LightNode` + tone-mapping-TSL imports that otherwise anchor the full
- * node builder inside the slim bundle.
+ * runtime-owned `ReplayNodeLibrary` eliminates its compiler graph and the
+ * final stock common NodeLibrary owner from the slim bundle.
  */
 
 import { test } from 'node:test';
@@ -17,7 +16,7 @@ import { rewriteThreeSource } from '../../src/three-rewrite.js';
 import { THREE_SRC } from '../_three-src.js';
 const PATH = resolve( THREE_SRC, 'renderers/webgpu/WebGPURenderer.js' );
 
-test( 'rewrite/WebGPURenderer: swaps StandardNodeLibrary import for NodeLibrary + drops WebGL fallback', () => {
+test( 'rewrite/WebGPURenderer: swaps StandardNodeLibrary for ReplayNodeLibrary + drops WebGL fallback', () => {
 
 	const src = readFileSync( PATH, 'utf8' );
 	const r = rewriteThreeSource( src, PATH, { threeVersion: '175', pluginVersion: '0.0.0' } );
@@ -28,14 +27,15 @@ test( 'rewrite/WebGPURenderer: swaps StandardNodeLibrary import for NodeLibrary 
 
 	// Library swap.
 	assert.doesNotMatch( out, /import\s+StandardNodeLibrary\s+from/ );
-	assert.match( out, /import\s+NodeLibrary\s+from\s+["'][^"']*\/common\/nodes\/NodeLibrary\.js["']/ );
+	assert.doesNotMatch( out, /common\/nodes\/NodeLibrary\.js/ );
+	assert.match( out, /import\s+ReplayNodeLibrary\s+from\s+["']virtual:tsl-precompile\/__slim-rewrite-runtime\/node-library["']/ );
 	assert.doesNotMatch( out, /new StandardNodeLibrary\s*\(/ );
-	assert.match( out, /new NodeLibrary\s*\(\s*\)/ );
+	assert.match( out, /new ReplayNodeLibrary\s*\(\s*\)/ );
 
 	// WebGL fallback is gone: no import, no construction, no getFallback wiring.
 	assert.doesNotMatch( out, /import\s+WebGLBackend\s+from/ );
 	assert.doesNotMatch( out, /parameters\.getFallback\s*=/ );
-	assert.doesNotMatch( out, /__slim-rewrite-runtime\//, 'pure WebGPURenderer rewrite must not add a runtime edge' );
+	assert.doesNotMatch( out, /__slim-rewrite-runtime\/(?!node-library)/ );
 
 } );
 

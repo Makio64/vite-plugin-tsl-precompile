@@ -43,6 +43,14 @@ test( 'Node core primitive rewrites are also hard stock-residue guards', () => {
 
 } );
 
+test( 'stock common NodeLibrary is owned by the graph-free replay adapter', () => {
+
+	const id = '/project/node_modules/three/src/renderers/common/nodes/NodeLibrary.js';
+	assert.equal( getSlimThreeReplayAdapterModule( id )?.label, 'stock NodeLibrary' );
+	assert.equal( getSlimThreeCompilerModule( id ), null );
+
+} );
+
 test( 'compiler and broad source-residue classifiers match the installed Three layout', () => {
 
 	assert.equal(

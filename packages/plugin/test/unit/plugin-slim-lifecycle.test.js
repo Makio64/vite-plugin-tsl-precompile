@@ -428,7 +428,7 @@ test( 'source slim build aliases the tree-shaken entry and routes private Three 
 		);
 		const guardId = plugin.resolveId( 'virtual:tsl-precompile/__slim-source' );
 		assert.equal( guardId, '\0virtual:tsl-precompile/__slim-source' );
-		assert.match( await plugin.load( guardId ), /slim-three-policy@8/ );
+		assert.match( await plugin.load( guardId ), /slim-three-policy@9/ );
 
 	} finally {
 
@@ -472,13 +472,14 @@ test( 'source slim final bundle guard rejects every compiler-free source-boundar
 				modules: {
 					[ join( fixture.threeRoot, 'src/nodes/core/NodeBuilder.js' ) ]: { renderedLength: 1200 },
 					[ join( fixture.threeRoot, 'src/renderers/common/Lighting.js' ) ]: { renderedLength: 400 },
+					[ join( fixture.threeRoot, 'src/renderers/common/nodes/NodeLibrary.js' ) ]: { renderedLength: 375 },
 					[ join( fixture.threeRoot, 'src/nodes/core/NodeFrame.js' ) ]: { renderedLength: 350 },
 					[ join( fixture.threeRoot, 'src/renderers/common/XRRenderTarget.js' ) ]: { renderedLength: 300 },
 					[ join( fixture.threeRoot, 'src/nodes/math/MathNode.js' ) ]: { renderedLength: 250 },
 					[ join( fixture.threeRoot, 'build/three.module.js' ) ]: { renderedLength: 2000 },
 				},
 			},
-		} ), /slim source build retained forbidden Three modules[\s\S]*NodeBuilder[\s\S]*stock Lighting[\s\S]*stock NodeFrame[\s\S]*stock XRRenderTarget[\s\S]*retained Node\/TSL runtime[\s\S]*MathNode[\s\S]*split bare Three identity[\s\S]*three\.module/ );
+		} ), /slim source build retained forbidden Three modules[\s\S]*NodeBuilder[\s\S]*stock Lighting[\s\S]*stock NodeLibrary[\s\S]*stock NodeFrame[\s\S]*stock XRRenderTarget[\s\S]*retained Node\/TSL runtime[\s\S]*MathNode[\s\S]*split bare Three identity[\s\S]*three\.module/ );
 
 	} finally {
 
@@ -502,6 +503,7 @@ test( 'source slim completes a real Vite build with guard, rewrites, and adapter
 		assert.ok( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-source-entry.js' ) ) );
 		assert.ok( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-bootstrap.js' ) ) );
 		assert.ok( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-replay-node-manager.js' ) ) );
+		assert.ok( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-replay-node-library.js' ) ) );
 		assert.ok( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-replay-node-frame.js' ) ) );
 		assert.ok( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-replay-xr-manager.js' ) ) );
 		assert.ok( moduleIds.some( ( id ) => id.endsWith( '/runtime/src/slim-replay-renderer-output.js' ) ) );

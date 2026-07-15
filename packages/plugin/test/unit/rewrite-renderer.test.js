@@ -32,6 +32,9 @@ test( 'rewrite/Renderer: NodeMaterial replaced with Material sentinel + fragment
 	const out = r.code;
 	assert.doesNotMatch( out, /new NodeMaterial\s*\(/ );
 	assert.match( out, /new QuadMesh\s*\(\s*new Material\s*\(\s*\)\s*\)/ );
+	assert.doesNotMatch( out, /common\/nodes\/NodeLibrary\.js/ );
+	assert.match( out, /import\s+ReplayNodeLibrary\s+from\s+["']virtual:tsl-precompile\/__slim-rewrite-runtime\/node-library["']/ );
+	assert.match( out, /this\.library\s*=\s*new ReplayNodeLibrary\s*\(\s*\)/ );
 	assert.match( out, /\.material\s*=\s*createReplayRenderOutputMaterial\s*\(/ );
 	assert.match( out, /getReplayRenderOutputCacheKey\s*\(\s*this\s*,\s*renderTarget\.texture\s*\)/ );
 	assert.match( out, /renderTarget\.texture/ );

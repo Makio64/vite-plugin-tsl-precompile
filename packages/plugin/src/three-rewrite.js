@@ -52,6 +52,7 @@ export const SLIM_REWRITE_RUNTIME_MODULE_RULES = Object.freeze( [
 	{ id: 'artifact-registry', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'artifact-registry', runtimeFile: '_vendor-PrecompiledArtifactRegistry.js' },
 	{ id: 'aux-loader', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'aux-loader', runtimeFile: 'aux-loader.js' },
 	{ id: 'graph-hash', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'graph-hash', runtimeFile: 'graph-hash.js' },
+	{ id: 'node-library', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'node-library', runtimeFile: 'slim-replay-node-library.js' },
 	{ id: 'renderer-context', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'renderer-context', runtimeFile: 'slim-replay-renderer-context.js' },
 	{ id: 'renderer-output', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'renderer-output', runtimeFile: 'slim-replay-renderer-output.js' },
 	{ id: 'cube-render-target', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'cube-render-target', runtimeFile: 'slim-replay-cube-render-target.js' },
@@ -77,6 +78,7 @@ const SLIM_REWRITE_RUNTIME_HELPERS = Object.freeze( {
 	attachPostprocessObject3DTargets: Object.freeze( { moduleId: 'aux-loader', kind: 'named' } ),
 	hashNodeGraphSync: Object.freeze( { moduleId: 'graph-hash', kind: 'named' } ),
 	hashPlainConfigSync: Object.freeze( { moduleId: 'graph-hash', kind: 'named' } ),
+	ReplayNodeLibrary: Object.freeze( { moduleId: 'node-library', kind: 'default' } ),
 	createReplayRendererContext: Object.freeze( { moduleId: 'renderer-context', kind: 'named' } ),
 	setReplayRendererHighPrecision: Object.freeze( { moduleId: 'renderer-context', kind: 'named' } ),
 	getReplayRendererHighPrecision: Object.freeze( { moduleId: 'renderer-context', kind: 'named' } ),
@@ -866,6 +868,8 @@ function rewriteRenderer( ast, ctx ) {
 
 	let foundConstruct = false;
 	let foundAssign = false;
+	let foundNodeLibraryImport = false;
+	let foundNodeLibraryConstruct = false;
 	let foundCacheKey = false;
 	let foundContext = false;
 	let foundHighPrecisionSetter = false;
@@ -879,6 +883,19 @@ function rewriteRenderer( ast, ctx ) {
 	let shadowWarnings = 0;
 
 	traverse( ast, {
+		ImportDeclaration( path ) {
+
+			if ( ! /\/nodes\/NodeLibrary\.js$/.test( path.node.source.value ) ) return;
+			const defaultSpecifier = path.node.specifiers.find( ( specifier ) => t.isImportDefaultSpecifier( specifier ) );
+			if ( ! defaultSpecifier || ! t.isIdentifier( defaultSpecifier.local, { name: 'NodeLibrary' } ) ) {
+
+				throw new Error( 'Renderer: NodeLibrary import shape changed' );
+
+			}
+			path.remove();
+			foundNodeLibraryImport = true;
+
+		},
 		ClassMethod( path ) {
 
 			if ( ! isRendererClassMethod( path ) ) return;
@@ -927,6 +944,15 @@ function rewriteRenderer( ast, ctx ) {
 
 		},
 		NewExpression( path ) {
+
+			if ( t.isIdentifier( path.node.callee, { name: 'NodeLibrary' } ) ) {
+
+				if ( path.node.arguments.length !== 0 ) throw new Error( 'Renderer: NodeLibrary construction shape changed' );
+				path.node.callee = t.identifier( 'ReplayNodeLibrary' );
+				foundNodeLibraryConstruct = true;
+				return;
+
+			}
 
 			// Match: new NodeMaterial() with zero arguments.
 			if ( ! t.isIdentifier( path.node.callee, { name: 'NodeMaterial' } ) ) return;
@@ -1015,6 +1041,8 @@ function rewriteRenderer( ast, ctx ) {
 
 	if ( ! foundConstruct ) throw new Error( 'Renderer: shape changed (no `new NodeMaterial()` found)' );
 	if ( ! foundAssign ) throw new Error( 'Renderer: shape changed (no `<X>.material.fragmentNode = <Y>` assignment found)' );
+	if ( ! foundNodeLibraryImport ) throw new Error( 'Renderer: shape changed (no NodeLibrary import found)' );
+	if ( ! foundNodeLibraryConstruct ) throw new Error( 'Renderer: shape changed (no `new NodeLibrary()` found)' );
 	if ( ! foundCacheKey ) throw new Error( 'Renderer: shape changed (no NodeManager output cache-key call found)' );
 	if ( ! foundContext ) throw new Error( 'Renderer: shape changed (no default `contextNode = context()` assignment found)' );
 	if ( ! foundHighPrecisionSetter || ! foundHighPrecisionGetter ) throw new Error( 'Renderer: shape changed (highPrecision accessors not found)' );
@@ -2133,11 +2161,9 @@ function stubCreateNodeBuilder( ast, importRegex, builderName, fileName ) {
 // at common/nodes/NodeLibrary.js) — and every precompiled material has
 // `isNodeMaterial = true`, so in a slim app the lookup never happens.
 //
-// Patch: swap the import to the base `NodeLibrary` and construct THAT
-// instead. Unused registrations are safe because precompile paths never
-// consult them; non-precompile paths throw loud "no material/light/tone-
-// mapping registered" errors — which is the correct slim-mode behaviour
-// (matches Phase 5's loud-failure gate).
+// Patch: replace the stock import with the runtime-owned graph-free
+// `ReplayNodeLibrary`. It preserves the private empty-registry surface without
+// retaining Three's stock NodeLibrary owner or any registered compiler graph.
 
 function rewriteWebGPURenderer( ast, ctx ) {
 
@@ -2148,12 +2174,16 @@ function rewriteWebGPURenderer( ast, ctx ) {
 	traverse( ast, {
 		ImportDeclaration( path ) {
 
-			// Swap StandardNodeLibrary for the base NodeLibrary.
+			// The replacement import is injected from its private runtime owner.
 			if ( /\/nodes\/StandardNodeLibrary\.js$/.test( path.node.source.value ) ) {
 
-				path.node.source = t.stringLiteral( '../common/nodes/NodeLibrary.js' );
 				const def = path.node.specifiers.find( ( s ) => t.isImportDefaultSpecifier( s ) );
-				if ( def ) def.local = t.identifier( 'NodeLibrary' );
+				if ( ! def || ! t.isIdentifier( def.local, { name: 'StandardNodeLibrary' } ) ) {
+
+					throw new Error( 'WebGPURenderer: StandardNodeLibrary import shape changed' );
+
+				}
+				path.remove();
 				foundLibImport = true;
 				return;
 
@@ -2172,7 +2202,8 @@ function rewriteWebGPURenderer( ast, ctx ) {
 
 			if ( t.isIdentifier( path.node.callee, { name: 'StandardNodeLibrary' } ) ) {
 
-				path.node.callee = t.identifier( 'NodeLibrary' );
+				if ( path.node.arguments.length !== 0 ) throw new Error( 'WebGPURenderer: StandardNodeLibrary construction shape changed' );
+				path.node.callee = t.identifier( 'ReplayNodeLibrary' );
 				foundLibNew = true;
 				return;
 
