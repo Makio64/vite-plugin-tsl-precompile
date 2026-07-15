@@ -21,7 +21,7 @@ test( 'the Playwright init-script installer is self-contained', () => {
 
 } );
 
-test( 'pending shadow work resets the quiet callback count without freezing the loop', () => {
+test( 'pending shadow work pauses without resetting completed callbacks', () => {
 
 	const transition = transitionForTest();
 	const result = transition( {
@@ -30,54 +30,61 @@ test( 'pending shadow work resets the quiet callback count without freezing the 
 		settleFrames: 8,
 		shadowPending: true,
 		waitingForAsyncCounters: true,
-		waitingForAsyncWork: true,
+		waitingForAsyncWork: false,
 	} );
 
-	assert.deepEqual( result, { animationLoopCalls: 0, runCallback: false } );
+	assert.deepEqual( result, { animationLoopCalls: 7, runCallback: false } );
 	assert.deepEqual( transition( {
 		...result,
 		atTarget: true,
 		settleFrames: 8,
 		shadowPending: true,
 		waitingForAsyncCounters: true,
-		waitingForAsyncWork: true,
-	} ), { animationLoopCalls: 0, runCallback: false } );
+		waitingForAsyncWork: false,
+	} ), { animationLoopCalls: 7, runCallback: false } );
 
 } );
 
-test( 'shadow completion requires exactly the configured 1/8/32 quiet callbacks', () => {
+test( 'non-shadow asynchronous work still restarts the settle count', () => {
+
+	const transition = transitionForTest();
+	assert.deepEqual( transition( {
+		animationLoopCalls: 7,
+		atTarget: true,
+		settleFrames: 8,
+		waitingForAsyncCounters: true,
+		waitingForAsyncWork: true,
+	} ), { animationLoopCalls: 1, runCallback: true } );
+
+} );
+
+test( 'recurrent callback shadow jobs reach exactly the configured settle count', () => {
 
 	const transition = transitionForTest();
 	for ( const settleFrames of [ 1, 8, 32 ] ) {
 
-		// The first callback starts the asynchronous shadow job while its pending
-		// counter is still zero. Observing the pending job then resets that call.
-		let state = transition( { atTarget: true, settleFrames } );
-		assert.equal( state.runCallback, true, `settle=${ settleFrames } starts shadow work` );
-		state = transition( {
-			...state,
-			atTarget: true,
-			settleFrames,
-			shadowPending: true,
-			waitingForAsyncCounters: true,
-			waitingForAsyncWork: true,
-		} );
-		assert.deepEqual( state, { animationLoopCalls: 0, runCallback: false } );
+		let state = { animationLoopCalls: 0 };
+		let completedCallbacks = 0;
+		while ( completedCallbacks < settleFrames ) {
 
-		let quietCallbacks = 0;
-		while ( true ) {
-
+			state = transition( { ...state, atTarget: true, settleFrames } );
+			assert.equal( state.runCallback, true, `settle=${ settleFrames } callback ${ completedCallbacks + 1 } runs` );
+			completedCallbacks ++;
 			state = transition( {
-				animationLoopCalls: state.animationLoopCalls,
+				...state,
 				atTarget: true,
 				settleFrames,
+				shadowPending: true,
+				waitingForAsyncCounters: true,
+				waitingForAsyncWork: false,
 			} );
-			if ( ! state.runCallback ) break;
-			quietCallbacks ++;
+			assert.deepEqual( state, { animationLoopCalls: completedCallbacks, runCallback: false } );
 
 		}
 
-		assert.equal( quietCallbacks, settleFrames, `settle=${ settleFrames } quiet callback count` );
+		state = transition( { ...state, atTarget: true, settleFrames } );
+		assert.equal( state.runCallback, false, `settle=${ settleFrames } stops after its final shadow job` );
+		assert.equal( completedCallbacks, settleFrames, `settle=${ settleFrames } completed callback count` );
 		assert.equal( state.animationLoopCalls, settleFrames, `settle=${ settleFrames } retained count` );
 
 	}

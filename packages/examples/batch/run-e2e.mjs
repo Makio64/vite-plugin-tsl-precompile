@@ -14808,7 +14808,16 @@ async function visitExample( browser, name, mode, waitMs ) {
 						|| ( w.__tslpPmremPending | 0 ) !== 0
 						|| ( w.__tslpShadowPending | 0 ) !== 0
 						|| ( w.__tslpComputePending | 0 ) !== 0;
-					const waitingForAsyncWork = waitingForAsyncCounters || waitingForRenderableObjects;
+					// A shadow job belongs to the callback that started it. Pause until
+					// that job finishes, but retain the completed-callback count; resetting
+					// it makes animated shadow scenes launch another job forever. Loader,
+					// compile, PMREM, compute, and scene-population work can change the next
+					// callback's inputs, so those still restart the settle count.
+					const waitingForAsyncWork = ( w.__tslpLoaderPending | 0 ) !== 0
+						|| ( w.__tslpCompilePending | 0 ) !== 0
+						|| ( w.__tslpPmremPending | 0 ) !== 0
+						|| ( w.__tslpComputePending | 0 ) !== 0
+						|| waitingForRenderableObjects;
 					const transition = transitionAnimationLoopSettle( {
 						animationLoopCalls: w.__tslpAnimationLoopCalls,
 						atTarget,
