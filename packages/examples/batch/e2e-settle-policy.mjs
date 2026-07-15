@@ -84,6 +84,42 @@ export function minimumRenderableObjectsForExample( name ) {
 }
 
 /**
+ * Whether animation callbacks must pause while capture/replay async work is
+ * pending. Count-driven simulations otherwise advance during a different
+ * number of shader-compilation frames in each mode, even though their final
+ * quiet-frame count is identical.
+ */
+export function holdAnimationUntilReadyForExample( name ) {
+
+	if (
+		name === 'webgpu_postprocessing_traa.html' ||
+		name === 'webgpu_postprocessing_lensflare.html' ||
+		name === 'webgpu_postprocessing_smaa.html' ||
+		name === 'webgpu_postprocessing_ssgi_ballpool.html' ||
+		name === 'webgpu_test_memory.html'
+	) return true;
+	return false;
+
+}
+
+/**
+ * Synthetic animation tick at which an example becomes temporally pinned.
+ */
+export function targetTickForExample( name, defaultTargetTick = 0, hasExplicitTargetTick = false ) {
+
+	if ( hasExplicitTargetTick ) return defaultTargetTick;
+	// Motion vectors need one completed animation step so VelocityNode has a
+	// meaningful previous/current pose pair.
+	if ( name === 'webgpu_postprocessing_motion_blur.html' ) return 1;
+	// Bounce treats a zero dt as an omitted argument and advances by a fixed
+	// physics step. Pinning at one gives it a truthy clock, so the later clamped
+	// SSGI/TRAA convergence callbacks keep one stable ball arrangement.
+	if ( name === 'webgpu_postprocessing_ssgi_ballpool.html' ) return 1;
+	return defaultTargetTick;
+
+}
+
+/**
  * Number of quiet animation-loop callbacks required before freezing an
  * example. Keep these harness-only policies outside the main runner so their
  * temporal assumptions can be tested without launching a browser.
@@ -124,6 +160,9 @@ export function settleFramesForExample( name, defaultSettleFrames = 8, hasExplic
 	// Sixty-four quiet frames let both capture and replay converge before comparison
 	// instead of grading different amounts of residual noise.
 	if ( name === 'webgpu_postprocessing_ssgi.html' ) return 64;
+	// Ballpool has the same stochastic SSGI + TRAA history, after its physics
+	// pose is pinned by targetTickForExample().
+	if ( name === 'webgpu_postprocessing_ssgi_ballpool.html' ) return 64;
 	// TRAA-backed effects need several quiet frames to build usable history
 	// after the harness holds pre-ready count-driven callbacks.
 	if ( name === 'webgpu_postprocessing_ao.html' ) return 16;

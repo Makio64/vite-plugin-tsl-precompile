@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 
-import { installAnimationLoopSettleTransition, minimumRenderableObjectsForExample, settleFramesForExample } from '../e2e-settle-policy.mjs';
-import { minimumBrightFractionForExample } from '../psnr.mjs';
+import { holdAnimationUntilReadyForExample, installAnimationLoopSettleTransition, minimumRenderableObjectsForExample, settleFramesForExample, targetTickForExample } from '../e2e-settle-policy.mjs';
+import { minimumBrightFractionForExample, pixelGateDisabledReasonForExample } from '../psnr.mjs';
 
 function transitionForTest() {
 
@@ -104,6 +104,14 @@ test( 'deferred subjects must be present before an example can freeze', () => {
 
 } );
 
+test( 'callback-driven simulations wait for capture and replay async work', () => {
+
+	assert.equal( holdAnimationUntilReadyForExample( 'webgpu_postprocessing_traa.html' ), true );
+	assert.equal( holdAnimationUntilReadyForExample( 'webgpu_postprocessing_ssgi_ballpool.html' ), true );
+	assert.equal( holdAnimationUntilReadyForExample( 'webgpu_materials.html' ), false );
+
+} );
+
 test( 'sparse point renders use a non-zero example-specific brightness floor', () => {
 
 	assert.equal( minimumBrightFractionForExample( 'webgpu_compute_points.html', 0.005 ), 0.0001 );
@@ -115,11 +123,22 @@ test( 'temporal examples freeze only after their required history is available',
 
 	assert.equal( settleFramesForExample( 'webgpu_postprocessing_motion_blur.html' ), 2 );
 	assert.equal( settleFramesForExample( 'webgpu_postprocessing_ssgi.html' ), 64 );
+	assert.equal( settleFramesForExample( 'webgpu_postprocessing_ssgi_ballpool.html' ), 64 );
 	assert.equal( settleFramesForExample( 'webgpu_postprocessing_ao.html' ), 16 );
 	assert.equal( settleFramesForExample( 'webgpu_postprocessing_traa.html' ), 80 );
 	assert.equal( settleFramesForExample( 'webgpu_camera_array.html' ), 1 );
 	assert.equal( settleFramesForExample( 'webgpu_textures_anisotropy.html' ), 1 );
 	assert.equal( settleFramesForExample( 'webgpu_materials.html', 12 ), 12 );
 	assert.equal( settleFramesForExample( 'webgpu_postprocessing_motion_blur.html', 5, true ), 5 );
+
+} );
+
+test( 'physics and velocity examples pin after their first deterministic tick', () => {
+
+	assert.equal( targetTickForExample( 'webgpu_postprocessing_motion_blur.html' ), 1 );
+	assert.equal( targetTickForExample( 'webgpu_postprocessing_ssgi_ballpool.html' ), 1 );
+	assert.equal( targetTickForExample( 'webgpu_materials.html' ), 0 );
+	assert.equal( targetTickForExample( 'webgpu_postprocessing_ssgi_ballpool.html', 5, true ), 5 );
+	assert.equal( pixelGateDisabledReasonForExample( 'webgpu_postprocessing_ssgi_ballpool.html' ), null );
 
 } );

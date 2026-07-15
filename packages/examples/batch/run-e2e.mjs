@@ -46,7 +46,7 @@ import { assertThreeCheckoutMatchesVersion } from './_three-version.mjs';
 import { isolateCanvasForScreenshot, restoreCanvasAfterScreenshot } from './e2e-canvas-screenshot.mjs';
 import { installRenderSelectorMismatchRecorder } from './e2e-render-selector-recorder.mjs';
 import { enrichRenderSelectorDiagnostics, resolveE2ERoots, summarizeArtifactRenderSelectors } from './e2e-report-diagnostics.mjs';
-import { installAnimationLoopSettleTransition, minimumRenderableObjectsForExample, settleFramesForExample } from './e2e-settle-policy.mjs';
+import { holdAnimationUntilReadyForExample, installAnimationLoopSettleTransition, minimumRenderableObjectsForExample, settleFramesForExample, targetTickForExample } from './e2e-settle-policy.mjs';
 import { captureWaitOverrideForExample, comparePngBuffers, expectedReplayErrorPatternsForExample, minimumBrightFractionForExample, pixelGateDisabledReasonForExample, psnrThresholdForExample, tierExamples } from './psnr.mjs';
 import { loadSlimBundle, slimBundleHashOptions, slimBundleReportProvenance } from './slim-bundle-provenance.mjs';
 
@@ -14125,30 +14125,6 @@ const ASSET_SETTLE_MS = parseIntAtLeast( getArg( '--asset-settle-ms=', '250' ), 
 const BRIGHT_POLL_MS = parseIntAtLeast( getArg( '--bright-poll-ms=', '400' ), 400, 0 );
 const HAS_EXPLICIT_SETTLE_FRAMES = args.some( ( arg ) => arg.startsWith( '--settle-frames=' ) );
 
-function targetTickForExample( name ) {
-	if ( HAS_EXPLICIT_TARGET_TICK ) return targetTick;
-	// Motion vectors need one completed animation step so VelocityNode has
-	// a meaningful previous/current pair. Tick zero compares startup history
-	// rather than replay fidelity.
-	if ( name === 'webgpu_postprocessing_motion_blur.html' ) return 1;
-	return targetTick;
-}
-
-function holdAnimationUntilReadyForExample( name ) {
-	// TRAA mutates object rotation by animation callback count and then
-	// accumulates that history. Resetting the settle counter while texture /
-	// compile work is pending is not enough: the hidden pre-ready callbacks
-	// still advance the scene. Hold callbacks until async work is quiet so both
-	// capture and replay build history from the same pose.
-	if (
-		name === 'webgpu_postprocessing_traa.html' ||
-		name === 'webgpu_postprocessing_lensflare.html' ||
-		name === 'webgpu_postprocessing_smaa.html' ||
-		name === 'webgpu_test_memory.html'
-	) return true;
-	return false;
-}
-
 async function dumpCanvases( page, name = '' ) {
 
 	const canvases = await page.$$( 'canvas' );
@@ -14649,7 +14625,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 	// `setAnimationLoop( ( time ) => ... )` callback therefore sees the
 	// same post-load settled time in all passes, so per-frame animations do
 	// not drift just because replay generated PMREM or hydrated artifacts.
-	const effectiveTargetTick = targetTickForExample( name );
+	const effectiveTargetTick = targetTickForExample( name, targetTick, HAS_EXPLICIT_TARGET_TICK );
 	const TARGET_TICK = Number.isFinite( effectiveTargetTick ) ? Math.max( 0, effectiveTargetTick | 0 ) : 0;
 	const FRAME_STEP_MS = 16.6667;
 		const effectiveSettleFrames = settleFramesForExample( name, SETTLE_FRAMES, HAS_EXPLICIT_SETTLE_FRAMES );

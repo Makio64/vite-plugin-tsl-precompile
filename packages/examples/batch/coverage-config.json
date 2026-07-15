@@ -7,7 +7,6 @@
         "webgpu_postprocessing_lensflare.html",
         "webgpu_postprocessing_retro.html",
         "webgpu_postprocessing_ssgi.html",
-        "webgpu_postprocessing_ssgi_ballpool.html",
         "webgpu_postprocessing_sss.html"
       ],
       "volatileCompute": [
