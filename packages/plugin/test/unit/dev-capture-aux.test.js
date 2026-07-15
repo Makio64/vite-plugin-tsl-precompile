@@ -196,6 +196,42 @@ test( 'dev-capture: user-material payload writes <name>.<hash>.json + manifest',
 
 } );
 
+test( 'dev-capture: a correctly hashed invalid signed family leaves no durable capture', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-invalid-signed-family-' ) );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+	const name = 'invalid-signed-family';
+	const root = makeSignedArtifact( { cacheKey: 'signed-root', selector: SIGNED_SELECTOR_A } );
+	const unsignedMember = makeSignedArtifact( { cacheKey: 'unsigned-member', selector: SIGNED_SELECTOR_B } );
+	delete unsignedMember.renderContextSelectors;
+	delete unsignedMember.renderContextSignature;
+	representedSignedFamily( root, [ root, unsignedMember ] );
+
+	try {
+
+		const response = await postJSON( port, '/__tsl-precompile/capture', makeSignedPayload(
+			name,
+			'src/invalid-family.js:precompile:0',
+			'a'.repeat( 64 ),
+			root,
+		) );
+
+		assert.equal( response.status, 400, response.text );
+		assert.match( response.json.error, /failed validation.*renderContextSelectors/ );
+		assert.deepEqual( readdirSync( artifactsDir ), [], 'rejection happens before artifact or manifest creation' );
+		assert.equal( vite._invalidated.length, 0 );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
 test( 'dev-capture: identical user recapture is a file and HMR no-op', async () => {
 
 	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-idempotent-user-' ) );

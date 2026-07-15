@@ -257,6 +257,12 @@ function validatePayload( payload ) {
 			throw einval( 'payload.hash does not match payload.artifact runtime content' );
 
 		}
+		const validation = validateArtifact( payload.artifact, { label: `captured artifact ${ JSON.stringify( payload.name ) }` } );
+		if ( ! validation.ok ) {
+
+			throw einval( `payload.artifact failed validation: ${ validation.errors.map( ( error ) => error.message ).join( '; ' ) }` );
+
+		}
 
 	}
 
