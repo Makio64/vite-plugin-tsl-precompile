@@ -59,7 +59,7 @@ test( 'source entry fails closed when plugin and runtime policy revisions differ
 test( 'slim source surface preserves the prebuilt named compatibility allowlist', () => {
 
 	const exports = namedExports( common );
-	assert.equal( exports.size, 291 );
+	assert.equal( exports.size, 292 );
 	for ( const name of [
 		'WebGPURenderer', 'Scene', 'PerspectiveCamera', 'Mesh', 'BoxGeometry',
 		'MeshStandardMaterial', 'PrecompiledMaterial', 'PrecompiledComputeNode',
@@ -67,6 +67,7 @@ test( 'slim source surface preserves the prebuilt named compatibility allowlist'
 		'registerAuxArtifacts', '__TSLP_SLIM__',
 		'linkGeneratedLightIdentitySource', 'writeGeneratedLightValue',
 		'attachLiveNodeDependency', 'getLiveNodeDependencies',
+		'registerLiveUniformNode',
 	] ) assert.equal( exports.has( name ), true, name );
 
 } );

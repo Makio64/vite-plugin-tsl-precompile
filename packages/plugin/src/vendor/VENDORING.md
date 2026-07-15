@@ -86,6 +86,14 @@ exposes a compatible resource at the same public node path; otherwise capture
 omits it and replay uses its owner-local snapshot/shape fallback. Source-local
 `render-material` live uniforms continue to resolve paths against the override.
 
+Anonymous `uniform.live` values that exist only inside `Fn()` closures use a
+plugin-owned call-site sidecar rather than an upstream Three field. The Vite
+transform stamps each direct imported `uniform()` call with a stable module,
+syntactic-call, and per-call occurrence identity; `compileTSL` reads that
+non-enumerable Symbol and serializes it beside artifact-local `liveNodeId`.
+Do not replace this with `Node.id`, generated uniform names, or registry-global
+order: all three are process-local and can diverge across HMR or slim replay.
+
 Shadow material cache keys are local to each renderer-owned per-light material
 family; r184 can reuse the same numeric key for equivalent directional and
 point-shadow payloads even though their render-target selectors differ. Aux
@@ -164,6 +172,13 @@ target are serialized as `object3d.*` sources with `target: "camera"`. This
 preserves TSL like `objectPosition(camera)` in post-processing passes, where
 replay's draw object and render camera are the fullscreen quad rather than the
 source scene camera.
+
+Local assumption: Three r184's `NodeStorageBuffer` keeps the authored
+`StorageBufferNode` on `binding.nodeUniform`, and an explicit `setName()` value
+survives on `binding.nodeUniform.name`. The binding's own `name` is a generated
+`StorageBuffer_<id>` token, so extraction serializes only the non-empty authored
+node name as the stable storage-attribute identity. Update the focused storage
+extractor fixture if an upstream Three bump changes this ownership seam.
 
 Local assumption: analytic-light sources carry a Symbol-keyed capture record
 from `@tsl-precompile/contract/light-identities` until `extractArtifact()`

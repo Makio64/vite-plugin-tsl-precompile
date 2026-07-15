@@ -701,3 +701,48 @@ test( 'extractUniformPlan keeps nested storage ownership sidecars live but out o
 	assert.equal( serialized[ 0 ].orderedBindings[ 0 ].ref._liveAttribute, undefined );
 
 } );
+
+test( 'extractUniformPlan serializes exact authored storage names without adopting generated binding names', () => {
+
+	const namedAttribute = {
+		isStorageBufferAttribute: true,
+		array: new Uint32Array( [ 1, 2 ] ),
+		count: 2,
+		itemSize: 1,
+	};
+	const unnamedAttribute = {
+		isStorageBufferAttribute: true,
+		array: new Uint32Array( [ 3, 4 ] ),
+		count: 2,
+		itemSize: 1,
+	};
+	const plan = extractUniformPlan( {
+		updateNodes: [],
+		bindings: [ {
+			name: 'compute',
+			bindings: [
+				{
+					isStorageBuffer: true,
+					name: 'StorageBuffer_17',
+					nodeUniform: { name: 'Current_Left' },
+					attribute: namedAttribute,
+				},
+				{
+					isStorageBuffer: true,
+					name: 'StorageBuffer_18',
+					nodeUniform: { name: '' },
+					attribute: unnamedAttribute,
+				},
+			],
+		} ],
+	}, {} );
+
+	assert.deepEqual( plan[ 0 ].storageBuffers[ 0 ].source, {
+		kind: 'storage.buffer',
+		attributeName: 'Current_Left',
+	} );
+	assert.equal( plan[ 0 ].storageBuffers[ 1 ].source, undefined );
+	assert.equal( plan[ 0 ].storageBuffers[ 0 ]._liveAttribute, namedAttribute );
+	assert.equal( plan[ 0 ].storageBuffers[ 1 ]._liveAttribute, unnamedAttribute );
+
+} );

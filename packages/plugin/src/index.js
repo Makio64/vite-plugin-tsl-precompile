@@ -27,7 +27,7 @@ import { resolve, join, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
-import { annotateDevMarkerSources, instrumentLiveContextDependencies, transformSource } from './babel-transform.js';
+import { annotateDevMarkerSources, instrumentLiveContextDependencies, instrumentLiveUniformIdentities, transformSource } from './babel-transform.js';
 import { autoMarkSource } from './auto-mark.js';
 import { emitArtifactModule } from './emit-manifest.js';
 import { createWgslStringPool, emitOptimizedJsonExpression, getExternalWgslRefIdentifiers } from './wgsl-optimize.js';
@@ -403,6 +403,7 @@ export default function tslPrecompile( userOpts = {} ) {
 						{ find: /^@tsl-precompile\/runtime\/writers$/, replacement: SLIM_THREE_RUNTIME_ENTRIES.PREBUILT },
 						{ find: /^@tsl-precompile\/runtime\/generated\/light-writer$/, replacement: SLIM_THREE_RUNTIME_ENTRIES.PREBUILT },
 						{ find: /^@tsl-precompile\/runtime\/slim-support\/node-dependencies$/, replacement: SLIM_THREE_RUNTIME_ENTRIES.PREBUILT },
+						{ find: /^@tsl-precompile\/runtime\/slim-support\/live-uniform-registry$/, replacement: SLIM_THREE_RUNTIME_ENTRIES.PREBUILT },
 					);
 
 				}
@@ -533,6 +534,9 @@ export default function tslPrecompile( userOpts = {} ) {
 
 			}
 
+			const liveUniformIdentities = instrumentLiveUniformIdentities( code, { filename: id, root } );
+			if ( liveUniformIdentities.touched ) code = liveUniformIdentities.code;
+
 			const contextDependencies = instrumentLiveContextDependencies( code, { filename: id } );
 			if ( contextDependencies.touched ) code = contextDependencies.code;
 
@@ -543,7 +547,7 @@ export default function tslPrecompile( userOpts = {} ) {
 
 				const annotated = annotateDevMarkerSources( code, { filename: id, root } );
 				if ( annotated.touched ) return { code: annotated.code, map: annotated.map };
-				return autoMarked || contextDependencies.touched ? { code, map: contextDependencies.map } : null;
+				return autoMarked || liveUniformIdentities.touched || contextDependencies.touched ? { code, map: contextDependencies.map || liveUniformIdentities.map } : null;
 
 			}
 
@@ -556,7 +560,7 @@ export default function tslPrecompile( userOpts = {} ) {
 					} );
 
 				let outputCode = result.code;
-				let touched = result.touchedNames.length > 0 || contextDependencies.touched;
+				let touched = result.touchedNames.length > 0 || liveUniformIdentities.touched || contextDependencies.touched;
 				// Inject the aux-artifact registry virtual module in any production build,
 				// not just slim mode. Without this, captured background / PMREM / post-process
 				// artifacts on disk are never registered in the bundle, and the precompiled

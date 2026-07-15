@@ -28,6 +28,7 @@ import { beginRenderObjectHarvest } from './render-object-observer.js';
 export { beginRenderObjectHarvest };
 import { DataUtils, FloatType, HalfFloatType, RGBAFormat, RenderTarget } from 'three';
 import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
+import { isLiveUniformNodeIdentity, LIVE_UNIFORM_NODE_IDENTITY_SYMBOL_KEY } from '@tsl-precompile/contract/dynamic-bindings';
 import { createRenderObjectContextSelector, RENDER_BINDING_OWNER_KINDS } from '@tsl-precompile/contract/render-selector';
 import { mergeArtifactVariantFamily } from '@tsl-precompile/contract/artifact-variants';
 import { normalizeArtifactLightIdentities } from '@tsl-precompile/contract/light-identities';
@@ -39,6 +40,8 @@ import {
 	MATERIAL_COMPUTE_UPDATE_TYPES,
 	MATERIAL_COMPUTE_VERSION,
 } from '@tsl-precompile/contract/material-compute';
+
+const LIVE_UNIFORM_NODE_IDENTITY_KEY = Symbol.for( LIVE_UNIFORM_NODE_IDENTITY_SYMBOL_KEY );
 
 /**
  * Describes a single binding inside a bind group in serializable form.
@@ -853,8 +856,13 @@ function annotateLiveUniformIdentities( uniformPlan, material, extractionContext
 				pathByNode.set( liveNode, nodePath );
 
 			}
-			const { nodePath: _staleNodePath, ...sourceWithoutPath } = source;
-			slot.source = nodePath ? { ...sourceWithoutPath, liveNodeId, nodePath } : { ...sourceWithoutPath, liveNodeId };
+			let liveNodeIdentity = null;
+			try { liveNodeIdentity = liveNode[ LIVE_UNIFORM_NODE_IDENTITY_KEY ]; } catch ( _ ) {}
+			const { nodePath: _staleNodePath, liveNodeIdentity: _staleLiveNodeIdentity, ...sourceWithoutPath } = source;
+			const identityFields = isLiveUniformNodeIdentity( liveNodeIdentity ) ? { liveNodeIdentity } : {};
+			slot.source = nodePath
+				? { ...sourceWithoutPath, liveNodeId, ...identityFields, nodePath }
+				: { ...sourceWithoutPath, liveNodeId, ...identityFields };
 
 		}
 

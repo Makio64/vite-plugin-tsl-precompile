@@ -194,6 +194,11 @@ for ( const [ kind, reason ] of Object.entries( BLOCKED_KINDS ) ) {
 	kinds[ kind ] = Object.freeze( { kind, status: KIND_STATUS.BLOCKED, reason } );
 
 }
+kinds[ 'storage.buffer' ] = Object.freeze( {
+	kind: 'storage.buffer',
+	status: KIND_STATUS.RUNTIME_DYNAMIC,
+	runtime: 'hydrator/storage-buffer',
+} );
 for ( const prop of MATERIAL_TEXTURE_PROPS ) {
 
 	const kind = `material.${ prop }`;
@@ -413,6 +418,12 @@ export function collectArtifactSourceKinds( input ) {
 		for ( const texture of group && Array.isArray( group.textures ) ? group.textures : [] ) {
 
 			const kind = texture && texture.source && texture.source.kind;
+			if ( typeof kind === 'string' && kind.length > 0 ) out.add( kind );
+
+		}
+		for ( const storageBuffer of group && Array.isArray( group.storageBuffers ) ? group.storageBuffers : [] ) {
+
+			const kind = storageBuffer && storageBuffer.source && storageBuffer.source.kind;
 			if ( typeof kind === 'string' && kind.length > 0 ) out.add( kind );
 
 		}
@@ -832,6 +843,7 @@ export function validateArtifact( input, opts = {} ) {
 			const lists = [
 				[ 'slots', group.slots ],
 				[ 'textures', group.textures ],
+				[ 'storageBuffers', group.storageBuffers ],
 			];
 			for ( const [ listName, list ] of lists ) {
 

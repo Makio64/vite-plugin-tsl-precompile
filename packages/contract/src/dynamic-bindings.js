@@ -3,6 +3,46 @@ import { isRenderBindingOwnerKind } from './render-selector.js';
 
 const UNSAFE_NODE_PATH_SEGMENTS = new Set( [ '__proto__', 'prototype', 'constructor' ] );
 
+export const LIVE_UNIFORM_CALLSITE_IDENTITY_SCHEMA = 'uniform-callsite@1';
+export const LIVE_UNIFORM_NODE_IDENTITY_SYMBOL_KEY = '@tsl-precompile/runtime/live-uniform-node-identity@1';
+
+export function createLiveUniformCallsiteIdentity( moduleIdentity, callIndex ) {
+
+	if ( typeof moduleIdentity !== 'string' || moduleIdentity.length === 0 || /[\r\n#]/.test( moduleIdentity ) ) return null;
+	if ( ! Number.isInteger( callIndex ) || callIndex < 0 ) return null;
+	return `${ LIVE_UNIFORM_CALLSITE_IDENTITY_SCHEMA }#${ moduleIdentity }#${ callIndex }`;
+
+}
+
+export function createLiveUniformNodeIdentity( callsiteIdentity, occurrence ) {
+
+	if ( ! isLiveUniformCallsiteIdentity( callsiteIdentity ) ) return null;
+	if ( ! Number.isInteger( occurrence ) || occurrence < 0 ) return null;
+	return `${ callsiteIdentity }#${ occurrence }`;
+
+}
+
+export function isLiveUniformCallsiteIdentity( identity ) {
+
+	if ( typeof identity !== 'string' || identity.length === 0 || /[\r\n]/.test( identity ) ) return false;
+	const parts = identity.split( '#' );
+	if ( parts.length < 3 || parts[ 0 ] !== LIVE_UNIFORM_CALLSITE_IDENTITY_SCHEMA ) return false;
+	const callIndex = parts.pop();
+	parts.shift();
+	return parts.join( '#' ).length > 0 && /^(?:0|[1-9]\d*)$/.test( callIndex );
+
+}
+
+export function isLiveUniformNodeIdentity( identity ) {
+
+	if ( typeof identity !== 'string' ) return false;
+	const separator = identity.lastIndexOf( '#' );
+	if ( separator <= 0 || separator === identity.length - 1 ) return false;
+	const occurrence = identity.slice( separator + 1 );
+	return /^(?:0|[1-9]\d*)$/.test( occurrence ) && isLiveUniformCallsiteIdentity( identity.slice( 0, separator ) );
+
+}
+
 export const DYNAMIC_BINDING_TARGET = Object.freeze( {
 	UNIFORM_SLOT: 'uniform-slot',
 	SAMPLED_TEXTURE: 'sampled-texture',
@@ -89,7 +129,7 @@ const exactDescriptors = {
 		owner: 'material',
 		resolver: 'hydrator/live-node',
 		required: [],
-		optional: [ 'bindingOwner', 'name', 'property', 'nodePath', 'liveNodeId', 'valueType', 'valueSnapshot' ],
+		optional: [ 'bindingOwner', 'name', 'property', 'nodePath', 'liveNodeId', 'liveNodeIdentity', 'valueType', 'valueSnapshot' ],
 	} ),
 	'object3d.nodeUniform': freezeDescriptor( {
 		kind: 'object3d.nodeUniform',
@@ -163,16 +203,9 @@ const exactDescriptors = {
 		required: [ 'ltcIndex' ],
 		optional: [ 'magFilter', 'minFilter', 'wrapS', 'wrapT' ],
 	} ),
-	// Storage-buffer descriptor scaffolding (Tier 3 work-in-progress).
-	// The runtime side (`packages/runtime/src/hydrate/kinds/storage-buffer.js`)
-	// already allocates `StorageBuffer` instances from artifact-side snapshots
-	// or live attribute reuse. The AOT extractor side — emitting compute-shader
-	// storage-buffer descriptors with a per-frame update model — is the
-	// remaining gap (STATUS §1.5 / IDEAS). When the AOT path lands, the
-	// extractor should populate `source.kind = 'storage.buffer'` and the
-	// expected `required` fields below. Listed here so artifact validation
-	// already knows the shape and adopters can register storage-buffer-flavoured
-	// custom kinds against this descriptor.
+	// Named StorageBufferNodes retain their authored name as a stable identity;
+	// the backend-facing binding name is generated and cannot relink a freshly
+	// created application graph.
 	'storage.buffer': freezeDescriptor( {
 		kind: 'storage.buffer',
 		target: DYNAMIC_BINDING_TARGET.STORAGE_BUFFER,
@@ -353,6 +386,26 @@ export function validateDynamicBindingSource( source ) {
 		} );
 
 	}
+	if ( kind === 'uniform.live' && source.liveNodeIdentity !== undefined && isLiveUniformNodeIdentity( source.liveNodeIdentity ) === false ) {
+
+		errors.push( {
+			code: 'dynamic-binding.live-node-identity',
+			kind,
+			field: 'liveNodeIdentity',
+			message: `${ kind } source "liveNodeIdentity" must be a stable uniform call-site instance identity`,
+		} );
+
+	}
+	if ( kind === 'uniform.live' && source.liveNodeIdentity !== undefined && source.liveNodeId === undefined ) {
+
+		errors.push( {
+			code: 'dynamic-binding.live-node-identity-owner',
+			kind,
+			field: 'liveNodeId',
+			message: `${ kind } source with "liveNodeIdentity" must also carry its artifact-local "liveNodeId"`,
+		} );
+
+	}
 	if ( kind === 'viewport.texture' && source.viewportIdentity !== undefined && isViewportTextureIdentity( source.viewportIdentity ) === false ) {
 
 		errors.push( {
@@ -369,7 +422,8 @@ export function validateDynamicBindingSource( source ) {
 
 /**
  * Walk `artifact.uniformPlan` and emit one descriptor entry per dynamic
- * binding (uniform slot, sampled texture, storage texture, sampler) that
+ * binding (uniform slot, sampled texture, storage buffer, storage texture,
+ * sampler) that
  * carries a `source.kind` in the registry. The output is a stable,
  * serializable view of "which slots need per-frame resolution and from
  * where" — the artifact section consumers like the dynamic-binding
@@ -427,6 +481,24 @@ export function collectArtifactDynamicBindings( artifact ) {
 				group: groupName,
 				binding: textureEntry.name || null,
 				textureType: textureEntry.textureType || null,
+				source,
+			} );
+
+		}
+
+		for ( const storageEntry of group && group.storageBuffers || [] ) {
+
+			const source = storageEntry && storageEntry.source || null;
+			const descriptor = source && dynamicBindingDescriptor( source.kind );
+			if ( ! descriptor ) continue;
+			out.push( {
+				kind: source.kind,
+				target: descriptor.target,
+				phase: descriptor.phase,
+				owner: descriptor.owner,
+				resolver: descriptor.resolver,
+				group: groupName,
+				binding: storageEntry.name || null,
 				source,
 			} );
 

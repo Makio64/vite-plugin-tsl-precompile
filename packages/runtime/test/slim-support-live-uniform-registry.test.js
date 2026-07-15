@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { uniform } from '../src/slim-stubs.js';
 import {
 	clearLiveUniformRegistryForTests,
+	getLiveUniformNodeIdentity,
 	listLiveUniformNodes,
 	registerLiveUniformNode,
 } from '../src/slim-support/live-uniform-registry.js';
@@ -28,5 +29,19 @@ test( 'slim uniform factory registers closure-only UniformNodes', () => {
 	const second = uniform( - 0.2 );
 	assert.deepEqual( listLiveUniformNodes(), [ first, second ] );
 	clearLiveUniformRegistryForTests();
+
+} );
+
+test( 'live uniform registry stamps stable call-site instance identity after generic registration', () => {
+
+	clearLiveUniformRegistryForTests();
+	const first = registerLiveUniformNode( { isUniformNode: true, value: 0 } );
+	registerLiveUniformNode( first, 'uniform-callsite@1#src/reduce.js#4', 0 );
+	const second = registerLiveUniformNode( { isUniformNode: true, value: 0 }, 'uniform-callsite@1#src/reduce.js#4', 1 );
+	assert.equal( getLiveUniformNodeIdentity( first ), 'uniform-callsite@1#src/reduce.js#4#0' );
+	assert.equal( getLiveUniformNodeIdentity( second ), 'uniform-callsite@1#src/reduce.js#4#1' );
+	assert.deepEqual( listLiveUniformNodes(), [ first, second ] );
+	clearLiveUniformRegistryForTests();
+	assert.equal( getLiveUniformNodeIdentity( first ), null );
 
 } );

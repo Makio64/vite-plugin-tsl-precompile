@@ -10,6 +10,7 @@ import {
 	attachLiveNodeDependency,
 	getLiveNodeDependencies,
 } from '@tsl-precompile/runtime/slim-support/node-dependencies';
+import { registerLiveUniformNode } from '@tsl-precompile/runtime/slim-support/live-uniform-registry';
 
 globalThis.__tslpSlimBudgetPrebuiltHelpers = [
 	__applyPrecompiled,
@@ -18,4 +19,5 @@ globalThis.__tslpSlimBudgetPrebuiltHelpers = [
 	writeGeneratedLightValue,
 	attachLiveNodeDependency,
 	getLiveNodeDependencies,
+	registerLiveUniformNode,
 ];

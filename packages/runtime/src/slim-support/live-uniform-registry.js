@@ -9,7 +9,14 @@
  * HMR on one ledger without retaining nodes when WeakRef is available.
  */
 
+import {
+	createLiveUniformNodeIdentity,
+	isLiveUniformNodeIdentity,
+	LIVE_UNIFORM_NODE_IDENTITY_SYMBOL_KEY,
+} from '@tsl-precompile/contract/dynamic-bindings';
+
 const REGISTRY_KEY = Symbol.for( '@tsl-precompile/runtime/live-uniform-registry@1' );
+const NODE_IDENTITY_KEY = Symbol.for( LIVE_UNIFORM_NODE_IDENTITY_SYMBOL_KEY );
 
 function registryState() {
 
@@ -25,14 +32,39 @@ function registryState() {
 
 }
 
-export function registerLiveUniformNode( node ) {
+export function registerLiveUniformNode( node, callsiteIdentity = null, occurrence = null ) {
 
 	if ( ! node || ( typeof node !== 'object' && typeof node !== 'function' ) || node.isUniformNode !== true ) return node;
+	const identity = callsiteIdentity === null
+		? null
+		: createLiveUniformNodeIdentity( callsiteIdentity, occurrence );
+	if ( identity !== null && getLiveUniformNodeIdentity( node ) === null ) {
+
+		try {
+
+			Object.defineProperty( node, NODE_IDENTITY_KEY, {
+				value: identity,
+				enumerable: false,
+				configurable: true,
+			} );
+
+		} catch ( _ ) {}
+
+	}
 	const state = registryState();
 	if ( state.seen.has( node ) ) return node;
 	state.seen.add( node );
 	state.refs.push( typeof WeakRef === 'function' ? new WeakRef( node ) : node );
 	return node;
+
+}
+
+export function getLiveUniformNodeIdentity( node ) {
+
+	if ( ! node || ( typeof node !== 'object' && typeof node !== 'function' ) ) return null;
+	let identity = null;
+	try { identity = node[ NODE_IDENTITY_KEY ]; } catch ( _ ) { return null; }
+	return isLiveUniformNodeIdentity( identity ) ? identity : null;
 
 }
 
@@ -57,6 +89,11 @@ export function listLiveUniformNodes() {
 export function clearLiveUniformRegistryForTests() {
 
 	const state = registryState();
+	for ( const node of listLiveUniformNodes() ) {
+
+		try { delete node[ NODE_IDENTITY_KEY ]; } catch ( _ ) {}
+
+	}
 	state.refs = [];
 	state.seen = new WeakSet();
 

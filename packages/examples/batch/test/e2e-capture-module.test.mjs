@@ -83,6 +83,32 @@ test( 'delegated compute outputs receive a non-advancing presentation render', (
 
 } );
 
+test( 'initialized delegated compute preserves synchronous call-time uniforms', () => {
+
+	const start = source.indexOf( 'compute( computeNode, ...rest ) {' );
+	const end = source.indexOf( 'computeAsync( computeNode, ...rest ) {', start );
+	assert.ok( start >= 0 && end > start, 'expected the replay compute entry point' );
+	const compute = source.slice( start, end );
+	assert.match( compute, /const fullRenderer = __computeRendererBySlim\.get\( this \) \|\| null;/ );
+	assert.match( compute, /const result = fullRenderer\.compute\( computeNode, \.\.\.rest \);/ );
+	assert.match( compute, /__syncStorageBuffers\( computeNode, fullRenderer, this \);/ );
+	assert.match( compute, /return this\.computeAsync\( computeNode, \.\.\.rest \)/ );
+	assert.ok(
+		compute.indexOf( 'fullRenderer.compute( computeNode, ...rest )' ) < compute.indexOf( 'this.computeAsync( computeNode, ...rest )' ),
+		'initialized dispatch must take the synchronous path before async startup fallback',
+	);
+
+} );
+
+test( 'capture and replay instrument inline uniform calls with the product identity transform', () => {
+
+	assert.match( source, /import \{ instrumentLiveUniformIdentities \} from '\.\.\/\.\.\/plugin\/src\/babel-transform\.js'/ );
+	assert.match( source, /function instrumentInlineLiveUniforms\( html, example \)/ );
+	assert.match( source, /instrumentLiveUniformIdentities\( moduleSource, \{ filename, root: sourceRoot \} \)/ );
+	assert.match( source, /'@tsl-precompile\/runtime\/slim-support\/live-uniform-registry': '\/__tslp_runtime\/slim-support\/live-uniform-callsite\.js'/ );
+
+} );
+
 test( 'material-owned compute delegates matching and retries to slim-support', () => {
 
 	assert.match( source, /AUTO_COMPUTE_MATERIAL_PROPERTIES as __AUTO_COMPUTE_SLOTS, createAutoComputeDispatcher as __sharedCreateAutoComputeDispatcher/ );

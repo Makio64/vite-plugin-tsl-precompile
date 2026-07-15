@@ -28,6 +28,7 @@ import _traverse from '@babel/traverse';
 import _generate from '@babel/generator';
 import * as t from '@babel/types';
 
+import { createLiveUniformCallsiteIdentity } from '@tsl-precompile/contract/dynamic-bindings';
 import { MARKER_METHOD_NAME, VIRTUAL_MODULE_PREFIX } from './_shared/constants.js';
 import { canonicalModuleIdentity, markerSourceRevision } from './_shared/module-identity.js';
 
@@ -39,6 +40,9 @@ const APPLY_IMPORT_SPECIFIER = '@tsl-precompile/runtime/apply';
 const APPLY_FN_NAME = '__applyPrecompiled';
 const NODE_DEPENDENCY_IMPORT_SPECIFIER = '@tsl-precompile/runtime/slim-support/node-dependencies';
 const ATTACH_NODE_DEPENDENCY_FN_NAME = 'attachLiveNodeDependency';
+const LIVE_UNIFORM_REGISTRY_IMPORT_SPECIFIER = '@tsl-precompile/runtime/slim-support/live-uniform-registry';
+const REGISTER_LIVE_UNIFORM_FN_NAME = 'registerLiveUniformNode';
+const LIVE_UNIFORM_IMPORT_SOURCES = new Set( [ 'three/tsl', 'three/webgpu' ] );
 const PARSER_PLUGINS = [
 	'jsx',
 	'typescript',
@@ -47,6 +51,108 @@ const PARSER_PLUGINS = [
 	'deprecatedImportAssert',
 	'topLevelAwait',
 ];
+
+/**
+ * Stamp direct `uniform()` calls with a stable module/call-site identity and
+ * a module-local occurrence. Anonymous UniformNodes can live only inside an
+ * `Fn()` closure, so neither the material graph nor a JSON artifact retains
+ * enough ownership evidence to reconnect two equal-valued instances. The
+ * same transform runs in capture and build; whole-module revision validation
+ * makes the call-site numbering part of the existing freshness contract.
+ */
+export function instrumentLiveUniformIdentities( source, { filename, root = process.cwd() } ) {
+
+	if ( ! source.includes( 'uniform' ) ) return { code: source, map: null, touched: false };
+	if ( ! [ ...LIVE_UNIFORM_IMPORT_SOURCES ].some( ( specifier ) => source.includes( specifier ) ) ) return { code: source, map: null, touched: false };
+	const ast = parse( source, {
+		sourceType: 'module',
+		sourceFilename: filename,
+		plugins: PARSER_PLUGINS,
+		errorRecovery: false,
+	} );
+	const calls = [];
+	traverse( ast, {
+		CallExpression( path ) {
+
+			let bindingName = null;
+			let expectedImport = null;
+			if ( t.isIdentifier( path.node.callee ) ) {
+
+				bindingName = path.node.callee.name;
+				expectedImport = 'uniform';
+
+			} else if ( t.isMemberExpression( path.node.callee ) && t.isIdentifier( path.node.callee.object ) ) {
+
+				const property = path.node.callee.computed
+					? t.isStringLiteral( path.node.callee.property ) ? path.node.callee.property.value : null
+					: t.isIdentifier( path.node.callee.property ) ? path.node.callee.property.name : null;
+				if ( property !== 'uniform' ) return;
+				bindingName = path.node.callee.object.name;
+				expectedImport = 'namespace';
+
+			} else return;
+			const binding = path.scope.getBinding( bindingName );
+			if ( ! binding || ! binding.path ) return;
+			const declaration = binding.path.parentPath;
+			if ( ! declaration || ! declaration.isImportDeclaration() || ! LIVE_UNIFORM_IMPORT_SOURCES.has( declaration.node.source.value ) ) return;
+			if ( expectedImport === 'uniform' ) {
+
+				if ( ! binding.path.isImportSpecifier() || ! t.isIdentifier( binding.path.node.imported, { name: 'uniform' } ) ) return;
+
+			} else {
+
+				const namespaceImport = binding.path.isImportNamespaceSpecifier();
+				const tslNamespaceImport = binding.path.isImportSpecifier()
+					&& t.isIdentifier( binding.path.node.imported, { name: 'TSL' } );
+				if ( ! namespaceImport && ! tslNamespaceImport ) return;
+
+			}
+			calls.push( path );
+
+		},
+	} );
+	if ( calls.length === 0 ) return { code: source, map: null, touched: false };
+
+	const occupiedIdentifiers = collectBindingNames( ast );
+	const registerName = allocateIdentifier( '__tslpRegisterLiveUniformNode', 'live-uniform-register', occupiedIdentifiers );
+	const { moduleIdentity } = canonicalModuleIdentity( filename, root );
+	const replacements = calls.map( ( path, callIndex ) => ( {
+		path,
+		callIndex,
+		counterName: allocateIdentifier( `__tslpUniformOccurrence${ callIndex }`, `live-uniform-counter:${ callIndex }`, occupiedIdentifiers ),
+		callsiteIdentity: createLiveUniformCallsiteIdentity( moduleIdentity, callIndex ),
+	} ) );
+
+	// Replace inner calls first so a nested `uniform(uniform(...))` retains
+	// both identities when the outer expression is cloned into its wrapper.
+	replacements.sort( ( a, b ) => ( b.path.node.start || 0 ) - ( a.path.node.start || 0 ) );
+	for ( const replacement of replacements ) {
+
+		const originalCall = t.cloneNode( replacement.path.node, true );
+		replacement.path.replaceWith( t.callExpression( t.identifier( registerName ), [
+			originalCall,
+			t.stringLiteral( replacement.callsiteIdentity ),
+			t.updateExpression( '++', t.identifier( replacement.counterName ), false ),
+		] ) );
+
+	}
+
+	ast.program.body.unshift( t.importDeclaration( [
+		t.importSpecifier( t.identifier( registerName ), t.identifier( REGISTER_LIVE_UNIFORM_FN_NAME ) ),
+	], t.stringLiteral( LIVE_UNIFORM_REGISTRY_IMPORT_SPECIFIER ) ) );
+	let insertAt = 0;
+	while ( insertAt < ast.program.body.length && t.isImportDeclaration( ast.program.body[ insertAt ] ) ) insertAt ++;
+	const counters = replacements
+		.sort( ( a, b ) => a.callIndex - b.callIndex )
+		.map( ( replacement ) => t.variableDeclaration( 'let', [
+			t.variableDeclarator( t.identifier( replacement.counterName ), t.numericLiteral( 0 ) ),
+		] ) );
+	ast.program.body.splice( insertAt, 0, ...counters );
+
+	const output = generate( ast, { sourceMaps: true, sourceFileName: filename }, source );
+	return { code: output.code, map: output.map, touched: true };
+
+}
 
 /**
  * Preserve inputs hidden inside three.js's builtin AO/shadow context closures.

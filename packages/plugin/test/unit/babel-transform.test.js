@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { annotateDevMarkerSources, instrumentLiveContextDependencies, transformSource } from '../../src/babel-transform.js';
+import { annotateDevMarkerSources, instrumentLiveContextDependencies, instrumentLiveUniformIdentities, transformSource } from '../../src/babel-transform.js';
 import { markerSourceRevision } from '../../src/_shared/module-identity.js';
 
 function resolveArtifactStub( table ) {
@@ -37,6 +37,49 @@ test( 'babel — live context dependency transform leaves namespace and unrelate
 	const unrelated = `import { builtinAOContext } from './local-tsl.js';\nbuiltinAOContext( aoNode );\n`;
 	assert.equal( instrumentLiveContextDependencies( namespace, { filename: 'namespace.js' } ).touched, false );
 	assert.equal( instrumentLiveContextDependencies( unrelated, { filename: 'local.js' } ).touched, false );
+
+} );
+
+test( 'babel — direct TSL uniform calls receive stable call-site occurrence identities', () => {
+
+	const source = `
+		import { uniform, uniform as makeUniform, vec3 } from 'three/tsl';
+		const shared = uniform( 1 );
+		const makePair = () => [ makeUniform( 0 ), makeUniform( 0 ) ];
+	`;
+	const result = instrumentLiveUniformIdentities( source, {
+		filename: '/project/src/reduce.js',
+		root: '/project',
+	} );
+	assert.equal( result.touched, true );
+	assert.match( result.code, /registerLiveUniformNode as __tslpRegisterLiveUniformNode/ );
+	assert.match( result.code, /let __tslpUniformOccurrence0 = 0/ );
+	assert.match( result.code, /"uniform-callsite@1#src\/reduce\.js#0"/ );
+	assert.match( result.code, /"uniform-callsite@1#src\/reduce\.js#1"/ );
+	assert.match( result.code, /"uniform-callsite@1#src\/reduce\.js#2"/ );
+	assert.equal( ( result.code.match( /__tslpUniformOccurrence\d\+\+/g ) || [] ).length, 3 );
+
+} );
+
+test( 'babel — live uniform identity transform ignores local and namespace uniform functions', () => {
+
+	const local = `import { uniform } from './nodes.js';\nuniform( 0 );\n`;
+	assert.equal( instrumentLiveUniformIdentities( local, { filename: 'local.js' } ).touched, false );
+
+} );
+
+test( 'babel — TSL namespace uniform calls receive stable identities', () => {
+
+	const source = `
+		import * as TSL from 'three/tsl';
+		import { TSL as WebGPUTSL } from 'three/webgpu';
+		const first = TSL.uniform( 0 );
+		const second = WebGPUTSL.uniform( 1 );
+	`;
+	const result = instrumentLiveUniformIdentities( source, { filename: '/project/src/namespaces.js', root: '/project' } );
+	assert.equal( result.touched, true );
+	assert.match( result.code, /__tslpRegisterLiveUniformNode\(TSL\.uniform\(0\)/ );
+	assert.match( result.code, /__tslpRegisterLiveUniformNode\(WebGPUTSL\.uniform\(1\)/ );
 
 } );
 

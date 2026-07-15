@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 
-import { holdAnimationUntilReadyForExample, installAnimationLoopSettleTransition, minimumRenderableObjectsForExample, settleFramesForExample, targetTickForExample } from '../e2e-settle-policy.mjs';
+import { deterministicTimeoutPolicyForExample, holdAnimationUntilReadyForExample, installAnimationLoopSettleTransition, minimumRenderableObjectsForExample, settleFramesForExample, targetTickForExample } from '../e2e-settle-policy.mjs';
 import { minimumBrightFractionForExample, pixelGateDisabledReasonForExample } from '../psnr.mjs';
 
 function transitionForTest() {
@@ -140,5 +140,12 @@ test( 'physics and velocity examples pin after their first deterministic tick', 
 	assert.equal( targetTickForExample( 'webgpu_materials.html' ), 0 );
 	assert.equal( targetTickForExample( 'webgpu_postprocessing_ssgi_ballpool.html', 5, true ), 5 );
 	assert.equal( pixelGateDisabledReasonForExample( 'webgpu_postprocessing_ssgi_ballpool.html' ), null );
+
+} );
+
+test( 'deterministic timeout policies expose explicit render-state transactions', () => {
+
+	assert.deepEqual( deterministicTimeoutPolicyForExample( 'webgpu_compute_reduce.html' ), { delayMs: 1000, steps: 4 } );
+	assert.equal( deterministicTimeoutPolicyForExample( 'webgpu_materials.html' ), null );
 
 } );

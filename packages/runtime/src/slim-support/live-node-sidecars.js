@@ -8,7 +8,7 @@
  * keeps flowing into the hydrated UBO writer.
  */
 
-import { listLiveUniformNodes } from './live-uniform-registry.js';
+import { getLiveUniformNodeIdentity, listLiveUniformNodes } from './live-uniform-registry.js';
 
 /**
  * Wire live runtime UniformNode instances from `sourceMaterial`'s node graph
@@ -183,11 +183,16 @@ function wireLiveUniformSlots( artifact, uniformNodes, options = {} ) {
 				if ( options.slotFilter && ! options.slotFilter( slot, owner ) ) continue;
 				const source = ( slot && slot.source ) || {};
 				if ( source.kind !== 'uniform.live' || source.property ) continue;
+				const requiresExactIdentity = typeof source.liveNodeIdentity === 'string' && source.liveNodeIdentity.length > 0;
 				const hasCapturedValue = uniformSlotHasCapturedValue( slot );
 				const pathMatch = resolveLiveNodePath( options.sourceMaterial, source.nodePath );
 				if ( slot._liveNode && ! pathMatch ) continue;
 				let match = pathMatch || ( Number.isInteger( source.liveNodeId ) ? identityMatches.get( source.liveNodeId ) || null : null );
 				if ( match && ! valueMatchesDtype( match.value, slot.dtype || '' ) ) match = null;
+				// A serialized call-site identity is an ownership proof. If the
+				// corresponding live node is absent, fail closed instead of letting
+				// equal-valued closure uniforms from another material cross-bind.
+				if ( ! match && ! pathMatch && requiresExactIdentity ) continue;
 				if ( ! match && source.name ) {
 
 					match = fallbackUniformNodes.find( ( node ) => ! used.has( node ) && node.name === source.name && valueMatchesUniformSlot( node.value, slot ) );
@@ -244,6 +249,7 @@ function resolveSerializedIdentityMatches( artifact, uniformNodes, sourceMateria
 
 	const matches = new Map();
 	const representativeById = new Map();
+	const exactIdentityIds = new Set();
 	for ( const group of artifact.uniformPlan || [] ) {
 
 		for ( const slot of group.slots || [] ) {
@@ -254,6 +260,20 @@ function resolveSerializedIdentityMatches( artifact, uniformNodes, sourceMateria
 			if ( ! representativeById.has( source.liveNodeId ) ) representativeById.set( source.liveNodeId, slot );
 			const pathMatch = resolveLiveNodePath( sourceMaterial, source.nodePath );
 			if ( pathMatch && valueMatchesDtype( pathMatch.value, slot.dtype || '' ) ) matches.set( source.liveNodeId, pathMatch );
+			if ( typeof source.liveNodeIdentity === 'string' && source.liveNodeIdentity.length > 0 ) {
+
+				exactIdentityIds.add( source.liveNodeId );
+				if ( ! matches.has( source.liveNodeId ) ) {
+
+					const exactCandidates = uniformNodes.filter( ( candidate ) =>
+						getLiveUniformNodeIdentity( candidate ) === source.liveNodeIdentity
+						&& valueMatchesDtype( candidate.value, slot.dtype || '' )
+					);
+					if ( exactCandidates.length === 1 ) matches.set( source.liveNodeId, exactCandidates[ 0 ] );
+
+				}
+
+			}
 
 		}
 
@@ -263,7 +283,7 @@ function resolveSerializedIdentityMatches( artifact, uniformNodes, sourceMateria
 	const groupsBySignature = new Map();
 	for ( const [ liveNodeId, slot ] of representativeById ) {
 
-		if ( matches.has( liveNodeId ) ) continue;
+		if ( matches.has( liveNodeId ) || exactIdentityIds.has( liveNodeId ) ) continue;
 		const signature = uniformIdentitySignature( slot );
 		let group = groupsBySignature.get( signature );
 		if ( ! group ) groupsBySignature.set( signature, group = [] );

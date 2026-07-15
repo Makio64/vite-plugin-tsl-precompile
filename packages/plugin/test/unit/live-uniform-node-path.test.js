@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { extractArtifact } from '../../src/vendor/compileTSL.js';
+import { LIVE_UNIFORM_NODE_IDENTITY_SYMBOL_KEY } from '@tsl-precompile/contract/dynamic-bindings';
 import { RENDER_BINDING_OWNER_KINDS } from '@tsl-precompile/contract/render-selector';
 
 function makeUniform( node, offset ) {
@@ -26,6 +27,10 @@ test( 'extractArtifact serializes exact material paths for anonymous live unifor
 		nodeType: 'float',
 		value: - 0.2,
 	};
+	Object.defineProperty( effectorA, Symbol.for( LIVE_UNIFORM_NODE_IDENTITY_SYMBOL_KEY ), {
+		value: 'uniform-callsite@1#src/reflection.js#0#0',
+		configurable: true,
+	} );
 	const effectorB = {
 		isUniformNode: true,
 		constructor: { type: 'UniformNode' },
@@ -74,6 +79,9 @@ test( 'extractArtifact serializes exact material paths for anonymous live unifor
 	assert.deepEqual( slots[ 2 ].source.nodePath, [ 'positionNode', 'branchA', 'effector' ] );
 	assert.deepEqual( slots[ 3 ].source.nodePath, [ 'positionNode', 'branchB', 'effector' ] );
 	assert.deepEqual( slots.map( ( slot ) => slot.source.liveNodeId ), [ 0, 1, 0, 1 ] );
+	assert.equal( slots[ 0 ].source.liveNodeIdentity, 'uniform-callsite@1#src/reflection.js#0#0' );
+	assert.equal( slots[ 2 ].source.liveNodeIdentity, 'uniform-callsite@1#src/reflection.js#0#0' );
+	assert.equal( slots[ 1 ].source.liveNodeIdentity, undefined );
 	assert.equal( slots[ 0 ].source.kind, 'uniform.live' );
 	assert.deepEqual( slots[ 0 ].source.valueSnapshot, { type: 'number', data: - 0.2 } );
 	assert.equal( JSON.parse( JSON.stringify( artifact ) ).uniformPlan[ 0 ].slots[ 0 ].source.nodePath[ 0 ], 'positionNode' );

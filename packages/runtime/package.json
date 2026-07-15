@@ -104,6 +104,10 @@
       "types": "./types/slim-support/node-dependencies.d.ts",
       "default": "./src/slim-support/node-dependencies.js"
     },
+    "./slim-support/live-uniform-registry": {
+      "types": "./types/slim-support/live-uniform-registry.d.ts",
+      "default": "./src/slim-support/live-uniform-callsite.js"
+    },
     "./slim-support/postprocess-execution-plan": {
       "types": "./types/slim-support/postprocess-execution-plan.d.ts",
       "default": "./src/slim-support/postprocess-execution-plan.js"

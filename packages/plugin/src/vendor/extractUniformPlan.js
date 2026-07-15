@@ -1904,6 +1904,9 @@ export function extractUniformPlan( state, context = null ) {
 				const attr = binding.attribute || null;
 				const array = attr && attr.array ? attr.array : null;
 				const arrayType = array ? array.constructor.name : 'Float32Array';
+				const authoredAttributeName = binding.nodeUniform && typeof binding.nodeUniform.name === 'string' && binding.nodeUniform.name.length > 0
+					? binding.nodeUniform.name
+					: null;
 
 				const sbEntry = {
 					name: binding.name || '',
@@ -1920,7 +1923,13 @@ export function extractUniformPlan( state, context = null ) {
 					// reference on the plan for the in-process path so the
 					// demo flow doesn't need separate serialisation.
 					count: attr && typeof attr.count === 'number' ? attr.count : ( array ? array.length : 0 ),
-					itemSize: attr && typeof attr.itemSize === 'number' ? attr.itemSize : 1
+					itemSize: attr && typeof attr.itemSize === 'number' ? attr.itemSize : 1,
+					...( authoredAttributeName !== null ? {
+						source: {
+							kind: 'storage.buffer',
+							attributeName: authoredAttributeName,
+						}
+					} : {} )
 				};
 				// These process-local identities must never become artifact data.
 				// Define them before the entry is nested into orderedBindings so

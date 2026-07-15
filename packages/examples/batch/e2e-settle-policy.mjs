@@ -120,6 +120,23 @@ export function targetTickForExample( name, defaultTargetTick = 0, hasExplicitTa
 }
 
 /**
+ * Long-running examples sometimes expose a render-visible state machine through
+ * a wall-clock timeout rather than their animation loop. Return the exact delay
+ * and number of callbacks the harness should drain before capture, or null when
+ * native wall-clock scheduling is appropriate.
+ */
+export function deterministicTimeoutPolicyForExample( name ) {
+
+	// Reduce renders before toggling its validation uniform. Each half owns its
+	// own timer, so draining Run Algo and then Validate for both canvases leaves
+	// the frame on the computed green result in every mode, independent of shader
+	// compilation and renderer-startup latency.
+	if ( name === 'webgpu_compute_reduce.html' ) return Object.freeze( { delayMs: 1000, steps: 4 } );
+	return null;
+
+}
+
+/**
  * Number of quiet animation-loop callbacks required before freezing an
  * example. Keep these harness-only policies outside the main runner so their
  * temporal assumptions can be tested without launching a browser.

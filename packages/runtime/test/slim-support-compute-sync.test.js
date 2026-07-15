@@ -729,6 +729,115 @@ test( 'wireArtifactStorageBuffersFromAttributes handles ordered storage-buffer r
 
 } );
 
+test( 'wireArtifactStorageBuffersFromAttributes matches authored storage identities before shape', () => {
+
+	const left = {
+		isStorageBufferAttribute: true,
+		array: new Uint32Array( 8 ),
+		count: 8,
+		itemSize: 1,
+		version: 0,
+	};
+	const right = {
+		isStorageBufferAttribute: true,
+		array: new Uint32Array( 8 ),
+		count: 8,
+		itemSize: 1,
+		version: 0,
+	};
+	const entry = {
+		name: 'StorageBuffer_4',
+		count: 8,
+		itemSize: 1,
+		arrayType: 'Uint32Array',
+		source: { kind: 'storage.buffer', attributeName: 'Current_Right' },
+	};
+	const artifact = { uniformPlan: [ { storageBuffers: [ entry ] } ] };
+
+	const wired = wireArtifactStorageBuffersFromAttributes( artifact, [
+		{ attribute: left, binding: { nodeUniform: { name: 'Current_Left' } } },
+		{ attribute: right, binding: { nodeUniform: { name: 'Current_Right' } } },
+	] );
+
+	assert.equal( wired, 1 );
+	assert.equal( entry._liveAttribute, right );
+	assert.equal( right.version, 1 );
+	assert.equal( left.version, 0 );
+
+} );
+
+test( 'wireArtifactStorageBuffersFromAttributes fails closed for ambiguous or missing identities', () => {
+
+	const makeAttribute = () => ( {
+		isStorageBufferAttribute: true,
+		array: new Uint32Array( 8 ),
+		count: 8,
+		itemSize: 1,
+		version: 0,
+	} );
+	const first = makeAttribute();
+	const second = makeAttribute();
+	const signedEntry = {
+		name: 'StorageBuffer_4',
+		count: 8,
+		itemSize: 1,
+		arrayType: 'Uint32Array',
+		source: { kind: 'storage.buffer', attributeName: 'Current_Right' },
+	};
+	const signedArtifact = { uniformPlan: [ { storageBuffers: [ signedEntry ] } ] };
+	assert.equal( wireArtifactStorageBuffersFromAttributes( signedArtifact, [
+		{ attribute: first, attributeName: 'Current_Right' },
+		{ attribute: second, attributeName: 'Current_Right' },
+	] ), 0, 'duplicate signed candidates are ambiguous' );
+	assert.equal( signedEntry._liveAttribute, undefined );
+
+	const missingEntry = { ...signedEntry, source: { kind: 'storage.buffer', attributeName: 'Missing' } };
+	assert.equal( wireArtifactStorageBuffersFromAttributes( { uniformPlan: [ { storageBuffers: [ missingEntry ] } ] }, [
+		{ attribute: first, attributeName: 'Current_Left' },
+	] ), 0, 'a missing signed identity never falls back by shape' );
+	assert.equal( missingEntry._liveAttribute, undefined );
+
+	const legacyEntry = { name: 'legacy', count: 8, itemSize: 1, arrayType: 'Uint32Array' };
+	assert.equal( wireArtifactStorageBuffersFromAttributes( { uniformPlan: [ { storageBuffers: [ legacyEntry ] } ] }, [ first, second ] ), 0, 'legacy shape matching must also be unique' );
+	assert.equal( legacyEntry._liveAttribute, undefined );
+
+} );
+
+test( 'wireArtifactStorageBuffersFromAttributes coalesces JSON-split flat and ordered aliases', () => {
+
+	const attribute = {
+		isStorageBufferAttribute: true,
+		array: new Uint32Array( 8 ),
+		count: 8,
+		itemSize: 1,
+		version: 4,
+	};
+	const flat = {
+		name: 'StorageBuffer_4',
+		count: 8,
+		itemSize: 1,
+		arrayType: 'Uint32Array',
+		source: { kind: 'storage.buffer', attributeName: 'Current_Right' },
+	};
+	const ordered = JSON.parse( JSON.stringify( flat ) );
+	const artifact = {
+		uniformPlan: [ {
+			storageBuffers: [ flat ],
+			orderedBindings: [ { type: 'storage-buffer', ref: ordered } ],
+		} ],
+	};
+
+	const wired = wireArtifactStorageBuffersFromAttributes( artifact, [
+		{ attribute, attributeName: 'Current_Right' },
+	] );
+
+	assert.equal( wired, 1, 'one logical storage binding is wired' );
+	assert.equal( flat._liveAttribute, attribute );
+	assert.equal( ordered._liveAttribute, attribute );
+	assert.equal( attribute.version, 5, 'the alias pair bumps the live attribute once' );
+
+} );
+
 test( 'pingPongInvalidate bumps both texture versions and clears the bind-group cache', () => {
 
 	const texA = { isTexture: true, isStorageTexture: true, version: 3, name: 'A' };

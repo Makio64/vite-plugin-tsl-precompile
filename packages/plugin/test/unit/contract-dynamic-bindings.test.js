@@ -2,13 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+	createLiveUniformCallsiteIdentity,
+	createLiveUniformNodeIdentity,
 	DYNAMIC_BINDING_PHASE,
 	DYNAMIC_BINDING_TARGET,
 	collectArtifactDynamicBindings,
 	dynamicBindingDescriptor,
 	isDynamicBindingKind,
+	isLiveUniformCallsiteIdentity,
+	isLiveUniformNodeIdentity,
 	validateDynamicBindingSource,
 } from '@tsl-precompile/contract/dynamic-bindings';
+import { collectArtifactSourceKinds, validateArtifact } from '@tsl-precompile/contract/kinds';
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
 
 test( 'dynamicBindingDescriptor resolves exact kinds', () => {
@@ -92,6 +97,25 @@ test( 'validateDynamicBindingSource accepts only non-negative uniform.live ident
 
 } );
 
+test( 'uniform.live call-site identities are stable, instance-qualified, and validated', () => {
+
+	const callsite = createLiveUniformCallsiteIdentity( 'src/materials.js?subresource=abc', 2 );
+	const identity = createLiveUniformNodeIdentity( callsite, 7 );
+	assert.equal( callsite, 'uniform-callsite@1#src/materials.js?subresource=abc#2' );
+	assert.equal( identity, 'uniform-callsite@1#src/materials.js?subresource=abc#2#7' );
+	assert.equal( isLiveUniformCallsiteIdentity( callsite ), true );
+	assert.equal( isLiveUniformNodeIdentity( identity ), true );
+	assert.equal( validateDynamicBindingSource( { kind: 'uniform.live', liveNodeId: 0, liveNodeIdentity: identity } ).length, 0 );
+	assert.equal( validateDynamicBindingSource( { kind: 'uniform.live', liveNodeIdentity: identity } )[ 0 ].code, 'dynamic-binding.live-node-identity-owner' );
+	for ( const invalid of [ '', callsite, 'uniform-callsite@1#src/materials.js#x#0', 'other@1#src/materials.js#2#0', null ] ) {
+
+		assert.equal( isLiveUniformNodeIdentity( invalid ), false );
+		assert.ok( validateDynamicBindingSource( { kind: 'uniform.live', liveNodeId: 0, liveNodeIdentity: invalid } ).length > 0 );
+
+	}
+
+} );
+
 test( 'collectArtifactDynamicBindings emits one entry per uniformPlan slot with a known source.kind', () => {
 
 	const artifact = {
@@ -108,13 +132,16 @@ test( 'collectArtifactDynamicBindings emits one entry per uniformPlan slot with 
 					{ name: 'envMap', textureType: '2d', source: { kind: 'artifact.texture', textureUuid: 'a' } },
 					{ name: 'shadowMap', textureType: 'depth', source: { kind: 'depth.texture', lightIndex: 0 } },
 				],
+				storageBuffers: [
+					{ name: 'StorageBuffer_17', source: { kind: 'storage.buffer', attributeName: 'Current_Left' } },
+				],
 			},
 		],
 	};
 	const entries = collectArtifactDynamicBindings( artifact );
 
-	// 3 known slots + 2 textures (unknown 'mystery.unknown' is skipped).
-	assert.equal( entries.length, 5 );
+	// 3 known slots + 2 textures + 1 storage buffer (unknown 'mystery.unknown' is skipped).
+	assert.equal( entries.length, 6 );
 
 	const camera = entries.find( ( e ) => e.kind === 'camera.projectionMatrix' );
 	assert.equal( camera.target, DYNAMIC_BINDING_TARGET.UNIFORM_SLOT );
@@ -135,6 +162,42 @@ test( 'collectArtifactDynamicBindings emits one entry per uniformPlan slot with 
 	const shadow = entries.find( ( e ) => e.kind === 'depth.texture' );
 	assert.equal( shadow.phase, DYNAMIC_BINDING_PHASE.UPDATE_BEFORE );
 	assert.equal( shadow.source.lightIndex, 0 );
+
+	const storage = entries.find( ( e ) => e.kind === 'storage.buffer' );
+	assert.equal( storage.target, DYNAMIC_BINDING_TARGET.STORAGE_BUFFER );
+	assert.equal( storage.binding, 'StorageBuffer_17' );
+	assert.equal( storage.group, 'render' );
+	assert.equal( storage.source.attributeName, 'Current_Left' );
+
+} );
+
+test( 'storage-buffer source kinds participate in shared collection and validation', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			name: 'render',
+			storageBuffers: [ {
+				name: 'StorageBuffer_17',
+				source: { kind: 'storage.buffer', attributeName: 'Current_Left' },
+			} ],
+		} ],
+	};
+	assert.deepEqual( collectArtifactSourceKinds( artifact ), [ 'storage.buffer' ] );
+	assert.deepEqual( validateArtifact( artifact ).errors, [] );
+
+	const invalid = validateArtifact( {
+		uniformPlan: [ {
+			name: 'render',
+			storageBuffers: [ {
+				name: 'StorageBuffer_18',
+				source: { kind: 'storage.future' },
+			} ],
+		} ],
+	} );
+	assert.ok( invalid.errors.some( ( error ) =>
+		error.code === 'source.kind.unknown'
+		&& error.path === 'uniformPlan[0].storageBuffers[0].source.kind'
+	) );
 
 } );
 

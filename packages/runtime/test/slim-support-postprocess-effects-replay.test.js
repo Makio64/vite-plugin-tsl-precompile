@@ -933,6 +933,72 @@ test( 'wireLiveNodeSidecarsToArtifact restores closure-only A/B/A/B identity fro
 
 } );
 
+test( 'wireLiveNodeSidecarsToArtifact uses exact call-site identity across equal-valued material closures', () => {
+
+	clearLiveUniformRegistryForTests();
+	const left = registerLiveUniformNode( { isUniformNode: true, value: 0 }, 'uniform-callsite@1#src/reduce.js#4', 0 );
+	const right = registerLiveUniformNode( { isUniformNode: true, value: 0 }, 'uniform-callsite@1#src/reduce.js#5', 0 );
+	const slot = {
+		dtype: 'number',
+		source: {
+			kind: 'uniform.live',
+			liveNodeId: 0,
+			liveNodeIdentity: 'uniform-callsite@1#src/reduce.js#5#0',
+			valueSnapshot: { type: 'number', data: 0 },
+		},
+	};
+	const artifact = { uniformPlan: [ { slots: [ slot ] } ] };
+	const counters = wireLiveNodeSidecarsToArtifact( artifact, { positionNode: { isNode: true } }, { overlay: true } );
+	assert.equal( counters.uniformsMatched, 1 );
+	assert.equal( slot._liveNode, right );
+	assert.notEqual( slot._liveNode, left );
+	clearLiveUniformRegistryForTests();
+
+} );
+
+test( 'wireLiveNodeSidecarsToArtifact fails closed when a call-site identity has no live candidate', () => {
+
+	clearLiveUniformRegistryForTests();
+	registerLiveUniformNode( { isUniformNode: true, value: 0 }, 'uniform-callsite@1#src/reduce.js#4', 0 );
+	const slot = {
+		dtype: 'number',
+		source: {
+			kind: 'uniform.live',
+			liveNodeId: 0,
+			liveNodeIdentity: 'uniform-callsite@1#src/reduce.js#5#0',
+			valueSnapshot: { type: 'number', data: 0 },
+		},
+	};
+	const artifact = { uniformPlan: [ { slots: [ slot ] } ] };
+	const counters = wireLiveNodeSidecarsToArtifact( artifact, { positionNode: { isNode: true } }, { overlay: true } );
+	assert.equal( counters.uniformsMatched, 0 );
+	assert.equal( slot._liveNode, undefined );
+	clearLiveUniformRegistryForTests();
+
+} );
+
+test( 'wireLiveNodeSidecarsToArtifact fails closed when a call-site identity has duplicate candidates', () => {
+
+	clearLiveUniformRegistryForTests();
+	registerLiveUniformNode( { isUniformNode: true, value: 0 }, 'uniform-callsite@1#src/reduce.js#5', 0 );
+	registerLiveUniformNode( { isUniformNode: true, value: 0 }, 'uniform-callsite@1#src/reduce.js#5', 0 );
+	const slot = {
+		dtype: 'number',
+		source: {
+			kind: 'uniform.live',
+			liveNodeId: 0,
+			liveNodeIdentity: 'uniform-callsite@1#src/reduce.js#5#0',
+			valueSnapshot: { type: 'number', data: 0 },
+		},
+	};
+	const artifact = { uniformPlan: [ { slots: [ slot ] } ] };
+	const counters = wireLiveNodeSidecarsToArtifact( artifact, { positionNode: { isNode: true } }, { overlay: true } );
+	assert.equal( counters.uniformsMatched, 0 );
+	assert.equal( slot._liveNode, undefined );
+	clearLiveUniformRegistryForTests();
+
+} );
+
 test( 'wireLiveNodeSidecarsToArtifact does not broad-match ambiguous global registry candidates', () => {
 
 	clearLiveUniformRegistryForTests();

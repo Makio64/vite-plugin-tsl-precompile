@@ -33,6 +33,7 @@ const GENERATED_RUNTIME_HELPER_IMPORTS = Object.freeze( [
 	'@tsl-precompile/runtime/writers',
 	'@tsl-precompile/runtime/generated/light-writer',
 	'@tsl-precompile/runtime/slim-support/node-dependencies',
+	'@tsl-precompile/runtime/slim-support/live-uniform-registry',
 ] );
 
 async function makeProject( threeVersion = '0.184.0', { provenance = false, bundleBody = null } = {} ) {
@@ -278,6 +279,7 @@ test( 'prebuilt slim generated helpers converge on one bundled runtime module', 
 			'export function writeGeneratedLightValue() {}',
 			'export function attachLiveNodeDependency() {}',
 			'export function getLiveNodeDependencies() { return []; }',
+			'export function registerLiveUniformNode( node ) { return node; }',
 			'',
 		].join( '\n' ),
 	} );
@@ -290,7 +292,8 @@ test( 'prebuilt slim generated helpers converge on one bundled runtime module', 
 			"import { writeF32 } from '@tsl-precompile/runtime/writers';",
 			"import { linkGeneratedLightIdentitySource, writeGeneratedLightValue } from '@tsl-precompile/runtime/generated/light-writer';",
 			"import { attachLiveNodeDependency, getLiveNodeDependencies } from '@tsl-precompile/runtime/slim-support/node-dependencies';",
-			'globalThis.__prebuiltHelpers = [ __applyPrecompiled, writeF32, linkGeneratedLightIdentitySource, writeGeneratedLightValue, attachLiveNodeDependency, getLiveNodeDependencies ];',
+			"import { registerLiveUniformNode } from '@tsl-precompile/runtime/slim-support/live-uniform-registry';",
+			'globalThis.__prebuiltHelpers = [ __applyPrecompiled, writeF32, linkGeneratedLightIdentitySource, writeGeneratedLightValue, attachLiveNodeDependency, getLiveNodeDependencies, registerLiveUniformNode ];',
 			'',
 		].join( '\n' ) );
 		const result = await viteBuild( {

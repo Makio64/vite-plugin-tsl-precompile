@@ -41,12 +41,13 @@ import { readFile, stat } from 'node:fs/promises';
 import { resolve, join, dirname, extname, normalize, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS as __NODE_GRAPH_KEYS } from '@tsl-precompile/contract/texture-props';
+import { instrumentLiveUniformIdentities } from '../../plugin/src/babel-transform.js';
 
 import { assertThreeCheckoutMatchesVersion } from './_three-version.mjs';
 import { isolateCanvasForScreenshot, restoreCanvasAfterScreenshot } from './e2e-canvas-screenshot.mjs';
 import { installRenderSelectorMismatchRecorder } from './e2e-render-selector-recorder.mjs';
 import { enrichRenderSelectorDiagnostics, resolveE2ERoots, summarizeArtifactRenderSelectors } from './e2e-report-diagnostics.mjs';
-import { holdAnimationUntilReadyForExample, installAnimationLoopSettleTransition, minimumRenderableObjectsForExample, settleFramesForExample, targetTickForExample } from './e2e-settle-policy.mjs';
+import { deterministicTimeoutPolicyForExample, holdAnimationUntilReadyForExample, installAnimationLoopSettleTransition, minimumRenderableObjectsForExample, settleFramesForExample, targetTickForExample } from './e2e-settle-policy.mjs';
 import { captureWaitOverrideForExample, comparePngBuffers, expectedReplayErrorPatternsForExample, minimumBrightFractionForExample, pixelGateDisabledReasonForExample, psnrThresholdForExample, tierExamples } from './psnr.mjs';
 import { loadSlimBundle, slimBundleHashOptions, slimBundleReportProvenance } from './slim-bundle-provenance.mjs';
 
@@ -377,6 +378,21 @@ function stabilizeExampleHtml( html, example ) {
 
 }
 
+function instrumentInlineLiveUniforms( html, example ) {
+
+	let inlineIndex = 0;
+	return String( html ).replace( /<script\b([^>]*\btype=["']module["'][^>]*)>([\s\S]*?)<\/script>/gi, ( match, attributes, moduleSource ) => {
+
+		if ( /\bsrc\s*=/.test( attributes ) ) return match;
+		const sourceRoot = localExamplesRoot || threeRepo;
+		const filename = join( sourceRoot, 'examples', `${ example }.inline-${ inlineIndex ++ }.js` );
+		const transformed = instrumentLiveUniformIdentities( moduleSource, { filename, root: sourceRoot } );
+		return transformed.touched ? `<script${ attributes }>${ transformed.code }</script>` : match;
+
+	} );
+
+}
+
 function stabilizeTslEditorHtml( html ) {
 
 	return html
@@ -469,7 +485,8 @@ function injectHtml( html, example, mode ) {
 		? `<script>globalThis.__tslpPinnedClock=${ pinnedClock };${ process.env.TSLP_DEBUG_CLOCK === '1' ? `console.log('[tslp-clock] replay pin=' + globalThis.__tslpPinnedClock);` : '' }</script>`
 		: '';
 	const boot = `<script>window.__TSLP_E2E=${ jsonScriptLiteral( { example, mode, artifacts: bucket, captureEndpoint, localExamples: !! localExamplesRoot } ) };</script>${ pinBoot }`;
-	const mapped = rewriteImportmap( stabilizeExampleHtml( html, example ), mode );
+	const stabilized = stabilizeExampleHtml( html, example );
+	const mapped = rewriteImportmap( instrumentInlineLiveUniforms( stabilized, example ), mode );
 	return mapped.includes( '</head>' )
 		? mapped.replace( '</head>', `${ boot }\n</head>` )
 		: boot + mapped;
@@ -513,6 +530,7 @@ function rewriteImportmap( html, mode ) {
 		'@tsl-precompile/runtime/slim-support/gpu-texture-share': '/__tslp_runtime/slim-support/gpu-texture-share.js',
 		'@tsl-precompile/runtime/slim-support/compute-sync': '/__tslp_runtime/slim-support/compute-sync.js',
 		'@tsl-precompile/runtime/slim-support/auto-compute': '/__tslp_runtime/slim-support/auto-compute.js',
+		'@tsl-precompile/runtime/slim-support/live-uniform-registry': '/__tslp_runtime/slim-support/live-uniform-callsite.js',
 		'@tsl-precompile/contract': '/__tslp_contract/index.js',
 		'@tsl-precompile/contract/dynamic-bindings': '/__tslp_contract/dynamic-bindings.js',
 		'@tsl-precompile/contract/fragment-outputs': '/__tslp_contract/fragment-outputs.js',
@@ -3856,28 +3874,49 @@ function __collectStorageAttrNodeAttrs( rootNode, results ) {
 // GPU-writable buffers instead of allocating fresh empty placeholders.
 // This is required for compute-driven examples where instancedArray() creates
 // a buffer that a compute kernel writes into and the render material reads from.
-const __computeStorageAttrFallbacks = [];
+const __computeStorageAttrsByRenderer = new WeakMap();
+const __computeStorageEvidenceByRenderer = new WeakMap();
+const __unscopedComputeStorageAttrs = [];
+const __unscopedComputeStorageEvidence = [];
 function __computeDiagnostics() {
 	if ( typeof window === 'undefined' ) return null;
 	const root = window.__tslpHarnessDiagnostics || ( window.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
 	const diag = root.compute || ( root.compute = { storageAttrs: 0, storageShapes: [], fallbackWires: 0 } );
 	return diag;
 }
-function __rememberComputeStorageAttr( attr ) {
+function __computeStorageLedger( map, fallback, renderer, create = false ) {
+	if ( ! renderer || ( typeof renderer !== 'object' && typeof renderer !== 'function' ) ) return fallback;
+	let ledger = map.get( renderer );
+	if ( ! ledger && create ) {
+		ledger = [];
+		map.set( renderer, ledger );
+	}
+	return ledger || [];
+}
+function __computeStorageAttrsFor( renderer = null ) {
+	return __computeStorageLedger( __computeStorageAttrsByRenderer, __unscopedComputeStorageAttrs, renderer, false );
+}
+function __computeStorageEvidenceFor( renderer = null ) {
+	return __computeStorageLedger( __computeStorageEvidenceByRenderer, __unscopedComputeStorageEvidence, renderer, false );
+}
+function __rememberComputeStorageAttr( attr, binding = null, renderer = null ) {
 	if ( ! attr || ! ( attr.isStorageBufferAttribute === true || attr.isStorageInstancedBufferAttribute === true ) ) return;
-	if ( ! __computeStorageAttrFallbacks.includes( attr ) ) {
-		__computeStorageAttrFallbacks.push( attr );
+	const attributes = __computeStorageLedger( __computeStorageAttrsByRenderer, __unscopedComputeStorageAttrs, renderer, true );
+	const evidence = __computeStorageLedger( __computeStorageEvidenceByRenderer, __unscopedComputeStorageEvidence, renderer, true );
+	if ( ! attributes.includes( attr ) ) {
+		attributes.push( attr );
 		const diag = __computeDiagnostics();
 		if ( diag ) {
 			diag.storageAttrs = ( diag.storageAttrs | 0 ) + 1;
 			if ( diag.storageShapes.length < 12 ) diag.storageShapes.push( String( attr.count || 0 ) + 'x' + String( attr.itemSize || 0 ) + ':' + ( attr.array && attr.array.constructor && attr.array.constructor.name || '' ) );
 		}
 	}
+	if ( binding && ! evidence.some( ( candidate ) => candidate.attribute === attr && candidate.binding === binding ) ) evidence.push( { attribute: attr, binding } );
 }
 
-function __preferComputeStorageAttr( attr, entry, sizeMatches ) {
-	if ( ! attr || __computeStorageAttrFallbacks.length === 0 ) return attr;
-	const match = __computeStorageAttrFallbacks.find( ( candidate ) => (
+function __preferComputeStorageAttr( attr, entry, sizeMatches, fallbacks ) {
+	if ( ! attr || fallbacks.length === 0 ) return attr;
+	const match = fallbacks.find( ( candidate ) => (
 		candidate &&
 		candidate !== attr &&
 		candidate.array === attr.array &&
@@ -3966,14 +4005,16 @@ function __wireStorageBuffersBySnapshot( artifact, attrs, sizeMatches ) {
 	return wired;
 }
 
-function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
+function __wireComputeAttrsToArtifact( artifact, sourceMaterial, renderer = window.__tslpCurrentReplayRenderer || null ) {
 	if ( ! sourceMaterial || ! artifact ) return 0;
+	const computeStorageAttrFallbacks = __computeStorageAttrsFor( renderer );
+	const computeStorageEvidence = __computeStorageEvidenceFor( renderer );
 	let wiredCount = 0;
 	function isStorageAttr( v ) { return v && ( v.isStorageBufferAttribute === true || v.isStorageInstancedBufferAttribute === true ); }
 	function bumpBeforeComputeOwnsBuffer( attr ) {
 		// After delegated compute adopts the GPU buffer, a CPU version bump makes
 		// the next render upload the zeroed backing array over the compute result.
-		if ( ! attr || __computeStorageAttrFallbacks.includes( attr ) ) return;
+		if ( ! attr || computeStorageAttrFallbacks.includes( attr ) ) return;
 		if ( typeof attr.version === 'number' ) attr.version = attr.version + 1;
 	}
 
@@ -4017,7 +4058,7 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 			if ( nodeAttr.storage === false ) continue;
 			const matchIdx = naCandidates.findIndex( ( v ) => v.count === nodeAttr.count && sizeMatches( v.itemSize, nodeAttr.itemSize ) );
 			if ( matchIdx === -1 ) continue;
-			const liveAttr = __preferComputeStorageAttr( naCandidates[ matchIdx ], nodeAttr, sizeMatches );
+			const liveAttr = __preferComputeStorageAttr( naCandidates[ matchIdx ], nodeAttr, sizeMatches, computeStorageAttrFallbacks );
 			Object.defineProperty( nodeAttr, '_liveAttribute', { value: liveAttr, enumerable: false, writable: true, configurable: true } );
 			bumpBeforeComputeOwnsBuffer( liveAttr );
 			wiredCount++;
@@ -4032,7 +4073,7 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 	// discovered from compute bind groups. This is deliberately limited to
 	// vertexNode materials so positionNode/colorNode paths keep their explicit
 	// userPath wiring.
-	if ( ( sourceMaterial.vertexNode || sourceMaterial.colorNode ) && __computeStorageAttrFallbacks.length > 0 ) {
+	if ( ( sourceMaterial.vertexNode || sourceMaterial.colorNode ) && computeStorageAttrFallbacks.length > 0 ) {
 		const hasAutoComputeNode = __AUTO_COMPUTE_SLOTS.some( ( slot ) => sourceMaterial[ slot ] && sourceMaterial[ slot ].isComputeNode === true );
 		for ( const nodeAttr of nodeAttrsArr ) {
 			if ( ! nodeAttr || nodeAttr.source !== 'node' || isStorageAttr( nodeAttr._liveAttribute ) ) continue;
@@ -4040,7 +4081,7 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 			if ( hasAutoComputeNode ) continue;
 			// See gate above: skip non-storage instanced attributes (instanceMatrix columns).
 			if ( nodeAttr.storage === false ) continue;
-			const matches = __computeStorageAttrFallbacks.filter( ( v ) => (
+			const matches = computeStorageAttrFallbacks.filter( ( v ) => (
 					v &&
 					v.count === nodeAttr.count &&
 					sizeMatches( v.itemSize, nodeAttr.itemSize ) &&
@@ -4105,14 +4146,14 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial ) {
 	// then MeshPhongNodeMaterial reads that grid via a storage binding. Reuse the
 	// runtime helper so replay and real slim+fallback users share the same shape
 	// matching behavior.
-		if ( __computeStorageAttrFallbacks.length > 0 ) {
-			const snapshotWired = __wireStorageBuffersBySnapshot( artifact, __computeStorageAttrFallbacks, sizeMatches );
+		if ( computeStorageAttrFallbacks.length > 0 ) {
+			const snapshotWired = __wireStorageBuffersBySnapshot( artifact, computeStorageAttrFallbacks, sizeMatches );
 		if ( snapshotWired > 0 ) {
 			const diag = __computeDiagnostics();
 			if ( diag ) diag.snapshotWires = ( diag.snapshotWires | 0 ) + snapshotWired;
 			wiredCount += snapshotWired;
 		}
-		const fallbackWired = __sharedWireArtifactStorageBuffersFromAttributes( artifact, __computeStorageAttrFallbacks, {
+		const fallbackWired = __sharedWireArtifactStorageBuffersFromAttributes( artifact, [ ...computeStorageAttrFallbacks, ...computeStorageEvidence ], {
 			bumpVersion: false,
 			allowVec3ToVec4: true,
 		} );
@@ -7825,14 +7866,14 @@ function __shareComputeSampledInputs( computeNode, fullRenderer, slimRenderer ) 
 }
 
 function __wireSceneComputeAttrsFromFallbacks( scene, renderer = null ) {
-	if ( ! scene || typeof scene.traverse !== 'function' || __computeStorageAttrFallbacks.length === 0 ) return;
+	if ( ! scene || typeof scene.traverse !== 'function' || __computeStorageAttrsFor( renderer ).length === 0 ) return;
 	let invalidated = false;
 	scene.traverse( ( object ) => {
 		const material = object && object.material;
 		const list = Array.isArray( material ) ? material : material ? [ material ] : [];
 		for ( const m of list ) {
 			if ( ! ( m && m.isPrecompiledMaterial === true && m.precompiledArtifact ) ) continue;
-				const wired = __wireComputeAttrsToArtifact( m.precompiledArtifact, m ) | 0;
+				const wired = __wireComputeAttrsToArtifact( m.precompiledArtifact, m, renderer ) | 0;
 				if ( wired > 0 ) {
 					m.needsUpdate = true;
 					try {
@@ -7858,7 +7899,7 @@ function __driveRendererLightingUpdateBefore( renderer, scene, camera ) {
 		diagnostics: diag || undefined,
 		guardKey: '__tslpInsideReplayUpdateBefore',
 		onStorageAttribute: ( attr ) => {
-			__rememberComputeStorageAttr( attr );
+			__rememberComputeStorageAttr( attr, null, renderer );
 			__wireSceneComputeAttrsFromFallbacks( scene, renderer );
 		},
 		onError: ( err ) => {
@@ -7898,8 +7939,8 @@ function __syncStorageBuffers( computeNode, fullRenderer, slimRenderer ) {
 	const seenStorageAttrs = [];
 
 	const syncStats = __sharedSyncComputeStorageOutputsPerPass( computeNode, fullRenderer, slimRenderer, passIndex, {
-		onStorageAttr: ( attr ) => {
-			__rememberComputeStorageAttr( attr );
+		onStorageAttr: ( attr, binding ) => {
+			__rememberComputeStorageAttr( attr, binding, slimRenderer );
 			seenStorageAttrs.push( attr );
 		},
 		onStorageTexture: ( tex ) => { seenStorageTextures.push( tex ); },
@@ -10148,10 +10189,33 @@ function __trackDebugShaderAsync( renderer ) {
 		if ( computeNode && computeNode.isPrecompiledCompute === true ) {
 			return super.compute( computeNode, ...rest );
 		}
-		// Raw TSL compute nodes: slim NodeManager cannot build them.
-		// Delegate asynchronously to the shared-device full renderer.
+		// Raw TSL compute nodes: slim NodeManager cannot build them. Once the
+		// shared-device full renderer is initialized, preserve stock compute()
+		// semantics by invoking it synchronously. Deferring every dispatch through
+		// computeAsync() makes call-time uniforms observable too late: a reduction
+		// loop that mutates one uniform between dispatches then runs every kernel
+		// with the final value. The synchronous full-renderer call also submits its
+		// GPU work before the application's immediately-following render.
 		if ( computeNode && computeNode.isComputeNode === true ) {
 			if ( this.__tslpPostComputeRendering === true ) return Promise.resolve();
+			const fullRenderer = __computeRendererBySlim.get( this ) || null;
+			const requiresAsyncInit = typeof computeNode.onInitFunction === 'function' && computeNode.__tslpReplayInitDone !== true;
+			if ( fullRenderer && fullRenderer._initialized !== false && ! requiresAsyncInit ) {
+				try {
+					__shareComputeSampledInputs( computeNode, fullRenderer, this );
+					const result = fullRenderer.compute( computeNode, ...rest );
+					if ( result && typeof result.then === 'function' ) {
+						return Promise.resolve( result ).then( () => __syncStorageBuffers( computeNode, fullRenderer, this ) ).catch( ( err ) => {
+							console.warn( '[tslp-e2e] compute dispatch failed:', err && err.message || err );
+						} );
+					}
+					__syncStorageBuffers( computeNode, fullRenderer, this );
+					return result;
+				} catch ( err ) {
+					console.warn( '[tslp-e2e] compute dispatch failed:', err && err.message || err );
+					return undefined;
+				}
+			}
 			return this.computeAsync( computeNode, ...rest ).catch( () => {} );
 		}
 		return undefined;
@@ -14634,6 +14698,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 		const waitForRenderableObjects = await exampleUsesDeferredSceneAssets( name );
 		const minRenderableObjects = minimumRenderableObjectsForExample( name );
 		const holdAnimationUntilReady = holdAnimationUntilReadyForExample( name );
+		const deterministicTimeoutPolicy = deterministicTimeoutPolicyForExample( name );
 	try {
 
 		stepStartedAt = Date.now();
@@ -14654,7 +14719,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 		}
 			await page.addInitScript( installAnimationLoopSettleTransition );
 			await page.addInitScript( installRenderSelectorMismatchRecorder, { phase: mode } );
-			await page.addInitScript( ( { step, base, freezeAt, quiescentMs, settleFrames, waitForRenderableObjects, minRenderableObjects, holdAnimationUntilReady, exampleName, mode } ) => {
+			await page.addInitScript( ( { step, base, freezeAt, quiescentMs, settleFrames, waitForRenderableObjects, minRenderableObjects, holdAnimationUntilReady, deterministicTimeoutPolicy, exampleName, mode } ) => {
 
 			// eslint-disable-next-line no-undef
 			const w = window;
@@ -14697,6 +14762,51 @@ async function visitExample( browser, name, mode, waitMs ) {
 				}
 
 			} catch ( _ ) {}
+			if ( deterministicTimeoutPolicy && ! w.__tslpDeterministicTimeoutInstalled ) {
+				w.__tslpDeterministicTimeoutInstalled = true;
+				const nativeSetTimeout = w.setTimeout.bind( w );
+				const nativeClearTimeout = w.clearTimeout.bind( w );
+				const targetDelay = Math.max( 0, Number( deterministicTimeoutPolicy.delayMs ) || 0 );
+				const queue = [];
+				const pending = new Map();
+				let nextId = - 1;
+				w.__tslpDeterministicTimeoutQueue = queue;
+				w.__tslpDeterministicTimeoutTrace = [];
+				w.setTimeout = function ( callback, delay = 0, ...args ) {
+					if ( typeof callback === 'function' && Number( delay ) === targetDelay ) {
+						const id = nextId --;
+						const record = { id, callback, args, cancelled: false };
+						pending.set( id, record );
+						queue.push( record );
+						return id;
+					}
+					return nativeSetTimeout( callback, delay, ...args );
+				};
+				w.clearTimeout = function ( id ) {
+					const record = pending.get( id );
+					if ( record ) {
+						record.cancelled = true;
+						pending.delete( id );
+						return;
+					}
+					return nativeClearTimeout( id );
+				};
+				w.__tslpRunDeterministicTimeouts = async function ( count ) {
+					let ran = 0;
+					while ( ran < Math.max( 0, count | 0 ) ) {
+						let record = queue.shift() || null;
+						while ( record && record.cancelled ) record = queue.shift() || null;
+						if ( ! record ) break;
+						pending.delete( record.id );
+						w.__tslpDeterministicTimeoutTrace.push( record.callback.name || '<anonymous>' );
+						const result = record.callback( ...record.args );
+						if ( result && typeof result.then === 'function' ) await result;
+						await Promise.resolve();
+						ran ++;
+					}
+					return ran;
+				};
+			}
 			if ( w.__tslpRafShimInstalled ) return;
 			w.__tslpRafShimInstalled = true;
 				w.__tslpRafTick = 0;
@@ -14990,7 +15100,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 
 			};
 
-		}, { step: FRAME_STEP_MS, base: 0, freezeAt: TARGET_TICK, quiescentMs: LOADER_QUIESCENT_MS, settleFrames: effectiveSettleFrames, waitForRenderableObjects, minRenderableObjects, holdAnimationUntilReady, exampleName: name, mode } );
+		}, { step: FRAME_STEP_MS, base: 0, freezeAt: TARGET_TICK, quiescentMs: LOADER_QUIESCENT_MS, settleFrames: effectiveSettleFrames, waitForRenderableObjects, minRenderableObjects, holdAnimationUntilReady, deterministicTimeoutPolicy, exampleName: name, mode } );
 		mark( 'initScriptMs', stepStartedAt );
 
 	} catch ( _ ) { /* older Playwright fallback */ }
@@ -15027,6 +15137,26 @@ async function visitExample( browser, name, mode, waitMs ) {
 		stepStartedAt = Date.now();
 		await new Promise( ( r ) => setTimeout( r, ASSET_SETTLE_MS ) );
 		mark( 'assetSettleMs', stepStartedAt );
+
+		if ( deterministicTimeoutPolicy ) {
+			stepStartedAt = Date.now();
+			await page.waitForFunction(
+				() => ( window.__tslpPrecompilePending | 0 ) === 0
+					&& ( window.__tslpAuxCapturePending | 0 ) === 0
+					&& ( window.__tslpCompilePending | 0 ) === 0,
+				null,
+				{ timeout: LOADER_TIMEOUT_MS, polling: 25 },
+			);
+			await page.waitForFunction(
+				() => Array.isArray( window.__tslpDeterministicTimeoutQueue ) && window.__tslpDeterministicTimeoutQueue.some( ( record ) => record && record.cancelled !== true ),
+				null,
+				{ timeout: RENDER_TIMEOUT_MS, polling: 25 },
+			);
+			const drained = await page.evaluate( async ( steps ) => window.__tslpRunDeterministicTimeouts( steps ), deterministicTimeoutPolicy.steps );
+			timings.deterministicTimeoutSteps = drained | 0;
+			timings.deterministicTimeoutTrace = await page.evaluate( () => window.__tslpDeterministicTimeoutTrace.slice() );
+			mark( 'deterministicTimeoutMs', stepStartedAt );
+		}
 
 		// Wait until the init-script rAF wrapper reaches TARGET_TICK and
 		// self-freezes. The freeze happens

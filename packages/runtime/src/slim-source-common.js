@@ -272,4 +272,5 @@ export { hashNodeGraphSync } from './graph-hash.js';
 export { setSlimRenderFallback } from './slim-support/render-fallback-registry.js';
 export { linkGeneratedLightIdentitySource, writeGeneratedLightValue } from './generated/light-writer.js';
 export { attachLiveNodeDependency, getLiveNodeDependencies } from './slim-support/node-dependencies.js';
+export { registerLiveUniformNode } from './slim-support/live-uniform-registry.js';
 export * from './writers.js';

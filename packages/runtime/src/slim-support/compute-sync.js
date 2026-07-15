@@ -44,6 +44,75 @@ function isLiveStorageAttribute( value ) {
 
 }
 
+function storageBindingAttributeName( binding ) {
+
+	const nodeUniform = binding && binding.nodeUniform;
+	for ( const candidate of [
+		nodeUniform && nodeUniform.name,
+		nodeUniform && nodeUniform.node && nodeUniform.node.name,
+	] ) {
+
+		if ( typeof candidate === 'string' && candidate.trim().length > 0 ) return candidate.trim();
+
+	}
+	return null;
+
+}
+
+function storageCandidateRecords( values ) {
+
+	const byAttribute = new Map();
+	for ( const value of asList( values ) ) {
+
+		const attribute = isStorageAttribute( value )
+			? value
+			: value && isStorageAttribute( value.attribute ) ? value.attribute : null;
+		if ( ! attribute ) continue;
+		let record = byAttribute.get( attribute );
+		if ( ! record ) {
+
+			record = { attribute, attributeNames: new Set() };
+			byAttribute.set( attribute, record );
+
+		}
+		const explicitName = value && ! isStorageAttribute( value ) && typeof value.attributeName === 'string'
+			? value.attributeName.trim()
+			: '';
+		const bindingName = value && ! isStorageAttribute( value ) ? storageBindingAttributeName( value.binding ) : null;
+		const attributeName = typeof attribute.name === 'string' ? attribute.name.trim() : '';
+		for ( const name of [ explicitName, bindingName, attributeName ] ) {
+
+			if ( name ) record.attributeNames.add( name );
+
+		}
+
+	}
+	return [ ...byAttribute.values() ];
+
+}
+
+function storageEntryAttributeName( entry ) {
+
+	const source = entry && entry.source;
+	if ( ! source || source.kind !== 'storage.buffer' || typeof source.attributeName !== 'string' ) return null;
+	const name = source.attributeName.trim();
+	return name || null;
+
+}
+
+function storageEntryAliasKey( entry, groupIndex ) {
+
+	return [
+		groupIndex,
+		entry && entry.name || '',
+		storageEntryAttributeName( entry ) || '',
+		entry && entry.count || 0,
+		entry && entry.itemSize || 0,
+		entry && entry.arrayType || '',
+	].join( ':' );
+
+}
+
 function storageShapeMatches( attribute, entry, allowVec3ToVec4 = true ) {
 
 	if ( ! isStorageAttribute( attribute ) || ! entry ) return false;
@@ -687,12 +756,14 @@ export function syncComputeStorageOutputsPerPass( computeNode, fullRenderer, sli
  * `material.colorNode`, `material.vertexNode`, etc. Renderer-owned systems
  * such as tiled lighting are different: compute writes the live buffer from a
  * lighting node, while the material shader only sees the final storage binding.
- * This helper bridges that gap by matching storage-buffer entries by
- * `count + itemSize + typed-array kind` and storing the live attribute on the
- * artifact before the next hydrate.
+ * This helper bridges that gap by matching signed storage-buffer identities
+ * (`source.attributeName`) plus shape. Legacy unsigned entries fall back to
+ * shape only when exactly one candidate is possible, so two same-shaped
+ * renderer resources can never silently exchange ownership.
  *
  * @param {Object} artifact
- * @param {Object|Object[]} attributes
+ * @param {Object|Object[]} attributes - Storage attributes or evidence records
+ *   shaped as `{ attribute, binding?, attributeName? }`.
  * @param {Object} [opts]
  * @param {boolean} [opts.bumpVersion=true] - Bump the live attribute version so cached bind groups rebuild.
  * @param {boolean} [opts.allowVec3ToVec4=true] - Accept WebGPU vec3 storage padding captured as vec4.
@@ -703,40 +774,64 @@ export function wireArtifactStorageBuffersFromAttributes( artifact, attributes, 
 	const plan = artifact && Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : null;
 	if ( ! plan || plan.length === 0 ) return 0;
 
-	const candidates = asList( attributes ).filter( isStorageAttribute );
+	const candidates = storageCandidateRecords( attributes );
 	if ( candidates.length === 0 ) return 0;
 
 	const bumpVersion = opts.bumpVersion !== false;
 	const allowVec3ToVec4 = opts.allowVec3ToVec4 !== false;
 	const consumed = new Set();
 	const seenEntries = new Set();
+	const aliasMatches = new Map();
 	let wired = 0;
 
-	const wireEntry = ( entry ) => {
+	const wireEntry = ( entry, groupIndex ) => {
 
 		if ( ! entry || seenEntries.has( entry ) ) return;
 		seenEntries.add( entry );
 		if ( isLiveStorageAttribute( entry._liveAttribute ) ) return;
+		const aliasKey = storageEntryAliasKey( entry, groupIndex );
+		const aliasMatch = aliasMatches.get( aliasKey );
+		if ( aliasMatch ) {
 
-		const match = candidates.find( ( candidate ) => (
-			! consumed.has( candidate )
-			&& storageShapeMatches( candidate, entry, allowVec3ToVec4 )
-		) );
-		if ( ! match ) return;
+			defineLiveStorageAttribute( entry, aliasMatch, false );
+			return;
+
+		}
+
+		const attributeName = storageEntryAttributeName( entry );
+		const compatible = candidates.filter( ( candidate ) =>
+			storageShapeMatches( candidate.attribute, entry, allowVec3ToVec4 )
+		);
+		let matches;
+		if ( attributeName ) {
+
+			matches = compatible.filter( ( candidate ) => candidate.attributeNames.has( attributeName ) );
+
+		} else {
+
+			matches = compatible.filter( ( candidate ) => ! consumed.has( candidate.attribute ) );
+
+		}
+		const uniqueAttributes = [ ...new Set( matches.map( ( candidate ) => candidate.attribute ) ) ];
+		if ( uniqueAttributes.length !== 1 ) return;
+		const match = uniqueAttributes[ 0 ];
 
 		defineLiveStorageAttribute( entry, match, bumpVersion );
 		consumed.add( match );
+		aliasMatches.set( aliasKey, match );
 		wired ++;
 
 	};
 
-	for ( const group of plan ) {
+	for ( let groupIndex = 0; groupIndex < plan.length; groupIndex ++ ) {
 
-		for ( const entry of group && group.storageBuffers || [] ) wireEntry( entry );
+		const group = plan[ groupIndex ];
+
+		for ( const entry of group && group.storageBuffers || [] ) wireEntry( entry, groupIndex );
 		for ( const binding of group && group.orderedBindings || [] ) {
 
 			if ( ! binding || binding.type !== 'storage-buffer' || ! binding.ref ) continue;
-			wireEntry( binding.ref );
+			wireEntry( binding.ref, groupIndex );
 
 		}
 

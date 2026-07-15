@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
-import { BLOCKED_KINDS, KINDS, LIGHT_SLOT_KINDS } from '@tsl-precompile/contract/kinds';
+import { BLOCKED_KINDS, KIND_STATUS, KINDS, LIGHT_SLOT_KINDS } from '@tsl-precompile/contract/kinds';
 
 const HERE = dirname( fileURLToPath( import.meta.url ) );
 const PLUGIN_SRC = resolve( HERE, '../../src' );
@@ -102,8 +102,11 @@ const updaterCases = new Set( [
 	...LIGHT_SLOT_KINDS,
 ] );
 const blockedKinds = new Set( Object.keys( BLOCKED_KINDS ) );
+const runtimeDynamicKinds = new Set( Object.values( KINDS )
+	.filter( ( entry ) => entry.status === KIND_STATUS.RUNTIME_DYNAMIC )
+	.map( ( entry ) => entry.kind ) );
 
-test( 'drift — every literal kind the extractor emits is handled or documented-blocked', () => {
+test( 'drift — every literal kind the extractor emits is codegen-handled, runtime-resolved, or documented-blocked', () => {
 
 	const missing = [];
 	for ( const kind of extractorKinds ) {
@@ -112,6 +115,7 @@ test( 'drift — every literal kind the extractor emits is handled or documented
 		// are legacy aliases still carried for hand-written plans; the
 		// extractor emits `uniform.live` AND `constant`.
 		if ( updaterCases.has( kind ) ) continue;
+		if ( runtimeDynamicKinds.has( kind ) ) continue;
 		if ( blockedKinds.has( kind ) ) continue;
 
 		// Also tolerate prefix-only placeholders — the extractor doesn't
