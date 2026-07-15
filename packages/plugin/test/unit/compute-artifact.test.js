@@ -508,7 +508,6 @@ test( 'material compute capture rejects a sampled texture without a serializable
 
 	assert.equal( descriptor.mode, 'hybrid-required' );
 	assert.deepEqual( descriptor.reasons, [
-		'kernel:0:binding-layout-unavailable',
 		'kernel:0:texture-source-unresolved',
 	] );
 	assert.deepEqual( validateMaterialComputeDescriptor( descriptor, { artifact: renderArtifact } ), [] );

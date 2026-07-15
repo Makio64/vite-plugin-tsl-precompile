@@ -1797,6 +1797,7 @@ export function extractUniformPlan( state, context = null ) {
 					type: binding.isSampledTexture ? 'sampled-texture' : 'sampler',
 					ref: texEntry
 				} );
+				continue;
 
 			}
 

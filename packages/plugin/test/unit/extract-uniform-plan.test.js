@@ -64,6 +64,23 @@ function makeTextureState( textureNode ) {
 
 }
 
+test( 'extractUniformPlan emits one ordered entry for a sampled storage texture', () => {
+
+	const texture = { isTexture: true, isStorageTexture: true, uuid: 'storage-texture' };
+	const state = makeTextureState( { value: texture } );
+	Object.assign( state.bindings[ 0 ].bindings[ 0 ], {
+		store: true,
+		access: 'writeOnly',
+		texture,
+	} );
+	const plan = extractUniformPlan( state, {} );
+
+	assert.equal( plan[ 0 ].orderedBindings.length, 1 );
+	assert.equal( plan[ 0 ].orderedBindings[ 0 ].type, 'sampled-texture' );
+	assert.equal( plan[ 0 ].orderedBindings[ 0 ].ref.access, 'writeOnly' );
+
+} );
+
 test( 'extractUniformPlan maps object-owned UniformNode properties', () => {
 
 	const distortionScale = {
