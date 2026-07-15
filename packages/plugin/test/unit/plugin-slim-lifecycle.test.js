@@ -28,8 +28,14 @@ import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 
 const CONTRACT_PACKAGE_ROOT = await realpath( new URL( '../../../contract', import.meta.url ) );
 const PLUGIN_PACKAGE_ROOT = await realpath( new URL( '../..', import.meta.url ) );
+const GENERATED_RUNTIME_HELPER_IMPORTS = Object.freeze( [
+	'@tsl-precompile/runtime/apply',
+	'@tsl-precompile/runtime/writers',
+	'@tsl-precompile/runtime/generated/light-writer',
+	'@tsl-precompile/runtime/slim-support/node-dependencies',
+] );
 
-async function makeProject( threeVersion = '0.184.0', { provenance = false } = {} ) {
+async function makeProject( threeVersion = '0.184.0', { provenance = false, bundleBody = null } = {} ) {
 
 	const root = await mkdtemp( join( tmpdir(), 'tslp-slim-lifecycle-' ) );
 	const threeRoot = join( root, 'node_modules/three' );
@@ -82,12 +88,12 @@ async function makeProject( threeVersion = '0.184.0', { provenance = false } = {
 		runtimeBundleFile,
 		runtimeMetadataFile,
 	};
-	if ( provenance ) await writeFixtureProvenance( fixture );
+	if ( provenance ) await writeFixtureProvenance( fixture, bundleBody || undefined );
 	return fixture;
 
 }
 
-async function writeFixtureProvenance( fixture ) {
+async function writeFixtureProvenance( fixture, bundleBody = 'export const __TSLP_SLIM__ = true;\n' ) {
 
 	const versions = createSlimBundleVersionIdentity( {
 		threeVersion: fixture.threeVersion,
@@ -102,7 +108,7 @@ async function writeFixtureProvenance( fixture ) {
 	} );
 	const source = await computeSlimBundleSourceFingerprint( inputs, versions );
 	const stamp = formatSlimBundleStamp( { sourceFingerprint: source.fingerprint, versions } );
-	const bundleSource = `${ stamp }\nexport const __TSLP_SLIM__ = true;\n`;
+	const bundleSource = `${ stamp }\n${ bundleBody.endsWith( '\n' ) ? bundleBody : bundleBody + '\n' }`;
 	const metadata = createSlimBundleMetadata( { bundleSource, source, versions } );
 	await writeFile( fixture.runtimeBundleFile, bundleSource );
 	await writeFile( fixture.runtimeMetadataFile, serializeSlimBundleMetadata( metadata ) );
@@ -201,6 +207,7 @@ test( 'slim serve keeps full three.js for capture and injects the exact package 
 		assert.equal( config.resolve.alias.some( ( alias ) => aliasMatches( alias, 'three/webgpu' ) ), false );
 		assert.equal( config.resolve.alias.some( ( alias ) => aliasMatches( alias, 'three/tsl' ) ), false );
 		assert.equal( config.resolve.alias.some( ( alias ) => aliasMatches( alias, 'three' ) ), false );
+		for ( const id of GENERATED_RUNTIME_HELPER_IMPORTS ) assert.equal( config.resolve.alias.some( ( alias ) => aliasMatches( alias, id ) ), false, id );
 		assert.equal( config.define[ 'globalThis.__TSLP_THREE_PACKAGE_VERSION__' ], '"0.184.0"' );
 		assert.equal( config.define[ 'globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__' ], 'true' );
 
@@ -231,6 +238,13 @@ test( 'slim build aliases public three entries but full-three bypasses the alias
 		assert.equal( webgpuAlias.replacement, '@tsl-precompile/runtime/slim' );
 		assert.equal( tslAlias.replacement, '@tsl-precompile/runtime/slim-stubs' );
 		assert.equal( config.resolve.alias.some( ( alias ) => aliasMatches( alias, 'three' ) ), false );
+		for ( const id of GENERATED_RUNTIME_HELPER_IMPORTS ) {
+
+			const helperAlias = config.resolve.alias.find( ( alias ) => aliasMatches( alias, id ) );
+			assert.equal( helperAlias.replacement, '@tsl-precompile/runtime/slim', id );
+			assert.equal( config.resolve.alias.some( ( alias ) => aliasMatches( alias, `${ id }/unexpected` ) ), false, `${ id } must be exact` );
+
+		}
 
 		await plugin.configResolved( {
 			root: fixture.root,
@@ -243,6 +257,63 @@ test( 'slim build aliases public three entries but full-three bypasses the alias
 			() => plugin.resolveId( SLIM_REWRITE_RUNTIME_MODULE_RULES[ 0 ].virtualId, join( fixture.threeRoot, 'src/renderers/common/Renderer.js' ) ),
 			/private Three source rewrite helper[\s\S]*three\/webgpu[\s\S]*slim: 'source'[\s\S]*constructor identity/,
 		);
+
+	} finally {
+
+		await rm( fixture.root, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'prebuilt slim generated helpers converge on one bundled runtime module', async () => {
+
+	const fixture = await makeProject( '0.184.0', {
+		provenance: true,
+		bundleBody: [
+			'export const __TSLP_SLIM__ = true;',
+			'export function __applyPrecompiled() {}',
+			'export function writeF32() {}',
+			'export function linkGeneratedLightIdentitySource() {}',
+			'export function writeGeneratedLightValue() {}',
+			'export function attachLiveNodeDependency() {}',
+			'export function getLiveNodeDependencies() { return []; }',
+			'',
+		].join( '\n' ),
+	} );
+	try {
+
+		const entry = join( fixture.root, 'src/main.js' );
+		await mkdir( join( fixture.root, 'src' ), { recursive: true } );
+		await writeFile( entry, [
+			"import { __applyPrecompiled } from '@tsl-precompile/runtime/apply';",
+			"import { writeF32 } from '@tsl-precompile/runtime/writers';",
+			"import { linkGeneratedLightIdentitySource, writeGeneratedLightValue } from '@tsl-precompile/runtime/generated/light-writer';",
+			"import { attachLiveNodeDependency, getLiveNodeDependencies } from '@tsl-precompile/runtime/slim-support/node-dependencies';",
+			'globalThis.__prebuiltHelpers = [ __applyPrecompiled, writeF32, linkGeneratedLightIdentitySource, writeGeneratedLightValue, attachLiveNodeDependency, getLiveNodeDependencies ];',
+			'',
+		].join( '\n' ) );
+		const result = await viteBuild( {
+			root: fixture.root,
+			configFile: false,
+			logLevel: 'silent',
+			plugins: [ tslPrecompile( { slim: true } ) ],
+			build: {
+				write: false,
+				minify: false,
+				target: 'esnext',
+				rollupOptions: { input: entry },
+			},
+		} );
+		const output = Array.isArray( result ) ? result.flatMap( ( item ) => item.output || [] ) : result.output;
+		const runtimeModules = output
+			.filter( ( item ) => item.type === 'chunk' )
+			.flatMap( ( chunk ) => Object.keys( chunk.modules || {} ) )
+			.map( ( id ) => id.replace( /\\/g, '/' ) )
+			.filter( ( id ) => id.includes( '/node_modules/@tsl-precompile/runtime/' ) );
+		assert.equal( runtimeModules.length, 1, `expected one runtime module, received ${ runtimeModules.join( ', ' ) }` );
+		assert.match( runtimeModules[ 0 ], /\/build\/three\.webgpu\.slim\.js$/ );
+		assert.doesNotMatch( runtimeModules[ 0 ], /\/runtime\/src\// );
 
 	} finally {
 
@@ -329,6 +400,7 @@ test( 'source slim build aliases the tree-shaken entry and routes private Three 
 		assert.equal( webgpuAlias.replacement, '@tsl-precompile/runtime/slim/source' );
 		assert.equal( tslAlias.replacement, '@tsl-precompile/runtime/slim-stubs' );
 		assert.equal( coreAlias.replacement, join( fixture.threeRoot, 'src/Three.Core.js' ) );
+		for ( const id of GENERATED_RUNTIME_HELPER_IMPORTS ) assert.equal( config.resolve.alias.some( ( alias ) => aliasMatches( alias, id ) ), false, id );
 		assert.equal( config.define[ 'globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__' ], 'true' );
 
 		const rendererId = join( fixture.threeRoot, 'src/renderers/common/Renderer.js' );

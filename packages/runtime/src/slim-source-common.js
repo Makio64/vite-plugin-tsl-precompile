@@ -270,4 +270,6 @@ export { getTextureResolutionDebugHook, setTextureResolutionDebugHook } from './
 export { registerAuxArtifact, registerAuxArtifacts, loadAux, hasAux, listAux, findAux, bindAuxConfig, bindAuxByName, attachArtifactTextureRefs, attachPostprocessTextureRefs, attachPostprocessUpdateBeforeNodes, attachPostprocessObject3DTargets, wireViewportTextureRefs, setupViewportTextureClasses } from './aux-loader.js';
 export { hashNodeGraphSync } from './graph-hash.js';
 export { setSlimRenderFallback } from './slim-support/render-fallback-registry.js';
+export { linkGeneratedLightIdentitySource, writeGeneratedLightValue } from './generated/light-writer.js';
+export { attachLiveNodeDependency, getLiveNodeDependencies } from './slim-support/node-dependencies.js';
 export * from './writers.js';

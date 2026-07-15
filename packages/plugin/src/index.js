@@ -391,6 +391,21 @@ export default function tslPrecompile( userOpts = {} ) {
 					{ find: /^three\/webgpu$/, replacement: slimRuntimeEntryForMode( opts.slim ) },
 					{ find: /^three\/tsl$/, replacement: SLIM_THREE_RUNTIME_ENTRIES.STUBS },
 				);
+				if ( opts.slim === 'prebuilt' ) {
+
+					// Generated production modules otherwise resolve these public
+					// subpaths back to runtime source beside the already-bundled slim
+					// runtime, creating duplicate registries and helper instances.
+					// Route only the exact generated-code entries into the prebuilt
+					// singleton; dev and source-slim keep their normal source graph.
+					alias.push(
+						{ find: /^@tsl-precompile\/runtime\/apply$/, replacement: SLIM_THREE_RUNTIME_ENTRIES.PREBUILT },
+						{ find: /^@tsl-precompile\/runtime\/writers$/, replacement: SLIM_THREE_RUNTIME_ENTRIES.PREBUILT },
+						{ find: /^@tsl-precompile\/runtime\/generated\/light-writer$/, replacement: SLIM_THREE_RUNTIME_ENTRIES.PREBUILT },
+						{ find: /^@tsl-precompile\/runtime\/slim-support\/node-dependencies$/, replacement: SLIM_THREE_RUNTIME_ENTRIES.PREBUILT },
+					);
+
+				}
 				if ( opts.slim === 'source' ) {
 
 					const threeCoreSource = resolve( detected.packageRoot, 'src/Three.Core.js' );
