@@ -32,6 +32,8 @@ import { mergeArtifactVariantFamily } from '@tsl-precompile/contract/artifact-va
 import { normalizeArtifactLightIdentities } from '@tsl-precompile/contract/light-identities';
 import { createRendererOutputConfig } from '@tsl-precompile/contract/output-config';
 import {
+	hasUnresolvedMaterialComputeTexture,
+	MATERIAL_COMPUTE_ACCESS_MODES,
 	MATERIAL_COMPUTE_UPDATE_TYPES,
 	MATERIAL_COMPUTE_VERSION,
 } from '@tsl-precompile/contract/material-compute';
@@ -1002,6 +1004,7 @@ function attachLiveUpdateSidecars( artifact, state ) {
 }
 
 const MATERIAL_COMPUTE_UPDATE_TYPE_SET = new Set( MATERIAL_COMPUTE_UPDATE_TYPES );
+const MATERIAL_COMPUTE_ACCESS_MODE_SET = new Set( MATERIAL_COMPUTE_ACCESS_MODES );
 
 function isRawMaterialComputeNode( node ) {
 
@@ -1174,7 +1177,7 @@ function hasUnresolvedMaterialComputeLiveUniform( artifact ) {
  * @param {Map<Object,Object>} computeStatesByNode
  * @return {?Object}
  */
-export function extractMaterialComputeDescriptor( renderArtifact, renderState, computeArtifactsByNode, computeStatesByNode ) {
+export function extractMaterialComputeDescriptor( renderArtifact, renderState, computeArtifactsByNode, computeStatesByNode, sharedComputeNodes = null ) {
 
 	const updateBeforeNodes = Array.isArray( renderState && renderState.updateBeforeNodes ) ? renderState.updateBeforeNodes : [];
 	const scheduleNodes = updateBeforeNodes
@@ -1202,11 +1205,17 @@ export function extractMaterialComputeDescriptor( renderArtifact, renderState, c
 			kernelNodes.push( node );
 			if ( ! artifact ) addCanonicalReason( reasons, `${ kernelId }:artifact-unavailable` );
 			if ( nestedArtifact && hasUnresolvedMaterialComputeLiveUniform( nestedArtifact ) ) addCanonicalReason( reasons, `${ kernelId }:live-uniform-unresolved` );
+			if ( nestedArtifact && hasUnresolvedMaterialComputeTexture( nestedArtifact ) ) addCanonicalReason( reasons, `${ kernelId }:texture-source-unresolved` );
 			if ( typeof node.onInitFunction === 'function' ) addCanonicalReason( reasons, `${ kernelId }:on-init-function` );
 
 		}
 		const updateType = computeNodeUpdateType( node );
 		if ( ! updateType ) addCanonicalReason( reasons, `${ kernelId }:update-type-unavailable` );
+		if ( sharedComputeNodes && sharedComputeNodes.has( node ) && ( updateType === 'frame' || updateType === 'render' ) ) {
+
+			addCanonicalReason( reasons, `${ kernelId }:shared-${ updateType }-schedule` );
+
+		}
 		schedule.push( {
 			kernel: kernelId,
 			phase: 'update-before',
@@ -1246,7 +1255,13 @@ export function extractMaterialComputeDescriptor( renderArtifact, renderState, c
 			continue;
 
 		}
-		if ( kernel.artifact && ! hasExactSerializedBindingLayout( state, kernel.artifact ) ) addCanonicalReason( reasons, `${ kernel.id }:binding-layout-unavailable` );
+		const hasExactBindingLayout = ! kernel.artifact || hasExactSerializedBindingLayout( state, kernel.artifact );
+		if ( ! hasExactBindingLayout ) {
+
+			addCanonicalReason( reasons, `${ kernel.id }:binding-layout-unavailable` );
+			continue;
+
+		}
 		for ( let group = 0; group < ( state.bindings || [] ).length; group ++ ) {
 
 			const rawGroup = state.bindings[ group ];
@@ -1263,12 +1278,18 @@ export function extractMaterialComputeDescriptor( renderArtifact, renderState, c
 					continue;
 
 				}
+				const access = MATERIAL_COMPUTE_ACCESS_MODE_SET.has( rawBinding.access ) ? rawBinding.access : 'readWrite';
+				if ( resource.kind === 'storage-buffer' && ! MATERIAL_COMPUTE_ACCESS_MODE_SET.has( rawBinding.access ) ) {
+
+					addCanonicalReason( reasons, `${ location }:access-unavailable` );
+
+				}
 				bindings.push( {
 					kernel: kernel.id,
 					resource: resource.id,
 					group,
 					binding,
-					access: rawBinding.access || 'readWrite',
+					access,
 				} );
 				if ( resource.kind === 'storage-texture' ) addCanonicalReason( reasons, `${ resource.id }:storage-texture` );
 
@@ -2419,7 +2440,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 			bindingOwnerKind: RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER,
 			materialBindingOwners,
 		} : null );
-		if ( entry.materialComputeDiscovery === true && Array.isArray( state.updateBeforeNodes ) && state.updateBeforeNodes.some( isRawMaterialComputeNode ) ) materialComputeRecords.push( { artifact, state } );
+		if ( entry.materialComputeDiscovery === true && Array.isArray( state.updateBeforeNodes ) && state.updateBeforeNodes.some( isRawMaterialComputeNode ) ) materialComputeRecords.push( { artifact, state, material } );
 		if ( exactShadowCasterRequests.length > 0 && artifact.materialShape === 'shadow-depth' ) {
 
 			artifact.bindingOwner = RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER;
@@ -2536,9 +2557,26 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 	}
 
+	const materialComputeOwnersByNode = new Map();
 	for ( const record of materialComputeRecords ) {
 
-		const descriptor = extractMaterialComputeDescriptor( record.artifact, record.state, byComputeNode, computeStatesByNode );
+		const owner = record.material || record.artifact;
+		for ( const node of Array.isArray( record.state && record.state.updateBeforeNodes ) ? record.state.updateBeforeNodes : [] ) {
+
+			if ( ! isRawMaterialComputeNode( node ) ) continue;
+			let owners = materialComputeOwnersByNode.get( node );
+			if ( ! owners ) materialComputeOwnersByNode.set( node, owners = new Set() );
+			owners.add( owner );
+
+		}
+
+	}
+	const sharedMaterialComputeNodes = new Set( [ ...materialComputeOwnersByNode ]
+		.filter( ( [ , owners ] ) => owners.size > 1 )
+		.map( ( [ node ] ) => node ) );
+	for ( const record of materialComputeRecords ) {
+
+		const descriptor = extractMaterialComputeDescriptor( record.artifact, record.state, byComputeNode, computeStatesByNode, sharedMaterialComputeNodes );
 		if ( descriptor ) record.artifact.materialCompute = descriptor;
 
 	}

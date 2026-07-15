@@ -367,6 +367,66 @@ test( 'material compute capture rejects an unresolved dynamic compute uniform', 
 
 } );
 
+test( 'material compute capture rejects a sampled texture without a serializable source', () => {
+
+	const attribute = storageAttribute();
+	const node = computeNode();
+	const rawComputeState = computeState( attribute );
+	const texture = { isTexture: true, uuid: 'process-local-texture', image: null };
+	rawComputeState.bindings[ 0 ].bindings.splice( 1, 0, {
+		name: 'lookupTexture',
+		isSampledTexture: true,
+		visibility: 4,
+		texture,
+		textureNode: { value: texture },
+	} );
+	const rawRenderState = renderState( node, attribute );
+	const renderArtifact = extractArtifact( 14, rawRenderState, { isMeshBasicNodeMaterial: true } );
+	const computeArtifact = extractComputeArtifact( 9, rawComputeState, node );
+	const descriptor = extractMaterialComputeDescriptor(
+		renderArtifact,
+		rawRenderState,
+		new Map( [ [ node, computeArtifact ] ] ),
+		new Map( [ [ node, rawComputeState ] ] ),
+	);
+
+	assert.equal( descriptor.mode, 'hybrid-required' );
+	assert.deepEqual( descriptor.reasons, [
+		'kernel:0:binding-layout-unavailable',
+		'kernel:0:texture-source-unresolved',
+	] );
+	assert.deepEqual( validateMaterialComputeDescriptor( descriptor, { artifact: renderArtifact } ), [] );
+	const falselyPrecompiled = { ...descriptor, mode: 'precompiled', reasons: [] };
+	assert.ok( validateMaterialComputeDescriptor( falselyPrecompiled, { artifact: renderArtifact } )
+		.some( ( error ) => error.code === 'material-compute.mode.texture-source' ) );
+
+} );
+
+test( 'material compute capture requires exact storage access evidence', () => {
+
+	const attribute = storageAttribute();
+	const node = computeNode();
+	const rawComputeState = computeState( attribute );
+	rawComputeState.bindings[ 0 ].bindings[ 1 ].access = null;
+	const rawRenderState = renderState( node, attribute );
+	const renderArtifact = extractArtifact( 15, rawRenderState, { isMeshBasicNodeMaterial: true } );
+	const computeArtifact = extractComputeArtifact( 10, rawComputeState, node );
+	const descriptor = extractMaterialComputeDescriptor(
+		renderArtifact,
+		rawRenderState,
+		new Map( [ [ node, computeArtifact ] ] ),
+		new Map( [ [ node, rawComputeState ] ] ),
+	);
+
+	assert.equal( descriptor.mode, 'hybrid-required' );
+	assert.deepEqual( descriptor.reasons, [ 'kernel:0:binding:0:1:access-unavailable' ] );
+	assert.deepEqual( validateMaterialComputeDescriptor( descriptor, { artifact: renderArtifact } ), [] );
+	const falselyPrecompiled = { ...descriptor, mode: 'precompiled', reasons: [] };
+	assert.ok( validateMaterialComputeDescriptor( falselyPrecompiled, { artifact: renderArtifact } )
+		.some( ( error ) => error.code === 'material-compute.binding.access-unproven' ) );
+
+} );
+
 test( 'material compute capture preserves exact scheduling when kernel extraction is unavailable', () => {
 
 	const attribute = storageAttribute();
@@ -491,6 +551,84 @@ test( 'compileTSL auto-captures material compute from a supplied exact render st
 	assert.equal( artifacts.byComputeNode.get( node ).kind, 'compute' );
 	assert.equal( artifacts.filter( ( artifact ) => artifact.kind === 'compute' ).length, 1 );
 	assert.equal( validateArtifact( renderArtifact ).ok, true );
+
+} );
+
+test( 'compileTSL fails shared frame kernels closed across material owners', async () => {
+
+	const attribute = storageAttribute();
+	const node = computeNode( { updateBeforeType: 'frame' } );
+	const rawComputeState = computeState( attribute );
+	const materialA = { uuid: 'shared-compute-a', isMeshBasicNodeMaterial: true };
+	const materialB = { uuid: 'shared-compute-b', isMeshBasicNodeMaterial: true };
+	const objectA = { material: materialA };
+	const objectB = { material: materialB };
+	const computeData = new Map();
+	const manager = {
+		nodeBuilderCache: new Map(),
+		getForRenderCacheKey( renderObject ) { return renderObject.cacheKey; },
+		getForRender() { return null; },
+		get( compute ) {
+
+			let data = computeData.get( compute );
+			if ( ! data ) computeData.set( compute, data = {} );
+			return data;
+
+		},
+		getForCompute( compute ) {
+
+			const data = this.get( compute );
+			data.nodeBuilderState = rawComputeState;
+			return rawComputeState;
+
+		},
+	};
+	let renderTarget = null;
+	const renderer = {
+		_nodes: manager,
+		_objects: { get( renderObject ) { return renderObject; } },
+		getRenderTarget() { return renderTarget; },
+		setRenderTarget( target ) { renderTarget = target; },
+		getMRT() { return null; },
+		setMRT() {},
+		async compileAsync() {},
+		render() {},
+	};
+	const family = ( material, object, cacheKey ) => Object.freeze( {
+		material,
+		complete: true,
+		variants: Object.freeze( [ Object.freeze( {
+			cacheKey,
+			nodeBuilderState: renderState( node, attribute ),
+			objects: Object.freeze( [ object ] ),
+			sourceMaterials: Object.freeze( [ material ] ),
+			sourceOwnerRequests: Object.freeze( [] ),
+			userMaterials: Object.freeze( [ material ] ),
+			captureClocks: Object.freeze( [] ),
+			renderContextSelectors: Object.freeze( [] ),
+			requests: Object.freeze( [] ),
+		} ) ] ),
+	} );
+	const artifacts = await compileTSL( renderer, { userData: {}, traverse() {} }, {}, {
+		noGlobalMRT: true,
+		skipWarmupRender: true,
+		renderObjectHarvest: Object.freeze( {
+			renderer,
+			familiesByMaterial: new Map( [
+				[ materialA, family( materialA, objectA, 'shared-a' ) ],
+				[ materialB, family( materialB, objectB, 'shared-b' ) ],
+			] ),
+		} ),
+	} );
+
+	for ( const material of [ materialA, materialB ] ) {
+
+		const artifact = artifacts.byMaterialUuid.get( material.uuid );
+		assert.equal( artifact.materialCompute.mode, 'hybrid-required' );
+		assert.deepEqual( artifact.materialCompute.reasons, [ 'kernel:0:shared-frame-schedule' ] );
+		assert.equal( validateArtifact( artifact ).ok, true );
+
+	}
 
 } );
 

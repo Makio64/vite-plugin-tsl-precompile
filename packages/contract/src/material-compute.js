@@ -274,7 +274,7 @@ function validateStorageTextureMetadata( resource, path, errors ) {
 
 }
 
-function validateResourceBindingDescriptor( descriptor, ordered, resource, entry, path, errors ) {
+function validateResourceBindingDescriptor( descriptor, ordered, resource, entry, path, mode, errors ) {
 
 	if ( ! descriptor ) {
 
@@ -293,9 +293,14 @@ function validateResourceBindingDescriptor( descriptor, ordered, resource, entry
 			`${ path } does not identify an exact storage-buffer binding`,
 			path,
 		) );
-		if ( typeof descriptor.access === 'string' && descriptor.access.length > 0 && descriptor.access !== entry.access ) errors.push( issue(
+		if ( descriptor.access !== null && descriptor.access !== undefined && descriptor.access !== entry.access ) errors.push( issue(
 			'material-compute.binding.access-mismatch',
 			`${ path }.access must match the nested compute binding descriptor`,
+			`${ path }.access`,
+		) );
+		if ( mode === 'precompiled' && ! ACCESS_MODE_SET.has( descriptor.access ) ) errors.push( issue(
+			'material-compute.binding.access-unproven',
+			`${ path }.access must be proven by the nested compute binding descriptor in precompiled mode`,
 			`${ path }.access`,
 		) );
 		const ref = ordered && ordered.ref;
@@ -380,6 +385,44 @@ function hasUnresolvedLiveUniform( artifact ) {
 
 			const source = slot && slot.source;
 			if ( source && source.kind === 'uniform.live' && ! validUserPath( source.nodePath ) ) return true;
+
+		}
+
+	}
+	return false;
+
+}
+
+/** Whether one sampled compute source can be rebuilt without process-local identity. */
+export function isSerializableMaterialComputeTextureSource( artifact, source ) {
+
+	if ( ! source || typeof source !== 'object' ) return false;
+	if ( source.kind === 'builtin.dfgLUT' ) return true;
+	if ( source.kind === 'builtin.ltcTexture' ) return Array.isArray( artifact && artifact.ltcTextures );
+	const snapshot = source.kind === 'artifact.texture' && source.snapshot;
+	return !! snapshot
+		&& Number.isSafeInteger( snapshot.width ) && snapshot.width > 0
+		&& Number.isSafeInteger( snapshot.height ) && snapshot.height > 0
+		&& Array.isArray( snapshot.data );
+
+}
+
+/** Detect a sampled texture/sampler that would fall through to a shape-only runtime texture. */
+export function hasUnresolvedMaterialComputeTexture( artifact ) {
+
+	const descriptorGroups = Array.isArray( artifact && artifact.bindings ) ? artifact.bindings : [];
+	const planGroups = Array.isArray( artifact && artifact.uniformPlan ) ? artifact.uniformPlan : [];
+	for ( let group = 0; group < descriptorGroups.length; group ++ ) {
+
+		const descriptors = Array.isArray( descriptorGroups[ group ] && descriptorGroups[ group ].bindings ) ? descriptorGroups[ group ].bindings : [];
+		const ordered = Array.isArray( planGroups[ group ] && planGroups[ group ].orderedBindings ) ? planGroups[ group ].orderedBindings : [];
+		for ( let binding = 0; binding < descriptors.length; binding ++ ) {
+
+			const descriptor = descriptors[ binding ];
+			if ( ! descriptor || descriptor.kind !== 'sampled-texture' && descriptor.kind !== 'sampler' ) continue;
+			if ( descriptor.kind === 'sampled-texture' && descriptor.store === true ) continue;
+			const source = ordered[ binding ] && ordered[ binding ].ref && ordered[ binding ].ref.source;
+			if ( ! isSerializableMaterialComputeTextureSource( artifact, source ) ) return true;
 
 		}
 
@@ -559,7 +602,7 @@ export function validateMaterialComputeDescriptor( value, opts = {} ) {
 
 			const descriptor = bindingDescriptorAt( kernel.artifact, entry.group, entry.binding );
 			const ordered = orderedBindingAt( kernel.artifact, entry.group, entry.binding );
-			if ( resource ) validateResourceBindingDescriptor( descriptor, ordered, resource, entry, path, errors );
+			if ( resource ) validateResourceBindingDescriptor( descriptor, ordered, resource, entry, path, value.mode, errors );
 
 		}
 
@@ -747,6 +790,11 @@ export function validateMaterialComputeDescriptor( value, opts = {} ) {
 			if ( kernel && kernel.artifact && hasUnresolvedLiveUniform( kernel.artifact ) ) errors.push( issue(
 				'material-compute.mode.live-uniform',
 				`${ root }.mode must be "hybrid-required" when ${ kernel.id } contains an unresolved live uniform`,
+				`${ root }.mode`,
+			) );
+			if ( kernel && kernel.artifact && hasUnresolvedMaterialComputeTexture( kernel.artifact ) ) errors.push( issue(
+				'material-compute.mode.texture-source',
+				`${ root }.mode must be "hybrid-required" when ${ kernel.id } has no serializable sampled-texture source`,
 				`${ root }.mode`,
 			) );
 			const groups = kernel && kernel.artifact && Array.isArray( kernel.artifact.bindings ) ? kernel.artifact.bindings : [];
