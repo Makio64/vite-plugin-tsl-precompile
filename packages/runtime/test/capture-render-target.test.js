@@ -41,12 +41,14 @@ test( 'capture target clones preserve a complete named topology and shrink priva
 	const source = {
 		textures: [ { name: 'output' }, { name: 'velocity' } ],
 		depthTexture: sourceDepth,
+		isPostProcessingRenderTarget: true,
 		clone: () => clone,
 	};
 
 	assert.equal( cloneRenderTargetForCapture( source, [ 'output', 'velocity' ] ), clone );
 	assert.deepEqual( [ clone.width, clone.height ], [ 1, 1 ] );
 	assert.deepEqual( cloneDepth.image, { width: 1, height: 1 } );
+	assert.equal( clone.isPostProcessingRenderTarget, true, 'private output-intermediate topology survives cloning' );
 	assert.deepEqual( sourceDepth.image, { width: 640, height: 480 }, 'the live depth texture is untouched' );
 
 } );

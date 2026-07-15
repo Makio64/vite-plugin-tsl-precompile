@@ -92,6 +92,14 @@ export function cloneRenderTargetForCapture( renderTarget, expectedOutputNames =
 		}
 		clone = renderTarget.clone();
 		if ( ! clone || clone === renderTarget ) return null;
+		// RenderTarget.clone() copies attachment state but not Three's private
+		// surface classification flags. They are selector topology, so carry the
+		// positive flags onto the disposable capture clone.
+		for ( const key of [ 'isPostProcessingRenderTarget', 'isOutputRenderTarget', 'isXRRenderTarget' ] ) {
+
+			if ( renderTarget[ key ] === true ) clone[ key ] = true;
+
+		}
 		if ( typeof clone.setSize === 'function' ) {
 
 			if ( typeof clone.depth === 'number' && Number.isFinite( clone.depth ) ) clone.setSize( 1, 1, clone.depth );

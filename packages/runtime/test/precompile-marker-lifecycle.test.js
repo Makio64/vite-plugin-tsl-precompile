@@ -1032,6 +1032,44 @@ test( 'auto-mark capture preserves an active non-MRT pass render target', async 
 
 } );
 
+test( 'late auto-mark fallback preserves the latest renderer output-intermediate target', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		globalThis.__TSLP_AUTO_FALLBACK_DELAY_MS__ = 0;
+		const three = makeThree( 'output-intermediate' );
+		const material = new three.Material();
+		const context = mount( three, material );
+		const captureTarget = { setSize() {}, dispose() {} };
+		const outputIntermediate = {
+			isPostProcessingRenderTarget: true,
+			clone: () => captureTarget,
+		};
+		const renderer = {
+			render() {},
+			getRenderTarget: () => null,
+			getMRT: () => null,
+			_getFrameBufferTarget: () => outputIntermediate,
+		};
+		let extractorOptions = null;
+		install( three, async ( _renderer, _scene, _camera, options ) => {
+
+			extractorOptions = options;
+			return artifactSet( material );
+
+		} );
+		await setDevRenderer( renderer, three );
+		renderer.render( context.scene, context.camera );
+		material.precompile( 'late-output-intermediate', { ...context, __tslpAutoMark: true } );
+		await waitFor( () => posts.length === 1, 'late output-intermediate capture' );
+
+		assert.equal( extractorOptions.renderTargetOverride, captureTarget );
+		assert.equal( captureTarget.isPostProcessingRenderTarget, true );
+
+	} );
+
+} );
+
 test( 'explicit marker context preserves observed MRT topology after renderer state changes', async () => {
 
 	await withBrowser( async ( posts ) => {

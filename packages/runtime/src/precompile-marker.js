@@ -271,6 +271,22 @@ function activeRenderTarget( renderer ) {
 
 }
 
+function activeOutputIntermediateTarget( renderer ) {
+
+	if ( ! renderer || typeof renderer._getFrameBufferTarget !== 'function' ) return null;
+	try {
+
+		const target = renderer._getFrameBufferTarget();
+		return target && target.isPostProcessingRenderTarget === true ? target : null;
+
+	} catch ( _ ) {
+
+		return null;
+
+	}
+
+}
+
 function armCaptureObservationTimeout( entry ) {
 
 	const configured = Number( globalThis.__TSLP_PRECOMPILE_OBSERVE_TIMEOUT_MS__ );
@@ -465,6 +481,12 @@ function scheduleAutoFallbackEntry( entry, scene, camera ) {
 		if ( entry.started || ! queued || queued.get( entry.name ) !== entry ) return;
 		entry.context.scene = entry.context.scene || scene;
 		entry.context.camera = entry.context.camera || camera;
+		// A late auto-mark fallback has missed the RenderObject observer, but the
+		// renderer still owns the exact intermediate target used by its latest
+		// main output pass. Preserve that topology instead of letting synthetic
+		// extraction invent a generic offscreen-2d surface.
+		if ( ! entry.observedRenderTarget ) entry.observedRenderTarget =
+			activeRenderTarget( entry.renderer ) || activeOutputIntermediateTarget( entry.renderer );
 		logOnce( 'auto-context-fallback:' + entry.name, () => console.warn( `[tsl-precompile] auto-marked material ${ JSON.stringify( entry.name ) } was not observed on a render object; capturing it with the latest Scene/Camera and a generic mesh fallback.` ) );
 		startQueuedCapture( entry );
 
