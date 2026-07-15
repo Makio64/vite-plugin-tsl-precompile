@@ -428,6 +428,16 @@ function validateResourceBindingDescriptor( descriptor, ordered, resource, entry
 			`${ path } does not identify a storage texture binding`,
 			path,
 		) );
+		if ( ! ACCESS_MODE_SET.has( descriptor.access ) ) errors.push( issue(
+			'material-compute.binding.access-unproven',
+			`${ path }.access must be proven by the nested storage-texture binding descriptor`,
+			`${ path }.access`,
+		) );
+		else if ( descriptor.access !== entry.access ) errors.push( issue(
+			'material-compute.binding.access-mismatch',
+			`${ path }.access must match the nested storage-texture binding descriptor`,
+			`${ path }.access`,
+		) );
 
 	}
 

@@ -1376,7 +1376,7 @@ export function extractMaterialComputeDescriptor( renderArtifact, renderState, c
 
 				}
 				const access = MATERIAL_COMPUTE_ACCESS_MODE_SET.has( rawBinding.access ) ? rawBinding.access : 'readWrite';
-				if ( resource.kind === 'storage-buffer' && ! MATERIAL_COMPUTE_ACCESS_MODE_SET.has( rawBinding.access ) ) {
+				if ( ! MATERIAL_COMPUTE_ACCESS_MODE_SET.has( rawBinding.access ) ) {
 
 					addCanonicalReason( reasons, `${ location }:access-unavailable` );
 

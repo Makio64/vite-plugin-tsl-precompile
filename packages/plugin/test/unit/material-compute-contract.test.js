@@ -119,6 +119,53 @@ function validDescriptor() {
 
 }
 
+function validStorageTextureFixture( access = 'writeOnly' ) {
+
+	const textureRef = {
+		name: 'positionsTexture',
+		bindingKind: 'sampled-texture',
+		textureType: '2d',
+		access,
+		visibility: 4,
+		source: { kind: 'unsupported' },
+	};
+	const textureBinding = {
+		name: 'positionsTexture',
+		kind: 'sampled-texture',
+		visibility: 4,
+		textureType: '2d',
+		byteLength: null,
+		access,
+		store: true,
+	};
+	const textureGroup = {
+		name: 'compute',
+		slots: [],
+		textures: [ textureRef ],
+		storageBuffers: [],
+		orderedBindings: [ { type: 'sampled-texture', ref: textureRef } ],
+	};
+	const descriptor = validDescriptor();
+	descriptor.mode = 'hybrid-required';
+	descriptor.reasons = [ 'resource:0:storage-texture' ];
+	descriptor.resources = [ { id: 'resource:0', kind: 'storage-texture', textureType: '2d' } ];
+	descriptor.bindings[ 0 ].access = access;
+	descriptor.kernels[ 0 ].artifact.bindings = [ { name: 'compute', bindings: [ textureBinding ] } ];
+	descriptor.kernels[ 0 ].artifact.uniformPlan = [ textureGroup ];
+	descriptor.renderBindings = [ { resource: 'resource:0', kind: 'storage-texture', group: 0, binding: 0 } ];
+
+	return {
+		descriptor,
+		owner: {
+			attributes: [],
+			bindings: [ { name: 'render', bindings: [ { ...textureBinding, visibility: 3 } ] } ],
+			uniformPlan: [ textureGroup ],
+			meta: { updateBeforeNodes: 1 },
+		},
+	};
+
+}
+
 test( 'material-compute contract accepts one exact owner-local storage topology', () => {
 
 	assert.deepEqual( validateMaterialComputeDescriptor( validDescriptor(), { artifact: validOwner() } ), [] );
@@ -205,6 +252,27 @@ test( 'hybrid storage-texture evidence cannot point at an ordinary sampled bindi
 
 	assert.ok( codes.has( 'material-compute.binding.kind' ) );
 	assert.ok( codes.has( 'material-compute.render-binding.descriptor-kind' ) );
+
+} );
+
+test( 'storage-texture ownership requires exact nested access evidence', () => {
+
+	for ( const access of [ 'readOnly', 'writeOnly', 'readWrite' ] ) {
+
+		const { descriptor, owner } = validStorageTextureFixture( access );
+		assert.deepEqual( validateMaterialComputeDescriptor( descriptor, { artifact: owner } ), [], `${ access } access is exact` );
+
+	}
+
+	const mismatched = validStorageTextureFixture( 'readOnly' );
+	mismatched.descriptor.bindings[ 0 ].access = 'writeOnly';
+	assert.ok( validateMaterialComputeDescriptor( mismatched.descriptor, { artifact: mismatched.owner } )
+		.some( ( error ) => error.code === 'material-compute.binding.access-mismatch' ) );
+
+	const missing = validStorageTextureFixture( 'writeOnly' );
+	missing.descriptor.kernels[ 0 ].artifact.bindings[ 0 ].bindings[ 0 ].access = null;
+	assert.ok( validateMaterialComputeDescriptor( missing.descriptor, { artifact: missing.owner } )
+		.some( ( error ) => error.code === 'material-compute.binding.access-unproven' ) );
 
 } );
 

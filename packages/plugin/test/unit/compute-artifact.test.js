@@ -60,6 +60,20 @@ function storageBinding( attribute, name = 'positions' ) {
 
 }
 
+function storageTextureBinding( texture, access = 'writeOnly', name = 'positionsTexture' ) {
+
+	return {
+		name,
+		isSampledTexture: true,
+		store: true,
+		visibility: 4,
+		access,
+		texture,
+		textureNode: { value: texture },
+	};
+
+}
+
 function computeState( attribute ) {
 
 	return {
@@ -540,6 +554,88 @@ test( 'material compute capture requires exact storage access evidence', () => {
 	assert.deepEqual( validateMaterialComputeDescriptor( descriptor, { artifact: renderArtifact } ), [] );
 	const falselyPrecompiled = { ...descriptor, mode: 'precompiled', reasons: [] };
 	assert.ok( validateMaterialComputeDescriptor( falselyPrecompiled, { artifact: renderArtifact } )
+		.some( ( error ) => error.code === 'material-compute.binding.access-unproven' ) );
+
+} );
+
+test( 'material compute capture proves exact storage-texture access', () => {
+
+	for ( const access of [ 'readOnly', 'writeOnly', 'readWrite' ] ) {
+
+		const texture = { isTexture: true, isStorageTexture: true, uuid: `storage-texture-${ access }` };
+		const node = computeNode();
+		const rawComputeState = {
+			...fakeState(),
+			bindings: [ { name: 'compute', bindings: [ storageTextureBinding( texture, access ) ] } ],
+		};
+		const rawRenderState = {
+			computeShader: '',
+			vertexShader: 'vertex',
+			fragmentShader: 'fragment',
+			nodeAttributes: [],
+			bindings: [ { name: 'render', bindings: [ storageTextureBinding( texture, access ) ] } ],
+			updateNodes: [],
+			updateBeforeNodes: [ node ],
+			updateAfterNodes: [],
+		};
+		const renderArtifact = extractArtifact( 21, rawRenderState, { isMeshBasicNodeMaterial: true } );
+		const computeArtifact = extractComputeArtifact( 16, rawComputeState, node );
+		const descriptor = extractMaterialComputeDescriptor(
+			renderArtifact,
+			rawRenderState,
+			new Map( [ [ node, computeArtifact ] ] ),
+			new Map( [ [ node, rawComputeState ] ] ),
+			null,
+			materialComputeOwner( node ),
+		);
+
+		assert.equal( descriptor.mode, 'hybrid-required' );
+		assert.deepEqual( descriptor.reasons, [ 'resource:0:storage-texture' ] );
+		assert.equal( descriptor.bindings[ 0 ].access, access );
+		assert.equal( descriptor.kernels[ 0 ].artifact.bindings[ 0 ].bindings[ 0 ].access, access );
+		assert.deepEqual( validateMaterialComputeDescriptor( descriptor, { artifact: renderArtifact } ), [] );
+
+	}
+
+} );
+
+test( 'material compute capture marks missing storage-texture access as unproven', () => {
+
+	const texture = { isTexture: true, isStorageTexture: true, uuid: 'storage-texture-missing-access' };
+	const node = computeNode();
+	const computeBinding = storageTextureBinding( texture );
+	delete computeBinding.access;
+	const rawComputeState = {
+		...fakeState(),
+		bindings: [ { name: 'compute', bindings: [ computeBinding ] } ],
+	};
+	const rawRenderState = {
+		computeShader: '',
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		nodeAttributes: [],
+		bindings: [ { name: 'render', bindings: [ storageTextureBinding( texture ) ] } ],
+		updateNodes: [],
+		updateBeforeNodes: [ node ],
+		updateAfterNodes: [],
+	};
+	const renderArtifact = extractArtifact( 22, rawRenderState, { isMeshBasicNodeMaterial: true } );
+	const computeArtifact = extractComputeArtifact( 17, rawComputeState, node );
+	const descriptor = extractMaterialComputeDescriptor(
+		renderArtifact,
+		rawRenderState,
+		new Map( [ [ node, computeArtifact ] ] ),
+		new Map( [ [ node, rawComputeState ] ] ),
+		null,
+		materialComputeOwner( node ),
+	);
+
+	assert.equal( descriptor.mode, 'hybrid-required' );
+	assert.deepEqual( descriptor.reasons, [
+		'kernel:0:binding:0:0:access-unavailable',
+		'resource:0:storage-texture',
+	] );
+	assert.ok( validateMaterialComputeDescriptor( descriptor, { artifact: renderArtifact } )
 		.some( ( error ) => error.code === 'material-compute.binding.access-unproven' ) );
 
 } );
