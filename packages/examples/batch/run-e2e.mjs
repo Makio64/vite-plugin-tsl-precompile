@@ -50,6 +50,7 @@ import { enrichRenderSelectorDiagnostics, resolveE2ERoots, summarizeArtifactRend
 import { deterministicTimeoutPolicyForExample, holdAnimationUntilReadyForExample, installAnimationLoopSettleTransition, minimumRenderableObjectsForExample, settleFramesForExample, targetTickForExample } from './e2e-settle-policy.mjs';
 import { captureWaitOverrideForExample, comparePngBuffers, expectedReplayErrorPatternsForExample, minimumBrightFractionForExample, pixelGateDisabledReasonForExample, psnrThresholdForExample, tierExamples } from './psnr.mjs';
 import { loadSlimBundle, slimBundleHashOptions, slimBundleReportProvenance } from './slim-bundle-provenance.mjs';
+import { coalesceUserArtifactVariantFamilies } from './user-artifact-families.mjs';
 
 const SELF = dirname( fileURLToPath( import.meta.url ) );
 const REPO = resolve( SELF, '../../..' );
@@ -15381,6 +15382,7 @@ async function runOne( browser, name ) {
 	artifactCapture.shot = null;
 	if ( replayOnly ) loadSavedArtifacts( name );
 	const bucket = captureBucket( name );
+	coalesceUserArtifactVariantFamilies( bucket.user );
 	const userCount = Object.keys( bucket.user ).length;
 	const auxCount = bucket.aux.length;
 	const artifactSummaries = summarizeArtifacts( bucket );
