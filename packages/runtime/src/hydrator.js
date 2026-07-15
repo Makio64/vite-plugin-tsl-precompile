@@ -601,20 +601,44 @@ function shouldFreezeLiveSkeletonState( material ) {
 
 }
 
+function liveSkeletonMatricesNeedBootstrap( boneMatrices ) {
+
+	if ( ! boneMatrices || boneMatrices.length === 0 ) return false;
+	for ( let i = 0; i < boneMatrices.length; i ++ ) {
+
+		const value = boneMatrices[ i ];
+		if ( Number.isFinite( value ) && value !== 0 ) return false;
+
+	}
+	return true;
+
+}
+
 function resolveLiveSkeletonMatrices( skeleton, byteLength, role, material ) {
 
 	if ( ! skeleton || ! skeleton.boneMatrices || skeleton.boneMatrices.byteLength !== byteLength ) return null;
+	const frameId = liveFrameKeyForMaterial( material );
 	let state = liveSkeletonBufferStates.get( skeleton );
 	if ( ! state ) {
 
+		const needsBootstrap = liveSkeletonMatricesNeedBootstrap( skeleton.boneMatrices );
+		if ( needsBootstrap && typeof skeleton.update === 'function' ) skeleton.update();
 		state = {
-			frameId: null,
+			frameId: needsBootstrap ? frameId : null,
 			previousBoneMatrices: new Float32Array( skeleton.boneMatrices ),
 		};
 		liveSkeletonBufferStates.set( skeleton, state );
+		if ( needsBootstrap ) {
+
+			if ( skeleton.previousBoneMatrices && skeleton.previousBoneMatrices.length === state.previousBoneMatrices.length ) {
+				skeleton.previousBoneMatrices.set( state.previousBoneMatrices );
+			} else {
+				skeleton.previousBoneMatrices = new Float32Array( state.previousBoneMatrices );
+			}
+
+		}
 
 	}
-	const frameId = liveFrameKeyForMaterial( material );
 	if ( state.frameId !== frameId && ! shouldFreezeLiveSkeletonState( material ) ) {
 
 		state.frameId = frameId;

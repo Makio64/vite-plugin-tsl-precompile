@@ -2539,6 +2539,29 @@ test( 'hydrator: duplicate skinned velocity uniform buffers resolve previous and
 	assert.deepEqual( Array.from( currentBones.buffer ), [ 30, 31, 32, 33, 34, 35, 36, 37 ] );
 	assert.equal( updateCount, 3 );
 
+	let coldUpdateCount = 0;
+	const coldSkeleton = {
+		boneMatrices: new Float32Array( 8 ),
+		previousBoneMatrices: null,
+		update() {
+			coldUpdateCount ++;
+			this.boneMatrices.set( [ 40, 41, 42, 43, 44, 45, 46, 47 ] );
+		},
+	};
+	const coldMaterial = {
+		__tslpPrecompileObject: { skeleton: coldSkeleton },
+		__tslpCurrentFrame: { frameId: 1 },
+	};
+	const coldState = hydrateNodeBuilderState( artifact, coldMaterial );
+	const [ coldPreviousBones, coldCurrentBones ] = coldState.bindings[ 0 ].bindings;
+	coldPreviousBones.update();
+	coldCurrentBones.update();
+
+	assert.deepEqual( Array.from( coldPreviousBones.buffer ), [ 40, 41, 42, 43, 44, 45, 46, 47 ] );
+	assert.deepEqual( Array.from( coldCurrentBones.buffer ), [ 40, 41, 42, 43, 44, 45, 46, 47 ] );
+	assert.deepEqual( Array.from( coldSkeleton.previousBoneMatrices ), [ 40, 41, 42, 43, 44, 45, 46, 47 ] );
+	assert.equal( coldUpdateCount, 1 );
+
 } );
 
 test( 'hydrator: builtin.ltcTexture resolves a 64x64 HalfFloat DataTexture from artifact.ltcTextures', () => {
