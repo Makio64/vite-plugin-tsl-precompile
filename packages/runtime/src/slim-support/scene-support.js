@@ -83,6 +83,7 @@ const DEFAULT_OPTS = {
 };
 
 const MATERIAL_COMPUTE_WRITE_ACCESS = new Set( [ 'readWrite', 'writeOnly' ] );
+const MATERIAL_COMPUTE_READ_ACCESS = new Set( [ 'readOnly', 'readWrite' ] );
 
 /**
  * @param {Object} opts
@@ -981,29 +982,65 @@ export function createSlimSceneSupport( opts = {} ) {
 		const dispatchedHybridNodes = new Set();
 		const hybridNodes = new Set();
 		for ( const expected of hybridExpectedByMaterial.values() ) for ( const node of expected.nodes ) hybridNodes.add( node );
-		const hybridOutputRequirements = ( computeNode, owners ) => {
+		const hybridResourceRequirements = ( computeNode, owners ) => {
 
-			const requirements = new Map();
+			const inputs = new Map();
+			const outputs = new Map();
+			let contracted = false;
 			for ( const owner of owners ) {
 
 				const policy = bindingPolicies.get( owner );
 				if ( ! policy || policy.mode !== 'hybrid-required' || policy.inspection.status !== 'uniform' ) continue;
+				contracted = true;
 				const descriptor = policy.inspection.descriptor;
 				const kernel = policy.expectedKernelByNode.get( computeNode );
 				if ( ! kernel ) continue;
+				const unprovenLayoutReason = `${ kernel.id }:binding-layout-unavailable`;
+				if ( Array.isArray( descriptor.reasons ) && descriptor.reasons.includes( unprovenLayoutReason ) ) {
+
+					const error = new Error( `createSlimSceneSupport: ${ kernel.id } cannot correlate serialized compute bindings with the retained raw binding layout.` );
+					error.code = 'TSLP_MATERIAL_COMPUTE_BINDING_LAYOUT_UNAVAILABLE';
+					error.kernel = kernel.id;
+					error.reason = unprovenLayoutReason;
+					throw error;
+
+				}
 				const resources = new Map( descriptor.resources.map( ( resource ) => [ resource.id, resource ] ) );
 				for ( const binding of descriptor.bindings ) {
 
-					if ( binding.kernel !== kernel.id || ! MATERIAL_COMPUTE_WRITE_ACCESS.has( binding.access ) ) continue;
+					if ( binding.kernel !== kernel.id ) continue;
 					const resource = resources.get( binding.resource );
 					if ( ! resource ) continue;
 					const key = `${ resource.kind }:${ binding.group }:${ binding.binding }`;
-					requirements.set( key, { ...binding, kind: resource.kind } );
+					const requirement = { ...binding, kind: resource.kind, source: 'material-compute' };
+					if ( MATERIAL_COMPUTE_READ_ACCESS.has( binding.access ) ) inputs.set( key, requirement );
+					if ( MATERIAL_COMPUTE_WRITE_ACCESS.has( binding.access ) ) outputs.set( key, requirement );
+
+				}
+				const groups = kernel.artifact && Array.isArray( kernel.artifact.bindings ) ? kernel.artifact.bindings : [];
+				for ( let group = 0; group < groups.length; group ++ ) {
+
+					const descriptors = groups[ group ] && Array.isArray( groups[ group ].bindings ) ? groups[ group ].bindings : [];
+					for ( let binding = 0; binding < descriptors.length; binding ++ ) {
+
+						const nested = descriptors[ binding ];
+						if ( ! nested || nested.kind !== 'sampled-texture' || nested.store === true ) continue;
+						const key = `sampled-texture:${ group }:${ binding }`;
+						if ( ! inputs.has( key ) ) inputs.set( key, {
+							kernel: kernel.id,
+							kind: 'sampled-texture',
+							group,
+							binding,
+							access: 'readOnly',
+							source: 'kernel-artifact',
+						} );
+
+					}
 
 				}
 
 			}
-			return requirements;
+			return { contracted, inputs, outputs };
 
 		};
 		const callerDispatchOnce = computeOpts.dispatchOnce instanceof Set ? computeOpts.dispatchOnce : null;
@@ -1043,10 +1080,36 @@ export function createSlimSceneSupport( opts = {} ) {
 			dispatchNode: async ( computeNode, owners ) => {
 
 				await initializeMaterialComputeNode( computeNode, fullRenderer );
-				const outputRequirements = hybridOutputRequirements( computeNode, owners );
+				const requirements = hybridResourceRequirements( computeNode, owners );
+				const inputRequirements = requirements.inputs;
+				const outputRequirements = requirements.outputs;
 				const shareOptions = computeOpts.shareOptions || {};
+				const sharedInputLocations = new Set();
+				const nonSlimOwnedInputLocations = new Set();
+				const callerInputFilter = typeof shareOptions.bindingFilter === 'function' ? shareOptions.bindingFilter : null;
 				const inputStats = shareComputeInputs( computeNode, fullRenderer, {
 					...shareOptions,
+					...( requirements.contracted ? {
+						initializeBindings: false,
+						bindingFilter: ( binding, location, detail ) => {
+
+							const key = `${ detail.kind }:${ location.group }:${ location.binding }`;
+							return inputRequirements.has( key ) && ( ! callerInputFilter || callerInputFilter( binding, location, detail ) === true );
+
+						},
+					} : {} ),
+					onInputSynced: ( resource, binding, location, detail ) => {
+
+						sharedInputLocations.add( `${ detail.kind }:${ location.group }:${ location.binding }` );
+						if ( typeof shareOptions.onInputSynced === 'function' ) shareOptions.onInputSynced( resource, binding, location, detail );
+
+					},
+					onInputNotSlimOwned: ( resource, binding, location, detail ) => {
+
+						nonSlimOwnedInputLocations.add( `${ detail.kind }:${ location.group }:${ location.binding }` );
+						if ( typeof shareOptions.onInputNotSlimOwned === 'function' ) shareOptions.onInputNotSlimOwned( resource, binding, location, detail );
+
+					},
 					onError: ( error, resource ) => {
 
 						if ( typeof shareOptions.onError === 'function' ) shareOptions.onError( error, resource );
@@ -1054,6 +1117,15 @@ export function createSlimSceneSupport( opts = {} ) {
 
 					},
 				} );
+				const missingInputs = [ ...inputRequirements ].filter( ( [ key ] ) => ! sharedInputLocations.has( key ) && ! nonSlimOwnedInputLocations.has( key ) );
+				if ( missingInputs.length > 0 ) {
+
+					const error = new Error( `createSlimSceneSupport: delegated material compute could not provide ${ missingInputs.length } contracted input binding(s).` );
+					error.code = 'TSLP_MATERIAL_COMPUTE_INPUT_SYNC_MISS';
+					error.missingInputs = missingInputs.map( ( [ , requirement ] ) => requirement );
+					throw error;
+
+				}
 				const args = typeof computeOpts.computeArgs === 'function'
 					? computeOpts.computeArgs( computeNode, owners )
 					: computeOpts.computeArgs;
@@ -1067,18 +1139,27 @@ export function createSlimSceneSupport( opts = {} ) {
 				} );
 				const syncOptions = computeOpts.syncOptions || {};
 				const syncedOutputLocations = new Set();
+				const callerOutputFilter = typeof syncOptions.bindingFilter === 'function' ? syncOptions.bindingFilter : null;
 				const syncStats = syncDelegatedComputeOutputs( computeNode, fullRenderer, {
 					...syncOptions,
+					...( requirements.contracted ? {
+						bindingFilter: ( binding, location, detail ) => {
+
+							const key = `${ detail.kind }:${ location.group }:${ location.binding }`;
+							return outputRequirements.has( key ) && ( ! callerOutputFilter || callerOutputFilter( binding, location, detail ) === true );
+
+						},
+					} : {} ),
 					onStorageAttrSynced: ( attribute, binding, location ) => {
 
-						if ( typeof syncOptions.onStorageAttrSynced === 'function' ) syncOptions.onStorageAttrSynced( attribute, binding, location );
 						syncedOutputLocations.add( `storage-buffer:${ location.group }:${ location.binding }` );
+						if ( typeof syncOptions.onStorageAttrSynced === 'function' ) syncOptions.onStorageAttrSynced( attribute, binding, location );
 
 					},
 					onStorageTextureSynced: ( texture, binding, location ) => {
 
-						if ( typeof syncOptions.onStorageTextureSynced === 'function' ) syncOptions.onStorageTextureSynced( texture, binding, location );
 						syncedOutputLocations.add( `storage-texture:${ location.group }:${ location.binding }` );
+						if ( typeof syncOptions.onStorageTextureSynced === 'function' ) syncOptions.onStorageTextureSynced( texture, binding, location );
 
 					},
 					onError: ( error ) => {

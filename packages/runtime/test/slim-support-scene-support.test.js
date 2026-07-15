@@ -50,11 +50,11 @@ function fakePassFullRenderer() {
 
 }
 
-function contractComputeArtifact( mode = 'hybrid-required', { storageOutput = false, updateType = 'object' } = {} ) {
+function contractComputeArtifact( mode = 'hybrid-required', { storageOutput = false, storageAccess = 'readWrite', updateType = 'object' } = {} ) {
 
 	const storageRef = {
 		name: 'positions',
-		access: 'readWrite',
+		access: storageAccess,
 		visibility: 4,
 		arrayType: 'Float32Array',
 		count: 1,
@@ -66,7 +66,7 @@ function contractComputeArtifact( mode = 'hybrid-required', { storageOutput = fa
 		visibility: 4,
 		textureType: null,
 		byteLength: 16,
-		access: 'readWrite',
+		access: storageAccess,
 	};
 
 	return {
@@ -134,7 +134,7 @@ function contractComputeArtifact( mode = 'hybrid-required', { storageOutput = fa
 				resource: 'resource:0',
 				group: 0,
 				binding: 0,
-				access: 'readWrite',
+				access: storageAccess,
 			} ] : [],
 			renderBindings: storageOutput ? [ {
 				resource: 'resource:0',
@@ -969,6 +969,201 @@ test( 'createSlimSceneSupport initializes material compute once per full rendere
 
 } );
 
+test( 'createSlimSceneSupport aborts before dispatch and claim when a slim-owned sampled input cannot be shared', async () => {
+
+	const slim = fakeRenderer();
+	const full = fakeRenderer();
+	full.backend.device = slim.backend.device;
+	const texture = { isTexture: true, name: 'slim-owned-compute-input', version: 0 };
+	const runtimeBinding = { isSampledTexture: true, texture };
+	const runtimeGroup = { bindings: [ runtimeBinding ] };
+	const raw = { isNode: true, isComputeNode: true, traverse( visitor ) { visitor( this ); } };
+	const artifact = contractComputeArtifact();
+	artifact.materialCompute.kernels[ 0 ].artifact.bindings = [ {
+		name: 'compute',
+		bindings: [ { name: 'input', kind: 'sampled-texture', store: false } ],
+	} ];
+	const material = {
+		isPrecompiledMaterial: true,
+		precompiledArtifact: artifact,
+		positionNode: raw,
+	};
+	const scene = { traverse( visitor ) { visitor( { material } ); } };
+	full._nodes = { getForCompute: () => ( { bindings: [ runtimeGroup ] } ) };
+	full._bindings = { getForCompute: () => [ runtimeGroup ] };
+	slim.backend.get( texture ).texture = { id: 'slim-input' };
+	full.backend.store.set( texture, Object.freeze( {} ) );
+	let physicalDispatches = 0;
+	full.computeAsync = async () => { physicalDispatches ++; };
+	const dispatchOnce = new Set();
+	const errors = [];
+	const support = createSlimSceneSupport( { renderer: slim, fullRendererFallback: false } );
+
+	try {
+
+		const failed = await support.dispatchMaterialComputes( scene, {
+			fullRenderer: full,
+			dispatchOnce,
+			onError: ( error ) => errors.push( error ),
+		} );
+		assert.equal( failed.dispatched, 0 );
+		assert.equal( failed.errors > 0, true );
+		assert.equal( physicalDispatches, 0, 'required inputs are audited before physical compute' );
+		assert.equal( dispatchOnce.has( raw ), false, 'a failed input transaction never publishes a caller claim' );
+		assert.equal( errors.some( ( error ) => error.code === 'TSLP_MATERIAL_COMPUTE_INPUT_SYNC_MISS' ), true );
+		assert.throws(
+			() => hydrateNodeBuilderState( artifact, material ),
+			( error ) => error.code === 'TSLP_MATERIAL_COMPUTE_HYBRID_REQUIRED',
+		);
+
+		// Without a slim GPU resource this is a compute-owned input. The full
+		// renderer may initialize it during dispatch, so it is not a share miss.
+		slim.backend.store.set( texture, {} );
+		full.backend.store.set( texture, {} );
+		const recovered = await support.dispatchMaterialComputes( scene, { fullRenderer: full, dispatchOnce } );
+		assert.equal( recovered.errors, 0 );
+		assert.equal( recovered.dispatched, 1 );
+		assert.equal( physicalDispatches, 1 );
+		assert.equal( dispatchOnce.has( raw ), true );
+		assert.equal( hydrateNodeBuilderState( artifact, material ).updateBeforeNodes.length, 1 );
+
+	} finally {
+
+		await support.dispose();
+
+	}
+
+} );
+
+test( 'createSlimSceneSupport rejects an unproven hybrid binding layout before dispatch', async () => {
+
+	const slim = fakeRenderer();
+	const full = fakeRenderer();
+	full.backend.device = slim.backend.device;
+	const raw = { isNode: true, isComputeNode: true, traverse( visitor ) { visitor( this ); } };
+	const artifact = contractComputeArtifact();
+	artifact.materialCompute.reasons = [ 'kernel:0:binding-layout-unavailable' ];
+	const material = { isPrecompiledMaterial: true, precompiledArtifact: artifact, positionNode: raw };
+	const scene = { traverse( visitor ) { visitor( { material } ); } };
+	full._nodes = { getForCompute: () => ( { bindings: [] } ) };
+	full._bindings = { getForCompute: () => [] };
+	let physicalDispatches = 0;
+	full.computeAsync = async () => { physicalDispatches ++; };
+	const dispatchOnce = new Set();
+	const errors = [];
+	const support = createSlimSceneSupport( { renderer: slim, fullRendererFallback: false } );
+
+	try {
+
+		const stats = await support.dispatchMaterialComputes( scene, {
+			fullRenderer: full,
+			dispatchOnce,
+			onError: ( error ) => errors.push( error ),
+		} );
+		assert.equal( stats.dispatched, 0 );
+		assert.equal( physicalDispatches, 0 );
+		assert.equal( dispatchOnce.has( raw ), false );
+		assert.equal( errors.some( ( error ) => error.code === 'TSLP_MATERIAL_COMPUTE_BINDING_LAYOUT_UNAVAILABLE' ), true );
+
+	} finally {
+
+		await support.dispose();
+
+	}
+
+} );
+
+test( 'createSlimSceneSupport pre-shares read-only storage inputs without post-syncing them or decoys', async () => {
+
+	const slim = fakeRenderer();
+	const full = fakeRenderer();
+	full.backend.device = slim.backend.device;
+	const inputAttribute = {
+		isBufferAttribute: true,
+		isStorageBufferAttribute: true,
+		array: new Float32Array( 4 ),
+		count: 1,
+		itemSize: 4,
+		version: 2,
+	};
+	const decoyAttribute = {
+		isBufferAttribute: true,
+		isStorageBufferAttribute: true,
+		array: new Float32Array( 4 ),
+		count: 1,
+		itemSize: 4,
+		version: 1,
+	};
+	const runtimeGroup = { bindings: [
+		{ isStorageBuffer: true, access: 'readOnly', attribute: inputAttribute },
+		{ isStorageBuffer: true, access: 'readOnly', attribute: decoyAttribute },
+	] };
+	const raw = {
+		isNode: true,
+		isComputeNode: true,
+		storage: { attribute: inputAttribute },
+		traverse( visitor ) { visitor( this ); },
+	};
+	const artifact = contractComputeArtifact( 'hybrid-required', { storageOutput: true, storageAccess: 'readOnly' } );
+	artifact.attributes = [];
+	artifact.materialCompute.renderBindings = [];
+	const material = {
+		isPrecompiledMaterial: true,
+		precompiledArtifact: artifact,
+		positionNode: raw,
+	};
+	const scene = { traverse( visitor ) { visitor( { material } ); } };
+	full._nodes = { getForCompute: () => ( { bindings: [ runtimeGroup ] } ) };
+	full._bindings = { getForCompute: () => [ runtimeGroup ] };
+	const slimInputBuffer = { id: 'slim-input', size: 16 };
+	const slimDecoyBuffer = { id: 'slim-decoy', size: 16 };
+	const fullInputPlaceholder = { id: 'full-input-placeholder', size: 16 };
+	const fullDecoyPlaceholder = { id: 'full-decoy-placeholder', size: 16 };
+	slim.backend.get( inputAttribute ).buffer = slimInputBuffer;
+	slim.backend.get( decoyAttribute ).buffer = slimDecoyBuffer;
+	full.backend.get( inputAttribute ).buffer = fullInputPlaceholder;
+	full.backend.get( decoyAttribute ).buffer = fullDecoyPlaceholder;
+	const inputLocations = [];
+	const outputLocations = [];
+	let physicalDispatches = 0;
+	full.computeAsync = async () => {
+
+		physicalDispatches ++;
+		assert.equal( full.backend.get( inputAttribute ).buffer, slimInputBuffer, 'contracted read input is shared before compute' );
+		assert.equal( full.backend.get( decoyAttribute ).buffer, fullDecoyPlaceholder, 'uncontracted input decoy is not shared' );
+		full.backend.get( inputAttribute ).buffer = { id: 'full-post-dispatch-input', size: 16 };
+		full.backend.get( decoyAttribute ).buffer = { id: 'full-post-dispatch-decoy', size: 16 };
+
+	};
+	const support = createSlimSceneSupport( { renderer: slim, fullRendererFallback: false } );
+
+	try {
+
+		const stats = await support.dispatchMaterialComputes( scene, {
+			fullRenderer: full,
+			shareOptions: {
+				onInputSynced: ( resource, binding, location, detail ) => inputLocations.push( `${ detail.kind }:${ location.group }:${ location.binding }` ),
+			},
+			syncOptions: {
+				onOutputSynced: ( resource, binding, location, detail ) => outputLocations.push( `${ detail.kind }:${ location.group }:${ location.binding }` ),
+			},
+		} );
+		assert.equal( stats.errors, 0 );
+		assert.equal( stats.dispatched, 1 );
+		assert.equal( physicalDispatches, 1 );
+		assert.deepEqual( inputLocations, [ 'storage-buffer:0:0' ] );
+		assert.deepEqual( outputLocations, [] );
+		assert.equal( slim.backend.get( inputAttribute ).buffer, slimInputBuffer, 'read-only input is not reverse-synchronized as an output' );
+		assert.equal( slim.backend.get( decoyAttribute ).buffer, slimDecoyBuffer, 'uncontracted decoy is untouched in both directions' );
+
+	} finally {
+
+		await support.dispose();
+
+	}
+
+} );
+
 test( 'createSlimSceneSupport keeps hybrid hydration closed when a contracted output was not synchronized', async () => {
 
 	const slim = fakeRenderer();
@@ -987,7 +1182,7 @@ test( 'createSlimSceneSupport keeps hybrid hydration closed when a contracted ou
 		storage: { attribute },
 		traverse( visitor ) { visitor( this ); },
 	};
-	const artifact = contractComputeArtifact( 'hybrid-required', { storageOutput: true } );
+	const artifact = contractComputeArtifact( 'hybrid-required', { storageOutput: true, storageAccess: 'writeOnly' } );
 	const material = {
 		isPrecompiledMaterial: true,
 		precompiledArtifact: artifact,

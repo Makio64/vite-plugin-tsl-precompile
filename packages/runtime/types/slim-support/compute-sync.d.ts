@@ -15,19 +15,59 @@ export type ComputeInputShareStats = {
 	missingTextures: number;
 };
 
+export type ComputeBindingLocation = {
+	group: number;
+	binding: number;
+};
+
+export type ComputeBindingDetail = {
+	direction: 'input' | 'output';
+	kind: 'sampled-texture' | 'storage-texture' | 'storage-buffer';
+	shared?: boolean;
+	notSlimOwned?: boolean;
+	alreadyAvailable?: boolean;
+};
+
+export type ComputeBindingFilter = (
+	binding: unknown,
+	location: ComputeBindingLocation,
+	detail: ComputeBindingDetail,
+) => boolean;
+
+export type ComputeResourceHook = (
+	resource: unknown,
+	binding: unknown,
+	location: ComputeBindingLocation,
+	detail: ComputeBindingDetail,
+) => void;
+
+export type ComputeLocatedResourceHook = (
+	resource: unknown,
+	binding: unknown,
+	location: ComputeBindingLocation,
+) => void;
+
 export type ComputeInputShareOptions = {
 	diagnostics?: Record<string, unknown>;
 	bumpVersion?: boolean;
-	onSampledTexture?: ( texture: unknown, binding: unknown ) => void;
+	bindingFilter?: ComputeBindingFilter;
+	initializeBindings?: boolean;
+	onSampledTexture?: ComputeResourceHook;
+	onStorageTexture?: ComputeResourceHook;
+	onStorageAttr?: ComputeResourceHook;
+	onInputSynced?: ComputeResourceHook;
+	onInputNotSlimOwned?: ComputeResourceHook;
 	onError?: ( err: unknown, textureOrBinding?: unknown ) => void;
 };
 
 export type ComputeSyncOptions = {
 	generateMipmaps?: boolean;
-	onStorageTexture?: ( texture: unknown, binding: unknown, location: { group: number; binding: number } ) => void;
-	onStorageAttr?: ( attribute: unknown, binding: unknown, location: { group: number; binding: number } ) => void;
-	onStorageTextureSynced?: ( texture: unknown, binding: unknown, location: { group: number; binding: number } ) => void;
-	onStorageAttrSynced?: ( attribute: unknown, binding: unknown, location: { group: number; binding: number } ) => void;
+	bindingFilter?: ComputeBindingFilter;
+	onStorageTexture?: ComputeLocatedResourceHook;
+	onStorageAttr?: ComputeLocatedResourceHook;
+	onStorageTextureSynced?: ComputeLocatedResourceHook;
+	onStorageAttrSynced?: ComputeLocatedResourceHook;
+	onOutputSynced?: ComputeResourceHook;
 	onError?: ( err: unknown ) => void;
 };
 

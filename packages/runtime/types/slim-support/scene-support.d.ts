@@ -1,4 +1,11 @@
-import type { ComputeInputShareStats, ComputeSyncStats, ComputeSyncPerPassStats } from './compute-sync.d.ts';
+import type {
+	ComputeInputShareOptions,
+	ComputeInputShareStats,
+	ComputeSyncOptions,
+	ComputeSyncPerPassOptions,
+	ComputeSyncStats,
+	ComputeSyncPerPassStats,
+} from './compute-sync.d.ts';
 import type { AutoComputeDispatchOptions, AutoComputeDispatchStats } from './auto-compute.d.ts';
 import type { SharePassRenderTargetTexturesStats } from './pass-render-fallback.d.ts';
 import type { RendererLightingOptions, RendererLightingStats } from './renderer-lighting.d.ts';
@@ -40,8 +47,8 @@ export type MaterialComputeDispatchStats = AutoComputeDispatchStats & ComputeSyn
 };
 
 export type DispatchMaterialComputesOptions = Omit<AutoComputeDispatchOptions, 'dispatchNode'> & {
-	shareOptions?: Record<string, unknown>;
-	syncOptions?: Record<string, unknown>;
+	shareOptions?: ComputeInputShareOptions;
+	syncOptions?: ComputeSyncOptions;
 	computeArgs?: unknown[] | ( ( computeNode: object, owners: unknown[] ) => unknown[] );
 };
 
@@ -58,10 +65,10 @@ export function createSlimSceneSupport( opts: Record<string, unknown> ): {
 	installComputeFallback: ( sourceRenderer?: unknown ) => boolean;
 	generatePMREMAsync: ( sourceTexture: unknown, generator?: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => Promise<unknown | null>;
 	setPMREMGenerator: ( generator: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => void;
-	syncComputeOutputs: ( computeNode: unknown, fullRenderer: unknown, syncOpts?: Record<string, unknown> ) => ComputeSyncStats;
+	syncComputeOutputs: ( computeNode: unknown, fullRenderer: unknown, syncOpts?: ComputeSyncOptions ) => ComputeSyncStats;
 	dispatchMaterialComputes: ( scene: unknown, computeOpts?: DispatchMaterialComputesOptions ) => Promise<MaterialComputeDispatchStats>;
-	shareComputeInputs: ( computeNode: unknown, fullRenderer: unknown, shareOpts?: Record<string, unknown> ) => ComputeInputShareStats;
-	syncComputeOutputsPerPass: ( computeNode: unknown, fullRenderer: unknown, passIndex: number | undefined, syncOpts?: Record<string, unknown> ) => ComputeSyncPerPassStats;
+	shareComputeInputs: ( computeNode: unknown, fullRenderer: unknown, shareOpts?: ComputeInputShareOptions ) => ComputeInputShareStats;
+	syncComputeOutputsPerPass: ( computeNode: unknown, fullRenderer: unknown, passIndex: number | undefined, syncOpts?: ComputeSyncPerPassOptions ) => ComputeSyncPerPassStats;
 	pingPongInvalidate: ( textureA: unknown, textureB: unknown, extraRenderer?: unknown ) => boolean;
 	shareInstancedAttributeBuffer: ( attribute: unknown, sourceRenderer: unknown ) => boolean;
 	computeNodeUsesStorageTexture: ( computeNode: unknown, sourceRenderer: unknown ) => boolean;

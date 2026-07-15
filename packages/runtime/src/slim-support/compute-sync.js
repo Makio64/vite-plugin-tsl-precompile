@@ -95,6 +95,67 @@ function sampledInputTextureFromBinding( binding ) {
 
 }
 
+function bindingFilterAllows( opts, binding, location, direction, kind ) {
+
+	const filter = typeof opts.bindingFilter === 'function' ? opts.bindingFilter : null;
+	if ( ! filter ) return true;
+	return filter( binding, location, { direction, kind } ) === true;
+
+}
+
+function uninitializedComputeBindGroups( computeNode, fullRenderer ) {
+
+	const manager = fullRenderer && ( fullRenderer._nodes || fullRenderer.nodes );
+	if ( ! manager || typeof manager.getForCompute !== 'function' ) return null;
+	const out = [];
+	for ( const node of asList( computeNode ) ) {
+
+		let state;
+		try { state = manager.getForCompute( node ); } catch ( _ ) { return null; }
+		if ( ! state || ! Array.isArray( state.bindings ) ) return null;
+		out.push( ...state.bindings );
+
+	}
+	return out;
+
+}
+
+function shareStorageBufferEntry( fullRenderer, slimRenderer, attribute ) {
+
+	if ( ! attribute || ! fullRenderer.backend || ! slimRenderer.backend ) return false;
+	const sourceAttribute = attribute.isInterleavedBufferAttribute === true ? attribute.data : attribute;
+	const slimData = slimRenderer.backend.get( sourceAttribute );
+	if ( ! slimData || ! slimData.buffer ) return false;
+	const fullData = fullRenderer.backend.get( sourceAttribute );
+	fullData.buffer = slimData.buffer;
+
+	// Prevent Three's first full-renderer binding initialization from allocating
+	// a replacement GPUBuffer over the exact slim-owned resource.
+	const fullAttributes = fullRenderer._attributes;
+	if ( fullAttributes && typeof fullAttributes.get === 'function' ) {
+
+		const fullAttributeData = fullAttributes.get( sourceAttribute );
+		const slimAttributes = slimRenderer._attributes;
+		const slimAttributeData = slimAttributes && typeof slimAttributes.get === 'function'
+			? slimAttributes.get( sourceAttribute )
+			: null;
+		const version = slimAttributeData && slimAttributeData.version !== undefined
+			? slimAttributeData.version
+			: sourceAttribute.version;
+		if ( version !== undefined ) fullAttributeData.version = version;
+
+	}
+	return fullData.buffer === slimData.buffer;
+
+}
+
+function callResourceHook( hook, resource, binding, location, detail ) {
+
+	if ( typeof hook !== 'function' ) return;
+	try { hook( resource, binding, location, detail ); } catch ( _ ) {}
+
+}
+
 /**
  * Pull the compute bind-groups for `computeNode` out of the full renderer's
  * `_bindings.getForCompute()`. Returns an empty array on any failure (the
@@ -179,15 +240,23 @@ export function computeSyncNeedsPresentation( stats ) {
  *
  * This covers kernels that sample render-target textures produced by an
  * immediately previous slim render pass (for example a collision/depth map).
- * Storage textures are skipped here because they are compute outputs handled by
- * `syncComputeStorageOutputs()`.
+ * Legacy calls share ordinary sampled textures and skip storage resources.
+ * Contract-aware callers can provide `bindingFilter`; returning `true` for an
+ * exact storage-texture or storage-buffer input opts that location into the
+ * same slim-to-full sharing transaction.
  *
  * @param {Object|Array<Object>} computeNode   - Compute node (or list).
  * @param {Object}               fullRenderer  - Full WebGPURenderer that will dispatch compute.
  * @param {Object}               slimRenderer  - Slim WebGPURenderer that rendered the sampled inputs.
  * @param {Object}               [opts]
  * @param {Object}               [opts.diagnostics] - Optional shareGPUTextureEntry diagnostics bag.
- * @param {Function}             [opts.onSampledTexture] - `(texture, binding) => void` invoked for each successful share.
+ * @param {Function}             [opts.bindingFilter] - `(binding, location, { direction, kind }) => boolean`; when present, only exact accepted locations are shared.
+ * @param {boolean}              [opts.initializeBindings=true] - Set false to inspect NodeBuilderState bindings without creating full-renderer GPU bindings first.
+ * @param {Function}             [opts.onSampledTexture] - `(texture, binding, location) => void` invoked for each successfully shared ordinary texture location.
+ * @param {Function}             [opts.onStorageTexture] - `(texture, binding, location) => void` invoked for each successfully shared storage-texture input location.
+ * @param {Function}             [opts.onStorageAttr] - `(attribute, binding, location) => void` invoked for each successfully shared storage-buffer input location.
+ * @param {Function}             [opts.onInputSynced] - `(resource, binding, location, { direction, kind }) => void` invoked for every successfully shared input location.
+ * @param {Function}             [opts.onInputNotSlimOwned] - `(texture, binding, location, detail) => void` invoked for an exact ordinary sampled location whose GPU texture is not owned by slim and therefore does not require sharing.
  * @param {Function}             [opts.onError] - `(err, textureOrBinding) => void` error hook.
  * @returns {{ texturesShared: number, skippedStorageTextures: number, missingTextures: number }}
  */
@@ -196,47 +265,130 @@ export function shareComputeSampledInputs( computeNode, fullRenderer, slimRender
 	const stats = { texturesShared: 0, skippedStorageTextures: 0, missingTextures: 0 };
 	if ( ! computeNode || ! fullRenderer || ! slimRenderer || ! fullRenderer.backend || ! slimRenderer.backend ) return stats;
 
-	const seen = new Set();
+	const sharedTextures = new Map();
+	const sharedStorageAttrs = new Map();
 	const onSampledTexture = typeof opts.onSampledTexture === 'function' ? opts.onSampledTexture : null;
+	const onStorageTexture = typeof opts.onStorageTexture === 'function' ? opts.onStorageTexture : null;
+	const onStorageAttr = typeof opts.onStorageAttr === 'function' ? opts.onStorageAttr : null;
+	const onInputSynced = typeof opts.onInputSynced === 'function' ? opts.onInputSynced : null;
+	const onInputNotSlimOwned = typeof opts.onInputNotSlimOwned === 'function' ? opts.onInputNotSlimOwned : null;
+	const exactFilter = typeof opts.bindingFilter === 'function';
 
 	try {
 
-		const bindGroups = getComputeBindGroups( computeNode, fullRenderer );
-		for ( const bindGroup of bindGroups ) {
+		const bindGroups = opts.initializeBindings === false
+			? uninitializedComputeBindGroups( computeNode, fullRenderer ) || []
+			: getComputeBindGroups( computeNode, fullRenderer );
+		for ( let groupIndex = 0; groupIndex < bindGroups.length; groupIndex ++ ) {
 
+			const bindGroup = bindGroups[ groupIndex ];
 			if ( ! bindGroup || ! bindGroup.bindings ) continue;
-			for ( const binding of bindGroup.bindings ) {
+			for ( let bindingIndex = 0; bindingIndex < bindGroup.bindings.length; bindingIndex ++ ) {
 
+				const binding = bindGroup.bindings[ bindingIndex ];
+				const location = { group: groupIndex, binding: bindingIndex };
+				if ( binding && binding.isStorageBuffer === true ) {
+
+					if ( ! exactFilter || ! bindingFilterAllows( opts, binding, location, 'input', 'storage-buffer' ) ) continue;
+					const attribute = binding.attribute;
+					if ( ! attribute ) continue;
+					let shared = sharedStorageAttrs.get( attribute );
+					if ( shared === undefined ) {
+
+						shared = shareStorageBufferEntry( fullRenderer, slimRenderer, attribute );
+						sharedStorageAttrs.set( attribute, shared );
+
+					}
+					if ( ! shared ) continue;
+					const detail = { direction: 'input', kind: 'storage-buffer' };
+					callResourceHook( onStorageAttr, attribute, binding, location, detail );
+					callResourceHook( onInputSynced, attribute, binding, location, detail );
+					continue;
+
+				}
 				if ( ! binding || binding.isSampledTexture !== true ) continue;
-				if ( binding.store === true || binding.texture && binding.texture.isStorageTexture === true ) {
+				const storageTexture = binding.store === true || binding.texture && binding.texture.isStorageTexture === true;
+				const kind = storageTexture ? 'storage-texture' : 'sampled-texture';
+				if ( exactFilter && ! bindingFilterAllows( opts, binding, location, 'input', kind ) ) {
+
+					if ( storageTexture ) stats.skippedStorageTextures ++;
+					continue;
+
+				}
+				if ( storageTexture && ! exactFilter ) {
 
 					stats.skippedStorageTextures ++;
 					continue;
 
 				}
 
-				const texture = sampledInputTextureFromBinding( binding );
+				const texture = storageTexture ? binding.texture : sampledInputTextureFromBinding( binding );
 				if ( ! texture ) {
 
 					stats.missingTextures ++;
 					continue;
 
 				}
-				if ( seen.has( texture ) ) continue;
-				seen.add( texture );
+				// Preserve the unfiltered API exactly: ordinary sampled textures are
+				// deduplicated, attempted once, and callbacks only report a transfer.
+				// Contract-aware callers need per-location outcomes, handled below.
+				if ( ! exactFilter ) {
 
-				const shared = shareGPUTextureEntry( fullRenderer, slimRenderer, texture, {
-					diagnostics: opts.diagnostics,
-					onError: opts.onError,
-					bumpVersion: opts.bumpVersion,
-				} );
-				if ( ! shared ) continue;
-				stats.texturesShared ++;
-				if ( onSampledTexture ) {
-
-					try { onSampledTexture( texture, binding ); } catch ( _ ) {}
+					if ( sharedTextures.has( texture ) ) continue;
+					sharedTextures.set( texture, null );
+					const transferred = shareGPUTextureEntry( fullRenderer, slimRenderer, texture, {
+						diagnostics: opts.diagnostics,
+						onError: opts.onError,
+						bumpVersion: opts.bumpVersion,
+					} );
+					if ( ! transferred ) continue;
+					stats.texturesShared ++;
+					callResourceHook( onSampledTexture, texture, binding, location, { direction: 'input', kind } );
+					continue;
 
 				}
+				let result = sharedTextures.get( texture );
+				if ( result === undefined ) {
+
+					const slimTextureData = slimRenderer.backend.get( texture );
+					const fullTextureData = fullRenderer.backend.get( texture );
+					const slimOwnsTexture = !! ( slimTextureData && slimTextureData.texture );
+					const notSlimOwned = ! storageTexture && ! slimOwnsTexture;
+					const transferred = ! notSlimOwned && shareGPUTextureEntry( fullRenderer, slimRenderer, texture, {
+						diagnostics: opts.diagnostics,
+						onError: opts.onError,
+						bumpVersion: opts.bumpVersion,
+					} );
+					result = {
+						transferred: transferred === true,
+						notSlimOwned,
+						alreadyAvailable: notSlimOwned && !! ( fullTextureData && fullTextureData.texture ),
+					};
+					sharedTextures.set( texture, result );
+					if ( result.transferred ) stats.texturesShared ++;
+
+				}
+				const detail = {
+					direction: 'input',
+					kind,
+					shared: result.transferred,
+					notSlimOwned: result.notSlimOwned,
+					alreadyAvailable: result.alreadyAvailable,
+				};
+				if ( result.notSlimOwned ) {
+
+					callResourceHook( onInputNotSlimOwned, texture, binding, location, detail );
+					continue;
+
+				}
+				if ( ! result.transferred ) {
+
+					stats.missingTextures ++;
+					continue;
+
+				}
+				callResourceHook( storageTexture ? onStorageTexture : onSampledTexture, texture, binding, location, detail );
+				callResourceHook( onInputSynced, texture, binding, location, detail );
 
 			}
 
@@ -272,6 +424,10 @@ export function shareComputeSampledInputs( computeNode, fullRenderer, slimRender
  *
  * Errors are caught and surfaced through `opts.onError(err)`; one bad
  * binding never breaks the whole sync.
+ * `opts.bindingFilter(binding, location, { direction: 'output', kind })` may
+ * restrict synchronization to exact contracted output locations. Omitting it
+ * preserves the legacy behavior of synchronizing every discovered storage
+ * binding.
  *
  * @returns {{ texturesShared: number, storageAttrs: number, buffersAdopted: number, buffersCopied: number }}
  */
@@ -286,7 +442,9 @@ export function syncComputeStorageOutputs( computeNode, fullRenderer, slimRender
 	const onStorageTexture = typeof opts.onStorageTexture === 'function' ? opts.onStorageTexture : null;
 	const onStorageAttrSynced = typeof opts.onStorageAttrSynced === 'function' ? opts.onStorageAttrSynced : null;
 	const onStorageTextureSynced = typeof opts.onStorageTextureSynced === 'function' ? opts.onStorageTextureSynced : null;
+	const onOutputSynced = typeof opts.onOutputSynced === 'function' ? opts.onOutputSynced : null;
 	const generateMipmaps = opts.generateMipmaps !== false;
+	const sharedTextures = new Map();
 	let commandEncoder = null;
 
 	try {
@@ -307,20 +465,30 @@ export function syncComputeStorageOutputs( computeNode, fullRenderer, slimRender
 				const tex = storageTextureFromBinding( binding );
 				if ( tex ) {
 
+					if ( ! bindingFilterAllows( opts, binding, location, 'output', 'storage-texture' ) ) continue;
+
 					if ( onStorageTexture ) {
 
 						try { onStorageTexture( tex, binding, location ); } catch ( _ ) {}
 
 					}
-					const shared = shareShadowGPUTextureIntoSlim( tex, fullRenderer, slimRenderer );
+					const firstTextureLocation = ! sharedTextures.has( tex );
+					let shared = sharedTextures.get( tex );
+					if ( firstTextureLocation ) {
+
+						shared = shareShadowGPUTextureIntoSlim( tex, fullRenderer, slimRenderer );
+						sharedTextures.set( tex, shared );
+						if ( shared ) stats.texturesShared ++;
+
+					}
 					if ( ! shared ) continue;
-					stats.texturesShared ++;
 					if ( onStorageTextureSynced ) {
 
 						try { onStorageTextureSynced( tex, binding, location ); } catch ( _ ) {}
 
 					}
-					if ( generateMipmaps && tex.generateMipmaps !== false && tex.mipmapsAutoUpdate !== false && typeof slimRenderer.backend.generateMipmaps === 'function' ) {
+					callResourceHook( onOutputSynced, tex, binding, location, { direction: 'output', kind: 'storage-texture' } );
+					if ( firstTextureLocation && generateMipmaps && tex.generateMipmaps !== false && tex.mipmapsAutoUpdate !== false && typeof slimRenderer.backend.generateMipmaps === 'function' ) {
 
 						try { slimRenderer.backend.generateMipmaps( tex ); } catch ( _ ) {}
 
@@ -331,6 +499,7 @@ export function syncComputeStorageOutputs( computeNode, fullRenderer, slimRender
 
 				// Storage buffer: adopt full's buffer if slim has none, else copy.
 				if ( ! binding.isStorageBuffer ) continue;
+				if ( ! bindingFilterAllows( opts, binding, location, 'output', 'storage-buffer' ) ) continue;
 				const attr = binding.attribute;
 				if ( ! attr ) continue;
 				if ( onStorageAttr ) {
@@ -382,6 +551,7 @@ export function syncComputeStorageOutputs( computeNode, fullRenderer, slimRender
 					try { onStorageAttrSynced( attr, binding, location ); } catch ( _ ) {}
 
 				}
+				if ( synced ) callResourceHook( onOutputSynced, attr, binding, location, { direction: 'output', kind: 'storage-buffer' } );
 
 			}
 

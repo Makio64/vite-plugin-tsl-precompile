@@ -161,6 +161,141 @@ test( 'shareComputeSampledInputs skips storage-texture output bindings', () => {
 
 } );
 
+test( 'shareComputeSampledInputs filters exact inputs, reports duplicate locations, and leaves decoys untouched', () => {
+
+	const sampledTexture = { isTexture: true, name: 'shared-sampled', version: 2 };
+	const fullOwnedTexture = { isTexture: true, name: 'compute-only', version: 0 };
+	const storageTexture = { isTexture: true, isStorageTexture: true, name: 'storage-input', version: 4 };
+	const decoyStorageTexture = { isTexture: true, isStorageTexture: true, name: 'storage-decoy', version: 1 };
+	const storageAttribute = { isStorageBufferAttribute: true, version: 3 };
+	const decoyAttribute = { isStorageBufferAttribute: true, version: 1 };
+	const group = { bindings: [
+		{ isSampledTexture: true, texture: sampledTexture },
+		{ isSampledTexture: true, texture: sampledTexture },
+		{ isSampledTexture: true, texture: fullOwnedTexture },
+		{ isSampledTexture: true, store: true, texture: storageTexture },
+		storageBufferBinding( storageAttribute ),
+		{ isSampledTexture: true, store: true, texture: decoyStorageTexture },
+		storageBufferBinding( decoyAttribute ),
+	] };
+	const slim = fakeRenderer();
+	const slimSampledGPU = { id: 'slim-sampled' };
+	const slimStorageGPU = { id: 'slim-storage' };
+	const slimStorageBuffer = { id: 'slim-buffer', size: 64 };
+	slim.backend.get( sampledTexture ).texture = slimSampledGPU;
+	slim.backend.get( storageTexture ).texture = slimStorageGPU;
+	slim.backend.get( storageAttribute ).buffer = slimStorageBuffer;
+	slim._attributes.get( storageAttribute ).version = 17;
+	const slimDecoyTexture = { id: 'slim-decoy-texture' };
+	const slimDecoyBuffer = { id: 'slim-decoy-buffer', size: 64 };
+	slim.backend.get( decoyStorageTexture ).texture = slimDecoyTexture;
+	slim.backend.get( decoyAttribute ).buffer = slimDecoyBuffer;
+
+	let initializedBindingReads = 0;
+	const full = fakeRenderer( { bindGroupsForNode: () => { initializedBindingReads ++; return [ group ]; } } );
+	full._nodes = { getForCompute: () => ( { bindings: [ group ] } ) };
+	full.backend.get( sampledTexture ).texture = { id: 'full-sampled-placeholder' };
+	full.backend.get( fullOwnedTexture ).texture = { id: 'full-compute-owned' };
+	full.backend.get( storageTexture ).texture = { id: 'full-storage-placeholder' };
+	const fullStorageEntry = full.backend.get( storageAttribute );
+	fullStorageEntry.buffer = { id: 'full-buffer-placeholder', size: 64 };
+	fullStorageEntry.rendererLocal = { keep: true };
+	const fullDecoyTexture = { id: 'full-decoy-texture' };
+	const fullDecoyBuffer = { id: 'full-decoy-buffer', size: 64 };
+	full.backend.get( decoyStorageTexture ).texture = fullDecoyTexture;
+	full.backend.get( decoyAttribute ).buffer = fullDecoyBuffer;
+	const accepted = new Set( [
+		'sampled-texture:0:0',
+		'sampled-texture:0:1',
+		'sampled-texture:0:2',
+		'storage-texture:0:3',
+		'storage-buffer:0:4',
+	] );
+	const synced = [];
+	const notSlimOwned = [];
+	const sampledLocations = [];
+	const storageTextureLocations = [];
+	const storageAttributeLocations = [];
+	const locationKey = ( location, detail ) => `${ detail.kind }:${ location.group }:${ location.binding }`;
+
+	const stats = shareComputeSampledInputs( {}, full, slim, {
+		initializeBindings: false,
+		bindingFilter: ( binding, location, detail ) => accepted.has( locationKey( location, detail ) ),
+		onInputSynced: ( resource, binding, location, detail ) => synced.push( locationKey( location, detail ) ),
+		onInputNotSlimOwned: ( resource, binding, location, detail ) => notSlimOwned.push( [ locationKey( location, detail ), detail.alreadyAvailable ] ),
+		onSampledTexture: ( resource, binding, location ) => sampledLocations.push( location.binding ),
+		onStorageTexture: ( resource, binding, location ) => storageTextureLocations.push( location.binding ),
+		onStorageAttr: ( resource, binding, location ) => storageAttributeLocations.push( location.binding ),
+	} );
+
+	assert.deepEqual( stats, { texturesShared: 2, skippedStorageTextures: 1, missingTextures: 0 }, 'the public stats shape stays legacy-compatible' );
+	assert.equal( initializedBindingReads, 0, 'uninitialized state inspection never asks _bindings to allocate resources' );
+	assert.equal( full.backend.get( sampledTexture ).texture, slimSampledGPU );
+	assert.equal( sampledTexture.version, 3, 'duplicate texture identity transfers only once' );
+	assert.equal( full.backend.get( storageTexture ).texture, slimStorageGPU );
+	assert.equal( full.backend.get( storageAttribute ).buffer, slimStorageBuffer );
+	assert.deepEqual( fullStorageEntry.rendererLocal, { keep: true }, 'storage input sharing preserves full-renderer-local backend fields' );
+	assert.equal( full._attributes.get( storageAttribute ).version, 17, 'the full attribute manager inherits the initialized slim version' );
+	assert.equal( full.backend.get( decoyStorageTexture ).texture, fullDecoyTexture );
+	assert.equal( full.backend.get( decoyAttribute ).buffer, fullDecoyBuffer );
+	assert.deepEqual( sampledLocations, [ 0, 1 ], 'one transferred texture can satisfy multiple exact locations' );
+	assert.deepEqual( storageTextureLocations, [ 3 ] );
+	assert.deepEqual( storageAttributeLocations, [ 4 ] );
+	assert.deepEqual( synced, [
+		'sampled-texture:0:0',
+		'sampled-texture:0:1',
+		'storage-texture:0:3',
+		'storage-buffer:0:4',
+	] );
+	assert.deepEqual( notSlimOwned, [ [ 'sampled-texture:0:2', true ] ], 'full-owned sampled inputs are explicitly optional, not failed shares' );
+
+} );
+
+test( 'shareComputeSampledInputs fails closed without uninitialized binding state', () => {
+
+	const texture = { isTexture: true, name: 'must-not-initialize', version: 0 };
+	const group = { bindings: [ { isSampledTexture: true, texture } ] };
+	const slim = fakeRenderer();
+	slim.backend.get( texture ).texture = { id: 'slim-input' };
+	let initializedBindingReads = 0;
+	const full = fakeRenderer( { bindGroupsForNode: () => { initializedBindingReads ++; return [ group ]; } } );
+	full._nodes = { getForCompute: () => { throw new Error( 'state unavailable' ); } };
+	const synced = [];
+
+	const stats = shareComputeSampledInputs( {}, full, slim, {
+		initializeBindings: false,
+		bindingFilter: () => true,
+		onInputSynced: ( resource, binding, location ) => synced.push( location ),
+	} );
+
+	assert.deepEqual( stats, { texturesShared: 0, skippedStorageTextures: 0, missingTextures: 0 } );
+	assert.equal( initializedBindingReads, 0, 'exact auditing must not fall back to allocating _bindings state' );
+	assert.deepEqual( synced, [] );
+
+} );
+
+test( 'shareComputeSampledInputs reports a selected storage texture missing from slim', () => {
+
+	const texture = { isTexture: true, isStorageTexture: true, name: 'missing-storage-input', version: 0 };
+	const group = { bindings: [ { isSampledTexture: true, store: true, texture } ] };
+	const slim = fakeRenderer();
+	const full = fakeRenderer();
+	full._nodes = { getForCompute: () => ( { bindings: [ group ] } ) };
+	full.backend.get( texture ).texture = { id: 'full-storage' };
+	const synced = [];
+
+	const stats = shareComputeSampledInputs( {}, full, slim, {
+		initializeBindings: false,
+		bindingFilter: () => true,
+		onInputSynced: ( resource, binding, location ) => synced.push( location ),
+	} );
+
+	assert.deepEqual( stats, { texturesShared: 0, skippedStorageTextures: 0, missingTextures: 1 } );
+	assert.deepEqual( synced, [] );
+	assert.equal( full.backend.get( texture ).texture.id, 'full-storage', 'a mandatory storage input is never reverse-adopted from full' );
+
+} );
+
 test( 'syncComputeStorageOutputs shares storage textures and bumps version', () => {
 
 	const tex = { isTexture: true, isStorageTexture: true, name: 'compute-out', version: 7, generateMipmaps: true };
@@ -281,6 +416,75 @@ test( 'syncComputeStorageOutputs copies buffer-to-buffer when slim already has i
 	assert.equal( call.dstBuf, slimBuf );
 	assert.equal( call.size, 1024, 'clamped to min(full.size, slim.size)' );
 	assert.equal( slim.submittedCommandBuffers.length, 1, 'single command buffer submitted' );
+
+} );
+
+test( 'syncComputeStorageOutputs filters exact outputs and reports duplicate texture locations without touching decoys', () => {
+
+	const readOnlyAttribute = { isStorageBufferAttribute: true, name: 'read-only' };
+	const outputAttribute = { isStorageBufferAttribute: true, name: 'write-output' };
+	const decoyAttribute = { isStorageBufferAttribute: true, name: 'decoy' };
+	const outputTexture = { isTexture: true, isStorageTexture: true, name: 'shared-output', version: 5, generateMipmaps: true };
+	const decoyTexture = { isTexture: true, isStorageTexture: true, name: 'decoy-output', version: 1, generateMipmaps: true };
+	const group = { bindings: [
+		storageBufferBinding( readOnlyAttribute ),
+		storageBufferBinding( outputAttribute ),
+		storageBufferBinding( decoyAttribute ),
+		{ isSampledTexture: true, texture: outputTexture },
+		{ isSampledTexture: true, texture: outputTexture },
+		{ isSampledTexture: true, texture: decoyTexture },
+	] };
+	const full = fakeRenderer( { bindGroupsForNode: () => [ group ] } );
+	const fullReadOnlyBuffer = { id: 'full-read-only', size: 64 };
+	const fullOutputBuffer = { id: 'full-output', size: 64 };
+	const fullDecoyBuffer = { id: 'full-decoy', size: 64 };
+	const fullOutputTexture = { id: 'full-output-texture' };
+	const fullDecoyTexture = { id: 'full-decoy-texture' };
+	full.backend.get( readOnlyAttribute ).buffer = fullReadOnlyBuffer;
+	full.backend.get( outputAttribute ).buffer = fullOutputBuffer;
+	full.backend.get( decoyAttribute ).buffer = fullDecoyBuffer;
+	full.backend.get( outputTexture ).texture = fullOutputTexture;
+	full.backend.get( decoyTexture ).texture = fullDecoyTexture;
+	const slim = fakeRenderer();
+	const slimReadOnlyBuffer = { id: 'slim-read-only', size: 64 };
+	const slimOutputBuffer = { id: 'slim-output', size: 64 };
+	const slimDecoyBuffer = { id: 'slim-decoy', size: 64 };
+	const slimDecoyTexture = { id: 'slim-decoy-texture' };
+	slim.backend.get( readOnlyAttribute ).buffer = slimReadOnlyBuffer;
+	slim.backend.get( outputAttribute ).buffer = slimOutputBuffer;
+	slim.backend.get( decoyAttribute ).buffer = slimDecoyBuffer;
+	slim.backend.get( decoyTexture ).texture = slimDecoyTexture;
+	const accepted = new Set( [
+		'storage-buffer:0:1',
+		'storage-texture:0:3',
+		'storage-texture:0:4',
+	] );
+	const synced = [];
+	const textureLocations = [];
+	const locationKey = ( location, detail ) => `${ detail.kind }:${ location.group }:${ location.binding }`;
+
+	const stats = syncComputeStorageOutputs( {}, full, slim, {
+		bindingFilter: ( binding, location, detail ) => accepted.has( locationKey( location, detail ) ),
+		onOutputSynced: ( resource, binding, location, detail ) => synced.push( locationKey( location, detail ) ),
+		onStorageTextureSynced: ( resource, binding, location ) => textureLocations.push( location.binding ),
+	} );
+
+	assert.deepEqual( stats, { texturesShared: 1, storageAttrs: 1, buffersAdopted: 0, buffersCopied: 1 } );
+	assert.equal( slim.backend.get( readOnlyAttribute ).buffer, slimReadOnlyBuffer, 'read-only input is not reverse-synchronized as an output' );
+	assert.equal( slim.backend.get( decoyAttribute ).buffer, slimDecoyBuffer );
+	assert.equal( slim.backend.get( decoyTexture ).texture, slimDecoyTexture );
+	assert.equal( slim.backend.get( outputTexture ).texture, fullOutputTexture );
+	assert.equal( outputTexture.version, 6, 'duplicate output identity is transferred and versioned once' );
+	assert.deepEqual( textureLocations, [ 3, 4 ], 'the same texture can prove both contracted output locations' );
+	assert.deepEqual( slim.generateMipmapsCalls, [ outputTexture ], 'duplicate output locations regenerate mipmaps once' );
+	assert.deepEqual( synced, [
+		'storage-buffer:0:1',
+		'storage-texture:0:3',
+		'storage-texture:0:4',
+	] );
+	assert.equal( slim.copyCalls.length, 1 );
+	assert.equal( slim.copyCalls[ 0 ].srcBuf, fullOutputBuffer );
+	assert.equal( slim.copyCalls[ 0 ].dstBuf, slimOutputBuffer );
 
 } );
 
