@@ -9948,6 +9948,7 @@ function __trackDebugShaderAsync( renderer ) {
 		let restorePreparedMRT = false;
 		__renderDepth ++;
 		try {
+		this.__tslpTopLevelRenderSequence = ( this.__tslpTopLevelRenderSequence | 0 ) + 1;
 		// Track last scene/camera so post-compute forced renders can use them.
 		this._lastScene = scene;
 		this._lastCamera = camera;
@@ -10169,6 +10170,7 @@ function __trackDebugShaderAsync( renderer ) {
 				window.__tslpComputePending = ( window.__tslpComputePending | 0 ) + 1;
 				const _slimRenderer = this;
 				const _hadRenderedSceneBeforeCompute = !! ( _slimRenderer._lastScene && _slimRenderer._lastCamera );
+				const _renderSequenceBeforeCompute = _slimRenderer.__tslpTopLevelRenderSequence | 0;
 				let _forcePostComputeRender = ( _slimRenderer.__tslpInsideReplayUpdateBefore | 0 ) > 0;
 				let _markInitialStorageRender = false;
 				const _topReplayPipeline = _slimRenderer.__tslpCurrentRenderPipeline || null;
@@ -10212,6 +10214,12 @@ function __trackDebugShaderAsync( renderer ) {
 					if ( _forcePostComputeRender && ( window.__tslpComputePending | 0 ) === 0 && _slimRenderer.__tslpPostComputeRendering !== true ) {
 						const sc = _slimRenderer._lastScene;
 						const cam = _slimRenderer._lastCamera;
+						const _rendersAfterComputeRequest = Math.max( 0, ( _slimRenderer.__tslpTopLevelRenderSequence | 0 ) - _renderSequenceBeforeCompute );
+						// Replaying only the last scene/camera is unsafe when the application
+						// presented a transaction with multiple top-level renders (split view,
+						// inset camera, manual compositing). The already-presented application
+						// frame is preferable to drawing its final pass a second time.
+						const _bareSceneReplaySafe = _rendersAfterComputeRequest <= 1;
 						if ( _topReplayPipeline && typeof _topReplayPipeline.render === 'function' ) {
 							_slimRenderer.__tslpPostComputeRendering = true;
 							try {
@@ -10225,7 +10233,7 @@ function __trackDebugShaderAsync( renderer ) {
 								if ( _markInitialStorageRender ) _slimRenderer.__tslpInitialStorageComputeRendered = true;
 							} catch ( _ ) {}
 							finally { _slimRenderer.__tslpPostComputeRendering = false; }
-						} else if ( sc && cam ) {
+						} else if ( sc && cam && _bareSceneReplaySafe ) {
 							_slimRenderer.__tslpPostComputeRendering = true;
 							try {
 								__sharedWithTemporalFrame(
@@ -10238,6 +10246,12 @@ function __trackDebugShaderAsync( renderer ) {
 								if ( _markInitialStorageRender ) _slimRenderer.__tslpInitialStorageComputeRendered = true;
 							} catch ( _ ) {}
 							finally { _slimRenderer.__tslpPostComputeRendering = false; }
+						} else if ( sc && cam ) {
+							const diag = __computeDiagnostics();
+							if ( diag ) {
+								diag.skippedUnsafeSceneRenders = ( diag.skippedUnsafeSceneRenders | 0 ) + 1;
+								diag.maxRendersAfterComputeRequest = Math.max( diag.maxRendersAfterComputeRequest | 0, _rendersAfterComputeRequest );
+							}
 						}
 					}
 				} );

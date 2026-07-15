@@ -74,6 +74,11 @@ test( 'delegated compute outputs receive a non-advancing presentation render', (
 	const compute = source.slice( start, end );
 	assert.match( compute, /const syncedOutputsNeedPresentation = __sharedComputeSyncNeedsPresentation\( syncStats \);/ );
 	assert.match( compute, /if \( syncedOutputsNeedPresentation \) _forcePostComputeRender = true;/ );
+	assert.match( source, /this\.__tslpTopLevelRenderSequence = \( this\.__tslpTopLevelRenderSequence \| 0 \) \+ 1;/ );
+	assert.match( compute, /const _renderSequenceBeforeCompute = _slimRenderer\.__tslpTopLevelRenderSequence \| 0;/ );
+	assert.match( compute, /const _bareSceneReplaySafe = _rendersAfterComputeRequest <= 1;/ );
+	assert.match( compute, /else if \( sc && cam && _bareSceneReplaySafe \)/ );
+	assert.match( compute, /diag\.skippedUnsafeSceneRenders/ );
 	assert.match( compute, /__maintenanceTemporalFrame\( 'compute' \)[\s\S]*\(\) => _slimRenderer\.render\( sc, cam \)/ );
 
 } );
