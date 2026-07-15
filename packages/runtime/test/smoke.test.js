@@ -1595,7 +1595,7 @@ test( '__applyPrecompiled live update sidecars refresh object-scoped uniform.liv
 
 } );
 
-test( 'PrecompiledMaterial only forces single-pass for zero-thickness double-sided transmission', () => {
+test( 'PrecompiledMaterial preserves captured two-pass transmission state', () => {
 
 	const baseModule = {
 		__hash: 'sha256:transmission',
@@ -1610,11 +1610,11 @@ test( 'PrecompiledMaterial only forces single-pass for zero-thickness double-sid
 		},
 	};
 	const direct = new PrecompiledMaterial( baseModule.artifact );
-	assert.equal( direct.forceSinglePass, true );
+	assert.equal( direct.forceSinglePass, false );
 	assert.equal( direct.transparent, true );
 
 	const thin = __applyPrecompiled( { transmission: 1, thickness: 0, transparent: false }, baseModule, 'sha256:transmission' );
-	assert.equal( thin.forceSinglePass, true );
+	assert.equal( thin.forceSinglePass, false );
 	assert.equal( thin.transparent, true );
 
 	const thick = __applyPrecompiled( {}, {

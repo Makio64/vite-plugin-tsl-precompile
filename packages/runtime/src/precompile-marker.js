@@ -1517,16 +1517,6 @@ async function captureMaterialInDev( entry ) {
 
 		}
 
-		const forceSinglePassForCapture = material && material.transmission > 0
-			&& Math.abs( Number.isFinite( material.thickness ) ? material.thickness : 0 ) <= 1e-7
-			&& material.side === 2
-			&& material.forceSinglePass === false;
-		if ( forceSinglePassForCapture ) {
-
-			material.forceSinglePass = true;
-			material.needsUpdate = true;
-
-		}
 		const artifactSets = [];
 		try {
 
@@ -1568,13 +1558,6 @@ async function captureMaterialInDev( entry ) {
 				try { captureRenderTarget.dispose(); } catch ( _ ) {}
 
 			}
-			if ( forceSinglePassForCapture ) {
-
-				material.forceSinglePass = false;
-				material.needsUpdate = true;
-
-			}
-
 		}
 
 		let artifact = null;

@@ -1348,7 +1348,7 @@ test( 'capture cleanup does not overwrite a render function replaced mid-capture
 
 } );
 
-test( 'captures thin double-sided transmission as one pass and restores the source material', async () => {
+test( 'captures thin double-sided transmission without collapsing its pass topology', async () => {
 
 	await withBrowser( async ( posts ) => {
 
@@ -1370,7 +1370,7 @@ test( 'captures thin double-sided transmission as one pass and restores the sour
 		setDevRenderer( renderer, three );
 		material.precompile( 'thin-transmission', context );
 		await waitFor( () => posts.length === 1, 'thin transmission capture' );
-		assert.equal( capturedForceSinglePass, true );
+		assert.equal( capturedForceSinglePass, false );
 		assert.equal( material.forceSinglePass, false );
 
 	} );
