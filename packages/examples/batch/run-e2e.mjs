@@ -1779,8 +1779,8 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 			if ( restore ) restore();
 		}
 	}
-	renderObject( object, scene, camera, geometry, material, group, lightsNode, clippingContext ) {
-		if ( __pmremRunning > 0 ) return super.renderObject( object, scene, camera, geometry, material, group, lightsNode, clippingContext );
+	renderObject( object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId = null ) {
+		if ( __pmremRunning > 0 ) return super.renderObject( object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId );
 		const materialClassName = material ? __classNameForMaterial( material ) : '';
 		const isOffscreenRenderPass = typeof this.getRenderTarget === 'function' && this.getRenderTarget() !== null;
 		const isUserScene = !! ( scene && scene.isScene === true && scene.userData && scene.userData.__tslpUserScene === true );
@@ -1799,7 +1799,7 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		if ( material && ( material.isMeshToonOutlineMaterial === true || ( materialClassName === 'NodeMaterial' && isUserScene && ! isOffscreenRenderPass ) || isRetroPassMaterial ) ) {
 			__mark( material, isRetroPassMaterial ? materialClassName : 'NodeMaterial', object, camera );
 		}
-		return super.renderObject( object, scene, camera, geometry, material, group, lightsNode, clippingContext );
+		return super.renderObject( object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId );
 	}
 	async init( ...args ) {
 		const result = await super.init( ...args );
@@ -10085,7 +10085,7 @@ function __trackDebugShaderAsync( renderer ) {
 			__renderDepth --;
 		}
 	}
-	renderObject( object, scene, camera, geometry, material, group, lightsNode, clippingContext ) {
+	renderObject( object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId = null ) {
 		let nextMaterial = material;
 		if ( __isRetroPassGeneratedMaterial( this, scene, material ) ) {
 			const retroDiag = __retroPassDiagnostics();
@@ -10140,7 +10140,7 @@ function __trackDebugShaderAsync( renderer ) {
 					if ( label && list.length < 64 && ! list.includes( label ) ) list.push( label );
 				} catch ( _ ) {}
 			}
-			return super.renderObject( object, scene, camera, geometry, nextMaterial, group, lightsNode, clippingContext );
+			return super.renderObject( object, scene, camera, geometry, nextMaterial, group, lightsNode, clippingContext, passId );
 		}
 		compute( computeNode, ...rest ) {
 		// Precompiled compute nodes: slim renderer handles these directly.
