@@ -38,6 +38,22 @@ function textureIdentity( value ) {
 
 }
 
+function withUniformSourceSnapshots( value, cameraValue, objectValue, extraSource = null ) {
+
+	const slots = [
+		{ name: 'projection', source: { kind: 'camera.projectionMatrix', valueSnapshot: { type: 'f32', data: cameraValue } } },
+		{ name: 'world', source: { kind: 'object.worldMatrix', valueSnapshot: { type: 'f32', data: objectValue } } },
+	];
+	if ( extraSource ) slots.push( { name: 'extra', source: extraSource } );
+	value.uniformPlan = [ {
+		name: 'render',
+		slots,
+		orderedBindings: [ { type: 'ubo', name: 'render', slots: structuredClone( slots ) } ],
+	} ];
+	return value;
+
+}
+
 test( 'artifact variant family flattens nested members and canonicalizes equivalent selector aliases', () => {
 
 	const selectorA = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'offscreen-2d' } } );
@@ -95,6 +111,43 @@ test( 'artifact variant family aligns renamed ephemeral identities before unioni
 	assert.deepEqual( authoritative.renderContextSelectors, [ selectorA, selectorB ].sort() );
 	assert.equal( textureIdentity( authoritative ), 'capture-texture-a', 'the durable family keeps its authoritative identity spelling' );
 	assert.equal( authoritative.variants, undefined );
+
+} );
+
+test( 'artifact variant family ignores fallback snapshots for live camera and object sources', () => {
+
+	const first = withUniformSourceSnapshots( artifact( 'live-frame', 'shared-shadow', [ '{}' ] ), 1, 2 );
+	const moved = withUniformSourceSnapshots( artifact( 'live-frame', 'shared-shadow', [ '{}' ] ), 10, 20 );
+
+	assert.doesNotThrow( () => mergeArtifactVariantFamily( first, [ first, moved ] ) );
+	assert.equal( first.uniformPlan[ 0 ].slots[ 0 ].source.valueSnapshot.data, 1, 'the authoritative fallback remains intact' );
+	assert.equal( first.uniformPlan[ 0 ].slots[ 1 ].source.valueSnapshot.data, 2, 'the authoritative caster fallback remains intact' );
+
+} );
+
+test( 'artifact variant family keeps constant and unresolved live snapshots strict', () => {
+
+	for ( const kind of [ 'constant', 'uniform.live' ] ) {
+
+		const first = withUniformSourceSnapshots(
+			artifact( `strict-${ kind }`, 'shared-shadow', [ '{}' ] ),
+			1,
+			2,
+			{ kind, valueSnapshot: { type: 'f32', data: 3 } },
+		);
+		const divergent = withUniformSourceSnapshots(
+			artifact( `strict-${ kind }`, 'shared-shadow', [ '{}' ] ),
+			10,
+			20,
+			{ kind, valueSnapshot: { type: 'f32', data: 4 } },
+		);
+		assert.throws(
+			() => mergeArtifactVariantFamily( first, [ first, divergent ] ),
+			( error ) => error && error.code === 'TSLP_ARTIFACT_VARIANT_CACHE_KEY_COLLISION',
+			`${ kind } snapshots remain family identity`,
+		);
+
+	}
 
 } );
 

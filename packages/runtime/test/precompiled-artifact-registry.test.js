@@ -77,6 +77,27 @@ test( 'precompiled registry unions semantic selectors for equivalent cross-famil
 
 } );
 
+test( 'precompiled registry merges shadow artifacts captured from moved cameras and casters', () => {
+
+	unregisterPrecompiledArtifacts();
+	const first = artifact( 'live-frame-key', 'shared-shadow' );
+	const moved = artifact( 'live-frame-key', 'shared-shadow' );
+	first.uniformPlan = [ { slots: [
+		{ source: { kind: 'camera.viewMatrix', valueSnapshot: { type: 'mat4', data: [ 1 ] } } },
+		{ source: { kind: 'object.worldMatrix', valueSnapshot: { type: 'mat4', data: [ 2 ] } } },
+	] } ];
+	moved.uniformPlan = [ { slots: [
+		{ source: { kind: 'camera.viewMatrix', valueSnapshot: { type: 'mat4', data: [ 10 ] } } },
+		{ source: { kind: 'object.worldMatrix', valueSnapshot: { type: 'mat4', data: [ 20 ] } } },
+	] } ];
+
+	assert.doesNotThrow( () => registerPrecompiledArtifacts( [ first, moved ] ) );
+	assert.equal( getShadowArtifact(), first );
+	assert.equal( getShadowArtifact().uniformPlan[ 0 ].slots[ 0 ].source.valueSnapshot.data[ 0 ], 1 );
+	unregisterPrecompiledArtifacts();
+
+} );
+
 test( 'precompiled registry fails closed for divergent payloads sharing one cache key', () => {
 
 	unregisterPrecompiledArtifacts();

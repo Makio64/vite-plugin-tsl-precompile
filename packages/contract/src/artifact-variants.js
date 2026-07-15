@@ -70,7 +70,7 @@ export function createArtifactVariantPayloadFingerprint( artifact ) {
 	const payload = createArtifactVariantPayload( artifact );
 	delete payload.cacheKey;
 	delete payload.renderContextSelectors;
-	return stableJsonStringify( payload, 'artifactVariant' );
+	return stableJsonStringify( normalizeLiveVariantSnapshots( payload ), 'artifactVariant' );
 
 }
 
@@ -337,7 +337,48 @@ function createSemanticVariantFingerprint( artifact ) {
 	const payload = createArtifactVariantPayload( artifact );
 	delete payload.cacheKey;
 	delete payload.renderContextSelectors;
-	return stableJsonStringify( remapArtifactEphemeralIdentities( payload ), 'artifactVariantSemantic' );
+	return stableJsonStringify(
+		remapArtifactEphemeralIdentities( normalizeLiveVariantSnapshots( payload ) ),
+		'artifactVariantSemantic',
+	);
+
+}
+
+/**
+ * Camera and render-object values are rewritten from the active frame before
+ * every draw. Their captured snapshots are fallback seeds, not shader-family
+ * identity. Ignore only those proven-live snapshots when comparing families;
+ * retain constants and unresolved live uniforms so real payload drift still
+ * fails closed. The returned clone leaves the durable artifact untouched.
+ */
+function normalizeLiveVariantSnapshots( value ) {
+
+	const seen = new Map();
+	const visit = ( current ) => {
+
+		if ( current === null || typeof current !== 'object' ) return current;
+		if ( seen.has( current ) ) return seen.get( current );
+		const clone = Array.isArray( current ) ? [] : {};
+		seen.set( current, clone );
+		if ( Array.isArray( current ) ) {
+
+			for ( const item of current ) clone.push( visit( item ) );
+			return clone;
+
+		}
+		const liveFrameSource = typeof current.kind === 'string' && (
+			current.kind.startsWith( 'camera.' ) || current.kind.startsWith( 'object.' )
+		);
+		for ( const key of Object.keys( current ) ) {
+
+			if ( liveFrameSource && key === 'valueSnapshot' ) continue;
+			clone[ key ] = visit( current[ key ] );
+
+		}
+		return clone;
+
+	};
+	return visit( value );
 
 }
 
