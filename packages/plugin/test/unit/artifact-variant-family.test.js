@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
 	collectArtifactVariantCandidates,
 	createArtifactVariantPayload,
+	createArtifactVariantPayloadFingerprint,
 	mergeArtifactVariantFamily,
 } from '@tsl-precompile/contract/artifact-variants';
 import { validateArtifact } from '@tsl-precompile/contract/kinds';
@@ -122,6 +123,36 @@ test( 'artifact variant family ignores fallback snapshots for live camera and ob
 	assert.doesNotThrow( () => mergeArtifactVariantFamily( first, [ first, moved ] ) );
 	assert.equal( first.uniformPlan[ 0 ].slots[ 0 ].source.valueSnapshot.data, 1, 'the authoritative fallback remains intact' );
 	assert.equal( first.uniformPlan[ 0 ].slots[ 1 ].source.valueSnapshot.data, 2, 'the authoritative caster fallback remains intact' );
+
+} );
+
+test( 'artifact variant fingerprints match the durable JSON form of non-finite material defaults', () => {
+
+	const selectorA = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'default' } } );
+	const selectorB = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'default', sampleCount: 4 } } );
+	const live = artifact( 'physical-transmission', 'shared-physical', [ selectorA ] );
+	live.defaults = { attenuationDistance: Infinity };
+	live.uniformPlan = [ {
+		name: 'material',
+		slots: [ {
+			name: 'attenuationDistance',
+			source: {
+				kind: 'material.attenuationDistance',
+				property: 'attenuationDistance',
+				valueSnapshot: { type: 'number', data: Infinity },
+			},
+		} ],
+	} ];
+	const persisted = JSON.parse( JSON.stringify( live ) );
+	persisted.renderContextSelectors = [ selectorB ];
+
+	assert.equal( persisted.defaults.attenuationDistance, null );
+	assert.equal( persisted.uniformPlan[ 0 ].slots[ 0 ].source.valueSnapshot.data, null );
+	assert.equal( createArtifactVariantPayloadFingerprint( live ), createArtifactVariantPayloadFingerprint( persisted ) );
+	assert.doesNotThrow( () => mergeArtifactVariantFamily( live, [ live, persisted ] ) );
+	assert.deepEqual( live.renderContextSelectors, [ selectorA, selectorB ].sort() );
+	assert.equal( live.defaults.attenuationDistance, Infinity, 'fingerprinting does not mutate the authoritative live artifact' );
+	assert.equal( live.uniformPlan[ 0 ].slots[ 0 ].source.valueSnapshot.data, Infinity );
 
 } );
 

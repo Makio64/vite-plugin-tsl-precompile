@@ -70,7 +70,7 @@ export function createArtifactVariantPayloadFingerprint( artifact ) {
 	const payload = createArtifactVariantPayload( artifact );
 	delete payload.cacheKey;
 	delete payload.renderContextSelectors;
-	return stableJsonStringify( normalizeLiveVariantSnapshots( payload ), 'artifactVariant' );
+	return stableJsonStringify( normalizeVariantFingerprintPayload( payload ), 'artifactVariant' );
 
 }
 
@@ -338,24 +338,26 @@ function createSemanticVariantFingerprint( artifact ) {
 	delete payload.cacheKey;
 	delete payload.renderContextSelectors;
 	return stableJsonStringify(
-		remapArtifactEphemeralIdentities( normalizeLiveVariantSnapshots( payload ) ),
+		remapArtifactEphemeralIdentities( normalizeVariantFingerprintPayload( payload ) ),
 		'artifactVariantSemantic',
 	);
 
 }
 
 /**
- * Camera and render-object values are rewritten from the active frame before
- * every draw. Their captured snapshots are fallback seeds, not shader-family
- * identity. Ignore only those proven-live snapshots when comparing families;
- * retain constants and unresolved live uniforms so real payload drift still
- * fails closed. The returned clone leaves the durable artifact untouched.
+ * Normalize only values whose in-memory spelling is known to differ from the
+ * durable JSON payload. Camera and render-object snapshots are rewritten from
+ * the active frame and are not shader-family identity. JSON.stringify maps
+ * non-finite numbers to null, so fingerprint the same representation while
+ * preserving legitimate live defaults such as attenuationDistance=Infinity
+ * on the authoritative in-process artifact.
  */
-function normalizeLiveVariantSnapshots( value ) {
+function normalizeVariantFingerprintPayload( value ) {
 
 	const seen = new Map();
 	const visit = ( current ) => {
 
+		if ( typeof current === 'number' && ! Number.isFinite( current ) ) return null;
 		if ( current === null || typeof current !== 'object' ) return current;
 		if ( seen.has( current ) ) return seen.get( current );
 		const clone = Array.isArray( current ) ? [] : {};
