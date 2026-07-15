@@ -565,7 +565,8 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	const computePassByNode = new WeakMap();
 	const computeStorageTextureLedger = new WeakMap();
-	const initializedMaterialComputeNodes = new WeakSet();
+	const materialComputeInitializationByNode = new WeakMap();
+	const materialComputeInitialized = Symbol( 'material-compute-initialized' );
 
 	function isRawComputeNode( computeNode ) {
 
@@ -656,35 +657,90 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	}
 
-	async function initializeMaterialComputeNode( computeNode ) {
+	function suppressMaterialComputeInitializer( computeNode ) {
 
 		const onInit = computeNode && computeNode.onInitFunction;
-		if ( typeof onInit !== 'function' || initializedMaterialComputeNodes.has( computeNode ) ) return;
-		initializedMaterialComputeNodes.add( computeNode );
-		// Three invokes this callback without awaiting it and exposes the full
-		// renderer. In hybrid mode the application owns the slim renderer, so
-		// preserve that public identity and await nested initialization kernels.
+		if ( typeof onInit !== 'function' ) return { onInit: null, restore() {} };
 		try { computeNode.onInitFunction = null; } catch ( _ ) {}
 		if ( computeNode.onInitFunction !== null ) {
 
-			initializedMaterialComputeNodes.delete( computeNode );
 			const error = new Error( 'createSlimSceneSupport: material compute onInitFunction must be temporarily writable so initialization can be awaited exactly once.' );
 			error.code = 'TSLP_MATERIAL_COMPUTE_ON_INIT_IMMUTABLE';
 			throw error;
 
 		}
+		let restored = false;
+		return {
+			onInit,
+			restore() {
+
+				if ( restored ) return;
+				restored = true;
+				// Preserve an intentional callback replacement made while the original
+				// initializer or the full renderer was active.
+				if ( computeNode.onInitFunction !== null ) return;
+				try { computeNode.onInitFunction = onInit; } catch ( _ ) {}
+				if ( computeNode.onInitFunction !== onInit ) {
+
+					const error = new Error( 'createSlimSceneSupport: material compute onInitFunction could not be restored for another full renderer.' );
+					error.code = 'TSLP_MATERIAL_COMPUTE_ON_INIT_IMMUTABLE';
+					throw error;
+
+				}
+
+			},
+		};
+
+	}
+
+	async function withSuppressedMaterialComputeInitializer( computeNode, callback ) {
+
+		const suppression = suppressMaterialComputeInitializer( computeNode );
 		try {
+
+			return await callback( suppression.onInit );
+
+		} finally {
+
+			suppression.restore();
+
+		}
+
+	}
+
+	async function initializeMaterialComputeNode( computeNode, fullRenderer ) {
+
+		if ( ! computeNode || ! fullRenderer ) return;
+		let byRenderer = materialComputeInitializationByNode.get( computeNode );
+		if ( ! byRenderer ) {
+
+			byRenderer = new WeakMap();
+			materialComputeInitializationByNode.set( computeNode, byRenderer );
+
+		}
+		const existing = byRenderer.get( fullRenderer );
+		if ( existing === materialComputeInitialized ) return;
+		if ( existing ) return existing;
+		if ( typeof computeNode.onInitFunction !== 'function' ) return;
+
+		// Three invokes this callback without awaiting it and exposes the full
+		// renderer. In hybrid mode the application owns the slim renderer, so
+		// preserve that public identity, await nested initialization kernels, and
+		// key successful initialization by the full renderer that owns the pipeline.
+		const initializing = withSuppressedMaterialComputeInitializer( computeNode, async ( onInit ) => {
 
 			await onInit.call( computeNode, { renderer } );
 
+		} );
+		byRenderer.set( fullRenderer, initializing );
+		try {
+
+			await initializing;
+			byRenderer.set( fullRenderer, materialComputeInitialized );
+
 		} catch ( error ) {
 
-			initializedMaterialComputeNodes.delete( computeNode );
-			try {
-
-				if ( computeNode.onInitFunction === null ) computeNode.onInitFunction = onInit;
-
-			} catch ( _ ) { /* the next transaction will fail closed as immutable */ }
+			if ( byRenderer.get( fullRenderer ) === initializing ) byRenderer.delete( fullRenderer );
 			throw error;
 
 		}
@@ -913,7 +969,7 @@ export function createSlimSceneSupport( opts = {} ) {
 			// must complete before auto-compute asks `_nodes.getForCompute()` to
 			// prepare output ownership, otherwise a failed/partial onInit can be
 			// cached as if it were the final kernel.
-			for ( const computeNode of includedNodes ) await initializeMaterialComputeNode( computeNode );
+			for ( const computeNode of includedNodes ) await initializeMaterialComputeNode( computeNode, fullRenderer );
 
 		} catch ( error ) {
 
@@ -986,7 +1042,7 @@ export function createSlimSceneSupport( opts = {} ) {
 			fullRenderer,
 			dispatchNode: async ( computeNode, owners ) => {
 
-				await initializeMaterialComputeNode( computeNode );
+				await initializeMaterialComputeNode( computeNode, fullRenderer );
 				const outputRequirements = hybridOutputRequirements( computeNode, owners );
 				const shareOptions = computeOpts.shareOptions || {};
 				const inputStats = shareComputeInputs( computeNode, fullRenderer, {
@@ -1002,9 +1058,13 @@ export function createSlimSceneSupport( opts = {} ) {
 					? computeOpts.computeArgs( computeNode, owners )
 					: computeOpts.computeArgs;
 				const rest = Array.isArray( args ) ? args : [];
-				if ( typeof fullRenderer.computeAsync === 'function' ) await fullRenderer.computeAsync( computeNode, ...rest );
-				else if ( typeof fullRenderer.compute === 'function' ) await fullRenderer.compute( computeNode, ...rest );
-				else throw new Error( 'createSlimSceneSupport: the full renderer exposes neither computeAsync() nor compute().' );
+				await withSuppressedMaterialComputeInitializer( computeNode, async () => {
+
+					if ( typeof fullRenderer.computeAsync === 'function' ) await fullRenderer.computeAsync( computeNode, ...rest );
+					else if ( typeof fullRenderer.compute === 'function' ) await fullRenderer.compute( computeNode, ...rest );
+					else throw new Error( 'createSlimSceneSupport: the full renderer exposes neither computeAsync() nor compute().' );
+
+				} );
 				const syncOptions = computeOpts.syncOptions || {};
 				const syncedOutputLocations = new Set();
 				const syncStats = syncDelegatedComputeOutputs( computeNode, fullRenderer, {

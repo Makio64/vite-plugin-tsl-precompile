@@ -874,8 +874,92 @@ test( 'createSlimSceneSupport retries failed material compute initialization bef
 		assert.equal( initCalls, 2 );
 		assert.equal( stateRequests > 0, true );
 		assert.equal( dispatches, 1 );
-		assert.equal( raw.onInitFunction, null );
+		assert.equal( typeof raw.onInitFunction, 'function', 'successful initialization retains the callback for another full renderer' );
 		assert.equal( hydrateNodeBuilderState( artifact, material ).updateBeforeNodes.length, 1 );
+
+	} finally {
+
+		await support.dispose();
+
+	}
+
+} );
+
+test( 'createSlimSceneSupport initializes material compute once per full renderer without a stock duplicate', async () => {
+
+	const slim = fakeRenderer();
+	const firstFull = fakeRenderer();
+	const secondFull = fakeRenderer();
+	firstFull.backend.device = slim.backend.device;
+	secondFull.backend.device = slim.backend.device;
+	const events = [];
+	let initializingRenderer = 'first';
+	const originalOnInit = async ( { renderer } ) => {
+
+		assert.equal( renderer, slim, 'initialization keeps the application renderer identity' );
+		events.push( `init:${ initializingRenderer }` );
+		await Promise.resolve();
+		events.push( `init-complete:${ initializingRenderer }` );
+
+	};
+	const raw = {
+		isNode: true,
+		isComputeNode: true,
+		traverse( visitor ) { visitor( this ); },
+		onInitFunction: originalOnInit,
+	};
+	const artifact = contractComputeArtifact();
+	const material = {
+		isPrecompiledMaterial: true,
+		precompiledArtifact: artifact,
+		positionNode: raw,
+	};
+	const scene = { traverse( visitor ) { visitor( { material } ); } };
+	const configureFullRenderer = ( fullRenderer, label ) => {
+
+		fullRenderer._nodes = {
+			getForCompute() {
+
+				events.push( `build:${ label }` );
+				return { bindings: [] };
+
+			},
+		};
+		fullRenderer._bindings = { getForCompute: () => [] };
+		fullRenderer.computeAsync = async ( computeNode ) => {
+
+			if ( typeof computeNode.onInitFunction === 'function' ) {
+
+				events.push( `stock-init:${ label }` );
+				await computeNode.onInitFunction.call( computeNode, { renderer: fullRenderer } );
+
+			}
+			events.push( `dispatch:${ label }` );
+
+		};
+
+	};
+	configureFullRenderer( firstFull, 'first' );
+	configureFullRenderer( secondFull, 'second' );
+	const support = createSlimSceneSupport( { renderer: slim, fullRendererFallback: false } );
+
+	try {
+
+		assert.equal( ( await support.dispatchMaterialComputes( scene, { fullRenderer: firstFull } ) ).errors, 0 );
+		assert.equal( raw.onInitFunction, originalOnInit, 'the callback is restored after dispatch' );
+		assert.equal( events.indexOf( 'init-complete:first' ) < events.indexOf( 'build:first' ), true, 'initialization completes before the first renderer builds bindings' );
+		assert.equal( events.indexOf( 'init-complete:first' ) < events.indexOf( 'dispatch:first' ), true );
+
+		assert.equal( ( await support.dispatchMaterialComputes( scene, { fullRenderer: firstFull } ) ).errors, 0 );
+		assert.equal( events.filter( ( event ) => event === 'init:first' ).length, 1, 'the same full renderer does not initialize twice' );
+
+		initializingRenderer = 'second';
+		assert.equal( ( await support.dispatchMaterialComputes( scene, { fullRenderer: secondFull } ) ).errors, 0 );
+		assert.equal( events.filter( ( event ) => event === 'init:second' ).length, 1, 'a different full renderer owns a distinct initialization' );
+		assert.equal( events.indexOf( 'init-complete:second' ) < events.indexOf( 'build:second' ), true, 'the second renderer also waits before building bindings' );
+		assert.equal( events.indexOf( 'init-complete:second' ) < events.indexOf( 'dispatch:second' ), true );
+		assert.equal( events.some( ( event ) => event.startsWith( 'stock-init:' ) ), false, 'the physical full-renderer dispatch sees a suppressed callback' );
+		assert.equal( raw.onInitFunction, originalOnInit, 'the original callback remains available after every renderer transaction' );
 
 	} finally {
 
