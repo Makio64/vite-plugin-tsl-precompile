@@ -170,8 +170,12 @@ function storageCarrierNode( attribute, nodeType = null ) {
  * A Proxy that pretends to be the full TSL namespace. The graph-free
  * NodeAccess enum remains usable; unsupported builder properties return a
  * function that throws with a helpful message naming the accessed field.
+ *
+ * Allocation-only compatibility exports carry PURE annotations so guarded
+ * source builds retain only the stubs an application actually imports. The
+ * prebuilt entry still exports and constructs the complete compatibility set.
  */
-export const TSL = new Proxy( Object.freeze( { NodeAccess } ), {
+export const TSL = /* @__PURE__ */ new Proxy( /* @__PURE__ */ Object.freeze( { NodeAccess } ), {
 	get( target, prop ) {
 
 		if ( prop === Symbol.toPrimitive ) return () => '[TSL slim-stub]';
@@ -673,7 +677,7 @@ export class CubeMapNode {
  * `RendererUtils` — three.js exposes a namespace of renderer helper
  * functions. Ship as a throwing Proxy (same pattern as TSL).
  */
-export const RendererUtils = new Proxy( {}, {
+export const RendererUtils = /* @__PURE__ */ new Proxy( {}, {
 	get( _target, prop ) {
 
 		if ( prop === Symbol.toPrimitive || prop === 'toString' ) return () => '[RendererUtils slim-stub]';
@@ -710,21 +714,21 @@ function makeNodeMaterialStub( name, Base = Material ) {
 
 }
 
-export const MeshBasicNodeMaterial = makeNodeMaterialStub( 'MeshBasicNodeMaterial', MeshBasicMaterial );
-export const MeshStandardNodeMaterial = makeNodeMaterialStub( 'MeshStandardNodeMaterial', MeshStandardMaterial );
-export const MeshPhysicalNodeMaterial = makeNodeMaterialStub( 'MeshPhysicalNodeMaterial', MeshPhysicalMaterial );
-export const MeshLambertNodeMaterial = makeNodeMaterialStub( 'MeshLambertNodeMaterial', MeshLambertMaterial );
-export const MeshPhongNodeMaterial = makeNodeMaterialStub( 'MeshPhongNodeMaterial', MeshPhongMaterial );
-export const MeshToonNodeMaterial = makeNodeMaterialStub( 'MeshToonNodeMaterial', MeshToonMaterial );
-export const MeshNormalNodeMaterial = makeNodeMaterialStub( 'MeshNormalNodeMaterial', MeshNormalMaterial );
-export const MeshMatcapNodeMaterial = makeNodeMaterialStub( 'MeshMatcapNodeMaterial', MeshMatcapMaterial );
-export const LineBasicNodeMaterial = makeNodeMaterialStub( 'LineBasicNodeMaterial', LineBasicMaterial );
-export const LineDashedNodeMaterial = makeNodeMaterialStub( 'LineDashedNodeMaterial', LineDashedMaterial );
-export const Line2NodeMaterial = makeNodeMaterialStub( 'Line2NodeMaterial', LineBasicMaterial );
-export const PointsNodeMaterial = makeNodeMaterialStub( 'PointsNodeMaterial', PointsMaterial );
-export const SpriteNodeMaterial = makeNodeMaterialStub( 'SpriteNodeMaterial', SpriteMaterial );
-export const ShadowNodeMaterial = makeNodeMaterialStub( 'ShadowNodeMaterial', ShadowMaterial );
-export const MeshSSSNodeMaterial = makeNodeMaterialStub( 'MeshSSSNodeMaterial', MeshPhysicalMaterial );
+export const MeshBasicNodeMaterial = /* @__PURE__ */ makeNodeMaterialStub( 'MeshBasicNodeMaterial', MeshBasicMaterial );
+export const MeshStandardNodeMaterial = /* @__PURE__ */ makeNodeMaterialStub( 'MeshStandardNodeMaterial', MeshStandardMaterial );
+export const MeshPhysicalNodeMaterial = /* @__PURE__ */ makeNodeMaterialStub( 'MeshPhysicalNodeMaterial', MeshPhysicalMaterial );
+export const MeshLambertNodeMaterial = /* @__PURE__ */ makeNodeMaterialStub( 'MeshLambertNodeMaterial', MeshLambertMaterial );
+export const MeshPhongNodeMaterial = /* @__PURE__ */ makeNodeMaterialStub( 'MeshPhongNodeMaterial', MeshPhongMaterial );
+export const MeshToonNodeMaterial = /* @__PURE__ */ makeNodeMaterialStub( 'MeshToonNodeMaterial', MeshToonMaterial );
+export const MeshNormalNodeMaterial = /* @__PURE__ */ makeNodeMaterialStub( 'MeshNormalNodeMaterial', MeshNormalMaterial );
+export const MeshMatcapNodeMaterial = /* @__PURE__ */ makeNodeMaterialStub( 'MeshMatcapNodeMaterial', MeshMatcapMaterial );
+export const LineBasicNodeMaterial = /* @__PURE__ */ makeNodeMaterialStub( 'LineBasicNodeMaterial', LineBasicMaterial );
+export const LineDashedNodeMaterial = /* @__PURE__ */ makeNodeMaterialStub( 'LineDashedNodeMaterial', LineDashedMaterial );
+export const Line2NodeMaterial = /* @__PURE__ */ makeNodeMaterialStub( 'Line2NodeMaterial', LineBasicMaterial );
+export const PointsNodeMaterial = /* @__PURE__ */ makeNodeMaterialStub( 'PointsNodeMaterial', PointsMaterial );
+export const SpriteNodeMaterial = /* @__PURE__ */ makeNodeMaterialStub( 'SpriteNodeMaterial', SpriteMaterial );
+export const ShadowNodeMaterial = /* @__PURE__ */ makeNodeMaterialStub( 'ShadowNodeMaterial', ShadowMaterial );
+export const MeshSSSNodeMaterial = /* @__PURE__ */ makeNodeMaterialStub( 'MeshSSSNodeMaterial', MeshPhysicalMaterial );
 
 export class VolumeNodeMaterial extends NodeMaterial {
 
@@ -848,7 +852,7 @@ export class CanvasTarget {
  * `NodeUtils` — the r184 graph-free hash surface remains usable by addons;
  * compiler/type-construction helpers retain the loud Proxy-throw behavior.
  */
-export const NodeUtils = new Proxy( Object.freeze( { hash, hashArray, hashString } ), {
+export const NodeUtils = /* @__PURE__ */ new Proxy( /* @__PURE__ */ Object.freeze( { hash, hashArray, hashString } ), {
 	get( target, prop ) {
 
 		if ( prop === Symbol.toPrimitive || prop === 'toString' ) return () => '[NodeUtils slim-stub]';
@@ -904,28 +908,28 @@ export function pass( scene, camera, options ) {
  * These cover the identifiers MRT, backdrop, and post-process examples
  * typically import from `three/tsl`.
  */
-export const output = inertNodeStub();
-export const normalWorld = inertNodeStub();
-export const normalView = inertNodeStub();
-export const normalLocal = inertNodeStub();
-export const normalWorldGeometry = inertNodeStub();
-export const positionWorld = inertNodeStub();
-export const positionView = inertNodeStub();
-export const positionLocal = inertNodeStub();
-export const uv = inertNodeStub();
-export const screenUV = inertNodeStub();
-export const viewportUV = inertNodeStub();
-export const viewportTopLeft = inertNodeStub();
-export const modelWorldMatrix = inertNodeStub();
-export const modelViewMatrix = inertNodeStub();
-export const modelViewProjection = inertNodeStub();
-export const modelPosition = inertNodeStub();
-export const modelScale = inertNodeStub();
-export const cameraPosition = inertNodeStub();
-export const cameraProjectionMatrix = inertNodeStub();
-export const cameraWorldMatrix = inertNodeStub();
-export const cameraNormalMatrix = inertNodeStub();
-export const PI = inertNodeStub();
+export const output = /* @__PURE__ */ inertNodeStub();
+export const normalWorld = /* @__PURE__ */ inertNodeStub();
+export const normalView = /* @__PURE__ */ inertNodeStub();
+export const normalLocal = /* @__PURE__ */ inertNodeStub();
+export const normalWorldGeometry = /* @__PURE__ */ inertNodeStub();
+export const positionWorld = /* @__PURE__ */ inertNodeStub();
+export const positionView = /* @__PURE__ */ inertNodeStub();
+export const positionLocal = /* @__PURE__ */ inertNodeStub();
+export const uv = /* @__PURE__ */ inertNodeStub();
+export const screenUV = /* @__PURE__ */ inertNodeStub();
+export const viewportUV = /* @__PURE__ */ inertNodeStub();
+export const viewportTopLeft = /* @__PURE__ */ inertNodeStub();
+export const modelWorldMatrix = /* @__PURE__ */ inertNodeStub();
+export const modelViewMatrix = /* @__PURE__ */ inertNodeStub();
+export const modelViewProjection = /* @__PURE__ */ inertNodeStub();
+export const modelPosition = /* @__PURE__ */ inertNodeStub();
+export const modelScale = /* @__PURE__ */ inertNodeStub();
+export const cameraPosition = /* @__PURE__ */ inertNodeStub();
+export const cameraProjectionMatrix = /* @__PURE__ */ inertNodeStub();
+export const cameraWorldMatrix = /* @__PURE__ */ inertNodeStub();
+export const cameraNormalMatrix = /* @__PURE__ */ inertNodeStub();
+export const PI = /* @__PURE__ */ inertNodeStub();
 
 /**
  * TSL callable stubs — these are called as functions (`mix(a, b, t)`).
@@ -1079,27 +1083,27 @@ export function reflector( ...args ) { return inertNodeStub( args ); }
  * `renderGroup` — used as a *value* (uniform group identity) in some examples.
  * Exported as an inert node stub with stable identity.
  */
-export const renderGroup = inertNodeStub();
-export const frameId = inertNodeStub();
-export const time = inertNodeStub();
-export const timerGlobal = inertNodeStub();
-export const timerLocal = inertNodeStub();
-export const timerDelta = inertNodeStub();
+export const renderGroup = /* @__PURE__ */ inertNodeStub();
+export const frameId = /* @__PURE__ */ inertNodeStub();
+export const time = /* @__PURE__ */ inertNodeStub();
+export const timerGlobal = /* @__PURE__ */ inertNodeStub();
+export const timerLocal = /* @__PURE__ */ inertNodeStub();
+export const timerDelta = /* @__PURE__ */ inertNodeStub();
 
 /** Backdrop-specific TSL helpers */
-export const backgroundBlurriness = inertNodeStub();
-export const backgroundIntensity = inertNodeStub();
-export const backgroundRotation = inertNodeStub();
+export const backgroundBlurriness = /* @__PURE__ */ inertNodeStub();
+export const backgroundIntensity = /* @__PURE__ */ inertNodeStub();
+export const backgroundRotation = /* @__PURE__ */ inertNodeStub();
 
 /** Screen / viewport node stubs */
-export const screenSize = inertNodeStub();
-export const viewportSize = inertNodeStub();
-export const viewportDepthTexture = inertNodeStub();
-export const viewportLinearDepth = inertNodeStub();
-export const linearDepth = inertNodeStub();
-export const depth = inertNodeStub();
-export const depthPass = inertNodeStub();
+export const screenSize = /* @__PURE__ */ inertNodeStub();
+export const viewportSize = /* @__PURE__ */ inertNodeStub();
+export const viewportDepthTexture = /* @__PURE__ */ inertNodeStub();
+export const viewportLinearDepth = /* @__PURE__ */ inertNodeStub();
+export const linearDepth = /* @__PURE__ */ inertNodeStub();
+export const depth = /* @__PURE__ */ inertNodeStub();
+export const depthPass = /* @__PURE__ */ inertNodeStub();
 
 /** Matrix-based transform helpers used by background and MRT setups */
-export const highpModelNormalViewMatrix = inertNodeStub();
-export const highpModelViewMatrix = inertNodeStub();
+export const highpModelNormalViewMatrix = /* @__PURE__ */ inertNodeStub();
+export const highpModelViewMatrix = /* @__PURE__ */ inertNodeStub();
