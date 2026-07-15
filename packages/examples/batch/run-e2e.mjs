@@ -5382,6 +5382,43 @@ function __applyCapturedTextureState( texture, source ) {
 	}
 }
 
+function __restoreMaterialTextureStatesFromArtifact( material, artifact ) {
+	if ( ! material || ! artifact ) return false;
+	const seen = new Set();
+	let changed = false;
+	for ( const group of artifact.uniformPlan || [] ) {
+		for ( const entry of group.textures || [] ) {
+			const source = entry && entry.source || {};
+			if ( ! source.kind || ! source.kind.startsWith( 'material.' ) ) continue;
+			const property = source.property || source.kind.split( '.' )[ 1 ];
+			if ( ! property || seen.has( property ) ) continue;
+			seen.add( property );
+			const texture = material[ property ];
+			if ( ! ( texture && texture.isTexture === true ) ) continue;
+			let textureChanged = false;
+			for ( const key of [ 'mapping', 'wrapS', 'wrapT', 'magFilter', 'minFilter', 'anisotropy', 'generateMipmaps', 'flipY', 'colorSpace' ] ) {
+				if ( source[ key ] === undefined || texture[ key ] === source[ key ] ) continue;
+				try {
+					texture[ key ] = source[ key ];
+					textureChanged = true;
+				} catch ( _ ) {}
+			}
+			if ( textureChanged ) {
+				texture.needsUpdate = true;
+				__rememberLiveTexture( texture );
+				changed = true;
+			}
+		}
+	}
+	if ( changed ) {
+		try {
+			const diag = __harnessDiagnostics();
+			diag.restoredMaterialTextureStates = ( diag.restoredMaterialTextureStates | 0 ) + 1;
+		} catch ( _ ) {}
+	}
+	return changed;
+}
+
 function __ensureArtifactTextureFallbacks( artifact ) {
 	if ( ! artifact ) return;
 	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
@@ -5511,6 +5548,7 @@ function __lookupLiveTextureForSource( source ) {
 function __wireMaterialPropertyTexturesFromArtifact( material ) {
 	const artifact = material && material.precompiledArtifact;
 	if ( ! artifact ) return false;
+	let changed = __restoreMaterialTextureStatesFromArtifact( material, artifact );
 	const materialSources = [];
 	const seenSources = new Set();
 	for ( const group of artifact.uniformPlan || [] ) {
@@ -5527,7 +5565,6 @@ function __wireMaterialPropertyTexturesFromArtifact( material ) {
 	}
 	if ( materialSources.length === 0 ) return false;
 	const orderFallbacks = __liveMaterialTextures.filter( ( texture ) => texture && texture.isTexture === true && __textureImageReady( texture ) );
-	let changed = false;
 	for ( let i = 0; i < materialSources.length; i ++ ) {
 		const { source, property } = materialSources[ i ];
 		if ( material[ property ] && material[ property ].isTexture === true ) {
