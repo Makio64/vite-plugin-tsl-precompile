@@ -4,11 +4,11 @@ Companion to [ARCHITECTURE.md](./ARCHITECTURE.md) (what the system is).
 
 This file is the **structural** to-do list: the changes that make the plugins easier to evolve and make 100% visual fidelity *reachable* rather than a per-example grind. The latest generated coverage summary currently reports **163 / 226 graded examples** at PSNR >= 30 dB, and that number moves quickly; refresh `packages/examples/batch/results/coverage-summary.md` before quoting it externally. The remaining work is no longer mostly limited by individual rendering bugs — it is limited by where the fidelity logic lives, how the modules are factored, and how brittle the three.js coupling is. Fix the structure and the per-example work gets cheaper, safer, and shippable to real users.
 
-**Current read.** This roadmap is good to use, but it is not "done." The first shared-contract, graph-normalization, slim-support, texture-resolution, hydrator-rebinder, codegen-parse, coverage-config, strict-rewrite, and production-preview wedges have landed (§P1.8 closed end-to-end on 2026-05-14 — ocean `vite build && vite preview` is green and locked in by the preview-smoke CI gate). The unfinished evolution is the second half: move the rest of the harness runtime behavior into `slim-support`, finish shrinking `hydrator.js` into allocation/source/dynamic modules, turn dynamic binding descriptors into emitted/runtime-resolved artifact data, harden the three.js compat matrix, and add a dev-vs-build extractor convergence guard.
+**Current read.** This roadmap is good to use, but it is not "done." The shared contract now owns represented variant families and material-global compute; the runtime can replay signed compute artifacts directly or execute an exact shared-device hybrid transaction. The prebuilt and guarded source profiles retain zero stock Node/TSL modules, and generated helpers converge on one prebuilt runtime identity. The unfinished evolution is narrower: move the remaining harness-only PMREM/pass/shadow policy into `slim-support`, finish the hydrator's source/dynamic-descriptor split, harden the three.js compat matrix, and add a dev-vs-build extractor convergence guard.
 
 Items are ordered **P0 → P3**. Each has: **Symptom** (what's wrong), **Why it blocks evolution/fidelity**, **Change** (target shape), **First step** (a small, low-risk wedge), **Files**.
 
-Last updated: 2026-07-13 (capture/identity/temporal/effect-dependency wedges; previous full audit 2026-06-09).
+Last updated: 2026-07-15 (material compute, represented families, runtime identity, and source-surface diet; previous full audit 2026-06-09).
 
 ---
 
@@ -564,18 +564,64 @@ classified as forbidden stock-adapter residue, so semantic drift rejects the
 rewrite and any rendered stock byte fails the build. A new consumer of an
 omitted export fails at ESM link time instead of silently expanding the shim.
 
-The safe primitives remain useful to developers: `NodeUtils.hash*`, the named
+At that checkpoint, the safe primitives remained useful to developers:
+`NodeUtils.hash*`, the named
 `NodeAccess` export, and `TSL.NodeAccess` now work in slim mode, while compiler
 and type-construction helpers still fail loudly. The source/runtime handshake
-advances to `slim-three-policy@8`, and retained-Node budgets are locked to zero
-modules / zero bytes for every profile. The strict prebuilt measures 768,403
+advanced to `slim-three-policy@8`, and retained-Node budgets were locked to zero
+modules / zero bytes for every profile. The strict prebuilt measured 768,403
 raw / 210,865 gzip-9 bytes, 332 modules, and zero retained Node/TSL modules.
-Minimal and advanced `slim: 'source'` fixtures measure 490,175 raw / 137,680
+Minimal and advanced `slim: 'source'` fixtures measured 490,175 raw / 137,680
 gzip and 519,695 raw / 145,631 gzip respectively, also with zero Node/TSL,
 compiler, stock-adapter, or duplicate bare-Three identity residue. The narrow
 storage `webgpu_compute_reduce` canary passes with no replay errors; the
 ordinary `webgpu_materials_envmaps_groundprojected` canary remains
 pixel-identical (infinite PSNR, 20 material plus 2 auxiliary artifacts).
+
+**Material-owned compute contract and transactional replay (2026-07-15).**
+The shared contract now emits and validates `materialCompute`: embedded kernel
+artifacts, exact resource/render-binding identities, initial state,
+lifecycle/cadence paths, and deterministic schedule order are material-global
+rather than duplicated per render variant. `precompiled` mode hydrates proven
+storage-buffer kernels without retaining a live Node graph. Storage textures
+and other unsupported proofs remain `hybrid-required`; that mode retains exact
+raw kernels only where required, pre-shares sampled/read-only inputs, synchronizes
+only contracted writable outputs, invalidates replaced full-renderer bind
+groups, and aligns the delegated renderer's logical `NodeFrame` without
+advancing its render cadence. Dispatch is serialized and transactional: every
+support-owned lease is revoked before the next scene walk, failed or incomplete
+sync remains closed, and material initialization is cached per renderer plus
+backend `GPUDevice` generation so device replacement cannot reuse stale state.
+
+**Durable represented families and initial validation (2026-07-15).**
+The represented root payload in an artifact family map is now authoritative and
+is projected back onto the durable root while root-only metadata is preserved.
+Private cache keys stay scoped to their family; equivalent cross-family
+selectors are canonical-unioned and
+divergent payload collisions fail closed. The dev capture server serializes
+family merge, validation, content-addressed write, manifest replacement, old
+artifact pruning, and HMR publication through one queue. That validation now
+also covers the first signed user capture, so invalid initial families cannot
+create an artifact, manifest entry, or HMR event.
+
+**Runtime identity and source-surface diet (2026-07-15).** Production generated
+helpers now alias their exact runtime subpaths into the same checked prebuilt
+runtime; the consumer gate requires exactly one runtime, one prebuilt bundle,
+and zero `runtime/src` copies. Replay lighting no longer pulls the broad stub
+module, both renderer constructors use the graph-free `ReplayNodeLibrary`, and
+strict policy `slim-three-policy@10` forbids the stock owner. The exact r184
+`Loader` constructor installs texture tracking only when a concrete loader is
+created, removing the eager fetch/cache/loader closure from loader-free source
+builds while preserving Three constructor identity. Allocation-only compatibility
+stubs are annotated pure so unused Node-material shells tree-shake; a broad
+package `sideEffects: false` was tested and rejected because it removes required
+bootstrap and policy effects.
+
+The current deterministic budget report is: prebuilt 765,909 raw / 210,466
+gzip bytes (338 modules); generated-helper consumer 578,509 raw / 163,030 gzip;
+minimal source 491,728 raw / 137,472 gzip (180 modules); advanced source
+520,230 raw / 145,111 gzip (190 modules). Every profile reports zero compiler,
+stock-adapter, retained Node/TSL, and duplicate bare-Three identity residue.
 
 ---
 
@@ -597,7 +643,7 @@ A verified architecture+performance audit (56 findings raised, 26 confirmed afte
 
 ## The one-paragraph diagnosis
 
-The real fidelity work — PMREM generation, texture rebinding by identity, compute-buffer sync, shadow/pass delegation — still mostly lives in a **9.8k-line test harness** ([`packages/examples/batch/run-e2e.mjs`](packages/examples/batch/run-e2e.mjs)), so fixes can land in scaffolding before adopters benefit. The first productized runtime wedges now exist in [`packages/runtime/src/slim-support/live-scene-index.js`](packages/runtime/src/slim-support/live-scene-index.js), [`packages/runtime/src/slim-support/pmrem.js`](packages/runtime/src/slim-support/pmrem.js), [`packages/runtime/src/slim-support/gpu-texture-share.js`](packages/runtime/src/slim-support/gpu-texture-share.js), and [`packages/runtime/src/slim-support/compute-sync.js`](packages/runtime/src/slim-support/compute-sync.js), including PMREM cache/pending orchestration and cross-renderer compute output sync; fallback-renderer orchestration still needs a public setup surface. The runtime's [`hydrator.js`](packages/runtime/src/hydrator.js) is down to ~660 LOC (656 verified 2026-05-14) from the earlier ~3.8k LOC, with texture/source resolution, binding allocation, built-in texture reconstruction, typed-array helpers, per-frame texture rebinders, and material/light/snapshot UBO writers now split across [`packages/runtime/src/hydrate`](packages/runtime/src/hydrate). The important remaining hydrator debt is no longer "one giant texture resolver"; it is the local orchestration/classification layer that still builds shadow/material/viewport/reflector rebinder entry arrays. The extractor -> codegen -> runtime contract now has a shared package ([`packages/contract`](packages/contract)) for graph normalization, texture-property lists, the `source.kind` registry, dynamic binding descriptors, and artifact validation, removing several drift risks. The vendored three.js fork (~2.8k LOC) plus [`three-rewrite.js`](packages/plugin/src/three-rewrite.js) (1,718 LOC of source-text AST surgery on ~9 three.js files) now fails strict/CI builds on rewrite warnings and has a locked/latest compat matrix, but the deeper upstream seam is still unresolved. And pure slim **cannot generate shaders**, so shadows / clipping / dynamic node subgraphs are blocked — the harness papers over this by spinning up a *full* `WebGPURenderer` on the side, a pattern that is not yet productized.
+The remaining structural risk is no longer the absence of a product runtime: [`createSlimSceneSupport()`](packages/runtime/src/slim-support/scene-support.js) now productizes lazy shared-device full-renderer bootstrap, PMREM, material compute, shadow, pass fallback, texture sharing, and lifecycle-safe disposal. The harness still owns example-specific PMREM scene cloning and several pass/shadow policies, so those fixes can still benefit tests before adopters. The hydrator has already been split into focused allocation, source-resolution, variant, and dynamic-rebinder modules; its remaining debt is the orchestration/classification layer and explicit artifact-level dynamic descriptors. The shared contract now owns graph normalization, source kinds, represented families, material-global compute, and artifact validation. Strict version-locked Three rewrites and residue budgets make drift fail closed, but the upstream private seam remains a maintenance cost. Pure slim intentionally cannot compile arbitrary new graphs: the supported path is exact precompiled artifacts, with opt-in shared-device delegation for the bounded policies that still need a full renderer.
 
 ---
 
@@ -629,16 +675,16 @@ Move the harness `__*` helpers in there one cluster at a time (textures → PMRE
 **Status (2026-07-15).** The focused support modules and public orchestrator have landed incrementally; material-owned compute discovery is now runtime-owned as well.
 [`packages/runtime/src/slim-support/live-scene-index.js`](packages/runtime/src/slim-support/live-scene-index.js) now owns live texture identity indexing, material/node texture cataloguing, and null-image healing.
 [`packages/runtime/src/slim-support/pmrem.js`](packages/runtime/src/slim-support/pmrem.js) now owns PMREM artifact/source detection, cache hits, pending joins, image-readiness skips, generation diagnostics, pending-counter hooks, `_textureRefs` wiring helpers, and PMREM texture selection for artifacts.
-[`packages/runtime/src/slim-support/gpu-texture-share.js`](packages/runtime/src/slim-support/gpu-texture-share.js) now owns the keystone cross-renderer GPU-texture migration primitives — `shareGPUTextureEntry`, `sharePMREMGPUTexture`, `shareShadowGPUTextureIntoSlim`, `markTextureInitialized`, `clearTextureViewCache` — used by PMREM + shadows + future compute sync. Unit-test coverage in [`packages/runtime/test/slim-support-gpu-texture-share.test.js`](packages/runtime/test/slim-support-gpu-texture-share.test.js); 9 cases covering the success paths, missing-data branches, diagnostics counters, bind-group invalidation, and error forwarding.
+[`packages/runtime/src/slim-support/gpu-texture-share.js`](packages/runtime/src/slim-support/gpu-texture-share.js) now owns the keystone cross-renderer GPU-texture migration primitives — `shareGPUTextureEntry`, `sharePMREMGPUTexture`, `shareShadowGPUTextureIntoSlim`, `markTextureInitialized`, `clearTextureViewCache` — used by PMREM, shadows, and compute sync. Unit-test coverage in [`packages/runtime/test/slim-support-gpu-texture-share.test.js`](packages/runtime/test/slim-support-gpu-texture-share.test.js); 9 cases covering the success paths, missing-data branches, diagnostics counters, bind-group invalidation, and error forwarding.
 [`packages/runtime/src/slim-support/compute-sync.js`](packages/runtime/src/slim-support/compute-sync.js) now owns compute-output synchronisation across renderers — `getComputeBindGroups`, `computeNodeUsesStorageTexture`, `syncComputeStorageOutputs` — for the case where the slim renderer borrows a full renderer to run a `ComputeNode` and needs its storage textures/buffers visible to its own draw call. Delegates storage-texture sharing to `shareShadowGPUTextureIntoSlim`; storage-buffer paths cover both "adopt full's GPUBuffer when slim has none" and "copyBufferToBuffer when slim already allocated its own". Unit-test coverage in [`packages/runtime/test/slim-support-compute-sync.test.js`](packages/runtime/test/slim-support-compute-sync.test.js); 8 cases covering bind-group detection, storage-texture sharing with mipmap regeneration, buffer adopt/copy paths, the `onStorageAttr` callback, missing-device gracefulness, and error forwarding.
-[`packages/runtime/src/slim-support/auto-compute.js`](packages/runtime/src/slim-support/auto-compute.js) now owns the material scene walk that used to be `__wireAutoComputeAttrsToArtifact` / `__dispatchAutoComputeNodes`: it retains every material owner of a shared kernel, filters writable full-renderer storage bindings, rejects ambiguous same-shape outputs, retries transient pre-bootstrap states, invalidates each newly wired material once, and dispatches a shared node once per call. The hydrator applies owner-local mappings through [`hydrate/material-compute-bindings.js`](packages/runtime/src/hydrate/material-compute-bindings.js) after exact variant selection; serialized artifacts remain immutable. `createSlimSceneSupport().dispatchMaterialComputes(scene)` is the awaited adopter API, while the harness is now a thin adapter that retains only frozen-screenshot policy. This is explicitly a hybrid-mode feature: it needs a retained real `ComputeNode` graph for the full renderer. A pure `three/tsl`-stubbed source build cannot recreate an arbitrary kernel and needs a separate build-time compute-ownership/sidecar contract.
+[`packages/runtime/src/slim-support/auto-compute.js`](packages/runtime/src/slim-support/auto-compute.js) now owns the material scene walk that used to be `__wireAutoComputeAttrsToArtifact` / `__dispatchAutoComputeNodes`: it retains every material owner of a shared kernel, filters writable full-renderer storage bindings, rejects ambiguous same-shape outputs, retries transient pre-bootstrap states, invalidates each newly wired material once, and dispatches a shared node once per call. The signed `materialCompute` contract supplies exact kernel/resource/render-binding ownership, lifecycle cadence, and schedule order. `precompiled` mode hydrates proven storage-buffer kernels without a live graph; storage textures and other unsupported proofs use `hybrid-required`, which retains the exact raw kernel and delegates one serialized shared-device transaction. Owner-local mappings are applied only after exact render-variant selection, serialized artifacts remain immutable, and `createSlimSceneSupport().dispatchMaterialComputes(scene)` is the awaited adopter API. The harness is now a thin adapter that retains only frozen-screenshot policy.
 [`packages/runtime/src/slim-support/full-renderer-fallback.js`](packages/runtime/src/slim-support/full-renderer-fallback.js) now owns the lazy bootstrap of a full `WebGPURenderer` on the slim renderer's shared `GPUDevice` — the productized version of `__getComputeRenderer`. Single-promise de-duplication, shared-device + `reversedDepthBuffer` forwarding, `shadowMap.enabled` toggle, optional `loadThreeFullModule()` async factory for non-bundler environments, `dispose()` + re-boot semantics. Unit-test coverage in [`packages/runtime/test/slim-support-full-renderer-fallback.test.js`](packages/runtime/test/slim-support-full-renderer-fallback.test.js); 9 cases covering boot/dedup/option-forwarding/error/dispose paths.
 [`packages/runtime/src/slim-support/shadow-fallback.js`](packages/runtime/src/slim-support/shadow-fallback.js) now owns the standard Directional/Spot/Point depth-shadow fallback: it builds and refreshes a cached full-native proxy scene, performs the two lazy shadow warm-up renders, copies live map/matrix/camera state to the slim lights, and shares depth GPU textures. It preserves native `autoUpdate` behavior, validates shared-device/depth conventions, and fails closed for VSM/transmitted shadows, custom shadow nodes, skinned/batched/morphing casters, clipping shadows, and opaque node graphs unless the caller supplies `resolveShadowMaterial`; `createSlimSceneSupport().populateShadowMaps()` is the public orchestrator surface.
 [`packages/runtime/src/slim-support/scene-support.js`](packages/runtime/src/slim-support/scene-support.js) is the public **`createSlimSceneSupport()`** orchestrator referenced at the top of this section — composes the focused support modules into a single opt-in entry point (`indexScene`, `getFullRenderer`, `generatePMREMAsync`, `dispatchMaterialComputes`, `syncComputeOutputs`, `populateShadowMaps`, pass fallback, texture sharing, and `dispose`), with a shared diagnostics bag and an `onError(err, where)` for non-fatal sub-module failures. Focused unit coverage exercises opt-in defaults, fallback boot, material compute ownership/delegation, texture sharing, scene indexing, PMREM routing, pass fallback, and missing shadow-fallback configuration.
 
 `run-e2e.mjs` imports the compute primitives and material dispatcher through the runtime package. Its auto-compute block now supplies only the active full renderer, the existing delegated `slimRenderer.compute()` call, and the harness-specific frozen-frame `Set`; owner discovery, attribute matching, retry state, and invalidation are shared with adopters. The harness still owns PMREM-generator scene cloning and several pass/shadow policies.
 
-**Next step.** Define a contract-side material-compute ownership descriptor so guarded pure-source builds can retain or reconstruct only the kernels they actually delegate, without restoring the Node builder/TSL compiler. In parallel, continue migrating standard shadow call sites onto `support.populateShadowMaps(...)`; keep VSM, custom shadow nodes, and GPU/skinned caster proxies as explicit adapters.
+**Next step.** Continue migrating the remaining harness PMREM/pass/shadow policy onto the existing support surface, and profile whether hybrid kernels can be retained more narrowly without weakening exact resource ownership. Keep VSM, custom shadow nodes, and GPU/skinned caster proxies as explicit adapters.
 
 **Files.** new `packages/runtime/src/slim-support/*`; `packages/runtime/src/index.js` (export); `packages/runtime/package.json` (export map); `packages/examples/batch/run-e2e.mjs` (call, don't inline).
 
@@ -980,6 +1026,25 @@ from that orchestrator; the broader texture-wiring convergence remains open.
 
 **Status (2026-07-13).** The single gzip constant is replaced by the machine-readable [`slim-budget.json`](packages/runtime/build-tools/slim-budget.json) and shared [`slim-bundle-analysis.js`](packages/runtime/build-tools/slim-bundle-analysis.js). The dedicated `pnpm test:slim:budget` gate performs one strict prebuilt Rollup build plus minimal and advanced production `slim: 'source'` Vite builds; it caps raw/gzip bytes, compiler residue, stock-adapter residue, retained Node module count/bytes for every profile, and split bare-Three identity. `pnpm analyze:slim` emits deterministic JSON for CI or trend tooling. After the graph-free shadow, CubeRenderTarget, and Node-core wedges, current observations are 768,403 raw / 210,865 gzip bytes and zero retained Node modules / zero rendered bytes for prebuilt. Minimal and advanced source are 137,680 and 145,631 gzip bytes, also with zero Node residue. All compiler, stock-adapter, and duplicate-identity counts are zero. The expensive three-build check stays outside the quick unit tier and runs once in Linux CI and `release:check`.
 
+**Status (2026-07-15).** The production-helper profile now proves that generated
+`/apply`, `/writers`, `/generated/light-writer`, and
+`/slim-support/node-dependencies` imports converge on the prebuilt singleton:
+exactly one runtime module, one prebuilt module, and zero `runtime/src` modules.
+Both renderer paths construct the graph-free `ReplayNodeLibrary`; stock
+`LightsNode`, `NodeLibrary`, and `StandardNodeLibrary` remain forbidden residue.
+Replay lighting uses its own small `slim-replay-lights-node.js`, independent of
+the broad stubs. Policy `slim-three-policy@10` also rewrites the exact r184 base
+`Loader` constructor so texture tracking installs only when a concrete subclass
+is instantiated. Allocation-only stub and Node-material factory initializers are
+pure, allowing guarded source consumers to omit unused compatibility shells;
+the checked prebuilt intentionally retains the complete exported surface.
+
+The latest budget report is prebuilt 765,909 raw / 210,466 gzip bytes (338
+modules), helper consumer 578,509 raw / 163,030 gzip, minimal source 491,728 raw
+/ 137,472 gzip (180 modules), and advanced source 520,230 raw / 145,111 gzip
+(190 modules). Compiler, stock-adapter, retained Node/TSL, and duplicate
+bare-Three identity residue remain zero.
+
 **Core entry wedge (2026-07-13).** `@tsl-precompile/runtime/core` now exposes
 one explicit additive AOT surface: `__applyPrecompiled`, the three public user-
 artifact registry operations, and the twelve uniform writers. It does not
@@ -1017,7 +1082,13 @@ fail-closed kind gates. On the real getting-started source build this removes
 about 23.8 KiB raw / 6.0 KiB gzip while retaining zero compiler,
 stock-adapter, or Node-runtime modules.
 
-**Remaining.** `sideEffects` annotations in [`packages/runtime/package.json`](packages/runtime/package.json) (careful: `hydrator.js` has a real module-init side effect — `installLiveTextureRegistryPatches()`; list side-effectful files explicitly rather than `false`); lazy TSL/PassNode stub entries if the analyzer shows them dominating; opt-in on-disk artifact minification (low value — dev artifacts are gitignored test fixtures).
+**Remaining.** Do not add a package-wide `sideEffects: false`: the focused build
+experiment removed required bootstrap and policy effects. Consider an explicit,
+audited side-effect manifest only if profiling justifies it; otherwise prefer
+narrow feature entries and pure allocation annotations. Deeper source feature
+entries remain an option when the analyzer identifies a dominant closure.
+Opt-in on-disk artifact minification remains low value because dev artifacts are
+gitignored test fixtures.
 
 **Files.** [core.js](packages/runtime/src/core.js), [core.d.ts](packages/runtime/types/core.d.ts), [core-entry.test.js](packages/runtime/test/core-entry.test.js), [package.json](packages/runtime/package.json), [slim-stubs.js](packages/runtime/src/slim-stubs.js), [slim-entry.js](packages/runtime/src/slim-entry.js), [index.js](packages/runtime/src/index.js), [slim-bundle.test.js](packages/plugin/test/unit/slim-bundle.test.js).
 
