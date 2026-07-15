@@ -29,6 +29,15 @@ states are correlated later by the pair `(renderObject.material, cacheKey)`.
 families can be passed to `compileTSL(..., { renderObjectHarvest })`. Consumers
 must adopt a complete family atomically; an unavailable state or selector makes
 the whole material family fall back to synthetic extraction.
+
+Local assumption: Three r184's `compileAsync()` queues mutable material
+references after selecting transparent back/front sides, restores DoubleSide,
+and builds the queued work afterward. The local
+`compile-async-double-pass.js` adapter temporarily routes only a matched
+`backSide` request and its following front request through r184's own synchronous
+`_createObjectPipeline` branch, while the selected side is still active. Keep
+the pass ID, pair counting, private method restoration, and the focused
+two-sided transmission regression together when upgrading Three.
 `compileTSL.js` re-exports that factory so the browser marker can preload the
 one Vite-aliased dev module instead of introducing another private-source alias.
 

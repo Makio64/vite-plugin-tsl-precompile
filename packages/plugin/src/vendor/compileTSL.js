@@ -23,6 +23,7 @@
  */
 
 import { extractUniformPlan } from './extractUniformPlan.js';
+import { compileDoublePassPairsSynchronously } from './compile-async-double-pass.js';
 import { beginRenderObjectHarvest } from './render-object-observer.js';
 export { beginRenderObjectHarvest };
 import { DataUtils, FloatType, HalfFloatType, RGBAFormat, RenderTarget } from 'three';
@@ -2191,7 +2192,16 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 		}
 
-		await renderer.compileAsync( scene, camera );
+		const restoreObjectPipeline = compileDoublePassPairsSynchronously( renderer );
+		try {
+
+			await renderer.compileAsync( scene, camera );
+
+		} finally {
+
+			restoreObjectPipeline();
+
+		}
 
 		// Compute precompile — each computeAsync call forces NodeManager
 		// .getForCompute to build the pipeline and stash the state on the

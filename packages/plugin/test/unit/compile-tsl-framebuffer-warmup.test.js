@@ -163,6 +163,78 @@ test( 'compileTSL signs the mixed attachment topology of a borrowed PassNode tar
 
 } );
 
+test( 'compileTSL preserves side-specialized two-pass transmission without leaking render objects', async () => {
+
+	installMockWebGPU();
+	const webgpu = await import( 'three/webgpu' );
+	const core = await import( 'three' );
+	const renderer = new webgpu.WebGPURenderer( { canvas: makeCanvas(), antialias: false } );
+	await renderer.init();
+
+	const scene = new core.Scene();
+	const camera = new core.PerspectiveCamera( 45, 1, 0.1, 10 );
+	camera.position.z = 3;
+	const material = new webgpu.MeshPhysicalNodeMaterial( {
+		transmission: 1,
+		thickness: 0.1,
+		attenuationDistance: 1,
+		side: core.DoubleSide,
+		forceSinglePass: false,
+	} );
+	const geometry = new core.BoxGeometry();
+	scene.add( new core.Mesh( geometry, material ) );
+	scene.add( new core.DirectionalLight( 0xffffff, 1 ) );
+
+	const originalObjectsDispose = renderer._objects.dispose;
+	let objectsDisposeCalls = 0;
+	renderer._objects.dispose = function countedObjectsDispose( ...args ) {
+
+		objectsDisposeCalls ++;
+		return originalObjectsDispose.apply( this, args );
+
+	};
+	const listenerCounts = [];
+	try {
+
+		for ( let captureIndex = 0; captureIndex < 2; captureIndex ++ ) {
+
+			const artifacts = await compileTSL( renderer, scene, camera, { noGlobalMRT: true } );
+			const variants = artifacts.byMaterialVariants.get( material.uuid ) || [];
+			assert.equal( variants.length, 2, 'capture retains one exact shader per rendered side' );
+			const bySide = new Map();
+			for ( const variant of variants ) {
+
+				const sides = new Set( ( variant.renderContextSelectors || [] ).map( ( selector ) => JSON.parse( selector ).material.side ) );
+				assert.equal( sides.size, 1 );
+				bySide.set( [ ...sides ][ 0 ], variant );
+
+			}
+			assert.deepEqual( [ ...bySide.keys() ].sort(), [ core.FrontSide, core.BackSide ].sort() );
+			const backShader = bySide.get( core.BackSide ).fragmentShader;
+			const frontShader = bySide.get( core.FrontSide ).fragmentShader;
+			assert.match( backShader, /NORMAL_normalView = \( normalViewGeometry \* vec3<f32>\( -1\.0 \) \);/ );
+			assert.match( frontShader, /NORMAL_normalView = normalViewGeometry;/ );
+			assert.doesNotMatch( backShader, /front_facing/ );
+			assert.doesNotMatch( frontShader, /front_facing/ );
+			assert.equal( material.side, core.DoubleSide );
+			listenerCounts.push( material._listeners && material._listeners.dispose ? material._listeners.dispose.length : 0 );
+
+		}
+		assert.equal( objectsDisposeCalls, 0, 'capture never globally drops the renderer object cache' );
+		assert.equal( listenerCounts[ 0 ], 2, 'one back and one front RenderObject listen to the material' );
+		assert.deepEqual( listenerCounts, [ 2, 2 ], 'repeated capture reuses the exact RenderObjects' );
+
+	} finally {
+
+		renderer._objects.dispose = originalObjectsDispose;
+		material.dispose();
+		geometry.dispose();
+		renderer.dispose();
+
+	}
+
+} );
+
 test( 'compileTSL correlates the active renderer output across stale caches and restores an offscreen target', async () => {
 
 	installMockWebGPU();
