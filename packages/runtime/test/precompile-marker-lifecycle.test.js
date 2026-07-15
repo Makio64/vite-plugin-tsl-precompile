@@ -9,6 +9,7 @@ import {
 	__createCaptureObjectForTests,
 } from '../src/precompile-marker.js';
 import { __resetRegistry, getArtifact } from '../src/artifact-loader.js';
+import { hashArtifactContentSync } from '../src/graph-hash.js';
 import { takeRenderObjectHarvest } from '../src/auxiliary/render-object-harvest-handoff.js';
 import { beginRenderObjectHarvest } from '../../plugin/src/vendor/render-object-observer.js';
 
@@ -259,8 +260,13 @@ async function withBrowser( run, { worker = false } = {} ) {
 	globalThis.__TSLP_THREE_PACKAGE_VERSION__ = '0.184.0';
 	globalThis.fetch = async ( _url, init ) => {
 
-		posts.push( JSON.parse( init.body ) );
-		return { ok: true, text: async () => 'ok' };
+		const posted = JSON.parse( init.body );
+		posts.push( posted );
+		return {
+			ok: true,
+			json: async () => ( { ok: true, name: posted.name, hash: posted.hash, artifact: posted.artifact } ),
+			text: async () => 'ok',
+		};
 
 	};
 
@@ -312,6 +318,108 @@ test( 'accepted recaptures replace the live inspector artifact', async () => {
 		material.precompile( 'live-recapture', context );
 		await waitFor( () => posts.length === 2 && getArtifact( 'live-recapture' )?.__hash === posts[ 1 ].hash, 'replacement live artifact' );
 		assert.notEqual( posts[ 1 ].hash, firstHash );
+
+	} );
+
+} );
+
+test( 'distinct same-callsite instances publish the server-accepted aggregate', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'aggregate-instances' );
+		const first = new three.Material();
+		const second = new three.Material();
+		const firstContext = mount( three, first );
+		const secondContext = mount( three, second );
+		const renderer = { render() {} };
+		install( three, async ( _renderer, scene ) => {
+
+			let captured = null;
+			scene.traverse( ( object ) => {
+
+				if ( object.material ) captured = object.material;
+
+			} );
+			return artifactSet( captured );
+
+		} );
+		setDevRenderer( renderer, three );
+		globalThis.fetch = async ( _url, init ) => {
+
+			const posted = JSON.parse( init.body );
+			posts.push( posted );
+			const acceptedArtifact = posts.length === 2
+				? { ...posted.artifact, serverAggregate: { members: 2 } }
+				: posted.artifact;
+			const acceptedHash = hashArtifactContentSync( acceptedArtifact, {
+				shape: `material:${ posted.name }`,
+				threeVersion: acceptedArtifact.sourceThreeVersion,
+				pluginVersion: acceptedArtifact.sourceHashVersion,
+			} );
+			return {
+				ok: true,
+				json: async () => ( { ok: true, name: posted.name, hash: acceptedHash, artifact: acceptedArtifact } ),
+			};
+
+		};
+		const revision = 'a'.repeat( 64 );
+		first.precompile( 'shared-callsite', firstContext, 'src/materials.js:1:0', revision );
+		second.precompile( 'shared-callsite', secondContext, 'src/materials.js:1:0', revision );
+
+		await waitFor( () => posts.length === 2 && getArtifact( 'shared-callsite' )?.artifact?.serverAggregate?.members === 2, 'server aggregate publication' );
+		assert.deepEqual( posts.map( ( post ) => post.sourceIdentity ), [ 'src/materials.js:1:0', 'src/materials.js:1:0' ] );
+		assert.deepEqual( posts.map( ( post ) => post.sourceRevision ), [ revision, revision ] );
+
+	} );
+
+} );
+
+test( 'an incompatible server aggregate cannot replace the accepted live artifact', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'incompatible-aggregate' );
+		const material = new three.Material();
+		const context = mount( three, material );
+		const renderer = { render() {} };
+		let revision = 0;
+		install( three, async () => {
+
+			const artifacts = artifactSet( material );
+			artifacts[ 0 ].fragmentShader = `fragment-${ ++ revision }`;
+			return artifacts;
+
+		} );
+		setDevRenderer( renderer, three );
+		globalThis.fetch = async ( _url, init ) => {
+
+			const posted = JSON.parse( init.body );
+			posts.push( posted );
+			const acceptedArtifact = posts.length === 2
+				? { ...posted.artifact, sourceGraphHash: 'f'.repeat( 64 ) }
+				: posted.artifact;
+			const acceptedHash = hashArtifactContentSync( acceptedArtifact, {
+				shape: `material:${ posted.name }`,
+				threeVersion: acceptedArtifact.sourceThreeVersion,
+				pluginVersion: acceptedArtifact.sourceHashVersion,
+			} );
+			return {
+				ok: true,
+				json: async () => ( { ok: true, name: posted.name, hash: acceptedHash, artifact: acceptedArtifact } ),
+			};
+
+		};
+
+		material.precompile( 'incompatible-live-aggregate', context );
+		await waitFor( () => posts.length === 1 && getArtifact( 'incompatible-live-aggregate' )?.__hash === posts[ 0 ].hash, 'first accepted artifact' );
+		const acceptedHash = getArtifact( 'incompatible-live-aggregate' ).__hash;
+		material.precompile( 'incompatible-live-aggregate', context );
+		await waitFor( () => posts.length === 2, 'incompatible aggregate response' );
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		assert.notEqual( posts[ 1 ].hash, acceptedHash );
+		assert.equal( getArtifact( 'incompatible-live-aggregate' ).__hash, acceptedHash );
 
 	} );
 

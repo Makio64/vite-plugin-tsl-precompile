@@ -46,6 +46,8 @@ import { resolve, join, dirname, relative, isAbsolute, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import { computeArtifactContentHash } from './hash.js';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
+import { collectArtifactVariantCandidates, mergeArtifactVariantFamily } from '@tsl-precompile/contract/artifact-variants';
+import { validateArtifact } from '@tsl-precompile/contract/kinds';
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
 
 const CAPTURE_PATH = '/__tsl-precompile/capture';
@@ -306,22 +308,32 @@ function econflict( message ) {
 
 async function writeArtifact( artifactsDir, manifestPath, payload ) {
 
-	const filename = `${ payload.name }.${ shortHash( payload.hash ) }.json`;
-	const filepath = containedArtifactPath( artifactsDir, filename );
 	const manifest = await readManifest( manifestPath );
-	const sourceIdentity = captureSourceIdentity( payload );
-	const incomingOwner = payload.sourceIdentity ? {
-		identity: payload.sourceIdentity,
-		revision: payload.sourceRevision,
-	} : null;
 	const existing = manifest[ payload.name ];
-	let sourceOwners = [];
+	const storedCapture = existing && typeof existing === 'object'
+		? await readStoredCapture( artifactsDir, existing )
+		: null;
+	let sourceOwners = existing && typeof existing === 'object'
+		? await storedSourceOwners( artifactsDir, existing )
+		: [];
+	const aggregate = aggregateSignedMaterialFamily( payload, existing, storedCapture, sourceOwners );
+	const acceptedPayload = aggregate ? {
+		...payload,
+		artifact: aggregate.artifact,
+		hash: aggregate.hash,
+	} : payload;
+	const filename = `${ acceptedPayload.name }.${ shortHash( acceptedPayload.hash ) }.json`;
+	const filepath = containedArtifactPath( artifactsDir, filename );
+	const sourceIdentity = captureSourceIdentity( acceptedPayload );
+	const incomingOwner = acceptedPayload.sourceIdentity ? {
+		identity: acceptedPayload.sourceIdentity,
+		revision: acceptedPayload.sourceRevision,
+	} : null;
 
 	if ( existing && typeof existing === 'object' ) {
 
-		sourceOwners = await storedSourceOwners( artifactsDir, existing );
 		const existingSourceIdentity = await storedSourceIdentity( artifactsDir, existing );
-		const hashesConflict = existing.hash !== payload.hash;
+		const hashesConflict = existing.hash !== acceptedPayload.hash;
 		const isShapeToCallsiteMigration = existingSourceIdentity && sourceIdentity && existingSourceIdentity.kind !== 'callsite' && sourceIdentity.kind === 'callsite';
 		const sourcesConflict = hashesConflict && existingSourceIdentity && sourceIdentity && existingSourceIdentity.kind !== 'legacy' && ! isShapeToCallsiteMigration && existingSourceIdentity.value !== sourceIdentity.value;
 		const sourceCannotProveSame = hashesConflict && existingSourceIdentity && existingSourceIdentity.kind !== 'legacy' && ( ! existingSourceIdentity.value || ! sourceIdentity || ! sourceIdentity.value );
@@ -335,7 +347,7 @@ async function writeArtifact( artifactsDir, manifestPath, payload ) {
 	}
 	if ( incomingOwner ) {
 
-		if ( existing && existing.hash !== payload.hash ) {
+		if ( existing && existing.hash !== acceptedPayload.hash ) {
 
 			sourceOwners = [ incomingOwner ];
 
@@ -350,21 +362,27 @@ async function writeArtifact( artifactsDir, manifestPath, payload ) {
 	}
 
 	const storedArtifact = {
-		__hash: payload.hash,
-		__name: payload.name,
+		__hash: acceptedPayload.hash,
+		__name: acceptedPayload.name,
 		...( sourceOwners.length > 0 ? { __sourceOwners: sourceOwners } : {} ),
-		artifact: payload.artifact,
+		artifact: acceptedPayload.artifact,
 	};
 	const manifestEntry = {
 		file: filename,
-		hash: payload.hash,
+		hash: acceptedPayload.hash,
 		...( sourceIdentity ? { sourceIdentity: sourceIdentity.value, sourceIdentityKind: sourceIdentity.kind } : {} ),
 		...( sourceOwners.length > 0 ? { sourceOwners } : {} ),
 	};
-	if ( await captureJsonFileMatches( filepath, storedArtifact, { contentShape: `material:${ payload.name }` } ) && captureManifestEntryMatches( existing, manifestEntry ) ) {
+	if ( await captureJsonFileMatches( filepath, storedArtifact, { contentShape: `material:${ acceptedPayload.name }` } ) && captureManifestEntryMatches( existing, manifestEntry ) ) {
 
-		await pruneStaleCaptures( artifactsDir, payload.name, filename );
-		return { name: payload.name, hash: payload.hash, file: filename, changed: false };
+		await pruneStaleCaptures( artifactsDir, acceptedPayload.name, filename );
+		return {
+			name: acceptedPayload.name,
+			hash: acceptedPayload.hash,
+			file: filename,
+			artifact: storedCapture && storedCapture.artifact || acceptedPayload.artifact,
+			changed: false,
+		};
 
 	}
 
@@ -374,15 +392,103 @@ async function writeArtifact( artifactsDir, manifestPath, payload ) {
 
 	await atomicWriteFile( filepath, body );
 
-	manifest[ payload.name ] = {
+	manifest[ acceptedPayload.name ] = {
 		...manifestEntry,
 		capturedAt: new Date().toISOString(),
 	};
 	await atomicWriteFile( manifestPath, JSON.stringify( manifest, null, 2 ) );
 
-	await pruneStaleCaptures( artifactsDir, payload.name, filename );
+	await pruneStaleCaptures( artifactsDir, acceptedPayload.name, filename );
 
-	return { name: payload.name, hash: payload.hash, file: filename, changed: true };
+	return {
+		name: acceptedPayload.name,
+		hash: acceptedPayload.hash,
+		file: filename,
+		artifact: acceptedPayload.artifact,
+		changed: true,
+	};
+
+}
+
+const SIGNED_FAMILY_COMPATIBILITY_FIELDS = Object.freeze( [
+	'sourceGraphHash',
+	'sourceHashVersion',
+	'sourceThreeVersion',
+	'sourceValidationMode',
+] );
+
+/**
+ * Extend a durable signed family only when both captures prove the same
+ * call-site owner, source revision, source graph, and exact toolchain. This
+ * runs inside the manifest write queue, so every concurrent material instance
+ * sees the family accepted by the request immediately before it.
+ */
+function aggregateSignedMaterialFamily( payload, existing, storedCapture, sourceOwners ) {
+
+	if ( ! existing || typeof existing !== 'object' || ! storedCapture || typeof storedCapture !== 'object' ) return null;
+	if ( typeof payload.sourceIdentity !== 'string' || typeof payload.sourceRevision !== 'string' ) return null;
+	if ( sourceOwners.length !== 1 || sourceOwners[ 0 ].identity !== payload.sourceIdentity || sourceOwners[ 0 ].revision !== payload.sourceRevision ) return null;
+
+	const storedArtifact = storedCapture.artifact;
+	const incomingArtifact = payload.artifact;
+	if ( ! isCurrentFullySignedArtifact( storedArtifact ) || ! isCurrentFullySignedArtifact( incomingArtifact ) ) return null;
+	if ( ! SIGNED_FAMILY_COMPATIBILITY_FIELDS.every( ( field ) =>
+		typeof storedArtifact[ field ] === 'string' && storedArtifact[ field ].length > 0 && storedArtifact[ field ] === incomingArtifact[ field ]
+	) ) {
+
+		throw econflict( `[tsl-precompile] artifact name ${ JSON.stringify( payload.name ) } cannot aggregate captures from one source revision with incompatible graph or toolchain metadata.` );
+
+	}
+
+	const storedHash = computeArtifactContentHash( storedArtifact, {
+		shape: `material:${ payload.name }`,
+		threeVersion: storedArtifact.sourceThreeVersion,
+		pluginVersion: storedArtifact.sourceHashVersion,
+	} );
+	if ( existing.hash !== storedHash || storedCapture.__hash !== storedHash ) {
+
+		throw econflict( `[tsl-precompile] artifact name ${ JSON.stringify( payload.name ) } cannot aggregate because its stored content hash is stale or invalid.` );
+
+	}
+
+	const mergedArtifact = structuredClone( storedArtifact );
+	try {
+
+		mergeArtifactVariantFamily( mergedArtifact, [ storedArtifact, incomingArtifact ] );
+
+	} catch ( error ) {
+
+		throw econflict( `[tsl-precompile] artifact name ${ JSON.stringify( payload.name ) } has an incompatible signed variant family: ${ error.message || String( error ) }` );
+
+	}
+
+	const validation = validateArtifact( mergedArtifact, { label: `captured artifact ${ JSON.stringify( payload.name ) }` } );
+	if ( ! validation.ok ) {
+
+		throw econflict( `[tsl-precompile] artifact name ${ JSON.stringify( payload.name ) } has an incompatible signed variant family: ${ validation.errors.map( ( error ) => error.message ).join( '; ' ) }` );
+
+	}
+	const mergedHash = computeArtifactContentHash( mergedArtifact, {
+		shape: `material:${ payload.name }`,
+		threeVersion: mergedArtifact.sourceThreeVersion,
+		pluginVersion: mergedArtifact.sourceHashVersion,
+	} );
+
+	// A subset replay or capture-session UUID/cache-key churn must preserve the
+	// exact durable family rather than replacing it with an equivalent clone.
+	if ( mergedHash === storedHash ) return { artifact: storedArtifact, hash: storedHash };
+	return { artifact: mergedArtifact, hash: mergedHash };
+
+}
+
+function isCurrentFullySignedArtifact( artifact ) {
+
+	if ( ! artifact || artifact.artifactContentHashVersion !== ARTIFACT_CONTENT_HASH_VERSION ) return false;
+	const candidates = collectArtifactVariantCandidates( artifact );
+	return candidates.length > 0 && candidates.every( ( candidate ) =>
+		Array.isArray( candidate.renderContextSelectors ) && candidate.renderContextSelectors.length > 0 &&
+		candidate.renderContextSelectors.every( ( selector ) => typeof selector === 'string' && selector.length > 0 )
+	);
 
 }
 
@@ -592,6 +698,23 @@ async function storedSourceIdentity( artifactsDir, entry ) {
 		const stored = JSON.parse( await readFile( filepath, 'utf8' ) );
 		const value = sourceIdentityFromArtifact( stored.artifact || stored );
 		return value ? { value, kind: 'legacy' } : null;
+
+	} catch ( _ ) {
+
+		return null;
+
+	}
+
+}
+
+async function readStoredCapture( artifactsDir, entry ) {
+
+	if ( ! entry || typeof entry.file !== 'string' || entry.file.length === 0 ) return null;
+	try {
+
+		const filepath = containedArtifactPath( artifactsDir, entry.file );
+		const stored = JSON.parse( await readFile( filepath, 'utf8' ) );
+		return stored && typeof stored === 'object' && ! Array.isArray( stored ) ? stored : null;
 
 	} catch ( _ ) {
 

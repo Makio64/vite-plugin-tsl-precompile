@@ -1626,18 +1626,27 @@ async function captureMaterialInDev( entry ) {
 			return;
 
 		}
+		const accepted = await acceptedCaptureResponse( response, {
+			name,
+			hash,
+			artifact: sanitized,
+			threeVersion: sourceThreeVersion,
+		} );
+		const acceptedUnsupportedKinds = accepted.artifact === sanitized
+			? unsupportedKinds
+			: collectCodegenUnsupportedKinds( accepted.artifact, codegen );
 
 		// Publish only artifacts accepted by the capture endpoint. Development
 		// recaptures intentionally replace the earlier inspector entry; production
 		// registrations continue to reject divergent hashes in registerArtifact().
 		__upsertArtifactForDev( name, {
-			__hash: hash,
+			__hash: accepted.hash,
 			__name: name,
-			artifact: sanitized,
-			__unsupportedKinds: unsupportedKinds,
+			artifact: accepted.artifact,
+			__unsupportedKinds: acceptedUnsupportedKinds,
 		} );
 
-		console.info( `[tsl-precompile] captured "${ name }" (hash ${ hash.slice( 0, 12 ) })` );
+		console.info( `[tsl-precompile] captured "${ name }" (hash ${ accepted.hash.slice( 0, 12 ) })` );
 
 	} catch ( err ) {
 
@@ -1659,6 +1668,50 @@ async function captureMaterialInDev( entry ) {
 		if ( guardedRender && captureRenderer.render === installedRenderGuard ) captureRenderer.render = guardedRender;
 
 	}
+
+}
+
+async function acceptedCaptureResponse( response, fallback ) {
+
+	let body = null;
+	if ( response && typeof response.json === 'function' ) {
+
+		try { body = await response.json(); } catch ( _ ) { /* custom endpoints may return an empty success body */ }
+
+	}
+	if ( ! body || typeof body !== 'object' || ( body.artifact === undefined && body.hash === undefined ) ) return fallback;
+	if ( body.name !== undefined && body.name !== fallback.name ) {
+
+		throw new Error( `[tsl-precompile] dev capture accepted the wrong artifact name ${ JSON.stringify( body.name ) } for ${ JSON.stringify( fallback.name ) }.` );
+
+	}
+	const artifact = body.artifact;
+	const hash = typeof body.hash === 'string' ? body.hash.replace( /^sha256:/i, '' ).toLowerCase() : '';
+	if ( ! artifact || typeof artifact !== 'object' || ! /^[a-f0-9]{64}$/.test( hash ) ) {
+
+		throw new Error( `[tsl-precompile] dev capture returned an incomplete accepted artifact for ${ JSON.stringify( fallback.name ) }.` );
+
+	}
+	if ( artifact.artifactContentHashVersion !== ARTIFACT_CONTENT_HASH_VERSION ||
+		artifact.sourceThreeVersion !== fallback.threeVersion ||
+		artifact.sourceHashVersion !== ARTIFACT_TOOLCHAIN_VERSION ||
+		artifact.sourceGraphHash !== fallback.artifact.sourceGraphHash ||
+		artifact.sourceValidationMode !== fallback.artifact.sourceValidationMode ) {
+
+		throw new Error( `[tsl-precompile] dev capture returned an incompatible accepted artifact for ${ JSON.stringify( fallback.name ) }.` );
+
+	}
+	const computed = hashArtifactContentSync( artifact, {
+		shape: `material:${ fallback.name }`,
+		threeVersion: fallback.threeVersion,
+		pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
+	} );
+	if ( computed !== hash ) {
+
+		throw new Error( `[tsl-precompile] dev capture returned an accepted artifact whose content does not match hash ${ hash }.` );
+
+	}
+	return { name: fallback.name, hash, artifact };
 
 }
 

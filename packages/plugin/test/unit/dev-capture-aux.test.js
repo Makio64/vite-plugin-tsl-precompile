@@ -17,7 +17,71 @@ import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { attachDevCapture } from '../../src/dev-capture-server.js';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
+import { collectArtifactVariantCandidates } from '@tsl-precompile/contract/artifact-variants';
+import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
 import { computeArtifactContentHash } from '../../src/hash.js';
+
+const SIGNED_SELECTOR_A = stableJsonStringify( {
+	version: 'render-object-selector@1',
+	target: { surface: 'default' },
+} );
+const SIGNED_SELECTOR_B = stableJsonStringify( {
+	version: 'render-object-selector@1',
+	target: { surface: 'offscreen-2d' },
+} );
+const SIGNED_SELECTOR_C = stableJsonStringify( {
+	version: 'render-object-selector@1',
+	target: { surface: 'offscreen-cube' },
+} );
+
+function makeSignedArtifact( options = {} ) {
+
+	const selector = options.selector || SIGNED_SELECTOR_A;
+	const shader = options.shader || 'signed-family-shader';
+	return {
+		version: 3,
+		cacheKey: options.cacheKey || 'private-family-cache',
+		materialShape: 'node-material',
+		renderContextSelectors: [ selector ],
+		vertexShader: `vertex:${ shader }`,
+		fragmentShader: `fragment:${ shader }`,
+		bindings: [],
+		uniformPlan: [ {
+			textures: [ { source: { kind: 'artifact.texture', textureUuid: options.textureUuid || 'capture-texture' } } ],
+		} ],
+		artifactContentHashVersion: ARTIFACT_CONTENT_HASH_VERSION,
+		sourceGraphHash: options.sourceGraphHash || 'f'.repeat( 64 ),
+		sourceHashVersion: options.sourceHashVersion || '0.1.0',
+		sourceThreeVersion: options.sourceThreeVersion || '0.184.0',
+		renderContextSignature: selector,
+		sourceValidationMode: options.sourceValidationMode || 'runtime-graph',
+	};
+
+}
+
+function makeSignedPayload( name, sourceIdentity, sourceRevision, artifact ) {
+
+	return {
+		name,
+		hash: computeArtifactContentHash( artifact, {
+			shape: `material:${ name }`,
+			threeVersion: artifact.sourceThreeVersion,
+			pluginVersion: artifact.sourceHashVersion,
+		} ),
+		sourceIdentity,
+		sourceRevision,
+		artifact,
+	};
+
+}
+
+function readUserCapture( artifactsDir, name ) {
+
+	const manifest = JSON.parse( readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' ) );
+	const stored = JSON.parse( readFileSync( join( artifactsDir, manifest[ name ].file ), 'utf8' ) );
+	return { manifest, entry: manifest[ name ], stored };
+
+}
 
 function makeFakeViteServer( options = {} ) {
 
@@ -104,6 +168,7 @@ test( 'dev-capture: user-material payload writes <name>.<hash>.json + manifest',
 		assert.equal( r.status, 200 );
 		assert.equal( r.json.ok, true );
 		assert.equal( r.json.name, 'ocean-water' );
+		assert.deepEqual( r.json.artifact, { uniformPlan: [], vertexShader: 'v', fragmentShader: 'f' } );
 
 		const files = readdirSync( artifactsDir );
 		assert.ok( files.includes( 'manifest.json' ) );
@@ -161,6 +226,7 @@ test( 'dev-capture: identical user recapture is a file and HMR no-op', async () 
 
 		assert.equal( repeated.status, 200 );
 		assert.equal( repeated.json.changed, false );
+		assert.deepEqual( repeated.json.artifact, { uniformPlan: [], vertexShader: 'v', fragmentShader: 'f' } );
 		assert.equal( readFileSync( join( artifactsDir, artifactFile ), 'utf8' ), artifactBefore );
 		assert.equal( readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' ), manifestBefore );
 		assert.equal( vite._invalidated.length, 1, 'only the first capture invalidates the virtual module' );
@@ -182,7 +248,7 @@ test( 'dev-capture: equivalent signed recapture ignores private cache and UUID c
 	attachDevCapture( vite, { artifactsDir } );
 	const { http, port } = await spinUpServer( vite );
 	const sourceRevision = 'e'.repeat( 64 );
-	const selector = '{"version":"render-object-selector@1","target":{"surface":"default"}}';
+	const selector = SIGNED_SELECTOR_A;
 	const makeArtifact = ( cacheKey, textureUuid ) => ( {
 		version: 3,
 		cacheKey,
@@ -240,6 +306,210 @@ test( 'dev-capture: equivalent signed recapture ignores private cache and UUID c
 		assert.equal( readFileSync( join( artifactsDir, first.json.file ), 'utf8' ), artifactBefore );
 		assert.equal( readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' ), manifestBefore );
 		assert.equal( vite._invalidated.length, 1 );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: concurrent signed selectors aggregate durably for one source revision', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-signed-family-' ) );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+	const name = 'signed-family';
+	const sourceIdentity = 'src/material-loop.js:precompile:0';
+	const sourceRevision = 'e'.repeat( 64 );
+	const firstArtifact = makeSignedArtifact( {
+		cacheKey: 'shared-private-cache',
+		selector: SIGNED_SELECTOR_A,
+		textureUuid: 'first-capture-texture',
+	} );
+	const secondArtifact = makeSignedArtifact( {
+		cacheKey: 'shared-private-cache',
+		selector: SIGNED_SELECTOR_B,
+		textureUuid: 'second-capture-texture',
+	} );
+
+	try {
+
+		const responses = await Promise.all( [ firstArtifact, secondArtifact ].map( ( artifact ) => postJSON(
+			port,
+			'/__tsl-precompile/capture',
+			makeSignedPayload( name, sourceIdentity, sourceRevision, artifact ),
+		) ) );
+		assert.deepEqual( responses.map( ( response ) => response.status ), [ 200, 200 ], responses.map( ( response ) => response.text ).join( '\n' ) );
+
+		const { entry, stored } = readUserCapture( artifactsDir, name );
+		assert.deepEqual( stored.artifact.renderContextSelectors, [ SIGNED_SELECTOR_A, SIGNED_SELECTOR_B ].sort() );
+		assert.equal( collectArtifactVariantCandidates( stored.artifact ).length, 1, 'the shared private cache key stays one authoritative member' );
+		const expectedHash = computeArtifactContentHash( stored.artifact, {
+			shape: `material:${ name }`,
+			threeVersion: stored.artifact.sourceThreeVersion,
+			pluginVersion: stored.artifact.sourceHashVersion,
+		} );
+		assert.equal( entry.hash, expectedHash );
+		assert.equal( stored.__hash, expectedHash );
+		const acceptedFinal = responses.find( ( response ) => response.json.hash === expectedHash );
+		assert.ok( acceptedFinal, 'one queued response returns the final durable family' );
+		assert.deepEqual( acceptedFinal.json.artifact, stored.artifact );
+		assert.deepEqual( entry.sourceOwners, [ { identity: sourceIdentity, revision: sourceRevision } ] );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: replaying either signed subset cannot shrink the durable family', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-signed-subset-' ) );
+	const name = 'signed-subset-family';
+	const moduleId = `\0virtual:tsl-precompile/${ name }`;
+	const vite = makeFakeViteServer( { moduleId } );
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+	const sourceIdentity = 'src/material-loop.js:precompile:1';
+	const sourceRevision = 'd'.repeat( 64 );
+	const artifacts = [
+		makeSignedArtifact( { cacheKey: 'shared-cache', selector: SIGNED_SELECTOR_A, textureUuid: 'subset-texture-a' } ),
+		makeSignedArtifact( { cacheKey: 'shared-cache', selector: SIGNED_SELECTOR_B, textureUuid: 'subset-texture-b' } ),
+	];
+
+	try {
+
+		for ( const artifact of artifacts ) {
+
+			const response = await postJSON( port, '/__tsl-precompile/capture', makeSignedPayload( name, sourceIdentity, sourceRevision, artifact ) );
+			assert.equal( response.status, 200, response.text );
+
+		}
+		const before = readUserCapture( artifactsDir, name );
+		const artifactBytes = readFileSync( join( artifactsDir, before.entry.file ), 'utf8' );
+		const manifestBytes = readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' );
+		const invalidations = vite._invalidated.length;
+
+		for ( const artifact of artifacts ) {
+
+			const repeated = await postJSON( port, '/__tsl-precompile/capture', makeSignedPayload( name, sourceIdentity, sourceRevision, artifact ) );
+			assert.equal( repeated.status, 200, repeated.text );
+			assert.equal( repeated.json.changed, false );
+			assert.equal( repeated.json.hash, before.entry.hash );
+			assert.deepEqual( repeated.json.artifact, before.stored.artifact );
+
+		}
+		assert.equal( readFileSync( join( artifactsDir, before.entry.file ), 'utf8' ), artifactBytes );
+		assert.equal( readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' ), manifestBytes );
+		assert.equal( vite._invalidated.length, invalidations, 'subset replays do not invalidate the user module' );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: a new source revision resets rather than extends a signed family', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-signed-revision-' ) );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+	const name = 'signed-revision-family';
+	const sourceIdentity = 'src/editable.js:precompile:0';
+	const firstRevision = 'a'.repeat( 64 );
+	const secondRevision = 'b'.repeat( 64 );
+	const firstFamily = [
+		makeSignedArtifact( { cacheKey: 'revision-cache', selector: SIGNED_SELECTOR_A, textureUuid: 'revision-texture-a' } ),
+		makeSignedArtifact( { cacheKey: 'revision-cache', selector: SIGNED_SELECTOR_B, textureUuid: 'revision-texture-b' } ),
+	];
+
+	try {
+
+		for ( const artifact of firstFamily ) {
+
+			const response = await postJSON( port, '/__tsl-precompile/capture', makeSignedPayload( name, sourceIdentity, firstRevision, artifact ) );
+			assert.equal( response.status, 200, response.text );
+
+		}
+		const before = readUserCapture( artifactsDir, name );
+		const replacement = makeSignedArtifact( {
+			cacheKey: 'revision-cache',
+			selector: SIGNED_SELECTOR_C,
+			shader: 'new-revision-shader',
+			textureUuid: 'revision-texture-c',
+			sourceGraphHash: 'c'.repeat( 64 ),
+		} );
+		const changed = await postJSON( port, '/__tsl-precompile/capture', makeSignedPayload( name, sourceIdentity, secondRevision, replacement ) );
+		assert.equal( changed.status, 200, changed.text );
+		assert.equal( changed.json.changed, true );
+		assert.deepEqual( changed.json.artifact, replacement );
+
+		const after = readUserCapture( artifactsDir, name );
+		assert.notEqual( after.entry.hash, before.entry.hash );
+		assert.deepEqual( after.stored.artifact.renderContextSelectors, [ SIGNED_SELECTOR_C ] );
+		assert.equal( after.stored.artifact.variants, undefined );
+		assert.deepEqual( after.entry.sourceOwners, [ { identity: sourceIdentity, revision: secondRevision } ] );
+		assert.equal( existsSync( join( artifactsDir, before.entry.file ) ), false, 'the prior revision artifact is pruned' );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: signed selector collisions return 409 and preserve the durable family', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-signed-collision-' ) );
+	const name = 'signed-selector-collision';
+	const moduleId = `\0virtual:tsl-precompile/${ name }`;
+	const vite = makeFakeViteServer( { moduleId } );
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+	const sourceIdentity = 'src/collision.js:precompile:0';
+	const sourceRevision = 'c'.repeat( 64 );
+
+	try {
+
+		const authoritative = makeSignedArtifact( {
+			cacheKey: 'authoritative-cache',
+			selector: SIGNED_SELECTOR_A,
+			shader: 'authoritative-shader',
+			textureUuid: 'authoritative-texture',
+		} );
+		const first = await postJSON( port, '/__tsl-precompile/capture', makeSignedPayload( name, sourceIdentity, sourceRevision, authoritative ) );
+		assert.equal( first.status, 200, first.text );
+		const before = readUserCapture( artifactsDir, name );
+		const artifactBytes = readFileSync( join( artifactsDir, before.entry.file ), 'utf8' );
+		const manifestBytes = readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' );
+		const filesBefore = readdirSync( artifactsDir ).sort();
+
+		const divergent = makeSignedArtifact( {
+			cacheKey: 'different-private-cache',
+			selector: SIGNED_SELECTOR_A,
+			shader: 'divergent-shader',
+			textureUuid: 'divergent-texture',
+		} );
+		const collision = await postJSON( port, '/__tsl-precompile/capture', makeSignedPayload( name, sourceIdentity, sourceRevision, divergent ) );
+		assert.equal( collision.status, 409, collision.text );
+		assert.match( collision.json.error, /incompatible signed variant family|renderContextSelector/ );
+		assert.equal( readFileSync( join( artifactsDir, before.entry.file ), 'utf8' ), artifactBytes );
+		assert.equal( readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' ), manifestBytes );
+		assert.deepEqual( readdirSync( artifactsDir ).sort(), filesBefore );
+		assert.equal( vite._invalidated.length, 1, 'a rejected family does not invalidate the user module' );
 
 	} finally {
 
