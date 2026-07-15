@@ -767,6 +767,16 @@ export function createSlimSceneSupport( opts = {} ) {
 				const rawNodes = new Set( materialBindings.map( ( binding ) => binding.computeNode ) );
 				const expectedNodes = new Set();
 				const expectedKernelByNode = new Map();
+				const scheduleCadences = inspection.status === 'uniform'
+					? new Set( inspection.descriptor.schedule.map( ( entry ) => entry.updateType ) )
+					: new Set();
+				if ( mode === 'hybrid-required' && scheduleCadences.size !== 1 ) {
+
+					const error = new Error( 'createSlimSceneSupport: hybrid material compute requires one uniform update cadence per delegated transaction.' );
+					error.code = 'TSLP_MATERIAL_COMPUTE_MIXED_CADENCE_UNSUPPORTED';
+					throw error;
+
+				}
 				const objectCadence = inspection.status === 'uniform' && (
 					inspection.descriptor.schedule.some( ( entry ) => entry && entry.updateType === 'object' )
 					|| inspection.descriptor.kernels.some( ( kernel ) => kernel.updates.some( ( entry ) => entry && entry.updateType === 'object' ) )
@@ -821,7 +831,7 @@ export function createSlimSceneSupport( opts = {} ) {
 					}
 
 				}
-				const policy = { inspection, mode, expectedNodes, expectedKernelByNode, objectCadence, objects: owner.objects || [] };
+				const policy = { inspection, mode, expectedNodes, expectedKernelByNode, objectCadence, cadence: scheduleCadences.values().next().value || null, objects: owner.objects || [] };
 				policiesByMaterial.set( material, policy );
 				if ( mode === 'hybrid-required' ) {
 

@@ -2,6 +2,8 @@ import { inspectMaterialComputeFamily } from '@tsl-precompile/contract/material-
 
 export const MATERIAL_COMPUTE_DELEGATION = Symbol.for( '@tsl-precompile/runtime/material-compute-delegation@1' );
 
+let nextDelegationGeneration = 1;
+
 function delegationError( code, message, details = {} ) {
 
 	const error = new Error( message );
@@ -59,10 +61,15 @@ export function claimMaterialComputeDelegation( material, owner, artifact ) {
 		'[tsl-precompile/slim] Another scene-support owner already controls this material\'s compute dispatch.',
 		{ artifact },
 	);
-	const record = Object.freeze( {
+	const record = Object.seal( {
 		owner,
 		artifact,
 		fingerprint: inspection.fingerprint,
+		generation: nextDelegationGeneration ++,
+		consumed: false,
+		consumedType: null,
+		consumedStamp: null,
+		consumedFrame: null,
 	} );
 	Object.defineProperty( material, MATERIAL_COMPUTE_DELEGATION, {
 		value: record,
@@ -74,12 +81,43 @@ export function claimMaterialComputeDelegation( material, owner, artifact ) {
 
 }
 
-export function hasMaterialComputeDelegation( material, artifact, fingerprint ) {
+function matchingMaterialComputeDelegation( material, artifact, fingerprint ) {
 
 	const record = material && material[ MATERIAL_COMPUTE_DELEGATION ];
-	return !! record
+	return record
 		&& record.artifact === artifact
-		&& record.fingerprint === fingerprint;
+		&& record.fingerprint === fingerprint
+		? record
+		: null;
+
+}
+
+export function hasMaterialComputeDelegation( material, artifact, fingerprint ) {
+
+	// Consumed records intentionally remain attached: replay schedulers need
+	// their generation identity to deduplicate another object/state at the same
+	// frame or render stamp. Freshness is enforced only by consume().
+	return matchingMaterialComputeDelegation( material, artifact, fingerprint ) !== null;
+
+}
+
+export function materialComputeDelegationReference( material, artifact, fingerprint ) {
+
+	return matchingMaterialComputeDelegation( material, artifact, fingerprint );
+
+}
+
+/** Consume one successful delegation transaction at its first replay update. */
+export function consumeMaterialComputeDelegation( material, artifact, fingerprint, updateType = null, frame = null ) {
+
+	const record = matchingMaterialComputeDelegation( material, artifact, fingerprint );
+	if ( ! record || record.consumed === true ) return false;
+	record.consumed = true;
+	record.consumedType = updateType;
+	const stamp = updateType === 'frame' ? 'frameId' : updateType === 'render' ? 'renderId' : null;
+	record.consumedStamp = stamp && frame ? frame[ stamp ] : null;
+	record.consumedFrame = frame && typeof frame === 'object' ? frame : null;
+	return true;
 
 }
 

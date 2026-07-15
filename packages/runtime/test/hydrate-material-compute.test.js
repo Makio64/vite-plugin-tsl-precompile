@@ -360,6 +360,13 @@ test( 'hybrid material compute requires an exact delegation claim', () => {
 	claimMaterialComputeDelegation( material, owner, artifact );
 	const state = hydrateNodeBuilderState( artifact, material );
 	assert.equal( state.updateBeforeNodes.length, 1 );
+	assert.equal( state.updateBeforeNodes[ 0 ].getUpdateBeforeType(), 'object' );
+	assert.doesNotThrow( () => state.updateBeforeNodes[ 0 ].updateBefore( {} ) );
+	assert.throws(
+		() => state.updateBeforeNodes[ 0 ].updateBefore( {} ),
+		( error ) => error.code === 'TSLP_MATERIAL_COMPUTE_HYBRID_REQUIRED',
+	);
+	claimMaterialComputeDelegation( material, owner, artifact );
 	assert.doesNotThrow( () => state.updateBeforeNodes[ 0 ].updateBefore( {} ) );
 	assert.equal( releaseMaterialComputeDelegation( material, owner ), true );
 	assert.throws(

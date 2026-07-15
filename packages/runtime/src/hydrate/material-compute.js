@@ -6,12 +6,15 @@ import PrecompiledComputeNode from '../precompiled-compute-node.js';
 import { resolveTypedArrayCtor } from './typed-arrays.js';
 import { createHydrationBindingArtifactView } from './user-attributes.js';
 import {
+	consumeMaterialComputeDelegation,
 	hasMaterialComputeDelegation,
 	inspectRuntimeMaterialComputeFamily,
+	materialComputeDelegationReference,
 	resolveMaterialComputePath,
 } from './material-compute-ownership.js';
 
 const controllersByMaterial = new WeakMap();
+const hybridGuardsByMaterial = new WeakMap();
 
 export class MaterialComputeHydrationError extends Error {
 
@@ -40,6 +43,19 @@ function controllerCacheFor( material ) {
 
 		cache = new WeakMap();
 		controllersByMaterial.set( material, cache );
+
+	}
+	return cache;
+
+}
+
+function hybridGuardCacheFor( material ) {
+
+	let cache = hybridGuardsByMaterial.get( material );
+	if ( ! cache ) {
+
+		cache = new WeakMap();
+		hybridGuardsByMaterial.set( material, cache );
 
 	}
 	return cache;
@@ -418,15 +434,35 @@ function removeRawComputeSidecars( artifact ) {
 
 function createHybridDelegationGuard( material, rootArtifact, inspection ) {
 
-	const reference = {};
+	const cadences = new Set( inspection.descriptor.schedule.map( ( entry ) => entry.updateType ) );
+	if ( cadences.size !== 1 ) fail(
+		'TSLP_MATERIAL_COMPUTE_MIXED_CADENCE_UNSUPPORTED',
+		'[tsl-precompile/slim] Hybrid material compute requires one uniform update cadence per delegated transaction.',
+		{ cadences: [ ...cadences ] },
+	);
+	const updateType = cadences.values().next().value;
 	return {
-		getUpdateBeforeType() { return 'object'; },
-		updateReference() { return reference; },
-		updateBefore() {
+		getUpdateBeforeType() { return updateType; },
+		updateReference( frame ) {
 
-			if ( ! hasMaterialComputeDelegation( material, rootArtifact, inspection.fingerprint ) ) fail(
+			const record = materialComputeDelegationReference( material, rootArtifact, inspection.fingerprint );
+			if ( ! record || record.consumed === true && updateType !== 'object' ) {
+
+				const stamp = updateType === 'frame' ? 'frameId' : 'renderId';
+				if ( ! record
+					|| record.consumedType !== updateType
+					|| record.consumedStamp !== frame?.[ stamp ]
+					|| record.consumedFrame !== frame ) return {};
+
+			}
+			return record;
+
+		},
+		updateBefore( frame ) {
+
+			if ( ! consumeMaterialComputeDelegation( material, rootArtifact, inspection.fingerprint, updateType, frame ) ) fail(
 				'TSLP_MATERIAL_COMPUTE_HYBRID_REQUIRED',
-				`[tsl-precompile/slim] Material compute delegation is no longer valid: ${ inspection.descriptor.reasons.join( ', ' ) }. Dispatch and synchronize it again before rendering.`,
+				`[tsl-precompile/slim] Material compute delegation is missing or was already consumed: ${ inspection.descriptor.reasons.join( ', ' ) }. Dispatch and synchronize it again before the next render.`,
 				{ reasons: inspection.descriptor.reasons.slice() },
 			);
 
@@ -456,8 +492,19 @@ export function hydrateMaterialCompute( rootArtifact, artifact, material, graphM
 			`[tsl-precompile/slim] Material compute requires explicit full-renderer delegation: ${ descriptor.reasons.join( ', ' ) }. Call await support.dispatchMaterialComputes(scene) before rendering.`,
 			{ reasons: descriptor.reasons.slice() },
 		);
+		const cache = hybridGuardCacheFor( material );
+		let cached = cache.get( rootArtifact );
+		if ( ! cached || cached.fingerprint !== inspection.fingerprint ) {
+
+			cached = {
+				fingerprint: inspection.fingerprint,
+				guard: createHybridDelegationGuard( material, rootArtifact, inspection ),
+			};
+			cache.set( rootArtifact, cached );
+
+		}
 		removeRawComputeSidecars( artifact );
-		return [ createHybridDelegationGuard( material, rootArtifact, inspection ) ];
+		return [ cached.guard ];
 
 	}
 	if ( descriptor.mode !== 'precompiled' ) fail(
