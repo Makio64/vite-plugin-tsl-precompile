@@ -251,6 +251,104 @@ test( 'shareComputeSampledInputs filters exact inputs, reports duplicate locatio
 
 } );
 
+test( 'shareComputeSampledInputs invalidates initialized compute bindings when a selected storage input buffer is replaced', () => {
+
+	const attribute = { isStorageBufferAttribute: true, version: 1 };
+	const group = { bindings: [ storageBufferBinding( attribute ) ] };
+	const computeNode = {};
+	const firstBuffer = { id: 'first-input', size: 64 };
+	const replacementBuffer = { id: 'replacement-input', size: 64 };
+	const slim = fakeRenderer();
+	slim.backend.get( attribute ).buffer = firstBuffer;
+	const full = fakeRenderer();
+	full.backend.get( attribute ).buffer = firstBuffer;
+	full._nodes = { getForCompute: () => ( { bindings: [ group ] } ) };
+	const bindingEntries = fakeDataMap();
+	bindingEntries.get( group ).bindGroup = group;
+	let nativeBoundBuffer = firstBuffer;
+	let invalidations = 0;
+	full._bindings = {
+		get: bindingEntries.get,
+		getForCompute() {
+
+			const entry = bindingEntries.get( group );
+			if ( entry.bindGroup === undefined ) {
+
+				entry.bindGroup = group;
+				nativeBoundBuffer = full.backend.get( attribute ).buffer;
+
+			}
+			return [ group ];
+
+		},
+		deleteForCompute( node ) {
+
+			assert.equal( node, computeNode );
+			invalidations ++;
+			bindingEntries.get( group ).bindGroup = undefined;
+
+		},
+	};
+	const synced = [];
+	const options = {
+		initializeBindings: false,
+		bindingFilter: ( binding, location, detail ) => detail.kind === 'storage-buffer' && location.group === 0 && location.binding === 0,
+		onInputSynced: ( resource, binding, location ) => synced.push( location.binding ),
+	};
+
+	shareComputeSampledInputs( computeNode, full, slim, options );
+	assert.equal( invalidations, 0, 'an already-shared handle preserves the existing native bind group' );
+	assert.equal( nativeBoundBuffer, firstBuffer );
+
+	slim.backend.get( attribute ).buffer = replacementBuffer;
+	shareComputeSampledInputs( computeNode, full, slim, options );
+	assert.equal( full.backend.get( attribute ).buffer, replacementBuffer );
+	assert.equal( invalidations, 1, 'a real handle replacement invalidates the initialized compute bindings once' );
+	assert.equal( nativeBoundBuffer, firstBuffer, 'the modelled native binding remains stale until Three rebuilds it' );
+	full._bindings.getForCompute( computeNode );
+	assert.equal( nativeBoundBuffer, replacementBuffer, 'the next native binding build observes the replacement input' );
+	assert.deepEqual( synced, [ 0, 0 ] );
+
+} );
+
+test( 'shareComputeSampledInputs rolls back a storage input replacement when initialized bindings cannot be invalidated', () => {
+
+	const attribute = { isStorageBufferAttribute: true, version: 7 };
+	const group = { bindings: [ storageBufferBinding( attribute ) ] };
+	const previousBuffer = { id: 'full-existing', size: 64 };
+	const replacementBuffer = { id: 'slim-replacement', size: 64 };
+	const slim = fakeRenderer();
+	slim.backend.get( attribute ).buffer = replacementBuffer;
+	slim._attributes.get( attribute ).version = 12;
+	const full = fakeRenderer();
+	full.backend.get( attribute ).buffer = previousBuffer;
+	full._attributes.get( attribute ).version = 4;
+	full._nodes = { getForCompute: () => ( { bindings: [ group ] } ) };
+	const bindingEntries = fakeDataMap();
+	bindingEntries.get( group ).bindGroup = group;
+	full._bindings = {
+		get: bindingEntries.get,
+		getForCompute: () => [ group ],
+		deleteForCompute() { throw new Error( 'cannot invalidate' ); },
+	};
+	const synced = [];
+	const errors = [];
+
+	shareComputeSampledInputs( {}, full, slim, {
+		initializeBindings: false,
+		bindingFilter: () => true,
+		onInputSynced: ( resource ) => synced.push( resource ),
+		onError: ( error ) => errors.push( error ),
+	} );
+
+	assert.equal( full.backend.get( attribute ).buffer, previousBuffer, 'failed invalidation restores the backend buffer' );
+	assert.equal( full._attributes.get( attribute ).version, 4, 'failed invalidation restores the attribute-manager version' );
+	assert.deepEqual( synced, [], 'a rolled-back input is never reported as synchronized' );
+	assert.equal( errors.length, 1 );
+	assert.match( errors[ 0 ].message, /could not invalidate initialized full-renderer compute bindings/ );
+
+} );
+
 test( 'shareComputeSampledInputs fails closed without uninitialized binding state', () => {
 
 	const texture = { isTexture: true, name: 'must-not-initialize', version: 0 };

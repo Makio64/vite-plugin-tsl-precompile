@@ -120,21 +120,62 @@ function uninitializedComputeBindGroups( computeNode, fullRenderer ) {
 
 }
 
+function hasInitializedComputeBindGroup( fullRenderer, bindGroup ) {
+
+	const bindings = fullRenderer && fullRenderer._bindings;
+	if ( ! bindings || typeof bindings.get !== 'function' ) return false;
+	try {
+
+		const data = bindings.get( bindGroup );
+		return !! data && data.bindGroup !== undefined;
+
+	} catch ( _ ) {
+
+		return false;
+
+	}
+
+}
+
+function invalidateComputeBindGroups( fullRenderer, computeNode ) {
+
+	const bindings = fullRenderer && fullRenderer._bindings;
+	if ( ! bindings || typeof bindings.deleteForCompute !== 'function' ) return false;
+	try {
+
+		for ( const node of asList( computeNode ) ) bindings.deleteForCompute( node );
+		return true;
+
+	} catch ( _ ) {
+
+		return false;
+
+	}
+
+}
+
 function shareStorageBufferEntry( fullRenderer, slimRenderer, attribute ) {
 
-	if ( ! attribute || ! fullRenderer.backend || ! slimRenderer.backend ) return false;
+	if ( ! attribute || ! fullRenderer.backend || ! slimRenderer.backend ) return { shared: false, replaced: false };
 	const sourceAttribute = attribute.isInterleavedBufferAttribute === true ? attribute.data : attribute;
 	const slimData = slimRenderer.backend.get( sourceAttribute );
-	if ( ! slimData || ! slimData.buffer ) return false;
+	if ( ! slimData || ! slimData.buffer ) return { shared: false, replaced: false };
 	const fullData = fullRenderer.backend.get( sourceAttribute );
+	if ( ! fullData ) return { shared: false, replaced: false };
+	const previousBuffer = fullData.buffer;
 	fullData.buffer = slimData.buffer;
 
 	// Prevent Three's first full-renderer binding initialization from allocating
 	// a replacement GPUBuffer over the exact slim-owned resource.
 	const fullAttributes = fullRenderer._attributes;
+	let fullAttributeData = null;
+	let hadAttributeVersion = false;
+	let previousAttributeVersion;
 	if ( fullAttributes && typeof fullAttributes.get === 'function' ) {
 
-		const fullAttributeData = fullAttributes.get( sourceAttribute );
+		fullAttributeData = fullAttributes.get( sourceAttribute );
+		hadAttributeVersion = !! fullAttributeData && Object.prototype.hasOwnProperty.call( fullAttributeData, 'version' );
+		previousAttributeVersion = fullAttributeData && fullAttributeData.version;
 		const slimAttributes = slimRenderer._attributes;
 		const slimAttributeData = slimAttributes && typeof slimAttributes.get === 'function'
 			? slimAttributes.get( sourceAttribute )
@@ -142,10 +183,18 @@ function shareStorageBufferEntry( fullRenderer, slimRenderer, attribute ) {
 		const version = slimAttributeData && slimAttributeData.version !== undefined
 			? slimAttributeData.version
 			: sourceAttribute.version;
-		if ( version !== undefined ) fullAttributeData.version = version;
+		if ( fullAttributeData && version !== undefined ) fullAttributeData.version = version;
 
 	}
-	return fullData.buffer === slimData.buffer;
+	return {
+		shared: fullData.buffer === slimData.buffer,
+		replaced: previousBuffer !== undefined && previousBuffer !== slimData.buffer,
+		fullData,
+		previousBuffer,
+		fullAttributeData,
+		hadAttributeVersion,
+		previousAttributeVersion,
+	};
 
 }
 
@@ -279,6 +328,8 @@ export function shareComputeSampledInputs( computeNode, fullRenderer, slimRender
 		const bindGroups = opts.initializeBindings === false
 			? uninitializedComputeBindGroups( computeNode, fullRenderer ) || []
 			: getComputeBindGroups( computeNode, fullRenderer );
+		const initializedComputeBindings = exactFilter && bindGroups.some( ( bindGroup ) => hasInitializedComputeBindGroup( fullRenderer, bindGroup ) );
+		let computeBindingsInvalidated = false;
 		for ( let groupIndex = 0; groupIndex < bindGroups.length; groupIndex ++ ) {
 
 			const bindGroup = bindGroups[ groupIndex ];
@@ -292,14 +343,36 @@ export function shareComputeSampledInputs( computeNode, fullRenderer, slimRender
 					if ( ! exactFilter || ! bindingFilterAllows( opts, binding, location, 'input', 'storage-buffer' ) ) continue;
 					const attribute = binding.attribute;
 					if ( ! attribute ) continue;
-					let shared = sharedStorageAttrs.get( attribute );
-					if ( shared === undefined ) {
+					let result = sharedStorageAttrs.get( attribute );
+					if ( result === undefined ) {
 
-						shared = shareStorageBufferEntry( fullRenderer, slimRenderer, attribute );
-						sharedStorageAttrs.set( attribute, shared );
+						result = shareStorageBufferEntry( fullRenderer, slimRenderer, attribute );
+						sharedStorageAttrs.set( attribute, result );
 
 					}
-					if ( ! shared ) continue;
+					if ( result.replaced && initializedComputeBindings && ! computeBindingsInvalidated ) {
+
+						if ( ! invalidateComputeBindGroups( fullRenderer, computeNode ) ) {
+
+							result.fullData.buffer = result.previousBuffer;
+							if ( result.fullAttributeData ) {
+
+								if ( result.hadAttributeVersion ) result.fullAttributeData.version = result.previousAttributeVersion;
+								else delete result.fullAttributeData.version;
+
+							}
+							result.shared = false;
+							if ( typeof opts.onError === 'function' ) opts.onError(
+								new Error( 'shareComputeSampledInputs: could not invalidate initialized full-renderer compute bindings after replacing a storage input buffer.' ),
+								attribute,
+							);
+							continue;
+
+						}
+						computeBindingsInvalidated = true;
+
+					}
+					if ( ! result.shared ) continue;
 					const detail = { direction: 'input', kind: 'storage-buffer' };
 					callResourceHook( onStorageAttr, attribute, binding, location, detail );
 					callResourceHook( onInputSynced, attribute, binding, location, detail );
