@@ -7,7 +7,7 @@
  * replaced by replay adapters, or rejected as runtime compiler residue.
  */
 
-export const SLIM_THREE_POLICY_VERSION = 'slim-three-policy@9';
+export const SLIM_THREE_POLICY_VERSION = 'slim-three-policy@10';
 
 /** Exact Three package patch used to build the published prebuilt slim file. */
 export const SLIM_THREE_PACKAGE_VERSION = '0.184.0';
@@ -38,6 +38,7 @@ function freezeRules( rules ) {
 export const SLIM_THREE_REWRITE_TARGETS = freezeRules( [
 	{ id: 'node-utils', sourcePath: 'nodes/core/NodeUtils.js', rewriteFamily: 'node-utils', role: SLIM_THREE_MODULE_ROLES.REWRITE },
 	{ id: 'node-core-constants', sourcePath: 'nodes/core/constants.js', rewriteFamily: 'node-core-constants', role: SLIM_THREE_MODULE_ROLES.REWRITE },
+	{ id: 'loader-tracking', sourcePath: 'loaders/Loader.js', rewriteFamily: 'loader-tracking', role: SLIM_THREE_MODULE_ROLES.REWRITE },
 	{ id: 'cube-render-target', sourcePath: 'renderers/common/CubeRenderTarget.js', rewriteFamily: 'cube-render-target', role: SLIM_THREE_MODULE_ROLES.REWRITE },
 	{ id: 'renderer', sourcePath: 'renderers/common/Renderer.js', rewriteFamily: 'renderer', role: SLIM_THREE_MODULE_ROLES.REWRITE },
 	{ id: 'render-object', sourcePath: 'renderers/common/RenderObject.js', rewriteFamily: 'render-object', role: SLIM_THREE_MODULE_ROLES.REWRITE },

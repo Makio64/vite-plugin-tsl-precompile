@@ -46,12 +46,12 @@ test( 'guarded and prebuilt slim entries share one exact source surface', () => 
 
 test( 'source entry fails closed when plugin and runtime policy revisions differ', () => {
 
-	assert.equal( RUNTIME_SLIM_THREE_POLICY_VERSION, 'slim-three-policy@9' );
+	assert.equal( RUNTIME_SLIM_THREE_POLICY_VERSION, 'slim-three-policy@10' );
 	assert.equal( RUNTIME_SLIM_THREE_POLICY_VERSION, SLIM_THREE_POLICY_VERSION, 'bump the runtime-owned handshake with the shared policy' );
-	assert.doesNotThrow( () => assertSlimSourcePolicyCompatibility( 'slim-three-policy@9' ) );
+	assert.doesNotThrow( () => assertSlimSourcePolicyCompatibility( 'slim-three-policy@10' ) );
 	assert.throws(
-		() => assertSlimSourcePolicyCompatibility( 'slim-three-policy@8' ),
-		/slim source policy mismatch[\s\S]*runtime expects slim-three-policy@9[\s\S]*plugin provided slim-three-policy@8/,
+		() => assertSlimSourcePolicyCompatibility( 'slim-three-policy@9' ),
+		/slim source policy mismatch[\s\S]*runtime expects slim-three-policy@10[\s\S]*plugin provided slim-three-policy@9/,
 	);
 
 } );
@@ -97,7 +97,8 @@ test( 'source bootstrap keeps required initialization explicit without a prematu
 
 	assert.match( bootstrap, /WebGPURenderer\.__TSLP_SLIM__ = true/ );
 	assert.match( bootstrap, /setupViewportTextureClasses/ );
-	assert.match( bootstrap, /installTextureLoaderTracking/ );
+	assert.doesNotMatch( bootstrap, /three\/src\/loaders\//, 'the mandatory source entry must not retain concrete loader graphs' );
+	assert.doesNotMatch( bootstrap, /installTextureLoaderTracking/ );
 	assert.match( bootstrap, /slim-webgpu-texture-utils@1/ );
 
 	const pkg = JSON.parse( readFileSync( new URL( '../package.json', import.meta.url ), 'utf8' ) );

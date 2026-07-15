@@ -128,6 +128,18 @@ surface until the new consumer and its slim-runtime need are reviewed. Update
 both fingerprints, the four-export fixture, the residue policy, and focused
 bundle metrics together when upgrading Three.
 
+Three r184's `loaders/Loader.js` is also an exact whole-module slim seam. Its
+constructor is preserved as the same public class and receives one final
+`installTextureLoaderTracking( this.constructor )` call. The call patches the
+concrete subclass only when it is instantiated, so loader-free source builds
+do not retain TextureLoader/CubeTextureLoader/DataTextureLoader plus their
+image, file, fetch, and cache closure. This is intentionally a base-constructor
+rewrite rather than wrapper subclasses: wrapper exports would split constructor
+identity, while a generic Texture update hook loses the loader URL needed to
+relink unnamed artifact textures. The complete comment-free compact Loader AST
+is fingerprinted; update its focused rewrite fixture and source bundle metrics
+with the fingerprint when Three changes any Loader behavior or export.
+
 Local assumption: `Object3DNode` instances with an explicit `object3d.isCamera`
 target are serialized as `object3d.*` sources with `target: "camera"`. This
 preserves TSL like `objectPosition(camera)` in post-processing passes, where

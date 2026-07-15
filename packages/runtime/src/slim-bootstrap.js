@@ -3,21 +3,17 @@
  *
  * Keep these effects in one package-declared side-effect module: source-mode
  * consumers can tree-shake unused constructors without losing renderer
- * sentinels, viewport texture factories, loader tracking, or the 3D texture
- * upload compatibility patch.
+ * sentinels, viewport texture factories, or the 3D texture upload
+ * compatibility patch. The checked Three Loader rewrite installs texture
+ * tracking lazily on each concrete loader instead of retaining them here.
  */
 
 import WebGPURenderer from 'three/src/renderers/webgpu/WebGPURenderer.js';
 import WebGPUTextureUtils from 'three/src/renderers/webgpu/utils/WebGPUTextureUtils.js';
-import { CubeTextureLoader } from 'three/src/loaders/CubeTextureLoader.js';
-import { DataTextureLoader } from 'three/src/loaders/DataTextureLoader.js';
-import { ImageBitmapLoader } from 'three/src/loaders/ImageBitmapLoader.js';
-import { TextureLoader } from 'three/src/loaders/TextureLoader.js';
 import { DepthTexture } from 'three/src/textures/DepthTexture.js';
 import { FramebufferTexture } from 'three/src/textures/FramebufferTexture.js';
 import { HalfFloatType, RedFormat, RGBAFormat, UnsignedByteType } from 'three/src/constants.js';
 import { setupViewportTextureClasses } from './aux-loader.js';
-import { installTextureLoaderTracking } from './hydrate/live-texture-registry.js';
 
 const TEXTURE_UTILS_PATCH = Symbol.for( '@tsl-precompile/runtime/slim-webgpu-texture-utils@1' );
 
@@ -25,7 +21,6 @@ WebGPURenderer.__TSLP_SLIM__ = true;
 WebGPURenderer.prototype.__TSLP_SLIM__ = true;
 
 setupViewportTextureClasses( { DepthTexture, FramebufferTexture } );
-installTextureLoaderTracking( { TextureLoader, CubeTextureLoader, DataTextureLoader, ImageBitmapLoader } );
 
 function default3DTextureFormat( texture ) {
 

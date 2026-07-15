@@ -52,6 +52,7 @@ export const SLIM_REWRITE_RUNTIME_MODULE_RULES = Object.freeze( [
 	{ id: 'artifact-registry', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'artifact-registry', runtimeFile: '_vendor-PrecompiledArtifactRegistry.js' },
 	{ id: 'aux-loader', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'aux-loader', runtimeFile: 'aux-loader.js' },
 	{ id: 'graph-hash', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'graph-hash', runtimeFile: 'graph-hash.js' },
+	{ id: 'texture-registry', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'texture-registry', runtimeFile: 'hydrate/live-texture-registry.js' },
 	{ id: 'node-library', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'node-library', runtimeFile: 'slim-replay-node-library.js' },
 	{ id: 'renderer-context', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'renderer-context', runtimeFile: 'slim-replay-renderer-context.js' },
 	{ id: 'renderer-output', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'renderer-output', runtimeFile: 'slim-replay-renderer-output.js' },
@@ -78,6 +79,7 @@ const SLIM_REWRITE_RUNTIME_HELPERS = Object.freeze( {
 	attachPostprocessObject3DTargets: Object.freeze( { moduleId: 'aux-loader', kind: 'named' } ),
 	hashNodeGraphSync: Object.freeze( { moduleId: 'graph-hash', kind: 'named' } ),
 	hashPlainConfigSync: Object.freeze( { moduleId: 'graph-hash', kind: 'named' } ),
+	installTextureLoaderTracking: Object.freeze( { moduleId: 'texture-registry', kind: 'named' } ),
 	ReplayNodeLibrary: Object.freeze( { moduleId: 'node-library', kind: 'default' } ),
 	createReplayRendererContext: Object.freeze( { moduleId: 'renderer-context', kind: 'named' } ),
 	setReplayRendererHighPrecision: Object.freeze( { moduleId: 'renderer-context', kind: 'named' } ),
@@ -103,6 +105,7 @@ export function getSlimRewriteRuntimeModuleRule( id ) {
 const REWRITE_HANDLERS_BY_FAMILY = Object.freeze( {
 	'node-utils': rewriteNodeUtils,
 	'node-core-constants': rewriteNodeCoreConstants,
+	'loader-tracking': rewriteLoaderTracking,
 	'cube-render-target': rewriteCubeRenderTarget,
 	renderer: rewriteRenderer,
 	'render-object': rewriteRenderObject,
@@ -242,6 +245,7 @@ function pickHandler( id ) {
 
 const NODE_UTILS_R184_AST_SHA256 = '6265ad8b2e2337d625ffa0691b9b949fbfef25ee5a6b7034be26dd2f241f1ab7';
 const NODE_CORE_CONSTANTS_R184_AST_SHA256 = 'fe34fd8c46b2a1c9629c137f9eae342f51627602c25abfe6696716458d866c24';
+const LOADER_R184_AST_SHA256 = 'd7e782ece3295a50b0572e08a89c489f97da5be914254adb7e2c15555739467e';
 
 function compactAstFingerprint( ast ) {
 
@@ -283,6 +287,37 @@ function rewriteNodeCoreConstants( ast, ctx ) {
 
 	assertExactModuleShape( ast, 'nodes/core/constants', NODE_CORE_CONSTANTS_R184_AST_SHA256 );
 	replaceWithNamedRuntimeReExports( ast, [ 'NodeAccess' ] );
+	ctx.touched = true;
+
+}
+
+/**
+ * Install URL/name tracking only when a concrete Loader subclass is actually
+ * instantiated. Keeping the hook on Three's exact base constructor preserves
+ * every public constructor identity while allowing source-mode consumers that
+ * do not use loaders to tree-shake the complete loader/fetch/cache closure.
+ */
+function rewriteLoaderTracking( ast, ctx ) {
+
+	assertExactModuleShape( ast, 'Loader', LOADER_R184_AST_SHA256 );
+	let loaderClasses = 0;
+	traverse( ast, {
+		ClassDeclaration( path ) {
+
+			if ( ! t.isIdentifier( path.node.id, { name: 'Loader' } ) ) return;
+			const constructors = path.node.body.body.filter( ( member ) =>
+				t.isClassMethod( member, { kind: 'constructor' } )
+			);
+			if ( constructors.length !== 1 ) throw new Error( `Loader: expected one constructor, got ${ constructors.length }` );
+			constructors[ 0 ].body.body.push( t.expressionStatement( t.callExpression(
+				t.identifier( 'installTextureLoaderTracking' ),
+				[ t.memberExpression( t.thisExpression(), t.identifier( 'constructor' ) ) ],
+			) ) );
+			loaderClasses ++;
+
+		},
+	} );
+	if ( loaderClasses !== 1 ) throw new Error( `Loader: expected one class, got ${ loaderClasses }` );
 	ctx.touched = true;
 
 }

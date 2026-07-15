@@ -26,7 +26,7 @@ import {
 
 const VERSIONS = createSlimBundleVersionIdentity( {
 	threeVersion: '0.184.0',
-	policyVersion: 'slim-three-policy@9',
+	policyVersion: 'slim-three-policy@10',
 	artifactToolchainVersion: '0.1.0',
 } );
 
