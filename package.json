@@ -17,6 +17,7 @@
     "test:coverage": "pnpm --filter vite-plugin-tsl-precompile test:coverage",
     "test:three-rewrite": "pnpm --filter vite-plugin-tsl-precompile test:rewrite",
     "test:slim:budget": "node packages/plugin/scripts/check-slim-budgets.mjs",
+    "test:slim:budget:prebuilt-helpers": "node packages/plugin/scripts/check-slim-budgets.mjs --profile=prebuilt-helpers",
     "analyze:slim": "node packages/plugin/scripts/check-slim-budgets.mjs --json",
     "vendor:probe": "pnpm --filter vite-plugin-tsl-precompile vendor:probe",
     "test:batch": "pnpm --filter examples-batch test",

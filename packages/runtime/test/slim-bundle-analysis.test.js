@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
 	SLIM_BUNDLE_ANALYSIS_SCHEMA,
 	SLIM_BUNDLE_ANALYSIS_REPORT_SCHEMA,
+	SLIM_PREBUILT_RUNTIME_MODULE_ID,
 	analyzeSlimBundle,
 	normalizeSlimBundleModuleId,
 } from '../build-tools/slim-bundle-analysis.js';
@@ -14,7 +15,30 @@ test( 'slim analysis normalizes workspace and Windows module ids', () => {
 	assert.equal( normalizeSlimBundleModuleId( 'C:\\repo\\node_modules\\three\\src\\math\\Vector3.js?v=1' ), 'three/src/math/Vector3.js' );
 	assert.equal( normalizeSlimBundleModuleId( '/three/src/nodes/core/Node.js' ), 'three/src/nodes/core/Node.js' );
 	assert.equal( normalizeSlimBundleModuleId( '/repo/packages/runtime/src/hydrator.js' ), 'runtime/src/hydrator.js' );
+	assert.equal( normalizeSlimBundleModuleId( '/consumer/node_modules/@tsl-precompile/runtime/build/three.webgpu.slim.js' ), SLIM_PREBUILT_RUNTIME_MODULE_ID );
+	assert.equal( normalizeSlimBundleModuleId( 'C:\\consumer\\node_modules\\@tsl-precompile\\runtime\\src\\writers.js?v=1' ), 'runtime/src/writers.js' );
 	assert.equal( normalizeSlimBundleModuleId( '/repo/packages/contract/src/kinds.js' ), 'contract/src/kinds.js' );
+
+} );
+
+test( 'slim analysis separates one installed prebuilt runtime from source duplicates', () => {
+
+	const analysis = analyzeSlimBundle( {
+		'entry.js': {
+			modules: {
+				'/consumer/node_modules/@tsl-precompile/runtime/build/three.webgpu.slim.js': { renderedLength: 4000 },
+				'/consumer/node_modules/@tsl-precompile/runtime/src/writers.js': { renderedLength: 0 },
+				'/consumer/src/main.js': { renderedLength: 50 },
+			},
+		},
+	} );
+
+	assert.deepEqual( analysis.runtime.modules, [
+		{ id: SLIM_PREBUILT_RUNTIME_MODULE_ID, renderedLength: 4000 },
+		{ id: 'runtime/src/writers.js', renderedLength: 0 },
+	] );
+	assert.deepEqual( analysis.prebuiltRuntime.modules, [ { id: SLIM_PREBUILT_RUNTIME_MODULE_ID, renderedLength: 4000 } ] );
+	assert.deepEqual( analysis.runtimeSource.modules, [ { id: 'runtime/src/writers.js', renderedLength: 0 } ] );
 
 } );
 

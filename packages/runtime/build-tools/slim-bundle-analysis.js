@@ -8,6 +8,7 @@ import {
 
 export const SLIM_BUNDLE_ANALYSIS_SCHEMA = 'tslp-slim-graph-analysis@1';
 export const SLIM_BUNDLE_ANALYSIS_REPORT_SCHEMA = 'tslp-slim-analysis-report@1';
+export const SLIM_PREBUILT_RUNTIME_MODULE_ID = 'runtime/build/three.webgpu.slim.js';
 
 function normalizeSeparators( id ) {
 
@@ -22,6 +23,9 @@ export function normalizeSlimBundleModuleId( id ) {
 	if ( normalized.startsWith( '\0' ) ) return normalized;
 	for ( const [ marker, prefix ] of [
 		[ '/node_modules/three/', 'three/' ],
+		[ '/node_modules/@tsl-precompile/runtime/', 'runtime/' ],
+		[ '/node_modules/@tsl-precompile/plugin/', 'plugin/' ],
+		[ '/node_modules/@tsl-precompile/contract/', 'contract/' ],
 		[ '/three/', 'three/' ],
 		[ '/packages/runtime/', 'runtime/' ],
 		[ '/packages/plugin/', 'plugin/' ],
@@ -37,15 +41,16 @@ export function normalizeSlimBundleModuleId( id ) {
 
 }
 
-function collectRenderedModules( bundle ) {
+function collectModules( bundle, { renderedOnly = false } = {} ) {
 
 	const found = new Map();
 	for ( const chunk of Object.values( bundle || {} ) ) {
 
 		for ( const [ rawId, module ] of Object.entries( chunk && chunk.modules || {} ) ) {
 
-			const renderedLength = Number( module && module.renderedLength );
-			if ( ! Number.isFinite( renderedLength ) || renderedLength <= 0 ) continue;
+			const measuredLength = Number( module && module.renderedLength );
+			if ( renderedOnly && ( ! Number.isFinite( measuredLength ) || measuredLength <= 0 ) ) continue;
+			const renderedLength = Number.isFinite( measuredLength ) && measuredLength > 0 ? measuredLength : 0;
 			const physicalId = normalizeSeparators( rawId );
 			const previous = found.get( physicalId );
 			if ( previous ) {
@@ -64,6 +69,12 @@ function collectRenderedModules( bundle ) {
 
 	}
 	return [ ...found.values() ].sort( ( a, b ) => b.renderedLength - a.renderedLength || compareCodeUnits( a.id, b.id ) || compareCodeUnits( a.physicalId, b.physicalId ) );
+
+}
+
+function collectRenderedModules( bundle ) {
+
+	return collectModules( bundle, { renderedOnly: true } );
 
 }
 
@@ -106,6 +117,7 @@ function classifiedModules( modules, classifier ) {
 export function analyzeSlimBundle( bundle ) {
 
 	const modules = collectRenderedModules( bundle );
+	const resolvedModules = collectModules( bundle );
 	const hasThreeSource = modules.some( ( module ) => isSlimThreeSourceModule( module.physicalId ) );
 	return {
 		schema: SLIM_BUNDLE_ANALYSIS_SCHEMA,
@@ -116,6 +128,12 @@ export function analyzeSlimBundle( bundle ) {
 		stockAdapters: summarizeModules( classifiedModules( modules, getSlimThreeReplayAdapterModule ) ),
 		retainedNodeRuntime: summarizeModules( modules.filter( ( module ) => isSlimThreeRetainedNodeRuntimeModule( module.physicalId ) ) ),
 		bareThreeIdentity: summarizeModules( hasThreeSource ? modules.filter( ( module ) => isSlimThreeBareBuildModule( module.physicalId ) ) : [] ),
+		// Consumer provenance counts every resolved runtime identity, including a
+		// fully tree-shaken duplicate. Byte budgets stay rendered-only above, but
+		// helper convergence must fail as soon as runtime/src enters the graph.
+		runtime: summarizeModules( resolvedModules.filter( ( module ) => module.id.startsWith( 'runtime/' ) ) ),
+		prebuiltRuntime: summarizeModules( resolvedModules.filter( ( module ) => module.id === SLIM_PREBUILT_RUNTIME_MODULE_ID ) ),
+		runtimeSource: summarizeModules( resolvedModules.filter( ( module ) => module.id.startsWith( 'runtime/src/' ) ) ),
 	};
 
 }

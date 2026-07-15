@@ -9,6 +9,17 @@
     "maxRetainedNodeModules": 0,
     "maxRetainedNodeRenderedBytes": 0
   },
+  "consumer": {
+    "fixtures": {
+      "prebuiltHelpers": {
+        "maxRawBytes": 600000,
+        "maxGzipBytes": 170000,
+        "expectedRuntimeModules": 1,
+        "expectedPrebuiltRuntimeModules": 1,
+        "maxRuntimeSourceModules": 0
+      }
+    }
+  },
   "source": {
     "maxCompilerModules": 0,
     "maxStockAdapterModules": 0,
