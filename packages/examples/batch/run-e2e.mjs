@@ -14298,9 +14298,9 @@ async function collectFrameTextureSnapshot( page ) {
 			const type = effectTypeName( node );
 			if ( node.isPassNode === true ) {
 				try {
-					const textures = node._textures || {};
-					addTexture( 'Pass.output', textures.output || ( typeof node.getTexture === 'function' ? node.getTexture( 'output' ) : null ) || node.renderTarget && node.renderTarget.texture );
-					addTexture( 'Pass.emissive', textures.emissive || ( typeof node.getTexture === 'function' ? node.getTexture( 'emissive' ) : null ) );
+					const passTextures = node._textures || {};
+					for ( const [ name, texture ] of Object.entries( passTextures ) ) addTexture( 'Pass.' + name, texture );
+					if ( ! passTextures.output ) addTexture( 'Pass.output', node.renderTarget && node.renderTarget.texture );
 				} catch ( _ ) {}
 			}
 			if ( type === 'BloomNode' || node && node._renderTargetBright && node._renderTargetsHorizontal ) {

@@ -98,3 +98,14 @@ test( 'material-owned compute delegates matching and retries to slim-support', (
 	assert.ok( dispatch >= 0 && dispatch < passRender && passRender < mainRender, 'material compute must start before pass and main presentation renders' );
 
 } );
+
+test( 'frame-texture diagnostics inspect only existing PassNode targets', () => {
+
+	const start = source.indexOf( 'async function collectFrameTextureSnapshot( page )' );
+	const end = source.indexOf( 'function safeExampleName( name', start );
+	assert.ok( start >= 0 && end > start, 'expected the frame-texture diagnostic collector' );
+	const collector = source.slice( start, end );
+	assert.match( collector, /Object\.entries\( passTextures \)/ );
+	assert.doesNotMatch( collector, /node\.getTexture\(/, 'diagnostics must not create undeclared MRT attachments' );
+
+} );
