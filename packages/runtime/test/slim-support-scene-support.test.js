@@ -1085,6 +1085,49 @@ test( 'createSlimSceneSupport claims hybrid compute only after forced full dispa
 
 } );
 
+test( 'createSlimSceneSupport revokes a removed scene material hybrid lease on an empty dispatch', async () => {
+
+	const slim = fakeRenderer();
+	const full = fakeRenderer();
+	full.backend.device = slim.backend.device;
+	const raw = { isNode: true, isComputeNode: true, traverse( visitor ) { visitor( this ); } };
+	const artifact = contractComputeArtifact();
+	const material = {
+		isPrecompiledMaterial: true,
+		precompiledArtifact: artifact,
+		positionNode: raw,
+	};
+	const sceneA = { traverse( visitor ) { visitor( { material } ); } };
+	const emptyScene = { traverse() {} };
+	full._nodes = { getForCompute: () => ( { bindings: [] } ) };
+	full._bindings = { getForCompute: () => [] };
+	full.computeAsync = async () => {};
+	const support = createSlimSceneSupport( { renderer: slim, fullRendererFallback: false } );
+
+	try {
+
+		assert.equal( ( await support.dispatchMaterialComputes( sceneA, { fullRenderer: full } ) ).errors, 0 );
+		const state = hydrateNodeBuilderState( artifact, material );
+		const emptyStats = await support.dispatchMaterialComputes( emptyScene );
+		assert.equal( emptyStats.errors, 0 );
+		assert.equal( emptyStats.owners, 0 );
+		assert.throws(
+			() => state.updateBeforeNodes[ 0 ].updateBefore( {} ),
+			( error ) => error.code === 'TSLP_MATERIAL_COMPUTE_HYBRID_REQUIRED',
+		);
+		assert.throws(
+			() => hydrateNodeBuilderState( artifact, material ),
+			( error ) => error.code === 'TSLP_MATERIAL_COMPUTE_HYBRID_REQUIRED',
+		);
+
+	} finally {
+
+		await support.dispose();
+
+	}
+
+} );
+
 test( 'createSlimSceneSupport consumes one hybrid lease per frame and recovers on redispatch', async () => {
 
 	const slim = fakeRenderer();

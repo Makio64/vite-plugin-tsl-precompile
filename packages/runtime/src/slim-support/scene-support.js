@@ -863,6 +863,16 @@ export function createSlimSceneSupport( opts = {} ) {
 	 */
 	async function dispatchMaterialComputesNow( scene, computeOpts = {} ) {
 
+		// A lease proves that one complete dispatch/synchronisation transaction
+		// succeeded. Revoke every lease owned by this support instance before
+		// inspecting the next scene, so removed materials cannot present stale
+		// output. Only current successful owners are claimed again below.
+		for ( const material of delegatedMaterialComputeMaterials ) {
+
+			releaseMaterialComputeDelegation( material, materialComputeDelegationOwner );
+
+		}
+		delegatedMaterialComputeMaterials.clear();
 		computeOpts = computeOpts || {};
 		const collectedBindings = Array.isArray( computeOpts.bindings )
 			? computeOpts.bindings.slice()
@@ -875,16 +885,6 @@ export function createSlimSceneSupport( opts = {} ) {
 			material: binding.material,
 			sourceMaterial: binding.sourceMaterial || binding.material.__tslpSourceMaterial || binding.material,
 		} );
-		// A lease proves that one complete dispatch/synchronisation transaction
-		// succeeded. Revoke this support owner's previous transaction before
-		// inspecting or dispatching the next one; every failure below therefore
-		// leaves hydration closed instead of presenting stale output.
-		for ( const material of ownerByMaterial.keys() ) if ( delegatedMaterialComputeMaterials.has( material ) ) {
-
-			releaseMaterialComputeDelegation( material, materialComputeDelegationOwner );
-			delegatedMaterialComputeMaterials.delete( material );
-
-		}
 		const bindingsByMaterial = new Map();
 		for ( const binding of collectedBindings ) {
 
