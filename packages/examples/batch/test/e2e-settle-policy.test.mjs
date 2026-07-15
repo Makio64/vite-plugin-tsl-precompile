@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 
-import { installAnimationLoopSettleTransition, minimumRenderableObjectsForExample } from '../e2e-settle-policy.mjs';
+import { installAnimationLoopSettleTransition, minimumRenderableObjectsForExample, settleFramesForExample } from '../e2e-settle-policy.mjs';
 
 function transitionForTest() {
 
@@ -100,5 +100,16 @@ test( 'deferred subjects must be present before an example can freeze', () => {
 	assert.equal( minimumRenderableObjectsForExample( 'webgpu_loader_materialx.html' ), 65 );
 	assert.equal( minimumRenderableObjectsForExample( 'webgpu_tsl_wood.html' ), 55 );
 	assert.equal( minimumRenderableObjectsForExample( 'webgpu_materials.html' ), 1 );
+
+} );
+
+test( 'temporal examples freeze only after their required history is available', () => {
+
+	assert.equal( settleFramesForExample( 'webgpu_postprocessing_motion_blur.html' ), 2 );
+	assert.equal( settleFramesForExample( 'webgpu_postprocessing_ao.html' ), 16 );
+	assert.equal( settleFramesForExample( 'webgpu_postprocessing_traa.html' ), 80 );
+	assert.equal( settleFramesForExample( 'webgpu_camera_array.html' ), 1 );
+	assert.equal( settleFramesForExample( 'webgpu_materials.html', 12 ), 12 );
+	assert.equal( settleFramesForExample( 'webgpu_postprocessing_motion_blur.html', 5, true ), 5 );
 
 } );

@@ -46,7 +46,7 @@ import { assertThreeCheckoutMatchesVersion } from './_three-version.mjs';
 import { isolateCanvasForScreenshot, restoreCanvasAfterScreenshot } from './e2e-canvas-screenshot.mjs';
 import { installRenderSelectorMismatchRecorder } from './e2e-render-selector-recorder.mjs';
 import { enrichRenderSelectorDiagnostics, resolveE2ERoots, summarizeArtifactRenderSelectors } from './e2e-report-diagnostics.mjs';
-import { installAnimationLoopSettleTransition, minimumRenderableObjectsForExample } from './e2e-settle-policy.mjs';
+import { installAnimationLoopSettleTransition, minimumRenderableObjectsForExample, settleFramesForExample } from './e2e-settle-policy.mjs';
 import { captureWaitOverrideForExample, comparePngBuffers, expectedReplayErrorPatternsForExample, pixelGateDisabledReasonForExample, psnrThresholdForExample, tierExamples } from './psnr.mjs';
 import { loadSlimBundle, slimBundleHashOptions, slimBundleReportProvenance } from './slim-bundle-provenance.mjs';
 
@@ -14119,55 +14119,6 @@ function targetTickForExample( name ) {
 	return targetTick;
 }
 
-function settleFramesForExample( name ) {
-	if ( HAS_EXPLICIT_SETTLE_FRAMES ) return SETTLE_FRAMES;
-	// ArrayCamera has no asynchronous scene assets and mutates rotation by
-	// frame count, not by the rAF timestamp. One quiet present frame is enough
-	// to capture the stable canvas; the general eight-frame settle advances the
-		// capture and replay wrappers through different renderer-initialization
-		// work, which shows up as a false visual diff.
-		if ( name === 'webgpu_camera_array.html' ) return 1;
-		// These examples keep advancing render-visible state on every clamped
-		// animation-loop callback (compute steps, helper/scissor state, media frames,
-		// postprocessing history, TSL time, or damping-driven camera state). Extra
-	// settle frames can therefore compare different histories instead of replay
-	// fidelity.
-	if ( name === 'webgpu_camera.html' ) return 1;
-		if ( name === 'webgpu_compute_birds.html' ) return 1;
-		if ( name === 'webgpu_compute_sort_bitonic.html' ) return 1;
-		if ( name === 'webgpu_compute_water.html' ) return 1;
-		if ( name === 'webgpu_tsl_compute_attractors_particles.html' ) return 1;
-		if ( name === 'webgpu_instance_path.html' ) return 1;
-	if ( name === 'webgpu_lights_custom.html' ) return 1;
-	if ( name === 'webgpu_lights_projector.html' ) return 1;
-	if ( name === 'webgpu_materials_video.html' ) return 1;
-		if ( name === 'webgpu_postprocessing_dof.html' ) return 1;
-		if ( name === 'webgpu_postprocessing_motion_blur.html' ) return 1;
-		if ( name === 'webgpu_postprocessing_retro.html' ) return 1;
-		if ( name === 'webgpu_postprocessing_smaa.html' ) return 1;
-		if ( name === 'webgpu_postprocessing_ssr.html' ) return 1;
-	// TRAA-backed effects need several quiet frames to build usable history
-	// after the harness holds pre-ready count-driven callbacks.
-	if ( name === 'webgpu_postprocessing_ao.html' ) return 16;
-	// TRAA's temporal resolve needs enough same-pose history to converge to the
-	// stock frame. With jitter pinned in both modes, 80 quiet frames reaches a
-	// bit-for-bit identical replay for this callback-count-driven example.
-	if ( name === 'webgpu_postprocessing_traa.html' ) return 80;
-	if ( name === 'webgpu_sandbox.html' ) return 1;
-	if ( name === 'webgpu_shadowmap_progressive.html' ) return 1;
-	if ( name === 'webgpu_tsl_wood.html' ) return 1;
-	// The transmitted shadow needs several completed renders before its projected
-	// caustic texture is usable. A single quiet frame freezes the reference while
-	// the duck and floor are still nearly black. The deterministic rAF wrapper
-	// keeps the eight callback-count rotations aligned across all three passes.
-	if ( name === 'webgpu_caustics.html' ) return 8;
-	// Replay generates PMREM for the cube-camera render target asynchronously.
-	// Extra settle frames run another cubeCamera.update(), invalidating the
-	// just-finished PMREM and keeping the visual gate in a moving target loop.
-	if ( name === 'webgpu_cubemap_dynamic.html' ) return 1;
-	return SETTLE_FRAMES;
-}
-
 function holdAnimationUntilReadyForExample( name ) {
 	// TRAA mutates object rotation by animation callback count and then
 	// accumulates that history. Resetting the settle counter while texture /
@@ -14685,7 +14636,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 	const effectiveTargetTick = targetTickForExample( name );
 	const TARGET_TICK = Number.isFinite( effectiveTargetTick ) ? Math.max( 0, effectiveTargetTick | 0 ) : 0;
 	const FRAME_STEP_MS = 16.6667;
-		const effectiveSettleFrames = settleFramesForExample( name );
+		const effectiveSettleFrames = settleFramesForExample( name, SETTLE_FRAMES, HAS_EXPLICIT_SETTLE_FRAMES );
 		timings.targetTick = TARGET_TICK;
 		timings.settleFrames = effectiveSettleFrames;
 		const waitForRenderableObjects = await exampleUsesDeferredSceneAssets( name );

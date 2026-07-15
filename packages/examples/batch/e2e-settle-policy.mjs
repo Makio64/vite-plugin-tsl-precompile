@@ -82,3 +82,62 @@ export function minimumRenderableObjectsForExample( name ) {
 	return 1;
 
 }
+
+/**
+ * Number of quiet animation-loop callbacks required before freezing an
+ * example. Keep these harness-only policies outside the main runner so their
+ * temporal assumptions can be tested without launching a browser.
+ */
+export function settleFramesForExample( name, defaultSettleFrames = 8, hasExplicitSettleFrames = false ) {
+
+	if ( hasExplicitSettleFrames ) return defaultSettleFrames;
+	// ArrayCamera has no asynchronous scene assets and mutates rotation by
+	// frame count, not by the rAF timestamp. One quiet present frame is enough
+	// to capture the stable canvas; the general eight-frame settle advances the
+	// capture and replay wrappers through different renderer-initialization
+	// work, which shows up as a false visual diff.
+	if ( name === 'webgpu_camera_array.html' ) return 1;
+	// These examples keep advancing render-visible state on every clamped
+	// animation-loop callback (compute steps, helper/scissor state, media frames,
+	// postprocessing history, TSL time, or damping-driven camera state). Extra
+	// settle frames can therefore compare different histories instead of replay
+	// fidelity.
+	if ( name === 'webgpu_camera.html' ) return 1;
+	if ( name === 'webgpu_compute_birds.html' ) return 1;
+	if ( name === 'webgpu_compute_sort_bitonic.html' ) return 1;
+	if ( name === 'webgpu_compute_water.html' ) return 1;
+	if ( name === 'webgpu_tsl_compute_attractors_particles.html' ) return 1;
+	if ( name === 'webgpu_instance_path.html' ) return 1;
+	if ( name === 'webgpu_lights_custom.html' ) return 1;
+	if ( name === 'webgpu_lights_projector.html' ) return 1;
+	if ( name === 'webgpu_materials_video.html' ) return 1;
+	if ( name === 'webgpu_postprocessing_dof.html' ) return 1;
+	if ( name === 'webgpu_postprocessing_retro.html' ) return 1;
+	if ( name === 'webgpu_postprocessing_smaa.html' ) return 1;
+	if ( name === 'webgpu_postprocessing_ssr.html' ) return 1;
+	// The first render containing the async Xbot initializes its skinned velocity
+	// history. A second render is required before the motion-blur pass has a real
+	// previous/current pose pair.
+	if ( name === 'webgpu_postprocessing_motion_blur.html' ) return 2;
+	// TRAA-backed effects need several quiet frames to build usable history
+	// after the harness holds pre-ready count-driven callbacks.
+	if ( name === 'webgpu_postprocessing_ao.html' ) return 16;
+	// TRAA's temporal resolve needs enough same-pose history to converge to the
+	// stock frame. With jitter pinned in both modes, 80 quiet frames reaches a
+	// bit-for-bit identical replay for this callback-count-driven example.
+	if ( name === 'webgpu_postprocessing_traa.html' ) return 80;
+	if ( name === 'webgpu_sandbox.html' ) return 1;
+	if ( name === 'webgpu_shadowmap_progressive.html' ) return 1;
+	if ( name === 'webgpu_tsl_wood.html' ) return 1;
+	// The transmitted shadow needs several completed renders before its projected
+	// caustic texture is usable. A single quiet frame freezes the reference while
+	// the duck and floor are still nearly black. The deterministic rAF wrapper
+	// keeps the eight callback-count rotations aligned across all three passes.
+	if ( name === 'webgpu_caustics.html' ) return 8;
+	// Replay generates PMREM for the cube-camera render target asynchronously.
+	// Extra settle frames run another cubeCamera.update(), invalidating the
+	// just-finished PMREM and keeping the visual gate in a moving target loop.
+	if ( name === 'webgpu_cubemap_dynamic.html' ) return 1;
+	return defaultSettleFrames;
+
+}
