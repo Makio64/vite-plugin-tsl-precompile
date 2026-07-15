@@ -7,6 +7,7 @@ import {
 	createArtifactVariantPayloadFingerprint,
 	mergeArtifactVariantFamily,
 } from '@tsl-precompile/contract/artifact-variants';
+import { createViewportTextureIdentity } from '@tsl-precompile/contract/dynamic-bindings';
 import { validateArtifact } from '@tsl-precompile/contract/kinds';
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
 
@@ -36,6 +37,21 @@ function withTextureIdentity( value, textureUuid ) {
 function textureIdentity( value ) {
 
 	return value.uniformPlan[ 0 ].textures[ 0 ].source.textureUuid;
+
+}
+
+function withViewportIdentity( value, captureReference ) {
+
+	value.uniformPlan = [ {
+		textures: [ { source: { kind: 'viewport.texture', viewportIdentity: createViewportTextureIdentity( captureReference ) } } ],
+	} ];
+	return value;
+
+}
+
+function viewportIdentity( value ) {
+
+	return value.uniformPlan[ 0 ].textures[ 0 ].source.viewportIdentity;
 
 }
 
@@ -112,6 +128,20 @@ test( 'artifact variant family aligns renamed ephemeral identities before unioni
 	assert.deepEqual( authoritative.renderContextSelectors, [ selectorA, selectorB ].sort() );
 	assert.equal( textureIdentity( authoritative ), 'capture-texture-a', 'the durable family keeps its authoritative identity spelling' );
 	assert.equal( authoritative.variants, undefined );
+
+} );
+
+test( 'artifact variant family aligns recaptured viewport reference identities', () => {
+
+	const selectorA = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'default' } } );
+	const selectorB = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'offscreen-2d' } } );
+	const authoritative = withViewportIdentity( artifact( 'viewport-copy', 'shared-shader', [ selectorA ] ), 'capture-reference-a' );
+	const recaptured = withViewportIdentity( artifact( 'viewport-copy', 'shared-shader', [ selectorB ] ), 'capture-reference-b' );
+
+	mergeArtifactVariantFamily( authoritative, [ authoritative, recaptured ] );
+
+	assert.deepEqual( authoritative.renderContextSelectors, [ selectorA, selectorB ].sort() );
+	assert.equal( viewportIdentity( authoritative ), createViewportTextureIdentity( 'capture-reference-a' ) );
 
 } );
 

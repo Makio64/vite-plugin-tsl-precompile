@@ -12,6 +12,28 @@ import {
 	textureBindingTargets,
 } from './texture-binding-targets.js';
 
+// viewportIdentity preserves equality of the live reference returned during
+// capture. Pooling that equivalence class recreates Three's copy-source sharing;
+// scheduling still keys the runtime node's current reference so render-target
+// switches remain independent. Weak values let old HMR epochs disappear once
+// no hydrated material retains their source.
+const viewportSourcesByIdentity = new Map();
+const viewportCopySchedule = new WeakMap();
+const hasWeakReferences = typeof WeakRef === 'function';
+const viewportSourceFinalizer = typeof FinalizationRegistry === 'function' && hasWeakReferences
+	? new FinalizationRegistry( ( { key, reference } ) => {
+
+		if ( viewportSourcesByIdentity.get( key ) === reference && reference.deref() === undefined ) viewportSourcesByIdentity.delete( key );
+
+	} )
+	: null;
+
+export function clearViewportTextureIdentityPoolForTests() {
+
+	viewportSourcesByIdentity.clear();
+
+}
+
 export function shouldSkipViewportCopyForZeroThicknessTransmission( _artifact ) {
 
 	// The fallback texture only exists to satisfy bind-group validation before
@@ -38,11 +60,7 @@ export function createViewportTextureRebinder( entries, deps = {} ) {
 	const createPlainNode = deps.viewportTexture || viewportTexture;
 	const createDepthNode = deps.viewportDepthTexture || viewportDepthTexture;
 	const createSharedNode = deps.viewportSharedTexture || viewportSharedTexture;
-	let mipNode = null;
-	let plainNode = null;
-	let depthNode = null;
-	let sharedNode = null;
-	const lastCopyRenderId = { mip: -1, plain: -1, depth: -1, shared: -1 };
+	const localNodes = new Map();
 	const lastSeen = new WeakMap();
 
 	return {
@@ -78,26 +96,11 @@ export function createViewportTextureRebinder( entries, deps = {} ) {
 				}
 
 				const variant = entry.isDepth ? 'depth' : entry.shared === true && entry.generateMipmaps !== true ? 'shared' : entry.generateMipmaps ? 'mip' : 'plain';
-				let node = variant === 'depth' ? depthNode : variant === 'shared' ? sharedNode : variant === 'mip' ? mipNode : plainNode;
-				if ( ! node ) {
+				const factory = variant === 'depth' ? createDepthNode : variant === 'shared' ? createSharedNode : variant === 'mip' ? createMipNode : createPlainNode;
+				const node = viewportCopyNode( localNodes, entry, variant, factory );
 
-					node = variant === 'depth' ? createDepthNode() : variant === 'shared' ? createSharedNode() : variant === 'mip' ? createMipNode() : createPlainNode();
-					if ( variant === 'depth' ) depthNode = node;
-					else if ( variant === 'shared' ) sharedNode = node;
-					else if ( variant === 'mip' ) mipNode = node;
-					else plainNode = node;
-
-				}
-
-				if ( typeof node.updateReference === 'function' ) node.updateReference( frame );
-
-				const renderId = frame.renderId != null ? frame.renderId : 0;
-				if ( lastCopyRenderId[ variant ] !== renderId ) {
-
-					node.updateBefore( frame );
-					lastCopyRenderId[ variant ] = renderId;
-
-				}
+				const reference = typeof node.updateReference === 'function' ? node.updateReference( frame ) : node.value;
+				updateViewportCopyOnce( reference || node.value || node, node, frame );
 
 				const liveTex = node.value;
 				if ( ! liveTex ) continue;
@@ -118,6 +121,55 @@ export function createViewportTextureRebinder( entries, deps = {} ) {
 
 }
 
+function viewportCopyNode( localNodes, entry, variant, factory ) {
+
+	const identity = entry && entry.sourceIdentity;
+	const key = typeof identity === 'string' && identity.length > 0 ? identity : variant;
+	let node = localNodes.get( key );
+	if ( node ) return node;
+	if ( typeof identity === 'string' && identity.length > 0 ) {
+
+		const stored = viewportSourcesByIdentity.get( key );
+		node = hasWeakReferences && stored ? stored.deref() : stored;
+		if ( stored && ! node ) viewportSourcesByIdentity.delete( key );
+
+	}
+	if ( ! node ) {
+
+		node = factory();
+		if ( typeof identity === 'string' && identity.length > 0 ) {
+
+			if ( hasWeakReferences ) {
+
+				const reference = new WeakRef( node );
+				viewportSourcesByIdentity.set( key, reference );
+				if ( viewportSourceFinalizer ) viewportSourceFinalizer.register( node, { key, reference } );
+
+			} else {
+
+				viewportSourcesByIdentity.set( key, node );
+
+			}
+
+		}
+
+	}
+	localNodes.set( key, node );
+	return node;
+
+}
+
+function updateViewportCopyOnce( reference, node, frame ) {
+
+	let byRenderer = viewportCopySchedule.get( reference );
+	if ( ! byRenderer ) viewportCopySchedule.set( reference, byRenderer = new WeakMap() );
+	const renderer = frame.renderer;
+	const renderId = frame.renderId != null ? frame.renderId : 0;
+	if ( byRenderer.get( renderer ) === renderId ) return;
+	if ( node.updateBefore( frame ) !== false ) byRenderer.set( renderer, renderId );
+
+}
+
 function recordViewportRebindDiagnostic( entry, variant, frame, texture, changed ) {
 
 	const root = typeof globalThis !== 'undefined' ? globalThis : null;
@@ -133,6 +185,7 @@ function recordViewportRebindDiagnostic( entry, variant, frame, texture, changed
 		changed: changed === true,
 		isDepth: entry && entry.isDepth === true,
 		generateMipmaps: entry && entry.generateMipmaps === true,
+		sourceIdentity: entry && entry.sourceIdentity || null,
 		renderId: frame && frame.renderId != null ? frame.renderId : null,
 		target: target && target.texture && target.texture.name || target && target.name || '',
 		textureName: texture && texture.name || '',

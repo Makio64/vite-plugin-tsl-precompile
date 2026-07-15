@@ -41,6 +41,16 @@ two-sided transmission regression together when upgrading Three.
 `compileTSL.js` re-exports that factory so the browser marker can preload the
 one Vite-aliased dev module instead of introducing another private-source alias.
 
+Three r184's `NodeFrame` deduplicates a viewport node's `updateBefore()` by the
+live texture returned from `updateReference()`, not by the viewport node or its
+material. After the warm-up render, the extractor persists equality of those
+non-default references as an ephemeral `viewportIdentity`; replay pools one
+copy source per identity and schedules it by the new render target's live
+reference. This preserves both shared and distinct copy cadence without trying
+to resolve a dead capture texture. Keep the reference proof, identity remap,
+live-reference schedule, and MaterialX multi-glass regression together when
+upgrading Three's viewport-node lifecycle.
+
 `RenderObjects.get()` returns before Renderer assigns the current geometry
 group to `renderObject.group`, and shadow rendering has already replaced the
 caster material by then. The adapter therefore also owns one Symbol-shared

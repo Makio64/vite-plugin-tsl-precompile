@@ -18,6 +18,29 @@ export const DYNAMIC_BINDING_PHASE = Object.freeze( {
 	LATE_REBIND: 'late-rebind',
 } );
 
+// Capture-time spelling for the live reference returned by a viewport node's
+// updateReference(). The token is ephemeral, but equality is meaningful:
+// Three's NodeFrame uses that same reference to deduplicate framebuffer copies.
+export const VIEWPORT_TEXTURE_IDENTITY_SCHEMA = 'viewport-reference@1';
+
+export function createViewportTextureIdentity( captureReference ) {
+
+	if ( typeof captureReference !== 'string' || captureReference.length === 0 || /[\s#]/.test( captureReference ) ) return null;
+	return `${ VIEWPORT_TEXTURE_IDENTITY_SCHEMA }#${ captureReference }`;
+
+}
+
+export function isViewportTextureIdentity( identity ) {
+
+	if ( typeof identity !== 'string' ) return false;
+	const separator = identity.indexOf( '#' );
+	if ( separator <= 0 || separator === identity.length - 1 ) return false;
+	const schema = identity.slice( 0, separator );
+	const captureReference = identity.slice( separator + 1 );
+	return schema === VIEWPORT_TEXTURE_IDENTITY_SCHEMA && ! /[\s#]/.test( captureReference );
+
+}
+
 function freezeDescriptor( descriptor ) {
 
 	return Object.freeze( {
@@ -111,7 +134,7 @@ const exactDescriptors = {
 		owner: 'renderer',
 		resolver: 'hydrator/viewport-texture-rebinder',
 		required: [],
-		optional: [ 'generateMipmaps', 'isDepth', 'shared', 'textureType', 'textureDimension' ],
+		optional: [ 'viewportIdentity', 'generateMipmaps', 'isDepth', 'shared', 'textureType', 'textureDimension' ],
 	} ),
 	'reflector.texture': freezeDescriptor( {
 		kind: 'reflector.texture',
@@ -327,6 +350,16 @@ export function validateDynamicBindingSource( source ) {
 			kind,
 			field: 'liveNodeId',
 			message: `${ kind } source "liveNodeId" must be a non-negative integer`,
+		} );
+
+	}
+	if ( kind === 'viewport.texture' && source.viewportIdentity !== undefined && isViewportTextureIdentity( source.viewportIdentity ) === false ) {
+
+		errors.push( {
+			code: 'dynamic-binding.viewport-identity',
+			kind,
+			field: 'viewportIdentity',
+			message: `${ kind } source "viewportIdentity" must be a known viewport copy-source identity`,
 		} );
 
 	}

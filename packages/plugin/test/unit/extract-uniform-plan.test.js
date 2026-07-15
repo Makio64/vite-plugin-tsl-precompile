@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Matrix3, Matrix4 } from 'three';
 import { UniformNode } from 'three/webgpu';
+import { createViewportTextureIdentity } from '@tsl-precompile/contract/dynamic-bindings';
 import { RENDER_BINDING_OWNER_KINDS } from '@tsl-precompile/contract/render-selector';
 
 import { extractUniformPlan } from '../../src/vendor/extractUniformPlan.js';
@@ -488,9 +489,36 @@ test( 'extractUniformPlan keeps ViewportTextureNode bindings on the viewport reb
 	const source = plan[ 0 ].textures[ 0 ].source;
 	assert.equal( source.kind, 'viewport.texture' );
 	assert.equal( source.generateMipmaps, true );
-	assert.equal( source.textureUuid, undefined );
+	assert.equal( source.viewportIdentity, undefined );
 
 	} );
+
+test( 'extractUniformPlan preserves observed viewport copy-reference equality', () => {
+
+	const defaultFramebuffer = { isTexture: true, isFramebufferTexture: true, uuid: 'default-framebuffer' };
+	const textureNode = {
+		isNode: true,
+		isViewportTextureNode: true,
+		generateMipmaps: true,
+		constructor: { type: 'ViewportTextureNode' },
+		value: {
+			isTexture: true,
+			isFramebufferTexture: true,
+			uuid: 'render-target-specific-clone',
+		},
+		defaultFramebuffer,
+	};
+	const first = extractUniformPlan( makeTextureState( textureNode ) );
+	const second = extractUniformPlan( makeTextureState( { ...textureNode } ) );
+
+	assert.equal( first[ 0 ].textures[ 0 ].source.viewportIdentity, createViewportTextureIdentity( 'render-target-specific-clone' ) );
+	assert.equal( second[ 0 ].textures[ 0 ].source.viewportIdentity, first[ 0 ].textures[ 0 ].source.viewportIdentity );
+
+	textureNode.value = defaultFramebuffer;
+	const notObserved = extractUniformPlan( makeTextureState( textureNode ) );
+	assert.equal( notObserved[ 0 ].textures[ 0 ].source.viewportIdentity, undefined );
+
+} );
 
 	test( 'extractUniformPlan preserves ViewportSharedTextureNode intent for the viewport rebinder', () => {
 
@@ -509,6 +537,7 @@ test( 'extractUniformPlan keeps ViewportTextureNode bindings on the viewport reb
 		assert.equal( source.kind, 'viewport.texture' );
 		assert.equal( source.shared, true );
 		assert.equal( source.generateMipmaps, false );
+		assert.equal( source.viewportIdentity, undefined );
 
 	} );
 

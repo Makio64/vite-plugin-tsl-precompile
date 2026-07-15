@@ -122,6 +122,7 @@ function classifyViewportTexture( entry, runtimeBinding, descriptor, ctx ) {
 		isDepth: source.isDepth === true || ctx.shaderDeclaresDepthTexture( ctx.artifact, descriptor.name || '' ),
 		material: ctx.material,
 		shared: source.shared === true,
+		sourceIdentity: typeof source.viewportIdentity === 'string' && source.viewportIdentity.length > 0 ? source.viewportIdentity : null,
 		skipZeroThicknessTransmission,
 	} );
 

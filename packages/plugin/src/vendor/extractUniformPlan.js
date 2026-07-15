@@ -23,6 +23,7 @@
 // version in VENDORING.md and add a compat shim in _shared/three-compat.js.
 import { modelNormalMatrix, modelWorldMatrixInverse, time, deltaTime, frameId, backgroundBlurriness, backgroundIntensity, backgroundRotation, toneMappingExposure, lightPosition, lightTargetPosition, lightViewPosition, lightShadowMatrix } from 'three/tsl';
 import { UniformNode } from 'three/webgpu';
+import { createViewportTextureIdentity } from '@tsl-precompile/contract/dynamic-bindings';
 import { createLightSourceIdentityMetadata } from '@tsl-precompile/contract/light-identities';
 import { RENDER_BINDING_OWNER_KINDS, SHADOW_CASTER_COPIED_BINDING_PROPERTIES } from '@tsl-precompile/contract/render-selector';
 
@@ -1265,6 +1266,50 @@ function textureIdentity( texture ) {
 
 }
 
+function canonicalViewportNode( node ) {
+
+	const seen = new Set();
+	let current = node;
+	try {
+
+		while ( current && current.referenceNode ) {
+
+			if ( seen.has( current ) ) return null;
+			seen.add( current );
+			current = current.referenceNode;
+
+		}
+
+	} catch ( _ ) {
+
+		return null;
+
+	}
+	return current || node;
+
+}
+
+function viewportSourceIdentity( textureNode ) {
+
+	try {
+
+		if ( ! textureNode || textureNode.constructor && textureNode.constructor.type === 'ViewportSharedTextureNode' ) return null;
+		const sourceNode = canonicalViewportNode( textureNode );
+		const liveReference = textureNode.value || textureNode._value || null;
+		// A non-default framebuffer proves updateReference() observed a concrete
+		// canvas/render-target reference during warm-up. Its UUID is persisted only
+		// as an equivalence token; runtime never resolves that dead texture.
+		if ( ! sourceNode || ! sourceNode.defaultFramebuffer || liveReference === sourceNode.defaultFramebuffer || liveReference && liveReference.isTexture !== true ) return null;
+		return createViewportTextureIdentity( liveReference && liveReference.uuid );
+
+	} catch ( _ ) {
+
+		return null;
+
+	}
+
+}
+
 function snapshotTexture( texture ) {
 
 	const image = texture && texture.image;
@@ -1657,8 +1702,10 @@ export function extractUniformPlan( state, context = null ) {
 							// not in the material graph), leaving the binding at the
 							// 1×1 fallback and breaking refraction depth checks.
 							const isSharedViewport = textureNode.constructor && textureNode.constructor.type === 'ViewportSharedTextureNode';
+							const viewportIdentity = viewportSourceIdentity( textureNode );
 							source = {
 								kind: 'viewport.texture',
+								...( viewportIdentity ? { viewportIdentity } : {} ),
 								generateMipmaps: !! ( textureNode && textureNode.generateMipmaps ),
 								isDepth: tex.isDepthTexture === true,
 							};
@@ -1756,8 +1803,10 @@ export function extractUniformPlan( state, context = null ) {
 							// maps) intentionally fall through to artifact.texture
 							// so replay can bind that material's live texture rather
 							// than copying the whole viewport over it.
+							const viewportIdentity = viewportSourceIdentity( textureNode );
 							source = {
 								kind: 'viewport.texture',
+								...( viewportIdentity ? { viewportIdentity } : {} ),
 								generateMipmaps: !! ( textureNode && textureNode.generateMipmaps ),
 							};
 

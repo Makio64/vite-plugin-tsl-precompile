@@ -4,6 +4,7 @@ const EPHEMERAL_IDENTITY_FIELDS = Object.freeze( {
 	captureUuid: 'light',
 	lightUuid: 'light',
 	textureUuid: 'texture',
+	viewportIdentity: 'viewport',
 } );
 
 /**
@@ -395,8 +396,8 @@ export function createArtifactIdentityRemapState() {
 }
 
 /**
- * Replace capture-session light/texture UUID spelling with deterministic,
- * kind-aware tokens while preserving relational identity.
+ * Replace capture-session light/texture/viewport-reference spelling with
+ * deterministic, kind-aware tokens while preserving relational identity.
  */
 export function remapArtifactEphemeralIdentities( value, state = createArtifactIdentityRemapState() ) {
 

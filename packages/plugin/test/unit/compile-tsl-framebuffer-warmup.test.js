@@ -4,6 +4,7 @@ import test from 'node:test';
 import { compileTSL } from '../../src/vendor/compileTSL.js';
 import { createMockGPUCanvasContext, installMockWebGPU } from '../../src/mock-webgpu.js';
 import { beginRenderObjectHarvest } from '../../src/vendor/render-object-observer.js';
+import { VIEWPORT_TEXTURE_IDENTITY_SCHEMA } from '@tsl-precompile/contract/dynamic-bindings';
 import { RENDER_BINDING_OWNER_KINDS } from '@tsl-precompile/contract/render-selector';
 
 test( 'compileTSL binds the renderer framebuffer target during canvas warm-up', async () => {
@@ -210,6 +211,17 @@ test( 'compileTSL preserves side-specialized two-pass transmission without leaki
 
 			}
 			assert.deepEqual( [ ...bySide.keys() ].sort(), [ core.FrontSide, core.BackSide ].sort() );
+			for ( const variant of bySide.values() ) {
+
+				const viewportIdentities = new Set( variant.uniformPlan
+					.flatMap( ( group ) => group.textures || [] )
+					.map( ( binding ) => binding.source )
+					.filter( ( source ) => source && source.kind === 'viewport.texture' )
+					.map( ( source ) => source.viewportIdentity ) );
+				assert.equal( viewportIdentities.size, 1 );
+				assert.match( [ ...viewportIdentities ][ 0 ], new RegExp( `^${ VIEWPORT_TEXTURE_IDENTITY_SCHEMA }#` ) );
+
+			}
 			const backShader = bySide.get( core.BackSide ).fragmentShader;
 			const frontShader = bySide.get( core.FrontSide ).fragmentShader;
 			assert.match( backShader, /NORMAL_normalView = \( normalViewGeometry \* vec3<f32>\( -1\.0 \) \);/ );

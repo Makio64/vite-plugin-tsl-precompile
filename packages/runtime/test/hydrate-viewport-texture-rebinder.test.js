@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+	clearViewportTextureIdentityPoolForTests,
 	createViewportTextureRebinder,
 	shouldSkipViewportCopyForZeroThicknessTransmission,
 	shouldUseViewportFallbackForFrame,
@@ -18,15 +19,17 @@ function createBinding( texture ) {
 
 }
 
-function createFrame( renderId = 1 ) {
+const defaultRenderer = {
+	backend: {
+		get: ( texture ) => ( { texture: texture && texture.gpuTexture || null } ),
+	},
+};
+
+function createFrame( renderId = 1, renderer = defaultRenderer ) {
 
 	return {
 		renderId,
-		renderer: {
-			backend: {
-				get: ( texture ) => ( { texture: texture && texture.gpuTexture || null } ),
-			},
-		},
+		renderer,
 	};
 
 }
@@ -258,5 +261,133 @@ test( 'viewport texture rebinder uses shared viewport nodes for shared entries',
 	assert.equal( plainFactoryCalls, 0 );
 	assert.equal( updateBeforeCalls, 1 );
 	assert.equal( binding.texture, liveTexture );
+
+} );
+
+test( 'viewport texture rebinder preserves captured reference equality across materials', () => {
+
+	clearViewportTextureIdentityPoolForTests();
+	const liveTexture = { uuid: 'identity-live', gpuTexture: { label: 'identity-gpu' } };
+	const bindingA = createBinding( { uuid: 'fallback-a' } );
+	const bindingB = createBinding( { uuid: 'fallback-b' } );
+	let factoryCalls = 0;
+	let updateBeforeCalls = 0;
+	const deps = {
+		viewportMipTexture: () => {
+
+			factoryCalls ++;
+			return {
+				value: liveTexture,
+				updateReference() {},
+				updateBefore() { updateBeforeCalls ++; },
+			};
+
+		},
+	};
+	const entry = ( binding ) => ( {
+		binding,
+		fallbackTexture: binding.texture,
+		generateMipmaps: true,
+		isDepth: false,
+		sourceIdentity: 'viewport-reference@1#captured-reference',
+		skipZeroThicknessTransmission: false,
+		material: {},
+	} );
+	const rebinderA = createViewportTextureRebinder( [ entry( bindingA ) ], deps );
+	const rebinderB = createViewportTextureRebinder( [ entry( bindingB ) ], deps );
+
+	rebinderA.updateBefore( createFrame( 21 ) );
+	rebinderB.updateBefore( createFrame( 21 ) );
+	rebinderA.updateBefore( createFrame( 22 ) );
+	rebinderB.updateBefore( createFrame( 22 ) );
+
+	assert.equal( factoryCalls, 1 );
+	assert.equal( updateBeforeCalls, 2 );
+	assert.equal( bindingA.texture, liveTexture );
+	assert.equal( bindingB.texture, liveTexture );
+	clearViewportTextureIdentityPoolForTests();
+
+} );
+
+test( 'viewport identity sharing wins over reconstructed copy variants', () => {
+
+	clearViewportTextureIdentityPoolForTests();
+	const liveTexture = { uuid: 'shared-variant-live', gpuTexture: { label: 'shared-variant-gpu' } };
+	const mipBinding = createBinding( { uuid: 'mip-fallback' } );
+	const plainBinding = createBinding( { uuid: 'plain-fallback' } );
+	let mipFactoryCalls = 0;
+	let plainFactoryCalls = 0;
+	let updateBeforeCalls = 0;
+	const node = {
+		value: liveTexture,
+		updateReference() { return liveTexture; },
+		updateBefore() { updateBeforeCalls ++; },
+	};
+	const deps = {
+		viewportMipTexture: () => { mipFactoryCalls ++; return node; },
+		viewportTexture: () => { plainFactoryCalls ++; return node; },
+	};
+	const entry = ( binding, generateMipmaps ) => ( {
+		binding,
+		fallbackTexture: binding.texture,
+		generateMipmaps,
+		isDepth: false,
+		sourceIdentity: 'viewport-reference@1#shared-copy-reference',
+		skipZeroThicknessTransmission: false,
+		material: {},
+	} );
+	const mip = createViewportTextureRebinder( [ entry( mipBinding, true ) ], deps );
+	const plain = createViewportTextureRebinder( [ entry( plainBinding, false ) ], deps );
+
+	mip.updateBefore( createFrame( 25 ) );
+	plain.updateBefore( createFrame( 25 ) );
+
+	assert.equal( mipFactoryCalls, 1 );
+	assert.equal( plainFactoryCalls, 0 );
+	assert.equal( updateBeforeCalls, 1 );
+	assert.equal( mipBinding.texture, liveTexture );
+	assert.equal( plainBinding.texture, liveTexture );
+	clearViewportTextureIdentityPoolForTests();
+
+} );
+
+test( 'viewport texture copy cadence follows the live render-target reference', () => {
+
+	clearViewportTextureIdentityPoolForTests();
+	const referenceA = { uuid: 'target-a', gpuTexture: { label: 'target-a-gpu' } };
+	const referenceB = { uuid: 'target-b', gpuTexture: { label: 'target-b-gpu' } };
+	const binding = createBinding( { uuid: 'fallback' } );
+	let activeReference = referenceA;
+	let updateBeforeCalls = 0;
+	const node = {
+		value: activeReference,
+		updateReference() {
+
+			this.value = activeReference;
+			return activeReference;
+
+		},
+		updateBefore() { updateBeforeCalls ++; },
+	};
+	const rebinder = createViewportTextureRebinder( [ {
+		binding,
+		fallbackTexture: binding.texture,
+		generateMipmaps: true,
+		isDepth: false,
+		sourceIdentity: 'viewport-reference@1#multi-target-reference',
+		skipZeroThicknessTransmission: false,
+		material: {},
+	} ], {
+		viewportMipTexture: () => node,
+	} );
+
+	rebinder.updateBefore( createFrame( 31 ) );
+	activeReference = referenceB;
+	rebinder.updateBefore( createFrame( 31 ) );
+	rebinder.updateBefore( createFrame( 31 ) );
+
+	assert.equal( updateBeforeCalls, 2 );
+	assert.equal( binding.texture, referenceB );
+	clearViewportTextureIdentityPoolForTests();
 
 } );

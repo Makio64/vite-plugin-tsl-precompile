@@ -19,6 +19,8 @@ import {
 import {
 	DYNAMIC_BINDING_PHASE,
 	DYNAMIC_BINDING_TARGET,
+	VIEWPORT_TEXTURE_IDENTITY_SCHEMA,
+	createViewportTextureIdentity,
 	dynamicBindingDescriptor,
 	isDynamicBindingKind,
 	validateDynamicBindingSource,
@@ -274,6 +276,17 @@ test( 'contract dynamic binding descriptors document runtime texture and live sl
 	assert.equal( viewport.phase, DYNAMIC_BINDING_PHASE.UPDATE_BEFORE );
 	assert.match( viewport.resolver, /viewport-texture/ );
 	assert.ok( viewport.optional.includes( 'shared' ) );
+	assert.ok( viewport.optional.includes( 'viewportIdentity' ) );
+	assert.equal( VIEWPORT_TEXTURE_IDENTITY_SCHEMA, 'viewport-reference@1' );
+	const validViewportIdentity = createViewportTextureIdentity( 'capture-reference' );
+	assert.deepEqual( validateDynamicBindingSource( { kind: 'viewport.texture', viewportIdentity: validViewportIdentity } ), [] );
+	for ( const viewportIdentity of [ null, '', 42, VIEWPORT_TEXTURE_IDENTITY_SCHEMA, 'viewport-reference@2#capture' ] ) {
+
+		const error = validateDynamicBindingSource( { kind: 'viewport.texture', viewportIdentity } )[ 0 ];
+		assert.equal( error.code, 'dynamic-binding.viewport-identity' );
+		assert.equal( error.field, 'viewportIdentity' );
+
+	}
 
 	const live = dynamicBindingDescriptor( 'uniform.live' );
 	assert.equal( live.target, DYNAMIC_BINDING_TARGET.UNIFORM_SLOT );
@@ -315,6 +328,16 @@ test( 'contract dynamic binding descriptor validation reports missing required f
 
 	assert.equal( result.ok, false );
 	assert.equal( result.errors.find( ( error ) => error.code === 'dynamic-binding.required' ).path, 'uniformPlan[0].textures[0].source.property' );
+
+	const invalidViewport = validateArtifact( {
+		fragmentShader: 'var nodeTexture0: texture_2d<f32>;',
+		uniformPlan: [ {
+			name: 'material',
+			textures: [ { name: 'nodeTexture0', source: { kind: 'viewport.texture', viewportIdentity: 'typo' } } ],
+		} ],
+	}, { label: 'viewport fixture' } );
+	assert.equal( invalidViewport.ok, false );
+	assert.equal( invalidViewport.errors.find( ( error ) => error.code === 'dynamic-binding.viewport-identity' ).path, 'uniformPlan[0].textures[0].source.viewportIdentity' );
 
 } );
 
