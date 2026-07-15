@@ -4,7 +4,7 @@
  * generation consumes the captured artifact instead of a live LightsNode.
  */
 
-import { LightsNode } from './slim-stubs.js';
+import { LightsNode } from './slim-replay-lights-node.js';
 
 const defaultLights = /*@__PURE__*/ new LightsNode();
 const lightsByScene = /*@__PURE__*/ new WeakMap();

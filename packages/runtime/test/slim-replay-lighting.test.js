@@ -1,7 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
+import { rollup } from 'rollup';
 
 import ReplayLighting, { ReplayLightsNode } from '../src/slim-replay-lighting.js';
+import { LightsNode as CompatibilityLightsNode, Node as CompatibilityNode } from '../src/slim-stubs.js';
+
+test( 'replay and compatibility surfaces expose the same LightsNode class', () => {
+
+	assert.equal( ReplayLightsNode, CompatibilityLightsNode );
+	assert.equal( new ReplayLightsNode() instanceof CompatibilityLightsNode, true );
+	assert.equal( new ReplayLightsNode() instanceof CompatibilityNode, true );
+	assert.equal( new ReplayLighting().getNode( { isQuadMesh: true } ) instanceof CompatibilityNode, true );
+
+} );
 
 test( 'replay LightsNode sorts and exposes the active light state', () => {
 
@@ -56,5 +68,29 @@ test( 'replay Lighting retains one node per scene and a shared postprocess node'
 
 	}
 	assert.equal( new CustomLighting().getNode( {} ).custom, true );
+
+} );
+
+test( 'replay Lighting tree-shakes the broad Node/TSL compatibility module', async () => {
+
+	const build = await rollup( {
+		input: fileURLToPath( new URL( '../src/slim-replay-lighting.js', import.meta.url ) ),
+		external: ( id ) => id.startsWith( 'three/' ),
+	} );
+
+	try {
+
+		const generated = await build.generate( { format: 'es', compact: true } );
+		const chunk = generated.output.find( ( item ) => item.type === 'chunk' );
+		const modules = Object.keys( chunk.modules );
+		assert.equal( modules.some( ( id ) => id.endsWith( '/slim-replay-lights-node.js' ) ), true );
+		assert.equal( modules.some( ( id ) => id.endsWith( '/slim-stubs.js' ) ), false );
+		assert.equal( modules.some( ( id ) => id.endsWith( '/slim-support/node-dependencies.js' ) ), false );
+
+	} finally {
+
+		await build.close();
+
+	}
 
 } );
