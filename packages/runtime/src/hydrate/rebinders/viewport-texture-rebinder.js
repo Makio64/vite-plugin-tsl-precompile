@@ -18,6 +18,12 @@ import {
 // switches remain independent. Weak values let old HMR epochs disappear once
 // no hydrated material retains their source.
 const viewportSourcesByIdentity = new Map();
+// Copy cadence belongs to the live viewport node, not only to its texture.
+// Distinct ViewportSharedTextureNode instances intentionally write the same
+// FramebufferTexture as transparent objects are rendered, so collapsing them
+// by texture would freeze every backdrop material on the first object copy.
+// Captured source identities still pool the node itself and therefore retain
+// the intended once-per-render deduplication.
 const viewportCopySchedule = new WeakMap();
 const hasWeakReferences = typeof WeakRef === 'function';
 const viewportSourceFinalizer = typeof FinalizationRegistry === 'function' && hasWeakReferences
@@ -161,8 +167,10 @@ function viewportCopyNode( localNodes, entry, variant, factory ) {
 
 function updateViewportCopyOnce( reference, node, frame ) {
 
-	let byRenderer = viewportCopySchedule.get( reference );
-	if ( ! byRenderer ) viewportCopySchedule.set( reference, byRenderer = new WeakMap() );
+	let byReference = viewportCopySchedule.get( node );
+	if ( ! byReference ) viewportCopySchedule.set( node, byReference = new WeakMap() );
+	let byRenderer = byReference.get( reference );
+	if ( ! byRenderer ) byReference.set( reference, byRenderer = new WeakMap() );
 	const renderer = frame.renderer;
 	const renderId = frame.renderId != null ? frame.renderId : 0;
 	if ( byRenderer.get( renderer ) === renderId ) return;

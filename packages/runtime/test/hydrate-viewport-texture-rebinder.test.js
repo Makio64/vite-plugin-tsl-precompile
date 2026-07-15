@@ -264,6 +264,51 @@ test( 'viewport texture rebinder uses shared viewport nodes for shared entries',
 
 } );
 
+test( 'distinct shared viewport nodes refresh their common framebuffer in object order', () => {
+
+	const sharedTexture = { uuid: 'shared-live', gpuTexture: { label: 'shared-gpu' } };
+	const bindingA = createBinding( { uuid: 'fallback-a' } );
+	const bindingB = createBinding( { uuid: 'fallback-b' } );
+	const updateBeforeCalls = [];
+	let factoryCalls = 0;
+	const deps = {
+		viewportSharedTexture: () => {
+
+			const id = ++ factoryCalls;
+			return {
+				value: sharedTexture,
+				updateReference: () => sharedTexture,
+				updateBefore: () => { updateBeforeCalls.push( id ); },
+			};
+
+		},
+	};
+	const entry = ( binding ) => ( {
+		binding,
+		fallbackTexture: binding.texture,
+		generateMipmaps: false,
+		isDepth: false,
+		shared: true,
+		skipZeroThicknessTransmission: false,
+		material: {},
+	} );
+	const rebinderA = createViewportTextureRebinder( [ entry( bindingA ) ], deps );
+	const rebinderB = createViewportTextureRebinder( [ entry( bindingB ) ], deps );
+
+	rebinderA.updateBefore( createFrame( 11 ) );
+	rebinderB.updateBefore( createFrame( 11 ) );
+	rebinderA.updateBefore( createFrame( 11 ) );
+	rebinderB.updateBefore( createFrame( 11 ) );
+	rebinderA.updateBefore( createFrame( 12 ) );
+	rebinderB.updateBefore( createFrame( 12 ) );
+
+	assert.equal( factoryCalls, 2 );
+	assert.deepEqual( updateBeforeCalls, [ 1, 2, 1, 2 ] );
+	assert.equal( bindingA.texture, sharedTexture );
+	assert.equal( bindingB.texture, sharedTexture );
+
+} );
+
 test( 'viewport texture rebinder preserves captured reference equality across materials', () => {
 
 	clearViewportTextureIdentityPoolForTests();
