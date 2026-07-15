@@ -114,7 +114,7 @@ test( 'sparse point renders use a non-zero example-specific brightness floor', (
 test( 'temporal examples freeze only after their required history is available', () => {
 
 	assert.equal( settleFramesForExample( 'webgpu_postprocessing_motion_blur.html' ), 2 );
-	assert.equal( settleFramesForExample( 'webgpu_postprocessing_ssgi.html' ), 16 );
+	assert.equal( settleFramesForExample( 'webgpu_postprocessing_ssgi.html' ), 64 );
 	assert.equal( settleFramesForExample( 'webgpu_postprocessing_ao.html' ), 16 );
 	assert.equal( settleFramesForExample( 'webgpu_postprocessing_traa.html' ), 80 );
 	assert.equal( settleFramesForExample( 'webgpu_camera_array.html' ), 1 );

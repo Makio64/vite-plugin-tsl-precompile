@@ -121,9 +121,9 @@ export function settleFramesForExample( name, defaultSettleFrames = 8, hasExplic
 	// previous/current pose pair.
 	if ( name === 'webgpu_postprocessing_motion_blur.html' ) return 2;
 	// SSGI rotates a stochastic sampling pattern and feeds it through TRAA.
-	// Sixteen quiet frames let both capture and replay converge before comparison
+	// Sixty-four quiet frames let both capture and replay converge before comparison
 	// instead of grading different amounts of residual noise.
-	if ( name === 'webgpu_postprocessing_ssgi.html' ) return 16;
+	if ( name === 'webgpu_postprocessing_ssgi.html' ) return 64;
 	// TRAA-backed effects need several quiet frames to build usable history
 	// after the harness holds pre-ready count-driven callbacks.
 	if ( name === 'webgpu_postprocessing_ao.html' ) return 16;
