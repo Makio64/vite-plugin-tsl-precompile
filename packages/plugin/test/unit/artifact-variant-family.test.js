@@ -144,6 +144,38 @@ test( 'represented roots self-merge without treating capture metadata as variant
 
 } );
 
+test( 'represented root aliases project the canonical family member back onto the root', () => {
+
+	const selectorA = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'default' } } );
+	const selectorB = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'offscreen-2d' } } );
+	const selectorC = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'offscreen-cube' } } );
+	const selectorD = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'default', sampleCount: 4 } } );
+	const canonical = withTextureIdentity( artifact( 'a-alias', 'shared-shader', [ selectorA, selectorB ] ), 'canonical-texture' );
+	const sibling = withTextureIdentity( artifact( 'm-sibling', 'sibling-shader', [ selectorC ] ), 'sibling-texture' );
+	const root = withTextureIdentity( artifact( 'z-root', 'shared-shader', [ selectorA ] ), 'root-texture' );
+	const independentlyReusedKey = withTextureIdentity( artifact( 'z-root', 'later-shader', [ selectorD ] ), 'later-texture' );
+	root.variants = {
+		'a-alias': createArtifactVariantPayload( canonical ),
+		'm-sibling': createArtifactVariantPayload( sibling ),
+		'z-root': createArtifactVariantPayload( root ),
+	};
+	root.sourceMaterial = { type: 'MeshStandardNodeMaterial', name: 'instance' };
+
+	mergeArtifactVariantFamily( root, [ root, independentlyReusedKey ] );
+
+	assert.equal( root.cacheKey, 'a-alias', 'the represented root follows its retained canonical alias' );
+	assert.deepEqual( root.renderContextSelectors, [ selectorA, selectorB ].sort() );
+	assert.equal( textureIdentity( root ), 'canonical-texture' );
+	assert.deepEqual( Object.keys( root.variants ), [ 'a-alias', 'm-sibling', 'z-root' ] );
+	assert.deepEqual( createArtifactVariantPayload( root ), root.variants[ 'a-alias' ] );
+	assert.equal( root.variants[ 'z-root' ].fragmentShader, 'later-shader', 'a later family may independently reuse the private root key' );
+	assert.deepEqual( collectArtifactVariantCandidates( root ).map( ( candidate ) => candidate.cacheKey ), [ 'a-alias', 'm-sibling', 'z-root' ] );
+	assert.deepEqual( root.sourceMaterial, { type: 'MeshStandardNodeMaterial', name: 'instance' } );
+	const validation = validateArtifact( root, { label: 'canonical represented root' } );
+	assert.equal( validation.ok, true, validation.errors.map( ( error ) => error.message ).join( '\n' ) );
+
+} );
+
 test( 'artifact variant family fails closed when one cache key identifies divergent payloads', () => {
 
 	const first = artifact( 7, 'first', [ '{}' ] );

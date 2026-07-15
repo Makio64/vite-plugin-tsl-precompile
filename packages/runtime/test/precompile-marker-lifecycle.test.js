@@ -12,6 +12,12 @@ import { __resetRegistry, getArtifact } from '../src/artifact-loader.js';
 import { hashArtifactContentSync } from '../src/graph-hash.js';
 import { takeRenderObjectHarvest } from '../src/auxiliary/render-object-harvest-handoff.js';
 import { beginRenderObjectHarvest } from '../../plugin/src/vendor/render-object-observer.js';
+import {
+	collectArtifactVariantCandidates,
+	createArtifactVariantPayload,
+	mergeArtifactVariantFamily,
+} from '@tsl-precompile/contract/artifact-variants';
+import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
 
 test( 'capture clones retain BatchedMesh runtime textures', () => {
 
@@ -370,6 +376,84 @@ test( 'distinct same-callsite instances publish the server-accepted aggregate', 
 		await waitFor( () => posts.length === 2 && getArtifact( 'shared-callsite' )?.artifact?.serverAggregate?.members === 2, 'server aggregate publication' );
 		assert.deepEqual( posts.map( ( post ) => post.sourceIdentity ), [ 'src/materials.js:1:0', 'src/materials.js:1:0' ] );
 		assert.deepEqual( posts.map( ( post ) => post.sourceRevision ), [ revision, revision ] );
+
+	} );
+
+} );
+
+test( 'represented extractor roots publish and adopt the canonical accepted family', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'represented-family' );
+		const material = new three.Material();
+		const context = mount( three, material );
+		const renderer = { render() {} };
+		const selectorA = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'default' } } );
+		const selectorB = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'offscreen-2d' } } );
+		const selectorC = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'offscreen-cube' } } );
+		const selectorD = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'default', sampleCount: 4 } } );
+		const makeVariant = ( cacheKey, shader, selectors ) => ( {
+			version: 3,
+			cacheKey,
+			materialUuid: material.uuid,
+			materialShape: 'mesh-standard',
+			renderContextSelectors: selectors,
+			vertexShader: `vertex:${ shader }`,
+			fragmentShader: `fragment:${ shader }`,
+			bindings: [],
+			uniformPlan: [],
+			attributes: [],
+			nodeAttributes: [],
+		} );
+		const canonical = makeVariant( 'a-canonical', 'shared-root', [ selectorA, selectorB ] );
+		const sibling = makeVariant( 'm-extractor-sibling', 'extractor-sibling', [ selectorC ] );
+		const root = makeVariant( 'z-extractor-root', 'shared-root', [ selectorA ] );
+		root.variants = {
+			'z-extractor-root': createArtifactVariantPayload( root ),
+			'm-extractor-sibling': createArtifactVariantPayload( sibling ),
+			'a-canonical': createArtifactVariantPayload( canonical ),
+		};
+		const artifactFamily = [ root, canonical, sibling ];
+		artifactFamily.byMaterialUuid = new Map( [ [ material.uuid, root ] ] );
+		artifactFamily.byMaterialVariants = new Map( [ [ material.uuid, [ root, sibling, canonical ] ] ] );
+		install( three, async () => artifactFamily );
+		setDevRenderer( renderer, three );
+
+		globalThis.fetch = async ( _url, init ) => {
+
+			const posted = JSON.parse( init.body );
+			posts.push( posted );
+			const acceptedArtifact = structuredClone( posted.artifact );
+			const serverSibling = makeVariant( 'n-server-sibling', 'server-sibling', [ selectorD ] );
+			mergeArtifactVariantFamily( acceptedArtifact, [ acceptedArtifact, serverSibling ] );
+			const acceptedHash = hashArtifactContentSync( acceptedArtifact, {
+				shape: `material:${ posted.name }`,
+				threeVersion: acceptedArtifact.sourceThreeVersion,
+				pluginVersion: acceptedArtifact.sourceHashVersion,
+			} );
+			return {
+				ok: true,
+				json: async () => ( { ok: true, name: posted.name, hash: acceptedHash, artifact: acceptedArtifact } ),
+			};
+
+		};
+
+		material.precompile( 'represented-live-family', context, 'src/materials.js:represented', 'b'.repeat( 64 ) );
+		await waitFor( () => collectArtifactVariantCandidates( getArtifact( 'represented-live-family' )?.artifact ).length === 3, 'accepted represented family' );
+
+		assert.equal( posts.length, 1 );
+		assert.equal( posts[ 0 ].artifact.cacheKey, 'a-canonical' );
+		assert.deepEqual(
+			collectArtifactVariantCandidates( posts[ 0 ].artifact ).map( ( candidate ) => candidate.cacheKey ),
+			[ 'a-canonical', 'm-extractor-sibling' ],
+		);
+		assert.deepEqual( createArtifactVariantPayload( posts[ 0 ].artifact ), posts[ 0 ].artifact.variants[ 'a-canonical' ] );
+		assert.deepEqual(
+			collectArtifactVariantCandidates( getArtifact( 'represented-live-family' ).artifact ).map( ( candidate ) => candidate.cacheKey ),
+			[ 'a-canonical', 'm-extractor-sibling', 'n-server-sibling' ],
+			'the live registry adopts the server-returned durable aggregate',
+		);
 
 	} );
 

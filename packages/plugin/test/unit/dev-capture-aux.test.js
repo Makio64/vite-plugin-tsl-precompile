@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { attachDevCapture } from '../../src/dev-capture-server.js';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
-import { collectArtifactVariantCandidates } from '@tsl-precompile/contract/artifact-variants';
+import { collectArtifactVariantCandidates, createArtifactVariantPayload } from '@tsl-precompile/contract/artifact-variants';
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
 import { computeArtifactContentHash } from '../../src/hash.js';
 
@@ -72,6 +72,13 @@ function makeSignedPayload( name, sourceIdentity, sourceRevision, artifact ) {
 		sourceRevision,
 		artifact,
 	};
+
+}
+
+function representedSignedFamily( root, members ) {
+
+	root.variants = Object.fromEntries( members.map( ( member ) => [ String( member.cacheKey ), createArtifactVariantPayload( member ) ] ) );
+	return root;
 
 }
 
@@ -359,6 +366,105 @@ test( 'dev-capture: concurrent signed selectors aggregate durably for one source
 		assert.ok( acceptedFinal, 'one queued response returns the final durable family' );
 		assert.deepEqual( acceptedFinal.json.artifact, stored.artifact );
 		assert.deepEqual( entry.sourceOwners, [ { identity: sourceIdentity, revision: sourceRevision } ] );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: represented roots aggregate into one canonical durable family', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-represented-family-' ) );
+	const name = 'represented-family';
+	const moduleId = `\0virtual:tsl-precompile/${ name }`;
+	const vite = makeFakeViteServer( { moduleId } );
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+	const sourceIdentity = 'src/material-loop.js:precompile:represented';
+	const sourceRevision = '9'.repeat( 64 );
+	const selectorD = stableJsonStringify( {
+		version: 'render-object-selector@1',
+		target: { surface: 'default', sampleCount: 4 },
+	} );
+	const canonical = makeSignedArtifact( {
+		cacheKey: 'a-canonical',
+		selector: SIGNED_SELECTOR_A,
+		shader: 'shared-root',
+		textureUuid: 'stored-shared-texture',
+	} );
+	canonical.renderContextSelectors = [ SIGNED_SELECTOR_A, SIGNED_SELECTOR_B ];
+	const storedSibling = makeSignedArtifact( {
+		cacheKey: 'm-stored-sibling',
+		selector: SIGNED_SELECTOR_C,
+		shader: 'stored-sibling',
+		textureUuid: 'stored-sibling-texture',
+	} );
+	const storedRoot = makeSignedArtifact( {
+		cacheKey: 'z-represented-root',
+		selector: SIGNED_SELECTOR_A,
+		shader: 'shared-root',
+		textureUuid: 'stored-shared-texture',
+	} );
+	representedSignedFamily( storedRoot, [ canonical, storedSibling, storedRoot ] );
+
+	const incomingRoot = makeSignedArtifact( {
+		cacheKey: 'y-incoming-root',
+		selector: SIGNED_SELECTOR_A,
+		shader: 'shared-root',
+		textureUuid: 'incoming-shared-texture',
+	} );
+	const incomingSibling = makeSignedArtifact( {
+		cacheKey: 'n-incoming-sibling',
+		selector: selectorD,
+		shader: 'incoming-sibling',
+		textureUuid: 'incoming-sibling-texture',
+	} );
+	representedSignedFamily( incomingRoot, [ incomingSibling, incomingRoot ] );
+
+	try {
+
+		const first = await postJSON( port, '/__tsl-precompile/capture', makeSignedPayload( name, sourceIdentity, sourceRevision, storedRoot ) );
+		assert.equal( first.status, 200, first.text );
+		const merged = await postJSON( port, '/__tsl-precompile/capture', makeSignedPayload( name, sourceIdentity, sourceRevision, incomingRoot ) );
+		assert.equal( merged.status, 200, merged.text );
+
+		const { entry, stored } = readUserCapture( artifactsDir, name );
+		const members = collectArtifactVariantCandidates( stored.artifact );
+		assert.equal( stored.artifact.cacheKey, 'a-canonical', 'the durable root projects its retained represented member' );
+		assert.deepEqual( stored.artifact.renderContextSelectors, [ SIGNED_SELECTOR_A, SIGNED_SELECTOR_B ].sort() );
+		assert.deepEqual( members.map( ( member ) => member.cacheKey ), [ 'a-canonical', 'm-stored-sibling', 'n-incoming-sibling' ] );
+		assert.deepEqual( createArtifactVariantPayload( stored.artifact ), stored.artifact.variants[ 'a-canonical' ] );
+		assert.deepEqual( merged.json.artifact, stored.artifact, 'the response returns the accepted durable aggregate' );
+		const expectedHash = computeArtifactContentHash( stored.artifact, {
+			shape: `material:${ name }`,
+			threeVersion: stored.artifact.sourceThreeVersion,
+			pluginVersion: stored.artifact.sourceHashVersion,
+		} );
+		assert.equal( merged.json.hash, expectedHash );
+		assert.equal( entry.hash, expectedHash );
+		assert.equal( stored.__hash, expectedHash );
+		assert.equal( existsSync( join( artifactsDir, first.json.file ) ), false, 'the superseded subset artifact is pruned' );
+
+		const artifactBytes = readFileSync( join( artifactsDir, entry.file ), 'utf8' );
+		const manifestBytes = readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' );
+		const filesBeforeCollision = readdirSync( artifactsDir ).sort();
+		const divergent = makeSignedArtifact( {
+			cacheKey: 'collision-cache',
+			selector: SIGNED_SELECTOR_A,
+			shader: 'divergent-root',
+			textureUuid: 'divergent-texture',
+		} );
+		const collision = await postJSON( port, '/__tsl-precompile/capture', makeSignedPayload( name, sourceIdentity, sourceRevision, divergent ) );
+		assert.equal( collision.status, 409, collision.text );
+		assert.match( collision.json.error, /incompatible signed variant family|renderContextSelector/ );
+		assert.equal( readFileSync( join( artifactsDir, entry.file ), 'utf8' ), artifactBytes );
+		assert.equal( readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' ), manifestBytes );
+		assert.deepEqual( readdirSync( artifactsDir ).sort(), filesBeforeCollision );
+		assert.equal( vite._invalidated.length, 2, 'the rejected collision does not invalidate the aggregate module' );
 
 	} finally {
 

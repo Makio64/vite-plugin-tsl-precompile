@@ -135,24 +135,30 @@ export function mergeArtifactVariantFamily( target, artifacts ) {
 		throw new TypeError( 'mergeArtifactVariantFamily: target must be an artifact object.' );
 
 	}
-	const inputs = Array.isArray( artifacts ) ? artifacts : [ artifacts ];
+	const suppliedInputs = Array.isArray( artifacts ) ? artifacts : [ artifacts ];
+	const hasSuppliedInput = suppliedInputs.some( ( input ) => input && typeof input === 'object' );
+	// A merge extends the target's current family even when the caller passes
+	// an equivalent clone as its authoritative first input.
+	const inputs = hasSuppliedInput && ! suppliedInputs.includes( target ) ? [ target, ...suppliedInputs ] : suppliedInputs;
 	const records = new Map();
+	let canonicalTargetKey = null;
 	for ( const input of inputs ) {
 
 		if ( ! input || typeof input !== 'object' ) continue;
 		// A family map contains the authoritative payload for its represented
 		// root cache key. Do not also merge the root envelope: it can carry
 		// capture-only metadata that is intentionally absent from variants.
-		mergeFamilyCandidates( records, collectArtifactVariantCandidates( input ) );
+		const canonicalKeys = mergeFamilyCandidates( records, collectArtifactVariantCandidates( input ) );
+		if ( input === target ) canonicalTargetKey = canonicalKeys.get( requiredCacheKey( target ) ) || requiredCacheKey( target );
 
 	}
 	if ( records.size === 0 ) return target;
 
 	const targetKey = requiredCacheKey( target );
-	const targetRecord = records.get( targetKey );
-	if ( targetRecord && targetRecord.payload.renderContextSelectors !== undefined ) {
+	const targetRecord = records.get( canonicalTargetKey || targetKey );
+	if ( targetRecord ) {
 
-		target.renderContextSelectors = targetRecord.payload.renderContextSelectors.slice();
+		applyArtifactVariantPayload( target, targetRecord.payload );
 
 	}
 
@@ -182,10 +188,18 @@ export function mergeArtifactVariantFamily( target, artifacts ) {
  */
 function mergeFamilyCandidates( records, candidates ) {
 
+	const canonicalKeyByInputKey = new Map();
 	const prepared = candidates
 		.filter( ( candidate ) => candidate && typeof candidate === 'object' )
-		.map( prepareFamilyCandidate );
-	if ( prepared.length === 0 ) return;
+		.map( prepareFamilyCandidate )
+		.sort( ( left, right ) => {
+
+			const leftKey = requiredCacheKey( left.payload );
+			const rightKey = requiredCacheKey( right.payload );
+			return leftKey < rightKey ? - 1 : leftKey > rightKey ? 1 : 0;
+
+		} );
+	if ( prepared.length === 0 ) return canonicalKeyByInputKey;
 
 	const aliases = createIdentityAliasState();
 	const authoritativeRecords = [ ...records.entries() ].sort( ( [ left ], [ right ] ) => left < right ? - 1 : left > right ? 1 : 0 );
@@ -216,6 +230,7 @@ function mergeFamilyCandidates( records, candidates ) {
 		if ( records.has( cacheKey ) ) {
 
 			addFamilyCandidate( records, payload );
+			canonicalKeyByInputKey.set( cacheKey, cacheKey );
 			continue;
 
 		}
@@ -234,10 +249,24 @@ function mergeFamilyCandidates( records, candidates ) {
 		if ( selectorAlias ) {
 
 			mergeFamilySelectors( selectorAlias[ 1 ], payload );
+			canonicalKeyByInputKey.set( cacheKey, selectorAlias[ 0 ] );
 			continue;
 
 		}
 		addFamilyCandidate( records, payload );
+		canonicalKeyByInputKey.set( cacheKey, cacheKey );
+
+	}
+	return canonicalKeyByInputKey;
+
+}
+
+function applyArtifactVariantPayload( target, payload ) {
+
+	for ( const field of ARTIFACT_VARIANT_FIELDS ) {
+
+		if ( Object.hasOwn( payload, field ) ) target[ field ] = payload[ field ];
+		else if ( Object.hasOwn( target, field ) ) delete target[ field ];
 
 	}
 
