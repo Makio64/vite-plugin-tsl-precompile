@@ -23,6 +23,21 @@ function artifact( cacheKey, fragmentShader, selectors = [] ) {
 
 }
 
+function withTextureIdentity( value, textureUuid ) {
+
+	value.uniformPlan = [ {
+		textures: [ { source: { kind: 'artifact.texture', textureUuid } } ],
+	} ];
+	return value;
+
+}
+
+function textureIdentity( value ) {
+
+	return value.uniformPlan[ 0 ].textures[ 0 ].source.textureUuid;
+
+}
+
 test( 'artifact variant family flattens nested members and canonicalizes equivalent selector aliases', () => {
 
 	const selectorA = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'offscreen-2d' } } );
@@ -65,6 +80,50 @@ test( 'artifact variant family order is independent of capture arrival order', (
 	assert.deepEqual( Object.keys( forward.variants ), [ 'left', 'right', 'root' ] );
 	assert.deepEqual( Object.keys( reverse.variants ), [ 'left', 'right', 'root' ] );
 	assert.equal( JSON.stringify( forward.variants ), JSON.stringify( reverse.variants ) );
+
+} );
+
+test( 'artifact variant family aligns renamed ephemeral identities before unioning one private cache key', () => {
+
+	const selectorA = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'default' } } );
+	const selectorB = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'offscreen-2d' } } );
+	const authoritative = withTextureIdentity( artifact( 'private-cache', 'shared-shader', [ selectorA ] ), 'capture-texture-a' );
+	const recaptured = withTextureIdentity( artifact( 'private-cache', 'shared-shader', [ selectorB ] ), 'capture-texture-b' );
+
+	mergeArtifactVariantFamily( authoritative, [ authoritative, recaptured ] );
+
+	assert.deepEqual( authoritative.renderContextSelectors, [ selectorA, selectorB ].sort() );
+	assert.equal( textureIdentity( authoritative ), 'capture-texture-a', 'the durable family keeps its authoritative identity spelling' );
+	assert.equal( authoritative.variants, undefined );
+
+} );
+
+test( 'artifact variant family carries proven identity aliases into new siblings without collapsing distinct resources', () => {
+
+	const selectorA = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'default' } } );
+	const selectorB = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'offscreen-2d' } } );
+	const mergeWithSiblingIdentity = ( siblingTextureUuid ) => {
+
+		const authoritative = withTextureIdentity( artifact( 'overlap', 'shared-shader', [ selectorA ] ), 'authoritative-texture' );
+		const overlap = withTextureIdentity( artifact( 'overlap', 'shared-shader', [ selectorA ] ), 'incoming-overlap-texture' );
+		const sibling = withTextureIdentity( artifact( 'sibling', 'shared-shader', [ selectorB ] ), siblingTextureUuid );
+		overlap.variants = {
+			overlap: createArtifactVariantPayload( overlap ),
+			sibling: createArtifactVariantPayload( sibling ),
+		};
+
+		mergeArtifactVariantFamily( authoritative, [ authoritative, overlap ] );
+		return Object.fromEntries( collectArtifactVariantCandidates( authoritative ).map( ( candidate ) => [ candidate.cacheKey, candidate ] ) );
+
+	};
+
+	const shared = mergeWithSiblingIdentity( 'incoming-overlap-texture' );
+	assert.equal( textureIdentity( shared.overlap ), 'authoritative-texture' );
+	assert.equal( textureIdentity( shared.sibling ), 'authoritative-texture', 'a sibling sharing the overlap inherits its proven alias' );
+
+	const distinct = mergeWithSiblingIdentity( 'incoming-distinct-texture' );
+	assert.equal( textureIdentity( distinct.overlap ), 'authoritative-texture' );
+	assert.equal( textureIdentity( distinct.sibling ), 'incoming-distinct-texture', 'an unproven sibling identity remains distinct' );
 
 } );
 

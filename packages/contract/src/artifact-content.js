@@ -1,7 +1,9 @@
 import {
 	ARTIFACT_VARIANT_FIELDS,
 	collectArtifactVariantCandidates,
+	createArtifactIdentityRemapState,
 	createArtifactVariantPayload,
+	remapArtifactEphemeralIdentities,
 } from './artifact-variants.js';
 
 const ROOT_METADATA_FIELDS = new Set( [
@@ -18,11 +20,6 @@ const ROOT_METADATA_FIELDS = new Set( [
 
 const ARTIFACT_FAMILY_FIELDS = new Set( [ ...ARTIFACT_VARIANT_FIELDS, 'variants' ] );
 const SIGNED_ROOT_ROUTING_FIELDS = new Set( [ 'renderContextSignature' ] );
-const EPHEMERAL_IDENTITY_FIELDS = Object.freeze( {
-	captureUuid: 'light',
-	lightUuid: 'light',
-	textureUuid: 'texture',
-} );
 
 export const ARTIFACT_CONTENT_HASH_VERSION = 'artifact-content@3';
 
@@ -82,7 +79,7 @@ function canonicalArtifactContent( artifact ) {
 		// instances observed at the same callsite.
 		delete effective.sourceMaterial;
 		const selectors = [ ...new Set( candidate.renderContextSelectors.filter( ( selector ) => typeof selector === 'string' && selector.length > 0 ) ) ].sort();
-		const localPayload = remapEphemeralIdentityReferences( effective );
+		const localPayload = remapArtifactEphemeralIdentities( effective );
 		return {
 			effective,
 			selectors,
@@ -95,11 +92,11 @@ function canonicalArtifactContent( artifact ) {
 	// Token allocation is shared across the deterministically ordered family.
 	// This preserves whether two variants reference one resource or distinct
 	// resources while remaining independent of capture-session UUID spelling.
-	const identityState = createIdentityRemapState();
+	const identityState = createArtifactIdentityRemapState();
 	const groups = new Map();
 	for ( const record of records ) {
 
-		const effective = remapEphemeralIdentityReferences( record.effective, identityState );
+		const effective = remapArtifactEphemeralIdentities( record.effective, identityState );
 		const fingerprint = stableArtifactValue( effective, new Set() );
 		let group = groups.get( fingerprint );
 		if ( group === undefined ) {
@@ -133,61 +130,6 @@ function canonicalArtifactContent( artifact ) {
 	}
 	canonical.variants = variants;
 	return canonical;
-
-}
-
-/**
- * Replace capture-session UUIDs with deterministic per-payload tokens while
- * preserving relational identity. Repeated references to one light/texture
- * retain one token; two distinct resources retain distinct tokens.
- */
-function createIdentityRemapState() {
-
-	return { identities: new Map(), nextByKind: new Map() };
-
-}
-
-function remapEphemeralIdentityReferences( value, state = createIdentityRemapState() ) {
-
-	const { identities, nextByKind } = state;
-	const seen = new Map();
-	const visit = ( current, field = null ) => {
-
-		const kind = field && EPHEMERAL_IDENTITY_FIELDS[ field ];
-		if ( kind && typeof current === 'string' && current.length > 0 ) {
-
-			const identityKey = `${ kind }\0${ current }`;
-			let token = identities.get( identityKey );
-			if ( token === undefined ) {
-
-				const next = nextByKind.get( kind ) || 0;
-				nextByKind.set( kind, next + 1 );
-				token = `<${ kind }-identity:${ next }>`;
-				identities.set( identityKey, token );
-
-			}
-			return token;
-
-		}
-		if ( current === null || typeof current !== 'object' ) return current;
-		if ( seen.has( current ) ) return seen.get( current );
-		const clone = Array.isArray( current ) ? [] : {};
-		seen.set( current, clone );
-		if ( Array.isArray( current ) ) {
-
-			for ( const item of current ) clone.push( visit( item ) );
-
-		} else {
-
-			// Sorted traversal makes first-reference token assignment independent
-			// of object insertion order while array/binding order stays semantic.
-			for ( const key of Object.keys( current ).sort() ) clone[ key ] = visit( current[ key ], key );
-
-		}
-		return clone;
-
-	};
-	return visit( value );
 
 }
 
