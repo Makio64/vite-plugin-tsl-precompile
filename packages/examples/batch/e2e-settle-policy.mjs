@@ -66,6 +66,10 @@ export function minimumRenderableObjectsForExample( name ) {
 	// mug scene. A one-object gate can freeze stock before the model appears,
 	// while replay captures it after loader settle.
 	if ( name === 'webgpu_postprocessing_retro.html' ) return 2;
+	// Motion blur creates the floor, room, and two toruses synchronously, then
+	// adds the Xbot's two skinned meshes from GLTF. Waiting for the generic first
+	// renderable lets capture freeze before either skinned material exists.
+	if ( name === 'webgpu_postprocessing_motion_blur.html' ) return 6;
 	// MaterialX loads one GLTF prefab, then sequentially awaits 32 MaterialX
 	// samples and compileAsync() calls. The loader/compile counters briefly hit
 	// zero between samples, so a one-object gate can freeze replay after the
