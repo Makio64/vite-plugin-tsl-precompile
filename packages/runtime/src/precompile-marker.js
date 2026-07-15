@@ -197,6 +197,13 @@ function queueMaterialCapture( material, name, installation, context, sourceIden
 		for ( const key of [ 'scene', 'camera', 'object', 'renderTarget' ] ) alreadyQueued.context[ key ] = nextContext[ key ] || alreadyQueued.context[ key ];
 		if ( Object.prototype.hasOwnProperty.call( nextContext, 'mrt' ) ) alreadyQueued.context.mrt = nextContext.mrt;
 		alreadyQueued.allowAutoFallback = alreadyQueued.allowAutoFallback || context && context.__tslpAutoMark === true;
+		alreadyQueued.observeNextRender = alreadyQueued.observeNextRender || context && context.__tslpObserveNextRender === true;
+		if ( alreadyQueued.observeNextRender && alreadyQueued.autoFallbackTimer ) {
+
+			clearTimeout( alreadyQueued.autoFallbackTimer );
+			alreadyQueued.autoFallbackTimer = null;
+
+		}
 		if ( hasUsableCaptureContext( alreadyQueued.context ) && ! alreadyQueued.observedRenderTarget ) {
 
 			alreadyQueued.observedRenderTarget = alreadyQueued.context.renderTarget || activeRenderTarget( alreadyQueued.renderer );
@@ -222,6 +229,10 @@ function queueMaterialCapture( material, name, installation, context, sourceIden
 		observeTimer: null,
 		autoFallbackTimer: null,
 		allowAutoFallback: context && context.__tslpAutoMark === true,
+		// Harness-owned capture policy. Keep it beside the queue lifecycle rather
+		// than in `context`, whose normalized fields feed artifact signatures and
+		// persisted capture metadata.
+		observeNextRender: context && context.__tslpObserveNextRender === true,
 		observedRenderTarget: normalizedContext.renderTarget || null,
 		sourceIdentity,
 		sourceRevision,
@@ -252,8 +263,8 @@ function queueMaterialCapture( material, name, installation, context, sourceIden
 	// wait for the renderer wrapper to collect the exact RenderObject family;
 	// starting immediately would sign the extractor's synthetic offscreen target
 	// instead of the renderer-owned output-intermediate topology.
-	if ( entry.renderer && hasUsableCaptureContext( entry.context ) && ( ! entry.allowAutoFallback || autoCaptureHasExplicitTarget ) ) startQueuedCapture( entry );
-	else if ( entry.allowAutoFallback && entry.renderer && lastRender ) scheduleAutoFallbackEntry( entry, lastRender.scene, lastRender.camera );
+	if ( ! entry.observeNextRender && entry.renderer && hasUsableCaptureContext( entry.context ) && ( ! entry.allowAutoFallback || autoCaptureHasExplicitTarget ) ) startQueuedCapture( entry );
+	else if ( ! entry.observeNextRender && entry.allowAutoFallback && entry.renderer && lastRender ) scheduleAutoFallbackEntry( entry, lastRender.scene, lastRender.camera );
 
 }
 
@@ -510,6 +521,7 @@ function startExplicitPendingCaptures( renderer, installation = null ) {
 
 			if ( installation && entry.installation !== installation ) continue;
 			if ( ! installation && entry.installation.renderer && entry.installation.renderer !== renderer ) continue;
+			if ( entry.observeNextRender ) continue;
 			if ( ! hasUsableCaptureContext( entry.context ) ) continue;
 			entry.renderer = renderer;
 			startQueuedCapture( entry );

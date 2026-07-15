@@ -676,6 +676,83 @@ test( 'auto-mark context waits for a real render when output target topology is 
 
 } );
 
+test( 'observed-pipeline auto-mark waits for a real render despite explicit MRT context', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'observed-explicit-mrt' );
+		const material = new three.Material();
+		const context = mount( three, material );
+		const observedMRT = { outputNodes: { output: {} } };
+		const harvest = { supported: true, familiesByMaterial: new Map( [ [ material, { complete: true, variants: [] } ] ] ) };
+		const renderer = { render() {}, getRenderTarget: () => null, getMRT: () => observedMRT };
+		const extractorOptions = [];
+		install( three, async ( _renderer, _scene, _camera, options ) => {
+
+			extractorOptions.push( options || {} );
+			return artifactSet( material );
+
+		}, { beginRenderObjectHarvest: () => ( { finish: () => harvest } ) } );
+		await setDevRenderer( renderer, three );
+		material.precompile( 'observed-explicit-mrt', {
+			...context,
+			mrt: observedMRT,
+			__tslpAutoMark: true,
+			__tslpObserveNextRender: true,
+		} );
+
+		assert.equal( extractorOptions.length, 0, 'explicit MRT capture remains pending until the real draw' );
+		renderer.render( context.scene, context.camera );
+		await waitFor( () => posts.length === 1, 'observed explicit-MRT capture' );
+
+		assert.equal( extractorOptions[ 0 ].renderObjectHarvest, harvest );
+		assert.equal( extractorOptions[ 0 ].mrtNode, observedMRT );
+		assert.equal( extractorOptions[ 0 ].__tslpObserveNextRender, undefined );
+		assert.doesNotMatch( JSON.stringify( posts[ 0 ] ), /__tslpObserveNextRender/, 'queue policy is not persisted in capture metadata' );
+
+	} );
+
+} );
+
+test( 'duplicate auto-mark entries retain the observed-pipeline request across renderer association', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'observed-duplicate' );
+		const material = new three.Material();
+		const context = mount( three, material );
+		const observedMRT = { outputNodes: { output: {} } };
+		const harvest = { supported: true, familiesByMaterial: new Map( [ [ material, { complete: true, variants: [] } ] ] ) };
+		const renderer = { render() {}, getRenderTarget: () => null, getMRT: () => observedMRT };
+		let extractorCalls = 0;
+		let suppliedHarvest = null;
+		install( three, async ( _renderer, _scene, _camera, options ) => {
+
+			extractorCalls ++;
+			if ( options && options.renderObjectHarvest ) suppliedHarvest = options.renderObjectHarvest;
+			return artifactSet( material );
+
+		}, { beginRenderObjectHarvest: () => ( { finish: () => harvest } ) } );
+
+		material.precompile( 'observed-duplicate', { ...context, __tslpAutoMark: true } );
+		material.precompile( 'observed-duplicate', {
+			...context,
+			mrt: observedMRT,
+			__tslpAutoMark: true,
+			__tslpObserveNextRender: true,
+		} );
+		await setDevRenderer( renderer, three );
+
+		assert.equal( extractorCalls, 0, 'renderer association preserves the merged observe-next-render policy' );
+		renderer.render( context.scene, context.camera );
+		await waitFor( () => posts.length === 1, 'duplicate observed-pipeline capture' );
+
+		assert.equal( suppliedHarvest, harvest );
+
+	} );
+
+} );
+
 test( 'capture metadata snapshots node properties before material setup', async () => {
 
 	await withBrowser( async ( posts ) => {

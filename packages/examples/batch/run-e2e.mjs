@@ -1419,7 +1419,7 @@ async function __waitForPrecompilePendingAtMost( limit, timeoutMs = 20000 ) {
 	}
 }
 
-async function __flush() {
+async function __flush( passNodes = [] ) {
 	if ( ! __renderer ) return;
 	const pendingItems = [];
 	for ( const item of __pending ) {
@@ -1427,6 +1427,10 @@ async function __flush() {
 		item.done = true;
 		pendingItems.push( item );
 	}
+	const observedPipelineScenes = new Set( passNodes
+		.filter( ( passNode ) => passNode && passNode.scene )
+		.map( ( passNode ) => passNode.scene ) );
+	const hasObservedPipelineItems = pendingItems.some( ( item ) => observedPipelineScenes.has( item.scene ) );
 	// Capture every explicit color sibling first. Interleaving a queued main
 	// capture with the next item's temporary MRT removal races on the shared
 	// scene.userData descriptor and can silently lose that main MRT variant.
@@ -1474,6 +1478,7 @@ async function __flush() {
 			item.material.needsUpdate = true;
 			item.material.precompile( item.name, {
 				__tslpAutoMark: true,
+				__tslpObserveNextRender: observedPipelineScenes.has( item.scene ),
 				scene: item.scene || null,
 				camera: item.camera || null,
 				object: item.object || null,
@@ -1483,6 +1488,25 @@ async function __flush() {
 		} catch ( err ) {
 			console.error( '[tslp-e2e] precompile failed:', err );
 		}
+	}
+	// Explicit MRT hints normally start synthetic extraction immediately. A
+	// post-processing scene needs one more real pipeline burst instead: its
+	// producer pass installs MRT while a later consumer pass can install a
+	// closure-backed context (SSS, AO, selective light, etc.). Keep the marked
+	// entries pending above, then let the runtime observer harvest the complete
+	// synchronous RenderObject family before extraction begins.
+	if ( hasObservedPipelineItems ) {
+		const pendingPipelineRenders = [];
+		for ( const pipeline of __postProcessingPipelines ) {
+			try {
+				if ( pipeline && pipeline.renderer && pipeline.renderer !== __renderer ) continue;
+				const result = pipeline && typeof pipeline.render === 'function' ? pipeline.render() : null;
+				if ( result && typeof result.then === 'function' ) pendingPipelineRenders.push( Promise.resolve( result ) );
+			} catch ( err ) {
+				console.warn( '[tslp-e2e] observed pipeline capture render failed:', err && err.message || err );
+			}
+		}
+		if ( pendingPipelineRenders.length > 0 ) await Promise.allSettled( pendingPipelineRenders );
 	}
 	// Material extraction is deliberately serialized by the runtime because
 	// compileTSL mutates renderer-global MRT/cache state. Enqueue the full burst
@@ -1599,7 +1623,7 @@ async function __waitForCaptureIdle( timeoutMs = 45000 ) {
 
 window.__tslpFlushCaptureArtifacts = async function () {
 	const passNodes = __stampMRTPassScenes();
-	await __flush();
+	await __flush( passNodes );
 	if ( __renderer ) {
 		const scenes = Array.from( __auxScenes.entries() );
 		if ( scenes.length === 0 && __lastScene && __lastCamera ) scenes.push( [ __lastScene, __lastCamera ] );
@@ -2868,14 +2892,13 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 						__driveRendererLightingUpdateBefore( renderer, scene, camera );
 						if ( renderer.__tslpSuppressShadowKick !== true && __sceneHasShadowLights( scene ) ) __kickShadowRenderAsync( renderer, scene, camera );
 					const renderedWithSource = __withPassRendererContext( this, renderer, () => __renderPassNodeWithSourceMaterials( this, renderer, camera ) );
-					const renderedWithFullFallback = ! renderedWithSource && ! canRenderPrecompiledMRT && __renderPassNodeWithFullRenderer( this, renderer, __computeRenderer, camera );
+					const renderedWithFullFallback = ! renderedWithSource && needsFullMRTPass && __renderPassNodeWithFullRenderer( this, renderer, __computeRenderer, camera );
 					if ( ! renderedWithSource && ! renderedWithFullFallback ) {
-						const savedRenderDepth = __renderDepth;
-						__renderDepth = 0;
+						__renderDepth ++;
 						try {
 							__withPassRendererContext( this, renderer, () => renderer.render( scene, camera ) );
 						} finally {
-							__renderDepth = savedRenderDepth;
+							__renderDepth --;
 						}
 						}
 				}
