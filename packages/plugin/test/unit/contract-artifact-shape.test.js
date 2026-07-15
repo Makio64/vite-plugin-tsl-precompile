@@ -70,3 +70,43 @@ test( 'diffArtifactShapes accepts identical fingerprints', () => {
 	assert.deepEqual( diffArtifactShapes( rows, rows ), { ok: true, missing: [], extra: [] } );
 
 } );
+
+test( 'fingerprintArtifactShape includes material-compute ownership and schedule topology', () => {
+
+	const rows = fingerprintArtifactShape( {
+		uniformPlan: [],
+		materialCompute: {
+			version: 'material-compute@1',
+			mode: 'precompiled',
+			resources: [ { id: 'resource:0', kind: 'storage-buffer' } ],
+			kernels: [ {
+				id: 'kernel:0',
+				artifact: {
+					kind: 'compute',
+					uniformPlan: [ {
+						name: 'compute',
+						slots: [ { name: 'delta', source: { kind: 'frame.deltaTime' } } ],
+					} ],
+				},
+			} ],
+			bindings: [ { kernel: 'kernel:0', resource: 'resource:0', group: 2, binding: 3 } ],
+			renderBindings: [
+				{ resource: 'resource:0', kind: 'attribute', attribute: 1 },
+				{ resource: 'resource:0', kind: 'storage-buffer', group: 0, binding: 4 },
+			],
+			schedule: [ { kernel: 'kernel:0', phase: 'update-before', order: 5, updateType: 'object' } ],
+		},
+	} );
+
+	assert.deepEqual( rows, [
+		'[materialCompute.kernel:0]compute\tslot\tdelta\tframe.deltaTime',
+		'material-compute\tcontract\tmaterial-compute@1\tprecompiled',
+		'material-compute\tkernel\tkernel:0\tcompute',
+		'material-compute\tkernel-binding\tkernel:0@2:3\tresource:0',
+		'material-compute\trender-binding\tresource:0@0:4\tstorage-buffer',
+		'material-compute\trender-binding\tresource:0@attribute:1\tattribute',
+		'material-compute\tresource\tresource:0\tstorage-buffer',
+		'material-compute\tschedule\t5:kernel:0\tobject',
+	] );
+
+} );

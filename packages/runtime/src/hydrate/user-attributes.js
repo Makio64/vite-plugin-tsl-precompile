@@ -221,6 +221,22 @@ function cloneRecord( record, replacements = null, mutableLiveSidecars = false )
 
 }
 
+function resolveExactMaterialAttributePath( sourceMaterial, path, entry ) {
+
+	if ( ! sourceMaterial || ! Array.isArray( path ) || path.length <= 1 ) return null;
+	let current = sourceMaterial;
+	for ( const segment of path ) {
+
+		if ( typeof segment !== 'string' || segment.length === 0 ) return null;
+		if ( ! current || ( typeof current !== 'object' && typeof current !== 'function' ) ) return null;
+		if ( ! Object.prototype.hasOwnProperty.call( current, segment ) ) return null;
+		try { current = current[ segment ]; } catch ( _ ) { return null; }
+
+	}
+	return attributeMatchesEntry( current, entry ) ? current : null;
+
+}
+
 /**
  * Walk every `attributes[]` / `nodeAttributes[]` entry in the artifact and
  * seed `entry._liveAttribute` from the user material's TSL node graph.
@@ -370,15 +386,24 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 
 		let live = null;
 		const path = entry.userPath;
+		const exactPath = Array.isArray( path ) && path.length > 1;
 		if ( Array.isArray( path ) && path.length > 0 ) {
 
-			const slotIdx = nextAttributeShapeSlot( pathShapeSlots, path, entry );
-			const root = sourceMaterial[ path[ 0 ] ];
-			if ( root && root.isNode === true ) live = findNthAttributeMatchingEntry( root, entry, slotIdx );
+			if ( exactPath ) {
+
+				live = resolveExactMaterialAttributePath( sourceMaterial, path, entry );
+
+			} else {
+
+				const slotIdx = nextAttributeShapeSlot( pathShapeSlots, path, entry );
+				const root = sourceMaterial[ path[ 0 ] ];
+				if ( root && root.isNode === true ) live = findNthAttributeMatchingEntry( root, entry, slotIdx );
+
+			}
 
 		}
 
-		if ( ! live ) {
+		if ( ! live && ! exactPath ) {
 
 			for ( const root of collectNodeRoots() ) {
 
@@ -389,11 +414,17 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 
 		}
 
-		if ( ! live ) live = findInstancedObjectAttributeMatchingEntry( sourceObject, entry, entries );
+		if ( ! live && ! exactPath ) live = findInstancedObjectAttributeMatchingEntry( sourceObject, entry, entries );
 		if ( ! live ) continue;
 
 		Object.defineProperty( entry, '_liveAttribute', {
 			value: live,
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		} );
+		if ( exactPath ) Object.defineProperty( entry, '_liveAttributeSource', {
+			value: 'userPath-exact',
 			enumerable: false,
 			configurable: true,
 			writable: true,
@@ -554,10 +585,6 @@ function findNthAttributeMatchingEntry( node, entry, slotIdx = 0 ) {
 
 function collectAttributesMatchingEntry( node, entry ) {
 
-	const wantSize = entry.itemSize || 0;
-	const wantCount = entry.count || 0;
-	const wantArray = entry.arrayType || '';
-
 	const matching = [];
 	const seen = new Set();
 	const probe = ( n ) => {
@@ -566,18 +593,8 @@ function collectAttributesMatchingEntry( node, entry ) {
 		const cands = [ n.attribute, n.value ];
 		for ( const cand of cands ) {
 
-			if ( ! cand || cand.isBufferAttribute !== true ) continue;
 			if ( seen.has( cand ) ) continue;
-			// vec3 storage attributes get padded to itemSize=4 when WebGPU
-			// touches them. Accept (3 → 4) so a freshly-built live attribute
-			// matches an artifact entry recorded after the pad fired.
-			if ( wantSize && cand.itemSize !== wantSize
-				&& ! ( cand.itemSize === 3 && wantSize === 4 ) ) continue;
-			if ( wantCount && cand.count !== wantCount ) continue;
-			if ( wantArray
-				&& cand.array
-				&& cand.array.constructor
-				&& cand.array.constructor.name !== wantArray ) continue;
+			if ( ! attributeMatchesEntry( cand, entry ) ) continue;
 			seen.add( cand );
 			matching.push( cand );
 
@@ -588,6 +605,31 @@ function collectAttributesMatchingEntry( node, entry ) {
 	probe( node );
 	if ( typeof node.traverse === 'function' ) node.traverse( probe );
 	return matching;
+
+}
+
+function attributeMatchesEntry( candidate, entry ) {
+
+	if ( ! candidate || candidate.isBufferAttribute !== true || ! entry ) return false;
+	const wantSize = entry.itemSize || itemSizeFromAttributeType( entry.type ) || 0;
+	const wantCount = entry.count || 0;
+	const wantArray = entry.arrayType || '';
+	// vec3 storage attributes get padded to itemSize=4 when WebGPU touches
+	// them. Accept (3 → 4) while keeping every other field exact.
+	if ( wantSize && candidate.itemSize !== wantSize
+		&& ! ( candidate.itemSize === 3 && wantSize === 4 ) ) return false;
+	if ( wantCount && candidate.count !== wantCount ) return false;
+	if ( wantArray
+		&& candidate.array
+		&& candidate.array.constructor
+		&& candidate.array.constructor.name !== wantArray ) return false;
+	if ( typeof entry.storage === 'boolean' ) {
+
+		const candidateStorage = candidate.isStorageBufferAttribute === true || candidate.isStorageInstancedBufferAttribute === true;
+		if ( candidateStorage !== entry.storage ) return false;
+
+	}
+	return true;
 
 }
 
@@ -738,18 +780,23 @@ export function bindUserStorageBuffersToArtifact( artifact, sourceMaterial ) {
 
 			let live = null;
 			const path = entry.userPath;
+			const exactPath = Array.isArray( path ) && path.length > 1;
 			if ( Array.isArray( path ) && path.length > 0 ) {
 
-				const root = sourceMaterial[ path[ 0 ] ];
-				if ( root && root.isNode === true ) {
+				if ( exactPath ) {
 
-					live = findFirstAttributeMatchingEntry( root, entry );
+					live = resolveExactMaterialAttributePath( sourceMaterial, path, entry );
+
+				} else {
+
+					const root = sourceMaterial[ path[ 0 ] ];
+					if ( root && root.isNode === true ) live = findFirstAttributeMatchingEntry( root, entry );
 
 				}
 
 			}
 
-			if ( ! live ) {
+			if ( ! live && ! exactPath ) {
 
 				for ( const root of collectNodeRoots() ) {
 
@@ -764,6 +811,12 @@ export function bindUserStorageBuffersToArtifact( artifact, sourceMaterial ) {
 
 			Object.defineProperty( entry, '_liveAttribute', {
 				value: live,
+				enumerable: false,
+				configurable: true,
+				writable: true,
+			} );
+			if ( exactPath ) Object.defineProperty( entry, '_liveAttributeSource', {
+				value: 'userPath-exact',
 				enumerable: false,
 				configurable: true,
 				writable: true,

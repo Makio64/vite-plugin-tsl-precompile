@@ -31,6 +31,10 @@ import { createRenderObjectContextSelector, RENDER_BINDING_OWNER_KINDS } from '@
 import { mergeArtifactVariantFamily } from '@tsl-precompile/contract/artifact-variants';
 import { normalizeArtifactLightIdentities } from '@tsl-precompile/contract/light-identities';
 import { createRendererOutputConfig } from '@tsl-precompile/contract/output-config';
+import {
+	MATERIAL_COMPUTE_UPDATE_TYPES,
+	MATERIAL_COMPUTE_VERSION,
+} from '@tsl-precompile/contract/material-compute';
 
 /**
  * Describes a single binding inside a bind group in serializable form.
@@ -91,6 +95,7 @@ function describeBinding( binding ) {
 	} else if ( binding.isSampledTexture ) {
 
 		descriptor.kind = 'sampled-texture';
+		if ( binding.store === true ) descriptor.store = true;
 
 		const texture = binding.texture;
 		if ( texture ) {
@@ -685,7 +690,7 @@ function findAttributePathOnMaterial( material, target ) {
 
 	if ( ! material || ! target || typeof material !== 'object' ) return null;
 
-	for ( const key of Object.keys( material ) ) {
+	for ( const key of Object.keys( material ).sort() ) {
 
 		// Convention: NodeMaterial node-shaped slots end in `Node` (positionNode,
 		// colorNode, vertexNode, mrtNode, …). Avoids walking arbitrary user
@@ -693,7 +698,8 @@ function findAttributePathOnMaterial( material, target ) {
 		if ( ! key.endsWith( 'Node' ) ) continue;
 		const root = material[ key ];
 		if ( ! root || root.isNode !== true ) continue;
-		if ( nodeTreeContainsAttribute( root, target ) ) return [ key ];
+		const suffix = findObjectPath( root, target );
+		if ( suffix ) return [ key, ...suffix ];
 
 	}
 
@@ -726,8 +732,8 @@ function findSharedCasterAttributePath( extractionContext, target ) {
 	if ( ! sharedPath ) return null;
 	for ( const owner of owners ) {
 
-		const root = resolveLiveNodePathOnMaterial( owner, sharedPath );
-		if ( ! root || root.isNode !== true || ! nodeTreeContainsCompatibleAttribute( root, target ) ) return null;
+		const candidate = resolveLiveNodePathOnMaterial( owner, sharedPath );
+		if ( ! compatibleAttribute( candidate, target ) ) return null;
 
 	}
 	return sharedPath;
@@ -945,39 +951,6 @@ function annotateStorageBufferUserPaths( uniformPlan, material, extractionContex
 
 }
 
-function nodeTreeContainsAttribute( node, target ) {
-
-	if ( ! node ) return false;
-	if ( node.attribute === target || node.value === target ) return true;
-	if ( typeof node.traverse !== 'function' ) return false;
-
-	let found = false;
-	node.traverse( ( child ) => {
-
-		if ( found || ! child ) return;
-		if ( child.attribute === target || child.value === target ) found = true;
-
-	} );
-	return found;
-
-}
-
-function nodeTreeContainsCompatibleAttribute( node, target ) {
-
-	if ( ! node || ! target ) return false;
-	if ( compatibleAttribute( node.attribute, target ) || compatibleAttribute( node.value, target ) ) return true;
-	if ( typeof node.traverse !== 'function' ) return false;
-	let found = false;
-	node.traverse( ( child ) => {
-
-		if ( found || ! child ) return;
-		if ( compatibleAttribute( child.attribute, target ) || compatibleAttribute( child.value, target ) ) found = true;
-
-	} );
-	return found;
-
-}
-
 function compatibleAttribute( candidate, captured ) {
 
 	if ( candidate === captured ) return true;
@@ -1025,6 +998,347 @@ function attachLiveUpdateSidecars( artifact, state ) {
 		} );
 
 	}
+
+}
+
+const MATERIAL_COMPUTE_UPDATE_TYPE_SET = new Set( MATERIAL_COMPUTE_UPDATE_TYPES );
+
+function isRawMaterialComputeNode( node ) {
+
+	return !! node && node.isComputeNode === true && node.isPrecompiledCompute !== true;
+
+}
+
+function computeResourceEvidence( binding ) {
+
+	if ( ! binding || typeof binding !== 'object' ) return null;
+	if ( binding.isStorageBuffer === true ) {
+
+		const identity = binding.attribute || null;
+		if ( ! identity || ( typeof identity !== 'object' && typeof identity !== 'function' ) ) return {
+			kind: 'storage-buffer',
+			identity: null,
+			metadata: {},
+		};
+		const array = identity.array;
+		return {
+			kind: 'storage-buffer',
+			identity,
+			metadata: {
+				arrayType: array && array.constructor && array.constructor.name || 'Float32Array',
+				count: Number.isFinite( identity.count ) ? identity.count : 0,
+				itemSize: Number.isFinite( identity.itemSize ) ? identity.itemSize : 1,
+				byteLength: array && Number.isFinite( array.byteLength ) ? array.byteLength : binding.byteLength ?? null,
+			},
+		};
+
+	}
+	const texture = binding.texture || binding.textureNode && binding.textureNode.value || null;
+	if ( texture && texture.isStorageTexture === true ) return {
+		kind: 'storage-texture',
+		identity: texture,
+		metadata: {
+			textureType: texture.isDataArrayTexture || texture.isArrayTexture ? '2d-array'
+				: texture.isData3DTexture || texture.is3DTexture ? '3d'
+					: '2d',
+		},
+	};
+	return null;
+
+}
+
+function computeNodeUpdateType( node ) {
+
+	let updateType = node && node.updateBeforeType;
+	if ( node && typeof node.getUpdateBeforeType === 'function' ) {
+
+		try { updateType = node.getUpdateBeforeType(); } catch ( _ ) { /* fall through to the public field */ }
+
+	}
+	return MATERIAL_COMPUTE_UPDATE_TYPE_SET.has( updateType ) ? updateType : null;
+
+}
+
+function nestedComputeArtifact( artifact, kernelIndex ) {
+
+	if ( ! artifact ) return null;
+	// Compute cache keys are process-local flat-array routing metadata. A nested
+	// material descriptor is owner-local, so normalize the key to its canonical
+	// kernel order while reusing the existing extracted artifact payload.
+	return { ...artifact, cacheKey: kernelIndex + 1 };
+
+}
+
+function orderedBindingKind( entry ) {
+
+	if ( ! entry ) return null;
+	if ( entry.type === 'ubo' || entry.type === 'buffer-uniform' ) return 'uniform-buffer';
+	if ( entry.type === 'sampled-texture' || entry.type === 'sampler' || entry.type === 'storage-buffer' ) return entry.type;
+	return entry.type === 'unknown' ? 'unknown' : null;
+
+}
+
+function hasExactSerializedBindingLayout( state, artifact ) {
+
+	const rawGroups = Array.isArray( state && state.bindings ) ? state.bindings : [];
+	const descriptorGroups = Array.isArray( artifact && artifact.bindings ) ? artifact.bindings : [];
+	const planGroups = Array.isArray( artifact && artifact.uniformPlan ) ? artifact.uniformPlan : [];
+	if ( rawGroups.length !== descriptorGroups.length || rawGroups.length !== planGroups.length ) return false;
+	for ( let group = 0; group < rawGroups.length; group ++ ) {
+
+		const rawBindings = Array.isArray( rawGroups[ group ] && rawGroups[ group ].bindings ) ? rawGroups[ group ].bindings : [];
+		const descriptors = Array.isArray( descriptorGroups[ group ] && descriptorGroups[ group ].bindings ) ? descriptorGroups[ group ].bindings : [];
+		const ordered = Array.isArray( planGroups[ group ] && planGroups[ group ].orderedBindings ) ? planGroups[ group ].orderedBindings : [];
+		if ( rawBindings.length !== descriptors.length || rawBindings.length !== ordered.length ) return false;
+		for ( let binding = 0; binding < descriptors.length; binding ++ ) {
+
+			if ( orderedBindingKind( ordered[ binding ] ) !== descriptors[ binding ].kind ) return false;
+
+		}
+
+	}
+	return true;
+
+}
+
+function addCanonicalReason( reasons, reason ) {
+
+	if ( ! reasons.includes( reason ) ) reasons.push( reason );
+
+}
+
+function validMaterialComputeUserPath( value ) {
+
+	return Array.isArray( value ) && value.length > 0 && value.every( ( segment ) => typeof segment === 'string' && segment.length > 0 );
+
+}
+
+function validMaterialComputeStoragePath( value ) {
+
+	return validMaterialComputeUserPath( value ) && value.length > 1;
+
+}
+
+function exactMaterialComputeArraySnapshot( value, resource ) {
+
+	return Array.isArray( value ) && value.length === resource.count * resource.itemSize;
+
+}
+
+function materialComputeRenderBindingProvidesInitialState( renderArtifact, entry, resource ) {
+
+	if ( ! renderArtifact || ! entry || ! resource || resource.kind !== 'storage-buffer' ) return false;
+	let serialized = null;
+	if ( entry.kind === 'attribute' ) {
+
+		serialized = Array.isArray( renderArtifact.attributes ) ? renderArtifact.attributes[ entry.attribute ] : null;
+
+	} else if ( entry.kind === 'storage-buffer' ) {
+
+		const group = Array.isArray( renderArtifact.uniformPlan ) ? renderArtifact.uniformPlan[ entry.group ] : null;
+		const ordered = group && Array.isArray( group.orderedBindings ) ? group.orderedBindings[ entry.binding ] : null;
+		serialized = ordered && ordered.ref || null;
+
+	}
+	return !! serialized && (
+		validMaterialComputeStoragePath( serialized.userPath ) ||
+		exactMaterialComputeArraySnapshot( serialized.arraySnapshot, resource )
+	);
+
+}
+
+function hasUnresolvedMaterialComputeLiveUniform( artifact ) {
+
+	for ( const group of artifact && Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [] ) {
+
+		for ( const slot of group && Array.isArray( group.slots ) ? group.slots : [] ) {
+
+			const source = slot && slot.source;
+			if ( source && source.kind === 'uniform.live' && ! validMaterialComputeUserPath( source.nodePath ) ) return true;
+
+		}
+
+	}
+	return false;
+
+}
+
+/**
+ * Build the optional variant-local material-compute descriptor from exact
+ * NodeBuilderState object identity. No UUID, shape, name, or array-length
+ * fallback is permitted at this boundary.
+ *
+ * @param {Object} renderArtifact
+ * @param {Object} renderState
+ * @param {Map<Object,Object>} computeArtifactsByNode
+ * @param {Map<Object,Object>} computeStatesByNode
+ * @return {?Object}
+ */
+export function extractMaterialComputeDescriptor( renderArtifact, renderState, computeArtifactsByNode, computeStatesByNode ) {
+
+	const updateBeforeNodes = Array.isArray( renderState && renderState.updateBeforeNodes ) ? renderState.updateBeforeNodes : [];
+	const scheduleNodes = updateBeforeNodes
+		.map( ( node, order ) => ( { node, order } ) )
+		.filter( ( entry ) => isRawMaterialComputeNode( entry.node ) );
+	if ( scheduleNodes.length === 0 ) return null;
+
+	const reasons = [];
+	if ( scheduleNodes.length !== updateBeforeNodes.length ) addCanonicalReason( reasons, 'schedule:non-compute-update-before' );
+	const kernels = [];
+	const kernelNodes = [];
+	const kernelIdByNode = new Map();
+	const schedule = [];
+	for ( const { node, order } of scheduleNodes ) {
+
+		let kernelId = kernelIdByNode.get( node );
+		if ( ! kernelId ) {
+
+			const kernelIndex = kernels.length;
+			kernelId = `kernel:${ kernelIndex }`;
+			kernelIdByNode.set( node, kernelId );
+			const artifact = computeArtifactsByNode && computeArtifactsByNode.get( node ) || null;
+			const nestedArtifact = nestedComputeArtifact( artifact, kernelIndex );
+			kernels.push( { id: kernelId, artifact: nestedArtifact } );
+			kernelNodes.push( node );
+			if ( ! artifact ) addCanonicalReason( reasons, `${ kernelId }:artifact-unavailable` );
+			if ( nestedArtifact && hasUnresolvedMaterialComputeLiveUniform( nestedArtifact ) ) addCanonicalReason( reasons, `${ kernelId }:live-uniform-unresolved` );
+			if ( typeof node.onInitFunction === 'function' ) addCanonicalReason( reasons, `${ kernelId }:on-init-function` );
+
+		}
+		const updateType = computeNodeUpdateType( node );
+		if ( ! updateType ) addCanonicalReason( reasons, `${ kernelId }:update-type-unavailable` );
+		schedule.push( {
+			kernel: kernelId,
+			phase: 'update-before',
+			order,
+			updateType: updateType || 'object',
+		} );
+
+	}
+
+	const resources = [];
+	const resourceByIdentity = new Map();
+	const bindings = [];
+	const resourceFor = ( evidence ) => {
+
+		if ( ! evidence || ! evidence.identity ) return null;
+		let resource = resourceByIdentity.get( evidence.identity );
+		if ( resource ) return resource;
+		resource = {
+			id: `resource:${ resources.length }`,
+			kind: evidence.kind,
+			...evidence.metadata,
+		};
+		resources.push( resource );
+		resourceByIdentity.set( evidence.identity, resource );
+		return resource;
+
+	};
+
+	for ( let kernelIndex = 0; kernelIndex < kernels.length; kernelIndex ++ ) {
+
+		const kernel = kernels[ kernelIndex ];
+		const node = kernelNodes[ kernelIndex ];
+		const state = computeStatesByNode && computeStatesByNode.get( node ) || null;
+		if ( ! state ) {
+
+			addCanonicalReason( reasons, `${ kernel.id }:state-unavailable` );
+			continue;
+
+		}
+		if ( kernel.artifact && ! hasExactSerializedBindingLayout( state, kernel.artifact ) ) addCanonicalReason( reasons, `${ kernel.id }:binding-layout-unavailable` );
+		for ( let group = 0; group < ( state.bindings || [] ).length; group ++ ) {
+
+			const rawGroup = state.bindings[ group ];
+			for ( let binding = 0; binding < ( rawGroup && rawGroup.bindings || [] ).length; binding ++ ) {
+
+				const rawBinding = rawGroup.bindings[ binding ];
+				const evidence = computeResourceEvidence( rawBinding );
+				if ( ! evidence ) continue;
+				const location = `${ kernel.id }:binding:${ group }:${ binding }`;
+				const resource = resourceFor( evidence );
+				if ( ! resource ) {
+
+					addCanonicalReason( reasons, `${ location }:resource-identity-unavailable` );
+					continue;
+
+				}
+				bindings.push( {
+					kernel: kernel.id,
+					resource: resource.id,
+					group,
+					binding,
+					access: rawBinding.access || 'readWrite',
+				} );
+				if ( resource.kind === 'storage-texture' ) addCanonicalReason( reasons, `${ resource.id }:storage-texture` );
+
+			}
+
+		}
+
+	}
+
+	const renderBindings = [];
+	const seenRenderBindings = new Set();
+	const addRenderBinding = ( entry ) => {
+
+		const key = JSON.stringify( entry );
+		if ( seenRenderBindings.has( key ) ) return;
+		seenRenderBindings.add( key );
+		renderBindings.push( entry );
+
+	};
+	for ( let attribute = 0; attribute < ( renderState.nodeAttributes || [] ).length; attribute ++ ) {
+
+		const rawAttribute = renderState.nodeAttributes[ attribute ];
+		const identity = rawAttribute && rawAttribute.node && rawAttribute.node.attribute || rawAttribute && rawAttribute.attribute || null;
+		const resource = identity && resourceByIdentity.get( identity );
+		if ( resource ) addRenderBinding( { resource: resource.id, kind: 'attribute', attribute } );
+
+	}
+	for ( let group = 0; group < ( renderState.bindings || [] ).length; group ++ ) {
+
+		const rawGroup = renderState.bindings[ group ];
+		for ( let binding = 0; binding < ( rawGroup && rawGroup.bindings || [] ).length; binding ++ ) {
+
+			const evidence = computeResourceEvidence( rawGroup.bindings[ binding ] );
+			const resource = evidence && evidence.identity && resourceByIdentity.get( evidence.identity );
+			if ( resource ) addRenderBinding( { resource: resource.id, kind: resource.kind, group, binding } );
+
+		}
+
+	}
+
+	renderBindings.sort( ( left, right ) => {
+
+		const leftResource = Number( left.resource.slice( 'resource:'.length ) );
+		const rightResource = Number( right.resource.slice( 'resource:'.length ) );
+		if ( leftResource !== rightResource ) return leftResource - rightResource;
+		const leftKind = left.kind === 'attribute' ? 0 : left.kind === 'storage-buffer' ? 1 : 2;
+		const rightKind = right.kind === 'attribute' ? 0 : right.kind === 'storage-buffer' ? 1 : 2;
+		return leftKind - rightKind || ( left.group ?? - 1 ) - ( right.group ?? - 1 ) || ( left.binding ?? - 1 ) - ( right.binding ?? - 1 ) || ( left.attribute ?? - 1 ) - ( right.attribute ?? - 1 );
+
+	} );
+	for ( const resource of resources ) {
+
+		if ( ! renderBindings.some( ( entry ) => entry.resource === resource.id ) ) addCanonicalReason( reasons, `${ resource.id }:render-binding-unavailable` );
+		if ( resource.kind === 'storage-buffer' && ! renderBindings.some( ( entry ) =>
+			entry.resource === resource.id && materialComputeRenderBindingProvidesInitialState( renderArtifact, entry, resource )
+		) ) addCanonicalReason( reasons, `${ resource.id }:initial-state-unavailable` );
+
+	}
+
+	reasons.sort();
+	return {
+		version: MATERIAL_COMPUTE_VERSION,
+		mode: reasons.length === 0 ? 'precompiled' : 'hybrid-required',
+		reasons,
+		resources,
+		kernels,
+		bindings,
+		renderBindings,
+		schedule,
+	};
 
 }
 
@@ -1361,9 +1675,53 @@ async function resolveRenderObjectHarvest( value, renderer ) {
 
 }
 
+function addMaterialComputeNodesFromState( state, computeNodes, computeNodeSet ) {
+
+	for ( const node of Array.isArray( state && state.updateBeforeNodes ) ? state.updateBeforeNodes : [] ) {
+
+		if ( ! isRawMaterialComputeNode( node ) || computeNodeSet.has( node ) ) continue;
+		computeNodeSet.add( node );
+		computeNodes.push( node );
+
+	}
+
+}
+
+function cachedComputeState( manager, computeNode, requireExisting = false ) {
+
+	if ( ! manager || typeof manager.get !== 'function' ) return null;
+	if ( requireExisting ) {
+
+		let exists = false;
+		try {
+
+			if ( typeof manager.has === 'function' ) exists = manager.has( computeNode );
+			else if ( manager.data && typeof manager.data.has === 'function' ) exists = manager.data.has( computeNode );
+
+		} catch ( _ ) { /* treat an opaque cache as unavailable */ }
+		if ( ! exists ) return null;
+
+	}
+	try {
+
+		const data = manager.get( computeNode );
+		return data && data.nodeBuilderState || null;
+
+	} catch ( _ ) {
+
+		return null;
+
+	}
+
+}
+
 async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
-	const computeNodes = Array.isArray( options.computeNodes ) ? options.computeNodes : [];
+	const explicitComputeNodes = Array.isArray( options.computeNodes ) ? options.computeNodes.slice() : [];
+	const computeNodes = explicitComputeNodes.slice();
+	const computeNodeSet = new Set( computeNodes );
+	const explicitComputeNodeSet = new Set( computeNodes );
+	const computeStatesByNode = new Map();
 	const renderPipeline = options.renderPipeline || null;
 	const captureRendererOutput = options.captureRendererOutput === true;
 	const rendererOutputConfig = captureRendererOutput && options.rendererOutputConfig || null;
@@ -1723,9 +2081,11 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		// real GPU dispatch; that's normally fine (compute kernels are
 		// idempotent seeds in our demo) but callers can set `state._seeded`
 		// to skip the init kernel on re-compile.
-		for ( const computeNode of computeNodes ) {
+		for ( const computeNode of explicitComputeNodes ) {
 
 			await renderer.computeAsync( computeNode );
+			const state = cachedComputeState( manager, computeNode );
+			if ( state ) computeStatesByNode.set( computeNode, state );
 
 		}
 
@@ -1851,6 +2211,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	const byMaterialVariants = new Map();
 	const byAuxiliaryMaterialVariants = new Map();
 	const byComputeNode = new Map();
+	const materialComputeRecords = [];
 	// Wedge 4: snapshot the renderer's nodeFrame.time at capture so the runtime
 	// can pin it during PSNR-snapshot replay. Without this, time-driven graphs
 	// (`mix(a, b, sin(time*k))`, scrolling UVs, particle position +=
@@ -1922,6 +2283,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 				captureClock: variant.captureClocks && variant.captureClocks.length > 0 ? variant.captureClocks[ 0 ] : null,
 				mrtNode: firstRequest && firstRequest.renderContext ? firstRequest.renderContext.mrt : null,
 				hasObservedMRT: !! ( firstRequest && firstRequest.renderContext ),
+				materialComputeDiscovery: true,
 			} );
 			selectedCacheKeys.add( variant.cacheKey );
 			markHandledPair( family.material || null, variant.cacheKey );
@@ -2005,6 +2367,39 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	const cacheOrder = new Map( [ ...cache.keys() ].map( ( cacheKey, index ) => [ cacheKey, index ] ) );
 	extractionEntries.sort( ( a, b ) => ( cacheOrder.get( a.cacheKey ) ?? Number.MAX_SAFE_INTEGER ) - ( cacheOrder.get( b.cacheKey ) ?? Number.MAX_SAFE_INTEGER ) );
 
+	// Discover material-owned kernels from the exact entries selected above,
+	// after supplied-vs-local family overlap and incomplete-family fallback have
+	// resolved. The accumulated-cache compatibility entries are intentionally
+	// excluded: they may belong to an earlier capture even when their state still
+	// contains a live ComputeNode. Selected synthetic fallback states remain
+	// eligible because addFamilyEntries() marks both harvested and cache-backed
+	// family entries at the same bounded ownership boundary.
+	for ( const entry of extractionEntries ) {
+
+		if ( entry.materialComputeDiscovery === true ) addMaterialComputeNodesFromState( entry.state, computeNodes, computeNodeSet );
+
+	}
+
+	// Auto-discovered kernels are built for extraction without dispatching. An
+	// uncached onInit kernel is different: its callback may initialize storage
+	// that the builder reads, so calling getForCompute() would build from an
+	// uninitialized and potentially externally mutable state. Preserve an
+	// already cached state, but otherwise leave the nested artifact unavailable
+	// and let the material-compute contract fail closed to hybrid mode. The
+	// requireExisting read also avoids DataMap.get() creating an empty cache row.
+	for ( const computeNode of computeNodes ) {
+
+		if ( explicitComputeNodeSet.has( computeNode ) ) continue;
+		let state = cachedComputeState( manager, computeNode, true );
+		if ( ! state && typeof computeNode.onInitFunction !== 'function' && typeof manager.getForCompute === 'function' ) {
+
+			try { state = manager.getForCompute( computeNode ); } catch ( _ ) { state = null; }
+
+		}
+		if ( state ) computeStatesByNode.set( computeNode, state );
+
+	}
+
 	for ( const entry of extractionEntries ) {
 
 		const { cacheKey, state, material, meshes } = entry;
@@ -2024,6 +2419,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 			bindingOwnerKind: RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER,
 			materialBindingOwners,
 		} : null );
+		if ( entry.materialComputeDiscovery === true && Array.isArray( state.updateBeforeNodes ) && state.updateBeforeNodes.some( isRawMaterialComputeNode ) ) materialComputeRecords.push( { artifact, state } );
 		if ( exactShadowCasterRequests.length > 0 && artifact.materialShape === 'shadow-depth' ) {
 
 			artifact.bindingOwner = RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER;
@@ -2123,26 +2519,33 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 	}
 
-	for ( const variantList of byAuxiliaryMaterialVariants.values() ) {
-
-		for ( const artifact of variantList ) attachArtifactVariantFamily( artifact, variantList );
-
-	}
-
 	// Compute artifacts are keyed by compute-node identity — there's no
 	// hash cache like nodeBuilderCache for render, so we walk the explicit
 	// list the caller gave us and read state off `_nodes.get(node)`.
 	let nextComputeCacheKey = 1;
 	for ( const computeNode of computeNodes ) {
 
-		const computeData = manager.get( computeNode );
-		const state = computeData && computeData.nodeBuilderState;
+		const state = computeStatesByNode.get( computeNode ) || ( explicitComputeNodeSet.has( computeNode ) ? cachedComputeState( manager, computeNode ) : null );
 		if ( ! state ) continue;
+		computeStatesByNode.set( computeNode, state );
 
 		const artifact = extractComputeArtifact( nextComputeCacheKey ++, state, computeNode );
 		if ( captureClock !== null ) artifact.captureClock = captureClock;
 		artifacts.push( artifact );
 		byComputeNode.set( computeNode, artifact );
+
+	}
+
+	for ( const record of materialComputeRecords ) {
+
+		const descriptor = extractMaterialComputeDescriptor( record.artifact, record.state, byComputeNode, computeStatesByNode );
+		if ( descriptor ) record.artifact.materialCompute = descriptor;
+
+	}
+
+	for ( const variantList of byAuxiliaryMaterialVariants.values() ) {
+
+		for ( const artifact of variantList ) attachArtifactVariantFamily( artifact, variantList );
 
 	}
 

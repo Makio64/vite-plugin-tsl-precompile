@@ -12,6 +12,7 @@ export * from './render-context.js';
 export * from './render-selector.js';
 export * from './output-config.js';
 export * from './cube-render-target.js';
+export * from './material-compute.js';
 export * from './stable-json.js';
 export * from './virtual-modules.js';
 export * from './slim-three-policy.js';

@@ -175,8 +175,8 @@ test( 'extractArtifact records caster-relative attribute and storage roots only 
 		materialBindingOwners: new Set( [ casterA, casterB ] ),
 	};
 	const artifact = extractArtifact( 11, state, override, null, context );
-	assert.deepEqual( artifact.attributes[ 0 ].userPath, [ 'positionNode' ] );
-	assert.deepEqual( artifact.uniformPlan[ 0 ].storageBuffers[ 0 ].userPath, [ 'positionNode' ] );
+	assert.deepEqual( artifact.attributes[ 0 ].userPath, [ 'positionNode', 'attribute' ] );
+	assert.deepEqual( artifact.uniformPlan[ 0 ].storageBuffers[ 0 ].userPath, [ 'positionNode', 'attribute' ] );
 
 	const inconsistent = { colorNode: carrier( equivalent ) };
 	const withoutProof = extractArtifact( 12, state, override, null, {

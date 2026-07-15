@@ -2,6 +2,7 @@ import { MATERIAL_TEXTURE_PROPS } from './texture-props.js';
 import { collectArtifactDynamicBindings, dynamicBindingDescriptor, validateDynamicBindingSource } from './dynamic-bindings.js';
 import { collectArtifactVariantCandidates, createArtifactVariantPayloadFingerprint } from './artifact-variants.js';
 import { validateArtifactLightIdentities } from './light-identities.js';
+import { validateMaterialComputeDescriptor } from './material-compute.js';
 import { RENDER_BINDING_OWNER_KINDS, isRenderBindingOwnerKind } from './render-selector.js';
 import { stableJsonStringify } from './stable-json.js';
 
@@ -785,6 +786,21 @@ export function validateArtifact( input, opts = {} ) {
 
 	}
 	validateRuntimeBindings( artifact, label, errors );
+	if ( artifact.materialCompute !== undefined ) {
+
+		if ( isCompute ) errors.push( validationError(
+			'material-compute.owner',
+			`${ label }: materialCompute is only valid on render artifacts`,
+			'materialCompute',
+		) );
+
+		for ( const materialComputeError of validateMaterialComputeDescriptor( artifact.materialCompute, { artifact } ) ) errors.push( validationError(
+			materialComputeError.code,
+			`${ label }: ${ materialComputeError.message }`,
+			materialComputeError.path,
+		) );
+
+	}
 	for ( const lightIdentityError of validateArtifactLightIdentities( artifact ) ) errors.push( validationError(
 		lightIdentityError.code,
 		`${ label }: ${ lightIdentityError.message }`,
@@ -946,6 +962,25 @@ export function validateArtifact( input, opts = {} ) {
 				) );
 
 			}
+
+		}
+
+	}
+
+	if ( artifact.materialCompute && Array.isArray( artifact.materialCompute.kernels ) ) {
+
+		for ( let index = 0; index < artifact.materialCompute.kernels.length; index ++ ) {
+
+			const nested = artifact.materialCompute.kernels[ index ] && artifact.materialCompute.kernels[ index ].artifact;
+			if ( ! nested || typeof nested !== 'object' || Array.isArray( nested ) ) continue;
+			const nestedPath = `materialCompute.kernels[${ index }].artifact`;
+			const result = validateArtifact( nested, { ...opts, label: `${ label }.${ nestedPath }` } );
+			for ( const error of result.errors ) errors.push( {
+				...error,
+				path: error.path ? `${ nestedPath }.${ error.path }` : nestedPath,
+			} );
+			for ( const warning of result.warnings ) warnings.push( warning );
+			for ( const kind of result.sourceKinds ) sourceKinds.push( kind );
 
 		}
 

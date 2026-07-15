@@ -91,6 +91,53 @@ export function fingerprintArtifactShape( input ) {
 
 	}
 
+	const materialCompute = artifact && artifact.materialCompute;
+	if ( materialCompute && typeof materialCompute === 'object' ) {
+
+		pushEntry( rows, 'material-compute', 'contract', materialCompute.version, materialCompute.mode );
+		for ( const kernel of Array.isArray( materialCompute.kernels ) ? materialCompute.kernels : [] ) {
+
+			pushEntry( rows, 'material-compute', 'kernel', kernel && kernel.id, kernel && kernel.artifact && kernel.artifact.kind );
+			if ( kernel && kernel.artifact && typeof kernel.artifact === 'object' ) {
+
+				for ( const row of fingerprintArtifactShape( kernel.artifact ) ) rows.push( `[materialCompute.${ kernel.id || '<kernel>' }]${ row }` );
+
+			}
+
+		}
+
+		for ( const resource of Array.isArray( materialCompute.resources ) ? materialCompute.resources : [] ) {
+
+			pushEntry( rows, 'material-compute', 'resource', resource && resource.id, resource && resource.kind );
+
+		}
+		for ( const binding of Array.isArray( materialCompute.bindings ) ? materialCompute.bindings : [] ) {
+
+			pushEntry(
+				rows,
+				'material-compute',
+				'kernel-binding',
+				`${ binding && binding.kernel || '<kernel>' }@${ binding && binding.group }:${ binding && binding.binding }`,
+				binding && binding.resource,
+			);
+
+		}
+		for ( const binding of Array.isArray( materialCompute.renderBindings ) ? materialCompute.renderBindings : [] ) {
+
+			const location = binding && binding.kind === 'attribute'
+				? `attribute:${ binding.attribute }`
+				: `${ binding && binding.group }:${ binding && binding.binding }`;
+			pushEntry( rows, 'material-compute', 'render-binding', `${ binding && binding.resource }@${ location }`, binding && binding.kind );
+
+		}
+		for ( const entry of Array.isArray( materialCompute.schedule ) ? materialCompute.schedule : [] ) {
+
+			pushEntry( rows, 'material-compute', 'schedule', `${ entry && entry.order }:${ entry && entry.kernel }`, entry && entry.updateType );
+
+		}
+
+	}
+
 	return Object.freeze( rows.sort() );
 
 }

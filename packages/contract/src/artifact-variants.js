@@ -27,6 +27,7 @@ export const ARTIFACT_VARIANT_FIELDS = Object.freeze( [
 	'uniformPlan',
 	'lightIdentities',
 	'dynamicBindings',
+	'materialCompute',
 	'defaults',
 	'renderState',
 	'ltcTextures',
