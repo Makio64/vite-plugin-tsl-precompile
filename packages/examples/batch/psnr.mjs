@@ -51,6 +51,13 @@ export function psnrThresholdForExample( name, defaultThreshold, config = covera
 
 }
 
+export function minimumBrightFractionForExample( name, defaultMinimum, config = coverageConfig ) {
+
+	const override = config.pixelGate?.minimumBrightFractionOverrides?.[ name ];
+	return typeof override === 'number' && Number.isFinite( override ) && override >= 0 ? override : defaultMinimum;
+
+}
+
 export function expectedReplayErrorPatternsForExample( name, config = coverageConfig ) {
 
 	const patterns = config.pixelGate?.expectedReplayErrors?.[ name ];

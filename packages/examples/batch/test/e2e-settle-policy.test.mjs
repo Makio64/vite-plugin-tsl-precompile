@@ -3,6 +3,7 @@ import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 
 import { installAnimationLoopSettleTransition, minimumRenderableObjectsForExample, settleFramesForExample } from '../e2e-settle-policy.mjs';
+import { minimumBrightFractionForExample } from '../psnr.mjs';
 
 function transitionForTest() {
 
@@ -100,6 +101,13 @@ test( 'deferred subjects must be present before an example can freeze', () => {
 	assert.equal( minimumRenderableObjectsForExample( 'webgpu_loader_materialx.html' ), 65 );
 	assert.equal( minimumRenderableObjectsForExample( 'webgpu_tsl_wood.html' ), 55 );
 	assert.equal( minimumRenderableObjectsForExample( 'webgpu_materials.html' ), 1 );
+
+} );
+
+test( 'sparse point renders use a non-zero example-specific brightness floor', () => {
+
+	assert.equal( minimumBrightFractionForExample( 'webgpu_compute_points.html', 0.005 ), 0.0001 );
+	assert.equal( minimumBrightFractionForExample( 'webgpu_materials.html', 0.005 ), 0.005 );
 
 } );
 

@@ -47,7 +47,7 @@ import { isolateCanvasForScreenshot, restoreCanvasAfterScreenshot } from './e2e-
 import { installRenderSelectorMismatchRecorder } from './e2e-render-selector-recorder.mjs';
 import { enrichRenderSelectorDiagnostics, resolveE2ERoots, summarizeArtifactRenderSelectors } from './e2e-report-diagnostics.mjs';
 import { installAnimationLoopSettleTransition, minimumRenderableObjectsForExample, settleFramesForExample } from './e2e-settle-policy.mjs';
-import { captureWaitOverrideForExample, comparePngBuffers, expectedReplayErrorPatternsForExample, pixelGateDisabledReasonForExample, psnrThresholdForExample, tierExamples } from './psnr.mjs';
+import { captureWaitOverrideForExample, comparePngBuffers, expectedReplayErrorPatternsForExample, minimumBrightFractionForExample, pixelGateDisabledReasonForExample, psnrThresholdForExample, tierExamples } from './psnr.mjs';
 import { loadSlimBundle, slimBundleHashOptions, slimBundleReportProvenance } from './slim-bundle-provenance.mjs';
 
 const SELF = dirname( fileURLToPath( import.meta.url ) );
@@ -14080,6 +14080,7 @@ const LOADER_QUIESCENT_MS = 250;
 // animation phase stays deterministic between capture and replay.
 const SETTLE_FRAMES = parseIntAtLeast( getArg( '--settle-frames=', '8' ), 8, 0 );
 const RENDER_POLL_MS = 400;
+const DEFAULT_MINIMUM_BRIGHT_FRACTION = 0.005;
 // Restart the browser more aggressively than wear-and-tear suggests because
 // some examples (PMREM-heavy, large GLTF, postprocessing) corrupt the WebGPU
 // state in a way that crashes the whole renderer process after 8–11 runs.
@@ -14490,7 +14491,7 @@ async function maybeClickStart( page ) {
 
 }
 
-async function waitForFrame( page, timeoutMs ) {
+async function waitForFrame( page, timeoutMs, minimumBrightFraction = DEFAULT_MINIMUM_BRIGHT_FRACTION ) {
 
 	try {
 
@@ -14520,7 +14521,7 @@ async function waitForFrame( page, timeoutMs ) {
 	while ( Date.now() < deadline ) {
 
 		bright = await canvasBrightFractionInPage( page );
-		if ( bright > 0.005 ) break;
+		if ( bright > minimumBrightFraction ) break;
 		await new Promise( ( r ) => setTimeout( r, RENDER_POLL_MS ) );
 
 	}
@@ -14531,6 +14532,7 @@ async function waitForFrame( page, timeoutMs ) {
 async function visitExample( browser, name, mode, waitMs ) {
 
 	const timings = { mode };
+	const minimumBrightFraction = minimumBrightFractionForExample( name, DEFAULT_MINIMUM_BRIGHT_FRACTION );
 	const startedAt = Date.now();
 	const mark = ( key, from ) => { timings[ key ] = Date.now() - from; };
 
@@ -15027,7 +15029,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 		// uninterrupted. Without this window, captures with async
 		// setup (HDR / KTX2 / GLTF) would be incomplete.
 		stepStartedAt = Date.now();
-		const bright = await waitForFrame( page, mode === 'capture' ? RENDER_TIMEOUT_MS : Math.max( waitMs, RENDER_TIMEOUT_MS ) );
+		const bright = await waitForFrame( page, mode === 'capture' ? RENDER_TIMEOUT_MS : Math.max( waitMs, RENDER_TIMEOUT_MS ), minimumBrightFraction );
 		mark( 'initialFrameMs', stepStartedAt );
 
 		// Additional real-time settle so aux capture (Promise chains)
@@ -15285,15 +15287,16 @@ async function runOne( browser, name ) {
 	];
 	const expectedReplayPatterns = expectedReplayErrorPatternsForExample( name );
 	const blockingReplayErrors = replay.errors.filter( ( error ) => ! isIgnorableReplayError( error ) && ! expectedReplayPatterns.some( ( re ) => re.test( error ) ) );
+	const minimumBrightFraction = minimumBrightFractionForExample( name, DEFAULT_MINIMUM_BRIGHT_FRACTION );
 
 	let pixelMetrics;
-	if ( capture.shot && replay.shot && capture.bright > 0.005 && replay.bright > 0.005 && replay.page ) {
+	if ( capture.shot && replay.shot && capture.bright > minimumBrightFraction && replay.bright > minimumBrightFraction && replay.page ) {
 
 		pixelMetrics = await comparePSNR( replay.page, capture.shot, replay.shot, name ).catch( ( err ) => ( { error: err && err.message || String( err ) } ) );
 
 	} else {
 
-		pixelMetrics = { skipped: true, reason: capture.bright <= 0.005 ? 'capture frame empty' : replay.bright <= 0.005 ? 'replay frame empty' : 'screenshot missing' };
+		pixelMetrics = { skipped: true, reason: capture.bright <= minimumBrightFraction ? 'capture frame empty' : replay.bright <= minimumBrightFraction ? 'replay frame empty' : 'screenshot missing' };
 
 	}
 	if ( saveShots ) {
@@ -15320,7 +15323,7 @@ async function runOne( browser, name ) {
 	const examplePixelGateEnabled = pixelGateEnabledForExample( name );
 	if ( ! examplePixelGateEnabled && pixelGate && pixelGate.pass === false ) pixelGate.disabled = true;
 	const pixelGateOk = ! examplePixelGateEnabled || pixelGate.pass !== false;
-	const pass = ( userCount > 0 || auxCount > 0 ) && blockingCaptureErrors.length === 0 && replay.bright > 0.005 && blockingReplayErrors.length === 0 && pixelGateOk;
+	const pass = ( userCount > 0 || auxCount > 0 ) && blockingCaptureErrors.length === 0 && replay.bright > minimumBrightFraction && blockingReplayErrors.length === 0 && pixelGateOk;
 	const captureDiagnostics = enrichRenderSelectorDiagnostics( mergeDiagnostics( capture.diagnostics, artifactCapture.diagnostics ), captureErrors );
 	const replayDiagnostics = enrichRenderSelectorDiagnostics( replay.diagnostics || null, replay.errors );
 
@@ -15340,6 +15343,7 @@ async function runOne( browser, name ) {
 		status: pass ? 'pass' : 'fail',
 		captureBrightFrac: capture.bright,
 		replayBrightFrac: replay.bright,
+		minimumBrightFraction,
 		pixelGate,
 		userArtifacts: userCount,
 		auxArtifacts: auxCount,
@@ -15352,7 +15356,7 @@ async function runOne( browser, name ) {
 		timings: passTimings,
 		artifactSummaries,
 		auxSummaries,
-		error: pass ? null : summarizeFailure( { userCount, blockingCaptureErrors, replayBright: replay.bright, blockingReplayErrors, pixelGate, pixelGateEnabled: examplePixelGateEnabled } ),
+		error: pass ? null : summarizeFailure( { userCount, blockingCaptureErrors, replayBright: replay.bright, minimumBrightFraction, blockingReplayErrors, pixelGate, pixelGateEnabled: examplePixelGateEnabled } ),
 	};
 
 }
@@ -15456,11 +15460,11 @@ function isIgnorableReplayError( error ) {
 
 }
 
-function summarizeFailure( { userCount, blockingCaptureErrors, replayBright, blockingReplayErrors, pixelGate, pixelGateEnabled } ) {
+function summarizeFailure( { userCount, blockingCaptureErrors, replayBright, minimumBrightFraction = DEFAULT_MINIMUM_BRIGHT_FRACTION, blockingReplayErrors, pixelGate, pixelGateEnabled } ) {
 
 	if ( userCount === 0 ) return 'capture produced no user-material artifacts';
 	if ( blockingCaptureErrors.length > 0 ) return blockingCaptureErrors[ 0 ].slice( 0, 500 );
-	if ( replayBright <= 0.005 ) return 'slim replay did not produce a non-empty frame';
+	if ( replayBright <= minimumBrightFraction ) return 'slim replay did not produce a non-empty frame';
 	if ( blockingReplayErrors.length > 0 ) return blockingReplayErrors[ 0 ].slice( 0, 500 );
 	if ( pixelGateEnabled && pixelGate && pixelGate.pass === false ) return `pixel diff PSNR ${ pixelGate.psnr } dB < threshold ${ pixelGate.threshold } dB (visual regression)`;
 	return 'unknown replay failure';
