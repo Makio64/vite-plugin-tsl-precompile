@@ -66,7 +66,7 @@ import {
 	resolveMaterialComputePath,
 } from '../hydrate/material-compute-ownership.js';
 import PrecompiledMaterial from '../_vendor-PrecompiledMaterial.js';
-import { withTemporalFrame as runWithTemporalFrame } from './temporal-frame.js';
+import { getTemporalFrameState, withTemporalFrame as runWithTemporalFrame } from './temporal-frame.js';
 
 const DEFAULT_OPTS = {
 	// Wave 5 Phase B3 — default to `'auto'` so any three.js project that
@@ -575,6 +575,87 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	}
 
+	function nodeFrameForRenderer( targetRenderer ) {
+
+		const nodes = targetRenderer && ( targetRenderer._nodes || targetRenderer.nodes );
+		return nodes && nodes.nodeFrame || null;
+
+	}
+
+	async function initializeFullRendererForCompute( fullRenderer ) {
+
+		if ( fullRenderer && fullRenderer._initialized === false && typeof fullRenderer.init === 'function' ) await fullRenderer.init();
+		return fullRenderer;
+
+	}
+
+	/**
+	 * Run Three's synchronous compute-node lifecycle under the application
+	 * renderer's effective frame identity. The returned value may be a Promise,
+	 * but an initialized Three renderer has already run updateForCompute() before
+	 * returning it, so restore the caller-owned frame and temporal scope now
+	 * rather than holding mutable renderer state until GPU completion.
+	 */
+	function invokeAlignedFullCompute( fullRenderer, callback ) {
+
+		const sourceFrame = nodeFrameForRenderer( renderer );
+		const fullFrame = nodeFrameForRenderer( fullRenderer );
+		const temporalState = getTemporalFrameState( renderer );
+		const sourceFrameId = temporalState && temporalState.frameId !== undefined && temporalState.frameId !== null
+			? temporalState.frameId
+			: sourceFrame && sourceFrame.frameId;
+		const sourceTime = temporalState && Number.isFinite( temporalState.time )
+			? temporalState.time
+			: sourceFrame && Number.isFinite( sourceFrame.time ) ? sourceFrame.time : undefined;
+		const sourceDeltaTime = sourceFrame && Number.isFinite( sourceFrame.deltaTime ) ? sourceFrame.deltaTime : undefined;
+		const snapshot = fullFrame ? {
+			frameId: fullFrame.frameId,
+			time: fullFrame.time,
+			deltaTime: fullFrame.deltaTime,
+			renderId: fullFrame.renderId,
+		} : null;
+
+		try {
+
+			if ( fullFrame ) {
+
+				if ( sourceFrameId !== undefined && sourceFrameId !== null ) fullFrame.frameId = sourceFrameId;
+				if ( sourceTime !== undefined ) fullFrame.time = sourceTime;
+				if ( sourceDeltaTime !== undefined ) fullFrame.deltaTime = sourceDeltaTime;
+
+			}
+
+			let result;
+			if ( temporalState ) {
+
+				// Deliberately do not return the callback's thenable from this scope.
+				// Stock computeAsync() invokes compute()/updateForCompute() synchronously
+				// once initialized; retaining this scope until settlement can overlap a
+				// sibling dispatch or the full renderer's own RAF.
+				runWithTemporalFrame( fullRenderer, temporalState, () => { result = callback(); } );
+
+			} else {
+
+				result = callback();
+
+			}
+			return result;
+
+		} finally {
+
+			if ( snapshot ) {
+
+				fullFrame.frameId = snapshot.frameId;
+				fullFrame.time = snapshot.time;
+				fullFrame.deltaTime = snapshot.deltaTime;
+				fullFrame.renderId = snapshot.renderId;
+
+			}
+
+		}
+
+	}
+
 	function installComputeFallback( sourceRenderer = null ) {
 
 		if ( sourceRenderer ) cachedFullRenderer = sourceRenderer;
@@ -589,10 +670,12 @@ export function createSlimSceneSupport( opts = {} ) {
 			const fullRenderer = cachedFullRenderer;
 			if ( fullRenderer ) {
 
+				if ( fullRenderer._initialized === false && typeof fullRenderer.init === 'function' ) return this.computeAsync( computeNode, ...rest );
+
 				shareComputeInputs( computeNode, fullRenderer );
-				const result = typeof fullRenderer.compute === 'function'
+				const result = invokeAlignedFullCompute( fullRenderer, () => typeof fullRenderer.compute === 'function'
 					? fullRenderer.compute( computeNode, ...rest )
-					: fullRenderer.computeAsync( computeNode, ...rest );
+					: fullRenderer.computeAsync( computeNode, ...rest ) );
 				if ( result && typeof result.then === 'function' ) {
 
 					return result.then( () => syncDelegatedComputeOutputs( computeNode, fullRenderer ) );
@@ -615,9 +698,12 @@ export function createSlimSceneSupport( opts = {} ) {
 			}
 			const fullRenderer = cachedFullRenderer || await getFullRenderer();
 			if ( ! fullRenderer ) return undefined;
+			await initializeFullRendererForCompute( fullRenderer );
 			shareComputeInputs( computeNode, fullRenderer );
-			if ( typeof fullRenderer.computeAsync === 'function' ) await fullRenderer.computeAsync( computeNode, ...rest );
-			else if ( typeof fullRenderer.compute === 'function' ) fullRenderer.compute( computeNode, ...rest );
+			const result = invokeAlignedFullCompute( fullRenderer, () => typeof fullRenderer.computeAsync === 'function'
+				? fullRenderer.computeAsync( computeNode, ...rest )
+				: typeof fullRenderer.compute === 'function' ? fullRenderer.compute( computeNode, ...rest ) : undefined );
+			if ( result && typeof result.then === 'function' ) await result;
 			return syncDelegatedComputeOutputs( computeNode, fullRenderer );
 
 		};
@@ -952,6 +1038,15 @@ export function createSlimSceneSupport( opts = {} ) {
 			return rejectMaterialComputeDispatch( scene, computeOpts, bindings, new Error( 'createSlimSceneSupport: dispatchMaterialComputes() requires a full renderer. Enable `fullRendererFallback` or pass `computeOpts.fullRenderer`.' ) );
 
 		}
+		try {
+
+			await initializeFullRendererForCompute( fullRenderer );
+
+		} catch ( error ) {
+
+			return rejectMaterialComputeDispatch( scene, computeOpts, bindings, error );
+
+		}
 		const slimDevice = renderer.backend && renderer.backend.device;
 		const fullDevice = fullRenderer.backend && fullRenderer.backend.device;
 		if ( slimDevice && fullDevice && slimDevice !== fullDevice ) {
@@ -1132,9 +1227,14 @@ export function createSlimSceneSupport( opts = {} ) {
 				const rest = Array.isArray( args ) ? args : [];
 				await withSuppressedMaterialComputeInitializer( computeNode, async () => {
 
-					if ( typeof fullRenderer.computeAsync === 'function' ) await fullRenderer.computeAsync( computeNode, ...rest );
-					else if ( typeof fullRenderer.compute === 'function' ) await fullRenderer.compute( computeNode, ...rest );
-					else throw new Error( 'createSlimSceneSupport: the full renderer exposes neither computeAsync() nor compute().' );
+					const result = invokeAlignedFullCompute( fullRenderer, () => {
+
+						if ( typeof fullRenderer.computeAsync === 'function' ) return fullRenderer.computeAsync( computeNode, ...rest );
+						if ( typeof fullRenderer.compute === 'function' ) return fullRenderer.compute( computeNode, ...rest );
+						throw new Error( 'createSlimSceneSupport: the full renderer exposes neither computeAsync() nor compute().' );
+
+					} );
+					if ( result && typeof result.then === 'function' ) await result;
 
 				} );
 				const syncOptions = computeOpts.syncOptions || {};

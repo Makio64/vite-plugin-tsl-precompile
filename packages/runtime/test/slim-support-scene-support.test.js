@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as Three from 'three';
+import NodeFrame from 'three/src/nodes/core/NodeFrame.js';
 
 import { createSlimSceneSupport, pinClock, unpinClock } from '../src/slim-support/scene-support.js';
 import { getSlimRenderFallback, setSlimRenderFallback } from '../src/slim-support/render-fallback-registry.js';
 import { clearLiveTextureIndex, hydrateNodeBuilderState } from '../src/hydrator.js';
 import { lookupLiveTextureByIdentity } from '../src/hydrate/live-texture-registry.js';
 import ReplayNodeFrame from '../src/slim-replay-node-frame.js';
-import { getTemporalFrameState } from '../src/slim-support/temporal-frame.js';
+import { getTemporalFrameState, withTemporalFrame } from '../src/slim-support/temporal-frame.js';
 
 function fakeDataMap() {
 
@@ -522,6 +523,7 @@ test( 'createSlimSceneSupport ensureFallback installs raw compute fallback on th
 		assert.equal( full.computed.computeNode, rawCompute );
 		assert.deepEqual( full.computed.rest, [ 12 ] );
 		assert.equal( stats.pass, 0 );
+		assert.equal( full._nodes.nodeFrame, undefined, 'fallback renderers without a NodeFrame seam remain compatible' );
 
 		assert.equal( slim.compute( precompiledCompute ), 'original' );
 		assert.equal( originalComputeNode, precompiledCompute );
@@ -533,6 +535,327 @@ test( 'createSlimSceneSupport ensureFallback installs raw compute fallback on th
 
 		support.dispose();
 		setSlimRenderFallback( null );
+
+	}
+
+} );
+
+test( 'createSlimSceneSupport aligns material compute with logical FRAME cadence without advancing the full NodeFrame', async () => {
+
+	const slim = fakeRenderer();
+	const slimFrame = new ReplayNodeFrame();
+	Object.assign( slimFrame, { renderer: slim, frameId: 60, time: 12, deltaTime: 0.125 } );
+	slim._nodes = { nodeFrame: slimFrame };
+
+	const full = fakeRenderer();
+	full.backend.device = slim.backend.device;
+	full._initialized = true;
+	const fullFrame = new NodeFrame();
+	Object.assign( fullFrame, { renderer: full, frameId: 41, time: 9, deltaTime: 0.75, renderId: 44 } );
+	let frameAdvanceCalls = 0;
+	fullFrame.update = () => { frameAdvanceCalls ++; };
+	full._nodes = { nodeFrame: fullFrame, getForCompute: () => ( { bindings: [] } ) };
+	full._bindings = { getForCompute: () => [] };
+
+	const frameReference = {};
+	const observations = [];
+	const frameUpdateNode = {
+		getUpdateType: () => 'frame',
+		updateReference: () => frameReference,
+		update( frame ) {
+
+			const temporal = getTemporalFrameState( frame );
+			observations.push( {
+				frameId: frame.frameId,
+				renderId: frame.renderId,
+				time: frame.time,
+				deltaTime: frame.deltaTime,
+				temporal: temporal && { ...temporal },
+			} );
+
+		},
+	};
+	let physicalComputes = 0;
+	full.computeAsync = () => {
+
+		fullFrame.renderId = ++ physicalComputes;
+		fullFrame.updateNode( frameUpdateNode );
+		return Promise.resolve();
+
+	};
+
+	const raw = { isNode: true, isComputeNode: true, traverse( visitor ) { visitor( this ); } };
+	const material = {
+		isPrecompiledMaterial: true,
+		precompiledArtifact: contractComputeArtifact( 'hybrid-required', { updateType: 'frame' } ),
+		positionNode: raw,
+	};
+	const scene = { traverse( visitor ) { visitor( { material } ); } };
+	const support = createSlimSceneSupport( { renderer: slim, fullRendererFallback: false } );
+	const fullSnapshot = { frameId: 41, time: 9, deltaTime: 0.75, renderId: 44 };
+	const dispatchAt = ( frameId, renderId, time ) => withTemporalFrame(
+		slim,
+		{ frameId, renderId, time },
+		() => support.dispatchMaterialComputes( scene, { fullRenderer: full } ),
+	);
+
+	try {
+
+		assert.equal( ( await dispatchAt( 7, 'visible-a', 3.25 ) ).errors, 0 );
+		assert.deepEqual( {
+			frameId: fullFrame.frameId,
+			time: fullFrame.time,
+			deltaTime: fullFrame.deltaTime,
+			renderId: fullFrame.renderId,
+		}, fullSnapshot );
+		assert.equal( getTemporalFrameState( full ), null, 'a caller-passed renderer is only scoped during its native lifecycle' );
+
+		assert.equal( ( await dispatchAt( 7, 'visible-b', 3.5 ) ).errors, 0 );
+		assert.equal( ( await dispatchAt( 8, 'visible-c', 4.25 ) ).errors, 0 );
+
+		assert.equal( physicalComputes, 3 );
+		assert.equal( observations.length, 2, 'FRAME work runs once at frame 7 and once at frame 8' );
+		assert.deepEqual( observations, [
+			{
+				frameId: 7,
+				renderId: 1,
+				time: 3.25,
+				deltaTime: 0.125,
+				temporal: { frameId: 7, renderId: 'visible-a', time: 3.25, advance: true },
+			},
+			{
+				frameId: 8,
+				renderId: 3,
+				time: 4.25,
+				deltaTime: 0.125,
+				temporal: { frameId: 8, renderId: 'visible-c', time: 4.25, advance: true },
+			},
+		] );
+		assert.equal( frameAdvanceCalls, 0, 'alignment does not advance the full renderer clock' );
+		assert.deepEqual( {
+			frameId: fullFrame.frameId,
+			time: fullFrame.time,
+			deltaTime: fullFrame.deltaTime,
+			renderId: fullFrame.renderId,
+		}, fullSnapshot );
+		assert.equal( getTemporalFrameState( full ), null );
+
+	} finally {
+
+		await support.dispose();
+
+	}
+
+} );
+
+test( 'createSlimSceneSupport keeps raw sync fallback synchronous and preserves FRAME and RENDER cadence', () => {
+
+	const slim = fakeRenderer();
+	const slimFrame = new ReplayNodeFrame();
+	Object.assign( slimFrame, { renderer: slim, frameId: 30, time: 6, deltaTime: 0.25 } );
+	slim._nodes = { nodeFrame: slimFrame };
+
+	const full = fakeRenderer();
+	full._initialized = true;
+	const fullFrame = new NodeFrame();
+	Object.assign( fullFrame, { renderer: full, frameId: 31, time: 7, deltaTime: 0.5, renderId: 40 } );
+	full._nodes = { nodeFrame: fullFrame, getForCompute: () => ( { bindings: [] } ) };
+	full._bindings = { getForCompute: () => [] };
+	const frameReference = {};
+	const renderReference = {};
+	const frameUpdates = [];
+	const renderUpdates = [];
+	const makeUpdateNode = ( updateType, reference, target ) => ( {
+		getUpdateType: () => updateType,
+		updateReference: () => reference,
+		update( frame ) {
+
+			const temporal = getTemporalFrameState( frame );
+			target.push( {
+				frameId: frame.frameId,
+				renderId: frame.renderId,
+				time: frame.time,
+				deltaTime: frame.deltaTime,
+				temporal: temporal && { ...temporal },
+			} );
+
+		},
+	} );
+	const frameUpdateNode = makeUpdateNode( 'frame', frameReference, frameUpdates );
+	const renderUpdateNode = makeUpdateNode( 'render', renderReference, renderUpdates );
+	let nativeRenderId = 0;
+	full.compute = () => {
+
+		fullFrame.renderId = ++ nativeRenderId;
+		fullFrame.updateNode( frameUpdateNode );
+		fullFrame.updateNode( renderUpdateNode );
+
+	};
+	const raw = { isComputeNode: true };
+	const support = createSlimSceneSupport( { renderer: slim, fullRendererFallback: false } );
+	support.installComputeFallback( full );
+	const fullSnapshot = { frameId: 31, time: 7, deltaTime: 0.5, renderId: 40 };
+
+	try {
+
+		withTemporalFrame( full, { frameId: 'caller', renderId: 'caller-pass', time: 99 }, ( callerState ) => {
+
+			withTemporalFrame( slim, { frameId: 5, renderId: 'application-pass', time: 2 }, () => {
+
+				const first = slim.compute( raw );
+				assert.equal( typeof first.then, 'undefined', 'an initialized full renderer keeps compute() synchronous' );
+				assert.equal( getTemporalFrameState( full ), callerState );
+				const second = slim.compute( raw );
+				assert.equal( typeof second.then, 'undefined' );
+				assert.equal( getTemporalFrameState( full ), callerState );
+
+			} );
+			assert.equal( getTemporalFrameState( full ), callerState );
+
+		} );
+
+		assert.equal( frameUpdates.length, 1, 'FRAME work is deduplicated within one logical frame' );
+		assert.equal( renderUpdates.length, 2, 'RENDER work follows the two native physical compute calls' );
+		assert.deepEqual( frameUpdates[ 0 ], {
+			frameId: 5,
+			renderId: 1,
+			time: 2,
+			deltaTime: 0.25,
+			temporal: { frameId: 5, renderId: 'application-pass', time: 2, advance: true },
+		} );
+		assert.deepEqual( renderUpdates.map( ( entry ) => entry.renderId ), [ 1, 2 ] );
+		assert.ok( renderUpdates.every( ( entry ) => entry.frameId === 5 && entry.time === 2 && entry.deltaTime === 0.25 ) );
+		assert.ok( renderUpdates.every( ( entry ) => entry.temporal.frameId === 5 && entry.temporal.renderId === 'application-pass' ) );
+		assert.deepEqual( {
+			frameId: fullFrame.frameId,
+			time: fullFrame.time,
+			deltaTime: fullFrame.deltaTime,
+			renderId: fullFrame.renderId,
+		}, fullSnapshot );
+		assert.equal( getTemporalFrameState( slim ), null );
+		assert.equal( getTemporalFrameState( full ), null );
+
+		full.compute = () => {
+
+			Object.assign( fullFrame, { frameId: - 1, time: - 1, deltaTime: - 1, renderId: - 1 } );
+			throw new Error( 'native sync compute failed' );
+
+		};
+		withTemporalFrame( full, { frameId: 'caller-throw', renderId: 'caller-throw-pass', time: 100 }, ( callerState ) => {
+
+			assert.throws(
+				() => withTemporalFrame( slim, { frameId: 6, renderId: 'throw-pass', time: 3 }, () => slim.compute( raw ) ),
+				/native sync compute failed/,
+			);
+			assert.equal( getTemporalFrameState( full ), callerState, 'throw restores the caller\'s existing full-renderer scope' );
+			assert.deepEqual( {
+				frameId: fullFrame.frameId,
+				time: fullFrame.time,
+				deltaTime: fullFrame.deltaTime,
+				renderId: fullFrame.renderId,
+			}, fullSnapshot );
+
+		} );
+		assert.equal( getTemporalFrameState( slim ), null );
+		assert.equal( getTemporalFrameState( full ), null );
+
+	} finally {
+
+		support.dispose();
+
+	}
+
+} );
+
+test( 'createSlimSceneSupport lazily initializes explicit async fallback before alignment and restores before settlement', async () => {
+
+	const slim = fakeRenderer();
+	const slimFrame = new ReplayNodeFrame();
+	Object.assign( slimFrame, { renderer: slim, frameId: 80, time: 18, deltaTime: 0.375 } );
+	slim._nodes = { nodeFrame: slimFrame };
+
+	const full = fakeRenderer();
+	full.backend.device = slim.backend.device;
+	full._initialized = false;
+	let initCalls = 0;
+	let fullFrame = null;
+	full.init = async () => {
+
+		initCalls ++;
+		await Promise.resolve();
+		fullFrame = new NodeFrame();
+		Object.assign( fullFrame, { renderer: full, frameId: 21, time: 11, deltaTime: 0.9, renderId: 12 } );
+		full._nodes = { nodeFrame: fullFrame, getForCompute: () => ( { bindings: [] } ) };
+		full._bindings = { getForCompute: () => [] };
+		full._initialized = true;
+
+	};
+	let resolveEntered;
+	const entered = new Promise( ( resolve ) => { resolveEntered = resolve; } );
+	let rejectCompute;
+	const deferred = new Promise( ( resolve, reject ) => { rejectCompute = reject; } );
+	let observation = null;
+	full.computeAsync = () => {
+
+		const temporal = getTemporalFrameState( full );
+		observation = {
+			frameId: fullFrame.frameId,
+			renderId: fullFrame.renderId,
+			time: fullFrame.time,
+			deltaTime: fullFrame.deltaTime,
+			temporal: temporal && { ...temporal },
+		};
+		fullFrame.renderId = 99;
+		resolveEntered();
+		return deferred;
+
+	};
+	const raw = { isComputeNode: true };
+	const support = createSlimSceneSupport( { renderer: slim, fullRendererFallback: false } );
+	support.installComputeFallback( full );
+
+	try {
+
+		const run = withTemporalFrame(
+			slim,
+			{ frameId: 9, renderId: 'async-pass', time: 6 },
+			() => slim.compute( raw ),
+		);
+		assert.equal( typeof run.then, 'function', 'lazy init promotes only this compute call to async' );
+		await entered;
+
+		assert.equal( initCalls, 1 );
+		assert.deepEqual( observation, {
+			frameId: 9,
+			renderId: 12,
+			time: 6,
+			deltaTime: 0.375,
+			temporal: { frameId: 9, renderId: 'async-pass', time: 6, advance: true },
+		} );
+		assert.deepEqual( {
+			frameId: fullFrame.frameId,
+			time: fullFrame.time,
+			deltaTime: fullFrame.deltaTime,
+			renderId: fullFrame.renderId,
+		}, { frameId: 21, time: 11, deltaTime: 0.9, renderId: 12 }, 'full NodeFrame scalars restore while GPU completion is still pending' );
+		assert.equal( getTemporalFrameState( full ), null, 'full temporal scope restores before the deferred compute settles' );
+		assert.equal( getTemporalFrameState( slim ).frameId, 9, 'the caller-owned async scope remains active until settlement' );
+
+		const rejection = assert.rejects( run, /deferred native compute failed/ );
+		rejectCompute( new Error( 'deferred native compute failed' ) );
+		await rejection;
+		assert.equal( getTemporalFrameState( slim ), null );
+		assert.equal( getTemporalFrameState( full ), null );
+		assert.deepEqual( {
+			frameId: fullFrame.frameId,
+			time: fullFrame.time,
+			deltaTime: fullFrame.deltaTime,
+			renderId: fullFrame.renderId,
+		}, { frameId: 21, time: 11, deltaTime: 0.9, renderId: 12 } );
+
+	} finally {
+
+		await support.dispose();
 
 	}
 
