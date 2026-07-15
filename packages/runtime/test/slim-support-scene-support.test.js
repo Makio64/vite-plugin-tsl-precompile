@@ -1251,7 +1251,7 @@ test( 'createSlimSceneSupport retries failed material compute initialization bef
 
 } );
 
-test( 'createSlimSceneSupport initializes material compute once per full renderer without a stock duplicate', async () => {
+test( 'createSlimSceneSupport initializes material compute once per full renderer and backend device generation without a stock duplicate', async () => {
 
 	const slim = fakeRenderer();
 	const firstFull = fakeRenderer();
@@ -1326,6 +1326,16 @@ test( 'createSlimSceneSupport initializes material compute once per full rendere
 		assert.equal( events.indexOf( 'init-complete:second' ) < events.indexOf( 'dispatch:second' ), true );
 		assert.equal( events.some( ( event ) => event.startsWith( 'stock-init:' ) ), false, 'the physical full-renderer dispatch sees a suppressed callback' );
 		assert.equal( raw.onInitFunction, originalOnInit, 'the original callback remains available after every renderer transaction' );
+
+		const replacementDevice = fakeRenderer( { device: { id: 'gpu-replacement' } } ).backend.device;
+		slim.backend.device = replacementDevice;
+		firstFull.backend.device = replacementDevice;
+		initializingRenderer = 'first-replacement';
+		assert.equal( ( await support.dispatchMaterialComputes( scene, { fullRenderer: firstFull } ) ).errors, 0 );
+		assert.equal( events.filter( ( event ) => event === 'init:first-replacement' ).length, 1, 'a replacement backend device starts a new initialization generation' );
+		assert.equal( ( await support.dispatchMaterialComputes( scene, { fullRenderer: firstFull } ) ).errors, 0 );
+		assert.equal( events.filter( ( event ) => event === 'init:first-replacement' ).length, 1, 'the replacement device generation still initializes only once' );
+		assert.equal( raw.onInitFunction, originalOnInit );
 
 	} finally {
 

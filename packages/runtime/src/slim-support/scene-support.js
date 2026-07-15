@@ -798,6 +798,7 @@ export function createSlimSceneSupport( opts = {} ) {
 	async function initializeMaterialComputeNode( computeNode, fullRenderer ) {
 
 		if ( ! computeNode || ! fullRenderer ) return;
+		const device = fullRenderer.backend && fullRenderer.backend.device;
 		let byRenderer = materialComputeInitializationByNode.get( computeNode );
 		if ( ! byRenderer ) {
 
@@ -806,28 +807,43 @@ export function createSlimSceneSupport( opts = {} ) {
 
 		}
 		const existing = byRenderer.get( fullRenderer );
-		if ( existing === materialComputeInitialized ) return;
-		if ( existing ) return existing;
+		if ( existing && existing.device === device ) {
+
+			if ( existing.state === materialComputeInitialized ) return;
+			if ( existing.state ) return existing.state;
+
+		}
+		if ( existing && existing.state && existing.state !== materialComputeInitialized ) {
+
+			// The callback is temporarily suppressed while an initialization is in
+			// flight. Let that generation restore it before starting on a replacement
+			// backend device, then re-read the current device in case it changed again.
+			try { await existing.state; } catch ( _ ) {}
+			return initializeMaterialComputeNode( computeNode, fullRenderer );
+
+		}
 		if ( typeof computeNode.onInitFunction !== 'function' ) return;
 
 		// Three invokes this callback without awaiting it and exposes the full
 		// renderer. In hybrid mode the application owns the slim renderer, so
 		// preserve that public identity, await nested initialization kernels, and
-		// key successful initialization by the full renderer that owns the pipeline.
+		// key successful initialization by the full renderer and backend device
+		// generation that own the pipeline.
 		const initializing = withSuppressedMaterialComputeInitializer( computeNode, async ( onInit ) => {
 
 			await onInit.call( computeNode, { renderer } );
 
 		} );
-		byRenderer.set( fullRenderer, initializing );
+		const entry = { device, state: initializing };
+		byRenderer.set( fullRenderer, entry );
 		try {
 
 			await initializing;
-			byRenderer.set( fullRenderer, materialComputeInitialized );
+			if ( byRenderer.get( fullRenderer ) === entry ) entry.state = materialComputeInitialized;
 
 		} catch ( error ) {
 
-			if ( byRenderer.get( fullRenderer ) === initializing ) byRenderer.delete( fullRenderer );
+			if ( byRenderer.get( fullRenderer ) === entry ) byRenderer.delete( fullRenderer );
 			throw error;
 
 		}
