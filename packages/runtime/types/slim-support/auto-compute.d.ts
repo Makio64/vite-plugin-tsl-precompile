@@ -9,6 +9,13 @@ export type MaterialComputeBinding = {
 	properties: string[];
 };
 
+export type MaterialComputeOwner = {
+	object: unknown;
+	objects: unknown[];
+	material: Record<string | symbol, unknown>;
+	sourceMaterial: Record<string | symbol, unknown>;
+};
+
 export type AutoComputeCandidateContext = {
 	artifact: unknown;
 	material: unknown;
@@ -45,6 +52,8 @@ export type AutoComputeDispatchOptions = {
 	resolveCandidate?: AutoComputeCandidateResolver;
 	onError?: ( error: unknown, detail: unknown ) => void;
 	shouldDispatch?: ( computeNode: object, owners: MaterialComputeBinding[] ) => boolean;
+	forceDispatch?: boolean | ( ( computeNode: object, owners: MaterialComputeBinding[] ) => boolean );
+	onDispatched?: ( computeNode: object, owners: MaterialComputeBinding[], result: unknown ) => void;
 	dispatchOnce?: Set<object>;
 	dispatchNode?: ( computeNode: object, owners: MaterialComputeBinding[] ) => unknown | Promise<unknown>;
 };
@@ -57,6 +66,7 @@ export class AutoComputeBindingError extends Error {
 }
 
 export function collectMaterialComputeBindings( scene: unknown, options?: { includeNonPrecompiled?: boolean } ): MaterialComputeBinding[];
+export function collectMaterialComputeOwners( scene: unknown, options?: { includeNonPrecompiled?: boolean } ): MaterialComputeOwner[];
 export function collectWritableComputeStorageAttributes( computeNode: unknown, fullRenderer: unknown, options?: { onError?: ( error: unknown, detail: unknown ) => void } ): {
 	status: string;
 	attributes: unknown[];

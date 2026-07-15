@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { validateMaterialComputeDescriptor } from '@tsl-precompile/contract/material-compute';
+import { inspectMaterialComputeFamily, validateMaterialComputeDescriptor } from '@tsl-precompile/contract/material-compute';
 
 function storagePlanEntry( overrides = {} ) {
 
@@ -78,6 +78,7 @@ function validKernel() {
 		defaults: {},
 		dispatchSize: 1,
 		workgroupSize: [ 1, 1, 1 ],
+		meta: { updateNodes: 0, updateBeforeNodes: 0, updateAfterNodes: 0 },
 	};
 
 }
@@ -96,7 +97,7 @@ function validDescriptor() {
 			itemSize: 4,
 			byteLength: 16,
 		} ],
-		kernels: [ { id: 'kernel:0', artifact: validKernel() } ],
+		kernels: [ { id: 'kernel:0', nodePath: [ 'positionNode' ], updates: [], artifact: validKernel() } ],
 		bindings: [ {
 			kernel: 'kernel:0',
 			resource: 'resource:0',
@@ -169,7 +170,7 @@ test( 'material-compute rejects conflicting locations and non-unique schedule or
 
 	const descriptor = validDescriptor();
 	descriptor.resources.push( { ...descriptor.resources[ 0 ], id: 'resource:1' } );
-	descriptor.kernels.push( { id: 'kernel:1', artifact: { ...validKernel(), cacheKey: 2 } } );
+	descriptor.kernels.push( { id: 'kernel:1', nodePath: [ 'colorNode' ], updates: [], artifact: { ...validKernel(), cacheKey: 2 } } );
 	descriptor.bindings.push( { ...descriptor.bindings[ 0 ], resource: 'resource:1' } );
 	descriptor.renderBindings.push( { resource: 'resource:1', kind: 'attribute', attribute: 0 } );
 	descriptor.schedule.push( { ...descriptor.schedule[ 0 ], kernel: 'kernel:1' } );
@@ -230,5 +231,50 @@ test( 'precompiled mode rejects unresolved dynamic compute uniforms', () => {
 	const errors = validateMaterialComputeDescriptor( descriptor, { artifact: validOwner() } );
 
 	assert.ok( errors.some( ( error ) => error.code === 'material-compute.mode.live-uniform' ) );
+
+} );
+
+test( 'precompiled mode requires exact nested kernel lifecycle coverage', () => {
+
+	const descriptor = validDescriptor();
+	descriptor.kernels[ 0 ].artifact.meta.updateNodes = 1;
+	const errors = validateMaterialComputeDescriptor( descriptor, { artifact: validOwner() } );
+
+	assert.ok( errors.some( ( error ) => error.code === 'material-compute.mode.kernel-update-coverage' ) );
+
+} );
+
+test( 'material-compute family inspection requires uniform descriptors and initial state', () => {
+
+	const variantA = { ...validOwner(), cacheKey: 'a', materialCompute: validDescriptor() };
+	const variantB = JSON.parse( JSON.stringify( { ...validOwner(), cacheKey: 'b', materialCompute: validDescriptor() } ) );
+	const family = { ...variantA, variants: { a: variantA, b: variantB } };
+	const uniform = inspectMaterialComputeFamily( family );
+
+	assert.equal( uniform.status, 'uniform' );
+	assert.equal( uniform.descriptor.mode, 'precompiled' );
+	assert.equal( typeof uniform.fingerprint, 'string' );
+
+	variantB.attributes[ 0 ].arraySnapshot[ 0 ] = 99;
+	const divergent = inspectMaterialComputeFamily( family );
+	assert.equal( divergent.status, 'divergent' );
+	assert.equal( divergent.reason, 'non-uniform-family' );
+
+	variantB.attributes[ 0 ].arraySnapshot[ 0 ] = 1;
+	variantB.attributes[ 0 ].instanced = true;
+	const resourceMetadataDivergence = inspectMaterialComputeFamily( family );
+	assert.equal( resourceMetadataDivergence.status, 'divergent' );
+	assert.equal( resourceMetadataDivergence.reason, 'non-uniform-family' );
+
+} );
+
+test( 'material-compute family inspection rejects partial variant coverage', () => {
+
+	const variantA = { ...validOwner(), cacheKey: 'a', materialCompute: validDescriptor() };
+	const variantB = { ...validOwner(), cacheKey: 'b' };
+	const inspection = inspectMaterialComputeFamily( { ...variantA, variants: { a: variantA, b: variantB } } );
+
+	assert.equal( inspection.status, 'divergent' );
+	assert.equal( inspection.reason, 'partial-family' );
 
 } );

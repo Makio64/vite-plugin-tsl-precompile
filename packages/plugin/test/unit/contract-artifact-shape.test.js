@@ -81,6 +81,8 @@ test( 'fingerprintArtifactShape includes material-compute ownership and schedule
 			resources: [ { id: 'resource:0', kind: 'storage-buffer' } ],
 			kernels: [ {
 				id: 'kernel:0',
+				nodePath: [ 'positionNode', 'compute' ],
+				updates: [ { phase: 'update', order: 0, nodePath: [ 'positionNode', 'time' ], updateType: 'frame' } ],
 				artifact: {
 					kind: 'compute',
 					uniformPlan: [ {
@@ -103,6 +105,8 @@ test( 'fingerprintArtifactShape includes material-compute ownership and schedule
 		'material-compute\tcontract\tmaterial-compute@1\tprecompiled',
 		'material-compute\tkernel\tkernel:0\tcompute',
 		'material-compute\tkernel-binding\tkernel:0@2:3\tresource:0',
+		'material-compute\tkernel-path\tkernel:0\t["positionNode","compute"]',
+		'material-compute\tkernel-update\tkernel:0:update:0:["positionNode","time"]\tframe',
 		'material-compute\trender-binding\tresource:0@0:4\tstorage-buffer',
 		'material-compute\trender-binding\tresource:0@attribute:1\tattribute',
 		'material-compute\tresource\tresource:0\tstorage-buffer',

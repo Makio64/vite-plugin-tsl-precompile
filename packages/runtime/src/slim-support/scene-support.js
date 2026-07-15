@@ -43,7 +43,7 @@ import {
 	computeSyncNeedsPresentation,
 	shareComputeSampledInputs,
 } from './compute-sync.js';
-import { collectMaterialComputeBindings, createAutoComputeDispatcher } from './auto-compute.js';
+import { collectMaterialComputeBindings, collectMaterialComputeOwners, createAutoComputeDispatcher } from './auto-compute.js';
 import { shareGPUTextureEntry, shareShadowGPUTextureIntoSlim } from './gpu-texture-share.js';
 import { createFullRendererFallback } from './full-renderer-fallback.js';
 import { setSlimRenderFallback } from './render-fallback-registry.js';
@@ -59,6 +59,12 @@ import { wirePrecompiledPostprocess } from './postprocess-wire.js';
 import { preparePrecompiledPostprocess } from './postprocess-effects-replay.js';
 import { loadAux } from '../aux-loader.js';
 import { installLiveTextureRegistryPatches, installTextureLoaderTracking, registerLiveTexture } from '../hydrate/live-texture-registry.js';
+import {
+	claimMaterialComputeDelegation,
+	inspectRuntimeMaterialComputeFamily,
+	releaseMaterialComputeDelegation,
+	resolveMaterialComputePath,
+} from '../hydrate/material-compute-ownership.js';
 import PrecompiledMaterial from '../_vendor-PrecompiledMaterial.js';
 import { withTemporalFrame as runWithTemporalFrame } from './temporal-frame.js';
 
@@ -75,6 +81,8 @@ const DEFAULT_OPTS = {
 	computeSync: true,
 	textureSharing: true,
 };
+
+const MATERIAL_COMPUTE_WRITE_ACCESS = new Set( [ 'readWrite', 'writeOnly' ] );
 
 /**
  * @param {Object} opts
@@ -104,6 +112,11 @@ export function createSlimSceneSupport( opts = {} ) {
 		renderer,
 		onError: ( err, detail ) => onError && onError( err, { where: 'materialCompute', detail } ),
 	} );
+	const materialComputeDelegationOwner = {};
+	const delegatedMaterialComputeMaterials = new Set();
+	let materialComputeDispatchTail = Promise.resolve();
+	let materialComputeDispatchPending = 0;
+	let materialComputeDisposed = false;
 
 	// --- live-scene-index (always on; the cheapest of the helpers) ----------
 	function trackLoaderNamespace( namespace ) {
@@ -502,16 +515,16 @@ export function createSlimSceneSupport( opts = {} ) {
 		const seenStorageAttrs = [];
 		const stats = syncComputeOutputsPerPass( computeNode, fullRenderer, passIndex, {
 			...syncOpts,
-			onStorageAttr: ( attr ) => {
+			onStorageAttr: ( attr, binding, location ) => {
 
 				seenStorageAttrs.push( attr );
-				if ( typeof syncOpts.onStorageAttr === 'function' ) syncOpts.onStorageAttr( attr );
+				if ( typeof syncOpts.onStorageAttr === 'function' ) syncOpts.onStorageAttr( attr, binding, location );
 
 			},
-			onStorageTexture: ( texture ) => {
+			onStorageTexture: ( texture, binding, location ) => {
 
 				seenStorageTextures.push( texture );
-				if ( typeof syncOpts.onStorageTexture === 'function' ) syncOpts.onStorageTexture( texture );
+				if ( typeof syncOpts.onStorageTexture === 'function' ) syncOpts.onStorageTexture( texture, binding, location );
 
 			},
 		} );
@@ -662,10 +675,12 @@ export function createSlimSceneSupport( opts = {} ) {
 		if ( onError ) onError( error, { where: 'dispatchMaterialComputes' } );
 		const stats = await materialCompute.dispatch( scene, {
 			...computeOpts,
-			bindings,
+			bindings: [],
 			fullRenderer: null,
 			shouldDispatch: () => false,
 		} );
+		stats.owners = bindings.length;
+		stats.nodes = new Set( bindings.map( ( binding ) => binding && binding.computeNode ).filter( Boolean ) ).size;
 		stats.errors ++;
 		return finalizeMaterialComputeStats( stats );
 
@@ -681,12 +696,160 @@ export function createSlimSceneSupport( opts = {} ) {
 	 * from `material.__tslpSourceMaterial` (or the material itself) and a full
 	 * renderer capable of compiling it.
 	 */
-	async function dispatchMaterialComputes( scene, computeOpts = {} ) {
+	async function dispatchMaterialComputesNow( scene, computeOpts = {} ) {
 
 		computeOpts = computeOpts || {};
-		const bindings = Array.isArray( computeOpts.bindings )
-			? computeOpts.bindings
+		const collectedBindings = Array.isArray( computeOpts.bindings )
+			? computeOpts.bindings.slice()
 			: collectMaterialComputeBindings( scene, computeOpts );
+		const ownerRecords = collectMaterialComputeOwners( scene, computeOpts );
+		const ownerByMaterial = new Map( ownerRecords.map( ( owner ) => [ owner.material, owner ] ) );
+		for ( const binding of collectedBindings ) if ( binding && binding.material && ! ownerByMaterial.has( binding.material ) ) ownerByMaterial.set( binding.material, {
+			object: binding.object || null,
+			objects: binding.object ? [ binding.object ] : [],
+			material: binding.material,
+			sourceMaterial: binding.sourceMaterial || binding.material.__tslpSourceMaterial || binding.material,
+		} );
+		// A lease proves that one complete dispatch/synchronisation transaction
+		// succeeded. Revoke this support owner's previous transaction before
+		// inspecting or dispatching the next one; every failure below therefore
+		// leaves hydration closed instead of presenting stale output.
+		for ( const material of ownerByMaterial.keys() ) if ( delegatedMaterialComputeMaterials.has( material ) ) {
+
+			releaseMaterialComputeDelegation( material, materialComputeDelegationOwner );
+			delegatedMaterialComputeMaterials.delete( material );
+
+		}
+		const bindingsByMaterial = new Map();
+		for ( const binding of collectedBindings ) {
+
+			let materialBindings = bindingsByMaterial.get( binding && binding.material );
+			if ( ! materialBindings ) bindingsByMaterial.set( binding && binding.material, materialBindings = [] );
+			materialBindings.push( binding );
+
+		}
+		const bindingPolicies = new Map();
+		const policiesByMaterial = new Map();
+		const hybridExpectedByMaterial = new Map();
+		const precompiledNodes = new Set();
+		const includedNodes = new Set();
+		const bindings = [];
+		try {
+
+			for ( const [ material, owner ] of ownerByMaterial ) {
+
+				const artifact = material && material.precompiledArtifact;
+				const inspection = artifact ? inspectRuntimeMaterialComputeFamily( artifact ) : { status: 'none' };
+				const mode = inspection.status === 'uniform' ? inspection.descriptor.mode : 'legacy';
+				const materialBindings = bindingsByMaterial.get( material ) || [];
+				const rawNodes = new Set( materialBindings.map( ( binding ) => binding.computeNode ) );
+				const expectedNodes = new Set();
+				const expectedKernelByNode = new Map();
+				const objectCadence = inspection.status === 'uniform' && (
+					inspection.descriptor.schedule.some( ( entry ) => entry && entry.updateType === 'object' )
+					|| inspection.descriptor.kernels.some( ( kernel ) => kernel.updates.some( ( entry ) => entry && entry.updateType === 'object' ) )
+				);
+				if ( mode === 'hybrid-required' && objectCadence && Array.isArray( owner.objects ) && owner.objects.length > 1 ) {
+
+					const error = new Error( 'createSlimSceneSupport: hybrid object-cadence material compute cannot be delegated once for a material shared by multiple scene objects.' );
+					error.code = 'TSLP_MATERIAL_COMPUTE_OBJECT_CADENCE_UNSUPPORTED';
+					throw error;
+
+				}
+				if ( inspection.status === 'uniform' && ( mode === 'hybrid-required' || rawNodes.size > 0 ) ) {
+
+					for ( const kernel of inspection.descriptor.kernels ) {
+
+						const node = resolveMaterialComputePath( owner.sourceMaterial, kernel.nodePath );
+						if ( ! node || node.isComputeNode !== true || node.isPrecompiledCompute === true ) {
+
+							const error = new Error( `createSlimSceneSupport: ${ kernel.id } did not resolve the exact retained raw ComputeNode at ${ JSON.stringify( kernel.nodePath ) }.` );
+							error.code = 'TSLP_MATERIAL_COMPUTE_KERNEL_PATH_MISS';
+							throw error;
+
+						}
+						expectedNodes.add( node );
+						expectedKernelByNode.set( node, kernel );
+
+					}
+					if ( mode === 'hybrid-required' ) for ( const node of expectedNodes ) if ( ! rawNodes.has( node ) ) {
+
+						const kernel = expectedKernelByNode.get( node );
+						const binding = {
+							object: owner.object || null,
+							material,
+							sourceMaterial: owner.sourceMaterial,
+							computeNode: node,
+							properties: kernel && kernel.nodePath.length > 0 ? [ kernel.nodePath[ 0 ] ] : [],
+						};
+						collectedBindings.push( binding );
+						materialBindings.push( binding );
+						rawNodes.add( node );
+
+					}
+					const exact = expectedNodes.size === inspection.descriptor.kernels.length
+						&& rawNodes.size === expectedNodes.size
+						&& [ ...rawNodes ].every( ( node ) => expectedNodes.has( node ) );
+					if ( ! exact ) {
+
+						const error = new Error( `createSlimSceneSupport: retained raw material compute does not exactly match its ${ inspection.descriptor.kernels.length } contracted kernel path(s).` );
+						error.code = 'TSLP_MATERIAL_COMPUTE_KERNEL_SET_MISMATCH';
+						throw error;
+
+					}
+
+				}
+				const policy = { inspection, mode, expectedNodes, expectedKernelByNode, objectCadence, objects: owner.objects || [] };
+				policiesByMaterial.set( material, policy );
+				if ( mode === 'hybrid-required' ) {
+
+					hybridExpectedByMaterial.set( material, { inspection, nodes: expectedNodes } );
+
+				}
+
+			}
+			const objectCadenceOwnersByNode = new Map();
+			for ( const binding of collectedBindings ) {
+
+				const policy = policiesByMaterial.get( binding.material ) || { inspection: { status: 'none' }, mode: 'legacy', expectedNodes: new Set() };
+				bindingPolicies.set( binding, policy );
+				if ( policy.mode === 'hybrid-required' && policy.objectCadence ) {
+
+					let owners = objectCadenceOwnersByNode.get( binding.computeNode );
+					if ( ! owners ) objectCadenceOwnersByNode.set( binding.computeNode, owners = new Set() );
+					const objects = Array.isArray( policy.objects ) && policy.objects.length > 0 ? policy.objects : [ binding.object || binding.material ];
+					for ( const object of objects ) owners.add( object );
+
+				}
+				if ( policy.mode === 'precompiled' ) {
+
+					precompiledNodes.add( binding.computeNode );
+					continue;
+
+				}
+				bindings.push( binding );
+				includedNodes.add( binding.computeNode );
+
+			}
+			for ( const owners of objectCadenceOwnersByNode.values() ) if ( owners.size > 1 ) {
+
+				const error = new Error( 'createSlimSceneSupport: one hybrid object-cadence ComputeNode cannot be delegated once for multiple live object owners.' );
+				error.code = 'TSLP_MATERIAL_COMPUTE_OBJECT_CADENCE_UNSUPPORTED';
+				throw error;
+
+			}
+
+		} catch ( error ) {
+
+			return rejectMaterialComputeDispatch( scene, computeOpts, collectedBindings, error );
+
+		}
+		for ( const node of precompiledNodes ) if ( includedNodes.has( node ) ) return rejectMaterialComputeDispatch(
+			scene,
+			computeOpts,
+			collectedBindings,
+			new Error( 'createSlimSceneSupport: one raw ComputeNode is shared by precompiled and delegated material-compute owners; recapture those owners together so sharing can fail closed.' ),
+		);
 		if ( bindings.length === 0 ) return finalizeMaterialComputeStats( await materialCompute.dispatch( scene, { ...computeOpts, bindings } ) );
 		if ( ! settings.computeSync ) {
 
@@ -713,6 +876,43 @@ export function createSlimSceneSupport( opts = {} ) {
 		// renderer while the explicit owner dispatch is active.
 		installComputeFallback( fullRenderer );
 		let resourceErrors = 0;
+		const dispatchedNodes = new Set();
+		const dispatchedHybridNodes = new Set();
+		const hybridNodes = new Set();
+		for ( const expected of hybridExpectedByMaterial.values() ) for ( const node of expected.nodes ) hybridNodes.add( node );
+		const hybridOutputRequirements = ( computeNode, owners ) => {
+
+			const requirements = new Map();
+			for ( const owner of owners ) {
+
+				const policy = bindingPolicies.get( owner );
+				if ( ! policy || policy.mode !== 'hybrid-required' || policy.inspection.status !== 'uniform' ) continue;
+				const descriptor = policy.inspection.descriptor;
+				const kernel = policy.expectedKernelByNode.get( computeNode );
+				if ( ! kernel ) continue;
+				const resources = new Map( descriptor.resources.map( ( resource ) => [ resource.id, resource ] ) );
+				for ( const binding of descriptor.bindings ) {
+
+					if ( binding.kernel !== kernel.id || ! MATERIAL_COMPUTE_WRITE_ACCESS.has( binding.access ) ) continue;
+					const resource = resources.get( binding.resource );
+					if ( ! resource ) continue;
+					const key = `${ resource.kind }:${ binding.group }:${ binding.binding }`;
+					requirements.set( key, { ...binding, kind: resource.kind } );
+
+				}
+
+			}
+			return requirements;
+
+		};
+		const callerDispatchOnce = computeOpts.dispatchOnce instanceof Set ? computeOpts.dispatchOnce : null;
+		// Contracted hybrid kernels must participate in this transaction even if
+		// a caller-owned once set still contains a claim from an older frame. Keep
+		// legacy nodes on the caller policy and publish successful hybrid dispatches
+		// back into that set only after they complete.
+		const dispatchOnce = callerDispatchOnce && hybridNodes.size > 0
+			? new Set( [ ...callerDispatchOnce ].filter( ( node ) => ! hybridNodes.has( node ) ) )
+			: callerDispatchOnce;
 		const reportResourceError = ( error, detail ) => {
 
 			resourceErrors ++;
@@ -722,10 +922,27 @@ export function createSlimSceneSupport( opts = {} ) {
 		const stats = await materialCompute.dispatch( scene, {
 			...computeOpts,
 			bindings,
+			dispatchOnce,
+			forceDispatch: ( computeNode, owners ) => {
+
+				const contractRequiresDispatch = owners.some( ( owner ) => bindingPolicies.get( owner )?.mode === 'hybrid-required' );
+				if ( contractRequiresDispatch ) return true;
+				if ( computeOpts.forceDispatch === true ) return true;
+				return typeof computeOpts.forceDispatch === 'function' && computeOpts.forceDispatch( computeNode, owners ) === true;
+
+			},
+			onDispatched: ( computeNode, owners, result ) => {
+
+				if ( typeof computeOpts.onDispatched === 'function' ) computeOpts.onDispatched( computeNode, owners, result );
+				dispatchedNodes.add( computeNode );
+				if ( owners.some( ( owner ) => bindingPolicies.get( owner )?.mode === 'hybrid-required' ) ) dispatchedHybridNodes.add( computeNode );
+
+			},
 			fullRenderer,
 			dispatchNode: async ( computeNode, owners ) => {
 
 				await initializeMaterialComputeNode( computeNode );
+				const outputRequirements = hybridOutputRequirements( computeNode, owners );
 				const shareOptions = computeOpts.shareOptions || {};
 				const inputStats = shareComputeInputs( computeNode, fullRenderer, {
 					...shareOptions,
@@ -743,16 +960,40 @@ export function createSlimSceneSupport( opts = {} ) {
 				if ( typeof fullRenderer.computeAsync === 'function' ) await fullRenderer.computeAsync( computeNode, ...rest );
 				else if ( typeof fullRenderer.compute === 'function' ) await fullRenderer.compute( computeNode, ...rest );
 				else throw new Error( 'createSlimSceneSupport: the full renderer exposes neither computeAsync() nor compute().' );
+				const syncOptions = computeOpts.syncOptions || {};
+				const syncedOutputLocations = new Set();
+				const syncStats = syncDelegatedComputeOutputs( computeNode, fullRenderer, {
+					...syncOptions,
+					onStorageAttrSynced: ( attribute, binding, location ) => {
+
+						if ( typeof syncOptions.onStorageAttrSynced === 'function' ) syncOptions.onStorageAttrSynced( attribute, binding, location );
+						syncedOutputLocations.add( `storage-buffer:${ location.group }:${ location.binding }` );
+
+					},
+					onStorageTextureSynced: ( texture, binding, location ) => {
+
+						if ( typeof syncOptions.onStorageTextureSynced === 'function' ) syncOptions.onStorageTextureSynced( texture, binding, location );
+						syncedOutputLocations.add( `storage-texture:${ location.group }:${ location.binding }` );
+
+					},
+					onError: ( error ) => {
+
+						if ( typeof syncOptions.onError === 'function' ) syncOptions.onError( error );
+						reportResourceError( error, { where: 'dispatchMaterialComputes.syncOutputs' } );
+
+					},
+				} );
+				const missingOutputs = [ ...outputRequirements ].filter( ( [ key ] ) => ! syncedOutputLocations.has( key ) );
+				if ( missingOutputs.length > 0 ) {
+
+					const error = new Error( `createSlimSceneSupport: delegated material compute did not synchronize ${ missingOutputs.length } contracted output binding(s).` );
+					error.code = 'TSLP_MATERIAL_COMPUTE_OUTPUT_SYNC_MISS';
+					error.missingOutputs = missingOutputs.map( ( [ , requirement ] ) => requirement );
+					throw error;
+
+				}
 				return {
-					...syncDelegatedComputeOutputs( computeNode, fullRenderer, {
-						...( computeOpts.syncOptions || {} ),
-						onError: ( error ) => {
-
-							if ( typeof computeOpts.syncOptions?.onError === 'function' ) computeOpts.syncOptions.onError( error );
-							reportResourceError( error, { where: 'dispatchMaterialComputes.syncOutputs' } );
-
-						},
-					} ),
+					...syncStats,
 					inputTexturesShared: inputStats.texturesShared || 0,
 				};
 
@@ -760,7 +1001,71 @@ export function createSlimSceneSupport( opts = {} ) {
 		} );
 
 		stats.errors += resourceErrors;
+		if ( stats.errors === 0 && callerDispatchOnce ) for ( const node of dispatchedNodes ) callerDispatchOnce.add( node );
+		if ( stats.errors === 0 && hybridExpectedByMaterial.size > 0 ) {
+
+			const claimable = [];
+			for ( const [ material, expected ] of hybridExpectedByMaterial ) {
+
+				const complete = [ ...expected.nodes ].every( ( node ) => dispatchedHybridNodes.has( node ) );
+				if ( complete ) claimable.push( material );
+				else {
+
+					stats.errors ++;
+					const error = new Error( 'createSlimSceneSupport: hybrid material-compute delegation did not dispatch every contracted raw kernel.' );
+					if ( typeof computeOpts.onError === 'function' ) computeOpts.onError( error, { where: 'dispatchMaterialComputes.claim', material } );
+					if ( onError ) onError( error, { where: 'dispatchMaterialComputes.claim', material } );
+
+				}
+
+			}
+			if ( stats.errors === 0 ) {
+
+				const newlyClaimed = [];
+				try {
+
+					for ( const material of claimable ) {
+
+						claimMaterialComputeDelegation( material, materialComputeDelegationOwner, material.precompiledArtifact );
+						delegatedMaterialComputeMaterials.add( material );
+						newlyClaimed.push( material );
+
+					}
+
+				} catch ( error ) {
+
+					for ( const material of newlyClaimed ) {
+
+						releaseMaterialComputeDelegation( material, materialComputeDelegationOwner );
+						delegatedMaterialComputeMaterials.delete( material );
+
+					}
+					stats.errors ++;
+					if ( typeof computeOpts.onError === 'function' ) computeOpts.onError( error, { where: 'dispatchMaterialComputes.claim' } );
+					if ( onError ) onError( error, { where: 'dispatchMaterialComputes.claim' } );
+
+				}
+
+			}
+
+		}
 		return finalizeMaterialComputeStats( stats );
+
+	}
+
+	function dispatchMaterialComputes( scene, computeOpts = {} ) {
+
+		if ( materialComputeDisposed ) return Promise.reject( new Error( 'createSlimSceneSupport: dispatchMaterialComputes() cannot run after dispose().' ) );
+		materialComputeDispatchPending ++;
+		const run = materialComputeDispatchTail.then( () => {
+
+			if ( materialComputeDisposed ) throw new Error( 'createSlimSceneSupport: dispatchMaterialComputes() was cancelled by dispose().' );
+			return dispatchMaterialComputesNow( scene, computeOpts );
+
+		} );
+		materialComputeDispatchTail = run.then( () => undefined, () => undefined );
+		run.finally( () => { materialComputeDispatchPending --; } ).catch( () => {} );
+		return run;
 
 	}
 
@@ -957,35 +1262,43 @@ export function createSlimSceneSupport( opts = {} ) {
 	function dispose() {
 
 		if ( activeDispose ) return activeDispose;
-
-		if ( restoreComputeFallback ) {
-
-			restoreComputeFallback();
-			restoreComputeFallback = null;
-			computeFallbackInstalled = false;
-
-		}
-		if ( fallbackRegistered ) {
-
-			setSlimRenderFallback( null );
-			fallbackRegistered = false;
-
-		}
+		materialComputeDisposed = true;
+		for ( const material of delegatedMaterialComputeMaterials ) releaseMaterialComputeDelegation( material, materialComputeDelegationOwner );
+		delegatedMaterialComputeMaterials.clear();
 		requestShadowMapDisposals();
 		const pendingShadowDisposals = Array.from( shadowDisposals );
 		const finish = () => {
 
+			// An in-flight transaction may have acquired a lease after disposal
+			// began. Revoke again only after the serialized dispatch queue drains.
+			for ( const material of delegatedMaterialComputeMaterials ) releaseMaterialComputeDelegation( material, materialComputeDelegationOwner );
+			delegatedMaterialComputeMaterials.clear();
+			if ( restoreComputeFallback ) {
+
+				restoreComputeFallback();
+				restoreComputeFallback = null;
+				computeFallbackInstalled = false;
+
+			}
+			if ( fallbackRegistered ) {
+
+				setSlimRenderFallback( null );
+				fallbackRegistered = false;
+
+			}
 			if ( fallback ) fallback.dispose();
 			cachedFullRenderer = null;
 
 		};
-		if ( pendingShadowDisposals.length === 0 ) {
+		const pending = pendingShadowDisposals.slice();
+		if ( materialComputeDispatchPending > 0 ) pending.push( materialComputeDispatchTail );
+		if ( pending.length === 0 ) {
 
 			finish();
 			return Promise.resolve();
 
 		}
-		activeDispose = Promise.allSettled( pendingShadowDisposals ).then( finish ).finally( () => {
+		activeDispose = Promise.allSettled( pending ).then( finish ).finally( () => {
 
 			activeDispose = null;
 

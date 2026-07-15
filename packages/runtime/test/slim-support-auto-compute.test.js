@@ -6,6 +6,7 @@ import {
 	applyMaterialComputeAttributeBindings,
 	artifactHasUnwiredAnonymousComputeAttribute,
 	collectMaterialComputeBindings,
+	collectMaterialComputeOwners,
 	collectWritableComputeStorageAttributes,
 	createAutoComputeDispatcher,
 	prepareMaterialComputeAttributes,
@@ -116,6 +117,21 @@ test( 'scene discovery keeps every precompiled owner but deduplicates each mater
 	assert.deepEqual( records.map( ( record ) => record.material ), [ first, second ] );
 	assert.deepEqual( records[ 0 ].properties.sort(), [ 'colorNode', 'positionNode' ] );
 	assert.equal( records.every( ( record ) => record.computeNode === shared ), true );
+
+} );
+
+test( 'scene owner discovery preserves every object that shares one material', () => {
+
+	const material = precompiledMaterial( { attributes: [] } );
+	const first = { material };
+	const second = { material };
+	const owners = collectMaterialComputeOwners( {
+		traverse( visitor ) { visitor( first ); visitor( second ); },
+	} );
+
+	assert.equal( owners.length, 1 );
+	assert.equal( owners[ 0 ].object, first );
+	assert.deepEqual( owners[ 0 ].objects, [ first, second ] );
 
 } );
 
@@ -322,6 +338,22 @@ test( 'dispatcher reports a missing dispatch implementation without claiming suc
 	assert.equal( stats.skipped, 1 );
 	assert.equal( stats.errors, 1 );
 	assert.equal( errors[ 0 ].code, 'TSLP_AUTO_COMPUTE_DISPATCH_UNAVAILABLE' );
+
+} );
+
+test( 'contract-owned hybrid compute can force dispatch without anonymous attributes', async () => {
+
+	const node = computeNode();
+	const material = precompiledMaterial( { attributes: [] }, { positionNode: node } );
+	let dispatches = 0;
+	const dispatcher = createAutoComputeDispatcher();
+	const stats = await dispatcher.dispatch( sceneWith( material ), {
+		forceDispatch: true,
+		dispatchNode() { dispatches ++; },
+	} );
+
+	assert.equal( dispatches, 1 );
+	assert.equal( stats.dispatched, 1 );
 
 } );
 

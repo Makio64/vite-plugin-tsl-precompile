@@ -68,6 +68,7 @@ export {
 	MATERIAL_COMPUTE_BINDINGS,
 	AutoComputeBindingError,
 	collectMaterialComputeBindings,
+	collectMaterialComputeOwners,
 	collectWritableComputeStorageAttributes,
 	artifactHasUnwiredAnonymousComputeAttribute,
 	prepareMaterialComputeAttributes,

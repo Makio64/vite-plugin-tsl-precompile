@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttribute.js';
+
 import ReplayNodeManager from '../src/slim-replay-node-manager.js';
 import ReplayNodeFrame from '../src/slim-replay-node-frame.js';
 import PrecompiledMaterial from '../src/_vendor-PrecompiledMaterial.js';
@@ -469,6 +471,77 @@ test( 'replay NodeManager supports compute, update scheduling, groups, and dispo
 	manager.dispose();
 	assert.notEqual( manager.nodeFrame, oldFrame );
 	assert.equal( manager.nodeBuilderCache.size, 0 );
+
+} );
+
+test( 'replay NodeManager hydrates material-owned compute from the exact owner and frame', () => {
+
+	const renderer = fakeRenderer();
+	const manager = new ReplayNodeManager( renderer, renderer.backend );
+	const attribute = new StorageBufferAttribute( new Float32Array( [ 1, 2, 3, 4 ] ), 4 );
+	const ownerMaterial = {
+		positionNode: { isNode: true, value: attribute },
+	};
+	const ownerFrame = {
+		renderer,
+		scene: { name: 'scene' },
+		object: { name: 'particles' },
+		camera: { name: 'camera' },
+		material: ownerMaterial,
+	};
+	let updateFrame = null;
+	const liveUpdate = {
+		getUpdateType: () => 'object',
+		updateReference: ( frame ) => frame.object,
+		update( frame ) { updateFrame = frame; },
+	};
+	const storageRef = {
+		name: 'positions',
+		access: 'readWrite',
+		visibility: 4,
+		arrayType: 'Float32Array',
+		count: 1,
+		itemSize: 4,
+		userPath: [ 'positionNode', 'value' ],
+	};
+	const computeNode = {
+		isPrecompiledCompute: true,
+		precompiledArtifact: artifact( {
+			kind: 'compute',
+			vertexShader: '',
+			fragmentShader: '',
+			computeShader: 'compute',
+			bindings: [ {
+				name: 'compute',
+				bindings: [ {
+					name: 'positions',
+					kind: 'storage-buffer',
+					visibility: 4,
+					byteLength: 16,
+					access: 'readWrite',
+				} ],
+			} ],
+			uniformPlan: [ {
+				name: 'compute',
+				slots: [],
+				textures: [],
+				storageBuffers: [ storageRef ],
+				orderedBindings: [ { type: 'storage-buffer', ref: storageRef } ],
+			} ],
+			_liveUpdateNodes: [ liveUpdate ],
+		} ),
+		__tslpMaterialComputeOwner: ownerMaterial,
+		__tslpMaterialComputeFrame: ownerFrame,
+	};
+
+	const state = manager.getForCompute( computeNode );
+	assert.equal( state.bindings[ 0 ].bindings[ 0 ].attribute, attribute );
+	manager.updateForCompute( computeNode );
+	assert.equal( updateFrame.renderer, renderer );
+	assert.equal( updateFrame.scene, ownerFrame.scene );
+	assert.equal( updateFrame.object, ownerFrame.object );
+	assert.equal( updateFrame.camera, ownerFrame.camera );
+	assert.equal( updateFrame.material, ownerMaterial );
 
 } );
 

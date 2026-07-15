@@ -24,8 +24,10 @@ export type ComputeInputShareOptions = {
 
 export type ComputeSyncOptions = {
 	generateMipmaps?: boolean;
-	onStorageTexture?: ( texture: unknown, binding: unknown ) => void;
-	onStorageAttr?: ( attribute: unknown ) => void;
+	onStorageTexture?: ( texture: unknown, binding: unknown, location: { group: number; binding: number } ) => void;
+	onStorageAttr?: ( attribute: unknown, binding: unknown, location: { group: number; binding: number } ) => void;
+	onStorageTextureSynced?: ( texture: unknown, binding: unknown, location: { group: number; binding: number } ) => void;
+	onStorageAttrSynced?: ( attribute: unknown, binding: unknown, location: { group: number; binding: number } ) => void;
 	onError?: ( err: unknown ) => void;
 };
 

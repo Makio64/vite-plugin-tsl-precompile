@@ -46,6 +46,7 @@ import { selectArtifactVariant } from './hydrate/variants/artifact-variant-selec
 import { logicalFrameKey, shouldAdvanceTemporalState } from './slim-support/temporal-frame.js';
 import { wireLiveNodeSidecarsToArtifact } from './slim-support/live-node-sidecars.js';
 import { applyMaterialComputeAttributeBindings } from './hydrate/material-compute-bindings.js';
+import { hydrateMaterialCompute } from './hydrate/material-compute.js';
 
 export { clearLiveTextureIndex, installTextureLoaderTracking, registerLiveTexture } from './hydrate/live-texture-registry.js';
 
@@ -124,7 +125,7 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 	// same-shape render input (for example particle speed) can steal the compute
 	// output's position slot. A shared artifact still never retains the first
 	// material instance's GPU resource because `effective` is state-local.
-	applyMaterialComputeAttributeBindings( effective, material );
+	if ( ! effective.materialCompute || effective.materialCompute.mode !== 'precompiled' ) applyMaterialComputeAttributeBindings( effective, material );
 	// Bind live BufferAttributes from the user's `*Node` material props
 	// (e.g. `material.positionNode = instancedBufferAttribute(buf)`) onto
 	// remaining artifact node-attribute entries before hydration walks them.
@@ -135,6 +136,7 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 	// `material.colorNode = colors.element( instanceIndex )` etc. — the
 	// kernel writes into `colors`, the render reads from the same buffer.
 	bindUserStorageBuffersToArtifact( effective, graphMaterial );
+	const materialComputeUpdateBeforeNodes = hydrateMaterialCompute( artifact, effective, material, graphMaterial );
 
 	const resolveInitialTextureBinding = createOwnedTextureBindingResolver( materialBindingOwner, resolveTextureBinding );
 	const resolveLiveTextureBinding = createOwnedTextureBindingResolver( materialBindingOwner, memoizedResolveTextureBinding );
@@ -191,6 +193,7 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 			// SampledTexture bindings to live resources before three.js reads
 			// bind-group versions for the upcoming draw.
 			...earlyUpdateBefore,
+			...materialComputeUpdateBeforeNodes,
 			...liveUpdateBeforeNodes,
 			...materialReflectorUpdateBeforeNodes,
 			// `lateUpdateBefore` runs after the live-node + reflector sidecars:

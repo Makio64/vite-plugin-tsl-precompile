@@ -98,6 +98,14 @@ export function fingerprintArtifactShape( input ) {
 		for ( const kernel of Array.isArray( materialCompute.kernels ) ? materialCompute.kernels : [] ) {
 
 			pushEntry( rows, 'material-compute', 'kernel', kernel && kernel.id, kernel && kernel.artifact && kernel.artifact.kind );
+			pushEntry( rows, 'material-compute', 'kernel-path', kernel && kernel.id, JSON.stringify( kernel && kernel.nodePath || null ) );
+			for ( const update of kernel && Array.isArray( kernel.updates ) ? kernel.updates : [] ) pushEntry(
+				rows,
+				'material-compute',
+				'kernel-update',
+				`${ kernel.id || '<kernel>' }:${ update && update.phase }:${ update && update.order }:${ JSON.stringify( update && update.nodePath || null ) }`,
+				update && update.updateType,
+			);
 			if ( kernel && kernel.artifact && typeof kernel.artifact === 'object' ) {
 
 				for ( const row of fingerprintArtifactShape( kernel.artifact ) ) rows.push( `[materialCompute.${ kernel.id || '<kernel>' }]${ row }` );

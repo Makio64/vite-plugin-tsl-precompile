@@ -1,3 +1,6 @@
+import { collectArtifactVariantCandidates } from './artifact-variants.js';
+import { stableJsonStringify } from './stable-json.js';
+
 /**
  * Variant-local material-owned compute contract.
  *
@@ -7,8 +10,9 @@
  * their GPU resources to render-side bindings without serializing process-
  * local UUIDs or relying on same-shape guesses.
  *
- * Runtime hydration/dispatch is intentionally outside this first contract
- * stage. Consumers must reject `hybrid-required` in compiler-free mode.
+ * Runtime consumers may hydrate `precompiled` kernels directly. They must
+ * require an explicit, successful full-renderer delegation transaction for
+ * `hybrid-required` descriptors before rendering.
  *
  * @module Contract.MaterialCompute
  */
@@ -43,6 +47,12 @@ export const MATERIAL_COMPUTE_UPDATE_TYPES = Object.freeze( [
 	'object',
 ] );
 
+export const MATERIAL_COMPUTE_LIFECYCLE_PHASES = Object.freeze( [
+	'update',
+	'update-before',
+	'update-after',
+] );
+
 export const MATERIAL_COMPUTE_ACCESS_MODES = Object.freeze( [
 	'readOnly',
 	'writeOnly',
@@ -54,6 +64,7 @@ const RESOURCE_KIND_SET = new Set( MATERIAL_COMPUTE_RESOURCE_KINDS );
 const STORAGE_TEXTURE_TYPE_SET = new Set( MATERIAL_COMPUTE_STORAGE_TEXTURE_TYPES );
 const RENDER_BINDING_KIND_SET = new Set( MATERIAL_COMPUTE_RENDER_BINDING_KINDS );
 const UPDATE_TYPE_SET = new Set( MATERIAL_COMPUTE_UPDATE_TYPES );
+const LIFECYCLE_PHASE_SET = new Set( MATERIAL_COMPUTE_LIFECYCLE_PHASES );
 const ACCESS_MODE_SET = new Set( MATERIAL_COMPUTE_ACCESS_MODES );
 
 function issue( code, message, path ) {
@@ -204,6 +215,97 @@ function validateKernelArtifact( artifact, mode, path, expectedCacheKey, errors 
 		`${ path }.workgroupSize must be a three-element positive-integer array`,
 		`${ path }.workgroupSize`,
 	) );
+
+}
+
+function validateKernelUpdates( kernel, mode, path, errors ) {
+
+	const updates = Array.isArray( kernel.updates ) ? kernel.updates : [];
+	if ( ! Array.isArray( kernel.updates ) ) errors.push( issue(
+		'material-compute.kernel.updates',
+		`${ path }.updates must be an array`,
+		`${ path }.updates`,
+	) );
+	const nextOrderByPhase = new Map( MATERIAL_COMPUTE_LIFECYCLE_PHASES.map( ( phase ) => [ phase, 0 ] ) );
+	let previousPhaseRank = - 1;
+	let previousOrder = - 1;
+	const phasePathKeys = new Set();
+	for ( let index = 0; index < updates.length; index ++ ) {
+
+		const entry = updates[ index ];
+		const entryPath = `${ path }.updates[${ index }]`;
+		if ( ! isRecord( entry ) ) {
+
+			errors.push( issue( 'material-compute.kernel.update', `${ entryPath } must be an object`, entryPath ) );
+			continue;
+
+		}
+		const phaseRank = MATERIAL_COMPUTE_LIFECYCLE_PHASES.indexOf( entry.phase );
+		if ( ! LIFECYCLE_PHASE_SET.has( entry.phase ) ) errors.push( issue(
+			'material-compute.kernel.update.phase',
+			`${ entryPath }.phase must be one of ${ MATERIAL_COMPUTE_LIFECYCLE_PHASES.join( ', ' ) }`,
+			`${ entryPath }.phase`,
+		) );
+		if ( ! isIndex( entry.order ) ) errors.push( issue(
+			'material-compute.kernel.update.order',
+			`${ entryPath }.order must be a non-negative integer`,
+			`${ entryPath }.order`,
+		) );
+		if ( phaseRank >= 0 && isIndex( entry.order ) ) {
+
+			const expectedOrder = nextOrderByPhase.get( entry.phase );
+			if ( entry.order !== expectedOrder ) errors.push( issue(
+				'material-compute.kernel.update.order',
+				`${ path }.updates must use contiguous order within ${ entry.phase }`,
+				`${ entryPath }.order`,
+			) );
+			nextOrderByPhase.set( entry.phase, expectedOrder + 1 );
+			if ( phaseRank < previousPhaseRank || phaseRank === previousPhaseRank && entry.order <= previousOrder ) errors.push( issue(
+				'material-compute.kernel.update.canonical-order',
+				`${ path }.updates must be in canonical phase/order sequence`,
+				entryPath,
+			) );
+			previousPhaseRank = phaseRank;
+			previousOrder = entry.order;
+
+		}
+		if ( ! validUserPath( entry.nodePath ) ) errors.push( issue(
+			'material-compute.kernel.update.node-path',
+			`${ entryPath }.nodePath must be an exact material graph path`,
+			`${ entryPath }.nodePath`,
+		) );
+		if ( ! UPDATE_TYPE_SET.has( entry.updateType ) ) errors.push( issue(
+			'material-compute.kernel.update.update-type',
+			`${ entryPath }.updateType must be one of ${ MATERIAL_COMPUTE_UPDATE_TYPES.join( ', ' ) }`,
+			`${ entryPath }.updateType`,
+		) );
+		const pathKey = `${ entry.phase }|${ JSON.stringify( entry.nodePath ) }`;
+		if ( phasePathKeys.has( pathKey ) ) errors.push( issue(
+			'material-compute.kernel.update.duplicate',
+			`${ entryPath } duplicates a node already scheduled in ${ entry.phase }`,
+			entryPath,
+		) );
+		phasePathKeys.add( pathKey );
+
+	}
+	if ( mode !== 'precompiled' || ! isRecord( kernel.artifact ) ) return;
+	const countFields = Object.freeze( {
+		update: 'updateNodes',
+		'update-before': 'updateBeforeNodes',
+		'update-after': 'updateAfterNodes',
+	} );
+	for ( const phase of MATERIAL_COMPUTE_LIFECYCLE_PHASES ) {
+
+		const field = countFields[ phase ];
+		const expected = kernel.artifact.meta && kernel.artifact.meta[ field ];
+		const actual = updates.filter( ( entry ) => entry && entry.phase === phase ).length;
+		if ( ! Number.isSafeInteger( expected ) || expected !== actual ) errors.push( issue(
+			'material-compute.mode.kernel-update-coverage',
+			`${ path }.updates must cover all ${ field } entries in precompiled mode`,
+			`${ path }.updates`,
+		) );
+
+	}
 
 }
 
@@ -431,6 +533,111 @@ export function hasUnresolvedMaterialComputeTexture( artifact ) {
 
 }
 
+function materialComputeRenderBindingRecord( artifact, entry ) {
+
+	if ( ! artifact || ! entry ) return null;
+	if ( entry.kind === 'attribute' ) {
+
+		const attributes = Array.isArray( artifact.attributes ) ? artifact.attributes : artifact.nodeAttributes;
+		return Array.isArray( attributes ) ? attributes[ entry.attribute ] || null : null;
+
+	}
+	const ordered = orderedBindingAt( artifact, entry.group, entry.binding );
+	return ordered && ordered.ref || null;
+
+}
+
+function materialComputeInitialStateFingerprint( artifact, descriptor ) {
+
+	const proofs = [];
+	for ( const binding of Array.isArray( descriptor && descriptor.renderBindings ) ? descriptor.renderBindings : [] ) {
+
+		const record = materialComputeRenderBindingRecord( artifact, binding );
+		proofs.push( {
+			resource: binding && binding.resource || null,
+			kind: binding && binding.kind || null,
+			userPath: record && Array.isArray( record.userPath ) ? record.userPath : null,
+			arraySnapshot: record && Array.isArray( record.arraySnapshot ) ? record.arraySnapshot : null,
+			instanced: record && record.instanced === true,
+			normalized: record && record.normalized === true,
+			usage: record && Number.isFinite( record.usage ) ? record.usage : null,
+			meshPerAttribute: record && Number.isFinite( record.meshPerAttribute ) ? record.meshPerAttribute : null,
+		} );
+
+	}
+	return proofs;
+
+}
+
+/**
+ * Inspect material-global compute ownership before selecting one render
+ * variant. The first runtime implementation can share one controller only
+ * when every authoritative variant carries the exact same descriptor and
+ * serialized initial-state proof.
+ */
+export function inspectMaterialComputeFamily( artifact ) {
+
+	const candidates = collectArtifactVariantCandidates( artifact );
+	const descriptors = candidates.map( ( candidate ) => candidate && candidate.materialCompute );
+	const present = descriptors.filter( ( descriptor ) => descriptor !== undefined );
+	if ( present.length === 0 ) return Object.freeze( {
+		status: 'none',
+		descriptor: null,
+		fingerprint: null,
+		candidateCount: candidates.length,
+	} );
+	if ( present.length !== descriptors.length ) return Object.freeze( {
+		status: 'divergent',
+		descriptor: null,
+		fingerprint: null,
+		candidateCount: candidates.length,
+		reason: 'partial-family',
+	} );
+
+	const fingerprints = new Map();
+	for ( let index = 0; index < candidates.length; index ++ ) {
+
+		const candidate = candidates[ index ];
+		const descriptor = descriptors[ index ];
+		let fingerprint;
+		try {
+
+			fingerprint = stableJsonStringify( {
+				descriptor,
+				initialState: materialComputeInitialStateFingerprint( candidate, descriptor ),
+			}, 'materialComputeFamily' );
+
+		} catch ( _ ) {
+
+			return Object.freeze( {
+				status: 'divergent',
+				descriptor: null,
+				fingerprint: null,
+				candidateCount: candidates.length,
+				reason: 'unfingerprintable-family',
+			} );
+
+		}
+		if ( ! fingerprints.has( fingerprint ) ) fingerprints.set( fingerprint, descriptor );
+
+	}
+	if ( fingerprints.size !== 1 ) return Object.freeze( {
+		status: 'divergent',
+		descriptor: null,
+		fingerprint: null,
+		candidateCount: candidates.length,
+		reason: 'non-uniform-family',
+	} );
+	const [ fingerprint, descriptor ] = fingerprints.entries().next().value;
+	return Object.freeze( {
+		status: 'uniform',
+		descriptor,
+		fingerprint,
+		candidateCount: candidates.length,
+	} );
+
+}
+
 /**
  * Validate one optional `material-compute@1` descriptor.
  *
@@ -545,7 +752,18 @@ export function validateMaterialComputeDescriptor( value, opts = {} ) {
 			`${ path }.id must be ${ JSON.stringify( expectedId ) }`,
 			`${ path }.id`,
 		) );
+		if ( kernel.nodePath !== null && ! validUserPath( kernel.nodePath ) ) errors.push( issue(
+			'material-compute.kernel.node-path',
+			`${ path }.nodePath must be an exact material graph path or null`,
+			`${ path }.nodePath`,
+		) );
+		if ( value.mode === 'precompiled' && ! validUserPath( kernel.nodePath ) ) errors.push( issue(
+			'material-compute.mode.kernel-node-path',
+			`${ path }.nodePath is required in precompiled mode`,
+			`${ path }.nodePath`,
+		) );
 		validateKernelArtifact( kernel.artifact, value.mode, `${ path }.artifact`, index + 1, errors );
+		validateKernelUpdates( kernel, value.mode, path, errors );
 		if ( typeof kernel.id === 'string' ) kernelById.set( kernel.id, kernel );
 
 	}

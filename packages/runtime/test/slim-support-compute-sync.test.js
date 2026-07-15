@@ -173,8 +173,12 @@ test( 'syncComputeStorageOutputs shares storage textures and bumps version', () 
 
 	const slim = fakeRenderer( { bindGroupsForNode: () => [ bindGroup ] } );
 	const seenTextures = [];
+	const syncedTextures = [];
 
-	const stats = syncComputeStorageOutputs( 'compute-node', full, slim, { onStorageTexture: ( texture, seenBinding ) => seenTextures.push( [ texture, seenBinding ] ) } );
+	const stats = syncComputeStorageOutputs( 'compute-node', full, slim, {
+		onStorageTexture: ( texture, seenBinding ) => seenTextures.push( [ texture, seenBinding ] ),
+		onStorageTextureSynced: ( texture, seenBinding, location ) => syncedTextures.push( [ texture, seenBinding, location ] ),
+	} );
 
 	assert.equal( stats.texturesShared, 1 );
 	assert.equal( stats.storageAttrs, 0 );
@@ -184,6 +188,7 @@ test( 'syncComputeStorageOutputs shares storage textures and bumps version', () 
 	assert.equal( slim.backend.get( tex ).texture, full.backend.get( tex ).texture );
 	assert.deepEqual( slim.generateMipmapsCalls, [ tex ], 'mipmaps regenerated for storage texture' );
 	assert.deepEqual( seenTextures, [ [ tex, binding ] ] );
+	assert.deepEqual( syncedTextures, [ [ tex, binding, { group: 0, binding: 0 } ] ] );
 
 } );
 
@@ -217,7 +222,11 @@ test( 'syncComputeStorageOutputs adopts the full buffer when slim has none', () 
 	const slimAttrEntry = slim._attributes.get( attr );
 
 	const remembered = [];
-	const stats = syncComputeStorageOutputs( 'n', full, slim, { onStorageAttr: ( a ) => remembered.push( a ) } );
+	const synced = [];
+	const stats = syncComputeStorageOutputs( 'n', full, slim, {
+		onStorageAttr: ( a ) => remembered.push( a ),
+		onStorageAttrSynced: ( a, binding, location ) => synced.push( [ a, binding, location ] ),
+	} );
 
 	assert.equal( stats.buffersAdopted, 1 );
 	assert.equal( stats.storageAttrs, 1 );
@@ -225,6 +234,7 @@ test( 'syncComputeStorageOutputs adopts the full buffer when slim has none', () 
 	assert.equal( slim.backend.get( attr ).buffer, fullBuf );
 	assert.equal( slimAttrEntry.version, 1 );
 	assert.deepEqual( remembered, [ attr ] );
+	assert.deepEqual( synced, [ [ attr, bindGroup.bindings[ 0 ], { group: 0, binding: 0 } ] ] );
 	assert.equal( slim.submittedCommandBuffers.length, 0, 'adopt path enqueues no copy' );
 
 } );

@@ -266,7 +266,9 @@ export function shareComputeSampledInputs( computeNode, fullRenderer, slimRender
  *
  * `opts.onStorageTexture(tex, binding)` and `opts.onStorageAttr(attr)` fire
  * for each storage resource encountered — adopters can use these to remember
- * resources that need re-wiring across dispatches.
+ * resources that need re-wiring across dispatches. The corresponding
+ * `onStorageTextureSynced` / `onStorageAttrSynced` hooks fire only after the
+ * exact group/binding location was successfully shared, adopted, or copied.
  *
  * Errors are caught and surfaced through `opts.onError(err)`; one bad
  * binding never breaks the whole sync.
@@ -282,18 +284,23 @@ export function syncComputeStorageOutputs( computeNode, fullRenderer, slimRender
 
 	const onStorageAttr = typeof opts.onStorageAttr === 'function' ? opts.onStorageAttr : null;
 	const onStorageTexture = typeof opts.onStorageTexture === 'function' ? opts.onStorageTexture : null;
+	const onStorageAttrSynced = typeof opts.onStorageAttrSynced === 'function' ? opts.onStorageAttrSynced : null;
+	const onStorageTextureSynced = typeof opts.onStorageTextureSynced === 'function' ? opts.onStorageTextureSynced : null;
 	const generateMipmaps = opts.generateMipmaps !== false;
 	let commandEncoder = null;
 
 	try {
 
 		const bindGroups = getComputeBindGroups( computeNode, fullRenderer );
-		for ( const bindGroup of bindGroups ) {
+		for ( let groupIndex = 0; groupIndex < bindGroups.length; groupIndex ++ ) {
 
+			const bindGroup = bindGroups[ groupIndex ];
 			if ( ! bindGroup || ! bindGroup.bindings ) continue;
-			for ( const binding of bindGroup.bindings ) {
+			for ( let bindingIndex = 0; bindingIndex < bindGroup.bindings.length; bindingIndex ++ ) {
 
+				const binding = bindGroup.bindings[ bindingIndex ];
 				if ( ! binding ) continue;
+				const location = { group: groupIndex, binding: bindingIndex };
 
 				// Storage texture (textureStore target): copy GPU handle and
 				// bump version so slim's bind-group cache refreshes.
@@ -302,12 +309,17 @@ export function syncComputeStorageOutputs( computeNode, fullRenderer, slimRender
 
 					if ( onStorageTexture ) {
 
-						try { onStorageTexture( tex, binding ); } catch ( _ ) {}
+						try { onStorageTexture( tex, binding, location ); } catch ( _ ) {}
 
 					}
 					const shared = shareShadowGPUTextureIntoSlim( tex, fullRenderer, slimRenderer );
 					if ( ! shared ) continue;
 					stats.texturesShared ++;
+					if ( onStorageTextureSynced ) {
+
+						try { onStorageTextureSynced( tex, binding, location ); } catch ( _ ) {}
+
+					}
 					if ( generateMipmaps && tex.generateMipmaps !== false && tex.mipmapsAutoUpdate !== false && typeof slimRenderer.backend.generateMipmaps === 'function' ) {
 
 						try { slimRenderer.backend.generateMipmaps( tex ); } catch ( _ ) {}
@@ -323,7 +335,7 @@ export function syncComputeStorageOutputs( computeNode, fullRenderer, slimRender
 				if ( ! attr ) continue;
 				if ( onStorageAttr ) {
 
-					try { onStorageAttr( attr ); } catch ( _ ) {}
+					try { onStorageAttr( attr, binding, location ); } catch ( _ ) {}
 
 				}
 
@@ -332,6 +344,7 @@ export function syncComputeStorageOutputs( computeNode, fullRenderer, slimRender
 				const fullBuf = fullBufData.buffer;
 				const slimBufData = slimRenderer.backend.get( attr );
 
+				let synced = false;
 				if ( ! slimBufData.buffer ) {
 
 					slimBufData.buffer = fullBuf;
@@ -339,6 +352,7 @@ export function syncComputeStorageOutputs( computeNode, fullRenderer, slimRender
 					if ( slimAttr && slimAttr.version === undefined ) slimAttr.version = 1;
 					stats.storageAttrs ++;
 					stats.buffersAdopted ++;
+					synced = true;
 
 				} else if ( slimBufData.buffer !== fullBuf ) {
 
@@ -350,6 +364,7 @@ export function syncComputeStorageOutputs( computeNode, fullRenderer, slimRender
 						commandEncoder.copyBufferToBuffer( fullBuf, 0, slimBuf, 0, copySize );
 						stats.storageAttrs ++;
 						stats.buffersCopied ++;
+						synced = true;
 
 					}
 
@@ -359,6 +374,12 @@ export function syncComputeStorageOutputs( computeNode, fullRenderer, slimRender
 					// mutated its contents, so callers must present another draw even
 					// though no adopt/copy work was necessary.
 					stats.storageAttrs ++;
+					synced = true;
+
+				}
+				if ( synced && onStorageAttrSynced ) {
+
+					try { onStorageAttrSynced( attr, binding, location ); } catch ( _ ) {}
 
 				}
 

@@ -178,7 +178,13 @@ class ReplayNodeManager extends DataMap {
 			throw new Error( '[tsl-precompile/slim] only PrecompiledComputeNode is supported in the slim bundle. Did you forget to wrap a compute artifact?' );
 
 		}
-		const state = hydrateNodeBuilderState( computeNode.precompiledArtifact );
+		const ownerFrame = computeNode.__tslpMaterialComputeFrame || null;
+		const ownerMaterial = computeNode.__tslpMaterialComputeOwner || null;
+		const state = hydrateNodeBuilderState(
+			computeNode.precompiledArtifact,
+			ownerMaterial,
+			ownerFrame && ownerFrame.object || null,
+		);
 		computeData.nodeBuilderState = state;
 		return state;
 
@@ -290,7 +296,16 @@ class ReplayNodeManager extends DataMap {
 
 	updateForCompute( computeNode ) {
 
-		const nodeFrame = this.getNodeFrame();
+		const ownerFrame = computeNode && computeNode.__tslpMaterialComputeFrame || null;
+		const nodeFrame = ownerFrame
+			? this.getNodeFrame(
+				ownerFrame.renderer || this.renderer,
+				ownerFrame.scene || null,
+				ownerFrame.object || null,
+				ownerFrame.camera || null,
+				ownerFrame.material || computeNode.__tslpMaterialComputeOwner || null,
+			)
+			: this.getNodeFrame();
 		const state = this.getForCompute( computeNode );
 		for ( const node of state.updateNodes || [] ) nodeFrame.updateNode( node );
 

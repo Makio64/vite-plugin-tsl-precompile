@@ -122,16 +122,15 @@ function materialNodeProperties( material ) {
 }
 
 /**
- * Find raw ComputeNodes reachable from precompiled material node properties.
- * One record is returned for every `(material, computeNode)` owner pair; a
- * shared node therefore keeps all material owners while dispatch can still be
- * deduplicated by node.
+ * Find each precompiled material owner independently from whether its retained
+ * graph still exposes a raw ComputeNode. Contract-aware callers use this to
+ * distinguish an empty scene from a missing hybrid kernel.
  */
-export function collectMaterialComputeBindings( scene, options = {} ) {
+export function collectMaterialComputeOwners( scene, options = {} ) {
 
 	if ( ! scene || typeof scene.traverse !== 'function' ) return [];
 	const includeNonPrecompiled = options.includeNonPrecompiled === true;
-	const records = [];
+	const owners = [];
 	const byMaterial = new WeakMap();
 
 	scene.traverse( ( object ) => {
@@ -140,39 +139,61 @@ export function collectMaterialComputeBindings( scene, options = {} ) {
 
 			if ( ! material ) continue;
 			if ( ! includeNonPrecompiled && ( material.isPrecompiledMaterial !== true || ! material.precompiledArtifact ) ) continue;
-			const sourceMaterial = sourceMaterialFor( material );
-			let byNode = byMaterial.get( material );
-			if ( ! byNode ) {
+			const existing = byMaterial.get( material );
+			if ( existing ) {
 
-				byNode = new Map();
-				byMaterial.set( material, byNode );
-
-			}
-			for ( const property of materialNodeProperties( sourceMaterial ) ) {
-
-				let root = null;
-				try { root = sourceMaterial && sourceMaterial[ property ]; } catch ( _ ) { continue; }
-				if ( ! root || root.isNode !== true ) continue;
-				visitNodeTree( root, ( computeNode ) => {
-
-					if ( ! isRawComputeNode( computeNode ) ) return;
-					let record = byNode.get( computeNode );
-					if ( ! record ) {
-
-						record = { object, material, sourceMaterial, computeNode, properties: [] };
-						byNode.set( computeNode, record );
-						records.push( record );
-
-					}
-					if ( ! record.properties.includes( property ) ) record.properties.push( property );
-
-				} );
+				if ( ! existing.objects.includes( object ) ) existing.objects.push( object );
+				continue;
 
 			}
+			const owner = { object, objects: [ object ], material, sourceMaterial: sourceMaterialFor( material ) };
+			byMaterial.set( material, owner );
+			owners.push( owner );
 
 		}
 
 	} );
+	return owners;
+
+}
+
+/**
+ * Find raw ComputeNodes reachable from precompiled material node properties.
+ * One record is returned for every `(material, computeNode)` owner pair; a
+ * shared node therefore keeps all material owners while dispatch can still be
+ * deduplicated by node.
+ */
+export function collectMaterialComputeBindings( scene, options = {} ) {
+
+	const records = [];
+	for ( const owner of collectMaterialComputeOwners( scene, options ) ) {
+
+		const { object, material, sourceMaterial } = owner;
+		const byNode = new Map();
+		for ( const property of materialNodeProperties( sourceMaterial ) ) {
+
+			let root = null;
+			try { root = sourceMaterial && sourceMaterial[ property ]; } catch ( _ ) { continue; }
+			if ( ! root || root.isNode !== true ) continue;
+			visitNodeTree( root, ( computeNode ) => {
+
+				if ( ! isRawComputeNode( computeNode ) ) return;
+				let record = byNode.get( computeNode );
+				if ( ! record ) {
+
+					record = { object, material, sourceMaterial, computeNode, properties: [] };
+					byNode.set( computeNode, record );
+					records.push( record );
+
+				}
+				if ( ! record.properties.includes( property ) ) record.properties.push( property );
+
+			} );
+
+
+		}
+
+	}
 
 	return records;
 
@@ -675,7 +696,18 @@ export function createAutoComputeDispatcher( options = {} ) {
 
 			const attempts = bootstrapAttempts.get( computeNode ) || 0;
 			const bootstrap = retryOwners.length > 0 && attempts < maxBootstrapAttempts;
-			if ( ! relevant && ! bootstrap ) continue;
+			let forced = dispatchOptions.forceDispatch === true;
+			if ( typeof dispatchOptions.forceDispatch === 'function' ) {
+
+				try { forced = dispatchOptions.forceDispatch( computeNode, owners ) === true; } catch ( error ) {
+
+					reportError( error, { where: 'forceDispatch', computeNode, owners }, stats, localOnError );
+					continue;
+
+				}
+
+			}
+			if ( ! relevant && ! bootstrap && ! forced ) continue;
 			if ( ! dispatchNode ) {
 
 				reportError( new AutoComputeBindingError(
@@ -712,6 +744,7 @@ export function createAutoComputeDispatcher( options = {} ) {
 				const result = await dispatchNode( computeNode, owners );
 				stats.dispatched ++;
 				stats.dispatchResults.push( result );
+				if ( typeof dispatchOptions.onDispatched === 'function' ) dispatchOptions.onDispatched( computeNode, owners, result );
 
 			} catch ( error ) {
 

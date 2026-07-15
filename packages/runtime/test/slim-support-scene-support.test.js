@@ -4,7 +4,7 @@ import * as Three from 'three';
 
 import { createSlimSceneSupport, pinClock, unpinClock } from '../src/slim-support/scene-support.js';
 import { getSlimRenderFallback, setSlimRenderFallback } from '../src/slim-support/render-fallback-registry.js';
-import { clearLiveTextureIndex } from '../src/hydrator.js';
+import { clearLiveTextureIndex, hydrateNodeBuilderState } from '../src/hydrator.js';
 import { lookupLiveTextureByIdentity } from '../src/hydrate/live-texture-registry.js';
 import { getTemporalFrameState } from '../src/slim-support/temporal-frame.js';
 
@@ -46,6 +46,108 @@ function fakePassFullRenderer() {
 		},
 	} );
 	return renderer;
+
+}
+
+function contractComputeArtifact( mode = 'hybrid-required', { storageOutput = false } = {} ) {
+
+	const storageRef = {
+		name: 'positions',
+		access: 'readWrite',
+		visibility: 4,
+		arrayType: 'Float32Array',
+		count: 1,
+		itemSize: 4,
+	};
+	const storageBinding = {
+		name: 'positions',
+		kind: 'storage-buffer',
+		visibility: 4,
+		textureType: null,
+		byteLength: 16,
+		access: 'readWrite',
+	};
+
+	return {
+		version: 3,
+		cacheKey: 'contract-compute',
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		computeShader: '',
+		attributes: storageOutput ? [ {
+			name: 'positions',
+			type: 'vec4',
+			source: 'node',
+			storage: true,
+			instanced: false,
+			arrayType: 'Float32Array',
+			count: 1,
+			itemSize: 4,
+			userPath: [ 'positionNode', 'storage', 'attribute' ],
+		} ] : [],
+		bindings: [],
+		uniformPlan: [],
+		defaults: {},
+		meta: { updateNodes: 0, updateBeforeNodes: 1, updateAfterNodes: 0 },
+		materialCompute: {
+			version: 'material-compute@1',
+			mode,
+			reasons: mode === 'hybrid-required' ? [ 'kernel:0:on-init-function' ] : [],
+			resources: storageOutput ? [ {
+				id: 'resource:0',
+				kind: 'storage-buffer',
+				arrayType: 'Float32Array',
+				count: 1,
+				itemSize: 4,
+				byteLength: 16,
+			} ] : [],
+			kernels: [ {
+				id: 'kernel:0',
+				nodePath: [ 'positionNode' ],
+				updates: [],
+				artifact: {
+					version: 3,
+					kind: 'compute',
+					cacheKey: 1,
+					name: 'contract-compute',
+					computeShader: '@compute @workgroup_size( 1 ) fn main() {}',
+					vertexShader: '',
+					fragmentShader: '',
+					attributes: [],
+					bindings: storageOutput ? [ { name: 'compute', bindings: [ storageBinding ] } ] : [],
+					uniformPlan: storageOutput ? [ {
+						name: 'compute',
+						slots: [],
+						textures: [],
+						storageBuffers: [ storageRef ],
+						orderedBindings: [ { type: 'storage-buffer', ref: storageRef } ],
+					} ] : [],
+					defaults: {},
+					dispatchSize: 1,
+					workgroupSize: [ 1, 1, 1 ],
+					meta: { updateNodes: 0, updateBeforeNodes: 0, updateAfterNodes: 0 },
+				},
+			} ],
+			bindings: storageOutput ? [ {
+				kernel: 'kernel:0',
+				resource: 'resource:0',
+				group: 0,
+				binding: 0,
+				access: 'readWrite',
+			} ] : [],
+			renderBindings: storageOutput ? [ {
+				resource: 'resource:0',
+				kind: 'attribute',
+				attribute: 0,
+			} ] : [],
+			schedule: [ {
+				kernel: 'kernel:0',
+				phase: 'update-before',
+				order: 0,
+				updateType: 'object',
+			} ],
+		},
+	};
 
 }
 
@@ -504,6 +606,377 @@ test( 'createSlimSceneSupport dispatches retained material compute and presents 
 		const nested = { isComputeNode: true };
 		await slim.computeAsync( nested );
 		assert.deepEqual( dispatchedNodes, [ initComputeNode, computeNode, nested ], 'an installed caller-owned renderer handles nested async kernels' );
+
+	} finally {
+
+		await support.dispose();
+
+	}
+
+} );
+
+test( 'createSlimSceneSupport skips raw graphs owned by a precompiled compute contract', async () => {
+
+	const slim = fakeRenderer();
+	const raw = { isNode: true, isComputeNode: true, traverse( visitor ) { visitor( this ); } };
+	const material = {
+		isPrecompiledMaterial: true,
+		precompiledArtifact: contractComputeArtifact( 'precompiled' ),
+		positionNode: raw,
+	};
+	const scene = { traverse( visitor ) { visitor( { material } ); } };
+	let fullRendererRequests = 0;
+	const support = createSlimSceneSupport( {
+		renderer: slim,
+		loadThreeFullModule: async () => { fullRendererRequests ++; return {}; },
+	} );
+
+	try {
+
+		const stats = await support.dispatchMaterialComputes( scene );
+		assert.equal( stats.dispatched, 0 );
+		assert.equal( stats.owners, 0 );
+		assert.equal( fullRendererRequests, 0 );
+
+	} finally {
+
+		await support.dispose();
+
+	}
+
+} );
+
+test( 'createSlimSceneSupport rejects a hybrid contract with no retained raw kernel', async () => {
+
+	const material = {
+		isPrecompiledMaterial: true,
+		precompiledArtifact: contractComputeArtifact(),
+	};
+	const scene = { traverse( visitor ) { visitor( { material } ); } };
+	const support = createSlimSceneSupport( { renderer: fakeRenderer(), fullRendererFallback: false } );
+
+	try {
+
+		const stats = await support.dispatchMaterialComputes( scene );
+		assert.equal( stats.errors, 1 );
+		assert.equal( stats.dispatched, 0 );
+
+	} finally {
+
+		await support.dispose();
+
+	}
+
+} );
+
+test( 'createSlimSceneSupport rejects an unrelated raw kernel at the contracted count', async () => {
+
+	const unrelated = { isNode: true, isComputeNode: true, traverse( visitor ) { visitor( this ); } };
+	const material = {
+		isPrecompiledMaterial: true,
+		precompiledArtifact: contractComputeArtifact(),
+		positionNode: { isNode: true, traverse( visitor ) { visitor( this ); } },
+		colorNode: unrelated,
+	};
+	const scene = { traverse( visitor ) { visitor( { material } ); } };
+	const support = createSlimSceneSupport( { renderer: fakeRenderer(), fullRendererFallback: false } );
+
+	try {
+
+		const stats = await support.dispatchMaterialComputes( scene );
+		assert.equal( stats.errors, 1 );
+		assert.equal( stats.nodes, 1, 'the wrong raw node cannot satisfy a one-kernel contract by count' );
+		assert.equal( stats.dispatched, 0 );
+
+	} finally {
+
+		await support.dispose();
+
+	}
+
+} );
+
+test( 'createSlimSceneSupport rejects extra raw kernels beside an exact contract path', async () => {
+
+	const expected = { isNode: true, isComputeNode: true, traverse( visitor ) { visitor( this ); } };
+	const extra = { isNode: true, isComputeNode: true, traverse( visitor ) { visitor( this ); } };
+	const material = {
+		isPrecompiledMaterial: true,
+		precompiledArtifact: contractComputeArtifact(),
+		positionNode: expected,
+		colorNode: extra,
+	};
+	const scene = { traverse( visitor ) { visitor( { material } ); } };
+	const support = createSlimSceneSupport( { renderer: fakeRenderer(), fullRendererFallback: false } );
+
+	try {
+
+		const stats = await support.dispatchMaterialComputes( scene );
+		assert.equal( stats.errors, 1 );
+		assert.equal( stats.nodes, 2 );
+		assert.equal( stats.dispatched, 0 );
+
+	} finally {
+
+		await support.dispose();
+
+	}
+
+} );
+
+test( 'createSlimSceneSupport claims hybrid compute only after forced full dispatch and releases it', async () => {
+
+	const slim = fakeRenderer();
+	const full = fakeRenderer();
+	full.backend.device = slim.backend.device;
+	const raw = { isNode: true, isComputeNode: true, traverse( visitor ) { visitor( this ); } };
+	const artifact = contractComputeArtifact();
+	const material = {
+		isPrecompiledMaterial: true,
+		precompiledArtifact: artifact,
+		positionNode: raw,
+	};
+	const scene = { traverse( visitor ) { visitor( { material } ); } };
+	full._nodes = { getForCompute: () => ( { bindings: [] } ) };
+	full._bindings = { getForCompute: () => [] };
+	const dispatched = [];
+	full.computeAsync = async ( node ) => { dispatched.push( node ); };
+	const support = createSlimSceneSupport( { renderer: slim, fullRendererFallback: false } );
+
+	assert.throws(
+		() => hydrateNodeBuilderState( artifact, material ),
+		( error ) => error.code === 'TSLP_MATERIAL_COMPUTE_HYBRID_REQUIRED',
+	);
+	const stats = await support.dispatchMaterialComputes( scene, { fullRenderer: full } );
+	assert.equal( stats.errors, 0 );
+	assert.equal( stats.dispatched, 1 );
+	assert.deepEqual( dispatched, [ raw ] );
+	assert.equal( hydrateNodeBuilderState( artifact, material ).updateBeforeNodes.length, 1 );
+
+	await support.dispose();
+	assert.throws(
+		() => hydrateNodeBuilderState( artifact, material ),
+		( error ) => error.code === 'TSLP_MATERIAL_COMPUTE_HYBRID_REQUIRED',
+	);
+
+} );
+
+test( 'createSlimSceneSupport keeps hybrid hydration closed when a contracted output was not synchronized', async () => {
+
+	const slim = fakeRenderer();
+	const full = fakeRenderer();
+	full.backend.device = slim.backend.device;
+	const attribute = {
+		isBufferAttribute: true,
+		isStorageBufferAttribute: true,
+		array: new Float32Array( 4 ),
+		count: 1,
+		itemSize: 4,
+	};
+	const raw = {
+		isNode: true,
+		isComputeNode: true,
+		storage: { attribute },
+		traverse( visitor ) { visitor( this ); },
+	};
+	const artifact = contractComputeArtifact( 'hybrid-required', { storageOutput: true } );
+	const material = {
+		isPrecompiledMaterial: true,
+		precompiledArtifact: artifact,
+		positionNode: raw,
+	};
+	const scene = { traverse( visitor ) { visitor( { material } ); } };
+	full._nodes = { getForCompute: () => ( { bindings: [] } ) };
+	full._bindings = { getForCompute: () => [] };
+	full.computeAsync = async () => {};
+	const errors = [];
+	const support = createSlimSceneSupport( { renderer: slim, fullRendererFallback: false } );
+
+	try {
+
+		const stats = await support.dispatchMaterialComputes( scene, {
+			fullRenderer: full,
+			onError: ( error ) => errors.push( error ),
+		} );
+		assert.equal( stats.errors, 1 );
+		assert.equal( stats.dispatched, 0, 'a physical dispatch is not committed until every contracted output is synchronized' );
+		assert.equal( errors.some( ( error ) => error.code === 'TSLP_MATERIAL_COMPUTE_OUTPUT_SYNC_MISS' ), true );
+		assert.throws(
+			() => hydrateNodeBuilderState( artifact, material ),
+			( error ) => error.code === 'TSLP_MATERIAL_COMPUTE_HYBRID_REQUIRED',
+		);
+
+	} finally {
+
+		await support.dispose();
+
+	}
+
+} );
+
+test( 'createSlimSceneSupport rejects hybrid object cadence for one material shared by multiple objects', async () => {
+
+	const raw = { isNode: true, isComputeNode: true, traverse( visitor ) { visitor( this ); } };
+	const artifact = contractComputeArtifact();
+	const material = {
+		isPrecompiledMaterial: true,
+		precompiledArtifact: artifact,
+		positionNode: raw,
+	};
+	const first = { material };
+	const second = { material };
+	const scene = { traverse( visitor ) { visitor( first ); visitor( second ); } };
+	const errors = [];
+	const support = createSlimSceneSupport( { renderer: fakeRenderer(), fullRendererFallback: false } );
+
+	try {
+
+		const stats = await support.dispatchMaterialComputes( scene, { onError: ( error ) => errors.push( error ) } );
+		assert.equal( stats.errors, 1 );
+		assert.equal( stats.dispatched, 0 );
+		assert.equal( errors.some( ( error ) => error.code === 'TSLP_MATERIAL_COMPUTE_OBJECT_CADENCE_UNSUPPORTED' ), true );
+		assert.throws(
+			() => hydrateNodeBuilderState( artifact, material ),
+			( error ) => error.code === 'TSLP_MATERIAL_COMPUTE_HYBRID_REQUIRED',
+		);
+
+	} finally {
+
+		await support.dispose();
+
+	}
+
+} );
+
+test( 'createSlimSceneSupport rejects one hybrid object-cadence node shared across material owners', async () => {
+
+	const raw = { isNode: true, isComputeNode: true, traverse( visitor ) { visitor( this ); } };
+	const artifact = contractComputeArtifact();
+	const firstMaterial = {
+		isPrecompiledMaterial: true,
+		precompiledArtifact: artifact,
+		positionNode: raw,
+	};
+	const secondMaterial = {
+		isPrecompiledMaterial: true,
+		precompiledArtifact: artifact,
+		positionNode: raw,
+	};
+	const scene = {
+		traverse( visitor ) { visitor( { material: firstMaterial } ); visitor( { material: secondMaterial } ); },
+	};
+	const errors = [];
+	const support = createSlimSceneSupport( { renderer: fakeRenderer(), fullRendererFallback: false } );
+
+	try {
+
+		const stats = await support.dispatchMaterialComputes( scene, { onError: ( error ) => errors.push( error ) } );
+		assert.equal( stats.errors, 1 );
+		assert.equal( stats.dispatched, 0 );
+		assert.equal( errors.some( ( error ) => error.code === 'TSLP_MATERIAL_COMPUTE_OBJECT_CADENCE_UNSUPPORTED' ), true );
+
+	} finally {
+
+		await support.dispose();
+
+	}
+
+} );
+
+test( 'createSlimSceneSupport serializes hybrid transactions so a later failure revokes an earlier claim', async () => {
+
+	const slim = fakeRenderer();
+	const full = fakeRenderer();
+	full.backend.device = slim.backend.device;
+	const raw = { isNode: true, isComputeNode: true, traverse( visitor ) { visitor( this ); } };
+	const artifact = contractComputeArtifact();
+	const material = {
+		isPrecompiledMaterial: true,
+		precompiledArtifact: artifact,
+		positionNode: raw,
+	};
+	const scene = { traverse( visitor ) { visitor( { material } ); } };
+	full._nodes = { getForCompute: () => ( { bindings: [] } ) };
+	full._bindings = { getForCompute: () => [] };
+	let enterFirst;
+	let releaseFirst;
+	const firstEntered = new Promise( ( resolve ) => { enterFirst = resolve; } );
+	const firstGate = new Promise( ( resolve ) => { releaseFirst = resolve; } );
+	let calls = 0;
+	full.computeAsync = async () => {
+
+		calls ++;
+		if ( calls === 1 ) {
+
+			enterFirst();
+			await firstGate;
+			return;
+
+		}
+		throw new Error( 'later transaction failed' );
+
+	};
+	const support = createSlimSceneSupport( { renderer: slim, fullRendererFallback: false } );
+
+	try {
+
+		const first = support.dispatchMaterialComputes( scene, { fullRenderer: full } );
+		await firstEntered;
+		const second = support.dispatchMaterialComputes( scene, { fullRenderer: full } );
+		await Promise.resolve();
+		assert.equal( calls, 1, 'the second transaction waits behind the first' );
+		releaseFirst();
+		const [ firstStats, secondStats ] = await Promise.all( [ first, second ] );
+		assert.equal( firstStats.errors, 0 );
+		assert.equal( secondStats.errors, 1 );
+		assert.equal( calls, 2 );
+		assert.throws(
+			() => hydrateNodeBuilderState( artifact, material ),
+			( error ) => error.code === 'TSLP_MATERIAL_COMPUTE_HYBRID_REQUIRED',
+		);
+
+	} finally {
+
+		await support.dispose();
+
+	}
+
+} );
+
+test( 'createSlimSceneSupport revokes an earlier hybrid claim when the next dispatch fails', async () => {
+
+	const slim = fakeRenderer();
+	const full = fakeRenderer();
+	full.backend.device = slim.backend.device;
+	const raw = { isNode: true, isComputeNode: true, traverse( visitor ) { visitor( this ); } };
+	const artifact = contractComputeArtifact();
+	const material = {
+		isPrecompiledMaterial: true,
+		precompiledArtifact: artifact,
+		positionNode: raw,
+	};
+	const scene = { traverse( visitor ) { visitor( { material } ); } };
+	full._nodes = { getForCompute: () => ( { bindings: [] } ) };
+	full._bindings = { getForCompute: () => [] };
+	full.computeAsync = async () => {};
+	const support = createSlimSceneSupport( { renderer: slim, fullRendererFallback: false } );
+
+	try {
+
+		assert.equal( ( await support.dispatchMaterialComputes( scene, { fullRenderer: full } ) ).errors, 0 );
+		const cachedState = hydrateNodeBuilderState( artifact, material );
+		assert.doesNotThrow( () => cachedState.updateBeforeNodes[ 0 ].updateBefore( {} ) );
+		full.computeAsync = async () => { throw new Error( 'dispatch failed' ); };
+		const failed = await support.dispatchMaterialComputes( scene, { fullRenderer: full } );
+		assert.equal( failed.errors, 1 );
+		assert.throws(
+			() => cachedState.updateBeforeNodes[ 0 ].updateBefore( {} ),
+			( error ) => error.code === 'TSLP_MATERIAL_COMPUTE_HYBRID_REQUIRED',
+		);
+		assert.throws(
+			() => hydrateNodeBuilderState( artifact, material ),
+			( error ) => error.code === 'TSLP_MATERIAL_COMPUTE_HYBRID_REQUIRED',
+		);
 
 	} finally {
 

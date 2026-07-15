@@ -34,6 +34,7 @@ import { createRendererOutputConfig } from '@tsl-precompile/contract/output-conf
 import {
 	hasUnresolvedMaterialComputeTexture,
 	MATERIAL_COMPUTE_ACCESS_MODES,
+	MATERIAL_COMPUTE_LIFECYCLE_PHASES,
 	MATERIAL_COMPUTE_UPDATE_TYPES,
 	MATERIAL_COMPUTE_VERSION,
 } from '@tsl-precompile/contract/material-compute';
@@ -1062,13 +1063,105 @@ function computeNodeUpdateType( node ) {
 
 }
 
-function nestedComputeArtifact( artifact, kernelIndex ) {
+function cloneMaterialComputeUniformPlan( uniformPlan, material ) {
+
+	if ( ! Array.isArray( uniformPlan ) ) return uniformPlan;
+	const plan = uniformPlan.map( ( group ) => {
+
+		if ( ! group || typeof group !== 'object' ) return group;
+		const slots = Array.isArray( group.slots ) ? group.slots.map( ( slot ) => {
+
+			if ( ! slot || typeof slot !== 'object' ) return slot;
+			const clone = {
+				...slot,
+				...( slot.source && typeof slot.source === 'object' ? { source: { ...slot.source } } : {} ),
+			};
+			if ( slot._liveNode ) Object.defineProperty( clone, '_liveNode', {
+				value: slot._liveNode,
+				enumerable: false,
+				configurable: true,
+				writable: true,
+			} );
+			return clone;
+
+		} ) : group.slots;
+		return { ...group, ...( Array.isArray( group.slots ) ? { slots } : {} ) };
+
+	} );
+	annotateLiveUniformIdentities( plan, material );
+	return plan;
+
+}
+
+function nestedComputeArtifact( artifact, kernelIndex, material ) {
 
 	if ( ! artifact ) return null;
 	// Compute cache keys are process-local flat-array routing metadata. A nested
 	// material descriptor is owner-local, so normalize the key to its canonical
-	// kernel order while reusing the existing extracted artifact payload.
-	return { ...artifact, cacheKey: kernelIndex + 1 };
+	// kernel order and clone the live-uniform slots before stamping owner-local
+	// paths. A shared standalone compute artifact must not retain the first
+	// material owner's graph identity.
+	return {
+		...artifact,
+		cacheKey: kernelIndex + 1,
+		uniformPlan: cloneMaterialComputeUniformPlan( artifact.uniformPlan, material ),
+	};
+
+}
+
+const MATERIAL_COMPUTE_LIFECYCLE_CONFIG_BY_PHASE = Object.freeze( {
+	update: Object.freeze( { list: 'updateNodes', typeMethod: 'getUpdateType', typeField: 'updateType', updateMethod: 'update' } ),
+	'update-before': Object.freeze( { list: 'updateBeforeNodes', typeMethod: 'getUpdateBeforeType', typeField: 'updateBeforeType', updateMethod: 'updateBefore' } ),
+	'update-after': Object.freeze( { list: 'updateAfterNodes', typeMethod: 'getUpdateAfterType', typeField: 'updateAfterType', updateMethod: 'updateAfter' } ),
+} );
+const MATERIAL_COMPUTE_LIFECYCLE_CONFIG = Object.freeze( MATERIAL_COMPUTE_LIFECYCLE_PHASES.map( ( phase ) => Object.freeze( {
+	phase,
+	...MATERIAL_COMPUTE_LIFECYCLE_CONFIG_BY_PHASE[ phase ],
+} ) ) );
+
+function materialComputeLifecycleType( node, config ) {
+
+	let updateType = node && node[ config.typeField ];
+	if ( node && typeof node[ config.typeMethod ] === 'function' ) {
+
+		try { updateType = node[ config.typeMethod ](); } catch ( _ ) { return null; }
+
+	}
+	if ( typeof node?.updateReference !== 'function' || typeof node?.[ config.updateMethod ] !== 'function' ) return null;
+	return MATERIAL_COMPUTE_UPDATE_TYPE_SET.has( updateType ) ? updateType : null;
+
+}
+
+function extractMaterialComputeKernelUpdates( state, material, kernelId, reasons ) {
+
+	const updates = [];
+	for ( const config of MATERIAL_COMPUTE_LIFECYCLE_CONFIG ) {
+
+		const nodes = Array.isArray( state && state[ config.list ] ) ? state[ config.list ] : [];
+		let serializedOrder = 0;
+		for ( let order = 0; order < nodes.length; order ++ ) {
+
+			const node = nodes[ order ];
+			if ( isRawMaterialComputeNode( node ) ) {
+
+				addCanonicalReason( reasons, `${ kernelId }:${ config.phase }-update:${ order }:nested-compute` );
+				continue;
+
+			}
+			const nodePath = findLiveNodePathOnMaterial( material, node );
+			const updateType = materialComputeLifecycleType( node, config );
+			if ( ! nodePath || ! updateType ) {
+
+				addCanonicalReason( reasons, `${ kernelId }:${ config.phase }-update:${ order }:unresolved` );
+				continue;
+
+			}
+			updates.push( { phase: config.phase, order: serializedOrder ++, nodePath, updateType } );
+
+		}
+
+	}
+	return updates;
 
 }
 
@@ -1177,7 +1270,7 @@ function hasUnresolvedMaterialComputeLiveUniform( artifact ) {
  * @param {Map<Object,Object>} computeStatesByNode
  * @return {?Object}
  */
-export function extractMaterialComputeDescriptor( renderArtifact, renderState, computeArtifactsByNode, computeStatesByNode, sharedComputeNodes = null ) {
+export function extractMaterialComputeDescriptor( renderArtifact, renderState, computeArtifactsByNode, computeStatesByNode, sharedComputeNodes = null, material = null ) {
 
 	const updateBeforeNodes = Array.isArray( renderState && renderState.updateBeforeNodes ) ? renderState.updateBeforeNodes : [];
 	const scheduleNodes = updateBeforeNodes
@@ -1200,9 +1293,13 @@ export function extractMaterialComputeDescriptor( renderArtifact, renderState, c
 			kernelId = `kernel:${ kernelIndex }`;
 			kernelIdByNode.set( node, kernelId );
 			const artifact = computeArtifactsByNode && computeArtifactsByNode.get( node ) || null;
-			const nestedArtifact = nestedComputeArtifact( artifact, kernelIndex );
-			kernels.push( { id: kernelId, artifact: nestedArtifact } );
+			const state = computeStatesByNode && computeStatesByNode.get( node ) || null;
+			const nodePath = findLiveNodePathOnMaterial( material, node );
+			const nestedArtifact = nestedComputeArtifact( artifact, kernelIndex, material );
+			const updates = extractMaterialComputeKernelUpdates( state, material, kernelId, reasons );
+			kernels.push( { id: kernelId, nodePath, updates, artifact: nestedArtifact } );
 			kernelNodes.push( node );
+			if ( ! nodePath ) addCanonicalReason( reasons, `${ kernelId }:node-path-unavailable` );
 			if ( ! artifact ) addCanonicalReason( reasons, `${ kernelId }:artifact-unavailable` );
 			if ( nestedArtifact && hasUnresolvedMaterialComputeLiveUniform( nestedArtifact ) ) addCanonicalReason( reasons, `${ kernelId }:live-uniform-unresolved` );
 			if ( nestedArtifact && hasUnresolvedMaterialComputeTexture( nestedArtifact ) ) addCanonicalReason( reasons, `${ kernelId }:texture-source-unresolved` );
@@ -2440,7 +2537,12 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 			bindingOwnerKind: RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER,
 			materialBindingOwners,
 		} : null );
-		if ( entry.materialComputeDiscovery === true && Array.isArray( state.updateBeforeNodes ) && state.updateBeforeNodes.some( isRawMaterialComputeNode ) ) materialComputeRecords.push( { artifact, state, material } );
+		if ( entry.materialComputeDiscovery === true && Array.isArray( state.updateBeforeNodes ) && state.updateBeforeNodes.some( isRawMaterialComputeNode ) ) materialComputeRecords.push( {
+			artifact,
+			state,
+			material,
+			graphMaterial: userMaterial || material,
+		} );
 		if ( exactShadowCasterRequests.length > 0 && artifact.materialShape === 'shadow-depth' ) {
 
 			artifact.bindingOwner = RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER;
@@ -2576,7 +2678,14 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		.map( ( [ node ] ) => node ) );
 	for ( const record of materialComputeRecords ) {
 
-		const descriptor = extractMaterialComputeDescriptor( record.artifact, record.state, byComputeNode, computeStatesByNode, sharedMaterialComputeNodes );
+		const descriptor = extractMaterialComputeDescriptor(
+			record.artifact,
+			record.state,
+			byComputeNode,
+			computeStatesByNode,
+			sharedMaterialComputeNodes,
+			record.graphMaterial,
+		);
 		if ( descriptor ) record.artifact.materialCompute = descriptor;
 
 	}

@@ -109,6 +109,12 @@ function computeNode( overrides = {} ) {
 
 }
 
+function materialComputeOwner( node, overrides = {} ) {
+
+	return { isMeshBasicNodeMaterial: true, positionNode: node, ...overrides };
+
+}
+
 test( 'extractComputeArtifact preserves numeric compute count and workgroup size', () => {
 
 	const artifact = extractComputeArtifact( 1, fakeState(), {
@@ -182,6 +188,8 @@ test( 'material compute capture uses exact identity and exact WGSL binding indic
 		rawRenderState,
 		new Map( [ [ node, computeArtifact ] ] ),
 		new Map( [ [ node, rawComputeState ] ] ),
+		null,
+		materialComputeOwner( node ),
 	);
 
 	assert.equal( descriptor.version, 'material-compute@1' );
@@ -252,6 +260,8 @@ test( 'material compute capture serializes the exact storage leaf among same-sha
 		rawRenderState,
 		new Map( [ [ node, computeArtifact ] ] ),
 		new Map( [ [ node, rawComputeState ] ] ),
+		null,
+		materialComputeOwner( node ),
 	);
 
 	assert.deepEqual( renderArtifact.attributes[ 0 ].userPath, [ 'positionNode', 'second', 'value' ] );
@@ -276,6 +286,8 @@ test( 'material compute capture fails closed instead of matching same-shaped res
 		rawRenderState,
 		new Map( [ [ node, computeArtifact ] ] ),
 		new Map( [ [ node, rawComputeState ] ] ),
+		null,
+		materialComputeOwner( node ),
 	);
 
 	assert.equal( descriptor.mode, 'hybrid-required' );
@@ -303,6 +315,8 @@ test( 'material compute capture marks non-compute update-before interleaving as 
 		rawRenderState,
 		new Map( [ [ node, computeArtifact ] ] ),
 		new Map( [ [ node, rawComputeState ] ] ),
+		null,
+		materialComputeOwner( node ),
 	);
 
 	assert.equal( descriptor.mode, 'hybrid-required' );
@@ -331,6 +345,8 @@ test( 'material compute capture requires serialized render-side initial storage 
 		rawRenderState,
 		new Map( [ [ node, computeArtifact ] ] ),
 		new Map( [ [ node, rawComputeState ] ] ),
+		null,
+		materialComputeOwner( node ),
 	);
 
 	assert.equal( descriptor.mode, 'hybrid-required' );
@@ -359,10 +375,108 @@ test( 'material compute capture rejects an unresolved dynamic compute uniform', 
 		rawRenderState,
 		new Map( [ [ node, computeArtifact ] ] ),
 		new Map( [ [ node, rawComputeState ] ] ),
+		null,
+		materialComputeOwner( node ),
 	);
 
 	assert.equal( descriptor.mode, 'hybrid-required' );
 	assert.deepEqual( descriptor.reasons, [ 'kernel:0:live-uniform-unresolved' ] );
+	assert.deepEqual( validateMaterialComputeDescriptor( descriptor, { artifact: renderArtifact } ), [] );
+
+} );
+
+test( 'material compute capture serializes exact kernel lifecycle ownership', () => {
+
+	const attribute = storageAttribute();
+	const node = computeNode();
+	const liveNode = {
+		isNode: true,
+		getUpdateType: () => 'frame',
+		updateReference() { return this; },
+		update() {},
+	};
+	const rawComputeState = computeState( attribute );
+	rawComputeState.updateNodes = [ liveNode ];
+	const rawRenderState = renderState( node, attribute );
+	const renderArtifact = extractArtifact( 16, rawRenderState, { isMeshBasicNodeMaterial: true } );
+	const computeArtifact = extractComputeArtifact( 11, rawComputeState, node );
+	const slot = {
+		name: 'dynamic',
+		offset: 0,
+		size: 4,
+		dtype: 'number',
+		source: { kind: 'uniform.live', valueSnapshot: 1 },
+	};
+	Object.defineProperty( slot, '_liveNode', { value: liveNode, enumerable: false } );
+	computeArtifact.uniformPlan[ 0 ].slots.push( slot );
+	const owner = {
+		isMeshBasicNodeMaterial: true,
+		positionNode: { isNode: true, kernel: node, speed: liveNode },
+	};
+	const descriptor = extractMaterialComputeDescriptor(
+		renderArtifact,
+		rawRenderState,
+		new Map( [ [ node, computeArtifact ] ] ),
+		new Map( [ [ node, rawComputeState ] ] ),
+		null,
+		owner,
+	);
+
+	assert.equal( descriptor.mode, 'precompiled' );
+	assert.deepEqual( descriptor.kernels[ 0 ].nodePath, [ 'positionNode', 'kernel' ] );
+	assert.deepEqual( descriptor.kernels[ 0 ].updates, [ {
+		phase: 'update',
+		order: 0,
+		nodePath: [ 'positionNode', 'speed' ],
+		updateType: 'frame',
+	} ] );
+	assert.deepEqual( descriptor.kernels[ 0 ].artifact.uniformPlan[ 0 ].slots.at( - 1 ).source.nodePath, [ 'positionNode', 'speed' ] );
+	assert.deepEqual( validateMaterialComputeDescriptor( descriptor, { artifact: renderArtifact } ), [] );
+
+} );
+
+test( 'material compute capture keeps mixed lifecycle evidence contract-valid in hybrid mode', () => {
+
+	const attribute = storageAttribute();
+	const node = computeNode();
+	const unresolvedNode = {
+		isNode: true,
+		getUpdateType: () => 'frame',
+		updateReference() { return this; },
+		update() {},
+	};
+	const resolvedNode = {
+		isNode: true,
+		getUpdateType: () => 'frame',
+		updateReference() { return this; },
+		update() {},
+	};
+	const rawComputeState = computeState( attribute );
+	rawComputeState.updateNodes = [ unresolvedNode, resolvedNode ];
+	const rawRenderState = renderState( node, attribute );
+	const renderArtifact = extractArtifact( 17, rawRenderState, { isMeshBasicNodeMaterial: true } );
+	const computeArtifact = extractComputeArtifact( 12, rawComputeState, node );
+	const owner = {
+		isMeshBasicNodeMaterial: true,
+		positionNode: { isNode: true, kernel: node, speed: resolvedNode },
+	};
+	const descriptor = extractMaterialComputeDescriptor(
+		renderArtifact,
+		rawRenderState,
+		new Map( [ [ node, computeArtifact ] ] ),
+		new Map( [ [ node, rawComputeState ] ] ),
+		null,
+		owner,
+	);
+
+	assert.equal( descriptor.mode, 'hybrid-required' );
+	assert.deepEqual( descriptor.reasons, [ 'kernel:0:update-update:0:unresolved' ] );
+	assert.deepEqual( descriptor.kernels[ 0 ].updates, [ {
+		phase: 'update',
+		order: 0,
+		nodePath: [ 'positionNode', 'speed' ],
+		updateType: 'frame',
+	} ] );
 	assert.deepEqual( validateMaterialComputeDescriptor( descriptor, { artifact: renderArtifact } ), [] );
 
 } );
@@ -388,6 +502,8 @@ test( 'material compute capture rejects a sampled texture without a serializable
 		rawRenderState,
 		new Map( [ [ node, computeArtifact ] ] ),
 		new Map( [ [ node, rawComputeState ] ] ),
+		null,
+		materialComputeOwner( node ),
 	);
 
 	assert.equal( descriptor.mode, 'hybrid-required' );
@@ -416,6 +532,8 @@ test( 'material compute capture requires exact storage access evidence', () => {
 		rawRenderState,
 		new Map( [ [ node, computeArtifact ] ] ),
 		new Map( [ [ node, rawComputeState ] ] ),
+		null,
+		materialComputeOwner( node ),
 	);
 
 	assert.equal( descriptor.mode, 'hybrid-required' );
@@ -433,10 +551,10 @@ test( 'material compute capture preserves exact scheduling when kernel extractio
 	const node = computeNode();
 	const rawRenderState = renderState( node, attribute );
 	const renderArtifact = extractArtifact( 10, rawRenderState, { isMeshBasicNodeMaterial: true } );
-	const descriptor = extractMaterialComputeDescriptor( renderArtifact, rawRenderState, new Map(), new Map() );
+	const descriptor = extractMaterialComputeDescriptor( renderArtifact, rawRenderState, new Map(), new Map(), null, materialComputeOwner( node ) );
 
 	assert.equal( descriptor.mode, 'hybrid-required' );
-	assert.deepEqual( descriptor.kernels, [ { id: 'kernel:0', artifact: null } ] );
+	assert.deepEqual( descriptor.kernels, [ { id: 'kernel:0', nodePath: [ 'positionNode' ], updates: [], artifact: null } ] );
 	assert.deepEqual( descriptor.resources, [] );
 	assert.deepEqual( descriptor.reasons, [
 		'kernel:0:artifact-unavailable',
@@ -465,6 +583,8 @@ test( 'material compute contract rejects non-canonical reasons and fabricated bi
 		rawRenderState,
 		new Map( [ [ node, computeArtifact ] ] ),
 		new Map( [ [ node, rawComputeState ] ] ),
+		null,
+		materialComputeOwner( node ),
 	);
 	const invalid = {
 		...valid,
@@ -487,7 +607,7 @@ test( 'compileTSL auto-captures material compute from a supplied exact render st
 	const node = computeNode();
 	const rawComputeState = computeState( attribute );
 	const rawRenderState = renderState( node, attribute );
-	const material = { uuid: 'material-with-compute', isMeshBasicNodeMaterial: true };
+	const material = { uuid: 'material-with-compute', isMeshBasicNodeMaterial: true, positionNode: node };
 	const object = { material };
 	const computeData = new Map();
 	const manager = {
@@ -559,8 +679,8 @@ test( 'compileTSL fails shared frame kernels closed across material owners', asy
 	const attribute = storageAttribute();
 	const node = computeNode( { updateBeforeType: 'frame' } );
 	const rawComputeState = computeState( attribute );
-	const materialA = { uuid: 'shared-compute-a', isMeshBasicNodeMaterial: true };
-	const materialB = { uuid: 'shared-compute-b', isMeshBasicNodeMaterial: true };
+	const materialA = { uuid: 'shared-compute-a', isMeshBasicNodeMaterial: true, positionNode: node };
+	const materialB = { uuid: 'shared-compute-b', isMeshBasicNodeMaterial: true, positionNode: node };
 	const objectA = { material: materialA };
 	const objectB = { material: materialB };
 	const computeData = new Map();
@@ -644,7 +764,7 @@ test( 'compileTSL discovers warm-up material compute without scanning stale rend
 		[ staleNode, computeState( staleAttribute ) ],
 		[ currentNode, computeState( currentAttribute ) ],
 	] );
-	const material = { uuid: 'warmup-compute-material', isMeshBasicNodeMaterial: true };
+	const material = { uuid: 'warmup-compute-material', isMeshBasicNodeMaterial: true, positionNode: currentNode };
 	const object = { material };
 	const renderObject = {
 		cacheKey: 'warmup-render-compute',
@@ -710,7 +830,7 @@ test( 'compileTSL leaves uncached onInit material compute unbuilt and marks it h
 	const attribute = storageAttribute();
 	const node = computeNode( { onInitFunction() {} } );
 	const rawRenderState = renderState( node, attribute );
-	const material = { uuid: 'on-init-compute-material', isMeshBasicNodeMaterial: true };
+	const material = { uuid: 'on-init-compute-material', isMeshBasicNodeMaterial: true, positionNode: node };
 	const object = { material };
 	const computeData = new Map();
 	let getCalls = 0;
@@ -806,7 +926,7 @@ test( 'compileTSL discovers material compute only from the selected supplied fam
 		[ suppliedNode, computeState( suppliedAttribute ) ],
 		[ localNode, computeState( localAttribute ) ],
 	] );
-	const material = { uuid: 'overlap-compute-material', isMeshBasicNodeMaterial: true };
+	const material = { uuid: 'overlap-compute-material', isMeshBasicNodeMaterial: true, positionNode: suppliedNode };
 	const object = { material };
 	const localRenderObject = {
 		cacheKey: 'discarded-local-render-compute',
@@ -894,7 +1014,7 @@ test( 'compileTSL includes material compute from a selected synthetic family fal
 	const node = computeNode( { name: 'synthetic-fallback' } );
 	const fallbackRenderState = renderState( node, attribute );
 	const rawComputeState = computeState( attribute );
-	const material = { uuid: 'synthetic-fallback-compute-material', isMeshBasicNodeMaterial: true };
+	const material = { uuid: 'synthetic-fallback-compute-material', isMeshBasicNodeMaterial: true, positionNode: node };
 	const object = { material };
 	const renderObject = {
 		cacheKey: 'synthetic-fallback-render-compute',
