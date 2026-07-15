@@ -1043,7 +1043,7 @@ function resolveSkinnedBindMatrixSlots( artifact ) {
 	let cached = skinnedBindMatrixSlots.get( artifact );
 	if ( cached !== undefined ) return cached;
 	const shader = artifact && artifact.vertexShader || '';
-	const bindMatch = /\b\w+\s*=\s*\(\s*object\.(\w+)\s*\*\s*vec4<f32>\(\s*positionLocal\b/.exec( shader );
+	const bindMatch = /\b\w+\s*=\s*\(\s*object\.(\w+)\s*\*\s*vec4<f32>\(\s*(?:varyings\.)?positionLocal\b/.exec( shader );
 	const inverseMatch = /\bpositionLocal\s*=\s*\(\s*object\.(\w+)\s*\*[^;]*\bskinWeight\b/.exec( shader );
 	cached = bindMatch && inverseMatch && bindMatch[ 1 ] !== inverseMatch[ 1 ]
 		? { bindMatrix: bindMatch[ 1 ], bindMatrixInverse: inverseMatch[ 1 ] }

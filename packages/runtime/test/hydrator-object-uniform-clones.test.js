@@ -214,8 +214,8 @@ test( 'skinned object UBOs use each live bind matrix instead of identity snapsho
 	const identity = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ];
 	const artifact = {
 		vertexShader: `
-			nodeVar0 = ( object.bindSlot * vec4<f32>( positionLocal, 1.0 ) );
-			positionLocal = ( object.inverseSlot * ( skinWeight.x * NodeBuffer.value[ skinIndex.x ] * nodeVar0 ) ).xyz;
+			nodeVar0 = ( object.bindSlot * vec4<f32>( varyings.positionLocal, 1.0 ) );
+			varyings.positionLocal = ( object.inverseSlot * ( skinWeight.x * NodeBuffer.value[ skinIndex.x ] * nodeVar0 ) ).xyz;
 		`,
 		fragmentShader: '',
 		bindings: [ {
