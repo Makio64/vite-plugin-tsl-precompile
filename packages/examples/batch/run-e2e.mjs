@@ -177,6 +177,7 @@ const SKIP_PREFIXES = [
 	'webxr_', 'vr_', 'ar_', 'webgpu_xr_', 'webgpu_webxr_',
 	'webgpu_compile_async',
 	'webgpu_tsl_precompile',
+	'webgpu_tsl_transpiler',
 ];
 function shouldSkip( name ) { return SKIP_PREFIXES.some( ( p ) => name.includes( p ) ); }
 
