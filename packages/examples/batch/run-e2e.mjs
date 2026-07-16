@@ -989,12 +989,14 @@ import { installPrecompileMarker, setDevRenderer } from '/__tslp_runtime/precomp
 import { precompileAuxiliary, precompileRendererOutput } from '/__tslp_runtime/aux-marker.js';
 import { createRenderObjectContextSelector as __createRenderObjectContextSelector, projectRenderObjectContextSelector as __projectRenderObjectContextSelector } from '/__tslp_contract/render-selector.js';
 import { createMaterialContextKey as __createMaterialContextKey, getMaterialContextMap as __getMaterialContextMap } from '/__tslp_batch/material-context-cache.mjs';
+import { createCubeCapturePrearmRegistry as __createCubeCapturePrearmRegistry, isVerifiedCubeRenderTarget as __isVerifiedCubeRenderTarget } from '/__tslp_batch/cube-capture-prearm.mjs';
 import { synchronizeTemporalJitterNode as __sharedSynchronizeTemporalJitterNode } from '/__tslp_batch/temporal-jitter.mjs';
 
 const __state = window.__TSLP_E2E || { example: 'unknown' };
 const __counts = Object.create( null );
 const __pending = [];
 const __seenMaterialContexts = new WeakMap();
+const __cubeCapturePrearmRegistry = __createCubeCapturePrearmRegistry();
 const __postProcessingPipelines = new Set();
 const __auxPromises = new Set();
 const __auxScenes = new Map();
@@ -1195,7 +1197,42 @@ function __captureRenderTarget( renderer ) {
 	}
 }
 
-function __mark( material, className, sourceObject = null, camera = null, renderer = null ) {
+function __queueCubeCapturePrearm( pendingItem, prearmQueue, context ) {
+	if ( ! Array.isArray( prearmQueue ) || ! pendingItem || ! context ) return;
+	if ( ! __cubeCapturePrearmRegistry.claim( {
+		material: pendingItem.material,
+		renderer: context.renderer,
+		renderTarget: context.renderTarget,
+		captureMaintenance: __isCaptureMaintenanceRender(),
+	} ) ) return;
+	prearmQueue.push( { pendingItem, ...context } );
+}
+
+function __prearmCubeCapture( task ) {
+	const { pendingItem, renderer, renderTarget, scene, camera, object, mrt } = task || {};
+	const material = pendingItem && pendingItem.material;
+	if ( ! pendingItem || pendingItem.done || typeof material.precompile !== 'function' ) return;
+	try {
+
+		material.precompile( pendingItem.name + ':cube-prearm', {
+			__tslpAutoMark: true,
+			__tslpObserveNextRender: true,
+			renderer,
+			scene,
+			camera,
+			object,
+			renderTarget,
+			mrt,
+		} );
+
+	} catch ( err ) {
+
+		console.warn( '[tslp-e2e] dynamic cube pre-arm failed; deferring to capture flush:', err && err.message || err );
+
+	}
+}
+
+function __mark( material, className, sourceObject = null, camera = null, renderer = null, renderTargetOverride = undefined, prearmQueue = null ) {
 	if ( ! material ) return;
 	if ( sourceObject && ! material.__tslpPrecompileObject ) Object.defineProperty( material, '__tslpPrecompileObject', { value: sourceObject, configurable: true } );
 	const hasCameraHint = Object.prototype.hasOwnProperty.call( material, '__tslpPrecompileCamera' );
@@ -1214,9 +1251,11 @@ function __mark( material, className, sourceObject = null, camera = null, render
 		const shouldSetScene = ! currentScene || ( __countSceneLights( currentScene ) === 0 && __countSceneLights( sourceScene ) > 0 );
 		if ( shouldSetScene ) Object.defineProperty( material, '__tslpPrecompileScene', { value: sourceScene, configurable: true } );
 	}
-	let renderTarget = null;
+	let renderTarget = renderTargetOverride;
 	let mrt = null;
-	try { renderTarget = __captureRenderTarget( renderer ); } catch ( _ ) {}
+	if ( renderTarget === undefined ) {
+		try { renderTarget = __captureRenderTarget( renderer ); } catch ( _ ) { renderTarget = null; }
+	}
 	try { mrt = renderer && typeof renderer.getMRT === 'function' ? renderer.getMRT() : null; } catch ( _ ) {}
 	const captureScene = sourceScene || material.__tslpPrecompileScene || null;
 	const captureCamera = nextCameraSeesObject ? camera : material.__tslpPrecompileCamera || camera || null;
@@ -1232,13 +1271,25 @@ function __mark( material, className, sourceObject = null, camera = null, render
 		mrt: null,
 	}, __projectRenderObjectContextSelector );
 	const seenContexts = __getMaterialContextMap( __seenMaterialContexts, material, true );
-	if ( seenContexts.has( contextKey ) ) return;
+	const existingItem = seenContexts.get( contextKey );
+	if ( existingItem ) {
+
+		__queueCubeCapturePrearm( existingItem, prearmQueue, {
+			renderer,
+			renderTarget,
+			scene: captureScene,
+			camera: captureCamera,
+			object: captureObject,
+			mrt,
+		} );
+		return;
+
+	}
 	const n = ( __counts[ className ] || 0 ) + 1;
 	__counts[ className ] = n;
 	const name = __state.example + ':' + className + ':' + n;
 	material.name = material.name || name;
-	seenContexts.set( contextKey, name );
-	__pending.push( {
+	const pendingItem = {
 		material,
 		name,
 		scene: captureScene,
@@ -1248,6 +1299,16 @@ function __mark( material, className, sourceObject = null, camera = null, render
 		renderTarget,
 		mrt,
 		done: false,
+	};
+	seenContexts.set( contextKey, pendingItem );
+	__pending.push( pendingItem );
+	__queueCubeCapturePrearm( pendingItem, prearmQueue, {
+		renderer,
+		renderTarget,
+		scene: captureScene,
+		camera: captureCamera,
+		object: captureObject,
+		mrt,
 	} );
 	// Do NOT __flush() here. precompile() must run AFTER the example
 	// has finished setting up the scene (background, environment,
@@ -1333,7 +1394,7 @@ function __isRetroPassGeneratedMaterial( renderer, scene, material, className ) 
 		&& /^(?:MeshBasic|MeshPhong)NodeMaterial$/.test( className || __classNameForMaterial( material ) ) );
 }
 
-function __markSceneMaterials( scene, camera = null, renderer = null ) {
+function __markSceneMaterials( scene, camera = null, renderer = null, renderTargetOverride = undefined, prearmQueue = null ) {
 	if ( ! scene || typeof scene.traverse !== 'function' ) return;
 	if ( scene.isScene !== true ) return;
 	if ( ! scene.userData || scene.userData.__tslpUserScene !== true ) return;
@@ -1349,7 +1410,7 @@ function __markSceneMaterials( scene, camera = null, renderer = null ) {
 			scene.traverse( ( object ) => {
 				if ( ! representative && object && object.geometry && object.visible !== false ) representative = object;
 			} );
-			__mark( scene.overrideMaterial, __classNameForMaterial( scene.overrideMaterial ), representative, camera, renderer );
+			__mark( scene.overrideMaterial, __classNameForMaterial( scene.overrideMaterial ), representative, camera, renderer, renderTargetOverride, prearmQueue );
 		}
 		// Renderer.overrideMaterial replaces every object's own material for
 		// this pass. Leave the originals unmarked until a pass actually uses
@@ -1362,11 +1423,67 @@ function __markSceneMaterials( scene, camera = null, renderer = null ) {
 		for ( const m of materials ) {
 
 			if ( m && m.visible === false ) continue;
-			__mark( m, __classNameForMaterial( m ), object, camera, renderer );
+			__mark( m, __classNameForMaterial( m ), object, camera, renderer, renderTargetOverride, prearmQueue );
 
 		}
 	} );
 }
+
+function __markHiddenCubeSceneMaterialsForMainOutput( scene, camera, renderer ) {
+	if ( ! scene || typeof scene.traverse !== 'function' || scene.isScene !== true ) return;
+	if ( ! scene.userData || scene.userData.__tslpUserScene !== true || scene.userData.__tslpSyntheticCaptureScene ) return;
+	scene.traverse( ( object ) => {
+		const material = object && object.material;
+		const materials = Array.isArray( material ) ? material : material ? [ material ] : [];
+		for ( const m of materials ) {
+
+			if ( m && m.visible === false ) __mark( m, __classNameForMaterial( m ), object, camera, renderer );
+
+		}
+	} );
+}
+
+( function patchDynamicCubeCaptureBoundary() {
+	const prototype = Original.CubeCamera && Original.CubeCamera.prototype;
+	if ( ! prototype || prototype.__tslpCapturePrearmPatched || typeof prototype.update !== 'function' ) return;
+	prototype.__tslpCapturePrearmPatched = true;
+	const originalUpdate = prototype.update;
+	prototype.update = function ( renderer, scene, ...args ) {
+
+		const renderTarget = this.renderTarget;
+		const prearmQueue = [];
+		if ( __pmremRunning === 0 && ! __isCaptureMaintenanceRender() && __isVerifiedCubeRenderTarget( renderTarget ) ) {
+
+			const camera = Array.isArray( this.children ) ? this.children[ 0 ] || null : null;
+			// The hidden reflective material is main-output-only in the dynamic
+			// cubemap pattern. Queue its normal flush capture before pre-arming the
+			// visible cube family turns later renders into capture maintenance.
+			__markHiddenCubeSceneMaterialsForMainOutput( scene, camera, renderer );
+			__markSceneMaterials( scene, camera, renderer, renderTarget, prearmQueue );
+			for ( const task of prearmQueue ) __prearmCubeCapture( task );
+
+		}
+		const result = originalUpdate.call( this, renderer, scene, ...args );
+		// Keep the ordinary pending capture independent from the one-shot cube
+		// pre-arm. CubeCamera has restored the renderer target here, so the later
+		// flush deterministically captures the normal output sibling even if the
+		// real-render harvest closes before the application's main draw.
+		if ( prearmQueue.length > 0 ) {
+			let outputTarget = null;
+			let outputMRT = null;
+			try { outputTarget = __captureRenderTarget( renderer ); } catch ( _ ) {}
+			try { outputMRT = renderer && typeof renderer.getMRT === 'function' ? renderer.getMRT() : null; } catch ( _ ) {}
+			for ( const task of prearmQueue ) {
+				task.pendingItem.renderer = renderer;
+				task.pendingItem.scene = scene;
+				task.pendingItem.renderTarget = outputTarget;
+				task.pendingItem.mrt = outputMRT;
+			}
+		}
+		return result;
+
+	};
+} )();
 
 // QuadMesh.render(renderer) bottoms out at renderer.render(quadMesh, _camera),
 // so the "scene" argument is a Mesh — not a Scene — and __markSceneMaterials
@@ -1861,7 +1978,22 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		return Promise.resolve( p ).then( ( v ) => { _settle(); return v; }, ( e ) => { _settle(); throw e; } );
 	}
 	render( scene, camera ) {
-		if ( __pmremRunning > 0 || __isCaptureMaintenanceRender() ) return super.render( scene, camera );
+		if ( __pmremRunning > 0 || __isCaptureMaintenanceRender() ) {
+
+			// A dynamic-cube pre-arm makes the live harvest burst capture
+			// maintenance. Keep it invisible to material marking, but retain the
+			// final scene/camera for the later renderer-output/background aux pass.
+			if ( __pmremRunning === 0 ) {
+
+				__recordRenderableObjectCount( scene );
+				__lastScene = scene;
+				__lastCamera = camera;
+				__rememberAuxScene( scene, camera, this );
+
+			}
+			return super.render( scene, camera );
+
+		}
 		__recordRenderableObjectCount( scene );
 		__lastScene = scene;
 		__lastCamera = camera;
@@ -14081,6 +14213,7 @@ const server = createServer( async ( req, res ) => {
 		if ( url.pathname === '/__tslp__/tsl-stub.js' ) return sendJs( res, tslStubModule() );
 		if ( url.pathname === '/__tslp__/tsl-capture.js' ) return sendJs( res, tslCaptureModule() );
 		if ( url.pathname === '/__tslp__/aux-virtual.js' ) return sendJs( res, auxVirtualModule() );
+		if ( url.pathname === '/__tslp_batch/cube-capture-prearm.mjs' ) return sendFile( res, join( SELF, 'cube-capture-prearm.mjs' ) );
 		if ( url.pathname === '/__tslp_batch/material-context-cache.mjs' ) return sendFile( res, join( SELF, 'material-context-cache.mjs' ) );
 		if ( url.pathname === '/__tslp_batch/temporal-jitter.mjs' ) return sendFile( res, join( SELF, 'temporal-jitter.mjs' ) );
 		if ( url.pathname === '/examples/jsm/inspector/Inspector.js' ) return sendJs( res, inspectorStubModule() );

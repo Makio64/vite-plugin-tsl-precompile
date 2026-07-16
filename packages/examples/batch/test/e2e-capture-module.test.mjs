@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createCubeCapturePrearmRegistry, isVerifiedCubeRenderTarget } from '../cube-capture-prearm.mjs';
 
 const source = readFileSync( new URL( '../run-e2e.mjs', import.meta.url ), 'utf8' );
 
@@ -26,7 +27,8 @@ test( 'capture module retains the renderer that discovered each material context
 	const marker = source.slice( markStart, markEnd );
 	assert.match( marker, /renderer = null/ );
 	assert.match( marker, /__createMaterialContextKey[\s\S]*renderer,[\s\S]*renderTarget: null,[\s\S]*mrt: null/ );
-	assert.match( marker, /__pending\.push\( \{[\s\S]*renderer,[\s\S]*renderTarget/ );
+	assert.match( marker, /const pendingItem = \{[\s\S]*renderer,[\s\S]*renderTarget/ );
+	assert.match( marker, /__pending\.push\( pendingItem \)/ );
 
 	const flushStart = source.indexOf( 'async function __flush(' );
 	const flushEnd = source.indexOf( 'function __trackAuxCapture(', flushStart );
@@ -59,6 +61,56 @@ test( 'capture maintenance renders cannot enqueue new harness material contexts'
 	assert.match( source, /window\.__tslpPrecompilePending \| 0/ );
 	const guards = source.match( /__pmremRunning > 0 \|\| __isCaptureMaintenanceRender\(\)/g ) || [];
 	assert.equal( guards.length, 4, 'renderObject, compile, compileAsync, and render all bypass capture marking' );
+	const captureModuleStart = source.indexOf( 'function fullWebgpuAutoModule()' );
+	const captureRendererStart = source.indexOf( 'export class WebGPURenderer extends Original.WebGPURenderer', captureModuleStart );
+	const renderGuardStart = source.indexOf( 'render( scene, camera ) {', captureRendererStart );
+	const renderGuardEnd = source.indexOf( '\n\t}\n}', renderGuardStart );
+	const renderGuard = source.slice( renderGuardStart, renderGuardEnd );
+	assert.match( renderGuard, /if \( __pmremRunning === 0 \)[\s\S]*__rememberAuxScene\( scene, camera, this \)/ );
+	assert.doesNotMatch( renderGuard.slice( 0, renderGuard.indexOf( 'return super.render' ) ), /__markSceneMaterials|__markStandaloneRenderTargetMaterial/ );
+
+} );
+
+test( 'dynamic cube capture pre-arm is verified, one-shot, and maintenance-safe', () => {
+
+	const ordinaryTexture = { isCubeTexture: true };
+	const ordinaryTarget = { isRenderTarget: true, texture: ordinaryTexture };
+	const cubeTarget = { isCubeRenderTarget: true, texture: ordinaryTexture };
+	assert.equal( isVerifiedCubeRenderTarget( ordinaryTarget ), false, 'a cube texture flag is not target-owned evidence' );
+	assert.equal( isVerifiedCubeRenderTarget( cubeTarget ), true );
+
+	const registry = createCubeCapturePrearmRegistry();
+	const material = {};
+	const firstRenderer = {};
+	const secondRenderer = {};
+	assert.equal( registry.claim( { material, renderer: firstRenderer, renderTarget: ordinaryTarget } ), false, 'ordinary 2d targets are ignored' );
+	assert.equal( registry.claim( { material, renderer: firstRenderer, renderTarget: cubeTarget, captureMaintenance: true } ), false, 'maintenance observations are ignored without consuming ownership' );
+	assert.equal( registry.claim( { material, renderer: firstRenderer, renderTarget: cubeTarget } ), true );
+	assert.equal( registry.claim( { material, renderer: firstRenderer, renderTarget: cubeTarget } ), false, 'one material/renderer pair pre-arms once' );
+	assert.equal( registry.claim( { material, renderer: secondRenderer, renderTarget: cubeTarget } ), true, 'renderer ownership is independent' );
+
+	const lifecycleStart = source.indexOf( 'function __queueCubeCapturePrearm(' );
+	const lifecycleEnd = source.indexOf( 'function __findParentScene(', lifecycleStart );
+	assert.ok( lifecycleStart >= 0 && lifecycleEnd > lifecycleStart, 'expected the generated cube pre-arm lifecycle' );
+	const lifecycle = source.slice( lifecycleStart, lifecycleEnd );
+	assert.match( lifecycle, /__cubeCapturePrearmRegistry\.claim\( \{[\s\S]*captureMaintenance: __isCaptureMaintenanceRender\(\)/ );
+	assert.match( lifecycle, /material\.precompile\( pendingItem\.name \+ ':cube-prearm',[\s\S]*__tslpObserveNextRender: true/ );
+	assert.doesNotMatch( lifecycle, /pendingItem\.done = true/, 'cube pre-arm must not consume the ordinary output capture' );
+	assert.doesNotMatch( lifecycle, /queueMicrotask/, 'the verified CubeCamera boundary arms before face zero' );
+
+	const boundaryStart = source.indexOf( 'function patchDynamicCubeCaptureBoundary' );
+	const boundaryEnd = source.indexOf( '// QuadMesh.render(renderer)', boundaryStart );
+	assert.ok( boundaryStart >= 0 && boundaryEnd > boundaryStart, 'expected the capture-only CubeCamera boundary' );
+	const boundary = source.slice( boundaryStart, boundaryEnd );
+	assert.match( boundary, /__pmremRunning === 0 && ! __isCaptureMaintenanceRender\(\) && __isVerifiedCubeRenderTarget\( renderTarget \)/ );
+	assert.match( boundary, /__markHiddenCubeSceneMaterialsForMainOutput\( scene, camera, renderer \)/ );
+	assert.match( boundary, /__markSceneMaterials\( scene, camera, renderer, renderTarget, prearmQueue \)/ );
+	assert.match( boundary, /for \( const task of prearmQueue \) __prearmCubeCapture\( task \)/ );
+	assert.match( boundary, /const result = originalUpdate\.call[\s\S]*task\.pendingItem\.renderTarget = outputTarget/ );
+	assert.ok(
+		boundary.indexOf( '__markSceneMaterials(' ) < boundary.indexOf( 'for ( const task of prearmQueue )' ),
+		'all visible materials are claimed before the current synchronous burst is armed',
+	);
 
 } );
 
@@ -75,7 +127,7 @@ test( 'forced pipeline maintenance renders receive distinct non-advancing identi
 
 test( 'capture module never queues Three renderer-owned shadow overrides as user materials', () => {
 
-	const start = source.indexOf( 'function __markSceneMaterials( scene, camera = null, renderer = null )' );
+	const start = source.indexOf( 'function __markSceneMaterials( scene,' );
 	const end = source.indexOf( '// QuadMesh.render(renderer)', start );
 	assert.ok( start >= 0 && end > start, 'expected the scene material marker' );
 	const marker = source.slice( start, end );
