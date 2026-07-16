@@ -436,6 +436,21 @@ test( 'pass-target variant views retain generated selector adapters', () => {
 
 } );
 
+test( 'RetroPass scene replacements restore their captured material topology', () => {
+
+	const start = source.indexOf( 'function __makeRetroPassSceneReplacement( material, object ) {' );
+	const end = source.indexOf( 'function __withRetroPassSceneReplacements(', start );
+	assert.ok( start >= 0 && end > start, 'expected the RetroPass scene replacement helper' );
+	const helper = source.slice( start, end );
+	assert.match( helper, /replacement\.flatShading = false;/ );
+	assert.match( helper, /replacement\.lights = true;/ );
+	assert.ok(
+		helper.lastIndexOf( '__copyMaterialProps(' ) < helper.indexOf( 'replacement.flatShading = false;' ),
+		'RetroPass topology must be restored after ordinary source properties are copied',
+	);
+
+} );
+
 test( 'nested offscreen scene renders prepare PMREM before bypassing top-level hooks', () => {
 
 	const start = source.indexOf( 'if ( __renderDepth > 0 ) {' );

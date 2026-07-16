@@ -6777,6 +6777,10 @@ function __makeRetroPassSceneReplacement( material, object ) {
 	try { Object.defineProperty( replacement, '__tslpSourceMaterial', { value: sourceMaterial, configurable: true, writable: true } ); } catch ( _ ) {}
 	__copyMaterialProps( material, replacement );
 	__copyMaterialProps( sourceMaterial, replacement );
+	// RetroPassNode owns these topology flags. Copying the ordinary scene
+	// material above must not select its flat, unlit sibling artifact.
+	replacement.flatShading = false;
+	replacement.lights = true;
 	__wireMaterialPropertyTexturesOnly( sourceMaterial, replacement );
 	__wireMaterialPropertyTexturesOnly( material, replacement );
 	if ( __wireMaterialPropertyTexturesFromArtifact( replacement ) ) __markMaterialTextureRewire( replacement );

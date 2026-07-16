@@ -298,6 +298,12 @@ test( 'artifactLooksLikeRetroPassMaterial uses browser-safe string checks', () =
 	assert.equal( artifactLooksLikeRetroPassMaterial( {
 		vertexShader: 'fn main() -> vec4<f32> { return vec4<f32>( 1.0 ); }',
 	} ), false );
+	assert.equal( artifactLooksLikeRetroPassMaterial( {
+		vertexShader: 'fn main() -> vec4<f32> { return vec4<f32>( 1.0 ); }',
+		variants: {
+			retro: { vertexShader: 'let pixel = round( position.xy * screenSize );' },
+		},
+	} ), true, 'variant-only RetroPass shaders are detected' );
 	assert.equal( artifactLooksLikeRetroPassMaterial( null ), false );
 
 } );

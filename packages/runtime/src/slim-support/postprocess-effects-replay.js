@@ -59,8 +59,13 @@ const PREPARED_FLAG = '__tslpEffectReplayReady';
  */
 export function artifactLooksLikeRetroPassMaterial( artifact ) {
 
-	const vertexShader = artifact && typeof artifact.vertexShader === 'string' ? artifact.vertexShader : '';
-	return vertexShader.includes( 'round(' ) || vertexShader.includes( 'screenSize' );
+	const candidates = [ artifact, ...Object.values( artifact && artifact.variants || {} ) ];
+	return candidates.some( ( candidate ) => {
+
+		const vertexShader = candidate && typeof candidate.vertexShader === 'string' ? candidate.vertexShader : '';
+		return vertexShader.includes( 'round(' ) || vertexShader.includes( 'screenSize' );
+
+	} );
 
 }
 
