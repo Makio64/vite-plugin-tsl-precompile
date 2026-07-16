@@ -259,6 +259,18 @@ export function shareGPUTextureEntry( targetRenderer, sourceRenderer, texture, o
 			} catch ( _ ) {}
 
 		}
+		const sourceTextureData = sourceRenderer._textures && typeof sourceRenderer._textures.get === 'function'
+			? sourceRenderer._textures.get( texture )
+			: null;
+		// A renderer-owned default texture is only a temporary 1x1 stand-in.
+		// Promoting it into another renderer as an initialized real resource
+		// prevents the later live upload from allocating the texture's true size.
+		if ( sourceTextureData && sourceTextureData.isDefaultTexture === true ) {
+
+			bump( diagnostics, 'sourceDefaultTexture' );
+			return false;
+
+		}
 		if ( ! sourceData ) {
 
 			bump( diagnostics, 'noSourceData' );

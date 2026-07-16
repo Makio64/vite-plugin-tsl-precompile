@@ -144,6 +144,28 @@ test( 'shareGPUTextureEntry reports missing source texture into diagnostics.miss
 
 } );
 
+test( 'shareGPUTextureEntry refuses to promote a source default-texture placeholder', () => {
+
+	const source = fakeRenderer();
+	const target = fakeRenderer();
+	const tex = fakeTexture( 'late-data-texture' );
+	const placeholder = { __gpu: '1x1-default' };
+	source.backend.get( tex ).texture = placeholder;
+	source._textures.get( tex ).isDefaultTexture = true;
+	const diagnostics = {};
+
+	const ok = shareGPUTextureEntry( target, source, tex, { diagnostics } );
+
+	assert.equal( ok, false );
+	assert.equal( diagnostics.calls, 1 );
+	assert.equal( diagnostics.sourceDefaultTexture, 1 );
+	assert.equal( diagnostics.success, undefined );
+	assert.equal( target.backend.get( tex ).texture, undefined );
+	assert.equal( target._textures.get( tex ).initialized, undefined );
+	assert.equal( tex.version, 0, 'failed sharing must not advance the live texture version' );
+
+} );
+
 test( 'shareGPUTextureEntry initializes render-target-owned textures before sharing', () => {
 
 	const source = fakeRenderer();
