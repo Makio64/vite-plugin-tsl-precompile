@@ -42,10 +42,14 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 		? 'callsite'
 		: null;
 
-	// Every variant owns its own uniformPlan, light identity table, and derived
-	// dynamic-binding descriptors. Inheriting any of them can pair the selected
-	// shader with light evidence or offsets from a different topology.
-	const artifactForEmission = attachDynamicBindingsDeep( normalizeArtifactLightIdentitiesDeep( artifact ) );
+	// `dynamicBindings` is a validated, derived view of `uniformPlan`. Persisted
+	// captures keep it as a convergence guard, but serializing the same source
+	// records twice makes generated modules larger and slower to parse. Drop the
+	// redundant literal before light normalization, then reconstruct the public
+	// root/variant views from references into the emitted plan. This preserves
+	// the virtual-module API without duplicating source snapshots in its payload.
+	const artifactForEmission = normalizeArtifactLightIdentitiesDeep( omitDynamicBindingsDeep( artifact ) );
+	const dynamicBindingRestorations = emitDynamicBindingRestorations( artifactForEmission );
 
 	const {
 		declarations: wgslDeclarations,
@@ -84,6 +88,7 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 		`export const __sourceValidationMode = ${ JSON.stringify( sourceValidationMode ) };`,
 		...wgslDeclarations,
 		`export const artifact = ${ artifactLiteral };`,
+		...dynamicBindingRestorations,
 		`export const update = __generatedUpdate;`,
 		`export const updateGroup = __generatedUpdateGroup;`,
 		`export const __unsupportedKinds = ${ JSON.stringify( unsupportedKinds ) };`,
@@ -97,17 +102,75 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 
 }
 
-function attachDynamicBindingsDeep( artifact ) {
+function emitDynamicBindingRestorations( artifact ) {
+
+	const lines = [];
+	const visit = ( member, memberExpression ) => {
+
+		if ( ! member || typeof member !== 'object' || Array.isArray( member ) ) return;
+		lines.push( `${ memberExpression }.dynamicBindings = ${ emitDynamicBindingArrayExpression( member, memberExpression ) };` );
+		if ( ! member.variants || typeof member.variants !== 'object' || Array.isArray( member.variants ) ) return;
+		for ( const [ key, variant ] of Object.entries( member.variants ) ) {
+
+			visit( variant, `${ memberExpression }.variants[${ JSON.stringify( key ) }]` );
+
+		}
+
+	};
+	visit( artifact, 'artifact' );
+	return lines;
+
+}
+
+function emitDynamicBindingArrayExpression( artifact, artifactExpression ) {
+
+	const sourceExpressions = new Map();
+	for ( let groupIndex = 0; groupIndex < ( artifact.uniformPlan || [] ).length; groupIndex ++ ) {
+
+		const group = artifact.uniformPlan[ groupIndex ];
+		for ( const collection of [ 'slots', 'textures', 'storageBuffers' ] ) {
+
+			const entries = group && Array.isArray( group[ collection ] ) ? group[ collection ] : [];
+			for ( let entryIndex = 0; entryIndex < entries.length; entryIndex ++ ) {
+
+				const source = entries[ entryIndex ] && entries[ entryIndex ].source;
+				if ( ! source || typeof source !== 'object' || sourceExpressions.has( source ) ) continue;
+				sourceExpressions.set(
+					source,
+					`${ artifactExpression }.uniformPlan[${ groupIndex }].${ collection }[${ entryIndex }].source`,
+				);
+
+			}
+
+		}
+
+	}
+
+	const entries = collectArtifactDynamicBindings( artifact ).map( ( entry ) => {
+
+		const sourceExpression = sourceExpressions.get( entry.source );
+		if ( ! sourceExpression ) throw new Error( '[tsl-precompile] could not link a derived dynamic binding to its emitted uniformPlan source' );
+		const metadata = { ...entry };
+		delete metadata.source;
+		const literal = JSON.stringify( metadata );
+		return `${ literal.slice( 0, - 1 ) },"source":${ sourceExpression }}`;
+
+	} );
+	return `[${ entries.join( ',' ) }]`;
+
+}
+
+function omitDynamicBindingsDeep( artifact ) {
 
 	if ( ! artifact || typeof artifact !== 'object' ) return artifact;
-	let changed = false;
+	let changed = Object.prototype.hasOwnProperty.call( artifact, 'dynamicBindings' );
 	let variants = artifact.variants;
 	if ( variants && typeof variants === 'object' ) {
 
 		const nextVariants = {};
 		for ( const [ key, variant ] of Object.entries( variants ) ) {
 
-			const next = attachDynamicBindingsDeep( variant );
+			const next = omitDynamicBindingsDeep( variant );
 			nextVariants[ key ] = next;
 			if ( next !== variant ) changed = true;
 
@@ -115,12 +178,10 @@ function attachDynamicBindingsDeep( artifact ) {
 		if ( changed ) variants = nextVariants;
 
 	}
-	// Always derive after light normalization so `source.lightIdentity` is part
-	// of the frozen descriptor and strict implied-descriptor validation.
-	const dynamicBindings = collectArtifactDynamicBindings( artifact );
-	if ( dynamicBindings !== artifact.dynamicBindings ) changed = true;
 	if ( ! changed ) return artifact;
-	return { ...artifact, dynamicBindings, ...( variants !== artifact.variants ? { variants } : {} ) };
+	const next = { ...artifact, ...( variants !== artifact.variants ? { variants } : {} ) };
+	delete next.dynamicBindings;
+	return next;
 
 }
 

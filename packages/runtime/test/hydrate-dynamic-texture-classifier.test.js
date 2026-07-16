@@ -43,6 +43,54 @@ test( 'indexDynamicTextureBindings only includes texture/sampler entries', () =>
 
 } );
 
+test( 'indexDynamicTextureBindings derives omitted root and variant payloads directly from uniformPlan textures', () => {
+
+	const root = {
+		uniformPlan: [ {
+			name: 'root',
+			textures: [ { name: 'mapTexture', textureType: '2d', source: { kind: 'material.map', property: 'map' } } ],
+			slots: [ { name: 'time', source: { kind: 'frame.time' } } ],
+		} ],
+	};
+	const variant = {
+		uniformPlan: [ {
+			name: 'variant',
+			textures: [ { name: 'environmentTexture', textureType: 'cube', source: { kind: 'artifact.texture', textureUuid: 'env' } } ],
+			slots: [ { name: 'opacity', source: { kind: 'material.opacity', property: 'opacity' } } ],
+		} ],
+	};
+
+	const rootIndex = indexDynamicTextureBindings( root );
+	const variantIndex = indexDynamicTextureBindings( variant );
+	assert.equal( root.dynamicBindings, undefined );
+	assert.equal( variant.dynamicBindings, undefined );
+	assert.equal( rootIndex.size, 1, 'uniform slots are not expanded while indexing textures' );
+	assert.equal( variantIndex.size, 1 );
+	assert.equal( rootIndex.get( 'root::mapTexture' ).kind, 'material.map' );
+	assert.equal( rootIndex.get( 'root::mapTexture' ).textureType, '2d' );
+	assert.equal( variantIndex.get( 'variant::environmentTexture' ).kind, 'artifact.texture' );
+	assert.equal( variantIndex.get( 'variant::environmentTexture' ).textureType, 'cube' );
+
+	const rootContext = freshContext( { artifact: root } );
+	const variantContext = freshContext( { artifact: variant } );
+	classifyDynamicTextureBinding(
+		rootIndex.get( 'root::mapTexture' ),
+		{ isSampledTexture: true },
+		{ kind: 'sampled-texture', name: 'mapTexture' },
+		rootContext,
+	);
+	classifyDynamicTextureBinding(
+		variantIndex.get( 'variant::environmentTexture' ),
+		{ isSampledTexture: true },
+		{ kind: 'sampled-texture', name: 'environmentTexture' },
+		variantContext,
+	);
+	assert.equal( rootContext.materialTextureBindings.length, 1 );
+	assert.equal( variantContext.artifactTextureBindings.length, 1 );
+	assert.equal( variantContext.artifactTextureBindings[ 0 ].textureType, 'cube' );
+
+} );
+
 test( 'classifier dispatches depth.texture into shadowDepthBindings or materialDepthBindings by fromMaterialGraph', () => {
 
 	const ctx = freshContext();

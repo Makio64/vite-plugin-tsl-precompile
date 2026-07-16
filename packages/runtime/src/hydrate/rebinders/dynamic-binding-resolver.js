@@ -11,10 +11,12 @@
  * `lateUpdateBefore` — that flank the live-node sidecars in the final
  * `updateBefore` schedule.
  *
- * Pairs with the `dynamicBindings` descriptor section emitted into artifacts
- * by `@tsl-precompile/contract/dynamic-bindings`: the artifact now declares
- * which slots need per-frame resolution and from where; this module is the
- * runtime side that builds the rebinder pipeline matching those descriptors.
+ * Pairs with the dynamic descriptors validated by
+ * `@tsl-precompile/contract/dynamic-bindings`. Generated module literals omit
+ * the redundant descriptor section and reconstruct their public view from
+ * `uniformPlan`; compact direct consumers can derive the texture-shaped subset
+ * from the same plan. This module builds the matching rebinder pipeline after
+ * classification.
  *
  * @module Hydrate.Rebinders.DynamicBindingResolver
  */

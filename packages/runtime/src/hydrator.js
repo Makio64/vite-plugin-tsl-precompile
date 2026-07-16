@@ -477,10 +477,11 @@ function hydrateRuntimeBindings( artifact, material, graphMaterial, textureResol
 	// until those resources can be resolved safely.
 	const groups = [];
 
-	// Pre-classified dynamic-texture entries from `artifact.dynamicBindings`,
-	// indexed by `${groupName}::${bindingName}`. Replaces the old per-binding
-	// `findPlanTextureSource(...)` walk with O(1) lookup. The classifier
-	// dispatches each entry to the right typed bag below.
+	// Dynamic-texture entries indexed by `${groupName}::${bindingName}`. Generated
+	// modules reconstruct their public `dynamicBindings` view from uniform-plan
+	// references without serializing it twice; compact direct consumers can let
+	// the classifier derive the texture subset from `uniformPlan[].textures`.
+	// The classifier dispatches each entry to the right typed bag below.
 	const dynamicTextureIndex = indexDynamicTextureBindings( artifact );
 	const classifierContext = {
 		artifact,

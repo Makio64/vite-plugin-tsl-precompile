@@ -100,7 +100,7 @@ test( 'source slim emits a call-site freshness policy only for owned captures', 
 
 } );
 
-test( 'emitArtifactModule derives bindings and validates updater kinds for every variant', () => {
+test( 'emitArtifactModule omits derived dynamic-binding literals and validates updater kinds for every variant', () => {
 
 	const slot = ( kind, byteOffset = 0 ) => ( {
 		name: kind,
@@ -128,13 +128,13 @@ test( 'emitArtifactModule derives bindings and validates updater kinds for every
 		{ artifact },
 	);
 
-	assert.equal( ( source.match( /"dynamicBindings"/g ) || [] ).length, 2 );
+	assert.equal( ( source.match( /"dynamicBindings"/g ) || [] ).length, 0 );
 	assert.ok( unsupportedKinds.some( ( entry ) => entry.kind === 'future.variant.kind' && entry.variantCacheKey === 'variant' ) );
 	assert.doesNotThrow( () => parse( source, { sourceType: 'module' } ) );
 
 } );
 
-test( 'emitArtifactModule derives variant-local light tables before dynamic bindings', () => {
+test( 'emitArtifactModule derives variant-local light tables directly from uniform plans', () => {
 
 	const lightSlot = ( uuid, lightIndex ) => ( {
 		name: 'distance',
@@ -163,7 +163,7 @@ test( 'emitArtifactModule derives variant-local light tables before dynamic bind
 	assert.equal( ( source.match( /"lightIdentities"/g ) || [] ).length, 2 );
 	assert.match( source, /"captureUuid":"root-light","captureIndex":0/ );
 	assert.match( source, /"captureUuid":"variant-light","captureIndex":3/ );
-	assert.ok( ( source.match( /"lightIdentity":0/g ) || [] ).length >= 4, 'uniform plans and derived dynamic descriptors retain the table reference' );
+	assert.ok( ( source.match( /"lightIdentity":0/g ) || [] ).length >= 2, 'root and variant uniform plans retain the table reference' );
 	assert.doesNotThrow( () => parse( source, { sourceType: 'module' } ) );
 
 } );
