@@ -48,6 +48,7 @@ import { isolateCanvasForScreenshot, restoreCanvasAfterScreenshot } from './e2e-
 import { hasReplayArtifactCoverage } from './e2e-artifact-policy.mjs';
 import { installRenderSelectorMismatchRecorder } from './e2e-render-selector-recorder.mjs';
 import { enrichRenderSelectorDiagnostics, resolveE2ERoots, summarizeArtifactRenderSelectors } from './e2e-report-diagnostics.mjs';
+import { writeCurrentShotPair } from './e2e-shot-output.mjs';
 import { deterministicTimeoutPolicyForExample, holdAnimationUntilReadyForExample, installAnimationLoopSettleTransition, installAudioAnalyserReadiness, minimumRenderableObjectsForExample, settleFramesForExample, targetTickForExample } from './e2e-settle-policy.mjs';
 import { captureWaitOverrideForExample, comparePngBuffers, expectedReplayErrorPatternsForExample, minimumBrightFractionForExample, pixelGateDisabledReasonForExample, psnrThresholdForExample, tierExamples } from './psnr.mjs';
 import { loadSlimBundle, slimBundleHashOptions, slimBundleReportProvenance } from './slim-bundle-provenance.mjs';
@@ -15900,10 +15901,13 @@ async function runOne( browser, name ) {
 	if ( saveShots ) {
 
 		const shotsDir = join( OUT, 'shots' );
-		if ( ! existsSync( shotsDir ) ) mkdirSync( shotsDir, { recursive: true } );
 		const safe = safeExampleName( name );
-		if ( capture.shot ) writeFileSync( join( shotsDir, `${ safe }.capture.png` ), capture.shot );
-		if ( replay.shot ) writeFileSync( join( shotsDir, `${ safe }.replay.png` ), replay.shot );
+		writeCurrentShotPair( {
+			shotsDir,
+			stem: safe,
+			captureShot: capture.shot,
+			replayShot: replay.shot,
+		} );
 		// Also dump full captured user-material artifacts for debugging.
 		const artifactsDir = join( OUT, 'artifacts' );
 		if ( ! existsSync( artifactsDir ) ) mkdirSync( artifactsDir, { recursive: true } );
