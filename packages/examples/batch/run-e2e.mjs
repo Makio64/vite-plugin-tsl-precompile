@@ -680,6 +680,7 @@ function stockWebgpuModule() {
 	return `
 import * as Original from '/build/three.webgpu.js';
 export * from '/build/three.webgpu.js';
+import { synchronizeTemporalJitterNode as __sharedSynchronizeTemporalJitterNode } from '/__tslp_batch/temporal-jitter.mjs';
 
 let __pmremRunning = 0;
 window.__tslpPmremPending = window.__tslpPmremPending || 0;
@@ -851,50 +852,12 @@ function __recordRenderableObjectCount( scene ) {
 		return !! ( node && typeof node.updateBefore === 'function' && node._resolveMaterial && node._historyRenderTarget && node._resolveRenderTarget );
 	}
 
-	function __pinStockTRAAJitterIndex( traaNode ) {
-		if ( ! traaNode || traaNode.__tslpTRAAJitterPinned === true ) return;
-		const proto = Object.getPrototypeOf( traaNode );
-		const originalSetViewOffset = traaNode.setViewOffset || ( proto && proto.setViewOffset );
-		const originalClearViewOffset = traaNode.clearViewOffset || ( proto && proto.clearViewOffset );
-		if ( typeof originalSetViewOffset === 'function' ) {
-			traaNode.setViewOffset = function ( width, height ) {
-				try { this._jitterIndex = 0; } catch ( _ ) {}
-				return originalSetViewOffset.call( this, width, height );
-			};
-		}
-		if ( typeof originalClearViewOffset === 'function' ) {
-			traaNode.clearViewOffset = function () {
-				try {
-					if ( this.camera && typeof this.camera.clearViewOffset === 'function' ) this.camera.clearViewOffset();
-					if ( this._velocityNode && typeof this._velocityNode.setProjectionMatrix === 'function' ) this._velocityNode.setProjectionMatrix( null );
-				} catch ( _ ) {}
-				try { this._jitterIndex = 0; } catch ( _ ) {}
-			};
-		}
-		try { traaNode._jitterIndex = 0; } catch ( _ ) {}
-		try { Object.defineProperty( traaNode, '__tslpTRAAJitterPinned', { value: true, configurable: true } ); } catch ( _ ) {}
+	function __syncStockTRAAJitterIndex( traaNode ) {
+		__sharedSynchronizeTemporalJitterNode( traaNode, { marker: '__tslpTRAAJitterSynchronized' } );
 	}
 
-	function __pinStockTAAUJitterIndex( taauNode ) {
-		if ( ! taauNode || taauNode.__tslpTAAUJitterPinned === true ) return;
-		const proto = Object.getPrototypeOf( taauNode );
-		const originalSetViewOffset = taauNode.setViewOffset || ( proto && proto.setViewOffset );
-		const originalClearViewOffset = taauNode.clearViewOffset || ( proto && proto.clearViewOffset );
-		if ( typeof originalSetViewOffset === 'function' ) {
-			taauNode.setViewOffset = function ( width, height ) {
-				try { this._jitterIndex = 0; } catch ( _ ) {}
-				return originalSetViewOffset.call( this, width, height );
-			};
-		}
-		if ( typeof originalClearViewOffset === 'function' ) {
-			taauNode.clearViewOffset = function () {
-				const result = originalClearViewOffset.call( this );
-				try { this._jitterIndex = 0; } catch ( _ ) {}
-				return result;
-			};
-		}
-		try { taauNode._jitterIndex = 0; } catch ( _ ) {}
-		try { Object.defineProperty( taauNode, '__tslpTAAUJitterPinned', { value: true, configurable: true } ); } catch ( _ ) {}
+	function __syncStockTAAUJitterIndex( taauNode ) {
+		__sharedSynchronizeTemporalJitterNode( taauNode, { marker: '__tslpTAAUJitterSynchronized' } );
 	}
 
 	function __scanForStockTAAUNodes( node, seen = new Set(), depth = 0 ) {
@@ -902,11 +865,11 @@ function __recordRenderableObjectCount( scene ) {
 		if ( typeof node !== 'object' && typeof node !== 'function' ) return;
 		seen.add( node );
 		if ( __isStockTRAAEffectNode( node ) ) {
-			__pinStockTRAAJitterIndex( node );
+			__syncStockTRAAJitterIndex( node );
 			return;
 		}
 		if ( __isStockTAAUEffectNode( node ) ) {
-			__pinStockTAAUJitterIndex( node );
+			__syncStockTAAUJitterIndex( node );
 			return;
 		}
 		const keys = [];
@@ -1024,6 +987,7 @@ import { installPrecompileMarker, setDevRenderer } from '/__tslp_runtime/precomp
 import { precompileAuxiliary } from '/__tslp_runtime/aux-marker.js';
 import { createRenderContextSignature as __createRenderContextSignature } from '/__tslp_contract/render-context.js';
 import { createMaterialContextKey as __createMaterialContextKey, getMaterialContextMap as __getMaterialContextMap } from '/__tslp_batch/material-context-cache.mjs';
+import { synchronizeTemporalJitterNode as __sharedSynchronizeTemporalJitterNode } from '/__tslp_batch/temporal-jitter.mjs';
 
 const __state = window.__TSLP_E2E || { example: 'unknown' };
 const __counts = Object.create( null );
@@ -1680,50 +1644,12 @@ function __isCaptureTAAUEffectNode( node ) {
 	return !! ( node && typeof node.updateBefore === 'function' && node._resolveMaterial && node._historyRenderTarget && node._resolveRenderTarget );
 }
 
-function __pinCaptureTRAAJitterIndex( traaNode ) {
-	if ( ! traaNode || traaNode.__tslpTRAAJitterPinned === true ) return;
-	const proto = Object.getPrototypeOf( traaNode );
-	const originalSetViewOffset = traaNode.setViewOffset || ( proto && proto.setViewOffset );
-	const originalClearViewOffset = traaNode.clearViewOffset || ( proto && proto.clearViewOffset );
-	if ( typeof originalSetViewOffset === 'function' ) {
-		traaNode.setViewOffset = function ( width, height ) {
-			try { this._jitterIndex = 0; } catch ( _ ) {}
-			return originalSetViewOffset.call( this, width, height );
-		};
-	}
-	if ( typeof originalClearViewOffset === 'function' ) {
-		traaNode.clearViewOffset = function () {
-			try {
-				if ( this.camera && typeof this.camera.clearViewOffset === 'function' ) this.camera.clearViewOffset();
-				if ( this._velocityNode && typeof this._velocityNode.setProjectionMatrix === 'function' ) this._velocityNode.setProjectionMatrix( null );
-			} catch ( _ ) {}
-			try { this._jitterIndex = 0; } catch ( _ ) {}
-		};
-	}
-	try { traaNode._jitterIndex = 0; } catch ( _ ) {}
-	try { Object.defineProperty( traaNode, '__tslpTRAAJitterPinned', { value: true, configurable: true } ); } catch ( _ ) {}
+function __syncCaptureTRAAJitterIndex( traaNode ) {
+	__sharedSynchronizeTemporalJitterNode( traaNode, { marker: '__tslpTRAAJitterSynchronized' } );
 }
 
-function __pinCaptureTAAUJitterIndex( taauNode ) {
-	if ( ! taauNode || taauNode.__tslpTAAUJitterPinned === true ) return;
-	const proto = Object.getPrototypeOf( taauNode );
-	const originalSetViewOffset = taauNode.setViewOffset || ( proto && proto.setViewOffset );
-	const originalClearViewOffset = taauNode.clearViewOffset || ( proto && proto.clearViewOffset );
-	if ( typeof originalSetViewOffset === 'function' ) {
-		taauNode.setViewOffset = function ( width, height ) {
-			try { this._jitterIndex = 0; } catch ( _ ) {}
-			return originalSetViewOffset.call( this, width, height );
-		};
-	}
-	if ( typeof originalClearViewOffset === 'function' ) {
-		taauNode.clearViewOffset = function () {
-			const result = originalClearViewOffset.call( this );
-			try { this._jitterIndex = 0; } catch ( _ ) {}
-			return result;
-		};
-	}
-	try { taauNode._jitterIndex = 0; } catch ( _ ) {}
-	try { Object.defineProperty( taauNode, '__tslpTAAUJitterPinned', { value: true, configurable: true } ); } catch ( _ ) {}
+function __syncCaptureTAAUJitterIndex( taauNode ) {
+	__sharedSynchronizeTemporalJitterNode( taauNode, { marker: '__tslpTAAUJitterSynchronized' } );
 }
 
 function __scanForCaptureTRAANodes( node, seen = new Set(), depth = 0 ) {
@@ -1731,11 +1657,11 @@ function __scanForCaptureTRAANodes( node, seen = new Set(), depth = 0 ) {
 	if ( typeof node !== 'object' && typeof node !== 'function' ) return;
 	seen.add( node );
 	if ( __isCaptureTRAAEffectNode( node ) ) {
-		__pinCaptureTRAAJitterIndex( node );
+		__syncCaptureTRAAJitterIndex( node );
 		return;
 	}
 	if ( __isCaptureTAAUEffectNode( node ) ) {
-		__pinCaptureTAAUJitterIndex( node );
+		__syncCaptureTAAUJitterIndex( node );
 		return;
 	}
 	const keys = [];
@@ -1757,8 +1683,8 @@ function __scanForCaptureTRAANodes( node, seen = new Set(), depth = 0 ) {
 function __capturePostProcessing( pipeline ) {
 	if ( pipeline ) {
 		__postProcessingPipelines.add( pipeline );
-		// Pin TRAA jitter to 0 during capture so the snapshot frame matches the
-		// slim replay harness's pin on its side.
+		// Keep temporal AA on the synthetic application-frame sample so capture
+		// and replay advance identically despite different internal render counts.
 		try {
 			if ( pipeline.outputNode ) __scanForCaptureTRAANodes( pipeline.outputNode );
 		} catch ( _ ) {}
@@ -1946,6 +1872,7 @@ import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS a
 import { countArtifactFragmentOutputCapacity as __sharedCountArtifactFragmentOutputCapacity, countArtifactFragmentOutputs as __sharedCountArtifactFragmentOutputs } from '/__tslp_contract/fragment-outputs.js';
 import { createRenderContextSignature as __createRenderContextSignature } from '/__tslp_contract/render-context.js';
 import { createMaterialContextKey as __createMaterialContextKey, getMaterialContextMap as __getMaterialContextMap } from '/__tslp_batch/material-context-cache.mjs';
+import { synchronizeTemporalJitterNode as __sharedSynchronizeTemporalJitterNode, temporalJitterFrameId as __sharedTemporalJitterFrameId } from '/__tslp_batch/temporal-jitter.mjs';
 ${ SLIM_REPLAY_FORWARD_EXPORT_BLOCK }
 ${ SLIM_REPLAY_FULL_FALLBACK_EXPORT_BLOCK }
 export { FullTextureNode as TextureNode, FullBlendMode as BlendMode, FullTempNode as TempNode, FullNodeUpdateType as NodeUpdateType, FullArrayCamera as ArrayCamera, FullControls as Controls, FullMOUSE as MOUSE, FullMathUtils as MathUtils, FullPlane as Plane, FullQuaternion as Quaternion, FullRay as Ray, FullSpherical as Spherical, FullTOUCH as TOUCH, FullQuadMesh as QuadMesh, FullRendererUtils as RendererUtils, FullVector2 as Vector2, FullVector3 as Vector3 };
@@ -12558,35 +12485,8 @@ function __patchTRAANodeUpdateBefore( traaNode ) {
 	Object.defineProperty( traaNode, '__tslpTRAAUpdatePatched', { value: true, configurable: true } );
 }
 
-function __pinTRAAJitterIndex( traaNode ) {
-	if ( ! traaNode || traaNode.__tslpTRAAJitterPinned === true ) return;
-	// TRAA's clearViewOffset increments _jitterIndex once per pipeline frame.
-	// Capture and replay both render up to TARGET_TICK frames, but the slim
-	// harness's pipeline wrappers can call setViewOffset/clearViewOffset a
-	// different number of times than capture (e.g. when a sibling effect re-
-	// drives the pipeline). Pin _jitterIndex to 0 on every setViewOffset and
-	// stub the increment in clearViewOffset so both modes sample the SAME
-	// halton offset regardless of pipeline-call count.
-	const proto = Object.getPrototypeOf( traaNode );
-	const originalSetViewOffset = traaNode.setViewOffset || ( proto && proto.setViewOffset );
-	const originalClearViewOffset = traaNode.clearViewOffset || ( proto && proto.clearViewOffset );
-	if ( typeof originalSetViewOffset === 'function' ) {
-		traaNode.setViewOffset = function ( width, height ) {
-			try { this._jitterIndex = 0; } catch ( _ ) {}
-			return originalSetViewOffset.call( this, width, height );
-		};
-	}
-	if ( typeof originalClearViewOffset === 'function' ) {
-		traaNode.clearViewOffset = function () {
-			try {
-				if ( this.camera && typeof this.camera.clearViewOffset === 'function' ) this.camera.clearViewOffset();
-				if ( this._velocityNode && typeof this._velocityNode.setProjectionMatrix === 'function' ) this._velocityNode.setProjectionMatrix( null );
-			} catch ( _ ) {}
-			try { this._jitterIndex = 0; } catch ( _ ) {}
-		};
-	}
-	try { traaNode._jitterIndex = 0; } catch ( _ ) {}
-	try { Object.defineProperty( traaNode, '__tslpTRAAJitterPinned', { value: true, configurable: true } ); } catch ( _ ) {}
+function __syncTRAAJitterIndex( traaNode ) {
+	__sharedSynchronizeTemporalJitterNode( traaNode, { marker: '__tslpTRAAJitterSynchronized' } );
 }
 
 	function __prepareTRAANodeForReplay( traaNode, context ) {
@@ -12596,10 +12496,10 @@ function __pinTRAAJitterIndex( traaNode ) {
 			const diag = __traaDiagnostics();
 			diag.ctor = traaNode.constructor && traaNode.constructor.name || '';
 			diag.type = traaNode.constructor && traaNode.constructor.type || traaNode.type || '';
-			// Pin BEFORE setup() so the setup-registered onBeforeRenderPipeline
+			// Synchronize BEFORE setup() so the setup-registered onBeforeRenderPipeline
 			// closure (which does this.setViewOffset(...) dynamically) picks up the
 			// patched instance methods on every frame.
-			__pinTRAAJitterIndex( traaNode );
+			__syncTRAAJitterIndex( traaNode );
 			// TRAA's setup() requires builder.renderer + builder.context.renderPipeline.
 			// Drive setup on the full renderer so the resolveMaterial gets its colorNode.
 		if ( __computeRenderer && typeof traaNode.setup === 'function' ) {
@@ -12740,11 +12640,7 @@ function __frameEffectDiagnostics() {
 }
 
 function __frameEffectFrameId() {
-	const callbackCount = window.__tslpFrameCallbackCount | 0;
-	if ( callbackCount > 0 ) return callbackCount;
-	const loopCalls = window.__tslpAnimationLoopCalls | 0;
-	if ( loopCalls > 0 ) return loopCalls;
-	return window.__tslpRafTick | 0;
+	return __sharedTemporalJitterFrameId( window );
 }
 
 let __maintenanceRenderSequence = 0;
@@ -12934,7 +12830,7 @@ function __prepareFrameEffectNodeForReplay( node, fullRenderer, context ) {
 	const diag = __frameEffectDiagnostics();
 	try {
 		if ( __deferFrameEffectUntilShadowReady( node, fullRenderer, context ) ) return false;
-		if ( __isTAAUFrameEffectNode( node ) ) __pinTAAUJitterIndex( node );
+		if ( __isTAAUFrameEffectNode( node ) ) __syncTAAUJitterIndex( node );
 		const effectType = __effectTypeName( node );
 		if ( effectType === 'SSSNode' ) {
 
@@ -12982,26 +12878,8 @@ function __isTAAUFrameEffectNode( node ) {
 		&& node.beautyNode;
 }
 
-	function __pinTAAUJitterIndex( taauNode ) {
-		if ( ! taauNode || taauNode.__tslpTAAUJitterPinned === true ) return;
-		const proto = Object.getPrototypeOf( taauNode );
-	const originalSetViewOffset = taauNode.setViewOffset || ( proto && proto.setViewOffset );
-	const originalClearViewOffset = taauNode.clearViewOffset || ( proto && proto.clearViewOffset );
-	if ( typeof originalSetViewOffset === 'function' ) {
-		taauNode.setViewOffset = function ( width, height ) {
-			try { this._jitterIndex = 0; } catch ( _ ) {}
-			return originalSetViewOffset.call( this, width, height );
-		};
-	}
-	if ( typeof originalClearViewOffset === 'function' ) {
-		taauNode.clearViewOffset = function () {
-			const result = originalClearViewOffset.call( this );
-			try { this._jitterIndex = 0; } catch ( _ ) {}
-			return result;
-		};
-	}
-	try { taauNode._jitterIndex = 0; } catch ( _ ) {}
-		try { Object.defineProperty( taauNode, '__tslpTAAUJitterPinned', { value: true, configurable: true } ); } catch ( _ ) {}
+	function __syncTAAUJitterIndex( taauNode ) {
+		__sharedSynchronizeTemporalJitterNode( taauNode, { marker: '__tslpTAAUJitterSynchronized' } );
 	}
 
 	function __findOwnedEffectTexture( root, effectType, seen = new Set(), depth = 0 ) {
@@ -14002,6 +13880,7 @@ const server = createServer( async ( req, res ) => {
 		if ( url.pathname === '/__tslp__/tsl-capture.js' ) return sendJs( res, tslCaptureModule() );
 		if ( url.pathname === '/__tslp__/aux-virtual.js' ) return sendJs( res, auxVirtualModule() );
 		if ( url.pathname === '/__tslp_batch/material-context-cache.mjs' ) return sendFile( res, join( SELF, 'material-context-cache.mjs' ) );
+		if ( url.pathname === '/__tslp_batch/temporal-jitter.mjs' ) return sendFile( res, join( SELF, 'temporal-jitter.mjs' ) );
 		if ( url.pathname === '/examples/jsm/inspector/Inspector.js' ) return sendJs( res, inspectorStubModule() );
 		if ( url.pathname === '/examples/jsm/libs/stats.module.js' ) return sendJs( res, statsStubModule() );
 		// `three/addons/*` for local-examples-root packages: `/examples/*` is

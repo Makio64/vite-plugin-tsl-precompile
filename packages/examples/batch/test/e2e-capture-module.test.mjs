@@ -156,3 +156,16 @@ test( 'nested offscreen scene renders prepare PMREM before bypassing top-level h
 	);
 
 } );
+
+test( 'stock, capture, and replay share logical-frame temporal jitter progression', () => {
+
+	const imports = source.match( /import \{[^}]*synchronizeTemporalJitterNode as __sharedSynchronizeTemporalJitterNode[^}]*\} from '\/__tslp_batch\/temporal-jitter\.mjs';/g ) || [];
+	assert.equal( imports.length, 3, 'all three generated WebGPU modules must use the shared jitter clock' );
+	assert.match( source, /function __syncStockTRAAJitterIndex/ );
+	assert.match( source, /function __syncCaptureTRAAJitterIndex/ );
+	assert.match( source, /function __syncTRAAJitterIndex/ );
+	assert.doesNotMatch( source, /function __pin(?:Stock|Capture)?TRAAJitterIndex/ );
+	assert.match( source, /url\.pathname === '\/__tslp_batch\/temporal-jitter\.mjs'/ );
+	assert.match( source, /function __frameEffectFrameId\(\) \{\s*return __sharedTemporalJitterFrameId\( window \);\s*\}/ );
+
+} );
