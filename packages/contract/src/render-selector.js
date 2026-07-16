@@ -178,10 +178,13 @@ export function createSceneRenderTopologySelector( scene ) {
  *
  * Unknown profiles are returned unchanged so callers can opt in one adapter
  * at a time without weakening ordinary material selection.
- * Background WGSL is invariant across the output target's MSAA count: Three
- * binds sample count when it creates the render pipeline, not in the shader or
- * hydrated bindings. A single background artifact may therefore render both a
- * multisampled scene pass and a single-sample reflector target in one frame.
+ * Background WGSL is invariant across the output target's adapter-owned
+ * surface label and MSAA count: Three binds both when it creates the render
+ * pipeline, not in the shader or hydrated bindings. A single background
+ * artifact may therefore render both the output-intermediate scene pass and a
+ * single-sample reflector target in one frame. NoColorSpace and
+ * LinearSRGBColorSpace attachments are likewise the same linear shader-output
+ * domain; nonlinear attachment spaces remain signed.
  *
  * @param {string} selector
  * @param {string|null|undefined} profile
@@ -292,7 +295,20 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 	if ( profile === 'background' && projected.target && typeof projected.target === 'object' ) {
 
 		projected.target = { ...projected.target };
+		delete projected.target.surface;
 		delete projected.target.sampleCount;
+		if ( Array.isArray( projected.target.colors ) ) {
+
+			projected.target.colors = projected.target.colors.map( ( color ) => {
+
+				if ( ! color || typeof color !== 'object' ) return color;
+				const attachment = { ...color };
+				if ( attachment.colorSpace === '' || attachment.colorSpace === 'srgb-linear' ) delete attachment.colorSpace;
+				return attachment;
+
+			} );
+
+		}
 
 	}
 	return stableJsonStringify( projected, 'renderObjectSelector' );

@@ -221,7 +221,7 @@ test( 'render selector distinguishes material shader-branch flags and enums', ()
 
 } );
 
-test( 'background selector projection ignores scene state and target samples but retains precision and attachments', () => {
+test( 'background selector projection ignores scene state and equivalent linear render surfaces but retains precision and attachments', () => {
 
 	const capture = fixture();
 	const replay = fixture();
@@ -250,6 +250,42 @@ test( 'background selector projection ignores scene state and target samples but
 		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'background' ),
 		'one background shader serves MSAA scene passes and single-sample reflectors',
 	);
+	capture.context.renderTarget = {
+		isRenderTarget: true,
+		isPostProcessingRenderTarget: true,
+		textures: capture.context.textures,
+		depthTexture: capture.context.depthTexture,
+		depthBuffer: true,
+		stencilBuffer: false,
+		samples: 4,
+	};
+	replay.context.renderTarget = {
+		isRenderTarget: true,
+		textures: replay.context.textures,
+		depthTexture: replay.context.depthTexture,
+		depthBuffer: true,
+		stencilBuffer: false,
+		samples: 1,
+	};
+	capture.context.textures[ 0 ].colorSpace = 'srgb-linear';
+	replay.context.textures[ 0 ].colorSpace = '';
+	assert.notEqual(
+		createRenderObjectContextSelector( capture ),
+		createRenderObjectContextSelector( replay ),
+		'ordinary selectors retain adapter surface and attachment color-space topology',
+	);
+	assert.equal(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'background' ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'background' ),
+		'the output-intermediate and reflector targets share one linear background shader',
+	);
+	replay.context.textures[ 0 ].colorSpace = 'srgb';
+	assert.notEqual(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'background' ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'background' ),
+		'nonlinear attachment color spaces remain signed',
+	);
+	replay.context.textures[ 0 ].colorSpace = '';
 	replay.context.textures[ 0 ].format = 1022;
 	assert.notEqual(
 		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'background' ),
