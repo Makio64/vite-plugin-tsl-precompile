@@ -174,6 +174,17 @@ test( 'capture and replay instrument inline uniform calls with the product ident
 
 } );
 
+test( 'pass depth replay preserves captured MSAA shape', () => {
+
+	const prepareStart = source.indexOf( 'function __preparePassNodeForReplay(' );
+	const prepareEnd = source.indexOf( 'const __wiredPCMaterials', prepareStart );
+	assert.ok( prepareStart >= 0 && prepareEnd > prepareStart, 'expected pass replay preparation' );
+	const prepare = source.slice( prepareStart, prepareEnd );
+	assert.match( prepare, /passNode\.renderTarget\.samples = passNode\.options && passNode\.options\.samples !== undefined/ );
+	assert.match( prepare, /: renderer\.samples;/ );
+
+} );
+
 test( 'material-owned compute delegates matching and retries to slim-support', () => {
 
 	assert.match( source, /AUTO_COMPUTE_MATERIAL_PROPERTIES as __AUTO_COMPUTE_SLOTS, createAutoComputeDispatcher as __sharedCreateAutoComputeDispatcher/ );

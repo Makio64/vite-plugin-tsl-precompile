@@ -6230,9 +6230,12 @@ function __patchVolumeRenderOutputAlpha( artifact, options = {} ) {
 function __preparePassNodeForReplay( renderer, passNode ) {
 	if ( ! renderer || ! passNode || ! passNode.renderTarget ) return;
 	try {
-		// PassNode render targets are single-sampled by default, independently
-		// of canvas MSAA. Only an explicit pass option may override that target.
-		if ( passNode.options && passNode.options.samples !== undefined ) passNode.renderTarget.samples = passNode.options.samples;
+		// Mirror r184 PassNode.setup(): an omitted pass override inherits the
+		// renderer's sample count. Captured post-process WGSL therefore expects
+		// the same multisampled depth shape during compiler-free replay.
+		passNode.renderTarget.samples = passNode.options && passNode.options.samples !== undefined
+			? passNode.options.samples
+			: renderer.samples;
 		if ( passNode.renderTarget.texture && typeof renderer.getOutputBufferType === 'function' ) {
 			passNode.renderTarget.texture.type = renderer.getOutputBufferType();
 		}
