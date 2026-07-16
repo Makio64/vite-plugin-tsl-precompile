@@ -47,6 +47,7 @@ import { createHash } from 'node:crypto';
 import { computeArtifactContentHash } from './hash.js';
 import { ARTIFACT_CONTENT_HASH_VERSION, stripPrivateArtifactFieldsInPlace } from '@tsl-precompile/contract/artifact-content';
 import { collectArtifactVariantCandidates, mergeArtifactVariantFamily } from '@tsl-precompile/contract/artifact-variants';
+import { isAuxiliaryMaterialShape } from '@tsl-precompile/contract/auxiliary-shapes';
 import { validateArtifact } from '@tsl-precompile/contract/kinds';
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
 
@@ -175,19 +176,9 @@ function readBody( req ) {
 
 }
 
-const AUX_SHAPES = new Set( [
-	'background', 'post-process', 'pmrem', 'lights', 'shadow-depth', 'render-pipeline', 'output-transform',
-	// PMREMGenerator's 4 internal materials, each captured separately so the
-	// slim runtime can `loadAux('pmrem-<sub>', hash)` per material on demand.
-	'pmrem-cubemap', 'pmrem-equirect', 'pmrem-blur', 'pmrem-ggx',
-	// Other shapes seen in the runtime that POST artifacts.
-	'mrt', 'backdrop', 'render-output', 'cube-render-target',
-	'bloom-high-pass', 'bloom-composite', 'bloom-blur-0', 'bloom-blur-1', 'bloom-blur-2', 'bloom-blur-3', 'bloom-blur-4',
-] );
-
 function isAuxPayload( payload ) {
 
-	return !! ( payload && typeof payload.materialShape === 'string' && AUX_SHAPES.has( payload.materialShape ) );
+	return !! ( payload && isAuxiliaryMaterialShape( payload.materialShape ) );
 
 }
 

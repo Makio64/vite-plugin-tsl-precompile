@@ -21,6 +21,7 @@
 		"./attribute-generators": "./src/attribute-generators.js",
 		"./artifact-variants": "./src/artifact-variants.js",
 		"./artifact-shape": "./src/artifact-shape.js",
+		"./auxiliary-shapes": "./src/auxiliary-shapes.js",
 		"./light-identities": "./src/light-identities.js",
     "./dynamic-bindings": "./src/dynamic-bindings.js",
     "./fragment-outputs": "./src/fragment-outputs.js",

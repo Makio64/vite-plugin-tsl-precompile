@@ -18,6 +18,7 @@ import { createServer } from 'node:http';
 import { attachDevCapture } from '../../src/dev-capture-server.js';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
 import { collectArtifactVariantCandidates, createArtifactVariantPayload } from '@tsl-precompile/contract/artifact-variants';
+import { POSTPROCESS_EFFECT_AUXILIARY_SHAPES } from '@tsl-precompile/contract/auxiliary-shapes';
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
 import { computeArtifactContentHash } from '../../src/hash.js';
 
@@ -789,6 +790,40 @@ test( 'dev-capture: aux background payload writes aux-<shape>-<hash>.json + mani
 		assert.ok( entry, 'aux manifest should be keyed by shape:configHash' );
 		assert.equal( entry.shape, 'background' );
 		assert.equal( entry.configHash, configHash );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: every built-in post-processing sub-pass is classified as auxiliary', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-post-effects-' ) );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+
+	try {
+
+		for ( const [ index, materialShape ] of POSTPROCESS_EFFECT_AUXILIARY_SHAPES.entries() ) {
+
+			const configHash = index.toString( 16 ).padStart( 64, '0' );
+			const response = await postJSON( port, '/__tsl-precompile/capture', {
+				materialShape,
+				configHash,
+				artifact: { materialShape, uniformPlan: [], vertexShader: 'v', fragmentShader: 'f' },
+			} );
+			assert.equal( response.status, 200, `${ materialShape } must not be validated as a user material` );
+			assert.equal( response.json.materialShape, materialShape );
+
+		}
+
+		const manifest = JSON.parse( readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' ) );
+		assert.equal( Object.keys( manifest.__aux ).length, POSTPROCESS_EFFECT_AUXILIARY_SHAPES.length );
 
 	} finally {
 

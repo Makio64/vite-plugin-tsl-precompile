@@ -9,6 +9,7 @@ export * from './artifact-shape.js';
 export * from './artifact-content.js';
 export * from './artifact-traversal.js';
 export * from './attribute-generators.js';
+export * from './auxiliary-shapes.js';
 export * from './artifact-variants.js';
 export * from './light-identities.js';
 export * from './versions.js';
