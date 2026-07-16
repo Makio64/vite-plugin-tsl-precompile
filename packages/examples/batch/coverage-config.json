@@ -6,8 +6,7 @@
         "webgpu_postprocessing_godrays.html",
         "webgpu_postprocessing_lensflare.html",
         "webgpu_postprocessing_retro.html",
-        "webgpu_postprocessing_ssgi.html",
-        "webgpu_postprocessing_sss.html"
+        "webgpu_postprocessing_ssgi.html"
       ],
       "volatileCompute": [
         "webgpu_compute_audio.html",
