@@ -297,6 +297,20 @@ test( 'nested offscreen scene renders prepare PMREM before bypassing top-level h
 
 } );
 
+test( 'video panorama freezes a deterministic decoded frame before settling', () => {
+
+	const start = source.indexOf( "if ( exampleName === 'webgpu_video_panorama.html'" );
+	const end = source.indexOf( '// Save the original Date.now', start );
+	assert.ok( start >= 0 && end > start, 'expected the video-media determinism hook' );
+	const hook = source.slice( start, end );
+	assert.match( hook, /w\.__tslpLoaderPending = \( w\.__tslpLoaderPending \| 0 \) \+ 1/ );
+	assert.match( hook, /const targetTime = 0\.25;/ );
+	assert.match( hook, /media\.addEventListener\( 'seeked', finish, \{ once: true \} \)/ );
+	assert.ok( hook.indexOf( 'media.pause();' ) < hook.indexOf( 'media.currentTime = targetTime;' ) );
+	assert.match( hook, /w\.__tslpVideoMediaFrozen = true/ );
+
+} );
+
 test( 'stock, capture, and replay share logical-frame temporal jitter progression', () => {
 
 	const imports = source.match( /import \{[^}]*synchronizeTemporalJitterNode as __sharedSynchronizeTemporalJitterNode[^}]*\} from '\/__tslp_batch\/temporal-jitter\.mjs';/g ) || [];

@@ -15070,6 +15070,56 @@ async function visitExample( browser, name, mode, waitMs ) {
 				w.__tslpHoldAnimationUntilReady = holdAnimationUntilReady === true;
 				w.__tslpRenderableObjectCount = 0;
 			w.__tslpRenderableLastBusyAt = 0;
+			if ( exampleName === 'webgpu_video_panorama.html' && w.HTMLMediaElement && ! w.HTMLMediaElement.prototype.__tslpFreezeFirstFrame ) {
+				const mediaPrototype = w.HTMLMediaElement.prototype;
+				const nativePlay = mediaPrototype.play;
+				mediaPrototype.__tslpFreezeFirstFrame = true;
+				mediaPrototype.play = function ( ...playArgs ) {
+					const media = this;
+					if ( media.__tslpFirstFrameRequested === true ) return nativePlay.apply( media, playArgs );
+					media.__tslpFirstFrameRequested = true;
+					w.__tslpLoaderPending = ( w.__tslpLoaderPending | 0 ) + 1;
+					let settled = false;
+					let freezing = false;
+					let seekTimeout = null;
+					const settle = () => {
+						if ( settled ) return;
+						settled = true;
+						w.__tslpLoaderPending = Math.max( 0, ( w.__tslpLoaderPending | 0 ) - 1 );
+						w.__tslpLoaderLastBusyAt = typeof w.__tslpRealNow === 'function' ? w.__tslpRealNow() : 1;
+					};
+					const finish = () => {
+						if ( seekTimeout !== null ) w.clearTimeout( seekTimeout );
+						try { media.pause(); } catch ( _ ) {}
+						w.__tslpVideoMediaFrozen = true;
+						settle();
+					};
+					const freezeFirstFrame = () => {
+						if ( freezing || media.readyState < 2 ) return;
+						freezing = true;
+						const targetTime = 0.25;
+						try { media.pause(); } catch ( _ ) {}
+						if ( Math.abs( ( Number( media.currentTime ) || 0 ) - targetTime ) <= 0.001 ) {
+							finish();
+							return;
+						}
+						media.addEventListener( 'seeked', finish, { once: true } );
+						seekTimeout = w.setTimeout( finish, 2000 );
+						try { media.currentTime = targetTime; } catch ( _ ) { finish(); }
+					};
+					media.addEventListener( 'loadeddata', freezeFirstFrame, { once: true } );
+					media.addEventListener( 'error', settle, { once: true } );
+					let playResult;
+					try {
+						playResult = nativePlay.apply( media, playArgs );
+					} catch ( error ) {
+						settle();
+						throw error;
+					}
+					Promise.resolve( playResult ).then( freezeFirstFrame, settle );
+					return playResult;
+				};
+			}
 
 			// Save the original Date.now BEFORE the synthetic-clock patch below
 			// overwrites it. The wait gate uses real wall-clock time to enforce
