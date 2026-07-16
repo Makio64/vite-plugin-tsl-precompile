@@ -811,6 +811,51 @@ test( 'wireArtifactStorageBuffersFromAttributes matches authored storage identit
 
 } );
 
+test( 'wireArtifactStorageBuffersFromAttributes distinguishes padded vec3 and vec4 binding evidence', () => {
+
+	const vec3 = {
+		isStorageBufferAttribute: true,
+		array: new Float32Array( 128 ),
+		count: 32,
+		itemSize: 4,
+		version: 0,
+	};
+	const vec4 = {
+		isStorageBufferAttribute: true,
+		array: new Float32Array( 128 ),
+		count: 32,
+		itemSize: 4,
+		version: 0,
+	};
+	const vec3Entry = {
+		name: 'StorageBuffer_10',
+		count: 32,
+		itemSize: 4,
+		arrayType: 'Float32Array',
+		source: { kind: 'storage.buffer', elementType: 'vec3' },
+	};
+	const vec4Entry = {
+		name: 'StorageBuffer_11',
+		count: 32,
+		itemSize: 4,
+		arrayType: 'Float32Array',
+		source: { kind: 'storage.buffer', elementType: 'vec4' },
+	};
+	const artifact = { uniformPlan: [ { storageBuffers: [ vec3Entry, vec4Entry ] } ] };
+
+	const wired = wireArtifactStorageBuffersFromAttributes( artifact, [
+		{ attribute: vec3, binding: { nodeUniform: { bufferType: 'vec3' } } },
+		{ attribute: vec4, binding: { nodeUniform: { bufferType: 'vec4' } } },
+	] );
+
+	assert.equal( wired, 2 );
+	assert.equal( vec3Entry._liveAttribute, vec3 );
+	assert.equal( vec4Entry._liveAttribute, vec4 );
+	assert.equal( vec3.version, 1 );
+	assert.equal( vec4.version, 1 );
+
+} );
+
 test( 'wireArtifactStorageBuffersFromAttributes wires every authoritative artifact variant', () => {
 
 	const attribute = {

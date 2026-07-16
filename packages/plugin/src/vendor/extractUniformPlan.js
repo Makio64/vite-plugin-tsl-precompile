@@ -1938,6 +1938,9 @@ export function extractUniformPlan( state, context = null ) {
 				const authoredAttributeName = binding.nodeUniform && typeof binding.nodeUniform.name === 'string' && binding.nodeUniform.name.length > 0
 					? binding.nodeUniform.name
 					: null;
+				const authoredElementType = binding.nodeUniform && typeof binding.nodeUniform.bufferType === 'string' && binding.nodeUniform.bufferType.trim().length > 0
+					? binding.nodeUniform.bufferType.trim()
+					: null;
 
 				const sbEntry = {
 					name: binding.name || '',
@@ -1955,10 +1958,11 @@ export function extractUniformPlan( state, context = null ) {
 					// demo flow doesn't need separate serialisation.
 					count: attr && typeof attr.count === 'number' ? attr.count : ( array ? array.length : 0 ),
 					itemSize: attr && typeof attr.itemSize === 'number' ? attr.itemSize : 1,
-					...( authoredAttributeName !== null ? {
+					...( authoredAttributeName !== null || authoredElementType !== null ? {
 						source: {
 							kind: 'storage.buffer',
-							attributeName: authoredAttributeName,
+							...( authoredAttributeName !== null ? { attributeName: authoredAttributeName } : {} ),
+							...( authoredElementType !== null ? { elementType: authoredElementType } : {} ),
 						}
 					} : {} )
 				};

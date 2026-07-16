@@ -60,6 +60,21 @@ function storageBindingAttributeName( binding ) {
 
 }
 
+function storageBindingElementType( binding ) {
+
+	const nodeUniform = binding && binding.nodeUniform;
+	for ( const candidate of [
+		nodeUniform && nodeUniform.bufferType,
+		nodeUniform && nodeUniform.nodeType,
+	] ) {
+
+		if ( typeof candidate === 'string' && candidate.trim().length > 0 ) return candidate.trim();
+
+	}
+	return null;
+
+}
+
 function storageCandidateRecords( values ) {
 
 	const byAttribute = new Map();
@@ -72,7 +87,7 @@ function storageCandidateRecords( values ) {
 		let record = byAttribute.get( attribute );
 		if ( ! record ) {
 
-			record = { attribute, attributeNames: new Set() };
+			record = { attribute, attributeNames: new Set(), elementTypes: new Set() };
 			byAttribute.set( attribute, record );
 
 		}
@@ -80,15 +95,26 @@ function storageCandidateRecords( values ) {
 			? value.attributeName.trim()
 			: '';
 		const bindingName = value && ! isStorageAttribute( value ) ? storageBindingAttributeName( value.binding ) : null;
+		const bindingElementType = value && ! isStorageAttribute( value ) ? storageBindingElementType( value.binding ) : null;
 		const attributeName = typeof attribute.name === 'string' ? attribute.name.trim() : '';
 		for ( const name of [ explicitName, bindingName, attributeName ] ) {
 
 			if ( name ) record.attributeNames.add( name );
 
 		}
+		if ( bindingElementType ) record.elementTypes.add( bindingElementType );
 
 	}
 	return [ ...byAttribute.values() ];
+
+}
+
+function storageEntryElementType( entry ) {
+
+	const source = entry && entry.source;
+	if ( ! source || source.kind !== 'storage.buffer' || typeof source.elementType !== 'string' ) return null;
+	const elementType = source.elementType.trim();
+	return elementType || null;
 
 }
 
@@ -107,6 +133,7 @@ function storageEntryAliasKey( entry, groupIndex ) {
 		groupIndex,
 		entry && entry.name || '',
 		storageEntryAttributeName( entry ) || '',
+		storageEntryElementType( entry ) || '',
 		entry && entry.count || 0,
 		entry && entry.itemSize || 0,
 		entry && entry.arrayType || '',
@@ -782,13 +809,16 @@ export function syncComputeStorageOutputsPerPass( computeNode, fullRenderer, sli
  * such as tiled lighting are different: compute writes the live buffer from a
  * lighting node, while the material shader only sees the final storage binding.
  * This helper bridges that gap by matching signed storage-buffer identities
- * (`source.attributeName`) plus shape. Legacy unsigned entries fall back to
- * shape only when exactly one candidate is possible, so two same-shaped
- * renderer resources can never silently exchange ownership.
+ * (`source.attributeName` and the authored `source.elementType`) plus shape.
+ * Element type remains stable when WebGPU pads both vec3 and vec4 attributes
+ * to itemSize=4. Legacy unsigned entries fall back to shape only when exactly
+ * one candidate is possible, so two same-shaped renderer resources can never
+ * silently exchange ownership.
  *
  * @param {Object} artifact
  * @param {Object|Object[]} attributes - Storage attributes or evidence records
- *   shaped as `{ attribute, binding?, attributeName? }`.
+ *   shaped as `{ attribute, binding?, attributeName? }`; live binding evidence
+ *   supplies `nodeUniform.bufferType` for padded storage attributes.
  * @param {Object} [opts]
  * @param {boolean} [opts.bumpVersion=true] - Bump the live attribute version so cached bind groups rebuild.
  * @param {boolean} [opts.allowVec3ToVec4=true] - Accept WebGPU vec3 storage padding captured as vec4.
@@ -829,8 +859,10 @@ export function wireArtifactStorageBuffersFromAttributes( artifact, attributes, 
 			}
 
 			const attributeName = storageEntryAttributeName( entry );
+			const elementType = storageEntryElementType( entry );
 			const compatible = candidates.filter( ( candidate ) =>
 				storageShapeMatches( candidate.attribute, entry, allowVec3ToVec4 )
+				&& ( ! elementType || candidate.elementTypes.size === 0 || candidate.elementTypes.has( elementType ) )
 			);
 			let matches;
 			if ( attributeName ) {

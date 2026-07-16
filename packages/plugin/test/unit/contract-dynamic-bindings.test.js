@@ -25,6 +25,7 @@ test( 'dynamicBindingDescriptor resolves exact kinds', () => {
 	assert.equal( dynamicBindingDescriptor( 'uniform.live' ).target, DYNAMIC_BINDING_TARGET.UNIFORM_SLOT );
 	assert.equal( dynamicBindingDescriptor( 'object3d.nodeUniform' ).owner, 'object3d' );
 	assert.equal( dynamicBindingDescriptor( 'builtin.dfgLUT' ).owner, 'runtime' );
+	assert.ok( dynamicBindingDescriptor( 'storage.buffer' ).optional.includes( 'elementType' ) );
 
 } );
 

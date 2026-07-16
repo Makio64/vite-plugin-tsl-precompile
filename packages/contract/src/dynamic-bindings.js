@@ -213,7 +213,7 @@ const exactDescriptors = {
 		owner: 'compute',
 		resolver: 'hydrator/storage-buffer',
 		required: [],
-		optional: [ 'itemSize', 'count', 'usage', 'attributeName', 'computeNodeUuid', 'snapshot' ],
+		optional: [ 'itemSize', 'count', 'usage', 'attributeName', 'elementType', 'computeNodeUuid', 'snapshot' ],
 	} ),
 };
 

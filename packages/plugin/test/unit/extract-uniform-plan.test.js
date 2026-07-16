@@ -799,3 +799,45 @@ test( 'extractUniformPlan serializes exact authored storage names without adopti
 	assert.equal( plan[ 0 ].storageBuffers[ 1 ]._liveAttribute, unnamedAttribute );
 
 } );
+
+test( 'extractUniformPlan preserves authored storage element types after WebGPU vec3 padding', () => {
+
+	const vec3Attribute = {
+		isStorageBufferAttribute: true,
+		array: new Float32Array( 8 ),
+		count: 2,
+		itemSize: 4,
+	};
+	const vec4Attribute = {
+		isStorageBufferAttribute: true,
+		array: new Float32Array( 8 ),
+		count: 2,
+		itemSize: 4,
+	};
+	const plan = extractUniformPlan( {
+		updateNodes: [],
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{
+					isStorageBuffer: true,
+					name: 'StorageBuffer_17',
+					nodeUniform: { name: '', bufferType: 'vec3' },
+					attribute: vec3Attribute,
+				},
+				{
+					isStorageBuffer: true,
+					name: 'StorageBuffer_18',
+					nodeUniform: { name: '', bufferType: 'vec4' },
+					attribute: vec4Attribute,
+				},
+			],
+		} ],
+	}, {} );
+
+	assert.deepEqual( plan[ 0 ].storageBuffers.map( ( entry ) => entry.source ), [
+		{ kind: 'storage.buffer', elementType: 'vec3' },
+		{ kind: 'storage.buffer', elementType: 'vec4' },
+	] );
+
+} );
