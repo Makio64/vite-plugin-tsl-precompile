@@ -766,6 +766,46 @@ test( 'wireArtifactStorageBuffersFromAttributes matches authored storage identit
 
 } );
 
+test( 'wireArtifactStorageBuffersFromAttributes wires every authoritative artifact variant', () => {
+
+	const attribute = {
+		isStorageBufferAttribute: true,
+		array: new Float32Array( 8 ),
+		count: 8,
+		itemSize: 1,
+		version: 0,
+	};
+	const makeEntry = () => ( {
+		name: 'height',
+		count: 8,
+		itemSize: 1,
+		arrayType: 'Float32Array',
+		source: { kind: 'storage.buffer', attributeName: 'HeightA' },
+	} );
+	const rootEntry = makeEntry();
+	const backEntry = makeEntry();
+	const frontEntry = makeEntry();
+	const artifact = {
+		cacheKey: 1,
+		uniformPlan: [ { storageBuffers: [ rootEntry ] } ],
+		variants: {
+			1: { cacheKey: 1, uniformPlan: [ { storageBuffers: [ backEntry ] } ] },
+			2: { cacheKey: 2, uniformPlan: [ { storageBuffers: [ frontEntry ] } ] },
+		},
+	};
+
+	const wired = wireArtifactStorageBuffersFromAttributes( artifact, [
+		{ attribute, attributeName: 'HeightA' },
+	] );
+
+	assert.equal( wired, 2 );
+	assert.equal( rootEntry._liveAttribute, undefined, 'represented root payload is not authoritative' );
+	assert.equal( backEntry._liveAttribute, attribute );
+	assert.equal( frontEntry._liveAttribute, attribute );
+	assert.equal( attribute.version, 1, 'one resource bump covers every variant binding' );
+
+} );
+
 test( 'wireArtifactStorageBuffersFromAttributes fails closed for ambiguous or missing identities', () => {
 
 	const makeAttribute = () => ( {

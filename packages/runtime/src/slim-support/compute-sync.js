@@ -23,6 +23,7 @@
  * @module SlimSupportComputeSync
  */
 
+import { collectArtifactVariantCandidates } from '@tsl-precompile/contract/artifact-variants';
 import { shareGPUTextureEntry, shareShadowGPUTextureIntoSlim, clearTextureViewCache } from './gpu-texture-share.js';
 
 function asList( node ) { return Array.isArray( node ) ? node : [ node ]; }
@@ -749,8 +750,9 @@ export function syncComputeStorageOutputsPerPass( computeNode, fullRenderer, sli
 }
 
 /**
- * Seed precompiled render-artifact storage-buffer entries from compute output
- * attributes discovered by `syncComputeStorageOutputs(..., { onStorageAttr })`.
+ * Seed every authoritative precompiled render-artifact variant's storage-buffer
+ * entries from compute outputs discovered by
+ * `syncComputeStorageOutputs(..., { onStorageAttr })`.
  *
  * Material-local storage buffers are usually recoverable by walking
  * `material.colorNode`, `material.vertexNode`, etc. Renderer-owned systems
@@ -771,67 +773,76 @@ export function syncComputeStorageOutputsPerPass( computeNode, fullRenderer, sli
  */
 export function wireArtifactStorageBuffersFromAttributes( artifact, attributes, opts = {} ) {
 
-	const plan = artifact && Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : null;
-	if ( ! plan || plan.length === 0 ) return 0;
+	const artifacts = collectArtifactVariantCandidates( artifact );
+	if ( artifacts.length === 0 ) return 0;
 
 	const candidates = storageCandidateRecords( attributes );
 	if ( candidates.length === 0 ) return 0;
 
 	const bumpVersion = opts.bumpVersion !== false;
 	const allowVec3ToVec4 = opts.allowVec3ToVec4 !== false;
-	const consumed = new Set();
-	const seenEntries = new Set();
-	const aliasMatches = new Map();
+	const bumpedAttributes = new Set();
 	let wired = 0;
 
-	const wireEntry = ( entry, groupIndex ) => {
+	for ( const candidateArtifact of artifacts ) {
 
-		if ( ! entry || seenEntries.has( entry ) ) return;
-		seenEntries.add( entry );
-		if ( isLiveStorageAttribute( entry._liveAttribute ) ) return;
-		const aliasKey = storageEntryAliasKey( entry, groupIndex );
-		const aliasMatch = aliasMatches.get( aliasKey );
-		if ( aliasMatch ) {
+		const plan = candidateArtifact && Array.isArray( candidateArtifact.uniformPlan ) ? candidateArtifact.uniformPlan : null;
+		if ( ! plan || plan.length === 0 ) continue;
+		const consumed = new Set();
+		const seenEntries = new Set();
+		const aliasMatches = new Map();
+		const wireEntry = ( entry, groupIndex ) => {
 
-			defineLiveStorageAttribute( entry, aliasMatch, false );
-			return;
+			if ( ! entry || seenEntries.has( entry ) ) return;
+			seenEntries.add( entry );
+			if ( isLiveStorageAttribute( entry._liveAttribute ) ) return;
+			const aliasKey = storageEntryAliasKey( entry, groupIndex );
+			const aliasMatch = aliasMatches.get( aliasKey );
+			if ( aliasMatch ) {
 
-		}
+				defineLiveStorageAttribute( entry, aliasMatch, false );
+				return;
 
-		const attributeName = storageEntryAttributeName( entry );
-		const compatible = candidates.filter( ( candidate ) =>
-			storageShapeMatches( candidate.attribute, entry, allowVec3ToVec4 )
-		);
-		let matches;
-		if ( attributeName ) {
+			}
 
-			matches = compatible.filter( ( candidate ) => candidate.attributeNames.has( attributeName ) );
+			const attributeName = storageEntryAttributeName( entry );
+			const compatible = candidates.filter( ( candidate ) =>
+				storageShapeMatches( candidate.attribute, entry, allowVec3ToVec4 )
+			);
+			let matches;
+			if ( attributeName ) {
 
-		} else {
+				matches = compatible.filter( ( candidate ) => candidate.attributeNames.has( attributeName ) );
 
-			matches = compatible.filter( ( candidate ) => ! consumed.has( candidate.attribute ) );
+			} else {
 
-		}
-		const uniqueAttributes = [ ...new Set( matches.map( ( candidate ) => candidate.attribute ) ) ];
-		if ( uniqueAttributes.length !== 1 ) return;
-		const match = uniqueAttributes[ 0 ];
+				matches = compatible.filter( ( candidate ) => ! consumed.has( candidate.attribute ) );
 
-		defineLiveStorageAttribute( entry, match, bumpVersion );
-		consumed.add( match );
-		aliasMatches.set( aliasKey, match );
-		wired ++;
+			}
+			const uniqueAttributes = [ ...new Set( matches.map( ( candidate ) => candidate.attribute ) ) ];
+			if ( uniqueAttributes.length !== 1 ) return;
+			const match = uniqueAttributes[ 0 ];
+			const shouldBump = bumpVersion && ! bumpedAttributes.has( match );
 
-	};
+			defineLiveStorageAttribute( entry, match, shouldBump );
+			if ( shouldBump ) bumpedAttributes.add( match );
+			consumed.add( match );
+			aliasMatches.set( aliasKey, match );
+			wired ++;
 
-	for ( let groupIndex = 0; groupIndex < plan.length; groupIndex ++ ) {
+		};
 
-		const group = plan[ groupIndex ];
+		for ( let groupIndex = 0; groupIndex < plan.length; groupIndex ++ ) {
 
-		for ( const entry of group && group.storageBuffers || [] ) wireEntry( entry, groupIndex );
-		for ( const binding of group && group.orderedBindings || [] ) {
+			const group = plan[ groupIndex ];
 
-			if ( ! binding || binding.type !== 'storage-buffer' || ! binding.ref ) continue;
-			wireEntry( binding.ref, groupIndex );
+			for ( const entry of group && group.storageBuffers || [] ) wireEntry( entry, groupIndex );
+			for ( const binding of group && group.orderedBindings || [] ) {
+
+				if ( ! binding || binding.type !== 'storage-buffer' || ! binding.ref ) continue;
+				wireEntry( binding.ref, groupIndex );
+
+			}
 
 		}
 
