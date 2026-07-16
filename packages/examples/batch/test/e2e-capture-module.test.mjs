@@ -493,3 +493,23 @@ test( 'stock, capture, and replay share logical-frame temporal jitter progressio
 	assert.match( source, /function __frameEffectFrameId\(\) \{\s*return __sharedTemporalJitterFrameId\( window \);\s*\}/ );
 
 } );
+
+test( 'positive target clocks advance only with completed author callbacks', () => {
+
+	const wrapStart = source.indexOf( 'w.__tslpWrapAnimationLoop = function ( callback ) {' );
+	const wrapEnd = source.indexOf( '// Pending counters for async loaders', wrapStart );
+	assert.ok( wrapStart >= 0 && wrapEnd > wrapStart, 'expected the animation-loop wrapper' );
+	const wrapper = source.slice( wrapStart, wrapEnd );
+	assert.match( wrapper, /const completedSteps = w\.__tslpFrameCallbackCount \| 0;/ );
+	assert.match( wrapper, /const atTarget = completedSteps >= freezeAt;/ );
+	assert.match( wrapper, /if \( ! atTarget \) w\.__tslpRafTick = Math\.min\( freezeAt, nextSteps \);/ );
+	assert.match( wrapper, /w\.__tslpFrameCallbackCount = completedSteps;/, 'throwing callbacks roll progress back' );
+
+	const rafStart = source.indexOf( 'w.requestAnimationFrame = function ( cb ) {' );
+	const rafEnd = source.indexOf( '// Also patch Date.now()', rafStart );
+	assert.ok( rafStart >= 0 && rafEnd > rafStart, 'expected the synthetic requestAnimationFrame wrapper' );
+	const raf = source.slice( rafStart, rafEnd );
+	assert.match( raf, /const targetProgress = hasAnimationLoop \? \( w\.__tslpFrameCallbackCount \| 0 \) : \( w\.__tslpRafTick \| 0 \);/ );
+	assert.match( raf, /if \( ! hasAnimationLoop \) w\.__tslpRafTick = tick;/ );
+
+} );

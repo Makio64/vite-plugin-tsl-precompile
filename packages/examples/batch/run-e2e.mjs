@@ -15280,7 +15280,10 @@ async function visitExample( browser, name, mode, waitMs ) {
 				if ( typeof callback !== 'function' ) return callback;
 				return function ( ...args ) {
 
-					const atTarget = ( w.__tslpRafTick | 0 ) >= freezeAt;
+					const completedSteps = w.__tslpFrameCallbackCount | 0;
+					const atTarget = completedSteps >= freezeAt;
+					const previousAnimationLoopCalls = w.__tslpAnimationLoopCalls | 0;
+					const previousRafTick = w.__tslpRafTick | 0;
 					const waitingForRenderableObjects = w.__tslpWaitForRenderableObjects === true && ( w.__tslpRenderableObjectCount | 0 ) < ( w.__tslpMinRenderableObjects | 0 );
 					const waitingForAsyncCounters = ( w.__tslpLoaderPending | 0 ) !== 0
 						|| ( w.__tslpCompilePending | 0 ) !== 0
@@ -15298,7 +15301,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 						|| ( w.__tslpComputePending | 0 ) !== 0
 						|| waitingForRenderableObjects;
 					const transition = transitionAnimationLoopSettle( {
-						animationLoopCalls: w.__tslpAnimationLoopCalls,
+						animationLoopCalls: previousAnimationLoopCalls,
 						atTarget,
 						computePending: ( w.__tslpComputePending | 0 ) !== 0,
 						holdAnimationUntilReady: w.__tslpHoldAnimationUntilReady === true,
@@ -15309,8 +15312,22 @@ async function visitExample( browser, name, mode, waitMs ) {
 					} );
 					w.__tslpAnimationLoopCalls = transition.animationLoopCalls;
 					if ( ! transition.runCallback ) return;
-					w.__tslpFrameCallbackCount = ( w.__tslpFrameCallbackCount | 0 ) + 1;
-					return callback.apply( this, args );
+					const nextSteps = completedSteps + 1;
+					if ( ! atTarget ) w.__tslpRafTick = Math.min( freezeAt, nextSteps );
+					w.__tslpFrameCallbackCount = nextSteps;
+					args[ 0 ] = base + Math.min( freezeAt, nextSteps ) * step;
+					try {
+
+						return callback.apply( this, args );
+
+					} catch ( error ) {
+
+						w.__tslpFrameCallbackCount = completedSteps;
+						w.__tslpAnimationLoopCalls = previousAnimationLoopCalls;
+						if ( ! atTarget ) w.__tslpRafTick = previousRafTick;
+						throw error;
+
+					}
 
 				};
 
@@ -15410,8 +15427,11 @@ async function visitExample( browser, name, mode, waitMs ) {
 				return origRaf( () => {
 
 					if ( w.__tslpFrozen ) return; // squash: freeze already triggered
-					if ( w.__tslpRafTick < freezeAt ) {
-						const tick = ++ w.__tslpRafTick;
+					const hasAnimationLoop = w.__tslpAnimationLoopRegistered === true;
+					const targetProgress = hasAnimationLoop ? ( w.__tslpFrameCallbackCount | 0 ) : ( w.__tslpRafTick | 0 );
+					if ( targetProgress < freezeAt ) {
+						const tick = targetProgress + 1;
+						if ( ! hasAnimationLoop ) w.__tslpRafTick = tick;
 						cb( base + tick * step );
 						return;
 					}

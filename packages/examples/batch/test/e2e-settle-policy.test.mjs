@@ -104,6 +104,95 @@ test( 'pending shadow work pauses without resetting completed callbacks', () => 
 
 } );
 
+test( 'pre-target readiness holds pause without consuming callback progress', () => {
+
+	const transition = transitionForTest();
+	const blocked = transition( {
+		animationLoopCalls: 2,
+		atTarget: false,
+		holdAnimationUntilReady: true,
+		waitingForAsyncCounters: true,
+		waitingForAsyncWork: true,
+	} );
+
+	assert.deepEqual( blocked, { animationLoopCalls: 2, runCallback: false } );
+	assert.deepEqual( transition( {
+		...blocked,
+		atTarget: false,
+		holdAnimationUntilReady: true,
+		waitingForAsyncCounters: false,
+		waitingForAsyncWork: false,
+	} ), { animationLoopCalls: 3, runCallback: true } );
+
+} );
+
+test( 'pre-target shadow and compute jobs pause without an opt-in readiness hold', () => {
+
+	const transition = transitionForTest();
+	for ( const pendingField of [ 'shadowPending', 'computePending' ] ) {
+
+		assert.deepEqual( transition( {
+			animationLoopCalls: 4,
+			atTarget: false,
+			[ pendingField ]: true,
+		} ), { animationLoopCalls: 4, runCallback: false }, pendingField );
+
+	}
+
+} );
+
+test( 'unheld pre-target loader work continues to render', () => {
+
+	const transition = transitionForTest();
+	assert.deepEqual( transition( {
+		animationLoopCalls: 2,
+		atTarget: false,
+		holdAnimationUntilReady: false,
+		waitingForAsyncCounters: true,
+		waitingForAsyncWork: true,
+	} ), { animationLoopCalls: 3, runCallback: true } );
+
+} );
+
+test( 'positive targets count only allowed author animation callbacks', () => {
+
+	const transition = transitionForTest();
+	const freezeAt = 2;
+	const settleFrames = 2;
+	let animationLoopCalls = 0;
+	let frameCallbackCount = 0;
+	let rafTick = 0;
+	const attempt = ( pending = {} ) => {
+
+		const completedSteps = frameCallbackCount;
+		const atTarget = completedSteps >= freezeAt;
+		const next = transition( {
+			animationLoopCalls,
+			atTarget,
+			settleFrames,
+			...pending,
+		} );
+		animationLoopCalls = next.animationLoopCalls;
+		if ( ! next.runCallback ) return false;
+		const nextSteps = completedSteps + 1;
+		if ( ! atTarget ) rafTick = Math.min( freezeAt, nextSteps );
+		frameCallbackCount = nextSteps;
+		return true;
+
+	};
+
+	assert.equal( attempt( { holdAnimationUntilReady: true, waitingForAsyncCounters: true, waitingForAsyncWork: true } ), false );
+	assert.deepEqual( { animationLoopCalls, frameCallbackCount, rafTick }, { animationLoopCalls: 0, frameCallbackCount: 0, rafTick: 0 } );
+	assert.equal( attempt(), true );
+	assert.deepEqual( { animationLoopCalls, frameCallbackCount, rafTick }, { animationLoopCalls: 1, frameCallbackCount: 1, rafTick: 1 } );
+	assert.equal( attempt( { computePending: true, waitingForAsyncCounters: true, waitingForAsyncWork: true } ), false );
+	assert.deepEqual( { animationLoopCalls, frameCallbackCount, rafTick }, { animationLoopCalls: 1, frameCallbackCount: 1, rafTick: 1 } );
+	assert.equal( attempt(), true );
+	assert.deepEqual( { animationLoopCalls, frameCallbackCount, rafTick }, { animationLoopCalls: 2, frameCallbackCount: 2, rafTick: 2 } );
+	assert.equal( attempt(), false, 'the target is followed by the existing settle stop without extra simulation steps' );
+
+} );
+
 test( 'non-shadow asynchronous work still restarts the settle count', () => {
 
 	const transition = transitionForTest();

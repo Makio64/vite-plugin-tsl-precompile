@@ -19,17 +19,19 @@ export function installAnimationLoopSettleTransition( target = globalThis ) {
 
 		let nextAnimationLoopCalls = animationLoopCalls | 0;
 		const settleTarget = Math.max( 0, settleFrames | 0 );
+		const callbackBlocked = ( waitingForAsyncCounters && holdAnimationUntilReady )
+			|| shadowPending
+			|| computePending;
 		if ( ! atTarget ) {
 
+			if ( callbackBlocked ) return { animationLoopCalls: nextAnimationLoopCalls, runCallback: false };
 			return { animationLoopCalls: nextAnimationLoopCalls + 1, runCallback: true };
 
 		}
 
 		if ( waitingForAsyncWork ) nextAnimationLoopCalls = 0;
 		if (
-			( waitingForAsyncCounters && holdAnimationUntilReady ) ||
-			shadowPending ||
-			computePending ||
+			callbackBlocked ||
 			( ! waitingForAsyncWork && nextAnimationLoopCalls >= settleTarget )
 		) {
 
