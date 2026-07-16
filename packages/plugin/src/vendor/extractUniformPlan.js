@@ -1406,6 +1406,14 @@ export function extractUniformPlan( state, context = null ) {
 	//   - textureNode → source (SampledTexture / Sampler bindings)
 	const uniformNodeToSource = new Map();
 	const textureNodeToSource = new Map();
+	// ScreenNode.setup() can replace its private `_output` UniformNode while a
+	// nested node sub-build is compiling, but the replacement keeps Three's
+	// renderer-owned Vector2/Vector4 value. Retain that exact value identity as
+	// a narrow secondary key so the final state-local UBO still receives its
+	// renderer.size / renderer.viewport provenance. Ambiguous shared values fail
+	// closed to the ordinary uniform.live fallback.
+	const screenValueToSource = new WeakMap();
+	const ambiguousScreenValues = new WeakSet();
 
 	// Seed the UBO map with every light-owned UniformNode found above.
 	for ( const [ uniformNode, source ] of lightUniformSources ) {
@@ -1486,6 +1494,19 @@ export function extractUniformPlan( state, context = null ) {
 		if ( objectUniformSources.has( entry.uniformNode ) ) continue;
 		if ( velocityUniformSources.has( entry.uniformNode ) ) continue;
 
+		if ( entry.source && ( entry.source.kind === 'renderer.size' || entry.source.kind === 'renderer.viewport' ) ) {
+
+			const value = entry.uniformNode.value;
+			if ( value && ( typeof value === 'object' || typeof value === 'function' ) ) {
+
+				const previous = screenValueToSource.get( value );
+				if ( previous && previous.kind !== entry.source.kind ) ambiguousScreenValues.add( value );
+				else if ( ! previous ) screenValueToSource.set( value, entry.source );
+
+			}
+
+		}
+
 		// MaterialReferenceNode with uniformType 'texture' binds its `node`
 		// to a TextureNode rather than a plain UniformNode. Route it into
 		// the texture map instead of the UBO map.
@@ -1565,6 +1586,16 @@ export function extractUniformPlan( state, context = null ) {
 					const dtype = uniformDtype( uniform );
 					const tslUniformNode = uniform.nodeUniform ? uniform.nodeUniform.node : null;
 					let source = tslUniformNode ? uniformNodeToSource.get( tslUniformNode ) : null;
+					if ( ! source && tslUniformNode ) {
+
+						const value = tslUniformNode.value;
+						if ( value && ( typeof value === 'object' || typeof value === 'function' ) && ! ambiguousScreenValues.has( value ) ) {
+
+							source = screenValueToSource.get( value ) || null;
+
+						}
+
+					}
 
 					if ( ! source ) {
 

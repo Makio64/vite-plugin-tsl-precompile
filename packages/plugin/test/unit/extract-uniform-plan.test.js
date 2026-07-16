@@ -34,6 +34,19 @@ function makeVec3UniformSlot( node, value ) {
 
 }
 
+function makeVec2UniformSlot( node, value ) {
+
+	return {
+		isVector2Uniform: true,
+		name: 'nodeUniform0',
+		offset: 0,
+		itemSize: 2,
+		nodeUniform: { node },
+		getValue() { return value; },
+	};
+
+}
+
 function makeMatrixUniformSlot( node, value, type ) {
 
 	return {
@@ -219,6 +232,46 @@ test( 'extractUniformPlan structurally maps renderer tone-mapping exposure refer
 	const plan = extractUniformPlan( state, {} );
 	assert.equal( plan[ 0 ].slots[ 0 ].source.kind, 'renderer.toneMappingExposure' );
 	assert.deepEqual( plan[ 0 ].slots[ 0 ].source.valueSnapshot, { type: 'number', data: 1.25 } );
+
+} );
+
+test( 'extractUniformPlan recovers a replaced ScreenNode output by renderer-owned value identity', () => {
+
+	const rendererSize = { isVector2: true, x: 1, y: 1 };
+	const staleOutput = {
+		isUniformNode: true,
+		constructor: { type: 'UniformNode' },
+		nodeType: 'vec2',
+		value: rendererSize,
+	};
+	const stateOutput = {
+		isUniformNode: true,
+		constructor: { type: 'UniformNode' },
+		nodeType: 'vec2',
+		value: rendererSize,
+	};
+	const state = {
+		updateNodes: [ {
+			constructor: { type: 'ScreenNode' },
+			scope: 'size',
+			_output: staleOutput,
+		} ],
+		bindings: [ {
+			name: 'object',
+			bindings: [ {
+				isUniformsGroup: true,
+				byteLength: 16,
+				visibility: 2,
+				groupNode: { shared: false },
+				uniforms: [ makeVec2UniformSlot( stateOutput, rendererSize ) ],
+			} ],
+		} ],
+	};
+
+	const plan = extractUniformPlan( state, {} );
+	assert.notEqual( staleOutput, stateOutput, 'fixture reproduces the nested-build output replacement' );
+	assert.equal( plan[ 0 ].slots[ 0 ].source.kind, 'renderer.size' );
+	assert.deepEqual( plan[ 0 ].slots[ 0 ].source.valueSnapshot, { type: 'vec2', data: [ 1, 1 ] } );
 
 } );
 
