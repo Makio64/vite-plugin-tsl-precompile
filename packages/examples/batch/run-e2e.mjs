@@ -13494,7 +13494,7 @@ function __renderFrameEffectNodeWithFullRenderer( node, slimRenderer, fullRender
 			sssDiag.renderedPrecompiled ++;
 
 		}
-		if ( scheduledNodeFrame === null ) {
+		if ( scheduledNodeFrame === null || effectName === 'GodraysNode' ) {
 			try { Object.defineProperty( node, '__tslpFrameEffectRenderedOnce', { value: true, configurable: true } ); } catch ( _ ) {}
 		}
 		if ( diag.names.length < 20 ) diag.names.push( effectName );

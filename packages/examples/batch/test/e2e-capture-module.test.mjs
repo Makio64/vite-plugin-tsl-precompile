@@ -145,6 +145,29 @@ test( 'forced pipeline maintenance renders receive distinct non-advancing identi
 
 } );
 
+test( 'scheduled Godrays rendering unlocks its dependent bilateral blur', () => {
+
+	const dependencyStart = source.indexOf( 'function __frameEffectNeedsShadowMap( node ) {' );
+	const dependencyEnd = source.indexOf( 'function __deferFrameEffectUntilShadowReady(', dependencyStart );
+	assert.ok( dependencyStart >= 0 && dependencyEnd > dependencyStart, 'expected the frame-effect shadow dependency guard' );
+	const dependencyGuard = source.slice( dependencyStart, dependencyEnd );
+	assert.match( dependencyGuard, /return godraysInput\.__tslpFrameEffectRenderedOnce !== true;/ );
+
+	const renderStart = source.indexOf( 'function __renderFrameEffectNodeWithFullRenderer(' );
+	const renderEnd = source.indexOf( 'function __renderFrameEffectNodesForPipeline(', renderStart );
+	assert.ok( renderStart >= 0 && renderEnd > renderStart, 'expected the frame-effect renderer' );
+	const renderer = source.slice( renderStart, renderEnd );
+	assert.match( renderer, /scheduledNodeFrame === null \|\| effectName === 'GodraysNode'/ );
+	const successfulRender = renderer.indexOf( 'diag.rendered ++;' );
+	const markerGuard = renderer.indexOf( "if ( scheduledNodeFrame === null || effectName === 'GodraysNode' )" );
+	const markerWrite = renderer.indexOf( "Object.defineProperty( node, '__tslpFrameEffectRenderedOnce'", markerGuard );
+	assert.ok(
+		successfulRender >= 0 && markerGuard > successfulRender && markerWrite > markerGuard,
+		'Godrays must publish successful scheduled rendering before the dependent blur checks readiness',
+	);
+
+} );
+
 test( 'capture module never queues Three renderer-owned shadow overrides as user materials', () => {
 
 	const start = source.indexOf( 'function __markSceneMaterials( scene,' );
