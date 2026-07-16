@@ -239,6 +239,17 @@ test( 'slim build: virtual aux module registers into the slim runtime registry',
 			vertexShader: '',
 			fragmentShader: '',
 			computeShader: '',
+			attributes: [ {
+				name: 'nodeAttribute0',
+				type: 'vec4',
+				source: 'node',
+				count: 2,
+				itemSize: 4,
+				arrayType: 'Float32Array',
+				instanced: true,
+				storage: false,
+				arrayGenerator: { kind: 'range@1', seed: 7, min: [ 0, 0, 0, 0 ], max: [ 1, 1, 1, 1 ] },
+			} ],
 			uniformPlan: [],
 		},
 	} ), 'utf8' );
@@ -254,6 +265,9 @@ test( 'slim build: virtual aux module registers into the slim runtime registry',
 		assert.match( source, /"configHash"\s*:\s*"abc123"/ );
 		assert.match( source, /"threeVersion"\s*:\s*"0\.184\.0"/ );
 		assert.match( source, /"pluginVersion"\s*:\s*"0\.1\.0"/ );
+		assert.match( source, /materializeArtifactAttributeDescriptors as __tslp_materializeAttributes/ );
+		assert.match( source, /from "@tsl-precompile\/contract\/attribute-generators"/ );
+		assert.ok( source.indexOf( '__tslp_materializeAttributes( __auxEntries );' ) < source.indexOf( 'registerAuxArtifacts( __auxEntries );' ) );
 		assert.match( source, /registerAuxArtifacts\( __auxEntries \);/ );
 
 	} finally {

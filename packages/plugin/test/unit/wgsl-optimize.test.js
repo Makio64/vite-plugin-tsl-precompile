@@ -318,6 +318,40 @@ test( 'packed artifact modules preserve the public artifact and dynamic-binding 
 
 } );
 
+test( 'generated attribute descriptors opt into one build-time materializer handoff', () => {
+
+	const descriptor = {
+		name: 'nodeAttribute0',
+		type: 'vec4',
+		source: 'node',
+		count: 2,
+		itemSize: 4,
+		arrayType: 'Float32Array',
+		instanced: true,
+		storage: false,
+		arrayGenerator: { kind: 'range@1', seed: 7, min: [ 0, 0, 0, 0 ], max: [ 1, 1, 1, 1 ] },
+	};
+	const { source } = emitArtifactModule(
+		{ hash: 'generated-attribute', name: 'generated-attribute' },
+		{
+			artifact: {
+				vertexShader: 'vertex',
+				fragmentShader: 'fragment',
+				attributes: [],
+				uniformPlan: [],
+				variants: { shadow: { attributes: [ descriptor ], uniformPlan: [] } },
+			},
+		},
+	);
+
+	assert.doesNotThrow( () => parse( source, { sourceType: 'module' } ) );
+	assert.equal( source.match( /from "@tsl-precompile\/contract\/attribute-generators"/g )?.length, 1 );
+	assert.equal( source.match( /__tslp_materializeAttributes\( artifact \);/g )?.length, 1 );
+	assert.ok( source.indexOf( 'materializeArtifactAttributeDescriptors as __tslp_materializeAttributes' ) < source.indexOf( 'export const artifact =' ) );
+	assert.ok( source.indexOf( '__tslp_materializeAttributes( artifact );' ) > source.indexOf( 'export const artifact =' ) );
+
+} );
+
 test( 'emitArtifactModule emits WGSL constants before the artifact literal', () => {
 
 	const shader = '@vertex fn main(  ) -> @builtin( position ) vec4<f32> { return vec4<f32>( 0.0 ); }';

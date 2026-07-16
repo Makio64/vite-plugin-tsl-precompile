@@ -18,6 +18,8 @@ import { emitUpdaterSource } from './emit-updater.js';
 import { VIRTUAL_WGSL_POOL_MODULE_ID } from './_shared/constants.js';
 import { emitOptimizedJsonExpression, getExternalWgslRefIdentifiers } from './wgsl-optimize.js';
 
+export const ATTRIBUTE_DESCRIPTOR_MATERIALIZER_IMPORT = '@tsl-precompile/contract/attribute-generators';
+
 /**
  * @param {Object} manifestEntry - e.g. { file: 'ocean-water.abcd.json', hash: 'sha256:...' }
  * @param {Object} artifactJson - the parsed contents of the artifact file — expected to have `artifact`, `__hash`, `__name` keys from the dev capture payload.
@@ -50,6 +52,7 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 	// the virtual-module API without duplicating source snapshots in its payload.
 	const artifactForEmission = normalizeArtifactLightIdentitiesDeep( omitDynamicBindingsDeep( artifact ) );
 	const dynamicBindingRestorations = emitDynamicBindingRestorations( artifactForEmission );
+	const materializeAttributeDescriptors = artifactNeedsAttributeDescriptorMaterialization( artifactForEmission );
 
 	const {
 		declarations: artifactDeclarations,
@@ -74,6 +77,11 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 		.replace( /export const __unsupportedKinds/, 'const __codegenUnsupportedKinds' );
 
 	const lines = [];
+	if ( materializeAttributeDescriptors ) {
+
+		lines.push( `import { materializeArtifactAttributeDescriptors as __tslp_materializeAttributes } from ${ JSON.stringify( ATTRIBUTE_DESCRIPTOR_MATERIALIZER_IMPORT ) };` );
+
+	}
 	if ( usedWgslPoolRefs.length > 0 ) {
 
 		lines.push( `import { ${ usedWgslPoolRefs.join( ', ' ) } } from ${ JSON.stringify( VIRTUAL_WGSL_POOL_MODULE_ID ) };` );
@@ -88,6 +96,7 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 		`export const __sourceValidationMode = ${ JSON.stringify( sourceValidationMode ) };`,
 		...artifactDeclarations,
 		`export const artifact = ${ artifactLiteral };`,
+		...( materializeAttributeDescriptors ? [ '__tslp_materializeAttributes( artifact );' ] : [] ),
 		...dynamicBindingRestorations,
 		`export const update = __generatedUpdate;`,
 		`export const updateGroup = __generatedUpdateGroup;`,
@@ -99,6 +108,36 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 	);
 
 	return { source: lines.join( '\n' ), unsupportedKinds };
+
+}
+
+export function artifactNeedsAttributeDescriptorMaterialization( value ) {
+
+	const seen = new WeakSet();
+	const visitArtifact = ( artifact ) => {
+
+		if ( ! artifact || typeof artifact !== 'object' || seen.has( artifact ) ) return false;
+		seen.add( artifact );
+		for ( const list of [ artifact.attributes, artifact.nodeAttributes ] ) {
+
+			if ( ! Array.isArray( list ) ) continue;
+			if ( list.some( ( descriptor ) => descriptor && typeof descriptor === 'object' && (
+				descriptor.arrayGenerator !== undefined || descriptor.objectAttribute !== undefined
+			) ) ) return true;
+
+		}
+		for ( const variant of Object.values( artifact.variants || {} ) ) if ( visitArtifact( variant ) ) return true;
+		return false;
+
+	};
+	const visitRoot = ( root ) => {
+
+		if ( Array.isArray( root ) ) return root.some( visitRoot );
+		if ( ! root || typeof root !== 'object' ) return false;
+		return visitArtifact( root.artifact && typeof root.artifact === 'object' ? root.artifact : root );
+
+	};
+	return visitRoot( value );
 
 }
 

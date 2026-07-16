@@ -11,6 +11,8 @@
 
 export const RANGE_ATTRIBUTE_GENERATOR_KIND = 'range@1';
 export const INSTANCE_MATRIX_ATTRIBUTE_KIND = 'instance-matrix@1';
+export const GENERATED_ATTRIBUTE_FILL_SIDECAR = Symbol.for( '@tsl-precompile/generated-attribute-fill@1' );
+export const GENERATED_INSTANCE_MATRIX_COLUMN_SIDECAR = Symbol.for( '@tsl-precompile/generated-instance-matrix-column@1' );
 
 /**
  * Process-local sidecar used by development capture to relate a generated
@@ -223,5 +225,76 @@ export function generateRangeAttributeArray( recipe, count ) {
 	const array = new Float32Array( count * 4 );
 	fillRangeAttributeArray( array, recipe, count );
 	return array;
+
+}
+
+/**
+ * Validate generated attribute descriptors once at the emitted-module
+ * boundary and attach their non-serializable replay handoffs. This keeps the
+ * validators and RangeNode PRNG out of renderer bundles that do not use them,
+ * while the hydrator still fills its final typed storage directly.
+ */
+export function materializeArtifactAttributeDescriptors( value ) {
+
+	const seenArtifacts = new WeakSet();
+	const seenDescriptors = new WeakSet();
+	const visitArtifact = ( artifact ) => {
+
+		if ( ! artifact || typeof artifact !== 'object' || seenArtifacts.has( artifact ) ) return;
+		seenArtifacts.add( artifact );
+		for ( const list of [ artifact.attributes, artifact.nodeAttributes ] ) {
+
+			if ( ! Array.isArray( list ) ) continue;
+			for ( const descriptor of list ) materializeDescriptor( descriptor, seenDescriptors );
+
+		}
+		for ( const variant of Object.values( artifact.variants || {} ) ) visitArtifact( variant );
+
+	};
+	const visitRoot = ( root ) => {
+
+		if ( Array.isArray( root ) ) {
+
+			for ( const entry of root ) visitRoot( entry );
+			return;
+
+		}
+		if ( ! root || typeof root !== 'object' ) return;
+		visitArtifact( root.artifact && typeof root.artifact === 'object' ? root.artifact : root );
+
+	};
+	visitRoot( value );
+	return value;
+
+}
+
+function materializeDescriptor( descriptor, seen ) {
+
+	if ( ! descriptor || typeof descriptor !== 'object' || seen.has( descriptor ) ) return;
+	seen.add( descriptor );
+	if ( descriptor.arrayGenerator !== undefined ) {
+
+		if ( ! isRangeAttributeDescriptor( descriptor ) ) throw new TypeError( 'invalid generated range attribute descriptor' );
+		defineSidecar( descriptor, GENERATED_ATTRIBUTE_FILL_SIDECAR, ( target, stride = 4, offset = 0 ) => (
+			fillRangeAttributeArray( target, descriptor.arrayGenerator, descriptor.count, stride, offset )
+		) );
+
+	}
+	if ( descriptor.objectAttribute !== undefined ) {
+
+		if ( ! isInstanceMatrixAttributeDescriptor( descriptor ) ) throw new TypeError( 'invalid generated instance matrix attribute descriptor' );
+		defineSidecar( descriptor, GENERATED_INSTANCE_MATRIX_COLUMN_SIDECAR, descriptor.objectAttribute.column );
+
+	}
+
+}
+
+function defineSidecar( target, property, value ) {
+
+	Object.defineProperty( target, property, {
+		value,
+		configurable: true,
+		writable: true,
+	} );
 
 }

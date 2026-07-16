@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+	GENERATED_ATTRIBUTE_FILL_SIDECAR,
+	GENERATED_INSTANCE_MATRIX_COLUMN_SIDECAR,
 	createInstanceMatrixAttributeReference,
 	createRangeAttributeGenerator,
 	createRangeAttributeRandom,
@@ -9,6 +11,7 @@ import {
 	isInstanceMatrixAttributeDescriptor,
 	isRangeAttributeDescriptor,
 	isRangeAttributeGenerator,
+	materializeArtifactAttributeDescriptors,
 } from '@tsl-precompile/contract/attribute-generators';
 import { validateArtifact } from '@tsl-precompile/contract/kinds';
 
@@ -27,6 +30,45 @@ test( 'range attribute recipes reproduce the capture random stream exactly', () 
 
 	assert.equal( isRangeAttributeGenerator( recipe ), true );
 	assert.deepEqual( generateRangeAttributeArray( recipe, 2 ), expected );
+
+} );
+
+test( 'generated artifact modules materialize range and instance descriptors once across variants', () => {
+
+	const base = {
+		name: 'nodeAttribute0',
+		type: 'vec4',
+		source: 'node',
+		count: 2,
+		itemSize: 4,
+		arrayType: 'Float32Array',
+		instanced: true,
+		storage: false,
+	};
+	const recipe = createRangeAttributeGenerator( 7, [ 0, 1, 2, 3 ], [ 4, 5, 6, 7 ] );
+	const range = { ...base, arrayGenerator: recipe };
+	const matrix = { ...base, objectAttribute: createInstanceMatrixAttributeReference( 3 ) };
+	const artifact = {
+		attributes: [ range ],
+		nodeAttributes: [ range ],
+		variants: { shadow: { attributes: [ matrix ] } },
+	};
+
+	assert.equal( materializeArtifactAttributeDescriptors( artifact ), artifact );
+	assert.equal( typeof range[ GENERATED_ATTRIBUTE_FILL_SIDECAR ], 'function' );
+	assert.equal( matrix[ GENERATED_INSTANCE_MATRIX_COLUMN_SIDECAR ], 3 );
+	assert.equal( Object.getOwnPropertyDescriptor( range, GENERATED_ATTRIBUTE_FILL_SIDECAR ).enumerable, false );
+	const target = new Float32Array( 10 );
+	range[ GENERATED_ATTRIBUTE_FILL_SIDECAR ]( target, 5, 1 );
+	const expected = generateRangeAttributeArray( recipe, 2 );
+	assert.deepEqual(
+		Array.from( target ),
+		[ 0, ...Array.from( expected.slice( 0, 4 ) ), 0, ...Array.from( expected.slice( 4, 8 ) ) ],
+	);
+
+	assert.throws( () => materializeArtifactAttributeDescriptors( {
+		attributes: [ { ...range, itemSize: 3 } ],
+	} ), /invalid generated range/ );
 
 } );
 

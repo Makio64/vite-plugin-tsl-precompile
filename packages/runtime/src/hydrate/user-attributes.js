@@ -37,15 +37,11 @@ import { InterleavedBufferAttribute } from 'three/src/core/InterleavedBufferAttr
 import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttribute.js';
 import StorageInstancedBufferAttribute from 'three/src/renderers/common/StorageInstancedBufferAttribute.js';
 import {
-	fillRangeAttributeArray,
-	generateRangeAttributeArray,
-	isInstanceMatrixAttributeDescriptor,
-	isRangeAttributeDescriptor,
+	GENERATED_ATTRIBUTE_FILL_SIDECAR,
+	GENERATED_INSTANCE_MATRIX_COLUMN_SIDECAR,
 } from '@tsl-precompile/contract/attribute-generators';
 
 import { resolveTypedArrayCtor } from './typed-arrays.js';
-
-const generatedAttributeArrays = new WeakMap();
 
 /**
  * Clone only artifact records that acquire live graph-resource sidecars while
@@ -535,8 +531,10 @@ function findInstancedObjectAttributeMatchingEntry( object, entry, entries ) {
 	const itemSize = entry.itemSize || itemSizeFromAttributeType( entry.type );
 	if ( entry.objectAttribute ) {
 
-		if ( ! isInstanceMatrixAttributeDescriptor( entry ) ) return null;
-		const column = entry.objectAttribute.column;
+		const column = entry[ GENERATED_INSTANCE_MATRIX_COLUMN_SIDECAR ];
+		if ( ! Number.isInteger( column ) || column < 0 || column > 3 ) throw new Error(
+			'[tsl-precompile/slim] Generated instance matrix descriptor was not materialized by its artifact module.',
+		);
 		const matrix = object.instanceMatrix;
 		if ( ! matrix
 			|| ! ( matrix.array instanceof Float32Array )
@@ -610,9 +608,6 @@ function createLiveInstanceMatrixInterleavedBuffer( source ) {
 	const data = new InstancedInterleavedBuffer( source.array, 16, source.meshPerAttribute || 1 );
 	if ( typeof source.usage === 'number' ) data.usage = source.usage;
 	if ( Array.isArray( source.updateRanges ) ) data.updateRanges = source.updateRanges;
-	// Attributes.js compares this buffer's version on every update. Delegate it
-	// to the authoritative instanceMatrix BufferAttribute so `needsUpdate` on
-	// the object immediately invalidates the shared GPU buffer without copies.
 	Object.defineProperty( data, 'version', {
 		configurable: true,
 		get: () => source.version || 0,
@@ -917,6 +912,7 @@ function collectStorageBufferEntries( group ) {
 export function hydrateNodeAttributes( attributes ) {
 
 	if ( ! Array.isArray( attributes ) ) return [];
+	for ( const attribute of attributes ) assertGeneratedAttributeMaterialized( attribute );
 
 	const fallbackGroups = collectInterleavedFallbackGroups( attributes );
 	const interleavedFallbacks = createInterleavedFallbacks( fallbackGroups );
@@ -949,12 +945,21 @@ export function hydrateNodeAttributes( attributes ) {
 		const interleavedAttribute = interleavedFallbacks.get( attribute );
 		if ( interleavedAttribute ) return { ...attribute, node: { attribute: interleavedAttribute } };
 
-		const sourceArray = attributeArraySource( attribute );
 		const itemSize = attribute.itemSize || itemSizeFromAttributeType( attribute.type );
 		const count = Math.max( 1, attribute.count || 1 );
 		const TypeArray = resolveTypedArrayCtor( attribute.arrayType );
 		const fallbackAttribute = createFallbackNodeAttribute( attribute, count, itemSize, TypeArray );
-		seedAttributeArray( fallbackAttribute, sourceArray );
+		const fillGeneratedArray = attribute[ GENERATED_ATTRIBUTE_FILL_SIDECAR ];
+		if ( typeof fillGeneratedArray === 'function' ) {
+
+			fillGeneratedArray( fallbackAttribute.array );
+			fallbackAttribute.needsUpdate = true;
+
+		} else {
+
+			seedAttributeArray( fallbackAttribute, attributeArraySource( attribute ) );
+
+		}
 
 		return {
 			...attribute,
@@ -1017,10 +1022,10 @@ function createInterleavedFallbacks( groups ) {
 		let offset = 0;
 		for ( const entry of group ) {
 
-			if ( ! entry.attribute.arraySnapshot && ! entry.attribute._liveArray && entry.attribute.arrayGenerator !== undefined ) {
+			const fillGeneratedArray = entry.attribute[ GENERATED_ATTRIBUTE_FILL_SIDECAR ];
+			if ( typeof fillGeneratedArray === 'function' ) {
 
-				assertRangeAttributeDescriptor( entry.attribute );
-				fillRangeAttributeArray( data.array, entry.attribute.arrayGenerator, count, stride, offset );
+				fillGeneratedArray( data.array, stride, offset );
 
 			} else {
 
@@ -1065,32 +1070,21 @@ function attributeArraySource( attribute ) {
 	if ( ! attribute ) return null;
 	if ( attribute.arraySnapshot ) return attribute.arraySnapshot;
 	if ( attribute._liveArray ) return attribute._liveArray;
-	if ( attribute.arrayGenerator === undefined ) return null;
-	assertRangeAttributeDescriptor( attribute );
-	const recipe = attribute.arrayGenerator;
-	let arraysByCount = generatedAttributeArrays.get( recipe );
-	if ( ! arraysByCount ) {
-
-		arraysByCount = new Map();
-		generatedAttributeArrays.set( recipe, arraysByCount );
-
-	}
-	let array = arraysByCount.get( attribute.count );
-	if ( ! array ) {
-
-		array = generateRangeAttributeArray( recipe, attribute.count );
-		arraysByCount.set( attribute.count, array );
-
-	}
-	return array;
+	return null;
 
 }
 
-function assertRangeAttributeDescriptor( attribute ) {
+function assertGeneratedAttributeMaterialized( attribute ) {
 
-	if ( ! isRangeAttributeDescriptor( attribute ) ) {
+	if ( ! attribute || typeof attribute !== 'object' ) return;
+	if ( attribute.arrayGenerator !== undefined && typeof attribute[ GENERATED_ATTRIBUTE_FILL_SIDECAR ] !== 'function' ) {
 
-		throw new Error( '[tsl-precompile/slim] Invalid range@1 attribute descriptor.' );
+		throw new Error( '[tsl-precompile/slim] Generated range descriptor was not materialized by its artifact module.' );
+
+	}
+	if ( attribute.objectAttribute !== undefined && ! Number.isInteger( attribute[ GENERATED_INSTANCE_MATRIX_COLUMN_SIDECAR ] ) ) {
+
+		throw new Error( '[tsl-precompile/slim] Generated instance matrix descriptor was not materialized by its artifact module.' );
 
 	}
 

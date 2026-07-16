@@ -7,6 +7,7 @@ import {
 	createInstanceMatrixAttributeReference,
 	createRangeAttributeGenerator,
 	generateRangeAttributeArray,
+	materializeArtifactAttributeDescriptors,
 } from '@tsl-precompile/contract/attribute-generators';
 
 import { registerArtifact, getArtifact } from '../src/artifact-loader.js';
@@ -302,7 +303,7 @@ test( 'runtime hydrator preserves anonymous instanced node attributes from snaps
 test( 'runtime hydrator regenerates deterministic RangeNode attributes without snapshots', () => {
 
 	const recipe = createRangeAttributeGenerator( 0x13579bdf, [ 0, - 1, 0, 2 ], [ 1, 1, 4, 6 ] );
-	const state = hydrateNodeBuilderState( {
+	const state = hydrateNodeBuilderState( materializeArtifactAttributeDescriptors( {
 		vertexShader: 'vertex',
 		fragmentShader: 'fragment',
 		attributes: [ {
@@ -318,7 +319,7 @@ test( 'runtime hydrator regenerates deterministic RangeNode attributes without s
 		} ],
 		bindings: [],
 		uniformPlan: [],
-	} );
+	} ) );
 
 	const attribute = state.nodeAttributes[ 0 ].node.attribute;
 	assert.equal( attribute.isInstancedBufferAttribute, true );
@@ -326,10 +327,10 @@ test( 'runtime hydrator regenerates deterministic RangeNode attributes without s
 
 } );
 
-test( 'runtime hydrator caches a shared RangeNode recipe independently per count', () => {
+test( 'runtime hydrator materializes a shared RangeNode recipe independently per count', () => {
 
 	const recipe = createRangeAttributeGenerator( 0x2468ace0, [ 0, 0, 0, 0 ], [ 1, 1, 1, 1 ] );
-	const artifact = ( count ) => ( {
+	const artifact = ( count ) => materializeArtifactAttributeDescriptors( {
 		vertexShader: 'vertex',
 		fragmentShader: 'fragment',
 		attributes: [ {
@@ -373,13 +374,13 @@ test( 'runtime hydrator fills multiple RangeNode recipes directly into shared in
 		storage: false,
 		arrayGenerator: recipe,
 	} ) );
-	const state = hydrateNodeBuilderState( {
+	const state = hydrateNodeBuilderState( materializeArtifactAttributeDescriptors( {
 		vertexShader: 'vertex',
 		fragmentShader: 'fragment',
 		attributes,
 		bindings: [],
 		uniformPlan: [],
-	} );
+	} ) );
 	const live = state.nodeAttributes.map( ( entry ) => entry.node.attribute );
 	assert.equal( live[ 0 ].isInterleavedBufferAttribute, true );
 	assert.equal( live[ 0 ].data, live[ 1 ].data );
@@ -417,16 +418,20 @@ test( 'runtime hydrator rejects malformed RangeNode generators instead of zero-f
 		bindings: [],
 		uniformPlan: [],
 	};
-	assert.throws( () => hydrateNodeBuilderState( artifact ), /Invalid range@1/ );
+	assert.throws( () => hydrateNodeBuilderState( materializeArtifactAttributeDescriptors( artifact ) ), /invalid generated range/ );
 
 	const validRecipe = createRangeAttributeGenerator( 1, [ 0, 0, 0, 0 ], [ 1, 1, 1, 1 ] );
-	assert.throws( () => hydrateNodeBuilderState( {
+	assert.throws( () => hydrateNodeBuilderState( materializeArtifactAttributeDescriptors( {
 		...artifact,
 		attributes: [
 			{ ...malformed, itemSize: 4, arrayType: 'Float32Array', arrayGenerator: { ...validRecipe, extra: true } },
 			{ ...malformed, name: 'nodeAttribute1', itemSize: 4, arrayType: 'Float32Array', arrayGenerator: validRecipe },
 		],
-	} ), /Invalid range@1/ );
+	} ) ), /invalid generated range/ );
+	assert.throws( () => hydrateNodeBuilderState( {
+		...artifact,
+		attributes: [ { ...malformed, itemSize: 4, arrayType: 'Float32Array', arrayGenerator: validRecipe } ],
+	} ), /not materialized by its artifact module/ );
 
 } );
 
@@ -679,6 +684,7 @@ test( 'runtime hydrator binds explicit instanceMatrix provenance without snapsho
 		uniformPlan: [],
 	};
 
+	materializeArtifactAttributeDescriptors( artifact );
 	const state = hydrateNodeBuilderState( artifact, material, object );
 	const columns = state.nodeAttributes.map( ( entry ) => entry.node.attribute );
 	assert.ok( columns.every( ( column ) => column !== sameShapeMaterialAttribute ) );

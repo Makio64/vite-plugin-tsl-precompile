@@ -29,7 +29,11 @@ import { createRequire } from 'node:module';
 
 import { annotateDevMarkerSources, instrumentLiveContextDependencies, instrumentLiveUniformIdentities, transformSource } from './babel-transform.js';
 import { autoMarkSource } from './auto-mark.js';
-import { emitArtifactModule } from './emit-manifest.js';
+import {
+	ATTRIBUTE_DESCRIPTOR_MATERIALIZER_IMPORT,
+	artifactNeedsAttributeDescriptorMaterialization,
+	emitArtifactModule,
+} from './emit-manifest.js';
 import { createWgslStringPool, emitOptimizedJsonExpression, getExternalWgslRefIdentifiers } from './wgsl-optimize.js';
 import { attachDevCapture } from './dev-capture-server.js';
 import { getSlimRewriteRuntimeModuleRule, isThreeRewriteTarget, rewriteThreeSource } from './three-rewrite.js';
@@ -697,14 +701,17 @@ export default function tslPrecompile( userOpts = {} ) {
 					externalWgslRefs: buildWgslPool().refs,
 				} );
 				const usedWgslPoolRefs = getExternalWgslRefIdentifiers( auxEntriesLiteral );
+				const materializeAttributeDescriptors = artifactNeedsAttributeDescriptorMaterialization( auxEntries );
 				const lines = [];
 				const runtimeModule = slimRuntimeEntryForMode( opts.slim );
 				lines.push( `import { registerAuxArtifacts } from ${ JSON.stringify( runtimeModule ) };` );
+				if ( materializeAttributeDescriptors ) lines.push( `import { materializeArtifactAttributeDescriptors as __tslp_materializeAttributes } from ${ JSON.stringify( ATTRIBUTE_DESCRIPTOR_MATERIALIZER_IMPORT ) };` );
 				if ( usedWgslPoolRefs.length > 0 ) lines.push( `import { ${ usedWgslPoolRefs.join( ', ' ) } } from ${ JSON.stringify( VIRTUAL_WGSL_POOL_MODULE_ID ) };` );
 				lines.push( '' );
 				for ( const declaration of wgslDeclarations ) lines.push( declaration );
 				if ( wgslDeclarations.length > 0 ) lines.push( '' );
 				lines.push( `const __auxEntries = ${ auxEntriesLiteral };` );
+				if ( materializeAttributeDescriptors ) lines.push( '__tslp_materializeAttributes( __auxEntries );' );
 				lines.push( '' );
 				lines.push( `registerAuxArtifacts( __auxEntries );` );
 				lines.push( `export default __auxEntries;` );

@@ -35,6 +35,7 @@ const GENERATED_RUNTIME_HELPER_IMPORTS = Object.freeze( [
 	'@tsl-precompile/runtime/slim-support/node-dependencies',
 	'@tsl-precompile/runtime/slim-support/live-uniform-registry',
 ] );
+const STATELESS_ATTRIBUTE_MATERIALIZER = '@tsl-precompile/contract/attribute-generators';
 
 async function makeProject( threeVersion = '0.184.0', { provenance = false, bundleBody = null } = {} ) {
 
@@ -246,6 +247,11 @@ test( 'slim build aliases public three entries but full-three bypasses the alias
 			assert.equal( config.resolve.alias.some( ( alias ) => aliasMatches( alias, `${ id }/unexpected` ) ), false, `${ id } must be exact` );
 
 		}
+		assert.equal(
+			config.resolve.alias.some( ( alias ) => aliasMatches( alias, STATELESS_ATTRIBUTE_MATERIALIZER ) ),
+			false,
+			'generated attribute materialization stays tree-shakeable outside the prebuilt singleton',
+		);
 
 		await plugin.configResolved( {
 			root: fixture.root,
