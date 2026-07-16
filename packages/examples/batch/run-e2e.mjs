@@ -5721,12 +5721,12 @@ function __collectFrameEffectTextureAliases( node, byName, seen = new Set(), dep
 		try {
 			const beauty = node.beautyNode;
 			const passNode = beauty && beauty.passNode;
-			const target = beauty && beauty.isRTTNode ? beauty.renderTarget : passNode && passNode.renderTarget;
-			// Context-sensitive volume passes can still need their visible beauty
-			// buffer when a compatible precompiled TRAA resolve is unavailable.
+			// Context-sensitive scene passes still feed TRAA through the ordinary
+			// resolve target. Bypassing that target here makes SSS/other context
+			// effects look sharp but silently drops temporal anti-aliasing.
 			if ( __useTRAAPrecompiledResolve( node ) ) texture = node._resolveRenderTarget && node._resolveRenderTarget.texture;
 			else if ( __useTRAABeautyFallback( node ) ) texture = __traaBeautyFallbackTexture( node );
-			else if ( passNode && passNode.contextNode !== null ) texture = target && target.texture;
+			else if ( passNode && passNode.contextNode !== null ) texture = node._resolveRenderTarget && node._resolveRenderTarget.texture;
 			else if ( beauty && beauty.isRTTNode === true && ( byName.get( 'SSGI' ) || [] ).length > 0 ) texture = node._resolveRenderTarget && node._resolveRenderTarget.texture;
 		} catch ( _ ) {}
 		if ( ! texture && existingResolve.length > 0 ) return byName;
@@ -12207,6 +12207,7 @@ function __collectTRAANodesInGraph( node, out = [], seen = new Set(), depth = 0 
 
 let __fullTRAARendererState = null;
 let __slimTRAAQuad = null;
+const __scheduledTRAAUpdateToken = Symbol( 'tslp-scheduled-traa-update' );
 
 function __collectTRAASelfTextures( traaNode ) {
 	const textures = new Set();
@@ -12488,10 +12489,18 @@ function __patchTRAANodeUpdateBefore( traaNode ) {
 	if ( traaNode.__tslpTRAAUpdatePatched === true ) return;
 	const originalUpdateBefore = traaNode.updateBefore;
 	Object.defineProperty( traaNode, '__tslpTRAAOriginalUpdateBefore', { value: originalUpdateBefore, configurable: true } );
-	traaNode.updateBefore = function ( frame = {} ) {
+	traaNode.updateBefore = function ( frame = {}, dispatchToken = null ) {
+		const diag = __traaDiagnostics();
+		// The terminal-effect scheduler drives TRAA after its producer and
+		// consumer passes. The slim renderer can also discover this live node
+		// while drawing the final quad; letting that automatic update through
+		// advances the temporal history a second time with stale inputs.
+		if ( dispatchToken !== __scheduledTRAAUpdateToken ) {
+			diag.unscheduledBypassed = ( diag.unscheduledBypassed | 0 ) + 1;
+			return;
+		}
 		const slimRenderer = frame && frame.renderer;
 		if ( ! slimRenderer ) return;
-		const diag = __traaDiagnostics();
 		const currentRenderTarget = typeof slimRenderer.getRenderTarget === 'function' ? slimRenderer.getRenderTarget() : null;
 		const currentMRT = typeof slimRenderer.getMRT === 'function' ? slimRenderer.getMRT() : null;
 		try {
@@ -12597,7 +12606,8 @@ function __renderTRAANodesForPipeline( renderer, traaNodes, passNodes, schedule 
 			if ( ! __prepareTRAANodeForReplay( traaNode, null ) ) return false;
 			const diag = __traaDiagnostics();
 			if ( __renderTRAANodeWithPrecompiledSlim( traaNode, renderer, passNodes, diag ) ) return true;
-			traaNode.updateBefore( nodeFrame || { renderer } );
+			diag.scheduledDispatches = ( diag.scheduledDispatches | 0 ) + 1;
+			traaNode.updateBefore( nodeFrame || { renderer }, __scheduledTRAAUpdateToken );
 			return true;
 		};
 		const result = schedule
