@@ -13,7 +13,7 @@ test( 'slim PMREM shell stays constructible for full-renderer adapters', () => {
 
 } );
 
-test( 'slim PMREM shell fails before entering a runtime compiler path', async () => {
+test( 'slim PMREM shell rejects generation but accepts compile-only hints', async () => {
 
 	const generator = new PMREMGenerator( {} );
 	const expected = /PMREMGenerator is excluded because it creates NodeMaterials at runtime/;
@@ -21,6 +21,7 @@ test( 'slim PMREM shell fails before entering a runtime compiler path', async ()
 	assert.throws( () => generator.fromScene( {} ), expected );
 	assert.throws( () => generator.fromEquirectangular( {} ), expected );
 	assert.throws( () => generator.fromCubemap( {} ), expected );
-	await assert.rejects( generator.compileCubemapShader(), expected );
+	await assert.doesNotReject( generator.compileCubemapShader() );
+	await assert.doesNotReject( generator.compileEquirectangularShader() );
 
 } );

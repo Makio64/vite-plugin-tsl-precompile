@@ -5,7 +5,10 @@
  * materials require the compiler that slim deliberately removes, so shipping
  * the implementation only adds dead compiler/runtime graph and fails later.
  * Keep construction available for wrappers and full-renderer adapters, but
- * fail at the first operation with the supported migration path.
+ * fail at the first generation operation with the supported migration path.
+ * The compile methods are performance-only hints in Three, so they remain
+ * harmless no-ops: generation may be delegated later by a full-renderer
+ * adapter without application code needing to special-case slim mode.
  */
 
 const MESSAGE = '[tsl-precompile/slim] PMREMGenerator is excluded because it creates NodeMaterials at runtime. Generate PMREM with the full three/webgpu fallback and wire it through createSlimSceneSupport({ pmremGenerator }), or use the full renderer build.';
@@ -35,8 +38,8 @@ export default class PMREMGenerator {
 	async fromEquirectangularAsync() { return unsupported(); }
 	async fromCubemapAsync() { return unsupported(); }
 
-	async compileCubemapShader() { return unsupported(); }
-	async compileEquirectangularShader() { return unsupported(); }
+	async compileCubemapShader() {}
+	async compileEquirectangularShader() {}
 
 	dispose() {}
 
