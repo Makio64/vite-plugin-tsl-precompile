@@ -380,6 +380,24 @@ test( 'signed background artifacts ignore scene and target samples but retain at
 		renderContextSelectorProfile: 'background',
 	} ), artifact );
 
+	const cubeTarget = JSON.stringify( {
+		...replayDescriptor,
+		target: { ...replayDescriptor.target, colors: [ { kind: 'cube', format: 1023 } ] },
+	} );
+	assert.equal( selectArtifactVariant( artifact, {
+		renderContextSelector: cubeTarget,
+		renderContextSelectorProfile: 'background',
+	} ), artifact );
+
+	const otherFaceAndMip = JSON.stringify( {
+		...replayDescriptor,
+		target: { ...replayDescriptor.target, activeCubeFace: 4, activeMipmapLevel: 2 },
+	} );
+	assert.equal( selectArtifactVariant( artifact, {
+		renderContextSelector: otherFaceAndMip,
+		renderContextSelectorProfile: 'background',
+	} ), artifact );
+
 	const wrongTarget = JSON.stringify( {
 		...replayDescriptor,
 		target: { ...replayDescriptor.target, colors: [ { kind: 'render-target', format: 1022 } ] },

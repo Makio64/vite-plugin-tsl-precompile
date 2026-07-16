@@ -182,12 +182,13 @@ export function createSceneRenderTopologySelector( scene ) {
  * item size and normalization remain signed shader topology. Unknown profiles
  * are returned unchanged so callers can opt in one adapter at a time.
  * Background WGSL is invariant across the output target's adapter-owned
- * surface label and MSAA count: Three binds both when it creates the render
- * pipeline, not in the shader or hydrated bindings. A single background
- * artifact may therefore render both the output-intermediate scene pass and a
- * single-sample reflector target in one frame. NoColorSpace and
- * LinearSRGBColorSpace attachments are likewise the same linear shader-output
- * domain; nonlinear attachment spaces remain signed.
+ * surface label, attachment view kind/face/mip, and MSAA count: Three binds
+ * those when it creates the render pipeline, not in the shader or hydrated
+ * bindings. A cube face is still a 2D color attachment for the draw, so one
+ * background artifact may serve both the output-intermediate scene pass and
+ * every view of a dynamic cube target. NoColorSpace and LinearSRGBColorSpace
+ * attachments are likewise the same linear shader-output domain; attachment
+ * format/data type and nonlinear color spaces remain signed.
  *
  * @param {string} selector
  * @param {string|null|undefined} profile
@@ -303,12 +304,15 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 		projected.target = { ...projected.target };
 		delete projected.target.surface;
 		delete projected.target.sampleCount;
+		delete projected.target.activeCubeFace;
+		delete projected.target.activeMipmapLevel;
 		if ( Array.isArray( projected.target.colors ) ) {
 
 			projected.target.colors = projected.target.colors.map( ( color ) => {
 
 				if ( ! color || typeof color !== 'object' ) return color;
 				const attachment = { ...color };
+				delete attachment.kind;
 				if ( attachment.colorSpace === '' || attachment.colorSpace === 'srgb-linear' ) delete attachment.colorSpace;
 				return attachment;
 

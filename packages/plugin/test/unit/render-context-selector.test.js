@@ -279,6 +279,32 @@ test( 'background selector projection ignores scene state and equivalent linear 
 		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'background' ),
 		'the output-intermediate and reflector targets share one linear background shader',
 	);
+	replay.context.textures[ 0 ].isCubeTexture = true;
+	assert.notEqual(
+		createRenderObjectContextSelector( capture ),
+		createRenderObjectContextSelector( replay ),
+		'ordinary selectors retain the attachment view kind',
+	);
+	assert.equal(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'background' ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'background' ),
+		'a cube face and a render-target texture share one background shader',
+	);
+	delete replay.context.textures[ 0 ].isCubeTexture;
+	replay.context.activeCubeFace = 4;
+	replay.context.activeMipmapLevel = 2;
+	assert.notEqual(
+		createRenderObjectContextSelector( capture ),
+		createRenderObjectContextSelector( replay ),
+		'ordinary selectors retain the selected cube face and mip',
+	);
+	assert.equal(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'background' ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'background' ),
+		'one background shader serves every cube face and mip view',
+	);
+	delete replay.context.activeCubeFace;
+	delete replay.context.activeMipmapLevel;
 	replay.context.textures[ 0 ].colorSpace = 'srgb';
 	assert.notEqual(
 		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'background' ),
