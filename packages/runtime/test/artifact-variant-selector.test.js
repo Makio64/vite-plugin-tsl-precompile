@@ -651,6 +651,11 @@ test( 'variant-local plan drops the root updater while preserving live sidecars'
 	const selectedB = selectArtifactVariant( artifact, { renderContextSelector: SELECTOR_B } );
 	assert.equal( selectedB._generatedUpdateGroup, undefined );
 	assert.equal( selectedB._textureRefs, textureRefs );
+	assert.equal(
+		selectArtifactVariantRuntime( selectedB, { renderContextSelector: SELECTOR_A } ).fragmentShader,
+		'fragment-a',
+		'a selected view retains the generated selector adapter when it is selected again',
+	);
 
 	const selectedA = selectArtifactVariant( artifact, { renderContextSelector: SELECTOR_A } );
 	assert.equal( selectedA._generatedUpdateGroup, updateGroup );

@@ -425,6 +425,17 @@ test( 'frame-texture diagnostics inspect only existing PassNode targets', () => 
 
 } );
 
+test( 'pass-target variant views retain generated selector adapters', () => {
+
+	const start = source.indexOf( 'function __artifactVariantView( artifact, variant ) {' );
+	const end = source.indexOf( 'function __selectArtifactForPassTarget(', start );
+	assert.ok( start >= 0 && end > start, 'expected the pass-target artifact view helper' );
+	const helper = source.slice( start, end );
+	assert.match( helper, /return __materializeArtifactVariantSelectorAdapters\( merged \);/ );
+	assert.doesNotMatch( helper, /delete merged\.variants|merged\.variants = undefined/, 'both transparent draw-side variants must remain selectable' );
+
+} );
+
 test( 'nested offscreen scene renders prepare PMREM before bypassing top-level hooks', () => {
 
 	const start = source.indexOf( 'if ( __renderDepth > 0 ) {' );

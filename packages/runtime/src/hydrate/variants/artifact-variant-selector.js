@@ -333,7 +333,7 @@ function renderObjectOutputCount( renderObject ) {
 function mergeArtifactVariantView( artifact, variant ) {
 
 	const merged = Object.assign( Object.create( Object.getPrototypeOf( artifact ) || null ), artifact, variant );
-	for ( const sidecar of [ '_textureRefs', '_liveUpdateNodes', '_liveUpdateBeforeNodes', '_liveUpdateAfterNodes', '_unsupportedKinds', '_textureResolutionStrategies' ] ) {
+	for ( const sidecar of [ GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR, '_textureRefs', '_liveUpdateNodes', '_liveUpdateBeforeNodes', '_liveUpdateAfterNodes', '_unsupportedKinds', '_textureResolutionStrategies' ] ) {
 
 		forwardSidecar( merged, artifact, sidecar );
 

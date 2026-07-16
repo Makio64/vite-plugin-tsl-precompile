@@ -6566,7 +6566,6 @@ function __retargetPrecompiledMaterialForObject( material, object ) {
 	function __artifactVariantView( artifact, variant ) {
 		if ( ! artifact || ! variant ) return artifact || variant;
 		const merged = Object.assign( Object.create( Object.getPrototypeOf( artifact ) || null ), artifact, variant );
-		try { delete merged.variants; } catch ( _ ) { merged.variants = undefined; }
 		for ( const sidecar of [ '_textureRefs', '_liveUpdateNodes', '_liveUpdateBeforeNodes', '_liveUpdateAfterNodes', '_generatedUpdateGroup', '_unsupportedKinds', '_textureResolutionStrategies' ] ) {
 			Object.defineProperty( merged, sidecar, {
 				get() { return artifact[ sidecar ]; },
@@ -6582,7 +6581,7 @@ function __retargetPrecompiledMaterialForObject( material, object ) {
 				configurable: true,
 			} );
 		}
-		return merged;
+		return __materializeArtifactVariantSelectorAdapters( merged );
 	}
 
 	function __selectArtifactForPassTarget( artifact, targetCount ) {
