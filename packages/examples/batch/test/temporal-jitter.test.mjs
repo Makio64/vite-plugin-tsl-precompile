@@ -78,3 +78,23 @@ test( 'logical callback identity takes precedence while rAF time is clamped', ()
 	assert.equal( temporalJitterFrameId( root ), 3 );
 
 } );
+
+test( 'TRAA exposes its unjittered projection only while the pipeline is active', () => {
+
+	const velocityProjection = Symbol.for( '@tsl-precompile/runtime/velocity-projection-matrix@1' );
+	const projectionMatrix = { elements: [ 1 ] };
+	const camera = {};
+	const node = {
+		camera,
+		_originalProjectionMatrix: projectionMatrix,
+		_jitterIndex: 0,
+		setViewOffset() {},
+		clearViewOffset() {},
+	};
+	synchronizeTemporalJitterNode( node, { root: { __tslpFrameCallbackCount: 1 } } );
+	node.setViewOffset( 640, 480 );
+	assert.equal( camera[ velocityProjection ], projectionMatrix );
+	node.clearViewOffset();
+	assert.equal( camera[ velocityProjection ], undefined );
+
+} );

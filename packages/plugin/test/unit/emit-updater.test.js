@@ -237,6 +237,8 @@ test( 'emitUpdaterSource — temporal frame scope drives frameId and velocity hi
 	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
 	assert.deepEqual( unsupportedKinds, [] );
 	assert.match( source, /Symbol\.for\("@tsl-precompile\/runtime\/temporal-frame@1"\)/ );
+	assert.match( source, /Symbol\.for\("@tsl-precompile\/runtime\/velocity-projection-matrix@1"\)/ );
+	assert.match( source, /new Matrix4\(\)\.copy\(projectionMatrix\)/ );
 	assert.match( source, /temporal\.advance === false/ );
 	assert.match( source, /temporal\.frameId !== undefined/ );
 	assert.match( source, /Number\.isFinite\(_s\.frameId\) \? _s\.frameId : frame\.frameId/ );

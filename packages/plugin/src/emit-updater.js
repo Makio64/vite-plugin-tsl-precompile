@@ -364,6 +364,7 @@ export function emitUpdaterSource( artifact, opts = {} ) {
 			decls.push( 'const _tslpVelocityCameraStates = new WeakMap();' );
 			decls.push( 'const _tslpVelocityObjectStates = new WeakMap();' );
 			decls.push( 'const _tslpTemporalFrameState = Symbol.for("@tsl-precompile/runtime/temporal-frame@1");' );
+			decls.push( 'const _tslpVelocityProjectionMatrix = Symbol.for("@tsl-precompile/runtime/velocity-projection-matrix@1");' );
 			decls.push( 'function _tslpTemporalState(frame) {' );
 			decls.push( '  const renderer = frame && frame.renderer;' );
 			decls.push( '  return renderer && renderer[_tslpTemporalFrameState] || null;' );
@@ -383,15 +384,16 @@ export function emitUpdaterSource( artifact, opts = {} ) {
 			decls.push( '  const camera = frame && frame.camera;' );
 			decls.push( '  if (!camera) return null;' );
 			decls.push( '  const key = _tslpFrameKey(frame);' );
+			decls.push( '  const projectionMatrix = camera[_tslpVelocityProjectionMatrix] && camera[_tslpVelocityProjectionMatrix].elements ? camera[_tslpVelocityProjectionMatrix] : camera.projectionMatrix;' );
 			decls.push( '  let state = _tslpVelocityCameraStates.get(camera);' );
 			decls.push( '  if (!state) {' );
-			decls.push( '    state = { frameId: key, previousProjectionMatrix: new Matrix4().copy(camera.projectionMatrix), previousCameraViewMatrix: new Matrix4().copy(camera.matrixWorldInverse), currentProjectionMatrix: new Matrix4().copy(camera.projectionMatrix), currentCameraViewMatrix: new Matrix4().copy(camera.matrixWorldInverse) };' );
+			decls.push( '    state = { frameId: key, previousProjectionMatrix: new Matrix4().copy(projectionMatrix), previousCameraViewMatrix: new Matrix4().copy(camera.matrixWorldInverse), currentProjectionMatrix: new Matrix4().copy(projectionMatrix), currentCameraViewMatrix: new Matrix4().copy(camera.matrixWorldInverse) };' );
 			decls.push( '    _tslpVelocityCameraStates.set(camera, state);' );
 			decls.push( '  } else if (state.frameId !== key && !_tslpFreezeVelocityState(frame)) {' );
 			decls.push( '    state.frameId = key;' );
 			decls.push( '    state.previousProjectionMatrix.copy(state.currentProjectionMatrix);' );
 			decls.push( '    state.previousCameraViewMatrix.copy(state.currentCameraViewMatrix);' );
-			decls.push( '    state.currentProjectionMatrix.copy(camera.projectionMatrix);' );
+			decls.push( '    state.currentProjectionMatrix.copy(projectionMatrix);' );
 			decls.push( '    state.currentCameraViewMatrix.copy(camera.matrixWorldInverse);' );
 			decls.push( '  }' );
 			decls.push( '  return state;' );

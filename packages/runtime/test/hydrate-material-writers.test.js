@@ -299,6 +299,34 @@ test( 'writeUniformGroup keys velocity history to an explicit logical frame', ()
 
 } );
 
+test( 'writeUniformGroup tracks the unjittered TRAA velocity projection', () => {
+
+	const group = makeGroup( [
+		{ offset: 0, dtype: 'mat4', source: { kind: 'velocity.previousProjectionMatrix' } },
+	] );
+	const velocityProjection = Symbol.for( '@tsl-precompile/runtime/velocity-projection-matrix@1' );
+	const camera = {
+		projectionMatrix: new Matrix4().makeTranslation( 100, 0, 0 ),
+		matrixWorldInverse: new Matrix4(),
+		[ velocityProjection ]: new Matrix4().makeTranslation( 4, 0, 0 ),
+	};
+	const first = makeView();
+	writeUniformGroup( group, { frameId: 1, camera }, first, null );
+	assert.equal( first.getFloat32( 12 * 4, true ), 4 );
+
+	camera.projectionMatrix.makeTranslation( 200, 0, 0 );
+	camera[ velocityProjection ].makeTranslation( 8, 0, 0 );
+	const second = makeView();
+	writeUniformGroup( group, { frameId: 2, camera }, second, null );
+	assert.equal( second.getFloat32( 12 * 4, true ), 4 );
+
+	camera[ velocityProjection ].makeTranslation( 12, 0, 0 );
+	const third = makeView();
+	writeUniformGroup( group, { frameId: 3, camera }, third, null );
+	assert.equal( third.getFloat32( 12 * 4, true ), 8 );
+
+} );
+
 test( 'writeUniformGroup falls back to snapshot when frame fields are missing', () => {
 
 	const view = makeView();

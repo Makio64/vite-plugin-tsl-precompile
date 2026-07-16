@@ -33,6 +33,14 @@ const _odir = new Vector3();
 const _mwi = new Matrix4();
 const _velocityCameraStates = new WeakMap();
 const _velocityObjectStates = new WeakMap();
+const _velocityProjectionMatrix = Symbol.for( '@tsl-precompile/runtime/velocity-projection-matrix@1' );
+
+function currentVelocityProjectionMatrix( camera ) {
+
+	const override = camera && camera[ _velocityProjectionMatrix ];
+	return override && override.elements ? override : camera && camera.projectionMatrix;
+
+}
 
 function frameKey( frame ) {
 
@@ -51,14 +59,15 @@ function getVelocityCameraState( frame ) {
 	const camera = frame && frame.camera;
 	if ( ! camera ) return null;
 	const key = frameKey( frame );
+	const projectionMatrix = currentVelocityProjectionMatrix( camera );
 	let state = _velocityCameraStates.get( camera );
 	if ( ! state ) {
 
 		state = {
 			frameId: key,
-			previousProjectionMatrix: new Matrix4().copy( camera.projectionMatrix ),
+			previousProjectionMatrix: new Matrix4().copy( projectionMatrix ),
 			previousCameraViewMatrix: new Matrix4().copy( camera.matrixWorldInverse ),
-			currentProjectionMatrix: new Matrix4().copy( camera.projectionMatrix ),
+			currentProjectionMatrix: new Matrix4().copy( projectionMatrix ),
 			currentCameraViewMatrix: new Matrix4().copy( camera.matrixWorldInverse ),
 		};
 		_velocityCameraStates.set( camera, state );
@@ -68,7 +77,7 @@ function getVelocityCameraState( frame ) {
 		state.frameId = key;
 		state.previousProjectionMatrix.copy( state.currentProjectionMatrix );
 		state.previousCameraViewMatrix.copy( state.currentCameraViewMatrix );
-		state.currentProjectionMatrix.copy( camera.projectionMatrix );
+		state.currentProjectionMatrix.copy( projectionMatrix );
 		state.currentCameraViewMatrix.copy( camera.matrixWorldInverse );
 
 	}
