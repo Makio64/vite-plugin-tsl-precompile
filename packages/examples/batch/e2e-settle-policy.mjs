@@ -158,7 +158,6 @@ export function settleFramesForExample( name, defaultSettleFrames = 8, hasExplic
 	if ( name === 'webgpu_camera.html' ) return 1;
 	if ( name === 'webgpu_compute_birds.html' ) return 1;
 	if ( name === 'webgpu_compute_sort_bitonic.html' ) return 1;
-	if ( name === 'webgpu_compute_water.html' ) return 1;
 	if ( name === 'webgpu_tsl_compute_attractors_particles.html' ) return 1;
 	if ( name === 'webgpu_instance_path.html' ) return 1;
 	if ( name === 'webgpu_lights_custom.html' ) return 1;
@@ -169,6 +168,12 @@ export function settleFramesForExample( name, defaultSettleFrames = 8, hasExplic
 	if ( name === 'webgpu_postprocessing_retro.html' ) return 1;
 	if ( name === 'webgpu_postprocessing_smaa.html' ) return 1;
 	if ( name === 'webgpu_postprocessing_ssr.html' ) return 1;
+	// Water advances its height and duck kernels on every second application
+	// callback. Replay can restart the quiet-frame count once while its PMREM is
+	// generated asynchronously; one callback therefore straddles the dispatch
+	// boundary in replay but not in stock. Two callbacks leave both modes after
+	// exactly one simulation step, without advancing to the next dispatch.
+	if ( name === 'webgpu_compute_water.html' ) return 2;
 	// The first render containing the async Xbot initializes its skinned velocity
 	// history. A second render is required before the motion-blur pass has a real
 	// previous/current pose pair.
