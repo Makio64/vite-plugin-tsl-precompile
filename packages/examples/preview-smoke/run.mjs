@@ -58,7 +58,7 @@ async function main() {
 	await runChild( 'pnpm', [ '--filter', `examples-${ example }`, 'build' ] );
 
 	log( `spawning vite preview on :${ port }…` );
-	const previewChild = spawn( 'pnpm', [ '--filter', `examples-${ example }`, 'preview', '--', '--port', String( port ), '--strictPort' ], { stdio: [ 'ignore', 'pipe', 'pipe' ] } );
+	const previewChild = spawn( 'pnpm', [ '--filter', `examples-${ example }`, 'preview', '--port', String( port ), '--strictPort' ], { stdio: [ 'ignore', 'pipe', 'pipe' ] } );
 
 	const ready = await waitForServerReady( previewChild, port, totalTimeoutMs );
 	if ( ! ready ) {
@@ -101,21 +101,32 @@ function waitForServerReady( child, expectedPort, timeoutMs ) {
 	return new Promise( ( resolveFn ) => {
 
 		const re = new RegExp( `http://(?:127\\.0\\.0\\.1|localhost|\\[::1\\]):${ expectedPort }/?` );
-		const timer = setTimeout( () => resolveFn( false ), timeoutMs );
+		let output = '';
+		let settled = false;
+		const finish = ( ready ) => {
+
+			if ( settled ) return;
+			settled = true;
+			clearTimeout( timer );
+			resolveFn( ready );
+
+		};
+		const timer = setTimeout( () => finish( false ), timeoutMs );
 		const onChunk = ( chunk ) => {
 
 			const text = chunk.toString();
 			process.stdout.write( text );
-			if ( re.test( text ) ) {
+			output = ( output + text ).replace( /\x1b\[[0-9;]*m/g, '' ).slice( - 4096 );
+			if ( re.test( output ) ) {
 
-				clearTimeout( timer );
-				setTimeout( () => resolveFn( true ), 250 );
+				setTimeout( () => finish( true ), 250 );
 
 			}
 
 		};
 		child.stdout?.on( 'data', onChunk );
 		child.stderr?.on( 'data', onChunk );
+		child.once( 'exit', () => finish( false ) );
 
 	} );
 

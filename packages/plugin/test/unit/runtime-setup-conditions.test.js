@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { build as viteBuild, createServer } from 'vite';
 
 import tslPrecompile from '../../src/index.js';
 
-const EXAMPLE_ROOT = resolve( new URL( '../../../examples/getting-started', import.meta.url ).pathname );
+const EXAMPLE_ROOT = fileURLToPath( new URL( '../../../examples/getting-started', import.meta.url ) );
 
 test( 'Vite resolves runtime setup and apply entries to development only while serving', async () => {
 

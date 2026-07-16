@@ -84,7 +84,7 @@ test( 'slim public compatibility exports expose only the safe Node-core primitiv
 	assert.equal( NodeUtils.hashString, hashString );
 	assert.equal( publicNodeAccess, NodeAccess );
 	assert.equal( TSL.NodeAccess, NodeAccess );
-	assert.throws( () => NodeUtils.getValueType( 1 ), /NodeUtils\.getValueType\(\) is not available/ );
+	assert.throws( () => NodeUtils.getValueType( 1 ), /NodeUtils\.getValueType\(\) unavailable/ );
 
 } );
 
