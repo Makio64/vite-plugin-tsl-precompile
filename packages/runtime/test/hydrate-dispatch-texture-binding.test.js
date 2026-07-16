@@ -55,6 +55,29 @@ test( 'dispatchTextureBinding returns the shape-appropriate fallback for depth.t
 
 } );
 
+test( 'dispatchTextureBinding prefers an attached material-graph pass depth texture', () => {
+
+	const source = {
+		kind: 'depth.texture',
+		textureUuid: 'pass-depth',
+		fromMaterialGraph: true,
+		lightIndex: - 1,
+	};
+	const artifact = makeArtifact( source );
+	const liveDepth = { isTexture: true, isDepthTexture: true, name: 'depth' };
+	artifact._textureRefs = new Map( [ [ source.textureUuid, liveDepth ] ] );
+	const result = dispatchTextureBinding( {
+		artifact,
+		groupName: 'render',
+		bindingName: 'nodeTexture0',
+		material: null,
+		deps: { fallbacks: makeFallbacks() },
+	} );
+
+	assert.equal( result, liveDepth );
+
+} );
+
 test( 'dispatchTextureBinding hands viewport.texture to makeViewportFallback', () => {
 
 	const artifact = makeArtifact( { kind: 'viewport.texture' } );

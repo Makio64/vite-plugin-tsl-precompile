@@ -39,7 +39,6 @@
  */
 
 import { registerPrecompiledArtifact, unregisterPrecompiledArtifacts } from './_vendor-PrecompiledArtifactRegistry.js';
-import { rewritePassDepthTextureSources } from './slim-support/artifact-texture-wiring.js';
 
 /** @type {Map<string, Object>} */
 const REGISTRY = new Map();
@@ -815,7 +814,6 @@ export function attachPostprocessTextureRefs( artifact, root ) {
 	if ( candidates.length === 0 ) return artifact;
 
 	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
-	const attachedPassDepthUuids = new Set();
 	let changed = false;
 
 	for ( const group of artifact.uniformPlan || [] ) {
@@ -839,7 +837,6 @@ export function attachPostprocessTextureRefs( artifact, root ) {
 			if ( match && match.texture && match.texture.isTexture === true ) {
 
 				refs.set( source.textureUuid, match.texture );
-				if ( passDepth ) attachedPassDepthUuids.add( source.textureUuid );
 				changed = true;
 
 			}
@@ -858,8 +855,6 @@ export function attachPostprocessTextureRefs( artifact, root ) {
 		} );
 
 	}
-	if ( attachedPassDepthUuids.size > 0 ) rewritePassDepthTextureSources( artifact, attachedPassDepthUuids );
-
 	return artifact;
 
 }

@@ -476,8 +476,18 @@ export function dispatchTextureBinding( { artifact, groupName, bindingName, mate
 	const selectShapeFallback = () => selectFallbackTextureForBinding( artifact, bindingName, fallbacks );
 
 	// Shadow depth textures: the live depth map is allocated by the renderer
-	// after hydration and swapped in by the per-frame shadow rebinder.
-	if ( source.kind === 'depth.texture' ) return selectShapeFallback();
+	// after hydration and swapped in by the per-frame shadow rebinder. A
+	// material-graph pass depth can already have an exact live ref attached by
+	// the postprocess replay adapter, so prefer that without changing its kind.
+	if ( source.kind === 'depth.texture' ) {
+
+		const passDepth = source.fromMaterialGraph === true
+			&& ! source.lightUuid
+			&& ! ( typeof source.lightIndex === 'number' && source.lightIndex >= 0 );
+		const live = passDepth && artifact._textureRefs && artifact._textureRefs.get( source.textureUuid );
+		return live && live.isTexture === true ? live : selectShapeFallback();
+
+	}
 
 	const builtinTexture = resolveBuiltinTextureBinding( {
 		artifact,

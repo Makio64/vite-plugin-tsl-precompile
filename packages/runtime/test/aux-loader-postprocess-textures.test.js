@@ -65,7 +65,7 @@ test( 'attachPostprocessTextureRefs updates PassTextureNode values before matchi
 
 } );
 
-test( 'attachPostprocessTextureRefs promotes material-graph pass depth without touching light shadows', () => {
+test( 'attachPostprocessTextureRefs binds material-graph pass depth without touching light shadows', () => {
 
 	const depthTexture = { isTexture: true, isDepthTexture: true, name: 'depth', uuid: 'live-depth' };
 	const passDepthSource = {
@@ -99,9 +99,7 @@ test( 'attachPostprocessTextureRefs promotes material-graph pass depth without t
 
 	assert.equal( artifact._textureRefs.get( 'captured-pass-depth' ), depthTexture );
 	assert.equal( artifact._textureRefs.has( 'captured-shadow-depth' ), false );
-	assert.equal( passDepthSource.kind, 'artifact.texture' );
-	assert.equal( passDepthSource.textureName, 'depth' );
-	assert.equal( passDepthSource.__tslpPassDepthAttached, true );
+	assert.equal( passDepthSource.kind, 'depth.texture' );
 	assert.equal( lightDepthSource.kind, 'depth.texture' );
 
 } );
