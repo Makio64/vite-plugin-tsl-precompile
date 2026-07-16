@@ -1,5 +1,5 @@
 {
-  "__hash": "7d9a746b24d46d19319874f034ccb68a86e2733010d88f4035813fee26ab3856",
+  "__hash": "c45c26c5977441d5c979458cf96f336e07323c8d099090a5bff5c1e10596e1a4",
   "__name": "getting-started",
   "__sourceOwners": [
     {
@@ -92,7 +92,7 @@
               "valueSnapshot": {
                 "type": "mat4",
                 "data": [
-                  1.2062851427866268,
+                  1.2311058247369688,
                   0,
                   0,
                   0,
@@ -150,7 +150,7 @@
             "source": {
               "kind": "light.colorScaled",
               "lightIndex": 0,
-              "lightUuid": "fbbccec1-24b5-4860-ac17-5068eb3c8883",
+              "lightUuid": "4e905e5e-0e99-4bd1-a878-b88ab531dd40",
               "valueSnapshot": {
                 "type": "color",
                 "data": [
@@ -170,7 +170,7 @@
             "source": {
               "kind": "light.position",
               "lightIndex": 0,
-              "lightUuid": "fbbccec1-24b5-4860-ac17-5068eb3c8883",
+              "lightUuid": "4e905e5e-0e99-4bd1-a878-b88ab531dd40",
               "valueSnapshot": {
                 "type": "vec3",
                 "data": [
@@ -208,7 +208,7 @@
             "source": {
               "kind": "light.colorScaled",
               "lightIndex": 1,
-              "lightUuid": "6051a66b-c44f-4a0a-b101-c4d946c7a25b",
+              "lightUuid": "8d2b75df-3838-4e03-b07e-ac5c4c3bb334",
               "valueSnapshot": {
                 "type": "color",
                 "data": [
@@ -228,7 +228,7 @@
             "source": {
               "kind": "light.position",
               "lightIndex": 1,
-              "lightUuid": "6051a66b-c44f-4a0a-b101-c4d946c7a25b",
+              "lightUuid": "8d2b75df-3838-4e03-b07e-ac5c4c3bb334",
               "valueSnapshot": {
                 "type": "vec3",
                 "data": [
@@ -248,7 +248,7 @@
             "source": {
               "kind": "light.targetPosition",
               "lightIndex": 1,
-              "lightUuid": "6051a66b-c44f-4a0a-b101-c4d946c7a25b",
+              "lightUuid": "8d2b75df-3838-4e03-b07e-ac5c4c3bb334",
               "valueSnapshot": {
                 "type": "vec3",
                 "data": [
@@ -280,7 +280,7 @@
                   "valueSnapshot": {
                     "type": "mat4",
                     "data": [
-                      1.2062851427866268,
+                      1.2311058247369688,
                       0,
                       0,
                       0,
@@ -338,7 +338,7 @@
                 "source": {
                   "kind": "light.colorScaled",
                   "lightIndex": 0,
-                  "lightUuid": "fbbccec1-24b5-4860-ac17-5068eb3c8883",
+                  "lightUuid": "4e905e5e-0e99-4bd1-a878-b88ab531dd40",
                   "valueSnapshot": {
                     "type": "color",
                     "data": [
@@ -358,7 +358,7 @@
                 "source": {
                   "kind": "light.position",
                   "lightIndex": 0,
-                  "lightUuid": "fbbccec1-24b5-4860-ac17-5068eb3c8883",
+                  "lightUuid": "4e905e5e-0e99-4bd1-a878-b88ab531dd40",
                   "valueSnapshot": {
                     "type": "vec3",
                     "data": [
@@ -396,7 +396,7 @@
                 "source": {
                   "kind": "light.colorScaled",
                   "lightIndex": 1,
-                  "lightUuid": "6051a66b-c44f-4a0a-b101-c4d946c7a25b",
+                  "lightUuid": "8d2b75df-3838-4e03-b07e-ac5c4c3bb334",
                   "valueSnapshot": {
                     "type": "color",
                     "data": [
@@ -416,7 +416,7 @@
                 "source": {
                   "kind": "light.position",
                   "lightIndex": 1,
-                  "lightUuid": "6051a66b-c44f-4a0a-b101-c4d946c7a25b",
+                  "lightUuid": "8d2b75df-3838-4e03-b07e-ac5c4c3bb334",
                   "valueSnapshot": {
                     "type": "vec3",
                     "data": [
@@ -436,7 +436,7 @@
                 "source": {
                   "kind": "light.targetPosition",
                   "lightIndex": 1,
-                  "lightUuid": "6051a66b-c44f-4a0a-b101-c4d946c7a25b",
+                  "lightUuid": "8d2b75df-3838-4e03-b07e-ac5c4c3bb334",
                   "valueSnapshot": {
                     "type": "vec3",
                     "data": [
@@ -513,15 +513,15 @@
               "valueSnapshot": {
                 "type": "mat3",
                 "data": [
-                  0.9984324097278342,
-                  0.001958575800902445,
-                  -0.05593645667989694,
+                  0.9988482211670138,
+                  0.0014392311963480028,
+                  -0.04795998003602387,
                   0,
-                  0.9993875625234885,
-                  0.034992854604336196,
-                  0.055970735255755466,
-                  -0.034938000145863124,
-                  0.9978209323023532
+                  0.9995500337489874,
+                  0.02999550020249566,
+                  0.047981570123249925,
+                  -0.02996095202027759,
+                  0.9983987731776048
                 ]
               }
             }
@@ -570,17 +570,17 @@
               "valueSnapshot": {
                 "type": "mat4",
                 "data": [
-                  0.9984324097278344,
-                  0.0019585758009024457,
-                  -0.055936456679896954,
+                  0.9988482211670138,
+                  0.0014392311963480028,
+                  -0.04795998003602387,
                   0,
-                  2.168404344971009e-19,
-                  0.9993875625234886,
-                  0.034992854604336196,
                   0,
-                  0.05597073525575548,
-                  -0.03493800014586314,
-                  0.9978209323023535,
+                  0.9995500337489875,
+                  0.02999550020249566,
+                  0,
+                  0.04798157012324992,
+                  -0.02996095202027759,
+                  0.9983987731776047,
                   0,
                   0,
                   0,
@@ -676,15 +676,15 @@
                   "valueSnapshot": {
                     "type": "mat3",
                     "data": [
-                      0.9984324097278342,
-                      0.001958575800902445,
-                      -0.05593645667989694,
+                      0.9988482211670138,
+                      0.0014392311963480028,
+                      -0.04795998003602387,
                       0,
-                      0.9993875625234885,
-                      0.034992854604336196,
-                      0.055970735255755466,
-                      -0.034938000145863124,
-                      0.9978209323023532
+                      0.9995500337489874,
+                      0.02999550020249566,
+                      0.047981570123249925,
+                      -0.02996095202027759,
+                      0.9983987731776048
                     ]
                   }
                 }
@@ -733,17 +733,17 @@
                   "valueSnapshot": {
                     "type": "mat4",
                     "data": [
-                      0.9984324097278344,
-                      0.0019585758009024457,
-                      -0.055936456679896954,
+                      0.9988482211670138,
+                      0.0014392311963480028,
+                      -0.04795998003602387,
                       0,
-                      2.168404344971009e-19,
-                      0.9993875625234886,
-                      0.034992854604336196,
                       0,
-                      0.05597073525575548,
-                      -0.03493800014586314,
-                      0.9978209323023535,
+                      0.9995500337489875,
+                      0.02999550020249566,
+                      0,
+                      0.04798157012324992,
+                      -0.02996095202027759,
+                      0.9983987731776047,
                       0,
                       0,
                       0,
@@ -769,14 +769,6 @@
             }
           },
           {
-            "type": "unknown",
-            "name": "nodeUniform15_sampler",
-            "flags": [
-              "isSampler"
-            ],
-            "visibility": 2
-          },
-          {
             "type": "sampled-texture",
             "ref": {
               "bindingKind": "sampled-texture",
@@ -788,15 +780,6 @@
                 "kind": "builtin.dfgLUT"
               }
             }
-          },
-          {
-            "type": "unknown",
-            "name": "nodeUniform15",
-            "flags": [
-              "isSampler",
-              "isSampledTexture"
-            ],
-            "visibility": 2
           }
         ]
       }
@@ -861,7 +844,7 @@
     "lightIdentities": [
       {
         "schema": "light-identity@1",
-        "captureUuid": "fbbccec1-24b5-4860-ac17-5068eb3c8883",
+        "captureUuid": "4e905e5e-0e99-4bd1-a878-b88ab531dd40",
         "captureIndex": 0,
         "type": "HemisphereLight",
         "snapshot": {
@@ -881,7 +864,7 @@
       },
       {
         "schema": "light-identity@1",
-        "captureUuid": "6051a66b-c44f-4a0a-b101-c4d946c7a25b",
+        "captureUuid": "8d2b75df-3838-4e03-b07e-ac5c4c3bb334",
         "captureIndex": 1,
         "type": "DirectionalLight",
         "snapshot": {
@@ -910,14 +893,14 @@
     "renderContextSelectors": [
       "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[{\"castShadow\":false,\"colorNode\":false,\"map\":null,\"shadow\":null,\"type\":\"HemisphereLight\"},{\"castShadow\":false,\"colorNode\":false,\"map\":null,\"shadow\":{\"cameraType\":\"orthographic\",\"type\":\"DirectionalLightShadow\"},\"type\":\"DirectionalLight\"}],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":true,\"maps\":[],\"normalMapType\":0,\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":0,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"normal\",{\"itemSize\":3,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":true,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":0,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"render-target\"}],\"depth\":true,\"depthTexture\":{\"colorSpace\":\"\",\"dataType\":1014,\"format\":1026,\"internalFormat\":null,\"kind\":\"depth\"},\"multiview\":false,\"sampleCount\":4,\"stencil\":false,\"surface\":\"output-intermediate\"},\"version\":\"render-object-selector@1\"}"
     ],
-    "materialUuid": "a54b1ec4-c669-4c92-9059-e6c6f8f804b8",
-    "userMaterialUuid": "a54b1ec4-c669-4c92-9059-e6c6f8f804b8",
-    "captureClock": 0.016099999904632567,
+    "materialUuid": "19b1aa8d-4bfb-4a60-a32d-c085235f5d7d",
+    "userMaterialUuid": "19b1aa8d-4bfb-4a60-a32d-c085235f5d7d",
+    "captureClock": 0.05479999995231629,
     "sourceGraphHash": "2386b04ac17958643070b2b044d70eebb7dca0cb92db264248812d5b248c06df",
     "sourceHashVersion": "0.1.0",
     "sourceThreeVersion": "0.184.0",
     "renderContextSignature": "{\"camera\":{\"array\":false,\"coordinateSystem\":2001,\"layers\":1,\"orthographic\":false,\"perspective\":true,\"type\":\"PerspectiveCamera\",\"viewEnabled\":false,\"views\":[]},\"clipping\":{\"groups\":[],\"intersection\":false,\"materialPlaneCount\":0,\"shadows\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"castShadow\":false,\"geometry\":{\"attributes\":[[\"normal\",{\"arrayType\":\"Float32Array\",\"gpuType\":1015,\"instanced\":false,\"itemSize\":3,\"normalized\":false,\"type\":\"Float32BufferAttribute\"}],[\"position\",{\"arrayType\":\"Float32Array\",\"gpuType\":1015,\"instanced\":false,\"itemSize\":3,\"normalized\":false,\"type\":\"Float32BufferAttribute\"}],[\"uv\",{\"arrayType\":\"Float32Array\",\"gpuType\":1015,\"instanced\":false,\"itemSize\":2,\"normalized\":false,\"type\":\"Float32BufferAttribute\"}]],\"index\":{\"arrayType\":\"Uint32Array\",\"gpuType\":1015,\"instanced\":false,\"itemSize\":1,\"normalized\":false,\"type\":\"Uint16BufferAttribute\"},\"morphAttributes\":[],\"morphTargetsRelative\":false,\"type\":\"TorusKnotGeometry\"},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"receiveShadow\":false,\"skinned\":false,\"type\":\"Mesh\",\"visible\":true},\"renderTarget\":null,\"renderer\":{\"backend\":\"WebGPUBackend\",\"coordinateSystem\":2001,\"currentSamples\":0,\"depth\":true,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"outputColorSpace\":\"srgb\",\"shadowMap\":{\"enabled\":false,\"type\":1},\"toneMapping\":0,\"transparent\":true,\"type\":\"WebGPURenderer\"},\"scene\":{\"backgroundNode\":null,\"environment\":null,\"environmentNode\":null,\"fog\":null,\"lights\":[{\"castShadow\":false,\"colorNode\":null,\"layers\":1,\"map\":null,\"shadow\":null,\"type\":\"HemisphereLight\",\"visible\":true,\"visibleToCameraLayers\":true},{\"castShadow\":false,\"colorNode\":null,\"layers\":1,\"map\":null,\"shadow\":{\"camera\":\"OrthographicCamera\",\"type\":\"DirectionalLightShadow\"},\"type\":\"DirectionalLight\",\"visible\":true,\"visibleToCameraLayers\":true}],\"overrideMaterial\":null,\"type\":\"Scene\"},\"version\":\"render-context@0.1.0\"}",
-    "artifactContentHashVersion": "artifact-content@2",
+    "artifactContentHashVersion": "artifact-content@3",
     "sourceValidationMode": "runtime-graph",
     "sourceMaterial": {
       "type": "MeshStandardNodeMaterial",

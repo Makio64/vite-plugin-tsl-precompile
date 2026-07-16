@@ -1,7 +1,7 @@
 {
   "getting-started": {
-    "file": "getting-started.7d9a746b24d4.json",
-    "hash": "7d9a746b24d46d19319874f034ccb68a86e2733010d88f4035813fee26ab3856",
+    "file": "getting-started.c45c26c59774.json",
+    "hash": "c45c26c5977441d5c979458cf96f336e07323c8d099090a5bff5c1e10596e1a4",
     "sourceIdentity": "fa21f08570e880101a6291f2efd85c976e6aaeb5d99b697e5f0ef92cadea0658",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -10,7 +10,7 @@
         "revision": "2f6deca0f0b9a67fcbbdfb3fca76d271e7de95f4cf3129c8571924d75dae89da"
       }
     ],
-    "capturedAt": "2026-07-14T05:09:40.931Z"
+    "capturedAt": "2026-07-16T16:56:22.349Z"
   },
   "__aux": {
     "render-output:97611dff0211377c84840eff1ccf7b6f1438023a9c4f25eefd043da604a5f198": {
@@ -19,6 +19,13 @@
       "configHash": "97611dff0211377c84840eff1ccf7b6f1438023a9c4f25eefd043da604a5f198",
       "hash": null,
       "capturedAt": "2026-07-14T05:09:40.899Z"
+    },
+    "render-output:64408283fa335f51e57c24dd9cc697109f23fd864f8474bc5e19cc6a7e835c7b": {
+      "file": "aux-render-output-64408283fa33.json",
+      "shape": "render-output",
+      "configHash": "64408283fa335f51e57c24dd9cc697109f23fd864f8474bc5e19cc6a7e835c7b",
+      "hash": null,
+      "capturedAt": "2026-07-16T16:56:32.726Z"
     }
   }
 }
