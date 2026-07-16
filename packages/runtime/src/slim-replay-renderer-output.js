@@ -33,6 +33,7 @@ export function getReplayRenderOutputCacheKey( renderer, outputTexture ) {
 		config.schema,
 		config.toneMapping,
 		config.currentColorSpace,
+		config.logarithmicDepthBuffer ? 1 : 0,
 		config.sampledTexture,
 		config.multiview ? 1 : 0,
 	].join( ',' );

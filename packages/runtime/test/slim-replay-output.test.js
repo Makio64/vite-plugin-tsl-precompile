@@ -132,6 +132,23 @@ test( 'renderer output selection is exact, per-target, and exposure-independent'
 
 } );
 
+test( 'renderer output selection and cache identity distinguish logarithmic depth', () => {
+
+	const normalRenderer = renderer( { logarithmicDepthBuffer: false } );
+	const logarithmicRenderer = renderer( { logarithmicDepthBuffer: true } );
+	const texture = new Texture();
+	registerOutput( normalRenderer, texture, outputArtifact( '2d', 'normal-depth' ) );
+	registerOutput( logarithmicRenderer, texture, outputArtifact( '2d', 'logarithmic-depth' ) );
+
+	assert.notEqual(
+		getReplayRenderOutputCacheKey( normalRenderer, texture ),
+		getReplayRenderOutputCacheKey( logarithmicRenderer, texture ),
+	);
+	assert.match( createReplayRenderOutputMaterial( normalRenderer, texture ).precompiledArtifact.vertexShader, /normal-depth/ );
+	assert.match( createReplayRenderOutputMaterial( logarithmicRenderer, texture ).precompiledArtifact.vertexShader, /logarithmic-depth/ );
+
+} );
+
 test( 'renderer output distinguishes 2d-array topology and preserves old material on a miss', () => {
 
 	const sourceRenderer = renderer();

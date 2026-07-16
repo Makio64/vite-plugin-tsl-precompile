@@ -17,6 +17,7 @@
  *   schema: 'renderer-output@1',
  *   toneMapping: string|number|boolean|null,
  *   currentColorSpace: string|number|boolean|null,
+ *   logarithmicDepthBuffer: boolean,
  *   sampledTexture: '2d'|'2d-array',
  *   multiview: boolean,
  * }}
@@ -30,6 +31,7 @@ export function createRendererOutputConfig( renderer, outputTexture ) {
 		schema: 'renderer-output@1',
 		toneMapping: scalar( safeRead( renderer, 'toneMapping' ) ),
 		currentColorSpace,
+		logarithmicDepthBuffer: safeRead( renderer, 'logarithmicDepthBuffer' ) === true,
 		sampledTexture: safeRead( outputTexture, 'isArrayTexture' ) === true ? '2d-array' : '2d',
 		multiview: rendererUsesMultiview( renderer ),
 	};

@@ -29,6 +29,7 @@ test( 'renderer output config captures color topology without live exposure', ()
 		schema: 'renderer-output@1',
 		toneMapping: 4,
 		currentColorSpace: 'display-p3',
+		logarithmicDepthBuffer: false,
 		sampledTexture: '2d',
 		multiview: false,
 	} );
@@ -47,6 +48,7 @@ test( 'renderer output config distinguishes array sampling and multiview', () =>
 		schema: 'renderer-output@1',
 		toneMapping: 0,
 		currentColorSpace: 'srgb',
+		logarithmicDepthBuffer: false,
 		sampledTexture: '2d-array',
 		multiview: true,
 	} );

@@ -186,6 +186,7 @@ test( 'slim-mode setup captures renderer output once per successful real-render 
 	const baseReplayConfig = {
 		schema: 'renderer-output@1',
 		currentColorSpace: 'srgb',
+		logarithmicDepthBuffer: false,
 		sampledTexture: '2d',
 		multiview: false,
 	};
@@ -267,6 +268,7 @@ test( 'slim-mode setup captures renderer output once per successful real-render 
 				schema: 'renderer-output@1',
 				toneMapping: 0,
 				currentColorSpace: 'srgb',
+				logarithmicDepthBuffer: false,
 				sampledTexture: '2d',
 				multiview: false,
 			},
@@ -329,6 +331,7 @@ test( 'slim-mode renderer-output capture retries a failed publish on a later rea
 					schema: 'renderer-output@1',
 					toneMapping: renderer.toneMapping,
 					currentColorSpace: renderer.outputColorSpace,
+					logarithmicDepthBuffer: renderer.logarithmicDepthBuffer === true,
 					sampledTexture: '2d',
 					multiview: false,
 				},
@@ -431,6 +434,7 @@ test( 'slim-mode output capture keys nested offscreen waves after canvas state i
 					schema: 'renderer-output@1',
 					toneMapping: renderer.toneMapping,
 					currentColorSpace: renderer.outputColorSpace,
+					logarithmicDepthBuffer: renderer.logarithmicDepthBuffer === true,
 					sampledTexture: '2d',
 					multiview: false,
 				},

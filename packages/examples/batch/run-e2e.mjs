@@ -984,7 +984,7 @@ function fullWebgpuAutoModule() {
 import * as Original from '/build/three.webgpu.js';
 export * from '/build/three.webgpu.js';
 import { installPrecompileMarker, setDevRenderer } from '/__tslp_runtime/precompile-marker.js';
-import { precompileAuxiliary } from '/__tslp_runtime/aux-marker.js';
+import { precompileAuxiliary, precompileRendererOutput } from '/__tslp_runtime/aux-marker.js';
 import { createRenderObjectContextSelector as __createRenderObjectContextSelector, projectRenderObjectContextSelector as __projectRenderObjectContextSelector } from '/__tslp_contract/render-selector.js';
 import { createMaterialContextKey as __createMaterialContextKey, getMaterialContextMap as __getMaterialContextMap } from '/__tslp_batch/material-context-cache.mjs';
 import { synchronizeTemporalJitterNode as __sharedSynchronizeTemporalJitterNode } from '/__tslp_batch/temporal-jitter.mjs';
@@ -1380,11 +1380,17 @@ function __markStandaloneRenderTargetMaterial( target, renderer = null ) {
 	}
 }
 
-function __rememberAuxScene( scene, camera ) {
+function __rememberAuxScene( scene, camera, renderer = null ) {
 	if ( ! scene || scene.isScene !== true ) return;
 	if ( ! scene.userData || scene.userData.__tslpUserScene !== true ) return;
 	if ( scene.userData && scene.userData.__tslpSyntheticCaptureScene ) return;
-	__auxScenes.set( scene, camera || null );
+	let entry = __auxScenes.get( scene );
+	if ( ! entry ) {
+		entry = { camera: null, renderers: new Map() };
+		__auxScenes.set( scene, entry );
+	}
+	if ( camera ) entry.camera = camera;
+	if ( renderer ) entry.renderers.set( renderer, camera || entry.camera || null );
 }
 
 function __stampSceneMRT( scene, renderer ) {
@@ -1619,22 +1625,32 @@ async function __waitForCaptureIdle( timeoutMs = 45000 ) {
 window.__tslpFlushCaptureArtifacts = async function () {
 	const passNodes = __stampMRTPassScenes();
 	await __flush( passNodes );
-	if ( __renderer ) {
+	if ( __renderer || __auxScenes.size > 0 ) {
 		const scenes = Array.from( __auxScenes.entries() );
-		if ( scenes.length === 0 && __lastScene && __lastCamera ) scenes.push( [ __lastScene, __lastCamera ] );
-		for ( const [ scene, camera ] of scenes ) {
-			if ( scene && camera ) {
+		if ( scenes.length === 0 && __lastScene && __lastCamera ) scenes.push( [ __lastScene, { camera: __lastCamera, renderers: new Map( [ [ __renderer, __lastCamera ] ] ) } ] );
+		for ( const [ scene, entry ] of scenes ) {
+			const rendererEntries = Array.from( entry.renderers.entries() );
+			const primaryRendererEntry = rendererEntries.find( ( [ renderer ] ) => renderer === __renderer ) || rendererEntries[ 0 ] || null;
+			const primaryRenderer = primaryRendererEntry && primaryRendererEntry[ 0 ] || __renderer;
+			const primaryCamera = primaryRendererEntry && primaryRendererEntry[ 1 ] || entry.camera || null;
+			if ( scene && primaryCamera && primaryRenderer ) {
 				const passNode = __passNodeForScene( scene, passNodes );
-				__trackAuxCapture( precompileAuxiliary( __renderer, scene, camera, __auxOpts( passNode ? { passNode, mrtNode: passNode._mrt } : {} ) ), 'aux capture' );
+				__trackAuxCapture( precompileAuxiliary( primaryRenderer, scene, primaryCamera, __auxOpts( passNode ? { passNode, mrtNode: passNode._mrt } : {} ) ), 'aux capture' );
+				for ( const [ renderer, camera ] of rendererEntries ) {
+					if ( renderer === primaryRenderer || ! camera ) continue;
+					__trackAuxCapture( precompileRendererOutput( renderer, scene, camera, __auxOpts() ), 'renderer-output aux capture' );
+				}
 			}
 		}
 	}
 	if ( __renderer ) {
 		for ( const pipeline of __postProcessingPipelines ) {
+			const pipelineRenderer = pipeline && pipeline.renderer || __renderer;
+			if ( ! pipelineRenderer ) continue;
 			const pipelinePassNodes = __collectCapturePassNodesInGraph( pipeline && pipeline.outputNode );
 			const passNode = pipelinePassNodes.find( ( node ) => node && node._mrt ) || pipelinePassNodes[ 0 ] || null;
 			__trackAuxCapture( precompileAuxiliary(
-				__renderer,
+				pipelineRenderer,
 				passNode && passNode.scene || null,
 				passNode && passNode.camera || null,
 				__auxOpts( {
@@ -1818,7 +1834,7 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		if ( __pmremRunning > 0 || __isCaptureMaintenanceRender() ) return typeof super.compile === 'function' ? super.compile( scene, camera, ...rest ) : undefined;
 		__lastScene = scene;
 		__lastCamera = camera;
-		__rememberAuxScene( scene, camera );
+		__rememberAuxScene( scene, camera, this );
 		__stampSceneMRT( scene, this );
 		__markSceneMaterials( scene, camera, this );
 		__markStandaloneRenderTargetMaterial( scene, this );
@@ -1828,7 +1844,7 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		if ( __pmremRunning > 0 || __isCaptureMaintenanceRender() ) return typeof super.compileAsync === 'function' ? super.compileAsync( scene, camera, ...rest ) : Promise.resolve();
 		__lastScene = scene;
 		__lastCamera = camera;
-		__rememberAuxScene( scene, camera );
+		__rememberAuxScene( scene, camera, this );
 		__stampSceneMRT( scene, this );
 		__markSceneMaterials( scene, camera, this );
 		__markStandaloneRenderTargetMaterial( scene, this );
@@ -1847,7 +1863,7 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		__recordRenderableObjectCount( scene );
 		__lastScene = scene;
 		__lastCamera = camera;
-		__rememberAuxScene( scene, camera );
+		__rememberAuxScene( scene, camera, this );
 		__stampSceneMRT( scene, this );
 		__markSceneMaterials( scene, camera, this );
 		__markStandaloneRenderTargetMaterial( scene, this );

@@ -37,6 +37,21 @@ test( 'capture module retains the renderer that discovered each material context
 
 } );
 
+test( 'capture module records renderer output once for every renderer topology', () => {
+
+	assert.match( source, /import \{ precompileAuxiliary, precompileRendererOutput \}/ );
+	assert.match( source, /function __rememberAuxScene\( scene, camera, renderer = null \)/ );
+	assert.match( source, /entry\.renderers\.set\( renderer, camera \|\| entry\.camera \|\| null \)/ );
+	const flushStart = source.indexOf( 'window.__tslpFlushCaptureArtifacts = async function' );
+	const flushEnd = source.indexOf( 'export class Scene', flushStart );
+	assert.ok( flushStart >= 0 && flushEnd > flushStart, 'expected the generated auxiliary flush' );
+	const flush = source.slice( flushStart, flushEnd );
+	assert.match( flush, /precompileAuxiliary\( primaryRenderer, scene, primaryCamera/ );
+	assert.match( flush, /if \( renderer === primaryRenderer \|\| ! camera \) continue;/ );
+	assert.match( flush, /precompileRendererOutput\( renderer, scene, camera/ );
+
+} );
+
 test( 'capture maintenance renders cannot enqueue new harness material contexts', () => {
 
 	assert.match( source, /function __isCaptureMaintenanceRender\(\)/ );
