@@ -2841,7 +2841,14 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 						// requested MRT shape, and reserve the full renderer for missing
 						// artifact coverage.
 							const needsFullMRTPass = !! ( replayMRT && ! canRenderPrecompiledMRT );
-				const renderedWithFullPass = !! ( needsFullMRTPass && __renderPassNodeWithFullRenderer( this, renderer, __computeRenderer, camera ) );
+				const needsFullStandalonePass = scene.isScene !== true;
+				const renderedWithFullPass = !! ( ( needsFullMRTPass || needsFullStandalonePass ) && __renderPassNodeWithFullRenderer(
+					this,
+					renderer,
+					__computeRenderer,
+					camera,
+					{ force: needsFullStandalonePass }
+				) );
 				if ( ! renderedWithFullPass && replayMRT && ( scene.background || scene.backgroundNode ) && ! __backgroundAuxCanRenderMRT( replayMRT ) ) {
 					const backgroundScene = this.__tslpBackgroundScene || ( this.__tslpBackgroundScene = new Slim.Scene() );
 					backgroundScene.background = scene.background;
