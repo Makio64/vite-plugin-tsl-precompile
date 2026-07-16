@@ -15131,10 +15131,18 @@ async function visitExample( browser, name, mode, waitMs ) {
 				const exampleLines = [];
 				const userLines = [];
 				const fallbackLines = [];
-				const normalizeLine = ( line ) => String( line || '' )
-					.replace( /https?:\/\/[^/]+/g, '' )
-					.replace( /\?[^:)\s]+/g, '' )
-					.trim();
+				const normalizeLine = ( line ) => {
+					const normalized = String( line || '' )
+						.replace( /https?:\/\/[^/]+/g, '' )
+						.replace( /\?[^:)\s]+/g, '' )
+						.trim();
+					// V8 prefixes stack locations with the current function name. The
+					// same user callback is "Animation.render" in stock Three but can be
+					// minified to "e.render" in replay, so key example calls by their
+					// stable source location instead of that mode-dependent prefix.
+					const location = normalized.match( /\(([^()]+:\d+:\d+)\)$/ );
+					return location ? 'at ' + location[ 1 ] : normalized;
+				};
 				const isHarnessLine = ( line ) => line.includes( '__tslp__' ) || line.includes( '/__tslp_' );
 				const isThreeInternalLine = ( line ) => (
 					/\/build\/three\.[^/)\s]+\.js/.test( line ) ||
