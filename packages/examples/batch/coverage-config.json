@@ -2,8 +2,7 @@
   "pixelGate": {
     "disabled": {
       "diagnostic": [
-        "webgpu_postprocessing_lensflare.html",
-        "webgpu_postprocessing_retro.html"
+        "webgpu_postprocessing_lensflare.html"
       ],
       "volatileCompute": [
         "webgpu_compute_audio.html",
