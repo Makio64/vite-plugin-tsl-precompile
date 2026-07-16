@@ -124,6 +124,68 @@ test( 'extractUniformPlan maps object-owned UniformNode properties', () => {
 
 } );
 
+test( 'extractUniformPlan classifies only the exact explicit VelocityNode projection value', () => {
+
+	const explicitProjection = new Matrix4().makeTranslation( 4, 0, 0 );
+	const velocityNode = {
+		constructor: { type: 'VelocityNode' },
+		projectionMatrix: explicitProjection,
+	};
+	const extractProjection = ( value ) => {
+
+		const uniformNode = new UniformNode( value, 'mat4' );
+		return extractUniformPlan( {
+			updateNodes: [ velocityNode ],
+			bindings: [ {
+				name: 'object',
+				bindings: [ {
+					isUniformsGroup: true,
+					byteLength: 64,
+					visibility: 3,
+					groupNode: { shared: false },
+					uniforms: [ makeMatrixUniformSlot( uniformNode, value, 'mat4' ) ],
+				} ],
+			} ],
+		}, {} )[ 0 ].slots[ 0 ].source;
+
+	};
+
+	const exactSource = extractProjection( explicitProjection );
+	assert.equal( exactSource.kind, 'velocity.currentProjectionMatrix' );
+	assert.deepEqual( exactSource.valueSnapshot, { type: 'mat4', data: explicitProjection.elements } );
+
+	const equalButForeignSource = extractProjection( explicitProjection.clone() );
+	assert.equal( equalButForeignSource.kind, 'uniform.live', 'equal matrix snapshots are not ownership evidence' );
+
+} );
+
+test( 'extractUniformPlan keeps the normal camera projection source when VelocityNode has no override', () => {
+
+	const cameraProjection = new Matrix4().makeTranslation( 5, 0, 0 );
+	const cameraProjectionNode = new UniformNode( cameraProjection, 'mat4' );
+	cameraProjectionNode.name = 'cameraProjectionMatrix';
+	const state = {
+		updateNodes: [
+			{ constructor: { type: 'VelocityNode' }, projectionMatrix: null },
+			cameraProjectionNode,
+		],
+		bindings: [ {
+			name: 'object',
+			bindings: [ {
+				isUniformsGroup: true,
+				byteLength: 64,
+				visibility: 3,
+				groupNode: { shared: false },
+				uniforms: [ makeMatrixUniformSlot( cameraProjectionNode, cameraProjection, 'mat4' ) ],
+			} ],
+		} ],
+	};
+
+	const source = extractUniformPlan( state, {} )[ 0 ].slots[ 0 ].source;
+	assert.equal( source.kind, 'camera.projectionMatrix' );
+
+} );
+
 test( 'extractUniformPlan maps custom object color update nodes to object properties', () => {
 
 	const color = { isColor: true, r: 0.2, g: 0.4, b: 0.6 };

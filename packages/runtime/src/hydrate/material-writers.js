@@ -229,7 +229,13 @@ export function writeUniformGroup( group, frame, view, material, materialBinding
 		else if ( kind === 'camera.position' ) writeVec3( view, offset, frame.camera && frame.camera.position, source.valueSnapshot );
 		else if ( kind === 'camera.near' ) writeNumber( view, offset, frame.camera && frame.camera.near, source.valueSnapshot );
 		else if ( kind === 'camera.far' ) writeNumber( view, offset, frame.camera && frame.camera.far, source.valueSnapshot );
-		else if ( kind === 'velocity.previousProjectionMatrix' ) {
+		else if ( kind === 'velocity.currentProjectionMatrix' ) {
+
+			const state = getVelocityCameraState( frame );
+			if ( state ) writeMat4( view, offset, state.currentProjectionMatrix, source.valueSnapshot );
+			else writeSnapshot( view, offset, source.valueSnapshot, slot.dtype );
+
+		} else if ( kind === 'velocity.previousProjectionMatrix' ) {
 
 			const state = getVelocityCameraState( frame );
 			if ( state ) writeMat4( view, offset, state.previousProjectionMatrix, source.valueSnapshot );

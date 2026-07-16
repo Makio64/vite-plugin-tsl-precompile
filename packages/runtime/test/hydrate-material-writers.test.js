@@ -299,10 +299,19 @@ test( 'writeUniformGroup keys velocity history to an explicit logical frame', ()
 
 } );
 
-test( 'writeUniformGroup tracks the unjittered TRAA velocity projection', () => {
+test( 'writeUniformGroup tracks current and previous unjittered TRAA velocity projections', () => {
 
+	const foreignLiveProjection = new Matrix4().makeTranslation( 400, 0, 0 );
+	const currentProjectionSlot = {
+		offset: 0,
+		dtype: 'mat4',
+		source: { kind: 'velocity.currentProjectionMatrix' },
+		_liveNode: { value: foreignLiveProjection },
+		__tslpLiveSidecarOverlay: true,
+	};
 	const group = makeGroup( [
-		{ offset: 0, dtype: 'mat4', source: { kind: 'velocity.previousProjectionMatrix' } },
+		currentProjectionSlot,
+		{ offset: 64, dtype: 'mat4', source: { kind: 'velocity.previousProjectionMatrix' } },
 	] );
 	const velocityProjection = Symbol.for( '@tsl-precompile/runtime/velocity-projection-matrix@1' );
 	const camera = {
@@ -312,18 +321,22 @@ test( 'writeUniformGroup tracks the unjittered TRAA velocity projection', () => 
 	};
 	const first = makeView();
 	writeUniformGroup( group, { frameId: 1, camera }, first, null );
-	assert.equal( first.getFloat32( 12 * 4, true ), 4 );
+	assert.equal( first.getFloat32( 12 * 4, true ), 4, 'current projection uses the unjittered handoff' );
+	assert.equal( first.getFloat32( 64 + 12 * 4, true ), 4, 'history initializes from the same projection' );
 
 	camera.projectionMatrix.makeTranslation( 200, 0, 0 );
 	camera[ velocityProjection ].makeTranslation( 8, 0, 0 );
+	foreignLiveProjection.makeTranslation( 500, 0, 0 );
 	const second = makeView();
 	writeUniformGroup( group, { frameId: 2, camera }, second, null );
-	assert.equal( second.getFloat32( 12 * 4, true ), 4 );
+	assert.equal( second.getFloat32( 12 * 4, true ), 8, 'foreign live sidecar cannot overlay the semantic current projection' );
+	assert.equal( second.getFloat32( 64 + 12 * 4, true ), 4 );
 
 	camera[ velocityProjection ].makeTranslation( 12, 0, 0 );
 	const third = makeView();
 	writeUniformGroup( group, { frameId: 3, camera }, third, null );
-	assert.equal( third.getFloat32( 12 * 4, true ), 8 );
+	assert.equal( third.getFloat32( 12 * 4, true ), 12 );
+	assert.equal( third.getFloat32( 64 + 12 * 4, true ), 8 );
 
 } );
 

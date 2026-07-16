@@ -1101,7 +1101,8 @@ function collectObjectUniformSources( object ) {
 
 function collectVelocityUniformSources( state ) {
 
-	const out = new Map();
+	const uniformSources = new Map();
+	const valueSources = new WeakMap();
 	const nodes = [
 		...( Array.isArray( state && state.updateNodes ) ? state.updateNodes : [] ),
 		...( Array.isArray( state && state.updateBeforeNodes ) ? state.updateBeforeNodes : [] ),
@@ -1111,12 +1112,25 @@ function collectVelocityUniformSources( state ) {
 
 		const type = node && node.constructor && node.constructor.type;
 		if ( type !== 'VelocityNode' ) continue;
-		if ( node.previousProjectionMatrix ) out.set( node.previousProjectionMatrix, { kind: 'velocity.previousProjectionMatrix' } );
-		if ( node.previousCameraViewMatrix ) out.set( node.previousCameraViewMatrix, { kind: 'velocity.previousCameraViewMatrix' } );
-		if ( node.previousModelWorldMatrix ) out.set( node.previousModelWorldMatrix, { kind: 'velocity.previousModelWorldMatrix' } );
+		if ( node.previousProjectionMatrix ) uniformSources.set( node.previousProjectionMatrix, { kind: 'velocity.previousProjectionMatrix' } );
+		if ( node.previousCameraViewMatrix ) uniformSources.set( node.previousCameraViewMatrix, { kind: 'velocity.previousCameraViewMatrix' } );
+		if ( node.previousModelWorldMatrix ) uniformSources.set( node.previousModelWorldMatrix, { kind: 'velocity.previousModelWorldMatrix' } );
+
+		// VelocityNode.setup() wraps an explicit projection override with a new
+		// anonymous UniformNode, so the node itself is not reachable from the
+		// VelocityNode. Its `.value`, however, is the exact projectionMatrix
+		// object supplied by TRAA. Preserve that identity as a semantic source;
+		// snapshot equality is intentionally insufficient because other effects
+		// commonly own equal camera matrices.
+		const projectionMatrix = node.projectionMatrix;
+		if ( projectionMatrix && ( typeof projectionMatrix === 'object' || typeof projectionMatrix === 'function' ) ) {
+
+			valueSources.set( projectionMatrix, { kind: 'velocity.currentProjectionMatrix' } );
+
+		}
 
 	}
-	return out;
+	return { uniformSources, valueSources };
 
 }
 
@@ -1399,7 +1413,10 @@ export function extractUniformPlan( state, context = null ) {
 	const highPrecisionShadowModelMatrixSources = collectHighPrecisionShadowModelMatrixSources( state );
 	const pointShadowCameraUniformSources = collectPointShadowCameraUniformSources( state );
 	const objectUniformSources = collectObjectUniformSources( context && context.object || null );
-	const velocityUniformSources = collectVelocityUniformSources( state );
+	const {
+		uniformSources: velocityUniformSources,
+		valueSources: velocityValueSources,
+	} = collectVelocityUniformSources( state );
 
 	// Walk updateNodes once, build two maps:
 	//   - uniformNode → source (UBO slots)
@@ -1589,9 +1606,10 @@ export function extractUniformPlan( state, context = null ) {
 					if ( ! source && tslUniformNode ) {
 
 						const value = tslUniformNode.value;
-						if ( value && ( typeof value === 'object' || typeof value === 'function' ) && ! ambiguousScreenValues.has( value ) ) {
+						if ( value && ( typeof value === 'object' || typeof value === 'function' ) ) {
 
-							source = screenValueToSource.get( value ) || null;
+							source = velocityValueSources.get( value ) || null;
+							if ( ! source && ! ambiguousScreenValues.has( value ) ) source = screenValueToSource.get( value ) || null;
 
 						}
 

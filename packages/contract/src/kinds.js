@@ -89,6 +89,7 @@ const CODEGEN_SLOT_KINDS = [
 	'object3d.radius',
 	'object3d.nodeUniform',
 	'object3d.userData',
+	'velocity.currentProjectionMatrix',
 	'velocity.previousProjectionMatrix',
 	'velocity.previousCameraViewMatrix',
 	'velocity.previousModelWorldMatrix',

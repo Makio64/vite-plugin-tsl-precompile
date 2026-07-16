@@ -501,6 +501,11 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 			usedWriters.add( 'writeF32' );
 			return `writeF32(view, ${ off }, frame.camera.far);`;
 
+		case 'velocity.currentProjectionMatrix':
+			rendererHelpers.add( 'velocity' );
+			usedWriters.add( 'writeMat4' );
+			return `{ const _v = _tslpVelocityCamera(frame); if (_v) writeMat4(view, ${ off }, _v.currentProjectionMatrix); }`;
+
 		case 'velocity.previousProjectionMatrix':
 			rendererHelpers.add( 'velocity' );
 			usedWriters.add( 'writeMat4' );

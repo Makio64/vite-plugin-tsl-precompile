@@ -230,7 +230,8 @@ test( 'emitUpdaterSource — temporal frame scope drives frameId and velocity hi
 		uniformPlan: [ {
 			slots: [
 				{ offset: 0, source: { kind: 'frame.frameId' } },
-				{ offset: 16, source: { kind: 'velocity.previousProjectionMatrix' } },
+				{ offset: 16, source: { kind: 'velocity.currentProjectionMatrix' } },
+				{ offset: 80, source: { kind: 'velocity.previousProjectionMatrix' } },
 			],
 		} ],
 	};
@@ -239,6 +240,8 @@ test( 'emitUpdaterSource — temporal frame scope drives frameId and velocity hi
 	assert.match( source, /Symbol\.for\("@tsl-precompile\/runtime\/temporal-frame@1"\)/ );
 	assert.match( source, /Symbol\.for\("@tsl-precompile\/runtime\/velocity-projection-matrix@1"\)/ );
 	assert.match( source, /new Matrix4\(\)\.copy\(projectionMatrix\)/ );
+	assert.match( source, /writeMat4\(view, byteOffset \+ 16, _v\.currentProjectionMatrix\)/ );
+	assert.match( source, /writeMat4\(view, byteOffset \+ 80, _v\.previousProjectionMatrix\)/ );
 	assert.match( source, /temporal\.advance === false/ );
 	assert.match( source, /temporal\.frameId !== undefined/ );
 	assert.match( source, /Number\.isFinite\(_s\.frameId\) \? _s\.frameId : frame\.frameId/ );
