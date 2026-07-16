@@ -167,6 +167,9 @@ export function holdAnimationUntilReadyForExample( name ) {
 		// Backdrop water advances auto-rotating OrbitControls once per callback,
 		// without a delta. Pause it while loaders/compilers differ between modes.
 		name === 'webgpu_backdrop_water.html' ||
+		// Rain advances four storage buffers once per author callback. Capture and
+		// replay must not run extra compute steps while their async work differs.
+		name === 'webgpu_compute_particles_rain.html' ||
 		name === 'webgpu_postprocessing_traa.html' ||
 		name === 'webgpu_postprocessing_lensflare.html' ||
 		name === 'webgpu_postprocessing_smaa.html' ||

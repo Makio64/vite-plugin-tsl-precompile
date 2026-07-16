@@ -165,6 +165,7 @@ test( 'deferred subjects must be present before an example can freeze', () => {
 test( 'callback-driven simulations wait for capture and replay async work', () => {
 
 	assert.equal( holdAnimationUntilReadyForExample( 'webgpu_backdrop_water.html' ), true );
+	assert.equal( holdAnimationUntilReadyForExample( 'webgpu_compute_particles_rain.html' ), true );
 	assert.equal( holdAnimationUntilReadyForExample( 'webgpu_postprocessing_traa.html' ), true );
 	assert.equal( holdAnimationUntilReadyForExample( 'webgpu_postprocessing_ssgi_ballpool.html' ), true );
 	assert.equal( holdAnimationUntilReadyForExample( 'webgpu_materials.html' ), false );
