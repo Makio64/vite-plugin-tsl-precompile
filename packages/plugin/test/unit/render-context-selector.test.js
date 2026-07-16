@@ -542,7 +542,43 @@ test( 'render selector captures clipping, interleaved layout, morph, and instanc
 	const beforeStride = createRenderObjectContextSelector( interleaved );
 	interleaved.object.geometry.attributes.position.data = { stride: 5 };
 	interleaved.object.geometry.attributes.position.offset = 2;
-	assert.notEqual( createRenderObjectContextSelector( interleaved ), beforeStride );
+	const interleavedSelector = createRenderObjectContextSelector( interleaved );
+	assert.notEqual( interleavedSelector, beforeStride, 'raw diagnostics retain the physical vertex layout' );
+	assert.equal(
+		projectRenderObjectContextSelector( interleavedSelector, null ),
+		projectRenderObjectContextSelector( beforeStride, null ),
+		'ordinary artifact selection ignores physical stride and offset',
+	);
+	assert.notEqual(
+		projectRenderObjectContextSelector( interleavedSelector, 'unknown-profile' ),
+		projectRenderObjectContextSelector( beforeStride, 'unknown-profile' ),
+		'unknown profiles remain unprojected',
+	);
+	interleaved.object.geometry.attributes.position.itemSize = 4;
+	assert.notEqual(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( interleaved ), null ),
+		projectRenderObjectContextSelector( beforeStride, null ),
+		'WGSL attribute item size remains signed',
+	);
+
+	const morphCapture = fixture();
+	const morphReplay = fixture();
+	morphCapture.object.geometry.morphAttributes.position = [ { data: { stride: 8 }, offset: 2, itemSize: 3, normalized: false } ];
+	morphReplay.object.geometry.morphAttributes.position = [ { data: { stride: 12 }, offset: 5, itemSize: 3, normalized: false } ];
+	const morphCaptureSelector = createRenderObjectContextSelector( morphCapture );
+	const morphReplaySelector = createRenderObjectContextSelector( morphReplay );
+	assert.notEqual( morphCaptureSelector, morphReplaySelector );
+	assert.equal(
+		projectRenderObjectContextSelector( morphCaptureSelector, null ),
+		projectRenderObjectContextSelector( morphReplaySelector, null ),
+		'morph vertex-fetch layout is projected by the same rule',
+	);
+	morphReplay.object.geometry.morphAttributes.position[ 0 ].normalized = true;
+	assert.notEqual(
+		projectRenderObjectContextSelector( morphCaptureSelector, null ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( morphReplay ), null ),
+		'morph normalization remains signed',
+	);
 
 	const instanced = fixture();
 	const beforeCount = createRenderObjectContextSelector( instanced );

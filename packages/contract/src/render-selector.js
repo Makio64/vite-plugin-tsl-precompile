@@ -176,8 +176,11 @@ export function createSceneRenderTopologySelector( scene ) {
  * Scene.environment, so their profile removes only those two scene axes while
  * retaining fog, override-material, target, object, and material topology.
  *
- * Unknown profiles are returned unchanged so callers can opt in one adapter
- * at a time without weakening ordinary material selection.
+ * Physical vertex-buffer stride and offset are projected out for ordinary and
+ * known auxiliary material selectors. They choose the live WebGPU vertex
+ * layout and pipeline cache entry, but do not change the WGSL attribute type;
+ * item size and normalization remain signed shader topology. Unknown profiles
+ * are returned unchanged so callers can opt in one adapter at a time.
  * Background WGSL is invariant across the output target's adapter-owned
  * surface label and MSAA count: Three binds both when it creates the render
  * pipeline, not in the shader or hydrated bindings. A single background
@@ -197,7 +200,8 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 	const sceneIndependent = profile === 'background' || profile === 'shadow-depth' || renderOutput || profile === 'cube-render-target';
 	const postProcess = profile === 'post-process';
 	const meshBasic = profile === 'mesh-basic';
-	if ( ( ! sceneIndependent && ! postProcess && ! meshBasic ) || selector.length === 0 ) return selector;
+	const ordinaryMaterial = profile === null || profile === undefined || profile === '';
+	if ( ( ! ordinaryMaterial && ! sceneIndependent && ! postProcess && ! meshBasic ) || selector.length === 0 ) return selector;
 	let descriptor;
 	try {
 
@@ -209,6 +213,8 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 
 	}
 	if ( ! descriptor || typeof descriptor !== 'object' || descriptor.version !== 'render-object-selector@1' ) return selector;
+	descriptor = projectShaderVertexLayout( descriptor );
+	if ( ordinaryMaterial ) return stableJsonStringify( descriptor, 'renderObjectSelector' );
 
 	if ( meshBasic ) {
 
@@ -312,6 +318,52 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 
 	}
 	return stableJsonStringify( projected, 'renderObjectSelector' );
+
+}
+
+function projectShaderVertexLayout( descriptor ) {
+
+	const object = descriptor.object;
+	const geometry = object && object.geometry;
+	if ( ! geometry || typeof geometry !== 'object' ) return descriptor;
+	const projectedGeometry = { ...geometry };
+	if ( Array.isArray( geometry.attributes ) ) {
+
+		projectedGeometry.attributes = geometry.attributes.map( ( entry ) => projectAttributeEntry( entry, false ) );
+
+	}
+	if ( Array.isArray( geometry.morphAttributes ) ) {
+
+		projectedGeometry.morphAttributes = geometry.morphAttributes.map( ( entry ) => projectAttributeEntry( entry, true ) );
+
+	}
+	return {
+		...descriptor,
+		object: {
+			...object,
+			geometry: projectedGeometry,
+		},
+	};
+
+}
+
+function projectAttributeEntry( entry, multiple ) {
+
+	if ( ! Array.isArray( entry ) || entry.length < 2 ) return entry;
+	const shapes = multiple && Array.isArray( entry[ 1 ] )
+		? entry[ 1 ].map( projectAttributeShape )
+		: projectAttributeShape( entry[ 1 ] );
+	return [ entry[ 0 ], shapes ];
+
+}
+
+function projectAttributeShape( shape ) {
+
+	if ( ! shape || typeof shape !== 'object' || Array.isArray( shape ) ) return shape;
+	const projected = { ...shape };
+	delete projected.stride;
+	delete projected.offset;
+	return projected;
 
 }
 

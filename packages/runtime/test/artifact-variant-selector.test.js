@@ -195,6 +195,48 @@ test( 'signed material artifacts retain sample counts for alpha-to-coverage shad
 
 } );
 
+test( 'signed material artifacts reuse WGSL across physical vertex-buffer layouts', () => {
+
+	const capturedAttributes = {
+		position: { itemSize: 3, normalized: false, stride: 13, offset: 0 },
+		normal: { itemSize: 3, normalized: false, stride: 13, offset: 3 },
+		uv: { itemSize: 2, normalized: false, stride: 13, offset: 6 },
+		skinIndex: { itemSize: 4, normalized: false, stride: 52, offset: 32 },
+	};
+	const liveAttributes = {
+		position: { itemSize: 3, normalized: false, stride: 9, offset: 0 },
+		normal: { itemSize: 3, normalized: false, stride: 9, offset: 3 },
+		uv: { itemSize: 2, normalized: false, stride: 9, offset: 6 },
+		skinIndex: { itemSize: 4, normalized: false, stride: 36, offset: 32 },
+	};
+	const captured = vertexLayoutSelector( capturedAttributes );
+	const liveLayout = vertexLayoutSelector( liveAttributes );
+	const artifact = signedArtifact( [ captured ], { materialShape: 'mesh-standard' } );
+	assert.equal( selectArtifactVariant( artifact, { renderContextSelector: liveLayout } ), artifact );
+
+	assert.throws(
+		() => selectArtifactVariant( artifact, {
+			renderContextSelector: vertexLayoutSelector( {
+				...liveAttributes,
+				position: { ...liveAttributes.position, itemSize: 4 },
+			} ),
+		} ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+		'WGSL-facing item size still fails closed',
+	);
+	assert.throws(
+		() => selectArtifactVariant( artifact, {
+			renderContextSelector: vertexLayoutSelector( {
+				...liveAttributes,
+				position: { ...liveAttributes.position, normalized: true },
+			} ),
+		} ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+		'WGSL-facing normalization still fails closed',
+	);
+
+} );
+
 test( 'pipeline-only sample aliases retain fail-closed family ambiguity', () => {
 
 	const captured = opaqueSelector( 4 );
@@ -573,6 +615,20 @@ function opaqueSelector( sampleCount, overrides = {} ) {
 		...overrides,
 		target: { ...descriptor.target, ...( overrides.target || {} ) },
 		material: { ...descriptor.material, ...( overrides.material || {} ) },
+	}, 'renderObjectSelector' );
+
+}
+
+function vertexLayoutSelector( attributes ) {
+
+	return stableJsonStringify( {
+		version: 'render-object-selector@1',
+		object: {
+			geometry: {
+				attributes: Object.entries( attributes ).sort( ( left, right ) => left[ 0 ].localeCompare( right[ 0 ] ) ),
+				morphAttributes: [],
+			},
+		},
 	}, 'renderObjectSelector' );
 
 }
