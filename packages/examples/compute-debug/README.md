@@ -7,7 +7,7 @@ Ordered simplest first.
 Pages (simplest → most complex; the per-page mechanic and its closest upstream
 analogue in parentheses):
 
-- `/particles.html` — a storage buffer (`attributeArray`) of particle positions
+- `/particles.html` — a storage buffer of particle positions
   advanced by a compute kernel, rendered as `THREE.Points`. The minimal
   compute-buffer → render-attribute path (`webgpu_compute_particles*`).
 - `/instanced.html` — an `InstancedMesh` whose per-instance offsets live in a
@@ -26,12 +26,19 @@ analogue in parentheses):
 - `/reduce.html` — a compute kernel reduces a storage buffer to a single scalar
   that drives a material uniform (`webgpu_compute_reduce`).
 
-Each render material is marked with `.precompile('compute-debug-<page>')`; the
-compute kernels run as raw TSL `ComputeNode`s (the batch harness routes them
-through a separate full renderer and syncs storage buffers/textures into slim
-during replay — those sync paths are exactly what these scenes exercise).
-Motion is driven by the TSL `time` node, which the E2E harness virtualizes so
-capture and replay see the same clock.
+Each render material is marked with `.precompile('compute-debug-<page>')`.
+Development loads the raw graph factories from `src/compute-dev/` and captures
+each named compute kernel with its exact buffers, textures, uniforms, dispatch
+size, and workgroup size. Production imports only the virtual compiled modules
+from `src/compiled/` and dispatches them through
+`createPrecompiledComputeRunner()`; raw `Fn` builders and capture code are not
+resolved into the production bundle.
+
+Every page publishes `window.__TSLP_SITE_RESULT__`. The site gate requires
+`runtimeMode: 'pure-slim'`, the exact expected kernel names, at least one
+successful compiled dispatch, a rendered canvas, and motion for animated pages.
+This makes the public examples executable proof of compiler-free compute, not
+just screenshots or raw-TSL demos.
 
 These are deliberately the *minimal* version of each mechanic — extend a page
 toward its upstream analogue (sprite quads, ping-pong buffers, 3D textures,
@@ -44,8 +51,8 @@ Run:
 pnpm --filter examples-compute-debug dev
 ```
 
-Build (run `dev` once first so `.precompile()` captures the artifacts under
-`./artifacts/`, then):
+Build (after changing a material or raw graph, open that page once in `dev` to
+refresh its artifacts under `./artifacts/`):
 
 ```sh
 pnpm --filter examples-compute-debug build
@@ -72,4 +79,11 @@ Iterate on a single repro:
 
 ```sh
 pnpm --filter examples-compute-debug test:e2e -- --filter=texture.html
+```
+
+Build and browser-check every compiled example published by the site:
+
+```sh
+pnpm --filter @tsl-precompile/site build
+pnpm --filter @tsl-precompile/site test:live
 ```
