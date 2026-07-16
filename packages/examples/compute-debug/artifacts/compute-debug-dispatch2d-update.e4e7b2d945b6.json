@@ -1,0 +1,185 @@
+{
+  "__hash": "e4e7b2d945b63b9cec02b85a392eb861ceb90936ae6e259da93173f7bfa585d8",
+  "__name": "compute-debug-dispatch2d-update",
+  "artifact": {
+    "version": 3,
+    "kind": "compute",
+    "cacheKey": 1,
+    "name": "compute-debug-dispatch2d-update",
+    "computeShader": "// Three.js r184 - Node System\n\n// directives\nenable subgroups;\n\n// system\nvar<private> instanceIndex : u32;\n\n// locals\n\n\n// structs\n\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0 : texture_storage_2d<rgba8unorm, write>;\n\nstruct renderStruct {\n\tnodeUniform1 : f32\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> nodeVar0 : f32;\n\n// codes\n\n\n@compute @workgroup_size( 8, 8, 1 )\nfn main( @builtin( global_invocation_id ) globalId : vec3<u32>,\n\t@builtin( workgroup_id ) workgroupId : vec3<u32>,\n\t@builtin( local_invocation_id ) localId : vec3<u32>,\n\t@builtin( num_workgroups ) numWorkgroups : vec3<u32>,\n\t@builtin( subgroup_size ) subgroupSize : u32 ) {\n\n\t// local vars\n\t\n\n\t// system\n\tinstanceIndex = globalId.x\n\t\t+ globalId.y * ( 8 * numWorkgroups.x )\n\t\t+ globalId.z * ( 8 * numWorkgroups.x ) * ( 8 * numWorkgroups.y );\n\n\t// flow\n\t// code\n\n\tnodeVar0 = ( f32( globalId.x ) / 63.0 );\n\ttextureStore( nodeUniform0, vec2<u32>( globalId.x, globalId.y ), vec4<f32>( nodeVar0, ( f32( globalId.y ) / 63.0 ), ( ( f32( ( ( globalId.x + globalId.y ) % 2u ) ) * 0.25 ) + ( ( sin( ( render.nodeUniform1 + ( nodeVar0 * 6.0 ) ) ) * 0.25 ) + 0.5 ) ), 1.0 ) );\n\n\t\n\n}\n",
+    "vertexShader": "",
+    "fragmentShader": "",
+    "attributes": [],
+    "bindings": [
+      {
+        "name": "render",
+        "bindings": [
+          {
+            "name": "render",
+            "kind": "uniform-buffer",
+            "visibility": 7,
+            "textureType": null,
+            "byteLength": 16,
+            "access": null
+          }
+        ]
+      },
+      {
+        "name": "object",
+        "bindings": [
+          {
+            "name": "nodeUniform0",
+            "kind": "sampled-texture",
+            "visibility": 4,
+            "textureType": "2d",
+            "byteLength": null,
+            "access": "writeOnly",
+            "store": true
+          }
+        ]
+      }
+    ],
+    "uniformPlan": [
+      {
+        "name": "render",
+        "shared": true,
+        "visibility": 7,
+        "byteLength": 16,
+        "slots": [
+          {
+            "name": "nodeUniform1",
+            "offset": 0,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "frame.time",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 0.02689999997615814
+              }
+            }
+          }
+        ],
+        "textures": [],
+        "storageBuffers": [],
+        "orderedBindings": [
+          {
+            "type": "ubo",
+            "name": "render",
+            "byteLength": 16,
+            "visibility": 7,
+            "slots": [
+              {
+                "name": "nodeUniform1",
+                "offset": 0,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "frame.time",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 0.02689999997615814
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "object",
+        "shared": false,
+        "visibility": 4,
+        "byteLength": 0,
+        "slots": [],
+        "textures": [
+          {
+            "bindingKind": "sampled-texture",
+            "name": "nodeUniform0",
+            "textureType": "2d",
+            "access": "writeOnly",
+            "visibility": 4,
+            "source": {
+              "kind": "artifact.texture",
+              "textureUuid": "ebf93e0b-bda9-4256-9b8d-3141d40a3c8d",
+              "mapping": 300,
+              "wrapS": 1001,
+              "wrapT": 1001,
+              "magFilter": 1006,
+              "minFilter": 1006,
+              "anisotropy": 1,
+              "generateMipmaps": true,
+              "colorSpace": "",
+              "flipY": true,
+              "imageWidth": 64,
+              "imageHeight": 64
+            }
+          }
+        ],
+        "storageBuffers": [],
+        "orderedBindings": [
+          {
+            "type": "sampled-texture",
+            "ref": {
+              "bindingKind": "sampled-texture",
+              "name": "nodeUniform0",
+              "textureType": "2d",
+              "access": "writeOnly",
+              "visibility": 4,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "ebf93e0b-bda9-4256-9b8d-3141d40a3c8d",
+                "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "generateMipmaps": true,
+                "colorSpace": "",
+                "flipY": true,
+                "imageWidth": 64,
+                "imageHeight": 64
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "defaults": {},
+    "dispatchSize": [
+      8,
+      8,
+      1
+    ],
+    "workgroupSize": [
+      8,
+      8,
+      1
+    ],
+    "meta": {
+      "updateNodes": 2,
+      "updateBeforeNodes": 1,
+      "updateAfterNodes": 0
+    },
+    "computeBindings": {
+      "version": "compute-bindings@1",
+      "entries": [
+        {
+          "key": "output",
+          "target": "storage-texture",
+          "group": 1,
+          "binding": 0,
+          "access": "writeOnly",
+          "textureType": "2d"
+        }
+      ]
+    },
+    "captureClock": 0.02689999997615814,
+    "sourceGraphHash": "e98089b750c48d6f161154a7474fcc162d3e833eec99ee90153f810646af1acb",
+    "sourceHashVersion": "0.1.0",
+    "sourceThreeVersion": "0.184.0",
+    "sourceValidationMode": "runtime-graph",
+    "artifactContentHashVersion": "artifact-content@3"
+  }
+}

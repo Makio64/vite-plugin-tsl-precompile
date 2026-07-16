@@ -1,0 +1,149 @@
+{
+  "__hash": "ee8824864056af17de4b631e3ee7127446198377ce7d5617560c3b71744cd462",
+  "__name": "compute-debug-particles-init",
+  "artifact": {
+    "version": 3,
+    "kind": "compute",
+    "cacheKey": 1,
+    "name": "compute-debug-particles-init",
+    "computeShader": "// Three.js r184 - Node System\n\n// directives\nenable subgroups;\n\n// system\nvar<private> instanceIndex : u32;\n\n// locals\n\n\n// structs\n\n\n// uniforms\n\nstruct NodeBuffer_912Struct {\n\tvalue : array< vec3<f32> >\n};\n@binding( 0 ) @group( 0 )\nvar<storage, read_write> NodeBuffer_912 : NodeBuffer_912Struct;\n\nstruct objectStruct {\n\tnodeUniform1 : u32\n};\n@binding( 1 ) @group( 0 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> nodeVar0 : f32;\nvar<private> nodeVar1 : f32;\n\n// codes\n\n\n@compute @workgroup_size( 64, 1, 1 )\nfn main( @builtin( global_invocation_id ) globalId : vec3<u32>,\n\t@builtin( workgroup_id ) workgroupId : vec3<u32>,\n\t@builtin( local_invocation_id ) localId : vec3<u32>,\n\t@builtin( num_workgroups ) numWorkgroups : vec3<u32>,\n\t@builtin( subgroup_size ) subgroupSize : u32 ) {\n\n\t// local vars\n\t\n\n\t// system\n\tinstanceIndex = globalId.x\n\t\t+ globalId.y * ( 64 * numWorkgroups.x )\n\t\t+ globalId.z * ( 64 * numWorkgroups.x ) * ( 1 * numWorkgroups.y );\n\n\t// flow\n\t// code\n\n\tif ( instanceIndex >= object.nodeUniform1 ) { return; }\n\n\tnodeVar0 = ( f32( instanceIndex ) * 2.399963 );\n\tnodeVar1 = ( sqrt( ( f32( instanceIndex ) / 512.0 ) ) * 1.3 );\n\tNodeBuffer_912.value[ instanceIndex ] = vec3<f32>( ( cos( nodeVar0 ) * nodeVar1 ), ( sin( nodeVar0 ) * nodeVar1 ), 0.0 );\n\n\t\n\n}\n",
+    "vertexShader": "",
+    "fragmentShader": "",
+    "attributes": [],
+    "bindings": [
+      {
+        "name": "object",
+        "bindings": [
+          {
+            "name": "StorageBuffer_0",
+            "kind": "storage-buffer",
+            "visibility": 4,
+            "textureType": null,
+            "byteLength": 8192,
+            "access": "readWrite"
+          },
+          {
+            "name": "object",
+            "kind": "uniform-buffer",
+            "visibility": 7,
+            "textureType": null,
+            "byteLength": 16,
+            "access": null
+          }
+        ]
+      }
+    ],
+    "uniformPlan": [
+      {
+        "name": "object",
+        "shared": false,
+        "visibility": 4,
+        "byteLength": 16,
+        "slots": [
+          {
+            "name": "nodeUniform1",
+            "offset": 0,
+            "size": 4,
+            "dtype": "uint",
+            "source": {
+              "kind": "uniform.live",
+              "name": null,
+              "valueSnapshot": {
+                "type": "number",
+                "data": 512
+              }
+            }
+          }
+        ],
+        "textures": [],
+        "storageBuffers": [
+          {
+            "name": "StorageBuffer_0",
+            "access": "readWrite",
+            "visibility": 4,
+            "arrayType": "Float32Array",
+            "count": 512,
+            "itemSize": 4,
+            "source": {
+              "kind": "storage.buffer",
+              "elementType": "vec3"
+            }
+          }
+        ],
+        "orderedBindings": [
+          {
+            "type": "storage-buffer",
+            "ref": {
+              "name": "StorageBuffer_0",
+              "access": "readWrite",
+              "visibility": 4,
+              "arrayType": "Float32Array",
+              "count": 512,
+              "itemSize": 4,
+              "source": {
+                "kind": "storage.buffer",
+                "elementType": "vec3"
+              }
+            }
+          },
+          {
+            "type": "ubo",
+            "name": "object",
+            "byteLength": 16,
+            "visibility": 7,
+            "slots": [
+              {
+                "name": "nodeUniform1",
+                "offset": 0,
+                "size": 4,
+                "dtype": "uint",
+                "source": {
+                  "kind": "uniform.live",
+                  "name": null,
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 512
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "defaults": {},
+    "dispatchSize": 512,
+    "workgroupSize": [
+      64,
+      1,
+      1
+    ],
+    "meta": {
+      "updateNodes": 2,
+      "updateBeforeNodes": 1,
+      "updateAfterNodes": 0
+    },
+    "computeBindings": {
+      "version": "compute-bindings@1",
+      "entries": [
+        {
+          "key": "positions",
+          "target": "storage-buffer",
+          "group": 0,
+          "binding": 0,
+          "access": "readWrite",
+          "arrayType": "Float32Array",
+          "count": 512,
+          "itemSize": 4,
+          "byteLength": 8192
+        }
+      ]
+    },
+    "captureClock": 0.05070000004768371,
+    "sourceGraphHash": "c7ca9806e6452b290f93aee024b098f89c41f47469876e767539f2976b3cb4e1",
+    "sourceHashVersion": "0.1.0",
+    "sourceThreeVersion": "0.184.0",
+    "sourceValidationMode": "runtime-graph",
+    "artifactContentHashVersion": "artifact-content@3"
+  }
+}

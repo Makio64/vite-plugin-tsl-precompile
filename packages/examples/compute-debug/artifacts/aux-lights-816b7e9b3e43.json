@@ -1,0 +1,15 @@
+{
+  "__materialShape": "lights",
+  "__configHash": "816b7e9b3e430f34eb5194c264ab9dcade5072bdd7ef2290e2a914ad33de7407",
+  "__hash": "816b7e9b3e430f34eb5194c264ab9dcade5072bdd7ef2290e2a914ad33de7407",
+  "__name": "aux-lights-816b7e9b3e43",
+  "artifact": {
+    "uniformPlan": [],
+    "vertexShader": "",
+    "fragmentShader": "",
+    "lightsSignature": [
+      "AmbientLight:",
+      "DirectionalLight:"
+    ]
+  }
+}
