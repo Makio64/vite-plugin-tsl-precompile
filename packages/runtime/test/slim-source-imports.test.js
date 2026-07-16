@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const SLIM_REPLAY_SOURCE_CLOSURE = [
 	'../src/precompiled-compute-node.js',
+	'../src/precompiled-compute-runner.js',
 	'../src/hydrate/builtin-textures.js',
 	'../src/hydrate/clipping-planes.js',
 	'../src/hydrate/dynamic-light-buffers.js',

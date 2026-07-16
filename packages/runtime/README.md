@@ -117,6 +117,45 @@ await setup.captureAux( {
 } );
 ```
 
+## Standalone compiled compute
+
+A compute artifact that carries a validated `compute-bindings@1` descriptor
+can run without retaining a TSL `ComputeNode` or node builder. Bind its public
+keys to resources owned by the application, then dispatch it through the slim
+renderer:
+
+```js
+import { createPrecompiledComputeRunner } from '@tsl-precompile/runtime/compute';
+import * as compiledKernel from 'virtual:tsl-precompile/my-kernel';
+
+const threshold = { value: 0.5 }; // mutable between dispatches
+const kernel = createPrecompiledComputeRunner( renderer, compiledKernel, {
+	positions,  // StorageBufferAttribute with the exact captured layout
+	input,      // Texture; the same key may own its paired sampler
+	output,     // StorageTexture with the captured dimension
+	threshold,
+} );
+
+kernel.dispatch();                    // animation-loop / already-initialized path
+await kernel.dispatchAsync( [ 8, 1, 1 ] ); // awaited init + dispatch override
+
+threshold.value = 0.75;
+kernel.dispatch();
+kernel.dispose();
+```
+
+The runner accepts either the raw compute artifact or its generated module
+`{ artifact, updateGroup }`. It clones only the bindable artifact records and
+attaches generated writers to that local view; emitted artifacts are never
+mutated. Buffer and texture identities are fixed for the runner lifetime, and
+`dispose()` releases only renderer state for the wrapper node—not caller-owned
+resources. Create another runner to replace a buffer or texture object.
+
+Bindings fail closed on missing/unknown keys and on shape mismatches. Storage
+attributes must match the captured count, item size, typed-array constructor,
+and byte length exactly. In particular, a logical vec3 attribute is not
+silently accepted for a contract that records a padded vec4 storage layout.
+
 ## Slim Support
 
 The supported production mode for v0.1+ is **slim + opt-in full-renderer
@@ -221,8 +260,8 @@ import {
 } from '@tsl-precompile/runtime';
 ```
 
-Subpath entries: `@tsl-precompile/runtime/core`, `/writers`, `/marker`,
-`/apply`, `/loader`, `/slim-support`, `/slim`, `/slim-stubs`.
+Subpath entries: `@tsl-precompile/runtime/core`, `/compute`, `/writers`,
+`/marker`, `/apply`, `/loader`, `/slim-support`, `/slim`, `/slim-stubs`.
 
 `/core` combines only artifact application, the user-artifact registry, and
 the uniform writers for advanced AOT integrations. Plugin-generated modules

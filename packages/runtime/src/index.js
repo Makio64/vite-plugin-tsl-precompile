@@ -4,6 +4,7 @@ export { __applyPrecompiled } from './apply-precompiled.js';
 export { registerArtifact, getArtifact, listUserArtifacts } from './artifact-loader.js';
 export { default as PrecompiledMaterial } from './_vendor-PrecompiledMaterial.js';
 export { default as PrecompiledComputeNode } from './precompiled-compute-node.js';
+export { createPrecompiledComputeRunner } from './precompiled-compute-runner.js';
 export { registerPrecompiledArtifact, registerPrecompiledArtifacts, unregisterPrecompiledArtifacts, getShadowArtifact, getPipelineArtifact, getOutputArtifact, dumpPrecompiledRegistry } from './_vendor-PrecompiledArtifactRegistry.js';
 export * from './writers.js';
 export {

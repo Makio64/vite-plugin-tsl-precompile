@@ -30,6 +30,10 @@
       "types": "./types/core.d.ts",
       "default": "./src/core.js"
     },
+    "./compute": {
+      "types": "./types/precompiled-compute-runner.d.ts",
+      "default": "./src/precompiled-compute-runner.js"
+    },
     "./writers": {
       "types": "./types/writers.d.ts",
       "default": "./src/writers.js"

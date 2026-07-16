@@ -16,6 +16,9 @@ test( 'texture binding kind creates sampled texture bindings with metadata and c
 		texture,
 		textureType: '3d',
 		visibility: 2,
+		store: true,
+		access: 'writeOnly',
+		mipLevel: 2,
 		groupNode,
 	} );
 	const clone = binding.clone();
@@ -24,6 +27,9 @@ test( 'texture binding kind creates sampled texture bindings with metadata and c
 	assert.equal( binding.texture, texture );
 	assert.equal( binding.isSampledTexture3D, true );
 	assert.equal( binding.visibility, 2 );
+	assert.equal( binding.store, true );
+	assert.equal( binding.access, 'writeOnly' );
+	assert.equal( binding.mipLevel, 2 );
 	assert.equal( binding.groupNode, groupNode );
 	assert.equal( clone.__tslpRebindSource, binding );
 	assert.equal( binding.__tslpRebindClones.has( clone ), true );

@@ -60,6 +60,9 @@ function createSampledTextureRuntimeBinding( { artifact, groupName, descriptor, 
 		texture,
 		textureType,
 		visibility: descriptor.visibility,
+		store: descriptor.store === true,
+		access: descriptor.access || null,
+		mipLevel: descriptor.mipLevel || 0,
 		groupNode,
 	} );
 

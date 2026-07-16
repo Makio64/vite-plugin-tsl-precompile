@@ -27,6 +27,16 @@ export type {
 	SlimSceneSupportErrorContext,
 	SlimSceneSupportOptions,
 } from './slim-support/scene-support.d.ts';
+export type {
+	GeneratedPrecompiledComputeModule,
+	PrecompiledComputeArtifact,
+	PrecompiledComputeBindingEntry,
+	PrecompiledComputeBindingsDescriptor,
+	PrecompiledComputeDispatchSize,
+	PrecompiledComputeResources,
+	PrecompiledComputeRunner,
+	PrecompiledComputeUniform,
+} from './precompiled-compute-runner.d.ts';
 export const AUTO_COMPUTE_MATERIAL_PROPERTIES: typeof import('./slim-support/auto-compute.d.ts').AUTO_COMPUTE_MATERIAL_PROPERTIES;
 export const MATERIAL_COMPUTE_BINDINGS: typeof import('./slim-support/auto-compute.d.ts').MATERIAL_COMPUTE_BINDINGS;
 export const AutoComputeBindingError: typeof import('./slim-support/auto-compute.d.ts').AutoComputeBindingError;
@@ -37,6 +47,7 @@ export const prepareMaterialComputeAttributes: typeof import('./slim-support/aut
 export const applyMaterialComputeAttributeBindings: typeof import('./slim-support/auto-compute.d.ts').applyMaterialComputeAttributeBindings;
 export const invalidateMaterialComputeBindings: typeof import('./slim-support/auto-compute.d.ts').invalidateMaterialComputeBindings;
 export const createAutoComputeDispatcher: typeof import('./slim-support/auto-compute.d.ts').createAutoComputeDispatcher;
+export const createPrecompiledComputeRunner: typeof import('./precompiled-compute-runner.d.ts').createPrecompiledComputeRunner;
 
 export interface PrecompileCaptureContext {
 	/** Exact renderer whose topology should be captured; useful when one scene is rendered by multiple renderer configurations. */

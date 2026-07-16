@@ -1,7 +1,16 @@
 import Sampler from 'three/src/renderers/common/Sampler.js';
 import { SampledTexture, SampledCubeTexture, Sampled3DTexture, SampledArrayTexture } from 'three/src/renderers/common/SampledTexture.js';
 
-export function createSampledTextureBinding( { name, texture, textureType, visibility = 0, groupNode = null } ) {
+export function createSampledTextureBinding( {
+	name,
+	texture,
+	textureType,
+	visibility = 0,
+	store = false,
+	access = null,
+	mipLevel = 0,
+	groupNode = null,
+} ) {
 
 	let binding;
 	if ( textureType === 'cube' ) binding = new SampledCubeTexture( name, texture );
@@ -13,6 +22,9 @@ export function createSampledTextureBinding( { name, texture, textureType, visib
 	}
 	else if ( textureType === '2d-array' ) binding = new SampledArrayTexture( name, texture );
 	else binding = new SampledTexture( name, texture );
+	binding.store = store === true;
+	binding.access = access;
+	binding.mipLevel = Number.isSafeInteger( mipLevel ) && mipLevel >= 0 ? mipLevel : 0;
 	return prepareTextureBinding( binding, visibility, groupNode );
 
 }

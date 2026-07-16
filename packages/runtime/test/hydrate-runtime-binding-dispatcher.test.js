@@ -26,7 +26,7 @@ test( 'runtime binding dispatcher creates sampled texture bindings through injec
 	const binding = createRuntimeBindingFromKind( {
 		artifact,
 		group: { name: 'render' },
-		descriptor: { kind: 'sampled-texture', name: 'nodeTexture0', visibility: 2 },
+		descriptor: { kind: 'sampled-texture', name: 'nodeTexture0', visibility: 2, store: true, access: 'readWrite', mipLevel: 3 },
 		material,
 		groupNode,
 		deps: {
@@ -44,6 +44,9 @@ test( 'runtime binding dispatcher creates sampled texture bindings through injec
 	assert.equal( binding.texture, texture );
 	assert.equal( binding.isSampledTexture3D, true );
 	assert.equal( binding.visibility, 2 );
+	assert.equal( binding.store, true );
+	assert.equal( binding.access, 'readWrite' );
+	assert.equal( binding.mipLevel, 3 );
 	assert.equal( binding.groupNode, groupNode );
 	assert.deepEqual( resolverCall, {
 		receivedArtifact: artifact,
