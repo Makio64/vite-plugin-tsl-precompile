@@ -49,6 +49,7 @@ export {
 	attachArtifactTextureRefsByShapeOrder,
 	attachTextureRefsWhere,
 	attachArtifactTextureRefsWhere,
+	rewritePassDepthTextureSources,
 } from './artifact-texture-wiring.js';
 
 export {

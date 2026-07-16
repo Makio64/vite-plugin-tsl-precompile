@@ -331,6 +331,7 @@ export function singleArtifactTextureUuid( artifact: unknown, predicate?: ( sour
 export function attachArtifactTextureRefsByShapeOrder( artifact: unknown, textures: unknown[], predicate?: ( source: Record<string, unknown>, entry: Record<string, unknown>, group: Record<string, unknown> ) => boolean, options?: { overwriteExisting?: boolean } ): number;
 export function attachTextureRefsWhere( artifact: unknown, texture: unknown, predicate: ( source: Record<string, unknown>, entry: Record<string, unknown>, group: Record<string, unknown> ) => boolean ): boolean;
 export function attachArtifactTextureRefsWhere( artifact: unknown, texture: unknown, predicate: ( source: Record<string, unknown>, entry: Record<string, unknown>, group: Record<string, unknown> ) => boolean ): boolean;
+export function rewritePassDepthTextureSources( artifact: unknown, textureUuids?: Set<string> | string[] | null ): number;
 export type ComputeSyncStats = {
 	texturesShared: number;
 	storageAttrs: number;

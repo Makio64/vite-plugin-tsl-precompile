@@ -6,6 +6,7 @@ import {
 	attachArtifactTextureRefsWhere,
 	attachTextureRefsWhere,
 	countArtifactTextureSources,
+	rewritePassDepthTextureSources,
 	singleArtifactTextureUuid,
 	textureMatchesArtifactSource,
 	textureMatchesSource,
@@ -156,5 +157,89 @@ test( 'attachTextureRefsWhere rejects non-texture inputs', () => {
 	assert.equal( attachTextureRefsWhere( artifact, null, () => true ), false );
 	assert.equal( attachTextureRefsWhere( artifact, { isTexture: false }, () => true ), false );
 	assert.equal( attachTextureRefsWhere( null, { isTexture: true }, () => true ), false );
+
+} );
+
+test( 'rewritePassDepthTextureSources rewrites root and represented family plans', () => {
+
+	const passDepth = () => ( {
+		kind: 'depth.texture',
+		textureUuid: 'pass-depth',
+		lightIndex: - 1,
+		lightUuid: null,
+		fromMaterialGraph: true,
+	} );
+	const shadowDepth = () => ( {
+		kind: 'depth.texture',
+		textureUuid: 'shadow-depth',
+		lightIndex: 0,
+		lightUuid: 'light-a',
+		fromMaterialGraph: true,
+	} );
+	const rootSource = passDepth();
+	const rootOrderedSource = passDepth();
+	const variantSource = passDepth();
+	const variantOrderedSource = passDepth();
+	const dynamicSource = passDepth();
+	const rootShadow = shadowDepth();
+	const variantShadow = shadowDepth();
+	const artifact = {
+		cacheKey: 'root',
+		uniformPlan: [ {
+			name: 'object',
+			textures: [ { source: rootSource }, { source: rootShadow } ],
+			orderedBindings: [ { type: 'sampled-texture', ref: { source: rootOrderedSource } } ],
+		} ],
+		variants: {
+			root: {
+				cacheKey: 'root',
+				uniformPlan: [ {
+					name: 'object',
+					textures: [ { source: variantSource }, { source: variantShadow } ],
+					orderedBindings: [ { type: 'sampled-texture', ref: { source: variantOrderedSource } } ],
+				} ],
+				dynamicBindings: [ {
+					kind: 'depth.texture',
+					target: 'sampled-texture',
+					source: dynamicSource,
+				} ],
+			},
+		},
+	};
+
+	assert.ok( rewritePassDepthTextureSources( artifact, new Set( [ 'pass-depth' ] ) ) > 0 );
+	for ( const source of [ rootSource, rootOrderedSource, variantSource, variantOrderedSource, dynamicSource ] ) {
+
+		assert.equal( source.kind, 'artifact.texture' );
+		assert.equal( source.textureName, 'depth' );
+		assert.equal( source.__tslpPassDepthAttached, true );
+
+	}
+	assert.equal( artifact.variants.root.dynamicBindings[ 0 ].kind, 'artifact.texture' );
+	assert.equal( rootShadow.kind, 'depth.texture' );
+	assert.equal( variantShadow.kind, 'depth.texture' );
+	assert.equal( rewritePassDepthTextureSources( artifact, [ 'pass-depth' ] ), 0, 'rewrite is idempotent' );
+
+} );
+
+test( 'rewritePassDepthTextureSources only rewrites attached pass UUIDs', () => {
+
+	const selected = {
+		kind: 'depth.texture',
+		textureUuid: 'selected',
+		lightIndex: - 1,
+		fromMaterialGraph: true,
+	};
+	const other = {
+		kind: 'depth.texture',
+		textureUuid: 'other',
+		lightIndex: - 1,
+		fromMaterialGraph: true,
+	};
+	const artifact = makeArtifact( [ { source: selected }, { source: other } ] );
+
+	assert.equal( rewritePassDepthTextureSources( artifact, [ 'selected' ] ), 1 );
+	assert.equal( selected.kind, 'artifact.texture' );
+	assert.equal( other.kind, 'depth.texture' );
 
 } );

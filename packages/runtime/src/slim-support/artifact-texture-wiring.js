@@ -260,3 +260,117 @@ export function attachArtifactTextureRefsWhere( artifact, texture, predicate ) {
 	return attachTextureRefsWhere( artifact, texture, ( source, entry, group ) => source.kind === 'artifact.texture' && predicate( source, entry, group ) );
 
 }
+
+function artifactFamilyMembers( artifact ) {
+
+	if ( ! artifact || typeof artifact !== 'object' ) return [];
+	const members = [];
+	const pending = [ artifact ];
+	const seen = new Set();
+	while ( pending.length > 0 ) {
+
+		const member = pending.shift();
+		if ( ! member || typeof member !== 'object' || seen.has( member ) ) continue;
+		seen.add( member );
+		members.push( member );
+		const variants = member.variants;
+		if ( ! variants || typeof variants !== 'object' || Array.isArray( variants ) ) continue;
+		for ( const variant of Object.values( variants ) ) pending.push( variant );
+
+	}
+	return members;
+
+}
+
+function passDepthSourceMatches( source, textureUuids ) {
+
+	if ( ! source || typeof source !== 'object' || ! source.textureUuid ) return false;
+	if ( textureUuids && ! textureUuids.has( source.textureUuid ) ) return false;
+	if ( source.kind === 'artifact.texture' && source.__tslpPassDepthAttached === true ) return true;
+	if ( source.kind !== 'depth.texture' || source.fromMaterialGraph !== true ) return false;
+	if ( source.lightUuid || ( typeof source.lightIndex === 'number' && source.lightIndex >= 0 ) ) return false;
+	return true;
+
+}
+
+function promotePassDepthSource( source ) {
+
+	let changed = false;
+	if ( source.kind !== 'artifact.texture' ) {
+
+		source.kind = 'artifact.texture';
+		changed = true;
+
+	}
+	if ( ! source.textureName ) {
+
+		source.textureName = 'depth';
+		changed = true;
+
+	}
+	if ( source.__tslpPassDepthAttached !== true ) {
+
+		source.__tslpPassDepthAttached = true;
+		changed = true;
+
+	}
+	return changed;
+
+}
+
+/**
+ * Reclassify live pass-rendered depth inputs across an artifact's complete
+ * represented family. A selected variant owns its own `uniformPlan`, so
+ * rewriting only the root envelope leaves the hydrator on `depth.texture` and
+ * its 1x1 shadow fallback. This helper keeps root/variant plans, ordered-binding
+ * aliases, and optional dynamic descriptors in sync.
+ *
+ * Light-owned shadow depth sources are deliberately excluded. `textureUuids`
+ * can restrict the rewrite to depth textures already attached to live pass
+ * render targets.
+ *
+ * @param {Object} artifact
+ * @param {Set<string>|string[]|null} textureUuids
+ * @return {number} number of source/descriptor records changed
+ */
+export function rewritePassDepthTextureSources( artifact, textureUuids = null ) {
+
+	const filter = textureUuids === null || textureUuids === undefined
+		? null
+		: textureUuids instanceof Set ? textureUuids : new Set( Array.isArray( textureUuids ) ? textureUuids : [] );
+	let changed = 0;
+	const visitedSources = new Set();
+	const rewriteSource = ( source ) => {
+
+		if ( ! passDepthSourceMatches( source, filter ) ) return false;
+		if ( visitedSources.has( source ) ) return true;
+		visitedSources.add( source );
+		if ( promotePassDepthSource( source ) ) changed ++;
+		return true;
+
+	};
+
+	for ( const member of artifactFamilyMembers( artifact ) ) {
+
+		for ( const group of Array.isArray( member.uniformPlan ) ? member.uniformPlan : [] ) {
+
+			for ( const entry of Array.isArray( group && group.textures ) ? group.textures : [] ) rewriteSource( entry && entry.source );
+			for ( const binding of Array.isArray( group && group.orderedBindings ) ? group.orderedBindings : [] ) rewriteSource( binding && binding.ref && binding.ref.source );
+
+		}
+		for ( const entry of Array.isArray( member.dynamicBindings ) ? member.dynamicBindings : [] ) {
+
+			if ( ! rewriteSource( entry && entry.source ) ) continue;
+			if ( entry.kind === 'depth.texture' ) {
+
+				entry.kind = 'artifact.texture';
+				changed ++;
+
+			}
+
+		}
+
+	}
+	return changed;
+
+}
