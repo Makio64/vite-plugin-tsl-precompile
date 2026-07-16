@@ -122,6 +122,84 @@ test( 'harvest includes repeated request-only cache hits as one complete materia
 
 } );
 
+test( 'complete cube-target state publishes canonical aliases for all faces without relaxing mip or format', async () => {
+
+	const { manager, renderer, renderObjects } = fixture();
+	const state = { vertexShader: 'cube-vertex', fragmentShader: 'cube-fragment' };
+	const texture = { isCubeTexture: true, format: 1023, type: 1016, colorSpace: 'srgb-linear' };
+	const renderTarget = {
+		isCubeRenderTarget: true,
+		texture,
+		textures: [ texture ],
+		depthBuffer: true,
+		stencilBuffer: false,
+	};
+	const material = { uuid: 'verified-cube-material' };
+	const renderObject = {
+		cacheKey: 94,
+		material,
+		object: { material },
+		context: {
+			renderTarget,
+			textures: [ texture ],
+			activeCubeFace: 3,
+			activeMipmapLevel: 2,
+			sampleCount: 1,
+		},
+	};
+	manager.nodeBuilderCache.set( renderObject.cacheKey, state );
+	const session = beginRenderObjectHarvest( renderer );
+	renderObjects.get( renderObject );
+	const harvest = await session.finish();
+	const variant = harvest.familiesByMaterial.get( material ).variants[ 0 ];
+	const selectors = variant.renderContextSelectors.map( ( selector ) => JSON.parse( selector ) );
+
+	assert.equal( variant.complete, true );
+	assert.equal( variant.nodeBuilderState, state, 'every alias belongs to the one proven complete builder state' );
+	assert.deepEqual( selectors.map( ( selector ) => selector.target.activeCubeFace ), [ 0, 1, 2, 3, 4, 5 ] );
+	assert.ok( selectors.every( ( selector ) => selector.target.activeMipmapLevel === 2 ) );
+	assert.ok( selectors.every( ( selector ) => selector.target.colors[ 0 ].format === 1023 ) );
+	assert.equal( new Set( variant.renderContextSelectors ).size, 6, 'aliases remain canonical and unique' );
+
+} );
+
+test( 'ordinary 2d targets and cube-texture flags without a cube target do not gain face aliases', async () => {
+
+	for ( const [ label, texture ] of [
+		[ 'ordinary-2d', { isRenderTargetTexture: true, format: 1023 } ],
+		[ 'cube-texture-only', { isCubeTexture: true, format: 1023 } ],
+	] ) {
+
+		const { manager, renderer, renderObjects } = fixture();
+		const state = { vertexShader: `${ label }-vertex`, fragmentShader: `${ label }-fragment` };
+		const renderTarget = { isRenderTarget: true, texture, textures: [ texture ] };
+		const material = { uuid: `${ label }-material` };
+		const renderObject = {
+			cacheKey: label,
+			material,
+			object: { material },
+			context: {
+				renderTarget,
+				textures: [ texture ],
+				activeCubeFace: 4,
+				activeMipmapLevel: 1,
+				sampleCount: 1,
+			},
+		};
+		manager.nodeBuilderCache.set( renderObject.cacheKey, state );
+		const session = beginRenderObjectHarvest( renderer );
+		renderObjects.get( renderObject );
+		const harvest = await session.finish();
+		const variant = harvest.familiesByMaterial.get( material ).variants[ 0 ];
+
+		assert.equal( variant.complete, true );
+		assert.equal( variant.renderContextSelectors.length, 1, label );
+		assert.equal( JSON.parse( variant.renderContextSelectors[ 0 ] ).target.activeCubeFace, 4, label );
+
+	}
+
+} );
+
 test( 'harvest publishes a closure-hidden compute kernel under one exact deferred material path', async () => {
 
 	const { manager, renderer, renderObjects } = fixture();

@@ -9,6 +9,7 @@
 
 import { createRenderObjectContextSelector, resolveRenderObjectBindingOwner } from '@tsl-precompile/contract/render-selector';
 import { attachDeferredMaterialComputeStatePaths } from '@tsl-precompile/contract/material-compute';
+import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
 
 const OBSERVER_STATE = Symbol.for( '@tsl-precompile/plugin/render-object-observer@1' );
 const REQUEST_OBSERVER_STATE = Symbol.for( '@tsl-precompile/plugin/render-object-request-observer@1' );
@@ -511,7 +512,6 @@ function buildHarvestResult( epoch, supported, renderer, requests, pairsByMateri
 
 			const exactRequests = pair.requests.filter( ( request ) => request.bindingOwnerExact );
 			const authoritativeRequests = exactRequests.length > 0 ? exactRequests : pair.requests;
-			const selectors = [ ...new Set( authoritativeRequests.map( ( request ) => request.renderContextSelector ).filter( Boolean ) ) ].sort();
 			const objects = [ ...new Set( authoritativeRequests.map( ( request ) => request.object ).filter( Boolean ) ) ];
 			const sourceOwnerRequests = authoritativeRequests.filter( ( request ) => request.sourceMaterial || request.userMaterial );
 			const sourceMaterials = [ ...new Set( sourceOwnerRequests.map( ( request ) =>
@@ -528,6 +528,9 @@ function buildHarvestResult( epoch, supported, renderer, requests, pairsByMateri
 			const complete = pair.cacheKey !== null && pair.cacheKey !== undefined &&
 				pair.nodeBuilderState !== null && pair.ambiguousState === false &&
 				pair.stateErrors.length === 0 && missingSelector === false;
+			const selectors = [ ...new Set( authoritativeRequests.flatMap( ( request ) =>
+				complete ? renderContextSelectorAliases( request ) : request.renderContextSelector ? [ request.renderContextSelector ] : []
+			) ) ].sort();
 			return Object.freeze( {
 				cacheKey: pair.cacheKey,
 				nodeBuilderState: pair.nodeBuilderState,
@@ -564,6 +567,49 @@ function buildHarvestResult( epoch, supported, renderer, requests, pairsByMateri
 		familiesByMaterial,
 		familiesByMaterialUuid,
 	} );
+
+}
+
+/**
+ * A CubeRenderTarget draw always binds one two-dimensional face view. Face
+ * identity selects the attachment layer but cannot change the material WGSL,
+ * so one complete builder state is valid for all six faces. Persist explicit
+ * aliases instead of weakening ordinary runtime selector matching.
+ *
+ * Require the target object itself to identify as a cube render target and
+ * require the canonical selector to agree. A cube-looking texture attached to
+ * an ordinary target is not sufficient evidence for alias expansion.
+ */
+function renderContextSelectorAliases( request ) {
+
+	const selector = request && request.renderContextSelector;
+	if ( ! selector ) return [];
+	const renderTarget = request && request.renderContext && request.renderContext.renderTarget;
+	const verifiedCubeTarget = safeRead( renderTarget, 'isCubeRenderTarget' ) === true ||
+		safeRead( renderTarget, 'isWebGLCubeRenderTarget' ) === true;
+	if ( ! verifiedCubeTarget ) return [ selector ];
+	let descriptor;
+	try {
+
+		descriptor = JSON.parse( selector );
+
+	} catch ( _ ) {
+
+		return [ selector ];
+
+	}
+	if ( ! descriptor || descriptor.version !== 'render-object-selector@1' ||
+		! descriptor.target || descriptor.target.surface !== 'offscreen-cube' ) return [ selector ];
+	const aliases = [];
+	for ( let activeCubeFace = 0; activeCubeFace < 6; activeCubeFace ++ ) {
+
+		aliases.push( stableJsonStringify( {
+			...descriptor,
+			target: { ...descriptor.target, activeCubeFace },
+		}, 'renderObjectSelector' ) );
+
+	}
+	return aliases;
 
 }
 
