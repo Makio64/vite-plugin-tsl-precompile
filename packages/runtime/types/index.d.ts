@@ -200,6 +200,8 @@ export interface AuxCaptureOptions extends Record<string, unknown> {
 	devEndpoint?: string;
 	renderPipeline?: unknown;
 	renderPipelineName?: string;
+	/** RenderTarget topology used by the pipeline final quad; capture operates on a disposable structural clone. */
+	renderPipelineTarget?: unknown;
 	postProcessing?: unknown;
 	postProcessingName?: string;
 	/** One equirectangular 2D Texture used by `CubeRenderTarget.fromEquirectangularTexture()`. */

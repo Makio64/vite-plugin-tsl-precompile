@@ -170,6 +170,8 @@ export async function precompileRendererOutput( renderer, scene, camera, opts = 
  * @param {string} opts.devEndpoint - e.g. '/__tsl-precompile/capture'.
  * @param {?Object} [opts.renderPipeline] - A RenderPipeline whose real final material should be captured.
  * @param {?string} [opts.renderPipelineName] - Friendly name for the RenderPipeline capture.
+ * @param {?Object} [opts.renderPipelineTarget] - RenderTarget topology used by the pipeline's final quad.
+ *   Capture uses a disposable 1x1 structural clone and never clears or disposes the live target.
  * @param {?Object} [opts.postProcessing] - Backward-compatible alias for `renderPipeline`.
  * @param {?string} [opts.postProcessingName] - Backward-compatible alias for `renderPipelineName`.
  * @param {?Object} [opts.cubeRenderTargetTexture] - One equirectangular 2D texture to capture for CubeRenderTarget conversion.
@@ -684,7 +686,37 @@ async function capturePostProcessingLive( renderer, renderPipeline, scene, camer
 	// (e.g. webgpu_multiple_rendertargets's `renderer.setMRT(...)` in init).
 	// Otherwise compileTSL would inherit it and emit a multi-output fragment
 	// for our single-output post-process material, crashing WGSL validation.
-	const artifacts = await compileTSL( renderer, captureScene, captureCamera, { renderPipeline, noGlobalMRT: true } );
+	// A pipeline final quad may intentionally render to an offscreen target.
+	// compileTSL deliberately ignores an ambient renderer target, so make that
+	// topology explicit and clone it before the synthetic render. This keeps
+	// accidental host state isolated while allowing authored multi-stage
+	// pipelines (for example, output-transform -> FXAA) to capture the selector
+	// they actually use in production.
+	const liveRenderTarget = opts.renderPipelineTarget || null;
+	const renderTargetOverride = cloneRenderTargetForCapture( liveRenderTarget );
+	if ( liveRenderTarget && ! renderTargetOverride ) {
+
+		throw new Error( 'capturePostProcessingLive: opts.renderPipelineTarget must be a cloneable RenderTarget' );
+
+	}
+	let artifacts;
+	try {
+
+		artifacts = await compileTSL( renderer, captureScene, captureCamera, {
+			renderPipeline,
+			noGlobalMRT: true,
+			...( renderTargetOverride ? { renderTargetOverride } : {} ),
+		} );
+
+	} finally {
+
+		if ( renderTargetOverride ) {
+
+			try { renderTargetOverride.dispose(); } catch ( _ ) {}
+
+		}
+
+	}
 	const pipelineMaterial = renderPipeline._quadMesh && renderPipeline._quadMesh.material;
 	const artifact = artifacts.find( ( a ) => pipelineMaterial && a.materialUuid === pipelineMaterial.uuid )
 		|| artifacts.find( ( a ) => a.materialShape === 'render-pipeline' );

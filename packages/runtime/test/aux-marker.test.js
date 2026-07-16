@@ -555,11 +555,33 @@ test( 'precompileAuxiliary captures effects observed only through live update no
 		renderer: { toneMapping: 4, outputColorSpace: 'srgb' },
 		_quadMesh: { material: { uuid: 'render-pipeline-material' } },
 	};
+	const targetClones = [];
+	const renderPipelineTarget = {
+		disposed: false,
+		cloneCalls: 0,
+		clone() {
+
+			this.cloneCalls ++;
+			const clone = {
+				disposed: false,
+				setSizeCalls: [],
+				setSize( ...args ) { this.setSizeCalls.push( args ); },
+				dispose() { this.disposed = true; },
+			};
+			targetClones.push( clone );
+			return clone;
+
+		},
+	};
 	let compileCalls = 0;
+	const pipelineCompileTargets = [];
 	const compileTSL = async ( _renderer, captureScene, _camera, options = {} ) => {
 
 		compileCalls ++;
 		if ( options.renderPipeline ) {
+
+			assert.equal( options.noGlobalMRT, true );
+			pipelineCompileTargets.push( options.renderTargetOverride || null );
 
 			const artifact = {
 				materialUuid: options.renderPipeline._quadMesh.material.uuid,
@@ -633,6 +655,7 @@ test( 'precompileAuxiliary captures effects observed only through live update no
 			compileTSL,
 			renderPipeline,
 			renderPipelineName: 'effects-pipeline-a',
+			renderPipelineTarget,
 			three: { NodeMaterial, Scene, QuadMesh, RenderTarget },
 		} );
 		assert.equal( compileCalls, 4, 'captures the output, hidden GTAO/SSS, and renderer-output materials' );
@@ -640,6 +663,11 @@ test( 'precompileAuxiliary captures effects observed only through live update no
 		assert.deepEqual( payloads.map( ( payload ) => payload.materialShape ), [ 'post-process', 'gtao', 'sss', 'render-output' ] );
 		assert.equal( payloads[ 0 ].name, 'effects-pipeline-a' );
 		assert.equal( payloads[ 0 ].artifact.replayConfig.outputColorTransform, true );
+		assert.equal( renderPipelineTarget.cloneCalls, 1 );
+		assert.equal( pipelineCompileTargets[ 0 ], targetClones[ 0 ] );
+		assert.deepEqual( targetClones[ 0 ].setSizeCalls, [ [ 1, 1 ] ] );
+		assert.equal( targetClones[ 0 ].disposed, true, 'capture clone is released' );
+		assert.equal( renderPipelineTarget.disposed, false, 'live pipeline target remains caller-owned' );
 		assert.equal( payloads[ 3 ].artifact.fragmentShader, 'active-output' );
 		assert.equal( payloads[ 3 ].artifact.replayConfig.currentColorSpace, 'srgb' );
 		assert.deepEqual( RenderTarget.options, [
@@ -653,9 +681,12 @@ test( 'precompileAuxiliary captures effects observed only through live update no
 			compileTSL,
 			renderPipeline,
 			renderPipelineName: 'effects-pipeline-b',
+			renderPipelineTarget,
 			three: { NodeMaterial, Scene, QuadMesh, RenderTarget },
 		} );
 		assert.equal( payloads[ 4 ].name, 'effects-pipeline-b' );
+		assert.equal( pipelineCompileTargets[ 1 ], targetClones[ 1 ] );
+		assert.equal( targetClones[ 1 ].disposed, true );
 		assert.notEqual(
 			payloads[ 0 ].configHash,
 			payloads[ 4 ].configHash,

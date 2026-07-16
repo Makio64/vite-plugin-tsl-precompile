@@ -106,6 +106,17 @@ renderPipeline.outputNode = scenePass.getTextureNode( 'output' );
 await setup.captureAux( { passNode: scenePass, renderPipeline } );
 ```
 
+If a `RenderPipeline` final quad is authored to render into an offscreen
+target, declare that topology explicitly. Capture compiles against a disposable
+1x1 clone, so the live target is neither cleared nor disposed:
+
+```js
+await setup.captureAux( {
+	renderPipeline: colorPipeline,
+	renderPipelineTarget: colorTarget,
+} );
+```
+
 ## Slim Support
 
 The supported production mode for v0.1+ is **slim + opt-in full-renderer
