@@ -1522,6 +1522,83 @@ test( 'createSlimSceneSupport aborts before dispatch and claim when a slim-owned
 
 } );
 
+test( 'createSlimSceneSupport accepts a contracted storage input first owned by delegated compute', async () => {
+
+	const slim = fakeRenderer();
+	const full = fakeRenderer();
+	full.backend.device = slim.backend.device;
+	const speedAttribute = {
+		isBufferAttribute: true,
+		isStorageBufferAttribute: true,
+		array: new Float32Array( 4 ),
+		count: 1,
+		itemSize: 4,
+		version: 0,
+	};
+	const speedBinding = { isStorageBuffer: true, access: 'readWrite', attribute: speedAttribute };
+	const runtimeGroup = { bindings: [ {}, {}, {}, speedBinding ] };
+	const raw = {
+		isNode: true,
+		isComputeNode: true,
+		storage: { attribute: speedAttribute },
+		traverse( visitor ) { visitor( this ); },
+	};
+	const artifact = contractComputeArtifact( 'hybrid-required', { storageOutput: true } );
+	artifact.attributes = [];
+	artifact.materialCompute.renderBindings = [];
+	artifact.materialCompute.bindings[ 0 ].binding = 3;
+	const nestedBindings = artifact.materialCompute.kernels[ 0 ].artifact.bindings[ 0 ].bindings;
+	nestedBindings.unshift(
+		{ name: 'object', kind: 'uniform-buffer', visibility: 7, textureType: null, byteLength: 16, access: null },
+		{ name: 'object-2', kind: 'uniform-buffer', visibility: 7, textureType: null, byteLength: 16, access: null },
+		{ name: 'object-3', kind: 'uniform-buffer', visibility: 7, textureType: null, byteLength: 16, access: null },
+	);
+	const material = {
+		isPrecompiledMaterial: true,
+		precompiledArtifact: artifact,
+		positionNode: raw,
+	};
+	const scene = { traverse( visitor ) { visitor( { material } ); } };
+	full._nodes = { getForCompute: () => ( { bindings: [ runtimeGroup ] } ) };
+	full._bindings = { getForCompute: () => [ runtimeGroup ] };
+	const fullSpeedBuffer = { id: 'full-compute-speed', size: 16 };
+	let physicalDispatches = 0;
+	full.computeAsync = async () => {
+
+		physicalDispatches ++;
+		assert.equal( slim.backend.get( speedAttribute ).buffer, undefined, 'private compute state has no slim input handle before first dispatch' );
+		full.backend.get( speedAttribute ).buffer = fullSpeedBuffer;
+
+	};
+	const nonSlimOwnedLocations = [];
+	const support = createSlimSceneSupport( { renderer: slim, fullRendererFallback: false } );
+
+	try {
+
+		const stats = await support.dispatchMaterialComputes( scene, {
+			fullRenderer: full,
+			shareOptions: {
+				onInputNotSlimOwned: ( resource, binding, location, detail ) => {
+
+					nonSlimOwnedLocations.push( `${ detail.kind }:${ location.group }:${ location.binding }` );
+
+				},
+			},
+		} );
+		assert.equal( stats.errors, 0 );
+		assert.equal( stats.dispatched, 1 );
+		assert.equal( physicalDispatches, 1 );
+		assert.deepEqual( nonSlimOwnedLocations, [ 'storage-buffer:0:3' ] );
+		assert.equal( slim.backend.get( speedAttribute ).buffer, fullSpeedBuffer, 'the delegated output transaction publishes the new buffer to slim' );
+
+	} finally {
+
+		await support.dispose();
+
+	}
+
+} );
+
 test( 'createSlimSceneSupport rejects an unproven hybrid binding layout before dispatch', async () => {
 
 	const slim = fakeRenderer();

@@ -251,6 +251,51 @@ test( 'shareComputeSampledInputs filters exact inputs, reports duplicate locatio
 
 } );
 
+test( 'shareComputeSampledInputs reports an exact storage input without a slim GPU handle as full-compute-owned', () => {
+
+	const speedAttribute = {
+		isStorageBufferAttribute: true,
+		array: new Float32Array( 16 ),
+		count: 4,
+		itemSize: 4,
+	};
+	const speedBinding = storageBufferBinding( speedAttribute );
+	const group = { bindings: [ {}, {}, {}, speedBinding ] };
+	const slim = fakeRenderer();
+	const full = fakeRenderer();
+	full._nodes = { getForCompute: () => ( { bindings: [ group ] } ) };
+	const synced = [];
+	const notSlimOwned = [];
+
+	shareComputeSampledInputs( {}, full, slim, {
+		initializeBindings: false,
+		bindingFilter: ( binding, location, detail ) => (
+			detail.kind === 'storage-buffer' && location.group === 0 && location.binding === 3
+		),
+		onInputSynced: ( resource, binding, location ) => synced.push( location ),
+		onInputNotSlimOwned: ( resource, binding, location, detail ) => notSlimOwned.push( {
+			resource,
+			binding,
+			location,
+			detail,
+		} ),
+	} );
+
+	assert.deepEqual( synced, [] );
+	assert.equal( notSlimOwned.length, 1 );
+	assert.equal( notSlimOwned[ 0 ].resource, speedAttribute );
+	assert.equal( notSlimOwned[ 0 ].binding, speedBinding );
+	assert.deepEqual( notSlimOwned[ 0 ].location, { group: 0, binding: 3 } );
+	assert.deepEqual( notSlimOwned[ 0 ].detail, {
+		direction: 'input',
+		kind: 'storage-buffer',
+		shared: false,
+		notSlimOwned: true,
+		alreadyAvailable: false,
+	} );
+
+} );
+
 test( 'shareComputeSampledInputs invalidates initialized compute bindings when a selected storage input buffer is replaced', () => {
 
 	const attribute = { isStorageBufferAttribute: true, version: 1 };

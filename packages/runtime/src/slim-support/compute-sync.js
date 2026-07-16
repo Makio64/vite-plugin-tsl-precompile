@@ -229,8 +229,18 @@ function shareStorageBufferEntry( fullRenderer, slimRenderer, attribute ) {
 	if ( ! attribute || ! fullRenderer.backend || ! slimRenderer.backend ) return { shared: false, replaced: false };
 	const sourceAttribute = attribute.isInterleavedBufferAttribute === true ? attribute.data : attribute;
 	const slimData = slimRenderer.backend.get( sourceAttribute );
-	if ( ! slimData || ! slimData.buffer ) return { shared: false, replaced: false };
 	const fullData = fullRenderer.backend.get( sourceAttribute );
+	// An exact compute input with no slim GPU handle is full-compute-owned. Its
+	// CPU attribute remains available to Three and the full renderer will create
+	// the first GPUBuffer when it initializes the binding for dispatch. This is
+	// the storage-buffer equivalent of a compute-owned sampled texture; there is
+	// no slim resource to transfer and therefore no synchronization failure.
+	if ( ! slimData || ! slimData.buffer ) return {
+		shared: false,
+		replaced: false,
+		notSlimOwned: true,
+		alreadyAvailable: !! ( fullData && fullData.buffer ),
+	};
 	if ( ! fullData ) return { shared: false, replaced: false };
 	const previousBuffer = fullData.buffer;
 	fullData.buffer = slimData.buffer;
@@ -375,7 +385,7 @@ export function computeSyncNeedsPresentation( stats ) {
  * @param {Function}             [opts.onStorageTexture] - `(texture, binding, location) => void` invoked for each successfully shared storage-texture input location.
  * @param {Function}             [opts.onStorageAttr] - `(attribute, binding, location) => void` invoked for each successfully shared storage-buffer input location.
  * @param {Function}             [opts.onInputSynced] - `(resource, binding, location, { direction, kind }) => void` invoked for every successfully shared input location.
- * @param {Function}             [opts.onInputNotSlimOwned] - `(texture, binding, location, detail) => void` invoked for an exact ordinary sampled location whose GPU texture is not owned by slim and therefore does not require sharing.
+ * @param {Function}             [opts.onInputNotSlimOwned] - `(resource, binding, location, detail) => void` invoked for an exact sampled-texture or storage-buffer location whose GPU resource is not owned by slim and therefore does not require sharing.
  * @param {Function}             [opts.onError] - `(err, textureOrBinding) => void` error hook.
  * @returns {{ texturesShared: number, skippedStorageTextures: number, missingTextures: number }}
  */
@@ -418,6 +428,19 @@ export function shareComputeSampledInputs( computeNode, fullRenderer, slimRender
 
 						result = shareStorageBufferEntry( fullRenderer, slimRenderer, attribute );
 						sharedStorageAttrs.set( attribute, result );
+
+					}
+					if ( result.notSlimOwned ) {
+
+						const detail = {
+							direction: 'input',
+							kind: 'storage-buffer',
+							shared: false,
+							notSlimOwned: true,
+							alreadyAvailable: result.alreadyAvailable,
+						};
+						callResourceHook( onInputNotSlimOwned, attribute, binding, location, detail );
+						continue;
 
 					}
 					if ( result.replaced && initializedComputeBindings && ! computeBindingsInvalidated ) {
