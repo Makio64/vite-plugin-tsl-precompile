@@ -1910,6 +1910,7 @@ import { computeNodeUsesStorageTexture as __sharedComputeNodeUsesStorageTexture,
 import { AUTO_COMPUTE_MATERIAL_PROPERTIES as __AUTO_COMPUTE_SLOTS, createAutoComputeDispatcher as __sharedCreateAutoComputeDispatcher } from '/__tslp_runtime/slim-support/auto-compute.js';
 import { artifactHasTextureSource as __sharedArtifactHasTextureSource, attachArtifactTextureRefsByShapeOrder as __sharedAttachArtifactTextureRefsByShapeOrder, attachArtifactTextureRefsWhere as __sharedAttachArtifactTextureRefsWhere, attachTextureRefsWhere as __sharedAttachTextureRefsWhere, countArtifactTextureSources as __sharedCountArtifactTextureSources, singleArtifactTextureUuid as __sharedSingleArtifactTextureUuid, textureMatchesArtifactSource as __sharedTextureMatchesArtifactSource, textureMatchesSource as __sharedTextureMatchesSource } from '/__tslp_runtime/slim-support/artifact-texture-wiring.js';
 import { createFullRendererFallback as __sharedCreateFullRendererFallback } from '/__tslp_runtime/slim-support/full-renderer-fallback.js';
+import { createSlimSceneSupport as __sharedCreateSlimSceneSupport } from '/__tslp_runtime/slim-support/scene-support.js';
 import { updateRendererLightingForSlim as __sharedUpdateRendererLightingForSlim } from '/__tslp_runtime/slim-support/renderer-lighting.js';
 import { artifactLooksLikeRetroPassMaterial as __sharedArtifactLooksLikeRetroPassMaterial, prepareEffectNodeForReplay as __sharedPrepareEffectNodeForReplay } from '/__tslp_runtime/slim-support/postprocess-effects-replay.js';
 import { refreshPreparedPostprocessResources as __sharedRefreshPreparedPostprocessResources } from '/__tslp_runtime/slim-support/postprocess-resource-refresh.js';
@@ -1921,6 +1922,7 @@ import { getLiveNodeDependencies as __sharedGetLiveNodeDependencies } from '/__t
 import { createPostprocessExecutionPlan as __sharedCreatePostprocessExecutionPlan, postprocessGraphContains as __sharedPostprocessGraphContains } from '/__tslp_runtime/slim-support/postprocess-execution-plan.js';
 import { renderOffscreenOverrideWithFullRenderer as __sharedRenderOffscreenOverrideWithFullRenderer } from '/__tslp_runtime/slim-support/pass-render-fallback.js';
 import { findAux as __runtimeFindAux } from '/__tslp_runtime/aux-loader.js';
+import { inspectRuntimeMaterialComputeFamily as __sharedInspectRuntimeMaterialComputeFamily } from '/__tslp_runtime/hydrate/material-compute-ownership.js';
 import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS as __NODE_GRAPH_KEYS } from '/__tslp_contract/texture-props.js';
 import { countArtifactFragmentOutputCapacity as __sharedCountArtifactFragmentOutputCapacity, countArtifactFragmentOutputs as __sharedCountArtifactFragmentOutputs } from '/__tslp_contract/fragment-outputs.js';
 import { createRenderObjectContextSelector as __createRenderObjectContextSelector, projectRenderObjectContextSelector as __projectRenderObjectContextSelector } from '/__tslp_contract/render-selector.js';
@@ -7879,9 +7881,138 @@ function __prepareSceneForReplay( scene, renderer ) {
 }
 
 // Material-owned compute discovery and artifact wiring live in the runtime.
-// The harness retains only its frozen-screenshot dispatch policy.
+// Legacy graphs retain the harness's frozen-screenshot dispatch policy. A
+// signed hybrid-required contract is different: hydration must see one
+// successful full-renderer delegation lease before its first draw. Keep the
+// public render() call synchronous by deferring that draw, serializing the
+// product dispatcher, then issuing one guarded presentation render.
 const __autoComputeDispatcherByRenderer = new WeakMap();
 const __frozenDispatchedAutoComputeNodes = new Set();
+const __materialComputeSceneSupportByRenderer = new WeakMap();
+const __materialComputeDispatchStateByRenderer = new WeakMap();
+
+function __sceneRequiresMaterialComputeDelegation( scene ) {
+	if ( ! scene || typeof scene.traverse !== 'function' ) return false;
+	let required = false;
+	scene.traverse( ( object ) => {
+		if ( required ) return;
+		const material = object && object.material;
+		const list = Array.isArray( material ) ? material : material ? [ material ] : [];
+		for ( const candidate of list ) {
+			if ( ! ( candidate && candidate.isPrecompiledMaterial === true && candidate.precompiledArtifact ) ) continue;
+			try {
+				const inspection = __sharedInspectRuntimeMaterialComputeFamily( candidate.precompiledArtifact );
+				if ( inspection.status === 'uniform' && inspection.descriptor.mode === 'hybrid-required' ) {
+					required = true;
+					return;
+				}
+			} catch ( _ ) {
+				// Let the product dispatcher report the typed divergent-family error.
+				required = true;
+				return;
+			}
+		}
+	} );
+	return required;
+}
+
+function __materialComputeSceneSupportFor( slimRenderer ) {
+	let support = __materialComputeSceneSupportByRenderer.get( slimRenderer );
+	if ( support ) return support;
+	support = __sharedCreateSlimSceneSupport( {
+		renderer: slimRenderer,
+		fullRendererFallback: false,
+	} );
+	__materialComputeSceneSupportByRenderer.set( slimRenderer, support );
+	return support;
+}
+
+function __snapshotMaterialComputeRenderRequest( slimRenderer, scene, camera ) {
+	let renderTarget = null;
+	let mrt = null;
+	let activeCubeFace = 0;
+	let activeMipmapLevel = 0;
+	try { renderTarget = typeof slimRenderer.getRenderTarget === 'function' ? slimRenderer.getRenderTarget() : null; } catch ( _ ) {}
+	try { mrt = typeof slimRenderer.getMRT === 'function' ? slimRenderer.getMRT() : null; } catch ( _ ) {}
+	try { activeCubeFace = typeof slimRenderer.getActiveCubeFace === 'function' ? slimRenderer.getActiveCubeFace() : 0; } catch ( _ ) {}
+	try { activeMipmapLevel = typeof slimRenderer.getActiveMipmapLevel === 'function' ? slimRenderer.getActiveMipmapLevel() : 0; } catch ( _ ) {}
+	return { scene, camera, renderTarget, mrt, activeCubeFace, activeMipmapLevel };
+}
+
+function __sameMaterialComputeRenderRequest( first, second ) {
+	return !! first && !! second
+		&& first.scene === second.scene
+		&& first.camera === second.camera
+		&& first.renderTarget === second.renderTarget
+		&& first.mrt === second.mrt
+		&& first.activeCubeFace === second.activeCubeFace
+		&& first.activeMipmapLevel === second.activeMipmapLevel;
+}
+
+function __presentDelegatedMaterialCompute( slimRenderer, request ) {
+	const restore = __snapshotMaterialComputeRenderRequest( slimRenderer, null, null );
+	try {
+		if ( typeof slimRenderer.setRenderTarget === 'function' ) slimRenderer.setRenderTarget( request.renderTarget, request.activeCubeFace, request.activeMipmapLevel );
+		if ( typeof slimRenderer.setMRT === 'function' ) slimRenderer.setMRT( request.mrt );
+		slimRenderer.__tslpMaterialComputePresentationRender = true;
+		slimRenderer.render( request.scene, request.camera );
+	} finally {
+		slimRenderer.__tslpMaterialComputePresentationRender = false;
+		try {
+			if ( typeof slimRenderer.setRenderTarget === 'function' ) slimRenderer.setRenderTarget( restore.renderTarget, restore.activeCubeFace, restore.activeMipmapLevel );
+			if ( typeof slimRenderer.setMRT === 'function' ) slimRenderer.setMRT( restore.mrt );
+		} catch ( _ ) {}
+	}
+}
+
+function __startMaterialComputeDispatch( slimRenderer, state, request ) {
+	state.active = request;
+	window.__tslpComputePending = ( window.__tslpComputePending | 0 ) + 1;
+	const dispatchErrors = [];
+	const job = __getComputeRenderer( slimRenderer ).then( ( fullRenderer ) => {
+		if ( ! fullRenderer ) throw new Error( 'Full renderer unavailable for material-compute delegation.' );
+		return __materialComputeSceneSupportFor( slimRenderer ).dispatchMaterialComputes( request.scene, {
+			fullRenderer,
+			onError( error ) { dispatchErrors.push( error ); },
+		} );
+	} ).then( ( stats ) => {
+		if ( ! stats || stats.errors > 0 ) {
+			throw dispatchErrors[ 0 ] || new Error( 'Material-compute delegation failed without a typed runtime error.' );
+		}
+		__presentDelegatedMaterialCompute( slimRenderer, request );
+	} ).catch( ( error ) => {
+		console.warn( '[tslp-e2e] material compute delegation failed:', error && ( error.stack || error.message ) || error );
+	} ).finally( () => {
+		window.__tslpComputePending = Math.max( 0, ( window.__tslpComputePending | 0 ) - 1 );
+		state.pending = null;
+		state.active = null;
+		const queued = state.queued;
+		state.queued = null;
+		if ( queued ) __startMaterialComputeDispatch( slimRenderer, state, queued );
+	} );
+	state.pending = job;
+}
+
+function __deferHybridMaterialComputeRender( scene, camera, slimRenderer ) {
+	if ( slimRenderer.__tslpMaterialComputePresentationRender === true ) return false;
+	if ( ! __sceneRequiresMaterialComputeDelegation( scene ) ) return false;
+	const request = __snapshotMaterialComputeRenderRequest( slimRenderer, scene, camera );
+	let state = __materialComputeDispatchStateByRenderer.get( slimRenderer );
+	if ( ! state ) {
+		state = { active: null, queued: null, pending: null };
+		__materialComputeDispatchStateByRenderer.set( slimRenderer, state );
+	}
+	if ( state.pending ) {
+		// Repeated animation renders for the same surface are represented by the
+		// active transaction. Preserve one distinct request (split view / cube face)
+		// behind it without building an unbounded RAF queue.
+		if ( ! __sameMaterialComputeRenderRequest( state.active, request ) ) state.queued = request;
+		return true;
+	}
+	__startMaterialComputeDispatch( slimRenderer, state, request );
+	return true;
+}
+
 function __dispatchAutoComputeNodes( scene, slimRenderer ) {
 	if ( ! scene || typeof scene.traverse !== 'function' || ! slimRenderer ) return;
 	let dispatcher = __autoComputeDispatcherByRenderer.get( slimRenderer );
@@ -10060,7 +10191,7 @@ function __trackDebugShaderAsync( renderer ) {
 		let restorePreparedMRT = false;
 		__renderDepth ++;
 		try {
-		this.__tslpTopLevelRenderSequence = ( this.__tslpTopLevelRenderSequence | 0 ) + 1;
+		if ( this.__tslpMaterialComputePresentationRender !== true ) this.__tslpTopLevelRenderSequence = ( this.__tslpTopLevelRenderSequence | 0 ) + 1;
 		// Track last scene/camera so post-compute forced renders can use them.
 		this._lastScene = scene;
 		this._lastCamera = camera;
@@ -10080,6 +10211,7 @@ function __trackDebugShaderAsync( renderer ) {
 			if ( isOffscreenRenderPass ) __prewarmStaticPMREMSourcesForScene( this, scene );
 			__wireEnvironmentPMREM( this, scene );
 			__driveRendererLightingUpdateBefore( this, scene, camera );
+			if ( __deferHybridMaterialComputeRender( scene, camera, this ) ) return undefined;
 			__dispatchAutoComputeNodes( scene, this );
 			if ( isOffscreenRenderPass && scene && scene.overrideMaterial && __renderOffscreenOverrideWithFullRenderer( this, scene, camera ) ) {
 				return undefined;

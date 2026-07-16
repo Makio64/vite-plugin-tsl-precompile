@@ -195,6 +195,31 @@ test( 'material-owned compute delegates matching and retries to slim-support', (
 
 } );
 
+test( 'hybrid material compute delegates through scene support before first hydration', () => {
+
+	assert.match( source, /createSlimSceneSupport as __sharedCreateSlimSceneSupport/ );
+	assert.match( source, /inspectRuntimeMaterialComputeFamily as __sharedInspectRuntimeMaterialComputeFamily/ );
+	const start = source.indexOf( 'function __sceneRequiresMaterialComputeDelegation(' );
+	const end = source.indexOf( 'function __dispatchAutoComputeNodes(', start );
+	assert.ok( start >= 0 && end > start, 'expected the hybrid material-compute scheduler' );
+	const scheduler = source.slice( start, end );
+	assert.match( scheduler, /inspection\.descriptor\.mode === 'hybrid-required'/ );
+	assert.match( scheduler, /__sharedCreateSlimSceneSupport\( \{[\s\S]*renderer: slimRenderer,[\s\S]*fullRendererFallback: false/ );
+	assert.match( scheduler, /\.dispatchMaterialComputes\( request\.scene, \{[\s\S]*fullRenderer/ );
+	assert.match( scheduler, /window\.__tslpComputePending = \( window\.__tslpComputePending \| 0 \) \+ 1/ );
+	assert.match( scheduler, /__presentDelegatedMaterialCompute\( slimRenderer, request \)/ );
+	assert.match( scheduler, /__tslpMaterialComputePresentationRender = true;[\s\S]*slimRenderer\.render\( request\.scene, request\.camera \)/ );
+	assert.match( scheduler, /setRenderTarget\( request\.renderTarget, request\.activeCubeFace, request\.activeMipmapLevel \)/ );
+	assert.match( scheduler, /if \( state\.pending \)[\s\S]*__sameMaterialComputeRenderRequest/ );
+
+	const defer = source.indexOf( '__deferHybridMaterialComputeRender( scene, camera, this )' );
+	const legacy = source.indexOf( '__dispatchAutoComputeNodes( scene, this );', defer );
+	const mainRender = source.indexOf( 'const r = super.render( scene, camera );', defer );
+	assert.ok( defer >= 0 && defer < legacy && legacy < mainRender, 'hybrid delegation must defer before legacy dispatch and hydration' );
+	assert.match( source, /if \( this\.__tslpMaterialComputePresentationRender !== true \) this\.__tslpTopLevelRenderSequence/ );
+
+} );
+
 test( 'replay retains graph-discovered storage buffers for hidden sibling consumers', () => {
 
 	const start = source.indexOf( 'function __wireComputeAttrsToArtifact(' );
