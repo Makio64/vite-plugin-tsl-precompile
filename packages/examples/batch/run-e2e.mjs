@@ -988,7 +988,8 @@ export * from '/build/three.webgpu.js';
 import { installPrecompileMarker, setDevRenderer } from '/__tslp_runtime/precompile-marker.js';
 import { precompileAuxiliary, precompileRendererOutput } from '/__tslp_runtime/aux-marker.js';
 import { createRenderObjectContextSelector as __createRenderObjectContextSelector, projectRenderObjectContextSelector as __projectRenderObjectContextSelector } from '/__tslp_contract/render-selector.js';
-import { createMaterialContextKey as __createMaterialContextKey, getMaterialContextMap as __getMaterialContextMap } from '/__tslp_batch/material-context-cache.mjs';
+import { MATERIAL_TEXTURE_PROPS as __MATERIAL_TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS as __MATERIAL_NODE_TEXTURE_KEYS } from '/__tslp_contract/texture-props.js';
+import { createMaterialContextKey as __createMaterialContextKey, createObjectIdentityKeyer as __createObjectIdentityKeyer, createStockMaterialTopologyKey as __createStockMaterialTopologyKey, getMaterialContextMap as __getMaterialContextMap, getSceneTopologyMap as __getSceneTopologyMap } from '/__tslp_batch/material-context-cache.mjs';
 import { createCubeCapturePrearmRegistry as __createCubeCapturePrearmRegistry, isVerifiedCubeRenderTarget as __isVerifiedCubeRenderTarget } from '/__tslp_batch/cube-capture-prearm.mjs';
 import { synchronizeTemporalJitterNode as __sharedSynchronizeTemporalJitterNode } from '/__tslp_batch/temporal-jitter.mjs';
 
@@ -996,6 +997,8 @@ const __state = window.__TSLP_E2E || { example: 'unknown' };
 const __counts = Object.create( null );
 const __pending = [];
 const __seenMaterialContexts = new WeakMap();
+const __captureTopologyRepresentativesByScene = new WeakMap();
+const __captureTopologyIdentity = __createObjectIdentityKeyer();
 const __cubeCapturePrearmRegistry = __createCubeCapturePrearmRegistry();
 const __postProcessingPipelines = new Set();
 const __auxPromises = new Set();
@@ -1289,6 +1292,34 @@ function __mark( material, className, sourceObject = null, camera = null, render
 	__counts[ className ] = n;
 	const name = __state.example + ':' + className + ':' + n;
 	material.name = material.name || name;
+	const topologyKey = __createStockMaterialTopologyKey( {
+		material,
+		object: captureObject,
+		className,
+		contextKey,
+		nodeKeys: __MATERIAL_NODE_TEXTURE_KEYS,
+		textureProps: __MATERIAL_TEXTURE_PROPS,
+		getObjectIdentity: __captureTopologyIdentity,
+	} );
+	const topologyRepresentatives = topologyKey && captureScene
+		? __getSceneTopologyMap( __captureTopologyRepresentativesByScene, captureScene, true )
+		: null;
+	const topologyRepresentative = topologyRepresentatives && topologyRepresentatives.get( topologyKey );
+	if ( topologyRepresentative ) {
+
+		seenContexts.set( contextKey, topologyRepresentative );
+		window.__tslpCaptureTopologyAliases = ( window.__tslpCaptureTopologyAliases | 0 ) + 1;
+		__queueCubeCapturePrearm( topologyRepresentative, prearmQueue, {
+			renderer,
+			renderTarget,
+			scene: captureScene,
+			camera: captureCamera,
+			object: captureObject,
+			mrt,
+		} );
+		return;
+
+	}
 	const pendingItem = {
 		material,
 		name,
@@ -1301,6 +1332,7 @@ function __mark( material, className, sourceObject = null, camera = null, render
 		done: false,
 	};
 	seenContexts.set( contextKey, pendingItem );
+	if ( topologyRepresentatives ) topologyRepresentatives.set( topologyKey, pendingItem );
 	__pending.push( pendingItem );
 	__queueCubeCapturePrearm( pendingItem, prearmQueue, {
 		renderer,
@@ -2061,7 +2093,7 @@ import { inspectRuntimeMaterialComputeFamily as __sharedInspectRuntimeMaterialCo
 import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS as __NODE_GRAPH_KEYS } from '/__tslp_contract/texture-props.js';
 import { countArtifactFragmentOutputCapacity as __sharedCountArtifactFragmentOutputCapacity, countArtifactFragmentOutputs as __sharedCountArtifactFragmentOutputs } from '/__tslp_contract/fragment-outputs.js';
 import { createRenderObjectContextSelector as __createRenderObjectContextSelector, projectRenderObjectContextSelector as __projectRenderObjectContextSelector } from '/__tslp_contract/render-selector.js';
-import { createMaterialContextKey as __createMaterialContextKey, getMaterialContextMap as __getMaterialContextMap } from '/__tslp_batch/material-context-cache.mjs';
+import { createMaterialContextKey as __createMaterialContextKey, createObjectIdentityKeyer as __createObjectIdentityKeyer, createStockMaterialTopologyKey as __createStockMaterialTopologyKey, getMaterialContextMap as __getMaterialContextMap, getSceneTopologyMap as __getSceneTopologyMap } from '/__tslp_batch/material-context-cache.mjs';
 import { passRendersMaterial as __passRendersMaterial } from '/__tslp_batch/pass-material-visibility.mjs';
 import { synchronizeTemporalJitterNode as __sharedSynchronizeTemporalJitterNode, temporalJitterFrameId as __sharedTemporalJitterFrameId } from '/__tslp_batch/temporal-jitter.mjs';
 ${ SLIM_REPLAY_FORWARD_EXPORT_BLOCK }
@@ -3048,6 +3080,8 @@ const __counts = Object.create( null );
 const __usedArtifactNames = new Set();
 const __seenMaterials = new WeakMap();
 const __seenMaterialContexts = new WeakMap();
+const __replayTopologyArtifactsByScene = new WeakMap();
+const __replayTopologyIdentity = __createObjectIdentityKeyer();
 const __fallbackArtifactTextures = new Map();
 const __liveSceneIndex = createLiveSceneIndex( {
 	registerLiveTexture: ( texture ) => Slim.registerLiveTexture( texture ),
@@ -5149,10 +5183,14 @@ function __takeMaterial( className, sourceMaterial = null, sourceObject = null, 
 	const allowUsed = !! ( opts && opts.allowUsed );
 	const n = ( __counts[ className ] || 0 ) + 1;
 	__counts[ className ] = n;
-	let name = __state.example + ':' + className + ':' + n;
+	const ordinalName = __state.example + ':' + className + ':' + n;
+	const preferredName = opts && typeof opts.preferredName === 'string' ? opts.preferredName : '';
+	const preferredMod = preferredName && __data.user && __data.user[ preferredName ];
+	const usePreferred = !! ( preferredMod && preferredMod.artifact && __classNameFromArtifactName( preferredName ) === className );
+	let name = usePreferred ? preferredName : ordinalName;
 	let mod = __data.user && __data.user[ name ];
 	if ( mod && ! allowUsed && __usedArtifactNames.has( name ) ) mod = null;
-	if ( sourceMaterial ) {
+	if ( sourceMaterial && ! usePreferred ) {
 		if ( ! mod || ! __artifactKeyMatchesMaterialSource( name, mod, className, sourceMaterial, sourceObject ) ) {
 			const allKeys = Object.keys( __data.user || {} );
 			const unusedKeys = allowUsed ? allKeys : allKeys.filter( ( key ) => ! __usedArtifactNames.has( key ) );
@@ -6819,6 +6857,19 @@ function __replayMaterialContextKey( material, object ) {
 
 }
 
+function __replaySceneForObject( object ) {
+
+	let current = object || null;
+	while ( current ) {
+
+		if ( current.isScene === true ) return current;
+		current = current.parent || null;
+
+	}
+	return null;
+
+}
+
 function __replaceMaterialForReplay( inputMaterial, object = null, force = false ) {
 	let m = inputMaterial;
 	if ( ! m ) return m;
@@ -6866,7 +6917,22 @@ function __replaceMaterialForReplay( inputMaterial, object = null, force = false
 			return replacement;
 			}
 			const className = __classNameForMaterial( m );
-			const replacement = __takeMaterial( className, m, object );
+			const sourceScene = __replaySceneForObject( object );
+			const topologyKey = __createStockMaterialTopologyKey( {
+				material: m,
+				object,
+				className,
+				contextKey,
+				nodeKeys: __NODE_GRAPH_KEYS,
+				textureProps: __TEXTURE_PROPS,
+				getObjectIdentity: __replayTopologyIdentity,
+			} );
+			const topologyArtifacts = topologyKey && sourceScene
+				? __getSceneTopologyMap( __replayTopologyArtifactsByScene, sourceScene, true )
+				: null;
+			const preferredName = topologyArtifacts && topologyArtifacts.get( topologyKey ) || '';
+			const replacement = __takeMaterial( className, m, object, preferredName ? { allowUsed: true, preferredName } : {} );
+			if ( topologyArtifacts && ! preferredName ) topologyArtifacts.set( topologyKey, replacement.name );
 		if ( object ) {
 		try { Object.defineProperty( replacement, '__tslpPrecompileObject', { value: object, configurable: true } ); } catch ( _ ) {}
 	}

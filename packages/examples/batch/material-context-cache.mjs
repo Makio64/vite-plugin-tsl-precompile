@@ -73,3 +73,136 @@ export function getMaterialContextMap( cache, material, create = false ) {
 	return contexts || null;
 
 }
+
+const STOCK_NODE_MATERIAL_CLASSES = new Set( [
+	'MeshBasicNodeMaterial',
+	'MeshLambertNodeMaterial',
+	'MeshStandardNodeMaterial',
+	'MeshPhysicalNodeMaterial',
+	'MeshPhongNodeMaterial',
+	'MeshToonNodeMaterial',
+	'MeshNormalNodeMaterial',
+	'MeshMatcapNodeMaterial',
+	'MeshSSSNodeMaterial',
+	'LineBasicNodeMaterial',
+	'LineDashedNodeMaterial',
+	'Line2NodeMaterial',
+	'PointsNodeMaterial',
+	'SpriteNodeMaterial',
+	'VolumeNodeMaterial',
+] );
+
+/**
+ * Allocate page-local identities for live resources. Capture and replay each
+ * build their own equivalence groups, so the numeric values need only be
+ * stable for the lifetime of that page.
+ */
+export function createObjectIdentityKeyer() {
+
+	const identities = new WeakMap();
+	let nextIdentity = 1;
+	return ( value ) => {
+
+		if ( ! value || ( typeof value !== 'object' && typeof value !== 'function' ) ) return null;
+		let identity = identities.get( value );
+		if ( ! identity ) {
+
+			identity = nextIdentity ++;
+			identities.set( value, identity );
+
+		}
+		return identity;
+
+	};
+
+}
+
+/**
+ * Return a conservative cross-material shader-topology key for stock
+ * NodeMaterials. This deliberately rejects authored node graphs, subclasses,
+ * per-object render hooks, and custom compiler hooks. It also requires every
+ * material texture to be the same live object, which keeps shared artifact
+ * texture refs owner-safe. Numeric uniforms such as roughness and metalness
+ * are intentionally absent because generated updaters read them per owner.
+ */
+export function createStockMaterialTopologyKey( {
+	material,
+	object,
+	className,
+	contextKey,
+	nodeKeys = [],
+	textureProps = [],
+	getObjectIdentity,
+} = {} ) {
+
+	if ( ! material || ! object || typeof contextKey !== 'string' || contextKey.length === 0 ) return null;
+	if ( ! STOCK_NODE_MATERIAL_CLASSES.has( className ) ) return null;
+	if ( material.isNodeMaterial !== true || material.type !== className ) return null;
+	if ( ! material.constructor || material.constructor.name !== className ) return null;
+	if ( typeof getObjectIdentity !== 'function' ) return null;
+	if ( Object.prototype.hasOwnProperty.call( material, 'onBeforeCompile' ) || Object.prototype.hasOwnProperty.call( material, 'customProgramCacheKey' ) ) return null;
+	if ( Object.prototype.hasOwnProperty.call( object, 'onBeforeRender' ) || Object.prototype.hasOwnProperty.call( object, 'onAfterRender' ) ) return null;
+
+	for ( const key of nodeKeys ) {
+
+		let value = null;
+		try { value = material[ key ]; } catch ( _ ) { return null; }
+		if ( value && value.isNode === true ) return null;
+
+	}
+
+	const textures = [];
+	for ( const property of textureProps ) {
+
+		let texture = null;
+		try { texture = material[ property ]; } catch ( _ ) { return null; }
+		if ( ! texture || texture.isTexture !== true ) continue;
+		const identity = getObjectIdentity( texture );
+		if ( identity === null || identity === undefined ) return null;
+		textures.push( [ property, identity ] );
+
+	}
+
+	const defines = stablePrimitiveRecord( material.defines );
+	if ( defines === null ) return null;
+	return JSON.stringify( {
+		version: 1,
+		className,
+		contextKey,
+		layers: object.layers && Number.isFinite( object.layers.mask ) ? object.layers.mask : null,
+		defines,
+		textures,
+	} );
+
+}
+
+/** Return the topology representatives owned by one live Scene. */
+export function getSceneTopologyMap( cache, scene, create = false ) {
+
+	if ( ! scene || ( typeof scene !== 'object' && typeof scene !== 'function' ) ) return null;
+	let topologies = cache.get( scene );
+	if ( ! topologies && create ) {
+
+		topologies = new Map();
+		cache.set( scene, topologies );
+
+	}
+	return topologies || null;
+
+}
+
+function stablePrimitiveRecord( value ) {
+
+	if ( value === undefined || value === null ) return [];
+	if ( typeof value !== 'object' || Array.isArray( value ) ) return null;
+	const entries = [];
+	for ( const key of Object.keys( value ).sort() ) {
+
+		const entry = value[ key ];
+		if ( entry !== null && ! [ 'boolean', 'number', 'string' ].includes( typeof entry ) ) return null;
+		entries.push( [ key, entry ] );
+
+	}
+	return entries;
+
+}

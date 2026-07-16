@@ -39,6 +39,26 @@ test( 'capture module retains the renderer that discovered each material context
 
 } );
 
+test( 'capture and replay reuse only conservatively proven stock material topology', () => {
+
+	assert.match( source, /createStockMaterialTopologyKey as __createStockMaterialTopologyKey/ );
+	const markStart = source.indexOf( 'function __mark( material,' );
+	const markEnd = source.indexOf( 'function __findParentScene(', markStart );
+	const marker = source.slice( markStart, markEnd );
+	assert.match( marker, /__createStockMaterialTopologyKey\( \{[\s\S]*nodeKeys: __MATERIAL_NODE_TEXTURE_KEYS,[\s\S]*textureProps: __MATERIAL_TEXTURE_PROPS/ );
+	assert.match( marker, /__getSceneTopologyMap\( __captureTopologyRepresentativesByScene, captureScene, true \)/ );
+	assert.match( marker, /if \( topologyRepresentative \)[\s\S]*seenContexts\.set\( contextKey, topologyRepresentative \)[\s\S]*return;/ );
+	assert.match( marker, /topologyRepresentatives\.set\( topologyKey, pendingItem \)/ );
+
+	const replayStart = source.indexOf( 'function __replaceMaterialForReplay(' );
+	const replayEnd = source.indexOf( 'function __replaceSceneOverrideMaterial(', replayStart );
+	const replay = source.slice( replayStart, replayEnd );
+	assert.match( replay, /__getSceneTopologyMap\( __replayTopologyArtifactsByScene, sourceScene, true \)/ );
+	assert.match( replay, /__takeMaterial\( className, m, object, preferredName \? \{ allowUsed: true, preferredName \} : \{\} \)/ );
+	assert.match( replay, /topologyArtifacts\.set\( topologyKey, replacement\.name \)/ );
+
+} );
+
 test( 'capture module records renderer output once for every renderer topology', () => {
 
 	assert.match( source, /import \{ precompileAuxiliary, precompileRendererOutput \}/ );

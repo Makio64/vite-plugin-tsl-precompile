@@ -2,7 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createRenderObjectContextSelector, projectRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
-import { createMaterialContextKey, getMaterialContextMap } from '../material-context-cache.mjs';
+import {
+	createMaterialContextKey,
+	createObjectIdentityKeyer,
+	createStockMaterialTopologyKey,
+	getMaterialContextMap,
+	getSceneTopologyMap,
+} from '../material-context-cache.mjs';
 
 test( 'material context cache deduplicates equivalent meshes but separates skinning topology', () => {
 
@@ -70,6 +76,91 @@ test( 'material context cache separates renderer shader topology without naming 
 
 } );
 
+test( 'stock material topology deduplicates uniform-only siblings conservatively', () => {
+
+	const getObjectIdentity = createObjectIdentityKeyer();
+	const sharedEnvMap = { isTexture: true };
+	const first = new MeshPhysicalNodeMaterial( { roughness: 0, metalness: 0, envMap: sharedEnvMap } );
+	const second = new MeshPhysicalNodeMaterial( { roughness: 1, metalness: 1, envMap: sharedEnvMap } );
+	const firstObject = mesh();
+	const secondObject = mesh( { position: [ 10, 4, -2 ] } );
+	const options = ( material, object ) => ( {
+		material,
+		object,
+		className: 'MeshPhysicalNodeMaterial',
+		contextKey: 'same-render-topology',
+		nodeKeys: [ 'colorNode', 'normalNode', 'envNode' ],
+		textureProps: [ 'map', 'envMap' ],
+		getObjectIdentity,
+	} );
+
+	assert.equal(
+		createStockMaterialTopologyKey( options( first, firstObject ) ),
+		createStockMaterialTopologyKey( options( second, secondObject ) ),
+		'owner-local numeric uniforms and transforms reuse one stock shader capture',
+	);
+
+	const otherTexture = new MeshPhysicalNodeMaterial( { envMap: { isTexture: true } } );
+	assert.notEqual(
+		createStockMaterialTopologyKey( options( first, firstObject ) ),
+		createStockMaterialTopologyKey( options( otherTexture, secondObject ) ),
+		'different live textures keep artifact texture refs isolated',
+	);
+	secondObject.layers = { mask: 2 };
+	assert.notEqual(
+		createStockMaterialTopologyKey( options( first, firstObject ) ),
+		createStockMaterialTopologyKey( options( second, secondObject ) ),
+		'objects on different render layers are not assumed to share observed variants',
+	);
+
+} );
+
+test( 'stock material topology rejects authored or customized compiler paths', () => {
+
+	const getObjectIdentity = createObjectIdentityKeyer();
+	const object = mesh();
+	const key = ( material, sourceObject = object ) => createStockMaterialTopologyKey( {
+		material,
+		object: sourceObject,
+		className: 'MeshPhysicalNodeMaterial',
+		contextKey: 'same-render-topology',
+		nodeKeys: [ 'colorNode' ],
+		textureProps: [ 'envMap' ],
+		getObjectIdentity,
+	} );
+
+	const authored = new MeshPhysicalNodeMaterial();
+	authored.colorNode = { isNode: true };
+	assert.equal( key( authored ), null );
+
+	const hooked = new MeshPhysicalNodeMaterial();
+	hooked.onBeforeCompile = () => {};
+	assert.equal( key( hooked ), null );
+
+	class CustomPhysicalMaterial extends MeshPhysicalNodeMaterial {}
+	const subclass = new CustomPhysicalMaterial();
+	assert.equal( key( subclass ), null );
+
+	const renderHookedObject = mesh();
+	renderHookedObject.onBeforeRender = () => {};
+	assert.equal( key( new MeshPhysicalNodeMaterial(), renderHookedObject ), null );
+
+} );
+
+test( 'scene topology representatives remain scene-local', () => {
+
+	const cache = new WeakMap();
+	const firstScene = {};
+	const secondScene = {};
+	const first = getSceneTopologyMap( cache, firstScene, true );
+	first.set( 'topology', 'artifact-one' );
+
+	assert.equal( getSceneTopologyMap( cache, firstScene ), first );
+	assert.equal( getSceneTopologyMap( cache, secondScene ), null );
+	assert.notEqual( getSceneTopologyMap( cache, secondScene, true ), first );
+
+} );
+
 function attribute( itemSize ) {
 
 	return {
@@ -125,5 +216,20 @@ function mesh( { isSkinnedMesh = false, attributes = {}, position = [ 0, 0, 0 ] 
 			morphTargetsRelative: false,
 		},
 	};
+
+}
+
+class MeshPhysicalNodeMaterial {
+
+	constructor( { roughness = 0.5, metalness = 0, envMap = null } = {} ) {
+
+		this.type = 'MeshPhysicalNodeMaterial';
+		this.isNodeMaterial = true;
+		this.roughness = roughness;
+		this.metalness = metalness;
+		this.envMap = envMap;
+		this.defines = {};
+
+	}
 
 }
