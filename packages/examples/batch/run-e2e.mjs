@@ -10061,6 +10061,14 @@ function __trackDebugShaderAsync( renderer ) {
 		// top-level call already drove RTT/effect/pass nodes; the recursion is just
 		// the slim renderer following node-graph updateBefore hooks into a quad scene.
 		if ( __renderDepth > 0 ) {
+			let nestedRenderTarget = null;
+			try { nestedRenderTarget = typeof this.getRenderTarget === 'function' ? this.getRenderTarget() : null; } catch ( _ ) {}
+			// PassNode/RTT scenes still need their live environment prepared before
+			// this shortcut bypasses the ordinary top-level PMREM lifecycle.
+			if ( nestedRenderTarget && scene && scene.isScene === true ) {
+				__prewarmStaticPMREMSourcesForScene( this, scene );
+				__wireEnvironmentPMREM( this, scene );
+			}
 			__resetRendererPipelineCachesForAttachmentChange( this, scene );
 			return super.render( scene, camera );
 		}

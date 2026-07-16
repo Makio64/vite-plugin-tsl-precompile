@@ -140,3 +140,19 @@ test( 'frame-texture diagnostics inspect only existing PassNode targets', () => 
 	assert.doesNotMatch( collector, /node\.getTexture\(/, 'diagnostics must not create undeclared MRT attachments' );
 
 } );
+
+test( 'nested offscreen scene renders prepare PMREM before bypassing top-level hooks', () => {
+
+	const start = source.indexOf( 'if ( __renderDepth > 0 ) {' );
+	const end = source.indexOf( 'let previousMRT = null;', start );
+	assert.ok( start >= 0 && end > start, 'expected the nested replay render shortcut' );
+	const nested = source.slice( start, end );
+	assert.match( nested, /nestedRenderTarget && scene && scene\.isScene === true/ );
+	assert.match( nested, /__prewarmStaticPMREMSourcesForScene\( this, scene \);/ );
+	assert.match( nested, /__wireEnvironmentPMREM\( this, scene \);/ );
+	assert.ok(
+		nested.indexOf( '__wireEnvironmentPMREM( this, scene );' ) < nested.indexOf( 'return super.render( scene, camera );' ),
+		'nested scene resources must be wired before the renderer shortcut',
+	);
+
+} );
