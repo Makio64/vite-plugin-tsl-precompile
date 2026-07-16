@@ -5570,6 +5570,13 @@ function __wireMaterialPropertyTexturesFromArtifact( material ) {
 			texture = orderFallbacks[ i ];
 		}
 		if ( ! texture || texture.isTexture !== true ) continue;
+		// TextureLoader registers its returned Texture before the onLoad callback
+		// applies user-authored sampler/color-space state. A first replay frame can
+		// therefore resolve the correct live image while it still has constructor
+		// defaults. Apply the captured source state before exposing that texture on
+		// the material; the signed selector must see the same shader topology on
+		// this first frame, not one frame later in the restore path above.
+		__applyCapturedTextureState( texture, source );
 		material[ property ] = texture;
 		changed = true;
 	}

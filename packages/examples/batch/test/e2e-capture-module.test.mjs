@@ -174,6 +174,18 @@ test( 'capture and replay instrument inline uniform calls with the product ident
 
 } );
 
+test( 'replay applies captured texture topology before first material assignment', () => {
+
+	const start = source.indexOf( 'function __wireMaterialPropertyTexturesFromArtifact(' );
+	const end = source.indexOf( 'function __markMaterialTextureRewire(', start );
+	assert.ok( start >= 0 && end > start, 'expected the material texture wiring helper' );
+	const wiring = source.slice( start, end );
+	const apply = wiring.indexOf( '__applyCapturedTextureState( texture, source );' );
+	const assign = wiring.indexOf( 'material[ property ] = texture;' );
+	assert.ok( apply >= 0 && apply < assign, 'captured sampler/color-space state must precede first-frame selector construction' );
+
+} );
+
 test( 'pass depth replay preserves captured MSAA shape', () => {
 
 	const prepareStart = source.indexOf( 'function __preparePassNodeForReplay(' );
