@@ -50,11 +50,11 @@ export function installAnimationLoopSettleTransition( target = globalThis ) {
 
 /**
  * Keep the compute-audio example active until its asynchronous initialization
- * has produced nonzero analyser data that drives the visible spectrum. The
- * page starts that work from a click handler, outside Three's loader manager,
- * and analyser construction precedes the first audible samples. The ordinary
- * loader counters therefore cannot otherwise distinguish "created" from
- * "ready to capture".
+ * has produced nonzero analyser data that drives the visible spectrum. Once
+ * audio is live, replace its wall-clock-dependent FFT phase with one stable,
+ * representative spectrum. The renderer still uploads and samples the same
+ * analyser texture, while stock/capture/replay no longer compare unrelated
+ * moments of real audio playback.
  *
  * Keep this installer self-contained: Playwright serializes it into the page
  * without preserving module closures.
@@ -70,6 +70,27 @@ export function installAudioAnalyserReadiness( target = globalThis ) {
 	target.__tslpAudioAnalyserReady = false;
 	target.__tslpLoaderPending = ( target.__tslpLoaderPending | 0 ) + 1;
 	let pending = true;
+	let pinnedSpectrum = null;
+	const fillPinnedSpectrum = ( values ) => {
+
+		if ( ! values || typeof values.length !== 'number' ) return;
+		if ( ! pinnedSpectrum || pinnedSpectrum.length !== values.length ) {
+
+			pinnedSpectrum = new Uint8Array( values.length );
+			const denominator = Math.max( 1, values.length - 1 );
+			for ( let i = 0; i < values.length; i ++ ) {
+
+				const envelope = Math.exp( - 3 * i / denominator );
+				const pulse = 0.35 + 0.65 * Math.sin( Math.PI * ( ( i % 48 ) + 1 ) / 48 ) ** 2;
+				pinnedSpectrum[ i ] = Math.max( 1, Math.min( 255, Math.round( 220 * envelope * pulse ) ) );
+
+			}
+
+		}
+		if ( typeof values.set === 'function' ) values.set( pinnedSpectrum );
+		else for ( let i = 0; i < values.length; i ++ ) values[ i ] = pinnedSpectrum[ i ];
+
+	};
 	const touch = () => {
 
 		target.__tslpLoaderLastBusyAt = typeof target.__tslpRealNow === 'function'
@@ -86,6 +107,12 @@ export function installAudioAnalyserReadiness( target = globalThis ) {
 		const getByteFrequencyData = analyser && analyser.getByteFrequencyData;
 		if ( typeof getByteFrequencyData === 'function' ) analyser.getByteFrequencyData = function getByteFrequencyDataWithReadiness( values ) {
 
+			if ( ! pending ) {
+
+				fillPinnedSpectrum( values );
+				return undefined;
+
+			}
 			const result = getByteFrequencyData.call( this, values );
 			if ( pending && values && typeof values.length === 'number' ) {
 
@@ -103,7 +130,9 @@ export function installAudioAnalyserReadiness( target = globalThis ) {
 				if ( hasEnergy ) {
 
 					pending = false;
+					fillPinnedSpectrum( values );
 					target.__tslpAudioAnalyserReady = true;
+					target.__tslpAudioAnalyserPinned = true;
 					target.__tslpLoaderPending = Math.max( 0, ( target.__tslpLoaderPending | 0 ) - 1 );
 					touch();
 

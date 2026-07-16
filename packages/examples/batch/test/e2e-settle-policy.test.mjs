@@ -26,7 +26,13 @@ test( 'audio analyser readiness holds capture until asynchronous audio setup com
 
 	const analyser = {};
 	let energy = 0;
-	analyser.getByteFrequencyData = ( values ) => { values[ 0 ] = energy; };
+	let nativeReads = 0;
+	analyser.getByteFrequencyData = ( values ) => {
+
+		nativeReads ++;
+		values[ 0 ] = energy;
+
+	};
 	class AudioContext {}
 	AudioContext.prototype.createAnalyser = function () {
 
@@ -58,11 +64,17 @@ test( 'audio analyser readiness holds capture until asynchronous audio setup com
 	analyser.getByteFrequencyData( values );
 	assert.equal( target.__tslpLoaderPending, 2 );
 	assert.equal( target.__tslpAudioAnalyserReady, true );
+	assert.equal( target.__tslpAudioAnalyserPinned, true );
+	assert.ok( values.every( ( value ) => value > 0 ), 'the first audible read is normalized to a deterministic visible spectrum' );
+	const pinned = [ ...values ];
 
 	now = 20;
+	energy = 255;
 	analyser.getByteFrequencyData( values );
 	assert.equal( target.__tslpLoaderPending, 2, 'later analysers do not release another loader hold' );
 	assert.equal( target.__tslpLoaderLastBusyAt, 10 );
+	assert.deepEqual( [ ...values ], pinned, 'later playback phase cannot move the pinned visual spectrum' );
+	assert.equal( nativeReads, 2, 'native FFT sampling stops once a representative spectrum is available' );
 	assert.equal( installAudioAnalyserReadiness( target ), false, 'the native prototype is patched only once' );
 
 } );
