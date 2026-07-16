@@ -1,17 +1,25 @@
-// Minimal compute repro: an InstancedMesh whose per-instance offsets are
-// produced by a compute kernel each frame, then read back via positionNode.
-// This is the webgpu_compute_birds shape in miniature — the
-// `compute-instance-mesh-buffer` slim-replay failure.
 import { AmbientLight, BoxGeometry, DirectionalLight, InstancedMesh, Matrix4 } from 'three';
-import { MeshStandardNodeMaterial } from 'three/webgpu';
-import { Fn, cos, float, instanceIndex, instancedArray, positionLocal, sin, time, vec3 } from 'three/tsl';
-import { createScene, runAux, IS_E2E_REPLAY } from './shared.js';
+import { MeshStandardNodeMaterial, StorageInstancedBufferAttribute } from 'three/webgpu';
+import { positionLocal, storage } from 'three/tsl';
+
+import {
+	IS_E2E_REPLAY,
+	IS_PRODUCTION_BUILD,
+	captureComputeStages,
+	createCompiledComputeRunner,
+	createRawComputeRunner,
+	createScene,
+	loadDevComputeModule,
+	runAux,
+	trackComputeRunner,
+} from './shared.js';
 
 const COUNT = 256;
+const KERNELS = [ 'compute-debug-instanced-init', 'compute-debug-instanced-update' ];
 
 async function main() {
 
-	const { renderer, scene, camera, setStatus } = await createScene( {
+	const { renderer, scene, camera, capture, setStatus, markComputeReady, recordFrame } = await createScene( {
 		title: 'Compute instanced mesh',
 		cameraPosition: [ 0, 1.4, 4.4 ],
 	} );
@@ -21,31 +29,10 @@ async function main() {
 	dir.position.set( 2, 3, 2 );
 	scene.add( dir );
 
-	// `base` is the static layout (written once). `display` holds the per-frame
-	// transformed positions — a pure function of (base, time), no accumulation.
-	const base = instancedArray( COUNT, 'vec3' );
-	const display = instancedArray( COUNT, 'vec3' );
-
-	const computeInit = Fn( () => {
-
-		const i = float( instanceIndex );
-		const angle = i.mul( 2.399963 );
-		const radius = i.div( COUNT ).sqrt().mul( 1.7 );
-		base.element( instanceIndex ).assign( vec3( cos( angle ).mul( radius ), 0, sin( angle ).mul( radius ) ) );
-
-	} )().compute( COUNT );
-
-	const computeUpdate = Fn( () => {
-
-		const i = float( instanceIndex );
-		const b = base.element( instanceIndex );
-		const ang = time.mul( 0.5 );
-		const x = b.x.mul( cos( ang ) ).sub( b.z.mul( sin( ang ) ) );
-		const z = b.x.mul( sin( ang ) ).add( b.z.mul( cos( ang ) ) );
-		const y = sin( time.mul( 1.6 ).add( i.mul( 0.4 ) ) ).mul( 0.3 );
-		display.element( instanceIndex ).assign( vec3( x, y, z ) );
-
-	} )().compute( COUNT );
+	const baseAttribute = new StorageInstancedBufferAttribute( new Float32Array( COUNT * 4 ), 4 );
+	const displayAttribute = new StorageInstancedBufferAttribute( new Float32Array( COUNT * 4 ), 4 );
+	const base = storage( baseAttribute, 'vec3', COUNT );
+	const display = storage( displayAttribute, 'vec3', COUNT );
 
 	const geometry = new BoxGeometry( 0.12, 0.12, 0.12 );
 	const material = new MeshStandardNodeMaterial( { color: 0xff8a44, roughness: 0.5, metalness: 0.0 } );
@@ -54,22 +41,44 @@ async function main() {
 
 	const mesh = new InstancedMesh( geometry, material, COUNT );
 	mesh.frustumCulled = false;
-	// InstancedMesh initialises instanceMatrix to all-zeros; set identity so the
-	// positionNode offset isn't multiplied into oblivion.
 	const identity = new Matrix4();
-	for ( let i = 0; i < COUNT; i ++ ) mesh.setMatrixAt( i, identity );
+	for ( let index = 0; index < COUNT; index ++ ) mesh.setMatrixAt( index, identity );
 	mesh.instanceMatrix.needsUpdate = true;
 	scene.add( mesh );
 
-	await renderer.computeAsync( computeInit );
+	const initResources = { base: baseAttribute };
+	const updateResources = { base: baseAttribute, display: displayAttribute };
+	let initRunner;
+	let updateRunner;
+	if ( IS_PRODUCTION_BUILD ) {
 
-	const auxSummary = await runAux( renderer, scene, camera );
+		const compiled = await import( './compiled/instanced.js' );
+		initRunner = trackComputeRunner( createCompiledComputeRunner( renderer, compiled.init, initResources ) );
+		updateRunner = trackComputeRunner( createCompiledComputeRunner( renderer, compiled.update, updateResources ) );
+
+	} else {
+
+		const { createInstancedComputeNodes } = await loadDevComputeModule( 'instanced' );
+		const nodes = createInstancedComputeNodes( { base, display, count: COUNT } );
+		await captureComputeStages( renderer, scene, camera, capture, [
+			{ name: KERNELS[ 0 ], node: nodes.init, resources: initResources },
+			{ name: KERNELS[ 1 ], node: nodes.update, resources: updateResources },
+		] );
+		initRunner = trackComputeRunner( createRawComputeRunner( renderer, nodes.init ) );
+		updateRunner = trackComputeRunner( createRawComputeRunner( renderer, nodes.update ) );
+
+	}
+
+	await initRunner.dispatchAsync();
+	markComputeReady( KERNELS );
+	const auxSummary = await runAux( renderer, scene, camera, capture );
 	setStatus( `rendering ${ COUNT } compute-driven instances — ${ auxSummary }` );
 
 	renderer.setAnimationLoop( () => {
 
-		renderer.compute( computeUpdate );
+		updateRunner.dispatch();
 		renderer.render( scene, camera );
+		recordFrame();
 
 	} );
 
