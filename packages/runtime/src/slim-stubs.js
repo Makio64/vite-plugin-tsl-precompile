@@ -37,6 +37,7 @@ import { Vector2 } from 'three/src/math/Vector2.js';
 import { Vector4 } from 'three/src/math/Vector4.js';
 import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttribute.js';
 import StorageInstancedBufferAttribute from 'three/src/renderers/common/StorageInstancedBufferAttribute.js';
+import * as RendererUtils from './slim-renderer-utils.js';
 import {
 	generateSlimConst,
 	inertNodeStub,
@@ -51,7 +52,7 @@ import { LightsNode } from './slim-replay-lights-node.js';
 import { registerLiveUniformNode } from './slim-support/live-uniform-registry.js';
 import { attachLiveNodeDependency } from './slim-support/node-dependencies.js';
 
-export { LightsNode, Node, NodeUpdateType };
+export { LightsNode, Node, NodeUpdateType, RendererUtils };
 
 function slimMessage( name ) {
 
@@ -672,24 +673,6 @@ export class CubeMapNode {
 	toVar() { return chainableSlimStub( 'CubeMapNode.toVar' ); }
 
 }
-
-/**
- * `RendererUtils` — three.js exposes a namespace of renderer helper
- * functions. Ship as a throwing Proxy (same pattern as TSL).
- */
-export const RendererUtils = /* @__PURE__ */ new Proxy( {}, {
-	get( _target, prop ) {
-
-		if ( prop === Symbol.toPrimitive || prop === 'toString' ) return () => '[RendererUtils slim-stub]';
-			if ( prop === '__esModule' ) return true;
-			if ( prop === 'resetRendererState' ) return () => ( {} );
-			if ( prop === 'restoreRendererState' ) return () => {};
-			if ( prop === 'resetRendererAndSceneState' ) return () => ( {} );
-			if ( prop === 'restoreRendererAndSceneState' ) return () => {};
-			return throwSlim( `RendererUtils.${ String( prop ) }` );
-
-	},
-} );
 
 /**
  * *NodeMaterial stubs — examples construct these before the transformed
