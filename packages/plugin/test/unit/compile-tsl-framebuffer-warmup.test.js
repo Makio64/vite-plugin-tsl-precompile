@@ -539,7 +539,11 @@ test( 'compileTSL prefers a caller-supplied completed multi-face harvest over sy
 
 	}
 	const realHarvest = await realSession.finish();
-	assert.equal( realHarvest.familiesByMaterial.get( material ).variants[ 0 ].renderContextSelectors.length, 2 );
+	assert.equal(
+		realHarvest.familiesByMaterial.get( material ).variants[ 0 ].renderContextSelectors.length,
+		6,
+		'a proven cube-target variant publishes canonical aliases for every face',
+	);
 
 	manager.nodeBuilderCache.set( 'shared-cube-key', syntheticState );
 	renderer.compileAsync = async () => {
@@ -565,7 +569,7 @@ test( 'compileTSL prefers a caller-supplied completed multi-face harvest over sy
 	assert.match( selected.vertexShader, /real-cube/ );
 	assert.doesNotMatch( selected.vertexShader, /synthetic-cube/ );
 	const faces = selected.renderContextSelectors.map( ( selector ) => JSON.parse( selector ).target.activeCubeFace ).sort();
-	assert.deepEqual( faces, [ 0, 5 ] );
+	assert.deepEqual( faces, [ 0, 1, 2, 3, 4, 5 ] );
 
 } );
 
