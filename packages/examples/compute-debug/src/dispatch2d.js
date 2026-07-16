@@ -1,53 +1,62 @@
-// Minimal compute repro: explicit 2-D dispatch + workgroup size writes a
-// StorageTexture using global invocation IDs, then a plane samples it.
 import { Mesh, PlaneGeometry } from 'three';
 import { MeshBasicNodeMaterial, StorageTexture } from 'three/webgpu';
-import { Fn, float, globalId, sin, texture, textureStore, time, uvec2, vec4 } from 'three/tsl';
-import { createScene, runAux, IS_E2E_REPLAY } from './shared.js';
+import { texture } from 'three/tsl';
+
+import {
+	IS_E2E_REPLAY,
+	IS_PRODUCTION_BUILD,
+	captureComputeStages,
+	createCompiledComputeRunner,
+	createRawComputeRunner,
+	createScene,
+	loadDevComputeModule,
+	runAux,
+	trackComputeRunner,
+} from './shared.js';
 
 const SIZE = 64;
 const WORKGROUP = 8;
+const KERNEL = 'compute-debug-dispatch2d-update';
 
 async function main() {
 
-	const { renderer, scene, camera, setStatus } = await createScene( {
+	const { renderer, scene, camera, capture, setStatus, markComputeReady, recordFrame } = await createScene( {
 		title: 'Compute 2D dispatch',
 		cameraPosition: [ 0, 0, 2.6 ],
 	} );
 
-	const storageTexture = new StorageTexture( SIZE, SIZE );
-
-	const computeTexture = Fn( ( { tex } ) => {
-
-		const x = globalId.x;
-		const y = globalId.y;
-		const u = float( x ).div( SIZE - 1 );
-		const v = float( y ).div( SIZE - 1 );
-		const checker = x.add( y ).mod( 2 );
-		const r = u;
-		const g = v;
-		const b = float( checker ).mul( 0.25 ).add( sin( time.add( u.mul( 6 ) ) ).mul( 0.25 ).add( 0.5 ) );
-		textureStore( tex, uvec2( x, y ), vec4( r, g, b, 1 ) ).toWriteOnly();
-
-	} );
-
-	const computeNode = computeTexture( { tex: storageTexture } ).compute( [ SIZE / WORKGROUP, SIZE / WORKGROUP, 1 ], [ WORKGROUP, WORKGROUP, 1 ] );
-
+	const output = new StorageTexture( SIZE, SIZE );
 	const material = new MeshBasicNodeMaterial();
-	material.colorNode = texture( storageTexture );
+	material.colorNode = texture( output );
 	if ( ! IS_E2E_REPLAY ) material.precompile( 'compute-debug-dispatch2d' );
-
 	scene.add( new Mesh( new PlaneGeometry( 2, 2 ), material ) );
 
-	await renderer.computeAsync( computeNode );
+	const resources = { output };
+	let runner;
+	if ( IS_PRODUCTION_BUILD ) {
 
-	const auxSummary = await runAux( renderer, scene, camera );
-	setStatus( `2D dispatch ${ SIZE }x${ SIZE } with ${ WORKGROUP }x${ WORKGROUP } workgroups — ${ auxSummary }` );
+		const compiled = await import( './compiled/dispatch2d.js' );
+		runner = trackComputeRunner( createCompiledComputeRunner( renderer, compiled.update, resources ) );
+
+	} else {
+
+		const { createDispatch2DComputeNode } = await loadDevComputeModule( 'dispatch2d' );
+		const node = createDispatch2DComputeNode( output, SIZE, WORKGROUP );
+		await captureComputeStages( renderer, scene, camera, capture, [ { name: KERNEL, node, resources } ] );
+		runner = trackComputeRunner( createRawComputeRunner( renderer, node ) );
+
+	}
+
+	await runner.dispatchAsync();
+	markComputeReady( [ KERNEL ] );
+	const auxSummary = await runAux( renderer, scene, camera, capture );
+	setStatus( `rendering 2D dispatch ${ SIZE }×${ SIZE } with ${ WORKGROUP }×${ WORKGROUP } workgroups — ${ auxSummary }` );
 
 	renderer.setAnimationLoop( () => {
 
-		renderer.compute( computeNode );
+		runner.dispatch();
 		renderer.render( scene, camera );
+		recordFrame();
 
 	} );
 
