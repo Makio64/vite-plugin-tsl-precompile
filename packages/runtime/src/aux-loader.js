@@ -39,6 +39,7 @@
  */
 
 import { registerPrecompiledArtifact, unregisterPrecompiledArtifacts } from './_vendor-PrecompiledArtifactRegistry.js';
+import { rewritePassDepthTextureSources } from './slim-support/artifact-texture-wiring.js';
 
 /** @type {Map<string, Object>} */
 const REGISTRY = new Map();
@@ -814,6 +815,7 @@ export function attachPostprocessTextureRefs( artifact, root ) {
 	if ( candidates.length === 0 ) return artifact;
 
 	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
+	const attachedPassDepthUuids = new Set();
 	let changed = false;
 
 	for ( const group of artifact.uniformPlan || [] ) {
@@ -821,13 +823,23 @@ export function attachPostprocessTextureRefs( artifact, root ) {
 		for ( const entry of group.textures || [] ) {
 
 			const source = entry && entry.source || {};
-			if ( source.kind !== 'artifact.texture' || ! source.textureUuid ) continue;
-			const wantedNames = [ source.textureName, entry.name ].filter( ( name ) => typeof name === 'string' && name.length > 0 );
+			if ( ! source.textureUuid ) continue;
+			const passDepth = source.kind === 'depth.texture'
+				&& source.fromMaterialGraph === true
+				&& ! source.lightUuid
+				&& ! ( typeof source.lightIndex === 'number' && source.lightIndex >= 0 );
+			if ( source.kind !== 'artifact.texture' && ! passDepth ) continue;
+			const wantedNames = passDepth
+				? [ 'depth' ]
+				: [ source.textureName, entry.name ].filter( ( name ) => typeof name === 'string' && name.length > 0 );
 			if ( wantedNames.length === 0 ) continue;
-			const match = candidates.find( ( candidate ) => candidate.texture && candidate.names.some( ( name ) => wantedNames.includes( name ) ) );
+			const match = candidates.find( ( candidate ) => candidate.texture
+				&& ( ! passDepth || candidate.texture.isDepthTexture === true || candidate.names.includes( 'depth' ) )
+				&& candidate.names.some( ( name ) => wantedNames.includes( name ) ) );
 			if ( match && match.texture && match.texture.isTexture === true ) {
 
 				refs.set( source.textureUuid, match.texture );
+				if ( passDepth ) attachedPassDepthUuids.add( source.textureUuid );
 				changed = true;
 
 			}
@@ -846,6 +858,7 @@ export function attachPostprocessTextureRefs( artifact, root ) {
 		} );
 
 	}
+	if ( attachedPassDepthUuids.size > 0 ) rewritePassDepthTextureSources( artifact, attachedPassDepthUuids );
 
 	return artifact;
 

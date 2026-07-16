@@ -65,6 +65,47 @@ test( 'attachPostprocessTextureRefs updates PassTextureNode values before matchi
 
 } );
 
+test( 'attachPostprocessTextureRefs promotes material-graph pass depth without touching light shadows', () => {
+
+	const depthTexture = { isTexture: true, isDepthTexture: true, name: 'depth', uuid: 'live-depth' };
+	const passDepthSource = {
+		kind: 'depth.texture',
+		textureUuid: 'captured-pass-depth',
+		fromMaterialGraph: true,
+		lightIndex: - 1,
+		lightUuid: null,
+	};
+	const lightDepthSource = {
+		kind: 'depth.texture',
+		textureUuid: 'captured-shadow-depth',
+		fromMaterialGraph: true,
+		lightIndex: 0,
+		lightUuid: 'light-0',
+	};
+	const artifact = {
+		uniformPlan: [ {
+			textures: [
+				{ name: 'passDepth', source: passDepthSource },
+				{ name: 'shadowDepth', source: lightDepthSource },
+			],
+		} ],
+	};
+
+	attachPostprocessTextureRefs( artifact, {
+		isPassNode: true,
+		_textures: { depth: depthTexture },
+		renderTarget: { depthTexture },
+	} );
+
+	assert.equal( artifact._textureRefs.get( 'captured-pass-depth' ), depthTexture );
+	assert.equal( artifact._textureRefs.has( 'captured-shadow-depth' ), false );
+	assert.equal( passDepthSource.kind, 'artifact.texture' );
+	assert.equal( passDepthSource.textureName, 'depth' );
+	assert.equal( passDepthSource.__tslpPassDepthAttached, true );
+	assert.equal( lightDepthSource.kind, 'depth.texture' );
+
+} );
+
 test( 'attachPostprocessUpdateBeforeNodes wires pass and in-process effect nodes', () => {
 
 	const passNode = {
