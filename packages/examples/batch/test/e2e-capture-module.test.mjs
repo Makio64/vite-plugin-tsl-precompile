@@ -269,29 +269,44 @@ test( 'capture and replay instrument inline uniform calls with the product ident
 
 } );
 
-test( 'dynamic replay artifacts materialize generated selector adapters before use', () => {
+test( 'dynamic replay artifacts restore generated sidecars before use', () => {
 
 	const auxStart = source.indexOf( 'function auxVirtualModule()' );
 	const auxEnd = source.indexOf( 'function fullWebgpuAutoModule()', auxStart );
 	assert.ok( auxStart >= 0 && auxEnd > auxStart, 'expected the auxiliary virtual module' );
 	const aux = source.slice( auxStart, auxEnd );
+	assert.match( aux, /from '@tsl-precompile\/contract\/attribute-generators'/ );
 	assert.match( aux, /from '@tsl-precompile\/contract\/variant-selector-adapter'/ );
 	assert.ok(
+		aux.indexOf( 'materializeArtifactAttributeDescriptors( __entries )' ) < aux.indexOf( 'materializeArtifactVariantSelectorAdapters( __entries )' ),
+		'generated attributes must be materialized before selector traversal',
+	);
+	assert.ok(
 		aux.indexOf( 'materializeArtifactVariantSelectorAdapters( __entries )' ) < aux.indexOf( 'registerAuxArtifacts( __entries )' ),
-		'auxiliary artifacts must be materialized before registry cloning',
+		'auxiliary sidecars must be materialized before registry cloning',
 	);
 
 	const replayStart = source.indexOf( 'function slimWebgpuReplayModule()' );
 	const replayEnd = source.indexOf( 'function tslStubModule()', replayStart );
 	assert.ok( replayStart >= 0 && replayEnd > replayStart, 'expected the slim replay module' );
 	const replay = source.slice( replayStart, replayEnd );
+	assert.match( replay, /from '\/__tslp_contract\/attribute-generators\.js'/ );
 	assert.match( replay, /from '\/__tslp_contract\/variant-selector-adapter\.js'/ );
-	const materialize = replay.indexOf( '__materializeArtifactVariantSelectorAdapters( [' );
+	const materializeAttributes = replay.indexOf( '__materializeArtifactAttributeDescriptors( __artifactEntries )' );
+	const materializeSelectors = replay.indexOf( '__materializeArtifactVariantSelectorAdapters( __artifactEntries )' );
 	const register = replay.indexOf( 'Slim.registerAuxArtifacts(' );
-	assert.ok( materialize >= 0 && register > materialize, 'user and auxiliary artifacts must be materialized before replay registration or selection' );
+	assert.ok(
+		materializeAttributes >= 0 && materializeSelectors > materializeAttributes && register > materializeSelectors,
+		'user and auxiliary sidecars must be materialized before replay registration or selection',
+	);
 	const cloneStart = replay.indexOf( 'function __cloneAuxArtifact( artifact )' );
 	const cloneEnd = replay.indexOf( 'function __cloneLiveUniformSidecar', cloneStart );
 	assert.ok( cloneStart >= 0 && cloneEnd > cloneStart, 'expected the auxiliary artifact clone boundary' );
+	assert.match(
+		replay.slice( cloneStart, cloneEnd ),
+		/__materializeArtifactAttributeDescriptors\( clone \);/,
+		'structured clones must restore generated attribute sidecars',
+	);
 	assert.match(
 		replay.slice( cloneStart, cloneEnd ),
 		/return __materializeArtifactVariantSelectorAdapters\( clone \);/,
