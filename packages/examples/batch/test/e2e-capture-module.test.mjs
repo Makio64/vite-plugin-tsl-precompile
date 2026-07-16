@@ -127,6 +127,21 @@ test( 'delegated compute outputs receive a non-advancing presentation render', (
 
 } );
 
+test( 'compute readback waits for the dispatch chain that preceded it', () => {
+
+	const start = source.indexOf( 'async getArrayBufferAsync( attribute, ...rest ) {' );
+	const end = source.indexOf( '\n}\n\nfunction __findPassNodeInGraph', start );
+	assert.ok( start >= 0 && end > start, 'expected the replay readback adapter' );
+	const readback = source.slice( start, end );
+	assert.match( readback, /const pendingCompute = this\.__tslpComputeChain;/ );
+	assert.match( readback, /if \( pendingCompute && typeof pendingCompute\.then === 'function' \) await pendingCompute;/ );
+	assert.ok(
+		readback.indexOf( 'await pendingCompute' ) < readback.indexOf( 'super.getArrayBufferAsync' ),
+		'readback must remain behind the already-requested compute dispatch',
+	);
+
+} );
+
 test( 'initialized delegated compute preserves synchronous call-time uniforms', () => {
 
 	const start = source.indexOf( 'compute( computeNode, ...rest ) {' );

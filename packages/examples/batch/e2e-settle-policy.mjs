@@ -47,6 +47,53 @@ export function installAnimationLoopSettleTransition( target = globalThis ) {
 }
 
 /**
+ * Keep the compute-audio example active until its asynchronous initialization
+ * has produced the analyser that drives the visible spectrum. The page starts
+ * that work from a click handler, outside Three's loader manager, so the
+ * ordinary loader counters cannot otherwise distinguish "not started yet"
+ * from "ready to capture".
+ *
+ * Keep this installer self-contained: Playwright serializes it into the page
+ * without preserving module closures.
+ */
+export function installAudioAnalyserReadiness( target = globalThis ) {
+
+	const AudioContext = target.AudioContext || target.webkitAudioContext;
+	const proto = AudioContext && AudioContext.prototype;
+	const createAnalyser = proto && proto.createAnalyser;
+	if ( typeof createAnalyser !== 'function' || proto.__tslpAnalyserReadinessPatched === true ) return false;
+
+	proto.__tslpAnalyserReadinessPatched = true;
+	target.__tslpAudioAnalyserReady = false;
+	target.__tslpLoaderPending = ( target.__tslpLoaderPending | 0 ) + 1;
+	let pending = true;
+	const touch = () => {
+
+		target.__tslpLoaderLastBusyAt = typeof target.__tslpRealNow === 'function'
+			? target.__tslpRealNow()
+			: Date.now();
+
+	};
+	touch();
+	proto.createAnalyser = function createAnalyserWithReadiness( ...args ) {
+
+		const analyser = createAnalyser.apply( this, args );
+		if ( pending ) {
+
+			pending = false;
+			target.__tslpAudioAnalyserReady = true;
+			target.__tslpLoaderPending = Math.max( 0, ( target.__tslpLoaderPending | 0 ) - 1 );
+			touch();
+
+		}
+		return analyser;
+
+	};
+	return true;
+
+}
+
+/**
  * Minimum visible scene population required before the capture loop may
  * become quiet. Some examples attach a placeholder synchronously and their
  * real subjects in a later loader callback, so a generic one-object gate can

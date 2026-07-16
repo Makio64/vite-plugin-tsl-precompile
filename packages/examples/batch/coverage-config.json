@@ -44,6 +44,7 @@
       "webgpu_tsl_galaxy.html": 20
     },
     "minimumBrightFractionOverrides": {
+      "webgpu_compute_audio.html": 0.1,
       "webgpu_compute_points.html": 0.0001
     },
     "expectedReplayErrors": {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 
-import { deterministicTimeoutPolicyForExample, holdAnimationUntilReadyForExample, installAnimationLoopSettleTransition, minimumRenderableObjectsForExample, settleFramesForExample, targetTickForExample } from '../e2e-settle-policy.mjs';
+import { deterministicTimeoutPolicyForExample, holdAnimationUntilReadyForExample, installAnimationLoopSettleTransition, installAudioAnalyserReadiness, minimumRenderableObjectsForExample, settleFramesForExample, targetTickForExample } from '../e2e-settle-policy.mjs';
 import { minimumBrightFractionForExample, pixelGateDisabledReasonForExample } from '../psnr.mjs';
 
 function transitionForTest() {
@@ -19,6 +19,54 @@ test( 'the Playwright init-script installer is self-contained', () => {
 		animationLoopCalls: 1,
 		runCallback: true,
 	} );
+
+} );
+
+test( 'audio analyser readiness holds capture until asynchronous audio setup completes', () => {
+
+	const analyser = {};
+	class AudioContext {}
+	AudioContext.prototype.createAnalyser = function () {
+
+		assert.equal( this, context );
+		return analyser;
+
+	};
+	let now = 10;
+	const target = {
+		AudioContext,
+		__tslpLoaderPending: 2,
+		__tslpLoaderLastBusyAt: 0,
+		__tslpRealNow: () => now,
+	};
+	const context = new AudioContext();
+
+	assert.equal( installAudioAnalyserReadiness( target ), true );
+	assert.equal( target.__tslpLoaderPending, 3 );
+	assert.equal( target.__tslpLoaderLastBusyAt, 10 );
+	assert.equal( target.__tslpAudioAnalyserReady, false );
+	assert.equal( context.createAnalyser(), analyser );
+	assert.equal( target.__tslpLoaderPending, 2 );
+	assert.equal( target.__tslpAudioAnalyserReady, true );
+
+	now = 20;
+	assert.equal( context.createAnalyser(), analyser );
+	assert.equal( target.__tslpLoaderPending, 2, 'later analysers do not release another loader hold' );
+	assert.equal( target.__tslpLoaderLastBusyAt, 10 );
+	assert.equal( installAudioAnalyserReadiness( target ), false, 'the native prototype is patched only once' );
+
+} );
+
+test( 'the audio readiness installer is self-contained for browser evaluation', () => {
+
+	const result = runInNewContext( `
+		class AudioContext {}
+		AudioContext.prototype.createAnalyser = () => ( {} );
+		const target = { AudioContext, __tslpLoaderPending: 0, __tslpRealNow: () => 5 };
+		( ${ installAudioAnalyserReadiness.toString() } )( target );
+		[ target.__tslpLoaderPending, target.__tslpAudioAnalyserReady, target.__tslpLoaderLastBusyAt ];
+	` );
+	assert.deepEqual( [ ...result ], [ 1, false, 5 ] );
 
 } );
 
@@ -115,6 +163,7 @@ test( 'callback-driven simulations wait for capture and replay async work', () =
 
 test( 'sparse point renders use a non-zero example-specific brightness floor', () => {
 
+	assert.equal( minimumBrightFractionForExample( 'webgpu_compute_audio.html', 0.005 ), 0.1 );
 	assert.equal( minimumBrightFractionForExample( 'webgpu_compute_points.html', 0.005 ), 0.0001 );
 	assert.equal( minimumBrightFractionForExample( 'webgpu_materials.html', 0.005 ), 0.005 );
 

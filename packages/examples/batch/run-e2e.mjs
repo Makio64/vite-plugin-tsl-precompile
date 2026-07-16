@@ -47,7 +47,7 @@ import { assertThreeCheckoutMatchesVersion } from './_three-version.mjs';
 import { isolateCanvasForScreenshot, restoreCanvasAfterScreenshot } from './e2e-canvas-screenshot.mjs';
 import { installRenderSelectorMismatchRecorder } from './e2e-render-selector-recorder.mjs';
 import { enrichRenderSelectorDiagnostics, resolveE2ERoots, summarizeArtifactRenderSelectors } from './e2e-report-diagnostics.mjs';
-import { deterministicTimeoutPolicyForExample, holdAnimationUntilReadyForExample, installAnimationLoopSettleTransition, minimumRenderableObjectsForExample, settleFramesForExample, targetTickForExample } from './e2e-settle-policy.mjs';
+import { deterministicTimeoutPolicyForExample, holdAnimationUntilReadyForExample, installAnimationLoopSettleTransition, installAudioAnalyserReadiness, minimumRenderableObjectsForExample, settleFramesForExample, targetTickForExample } from './e2e-settle-policy.mjs';
 import { captureWaitOverrideForExample, comparePngBuffers, expectedReplayErrorPatternsForExample, minimumBrightFractionForExample, pixelGateDisabledReasonForExample, psnrThresholdForExample, tierExamples } from './psnr.mjs';
 import { loadSlimBundle, slimBundleHashOptions, slimBundleReportProvenance } from './slim-bundle-provenance.mjs';
 import { coalesceUserArtifactVariantFamilies } from './user-artifact-families.mjs';
@@ -10394,7 +10394,15 @@ function __trackDebugShaderAsync( renderer ) {
 	}
 	async getArrayBufferAsync( attribute, ...rest ) {
 		if ( ! attribute ) return new Float32Array( 1 ).buffer;
-		try { return await super.getArrayBufferAsync( attribute, ...rest ); }
+		try {
+			// compute() is synchronous in the public API, but raw TSL fallback may
+			// need asynchronous full-renderer startup. Snapshot the dispatch chain
+			// so this readback observes all work requested before it without waiting
+			// for unrelated later dispatches.
+			const pendingCompute = this.__tslpComputeChain;
+			if ( pendingCompute && typeof pendingCompute.then === 'function' ) await pendingCompute;
+			return await super.getArrayBufferAsync( attribute, ...rest );
+		}
 		catch ( _ ) { return new Float32Array( 1 ).buffer; }
 	}
 }
@@ -15161,6 +15169,13 @@ async function visitExample( browser, name, mode, waitMs ) {
 			if ( _perfNowCheck > 10000 ) console.warn( `[tslp-patch-warn] ${ name } ${ mode }: performance.now()=${ _perfNowCheck.toFixed(0) } — patch may not be active` );
 		} catch ( _ ) {}
 
+		if ( name === 'webgpu_compute_audio.html' ) {
+
+			const readinessInstalled = await page.evaluate( installAudioAnalyserReadiness );
+			timings.audioAnalyserReadinessInstalled = readinessInstalled;
+			if ( ! readinessInstalled ) errors.push( '[tslp-e2e] Audio analyser readiness hook could not be installed' );
+
+		}
 		await maybeClickStart( page );
 
 		// Wait for the canvas to paint a non-empty frame under real
