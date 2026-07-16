@@ -203,6 +203,7 @@ test( 'physics and velocity examples pin after their first deterministic tick', 
 	assert.equal( targetTickForExample( 'webgpu_materials.html' ), 0 );
 	assert.equal( targetTickForExample( 'webgpu_postprocessing_ssgi_ballpool.html', 5, true ), 5 );
 	assert.equal( pixelGateDisabledReasonForExample( 'webgpu_postprocessing_ssgi_ballpool.html' ), null );
+	assert.equal( pixelGateDisabledReasonForExample( 'webgpu_postprocessing_godrays.html' ), null );
 	assert.equal( pixelGateDisabledReasonForExample( 'webgpu_compute_water.html' ), null );
 
 } );
