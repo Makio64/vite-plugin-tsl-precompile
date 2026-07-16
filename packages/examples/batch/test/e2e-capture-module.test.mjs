@@ -130,6 +130,20 @@ test( 'material-owned compute delegates matching and retries to slim-support', (
 
 } );
 
+test( 'replay retains graph-discovered storage buffers for hidden sibling consumers', () => {
+
+	const start = source.indexOf( 'function __wireComputeAttrsToArtifact(' );
+	const end = source.indexOf( 'function __sourceTypeNeedle(', start );
+	assert.ok( start >= 0 && end > start, 'expected the replay compute-attribute binder' );
+	const binder = source.slice( start, end );
+	const collect = binder.indexOf( "__collectStorageBufAttrs( sourceMaterial[ key ], sbCandidates )" );
+	const retain = binder.indexOf( '__rememberComputeStorageAttr( attr, null, renderer )' );
+	const fallback = binder.indexOf( '__wireStorageBuffersBySnapshot(' );
+	assert.ok( collect >= 0 && retain > collect, 'live graph buffers must be retained after exact discovery' );
+	assert.ok( fallback > retain, 'later hidden consumers must see retained buffers before fallback matching' );
+
+} );
+
 test( 'frame-texture diagnostics inspect only existing PassNode targets', () => {
 
 	const start = source.indexOf( 'async function collectFrameTextureSnapshot( page )' );

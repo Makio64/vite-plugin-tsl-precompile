@@ -4066,6 +4066,11 @@ function __wireComputeAttrsToArtifact( artifact, sourceMaterial, renderer = wind
 	for ( const key of nodeKeys ) {
 		if ( sourceMaterial[ key ] ) __collectStorageBufAttrs( sourceMaterial[ key ], sbCandidates );
 	}
+	// A later material can read the same compute-owned buffer from inside an
+	// unevaluated Fn closure, where replay cannot walk it directly. Retain every
+	// exact live buffer exposed by an earlier sibling so the existing
+	// renderer-scoped shape/snapshot matcher can bind that hidden consumer.
+	for ( const attr of sbCandidates ) __rememberComputeStorageAttr( attr, null, renderer );
 	// Runtime userPath binding handles explicit paths, but many compute examples
 	// build storage(...) reads inside helper closures, leaving storageBuffers with
 	// no userPath. Wire those from the live material node graph before hydration.
