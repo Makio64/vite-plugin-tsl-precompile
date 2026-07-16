@@ -52,7 +52,7 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 	const dynamicBindingRestorations = emitDynamicBindingRestorations( artifactForEmission );
 
 	const {
-		declarations: wgslDeclarations,
+		declarations: artifactDeclarations,
 		expression: artifactLiteral,
 	} = emitOptimizedJsonExpression( artifactForEmission, opts );
 	const usedWgslPoolRefs = getExternalWgslRefIdentifiers( artifactLiteral );
@@ -86,7 +86,7 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 		`export const __hash = ${ JSON.stringify( hash ) };`,
 		`export const name = ${ JSON.stringify( name ) };`,
 		`export const __sourceValidationMode = ${ JSON.stringify( sourceValidationMode ) };`,
-		...wgslDeclarations,
+		...artifactDeclarations,
 		`export const artifact = ${ artifactLiteral };`,
 		...dynamicBindingRestorations,
 		`export const update = __generatedUpdate;`,
