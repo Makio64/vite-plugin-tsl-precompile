@@ -231,6 +231,10 @@ export function settleFramesForExample( name, defaultSettleFrames = 8, hasExplic
 	// settle frames can therefore compare different histories instead of replay
 	// fidelity.
 	if ( name === 'webgpu_camera.html' ) return 1;
+	// Log-depth advances its exponential zoom once per raw rAF callback rather
+	// than from the callback timestamp. One presented frame avoids grading a
+	// different number of zoom steps after capture-only shader work.
+	if ( name === 'webgpu_camera_logarithmicdepthbuffer.html' ) return 1;
 	if ( name === 'webgpu_compute_birds.html' ) return 1;
 	if ( name === 'webgpu_compute_sort_bitonic.html' ) return 1;
 	if ( name === 'webgpu_tsl_compute_attractors_particles.html' ) return 1;
