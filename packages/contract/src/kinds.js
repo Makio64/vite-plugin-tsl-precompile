@@ -2,6 +2,7 @@ import { MATERIAL_TEXTURE_PROPS } from './texture-props.js';
 import { collectArtifactDynamicBindings, dynamicBindingDescriptor, validateDynamicBindingSource } from './dynamic-bindings.js';
 import { collectArtifactVariantCandidates, createArtifactVariantPayloadFingerprint } from './artifact-variants.js';
 import { validateArtifactLightIdentities } from './light-identities.js';
+import { validateComputeBindingsDescriptor } from './compute-bindings.js';
 import { validateMaterialComputeDescriptor } from './material-compute.js';
 import { RENDER_BINDING_OWNER_KINDS, isRenderBindingOwnerKind } from './render-selector.js';
 import { stableJsonStringify } from './stable-json.js';
@@ -837,6 +838,21 @@ export function validateArtifact( input, opts = {} ) {
 	}
 	validateArtifactAttributes( artifact, label, errors );
 	validateRuntimeBindings( artifact, label, errors );
+	if ( artifact.computeBindings !== undefined ) {
+
+		if ( ! isCompute ) errors.push( validationError(
+			'compute-bindings.owner',
+			`${ label }: computeBindings is only valid on compute artifacts`,
+			'computeBindings',
+		) );
+
+		for ( const computeBindingError of validateComputeBindingsDescriptor( artifact.computeBindings, { artifact } ) ) errors.push( validationError(
+			computeBindingError.code,
+			`${ label }: ${ computeBindingError.message }`,
+			computeBindingError.path,
+		) );
+
+	}
 	if ( artifact.materialCompute !== undefined ) {
 
 		if ( isCompute ) errors.push( validationError(
