@@ -75,6 +75,7 @@ function selectSingletonArtifact( artifact, selection ) {
 		if ( candidateSelectors( artifact, profile ).includes( selector ) ) return artifact;
 		if ( transparentDoubleSideSiblingCandidates( selector, [ artifact ], profile ).length === 1 ) return artifact;
 		if ( pipelineSampleCountSiblingCandidates( selector, [ artifact ], profile ).length === 1 ) return artifact;
+		if ( materialComputeStoragePaddingSiblingCandidates( selector, [ artifact ], profile ).length === 1 ) return artifact;
 		throw selectorMiss( selector, [ artifact ], profile );
 
 	}
@@ -130,6 +131,8 @@ function computeArtifactVariant( artifact, variants, selection ) {
 			if ( siblingMatches.length > 0 ) return chooseSemanticCandidate( siblingMatches, targetCount, selector );
 			const sampleCountMatches = pipelineSampleCountSiblingCandidates( selector, signedCandidates, profile );
 			if ( sampleCountMatches.length > 0 ) return chooseSemanticCandidate( sampleCountMatches, targetCount, selector );
+			const storagePaddingMatches = materialComputeStoragePaddingSiblingCandidates( selector, signedCandidates, profile );
+			if ( storagePaddingMatches.length > 0 ) return chooseSemanticCandidate( storagePaddingMatches, targetCount, selector );
 			throw selectorMiss( selector, signedCandidates, profile );
 
 		}
@@ -362,6 +365,158 @@ function projectPipelineSampleCount( selector ) {
 	const projectedTarget = { ...target };
 	delete projectedTarget.sampleCount;
 	return stableJsonStringify( { ...descriptor, target: projectedTarget }, 'renderObjectSelector' );
+
+}
+
+/**
+ * WebGPUAttributeUtils pads StorageBufferAttribute itemSize=3 data to four
+ * components when it creates the GPU buffer, mutating the live attribute in
+ * place. Capture can therefore observe itemSize=4 after the first upload while
+ * replay describes the same attribute before upload and observes itemSize=3.
+ *
+ * This is not a general vertex-width alias. Require the candidate's signed
+ * material-compute contract to prove itemSize=4 storage resources, preferring
+ * exact render-attribute bindings and bounding explicitly unavailable hybrid
+ * bindings by resource count. Project only captured 4 -> active 3 differences;
+ * canonical equality then retains every other selector axis and ambiguous
+ * payloads still fail closed in the caller.
+ */
+function materialComputeStoragePaddingSiblingCandidates( selector, candidates, profile ) {
+
+	if ( profile !== null ) return [];
+	const active = parseCanonicalRenderSelector( selector );
+	if ( ! active || renderSelectorBackendKind( active ) !== 'webgpu' ) return [];
+	const activeShapes = renderSelectorGeometryAttributeShapes( active );
+	if ( ! activeShapes ) return [];
+	return candidates.filter( ( candidate ) => {
+
+		const paddingProof = materialComputeStoragePaddingProof( candidate );
+		if ( ! paddingProof ) return false;
+		return candidateSelectors( candidate, profile ).some( ( capturedSelector ) => {
+
+			const captured = parseCanonicalRenderSelector( capturedSelector );
+			if ( ! captured || renderSelectorBackendKind( captured ) !== 'webgpu' ) return false;
+			const geometry = captured.object && captured.object.geometry;
+			if ( ! geometry || ! Array.isArray( geometry.attributes ) ) return false;
+			let projectedCount = 0;
+			const attributes = geometry.attributes.map( ( entry ) => {
+
+				if ( ! Array.isArray( entry ) || entry.length < 2 || ! paddingProof.names.has( entry[ 0 ] ) ) return entry;
+				const capturedShape = entry[ 1 ];
+				const activeShape = activeShapes.get( entry[ 0 ] );
+				if ( ! capturedShape || typeof capturedShape !== 'object' || Array.isArray( capturedShape )
+					|| ! activeShape || capturedShape.itemSize !== 4 || activeShape.itemSize !== 3 ) return entry;
+				projectedCount ++;
+				return [ entry[ 0 ], { ...capturedShape, itemSize: 3 } ];
+
+			} );
+			if ( projectedCount === 0 || projectedCount > paddingProof.maxChanges ) return false;
+			const projected = {
+				...captured,
+				object: {
+					...captured.object,
+					geometry: { ...geometry, attributes },
+				},
+			};
+			return stableJsonStringify( projected, 'renderObjectSelector' ) === selector;
+
+		} );
+
+	} );
+
+}
+
+function materialComputeStoragePaddingProof( candidate ) {
+
+	const descriptor = candidate && candidate.materialCompute;
+	const attributes = candidate && candidate.attributes;
+	if ( ! descriptor || descriptor.version !== 'material-compute@1'
+		|| ( descriptor.mode !== 'precompiled' && descriptor.mode !== 'hybrid-required' )
+		|| ! Array.isArray( descriptor.resources ) || ! Array.isArray( descriptor.renderBindings )
+		|| ! Array.isArray( attributes ) ) return null;
+	const resources = new Map();
+	for ( const resource of descriptor.resources ) {
+
+		if ( ! resource || typeof resource.id !== 'string' || resources.has( resource.id ) ) return null;
+		resources.set( resource.id, resource );
+
+	}
+	const names = new Set();
+	for ( const binding of descriptor.renderBindings ) {
+
+		if ( ! binding || binding.kind !== 'attribute' || ! Number.isSafeInteger( binding.attribute ) || binding.attribute < 0 ) continue;
+		const resource = resources.get( binding.resource );
+		const attribute = attributes[ binding.attribute ];
+		if ( ! resource || resource.kind !== 'storage-buffer' || resource.itemSize !== 4
+			|| ! attribute || attribute.source !== 'geometry'
+			|| ( attribute.type !== 'vec3' && attribute.type !== 'vec4' )
+			|| typeof attribute.name !== 'string' || attribute.name.length === 0 ) continue;
+		names.add( attribute.name );
+
+	}
+	if ( names.size > 0 ) return { names, maxChanges: names.size };
+
+	// Some hybrid-required captures prove all storage resources but explicitly
+	// report that their live render binding identities were unavailable. Keep
+	// that fallback bounded by the number of itemSize=4 storage resources and by
+	// geometry attributes actually consumed by the captured vertex shader.
+	if ( descriptor.mode !== 'hybrid-required' || descriptor.renderBindings.length !== 0 ) return null;
+	const paddedResources = [ ...resources.values() ].filter( ( resource ) => (
+		resource.kind === 'storage-buffer' && resource.itemSize === 4
+	) );
+	if ( paddedResources.length === 0 ) return null;
+	const reasons = new Set( Array.isArray( descriptor.reasons ) ? descriptor.reasons : [] );
+	if ( ! paddedResources.every( ( resource ) => reasons.has( `${ resource.id }:render-binding-unavailable` ) ) ) return null;
+	for ( const attribute of attributes ) {
+
+		if ( attribute && attribute.source === 'geometry'
+			&& ( attribute.type === 'vec3' || attribute.type === 'vec4' )
+			&& typeof attribute.name === 'string' && attribute.name.length > 0 ) names.add( attribute.name );
+
+	}
+	return names.size > 0 ? { names, maxChanges: paddedResources.length } : null;
+
+}
+
+function parseCanonicalRenderSelector( selector ) {
+
+	let descriptor;
+	try {
+
+		descriptor = JSON.parse( selector );
+		if ( stableJsonStringify( descriptor, 'renderObjectSelector' ) !== selector ) return null;
+
+	} catch ( _ ) {
+
+		return null;
+
+	}
+	return descriptor && ! Array.isArray( descriptor ) && descriptor.version === 'render-object-selector@1'
+		? descriptor
+		: null;
+
+}
+
+function renderSelectorBackendKind( descriptor ) {
+
+	return descriptor && descriptor.renderer && descriptor.renderer.backend && descriptor.renderer.backend.kind || null;
+
+}
+
+function renderSelectorGeometryAttributeShapes( descriptor ) {
+
+	const geometry = descriptor && descriptor.object && descriptor.object.geometry;
+	if ( ! geometry || ! Array.isArray( geometry.attributes ) ) return null;
+	const shapes = new Map();
+	for ( const entry of geometry.attributes ) {
+
+		if ( ! Array.isArray( entry ) || entry.length < 2 || typeof entry[ 0 ] !== 'string' || shapes.has( entry[ 0 ] ) ) return null;
+		const shape = entry[ 1 ];
+		if ( ! shape || typeof shape !== 'object' || Array.isArray( shape ) ) return null;
+		shapes.set( entry[ 0 ], shape );
+
+	}
+	return shapes;
 
 }
 

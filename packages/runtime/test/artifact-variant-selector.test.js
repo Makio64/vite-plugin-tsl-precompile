@@ -237,6 +237,88 @@ test( 'signed material artifacts reuse WGSL across physical vertex-buffer layout
 
 } );
 
+test( 'signed singleton material-compute artifacts alias WebGPU vec3 storage padding only with bounded contract proof', () => {
+
+	const captured = computeStorageSelector( { position: 4, storagePosition: 4, normal: 3 } );
+	const replay = computeStorageSelector( { position: 3, storagePosition: 3, normal: 3 } );
+	const artifact = signedArtifact( [ captured ], computeStorageArtifactFields() );
+	assert.equal( selectArtifactVariant( artifact, { renderContextSelector: replay } ), artifact );
+
+	const withoutProof = { ...artifact };
+	delete withoutProof.materialCompute;
+	assert.throws(
+		() => selectArtifactVariant( withoutProof, { renderContextSelector: replay } ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+		'storage-looking geometry is insufficient without material-compute ownership',
+	);
+	const insufficientProof = {
+		...artifact,
+		materialCompute: {
+			...artifact.materialCompute,
+			resources: artifact.materialCompute.resources.slice( 0, 1 ),
+			reasons: [ 'resource:0:render-binding-unavailable' ],
+		},
+	};
+	assert.throws(
+		() => selectArtifactVariant( insufficientProof, { renderContextSelector: replay } ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+		'the number of padded differences cannot exceed the proven itemSize=4 resources',
+	);
+	const partialExactBindings = {
+		...artifact,
+		materialCompute: {
+			...artifact.materialCompute,
+			renderBindings: [ { resource: 'resource:0', kind: 'attribute', attribute: 0 } ],
+		},
+	};
+	assert.throws(
+		() => selectArtifactVariant( partialExactBindings, { renderContextSelector: replay } ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+		'partial exact render-binding proof cannot alias an unbound sibling attribute',
+	);
+	assert.throws(
+		() => selectArtifactVariant( artifact, {
+			renderContextSelector: computeStorageSelector( { position: 3, storagePosition: 3, normal: 4 } ),
+		} ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+		'unrelated geometry widths remain signed',
+	);
+	assert.throws(
+		() => selectArtifactVariant( artifact, {
+			renderContextSelector: computeStorageSelector( { position: 3, storagePosition: 3, normal: 3 }, 'webgl' ),
+		} ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+		'the alias is specific to WebGPU storage-buffer padding',
+	);
+
+} );
+
+test( 'signed material-compute families select and disambiguate WebGPU storage-padding siblings', () => {
+
+	const captured = computeStorageSelector( { position: 4, storagePosition: 4, normal: 3 } );
+	const replay = computeStorageSelector( { position: 3, storagePosition: 3, normal: 3 } );
+	const other = computeStorageSelector( { position: 4, storagePosition: 4, normal: 3 }, 'webgpu', { instanced: true } );
+	const fields = computeStorageArtifactFields();
+	const first = signedArtifact( [ captured ], { ...fields, cacheKey: 'first', fragmentShader: 'first' } );
+	const second = signedArtifact( [ other ], { ...fields, cacheKey: 'second', fragmentShader: 'second' } );
+	const artifact = { ...first, variants: { first, second } };
+	assert.equal( selectArtifactVariant( artifact, { renderContextSelector: replay } ).fragmentShader, 'first' );
+
+	const ambiguous = {
+		...first,
+		variants: {
+			first,
+			second: { ...first, cacheKey: 'second', fragmentShader: 'second' },
+		},
+	};
+	assert.throws(
+		() => selectArtifactVariant( ambiguous, { renderContextSelector: replay } ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_AMBIGUOUS',
+		'divergent payloads with the same padding proof remain ambiguous',
+	);
+
+} );
+
 test( 'pipeline-only sample aliases retain fail-closed family ambiguity', () => {
 
 	const captured = opaqueSelector( 4 );
@@ -630,6 +712,52 @@ function vertexLayoutSelector( attributes ) {
 			},
 		},
 	}, 'renderObjectSelector' );
+
+}
+
+function computeStorageSelector( itemSizes, backend = 'webgpu', objectOverrides = {} ) {
+
+	return stableJsonStringify( {
+		version: 'render-object-selector@1',
+		renderer: { backend: { kind: backend } },
+		object: {
+			instanced: false,
+			...objectOverrides,
+			geometry: {
+				attributes: Object.entries( itemSizes )
+					.sort( ( left, right ) => left[ 0 ].localeCompare( right[ 0 ] ) )
+					.map( ( [ name, itemSize ] ) => [ name, { itemSize, normalized: false } ] ),
+				morphAttributes: [],
+			},
+		},
+	}, 'renderObjectSelector' );
+
+}
+
+function computeStorageArtifactFields() {
+
+	return {
+		attributes: [
+			{ name: 'position', type: 'vec4', source: 'geometry' },
+			{ name: 'storagePosition', type: 'vec3', source: 'geometry' },
+			{ name: 'normal', type: 'vec3', source: 'geometry' },
+		],
+		materialCompute: {
+			version: 'material-compute@1',
+			mode: 'hybrid-required',
+			reasons: [
+				'resource:0:render-binding-unavailable',
+				'resource:1:render-binding-unavailable',
+				'resource:2:render-binding-unavailable',
+			],
+			resources: [
+				{ id: 'resource:0', kind: 'storage-buffer', itemSize: 4 },
+				{ id: 'resource:1', kind: 'storage-buffer', itemSize: 4 },
+				{ id: 'resource:2', kind: 'storage-buffer', itemSize: 4 },
+			],
+			renderBindings: [],
+		},
+	};
 
 }
 
