@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createRenderContextSignature } from '@tsl-precompile/contract/render-context';
+import { createRenderObjectContextSelector, projectRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
 import { createMaterialContextKey, getMaterialContextMap } from '../material-context-cache.mjs';
 
 test( 'material context cache deduplicates equivalent meshes but separates skinning topology', () => {
@@ -16,10 +16,19 @@ test( 'material context cache deduplicates equivalent meshes but separates skinn
 			skinWeight: attribute( 4 ),
 		},
 	} );
-	const key = ( object ) => createMaterialContextKey( createRenderContextSignature, { material, object } );
+	const key = ( object ) => createMaterialContextKey(
+		createRenderObjectContextSelector,
+		{ material, object },
+		projectRenderObjectContextSelector,
+	);
 
 	assert.equal( key( ordinaryA ), key( ordinaryB ), 'live transforms do not split shader topology' );
 	assert.notEqual( key( ordinaryA ), key( skinned ), 'skinning and its attributes require a separate artifact' );
+	const indexed16 = mesh();
+	indexed16.geometry.index = indexAttribute( Uint16Array );
+	const indexed32 = mesh();
+	indexed32.geometry.index = indexAttribute( Uint32Array );
+	assert.equal( key( indexed16 ), key( indexed32 ), 'GPU index promotion does not create a new shader context' );
 
 	const cache = new WeakMap();
 	const contexts = getMaterialContextMap( cache, material, true );
@@ -44,13 +53,17 @@ test( 'material context cache separates renderer shader topology without naming 
 	const normalRenderer = renderer( false, { name: 'normal-target' } );
 	const equivalentNormalRenderer = renderer( false, { name: 'other-target' } );
 	const logarithmicRenderer = renderer( true, { name: 'log-target' } );
-	const key = ( value ) => createMaterialContextKey( createRenderContextSignature, {
-		material,
-		object,
-		renderer: value,
-		renderTarget: null,
-		mrt: null,
-	} );
+	const key = ( value ) => createMaterialContextKey(
+		createRenderObjectContextSelector,
+		{
+			material,
+			object,
+			renderer: value,
+			renderTarget: null,
+			mrt: null,
+		},
+		projectRenderObjectContextSelector,
+	);
 
 	assert.equal( key( normalRenderer ), key( equivalentNormalRenderer ), 'active targets remain represented variants' );
 	assert.notEqual( key( normalRenderer ), key( logarithmicRenderer ), 'log-depth selects different shader topology' );
@@ -62,6 +75,16 @@ function attribute( itemSize ) {
 	return {
 		array: new Float32Array( itemSize * 3 ),
 		itemSize,
+		normalized: false,
+	};
+
+}
+
+function indexAttribute( ArrayType ) {
+
+	return {
+		array: new ArrayType( [ 0, 1, 2 ] ),
+		itemSize: 1,
 		normalized: false,
 	};
 

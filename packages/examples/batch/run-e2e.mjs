@@ -985,7 +985,7 @@ import * as Original from '/build/three.webgpu.js';
 export * from '/build/three.webgpu.js';
 import { installPrecompileMarker, setDevRenderer } from '/__tslp_runtime/precompile-marker.js';
 import { precompileAuxiliary } from '/__tslp_runtime/aux-marker.js';
-import { createRenderContextSignature as __createRenderContextSignature } from '/__tslp_contract/render-context.js';
+import { createRenderObjectContextSelector as __createRenderObjectContextSelector, projectRenderObjectContextSelector as __projectRenderObjectContextSelector } from '/__tslp_contract/render-selector.js';
 import { createMaterialContextKey as __createMaterialContextKey, getMaterialContextMap as __getMaterialContextMap } from '/__tslp_batch/material-context-cache.mjs';
 import { synchronizeTemporalJitterNode as __sharedSynchronizeTemporalJitterNode } from '/__tslp_batch/temporal-jitter.mjs';
 
@@ -1220,7 +1220,7 @@ function __mark( material, className, sourceObject = null, camera = null, render
 	const captureCamera = nextCameraSeesObject ? camera : material.__tslpPrecompileCamera || camera || null;
 	const captureObject = sourceObject || material.__tslpPrecompileObject || null;
 	if ( ! mrt && captureScene && captureScene.userData ) mrt = captureScene.userData.__tslp_mrtNode || null;
-	const contextKey = __createMaterialContextKey( __createRenderContextSignature, {
+	const contextKey = __createMaterialContextKey( __createRenderObjectContextSelector, {
 		object: captureObject,
 		material,
 		renderer,
@@ -1228,7 +1228,7 @@ function __mark( material, className, sourceObject = null, camera = null, render
 		// material names. Keep only renderer configuration in this queue key.
 		renderTarget: null,
 		mrt: null,
-	} );
+	}, __projectRenderObjectContextSelector );
 	const seenContexts = __getMaterialContextMap( __seenMaterialContexts, material, true );
 	if ( seenContexts.has( contextKey ) ) return;
 	const n = ( __counts[ className ] || 0 ) + 1;
@@ -1906,7 +1906,7 @@ import { renderOffscreenOverrideWithFullRenderer as __sharedRenderOffscreenOverr
 import { findAux as __runtimeFindAux } from '/__tslp_runtime/aux-loader.js';
 import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS as __NODE_GRAPH_KEYS } from '/__tslp_contract/texture-props.js';
 import { countArtifactFragmentOutputCapacity as __sharedCountArtifactFragmentOutputCapacity, countArtifactFragmentOutputs as __sharedCountArtifactFragmentOutputs } from '/__tslp_contract/fragment-outputs.js';
-import { createRenderContextSignature as __createRenderContextSignature } from '/__tslp_contract/render-context.js';
+import { createRenderObjectContextSelector as __createRenderObjectContextSelector, projectRenderObjectContextSelector as __projectRenderObjectContextSelector } from '/__tslp_contract/render-selector.js';
 import { createMaterialContextKey as __createMaterialContextKey, getMaterialContextMap as __getMaterialContextMap } from '/__tslp_batch/material-context-cache.mjs';
 import { synchronizeTemporalJitterNode as __sharedSynchronizeTemporalJitterNode, temporalJitterFrameId as __sharedTemporalJitterFrameId } from '/__tslp_batch/temporal-jitter.mjs';
 ${ SLIM_REPLAY_FORWARD_EXPORT_BLOCK }
@@ -6663,10 +6663,10 @@ function __prepareSceneForCurrentMRT( scene, renderer ) {
 
 function __replayMaterialContextKey( material, object ) {
 
-	return __createMaterialContextKey( __createRenderContextSignature, {
+	return __createMaterialContextKey( __createRenderObjectContextSelector, {
 		material,
 		object,
-	} );
+	}, __projectRenderObjectContextSelector );
 
 }
 
