@@ -246,6 +246,37 @@ test( 'capture and replay instrument inline uniform calls with the product ident
 
 } );
 
+test( 'dynamic replay artifacts materialize generated selector adapters before use', () => {
+
+	const auxStart = source.indexOf( 'function auxVirtualModule()' );
+	const auxEnd = source.indexOf( 'function fullWebgpuAutoModule()', auxStart );
+	assert.ok( auxStart >= 0 && auxEnd > auxStart, 'expected the auxiliary virtual module' );
+	const aux = source.slice( auxStart, auxEnd );
+	assert.match( aux, /from '@tsl-precompile\/contract\/variant-selector-adapter'/ );
+	assert.ok(
+		aux.indexOf( 'materializeArtifactVariantSelectorAdapters( __entries )' ) < aux.indexOf( 'registerAuxArtifacts( __entries )' ),
+		'auxiliary artifacts must be materialized before registry cloning',
+	);
+
+	const replayStart = source.indexOf( 'function slimWebgpuReplayModule()' );
+	const replayEnd = source.indexOf( 'function tslStubModule()', replayStart );
+	assert.ok( replayStart >= 0 && replayEnd > replayStart, 'expected the slim replay module' );
+	const replay = source.slice( replayStart, replayEnd );
+	assert.match( replay, /from '\/__tslp_contract\/variant-selector-adapter\.js'/ );
+	const materialize = replay.indexOf( '__materializeArtifactVariantSelectorAdapters( [' );
+	const register = replay.indexOf( 'Slim.registerAuxArtifacts(' );
+	assert.ok( materialize >= 0 && register > materialize, 'user and auxiliary artifacts must be materialized before replay registration or selection' );
+	const cloneStart = replay.indexOf( 'function __cloneAuxArtifact( artifact )' );
+	const cloneEnd = replay.indexOf( 'function __cloneLiveUniformSidecar', cloneStart );
+	assert.ok( cloneStart >= 0 && cloneEnd > cloneStart, 'expected the auxiliary artifact clone boundary' );
+	assert.match(
+		replay.slice( cloneStart, cloneEnd ),
+		/return __materializeArtifactVariantSelectorAdapters\( clone \);/,
+		'structured clones must restore their non-serializable selector adapter',
+	);
+
+} );
+
 test( 'replay applies captured texture topology before first material assignment', () => {
 
 	const start = source.indexOf( 'function __wireMaterialPropertyTexturesFromArtifact(' );

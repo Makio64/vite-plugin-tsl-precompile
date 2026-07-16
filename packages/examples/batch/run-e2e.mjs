@@ -968,13 +968,17 @@ function auxVirtualModule() {
 
 	return `
 import { registerAuxArtifacts } from '@tsl-precompile/runtime';
+import { materializeArtifactVariantSelectorAdapters } from '@tsl-precompile/contract/variant-selector-adapter';
 
 const __state = window.__TSLP_E2E || {};
 const __entries = __state.mode === 'replay' && __state.artifacts && Array.isArray( __state.artifacts.aux )
 	? __state.artifacts.aux
 	: [];
 
-if ( __entries.length > 0 ) registerAuxArtifacts( __entries );
+if ( __entries.length > 0 ) {
+	materializeArtifactVariantSelectorAdapters( __entries );
+	registerAuxArtifacts( __entries );
+}
 
 export default __entries;
 `;
@@ -2094,6 +2098,7 @@ import { inspectRuntimeMaterialComputeFamily as __sharedInspectRuntimeMaterialCo
 import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS as __NODE_GRAPH_KEYS } from '/__tslp_contract/texture-props.js';
 import { countArtifactFragmentOutputCapacity as __sharedCountArtifactFragmentOutputCapacity, countArtifactFragmentOutputs as __sharedCountArtifactFragmentOutputs } from '/__tslp_contract/fragment-outputs.js';
 import { createRenderObjectContextSelector as __createRenderObjectContextSelector, projectRenderObjectContextSelector as __projectRenderObjectContextSelector } from '/__tslp_contract/render-selector.js';
+import { materializeArtifactVariantSelectorAdapters as __materializeArtifactVariantSelectorAdapters } from '/__tslp_contract/variant-selector-adapter.js';
 import { createMaterialContextKey as __createMaterialContextKey, createObjectIdentityKeyer as __createObjectIdentityKeyer, createStockMaterialTopologyKey as __createStockMaterialTopologyKey, getMaterialContextMap as __getMaterialContextMap, getSceneTopologyMap as __getSceneTopologyMap } from '/__tslp_batch/material-context-cache.mjs';
 import { passRendersMaterial as __passRendersMaterial } from '/__tslp_batch/pass-material-visibility.mjs';
 import { synchronizeTemporalJitterNode as __sharedSynchronizeTemporalJitterNode, temporalJitterFrameId as __sharedTemporalJitterFrameId } from '/__tslp_batch/temporal-jitter.mjs';
@@ -2103,6 +2108,10 @@ export { FullTextureNode as TextureNode, FullBlendMode as BlendMode, FullTempNod
 
 const __state = window.__TSLP_E2E || { example: 'unknown', artifacts: { user: {}, aux: [] } };
 const __data = __state.artifacts || { user: {}, aux: [] };
+__materializeArtifactVariantSelectorAdapters( [
+	...Object.values( __data.user || {} ),
+	...( Array.isArray( __data.aux ) ? __data.aux : [] ),
+] );
 
 function __tslpLoaderBasename( value ) {
 	const raw = String( value || '' );
@@ -11194,10 +11203,12 @@ function __makeFullBloomNodeMaterial( sourceMaterial, name ) {
 }
 
 	function __cloneAuxArtifact( artifact ) {
+		let clone = null;
 		try {
-			if ( typeof structuredClone === 'function' ) return structuredClone( artifact );
+			if ( typeof structuredClone === 'function' ) clone = structuredClone( artifact );
 		} catch ( _ ) {}
-		return JSON.parse( JSON.stringify( artifact ) );
+		if ( ! clone ) clone = JSON.parse( JSON.stringify( artifact ) );
+		return __materializeArtifactVariantSelectorAdapters( clone );
 	}
 
 	function __cloneLiveUniformSidecar( node ) {
