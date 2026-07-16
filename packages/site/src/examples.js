@@ -247,6 +247,7 @@ function renderStage() {
 		$( '#ex-stage-badge' ).innerHTML = '';
 		$( '#ex-stage-stats' ).innerHTML = '';
 		$( '#ex-stage-cta' ).hidden = true;
+		$( '#ex-stage-live' ).hidden = true;
 		$( '#ex-stage-share' ).hidden = true;
 		psnrChip.hidden = true;
 		empty.hidden = false;
@@ -255,6 +256,7 @@ function renderStage() {
 		return;
 	}
 	stage.dataset.empty = 'false';
+	updateLiveAction( r );
 
 	$( '#ex-stage-title' ).textContent = r.displayName;
 	$( '#ex-stage-cat' ).textContent = r.categoryLabel;
@@ -357,6 +359,31 @@ function updateStats( r ) {
 	$( '#ex-stage-stats' ).innerHTML = stats.map( ( [ lab, val ] ) =>
 		`<div class="ex-stage-stat"><div class="ex-stage-stat-num">${escapeHtml( String( val ) )}</div><div class="ex-stage-stat-lab">${escapeHtml( lab )}</div></div>`
 	).join( '' );
+}
+
+function verifiedLiveEntry( entry ) {
+
+	if ( ! entry || entry.runtimeMode !== 'pure-slim' || entry.buildVerified !== true ) return null;
+	const residue = Object.values( entry.forbiddenModuleCounts || {} ).reduce( ( total, count ) => total + Number( count || 0 ), 0 );
+	return residue === 0 ? entry : null;
+
+}
+
+function liveEntryForCatalogue( catalogueId ) {
+
+	return verifiedLiveEntry( state.liveManifest?.examples?.find( entry => entry.catalogueId === catalogueId ) );
+
+}
+
+function updateLiveAction( record ) {
+
+	const button = $( '#ex-stage-live' );
+	const entry = liveEntryForCatalogue( record.basename );
+	button.hidden = ! entry;
+	button.disabled = ! entry;
+	button.dataset.liveId = entry?.id || '';
+	if ( entry ) button.title = `Run ${ entry.title } from its compiler-free production bundle`;
+
 }
 
 function updateNotes( r ) {
@@ -588,14 +615,15 @@ function bindDrawer() {
 	} );
 }
 
-function bindLiveCanary( manifest ) {
+function bindLivePlayer( manifest ) {
 	const container = $( '#ex-live-canary' );
 	const openButton = $( '#ex-live-open' );
+	const stageButton = $( '#ex-stage-live' );
 	const dialog = $( '#ex-live-dialog' );
 	const frame = $( '#ex-live-frame' );
 	const status = $( '#ex-live-status' );
 	const direct = $( '#ex-live-direct' );
-	const canary = manifest?.examples?.find( entry => entry.role === 'canary' && entry.buildVerified );
+	const canary = verifiedLiveEntry( manifest?.examples?.find( entry => entry.role === 'canary' ) );
 
 	if ( ! canary ) {
 		container.dataset.unavailable = 'true';
@@ -603,30 +631,36 @@ function bindLiveCanary( manifest ) {
 		return;
 	}
 
-	const residue = Object.values( canary.forbiddenModuleCounts || {} ).reduce( ( total, count ) => total + Number( count || 0 ), 0 );
-	if ( canary.runtimeMode !== 'pure-slim' || residue !== 0 ) {
-		container.dataset.unavailable = 'true';
-		openButton.textContent = 'Compiler-free gate failed';
-		return;
-	}
-
-	const route = new URL( canary.playUrl, document.baseURI );
 	openButton.disabled = false;
 	openButton.textContent = 'Run compiled example';
-	direct.href = route.href;
-	$( '#ex-live-title' ).textContent = canary.title;
-	$( '#ex-live-meta' ).innerHTML = [
-		[ 'mode', canary.runtimeMode ],
-		[ 'bundle', fmtBytes( canary.bundleBytes ) ],
-		[ 'Three.js', canary.threeVersion ],
-		[ 'compiler modules', residue ],
-	].map( ( [ label, value ] ) => `<div><strong>${escapeHtml( String( value ) )}</strong><span>${escapeHtml( label )}</span></div>` ).join( '' );
 
-	openButton.addEventListener( 'click', () => {
+	function openEntry( entry ) {
+
+		const verified = verifiedLiveEntry( entry );
+		if ( ! verified ) return;
+		const route = new URL( verified.playUrl, document.baseURI );
+		const residue = Object.values( verified.forbiddenModuleCounts || {} ).reduce( ( total, count ) => total + Number( count || 0 ), 0 );
+		direct.href = route.href;
+		$( '#ex-live-title' ).textContent = verified.title;
+		$( '#ex-live-meta' ).innerHTML = [
+			[ 'mode', verified.runtimeMode ],
+			[ 'bundle', fmtBytes( verified.bundleBytes ) ],
+			[ 'Three.js', verified.threeVersion ],
+			[ 'compiler modules', residue ],
+		].map( ( [ label, value ] ) => `<div><strong>${escapeHtml( String( value ) )}</strong><span>${escapeHtml( label )}</span></div>` ).join( '' );
 		status.className = 'ex-live-status';
 		status.textContent = 'Starting WebGPU and hydrating the compiled artifact…';
 		frame.src = route.href;
 		dialog.showModal();
+
+	}
+
+	openButton.addEventListener( 'click', () => openEntry( canary ) );
+	stageButton.addEventListener( 'click', () => {
+
+		const entry = manifest?.examples?.find( item => item.id === stageButton.dataset.liveId );
+		openEntry( entry );
+
 	} );
 
 	window.addEventListener( 'message', event => {
@@ -681,7 +715,7 @@ async function init() {
 	bindKeyboard();
 	bindHash();
 	bindDrawer();
-	bindLiveCanary( liveManifest );
+	bindLivePlayer( liveManifest );
 
 	// Initial seam position
 	setSliderPos( 50 );

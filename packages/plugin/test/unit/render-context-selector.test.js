@@ -436,6 +436,28 @@ test( 'post-process projection ignores private output attachments but retains pi
 
 } );
 
+test( 'render-output projection ignores the scene shadow filter but retains output sample topology', () => {
+
+	const capture = fixture();
+	const replay = fixture();
+	capture.renderer.shadowMap.type = 3;
+	replay.renderer.shadowMap.type = 1;
+	assert.notEqual( createRenderObjectContextSelector( capture ), createRenderObjectContextSelector( replay ) );
+	assert.equal(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'render-output' ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'render-output' ),
+		'output WGSL is independent of the earlier scene shadow-map algorithm',
+	);
+
+	replay.context.sampleCount = 1;
+	assert.notEqual(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'render-output' ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'render-output' ),
+		'output pipeline sample topology remains signed',
+	);
+
+} );
+
 test( 'shadow-depth selector mirrors effective source-material shadow branches', () => {
 
 	const plain = shadowFixture();

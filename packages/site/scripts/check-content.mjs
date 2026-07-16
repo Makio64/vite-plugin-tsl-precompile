@@ -154,21 +154,37 @@ if ( ! canary ) {
 } else {
 
 	if ( canary.runtimeMode !== 'pure-slim' || canary.buildVerified !== true ) fail( 'dist/live-examples.json: canary is not a verified pure-slim build' );
-	const expectedManifestHash = sha256( JSON.stringify( liveManifest.examples ) );
-	if ( liveManifest.manifestSha256 !== expectedManifestHash ) fail( 'dist/live-examples.json: manifest fingerprint does not match its records' );
-	const forbidden = Object.values( canary.forbiddenModuleCounts || {} ).reduce( ( total, count ) => total + Number( count || 0 ), 0 );
-	if ( forbidden !== 0 ) fail( `dist/live-examples.json: canary retained ${ forbidden } forbidden module(s)` );
-	if ( ! /^[a-f0-9]{64}$/.test( canary.bundleSha256 || '' ) ) fail( 'dist/live-examples.json: canary has no bundle fingerprint' );
-	const routeDir = resolve( distDir, canary.playUrl );
+
+}
+
+const expectedManifestHash = sha256( JSON.stringify( liveManifest?.examples || [] ) );
+if ( liveManifest?.manifestSha256 !== expectedManifestHash ) fail( 'dist/live-examples.json: manifest fingerprint does not match its records' );
+if ( liveManifest?.schemaVersion !== 2 ) fail( 'dist/live-examples.json: expected schemaVersion 2' );
+const seenLiveCatalogueIds = new Set();
+for ( const entry of liveManifest?.examples || [] ) {
+
+	const forbidden = Object.values( entry.forbiddenModuleCounts || {} ).reduce( ( total, count ) => total + Number( count || 0 ), 0 );
+	if ( entry.runtimeMode !== 'pure-slim' || entry.buildVerified !== true ) fail( `dist/live-examples.json: ${ entry.id } is not a verified pure-slim build` );
+	if ( forbidden !== 0 ) fail( `dist/live-examples.json: ${ entry.id } retained ${ forbidden } forbidden module(s)` );
+	if ( ! /^[a-f0-9]{64}$/.test( entry.bundleSha256 || '' ) ) fail( `dist/live-examples.json: ${ entry.id } has no bundle fingerprint` );
+	if ( entry.catalogueId ) {
+
+		if ( ! catalogueIds.has( entry.catalogueId ) ) fail( `dist/live-examples.json: ${ entry.id } targets unknown catalogue route ${ entry.catalogueId }` );
+		if ( seenLiveCatalogueIds.has( entry.catalogueId ) ) fail( `dist/live-examples.json: duplicate compiled route for ${ entry.catalogueId }` );
+		seenLiveCatalogueIds.add( entry.catalogueId );
+
+	}
+	const routePath = entry.playUrl.split( '?' )[ 0 ];
+	const htmlPath = routePath.endsWith( '/' ) ? `${ routePath }index.html` : routePath;
 	try {
 
-		const liveHtml = await readFile( resolve( routeDir, 'index.html' ), 'utf8' );
-		if ( /(?:src|href)=["']\/assets\//.test( liveHtml ) ) fail( `${ canary.playUrl }index.html: root-relative asset URL breaks the Pages base path` );
-		if ( ! /(?:src|href)=["']\.\/assets\//.test( liveHtml ) ) fail( `${ canary.playUrl }index.html: no relative compiled asset found` );
+		const liveHtml = await readFile( resolve( distDir, htmlPath ), 'utf8' );
+		if ( /(?:src|href)=["']\/assets\//.test( liveHtml ) ) fail( `${ entry.playUrl }: root-relative asset URL breaks the Pages base path` );
+		if ( ! /(?:src|href)=["']\.\/assets\//.test( liveHtml ) ) fail( `${ entry.playUrl }: no relative compiled asset found` );
 
 	} catch {
 
-		fail( `${ canary.playUrl }index.html: missing compiled route` );
+		fail( `${ entry.playUrl }: missing compiled route` );
 
 	}
 
@@ -181,6 +197,6 @@ if ( failures.length > 0 ) {
 
 } else {
 
-	console.log( `[site-check] ${ pages.length } pages, canonical evidence, and the compiler-free live route verified.` );
+	console.log( `[site-check] ${ pages.length } pages, canonical evidence, and ${ liveManifest.examples.length } compiler-free live routes verified.` );
 
 }

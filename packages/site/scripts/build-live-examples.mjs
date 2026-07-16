@@ -13,14 +13,43 @@ const REPO_ROOT = resolve( SITE_ROOT, '../..' );
 const PUBLIC_ROOT = resolve( SITE_ROOT, 'public' );
 const LIVE_ROOT = resolve( PUBLIC_ROOT, 'live' );
 const MANIFEST_PATH = resolve( PUBLIC_ROOT, 'live-examples.json' );
+const CATALOGUE_PATH = resolve( REPO_ROOT, 'packages/examples/batch/example-catalogue.json' );
+const catalogue = JSON.parse( await readFile( CATALOGUE_PATH, 'utf8' ) );
 
-const examples = [
+function titleFromId( id ) {
+
+	return id.split( '-' ).map( word => word[ 0 ].toUpperCase() + word.slice( 1 ) ).join( ' ' );
+
+}
+
+function catalogueRoutes( project ) {
+
+	return catalogue.cases
+		.filter( entry => entry.source?.kind === 'local' && entry.source.project === project )
+		.map( entry => ( {
+			id: `${ project }:${ entry.id }`,
+			catalogueId: entry.id,
+			title: `${ titleFromId( entry.id ) } · compiled TSL`,
+			route: entry.source.route,
+		} ) );
+
+}
+
+const projects = [
 	{
 		id: 'getting-started',
-		role: 'canary',
-		title: 'Getting started · compiled TSL',
 		root: resolve( REPO_ROOT, 'packages/examples/getting-started' ),
-		playUrl: 'live/getting-started/',
+		routes: [ {
+			id: 'getting-started',
+			role: 'canary',
+			title: 'Getting started · compiled TSL',
+			route: 'index.html',
+		} ],
+	},
+	{
+		id: 'shadow-debug',
+		root: resolve( REPO_ROOT, 'packages/examples/shadow-debug' ),
+		routes: catalogueRoutes( 'shadow-debug' ),
 	},
 ];
 
@@ -80,12 +109,12 @@ async function packageVersion( path ) {
 
 }
 
-async function buildExample( example ) {
+async function buildProject( project ) {
 
-	const outDir = resolve( LIVE_ROOT, example.id );
+	const outDir = resolve( LIVE_ROOT, project.id );
 	const result = await build( {
-		root: example.root,
-		configFile: resolve( example.root, 'vite.config.js' ),
+		root: project.root,
+		configFile: resolve( project.root, 'vite.config.js' ),
 		base: './',
 		build: {
 			outDir,
@@ -98,26 +127,29 @@ async function buildExample( example ) {
 	const residueCounts = Object.fromEntries( Object.entries( residue ).map( ( [ key, value ] ) => [ key, value.length ] ) );
 	if ( Object.values( residueCounts ).some( Boolean ) ) {
 
-		throw new Error( `${ example.id }: forbidden compiler/runtime residue ${ JSON.stringify( residueCounts ) }` );
+		throw new Error( `${ project.id }: forbidden compiler/runtime residue ${ JSON.stringify( residueCounts ) }` );
 
 	}
 
 	const output = await directoryFingerprint( outDir );
-	const artifacts = await directoryFingerprint( resolve( example.root, 'artifacts' ) );
+	const artifacts = await directoryFingerprint( resolve( project.root, 'artifacts' ) );
 	const chunks = Object.values( bundle ).filter( ( item ) => item.type === 'chunk' );
 	const renderedModules = new Set( chunks.flatMap( ( chunk ) => Object.keys( chunk.modules || {} ) ) );
-	const html = await readFile( resolve( outDir, 'index.html' ), 'utf8' );
-	if ( /(?:src|href)=["']\/assets\//.test( html ) ) throw new Error( `${ example.id }: root-relative asset URL breaks the Pages base path` );
+	for ( const route of project.routes ) {
 
-	return {
-		id: example.id,
-		role: example.role,
-		title: example.title,
-		playUrl: example.playUrl,
+		const htmlPath = route.route.split( '?' )[ 0 ];
+		const html = await readFile( resolve( outDir, htmlPath ), 'utf8' );
+		if ( /(?:src|href)=["']\/assets\//.test( html ) ) throw new Error( `${ project.id}:${ htmlPath }: root-relative asset URL breaks the Pages base path` );
+		if ( ! /(?:src|href)=["']\.\/assets\//.test( html ) ) throw new Error( `${ project.id}:${ htmlPath }: no relative compiled asset found` );
+
+	}
+
+	const metadata = {
+		buildId: project.id,
 		runtimeMode: 'pure-slim',
 		threeVersion: await packageVersion( resolve( REPO_ROOT, 'node_modules/three/package.json' ) ).catch( async () => {
 
-			const packageJson = JSON.parse( await readFile( resolve( example.root, 'package.json' ), 'utf8' ) );
+			const packageJson = JSON.parse( await readFile( resolve( project.root, 'package.json' ), 'utf8' ) );
 			return String( packageJson.dependencies?.three || '' ).replace( /^[^\d]*/, '' );
 
 		} ),
@@ -129,6 +161,18 @@ async function buildExample( example ) {
 		forbiddenModuleCounts: residueCounts,
 		buildVerified: true,
 	};
+	const records = project.routes.map( route => ( {
+		id: route.id,
+		role: route.role || 'example',
+		catalogueId: route.catalogueId || null,
+		title: route.title,
+		playUrl: route.route === 'index.html'
+			? `live/${ project.id }/`
+			: `live/${ project.id }/${ route.route }`,
+		...metadata,
+	} ) );
+
+	return { output, records };
 
 }
 
@@ -136,15 +180,22 @@ await rm( LIVE_ROOT, { recursive: true, force: true } );
 await rm( MANIFEST_PATH, { force: true } );
 
 const records = [];
-for ( const example of examples ) records.push( await buildExample( example ) );
+const outputs = [];
+for ( const project of projects ) {
+
+	const built = await buildProject( project );
+	records.push( ...built.records );
+	outputs.push( built.output );
+
+}
 
 const manifest = {
-	schemaVersion: 1,
+	schemaVersion: 2,
 	manifestSha256: null,
 	examples: records,
 };
 manifest.manifestSha256 = sha256( JSON.stringify( manifest.examples ) );
 await writeFile( MANIFEST_PATH, JSON.stringify( manifest, null, '\t' ) + '\n' );
 
-const totalBytes = records.reduce( ( total, entry ) => total + entry.bundleBytes, 0 );
-console.log( `[site-live] built ${ records.length } compiler-free route(s), ${ totalBytes } bytes` );
+const totalBytes = outputs.reduce( ( total, output ) => total + output.bytes, 0 );
+console.log( `[site-live] built ${ records.length } compiler-free route(s) from ${ projects.length } project(s), ${ totalBytes } bytes` );

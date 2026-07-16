@@ -23,6 +23,12 @@ Build:
 pnpm --filter examples-shadow-debug build
 ```
 
+The production build uses `slim: 'source'`: its checked artifacts hydrate the
+scene, shadow-depth, and renderer-output programs without shipping NodeBuilder.
+Capture the full light/filter matrix with WebGPU enabled before replacing those
+artifacts; WebGL2-fallback selectors are intentionally rejected by the
+production runtime.
+
 Capture and slim-replay E2E:
 
 ```sh

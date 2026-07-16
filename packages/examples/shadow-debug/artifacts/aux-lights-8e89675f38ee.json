@@ -1,0 +1,15 @@
+{
+  "__materialShape": "lights",
+  "__configHash": "8e89675f38ee3fcd342ccc99280960319aafd69442de469e76b4fc07bfbc8742",
+  "__hash": "8e89675f38ee3fcd342ccc99280960319aafd69442de469e76b4fc07bfbc8742",
+  "__name": "aux-lights-8e89675f38ee",
+  "artifact": {
+    "uniformPlan": [],
+    "vertexShader": "",
+    "fragmentShader": "",
+    "lightsSignature": [
+      "AmbientLight:",
+      "PointLight:shadow"
+    ]
+  }
+}

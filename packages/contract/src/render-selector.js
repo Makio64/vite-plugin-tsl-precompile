@@ -237,6 +237,11 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 		if ( projected.renderer && typeof projected.renderer === 'object' ) {
 
 			projected.renderer = { ...projected.renderer };
+			// The output transform is a fixed fullscreen color shader. Scene
+			// shadow filtering has already completed before this pass and cannot
+			// change its WGSL or bindings, so one captured output artifact must be
+			// reusable across Basic/PCF/PCFSoft/VSM scene renders.
+			if ( renderOutput ) delete projected.renderer.shadowMap;
 
 		}
 		if ( projected.material && typeof projected.material === 'object' ) {

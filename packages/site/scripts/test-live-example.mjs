@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -9,6 +10,7 @@ import { preview } from 'vite';
 
 const SITE_ROOT = resolve( dirname( fileURLToPath( import.meta.url ) ), '..' );
 const BROWSER_ARGS = [ '--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--no-sandbox', '--disable-dev-shm-usage' ];
+const liveManifest = JSON.parse( await readFile( resolve( SITE_ROOT, 'dist/live-examples.json' ), 'utf8' ) );
 
 function pixelDifference( left, right ) {
 
@@ -53,8 +55,8 @@ try {
 
 	}
 	const page = await browser.newPage( { viewport: { width: 960, height: 720 }, deviceScaleFactor: 1 } );
-	const errors = [];
-	const captureRequests = [];
+	let errors = [];
+	let captureRequests = [];
 	page.on( 'pageerror', error => errors.push( `pageerror: ${ error.message || error }` ) );
 	page.on( 'console', message => {
 
@@ -73,37 +75,76 @@ try {
 	} );
 
 	await page.goto( new URL( 'examples.html', baseUrl ).href, { waitUntil: 'networkidle', timeout: 30000 } );
-	const open = page.locator( '#ex-live-open' );
-	await open.waitFor( { state: 'visible' } );
-	if ( await open.isDisabled() ) throw new Error( `compiled route did not enable: ${ await open.textContent() }` );
-	await open.click();
-	await page.locator( '#ex-live-dialog[open]' ).waitFor();
-	const liveFrame = page.frameLocator( '#ex-live-frame' );
-	await page.waitForFunction( () => document.querySelector( '#ex-live-status' )?.classList.contains( 'is-ready' ), null, { timeout: 30000 } );
-	const runtime = await liveFrame.locator( 'body' ).evaluate( () => ( { ...window.__TSLP_SITE_RESULT__, webgpu: !!navigator.gpu } ) );
-	if ( ! runtime.webgpu ) throw new Error( 'navigator.gpu is unavailable in the compiled route' );
-	if ( runtime.runtimeMode !== 'pure-slim' || runtime.compilerFree !== true ) throw new Error( `unexpected runtime mode: ${ JSON.stringify( runtime ) }` );
-	if ( ! runtime.ready || runtime.canvasCount < 1 || runtime.errors.length > 0 ) throw new Error( `compiled route did not become healthy: ${ JSON.stringify( runtime ) }` );
+	const verified = liveManifest.examples.filter( entry => entry.runtimeMode === 'pure-slim' && entry.buildVerified === true );
+	if ( verified.length !== liveManifest.examples.length ) throw new Error( 'live manifest contains an unverified route' );
 
-	const canvas = liveFrame.locator( 'canvas' ).first();
-	await canvas.waitFor( { state: 'visible' } );
-	const firstPng = await canvas.screenshot();
-	await page.waitForTimeout( 800 );
-	const secondPng = await canvas.screenshot();
-	const first = await sharp( firstPng ).ensureAlpha().raw().toBuffer( { resolveWithObject: true } );
-	const second = await sharp( secondPng ).ensureAlpha().raw().toBuffer( { resolveWithObject: true } );
-	const stats = await sharp( secondPng ).stats();
-	const maxRgbDeviation = Math.max( ...stats.channels.slice( 0, 3 ).map( channel => channel.stdev ) );
-	if ( maxRgbDeviation < 2 ) throw new Error( `compiled canvas is blank or uniform (RGB deviation ${ maxRgbDeviation })` );
-	if ( first.info.width !== second.info.width || first.info.height !== second.info.height ) throw new Error( 'compiled canvas changed dimensions during the motion probe' );
-	const motion = pixelDifference( first.data, second.data );
-	if ( motion.changedFraction < 0.001 ) throw new Error( `compiled canvas did not animate: ${ JSON.stringify( motion ) }` );
-	if ( captureRequests.length > 0 ) throw new Error( `production route attempted capture/network mutation: ${ captureRequests.join( ', ' ) }` );
-	if ( errors.length > 0 ) throw new Error( errors.join( '\n' ) );
+	async function openRecord( entry ) {
 
-	await page.locator( '.ex-live-close' ).click();
-	await page.waitForFunction( () => document.querySelector( '#ex-live-frame' )?.getAttribute( 'src' ) === 'about:blank' );
-	console.log( `[site-live-test] pure-slim route ready; RGB deviation ${ maxRgbDeviation.toFixed( 2 ) }; ${( motion.changedFraction * 100 ).toFixed( 2 )}% pixels moved` );
+		errors = [];
+		captureRequests = [];
+		if ( entry.role === 'canary' ) {
+
+			const open = page.locator( '#ex-live-open' );
+			await open.waitFor( { state: 'visible' } );
+			if ( await open.isDisabled() ) throw new Error( `compiled canary did not enable: ${ await open.textContent() }` );
+			await open.click();
+
+		} else {
+
+			await page.evaluate( catalogueId => {
+
+				window.location.hash = encodeURIComponent( catalogueId );
+
+			}, entry.catalogueId );
+			const open = page.locator( '#ex-stage-live' );
+			await open.waitFor( { state: 'visible' } );
+			if ( await open.isDisabled() ) throw new Error( `${ entry.id }: gallery live button is disabled` );
+			await open.click();
+
+		}
+
+		await page.locator( '#ex-live-dialog[open]' ).waitFor();
+		const liveFrame = page.frameLocator( '#ex-live-frame' );
+		try {
+
+			await page.waitForFunction( () => document.querySelector( '#ex-live-status' )?.classList.contains( 'is-ready' ), null, { timeout: 30000 } );
+
+		} catch ( error ) {
+
+			const statusText = await page.locator( '#ex-live-status' ).textContent();
+			const runtime = await liveFrame.locator( 'body' ).evaluate( () => window.__TSLP_SITE_RESULT__ || null ).catch( () => null );
+			throw new Error( `${ entry.id }: timed out waiting for ready status (${ statusText }): ${ JSON.stringify( runtime ) }`, { cause: error } );
+
+		}
+		const runtime = await liveFrame.locator( 'body' ).evaluate( () => ( { ...window.__TSLP_SITE_RESULT__, webgpu: !!navigator.gpu } ) );
+		if ( ! runtime.webgpu ) throw new Error( `${ entry.id }: navigator.gpu is unavailable` );
+		if ( runtime.runtimeMode !== 'pure-slim' || runtime.compilerFree !== true ) throw new Error( `${ entry.id }: unexpected runtime mode ${ JSON.stringify( runtime ) }` );
+		if ( ! runtime.ready || runtime.canvasCount < 1 || runtime.errors.length > 0 ) throw new Error( `${ entry.id }: route did not become healthy ${ JSON.stringify( runtime ) }` );
+
+		const canvas = liveFrame.locator( 'canvas' ).first();
+		await canvas.waitFor( { state: 'visible' } );
+		const firstPng = await canvas.screenshot();
+		await page.waitForTimeout( 400 );
+		const secondPng = await canvas.screenshot();
+		const first = await sharp( firstPng ).ensureAlpha().raw().toBuffer( { resolveWithObject: true } );
+		const second = await sharp( secondPng ).ensureAlpha().raw().toBuffer( { resolveWithObject: true } );
+		const stats = await sharp( secondPng ).stats();
+		const maxRgbDeviation = Math.max( ...stats.channels.slice( 0, 3 ).map( channel => channel.stdev ) );
+		if ( maxRgbDeviation < 2 ) throw new Error( `${ entry.id }: canvas is blank or uniform (RGB deviation ${ maxRgbDeviation })` );
+		if ( first.info.width !== second.info.width || first.info.height !== second.info.height ) throw new Error( `${ entry.id }: canvas changed dimensions during the motion probe` );
+		const motion = pixelDifference( first.data, second.data );
+		if ( entry.role === 'canary' && motion.changedFraction < 0.001 ) throw new Error( `${ entry.id }: canvas did not animate ${ JSON.stringify( motion ) }` );
+		if ( captureRequests.length > 0 ) throw new Error( `${ entry.id }: production route attempted capture/network mutation: ${ captureRequests.join( ', ' ) }` );
+		if ( errors.length > 0 ) throw new Error( `${ entry.id }:\n${ errors.join( '\n' ) }` );
+
+		await page.locator( '.ex-live-close' ).click();
+		await page.waitForFunction( () => document.querySelector( '#ex-live-frame' )?.getAttribute( 'src' ) === 'about:blank' );
+		console.log( `[site-live-test] ${ entry.id } ready; RGB deviation ${ maxRgbDeviation.toFixed( 2 ) }; ${( motion.changedFraction * 100 ).toFixed( 2 )}% pixels moved` );
+
+	}
+
+	for ( const entry of verified ) await openRecord( entry );
+	console.log( `[site-live-test] ${ verified.length } pure-slim route(s) passed` );
 
 } finally {
 

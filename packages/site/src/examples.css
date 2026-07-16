@@ -783,6 +783,11 @@
 	font-size: 0.88rem;
 }
 .ex-stage-cta:hover { color: var(--bg); transform: translateY(-1px); }
+.ex-stage-live {
+	border: 0;
+	font: inherit;
+	cursor: pointer;
+}
 .ex-stage-share {
 	background: var(--surface-2);
 	color: var(--text-dim);

@@ -16,8 +16,6 @@ import {
 	VSMShadowMap,
 } from 'three';
 import { WebGPURenderer, Mesh, MeshStandardNodeMaterial } from 'three/webgpu';
-import { installPrecompileMarker, precompileAuxiliary, setDevRenderer } from '@tsl-precompile/runtime';
-import * as THREE from 'three';
 
 const SHADOW_TYPES = {
 	basic: { label: 'Basic', value: BasicShadowMap },
@@ -76,7 +74,37 @@ function attachPrecompileSource( material, object, scene ) {
 	material.__tslpPrecompileScene = scene;
 }
 
-function addDebugGeometry( scene ) {
+function precompileShadowMaterial( material, object, scene, lightKind, role ) {
+
+	attachPrecompileSource( material, object, scene );
+
+	// Point-light shadow shaders have a different topology even when Three's
+	// private material cache key collides with directional/spot captures. Keep
+	// each light family under an explicit, build-time name so signed artifacts
+	// never need to merge divergent payloads behind that private key.
+	if ( role === 'floor' ) {
+
+		if ( lightKind === 'point' ) material.precompile( 'shadow-debug-point-floor' );
+		else if ( lightKind === 'spot' ) material.precompile( 'shadow-debug-spot-floor' );
+		else material.precompile( 'shadow-debug-directional-floor' );
+
+	} else if ( role === 'cube' ) {
+
+		if ( lightKind === 'point' ) material.precompile( 'shadow-debug-point-cube' );
+		else if ( lightKind === 'spot' ) material.precompile( 'shadow-debug-spot-cube' );
+		else material.precompile( 'shadow-debug-directional-cube' );
+
+	} else {
+
+		if ( lightKind === 'point' ) material.precompile( 'shadow-debug-point-sphere' );
+		else if ( lightKind === 'spot' ) material.precompile( 'shadow-debug-spot-sphere' );
+		else material.precompile( 'shadow-debug-directional-sphere' );
+
+	}
+
+}
+
+function addDebugGeometry( scene, lightKind ) {
 	const group = new Group();
 	group.name = 'shadow-casters';
 
@@ -90,8 +118,7 @@ function addDebugGeometry( scene ) {
 	floor.receiveShadow = true;
 	scene.add( floor );
 	if ( ! IS_E2E_REPLAY ) {
-		attachPrecompileSource( floorMaterial, floor, scene );
-		floorMaterial.precompile( 'shadow-debug-floor' );
+		precompileShadowMaterial( floorMaterial, floor, scene, lightKind, 'floor' );
 	}
 
 	const cubeMaterial = makeMaterial( 0xd77f47, 0.45 );
@@ -105,8 +132,7 @@ function addDebugGeometry( scene ) {
 	cube.receiveShadow = true;
 	group.add( cube );
 	if ( ! IS_E2E_REPLAY ) {
-		attachPrecompileSource( cubeMaterial, cube, scene );
-		cubeMaterial.precompile( 'shadow-debug-cube' );
+		precompileShadowMaterial( cubeMaterial, cube, scene, lightKind, 'cube' );
 	}
 
 	const sphereMaterial = makeMaterial( 0x72a7d8, 0.35 );
@@ -120,8 +146,7 @@ function addDebugGeometry( scene ) {
 	sphere.receiveShadow = true;
 	group.add( sphere );
 	if ( ! IS_E2E_REPLAY ) {
-		attachPrecompileSource( sphereMaterial, sphere, scene );
-		sphereMaterial.precompile( 'shadow-debug-sphere' );
+		precompileShadowMaterial( sphereMaterial, sphere, scene, lightKind, 'sphere' );
 	}
 
 	scene.add( group );
@@ -200,8 +225,21 @@ export async function runShadowDebugExample( {
 
 	await renderer.init();
 
-	installPrecompileMarker( THREE, { devEndpoint: CAPTURE_ENDPOINT } );
-	setDevRenderer( renderer );
+	// Capture-only helpers must not make the production renderer retain the
+	// broad Three namespace. Vite folds this branch away in a slim source build;
+	// the raw batch harness has no import.meta.env and still exercises capture.
+	let captureRuntime = null;
+	let captureThree = null;
+	if ( import.meta.env?.PROD !== true ) {
+
+		[ captureRuntime, captureThree ] = await Promise.all( [
+			import( '@tsl-precompile/runtime' ),
+			import( 'three' ),
+		] );
+		captureRuntime.installPrecompileMarker( captureThree, { devEndpoint: CAPTURE_ENDPOINT } );
+		captureRuntime.setDevRenderer( renderer );
+
+	}
 
 	const scene = new Scene();
 
@@ -210,17 +248,17 @@ export async function runShadowDebugExample( {
 	camera.lookAt( 0, 0.5, 0 );
 
 	scene.add( new AmbientLight( 0xffffff, 0.08 ) );
-	const casters = addDebugGeometry( scene );
+	const casters = addDebugGeometry( scene, lightKind );
 	makeLight( lightKind, scene );
 
-	const auxResults = await precompileAuxiliary( renderer, scene, camera, {
+	const auxResults = captureRuntime ? await captureRuntime.precompileAuxiliary( renderer, scene, camera, {
 		devEndpoint: CAPTURE_ENDPOINT,
-		three: THREE,
-		threeVersion: globalThis.__TSLP_THREE_PACKAGE_VERSION__ || String( THREE.REVISION ).match( /^\d+/ )[ 0 ],
+		three: captureThree,
+		threeVersion: globalThis.__TSLP_THREE_PACKAGE_VERSION__ || String( captureThree.REVISION ).match( /^\d+/ )[ 0 ],
 	} ).catch( ( err ) => {
 		console.warn( '[shadow-debug] auxiliary capture failed:', err );
 		return [ { shape: 'aux', ok: false, error: err && err.message || String( err ) } ];
-	} );
+	} ) : [];
 
 	const auxSummary = auxResults.map( ( r ) => `${ r.shape }:${ r.ok ? 'ok' : 'err' }` ).join( ', ' ) || 'no aux';
 	setHud( title, shadowKind, IS_E2E ? 'rendering' : `rendering - ${ auxSummary }` );
