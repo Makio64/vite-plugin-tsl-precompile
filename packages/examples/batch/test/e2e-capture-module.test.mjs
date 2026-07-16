@@ -220,6 +220,19 @@ test( 'hybrid material compute delegates through scene support before first hydr
 
 } );
 
+test( 'material compute nodes never enter the frame-effect setup plane', () => {
+
+	const start = source.indexOf( 'function __isFrameEffectNode( node ) {' );
+	const end = source.indexOf( 'function __collectFrameEffectNodesInGraph(', start );
+	assert.ok( start >= 0 && end > start, 'expected the frame-effect classifier' );
+	const classifier = source.slice( start, end );
+	const computeGuard = classifier.indexOf( 'if ( node.isComputeNode === true ) return false;' );
+	const setupCapability = classifier.indexOf( "typeof node.setup !== 'function'" );
+	assert.ok( computeGuard >= 0, 'compute nodes need an explicit execution-plane guard' );
+	assert.ok( computeGuard < setupCapability, 'compute ownership must win over generic setup/updateBefore capability' );
+
+} );
+
 test( 'replay retains graph-discovered storage buffers for hidden sibling consumers', () => {
 
 	const start = source.indexOf( 'function __wireComputeAttrsToArtifact(' );

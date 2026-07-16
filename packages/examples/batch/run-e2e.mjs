@@ -12870,6 +12870,11 @@ function __nodeOwnsRenderTarget( node ) {
 
 function __isFrameEffectNode( node ) {
 	if ( ! node || typeof node.updateBefore !== 'function' ) return false;
+	// Compute nodes can be reachable from material roots (for example through a
+	// geometryNode's deferred material-compute sidecar), but their updateBefore
+	// hook belongs to the compute dispatch plane. They are never postprocess
+	// effects and setup() requires a real NodeBuilder owned by that dispatcher.
+	if ( node.isComputeNode === true ) return false;
 	if ( node.isPassNode === true || node.isRTTNode === true || __isBloomEffectNode( node ) || __isOutlineEffectNode( node ) ) return false;
 	if ( __isSSREffectNode( node ) || __isDOFEffectNode( node ) || __isTRAAEffectNode( node ) ) return false;
 	const proto = Object.getPrototypeOf( node );
