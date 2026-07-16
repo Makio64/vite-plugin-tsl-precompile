@@ -4,8 +4,9 @@
 //   pnpm --filter @tsl-precompile/site data
 // CI does not run this — outputs are committed.
 
-import { readdir, readFile, stat, mkdir, writeFile, rename } from 'node:fs/promises';
+import { readFile, stat, mkdir, writeFile, rename } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
@@ -18,16 +19,22 @@ const SHOTS = resolve( RESULTS, 'shots' );
 const ARTIFACTS = resolve( RESULTS, 'artifacts' );
 const COVERAGE_MD = resolve( RESULTS, 'coverage-summary.md' );
 const REPORT_JSON = resolve( RESULTS, 'report.json' );
+const CATALOGUE_JSON = resolve( REPO_ROOT, 'packages/examples/batch/example-catalogue.json' );
 
 const PUBLIC = resolve( SITE_ROOT, 'public' );
 const THUMBS = resolve( PUBLIC, 'examples/thumbs' );
 const OUT_JSON = resolve( PUBLIC, 'examples.json' );
+const GENERATOR_SOURCE = fileURLToPath( import.meta.url );
 
 const THUMB_W = 320;
 const THUMB_H = 240;
 const MODAL_W = 640;
 const MODAL_H = 480;
 const WEBP_Q = 78;
+
+function sha256( value ) {
+	return createHash( 'sha256' ).update( value ).digest( 'hex' );
+}
 
 // ---------- coverage-summary.md parser ----------
 
@@ -167,10 +174,6 @@ function displayName( basename ) {
 	return parts[ 0 ] + ' · ' + parts.slice( 1 ).join( ' ' );
 }
 
-function threejsUrlFor( basename ) {
-	return `https://threejs.org/examples/?q=tsl#${basename}`;
-}
-
 // "most-impressive first" sort — see plan.
 function sortKey( record ) {
 	const tier = { 'pixel-match': 0, 'visual-match': 1, 'renders': 2, 'capture-only': 3 }[ record.badge ] ?? 4;
@@ -213,32 +216,25 @@ function reorderForBreadth( records ) {
 async function main() {
 	console.log( '[examples-data] reading inputs…' );
 
-	const [ md, reportRaw ] = await Promise.all( [
+	const [ md, reportRaw, catalogueRaw, generatorRaw ] = await Promise.all( [
 		readFile( COVERAGE_MD, 'utf8' ),
 		readFile( REPORT_JSON, 'utf8' ),
+		readFile( CATALOGUE_JSON, 'utf8' ),
+		readFile( GENERATOR_SOURCE, 'utf8' ),
 	] );
 	const sections = parseCoverage( md );
 	const report = JSON.parse( reportRaw );
+	const catalogue = JSON.parse( catalogueRaw );
+	const catalogueById = new Map( ( catalogue.cases || [] ).map( ( entry ) => [ entry.id, entry ] ) );
 
-	// Universe is replay PNGs on disk.
-	const shotFiles = await readdir( SHOTS );
-	const replayBasenames = shotFiles
-		.filter( f => f.endsWith( '.replay.png' ) )
-		.map( f => f.replace( /\.html\.replay\.png$/, '' ) );
-	const replaySet = new Set( replayBasenames );
-
-	// Coverage rows include some examples without a replay (no-replay note).
-	// Universe is union of (any row in coverage) ∪ (any replay PNG) — captureBasenames may also exist.
-	const captureSet = new Set(
-		shotFiles
-			.filter( f => f.endsWith( '.capture.png' ) )
-			.map( f => f.replace( /\.html\.capture\.png$/, '' ) )
-	);
-
-	const universe = new Set();
-	for ( const sec of sections ) for ( const row of sec.rows ) universe.add( row.basename );
-	for ( const b of replaySet ) universe.add( b );
-	for ( const b of captureSet ) universe.add( b );
+	const universe = new Set( catalogueById.keys() );
+	const evidenceNames = new Set();
+	for ( const sec of sections ) for ( const row of sec.rows ) evidenceNames.add( row.basename );
+	const missingSources = [ ...evidenceNames ].filter( ( name ) => ! universe.has( name ) );
+	const missingEvidence = [ ...universe ].filter( ( name ) => ! evidenceNames.has( name ) );
+	if ( missingSources.length || missingEvidence.length ) {
+		throw new Error( `source/evidence catalogue drift (missing sources: ${ missingSources.join( ', ' ) || 'none' }; missing evidence: ${ missingEvidence.join( ', ' ) || 'none' })` );
+	}
 
 	console.log( `[examples-data] universe: ${universe.size} examples` );
 
@@ -266,6 +262,7 @@ async function main() {
 		const cat = categoryByBasename.get( basename ) ?? { id: 'misc', label: 'Misc' };
 		const rep = reportByName.get( basename );
 		const aux = await readAux( basename );
+		const catalogueEntry = catalogueById.get( basename );
 
 		const replaySrc = join( SHOTS, `${basename}.html.replay.png` );
 		const captureSrc = join( SHOTS, `${basename}.html.capture.png` );
@@ -293,7 +290,8 @@ async function main() {
 			displayName: displayName( basename ),
 			category: cat.id,
 			categoryLabel: cat.label,
-			threejsUrl: threejsUrlFor( basename ),
+			threejsUrl: catalogueEntry.source.originalUrl ?? null,
+			source: catalogueEntry.source,
 			thumbReplay: hasReplay ? `examples/thumbs/${basename}.webp` : null,
 			thumbCapture: hasCapture ? `examples/thumbs/${basename}.capture.webp` : null,
 			thumbReplayModal: hasReplay ? `examples/thumbs/${basename}.modal.webp` : null,
@@ -357,6 +355,12 @@ async function main() {
 
 	const out = {
 		generatedAt: new Date().toISOString(),
+		provenance: {
+			coverageSha256: sha256( md ),
+			reportSha256: sha256( reportRaw ),
+			catalogueSha256: sha256( catalogueRaw ),
+			generatorSha256: sha256( generatorRaw ),
+		},
 		totals: {
 			examplesProcessed: ordered.length,
 			examplesVisible: visible.length,

@@ -1,0 +1,2067 @@
+{
+	"schemaVersion": 1,
+	"threeVersion": "0.184.0",
+	"cases": [
+		{
+			"id": "bloom",
+			"source": {
+				"kind": "local",
+				"project": "postprocessing-debug",
+				"path": "packages/examples/postprocessing-debug/bloom.html",
+				"route": "bloom.html"
+			}
+		},
+		{
+			"id": "directional",
+			"source": {
+				"kind": "local",
+				"project": "shadow-debug",
+				"path": "packages/examples/shadow-debug/directional.html",
+				"route": "directional.html"
+			}
+		},
+		{
+			"id": "directional-basic",
+			"source": {
+				"kind": "local",
+				"project": "shadow-debug",
+				"path": "packages/examples/shadow-debug/directional.html",
+				"route": "directional.html?shadow=basic"
+			}
+		},
+		{
+			"id": "directional-pcf",
+			"source": {
+				"kind": "local",
+				"project": "shadow-debug",
+				"path": "packages/examples/shadow-debug/directional.html",
+				"route": "directional.html?shadow=pcf"
+			}
+		},
+		{
+			"id": "directional-pcf-soft",
+			"source": {
+				"kind": "local",
+				"project": "shadow-debug",
+				"path": "packages/examples/shadow-debug/directional.html",
+				"route": "directional.html?shadow=pcf-soft"
+			}
+		},
+		{
+			"id": "directional-vsm",
+			"source": {
+				"kind": "local",
+				"project": "shadow-debug",
+				"path": "packages/examples/shadow-debug/directional.html",
+				"route": "directional.html?shadow=vsm"
+			}
+		},
+		{
+			"id": "dispatch2d",
+			"source": {
+				"kind": "local",
+				"project": "compute-debug",
+				"path": "packages/examples/compute-debug/dispatch2d.html",
+				"route": "dispatch2d.html"
+			}
+		},
+		{
+			"id": "fxaa",
+			"source": {
+				"kind": "local",
+				"project": "postprocessing-debug",
+				"path": "packages/examples/postprocessing-debug/fxaa.html",
+				"route": "fxaa.html"
+			}
+		},
+		{
+			"id": "gtao",
+			"source": {
+				"kind": "local",
+				"project": "postprocessing-debug",
+				"path": "packages/examples/postprocessing-debug/gtao.html",
+				"route": "gtao.html"
+			}
+		},
+		{
+			"id": "instanced",
+			"source": {
+				"kind": "local",
+				"project": "compute-debug",
+				"path": "packages/examples/compute-debug/instanced.html",
+				"route": "instanced.html"
+			}
+		},
+		{
+			"id": "manual",
+			"source": {
+				"kind": "local",
+				"project": "mrt-debug",
+				"path": "packages/examples/mrt-debug/manual.html",
+				"route": "manual.html"
+			}
+		},
+		{
+			"id": "mask",
+			"source": {
+				"kind": "local",
+				"project": "mrt-debug",
+				"path": "packages/examples/mrt-debug/mask.html",
+				"route": "mask.html"
+			}
+		},
+		{
+			"id": "particles",
+			"source": {
+				"kind": "local",
+				"project": "compute-debug",
+				"path": "packages/examples/compute-debug/particles.html",
+				"route": "particles.html"
+			}
+		},
+		{
+			"id": "pass",
+			"source": {
+				"kind": "local",
+				"project": "mrt-debug",
+				"path": "packages/examples/mrt-debug/pass.html",
+				"route": "pass.html"
+			}
+		},
+		{
+			"id": "passthrough",
+			"source": {
+				"kind": "local",
+				"project": "postprocessing-debug",
+				"path": "packages/examples/postprocessing-debug/passthrough.html",
+				"route": "passthrough.html"
+			}
+		},
+		{
+			"id": "pipeline",
+			"source": {
+				"kind": "local",
+				"project": "compute-debug",
+				"path": "packages/examples/compute-debug/pipeline.html",
+				"route": "pipeline.html"
+			}
+		},
+		{
+			"id": "point",
+			"source": {
+				"kind": "local",
+				"project": "shadow-debug",
+				"path": "packages/examples/shadow-debug/point.html",
+				"route": "point.html"
+			}
+		},
+		{
+			"id": "point-basic",
+			"source": {
+				"kind": "local",
+				"project": "shadow-debug",
+				"path": "packages/examples/shadow-debug/point.html",
+				"route": "point.html?shadow=basic"
+			}
+		},
+		{
+			"id": "point-pcf",
+			"source": {
+				"kind": "local",
+				"project": "shadow-debug",
+				"path": "packages/examples/shadow-debug/point.html",
+				"route": "point.html?shadow=pcf"
+			}
+		},
+		{
+			"id": "point-pcf-soft",
+			"source": {
+				"kind": "local",
+				"project": "shadow-debug",
+				"path": "packages/examples/shadow-debug/point.html",
+				"route": "point.html?shadow=pcf-soft"
+			}
+		},
+		{
+			"id": "point-vsm",
+			"source": {
+				"kind": "local",
+				"project": "shadow-debug",
+				"path": "packages/examples/shadow-debug/point.html",
+				"route": "point.html?shadow=vsm"
+			}
+		},
+		{
+			"id": "reduce",
+			"source": {
+				"kind": "local",
+				"project": "compute-debug",
+				"path": "packages/examples/compute-debug/reduce.html",
+				"route": "reduce.html"
+			}
+		},
+		{
+			"id": "spot",
+			"source": {
+				"kind": "local",
+				"project": "shadow-debug",
+				"path": "packages/examples/shadow-debug/spot.html",
+				"route": "spot.html"
+			}
+		},
+		{
+			"id": "spot-basic",
+			"source": {
+				"kind": "local",
+				"project": "shadow-debug",
+				"path": "packages/examples/shadow-debug/spot.html",
+				"route": "spot.html?shadow=basic"
+			}
+		},
+		{
+			"id": "spot-pcf",
+			"source": {
+				"kind": "local",
+				"project": "shadow-debug",
+				"path": "packages/examples/shadow-debug/spot.html",
+				"route": "spot.html?shadow=pcf"
+			}
+		},
+		{
+			"id": "spot-pcf-soft",
+			"source": {
+				"kind": "local",
+				"project": "shadow-debug",
+				"path": "packages/examples/shadow-debug/spot.html",
+				"route": "spot.html?shadow=pcf-soft"
+			}
+		},
+		{
+			"id": "spot-vsm",
+			"source": {
+				"kind": "local",
+				"project": "shadow-debug",
+				"path": "packages/examples/shadow-debug/spot.html",
+				"route": "spot.html?shadow=vsm"
+			}
+		},
+		{
+			"id": "texture",
+			"source": {
+				"kind": "local",
+				"project": "compute-debug",
+				"path": "packages/examples/compute-debug/texture.html",
+				"route": "texture.html"
+			}
+		},
+		{
+			"id": "uniform",
+			"source": {
+				"kind": "local",
+				"project": "compute-debug",
+				"path": "packages/examples/compute-debug/uniform.html",
+				"route": "uniform.html"
+			}
+		},
+		{
+			"id": "variants",
+			"source": {
+				"kind": "local",
+				"project": "postprocessing-debug",
+				"path": "packages/examples/postprocessing-debug/variants.html",
+				"route": "variants.html"
+			}
+		},
+		{
+			"id": "vsm",
+			"source": {
+				"kind": "local",
+				"project": "shadow-debug",
+				"path": "packages/examples/shadow-debug/vsm.html",
+				"route": "vsm.html"
+			}
+		},
+		{
+			"id": "webgpu_animation_retargeting",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_animation_retargeting.html",
+				"route": "webgpu_animation_retargeting.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_animation_retargeting"
+			}
+		},
+		{
+			"id": "webgpu_animation_retargeting_readyplayer",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_animation_retargeting_readyplayer.html",
+				"route": "webgpu_animation_retargeting_readyplayer.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_animation_retargeting_readyplayer"
+			}
+		},
+		{
+			"id": "webgpu_backdrop",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_backdrop.html",
+				"route": "webgpu_backdrop.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_backdrop"
+			}
+		},
+		{
+			"id": "webgpu_backdrop_area",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_backdrop_area.html",
+				"route": "webgpu_backdrop_area.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_backdrop_area"
+			}
+		},
+		{
+			"id": "webgpu_backdrop_water",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_backdrop_water.html",
+				"route": "webgpu_backdrop_water.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_backdrop_water"
+			}
+		},
+		{
+			"id": "webgpu_camera",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_camera.html",
+				"route": "webgpu_camera.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_camera"
+			}
+		},
+		{
+			"id": "webgpu_camera_array",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_camera_array.html",
+				"route": "webgpu_camera_array.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_camera_array"
+			}
+		},
+		{
+			"id": "webgpu_camera_logarithmicdepthbuffer",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_camera_logarithmicdepthbuffer.html",
+				"route": "webgpu_camera_logarithmicdepthbuffer.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_camera_logarithmicdepthbuffer"
+			}
+		},
+		{
+			"id": "webgpu_caustics",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_caustics.html",
+				"route": "webgpu_caustics.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_caustics"
+			}
+		},
+		{
+			"id": "webgpu_centroid_sampling",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_centroid_sampling.html",
+				"route": "webgpu_centroid_sampling.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_centroid_sampling"
+			}
+		},
+		{
+			"id": "webgpu_clearcoat",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_clearcoat.html",
+				"route": "webgpu_clearcoat.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_clearcoat"
+			}
+		},
+		{
+			"id": "webgpu_clipping",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_clipping.html",
+				"route": "webgpu_clipping.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_clipping"
+			}
+		},
+		{
+			"id": "webgpu_compute_audio",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_compute_audio.html",
+				"route": "webgpu_compute_audio.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_audio"
+			}
+		},
+		{
+			"id": "webgpu_compute_birds",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_compute_birds.html",
+				"route": "webgpu_compute_birds.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_birds"
+			}
+		},
+		{
+			"id": "webgpu_compute_cloth",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_compute_cloth.html",
+				"route": "webgpu_compute_cloth.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_cloth"
+			}
+		},
+		{
+			"id": "webgpu_compute_geometry",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_compute_geometry.html",
+				"route": "webgpu_compute_geometry.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_geometry"
+			}
+		},
+		{
+			"id": "webgpu_compute_particles",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_compute_particles.html",
+				"route": "webgpu_compute_particles.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_particles"
+			}
+		},
+		{
+			"id": "webgpu_compute_particles_fluid",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_compute_particles_fluid.html",
+				"route": "webgpu_compute_particles_fluid.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_particles_fluid"
+			}
+		},
+		{
+			"id": "webgpu_compute_particles_rain",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_compute_particles_rain.html",
+				"route": "webgpu_compute_particles_rain.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_particles_rain"
+			}
+		},
+		{
+			"id": "webgpu_compute_particles_snow",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_compute_particles_snow.html",
+				"route": "webgpu_compute_particles_snow.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_particles_snow"
+			}
+		},
+		{
+			"id": "webgpu_compute_points",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_compute_points.html",
+				"route": "webgpu_compute_points.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_points"
+			}
+		},
+		{
+			"id": "webgpu_compute_reduce",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_compute_reduce.html",
+				"route": "webgpu_compute_reduce.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_reduce"
+			}
+		},
+		{
+			"id": "webgpu_compute_sort_bitonic",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_compute_sort_bitonic.html",
+				"route": "webgpu_compute_sort_bitonic.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_sort_bitonic"
+			}
+		},
+		{
+			"id": "webgpu_compute_texture",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_compute_texture.html",
+				"route": "webgpu_compute_texture.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_texture"
+			}
+		},
+		{
+			"id": "webgpu_compute_texture_3d",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_compute_texture_3d.html",
+				"route": "webgpu_compute_texture_3d.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_texture_3d"
+			}
+		},
+		{
+			"id": "webgpu_compute_texture_pingpong",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_compute_texture_pingpong.html",
+				"route": "webgpu_compute_texture_pingpong.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_texture_pingpong"
+			}
+		},
+		{
+			"id": "webgpu_compute_water",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_compute_water.html",
+				"route": "webgpu_compute_water.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_water"
+			}
+		},
+		{
+			"id": "webgpu_cubemap_adjustments",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_cubemap_adjustments.html",
+				"route": "webgpu_cubemap_adjustments.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_cubemap_adjustments"
+			}
+		},
+		{
+			"id": "webgpu_cubemap_dynamic",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_cubemap_dynamic.html",
+				"route": "webgpu_cubemap_dynamic.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_cubemap_dynamic"
+			}
+		},
+		{
+			"id": "webgpu_cubemap_mix",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_cubemap_mix.html",
+				"route": "webgpu_cubemap_mix.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_cubemap_mix"
+			}
+		},
+		{
+			"id": "webgpu_custom_fog",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_custom_fog.html",
+				"route": "webgpu_custom_fog.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_custom_fog"
+			}
+		},
+		{
+			"id": "webgpu_custom_fog_background",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_custom_fog_background.html",
+				"route": "webgpu_custom_fog_background.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_custom_fog_background"
+			}
+		},
+		{
+			"id": "webgpu_custom_fog_scattering",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_custom_fog_scattering.html",
+				"route": "webgpu_custom_fog_scattering.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_custom_fog_scattering"
+			}
+		},
+		{
+			"id": "webgpu_depth_texture",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_depth_texture.html",
+				"route": "webgpu_depth_texture.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_depth_texture"
+			}
+		},
+		{
+			"id": "webgpu_display_stereo",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_display_stereo.html",
+				"route": "webgpu_display_stereo.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_display_stereo"
+			}
+		},
+		{
+			"id": "webgpu_equirectangular",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_equirectangular.html",
+				"route": "webgpu_equirectangular.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_equirectangular"
+			}
+		},
+		{
+			"id": "webgpu_fog_height",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_fog_height.html",
+				"route": "webgpu_fog_height.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_fog_height"
+			}
+		},
+		{
+			"id": "webgpu_hdr",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_hdr.html",
+				"route": "webgpu_hdr.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_hdr"
+			}
+		},
+		{
+			"id": "webgpu_instance_mesh",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_instance_mesh.html",
+				"route": "webgpu_instance_mesh.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_instance_mesh"
+			}
+		},
+		{
+			"id": "webgpu_instance_path",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_instance_path.html",
+				"route": "webgpu_instance_path.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_instance_path"
+			}
+		},
+		{
+			"id": "webgpu_instance_points",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_instance_points.html",
+				"route": "webgpu_instance_points.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_instance_points"
+			}
+		},
+		{
+			"id": "webgpu_instance_sprites",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_instance_sprites.html",
+				"route": "webgpu_instance_sprites.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_instance_sprites"
+			}
+		},
+		{
+			"id": "webgpu_instance_uniform",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_instance_uniform.html",
+				"route": "webgpu_instance_uniform.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_instance_uniform"
+			}
+		},
+		{
+			"id": "webgpu_instancing_morph",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_instancing_morph.html",
+				"route": "webgpu_instancing_morph.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_instancing_morph"
+			}
+		},
+		{
+			"id": "webgpu_layers",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_layers.html",
+				"route": "webgpu_layers.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_layers"
+			}
+		},
+		{
+			"id": "webgpu_lensflares",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_lensflares.html",
+				"route": "webgpu_lensflares.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_lensflares"
+			}
+		},
+		{
+			"id": "webgpu_lightprobe",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_lightprobe.html",
+				"route": "webgpu_lightprobe.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_lightprobe"
+			}
+		},
+		{
+			"id": "webgpu_lightprobe_cubecamera",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_lightprobe_cubecamera.html",
+				"route": "webgpu_lightprobe_cubecamera.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_lightprobe_cubecamera"
+			}
+		},
+		{
+			"id": "webgpu_lights_custom",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_lights_custom.html",
+				"route": "webgpu_lights_custom.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_lights_custom"
+			}
+		},
+		{
+			"id": "webgpu_lights_dynamic",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_lights_dynamic.html",
+				"route": "webgpu_lights_dynamic.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_lights_dynamic"
+			}
+		},
+		{
+			"id": "webgpu_lights_ies_spotlight",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_lights_ies_spotlight.html",
+				"route": "webgpu_lights_ies_spotlight.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_lights_ies_spotlight"
+			}
+		},
+		{
+			"id": "webgpu_lights_phong",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_lights_phong.html",
+				"route": "webgpu_lights_phong.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_lights_phong"
+			}
+		},
+		{
+			"id": "webgpu_lights_physical",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_lights_physical.html",
+				"route": "webgpu_lights_physical.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_lights_physical"
+			}
+		},
+		{
+			"id": "webgpu_lights_pointlights",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_lights_pointlights.html",
+				"route": "webgpu_lights_pointlights.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_lights_pointlights"
+			}
+		},
+		{
+			"id": "webgpu_lights_projector",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_lights_projector.html",
+				"route": "webgpu_lights_projector.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_lights_projector"
+			}
+		},
+		{
+			"id": "webgpu_lights_rectarealight",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_lights_rectarealight.html",
+				"route": "webgpu_lights_rectarealight.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_lights_rectarealight"
+			}
+		},
+		{
+			"id": "webgpu_lights_selective",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_lights_selective.html",
+				"route": "webgpu_lights_selective.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_lights_selective"
+			}
+		},
+		{
+			"id": "webgpu_lights_spotlight",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_lights_spotlight.html",
+				"route": "webgpu_lights_spotlight.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_lights_spotlight"
+			}
+		},
+		{
+			"id": "webgpu_lights_tiled",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_lights_tiled.html",
+				"route": "webgpu_lights_tiled.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_lights_tiled"
+			}
+		},
+		{
+			"id": "webgpu_lines_fat",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_lines_fat.html",
+				"route": "webgpu_lines_fat.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_lines_fat"
+			}
+		},
+		{
+			"id": "webgpu_lines_fat_raycasting",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_lines_fat_raycasting.html",
+				"route": "webgpu_lines_fat_raycasting.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_lines_fat_raycasting"
+			}
+		},
+		{
+			"id": "webgpu_lines_fat_wireframe",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_lines_fat_wireframe.html",
+				"route": "webgpu_lines_fat_wireframe.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_lines_fat_wireframe"
+			}
+		},
+		{
+			"id": "webgpu_loader_gltf",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_loader_gltf.html",
+				"route": "webgpu_loader_gltf.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_loader_gltf"
+			}
+		},
+		{
+			"id": "webgpu_loader_gltf_anisotropy",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_loader_gltf_anisotropy.html",
+				"route": "webgpu_loader_gltf_anisotropy.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_loader_gltf_anisotropy"
+			}
+		},
+		{
+			"id": "webgpu_loader_gltf_compressed",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_loader_gltf_compressed.html",
+				"route": "webgpu_loader_gltf_compressed.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_loader_gltf_compressed"
+			}
+		},
+		{
+			"id": "webgpu_loader_gltf_dispersion",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_loader_gltf_dispersion.html",
+				"route": "webgpu_loader_gltf_dispersion.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_loader_gltf_dispersion"
+			}
+		},
+		{
+			"id": "webgpu_loader_gltf_iridescence",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_loader_gltf_iridescence.html",
+				"route": "webgpu_loader_gltf_iridescence.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_loader_gltf_iridescence"
+			}
+		},
+		{
+			"id": "webgpu_loader_gltf_sheen",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_loader_gltf_sheen.html",
+				"route": "webgpu_loader_gltf_sheen.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_loader_gltf_sheen"
+			}
+		},
+		{
+			"id": "webgpu_loader_gltf_transmission",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_loader_gltf_transmission.html",
+				"route": "webgpu_loader_gltf_transmission.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_loader_gltf_transmission"
+			}
+		},
+		{
+			"id": "webgpu_loader_materialx",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_loader_materialx.html",
+				"route": "webgpu_loader_materialx.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_loader_materialx"
+			}
+		},
+		{
+			"id": "webgpu_loader_texture_ktx2",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_loader_texture_ktx2.html",
+				"route": "webgpu_loader_texture_ktx2.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_loader_texture_ktx2"
+			}
+		},
+		{
+			"id": "webgpu_materials",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_materials.html",
+				"route": "webgpu_materials.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_materials"
+			}
+		},
+		{
+			"id": "webgpu_materials_alphahash",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_materials_alphahash.html",
+				"route": "webgpu_materials_alphahash.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_materials_alphahash"
+			}
+		},
+		{
+			"id": "webgpu_materials_arrays",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_materials_arrays.html",
+				"route": "webgpu_materials_arrays.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_materials_arrays"
+			}
+		},
+		{
+			"id": "webgpu_materials_basic",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_materials_basic.html",
+				"route": "webgpu_materials_basic.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_materials_basic"
+			}
+		},
+		{
+			"id": "webgpu_materials_cubemap_mipmaps",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_materials_cubemap_mipmaps.html",
+				"route": "webgpu_materials_cubemap_mipmaps.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_materials_cubemap_mipmaps"
+			}
+		},
+		{
+			"id": "webgpu_materials_displacementmap",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_materials_displacementmap.html",
+				"route": "webgpu_materials_displacementmap.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_materials_displacementmap"
+			}
+		},
+		{
+			"id": "webgpu_materials_envmaps",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_materials_envmaps.html",
+				"route": "webgpu_materials_envmaps.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_materials_envmaps"
+			}
+		},
+		{
+			"id": "webgpu_materials_envmaps_bpcem",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_materials_envmaps_bpcem.html",
+				"route": "webgpu_materials_envmaps_bpcem.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_materials_envmaps_bpcem"
+			}
+		},
+		{
+			"id": "webgpu_materials_lightmap",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_materials_lightmap.html",
+				"route": "webgpu_materials_lightmap.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_materials_lightmap"
+			}
+		},
+		{
+			"id": "webgpu_materials_matcap",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_materials_matcap.html",
+				"route": "webgpu_materials_matcap.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_materials_matcap"
+			}
+		},
+		{
+			"id": "webgpu_materials_sss",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_materials_sss.html",
+				"route": "webgpu_materials_sss.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_materials_sss"
+			}
+		},
+		{
+			"id": "webgpu_materials_texture_html",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_materials_texture_html.html",
+				"route": "webgpu_materials_texture_html.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_materials_texture_html"
+			}
+		},
+		{
+			"id": "webgpu_materials_texture_manualmipmap",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_materials_texture_manualmipmap.html",
+				"route": "webgpu_materials_texture_manualmipmap.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_materials_texture_manualmipmap"
+			}
+		},
+		{
+			"id": "webgpu_materials_toon",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_materials_toon.html",
+				"route": "webgpu_materials_toon.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_materials_toon"
+			}
+		},
+		{
+			"id": "webgpu_materials_transmission",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_materials_transmission.html",
+				"route": "webgpu_materials_transmission.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_materials_transmission"
+			}
+		},
+		{
+			"id": "webgpu_materials_video",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_materials_video.html",
+				"route": "webgpu_materials_video.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_materials_video"
+			}
+		},
+		{
+			"id": "webgpu_materialx_noise",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_materialx_noise.html",
+				"route": "webgpu_materialx_noise.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_materialx_noise"
+			}
+		},
+		{
+			"id": "webgpu_mesh_batch",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_mesh_batch.html",
+				"route": "webgpu_mesh_batch.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_mesh_batch"
+			}
+		},
+		{
+			"id": "webgpu_mirror",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_mirror.html",
+				"route": "webgpu_mirror.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_mirror"
+			}
+		},
+		{
+			"id": "webgpu_modifier_curve",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_modifier_curve.html",
+				"route": "webgpu_modifier_curve.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_modifier_curve"
+			}
+		},
+		{
+			"id": "webgpu_morphtargets",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_morphtargets.html",
+				"route": "webgpu_morphtargets.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_morphtargets"
+			}
+		},
+		{
+			"id": "webgpu_morphtargets_face",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_morphtargets_face.html",
+				"route": "webgpu_morphtargets_face.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_morphtargets_face"
+			}
+		},
+		{
+			"id": "webgpu_mrt",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_mrt.html",
+				"route": "webgpu_mrt.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_mrt"
+			}
+		},
+		{
+			"id": "webgpu_mrt_mask",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_mrt_mask.html",
+				"route": "webgpu_mrt_mask.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_mrt_mask"
+			}
+		},
+		{
+			"id": "webgpu_multiple_canvas",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_multiple_canvas.html",
+				"route": "webgpu_multiple_canvas.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_multiple_canvas"
+			}
+		},
+		{
+			"id": "webgpu_multiple_elements",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_multiple_elements.html",
+				"route": "webgpu_multiple_elements.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_multiple_elements"
+			}
+		},
+		{
+			"id": "webgpu_multiple_rendertargets",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_multiple_rendertargets.html",
+				"route": "webgpu_multiple_rendertargets.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_multiple_rendertargets"
+			}
+		},
+		{
+			"id": "webgpu_multiple_rendertargets_readback",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_multiple_rendertargets_readback.html",
+				"route": "webgpu_multiple_rendertargets_readback.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_multiple_rendertargets_readback"
+			}
+		},
+		{
+			"id": "webgpu_multisampled_renderbuffers",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_multisampled_renderbuffers.html",
+				"route": "webgpu_multisampled_renderbuffers.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_multisampled_renderbuffers"
+			}
+		},
+		{
+			"id": "webgpu_occlusion",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_occlusion.html",
+				"route": "webgpu_occlusion.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_occlusion"
+			}
+		},
+		{
+			"id": "webgpu_ocean",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_ocean.html",
+				"route": "webgpu_ocean.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_ocean"
+			}
+		},
+		{
+			"id": "webgpu_parallax_uv",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_parallax_uv.html",
+				"route": "webgpu_parallax_uv.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_parallax_uv"
+			}
+		},
+		{
+			"id": "webgpu_particles",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_particles.html",
+				"route": "webgpu_particles.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_particles"
+			}
+		},
+		{
+			"id": "webgpu_performance",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_performance.html",
+				"route": "webgpu_performance.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_performance"
+			}
+		},
+		{
+			"id": "webgpu_performance_renderbundle",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_performance_renderbundle.html",
+				"route": "webgpu_performance_renderbundle.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_performance_renderbundle"
+			}
+		},
+		{
+			"id": "webgpu_pmrem_cubemap",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_pmrem_cubemap.html",
+				"route": "webgpu_pmrem_cubemap.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_pmrem_cubemap"
+			}
+		},
+		{
+			"id": "webgpu_pmrem_equirectangular",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_pmrem_equirectangular.html",
+				"route": "webgpu_pmrem_equirectangular.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_pmrem_equirectangular"
+			}
+		},
+		{
+			"id": "webgpu_pmrem_scene",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_pmrem_scene.html",
+				"route": "webgpu_pmrem_scene.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_pmrem_scene"
+			}
+		},
+		{
+			"id": "webgpu_pmrem_test",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_pmrem_test.html",
+				"route": "webgpu_pmrem_test.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_pmrem_test"
+			}
+		},
+		{
+			"id": "webgpu_portal",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_portal.html",
+				"route": "webgpu_portal.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_portal"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing.html",
+				"route": "webgpu_postprocessing.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_3dlut",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_3dlut.html",
+				"route": "webgpu_postprocessing_3dlut.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_3dlut"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_afterimage",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_afterimage.html",
+				"route": "webgpu_postprocessing_afterimage.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_afterimage"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_anamorphic",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_anamorphic.html",
+				"route": "webgpu_postprocessing_anamorphic.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_anamorphic"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_ao",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_ao.html",
+				"route": "webgpu_postprocessing_ao.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_ao"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_bloom",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_bloom.html",
+				"route": "webgpu_postprocessing_bloom.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_bloom"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_bloom_emissive",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_bloom_emissive.html",
+				"route": "webgpu_postprocessing_bloom_emissive.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_bloom_emissive"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_bloom_selective",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_bloom_selective.html",
+				"route": "webgpu_postprocessing_bloom_selective.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_bloom_selective"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_ca",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_ca.html",
+				"route": "webgpu_postprocessing_ca.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_ca"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_difference",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_difference.html",
+				"route": "webgpu_postprocessing_difference.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_difference"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_dof",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_dof.html",
+				"route": "webgpu_postprocessing_dof.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_dof"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_dof_basic",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_dof_basic.html",
+				"route": "webgpu_postprocessing_dof_basic.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_dof_basic"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_fxaa",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_fxaa.html",
+				"route": "webgpu_postprocessing_fxaa.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_fxaa"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_godrays",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_godrays.html",
+				"route": "webgpu_postprocessing_godrays.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_godrays"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_lensflare",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_lensflare.html",
+				"route": "webgpu_postprocessing_lensflare.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_lensflare"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_masking",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_masking.html",
+				"route": "webgpu_postprocessing_masking.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_masking"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_motion_blur",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_motion_blur.html",
+				"route": "webgpu_postprocessing_motion_blur.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_motion_blur"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_outline",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_outline.html",
+				"route": "webgpu_postprocessing_outline.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_outline"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_pixel",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_pixel.html",
+				"route": "webgpu_postprocessing_pixel.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_pixel"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_radial_blur",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_radial_blur.html",
+				"route": "webgpu_postprocessing_radial_blur.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_radial_blur"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_retro",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_retro.html",
+				"route": "webgpu_postprocessing_retro.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_retro"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_smaa",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_smaa.html",
+				"route": "webgpu_postprocessing_smaa.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_smaa"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_sobel",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_sobel.html",
+				"route": "webgpu_postprocessing_sobel.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_sobel"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_ssaa",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_ssaa.html",
+				"route": "webgpu_postprocessing_ssaa.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_ssaa"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_ssgi",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_ssgi.html",
+				"route": "webgpu_postprocessing_ssgi.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_ssgi"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_ssgi_ballpool",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_ssgi_ballpool.html",
+				"route": "webgpu_postprocessing_ssgi_ballpool.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_ssgi_ballpool"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_ssr",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_ssr.html",
+				"route": "webgpu_postprocessing_ssr.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_ssr"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_sss",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_sss.html",
+				"route": "webgpu_postprocessing_sss.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_sss"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_traa",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_traa.html",
+				"route": "webgpu_postprocessing_traa.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_traa"
+			}
+		},
+		{
+			"id": "webgpu_postprocessing_transition",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_transition.html",
+				"route": "webgpu_postprocessing_transition.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_transition"
+			}
+		},
+		{
+			"id": "webgpu_procedural_texture",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_procedural_texture.html",
+				"route": "webgpu_procedural_texture.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_procedural_texture"
+			}
+		},
+		{
+			"id": "webgpu_reflection",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_reflection.html",
+				"route": "webgpu_reflection.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_reflection"
+			}
+		},
+		{
+			"id": "webgpu_reflection_blurred",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_reflection_blurred.html",
+				"route": "webgpu_reflection_blurred.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_reflection_blurred"
+			}
+		},
+		{
+			"id": "webgpu_reflection_roughness",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_reflection_roughness.html",
+				"route": "webgpu_reflection_roughness.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_reflection_roughness"
+			}
+		},
+		{
+			"id": "webgpu_refraction",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_refraction.html",
+				"route": "webgpu_refraction.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_refraction"
+			}
+		},
+		{
+			"id": "webgpu_rendertarget_2d-array_3d",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_rendertarget_2d-array_3d.html",
+				"route": "webgpu_rendertarget_2d-array_3d.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_rendertarget_2d-array_3d"
+			}
+		},
+		{
+			"id": "webgpu_reversed_depth_buffer",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_reversed_depth_buffer.html",
+				"route": "webgpu_reversed_depth_buffer.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_reversed_depth_buffer"
+			}
+		},
+		{
+			"id": "webgpu_rtt",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_rtt.html",
+				"route": "webgpu_rtt.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_rtt"
+			}
+		},
+		{
+			"id": "webgpu_sandbox",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_sandbox.html",
+				"route": "webgpu_sandbox.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_sandbox"
+			}
+		},
+		{
+			"id": "webgpu_shadertoy",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_shadertoy.html",
+				"route": "webgpu_shadertoy.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_shadertoy"
+			}
+		},
+		{
+			"id": "webgpu_shadow_contact",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_shadow_contact.html",
+				"route": "webgpu_shadow_contact.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_shadow_contact"
+			}
+		},
+		{
+			"id": "webgpu_shadowmap",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_shadowmap.html",
+				"route": "webgpu_shadowmap.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_shadowmap"
+			}
+		},
+		{
+			"id": "webgpu_shadowmap_array",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_shadowmap_array.html",
+				"route": "webgpu_shadowmap_array.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_shadowmap_array"
+			}
+		},
+		{
+			"id": "webgpu_shadowmap_csm",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_shadowmap_csm.html",
+				"route": "webgpu_shadowmap_csm.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_shadowmap_csm"
+			}
+		},
+		{
+			"id": "webgpu_shadowmap_opacity",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_shadowmap_opacity.html",
+				"route": "webgpu_shadowmap_opacity.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_shadowmap_opacity"
+			}
+		},
+		{
+			"id": "webgpu_shadowmap_pointlight",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_shadowmap_pointlight.html",
+				"route": "webgpu_shadowmap_pointlight.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_shadowmap_pointlight"
+			}
+		},
+		{
+			"id": "webgpu_shadowmap_progressive",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_shadowmap_progressive.html",
+				"route": "webgpu_shadowmap_progressive.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_shadowmap_progressive"
+			}
+		},
+		{
+			"id": "webgpu_shadowmap_vsm",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_shadowmap_vsm.html",
+				"route": "webgpu_shadowmap_vsm.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_shadowmap_vsm"
+			}
+		},
+		{
+			"id": "webgpu_skinning",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_skinning.html",
+				"route": "webgpu_skinning.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_skinning"
+			}
+		},
+		{
+			"id": "webgpu_skinning_instancing",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_skinning_instancing.html",
+				"route": "webgpu_skinning_instancing.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_skinning_instancing"
+			}
+		},
+		{
+			"id": "webgpu_skinning_points",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_skinning_points.html",
+				"route": "webgpu_skinning_points.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_skinning_points"
+			}
+		},
+		{
+			"id": "webgpu_sky",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_sky.html",
+				"route": "webgpu_sky.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_sky"
+			}
+		},
+		{
+			"id": "webgpu_sprites",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_sprites.html",
+				"route": "webgpu_sprites.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_sprites"
+			}
+		},
+		{
+			"id": "webgpu_storage_buffer",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_storage_buffer.html",
+				"route": "webgpu_storage_buffer.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_storage_buffer"
+			}
+		},
+		{
+			"id": "webgpu_struct_drawindirect",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_struct_drawindirect.html",
+				"route": "webgpu_struct_drawindirect.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_struct_drawindirect"
+			}
+		},
+		{
+			"id": "webgpu_test_memory",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_test_memory.html",
+				"route": "webgpu_test_memory.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_test_memory"
+			}
+		},
+		{
+			"id": "webgpu_texturegrad",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_texturegrad.html",
+				"route": "webgpu_texturegrad.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_texturegrad"
+			}
+		},
+		{
+			"id": "webgpu_textures_2d-array",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_textures_2d-array.html",
+				"route": "webgpu_textures_2d-array.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_textures_2d-array"
+			}
+		},
+		{
+			"id": "webgpu_textures_2d-array_compressed",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_textures_2d-array_compressed.html",
+				"route": "webgpu_textures_2d-array_compressed.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_textures_2d-array_compressed"
+			}
+		},
+		{
+			"id": "webgpu_textures_anisotropy",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_textures_anisotropy.html",
+				"route": "webgpu_textures_anisotropy.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_textures_anisotropy"
+			}
+		},
+		{
+			"id": "webgpu_textures_partialupdate",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_textures_partialupdate.html",
+				"route": "webgpu_textures_partialupdate.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_textures_partialupdate"
+			}
+		},
+		{
+			"id": "webgpu_tonemapping",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_tonemapping.html",
+				"route": "webgpu_tonemapping.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_tonemapping"
+			}
+		},
+		{
+			"id": "webgpu_tsl_compute_attractors_particles",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_tsl_compute_attractors_particles.html",
+				"route": "webgpu_tsl_compute_attractors_particles.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_compute_attractors_particles"
+			}
+		},
+		{
+			"id": "webgpu_tsl_earth",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_tsl_earth.html",
+				"route": "webgpu_tsl_earth.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_earth"
+			}
+		},
+		{
+			"id": "webgpu_tsl_editor",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_tsl_editor.html",
+				"route": "webgpu_tsl_editor.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_editor"
+			}
+		},
+		{
+			"id": "webgpu_tsl_galaxy",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_tsl_galaxy.html",
+				"route": "webgpu_tsl_galaxy.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_galaxy"
+			}
+		},
+		{
+			"id": "webgpu_tsl_graph",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_tsl_graph.html",
+				"route": "webgpu_tsl_graph.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_graph"
+			}
+		},
+		{
+			"id": "webgpu_tsl_halftone",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_tsl_halftone.html",
+				"route": "webgpu_tsl_halftone.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_halftone"
+			}
+		},
+		{
+			"id": "webgpu_tsl_interoperability",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_tsl_interoperability.html",
+				"route": "webgpu_tsl_interoperability.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_interoperability"
+			}
+		},
+		{
+			"id": "webgpu_tsl_procedural_terrain",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_tsl_procedural_terrain.html",
+				"route": "webgpu_tsl_procedural_terrain.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_procedural_terrain"
+			}
+		},
+		{
+			"id": "webgpu_tsl_raging_sea",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_tsl_raging_sea.html",
+				"route": "webgpu_tsl_raging_sea.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_raging_sea"
+			}
+		},
+		{
+			"id": "webgpu_tsl_transpiler",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_tsl_transpiler.html",
+				"route": "webgpu_tsl_transpiler.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_transpiler"
+			}
+		},
+		{
+			"id": "webgpu_tsl_vfx_flames",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_tsl_vfx_flames.html",
+				"route": "webgpu_tsl_vfx_flames.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_vfx_flames"
+			}
+		},
+		{
+			"id": "webgpu_tsl_vfx_linkedparticles",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_tsl_vfx_linkedparticles.html",
+				"route": "webgpu_tsl_vfx_linkedparticles.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_vfx_linkedparticles"
+			}
+		},
+		{
+			"id": "webgpu_tsl_vfx_tornado",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_tsl_vfx_tornado.html",
+				"route": "webgpu_tsl_vfx_tornado.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_vfx_tornado"
+			}
+		},
+		{
+			"id": "webgpu_tsl_wood",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_tsl_wood.html",
+				"route": "webgpu_tsl_wood.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_wood"
+			}
+		},
+		{
+			"id": "webgpu_upscaling_fsr1",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_upscaling_fsr1.html",
+				"route": "webgpu_upscaling_fsr1.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_upscaling_fsr1"
+			}
+		},
+		{
+			"id": "webgpu_upscaling_taau",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_upscaling_taau.html",
+				"route": "webgpu_upscaling_taau.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_upscaling_taau"
+			}
+		},
+		{
+			"id": "webgpu_video_frame",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_video_frame.html",
+				"route": "webgpu_video_frame.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_video_frame"
+			}
+		},
+		{
+			"id": "webgpu_video_panorama",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_video_panorama.html",
+				"route": "webgpu_video_panorama.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_video_panorama"
+			}
+		},
+		{
+			"id": "webgpu_volume_caustics",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_volume_caustics.html",
+				"route": "webgpu_volume_caustics.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_volume_caustics"
+			}
+		},
+		{
+			"id": "webgpu_volume_cloud",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_volume_cloud.html",
+				"route": "webgpu_volume_cloud.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_volume_cloud"
+			}
+		},
+		{
+			"id": "webgpu_volume_lighting",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_volume_lighting.html",
+				"route": "webgpu_volume_lighting.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_volume_lighting"
+			}
+		},
+		{
+			"id": "webgpu_volume_lighting_rectarea",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_volume_lighting_rectarea.html",
+				"route": "webgpu_volume_lighting_rectarea.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_volume_lighting_rectarea"
+			}
+		},
+		{
+			"id": "webgpu_volume_lighting_traa",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_volume_lighting_traa.html",
+				"route": "webgpu_volume_lighting_traa.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_volume_lighting_traa"
+			}
+		},
+		{
+			"id": "webgpu_volume_perlin",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_volume_perlin.html",
+				"route": "webgpu_volume_perlin.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_volume_perlin"
+			}
+		},
+		{
+			"id": "webgpu_water",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_water.html",
+				"route": "webgpu_water.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_water"
+			}
+		}
+	]
+}

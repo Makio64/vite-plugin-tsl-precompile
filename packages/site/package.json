@@ -7,7 +7,7 @@
   "scripts": {
     "data": "node scripts/build-examples-data.mjs",
     "dev": "vite",
-    "check:content": "node scripts/check-content.mjs",
+    "check:content": "node ../examples/batch/scripts/build-example-catalogue.mjs --check && node scripts/check-content.mjs",
     "build": "vite build && pnpm check:content",
     "preview": "vite preview"
   },

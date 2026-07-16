@@ -3,8 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Runs extractor/codegen and slim-bundle load-smoke checks across the 206 three.js WebGPU examples.",
+  "description": "Runs extractor/codegen and slim-runtime checks across the tracked Three.js WebGPU and local regression examples.",
   "scripts": {
+    "catalogue": "node scripts/build-example-catalogue.mjs",
+    "catalogue:check": "node scripts/build-example-catalogue.mjs --check",
     "test": "node run.mjs",
     "run": "node run.mjs",
     "ui": "node run-ui.mjs",

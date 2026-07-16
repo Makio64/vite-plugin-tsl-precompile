@@ -1,4 +1,5 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -9,6 +10,12 @@ const failures = [];
 function fail( message ) {
 
 	failures.push( message );
+
+}
+
+function sha256( value ) {
+
+	return createHash( 'sha256' ).update( value ).digest( 'hex' );
 
 }
 
@@ -45,6 +52,38 @@ for ( const required of [
 }
 
 const evidence = JSON.parse( await readFile( resolve( siteDir, 'public/examples.json' ), 'utf8' ) );
+const cataloguePath = resolve( siteDir, '../examples/batch/example-catalogue.json' );
+const coveragePath = resolve( siteDir, '../examples/batch/results/coverage-summary.md' );
+const reportPath = resolve( siteDir, '../examples/batch/results/report.json' );
+const generatorPath = resolve( siteDir, 'scripts/build-examples-data.mjs' );
+const [ catalogueRaw, coverageRaw, reportRaw, generatorRaw ] = await Promise.all( [
+	readFile( cataloguePath, 'utf8' ),
+	readFile( coveragePath, 'utf8' ),
+	readFile( reportPath, 'utf8' ),
+	readFile( generatorPath, 'utf8' ),
+] );
+const catalogue = JSON.parse( catalogueRaw );
+const expectedProvenance = {
+	coverageSha256: sha256( coverageRaw ),
+	reportSha256: sha256( reportRaw ),
+	catalogueSha256: sha256( catalogueRaw ),
+	generatorSha256: sha256( generatorRaw ),
+};
+for ( const [ key, expected ] of Object.entries( expectedProvenance ) ) {
+
+	if ( evidence.provenance?.[ key ] !== expected ) fail( `public/examples.json: stale ${ key }; run pnpm --filter @tsl-precompile/site data` );
+
+}
+const evidenceIds = new Set( evidence.examples.map( ( entry ) => entry.basename ) );
+const catalogueIds = new Set( catalogue.cases.map( ( entry ) => entry.id ) );
+for ( const id of catalogueIds ) if ( ! evidenceIds.has( id ) ) fail( `public/examples.json: missing catalogue route ${ id }` );
+for ( const id of evidenceIds ) if ( ! catalogueIds.has( id ) ) fail( `public/examples.json: unknown route ${ id }` );
+for ( const entry of evidence.examples ) {
+
+	if ( ! entry.source || ! [ 'three', 'local' ].includes( entry.source.kind ) ) fail( `public/examples.json: ${ entry.basename } has no canonical source` );
+	if ( entry.source && entry.source.kind === 'local' && entry.threejsUrl != null ) fail( `public/examples.json: ${ entry.basename } points a local case at threejs.org` );
+
+}
 for ( const key of [ 'materialsBaked', 'artifactsCaptured', 'smokePassRate', 'runtimeNodeBuilderCalls' ] ) {
 
 	const match = index.match( new RegExp( `data-stat="${ key }"[^>]*>([^<]+)<` ) );
