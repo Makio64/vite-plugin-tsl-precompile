@@ -45,6 +45,7 @@ import { instrumentLiveUniformIdentities } from '../../plugin/src/babel-transfor
 
 import { assertThreeCheckoutMatchesVersion } from './_three-version.mjs';
 import { isolateCanvasForScreenshot, restoreCanvasAfterScreenshot } from './e2e-canvas-screenshot.mjs';
+import { hasReplayArtifactCoverage } from './e2e-artifact-policy.mjs';
 import { installRenderSelectorMismatchRecorder } from './e2e-render-selector-recorder.mjs';
 import { enrichRenderSelectorDiagnostics, resolveE2ERoots, summarizeArtifactRenderSelectors } from './e2e-report-diagnostics.mjs';
 import { deterministicTimeoutPolicyForExample, holdAnimationUntilReadyForExample, installAnimationLoopSettleTransition, installAudioAnalyserReadiness, minimumRenderableObjectsForExample, settleFramesForExample, targetTickForExample } from './e2e-settle-policy.mjs';
@@ -15443,6 +15444,7 @@ async function runOne( browser, name ) {
 	coalesceUserArtifactVariantFamilies( bucket.user );
 	const userCount = Object.keys( bucket.user ).length;
 	const auxCount = bucket.aux.length;
+	const artifactCoverageOk = hasReplayArtifactCoverage( bucket.user, bucket.aux );
 	const artifactSummaries = summarizeArtifacts( bucket );
 	const auxSummaries = summarizeAuxArtifacts( bucket );
 
@@ -15503,7 +15505,7 @@ async function runOne( browser, name ) {
 	const examplePixelGateEnabled = pixelGateEnabledForExample( name );
 	if ( ! examplePixelGateEnabled && pixelGate && pixelGate.pass === false ) pixelGate.disabled = true;
 	const pixelGateOk = ! examplePixelGateEnabled || pixelGate.pass !== false;
-	const pass = ( userCount > 0 || auxCount > 0 ) && blockingCaptureErrors.length === 0 && replay.bright > minimumBrightFraction && blockingReplayErrors.length === 0 && pixelGateOk;
+	const pass = artifactCoverageOk && blockingCaptureErrors.length === 0 && replay.bright > minimumBrightFraction && blockingReplayErrors.length === 0 && pixelGateOk;
 	const captureDiagnostics = enrichRenderSelectorDiagnostics( mergeDiagnostics( capture.diagnostics, artifactCapture.diagnostics ), captureErrors );
 	const replayDiagnostics = enrichRenderSelectorDiagnostics( replay.diagnostics || null, replay.errors );
 
@@ -15536,7 +15538,7 @@ async function runOne( browser, name ) {
 		timings: passTimings,
 		artifactSummaries,
 		auxSummaries,
-		error: pass ? null : summarizeFailure( { userCount, blockingCaptureErrors, replayBright: replay.bright, minimumBrightFraction, blockingReplayErrors, pixelGate, pixelGateEnabled: examplePixelGateEnabled } ),
+		error: pass ? null : summarizeFailure( { artifactCoverageOk, userCount, auxCount, blockingCaptureErrors, replayBright: replay.bright, minimumBrightFraction, blockingReplayErrors, pixelGate, pixelGateEnabled: examplePixelGateEnabled } ),
 	};
 
 }
@@ -15640,9 +15642,11 @@ function isIgnorableReplayError( error ) {
 
 }
 
-function summarizeFailure( { userCount, blockingCaptureErrors, replayBright, minimumBrightFraction = DEFAULT_MINIMUM_BRIGHT_FRACTION, blockingReplayErrors, pixelGate, pixelGateEnabled } ) {
+function summarizeFailure( { artifactCoverageOk, userCount, auxCount, blockingCaptureErrors, replayBright, minimumBrightFraction = DEFAULT_MINIMUM_BRIGHT_FRACTION, blockingReplayErrors, pixelGate, pixelGateEnabled } ) {
 
-	if ( userCount === 0 ) return 'capture produced no user-material artifacts';
+	if ( ! artifactCoverageOk ) return userCount === 0 && auxCount > 0
+		? 'capture produced auxiliary artifacts without complete background + render-output replay coverage'
+		: 'capture produced no replayable material artifacts';
 	if ( blockingCaptureErrors.length > 0 ) return blockingCaptureErrors[ 0 ].slice( 0, 500 );
 	if ( replayBright <= minimumBrightFraction ) return 'slim replay did not produce a non-empty frame';
 	if ( blockingReplayErrors.length > 0 ) return blockingReplayErrors[ 0 ].slice( 0, 500 );
