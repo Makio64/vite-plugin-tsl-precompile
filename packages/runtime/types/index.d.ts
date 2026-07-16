@@ -28,6 +28,12 @@ export type {
 	SlimSceneSupportOptions,
 } from './slim-support/scene-support.d.ts';
 export type {
+	ComputeCapture,
+	ComputeCaptureEntry,
+	PrecompileComputeOptions,
+	PrecompileComputesOptions,
+} from './compute-capture.d.ts';
+export type {
 	GeneratedPrecompiledComputeModule,
 	PrecompiledComputeArtifact,
 	PrecompiledComputeBindingEntry,
@@ -48,6 +54,8 @@ export const applyMaterialComputeAttributeBindings: typeof import('./slim-suppor
 export const invalidateMaterialComputeBindings: typeof import('./slim-support/auto-compute.d.ts').invalidateMaterialComputeBindings;
 export const createAutoComputeDispatcher: typeof import('./slim-support/auto-compute.d.ts').createAutoComputeDispatcher;
 export const createPrecompiledComputeRunner: typeof import('./precompiled-compute-runner.d.ts').createPrecompiledComputeRunner;
+export const precompileCompute: typeof import('./compute-capture.d.ts').precompileCompute;
+export const precompileComputes: typeof import('./compute-capture.d.ts').precompileComputes;
 
 export interface PrecompileCaptureContext {
 	/** Exact renderer whose topology should be captured; useful when one scene is rendered by multiple renderer configurations. */

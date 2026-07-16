@@ -34,6 +34,10 @@
       "types": "./types/precompiled-compute-runner.d.ts",
       "default": "./src/precompiled-compute-runner.js"
     },
+    "./compute-capture": {
+      "types": "./types/compute-capture.d.ts",
+      "default": "./src/compute-capture.js"
+    },
     "./writers": {
       "types": "./types/writers.d.ts",
       "default": "./src/writers.js"

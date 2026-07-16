@@ -119,6 +119,23 @@ await setup.captureAux( {
 
 ## Standalone compiled compute
 
+A standalone compute graph needs an explicit development capture because it is
+not owned by a material. Keep raw graph construction in a development-only
+module, name every kernel, and declare its caller-owned resource keys:
+
+```js
+import { precompileComputes } from '@tsl-precompile/runtime/compute-capture';
+
+await precompileComputes( renderer, [
+	{ name: 'particles-init', node: computeInit, resources: { positions } },
+	{ name: 'particles-update', node: computeUpdate, resources: { positions } },
+], { scene, camera, three: THREE } );
+```
+
+The capture runs all kernels in one extractor transaction and persists signed
+`kind: 'compute'` artifacts through the plugin dev endpoint. Production code
+imports the generated virtual modules and never imports the raw graph module.
+
 A compute artifact that carries a validated `compute-bindings@1` descriptor
 can run without retaining a TSL `ComputeNode` or node builder. Bind its public
 keys to resources owned by the application, then dispatch it through the slim
