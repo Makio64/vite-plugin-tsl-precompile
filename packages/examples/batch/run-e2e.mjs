@@ -1908,7 +1908,7 @@ import { artifactNeedsPMREM as __sharedArtifactNeedsPMREM, artifactPMREMSourceUu
 import { clearTextureViewCache as __sharedClearTextureViewCache, markTextureInitialized as __sharedMarkTextureInitialized, shareGPUTextureEntry as __sharedShareGPUTextureEntry, sharePMREMGPUTexture as __sharedSharePMREMGPUTexture, shareShadowGPUTextureIntoSlim as __sharedShareShadowGpuTextureIntoSlim } from '/__tslp_runtime/slim-support/gpu-texture-share.js';
 import { computeNodeUsesStorageTexture as __sharedComputeNodeUsesStorageTexture, computeSyncNeedsPresentation as __sharedComputeSyncNeedsPresentation, shareComputeSampledInputs as __sharedShareComputeSampledInputs, syncComputeStorageOutputs as __sharedSyncComputeStorageOutputs, syncComputeStorageOutputsPerPass as __sharedSyncComputeStorageOutputsPerPass, wireArtifactStorageBuffersFromAttributes as __sharedWireArtifactStorageBuffersFromAttributes, pingPongInvalidate as __sharedPingPongInvalidate, shareInstancedAttributeBufferIntoSlim as __sharedShareInstancedAttributeBufferIntoSlim } from '/__tslp_runtime/slim-support/compute-sync.js';
 import { AUTO_COMPUTE_MATERIAL_PROPERTIES as __AUTO_COMPUTE_SLOTS, createAutoComputeDispatcher as __sharedCreateAutoComputeDispatcher } from '/__tslp_runtime/slim-support/auto-compute.js';
-import { artifactHasTextureSource as __sharedArtifactHasTextureSource, attachArtifactTextureRefsByShapeOrder as __sharedAttachArtifactTextureRefsByShapeOrder, attachArtifactTextureRefsWhere as __sharedAttachArtifactTextureRefsWhere, attachTextureRefsWhere as __sharedAttachTextureRefsWhere, countArtifactTextureSources as __sharedCountArtifactTextureSources, singleArtifactTextureUuid as __sharedSingleArtifactTextureUuid, textureMatchesArtifactSource as __sharedTextureMatchesArtifactSource, textureMatchesSource as __sharedTextureMatchesSource } from '/__tslp_runtime/slim-support/artifact-texture-wiring.js';
+import { artifactHasTextureSource as __sharedArtifactHasTextureSource, attachArtifactTextureRefsByShapeOrder as __sharedAttachArtifactTextureRefsByShapeOrder, attachArtifactTextureRefsWhere as __sharedAttachArtifactTextureRefsWhere, attachTextureRefsWhere as __sharedAttachTextureRefsWhere, countArtifactTextureSources as __sharedCountArtifactTextureSources, rewritePassDepthTextureSources as __sharedRewritePassDepthTextureSources, singleArtifactTextureUuid as __sharedSingleArtifactTextureUuid, textureMatchesArtifactSource as __sharedTextureMatchesArtifactSource, textureMatchesSource as __sharedTextureMatchesSource } from '/__tslp_runtime/slim-support/artifact-texture-wiring.js';
 import { createFullRendererFallback as __sharedCreateFullRendererFallback } from '/__tslp_runtime/slim-support/full-renderer-fallback.js';
 import { createSlimSceneSupport as __sharedCreateSlimSceneSupport } from '/__tslp_runtime/slim-support/scene-support.js';
 import { updateRendererLightingForSlim as __sharedUpdateRendererLightingForSlim } from '/__tslp_runtime/slim-support/renderer-lighting.js';
@@ -5915,25 +5915,7 @@ function __attachPassTextureRefs( artifact, passNode ) {
 	const depth = getPassTexture( 'depth' );
 	if ( depth ) {
 		__attachTextureRefsWhere( artifact, depth, ( source ) => source.kind === 'depth.texture' );
-		// Re-tag pass-rendered depth bindings (fromMaterialGraph, no light)
-		// from kind=depth.texture to kind=artifact.texture so the slim
-		// hydrator resolves them through the existing _textureRefs path
-		// (the depth.texture path targets shadow maps and returns an empty
-		// 1x1 fallback that reads as 0 -> viewZ near -> fog factor 0 -> fog
-		// never appears). Shadow-map depth bindings (lightUuid set or
-		// lightIndex>=0) keep kind=depth.texture so the per-frame shadow
-		// rebinder still owns them.
-		for ( const group of artifact.uniformPlan || [] ) {
-			for ( const entry of group.textures || [] ) {
-				const src = entry && entry.source;
-				if ( ! src || src.kind !== 'depth.texture' ) continue;
-				if ( src.lightUuid || ( typeof src.lightIndex === 'number' && src.lightIndex >= 0 ) ) continue;
-				if ( src.fromMaterialGraph !== true ) continue;
-				src.kind = 'artifact.texture';
-				src.textureName = src.textureName || 'depth';
-				src.__tslpPassDepthAttached = true;
-			}
-		}
+		__sharedRewritePassDepthTextureSources( artifact );
 	}
 	return artifact;
 }
@@ -6038,15 +6020,7 @@ function __attachOrderedPassDepthRefs( artifact, passNodes ) {
 		} );
 	}
 	if ( mappedUuids.size === 0 ) return artifact;
-	for ( const group of artifact.uniformPlan || [] ) {
-		for ( const entry of group.textures || [] ) {
-			const src = entry && entry.source;
-			if ( ! src || ! mappedUuids.has( src.textureUuid ) || src.kind !== 'depth.texture' ) continue;
-			src.kind = 'artifact.texture';
-			src.textureName = src.textureName || 'depth';
-			src.__tslpPassDepthAttached = true;
-		}
-	}
+	__sharedRewritePassDepthTextureSources( artifact, mappedUuids );
 	if ( refDiag.length > 0 ) diag.orderedPassDepthRefs = refDiag;
 	Object.defineProperty( artifact, '_textureRefs', {
 		value: refs,
