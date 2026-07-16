@@ -224,7 +224,7 @@
 						<li><span>✓</span><div><strong>Static shader source</strong><p>Captured WGSL is embedded in the production chunk.</p></div></li>
 						<li><span>✓</span><div><strong>Resource reconstruction</strong><p>Bindings reconnect textures, samplers, lights, camera buffers, and other live resources.</p></div></li>
 						<li><span>✓</span><div><strong>Generated updates</strong><p>Supported dynamic values are written through a generated plan instead of rebuilding the graph.</p></div></li>
-						<li><span>✓</span><div><strong>Optional slim runtime</strong><p>Once every path is covered, <code>slim: true</code> removes the runtime NodeBuilder.</p></div></li>
+						<li><span>✓</span><div><strong>Optional slim runtime</strong><p>Once every path is covered, <code>slim: 'source'</code> removes the runtime NodeBuilder and lets Vite tree-shake unused exports.</p></div></li>
 					</ul>
 				</article>
 
@@ -270,7 +270,7 @@
 				<article><span>1</span><h3>Prove one explicit material</h3><p>Install the base pipeline, capture a representative PBR material, and inspect its generated artifact.</p></article>
 				<article><span>2</span><h3>Expand observed coverage</h3><p>Visit relevant routes and states. Use explicit names for control or <code>autoMark</code> for a broad trial.</p></article>
 				<article><span>3</span><h3>Verify compatibility</h3><p>Run the artifact checks and visual/runtime gates appropriate for your scene before changing the renderer bundle.</p></article>
-				<article><span>4</span><h3>Enable <code>slim: true</code></h3><p>Remove the NodeBuilder only when every reachable material path is captured or covered by the lazy full-renderer fallback.</p></article>
+				<article><span>4</span><h3>Enable <code>slim: 'source'</code></h3><p>Remove the NodeBuilder only when every reachable material path is captured or covered by the lazy full-renderer fallback.</p></article>
 			</div>
 		</section>
 

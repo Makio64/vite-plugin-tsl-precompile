@@ -13,7 +13,7 @@ precompile their TSL materials. Five minutes to first capture, plus a short
 | Requirement | Minimum | Why |
 |---|---|---|
 | `three` | `>= 0.184.0`, **pinned to an exact patch** | Captured artifacts are versioned against the three.js WGSL emitter — see [MIGRATION.md](MIGRATION.md). A `^0.184.0` range will silently break artifacts on patch bumps. |
-| `vite` | `>= 5` | The dev-capture endpoint is mounted as Vite middleware. |
+| `vite` | `>= 6.4.3` | The dev-capture endpoint is mounted as Vite middleware. |
 | Renderer | `WebGPURenderer` | No WebGL fallback. |
 | Browser | WebGPU-capable | Chrome/Edge 113+, Safari 18+ / Tech Preview. |
 
@@ -141,17 +141,35 @@ revision checks, dev hot-recapture, exact toolchain checks, runtime validation,
 and `pnpm verify`. A changed source module must be observed in dev again before
 the next production build accepts its artifact.
 
-## Optional: `slim: true` (no TSL compiler at runtime, harder mode)
+## Optional: guarded slim production (no TSL compiler, stricter mode)
 
 ```js
-tslPrecompile( { slim: true } )
+tslPrecompile( { slim: 'source' } ) // recommended for a fully captured Vite app
+// tslPrecompile( { slim: true } )  // checked single-file prebuilt alternative
 ```
 
-Aliases `three/webgpu` to a node-builder-stripped three.js. **Every** material reachable in production must be marked with `.precompile()` (or `autoMark: true`). Any un-precompiled TSL path throws at runtime with a descriptive error.
+Both modes alias `three/webgpu` to a node-builder-stripped three.js. **Every**
+production path must be represented by captured artifacts or explicit slim
+support (or use `autoMark: true` for eligible materials). An unsupported live
+TSL path throws in pure slim; a path covered by an explicitly initialized full
+renderer fallback delegates there instead. Source mode lets Vite
+discard unused Three constructors and runtime exports; `true` selects the
+stable checked prebuilt file.
 
-**What slim mode buys you:** no TSL→WGSL compile at first frame (predictable cold start), no node-graph traversal per draw, and loud errors on forgotten markers instead of silent live compilation. **It is not primarily a bundle-size win** — measured on a minimal PBR scene, the slim three.js bundle is roughly the same gzip size as stock three.js TSL. Run the numbers on your own scene before assuming a download-size benefit.
+**What slim mode buys you:** no TSL→WGSL compile at first frame (predictable
+cold start), no node-graph traversal per draw, and explicit handling for every
+reachable path. The deterministic gzip-9 fixtures currently measure 138,279
+bytes for minimal source, 145,910 bytes for advanced source, and 211,646 bytes
+for the checked prebuilt runtime. Those are regression
+fixtures, not a promise for your scene or a current stock-Three comparison.
 
 Slim is the right choice for shipping a tightly-controlled scene where you want predictable runtime behavior. It is the wrong choice if you have a sprawling scene with addons (`WaterMesh`, `Sky`, etc.) you haven't audited — start without slim, get the dev-capture flow working, then enable slim once you know which materials need markers.
+
+If an audited feature still needs live compilation, configure
+`createSlimSceneSupport()` with the lazy `virtual:tsl-precompile/full-three`
+fallback. That compiler lives in a separate chunk and is loaded only when the
+application explicitly requests it; once loaded, that fallback path is not
+compiler-free.
 
 ## Common questions
 

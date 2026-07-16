@@ -5,7 +5,10 @@
 - Author marks materials with `material.precompile('name')`.
 - In dev, the marker waits for a real render, records the material's Scene/Camera/Object context, then fires the real three.js node builder and saves an artifact (shader + bindings + uniform plan).
 - In prod, a Vite/Babel transform rewrites the marker to load the baked artifact + a generated updater function.
-- Runtime is a slim three.js build with no node builder — just bind-group setup + typed-array writes per frame.
+- Production may keep full Three (compatibility default) or opt into a slim
+  build with no node builder. Slim runtime work includes artifact hydration,
+  topology/variant selection, replay adapters, bind-group setup, and generated
+  typed-array writes per frame.
 
 Inspired by Unreal's Material Compiler (`FMaterialUniformExpressionSet` generates C++ updaters at cook time) and Unity Shader Graph (HLSL variants compiled offline; SRP Batcher writes uniforms at runtime).
 
@@ -56,9 +59,9 @@ Inspired by Unreal's Material Compiler (`FMaterialUniformExpressionSet` generate
          │
          ▼  (codegen, phase 3)
 ┌─────────────────────────────────────────────┐
-│ generated virtual modules — static artifact,
-│ optional WGSL pool, and updater.js writes via
-│ runtime/writers.js
+│ generated virtual modules — compact static artifact,
+│ optional WGSL/raw numeric pools, and updater.js writes
+│ via runtime/writers.js
 └─────────────────────────────────────────────┘
          │
          ▼  (runtime, phase 4)
@@ -82,7 +85,7 @@ The Vite plugin. Runs at build time.
 - `src/node-harness.js` — headless three.js + mock WebGPU, for CI verify.
 - `src/emit-updater.js` — descriptor → static updater.js codegen.
 - `src/emit-manifest.js` — artifact JSON → virtual module source.
-- `src/wgsl-optimize.js` — build-output-only WGSL minify/dedupe support, including the shared `virtual:tsl-precompile/__wgsl` pool.
+- `src/wgsl-optimize.js` — build-output-only WGSL minify/dedupe support, including the shared `virtual:tsl-precompile/__wgsl` pool. It also restores schema-known uniform-plan aliases before emission, hoists profitable shared records, and replaces sufficiently large exact typed-array snapshots with raw little-endian base64 constants. The generated decoder performs synchronous byte materialization, not decompression, and preserves ordinary `Array` runtime contracts.
 - `src/hash.js` — artifact hash wrapper around the shared graph normalizer from `@tsl-precompile/contract`.
 - `src/three-rewrite.js` — strict, version-locked AST rewrites for the compiler-free Three closure. The r184 Renderer rewrite installs exact-caster replay, graph-free `ReplayNodeLibrary`, and removes the stock shadow-node graph. The exact `CubeRenderTarget.fromEquirectangularTexture()` lifecycle is replaced by a preflighted replay adapter. Complete comment-free AST fingerprints replace Three's last `NodeUtils` / node-constants owners and add lazy texture-loader tracking to Three's exact `Loader` constructor; loader-free source builds therefore retain no concrete loader/fetch/cache closure. Any upstream semantic drift fails the slim build instead of partially applying a cut.
 - `src/vendor/` — vendored files from the three.js fork (compileTSL, extractUniformPlan, …), plus the centralized private RenderObject observer. A bounded observer epoch snapshots reused render contexts and supplies complete real-render variant families to extraction; incomplete families fall back atomically to synthetic compilation.
@@ -100,6 +103,9 @@ Shared extractor/codegen/runtime contract helpers.
 - `src/material-compute.js` — the versioned material-global compute ownership contract. It validates embedded precompiled kernels, exact resource and render-binding identities, initial state, lifecycle paths/cadence, and schedule order across every represented render variant.
 - `src/light-identities.js` — shared capture normalization and validation for variant-local light identity tables; slots retain legacy fields but resolve through one complete record per light.
 - `src/stable-json.js` — deterministic JSON encoding for persisted selectors and payload comparisons.
+- `src/artifact-content.js` — canonical artifact-content identity plus the shared durable-data boundary. Capture serialization skips private `_...` sidecars before reading their values (so a live object's `toJSON()` cannot expand into artifact data), while the server strips any stale private fields before validation and persistence.
+- `src/artifact-traversal.js` / `src/variant-selector-adapter.js` — one canonical walk over generated user, auxiliary, variant, and material-compute payloads plus the generated selector projection/matching adapter. Generated modules attach the adapter as a non-serializable sidecar; the checked renderer consumes its tiny interface and fails closed when manually registered signed JSON was not materialized.
+- `src/attribute-generators.js` — canonical captured-attribute vocabulary shared by dev capture, extraction, validation, and replay. `range@1` is accepted only after capture and extraction both verify exact live Float32 output; `instance-matrix@1` records proven object-owned columns. Runtime fills recipe storage directly and exposes matrix columns as live shared views.
 - `src/kinds.js` — shared `source.kind` registry, blocked-kind reasons, artifact payload/aggregate validation, and source-kind collection.
 - `src/texture-props.js` — canonical material texture slots and node-graph texture keys.
 
@@ -108,6 +114,7 @@ Shared extractor/codegen/runtime contract helpers.
 Ships with the user's bundle. Runtime only.
 
 - `src/precompile-marker.js` — `Material.prototype.precompile`. In dev, calls the extractor + POSTs artifact. In prod, replaced by transform.
+- `src/range-attribute-capture.js` — development-only RangeNode instrumentation for Three's above-uniform-limit attribute branch. For the version-checked r184 shape it replaces only that physical branch with a local deterministic generator, never reads or replaces `Math.random`, verifies the live attribute byte-for-byte, and attaches the private recipe sidecar consumed and reverified by the extractor; scalar, buffer, frozen, and unsupported shapes retain stock behavior/snapshots.
 - `src/auxiliary/cube-render-target-capture.js` — isolated dev-only owner for CubeRenderTarget's temporary graph, exact face camera, compile-lock coordination, source-state restoration, and capture-resource disposal; `aux-marker.js` remains discovery/registration/persistence orchestration.
 - `src/apply-precompiled.js` / `src/apply-precompiled-development.js` — conditional `__applyPrecompiled` boundary injected by the transform. Production keeps hash and live source-graph freshness gates; development additionally loads the shared artifact-schema validator.
 - `src/slim-replay-renderer-context.js` — graph-free renderer context/cache identity and explicit high-precision state for replay; it preserves the narrow `RenderObject` invalidation protocol without constructing a TSL `ContextNode`.
@@ -121,10 +128,10 @@ Ships with the user's bundle. Runtime only.
 - `src/slim-replay-output.js` — graph-free renderer-output and RenderPipeline material adapter; selects exact topology, isolates texture refs per owner, validates 2D/array sampling, and disposes replacements safely.
 - `src/slim-replay-cube-render-target.js` — graph-free equirectangular conversion adapter. It selects an exact source/destination capture, validates one sampled-texture identity across the complete artifact family, clones the registry template, and wires the live source without retaining CubeRenderTarget's TSL graph.
 - `src/slim-replay-scene-nodes.js` — graph-free environment/fog topology state; hashes the shared semantic descriptor, preserves Three's invalidation axes, and fails closed when an opaque custom scene graph is replaced.
-- `src/slim-source-entry.js` / `src/slim-source-common.js` — guarded application-tree-shaken slim mode. The Vite plugin routes Three internals through the same replay adapters as the checked prebuilt build, preserves one exact Three source identity, validates a plugin/runtime policy handshake, and rejects compiler or classified stock-adapter residue in final chunks. In prebuilt mode, generated `/apply`, `/writers`, `/generated/light-writer`, and `/slim-support/node-dependencies` imports alias to helpers exported by the same prebuilt singleton. Loader tracking is installed lazily on the exact Three `Loader` subclass only when constructed, while allocation-only compatibility stubs are marked pure so selective applications do not pay for unused Node-material shells.
+- `src/slim-source-entry.js` / `src/slim-source-common.js` — guarded application-tree-shaken slim mode. The Vite plugin routes Three internals through the same replay adapters as the checked prebuilt build, preserves one exact Three source identity, validates a plugin/runtime policy handshake, and rejects compiler, classified stock-adapter, retained Three Node/TSL, or split bare-Three identity residue in final chunks. In prebuilt mode, generated `/apply`, `/writers`, `/generated/light-writer`, and `/slim-support/node-dependencies` imports alias to helpers exported by the same prebuilt singleton. Loader tracking is installed lazily on the exact Three `Loader` subclass only when constructed, while allocation-only compatibility stubs are marked pure so selective applications do not pay for unused Node-material shells.
 - `src/hydrate/*` — runtime hydration modules: static binding allocation, texture/source resolution, built-in texture reconstruction, live texture registry, shared light identity resolution, per-frame texture rebinders, and source-qualified material binding ownership. Signed shadow artifacts resolve caster-owned scalar/texture/graph inputs from the exact caster while source-local render-material exceptions remain on the renderer-owned override. Each hydrated state owns cloned mutable attribute/storage/uniform-live records and exact graph update phases, so shared artifact families cannot leak the first caster’s GPU resource or live node; legacy shadow graphs read the temporary renderer-owned override as before.
 - Slim-replay hydration imports exact `three/src/**` constructors/constants instead of the bare Three barrel. This preserves module identity for the prebuilt build and is the tree-shaking prerequisite for the guarded slim source entry.
-- `src/hydrate/variants/artifact-variant-selector.js` — exact semantic variant selection; signed artifacts fail closed on an uncaptured topology while old unsigned artifacts retain cache-key/MRT compatibility.
+- `src/hydrate/variants/artifact-variant-selector.js` — small runtime dispatcher over the generated selector adapter. Signed artifacts fail closed on an uncaptured topology or missing materialization sidecar; old unsigned artifacts retain cache-key/MRT compatibility.
 - `src/slim-support/live-scene-index.js` — first productized slim-support helper for live texture indexing and null-image healing.
 - `src/slim-support/pmrem.js` — productized PMREM support helpers for artifact/source detection, cache orchestration, and `_textureRefs` wiring; the harness still supplies the full-renderer generator.
 - `src/hydrate/material-compute.js` / `src/hydrate/material-compute-ownership.js` — hydrate the signed material-global compute contract before draw-variant state. `precompiled` mode replays embedded storage-buffer kernel artifacts and exact lifecycle/schedule paths without a live graph. Storage textures and other unsupported proofs remain explicit `hybrid-required` descriptors, which fail closed until the configured support instance completes one exact delegated transaction for that material.

@@ -109,19 +109,20 @@ await setup.captureAux( { passNode: scenePass, renderPipeline } );
 ## Slim Support
 
 The supported production mode for v0.1+ is **slim + opt-in full-renderer
-fallback**. The slim bundle is the primary renderer for precompiled materials
-(~240 KB gzip). Features that still need live TSL compilation boot a full
-`WebGPURenderer` on the **same `GPUDevice`** and share GPU textures/buffers
-back into slim.
+fallback**. For new Vite apps, the preferred primary renderer is the guarded
+`slim: 'source'` profile; its checked minimal and advanced fixtures measure
+138,279 and 145,910 bytes gzip-9. Features that still need live TSL compilation
+boot a full `WebGPURenderer` on the **same `GPUDevice`** and share GPU
+textures/buffers back into slim.
 
-| Feature | Why slim alone can't | Fallback path |
+| Feature | Compiler-free path | Explicit fallback for uncaptured/live work |
 |---|---|---|
-| Compute kernels | No node-graph compiler | Full renderer dispatches; `syncComputeOutputs` copies storage back |
-| Shadow maps | Depth materials need the builder | Full renderer renders shadows; depth GPUTexture is shared |
-| PMREM generation | Blur passes need the builder | Full `PMREMGenerator`, then slim-support cache wiring |
-| Live PassNode WGSL | Slim can't emit new pass shaders | Full renderer renders the pass; texture shared back |
-| Clipping context | Live `clipShadows` rebuild | Planes baked into artifacts; ancestry honoured at runtime |
-| WebXR sessions | Three r184 supports XR only through its WebGL 2 backend | Use the full Three renderer with `{ forceWebGL: true }`; slim fails with `TSLP_SLIM_XR_UNSUPPORTED` before claiming a session |
+| Compute kernels | Proven storage-buffer kernels replay from signed artifacts | Full renderer dispatches hybrid-required kernels; contracted writable outputs sync back |
+| Shadow maps | Captured signed shadow families replay exact depth artifacts | Shared-device renderer handles a family not represented by a supported capture |
+| PMREM | Captured PMREM/cube-conversion artifacts and cached textures replay directly | Full `PMREMGenerator` performs genuinely new runtime filtering |
+| Pass/effect WGSL | Captured pass and effect execution plans replay directly | Full renderer produces an uncaptured dynamic pass and shares its texture |
+| Clipping context | Captured planes and ancestry are applied by generated writers | A topology outside the signed artifact fails closed until recaptured |
+| WebXR sessions | None in the WebGPU-only slim renderer on Three r184 | Use full Three with `{ forceWebGL: true }`; slim fails before claiming a session |
 
 Apps that enable either plugin slim mode can use the stable
 `@tsl-precompile/runtime/slim-support` entry when they need real-app fallback
@@ -149,11 +150,13 @@ virtual entry resolves directly to the consumer's physical full WebGPU entry
 and bypasses the slim alias. Passing the slim namespace or a slim-marked
 constructor to the fallback throws a configuration error.
 
-Choose `slim: true` for the checked, single-file prebuilt renderer. Choose
-`slim: 'source'` when the application bundler should discard unused Three and
-runtime exports. The guarded source entry cannot be imported without the
-plugin, verifies the plugin/runtime slim-policy revision, and rejects final
-chunks that retain compiler or stock replay-owned modules. Capture and build
+Choose `slim: 'source'` for new Vite apps when the application bundler should
+discard unused Three and runtime exports. Choose `slim: true` for the checked,
+single-file prebuilt renderer (currently 211,646 bytes gzip-9). The guarded
+source entry cannot be imported without the plugin, verifies the plugin/runtime
+slim-policy revision, and rejects final
+chunks that retain compiler, stock replay-owned, retained Three Node/TSL, or
+split bare-Three identity modules. Capture and build
 must use the same exact Three patch in both modes.
 
 `ensureFallback()` also patches slim `renderer.compute(rawComputeNode)` so raw

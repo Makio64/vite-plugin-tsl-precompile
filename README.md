@@ -14,21 +14,25 @@ frame), lower per-frame CPU (AOT updater writes UBO bytes directly — no node
 graph traversal, no closure dispatch), and a layered staleness gate that
 fails loudly instead of regressing visuals silently.
 
-**Bundle size.** The slim runtime bundle ships **~240 kB gzip (~200 kB
-brotli)** versus **~280 kB gzip** for stock `three.webgpu` + `three.core` —
-so slim is modestly *smaller* on the wire, not larger. But the bundle is not
-the headline: the win is *what runs at runtime* (no TSL→WGSL compile on the
-first frame, no node-graph traversal per draw), not *what's downloaded*. The
-download delta widens on apps that pull in many TSL helpers / postprocessing
-chains, where stock three.js drags the whole node-builder + TSL function
-library in while slim ships only stubs. **Run the numbers on your own scene.**
+**Bundle size.** The deterministic gzip-9 delivery fixtures currently measure
+**138,279 bytes** for a minimal guarded source build, **145,910 bytes** for the
+advanced source fixture, and **211,646 bytes** for the checked single-file
+prebuilt runtime. A fourth generated-helper consumer fixture is **164,168
+bytes**. All four retain zero stock compiler, stock replay-adapter, or Three
+Node/TSL modules. These are fixture measurements, not universal transfer sizes
+or a stock-Three comparison. `pnpm analyze:slim` reproduces these fixed
+repository fixtures; inspect your own production chunks to measure an
+application. For new Vite projects with complete capture/fallback coverage,
+`slim: 'source'` is the preferred compiler-free production mode.
 
 **Site:** https://makio64.github.io/vite-plugin-tsl-precompile/
 
 > **Status — experimental.** The beta target is ordinary PBR app rendering
 > (`Mesh{Standard,Physical}NodeMaterial` + texture maps + env/PMREM + direct
-> lights + shadows + material uniforms). Focused MRT/render-target guards are
-> green, while compute/storage and broad postprocessing remain deferred.
+> lights + shadows + material uniforms). Compute, storage, MRT, and focused
+> post-processing paths are implemented through captured artifacts and the
+> explicit slim-support boundary. Arbitrary uncaptured live TSL remains outside
+> the compiler-free contract.
 > The latest generated coverage table is at [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md).
 
 ## Requirements
@@ -57,7 +61,9 @@ import { defineConfig } from 'vite';
 import tslPrecompile from 'vite-plugin-tsl-precompile';
 
 export default defineConfig( {
-	plugins: [ tslPrecompile() ],
+	// Preferred compiler-free production profile. Use `tslPrecompile()` while
+	// auditing an existing app whose production paths are not captured yet.
+	plugins: [ tslPrecompile( { slim: 'source' } ) ],
 	// `WebGPURenderer.init()` is async; the recommended app-entry pattern
 	// uses top-level `await`. Vite's default browser target is `modules`
 	// (ES2020) which does not allow that, so we bump to `esnext`.
@@ -95,8 +101,9 @@ renderer.setAnimationLoop( () => renderer.render( scene, camera ) );
 
 Run `vite` once. The plugin captures the live material and writes
 `./artifacts/my-material.<hash>.json`. Commit the artifact, then `vite build`
-ships precompiled WGSL plus a generated UBO updater — no TSL builder at
-runtime. Capture begins only after the marker is observed in a real render,
+ships precompiled WGSL plus a generated UBO updater. With either slim mode,
+the production renderer also ships without the TSL builder. Capture begins
+only after the marker is observed in a real render,
 so lights, shadows, fog, camera type, geometry attributes, instancing/skinning,
 clipping, and MRT state select the correct shader variant.
 
@@ -127,9 +134,10 @@ await setup.captureAux( { passNode: scenePass, renderPipeline } );
    hoists `import * as __tsl_art_<name> from 'virtual:tsl-precompile/<name>'`.
    The plugin's `load()` hook resolves that virtual module to the captured
    artifact JSON + a generated `updater.js` that writes UBOs per frame.
-3. **Slim runtime (optional).** Production builds can use the checked prebuilt
-   runtime (`slim: true`) or the guarded application-tree-shaken entry
-   (`slim: 'source'`). Both strip the node builder; dev/serve deliberately
+3. **Slim runtime (optional).** Production builds can use the guarded
+   application-tree-shaken entry (`slim: 'source'`, recommended for new Vite
+   apps) or the checked single-file prebuilt runtime (`slim: true`). Both strip
+   the node builder; dev/serve deliberately
    keeps full Three so capture can generate WGSL. Only paths represented by
    precompiled artifacts or explicit replay/fallback adapters work in slim.
 
@@ -163,28 +171,32 @@ reshuffles names, which invalidates the on-disk artifacts.
 ### 3. `slim` — ship a node-builder-stripped three.js
 
 ```js
-tslPrecompile( { slim: true } );
+tslPrecompile( { slim: 'source' } );
 ```
 
 Production has two compiler-free delivery modes:
 
 ```js
-tslPrecompile( { slim: true } );       // checked, prebuilt runtime
-tslPrecompile( { slim: 'source' } );   // application-tree-shaken source
+tslPrecompile( { slim: 'source' } );   // recommended, app-tree-shaken source
+tslPrecompile( { slim: true } );       // checked single-file prebuilt runtime
 ```
 
-Both alias `three/tsl` to fail-loud replay stubs. `slim: true` aliases
-`three/webgpu` to the checked `@tsl-precompile/runtime/slim` file.
-`slim: 'source'` aliases it to a guarded source entry so the application
-bundler can discard unused Three constructors and runtime exports. A minimal
-WebGPU renderer build measured 162,508 bytes gzip in source mode versus
-223,943 bytes for the current prebuilt file (61,435 bytes, or 27.4%, smaller).
+Both alias `three/tsl` to compiler-free replay stubs; known captured graph
+construction calls become inert, while unsupported live paths fail loudly.
+`slim: 'source'` aliases
+`three/webgpu` to a guarded source entry so the application bundler can discard
+unused Three constructors and runtime exports. The checked fixtures measure
+138,279 bytes gzip-9 for minimal source versus 211,646 bytes for the current
+prebuilt file: 73,367 bytes, or 34.7%, smaller. `slim: true` aliases
+`three/webgpu` to that checked `@tsl-precompile/runtime/slim` file when a stable
+single-file renderer is preferable to application-specific tree shaking.
 
 The source entry is build-only: importing it without a matching plugin fails,
 plugin/runtime policy revisions are checked, and the final bundle is rejected
-if a Three node compiler or stock replay-owned adapter survives. `vite dev`
-keeps the full Three entries in either mode so `.precompile()` and auxiliary
-capture still have a node builder.
+if a Three node compiler, stock replay-owned adapter, retained Three Node/TSL
+module, or split bare-Three identity survives. `vite dev` keeps the full Three
+entries in either mode so `.precompile()` and auxiliary capture still have a
+node builder.
 
 When either slim mode is configured, the development `setupPrecompile()`
 hook also observes successful real renders and captures each renderer-output
@@ -204,12 +216,14 @@ the same exact patch; artifacts from another patch are rejected.
 **What slim mode actually changes:**
 - ✅ Eliminates the TSL→WGSL compiler from production runtime (no JIT shader
   compile at first frame, no node-graph traversal each draw).
-- ✅ Removes node-graph data structures from memory.
-- ✅ Catches forgotten `.precompile()` markers as loud runtime errors instead
-  of silent live compilation.
-- ✅ Smaller on the wire: the slim bundle is ~240 kB gzip vs ~280 kB for
-  stock `three.webgpu` + `three.core`. The gap widens on scenes that pull in
-  many TSL helpers / postprocessing chains; on a minimal scene it's modest.
+- ✅ Guarded builds retain zero stock compiler, stock replay-adapter, and Three
+  Node/TSL modules. Explicit hybrid/full-renderer fallback remains a separate
+  lazy chunk and loads a compiler only when the application asks for it.
+- ✅ Uncovered paths fail loudly in pure slim; applications that explicitly
+  call `ensureFallback()` can instead delegate them to the lazy full renderer.
+- ✅ Lets the application bundler remove unused renderer/runtime exports in
+  source mode; the guarded minimal and advanced fixtures are 138,279 and
+  145,910 bytes gzip-9, versus 211,646 bytes for the checked prebuilt runtime.
 
 **`optimizeDeps` is required** in `vite.config.js` for slim:
 
@@ -259,7 +273,7 @@ material.
 | `fail` | `'error'` | Use `'warn'` to keep building when a named artifact is missing. |
 | `autoMark` | `false` | Chain `.precompile('auto-<n>')` onto every `new *NodeMaterial(...)` automatically. |
 | `autoMarkPrefix` | `'auto'` | Prefix used by `autoMark` to name artifacts. |
-| `slim` | `false` | `true` uses the checked prebuilt slim runtime; `'source'` lets the application bundler tree-shake the guarded compiler-free source entry. Production only; dev keeps full Three for capture. |
+| `slim` | `false` | `'source'` is the recommended guarded, tree-shaken compiler-free entry for new Vite apps; `true` uses the checked single-file prebuilt runtime. Production only; dev keeps full Three for capture. |
 | `minifyWgsl` | `true` | Compact WGSL only in emitted virtual modules; captured JSON stays readable. |
 | `dedupeWgsl` | `true` | Hoist repeated WGSL strings into `virtual:tsl-precompile/__wgsl` for tree-shakeable reuse. |
 | `threeVersion` | auto-detect | Override the exact three.js package version used in rewrite hashes. It must match the installed package (rarely needed). |
@@ -279,7 +293,7 @@ material.
   is correct, but values won't animate over time. Track support at
   [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md).
 - **`[tsl-precompile/slim] X is not available in the slim bundle`**
-  You hit a code path that wasn't precompiled in `slim: true` mode. Mark
+  You hit a code path that wasn't precompiled in a slim production mode. Mark
   that material with `.precompile()` (or enable `autoMark`), re-run dev to
   capture, then rebuild.
 - **`slim build refused: ... built against three 0.184.0`**
@@ -332,8 +346,11 @@ physical node materials, material texture maps, env maps / PMREM, direct
 lights, shadows, material uniforms, plus stable artifact invalidation
 across dev capture / build rewrite / runtime hash check.
 
-Compute and storage shaders are experimental. The focused MRT/render-target
-guard set is green; broad postprocessing beyond focused bloom is deferred.
+Compute/storage and post-processing replay are implemented through captured
+artifacts and explicit hybrid support. The configured visual suite currently
+has no per-example pixel-gate exemptions; consult the generated table because
+the broad saved snapshot can lag fresh targeted reruns, and do not assume an
+arbitrary uncaptured live TSL path is accepted by pure slim.
 
 The latest generated coverage table is at
 [packages/examples/batch/results/coverage-summary.md](packages/examples/batch/results/coverage-summary.md).
@@ -355,13 +372,12 @@ regression.
 | **Publish path** | `npm install` of `pnpm pack` tarballs into a clean temp project ([fresh-project-smoke](packages/examples/fresh-project-smoke)) | Verifies that `exports`, `files`, `peerDependencies`, and `.d.ts` resolve outside the monorepo. |
 | **Bundlers** | Vite only | Plugin is Vite-specific; Rollup/esbuild/webpack are not supported. |
 
-**Known-limited examples.** Sixteen of the 206 stock three.js examples
-have the pixel-diff gate disabled — eight stochastic/PRNG-driven compute
-demos plus seven postprocessing flows whose float drift is too large for
-PSNR. Each carries a per-example justification in
-[coverage-config.json](packages/examples/batch/coverage-config.json) under
-`pixelGate.disabledNotes`. The replay still loads and renders a
-non-trivial frame; only the per-pixel assertion is relaxed.
+**Visual exceptions.**
+[coverage-config.json](packages/examples/batch/coverage-config.json) currently
+contains no `pixelGate.disabled` entries. Any future exception must carry a
+reviewable per-example justification there; artifact coverage, runtime errors,
+and minimum-brightness checks remain mandatory even when a pixel comparison is
+temporarily relaxed.
 
 ## Examples in this repo
 

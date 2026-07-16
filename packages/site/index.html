@@ -63,7 +63,7 @@
 				</div>
 				<ul class="hero-badges" aria-label="Project status and requirements">
 					<li>Experimental</li>
-					<li>Vite 5+</li>
+					<li>Vite 6.4.3+</li>
 					<li>WebGPU</li>
 					<li>three.js 0.184</li>
 					<li>MIT</li>
@@ -322,7 +322,7 @@
 					<div class="mode-head"><span class="mode-num">03</span><span class="mode-chip">production optimization</span></div>
 					<h3>Slim runtime</h3>
 					<p>Alias production Three.js to a node-builder-stripped bundle after the base capture workflow is green.</p>
-					<pre><code><span class="tok-fn">tslPrecompile</span>({ <span class="artifact-key">slim</span>: <span class="tok-key">true</span> })</code></pre>
+					<pre><code><span class="tok-fn">tslPrecompile</span>({ <span class="artifact-key">slim</span>: <span class="tok-str">'source'</span> })</code></pre>
 					<ul><li>No runtime NodeBuilder</li><li>Loud uncovered-path errors</li><li>Lazy full-renderer fallback</li></ul>
 				</article>
 			</div>
@@ -334,7 +334,7 @@
 					<p class="eyebrow">working quickstart</p>
 					<h2>One-time setup.<br>Then one line per material.</h2>
 				</div>
-				<p>This starts with the safer non-slim path. Once capture and coverage are green, add <code>slim: true</code>.</p>
+				<p>This new-project path uses guarded <code>slim: 'source'</code>. Existing apps can omit slim while they audit capture and fallback coverage.</p>
 			</div>
 
 			<div class="quickstart-steps">
@@ -355,7 +355,7 @@ pnpm add @tsl-precompile/runtime</code></pre>
 <span class="tok-key">import</span> tslPrecompile <span class="tok-key">from</span> <span class="tok-str">'vite-plugin-tsl-precompile'</span>;
 
 <span class="tok-key">export default</span> <span class="tok-fn">defineConfig</span>({
-  plugins: [ <span class="tok-fn">tslPrecompile</span>() ],
+  plugins: [ <span class="tok-fn">tslPrecompile</span>({ slim: <span class="tok-str">'source'</span> }) ],
   build: { target: <span class="tok-str">'esnext'</span> },
   optimizeDeps: {
     include: [ <span class="tok-str">'three'</span>, <span class="tok-str">'three/webgpu'</span>, <span class="tok-str">'three/tsl'</span> ],
@@ -448,8 +448,8 @@ scene.<span class="tok-fn">add</span>( <span class="tok-key">new</span> <span cl
 					<p>Yes. Treat it like generated source or a lockfile. It makes local builds and CI consume the same shader inputs and lets code review see shader changes.</p>
 				</details>
 				<details>
-					<summary>Is <code>slim: true</code> required?</summary>
-					<p>No. Start with normal capture. Slim mode is the later optimization that removes the node builder, and it requires every reachable material path to be covered or handled by fallback.</p>
+					<summary>Is <code>slim: 'source'</code> required?</summary>
+					<p>No. It is the preferred compiler-free profile for a fully covered new Vite app. Existing apps can start with normal capture; either slim mode requires every reachable path to be captured or handled by fallback.</p>
 				</details>
 				<details>
 					<summary>Can I try it without editing every material?</summary>

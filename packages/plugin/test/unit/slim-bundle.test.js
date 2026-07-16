@@ -54,12 +54,12 @@ test( 'slim bundle — exports the promised slim surface', { skip: bundleExists 
 
 } );
 
-test( 'slim bundle — diagnostic report on retained runtime Node/TSL DSL', { skip: bundleExists ? false : 'bundle not built' }, () => {
+test( 'slim bundle — diagnostic report on compatibility symbol strings', { skip: bundleExists ? false : 'bundle not built' }, () => {
 
 	// Compiler-only module IDs are a hard Rollup graph gate in
-	// runtime/rollup.config.js. These strings report the separate runtime Node
-	// DSL still retained by renderer auxiliaries so the next adapter cuts stay
-	// measurable without confusing them with NodeBuilder leakage.
+	// runtime/rollup.config.js, and the budget gate separately requires zero
+	// retained Three Node/TSL modules. These names can still appear in graph-free
+	// compatibility stubs or diagnostics, so print them only as size clues.
 	const src = readFileSync( BUNDLE, 'utf8' );
 	const fingerprints = [ 'OperatorNode', 'TempNode', 'FunctionNode', 'ContextNode' ];
 	const counts = fingerprints.map( ( s ) => ( { s, n: ( src.match( new RegExp( s, 'g' ) ) || [] ).length } ) );

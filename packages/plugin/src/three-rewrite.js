@@ -1,7 +1,7 @@
 /**
  * three.js source-file rewrites for the slim bundle.
  *
- * When `slim: true`, the plugin routes specific files from `three/src/**`
+ * In either slim build mode, the plugin routes specific files from `three/src/**`
  * through this module BEFORE bundling. Each handler mutates the AST to
  * replace `new NodeMaterial()` + graph-assignment sequences with
  * `new PrecompiledMaterial(loadAux(shape, hashNodeGraphSync(input)))`,

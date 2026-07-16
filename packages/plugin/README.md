@@ -16,7 +16,7 @@ pnpm add -D vite-plugin-tsl-precompile
 pnpm add @tsl-precompile/runtime
 ```
 
-Peer deps: `three >= 0.184.0`, `vite >= 5`.
+Peer deps: `three >= 0.184.0`, `vite >= 6.4.3`.
 
 ## Use
 
@@ -26,7 +26,8 @@ import { defineConfig } from 'vite';
 import tslPrecompile from 'vite-plugin-tsl-precompile';
 
 export default defineConfig( {
-	plugins: [ tslPrecompile() ],
+	// Preferred compiler-free profile for a new, fully captured Vite app.
+	plugins: [ tslPrecompile( { slim: 'source' } ) ],
 	build: { target: 'esnext' },
 	optimizeDeps: {
 		// three.js's WebGPU entry pulls a lot of node-graph code via dynamic
@@ -55,11 +56,13 @@ water.precompile( 'ocean-water' );      // <-- the only thing you add
 In dev, `.precompile('ocean-water')` runs the real extractor on the live
 material and writes `artifacts/ocean-water.<hash>.json`. In build, the plugin
 rewrites that call to inject the baked artifact + a generated updater
-function. With `slim: true`, the checked slim runtime bundle skips the node
-builder entirely at runtime. Use `slim: 'source'` to expose the same guarded,
-compiler-free surface to the application bundler for finer tree-shaking.
-Source mode is production-only, checks the plugin/runtime policy revision, and
-fails the build if compiler or stock replay modules remain reachable.
+function. `slim: 'source'` is the recommended compiler-free mode for new Vite
+apps whose production paths are captured: it exposes the guarded source surface
+to the application bundler for finer tree shaking. `slim: true` selects the
+same public surface from the checked single-file prebuilt runtime. Source mode
+is production-only, checks the plugin/runtime policy revision, and fails the
+build if compiler, stock replay, retained Node/TSL, or split Three-identity
+modules remain reachable.
 
 In either slim mode, `setupPrecompile()` automatically captures the exact
 renderer-output transform after successful real renders in dev. It deduplicates
@@ -106,7 +109,7 @@ To automate the dev-capture process (e.g. during CI or post-upgrade sweeps) with
 | `fail` | `'error'` | Use `'warn'` to keep building when a named artifact is missing. |
 | `autoMark` | `false` | Auto-chain `.precompile('auto-<n>')` onto every `new *NodeMaterial(...)` — zero source edits. |
 | `autoMarkPrefix` | `'auto'` | Prefix used by `autoMark`. |
-| `slim` | `false` | `true` aliases `three/webgpu` to the checked prebuilt runtime; `'source'` lets Vite tree-shake the guarded compiler-free source entry. Dev keeps full Three for capture. |
+| `slim` | `false` | `'source'` is the recommended guarded, tree-shaken compiler-free entry for new Vite apps; `true` selects the checked single-file prebuilt runtime. Dev keeps full Three for capture. |
 | `minifyWgsl` | `true` | Compact WGSL only in emitted virtual modules; captured artifact JSON stays readable. |
 | `dedupeWgsl` | `true` | Hoist repeated WGSL strings into `virtual:tsl-precompile/__wgsl` for tree-shakeable reuse. |
 | `threeVersion` | auto-detect | Override the three.js version used in rewrite hashes. |

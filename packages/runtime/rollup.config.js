@@ -3,9 +3,9 @@
  *
  * Rolls up three.js's ESM source (`three/src/**`) with compiler-only modules
  * excluded plus our precompile layer, producing
- * `build/three.webgpu.slim.js`. Some Node/TSL runtime carriers still remain
- * until renderer-owned auxiliaries move behind slim adapters. The Vite
- * plugin, when `slim: true`, aliases `three/webgpu` to this bundle so the
+ * `build/three.webgpu.slim.js`. The graph gate enforces zero compiler, stock
+ * replay-adapter, and retained Three Node/TSL modules. The Vite plugin, when
+ * `slim: true`, aliases `three/webgpu` to this bundle so the
  * user's `import { WebGPURenderer } from 'three/webgpu'` continues to work
  * without shipping the node builder.
  *

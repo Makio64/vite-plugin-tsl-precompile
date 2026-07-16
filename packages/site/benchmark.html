@@ -52,12 +52,12 @@
 			<article class="bench-card">
 				<h2 class="bench-card-h">Measured reference build</h2>
 				<div class="bench-card-stat">
-					<span class="bench-card-big">~240 KB</span>
-					<span class="bench-card-sub">slim runtime, gzip</span>
+					<span class="bench-card-big">138,279 B</span>
+					<span class="bench-card-sub">minimal source fixture, gzip-9</span>
 				</div>
 				<p class="bench-card-body">
-					vs <strong>~280 KB</strong> gzip for the reference stock <code>three.webgpu</code> + <code>three.core</code> build.
-					Treat this as a checked-in implementation measurement, not a promise for every app bundle.
+					The advanced source fixture is <strong>145,910 bytes</strong>; the checked single-file prebuilt runtime is <strong>211,646 bytes</strong>.
+					These are deterministic regression fixtures, not a stock-Three comparison or a promise for every app bundle.
 				</p>
 			</article>
 
@@ -131,7 +131,7 @@
 		<section class="bench-foot">
 			<p>
 				<strong>What the architecture guarantees:</strong> captured materials use embedded WGSL and generated update plans.
-				With <code>slim: true</code>, the production bundle aliases to a NodeBuilder-stripped Three build. Without slim mode,
+				With either slim mode (<code>slim: 'source'</code> preferred for new Vite apps), the production bundle uses a NodeBuilder-stripped Three build. Without slim mode,
 				the full compiler may still exist elsewhere in the bundle even though marked materials use their artifacts.
 				<a href="how-it-works.html">See the exact boundary →</a>
 			</p>

@@ -22,9 +22,10 @@ export interface TslPrecompileOptions {
 	autoMarkPrefix?: string;
 	/**
 	 * Alias `three/webgpu` to a compiler-free runtime in production builds.
-	 * `true` uses the checked prebuilt bundle; `'source'` lets the application
-	 * bundler tree-shake exact Three source modules. Serve/dev keeps full Three
-	 * for capture. Requires every reachable material to be precompiled.
+	 * `'source'` is recommended for new Vite apps and lets the application
+	 * bundler tree-shake exact Three source modules; `true` uses the checked
+	 * single-file prebuilt bundle. Serve/dev keeps full Three for capture.
+	 * Requires every reachable path to be precompiled or explicitly supported.
 	 * Default: `false`.
 	 */
 	slim?: boolean | 'source';

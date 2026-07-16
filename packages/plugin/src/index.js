@@ -178,7 +178,7 @@ function validateOptions( userOpts ) {
  * @param {'error' | 'warn'} [userOpts.fail='error']
  * @param {boolean} [userOpts.autoMark=false] - Auto-mark every `new *NodeMaterial(...)` with `.precompile('<prefix>-<slug>-<n>')` so unmodified three.js demos flow through the AOT pipeline.
  * @param {string}  [userOpts.autoMarkPrefix='auto'] - Prefix used by auto-mark names.
- * @param {boolean | 'source'} [userOpts.slim=false] - Alias `three/webgpu` to the checked prebuilt slim bundle, or use `'source'` for the guarded tree-shaken entry. Dev/serve keeps full three for capture.
+ * @param {boolean | 'source'} [userOpts.slim=false] - Use `'source'` (recommended for new Vite apps) for the guarded tree-shaken entry, or `true` for the checked single-file prebuilt bundle. Dev/serve keeps full Three for capture.
  * @param {string}  [userOpts.threeVersion] - Override the auto-detected exact three.js package version used in artifact hashes.
  * @param {boolean} [userOpts.minifyWgsl=true] - Compact WGSL in emitted virtual modules; captured JSON stays untouched.
  * @param {boolean} [userOpts.dedupeWgsl=true] - Hoist repeated WGSL strings inside emitted virtual modules.
@@ -498,7 +498,7 @@ export default function tslPrecompile( userOpts = {} ) {
 
 		async transform( code, id ) {
 
-			// three.js source rewrite (slim: true, build only). Runs before
+			// three.js source rewrite (both slim modes, build only). Runs before
 			// the general `isTransformable` check so we can pull in files
 			// from `node_modules` — the carve-out is scoped to the specific
 			// files our handlers know how to rewrite.
