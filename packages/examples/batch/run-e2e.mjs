@@ -6082,7 +6082,14 @@ function __wirePassTexturesIntoSceneMaterials( scene, passNodes ) {
 			: object && object.material ? [ object.material ] : [];
 		for ( const material of materials ) {
 			if ( ! material || ! material.precompiledArtifact ) continue;
-			const artifact = __attachActivePassTextureRefs( material.precompiledArtifact, nodes );
+			let artifact = __attachActivePassTextureRefs( material.precompiledArtifact, nodes );
+			// Context-sensitive consumer variants can capture effect-owned inputs
+			// (for example SSS) in addition to ordinary pass color/depth textures.
+			// Material-node texture fallback wiring cannot identify those slots and
+			// may otherwise replace them with an unrelated albedo/normal texture.
+			for ( const passNode of nodes ) {
+				if ( passNode && passNode.contextNode ) artifact = __attachGraphTextureRefs( artifact, passNode.contextNode );
+			}
 			if ( artifact !== material.precompiledArtifact ) material.precompiledArtifact = artifact;
 			material.needsUpdate = true;
 		}
