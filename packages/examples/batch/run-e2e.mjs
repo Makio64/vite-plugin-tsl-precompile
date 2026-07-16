@@ -9205,6 +9205,8 @@ async function __probeShadowCameraCoverage( fullRenderer, shadowScene, light, si
 		const shouldReport = window.__TSLP_DEBUG_SHADOW_COVERAGE === true;
 		if ( shouldReport !== true && options.warm !== true ) return null;
 		if ( ! fullRenderer || ! fullRenderer.backend || typeof fullRenderer.backend.copyTextureToBuffer !== 'function' || ! depthTex || ! FullTSL || ! FullNodeMaterial || ! FullQuadMesh || ! FullRenderTarget ) return null;
+		// WGSL has no raw textureLoad overload for depth cube textures.
+		if ( depthTex.isCubeTexture === true ) return null;
 	try {
 		if ( ! __shadowDepthViewRT.rt ) __shadowDepthViewRT.rt = new FullRenderTarget( size, size );
 		const rt = __shadowDepthViewRT.rt;
