@@ -22,6 +22,7 @@ const VALID_MODES = new Set( [ 'slider', 'split', 'solo' ] );
 
 const state = {
 	data: null,
+	liveManifest: null,
 	filter: 'all',
 	query: '',
 	view: [],                 // currently filtered+sorted array (the prev/next walk path)
@@ -587,20 +588,86 @@ function bindDrawer() {
 	} );
 }
 
+function bindLiveCanary( manifest ) {
+	const container = $( '#ex-live-canary' );
+	const openButton = $( '#ex-live-open' );
+	const dialog = $( '#ex-live-dialog' );
+	const frame = $( '#ex-live-frame' );
+	const status = $( '#ex-live-status' );
+	const direct = $( '#ex-live-direct' );
+	const canary = manifest?.examples?.find( entry => entry.role === 'canary' && entry.buildVerified );
+
+	if ( ! canary ) {
+		container.dataset.unavailable = 'true';
+		openButton.textContent = 'Compiled route unavailable';
+		return;
+	}
+
+	const residue = Object.values( canary.forbiddenModuleCounts || {} ).reduce( ( total, count ) => total + Number( count || 0 ), 0 );
+	if ( canary.runtimeMode !== 'pure-slim' || residue !== 0 ) {
+		container.dataset.unavailable = 'true';
+		openButton.textContent = 'Compiler-free gate failed';
+		return;
+	}
+
+	const route = new URL( canary.playUrl, document.baseURI );
+	openButton.disabled = false;
+	openButton.textContent = 'Run compiled example';
+	direct.href = route.href;
+	$( '#ex-live-title' ).textContent = canary.title;
+	$( '#ex-live-meta' ).innerHTML = [
+		[ 'mode', canary.runtimeMode ],
+		[ 'bundle', fmtBytes( canary.bundleBytes ) ],
+		[ 'Three.js', canary.threeVersion ],
+		[ 'compiler modules', residue ],
+	].map( ( [ label, value ] ) => `<div><strong>${escapeHtml( String( value ) )}</strong><span>${escapeHtml( label )}</span></div>` ).join( '' );
+
+	openButton.addEventListener( 'click', () => {
+		status.className = 'ex-live-status';
+		status.textContent = 'Starting WebGPU and hydrating the compiled artifact…';
+		frame.src = route.href;
+		dialog.showModal();
+	} );
+
+	window.addEventListener( 'message', event => {
+		if ( event.source !== frame.contentWindow || event.origin !== location.origin || event.data?.type !== 'tslp-example-status' ) return;
+		const result = event.data.result || {};
+		if ( result.errors?.length ) {
+			status.className = 'ex-live-status is-error';
+			status.textContent = `Runtime error: ${result.errors[ 0 ]}`;
+		} else if ( result.ready && result.compilerFree ) {
+			status.className = 'ex-live-status is-ready';
+			status.textContent = `Running compiled TSL · ${result.canvasCount} canvas · ${result.animationFrames} animation frames`;
+		}
+	} );
+
+	dialog.addEventListener( 'close', () => {
+		frame.src = 'about:blank';
+		status.className = 'ex-live-status';
+		status.textContent = 'Stopped — the WebGPU context was released.';
+	} );
+}
+
 async function init() {
 	const stageTitle = $( '#ex-stage-title' );
 	stageTitle.textContent = 'Loading…';
 
 	let data;
+	let liveManifest = null;
 	try {
-		const res = await fetch( new URL( 'examples.json', document.baseURI ) );
+		const [ res, liveRes ] = await Promise.all( [
+			fetch( new URL( 'examples.json', document.baseURI ) ),
+			fetch( new URL( 'live-examples.json', document.baseURI ) ).catch( () => null ),
+		] );
 		if ( ! res.ok ) throw new Error( `HTTP ${res.status}` );
 		data = await res.json();
+		if ( liveRes?.ok ) liveManifest = await liveRes.json();
 	} catch ( err ) {
 		stageTitle.textContent = `Failed to load examples.json (${err.message}).`;
 		return;
 	}
 	state.data = data;
+	state.liveManifest = liveManifest;
 
 	$( '#ex-drawer-count' ).textContent = data.totals.examplesProcessed;
 
@@ -614,6 +681,7 @@ async function init() {
 	bindKeyboard();
 	bindHash();
 	bindDrawer();
+	bindLiveCanary( liveManifest );
 
 	// Initial seam position
 	setSliderPos( 50 );

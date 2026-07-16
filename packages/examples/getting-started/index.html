@@ -22,5 +22,39 @@
 		<div>status: <span id="status">starting…</span></div>
 	</div>
 	<script type="module" src="./main.js"></script>
+	<script type="module">
+		import * as THREE from 'three/webgpu';
+
+		const result = window.__TSLP_SITE_RESULT__ = {
+			id: 'getting-started',
+			ready: false,
+			runtimeMode: THREE.__TSLP_SLIM__ === true ? 'pure-slim' : 'capture',
+			compilerFree: THREE.__TSLP_SLIM__ === true,
+			animationFrames: 0,
+			canvasCount: 0,
+			errors: [],
+		};
+		const publish = () => window.parent.postMessage( { type: 'tslp-example-status', result: { ...result } }, location.origin );
+		window.addEventListener( 'error', event => {
+			result.errors.push( event.message || 'window error' );
+			publish();
+		} );
+		window.addEventListener( 'unhandledrejection', event => {
+			result.errors.push( String( event.reason?.message || event.reason || 'unhandled rejection' ) );
+			publish();
+		} );
+		const observe = () => {
+			result.animationFrames += 1;
+			result.canvasCount = document.querySelectorAll( 'canvas' ).length;
+			const rendererReady = document.getElementById( 'status' )?.textContent === 'renderer ready';
+			const ready = result.compilerFree && rendererReady && result.canvasCount > 0 && result.errors.length === 0;
+			if ( ready !== result.ready || result.animationFrames === 1 || result.animationFrames % 120 === 0 ) {
+				result.ready = ready;
+				publish();
+			}
+			requestAnimationFrame( observe );
+		};
+		observe();
+	</script>
 </body>
 </html>

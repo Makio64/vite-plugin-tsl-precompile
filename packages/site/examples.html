@@ -66,6 +66,15 @@
 				<li><span class="ex-kpi-num">0</span><span class="ex-kpi-lab">runtime builder calls</span></li>
 				<li><span class="ex-kpi-num" data-key="smokePassRate">—</span><span class="ex-kpi-lab">load-smoke pass</span></li>
 			</ul>
+
+			<div class="ex-live-canary" id="ex-live-canary">
+				<div>
+					<span class="ex-live-canary-kicker">Real production route</span>
+					<strong>Run compiled TSL in this page</strong>
+					<p>The canary below is built with the public Vite plugin and <code>slim: 'source'</code>. Its bundle gate found zero compiler or stock NodeBuilder modules.</p>
+				</div>
+				<button type="button" id="ex-live-open" disabled>Preparing compiled route…</button>
+			</div>
 		</div>
 	</header>
 
@@ -177,6 +186,24 @@
 			</div>
 		</main>
 	</section>
+
+	<dialog class="ex-live-dialog" id="ex-live-dialog" aria-labelledby="ex-live-title">
+		<div class="ex-live-dialog-shell">
+			<header class="ex-live-dialog-header">
+				<div>
+					<span class="ex-live-canary-kicker">Compiler-free WebGPU</span>
+					<h2 id="ex-live-title">Compiled TSL canary</h2>
+				</div>
+				<form method="dialog"><button class="ex-live-close" aria-label="Close compiled example">×</button></form>
+			</header>
+			<div class="ex-live-status" id="ex-live-status" role="status">Waiting to start…</div>
+			<div class="ex-live-frame-wrap">
+				<iframe id="ex-live-frame" title="Live compiler-free TSL example" sandbox="allow-scripts allow-same-origin"></iframe>
+			</div>
+			<div class="ex-live-meta" id="ex-live-meta"></div>
+			<a class="ex-stage-cta" id="ex-live-direct" target="_blank" rel="noopener">Open compiled route in a new tab →</a>
+		</div>
+	</dialog>
 
 	<!-- ========== METHODOLOGY (compact) ========== -->
 	<section class="ex-methodology">

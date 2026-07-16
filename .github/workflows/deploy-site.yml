@@ -7,6 +7,8 @@ on:
       - 'packages/site/**'
       - 'packages/plugin/**'
       - 'packages/runtime/**'
+      - 'packages/contract/**'
+      - 'packages/examples/getting-started/**'
       - '.github/workflows/deploy-site.yml'
   workflow_dispatch:
 
@@ -32,6 +34,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build:site
+      - run: npx playwright install --with-deps chromium
+      - run: xvfb-run -a pnpm --filter @tsl-precompile/site test:live
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

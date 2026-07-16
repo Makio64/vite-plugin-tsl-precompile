@@ -6,10 +6,12 @@
   "description": "Landing site for vite-plugin-tsl-precompile.",
   "scripts": {
     "data": "node scripts/build-examples-data.mjs",
-    "dev": "vite",
+    "live": "node scripts/build-live-examples.mjs",
+    "dev": "node scripts/build-live-examples.mjs && vite",
     "check:content": "node ../examples/batch/scripts/build-example-catalogue.mjs --check && node scripts/check-content.mjs",
-    "build": "vite build && pnpm check:content",
-    "preview": "vite preview"
+    "build": "node scripts/build-live-examples.mjs && vite build && pnpm check:content",
+    "preview": "vite preview",
+    "test:live": "node scripts/test-live-example.mjs"
   },
   "dependencies": {
     "three": "0.184.0"

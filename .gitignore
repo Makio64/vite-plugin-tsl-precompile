@@ -14,6 +14,8 @@ packages/plugin/test/.scratch-shadow-live/
 # Per-project artifact caches (examples produce these when running the plugin)
 packages/examples/**/artifacts/
 packages/examples/**/.tsl-precompile-cache/
+packages/site/public/live/
+packages/site/public/live-examples.json
 
 # Playwright/CI scratch
 playwright-report/

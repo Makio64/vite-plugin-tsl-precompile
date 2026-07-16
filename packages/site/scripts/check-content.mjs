@@ -136,6 +136,44 @@ for ( const page of pages ) {
 
 }
 
+let liveManifest;
+try {
+
+	liveManifest = JSON.parse( await readFile( resolve( distDir, 'live-examples.json' ), 'utf8' ) );
+
+} catch {
+
+	fail( 'dist/live-examples.json: missing compiled-route manifest' );
+
+}
+const canary = liveManifest?.examples?.find( entry => entry.role === 'canary' );
+if ( ! canary ) {
+
+	fail( 'dist/live-examples.json: missing compiler-free canary' );
+
+} else {
+
+	if ( canary.runtimeMode !== 'pure-slim' || canary.buildVerified !== true ) fail( 'dist/live-examples.json: canary is not a verified pure-slim build' );
+	const expectedManifestHash = sha256( JSON.stringify( liveManifest.examples ) );
+	if ( liveManifest.manifestSha256 !== expectedManifestHash ) fail( 'dist/live-examples.json: manifest fingerprint does not match its records' );
+	const forbidden = Object.values( canary.forbiddenModuleCounts || {} ).reduce( ( total, count ) => total + Number( count || 0 ), 0 );
+	if ( forbidden !== 0 ) fail( `dist/live-examples.json: canary retained ${ forbidden } forbidden module(s)` );
+	if ( ! /^[a-f0-9]{64}$/.test( canary.bundleSha256 || '' ) ) fail( 'dist/live-examples.json: canary has no bundle fingerprint' );
+	const routeDir = resolve( distDir, canary.playUrl );
+	try {
+
+		const liveHtml = await readFile( resolve( routeDir, 'index.html' ), 'utf8' );
+		if ( /(?:src|href)=["']\/assets\//.test( liveHtml ) ) fail( `${ canary.playUrl }index.html: root-relative asset URL breaks the Pages base path` );
+		if ( ! /(?:src|href)=["']\.\/assets\//.test( liveHtml ) ) fail( `${ canary.playUrl }index.html: no relative compiled asset found` );
+
+	} catch {
+
+		fail( `${ canary.playUrl }index.html: missing compiled route` );
+
+	}
+
+}
+
 if ( failures.length > 0 ) {
 
 	console.error( `[site-check] ${ failures.length } issue(s):\n- ${ failures.join( '\n- ' ) }` );
@@ -143,6 +181,6 @@ if ( failures.length > 0 ) {
 
 } else {
 
-	console.log( `[site-check] ${ pages.length } pages, generated evidence, quickstart, and lightweight overview verified.` );
+	console.log( `[site-check] ${ pages.length } pages, canonical evidence, and the compiler-free live route verified.` );
 
 }
