@@ -3,8 +3,7 @@
     "disabled": {
       "diagnostic": [],
       "volatileCompute": [
-        "webgpu_compute_particles_snow.html",
-        "webgpu_compute_sort_bitonic.html"
+        "webgpu_compute_particles_snow.html"
       ]
     },
     "ignoreRegions": {
