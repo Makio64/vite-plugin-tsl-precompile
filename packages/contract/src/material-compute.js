@@ -19,6 +19,21 @@ import { stableJsonStringify } from './stable-json.js';
 
 export const MATERIAL_COMPUTE_VERSION = 'material-compute@1';
 
+// Deferred Fn() roots (most notably NodeMaterial.geometryNode) create their
+// output nodes only while a full NodeBuilder executes the JavaScript closure.
+// Keep the exact builder result on the live root under one private property so
+// capture can serialize a normal material property path and hybrid replay can
+// publish the equivalent retained node at that same path. Graph normalization
+// deliberately ignores private node properties, so this evidence never changes
+// source identity.
+export const MATERIAL_COMPUTE_DEFERRED_NODES_PROPERTY = '_tslpMaterialComputeNodes';
+
+const MATERIAL_COMPUTE_NODE_PATH_SKIP_KEYS = new Set( [
+	'parent', 'children', 'scene', 'camera', 'renderer', 'geometry', '_cache',
+	'domElement', 'sourceMaterial', 'constructor', '__proto__', 'prototype',
+] );
+const MATERIAL_COMPUTE_NODE_PATH_MAX_DEPTH = 24;
+
 export const MATERIAL_COMPUTE_MODES = Object.freeze( [
 	'precompiled',
 	'hybrid-required',
@@ -66,6 +81,136 @@ const RENDER_BINDING_KIND_SET = new Set( MATERIAL_COMPUTE_RENDER_BINDING_KINDS )
 const UPDATE_TYPE_SET = new Set( MATERIAL_COMPUTE_UPDATE_TYPES );
 const LIFECYCLE_PHASE_SET = new Set( MATERIAL_COMPUTE_LIFECYCLE_PHASES );
 const ACCESS_MODE_SET = new Set( MATERIAL_COMPUTE_ACCESS_MODES );
+
+/**
+ * Find one exact own-property path from a material's public `*Node` roots to a
+ * live node. This mirrors the extractor's fail-closed identity walk and is
+ * exported so render observation can prove whether a ComputeNode is genuinely
+ * closure-hidden before publishing deferred evidence.
+ *
+ * @param {?Object} material
+ * @param {?Object} target
+ * @return {?Array<string>}
+ */
+export function findMaterialComputeNodePath( material, target ) {
+
+	if ( ! material || ! target || typeof material !== 'object' ) return null;
+	const rootKeys = Object.getOwnPropertyNames( material ).filter( ( key ) => key.endsWith( 'Node' ) ).sort();
+	for ( const rootKey of rootKeys ) {
+
+		let root = null;
+		try { root = material[ rootKey ]; } catch ( _ ) { continue; }
+		if ( ! root || ( typeof root !== 'object' && typeof root !== 'function' ) ) continue;
+		const suffix = findMaterialComputeObjectPath( root, target );
+		if ( suffix ) return [ rootKey, ...suffix ];
+
+	}
+	return null;
+
+}
+
+function findMaterialComputeObjectPath( root, target ) {
+
+	if ( root === target ) return [];
+	const seen = new Set();
+	const visit = ( value, depth ) => {
+
+		if ( value === target ) return [];
+		if ( ! value || ( typeof value !== 'object' && typeof value !== 'function' ) ) return null;
+		if ( seen.has( value ) || depth >= MATERIAL_COMPUTE_NODE_PATH_MAX_DEPTH ) return null;
+		seen.add( value );
+
+		let keys = [];
+		try { keys = Object.getOwnPropertyNames( value ).sort(); } catch ( _ ) { return null; }
+		for ( const key of keys ) {
+
+			if ( MATERIAL_COMPUTE_NODE_PATH_SKIP_KEYS.has( key ) || key === 'length' ) continue;
+			let child = null;
+			try { child = value[ key ]; } catch ( _ ) { continue; }
+			if ( child === target ) return [ key ];
+			if ( ! child || ( typeof child !== 'object' && typeof child !== 'function' ) ) continue;
+			const suffix = visit( child, depth + 1 );
+			if ( suffix ) return [ key, ...suffix ];
+
+		}
+		return null;
+
+	};
+	return visit( root, 0 );
+
+}
+
+/**
+ * Publish exact raw ComputeNodes on one deferred material root. Existing live
+ * identities are retained in insertion order; a second builder variant thus
+ * gets a different path and the material-compute family correctly fails closed
+ * instead of pretending variant-local nodes share one runtime identity.
+ *
+ * @param {?Object} rootNode
+ * @param {Array<Object>} nodes
+ * @return {ReadonlyArray<Object>}
+ */
+export function attachDeferredMaterialComputeNodes( rootNode, nodes ) {
+
+	if ( ! rootNode || ( typeof rootNode !== 'object' && typeof rootNode !== 'function' ) ) return Object.freeze( [] );
+	const candidates = Array.isArray( nodes ) ? nodes.filter( ( node ) => (
+		node && node.isComputeNode === true && node.isPrecompiledCompute !== true
+	) ) : [];
+	if ( candidates.length === 0 ) return Object.freeze( [] );
+
+	let published = null;
+	try { published = rootNode[ MATERIAL_COMPUTE_DEFERRED_NODES_PROPERTY ]; } catch ( _ ) { return Object.freeze( [] ); }
+	if ( ! Array.isArray( published ) ) {
+
+		published = [];
+		try {
+
+			Object.defineProperty( rootNode, MATERIAL_COMPUTE_DEFERRED_NODES_PROPERTY, {
+				value: published,
+				enumerable: false,
+				configurable: true,
+			} );
+
+		} catch ( _ ) { return Object.freeze( [] ); }
+
+	}
+	for ( const node of candidates ) if ( ! published.includes( node ) ) published.push( node );
+	return Object.freeze( candidates.slice() );
+
+}
+
+/**
+ * Bridge closure-hidden raw ComputeNodes from one exact NodeBuilderState onto
+ * a single deferred Fn() material root. Multiple deferred roots are ambiguous
+ * and remain unmodified so extraction continues to fail closed.
+ *
+ * @param {?Object} material
+ * @param {?Object} state
+ * @return {ReadonlyArray<Array<string>>}
+ */
+export function attachDeferredMaterialComputeStatePaths( material, state ) {
+
+	if ( ! material || ! state ) return Object.freeze( [] );
+	const computeNodes = [ ...new Set( ( Array.isArray( state.updateBeforeNodes ) ? state.updateBeforeNodes : [] ).filter( ( node ) => (
+		node && node.isComputeNode === true && node.isPrecompiledCompute !== true
+	) ) ) ];
+	const unresolved = computeNodes.filter( ( node ) => findMaterialComputeNodePath( material, node ) === null );
+	if ( unresolved.length === 0 ) return Object.freeze( [] );
+
+	const deferredRoots = [];
+	for ( const rootKey of Object.getOwnPropertyNames( material ).filter( ( key ) => key.endsWith( 'Node' ) ).sort() ) {
+
+		let root = null;
+		try { root = material[ rootKey ]; } catch ( _ ) { continue; }
+		const callNode = root && root.isVarNode === true ? root.node : root;
+		if ( callNode && callNode.isShaderCallNodeInternal === true && typeof callNode.shaderNode?.jsFunc === 'function' ) deferredRoots.push( callNode );
+
+	}
+	if ( deferredRoots.length !== 1 ) return Object.freeze( [] );
+	attachDeferredMaterialComputeNodes( deferredRoots[ 0 ], unresolved );
+	return Object.freeze( unresolved.map( ( node ) => findMaterialComputeNodePath( material, node ) ).filter( Boolean ) );
+
+}
 
 function issue( code, message, path ) {
 

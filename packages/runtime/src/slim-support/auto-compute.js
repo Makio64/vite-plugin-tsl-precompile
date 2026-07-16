@@ -14,6 +14,7 @@
  */
 
 import { collectArtifactVariantCandidates } from '@tsl-precompile/contract/artifact-variants';
+import { attachDeferredMaterialComputeNodes } from '@tsl-precompile/contract/material-compute';
 import {
 	MATERIAL_COMPUTE_BINDINGS,
 	applyMaterialComputeAttributeBindings,
@@ -32,6 +33,11 @@ export const AUTO_COMPUTE_MATERIAL_PROPERTIES = Object.freeze( [
 	'colorNode',
 	'outputNode',
 ] );
+
+// Productized name for the live deferred-geometry result currently populated
+// by replay preparation. Keeping the adoption here lets contract-aware scene
+// support resolve the same material path before its strict kernel-set check.
+const DEFERRED_GEOMETRY_UPDATE_BEFORE_NODES = '__tslpDeferredGeometryUpdateBeforeNodes';
 
 const WRITE_ACCESS = new Set( [ 'readWrite', 'writeOnly' ] );
 const MAX_ASSIGNMENT_SOLUTIONS = 2;
@@ -170,6 +176,29 @@ export function collectMaterialComputeBindings( scene, options = {} ) {
 
 		const { object, material, sourceMaterial } = owner;
 		const byNode = new Map();
+		let deferredNodes = null;
+		try { deferredNodes = material && material[ DEFERRED_GEOMETRY_UPDATE_BEFORE_NODES ]; } catch ( _ ) {}
+		if ( ! Array.isArray( deferredNodes ) ) {
+
+			try { deferredNodes = sourceMaterial && sourceMaterial[ DEFERRED_GEOMETRY_UPDATE_BEFORE_NODES ]; } catch ( _ ) {}
+
+		}
+		let deferredRoot = null;
+		try { deferredRoot = sourceMaterial && sourceMaterial.geometryNode; } catch ( _ ) {}
+		if ( deferredRoot && deferredRoot.isVarNode === true ) deferredRoot = deferredRoot.node;
+		if ( deferredRoot && Array.isArray( deferredNodes ) ) {
+
+			attachDeferredMaterialComputeNodes( deferredRoot, deferredNodes );
+			for ( const computeNode of deferredNodes ) {
+
+				if ( ! isRawComputeNode( computeNode ) || byNode.has( computeNode ) ) continue;
+				const record = { object, material, sourceMaterial, computeNode, properties: [ 'geometryNode' ] };
+				byNode.set( computeNode, record );
+				records.push( record );
+
+			}
+
+		}
 		for ( const property of materialNodeProperties( sourceMaterial ) ) {
 
 			let root = null;

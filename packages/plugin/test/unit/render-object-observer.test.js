@@ -8,6 +8,7 @@ import {
 	snapshotRenderObjectRequest,
 } from '../../src/vendor/render-object-observer.js';
 import { RENDER_BINDING_OWNER_KINDS } from '@tsl-precompile/contract/render-selector';
+import { findMaterialComputeNodePath } from '@tsl-precompile/contract/material-compute';
 
 function fixture() {
 
@@ -118,6 +119,61 @@ test( 'harvest includes repeated request-only cache hits as one complete materia
 	assert.equal( family.variants.length, 1 );
 	assert.equal( family.variants[ 0 ].requestCount, 2 );
 	assert.equal( family.variants[ 0 ].nodeBuilderState, state );
+
+} );
+
+test( 'harvest publishes a closure-hidden compute kernel under one exact deferred material path', async () => {
+
+	const { manager, renderer, renderObjects } = fixture();
+	const computeNode = { isNode: true, isComputeNode: true, isPrecompiledCompute: false };
+	const geometryNode = {
+		isNode: true,
+		isShaderCallNodeInternal: true,
+		shaderNode: { jsFunc() {} },
+	};
+	const material = { uuid: 'deferred-compute-material', geometryNode };
+	const state = { updateBeforeNodes: [ computeNode ] };
+	manager.nodeBuilderCache.set( 92, state );
+	const renderObject = {
+		cacheKey: 92,
+		material,
+		object: { material },
+		context: { renderTarget: null, activeCubeFace: 0, activeMipmapLevel: 0, sampleCount: 1 },
+	};
+	const session = beginRenderObjectHarvest( renderer );
+	renderObjects.get( renderObject );
+	await session.finish();
+
+	assert.deepEqual(
+		findMaterialComputeNodePath( material, computeNode ),
+		[ 'geometryNode', '_tslpMaterialComputeNodes', '0' ],
+	);
+	assert.equal( Object.prototype.propertyIsEnumerable.call( geometryNode, '_tslpMaterialComputeNodes' ), false );
+
+} );
+
+test( 'harvest leaves multiple deferred roots unresolved instead of guessing ownership', async () => {
+
+	const { manager, renderer, renderObjects } = fixture();
+	const computeNode = { isNode: true, isComputeNode: true, isPrecompiledCompute: false };
+	const deferredRoot = () => ( {
+		isNode: true,
+		isShaderCallNodeInternal: true,
+		shaderNode: { jsFunc() {} },
+	} );
+	const material = { uuid: 'ambiguous-deferred-compute', geometryNode: deferredRoot(), colorNode: deferredRoot() };
+	manager.nodeBuilderCache.set( 93, { updateBeforeNodes: [ computeNode ] } );
+	const renderObject = {
+		cacheKey: 93,
+		material,
+		object: { material },
+		context: { renderTarget: null, activeCubeFace: 0, activeMipmapLevel: 0, sampleCount: 1 },
+	};
+	const session = beginRenderObjectHarvest( renderer );
+	renderObjects.get( renderObject );
+	await session.finish();
+
+	assert.equal( findMaterialComputeNodePath( material, computeNode ), null );
 
 } );
 

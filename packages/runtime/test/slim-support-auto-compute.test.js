@@ -12,6 +12,7 @@ import {
 	prepareMaterialComputeAttributes,
 } from '../src/slim-support/auto-compute.js';
 import { hydrateNodeBuilderState } from '../src/hydrator.js';
+import { findMaterialComputeNodePath } from '@tsl-precompile/contract/material-compute';
 
 function storageAttribute( { count = 4, itemSize = 3, ArrayType = Float32Array } = {} ) {
 
@@ -117,6 +118,32 @@ test( 'scene discovery keeps every precompiled owner but deduplicates each mater
 	assert.deepEqual( records.map( ( record ) => record.material ), [ first, second ] );
 	assert.deepEqual( records[ 0 ].properties.sort(), [ 'colorNode', 'positionNode' ] );
 	assert.equal( records.every( ( record ) => record.computeNode === shared ), true );
+
+} );
+
+test( 'scene discovery adopts deferred geometry kernels at their captured private root path', () => {
+
+	const deferred = computeNode( 'deferred-geometry' );
+	const geometryNode = {
+		isNode: true,
+		isShaderCallNodeInternal: true,
+		shaderNode: { jsFunc() {} },
+		traverse( visitor ) { visitor( this ); },
+	};
+	const sourceMaterial = { geometryNode };
+	const material = precompiledMaterial( { attributes: [] }, {
+		__tslpSourceMaterial: sourceMaterial,
+		__tslpDeferredGeometryUpdateBeforeNodes: [ deferred ],
+	} );
+	const records = collectMaterialComputeBindings( sceneWith( material ) );
+
+	assert.equal( records.length, 1 );
+	assert.equal( records[ 0 ].computeNode, deferred );
+	assert.deepEqual( records[ 0 ].properties, [ 'geometryNode' ] );
+	assert.deepEqual(
+		findMaterialComputeNodePath( sourceMaterial, deferred ),
+		[ 'geometryNode', '_tslpMaterialComputeNodes', '0' ],
+	);
 
 } );
 

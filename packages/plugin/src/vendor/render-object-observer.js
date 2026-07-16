@@ -8,6 +8,7 @@
  */
 
 import { createRenderObjectContextSelector, resolveRenderObjectBindingOwner } from '@tsl-precompile/contract/render-selector';
+import { attachDeferredMaterialComputeStatePaths } from '@tsl-precompile/contract/material-compute';
 
 const OBSERVER_STATE = Symbol.for( '@tsl-precompile/plugin/render-object-observer@1' );
 const REQUEST_OBSERVER_STATE = Symbol.for( '@tsl-precompile/plugin/render-object-request-observer@1' );
@@ -516,6 +517,12 @@ function buildHarvestResult( epoch, supported, renderer, requests, pairsByMateri
 			const sourceMaterials = [ ...new Set( sourceOwnerRequests.map( ( request ) =>
 				request.sourceMaterial || ( ! Array.isArray( request.userMaterial ) ? request.userMaterial : null )
 			).filter( Boolean ) ) ];
+			// A deferred Fn() material root can create its ComputeNode only while
+			// NodeBuilder executes the closure. Publish the exact observed identity
+			// beneath that live root before extraction so the normal property-path
+			// contract can serialize it. Ambiguous roots remain untouched.
+			const graphMaterials = sourceMaterials.length > 0 ? sourceMaterials : [ material ];
+			for ( const graphMaterial of graphMaterials ) attachDeferredMaterialComputeStatePaths( graphMaterial, pair.nodeBuilderState );
 			const captureClocks = [ ...new Set( authoritativeRequests.map( ( request ) => request.captureClock ).filter( Number.isFinite ) ) ];
 			const missingSelector = authoritativeRequests.some( ( request ) => ! request.renderContextSelector );
 			const complete = pair.cacheKey !== null && pair.cacheKey !== undefined &&

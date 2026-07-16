@@ -2,8 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createArtifactVariantPayload } from '@tsl-precompile/contract/artifact-variants';
+import { normalizeMaterialGraph } from '@tsl-precompile/contract/graph-normalize';
 import { validateArtifact } from '@tsl-precompile/contract/kinds';
-import { validateMaterialComputeDescriptor } from '@tsl-precompile/contract/material-compute';
+import { attachDeferredMaterialComputeStatePaths, validateMaterialComputeDescriptor } from '@tsl-precompile/contract/material-compute';
 import {
 	compileTSL,
 	extractArtifact,
@@ -249,6 +250,42 @@ test( 'material compute capture uses exact identity and exact WGSL binding indic
 	const nestedStorage = json.kernels[ 0 ].artifact.uniformPlan[ 0 ].storageBuffers[ 0 ];
 	assert.equal( nestedStorage._liveArray, undefined );
 	assert.equal( nestedStorage._liveAttribute, undefined );
+
+} );
+
+test( 'material compute capture serializes a builder-proven deferred Fn kernel path', () => {
+
+	const attribute = storageAttribute();
+	const node = computeNode();
+	const rawComputeState = computeState( attribute );
+	const rawRenderState = renderState( node, attribute );
+	const material = {
+		isMeshBasicNodeMaterial: true,
+		geometryNode: {
+			isNode: true,
+			isShaderCallNodeInternal: true,
+			shaderNode: { jsFunc() {} },
+		},
+	};
+	const sourceGraphBefore = normalizeMaterialGraph( material );
+	assert.deepEqual( attachDeferredMaterialComputeStatePaths( material, rawRenderState ), [
+		[ 'geometryNode', '_tslpMaterialComputeNodes', '0' ],
+	] );
+	assert.equal( normalizeMaterialGraph( material ), sourceGraphBefore, 'private identity evidence does not change source freshness' );
+	const renderArtifact = extractArtifact( 18, rawRenderState, material );
+	const computeArtifact = extractComputeArtifact( 12, rawComputeState, node );
+	const descriptor = extractMaterialComputeDescriptor(
+		renderArtifact,
+		rawRenderState,
+		new Map( [ [ node, computeArtifact ] ] ),
+		new Map( [ [ node, rawComputeState ] ] ),
+		null,
+		material,
+	);
+
+	assert.deepEqual( descriptor.kernels[ 0 ].nodePath, [ 'geometryNode', '_tslpMaterialComputeNodes', '0' ] );
+	assert.equal( descriptor.reasons.includes( 'kernel:0:node-path-unavailable' ), false );
+	assert.deepEqual( validateMaterialComputeDescriptor( descriptor, { artifact: renderArtifact } ), [] );
 
 } );
 
