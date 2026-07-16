@@ -56,7 +56,7 @@ export { LightsNode, Node, NodeUpdateType, RendererUtils };
 
 function slimMessage( name ) {
 
-	return `[tsl-precompile/slim] ${ name }() is not available in the slim bundle. Slim mode supports only PrecompiledMaterial — the TSL builder and its auxiliary nodes are stripped at build time.`;
+	return `[tsl-precompile/slim] ${ name }() unavailable; slim replay requires precompiled materials.`;
 
 }
 

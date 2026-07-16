@@ -1,10 +1,10 @@
 import { Color } from 'three/src/math/Color.js';
 
+const rendererProperties = [ 'toneMapping', 'toneMappingExposure', 'outputColorSpace' ];
+
 export function saveRendererState( renderer, state = {} ) {
 
-	state.toneMapping = renderer.toneMapping;
-	state.toneMappingExposure = renderer.toneMappingExposure;
-	state.outputColorSpace = renderer.outputColorSpace;
+	for ( const property of rendererProperties ) state[ property ] = renderer[ property ];
 	state.renderTarget = renderer.getRenderTarget();
 	state.activeCubeFace = renderer.getActiveCubeFace();
 	state.activeMipmapLevel = renderer.getActiveMipmapLevel();
@@ -35,9 +35,7 @@ export function resetRendererState( renderer, state ) {
 
 export function restoreRendererState( renderer, state ) {
 
-	renderer.toneMapping = state.toneMapping;
-	renderer.toneMappingExposure = state.toneMappingExposure;
-	renderer.outputColorSpace = state.outputColorSpace;
+	for ( const property of rendererProperties ) renderer[ property ] = state[ property ];
 	renderer.setRenderTarget( state.renderTarget, state.activeCubeFace, state.activeMipmapLevel );
 	renderer.setRenderObjectFunction( state.renderObjectFunction );
 	renderer.setPixelRatio( state.pixelRatio );
@@ -80,19 +78,13 @@ export function restoreSceneState( scene, state ) {
 
 export function saveRendererAndSceneState( renderer, scene, state = {} ) {
 
-	state = saveRendererState( renderer, state );
-	state = saveSceneState( scene, state );
-
-	return state;
+	return saveSceneState( scene, saveRendererState( renderer, state ) );
 
 }
 
 export function resetRendererAndSceneState( renderer, scene, state ) {
 
-	state = resetRendererState( renderer, state );
-	state = resetSceneState( scene, state );
-
-	return state;
+	return resetSceneState( scene, resetRendererState( renderer, state ) );
 
 }
 
