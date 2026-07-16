@@ -15,6 +15,37 @@ const LIVE_ROOT = resolve( PUBLIC_ROOT, 'live' );
 const MANIFEST_PATH = resolve( PUBLIC_ROOT, 'live-examples.json' );
 const CATALOGUE_PATH = resolve( REPO_ROOT, 'packages/examples/batch/example-catalogue.json' );
 const catalogue = JSON.parse( await readFile( CATALOGUE_PATH, 'utf8' ) );
+const VIRTUAL_ARTIFACT_PREFIX = '\0virtual:tsl-precompile/';
+
+const COMPUTE_DEBUG_KERNEL_NAMES = Object.freeze( {
+	particles: Object.freeze( [ 'compute-debug-particles-init', 'compute-debug-particles-update' ] ),
+	instanced: Object.freeze( [ 'compute-debug-instanced-init', 'compute-debug-instanced-update' ] ),
+	texture: Object.freeze( [ 'compute-debug-texture-update' ] ),
+	dispatch2d: Object.freeze( [ 'compute-debug-dispatch2d-update' ] ),
+	uniform: Object.freeze( [ 'compute-debug-uniform-update' ] ),
+	pipeline: Object.freeze( [ 'compute-debug-pipeline-source', 'compute-debug-pipeline-display' ] ),
+	reduce: Object.freeze( [ 'compute-debug-reduce-fill', 'compute-debug-reduce-reduce' ] ),
+} );
+const COMPUTE_DEBUG_ARTIFACT_NAMES = Object.freeze( Object.values( COMPUTE_DEBUG_KERNEL_NAMES ).flat() );
+if ( COMPUTE_DEBUG_ARTIFACT_NAMES.length !== 11 || new Set( COMPUTE_DEBUG_ARTIFACT_NAMES ).size !== 11 ) throw new Error(
+	'compute-debug: expected 11 unique standalone compute artifact names',
+);
+
+function requireExactNames( label, names, expectedNames ) {
+
+	const counts = new Map();
+	for ( const name of names ) counts.set( name, ( counts.get( name ) || 0 ) + 1 );
+	const actual = new Set( counts.keys() );
+	const expected = new Set( expectedNames );
+	const missing = [ ...expected ].filter( name => ! actual.has( name ) ).sort();
+	const unexpected = [ ...actual ].filter( name => ! expected.has( name ) ).sort();
+	const duplicates = [ ...counts ].filter( ( [ , count ] ) => count > 1 ).map( ( [ name ] ) => name ).sort();
+	if ( missing.length > 0 || unexpected.length > 0 || duplicates.length > 0 ) throw new Error(
+		`${ label }: expected exact names (missing: ${ missing.join( ', ' ) || 'none' }; ` +
+		`unexpected: ${ unexpected.join( ', ' ) || 'none' }; duplicates: ${ duplicates.join( ', ' ) || 'none' })`,
+	);
+
+}
 
 function titleFromId( id ) {
 
@@ -32,6 +63,18 @@ function catalogueRoutes( project ) {
 			title: `${ titleFromId( entry.id ) } · compiled TSL`,
 			route: entry.source.route,
 		} ) );
+
+}
+
+function computeDebugRoutes() {
+
+	const routes = catalogueRoutes( 'compute-debug' );
+	requireExactNames( 'compute-debug catalogue routes', routes.map( route => route.catalogueId ), Object.keys( COMPUTE_DEBUG_KERNEL_NAMES ) );
+	return routes.map( route => ( {
+		...route,
+		expectsMotion: route.catalogueId !== 'uniform',
+		computeKernelNames: COMPUTE_DEBUG_KERNEL_NAMES[ route.catalogueId ],
+	} ) );
 
 }
 
@@ -72,6 +115,12 @@ const projects = [
 			...route,
 			expectsMotion: route.catalogueId === 'variants',
 		} ) ),
+	},
+	{
+		id: 'compute-debug',
+		root: resolve( REPO_ROOT, 'packages/examples/compute-debug' ),
+		expectedComputeNames: COMPUTE_DEBUG_ARTIFACT_NAMES,
+		routes: computeDebugRoutes(),
 	},
 ];
 
@@ -131,6 +180,25 @@ async function packageVersion( path ) {
 
 }
 
+async function computeArtifactNamesUnder( root ) {
+
+	const names = [];
+	for ( const entry of await readdir( root, { withFileTypes: true } ) ) {
+
+		if ( ! entry.isFile() || ! entry.name.endsWith( '.json' ) || entry.name === 'manifest.json' ) continue;
+		const path = resolve( root, entry.name );
+		const envelope = JSON.parse( await readFile( path, 'utf8' ) );
+		if ( envelope?.artifact?.kind !== 'compute' ) continue;
+		if ( typeof envelope.__name !== 'string' || envelope.__name.length === 0 ) throw new Error(
+			`${ relative( REPO_ROOT, path ) }: compute artifact is missing __name`,
+		);
+		names.push( envelope.__name );
+
+	}
+	return names;
+
+}
+
 async function buildProject( project ) {
 
 	const outDir = resolve( LIVE_ROOT, project.id );
@@ -158,11 +226,21 @@ async function buildProject( project ) {
 	const chunks = Object.values( bundle ).filter( ( item ) => item.type === 'chunk' );
 	const renderedModules = new Set( chunks.flatMap( ( chunk ) => Object.keys( chunk.modules || {} ) ) );
 	const compiledArtifactModules = [ ...renderedModules ].filter( id =>
-		id.startsWith( '\0virtual:tsl-precompile/' ) && ! id.startsWith( '\0virtual:tsl-precompile/__' )
+		id.startsWith( VIRTUAL_ARTIFACT_PREFIX ) && ! id.startsWith( `${ VIRTUAL_ARTIFACT_PREFIX }__` )
 	);
 	if ( compiledArtifactModules.length === 0 ) {
 
 		throw new Error( `${ project.id }: production bundle contains no rendered compiled-material module` );
+
+	}
+	const compiledArtifactNames = compiledArtifactModules.map( id => id.slice( VIRTUAL_ARTIFACT_PREFIX.length ) );
+	if ( project.expectedComputeNames ) {
+
+		const computeArtifactNames = await computeArtifactNamesUnder( resolve( project.root, 'artifacts' ) );
+		requireExactNames( `${ project.id }: standalone compute artifacts`, computeArtifactNames, project.expectedComputeNames );
+		const computeArtifactNameSet = new Set( computeArtifactNames );
+		const computeModuleNames = compiledArtifactNames.filter( name => computeArtifactNameSet.has( name ) );
+		requireExactNames( `${ project.id }: rendered standalone compute virtual modules`, computeModuleNames, project.expectedComputeNames );
 
 	}
 	const renderedCode = chunks.map( chunk => chunk.code || '' ).join( '\n' );
@@ -204,6 +282,7 @@ async function buildProject( project ) {
 		expectsMotion: route.expectsMotion === true || route.role === 'canary',
 		catalogueId: route.catalogueId || null,
 		title: route.title,
+		...( route.computeKernelNames ? { computeKernelNames: [ ...route.computeKernelNames ] } : {} ),
 		playUrl: route.route === 'index.html'
 			? `live/${ project.id }/`
 			: `live/${ project.id }/${ route.route }`,

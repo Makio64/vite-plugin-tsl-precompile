@@ -45,6 +45,15 @@ function pixelDifference( left, right ) {
 
 }
 
+function sameNames( actual, expected ) {
+
+	if ( ! Array.isArray( actual ) || ! Array.isArray( expected ) ) return false;
+	const left = [ ...new Set( actual ) ].sort();
+	const right = [ ...new Set( expected ) ].sort();
+	return left.length === right.length && left.every( ( name, index ) => name === right[ index ] );
+
+}
+
 const server = await preview( {
 	root: SITE_ROOT,
 	configFile: resolve( SITE_ROOT, 'vite.config.js' ),
@@ -131,6 +140,18 @@ try {
 		if ( ! runtime.webgpu ) throw new Error( `${ entry.id }: navigator.gpu is unavailable` );
 		if ( runtime.runtimeMode !== 'pure-slim' || runtime.compilerFree !== true ) throw new Error( `${ entry.id }: unexpected runtime mode ${ JSON.stringify( runtime ) }` );
 		if ( ! runtime.ready || runtime.canvasCount < 1 || runtime.errors.length > 0 ) throw new Error( `${ entry.id }: route did not become healthy ${ JSON.stringify( runtime ) }` );
+		if ( entry.buildId === 'compute-debug' ) {
+
+			if ( runtime.computeReady !== true ) throw new Error( `${ entry.id }: compute runtime did not become ready ${ JSON.stringify( runtime ) }` );
+			if ( ! sameNames( runtime.kernelNames, entry.computeKernelNames ) ) throw new Error(
+				`${ entry.id }: unexpected compute kernels (expected ${ JSON.stringify( entry.computeKernelNames ) }, ` +
+				`received ${ JSON.stringify( runtime.kernelNames ) })`,
+			);
+			if ( ! Number.isSafeInteger( runtime.computeDispatches ) || runtime.computeDispatches < 1 ) throw new Error(
+				`${ entry.id }: no successful compute dispatch was reported ${ JSON.stringify( runtime ) }`,
+			);
+
+		}
 
 		const canvas = liveFrame.locator( 'canvas' ).first();
 		await canvas.waitFor( { state: 'visible' } );
