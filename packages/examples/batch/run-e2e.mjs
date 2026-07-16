@@ -2060,6 +2060,7 @@ import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS a
 import { countArtifactFragmentOutputCapacity as __sharedCountArtifactFragmentOutputCapacity, countArtifactFragmentOutputs as __sharedCountArtifactFragmentOutputs } from '/__tslp_contract/fragment-outputs.js';
 import { createRenderObjectContextSelector as __createRenderObjectContextSelector, projectRenderObjectContextSelector as __projectRenderObjectContextSelector } from '/__tslp_contract/render-selector.js';
 import { createMaterialContextKey as __createMaterialContextKey, getMaterialContextMap as __getMaterialContextMap } from '/__tslp_batch/material-context-cache.mjs';
+import { passRendersMaterial as __passRendersMaterial } from '/__tslp_batch/pass-material-visibility.mjs';
 import { synchronizeTemporalJitterNode as __sharedSynchronizeTemporalJitterNode, temporalJitterFrameId as __sharedTemporalJitterFrameId } from '/__tslp_batch/temporal-jitter.mjs';
 ${ SLIM_REPLAY_FORWARD_EXPORT_BLOCK }
 ${ SLIM_REPLAY_FULL_FALLBACK_EXPORT_BLOCK }
@@ -2370,7 +2371,7 @@ window.__tslpPatchTextureLoaderClass = function ( Ctor ) {
 		__refreshPassTextureNodes( passNode );
 	}
 
-function __sceneCanRenderMRT( scene, mrt ) {
+function __sceneCanRenderMRT( scene, mrt, passNode = null ) {
 	const targetCount = __mrtOutputCount( mrt );
 	if ( targetCount <= 1 || ! scene || typeof scene.traverse !== 'function' ) return true;
 	let ok = true;
@@ -2378,6 +2379,7 @@ function __sceneCanRenderMRT( scene, mrt ) {
 			if ( ! ok || ! object || ! object.material ) return;
 			const materials = Array.isArray( object.material ) ? object.material : [ object.material ];
 			for ( const material of materials ) {
+				if ( ! __passRendersMaterial( passNode, material ) ) continue;
 				if ( material && material.visible !== false && __fragmentOutputCount( material ) < targetCount ) {
 					ok = false;
 					break;
@@ -2387,13 +2389,14 @@ function __sceneCanRenderMRT( scene, mrt ) {
 	return ok;
 }
 
-function __prepareSceneMaterialsForMRTReplay( scene, mrt ) {
+function __prepareSceneMaterialsForMRTReplay( scene, mrt, passNode = null ) {
 	const targetCount = __mrtOutputCount( mrt );
 	if ( targetCount <= 1 || ! scene || typeof scene.traverse !== 'function' ) return;
 	scene.traverse( ( object ) => {
 		const material = object && object.material;
 		const list = Array.isArray( material ) ? material : material ? [ material ] : [];
 		for ( const mat of list ) {
+			if ( ! __passRendersMaterial( passNode, mat ) ) continue;
 			if ( ! mat || mat.isPrecompiledMaterial !== true ) continue;
 			if ( __fragmentOutputCount( mat ) < targetCount ) continue;
 			if ( mat.mrtNode !== mrt ) mat.mrtNode = mrt;
@@ -2612,7 +2615,9 @@ function __renderOffscreenOverrideWithFullRenderer( slimRenderer, scene, camera 
 
 function __withPassRendererContext( passNode, renderer, callback ) {
 	const currentContextNode = renderer && renderer.contextNode;
+	const currentReplayPassNode = renderer && renderer.__tslpActiveReplayPassNode;
 	try {
+		if ( renderer ) renderer.__tslpActiveReplayPassNode = passNode || null;
 		if ( passNode && passNode.contextNode !== null && renderer ) {
 			if ( renderer.contextNode && typeof renderer.contextNode.getFlowContextData === 'function' && typeof passNode.contextNode.getFlowContextData === 'function' ) {
 				if ( passNode._contextNodeCache == null || passNode._contextNodeCache.version !== passNode.version ) {
@@ -2628,7 +2633,10 @@ function __withPassRendererContext( passNode, renderer, callback ) {
 		}
 		return callback();
 	} finally {
-		if ( renderer ) renderer.contextNode = currentContextNode;
+		if ( renderer ) {
+			renderer.contextNode = currentContextNode;
+			renderer.__tslpActiveReplayPassNode = currentReplayPassNode;
+		}
 	}
 }
 
@@ -2930,19 +2938,19 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 			if ( this.overrideMaterial !== null ) scene.overrideMaterial = this.overrideMaterial;
 			let replayMRT = this._mrt || null;
 			if ( replayMRT ) {
-				__retargetSceneMaterialsForPassTarget( scene, __mrtOutputCount( replayMRT ) );
-				if ( ! __sceneCanRenderMRT( scene, replayMRT ) ) {
+				__retargetSceneMaterialsForPassTarget( scene, __mrtOutputCount( replayMRT ), this );
+				if ( ! __sceneCanRenderMRT( scene, replayMRT, this ) ) {
 					replayMRT = null;
-					__retargetSceneMaterialsForPassTarget( scene, 1 );
+					__retargetSceneMaterialsForPassTarget( scene, 1, this );
 				}
 			} else {
-				__retargetSceneMaterialsForPassTarget( scene, 1 );
+				__retargetSceneMaterialsForPassTarget( scene, 1, this );
 			}
-				__prepareSceneMaterialsForMRTReplay( scene, replayMRT );
+				__prepareSceneMaterialsForMRTReplay( scene, replayMRT, this );
 				renderer.autoClear = true;
 				renderer.transparent = this.transparent;
 				renderer.opaque = this.opaque;
-				const canRenderPrecompiledMRT = !! ( replayMRT && __sceneCanRenderMRT( scene, replayMRT ) );
+				const canRenderPrecompiledMRT = !! ( replayMRT && __sceneCanRenderMRT( scene, replayMRT, this ) );
 					try {
 						const pathDiag = __harnessDiagnostics().passPaths || ( __harnessDiagnostics().passPaths = [] );
 						if ( pathDiag.length < 24 ) pathDiag.push( {
@@ -2999,7 +3007,7 @@ function __renderPassNodeWithFullRenderer( passNode, slimRenderer, fullRenderer,
 					__resetRendererPipelineCachesForMRTReplay( renderer, replayMRT );
 					__wirePassTexturesIntoSceneMaterials( scene, __activePipelinePassNodes || [ this ] );
 					if ( renderer.__tslpSuppressShadowKick !== true && __sceneHasShadowLights( scene ) ) __kickShadowRenderAsync( renderer, scene, camera );
-					renderer.render( scene, camera );
+					__withPassRendererContext( this, renderer, () => renderer.render( scene, camera ) );
 				} finally {
 					scene.background = savedBackground;
 					scene.backgroundNode = savedBackgroundNode;
@@ -6610,12 +6618,14 @@ function __retargetPrecompiledMaterialForObject( material, object ) {
 		return __makePassTargetMaterial( name, sourceMaterial, material, object, targetCount ) || material;
 	}
 
-function __retargetSceneMaterialsForPassTarget( scene, targetCount ) {
+function __retargetSceneMaterialsForPassTarget( scene, targetCount, passNode = null ) {
 	if ( ! scene || typeof scene.traverse !== 'function' ) return;
 	scene.traverse( ( object ) => {
 		const material = object && object.material;
 		if ( ! material ) return;
-		const retargetOne = ( mat ) => __retargetPrecompiledMaterialForPassTarget( mat, object, targetCount );
+		const retargetOne = ( mat ) => __passRendersMaterial( passNode, mat )
+			? __retargetPrecompiledMaterialForPassTarget( mat, object, targetCount )
+			: mat;
 		object.material = Array.isArray( material ) ? material.map( retargetOne ) : retargetOne( material );
 	} );
 }
@@ -6779,21 +6789,22 @@ function __recordRetroPassValue( list, value, limit = 16 ) {
 
 function __prepareSceneForCurrentMRT( scene, renderer ) {
 	if ( ! renderer || typeof renderer.getMRT !== 'function' ) return null;
+	const passNode = renderer.__tslpActiveReplayPassNode || null;
 	let mrt = renderer.getMRT();
 	if ( ! mrt && typeof renderer.getRenderTarget === 'function' ) {
 		try { mrt = __mrtFromRenderTarget( renderer.getRenderTarget() ); } catch ( _ ) { mrt = null; }
 	}
 	const targetCount = __mrtOutputCount( mrt );
 	if ( targetCount <= 1 ) {
-		__retargetSceneMaterialsForPassTarget( scene, 1 );
+		__retargetSceneMaterialsForPassTarget( scene, 1, passNode );
 		return null;
 	}
-	__retargetSceneMaterialsForPassTarget( scene, targetCount );
-	if ( ! __sceneCanRenderMRT( scene, mrt ) ) {
-		__retargetSceneMaterialsForPassTarget( scene, 1 );
+	__retargetSceneMaterialsForPassTarget( scene, targetCount, passNode );
+	if ( ! __sceneCanRenderMRT( scene, mrt, passNode ) ) {
+		__retargetSceneMaterialsForPassTarget( scene, 1, passNode );
 		return null;
 	}
-	__prepareSceneMaterialsForMRTReplay( scene, mrt );
+	__prepareSceneMaterialsForMRTReplay( scene, mrt, passNode );
 	return mrt;
 }
 
@@ -14215,6 +14226,7 @@ const server = createServer( async ( req, res ) => {
 		if ( url.pathname === '/__tslp__/aux-virtual.js' ) return sendJs( res, auxVirtualModule() );
 		if ( url.pathname === '/__tslp_batch/cube-capture-prearm.mjs' ) return sendFile( res, join( SELF, 'cube-capture-prearm.mjs' ) );
 		if ( url.pathname === '/__tslp_batch/material-context-cache.mjs' ) return sendFile( res, join( SELF, 'material-context-cache.mjs' ) );
+		if ( url.pathname === '/__tslp_batch/pass-material-visibility.mjs' ) return sendFile( res, join( SELF, 'pass-material-visibility.mjs' ) );
 		if ( url.pathname === '/__tslp_batch/temporal-jitter.mjs' ) return sendFile( res, join( SELF, 'temporal-jitter.mjs' ) );
 		if ( url.pathname === '/examples/jsm/inspector/Inspector.js' ) return sendJs( res, inspectorStubModule() );
 		if ( url.pathname === '/examples/jsm/libs/stats.module.js' ) return sendJs( res, statsStubModule() );
