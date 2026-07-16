@@ -568,7 +568,7 @@ function install( three, extractor, options = {} ) {
 
 }
 
-test( 'aggregates a synchronous real-render burst before handing the complete harvest to extraction', async () => {
+test( 'aggregates dynamic cube faces and the following main output in one synchronous real-render harvest', async () => {
 
 	await withBrowser( async ( posts ) => {
 
@@ -577,6 +577,13 @@ test( 'aggregates a synchronous real-render burst before handing the complete ha
 		const context = mount( three, material );
 		const cubeTexture = { isCubeTexture: true, format: 1023 };
 		const cubeTarget = { isCubeRenderTarget: true, texture: cubeTexture, textures: [ cubeTexture ] };
+		const outputTexture = { isRenderTargetTexture: true, format: 1023, colorSpace: 'srgb-linear' };
+		const outputTarget = {
+			isPostProcessingRenderTarget: true,
+			texture: outputTexture,
+			textures: [ outputTexture ],
+			samples: 4,
+		};
 		const renderContext = {
 			renderTarget: cubeTarget,
 			textures: [ cubeTexture ],
@@ -604,13 +611,16 @@ test( 'aggregates a synchronous real-render burst before handing the complete ha
 		const renderer = {
 			_nodes: manager,
 			_objects: { get: () => renderObject },
-			getRenderTarget: () => cubeTarget,
+			getRenderTarget: () => renderContext.renderTarget,
 			getActiveCubeFace: () => renderContext.activeCubeFace,
 			getActiveMipmapLevel: () => renderContext.activeMipmapLevel,
 			getMRT: () => null,
-			render( scene, camera, activeCubeFace ) {
+			render( scene, camera, activeCubeFace, renderTarget = cubeTarget ) {
 
+				renderContext.renderTarget = renderTarget;
+				renderContext.textures = renderTarget.textures;
 				renderContext.activeCubeFace = activeCubeFace;
+				renderContext.sampleCount = renderTarget.samples || 1;
 				renderObject.scene = scene;
 				renderObject.camera = camera;
 				this._objects.get( renderObject );
@@ -627,7 +637,8 @@ test( 'aggregates a synchronous real-render burst before handing the complete ha
 		await setDevRenderer( renderer, three );
 		material.precompile( 'real-render-burst' );
 
-		for ( let face = 0; face < 6; face ++ ) renderer.render( context.scene, context.camera, face );
+		for ( let face = 0; face < 6; face ++ ) renderer.render( context.scene, context.camera, face, cubeTarget );
+		renderer.render( context.scene, context.camera, 0, outputTarget );
 		assert.equal( extractorCalls, 0, 'capture starts after the whole synchronous burst, not after face zero' );
 		await waitFor( () => posts.length === 1, 'real-render-burst capture' );
 
@@ -635,11 +646,16 @@ test( 'aggregates a synchronous real-render burst before handing the complete ha
 		assert.ok( family, 'the exact marked material family reaches the extractor' );
 		assert.equal( family.complete, true );
 		assert.equal( family.variants.length, 1 );
-		assert.equal( family.variants[ 0 ].requestCount, 6 );
-		const faces = family.variants[ 0 ].renderContextSelectors
-			.map( ( selector ) => JSON.parse( selector ).target.activeCubeFace )
+		assert.equal( family.variants[ 0 ].requestCount, 7 );
+		const selectors = family.variants[ 0 ].renderContextSelectors.map( ( selector ) => JSON.parse( selector ) );
+		const cubeSelectors = selectors.filter( ( selector ) => selector.target.surface === 'offscreen-cube' );
+		const outputSelectors = selectors.filter( ( selector ) => selector.target.surface === 'output-intermediate' );
+		const faces = cubeSelectors
+			.map( ( selector ) => selector.target.activeCubeFace )
 			.sort( ( a, b ) => a - b );
 		assert.deepEqual( faces, [ 0, 1, 2, 3, 4, 5 ], 'request-time snapshots survive mutable RenderContext reuse' );
+		assert.equal( outputSelectors.length, 1, 'the same complete state retains its following main-output selector' );
+		assert.equal( outputSelectors[ 0 ].target.sampleCount, 4 );
 
 	} );
 
