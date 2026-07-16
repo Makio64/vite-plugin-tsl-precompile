@@ -1330,6 +1330,34 @@ test( 'renderer replacement disables the old render wrapper', async () => {
 
 } );
 
+test( 'an explicit capture renderer survives installation renderer replacement', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'explicit-renderer' );
+		const material = new three.Material();
+		const context = mount( three, material );
+		const firstRenderer = { render() {} };
+		const replacementRenderer = { render() {} };
+		const capturedRenderers = [];
+		install( three, async ( renderer ) => {
+
+			capturedRenderers.push( renderer );
+			return artifactSet( material );
+
+		} );
+		await setDevRenderer( firstRenderer, three );
+		await setDevRenderer( replacementRenderer, three );
+
+		material.precompile( 'explicit-first-renderer', { ...context, renderer: firstRenderer } );
+		await waitFor( () => posts.length === 1, 'explicit renderer capture' );
+
+		assert.deepEqual( capturedRenderers, [ firstRenderer ] );
+
+	} );
+
+} );
+
 test( 'worker-only environments can capture marked materials', async () => {
 
 	await withBrowser( async ( posts ) => {

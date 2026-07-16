@@ -33,6 +33,8 @@ export const invalidateMaterialComputeBindings: typeof import('./slim-support/au
 export const createAutoComputeDispatcher: typeof import('./slim-support/auto-compute.d.ts').createAutoComputeDispatcher;
 
 export interface PrecompileCaptureContext {
+	/** Exact renderer whose topology should be captured; useful when one scene is rendered by multiple renderer configurations. */
+	renderer?: unknown;
 	/** Scene used to build render-context-dependent shader state (lights, fog, shadows, clipping, MRT). */
 	scene?: unknown;
 	/** Camera used for capture. */

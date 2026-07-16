@@ -1180,7 +1180,20 @@ function __cameraSeesObject( camera, object ) {
 	try { return camera.layers.test( object.layers ); } catch ( _ ) { return true; }
 }
 
-function __mark( material, className, sourceObject = null, camera = null ) {
+function __captureRenderTarget( renderer ) {
+	try {
+		const target = renderer && typeof renderer.getRenderTarget === 'function' ? renderer.getRenderTarget() : null;
+		if ( target ) return target;
+	} catch ( _ ) {}
+	try {
+		const target = renderer && typeof renderer._getFrameBufferTarget === 'function' ? renderer._getFrameBufferTarget() : null;
+		return target && target.isPostProcessingRenderTarget === true ? target : null;
+	} catch ( _ ) {
+		return null;
+	}
+}
+
+function __mark( material, className, sourceObject = null, camera = null, renderer = null ) {
 	if ( ! material ) return;
 	if ( sourceObject && ! material.__tslpPrecompileObject ) Object.defineProperty( material, '__tslpPrecompileObject', { value: sourceObject, configurable: true } );
 	const hasCameraHint = Object.prototype.hasOwnProperty.call( material, '__tslpPrecompileCamera' );
@@ -1201,13 +1214,21 @@ function __mark( material, className, sourceObject = null, camera = null ) {
 	}
 	let renderTarget = null;
 	let mrt = null;
-	try { renderTarget = __renderer && typeof __renderer.getRenderTarget === 'function' ? __renderer.getRenderTarget() : null; } catch ( _ ) {}
-	try { mrt = __renderer && typeof __renderer.getMRT === 'function' ? __renderer.getMRT() : null; } catch ( _ ) {}
+	try { renderTarget = __captureRenderTarget( renderer ); } catch ( _ ) {}
+	try { mrt = renderer && typeof renderer.getMRT === 'function' ? renderer.getMRT() : null; } catch ( _ ) {}
 	const captureScene = sourceScene || material.__tslpPrecompileScene || null;
 	const captureCamera = nextCameraSeesObject ? camera : material.__tslpPrecompileCamera || camera || null;
 	const captureObject = sourceObject || material.__tslpPrecompileObject || null;
 	if ( ! mrt && captureScene && captureScene.userData ) mrt = captureScene.userData.__tslp_mrtNode || null;
-	const contextKey = __createMaterialContextKey( __createRenderContextSignature, { object: captureObject, material } );
+	const contextKey = __createMaterialContextKey( __createRenderContextSignature, {
+		object: captureObject,
+		material,
+		renderer,
+		// Render targets and MRT are represented artifact variants, not distinct
+		// material names. Keep only renderer configuration in this queue key.
+		renderTarget: null,
+		mrt: null,
+	} );
 	const seenContexts = __getMaterialContextMap( __seenMaterialContexts, material, true );
 	if ( seenContexts.has( contextKey ) ) return;
 	const n = ( __counts[ className ] || 0 ) + 1;
@@ -1221,6 +1242,7 @@ function __mark( material, className, sourceObject = null, camera = null ) {
 		scene: captureScene,
 		camera: captureCamera,
 		object: captureObject,
+		renderer,
 		renderTarget,
 		mrt,
 		done: false,
@@ -1309,7 +1331,7 @@ function __isRetroPassGeneratedMaterial( renderer, scene, material, className ) 
 		&& /^(?:MeshBasic|MeshPhong)NodeMaterial$/.test( className || __classNameForMaterial( material ) ) );
 }
 
-function __markSceneMaterials( scene, camera = null ) {
+function __markSceneMaterials( scene, camera = null, renderer = null ) {
 	if ( ! scene || typeof scene.traverse !== 'function' ) return;
 	if ( scene.isScene !== true ) return;
 	if ( ! scene.userData || scene.userData.__tslpUserScene !== true ) return;
@@ -1325,7 +1347,7 @@ function __markSceneMaterials( scene, camera = null ) {
 			scene.traverse( ( object ) => {
 				if ( ! representative && object && object.geometry && object.visible !== false ) representative = object;
 			} );
-			__mark( scene.overrideMaterial, __classNameForMaterial( scene.overrideMaterial ), representative, camera );
+			__mark( scene.overrideMaterial, __classNameForMaterial( scene.overrideMaterial ), representative, camera, renderer );
 		}
 		// Renderer.overrideMaterial replaces every object's own material for
 		// this pass. Leave the originals unmarked until a pass actually uses
@@ -1338,7 +1360,7 @@ function __markSceneMaterials( scene, camera = null ) {
 		for ( const m of materials ) {
 
 			if ( m && m.visible === false ) continue;
-			__mark( m, __classNameForMaterial( m ), object, camera );
+			__mark( m, __classNameForMaterial( m ), object, camera, renderer );
 
 		}
 	} );
@@ -1348,13 +1370,13 @@ function __markSceneMaterials( scene, camera = null ) {
 // so the "scene" argument is a Mesh — not a Scene — and __markSceneMaterials
 // short-circuits. Catch the post-FX material on the QuadMesh (and any other
 // standalone mesh.render path) here so its precompile artifact gets captured.
-function __markStandaloneRenderTargetMaterial( target ) {
+function __markStandaloneRenderTargetMaterial( target, renderer = null ) {
 	if ( ! target || target.isScene === true || ! target.material ) return;
 	const materials = Array.isArray( target.material ) ? target.material : [ target.material ];
 	for ( const m of materials ) {
 		if ( ! m || m.visible === false ) continue;
 		if ( __classNameForMaterial( m ) === 'NodeMaterial' && target.name !== 'Render Pipeline' && target.isQuadMesh !== true ) continue;
-		__mark( m, __classNameForMaterial( m ), target );
+		__mark( m, __classNameForMaterial( m ), target, null, renderer );
 	}
 }
 
@@ -1384,13 +1406,13 @@ async function __waitForPrecompilePendingAtMost( limit, timeoutMs = 20000 ) {
 }
 
 async function __flush( passNodes = [] ) {
-	if ( ! __renderer ) return;
 	const pendingItems = [];
 	for ( const item of __pending ) {
 		if ( item.done ) continue;
 		item.done = true;
 		pendingItems.push( item );
 	}
+	if ( pendingItems.length === 0 ) return;
 	const observedPipelineScenes = new Set( passNodes
 		.filter( ( passNode ) => passNode && passNode.scene )
 		.map( ( passNode ) => passNode.scene ) );
@@ -1399,10 +1421,12 @@ async function __flush( passNodes = [] ) {
 	// capture with the next item's temporary MRT removal races on the shared
 	// scene.userData descriptor and can silently lose that main MRT variant.
 	for ( const item of pendingItems ) {
+		const itemRenderer = item.renderer || __renderer;
+		if ( ! itemRenderer ) continue;
 		const sceneUserData = item.scene && item.scene.userData;
 		const sceneMRT = item.mrt;
 		if ( sceneMRT ) {
-			const currentMRT = typeof __renderer.getMRT === 'function' ? __renderer.getMRT() : null;
+			const currentMRT = typeof itemRenderer.getMRT === 'function' ? itemRenderer.getMRT() : null;
 			const colorMaterial = item.material && typeof item.material.clone === 'function' ? item.material.clone() : item.material;
 			let removedSceneMRT = false;
 			try {
@@ -1418,10 +1442,11 @@ async function __flush( passNodes = [] ) {
 				}
 				colorMaterial.mrtNode = null;
 				colorMaterial.needsUpdate = true;
-				if ( typeof __renderer.setMRT === 'function' ) __renderer.setMRT( null );
+				if ( typeof itemRenderer.setMRT === 'function' ) itemRenderer.setMRT( null );
 				const pendingBefore = window.__tslpPrecompilePending | 0;
 				colorMaterial.precompile( item.name + ':color', {
 					__tslpAutoMark: true,
+					renderer: itemRenderer,
 					scene: item.scene || null,
 					camera: item.camera || null,
 					object: item.object || null,
@@ -1432,21 +1457,24 @@ async function __flush( passNodes = [] ) {
 				console.error( '[tslp-e2e] non-MRT precompile failed:', err );
 			} finally {
 				if ( removedSceneMRT && sceneUserData.__tslp_mrtNode === undefined ) sceneUserData.__tslp_mrtNode = sceneMRT;
-				if ( typeof __renderer.setMRT === 'function' ) __renderer.setMRT( currentMRT );
+				if ( typeof itemRenderer.setMRT === 'function' ) itemRenderer.setMRT( currentMRT );
 			}
 		}
 	}
 	// With every shared scene MRT restored, enqueue the main artifact burst.
 	for ( const item of pendingItems ) {
 		try {
+			const itemRenderer = item.renderer || __renderer;
+			if ( ! itemRenderer ) continue;
 			item.material.needsUpdate = true;
 			item.material.precompile( item.name, {
 				__tslpAutoMark: true,
 				__tslpObserveNextRender: observedPipelineScenes.has( item.scene ),
+				renderer: itemRenderer,
 				scene: item.scene || null,
 				camera: item.camera || null,
 				object: item.object || null,
-				renderTarget: item.renderTarget || null,
+				renderTarget: item.renderTarget || __captureRenderTarget( itemRenderer ) || null,
 				mrt: item.mrt || null,
 			} );
 		} catch ( err ) {
@@ -1460,10 +1488,13 @@ async function __flush( passNodes = [] ) {
 	// entries pending above, then let the runtime observer harvest the complete
 	// synchronous RenderObject family before extraction begins.
 	if ( hasObservedPipelineItems ) {
+		const observedRenderers = new Set( pendingItems
+			.filter( ( item ) => observedPipelineScenes.has( item.scene ) )
+			.map( ( item ) => item.renderer || __renderer ) );
 		const pendingPipelineRenders = [];
 		for ( const pipeline of __postProcessingPipelines ) {
 			try {
-				if ( pipeline && pipeline.renderer && pipeline.renderer !== __renderer ) continue;
+				if ( pipeline && pipeline.renderer && ! observedRenderers.has( pipeline.renderer ) ) continue;
 				const result = pipeline && typeof pipeline.render === 'function' ? pipeline.render() : null;
 				if ( result && typeof result.then === 'function' ) pendingPipelineRenders.push( Promise.resolve( result ) );
 			} catch ( err ) {
@@ -1766,7 +1797,7 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 			}
 		}
 		if ( material && ( material.isMeshToonOutlineMaterial === true || ( materialClassName === 'NodeMaterial' && isUserScene && ! isOffscreenRenderPass ) || isRetroPassMaterial ) ) {
-			__mark( material, isRetroPassMaterial ? materialClassName : 'NodeMaterial', object, camera );
+			__mark( material, isRetroPassMaterial ? materialClassName : 'NodeMaterial', object, camera, this );
 		}
 		return super.renderObject( object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId );
 	}
@@ -1784,8 +1815,8 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		__lastCamera = camera;
 		__rememberAuxScene( scene, camera );
 		__stampSceneMRT( scene, this );
-		__markSceneMaterials( scene, camera );
-		__markStandaloneRenderTargetMaterial( scene );
+		__markSceneMaterials( scene, camera, this );
+		__markStandaloneRenderTargetMaterial( scene, this );
 		return typeof super.compile === 'function' ? super.compile( scene, camera, ...rest ) : undefined;
 	}
 	compileAsync( scene, camera, ...rest ) {
@@ -1794,8 +1825,8 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		__lastCamera = camera;
 		__rememberAuxScene( scene, camera );
 		__stampSceneMRT( scene, this );
-		__markSceneMaterials( scene, camera );
-		__markStandaloneRenderTargetMaterial( scene );
+		__markSceneMaterials( scene, camera, this );
+		__markStandaloneRenderTargetMaterial( scene, this );
 		if ( typeof super.compileAsync !== 'function' ) return Promise.resolve();
 		// Track this compile so the screenshot waits for it. MaterialX, GLTF, and
 		// other examples await renderer.compileAsync between asset loads to warm
@@ -1813,8 +1844,8 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		__lastCamera = camera;
 		__rememberAuxScene( scene, camera );
 		__stampSceneMRT( scene, this );
-		__markSceneMaterials( scene, camera );
-		__markStandaloneRenderTargetMaterial( scene );
+		__markSceneMaterials( scene, camera, this );
+		__markStandaloneRenderTargetMaterial( scene, this );
 		return super.render( scene, camera );
 	}
 }

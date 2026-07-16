@@ -37,12 +37,43 @@ test( 'material context cache deduplicates equivalent meshes but separates skinn
 
 } );
 
+test( 'material context cache separates renderer shader topology without naming target variants', () => {
+
+	const material = { clippingPlanes: [] };
+	const object = mesh();
+	const normalRenderer = renderer( false, { name: 'normal-target' } );
+	const equivalentNormalRenderer = renderer( false, { name: 'other-target' } );
+	const logarithmicRenderer = renderer( true, { name: 'log-target' } );
+	const key = ( value ) => createMaterialContextKey( createRenderContextSignature, {
+		material,
+		object,
+		renderer: value,
+		renderTarget: null,
+		mrt: null,
+	} );
+
+	assert.equal( key( normalRenderer ), key( equivalentNormalRenderer ), 'active targets remain represented variants' );
+	assert.notEqual( key( normalRenderer ), key( logarithmicRenderer ), 'log-depth selects different shader topology' );
+
+} );
+
 function attribute( itemSize ) {
 
 	return {
 		array: new Float32Array( itemSize * 3 ),
 		itemSize,
 		normalized: false,
+	};
+
+}
+
+function renderer( logarithmicDepthBuffer, renderTarget ) {
+
+	return {
+		type: 'WebGPURenderer',
+		logarithmicDepthBuffer,
+		getRenderTarget: () => renderTarget,
+		getMRT: () => null,
 	};
 
 }

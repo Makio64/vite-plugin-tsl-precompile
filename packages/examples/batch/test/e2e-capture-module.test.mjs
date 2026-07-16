@@ -18,6 +18,25 @@ test( 'capture module removes and restores only the matching scene MRT', () => {
 
 } );
 
+test( 'capture module retains the renderer that discovered each material context', () => {
+
+	const markStart = source.indexOf( 'function __mark( material,' );
+	const markEnd = source.indexOf( 'function __findParentScene(', markStart );
+	assert.ok( markStart >= 0 && markEnd > markStart, 'expected the generated material marker' );
+	const marker = source.slice( markStart, markEnd );
+	assert.match( marker, /renderer = null/ );
+	assert.match( marker, /__createMaterialContextKey[\s\S]*renderer,[\s\S]*renderTarget: null,[\s\S]*mrt: null/ );
+	assert.match( marker, /__pending\.push\( \{[\s\S]*renderer,[\s\S]*renderTarget/ );
+
+	const flushStart = source.indexOf( 'async function __flush(' );
+	const flushEnd = source.indexOf( 'function __trackAuxCapture(', flushStart );
+	assert.ok( flushStart >= 0 && flushEnd > flushStart, 'expected the generated capture flush' );
+	const flush = source.slice( flushStart, flushEnd );
+	assert.match( flush, /const itemRenderer = item\.renderer \|\| __renderer;/ );
+	assert.match( flush, /precompile\( item\.name,[\s\S]*renderer: itemRenderer/ );
+
+} );
+
 test( 'forced pipeline maintenance renders receive distinct non-advancing identities', () => {
 
 	assert.match( source, /function __maintenanceTemporalFrame\( kind \)/ );
@@ -31,7 +50,7 @@ test( 'forced pipeline maintenance renders receive distinct non-advancing identi
 
 test( 'capture module never queues Three renderer-owned shadow overrides as user materials', () => {
 
-	const start = source.indexOf( 'function __markSceneMaterials( scene, camera = null )' );
+	const start = source.indexOf( 'function __markSceneMaterials( scene, camera = null, renderer = null )' );
 	const end = source.indexOf( '// QuadMesh.render(renderer)', start );
 	assert.ok( start >= 0 && end > start, 'expected the scene material marker' );
 	const marker = source.slice( start, end );

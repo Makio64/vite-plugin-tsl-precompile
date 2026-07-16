@@ -160,6 +160,14 @@ function normalizeCaptureContext( material, context ) {
 
 }
 
+function explicitCaptureRenderer( context ) {
+
+	if ( ! context || ! Object.prototype.hasOwnProperty.call( context, 'renderer' ) ) return null;
+	const renderer = context.renderer;
+	return renderer && ( typeof renderer === 'object' || typeof renderer === 'function' ) ? renderer : null;
+
+}
+
 function hasUsableCaptureContext( context ) {
 
 	return !! ( context && context.object && context.scene && context.camera );
@@ -194,8 +202,15 @@ function queueMaterialCapture( material, name, installation, context, sourceIden
 	if ( alreadyQueued ) {
 
 		const nextContext = normalizeCaptureContext( material, context );
+		const nextExplicitRenderer = explicitCaptureRenderer( context );
 		for ( const key of [ 'scene', 'camera', 'object', 'renderTarget' ] ) alreadyQueued.context[ key ] = nextContext[ key ] || alreadyQueued.context[ key ];
 		if ( Object.prototype.hasOwnProperty.call( nextContext, 'mrt' ) ) alreadyQueued.context.mrt = nextContext.mrt;
+		if ( nextExplicitRenderer ) {
+
+			alreadyQueued.explicitRenderer = nextExplicitRenderer;
+			alreadyQueued.renderer = nextExplicitRenderer;
+
+		}
 		alreadyQueued.allowAutoFallback = alreadyQueued.allowAutoFallback || context && context.__tslpAutoMark === true;
 		alreadyQueued.observeNextRender = alreadyQueued.observeNextRender || context && context.__tslpObserveNextRender === true;
 		if ( alreadyQueued.observeNextRender && alreadyQueued.autoFallbackTimer ) {
@@ -206,7 +221,8 @@ function queueMaterialCapture( material, name, installation, context, sourceIden
 		}
 		if ( hasUsableCaptureContext( alreadyQueued.context ) && ! alreadyQueued.observedRenderTarget ) {
 
-			alreadyQueued.observedRenderTarget = alreadyQueued.context.renderTarget || activeRenderTarget( alreadyQueued.renderer );
+			alreadyQueued.observedRenderTarget = alreadyQueued.context.renderTarget || activeRenderTarget( alreadyQueued.renderer ) ||
+				( alreadyQueued.explicitRenderer ? activeOutputIntermediateTarget( alreadyQueued.renderer ) : null );
 
 		}
 		alreadyQueued.sourceIdentity = sourceIdentity || alreadyQueued.sourceIdentity;
@@ -216,7 +232,8 @@ function queueMaterialCapture( material, name, installation, context, sourceIden
 	}
 
 	const normalizedContext = normalizeCaptureContext( material, context );
-	const renderer = installation.renderer || ( installationSet.size === 1 ? devRenderer : null );
+	const explicitRenderer = explicitCaptureRenderer( context );
+	const renderer = explicitRenderer || installation.renderer || ( installationSet.size === 1 ? devRenderer : null );
 	const lastRender = renderer && lastRenderContextByRenderer.get( renderer );
 	if ( ! normalizedContext.camera && lastRender && normalizedContext.scene === lastRender.scene ) normalizedContext.camera = lastRender.camera;
 	const entry = {
@@ -225,6 +242,7 @@ function queueMaterialCapture( material, name, installation, context, sourceIden
 		installation,
 		context: normalizedContext,
 		renderer,
+		explicitRenderer,
 		started: false,
 		observeTimer: null,
 		autoFallbackTimer: null,
@@ -245,7 +263,8 @@ function queueMaterialCapture( material, name, installation, context, sourceIden
 	// and signs the wrong topology.
 	if ( ! entry.observedRenderTarget && hasUsableCaptureContext( entry.context ) ) {
 
-		entry.observedRenderTarget = activeRenderTarget( renderer );
+		entry.observedRenderTarget = activeRenderTarget( renderer ) ||
+			( entry.explicitRenderer ? activeOutputIntermediateTarget( renderer ) : null );
 
 	}
 	queuedNames.set( name, entry );
@@ -256,7 +275,7 @@ function queueMaterialCapture( material, name, installation, context, sourceIden
 	// render-dependent shader shape. Context-free markers deliberately wait for
 	// the material to appear in a real render (see setDevRenderer below).
 	const autoCaptureHasExplicitTarget = entry.allowAutoFallback && (
-		entry.context.renderTarget || Object.prototype.hasOwnProperty.call( entry.context, 'mrt' ) && entry.context.mrt
+		entry.context.renderTarget || entry.observedRenderTarget || Object.prototype.hasOwnProperty.call( entry.context, 'mrt' ) && entry.context.mrt
 	);
 	// Auto-mark instrumentation supplies Scene/Camera/Object hints before the
 	// material's first real draw. Unless it also observed an explicit RT/MRT,
@@ -423,7 +442,8 @@ function bindPendingCapturesFromRender( renderer, scene, camera, renderTopology 
 			if ( ! entries ) continue;
 			for ( const entry of entries.values() ) {
 
-				entry.renderer = renderer;
+				if ( entry.explicitRenderer && entry.explicitRenderer !== renderer ) continue;
+				entry.renderer = entry.explicitRenderer || renderer;
 				if ( ! entry.observedRenderTarget && renderTopology && renderTopology.renderTarget ) {
 
 					entry.observedRenderTarget = renderTopology.renderTarget;
@@ -477,8 +497,9 @@ function scheduleAutoFallbackCaptures( renderer, scene, camera ) {
 		for ( const entry of entries.values() ) {
 
 			if ( ! entry.allowAutoFallback || entry.started || entry.autoFallbackTimer ) continue;
-			if ( entry.installation.renderer && entry.installation.renderer !== renderer ) continue;
-			entry.renderer = renderer;
+			if ( entry.explicitRenderer && entry.explicitRenderer !== renderer ) continue;
+			if ( ! entry.explicitRenderer && entry.installation.renderer && entry.installation.renderer !== renderer ) continue;
+			entry.renderer = entry.explicitRenderer || renderer;
 			scheduleAutoFallbackEntry( entry, scene, camera );
 
 		}
@@ -520,10 +541,11 @@ function startExplicitPendingCaptures( renderer, installation = null ) {
 		for ( const entry of entries.values() ) {
 
 			if ( installation && entry.installation !== installation ) continue;
-			if ( ! installation && entry.installation.renderer && entry.installation.renderer !== renderer ) continue;
+			if ( entry.explicitRenderer && entry.explicitRenderer !== renderer ) continue;
+			if ( ! entry.explicitRenderer && ! installation && entry.installation.renderer && entry.installation.renderer !== renderer ) continue;
 			if ( entry.observeNextRender ) continue;
 			if ( ! hasUsableCaptureContext( entry.context ) ) continue;
-			entry.renderer = renderer;
+			entry.renderer = entry.explicitRenderer || renderer;
 			startQueuedCapture( entry );
 
 		}

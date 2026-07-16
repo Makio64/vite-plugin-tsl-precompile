@@ -51,6 +51,14 @@ shader variants. A one-shot app may instead provide the complete context:
 material.precompile( 'my-material', { scene, camera, object: mesh } );
 ```
 
+When the same scene is rendered by multiple renderer configurations, include
+the exact renderer so deferred capture cannot inherit whichever renderer was
+registered most recently:
+
+```js
+material.precompile( 'my-material-log-depth', { renderer, scene, camera, object: mesh } );
+```
+
 In a production build the Vite plugin has already rewritten every
 `.precompile('name')` call to `__applyPrecompiled(...)`. The conditional
 `/setup` entry resolves to a tiny no-op, so the development marker, auxiliary
