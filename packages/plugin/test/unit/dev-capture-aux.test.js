@@ -196,6 +196,56 @@ test( 'dev-capture: user-material payload writes <name>.<hash>.json + manifest',
 
 } );
 
+test( 'dev-capture: strips stale enumerable live sidecars before validation and storage', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-private-sidecars-' ) );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+	const name = 'private-sidecar-guard';
+	const artifact = makeSignedArtifact();
+	artifact.__hash = 'extractor-envelope-hash';
+	artifact.__name = name;
+	artifact.uniformPlan[ 0 ]._liveArray = [ 1, 2, 3 ];
+	artifact.uniformPlan[ 0 ].textures[ 0 ].source._liveAttribute = {
+		array: [ 4, 5, 6 ],
+	};
+
+	try {
+
+		const response = await postJSON( port, '/__tsl-precompile/capture', makeSignedPayload(
+			name,
+			'src/private-sidecar.js:precompile:0',
+			'b'.repeat( 64 ),
+			artifact,
+		) );
+
+		assert.equal( response.status, 200, response.text );
+		assert.equal( response.json.artifact.__hash, 'extractor-envelope-hash' );
+		assert.equal( response.json.artifact.__name, name );
+		assert.equal( response.json.artifact.uniformPlan[ 0 ]._liveArray, undefined );
+		assert.equal( response.json.artifact.uniformPlan[ 0 ].textures[ 0 ].source._liveAttribute, undefined );
+
+		const { stored } = readUserCapture( artifactsDir, name );
+		assert.equal( stored.__hash, response.json.hash, 'durable envelope hash is preserved' );
+		assert.equal( stored.__name, name, 'durable envelope name is preserved' );
+		assert.deepEqual( stored.__sourceOwners, [ {
+			identity: 'src/private-sidecar.js:precompile:0',
+			revision: 'b'.repeat( 64 ),
+		} ] );
+		assert.equal( stored.artifact.__hash, 'extractor-envelope-hash' );
+		assert.equal( stored.artifact.__name, name );
+		assert.doesNotMatch( JSON.stringify( stored ), /_live(?:Array|Attribute)/ );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
 test( 'dev-capture: a correctly hashed invalid signed family leaves no durable capture', async () => {
 
 	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-invalid-signed-family-' ) );

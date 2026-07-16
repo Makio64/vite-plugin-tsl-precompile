@@ -26,6 +26,7 @@ import {
 import { takeRenderObjectHarvest } from './auxiliary/render-object-harvest-handoff.js';
 import { collectEffectNodes } from './slim-support/postprocess-effects.js';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
+import { stringifyArtifactJson } from '@tsl-precompile/contract/artifact-content';
 import { createRenderPipelineConfig } from '@tsl-precompile/contract/output-config';
 import { collectArtifactVariantCandidates, mergeArtifactVariantFamily } from '@tsl-precompile/contract/artifact-variants';
 
@@ -1351,6 +1352,6 @@ async function post( endpoint, payload, shape, configHash ) {
 
 function jsonSafe( artifact ) {
 
-	return JSON.parse( JSON.stringify( artifact ) );
+	return JSON.parse( stringifyArtifactJson( artifact ) );
 
 }

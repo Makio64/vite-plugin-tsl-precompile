@@ -311,12 +311,20 @@ test( 'precompileRendererOutput captures exactly the active output transform wit
 	};
 	const artifact = {
 		materialShape: 'output-transform',
+		__hash: 'extractor-envelope-hash',
+		__name: 'renderer-output',
+		_liveArray: [ 1, 2, 3 ],
 		vertexShader: 'output-vertex',
 		fragmentShader: 'output-fragment',
 		uniformPlan: [ { name: 'object', textures: [ {
 			bindingKind: 'sampled-texture',
 			textureType: '2d',
-			source: { kind: 'artifact.texture', textureUuid: 'output-texture', mapping: 300 },
+			source: {
+				kind: 'artifact.texture',
+				textureUuid: 'output-texture',
+				mapping: 300,
+				_liveAttribute: { array: [ 4, 5, 6 ] },
+			},
 		} ] } ],
 	};
 	const observedScene = {
@@ -365,7 +373,13 @@ test( 'precompileRendererOutput captures exactly the active output transform wit
 		assert.equal( posts[ 0 ].payload.materialShape, 'render-output' );
 		assert.equal( posts[ 0 ].payload.configHash, configHash );
 		assert.equal( posts[ 0 ].payload.artifact.fragmentShader, 'output-fragment' );
+		assert.equal( posts[ 0 ].payload.artifact.__hash, 'extractor-envelope-hash' );
+		assert.equal( posts[ 0 ].payload.artifact.__name, 'renderer-output' );
+		assert.equal( posts[ 0 ].payload.artifact._liveArray, undefined );
+		assert.equal( posts[ 0 ].payload.artifact.uniformPlan[ 0 ].textures[ 0 ].source._liveAttribute, undefined );
 		assert.deepEqual( posts[ 0 ].payload.artifact.replayConfig, replayConfig );
+		assert.deepEqual( artifact._liveArray, [ 1, 2, 3 ], 'aux serialization leaves the captured artifact untouched' );
+		assert.deepEqual( artifact.uniformPlan[ 0 ].textures[ 0 ].source._liveAttribute, { array: [ 4, 5, 6 ] } );
 		assert.equal( hasAux( 'render-output', configHash ), true );
 
 	} finally {

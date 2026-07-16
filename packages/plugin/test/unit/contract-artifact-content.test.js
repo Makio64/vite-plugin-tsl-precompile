@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import {
 	ARTIFACT_CONTENT_HASH_VERSION,
 	createArtifactContentHashPayload,
+	stringifyArtifactJson,
+	stripPrivateArtifactFieldsInPlace,
 } from '@tsl-precompile/contract/artifact-content';
 import { createArtifactVariantPayload } from '@tsl-precompile/contract/artifact-variants';
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
@@ -52,6 +54,130 @@ function family( root, members ) {
 	};
 
 }
+
+test( 'artifact payload sanitizer removes nested private sidecars and preserves envelope metadata', () => {
+
+	const sourceOwners = [ { identity: 'src/material.js:precompile:0', revision: 'a'.repeat( 64 ) } ];
+	const envelope = {
+		__configHash: 'aux-config-hash',
+		__hash: 'artifact-hash',
+		__materialShape: 'post-process',
+		__name: 'artifact-name',
+		__sourceOwners: sourceOwners,
+		_privateEnvelopeCache: { oversized: true },
+		artifact: {
+			uniformPlan: [ {
+				storageBuffers: [ {
+					count: 1,
+					_liveArray: [ 1, 2, 3 ],
+					ref: {
+						itemSize: 1,
+						_liveAttribute: { array: [ 1, 2, 3 ] },
+					},
+				} ],
+			} ],
+		},
+	};
+
+	assert.equal( stripPrivateArtifactFieldsInPlace( envelope ), envelope, 'sanitization is allocation-free' );
+	assert.equal( envelope.__configHash, 'aux-config-hash' );
+	assert.equal( envelope.__hash, 'artifact-hash' );
+	assert.equal( envelope.__materialShape, 'post-process' );
+	assert.equal( envelope.__name, 'artifact-name' );
+	assert.equal( envelope.__sourceOwners, sourceOwners );
+	assert.equal( envelope._privateEnvelopeCache, undefined );
+	assert.equal( envelope.artifact.uniformPlan[ 0 ].storageBuffers[ 0 ]._liveArray, undefined );
+	assert.equal( envelope.artifact.uniformPlan[ 0 ].storageBuffers[ 0 ].ref._liveAttribute, undefined );
+	assert.equal( envelope.artifact.uniformPlan[ 0 ].storageBuffers[ 0 ].count, 1 );
+	assert.equal( envelope.artifact.uniformPlan[ 0 ].storageBuffers[ 0 ].ref.itemSize, 1 );
+
+} );
+
+test( 'artifact JSON serialization omits private subtrees before toJSON without mutating the live capture', () => {
+
+	const liveArray = [ 1, 2, 3 ];
+	const liveAttribute = { array: liveArray };
+	let privateToJsonCalls = 0;
+	const dangerousPrivateValue = {
+		toJSON() {
+
+			privateToJsonCalls ++;
+			throw new Error( 'private toJSON must not run' );
+
+		},
+	};
+	const sourceOwners = [ { identity: 'src/material.js:precompile:0', revision: 'b'.repeat( 64 ) } ];
+	const liveCapture = {
+		__configHash: 'aux-config-hash',
+		__hash: 'artifact-hash',
+		__materialShape: 'post-process',
+		__name: 'artifact-name',
+		__sourceOwners: sourceOwners,
+		_privateRoot: { oversized: true },
+		_liveNode: dangerousPrivateValue,
+		uniformPlan: [ {
+			storageBuffers: [ {
+				count: 1,
+				_liveArray: liveArray,
+				ref: { itemSize: 1, _liveAttribute: liveAttribute },
+			} ],
+		} ],
+	};
+
+	const serialized = stringifyArtifactJson( liveCapture );
+	const payload = JSON.parse( serialized );
+
+	assert.equal( payload.__configHash, 'aux-config-hash' );
+	assert.equal( payload.__hash, 'artifact-hash' );
+	assert.equal( payload.__materialShape, 'post-process' );
+	assert.equal( payload.__name, 'artifact-name' );
+	assert.deepEqual( payload.__sourceOwners, sourceOwners );
+	assert.equal( payload._privateRoot, undefined );
+	assert.equal( payload._liveNode, undefined );
+	assert.equal( payload.uniformPlan[ 0 ].storageBuffers[ 0 ]._liveArray, undefined );
+	assert.equal( payload.uniformPlan[ 0 ].storageBuffers[ 0 ].ref._liveAttribute, undefined );
+	assert.equal( liveCapture._privateRoot.oversized, true, 'root private data remains on the live object' );
+	assert.equal( liveCapture._liveNode, dangerousPrivateValue );
+	assert.equal( privateToJsonCalls, 0, 'private values are skipped before their toJSON hook can run' );
+	assert.equal( liveCapture.uniformPlan[ 0 ].storageBuffers[ 0 ]._liveArray, liveArray );
+	assert.equal( liveCapture.uniformPlan[ 0 ].storageBuffers[ 0 ].ref._liveAttribute, liveAttribute );
+
+} );
+
+test( 'artifact JSON serialization never reads or invokes custom own toJSON hooks', () => {
+
+	let rootToJsonCalls = 0;
+	let nestedToJsonReads = 0;
+	const nested = { value: 2 };
+	Object.defineProperty( nested, 'toJSON', {
+		enumerable: true,
+		get() {
+
+			nestedToJsonReads ++;
+			throw new Error( 'nested toJSON must not be read' );
+
+		},
+	} );
+	const artifact = {
+		value: 1,
+		nested,
+		toJSON() {
+
+			rootToJsonCalls ++;
+			throw new Error( 'root toJSON must not run' );
+
+		},
+	};
+
+	assert.equal( Object.prototype.propertyIsEnumerable.call( artifact, 'toJSON' ), true );
+	assert.equal( Object.prototype.propertyIsEnumerable.call( nested, 'toJSON' ), true );
+	assert.equal( stringifyArtifactJson( artifact ), '{"value":1,"nested":{"value":2}}' );
+	assert.equal( rootToJsonCalls, 0 );
+	assert.equal( nestedToJsonReads, 0 );
+	assert.equal( typeof artifact.toJSON, 'function', 'serialization does not mutate the live root' );
+	assert.equal( Object.prototype.hasOwnProperty.call( nested, 'toJSON' ), true, 'serialization does not mutate nested values' );
+
+} );
 
 test( 'signed artifact content identity ignores private family keys and duplicate semantic payloads', () => {
 

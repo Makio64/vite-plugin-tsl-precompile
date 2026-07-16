@@ -18,10 +18,136 @@ const ROOT_METADATA_FIELDS = new Set( [
 	'userMaterialUuid',
 ] );
 
+const ARTIFACT_ENVELOPE_METADATA_FIELDS = new Set( [
+	'__configHash',
+	'__hash',
+	'__materialShape',
+	'__name',
+	'__sourceOwners',
+] );
+
 const ARTIFACT_FAMILY_FIELDS = new Set( [ ...ARTIFACT_VARIANT_FIELDS, 'variants' ] );
 const SIGNED_ROOT_ROUTING_FIELDS = new Set( [ 'renderContextSignature' ] );
 
 export const ARTIFACT_CONTENT_HASH_VERSION = 'artifact-content@3';
+
+/**
+ * Serialize the durable public artifact graph without mutating a live capture.
+ *
+ * A JSON.stringify replacer is not sufficient here: JSON.stringify invokes a
+ * property's `toJSON()` before the replacer sees the resulting value. A stale
+ * enumerable `_liveNode` could therefore serialize a complete Three node graph
+ * (or throw) even though the replacer eventually omitted that property. Build a
+ * plain public-data graph first, skipping private properties before their value
+ * is read, then apply ordinary JSON semantics to that safe graph.
+ *
+ * Artifact payloads are contract data, so custom object `toJSON()` methods are
+ * deliberately not invoked. Arrays, enumerable object fields, shared identity,
+ * cycles, and the built-in primitive/Date JSON behavior are preserved.
+ *
+ * @param {*} value
+ * @return {string|undefined}
+ */
+export function stringifyArtifactJson( value ) {
+
+	return JSON.stringify( clonePublicArtifactGraph( value, value, new WeakMap() ) );
+
+}
+
+function clonePublicArtifactGraph( value, root, seen ) {
+
+	if ( value === null || typeof value !== 'object' ) return value;
+	if ( seen.has( value ) ) return seen.get( value );
+
+	// Preserve the built-in JSON conversion for values that may legitimately
+	// appear in metadata while preventing user-defined `toJSON()` execution.
+	if ( value instanceof Date ) return new Date( value.getTime() );
+	if ( value instanceof Number || value instanceof String || value instanceof Boolean ) return Object( value.valueOf() );
+	if ( typeof BigInt === 'function' && value instanceof BigInt ) return Object( value.valueOf() );
+
+	if ( Array.isArray( value ) ) {
+
+		const out = new Array( value.length );
+		seen.set( value, out );
+		for ( let index = 0; index < value.length; index ++ ) {
+
+			if ( Object.prototype.hasOwnProperty.call( value, index ) ) out[ index ] = clonePublicArtifactGraph( value[ index ], root, seen );
+
+		}
+		return out;
+
+	}
+
+	const out = {};
+	seen.set( value, out );
+	for ( const key of Object.keys( value ) ) {
+
+		if ( key.startsWith( '_' ) && ! ( value === root && ARTIFACT_ENVELOPE_METADATA_FIELDS.has( key ) ) ) continue;
+		// Never copy an own hook onto the safe plain-data graph. JSON.stringify
+		// would invoke it before serializing the object's public fields, and even
+		// reading an accessor-backed hook here could execute capture code.
+		if ( key === 'toJSON' ) continue;
+		Object.defineProperty( out, key, {
+			value: clonePublicArtifactGraph( value[ key ], root, seen ),
+			enumerable: true,
+			configurable: true,
+			writable: true,
+		} );
+
+	}
+	return out;
+
+}
+
+/**
+ * Remove enumerable capture-only sidecars before validation and persistence.
+ *
+ * Extractors deliberately attach live runtime objects under private `_...`
+ * fields. Current sidecars are non-enumerable, but older or third-party
+ * extractors may leak enumerable copies into a capture POST. Artifact hashes
+ * already exclude these fields, so retaining them would add unvalidated bytes
+ * without changing artifact identity.
+ *
+ * The walk is iterative and mutates the parsed payload in place so a large
+ * private subtree is discarded without cloning or traversing it. Root envelope
+ * metadata remains compatible with callers that pass an extracted artifact or
+ * a persisted artifact envelope directly.
+ *
+ * @param {*} value
+ * @return {*} the original value
+ */
+export function stripPrivateArtifactFieldsInPlace( value ) {
+
+	if ( ! value || typeof value !== 'object' ) return value;
+
+	const root = value;
+	const pending = [ value ];
+	const seen = new WeakSet();
+	while ( pending.length > 0 ) {
+
+		const current = pending.pop();
+		if ( seen.has( current ) ) continue;
+		seen.add( current );
+
+		for ( const key of Object.keys( current ) ) {
+
+			if ( key.startsWith( '_' ) && ! ( current === root && ARTIFACT_ENVELOPE_METADATA_FIELDS.has( key ) ) ) {
+
+				delete current[ key ];
+				continue;
+
+			}
+
+			const child = current[ key ];
+			if ( child && typeof child === 'object' ) pending.push( child );
+
+		}
+
+	}
+
+	return value;
+
+}
 
 /**
  * Canonical payload for the hard artifact identity gate.

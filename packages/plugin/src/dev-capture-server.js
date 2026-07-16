@@ -45,7 +45,7 @@ import { existsSync } from 'node:fs';
 import { resolve, join, dirname, relative, isAbsolute, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import { computeArtifactContentHash } from './hash.js';
-import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
+import { ARTIFACT_CONTENT_HASH_VERSION, stripPrivateArtifactFieldsInPlace } from '@tsl-precompile/contract/artifact-content';
 import { collectArtifactVariantCandidates, mergeArtifactVariantFamily } from '@tsl-precompile/contract/artifact-variants';
 import { validateArtifact } from '@tsl-precompile/contract/kinds';
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
@@ -122,6 +122,7 @@ export function attachDevCapture( server, opts ) {
 			const body = await readBody( req );
 			const payload = JSON.parse( body );
 
+			stripPrivateArtifactFieldsInPlace( payload && payload.artifact );
 			canonicalizeCaptureHashes( payload );
 			validatePayload( payload );
 

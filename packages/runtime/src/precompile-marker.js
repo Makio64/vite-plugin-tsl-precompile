@@ -33,7 +33,7 @@ import { MATERIAL_NODE_TEXTURE_KEYS } from '@tsl-precompile/contract/texture-pro
 import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { createRenderContextSignature } from '@tsl-precompile/contract/render-context';
-import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
+import { ARTIFACT_CONTENT_HASH_VERSION, stringifyArtifactJson } from '@tsl-precompile/contract/artifact-content';
 import { mergeArtifactVariantFamily } from '@tsl-precompile/contract/artifact-variants';
 import {
 	__resetRenderObjectHarvestHandoffForTests,
@@ -1790,16 +1790,15 @@ async function acceptedCaptureResponse( response, fallback ) {
  * Strip non-enumerable / non-JSON-serialisable side-cars from an artifact.
  * The vendored `extractArtifact` attaches Maps and live node references via
  * `Object.defineProperty(... { enumerable: false })`; JSON.stringify drops
- * those automatically, but we also clean up known mutable fields.
+ * those automatically. The shared serializer also omits stale enumerable
+ * private sidecars without traversing their potentially large live payloads.
  *
  * @param {Object} artifact
  * @return {Object}
  */
 function jsonSafeArtifact( artifact ) {
 
-	// JSON.stringify already drops non-enumerable properties; the round-trip
-	// is enough to guarantee a clean payload.
-	return JSON.parse( JSON.stringify( artifact ) );
+	return JSON.parse( stringifyArtifactJson( artifact ) );
 
 }
 

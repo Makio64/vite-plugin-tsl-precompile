@@ -329,6 +329,46 @@ test( 'accepted recaptures replace the live inspector artifact', async () => {
 
 } );
 
+test( 'material capture omits enumerable private sidecars without mutating the extracted artifact', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'private-sidecar-serializer' );
+		const material = new three.Material();
+		const context = mount( three, material );
+		const renderer = { render() {} };
+		let extractedArtifact = null;
+		const liveArray = [ 1, 2, 3 ];
+		const liveAttribute = { array: liveArray };
+		install( three, async () => {
+
+			const artifacts = artifactSet( material );
+			extractedArtifact = artifacts[ 0 ];
+			extractedArtifact.__hash = 'extractor-envelope-hash';
+			extractedArtifact.__name = 'private-sidecar-material';
+			extractedArtifact._liveArray = liveArray;
+			extractedArtifact.uniformPlan.push( {
+				storageBuffers: [ { count: 3, _liveAttribute: liveAttribute } ],
+			} );
+			return artifacts;
+
+		} );
+		setDevRenderer( renderer, three );
+
+		material.precompile( 'private-sidecar-material', context );
+		await waitFor( () => posts.length === 1, 'private-sidecar material capture' );
+
+		assert.equal( posts[ 0 ].artifact.__hash, 'extractor-envelope-hash' );
+		assert.equal( posts[ 0 ].artifact.__name, 'private-sidecar-material' );
+		assert.equal( posts[ 0 ].artifact._liveArray, undefined );
+		assert.equal( posts[ 0 ].artifact.uniformPlan[ 0 ].storageBuffers[ 0 ]._liveAttribute, undefined );
+		assert.equal( extractedArtifact._liveArray, liveArray );
+		assert.equal( extractedArtifact.uniformPlan[ 0 ].storageBuffers[ 0 ]._liveAttribute, liveAttribute );
+
+	} );
+
+} );
+
 test( 'distinct same-callsite instances publish the server-accepted aggregate', async () => {
 
 	await withBrowser( async ( posts ) => {
