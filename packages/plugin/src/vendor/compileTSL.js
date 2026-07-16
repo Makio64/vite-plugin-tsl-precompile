@@ -26,6 +26,8 @@ import { extractUniformPlan } from './extractUniformPlan.js';
 import { compileDoublePassPairsSynchronously } from './compile-async-double-pass.js';
 import { beginRenderObjectHarvest } from './render-object-observer.js';
 export { beginRenderObjectHarvest };
+import { deriveComputeBindingsDescriptor } from '../compute-bindings.js';
+export { deriveComputeBindingsDescriptor } from '../compute-bindings.js';
 import { DataUtils, FloatType, HalfFloatType, RGBAFormat, RenderTarget } from 'three';
 import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
 import { isLiveUniformNodeIdentity, LIVE_UNIFORM_NODE_IDENTITY_SYMBOL_KEY } from '@tsl-precompile/contract/dynamic-bindings';
@@ -103,7 +105,10 @@ function describeBinding( binding ) {
 	} else if ( binding.isStorageBuffer ) {
 
 		descriptor.kind = 'storage-buffer';
-		descriptor.byteLength = binding.byteLength ?? null;
+		const attribute = binding.attribute || null;
+		descriptor.byteLength = attribute && attribute.array
+			? attribute.array.byteLength
+			: binding.byteLength ?? null;
 
 	} else if ( binding.isSampledTexture ) {
 
@@ -1814,6 +1819,8 @@ function sceneMaterialOwnsMRTNode( scene, mrtNode ) {
  * @param {Camera} camera
  * @param {Object} [options]
  * @param {Array<Node>} [options.computeNodes] - Compute nodes to precompile.
+ * @param {Map<Node,Map<string,Object>|Object>} [options.computeBindingResources]
+ *   Process-local public resource maps keyed by compute-node identity.
  * @param {RenderPipeline} [options.renderPipeline] - Post-process pipeline to warm up.
  * @param {Object} [options.mrtNode] - Explicit MRT node to activate during warm-up.
  * @param {Object} [options.renderTargetOverride] - Pre-allocated three RenderTarget
@@ -1922,6 +1929,10 @@ function cachedComputeState( manager, computeNode, requireExisting = false ) {
 async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 	const explicitComputeNodes = Array.isArray( options.computeNodes ) ? options.computeNodes.slice() : [];
+	const computeBindingResources = options.computeBindingResources;
+	if ( computeBindingResources !== undefined && ( ! computeBindingResources || typeof computeBindingResources.get !== 'function' ) ) throw new TypeError(
+		'compileTSL: options.computeBindingResources must be a Map or WeakMap keyed by compute-node identity',
+	);
 	const computeNodes = explicitComputeNodes.slice();
 	const computeNodeSet = new Set( computeNodes );
 	const explicitComputeNodeSet = new Set( computeNodes );
@@ -2747,7 +2758,8 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		if ( ! state ) continue;
 		computeStatesByNode.set( computeNode, state );
 
-		const artifact = extractComputeArtifact( nextComputeCacheKey ++, state, computeNode );
+		const publicResources = computeBindingResources ? computeBindingResources.get( computeNode ) : undefined;
+		const artifact = extractComputeArtifact( nextComputeCacheKey ++, state, computeNode, publicResources );
 		if ( captureClock !== null ) artifact.captureClock = captureClock;
 		artifacts.push( artifact );
 		byComputeNode.set( computeNode, artifact );
@@ -2866,9 +2878,10 @@ function captureActiveRendererOutputIdentity( renderer, observations ) {
  *     matched to their source node via the `byComputeNode` map, not this.
  * @param {NodeBuilderState} state
  * @param {Node} computeNode
+ * @param {Map<string,Object>|Record<string,Object>} [publicResources]
  * @return {PrecompiledArtifact}
  */
-export function extractComputeArtifact( cacheKey, state, computeNode ) {
+export function extractComputeArtifact( cacheKey, state, computeNode, publicResources = undefined ) {
 
 	const bindings = ( state.bindings || [] ).map( describeBindGroup );
 	const uniformPlan = extractUniformPlan( state );
@@ -2902,6 +2915,11 @@ export function extractComputeArtifact( cacheKey, state, computeNode ) {
 			updateAfterNodes: state.updateAfterNodes ? state.updateAfterNodes.length : 0
 		}
 	};
+	if ( publicResources !== undefined && publicResources !== null ) artifact.computeBindings = deriveComputeBindingsDescriptor(
+		artifact,
+		state,
+		publicResources,
+	);
 
 	attachLiveUpdateSidecars( artifact, state );
 
