@@ -135,9 +135,15 @@ test( 'compute readback waits for the dispatch chain that preceded it', () => {
 	const readback = source.slice( start, end );
 	assert.match( readback, /const pendingCompute = this\.__tslpComputeChain;/ );
 	assert.match( readback, /if \( pendingCompute && typeof pendingCompute\.then === 'function' \) await pendingCompute;/ );
+	assert.match( readback, /const readbackRenderer = __computeRendererBySlim\.get\( this \) \|\| null;/ );
+	assert.match( readback, /readbackRenderer\.getArrayBufferAsync\.call\( readbackRenderer, attribute, \.\.\.rest \)/ );
 	assert.ok(
-		readback.indexOf( 'await pendingCompute' ) < readback.indexOf( 'super.getArrayBufferAsync' ),
-		'readback must remain behind the already-requested compute dispatch',
+		readback.indexOf( 'await pendingCompute' ) < readback.indexOf( 'readbackRenderer.getArrayBufferAsync.call' ),
+		'readback ownership must be resolved after the already-requested compute dispatch',
+	);
+	assert.ok(
+		readback.indexOf( 'readbackRenderer.getArrayBufferAsync.call' ) < readback.indexOf( 'super.getArrayBufferAsync' ),
+		'the full renderer that owns delegated compute output must precede the slim fallback',
 	);
 
 } );

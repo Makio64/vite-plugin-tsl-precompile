@@ -10401,6 +10401,10 @@ function __trackDebugShaderAsync( renderer ) {
 			// for unrelated later dispatches.
 			const pendingCompute = this.__tslpComputeChain;
 			if ( pendingCompute && typeof pendingCompute.then === 'function' ) await pendingCompute;
+			const readbackRenderer = __computeRendererBySlim.get( this ) || null;
+			if ( readbackRenderer && typeof readbackRenderer.getArrayBufferAsync === 'function' ) {
+				return await readbackRenderer.getArrayBufferAsync.call( readbackRenderer, attribute, ...rest );
+			}
 			return await super.getArrayBufferAsync( attribute, ...rest );
 		}
 		catch ( _ ) { return new Float32Array( 1 ).buffer; }
