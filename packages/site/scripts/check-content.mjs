@@ -181,6 +181,7 @@ for ( const entry of liveManifest?.examples || [] ) {
 		const liveHtml = await readFile( resolve( distDir, htmlPath ), 'utf8' );
 		if ( /(?:src|href)=["']\/assets\//.test( liveHtml ) ) fail( `${ entry.playUrl }: root-relative asset URL breaks the Pages base path` );
 		if ( ! /(?:src|href)=["']\.\/assets\//.test( liveHtml ) ) fail( `${ entry.playUrl }: no relative compiled asset found` );
+		if ( ! /<link\b[^>]*\brel=["']icon["'][^>]*\bhref=["'][^"']*favicon\.svg["'][^>]*>/i.test( liveHtml ) ) fail( `${ entry.playUrl }: missing shared favicon metadata` );
 
 	} catch {
 

@@ -145,6 +145,26 @@ async function filesUnder( root, current = root ) {
 
 }
 
+async function ensureLiveDocumentMetadata( outDir ) {
+
+	const faviconPath = resolve( PUBLIC_ROOT, 'favicon.svg' );
+	for ( const file of ( await filesUnder( outDir ) ).filter( name => name.endsWith( '.html' ) ) ) {
+
+		const path = resolve( outDir, file );
+		let html = await readFile( path, 'utf8' );
+		if ( /<link\b[^>]*\brel=["']icon["'][^>]*>/i.test( html ) ) continue;
+		if ( ! /<head(?:\s[^>]*)?>/i.test( html ) ) throw new Error( `${ relative( REPO_ROOT, path ) }: missing <head> for live document metadata` );
+		const faviconHref = relative( dirname( path ), faviconPath ).replaceAll( '\\', '/' );
+		html = html.replace(
+			/<head(?:\s[^>]*)?>/i,
+			match => `${ match }\n\t\t<link rel="icon" type="image/svg+xml" href="${ faviconHref }">`,
+		);
+		await writeFile( path, html );
+
+	}
+
+}
+
 function rollupBundle( result ) {
 
 	const outputs = Array.isArray( result ) ? result : [ result ];
@@ -220,6 +240,7 @@ async function buildProject( project ) {
 		throw new Error( `${ project.id }: forbidden compiler/runtime residue ${ JSON.stringify( residueCounts ) }` );
 
 	}
+	await ensureLiveDocumentMetadata( outDir );
 
 	const output = await directoryFingerprint( outDir );
 	const artifacts = await directoryFingerprint( resolve( project.root, 'artifacts' ) );
