@@ -1,4 +1,8 @@
-import { collectArtifactVariantCandidates, mergeArtifactVariantFamily } from '@tsl-precompile/contract/artifact-variants';
+import {
+	collectArtifactVariantCandidates,
+	createArtifactVariantPayloadFingerprint,
+	mergeArtifactVariantFamily,
+} from '@tsl-precompile/contract/artifact-variants';
 
 /**
  * Coalesce contexts captured under different harness names back into the one
@@ -36,6 +40,17 @@ export function coalesceUserArtifactVariantFamilies( userArtifacts = {} ) {
 
 			if ( item === root ) continue;
 			const itemSelectors = selectorsForArtifact( item.artifact );
+			// Deferred capture can emit a later partial root after the selected root
+			// already owns the same signed payloads. Leaving that duplicate available
+			// lets counter-based replay choose the incomplete family and then fail on
+			// a sibling topology that the complete root does contain.
+			if ( itemSelectors.size > 0 && artifactFamilyIsRepresented( root.artifact, item.artifact ) ) {
+
+				delete userArtifacts[ item.name ];
+				removedEntries ++;
+				continue;
+
+			}
 			// Two payloads for one signed topology are not a selectable variant
 			// family. Keep those roots independent so the existing object/source
 			// matching can choose between them without creating runtime ambiguity.
@@ -75,6 +90,45 @@ function selectorsForArtifact( artifact ) {
 
 	}
 	return selectors;
+
+}
+
+function artifactFamilyIsRepresented( rootArtifact, itemArtifact ) {
+
+	try {
+
+		const roots = collectArtifactVariantCandidates( rootArtifact ).map( ( candidate ) => ( {
+			fingerprint: createArtifactVariantPayloadFingerprint( candidate ),
+			selectors: selectorsForCandidate( candidate ),
+		} ) );
+		return collectArtifactVariantCandidates( itemArtifact ).every( ( candidate ) => {
+
+			const selectors = selectorsForCandidate( candidate );
+			if ( selectors.size === 0 ) return false;
+			const fingerprint = createArtifactVariantPayloadFingerprint( candidate );
+			return roots.some( ( root ) => root.fingerprint === fingerprint && setIsSubset( selectors, root.selectors ) );
+
+		} );
+
+	} catch ( _ ) {
+
+		return false;
+
+	}
+
+}
+
+function selectorsForCandidate( candidate ) {
+
+	return new Set( ( candidate && candidate.renderContextSelectors || [] )
+		.filter( ( selector ) => typeof selector === 'string' && selector.length > 0 ) );
+
+}
+
+function setIsSubset( subset, superset ) {
+
+	for ( const value of subset ) if ( ! superset.has( value ) ) return false;
+	return true;
 
 }
 

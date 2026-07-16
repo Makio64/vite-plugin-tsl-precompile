@@ -101,6 +101,43 @@ test( 'keeps divergent payload roots independent when they claim the same select
 
 } );
 
+test( 'removes a signed partial root already represented by the complete family', () => {
+
+	const rootName = 'example.html:MeshStandardNodeMaterial:2';
+	const duplicateName = 'example.html:MeshStandardNodeMaterial:7';
+	const rootVariant = artifact( {
+		cacheKey: 2,
+		materialUuid: 'shared-material',
+		selector: 'selector:non-skinned',
+		sourceName: rootName,
+	} );
+	const skinnedVariant = artifact( {
+		cacheKey: 7,
+		materialUuid: 'shared-material',
+		selector: 'selector:skinned',
+		sourceName: rootName,
+	} );
+	const root = {
+		...rootVariant,
+		variants: {
+			'2': rootVariant,
+			'7': skinnedVariant,
+		},
+	};
+	const user = {
+		[ rootName ]: entry( root, 'complete-root-hash' ),
+		[ duplicateName ]: entry( { ...skinnedVariant }, 'partial-root-hash' ),
+	};
+
+	const result = coalesceUserArtifactVariantFamilies( user );
+
+	assert.deepEqual( result, { mergedFamilies: 0, removedEntries: 1 } );
+	assert.deepEqual( Object.keys( user ), [ rootName ] );
+	assert.equal( user[ rootName ].__hash, 'complete-root-hash', 'unchanged complete root keeps its transport hash' );
+	assert.deepEqual( Object.keys( user[ rootName ].artifact.variants ), [ '2', '7' ] );
+
+} );
+
 function entry( artifactValue, hash = undefined ) {
 
 	return {
