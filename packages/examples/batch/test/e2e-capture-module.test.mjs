@@ -37,6 +37,16 @@ test( 'capture module retains the renderer that discovered each material context
 
 } );
 
+test( 'capture maintenance renders cannot enqueue new harness material contexts', () => {
+
+	assert.match( source, /function __isCaptureMaintenanceRender\(\)/ );
+	assert.match( source, /window\.__tslpSyntheticRenderActive \| 0/ );
+	assert.match( source, /window\.__tslpPrecompilePending \| 0/ );
+	const guards = source.match( /__pmremRunning > 0 \|\| __isCaptureMaintenanceRender\(\)/g ) || [];
+	assert.equal( guards.length, 4, 'renderObject, compile, compileAsync, and render all bypass capture marking' );
+
+} );
+
 test( 'forced pipeline maintenance renders receive distinct non-advancing identities', () => {
 
 	assert.match( source, /function __maintenanceTemporalFrame\( kind \)/ );

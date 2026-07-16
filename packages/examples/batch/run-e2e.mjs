@@ -1758,6 +1758,11 @@ function __trackDebugShaderAsync( renderer ) {
 	};
 }
 
+function __isCaptureMaintenanceRender() {
+	return ( window.__tslpSyntheticRenderActive | 0 ) > 0
+		|| ( window.__tslpPrecompilePending | 0 ) > 0;
+}
+
 export class WebGPURenderer extends Original.WebGPURenderer {
 	constructor( ...args ) {
 		super( ...args );
@@ -1780,7 +1785,7 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		}
 	}
 	renderObject( object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId = null ) {
-		if ( __pmremRunning > 0 ) return super.renderObject( object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId );
+		if ( __pmremRunning > 0 || __isCaptureMaintenanceRender() ) return super.renderObject( object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId );
 		const materialClassName = material ? __classNameForMaterial( material ) : '';
 		const isOffscreenRenderPass = typeof this.getRenderTarget === 'function' && this.getRenderTarget() !== null;
 		const isUserScene = !! ( scene && scene.isScene === true && scene.userData && scene.userData.__tslpUserScene === true );
@@ -1810,7 +1815,7 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		return result;
 	}
 	compile( scene, camera, ...rest ) {
-		if ( __pmremRunning > 0 ) return typeof super.compile === 'function' ? super.compile( scene, camera, ...rest ) : undefined;
+		if ( __pmremRunning > 0 || __isCaptureMaintenanceRender() ) return typeof super.compile === 'function' ? super.compile( scene, camera, ...rest ) : undefined;
 		__lastScene = scene;
 		__lastCamera = camera;
 		__rememberAuxScene( scene, camera );
@@ -1820,7 +1825,7 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		return typeof super.compile === 'function' ? super.compile( scene, camera, ...rest ) : undefined;
 	}
 	compileAsync( scene, camera, ...rest ) {
-		if ( __pmremRunning > 0 ) return typeof super.compileAsync === 'function' ? super.compileAsync( scene, camera, ...rest ) : Promise.resolve();
+		if ( __pmremRunning > 0 || __isCaptureMaintenanceRender() ) return typeof super.compileAsync === 'function' ? super.compileAsync( scene, camera, ...rest ) : Promise.resolve();
 		__lastScene = scene;
 		__lastCamera = camera;
 		__rememberAuxScene( scene, camera );
@@ -1838,7 +1843,7 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		return Promise.resolve( p ).then( ( v ) => { _settle(); return v; }, ( e ) => { _settle(); throw e; } );
 	}
 	render( scene, camera ) {
-		if ( __pmremRunning > 0 ) return super.render( scene, camera );
+		if ( __pmremRunning > 0 || __isCaptureMaintenanceRender() ) return super.render( scene, camera );
 		__recordRenderableObjectCount( scene );
 		__lastScene = scene;
 		__lastCamera = camera;
