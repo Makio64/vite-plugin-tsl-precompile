@@ -6684,6 +6684,17 @@ function __replaceMaterialForReplay( inputMaterial, object = null, force = false
 	// called in the upcoming super.render.
 	if ( m.isPrecompiledMaterial ) {
 		m = __retargetPrecompiledMaterialForObject( m, object );
+		// The generated replay constructors deliberately keep the author's full
+		// material alive until its first render, then swap a PrecompiledMaterial
+		// onto the mesh. Mirror subsequent author-side mutations before every draw
+		// so toggles such as material.visible around CubeCamera.update() still
+		// govern the live render material.
+		const sourceMaterial = m && m.__tslpSourceMaterial;
+		if ( sourceMaterial && sourceMaterial !== m ) {
+			__copyMaterialProps( sourceMaterial, m );
+			__copyMaterialNodeProps( sourceMaterial, m );
+			__wireMaterialTextures( sourceMaterial, m );
+		}
 		if ( object ) {
 			try { Object.defineProperty( m, '__tslpPrecompileObject', { value: object, configurable: true } ); } catch ( _ ) {}
 		}

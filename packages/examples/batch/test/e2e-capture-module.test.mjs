@@ -186,6 +186,24 @@ test( 'replay applies captured texture topology before first material assignment
 
 } );
 
+test( 'replay mirrors author material mutations after the first precompiled swap', () => {
+
+	const start = source.indexOf( 'function __replaceMaterialForReplay(' );
+	const end = source.indexOf( 'function __replaceSceneOverrideMaterial(', start );
+	assert.ok( start >= 0 && end > start, 'expected the replay material replacement helper' );
+	const replacement = source.slice( start, end );
+	const precompiledBranch = replacement.slice(
+		replacement.indexOf( 'if ( m.isPrecompiledMaterial )' ),
+		replacement.indexOf( 'if ( ! force && m.visible === false )' ),
+	);
+	assert.match( precompiledBranch, /const sourceMaterial = m && m\.__tslpSourceMaterial/ );
+	assert.match( precompiledBranch, /__copyMaterialProps\( sourceMaterial, m \)/ );
+	assert.match( precompiledBranch, /__copyMaterialNodeProps\( sourceMaterial, m \)/ );
+	assert.match( precompiledBranch, /__wireMaterialTextures\( sourceMaterial, m \)/ );
+	assert.match( source, /const __SCALAR_PROPS = \[[^\n]*'visible'/, 'visible participates in live scalar synchronization' );
+
+} );
+
 test( 'pass depth replay preserves captured MSAA shape', () => {
 
 	const prepareStart = source.indexOf( 'function __preparePassNodeForReplay(' );
