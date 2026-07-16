@@ -485,7 +485,7 @@ export function dispatchTextureBinding( { artifact, groupName, bindingName, mate
 			&& ! source.lightUuid
 			&& ! ( typeof source.lightIndex === 'number' && source.lightIndex >= 0 );
 		const live = passDepth && artifact._textureRefs && artifact._textureRefs.get( source.textureUuid );
-		return live && live.isTexture === true ? live : selectShapeFallback();
+		return live && live.isTexture === true && textureMatchesShaderBinding( artifact, bindingName, live ) ? live : selectShapeFallback();
 
 	}
 

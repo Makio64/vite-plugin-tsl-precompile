@@ -56,6 +56,8 @@ export function collectMaterialContextDepthTextures( material ) {
 export function resolveDepthTextureFromMaterial( material, textureUuid, camera = null ) {
 
 	if ( ! material ) return null;
+	const attached = material.precompiledArtifact?._textureRefs?.get( textureUuid );
+	if ( attached?.isDepthTexture === true ) return attached;
 	let firstReflectorDepth = null;
 	for ( const baseNode of collectMaterialReflectorBaseNodes( material ) ) {
 

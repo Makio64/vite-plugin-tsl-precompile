@@ -64,6 +64,7 @@ test( 'dispatchTextureBinding prefers an attached material-graph pass depth text
 		lightIndex: - 1,
 	};
 	const artifact = makeArtifact( source );
+	artifact.fragmentShader = 'var nodeTexture0: texture_depth_2d;';
 	const liveDepth = { isTexture: true, isDepthTexture: true, name: 'depth' };
 	artifact._textureRefs = new Map( [ [ source.textureUuid, liveDepth ] ] );
 	const result = dispatchTextureBinding( {
@@ -75,6 +76,30 @@ test( 'dispatchTextureBinding prefers an attached material-graph pass depth text
 	} );
 
 	assert.equal( result, liveDepth );
+
+} );
+
+test( 'dispatchTextureBinding rejects a color texture merely named depth', () => {
+
+	const source = {
+		kind: 'depth.texture',
+		textureUuid: 'pass-depth',
+		fromMaterialGraph: true,
+		lightIndex: - 1,
+	};
+	const artifact = makeArtifact( source );
+	artifact.fragmentShader = 'var nodeTexture0: texture_depth_2d;';
+	artifact._textureRefs = new Map( [ [ source.textureUuid, { isTexture: true, name: 'depth' } ] ] );
+	const fallbacks = makeFallbacks();
+	const result = dispatchTextureBinding( {
+		artifact,
+		groupName: 'render',
+		bindingName: 'nodeTexture0',
+		material: null,
+		deps: { fallbacks },
+	} );
+
+	assert.equal( result, fallbacks.depth );
 
 } );
 

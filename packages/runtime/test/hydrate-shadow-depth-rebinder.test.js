@@ -57,6 +57,35 @@ test( 'shadow depth resolver prefers reflector depth textures from material side
 
 } );
 
+test( 'shadow depth rebinder follows refreshed artifact refs without a raw material graph', () => {
+
+	const initialDepth = { uuid: 'initial-depth', isDepthTexture: true };
+	const replacementDepth = { uuid: 'replacement-depth', isDepthTexture: true };
+	const artifact = createArtifact( 'materialDepthTex' );
+	artifact._textureRefs = new Map( [ [ 'captured-depth', initialDepth ] ] );
+	const material = { precompiledArtifact: artifact };
+	const binding = createBinding( { uuid: 'fallback' } );
+	const rebinder = createShadowDepthRebinder( [ {
+		artifact,
+		binding,
+		bindingName: 'materialDepthTex',
+		fromMaterialGraph: true,
+		material,
+		textureUuid: 'captured-depth',
+	} ], { diagnosticsEnabled: () => false } );
+	const frame = {
+		renderer: { backend: { get: ( texture ) => ( { texture: { label: texture.uuid }, initialized: true } ) } },
+	};
+
+	rebinder.updateBefore( frame );
+	assert.equal( binding.texture, initialDepth );
+
+	artifact._textureRefs = new Map( [ [ 'captured-depth', replacementDepth ] ] );
+	rebinder.updateBefore( frame );
+	assert.equal( binding.texture, replacementDepth );
+
+} );
+
 test( 'shadow depth rebinder relinks light shadow depth textures and records diagnostics', () => {
 
 	const fallbackTexture = { uuid: 'fallback' };
