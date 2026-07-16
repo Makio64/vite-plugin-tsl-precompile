@@ -34,3 +34,6 @@ packages/examples/batch/results/*.json
 # These live under .claude/ but git treats them as untracked since they're
 # detached worktrees rooted in the main repo.
 .claude/worktrees/
+
+# Local Netlify site linkage
+.netlify/
