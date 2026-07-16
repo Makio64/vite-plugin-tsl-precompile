@@ -9448,7 +9448,6 @@ function __kickShadowRenderAsync( slimRenderer, userScene, camera ) {
 							hasDepthTexture: !! ( src.shadow && src.shadow.map && src.shadow.map.depthTexture ),
 						} );
 					}
-					if ( _camera.isArrayCamera === true && Number.isFinite( src.shadow.intensity ) ) src.shadow.intensity = Math.min( src.shadow.intensity, 0.25 );
 					const isVsmShadowLight = ( fullRenderer.shadowMap && fullRenderer.shadowMap.type ) === ( __fullThreeMod.VSMShadowMap ?? 3 ) && src.isPointLight !== true;
 						let depthTex = src.shadow.map.depthTexture;
 						if ( depthTex ) {
