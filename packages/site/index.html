@@ -58,8 +58,8 @@
 					Keep normal three.js authoring. Add one marker per material—or let <code>autoMark</code> instrument constructors while you evaluate the pipeline.
 				</p>
 				<div class="hero-actions">
-					<a class="btn btn-primary" href="#quickstart">Precompile your first material</a>
-					<a class="btn btn-ghost" href="#pipeline">See capture → build → runtime</a>
+					<a class="btn btn-primary" href="examples.html#particles">Run compiled WebGPU</a>
+					<a class="btn btn-ghost" href="#quickstart">Precompile your first material</a>
 				</div>
 				<ul class="hero-badges" aria-label="Project status and requirements">
 					<li>Experimental</li>
@@ -423,7 +423,7 @@ scene.<span class="tok-fn">add</span>( <span class="tok-key">new</span> <span cl
 				<div class="scope-head scope-head-muted"><span></span><strong>Plan for explicit coverage</strong></div>
 				<ul class="scope-list scope-watch">
 					<li>MRT, backgrounds, PMREM, and post-processing may need auxiliary capture</li>
-					<li>Compute and live-only shader paths may need the lazy full renderer</li>
+					<li>Captured compute kernels replay in pure slim mode; uncaptured live-only graph paths need explicit hybrid support</li>
 					<li>Artifacts exist only for routes and material variants you actually observe</li>
 				</ul>
 			</div>

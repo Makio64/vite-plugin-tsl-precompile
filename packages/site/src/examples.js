@@ -1,5 +1,5 @@
-// Compare page — reads /examples.json, renders sidebar + comparison stage.
-// Three view modes: slider (default, draggable seam), split (side-by-side), solo (single image with toggle).
+// Compatibility lab — reads /examples.json, renders a gallery and comparison stage.
+// Comparison modes: slider (default, draggable seam), split (side-by-side), solo (single image with toggle).
 // Vanilla DOM, no framework — matches the rest of the site.
 
 const TIER_LABEL = {
@@ -10,6 +10,7 @@ const TIER_LABEL = {
 };
 
 const TIER_RANK = { 'pixel-match': 0, 'visual-match': 1, 'renders': 2, 'capture-only': 3 };
+const LIVE_FILTER = 'live-compiled';
 
 const TIER_CHIPS = [
 	{ id: 'pixel-match', totalsKey: 'pixelMatchCount' },
@@ -19,6 +20,7 @@ const TIER_CHIPS = [
 ];
 
 const VALID_MODES = new Set( [ 'slider', 'split', 'solo' ] );
+const VALID_VIEWS = new Set( [ 'gallery', 'compare' ] );
 
 const state = {
 	data: null,
@@ -27,6 +29,7 @@ const state = {
 	query: '',
 	view: [],                 // currently filtered+sorted array (the prev/next walk path)
 	currentBasename: null,
+	viewMode: 'gallery',       // 'gallery' | 'compare'
 	mode: 'slider',           // 'slider' | 'split' | 'solo'
 	soloSide: 'replay',       // 'replay' | 'capture' — used in solo mode
 	sliderPos: 50,            // % — used in slider mode
@@ -78,6 +81,29 @@ function renderMetrics( totals ) {
 	}
 }
 
+function verifiedLiveEntries() {
+
+	return ( state.liveManifest?.examples || [] ).filter( entry => verifiedLiveEntry( entry ) );
+
+}
+
+function renderLiveMetrics( examples ) {
+
+	const liveEntries = verifiedLiveEntries();
+	const linked = examples.filter( record => liveEntryForCatalogue( record.basename ) ).length;
+	const map = {
+		liveRouteCount: liveEntries.length,
+		liveGalleryCount: linked,
+	};
+	for ( const el of document.querySelectorAll( '[data-key]' ) ) {
+
+		const value = map[ el.getAttribute( 'data-key' ) ];
+		if ( value != null ) el.textContent = value;
+
+	}
+
+}
+
 function renderTierBar( totals ) {
 	const total = ( totals.pixelMatchCount ?? 0 )
 		+ ( totals.visualMatchCount ?? 0 )
@@ -91,8 +117,9 @@ function renderTierBar( totals ) {
 	document.querySelector( '.ex-tier-segment[data-tier="capture-only"]' ).style.setProperty( '--pct', pct( 'captureOnlyCount' ) );
 }
 
-function renderChips( categories, totals ) {
+function renderChips( categories, totals, examples ) {
 	const chipsEl = $( '#ex-chips' );
+	const liveCount = examples.filter( record => liveEntryForCatalogue( record.basename ) ).length;
 	const tierChips = TIER_CHIPS.map( c => ( {
 		id: c.id,
 		label: TIER_LABEL[ c.id ],
@@ -100,15 +127,17 @@ function renderChips( categories, totals ) {
 		tier: true,
 	} ) );
 	const all = [
-		{ id: 'all', label: 'All', count: totals.examplesProcessed },
+		{ id: 'all', label: 'All', count: totals.examplesVisible ?? examples.length },
+		{ id: LIVE_FILTER, label: 'Live compiled', count: liveCount, live: true },
 		...tierChips,
 		...categories,
 	];
 	chipsEl.innerHTML = all.map( c => {
 		const sel = state.filter === c.id ? 'true' : 'false';
 		const dot = c.tier ? `<span class="ex-dot ex-dot-${escapeHtml( c.id )}" aria-hidden="true"></span>` : '';
-		return `<button type="button" role="tab" aria-selected="${sel}" class="ex-chip${c.tier ? ' ex-chip-tier' : ''}" data-filter="${escapeHtml( c.id )}">
-			${dot}<span>${escapeHtml( c.label )}</span>
+		const liveDot = c.live ? '<span class="ex-chip-live-dot" aria-hidden="true"></span>' : '';
+		return `<button type="button" role="tab" aria-selected="${sel}" class="ex-chip${c.tier ? ' ex-chip-tier' : ''}${c.live ? ' ex-chip-live' : ''}" data-filter="${escapeHtml( c.id )}">
+			${dot}${liveDot}<span>${escapeHtml( c.label )}</span>
 			<span class="ex-chip-count">${c.count}</span>
 		</button>`;
 	} ).join( '' );
@@ -129,7 +158,9 @@ function applyFilters( examples ) {
 	const isTierFilter = state.filter in TIER_LABEL;
 	// Capture-only entries have thumbHealth !== 'ok'; surface them when that tier is selected.
 	if ( state.filter !== 'capture-only' ) xs = xs.filter( r => r.thumbHealth === 'ok' );
-	if ( isTierFilter ) {
+	if ( state.filter === LIVE_FILTER ) {
+		xs = xs.filter( r => liveEntryForCatalogue( r.basename ) );
+	} else if ( isTierFilter ) {
 		xs = xs.filter( r => r.badge === state.filter );
 	} else if ( state.filter !== 'all' ) {
 		xs = xs.filter( r => r.category === state.filter );
@@ -175,7 +206,7 @@ function renderSidebar() {
 	}
 	empty.hidden = true;
 
-	const flat = state.query || state.filter in TIER_LABEL;
+	const flat = state.query || state.filter in TIER_LABEL || state.filter === LIVE_FILTER;
 	const groups = flat
 		? [ { id: '__flat__', label: null, items: state.view } ]
 		: groupByCategory( state.view );
@@ -183,12 +214,14 @@ function renderSidebar() {
 	listEl.innerHTML = groups.map( g => {
 		const items = g.items.map( r => {
 			const isCurrent = r.basename === state.currentBasename;
+			const hasLiveRoute = !! liveEntryForCatalogue( r.basename );
 			return `<a class="ex-side-item${isCurrent ? ' is-current' : ''}"
 				href="#${escapeHtml( r.basename )}"
 				data-basename="${escapeHtml( r.basename )}"
 				aria-current="${isCurrent ? 'true' : 'false'}">
 				<span class="ex-dot ex-dot-${escapeHtml( r.badge )}" aria-hidden="true"></span>
 				<span class="ex-side-name">${escapeHtml( r.displayName )}</span>
+				${hasLiveRoute ? '<span class="ex-side-live">Live</span>' : ''}
 			</a>`;
 		} ).join( '' );
 
@@ -204,6 +237,47 @@ function renderSidebar() {
 
 	const current = listEl.querySelector( '.is-current' );
 	if ( current ) current.scrollIntoView( { block: 'nearest', behavior: 'auto' } );
+}
+
+function renderGallery() {
+
+	const gallery = $( '#ex-gallery' );
+	const empty = $( '#ex-gallery-empty' );
+	if ( ! state.view.length ) {
+
+		gallery.innerHTML = '';
+		empty.hidden = false;
+		return;
+
+	}
+	empty.hidden = true;
+	gallery.innerHTML = state.view.map( r => {
+
+		const image = r.thumbReplay || r.thumbCapture;
+		const hasLiveRoute = !! liveEntryForCatalogue( r.basename );
+		const source = r.source?.kind === 'three' ? 'Three.js upstream' : 'Compiled fixture';
+		const tier = TIER_LABEL[ r.badge ] ?? r.badge;
+		const psnr = fmtPsnr( r.pixel );
+		const materials = r.materialCount == null ? null : `${ r.materialCount } material${ r.materialCount === 1 ? '' : 's' }`;
+		return `<a class="ex-gallery-card${hasLiveRoute ? ' is-live' : ''}" href="#${escapeHtml( r.basename )}" data-basename="${escapeHtml( r.basename )}">
+			<span class="ex-gallery-media">
+				${image
+					? `<img src="${escapeHtml( image )}" alt="${escapeHtml( r.displayName )} slim-runtime replay" loading="lazy" decoding="async">`
+					: '<span class="ex-gallery-placeholder">Frame unavailable</span>'}
+				<span class="ex-gallery-badges">
+					<span class="ex-gallery-tier" data-tier="${escapeHtml( r.badge )}">${escapeHtml( tier )}</span>
+					${hasLiveRoute ? '<span class="ex-gallery-live"><i aria-hidden="true"></i> Live compiled</span>' : ''}
+				</span>
+			</span>
+			<span class="ex-gallery-body">
+				<span class="ex-gallery-source">${escapeHtml( source )}</span>
+				<strong>${escapeHtml( r.displayName )}</strong>
+				<span class="ex-gallery-meta"><span>${escapeHtml( psnr )}</span>${materials ? `<span>${escapeHtml( materials )}</span>` : ''}</span>
+			</span>
+		</a>`;
+
+	} ).join( '' );
+
 }
 
 function setSliderPos( pct ) {
@@ -232,6 +306,26 @@ function setSoloSide( side ) {
 		btn.setAttribute( 'aria-selected', btn.dataset.solo === side ? 'true' : 'false' );
 	}
 	renderStage();
+}
+
+function setViewMode( view, opts = {} ) {
+
+	if ( ! VALID_VIEWS.has( view ) ) return;
+	state.viewMode = view;
+	$( '#ex-browser' ).dataset.view = view;
+	for ( const button of document.querySelectorAll( '.ex-view-switch [data-view]' ) ) {
+
+		button.setAttribute( 'aria-pressed', button.dataset.view === view ? 'true' : 'false' );
+
+	}
+	if ( view === 'gallery' ) closeDrawer();
+	if ( view === 'compare' ) {
+
+		renderStage();
+		if ( opts.focus === true ) $( '#ex-stage' ).focus( { preventScroll: true } );
+
+	}
+
 }
 
 function renderStage() {
@@ -437,12 +531,15 @@ function rebuildView( opts = {} ) {
 	const filtered = applyFilters( state.data.examples );
 	state.view = defaultSort( filtered );
 	renderSidebar();
+	renderGallery();
+	$( '#ex-drawer-count' ).textContent = state.view.length;
+	$( '#ex-result-count' ).textContent = `${ state.view.length } example${ state.view.length === 1 ? '' : 's' } shown`;
 
 	const stillIn = state.view.some( x => x.basename === state.currentBasename );
 	if ( opts.keepSelection && stillIn ) {
 		renderStage();
 	} else if ( state.view.length ) {
-		selectExample( state.view[ 0 ].basename );
+		selectExample( state.view[ 0 ].basename, { updateHash: state.viewMode === 'compare' } );
 	} else {
 		state.currentBasename = null;
 		renderStage();
@@ -457,6 +554,32 @@ function bindSidebar() {
 		e.preventDefault();
 		selectExample( a.dataset.basename );
 	} );
+}
+
+function bindGallery() {
+
+	$( '#ex-gallery' ).addEventListener( 'click', event => {
+
+		const card = event.target.closest( '.ex-gallery-card' );
+		if ( ! card || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey ) return;
+		event.preventDefault();
+		selectExample( card.dataset.basename );
+		setViewMode( 'compare', { focus: true } );
+
+	} );
+
+}
+
+function bindViewSwitch() {
+
+	document.querySelector( '.ex-view-switch' ).addEventListener( 'click', event => {
+
+		const button = event.target.closest( '[data-view]' );
+		if ( ! button ) return;
+		setViewMode( button.dataset.view, { focus: button.dataset.view === 'compare' } );
+
+	} );
+
 }
 
 function bindStage() {
@@ -565,6 +688,7 @@ function bindSlider() {
 function bindKeyboard() {
 	window.addEventListener( 'keydown', e => {
 		if ( e.target.matches( 'input, textarea, [contenteditable="true"]' ) ) return;
+		if ( state.viewMode !== 'compare' ) return;
 		// Don't fight with slider-handle arrows.
 		if ( e.target.closest?.( '.cmp-handle' ) ) return;
 		if ( e.key === 'ArrowLeft' ) {
@@ -592,8 +716,9 @@ function bindSearch() {
 function bindHash() {
 	window.addEventListener( 'hashchange', () => {
 		const basename = decodeURIComponent( location.hash.replace( /^#/, '' ) );
-		if ( basename && basename !== state.currentBasename ) {
-			selectExample( basename, { updateHash: false } );
+		if ( basename ) {
+			setViewMode( 'compare' );
+			if ( basename !== state.currentBasename ) selectExample( basename, { updateHash: false } );
 		}
 	} );
 }
@@ -632,7 +757,7 @@ function bindLivePlayer( manifest ) {
 	}
 
 	openButton.disabled = false;
-	openButton.textContent = 'Run compiled example';
+	openButton.textContent = 'Run production canary';
 
 	function openEntry( entry ) {
 
@@ -703,12 +828,13 @@ async function init() {
 	state.data = data;
 	state.liveManifest = liveManifest;
 
-	$( '#ex-drawer-count' ).textContent = data.totals.examplesProcessed;
-
 	renderMetrics( data.totals );
+	renderLiveMetrics( data.examples );
 	renderTierBar( data.totals );
-	renderChips( data.categories, data.totals );
+	renderChips( data.categories, data.totals, data.examples );
 	bindSidebar();
+	bindGallery();
+	bindViewSwitch();
 	bindStage();
 	bindSlider();
 	bindSearch();
@@ -723,11 +849,15 @@ async function init() {
 	const filtered = applyFilters( data.examples );
 	state.view = defaultSort( filtered );
 	renderSidebar();
+	renderGallery();
+	$( '#ex-drawer-count' ).textContent = state.view.length;
+	$( '#ex-result-count' ).textContent = `${ state.view.length } example${ state.view.length === 1 ? '' : 's' } shown`;
 
 	const hashBasename = decodeURIComponent( location.hash.replace( /^#/, '' ) );
 	const hashHit = hashBasename && data.examples.some( x => x.basename === hashBasename );
 	const initial = hashHit ? hashBasename : ( state.view[ 0 ]?.basename ?? null );
-	if ( initial ) selectExample( initial, { updateHash: ! hashHit } );
+	if ( hashHit ) setViewMode( 'compare' );
+	if ( initial ) selectExample( initial, { updateHash: false } );
 	else renderStage();
 }
 

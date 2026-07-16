@@ -40,8 +40,9 @@
 				Drag the seam. See the diff.
 			</h1>
 			<p class="ex-hero-lead">
-				The tracked <code>webgpu_*</code> suite, captured against live Three.js and replayed through
-				the precompiled slim runtime. Pick an example, slide the handle, and inspect the generated status.
+				The compatibility lab tracks the complete source catalogue and publishes generated capture/replay
+				evidence wherever a reviewable frame exists. A verified subset also runs here as real compiler-free
+				WebGPU routes, built with the public plugin.
 			</p>
 
 			<!-- Tier breakdown stacked bar -->
@@ -60,7 +61,8 @@
 
 			<!-- Compact KPI strip -->
 			<ul class="ex-kpis">
-				<li><span class="ex-kpi-num" data-key="examplesProcessed">—</span><span class="ex-kpi-lab">examples</span></li>
+				<li><span class="ex-kpi-num" data-key="examplesProcessed">—</span><span class="ex-kpi-lab">tracked source routes</span></li>
+				<li class="ex-kpi-live"><span class="ex-kpi-num" data-key="liveRouteCount">—</span><span class="ex-kpi-lab">verified live routes</span></li>
 				<li><span class="ex-kpi-num" data-key="materialsBaked">—</span><span class="ex-kpi-lab">materials baked</span></li>
 				<li><span class="ex-kpi-num" data-key="wgslKb">—</span><span class="ex-kpi-lab">WGSL emitted</span></li>
 				<li><span class="ex-kpi-num">0</span><span class="ex-kpi-lab">runtime builder calls</span></li>
@@ -71,28 +73,45 @@
 				<div>
 					<span class="ex-live-canary-kicker">Real production route</span>
 					<strong>Run compiled TSL in this page</strong>
-					<p>The canary below is built with the public Vite plugin and <code>slim: 'source'</code>. Its bundle gate found zero compiler or stock NodeBuilder modules.</p>
+					<p>The canary and <span class="ex-live-inline-count" data-key="liveGalleryCount">—</span> linked gallery demos use <code>slim: 'source'</code>. Their bundle gates found zero compiler or stock NodeBuilder modules.</p>
 				</div>
-				<button type="button" id="ex-live-open" disabled>Preparing compiled route…</button>
+				<button type="button" id="ex-live-open" disabled>Preparing production canary…</button>
 			</div>
 		</div>
 	</header>
 
 	<!-- ========== BROWSER (sidebar + stage) ========== -->
-	<section class="ex-browser" aria-label="Examples comparison">
+	<section class="ex-browser" id="ex-browser" data-view="gallery" aria-label="Examples compatibility lab">
+		<div class="ex-browser-head">
+			<div class="ex-catalogue-controls">
+				<input type="search" id="ex-search" class="ex-search" placeholder="Search examples…" autocomplete="off" aria-label="Search examples">
+				<div class="ex-chips" id="ex-chips" role="tablist" aria-label="Filter examples"></div>
+			</div>
+			<div class="ex-browser-tools">
+				<span class="ex-result-count" id="ex-result-count" aria-live="polite">— examples shown</span>
+				<div class="ex-view-switch" role="group" aria-label="Examples view">
+					<button type="button" data-view="gallery" aria-pressed="true">
+						<span aria-hidden="true">▦</span> Gallery
+					</button>
+					<button type="button" data-view="compare" aria-pressed="false">
+						<span aria-hidden="true">⇄</span> Compare
+					</button>
+				</div>
+			</div>
+		</div>
+
 		<button type="button" class="ex-drawer-toggle" id="ex-drawer-toggle" aria-controls="ex-sidebar" aria-expanded="false">
 			<span class="ex-drawer-toggle-icon" aria-hidden="true">☰</span>
 			<span>Browse <span id="ex-drawer-count">—</span> examples</span>
 		</button>
 
 		<aside class="ex-sidebar" id="ex-sidebar" aria-label="Examples list">
-			<div class="ex-sidebar-controls">
-				<input type="search" id="ex-search" class="ex-search" placeholder="Search examples…" autocomplete="off" aria-label="Search examples">
-				<div class="ex-chips" id="ex-chips" role="tablist"></div>
-			</div>
 			<div class="ex-sidebar-list" id="ex-sidebar-list" aria-live="polite"></div>
 			<p id="ex-empty" class="ex-empty" hidden>No examples match the current filter.</p>
 		</aside>
+
+		<div class="ex-gallery" id="ex-gallery" aria-label="Examples gallery"></div>
+		<p id="ex-gallery-empty" class="ex-gallery-empty" hidden>No examples match the current filter.</p>
 
 		<main class="ex-stage" id="ex-stage" tabindex="-1">
 			<!-- Toolbar: prev/next + title + badge -->
