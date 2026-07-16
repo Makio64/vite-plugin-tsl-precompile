@@ -74,6 +74,7 @@ const AUTO_CAPTURE_RENDER_OUTPUT_GLOBAL = 'globalThis.__TSLP_AUTO_CAPTURE_RENDER
 // from the runtime package's location, where pnpm has not created a symlink
 // (runtime doesn't declare the plugin as a dep), and resolution fails.
 const PLUGIN_SRC_DIR = dirname( fileURLToPath( import.meta.url ) );
+const PLUGIN_REQUIRE = createRequire( import.meta.url );
 
 // Bare specifiers the runtime imports dynamically. Vite 8's import-analysis
 // statically resolves string-literal dynamic-import specifiers even with
@@ -82,6 +83,15 @@ const PLUGIN_SRC_DIR = dirname( fileURLToPath( import.meta.url ) );
 const PLUGIN_BARE_SOURCES = {
 	'vite-plugin-tsl-precompile/src/vendor/compileTSL.js': resolve( PLUGIN_SRC_DIR, 'vendor/compileTSL.js' ),
 	'vite-plugin-tsl-precompile/src/emit-updater.js': resolve( PLUGIN_SRC_DIR, 'emit-updater.js' ),
+};
+
+// Generated virtual modules execute in the consumer graph, which may not
+// hoist the plugin's transitive contract dependency into the application
+// root. Resolve build-time materializers from this plugin installation so
+// consumers need only the documented plugin + runtime packages.
+const GENERATED_CONTRACT_MATERIALIZER_SOURCES = {
+	[ ATTRIBUTE_DESCRIPTOR_MATERIALIZER_IMPORT ]: PLUGIN_REQUIRE.resolve( ATTRIBUTE_DESCRIPTOR_MATERIALIZER_IMPORT ),
+	[ VARIANT_SELECTOR_ADAPTER_MATERIALIZER_IMPORT ]: PLUGIN_REQUIRE.resolve( VARIANT_SELECTOR_ADAPTER_MATERIALIZER_IMPORT ),
 };
 
 const KNOWN_OPTION_KEYS = new Set( [
@@ -597,6 +607,7 @@ export default function tslPrecompile( userOpts = {} ) {
 		resolveId( id, importer ) {
 
 			if ( PLUGIN_BARE_SOURCES[ id ] ) return PLUGIN_BARE_SOURCES[ id ];
+			if ( GENERATED_CONTRACT_MATERIALIZER_SOURCES[ id ] ) return GENERATED_CONTRACT_MATERIALIZER_SOURCES[ id ];
 			if ( id === SLIM_THREE_SOURCE_GUARD_MODULE_ID ) {
 
 				if ( opts.slim !== 'source' || ! isBuild ) {

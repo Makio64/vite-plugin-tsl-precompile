@@ -311,6 +311,14 @@ test( 'source slim build registers aux artifacts into the source runtime instanc
 		const source = await plugin.load.call( makePluginContext(), id );
 		assert.match( source, /import \{ registerAuxArtifacts \} from "@tsl-precompile\/runtime\/slim\/source";/ );
 		assert.doesNotMatch( source, /from "@tsl-precompile\/runtime\/slim";/ );
+		assert.match(
+			plugin.resolveId( '@tsl-precompile/contract/variant-selector-adapter' ),
+			/\/packages\/contract\/src\/variant-selector-adapter\.js$/,
+		);
+		assert.match(
+			plugin.resolveId( '@tsl-precompile/contract/attribute-generators' ),
+			/\/packages\/contract\/src\/attribute-generators\.js$/,
+		);
 
 	} finally {
 
