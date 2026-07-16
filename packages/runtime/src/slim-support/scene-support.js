@@ -506,6 +506,7 @@ export function createSlimSceneSupport( opts = {} ) {
 	let computeFallbackInstalled = false;
 	let restoreComputeFallback = null;
 	let computeFallbackDispatchTail = Promise.resolve();
+	let delegatedComputeOutputRenderers = new WeakMap();
 
 	function trackPromotedComputeDispatch( result ) {
 
@@ -564,6 +565,8 @@ export function createSlimSceneSupport( opts = {} ) {
 		}
 
 		for ( const attr of seenStorageAttrs ) {
+
+			if ( attr && typeof attr === 'object' ) delegatedComputeOutputRenderers.set( attr, fullRenderer );
 
 			if ( attr && ( attr.isStorageInstancedBufferAttribute === true || attr.isInstancedBufferAttribute === true ) ) {
 
@@ -735,6 +738,15 @@ export function createSlimSceneSupport( opts = {} ) {
 				// delay it.
 				const priorDispatchTail = computeFallbackDispatchTail;
 				await priorDispatchTail;
+				const attribute = args[ 0 ];
+				const outputRenderer = attribute && typeof attribute === 'object'
+					? delegatedComputeOutputRenderers.get( attribute ) || null
+					: null;
+				if ( outputRenderer && typeof outputRenderer.getArrayBufferAsync === 'function' ) {
+
+					return outputRenderer.getArrayBufferAsync( ...args );
+
+				}
 				return originalGetArrayBufferAsync.apply( this, args );
 
 			};
@@ -754,6 +766,7 @@ export function createSlimSceneSupport( opts = {} ) {
 
 			}
 			computeFallbackDispatchTail = Promise.resolve();
+			delegatedComputeOutputRenderers = new WeakMap();
 
 		};
 		computeFallbackInstalled = true;

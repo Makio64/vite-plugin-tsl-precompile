@@ -861,18 +861,19 @@ test( 'createSlimSceneSupport lazily initializes explicit async fallback before 
 
 } );
 
-test( 'createSlimSceneSupport orders promoted compute before an immediate readback without waiting for later dispatches', async () => {
+test( 'createSlimSceneSupport reads delegated compute outputs from their owner after the prior dispatch', async () => {
 
-	const readbackResult = new ArrayBuffer( 16 );
-	const readbackCalls = [];
+	const slimReadbackResult = new ArrayBuffer( 8 );
+	const fullReadbackResult = new ArrayBuffer( 16 );
+	const slimReadbackCalls = [];
+	const fullReadbackCalls = [];
 	let resolveReadbackCalled;
 	const readbackCalled = new Promise( ( resolve ) => { resolveReadbackCalled = resolve; } );
 	const originalGetArrayBufferAsync = async function ( ...args ) {
 
 		assert.equal( this, slim );
-		readbackCalls.push( args );
-		resolveReadbackCalled();
-		return readbackResult;
+		slimReadbackCalls.push( args );
+		return slimReadbackResult;
 
 	};
 	const slim = Object.assign( Object.create( { getArrayBufferAsync: originalGetArrayBufferAsync } ), fakeRenderer() );
@@ -880,6 +881,14 @@ test( 'createSlimSceneSupport orders promoted compute before an immediate readba
 
 	const full = fakeRenderer();
 	full.backend.device = slim.backend.device;
+	full.getArrayBufferAsync = async function ( ...args ) {
+
+		assert.equal( this, full );
+		fullReadbackCalls.push( args );
+		resolveReadbackCalled();
+		return fullReadbackResult;
+
+	};
 	full._initialized = false;
 	full.init = async () => {
 
@@ -889,6 +898,13 @@ test( 'createSlimSceneSupport orders promoted compute before an immediate readba
 	};
 	const firstNode = { isComputeNode: true };
 	const laterNode = { isComputeNode: true };
+	const storageAttribute = { isBufferAttribute: true };
+	const unrelatedAttribute = { isBufferAttribute: true };
+	const storageBinding = { isStorageBuffer: true, attribute: storageAttribute };
+	const computeBindings = [ { bindings: [ storageBinding ] } ];
+	full._nodes = { getForCompute: () => ( { bindings: computeBindings } ) };
+	full._bindings = { getForCompute: () => computeBindings };
+	full.backend.get( storageAttribute ).buffer = { size: 16 };
 	let resolveFirst;
 	let resolveLater;
 	let resolveFirstEntered;
@@ -917,9 +933,10 @@ test( 'createSlimSceneSupport orders promoted compute before an immediate readba
 
 		assert.notEqual( slim.getArrayBufferAsync, originalGetArrayBufferAsync );
 		firstDispatch = slim.compute( firstNode );
-		const readback = slim.getArrayBufferAsync( 'storage', 'target', 4, 8 );
+		const readback = slim.getArrayBufferAsync( storageAttribute, 'target', 4, 8 );
 		await firstEntered;
-		assert.equal( readbackCalls.length, 0, 'readback stays behind the promoted compute dispatch' );
+		assert.equal( fullReadbackCalls.length, 0, 'readback stays behind the promoted compute dispatch' );
+		assert.equal( slimReadbackCalls.length, 0 );
 
 		laterDispatch = slim.compute( laterNode );
 		assert.equal( typeof resolveLater, 'function', 'the later dispatch is pending independently' );
@@ -930,11 +947,16 @@ test( 'createSlimSceneSupport orders promoted compute before an immediate readba
 			new Promise( ( resolve ) => setImmediate( () => resolve( false ) ) ),
 		] );
 		assert.equal( observedBeforeLaterDispatch, true, 'readback snapshots only dispatches requested before it' );
-		assert.equal( await readback, readbackResult );
-		assert.deepEqual( readbackCalls, [ [ 'storage', 'target', 4, 8 ] ] );
+		assert.equal( await readback, fullReadbackResult );
+		assert.deepEqual( fullReadbackCalls, [ [ storageAttribute, 'target', 4, 8 ] ], 'the full renderer reads its delegated storage output with unchanged arguments' );
+		assert.deepEqual( slimReadbackCalls, [] );
 
 		resolveLater();
 		await laterDispatch;
+		const unrelatedReadback = await slim.getArrayBufferAsync( unrelatedAttribute, 'unrelated-target', 2 );
+		assert.equal( unrelatedReadback, slimReadbackResult );
+		assert.deepEqual( slimReadbackCalls, [ [ unrelatedAttribute, 'unrelated-target', 2 ] ], 'unrelated attributes preserve the original slim readback path and receiver' );
+
 		await support.dispose();
 		assert.equal( slim.getArrayBufferAsync, originalGetArrayBufferAsync, 'dispose restores the application renderer method' );
 		assert.equal( Object.prototype.hasOwnProperty.call( slim, 'getArrayBufferAsync' ), false, 'dispose removes the temporary own wrapper' );
