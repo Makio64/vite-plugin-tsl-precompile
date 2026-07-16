@@ -51,6 +51,11 @@ const projects = [
 		root: resolve( REPO_ROOT, 'packages/examples/shadow-debug' ),
 		routes: catalogueRoutes( 'shadow-debug' ),
 	},
+	{
+		id: 'mrt-debug',
+		root: resolve( REPO_ROOT, 'packages/examples/mrt-debug' ),
+		routes: catalogueRoutes( 'mrt-debug' ),
+	},
 ];
 
 function sha256( value ) {

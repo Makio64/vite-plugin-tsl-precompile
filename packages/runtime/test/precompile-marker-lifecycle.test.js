@@ -1064,6 +1064,32 @@ test( 'a post-render sidecar capture reuses that renderer camera', async () => {
 
 } );
 
+test( 'explicit capture applies the renderer coordinate system before extraction', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree();
+		const material = new three.Material();
+		const context = mount( three, material );
+		context.camera.coordinateSystem = 2000;
+		three.PerspectiveCamera.prototype.coordinateSystem = 2000;
+		const renderer = { coordinateSystem: 2001, render() {} };
+		let capturedCoordinateSystem = null;
+		install( three, async ( _renderer, _scene, camera ) => {
+
+			capturedCoordinateSystem = camera.coordinateSystem;
+			return artifactSet( material );
+
+		} );
+		setDevRenderer( renderer, three );
+		material.precompile( 'renderer-coordinate-system', context );
+		await waitFor( () => posts.length === 1, 'coordinate-system capture' );
+		assert.equal( capturedCoordinateSystem, 2001 );
+
+	} );
+
+} );
+
 test( 'scene override materials bind to a representative rendered object', async () => {
 
 	await withBrowser( async ( posts ) => {

@@ -24,7 +24,19 @@ import {
 	vec4,
 } from 'three/tsl';
 import { registerLiveTexture } from '@tsl-precompile/runtime';
-import { createScene, runAux } from './shared.js';
+import { createScene, IS_E2E_REPLAY, runAux } from './shared.js';
+
+function markMaterial( material, object, scene, camera, renderer, renderTarget, mrtNode, name ) {
+
+	material.__tslpPrecompileObject = object;
+	material.__tslpPrecompileScene = scene;
+	if ( IS_E2E_REPLAY ) return;
+	const context = { object, scene, camera, renderer, renderTarget, mrt: mrtNode };
+	if ( name === 'floor' ) material.precompile( 'mrt-manual-floor', context );
+	else if ( name === 'cube' ) material.precompile( 'mrt-manual-cube', context );
+	else material.precompile( 'mrt-manual-sphere', context );
+
+}
 
 function makeMaterial( color, options = {} ) {
 
@@ -72,7 +84,7 @@ function addRenderSceneGeometry( scene ) {
 	sphere.position.set( 0.72, - 0.18, 0.12 );
 	scene.add( sphere );
 
-	return { cube, sphere };
+	return { floor, cube, sphere };
 
 }
 
@@ -103,6 +115,9 @@ async function main() {
 		manualMask: vec4( 0, 0, 0, 1 ),
 	} );
 	scene.userData.__tslp_mrtNode = targetMRT;
+	markMaterial( objects.floor.material, objects.floor, scene, camera, renderer, target, targetMRT, 'floor' );
+	markMaterial( objects.cube.material, objects.cube, scene, camera, renderer, target, targetMRT, 'cube' );
+	markMaterial( objects.sphere.material, objects.sphere, scene, camera, renderer, target, targetMRT, 'sphere' );
 
 	const renderPipeline = new RenderPipeline( renderer );
 	renderPipeline.outputColorTransform = false;
@@ -122,7 +137,10 @@ async function main() {
 
 	}
 
-	const auxSummary = await runAux( renderer, scene, camera, { postProcessing: renderPipeline } );
+	const auxSummary = await runAux( renderer, scene, camera, {
+		postProcessing: renderPipeline,
+		postProcessingName: 'mrt-manual-pipeline',
+	} );
 	setStatus( `rendering explicit setRenderTarget MRT - ${ auxSummary }` );
 
 	renderer.setAnimationLoop( () => {

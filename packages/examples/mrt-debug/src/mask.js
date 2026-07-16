@@ -13,7 +13,6 @@ import {
 	UnsignedByteType,
 } from 'three/webgpu';
 import {
-	Fn,
 	mix,
 	mrt,
 	output,
@@ -22,7 +21,18 @@ import {
 	step,
 	vec4,
 } from 'three/tsl';
-import { createScene, runAux } from './shared.js';
+import { createScene, IS_E2E_REPLAY, runAux } from './shared.js';
+
+function markMaterial( material, object, scene, name ) {
+
+	material.__tslpPrecompileObject = object;
+	material.__tslpPrecompileScene = scene;
+	if ( IS_E2E_REPLAY ) return;
+	if ( name === 'floor' ) material.precompile( 'mrt-mask-floor' );
+	else if ( name === 'cube' ) material.precompile( 'mrt-mask-cube' );
+	else material.precompile( 'mrt-mask-sphere' );
+
+}
 
 function makeMaterial( color, options = {} ) {
 
@@ -54,11 +64,13 @@ function addGeometry( scene ) {
 	floor.rotation.x = - Math.PI / 2;
 	floor.position.y = - 0.72;
 	scene.add( floor );
+	markMaterial( floor.material, floor, scene, 'floor' );
 
 	const cube = new Mesh( new BoxGeometry( 0.9, 0.9, 0.9 ), makeMaterial( 0xf06d48, { roughness: 0.36, mask: [ 1.0, 0.24, 0.08 ] } ) );
 	cube.name = 'mrt-mask-cube';
 	cube.position.set( - 0.65, - 0.22, 0 );
 	scene.add( cube );
+	markMaterial( cube.material, cube, scene, 'cube' );
 
 	const sphere = new Mesh( new SphereGeometry( 0.48, 48, 24 ), makeMaterial( 0x202833, {
 		roughness: 0.2,
@@ -69,6 +81,7 @@ function addGeometry( scene ) {
 	sphere.name = 'mrt-mask-sphere';
 	sphere.position.set( 0.72, - 0.18, 0.12 );
 	scene.add( sphere );
+	markMaterial( sphere.material, sphere, scene, 'sphere' );
 
 	return { floor, cube, sphere };
 
@@ -99,15 +112,15 @@ async function main() {
 
 	const renderPipeline = new RenderPipeline( renderer );
 	renderPipeline.outputColorTransform = false;
-	renderPipeline.outputNode = Fn( () => {
+	const beauty = scenePass.getTextureNode( 'output' );
+	const mask = scenePass.getTextureNode( 'mask' );
+	renderPipeline.outputNode = mix( beauty.renderOutput(), mask, step( 0.58, screenUV.x ) );
 
-		const beauty = scenePass.getTextureNode( 'output' );
-		const mask = scenePass.getTextureNode( 'mask' );
-		return mix( beauty.renderOutput(), mask, step( 0.58, screenUV.x ) );
-
-	} )();
-
-	const auxSummary = await runAux( renderer, scene, camera, { passNode: scenePass, renderPipeline } );
+	const auxSummary = await runAux( renderer, scene, camera, {
+		passNode: scenePass,
+		renderPipeline,
+		renderPipelineName: 'mrt-mask-pipeline',
+	} );
 	setStatus( `rendering material-level mask attachment - ${ auxSummary }` );
 
 	renderer.setAnimationLoop( () => {

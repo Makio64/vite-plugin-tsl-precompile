@@ -632,11 +632,13 @@ test( 'precompileAuxiliary captures effects observed only through live update no
 			threeVersion: '184',
 			compileTSL,
 			renderPipeline,
+			renderPipelineName: 'effects-pipeline-a',
 			three: { NodeMaterial, Scene, QuadMesh, RenderTarget },
 		} );
 		assert.equal( compileCalls, 4, 'captures the output, hidden GTAO/SSS, and renderer-output materials' );
 		assert.deepEqual( results.map( ( result ) => result.shape ), [ 'post-process', 'gtao', 'sss', 'render-output' ] );
 		assert.deepEqual( payloads.map( ( payload ) => payload.materialShape ), [ 'post-process', 'gtao', 'sss', 'render-output' ] );
+		assert.equal( payloads[ 0 ].name, 'effects-pipeline-a' );
 		assert.equal( payloads[ 0 ].artifact.replayConfig.outputColorTransform, true );
 		assert.equal( payloads[ 3 ].artifact.fragmentShader, 'active-output' );
 		assert.equal( payloads[ 3 ].artifact.replayConfig.currentColorSpace, 'srgb' );
@@ -644,6 +646,21 @@ test( 'precompileAuxiliary captures effects observed only through live update no
 			{ depthBuffer: false, count: 1, format: 1028, type: 1009 },
 			{ depthBuffer: false, count: 1, format: 1028, type: 1009 },
 		] );
+
+		await precompileAuxiliary( {}, { traverse: () => {} }, {}, {
+			devEndpoint: '/capture',
+			threeVersion: '184',
+			compileTSL,
+			renderPipeline,
+			renderPipelineName: 'effects-pipeline-b',
+			three: { NodeMaterial, Scene, QuadMesh, RenderTarget },
+		} );
+		assert.equal( payloads[ 4 ].name, 'effects-pipeline-b' );
+		assert.notEqual(
+			payloads[ 0 ].configHash,
+			payloads[ 4 ].configHash,
+			'semantically named pipelines remain distinct when their normalized graphs match',
+		);
 
 	} finally {
 

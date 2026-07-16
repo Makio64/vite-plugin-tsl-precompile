@@ -11,6 +11,9 @@ import {
 	mrt,
 	builtinAOContext,
 	builtinShadowContext,
+	diffuseColor,
+	directionToColor,
+	emissive,
 	TSL,
 } from '../src/slim-stubs.js';
 import { getLiveNodeDependencies } from '../src/slim-support/node-dependencies.js';
@@ -99,6 +102,16 @@ test( 'slim PassNode owns named render-target textures for postprocess rebinding
 	assert.equal( pass.getTexture( 'normal' ).name, 'normal' );
 	assert.equal( pass.renderTarget.textures.length, 2 );
 	assert.equal( pass.renderTarget.textures[ 1 ], pass.getTexture( 'normal' ) );
+	assert.deepEqual( pass._mrt.getBlendMode( 'output' ), { blending: 6 } );
+	assert.deepEqual( pass._mrt.getBlendMode( 'normal' ), { blending: 0 } );
+
+} );
+
+test( 'slim MRT semantic nodes remain inert after their shaders are precompiled', () => {
+
+	assert.equal( diffuseColor.isNode, true );
+	assert.equal( emissive.isNode, true );
+	assert.equal( directionToColor( diffuseColor ).isNode, true );
 
 } );
 

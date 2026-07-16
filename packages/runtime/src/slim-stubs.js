@@ -16,7 +16,7 @@
  * @module SlimStubs
  */
 
-import { BackSide, FloatType, HalfFloatType } from 'three/src/constants.js';
+import { BackSide, FloatType, HalfFloatType, MaterialBlending } from 'three/src/constants.js';
 import { DepthTexture } from 'three/src/textures/DepthTexture.js';
 import { LineBasicMaterial } from 'three/src/materials/LineBasicMaterial.js';
 import { LineDashedMaterial } from 'three/src/materials/LineDashedMaterial.js';
@@ -872,10 +872,14 @@ export { NodeAccess };
  */
 export function mrt( _outputs ) {
 
+	const outputNodes = _outputs && typeof _outputs === 'object' ? _outputs : {};
+	const blendModes = Object.fromEntries( Object.keys( outputNodes ).map( name => [ name, name === 'output' ? MaterialBlending : 0 ] ) );
 	return inertNodeStub( [], {
 		isMRTNode: true,
-		outputNodes: _outputs && typeof _outputs === 'object' ? _outputs : {},
-		outputs: _outputs && typeof _outputs === 'object' ? _outputs : {},
+		outputNodes,
+		outputs: outputNodes,
+		blendModes,
+		getBlendMode: name => ( { blending: blendModes[ name ] ?? 0 } ),
 	} );
 
 }
@@ -892,6 +896,8 @@ export function pass( scene, camera, options ) {
  * typically import from `three/tsl`.
  */
 export const output = /* @__PURE__ */ inertNodeStub();
+export const diffuseColor = /* @__PURE__ */ inertNodeStub();
+export const emissive = /* @__PURE__ */ inertNodeStub();
 export const normalWorld = /* @__PURE__ */ inertNodeStub();
 export const normalView = /* @__PURE__ */ inertNodeStub();
 export const normalLocal = /* @__PURE__ */ inertNodeStub();
@@ -919,6 +925,7 @@ export const PI = /* @__PURE__ */ inertNodeStub();
  * Each returns an inert node stub.
  */
 export function mix( ...args ) { return inertNodeStub( args ); }
+export function directionToColor( ...args ) { return inertNodeStub( args ); }
 export function step( ...args ) { return inertNodeStub( args ); }
 export function texture( source, ...args ) { return inertNodeStub( [ source, ...args ], source && source.isTexture === true ? { isTextureNode: true, value: source } : {} ); }
 export function cubeTexture( source, ...args ) { return inertNodeStub( [ source, ...args ], source && source.isTexture === true ? { isTextureNode: true, value: source } : {} ); }

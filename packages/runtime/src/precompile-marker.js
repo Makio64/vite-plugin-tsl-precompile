@@ -1358,6 +1358,18 @@ async function captureMaterialInDev( entry ) {
 			camera.lookAt( 0, 0, 0 );
 
 		}
+		// Explicit captures can begin before the application's first render. In
+		// that case Three has not yet copied the active backend coordinate system
+		// onto the camera, and skip-warmup MRT extraction would sign WebGL's
+		// default camera topology for a WebGPU pipeline. Mirror the renderer's
+		// normal camera preparation before hashing or extracting.
+		const rendererCoordinateSystem = captureRenderer && captureRenderer.coordinateSystem;
+		if ( rendererCoordinateSystem !== undefined && rendererCoordinateSystem !== null && camera.coordinateSystem !== rendererCoordinateSystem ) {
+
+			camera.coordinateSystem = rendererCoordinateSystem;
+			if ( typeof camera.updateProjectionMatrix === 'function' ) camera.updateProjectionMatrix();
+
+		}
 		const sourceObject = captureContext.object || material.__tslpPrecompileObject || null;
 
 		// Inherit scene-level state that drives PBR shader binding
@@ -1382,7 +1394,7 @@ async function captureMaterialInDev( entry ) {
 		const renderContextSignature = createRenderContextSignature( {
 			renderer: captureRenderer,
 			scene: sourceScene,
-			camera: sourceCamera,
+			camera,
 			object: sourceObject,
 			material,
 			mrt: renderContextMRT,

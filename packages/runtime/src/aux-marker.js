@@ -264,8 +264,17 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 		try {
 
 			const replayConfig = createRenderPipelineConfig( renderPipeline );
-			const configHash = hashNodeGraphSync( replayConfig, { shape, ...hashOpts } );
-			const captureName = opts.renderPipelineName || opts.postProcessingName || `aux-${ shape }-${ configHash.slice( 0, 12 ) }`;
+			const graphConfigHash = hashNodeGraphSync( replayConfig, { shape, ...hashOpts } );
+			// A friendly name is an explicit semantic identity, not just a label.
+			// Partition named captures even when graph normalization collapses two
+			// live pipelines to the same structural hash (for example, equivalent
+			// MRT texture-node stubs backed by different attachments).
+			const requestedName = opts.renderPipelineName || opts.postProcessingName || null;
+			const configHash = requestedName ? hashPlainConfigSync( {
+				graphConfigHash,
+				semanticName: requestedName,
+			}, { shape, ...hashOpts } ) : graphConfigHash;
+			const captureName = requestedName || `aux-${ shape }-${ configHash.slice( 0, 12 ) }`;
 			const captured = await capturePostProcessingLive( renderer, renderPipeline, scene, camera, opts, hashOpts );
 			const artifact = captured && captured.artifact ? captured.artifact : captured;
 			const extraArtifacts = captured && Array.isArray( captured.extraArtifacts ) ? captured.extraArtifacts : [];
