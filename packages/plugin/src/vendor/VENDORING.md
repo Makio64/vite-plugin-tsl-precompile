@@ -200,6 +200,17 @@ preserves TSL like `objectPosition(camera)` in post-processing passes, where
 replay's draw object and render camera are the fullscreen quad rather than the
 source scene camera.
 
+Local assumption: Three r184's TRAA pass assigns its unjittered current
+projection object to each `VelocityNode.projectionMatrix` while the render
+object is requested, then clears that field after the pass. The generated
+anonymous projection `UniformNode` retains the same object in the cached
+`NodeBuilderState`. The render-object observer therefore records only that
+exact object identity before the clear; deferred extraction may classify the
+matching value as `velocity.currentProjectionMatrix`. Never infer this source
+from matrix contents, generated uniform names, or lifecycle ordering. Keep the
+observer/extractor exact-identity tests and SSGI velocity-buffer canary together
+when upgrading Three's TRAA or VelocityNode lifecycle.
+
 Local assumption: Three r184's `NodeStorageBuffer` keeps the authored
 `StorageBufferNode` on `binding.nodeUniform`, and an explicit `setName()` value
 survives on `binding.nodeUniform.name`. The binding's own `name` is a generated

@@ -10,6 +10,7 @@
 import { createRenderObjectContextSelector, resolveRenderObjectBindingOwner } from '@tsl-precompile/contract/render-selector';
 import { attachDeferredMaterialComputeStatePaths } from '@tsl-precompile/contract/material-compute';
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
+import { observeVelocityProjectionSources } from '../velocity-projection-observation.js';
 
 const OBSERVER_STATE = Symbol.for( '@tsl-precompile/plugin/render-object-observer@1' );
 const REQUEST_OBSERVER_STATE = Symbol.for( '@tsl-precompile/plugin/render-object-request-observer@1' );
@@ -116,6 +117,7 @@ export function observeRenderObjects( renderer, listener ) {
 
 			}
 			const nodeBuilderState = state.original.call( this, renderObject, ...args );
+			observeVelocityProjectionSources( nodeBuilderState );
 			const event = { kind: 'node-builder-state', renderObject, cacheKey, nodeBuilderState };
 			for ( const subscriber of [ ...state.listeners ] ) {
 
@@ -196,6 +198,7 @@ export function observeRenderObjectRequests( renderer, listener ) {
 				try { nodeBuilderState = manager.nodeBuilderCache.get( cacheKey ) || null; } catch ( _ ) {}
 
 			}
+			observeVelocityProjectionSources( nodeBuilderState );
 			const requestSnapshot = snapshotRenderObjectRequest( renderObject, renderer, cacheKey, currentRenderDispatch( state.dispatchState ) );
 			const event = {
 				kind: 'render-object-request',

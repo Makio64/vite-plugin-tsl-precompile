@@ -6,6 +6,7 @@ import { createViewportTextureIdentity } from '@tsl-precompile/contract/dynamic-
 import { RENDER_BINDING_OWNER_KINDS } from '@tsl-precompile/contract/render-selector';
 
 import { extractUniformPlan } from '../../src/vendor/extractUniformPlan.js';
+import { observeVelocityProjectionSources } from '../../src/velocity-projection-observation.js';
 
 function makeUniformSlot( node, value ) {
 
@@ -183,6 +184,39 @@ test( 'extractUniformPlan keeps the normal camera projection source when Velocit
 
 	const source = extractUniformPlan( state, {} )[ 0 ].slots[ 0 ].source;
 	assert.equal( source.kind, 'camera.projectionMatrix' );
+
+} );
+
+test( 'extractUniformPlan retains an observed TRAA projection after VelocityNode clears it', () => {
+
+	const explicitProjection = new Matrix4().makeTranslation( 7, 0, 0 );
+	const velocityNode = {
+		constructor: { type: 'VelocityNode' },
+		projectionMatrix: explicitProjection,
+	};
+	const currentProjectionNode = new UniformNode( explicitProjection, 'mat4' );
+	const state = {
+		updateNodes: [ velocityNode ],
+		bindings: [ {
+			name: 'object',
+			bindings: [ {
+				isUniformsGroup: true,
+				byteLength: 64,
+				visibility: 3,
+				groupNode: { shared: false },
+				uniforms: [ makeMatrixUniformSlot( currentProjectionNode, explicitProjection, 'mat4' ) ],
+			} ],
+		} ],
+	};
+	observeVelocityProjectionSources( state );
+	velocityNode.projectionMatrix = null;
+
+	const source = extractUniformPlan( state, {} )[ 0 ].slots[ 0 ].source;
+	assert.equal( source.kind, 'velocity.currentProjectionMatrix' );
+
+	const foreignProjectionNode = new UniformNode( explicitProjection.clone(), 'mat4' );
+	state.bindings[ 0 ].bindings[ 0 ].uniforms = [ makeMatrixUniformSlot( foreignProjectionNode, foreignProjectionNode.value, 'mat4' ) ];
+	assert.equal( extractUniformPlan( state, {} )[ 0 ].slots[ 0 ].source.kind, 'uniform.live' );
 
 } );
 

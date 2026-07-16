@@ -26,6 +26,7 @@ import { UniformNode } from 'three/webgpu';
 import { createViewportTextureIdentity } from '@tsl-precompile/contract/dynamic-bindings';
 import { createLightSourceIdentityMetadata } from '@tsl-precompile/contract/light-identities';
 import { RENDER_BINDING_OWNER_KINDS, SHADOW_CASTER_COPIED_BINDING_PROPERTIES } from '@tsl-precompile/contract/render-selector';
+import { isObservedVelocityProjectionSource } from '../velocity-projection-observation.js';
 
 const SHADOW_CASTER_COPIED_BINDING_PROPERTY_SET = new Set( SHADOW_CASTER_COPIED_BINDING_PROPERTIES );
 
@@ -1608,7 +1609,11 @@ export function extractUniformPlan( state, context = null ) {
 						const value = tslUniformNode.value;
 						if ( value && ( typeof value === 'object' || typeof value === 'function' ) ) {
 
-							source = velocityValueSources.get( value ) || null;
+							source = velocityValueSources.get( value ) || (
+								isObservedVelocityProjectionSource( state, value )
+									? { kind: 'velocity.currentProjectionMatrix' }
+									: null
+							);
 							if ( ! source && ! ambiguousScreenValues.has( value ) ) source = screenValueToSource.get( value ) || null;
 
 						}

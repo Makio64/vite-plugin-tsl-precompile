@@ -9,6 +9,10 @@ import {
 } from '../../src/vendor/render-object-observer.js';
 import { RENDER_BINDING_OWNER_KINDS } from '@tsl-precompile/contract/render-selector';
 import { findMaterialComputeNodePath } from '@tsl-precompile/contract/material-compute';
+import {
+	isObservedVelocityProjectionSource,
+	observeVelocityProjectionSources,
+} from '../../src/velocity-projection-observation.js';
 
 function fixture() {
 
@@ -52,6 +56,53 @@ test( 'render-object observer shares one wrapper and preserves the original resu
 	assert.equal( manager.getForRender, wrapper, 'remaining subscriber keeps observation active' );
 	stopSecond();
 	assert.equal( manager.getForRender, original, 'last subscriber restores the original method' );
+
+} );
+
+test( 'render-object observers snapshot active VelocityNode projection identity', () => {
+
+	const { manager, renderer, renderObjects, stateByObject } = fixture();
+	const liveProjection = {};
+	const cachedProjection = {};
+	const liveVelocity = { constructor: { type: 'VelocityNode' }, projectionMatrix: liveProjection };
+	const cachedVelocity = { constructor: { type: 'VelocityNode' }, projectionMatrix: cachedProjection };
+	const renderObject = { cacheKey: 42 };
+	const liveState = { updateNodes: [ liveVelocity ] };
+	const cachedState = { updateNodes: [ cachedVelocity ] };
+	stateByObject.set( renderObject, liveState );
+	manager.nodeBuilderCache.set( renderObject.cacheKey, cachedState );
+
+	const stopStates = observeRenderObjects( renderer, () => {} );
+	manager.getForRender( renderObject );
+	stopStates();
+	const stopRequests = observeRenderObjectRequests( renderer, () => {} );
+	renderObjects.get( renderObject );
+	stopRequests();
+	liveVelocity.projectionMatrix = null;
+	cachedVelocity.projectionMatrix = null;
+
+	assert.equal( isObservedVelocityProjectionSource( liveState, liveProjection ), true );
+	assert.equal( isObservedVelocityProjectionSource( cachedState, cachedProjection ), true );
+	assert.equal( isObservedVelocityProjectionSource( liveState, {} ), false );
+
+} );
+
+test( 'velocity projection observation preserves async states and fails closed', async () => {
+
+	let resolveState;
+	const promisedState = new Promise( ( resolve ) => { resolveState = resolve; } );
+	const projection = {};
+	const velocityNode = { constructor: { type: 'VelocityNode' }, projectionMatrix: projection };
+	const state = { updateBeforeNodes: [ velocityNode ] };
+	assert.equal( observeVelocityProjectionSources( promisedState ), promisedState );
+	resolveState( state );
+	await promisedState;
+	await Promise.resolve();
+	velocityNode.projectionMatrix = null;
+	assert.equal( isObservedVelocityProjectionSource( state, projection ), true );
+
+	const hostileState = new Proxy( {}, { get() { throw new Error( 'hostile getter' ); } } );
+	assert.doesNotThrow( () => observeVelocityProjectionSources( hostileState ) );
 
 } );
 
