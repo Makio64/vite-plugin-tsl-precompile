@@ -6262,7 +6262,9 @@ function __patchVolumeRenderOutputAlpha( artifact, options = {} ) {
 function __preparePassNodeForReplay( renderer, passNode ) {
 	if ( ! renderer || ! passNode || ! passNode.renderTarget ) return;
 	try {
-		passNode.renderTarget.samples = passNode.options && passNode.options.samples !== undefined ? passNode.options.samples : renderer.samples;
+		// PassNode render targets are single-sampled by default, independently
+		// of canvas MSAA. Only an explicit pass option may override that target.
+		if ( passNode.options && passNode.options.samples !== undefined ) passNode.renderTarget.samples = passNode.options.samples;
 		if ( passNode.renderTarget.texture && typeof renderer.getOutputBufferType === 'function' ) {
 			passNode.renderTarget.texture.type = renderer.getOutputBufferType();
 		}
