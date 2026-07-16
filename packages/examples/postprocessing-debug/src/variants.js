@@ -9,24 +9,19 @@ import {
 	Scene,
 	SphereGeometry,
 } from 'three';
-import { WebGPURenderer, Mesh, MeshStandardNodeMaterial, PostProcessing } from 'three/webgpu';
+import { WebGPURenderer, Mesh, MeshStandardNodeMaterial, RenderPipeline } from 'three/webgpu';
 import { color, mix, pass, positionLocal, sin, time } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
-import {
-	bindAuxByName,
-	createMaterialVariants,
-	installPrecompileMarker,
-	precompileAuxiliary,
-	setDevRenderer,
-} from '@tsl-precompile/runtime';
-import * as THREE_GPU from 'three/webgpu';
-import 'virtual:tsl-precompile/__aux';
+import { createMaterialVariants } from '@tsl-precompile/runtime/material-variants';
+import { bindPostprocessAuxByName, POSTPROCESS_AUX_NAMES } from './postprocess-aux.js';
+import { recordLiveRouteFrame } from './site-status.js';
 
 const CAPTURE_ENDPOINT = window.__TSLP_E2E?.captureEndpoint || '/__tsl-precompile/capture';
 const IS_E2E = !! window.__TSLP_E2E;
 const IS_E2E_REPLAY = window.__TSLP_E2E?.mode === 'replay';
-const POST_PLAIN = 'postprocessing-debug-variants-plain';
-const POST_BLOOM = 'postprocessing-debug-variants-bloom';
+const IS_PRODUCTION_BUILD = import.meta.env?.PROD === true;
+const POST_PLAIN = POSTPROCESS_AUX_NAMES.variantsPlain;
+const POST_BLOOM = POSTPROCESS_AUX_NAMES.variantsBloom;
 
 const VARIANT_ORDER = [ 'ember', 'lagoon', 'circuit' ];
 
@@ -81,10 +76,10 @@ function makeStaticMaterial( colorValue, opts = {} ) {
 
 function makePostPipelines( renderer, scene, camera ) {
 
-	const plain = new PostProcessing( renderer );
+	const plain = new RenderPipeline( renderer );
 	plain.outputNode = pass( scene, camera ).getTextureNode( 'output' );
 
-	const bloomPipeline = new PostProcessing( renderer );
+	const bloomPipeline = new RenderPipeline( renderer );
 	const scenePassColor = pass( scene, camera ).getTextureNode( 'output' );
 	bloomPipeline.outputNode = scenePassColor.add( bloom( scenePassColor ) );
 
@@ -92,22 +87,19 @@ function makePostPipelines( renderer, scene, camera ) {
 
 }
 
-async function ensurePipelineAux( renderer, scene, camera, postProcessing, name ) {
+async function ensurePipelineAux( capture, renderer, scene, camera, postProcessing, name ) {
 
-	try {
+	if ( IS_PRODUCTION_BUILD || IS_E2E_REPLAY ) {
 
-		bindAuxByName( postProcessing.outputNode, 'post-process', name );
+		await bindPostprocessAuxByName( postProcessing.outputNode, name );
 		return `${ name }:bound`;
 
-	} catch ( _ ) {
-		// Dev's first visit has no artifact yet. Capture it, then bind the
-		// freshly registered local aux entry by friendly name.
 	}
 
-	const results = await precompileAuxiliary( renderer, scene, camera, {
+	const results = await capture.runtime.precompileAuxiliary( renderer, scene, camera, {
 		devEndpoint: CAPTURE_ENDPOINT,
-		three: THREE_GPU,
-		threeVersion: globalThis.__TSLP_THREE_PACKAGE_VERSION__ || String( THREE_GPU.REVISION ).match( /^\d+/ )[ 0 ],
+		three: capture.three,
+		threeVersion: globalThis.__TSLP_THREE_PACKAGE_VERSION__ || String( capture.three.REVISION ).match( /^\d+/ )[ 0 ],
 		postProcessing,
 		postProcessingName: name,
 		renderPipeline: postProcessing,
@@ -117,16 +109,6 @@ async function ensurePipelineAux( renderer, scene, camera, postProcessing, name 
 		return [ { shape: 'aux', ok: false, error: err && err.message || String( err ) } ];
 
 	} );
-
-	try {
-
-		bindAuxByName( postProcessing.outputNode, 'post-process', name );
-
-	} catch ( err ) {
-
-		console.warn( `[postprocessing-debug/variants] could not bind ${ name }:`, err );
-
-	}
 
 	return results.map( ( r ) => `${ r.shape }:${ r.ok ? 'ok' : 'err' }` ).join( ', ' ) || `${ name }:no aux`;
 
@@ -144,8 +126,13 @@ async function main() {
 	document.body.appendChild( renderer.domElement );
 
 	await renderer.init();
-	installPrecompileMarker( THREE_GPU, { devEndpoint: CAPTURE_ENDPOINT } );
-	setDevRenderer( renderer );
+	let capture = null;
+	if ( ! IS_PRODUCTION_BUILD && ! IS_E2E_REPLAY ) {
+
+		const { setupCaptureRuntime } = await import( './capture-runtime.js' );
+		capture = await setupCaptureRuntime( renderer, CAPTURE_ENDPOINT );
+
+	}
 
 	const scene = new Scene();
 	const camera = new PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 0.1, 60 );
@@ -194,8 +181,8 @@ async function main() {
 	scene.add( group );
 
 	const post = makePostPipelines( renderer, scene, camera );
-	const plainAux = await ensurePipelineAux( renderer, scene, camera, post.plain, POST_PLAIN );
-	const bloomAux = await ensurePipelineAux( renderer, scene, camera, post.bloom, POST_BLOOM );
+	const plainAux = await ensurePipelineAux( capture, renderer, scene, camera, post.plain, POST_PLAIN );
+	const bloomAux = await ensurePipelineAux( capture, renderer, scene, camera, post.bloom, POST_BLOOM );
 	const auxStatus = IS_E2E ? 'ready' : `${ plainAux } / ${ bloomAux }`;
 
 	setHud( `rendering - ${ auxStatus }`, variants.currentName, 'plain' );
@@ -224,6 +211,7 @@ async function main() {
 
 		group.rotation.y = seconds * 0.35;
 		post[ lastPost ].render();
+		recordLiveRouteFrame();
 
 	} );
 

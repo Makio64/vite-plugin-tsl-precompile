@@ -56,6 +56,23 @@ const projects = [
 		root: resolve( REPO_ROOT, 'packages/examples/mrt-debug' ),
 		routes: catalogueRoutes( 'mrt-debug' ),
 	},
+	{
+		id: 'postprocessing-debug',
+		root: resolve( REPO_ROOT, 'packages/examples/postprocessing-debug' ),
+		expectedAuxNames: [
+			'postprocessing-debug-passthrough',
+			'postprocessing-debug-bloom',
+			'postprocessing-debug-fxaa-color',
+			'postprocessing-debug-fxaa',
+			'postprocessing-debug-gtao',
+			'postprocessing-debug-variants-plain',
+			'postprocessing-debug-variants-bloom',
+		],
+		routes: catalogueRoutes( 'postprocessing-debug' ).map( route => ( {
+			...route,
+			expectsMotion: route.catalogueId === 'variants',
+		} ) ),
+	},
 ];
 
 function sha256( value ) {
@@ -140,6 +157,20 @@ async function buildProject( project ) {
 	const artifacts = await directoryFingerprint( resolve( project.root, 'artifacts' ) );
 	const chunks = Object.values( bundle ).filter( ( item ) => item.type === 'chunk' );
 	const renderedModules = new Set( chunks.flatMap( ( chunk ) => Object.keys( chunk.modules || {} ) ) );
+	const compiledArtifactModules = [ ...renderedModules ].filter( id =>
+		id.startsWith( '\0virtual:tsl-precompile/' ) && ! id.startsWith( '\0virtual:tsl-precompile/__' )
+	);
+	if ( compiledArtifactModules.length === 0 ) {
+
+		throw new Error( `${ project.id }: production bundle contains no rendered compiled-material module` );
+
+	}
+	const renderedCode = chunks.map( chunk => chunk.code || '' ).join( '\n' );
+	for ( const name of project.expectedAuxNames || [] ) {
+
+		if ( ! renderedCode.includes( name ) ) throw new Error( `${ project.id }: production bundle does not contain required aux capture ${ name }` );
+
+	}
 	for ( const route of project.routes ) {
 
 		const htmlPath = route.route.split( '?' )[ 0 ];
@@ -163,12 +194,14 @@ async function buildProject( project ) {
 		bundleSha256: output.sha256,
 		bundleBytes: output.bytes,
 		renderedModuleCount: renderedModules.size,
+		compiledArtifactModuleCount: compiledArtifactModules.length,
 		forbiddenModuleCounts: residueCounts,
 		buildVerified: true,
 	};
 	const records = project.routes.map( route => ( {
 		id: route.id,
 		role: route.role || 'example',
+		expectsMotion: route.expectsMotion === true || route.role === 'canary',
 		catalogueId: route.catalogueId || null,
 		title: route.title,
 		playUrl: route.route === 'index.html'

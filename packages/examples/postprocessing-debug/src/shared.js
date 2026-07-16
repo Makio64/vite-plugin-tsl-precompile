@@ -4,25 +4,28 @@ import {
 	Color,
 	DirectionalLight,
 	Group,
+	HalfFloatType,
 	PerspectiveCamera,
 	PlaneGeometry,
 	ReinhardToneMapping,
+	RenderTarget,
 	Scene,
 	SphereGeometry,
 } from 'three';
-import { WebGPURenderer, Mesh, MeshStandardNodeMaterial, PostProcessing } from 'three/webgpu';
+import { WebGPURenderer, Mesh, MeshStandardNodeMaterial, RenderPipeline } from 'three/webgpu';
 import {
 	mrt,
 	normalView,
 	output,
 	pass,
 	renderOutput,
+	texture,
 } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 import { ao } from 'three/addons/tsl/display/GTAONode.js';
-import { installPrecompileMarker, precompileAuxiliary, setDevRenderer } from '@tsl-precompile/runtime';
-import * as THREE_GPU from 'three/webgpu';
+import { bindPostprocessAuxByName, POSTPROCESS_AUX_NAMES } from './postprocess-aux.js';
+import { recordLiveRouteFrame } from './site-status.js';
 
 // Ordered easiest → most complex. Each page mirrors the matching upstream
 // three.js `webgpu_postprocessing*` example so a failing page maps directly
@@ -37,6 +40,7 @@ const EFFECTS = {
 const CAPTURE_ENDPOINT = window.__TSLP_E2E?.captureEndpoint || '/__tsl-precompile/capture';
 const IS_E2E = !! window.__TSLP_E2E;
 const IS_E2E_REPLAY = window.__TSLP_E2E?.mode === 'replay';
+const IS_PRODUCTION_BUILD = import.meta.env?.PROD === true;
 
 function setHud( title, effect, status ) {
 
@@ -65,13 +69,12 @@ function makeMaterial( color, { roughness = 0.5, metalness = 0.0, emissive = 0x0
 
 }
 
-function addDebugGeometry( scene ) {
+function addDebugGeometry( scene, markMaterials ) {
 
 	const group = new Group();
 	group.name = 'postprocessing-debug-objects';
 
 	const floorMaterial = makeMaterial( 0x8a8f96, { roughness: 0.85 } );
-	if ( ! IS_E2E_REPLAY ) floorMaterial.precompile( 'postprocessing-debug-floor' );
 	const floor = new Mesh( new PlaneGeometry( 12, 12 ), floorMaterial );
 	floor.name = 'floor';
 	floor.rotation.x = - Math.PI / 2;
@@ -79,7 +82,6 @@ function addDebugGeometry( scene ) {
 	scene.add( floor );
 
 	const cubeMaterial = makeMaterial( 0xd96a3c, { roughness: 0.35 } );
-	if ( ! IS_E2E_REPLAY ) cubeMaterial.precompile( 'postprocessing-debug-cube' );
 	const cube = new Mesh( new BoxGeometry( 1, 1, 1 ), cubeMaterial );
 	cube.name = 'cube';
 	cube.position.set( - 1.1, 0, 0 );
@@ -87,11 +89,16 @@ function addDebugGeometry( scene ) {
 
 	// Bright emissive sphere so the bloom page actually shows a glow.
 	const sphereMaterial = makeMaterial( 0x101418, { roughness: 0.25, emissive: 0x33aaff, emissiveIntensity: 4 } );
-	if ( ! IS_E2E_REPLAY ) sphereMaterial.precompile( 'postprocessing-debug-sphere' );
 	const sphere = new Mesh( new SphereGeometry( 0.6, 48, 24 ), sphereMaterial );
 	sphere.name = 'sphere';
 	sphere.position.set( 1.0, 0.1, 0.2 );
 	group.add( sphere );
+
+	if ( ! IS_E2E_REPLAY ) markMaterials( {
+		floor: floorMaterial,
+		cube: cubeMaterial,
+		sphere: sphereMaterial,
+	} );
 
 	scene.add( group );
 	return group;
@@ -129,15 +136,6 @@ function buildOutputNode( effect, scene, camera ) {
 
 	}
 
-	if ( effect === 'fxaa' ) {
-
-		// Mirrors webgpu_postprocessing_fxaa.html — FXAA runs after the
-		// output color transform, so feed it `renderOutput( pass )`.
-		const outputPass = renderOutput( scenePass );
-		return fxaa( outputPass );
-
-	}
-
 	if ( effect === 'gtao' ) {
 
 		// Mirrors GTAONode's documented usage: a single MRT pass exposing
@@ -158,9 +156,75 @@ function buildOutputNode( effect, scene, camera ) {
 
 }
 
-export async function runPostProcessingDebugExample( { effect = 'passthrough', title = `${ EFFECTS[ effect ]?.label || effect } postprocessing` } = {} ) {
+function makeFxaaPipelines( renderer, scene, camera ) {
+
+	const scenePass = pass( scene, camera );
+	const colorPipeline = new RenderPipeline( renderer );
+	colorPipeline.outputNode = scenePass.getTextureNode( 'output' );
+
+	// FXAA requires an sRGB input. Three's `fxaa( renderOutput( pass ) )`
+	// shorthand inserts a hidden RTT node, which is not an authored render
+	// stage and therefore has no independently named artifact to replay. Make
+	// that stage explicit: the first compiled pipeline performs the output
+	// transform into a stable texture; the second compiled pipeline runs FXAA.
+	const colorTarget = new RenderTarget( 1, 1, {
+		depthBuffer: false,
+		type: HalfFloatType,
+	} );
+	colorTarget.texture.name = 'postprocessing-debug-fxaa-color';
+
+	const effectPipeline = new RenderPipeline( renderer );
+	effectPipeline.outputColorTransform = false;
+	effectPipeline.outputNode = fxaa( texture( colorTarget.texture ) );
+
+	return { colorPipeline, colorTarget, effectPipeline };
+
+}
+
+function resizeFxaaTarget( renderer, stages ) {
+
+	if ( ! stages ) return;
+	const pixelRatio = renderer.getPixelRatio();
+	stages.colorTarget.setSize(
+		Math.max( 1, Math.floor( window.innerWidth * pixelRatio ) ),
+		Math.max( 1, Math.floor( window.innerHeight * pixelRatio ) ),
+	);
+
+}
+
+async function preparePipeline( capture, renderer, scene, camera, pipeline, name, renderPipelineTarget = null ) {
+
+	if ( IS_PRODUCTION_BUILD || IS_E2E_REPLAY ) {
+
+		await bindPostprocessAuxByName( pipeline.outputNode, name );
+		return [ { shape: 'post-process', ok: true } ];
+
+	}
+	return capture.runtime.precompileAuxiliary( renderer, scene, camera, {
+		devEndpoint: CAPTURE_ENDPOINT,
+		three: capture.three,
+		threeVersion: globalThis.__TSLP_THREE_PACKAGE_VERSION__ || String( capture.three.REVISION ).match( /^\d+/ )[ 0 ],
+		postProcessing: pipeline,
+		postProcessingName: name,
+		renderPipeline: pipeline,
+		...( renderPipelineTarget ? { renderPipelineTarget } : {} ),
+	} ).catch( ( err ) => {
+
+		console.warn( '[postprocessing-debug] auxiliary capture failed:', err );
+		return [ { shape: 'aux', ok: false, error: err && err.message || String( err ) } ];
+
+	} );
+
+}
+
+export async function runPostProcessingDebugExample( {
+	effect = 'passthrough',
+	title = `${ EFFECTS[ effect ]?.label || effect } postprocessing`,
+	markMaterials,
+} = {} ) {
 
 	if ( ! EFFECTS[ effect ] ) throw new Error( `[postprocessing-debug] unknown effect: ${ effect }` );
+	if ( typeof markMaterials !== 'function' ) throw new TypeError( '[postprocessing-debug] markMaterials must be a function.' );
 	setHud( title, effect, 'starting' );
 
 	const renderer = new WebGPURenderer( { antialias: false } );
@@ -172,8 +236,13 @@ export async function runPostProcessingDebugExample( { effect = 'passthrough', t
 
 	await renderer.init();
 
-	installPrecompileMarker( THREE_GPU, { devEndpoint: CAPTURE_ENDPOINT } );
-	setDevRenderer( renderer );
+	let capture = null;
+	if ( ! IS_PRODUCTION_BUILD && ! IS_E2E_REPLAY ) {
+
+		const { setupCaptureRuntime } = await import( './capture-runtime.js' );
+		capture = await setupCaptureRuntime( renderer, CAPTURE_ENDPOINT );
+
+	}
 
 	const scene = new Scene();
 	const camera = new PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 0.1, 50 );
@@ -181,27 +250,46 @@ export async function runPostProcessingDebugExample( { effect = 'passthrough', t
 	camera.lookAt( 0, 0, 0 );
 
 	makeLights( scene );
-	const objects = addDebugGeometry( scene );
+	const objects = addDebugGeometry( scene, markMaterials );
 
-	const postProcessing = new PostProcessing( renderer );
-	// FXAA and Bloom need the captured graph to own the color transform so the
-	// slim replay can bind one post-process artifact that includes the effect.
-	if ( effect === 'fxaa' || effect === 'bloom' ) postProcessing.outputColorTransform = false;
-	postProcessing.outputNode = buildOutputNode( effect, scene, camera );
+	let postProcessing;
+	let fxaaStages = null;
+	if ( effect === 'fxaa' ) {
 
-	const skipReplayAuxCapture = IS_E2E_REPLAY && effect === 'bloom';
-	const auxResults = skipReplayAuxCapture ? [ { shape: 'replay', ok: true } ] : await precompileAuxiliary( renderer, scene, camera, {
-		devEndpoint: CAPTURE_ENDPOINT,
-		three: THREE_GPU,
-		threeVersion: globalThis.__TSLP_THREE_PACKAGE_VERSION__ || String( THREE_GPU.REVISION ).match( /^\d+/ )[ 0 ],
+		fxaaStages = makeFxaaPipelines( renderer, scene, camera );
+		resizeFxaaTarget( renderer, fxaaStages );
+		postProcessing = fxaaStages.effectPipeline;
+
+	} else {
+
+		postProcessing = new RenderPipeline( renderer );
+		if ( effect === 'bloom' ) postProcessing.outputColorTransform = false;
+		postProcessing.outputNode = buildOutputNode( effect, scene, camera );
+
+	}
+
+	const auxResults = [];
+	if ( fxaaStages ) {
+
+		auxResults.push( ...await preparePipeline(
+			capture,
+			renderer,
+			scene,
+			camera,
+			fxaaStages.colorPipeline,
+			POSTPROCESS_AUX_NAMES.fxaaColor,
+			fxaaStages.colorTarget,
+		) );
+
+	}
+	auxResults.push( ...await preparePipeline(
+		capture,
+		renderer,
+		scene,
+		camera,
 		postProcessing,
-		renderPipeline: postProcessing,
-	} ).catch( ( err ) => {
-
-		console.warn( '[postprocessing-debug] auxiliary capture failed:', err );
-		return [ { shape: 'aux', ok: false, error: err && err.message || String( err ) } ];
-
-	} );
+		POSTPROCESS_AUX_NAMES[ effect ],
+	) );
 
 	const auxSummary = IS_E2E ? 'ready' : auxResults.map( ( r ) => `${ r.shape }:${ r.ok ? 'ok' : 'err' }` ).join( ', ' ) || 'no aux';
 	setHud( title, effect, `rendering — ${ auxSummary }` );
@@ -209,7 +297,23 @@ export async function runPostProcessingDebugExample( { effect = 'passthrough', t
 	renderer.setAnimationLoop( () => {
 
 		objects.rotation.y = 0;
+		if ( fxaaStages ) {
+
+			const currentTarget = renderer.getRenderTarget();
+			try {
+
+				renderer.setRenderTarget( fxaaStages.colorTarget );
+				fxaaStages.colorPipeline.render();
+
+			} finally {
+
+				renderer.setRenderTarget( currentTarget );
+
+			}
+
+		}
 		postProcessing.render();
+		recordLiveRouteFrame();
 
 	} );
 
@@ -218,6 +322,7 @@ export async function runPostProcessingDebugExample( { effect = 'passthrough', t
 		camera.aspect = window.innerWidth / window.innerHeight;
 		camera.updateProjectionMatrix();
 		renderer.setSize( window.innerWidth, window.innerHeight );
+		resizeFxaaTarget( renderer, fxaaStages );
 
 	} );
 

@@ -2,9 +2,11 @@ import { defineConfig } from 'vite';
 import tslPrecompile from 'vite-plugin-tsl-precompile';
 
 export default defineConfig( {
+	base: './',
 	plugins: [
 		tslPrecompile( {
 			artifactsDir: './artifacts',
+			slim: 'source',
 		} ),
 	],
 	server: {

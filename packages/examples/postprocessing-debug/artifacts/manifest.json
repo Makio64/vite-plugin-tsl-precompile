@@ -1,0 +1,273 @@
+{
+  "__aux": {
+    "post-process:d66c83157f4956c830038fb68f1e72d4e6eea287ef251e0d7186a89becf020ac": {
+      "file": "aux-post-process-d66c83157f49.json",
+      "shape": "post-process",
+      "configHash": "d66c83157f4956c830038fb68f1e72d4e6eea287ef251e0d7186a89becf020ac",
+      "hash": null,
+      "capturedAt": "2026-07-16T20:16:04.068Z"
+    },
+    "lights:c035f2fb0ad933b5c646d6b98c0b96bd735eee8f97d47d54b98ce53eb08d2cf7": {
+      "file": "aux-lights-c035f2fb0ad9.json",
+      "shape": "lights",
+      "configHash": "c035f2fb0ad933b5c646d6b98c0b96bd735eee8f97d47d54b98ce53eb08d2cf7",
+      "hash": null,
+      "capturedAt": "2026-07-16T20:16:04.070Z"
+    },
+    "render-output:64408283fa335f51e57c24dd9cc697109f23fd864f8474bc5e19cc6a7e835c7b": {
+      "file": "aux-render-output-64408283fa33.json",
+      "shape": "render-output",
+      "configHash": "64408283fa335f51e57c24dd9cc697109f23fd864f8474bc5e19cc6a7e835c7b",
+      "hash": null,
+      "capturedAt": "2026-07-16T20:25:19.296Z"
+    },
+    "post-process:d50a6fb22a07de357cb7b4a2b702da418017733037ba60c22d6046e4bdfbf0a8": {
+      "file": "aux-post-process-d50a6fb22a07.json",
+      "shape": "post-process",
+      "configHash": "d50a6fb22a07de357cb7b4a2b702da418017733037ba60c22d6046e4bdfbf0a8",
+      "hash": null,
+      "capturedAt": "2026-07-16T20:16:05.722Z"
+    },
+    "bloom-high-pass:a1da582b876cc931c0ac8370b661d8de4bb21ad275bbca454471596771d8cf92": {
+      "file": "aux-bloom-high-pass-a1da582b876c.json",
+      "shape": "bloom-high-pass",
+      "configHash": "a1da582b876cc931c0ac8370b661d8de4bb21ad275bbca454471596771d8cf92",
+      "hash": null,
+      "capturedAt": "2026-07-16T20:16:10.677Z"
+    },
+    "bloom-blur-0:678e00193b7c25d49fcf6e04a253bcd9e66df13dedd44d9b6a18a9c79278ea78": {
+      "file": "aux-bloom-blur-0-678e00193b7c.json",
+      "shape": "bloom-blur-0",
+      "configHash": "678e00193b7c25d49fcf6e04a253bcd9e66df13dedd44d9b6a18a9c79278ea78",
+      "hash": null,
+      "capturedAt": "2026-07-16T20:16:10.679Z"
+    },
+    "bloom-blur-1:53f1d9d07caff3ffd2ddfa773d3034f7ba4af9cd645b7fd29e5cdcab880f4ee1": {
+      "file": "aux-bloom-blur-1-53f1d9d07caf.json",
+      "shape": "bloom-blur-1",
+      "configHash": "53f1d9d07caff3ffd2ddfa773d3034f7ba4af9cd645b7fd29e5cdcab880f4ee1",
+      "hash": null,
+      "capturedAt": "2026-07-16T20:16:10.681Z"
+    },
+    "bloom-blur-2:cdd7cff002fef135559db58682fa7a03e0022031c37e3162feee347552268304": {
+      "file": "aux-bloom-blur-2-cdd7cff002fe.json",
+      "shape": "bloom-blur-2",
+      "configHash": "cdd7cff002fef135559db58682fa7a03e0022031c37e3162feee347552268304",
+      "hash": null,
+      "capturedAt": "2026-07-16T20:16:10.683Z"
+    },
+    "bloom-blur-3:518a8ca2eeaedcfd6f4735bcb2faad9e8ae4f5287ed72e76f8c642875cb5ab15": {
+      "file": "aux-bloom-blur-3-518a8ca2eeae.json",
+      "shape": "bloom-blur-3",
+      "configHash": "518a8ca2eeaedcfd6f4735bcb2faad9e8ae4f5287ed72e76f8c642875cb5ab15",
+      "hash": null,
+      "capturedAt": "2026-07-16T20:16:10.684Z"
+    },
+    "bloom-blur-4:ca0b13cc1a49c70ba9c95d29ab42f9ba9c21779dea75dfeac911d2facb7520ca": {
+      "file": "aux-bloom-blur-4-ca0b13cc1a49.json",
+      "shape": "bloom-blur-4",
+      "configHash": "ca0b13cc1a49c70ba9c95d29ab42f9ba9c21779dea75dfeac911d2facb7520ca",
+      "hash": null,
+      "capturedAt": "2026-07-16T20:16:10.687Z"
+    },
+    "bloom-composite:2c0192a94199fee282c7573a080e04bcdc32bf39963966203956dd8a8e079db8": {
+      "file": "aux-bloom-composite-2c0192a94199.json",
+      "shape": "bloom-composite",
+      "configHash": "2c0192a94199fee282c7573a080e04bcdc32bf39963966203956dd8a8e079db8",
+      "hash": null,
+      "capturedAt": "2026-07-16T20:16:10.689Z"
+    },
+    "render-output:1421b7e06e0065d07fa70bcb1ca1c0994ab2298bc6a392d0150686fd38a276fc": {
+      "file": "aux-render-output-1421b7e06e00.json",
+      "shape": "render-output",
+      "configHash": "1421b7e06e0065d07fa70bcb1ca1c0994ab2298bc6a392d0150686fd38a276fc",
+      "hash": null,
+      "capturedAt": "2026-07-16T20:16:10.694Z"
+    },
+    "post-process:1f9791c5610d1192d22423521ee84770294e64aa0a07afadf903f53d1f1367dd": {
+      "file": "aux-post-process-1f9791c5610d.json",
+      "shape": "post-process",
+      "configHash": "1f9791c5610d1192d22423521ee84770294e64aa0a07afadf903f53d1f1367dd",
+      "hash": null,
+      "capturedAt": "2026-07-16T20:25:19.262Z"
+    },
+    "post-process:4a679352d77a781d7b3b88818101a0bf12b2656b6082478cb9d1e761dd32b066": {
+      "file": "aux-post-process-4a679352d77a.json",
+      "shape": "post-process",
+      "configHash": "4a679352d77a781d7b3b88818101a0bf12b2656b6082478cb9d1e761dd32b066",
+      "hash": null,
+      "capturedAt": "2026-07-16T20:25:19.290Z"
+    },
+    "post-process:b23eeedc36b463567c0d6f5bb0025c58a3d22850f169361fa711899afe73eb0d": {
+      "file": "aux-post-process-b23eeedc36b4.json",
+      "shape": "post-process",
+      "configHash": "b23eeedc36b463567c0d6f5bb0025c58a3d22850f169361fa711899afe73eb0d",
+      "hash": null,
+      "capturedAt": "2026-07-16T20:16:08.984Z"
+    },
+    "gtao:e3d3402081750b17d14f42eaf56d9637109588953ce147a2ac0d1605f91b7fbd": {
+      "file": "aux-gtao-e3d340208175.json",
+      "shape": "gtao",
+      "configHash": "e3d3402081750b17d14f42eaf56d9637109588953ce147a2ac0d1605f91b7fbd",
+      "hash": null,
+      "capturedAt": "2026-07-16T20:16:08.987Z"
+    },
+    "post-process:4ebea62e7ee1aec451b36d7779c5bc6f2f9925a25c916e1fe6271498147c9753": {
+      "file": "aux-post-process-4ebea62e7ee1.json",
+      "shape": "post-process",
+      "configHash": "4ebea62e7ee1aec451b36d7779c5bc6f2f9925a25c916e1fe6271498147c9753",
+      "hash": null,
+      "capturedAt": "2026-07-16T20:16:10.596Z"
+    },
+    "post-process:01ac75875a9af8466980c0ea0feb119a10ce4c3b84dfd9331c74c509a040ee1c": {
+      "file": "aux-post-process-01ac75875a9a.json",
+      "shape": "post-process",
+      "configHash": "01ac75875a9af8466980c0ea0feb119a10ce4c3b84dfd9331c74c509a040ee1c",
+      "hash": null,
+      "capturedAt": "2026-07-16T20:16:10.675Z"
+    }
+  },
+  "postprocessing-debug-floor": {
+    "file": "postprocessing-debug-floor.dee5b49c6bc2.json",
+    "hash": "dee5b49c6bc2ed0e7f2ddc17f47040da625d9a0c50590a4f1c03a57d1e6c459d",
+    "sourceIdentity": "ac2b3055a28be15eb005b2f999aa8e063967325d440028430fe4ef820809641b",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/standard-materials.js:precompile:0",
+        "revision": "2a92233e77661c38b22fbdb5b4eff550fd8d77788a217127cac6a04b58df6c48"
+      }
+    ],
+    "capturedAt": "2026-07-16T20:16:04.118Z"
+  },
+  "postprocessing-debug-cube": {
+    "file": "postprocessing-debug-cube.e14ca608b1c6.json",
+    "hash": "e14ca608b1c62194e353f6af99ee8d34d2cf7552329f4b93f917513084ab4ac1",
+    "sourceIdentity": "ac2b3055a28be15eb005b2f999aa8e063967325d440028430fe4ef820809641b",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/standard-materials.js:precompile:0",
+        "revision": "2a92233e77661c38b22fbdb5b4eff550fd8d77788a217127cac6a04b58df6c48"
+      }
+    ],
+    "capturedAt": "2026-07-16T20:16:04.131Z"
+  },
+  "postprocessing-debug-sphere": {
+    "file": "postprocessing-debug-sphere.0b351e14fc6b.json",
+    "hash": "0b351e14fc6bb782e1a43b87b966969f9ba3c26d50b4e5ac977e84336c4654af",
+    "sourceIdentity": "ac2b3055a28be15eb005b2f999aa8e063967325d440028430fe4ef820809641b",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/standard-materials.js:precompile:0",
+        "revision": "2a92233e77661c38b22fbdb5b4eff550fd8d77788a217127cac6a04b58df6c48"
+      }
+    ],
+    "capturedAt": "2026-07-16T20:16:04.142Z"
+  },
+  "postprocessing-debug-gtao-floor": {
+    "file": "postprocessing-debug-gtao-floor.ae33365457a1.json",
+    "hash": "ae33365457a194b13282a68b88fc73235a0b4569ec2fc440581a2ce3faf0da11",
+    "sourceIdentity": "1beec6eb84a05dfa9f6ebd086d6c9ff39811f2398fc0f60e56986c358c03117c",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/gtao-materials.js:precompile:0",
+        "revision": "f473bd8319859f9ef3d1dedc0c3e900441e6ab9e288f093ad95f89e593e58ccd"
+      }
+    ],
+    "capturedAt": "2026-07-16T20:16:09.044Z"
+  },
+  "postprocessing-debug-gtao-cube": {
+    "file": "postprocessing-debug-gtao-cube.b88c9b8c7aa8.json",
+    "hash": "b88c9b8c7aa815e33b133d5f40655595514191986ef63e09ca0219856bbe630f",
+    "sourceIdentity": "1beec6eb84a05dfa9f6ebd086d6c9ff39811f2398fc0f60e56986c358c03117c",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/gtao-materials.js:precompile:0",
+        "revision": "f473bd8319859f9ef3d1dedc0c3e900441e6ab9e288f093ad95f89e593e58ccd"
+      }
+    ],
+    "capturedAt": "2026-07-16T20:16:09.068Z"
+  },
+  "postprocessing-debug-gtao-sphere": {
+    "file": "postprocessing-debug-gtao-sphere.35ad1cc742d2.json",
+    "hash": "35ad1cc742d2eefbd4f7f597210ea40a5365959f7b3547830154340baab19d3f",
+    "sourceIdentity": "1beec6eb84a05dfa9f6ebd086d6c9ff39811f2398fc0f60e56986c358c03117c",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/gtao-materials.js:precompile:0",
+        "revision": "f473bd8319859f9ef3d1dedc0c3e900441e6ab9e288f093ad95f89e593e58ccd"
+      }
+    ],
+    "capturedAt": "2026-07-16T20:16:09.090Z"
+  },
+  "postprocessing-debug-variants-floor": {
+    "file": "postprocessing-debug-variants-floor.6df0afca07fd.json",
+    "hash": "6df0afca07fdef5474c1d9f839302834dde1947e98824498b09a61eb031f6069",
+    "sourceIdentity": "66d56430a88fd22e5f62f0c7b6426e2b55aa1b61b63d6b06055f15c9f4bc0b49",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/variants.js:precompile:0",
+        "revision": "fbafb982c419f3469f6dbfd674d57b8e2caba3f3ce1f4693f63df8c21e9fa579"
+      }
+    ],
+    "capturedAt": "2026-07-16T20:16:10.721Z"
+  },
+  "postprocessing-debug-variant-ember": {
+    "file": "postprocessing-debug-variant-ember.ee59bcc95d7b.json",
+    "hash": "ee59bcc95d7ba14238c463fc497d3e9dff7e86d702465a2097799754351c2561",
+    "sourceIdentity": "66d56430a88fd22e5f62f0c7b6426e2b55aa1b61b63d6b06055f15c9f4bc0b49",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/variants.js:precompile:0",
+        "revision": "fbafb982c419f3469f6dbfd674d57b8e2caba3f3ce1f4693f63df8c21e9fa579"
+      }
+    ],
+    "capturedAt": "2026-07-16T20:16:10.734Z"
+  },
+  "postprocessing-debug-variants-glow": {
+    "file": "postprocessing-debug-variants-glow.2dba2956adb5.json",
+    "hash": "2dba2956adb535063d7a8df9815dae910934b73136be4be71276b82c6e154c86",
+    "sourceIdentity": "66d56430a88fd22e5f62f0c7b6426e2b55aa1b61b63d6b06055f15c9f4bc0b49",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/variants.js:precompile:0",
+        "revision": "fbafb982c419f3469f6dbfd674d57b8e2caba3f3ce1f4693f63df8c21e9fa579"
+      }
+    ],
+    "capturedAt": "2026-07-16T20:16:10.744Z"
+  },
+  "postprocessing-debug-variant-lagoon": {
+    "file": "postprocessing-debug-variant-lagoon.28f130fa6c86.json",
+    "hash": "28f130fa6c865f6354c3fe91b12a685f7bf705a272ba50ccd553904fbed634f4",
+    "sourceIdentity": "66d56430a88fd22e5f62f0c7b6426e2b55aa1b61b63d6b06055f15c9f4bc0b49",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/variants.js:precompile:0",
+        "revision": "fbafb982c419f3469f6dbfd674d57b8e2caba3f3ce1f4693f63df8c21e9fa579"
+      }
+    ],
+    "capturedAt": "2026-07-16T20:16:12.862Z"
+  },
+  "postprocessing-debug-variant-circuit": {
+    "file": "postprocessing-debug-variant-circuit.eb403e25aa3c.json",
+    "hash": "eb403e25aa3c904a9c150cd91a9defe18fcec128489a40237982bdcff50e3caa",
+    "sourceIdentity": "66d56430a88fd22e5f62f0c7b6426e2b55aa1b61b63d6b06055f15c9f4bc0b49",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/variants.js:precompile:0",
+        "revision": "fbafb982c419f3469f6dbfd674d57b8e2caba3f3ce1f4693f63df8c21e9fa579"
+      }
+    ],
+    "capturedAt": "2026-07-16T20:16:15.289Z"
+  }
+}

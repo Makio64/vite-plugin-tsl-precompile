@@ -10,6 +10,17 @@ import { preview } from 'vite';
 
 const SITE_ROOT = resolve( dirname( fileURLToPath( import.meta.url ) ), '..' );
 const BROWSER_ARGS = [ '--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--no-sandbox', '--disable-dev-shm-usage' ];
+const VISUAL_OVERLAY_SELECTOR = [
+	'#hud',
+	'.hud',
+	'#status',
+	'.status',
+	'#info',
+	'.info',
+	'.overlay',
+	'.lil-gui',
+	'[data-tslp-overlay]',
+].join( ',' );
 const liveManifest = JSON.parse( await readFile( resolve( SITE_ROOT, 'dist/live-examples.json' ), 'utf8' ) );
 
 function pixelDifference( left, right ) {
@@ -123,6 +134,19 @@ try {
 
 		const canvas = liveFrame.locator( 'canvas' ).first();
 		await canvas.waitFor( { state: 'visible' } );
+		// Element screenshots include DOM composited over a WebGPU canvas. Hide
+		// known diagnostics before sampling so a text HUD cannot make a blank
+		// render pass the non-uniformity gate.
+		await liveFrame.locator( 'body' ).evaluate( ( body, selector ) => {
+
+			for ( const overlay of body.querySelectorAll( selector ) ) {
+
+				overlay.style.setProperty( 'visibility', 'hidden', 'important' );
+
+			}
+
+		}, VISUAL_OVERLAY_SELECTOR );
+		await page.waitForTimeout( 50 );
 		const firstPng = await canvas.screenshot();
 		await page.waitForTimeout( 400 );
 		const secondPng = await canvas.screenshot();
@@ -133,7 +157,7 @@ try {
 		if ( maxRgbDeviation < 2 ) throw new Error( `${ entry.id }: canvas is blank or uniform (RGB deviation ${ maxRgbDeviation })` );
 		if ( first.info.width !== second.info.width || first.info.height !== second.info.height ) throw new Error( `${ entry.id }: canvas changed dimensions during the motion probe` );
 		const motion = pixelDifference( first.data, second.data );
-		if ( entry.role === 'canary' && motion.changedFraction < 0.001 ) throw new Error( `${ entry.id }: canvas did not animate ${ JSON.stringify( motion ) }` );
+		if ( entry.expectsMotion === true && motion.changedFraction < 0.001 ) throw new Error( `${ entry.id }: canvas did not animate ${ JSON.stringify( motion ) }` );
 		if ( captureRequests.length > 0 ) throw new Error( `${ entry.id }: production route attempted capture/network mutation: ${ captureRequests.join( ', ' ) }` );
 		if ( errors.length > 0 ) throw new Error( `${ entry.id }:\n${ errors.join( '\n' ) }` );
 

@@ -1,0 +1,1254 @@
+{
+  "__materialShape": "post-process",
+  "__configHash": "4a679352d77a781d7b3b88818101a0bf12b2656b6082478cb9d1e761dd32b066",
+  "__hash": "4a679352d77a781d7b3b88818101a0bf12b2656b6082478cb9d1e761dd32b066",
+  "__name": "postprocessing-debug-fxaa",
+  "artifact": {
+    "version": 3,
+    "cacheKey": 11249383991959092,
+    "materialShape": "post-process",
+    "vertexShader": "// Three.js r184 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : mat3x3<f32>,\n\tnodeUniform2 : mat3x3<f32>,\n\tnodeUniform3 : mat3x3<f32>,\n\tnodeUniform4 : mat3x3<f32>,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform6 : mat3x3<f32>,\n\tnodeUniform7 : mat3x3<f32>,\n\tnodeUniform8 : mat3x3<f32>,\n\tnodeUniform9 : mat3x3<f32>,\n\tnodeUniform10 : mat3x3<f32>,\n\tnodeUniform12 : mat3x3<f32>,\n\tnodeUniform13 : mat3x3<f32>,\n\tnodeUniform14 : mat3x3<f32>,\n\tnodeUniform15 : mat3x3<f32>,\n\tnodeUniform16 : mat3x3<f32>,\n\tnodeUniform17 : vec2<f32>,\n\tnodeUniform20 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar0 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying4 = uv;\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform20 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar0 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar0;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
+    "fragmentShader": "// Three.js r184 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n\nstruct NodeBuffer_2401Struct {\n\tvalue : array< vec4<f32>, 6 >\n};\n@binding( 3 ) @group( 1 )\nvar<uniform> NodeBuffer_2401 : NodeBuffer_2401Struct;\n\nstruct objectStruct {\n\tnodeUniform1 : mat3x3<f32>,\n\tnodeUniform2 : mat3x3<f32>,\n\tnodeUniform3 : mat3x3<f32>,\n\tnodeUniform4 : mat3x3<f32>,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform6 : mat3x3<f32>,\n\tnodeUniform7 : mat3x3<f32>,\n\tnodeUniform8 : mat3x3<f32>,\n\tnodeUniform9 : mat3x3<f32>,\n\tnodeUniform10 : mat3x3<f32>,\n\tnodeUniform12 : mat3x3<f32>,\n\tnodeUniform13 : mat3x3<f32>,\n\tnodeUniform14 : mat3x3<f32>,\n\tnodeUniform15 : mat3x3<f32>,\n\tnodeUniform16 : mat3x3<f32>,\n\tnodeUniform17 : vec2<f32>,\n\tnodeUniform20 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\n\n\n// codes\nfn FxaaPixelShader ( uv : vec2<f32>, texSize : vec2<f32> ) -> vec4<f32> {\n\n\tvar nodeVar0 : vec4<f32>;\n\tvar nodeVar1 : f32;\n\tvar nodeVar2 : vec4<f32>;\n\tvar nodeVar3 : f32;\n\tvar nodeVar4 : vec4<f32>;\n\tvar nodeVar5 : f32;\n\tvar nodeVar6 : vec4<f32>;\n\tvar nodeVar7 : f32;\n\tvar nodeVar8 : vec4<f32>;\n\tvar nodeVar9 : f32;\n\tvar nodeVar10 : f32;\n\tvar nodeVar11 : f32;\n\tvar nodeVar12 : vec4<f32>;\n\tvar nodeVar13 : f32;\n\tvar nodeVar14 : vec4<f32>;\n\tvar nodeVar15 : f32;\n\tvar nodeVar16 : vec4<f32>;\n\tvar nodeVar17 : f32;\n\tvar nodeVar18 : vec4<f32>;\n\tvar nodeVar19 : f32;\n\tvar nodeVar20 : vec4<f32>;\n\tvar nodeVar21 : f32;\n\tvar nodeVar22 : bool;\n\tvar nodeVar23 : f32;\n\tvar nodeVar24 : f32;\n\tvar nodeVar25 : f32;\n\tvar nodeVar26 : f32;\n\tvar nodeVar27 : f32;\n\tvar nodeVar28 : f32;\n\tvar nodeVar29 : f32;\n\tvar nodeVar30 : vec2<f32>;\n\tvar nodeVar31 : vec2<f32>;\n\tvar nodeVar32 : vec2<f32>;\n\tvar nodeVar33 : vec4<f32>;\n\tvar nodeVar34 : f32;\n\tvar nodeVar35 : f32;\n\tvar nodeVar36 : f32;\n\tvar nodeVar37 : bool;\n\tvar nodeVar38 : vec4<f32>;\n\tvar nodeVar39 : vec2<f32>;\n\tvar nodeVar40 : vec4<f32>;\n\tvar nodeVar41 : f32;\n\tvar nodeVar42 : bool;\n\tvar nodeVar43 : vec4<f32>;\n\tvar nodeVar44 : f32;\n\tvar nodeVar45 : f32;\n\tvar nodeVar46 : f32;\n\tvar nodeVar47 : bool;\n\tvar nodeVar48 : f32;\n\tvar nodeVar49 : vec2<f32>;\n\tvar nodeVar50 : f32;\n\tvar nodeVar51 : f32;\n\tvar nodeVar52 : vec4<f32>;\n\n\tnodeVar0 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform1 * vec3<f32>( ( uv + ( texSize * vec2<f32>( 0.0, 1.0 ) ) ), 1.0 ) ).xy, -100.0 );\n\tnodeVar1 = dot( nodeVar0.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) );\n\tnodeVar2 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform2 * vec3<f32>( ( uv + ( texSize * vec2<f32>( 1.0, 0.0 ) ) ), 1.0 ) ).xy, -100.0 );\n\tnodeVar3 = dot( nodeVar2.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) );\n\tnodeVar4 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform3 * vec3<f32>( ( uv + ( texSize * vec2<f32>( 0.0, -1.0 ) ) ), 1.0 ) ).xy, -100.0 );\n\tnodeVar5 = dot( nodeVar4.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) );\n\tnodeVar6 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform4 * vec3<f32>( ( uv + ( texSize * vec2<f32>( -1.0, 0.0 ) ) ), 1.0 ) ).xy, -100.0 );\n\tnodeVar7 = dot( nodeVar6.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) );\n\tnodeVar8 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform5 * vec3<f32>( uv, 1.0 ) ).xy, -100.0 );\n\tnodeVar9 = dot( nodeVar8.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) );\n\tnodeVar10 = max( max( max( max( max( nodeVar1, nodeVar3 ), nodeVar3 ), nodeVar5 ), nodeVar7 ), nodeVar9 );\n\tnodeVar11 = ( nodeVar10 - min( min( min( min( min( nodeVar1, nodeVar3 ), nodeVar3 ), nodeVar5 ), nodeVar7 ), nodeVar9 ) );\n\n\tif ( ( nodeVar11 < max( 0.0312, ( 0.063 * nodeVar10 ) ) ) ) {\n\n\t\tnodeVar12 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform6 * vec3<f32>( uv, 1.0 ) ).xy, -100.0 );\n\t\treturn nodeVar12;\n\n\t}\n\n\tnodeVar14 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform7 * vec3<f32>( ( uv + ( texSize * vec2<f32>( 1.0, 1.0 ) ) ), 1.0 ) ).xy, -100.0 );\n\tnodeVar15 = dot( nodeVar14.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) );\n\tnodeVar16 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform8 * vec3<f32>( ( uv + ( texSize * vec2<f32>( 1.0, -1.0 ) ) ), 1.0 ) ).xy, -100.0 );\n\tnodeVar17 = dot( nodeVar16.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) );\n\tnodeVar18 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform9 * vec3<f32>( ( uv + ( texSize * vec2<f32>( -1.0, 1.0 ) ) ), 1.0 ) ).xy, -100.0 );\n\tnodeVar19 = dot( nodeVar18.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) );\n\tnodeVar20 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform10 * vec3<f32>( ( uv + ( texSize * vec2<f32>( -1.0, -1.0 ) ) ), 1.0 ) ).xy, -100.0 );\n\tnodeVar21 = dot( nodeVar20.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) );\n\tnodeVar22 = ( ( ( abs( ( ( nodeVar1 + nodeVar5 ) - ( nodeVar9 * 2.0 ) ) ) * 2.0 ) + ( abs( ( ( nodeVar15 + nodeVar17 ) - ( nodeVar3 * 2.0 ) ) ) + abs( ( ( nodeVar19 + nodeVar21 ) - ( nodeVar7 * 2.0 ) ) ) ) ) >= ( ( abs( ( ( nodeVar3 + nodeVar7 ) - ( nodeVar9 * 2.0 ) ) ) * 2.0 ) + ( abs( ( ( nodeVar15 + nodeVar19 ) - ( nodeVar1 * 2.0 ) ) ) + abs( ( ( nodeVar17 + nodeVar21 ) - ( nodeVar5 * 2.0 ) ) ) ) ) );\n\n\tif ( nodeVar22 ) {\n\n\t\tnodeVar13 = texSize.y;\n\n\t} else {\n\n\t\tnodeVar13 = texSize.x;\n\n\t}\n\n\tnodeVar23 = nodeVar13;\n\tnodeVar24 = 0.0;\n\tnodeVar25 = 0.0;\n\n\tif ( nodeVar22 ) {\n\n\t\tnodeVar26 = nodeVar1;\n\n\t} else {\n\n\t\tnodeVar26 = nodeVar3;\n\n\t}\n\n\tnodeVar27 = abs( ( nodeVar26 - nodeVar9 ) );\n\n\tif ( nodeVar22 ) {\n\n\t\tnodeVar28 = nodeVar5;\n\n\t} else {\n\n\t\tnodeVar28 = nodeVar7;\n\n\t}\n\n\tnodeVar29 = abs( ( nodeVar28 - nodeVar9 ) );\n\n\tif ( ( nodeVar27 < nodeVar29 ) ) {\n\n\t\tnodeVar23 = ( - nodeVar23 );\n\t\tnodeVar24 = nodeVar28;\n\t\tnodeVar25 = nodeVar29;\n\t\t\n\n\t} else {\n\n\t\tnodeVar24 = nodeVar26;\n\t\tnodeVar25 = nodeVar27;\n\t\t\n\n\t}\n\n\tnodeVar30 = uv;\n\tnodeVar31 = vec2<f32>( 0.0, 0.0 );\n\n\tif ( nodeVar22 ) {\n\n\t\tnodeVar30.y = ( nodeVar30.y + ( nodeVar23 * 0.5 ) );\n\t\tnodeVar31 = vec2<f32>( texSize.x, 0.0 );\n\t\t\n\n\t} else {\n\n\t\tnodeVar30.x = ( nodeVar30.x + ( nodeVar23 * 0.5 ) );\n\t\tnodeVar31 = vec2<f32>( 0.0, texSize.y );\n\t\t\n\n\t}\n\n\tnodeVar32 = ( nodeVar30 + ( nodeVar31 * vec2<f32>( NodeBuffer_2401.value[ 0u ].x ) ) );\n\tnodeVar33 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform12 * vec3<f32>( nodeVar32, 1.0 ) ).xy, -100.0 );\n\tnodeVar34 = ( ( nodeVar9 + nodeVar24 ) * 0.5 );\n\tnodeVar35 = ( dot( nodeVar33.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) ) - nodeVar34 );\n\tnodeVar36 = ( nodeVar25 * 0.25 );\n\tnodeVar37 = ( abs( nodeVar35 ) >= nodeVar36 );\n\n\tfor ( var i : i32 = 1; i < 6; i ++ ) {\n\n\n\t\tif ( nodeVar37 ) {\n\n\t\t\tbreak;\n\t\t\t\n\n\t\t}\n\n\t\tnodeVar32 = ( nodeVar32 + ( nodeVar31 * vec2<f32>( NodeBuffer_2401.value[ i ].x ) ) );\n\t\tnodeVar38 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform13 * vec3<f32>( nodeVar32, 1.0 ) ).xy, -100.0 );\n\t\tnodeVar35 = ( dot( nodeVar38.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) ) - nodeVar34 );\n\t\tnodeVar37 = ( abs( nodeVar35 ) >= nodeVar36 );\n\n\t}\n\n\n\tif ( (!nodeVar37) ) {\n\n\t\tnodeVar32 = ( nodeVar32 + ( nodeVar31 * vec2<f32>( 8.0 ) ) );\n\t\t\n\n\t}\n\n\tnodeVar39 = ( nodeVar30 - ( nodeVar31 * vec2<f32>( NodeBuffer_2401.value[ 0u ].x ) ) );\n\tnodeVar40 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform14 * vec3<f32>( nodeVar39, 1.0 ) ).xy, -100.0 );\n\tnodeVar41 = ( dot( nodeVar40.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) ) - nodeVar34 );\n\tnodeVar42 = ( abs( nodeVar41 ) >= nodeVar36 );\n\n\tfor ( var i : i32 = 1; i < 6; i ++ ) {\n\n\n\t\tif ( nodeVar42 ) {\n\n\t\t\tbreak;\n\t\t\t\n\n\t\t}\n\n\t\tnodeVar39 = ( nodeVar39 - ( nodeVar31 * vec2<f32>( NodeBuffer_2401.value[ i ].x ) ) );\n\t\tnodeVar43 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform15 * vec3<f32>( nodeVar39, 1.0 ) ).xy, -100.0 );\n\t\tnodeVar41 = ( dot( nodeVar43.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) ) - nodeVar34 );\n\t\tnodeVar42 = ( abs( nodeVar41 ) >= nodeVar36 );\n\n\t}\n\n\n\tif ( (!nodeVar42) ) {\n\n\t\tnodeVar39 = ( nodeVar39 - ( nodeVar31 * vec2<f32>( 8.0 ) ) );\n\t\t\n\n\t}\n\n\tnodeVar44 = 0.0;\n\tnodeVar45 = 0.0;\n\n\tif ( nodeVar22 ) {\n\n\t\tnodeVar44 = ( nodeVar32.x - uv.x );\n\t\tnodeVar45 = ( uv.x - nodeVar39.x );\n\t\t\n\n\t} else {\n\n\t\tnodeVar44 = ( nodeVar32.y - uv.y );\n\t\tnodeVar45 = ( uv.y - nodeVar39.y );\n\t\t\n\n\t}\n\n\tnodeVar46 = 0.0;\n\tnodeVar47 = false;\n\n\tif ( ( nodeVar44 <= nodeVar45 ) ) {\n\n\t\tnodeVar46 = nodeVar44;\n\t\tnodeVar47 = ( nodeVar35 >= 0.0 );\n\t\t\n\n\t} else {\n\n\t\tnodeVar46 = nodeVar45;\n\t\tnodeVar47 = ( nodeVar41 >= 0.0 );\n\t\t\n\n\t}\n\n\tnodeVar48 = 0.0;\n\n\tif ( ( nodeVar47 == ( ( nodeVar9 - nodeVar34 ) >= 0.0 ) ) ) {\n\n\t\tnodeVar48 = 0.0;\n\t\t\n\n\t} else {\n\n\t\tnodeVar48 = ( 0.5 - ( nodeVar46 / ( nodeVar44 + nodeVar45 ) ) );\n\t\t\n\n\t}\n\n\tnodeVar49 = uv;\n\n\tif ( nodeVar22 ) {\n\n\t\tnodeVar50 = smoothstep( 0.0, 1.0, clamp( ( abs( ( ( ( ( 2.0 * ( ( ( nodeVar1 + nodeVar3 ) + nodeVar5 ) + nodeVar7 ) ) + ( ( ( nodeVar15 + nodeVar19 ) + nodeVar17 ) + nodeVar21 ) ) * 0.08333333333333333 ) - nodeVar9 ) ) / max( nodeVar11, 0.0 ) ), 0.0, 1.0 ) );\n\t\tnodeVar49.y = ( nodeVar49.y + ( nodeVar23 * max( ( ( nodeVar50 * nodeVar50 ) * 1.0 ), nodeVar48 ) ) );\n\t\t\n\n\t} else {\n\n\t\tnodeVar51 = smoothstep( 0.0, 1.0, clamp( ( abs( ( ( ( ( 2.0 * ( ( ( nodeVar1 + nodeVar3 ) + nodeVar5 ) + nodeVar7 ) ) + ( ( ( nodeVar15 + nodeVar19 ) + nodeVar17 ) + nodeVar21 ) ) * 0.08333333333333333 ) - nodeVar9 ) ) / max( nodeVar11, 0.0 ) ), 0.0, 1.0 ) );\n\t\tnodeVar49.x = ( nodeVar49.x + ( nodeVar23 * max( ( ( nodeVar51 * nodeVar51 ) * 1.0 ), nodeVar48 ) ) );\n\t\t\n\n\t}\n\n\tnodeVar52 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform16 * vec3<f32>( nodeVar49, 1.0 ) ).xy, -100.0 );\n\n\treturn nodeVar52;\n\n}\n\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying4 : vec2<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\n\t// result\n\n\toutput.color = FxaaPixelShader( nodeVarying4, object.nodeUniform17 );\n\n\treturn output;\n\n}\n",
+    "computeShader": "",
+    "attributes": [
+      {
+        "name": "uv",
+        "type": "vec2",
+        "source": "geometry"
+      },
+      {
+        "name": "position",
+        "type": "vec3",
+        "source": "geometry"
+      }
+    ],
+    "bindings": [
+      {
+        "name": "render",
+        "bindings": [
+          {
+            "name": "render",
+            "kind": "uniform-buffer",
+            "visibility": 7,
+            "textureType": null,
+            "byteLength": 128,
+            "access": null
+          }
+        ]
+      },
+      {
+        "name": "object",
+        "bindings": [
+          {
+            "name": "nodeUniform0_sampler",
+            "kind": "sampler",
+            "visibility": 2,
+            "textureType": null,
+            "byteLength": null,
+            "access": null
+          },
+          {
+            "name": "nodeUniform0",
+            "kind": "sampled-texture",
+            "visibility": 2,
+            "textureType": "2d",
+            "byteLength": null,
+            "access": "readOnly"
+          },
+          {
+            "name": "object",
+            "kind": "uniform-buffer",
+            "visibility": 7,
+            "textureType": null,
+            "byteLength": 800,
+            "access": null
+          },
+          {
+            "name": "UniformBuffer_0",
+            "kind": "uniform-buffer",
+            "visibility": 2,
+            "textureType": null,
+            "byteLength": 96,
+            "access": null
+          }
+        ]
+      }
+    ],
+    "uniformPlan": [
+      {
+        "name": "render",
+        "shared": true,
+        "visibility": 7,
+        "byteLength": 128,
+        "slots": [
+          {
+            "name": "cameraProjectionMatrix",
+            "offset": 0,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "camera.projectionMatrix",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  -1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              }
+            }
+          },
+          {
+            "name": "cameraViewMatrix",
+            "offset": 64,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "camera.viewMatrix",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              }
+            }
+          }
+        ],
+        "textures": [],
+        "storageBuffers": [],
+        "orderedBindings": [
+          {
+            "type": "ubo",
+            "name": "render",
+            "byteLength": 128,
+            "visibility": 7,
+            "slots": [
+              {
+                "name": "cameraProjectionMatrix",
+                "offset": 0,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "camera.projectionMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      -1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "cameraViewMatrix",
+                "offset": 64,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "camera.viewMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "object",
+        "shared": false,
+        "visibility": 2,
+        "byteLength": 800,
+        "slots": [
+          {
+            "name": "nodeUniform1",
+            "offset": 0,
+            "size": 48,
+            "dtype": "mat3",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "mat3",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              },
+              "liveNodeId": 0
+            }
+          },
+          {
+            "name": "nodeUniform2",
+            "offset": 48,
+            "size": 48,
+            "dtype": "mat3",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "mat3",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              },
+              "liveNodeId": 1
+            }
+          },
+          {
+            "name": "nodeUniform3",
+            "offset": 96,
+            "size": 48,
+            "dtype": "mat3",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "mat3",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              },
+              "liveNodeId": 2
+            }
+          },
+          {
+            "name": "nodeUniform4",
+            "offset": 144,
+            "size": 48,
+            "dtype": "mat3",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "mat3",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              },
+              "liveNodeId": 3
+            }
+          },
+          {
+            "name": "nodeUniform5",
+            "offset": 192,
+            "size": 48,
+            "dtype": "mat3",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "mat3",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              },
+              "liveNodeId": 4
+            }
+          },
+          {
+            "name": "nodeUniform6",
+            "offset": 240,
+            "size": 48,
+            "dtype": "mat3",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "mat3",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              },
+              "liveNodeId": 5
+            }
+          },
+          {
+            "name": "nodeUniform7",
+            "offset": 288,
+            "size": 48,
+            "dtype": "mat3",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "mat3",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              },
+              "liveNodeId": 6
+            }
+          },
+          {
+            "name": "nodeUniform8",
+            "offset": 336,
+            "size": 48,
+            "dtype": "mat3",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "mat3",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              },
+              "liveNodeId": 7
+            }
+          },
+          {
+            "name": "nodeUniform9",
+            "offset": 384,
+            "size": 48,
+            "dtype": "mat3",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "mat3",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              },
+              "liveNodeId": 8
+            }
+          },
+          {
+            "name": "nodeUniform10",
+            "offset": 432,
+            "size": 48,
+            "dtype": "mat3",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "mat3",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              },
+              "liveNodeId": 9
+            }
+          },
+          {
+            "name": "nodeUniform12",
+            "offset": 480,
+            "size": 48,
+            "dtype": "mat3",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "mat3",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              },
+              "liveNodeId": 10
+            }
+          },
+          {
+            "name": "nodeUniform13",
+            "offset": 528,
+            "size": 48,
+            "dtype": "mat3",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "mat3",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              },
+              "liveNodeId": 11
+            }
+          },
+          {
+            "name": "nodeUniform14",
+            "offset": 576,
+            "size": 48,
+            "dtype": "mat3",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "mat3",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              },
+              "liveNodeId": 12
+            }
+          },
+          {
+            "name": "nodeUniform15",
+            "offset": 624,
+            "size": 48,
+            "dtype": "mat3",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "mat3",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              },
+              "liveNodeId": 13
+            }
+          },
+          {
+            "name": "nodeUniform16",
+            "offset": 672,
+            "size": 48,
+            "dtype": "mat3",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "mat3",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              },
+              "liveNodeId": 14
+            }
+          },
+          {
+            "name": "nodeUniform17",
+            "offset": 720,
+            "size": 8,
+            "dtype": "vec2",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "vec2",
+                "data": [
+                  0.0010416666666666667,
+                  0.001388888888888889
+                ]
+              },
+              "liveNodeId": 15,
+              "nodePath": [
+                "fragmentNode",
+                "node",
+                "_invSize"
+              ]
+            }
+          },
+          {
+            "name": "nodeUniform20",
+            "offset": 736,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "object.worldMatrix",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              }
+            }
+          }
+        ],
+        "textures": [
+          {
+            "bindingKind": "sampler",
+            "name": "nodeUniform0_sampler",
+            "textureType": "unknown",
+            "access": null,
+            "visibility": 2,
+            "source": {
+              "kind": "artifact.texture",
+              "textureUuid": "778405b8-a078-4584-8bd1-84a80e0777d4",
+              "textureName": "postprocessing-debug-fxaa-color",
+              "mapping": 300,
+              "wrapS": 1001,
+              "wrapT": 1001,
+              "magFilter": 1006,
+              "minFilter": 1006,
+              "anisotropy": 1,
+              "generateMipmaps": false,
+              "colorSpace": "",
+              "flipY": false,
+              "imageWidth": 960,
+              "imageHeight": 720,
+              "imageDepth": 1
+            }
+          },
+          {
+            "bindingKind": "sampled-texture",
+            "name": "nodeUniform0",
+            "textureType": "2d",
+            "access": "readOnly",
+            "visibility": 2,
+            "source": {
+              "kind": "artifact.texture",
+              "textureUuid": "778405b8-a078-4584-8bd1-84a80e0777d4",
+              "textureName": "postprocessing-debug-fxaa-color",
+              "mapping": 300,
+              "wrapS": 1001,
+              "wrapT": 1001,
+              "magFilter": 1006,
+              "minFilter": 1006,
+              "anisotropy": 1,
+              "generateMipmaps": false,
+              "colorSpace": "",
+              "flipY": false,
+              "imageWidth": 960,
+              "imageHeight": 720,
+              "imageDepth": 1
+            }
+          }
+        ],
+        "storageBuffers": [],
+        "orderedBindings": [
+          {
+            "type": "sampler",
+            "ref": {
+              "bindingKind": "sampler",
+              "name": "nodeUniform0_sampler",
+              "textureType": "unknown",
+              "access": null,
+              "visibility": 2,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "778405b8-a078-4584-8bd1-84a80e0777d4",
+                "textureName": "postprocessing-debug-fxaa-color",
+                "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "generateMipmaps": false,
+                "colorSpace": "",
+                "flipY": false,
+                "imageWidth": 960,
+                "imageHeight": 720,
+                "imageDepth": 1
+              }
+            }
+          },
+          {
+            "type": "sampled-texture",
+            "ref": {
+              "bindingKind": "sampled-texture",
+              "name": "nodeUniform0",
+              "textureType": "2d",
+              "access": "readOnly",
+              "visibility": 2,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "778405b8-a078-4584-8bd1-84a80e0777d4",
+                "textureName": "postprocessing-debug-fxaa-color",
+                "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "generateMipmaps": false,
+                "colorSpace": "",
+                "flipY": false,
+                "imageWidth": 960,
+                "imageHeight": 720,
+                "imageDepth": 1
+              }
+            }
+          },
+          {
+            "type": "ubo",
+            "name": "object",
+            "byteLength": 800,
+            "visibility": 7,
+            "slots": [
+              {
+                "name": "nodeUniform1",
+                "offset": 0,
+                "size": 48,
+                "dtype": "mat3",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "mat3",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  },
+                  "liveNodeId": 0
+                }
+              },
+              {
+                "name": "nodeUniform2",
+                "offset": 48,
+                "size": 48,
+                "dtype": "mat3",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "mat3",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  },
+                  "liveNodeId": 1
+                }
+              },
+              {
+                "name": "nodeUniform3",
+                "offset": 96,
+                "size": 48,
+                "dtype": "mat3",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "mat3",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  },
+                  "liveNodeId": 2
+                }
+              },
+              {
+                "name": "nodeUniform4",
+                "offset": 144,
+                "size": 48,
+                "dtype": "mat3",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "mat3",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  },
+                  "liveNodeId": 3
+                }
+              },
+              {
+                "name": "nodeUniform5",
+                "offset": 192,
+                "size": 48,
+                "dtype": "mat3",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "mat3",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  },
+                  "liveNodeId": 4
+                }
+              },
+              {
+                "name": "nodeUniform6",
+                "offset": 240,
+                "size": 48,
+                "dtype": "mat3",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "mat3",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  },
+                  "liveNodeId": 5
+                }
+              },
+              {
+                "name": "nodeUniform7",
+                "offset": 288,
+                "size": 48,
+                "dtype": "mat3",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "mat3",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  },
+                  "liveNodeId": 6
+                }
+              },
+              {
+                "name": "nodeUniform8",
+                "offset": 336,
+                "size": 48,
+                "dtype": "mat3",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "mat3",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  },
+                  "liveNodeId": 7
+                }
+              },
+              {
+                "name": "nodeUniform9",
+                "offset": 384,
+                "size": 48,
+                "dtype": "mat3",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "mat3",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  },
+                  "liveNodeId": 8
+                }
+              },
+              {
+                "name": "nodeUniform10",
+                "offset": 432,
+                "size": 48,
+                "dtype": "mat3",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "mat3",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  },
+                  "liveNodeId": 9
+                }
+              },
+              {
+                "name": "nodeUniform12",
+                "offset": 480,
+                "size": 48,
+                "dtype": "mat3",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "mat3",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  },
+                  "liveNodeId": 10
+                }
+              },
+              {
+                "name": "nodeUniform13",
+                "offset": 528,
+                "size": 48,
+                "dtype": "mat3",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "mat3",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  },
+                  "liveNodeId": 11
+                }
+              },
+              {
+                "name": "nodeUniform14",
+                "offset": 576,
+                "size": 48,
+                "dtype": "mat3",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "mat3",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  },
+                  "liveNodeId": 12
+                }
+              },
+              {
+                "name": "nodeUniform15",
+                "offset": 624,
+                "size": 48,
+                "dtype": "mat3",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "mat3",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  },
+                  "liveNodeId": 13
+                }
+              },
+              {
+                "name": "nodeUniform16",
+                "offset": 672,
+                "size": 48,
+                "dtype": "mat3",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "mat3",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  },
+                  "liveNodeId": 14
+                }
+              },
+              {
+                "name": "nodeUniform17",
+                "offset": 720,
+                "size": 8,
+                "dtype": "vec2",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "vec2",
+                    "data": [
+                      0.0010416666666666667,
+                      0.001388888888888889
+                    ]
+                  },
+                  "liveNodeId": 15,
+                  "nodePath": [
+                    "fragmentNode",
+                    "node",
+                    "_invSize"
+                  ]
+                }
+              },
+              {
+                "name": "nodeUniform20",
+                "offset": 736,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "object.worldMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "buffer-uniform",
+            "ref": {
+              "name": "UniformBuffer_0",
+              "byteLength": 96,
+              "arrayType": "Float32Array",
+              "visibility": 2,
+              "valueSnapshot": [
+                1,
+                0,
+                0,
+                0,
+                1.5,
+                0,
+                0,
+                0,
+                2,
+                0,
+                0,
+                0,
+                2,
+                0,
+                0,
+                0,
+                2,
+                0,
+                0,
+                0,
+                4,
+                0,
+                0,
+                0
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "defaults": {},
+    "renderState": {
+      "transparent": false,
+      "opacity": 1,
+      "alphaTest": 0,
+      "alphaHash": false,
+      "alphaToCoverage": false,
+      "side": 0,
+      "depthTest": true,
+      "depthWrite": true,
+      "depthFunc": 3,
+      "blending": 1,
+      "blendSrc": 204,
+      "blendDst": 205,
+      "blendEquation": 100,
+      "colorWrite": true,
+      "premultipliedAlpha": false,
+      "dithering": false,
+      "toneMapped": true,
+      "vertexColors": false,
+      "fog": true,
+      "lights": false,
+      "allowOverride": true,
+      "forceSinglePass": false,
+      "polygonOffset": false,
+      "polygonOffsetFactor": 0,
+      "polygonOffsetUnits": 0,
+      "stencilWrite": false,
+      "stencilWriteMask": 255,
+      "stencilFunc": 519,
+      "stencilRef": 0,
+      "stencilFuncMask": 255,
+      "stencilFail": 7680,
+      "stencilZFail": 7680,
+      "stencilZPass": 7680
+    },
+    "meta": {
+      "updateNodes": 22,
+      "updateBeforeNodes": 1,
+      "updateAfterNodes": 0
+    },
+    "renderContextSelectors": [
+      "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":0,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":false,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":0,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"render-target\"}],\"depth\":true,\"depthTexture\":{\"colorSpace\":\"\",\"dataType\":1014,\"format\":1026,\"internalFormat\":null,\"kind\":\"depth\"},\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"output-intermediate\"},\"version\":\"render-object-selector@1\"}"
+    ],
+    "materialUuid": "78cf4b08-cdf8-49cf-98df-1a8bf8f1553c",
+    "captureClock": 0.37739999997615825,
+    "replayConfig": {
+      "schema": "render-pipeline@1",
+      "outputColorTransform": false,
+      "toneMapping": 0,
+      "outputColorSpace": "srgb"
+    }
+  }
+}
