@@ -3,6 +3,7 @@ import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 
 import {
+	canvasIndicesByHorizontalPosition,
 	isolateCanvasForScreenshot,
 	restoreCanvasAfterScreenshot,
 } from '../e2e-canvas-screenshot.mjs';
@@ -59,5 +60,22 @@ test( 'Playwright screenshot callbacks are self-contained', () => {
 	assert.equal( typeof restore, 'function' );
 	assert.equal( isolate( null ), 0 );
 	assert.equal( restore( null ), 0 );
+
+} );
+
+test( 'multi-canvas screenshots follow authored horizontal position instead of DOM order', () => {
+
+	const globalThenLocal = [
+		{ index: 0, left: 320 },
+		{ index: 1, left: 0 },
+	];
+	const localThenGlobal = [
+		{ index: 0, left: 0 },
+		{ index: 1, left: 320 },
+	];
+
+	assert.deepEqual( canvasIndicesByHorizontalPosition( globalThenLocal, { rightFirst: true } ), [ 0, 1 ] );
+	assert.deepEqual( canvasIndicesByHorizontalPosition( localThenGlobal, { rightFirst: true } ), [ 1, 0 ] );
+	assert.deepEqual( canvasIndicesByHorizontalPosition( globalThenLocal ), [ 1, 0 ] );
 
 } );

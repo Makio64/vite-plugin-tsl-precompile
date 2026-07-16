@@ -49,6 +49,89 @@ export function installAnimationLoopSettleTransition( target = globalThis ) {
 }
 
 /**
+ * Track settle progress independently for every renderer animation-loop owner.
+ * A single global callback count lets one renderer consume another renderer's
+ * readiness budget in examples that initialize multiple canvases in parallel.
+ *
+ * Keep this installer self-contained: Playwright serializes it into the page
+ * without preserving module closures.
+ */
+export function installAnimationLoopOwnerReadiness( target = globalThis ) {
+
+	const ownerStates = new Map();
+	const stateKeyFor = ( owner, callback ) => {
+
+		if ( owner && ( typeof owner === 'object' || typeof owner === 'function' ) ) return owner;
+		return callback;
+
+	};
+	const states = () => [ ...ownerStates.values() ];
+	const sync = () => {
+
+		const active = states();
+		target.__tslpAnimationLoopRegistered = active.length > 0;
+		target.__tslpAnimationLoopCalls = active.length > 0
+			? Math.min( ...active.map( ( state ) => state.animationLoopCalls | 0 ) )
+			: 0;
+		return active.length;
+
+	};
+	const api = {
+		register( owner, callback ) {
+
+			const key = stateKeyFor( owner, callback );
+			if ( typeof callback !== 'function' ) {
+
+				if ( key ) ownerStates.delete( key );
+				sync();
+				return null;
+
+			}
+			const state = {
+				animationLoopCalls: 0,
+				successfulCallbacks: 0,
+			};
+			ownerStates.set( key, state );
+			sync();
+			return state;
+
+		},
+		ready( minimumOwners = 1, minimumSuccessfulCallbacks = 1 ) {
+
+			const active = states();
+			const requiredOwners = Math.max( 1, minimumOwners | 0 );
+			const requiredCallbacks = Math.max( 0, minimumSuccessfulCallbacks | 0 );
+			return active.length >= requiredOwners
+				&& active.every( ( state ) => ( state.successfulCallbacks | 0 ) >= requiredCallbacks );
+
+		},
+		snapshot() {
+
+			return states().map( ( state ) => ( {
+				animationLoopCalls: state.animationLoopCalls | 0,
+				successfulCallbacks: state.successfulCallbacks | 0,
+			} ) );
+
+		},
+		sync,
+	};
+	target.__tslpAnimationLoopOwnerReadiness = api;
+	return api;
+
+}
+
+/** Number of independently owned animation loops that must present. */
+export function minimumAnimationLoopOwnersForExample( name ) {
+
+	// Bitonic sort initializes its local/global canvases through two independent
+	// async WebGPURenderers. Both must present before either logical canvas is
+	// valid capture/replay evidence.
+	if ( name === 'webgpu_compute_sort_bitonic.html' ) return 2;
+	return 1;
+
+}
+
+/**
  * Keep the compute-audio example active until its asynchronous initialization
  * has produced nonzero analyser data that drives the visible spectrum. Once
  * audio is live, replace its wall-clock-dependent FFT phase with one stable,

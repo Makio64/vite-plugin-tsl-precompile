@@ -44,12 +44,12 @@ import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS a
 import { instrumentLiveUniformIdentities } from '../../plugin/src/babel-transform.js';
 
 import { assertThreeCheckoutMatchesVersion } from './_three-version.mjs';
-import { isolateCanvasForScreenshot, restoreCanvasAfterScreenshot } from './e2e-canvas-screenshot.mjs';
+import { canvasIndicesByHorizontalPosition, isolateCanvasForScreenshot, restoreCanvasAfterScreenshot } from './e2e-canvas-screenshot.mjs';
 import { hasReplayArtifactCoverage } from './e2e-artifact-policy.mjs';
 import { installRenderSelectorMismatchRecorder } from './e2e-render-selector-recorder.mjs';
 import { enrichRenderSelectorDiagnostics, resolveE2ERoots, summarizeArtifactRenderSelectors } from './e2e-report-diagnostics.mjs';
 import { writeCurrentShotPair } from './e2e-shot-output.mjs';
-import { deterministicTimeoutPolicyForExample, holdAnimationUntilReadyForExample, installAnimationLoopSettleTransition, installAudioAnalyserReadiness, minimumRenderableObjectsForExample, settleFramesForExample, targetTickForExample } from './e2e-settle-policy.mjs';
+import { deterministicTimeoutPolicyForExample, holdAnimationUntilReadyForExample, installAnimationLoopOwnerReadiness, installAnimationLoopSettleTransition, installAudioAnalyserReadiness, minimumAnimationLoopOwnersForExample, minimumRenderableObjectsForExample, settleFramesForExample, targetTickForExample } from './e2e-settle-policy.mjs';
 import { captureWaitOverrideForExample, comparePngBuffers, expectedReplayErrorPatternsForExample, minimumBrightFractionForExample, pixelGateDisabledReasonForExample, psnrThresholdForExample, tierExamples } from './psnr.mjs';
 import { loadSlimBundle, slimBundleHashOptions, slimBundleReportProvenance } from './slim-bundle-provenance.mjs';
 import { coalesceUserArtifactVariantFamilies } from './user-artifact-families.mjs';
@@ -937,7 +937,7 @@ function __recordRenderableObjectCount( scene ) {
 	}
 		setAnimationLoop( callback ) {
 			const wrap = typeof window.__tslpWrapAnimationLoop === 'function' ? window.__tslpWrapAnimationLoop : null;
-			return super.setAnimationLoop( wrap ? wrap( callback ) : callback );
+			return super.setAnimationLoop( wrap ? wrap( callback, this ) : callback );
 		}
 		copyFramebufferToTexture( texture, rectangle = null ) {
 			const restore = __syncFramebufferTextureForActiveTarget( this, texture );
@@ -1950,7 +1950,7 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 	}
 	setAnimationLoop( callback ) {
 		const wrap = typeof window.__tslpWrapAnimationLoop === 'function' ? window.__tslpWrapAnimationLoop : null;
-		return super.setAnimationLoop( wrap ? wrap( callback ) : callback );
+		return super.setAnimationLoop( wrap ? wrap( callback, this ) : callback );
 	}
 	copyFramebufferToTexture( texture, rectangle = null ) {
 		const restore = __syncFramebufferTextureForActiveTarget( this, texture );
@@ -10325,7 +10325,7 @@ function __trackDebugShaderAsync( renderer ) {
 		}
 			setAnimationLoop( callback ) {
 				const wrap = typeof window.__tslpWrapAnimationLoop === 'function' ? window.__tslpWrapAnimationLoop : null;
-				return super.setAnimationLoop( wrap ? wrap( callback ) : callback );
+				return super.setAnimationLoop( wrap ? wrap( callback, this ) : callback );
 			}
 			copyFramebufferToTexture( texture, rectangle = null ) {
 				const restore = __syncFramebufferTextureForActiveTarget( this, texture );
@@ -14628,6 +14628,20 @@ async function dumpCanvases( page, name = '' ) {
 	let indices = name === 'webgpu_texturegrad.html'
 		? Array.from( canvases.keys() )
 		: Array.from( canvases.keys() ).reverse();
+	if ( name === 'webgpu_compute_sort_bitonic.html' ) {
+
+		// Both renderer initializers run concurrently, so append order is not a
+		// canvas identity. Preserve the existing right/global-canvas evidence by
+		// selecting it from the authored horizontal layout instead.
+		const candidates = await Promise.all( canvases.map( async ( canvas, index ) => {
+
+			const box = await canvas.boundingBox();
+			return { index, left: box && box.x || 0 };
+
+		} ) );
+		indices = canvasIndicesByHorizontalPosition( candidates, { rightFirst: true } );
+
+	}
 	if ( name === 'webgpu_storage_buffer.html' ) {
 
 		// The example starts both async renderer initializers without awaiting
@@ -15144,8 +15158,10 @@ async function visitExample( browser, name, mode, waitMs ) {
 	const TARGET_TICK = Number.isFinite( effectiveTargetTick ) ? Math.max( 0, effectiveTargetTick | 0 ) : 0;
 	const FRAME_STEP_MS = 16.6667;
 		const effectiveSettleFrames = settleFramesForExample( name, SETTLE_FRAMES, HAS_EXPLICIT_SETTLE_FRAMES );
+		const minimumAnimationLoopOwners = minimumAnimationLoopOwnersForExample( name );
 		timings.targetTick = TARGET_TICK;
 		timings.settleFrames = effectiveSettleFrames;
+		timings.minimumAnimationLoopOwners = minimumAnimationLoopOwners;
 		const waitForRenderableObjects = await exampleUsesDeferredSceneAssets( name );
 		const minRenderableObjects = minimumRenderableObjectsForExample( name );
 		const holdAnimationUntilReady = holdAnimationUntilReadyForExample( name );
@@ -15168,9 +15184,10 @@ async function visitExample( browser, name, mode, waitMs ) {
 		if ( process.env.TSLP_DEBUG_REFLECTOR_BINDINGS === '1' && mode === 'replay' ) {
 			await page.addInitScript( () => { globalThis.__TSLP_DEBUG_REFLECTOR_BINDINGS = true; window.__TSLP_DEBUG_REFLECTOR_BINDINGS = true; } );
 		}
+			await page.addInitScript( installAnimationLoopOwnerReadiness );
 			await page.addInitScript( installAnimationLoopSettleTransition );
 			await page.addInitScript( installRenderSelectorMismatchRecorder, { phase: mode } );
-			await page.addInitScript( ( { step, base, freezeAt, quiescentMs, settleFrames, waitForRenderableObjects, minRenderableObjects, holdAnimationUntilReady, deterministicTimeoutPolicy, exampleName, mode } ) => {
+			await page.addInitScript( ( { step, base, freezeAt, quiescentMs, settleFrames, minimumAnimationLoopOwners, waitForRenderableObjects, minRenderableObjects, holdAnimationUntilReady, deterministicTimeoutPolicy, exampleName, mode } ) => {
 
 			// eslint-disable-next-line no-undef
 			const w = window;
@@ -15295,19 +15312,32 @@ async function visitExample( browser, name, mode, waitMs ) {
 					}
 				};
 			}
-			w.__tslpWrapAnimationLoop = function ( callback ) {
+			w.__tslpWrapAnimationLoop = function ( callback, owner = null ) {
 
 				const transitionAnimationLoopSettle = w.__tslpTransitionAnimationLoopSettle;
 				if ( typeof transitionAnimationLoopSettle !== 'function' ) throw new Error( '[batch-e2e] animation-loop settle transition was not installed' );
-				w.__tslpAnimationLoopRegistered = typeof callback === 'function';
-				w.__tslpAnimationLoopCalls = 0;
+				const ownerReadiness = w.__tslpAnimationLoopOwnerReadiness;
+				const ownerReadinessEnabled = minimumAnimationLoopOwners > 1
+					&& ownerReadiness && typeof ownerReadiness.register === 'function';
+				const ownerState = ownerReadinessEnabled
+					? ownerReadiness.register( owner, callback )
+					: null;
+				if ( ! ownerReadinessEnabled ) {
+
+					w.__tslpAnimationLoopRegistered = typeof callback === 'function';
+					w.__tslpAnimationLoopCalls = 0;
+
+				}
 				w.__tslpSettleTicks = 0;
 				if ( typeof callback !== 'function' ) return callback;
 				return function ( ...args ) {
 
 					const completedSteps = w.__tslpFrameCallbackCount | 0;
 					const atTarget = completedSteps >= freezeAt;
-					const previousAnimationLoopCalls = w.__tslpAnimationLoopCalls | 0;
+					const previousAnimationLoopCalls = ownerState
+						? ownerState.animationLoopCalls | 0
+						: w.__tslpAnimationLoopCalls | 0;
+					const previousSuccessfulCallbacks = ownerState ? ownerState.successfulCallbacks | 0 : 0;
 					const previousRafTick = w.__tslpRafTick | 0;
 					const waitingForRenderableObjects = w.__tslpWaitForRenderableObjects === true && ( w.__tslpRenderableObjectCount | 0 ) < ( w.__tslpMinRenderableObjects | 0 );
 					const waitingForAsyncCounters = ( w.__tslpLoaderPending | 0 ) !== 0
@@ -15335,7 +15365,17 @@ async function visitExample( browser, name, mode, waitMs ) {
 						waitingForAsyncCounters,
 						waitingForAsyncWork,
 					} );
-					w.__tslpAnimationLoopCalls = transition.animationLoopCalls;
+					if ( ownerState ) {
+
+						ownerState.animationLoopCalls = transition.animationLoopCalls;
+						if ( transition.animationLoopCalls < previousAnimationLoopCalls ) ownerState.successfulCallbacks = 0;
+						ownerReadiness.sync();
+
+					} else {
+
+						w.__tslpAnimationLoopCalls = transition.animationLoopCalls;
+
+					}
 					if ( ! transition.runCallback ) return;
 					const nextSteps = completedSteps + 1;
 					if ( ! atTarget ) w.__tslpRafTick = Math.min( freezeAt, nextSteps );
@@ -15343,12 +15383,29 @@ async function visitExample( browser, name, mode, waitMs ) {
 					args[ 0 ] = base + Math.min( freezeAt, nextSteps ) * step;
 					try {
 
-						return callback.apply( this, args );
+						const result = callback.apply( this, args );
+						if ( ownerState ) {
+
+							ownerState.successfulCallbacks = ( ownerState.successfulCallbacks | 0 ) + 1;
+							ownerReadiness.sync();
+
+						}
+						return result;
 
 					} catch ( error ) {
 
 						w.__tslpFrameCallbackCount = completedSteps;
-						w.__tslpAnimationLoopCalls = previousAnimationLoopCalls;
+						if ( ownerState ) {
+
+							ownerState.animationLoopCalls = previousAnimationLoopCalls;
+							ownerState.successfulCallbacks = previousSuccessfulCallbacks;
+							ownerReadiness.sync();
+
+						} else {
+
+							w.__tslpAnimationLoopCalls = previousAnimationLoopCalls;
+
+						}
 						if ( ! atTarget ) w.__tslpRafTick = previousRafTick;
 						throw error;
 
@@ -15468,7 +15525,11 @@ async function visitExample( browser, name, mode, waitMs ) {
 					const realNow = ( typeof w.__tslpRealNow === 'function' ) ? w.__tslpRealNow() : 0;
 					const renderableReady = w.__tslpWaitForRenderableObjects !== true || ( w.__tslpRenderableObjectCount | 0 ) >= ( w.__tslpMinRenderableObjects | 0 );
 					const animationLoopRegistered = w.__tslpAnimationLoopRegistered === true;
-					const animationLoopReady = ! animationLoopRegistered || ( w.__tslpAnimationLoopCalls | 0 ) >= settleFrames;
+					const ownerReadiness = w.__tslpAnimationLoopOwnerReadiness;
+					const animationLoopReady = minimumAnimationLoopOwners > 1
+						&& ownerReadiness && typeof ownerReadiness.ready === 'function'
+						? ownerReadiness.ready( minimumAnimationLoopOwners, settleFrames )
+						: ! animationLoopRegistered || ( w.__tslpAnimationLoopCalls | 0 ) >= settleFrames;
 					const settleTarget = animationLoopRegistered ? 1 : settleFrames;
 					const quiescent = ( ( lastBusy === 0 ) || ( realNow && ( realNow - lastBusy ) >= quiescentMs ) )
 						&& ( ( renderableLastBusy === 0 ) || ( realNow && ( realNow - renderableLastBusy ) >= quiescentMs ) );
@@ -15629,7 +15690,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 
 			};
 
-		}, { step: FRAME_STEP_MS, base: 0, freezeAt: TARGET_TICK, quiescentMs: LOADER_QUIESCENT_MS, settleFrames: effectiveSettleFrames, waitForRenderableObjects, minRenderableObjects, holdAnimationUntilReady, deterministicTimeoutPolicy, exampleName: name, mode } );
+		}, { step: FRAME_STEP_MS, base: 0, freezeAt: TARGET_TICK, quiescentMs: LOADER_QUIESCENT_MS, settleFrames: effectiveSettleFrames, minimumAnimationLoopOwners, waitForRenderableObjects, minRenderableObjects, holdAnimationUntilReady, deterministicTimeoutPolicy, exampleName: name, mode } );
 		mark( 'initScriptMs', stepStartedAt );
 
 	} catch ( _ ) { /* older Playwright fallback */ }

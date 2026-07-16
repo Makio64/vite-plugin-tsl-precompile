@@ -529,7 +529,7 @@ test( 'stock, capture, and replay share logical-frame temporal jitter progressio
 
 test( 'positive target clocks advance only with completed author callbacks', () => {
 
-	const wrapStart = source.indexOf( 'w.__tslpWrapAnimationLoop = function ( callback ) {' );
+	const wrapStart = source.indexOf( 'w.__tslpWrapAnimationLoop = function ( callback, owner = null ) {' );
 	const wrapEnd = source.indexOf( '// Pending counters for async loaders', wrapStart );
 	assert.ok( wrapStart >= 0 && wrapEnd > wrapStart, 'expected the animation-loop wrapper' );
 	const wrapper = source.slice( wrapStart, wrapEnd );
@@ -544,5 +544,30 @@ test( 'positive target clocks advance only with completed author callbacks', () 
 	const raf = source.slice( rafStart, rafEnd );
 	assert.match( raf, /const targetProgress = hasAnimationLoop \? \( w\.__tslpFrameCallbackCount \| 0 \) : \( w\.__tslpRafTick \| 0 \);/ );
 	assert.match( raf, /if \( ! hasAnimationLoop \) w\.__tslpRafTick = tick;/ );
+
+} );
+
+test( 'multiple renderer loops settle through independent owner claims', () => {
+
+	assert.equal(
+		( source.match( /wrap \? wrap\( callback, this \) : callback/g ) || [] ).length,
+		3,
+		'stock, capture, and replay renderers pass their owner to the shared wrapper',
+	);
+	const wrapStart = source.indexOf( 'w.__tslpWrapAnimationLoop = function ( callback, owner = null ) {' );
+	const wrapEnd = source.indexOf( '// Pending counters for async loaders', wrapStart );
+	const wrapper = source.slice( wrapStart, wrapEnd );
+	assert.match( wrapper, /ownerReadiness\.register\( owner, callback \)/ );
+	assert.match( wrapper, /ownerState\.animationLoopCalls = transition\.animationLoopCalls/ );
+	assert.match( wrapper, /ownerState\.successfulCallbacks = \( ownerState\.successfulCallbacks \| 0 \) \+ 1/ );
+	assert.ok(
+		wrapper.indexOf( 'callback.apply( this, args )' ) < wrapper.indexOf( 'ownerState.successfulCallbacks = ( ownerState.successfulCallbacks | 0 ) + 1' ),
+		'only successful author callbacks satisfy an owner readiness claim',
+	);
+
+	const rafStart = source.indexOf( 'w.requestAnimationFrame = function ( cb ) {' );
+	const rafEnd = source.indexOf( '// Also patch Date.now()', rafStart );
+	const raf = source.slice( rafStart, rafEnd );
+	assert.match( raf, /ownerReadiness\.ready\( minimumAnimationLoopOwners, settleFrames \)/ );
 
 } );

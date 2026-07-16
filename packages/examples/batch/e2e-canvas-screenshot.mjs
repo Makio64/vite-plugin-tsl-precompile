@@ -62,3 +62,23 @@ export function restoreCanvasAfterScreenshot( target ) {
 	return hidden.length;
 
 }
+
+/**
+ * Return stable canvas indices for examples whose async renderer initialization
+ * makes DOM append order nondeterministic. Candidate positions come from
+ * Playwright bounding boxes, so the authored layout remains the identity.
+ */
+export function canvasIndicesByHorizontalPosition( candidates, { rightFirst = false } = {} ) {
+
+	return [ ...( candidates || [] ) ]
+		.sort( ( left, right ) => {
+
+			const leftX = Number.isFinite( left && left.left ) ? left.left : 0;
+			const rightX = Number.isFinite( right && right.left ) ? right.left : 0;
+			const positionOrder = rightFirst ? rightX - leftX : leftX - rightX;
+			return positionOrder || ( left && left.index || 0 ) - ( right && right.index || 0 );
+
+		} )
+		.map( ( candidate ) => candidate.index );
+
+}

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 
-import { deterministicTimeoutPolicyForExample, holdAnimationUntilReadyForExample, installAnimationLoopSettleTransition, installAudioAnalyserReadiness, minimumRenderableObjectsForExample, settleFramesForExample, targetTickForExample } from '../e2e-settle-policy.mjs';
+import { deterministicTimeoutPolicyForExample, holdAnimationUntilReadyForExample, installAnimationLoopOwnerReadiness, installAnimationLoopSettleTransition, installAudioAnalyserReadiness, minimumAnimationLoopOwnersForExample, minimumRenderableObjectsForExample, settleFramesForExample, targetTickForExample } from '../e2e-settle-policy.mjs';
 import { minimumBrightFractionForExample, pixelGateDisabledReasonForExample } from '../psnr.mjs';
 
 function transitionForTest() {
@@ -19,6 +19,60 @@ test( 'the Playwright init-script installer is self-contained', () => {
 		animationLoopCalls: 1,
 		runCallback: true,
 	} );
+
+} );
+
+test( 'multi-renderer readiness requires successful callbacks from every owner', () => {
+
+	const target = {};
+	const readiness = installAnimationLoopOwnerReadiness( target );
+	const ownerA = {};
+	const ownerB = {};
+	const callback = () => {};
+	const stateA = readiness.register( ownerA, callback );
+	stateA.animationLoopCalls = 2;
+	stateA.successfulCallbacks = 2;
+	readiness.sync();
+
+	assert.equal( readiness.ready( 2, 1 ), false, 'one renderer cannot consume both readiness claims' );
+	const stateB = readiness.register( ownerB, callback );
+	assert.equal( readiness.ready( 2, 1 ), false, 'registration alone is not a presented frame' );
+	stateB.animationLoopCalls = 1;
+	readiness.sync();
+	assert.equal( readiness.ready( 2, 1 ), false, 'an allowed callback does not count before it returns successfully' );
+	stateB.successfulCallbacks = 1;
+	readiness.sync();
+	assert.equal( readiness.ready( 2, 1 ), true );
+	assert.equal( target.__tslpAnimationLoopCalls, 1, 'legacy diagnostics expose the least-settled owner' );
+	assert.deepEqual( readiness.snapshot(), [
+		{ animationLoopCalls: 2, successfulCallbacks: 2 },
+		{ animationLoopCalls: 1, successfulCallbacks: 1 },
+	] );
+
+	readiness.register( ownerB, null );
+	assert.equal( readiness.ready( 2, 1 ), false );
+	assert.equal( target.__tslpAnimationLoopRegistered, true );
+
+} );
+
+test( 'the animation-loop owner installer is self-contained for browser evaluation', () => {
+
+	const result = runInNewContext( `
+		const target = {};
+		const api = ( ${ installAnimationLoopOwnerReadiness.toString() } )( target );
+		const state = api.register( {}, () => {} );
+		state.successfulCallbacks = 1;
+		api.sync();
+		[ api.ready( 1, 1 ), target.__tslpAnimationLoopRegistered, target.__tslpAnimationLoopCalls ];
+	` );
+	assert.deepEqual( [ ...result ], [ true, true, 0 ] );
+
+} );
+
+test( 'bitonic sort requires both renderer animation-loop owners', () => {
+
+	assert.equal( minimumAnimationLoopOwnersForExample( 'webgpu_compute_sort_bitonic.html' ), 2 );
+	assert.equal( minimumAnimationLoopOwnersForExample( 'webgpu_materials.html' ), 1 );
 
 } );
 
