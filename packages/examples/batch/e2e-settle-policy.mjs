@@ -92,6 +92,9 @@ export function minimumRenderableObjectsForExample( name ) {
 export function holdAnimationUntilReadyForExample( name ) {
 
 	if (
+		// Backdrop water advances auto-rotating OrbitControls once per callback,
+		// without a delta. Pause it while loaders/compilers differ between modes.
+		name === 'webgpu_backdrop_water.html' ||
 		name === 'webgpu_postprocessing_traa.html' ||
 		name === 'webgpu_postprocessing_lensflare.html' ||
 		name === 'webgpu_postprocessing_smaa.html' ||
