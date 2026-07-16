@@ -252,6 +252,20 @@ function resolveUniqueSlimCarrierAttribute( root, entry ) {
 
 }
 
+function bindExactMaterialAttributePath( sourceMaterial, path, entry ) {
+
+	let live = resolveExactMaterialAttributePath( sourceMaterial, path, entry );
+	let source = 'userPath-exact';
+	if ( ! live ) {
+
+		live = resolveUniqueSlimCarrierAttribute( sourceMaterial && sourceMaterial[ path[ 0 ] ], entry );
+		source = 'userPath-slim-unique';
+
+	}
+	if ( live ) setLiveAttributeBinding( entry, live, source );
+
+}
+
 /**
  * Walk every `attributes[]` / `nodeAttributes[]` entry in the artifact and
  * seed `entry._liveAttribute` from the user material's TSL node graph.
@@ -342,22 +356,7 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial, sour
 			if ( entry.storage === false ) {
 
 				const instancedObjectAttribute = findInstancedObjectAttributeMatchingEntry( sourceObject, entry, entries );
-				if ( instancedObjectAttribute ) {
-
-					Object.defineProperty( entry, '_liveAttribute', {
-						value: instancedObjectAttribute,
-						enumerable: false,
-						configurable: true,
-						writable: true,
-					} );
-					Object.defineProperty( entry, '_liveAttributeSource', {
-						value: 'instancedObject',
-						enumerable: false,
-						configurable: true,
-						writable: true,
-					} );
-
-				}
+				if ( instancedObjectAttribute ) setLiveAttributeBinding( entry, instancedObjectAttribute, 'instancedObject' );
 
 			} else {
 
@@ -368,12 +367,7 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial, sour
 				const matchingStorage = findNthStorageMatchingShape( anonStorageCandidates, entry, slotIdx );
 				if ( matchingStorage ) {
 
-					Object.defineProperty( entry, '_liveAttribute', {
-						value: matchingStorage,
-						enumerable: false,
-						configurable: true,
-						writable: true,
-					} );
+					setLiveAttributeBinding( entry, matchingStorage );
 					// Force bind-group rebuild: slim's `Bindings._update` only
 					// rebuilds when `binding.version !== attribute.version`. The
 					// compute kernel doesn't bump `version` on its own — bump
@@ -388,22 +382,7 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial, sour
 			if ( ! entry._liveAttribute ) {
 
 				const instancedObjectAttribute = findInstancedObjectAttributeMatchingEntry( sourceObject, entry, entries );
-				if ( instancedObjectAttribute ) {
-
-					Object.defineProperty( entry, '_liveAttribute', {
-						value: instancedObjectAttribute,
-						enumerable: false,
-						configurable: true,
-						writable: true,
-					} );
-					Object.defineProperty( entry, '_liveAttributeSource', {
-						value: 'instancedObject',
-						enumerable: false,
-						configurable: true,
-						writable: true,
-					} );
-
-				}
+				if ( instancedObjectAttribute ) setLiveAttributeBinding( entry, instancedObjectAttribute, 'instancedObject' );
 
 			}
 			continue;
@@ -411,22 +390,14 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial, sour
 		}
 
 		let live = null;
-		let liveSource = null;
 		const path = entry.userPath;
 		const exactPath = Array.isArray( path ) && path.length > 1;
 		if ( Array.isArray( path ) && path.length > 0 ) {
 
 			if ( exactPath ) {
 
-				live = resolveExactMaterialAttributePath( sourceMaterial, path, entry );
-				if ( live ) liveSource = 'userPath-exact';
-				else {
-
-					const root = sourceMaterial && sourceMaterial[ path[ 0 ] ];
-					live = resolveUniqueSlimCarrierAttribute( root, entry );
-					if ( live ) liveSource = 'userPath-slim-unique';
-
-				}
+				bindExactMaterialAttributePath( sourceMaterial, path, entry );
+				continue;
 
 			} else {
 
@@ -438,7 +409,7 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial, sour
 
 		}
 
-		if ( ! live && ! exactPath ) {
+		if ( ! live ) {
 
 			for ( const root of collectNodeRoots() ) {
 
@@ -449,27 +420,15 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial, sour
 
 		}
 
-		if ( ! live && ! exactPath ) live = findInstancedObjectAttributeMatchingEntry( sourceObject, entry, entries );
+		if ( ! live ) live = findInstancedObjectAttributeMatchingEntry( sourceObject, entry, entries );
 		if ( ! live ) continue;
-
-		Object.defineProperty( entry, '_liveAttribute', {
-			value: live,
-			enumerable: false,
-			configurable: true,
-			writable: true,
-		} );
-		if ( exactPath ) Object.defineProperty( entry, '_liveAttributeSource', {
-			value: liveSource,
-			enumerable: false,
-			configurable: true,
-			writable: true,
-		} );
+		setLiveAttributeBinding( entry, live );
 
 	}
 
 }
 
-function setLiveAttributeBinding( entry, attribute, source = null ) {
+function setLiveAttributeBinding( entry, attribute, source = undefined ) {
 
 	if ( Object.prototype.hasOwnProperty.call( entry, '_liveAttribute' ) ) entry._liveAttribute = attribute;
 	else Object.defineProperty( entry, '_liveAttribute', {
@@ -478,13 +437,17 @@ function setLiveAttributeBinding( entry, attribute, source = null ) {
 		configurable: true,
 		writable: true,
 	} );
-	if ( Object.prototype.hasOwnProperty.call( entry, '_liveAttributeSource' ) ) entry._liveAttributeSource = source;
-	else Object.defineProperty( entry, '_liveAttributeSource', {
-		value: source,
-		enumerable: false,
-		configurable: true,
-		writable: true,
-	} );
+	if ( source !== undefined ) {
+
+		if ( Object.prototype.hasOwnProperty.call( entry, '_liveAttributeSource' ) ) entry._liveAttributeSource = source;
+		else Object.defineProperty( entry, '_liveAttributeSource', {
+			value: source,
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		} );
+
+	}
 
 }
 
@@ -848,22 +811,14 @@ export function bindUserStorageBuffersToArtifact( artifact, sourceMaterial ) {
 				&& ! ( Array.isArray( entry.userPath ) && entry.userPath.length > 0 ) ) continue;
 
 			let live = null;
-			let liveSource = null;
 			const path = entry.userPath;
 			const exactPath = Array.isArray( path ) && path.length > 1;
 			if ( Array.isArray( path ) && path.length > 0 ) {
 
 				if ( exactPath ) {
 
-					live = resolveExactMaterialAttributePath( sourceMaterial, path, entry );
-					if ( live ) liveSource = 'userPath-exact';
-					else {
-
-						const root = sourceMaterial[ path[ 0 ] ];
-						live = resolveUniqueSlimCarrierAttribute( root, entry );
-						if ( live ) liveSource = 'userPath-slim-unique';
-
-					}
+					bindExactMaterialAttributePath( sourceMaterial, path, entry );
+					continue;
 
 				} else {
 
@@ -874,7 +829,7 @@ export function bindUserStorageBuffersToArtifact( artifact, sourceMaterial ) {
 
 			}
 
-			if ( ! live && ! exactPath ) {
+			if ( ! live ) {
 
 				for ( const root of collectNodeRoots() ) {
 
@@ -886,19 +841,7 @@ export function bindUserStorageBuffersToArtifact( artifact, sourceMaterial ) {
 			}
 
 			if ( ! live ) continue;
-
-			Object.defineProperty( entry, '_liveAttribute', {
-				value: live,
-				enumerable: false,
-				configurable: true,
-				writable: true,
-			} );
-			if ( exactPath ) Object.defineProperty( entry, '_liveAttributeSource', {
-				value: liveSource,
-				enumerable: false,
-				configurable: true,
-				writable: true,
-			} );
+			setLiveAttributeBinding( entry, live );
 
 		}
 
