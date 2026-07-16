@@ -40,6 +40,35 @@ export function coalesceUserArtifactVariantFamilies( userArtifacts = {} ) {
 
 			if ( item === root ) continue;
 			const itemSelectors = selectorsForArtifact( item.artifact );
+			// Dynamic cube capture deliberately uses a temporary sibling name so
+			// its real face burst cannot consume the ordinary output capture. The
+			// observer can still include the following main draw in that sibling,
+			// which overlaps the authoritative ordinary root. Merge only the
+			// sibling's disjoint cube candidates, then discard the internal entry.
+			if ( item.name.endsWith( ':cube-prearm' ) ) {
+
+				const disjointCandidates = collectArtifactVariantCandidates( item.artifact ).filter( ( candidate ) => {
+
+					const selectors = selectorsForCandidate( candidate );
+					return selectors.size > 0 && ! setsOverlap( familySelectors, selectors );
+
+				} );
+				if ( disjointCandidates.length > 0 ) {
+
+					mergeArtifactVariantFamily( root.artifact, [ root.artifact, ...disjointCandidates ] );
+					for ( const candidate of disjointCandidates ) {
+
+						for ( const selector of selectorsForCandidate( candidate ) ) familySelectors.add( selector );
+
+					}
+					mergedThisFamily = true;
+
+				}
+				delete userArtifacts[ item.name ];
+				removedEntries ++;
+				continue;
+
+			}
 			// Deferred capture can emit a later partial root after the selected root
 			// already owns the same signed payloads. Leaving that duplicate available
 			// lets counter-based replay choose the incomplete family and then fail on

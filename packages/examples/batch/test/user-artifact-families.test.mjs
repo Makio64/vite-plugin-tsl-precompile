@@ -138,6 +138,52 @@ test( 'removes a signed partial root already represented by the complete family'
 
 } );
 
+test( 'folds only disjoint cube pre-arm candidates into the ordinary material root', () => {
+
+	const rootName = 'example.html:MeshStandardNodeMaterial:2';
+	const output = artifact( {
+		cacheKey: 2,
+		materialUuid: 'shared-material',
+		selector: 'selector:output',
+		sourceName: rootName,
+	} );
+	const overlappingOutput = artifact( {
+		cacheKey: 20,
+		materialUuid: 'shared-material',
+		selector: 'selector:output',
+		sourceName: rootName,
+	} );
+	overlappingOutput.fragmentShader = 'prearm-output-that-must-not-win';
+	const cube = artifact( {
+		cacheKey: 21,
+		materialUuid: 'shared-material',
+		selector: 'selector:cube-face-family',
+		sourceName: rootName,
+	} );
+	const cubePrearm = {
+		...overlappingOutput,
+		variants: {
+			'20': overlappingOutput,
+			'21': cube,
+		},
+	};
+	const user = {
+		[ `${ rootName }:cube-prearm` ]: entry( cubePrearm, 'prearm-hash' ),
+		[ rootName ]: entry( output, 'output-hash' ),
+	};
+
+	const result = coalesceUserArtifactVariantFamilies( user );
+
+	assert.deepEqual( result, { mergedFamilies: 1, removedEntries: 1 } );
+	assert.deepEqual( Object.keys( user ), [ rootName ] );
+	assert.equal( user[ rootName ].__hash, undefined );
+	const candidates = [ user[ rootName ].artifact, ...Object.values( user[ rootName ].artifact.variants || {} ) ];
+	assert.ok( candidates.some( ( candidate ) => candidate.renderContextSelectors.includes( 'selector:output' ) ) );
+	assert.ok( candidates.some( ( candidate ) => candidate.renderContextSelectors.includes( 'selector:cube-face-family' ) ) );
+	assert.equal( candidates.some( ( candidate ) => candidate.fragmentShader === 'prearm-output-that-must-not-win' ), false );
+
+} );
+
 function entry( artifactValue, hash = undefined ) {
 
 	return {
