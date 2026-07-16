@@ -51,6 +51,33 @@ to resolve a dead capture texture. Keep the reference proof, identity remap,
 live-reference schedule, and MaterialX multi-glass regression together when
 upgrading Three's viewport-node lifecycle.
 
+Three r184's `RangeNode.setup()` creates large-range outputs as a
+`Float32Array(count * 4)` using one `Math.random()` call per physical lane and,
+above the uniform-buffer limit, installs the exact `InstancedBufferAttribute`
+at `builder.geometry.getAttribute('__range' + node.id)`. Development setup
+replaces only that version-checked physical branch with the equivalent public
+`InstancedBufferAttribute`/`TSL.instancedBufferAttribute` construction fed by
+the local `range@1` generator. It never reads or replaces `Math.random`, then
+verifies the installed array byte-for-byte before `compileTSL.js` accepts its
+private recipe sidecar. Scalar and uniform-buffer paths keep the stock setup
+and random call count; unsupported revisions/exports retain the stock snapshot
+path. Extraction reverifies the current array in case it changed after setup.
+If the key, storage type, interpolation formula, public factory, limit rule, or
+setup timing changes, disable the replacement until this adapter is updated.
+Keep the real r184 RangeNode integration and Math.random-isolation tests with
+this assumption when upgrading Three.
+
+Three r184's `InstanceNode._createInstanceMatrixNode()` exposes the live
+`InstancedMesh.instanceMatrix.array` through one stride-16
+`InstancedInterleavedBuffer` and four vec4 `InterleavedBufferAttribute` views
+at offsets 0/4/8/12 with `meshPerAttribute === 1`. The extractor records the
+`instance-matrix@1` reference only when the live Float32 array identity, stride,
+step rate, item size, count, instancing flag, and offset all match. Replay uses
+four interleaved views over the active array and delegates their buffer version
+to `instanceMatrix.version`, so later `needsUpdate` changes remain live without
+copies. Never replace that proof with identity-value or attribute-name
+inference; unrelated application buffers can have the same values and shape.
+
 `RenderObjects.get()` returns before Renderer assigns the current geometry
 group to `renderObject.group`, and shadow rendering has already replaced the
 caster material by then. The adapter therefore also owns one Symbol-shared

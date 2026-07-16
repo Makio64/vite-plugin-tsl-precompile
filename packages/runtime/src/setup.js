@@ -30,6 +30,7 @@ import { observeDevRendererRenders } from './dev-render-observers.js';
 import { hashPlainConfigSync } from './graph-hash.js';
 import { createRendererOutputConfig } from '@tsl-precompile/contract/output-config';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
+import { installRangeAttributeCapture } from './range-attribute-capture.js';
 
 const DEFAULT_DEV_ENDPOINT = '/__tsl-precompile/capture';
 const INIT_WRAPPED_FLAG = '__tslpSetupInitWrapped';
@@ -386,6 +387,13 @@ export function setupPrecompile( opts = {} ) {
 		throw new Error( 'setupPrecompile: aux capture needs { scene, camera }.' );
 
 	}
+
+	// RangeNode creates anonymous random Float32 attributes during the first
+	// builder pass. Replace only r184's version-checked physical-attribute branch
+	// with a local reproducible stream before renderer initialization, so capture
+	// can persist a tiny exact recipe without reading or replacing Math.random.
+	// Unsupported/changed Three shapes keep the ordinary snapshot path.
+	installRangeAttributeCapture( three );
 
 	// Install the marker synchronously — it only adds `Material.prototype.precompile`
 	// and is harmless before `renderer.init()`. The function is itself

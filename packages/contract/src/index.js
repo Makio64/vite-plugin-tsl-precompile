@@ -5,6 +5,7 @@ export * from './dynamic-bindings.js';
 export * from './fragment-outputs.js';
 export * from './artifact-shape.js';
 export * from './artifact-content.js';
+export * from './attribute-generators.js';
 export * from './artifact-variants.js';
 export * from './light-identities.js';
 export * from './versions.js';

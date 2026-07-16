@@ -130,7 +130,7 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 	// (e.g. `material.positionNode = instancedBufferAttribute(buf)`) onto
 	// remaining artifact node-attribute entries before hydration walks them.
 	// Explicit userPath entries are outside auto-compute eligibility.
-	bindUserNodeAttributesToArtifact( effective, graphMaterial );
+	bindUserNodeAttributesToArtifact( effective, graphMaterial, object );
 	applyCapturedInstancedDrawCount( effective, object || material && material.__tslpPrecompileObject || null );
 	// Same trick for compute-storage buffers wired through the user's
 	// `material.colorNode = colors.element( instanceIndex )` etc. — the

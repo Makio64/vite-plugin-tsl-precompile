@@ -13,11 +13,13 @@ const generationTests = new Set( [
 	'classify-material-shape.test.js',
 	'compile-tsl-framebuffer-warmup.test.js',
 	'compute-artifact.test.js',
+	'extract-attribute-payload.test.js',
 	'extract-uniform-plan.test.js',
 	'extractor-convergence.test.js',
 	'ltc-capture.test.js',
 	'live-render-harvest.test.js',
 	'live-uniform-node-path.test.js',
+	'range-attribute-integration.test.js',
 ] );
 
 const generationImportMarkers = [

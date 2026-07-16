@@ -2,6 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DataTexture } from 'three/src/textures/DataTexture.js';
 import { DepthTexture } from 'three/src/textures/DepthTexture.js';
+import { InstancedBufferAttribute } from 'three/src/core/InstancedBufferAttribute.js';
+import {
+	createInstanceMatrixAttributeReference,
+	createRangeAttributeGenerator,
+	generateRangeAttributeArray,
+} from '@tsl-precompile/contract/attribute-generators';
 
 import { registerArtifact, getArtifact } from '../src/artifact-loader.js';
 import { getDFGLUT } from '../src/dfg-lut.js';
@@ -293,6 +299,137 @@ test( 'runtime hydrator preserves anonymous instanced node attributes from snaps
 
 } );
 
+test( 'runtime hydrator regenerates deterministic RangeNode attributes without snapshots', () => {
+
+	const recipe = createRangeAttributeGenerator( 0x13579bdf, [ 0, - 1, 0, 2 ], [ 1, 1, 4, 6 ] );
+	const state = hydrateNodeBuilderState( {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		attributes: [ {
+			name: 'nodeAttribute0',
+			type: 'vec4',
+			source: 'node',
+			count: 3,
+			itemSize: 4,
+			arrayType: 'Float32Array',
+			instanced: true,
+			storage: false,
+			arrayGenerator: recipe,
+		} ],
+		bindings: [],
+		uniformPlan: [],
+	} );
+
+	const attribute = state.nodeAttributes[ 0 ].node.attribute;
+	assert.equal( attribute.isInstancedBufferAttribute, true );
+	assert.deepEqual( attribute.array, generateRangeAttributeArray( recipe, 3 ) );
+
+} );
+
+test( 'runtime hydrator caches a shared RangeNode recipe independently per count', () => {
+
+	const recipe = createRangeAttributeGenerator( 0x2468ace0, [ 0, 0, 0, 0 ], [ 1, 1, 1, 1 ] );
+	const artifact = ( count ) => ( {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		attributes: [ {
+			name: 'nodeAttribute0',
+			type: 'vec4',
+			source: 'node',
+			count,
+			itemSize: 4,
+			arrayType: 'Float32Array',
+			instanced: true,
+			storage: false,
+			arrayGenerator: recipe,
+		} ],
+		bindings: [],
+		uniformPlan: [],
+	} );
+
+	const short = hydrateNodeBuilderState( artifact( 2 ) ).nodeAttributes[ 0 ].node.attribute.array;
+	const long = hydrateNodeBuilderState( artifact( 3 ) ).nodeAttributes[ 0 ].node.attribute.array;
+	assert.deepEqual( short, generateRangeAttributeArray( recipe, 2 ) );
+	assert.deepEqual( long, generateRangeAttributeArray( recipe, 3 ) );
+	assert.equal( short.length, 8 );
+	assert.equal( long.length, 12 );
+
+} );
+
+test( 'runtime hydrator fills multiple RangeNode recipes directly into shared interleaved storage', () => {
+
+	const recipes = [
+		createRangeAttributeGenerator( 11, [ 0, 1, 2, 3 ], [ 1, 2, 3, 4 ] ),
+		createRangeAttributeGenerator( 22, [ - 4, - 3, - 2, - 1 ], [ 0, 0, 0, 0 ] ),
+	];
+	const attributes = recipes.map( ( recipe, index ) => ( {
+		name: `nodeAttribute${ index }`,
+		type: 'vec4',
+		source: 'node',
+		count: 3,
+		itemSize: 4,
+		arrayType: 'Float32Array',
+		instanced: true,
+		storage: false,
+		arrayGenerator: recipe,
+	} ) );
+	const state = hydrateNodeBuilderState( {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		attributes,
+		bindings: [],
+		uniformPlan: [],
+	} );
+	const live = state.nodeAttributes.map( ( entry ) => entry.node.attribute );
+	assert.equal( live[ 0 ].isInterleavedBufferAttribute, true );
+	assert.equal( live[ 0 ].data, live[ 1 ].data );
+	assert.equal( live[ 0 ].data.stride, 8 );
+	for ( let recipeIndex = 0; recipeIndex < recipes.length; recipeIndex ++ ) {
+
+		const expected = generateRangeAttributeArray( recipes[ recipeIndex ], 3 );
+		for ( let instance = 0; instance < 3; instance ++ ) for ( let component = 0; component < 4; component ++ ) {
+
+			assert.equal( live[ recipeIndex ].getComponent( instance, component ), expected[ instance * 4 + component ] );
+
+		}
+
+	}
+
+} );
+
+test( 'runtime hydrator rejects malformed RangeNode generators instead of zero-filling', () => {
+
+	const malformed = {
+		name: 'nodeAttribute0',
+		type: 'vec4',
+		source: 'node',
+		count: 3,
+		itemSize: 3,
+		arrayType: 'Uint16Array',
+		instanced: true,
+		storage: false,
+		arrayGenerator: { kind: 'range@1', seed: - 1, min: [ 0, 0, 0 ], max: [ 1, 1, 1 ] },
+	};
+	const artifact = {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		attributes: [ malformed ],
+		bindings: [],
+		uniformPlan: [],
+	};
+	assert.throws( () => hydrateNodeBuilderState( artifact ), /Invalid range@1/ );
+
+	const validRecipe = createRangeAttributeGenerator( 1, [ 0, 0, 0, 0 ], [ 1, 1, 1, 1 ] );
+	assert.throws( () => hydrateNodeBuilderState( {
+		...artifact,
+		attributes: [
+			{ ...malformed, itemSize: 4, arrayType: 'Float32Array', arrayGenerator: { ...validRecipe, extra: true } },
+			{ ...malformed, name: 'nodeAttribute1', itemSize: 4, arrayType: 'Float32Array', arrayGenerator: validRecipe },
+		],
+	} ), /Invalid range@1/ );
+
+} );
+
 test( 'runtime hydrator interleaves anonymous instanced snapshot fallbacks', () => {
 
 	const state = hydrateNodeBuilderState( {
@@ -455,11 +592,12 @@ test( 'runtime hydrator disambiguates duplicate userPath attributes by encounter
 	const state = hydrateNodeBuilderState( artifact, material, object );
 	const columns = state.nodeAttributes.map( ( entry ) => entry.node.attribute );
 
-	for ( const column of columns ) assert.equal( column.isInstancedBufferAttribute, true );
-	assert.deepEqual( Array.from( columns[ 0 ].array ), [ 1, 2, 3, 4, 17, 18, 19, 20 ] );
-	assert.deepEqual( Array.from( columns[ 1 ].array ), [ 5, 6, 7, 8, 21, 22, 23, 24 ] );
-	assert.deepEqual( Array.from( columns[ 2 ].array ), [ 9, 10, 11, 12, 25, 26, 27, 28 ] );
-	assert.deepEqual( Array.from( columns[ 3 ].array ), [ 13, 14, 15, 16, 29, 30, 31, 32 ] );
+	for ( const column of columns ) assert.equal( column.isInterleavedBufferAttribute, true );
+	assert.ok( columns.every( ( column ) => column.data === columns[ 0 ].data ) );
+	assert.deepEqual( [ columns[ 0 ].getX( 0 ), columns[ 0 ].getY( 0 ), columns[ 0 ].getZ( 0 ), columns[ 0 ].getW( 0 ) ], [ 1, 2, 3, 4 ] );
+	assert.deepEqual( [ columns[ 1 ].getX( 1 ), columns[ 1 ].getY( 1 ), columns[ 1 ].getZ( 1 ), columns[ 1 ].getW( 1 ) ], [ 21, 22, 23, 24 ] );
+	assert.deepEqual( [ columns[ 2 ].getX( 1 ), columns[ 2 ].getY( 1 ), columns[ 2 ].getZ( 1 ), columns[ 2 ].getW( 1 ) ], [ 25, 26, 27, 28 ] );
+	assert.deepEqual( [ columns[ 3 ].getX( 1 ), columns[ 3 ].getY( 1 ), columns[ 3 ].getZ( 1 ), columns[ 3 ].getW( 1 ) ], [ 29, 30, 31, 32 ] );
 
 } );
 
@@ -499,11 +637,61 @@ test( 'runtime hydrator still binds instanceMatrix columns beside storage vec4 a
 	const state = hydrateNodeBuilderState( artifact, material, object );
 	const columns = state.nodeAttributes.slice( 1, 5 ).map( ( entry ) => entry.node.attribute );
 
-	for ( const column of columns ) assert.equal( column.isInstancedBufferAttribute, true );
-	assert.deepEqual( Array.from( columns[ 0 ].array ), [ 1, 2, 3, 4, 17, 18, 19, 20 ] );
-	assert.deepEqual( Array.from( columns[ 1 ].array ), [ 5, 6, 7, 8, 21, 22, 23, 24 ] );
-	assert.deepEqual( Array.from( columns[ 2 ].array ), [ 9, 10, 11, 12, 25, 26, 27, 28 ] );
-	assert.deepEqual( Array.from( columns[ 3 ].array ), [ 13, 14, 15, 16, 29, 30, 31, 32 ] );
+	for ( const column of columns ) assert.equal( column.isInterleavedBufferAttribute, true );
+	assert.ok( columns.every( ( column ) => column.data === columns[ 0 ].data ) );
+	assert.deepEqual( [ columns[ 0 ].getX( 0 ), columns[ 0 ].getY( 0 ), columns[ 0 ].getZ( 0 ), columns[ 0 ].getW( 0 ) ], [ 1, 2, 3, 4 ] );
+	assert.deepEqual( [ columns[ 3 ].getX( 1 ), columns[ 3 ].getY( 1 ), columns[ 3 ].getZ( 1 ), columns[ 3 ].getW( 1 ) ], [ 29, 30, 31, 32 ] );
+
+} );
+
+test( 'runtime hydrator binds explicit instanceMatrix provenance without snapshots', () => {
+
+	const matrix = new Float32Array( Array.from( { length: 32 }, ( _, i ) => i + 1 ) );
+	const object = {
+		isInstancedMesh: true,
+		// Draw count can legitimately be lower than the matrix buffer capacity;
+		// explicit provenance resolves against the buffer's count.
+		count: 1,
+		instanceMatrix: new InstancedBufferAttribute( matrix, 16 ),
+	};
+	const sameShapeMaterialAttribute = {
+		isBufferAttribute: true,
+		itemSize: 4,
+		count: 2,
+		array: new Float32Array( 8 ).fill( 99 ),
+	};
+	const material = { positionNode: { isNode: true, attribute: sameShapeMaterialAttribute } };
+	const artifact = {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		attributes: [ 0, 1, 2, 3 ].map( ( column ) => ( {
+			name: `nodeAttribute${ column }`,
+			type: 'vec4',
+			source: 'node',
+			count: 2,
+			itemSize: 4,
+			arrayType: 'Float32Array',
+			instanced: true,
+			storage: false,
+			objectAttribute: createInstanceMatrixAttributeReference( column ),
+		} ) ),
+		bindings: [],
+		uniformPlan: [],
+	};
+
+	const state = hydrateNodeBuilderState( artifact, material, object );
+	const columns = state.nodeAttributes.map( ( entry ) => entry.node.attribute );
+	assert.ok( columns.every( ( column ) => column !== sameShapeMaterialAttribute ) );
+	assert.ok( columns.every( ( column ) => column.isInterleavedBufferAttribute === true ) );
+	assert.ok( columns.every( ( column ) => column.data === columns[ 0 ].data ) );
+	assert.equal( columns[ 0 ].array, matrix );
+	assert.deepEqual( [ columns[ 0 ].getX( 0 ), columns[ 0 ].getY( 0 ), columns[ 0 ].getZ( 0 ), columns[ 0 ].getW( 0 ) ], [ 1, 2, 3, 4 ] );
+	assert.deepEqual( [ columns[ 3 ].getX( 1 ), columns[ 3 ].getY( 1 ), columns[ 3 ].getZ( 1 ), columns[ 3 ].getW( 1 ) ], [ 29, 30, 31, 32 ] );
+	matrix[ 0 ] = 42;
+	object.instanceMatrix.needsUpdate = true;
+	assert.equal( columns[ 0 ].getX( 0 ), 42 );
+	assert.equal( columns[ 0 ].data.version, object.instanceMatrix.version );
+	assert.equal( object.count, 1 );
 
 } );
 

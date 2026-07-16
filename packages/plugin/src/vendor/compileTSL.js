@@ -34,6 +34,12 @@ import { mergeArtifactVariantFamily } from '@tsl-precompile/contract/artifact-va
 import { normalizeArtifactLightIdentities } from '@tsl-precompile/contract/light-identities';
 import { createRendererOutputConfig } from '@tsl-precompile/contract/output-config';
 import {
+	RANGE_ATTRIBUTE_GENERATOR_SIDECAR,
+	createInstanceMatrixAttributeReference,
+	generateRangeAttributeArray,
+	isRangeAttributeGenerator,
+} from '@tsl-precompile/contract/attribute-generators';
+import {
 	hasUnresolvedMaterialComputeTexture,
 	MATERIAL_COMPUTE_ACCESS_MODES,
 	MATERIAL_COMPUTE_LIFECYCLE_PHASES,
@@ -521,8 +527,30 @@ export function extractArtifact( cacheKey, state, material = null, object = null
 				// reference is lost. The path lets the apply-side rewalk
 				// the user's freshly-constructed node tree and rebind the
 				// live BufferAttribute the user code created.
+				const objectAttribute = exactObjectAttributeProvenance( object, liveAttribute );
+				const arrayGenerator = verifiedRangeAttributeGenerator(
+					liveAttribute,
+					liveAttribute[ RANGE_ATTRIBUTE_GENERATOR_SIDECAR ],
+				);
 				const userPath = findOwnerQualifiedAttributePath( material, liveAttribute, extractionContext );
-				if ( userPath ) {
+				if ( objectAttribute ) {
+
+					entry.objectAttribute = objectAttribute;
+
+				} else if ( isRangeAttributeGenerator( arrayGenerator ) ) {
+
+					// Copy the verified process-local sidecar into the public artifact
+					// vocabulary. The capture wrapper already compared every generated
+					// Float32 with Three's live attribute, so this never guesses a
+					// recipe from values or shader text.
+					entry.arrayGenerator = {
+						kind: arrayGenerator.kind,
+						seed: arrayGenerator.seed,
+						min: arrayGenerator.min.slice(),
+						max: arrayGenerator.max.slice(),
+					};
+
+				} else if ( userPath ) {
 
 					entry.userPath = userPath;
 
@@ -647,6 +675,55 @@ function isInstancedAttribute( attribute ) {
 		|| attribute.isStorageInstancedBufferAttribute === true
 		|| attribute.data && attribute.data.isInstancedInterleavedBuffer === true
 	);
+
+}
+
+/**
+ * Prove that a physical vec4 attribute is one column of the active
+ * InstancedMesh.instanceMatrix. Three r184's InstanceNode creates four
+ * InterleavedBufferAttribute views over the exact instanceMatrix array. Keep
+ * every identity/stride/offset check here: value-pattern inference would
+ * misclassify unrelated identity-shaped application buffers.
+ */
+function exactObjectAttributeProvenance( object, attribute ) {
+
+	const matrix = object && object.isInstancedMesh === true && object.instanceMatrix;
+	const data = attribute && attribute.data;
+	if ( ! matrix || ! ( matrix.array instanceof Float32Array ) || ! attribute || attribute.isInterleavedBufferAttribute !== true ) return null;
+	if ( ! data || data.array !== matrix.array || data.stride !== 16 ) return null;
+	if ( data.isInstancedInterleavedBuffer !== true || data.meshPerAttribute !== 1 || attribute.itemSize !== 4 ) return null;
+	if ( attribute.count !== matrix.count || ! isInstancedAttribute( attribute ) ) return null;
+	const offset = attribute.offset;
+	if ( offset !== 0 && offset !== 4 && offset !== 8 && offset !== 12 ) return null;
+	return createInstanceMatrixAttributeReference( offset / 4 );
+
+}
+
+function verifiedRangeAttributeGenerator( attribute, recipe ) {
+
+	if ( ! isRangeAttributeGenerator( recipe )
+		|| ! attribute
+		|| attribute.itemSize !== 4
+		|| ! Number.isSafeInteger( attribute.count )
+		|| attribute.count <= 0
+		|| ! ( attribute.array instanceof Float32Array ) ) return null;
+	let expected;
+	try {
+
+		expected = generateRangeAttributeArray( recipe, attribute.count );
+
+	} catch ( _ ) {
+
+		return null;
+
+	}
+	if ( expected.length !== attribute.array.length ) return null;
+	for ( let index = 0; index < expected.length; index ++ ) {
+
+		if ( ! Object.is( expected[ index ], attribute.array[ index ] ) ) return null;
+
+	}
+	return recipe;
 
 }
 

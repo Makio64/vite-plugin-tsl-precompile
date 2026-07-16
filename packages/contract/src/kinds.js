@@ -5,6 +5,10 @@ import { validateArtifactLightIdentities } from './light-identities.js';
 import { validateMaterialComputeDescriptor } from './material-compute.js';
 import { RENDER_BINDING_OWNER_KINDS, isRenderBindingOwnerKind } from './render-selector.js';
 import { stableJsonStringify } from './stable-json.js';
+import {
+	isInstanceMatrixAttributeDescriptor,
+	isRangeAttributeDescriptor,
+} from './attribute-generators.js';
 
 export const KIND_STATUS = Object.freeze( {
 	CODEGEN: 'codegen',
@@ -439,6 +443,40 @@ function validationError( code, message, path = '' ) {
 
 }
 
+function validateArtifactAttributes( artifact, label, errors ) {
+
+	for ( const listName of [ 'attributes', 'nodeAttributes' ] ) {
+
+		const attributes = artifact[ listName ];
+		if ( attributes === undefined ) continue;
+		if ( ! Array.isArray( attributes ) ) {
+
+			errors.push( validationError( `artifact.${ listName }`, `${ label}: ${ listName } must be an array when present`, listName ) );
+			continue;
+
+		}
+		for ( let index = 0; index < attributes.length; index ++ ) {
+
+			const entry = attributes[ index ];
+			if ( ! entry || typeof entry !== 'object' || Array.isArray( entry ) ) continue;
+			const path = `${ listName }[${ index }]`;
+			if ( entry.arrayGenerator !== undefined && ! isRangeAttributeDescriptor( entry ) ) errors.push( validationError(
+				'attribute.arrayGenerator',
+				`${ label}: ${ path } has an invalid or non-exclusive range@1 descriptor`,
+				`${ path }.arrayGenerator`,
+			) );
+			if ( entry.objectAttribute !== undefined && ! isInstanceMatrixAttributeDescriptor( entry ) ) errors.push( validationError(
+				'attribute.objectAttribute',
+				`${ label}: ${ path } has an invalid or non-exclusive instance-matrix@1 descriptor`,
+				`${ path }.objectAttribute`,
+			) );
+
+		}
+
+	}
+
+}
+
 function validateRuntimeBindings( artifact, label, errors ) {
 
 	if ( artifact.bindings === undefined ) return;
@@ -796,6 +834,7 @@ export function validateArtifact( input, opts = {} ) {
 		}
 
 	}
+	validateArtifactAttributes( artifact, label, errors );
 	validateRuntimeBindings( artifact, label, errors );
 	if ( artifact.materialCompute !== undefined ) {
 

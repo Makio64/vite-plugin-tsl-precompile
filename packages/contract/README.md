@@ -5,7 +5,9 @@ Internal shared contract between
 and [`@tsl-precompile/runtime`](https://www.npmjs.com/package/@tsl-precompile/runtime).
 
 Holds the cross-package vocabulary: source-kind registry, texture-property
-lists, graph normalization, artifact validator. Not a standalone API; you do
+lists, deterministic attribute recipes, exact object-attribute references,
+graph normalization, and artifact
+validation. Not a standalone API; you do
 not need to install this package directly — both consumer packages already
 depend on it.
 

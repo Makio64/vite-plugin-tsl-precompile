@@ -36,8 +36,16 @@ import { InstancedInterleavedBuffer } from 'three/src/core/InstancedInterleavedB
 import { InterleavedBufferAttribute } from 'three/src/core/InterleavedBufferAttribute.js';
 import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttribute.js';
 import StorageInstancedBufferAttribute from 'three/src/renderers/common/StorageInstancedBufferAttribute.js';
+import {
+	fillRangeAttributeArray,
+	generateRangeAttributeArray,
+	isInstanceMatrixAttributeDescriptor,
+	isRangeAttributeDescriptor,
+} from '@tsl-precompile/contract/attribute-generators';
 
 import { resolveTypedArrayCtor } from './typed-arrays.js';
+
+const generatedAttributeArrays = new WeakMap();
 
 /**
  * Clone only artifact records that acquire live graph-resource sidecars while
@@ -243,10 +251,11 @@ function resolveExactMaterialAttributePath( sourceMaterial, path, entry ) {
  *
  * @param {Object} artifact
  * @param {?Object} sourceMaterial
+ * @param {?Object} [sourceObjectOverride]
  */
-export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
+export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial, sourceObjectOverride = null ) {
 
-	if ( ! sourceMaterial ) return;
+	if ( ! sourceMaterial && ! sourceObjectOverride ) return;
 	const entries = Array.isArray( artifact.attributes )
 		? artifact.attributes
 		: Array.isArray( artifact.nodeAttributes ) ? artifact.nodeAttributes : null;
@@ -257,7 +266,7 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 
 		if ( nodeRoots ) return nodeRoots;
 		nodeRoots = [];
-		for ( const key in sourceMaterial ) {
+		for ( const key in sourceMaterial || {} ) {
 
 			const v = sourceMaterial[ key ];
 			if ( v && v.isNode === true ) nodeRoots.push( v );
@@ -267,7 +276,7 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 
 	};
 
-	const sourceObject = sourceMaterial.__tslpPrecompileObject || null;
+	const sourceObject = sourceObjectOverride || sourceMaterial && sourceMaterial.__tslpPrecompileObject || null;
 	const pathShapeSlots = new Map();
 
 	// Wave 5 Phase B2 — anonymous storage attribute live binding.
@@ -301,6 +310,16 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 	for ( const entry of entries ) {
 
 		if ( ! entry || entry.source !== 'node' ) continue;
+		if ( entry.objectAttribute ) {
+
+			// Explicit provenance is stronger than every material-graph shape
+			// heuristic. Resolve it from the active render object only, so an
+			// unrelated same-shaped material attribute can never steal the slot.
+			const objectAttribute = findInstancedObjectAttributeMatchingEntry( sourceObject, entry, entries );
+			setLiveAttributeBinding( entry, objectAttribute, objectAttribute ? 'instancedObject' : null );
+			continue;
+
+		}
 		if ( entry._liveAttribute && entry._liveAttribute.isBufferAttribute === true
 			&& ! ( Array.isArray( entry.userPath ) && entry.userPath.length > 0 ) ) continue;
 
@@ -396,7 +415,7 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 			} else {
 
 				const slotIdx = nextAttributeShapeSlot( pathShapeSlots, path, entry );
-				const root = sourceMaterial[ path[ 0 ] ];
+				const root = sourceMaterial && sourceMaterial[ path[ 0 ] ];
 				if ( root && root.isNode === true ) live = findNthAttributeMatchingEntry( root, entry, slotIdx );
 
 			}
@@ -431,6 +450,25 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial ) {
 		} );
 
 	}
+
+}
+
+function setLiveAttributeBinding( entry, attribute, source = null ) {
+
+	if ( Object.prototype.hasOwnProperty.call( entry, '_liveAttribute' ) ) entry._liveAttribute = attribute;
+	else Object.defineProperty( entry, '_liveAttribute', {
+		value: attribute,
+		enumerable: false,
+		configurable: true,
+		writable: true,
+	} );
+	if ( Object.prototype.hasOwnProperty.call( entry, '_liveAttributeSource' ) ) entry._liveAttributeSource = source;
+	else Object.defineProperty( entry, '_liveAttributeSource', {
+		value: source,
+		enumerable: false,
+		configurable: true,
+		writable: true,
+	} );
 
 }
 
@@ -481,7 +519,7 @@ function capturedAnonymousInstancedCount( artifact ) {
 		if ( ! entry || entry.source !== 'node' || entry.instanced !== true ) continue;
 		if ( entry.storage === true ) continue;
 		if ( entry.userPath ) continue;
-		if ( ! entry.arraySnapshot && ! entry._liveArray ) continue;
+		if ( ! entry.arraySnapshot && ! entry._liveArray && ! entry.arrayGenerator ) continue;
 		if ( ! Number.isFinite( entry.count ) || entry.count <= 0 ) continue;
 		if ( count === null ) count = entry.count;
 		else if ( count !== entry.count ) return null;
@@ -494,9 +532,26 @@ function capturedAnonymousInstancedCount( artifact ) {
 function findInstancedObjectAttributeMatchingEntry( object, entry, entries ) {
 
 	if ( ! object || object.isInstancedMesh !== true ) return null;
+	const itemSize = entry.itemSize || itemSizeFromAttributeType( entry.type );
+	if ( entry.objectAttribute ) {
+
+		if ( ! isInstanceMatrixAttributeDescriptor( entry ) ) return null;
+		const column = entry.objectAttribute.column;
+		const matrix = object.instanceMatrix;
+		if ( ! matrix
+			|| ! ( matrix.array instanceof Float32Array )
+			|| matrix.array.length % 16 !== 0
+			|| matrix.itemSize !== undefined && matrix.itemSize !== 16
+			|| matrix.meshPerAttribute !== undefined && matrix.meshPerAttribute !== 1 ) return null;
+		const matrixCount = matrix && Number.isFinite( matrix.count )
+			? matrix.count
+			: matrix && matrix.array ? matrix.array.length / 16 : 0;
+		if ( ! Number.isInteger( matrixCount ) || matrixCount <= 0 || entry.count !== matrixCount ) return null;
+		return getInstancedMatrixColumnAttribute( object, column, matrixCount );
+
+	}
 	const count = object.count || 0;
 	if ( ! count || entry.count !== count ) return null;
-	const itemSize = entry.itemSize || itemSizeFromAttributeType( entry.type );
 
 	if ( object.instanceColor && object.instanceColor.isBufferAttribute === true ) {
 
@@ -524,47 +579,46 @@ function findInstancedObjectAttributeMatchingEntry( object, entry, entries ) {
 
 }
 
-function getInstancedMatrixColumnAttribute( object, column ) {
+function getInstancedMatrixColumnAttribute( object, column, expectedCount = null ) {
 
 	const source = object && object.instanceMatrix;
 	const sourceArray = source && source.array;
-	const count = object && object.count || 0;
+	const count = expectedCount || object && object.count || 0;
 	if ( ! sourceArray || ! count ) return null;
 
 	const cacheKey = '__tslpMatrixColumnAttributes';
 	let cache = object[ cacheKey ];
-	if ( ! cache || cache.sourceArray !== sourceArray || cache.count !== count ) {
+	if ( ! cache || cache.source !== source || cache.sourceArray !== sourceArray || cache.count !== count ) {
 
 		cache = {
+			source,
 			sourceArray,
 			count,
-			attributes: [
-				new InstancedBufferAttribute( new Float32Array( count * 4 ), 4 ),
-				new InstancedBufferAttribute( new Float32Array( count * 4 ), 4 ),
-				new InstancedBufferAttribute( new Float32Array( count * 4 ), 4 ),
-				new InstancedBufferAttribute( new Float32Array( count * 4 ), 4 ),
-			],
+			data: createLiveInstanceMatrixInterleavedBuffer( source ),
 		};
-		for ( const attribute of cache.attributes ) attribute.needsUpdate = true;
+		cache.attributes = [ 0, 1, 2, 3 ].map( ( offset ) => new InterleavedBufferAttribute( cache.data, 4, offset * 4 ) );
 		try { Object.defineProperty( object, cacheKey, { value: cache, configurable: true } ); } catch ( _ ) { object[ cacheKey ] = cache; }
 
 	}
 
-	const attribute = cache.attributes[ column ];
-	const dst = attribute && attribute.array;
-	if ( ! dst ) return null;
-	for ( let i = 0; i < count; i ++ ) {
+	return cache.attributes[ column ] || null;
 
-		const srcOffset = i * 16 + column * 4;
-		const dstOffset = i * 4;
-		dst[ dstOffset + 0 ] = sourceArray[ srcOffset + 0 ];
-		dst[ dstOffset + 1 ] = sourceArray[ srcOffset + 1 ];
-		dst[ dstOffset + 2 ] = sourceArray[ srcOffset + 2 ];
-		dst[ dstOffset + 3 ] = sourceArray[ srcOffset + 3 ];
+}
 
-	}
-	attribute.needsUpdate = true;
-	return attribute;
+function createLiveInstanceMatrixInterleavedBuffer( source ) {
+
+	const data = new InstancedInterleavedBuffer( source.array, 16, source.meshPerAttribute || 1 );
+	if ( typeof source.usage === 'number' ) data.usage = source.usage;
+	if ( Array.isArray( source.updateRanges ) ) data.updateRanges = source.updateRanges;
+	// Attributes.js compares this buffer's version on every update. Delegate it
+	// to the authoritative instanceMatrix BufferAttribute so `needsUpdate` on
+	// the object immediately invalidates the shared GPU buffer without copies.
+	Object.defineProperty( data, 'version', {
+		configurable: true,
+		get: () => source.version || 0,
+		set: ( value ) => { source.version = value; },
+	} );
+	return data;
 
 }
 
@@ -882,19 +936,25 @@ export function hydrateNodeAttributes( attributes ) {
 			|| attribute._liveAttribute.isStorageInstancedBufferAttribute === true
 		);
 		const isLiveInstancedObjectAttribute = attribute._liveAttributeSource === 'instancedObject';
-		const hasCapturedAnonymousSnapshot = ! attribute.userPath && ( attribute.arraySnapshot || attribute._liveArray );
+		const hasCapturedAnonymousSnapshot = ! attribute.userPath && (
+			attribute.arraySnapshot || attribute._liveArray || attribute.arrayGenerator
+		);
 		const liveAttribute = ( hasCapturedAnonymousSnapshot && ! isLiveStorageAttribute && ! isLiveInstancedObjectAttribute )
 			? null
 			: attribute._liveAttribute || ( attribute.node && attribute.node.attribute );
 		if ( liveAttribute ) return { ...attribute, node: { attribute: liveAttribute } };
+		if ( attribute.objectAttribute ) throw new Error(
+			`[tsl-precompile/slim] Could not resolve captured object attribute ${ attribute.objectAttribute.kind || '<unknown>' }.`,
+		);
 		const interleavedAttribute = interleavedFallbacks.get( attribute );
 		if ( interleavedAttribute ) return { ...attribute, node: { attribute: interleavedAttribute } };
 
+		const sourceArray = attributeArraySource( attribute );
 		const itemSize = attribute.itemSize || itemSizeFromAttributeType( attribute.type );
 		const count = Math.max( 1, attribute.count || 1 );
 		const TypeArray = resolveTypedArrayCtor( attribute.arrayType );
 		const fallbackAttribute = createFallbackNodeAttribute( attribute, count, itemSize, TypeArray );
-		seedAttributeArray( fallbackAttribute, attribute.arraySnapshot || attribute._liveArray );
+		seedAttributeArray( fallbackAttribute, sourceArray );
 
 		return {
 			...attribute,
@@ -957,7 +1017,16 @@ function createInterleavedFallbacks( groups ) {
 		let offset = 0;
 		for ( const entry of group ) {
 
-			copyIntoInterleavedArray( data.array, stride, offset, entry.itemSize, count, entry.attribute.arraySnapshot || entry.attribute._liveArray );
+			if ( ! entry.attribute.arraySnapshot && ! entry.attribute._liveArray && entry.attribute.arrayGenerator !== undefined ) {
+
+				assertRangeAttributeDescriptor( entry.attribute );
+				fillRangeAttributeArray( data.array, entry.attribute.arrayGenerator, count, stride, offset );
+
+			} else {
+
+				copyIntoInterleavedArray( data.array, stride, offset, entry.itemSize, count, attributeArraySource( entry.attribute ) );
+
+			}
 			const attr = new InterleavedBufferAttribute( data, entry.itemSize, offset, entry.attribute.normalized === true );
 			fallbacks.set( entry.attribute, attr );
 			offset += entry.itemSize;
@@ -986,6 +1055,42 @@ function copyIntoInterleavedArray( target, stride, offset, itemSize, count, sour
 			if ( value !== undefined ) target[ dstOffset + c ] = value;
 
 		}
+
+	}
+
+}
+
+function attributeArraySource( attribute ) {
+
+	if ( ! attribute ) return null;
+	if ( attribute.arraySnapshot ) return attribute.arraySnapshot;
+	if ( attribute._liveArray ) return attribute._liveArray;
+	if ( attribute.arrayGenerator === undefined ) return null;
+	assertRangeAttributeDescriptor( attribute );
+	const recipe = attribute.arrayGenerator;
+	let arraysByCount = generatedAttributeArrays.get( recipe );
+	if ( ! arraysByCount ) {
+
+		arraysByCount = new Map();
+		generatedAttributeArrays.set( recipe, arraysByCount );
+
+	}
+	let array = arraysByCount.get( attribute.count );
+	if ( ! array ) {
+
+		array = generateRangeAttributeArray( recipe, attribute.count );
+		arraysByCount.set( attribute.count, array );
+
+	}
+	return array;
+
+}
+
+function assertRangeAttributeDescriptor( attribute ) {
+
+	if ( ! isRangeAttributeDescriptor( attribute ) ) {
+
+		throw new Error( '[tsl-precompile/slim] Invalid range@1 attribute descriptor.' );
 
 	}
 

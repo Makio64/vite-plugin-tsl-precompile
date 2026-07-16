@@ -17,6 +17,7 @@
   "exports": {
 		".": "./src/index.js",
 		"./artifact-content": "./src/artifact-content.js",
+		"./attribute-generators": "./src/attribute-generators.js",
 		"./artifact-variants": "./src/artifact-variants.js",
 		"./artifact-shape": "./src/artifact-shape.js",
 		"./light-identities": "./src/light-identities.js",

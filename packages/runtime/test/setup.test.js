@@ -108,6 +108,74 @@ test( 'setupPrecompile installs marker and resolves ready after init', async () 
 
 } );
 
+test( 'setupPrecompile installs physical RangeNode capture without touching Math.random', async () => {
+
+	const { three } = freshHarness();
+	class RangeNode {
+
+		constructor() {
+
+			this.id = 21;
+			this.minNode = { value: 0 };
+			this.maxNode = { value: 1 };
+
+		}
+
+		getConstNode( node ) { return node; }
+		getNodeType() { return 'float'; }
+		setup( builder ) {
+
+			const array = new Float32Array( builder.object.count * 4 );
+			for ( let index = 0; index < array.length; index ++ ) array[ index ] = Math.random();
+			return { array };
+
+		}
+
+	}
+	class InstancedBufferAttribute {
+
+		constructor( array, itemSize ) {
+
+			this.array = array;
+			this.itemSize = itemSize;
+			this.count = array.length / itemSize;
+			this.isBufferAttribute = true;
+			this.isInstancedBufferAttribute = true;
+
+		}
+
+	}
+	Object.assign( three, {
+		RangeNode,
+		InstancedBufferAttribute,
+		TSL: { instancedBufferAttribute: ( attribute ) => ( { convert: () => ( { attribute } ) } ) },
+	} );
+	const renderer = fakeRenderer( { initialised: true } );
+	const setup = setupPrecompile( { three, renderer } );
+	await setup.ready;
+
+	const geometry = {
+		attribute: null,
+		setAttribute( name, attribute ) { if ( name === '__range21' ) this.attribute = attribute; },
+		getAttribute( name ) { return name === '__range21' ? this.attribute : null; },
+	};
+	const originalRandom = Math.random;
+	let randomCalls = 0;
+	Math.random = () => { randomCalls ++; return 0.5; };
+	try {
+
+		new RangeNode().setup( { object: { count: 3 }, geometry, getUniformBufferLimit: () => 0 } );
+
+	} finally {
+
+		Math.random = originalRandom;
+
+	}
+	assert.equal( randomCalls, 0 );
+	assert.ok( geometry.attribute[ Symbol.for( '@tsl-precompile/range-attribute-generator@1' ) ] );
+
+} );
+
 test( 'setupPrecompile registers immediately when the renderer is already initialised', async () => {
 
 	const { three } = freshHarness();
