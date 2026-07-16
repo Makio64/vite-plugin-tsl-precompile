@@ -25,6 +25,8 @@ test( 'the Playwright init-script installer is self-contained', () => {
 test( 'audio analyser readiness holds capture until asynchronous audio setup completes', () => {
 
 	const analyser = {};
+	let energy = 0;
+	analyser.getByteFrequencyData = ( values ) => { values[ 0 ] = energy; };
 	class AudioContext {}
 	AudioContext.prototype.createAnalyser = function () {
 
@@ -46,11 +48,19 @@ test( 'audio analyser readiness holds capture until asynchronous audio setup com
 	assert.equal( target.__tslpLoaderLastBusyAt, 10 );
 	assert.equal( target.__tslpAudioAnalyserReady, false );
 	assert.equal( context.createAnalyser(), analyser );
+	assert.equal( target.__tslpAudioAnalyserCreated, true );
+	assert.equal( target.__tslpLoaderPending, 3, 'construction alone does not prove visible spectrum data' );
+	const values = new Uint8Array( 4 );
+	analyser.getByteFrequencyData( values );
+	assert.equal( target.__tslpLoaderPending, 3, 'silent analyser data keeps the readiness hold active' );
+
+	energy = 12;
+	analyser.getByteFrequencyData( values );
 	assert.equal( target.__tslpLoaderPending, 2 );
 	assert.equal( target.__tslpAudioAnalyserReady, true );
 
 	now = 20;
-	assert.equal( context.createAnalyser(), analyser );
+	analyser.getByteFrequencyData( values );
 	assert.equal( target.__tslpLoaderPending, 2, 'later analysers do not release another loader hold' );
 	assert.equal( target.__tslpLoaderLastBusyAt, 10 );
 	assert.equal( installAudioAnalyserReadiness( target ), false, 'the native prototype is patched only once' );
@@ -61,7 +71,7 @@ test( 'the audio readiness installer is self-contained for browser evaluation', 
 
 	const result = runInNewContext( `
 		class AudioContext {}
-		AudioContext.prototype.createAnalyser = () => ( {} );
+		AudioContext.prototype.createAnalyser = () => ( { getByteFrequencyData() {} } );
 		const target = { AudioContext, __tslpLoaderPending: 0, __tslpRealNow: () => 5 };
 		( ${ installAudioAnalyserReadiness.toString() } )( target );
 		[ target.__tslpLoaderPending, target.__tslpAudioAnalyserReady, target.__tslpLoaderLastBusyAt ];

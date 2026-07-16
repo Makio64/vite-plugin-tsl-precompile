@@ -48,10 +48,11 @@ export function installAnimationLoopSettleTransition( target = globalThis ) {
 
 /**
  * Keep the compute-audio example active until its asynchronous initialization
- * has produced the analyser that drives the visible spectrum. The page starts
- * that work from a click handler, outside Three's loader manager, so the
- * ordinary loader counters cannot otherwise distinguish "not started yet"
- * from "ready to capture".
+ * has produced nonzero analyser data that drives the visible spectrum. The
+ * page starts that work from a click handler, outside Three's loader manager,
+ * and analyser construction precedes the first audible samples. The ordinary
+ * loader counters therefore cannot otherwise distinguish "created" from
+ * "ready to capture".
  *
  * Keep this installer self-contained: Playwright serializes it into the page
  * without preserving module closures.
@@ -78,14 +79,38 @@ export function installAudioAnalyserReadiness( target = globalThis ) {
 	proto.createAnalyser = function createAnalyserWithReadiness( ...args ) {
 
 		const analyser = createAnalyser.apply( this, args );
-		if ( pending ) {
+		target.__tslpAudioAnalyserCreated = true;
+		touch();
+		const getByteFrequencyData = analyser && analyser.getByteFrequencyData;
+		if ( typeof getByteFrequencyData === 'function' ) analyser.getByteFrequencyData = function getByteFrequencyDataWithReadiness( values ) {
 
-			pending = false;
-			target.__tslpAudioAnalyserReady = true;
-			target.__tslpLoaderPending = Math.max( 0, ( target.__tslpLoaderPending | 0 ) - 1 );
-			touch();
+			const result = getByteFrequencyData.call( this, values );
+			if ( pending && values && typeof values.length === 'number' ) {
 
-		}
+				let hasEnergy = false;
+				for ( let i = 0; i < values.length; i ++ ) {
+
+					if ( values[ i ] > 0 ) {
+
+						hasEnergy = true;
+						break;
+
+					}
+
+				}
+				if ( hasEnergy ) {
+
+					pending = false;
+					target.__tslpAudioAnalyserReady = true;
+					target.__tslpLoaderPending = Math.max( 0, ( target.__tslpLoaderPending | 0 ) - 1 );
+					touch();
+
+				}
+
+			}
+			return result;
+
+		};
 		return analyser;
 
 	};
