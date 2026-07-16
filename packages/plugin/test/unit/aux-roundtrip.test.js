@@ -328,6 +328,35 @@ test( 'source slim build registers aux artifacts into the source runtime instanc
 
 } );
 
+test( 'source slim dev registers aux artifacts into the full capture runtime', async () => {
+
+	const root = mkdtempSync( join( tmpdir(), 'tslp-source-dev-rt-' ) );
+	const artifactsDir = join( root, 'artifacts' );
+	mkdirSync( artifactsDir, { recursive: true } );
+	writeFileSync( join( artifactsDir, 'aux-lights-source-dev.json' ), JSON.stringify( {
+		__materialShape: 'lights',
+		__configHash: 'source-dev-123',
+		__hash: 'source-dev-123',
+		artifact: { version: 3, uniformPlan: [], lightsSignature: [] },
+	} ) );
+
+	const plugin = tslPrecompile( { artifactsDir: 'artifacts', slim: 'source' } );
+	await plugin.configResolved( { root, command: 'serve', logger: { warn() {} } } );
+	try {
+
+		const id = plugin.resolveId( VIRTUAL_AUX_MODULE_ID );
+		const source = await plugin.load.call( makePluginContext(), id );
+		assert.match( source, /import \{ registerAuxArtifacts \} from "@tsl-precompile\/runtime";/ );
+		assert.doesNotMatch( source, /@tsl-precompile\/runtime\/slim(?:\/source)?/ );
+
+	} finally {
+
+		rmSync( root, { recursive: true, force: true } );
+
+	}
+
+} );
+
 /**
  * Same shape as the generator in `packages/plugin/src/index.js` — inlined
  * here to keep the test self-contained (the plugin's load() hook is

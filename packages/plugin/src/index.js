@@ -717,7 +717,10 @@ export default function tslPrecompile( userOpts = {} ) {
 				const materializeAttributeDescriptors = artifactNeedsAttributeDescriptorMaterialization( auxEntries );
 				const materializeVariantSelectorAdapter = artifactNeedsVariantSelectorAdapterMaterialization( auxEntries );
 				const lines = [];
-				const runtimeModule = slimRuntimeEntryForMode( opts.slim );
+				// Capture/dev always runs against full Three. Routing this virtual
+				// module to the build-only slim source entry makes every dev page
+				// with captured aux data fail before its first render.
+				const runtimeModule = isBuild ? slimRuntimeEntryForMode( opts.slim ) : '@tsl-precompile/runtime';
 				lines.push( `import { registerAuxArtifacts } from ${ JSON.stringify( runtimeModule ) };` );
 				if ( materializeAttributeDescriptors ) lines.push( `import { materializeArtifactAttributeDescriptors as __tslp_materializeAttributes } from ${ JSON.stringify( ATTRIBUTE_DESCRIPTOR_MATERIALIZER_IMPORT ) };` );
 				if ( materializeVariantSelectorAdapter ) lines.push( `import { materializeArtifactVariantSelectorAdapters as __tslp_materializeVariantSelectors } from ${ JSON.stringify( VARIANT_SELECTOR_ADAPTER_MATERIALIZER_IMPORT ) };` );
