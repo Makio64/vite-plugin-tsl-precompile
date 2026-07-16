@@ -20,7 +20,13 @@ export type {
 	AutoComputeDispatchStats,
 	AutoComputeDispatchOptions,
 } from './slim-support/auto-compute.d.ts';
-export type { DispatchMaterialComputesOptions, MaterialComputeDispatchStats } from './slim-support/scene-support.d.ts';
+export type {
+	DispatchMaterialComputesOptions,
+	MaterialComputeDispatchStats,
+	SlimSceneSupportDiagnostics,
+	SlimSceneSupportErrorContext,
+	SlimSceneSupportOptions,
+} from './slim-support/scene-support.d.ts';
 export const AUTO_COMPUTE_MATERIAL_PROPERTIES: typeof import('./slim-support/auto-compute.d.ts').AUTO_COMPUTE_MATERIAL_PROPERTIES;
 export const MATERIAL_COMPUTE_BINDINGS: typeof import('./slim-support/auto-compute.d.ts').MATERIAL_COMPUTE_BINDINGS;
 export const AutoComputeBindingError: typeof import('./slim-support/auto-compute.d.ts').AutoComputeBindingError;
@@ -520,7 +526,7 @@ export function wirePrecompiledPostprocess( args?: {
 export function collectLiveBloomNodes( root: unknown ): unknown[];
 export function wireBloomNode( bloomNode: unknown, opts?: { bloomIndex?: number } ): WireRegisteredEffectNodeResult;
 export function findPostprocessAux( shape: string, nameOrConfigHash: string ): unknown;
-export function createSlimSceneSupport( opts: Record<string, unknown> ): {
+export function createSlimSceneSupport( opts: import('./slim-support/scene-support.d.ts').SlimSceneSupportOptions ): {
 	liveSceneIndex: unknown;
 	pmrem: unknown;
 	fallback: unknown;

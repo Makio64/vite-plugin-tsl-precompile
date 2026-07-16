@@ -91,7 +91,7 @@ const MATERIAL_COMPUTE_READ_ACCESS = new Set( [ 'readOnly', 'readWrite' ] );
  * @param {Object}  [opts.threeFullModule]       - The full `three/webgpu` module namespace. Required when `fullRendererFallback: true` (or pass `loadThreeFullModule`).
  * @param {Object}  [opts.threeModule]           - Optional three namespace used to auto-track TextureLoader/CubeTextureLoader results in the runtime live texture registry.
  * @param {Function} [opts.loadThreeFullModule]  - Async factory for the full-three module, used by the fallback boot.
- * @param {boolean} [opts.fullRendererFallback=false] - Enable the on-the-side full `WebGPURenderer` for compute / shadows / dynamic passes.
+ * @param {boolean|'auto'} [opts.fullRendererFallback='auto'] - Enable the on-the-side full `WebGPURenderer`, or enable it only when `threeFullModule`/`loadThreeFullModule` is configured.
  * @param {boolean} [opts.textureLoaderTracking=true] - Patch loader classes from `threeModule`/`threeFullModule` so async textures can relink JSON-loaded artifacts.
  * @param {boolean} [opts.pmrem=true]            - Build a PMREM support sub-helper (always cheap; disable to opt out of the cache).
  * @param {boolean} [opts.computeSync=true]      - Expose `syncComputeOutputs()` (pure compute output sync; safe to leave on).

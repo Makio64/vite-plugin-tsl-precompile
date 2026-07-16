@@ -6,11 +6,13 @@ import * as runtime from '../src/index.js';
 
 test( 'public declarations track the runtime signatures that previously drifted', async () => {
 
-	const [ declaration, runtimeIndex ] = await Promise.all( [
+	const [ declaration, runtimeIndex, sceneSupportDeclaration ] = await Promise.all( [
 		readFile( new URL( '../types/index.d.ts', import.meta.url ), 'utf8' ),
 		readFile( new URL( '../src/index.js', import.meta.url ), 'utf8' ),
+		readFile( new URL( '../types/slim-support/scene-support.d.ts', import.meta.url ), 'utf8' ),
 	] );
 	const source = declaration.replace( /\s+/g, ' ' );
+	const sceneSupportSource = sceneSupportDeclaration.replace( /\s+/g, ' ' );
 	const declaredValues = new Set(
 		[ ...declaration.matchAll( /export\s+(?:declare\s+)?(?:async\s+)?(?:function|class|const|let|var)\s+(\w+)/g ) ]
 			.map( ( match ) => match[ 1 ] )
@@ -78,5 +80,10 @@ test( 'public declarations track the runtime signatures that previously drifted'
 	assert.match( source, /class MaterialVariantSet<TMaterial = unknown>/ );
 	assert.match( source, /createMaterialVariants<TMaterial = unknown>\( variants: MaterialVariantInput<TMaterial>, initialName\?: string \): MaterialVariantSet<TMaterial>;/ );
 	assert.match( source, /applyMaterialVariant<TMaterial = unknown>\( target: unknown \| unknown\[\], material: TMaterial \): TMaterial;/ );
+	assert.match( source, /createSlimSceneSupport\( opts: import\('\.\/slim-support\/scene-support\.d\.ts'\)\.SlimSceneSupportOptions \):/ );
+	assert.match( sceneSupportSource, /export interface SlimSceneSupportOptions \{/ );
+	assert.match( sceneSupportSource, /renderer: object;/ );
+	assert.match( sceneSupportSource, /fullRendererFallback\?: boolean \| 'auto';/ );
+	assert.match( sceneSupportSource, /createSlimSceneSupport\( opts: SlimSceneSupportOptions \):/ );
 
 } );

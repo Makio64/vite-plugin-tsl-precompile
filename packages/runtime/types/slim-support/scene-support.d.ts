@@ -12,6 +12,55 @@ import type { RendererLightingOptions, RendererLightingStats } from './renderer-
 import type { TemporalFrameState } from './temporal-frame.d.ts';
 import type { PopulateShadowMapsWithFullRendererOptions, ShadowFallbackResult } from './shadow-fallback.d.ts';
 
+export type SlimSceneSupportDiagnostics = Record<string, unknown> & {
+	pmrem?: Record<string, unknown>;
+	textureShare?: Record<string, unknown>;
+	compute?: Record<string, unknown>;
+	loader?: Record<string, unknown>;
+	shadow?: Record<string, unknown>;
+};
+
+export interface SlimSceneSupportErrorContext {
+	where: string;
+	detail?: unknown;
+	texture?: unknown;
+	material?: unknown;
+	[ key: string ]: unknown;
+}
+
+export interface SlimSceneSupportOptions {
+	/** The slim WebGPURenderer. */
+	renderer: object;
+	/** Eager full `three/webgpu` namespace. Prefer `loadThreeFullModule` so bundlers can split the fallback chunk. */
+	threeFullModule?: object;
+	/** Optional three namespace whose texture-loader classes should be tracked. */
+	threeModule?: object;
+	/** Lazy loader for the full `three/webgpu` namespace. */
+	loadThreeFullModule?: () => Promise<object>;
+	/**
+	 * Enable the on-the-side full renderer, or enable it only when a full-three
+	 * namespace/loader is configured.
+	 * @default 'auto'
+	 */
+	fullRendererFallback?: boolean | 'auto';
+	/** Track textures created by loader classes from the configured three namespaces. @default true */
+	textureLoaderTracking?: boolean;
+	/** Create the PMREM support helper. @default true */
+	pmrem?: boolean;
+	/** Enable compute-output synchronization helpers. @default true */
+	computeSync?: boolean;
+	/** Enable texture-sharing convenience helpers. @default true */
+	textureSharing?: boolean;
+	/** Mutable diagnostics bag populated by the support helpers. */
+	diagnostics?: SlimSceneSupportDiagnostics;
+	/** PMREM generator used by `generatePMREMAsync()`. */
+	pmremGenerator?: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown;
+	/** Optional readiness predicate for PMREM source textures. */
+	textureImageReady?: ( sourceTexture: unknown ) => boolean;
+	/** Receives non-fatal errors together with the helper operation that raised them. */
+	onError?: ( error: unknown, context: SlimSceneSupportErrorContext ) => void;
+}
+
 export type RenderPassWithFallbackOptions = {
 	fullRenderer?: unknown;
 	camera?: unknown;
@@ -52,7 +101,7 @@ export type DispatchMaterialComputesOptions = Omit<AutoComputeDispatchOptions, '
 	computeArgs?: unknown[] | ( ( computeNode: object, owners: unknown[] ) => unknown[] );
 };
 
-export function createSlimSceneSupport( opts: Record<string, unknown> ): {
+export function createSlimSceneSupport( opts: SlimSceneSupportOptions ): {
 	liveSceneIndex: unknown;
 	pmrem: unknown;
 	fallback: unknown;
