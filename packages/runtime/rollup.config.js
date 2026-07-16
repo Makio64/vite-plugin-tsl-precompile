@@ -511,7 +511,9 @@ export default {
 		threeRewritePlugin,
 		terser( {
 			ecma: 2020,
-			compress: { passes: 2, pure_getters: true },
+			// Replay helpers are deliberately split by responsibility; a third
+			// safe compression pass folds their cross-module adapter indirection.
+			compress: { passes: 3, pure_getters: true },
 			mangle: true,
 			format: { comments: false },
 		} ),
