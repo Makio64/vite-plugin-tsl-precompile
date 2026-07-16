@@ -1,42 +1,35 @@
-// Minimal compute repro: a storage buffer of particle positions advanced by a
-// compute kernel, rendered as THREE.Points. The smallest compute-buffer →
-// render-attribute path (mirrors the webgpu_compute_particles* family).
+// Storage-buffer compute replay: one initialization kernel and one animated
+// update kernel share the exact buffer rendered by THREE.Points.
 import { AdditiveBlending, BufferAttribute, BufferGeometry, Points } from 'three';
-import { PointsNodeMaterial } from 'three/webgpu';
-import { Fn, attributeArray, cos, float, instanceIndex, sin, time, vec3 } from 'three/tsl';
-import { createScene, runAux, IS_E2E_REPLAY } from './shared.js';
+import { PointsNodeMaterial, StorageBufferAttribute } from 'three/webgpu';
+import { storage, vec3 } from 'three/tsl';
+
+import {
+	IS_E2E_REPLAY,
+	IS_PRODUCTION_BUILD,
+	captureComputeStages,
+	createCompiledComputeRunner,
+	createRawComputeRunner,
+	createScene,
+	loadDevComputeModule,
+	runAux,
+	trackComputeRunner,
+} from './shared.js';
 
 const COUNT = 512;
+const KERNELS = [ 'compute-debug-particles-init', 'compute-debug-particles-update' ];
 
 async function main() {
 
-	const { renderer, scene, camera, setStatus } = await createScene( {
+	const { renderer, scene, camera, capture, setStatus, markComputeReady, recordFrame } = await createScene( {
 		title: 'Compute particles',
 		cameraPosition: [ 0, 0, 3.4 ],
 	} );
 
-	// Per-vertex storage buffer (StorageBufferAttribute) written by compute,
-	// read back as the render material's positionNode.
-	const positions = attributeArray( COUNT, 'vec3' );
-
-	// One-time layout: golden-angle spiral in the XY plane.
-	const computeInit = Fn( () => {
-
-		const i = float( instanceIndex );
-		const angle = i.mul( 2.399963 );
-		const radius = i.div( COUNT ).sqrt().mul( 1.3 );
-		positions.element( instanceIndex ).assign( vec3( cos( angle ).mul( radius ), sin( angle ).mul( radius ), 0 ) );
-
-	} )().compute( COUNT );
-
-	// Per-frame: wobble Z by a time-driven sine. Pure function of (index, time)
-	// so capture and replay stay aligned under the harness's virtual clock.
-	const computeUpdate = Fn( () => {
-
-		const i = float( instanceIndex );
-		positions.element( instanceIndex ).z = sin( i.mul( 0.21 ).add( time.mul( 1.4 ) ) ).mul( 0.45 );
-
-	} )().compute( COUNT );
+	// WGSL storage vec3 values have a 16-byte stride. Allocate that physical
+	// shape up front so capture and compiler-free replay bind the same object.
+	const positionsAttribute = new StorageBufferAttribute( new Float32Array( COUNT * 4 ), 4 );
+	const positions = storage( positionsAttribute, 'vec3', COUNT );
 
 	const geometry = new BufferGeometry();
 	geometry.setAttribute( 'position', new BufferAttribute( new Float32Array( COUNT * 3 ), 3 ) );
@@ -55,15 +48,39 @@ async function main() {
 	points.frustumCulled = false;
 	scene.add( points );
 
-	await renderer.computeAsync( computeInit );
+	let initRunner;
+	let updateRunner;
+	const resources = { positions: positionsAttribute };
+	if ( IS_PRODUCTION_BUILD ) {
 
-	const auxSummary = await runAux( renderer, scene, camera );
+		const compiled = await import( './compiled/particles.js' );
+		initRunner = trackComputeRunner( createCompiledComputeRunner( renderer, compiled.init, resources ) );
+		updateRunner = trackComputeRunner( createCompiledComputeRunner( renderer, compiled.update, resources ) );
+
+	} else {
+
+		const { createParticleComputeNodes } = await loadDevComputeModule( 'particles' );
+		const nodes = createParticleComputeNodes( positions, COUNT );
+		await captureComputeStages( renderer, scene, camera, capture, [
+			{ name: KERNELS[ 0 ], node: nodes.init, resources },
+			{ name: KERNELS[ 1 ], node: nodes.update, resources },
+		] );
+		initRunner = trackComputeRunner( createRawComputeRunner( renderer, nodes.init ) );
+		updateRunner = trackComputeRunner( createRawComputeRunner( renderer, nodes.update ) );
+
+	}
+
+	await initRunner.dispatchAsync();
+	markComputeReady( KERNELS );
+
+	const auxSummary = await runAux( renderer, scene, camera, capture );
 	setStatus( `rendering ${ COUNT } particles — ${ auxSummary }` );
 
 	renderer.setAnimationLoop( () => {
 
-		renderer.compute( computeUpdate );
+		updateRunner.dispatch();
 		renderer.render( scene, camera );
+		recordFrame();
 
 	} );
 
