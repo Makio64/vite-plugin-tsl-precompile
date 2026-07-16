@@ -11122,9 +11122,10 @@ function __collectRTTNodesInGraph( node, out = [], seen = new Set(), depth = 0 )
 		material.customProgramCacheKey = () => base + ':tslp-bloom-instance:' + suffix + ':' + ( name || '' );
 	}
 
-	function __makeBloomPrecompiledMaterial( shape, sourceMaterial, name ) {
+	function __makeBloomPrecompiledMaterial( shape, sourceMaterial, name, bloomNode = null ) {
 		const artifact = __cloneAuxArtifact( Slim.loadAux( shape, 'tslp-e2e-bypass' ) );
-		__wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial );
+		if ( shape === 'bloom-composite' ) __wireBloomCompositeUniforms( artifact, bloomNode );
+		else __wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial );
 		const material = new Slim.PrecompiledMaterial( artifact );
 		material.name = name;
 		__isolateBloomBlurMaterialCacheKey( material, shape, name );
@@ -11141,6 +11142,24 @@ function __collectRTTNodesInGraph( node, out = [], seen = new Set(), depth = 0 )
 		material.needsUpdate = true;
 		return material;
 	}
+
+function __wireBloomCompositeUniforms( artifact, bloomNode ) {
+	if ( ! artifact || ! bloomNode ) return;
+	for ( const group of artifact.uniformPlan || [] ) {
+		for ( const slot of group.slots || [] ) {
+			const source = slot && slot.source || {};
+			if ( source.kind !== 'uniform.live' || slot.dtype !== 'number' ) continue;
+			const path = Array.isArray( source.nodePath ) ? source.nodePath : [];
+			const property = path.length > 0 ? path[ path.length - 1 ] : '';
+			const liveNode = property === 'radius'
+				? bloomNode.radius
+				: property === 'strength'
+					? bloomNode.strength
+					: null;
+			if ( liveNode ) __setLiveUniformSlot( slot, liveNode );
+		}
+	}
+}
 
 function __setLiveUniformSlot( slot, node ) {
 	if ( ! slot || ! node ) return;
@@ -11281,7 +11300,7 @@ function __prepareBloomNodeForReplay( bloomNode, context ) {
 		const fullHighPassMaterial = __makeFullBloomNodeMaterial( sourceHighPassMaterial, 'Bloom_highPass_full' );
 		const fullCompositeMaterial = __makeFullBloomNodeMaterial( sourceCompositeMaterial, 'Bloom_comp_full' );
 		bloomNode._highPassFilterMaterial = __makeBloomPrecompiledMaterial( 'bloom-high-pass', sourceHighPassMaterial, 'Bloom_highPass' );
-		bloomNode._compositeMaterial = __makeBloomPrecompiledMaterial( 'bloom-composite', sourceCompositeMaterial, 'Bloom_comp' );
+		bloomNode._compositeMaterial = __makeBloomPrecompiledMaterial( 'bloom-composite', sourceCompositeMaterial, 'Bloom_comp', bloomNode );
 		const blurHorizontal = [];
 		const blurVertical = [];
 		const fullBlurMaterials = [];

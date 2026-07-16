@@ -451,6 +451,24 @@ test( 'pass-target variant views retain generated selector adapters', () => {
 
 } );
 
+test( 'Bloom composite binds only effect-owned scalar uniforms', () => {
+
+	const makeStart = source.indexOf( 'function __makeBloomPrecompiledMaterial( shape, sourceMaterial, name, bloomNode = null ) {' );
+	const makeEnd = source.indexOf( 'function __wireBloomCompositeUniforms(', makeStart );
+	assert.ok( makeStart >= 0 && makeEnd > makeStart, 'expected the Bloom material factory' );
+	const factory = source.slice( makeStart, makeEnd );
+	assert.match( factory, /if \( shape === 'bloom-composite' \) __wireBloomCompositeUniforms\( artifact, bloomNode \);/ );
+	assert.match( factory, /else __wireLiveNodeSidecarsToArtifact\( artifact, sourceMaterial \);/ );
+
+	const helperEnd = source.indexOf( 'function __setLiveUniformSlot(', makeEnd );
+	assert.ok( helperEnd > makeEnd, 'expected the owned Bloom uniform helper' );
+	const helper = source.slice( makeEnd, helperEnd );
+	assert.match( helper, /property === 'radius'[\s\S]*bloomNode\.radius/ );
+	assert.match( helper, /property === 'strength'[\s\S]*bloomNode\.strength/ );
+	assert.match( helper, /if \( liveNode \) __setLiveUniformSlot\( slot, liveNode \);/ );
+
+} );
+
 test( 'RetroPass scene replacements restore their captured material topology', () => {
 
 	const start = source.indexOf( 'function __makeRetroPassSceneReplacement( material, object ) {' );
