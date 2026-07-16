@@ -16,8 +16,11 @@ function bloomLike() {
 
 	return {
 		updateBefore: () => {},
-		_renderTargetBright: { texture: {} },
-		_renderTargetsHorizontal: [],
+		_renderTargetBright: { texture: { format: 1028, type: 1009 } },
+		_renderTargetsHorizontal: [
+			{ texture: { format: 1023, type: 1016 } },
+			{ texture: { format: 1026, type: 1009 } },
+		],
 		_renderTargetsVertical: [],
 		_highPassFilterMaterial: { name: 'highPass' },
 		_separableBlurMaterials: [ { name: 'b0' }, { name: 'b1' } ],
@@ -213,6 +216,10 @@ test( 'bloom handler subPasses returns high-pass + N blur + composite', () => {
 	assert.equal( sub[ 2 ].shape, 'bloom-blur-1' );
 	assert.equal( sub[ 3 ].shape, 'bloom-composite' );
 	assert.equal( sub[ 0 ].config.bloomIndex, 0 );
+	assert.deepEqual( sub[ 0 ].renderTargetHint, { count: 1, format: 1028, type: 1009 } );
+	assert.deepEqual( sub[ 1 ].renderTargetHint, { count: 1, format: 1023, type: 1016 } );
+	assert.deepEqual( sub[ 2 ].renderTargetHint, { count: 1, format: 1026, type: 1009 } );
+	assert.deepEqual( sub[ 3 ].renderTargetHint, { count: 1, format: 1023, type: 1016 } );
 
 } );
 

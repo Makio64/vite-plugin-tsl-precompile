@@ -273,6 +273,7 @@ registerEffectHandler( {
 				material: node._highPassFilterMaterial,
 				shape: 'bloom-high-pass',
 				config: { type: 'bloom-high-pass', bloomIndex: index },
+				renderTargetHint: __singleRenderTargetHint( node._renderTargetBright ),
 			} );
 
 		}
@@ -295,6 +296,7 @@ registerEffectHandler( {
 					material,
 					shape: `bloom-blur-${ i }`,
 					config: { type: 'bloom-blur', bloomIndex: index, index: i },
+					renderTargetHint: __singleRenderTargetHint( node._renderTargetsHorizontal[ i ] ),
 				} );
 
 			}
@@ -306,6 +308,7 @@ registerEffectHandler( {
 				material: node._compositeMaterial,
 				shape: 'bloom-composite',
 				config: { type: 'bloom-composite', bloomIndex: index },
+				renderTargetHint: __singleRenderTargetHint( node._renderTargetsHorizontal[ 0 ] ),
 			} );
 
 		}
