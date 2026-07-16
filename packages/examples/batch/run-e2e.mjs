@@ -2612,7 +2612,13 @@ function __withSourceMaterialsForFullPass( scene, callback, options = {} ) {
 	try {
 		if ( scene && scene.overrideMaterial && scene.overrideMaterial.isPrecompiledMaterial === true && scene.overrideMaterial.__tslpSourceMaterial ) {
 			swaps.push( { object: scene, material: scene.overrideMaterial, override: true } );
-			scene.overrideMaterial = materialForSource( scene.overrideMaterial.__tslpSourceMaterial );
+			const sourceOverrideMaterial = scene.overrideMaterial.__tslpSourceMaterial;
+			// Keep live node overrides intact. Cloning these through
+			// __materialForFullPass() can change renderer-owned position nodes while
+			// the same override is applied across heterogeneous scene objects.
+			scene.overrideMaterial = sourceOverrideMaterial.isNodeMaterial === true
+				? sourceOverrideMaterial
+				: materialForSource( sourceOverrideMaterial );
 		}
 		if ( scene && typeof scene.traverse === 'function' ) scene.traverse( swapOne );
 		return callback();

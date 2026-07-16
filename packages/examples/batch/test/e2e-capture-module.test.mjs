@@ -181,6 +181,20 @@ test( 'capture module never queues Three renderer-owned shadow overrides as user
 
 } );
 
+test( 'full offscreen fallback preserves live node override materials', () => {
+
+	const start = source.indexOf( 'function __withSourceMaterialsForFullPass(' );
+	const end = source.indexOf( 'function __sharePassRenderTargetFromFullRenderer(', start );
+	assert.ok( start >= 0 && end > start, 'expected the full-pass source-material wrapper' );
+	const wrapper = source.slice( start, end );
+
+	assert.match( wrapper, /const sourceOverrideMaterial = scene\.overrideMaterial\.__tslpSourceMaterial;/ );
+	assert.match( wrapper, /sourceOverrideMaterial\.isNodeMaterial === true[\s\S]*\? sourceOverrideMaterial[\s\S]*: materialForSource\( sourceOverrideMaterial \)/ );
+	assert.match( wrapper, /return materialForSource\( mat\.__tslpSourceMaterial \);/, 'ordinary array object materials still use the full-pass mapper' );
+	assert.match( wrapper, /object\.material = materialForSource\( material\.__tslpSourceMaterial \);/, 'ordinary scalar object materials still use the full-pass mapper' );
+
+} );
+
 test( 'full-renderer shadow fallback does not double-apply captured position-node instancing', () => {
 
 	const start = source.indexOf( 'function __buildShadowScene( userScene )' );
