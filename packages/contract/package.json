@@ -17,6 +17,7 @@
   "exports": {
 		".": "./src/index.js",
 		"./artifact-content": "./src/artifact-content.js",
+		"./artifact-traversal": "./src/artifact-traversal.js",
 		"./attribute-generators": "./src/attribute-generators.js",
 		"./artifact-variants": "./src/artifact-variants.js",
 		"./artifact-shape": "./src/artifact-shape.js",
@@ -34,6 +35,8 @@
     "./slim-bundle-provenance-node": "./src/slim-bundle-provenance-node.js",
     "./slim-three-policy": "./src/slim-three-policy.js",
     "./texture-props": "./src/texture-props.js",
+		"./variant-selector-adapter": "./src/variant-selector-adapter.js",
+		"./variant-selector-sidecar": "./src/variant-selector-sidecar.js",
     "./virtual-modules": "./src/virtual-modules.js",
     "./versions": "./src/versions.js"
   },

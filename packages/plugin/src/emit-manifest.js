@@ -13,12 +13,14 @@
  */
 
 import { collectArtifactDynamicBindings } from '@tsl-precompile/contract/dynamic-bindings';
+import { forEachArtifactPayload } from '@tsl-precompile/contract/artifact-traversal';
 import { normalizeArtifactLightIdentitiesDeep } from '@tsl-precompile/contract/light-identities';
 import { emitUpdaterSource } from './emit-updater.js';
 import { VIRTUAL_WGSL_POOL_MODULE_ID } from './_shared/constants.js';
 import { emitOptimizedJsonExpression, getExternalWgslRefIdentifiers } from './wgsl-optimize.js';
 
 export const ATTRIBUTE_DESCRIPTOR_MATERIALIZER_IMPORT = '@tsl-precompile/contract/attribute-generators';
+export const VARIANT_SELECTOR_ADAPTER_MATERIALIZER_IMPORT = '@tsl-precompile/contract/variant-selector-adapter';
 
 /**
  * @param {Object} manifestEntry - e.g. { file: 'ocean-water.abcd.json', hash: 'sha256:...' }
@@ -53,6 +55,7 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 	const artifactForEmission = normalizeArtifactLightIdentitiesDeep( omitDynamicBindingsDeep( artifact ) );
 	const dynamicBindingRestorations = emitDynamicBindingRestorations( artifactForEmission );
 	const materializeAttributeDescriptors = artifactNeedsAttributeDescriptorMaterialization( artifactForEmission );
+	const materializeVariantSelectorAdapter = artifactNeedsVariantSelectorAdapterMaterialization( artifactForEmission );
 
 	const {
 		declarations: artifactDeclarations,
@@ -82,6 +85,11 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 		lines.push( `import { materializeArtifactAttributeDescriptors as __tslp_materializeAttributes } from ${ JSON.stringify( ATTRIBUTE_DESCRIPTOR_MATERIALIZER_IMPORT ) };` );
 
 	}
+	if ( materializeVariantSelectorAdapter ) {
+
+		lines.push( `import { materializeArtifactVariantSelectorAdapters as __tslp_materializeVariantSelectors } from ${ JSON.stringify( VARIANT_SELECTOR_ADAPTER_MATERIALIZER_IMPORT ) };` );
+
+	}
 	if ( usedWgslPoolRefs.length > 0 ) {
 
 		lines.push( `import { ${ usedWgslPoolRefs.join( ', ' ) } } from ${ JSON.stringify( VIRTUAL_WGSL_POOL_MODULE_ID ) };` );
@@ -97,6 +105,7 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 		...artifactDeclarations,
 		`export const artifact = ${ artifactLiteral };`,
 		...( materializeAttributeDescriptors ? [ '__tslp_materializeAttributes( artifact );' ] : [] ),
+		...( materializeVariantSelectorAdapter ? [ '__tslp_materializeVariantSelectors( artifact );' ] : [] ),
 		...dynamicBindingRestorations,
 		`export const update = __generatedUpdate;`,
 		`export const updateGroup = __generatedUpdateGroup;`,
@@ -113,11 +122,8 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 
 export function artifactNeedsAttributeDescriptorMaterialization( value ) {
 
-	const seen = new WeakSet();
-	const visitArtifact = ( artifact ) => {
+	return artifactPayloadSome( value, ( artifact ) => {
 
-		if ( ! artifact || typeof artifact !== 'object' || seen.has( artifact ) ) return false;
-		seen.add( artifact );
 		for ( const list of [ artifact.attributes, artifact.nodeAttributes ] ) {
 
 			if ( ! Array.isArray( list ) ) continue;
@@ -126,18 +132,28 @@ export function artifactNeedsAttributeDescriptorMaterialization( value ) {
 			) ) ) return true;
 
 		}
-		for ( const variant of Object.values( artifact.variants || {} ) ) if ( visitArtifact( variant ) ) return true;
 		return false;
 
-	};
-	const visitRoot = ( root ) => {
+	} );
 
-		if ( Array.isArray( root ) ) return root.some( visitRoot );
-		if ( ! root || typeof root !== 'object' ) return false;
-		return visitArtifact( root.artifact && typeof root.artifact === 'object' ? root.artifact : root );
+}
 
-	};
-	return visitRoot( value );
+export function artifactNeedsVariantSelectorAdapterMaterialization( value ) {
+
+	return artifactPayloadSome( value, ( artifact ) => Array.isArray( artifact.renderContextSelectors )
+		&& artifact.renderContextSelectors.some( ( selector ) => typeof selector === 'string' && selector.length > 0 ) );
+
+}
+
+function artifactPayloadSome( value, predicate ) {
+
+	let result = false;
+	forEachArtifactPayload( value, ( artifact ) => {
+
+		if ( ! result && predicate( artifact ) ) result = true;
+
+	} );
+	return result;
 
 }
 

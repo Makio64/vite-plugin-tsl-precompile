@@ -31,7 +31,9 @@ import { annotateDevMarkerSources, instrumentLiveContextDependencies, instrument
 import { autoMarkSource } from './auto-mark.js';
 import {
 	ATTRIBUTE_DESCRIPTOR_MATERIALIZER_IMPORT,
+	VARIANT_SELECTOR_ADAPTER_MATERIALIZER_IMPORT,
 	artifactNeedsAttributeDescriptorMaterialization,
+	artifactNeedsVariantSelectorAdapterMaterialization,
 	emitArtifactModule,
 } from './emit-manifest.js';
 import { createWgslStringPool, emitOptimizedJsonExpression, getExternalWgslRefIdentifiers } from './wgsl-optimize.js';
@@ -702,16 +704,19 @@ export default function tslPrecompile( userOpts = {} ) {
 				} );
 				const usedWgslPoolRefs = getExternalWgslRefIdentifiers( auxEntriesLiteral );
 				const materializeAttributeDescriptors = artifactNeedsAttributeDescriptorMaterialization( auxEntries );
+				const materializeVariantSelectorAdapter = artifactNeedsVariantSelectorAdapterMaterialization( auxEntries );
 				const lines = [];
 				const runtimeModule = slimRuntimeEntryForMode( opts.slim );
 				lines.push( `import { registerAuxArtifacts } from ${ JSON.stringify( runtimeModule ) };` );
 				if ( materializeAttributeDescriptors ) lines.push( `import { materializeArtifactAttributeDescriptors as __tslp_materializeAttributes } from ${ JSON.stringify( ATTRIBUTE_DESCRIPTOR_MATERIALIZER_IMPORT ) };` );
+				if ( materializeVariantSelectorAdapter ) lines.push( `import { materializeArtifactVariantSelectorAdapters as __tslp_materializeVariantSelectors } from ${ JSON.stringify( VARIANT_SELECTOR_ADAPTER_MATERIALIZER_IMPORT ) };` );
 				if ( usedWgslPoolRefs.length > 0 ) lines.push( `import { ${ usedWgslPoolRefs.join( ', ' ) } } from ${ JSON.stringify( VIRTUAL_WGSL_POOL_MODULE_ID ) };` );
 				lines.push( '' );
 				for ( const declaration of wgslDeclarations ) lines.push( declaration );
 				if ( wgslDeclarations.length > 0 ) lines.push( '' );
 				lines.push( `const __auxEntries = ${ auxEntriesLiteral };` );
 				if ( materializeAttributeDescriptors ) lines.push( '__tslp_materializeAttributes( __auxEntries );' );
+				if ( materializeVariantSelectorAdapter ) lines.push( '__tslp_materializeVariantSelectors( __auxEntries );' );
 				lines.push( '' );
 				lines.push( `registerAuxArtifacts( __auxEntries );` );
 				lines.push( `export default __auxEntries;` );

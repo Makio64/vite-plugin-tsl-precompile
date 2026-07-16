@@ -2,15 +2,41 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
+import { materializeArtifactVariantSelectorAdapters } from '@tsl-precompile/contract/variant-selector-adapter';
 
 import {
 	ArtifactVariantSelectionError,
-	selectArtifactVariant,
+	selectArtifactVariant as selectArtifactVariantRuntime,
 } from '../src/hydrate/variants/artifact-variant-selector.js';
 
 const SELECTOR_A = JSON.stringify( { version: 'render-object-selector@1', topology: 'a' } );
 const SELECTOR_B = JSON.stringify( { version: 'render-object-selector@1', topology: 'b' } );
 const SELECTOR_ALIAS = JSON.stringify( { version: 'render-object-selector@1', topology: 'alias' } );
+
+function selectArtifactVariant( artifact, selection ) {
+
+	materializeArtifactVariantSelectorAdapters( artifact );
+	return selectArtifactVariantRuntime( artifact, selection );
+
+}
+
+test( 'signed manual artifacts fail loudly when selector adaptation was not materialized', () => {
+
+	const artifact = {
+		cacheKey: 'manual',
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		uniformPlan: [],
+		bindings: [],
+		renderContextSelectors: [ SELECTOR_A ],
+	};
+	assert.equal( selectArtifactVariantRuntime( artifact, { renderContextSelector: SELECTOR_A } ), artifact );
+	assert.throws(
+		() => selectArtifactVariantRuntime( artifact, { renderContextSelector: SELECTOR_B } ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_ADAPTER_UNAVAILABLE',
+	);
+
+} );
 
 test( 'semantic selector wins when replay cache identity points at another variant', () => {
 

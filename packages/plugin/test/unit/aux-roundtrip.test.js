@@ -233,10 +233,11 @@ test( 'slim build: virtual aux module registers into the slim runtime registry',
 		__configHash: 'abc123',
 		__hash: 'abc123',
 		__name: 'aux-post-process-abc123',
-		artifact: {
-			version: 3,
-			materialShape: 'post-process',
-			vertexShader: '',
+			artifact: {
+				version: 3,
+				materialShape: 'post-process',
+				renderContextSelectors: [ '{"version":"render-object-selector@1","topology":"aux"}' ],
+				vertexShader: '',
 			fragmentShader: '',
 			computeShader: '',
 			attributes: [ {
@@ -266,9 +267,12 @@ test( 'slim build: virtual aux module registers into the slim runtime registry',
 		assert.match( source, /"threeVersion"\s*:\s*"0\.184\.0"/ );
 		assert.match( source, /"pluginVersion"\s*:\s*"0\.1\.0"/ );
 		assert.match( source, /materializeArtifactAttributeDescriptors as __tslp_materializeAttributes/ );
-		assert.match( source, /from "@tsl-precompile\/contract\/attribute-generators"/ );
-		assert.ok( source.indexOf( '__tslp_materializeAttributes( __auxEntries );' ) < source.indexOf( 'registerAuxArtifacts( __auxEntries );' ) );
-		assert.match( source, /registerAuxArtifacts\( __auxEntries \);/ );
+			assert.match( source, /from "@tsl-precompile\/contract\/attribute-generators"/ );
+			assert.ok( source.indexOf( '__tslp_materializeAttributes( __auxEntries );' ) < source.indexOf( 'registerAuxArtifacts( __auxEntries );' ) );
+			assert.match( source, /materializeArtifactVariantSelectorAdapters as __tslp_materializeVariantSelectors/ );
+			assert.match( source, /from "@tsl-precompile\/contract\/variant-selector-adapter"/ );
+			assert.ok( source.indexOf( '__tslp_materializeVariantSelectors( __auxEntries );' ) < source.indexOf( 'registerAuxArtifacts( __auxEntries );' ) );
+			assert.match( source, /registerAuxArtifacts\( __auxEntries \);/ );
 
 	} finally {
 

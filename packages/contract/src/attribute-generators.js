@@ -1,3 +1,5 @@
+import { forEachArtifactPayload } from './artifact-traversal.js';
+
 /**
  * Compact, synchronous generators for artifact-owned attribute arrays.
  *
@@ -236,34 +238,17 @@ export function generateRangeAttributeArray( recipe, count ) {
  */
 export function materializeArtifactAttributeDescriptors( value ) {
 
-	const seenArtifacts = new WeakSet();
 	const seenDescriptors = new WeakSet();
-	const visitArtifact = ( artifact ) => {
+	forEachArtifactPayload( value, ( artifact ) => {
 
-		if ( ! artifact || typeof artifact !== 'object' || seenArtifacts.has( artifact ) ) return;
-		seenArtifacts.add( artifact );
 		for ( const list of [ artifact.attributes, artifact.nodeAttributes ] ) {
 
 			if ( ! Array.isArray( list ) ) continue;
 			for ( const descriptor of list ) materializeDescriptor( descriptor, seenDescriptors );
 
 		}
-		for ( const variant of Object.values( artifact.variants || {} ) ) visitArtifact( variant );
 
-	};
-	const visitRoot = ( root ) => {
-
-		if ( Array.isArray( root ) ) {
-
-			for ( const entry of root ) visitRoot( entry );
-			return;
-
-		}
-		if ( ! root || typeof root !== 'object' ) return;
-		visitArtifact( root.artifact && typeof root.artifact === 'object' ? root.artifact : root );
-
-	};
-	visitRoot( value );
+	} );
 	return value;
 
 }

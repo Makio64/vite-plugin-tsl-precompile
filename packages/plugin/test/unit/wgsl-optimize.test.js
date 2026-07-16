@@ -352,6 +352,32 @@ test( 'generated attribute descriptors opt into one build-time materializer hand
 
 } );
 
+test( 'signed artifact families opt into one generated selector adapter handoff', () => {
+
+	const selector = '{"version":"render-object-selector@1","topology":"signed"}';
+	const { source } = emitArtifactModule(
+		{ hash: 'signed-selector', name: 'signed-selector' },
+		{
+			artifact: {
+				vertexShader: 'vertex',
+				fragmentShader: 'fragment',
+				renderContextSelectors: [],
+				uniformPlan: [],
+				variants: {
+					signed: { vertexShader: 'vertex', fragmentShader: 'fragment', renderContextSelectors: [ selector ], uniformPlan: [] },
+				},
+			},
+		},
+	);
+
+	assert.doesNotThrow( () => parse( source, { sourceType: 'module' } ) );
+	assert.equal( source.match( /from "@tsl-precompile\/contract\/variant-selector-adapter"/g )?.length, 1 );
+	assert.equal( source.match( /__tslp_materializeVariantSelectors\( artifact \);/g )?.length, 1 );
+	assert.ok( source.indexOf( 'materializeArtifactVariantSelectorAdapters as __tslp_materializeVariantSelectors' ) < source.indexOf( 'export const artifact =' ) );
+	assert.ok( source.indexOf( '__tslp_materializeVariantSelectors( artifact );' ) > source.indexOf( 'export const artifact =' ) );
+
+} );
+
 test( 'emitArtifactModule emits WGSL constants before the artifact literal', () => {
 
 	const shader = '@vertex fn main(  ) -> @builtin( position ) vec4<f32> { return vec4<f32>( 0.0 ); }';

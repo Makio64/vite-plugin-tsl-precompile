@@ -36,6 +36,7 @@ const GENERATED_RUNTIME_HELPER_IMPORTS = Object.freeze( [
 	'@tsl-precompile/runtime/slim-support/live-uniform-registry',
 ] );
 const STATELESS_ATTRIBUTE_MATERIALIZER = '@tsl-precompile/contract/attribute-generators';
+const STATELESS_VARIANT_SELECTOR_MATERIALIZER = '@tsl-precompile/contract/variant-selector-adapter';
 
 async function makeProject( threeVersion = '0.184.0', { provenance = false, bundleBody = null } = {} ) {
 
@@ -251,6 +252,11 @@ test( 'slim build aliases public three entries but full-three bypasses the alias
 			config.resolve.alias.some( ( alias ) => aliasMatches( alias, STATELESS_ATTRIBUTE_MATERIALIZER ) ),
 			false,
 			'generated attribute materialization stays tree-shakeable outside the prebuilt singleton',
+		);
+		assert.equal(
+			config.resolve.alias.some( ( alias ) => aliasMatches( alias, STATELESS_VARIANT_SELECTOR_MATERIALIZER ) ),
+			false,
+			'generated selector adaptation stays tree-shakeable outside the prebuilt singleton',
 		);
 
 		await plugin.configResolved( {

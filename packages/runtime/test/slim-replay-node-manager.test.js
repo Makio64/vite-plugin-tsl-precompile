@@ -10,6 +10,7 @@ import { createReplayShadowMaterial } from '../src/slim-replay-shadow-material.j
 import { setSlimRenderFallback } from '../src/slim-support/render-fallback-registry.js';
 import { shouldAdvanceTemporalState, withTemporalFrame } from '../src/slim-support/temporal-frame.js';
 import { createRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
+import { materializeArtifactVariantSelectorAdapters } from '@tsl-precompile/contract/variant-selector-adapter';
 
 function fakeRenderer() {
 
@@ -186,6 +187,7 @@ test( 'replay NodeManager applies the background selector profile from aux metad
 	captureDescriptor.target.sampleCount = 4;
 	unsigned.renderContextSelectors = [ JSON.stringify( captureDescriptor ) ];
 	Object.defineProperty( unsigned, '__tslpAuxShape', { value: 'background' } );
+	materializeArtifactVariantSelectorAdapters( unsigned );
 
 	const manager = new ReplayNodeManager( sourceRenderer, sourceRenderer.backend );
 	assert.doesNotThrow( () => manager.getForRender( live ) );
@@ -204,6 +206,7 @@ test( 'replay NodeManager reuses an opaque material artifact across live MSAA ta
 	const captureDescriptor = JSON.parse( createRenderObjectContextSelector( live, renderer ) );
 	captureDescriptor.target.sampleCount = 4;
 	signed.renderContextSelectors = [ JSON.stringify( captureDescriptor ) ];
+	materializeArtifactVariantSelectorAdapters( signed );
 
 	const manager = new ReplayNodeManager( renderer, renderer.backend );
 	assert.doesNotThrow( () => manager.getForRender( live ) );
@@ -222,6 +225,7 @@ test( 'replay NodeManager applies the mesh-basic selector profile from material 
 	captureDescriptor.scene.environment = { kind: '2d', mapping: 303, colorSpace: 'srgb-linear' };
 	captureDescriptor.scene.environmentNode = true;
 	signed.renderContextSelectors = [ JSON.stringify( captureDescriptor ) ];
+	materializeArtifactVariantSelectorAdapters( signed );
 
 	const manager = new ReplayNodeManager( renderer, renderer.backend );
 	assert.doesNotThrow( () => manager.getForRender( live ) );
@@ -230,6 +234,7 @@ test( 'replay NodeManager applies the mesh-basic selector profile from material 
 		materialShape: 'mesh-physical',
 		renderContextSelectors: signed.renderContextSelectors,
 	} );
+	materializeArtifactVariantSelectorAdapters( physical );
 	assert.throws(
 		() => new ReplayNodeManager( renderer, renderer.backend ).getForRender( renderObject( renderer, material( physical ), { scene: live.scene } ) ),
 		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
@@ -265,6 +270,7 @@ test( 'replay NodeManager applies the shadow-depth selector profile from artifac
 	captureDescriptor.scene = { fog: null, environment: null };
 	captureDescriptor.lights = [ { type: 'DirectionalLight', castShadow: true } ];
 	signed.renderContextSelectors = [ JSON.stringify( captureDescriptor ) ];
+	materializeArtifactVariantSelectorAdapters( signed );
 
 	const manager = new ReplayNodeManager( sourceRenderer, sourceRenderer.backend );
 	assert.doesNotThrow( () => manager.getForRender( live ) );
@@ -333,6 +339,7 @@ test( 'shadow topology invalidation reselects a signed artifact variant for the 
 			renderContextSelectors: [ withMapSelector ],
 		} ),
 	};
+	materializeArtifactVariantSelectorAdapters( family );
 
 	const manager = new ReplayNodeManager( renderer, renderer.backend );
 	caster.map = null;
@@ -363,6 +370,7 @@ test( 'replay NodeManager applies the post-process selector profile from artifac
 		depthTexture: { kind: 'depth', format: 1026 },
 	};
 	signed.renderContextSelectors = [ JSON.stringify( captureDescriptor ) ];
+	materializeArtifactVariantSelectorAdapters( signed );
 
 	const manager = new ReplayNodeManager( sourceRenderer, sourceRenderer.backend );
 	assert.doesNotThrow( () => manager.getForRender( live ) );
@@ -379,6 +387,7 @@ test( 'replay NodeManager applies the scene-independent render-output selector p
 	captureDescriptor.scene = { environment: { kind: '2d', colorSpace: 'srgb-linear' } };
 	captureDescriptor.lights = [ { type: 'DirectionalLight', castShadow: true } ];
 	signed.renderContextSelectors = [ JSON.stringify( captureDescriptor ) ];
+	materializeArtifactVariantSelectorAdapters( signed );
 
 	const manager = new ReplayNodeManager( renderer, renderer.backend );
 	assert.doesNotThrow( () => manager.getForRender( live ) );
@@ -415,6 +424,8 @@ test( 'replay NodeManager shares one cube conversion state across faces and mips
 			sampleCount: 1,
 		},
 	} );
+	cubeArtifact.renderContextSelectors = [ createRenderObjectContextSelector( atFace( 0, 0 ), renderer ) ];
+	materializeArtifactVariantSelectorAdapters( cubeArtifact );
 	const manager = new ReplayNodeManager( renderer, renderer.backend );
 	const firstState = manager.getForRender( atFace( 0, 0 ) );
 	const sixthFaceState = manager.getForRender( atFace( 5, 0 ) );

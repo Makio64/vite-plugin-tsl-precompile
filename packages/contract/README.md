@@ -18,6 +18,12 @@ from `@tsl-precompile/contract/attribute-generators` before manual registration
 or `hydrateNodeBuilderState()`; undecorated generated descriptors fail loudly
 instead of producing zero-filled data.
 
+Signed render variants use the same boundary: generated modules call
+`materializeArtifactVariantSelectorAdapters( artifact )` from
+`@tsl-precompile/contract/variant-selector-adapter`. Manual JSON consumers must
+do likewise before registration so topology projection and bounded selector
+aliases stay outside the checked renderer bundle without weakening matching.
+
 See [AGENTS.md → Change Rules](https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/AGENTS.md)
 for the contract-first development rule.
 

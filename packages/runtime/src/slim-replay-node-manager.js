@@ -10,10 +10,10 @@
 import DataMap from 'three/src/renderers/common/DataMap.js';
 import {
 	createRenderObjectContextSelector,
-	projectRenderObjectContextSelector,
 	RENDER_BINDING_OWNER_KINDS,
 	resolveRenderObjectBindingOwner,
 } from '@tsl-precompile/contract/render-selector';
+import { GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR } from '@tsl-precompile/contract/variant-selector-sidecar';
 import { hydrateNodeBuilderState } from './hydrator.js';
 import ReplayNodeFrame from './slim-replay-node-frame.js';
 import { getSlimRenderFallback } from './slim-support/render-fallback-registry.js';
@@ -199,6 +199,7 @@ class ReplayNodeManager extends DataMap {
 		const selectorProfile = auxShape === 'background' || auxShape === 'shadow-depth' || auxShape === 'post-process' || auxShape === 'render-output' || auxShape === 'cube-render-target' || auxShape === 'mesh-basic'
 			? auxShape
 			: null;
+		const selectorAdapter = artifact && artifact[ GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR ];
 		return {
 			cacheKey: this.getForRenderCacheKey( renderObject ),
 			bindingMaterial: bindingOwner.kind === RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER ? bindingOwner.material : null,
@@ -208,7 +209,9 @@ class ReplayNodeManager extends DataMap {
 			// and mip levels share one fixed conversion shader; retaining their raw
 			// values here would hydrate six equivalent states before the selector
 			// layer projects them away.
-			renderContextSelector: projectRenderObjectContextSelector( selector, selectorProfile ),
+			renderContextSelector: selectorAdapter && typeof selectorAdapter.project === 'function'
+				? selectorAdapter.project( selector, selectorProfile )
+				: selector,
 			renderContextSelectorProfile: selectorProfile,
 		};
 

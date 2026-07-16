@@ -1,4 +1,5 @@
 import { stableJsonStringify } from './stable-json.js';
+import { GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR } from './variant-selector-sidecar.js';
 
 const EPHEMERAL_IDENTITY_FIELDS = Object.freeze( {
 	captureUuid: 'light',
@@ -53,6 +54,7 @@ export function createArtifactVariantPayload( artifact ) {
 		if ( artifact && artifact[ field ] !== undefined ) payload[ field ] = artifact[ field ];
 
 	}
+	copyVariantSelectorAdapter( artifact, payload );
 	return payload;
 
 }
@@ -270,6 +272,7 @@ function applyArtifactVariantPayload( target, payload ) {
 		else if ( Object.hasOwn( target, field ) ) delete target[ field ];
 
 	}
+	copyVariantSelectorAdapter( payload, target );
 
 }
 
@@ -319,6 +322,8 @@ function mergeFamilySelectors( record, payload ) {
 		...( payload.renderContextSelectors || [] ),
 	] );
 	if ( mergedSelectors.length > 0 ) record.payload.renderContextSelectors = mergedSelectors;
+	if ( ! record.payload[ GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR ]
+		&& payload[ GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR ] ) copyVariantSelectorAdapter( payload, record.payload );
 
 }
 
@@ -528,6 +533,7 @@ function applyEphemeralIdentityAliases( value, state ) {
 		if ( seen.has( current ) ) return seen.get( current );
 		const clone = Array.isArray( current ) ? [] : {};
 		seen.set( current, clone );
+		copyVariantSelectorAdapter( current, clone );
 		if ( Array.isArray( current ) ) {
 
 			for ( const item of current ) clone.push( visit( item ) );
@@ -541,6 +547,26 @@ function applyEphemeralIdentityAliases( value, state ) {
 
 	};
 	return visit( value );
+
+}
+
+function copyVariantSelectorAdapter( source, target ) {
+
+	if ( ! source || ! target || typeof source !== 'object' || typeof target !== 'object' ) return;
+	const adapter = source[ GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR ];
+	if ( adapter && typeof adapter.project === 'function' && typeof adapter.match === 'function' ) {
+
+		Object.defineProperty( target, GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR, {
+			value: adapter,
+			configurable: true,
+			writable: true,
+		} );
+
+	} else if ( Object.hasOwn( target, GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR ) ) {
+
+		delete target[ GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR ];
+
+	}
 
 }
 
