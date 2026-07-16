@@ -1900,7 +1900,9 @@ function __isCaptureMaintenanceRender() {
 
 export class WebGPURenderer extends Original.WebGPURenderer {
 	constructor( ...args ) {
+		const params = args[ 0 ];
 		super( ...args );
+		if ( this.domElement && this.domElement.dataset ) this.domElement.dataset.tslpBackend = params && params.forceWebGL === true ? 'webgl' : 'webgpu';
 		// Wedge 4: expose the full renderer so the runner can read nodeFrame.time
 		// at screenshot time.
 		window.__tslpHarnessRenderer = this;
@@ -6939,8 +6941,8 @@ function __makeStorageBufferPboReplayMaterial( sourceMaterial ) {
 	return material;
 }
 
-function __replaceStorageBufferPboReplayMaterials( scene ) {
-	if ( __state.example !== 'webgpu_storage_buffer.html' || ! scene || typeof scene.traverse !== 'function' ) return;
+function __replaceStorageBufferPboReplayMaterials( scene, renderer ) {
+	if ( __state.example !== 'webgpu_storage_buffer.html' || ! renderer || renderer.__tslpForceWebGLReplay !== true || ! scene || typeof scene.traverse !== 'function' ) return;
 	scene.traverse( ( object ) => {
 		const material = object && object.material;
 		if ( ! material ) return;
@@ -8011,7 +8013,7 @@ function __prepareSceneForReplay( scene, renderer ) {
 	window.__tslpCurrentReplayRenderer = renderer;
 	try {
 		__replaceSceneOverrideMaterial( scene );
-		__replaceStorageBufferPboReplayMaterials( scene );
+		__replaceStorageBufferPboReplayMaterials( scene, renderer );
 		__replaceSceneMaterials( scene );
 	} finally {
 		window.__tslpCurrentReplayRenderer = previousReplayRenderer;
@@ -10230,6 +10232,7 @@ function __trackDebugShaderAsync( renderer ) {
 			}
 			super( ...args );
 			this.__tslpForceWebGLReplay = forceWebGLReplay;
+			if ( this.domElement && this.domElement.dataset ) this.domElement.dataset.tslpBackend = forceWebGLReplay ? 'webgl' : 'webgpu';
 			// Wedge 4: expose the slim renderer so the runner can read
 			// nodeFrame.time at screenshot time.
 			window.__tslpHarnessRenderer = this;
@@ -14516,9 +14519,28 @@ async function dumpCanvases( page, name = '' ) {
 
 	const canvases = await page.$$( 'canvas' );
 	const shots = [];
-	const indices = name === 'webgpu_texturegrad.html'
+	let indices = name === 'webgpu_texturegrad.html'
 		? Array.from( canvases.keys() )
 		: Array.from( canvases.keys() ).reverse();
+	if ( name === 'webgpu_storage_buffer.html' ) {
+
+		// The example starts both async renderer initializers without awaiting
+		// either, so DOM append order is not a backend identity. Prefer the marker
+		// installed by the capture/replay wrappers and use the authored left-canvas
+		// position for the unwrapped stock pass.
+		const candidates = await Promise.all( canvases.map( async ( canvas, index ) => {
+
+			const box = await canvas.boundingBox();
+			const backend = await canvas.evaluate( ( element ) => element.dataset && element.dataset.tslpBackend || '' ).catch( () => '' );
+			return { index, backend, left: box && box.x || 0 };
+
+		} ) );
+		const backendRank = ( backend ) => backend === 'webgpu' ? 0 : backend === 'webgl' ? 2 : 1;
+		indices = candidates
+			.sort( ( left, right ) => backendRank( left.backend ) - backendRank( right.backend ) || left.left - right.left || left.index - right.index )
+			.map( ( candidate ) => candidate.index );
+
+	}
 	for ( const i of indices ) {
 
 		const box = await canvases[ i ].boundingBox();
