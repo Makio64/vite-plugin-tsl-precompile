@@ -861,6 +861,95 @@ test( 'createSlimSceneSupport lazily initializes explicit async fallback before 
 
 } );
 
+test( 'createSlimSceneSupport orders promoted compute before an immediate readback without waiting for later dispatches', async () => {
+
+	const readbackResult = new ArrayBuffer( 16 );
+	const readbackCalls = [];
+	let resolveReadbackCalled;
+	const readbackCalled = new Promise( ( resolve ) => { resolveReadbackCalled = resolve; } );
+	const originalGetArrayBufferAsync = async function ( ...args ) {
+
+		assert.equal( this, slim );
+		readbackCalls.push( args );
+		resolveReadbackCalled();
+		return readbackResult;
+
+	};
+	const slim = Object.assign( Object.create( { getArrayBufferAsync: originalGetArrayBufferAsync } ), fakeRenderer() );
+	assert.equal( Object.prototype.hasOwnProperty.call( slim, 'getArrayBufferAsync' ), false );
+
+	const full = fakeRenderer();
+	full.backend.device = slim.backend.device;
+	full._initialized = false;
+	full.init = async () => {
+
+		await Promise.resolve();
+		full._initialized = true;
+
+	};
+	const firstNode = { isComputeNode: true };
+	const laterNode = { isComputeNode: true };
+	let resolveFirst;
+	let resolveLater;
+	let resolveFirstEntered;
+	const firstEntered = new Promise( ( resolve ) => { resolveFirstEntered = resolve; } );
+	full.computeAsync = ( node ) => new Promise( ( resolve ) => {
+
+		if ( node === firstNode ) {
+
+			resolveFirst = resolve;
+			resolveFirstEntered();
+
+		} else {
+
+			resolveLater = resolve;
+
+		}
+
+	} );
+
+	const support = createSlimSceneSupport( { renderer: slim, fullRendererFallback: false } );
+	support.installComputeFallback( full );
+	let firstDispatch = null;
+	let laterDispatch = null;
+
+	try {
+
+		assert.notEqual( slim.getArrayBufferAsync, originalGetArrayBufferAsync );
+		firstDispatch = slim.compute( firstNode );
+		const readback = slim.getArrayBufferAsync( 'storage', 'target', 4, 8 );
+		await firstEntered;
+		assert.equal( readbackCalls.length, 0, 'readback stays behind the promoted compute dispatch' );
+
+		laterDispatch = slim.compute( laterNode );
+		assert.equal( typeof resolveLater, 'function', 'the later dispatch is pending independently' );
+		resolveFirst();
+		await firstDispatch;
+		const observedBeforeLaterDispatch = await Promise.race( [
+			readbackCalled.then( () => true ),
+			new Promise( ( resolve ) => setImmediate( () => resolve( false ) ) ),
+		] );
+		assert.equal( observedBeforeLaterDispatch, true, 'readback snapshots only dispatches requested before it' );
+		assert.equal( await readback, readbackResult );
+		assert.deepEqual( readbackCalls, [ [ 'storage', 'target', 4, 8 ] ] );
+
+		resolveLater();
+		await laterDispatch;
+		await support.dispose();
+		assert.equal( slim.getArrayBufferAsync, originalGetArrayBufferAsync, 'dispose restores the application renderer method' );
+		assert.equal( Object.prototype.hasOwnProperty.call( slim, 'getArrayBufferAsync' ), false, 'dispose removes the temporary own wrapper' );
+
+	} finally {
+
+		if ( resolveFirst ) resolveFirst();
+		if ( resolveLater ) resolveLater();
+		await Promise.allSettled( [ firstDispatch, laterDispatch ].filter( Boolean ) );
+		await support.dispose();
+
+	}
+
+} );
+
 test( 'createSlimSceneSupport dispatches retained material compute and presents shared storage', async () => {
 
 	const slim = fakeRenderer();

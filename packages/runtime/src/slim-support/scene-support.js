@@ -505,6 +505,19 @@ export function createSlimSceneSupport( opts = {} ) {
 	let fallbackRegistered = false;
 	let computeFallbackInstalled = false;
 	let restoreComputeFallback = null;
+	let computeFallbackDispatchTail = Promise.resolve();
+
+	function trackPromotedComputeDispatch( result ) {
+
+		if ( ! result || typeof result.then !== 'function' ) return result;
+		const settledDispatch = Promise.resolve( result ).then( () => undefined, () => undefined );
+		computeFallbackDispatchTail = computeFallbackDispatchTail.then(
+			() => settledDispatch,
+			() => settledDispatch,
+		);
+		return result;
+
+	}
 
 	function syncDelegatedComputeOutputs( computeNode, fullRenderer, syncOpts = {} ) {
 
@@ -663,6 +676,8 @@ export function createSlimSceneSupport( opts = {} ) {
 		if ( ! fallback && ! cachedFullRenderer ) return false;
 		const originalCompute = typeof renderer.compute === 'function' ? renderer.compute : null;
 		const originalComputeAsync = typeof renderer.computeAsync === 'function' ? renderer.computeAsync : null;
+		const originalGetArrayBufferAsync = typeof renderer.getArrayBufferAsync === 'function' ? renderer.getArrayBufferAsync : null;
+		const hadOwnGetArrayBufferAsync = Object.prototype.hasOwnProperty.call( renderer, 'getArrayBufferAsync' );
 
 		renderer.compute = function computeWithSlimFallback( computeNode, ...rest ) {
 
@@ -670,7 +685,11 @@ export function createSlimSceneSupport( opts = {} ) {
 			const fullRenderer = cachedFullRenderer;
 			if ( fullRenderer ) {
 
-				if ( fullRenderer._initialized === false && typeof fullRenderer.init === 'function' ) return this.computeAsync( computeNode, ...rest );
+				if ( fullRenderer._initialized === false && typeof fullRenderer.init === 'function' ) {
+
+					return trackPromotedComputeDispatch( this.computeAsync( computeNode, ...rest ) );
+
+				}
 
 				shareComputeInputs( computeNode, fullRenderer );
 				const result = invokeAlignedFullCompute( fullRenderer, () => typeof fullRenderer.compute === 'function'
@@ -678,13 +697,13 @@ export function createSlimSceneSupport( opts = {} ) {
 					: fullRenderer.computeAsync( computeNode, ...rest ) );
 				if ( result && typeof result.then === 'function' ) {
 
-					return result.then( () => syncDelegatedComputeOutputs( computeNode, fullRenderer ) );
+					return trackPromotedComputeDispatch( result.then( () => syncDelegatedComputeOutputs( computeNode, fullRenderer ) ) );
 
 				}
 				return syncDelegatedComputeOutputs( computeNode, fullRenderer );
 
 			}
-			return this.computeAsync( computeNode, ...rest );
+			return trackPromotedComputeDispatch( this.computeAsync( computeNode, ...rest ) );
 
 		};
 
@@ -707,6 +726,20 @@ export function createSlimSceneSupport( opts = {} ) {
 			return syncDelegatedComputeOutputs( computeNode, fullRenderer );
 
 		};
+		if ( originalGetArrayBufferAsync ) {
+
+			renderer.getArrayBufferAsync = async function getArrayBufferAfterSlimFallbackCompute( ...args ) {
+
+				// Snapshot the ordering barrier at call time. Dispatches requested
+				// after this readback belong to a later transaction and must not
+				// delay it.
+				const priorDispatchTail = computeFallbackDispatchTail;
+				await priorDispatchTail;
+				return originalGetArrayBufferAsync.apply( this, args );
+
+			};
+
+		}
 
 		restoreComputeFallback = () => {
 
@@ -714,6 +747,13 @@ export function createSlimSceneSupport( opts = {} ) {
 			else delete renderer.compute;
 			if ( originalComputeAsync ) renderer.computeAsync = originalComputeAsync;
 			else delete renderer.computeAsync;
+			if ( originalGetArrayBufferAsync ) {
+
+				if ( hadOwnGetArrayBufferAsync ) renderer.getArrayBufferAsync = originalGetArrayBufferAsync;
+				else delete renderer.getArrayBufferAsync;
+
+			}
+			computeFallbackDispatchTail = Promise.resolve();
 
 		};
 		computeFallbackInstalled = true;
