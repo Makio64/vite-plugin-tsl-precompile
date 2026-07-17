@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * Score every paired capture/replay PNG in the configured results root and emit a
- * categorized markdown summary. Answers the question: "for which three.js
- * webgpu_* examples does the slim runtime produce the same pixels as live
- * three.js right now?"
+ * Score capture/replay evidence for every route in example-catalogue.json and
+ * emit a categorized markdown summary. Answers the question: "for which
+ * tracked three.js webgpu_* examples does the slim runtime produce the same
+ * pixels as live three.js right now?"
  *
- * For each `<name>.capture.png` + `<name>.replay.png` pair found on disk:
+ * For each tracked `<name>.capture.png` + `<name>.replay.png` pair found on disk:
  *   - Decode both PNGs and compute PSNR through the shared psnr.mjs helper.
  *     Default verdict threshold is 30 dB to match run-e2e.mjs's existing
  *     pixel gate.
@@ -13,8 +13,9 @@
  *   - Dimension mismatches between capture and replay are flagged as well.
  *
  * Existing e2e-report.json `pixelGate.psnr` values are merged in for any
- * example that doesn't have a paired PNG on disk, so the table doesn't
- * lose information when shots get pruned.
+ * tracked example that doesn't have a paired PNG on disk, so the table doesn't
+ * lose information when shots get pruned. Orphan evidence is ignored rather
+ * than silently expanding the public catalogue.
  *
  * Output: <output-root>/coverage-summary.md (overwritten each run).
  *
@@ -35,6 +36,27 @@ const RESULTS = resolveE2EOutputRoot( { selfDir: SELF, args } );
 const SHOTS = join( RESULTS, 'shots' );
 const E2E_REPORT = join( RESULTS, 'e2e-report.json' );
 const OUT = join( RESULTS, 'coverage-summary.md' );
+const CATALOGUE = join( SELF, 'example-catalogue.json' );
+
+function trackedExampleNames() {
+
+	const catalogue = JSON.parse( readFileSync( CATALOGUE, 'utf8' ) );
+	if ( ! Array.isArray( catalogue.cases ) ) throw new Error( 'example-catalogue.json must contain a cases array' );
+	const names = catalogue.cases.map( ( entry ) => {
+
+		if ( ! entry || typeof entry.id !== 'string' || entry.id.length === 0 ) {
+
+			throw new Error( 'example-catalogue.json contains a case without an id' );
+
+		}
+		return `${ entry.id }.html`;
+
+	} );
+	const unique = new Set( names );
+	if ( unique.size !== names.length ) throw new Error( 'example-catalogue.json contains duplicate case ids' );
+	return unique;
+
+}
 
 function getArg( prefix, def ) {
 
@@ -68,7 +90,7 @@ for ( const f of files ) {
 
 }
 
-const allNames = new Set( [ ...captures.keys(), ...replays.keys() ] );
+const allNames = trackedExampleNames();
 
 function comparePSNR( capPath, repPath ) {
 
@@ -104,6 +126,16 @@ for ( const reportPath of reportPaths ) {
 		} );
 
 	}
+
+}
+
+const evidenceNames = new Set( [ ...captures.keys(), ...replays.keys(), ...e2eByName.keys() ] );
+const orphanNames = [ ...evidenceNames ].filter( ( name ) => ! allNames.has( name ) ).sort();
+if ( orphanNames.length > 0 ) {
+
+	const listed = orphanNames.slice( 0, 12 ).join( ', ' );
+	const remainder = orphanNames.length > 12 ? ` (+${ orphanNames.length - 12 } more)` : '';
+	console.warn( `[coverage-summary] ignored ${ orphanNames.length } untracked evidence entr${ orphanNames.length === 1 ? 'y' : 'ies' }: ${ listed }${ remainder }` );
 
 }
 
@@ -211,20 +243,19 @@ for ( const name of allNames ) {
 			note = 'no capture (live three.js did not produce a frame)';
 		}
 
+	} else {
+
+		const reportEntry = e2eByName.get( name );
+		if ( reportEntry ) {
+			( { psnr, verdict, note } = rowFromReportEntry( name, reportEntry ) );
+		} else {
+			verdict = 'fail';
+			note = 'no capture or replay evidence';
+		}
+
 	}
 
 	rows.push( { name, hasCapture, hasReplay, psnr, verdict, note } );
-
-}
-
-// Merge in e2e-report entries for examples not on disk so nothing is lost
-// if shots get pruned. These entries are tagged so the reader can tell.
-for ( const [ name, reportEntry ] of e2eByName ) {
-
-	if ( allNames.has( name ) ) continue;
-	const { psnr, verdict, note } = rowFromReportEntry( name, reportEntry );
-
-	rows.push( { name, hasCapture: false, hasReplay: false, psnr, verdict, note } );
 
 }
 
