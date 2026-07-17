@@ -251,6 +251,16 @@ export async function runShadowDebugExample( {
 	const casters = addDebugGeometry( scene, lightKind );
 	makeLight( lightKind, scene );
 
+	function tick() {
+		casters.rotation.y = 0;
+		renderer.render( scene, camera );
+	}
+
+	// Material markers deliberately wait for a real draw so their captured
+	// topology comes from the renderer rather than a synthetic fallback. Give
+	// them that draw before auxiliary capture borrows the same renderer.
+	if ( captureRuntime ) tick();
+
 	const auxResults = captureRuntime ? await captureRuntime.precompileAuxiliary( renderer, scene, camera, {
 		devEndpoint: CAPTURE_ENDPOINT,
 		three: captureThree,
@@ -262,11 +272,6 @@ export async function runShadowDebugExample( {
 
 	const auxSummary = auxResults.map( ( r ) => `${ r.shape }:${ r.ok ? 'ok' : 'err' }` ).join( ', ' ) || 'no aux';
 	setHud( title, shadowKind, IS_E2E ? 'rendering' : `rendering - ${ auxSummary }` );
-
-	function tick() {
-		casters.rotation.y = 0;
-		renderer.render( scene, camera );
-	}
 
 	renderer.setAnimationLoop( tick );
 
