@@ -1,7 +1,7 @@
 {
-	"generatedAt": "2026-07-16T18:44:14.950Z",
+	"generatedAt": "2026-07-17T00:49:53.967Z",
 	"provenance": {
-		"coverageSha256": "2ef94a1b967df0b5abbec21250a76473f1f374c0b8ea6b3c45509239a313c1d8",
+		"coverageSha256": "7e3e0cf6bfb7919c28fafc7783fed51a62f0653d2d1f849ff94e9abba7327acd",
 		"reportSha256": "feae4b79008ffbe3121a2349be36260140b2765aae142f66af4a4c4c2456d676",
 		"catalogueSha256": "081d5fb87e3e635af49cc38aa5ba49b65063e024f0ff977847d32acd9de3828a",
 		"generatorSha256": "ace2b6a91c2226e6d5f7b65f73d3de2499e5293659c2a4e229ecc6980add099e"
@@ -12,7 +12,7 @@
 		"examplesHidden": 1,
 		"materialsBaked": 819,
 		"artifactsCaptured": 937,
-		"wgslBytes": 3549681,
+		"wgslBytes": 3549172,
 		"runtimeNodeBuilderCalls": 0,
 		"smokeTotal": 198,
 		"smokePass": 197,
@@ -1756,21 +1756,21 @@
 			"badge": "pixel-match"
 		},
 		{
-			"basename": "webgpu_compute_sort_bitonic",
-			"displayName": "compute · sort bitonic",
+			"basename": "webgpu_compute_particles_rain",
+			"displayName": "compute · particles rain",
 			"category": "compute",
 			"categoryLabel": "Compute",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_compute_sort_bitonic",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_compute_particles_rain",
 			"source": {
 				"kind": "three",
-				"path": "examples/webgpu_compute_sort_bitonic.html",
-				"route": "webgpu_compute_sort_bitonic.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_compute_sort_bitonic"
+				"path": "examples/webgpu_compute_particles_rain.html",
+				"route": "webgpu_compute_particles_rain.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_particles_rain"
 			},
-			"thumbReplay": "examples/thumbs/webgpu_compute_sort_bitonic.webp",
-			"thumbCapture": "examples/thumbs/webgpu_compute_sort_bitonic.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_compute_sort_bitonic.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_compute_sort_bitonic.capture.modal.webp",
+			"thumbReplay": "examples/thumbs/webgpu_compute_particles_rain.webp",
+			"thumbCapture": "examples/thumbs/webgpu_compute_particles_rain.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_compute_particles_rain.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_compute_particles_rain.capture.modal.webp",
 			"smoke": {
 				"status": "pass",
 				"gpuValidationCount": 0
@@ -1784,12 +1784,17 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 0,
-			"artifactCount": 0,
-			"totalWgslBytes": 0,
+			"materialCount": 1,
+			"artifactCount": 2,
+			"totalWgslBytes": 2391,
 			"hasCompute": false,
-			"shapes": [],
-			"materialShapes": [],
+			"shapes": [
+				"lights",
+				"render-output"
+			],
+			"materialShapes": [
+				"render-output"
+			],
 			"notes": "",
 			"thumbHealth": "ok",
 			"badge": "pixel-match"
@@ -2060,21 +2065,21 @@
 			"badge": "pixel-match"
 		},
 		{
-			"basename": "webgpu_compute_texture",
-			"displayName": "compute · texture",
+			"basename": "webgpu_compute_sort_bitonic",
+			"displayName": "compute · sort bitonic",
 			"category": "compute",
 			"categoryLabel": "Compute",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_compute_texture",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_compute_sort_bitonic",
 			"source": {
 				"kind": "three",
-				"path": "examples/webgpu_compute_texture.html",
-				"route": "webgpu_compute_texture.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_compute_texture"
+				"path": "examples/webgpu_compute_sort_bitonic.html",
+				"route": "webgpu_compute_sort_bitonic.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_sort_bitonic"
 			},
-			"thumbReplay": "examples/thumbs/webgpu_compute_texture.webp",
-			"thumbCapture": "examples/thumbs/webgpu_compute_texture.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_compute_texture.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_compute_texture.capture.modal.webp",
+			"thumbReplay": "examples/thumbs/webgpu_compute_sort_bitonic.webp",
+			"thumbCapture": "examples/thumbs/webgpu_compute_sort_bitonic.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_compute_sort_bitonic.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_compute_sort_bitonic.capture.modal.webp",
 			"smoke": {
 				"status": "pass",
 				"gpuValidationCount": 0
@@ -2088,16 +2093,12 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 1,
-			"artifactCount": 1,
-			"totalWgslBytes": 2900,
+			"materialCount": 0,
+			"artifactCount": 0,
+			"totalWgslBytes": 0,
 			"hasCompute": false,
-			"shapes": [
-				"render-output"
-			],
-			"materialShapes": [
-				"render-output"
-			],
+			"shapes": [],
+			"materialShapes": [],
 			"notes": "",
 			"thumbHealth": "ok",
 			"badge": "pixel-match"
@@ -2903,27 +2904,27 @@
 			"badge": "pixel-match"
 		},
 		{
-			"basename": "webgpu_compute_texture_3d",
-			"displayName": "compute · texture 3d",
+			"basename": "webgpu_compute_texture",
+			"displayName": "compute · texture",
 			"category": "compute",
 			"categoryLabel": "Compute",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_compute_texture_3d",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_compute_texture",
 			"source": {
 				"kind": "three",
-				"path": "examples/webgpu_compute_texture_3d.html",
-				"route": "webgpu_compute_texture_3d.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_compute_texture_3d"
+				"path": "examples/webgpu_compute_texture.html",
+				"route": "webgpu_compute_texture.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_texture"
 			},
-			"thumbReplay": "examples/thumbs/webgpu_compute_texture_3d.webp",
-			"thumbCapture": "examples/thumbs/webgpu_compute_texture_3d.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_compute_texture_3d.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_compute_texture_3d.capture.modal.webp",
+			"thumbReplay": "examples/thumbs/webgpu_compute_texture.webp",
+			"thumbCapture": "examples/thumbs/webgpu_compute_texture.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_compute_texture.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_compute_texture.capture.modal.webp",
 			"smoke": {
 				"status": "pass",
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 58.52,
+				"psnr": 62.91,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
@@ -3125,27 +3126,27 @@
 			"badge": "pixel-match"
 		},
 		{
-			"basename": "webgpu_compute_reduce",
-			"displayName": "compute · reduce",
+			"basename": "webgpu_compute_texture_3d",
+			"displayName": "compute · texture 3d",
 			"category": "compute",
 			"categoryLabel": "Compute",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_compute_reduce",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_compute_texture_3d",
 			"source": {
 				"kind": "three",
-				"path": "examples/webgpu_compute_reduce.html",
-				"route": "webgpu_compute_reduce.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_compute_reduce"
+				"path": "examples/webgpu_compute_texture_3d.html",
+				"route": "webgpu_compute_texture_3d.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_texture_3d"
 			},
-			"thumbReplay": "examples/thumbs/webgpu_compute_reduce.webp",
-			"thumbCapture": "examples/thumbs/webgpu_compute_reduce.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_compute_reduce.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_compute_reduce.capture.modal.webp",
+			"thumbReplay": "examples/thumbs/webgpu_compute_texture_3d.webp",
+			"thumbCapture": "examples/thumbs/webgpu_compute_texture_3d.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_compute_texture_3d.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_compute_texture_3d.capture.modal.webp",
 			"smoke": {
 				"status": "pass",
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 42.79,
+				"psnr": 58.52,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
@@ -3424,7 +3425,7 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 46.08,
+				"psnr": 31.45,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
@@ -3575,6 +3576,53 @@
 				"render-output"
 			],
 			"materialShapes": [
+				"render-output"
+			],
+			"notes": "",
+			"thumbHealth": "ok",
+			"badge": "pixel-match"
+		},
+		{
+			"basename": "webgpu_compute_particles_snow",
+			"displayName": "compute · particles snow",
+			"category": "compute",
+			"categoryLabel": "Compute",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_compute_particles_snow",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_compute_particles_snow.html",
+				"route": "webgpu_compute_particles_snow.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_particles_snow"
+			},
+			"thumbReplay": "examples/thumbs/webgpu_compute_particles_snow.webp",
+			"thumbCapture": "examples/thumbs/webgpu_compute_particles_snow.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_compute_particles_snow.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_compute_particles_snow.capture.modal.webp",
+			"smoke": {
+				"status": "pass",
+				"gpuValidationCount": 0
+			},
+			"pixel": {
+				"psnr": 30.13,
+				"identical": false,
+				"threshold": 30,
+				"captured": true,
+				"replayed": true
+			},
+			"hasReplay": true,
+			"hasCapture": true,
+			"materialCount": 3,
+			"artifactCount": 4,
+			"totalWgslBytes": 11165,
+			"hasCompute": false,
+			"shapes": [
+				"background",
+				"post-process",
+				"lights",
+				"render-output"
+			],
+			"materialShapes": [
+				"node-material",
 				"render-output"
 			],
 			"notes": "",
@@ -4186,27 +4234,27 @@
 			"badge": "pixel-match"
 		},
 		{
-			"basename": "webgpu_materials_alphahash",
-			"displayName": "materials · alphahash",
+			"basename": "webgpu_materials_transmission",
+			"displayName": "materials · transmission",
 			"category": "materials",
 			"categoryLabel": "Materials",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_materials_alphahash",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_materials_transmission",
 			"source": {
 				"kind": "three",
-				"path": "examples/webgpu_materials_alphahash.html",
-				"route": "webgpu_materials_alphahash.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_materials_alphahash"
+				"path": "examples/webgpu_materials_transmission.html",
+				"route": "webgpu_materials_transmission.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_materials_transmission"
 			},
-			"thumbReplay": "examples/thumbs/webgpu_materials_alphahash.webp",
-			"thumbCapture": "examples/thumbs/webgpu_materials_alphahash.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_materials_alphahash.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_materials_alphahash.capture.modal.webp",
+			"thumbReplay": "examples/thumbs/webgpu_materials_transmission.webp",
+			"thumbCapture": "examples/thumbs/webgpu_materials_transmission.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_materials_transmission.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_materials_transmission.capture.modal.webp",
 			"smoke": {
 				"status": "pass",
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 36.39,
+				"psnr": 38.71,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
@@ -4214,16 +4262,24 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 2,
-			"artifactCount": 2,
-			"totalWgslBytes": 5399,
+			"materialCount": 6,
+			"artifactCount": 6,
+			"totalWgslBytes": 37314,
 			"hasCompute": false,
 			"shapes": [
-				"post-process",
+				"background",
+				"pmrem-cubemap",
+				"pmrem-equirect",
+				"pmrem-blur",
+				"pmrem-ggx",
 				"render-output"
 			],
 			"materialShapes": [
 				"node-material",
+				"pmrem-cubemap",
+				"pmrem-equirect",
+				"pmrem-blur",
+				"pmrem-ggx",
 				"render-output"
 			],
 			"notes": "",
@@ -4275,21 +4331,21 @@
 			"badge": "pixel-match"
 		},
 		{
-			"basename": "webgpu_centroid_sampling",
-			"displayName": "centroid · sampling",
+			"basename": "webgpu_backdrop_water",
+			"displayName": "backdrop · water",
 			"category": "misc",
 			"categoryLabel": "Misc",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_centroid_sampling",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_backdrop_water",
 			"source": {
 				"kind": "three",
-				"path": "examples/webgpu_centroid_sampling.html",
-				"route": "webgpu_centroid_sampling.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_centroid_sampling"
+				"path": "examples/webgpu_backdrop_water.html",
+				"route": "webgpu_backdrop_water.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_backdrop_water"
 			},
-			"thumbReplay": "examples/thumbs/webgpu_centroid_sampling.webp",
-			"thumbCapture": "examples/thumbs/webgpu_centroid_sampling.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_centroid_sampling.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_centroid_sampling.capture.modal.webp",
+			"thumbReplay": "examples/thumbs/webgpu_backdrop_water.webp",
+			"thumbCapture": "examples/thumbs/webgpu_backdrop_water.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_backdrop_water.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_backdrop_water.capture.modal.webp",
 			"smoke": {
 				"status": "pass",
 				"gpuValidationCount": 0
@@ -4303,14 +4359,21 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 1,
-			"artifactCount": 1,
-			"totalWgslBytes": 2900,
+			"materialCount": 5,
+			"artifactCount": 6,
+			"totalWgslBytes": 32416,
 			"hasCompute": false,
 			"shapes": [
+				"background",
+				"backdrop",
+				"post-process",
+				"lights",
 				"render-output"
 			],
 			"materialShapes": [
+				"node-material",
+				"mesh-basic",
+				"post-process",
 				"render-output"
 			],
 			"notes": "",
@@ -4318,27 +4381,27 @@
 			"badge": "pixel-match"
 		},
 		{
-			"basename": "webgpu_materials_transmission",
-			"displayName": "materials · transmission",
+			"basename": "webgpu_materials_alphahash",
+			"displayName": "materials · alphahash",
 			"category": "materials",
 			"categoryLabel": "Materials",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_materials_transmission",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_materials_alphahash",
 			"source": {
 				"kind": "three",
-				"path": "examples/webgpu_materials_transmission.html",
-				"route": "webgpu_materials_transmission.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_materials_transmission"
+				"path": "examples/webgpu_materials_alphahash.html",
+				"route": "webgpu_materials_alphahash.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_materials_alphahash"
 			},
-			"thumbReplay": "examples/thumbs/webgpu_materials_transmission.webp",
-			"thumbCapture": "examples/thumbs/webgpu_materials_transmission.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_materials_transmission.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_materials_transmission.capture.modal.webp",
+			"thumbReplay": "examples/thumbs/webgpu_materials_alphahash.webp",
+			"thumbCapture": "examples/thumbs/webgpu_materials_alphahash.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_materials_alphahash.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_materials_alphahash.capture.modal.webp",
 			"smoke": {
 				"status": "pass",
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 33.77,
+				"psnr": 36.83,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
@@ -4346,24 +4409,16 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 6,
-			"artifactCount": 6,
-			"totalWgslBytes": 37314,
+			"materialCount": 2,
+			"artifactCount": 2,
+			"totalWgslBytes": 5399,
 			"hasCompute": false,
 			"shapes": [
-				"background",
-				"pmrem-cubemap",
-				"pmrem-equirect",
-				"pmrem-blur",
-				"pmrem-ggx",
+				"post-process",
 				"render-output"
 			],
 			"materialShapes": [
 				"node-material",
-				"pmrem-cubemap",
-				"pmrem-equirect",
-				"pmrem-blur",
-				"pmrem-ggx",
 				"render-output"
 			],
 			"notes": "",
@@ -4417,21 +4472,21 @@
 			"badge": "pixel-match"
 		},
 		{
-			"basename": "webgpu_clipping",
-			"displayName": "clipping",
+			"basename": "webgpu_centroid_sampling",
+			"displayName": "centroid · sampling",
 			"category": "misc",
 			"categoryLabel": "Misc",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_clipping",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_centroid_sampling",
 			"source": {
 				"kind": "three",
-				"path": "examples/webgpu_clipping.html",
-				"route": "webgpu_clipping.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_clipping"
+				"path": "examples/webgpu_centroid_sampling.html",
+				"route": "webgpu_centroid_sampling.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_centroid_sampling"
 			},
-			"thumbReplay": "examples/thumbs/webgpu_clipping.webp",
-			"thumbCapture": "examples/thumbs/webgpu_clipping.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_clipping.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_clipping.capture.modal.webp",
+			"thumbReplay": "examples/thumbs/webgpu_centroid_sampling.webp",
+			"thumbCapture": "examples/thumbs/webgpu_centroid_sampling.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_centroid_sampling.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_centroid_sampling.capture.modal.webp",
 			"smoke": {
 				"status": "pass",
 				"gpuValidationCount": 0
@@ -4446,11 +4501,10 @@
 			"hasReplay": true,
 			"hasCapture": true,
 			"materialCount": 1,
-			"artifactCount": 2,
+			"artifactCount": 1,
 			"totalWgslBytes": 2900,
 			"hasCompute": false,
 			"shapes": [
-				"lights",
 				"render-output"
 			],
 			"materialShapes": [
@@ -4508,21 +4562,21 @@
 			"badge": "pixel-match"
 		},
 		{
-			"basename": "webgpu_cubemap_adjustments",
-			"displayName": "cubemap · adjustments",
+			"basename": "webgpu_clipping",
+			"displayName": "clipping",
 			"category": "misc",
 			"categoryLabel": "Misc",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_cubemap_adjustments",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_clipping",
 			"source": {
 				"kind": "three",
-				"path": "examples/webgpu_cubemap_adjustments.html",
-				"route": "webgpu_cubemap_adjustments.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_cubemap_adjustments"
+				"path": "examples/webgpu_clipping.html",
+				"route": "webgpu_clipping.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_clipping"
 			},
-			"thumbReplay": "examples/thumbs/webgpu_cubemap_adjustments.webp",
-			"thumbCapture": "examples/thumbs/webgpu_cubemap_adjustments.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_cubemap_adjustments.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_cubemap_adjustments.capture.modal.webp",
+			"thumbReplay": "examples/thumbs/webgpu_clipping.webp",
+			"thumbCapture": "examples/thumbs/webgpu_clipping.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_clipping.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_clipping.capture.modal.webp",
 			"smoke": {
 				"status": "pass",
 				"gpuValidationCount": 0
@@ -4536,16 +4590,15 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 2,
+			"materialCount": 1,
 			"artifactCount": 2,
-			"totalWgslBytes": 18798,
+			"totalWgslBytes": 2900,
 			"hasCompute": false,
 			"shapes": [
-				"background",
+				"lights",
 				"render-output"
 			],
 			"materialShapes": [
-				"node-material",
 				"render-output"
 			],
 			"notes": "",
@@ -4733,21 +4786,21 @@
 			"badge": "pixel-match"
 		},
 		{
-			"basename": "webgpu_cubemap_mix",
-			"displayName": "cubemap · mix",
+			"basename": "webgpu_cubemap_adjustments",
+			"displayName": "cubemap · adjustments",
 			"category": "misc",
 			"categoryLabel": "Misc",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_cubemap_mix",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_cubemap_adjustments",
 			"source": {
 				"kind": "three",
-				"path": "examples/webgpu_cubemap_mix.html",
-				"route": "webgpu_cubemap_mix.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_cubemap_mix"
+				"path": "examples/webgpu_cubemap_adjustments.html",
+				"route": "webgpu_cubemap_adjustments.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_cubemap_adjustments"
 			},
-			"thumbReplay": "examples/thumbs/webgpu_cubemap_mix.webp",
-			"thumbCapture": "examples/thumbs/webgpu_cubemap_mix.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_cubemap_mix.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_cubemap_mix.capture.modal.webp",
+			"thumbReplay": "examples/thumbs/webgpu_cubemap_adjustments.webp",
+			"thumbCapture": "examples/thumbs/webgpu_cubemap_adjustments.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_cubemap_adjustments.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_cubemap_adjustments.capture.modal.webp",
 			"smoke": {
 				"status": "pass",
 				"gpuValidationCount": 0
@@ -4761,24 +4814,16 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 6,
-			"artifactCount": 6,
-			"totalWgslBytes": 45912,
+			"materialCount": 2,
+			"artifactCount": 2,
+			"totalWgslBytes": 18798,
 			"hasCompute": false,
 			"shapes": [
 				"background",
-				"pmrem-cubemap",
-				"pmrem-equirect",
-				"pmrem-blur",
-				"pmrem-ggx",
 				"render-output"
 			],
 			"materialShapes": [
 				"node-material",
-				"pmrem-cubemap",
-				"pmrem-equirect",
-				"pmrem-blur",
-				"pmrem-ggx",
 				"render-output"
 			],
 			"notes": "",
@@ -4841,21 +4886,21 @@
 			"badge": "pixel-match"
 		},
 		{
-			"basename": "webgpu_custom_fog",
-			"displayName": "custom · fog",
+			"basename": "webgpu_cubemap_mix",
+			"displayName": "cubemap · mix",
 			"category": "misc",
 			"categoryLabel": "Misc",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_custom_fog",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_cubemap_mix",
 			"source": {
 				"kind": "three",
-				"path": "examples/webgpu_custom_fog.html",
-				"route": "webgpu_custom_fog.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_custom_fog"
+				"path": "examples/webgpu_cubemap_mix.html",
+				"route": "webgpu_cubemap_mix.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_cubemap_mix"
 			},
-			"thumbReplay": "examples/thumbs/webgpu_custom_fog.webp",
-			"thumbCapture": "examples/thumbs/webgpu_custom_fog.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_custom_fog.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_custom_fog.capture.modal.webp",
+			"thumbReplay": "examples/thumbs/webgpu_cubemap_mix.webp",
+			"thumbCapture": "examples/thumbs/webgpu_cubemap_mix.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_cubemap_mix.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_cubemap_mix.capture.modal.webp",
 			"smoke": {
 				"status": "pass",
 				"gpuValidationCount": 0
@@ -4869,17 +4914,24 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 2,
-			"artifactCount": 3,
-			"totalWgslBytes": 6352,
+			"materialCount": 6,
+			"artifactCount": 6,
+			"totalWgslBytes": 45912,
 			"hasCompute": false,
 			"shapes": [
 				"background",
-				"lights",
+				"pmrem-cubemap",
+				"pmrem-equirect",
+				"pmrem-blur",
+				"pmrem-ggx",
 				"render-output"
 			],
 			"materialShapes": [
 				"node-material",
+				"pmrem-cubemap",
+				"pmrem-equirect",
+				"pmrem-blur",
+				"pmrem-ggx",
 				"render-output"
 			],
 			"notes": "",
@@ -4932,21 +4984,21 @@
 			"badge": "pixel-match"
 		},
 		{
-			"basename": "webgpu_custom_fog_background",
-			"displayName": "custom · fog background",
+			"basename": "webgpu_custom_fog",
+			"displayName": "custom · fog",
 			"category": "misc",
 			"categoryLabel": "Misc",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_custom_fog_background",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_custom_fog",
 			"source": {
 				"kind": "three",
-				"path": "examples/webgpu_custom_fog_background.html",
-				"route": "webgpu_custom_fog_background.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_custom_fog_background"
+				"path": "examples/webgpu_custom_fog.html",
+				"route": "webgpu_custom_fog.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_custom_fog"
 			},
-			"thumbReplay": "examples/thumbs/webgpu_custom_fog_background.webp",
-			"thumbCapture": "examples/thumbs/webgpu_custom_fog_background.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_custom_fog_background.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_custom_fog_background.capture.modal.webp",
+			"thumbReplay": "examples/thumbs/webgpu_custom_fog.webp",
+			"thumbCapture": "examples/thumbs/webgpu_custom_fog.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_custom_fog.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_custom_fog.capture.modal.webp",
 			"smoke": {
 				"status": "pass",
 				"gpuValidationCount": 0
@@ -4961,11 +5013,12 @@
 			"hasReplay": true,
 			"hasCapture": true,
 			"materialCount": 2,
-			"artifactCount": 2,
-			"totalWgslBytes": 8952,
+			"artifactCount": 3,
+			"totalWgslBytes": 6352,
 			"hasCompute": false,
 			"shapes": [
-				"post-process",
+				"background",
+				"lights",
 				"render-output"
 			],
 			"materialShapes": [
@@ -5031,21 +5084,21 @@
 			"badge": "pixel-match"
 		},
 		{
-			"basename": "webgpu_custom_fog_scattering",
-			"displayName": "custom · fog scattering",
+			"basename": "webgpu_custom_fog_background",
+			"displayName": "custom · fog background",
 			"category": "misc",
 			"categoryLabel": "Misc",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_custom_fog_scattering",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_custom_fog_background",
 			"source": {
 				"kind": "three",
-				"path": "examples/webgpu_custom_fog_scattering.html",
-				"route": "webgpu_custom_fog_scattering.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_custom_fog_scattering"
+				"path": "examples/webgpu_custom_fog_background.html",
+				"route": "webgpu_custom_fog_background.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_custom_fog_background"
 			},
-			"thumbReplay": "examples/thumbs/webgpu_custom_fog_scattering.webp",
-			"thumbCapture": "examples/thumbs/webgpu_custom_fog_scattering.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_custom_fog_scattering.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_custom_fog_scattering.capture.modal.webp",
+			"thumbReplay": "examples/thumbs/webgpu_custom_fog_background.webp",
+			"thumbCapture": "examples/thumbs/webgpu_custom_fog_background.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_custom_fog_background.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_custom_fog_background.capture.modal.webp",
 			"smoke": {
 				"status": "pass",
 				"gpuValidationCount": 0
@@ -5060,12 +5113,11 @@
 			"hasReplay": true,
 			"hasCapture": true,
 			"materialCount": 2,
-			"artifactCount": 3,
-			"totalWgslBytes": 8184,
+			"artifactCount": 2,
+			"totalWgslBytes": 8952,
 			"hasCompute": false,
 			"shapes": [
 				"post-process",
-				"lights",
 				"render-output"
 			],
 			"materialShapes": [
@@ -5123,21 +5175,21 @@
 			"badge": "pixel-match"
 		},
 		{
-			"basename": "webgpu_depth_texture",
-			"displayName": "depth · texture",
+			"basename": "webgpu_custom_fog_scattering",
+			"displayName": "custom · fog scattering",
 			"category": "misc",
 			"categoryLabel": "Misc",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_depth_texture",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_custom_fog_scattering",
 			"source": {
 				"kind": "three",
-				"path": "examples/webgpu_depth_texture.html",
-				"route": "webgpu_depth_texture.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_depth_texture"
+				"path": "examples/webgpu_custom_fog_scattering.html",
+				"route": "webgpu_custom_fog_scattering.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_custom_fog_scattering"
 			},
-			"thumbReplay": "examples/thumbs/webgpu_depth_texture.webp",
-			"thumbCapture": "examples/thumbs/webgpu_depth_texture.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_depth_texture.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_depth_texture.capture.modal.webp",
+			"thumbReplay": "examples/thumbs/webgpu_custom_fog_scattering.webp",
+			"thumbCapture": "examples/thumbs/webgpu_custom_fog_scattering.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_custom_fog_scattering.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_custom_fog_scattering.capture.modal.webp",
 			"smoke": {
 				"status": "pass",
 				"gpuValidationCount": 0
@@ -5151,14 +5203,17 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 1,
-			"artifactCount": 1,
-			"totalWgslBytes": 2900,
+			"materialCount": 2,
+			"artifactCount": 3,
+			"totalWgslBytes": 8184,
 			"hasCompute": false,
 			"shapes": [
+				"post-process",
+				"lights",
 				"render-output"
 			],
 			"materialShapes": [
+				"node-material",
 				"render-output"
 			],
 			"notes": "",
@@ -5209,6 +5264,99 @@
 				"node-material",
 				"traa-resolve",
 				"output-transform",
+				"render-output"
+			],
+			"notes": "",
+			"thumbHealth": "ok",
+			"badge": "pixel-match"
+		},
+		{
+			"basename": "webgpu_depth_texture",
+			"displayName": "depth · texture",
+			"category": "misc",
+			"categoryLabel": "Misc",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_depth_texture",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_depth_texture.html",
+				"route": "webgpu_depth_texture.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_depth_texture"
+			},
+			"thumbReplay": "examples/thumbs/webgpu_depth_texture.webp",
+			"thumbCapture": "examples/thumbs/webgpu_depth_texture.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_depth_texture.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_depth_texture.capture.modal.webp",
+			"smoke": {
+				"status": "pass",
+				"gpuValidationCount": 0
+			},
+			"pixel": {
+				"psnr": null,
+				"identical": true,
+				"threshold": 30,
+				"captured": true,
+				"replayed": true
+			},
+			"hasReplay": true,
+			"hasCapture": true,
+			"materialCount": 1,
+			"artifactCount": 1,
+			"totalWgslBytes": 2900,
+			"hasCompute": false,
+			"shapes": [
+				"render-output"
+			],
+			"materialShapes": [
+				"render-output"
+			],
+			"notes": "",
+			"thumbHealth": "ok",
+			"badge": "pixel-match"
+		},
+		{
+			"basename": "webgpu_postprocessing_ssgi",
+			"displayName": "postprocessing · ssgi",
+			"category": "postprocessing",
+			"categoryLabel": "Postprocessing",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_postprocessing_ssgi",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_ssgi.html",
+				"route": "webgpu_postprocessing_ssgi.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_ssgi"
+			},
+			"thumbReplay": "examples/thumbs/webgpu_postprocessing_ssgi.webp",
+			"thumbCapture": "examples/thumbs/webgpu_postprocessing_ssgi.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_postprocessing_ssgi.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_postprocessing_ssgi.capture.modal.webp",
+			"smoke": {
+				"status": "pass",
+				"gpuValidationCount": 0
+			},
+			"pixel": {
+				"psnr": 32.43,
+				"identical": false,
+				"threshold": 30,
+				"captured": true,
+				"replayed": true
+			},
+			"hasReplay": true,
+			"hasCapture": true,
+			"materialCount": 5,
+			"artifactCount": 6,
+			"totalWgslBytes": 26480,
+			"hasCompute": false,
+			"shapes": [
+				"mrt",
+				"post-process",
+				"traa-resolve",
+				"lights",
+				"render-output"
+			],
+			"materialShapes": [
+				"output-transform",
+				"node-material",
+				"traa-resolve",
 				"render-output"
 			],
 			"notes": "",
@@ -5354,54 +5502,6 @@
 				"render-output"
 			],
 			"materialShapes": [
-				"node-material",
-				"render-output"
-			],
-			"notes": "",
-			"thumbHealth": "ok",
-			"badge": "pixel-match"
-		},
-		{
-			"basename": "webgpu_postprocessing_motion_blur",
-			"displayName": "postprocessing · motion blur",
-			"category": "postprocessing",
-			"categoryLabel": "Postprocessing",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_postprocessing_motion_blur",
-			"source": {
-				"kind": "three",
-				"path": "examples/webgpu_postprocessing_motion_blur.html",
-				"route": "webgpu_postprocessing_motion_blur.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_motion_blur"
-			},
-			"thumbReplay": "examples/thumbs/webgpu_postprocessing_motion_blur.webp",
-			"thumbCapture": "examples/thumbs/webgpu_postprocessing_motion_blur.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_postprocessing_motion_blur.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_postprocessing_motion_blur.capture.modal.webp",
-			"smoke": {
-				"status": "pass",
-				"gpuValidationCount": 0
-			},
-			"pixel": {
-				"psnr": 30.45,
-				"identical": false,
-				"threshold": 30,
-				"captured": true,
-				"replayed": true
-			},
-			"hasReplay": true,
-			"hasCapture": true,
-			"materialCount": 4,
-			"artifactCount": 5,
-			"totalWgslBytes": 15624,
-			"hasCompute": false,
-			"shapes": [
-				"mrt",
-				"post-process",
-				"lights",
-				"render-output"
-			],
-			"materialShapes": [
-				"output-transform",
 				"node-material",
 				"render-output"
 			],
@@ -6505,6 +6605,85 @@
 			"badge": "pixel-match"
 		},
 		{
+			"basename": "webgpu_ocean",
+			"displayName": "ocean",
+			"category": "misc",
+			"categoryLabel": "Misc",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_ocean",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_ocean.html",
+				"route": "webgpu_ocean.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_ocean"
+			},
+			"thumbReplay": "examples/thumbs/webgpu_ocean.webp",
+			"thumbCapture": "examples/thumbs/webgpu_ocean.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_ocean.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_ocean.capture.modal.webp",
+			"smoke": {
+				"status": "pass",
+				"gpuValidationCount": 0
+			},
+			"pixel": {
+				"psnr": null,
+				"identical": true,
+				"threshold": 30,
+				"captured": true,
+				"replayed": true
+			},
+			"hasReplay": true,
+			"hasCapture": true,
+			"materialCount": 19,
+			"artifactCount": 19,
+			"totalWgslBytes": 64664,
+			"hasCompute": false,
+			"shapes": [
+				"post-process",
+				"bloom-high-pass",
+				"bloom-blur-0",
+				"bloom-blur-1",
+				"bloom-blur-2",
+				"bloom-blur-3",
+				"bloom-blur-4",
+				"bloom-blur-5",
+				"bloom-blur-6",
+				"bloom-blur-7",
+				"bloom-blur-8",
+				"bloom-blur-9",
+				"bloom-blur-10",
+				"bloom-blur-11",
+				"bloom-blur-12",
+				"bloom-blur-13",
+				"bloom-blur-14",
+				"bloom-composite",
+				"render-output"
+			],
+			"materialShapes": [
+				"node-material",
+				"bloom-high-pass",
+				"bloom-blur-0",
+				"bloom-blur-1",
+				"bloom-blur-2",
+				"bloom-blur-3",
+				"bloom-blur-4",
+				"bloom-blur-5",
+				"bloom-blur-6",
+				"bloom-blur-7",
+				"bloom-blur-8",
+				"bloom-blur-9",
+				"bloom-blur-10",
+				"bloom-blur-11",
+				"bloom-blur-12",
+				"bloom-blur-13",
+				"bloom-blur-14",
+				"bloom-composite",
+				"render-output"
+			],
+			"notes": "",
+			"thumbHealth": "ok",
+			"badge": "pixel-match"
+		},
+		{
 			"basename": "webgpu_performance",
 			"displayName": "performance",
 			"category": "misc",
@@ -7197,52 +7376,6 @@
 			"badge": "pixel-match"
 		},
 		{
-			"basename": "webgpu_skinning_instancing",
-			"displayName": "skinning · instancing",
-			"category": "misc",
-			"categoryLabel": "Misc",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_skinning_instancing",
-			"source": {
-				"kind": "three",
-				"path": "examples/webgpu_skinning_instancing.html",
-				"route": "webgpu_skinning_instancing.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_skinning_instancing"
-			},
-			"thumbReplay": "examples/thumbs/webgpu_skinning_instancing.webp",
-			"thumbCapture": "examples/thumbs/webgpu_skinning_instancing.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_skinning_instancing.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_skinning_instancing.capture.modal.webp",
-			"smoke": {
-				"status": "pass",
-				"gpuValidationCount": 0
-			},
-			"pixel": {
-				"psnr": null,
-				"identical": true,
-				"threshold": 30,
-				"captured": true,
-				"replayed": true
-			},
-			"hasReplay": true,
-			"hasCapture": true,
-			"materialCount": 2,
-			"artifactCount": 3,
-			"totalWgslBytes": 5399,
-			"hasCompute": false,
-			"shapes": [
-				"post-process",
-				"lights",
-				"render-output"
-			],
-			"materialShapes": [
-				"node-material",
-				"render-output"
-			],
-			"notes": "",
-			"thumbHealth": "ok",
-			"badge": "pixel-match"
-		},
-		{
 			"basename": "webgpu_skinning_points",
 			"displayName": "skinning · points",
 			"category": "misc",
@@ -7733,6 +7866,49 @@
 			"badge": "pixel-match"
 		},
 		{
+			"basename": "webgpu_tsl_editor",
+			"displayName": "tsl · editor",
+			"category": "misc",
+			"categoryLabel": "Misc",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_tsl_editor",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_tsl_editor.html",
+				"route": "webgpu_tsl_editor.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_editor"
+			},
+			"thumbReplay": "examples/thumbs/webgpu_tsl_editor.webp",
+			"thumbCapture": "examples/thumbs/webgpu_tsl_editor.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_tsl_editor.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_tsl_editor.capture.modal.webp",
+			"smoke": {
+				"status": "pass",
+				"gpuValidationCount": 0
+			},
+			"pixel": {
+				"psnr": null,
+				"identical": true,
+				"threshold": 30,
+				"captured": true,
+				"replayed": true
+			},
+			"hasReplay": true,
+			"hasCapture": true,
+			"materialCount": 1,
+			"artifactCount": 1,
+			"totalWgslBytes": 2900,
+			"hasCompute": false,
+			"shapes": [
+				"render-output"
+			],
+			"materialShapes": [
+				"render-output"
+			],
+			"notes": "",
+			"thumbHealth": "ok",
+			"badge": "pixel-match"
+		},
+		{
 			"basename": "webgpu_tsl_graph",
 			"displayName": "tsl · graph",
 			"category": "misc",
@@ -7855,6 +8031,60 @@
 			"hasCompute": false,
 			"shapes": [],
 			"materialShapes": [],
+			"notes": "",
+			"thumbHealth": "ok",
+			"badge": "pixel-match"
+		},
+		{
+			"basename": "webgpu_tsl_procedural_terrain",
+			"displayName": "tsl · procedural terrain",
+			"category": "misc",
+			"categoryLabel": "Misc",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_tsl_procedural_terrain",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_tsl_procedural_terrain.html",
+				"route": "webgpu_tsl_procedural_terrain.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_procedural_terrain"
+			},
+			"thumbReplay": "examples/thumbs/webgpu_tsl_procedural_terrain.webp",
+			"thumbCapture": "examples/thumbs/webgpu_tsl_procedural_terrain.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_tsl_procedural_terrain.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_tsl_procedural_terrain.capture.modal.webp",
+			"smoke": {
+				"status": "pass",
+				"gpuValidationCount": 0
+			},
+			"pixel": {
+				"psnr": null,
+				"identical": true,
+				"threshold": 30,
+				"captured": true,
+				"replayed": true
+			},
+			"hasReplay": true,
+			"hasCapture": true,
+			"materialCount": 6,
+			"artifactCount": 7,
+			"totalWgslBytes": 42963,
+			"hasCompute": false,
+			"shapes": [
+				"background",
+				"lights",
+				"pmrem-cubemap",
+				"pmrem-equirect",
+				"pmrem-blur",
+				"pmrem-ggx",
+				"render-output"
+			],
+			"materialShapes": [
+				"node-material",
+				"pmrem-cubemap",
+				"pmrem-equirect",
+				"pmrem-blur",
+				"pmrem-ggx",
+				"render-output"
+			],
 			"notes": "",
 			"thumbHealth": "ok",
 			"badge": "pixel-match"
@@ -8513,6 +8743,95 @@
 			"badge": "pixel-match"
 		},
 		{
+			"basename": "webgpu_skinning_instancing",
+			"displayName": "skinning · instancing",
+			"category": "misc",
+			"categoryLabel": "Misc",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_skinning_instancing",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_skinning_instancing.html",
+				"route": "webgpu_skinning_instancing.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_skinning_instancing"
+			},
+			"thumbReplay": "examples/thumbs/webgpu_skinning_instancing.webp",
+			"thumbCapture": "examples/thumbs/webgpu_skinning_instancing.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_skinning_instancing.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_skinning_instancing.capture.modal.webp",
+			"smoke": {
+				"status": "pass",
+				"gpuValidationCount": 0
+			},
+			"pixel": {
+				"psnr": 107.78,
+				"identical": false,
+				"threshold": 30,
+				"captured": true,
+				"replayed": true
+			},
+			"hasReplay": true,
+			"hasCapture": true,
+			"materialCount": 2,
+			"artifactCount": 3,
+			"totalWgslBytes": 5399,
+			"hasCompute": false,
+			"shapes": [
+				"post-process",
+				"lights",
+				"render-output"
+			],
+			"materialShapes": [
+				"node-material",
+				"render-output"
+			],
+			"notes": "",
+			"thumbHealth": "ok",
+			"badge": "pixel-match"
+		},
+		{
+			"basename": "webgpu_loader_materialx",
+			"displayName": "loader · materialx",
+			"category": "misc",
+			"categoryLabel": "Misc",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_loader_materialx",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_loader_materialx.html",
+				"route": "webgpu_loader_materialx.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_loader_materialx"
+			},
+			"thumbReplay": "examples/thumbs/webgpu_loader_materialx.webp",
+			"thumbCapture": "examples/thumbs/webgpu_loader_materialx.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_loader_materialx.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_loader_materialx.capture.modal.webp",
+			"smoke": {
+				"status": "pass",
+				"gpuValidationCount": 0
+			},
+			"pixel": {
+				"psnr": 83.99,
+				"identical": false,
+				"threshold": 30,
+				"captured": true,
+				"replayed": true
+			},
+			"hasReplay": true,
+			"hasCapture": true,
+			"materialCount": 1,
+			"artifactCount": 1,
+			"totalWgslBytes": 3400,
+			"hasCompute": false,
+			"shapes": [
+				"render-output"
+			],
+			"materialShapes": [
+				"render-output"
+			],
+			"notes": "",
+			"thumbHealth": "ok",
+			"badge": "pixel-match"
+		},
+		{
 			"basename": "webgpu_water",
 			"displayName": "water",
 			"category": "misc",
@@ -8533,7 +8852,7 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 77.37,
+				"psnr": 77.09,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
@@ -8693,96 +9012,6 @@
 			"badge": "pixel-match"
 		},
 		{
-			"basename": "webgpu_tsl_editor",
-			"displayName": "tsl · editor",
-			"category": "misc",
-			"categoryLabel": "Misc",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_tsl_editor",
-			"source": {
-				"kind": "three",
-				"path": "examples/webgpu_tsl_editor.html",
-				"route": "webgpu_tsl_editor.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_editor"
-			},
-			"thumbReplay": "examples/thumbs/webgpu_tsl_editor.webp",
-			"thumbCapture": "examples/thumbs/webgpu_tsl_editor.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_tsl_editor.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_tsl_editor.capture.modal.webp",
-			"smoke": {
-				"status": "pass",
-				"gpuValidationCount": 0
-			},
-			"pixel": {
-				"psnr": 56.59,
-				"identical": false,
-				"threshold": 30,
-				"captured": true,
-				"replayed": true
-			},
-			"hasReplay": true,
-			"hasCapture": true,
-			"materialCount": 1,
-			"artifactCount": 1,
-			"totalWgslBytes": 2900,
-			"hasCompute": false,
-			"shapes": [
-				"render-output"
-			],
-			"materialShapes": [
-				"render-output"
-			],
-			"notes": "",
-			"thumbHealth": "ok",
-			"badge": "pixel-match"
-		},
-		{
-			"basename": "webgpu_upscaling_taau",
-			"displayName": "upscaling · taau",
-			"category": "misc",
-			"categoryLabel": "Misc",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_upscaling_taau",
-			"source": {
-				"kind": "three",
-				"path": "examples/webgpu_upscaling_taau.html",
-				"route": "webgpu_upscaling_taau.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_upscaling_taau"
-			},
-			"thumbReplay": "examples/thumbs/webgpu_upscaling_taau.webp",
-			"thumbCapture": "examples/thumbs/webgpu_upscaling_taau.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_upscaling_taau.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_upscaling_taau.capture.modal.webp",
-			"smoke": {
-				"status": "pass",
-				"gpuValidationCount": 0
-			},
-			"pixel": {
-				"psnr": 52.86,
-				"identical": false,
-				"threshold": 30,
-				"captured": true,
-				"replayed": true
-			},
-			"hasReplay": true,
-			"hasCapture": true,
-			"materialCount": 3,
-			"artifactCount": 3,
-			"totalWgslBytes": 8260,
-			"hasCompute": false,
-			"shapes": [
-				"post-process",
-				"mrt",
-				"render-output"
-			],
-			"materialShapes": [
-				"node-material",
-				"output-transform",
-				"render-output"
-			],
-			"notes": "",
-			"thumbHealth": "ok",
-			"badge": "pixel-match"
-		},
-		{
 			"basename": "webgpu_reflection_roughness",
 			"displayName": "reflection · roughness",
 			"category": "misc",
@@ -8856,53 +9085,7 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 49.78,
-				"identical": false,
-				"threshold": 30,
-				"captured": true,
-				"replayed": true
-			},
-			"hasReplay": true,
-			"hasCapture": true,
-			"materialCount": 2,
-			"artifactCount": 3,
-			"totalWgslBytes": 7602,
-			"hasCompute": false,
-			"shapes": [
-				"post-process",
-				"lights",
-				"render-output"
-			],
-			"materialShapes": [
-				"node-material",
-				"render-output"
-			],
-			"notes": "",
-			"thumbHealth": "ok",
-			"badge": "pixel-match"
-		},
-		{
-			"basename": "webgpu_volume_lighting",
-			"displayName": "volume · lighting",
-			"category": "misc",
-			"categoryLabel": "Misc",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_volume_lighting",
-			"source": {
-				"kind": "three",
-				"path": "examples/webgpu_volume_lighting.html",
-				"route": "webgpu_volume_lighting.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_volume_lighting"
-			},
-			"thumbReplay": "examples/thumbs/webgpu_volume_lighting.webp",
-			"thumbCapture": "examples/thumbs/webgpu_volume_lighting.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_volume_lighting.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_volume_lighting.capture.modal.webp",
-			"smoke": {
-				"status": "pass",
-				"gpuValidationCount": 0
-			},
-			"pixel": {
-				"psnr": 48.92,
+				"psnr": 49.81,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
@@ -8948,7 +9131,7 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 47.38,
+				"psnr": 49.52,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
@@ -8975,6 +9158,52 @@
 				"pmrem-equirect",
 				"pmrem-blur",
 				"pmrem-ggx",
+				"render-output"
+			],
+			"notes": "",
+			"thumbHealth": "ok",
+			"badge": "pixel-match"
+		},
+		{
+			"basename": "webgpu_volume_lighting",
+			"displayName": "volume · lighting",
+			"category": "misc",
+			"categoryLabel": "Misc",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_volume_lighting",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_volume_lighting.html",
+				"route": "webgpu_volume_lighting.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_volume_lighting"
+			},
+			"thumbReplay": "examples/thumbs/webgpu_volume_lighting.webp",
+			"thumbCapture": "examples/thumbs/webgpu_volume_lighting.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_volume_lighting.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_volume_lighting.capture.modal.webp",
+			"smoke": {
+				"status": "pass",
+				"gpuValidationCount": 0
+			},
+			"pixel": {
+				"psnr": 48.94,
+				"identical": false,
+				"threshold": 30,
+				"captured": true,
+				"replayed": true
+			},
+			"hasReplay": true,
+			"hasCapture": true,
+			"materialCount": 2,
+			"artifactCount": 3,
+			"totalWgslBytes": 7602,
+			"hasCompute": false,
+			"shapes": [
+				"post-process",
+				"lights",
+				"render-output"
+			],
+			"materialShapes": [
+				"node-material",
 				"render-output"
 			],
 			"notes": "",
@@ -9068,6 +9297,53 @@
 			],
 			"materialShapes": [
 				"node-material",
+				"render-output"
+			],
+			"notes": "",
+			"thumbHealth": "ok",
+			"badge": "pixel-match"
+		},
+		{
+			"basename": "webgpu_upscaling_taau",
+			"displayName": "upscaling · taau",
+			"category": "misc",
+			"categoryLabel": "Misc",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_upscaling_taau",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_upscaling_taau.html",
+				"route": "webgpu_upscaling_taau.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_upscaling_taau"
+			},
+			"thumbReplay": "examples/thumbs/webgpu_upscaling_taau.webp",
+			"thumbCapture": "examples/thumbs/webgpu_upscaling_taau.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_upscaling_taau.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_upscaling_taau.capture.modal.webp",
+			"smoke": {
+				"status": "pass",
+				"gpuValidationCount": 0
+			},
+			"pixel": {
+				"psnr": 44.5,
+				"identical": false,
+				"threshold": 30,
+				"captured": true,
+				"replayed": true
+			},
+			"hasReplay": true,
+			"hasCapture": true,
+			"materialCount": 3,
+			"artifactCount": 3,
+			"totalWgslBytes": 8260,
+			"hasCompute": false,
+			"shapes": [
+				"post-process",
+				"mrt",
+				"render-output"
+			],
+			"materialShapes": [
+				"node-material",
+				"output-transform",
 				"render-output"
 			],
 			"notes": "",
@@ -9348,49 +9624,6 @@
 				"node-material",
 				"output-transform",
 				"gtao",
-				"render-output"
-			],
-			"notes": "",
-			"thumbHealth": "ok",
-			"badge": "pixel-match"
-		},
-		{
-			"basename": "webgpu_loader_materialx",
-			"displayName": "loader · materialx",
-			"category": "misc",
-			"categoryLabel": "Misc",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_loader_materialx",
-			"source": {
-				"kind": "three",
-				"path": "examples/webgpu_loader_materialx.html",
-				"route": "webgpu_loader_materialx.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_loader_materialx"
-			},
-			"thumbReplay": "examples/thumbs/webgpu_loader_materialx.webp",
-			"thumbCapture": "examples/thumbs/webgpu_loader_materialx.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_loader_materialx.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_loader_materialx.capture.modal.webp",
-			"smoke": {
-				"status": "pass",
-				"gpuValidationCount": 0
-			},
-			"pixel": {
-				"psnr": 39.86,
-				"identical": false,
-				"threshold": 30,
-				"captured": true,
-				"replayed": true
-			},
-			"hasReplay": true,
-			"hasCapture": true,
-			"materialCount": 1,
-			"artifactCount": 1,
-			"totalWgslBytes": 3400,
-			"hasCompute": false,
-			"shapes": [
-				"render-output"
-			],
-			"materialShapes": [
 				"render-output"
 			],
 			"notes": "",
@@ -9700,7 +9933,7 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 34.43,
+				"psnr": 34.49,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
@@ -9730,27 +9963,27 @@
 			"badge": "pixel-match"
 		},
 		{
-			"basename": "webgpu_tsl_procedural_terrain",
-			"displayName": "tsl · procedural terrain",
+			"basename": "webgpu_volume_caustics",
+			"displayName": "volume · caustics",
 			"category": "misc",
 			"categoryLabel": "Misc",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_tsl_procedural_terrain",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_volume_caustics",
 			"source": {
 				"kind": "three",
-				"path": "examples/webgpu_tsl_procedural_terrain.html",
-				"route": "webgpu_tsl_procedural_terrain.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_procedural_terrain"
+				"path": "examples/webgpu_volume_caustics.html",
+				"route": "webgpu_volume_caustics.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_volume_caustics"
 			},
-			"thumbReplay": "examples/thumbs/webgpu_tsl_procedural_terrain.webp",
-			"thumbCapture": "examples/thumbs/webgpu_tsl_procedural_terrain.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_tsl_procedural_terrain.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_tsl_procedural_terrain.capture.modal.webp",
+			"thumbReplay": "examples/thumbs/webgpu_volume_caustics.webp",
+			"thumbCapture": "examples/thumbs/webgpu_volume_caustics.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_volume_caustics.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_volume_caustics.capture.modal.webp",
 			"smoke": {
 				"status": "pass",
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 34.17,
+				"psnr": 32.8,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
@@ -9758,25 +9991,94 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 6,
-			"artifactCount": 7,
-			"totalWgslBytes": 42963,
+			"materialCount": 19,
+			"artifactCount": 20,
+			"totalWgslBytes": 64226,
 			"hasCompute": false,
 			"shapes": [
-				"background",
+				"post-process",
+				"bloom-high-pass",
+				"bloom-blur-0",
+				"bloom-blur-1",
+				"bloom-blur-2",
+				"bloom-blur-3",
+				"bloom-blur-4",
+				"bloom-blur-5",
+				"bloom-blur-6",
+				"bloom-blur-7",
+				"bloom-blur-8",
+				"bloom-blur-9",
+				"bloom-blur-10",
+				"bloom-blur-11",
+				"bloom-blur-12",
+				"bloom-blur-13",
+				"bloom-blur-14",
+				"bloom-composite",
 				"lights",
-				"pmrem-cubemap",
-				"pmrem-equirect",
-				"pmrem-blur",
-				"pmrem-ggx",
 				"render-output"
 			],
 			"materialShapes": [
 				"node-material",
-				"pmrem-cubemap",
-				"pmrem-equirect",
-				"pmrem-blur",
-				"pmrem-ggx",
+				"bloom-high-pass",
+				"bloom-blur-0",
+				"bloom-blur-1",
+				"bloom-blur-2",
+				"bloom-blur-3",
+				"bloom-blur-4",
+				"bloom-blur-5",
+				"bloom-blur-6",
+				"bloom-blur-7",
+				"bloom-blur-8",
+				"bloom-blur-9",
+				"bloom-blur-10",
+				"bloom-blur-11",
+				"bloom-blur-12",
+				"bloom-blur-13",
+				"bloom-blur-14",
+				"bloom-composite",
+				"render-output"
+			],
+			"notes": "",
+			"thumbHealth": "ok",
+			"badge": "pixel-match"
+		},
+		{
+			"basename": "webgpu_materials",
+			"displayName": "materials",
+			"category": "misc",
+			"categoryLabel": "Misc",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_materials",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_materials.html",
+				"route": "webgpu_materials.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_materials"
+			},
+			"thumbReplay": "examples/thumbs/webgpu_materials.webp",
+			"thumbCapture": "examples/thumbs/webgpu_materials.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_materials.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_materials.capture.modal.webp",
+			"smoke": {
+				"status": "pass",
+				"gpuValidationCount": 0
+			},
+			"pixel": {
+				"psnr": 32.69,
+				"identical": false,
+				"threshold": 30,
+				"captured": true,
+				"replayed": true
+			},
+			"hasReplay": true,
+			"hasCapture": true,
+			"materialCount": 1,
+			"artifactCount": 1,
+			"totalWgslBytes": 2900,
+			"hasCompute": false,
+			"shapes": [
+				"render-output"
+			],
+			"materialShapes": [
 				"render-output"
 			],
 			"notes": "",
@@ -9912,222 +10214,6 @@
 			],
 			"materialShapes": [
 				"node-material",
-				"render-output"
-			],
-			"notes": "",
-			"thumbHealth": "ok",
-			"badge": "pixel-match"
-		},
-		{
-			"basename": "webgpu_materials",
-			"displayName": "materials",
-			"category": "misc",
-			"categoryLabel": "Misc",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_materials",
-			"source": {
-				"kind": "three",
-				"path": "examples/webgpu_materials.html",
-				"route": "webgpu_materials.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_materials"
-			},
-			"thumbReplay": "examples/thumbs/webgpu_materials.webp",
-			"thumbCapture": "examples/thumbs/webgpu_materials.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_materials.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_materials.capture.modal.webp",
-			"smoke": {
-				"status": "pass",
-				"gpuValidationCount": 0
-			},
-			"pixel": {
-				"psnr": 32.19,
-				"identical": false,
-				"threshold": 30,
-				"captured": true,
-				"replayed": true
-			},
-			"hasReplay": true,
-			"hasCapture": true,
-			"materialCount": 1,
-			"artifactCount": 1,
-			"totalWgslBytes": 2900,
-			"hasCompute": false,
-			"shapes": [
-				"render-output"
-			],
-			"materialShapes": [
-				"render-output"
-			],
-			"notes": "",
-			"thumbHealth": "ok",
-			"badge": "pixel-match"
-		},
-		{
-			"basename": "webgpu_caustics",
-			"displayName": "caustics",
-			"category": "misc",
-			"categoryLabel": "Misc",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_caustics",
-			"source": {
-				"kind": "three",
-				"path": "examples/webgpu_caustics.html",
-				"route": "webgpu_caustics.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_caustics"
-			},
-			"thumbReplay": "examples/thumbs/webgpu_caustics.webp",
-			"thumbCapture": "examples/thumbs/webgpu_caustics.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_caustics.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_caustics.capture.modal.webp",
-			"smoke": {
-				"status": "pass",
-				"gpuValidationCount": 0
-			},
-			"pixel": {
-				"psnr": 31.55,
-				"identical": false,
-				"threshold": 30,
-				"captured": true,
-				"replayed": true
-			},
-			"hasReplay": true,
-			"hasCapture": true,
-			"materialCount": 1,
-			"artifactCount": 2,
-			"totalWgslBytes": 2900,
-			"hasCompute": false,
-			"shapes": [
-				"lights",
-				"render-output"
-			],
-			"materialShapes": [
-				"render-output"
-			],
-			"notes": "",
-			"thumbHealth": "ok",
-			"badge": "pixel-match"
-		},
-		{
-			"basename": "webgpu_ocean",
-			"displayName": "ocean",
-			"category": "misc",
-			"categoryLabel": "Misc",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_ocean",
-			"source": {
-				"kind": "three",
-				"path": "examples/webgpu_ocean.html",
-				"route": "webgpu_ocean.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_ocean"
-			},
-			"thumbReplay": "examples/thumbs/webgpu_ocean.webp",
-			"thumbCapture": "examples/thumbs/webgpu_ocean.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_ocean.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_ocean.capture.modal.webp",
-			"smoke": {
-				"status": "pass",
-				"gpuValidationCount": 0
-			},
-			"pixel": {
-				"psnr": 31.37,
-				"identical": false,
-				"threshold": 30,
-				"captured": true,
-				"replayed": true
-			},
-			"hasReplay": true,
-			"hasCapture": true,
-			"materialCount": 19,
-			"artifactCount": 19,
-			"totalWgslBytes": 64664,
-			"hasCompute": false,
-			"shapes": [
-				"post-process",
-				"bloom-high-pass",
-				"bloom-blur-0",
-				"bloom-blur-1",
-				"bloom-blur-2",
-				"bloom-blur-3",
-				"bloom-blur-4",
-				"bloom-blur-5",
-				"bloom-blur-6",
-				"bloom-blur-7",
-				"bloom-blur-8",
-				"bloom-blur-9",
-				"bloom-blur-10",
-				"bloom-blur-11",
-				"bloom-blur-12",
-				"bloom-blur-13",
-				"bloom-blur-14",
-				"bloom-composite",
-				"render-output"
-			],
-			"materialShapes": [
-				"node-material",
-				"bloom-high-pass",
-				"bloom-blur-0",
-				"bloom-blur-1",
-				"bloom-blur-2",
-				"bloom-blur-3",
-				"bloom-blur-4",
-				"bloom-blur-5",
-				"bloom-blur-6",
-				"bloom-blur-7",
-				"bloom-blur-8",
-				"bloom-blur-9",
-				"bloom-blur-10",
-				"bloom-blur-11",
-				"bloom-blur-12",
-				"bloom-blur-13",
-				"bloom-blur-14",
-				"bloom-composite",
-				"render-output"
-			],
-			"notes": "",
-			"thumbHealth": "ok",
-			"badge": "pixel-match"
-		},
-		{
-			"basename": "webgpu_backdrop_water",
-			"displayName": "backdrop · water",
-			"category": "misc",
-			"categoryLabel": "Misc",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_backdrop_water",
-			"source": {
-				"kind": "three",
-				"path": "examples/webgpu_backdrop_water.html",
-				"route": "webgpu_backdrop_water.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_backdrop_water"
-			},
-			"thumbReplay": "examples/thumbs/webgpu_backdrop_water.webp",
-			"thumbCapture": "examples/thumbs/webgpu_backdrop_water.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_backdrop_water.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_backdrop_water.capture.modal.webp",
-			"smoke": {
-				"status": "pass",
-				"gpuValidationCount": 0
-			},
-			"pixel": {
-				"psnr": 31.27,
-				"identical": false,
-				"threshold": 30,
-				"captured": true,
-				"replayed": true
-			},
-			"hasReplay": true,
-			"hasCapture": true,
-			"materialCount": 5,
-			"artifactCount": 6,
-			"totalWgslBytes": 32416,
-			"hasCompute": false,
-			"shapes": [
-				"background",
-				"backdrop",
-				"post-process",
-				"lights",
-				"render-output"
-			],
-			"materialShapes": [
-				"node-material",
-				"mesh-basic",
-				"post-process",
 				"render-output"
 			],
 			"notes": "",
@@ -10510,86 +10596,6 @@
 			"badge": "pixel-match"
 		},
 		{
-			"basename": "webgpu_volume_caustics",
-			"displayName": "volume · caustics",
-			"category": "misc",
-			"categoryLabel": "Misc",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_volume_caustics",
-			"source": {
-				"kind": "three",
-				"path": "examples/webgpu_volume_caustics.html",
-				"route": "webgpu_volume_caustics.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_volume_caustics"
-			},
-			"thumbReplay": "examples/thumbs/webgpu_volume_caustics.webp",
-			"thumbCapture": "examples/thumbs/webgpu_volume_caustics.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_volume_caustics.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_volume_caustics.capture.modal.webp",
-			"smoke": {
-				"status": "pass",
-				"gpuValidationCount": 0
-			},
-			"pixel": {
-				"psnr": 30.44,
-				"identical": false,
-				"threshold": 30,
-				"captured": true,
-				"replayed": true
-			},
-			"hasReplay": true,
-			"hasCapture": true,
-			"materialCount": 19,
-			"artifactCount": 20,
-			"totalWgslBytes": 64226,
-			"hasCompute": false,
-			"shapes": [
-				"post-process",
-				"bloom-high-pass",
-				"bloom-blur-0",
-				"bloom-blur-1",
-				"bloom-blur-2",
-				"bloom-blur-3",
-				"bloom-blur-4",
-				"bloom-blur-5",
-				"bloom-blur-6",
-				"bloom-blur-7",
-				"bloom-blur-8",
-				"bloom-blur-9",
-				"bloom-blur-10",
-				"bloom-blur-11",
-				"bloom-blur-12",
-				"bloom-blur-13",
-				"bloom-blur-14",
-				"bloom-composite",
-				"lights",
-				"render-output"
-			],
-			"materialShapes": [
-				"node-material",
-				"bloom-high-pass",
-				"bloom-blur-0",
-				"bloom-blur-1",
-				"bloom-blur-2",
-				"bloom-blur-3",
-				"bloom-blur-4",
-				"bloom-blur-5",
-				"bloom-blur-6",
-				"bloom-blur-7",
-				"bloom-blur-8",
-				"bloom-blur-9",
-				"bloom-blur-10",
-				"bloom-blur-11",
-				"bloom-blur-12",
-				"bloom-blur-13",
-				"bloom-blur-14",
-				"bloom-composite",
-				"render-output"
-			],
-			"notes": "",
-			"thumbHealth": "ok",
-			"badge": "pixel-match"
-		},
-		{
 			"basename": "webgpu_camera_logarithmicdepthbuffer",
 			"displayName": "camera · logarithmicdepthbuffer",
 			"category": "camera",
@@ -10634,27 +10640,27 @@
 			"badge": "visual-match"
 		},
 		{
-			"basename": "webgpu_postprocessing_ssgi",
-			"displayName": "postprocessing · ssgi",
+			"basename": "webgpu_postprocessing_motion_blur",
+			"displayName": "postprocessing · motion blur",
 			"category": "postprocessing",
 			"categoryLabel": "Postprocessing",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_postprocessing_ssgi",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_postprocessing_motion_blur",
 			"source": {
 				"kind": "three",
-				"path": "examples/webgpu_postprocessing_ssgi.html",
-				"route": "webgpu_postprocessing_ssgi.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_ssgi"
+				"path": "examples/webgpu_postprocessing_motion_blur.html",
+				"route": "webgpu_postprocessing_motion_blur.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_motion_blur"
 			},
-			"thumbReplay": "examples/thumbs/webgpu_postprocessing_ssgi.webp",
-			"thumbCapture": "examples/thumbs/webgpu_postprocessing_ssgi.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_postprocessing_ssgi.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_postprocessing_ssgi.capture.modal.webp",
+			"thumbReplay": "examples/thumbs/webgpu_postprocessing_motion_blur.webp",
+			"thumbCapture": "examples/thumbs/webgpu_postprocessing_motion_blur.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_postprocessing_motion_blur.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_postprocessing_motion_blur.capture.modal.webp",
 			"smoke": {
 				"status": "pass",
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 29.11,
+				"psnr": 29.66,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
@@ -10662,24 +10668,66 @@
 			},
 			"hasReplay": true,
 			"hasCapture": true,
-			"materialCount": 5,
-			"artifactCount": 6,
-			"totalWgslBytes": 26480,
+			"materialCount": 4,
+			"artifactCount": 5,
+			"totalWgslBytes": 15624,
 			"hasCompute": false,
 			"shapes": [
 				"mrt",
 				"post-process",
-				"traa-resolve",
 				"lights",
 				"render-output"
 			],
 			"materialShapes": [
 				"output-transform",
 				"node-material",
-				"traa-resolve",
 				"render-output"
 			],
-			"notes": "pixel gate disabled: diagnostic",
+			"notes": "",
+			"thumbHealth": "ok",
+			"badge": "visual-match"
+		},
+		{
+			"basename": "webgpu_caustics",
+			"displayName": "caustics",
+			"category": "misc",
+			"categoryLabel": "Misc",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_caustics",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_caustics.html",
+				"route": "webgpu_caustics.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_caustics"
+			},
+			"thumbReplay": "examples/thumbs/webgpu_caustics.webp",
+			"thumbCapture": "examples/thumbs/webgpu_caustics.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_caustics.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_caustics.capture.modal.webp",
+			"smoke": {
+				"status": "pass",
+				"gpuValidationCount": 0
+			},
+			"pixel": {
+				"psnr": 25.91,
+				"identical": false,
+				"threshold": 30,
+				"captured": true,
+				"replayed": true
+			},
+			"hasReplay": true,
+			"hasCapture": true,
+			"materialCount": 1,
+			"artifactCount": 2,
+			"totalWgslBytes": 2900,
+			"hasCompute": false,
+			"shapes": [
+				"lights",
+				"render-output"
+			],
+			"materialShapes": [
+				"render-output"
+			],
+			"notes": "",
 			"thumbHealth": "ok",
 			"badge": "visual-match"
 		},
@@ -10733,7 +10781,7 @@
 				"pmrem-ggx",
 				"render-output"
 			],
-			"notes": "pixel gate disabled: volatileCompute",
+			"notes": "",
 			"thumbHealth": "ok",
 			"badge": "visual-match"
 		},
@@ -10758,7 +10806,7 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 21.87,
+				"psnr": 21.79,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
@@ -10776,54 +10824,7 @@
 			"materialShapes": [
 				"render-output"
 			],
-			"notes": "pixel gate disabled: volatileCompute",
-			"thumbHealth": "ok",
-			"badge": "visual-match"
-		},
-		{
-			"basename": "webgpu_compute_particles_snow",
-			"displayName": "compute · particles snow",
-			"category": "compute",
-			"categoryLabel": "Compute",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_compute_particles_snow",
-			"source": {
-				"kind": "three",
-				"path": "examples/webgpu_compute_particles_snow.html",
-				"route": "webgpu_compute_particles_snow.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_compute_particles_snow"
-			},
-			"thumbReplay": "examples/thumbs/webgpu_compute_particles_snow.webp",
-			"thumbCapture": "examples/thumbs/webgpu_compute_particles_snow.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_compute_particles_snow.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_compute_particles_snow.capture.modal.webp",
-			"smoke": {
-				"status": "pass",
-				"gpuValidationCount": 0
-			},
-			"pixel": {
-				"psnr": 21.77,
-				"identical": false,
-				"threshold": 30,
-				"captured": true,
-				"replayed": true
-			},
-			"hasReplay": true,
-			"hasCapture": true,
-			"materialCount": 3,
-			"artifactCount": 4,
-			"totalWgslBytes": 11165,
-			"hasCompute": false,
-			"shapes": [
-				"background",
-				"post-process",
-				"lights",
-				"render-output"
-			],
-			"materialShapes": [
-				"node-material",
-				"render-output"
-			],
-			"notes": "pixel gate disabled: volatileCompute",
+			"notes": "",
 			"thumbHealth": "ok",
 			"badge": "visual-match"
 		},
@@ -10848,7 +10849,7 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 21.07,
+				"psnr": 21.03,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
@@ -10963,144 +10964,6 @@
 			"badge": "visual-match"
 		},
 		{
-			"basename": "webgpu_compute_particles_rain",
-			"displayName": "compute · particles rain",
-			"category": "compute",
-			"categoryLabel": "Compute",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_compute_particles_rain",
-			"source": {
-				"kind": "three",
-				"path": "examples/webgpu_compute_particles_rain.html",
-				"route": "webgpu_compute_particles_rain.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_compute_particles_rain"
-			},
-			"thumbReplay": "examples/thumbs/webgpu_compute_particles_rain.webp",
-			"thumbCapture": "examples/thumbs/webgpu_compute_particles_rain.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_compute_particles_rain.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_compute_particles_rain.capture.modal.webp",
-			"smoke": {
-				"status": "pass",
-				"gpuValidationCount": 0
-			},
-			"pixel": {
-				"psnr": 15.88,
-				"identical": false,
-				"threshold": 30,
-				"captured": true,
-				"replayed": true
-			},
-			"hasReplay": true,
-			"hasCapture": true,
-			"materialCount": 1,
-			"artifactCount": 2,
-			"totalWgslBytes": 2900,
-			"hasCompute": false,
-			"shapes": [
-				"lights",
-				"render-output"
-			],
-			"materialShapes": [
-				"render-output"
-			],
-			"notes": "pixel gate disabled: volatileCompute",
-			"thumbHealth": "ok",
-			"badge": "renders"
-		},
-		{
-			"basename": "webgpu_postprocessing_ssgi_ballpool",
-			"displayName": "postprocessing · ssgi ballpool",
-			"category": "postprocessing",
-			"categoryLabel": "Postprocessing",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_postprocessing_ssgi_ballpool",
-			"source": {
-				"kind": "three",
-				"path": "examples/webgpu_postprocessing_ssgi_ballpool.html",
-				"route": "webgpu_postprocessing_ssgi_ballpool.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_ssgi_ballpool"
-			},
-			"thumbReplay": "examples/thumbs/webgpu_postprocessing_ssgi_ballpool.webp",
-			"thumbCapture": "examples/thumbs/webgpu_postprocessing_ssgi_ballpool.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_postprocessing_ssgi_ballpool.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_postprocessing_ssgi_ballpool.capture.modal.webp",
-			"smoke": {
-				"status": "pass",
-				"gpuValidationCount": 0
-			},
-			"pixel": {
-				"psnr": 14.36,
-				"identical": false,
-				"threshold": 30,
-				"captured": true,
-				"replayed": true
-			},
-			"hasReplay": true,
-			"hasCapture": true,
-			"materialCount": 5,
-			"artifactCount": 6,
-			"totalWgslBytes": 29396,
-			"hasCompute": false,
-			"shapes": [
-				"mrt",
-				"post-process",
-				"traa-resolve",
-				"lights",
-				"render-output"
-			],
-			"materialShapes": [
-				"output-transform",
-				"node-material",
-				"traa-resolve",
-				"render-output"
-			],
-			"notes": "pixel gate disabled: diagnostic",
-			"thumbHealth": "ok",
-			"badge": "renders"
-		},
-		{
-			"basename": "webgpu_tsl_compute_attractors_particles",
-			"displayName": "tsl · compute attractors particles",
-			"category": "misc",
-			"categoryLabel": "Misc",
-			"threejsUrl": "https://threejs.org/examples/#webgpu_tsl_compute_attractors_particles",
-			"source": {
-				"kind": "three",
-				"path": "examples/webgpu_tsl_compute_attractors_particles.html",
-				"route": "webgpu_tsl_compute_attractors_particles.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_compute_attractors_particles"
-			},
-			"thumbReplay": "examples/thumbs/webgpu_tsl_compute_attractors_particles.webp",
-			"thumbCapture": "examples/thumbs/webgpu_tsl_compute_attractors_particles.capture.webp",
-			"thumbReplayModal": "examples/thumbs/webgpu_tsl_compute_attractors_particles.modal.webp",
-			"thumbCaptureModal": "examples/thumbs/webgpu_tsl_compute_attractors_particles.capture.modal.webp",
-			"smoke": {
-				"status": "pass",
-				"gpuValidationCount": 0
-			},
-			"pixel": {
-				"psnr": 11.91,
-				"identical": false,
-				"threshold": 30,
-				"captured": true,
-				"replayed": true
-			},
-			"hasReplay": true,
-			"hasCapture": true,
-			"materialCount": 1,
-			"artifactCount": 2,
-			"totalWgslBytes": 2900,
-			"hasCompute": false,
-			"shapes": [
-				"lights",
-				"render-output"
-			],
-			"materialShapes": [
-				"render-output"
-			],
-			"notes": "pixel gate disabled: volatileCompute",
-			"thumbHealth": "ok",
-			"badge": "renders"
-		},
-		{
 			"basename": "webgpu_postprocessing_sss",
 			"displayName": "postprocessing · sss",
 			"category": "postprocessing",
@@ -11121,7 +10984,7 @@
 				"gpuValidationCount": 0
 			},
 			"pixel": {
-				"psnr": 4.57,
+				"psnr": 17.58,
 				"identical": false,
 				"threshold": 30,
 				"captured": true,
@@ -11146,7 +11009,144 @@
 				"output-transform",
 				"render-output"
 			],
-			"notes": "pixel gate disabled: diagnostic",
+			"notes": "",
+			"thumbHealth": "ok",
+			"badge": "renders"
+		},
+		{
+			"basename": "webgpu_tsl_compute_attractors_particles",
+			"displayName": "tsl · compute attractors particles",
+			"category": "misc",
+			"categoryLabel": "Misc",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_tsl_compute_attractors_particles",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_tsl_compute_attractors_particles.html",
+				"route": "webgpu_tsl_compute_attractors_particles.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_compute_attractors_particles"
+			},
+			"thumbReplay": "examples/thumbs/webgpu_tsl_compute_attractors_particles.webp",
+			"thumbCapture": "examples/thumbs/webgpu_tsl_compute_attractors_particles.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_tsl_compute_attractors_particles.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_tsl_compute_attractors_particles.capture.modal.webp",
+			"smoke": {
+				"status": "pass",
+				"gpuValidationCount": 0
+			},
+			"pixel": {
+				"psnr": 16.52,
+				"identical": false,
+				"threshold": 30,
+				"captured": true,
+				"replayed": true
+			},
+			"hasReplay": true,
+			"hasCapture": true,
+			"materialCount": 1,
+			"artifactCount": 2,
+			"totalWgslBytes": 2900,
+			"hasCompute": false,
+			"shapes": [
+				"lights",
+				"render-output"
+			],
+			"materialShapes": [
+				"render-output"
+			],
+			"notes": "",
+			"thumbHealth": "ok",
+			"badge": "renders"
+		},
+		{
+			"basename": "webgpu_compute_reduce",
+			"displayName": "compute · reduce",
+			"category": "compute",
+			"categoryLabel": "Compute",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_compute_reduce",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_compute_reduce.html",
+				"route": "webgpu_compute_reduce.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_reduce"
+			},
+			"thumbReplay": "examples/thumbs/webgpu_compute_reduce.webp",
+			"thumbCapture": "examples/thumbs/webgpu_compute_reduce.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_compute_reduce.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_compute_reduce.capture.modal.webp",
+			"smoke": {
+				"status": "pass",
+				"gpuValidationCount": 0
+			},
+			"pixel": {
+				"psnr": 14.81,
+				"identical": false,
+				"threshold": 30,
+				"captured": true,
+				"replayed": true
+			},
+			"hasReplay": true,
+			"hasCapture": true,
+			"materialCount": 1,
+			"artifactCount": 1,
+			"totalWgslBytes": 2900,
+			"hasCompute": false,
+			"shapes": [
+				"render-output"
+			],
+			"materialShapes": [
+				"render-output"
+			],
+			"notes": "",
+			"thumbHealth": "ok",
+			"badge": "renders"
+		},
+		{
+			"basename": "webgpu_postprocessing_ssgi_ballpool",
+			"displayName": "postprocessing · ssgi ballpool",
+			"category": "postprocessing",
+			"categoryLabel": "Postprocessing",
+			"threejsUrl": "https://threejs.org/examples/#webgpu_postprocessing_ssgi_ballpool",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_ssgi_ballpool.html",
+				"route": "webgpu_postprocessing_ssgi_ballpool.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_ssgi_ballpool"
+			},
+			"thumbReplay": "examples/thumbs/webgpu_postprocessing_ssgi_ballpool.webp",
+			"thumbCapture": "examples/thumbs/webgpu_postprocessing_ssgi_ballpool.capture.webp",
+			"thumbReplayModal": "examples/thumbs/webgpu_postprocessing_ssgi_ballpool.modal.webp",
+			"thumbCaptureModal": "examples/thumbs/webgpu_postprocessing_ssgi_ballpool.capture.modal.webp",
+			"smoke": {
+				"status": "pass",
+				"gpuValidationCount": 0
+			},
+			"pixel": {
+				"psnr": 14.22,
+				"identical": false,
+				"threshold": 30,
+				"captured": true,
+				"replayed": true
+			},
+			"hasReplay": true,
+			"hasCapture": true,
+			"materialCount": 5,
+			"artifactCount": 6,
+			"totalWgslBytes": 29396,
+			"hasCompute": false,
+			"shapes": [
+				"mrt",
+				"post-process",
+				"traa-resolve",
+				"lights",
+				"render-output"
+			],
+			"materialShapes": [
+				"output-transform",
+				"node-material",
+				"traa-resolve",
+				"render-output"
+			],
+			"notes": "",
 			"thumbHealth": "ok",
 			"badge": "renders"
 		}

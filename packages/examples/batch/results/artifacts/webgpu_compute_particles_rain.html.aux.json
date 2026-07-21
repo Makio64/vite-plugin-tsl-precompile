@@ -1,8 +1,8 @@
 [
   {
     "shape": "lights",
-    "configHash": "816b7e9b3e430f34eb5194c264ab9dcade5072bdd7ef2290e2a914ad33de7407",
-    "name": "aux-lights-816b7e9b3e43",
+    "configHash": "c035f2fb0ad933b5c646d6b98c0b96bd735eee8f97d47d54b98ce53eb08d2cf7",
+    "name": "aux-lights-c035f2fb0ad9",
     "artifact": {
       "uniformPlan": [],
       "vertexShader": "",
@@ -15,14 +15,14 @@
   },
   {
     "shape": "render-output",
-    "configHash": "90a5a84186bcbc44efdd95b20bf6492a0c0d34057e53f1b3ebe0bc95b1236c03",
-    "name": "aux-render-output-90a5a84186bc",
+    "configHash": "64408283fa335f51e57c24dd9cc697109f23fd864f8474bc5e19cc6a7e835c7b",
+    "name": "aux-render-output-64408283fa33",
     "artifact": {
       "version": 3,
       "cacheKey": 8677583074271256,
       "materialShape": "render-output",
-      "vertexShader": "// Three.js r184dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : vec2<f32>,\n\tnodeUniform4 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar1 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform4 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar1 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar1;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
-      "fragmentShader": "// Three.js r184dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform1 : vec2<f32>,\n\tnodeUniform4 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> nodeVar0 : vec4<f32>;\n\n// codes\nfn sRGBTransferOETF ( color : vec3<f32> ) -> vec3<f32> {\n\n\t\n\n\n\treturn mix( ( ( pow( color, vec3<f32>( 0.41666 ) ) * vec3<f32>( 1.055 ) ) - vec3<f32>( 0.055 ) ), ( color * vec3<f32>( 12.92 ) ), vec3<f32>( ( color <= vec3<f32>( 0.0031308 ) ) ) );\n\n}\n\n\n\n@fragment\nfn main( @builtin( position ) fragCoord : vec4<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform0, nodeUniform0_sampler, ( fragCoord.xy / object.nodeUniform1 ) );\n\n\t// result\n\n\toutput.color = vec4<f32>( sRGBTransferOETF( nodeVar0.xyz ), nodeVar0.w );\n\n\treturn output;\n\n}\n",
+      "vertexShader": "// Three.js r184 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : vec2<f32>,\n\tnodeUniform4 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar1 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tpositionLocal = position;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform4 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar1 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar1;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
+      "fragmentShader": "// Three.js r184 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform1 : vec2<f32>,\n\tnodeUniform4 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> nodeVar0 : vec4<f32>;\n\n// codes\nfn sRGBTransferOETF ( color : vec3<f32> ) -> vec3<f32> {\n\n\t\n\n\n\treturn mix( ( ( pow( color, vec3<f32>( 0.41666 ) ) * vec3<f32>( 1.055 ) ) - vec3<f32>( 0.055 ) ), ( color * vec3<f32>( 12.92 ) ), vec3<f32>( ( color <= vec3<f32>( 0.0031308 ) ) ) );\n\n}\n\n\n\n@fragment\nfn main( @builtin( position ) fragCoord : vec4<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform0, nodeUniform0_sampler, ( fragCoord.xy / object.nodeUniform1 ) );\n\n\t// result\n\n\toutput.color = vec4<f32>( sRGBTransferOETF( nodeVar0.xyz ), nodeVar0.w );\n\n\treturn output;\n\n}\n",
       "computeShader": "",
       "attributes": [
         {
@@ -92,22 +92,22 @@
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
-                    1.299038105676658,
+                    1,
                     0,
                     0,
                     0,
                     0,
-                    1.7320508075688774,
+                    1,
                     0,
                     0,
                     0,
                     0,
-                    -1.0009099181073702,
                     -1,
                     0,
                     0,
-                    -0.10009099181073702,
-                    0
+                    0,
+                    0,
+                    1
                   ]
                 }
               }
@@ -122,21 +122,21 @@
                 "valueSnapshot": {
                   "type": "mat4",
                   "data": [
-                    1.2247461491113721e-16,
-                    -0.19611613513818393,
-                    0.98058067569092,
+                    1,
                     0,
-                    -4.6268187855318505e-17,
-                    0.98058067569092,
-                    0.19611613513818393,
                     0,
-                    -1,
-                    -6.259813651013679e-17,
-                    1.0070135003804614e-16,
                     0,
-                    -2.0795454953082333e-15,
-                    -8.881784197001252e-16,
-                    -40.79215610874227,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
                     1
                   ]
                 }
@@ -162,22 +162,22 @@
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
-                        1.299038105676658,
+                        1,
                         0,
                         0,
                         0,
                         0,
-                        1.7320508075688774,
+                        1,
                         0,
                         0,
                         0,
                         0,
-                        -1.0009099181073702,
                         -1,
                         0,
                         0,
-                        -0.10009099181073702,
-                        0
+                        0,
+                        0,
+                        1
                       ]
                     }
                   }
@@ -192,21 +192,21 @@
                     "valueSnapshot": {
                       "type": "mat4",
                       "data": [
-                        1.2247461491113721e-16,
-                        -0.19611613513818393,
-                        0.98058067569092,
+                        1,
                         0,
-                        -4.6268187855318505e-17,
-                        0.98058067569092,
-                        0.19611613513818393,
                         0,
-                        -1,
-                        -6.259813651013679e-17,
-                        1.0070135003804614e-16,
                         0,
-                        -2.0795454953082333e-15,
-                        -8.881784197001252e-16,
-                        -40.79215610874227,
+                        0,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
                         1
                       ]
                     }
@@ -278,7 +278,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "5ca6177a-d64f-4464-af99-e5ed9dbfad8b",
+                "textureUuid": "fda9bc54-36b4-4c14-898e-69414baa2106",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
@@ -301,7 +301,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "5ca6177a-d64f-4464-af99-e5ed9dbfad8b",
+                "textureUuid": "fda9bc54-36b4-4c14-898e-69414baa2106",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
@@ -329,7 +329,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "5ca6177a-d64f-4464-af99-e5ed9dbfad8b",
+                  "textureUuid": "fda9bc54-36b4-4c14-898e-69414baa2106",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,
@@ -344,14 +344,6 @@
                   "imageDepth": 1
                 }
               }
-            },
-            {
-              "type": "unknown",
-              "name": "nodeUniform0_sampler",
-              "flags": [
-                "isSampler"
-              ],
-              "visibility": 2
             },
             {
               "type": "sampled-texture",
@@ -363,7 +355,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "5ca6177a-d64f-4464-af99-e5ed9dbfad8b",
+                  "textureUuid": "fda9bc54-36b4-4c14-898e-69414baa2106",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,
@@ -378,15 +370,6 @@
                   "imageDepth": 1
                 }
               }
-            },
-            {
-              "type": "unknown",
-              "name": "nodeUniform0",
-              "flags": [
-                "isSampler",
-                "isSampledTexture"
-              ],
-              "visibility": 2
             },
             {
               "type": "ubo",
@@ -446,13 +429,59 @@
         }
       ],
       "defaults": {},
-      "renderState": {},
+      "renderState": {
+        "transparent": false,
+        "opacity": 1,
+        "alphaTest": 0,
+        "alphaHash": false,
+        "alphaToCoverage": false,
+        "side": 0,
+        "depthTest": true,
+        "depthWrite": true,
+        "depthFunc": 3,
+        "blending": 1,
+        "blendSrc": 204,
+        "blendDst": 205,
+        "blendEquation": 100,
+        "colorWrite": true,
+        "premultipliedAlpha": false,
+        "dithering": false,
+        "toneMapped": true,
+        "vertexColors": false,
+        "fog": true,
+        "lights": false,
+        "allowOverride": true,
+        "forceSinglePass": false,
+        "polygonOffset": false,
+        "polygonOffsetFactor": 0,
+        "polygonOffsetUnits": 0,
+        "stencilWrite": false,
+        "stencilWriteMask": 255,
+        "stencilFunc": 519,
+        "stencilRef": 0,
+        "stencilFuncMask": 255,
+        "stencilFail": 7680,
+        "stencilZFail": 7680,
+        "stencilZPass": 7680
+      },
       "meta": {
         "updateNodes": 6,
         "updateBeforeNodes": 0,
         "updateAfterNodes": 0
       },
-      "captureClock": 0
+      "renderContextSelectors": [
+        "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":0,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":false,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":0,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[],\"depth\":true,\"depthTexture\":null,\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"default\"},\"version\":\"render-object-selector@1\"}"
+      ],
+      "materialUuid": "e515689d-7933-4393-aad1-8e4db02ade6a",
+      "captureClock": 0,
+      "replayConfig": {
+        "schema": "renderer-output@1",
+        "toneMapping": 0,
+        "currentColorSpace": "srgb",
+        "logarithmicDepthBuffer": false,
+        "sampledTexture": "2d",
+        "multiview": false
+      }
     }
   }
 ]
