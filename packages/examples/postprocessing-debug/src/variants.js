@@ -118,7 +118,7 @@ async function ensurePipelineAux( capture, renderer, scene, camera, postProcessi
 
 }
 
-async function renderCaptureVariantsOncePerFrame( renderer, postProcessing, variants, cube ) {
+async function renderCaptureStatesOncePerFrame( renderer, post, variants, cube ) {
 
 	const previousAnimationLoop = renderer.getAnimationLoop();
 
@@ -155,12 +155,23 @@ async function renderCaptureVariantsOncePerFrame( renderer, postProcessing, vari
 
 			try {
 
-				const variantName = VARIANT_ORDER[ variantIndex ];
-				variants.select( variantName, cube );
-				postProcessing.render();
-				variantIndex ++;
+				if ( variantIndex < VARIANT_ORDER.length ) {
 
-				if ( variantIndex === VARIANT_ORDER.length ) finish();
+					const variantName = VARIANT_ORDER[ variantIndex ];
+					variants.select( variantName, cube );
+					post.plain.render();
+					variantIndex ++;
+					return;
+
+				}
+
+				// BloomNode owns lazy internal materials and live blur uniforms that
+				// are initialized by its first real updateBefore pass. Capture the
+				// same lifecycle state as bloom.html instead of force-setting up an
+				// otherwise unrendered effect graph.
+				variants.select( 'ember', cube );
+				post.bloom.render();
+				finish();
 
 			} catch ( error ) {
 
@@ -247,8 +258,7 @@ async function main() {
 		// Each variant owns a distinct shader graph but only one is mounted at a
 		// time. PassNode producers have FRAME cadence, so render one state per
 		// real renderer frame instead of issuing several renders in one frame.
-		await renderCaptureVariantsOncePerFrame( renderer, post.plain, variants, cube );
-		variants.select( 'ember', cube );
+		await renderCaptureStatesOncePerFrame( renderer, post, variants, cube );
 		await capture.setup.waitForCaptureSettled( {
 			since: captureBaseline,
 			timeoutMs: 30_000,
