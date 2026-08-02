@@ -31,12 +31,15 @@ jobs:
     name: Reproduce evidence and build
     runs-on: ubuntu-24.04
     timeout-minutes: 360
-    env:
-      TSLP_E2E_OUT: ${{ runner.temp }}/deploy-e2e
-      TSLP_STOCK_OUT: ${{ runner.temp }}/deploy-stock
-      TSLP_STOCK_REPORT: ${{ runner.temp }}/deploy-stock/report.json
-      TSLP_SITE_PUBLIC_OUT: ${{ runner.temp }}/deploy-site-public
     steps:
+      - name: Configure runner-temporary output paths
+        run: |
+          {
+            echo "TSLP_E2E_OUT=$RUNNER_TEMP/deploy-e2e"
+            echo "TSLP_STOCK_OUT=$RUNNER_TEMP/deploy-stock"
+            echo "TSLP_STOCK_REPORT=$RUNNER_TEMP/deploy-stock/report.json"
+            echo "TSLP_SITE_PUBLIC_OUT=$RUNNER_TEMP/deploy-site-public"
+          } >> "$GITHUB_ENV"
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Check out the matching three.js examples corpus
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -85,19 +88,19 @@ jobs:
         with:
           name: deploy-site-evidence-${{ github.sha }}
           path: |
-            ${{ env.TSLP_E2E_OUT }}/e2e-report.json
-            ${{ env.TSLP_E2E_OUT }}/coverage-summary.json
-            ${{ env.TSLP_E2E_OUT }}/coverage-evidence-set.json
-            ${{ env.TSLP_E2E_OUT }}/evidence-manifest.json
-            ${{ env.TSLP_E2E_OUT }}/evidence/**/shots/*.png
-            ${{ env.TSLP_E2E_OUT }}/evidence/**/artifacts/*
-            ${{ env.TSLP_E2E_OUT }}/evidence/**/network/*.bin
-            ${{ env.TSLP_E2E_OUT }}/cohorts/**/*-e2e-report.json
-            ${{ env.TSLP_E2E_OUT }}/cohorts/**/evidence/**/shots/*.png
-            ${{ env.TSLP_E2E_OUT }}/cohorts/**/evidence/**/artifacts/*
-            ${{ env.TSLP_E2E_OUT }}/cohorts/**/evidence/**/network/*.bin
-            ${{ env.TSLP_STOCK_REPORT }}
-            ${{ env.TSLP_STOCK_OUT }}/network/*.bin
+            ${{ runner.temp }}/deploy-e2e/e2e-report.json
+            ${{ runner.temp }}/deploy-e2e/coverage-summary.json
+            ${{ runner.temp }}/deploy-e2e/coverage-evidence-set.json
+            ${{ runner.temp }}/deploy-e2e/evidence-manifest.json
+            ${{ runner.temp }}/deploy-e2e/evidence/**/shots/*.png
+            ${{ runner.temp }}/deploy-e2e/evidence/**/artifacts/*
+            ${{ runner.temp }}/deploy-e2e/evidence/**/network/*.bin
+            ${{ runner.temp }}/deploy-e2e/cohorts/**/*-e2e-report.json
+            ${{ runner.temp }}/deploy-e2e/cohorts/**/evidence/**/shots/*.png
+            ${{ runner.temp }}/deploy-e2e/cohorts/**/evidence/**/artifacts/*
+            ${{ runner.temp }}/deploy-e2e/cohorts/**/evidence/**/network/*.bin
+            ${{ runner.temp }}/deploy-stock/report.json
+            ${{ runner.temp }}/deploy-stock/network/*.bin
           if-no-files-found: ignore
           retention-days: 14
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6

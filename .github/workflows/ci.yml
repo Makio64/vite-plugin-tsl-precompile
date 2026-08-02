@@ -102,9 +102,9 @@ jobs:
     name: Tier-1 visual gate
     runs-on: ubuntu-24.04
     timeout-minutes: 35
-    env:
-      TSLP_E2E_OUT: ${{ runner.temp }}/tier1-e2e
     steps:
+      - name: Configure runner-temporary output paths
+        run: echo "TSLP_E2E_OUT=$RUNNER_TEMP/tier1-e2e" >> "$GITHUB_ENV"
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Check out the matching three.js examples corpus
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -148,10 +148,13 @@ jobs:
     name: Example builds + preview smokes
     runs-on: ubuntu-24.04
     timeout-minutes: 35
-    env:
-      TSLP_PREVIEW_RESULTS: ${{ runner.temp }}/example-production/preview-smoke
-      TSLP_WOW_RESULTS: ${{ runner.temp }}/example-production/wow-showcase
     steps:
+      - name: Configure runner-temporary output paths
+        run: |
+          {
+            echo "TSLP_PREVIEW_RESULTS=$RUNNER_TEMP/example-production/preview-smoke"
+            echo "TSLP_WOW_RESULTS=$RUNNER_TEMP/example-production/wow-showcase"
+          } >> "$GITHUB_ENV"
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -178,8 +181,6 @@ jobs:
     name: Packed smoke (${{ matrix.label }})
     runs-on: ubuntu-24.04
     timeout-minutes: 25
-    env:
-      TSLP_FRESH_RESULTS: ${{ runner.temp }}/fresh-project-smoke
     strategy:
       fail-fast: false
       matrix:
@@ -200,6 +201,8 @@ jobs:
             typescript: 5.6.3
             artifact: minimum
     steps:
+      - name: Configure runner-temporary output paths
+        run: echo "TSLP_FRESH_RESULTS=$RUNNER_TEMP/fresh-project-smoke" >> "$GITHUB_ENV"
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6

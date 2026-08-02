@@ -1810,6 +1810,15 @@ test( 'workflow executables use immutable action SHAs and fixed runtime baseline
 		const path = join( workflowsDirectory, file );
 		const source = readFileSync( path, 'utf8' );
 		assert.doesNotMatch( source, /\bruns-on:\s*ubuntu-latest\b/, `${ file } uses a moving runner alias` );
+		for ( const match of source.matchAll( /^    env:\n((?:      [^\n]*\n)*)/gm ) ) {
+
+			assert.doesNotMatch(
+				match[ 1 ],
+				/\$\{\{\s*runner\./,
+				`${ file } job-level env cannot access the runner context`,
+			);
+
+		}
 		for ( const step of source.split( /(?=^\s*-\s+(?:name|uses):)/m ) ) {
 
 			const externalRepository = /\brepository:\s*([^\s#]+)/.exec( step )?.[ 1 ];

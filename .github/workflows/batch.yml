@@ -20,12 +20,15 @@ jobs:
     name: Exact 254-case evidence campaign
     runs-on: ubuntu-24.04
     timeout-minutes: 360
-    env:
-      TSLP_E2E_OUT: ${{ runner.temp }}/nightly-e2e
-      TSLP_STOCK_OUT: ${{ runner.temp }}/nightly-stock-preflight
-      TSLP_STOCK_REPORT: ${{ runner.temp }}/nightly-stock-preflight/report.json
-      TSLP_SITE_PUBLIC_OUT: ${{ runner.temp }}/nightly-site-public
     steps:
+      - name: Configure runner-temporary output paths
+        run: |
+          {
+            echo "TSLP_E2E_OUT=$RUNNER_TEMP/nightly-e2e"
+            echo "TSLP_STOCK_OUT=$RUNNER_TEMP/nightly-stock-preflight"
+            echo "TSLP_STOCK_REPORT=$RUNNER_TEMP/nightly-stock-preflight/report.json"
+            echo "TSLP_SITE_PUBLIC_OUT=$RUNNER_TEMP/nightly-site-public"
+          } >> "$GITHUB_ENV"
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Check out the matching three.js examples corpus
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
