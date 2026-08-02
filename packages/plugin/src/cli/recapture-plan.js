@@ -39,7 +39,16 @@ const EXAMPLE_SPECS = [
 			},
 		],
 	},
-	{ name: 'ocean', filter: 'examples-ocean', paths: [ '/' ], sources: [ 'main.js' ] },
+	{
+		name: 'ocean',
+		filter: 'examples-ocean',
+		paths: [ '/' ],
+		sources: [ 'main.js' ],
+		// The PMREM sky capture can finish near the default 10s boundary on
+		// software WebGPU runners. Keep the route bounded without grading a
+		// valid final POST as an empty capture because of scheduler jitter.
+		timeout: 60_000,
+	},
 	{ name: 'pbr-shadows', filter: 'examples-pbr-shadows', paths: [ '/' ], sources: [ 'main.js' ] },
 	{
 		name: 'shadow-debug',

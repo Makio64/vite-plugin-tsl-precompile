@@ -219,6 +219,7 @@ test( 'long-running recapture subsets carry explicit bounded timeouts', () => {
 			.filter( ( example ) => Object.hasOwn( example, 'timeout' ) )
 			.map( ( example ) => [ example.name, example.timeout ] ),
 		[
+			[ 'ocean', 60000 ],
 			[ 'shadow-debug', 60000 ],
 			[ 'postprocessing-debug', 60000 ],
 			[ 'pmrem-debug', 60000 ],
