@@ -23,6 +23,7 @@
  */
 
 import { chromium } from 'playwright';
+import { PNG } from 'pngjs';
 import { readdirSync, existsSync } from 'node:fs';
 import { resolve, join, dirname, extname, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -313,7 +314,7 @@ console.log( `[batch] static file server on http://localhost:${ port }/ (root: $
 const BROWSER_ARGS = [ '--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--no-sandbox', '--disable-dev-shm-usage' ];
 const MAX_RUNS_PER_BROWSER = 24;
 const NAV_TIMEOUT_MS = 25000;
-const RENDER_TIMEOUT_MS = 120000;
+const RENDER_TIMEOUT_MS = 12000;
 const RENDER_POLL_MS = 400;
 
 async function dumpCanvas( page ) {
@@ -332,33 +333,25 @@ async function dumpCanvas( page ) {
 
 }
 
-async function brightFraction( page, pngBuf ) {
+function brightFraction( pngBuf ) {
 
 	if ( ! pngBuf ) return 0;
-	return await page.evaluate( async ( b64 ) => {
+	try {
 
-		try {
+		const image = PNG.sync.read( pngBuf );
+		let bright = 0;
+		for ( let i = 0; i < image.data.length; i += 4 ) {
 
-			const blob = await ( await fetch( 'data:image/png;base64,' + b64 ) ).blob();
-			const bmp = await createImageBitmap( blob );
-			const off = new OffscreenCanvas( bmp.width, bmp.height );
-			off.getContext( '2d' ).drawImage( bmp, 0, 0 );
-			const img = off.getContext( '2d' ).getImageData( 0, 0, bmp.width, bmp.height ).data;
-			let bright = 0;
-			for ( let i = 0; i < img.length; i += 4 ) {
-
-				if ( img[ i ] + img[ i + 1 ] + img[ i + 2 ] > 30 ) bright ++;
-
-			}
-			return bright / ( img.length / 4 );
-
-		} catch ( _ ) {
-
-			return 0;
+			if ( image.data[ i ] + image.data[ i + 1 ] + image.data[ i + 2 ] > 30 ) bright ++;
 
 		}
+		return bright / ( image.data.length / 4 );
 
-	}, pngBuf.toString( 'base64' ) );
+	} catch ( _ ) {
+
+		return 0;
+
+	}
 
 }
 
@@ -416,13 +409,26 @@ async function runOne( browser, name ) {
 		while ( Date.now() < deadline ) {
 
 			shot = await dumpCanvas( page );
-			bright = await brightFraction( page, shot );
+			bright = brightFraction( shot );
 			if ( bright > 0.005 ) break;
 			await new Promise( ( resolvePoll ) => setTimeout( resolvePoll, RENDER_POLL_MS ) );
 
 		}
 
 		await drainAndSettleE2EGpuDiagnostics( page );
+		await page.evaluate( () => new Promise( ( resolveFrame ) => {
+
+			requestAnimationFrame( () => requestAnimationFrame( resolveFrame ) );
+
+		} ) );
+		const settledShot = await dumpCanvas( page );
+		const settledBright = brightFraction( settledShot );
+		if ( settledBright > bright ) {
+
+			shot = settledShot;
+			bright = settledBright;
+
+		}
 		const diagnostics = await page.evaluate( () => window.__tslpHarnessDiagnostics || null );
 		const gpuObservation = snapshotE2EGpuObservation( diagnostics?.gpuObservation );
 		const gpuErrors = Array.isArray( diagnostics?.gpuErrors )
