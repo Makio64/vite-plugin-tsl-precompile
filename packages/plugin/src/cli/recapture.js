@@ -26,7 +26,7 @@ import {
 	isTransientRecaptureNavigationError,
 	navigateWithColdReloadRetry,
 	parseRecaptureArgs,
-	recaptureBrowserLaunchArgs,
+	recaptureBrowserLaunchOptions,
 	RECAPTURE_HELP,
 	RECAPTURE_VIEWPORT,
 	recoverColdReloadDuringPolling,
@@ -189,16 +189,13 @@ if ( ! browserType ) {
 
 }
 
-const browserArgs = recaptureBrowserLaunchArgs( browserName );
+const browserLaunchOptions = recaptureBrowserLaunchOptions( browserName, { headless } );
 
 progress( `[tsl-precompile] Launching ${ browserName }...` );
 let browser;
 try {
 
-	browser = await browserType.launch( {
-		headless,
-		args: browserArgs,
-	} );
+	browser = await browserType.launch( browserLaunchOptions );
 
 } catch ( error ) {
 

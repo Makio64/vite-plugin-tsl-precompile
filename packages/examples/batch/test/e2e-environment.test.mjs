@@ -173,7 +173,7 @@ test( 'browser launch records the actual selected Chrome channel', async () => {
 	assert.equal( selectedBundled.channel, 'playwright-chromium' );
 	assert.deepEqual( bundledCalls, [
 		{ channel: 'chrome', headless: true, args: [] },
-		{ headless: true, args: [] },
+		{ channel: 'chromium', headless: true, args: [] },
 	] );
 
 } );
@@ -187,6 +187,17 @@ test( 'Linux browser launch opts into deterministic WebGPU and WebGL SwiftShader
 	];
 	assert.deepEqual( evidenceBrowserLaunchArgs( baseArgs, 'linux' ), expectedArgs );
 	assert.deepEqual( evidenceBrowserLaunchArgs( baseArgs, 'darwin' ), baseArgs );
+	for ( const required of [
+		'--use-webgpu-adapter=swiftshader',
+		'--enable-features=Vulkan',
+		'--disable-vulkan-surface',
+		'--use-vulkan=swiftshader',
+		'--use-angle=swiftshader',
+	] ) {
+
+		assert.ok( expectedArgs.includes( required ), `Linux browser args require ${ required }` );
+
+	}
 
 	const calls = [];
 	const browser = {};

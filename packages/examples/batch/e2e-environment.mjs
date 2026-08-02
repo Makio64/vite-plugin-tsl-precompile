@@ -150,7 +150,7 @@ export async function launchEvidenceBrowser( chromium, {
 		args: launchArgs,
 	} ).catch( () => null );
 	if ( browser ) return { browser, channel: 'chrome' };
-	browser = await chromium.launch( { headless, args: launchArgs } );
+	browser = await chromium.launch( { channel: 'chromium', headless, args: launchArgs } );
 	return { browser, channel: 'playwright-chromium' };
 
 }

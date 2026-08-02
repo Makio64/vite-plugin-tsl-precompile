@@ -19,6 +19,7 @@ import {
 	navigateWithColdReloadRetry,
 	parseRecaptureArgs,
 	recaptureBrowserLaunchArgs,
+	recaptureBrowserLaunchOptions,
 	recoverColdReloadDuringPolling,
 } from '../../src/cli/recapture-support.js';
 
@@ -75,6 +76,18 @@ test( 'recapture Chromium launch preserves macOS behavior and enables both softw
 	];
 	assert.deepEqual( recaptureBrowserLaunchArgs( 'chromium', 'darwin' ), macArgs );
 	assert.deepEqual( recaptureBrowserLaunchArgs( 'firefox', 'linux' ), [] );
+	assert.deepEqual(
+		recaptureBrowserLaunchOptions( 'chromium', { platform: 'linux', headless: true } ),
+		{
+			channel: 'chromium',
+			headless: true,
+			args: recaptureBrowserLaunchArgs( 'chromium', 'linux' ),
+		},
+	);
+	assert.deepEqual(
+		recaptureBrowserLaunchOptions( 'chromium', { platform: 'darwin', headless: true } ),
+		{ headless: true, args: macArgs },
+	);
 
 	const { evidenceBrowserLaunchArgs, LINUX_SWIFTSHADER_BROWSER_ARGS } = await import(
 		'../../../examples/batch/e2e-environment.mjs'

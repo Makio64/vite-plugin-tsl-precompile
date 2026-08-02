@@ -84,7 +84,7 @@ export function createProductionBrowserLaunchPlan( {
 	const args = evidenceBrowserLaunchArgs( PRODUCTION_BROWSER_BASE_ARGS, platform );
 	const bundled = {
 		channel: 'playwright-chromium',
-		options: { headless, args: [ ...args ] },
+		options: { channel: 'chromium', headless, args: [ ...args ] },
 	};
 	const system = {
 		channel: 'chrome',

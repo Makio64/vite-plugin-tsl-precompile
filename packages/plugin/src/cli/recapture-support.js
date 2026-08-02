@@ -16,9 +16,13 @@ export const LINUX_SWIFTSHADER_BROWSER_ARGS = Object.freeze( [
 	'--enable-unsafe-webgpu',
 	'--use-webgpu-adapter=swiftshader',
 	// Dawn's Linux decoder requires Chromium's shared graphics context to use
-	// Vulkan even when the requested WebGPU adapter is SwiftShader.
+	// Vulkan even when the requested WebGPU adapter is SwiftShader. Select the
+	// packaged SwiftShader Vulkan driver explicitly as well; otherwise GPU-less
+	// Linux hosts can expose navigator.gpu but drop Dawn's instance while Three
+	// still has a validation error scope pending.
 	'--enable-features=Vulkan',
 	'--disable-vulkan-surface',
+	'--use-vulkan=swiftshader',
 	'--use-gpu-in-tests',
 	'--enable-accelerated-2d-canvas',
 	'--use-gl=angle',
@@ -36,6 +40,22 @@ export function recaptureBrowserLaunchArgs( browserName, platform = process.plat
 		...RECAPTURE_CHROMIUM_BROWSER_ARGS,
 		...LINUX_SWIFTSHADER_BROWSER_ARGS,
 	] ) ];
+
+}
+
+export function recaptureBrowserLaunchOptions( browserName, {
+	headless = true,
+	platform = process.platform,
+} = {} ) {
+
+	return {
+		headless,
+		args: recaptureBrowserLaunchArgs( browserName, platform ),
+		// Playwright otherwise selects Chromium's reduced headless shell. Use
+		// the regular bundled browser on Linux so Dawn/WebGPU exercises the same
+		// graphics stack as Chrome's supported new-headless mode.
+		...( browserName === 'chromium' && platform === 'linux' ? { channel: 'chromium' } : {} ),
+	};
 
 }
 

@@ -88,7 +88,7 @@ test( 'production preview shares deterministic WebGPU and WebGL SwiftShader flag
 	const plan = createProductionBrowserLaunchPlan( { platform: 'linux', headless: false } );
 	const expectedArgs = evidenceBrowserLaunchArgs( PRODUCTION_BROWSER_BASE_ARGS, 'linux' );
 	assert.equal( plan[ 0 ].channel, 'playwright-chromium' );
-	assert.equal( plan[ 0 ].options.channel, undefined );
+	assert.equal( plan[ 0 ].options.channel, 'chromium' );
 	assert.equal( plan[ 0 ].options.headless, false );
 	assert.equal( plan[ 1 ].channel, 'chrome' );
 	assert.equal( plan[ 1 ].options.channel, 'chrome' );
@@ -100,7 +100,7 @@ test( 'production preview shares deterministic WebGPU and WebGL SwiftShader flag
 			assert.ok( candidate.options.args.includes( arg ) );
 
 		}
-		assert.ok( ! candidate.options.args.includes( '--use-vulkan=swiftshader' ) );
+		assert.ok( candidate.options.args.includes( '--use-vulkan=swiftshader' ) );
 		assert.ok( ! candidate.options.args.includes( '--enable-features=Vulkan,WebGPUService' ) );
 
 	}
@@ -110,7 +110,7 @@ test( 'production preview shares deterministic WebGPU and WebGL SwiftShader flag
 		'utf8',
 	);
 	assert.match( source, /evidenceBrowserLaunchArgs\( PRODUCTION_BROWSER_BASE_ARGS, platform \)/ );
-	assert.doesNotMatch( source, /use-vulkan=swiftshader/ );
+	assert.doesNotMatch( source, /enable-features=Vulkan,WebGPUService/ );
 
 } );
 
@@ -133,7 +133,7 @@ test( 'production preview falls back through the platform launch plan', async ()
 	);
 	assert.equal( calls.length, 2 );
 	assert.equal( calls[ 0 ].channel, 'chrome' );
-	assert.equal( calls[ 1 ].channel, undefined );
+	assert.equal( calls[ 1 ].channel, 'chromium' );
 
 } );
 
