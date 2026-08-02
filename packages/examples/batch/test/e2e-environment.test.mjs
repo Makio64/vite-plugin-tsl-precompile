@@ -300,7 +300,7 @@ test( 'browser recycling fails closed when any fingerprinted environment identit
 
 } );
 
-test( 'Linux environment collection rejects unavailable WebGPU or WebGL before case evidence', async () => {
+test( 'Linux environment collection binds live WebGPU adapter evidence over Chromium software status', async () => {
 
 	const unavailable = fakeBrowser( {
 		backend: 'ANGLE SwiftShader',
@@ -317,10 +317,33 @@ test( 'Linux environment collection rejects unavailable WebGPU or WebGL before c
 			probeUrl: 'http://127.0.0.1:8729/__tslp__/environment-probe.html',
 			node: { version: 'v24.4.0', platform: 'linux', arch: 'x64' },
 		} ),
-		/unusable Linux browser graphics feature status \(webgpu=unavailable_software, webgl=unavailable_software\)/,
+		/unusable Linux browser graphics feature status \(webgl=unavailable_software\)/,
 	);
 	assert.equal( unavailable.contextClosed, true );
 	assert.equal( unavailable.cdpDetached, true );
+
+	const softwareWebgpu = await collectEvidenceEnvironment( {
+		browser: fakeBrowser( {
+			backend: 'ANGLE SwiftShader',
+			featureStatus: {
+				webgpu: 'unavailable_software',
+				webgl: 'enabled',
+				vulkan: 'enabled',
+			},
+		} ).browser,
+		channel: 'playwright-chromium',
+		probeUrl: 'http://127.0.0.1:8729/__tslp__/environment-probe.html',
+		node: { version: 'v24.4.0', platform: 'linux', arch: 'x64' },
+	} );
+	assert.equal( softwareWebgpu.webgpu.available, true );
+	assert.equal( softwareWebgpu.graphics.featureStatus.webgpu, 'unavailable_software' );
+
+	const disabledWebgpu = structuredClone( softwareWebgpu );
+	disabledWebgpu.graphics.featureStatus.webgpu = 'disabled_off';
+	assert.throws(
+		() => assertEvidenceEnvironment( disabledWebgpu ),
+		/unusable Linux browser graphics feature status \(webgpu=disabled_off\)/,
+	);
 
 	const enabled = await collectEvidenceEnvironment( {
 		browser: fakeBrowser( { backend: 'ANGLE SwiftShader' } ).browser,

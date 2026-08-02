@@ -352,7 +352,15 @@ export function assertEvidenceEnvironment( environment, label = 'Evidence enviro
 		const unusable = [ 'webgpu', 'webgl' ].filter( ( feature ) => {
 
 			const status = statuses[ feature ];
-			return ! availableString( status ) || /(?:disabled|unavailable)/i.test( status );
+			if ( ! availableString( status ) || /disabled/i.test( status ) ) return true;
+			// Chromium reports `unavailable_software` for WebGPU when software
+			// fallback is blocklisted in the GPU feature table, even while
+			// --enable-unsafe-webgpu exposes a real adapter through navigator.gpu.
+			// The browser probe above acquired that adapter directly, so its live
+			// result is authoritative; every stock/evidence case still has to prove
+			// a device and rendered output before publication.
+			if ( feature === 'webgpu' && /^unavailable_software$/i.test( status ) ) return false;
+			return /unavailable/i.test( status );
 
 		} );
 		if ( unusable.length > 0 ) {
