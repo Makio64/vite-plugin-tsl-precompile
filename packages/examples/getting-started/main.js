@@ -69,8 +69,11 @@ scene.add( mesh );
 function tick() {
 
 	requestAnimationFrame( tick );
-	mesh.rotation.x += 0.005;
-	mesh.rotation.y += 0.008;
+	// Keep the canary delta obvious under software WebGPU: small per-frame
+	// steps can land in identical canvas screenshots when the runner presents
+	// slowly between the production-preview probes.
+	mesh.rotation.x += 0.04;
+	mesh.rotation.y += 0.06;
 	renderer.render( scene, camera );
 
 }

@@ -205,7 +205,19 @@ async function probeRoute( browser, baseUrl, route, timeoutMs ) {
 		let secondFrame = null;
 		if ( route.domain.type === 'canary' ) {
 
-			await page.waitForTimeout( 250 );
+			// Software WebGPU can present slower than a fixed 250ms sleep. Drive
+			// real animation frames before the second capture so the canary
+			// grades a presented delta instead of two identical surfaces.
+			await page.evaluate( async () => {
+
+				const startedAt = performance.now();
+				while ( performance.now() - startedAt < 750 ) {
+
+					await new Promise( ( resolve ) => requestAnimationFrame( resolve ) );
+
+				}
+
+			} );
 			secondFrame = await canvas.screenshot();
 
 		}
