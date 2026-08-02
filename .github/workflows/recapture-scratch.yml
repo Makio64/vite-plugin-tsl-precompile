@@ -31,9 +31,18 @@ jobs:
       - name: Rebuild the checked slim bundle
         run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim
       - name: Transactionally recapture and preview every configured example
-        # Full-branch refresh may collapse stale dual-hash aux identities
-        # (for example compute-debug lights) down to the live renderer set.
-        run: xvfb-run -a pnpm recapture:examples -- --allow-prune
+        run: |
+          set -o pipefail
+          recapture_log="$RUNNER_TEMP/recapture-all.log"
+          xvfb-run -a pnpm recapture:examples --allow-prune 2>&1 | tee "$recapture_log"
+
+          # The r184 baseline contains two byte-identical unsigned lights
+          # placeholders for this one Ambient+Directional topology. The signed
+          # r185 recapture correctly consolidates them into one artifact. Keep
+          # the broad prune flag bounded to that audited duplicate only.
+          expected_prune='[recapture-all] compute-debug: intentionally pruned aux:lights:c035f2fb0ad933b5c646d6b98c0b96bd735eee8f97d47d54b98ce53eb08d2cf7'
+          test "$(grep -Fc 'intentionally pruned ' "$recapture_log" || true)" -eq 1
+          grep -Fxq "$expected_prune" "$recapture_log"
       - name: Verify the committed artifact contract
         run: pnpm verify
       - name: Package a recoverable artifact snapshot
