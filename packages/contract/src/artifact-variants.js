@@ -29,6 +29,13 @@ const INTERNAL_PASS_SOURCE_CAPTURE_FIELDS = new Set( [
 	'valueSnapshot',
 ] );
 
+const VARIANT_COLLISION_DIFFERENCE_PATH_LIMIT = 12;
+const VARIANT_COLLISION_STRING_DETAIL_LIMIT = 2;
+const VARIANT_COLLISION_STRING_EXCERPT_RADIUS = 32;
+const SHADER_SOURCE_FIELDS = new Set( [ 'vertexShader', 'fragmentShader', 'computeShader' ] );
+const CAPTURE_GENERATED_IDENTIFIER_PATTERN = /\b(?:NodeBuffer_|buffer)\d+(?!\d)/g;
+const CAPTURE_GENERATED_SHADER_NODE_ID_PATTERN = /\b(NodeBuffer_|buffer)(\d+)(?!\d)/g;
+
 /**
  * Runtime fields that may differ between members of one captured material
  * family. Capture, manifest emission, registry merging, and hydration all use
@@ -290,6 +297,16 @@ function mergeFamilyCandidates( records, candidates ) {
 			continue;
 
 		}
+		const selectorCollision = [ ...records.entries() ]
+			.sort( ( [ left ], [ right ] ) => left < right ? - 1 : left > right ? 1 : 0 )
+			.find( ( [ , authoritative ] ) =>
+				selectorsOverlap( authoritative.payload.renderContextSelectors, payload.renderContextSelectors )
+			);
+		if ( selectorCollision ) {
+
+			throwVariantSelectorCollision( selectorCollision[ 0 ], selectorCollision[ 1 ].payload, variantKey, payload );
+
+		}
 		addFamilyCandidate( records, payload );
 		canonicalKeyByInputKey.set( variantKey, variantKey );
 
@@ -363,22 +380,12 @@ function mergeFamilySelectors( record, payload ) {
 
 function throwVariantKeyCollision( variantKey, authoritative = null, incoming = null ) {
 
-	const differingFields = authoritative && incoming
-		? ARTIFACT_VARIANT_FIELDS.filter( ( field ) =>
-			field !== 'cacheKey' &&
-			field !== 'variantKey' &&
-			field !== 'renderContextSelectors' &&
-			stableJsonStringify(
-				remapArtifactEphemeralIdentities( normalizeVariantFingerprintPayload( authoritative[ field ] ) ),
-				'artifactVariantCollisionField',
-			) !== stableJsonStringify(
-				remapArtifactEphemeralIdentities( normalizeVariantFingerprintPayload( incoming[ field ] ) ),
-				'artifactVariantCollisionField',
-			)
-		)
-		: [];
+	const differences = authoritative && incoming
+		? describeArtifactVariantSemanticDifferences( authoritative, incoming )
+		: emptyArtifactVariantSemanticDifferences();
+	const differingFields = differences.fields;
 	const detail = differingFields.length > 0
-		? ` Divergent fields: ${ differingFields.join( ', ' ) }.`
+		? ` Divergent fields: ${ differingFields.join( ', ' ) }.${ formatVariantDifferencePathDetail( differences ) }`
 		: '';
 
 	const explicitVariantKey = authoritative && authoritative.variantKey !== undefined || incoming && incoming.variantKey !== undefined;
@@ -387,8 +394,252 @@ function throwVariantKeyCollision( variantKey, authoritative = null, incoming = 
 		explicitVariantKey ? 'TSLP_ARTIFACT_VARIANT_KEY_COLLISION' : 'TSLP_ARTIFACT_VARIANT_CACHE_KEY_COLLISION',
 		`[tsl-precompile] ${ identityName } ${ JSON.stringify( variantKey ) } identifies divergent artifact variant payloads. ` +
 		`Recapture with the current toolchain; this family cannot be merged safely.${ detail }`,
-		{ variantKey, cacheKey: explicitVariantKey ? authoritative && authoritative.cacheKey : variantKey, differingFields },
+		{
+			variantKey,
+			cacheKey: explicitVariantKey ? authoritative && authoritative.cacheKey : variantKey,
+			differingFields,
+			differingPaths: differences.paths,
+			stringDifferences: differences.stringDifferences,
+			differencesTruncated: differences.truncated,
+			differencePathLimit: VARIANT_COLLISION_DIFFERENCE_PATH_LIMIT,
+		},
 	);
+
+}
+
+function throwVariantSelectorCollision( authoritativeVariantKey, authoritative, incomingVariantKey, incoming ) {
+
+	const differences = describeArtifactVariantSemanticDifferences( authoritative, incoming );
+	const sharedSelectors = canonicalSelectors( authoritative.renderContextSelectors )
+		.filter( ( selector ) => canonicalSelectors( incoming.renderContextSelectors ).includes( selector ) );
+	throw new ArtifactVariantFamilyError(
+		'TSLP_ARTIFACT_VARIANT_SELECTOR_COLLISION',
+		`[tsl-precompile] render-context selector identifies divergent artifact variants ` +
+		`${ JSON.stringify( authoritativeVariantKey ) } and ${ JSON.stringify( incomingVariantKey ) }. ` +
+		`This family cannot be merged safely.${ formatVariantDifferencePathDetail( differences ) }`,
+		{
+			authoritativeVariantKey,
+			incomingVariantKey,
+			selector: sharedSelectors[ 0 ] || null,
+			differingFields: differences.fields,
+			differingPaths: differences.paths,
+			stringDifferences: differences.stringDifferences,
+			differencesTruncated: differences.truncated,
+			differencePathLimit: VARIANT_COLLISION_DIFFERENCE_PATH_LIMIT,
+		},
+	);
+
+}
+
+function emptyArtifactVariantSemanticDifferences() {
+
+	return { fields: [], paths: [], stringDifferences: [], truncated: false };
+
+}
+
+function describeArtifactVariantSemanticDifferences( authoritative, incoming ) {
+
+	const authoritativePayload = createArtifactVariantSemanticPayload( authoritative );
+	const incomingPayload = createArtifactVariantSemanticPayload( incoming );
+	const paths = [];
+	const stringDifferences = [];
+	collectArtifactVariantSemanticDifferencePaths(
+		authoritativePayload,
+		incomingPayload,
+		'',
+		paths,
+		stringDifferences,
+		VARIANT_COLLISION_DIFFERENCE_PATH_LIMIT + 1,
+	);
+	const truncated = paths.length > VARIANT_COLLISION_DIFFERENCE_PATH_LIMIT;
+	const boundedPaths = paths.slice( 0, VARIANT_COLLISION_DIFFERENCE_PATH_LIMIT );
+	const discoveredFields = new Set( [ ...new Set( [
+		...Object.keys( authoritativePayload ),
+		...Object.keys( incomingPayload ),
+	] ) ].filter( ( field ) => artifactVariantSemanticFieldDiffers(
+		authoritativePayload,
+		incomingPayload,
+		field,
+	) ) );
+	const fields = ARTIFACT_VARIANT_FIELDS.filter( ( field ) => discoveredFields.delete( field ) );
+	fields.push( ...[ ...discoveredFields ].sort() );
+	return {
+		fields,
+		paths: boundedPaths,
+		stringDifferences: stringDifferences.filter( ( difference ) => boundedPaths.includes( difference.path ) ),
+		truncated,
+	};
+
+}
+
+function artifactVariantSemanticFieldDiffers( authoritative, incoming, field ) {
+
+	if ( ! Object.hasOwn( authoritative, field ) || ! Object.hasOwn( incoming, field ) ) return true;
+	return stableJsonStringify( authoritative[ field ], 'artifactVariantCollisionField' ) !==
+		stableJsonStringify( incoming[ field ], 'artifactVariantCollisionField' );
+
+}
+
+function collectArtifactVariantSemanticDifferencePaths( authoritative, incoming, path, out, stringDifferences, limit ) {
+
+	if ( out.length >= limit || Object.is( authoritative, incoming ) ) return;
+	const authoritativeObject = authoritative !== null && typeof authoritative === 'object';
+	const incomingObject = incoming !== null && typeof incoming === 'object';
+	if ( ! authoritativeObject || ! incomingObject || Array.isArray( authoritative ) !== Array.isArray( incoming ) ) {
+
+		const differencePath = path || '<root>';
+		out.push( differencePath );
+		if ( typeof authoritative === 'string' && typeof incoming === 'string' ) {
+
+			stringDifferences.push( describeVariantStringDifference( differencePath, authoritative, incoming ) );
+
+		}
+		return;
+
+	}
+	const keys = Array.isArray( authoritative )
+		? Array.from( { length: Math.max( authoritative.length, incoming.length ) }, ( _, index ) => String( index ) )
+		: [ ...new Set( [ ...Object.keys( authoritative ), ...Object.keys( incoming ) ] ) ].sort();
+	for ( const key of keys ) {
+
+		const childPath = appendVariantDifferencePath( path, key, Array.isArray( authoritative ) );
+		if ( ! Object.hasOwn( authoritative, key ) || ! Object.hasOwn( incoming, key ) ) {
+
+			out.push( childPath );
+
+		} else {
+
+			collectArtifactVariantSemanticDifferencePaths( authoritative[ key ], incoming[ key ], childPath, out, stringDifferences, limit );
+
+		}
+		if ( out.length >= limit ) return;
+
+	}
+
+}
+
+function describeVariantStringDifference( path, authoritative, incoming ) {
+
+	const firstDifferenceOffset = firstStringDifferenceOffset( authoritative, incoming );
+	const difference = {
+		path,
+		firstDifferenceOffset,
+		authoritativeLength: authoritative.length,
+		incomingLength: incoming.length,
+	};
+	const authoritativeGeneratedIdentifier = generatedIdentifierNearOffset( authoritative, firstDifferenceOffset );
+	const incomingGeneratedIdentifier = generatedIdentifierNearOffset( incoming, firstDifferenceOffset );
+	if ( authoritativeGeneratedIdentifier || incomingGeneratedIdentifier ) {
+
+		difference.authoritativeGeneratedIdentifier = authoritativeGeneratedIdentifier;
+		difference.incomingGeneratedIdentifier = incomingGeneratedIdentifier;
+
+	}
+	const topLevelField = topLevelVariantDifferenceField( path );
+	if ( SHADER_SOURCE_FIELDS.has( topLevelField ) ) {
+
+		difference.authoritativeExcerpt = stringDifferenceExcerpt( authoritative, firstDifferenceOffset );
+		difference.incomingExcerpt = stringDifferenceExcerpt( incoming, firstDifferenceOffset );
+
+	}
+	return difference;
+
+}
+
+function firstStringDifferenceOffset( left, right ) {
+
+	const length = Math.min( left.length, right.length );
+	let offset = 0;
+	while ( offset < length && left.charCodeAt( offset ) === right.charCodeAt( offset ) ) offset ++;
+	return offset;
+
+}
+
+function generatedIdentifierNearOffset( value, offset ) {
+
+	CAPTURE_GENERATED_IDENTIFIER_PATTERN.lastIndex = 0;
+	let closest = null;
+	let closestDistance = Infinity;
+	for ( const match of value.matchAll( CAPTURE_GENERATED_IDENTIFIER_PATTERN ) ) {
+
+		const start = match.index;
+		const end = start + match[ 0 ].length;
+		const distance = offset < start ? start - offset : offset > end ? offset - end : 0;
+		if ( distance < closestDistance ) {
+
+			closest = match[ 0 ];
+			closestDistance = distance;
+
+		}
+		if ( distance === 0 ) break;
+
+	}
+	return closestDistance <= VARIANT_COLLISION_STRING_EXCERPT_RADIUS ? closest : null;
+
+}
+
+function stringDifferenceExcerpt( value, offset ) {
+
+	const start = Math.max( 0, offset - VARIANT_COLLISION_STRING_EXCERPT_RADIUS );
+	const end = Math.min( value.length, offset + VARIANT_COLLISION_STRING_EXCERPT_RADIUS );
+	return `${ start > 0 ? '…' : '' }${ value.slice( start, end ) }${ end < value.length ? '…' : '' }`;
+
+}
+
+function appendVariantDifferencePath( parent, key, arrayParent ) {
+
+	if ( arrayParent ) return `${ parent }[${ key }]`;
+	if ( /^[A-Za-z_$][0-9A-Za-z_$]*$/.test( key ) ) return parent ? `${ parent }.${ key }` : key;
+	return `${ parent }[${ JSON.stringify( key ) }]`;
+
+}
+
+function topLevelVariantDifferenceField( path ) {
+
+	if ( typeof path !== 'string' || path.length === 0 || path === '<root>' ) return null;
+	const match = /^[A-Za-z_$][0-9A-Za-z_$]*/.exec( path );
+	if ( match ) return match[ 0 ];
+	if ( ! path.startsWith( '[' ) ) return null;
+	try {
+
+		return JSON.parse( path.slice( 1, path.indexOf( ']' ) ) );
+
+	} catch ( _ ) {
+
+		return null;
+
+	}
+
+}
+
+function formatVariantDifferencePathDetail( differences ) {
+
+	if ( differences.paths.length === 0 ) return '';
+	const stringDetail = differences.stringDifferences.slice( 0, VARIANT_COLLISION_STRING_DETAIL_LIMIT )
+		.map( formatVariantStringDifference )
+		.join( '; ' );
+	return ` Divergent semantic paths: ${ differences.paths.join( ', ' ) }${ differences.truncated ? ', …' : '' }.` +
+		( stringDetail ? ` String differences: ${ stringDetail }.` : '' );
+
+}
+
+function formatVariantStringDifference( difference ) {
+
+	const location = `${ difference.path }@${ difference.firstDifferenceOffset }`;
+	if ( difference.authoritativeGeneratedIdentifier || difference.incomingGeneratedIdentifier ) {
+
+		return `${ location } (` +
+			`${ difference.authoritativeGeneratedIdentifier || '<none>' } != ` +
+			`${ difference.incomingGeneratedIdentifier || '<none>' })`;
+
+	}
+	if ( difference.authoritativeExcerpt !== undefined && difference.incomingExcerpt !== undefined ) {
+
+		return `${ location } (${ JSON.stringify( difference.authoritativeExcerpt ) } != ` +
+			`${ JSON.stringify( difference.incomingExcerpt ) })`;
+
+	}
+	return location;
 
 }
 
@@ -402,14 +653,17 @@ function throwVariantKeyCollision( variantKey, authoritative = null, incoming = 
  */
 export function createArtifactVariantSemanticFingerprint( artifact ) {
 
+	return stableJsonStringify( createArtifactVariantSemanticPayload( artifact ), 'artifactVariantSemantic' );
+
+}
+
+function createArtifactVariantSemanticPayload( artifact ) {
+
 	const payload = normalizeVariantShaderLanguage( createArtifactVariantPayload( artifact ) );
 	delete payload.cacheKey;
 	delete payload.variantKey;
 	delete payload.renderContextSelectors;
-	return stableJsonStringify(
-		remapArtifactEphemeralIdentities( normalizeVariantFingerprintPayload( payload ) ),
-		'artifactVariantSemantic',
-	);
+	return remapArtifactEphemeralIdentities( normalizeVariantFingerprintPayload( payload ) );
 
 }
 
@@ -424,6 +678,7 @@ export function createArtifactVariantSemanticFingerprint( artifact ) {
 function normalizeVariantFingerprintPayload( value ) {
 
 	const vsmInternalPass = !! value && VSM_INTERNAL_PASS_SHAPES.has( value.materialShape );
+	const generatedShaderNodeIds = new Map();
 	const seen = new Map();
 	const visit = ( current ) => {
 
@@ -465,6 +720,18 @@ function normalizeVariantFingerprintPayload( value ) {
 			// same backend program and selector.
 			if ( vsmInternalPass && current === value && key === 'lightIdentities' ) continue;
 			if ( internalPassRoleSource && INTERNAL_PASS_SOURCE_CAPTURE_FIELDS.has( key ) ) continue;
+			// Three names buffer uniforms from Node.id, a module-global counter:
+			// WGSL emits NodeBuffer_<id>, while WebGL fallback emits both
+			// NodeBuffer_<id> and buffer<id> for the same node. Preserve the
+			// shared-vs-distinct node topology in one namespace, but remove the
+			// capture-order number from fingerprints. Durable shader bytes remain
+			// untouched because this visitor always writes into its clone.
+			if ( current === value && SHADER_SOURCE_FIELDS.has( key ) && typeof current[ key ] === 'string' ) {
+
+				clone[ key ] = normalizeCaptureGeneratedShaderNodeIds( current[ key ], generatedShaderNodeIds );
+				continue;
+
+			}
 			if ( liveFrameSource && key === 'valueSnapshot' ) continue;
 			if ( livePMREMTextureSource && (
 				key === 'imageSrc' ||
@@ -509,6 +776,23 @@ function normalizeVariantFingerprintPayload( value ) {
 
 	};
 	return visit( value );
+
+}
+
+function normalizeCaptureGeneratedShaderNodeIds( shader, identities ) {
+
+	return shader.replace( CAPTURE_GENERATED_SHADER_NODE_ID_PATTERN, ( _, prefix, nodeId ) => {
+
+		let canonicalId = identities.get( nodeId );
+		if ( canonicalId === undefined ) {
+
+			canonicalId = identities.size;
+			identities.set( nodeId, canonicalId );
+
+		}
+		return `${ prefix }<capture-node-id:${ canonicalId }>`;
+
+	} );
 
 }
 
