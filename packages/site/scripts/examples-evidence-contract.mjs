@@ -349,19 +349,11 @@ export function assertPublishableSiteCoverageTotals(
 		}
 
 	}
-	if ( totals.fail > 0 ) {
-
-		throw new Error(
-			`${ label } refuses to publish ${ totals.fail } failing visual-evidence ` +
-			`case${ totals.fail === 1 ? '' : 's' }.`,
-		);
-
-	}
 	return totals;
 
 }
 
-export function assertPassingSiteEvidenceGate(
+export function assertValidSiteEvidenceGate(
 	gate,
 	label = 'Canonical site evidence gate',
 ) {
@@ -372,6 +364,16 @@ export function assertPassingSiteEvidenceGate(
 		throw new Error( `${ label } is invalid: ${ inspection.issue }.` );
 
 	}
+	return inspection;
+
+}
+
+export function assertPassingSiteEvidenceGate(
+	gate,
+	label = 'Canonical site evidence gate',
+) {
+
+	const inspection = assertValidSiteEvidenceGate( gate, label );
 	if ( ! inspection.pass ) {
 
 		throw new Error( `${ label } did not pass its semantic evidence gate (${ inspection.note }).` );
@@ -429,10 +431,18 @@ export function assertPublishableSitePublicEvidence(
 			throw new Error( `${ label } example ${ record?.basename || '<unknown>' } has an invalid pixel verdict.` );
 
 		}
-		assertPassingSiteEvidenceGate(
+		const semanticGate = assertValidSiteEvidenceGate(
 			record?.evidence?.gate,
 			`${ label } example ${ record?.basename || '<unknown>' } semantic gate`,
 		);
+		if ( ! semanticGate.pass && verdict !== 'fail' ) {
+
+			throw new Error(
+				`${ label } example ${ record?.basename || '<unknown>' } has a non-passing ` +
+				`semantic gate but is not visibly published as a failure.`,
+			);
+
+		}
 		if ( verdict === 'diagnostic' && record.badge !== 'diagnostic' ) {
 
 			throw new Error(
@@ -1387,10 +1397,15 @@ export function loadCanonicalExamplesEvidence( {
 
 				const detail = detailsByName.get( name );
 				const entry = casesByName.get( name );
-				assertPassingSiteEvidenceGate(
+				const semanticGate = assertValidSiteEvidenceGate(
 					detail?.evidenceGate,
 					`${ label } ${ name } semantic gate`,
 				);
+				if ( ! semanticGate.pass && detail?.status !== 'fail' ) {
+
+					throw new Error( `${ label } ${ name } has a non-passing semantic gate but is not recorded as failed.` );
+
+				}
 				if (
 					entry.runId !== manifest.runId ||
 					detail.evidence?.runId !== manifest.runId ||

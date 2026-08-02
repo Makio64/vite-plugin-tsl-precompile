@@ -43,6 +43,23 @@ test( 'artifact metrics include variants and compute kernels without double-coun
 
 } );
 
+test( 'artifact metrics preserve distinct byte-identical payloads', () => {
+
+	const first = { materialShape: 'same', vertexShader: 'v', fragmentShader: 'f' };
+	const second = { materialShape: 'same', vertexShader: 'v', fragmentShader: 'f' };
+	const metrics = computeE2EArtifactMetrics( {
+		user: {
+			first: { artifact: first },
+			second: { artifact: second },
+		},
+		aux: [],
+	} );
+	assert.equal( metrics.artifactCount, 2 );
+	assert.equal( metrics.materialCount, 2 );
+	assert.equal( metrics.totalWgslBytes, 4 );
+
+} );
+
 test( 'artifact metrics binding rejects descriptor and run drift', () => {
 
 	const descriptors = {

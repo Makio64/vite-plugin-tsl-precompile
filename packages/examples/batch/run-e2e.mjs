@@ -5032,7 +5032,64 @@ async function runOne( browser, name ) {
 	const artifactCoverageOk = hasReplayArtifactCoverage( bucket.user, bucket.aux );
 	const artifactSummaries = summarizeArtifacts( bucket );
 	const auxSummaries = summarizeAuxArtifacts( bucket );
-	const artifactMetricsBase = computeE2EArtifactMetrics( bucket );
+	let userArtifactEvidence = null;
+	let auxArtifactEvidence = null;
+	let artifactEvidenceBucket = bucket;
+	if ( saveShots ) {
+
+		const safe = safeExampleName( name );
+		// Persist the dedicated capture pass before replay can issue any further
+		// capture-server POSTs. The decoded bytes are the canonical metric and
+		// shader-language authority consumed again by the aggregate validator.
+		ensureOutputDirectory( OUT, RUN_ARTIFACTS_DIR, {
+			label: 'E2E artifact evidence directory',
+		} );
+		const userDump = writeArtifactDebugDump( join( RUN_ARTIFACTS_DIR, `${ safe }.user.json` ), bucket.user, artifactSummaries );
+		const auxDump = writeArtifactDebugDump( join( RUN_ARTIFACTS_DIR, `${ safe }.aux.json` ), bucket.aux, auxSummaries );
+		userArtifactEvidence = describeArtifactEvidenceDump( {
+			outputRoot: OUT,
+			dump: userDump,
+			runId: RUN_ID,
+		} );
+		auxArtifactEvidence = describeArtifactEvidenceDump( {
+			outputRoot: OUT,
+			dump: auxDump,
+			runId: RUN_ID,
+		} );
+		const persistedUser = readArtifactEvidenceJson( {
+			outputRoot: OUT,
+			descriptor: userArtifactEvidence,
+			expectedRunId: RUN_ID,
+			label: `Captured user artifact evidence for ${ name }`,
+		} );
+		const persistedAux = readArtifactEvidenceJson( {
+			outputRoot: OUT,
+			descriptor: auxArtifactEvidence,
+			expectedRunId: RUN_ID,
+			label: `Captured auxiliary artifact evidence for ${ name }`,
+		} );
+		if ( ! persistedUser || typeof persistedUser !== 'object' || Array.isArray( persistedUser ) ) {
+
+			throw new Error( `Captured user artifact evidence for ${ name } must decode to an object.` );
+
+		}
+		if ( ! Array.isArray( persistedAux ) ) {
+
+			throw new Error( `Captured auxiliary artifact evidence for ${ name } must decode to an array.` );
+
+		}
+		artifactEvidenceBucket = { user: persistedUser, aux: persistedAux };
+
+	}
+	const artifactMetricsBase = computeE2EArtifactMetrics( artifactEvidenceBucket );
+	const artifactMetrics = bindE2EArtifactMetrics( artifactMetricsBase, {
+		runId: RUN_ID,
+		userArtifacts: userArtifactEvidence,
+		auxArtifacts: auxArtifactEvidence,
+	} );
+	const backendArtifactGate = auditArtifactShaderLanguageBackends( artifactEvidenceBucket, {
+		requiredBackends: canvasOrderForExample( name ) === 'webgpu-backend-first' ? [ 'webgpu', 'webgl' ] : [],
+	} );
 
 	if ( replayOperationDiagnostics ) {
 
@@ -5107,8 +5164,6 @@ async function runOne( browser, name ) {
 
 	}
 	let shotEvidence = { capture: null, replay: null };
-	let userArtifactEvidence = null;
-	let auxArtifactEvidence = null;
 	if ( saveShots ) {
 
 		const safe = safeExampleName( name );
@@ -5120,29 +5175,8 @@ async function runOne( browser, name ) {
 			captureShot: capture.shot,
 			replayShot: replay.shot,
 		} );
-		// Also dump full captured user-material artifacts for debugging.
-		ensureOutputDirectory( OUT, RUN_ARTIFACTS_DIR, {
-			label: 'E2E artifact evidence directory',
-		} );
-		const userDump = writeArtifactDebugDump( join( RUN_ARTIFACTS_DIR, `${ safe }.user.json` ), bucket.user, artifactSummaries );
-		const auxDump = writeArtifactDebugDump( join( RUN_ARTIFACTS_DIR, `${ safe }.aux.json` ), bucket.aux, auxSummaries );
-		userArtifactEvidence = describeArtifactEvidenceDump( {
-			outputRoot: OUT,
-			dump: userDump,
-			runId: RUN_ID,
-		} );
-		auxArtifactEvidence = describeArtifactEvidenceDump( {
-			outputRoot: OUT,
-			dump: auxDump,
-			runId: RUN_ID,
-		} );
 
 	}
-	const artifactMetrics = bindE2EArtifactMetrics( artifactMetricsBase, {
-		runId: RUN_ID,
-		userArtifacts: userArtifactEvidence,
-		auxArtifacts: auxArtifactEvidence,
-	} );
 	if ( replay.cleanup ) await replay.cleanup();
 	replay.cleanup = null;
 	replay.context = null;
@@ -5194,9 +5228,6 @@ async function runOne( browser, name ) {
 			artifactCapture.diagnostics?.operationRegistry,
 			replay.diagnostics?.operationRegistry,
 		),
-	} );
-	const backendArtifactGate = auditArtifactShaderLanguageBackends( bucket, {
-		requiredBackends: canvasOrderForExample( name ) === 'webgpu-backend-first' ? [ 'webgpu', 'webgl' ] : [],
 	} );
 	const rendererBackendEvidence = createRendererBackendEvidence( {
 		capture: artifactCapture.canvasBackends,

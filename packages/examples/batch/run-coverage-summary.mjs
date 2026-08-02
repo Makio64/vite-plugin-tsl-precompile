@@ -821,7 +821,7 @@ function verdictTag( verdict ) {
 
 	if ( verdict === 'pass' ) return '✅ matches';
 	if ( verdict === 'diagnostic' ) return '⚠ diagnostic';
-	return '❌ regression';
+	return '❌ failure';
 
 }
 
@@ -917,13 +917,13 @@ const lines = [
 	'',
 	`**${ totals.pass } / ${ totals.rows } catalogue examples match (${ totals.matchPercent }%).** ` +
 	`${ totals.evidenceRows } rows belong to ${ bundles.length } run-bound evidence cohort(s); ` +
-	`${ totals.diagnostic } diagnostics, ${ totals.fail } regressions or ungraded routes.`,
+	`${ totals.diagnostic } diagnostics, ${ totals.fail } failed or ungraded routes.`,
 	'',
 	`Semantic evidence: ${ totals.semanticGatePass } pass, ${ totals.semanticGateFail } fail; ` +
 	`${ totals.semanticErrors } unexpected errors, ${ totals.semanticWarnings } unclassified warnings, ${ totals.semanticRecoveries } proven recoveries, ` +
 	`${ totals.semanticOptionalFailures } optional probe failures.`,
 	'',
-	'Only screenshot bytes named and hashed by this run’s evidence manifest are graded, and a schema-valid semantic gate must also pass. Missing, unbound, timed-out, or warning-bearing evidence fails closed.',
+	'Only screenshot bytes named and hashed by this run’s evidence manifest are graded. Semantic failures remain visibly failed even when their pixels match; missing, unbound, timed-out, or warning-bearing evidence fails closed.',
 	'',
 ];
 const categoryOrder = [ 'Lights', 'Materials', 'Shadows', 'Sprites', 'Compute', 'Camera', 'MRT / RenderTargets', 'Particles', 'Postprocessing', 'Misc' ];

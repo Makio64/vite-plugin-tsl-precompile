@@ -75,8 +75,16 @@ jobs:
           test -f "$TSLP_STOCK_REPORT"
       - name: Build slim bundle with rewrite fallbacks fatal
         run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim
-      - name: Run exact upstream and six-local-cohort capture/replay campaign
-        run: xvfb-run -a pnpm test:e2e:campaign -- --three-repo="$GITHUB_WORKSPACE/three.js"
+      - name: Record exact upstream and six-local-cohort capture/replay campaign
+        run: |
+          campaign_status=0
+          xvfb-run -a pnpm test:e2e:campaign -- --three-repo="$GITHUB_WORKSPACE/three.js" || campaign_status=$?
+          if [ "$campaign_status" -ne 0 ] && [ "$campaign_status" -ne 1 ]; then
+            echo "Unexpected evidence campaign exit status: $campaign_status" >&2
+            exit "$campaign_status"
+          fi
+          test -f "$TSLP_E2E_OUT/coverage-summary.json"
+          test -f "$TSLP_E2E_OUT/coverage-evidence-set.json"
         env:
           NODE_OPTIONS: --max-old-space-size=4096
       - name: Generate site data from the same immutable evidence

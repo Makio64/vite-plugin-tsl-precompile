@@ -623,6 +623,31 @@ test( 'capture operation discovery is sealed only at the deterministic diagnosti
 
 } );
 
+test( 'canonical artifact evidence is frozen and decoded before replay', () => {
+
+	const runOne = runnerSource.indexOf( 'async function runOne( browser, name ) {' );
+	const summaries = runnerSource.indexOf( 'const auxSummaries = summarizeAuxArtifacts( bucket );', runOne );
+	const canonicalDump = runnerSource.indexOf( 'ensureOutputDirectory( OUT, RUN_ARTIFACTS_DIR', summaries );
+	const decodedUser = runnerSource.indexOf( 'const persistedUser = readArtifactEvidenceJson(', canonicalDump );
+	const decodedAux = runnerSource.indexOf( 'const persistedAux = readArtifactEvidenceJson(', decodedUser );
+	const metrics = runnerSource.indexOf( 'const artifactMetricsBase = computeE2EArtifactMetrics( artifactEvidenceBucket );', decodedAux );
+	const backendAudit = runnerSource.indexOf( 'const backendArtifactGate = auditArtifactShaderLanguageBackends( artifactEvidenceBucket', metrics );
+	const replay = runnerSource.indexOf( "const replay = await visitExample( browser, name, 'replay'", backendAudit );
+	const runOneEnd = runnerSource.indexOf( '\nfunction summarizeArtifacts( bucket ) {', replay );
+	assert.ok(
+		runOne >= 0 && summaries > runOne && canonicalDump > summaries && decodedUser > canonicalDump &&
+		decodedAux > decodedUser && metrics > decodedAux && backendAudit > metrics && replay > backendAudit &&
+		runOneEnd > replay,
+		'capture-only artifact bytes, metrics, and backend audit must be finalized before replay',
+	);
+	assert.doesNotMatch(
+		runnerSource.slice( replay, runOneEnd ),
+		/writeArtifactDebugDump\( join\( RUN_ARTIFACTS_DIR/,
+		'replay must not mutate the canonical artifact dump',
+	);
+
+} );
+
 test( 'repeated auxiliary captures aggregate into one operation outcome', () => {
 
 	const trackerStart = source.indexOf( 'function __trackAuxCapture(' );

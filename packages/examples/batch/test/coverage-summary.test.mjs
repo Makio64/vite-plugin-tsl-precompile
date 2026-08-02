@@ -725,7 +725,7 @@ test( 'coverage summary emits exact catalogue rows, run binding, and per-case th
 	assert.deepEqual( names.sort(), CATALOGUE.records.map( ( entry ) => entry.name ).sort() );
 	assert.match( markdown, new RegExp( `campaign \\\`${ CAMPAIGN_ID }\\\`` ) );
 	assert.match( markdown, /\| webgpu_clearcoat\.html \| three \| ✓ \| ✓ \| inf \| 30 dB \| ✅ matches \|/ );
-	assert.match( markdown, /\| webgpu_camera_logarithmicdepthbuffer\.html \| three \| ✗ \| ✗ \| — \| 30 dB \| ❌ regression \|/ );
+	assert.match( markdown, /\| webgpu_camera_logarithmicdepthbuffer\.html \| three \| ✗ \| ✗ \| — \| 30 dB \| ❌ failure \|/ );
 
 	const coverage = JSON.parse( readFileSync( join( root, 'coverage-summary.json' ), 'utf8' ) );
 	assert.equal( coverage.schemaVersion, E2E_EVIDENCE_SCHEMA_VERSION );

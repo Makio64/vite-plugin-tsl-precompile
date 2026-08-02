@@ -17,10 +17,11 @@ test( 'public proof separates semantic verdicts from image quality and links loc
 		source( 'examples.html' ),
 		source( 'src/examples.js' ),
 	] );
-	assert.match( html, /data-evidence-verdict="pass">253<\/strong> gated passes/ );
-	assert.match( html, /data-evidence-verdict="diagnostic">1<\/strong> diagnostic/ );
-	assert.match( html, /data-evidence-verdict="fail">0<\/strong> failures/ );
-	assert.match( html, /diagnostic route.*PSNR as quality context/s );
+	assert.match( html, /data-evidence-verdict="pass">—<\/strong> gated passes/ );
+	assert.match( html, /data-evidence-verdict="diagnostic">—<\/strong> diagnostic/ );
+	assert.match( html, /data-evidence-verdict="fail">—<\/strong> failures/ );
+	assert.match( html, /Diagnostic routes.*PSNR as quality context/s );
+	assert.match( html, /Failed routes keep their comparisons visible/ );
 	assert.match( html, /href="coverage-summary\.json"/ );
 	assert.match( html, /href="coverage-evidence-set\.json"/ );
 	assert.doesNotMatch( html, /packages\/examples\/batch\/results\/coverage-summary/ );
@@ -39,9 +40,9 @@ test( 'public proof scopes stock smoke separately and makes no fabricated runtim
 		source( 'scripts/build-examples-data.mjs' ),
 		source( 'scripts/check-content.mjs' ),
 	] );
-	assert.match( index, /data-stat="smokePass">209<\/span>\/<span data-stat="smokeTotal">209/ );
+	assert.match( index, /data-stat="smokePass">—<\/span>\/<span data-stat="smokeTotal">—/ );
 	assert.match( index, /official stock routes met the CI GPU observation gate/ );
-	assert.match( index, /data-stat="smokeFail">0<\/span> did not meet it/ );
+	assert.match( index, /data-stat="smokeFail">—<\/span> did not meet it/ );
 	assert.match( examples, /strict 254-route capture\/replay campaign, separate from the exact 209-route stock-renderer observation/i );
 	assert.match( examples, /data-key="stockSmokeFraction"/ );
 	assert.match( examples, /official stock CI GPU observation/ );

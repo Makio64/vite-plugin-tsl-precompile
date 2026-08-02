@@ -298,7 +298,7 @@ function localSources( project ) {
 
 }
 
-function createCampaignFixture( root, { semanticGatePass = true } = {} ) {
+function createCampaignFixture( root, { semanticGatePass = true, failingCaseName = null } = {} ) {
 
 	const cohortReferences = [];
 	const rows = [];
@@ -369,6 +369,8 @@ function createCampaignFixture( root, { semanticGatePass = true } = {} ) {
 			);
 				const caseConfiguration = casePolicies[ name ];
 				const evidence = { runId, capture, replay, userArtifacts, auxArtifacts };
+				const caseSemanticGatePass = semanticGatePass && name !== failingCaseName;
+				const caseStatus = name === failingCaseName ? 'fail' : 'pass';
 				const evidenceGate = createE2EEvidenceGate( {
 					timings: {
 						stock: { freezeCompleted: true },
@@ -381,7 +383,7 @@ function createCampaignFixture( root, { semanticGatePass = true } = {} ) {
 						expected: [],
 					},
 					diagnostics: passingGpuDiagnostics(),
-					blocking: semanticGatePass ? [] : [ {
+					blocking: caseSemanticGatePass ? [] : [ {
 						code: 'fixture-semantic-failure',
 						message: 'fixture semantic evidence failed',
 					} ],
@@ -389,7 +391,7 @@ function createCampaignFixture( root, { semanticGatePass = true } = {} ) {
 				const entry = {
 					runId,
 					name,
-					status: 'pass',
+					status: caseStatus,
 					evidenceGate,
 					caseConfiguration,
 				...evidence,
@@ -398,7 +400,7 @@ function createCampaignFixture( root, { semanticGatePass = true } = {} ) {
 			cases.push( entry );
 					details.push( {
 						name,
-						status: 'pass',
+						status: caseStatus,
 						evidenceGate,
 						caseConfiguration,
 					evidence,
@@ -419,7 +421,7 @@ function createCampaignFixture( root, { semanticGatePass = true } = {} ) {
 				effectiveThreshold: caseConfiguration.effectivePsnrThreshold,
 				pixelGateEnabled: caseConfiguration.pixelGateEnabled,
 				disabledReason: caseConfiguration.pixelGateDisabledReason,
-				verdict: caseConfiguration.pixelGateEnabled ? 'pass' : 'diagnostic',
+				verdict: caseStatus === 'fail' ? 'fail' : caseConfiguration.pixelGateEnabled ? 'pass' : 'diagnostic',
 				note: '',
 				runId,
 				cohort: id,
@@ -454,8 +456,8 @@ function createCampaignFixture( root, { semanticGatePass = true } = {} ) {
 			status: 'completed',
 			canonical: id === 'upstream',
 			total: details.length,
-			pass: details.length,
-			fail: 0,
+			pass: details.filter( ( detail ) => detail.status === 'pass' ).length,
+			fail: details.filter( ( detail ) => detail.status === 'fail' ).length,
 			configuration,
 			evidence: {
 				catalogue: manifestBase.catalogue,
@@ -546,7 +548,7 @@ function createCampaignFixture( root, { semanticGatePass = true } = {} ) {
 			evidenceRows: CATALOGUE.caseCount,
 			pass: rows.filter( ( row ) => row.verdict === 'pass' ).length,
 			diagnostic: rows.filter( ( row ) => row.verdict === 'diagnostic' ).length,
-			fail: 0,
+			fail: rows.filter( ( row ) => row.verdict === 'fail' ).length,
 		},
 		rows,
 	};
@@ -854,7 +856,7 @@ test( 'semantic evidence failures cannot be presented as canonical passes', ( t 
 	createCampaignFixture( root, { semanticGatePass: false } );
 	assert.throws(
 		() => loadCanonicalExamplesEvidence( { resultsRoot: root, cataloguePath: CATALOGUE_PATH } ),
-		/semantic gate did not pass its semantic evidence gate/,
+		/non-passing semantic gate but is not recorded as failed/,
 	);
 	const contradictory = passingSemanticGate();
 	contradictory.blocking.push( { code: 'contradiction', message: 'contradictory blocker' } );
@@ -865,18 +867,29 @@ test( 'semantic evidence failures cannot be presented as canonical passes', ( t 
 
 } );
 
-test( 'refuses to publish an exact campaign with a failing aggregate row', ( t ) => {
+test( 'accepts an exact campaign with a visibly failed, fully bound evidence row', ( t ) => {
+
+	const root = mkdtempSync( join( tmpdir(), 'tslp-site-evidence-honest-failure-' ) );
+	t.after( () => rmSync( root, { recursive: true, force: true } ) );
+	createCampaignFixture( root, { failingCaseName: 'webgpu_clearcoat.html' } );
+	const loaded = loadCanonicalExamplesEvidence( { resultsRoot: root, cataloguePath: CATALOGUE_PATH } );
+	assert.equal( loaded.coverage.totals.fail, 1 );
+	assert.equal( loaded.rowsByName.get( 'webgpu_clearcoat.html' ).verdict, 'fail' );
+	assert.equal( loaded.caseByName.get( 'webgpu_clearcoat.html' ).detail.status, 'fail' );
+
+} );
+
+test( 'rejects failing aggregate totals that are not backed by a failing row', ( t ) => {
 
 	const root = mkdtempSync( join( tmpdir(), 'tslp-site-evidence-failing-' ) );
 	t.after( () => rmSync( root, { recursive: true, force: true } ) );
 	const fixture = createCampaignFixture( root );
 	const coverage = JSON.parse( readFileSync( fixture.coveragePath, 'utf8' ) );
-	coverage.totals.pass --;
 	coverage.totals.fail ++;
 	writeJson( fixture.coveragePath, coverage );
 	assert.throws(
 		() => loadCanonicalExamplesEvidence( { resultsRoot: root, cataloguePath: CATALOGUE_PATH } ),
-		/refuses to publish 1 failing visual-evidence case/,
+		/Coverage totals do not account for the exact public corpus/,
 	);
 
 } );
@@ -1569,9 +1582,40 @@ test( 'featured homepage evidence is bound to versioned bytes and its aggregate 
 			pixel: { identical: false, psnr: 12, threshold: 30, verdict: 'fail' },
 		} ],
 	};
+	assert.doesNotThrow( () => assertPublishableSitePublicEvidence( failing ) );
+	const semanticFailureGate = createE2EEvidenceGate( {
+		timings: {
+			stock: { freezeCompleted: true },
+			capture: { freezeCompleted: true },
+			replay: { freezeCompleted: true },
+		},
+		operationRegistry: {
+			schema: 'tslp-e2e-operation-registry@1',
+			complete: true,
+			expected: [],
+		},
+		diagnostics: passingGpuDiagnostics(),
+		blocking: [ { code: 'fixture-failure', message: 'visible fixture failure' } ],
+	} );
+	const semanticFailure = {
+		...failing,
+		examples: [ {
+			...failing.examples[ 0 ],
+			evidence: { gate: semanticFailureGate },
+		} ],
+	};
+	assert.doesNotThrow( () => assertPublishableSitePublicEvidence( semanticFailure ) );
 	assert.throws(
-		() => assertPublishableSitePublicEvidence( failing ),
-		/refuses to publish 1 failing visual-evidence case/,
+		() => assertPublishableSitePublicEvidence( {
+			...semanticFailure,
+			coverageVerdicts: { pass: 1, diagnostic: 0, fail: 0 },
+			examples: [ {
+				...semanticFailure.examples[ 0 ],
+				badge: 'pixel-match',
+				pixel: { ...semanticFailure.examples[ 0 ].pixel, verdict: 'pass' },
+			} ],
+		} ),
+		/non-passing semantic gate but is not visibly published as a failure/,
 	);
 
 } );

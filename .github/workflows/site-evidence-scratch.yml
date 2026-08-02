@@ -80,12 +80,19 @@ jobs:
             exit "$stock_status"
           fi
           test -f "$TSLP_STOCK_REPORT"
-      - name: Run the exact 254-case capture/replay campaign
-        run: >-
-          xvfb-run -a node packages/examples/batch/run-evidence-campaign.mjs
-          --three-repo="$GITHUB_WORKSPACE/three.js"
-          --output-root="$TSLP_E2E_OUT"
-          --campaign-id="site-${GITHUB_SHA}"
+      - name: Record the exact 254-case capture/replay campaign
+        run: |
+          campaign_status=0
+          xvfb-run -a node packages/examples/batch/run-evidence-campaign.mjs \
+            --three-repo="$GITHUB_WORKSPACE/three.js" \
+            --output-root="$TSLP_E2E_OUT" \
+            --campaign-id="site-${GITHUB_SHA}" || campaign_status=$?
+          if [ "$campaign_status" -ne 0 ] && [ "$campaign_status" -ne 1 ]; then
+            echo "Unexpected evidence campaign exit status: $campaign_status" >&2
+            exit "$campaign_status"
+          fi
+          test -f "$TSLP_E2E_OUT/coverage-summary.json"
+          test -f "$TSLP_E2E_OUT/coverage-evidence-set.json"
         env:
           NODE_OPTIONS: --max-old-space-size=4096
       - name: Generate isolated schema-2 public evidence
