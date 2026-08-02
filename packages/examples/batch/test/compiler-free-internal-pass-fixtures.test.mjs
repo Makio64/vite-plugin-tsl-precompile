@@ -45,10 +45,11 @@ test( 'PMREM debug is a source-slim fixture that invokes the captured generator 
 
 		assert.match(
 			shared,
-			new RegExp( `if \\( fromScene \\) \\w+Material\\.precompile\\( 'pmrem-debug-from-scene-${ material }' \\);\\s+else \\w+Material\\.precompile\\( 'pmrem-debug-${ material }' \\);` ),
+			new RegExp( `if \\( fromScene \\) \\w+Material\\.precompile\\( 'pmrem-debug-from-scene-${ material }' \\);\\s+else if \\( cubemap \\) \\w+Material\\.precompile\\( 'pmrem-debug-cubemap-${ material }' \\);\\s+else \\w+Material\\.precompile\\( 'pmrem-debug-${ material }' \\);` ),
 		);
 
 	}
+	assert.match( shared, /cubemap:\s*mode === 'cubemap'/ );
 	assert.match( shared, /fromScene:\s*mode === 'from-scene'/ );
 	assert.match( shared, /pmremSceneSizes:\s*mode === 'from-scene' \? \[ 64 \] : \[\]/ );
 	assert.match( shared, /if \( import\.meta\.env\?\.PROD !== true && ! IS_E2E_REPLAY \) \{[\s\S]*import\( '@tsl-precompile\/runtime' \)/ );

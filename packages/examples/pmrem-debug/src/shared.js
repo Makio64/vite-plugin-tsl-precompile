@@ -133,7 +133,7 @@ function addEnvironmentSceneObjects( scene ) {
 	}
 }
 
-function addSceneGeometry( scene, { transmission = false, fromScene = false } = {} ) {
+function addSceneGeometry( scene, { transmission = false, cubemap = false, fromScene = false } = {} ) {
 	const floorMaterial = new MeshStandardNodeMaterial( {
 		color: new Color( 0x46515f ),
 		roughness: 0.78,
@@ -148,6 +148,7 @@ function addSceneGeometry( scene, { transmission = false, fromScene = false } = 
 	if ( ! IS_E2E_REPLAY ) {
 
 		if ( fromScene ) floorMaterial.precompile( 'pmrem-debug-from-scene-floor' );
+		else if ( cubemap ) floorMaterial.precompile( 'pmrem-debug-cubemap-floor' );
 		else floorMaterial.precompile( 'pmrem-debug-floor' );
 
 	}
@@ -165,6 +166,7 @@ function addSceneGeometry( scene, { transmission = false, fromScene = false } = 
 	if ( ! IS_E2E_REPLAY ) {
 
 		if ( fromScene ) metalMaterial.precompile( 'pmrem-debug-from-scene-metal' );
+		else if ( cubemap ) metalMaterial.precompile( 'pmrem-debug-cubemap-metal' );
 		else metalMaterial.precompile( 'pmrem-debug-metal' );
 
 	}
@@ -182,6 +184,7 @@ function addSceneGeometry( scene, { transmission = false, fromScene = false } = 
 	if ( ! IS_E2E_REPLAY ) {
 
 		if ( fromScene ) roughMaterial.precompile( 'pmrem-debug-from-scene-rough' );
+		else if ( cubemap ) roughMaterial.precompile( 'pmrem-debug-cubemap-rough' );
 		else roughMaterial.precompile( 'pmrem-debug-rough' );
 
 	}
@@ -318,17 +321,19 @@ export async function runPMREMDebugExample( {
 	}
 
 	scene.add( new AmbientLight( 0xffffff, 0.03 ) );
-	// Texture-backed routes deliberately share their visible material names.
-	// The from-scene route compiles its four environment materials first on the
-	// same renderer, which gives Three r185 a distinct main-material builder
-	// layout under an otherwise identical render selector; its explicit marker
-	// branch is therefore the durable route-owned identity.
+	// Equirect and transmission deliberately share visible material names: both
+	// execute the same equirectangular PMREM path before constructing these three
+	// common materials. Cubemap and from-scene exercise different renderer setup
+	// histories, which give Three r185 distinct main-material builder layouts
+	// under otherwise identical render selectors; their explicit marker branches
+	// are therefore the durable route-owned identities.
 	const light = new DirectionalLight( 0xffffff, SHARED_DIRECTIONAL_LIGHT_INTENSITY );
 	light.position.set( 3, 4, 2 );
 	scene.add( light );
 
 	const objects = addSceneGeometry( scene, {
 		transmission: mode === 'transmission',
+		cubemap: mode === 'cubemap',
 		fromScene: mode === 'from-scene',
 	} );
 

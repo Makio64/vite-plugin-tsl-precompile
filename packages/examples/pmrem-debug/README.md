@@ -33,15 +33,15 @@ raw texture identity: equirect, cubemap, and from-scene profiles stay separate,
 and sample/component type or filterability splits a family only when Three's
 WGSL or bind layout changes.
 The visible floor/metal/rough materials intentionally reuse one artifact name
-across the equirect, cubemap, and transmission routes. This is a regression
-guarantee: topology-equivalent captures must merge while the runtime keeps the
-PMREM atlas UUID, dimensions, and derived CubeUV scalars as one exact live
-relation. The from-scene route owns three explicit marker names because it
-first renders four environment materials on the same renderer; in Three r185
-that produces a distinct main-material builder layout under the same observable
-render selector. The literal marker branch is the safe compiler-free route
-choice. Equirectangular and cubemap backgrounds use explicit friendly aux names
-so replay never guesses between the two captured background graphs.
+across the equirect and transmission routes: both execute the same
+equirectangular PMREM path before constructing those three common materials.
+This keeps the PMREM atlas UUID, dimensions, and derived CubeUV scalars as one
+exact live relation without duplicating proven-identical artifacts. Cubemap and
+from-scene each own three explicit marker names because their preceding renderer
+setup produces distinct Three r185 main-material builder layouts under the same
+observable render selector. Literal marker branches are the safe compiler-free
+route choice. Equirectangular and cubemap backgrounds use explicit friendly aux
+names so replay never guesses between the two captured background graphs.
 The from-scene route passes `pmremSceneSizes: [64]` to
 `precompileAuxiliary()`: the resulting CubeUV texture cannot retain the
 `fromScene(..., { size: 64 })` request for automatic discovery.
