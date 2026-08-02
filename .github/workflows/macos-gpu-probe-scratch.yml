@@ -65,6 +65,9 @@ jobs:
               bright: detail.baseBrightFrac,
               gpuValidationCount: detail.gpuValidationCount,
               gpuErrorCount: detail.gpuErrorCount,
+              preErrors: detail.preErrors,
+              gpuErrors: detail.gpuErrors,
+              gpuObservation: detail.gpuObservation,
               environment: report.configuration.environment,
               error: detail.error,
             } );
