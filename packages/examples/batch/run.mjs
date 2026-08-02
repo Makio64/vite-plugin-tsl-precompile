@@ -466,7 +466,7 @@ async function launchStockBrowser( expectedEnvironment = null ) {
 
 	const launched = await launchEvidenceBrowser( chromium, {
 		args: BROWSER_ARGS,
-		headless: true,
+		headless: false,
 	} );
 	try {
 

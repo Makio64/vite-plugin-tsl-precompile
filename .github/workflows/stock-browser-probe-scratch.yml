@@ -11,7 +11,7 @@ permissions:
 jobs:
   probe:
     if: github.ref == 'refs/heads/codex/system-chrome-stock-probe'
-    name: Probe ${{ matrix.case }} with system Chrome
+    name: Probe ${{ matrix.case }} with headful system Chrome
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
