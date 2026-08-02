@@ -695,6 +695,7 @@ test( 'correctness lint has an exact command, authored scope, and generated excl
 test( 'declared Vite 6, 7, and 8 support has exact Node 24 packed-consumer lanes', () => {
 
 	const rootPackage = JSON.parse( readFileSync( join( TEST_REPO_ROOT, 'package.json' ), 'utf8' ) );
+	const pluginPackage = JSON.parse( readFileSync( join( TEST_REPO_ROOT, 'packages/plugin/package.json' ), 'utf8' ) );
 	assert.equal( rootPackage.packageManager, 'pnpm@10.34.5' );
 	assert.equal(
 		rootPackage.scripts[ 'test:fresh-project:vite6' ],
@@ -728,6 +729,10 @@ test( 'declared Vite 6, 7, and 8 support has exact Node 24 packed-consumer lanes
 	assert.match( ci, /Package checks \(Node 24 LTS\)[\s\S]*?node-version: 24\.18\.0/ );
 	assert.equal( [ ...ci.matchAll( /^\s+node:\s+24\.18\.0$/gm ) ].length, 3 );
 	assert.doesNotMatch( ci, /^\s+node:\s+(?:20|22)\./m );
+	assert.equal( rootPackage.engines.node, '>=24.0.0' );
+	assert.equal( pluginPackage.engines.node, '>=24.0.0' );
+	assert.match( readFileSync( join( TEST_REPO_ROOT, 'README.md' ), 'utf8' ), /\*\*Node\*\* \| `>= 24\.0\.0`/ );
+	assert.match( readFileSync( join( TEST_REPO_ROOT, 'RELEASING.md' ), 'utf8' ), /packed-consumer gates on Node 24\.18/ );
 
 } );
 

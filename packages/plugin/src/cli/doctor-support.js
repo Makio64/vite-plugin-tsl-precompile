@@ -243,9 +243,9 @@ export async function inspectTslPrecompileProject( options = {} ) {
 		id: 'node-version',
 		status: supportsNodeVersion( process.versions.node ) ? 'pass' : 'fail',
 		summary: supportsNodeVersion( process.versions.node )
-			? `Node ${ process.versions.node } satisfies >=20.19.`
-			: `Node ${ process.versions.node } does not satisfy >=20.19.`,
-		nextAction: 'Use Node 20.19 or newer before installing or building.',
+			? `Node ${ process.versions.node } satisfies >=24.0.0.`
+			: `Node ${ process.versions.node } does not satisfy >=24.0.0.`,
+		nextAction: 'Use Node 24 or newer before installing or building.',
 	} );
 
 	addCheck( checks, {
@@ -2036,7 +2036,7 @@ async function installedPackage( root, name ) {
 function supportsNodeVersion( version ) {
 
 	const parsed = parseVersion( version );
-	return parsed !== null && ( parsed.major > 20 || parsed.major === 20 && parsed.minor >= 19 );
+	return parsed !== null && parsed.major >= 24;
 
 }
 

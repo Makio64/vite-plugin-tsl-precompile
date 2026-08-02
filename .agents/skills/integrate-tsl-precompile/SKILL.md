@@ -20,7 +20,7 @@ treat compiler-free slim mode as a separate, stricter optimization.
 - Inspect the lockfile, package scripts, Vite config shape, renderer bootstrap, material factories, routes, and existing artifacts before editing.
 - Preserve the project's package manager and code style. Merge config arrays and objects; do not replace unrelated plugins, aliases, build options, or initialization logic.
 - Use compatibility-first sequencing for new or broken integrations. If an app is already intentionally configured for slim mode and has current capture/build evidence, preserve that mode and validate it in place; do not downgrade it merely to replay this workflow.
-- Keep `three` on the exact peer version required by the installed plugin and runtime. The current alpha requires `three@0.185.1`, Vite `>=6.4.3 <9`, and Node `>=20.19`; never use `^` or `~` for `three`. TypeScript projects must also install exact matching declarations, currently `@types/three@0.185.1`.
+- Keep `three` on the exact peer version required by the installed plugin and runtime. The current alpha requires `three@0.185.1`, Vite `>=6.4.3 <9`, and Node `>=24.0.0`; never use `^` or `~` for `three`. TypeScript projects must also install exact matching declarations, currently `@types/three@0.185.1`.
 - Install `vite-plugin-tsl-precompile` and `@tsl-precompile/runtime` at matching releases when versions are explicitly selected.
 - Never create or hand-edit capture JSON. Artifacts are generated build inputs and should be committed.
 - Do not claim completion merely because the source builds. A real render on
