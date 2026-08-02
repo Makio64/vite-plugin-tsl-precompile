@@ -148,6 +148,7 @@ jobs:
             'examples.json',
             'coverage-summary.json',
             'coverage-evidence-set.json',
+            'measurements.json',
           ] ) {
             const stat = await lstat( join( root, file ) );
             if ( ! stat.isFile() || stat.isSymbolicLink() ) throw new Error( `${ file } is not a regular file.` );
@@ -163,6 +164,7 @@ jobs:
             examples.json \
             coverage-summary.json \
             coverage-evidence-set.json \
+            measurements.json \
             examples/thumbs
           tar --create --gzip --file="$browser_archive" \
             --directory="$TSLP_SITE_BROWSER_OUT" \
@@ -208,6 +210,7 @@ jobs:
           install -m 0644 -- "$source_root/examples.json" "$target_root/examples.json"
           install -m 0644 -- "$source_root/coverage-summary.json" "$target_root/coverage-summary.json"
           install -m 0644 -- "$source_root/coverage-evidence-set.json" "$target_root/coverage-evidence-set.json"
+          install -m 0644 -- "$source_root/measurements.json" "$target_root/measurements.json"
       - name: Commit only the exact generated outputs
         run: |
           git config user.name "github-actions[bot]"
