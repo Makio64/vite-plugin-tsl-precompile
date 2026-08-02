@@ -9,12 +9,19 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: macos-gpu-probe-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  probe:
+  campaign:
     if: github.ref == 'refs/heads/codex/macos-gpu-probe'
     runs-on: macos-15
-    timeout-minutes: 90
+    timeout-minutes: 360
     steps:
+      - name: Configure isolated campaign output
+        shell: bash
+        run: echo "TSLP_E2E_OUT=$RUNNER_TEMP/macos-evidence-campaign" >> "$GITHUB_ENV"
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Check out Three.js r185
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -35,50 +42,31 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install chromium
-      - name: Probe representative WebGPU routes
+      - name: Build exact slim bundle
+        run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim
+      - name: Run exact 254-case campaign on native Metal WebGPU
+        run: >-
+          node packages/examples/batch/run-evidence-campaign.mjs
+          --three-repo="$GITHUB_WORKSPACE/three.js"
+          --output-root="$TSLP_E2E_OUT"
+          --campaign-id="macos-probe-${GITHUB_SHA}"
+      - name: Print aggregate verdict
+        if: always()
         shell: bash
         run: |
-          mkdir -p "$RUNNER_TEMP/macos-webgpu-probe"
-          : > "$RUNNER_TEMP/macos-webgpu-probe/status.txt"
-          for case_name in             webgpu_postprocessing_bloom             webgpu_pmrem_cubemap             webgpu_compute_particles             webgpu_postprocessing_ssgi             webgpu_backdrop_water
-          do
-            case_root="$RUNNER_TEMP/macos-webgpu-probe/$case_name"
-            status=0
-            node packages/examples/batch/run.mjs               --three-repo="$GITHUB_WORKSPACE/three.js"               --filter="$case_name"               --limit=1               --output-root="$case_root"               --report=report.json || status=$?
-            echo "$case_name $status" | tee -a "$RUNNER_TEMP/macos-webgpu-probe/status.txt"
-          done
-      - name: Summarize probe reports
-        shell: bash
-        run: |
-          node --input-type=module <<'NODE'
-          import { readFile, readdir } from 'node:fs/promises';
-          import { join } from 'node:path';
-          const root = join( process.env.RUNNER_TEMP, 'macos-webgpu-probe' );
-          const rows = [];
-          for ( const name of await readdir( root ) ) {
-            if ( name === 'status.txt' ) continue;
-            const report = JSON.parse( await readFile( join( root, name, 'report.json' ), 'utf8' ) );
-            const detail = report.details[ 0 ];
-            rows.push( {
-              name,
-              status: detail.status,
-              bright: detail.baseBrightFrac,
-              gpuValidationCount: detail.gpuValidationCount,
-              gpuErrorCount: detail.gpuErrorCount,
-              preErrors: detail.preErrors,
-              gpuErrors: detail.gpuErrors,
-              gpuObservation: detail.gpuObservation,
-              environment: report.configuration.environment,
-              error: detail.error,
-            } );
-          }
-          console.log( JSON.stringify( rows, null, 2 ) );
-          if ( rows.length !== 5 ) throw new Error( `Expected five probe reports, got ${ rows.length }.` );
-          NODE
+          if test -f "$TSLP_E2E_OUT/coverage-summary.json"; then
+            node -e "const j=require(process.argv[1]); console.log(JSON.stringify({campaignId:j.campaignId,totals:j.totals,rows:j.rows?.length},null,2))" "$TSLP_E2E_OUT/coverage-summary.json"
+          fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
-          name: macos-webgpu-probe-${{ github.run_id }}
-          path: ${{ runner.temp }}/macos-webgpu-probe/**
-          if-no-files-found: error
+          name: macos-evidence-campaign-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/macos-evidence-campaign/coverage-summary.json
+            ${{ runner.temp }}/macos-evidence-campaign/coverage-evidence-set.json
+            ${{ runner.temp }}/macos-evidence-campaign/e2e-report.json
+            ${{ runner.temp }}/macos-evidence-campaign/evidence-manifest.json
+            ${{ runner.temp }}/macos-evidence-campaign/cohorts/**/*-e2e-report.json
+            ${{ runner.temp }}/macos-evidence-campaign/cohorts/**/evidence-manifest.json
+          if-no-files-found: warn
           retention-days: 7
