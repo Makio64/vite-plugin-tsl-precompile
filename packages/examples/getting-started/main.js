@@ -70,22 +70,107 @@ scene.add( mesh );
 // that receives changing CPU transforms but presents a stale GPU frame.
 const renderEvidence = window.__TSLP_CANARY_RENDER_EVIDENCE__ = {
 	renderFrames: 0,
+	naturalRenderFrames: 0,
+	controlledRenderFrames: 0,
+	controlled: false,
 	rotation: [ mesh.rotation.x, mesh.rotation.y ],
 	worldMatrix: Array.from( mesh.matrixWorld.elements ),
+};
+
+function renderCanaryFrame( mode ) {
+
+	renderer.render( scene, camera );
+	renderEvidence.renderFrames ++;
+	if ( mode === 'controlled' ) renderEvidence.controlledRenderFrames ++;
+	else renderEvidence.naturalRenderFrames ++;
+	renderEvidence.rotation = [ mesh.rotation.x, mesh.rotation.y ];
+	renderEvidence.worldMatrix = Array.from( mesh.matrixWorld.elements );
+
+}
+
+// Production verification takes deterministic control only after the normal
+// animation loop has rendered. Each call pauses natural GPU submissions, sets
+// an exact pose, renders it once, and fences the renderer's real backend. The
+// harness then gives the browser compositor two submission-free RAFs before
+// taking the screenshot.
+window.__TSLP_CANARY_RENDER_AT__ = async ( capture ) => {
+
+	if ( renderEvidence.naturalRenderFrames < 1 ) {
+
+		throw new Error( 'Canary deterministic render ran before the natural animation loop.' );
+
+	}
+	const rotation = Array.isArray( capture?.rotation ) ? capture.rotation : [];
+	if ( rotation.length !== 2 || rotation.some( ( value ) => ! Number.isFinite( value ) ) ) {
+
+		throw new Error( 'Canary deterministic render requires two finite rotation values.' );
+
+	}
+	renderEvidence.controlled = true;
+	mesh.rotation.x = rotation[ 0 ];
+	mesh.rotation.y = rotation[ 1 ];
+	renderCanaryFrame( 'controlled' );
+	const submittedRenderFrames = renderEvidence.renderFrames;
+	const backend = renderer.backend;
+	let backendEvidence;
+	if ( backend?.isWebGPUBackend === true ) {
+
+		const queue = backend.device?.queue;
+		if ( ! queue || typeof queue.onSubmittedWorkDone !== 'function' ) {
+
+			throw new Error( 'Canary WebGPU backend does not expose GPUQueue.onSubmittedWorkDone().' );
+
+		}
+		await queue.onSubmittedWorkDone();
+		backendEvidence = {
+			backend: 'webgpu',
+			method: 'GPUQueue.onSubmittedWorkDone',
+		};
+
+	} else if ( backend?.isWebGLBackend === true ) {
+
+		const context = backend.gl;
+		if ( ! context || typeof context.finish !== 'function' ) {
+
+			throw new Error( 'Canary WebGL backend does not expose WebGL2RenderingContext.finish().' );
+
+		}
+		context.finish();
+		backendEvidence = {
+			backend: 'webgl',
+			method: 'WebGL2RenderingContext.finish',
+		};
+
+	} else {
+
+		throw new Error( 'Canary renderer backend is unavailable for the deterministic render.' );
+
+	}
+	return {
+		...backendEvidence,
+		captureId: typeof capture?.id === 'string' ? capture.id : null,
+		pausedNaturalRendering: renderEvidence.controlled === true,
+		fenceCompleted: true,
+		requestedRotation: rotation.slice(),
+		rotation: renderEvidence.rotation.slice(),
+		naturalRenderFrames: renderEvidence.naturalRenderFrames,
+		controlledRenderFrames: renderEvidence.controlledRenderFrames,
+		submittedRenderFrames,
+		completedRenderFrames: renderEvidence.renderFrames,
+	};
+
 };
 
 // --- render loop --------------------------------------------------------
 function tick() {
 
 	requestAnimationFrame( tick );
+	if ( renderEvidence.controlled ) return;
 	// Keep the visual canary obvious even on software WebGPU, where presentation
 	// can be slower than the browser's requestAnimationFrame cadence.
 	mesh.rotation.x += 0.04;
 	mesh.rotation.y += 0.06;
-	renderer.render( scene, camera );
-	renderEvidence.renderFrames ++;
-	renderEvidence.rotation = [ mesh.rotation.x, mesh.rotation.y ];
-	renderEvidence.worldMatrix = Array.from( mesh.matrixWorld.elements );
+	renderCanaryFrame( 'natural' );
 
 }
 tick();

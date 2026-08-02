@@ -13,7 +13,9 @@ import {
 	createProductionBrowserLaunchPlan,
 	launchProductionBrowser,
 	PRODUCTION_BROWSER_BASE_ARGS,
+	PRODUCTION_CANARY_CAPTURE_STATES,
 	PRODUCTION_PREVIEW_VIEWPORT,
+	settleCanaryPresentation,
 } from '../../../examples/preview-smoke/run-production-routes.mjs';
 import {
 	evidenceBrowserLaunchArgs,
@@ -44,6 +46,9 @@ test( 'production canary summarizes changing render and object UBO evidence', ()
 
 		globalThis.__TSLP_CANARY_RENDER_EVIDENCE__ = {
 			renderFrames: 9,
+			naturalRenderFrames: 7,
+			controlledRenderFrames: 2,
+			controlled: true,
 			rotation: [ 0.4, 0.6 ],
 			worldMatrix: [ 1, 0, 0, 1 ],
 		};
@@ -62,6 +67,9 @@ test( 'production canary summarizes changing render and object UBO evidence', ()
 
 		const evidence = collectCanaryRuntimeEvidence();
 		assert.equal( evidence.render.renderFrames, 9 );
+		assert.equal( evidence.render.naturalRenderFrames, 7 );
+		assert.equal( evidence.render.controlledRenderFrames, 2 );
+		assert.equal( evidence.render.controlled, true );
 		assert.deepEqual( evidence.render.rotation, [ 0.4, 0.6 ] );
 		assert.deepEqual( evidence.objectUbo.update, {
 			count: 2,
@@ -77,6 +85,131 @@ test( 'production canary summarizes changing render and object UBO evidence', ()
 		else globalThis.__TSLP_CANARY_RENDER_EVIDENCE__ = previousRender;
 		if ( previousDiagnostics === undefined ) delete globalThis.__tslpHarnessDiagnostics;
 		else globalThis.__tslpHarnessDiagnostics = previousDiagnostics;
+
+	}
+
+} );
+
+test( 'production canary deterministically renders and fences before two compositor frames', async () => {
+
+	const previousRenderAt = globalThis.__TSLP_CANARY_RENDER_AT__;
+	const previousAnimationFrame = globalThis.requestAnimationFrame;
+	const previousDiagnostics = globalThis.__tslpHarnessDiagnostics;
+	const events = [];
+	const capture = { ...PRODUCTION_CANARY_CAPTURE_STATES[ 0 ], fenceTimeoutMs: 250 };
+	try {
+
+		globalThis.__tslpHarnessDiagnostics = { objectUboSamples: [ { phase: 'natural' }, { phase: 'natural' } ] };
+		globalThis.__TSLP_CANARY_RENDER_AT__ = async ( requestedCapture ) => {
+
+			events.push( `render:${ requestedCapture.id }:samples=${ globalThis.__tslpHarnessDiagnostics.objectUboSamples.length }` );
+			return {
+				backend: 'webgpu',
+				method: 'GPUQueue.onSubmittedWorkDone',
+				captureId: requestedCapture.id,
+				pausedNaturalRendering: true,
+				fenceCompleted: true,
+				requestedRotation: requestedCapture.rotation.slice(),
+				rotation: requestedCapture.rotation.slice(),
+				naturalRenderFrames: 10,
+				controlledRenderFrames: 1,
+				submittedRenderFrames: 12,
+				completedRenderFrames: 12,
+			};
+
+		};
+		globalThis.requestAnimationFrame = ( callback ) => {
+
+			events.push( 'raf' );
+			callback();
+			return events.length;
+
+		};
+		assert.deepEqual( await settleCanaryPresentation( capture ), {
+			backend: 'webgpu',
+			method: 'GPUQueue.onSubmittedWorkDone',
+			captureId: 'pose-a',
+			pausedNaturalRendering: true,
+			fenceCompleted: true,
+			requestedRotation: [ 0.2, 0.35 ],
+			rotation: [ 0.2, 0.35 ],
+			naturalRenderFrames: 10,
+			controlledRenderFrames: 1,
+			submittedRenderFrames: 12,
+			completedRenderFrames: 12,
+			discardedObjectUboSamples: 2,
+			compositorAnimationFrames: 2,
+		} );
+		assert.deepEqual( events, [ 'render:pose-a:samples=0', 'raf', 'raf' ] );
+
+	} finally {
+
+		if ( previousRenderAt === undefined ) delete globalThis.__TSLP_CANARY_RENDER_AT__;
+		else globalThis.__TSLP_CANARY_RENDER_AT__ = previousRenderAt;
+		if ( previousAnimationFrame === undefined ) delete globalThis.requestAnimationFrame;
+		else globalThis.requestAnimationFrame = previousAnimationFrame;
+		if ( previousDiagnostics === undefined ) delete globalThis.__tslpHarnessDiagnostics;
+		else globalThis.__tslpHarnessDiagnostics = previousDiagnostics;
+
+	}
+
+} );
+
+test( 'production canary deterministic render fails closed and accepts WebGL evidence', async () => {
+
+	const previousRenderAt = globalThis.__TSLP_CANARY_RENDER_AT__;
+	const previousAnimationFrame = globalThis.requestAnimationFrame;
+	const capture = { ...PRODUCTION_CANARY_CAPTURE_STATES[ 1 ], fenceTimeoutMs: 250 };
+	try {
+
+		globalThis.requestAnimationFrame = ( callback ) => { callback(); return 1; };
+		delete globalThis.__TSLP_CANARY_RENDER_AT__;
+		await assert.rejects( settleCanaryPresentation( capture ), /missing its deterministic render hook/ );
+
+		globalThis.__TSLP_CANARY_RENDER_AT__ = async () => ( {
+			backend: 'webgpu',
+			method: 'unavailable',
+			captureId: capture.id,
+			pausedNaturalRendering: true,
+			fenceCompleted: true,
+			requestedRotation: capture.rotation.slice(),
+			rotation: capture.rotation.slice(),
+			naturalRenderFrames: 3,
+			controlledRenderFrames: 1,
+			submittedRenderFrames: 1,
+			completedRenderFrames: 1,
+		} );
+		await assert.rejects( settleCanaryPresentation( capture ), /did not use GPUQueue\.onSubmittedWorkDone/ );
+
+		globalThis.__TSLP_CANARY_RENDER_AT__ = async () => ( {
+			backend: 'webgl',
+			method: 'WebGL2RenderingContext.finish',
+			captureId: capture.id,
+			pausedNaturalRendering: true,
+			fenceCompleted: true,
+			requestedRotation: capture.rotation.slice(),
+			rotation: capture.rotation.slice(),
+			naturalRenderFrames: 3,
+			controlledRenderFrames: 1,
+			submittedRenderFrames: 4,
+			completedRenderFrames: 4,
+		} );
+		const webgl = await settleCanaryPresentation( capture );
+		assert.equal( webgl.backend, 'webgl' );
+		assert.equal( webgl.compositorAnimationFrames, 2 );
+
+		globalThis.__TSLP_CANARY_RENDER_AT__ = async () => new Promise( () => {} );
+		await assert.rejects(
+			settleCanaryPresentation( { ...capture, fenceTimeoutMs: 10 } ),
+			/backend fence did not complete within 10ms/,
+		);
+
+	} finally {
+
+		if ( previousRenderAt === undefined ) delete globalThis.__TSLP_CANARY_RENDER_AT__;
+		else globalThis.__TSLP_CANARY_RENDER_AT__ = previousRenderAt;
+		if ( previousAnimationFrame === undefined ) delete globalThis.requestAnimationFrame;
+		else globalThis.requestAnimationFrame = previousAnimationFrame;
 
 	}
 
