@@ -41,6 +41,15 @@ test( 'PMREM debug is a source-slim fixture that invokes the captured generator 
 	for ( let face = 0; face < 4; face ++ ) {
 		assert.equal( shared.includes( `material.precompile( 'pmrem-debug-env-face-${ face }' )` ), true );
 	}
+	for ( const material of [ 'floor', 'metal', 'rough' ] ) {
+
+		assert.match(
+			shared,
+			new RegExp( `if \\( fromScene \\) \\w+Material\\.precompile\\( 'pmrem-debug-from-scene-${ material }' \\);\\s+else \\w+Material\\.precompile\\( 'pmrem-debug-${ material }' \\);` ),
+		);
+
+	}
+	assert.match( shared, /fromScene:\s*mode === 'from-scene'/ );
 	assert.match( shared, /pmremSceneSizes:\s*mode === 'from-scene' \? \[ 64 \] : \[\]/ );
 	assert.match( shared, /if \( import\.meta\.env\?\.PROD !== true && ! IS_E2E_REPLAY \) \{[\s\S]*import\( '@tsl-precompile\/runtime' \)/ );
 	assert.doesNotMatch( shared, /import \{[^}]*\b(?:installPrecompileMarker|precompileAuxiliary|setDevRenderer)\b[^}]*\} from '@tsl-precompile\/runtime'/ );

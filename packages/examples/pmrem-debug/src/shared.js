@@ -133,7 +133,7 @@ function addEnvironmentSceneObjects( scene ) {
 	}
 }
 
-function addSceneGeometry( scene, { transmission = false } = {} ) {
+function addSceneGeometry( scene, { transmission = false, fromScene = false } = {} ) {
 	const floorMaterial = new MeshStandardNodeMaterial( {
 		color: new Color( 0x46515f ),
 		roughness: 0.78,
@@ -145,7 +145,12 @@ function addSceneGeometry( scene, { transmission = false } = {} ) {
 	floor.position.y = - 0.8;
 	scene.add( floor );
 	attachPrecompileSource( floorMaterial, floor, scene );
-	if ( ! IS_E2E_REPLAY ) floorMaterial.precompile( 'pmrem-debug-floor' );
+	if ( ! IS_E2E_REPLAY ) {
+
+		if ( fromScene ) floorMaterial.precompile( 'pmrem-debug-from-scene-floor' );
+		else floorMaterial.precompile( 'pmrem-debug-floor' );
+
+	}
 
 	const metalMaterial = new MeshStandardNodeMaterial( {
 		color: new Color( 0xf6d66a ),
@@ -157,7 +162,12 @@ function addSceneGeometry( scene, { transmission = false } = {} ) {
 	metalSphere.position.set( - 0.85, 0, 0 );
 	scene.add( metalSphere );
 	attachPrecompileSource( metalMaterial, metalSphere, scene );
-	if ( ! IS_E2E_REPLAY ) metalMaterial.precompile( 'pmrem-debug-metal' );
+	if ( ! IS_E2E_REPLAY ) {
+
+		if ( fromScene ) metalMaterial.precompile( 'pmrem-debug-from-scene-metal' );
+		else metalMaterial.precompile( 'pmrem-debug-metal' );
+
+	}
 
 	const roughMaterial = new MeshStandardNodeMaterial( {
 		color: new Color( 0x7bb2ff ),
@@ -169,7 +179,12 @@ function addSceneGeometry( scene, { transmission = false } = {} ) {
 	roughSphere.position.set( 0.85, 0, 0 );
 	scene.add( roughSphere );
 	attachPrecompileSource( roughMaterial, roughSphere, scene );
-	if ( ! IS_E2E_REPLAY ) roughMaterial.precompile( 'pmrem-debug-rough' );
+	if ( ! IS_E2E_REPLAY ) {
+
+		if ( fromScene ) roughMaterial.precompile( 'pmrem-debug-from-scene-rough' );
+		else roughMaterial.precompile( 'pmrem-debug-rough' );
+
+	}
 
 	if ( transmission ) {
 		const glassMaterial = new MeshPhysicalNodeMaterial( {
@@ -303,15 +318,18 @@ export async function runPMREMDebugExample( {
 	}
 
 	scene.add( new AmbientLight( 0xffffff, 0.03 ) );
-	// These names deliberately span every route. The atlas UUID, dimensions,
-	// and addressing scalars form one live relation, so recapture must merge
-	// topology-equivalent environments without freezing route-owned values.
+	// Texture-backed routes deliberately share their visible material names.
+	// The from-scene route compiles its four environment materials first on the
+	// same renderer, which gives Three r185 a distinct main-material builder
+	// layout under an otherwise identical render selector; its explicit marker
+	// branch is therefore the durable route-owned identity.
 	const light = new DirectionalLight( 0xffffff, SHARED_DIRECTIONAL_LIGHT_INTENSITY );
 	light.position.set( 3, 4, 2 );
 	scene.add( light );
 
 	const objects = addSceneGeometry( scene, {
 		transmission: mode === 'transmission',
+		fromScene: mode === 'from-scene',
 	} );
 
 	// Context-free .precompile() markers are intentionally claimed only by an
