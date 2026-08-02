@@ -692,7 +692,7 @@ test( 'correctness lint has an exact command, authored scope, and generated excl
 
 } );
 
-test( 'declared Vite 6, 7, and 8 support has exact Node 26 packed-consumer lanes', () => {
+test( 'declared Vite 6, 7, and 8 support has exact Node 24 packed-consumer lanes', () => {
 
 	const rootPackage = JSON.parse( readFileSync( join( TEST_REPO_ROOT, 'package.json' ), 'utf8' ) );
 	const pluginPackage = JSON.parse( readFileSync( join( TEST_REPO_ROOT, 'packages/plugin/package.json' ), 'utf8' ) );
@@ -719,20 +719,21 @@ test( 'declared Vite 6, 7, and 8 support has exact Node 26 packed-consumer lanes
 	] ) {
 
 		const vite = lane.vite.replaceAll( '.', '\\.' );
-		assert.match( ci, new RegExp( `label: Node 26 / Vite ${ vite }` ) );
+		assert.match( ci, new RegExp( `label: Node 24 / Vite ${ vite }` ) );
 		assert.match(
 			ci,
-			new RegExp( `node: 26\\.5\\.1[\\s\\S]{0,100}vite: ${ vite }[\\s\\S]{0,100}typescript: ${ lane.typescript.replaceAll( '.', '\\.' )}` ),
+			new RegExp( `node: 24\\.18\\.0[\\s\\S]{0,100}vite: ${ vite }[\\s\\S]{0,100}typescript: ${ lane.typescript.replaceAll( '.', '\\.' )}` ),
 		);
 
 	}
-	assert.match( ci, /Package checks \(Node 26\)[\s\S]*?node-version: 26\.5\.1/ );
-	assert.equal( [ ...ci.matchAll( /^\s+node:\s+26\.5\.1$/gm ) ].length, 3 );
-	assert.doesNotMatch( ci, /^\s+node:\s+(?:20|22|24)\./m );
+	assert.match( ci, /Package checks \(Node 24 LTS\)[\s\S]*?node-version: 24\.18\.0/ );
+	assert.equal( [ ...ci.matchAll( /^\s+node:\s+24\.18\.0$/gm ) ].length, 3 );
+	assert.doesNotMatch( ci, /^\s+node:\s+(?:20|22)\./m );
 	assert.equal( rootPackage.engines.node, '>=24.0.0' );
 	assert.equal( pluginPackage.engines.node, '>=24.0.0' );
+	assert.match( readFileSync( join( TEST_REPO_ROOT, 'netlify.toml' ), 'utf8' ), /NODE_VERSION\s*=\s*"24\.18\.0"/ );
 	assert.match( readFileSync( join( TEST_REPO_ROOT, 'README.md' ), 'utf8' ), /\*\*Node\*\* \| `>= 24\.0\.0`/ );
-	assert.match( readFileSync( join( TEST_REPO_ROOT, 'RELEASING.md' ), 'utf8' ), /packed-consumer gates on Node 26\.5/ );
+	assert.match( readFileSync( join( TEST_REPO_ROOT, 'RELEASING.md' ), 'utf8' ), /packed-consumer gates on Node 24\.18/ );
 
 } );
 
@@ -1923,7 +1924,7 @@ test( 'manual batch recapture is isolated from the canonical campaign and upload
 		recapture,
 		/if: github\.event_name == 'workflow_dispatch' && inputs\.mode == 'recapture-examples'/,
 	);
-	assert.match( recapture, /node-version:\s*26\.5\.1/ );
+	assert.match( recapture, /node-version:\s*24\.18\.0/ );
 	assert.match( recapture, /pnpm exec playwright install --with-deps chromium/ );
 	assert.match( recapture, /xvfb-run -a pnpm recapture:examples/ );
 	assert.match( recapture, /name: recaptured-example-artifacts/ );

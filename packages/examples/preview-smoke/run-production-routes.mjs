@@ -35,6 +35,49 @@ export const PRODUCTION_BROWSER_BASE_ARGS = Object.freeze( [
 ] );
 export const PRODUCTION_PREVIEW_VIEWPORT = Object.freeze( { width: 1280, height: 800 } );
 
+export function collectCanaryRuntimeEvidence() {
+
+	const root = globalThis;
+	const render = root.__TSLP_CANARY_RENDER_EVIDENCE__;
+	const samples = Array.isArray( root.__tslpHarnessDiagnostics?.objectUboSamples )
+		? root.__tslpHarnessDiagnostics.objectUboSamples
+		: [];
+	const matrices = samples.flatMap( ( sample ) => {
+
+		const slot = Array.isArray( sample?.slots )
+			? sample.slots.find( ( entry ) => entry?.sourceKind === 'object.worldMatrix' )
+			: null;
+		return slot && Array.isArray( slot.floats )
+			? [ { phase: sample.phase, value: slot.floats.slice() } ]
+			: [];
+
+	} );
+	const phaseSummary = ( phase ) => {
+
+		const values = matrices.filter( ( entry ) => entry.phase === phase ).map( ( entry ) => entry.value );
+		return {
+			count: values.length,
+			first: values[ 0 ] || null,
+			last: values.at( - 1 ) || null,
+			distinct: new Set( values.map( ( value ) => JSON.stringify( value ) ) ).size,
+		};
+
+	};
+	return {
+		render: render && typeof render === 'object' ? {
+			renderFrames: Number( render.renderFrames ) || 0,
+			rotation: Array.isArray( render.rotation ) ? render.rotation.slice() : null,
+			worldMatrix: Array.isArray( render.worldMatrix ) ? render.worldMatrix.slice() : null,
+		} : null,
+		objectUbo: {
+			sampleCount: samples.length,
+			update: phaseSummary( 'update' ),
+			upload: phaseSummary( 'upload' ),
+		},
+	};
+
+}
+
 function parseArgs( args ) {
 
 	let example = null;
@@ -132,6 +175,11 @@ async function probeRoute( browser, baseUrl, route, timeoutMs ) {
 		installRecaptureActivityCounter,
 		{ requestedBackend: route.requestedBackend },
 	);
+	if ( route.domain.type === 'canary' ) await context.addInitScript( () => {
+
+		globalThis.__TSLP_DEBUG_OBJECT_UBO = true;
+
+	} );
 	const page = await context.newPage();
 	const collector = installBrowserFailureCollector( page, { pageUrl } );
 	const captureRequests = [];
@@ -145,6 +193,7 @@ async function probeRoute( browser, baseUrl, route, timeoutMs ) {
 	let pixelEvidence = null;
 	let webgpu = false;
 	let rendererBackends = null;
+	let canaryRuntimeEvidence = null;
 	const failures = [];
 	let browserFailures = [];
 	try {
@@ -201,23 +250,27 @@ async function probeRoute( browser, baseUrl, route, timeoutMs ) {
 		const canvas = await primaryCanvasLocator( page );
 		await canvas.waitFor( { state: 'visible', timeout: timeoutMs } );
 		await page.waitForTimeout( 250 );
+		const firstRuntimeEvidence = route.domain.type === 'canary'
+			? await page.evaluate( collectCanaryRuntimeEvidence )
+			: null;
 		const firstFrame = await canvas.screenshot();
 		let secondFrame = null;
 		if ( route.domain.type === 'canary' ) {
 
-			// Software WebGPU can present slower than a fixed 250ms sleep. Drive
-			// real animation frames before the second capture so the canary
-			// grades a presented delta instead of two identical surfaces.
+			// Wait through real animation callbacks instead of relying on a short
+			// timer. Linux software WebGPU can present less frequently than RAF.
 			await page.evaluate( async () => {
 
 				const startedAt = performance.now();
 				while ( performance.now() - startedAt < 750 ) {
 
-					await new Promise( ( resolve ) => requestAnimationFrame( resolve ) );
+					await new Promise( ( resolveFrame ) => requestAnimationFrame( resolveFrame ) );
 
 				}
 
 			} );
+			const secondRuntimeEvidence = await page.evaluate( collectCanaryRuntimeEvidence );
+			canaryRuntimeEvidence = { first: firstRuntimeEvidence, second: secondRuntimeEvidence };
 			secondFrame = await canvas.screenshot();
 
 		}
@@ -244,6 +297,7 @@ async function probeRoute( browser, baseUrl, route, timeoutMs ) {
 		captureRequests,
 		browserFailures,
 		pixelEvidence,
+		canaryRuntimeEvidence,
 	};
 	failures.push( ...productionRouteFailures( route, observation ) );
 	return {

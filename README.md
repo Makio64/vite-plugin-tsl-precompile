@@ -625,7 +625,7 @@ may work but aren't guarded against regression.
 |---|---|---|
 | **Operating systems** | Ubuntu | Unit, visual, example-production, and packed-consumer gates run on Linux. macOS and Windows are not currently gated. |
 | **Browsers** | Chromium (Playwright, SwiftShader Vulkan) | Firefox WebGPU is still flag-gated; Safari is untested in CI. |
-| **Node** | 26.5.1 | The complete suite, default package checks, and every packed-consumer lane run on the Node 26 Current line. |
+| **Node** | 24.18.0 | The complete suite, default package checks, and every packed-consumer lane run on the Node 24 LTS line. |
 | **Vite** | 6.4.3, 7.3.6, and 8.0.16 | Exact packed-consumer smokes exercise every major in the declared `>= 6.4.3 < 9` range. |
 | **three.js** | `0.185.1` (locked) + nightly run against `latest` ([three-compat.yml](.github/workflows/three-compat.yml)) | Artifacts are pinned to a three.js patch — see [MIGRATION.md](MIGRATION.md). |
 | **TypeScript** | 5.6.3 and 5.9.3 | Packed public declarations are checked in strict NodeNext mode with library checking enabled at the documented floor and current pinned compiler. |

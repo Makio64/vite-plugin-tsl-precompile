@@ -9,6 +9,7 @@ import {
 	productionRouteFailures,
 } from '../../../examples/preview-smoke/production-route-contract.mjs';
 import {
+	collectCanaryRuntimeEvidence,
 	createProductionBrowserLaunchPlan,
 	launchProductionBrowser,
 	PRODUCTION_BROWSER_BASE_ARGS,
@@ -33,6 +34,52 @@ const PIXELS = Object.freeze( {
 	framesCompared: false,
 	changedFraction: null,
 	meanFrameDelta: null,
+} );
+
+test( 'production canary summarizes changing render and object UBO evidence', () => {
+
+	const previousRender = globalThis.__TSLP_CANARY_RENDER_EVIDENCE__;
+	const previousDiagnostics = globalThis.__tslpHarnessDiagnostics;
+	try {
+
+		globalThis.__TSLP_CANARY_RENDER_EVIDENCE__ = {
+			renderFrames: 9,
+			rotation: [ 0.4, 0.6 ],
+			worldMatrix: [ 1, 0, 0, 1 ],
+		};
+		const sample = ( phase, value ) => ( {
+			phase,
+			slots: [ { sourceKind: 'object.worldMatrix', floats: [ value, 0, 0, 1 ] } ],
+		} );
+		globalThis.__tslpHarnessDiagnostics = {
+			objectUboSamples: [
+				sample( 'update', 1 ),
+				sample( 'upload', 1 ),
+				sample( 'update', 2 ),
+				sample( 'upload', 2 ),
+			],
+		};
+
+		const evidence = collectCanaryRuntimeEvidence();
+		assert.equal( evidence.render.renderFrames, 9 );
+		assert.deepEqual( evidence.render.rotation, [ 0.4, 0.6 ] );
+		assert.deepEqual( evidence.objectUbo.update, {
+			count: 2,
+			first: [ 1, 0, 0, 1 ],
+			last: [ 2, 0, 0, 1 ],
+			distinct: 2,
+		} );
+		assert.equal( evidence.objectUbo.upload.distinct, 2 );
+
+	} finally {
+
+		if ( previousRender === undefined ) delete globalThis.__TSLP_CANARY_RENDER_EVIDENCE__;
+		else globalThis.__TSLP_CANARY_RENDER_EVIDENCE__ = previousRender;
+		if ( previousDiagnostics === undefined ) delete globalThis.__tslpHarnessDiagnostics;
+		else globalThis.__tslpHarnessDiagnostics = previousDiagnostics;
+
+	}
+
 } );
 
 test( 'production preview exercises a viewport distinct from capture', () => {

@@ -65,16 +65,27 @@ material.precompile( 'getting-started' );   // optional stable-name override
 const mesh = new Mesh( new TorusKnotGeometry( 1, 0.3, 128, 32 ), material );
 scene.add( mesh );
 
+// The production dual-backend canary samples this small receipt alongside
+// canvas pixels. It distinguishes a stopped application loop from a backend
+// that receives changing CPU transforms but presents a stale GPU frame.
+const renderEvidence = window.__TSLP_CANARY_RENDER_EVIDENCE__ = {
+	renderFrames: 0,
+	rotation: [ mesh.rotation.x, mesh.rotation.y ],
+	worldMatrix: Array.from( mesh.matrixWorld.elements ),
+};
+
 // --- render loop --------------------------------------------------------
 function tick() {
 
 	requestAnimationFrame( tick );
-	// Keep the canary delta obvious under software WebGPU: small per-frame
-	// steps can land in identical canvas screenshots when the runner presents
-	// slowly between the production-preview probes.
+	// Keep the visual canary obvious even on software WebGPU, where presentation
+	// can be slower than the browser's requestAnimationFrame cadence.
 	mesh.rotation.x += 0.04;
 	mesh.rotation.y += 0.06;
 	renderer.render( scene, camera );
+	renderEvidence.renderFrames ++;
+	renderEvidence.rotation = [ mesh.rotation.x, mesh.rotation.y ];
+	renderEvidence.worldMatrix = Array.from( mesh.matrixWorld.elements );
 
 }
 tick();

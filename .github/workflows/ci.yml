@@ -23,7 +23,7 @@ jobs:
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 26.5.1
+          node-version: 24.18.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Authored JavaScript correctness lint
@@ -36,7 +36,7 @@ jobs:
         run: pnpm test:slim:budget
 
   minimum-node:
-    name: Package checks (Node 26)
+    name: Package checks (Node 24 LTS)
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
@@ -44,7 +44,7 @@ jobs:
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 26.5.1
+          node-version: 24.18.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Default package suites
@@ -63,7 +63,7 @@ jobs:
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 26.5.1
+          node-version: 24.18.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
@@ -88,7 +88,7 @@ jobs:
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 26.5.1
+          node-version: 24.18.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Verify the checked catalogue against the exact Three corpus
@@ -121,7 +121,7 @@ jobs:
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 26.5.1
+          node-version: 24.18.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
@@ -159,7 +159,7 @@ jobs:
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 26.5.1
+          node-version: 24.18.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
@@ -185,18 +185,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - label: Node 26 / Vite 8.0.16
-            node: 26.5.1
+          - label: Node 24 / Vite 8.0.16
+            node: 24.18.0
             vite: 8.0.16
             typescript: 5.9.3
             artifact: current
-          - label: Node 26 / Vite 7.3.6
-            node: 26.5.1
+          - label: Node 24 / Vite 7.3.6
+            node: 24.18.0
             vite: 7.3.6
             typescript: 5.9.3
             artifact: vite7
-          - label: Node 26 / Vite 6.4.3 / TypeScript 5.6.3 minimums
-            node: 26.5.1
+          - label: Node 24 / Vite 6.4.3 / TypeScript 5.6.3 minimums
+            node: 24.18.0
             vite: 6.4.3
             typescript: 5.6.3
             artifact: minimum

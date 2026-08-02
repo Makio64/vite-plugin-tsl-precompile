@@ -77,7 +77,7 @@ caret range. You do not need to commit a different dependency specifier.
    build, the ocean and showcase preview smokes, artifact verification, a
    packed-tarball install/capture/build/preview smoke at the current and
    declared-minimum Vite surfaces, and dry package creation. CI separately
-   exercises the package and packed-consumer gates on Node 26.5. The packed
+   exercises the package and packed-consumer gates on Node 24.18. The packed
    smokes install exact public dependencies from the npm registry, so run this
    gate with registry access. Browser-smoke evidence and release tarballs are
    written under the unique private temporary directory printed by
