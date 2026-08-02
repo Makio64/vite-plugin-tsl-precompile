@@ -17,7 +17,11 @@ jobs:
   refresh:
     if: github.ref == 'refs/heads/codex/webgpu-webgl-final' && github.actor != 'github-actions[bot]'
     name: Generate, verify, and commit schema-2 site evidence
-    runs-on: macos-15
+    # The exhaustive corpus is pinned to the deterministic Linux SwiftShader
+    # WebGPU + WebGL2 configuration. Native Metal remains covered by CI's
+    # smaller Tier-1 hardware gate without making site publication depend on
+    # upstream Inspector behavior that varies with macOS/Chromium.
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
     steps:
       - name: Configure runner-temporary evidence paths
@@ -60,14 +64,14 @@ jobs:
         run: pnpm --filter examples-batch catalogue:check:corpus
         env:
           TSLP_THREE_REPO: ${{ github.workspace }}/three.js
-      - name: Install Playwright Chromium
-        run: pnpm exec playwright install chromium
+      - name: Install Playwright Chromium and its system dependencies
+        run: pnpm exec playwright install --with-deps chromium
       - name: Build the exact slim bundle with rewrite warnings fatal
         run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim
       - name: Record the exact 209-case stock-renderer observation
         run: |
           stock_status=0
-          node packages/examples/batch/run.mjs \
+          xvfb-run -a node packages/examples/batch/run.mjs \
             --three-repo="$GITHUB_WORKSPACE/three.js" \
             --output-root="$TSLP_STOCK_OUT" \
             --canonical-evidence || stock_status=$?
@@ -78,18 +82,20 @@ jobs:
           test -f "$TSLP_STOCK_REPORT"
       - name: Run the exact 254-case capture/replay campaign
         run: >-
-          node packages/examples/batch/run-evidence-campaign.mjs
+          xvfb-run -a node packages/examples/batch/run-evidence-campaign.mjs
           --three-repo="$GITHUB_WORKSPACE/three.js"
           --output-root="$TSLP_E2E_OUT"
           --campaign-id="site-${GITHUB_SHA}"
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
       - name: Generate isolated schema-2 public evidence
         run: pnpm --filter @tsl-precompile/site data
       - name: Build and audit the production site
         run: pnpm build:site
       - name: Verify landing, gallery, and comparison evidence in full Chromium
-        run: pnpm --filter @tsl-precompile/site test:static
+        run: xvfb-run -a pnpm --filter @tsl-precompile/site test:static
       - name: Exercise the built compiler-free live examples
-        run: pnpm --filter @tsl-precompile/site test:live
+        run: xvfb-run -a pnpm --filter @tsl-precompile/site test:live
       - name: Validate the isolated publication payload
         run: |
           test "$TSLP_SITE_PUBLIC_OUT" = "$RUNNER_TEMP/site-evidence-public"

@@ -28,7 +28,9 @@ jobs:
   batch:
     name: Exact 254-case evidence campaign
     if: github.event_name == 'schedule' || inputs.mode == 'canonical-campaign'
-    runs-on: macos-15
+    # Exhaustive evidence is deterministic on Linux SwiftShader; CI Tier-1
+    # retains the native macOS Metal coverage.
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
     steps:
       - name: Configure runner-temporary output paths
@@ -58,11 +60,11 @@ jobs:
           node-version: 24.18.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install chromium
+      - run: pnpm exec playwright install --with-deps chromium
       - name: Record exact 209-case stock-renderer observation
         run: |
           stock_status=0
-          node packages/examples/batch/run.mjs \
+          xvfb-run -a node packages/examples/batch/run.mjs \
             --three-repo="$GITHUB_WORKSPACE/three.js" \
             --output-root="$TSLP_STOCK_OUT" \
             --canonical-evidence || stock_status=$?
@@ -74,13 +76,15 @@ jobs:
       - name: Build slim bundle with rewrite fallbacks fatal
         run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim
       - name: Run exact upstream and six-local-cohort capture/replay campaign
-        run: pnpm test:e2e:campaign -- --three-repo="$GITHUB_WORKSPACE/three.js"
+        run: xvfb-run -a pnpm test:e2e:campaign -- --three-repo="$GITHUB_WORKSPACE/three.js"
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
       - name: Generate site data from the same immutable evidence
         run: pnpm --filter @tsl-precompile/site data
       - name: Build and audit the production site
         run: pnpm build:site
       - name: Exercise the built compiler-free live examples
-        run: pnpm --filter @tsl-precompile/site test:live
+        run: xvfb-run -a pnpm --filter @tsl-precompile/site test:live
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
