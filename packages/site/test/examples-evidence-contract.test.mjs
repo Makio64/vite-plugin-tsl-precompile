@@ -1477,6 +1477,14 @@ test( 'featured homepage evidence is bound to versioned bytes and its aggregate 
 		'<figcaption data-featured-evidence-caption>unbound</figcaption>',
 		'</figure>',
 	].join( '' );
+	assert.doesNotThrow( () => assertPublishableSitePublicEvidence( {
+		...evidence,
+		totals: {
+			...evidence.totals,
+			smokePass: 0,
+			smokeFail: 1,
+		},
+	}, 'Public evidence with an honest stock observation failure' ) );
 	const transformed = applySiteFeaturedEvidenceToHtml( source, evidence );
 	assert.match( transformed, new RegExp( `src="/${ capturePath }"` ) );
 	assert.match( transformed, new RegExp( `src="/${ replayPath }"` ) );

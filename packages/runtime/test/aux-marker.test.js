@@ -1405,14 +1405,16 @@ test( 'precompileAuxiliary preserves shadow families, unions equivalent keys, an
 	} );
 	const directionalSelector = '{"target":{"surface":"offscreen-2d"}}';
 	const pointSelector = '{"target":{"surface":"offscreen-cube"}}';
+	const reusedDirectionalSelector = '{"material":{"transparent":true},"target":{"surface":"offscreen-2d"}}';
+	const reusedPointSelector = '{"material":{"transparent":false},"target":{"surface":"offscreen-cube"}}';
 	const directionalOnly = '{"shadowCaster":{"customDepth":true}}';
 	const pointOnly = '{"shadowCaster":{"map":true},"target":{"surface":"offscreen-cube"}}';
 	const sharedDirectional = shadowArtifact( 'shared-key', directionalSelector, 'shared-shadow' );
 	const sharedPoint = shadowArtifact( 'shared-key', pointSelector, 'shared-shadow' );
 	const directional = shadowArtifact( 'directional-key', directionalOnly, 'directional-shadow' );
 	const point = shadowArtifact( 'point-key', pointOnly, 'point-shadow' );
-	const reused2D = shadowArtifact( 'r185-reused-key', directionalSelector, 'r185-shadow' );
-	const reusedCube = shadowArtifact( 'r185-reused-key', pointSelector, 'r185-shadow' );
+	const reused2D = shadowArtifact( 'r185-reused-key', reusedDirectionalSelector, 'r185-shadow' );
+	const reusedCube = shadowArtifact( 'r185-reused-key', reusedPointSelector, 'r185-shadow' );
 	const vsmSupportConfig = createVSMSupportConfig();
 	const vsmArtifact = ( stage ) => {
 
@@ -1559,7 +1561,7 @@ test( 'precompileAuxiliary preserves shadow families, unions equivalent keys, an
 		assert.deepEqual( rekeyed.map( ( candidate ) => candidate.renderState.transparent ).sort(), [ true, undefined ] );
 		assert.deepEqual(
 			rekeyed.flatMap( ( candidate ) => candidate.renderContextSelectors ).sort(),
-			[ directionalSelector, pointSelector ].sort(),
+			[ reusedDirectionalSelector, reusedPointSelector ].sort(),
 			'the signed target selectors remain authoritative after rekeying',
 		);
 		const vsmPayloads = payloads
