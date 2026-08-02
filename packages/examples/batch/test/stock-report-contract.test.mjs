@@ -11,6 +11,7 @@ import {
 	stockCorpusFingerprint,
 	stockHarnessFingerprint,
 	validateCanonicalStockReport,
+	validateExactStockReport,
 } from '../stock-report-contract.mjs';
 import { fingerprintThreeSourceVerificationRecords } from '../_three-version.mjs';
 
@@ -228,6 +229,178 @@ test( 'accepts a complete exact canonical stock report', () => {
 		validateCanonicalStockReport( validReport(), { catalogue, catalogueSha256, harnessSha256 } ),
 		{ expectedNames: [ 'webgpu_a.html', 'webgpu_b.html' ], pass: 2, fail: 0 },
 	);
+
+} );
+
+function markFailed( report, mutateEvidence ) {
+
+	report.details[ 1 ].status = 'fail';
+	report.pass = 1;
+	report.fail = 1;
+	mutateEvidence( report.details[ 1 ] );
+	return report;
+
+}
+
+test( 'accepts honest failed details without weakening the canonical all-pass validator', () => {
+
+	const report = markFailed( validReport(), ( detail ) => {
+
+		detail.baseBrightFrac = 0;
+
+	} );
+	assert.deepEqual(
+		validateExactStockReport( report, { catalogue, catalogueSha256, harnessSha256 } ),
+		{ expectedNames: [ 'webgpu_a.html', 'webgpu_b.html' ], pass: 1, fail: 1 },
+	);
+	assert.throws(
+		() => validateCanonicalStockReport( report, { catalogue, catalogueSha256, harnessSha256 } ),
+		/canonical stock report detail webgpu_b\.html did not pass/,
+	);
+
+} );
+
+test( 'accepts each normalized failure class in a complete exact report', () => {
+
+	const mutations = [
+		( detail ) => { detail.baseBrightFrac = 0; },
+		( detail ) => { detail.gpuValidationCount = 1; },
+		( detail ) => {
+
+			detail.gpuErrors = [ 'GPU uncaptured error: fixture validation failure' ];
+			detail.gpuErrorCount = 1;
+
+		},
+		( detail ) => {
+
+			detail.gpuErrors = Array.from( { length: 10 }, ( _, index ) => `GPU error ${ index }` );
+			detail.gpuErrorCount = 12;
+
+		},
+		( detail ) => {
+
+			detail.gpuObservation.queuesFenced = 0;
+			detail.gpuObservation.queueFenceFailures = 1;
+			detail.gpuObservation.complete = false;
+
+		},
+		( detail ) => { detail.error = 'renderer failed'; },
+		( detail ) => { detail.preErrors = [ 'pageerror: fixture failure' ]; },
+	];
+	for ( const mutate of mutations ) {
+
+		const report = markFailed( validReport(), mutate );
+		assert.equal(
+			validateExactStockReport( report, { catalogue, catalogueSha256, harnessSha256 } ).fail,
+			1,
+		);
+
+	}
+
+} );
+
+test( 'rejects dishonest statuses and malformed failed-detail evidence', () => {
+
+	const mutations = [
+		{
+			pattern: /evidence satisfies the stock pass contract/,
+			mutate: ( report ) => markFailed( report, () => {} ),
+		},
+		{
+			pattern: /decoded pixel evidence behind a pass status/,
+			mutate( report ) { report.details[ 0 ].baseBrightFrac = 0; },
+		},
+		{
+			pattern: /GPU observer errors must be an array/,
+			mutate: ( report ) => markFailed( report, ( detail ) => {
+
+				detail.baseBrightFrac = 0;
+				delete detail.gpuErrors;
+
+			} ),
+		},
+		{
+			pattern: /internally inconsistent GPU observer errors/,
+			mutate: ( report ) => markFailed( report, ( detail ) => {
+
+				detail.baseBrightFrac = 0;
+				detail.gpuErrorCount = 1;
+
+			} ),
+		},
+		{
+			pattern: /GPU observation\.complete must be a boolean/,
+			mutate: ( report ) => markFailed( report, ( detail ) => {
+
+				detail.baseBrightFrac = 0;
+				delete detail.gpuObservation.complete;
+
+			} ),
+		},
+		{
+			pattern: /invalid decoded pixel evidence/,
+			mutate: ( report ) => markFailed( report, ( detail ) => { detail.baseBrightFrac = -0.01; } ),
+		},
+		{
+			pattern: /invalid decoded pixel evidence/,
+			mutate: ( report ) => markFailed( report, ( detail ) => { detail.baseBrightFrac = 1.01; } ),
+		},
+		{
+			pattern: /invalid runtime error field/,
+			mutate: ( report ) => markFailed( report, ( detail ) => {
+
+				detail.baseBrightFrac = 0;
+				detail.error = 42;
+
+			} ),
+		},
+		{
+			pattern: /page or console errors must be an array of non-empty strings/,
+			mutate: ( report ) => markFailed( report, ( detail ) => {
+
+				detail.baseBrightFrac = 0;
+				detail.preErrors = [ '' ];
+
+			} ),
+		},
+	];
+	for ( const { mutate, pattern } of mutations ) {
+
+		const report = validReport();
+		mutate( report );
+		assert.throws(
+			() => validateExactStockReport( report, { catalogue, catalogueSha256, harnessSha256 } ),
+			pattern,
+		);
+
+	}
+
+} );
+
+test( 'relaxed validation still requires a complete current exact run', () => {
+
+	const mutations = [
+		( report ) => { report.complete = false; },
+		( report ) => { report.completedAt = null; },
+		( report ) => { report.completedAt = '2026-07-29T23:59:59.000Z'; },
+		( report ) => { report.configuration.mode = 'diagnostic-full'; },
+		( report ) => { report.configuration.environment = null; },
+		( report ) => { report.configuration.corpus.catalogueSha256 = 'b'.repeat( 64 ); },
+		( report ) => { report.configuration.harnessSha256 = 'b'.repeat( 64 ); },
+		( report ) => { report.configuration.threeCheckout.clean = false; },
+		( report ) => { report.details.pop(); report.total --; report.pass --; },
+		( report ) => { report.pass = 1; },
+	];
+	for ( const mutate of mutations ) {
+
+		const report = validReport();
+		mutate( report );
+		assert.throws(
+			() => validateExactStockReport( report, { catalogue, catalogueSha256, harnessSha256 } ),
+			/Error/,
+		);
+
+	}
 
 } );
 

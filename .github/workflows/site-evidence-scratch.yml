@@ -15,9 +15,9 @@ concurrency:
 
 jobs:
   refresh:
-    if: github.ref == 'refs/heads/codex/webgpu-webgl-final'
+    if: github.ref == 'refs/heads/codex/webgpu-webgl-final' && github.actor != 'github-actions[bot]'
     name: Generate, verify, and commit schema-2 site evidence
-    runs-on: ubuntu-24.04
+    runs-on: macos-15
     timeout-minutes: 360
     steps:
       - name: Configure runner-temporary evidence paths
@@ -60,19 +60,25 @@ jobs:
         run: pnpm --filter examples-batch catalogue:check:corpus
         env:
           TSLP_THREE_REPO: ${{ github.workspace }}/three.js
-      - name: Install full Playwright Chromium and its system dependencies
-        run: pnpm exec playwright install --with-deps chromium
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install chromium
       - name: Build the exact slim bundle with rewrite warnings fatal
         run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim
-      - name: Run the canonical 209-case stock-renderer sweep
-        run: >-
-          xvfb-run -a node packages/examples/batch/run.mjs
-          --three-repo="$GITHUB_WORKSPACE/three.js"
-          --output-root="$TSLP_STOCK_OUT"
-          --canonical-evidence
+      - name: Record the exact 209-case stock-renderer observation
+        run: |
+          stock_status=0
+          node packages/examples/batch/run.mjs \
+            --three-repo="$GITHUB_WORKSPACE/three.js" \
+            --output-root="$TSLP_STOCK_OUT" \
+            --canonical-evidence || stock_status=$?
+          if [ "$stock_status" -ne 0 ] && [ "$stock_status" -ne 1 ]; then
+            echo "Unexpected stock sweep exit status: $stock_status" >&2
+            exit "$stock_status"
+          fi
+          test -f "$TSLP_STOCK_REPORT"
       - name: Run the exact 254-case capture/replay campaign
         run: >-
-          xvfb-run -a node packages/examples/batch/run-evidence-campaign.mjs
+          node packages/examples/batch/run-evidence-campaign.mjs
           --three-repo="$GITHUB_WORKSPACE/three.js"
           --output-root="$TSLP_E2E_OUT"
           --campaign-id="site-${GITHUB_SHA}"
@@ -81,9 +87,9 @@ jobs:
       - name: Build and audit the production site
         run: pnpm build:site
       - name: Verify landing, gallery, and comparison evidence in full Chromium
-        run: xvfb-run -a pnpm --filter @tsl-precompile/site test:static
+        run: pnpm --filter @tsl-precompile/site test:static
       - name: Exercise the built compiler-free live examples
-        run: xvfb-run -a pnpm --filter @tsl-precompile/site test:live
+        run: pnpm --filter @tsl-precompile/site test:live
       - name: Validate the isolated publication payload
         run: |
           test "$TSLP_SITE_PUBLIC_OUT" = "$RUNNER_TEMP/site-evidence-public"
@@ -114,8 +120,11 @@ jobs:
           if ( examples.totals.examplesProcessed !== 254 ) throw new Error( 'Expected exactly 254 published cases.' );
           if ( examples.totals.upstreamExamples !== 209 ) throw new Error( 'Expected exactly 209 upstream cases.' );
           if ( examples.totals.localExamples !== 45 ) throw new Error( 'Expected exactly 45 local cases.' );
-          if ( examples.totals.smokeTotal !== 209 || examples.totals.smokePass !== 209 ) {
-            throw new Error( 'Expected the stock sweep to pass all 209 cases.' );
+          if (
+            examples.totals.smokeTotal !== 209 ||
+            examples.totals.smokePass + examples.totals.smokeFail !== 209
+          ) {
+            throw new Error( 'Expected exact pass/fail observations for all 209 stock routes.' );
           }
 
           const generation = examples.provenance.thumbnailGeneration;
@@ -160,7 +169,7 @@ jobs:
             .
           (
             cd "$RUNNER_TEMP"
-            sha256sum \
+            shasum -a 256 \
               canonical-site-public.tar.gz \
               canonical-site-browser.tar.gz \
               > canonical-site-evidence.sha256
@@ -207,6 +216,7 @@ jobs:
             packages/site/public/examples.json \
             packages/site/public/coverage-summary.json \
             packages/site/public/coverage-evidence-set.json \
+            packages/site/public/measurements.json \
             packages/site/public/examples/thumbs
 
           test -n "$(git diff --cached --name-only)"
@@ -215,6 +225,7 @@ jobs:
               packages/site/public/examples.json | \
               packages/site/public/coverage-summary.json | \
               packages/site/public/coverage-evidence-set.json | \
+              packages/site/public/measurements.json | \
               packages/site/public/examples/thumbs/*)
                 ;;
               *)

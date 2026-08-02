@@ -5,7 +5,10 @@ import {
 } from './_three-version.mjs';
 import { resolveRepositoryStaticImportClosure } from './e2e-evidence.mjs';
 import { assertEvidenceEnvironment } from './e2e-environment.mjs';
-import { e2eGpuObservationIssues } from './e2e-gpu-diagnostics.mjs';
+import {
+	E2E_GPU_OBSERVATION_SCHEMA,
+	e2eGpuObservationIssues,
+} from './e2e-gpu-diagnostics.mjs';
 
 export const STOCK_REPORT_SCHEMA = 'tslp-stock-smoke@1';
 export const STOCK_MINIMUM_BRIGHT_FRACTION = 0.005;
@@ -137,7 +140,169 @@ function assertExactNames( actualNames, expectedNames, label ) {
 
 }
 
-export function validateCanonicalStockReport( report, {
+const GPU_OBSERVATION_BOOLEAN_FIELDS = Object.freeze( [
+	'hookInstalled',
+	'complete',
+] );
+// run.mjs stores the first ten observer messages while retaining their full
+// count, so exact consistency includes the bounded-list form for noisy routes.
+const STOCK_GPU_ERROR_SAMPLE_LIMIT = 10;
+const GPU_OBSERVATION_COUNTER_FIELDS = Object.freeze( [
+	'requestAdapterCalls',
+	'requestDeviceCalls',
+	'devicesObserved',
+	'uncapturedErrorObservers',
+	'deviceLostObservers',
+	'drainAttempts',
+	'queuesExpected',
+	'queuesFenced',
+	'queueFenceFailures',
+] );
+
+function assertStringArray( value, label ) {
+
+	if (
+		! Array.isArray( value ) ||
+		value.some( ( entry ) => typeof entry !== 'string' || entry.length === 0 )
+	) {
+
+		throw new Error( `${ label } must be an array of non-empty strings` );
+
+	}
+
+}
+
+function assertGpuObservationFields( observation, label ) {
+
+	assertObject( observation, label );
+	if ( observation.schema !== E2E_GPU_OBSERVATION_SCHEMA ) {
+
+		throw new Error( `${ label } schema must be ${ E2E_GPU_OBSERVATION_SCHEMA }` );
+
+	}
+	for ( const field of GPU_OBSERVATION_BOOLEAN_FIELDS ) {
+
+		if ( typeof observation[ field ] !== 'boolean' ) {
+
+			throw new Error( `${ label }.${ field } must be a boolean` );
+
+		}
+
+	}
+	for ( const field of GPU_OBSERVATION_COUNTER_FIELDS ) {
+
+		if ( ! Number.isSafeInteger( observation[ field ] ) || observation[ field ] < 0 ) {
+
+			throw new Error( `${ label }.${ field } must be a non-negative integer` );
+
+		}
+
+	}
+
+}
+
+function validateExactStockDetail( detail ) {
+
+	assertObject( detail, 'stock report detail' );
+	const label = `stock report detail ${ detail.name }`;
+	if ( detail.status !== 'pass' && detail.status !== 'fail' ) {
+
+		throw new Error( `${ label } has invalid status ${ String( detail.status ) }` );
+
+	}
+	if ( ! Number.isSafeInteger( detail.gpuValidationCount ) || detail.gpuValidationCount < 0 ) {
+
+		throw new Error( `${ label } has an invalid GPU validation-error count` );
+
+	}
+	assertStringArray( detail.gpuErrors, `${ label } GPU observer errors` );
+	if (
+		! Number.isSafeInteger( detail.gpuErrorCount ) ||
+		detail.gpuErrorCount < 0 ||
+		detail.gpuErrors.length !== Math.min( detail.gpuErrorCount, STOCK_GPU_ERROR_SAMPLE_LIMIT )
+	) {
+
+		throw new Error( `${ label } has internally inconsistent GPU observer errors` );
+
+	}
+	assertGpuObservationFields( detail.gpuObservation, `${ label } GPU observation` );
+	if ( detail.error !== null && ( typeof detail.error !== 'string' || detail.error.length === 0 ) ) {
+
+		throw new Error( `${ label } has an invalid runtime error field` );
+
+	}
+	assertStringArray( detail.preErrors, `${ label } page or console errors` );
+	if (
+		! Number.isFinite( detail.baseBrightFrac ) ||
+		detail.baseBrightFrac < 0 ||
+		detail.baseBrightFrac > 1
+	) {
+
+		throw new Error( `${ label } has invalid decoded pixel evidence` );
+
+	}
+
+	const gpuObservationIssues = e2eGpuObservationIssues( detail.gpuObservation );
+	const failedEvidence =
+		detail.gpuValidationCount !== 0 ||
+		detail.gpuErrorCount !== 0 ||
+		gpuObservationIssues.length > 0 ||
+		detail.error !== null ||
+		detail.preErrors.length !== 0 ||
+		detail.baseBrightFrac <= STOCK_MINIMUM_BRIGHT_FRACTION;
+
+	if ( detail.status === 'fail' ) {
+
+		if ( ! failedEvidence ) {
+
+			throw new Error( `${ label } did not pass, but its evidence satisfies the stock pass contract` );
+
+		}
+		return;
+
+	}
+	if ( detail.gpuValidationCount !== 0 ) {
+
+		throw new Error( `${ label } has GPU validation errors behind a pass status` );
+
+	}
+	if ( detail.gpuErrorCount !== 0 ) {
+
+		throw new Error( `${ label } has GPU observer errors behind a pass status` );
+
+	}
+	if ( gpuObservationIssues.length > 0 ) {
+
+		throw new Error( `${ label } has invalid GPU observation: ${ gpuObservationIssues[ 0 ] }` );
+
+	}
+	if ( detail.error !== null ) {
+
+		throw new Error( `${ label } has an error behind a pass status` );
+
+	}
+	if ( detail.preErrors.length !== 0 ) {
+
+		throw new Error( `${ label } has page or console errors behind a pass status` );
+
+	}
+	if ( detail.baseBrightFrac <= STOCK_MINIMUM_BRIGHT_FRACTION ) {
+
+		throw new Error( `${ label } has invalid decoded pixel evidence behind a pass status` );
+
+	}
+
+}
+
+/**
+ * Validate a complete, exact stock sweep without claiming every route passed.
+ *
+ * Failed details remain publishable evidence only when their normalized fields
+ * contain at least one failure according to the same predicate as the stock
+ * runner. This keeps infrastructure-limited runs honest while retaining every
+ * provenance, corpus, environment, and per-route evidence gate.
+ */
+export function validateExactStockReport( report, {
 	catalogue,
 	catalogueSha256,
 	harnessSha256,
@@ -147,6 +312,16 @@ export function validateCanonicalStockReport( report, {
 	if ( report.schema !== STOCK_REPORT_SCHEMA ) {
 
 		throw new Error( `stock report schema must be ${ STOCK_REPORT_SCHEMA }` );
+
+	}
+	if ( typeof catalogueSha256 !== 'string' || ! /^[a-f0-9]{64}$/i.test( catalogueSha256 ) ) {
+
+		throw new Error( 'current example catalogue fingerprint must be a SHA-256 digest' );
+
+	}
+	if ( typeof harnessSha256 !== 'string' || ! /^[a-f0-9]{64}$/i.test( harnessSha256 ) ) {
+
+		throw new Error( 'current stock harness fingerprint must be a SHA-256 digest' );
 
 	}
 	if ( report.complete !== true ) throw new Error( 'stock report is incomplete' );
@@ -218,54 +393,7 @@ export function validateCanonicalStockReport( report, {
 	assertExactNames( detailNames, expectedNames, 'stock report details' );
 	for ( const detail of report.details ) {
 
-		assertObject( detail, 'stock report detail' );
-		if ( detail.status !== 'pass' ) {
-
-			throw new Error( `canonical stock report detail ${ detail.name } did not pass` );
-
-		}
-		if ( detail.gpuValidationCount !== 0 ) {
-
-			throw new Error( `canonical stock report detail ${ detail.name } has GPU validation errors` );
-
-		}
-		if (
-			! Array.isArray( detail.gpuErrors ) ||
-			! Number.isSafeInteger( detail.gpuErrorCount ) ||
-			detail.gpuErrorCount !== detail.gpuErrors.length ||
-			detail.gpuErrorCount !== 0
-		) {
-
-			throw new Error( `canonical stock report detail ${ detail.name } has GPU observer errors` );
-
-		}
-		const gpuObservationIssues = e2eGpuObservationIssues( detail.gpuObservation );
-		if ( gpuObservationIssues.length > 0 ) {
-
-			throw new Error(
-				`canonical stock report detail ${ detail.name } has invalid GPU observation: ${ gpuObservationIssues[ 0 ] }`,
-			);
-
-		}
-		if ( detail.error !== null ) {
-
-			throw new Error( `canonical stock report detail ${ detail.name } has an error` );
-
-		}
-		if ( ! Array.isArray( detail.preErrors ) || detail.preErrors.length !== 0 ) {
-
-			throw new Error( `canonical stock report detail ${ detail.name } has page or console errors` );
-
-		}
-		if (
-			! Number.isFinite( detail.baseBrightFrac ) ||
-			detail.baseBrightFrac <= STOCK_MINIMUM_BRIGHT_FRACTION ||
-			detail.baseBrightFrac > 1
-		) {
-
-			throw new Error( `canonical stock report detail ${ detail.name } has invalid decoded pixel evidence` );
-
-		}
+		validateExactStockDetail( detail );
 
 	}
 
@@ -273,11 +401,22 @@ export function validateCanonicalStockReport( report, {
 		! Number.isSafeInteger( report.total ) ||
 		report.total <= 0 ||
 		report.total !== report.details.length ||
-		report.pass !== report.total ||
-		report.fail !== 0
+		report.total !== expectedNames.length ||
+		! Number.isSafeInteger( report.pass ) ||
+		report.pass < 0 ||
+		! Number.isSafeInteger( report.fail ) ||
+		report.fail < 0 ||
+		report.pass + report.fail !== report.total
 	) {
 
-		throw new Error( 'canonical stock report is not a completely successful exact run' );
+		throw new Error( 'stock report totals do not account for the complete exact run' );
+
+	}
+	const detailPass = report.details.filter( ( detail ) => detail.status === 'pass' ).length;
+	const detailFail = report.details.filter( ( detail ) => detail.status === 'fail' ).length;
+	if ( report.pass !== detailPass || report.fail !== detailFail ) {
+
+		throw new Error( 'stock report pass/fail totals do not match its detail statuses' );
 
 	}
 	const expectedSkip = threeCheckout.discoveredCases - corpus.discoveredSupportedCaseCount;
@@ -289,5 +428,23 @@ export function validateCanonicalStockReport( report, {
 
 	}
 	return { expectedNames, pass: report.pass, fail: report.fail };
+
+}
+
+export function validateCanonicalStockReport( report, options ) {
+
+	const result = validateExactStockReport( report, options );
+	const failedDetail = report.details.find( ( detail ) => detail.status !== 'pass' );
+	if ( failedDetail ) {
+
+		throw new Error( `canonical stock report detail ${ failedDetail.name } did not pass` );
+
+	}
+	if ( report.pass !== report.total || report.fail !== 0 ) {
+
+		throw new Error( 'canonical stock report is not a completely successful exact run' );
+
+	}
+	return result;
 
 }

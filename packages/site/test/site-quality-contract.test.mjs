@@ -40,10 +40,11 @@ test( 'public proof scopes stock smoke separately and makes no fabricated runtim
 		source( 'scripts/check-content.mjs' ),
 	] );
 	assert.match( index, /data-stat="smokePass">209<\/span>\/<span data-stat="smokeTotal">209/ );
-	assert.match( index, /official stock routes passed load-smoke/ );
-	assert.match( examples, /254-route capture\/replay campaign, separate from the 209-route official-stock load smoke/ );
+	assert.match( index, /official stock routes met the CI GPU observation gate/ );
+	assert.match( index, /data-stat="smokeFail">0<\/span> did not meet it/ );
+	assert.match( examples, /strict 254-route capture\/replay campaign, separate from the exact 209-route stock-renderer observation/i );
 	assert.match( examples, /data-key="stockSmokeFraction"/ );
-	assert.match( examples, /official stock load-smoke/ );
+	assert.match( examples, /official stock CI GPU observation/ );
 	assert.match( javascript, /stockSmokeFraction: `\$\{totals\.smokePass\}\/\$\{totals\.smokeTotal\}`/ );
 	for ( const sourceText of [ index, examples, javascript, generator, checker ] ) {
 

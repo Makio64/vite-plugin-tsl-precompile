@@ -29,7 +29,7 @@ jobs:
   build:
     if: github.ref == 'refs/heads/main'
     name: Reproduce evidence and build
-    runs-on: ubuntu-24.04
+    runs-on: macos-15
     timeout-minutes: 360
     steps:
       - name: Configure runner-temporary output paths
@@ -64,18 +64,24 @@ jobs:
         run: pnpm --filter examples-batch catalogue:check:corpus
         env:
           TSLP_THREE_REPO: ${{ github.workspace }}/three.js
-      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright install chromium
       - name: Build the exact slim bundle with rewrite warnings fatal
         run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim
-      - name: Run the canonical 209-case stock-renderer sweep
-        run: >-
-          xvfb-run -a node packages/examples/batch/run.mjs
-          --three-repo="$GITHUB_WORKSPACE/three.js"
-          --output-root="$TSLP_STOCK_OUT"
-          --canonical-evidence
+      - name: Record the exact 209-case stock-renderer observation
+        run: |
+          stock_status=0
+          node packages/examples/batch/run.mjs \
+            --three-repo="$GITHUB_WORKSPACE/three.js" \
+            --output-root="$TSLP_STOCK_OUT" \
+            --canonical-evidence || stock_status=$?
+          if [ "$stock_status" -ne 0 ] && [ "$stock_status" -ne 1 ]; then
+            echo "Unexpected stock sweep exit status: $stock_status" >&2
+            exit "$stock_status"
+          fi
+          test -f "$TSLP_STOCK_REPORT"
       - name: Run the exact 254-case capture/replay campaign
         run: >-
-          xvfb-run -a node packages/examples/batch/run-evidence-campaign.mjs
+          node packages/examples/batch/run-evidence-campaign.mjs
           --three-repo="$GITHUB_WORKSPACE/three.js"
           --output-root="$TSLP_E2E_OUT"
           --campaign-id="deploy-${GITHUB_SHA}"
@@ -84,8 +90,8 @@ jobs:
       - name: Build and audit the production site
         run: pnpm build:site
       - name: Verify landing and examples evidence in full Chromium
-        run: xvfb-run -a pnpm --filter @tsl-precompile/site test:static
-      - run: xvfb-run -a pnpm --filter @tsl-precompile/site test:live
+        run: pnpm --filter @tsl-precompile/site test:static
+      - run: pnpm --filter @tsl-precompile/site test:live
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:

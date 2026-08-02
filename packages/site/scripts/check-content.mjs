@@ -8,7 +8,7 @@ import { assertCanonicalExampleId } from '../../examples/batch/output-path-safet
 import {
 	resolveStockHarnessSourceFiles,
 	stockHarnessFingerprint,
-	validateCanonicalStockReport,
+	validateExactStockReport,
 } from '../../examples/batch/stock-report-contract.mjs';
 import {
 	assertKnownSiteSelectorArguments,
@@ -277,7 +277,7 @@ const stockHarnessSha256 = stockHarnessFingerprint(
 );
 const catalogue = JSON.parse( catalogueRaw );
 const stockReport = JSON.parse( reportRaw.toString( 'utf8' ) );
-validateCanonicalStockReport( stockReport, {
+validateExactStockReport( stockReport, {
 	catalogue,
 	catalogueSha256: sha256( catalogueRaw ),
 	harnessSha256: stockHarnessSha256,
@@ -520,6 +520,7 @@ const expectedTotals = {
 	wgslBytes: evidence.examples.reduce( ( total, entry ) => total + Number( entry.totalWgslBytes || 0 ), 0 ),
 	smokeTotal: stockReport.total,
 	smokePass: stockReport.pass,
+	smokeFail: stockReport.fail,
 	pixelMatchCount: evidence.examples.filter( ( entry ) => entry.badge === 'pixel-match' ).length,
 	visualMatchCount: evidence.examples.filter( ( entry ) => entry.badge === 'visual-match' ).length,
 	rendersCount: evidence.examples.filter( ( entry ) => entry.badge === 'renders' ).length,

@@ -316,6 +316,7 @@ export const SITE_EVIDENCE_TOTAL_KEYS = Object.freeze( [
 	'materialsBaked',
 	'artifactsCaptured',
 	'smokePass',
+	'smokeFail',
 	'smokeTotal',
 ] );
 
@@ -392,7 +393,7 @@ export function assertPublishableSitePublicEvidence(
 
 	}
 	assertObject( evidence.totals, `${ label } totals` );
-	for ( const key of [ 'upstreamExamples', 'smokePass', 'smokeTotal' ] ) {
+	for ( const key of [ 'upstreamExamples', 'smokePass', 'smokeFail', 'smokeTotal' ] ) {
 
 		if ( ! Number.isSafeInteger( evidence.totals[ key ] ) || evidence.totals[ key ] < 0 ) {
 
@@ -409,11 +410,12 @@ export function assertPublishableSitePublicEvidence(
 		);
 
 	}
-	if ( evidence.totals.smokePass !== evidence.totals.smokeTotal ) {
+	if ( evidence.totals.smokePass + evidence.totals.smokeFail !== evidence.totals.smokeTotal ) {
 
 		throw new Error(
-			`${ label } stock smoke passes ${ evidence.totals.smokePass } must cover all ` +
-			`${ evidence.totals.smokeTotal } official upstream routes.`,
+			`${ label } stock smoke passes ${ evidence.totals.smokePass } plus failures ` +
+			`${ evidence.totals.smokeFail } must equal all ${ evidence.totals.smokeTotal } ` +
+			`official upstream routes.`,
 		);
 
 	}

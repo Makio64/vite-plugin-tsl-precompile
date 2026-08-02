@@ -1445,6 +1445,7 @@ test( 'featured homepage evidence is bound to versioned bytes and its aggregate 
 		totals: {
 			upstreamExamples: 1,
 			smokePass: 1,
+			smokeFail: 0,
 			smokeTotal: 1,
 		},
 			examples: [ {
@@ -1530,6 +1531,13 @@ test( 'featured homepage evidence is bound to versioned bytes and its aggregate 
 			totals: { ...evidence.totals, smokeTotal: 2 },
 		} ),
 		/stock smoke total 2 must equal its 1 official upstream routes/,
+	);
+	assert.throws(
+		() => assertPublishableSitePublicEvidence( {
+			...evidence,
+			totals: { ...evidence.totals, smokePass: 0 },
+		} ),
+		/stock smoke passes 0 plus failures 0 must equal all 1 official upstream routes/,
 	);
 
 	writeFileSync( resolve( scratch, replayPath ), 'tampered replay' );

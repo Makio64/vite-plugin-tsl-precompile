@@ -19,7 +19,7 @@ import {
 import {
 	resolveStockHarnessSourceFiles,
 	stockHarnessFingerprint,
-	validateCanonicalStockReport,
+	validateExactStockReport,
 } from '../../examples/batch/stock-report-contract.mjs';
 import {
 	assertCanonicalExampleId,
@@ -219,7 +219,7 @@ async function main() {
 	const stockReport = JSON.parse( stockReportRaw.toString( 'utf8' ) );
 	const stockReportDescriptor = describeCanonicalStockReport( STOCK_REPORT_JSON, stockReportRaw, stockReport );
 	const catalogueJson = JSON.parse( catalogueRaw.toString( 'utf8' ) );
-	validateCanonicalStockReport( stockReport, {
+	validateExactStockReport( stockReport, {
 		catalogue: catalogueJson,
 		catalogueSha256: sha256( catalogueRaw ),
 		harnessSha256: stockHarnessSha256,
@@ -456,6 +456,7 @@ async function main() {
 			wgslBytes: ordered.reduce( ( total, record ) => total + record.totalWgslBytes, 0 ),
 			smokeTotal: stockReport.total,
 			smokePass: stockReport.pass,
+			smokeFail: stockReport.fail,
 			pixelMatchCount: ordered.filter( ( record ) => record.badge === 'pixel-match' ).length,
 			visualMatchCount: ordered.filter( ( record ) => record.badge === 'visual-match' ).length,
 			rendersCount: ordered.filter( ( record ) => record.badge === 'renders' ).length,
@@ -500,7 +501,7 @@ async function main() {
 	console.log(
 		`[examples-data] totals: ${ out.totals.examplesProcessed } examples, ${ out.totals.materialsBaked } materials, ` +
 		`${ ( out.totals.wgslBytes / 1024 ).toFixed( 1 ) } KB WGSL, ` +
-		`official stock smoke ${ out.totals.smokePass }/${ out.totals.smokeTotal }, ` +
+		`official stock observation ${ out.totals.smokePass }/${ out.totals.smokeTotal }, ` +
 		`pixel-match ${ out.totals.pixelMatchCount }`,
 	);
 

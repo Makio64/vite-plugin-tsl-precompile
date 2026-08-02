@@ -100,7 +100,7 @@ jobs:
 
   tier1-visual:
     name: Tier-1 visual gate
-    runs-on: ubuntu-24.04
+    runs-on: macos-15
     timeout-minutes: 35
     steps:
       - name: Configure runner-temporary output paths
@@ -124,11 +124,11 @@ jobs:
           node-version: 24.18.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright install chromium
       - name: Build slim bundle with rewrite fallbacks fatal
         run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim
       - name: Run configured tier-1 visual subset
-        run: xvfb-run -a pnpm test:e2e:tier1 -- --three-repo="$GITHUB_WORKSPACE/three.js"
+        run: pnpm test:e2e:tier1 -- --three-repo="$GITHUB_WORKSPACE/three.js"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
