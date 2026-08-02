@@ -31,7 +31,9 @@ jobs:
       - name: Rebuild the checked slim bundle
         run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim
       - name: Transactionally recapture and preview every configured example
-        run: xvfb-run -a pnpm recapture:examples
+        # Full-branch refresh may collapse stale dual-hash aux identities
+        # (for example compute-debug lights) down to the live renderer set.
+        run: xvfb-run -a pnpm recapture:examples -- --allow-prune
       - name: Verify the committed artifact contract
         run: pnpm verify
       - name: Package a recoverable artifact snapshot
