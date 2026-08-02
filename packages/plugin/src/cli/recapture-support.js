@@ -1,6 +1,7 @@
 const SUPPORTED_BROWSERS = new Set( [ 'chromium', 'firefox', 'webkit' ] );
 const SUPPORTED_RENDERER_BACKENDS = new Set( [ 'webgpu', 'webgl' ] );
 const INTENTIONAL_NON_NETWORK_PROTOCOLS = new Set( [ 'about:', 'blob:', 'data:' ] );
+const RESOURCE_LOAD_ERROR = /^Failed to load resource(?::[\s\S]*)?$/i;
 
 const RECAPTURE_CHROMIUM_BROWSER_ARGS = Object.freeze( [
 	'--enable-unsafe-webgpu',
@@ -847,6 +848,28 @@ function exactRecaptureFavicon( value, pageUrl ) {
 		resource.pathname === '/favicon.ico' &&
 		resource.search === '' &&
 		resource.hash === '';
+
+}
+
+export function isExactRecaptureFaviconFailure( event, pageUrl ) {
+
+	if ( ! event || typeof event !== 'object' ) return false;
+	const method = typeof event.method === 'string' && event.method ? event.method.toUpperCase() : 'GET';
+	if ( method !== 'GET' || ! exactRecaptureFavicon( event.url, pageUrl ) ) return false;
+	if ( event.kind === 'requestfailed' ) return true;
+	return event.kind === 'response' && Number.isInteger( Number( event.status ) ) && Number( event.status ) >= 400;
+
+}
+
+export function isCorrelatedRecaptureFaviconConsoleError( event, pageUrl, {
+	networkFailureObserved = false,
+} = {} ) {
+
+	if ( ! event || typeof event !== 'object' || event.level !== 'error' ) return false;
+	const message = String( event.message || '' ).trim();
+	if ( ! RESOURCE_LOAD_ERROR.test( message ) ) return false;
+	const url = typeof event.url === 'string' ? event.url : '';
+	return exactRecaptureFavicon( url, pageUrl ) || ( url === '' && networkFailureObserved === true );
 
 }
 

@@ -15,6 +15,7 @@
     "check:content": "node ../examples/batch/scripts/build-example-catalogue.mjs --check && node scripts/check-content.mjs",
     "build": "node scripts/build-agent-assets.mjs && node scripts/build-measurements-data.mjs && node scripts/build-live-examples.mjs && vite build && pnpm check:content",
     "preview": "vite preview",
+    "test:static": "node scripts/test-static-site.mjs",
     "test:live": "node scripts/test-live-example.mjs"
   },
   "dependencies": {

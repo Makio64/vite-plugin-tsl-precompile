@@ -7,6 +7,8 @@ import { resolve } from 'node:path';
 import {
 	captureCanSettle,
 	classifyRecaptureResourceFailure,
+	isCorrelatedRecaptureFaviconConsoleError,
+	isExactRecaptureFaviconFailure,
 	classifyRecaptureRendererBackendEvidence,
 	classifyRecaptureRendererBackendGate,
 	classifyRecaptureRouteOutcome,
@@ -820,6 +822,44 @@ test( 'recapture network policy ignores only exact same-origin favicon failures'
 		status: 500,
 		url: 'http://127.0.0.1:5199/favicon.ico',
 	}, pageUrl ), /HTTP 500/ );
+
+} );
+
+test( 'recapture correlates Chromium URL-less console duplicates only after an exact favicon failure', () => {
+
+	const pageUrl = 'http://127.0.0.1:5199/example';
+	const faviconFailure = {
+		kind: 'response',
+		method: 'GET',
+		status: 404,
+		url: 'http://127.0.0.1:5199/favicon.ico',
+	};
+	assert.equal( isExactRecaptureFaviconFailure( faviconFailure, pageUrl ), true );
+	assert.equal( isExactRecaptureFaviconFailure( {
+		...faviconFailure,
+		url: 'http://127.0.0.1:5199/assets/favicon.ico',
+	}, pageUrl ), false );
+
+	const consoleError = {
+		level: 'error',
+		message: 'Failed to load resource: the server responded with a status of 404 (Not Found)',
+		url: '',
+	};
+	assert.equal( isCorrelatedRecaptureFaviconConsoleError( consoleError, pageUrl ), false );
+	assert.equal( isCorrelatedRecaptureFaviconConsoleError(
+		consoleError,
+		pageUrl,
+		{ networkFailureObserved: true },
+	), true );
+	assert.equal( isCorrelatedRecaptureFaviconConsoleError( {
+		...consoleError,
+		url: 'http://127.0.0.1:5199/favicon.ico',
+	}, pageUrl ), true );
+	assert.equal( isCorrelatedRecaptureFaviconConsoleError( {
+		...consoleError,
+		message: 'application failed while handling favicon',
+		url: 'http://127.0.0.1:5199/favicon.ico',
+	}, pageUrl ), false );
 
 } );
 
