@@ -88,6 +88,13 @@ const PLUGIN_BARE_SOURCES = {
 	'vite-plugin-tsl-precompile/src/emit-updater.js': resolve( PLUGIN_SRC_DIR, 'emit-updater.js' ),
 };
 
+// The optional runtime Inspector import must remain a literal so Vite can
+// resolve the bare specifier in development. Keep it out of dependency
+// optimization, though: late discovery otherwise forces Vite to reload the
+// first capture page, and pre-bundling changes import.meta.url used by the
+// addon to locate its extensions manifest.
+const INSPECTOR_ADDON_SPECIFIER = 'three/addons/inspector/Inspector.js';
+
 // Generated virtual modules execute in the consumer graph, which may not
 // hoist the plugin's transitive contract dependency into the application
 // root. Resolve build-time materializers from this plugin installation so
@@ -418,8 +425,18 @@ export default function tslPrecompile( userOpts = {} ) {
 
 			}
 
+			const userOptimizeDepsExclude = userConfig.optimizeDeps && userConfig.optimizeDeps.exclude;
+			const shouldExcludeInspectorFromOptimization = env.command === 'serve' && ! (
+				Array.isArray( userOptimizeDepsExclude ) && userOptimizeDepsExclude.includes( INSPECTOR_ADDON_SPECIFIER )
+			);
+
 			return {
 				resolve: { alias },
+				...( shouldExcludeInspectorFromOptimization ? {
+					optimizeDeps: {
+						exclude: [ INSPECTOR_ADDON_SPECIFIER ],
+					},
+				} : {} ),
 				// Runtime capture cannot recover an npm patch version from
 				// THREE.REVISION (both 0.185.0 and 0.185.1 report "185").
 				// Expose the exact resolved package identity at compile
