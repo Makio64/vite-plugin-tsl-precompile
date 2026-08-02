@@ -210,11 +210,30 @@ test( 'Linux browser launch opts into deterministic WebGPU and WebGL SwiftShader
 		},
 	}, { args: baseArgs, platform: 'linux' } );
 	assert.equal( selected.browser, browser );
+	assert.equal( selected.channel, 'playwright-chromium' );
 	assert.deepEqual( calls, [ {
-		channel: 'chrome',
+		channel: 'chromium',
 		headless: true,
 		args: expectedArgs,
 	} ] );
+
+	const fallbackCalls = [];
+	const fallbackBrowser = {};
+	const selectedFallback = await launchEvidenceBrowser( {
+		async launch( options ) {
+
+			fallbackCalls.push( options );
+			if ( options.channel === 'chromium' ) throw new Error( 'bundled Chromium unavailable' );
+			return fallbackBrowser;
+
+		},
+	}, { args: baseArgs, platform: 'linux' } );
+	assert.equal( selectedFallback.browser, fallbackBrowser );
+	assert.equal( selectedFallback.channel, 'chrome' );
+	assert.deepEqual( fallbackCalls, [
+		{ channel: 'chromium', headless: true, args: expectedArgs },
+		{ channel: 'chrome', headless: true, args: expectedArgs },
+	] );
 
 } );
 

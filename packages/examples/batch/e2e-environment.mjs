@@ -143,15 +143,26 @@ export async function launchEvidenceBrowser( chromium, {
 } = {} ) {
 
 	const launchArgs = evidenceBrowserLaunchArgs( args, platform );
+	// Linux evidence is pinned to Playwright's installed Chromium revision. A
+	// runner's system Chrome can accept the SwiftShader flags yet report WebGPU
+	// as unavailable, making the environment non-reproducible. Keep system
+	// Chrome first on other platforms, where the bundled browser can expose a
+	// native adapter but still present a blank surface.
+	const primary = platform === 'linux'
+		? { launchChannel: 'chromium', evidenceChannel: 'playwright-chromium' }
+		: { launchChannel: 'chrome', evidenceChannel: 'chrome' };
+	const fallback = platform === 'linux'
+		? { launchChannel: 'chrome', evidenceChannel: 'chrome' }
+		: { launchChannel: 'chromium', evidenceChannel: 'playwright-chromium' };
 
 	let browser = await chromium.launch( {
-		channel: 'chrome',
+		channel: primary.launchChannel,
 		headless,
 		args: launchArgs,
 	} ).catch( () => null );
-	if ( browser ) return { browser, channel: 'chrome' };
-	browser = await chromium.launch( { channel: 'chromium', headless, args: launchArgs } );
-	return { browser, channel: 'playwright-chromium' };
+	if ( browser ) return { browser, channel: primary.evidenceChannel };
+	browser = await chromium.launch( { channel: fallback.launchChannel, headless, args: launchArgs } );
+	return { browser, channel: fallback.evidenceChannel };
 
 }
 
