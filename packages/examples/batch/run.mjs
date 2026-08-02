@@ -310,7 +310,7 @@ console.log( `[batch] static file server on http://localhost:${ port }/ (root: $
 
 // ---- Playwright loop -----------------------------------------------------
 
-const BROWSER_ARGS = [ '--enable-unsafe-webgpu', '--enable-dawn-features=allow_unsafe_apis', '--ignore-gpu-blocklist', '--no-sandbox', '--disable-dev-shm-usage' ];
+const BROWSER_ARGS = [ '--enable-unsafe-webgpu', '--enable-dawn-features=allow_unsafe_apis', '--enable-webgpu-developer-features', '--ignore-gpu-blocklist', '--no-sandbox', '--disable-dev-shm-usage' ];
 const MAX_RUNS_PER_BROWSER = 24;
 const NAV_TIMEOUT_MS = 25000;
 const RENDER_TIMEOUT_MS = 12000;
