@@ -1,4 +1,4 @@
-name: One-shot example artifact recapture
+name: One-shot dual-backend artifact recapture
 
 on:
   push:
