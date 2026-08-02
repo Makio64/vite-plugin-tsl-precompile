@@ -1,9 +1,9 @@
 name: One-shot canonical site evidence refresh
 
-# Manual only. Push-triggered evidence refresh re-runs the full stock +
-# capture/replay campaign on software WebGPU and is not required to host
-# already-committed artifacts.
 on:
+  push:
+    branches:
+      - codex/webgpu-webgl-final
   workflow_dispatch:
 
 permissions:
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   refresh:
-    if: github.ref == 'refs/heads/codex/recapture-artifacts'
+    if: github.ref == 'refs/heads/codex/webgpu-webgl-final'
     name: Generate, verify, and commit schema-2 site evidence
     runs-on: ubuntu-24.04
     timeout-minutes: 360
@@ -34,7 +34,7 @@ jobs:
           fetch-depth: 0
       - name: Require the completed artifact-recapture branch
         run: |
-          test "$GITHUB_REF" = "refs/heads/codex/recapture-artifacts"
+          test "$GITHUB_REF" = "refs/heads/codex/webgpu-webgl-final"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test ! -e .github/workflows/recapture-scratch.yml
           git ls-files -s packages/plugin/src/cli/recapture.js | grep -q '^100755 '
@@ -227,4 +227,4 @@ jobs:
           git ls-files -s packages/plugin/src/cli/recapture.js | grep -q '^100755 '
           git diff --cached --check
           git commit -m "chore: refresh canonical site evidence"
-          git push origin HEAD:codex/recapture-artifacts
+          git push origin HEAD:codex/webgpu-webgl-final
