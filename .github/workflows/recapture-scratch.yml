@@ -29,7 +29,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - name: Rebuild the checked slim bundle
-        run: pnpm --filter @tsl-precompile/runtime build:slim
+        run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim
       - name: Transactionally recapture and preview every configured example
         run: xvfb-run -a pnpm recapture:examples
       - name: Verify the committed artifact contract
@@ -63,13 +63,11 @@ jobs:
             ${{ runner.temp }}/recaptured-example-artifacts.tar.gz.sha256
           if-no-files-found: error
           retention-days: 14
-      - name: Commit the generated outputs and remove this one-shot workflow
+      - name: Commit only the generated outputs
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          rm .github/workflows/recapture-scratch.yml
-          git add -A -- \
-            .github/workflows/recapture-scratch.yml \
+          git add -- \
             packages/runtime/build/three.webgpu.slim.js \
             packages/runtime/build/three.webgpu.slim.meta.json \
             packages/examples/ocean/artifacts \
