@@ -1,0 +1,63 @@
+name: One-shot stock browser channel probe
+
+on:
+  push:
+    branches:
+      - codex/system-chrome-stock-probe
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    if: github.ref == 'refs/heads/codex/system-chrome-stock-probe'
+    name: Probe ${{ matrix.case }} with system Chrome
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        case:
+          - webgpu_pmrem_cubemap.html
+          - webgpu_particles.html
+          - webgpu_postprocessing_ssgi.html
+          - webgpu_postprocessing_bloom.html
+          - webgpu_water.html
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Check out the matching Three.js r185 corpus
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: mrdoob/three.js
+          ref: 2431a09f46f34c560bc8e44b33be0e567723d5b9 # official r185 commit
+          path: three.js
+          fetch-depth: 1
+          sparse-checkout: |
+            build
+            examples
+            src
+            package.json
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install full Playwright Chromium and its system dependencies
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Exercise the selected stock route
+        shell: bash
+        run: |
+          output="$RUNNER_TEMP/stock-probe/${{ matrix.case }}"
+          set +e
+          xvfb-run -a node packages/examples/batch/run.mjs \
+            --three-repo="$GITHUB_WORKSPACE/three.js" \
+            --filter="${{ matrix.case }}" \
+            --output-root="$output"
+          status=$?
+          set -e
+
+          test -f "$output/report.json"
+          jq '{ total, pass, fail, configuration, details }' "$output/report.json"
+          test "$(jq -r '.configuration.environment.browser.channel' "$output/report.json")" = "chrome"
+          exit "$status"
