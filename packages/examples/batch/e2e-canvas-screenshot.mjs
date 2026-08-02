@@ -63,6 +63,66 @@ export function restoreCanvasAfterScreenshot( target ) {
 
 }
 
+function screenshotErrorMessage( error ) {
+
+	return error && error.message || String( error );
+
+}
+
+/**
+ * Capture the selected canvas through Playwright's element screenshot path,
+ * then retry the exact compositor region if element screenshot bookkeeping
+ * fails. Both paths capture real page pixels; no placeholder evidence is ever
+ * synthesized.
+ */
+export async function captureCanvasRegion( page, canvas, box, {
+	elementTimeout = 3000,
+	fallbackTimeout = elementTimeout,
+} = {} ) {
+
+	try {
+
+		return await canvas.screenshot( { timeout: elementTimeout } );
+
+	} catch ( elementError ) {
+
+		const clip = {
+			x: Number( box && box.x ),
+			y: Number( box && box.y ),
+			width: Number( box && box.width ),
+			height: Number( box && box.height ),
+		};
+		if (
+			! page || typeof page.screenshot !== 'function' ||
+			! Number.isFinite( clip.x ) || ! Number.isFinite( clip.y ) ||
+			! Number.isFinite( clip.width ) || ! Number.isFinite( clip.height ) ||
+			clip.width <= 0 || clip.height <= 0
+		) {
+
+			throw new Error(
+				`Canvas element screenshot failed and its compositor clip is invalid: ${ screenshotErrorMessage( elementError ) }`,
+				{ cause: elementError },
+			);
+
+		}
+		try {
+
+			return await page.screenshot( { clip, timeout: fallbackTimeout } );
+
+		} catch ( fallbackError ) {
+
+			throw new AggregateError(
+				[ elementError, fallbackError ],
+				`Canvas element screenshot failed (${ screenshotErrorMessage( elementError ) }); ` +
+				`compositor-region fallback failed (${ screenshotErrorMessage( fallbackError ) }).`,
+			);
+
+		}
+
+	}
+
+}
+
 /**
  * Return stable canvas indices for examples whose async renderer initialization
  * makes DOM append order nondeterministic. Candidate positions come from

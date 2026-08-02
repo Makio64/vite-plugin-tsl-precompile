@@ -102,7 +102,7 @@ import { validateE2ESelection } from './e2e-selection.mjs';
 import { discoverLocalExampleCases as discoverSharedLocalExampleCases } from './local-example-discovery.mjs';
 import { describeLocalExampleDiscovery } from './e2e-local-source-contract.mjs';
 import { isTslpWarningMessage } from './e2e-warning-policy.mjs';
-import { canvasIndicesByBackendThenHorizontalPosition, canvasIndicesByHorizontalPosition, isolateCanvasForScreenshot, restoreCanvasAfterScreenshot } from './e2e-canvas-screenshot.mjs';
+import { canvasIndicesByBackendThenHorizontalPosition, canvasIndicesByHorizontalPosition, captureCanvasRegion, isolateCanvasForScreenshot, restoreCanvasAfterScreenshot } from './e2e-canvas-screenshot.mjs';
 import { browserStabilizationPolicyForExample, canvasOrderForExample } from './e2e-browser-stabilization-policy.mjs';
 import { createRendererBackendEvidence, uniqueRendererBackendValues } from './e2e-renderer-backend-evidence.mjs';
 import { hasReplayArtifactCoverage } from './e2e-artifact-policy.mjs';
@@ -3463,6 +3463,7 @@ async function dumpCanvases( page, name = '' ) {
 
 	const canvases = await page.$$( 'canvas' );
 	const shots = [];
+	const failures = [];
 	const canvasOrder = canvasOrderForExample( name );
 	let indices = canvasOrder === 'document'
 		? Array.from( canvases.keys() )
@@ -3507,14 +3508,31 @@ async function dumpCanvases( page, name = '' ) {
 			// Let the compositor observe the visibility change before Playwright
 			// clips the page for its element screenshot.
 			await page.waitForTimeout( 16 );
-			shots.push( await canvases[ i ].screenshot( { timeout: 3000 } ) );
+			shots.push( await captureCanvasRegion( page, canvases[ i ], box, {
+				elementTimeout: 3000,
+				fallbackTimeout: RENDER_TIMEOUT_MS,
+			} ) );
 
-		} catch ( _ ) { /* ignore this canvas */ }
+		} catch ( error ) {
+
+			failures.push( error );
+
+		}
 		finally {
 
 			try { await page.evaluate( restoreCanvasAfterScreenshot, canvases[ i ] ); } catch ( _ ) {}
 
 		}
+
+	}
+	if ( shots.length === 0 ) {
+
+		if ( failures.length > 0 ) {
+
+			throw new AggregateError( failures, `Could not capture a real canvas screenshot for ${ name || 'the current case' }.` );
+
+		}
+		throw new Error( `Could not find a visible canvas to screenshot for ${ name || 'the current case' }.` );
 
 	}
 	return shots;
@@ -3940,7 +3958,7 @@ async function brightFraction( page, pngBuf ) {
 
 		}
 
-	}, pngBuf.toString( 'base64' ) );
+	}, pngBuf.toString( 'base64' ) ).catch( () => 0 );
 
 }
 
@@ -4025,6 +4043,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 
 	};
 	trace( 'start' );
+	let shot = null;
 
 	let stepStartedAt = Date.now();
 	const context = await browser.newContext( { viewport: { width: 640, height: 480 } } );
@@ -4816,7 +4835,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 		trace( `canvas-backends-collected (${ canvasBackends.join( ',' ) || 'none' })` );
 
 		stepStartedAt = Date.now();
-		const shot = await dumpCanvas( page, name );
+		shot = await dumpCanvas( page, name );
 		mark( 'screenshotMs', stepStartedAt );
 		trace( 'screenshot-complete' );
 		// Re-measure bright from the final screenshot PNG — WebGPU canvas pixels
@@ -4898,7 +4917,7 @@ async function visitExample( browser, name, mode, waitMs ) {
 		const diagnostics = await page.evaluate( () => window.__tslpHarnessDiagnostics || null ).catch( () => null );
 		timings.totalMs = Date.now() - startedAt;
 		const visitErrors = [ ...browserFailures.messages(), ...errors, err && err.message || String( err ) ];
-		return { bright: 0, shot: null, errors: visitErrors, errorCount: visitErrors.length, warnings: warnings.slice( 0, 5 ), warningCount: warnings.length, canvasBackends, diagnostics, navigationError: true, context, page, timings, cleanup };
+		return { bright: 0, shot, errors: visitErrors, errorCount: visitErrors.length, warnings: warnings.slice( 0, 5 ), warningCount: warnings.length, canvasBackends, diagnostics, navigationError: true, context, page, timings, cleanup };
 
 	}
 
@@ -5154,13 +5173,21 @@ async function runOne( browser, name ) {
 	const minimumBrightFraction = minimumBrightFractionForExample( name, DEFAULT_MINIMUM_BRIGHT_FRACTION );
 
 	let pixelMetrics;
-	if ( capture.shot && replay.shot && capture.bright > minimumBrightFraction && replay.bright > minimumBrightFraction && replay.page ) {
+	if ( ! capture.shot || ! replay.shot ) {
+
+		pixelMetrics = { skipped: true, reason: 'screenshot missing' };
+
+	} else if ( capture.bright <= minimumBrightFraction || replay.bright <= minimumBrightFraction ) {
+
+		pixelMetrics = { skipped: true, reason: capture.bright <= minimumBrightFraction ? 'capture frame empty' : 'replay frame empty' };
+
+	} else if ( replay.page ) {
 
 		pixelMetrics = await comparePSNR( replay.page, capture.shot, replay.shot, name ).catch( ( err ) => ( { error: err && err.message || String( err ) } ) );
 
 	} else {
 
-		pixelMetrics = { skipped: true, reason: capture.bright <= minimumBrightFraction ? 'capture frame empty' : replay.bright <= minimumBrightFraction ? 'replay frame empty' : 'screenshot missing' };
+		pixelMetrics = { skipped: true, reason: 'replay page unavailable' };
 
 	}
 	let shotEvidence = { capture: null, replay: null };
@@ -5401,6 +5428,7 @@ function summarizeFailure( { artifactCoverageOk, userCount, auxCount, blockingCa
 		? 'capture produced auxiliary artifacts without complete background + render-output replay coverage'
 		: 'capture produced no replayable material artifacts';
 	if ( blockingCaptureErrors.length > 0 ) return blockingCaptureErrors[ 0 ].slice( 0, 500 );
+	if ( pixelGate?.reason === 'screenshot missing' ) return 'capture/replay screenshot evidence is missing';
 	if ( replayBright <= minimumBrightFraction ) return 'slim replay did not produce a non-empty frame';
 	if ( blockingReplayErrors.length > 0 ) return blockingReplayErrors[ 0 ].slice( 0, 500 );
 	if ( evidenceGate && evidenceGate.pass === false ) {

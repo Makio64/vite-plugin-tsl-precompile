@@ -298,6 +298,7 @@ function createEvidenceFixture( root, {
 	omitRepositorySource = null,
 	driftReportTotals = false,
 	failedPairedCase = false,
+	blackScreenshots = false,
 	failedSemanticGate = false,
 	missingSemanticGate = false,
 	missingEnvironment = false,
@@ -309,7 +310,7 @@ function createEvidenceFixture( root, {
 	mkdirSync( shotDir, { recursive: true } );
 	mkdirSync( artifactDir, { recursive: true } );
 	const passingName = 'webgpu_clearcoat.html';
-	const captureBytes = png( [ 20, 80, 140 ] );
+	const captureBytes = png( blackScreenshots ? [ 0, 0, 0 ] : [ 20, 80, 140 ] );
 	const replayBytes = Buffer.from( captureBytes );
 	const capturePath = join( shotDir, `${ passingName }.capture.png` );
 	const casePolicies = Object.fromEntries( CATALOGUE.upstreamCaseNames.map( ( name ) => [ name, casePolicy( name ) ] ) );
@@ -892,6 +893,44 @@ test( 'canonical aggregate coverage requires the exact upstream plus six local c
 	assert.equal( evidenceSet.canonical, true );
 	assert.equal( evidenceSet.cohorts.length, projects.length + 1 );
 	assert.deepEqual( evidenceSet.cohorts.map( ( cohort ) => cohort.id ).sort(), [ 'upstream', ...projects ].sort() );
+
+} );
+
+test( 'canonical aggregate publishes an honest failed black pair but still rejects a missing side', ( t ) => {
+
+	const root = mkdtempSync( join( tmpdir(), 'tslp-coverage-black-failure-' ) );
+	t.after( () => rmSync( root, { recursive: true, force: true } ) );
+	createEvidenceFixture( root, {
+		canonical: true,
+		failedPairedCase: true,
+		blackScreenshots: true,
+	} );
+	const projects = [ ...new Set( CATALOGUE.records
+		.filter( ( record ) => record.sourceKind === 'local' )
+		.map( ( record ) => record.source.project ) ) ];
+	projects.forEach( ( project, index ) => createLocalCohortFixture( root, project, index + 1 ) );
+
+	const complete = runCoverageSummary( root );
+	assert.equal( complete.status, 0, complete.stderr || complete.stdout );
+	const coverage = JSON.parse( readFileSync( join( root, 'coverage-summary.json' ), 'utf8' ) );
+	const row = coverage.rows.find( ( entry ) => entry.name === 'webgpu_clearcoat.html' );
+	assert.equal( row.hasCapture, true );
+	assert.equal( row.hasReplay, true );
+	assert.equal( row.identical, true );
+	assert.equal( row.verdict, 'fail' );
+	assert.equal( row.note, 'fixture forced a paired failure' );
+
+	rewritePrimaryEvidence( root, ( { report, manifest } ) => {
+
+		const detail = report.details.find( ( entry ) => entry.name === 'webgpu_clearcoat.html' );
+		const entry = manifest.cases.find( ( candidate ) => candidate.name === detail.name );
+		detail.evidence.replay = null;
+		entry.replay = null;
+
+	} );
+	const missing = runCoverageSummary( root );
+	assert.notEqual( missing.status, 0 );
+	assert.match( missing.stderr, /missing its capture\/replay evidence pair/ );
 
 } );
 

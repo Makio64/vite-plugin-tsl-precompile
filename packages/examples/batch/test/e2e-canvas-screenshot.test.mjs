@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import {
 	canvasIndicesByBackendThenHorizontalPosition,
 	canvasIndicesByHorizontalPosition,
+	captureCanvasRegion,
 	isolateCanvasForScreenshot,
 	restoreCanvasAfterScreenshot,
 } from '../e2e-canvas-screenshot.mjs';
@@ -61,6 +62,60 @@ test( 'Playwright screenshot callbacks are self-contained', () => {
 	assert.equal( typeof restore, 'function' );
 	assert.equal( isolate( null ), 0 );
 	assert.equal( restore( null ), 0 );
+
+} );
+
+test( 'canvas evidence falls back to the exact real compositor region', async () => {
+
+	const elementError = new Error( 'element screenshot timed out' );
+	const fallbackBytes = Buffer.from( 'real compositor pixels' );
+	const calls = [];
+	const canvas = {
+		async screenshot( options ) {
+
+			calls.push( [ 'element', options ] );
+			throw elementError;
+
+		},
+	};
+	const page = {
+		async screenshot( options ) {
+
+			calls.push( [ 'page', options ] );
+			return fallbackBytes;
+
+		},
+	};
+	const box = { x: 12, y: 34, width: 320, height: 240 };
+	const shot = await captureCanvasRegion( page, canvas, box, {
+		elementTimeout: 3000,
+		fallbackTimeout: 12000,
+	} );
+
+	assert.equal( shot, fallbackBytes );
+	assert.deepEqual( calls, [
+		[ 'element', { timeout: 3000 } ],
+		[ 'page', { clip: box, timeout: 12000 } ],
+	] );
+
+} );
+
+test( 'canvas evidence never fabricates bytes when both real capture paths fail', async () => {
+
+	const canvas = { screenshot: async () => { throw new Error( 'element failed' ); } };
+	const page = { screenshot: async () => { throw new Error( 'clip failed' ); } };
+
+	await assert.rejects(
+		captureCanvasRegion( page, canvas, { x: 0, y: 0, width: 640, height: 480 } ),
+		( error ) => {
+
+			assert.ok( error instanceof AggregateError );
+			assert.match( error.message, /element failed/ );
+			assert.match( error.message, /clip failed/ );
+			return true;
+
+		},
+	);
 
 } );
 
