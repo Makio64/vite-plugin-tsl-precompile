@@ -695,6 +695,7 @@ test( 'correctness lint has an exact command, authored scope, and generated excl
 test( 'declared Vite 6, 7, and 8 support has exact packed-consumer lanes', () => {
 
 	const rootPackage = JSON.parse( readFileSync( join( TEST_REPO_ROOT, 'package.json' ), 'utf8' ) );
+	assert.equal( rootPackage.packageManager, 'pnpm@10.34.5' );
 	assert.equal(
 		rootPackage.scripts[ 'test:fresh-project:vite6' ],
 		'pnpm test:fresh-project -- --vite-version=6.4.3 --typescript-version=5.6.3',
@@ -1810,7 +1811,7 @@ test( 'workflow executables use immutable action SHAs and fixed runtime baseline
 		const path = join( workflowsDirectory, file );
 		const source = readFileSync( path, 'utf8' );
 		assert.doesNotMatch( source, /\bruns-on:\s*ubuntu-latest\b/, `${ file } uses a moving runner alias` );
-		for ( const match of source.matchAll( /^    env:\n((?:      [^\n]*\n)*)/gm ) ) {
+		for ( const match of source.matchAll( /^ {4}env:\n((?: {6}[^\n]*\n)*)/gm ) ) {
 
 			assert.doesNotMatch(
 				match[ 1 ],

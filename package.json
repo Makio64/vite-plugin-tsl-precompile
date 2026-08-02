@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "description": "Vite plugin that AOT-compiles three.js TSL materials marked with .precompile(name).",
   "type": "module",
-  "packageManager": "pnpm@11.1.0",
+  "packageManager": "pnpm@10.34.5",
   "engines": {
     "node": ">=20.19"
   },
