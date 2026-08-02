@@ -39,7 +39,16 @@ const EXAMPLE_SPECS = [
 			},
 		],
 	},
-	{ name: 'ocean', filter: 'examples-ocean', paths: [ '/' ], sources: [ 'main.js' ] },
+	{
+		name: 'ocean',
+		filter: 'examples-ocean',
+		paths: [ '/' ],
+		sources: [ 'main.js' ],
+		// The PMREM sky capture can finish near the default 10s boundary on
+		// software WebGPU runners. Keep the route bounded without grading a
+		// valid final POST as an empty capture because of scheduler jitter.
+		timeout: 60_000,
+	},
 	{ name: 'pbr-shadows', filter: 'examples-pbr-shadows', paths: [ '/' ], sources: [ 'main.js' ] },
 	{
 		name: 'shadow-debug',
@@ -48,10 +57,22 @@ const EXAMPLE_SPECS = [
 		sources: [ 'src' ],
 		autoMark: false,
 		timeout: 60000,
-			requiredAuxiliaryShapes: [
-				...INTERNAL_PASS_FAMILY_REQUIREMENTS[ 'shadow-vsm' ].requiredAuxiliaryShapes,
-				...internalPassFamilyShapes( 'shadow-vsm' ),
-			],
+		requiredAuxiliaryShapes: [
+			...INTERNAL_PASS_FAMILY_REQUIREMENTS[ 'shadow-vsm' ].requiredAuxiliaryShapes,
+			...internalPassFamilyShapes( 'shadow-vsm' ),
+		],
+		productionPreviewRoutes: [
+			{
+				path: '/vsm.html',
+				receiptId: 'shadow-debug:vsm.html',
+				domain: { type: 'vsm', lightKind: 'directional' },
+			},
+			{
+				path: '/spot.html?shadow=vsm',
+				receiptId: 'shadow-debug:spot.html?shadow=vsm',
+				domain: { type: 'vsm', lightKind: 'spot' },
+			},
+		],
 	},
 	{
 		name: 'postprocessing-debug',
@@ -69,9 +90,31 @@ const EXAMPLE_SPECS = [
 		name: 'pmrem-debug',
 		filter: 'examples-pmrem-debug',
 		cases: 'packages/examples/pmrem-debug/e2e-cases.json',
-			sources: [ 'src' ],
-			timeout: 60000,
-			requiredAuxiliaryShapes: internalPassFamilyShapes( 'pmrem' ),
+		sources: [ 'src' ],
+		timeout: 60000,
+		requiredAuxiliaryShapes: internalPassFamilyShapes( 'pmrem' ),
+		productionPreviewRoutes: [
+			{
+				path: '/equirect.html',
+				receiptId: 'pmrem-debug:equirect.html',
+				domain: { type: 'pmrem', mode: 'equirect' },
+			},
+			{
+				path: '/cubemap.html',
+				receiptId: 'pmrem-debug:cubemap.html',
+				domain: { type: 'pmrem', mode: 'cubemap' },
+			},
+			{
+				path: '/from-scene.html',
+				receiptId: 'pmrem-debug:from-scene.html',
+				domain: { type: 'pmrem', mode: 'from-scene' },
+			},
+			{
+				path: '/transmission.html',
+				receiptId: 'pmrem-debug:transmission.html',
+				domain: { type: 'pmrem', mode: 'transmission' },
+			},
+		],
 	},
 	{
 		name: 'mrt-debug',

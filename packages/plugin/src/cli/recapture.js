@@ -23,9 +23,12 @@ import {
 	createRecaptureRetryArgv,
 	createRecaptureVerifyArgv,
 	installRecaptureActivityCounter,
+	isCorrelatedRecaptureFaviconConsoleError,
+	isExactRecaptureFaviconFailure,
 	isTransientRecaptureNavigationError,
 	navigateWithColdReloadRetry,
 	parseRecaptureArgs,
+	recaptureBrowserLaunchOptions,
 	RECAPTURE_HELP,
 	RECAPTURE_VIEWPORT,
 	recoverColdReloadDuringPolling,
@@ -188,23 +191,13 @@ if ( ! browserType ) {
 
 }
 
-const browserArgs = browserName === 'chromium'
-	? [
-		'--enable-unsafe-webgpu',
-		'--ignore-gpu-blocklist',
-		'--no-sandbox',
-		'--disable-dev-shm-usage',
-	]
-	: [];
+const browserLaunchOptions = recaptureBrowserLaunchOptions( browserName, { headless } );
 
 progress( `[tsl-precompile] Launching ${ browserName }...` );
 let browser;
 try {
 
-	browser = await browserType.launch( {
-		headless,
-		args: browserArgs,
-	} );
+	browser = await browserType.launch( browserLaunchOptions );
 
 } catch ( error ) {
 
@@ -265,6 +258,7 @@ try {
 			await context.addInitScript( installRecaptureActivityCounter, { requestedBackend } );
 			page = await context.newPage();
 			let navigationEpoch = 0;
+			let pendingExactFaviconConsoleError = false;
 			const routeFailureTracker = createRecaptureFailureTracker();
 			page.on( 'framenavigated', ( frame ) => {
 
@@ -282,8 +276,28 @@ try {
 
 				const type = message.type();
 				const text = message.text();
+				let location = null;
+				try {
+
+					location = message.location();
+
+				} catch {
+
+					location = null;
+
+				}
 				if ( type === 'error' ) {
 
+					if ( isCorrelatedRecaptureFaviconConsoleError( {
+						level: type,
+						message: text,
+						url: location && location.url || '',
+					}, fullUrl, { networkFailureObserved: pendingExactFaviconConsoleError } ) ) {
+
+						pendingExactFaviconConsoleError = false;
+						return;
+
+					}
 					warning( `\x1b[31m[console-error] ${ text }\x1b[0m` );
 					routeFailureTracker.record( navigationEpoch, 'console', text );
 
@@ -296,12 +310,14 @@ try {
 			} );
 			page.on( 'requestfailed', ( request ) => {
 
-				const failure = classifyRecaptureResourceFailure( {
+				const event = {
 					kind: 'requestfailed',
 					method: request.method(),
 					url: request.url(),
 					message: request.failure()?.errorText || 'unknown network failure',
-				}, fullUrl );
+				};
+				if ( isExactRecaptureFaviconFailure( event, fullUrl ) ) pendingExactFaviconConsoleError = true;
+				const failure = classifyRecaptureResourceFailure( event, fullUrl );
 				if ( failure ) {
 
 					warning( `\x1b[31m[request-failed] ${ failure }\x1b[0m` );
@@ -312,12 +328,14 @@ try {
 			} );
 			page.on( 'response', ( response ) => {
 
-				const failure = classifyRecaptureResourceFailure( {
+				const event = {
 					kind: 'response',
 					method: response.request().method(),
 					status: response.status(),
 					url: response.url(),
-				}, fullUrl );
+				};
+				if ( isExactRecaptureFaviconFailure( event, fullUrl ) ) pendingExactFaviconConsoleError = true;
+				const failure = classifyRecaptureResourceFailure( event, fullUrl );
 				if ( failure ) {
 
 					warning( `\x1b[31m[response-error] ${ failure }\x1b[0m` );

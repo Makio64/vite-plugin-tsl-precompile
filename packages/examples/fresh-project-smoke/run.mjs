@@ -129,7 +129,7 @@ const PKG_JSON = ( contractTgz, runtimeTgz, pluginTgz ) => JSON.stringify( {
 	dependencies: {
 		'@tsl-precompile/contract': `file:./${ contractTgz }`,
 		'@tsl-precompile/runtime': `file:./${ runtimeTgz }`,
-		three: '0.184.0',
+		three: '0.185.1',
 	},
 	devDependencies: {
 		'vite-plugin-tsl-precompile': `file:./${ pluginTgz }`,

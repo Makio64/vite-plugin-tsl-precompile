@@ -10,6 +10,8 @@ import { build as viteBuild, createServer } from 'vite';
 import tslPrecompile from '../../src/index.js';
 
 const EXAMPLE_ROOT = fileURLToPath( new URL( '../../../examples/getting-started', import.meta.url ) );
+const INSPECTOR_LOADER = fileURLToPath( new URL( '../../../runtime/src/inspector-loader.js', import.meta.url ) );
+const INSPECTOR_ADDON_SPECIFIER = 'three/addons/inspector/Inspector.js';
 
 test( 'Vite resolves runtime setup and apply entries to development only while serving', async () => {
 
@@ -54,6 +56,46 @@ test( 'Vite resolves runtime setup and apply entries to development only while s
 		if ( server ) await server.close();
 		if ( originalNodeEnv === undefined ) delete process.env.NODE_ENV;
 		else process.env.NODE_ENV = originalNodeEnv;
+		await rm( cacheDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'Vite serves the optional Inspector from source without replacing consumer optimizer config', async () => {
+
+	const cacheDir = await mkdtemp( join( tmpdir(), 'tslp-inspector-vite-dev-' ) );
+	let server = null;
+	try {
+
+		server = await createServer( {
+			configFile: false,
+			root: EXAMPLE_ROOT,
+			cacheDir,
+			logLevel: 'silent',
+			plugins: [ tslPrecompile() ],
+			server: { middlewareMode: true },
+			optimizeDeps: {
+				include: [ 'three', 'three/webgpu', 'three/tsl' ],
+				exclude: [ 'consumer-owned-addon' ],
+			},
+		} );
+		assert.deepEqual( server.config.optimizeDeps.include, [ 'three', 'three/webgpu', 'three/tsl' ] );
+		assert.equal( server.config.optimizeDeps.exclude.includes( 'consumer-owned-addon' ), true );
+		assert.equal( server.config.optimizeDeps.exclude.includes( INSPECTOR_ADDON_SPECIFIER ), true );
+
+		const container = server.environments && server.environments.client
+			? server.environments.client.pluginContainer
+			: server.pluginContainer;
+		const resolved = await container.resolveId( INSPECTOR_ADDON_SPECIFIER, INSPECTOR_LOADER );
+		assert.ok( resolved );
+		const normalizedId = resolved.id.replaceAll( '\\', '/' );
+		assert.match( normalizedId.split( '?' )[ 0 ], /\/three\/examples\/jsm\/inspector\/Inspector\.js$/ );
+		assert.doesNotMatch( normalizedId, /\/\.vite\/deps\// );
+
+	} finally {
+
+		if ( server ) await server.close();
 		await rm( cacheDir, { recursive: true, force: true } );
 
 	}

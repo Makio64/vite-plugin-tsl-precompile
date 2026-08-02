@@ -3,5 +3,5 @@ command = "pnpm build:site"
 publish = "packages/site/dist"
 
 [build.environment]
-NODE_VERSION = "22"
+NODE_VERSION = "24.18.0"
 SITE_BASE = "/"

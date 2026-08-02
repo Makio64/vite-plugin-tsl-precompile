@@ -6,6 +6,8 @@ import {
 	createRendererBackendEvidence,
 	uniqueRendererBackendValues,
 } from '../e2e-renderer-backend-evidence.mjs';
+import { canvasOrderForExample } from '../e2e-browser-stabilization-policy.mjs';
+import { tierExamples } from '../psnr.mjs';
 
 const runnerSource = readFileSync( new URL( '../run-e2e.mjs', import.meta.url ), 'utf8' );
 
@@ -59,6 +61,19 @@ test( 'non-dual examples report observed values without turning them into a gate
 	assert.equal( evidence.enabled, false );
 	assert.equal( evidence.pass, true );
 	assert.deepEqual( evidence.visits, { capture: [ 'webgpu' ], replay: [] } );
+
+} );
+
+test( 'Tier-1 includes every declared dual-backend fixture', () => {
+
+	const dualBackendCases = tierExamples( 'tier1' )
+		.filter( ( name ) => canvasOrderForExample( name ) === 'webgpu-backend-first' )
+		.sort();
+	assert.deepEqual( dualBackendCases, [
+		'webgpu_storage_buffer.html',
+		'webgpu_texturegather.html',
+		'webgpu_texturegrad.html',
+	] );
 
 } );
 

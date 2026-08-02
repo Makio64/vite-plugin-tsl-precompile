@@ -6,7 +6,7 @@
   "type": "module",
   "packageManager": "pnpm@10.34.5",
   "engines": {
-    "node": ">=20.19"
+    "node": ">=24.0.0"
   },
   "scripts": {
     "build": "node scripts/examples-build-contract.mjs && pnpm -r --filter=!examples-* build",

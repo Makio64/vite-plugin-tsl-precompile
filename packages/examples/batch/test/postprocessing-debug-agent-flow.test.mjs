@@ -29,16 +29,19 @@ test( 'postprocessing debug uses the one-call setup and settles real marker rend
 test( 'postprocessing variant capture renders every dormant material state before aux capture', () => {
 
 	const variants = readExampleSource( 'variants.js' );
-	const stateMatrix = variants.indexOf( '\t\tawait renderCaptureVariantsOncePerFrame(' );
+	const stateMatrix = variants.indexOf( '\t\tawait renderCaptureStatesOncePerFrame(' );
 	const markerSettlement = variants.indexOf( '\t\tawait capture.setup.waitForCaptureSettled( {' );
 	const auxiliaryCapture = variants.indexOf( '\tconst plainAux = await ensurePipelineAux(' );
+	const bloomPreflight = variants.indexOf( '\t\t\t\tpost.bloom.render();' );
 
 	assert.ok( stateMatrix > 0 );
+	assert.ok( bloomPreflight > 0 );
 	assert.ok( markerSettlement > stateMatrix );
 	assert.ok( auxiliaryCapture > markerSettlement );
-	assert.match( variants, /const variantName = VARIANT_ORDER\[ variantIndex \];\s+variants\.select\( variantName, cube \);\s+postProcessing\.render\(\);\s+variantIndex \+\+;/ );
-	assert.match( variants, /if \( variantIndex === VARIANT_ORDER\.length \) finish\(\);/ );
-	assert.match( variants, /variants\.select\( 'ember', cube \);\s+await capture\.setup\.waitForCaptureSettled/ );
+	assert.match( variants, /const variantName = VARIANT_ORDER\[ variantIndex \];\s+variants\.select\( variantName, cube \);\s+post\.plain\.render\(\);\s+variantIndex \+\+;/ );
+	assert.match( variants, /variants\.select\( 'ember', cube \);\s+post\.bloom\.render\(\);\s+finish\(\);/ );
+	assert.match( variants, /await renderCaptureStatesOncePerFrame\( renderer, post, variants, cube \);\s+await capture\.setup\.waitForCaptureSettled/ );
+	assert.match( variants, /bloomPipeline\.outputColorTransform = false;\s+bloomPipeline\.outputNode = renderOutput\( scenePassColor\.add\( bloom\( scenePassColor \) \) \);/ );
 
 } );
 

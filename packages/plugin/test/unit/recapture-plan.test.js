@@ -97,6 +97,46 @@ test( 'recapture-all covers every artifact-producing example route', () => {
 		[ 'pmrem-cubemap', 'pmrem-equirect', 'pmrem-blur', 'pmrem-ggx' ],
 	);
 	assert.deepEqual(
+		plan.find( ( example ) => example.name === 'shadow-debug' ).productionPreviewRoutes,
+		[
+			{
+				path: '/vsm.html',
+				receiptId: 'shadow-debug:vsm.html',
+				domain: { type: 'vsm', lightKind: 'directional' },
+			},
+			{
+				path: '/spot.html?shadow=vsm',
+				receiptId: 'shadow-debug:spot.html?shadow=vsm',
+				domain: { type: 'vsm', lightKind: 'spot' },
+			},
+		],
+	);
+	assert.deepEqual(
+		plan.find( ( example ) => example.name === 'pmrem-debug' ).productionPreviewRoutes,
+		[
+			{
+				path: '/equirect.html',
+				receiptId: 'pmrem-debug:equirect.html',
+				domain: { type: 'pmrem', mode: 'equirect' },
+			},
+			{
+				path: '/cubemap.html',
+				receiptId: 'pmrem-debug:cubemap.html',
+				domain: { type: 'pmrem', mode: 'cubemap' },
+			},
+			{
+				path: '/from-scene.html',
+				receiptId: 'pmrem-debug:from-scene.html',
+				domain: { type: 'pmrem', mode: 'from-scene' },
+			},
+			{
+				path: '/transmission.html',
+				receiptId: 'pmrem-debug:transmission.html',
+				domain: { type: 'pmrem', mode: 'transmission' },
+			},
+		],
+	);
+	assert.deepEqual(
 		plan.find( ( example ) => example.name === 'getting-started' ).backends,
 		[ 'webgpu', 'webgl' ],
 		'the docs-site slim canary is recaptured for both WebGPURenderer backends',
@@ -132,7 +172,7 @@ test( 'recapture-all covers every artifact-producing example route', () => {
 	);
 	assert.deepEqual(
 		plan
-			.filter( ( example ) => example.name !== 'getting-started' )
+			.filter( ( example ) => ! [ 'getting-started', 'shadow-debug', 'pmrem-debug' ].includes( example.name ) )
 			.flatMap( ( example ) => example.productionPreviewRoutes ),
 		[],
 		'unrelated recapture examples remain build-only',
@@ -179,11 +219,46 @@ test( 'long-running recapture subsets carry explicit bounded timeouts', () => {
 			.filter( ( example ) => Object.hasOwn( example, 'timeout' ) )
 			.map( ( example ) => [ example.name, example.timeout ] ),
 		[
+			[ 'ocean', 60000 ],
 			[ 'shadow-debug', 60000 ],
 			[ 'postprocessing-debug', 60000 ],
 			[ 'pmrem-debug', 60000 ],
 			[ 'wow-showcase', 45000 ],
 		],
+	);
+
+	const readme = readFileSync(
+		resolve( REPO, 'packages/examples/pmrem-debug/README.md' ),
+		'utf8',
+	);
+	assert.match( readme, /--timeout 60000/ );
+
+} );
+
+test( 'pmrem-debug shared artifact routes keep captured scene evidence invariant', () => {
+
+	const source = readFileSync(
+		resolve( REPO, 'packages/examples/pmrem-debug/src/shared.js' ),
+		'utf8',
+	);
+
+	assert.match( source, /const SHARED_DIRECTIONAL_LIGHT_INTENSITY = 0\.45;/ );
+	assert.match( source, /const SHARED_ENVIRONMENT_INTENSITY = 1\.25;/ );
+	assert.match(
+		source,
+		/new DirectionalLight\( 0xffffff, SHARED_DIRECTIONAL_LIGHT_INTENSITY \)/,
+	);
+	assert.doesNotMatch(
+		source,
+		/new DirectionalLight\([\s\S]{0,120}mode === ['"]transmission['"]/,
+	);
+	assert.match(
+		source,
+		/scene\.environmentIntensity = SHARED_ENVIRONMENT_INTENSITY;/,
+	);
+	assert.doesNotMatch(
+		source,
+		/scene\.environmentIntensity = mode === ['"]transmission['"]/,
 	);
 
 

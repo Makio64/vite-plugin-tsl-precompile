@@ -1,0 +1,571 @@
+{
+  "__materialShape": "pmrem-cubemap",
+  "__configHash": "6b19fe2354212b6594c2b603131799778cdff15f03a1e4c36568babe404676fe",
+  "__hash": "fc19e16ced84677b5e09a251eb323cc931667e05ee0b88da5b000e3b9a2200d4",
+  "__name": "aux-pmrem-cubemap-6b19fe235421",
+  "threeVersion": "0.185.1",
+  "pluginVersion": "0.1.0",
+  "artifact": {
+    "version": 3,
+    "cacheKey": 11576100479207388,
+    "shaderLanguage": "wgsl",
+    "variantKey": "webgpu:11576100479207388",
+    "materialShape": "pmrem-cubemap",
+    "vertexShader": "// Three.js r185 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : mat4x4<f32>,\n\tnodeUniform4 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying4 : vec2<f32>,\n\t@location( 1 ) nodeVarying5 : f32,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar3 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) faceIndex : f32,\n\t@location( 2 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying4 = uv;\n\tvaryings.nodeVarying5 = faceIndex;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform4 );\n\tpositionLocal = position;\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar3 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar3;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
+    "fragmentShader": "// Three.js r185 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_cube<f32>;\n\nstruct objectStruct {\n\tnodeUniform1 : mat4x4<f32>,\n\tnodeUniform4 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> nodeVar1 : vec4<f32>;\nvar<private> nodeVar2 : vec4<f32>;\n\n// codes\nfn getDirection ( uv : vec2<f32>, face : f32 ) -> vec3<f32> {\n\n\tvar nodeVar0 : vec2<f32>;\n\tvar nodeVar1 : vec3<f32>;\n\tvar nodeVar2 : vec2<f32>;\n\tvar nodeVar3 : vec2<f32>;\n\tvar nodeVar4 : vec2<f32>;\n\n\tnodeVar0 = uv;\n\tnodeVar0 = ( ( vec2<f32>( 2.0 ) * nodeVar0 ) - vec2<f32>( 1.0 ) );\n\tnodeVar1 = vec3<f32>( nodeVar0, 1.0 );\n\n\tif ( ( face == 0.0 ) ) {\n\n\t\tnodeVar1 = nodeVar1.zyx;\n\t\t\n\n\t} else {\n\n\n\t\tif ( ( face == 1.0 ) ) {\n\n\t\t\tnodeVar1 = nodeVar1.xzy;\n\t\t\tnodeVar2 = ( nodeVar1.xz * vec2<f32>( -1.0 ) );\n\t\t\tnodeVar1.x = nodeVar2[ 0 ];\n\t\t\tnodeVar1.z = nodeVar2[ 1 ];\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( face == 2.0 ) ) {\n\n\t\t\t\tnodeVar1.x = ( nodeVar1.x * -1.0 );\n\t\t\t\t\n\n\t\t\t} else {\n\n\n\t\t\t\tif ( ( face == 3.0 ) ) {\n\n\t\t\t\t\tnodeVar1 = nodeVar1.zyx;\n\t\t\t\t\tnodeVar3 = ( nodeVar1.xz * vec2<f32>( -1.0 ) );\n\t\t\t\t\tnodeVar1.x = nodeVar3[ 0 ];\n\t\t\t\t\tnodeVar1.z = nodeVar3[ 1 ];\n\t\t\t\t\t\n\n\t\t\t\t} else {\n\n\n\t\t\t\t\tif ( ( face == 4.0 ) ) {\n\n\t\t\t\t\t\tnodeVar1 = nodeVar1.xzy;\n\t\t\t\t\t\tnodeVar4 = ( nodeVar1.xy * vec2<f32>( -1.0 ) );\n\t\t\t\t\t\tnodeVar1.x = nodeVar4[ 0 ];\n\t\t\t\t\t\tnodeVar1.y = nodeVar4[ 1 ];\n\t\t\t\t\t\t\n\n\t\t\t\t\t} else {\n\n\n\t\t\t\t\t\tif ( ( face == 5.0 ) ) {\n\n\t\t\t\t\t\t\tnodeVar1.z = ( nodeVar1.z * -1.0 );\n\t\t\t\t\t\t\t\n\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\n\n\t\t\t\t\t}\n\n\t\t\t\t\t\n\n\t\t\t\t}\n\n\t\t\t\t\n\n\t\t\t}\n\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t}\n\n\n\treturn nodeVar1;\n\n}\n\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying4 : vec2<f32>,\n\t@location( 1 ) nodeVarying5 : f32 ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = normalize( getDirection( nodeVarying4, nodeVarying5 ) );\n\tnodeVar1 = ( object.nodeUniform1 * vec4<f32>( vec3<f32>( nodeVar0.x, nodeVar0.y, nodeVar0.z ), 1.0 ) );\n\tnodeVar2 = textureSample( nodeUniform0, nodeUniform0_sampler, vec3<f32>( ( - nodeVar1.x ), nodeVar1.yz ) );\n\n\t// result\n\n\toutput.color = nodeVar2;\n\n\treturn output;\n\n}\n",
+    "computeShader": "",
+    "attributes": [
+      {
+        "name": "uv",
+        "type": "vec2",
+        "source": "geometry"
+      },
+      {
+        "name": "faceIndex",
+        "type": "float",
+        "source": "geometry"
+      },
+      {
+        "name": "position",
+        "type": "vec3",
+        "source": "geometry"
+      }
+    ],
+    "bindings": [
+      {
+        "name": "render",
+        "bindings": [
+          {
+            "name": "render",
+            "kind": "uniform-buffer",
+            "visibility": 7,
+            "textureType": null,
+            "byteLength": 128,
+            "access": null
+          }
+        ]
+      },
+      {
+        "name": "object",
+        "bindings": [
+          {
+            "name": "nodeUniform0_sampler",
+            "kind": "sampler",
+            "visibility": 2,
+            "textureType": null,
+            "byteLength": null,
+            "access": null,
+            "comparison": false
+          },
+          {
+            "name": "nodeUniform0",
+            "kind": "sampled-texture",
+            "visibility": 2,
+            "textureType": "cube",
+            "byteLength": null,
+            "access": "readOnly"
+          },
+          {
+            "name": "object",
+            "kind": "uniform-buffer",
+            "visibility": 7,
+            "textureType": null,
+            "byteLength": 128,
+            "access": null
+          }
+        ]
+      }
+    ],
+    "uniformPlan": [
+      {
+        "name": "render",
+        "shared": true,
+        "visibility": 7,
+        "byteLength": 128,
+        "slots": [
+          {
+            "name": "cameraProjectionMatrix",
+            "offset": 0,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "camera.projectionMatrix",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  -1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              }
+            }
+          },
+          {
+            "name": "cameraViewMatrix",
+            "offset": 64,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "camera.viewMatrix",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              }
+            }
+          }
+        ],
+        "textures": [],
+        "storageBuffers": [],
+        "orderedBindings": [
+          {
+            "type": "ubo",
+            "name": "render",
+            "byteLength": 128,
+            "visibility": 7,
+            "slots": [
+              {
+                "name": "cameraProjectionMatrix",
+                "offset": 0,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "camera.projectionMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      -1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "cameraViewMatrix",
+                "offset": 64,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "camera.viewMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "object",
+        "shared": false,
+        "visibility": 2,
+        "byteLength": 128,
+        "slots": [
+          {
+            "name": "nodeUniform1",
+            "offset": 0,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "environment.rotation",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              }
+            }
+          },
+          {
+            "name": "nodeUniform4",
+            "offset": 64,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "object.worldMatrix",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              }
+            }
+          }
+        ],
+        "textures": [
+          {
+            "bindingKind": "sampler",
+            "name": "nodeUniform0_sampler",
+            "textureType": "unknown",
+            "access": null,
+            "visibility": 2,
+            "source": {
+              "kind": "artifact.texture",
+              "textureUuid": "7b4a0754-08b6-4f18-b0d6-6b7a98122920",
+              "textureName": "pmrem-debug-cube-source",
+              "mapping": 301,
+              "wrapS": 1001,
+              "wrapT": 1001,
+              "magFilter": 1006,
+              "minFilter": 1008,
+              "anisotropy": 1,
+              "generateMipmaps": true,
+              "colorSpace": "srgb",
+              "flipY": false
+            },
+            "comparison": false
+          },
+          {
+            "bindingKind": "sampled-texture",
+            "name": "nodeUniform0",
+            "textureType": "cube",
+            "access": "readOnly",
+            "visibility": 2,
+            "source": {
+              "kind": "artifact.texture",
+              "textureUuid": "7b4a0754-08b6-4f18-b0d6-6b7a98122920",
+              "textureName": "pmrem-debug-cube-source",
+              "mapping": 301,
+              "wrapS": 1001,
+              "wrapT": 1001,
+              "magFilter": 1006,
+              "minFilter": 1008,
+              "anisotropy": 1,
+              "generateMipmaps": true,
+              "colorSpace": "srgb",
+              "flipY": false
+            }
+          }
+        ],
+        "storageBuffers": [],
+        "orderedBindings": [
+          {
+            "type": "sampler",
+            "ref": {
+              "bindingKind": "sampler",
+              "name": "nodeUniform0_sampler",
+              "textureType": "unknown",
+              "access": null,
+              "visibility": 2,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "7b4a0754-08b6-4f18-b0d6-6b7a98122920",
+                "textureName": "pmrem-debug-cube-source",
+                "mapping": 301,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1008,
+                "anisotropy": 1,
+                "generateMipmaps": true,
+                "colorSpace": "srgb",
+                "flipY": false
+              },
+              "comparison": false
+            }
+          },
+          {
+            "type": "sampled-texture",
+            "ref": {
+              "bindingKind": "sampled-texture",
+              "name": "nodeUniform0",
+              "textureType": "cube",
+              "access": "readOnly",
+              "visibility": 2,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "7b4a0754-08b6-4f18-b0d6-6b7a98122920",
+                "textureName": "pmrem-debug-cube-source",
+                "mapping": 301,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1008,
+                "anisotropy": 1,
+                "generateMipmaps": true,
+                "colorSpace": "srgb",
+                "flipY": false
+              }
+            }
+          },
+          {
+            "type": "ubo",
+            "name": "object",
+            "byteLength": 128,
+            "visibility": 7,
+            "slots": [
+              {
+                "name": "nodeUniform1",
+                "offset": 0,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "environment.rotation",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform4",
+                "offset": 64,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "object.worldMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "defaults": {},
+    "renderState": {
+      "transparent": false,
+      "opacity": 1,
+      "alphaTest": 0,
+      "alphaHash": false,
+      "alphaToCoverage": false,
+      "side": 0,
+      "depthTest": false,
+      "depthWrite": false,
+      "depthFunc": 3,
+      "blending": 0,
+      "blendSrc": 204,
+      "blendDst": 205,
+      "blendEquation": 100,
+      "colorWrite": true,
+      "premultipliedAlpha": false,
+      "dithering": false,
+      "toneMapped": true,
+      "vertexColors": false,
+      "fog": true,
+      "lights": false,
+      "allowOverride": true,
+      "forceSinglePass": false,
+      "polygonOffset": false,
+      "polygonOffsetFactor": 0,
+      "polygonOffsetUnits": 0,
+      "stencilWrite": false,
+      "stencilWriteMask": 255,
+      "stencilFunc": 519,
+      "stencilRef": 0,
+      "stencilFuncMask": 255,
+      "stencilFail": 7680,
+      "stencilZFail": 7680,
+      "stencilZPass": 7680
+    },
+    "meta": {
+      "updateNodes": 6,
+      "updateBeforeNodes": 0,
+      "updateAfterNodes": 0
+    },
+    "renderContextSelectors": [
+      "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":0,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"faceIndex\",{\"itemSize\":1,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":false,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":0,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"render-target\"}],\"depth\":false,\"depthTexture\":null,\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"offscreen-2d\"},\"version\":\"render-object-selector@1\"}"
+    ],
+    "materialUuid": "9aef55bf-b921-4b81-a73f-0cef904fbab6",
+    "userMaterialUuid": "9aef55bf-b921-4b81-a73f-0cef904fbab6",
+    "captureClock": 2.6306000000000056,
+    "pmremKind": "cubemap",
+    "replayConfig": {
+      "schema": "pmrem-layout@1",
+      "cubeSize": 64,
+      "lodMax": 6,
+      "target": {
+        "width": 336,
+        "height": 256
+      }
+    },
+    "internalPass": {
+      "schema": "internal-pass@1",
+      "family": "pmrem",
+      "stage": "cubemap",
+      "shape": "pmrem-cubemap",
+      "config": {
+        "schema": "pmrem-support@1",
+        "profile": "texture-cubemap",
+        "layout": {
+          "schema": "pmrem-layout@1",
+          "cubeSize": 64,
+          "lodMax": 6,
+          "target": {
+            "width": 336,
+            "height": 256
+          }
+        },
+        "source": {
+          "kind": "cubemap",
+          "dimension": "cube",
+          "componentType": "f32",
+          "sampleType": "float",
+          "samplingMode": "sample-implicit",
+          "samplerType": "filtering",
+          "wrapS": null,
+          "wrapT": null,
+          "float32Filterable": null,
+          "samples": 1
+        }
+      },
+      "uniforms": [],
+      "inputs": [
+        {
+          "role": "source",
+          "kind": "texture",
+          "group": "object",
+          "binding": "nodeUniform0",
+          "topology": {
+            "dimension": "cube",
+            "sampleType": "float",
+            "samples": 1,
+            "comparison": false
+          }
+        }
+      ],
+      "output": {
+        "topology": {
+          "dimension": "2d",
+          "depth": false,
+          "format": 1023,
+          "internalFormat": null,
+          "type": 1016,
+          "colorSpace": "srgb-linear"
+        }
+      }
+    },
+    "sourceThreeVersion": "0.185.1",
+    "sourceHashVersion": "0.1.0",
+    "artifactContentHashVersion": "artifact-content@3"
+  }
+}

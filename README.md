@@ -68,7 +68,7 @@ current exact measurements and provenance; measure your own production chunks.
 | **Browser** | WebGPU or WebGL 2, matching the backend captured for each render path |
 | **three.js** | Exactly `0.185.1` for this alpha (use `"three": "0.185.1"`, not a range). Artifacts are versioned against the exact native-shader emitter package; see [MIGRATION.md](MIGRATION.md) for the deliberate upgrade and re-capture workflow. |
 | **Vite** | `>= 6.4.3 < 9` |
-| **Node** | `>= 20.19` (build tooling only; not a runtime requirement) |
+| **Node** | `>= 24.0.0` (build tooling only; not a runtime requirement) |
 | **TypeScript** | `>= 5.6` when consuming the declarations (CI runs exact `5.6.3` and `5.9.3` packed consumers) |
 
 Classic `WebGLRenderer` is not supported. WebGL 2 support means the WebGL
@@ -625,7 +625,7 @@ may work but aren't guarded against regression.
 |---|---|---|
 | **Operating systems** | Ubuntu | Unit, visual, example-production, and packed-consumer gates run on Linux. macOS and Windows are not currently gated. |
 | **Browsers** | Chromium (Playwright, SwiftShader Vulkan) | Firefox WebGPU is still flag-gated; Safari is untested in CI. |
-| **Node** | 20.19.0, 22.12.0, and 24.18.0 | The complete suite runs on 24.18; default package checks exercise the declared 20.19 minimum, and packed-consumer lanes cover all three versions. |
+| **Node** | 24.18.0 | The complete suite, default package checks, and every packed-consumer lane run on the Node 24 LTS line. |
 | **Vite** | 6.4.3, 7.3.6, and 8.0.16 | Exact packed-consumer smokes exercise every major in the declared `>= 6.4.3 < 9` range. |
 | **three.js** | `0.185.1` (locked) + nightly run against `latest` ([three-compat.yml](.github/workflows/three-compat.yml)) | Artifacts are pinned to a three.js patch — see [MIGRATION.md](MIGRATION.md). |
 | **TypeScript** | 5.6.3 and 5.9.3 | Packed public declarations are checked in strict NodeNext mode with library checking enabled at the documented floor and current pinned compiler. |

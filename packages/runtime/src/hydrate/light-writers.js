@@ -128,13 +128,23 @@ function vecDistanceSq( a, b ) {
 
 }
 
-function colorDistanceSq( light, data ) {
+function lightColorForSource( light, source ) {
 
-	if ( ! light || ! light.color || ! data || data.length < 3 ) return Infinity;
+	if ( ! light ) return null;
+	return source && source.property === 'groundColor'
+		? light.groundColor || null
+		: light.color || null;
+
+}
+
+function colorDistanceSq( light, data, source = null ) {
+
+	const color = lightColorForSource( light, source );
+	if ( ! color || ! data || data.length < 3 ) return Infinity;
 	const intensity = Number.isFinite( light.intensity ) ? light.intensity : 1;
-	const r = light.color.r * intensity - data[ 0 ];
-	const g = light.color.g * intensity - data[ 1 ];
-	const b = light.color.b * intensity - data[ 2 ];
+	const r = color.r * intensity - data[ 0 ];
+	const g = color.g * intensity - data[ 1 ];
+	const b = color.b * intensity - data[ 2 ];
 	return r * r + g * g + b * b;
 
 }
@@ -481,7 +491,7 @@ export function findLightBySnapshot( scene, source, frame = null ) {
 
 			for ( const light of lights ) {
 
-				const score = colorDistanceSq( light, data );
+				const score = colorDistanceSq( light, data, source );
 				if ( score < bestScore ) {
 
 					bestScore = score;
@@ -797,11 +807,17 @@ export function writeLightValue( view, offset, kind, source, frame ) {
 			// intensity. Re-use a scratch field on `frame.scene` to avoid
 			// allocating per call; small enough to inline directly via
 			// component math instead of a Color helper.
-			const c = light.color || null;
+			const c = lightColorForSource( light, source );
+			if ( ! c ) {
+
+				writeSnapshot( view, offset, source.valueSnapshot );
+				return;
+
+			}
 			const intensity = Number.isFinite( light.intensity ) ? light.intensity : 1;
-			const r = c ? c.r * intensity : 0;
-			const g = c ? c.g * intensity : 0;
-			const b = c ? c.b * intensity : 0;
+			const r = c.r * intensity;
+			const g = c.g * intensity;
+			const b = c.b * intensity;
 			view.setFloat32( offset, r, true );
 			view.setFloat32( offset + 4, g, true );
 			view.setFloat32( offset + 8, b, true );

@@ -23,7 +23,7 @@ import {
 import { WebGPURenderer, MeshStandardNodeMaterial, PMREMGenerator } from 'three/webgpu';
 import { vec4, screenUV, color, mix } from 'three/tsl';
 import { installPrecompileMarker, setDevRenderer, precompileAuxiliary } from '@tsl-precompile/runtime';
-import * as THREE from 'three';
+import * as THREE_WEBGPU from 'three/webgpu';
 
 const status = document.getElementById( 'status' );
 const setStatus = ( msg ) => { status.textContent = msg; console.info( '[bg-test]', msg ); };
@@ -39,7 +39,7 @@ await renderer.init();
 setStatus( 'renderer ready' );
 
 // Install the dev-time precompile marker so .precompile() captures.
-installPrecompileMarker( THREE, { devEndpoint: '/__tsl-precompile/capture' } );
+installPrecompileMarker( THREE_WEBGPU, { devEndpoint: '/__tsl-precompile/capture' } );
 setDevRenderer( renderer );
 
 // ---- Scene -----------------------------------------------------------
@@ -103,8 +103,10 @@ scene.add( sphere );
 // reattach the captured TSL backgroundNode artifact at runtime.
 await precompileAuxiliary( renderer, scene, camera, {
 	devEndpoint: '/__tsl-precompile/capture',
-	three: THREE,
-	threeVersion: globalThis.__TSLP_THREE_PACKAGE_VERSION__ || String( THREE.REVISION ).match( /^\d+/ )[ 0 ],
+	// Auxiliary CubeRenderTarget capture needs the WebGPU NodeMaterial
+	// surface; the root `three` entry exposes the WebGL material family.
+	three: THREE_WEBGPU,
+	threeVersion: globalThis.__TSLP_THREE_PACKAGE_VERSION__ || String( THREE_WEBGPU.REVISION ).match( /^\d+/ )[ 0 ],
 } );
 setStatus( 'aux captured' );
 

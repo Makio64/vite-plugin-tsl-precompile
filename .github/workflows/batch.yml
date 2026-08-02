@@ -7,6 +7,15 @@ on:
   schedule:
     - cron: '17 5 * * *'   # 05:17 UTC daily
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Workload to run
+        required: true
+        default: canonical-campaign
+        type: choice
+        options:
+          - canonical-campaign
+          - recapture-examples
 
 permissions:
   contents: read
@@ -18,6 +27,7 @@ concurrency:
 jobs:
   batch:
     name: Exact 254-case evidence campaign
+    if: github.event_name == 'schedule' || inputs.mode == 'canonical-campaign'
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     steps:
@@ -93,4 +103,48 @@ jobs:
             ${{ runner.temp }}/nightly-stock-preflight/report.json
             ${{ runner.temp }}/nightly-stock-preflight/network/*.bin
           if-no-files-found: ignore
+          retention-days: 14
+
+  recapture-examples:
+    name: Recapture all ten example artifact directories
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'recapture-examples'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Transactionally recapture every configured example
+        run: xvfb-run -a pnpm recapture:examples
+      - name: Package recaptured artifact directories
+        run: |
+          archive_name="recaptured-example-artifacts.tar.gz"
+          archive="$RUNNER_TEMP/$archive_name"
+          tar --create --gzip --file="$archive" \
+            packages/examples/ocean/artifacts \
+            packages/examples/getting-started/artifacts \
+            packages/examples/pbr-shadows/artifacts \
+            packages/examples/shadow-debug/artifacts \
+            packages/examples/postprocessing-debug/artifacts \
+            packages/examples/pmrem-debug/artifacts \
+            packages/examples/mrt-debug/artifacts \
+            packages/examples/background/artifacts \
+            packages/examples/compute-debug/artifacts \
+            packages/examples/wow-showcase/artifacts
+          (
+            cd "$RUNNER_TEMP"
+            sha256sum "$archive_name" > "$archive_name.sha256"
+          )
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: recaptured-example-artifacts
+          path: |
+            ${{ runner.temp }}/recaptured-example-artifacts.tar.gz
+            ${{ runner.temp }}/recaptured-example-artifacts.tar.gz.sha256
+          if-no-files-found: error
           retention-days: 14

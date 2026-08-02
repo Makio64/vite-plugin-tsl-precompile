@@ -1,273 +1,373 @@
 {
-  "__aux": {
-    "post-process:d66c83157f4956c830038fb68f1e72d4e6eea287ef251e0d7186a89becf020ac": {
-      "file": "aux-post-process-d66c83157f49.json",
-      "shape": "post-process",
-      "configHash": "d66c83157f4956c830038fb68f1e72d4e6eea287ef251e0d7186a89becf020ac",
-      "hash": null,
-      "capturedAt": "2026-07-16T20:16:04.068Z"
-    },
-    "lights:c035f2fb0ad933b5c646d6b98c0b96bd735eee8f97d47d54b98ce53eb08d2cf7": {
-      "file": "aux-lights-c035f2fb0ad9.json",
-      "shape": "lights",
-      "configHash": "c035f2fb0ad933b5c646d6b98c0b96bd735eee8f97d47d54b98ce53eb08d2cf7",
-      "hash": null,
-      "capturedAt": "2026-07-16T20:16:04.070Z"
-    },
-    "render-output:64408283fa335f51e57c24dd9cc697109f23fd864f8474bc5e19cc6a7e835c7b": {
-      "file": "aux-render-output-64408283fa33.json",
-      "shape": "render-output",
-      "configHash": "64408283fa335f51e57c24dd9cc697109f23fd864f8474bc5e19cc6a7e835c7b",
-      "hash": null,
-      "capturedAt": "2026-07-16T20:25:19.296Z"
-    },
-    "post-process:d50a6fb22a07de357cb7b4a2b702da418017733037ba60c22d6046e4bdfbf0a8": {
-      "file": "aux-post-process-d50a6fb22a07.json",
-      "shape": "post-process",
-      "configHash": "d50a6fb22a07de357cb7b4a2b702da418017733037ba60c22d6046e4bdfbf0a8",
-      "hash": null,
-      "capturedAt": "2026-07-16T20:16:05.722Z"
-    },
-    "bloom-high-pass:a1da582b876cc931c0ac8370b661d8de4bb21ad275bbca454471596771d8cf92": {
-      "file": "aux-bloom-high-pass-a1da582b876c.json",
-      "shape": "bloom-high-pass",
-      "configHash": "a1da582b876cc931c0ac8370b661d8de4bb21ad275bbca454471596771d8cf92",
-      "hash": null,
-      "capturedAt": "2026-07-16T20:16:10.677Z"
-    },
-    "bloom-blur-0:678e00193b7c25d49fcf6e04a253bcd9e66df13dedd44d9b6a18a9c79278ea78": {
-      "file": "aux-bloom-blur-0-678e00193b7c.json",
-      "shape": "bloom-blur-0",
-      "configHash": "678e00193b7c25d49fcf6e04a253bcd9e66df13dedd44d9b6a18a9c79278ea78",
-      "hash": null,
-      "capturedAt": "2026-07-16T20:16:10.679Z"
-    },
-    "bloom-blur-1:53f1d9d07caff3ffd2ddfa773d3034f7ba4af9cd645b7fd29e5cdcab880f4ee1": {
-      "file": "aux-bloom-blur-1-53f1d9d07caf.json",
-      "shape": "bloom-blur-1",
-      "configHash": "53f1d9d07caff3ffd2ddfa773d3034f7ba4af9cd645b7fd29e5cdcab880f4ee1",
-      "hash": null,
-      "capturedAt": "2026-07-16T20:16:10.681Z"
-    },
-    "bloom-blur-2:cdd7cff002fef135559db58682fa7a03e0022031c37e3162feee347552268304": {
-      "file": "aux-bloom-blur-2-cdd7cff002fe.json",
-      "shape": "bloom-blur-2",
-      "configHash": "cdd7cff002fef135559db58682fa7a03e0022031c37e3162feee347552268304",
-      "hash": null,
-      "capturedAt": "2026-07-16T20:16:10.683Z"
-    },
-    "bloom-blur-3:518a8ca2eeaedcfd6f4735bcb2faad9e8ae4f5287ed72e76f8c642875cb5ab15": {
-      "file": "aux-bloom-blur-3-518a8ca2eeae.json",
-      "shape": "bloom-blur-3",
-      "configHash": "518a8ca2eeaedcfd6f4735bcb2faad9e8ae4f5287ed72e76f8c642875cb5ab15",
-      "hash": null,
-      "capturedAt": "2026-07-16T20:16:10.684Z"
-    },
-    "bloom-blur-4:ca0b13cc1a49c70ba9c95d29ab42f9ba9c21779dea75dfeac911d2facb7520ca": {
-      "file": "aux-bloom-blur-4-ca0b13cc1a49.json",
-      "shape": "bloom-blur-4",
-      "configHash": "ca0b13cc1a49c70ba9c95d29ab42f9ba9c21779dea75dfeac911d2facb7520ca",
-      "hash": null,
-      "capturedAt": "2026-07-16T20:16:10.687Z"
-    },
-    "bloom-composite:2c0192a94199fee282c7573a080e04bcdc32bf39963966203956dd8a8e079db8": {
-      "file": "aux-bloom-composite-2c0192a94199.json",
-      "shape": "bloom-composite",
-      "configHash": "2c0192a94199fee282c7573a080e04bcdc32bf39963966203956dd8a8e079db8",
-      "hash": null,
-      "capturedAt": "2026-07-16T20:16:10.689Z"
-    },
-    "render-output:1421b7e06e0065d07fa70bcb1ca1c0994ab2298bc6a392d0150686fd38a276fc": {
-      "file": "aux-render-output-1421b7e06e00.json",
-      "shape": "render-output",
-      "configHash": "1421b7e06e0065d07fa70bcb1ca1c0994ab2298bc6a392d0150686fd38a276fc",
-      "hash": null,
-      "capturedAt": "2026-07-16T20:16:10.694Z"
-    },
-    "post-process:1f9791c5610d1192d22423521ee84770294e64aa0a07afadf903f53d1f1367dd": {
-      "file": "aux-post-process-1f9791c5610d.json",
-      "shape": "post-process",
-      "configHash": "1f9791c5610d1192d22423521ee84770294e64aa0a07afadf903f53d1f1367dd",
-      "hash": null,
-      "capturedAt": "2026-07-16T20:25:19.262Z"
-    },
-    "post-process:4a679352d77a781d7b3b88818101a0bf12b2656b6082478cb9d1e761dd32b066": {
-      "file": "aux-post-process-4a679352d77a.json",
-      "shape": "post-process",
-      "configHash": "4a679352d77a781d7b3b88818101a0bf12b2656b6082478cb9d1e761dd32b066",
-      "hash": null,
-      "capturedAt": "2026-07-16T20:25:19.290Z"
-    },
-    "post-process:b23eeedc36b463567c0d6f5bb0025c58a3d22850f169361fa711899afe73eb0d": {
-      "file": "aux-post-process-b23eeedc36b4.json",
-      "shape": "post-process",
-      "configHash": "b23eeedc36b463567c0d6f5bb0025c58a3d22850f169361fa711899afe73eb0d",
-      "hash": null,
-      "capturedAt": "2026-07-16T20:16:08.984Z"
-    },
-    "gtao:e3d3402081750b17d14f42eaf56d9637109588953ce147a2ac0d1605f91b7fbd": {
-      "file": "aux-gtao-e3d340208175.json",
-      "shape": "gtao",
-      "configHash": "e3d3402081750b17d14f42eaf56d9637109588953ce147a2ac0d1605f91b7fbd",
-      "hash": null,
-      "capturedAt": "2026-07-16T20:16:08.987Z"
-    },
-    "post-process:4ebea62e7ee1aec451b36d7779c5bc6f2f9925a25c916e1fe6271498147c9753": {
-      "file": "aux-post-process-4ebea62e7ee1.json",
-      "shape": "post-process",
-      "configHash": "4ebea62e7ee1aec451b36d7779c5bc6f2f9925a25c916e1fe6271498147c9753",
-      "hash": null,
-      "capturedAt": "2026-07-16T20:16:10.596Z"
-    },
-    "post-process:01ac75875a9af8466980c0ea0feb119a10ce4c3b84dfd9331c74c509a040ee1c": {
-      "file": "aux-post-process-01ac75875a9a.json",
-      "shape": "post-process",
-      "configHash": "01ac75875a9af8466980c0ea0feb119a10ce4c3b84dfd9331c74c509a040ee1c",
-      "hash": null,
-      "capturedAt": "2026-07-16T20:16:10.675Z"
-    }
-  },
   "postprocessing-debug-floor": {
-    "file": "postprocessing-debug-floor.dee5b49c6bc2.json",
-    "hash": "dee5b49c6bc2ed0e7f2ddc17f47040da625d9a0c50590a4f1c03a57d1e6c459d",
+    "file": "postprocessing-debug-floor.295c1ca07725.json",
+    "hash": "295c1ca07725b06794f08c7aa0ab456b779efade8abe7b4033da1f172bdcb57a",
     "sourceIdentity": "ac2b3055a28be15eb005b2f999aa8e063967325d440028430fe4ef820809641b",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/standard-materials.js:precompile:0",
-        "revision": "2a92233e77661c38b22fbdb5b4eff550fd8d77788a217127cac6a04b58df6c48"
+        "revision": "dde030dceb79c518f6f4797ed88c0d8db252a9bb87200927faf2fc8cbe19e36a",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
       }
     ],
-    "capturedAt": "2026-07-16T20:16:04.118Z"
+    "capturedAt": "2026-08-02T12:45:57.877Z"
   },
   "postprocessing-debug-cube": {
-    "file": "postprocessing-debug-cube.e14ca608b1c6.json",
-    "hash": "e14ca608b1c62194e353f6af99ee8d34d2cf7552329f4b93f917513084ab4ac1",
+    "file": "postprocessing-debug-cube.7d1e20a92d4e.json",
+    "hash": "7d1e20a92d4e9c20eda25184c08ea0a1a89b19640951340c12ba3bb2f35df2e8",
     "sourceIdentity": "ac2b3055a28be15eb005b2f999aa8e063967325d440028430fe4ef820809641b",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/standard-materials.js:precompile:0",
-        "revision": "2a92233e77661c38b22fbdb5b4eff550fd8d77788a217127cac6a04b58df6c48"
+        "revision": "dde030dceb79c518f6f4797ed88c0d8db252a9bb87200927faf2fc8cbe19e36a",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
       }
     ],
-    "capturedAt": "2026-07-16T20:16:04.131Z"
+    "capturedAt": "2026-08-02T12:45:57.928Z"
   },
   "postprocessing-debug-sphere": {
-    "file": "postprocessing-debug-sphere.0b351e14fc6b.json",
-    "hash": "0b351e14fc6bb782e1a43b87b966969f9ba3c26d50b4e5ac977e84336c4654af",
+    "file": "postprocessing-debug-sphere.91748867fd7c.json",
+    "hash": "91748867fd7c4b2a3b06f03bd694014e8d6982e15c483c5ff2f5ad51913b89dc",
     "sourceIdentity": "ac2b3055a28be15eb005b2f999aa8e063967325d440028430fe4ef820809641b",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/standard-materials.js:precompile:0",
-        "revision": "2a92233e77661c38b22fbdb5b4eff550fd8d77788a217127cac6a04b58df6c48"
+        "revision": "dde030dceb79c518f6f4797ed88c0d8db252a9bb87200927faf2fc8cbe19e36a",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
       }
     ],
-    "capturedAt": "2026-07-16T20:16:04.142Z"
+    "capturedAt": "2026-08-02T12:45:57.971Z"
+  },
+  "__aux": {
+    "post-process:5e8414b7ec99afb60df838d903c2001f11cd5f29a508380daa2f43f6bf96ef31": {
+      "file": "aux-post-process-5e8414b7ec99.json",
+      "shape": "post-process",
+      "configHash": "5e8414b7ec99afb60df838d903c2001f11cd5f29a508380daa2f43f6bf96ef31",
+      "hash": "858f21c378035992d96ec37441c8b63c3244dcd1aff6bddeb9eb776d7c4c08eb",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:45:58.063Z"
+    },
+    "lights:3247ab5f57afbed8de1051aaa826048a8ce76487e956badfbc74de21d1f31e36": {
+      "file": "aux-lights-3247ab5f57af.json",
+      "shape": "lights",
+      "configHash": "3247ab5f57afbed8de1051aaa826048a8ce76487e956badfbc74de21d1f31e36",
+      "hash": "88e5bf6d5dfe5edfa9b43a86d3428fced3f4d9af1b64126d9417455d5b526f7d",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:45:58.072Z"
+    },
+    "render-output:3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8": {
+      "file": "aux-render-output-3f1fa57642fc.json",
+      "shape": "render-output",
+      "configHash": "3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8",
+      "hash": "b2311006b421a3eb2416a8458c9aefa520952fb284571c614e15897cbfd9c655",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:45:58.123Z"
+    },
+    "post-process:001d5630052a1683b013488a55cba4844b1b9ddb9785bd058092f62959144cc1": {
+      "file": "aux-post-process-001d5630052a.json",
+      "shape": "post-process",
+      "configHash": "001d5630052a1683b013488a55cba4844b1b9ddb9785bd058092f62959144cc1",
+      "hash": "05cc9b36bcf77e2131b64a99f0af8fd40325bc9a17e1dda3f616be351380851b",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:00.610Z"
+    },
+    "bloom-high-pass:5d9921bdfa5c252ffe3c12f13d3f25acb8bd1b1476446dc78dc05432e6ad1e0e": {
+      "file": "aux-bloom-high-pass-5d9921bdfa5c.json",
+      "shape": "bloom-high-pass",
+      "configHash": "5d9921bdfa5c252ffe3c12f13d3f25acb8bd1b1476446dc78dc05432e6ad1e0e",
+      "hash": "09221a915d8d4b34edf4237a33aa21d37404bcd4c677a85ab7905b0273d47a5b",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:00.621Z"
+    },
+    "bloom-blur-0:fb79c6b9530f77a63079f90cb3d9f2dcabc12b550a29cb1d9ca6d98f7f3fff05": {
+      "file": "aux-bloom-blur-0-fb79c6b9530f.json",
+      "shape": "bloom-blur-0",
+      "configHash": "fb79c6b9530f77a63079f90cb3d9f2dcabc12b550a29cb1d9ca6d98f7f3fff05",
+      "hash": "c1953d799a3cae36e18e2ecedbd29ea06a9d1234fa9d91fa793cc2ce07c73704",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:00.632Z"
+    },
+    "bloom-blur-1:4fbd3a5c12aa9e405b033cc85597ab13690c413ae3089e283b9ade6740ab53e8": {
+      "file": "aux-bloom-blur-1-4fbd3a5c12aa.json",
+      "shape": "bloom-blur-1",
+      "configHash": "4fbd3a5c12aa9e405b033cc85597ab13690c413ae3089e283b9ade6740ab53e8",
+      "hash": "f8bb8bec0b7995107d5df06cde4d4d3706db246bbbfd0c9327fc51a118ebadf0",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:00.644Z"
+    },
+    "bloom-blur-2:b7c7eeaad8cf404b0012c3d92d9aa52c17e57d4e7ccb576afdfcd6260b3840bc": {
+      "file": "aux-bloom-blur-2-b7c7eeaad8cf.json",
+      "shape": "bloom-blur-2",
+      "configHash": "b7c7eeaad8cf404b0012c3d92d9aa52c17e57d4e7ccb576afdfcd6260b3840bc",
+      "hash": "ddc3beea13fadd33e1bcb777464d398761f1139d9450736ce51b44c1e93339ba",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:00.655Z"
+    },
+    "bloom-blur-3:dbe8ca148e88eac871144eb8d1b4d66148cbec8e18a68b85c66512eb8ad1fc28": {
+      "file": "aux-bloom-blur-3-dbe8ca148e88.json",
+      "shape": "bloom-blur-3",
+      "configHash": "dbe8ca148e88eac871144eb8d1b4d66148cbec8e18a68b85c66512eb8ad1fc28",
+      "hash": "b18189f2f4f7e0b08ad0929e1e7fd9ebc1176b617c2ab574574bba9c132aaf73",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:00.666Z"
+    },
+    "bloom-blur-4:458a332e820b0103dcf8c3b43b467637a5ac81e1b41d3647ca14cb010e35cd10": {
+      "file": "aux-bloom-blur-4-458a332e820b.json",
+      "shape": "bloom-blur-4",
+      "configHash": "458a332e820b0103dcf8c3b43b467637a5ac81e1b41d3647ca14cb010e35cd10",
+      "hash": "1a391647cd3f162aa4e8fbcb651d98c14462b8e34e5eceb9e73896aadc9a1b19",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:00.678Z"
+    },
+    "bloom-composite:ad85c5ae13589b9e417bb6e287f686543bdc925e2a121404b8c18c38bac400b2": {
+      "file": "aux-bloom-composite-ad85c5ae1358.json",
+      "shape": "bloom-composite",
+      "configHash": "ad85c5ae13589b9e417bb6e287f686543bdc925e2a121404b8c18c38bac400b2",
+      "hash": "145d170d860ff9398874e02ac959473ed0433402a35085c9251844c27cafd312",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:00.693Z"
+    },
+    "render-output:024622bcc264ab0e70914bb4a6365b36a3330503ccf848ca0be977ecedff5bac": {
+      "file": "aux-render-output-024622bcc264.json",
+      "shape": "render-output",
+      "configHash": "024622bcc264ab0e70914bb4a6365b36a3330503ccf848ca0be977ecedff5bac",
+      "hash": "40ff81c7569e0df8088883c132bd9d0fa06ece262ce5d51bb9fd07d6afc5bc73",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:00.736Z"
+    },
+    "post-process:77d70d679dcce1d838dc932b349c7f017aeb6506a5643969c586d1327aa11ac4": {
+      "file": "aux-post-process-77d70d679dcc.json",
+      "shape": "post-process",
+      "configHash": "77d70d679dcce1d838dc932b349c7f017aeb6506a5643969c586d1327aa11ac4",
+      "hash": "23cdd4d62b305def2c0fef3b261ae2ee1a2910327f1768ff0da0746fb9005b43",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:02.842Z"
+    },
+    "post-process:6d8954b56cb4c0486ae3ca6145644f9604b92776bb52a6c8bc7114841d7c2dfc": {
+      "file": "aux-post-process-6d8954b56cb4.json",
+      "shape": "post-process",
+      "configHash": "6d8954b56cb4c0486ae3ca6145644f9604b92776bb52a6c8bc7114841d7c2dfc",
+      "hash": "c4ad973f2123af1c9ab116adc883822eac35c92e78632e0121a4fca6770da47f",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:03.046Z"
+    },
+    "post-process:9a61d592fdf576a341558854350dd89da51725340f5745f20091c458a79aa340": {
+      "file": "aux-post-process-9a61d592fdf5.json",
+      "shape": "post-process",
+      "configHash": "9a61d592fdf576a341558854350dd89da51725340f5745f20091c458a79aa340",
+      "hash": "a165f388b428b77ad08e7bd1b07130c5a53d161ee84100900e8bf7b5b9956e67",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:06.299Z"
+    },
+    "gtao:731b085665d060fab7a6e7777e929a0ebf613cf2915130685aa3f43be184736e": {
+      "file": "aux-gtao-731b085665d0.json",
+      "shape": "gtao",
+      "configHash": "731b085665d060fab7a6e7777e929a0ebf613cf2915130685aa3f43be184736e",
+      "hash": "591da4d4f593aa7f8280d7c1a7994f74e013d70a71122cb6b7f401e74df342e4",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:06.327Z"
+    },
+    "post-process:2545e3fee73d7e8e887b25520ec0ad88120f0ee5217ec4f1a8466c5b0d2dfc58": {
+      "file": "aux-post-process-2545e3fee73d.json",
+      "shape": "post-process",
+      "configHash": "2545e3fee73d7e8e887b25520ec0ad88120f0ee5217ec4f1a8466c5b0d2dfc58",
+      "hash": "4223657670d26202706a0612a8fb317da020044ea5ec566bc6c99e549c13efd0",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:09.366Z"
+    },
+    "post-process:d34c93cd1ab98bdc0b57dea9d68695681db0173ef8dbda3a5b7f376599ac82d1": {
+      "file": "aux-post-process-d34c93cd1ab9.json",
+      "shape": "post-process",
+      "configHash": "d34c93cd1ab98bdc0b57dea9d68695681db0173ef8dbda3a5b7f376599ac82d1",
+      "hash": "3150c89c224fdbb31f995521e8d596e84841b2198c061801ddef5437cae901e8",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:09.720Z"
+    }
   },
   "postprocessing-debug-gtao-floor": {
-    "file": "postprocessing-debug-gtao-floor.ae33365457a1.json",
-    "hash": "ae33365457a194b13282a68b88fc73235a0b4569ec2fc440581a2ce3faf0da11",
+    "file": "postprocessing-debug-gtao-floor.91c679512e32.json",
+    "hash": "91c679512e32629ddec6324db719f73036a242f59bda012583ac7f533f1b9a38",
     "sourceIdentity": "1beec6eb84a05dfa9f6ebd086d6c9ff39811f2398fc0f60e56986c358c03117c",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/gtao-materials.js:precompile:0",
-        "revision": "f473bd8319859f9ef3d1dedc0c3e900441e6ab9e288f093ad95f89e593e58ccd"
+        "revision": "b229cea43454faaf0f18336c1e1a81bdef01bc0e6d3fca8472935c5ced5c2de3",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
       }
     ],
-    "capturedAt": "2026-07-16T20:16:09.044Z"
+    "capturedAt": "2026-08-02T12:46:05.978Z"
   },
   "postprocessing-debug-gtao-cube": {
-    "file": "postprocessing-debug-gtao-cube.b88c9b8c7aa8.json",
-    "hash": "b88c9b8c7aa815e33b133d5f40655595514191986ef63e09ca0219856bbe630f",
+    "file": "postprocessing-debug-gtao-cube.974251df401e.json",
+    "hash": "974251df401e22c38c39fc77299158aecb3293be54d866856808076e66c4ef5c",
     "sourceIdentity": "1beec6eb84a05dfa9f6ebd086d6c9ff39811f2398fc0f60e56986c358c03117c",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/gtao-materials.js:precompile:0",
-        "revision": "f473bd8319859f9ef3d1dedc0c3e900441e6ab9e288f093ad95f89e593e58ccd"
+        "revision": "b229cea43454faaf0f18336c1e1a81bdef01bc0e6d3fca8472935c5ced5c2de3",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
       }
     ],
-    "capturedAt": "2026-07-16T20:16:09.068Z"
+    "capturedAt": "2026-08-02T12:46:06.082Z"
   },
   "postprocessing-debug-gtao-sphere": {
-    "file": "postprocessing-debug-gtao-sphere.35ad1cc742d2.json",
-    "hash": "35ad1cc742d2eefbd4f7f597210ea40a5365959f7b3547830154340baab19d3f",
+    "file": "postprocessing-debug-gtao-sphere.cd5d39728c38.json",
+    "hash": "cd5d39728c38ce8bad48aa440bd633c282d0ca4fc4d93c063574cd88f63fb314",
     "sourceIdentity": "1beec6eb84a05dfa9f6ebd086d6c9ff39811f2398fc0f60e56986c358c03117c",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/gtao-materials.js:precompile:0",
-        "revision": "f473bd8319859f9ef3d1dedc0c3e900441e6ab9e288f093ad95f89e593e58ccd"
+        "revision": "b229cea43454faaf0f18336c1e1a81bdef01bc0e6d3fca8472935c5ced5c2de3",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
       }
     ],
-    "capturedAt": "2026-07-16T20:16:09.090Z"
+    "capturedAt": "2026-08-02T12:46:06.153Z"
   },
   "postprocessing-debug-variants-floor": {
-    "file": "postprocessing-debug-variants-floor.6df0afca07fd.json",
-    "hash": "6df0afca07fdef5474c1d9f839302834dde1947e98824498b09a61eb031f6069",
+    "file": "postprocessing-debug-variants-floor.194b117a420d.json",
+    "hash": "194b117a420d66a4c4baccce20265ffaa0cb59044387877d0ce5d908be7ed02c",
     "sourceIdentity": "66d56430a88fd22e5f62f0c7b6426e2b55aa1b61b63d6b06055f15c9f4bc0b49",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/variants.js:precompile:0",
-        "revision": "fbafb982c419f3469f6dbfd674d57b8e2caba3f3ce1f4693f63df8c21e9fa579"
+        "revision": "06bad39020ca9de39a96a134745f7d3710dbefaa5dbcf98acbf4c562cf3ca2f2",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": [
+            "src/capture-runtime.js",
+            "src/postprocess-aux.js",
+            "src/site-status.js"
+          ]
+        }
       }
     ],
-    "capturedAt": "2026-07-16T20:16:10.721Z"
+    "capturedAt": "2026-08-02T12:46:08.299Z"
   },
   "postprocessing-debug-variant-ember": {
-    "file": "postprocessing-debug-variant-ember.ee59bcc95d7b.json",
-    "hash": "ee59bcc95d7ba14238c463fc497d3e9dff7e86d702465a2097799754351c2561",
+    "file": "postprocessing-debug-variant-ember.fbe68fc826aa.json",
+    "hash": "fbe68fc826aa79e8e7112f844fb49079375595d519b016124453f93d9a404775",
     "sourceIdentity": "66d56430a88fd22e5f62f0c7b6426e2b55aa1b61b63d6b06055f15c9f4bc0b49",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/variants.js:precompile:0",
-        "revision": "fbafb982c419f3469f6dbfd674d57b8e2caba3f3ce1f4693f63df8c21e9fa579"
+        "revision": "06bad39020ca9de39a96a134745f7d3710dbefaa5dbcf98acbf4c562cf3ca2f2",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": [
+            "src/capture-runtime.js",
+            "src/postprocess-aux.js",
+            "src/site-status.js"
+          ]
+        }
       }
     ],
-    "capturedAt": "2026-07-16T20:16:10.734Z"
+    "capturedAt": "2026-08-02T12:46:08.340Z"
   },
   "postprocessing-debug-variants-glow": {
-    "file": "postprocessing-debug-variants-glow.2dba2956adb5.json",
-    "hash": "2dba2956adb535063d7a8df9815dae910934b73136be4be71276b82c6e154c86",
+    "file": "postprocessing-debug-variants-glow.cf919f3653fd.json",
+    "hash": "cf919f3653fd17b4b3ed5599dddcf93f34812afeff1d0bc664dc5fabf11183c4",
     "sourceIdentity": "66d56430a88fd22e5f62f0c7b6426e2b55aa1b61b63d6b06055f15c9f4bc0b49",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/variants.js:precompile:0",
-        "revision": "fbafb982c419f3469f6dbfd674d57b8e2caba3f3ce1f4693f63df8c21e9fa579"
+        "revision": "06bad39020ca9de39a96a134745f7d3710dbefaa5dbcf98acbf4c562cf3ca2f2",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": [
+            "src/capture-runtime.js",
+            "src/postprocess-aux.js",
+            "src/site-status.js"
+          ]
+        }
       }
     ],
-    "capturedAt": "2026-07-16T20:16:10.744Z"
+    "capturedAt": "2026-08-02T12:46:08.386Z"
   },
   "postprocessing-debug-variant-lagoon": {
-    "file": "postprocessing-debug-variant-lagoon.28f130fa6c86.json",
-    "hash": "28f130fa6c865f6354c3fe91b12a685f7bf705a272ba50ccd553904fbed634f4",
+    "file": "postprocessing-debug-variant-lagoon.93362e977450.json",
+    "hash": "93362e977450ab8fe1707202552bad122a30a2c9971c64427b0ae05952faf4a4",
     "sourceIdentity": "66d56430a88fd22e5f62f0c7b6426e2b55aa1b61b63d6b06055f15c9f4bc0b49",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/variants.js:precompile:0",
-        "revision": "fbafb982c419f3469f6dbfd674d57b8e2caba3f3ce1f4693f63df8c21e9fa579"
+        "revision": "06bad39020ca9de39a96a134745f7d3710dbefaa5dbcf98acbf4c562cf3ca2f2",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": [
+            "src/capture-runtime.js",
+            "src/postprocess-aux.js",
+            "src/site-status.js"
+          ]
+        }
       }
     ],
-    "capturedAt": "2026-07-16T20:16:12.862Z"
+    "capturedAt": "2026-08-02T12:46:08.452Z"
   },
   "postprocessing-debug-variant-circuit": {
-    "file": "postprocessing-debug-variant-circuit.eb403e25aa3c.json",
-    "hash": "eb403e25aa3c904a9c150cd91a9defe18fcec128489a40237982bdcff50e3caa",
+    "file": "postprocessing-debug-variant-circuit.5510314ab571.json",
+    "hash": "5510314ab571668ec6cd33effe95b118995bc0318c716ec4fdd9869bd90ac0de",
     "sourceIdentity": "66d56430a88fd22e5f62f0c7b6426e2b55aa1b61b63d6b06055f15c9f4bc0b49",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/variants.js:precompile:0",
-        "revision": "fbafb982c419f3469f6dbfd674d57b8e2caba3f3ce1f4693f63df8c21e9fa579"
+        "revision": "06bad39020ca9de39a96a134745f7d3710dbefaa5dbcf98acbf4c562cf3ca2f2",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": [
+            "src/capture-runtime.js",
+            "src/postprocess-aux.js",
+            "src/site-status.js"
+          ]
+        }
       }
     ],
-    "capturedAt": "2026-07-16T20:16:15.289Z"
+    "capturedAt": "2026-08-02T12:46:08.515Z"
   }
 }

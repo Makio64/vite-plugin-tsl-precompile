@@ -11,8 +11,16 @@ export async function setupCaptureRuntime( renderer, devEndpoint ) {
 		import( '@tsl-precompile/runtime' ),
 		import( 'three/webgpu' ),
 	] );
-	runtime.installPrecompileMarker( three, { devEndpoint } );
-	runtime.setDevRenderer( renderer );
-	return { runtime, three };
+	const setup = runtime.setupPrecompile( {
+		three,
+		renderer,
+		devEndpoint,
+		// Each route captures its named output topology explicitly after the
+		// material-state preflight, so the generic automatic capture must not
+		// claim the same deduplicated configuration first.
+		captureRendererOutput: false,
+	} );
+	await setup.ready;
+	return { runtime, three, setup };
 
 }

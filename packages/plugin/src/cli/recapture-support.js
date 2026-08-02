@@ -1,8 +1,64 @@
 const SUPPORTED_BROWSERS = new Set( [ 'chromium', 'firefox', 'webkit' ] );
 const SUPPORTED_RENDERER_BACKENDS = new Set( [ 'webgpu', 'webgl' ] );
 const INTENTIONAL_NON_NETWORK_PROTOCOLS = new Set( [ 'about:', 'blob:', 'data:' ] );
+const RESOURCE_LOAD_ERROR = /^Failed to load resource(?::[\s\S]*)?$/i;
+
+const RECAPTURE_CHROMIUM_BROWSER_ARGS = Object.freeze( [
+	'--enable-unsafe-webgpu',
+	'--ignore-gpu-blocklist',
+	'--no-sandbox',
+	'--disable-dev-shm-usage',
+] );
+
+// Chromium's Linux bots do not have a hardware GPU. This is the shared
+// software-adapter configuration used by both recapture and the evidence
+// harness so WebGPU and WebGL exercise the same deterministic SwiftShader GPU.
+export const LINUX_SWIFTSHADER_BROWSER_ARGS = Object.freeze( [
+	'--enable-unsafe-webgpu',
+	'--use-webgpu-adapter=swiftshader',
+	// Dawn's Linux decoder requires Chromium's shared graphics context to use
+	// Vulkan even when the requested WebGPU adapter is SwiftShader. Select the
+	// packaged SwiftShader Vulkan driver explicitly as well; otherwise GPU-less
+	// Linux hosts can expose navigator.gpu but drop Dawn's instance while Three
+	// still has a validation error scope pending. Keep Vulkan surfaces enabled:
+	// disabling them lets Dawn execute while the composited canvas stays stale.
+	'--enable-features=Vulkan',
+	'--use-vulkan=swiftshader',
+	'--use-gpu-in-tests',
+	'--enable-accelerated-2d-canvas',
+	'--use-gl=angle',
+	'--use-angle=swiftshader',
+	'--enable-unsafe-swiftshader',
+] );
 
 export const RECAPTURE_VIEWPORT = Object.freeze( { width: 1280, height: 720 } );
+
+export function recaptureBrowserLaunchArgs( browserName, platform = process.platform ) {
+
+	if ( browserName !== 'chromium' ) return [];
+	if ( platform !== 'linux' ) return [ ...RECAPTURE_CHROMIUM_BROWSER_ARGS ];
+	return [ ...new Set( [
+		...RECAPTURE_CHROMIUM_BROWSER_ARGS,
+		...LINUX_SWIFTSHADER_BROWSER_ARGS,
+	] ) ];
+
+}
+
+export function recaptureBrowserLaunchOptions( browserName, {
+	headless = true,
+	platform = process.platform,
+} = {} ) {
+
+	return {
+		headless,
+		args: recaptureBrowserLaunchArgs( browserName, platform ),
+		// Playwright otherwise selects Chromium's reduced headless shell. Use
+		// the regular bundled browser on Linux so Dawn/WebGPU exercises the same
+		// graphics stack as Chrome's supported new-headless mode.
+		...( browserName === 'chromium' && platform === 'linux' ? { channel: 'chromium' } : {} ),
+	};
+
+}
 
 export const RECAPTURE_HELP = `
 Usage: tsl-precompile-recapture [options]
@@ -792,6 +848,28 @@ function exactRecaptureFavicon( value, pageUrl ) {
 		resource.pathname === '/favicon.ico' &&
 		resource.search === '' &&
 		resource.hash === '';
+
+}
+
+export function isExactRecaptureFaviconFailure( event, pageUrl ) {
+
+	if ( ! event || typeof event !== 'object' ) return false;
+	const method = typeof event.method === 'string' && event.method ? event.method.toUpperCase() : 'GET';
+	if ( method !== 'GET' || ! exactRecaptureFavicon( event.url, pageUrl ) ) return false;
+	if ( event.kind === 'requestfailed' ) return true;
+	return event.kind === 'response' && Number.isInteger( Number( event.status ) ) && Number( event.status ) >= 400;
+
+}
+
+export function isCorrelatedRecaptureFaviconConsoleError( event, pageUrl, {
+	networkFailureObserved = false,
+} = {} ) {
+
+	if ( ! event || typeof event !== 'object' || event.level !== 'error' ) return false;
+	const message = String( event.message || '' ).trim();
+	if ( ! RESOURCE_LOAD_ERROR.test( message ) ) return false;
+	const url = typeof event.url === 'string' ? event.url : '';
+	return exactRecaptureFavicon( url, pageUrl ) || ( url === '' && networkFailureObserved === true );
 
 }
 

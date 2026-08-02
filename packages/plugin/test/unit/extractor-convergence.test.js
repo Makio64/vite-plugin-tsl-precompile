@@ -18,6 +18,7 @@ import {
 	diffArtifactShapes,
 	fingerprintArtifactShape,
 } from '@tsl-precompile/contract/artifact-shape';
+import { collectArtifactVariantCandidates } from '@tsl-precompile/contract/artifact-variants';
 import { extractMaterial } from '../../src/node-harness.js';
 
 const GETTING_STARTED_ARTIFACTS = fileURLToPath(
@@ -96,9 +97,31 @@ test( 'browser capture and Node re-extract converge for the getting-started scen
 		Array.isArray( browserCapture.__sourceOwners ) && browserCapture.__sourceOwners.length > 0,
 		'fixture must retain browser capture source ownership rather than a fabricated artifact',
 	);
+	const capturedVariants = collectArtifactVariantCandidates( browserCapture.artifact );
+	assert.deepEqual(
+		capturedVariants.map( ( artifact ) => artifact.shaderLanguage ).sort(),
+		[ 'glsl', 'wgsl' ],
+		'fixture must retain both WebGL and WebGPU shader variants',
+	);
+	for ( const artifact of capturedVariants ) {
+
+		const slots = artifact.uniformPlan.flatMap( ( group ) => group.slots || [] );
+		assert.equal(
+			slots.filter( ( slot ) => slot.source?.kind === 'light.colorScaled' && slot.source?.property === 'groundColor' ).length,
+			1,
+			`${ artifact.shaderLanguage } must retain the live HemisphereLight ground color`,
+		);
+		assert.equal(
+			slots.filter( ( slot ) => slot.dtype === 'color' && slot.source?.kind === 'uniform.live' && ! slot.source?.property ).length,
+			0,
+			`${ artifact.shaderLanguage } must not freeze an unaddressed light color`,
+		);
+
+	}
+	const browserWebGPUCapture = capturedVariants.find( ( artifact ) => artifact.shaderLanguage === 'wgsl' );
 
 	const nodeExtract = await extractMaterial( gettingStartedFactory );
-	const capturedShape = fingerprintArtifactShape( browserCapture );
+	const capturedShape = fingerprintArtifactShape( browserWebGPUCapture );
 	const extractedShape = fingerprintArtifactShape( nodeExtract.artifact );
 	const diff = diffArtifactShapes( capturedShape, extractedShape );
 

@@ -10,11 +10,11 @@ import {
 	SphereGeometry,
 } from 'three';
 import { WebGPURenderer, Mesh, MeshStandardNodeMaterial, RenderPipeline } from 'three/webgpu';
-import { color, mix, pass, positionLocal, sin, time } from 'three/tsl';
+import { color, mix, pass, positionLocal, renderOutput, sin, time } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { createMaterialVariants } from '@tsl-precompile/runtime/material-variants';
 import { bindPostprocessAuxByName, POSTPROCESS_AUX_NAMES } from './postprocess-aux.js';
-import { recordLiveRouteFrame } from './site-status.js';
+import { recordLiveRouteFrame, runLiveRouteSetup } from './site-status.js';
 
 const CAPTURE_ENDPOINT = window.__TSLP_E2E?.captureEndpoint || '/__tsl-precompile/capture';
 const IS_E2E = !! window.__TSLP_E2E;
@@ -81,7 +81,11 @@ function makePostPipelines( renderer, scene, camera ) {
 
 	const bloomPipeline = new RenderPipeline( renderer );
 	const scenePassColor = pass( scene, camera ).getTextureNode( 'output' );
-	bloomPipeline.outputNode = scenePassColor.add( bloom( scenePassColor ) );
+	// Match bloom.html's explicit output stage exactly. Leaving the pipeline's
+	// implicit color transform enabled creates the same shader with a different
+	// live-node ownership path, so two routes cannot safely share the capture.
+	bloomPipeline.outputColorTransform = false;
+	bloomPipeline.outputNode = renderOutput( scenePassColor.add( bloom( scenePassColor ) ) );
 
 	return { plain, bloom: bloomPipeline };
 
@@ -103,14 +107,85 @@ async function ensurePipelineAux( capture, renderer, scene, camera, postProcessi
 		postProcessing,
 		postProcessingName: name,
 		renderPipeline: postProcessing,
-	} ).catch( ( err ) => {
-
-		console.warn( '[postprocessing-debug/variants] auxiliary capture failed:', err );
-		return [ { shape: 'aux', ok: false, error: err && err.message || String( err ) } ];
-
 	} );
+	const matching = results.filter( ( result ) => result?.shape === 'post-process' && result.ok === true );
+	if ( matching.length !== 1 ) {
+
+		throw new Error(
+			`[postprocessing-debug/variants] named capture ${ JSON.stringify( name ) } returned ` +
+			`${ matching.length } successful post-process artifacts: ${ JSON.stringify( results ) }`,
+		);
+
+	}
 
 	return results.map( ( r ) => `${ r.shape }:${ r.ok ? 'ok' : 'err' }` ).join( ', ' ) || `${ name }:no aux`;
+
+}
+
+async function renderCaptureStatesOncePerFrame( renderer, post, variants, cube ) {
+
+	const previousAnimationLoop = renderer.getAnimationLoop();
+
+	await new Promise( ( resolve, reject ) => {
+
+		let variantIndex = 0;
+		let settled = false;
+
+		const restoreAnimationLoop = () => {
+
+			void renderer.setAnimationLoop( previousAnimationLoop );
+
+		};
+		const finish = ( error ) => {
+
+			if ( settled ) return;
+			settled = true;
+			clearTimeout( timeoutId );
+			restoreAnimationLoop();
+
+			if ( error ) reject( error );
+			else resolve();
+
+		};
+		const timeoutId = setTimeout( () => {
+
+			finish( new Error(
+				`[postprocessing-debug/variants] timed out rendering ${ VARIANT_ORDER.length } capture variants`,
+			) );
+
+		}, 10_000 );
+
+		void renderer.setAnimationLoop( () => {
+
+			try {
+
+				if ( variantIndex < VARIANT_ORDER.length ) {
+
+					const variantName = VARIANT_ORDER[ variantIndex ];
+					variants.select( variantName, cube );
+					post.plain.render();
+					variantIndex ++;
+					return;
+
+				}
+
+				// BloomNode owns lazy internal materials and live blur uniforms that
+				// are initialized by its first real updateBefore pass. Capture the
+				// same lifecycle state as bloom.html instead of force-setting up an
+				// otherwise unrendered effect graph.
+				variants.select( 'ember', cube );
+				post.bloom.render();
+				finish();
+
+			} catch ( error ) {
+
+				finish( error );
+
+			}
+
+		} ).catch( finish );
+
+	} );
 
 }
 
@@ -133,6 +208,7 @@ async function main() {
 		capture = await setupCaptureRuntime( renderer, CAPTURE_ENDPOINT );
 
 	}
+	const captureBaseline = capture?.setup.captureStatus();
 
 	const scene = new Scene();
 	const camera = new PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 0.1, 60 );
@@ -181,6 +257,19 @@ async function main() {
 	scene.add( group );
 
 	const post = makePostPipelines( renderer, scene, camera );
+	if ( capture ) {
+
+		// Each variant owns a distinct shader graph but only one is mounted at a
+		// time. PassNode producers have FRAME cadence, so render one state per
+		// real renderer frame instead of issuing several renders in one frame.
+		await renderCaptureStatesOncePerFrame( renderer, post, variants, cube );
+		await capture.setup.waitForCaptureSettled( {
+			since: captureBaseline,
+			timeoutMs: 30_000,
+			settleMs: 50,
+		} );
+
+	}
 	const plainAux = await ensurePipelineAux( capture, renderer, scene, camera, post.plain, POST_PLAIN );
 	const bloomAux = await ensurePipelineAux( capture, renderer, scene, camera, post.bloom, POST_BLOOM );
 	const auxStatus = IS_E2E ? 'ready' : `${ plainAux } / ${ bloomAux }`;
@@ -225,4 +314,4 @@ async function main() {
 
 }
 
-main();
+runLiveRouteSetup( main );
