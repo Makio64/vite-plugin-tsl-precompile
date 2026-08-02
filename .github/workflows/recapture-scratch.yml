@@ -32,7 +32,7 @@ jobs:
         run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim
       - name: Transactionally recapture and preview every configured example
         run: |
-          set -o pipefail
+          set -euo pipefail
           recapture_log="$RUNNER_TEMP/recapture-all.log"
           xvfb-run -a pnpm recapture:examples --allow-prune 2>&1 | tee "$recapture_log"
 
@@ -41,8 +41,32 @@ jobs:
           # r185 recapture correctly consolidates them into one artifact. Keep
           # the broad prune flag bounded to that audited duplicate only.
           expected_prune='[recapture-all] compute-debug: intentionally pruned aux:lights:c035f2fb0ad933b5c646d6b98c0b96bd735eee8f97d47d54b98ce53eb08d2cf7'
+          expected_refresh='[recapture-all] compute-debug: refreshed aux:lights (aux:lights:816b7e9b3e430f34eb5194c264ab9dcade5072bdd7ef2290e2a914ad33de7407 -> aux:lights:3247ab5f57afbed8de1051aaa826048a8ce76487e956badfbc74de21d1f31e36)'
           test "$(grep -Fc 'intentionally pruned ' "$recapture_log" || true)" -eq 1
           grep -Fxq "$expected_prune" "$recapture_log"
+          grep -Fxq "$expected_refresh" "$recapture_log"
+          test ! -e packages/examples/compute-debug/artifacts/aux-lights-816b7e9b3e43.json
+          test ! -e packages/examples/compute-debug/artifacts/aux-lights-c035f2fb0ad9.json
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+
+          const root = 'packages/examples/compute-debug/artifacts';
+          const manifest = JSON.parse( readFileSync( `${ root }/manifest.json`, 'utf8' ) );
+          const lights = Object.entries( manifest.__aux || {} ).filter( ( [ , entry ] ) => entry.shape === 'lights' );
+          if ( lights.length !== 1 || lights[ 0 ][ 0 ] !== 'lights:3247ab5f57afbed8de1051aaa826048a8ce76487e956badfbc74de21d1f31e36' ) {
+            throw new Error( `Expected the one signed r185 lights replacement, received ${ JSON.stringify( lights ) }.` );
+          }
+          const envelope = JSON.parse( readFileSync( `${ root }/${ lights[ 0 ][ 1 ].file }`, 'utf8' ) );
+          if ( envelope.threeVersion !== '0.185.1' || envelope.pluginVersion !== '0.1.0' ) {
+            throw new Error( 'The consolidated lights artifact is not signed by the r185 toolchain.' );
+          }
+          if ( envelope.__hash !== '88e5bf6d5dfe5edfa9b43a86d3428fced3f4d9af1b64126d9417455d5b526f7d' ) {
+            throw new Error( `Unexpected consolidated lights hash: ${ envelope.__hash }.` );
+          }
+          if ( JSON.stringify( envelope.artifact?.lightsSignature ) !== JSON.stringify( [ 'AmbientLight:', 'DirectionalLight:' ] ) ) {
+            throw new Error( `Unexpected consolidated lights signature: ${ JSON.stringify( envelope.artifact?.lightsSignature ) }.` );
+          }
+          NODE
       - name: Verify the committed artifact contract
         run: pnpm verify
       - name: Package a recoverable artifact snapshot
