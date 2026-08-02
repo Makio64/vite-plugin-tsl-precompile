@@ -33,8 +33,12 @@ const VARIANT_COLLISION_DIFFERENCE_PATH_LIMIT = 12;
 const VARIANT_COLLISION_STRING_DETAIL_LIMIT = 2;
 const VARIANT_COLLISION_STRING_EXCERPT_RADIUS = 32;
 const SHADER_SOURCE_FIELDS = new Set( [ 'vertexShader', 'fragmentShader', 'computeShader' ] );
-const CAPTURE_GENERATED_IDENTIFIER_PATTERN = /\b(?:NodeBuffer_|buffer)\d+(?!\d)/g;
-const CAPTURE_GENERATED_SHADER_NODE_ID_PATTERN = /\b(NodeBuffer_|buffer)(\d+)(?!\d)/g;
+const CAPTURE_GENERATED_IDENTIFIER_PATTERN = /\b(?:NodeBuffer_\d+(?=\b|Struct\b)|buffer\d+\b)/g;
+const CAPTURE_GENERATED_SHADER_NODE_BUFFER_ID_PATTERN = /\bNodeBuffer_(\d+)(?=\b|Struct\b)/g;
+const CAPTURE_GENERATED_SHADER_NODE_ID_PATTERN = /\b(?:(NodeBuffer_)(\d+)(?=\b|Struct\b)|(buffer)(\d+)\b)/g;
+const CAPTURE_GENERATED_WEBGL_BUFFER_NAME_PATTERN = /^NodeBuffer_(\d+)$/;
+const CAPTURE_GENERATED_UNIFORM_BUFFER_NAME_PATTERN = /^UniformBuffer_(\d+)$/;
+const CAPTURE_GENERATED_STORAGE_BUFFER_NAME_PATTERN = /^StorageBuffer_(\d+)$/;
 
 /**
  * Runtime fields that may differ between members of one captured material
@@ -679,8 +683,10 @@ function normalizeVariantFingerprintPayload( value ) {
 
 	const vsmInternalPass = !! value && VSM_INTERNAL_PASS_SHAPES.has( value.materialShape );
 	const generatedShaderNodeIds = new Map();
+	const generatedUniformBufferIds = new Map();
+	const generatedStorageBufferIds = new Map();
 	const seen = new Map();
-	const visit = ( current ) => {
+	const visit = ( current, role = null ) => {
 
 		if ( typeof current === 'number' && ! Number.isFinite( current ) ) return null;
 		if ( current === null || typeof current !== 'object' ) return current;
@@ -689,8 +695,16 @@ function normalizeVariantFingerprintPayload( value ) {
 		seen.set( current, clone );
 		if ( Array.isArray( current ) ) {
 
-			for ( const item of current ) clone.push( visit( item ) );
+			for ( const item of current ) clone.push( visit( item, role ) );
 			return clone;
+
+		}
+		if ( role === 'artifact' ) for ( const field of SHADER_SOURCE_FIELDS ) {
+
+			if ( typeof current[ field ] === 'string' ) collectCaptureGeneratedShaderNodeIds(
+				current[ field ],
+				generatedShaderNodeIds,
+			);
 
 		}
 		const liveFrameSource = typeof current.kind === 'string' && (
@@ -726,9 +740,37 @@ function normalizeVariantFingerprintPayload( value ) {
 			// shared-vs-distinct node topology in one namespace, but remove the
 			// capture-order number from fingerprints. Durable shader bytes remain
 			// untouched because this visitor always writes into its clone.
-			if ( current === value && SHADER_SOURCE_FIELDS.has( key ) && typeof current[ key ] === 'string' ) {
+			if ( role === 'artifact' && SHADER_SOURCE_FIELDS.has( key ) && typeof current[ key ] === 'string' ) {
 
 				clone[ key ] = normalizeCaptureGeneratedShaderNodeIds( current[ key ], generatedShaderNodeIds );
+				continue;
+
+			}
+			if ( key === 'name' && typeof current[ key ] === 'string' ) {
+
+				if ( ( role === 'binding-descriptors' && current.kind === 'uniform-buffer' ) || role === 'uniform-buffer-ref' ) {
+
+					clone[ key ] = normalizeCaptureGeneratedUniformBufferName(
+						current[ key ],
+						generatedUniformBufferIds,
+						generatedShaderNodeIds,
+					);
+					continue;
+
+				}
+				if ( ( role === 'binding-descriptors' && current.kind === 'storage-buffer' ) ||
+					role === 'storage-buffer-entry' || role === 'storage-buffer-ref' ) {
+
+					clone[ key ] = normalizeCaptureGeneratedStorageBufferName( current[ key ], generatedStorageBufferIds );
+					continue;
+
+				}
+
+			}
+			if ( role === 'dynamic-bindings' && key === 'binding' &&
+				current.target === 'storage-buffer' && typeof current[ key ] === 'string' ) {
+
+				clone[ key ] = normalizeCaptureGeneratedStorageBufferName( current[ key ], generatedStorageBufferIds );
 				continue;
 
 			}
@@ -767,7 +809,7 @@ function normalizeVariantFingerprintPayload( value ) {
 
 			} else {
 
-				clone[ key ] = visit( current[ key ] );
+				clone[ key ] = visit( current[ key ], variantFingerprintChildRole( role, current, key ) );
 
 			}
 
@@ -775,24 +817,106 @@ function normalizeVariantFingerprintPayload( value ) {
 		return clone;
 
 	};
-	return visit( value );
+	return visit( value, 'artifact' );
+
+}
+
+function variantFingerprintChildRole( role, parent, key ) {
+
+	if ( role === 'artifact' ) {
+
+		if ( key === 'bindings' ) return 'binding-groups';
+		if ( key === 'uniformPlan' ) return 'uniform-plan-groups';
+		if ( key === 'dynamicBindings' ) return 'dynamic-bindings';
+		if ( key === 'materialCompute' ) return 'material-compute';
+
+	}
+	if ( role === 'binding-groups' && key === 'bindings' ) return 'binding-descriptors';
+	if ( role === 'uniform-plan-groups' ) {
+
+		if ( key === 'storageBuffers' ) return 'storage-buffer-entry';
+		if ( key === 'orderedBindings' ) return 'ordered-bindings';
+
+	}
+	if ( role === 'ordered-bindings' && key === 'ref' ) {
+
+		if ( parent.type === 'buffer-uniform' ) return 'uniform-buffer-ref';
+		if ( parent.type === 'storage-buffer' ) return 'storage-buffer-ref';
+
+	}
+	if ( role === 'material-compute' && key === 'kernels' ) return 'material-compute-kernels';
+	if ( role === 'material-compute-kernels' && key === 'artifact' ) return 'artifact';
+	return null;
 
 }
 
 function normalizeCaptureGeneratedShaderNodeIds( shader, identities ) {
 
-	return shader.replace( CAPTURE_GENERATED_SHADER_NODE_ID_PATTERN, ( _, prefix, nodeId ) => {
+	return shader.replace( CAPTURE_GENERATED_SHADER_NODE_ID_PATTERN, (
+		_,
+		nodeBufferPrefix,
+		nodeBufferId,
+		webglBufferPrefix,
+		webglBufferId,
+	) => {
 
-		let canonicalId = identities.get( nodeId );
-		if ( canonicalId === undefined ) {
-
-			canonicalId = identities.size;
-			identities.set( nodeId, canonicalId );
-
-		}
+		const prefix = nodeBufferPrefix || webglBufferPrefix;
+		const nodeId = nodeBufferId || webglBufferId;
+		const canonicalId = identities.get( nodeId );
+		if ( canonicalId === undefined ) return _;
 		return `${ prefix }<capture-node-id:${ canonicalId }>`;
 
 	} );
+
+}
+
+function collectCaptureGeneratedShaderNodeIds( shader, identities ) {
+
+	CAPTURE_GENERATED_SHADER_NODE_BUFFER_ID_PATTERN.lastIndex = 0;
+	for ( const match of shader.matchAll( CAPTURE_GENERATED_SHADER_NODE_BUFFER_ID_PATTERN ) ) {
+
+		captureGeneratedIdentityId( identities, match[ 1 ] );
+
+	}
+
+}
+
+function normalizeCaptureGeneratedUniformBufferName( value, uniformBufferIdentities, shaderNodeIdentities ) {
+
+	const uniformBufferMatch = CAPTURE_GENERATED_UNIFORM_BUFFER_NAME_PATTERN.exec( value );
+	if ( uniformBufferMatch ) {
+
+		const canonicalId = captureGeneratedIdentityId( uniformBufferIdentities, uniformBufferMatch[ 1 ] );
+		return `UniformBuffer_<capture-binding-id:${ canonicalId }>`;
+
+	}
+	const webglBufferMatch = CAPTURE_GENERATED_WEBGL_BUFFER_NAME_PATTERN.exec( value );
+	if ( ! webglBufferMatch ) return value;
+	const canonicalId = shaderNodeIdentities.get( webglBufferMatch[ 1 ] );
+	if ( canonicalId === undefined ) return value;
+	return `NodeBuffer_<capture-node-id:${ canonicalId }>`;
+
+}
+
+function normalizeCaptureGeneratedStorageBufferName( value, identities ) {
+
+	const match = CAPTURE_GENERATED_STORAGE_BUFFER_NAME_PATTERN.exec( value );
+	if ( ! match ) return value;
+	const canonicalId = captureGeneratedIdentityId( identities, match[ 1 ] );
+	return `StorageBuffer_<capture-binding-id:${ canonicalId }>`;
+
+}
+
+function captureGeneratedIdentityId( identities, generatedId ) {
+
+	let canonicalId = identities.get( generatedId );
+	if ( canonicalId === undefined ) {
+
+		canonicalId = identities.size;
+		identities.set( generatedId, canonicalId );
+
+	}
+	return canonicalId;
 
 }
 

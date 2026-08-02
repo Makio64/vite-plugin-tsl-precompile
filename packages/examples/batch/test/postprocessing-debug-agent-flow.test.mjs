@@ -41,6 +41,7 @@ test( 'postprocessing variant capture renders every dormant material state befor
 	assert.match( variants, /const variantName = VARIANT_ORDER\[ variantIndex \];\s+variants\.select\( variantName, cube \);\s+post\.plain\.render\(\);\s+variantIndex \+\+;/ );
 	assert.match( variants, /variants\.select\( 'ember', cube \);\s+post\.bloom\.render\(\);\s+finish\(\);/ );
 	assert.match( variants, /await renderCaptureStatesOncePerFrame\( renderer, post, variants, cube \);\s+await capture\.setup\.waitForCaptureSettled/ );
+	assert.match( variants, /bloomPipeline\.outputColorTransform = false;\s+bloomPipeline\.outputNode = renderOutput\( scenePassColor\.add\( bloom\( scenePassColor \) \) \);/ );
 
 } );
 

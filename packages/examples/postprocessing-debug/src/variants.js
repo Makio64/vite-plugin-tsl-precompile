@@ -10,7 +10,7 @@ import {
 	SphereGeometry,
 } from 'three';
 import { WebGPURenderer, Mesh, MeshStandardNodeMaterial, RenderPipeline } from 'three/webgpu';
-import { color, mix, pass, positionLocal, sin, time } from 'three/tsl';
+import { color, mix, pass, positionLocal, renderOutput, sin, time } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { createMaterialVariants } from '@tsl-precompile/runtime/material-variants';
 import { bindPostprocessAuxByName, POSTPROCESS_AUX_NAMES } from './postprocess-aux.js';
@@ -81,7 +81,11 @@ function makePostPipelines( renderer, scene, camera ) {
 
 	const bloomPipeline = new RenderPipeline( renderer );
 	const scenePassColor = pass( scene, camera ).getTextureNode( 'output' );
-	bloomPipeline.outputNode = scenePassColor.add( bloom( scenePassColor ) );
+	// Match bloom.html's explicit output stage exactly. Leaving the pipeline's
+	// implicit color transform enabled creates the same shader with a different
+	// live-node ownership path, so two routes cannot safely share the capture.
+	bloomPipeline.outputColorTransform = false;
+	bloomPipeline.outputNode = renderOutput( scenePassColor.add( bloom( scenePassColor ) ) );
 
 	return { plain, bloom: bloomPipeline };
 
