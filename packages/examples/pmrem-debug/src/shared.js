@@ -147,8 +147,14 @@ function addSceneGeometry( scene, { transmission = false, cubemap = false, fromS
 	attachPrecompileSource( floorMaterial, floor, scene );
 	if ( ! IS_E2E_REPLAY ) {
 
+		// Capture names need literal string arguments at every call site.
+		// Equirect keeps the shared family. Transmission compiles a physical
+		// glass material on the same renderer first; cubemap/from-scene bake
+		// different PMREM passes — each shifts the Three r185 builder layout
+		// under an otherwise identical CubeUV selector.
 		if ( fromScene ) floorMaterial.precompile( 'pmrem-debug-from-scene-floor' );
 		else if ( cubemap ) floorMaterial.precompile( 'pmrem-debug-cubemap-floor' );
+		else if ( transmission ) floorMaterial.precompile( 'pmrem-debug-transmission-floor' );
 		else floorMaterial.precompile( 'pmrem-debug-floor' );
 
 	}
@@ -167,6 +173,7 @@ function addSceneGeometry( scene, { transmission = false, cubemap = false, fromS
 
 		if ( fromScene ) metalMaterial.precompile( 'pmrem-debug-from-scene-metal' );
 		else if ( cubemap ) metalMaterial.precompile( 'pmrem-debug-cubemap-metal' );
+		else if ( transmission ) metalMaterial.precompile( 'pmrem-debug-transmission-metal' );
 		else metalMaterial.precompile( 'pmrem-debug-metal' );
 
 	}
@@ -185,6 +192,7 @@ function addSceneGeometry( scene, { transmission = false, cubemap = false, fromS
 
 		if ( fromScene ) roughMaterial.precompile( 'pmrem-debug-from-scene-rough' );
 		else if ( cubemap ) roughMaterial.precompile( 'pmrem-debug-cubemap-rough' );
+		else if ( transmission ) roughMaterial.precompile( 'pmrem-debug-transmission-rough' );
 		else roughMaterial.precompile( 'pmrem-debug-rough' );
 
 	}
@@ -321,12 +329,10 @@ export async function runPMREMDebugExample( {
 	}
 
 	scene.add( new AmbientLight( 0xffffff, 0.03 ) );
-	// Equirect and transmission deliberately share visible material names: both
-	// execute the same equirectangular PMREM path before constructing these three
-	// common materials. Cubemap and from-scene exercise different renderer setup
-	// histories, which give Three r185 distinct main-material builder layouts
-	// under otherwise identical render selectors; their explicit marker branches
-	// are therefore the durable route-owned identities.
+	// Equirect owns the shared visible material names. Transmission, cubemap,
+	// and from-scene each leave a different Three r185 builder layout under an
+	// otherwise identical CubeUV render selector, so they use explicit
+	// route-owned marker names.
 	const light = new DirectionalLight( 0xffffff, SHARED_DIRECTIONAL_LIGHT_INTENSITY );
 	light.position.set( 3, 4, 2 );
 	scene.add( light );

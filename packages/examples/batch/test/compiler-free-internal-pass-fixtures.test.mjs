@@ -45,10 +45,11 @@ test( 'PMREM debug is a source-slim fixture that invokes the captured generator 
 
 		assert.match(
 			shared,
-			new RegExp( `if \\( fromScene \\) \\w+Material\\.precompile\\( 'pmrem-debug-from-scene-${ material }' \\);\\s+else if \\( cubemap \\) \\w+Material\\.precompile\\( 'pmrem-debug-cubemap-${ material }' \\);\\s+else \\w+Material\\.precompile\\( 'pmrem-debug-${ material }' \\);` ),
+			new RegExp( `if \\( fromScene \\) \\w+Material\\.precompile\\( 'pmrem-debug-from-scene-${ material }' \\);\\s+else if \\( cubemap \\) \\w+Material\\.precompile\\( 'pmrem-debug-cubemap-${ material }' \\);\\s+else if \\( transmission \\) \\w+Material\\.precompile\\( 'pmrem-debug-transmission-${ material }' \\);\\s+else \\w+Material\\.precompile\\( 'pmrem-debug-${ material }' \\);` ),
 		);
 
 	}
+	assert.match( shared, /transmission:\s*mode === 'transmission'/ );
 	assert.match( shared, /cubemap:\s*mode === 'cubemap'/ );
 	assert.match( shared, /fromScene:\s*mode === 'from-scene'/ );
 	assert.match( shared, /pmremSceneSizes:\s*mode === 'from-scene' \? \[ 64 \] : \[\]/ );
