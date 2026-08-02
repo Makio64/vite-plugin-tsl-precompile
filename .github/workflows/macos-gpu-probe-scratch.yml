@@ -1,0 +1,81 @@
+name: One-shot macOS WebGPU evidence probe
+
+on:
+  push:
+    branches:
+      - codex/macos-gpu-probe
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    if: github.ref == 'refs/heads/codex/macos-gpu-probe'
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Check out Three.js r185
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: mrdoob/three.js
+          ref: 2431a09f46f34c560bc8e44b33be0e567723d5b9
+          path: three.js
+          fetch-depth: 1
+          sparse-checkout: |
+            build
+            examples
+            src
+            package.json
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install chromium
+      - name: Probe representative WebGPU routes
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/macos-webgpu-probe"
+          : > "$RUNNER_TEMP/macos-webgpu-probe/status.txt"
+          for case_name in             webgpu_postprocessing_bloom             webgpu_pmrem_cubemap             webgpu_compute_particles             webgpu_postprocessing_ssgi             webgpu_backdrop_water
+          do
+            case_root="$RUNNER_TEMP/macos-webgpu-probe/$case_name"
+            status=0
+            node packages/examples/batch/run.mjs               --three-repo="$GITHUB_WORKSPACE/three.js"               --filter="$case_name"               --limit=1               --output-root="$case_root"               --report=report.json || status=$?
+            echo "$case_name $status" | tee -a "$RUNNER_TEMP/macos-webgpu-probe/status.txt"
+          done
+      - name: Summarize probe reports
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile, readdir } from 'node:fs/promises';
+          import { join } from 'node:path';
+          const root = join( process.env.RUNNER_TEMP, 'macos-webgpu-probe' );
+          const rows = [];
+          for ( const name of await readdir( root ) ) {
+            if ( name === 'status.txt' ) continue;
+            const report = JSON.parse( await readFile( join( root, name, 'report.json' ), 'utf8' ) );
+            const detail = report.details[ 0 ];
+            rows.push( {
+              name,
+              status: detail.status,
+              bright: detail.baseBrightFrac,
+              gpuValidationCount: detail.gpuValidationCount,
+              gpuErrorCount: detail.gpuErrorCount,
+              environment: report.configuration.environment,
+              error: detail.error,
+            } );
+          }
+          console.log( JSON.stringify( rows, null, 2 ) );
+          if ( rows.length !== 5 ) throw new Error( `Expected five probe reports, got ${ rows.length }.` );
+          NODE
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: macos-webgpu-probe-${{ github.run_id }}
+          path: ${{ runner.temp }}/macos-webgpu-probe/**
+          if-no-files-found: error
+          retention-days: 7
