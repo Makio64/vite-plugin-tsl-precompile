@@ -1200,6 +1200,75 @@ test( 'artifact variant fingerprints canonicalize generated storage-buffer linka
 
 } );
 
+test( 'render-output fingerprints ignore only the generated exposure-slot ordinal', () => {
+
+	const selector = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'default' } } );
+	const withExposureSlot = ( value, name, overrides = {} ) => {
+
+		value.materialShape = 'render-output';
+		const slot = {
+			name,
+			offset: 128,
+			size: 4,
+			dtype: 'number',
+			source: {
+				kind: 'renderer.toneMappingExposure',
+				valueSnapshot: { type: 'number', data: 1 },
+			},
+			...overrides,
+		};
+		value.uniformPlan = [ {
+			name: 'render',
+			slots: [ structuredClone( slot ) ],
+			orderedBindings: [ { type: 'ubo', name: 'render', slots: [ structuredClone( slot ) ] } ],
+		} ];
+		return value;
+
+	};
+	const authoritative = withExposureSlot( artifact( 'render-output-first', 'shared-output-shader', [ selector ] ), 'nodeUniform2' );
+	const recaptured = withExposureSlot( artifact( 'render-output-second', 'shared-output-shader', [ selector ] ), 'nodeUniform1' );
+	const beforeFingerprint = structuredClone( authoritative );
+
+	assert.equal(
+		createArtifactVariantPayloadFingerprint( authoritative ),
+		createArtifactVariantPayloadFingerprint( recaptured ),
+		'Three r185 cache reuse can move only the generated exposure label while retaining its exact byte writer',
+	);
+	assert.doesNotThrow( () => mergeArtifactVariantFamily( authoritative, [ authoritative, recaptured ] ) );
+	assert.deepEqual( authoritative, beforeFingerprint, 'the shader-era durable slot name remains authoritative' );
+
+	const moved = withExposureSlot(
+		artifact( 'render-output-moved', 'shared-output-shader', [ selector ] ),
+		'nodeUniform1',
+		{ offset: 132 },
+	);
+	assert.notEqual(
+		createArtifactVariantSemanticFingerprint( authoritative ),
+		createArtifactVariantSemanticFingerprint( moved ),
+		'the exposure byte offset remains shader-family identity',
+	);
+	const otherSource = withExposureSlot(
+		artifact( 'render-output-other-source', 'shared-output-shader', [ selector ] ),
+		'nodeUniform1',
+		{ source: { kind: 'renderer.size', valueSnapshot: { type: 'vec2', data: [ 1, 1 ] } } },
+	);
+	assert.notEqual(
+		createArtifactVariantSemanticFingerprint( authoritative ),
+		createArtifactVariantSemanticFingerprint( otherSource ),
+		'other renderer slot sources remain strict',
+	);
+	const authored = withExposureSlot(
+		artifact( 'render-output-authored-label', 'shared-output-shader', [ selector ] ),
+		'toneMappingExposure',
+	);
+	assert.notEqual(
+		createArtifactVariantSemanticFingerprint( authoritative ),
+		createArtifactVariantSemanticFingerprint( authored ),
+		'non-generated exposure labels remain strict',
+	);
+
+} );
+
 test( 'artifact variant family validation still rejects partially signed families', () => {
 
 	const signed = artifact( 'signed', 'signed', [ '{}' ] );

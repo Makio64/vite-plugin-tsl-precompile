@@ -39,6 +39,7 @@ const CAPTURE_GENERATED_SHADER_NODE_ID_PATTERN = /\b(?:(NodeBuffer_)(\d+)(?=\b|S
 const CAPTURE_GENERATED_WEBGL_BUFFER_NAME_PATTERN = /^NodeBuffer_(\d+)$/;
 const CAPTURE_GENERATED_UNIFORM_BUFFER_NAME_PATTERN = /^UniformBuffer_(\d+)$/;
 const CAPTURE_GENERATED_STORAGE_BUFFER_NAME_PATTERN = /^StorageBuffer_(\d+)$/;
+const CAPTURE_GENERATED_UNIFORM_SLOT_NAME_PATTERN = /^nodeUniform\d+$/;
 
 /**
  * Runtime fields that may differ between members of one captured material
@@ -682,6 +683,7 @@ function createArtifactVariantSemanticPayload( artifact ) {
 function normalizeVariantFingerprintPayload( value ) {
 
 	const vsmInternalPass = !! value && VSM_INTERNAL_PASS_SHAPES.has( value.materialShape );
+	const rendererOutput = value?.materialShape === 'render-output';
 	const generatedShaderNodeIds = new Map();
 	const generatedUniformBufferIds = new Map();
 	const generatedStorageBufferIds = new Map();
@@ -747,6 +749,20 @@ function normalizeVariantFingerprintPayload( value ) {
 
 			}
 			if ( key === 'name' && typeof current[ key ] === 'string' ) {
+
+				// RenderPipeline can reuse a compiled render-output shader while the
+				// current builder's generated nodeUniform ordinal has moved. The
+				// exposure writer is addressed by its source kind and byte offset;
+				// keep the durable name, but do not split an otherwise identical
+				// renderer-output family on this stale compiler-cache label.
+				if ( rendererOutput && role === 'uniform-plan-slots' &&
+					current.source?.kind === 'renderer.toneMappingExposure' &&
+					CAPTURE_GENERATED_UNIFORM_SLOT_NAME_PATTERN.test( current[ key ] ) ) {
+
+					clone[ key ] = '<capture-generated-render-output-exposure-slot>';
+					continue;
+
+				}
 
 				if ( ( role === 'binding-descriptors' && current.kind === 'uniform-buffer' ) || role === 'uniform-buffer-ref' ) {
 
@@ -834,10 +850,12 @@ function variantFingerprintChildRole( role, parent, key ) {
 	if ( role === 'binding-groups' && key === 'bindings' ) return 'binding-descriptors';
 	if ( role === 'uniform-plan-groups' ) {
 
+		if ( key === 'slots' ) return 'uniform-plan-slots';
 		if ( key === 'storageBuffers' ) return 'storage-buffer-entry';
 		if ( key === 'orderedBindings' ) return 'ordered-bindings';
 
 	}
+	if ( role === 'ordered-bindings' && key === 'slots' ) return 'uniform-plan-slots';
 	if ( role === 'ordered-bindings' && key === 'ref' ) {
 
 		if ( parent.type === 'buffer-uniform' ) return 'uniform-buffer-ref';
