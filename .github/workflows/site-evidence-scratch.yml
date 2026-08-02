@@ -1,9 +1,9 @@
 name: One-shot canonical site evidence refresh
 
+# Manual only. Push-triggered evidence refresh re-runs the full stock +
+# capture/replay campaign on software WebGPU and is not required to host
+# already-committed artifacts.
 on:
-  push:
-    branches:
-      - codex/recapture-artifacts
   workflow_dispatch:
 
 permissions:
