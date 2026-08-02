@@ -1,0 +1,401 @@
+{
+  "__aux": {
+    "background:2e54b8c8cdd7371f15594cb88fb1abbbda95983fb7d282879f0c64ea95bf4977": {
+      "file": "aux-background-2e54b8c8cdd7.json",
+      "shape": "background",
+      "configHash": "2e54b8c8cdd7371f15594cb88fb1abbbda95983fb7d282879f0c64ea95bf4977",
+      "hash": "4023c9a35ca61fe3dddb564e14128be27a65a0b9a132f97bf02faf1fb012d710",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:16.024Z"
+    },
+    "lights:3247ab5f57afbed8de1051aaa826048a8ce76487e956badfbc74de21d1f31e36": {
+      "file": "aux-lights-3247ab5f57af.json",
+      "shape": "lights",
+      "configHash": "3247ab5f57afbed8de1051aaa826048a8ce76487e956badfbc74de21d1f31e36",
+      "hash": "88e5bf6d5dfe5edfa9b43a86d3428fced3f4d9af1b64126d9417455d5b526f7d",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:16.114Z"
+    },
+    "cube-render-target:8c3dc01d546a85bd61df2be3407458a69a3a142a93dc33a3ae4b7f72756e6846": {
+      "file": "aux-cube-render-target-8c3dc01d546a.json",
+      "shape": "cube-render-target",
+      "configHash": "8c3dc01d546a85bd61df2be3407458a69a3a142a93dc33a3ae4b7f72756e6846",
+      "hash": "1f0b3106761bfcad48d1df7d5eab7557e006fb9c7381158098607a1ce95e10f8",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:16.776Z"
+    },
+    "cube-render-target:f8bd804355c3eb371301006942eae331cca0746db9ce573e99786d8009086f5d": {
+      "file": "aux-cube-render-target-f8bd804355c3.json",
+      "shape": "cube-render-target",
+      "configHash": "f8bd804355c3eb371301006942eae331cca0746db9ce573e99786d8009086f5d",
+      "hash": "9a1d6f683e688cd69d29a205d65869e28d2fb44175ae645e8270bd544e2c5908",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:16.818Z"
+    },
+    "pmrem-equirect:43369b977f511fec45dc46efcb8d0fe60d1e40f83816d92ab0b32442a57288fd": {
+      "file": "aux-pmrem-equirect-43369b977f511fec45dc46efcb8d0fe60d1e40f83816d92ab0b32442a57288fd-e41330cf3a825868ae259976b7b3b5aff2ec946fd4ffa2b567df39b9adc82e39.json",
+      "shape": "pmrem-equirect",
+      "configHash": "43369b977f511fec45dc46efcb8d0fe60d1e40f83816d92ab0b32442a57288fd",
+      "hash": "e41330cf3a825868ae259976b7b3b5aff2ec946fd4ffa2b567df39b9adc82e39",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:17.329Z"
+    },
+    "pmrem-ggx:43369b977f511fec45dc46efcb8d0fe60d1e40f83816d92ab0b32442a57288fd": {
+      "file": "aux-pmrem-ggx-43369b977f511fec45dc46efcb8d0fe60d1e40f83816d92ab0b32442a57288fd-bfda9d46cdf8bfd2297ffd12c9307e3d86d368d4bf57a54d817ba601b3859ba0.json",
+      "shape": "pmrem-ggx",
+      "configHash": "43369b977f511fec45dc46efcb8d0fe60d1e40f83816d92ab0b32442a57288fd",
+      "hash": "bfda9d46cdf8bfd2297ffd12c9307e3d86d368d4bf57a54d817ba601b3859ba0",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:17.329Z"
+    },
+    "render-output:3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8": {
+      "file": "aux-render-output-3f1fa57642fc.json",
+      "shape": "render-output",
+      "configHash": "3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8",
+      "hash": "b2311006b421a3eb2416a8458c9aefa520952fb284571c614e15897cbfd9c655",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:17.421Z"
+    },
+    "background:c78ea2daa4140806552aab30d8161d64f793316294aded9e6cde6c2a2d903df3": {
+      "file": "aux-background-c78ea2daa414.json",
+      "shape": "background",
+      "configHash": "c78ea2daa4140806552aab30d8161d64f793316294aded9e6cde6c2a2d903df3",
+      "hash": "64ae975bf4d08d1ec0778f3fe5341ab43e49c2088907a3429535afdd8189c38f",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:19.474Z"
+    },
+    "pmrem-cubemap:6b19fe2354212b6594c2b603131799778cdff15f03a1e4c36568babe404676fe": {
+      "file": "aux-pmrem-cubemap-6b19fe2354212b6594c2b603131799778cdff15f03a1e4c36568babe404676fe-fc19e16ced84677b5e09a251eb323cc931667e05ee0b88da5b000e3b9a2200d4.json",
+      "shape": "pmrem-cubemap",
+      "configHash": "6b19fe2354212b6594c2b603131799778cdff15f03a1e4c36568babe404676fe",
+      "hash": "fc19e16ced84677b5e09a251eb323cc931667e05ee0b88da5b000e3b9a2200d4",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:21.772Z"
+    },
+    "pmrem-ggx:6b19fe2354212b6594c2b603131799778cdff15f03a1e4c36568babe404676fe": {
+      "file": "aux-pmrem-ggx-6b19fe2354212b6594c2b603131799778cdff15f03a1e4c36568babe404676fe-02d756f2308aea0c7a9a5f18167f410cc76fc1b6e849ab5a1234ea1834dbacde.json",
+      "shape": "pmrem-ggx",
+      "configHash": "6b19fe2354212b6594c2b603131799778cdff15f03a1e4c36568babe404676fe",
+      "hash": "02d756f2308aea0c7a9a5f18167f410cc76fc1b6e849ab5a1234ea1834dbacde",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:21.772Z"
+    },
+    "pmrem-blur:0e043867c967ae3e4c0b0545c4d9c6c1581c75bc8057a496554aa1e5fb5e0ff7": {
+      "file": "aux-pmrem-blur-0e043867c967ae3e4c0b0545c4d9c6c1581c75bc8057a496554aa1e5fb5e0ff7-4d1c1862cba52dba427844eab96dcfc10b214475a6e57c77b3860f97904adb42.json",
+      "shape": "pmrem-blur",
+      "configHash": "0e043867c967ae3e4c0b0545c4d9c6c1581c75bc8057a496554aa1e5fb5e0ff7",
+      "hash": "4d1c1862cba52dba427844eab96dcfc10b214475a6e57c77b3860f97904adb42",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:26.241Z"
+    },
+    "pmrem-ggx:0e043867c967ae3e4c0b0545c4d9c6c1581c75bc8057a496554aa1e5fb5e0ff7": {
+      "file": "aux-pmrem-ggx-0e043867c967ae3e4c0b0545c4d9c6c1581c75bc8057a496554aa1e5fb5e0ff7-605daf0be4e6f958537b454f4d757d66a7893d2c2ee6b6218ffa62d585e3b285.json",
+      "shape": "pmrem-ggx",
+      "configHash": "0e043867c967ae3e4c0b0545c4d9c6c1581c75bc8057a496554aa1e5fb5e0ff7",
+      "hash": "605daf0be4e6f958537b454f4d757d66a7893d2c2ee6b6218ffa62d585e3b285",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:46:26.241Z"
+    }
+  },
+  "pmrem-debug-floor": {
+    "file": "pmrem-debug-floor.bdf605a5fc1a.json",
+    "hash": "bdf605a5fc1a4076f19f7b8dd37881d26ea2bbb32c7b46f26718623e57b9d940",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "f4daebdf368ff6f38c85c965cf9503b8bca246c7f29c1abd7c4cbafc13453d4d",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-08-02T12:46:16.269Z"
+  },
+  "pmrem-debug-metal": {
+    "file": "pmrem-debug-metal.972205251636.json",
+    "hash": "9722052516369d24b9c9cb4a70a2cce423cad9a32655216a12b4b89a757b89d2",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "f4daebdf368ff6f38c85c965cf9503b8bca246c7f29c1abd7c4cbafc13453d4d",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-08-02T12:46:16.787Z"
+  },
+  "pmrem-debug-rough": {
+    "file": "pmrem-debug-rough.42b27f63255d.json",
+    "hash": "42b27f63255dffb4844354db8cc70a047a0cbd9405de19e8079ad3d316260035",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "f4daebdf368ff6f38c85c965cf9503b8bca246c7f29c1abd7c4cbafc13453d4d",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-08-02T12:46:16.863Z"
+  },
+  "pmrem-debug-cubemap-floor": {
+    "file": "pmrem-debug-cubemap-floor.914e06a5a151.json",
+    "hash": "914e06a5a151efe0f85725bfb87f1d42322a4c9364ee0032a800bd190026c6eb",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "f4daebdf368ff6f38c85c965cf9503b8bca246c7f29c1abd7c4cbafc13453d4d",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-08-02T12:46:21.575Z"
+  },
+  "pmrem-debug-cubemap-metal": {
+    "file": "pmrem-debug-cubemap-metal.e77fa65eeedf.json",
+    "hash": "e77fa65eeedf3e0e354c4c3116d6df59a7e4aed0793e4d00c562b026e3fa215f",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "f4daebdf368ff6f38c85c965cf9503b8bca246c7f29c1abd7c4cbafc13453d4d",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-08-02T12:46:21.760Z"
+  },
+  "pmrem-debug-cubemap-rough": {
+    "file": "pmrem-debug-cubemap-rough.2bd75e6c97e6.json",
+    "hash": "2bd75e6c97e6a37dd0e9573c1f3715aacbf68f11876955d79e5a4d39b61b2797",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "f4daebdf368ff6f38c85c965cf9503b8bca246c7f29c1abd7c4cbafc13453d4d",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-08-02T12:46:21.993Z"
+  },
+  "pmrem-debug-env-face-0": {
+    "file": "pmrem-debug-env-face-0.a7b374618463.json",
+    "hash": "a7b374618463c627e6f57847b4a324913464eab7923a0a0d6dffbe90ebb8df69",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "f4daebdf368ff6f38c85c965cf9503b8bca246c7f29c1abd7c4cbafc13453d4d",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-08-02T12:46:26.127Z"
+  },
+  "pmrem-debug-env-face-1": {
+    "file": "pmrem-debug-env-face-1.f48e7aef93aa.json",
+    "hash": "f48e7aef93aa40071f06a7ccbb5369f774b64d9ad4959ff9385d9ee74c0815e8",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "f4daebdf368ff6f38c85c965cf9503b8bca246c7f29c1abd7c4cbafc13453d4d",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-08-02T12:46:26.275Z"
+  },
+  "pmrem-debug-env-face-2": {
+    "file": "pmrem-debug-env-face-2.567b78ef7196.json",
+    "hash": "567b78ef7196e31c1d0424121b0a52efc909a7e10a7c409b36ba98932b76b77d",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "f4daebdf368ff6f38c85c965cf9503b8bca246c7f29c1abd7c4cbafc13453d4d",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-08-02T12:46:26.315Z"
+  },
+  "pmrem-debug-env-face-3": {
+    "file": "pmrem-debug-env-face-3.4766b81ca925.json",
+    "hash": "4766b81ca9254ffd3ffc181ac71bd761e1ec716ead84f1542fc298e0e8a28ec5",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "f4daebdf368ff6f38c85c965cf9503b8bca246c7f29c1abd7c4cbafc13453d4d",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-08-02T12:46:26.388Z"
+  },
+  "pmrem-debug-from-scene-floor": {
+    "file": "pmrem-debug-from-scene-floor.552e1334e8a9.json",
+    "hash": "552e1334e8a9f60aa4fa946d9a93c6eabee9a2bc1beb3a72d417ba59abcc0b78",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "f4daebdf368ff6f38c85c965cf9503b8bca246c7f29c1abd7c4cbafc13453d4d",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-08-02T12:46:27.517Z"
+  },
+  "pmrem-debug-from-scene-metal": {
+    "file": "pmrem-debug-from-scene-metal.1a56fea8b58b.json",
+    "hash": "1a56fea8b58ba1be3cc8e32c7be99e76b062ada85f87c1b450c46223dda21295",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "f4daebdf368ff6f38c85c965cf9503b8bca246c7f29c1abd7c4cbafc13453d4d",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-08-02T12:46:27.592Z"
+  },
+  "pmrem-debug-from-scene-rough": {
+    "file": "pmrem-debug-from-scene-rough.08275311bbd3.json",
+    "hash": "08275311bbd310a65d17d088c8fc9b12d55c7bd19950b963428d1045c7077ace",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "f4daebdf368ff6f38c85c965cf9503b8bca246c7f29c1abd7c4cbafc13453d4d",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-08-02T12:46:27.682Z"
+  },
+  "pmrem-debug-transmission-floor": {
+    "file": "pmrem-debug-transmission-floor.8a14fe4d8394.json",
+    "hash": "8a14fe4d83944b9616ab36a11d8bfd52cbac57538cf480c556df0f9dc8017c33",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "f4daebdf368ff6f38c85c965cf9503b8bca246c7f29c1abd7c4cbafc13453d4d",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-08-02T12:46:31.685Z"
+  },
+  "pmrem-debug-transmission-metal": {
+    "file": "pmrem-debug-transmission-metal.5e223be05907.json",
+    "hash": "5e223be059070873cb2ebb54b5b55f0daa231d0e62a751d434720bd21fd29a07",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "f4daebdf368ff6f38c85c965cf9503b8bca246c7f29c1abd7c4cbafc13453d4d",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-08-02T12:46:32.737Z"
+  },
+  "pmrem-debug-transmission-rough": {
+    "file": "pmrem-debug-transmission-rough.f730e80c5a32.json",
+    "hash": "f730e80c5a32ac1f18ac76a957037f03fdd8d05a10070ff460b4f81153e3175c",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "f4daebdf368ff6f38c85c965cf9503b8bca246c7f29c1abd7c4cbafc13453d4d",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-08-02T12:46:32.828Z"
+  },
+  "pmrem-debug-transmission": {
+    "file": "pmrem-debug-transmission.5d07161662cc.json",
+    "hash": "5d07161662ccdd7a3155593cdb2cdee88992836e473d76db952729814a43d002",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "f4daebdf368ff6f38c85c965cf9503b8bca246c7f29c1abd7c4cbafc13453d4d",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-08-02T12:46:33.890Z"
+  }
+}

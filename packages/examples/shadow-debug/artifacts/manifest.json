@@ -1,226 +1,310 @@
 {
   "__aux": {
-    "lights:0c3f79a53ac4a55a950479275400976e4a14fec55b1dd00cecf7fbc61efb64c5": {
-      "file": "aux-lights-0c3f79a53ac4.json",
+    "lights:463aeac20eefc56bcfe18e26f466ab325e6b855a080b84724364f5008342a005": {
+      "file": "aux-lights-463aeac20eef.json",
       "shape": "lights",
-      "configHash": "0c3f79a53ac4a55a950479275400976e4a14fec55b1dd00cecf7fbc61efb64c5",
-      "hash": null,
-      "capturedAt": "2026-07-16T19:15:00.068Z"
+      "configHash": "463aeac20eefc56bcfe18e26f466ab325e6b855a080b84724364f5008342a005",
+      "hash": "3127e3845e79f906ff4bb038c512a05117afa58ea7367b60671069ef15cddf9f",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:45:16.843Z"
     },
-    "shadow-depth:5e2aee7d1e9f0316f52fda7fff4a277a1102556d91d6e5a652638d6eae0ac50b": {
-      "file": "aux-shadow-depth-5e2aee7d1e9f.json",
+    "shadow-depth:58058c523d3285379e762a0c25ed06c6f66cce3a9f824ac3b83a8037e2e9199e": {
+      "file": "aux-shadow-depth-58058c523d32.json",
       "shape": "shadow-depth",
-      "configHash": "5e2aee7d1e9f0316f52fda7fff4a277a1102556d91d6e5a652638d6eae0ac50b",
-      "hash": null,
-      "capturedAt": "2026-07-16T19:15:00.101Z"
+      "configHash": "58058c523d3285379e762a0c25ed06c6f66cce3a9f824ac3b83a8037e2e9199e",
+      "hash": "40308c1eff8c1148124c1230936a8f9393a1b67f99fad1a5b83ceefe3ec0cceb",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:45:16.912Z"
     },
-    "render-output:64408283fa335f51e57c24dd9cc697109f23fd864f8474bc5e19cc6a7e835c7b": {
-      "file": "aux-render-output-64408283fa33.json",
+    "render-output:3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8": {
+      "file": "aux-render-output-3f1fa57642fc.json",
       "shape": "render-output",
-      "configHash": "64408283fa335f51e57c24dd9cc697109f23fd864f8474bc5e19cc6a7e835c7b",
-      "hash": null,
-      "capturedAt": "2026-07-16T19:15:18.814Z"
+      "configHash": "3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8",
+      "hash": "ba866ea2b8101ccafcc14a3cbb5b48017c18000c281d1f371c7136771b8ee83f",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:45:23.650Z"
     },
-    "shadow-depth:6ade4aafa0b36c69ed4d27b86b434a27ada2adf68be64579e5b3c2ff88769936": {
-      "file": "aux-shadow-depth-6ade4aafa0b3.json",
+    "shadow-depth:1a653099079a00f70d0f00f6a10f66134a1174de01306b9ba97357fc3f2d7156": {
+      "file": "aux-shadow-depth-1a653099079a.json",
       "shape": "shadow-depth",
-      "configHash": "6ade4aafa0b36c69ed4d27b86b434a27ada2adf68be64579e5b3c2ff88769936",
-      "hash": null,
-      "capturedAt": "2026-07-16T19:15:01.800Z"
+      "configHash": "1a653099079a00f70d0f00f6a10f66134a1174de01306b9ba97357fc3f2d7156",
+      "hash": "ef927a08aeb6297a7557c86f16c8fdfacffb061aeeaee5a6bfea85ac72023b27",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:45:18.903Z"
     },
-    "shadow-depth:f3bbb2f617c5629bbad51484806286540c757e5b037e4089a8b2e11f71ddac41": {
-      "file": "aux-shadow-depth-f3bbb2f617c5.json",
+    "shadow-depth:5c6b46bcefdc2292ba0d12d8bd5a9bd836931d66c44f79d1146d8bcf395d5b6d": {
+      "file": "aux-shadow-depth-5c6b46bcefdc.json",
       "shape": "shadow-depth",
-      "configHash": "f3bbb2f617c5629bbad51484806286540c757e5b037e4089a8b2e11f71ddac41",
-      "hash": null,
-      "capturedAt": "2026-07-16T19:15:03.489Z"
+      "configHash": "5c6b46bcefdc2292ba0d12d8bd5a9bd836931d66c44f79d1146d8bcf395d5b6d",
+      "hash": "291b97d1a2cf5e67e49d5e49deacd7db8d238abfb5450a82044125613bb0a1bc",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:45:21.056Z"
     },
-    "shadow-depth:785700710f4a7b34269b7245fe664fb4f3e1cbed513fea50acc73e0e5529bc08": {
-      "file": "aux-shadow-depth-785700710f4a.json",
+    "shadow-depth:5745734995051f3ceda8f15252be8cf3f46fd2744c2ce38c1a2cc446a668b0c2": {
+      "file": "aux-shadow-depth-5745734995051f3ceda8f15252be8cf3f46fd2744c2ce38c1a2cc446a668b0c2-f019f2cc42ab7f3bb3f46b493a6ee39b5863c00bf331c9f14e94eba748546fec.json",
       "shape": "shadow-depth",
-      "configHash": "785700710f4a7b34269b7245fe664fb4f3e1cbed513fea50acc73e0e5529bc08",
-      "hash": null,
-      "capturedAt": "2026-07-16T19:15:05.171Z"
+      "configHash": "5745734995051f3ceda8f15252be8cf3f46fd2744c2ce38c1a2cc446a668b0c2",
+      "hash": "f019f2cc42ab7f3bb3f46b493a6ee39b5863c00bf331c9f14e94eba748546fec",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:45:23.394Z"
     },
-    "lights:3d87e76974bb5051001b0a16beab35becf087d70bc0cf77fd7af36c2ea55163b": {
-      "file": "aux-lights-3d87e76974bb.json",
+    "shadow-vsm-vertical:e7fcacd173b52e5681120378e31e6c5394873b33dd6ac0502efcb6879ce042ca": {
+      "file": "aux-shadow-vsm-vertical-e7fcacd173b52e5681120378e31e6c5394873b33dd6ac0502efcb6879ce042ca-d2f2987d5a90a1243e2ab235286d6c4ae58fffb946ad651ae81009bc41449e80.json",
+      "shape": "shadow-vsm-vertical",
+      "configHash": "e7fcacd173b52e5681120378e31e6c5394873b33dd6ac0502efcb6879ce042ca",
+      "hash": "d2f2987d5a90a1243e2ab235286d6c4ae58fffb946ad651ae81009bc41449e80",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:45:33.114Z"
+    },
+    "shadow-vsm-horizontal:e7fcacd173b52e5681120378e31e6c5394873b33dd6ac0502efcb6879ce042ca": {
+      "file": "aux-shadow-vsm-horizontal-e7fcacd173b52e5681120378e31e6c5394873b33dd6ac0502efcb6879ce042ca-b220fd3f25591a95b9778b8e88452c375e44cb9631d6c8ac94f861f8d0de4c03.json",
+      "shape": "shadow-vsm-horizontal",
+      "configHash": "e7fcacd173b52e5681120378e31e6c5394873b33dd6ac0502efcb6879ce042ca",
+      "hash": "b220fd3f25591a95b9778b8e88452c375e44cb9631d6c8ac94f861f8d0de4c03",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:45:33.114Z"
+    },
+    "lights:d0d770061a0888280a01cdcd47a6da01032bf44008bb00a5384abf79d0258dea": {
+      "file": "aux-lights-d0d770061a08.json",
       "shape": "lights",
-      "configHash": "3d87e76974bb5051001b0a16beab35becf087d70bc0cf77fd7af36c2ea55163b",
-      "hash": null,
-      "capturedAt": "2026-07-16T19:15:06.893Z"
+      "configHash": "d0d770061a0888280a01cdcd47a6da01032bf44008bb00a5384abf79d0258dea",
+      "hash": "43ea5e1862f46433e9edca17c3c64bc29727ece895c51ca0effaa535d801bdba",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:45:26.819Z"
     },
-    "shadow-depth:2369a95f8f4a85b74facc0159ebcb6926ab9c19907c4344a61f4fd25e5910102": {
-      "file": "aux-shadow-depth-2369a95f8f4a.json",
+    "shadow-depth:8cb1b28fe539377c82031d2ff59a43d5d2e64a33c8e8a67fed66ba4a871b4691": {
+      "file": "aux-shadow-depth-8cb1b28fe539.json",
       "shape": "shadow-depth",
-      "configHash": "2369a95f8f4a85b74facc0159ebcb6926ab9c19907c4344a61f4fd25e5910102",
-      "hash": null,
-      "capturedAt": "2026-07-16T19:15:06.915Z"
+      "configHash": "8cb1b28fe539377c82031d2ff59a43d5d2e64a33c8e8a67fed66ba4a871b4691",
+      "hash": "64998f18edee4423af820ed1261a3fa1eaf28ff77906c5307c69dd527ab90e2f",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:45:26.898Z"
     },
-    "shadow-depth:9606e1f1164d0ec607ae080607902360dab8912be3cf592813db73ca96a4a3b8": {
-      "file": "aux-shadow-depth-9606e1f1164d.json",
+    "shadow-depth:7d5941c86c7671e9d80dfb2037ba7867e743bdbbcdd1e52ceed8e2ad2b240874": {
+      "file": "aux-shadow-depth-7d5941c86c76.json",
       "shape": "shadow-depth",
-      "configHash": "9606e1f1164d0ec607ae080607902360dab8912be3cf592813db73ca96a4a3b8",
-      "hash": null,
-      "capturedAt": "2026-07-16T19:15:08.572Z"
+      "configHash": "7d5941c86c7671e9d80dfb2037ba7867e743bdbbcdd1e52ceed8e2ad2b240874",
+      "hash": "bb21905b6d8559fda2d4b15de26e507f5cc8a2a1ecb5ec50b5a7371dff7a11e0",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:45:28.789Z"
     },
-    "shadow-depth:08bab7ce7dbff5e6b4aefe21f4ea27bb3c94fb4815c93c7faa0cf1a0c2afd63a": {
-      "file": "aux-shadow-depth-08bab7ce7dbf.json",
+    "shadow-depth:567f94b161416452bd9a82fe9c1ea3cc81ef879324083ab351c206353d85867d": {
+      "file": "aux-shadow-depth-567f94b16141.json",
       "shape": "shadow-depth",
-      "configHash": "08bab7ce7dbff5e6b4aefe21f4ea27bb3c94fb4815c93c7faa0cf1a0c2afd63a",
-      "hash": null,
-      "capturedAt": "2026-07-16T19:15:10.252Z"
+      "configHash": "567f94b161416452bd9a82fe9c1ea3cc81ef879324083ab351c206353d85867d",
+      "hash": "2b3a4bea92c4ee3af32d6c7150230294121f77d96f14bf59efc5900566d736aa",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:45:30.840Z"
     },
-    "shadow-depth:229b21ec4847decf7dece3e72006f5b0f7f81fbba566200c37f0ecf8e1ebdad9": {
-      "file": "aux-shadow-depth-229b21ec4847.json",
+    "shadow-depth:3fbae1573794a787ef137f606f8655325ea72b0a1e9db908c46738da12593963": {
+      "file": "aux-shadow-depth-3fbae1573794a787ef137f606f8655325ea72b0a1e9db908c46738da12593963-c308f85ae85e62c717a49f0519deee165a19f951996ec228be4296c2ab90ab34.json",
       "shape": "shadow-depth",
-      "configHash": "229b21ec4847decf7dece3e72006f5b0f7f81fbba566200c37f0ecf8e1ebdad9",
-      "hash": null,
-      "capturedAt": "2026-07-16T19:15:11.964Z"
+      "configHash": "3fbae1573794a787ef137f606f8655325ea72b0a1e9db908c46738da12593963",
+      "hash": "c308f85ae85e62c717a49f0519deee165a19f951996ec228be4296c2ab90ab34",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:45:33.114Z"
     },
-    "lights:8e89675f38ee3fcd342ccc99280960319aafd69442de469e76b4fc07bfbc8742": {
-      "file": "aux-lights-8e89675f38ee.json",
+    "lights:08059e3a362b68d312872d0217c759c5b8e27b1b8d2adc24b4cfeaa977489d6e": {
+      "file": "aux-lights-08059e3a362b.json",
       "shape": "lights",
-      "configHash": "8e89675f38ee3fcd342ccc99280960319aafd69442de469e76b4fc07bfbc8742",
-      "hash": null,
-      "capturedAt": "2026-07-16T19:15:13.679Z"
+      "configHash": "08059e3a362b68d312872d0217c759c5b8e27b1b8d2adc24b4cfeaa977489d6e",
+      "hash": "6b888c836244c7e2b2b4f1eeb0279e9a7d6ebf650b6c6ed38caee6d9593eeb11",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:45:36.737Z"
     },
-    "shadow-depth:6b198fcdc582b8cfc494ea407899bb0bc1ce4eb13bbae7f41031d1e9de99e2bd": {
-      "file": "aux-shadow-depth-6b198fcdc582.json",
+    "shadow-depth:1a7aa5f457fe8be3c1f32e05634ee9af20a1fd0928b3cbe7ace6ae92c13b701c": {
+      "file": "aux-shadow-depth-1a7aa5f457fe.json",
       "shape": "shadow-depth",
-      "configHash": "6b198fcdc582b8cfc494ea407899bb0bc1ce4eb13bbae7f41031d1e9de99e2bd",
-      "hash": null,
-      "capturedAt": "2026-07-16T19:15:13.704Z"
+      "configHash": "1a7aa5f457fe8be3c1f32e05634ee9af20a1fd0928b3cbe7ace6ae92c13b701c",
+      "hash": "a89932a7f7fce4a0f972498eca2435ffdd0d0980e57e71431640f43367336430",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:45:36.828Z"
     },
-    "shadow-depth:b79161c137812f70e58148460f678917d945eb939782b631bc1370b1f12626a1": {
-      "file": "aux-shadow-depth-b79161c13781.json",
+    "shadow-depth:55946bf96188af0ff77640f2657756a2fa4cce5d6f778335a1ccda3a1b16e50a": {
+      "file": "aux-shadow-depth-55946bf96188.json",
       "shape": "shadow-depth",
-      "configHash": "b79161c137812f70e58148460f678917d945eb939782b631bc1370b1f12626a1",
-      "hash": null,
-      "capturedAt": "2026-07-16T19:15:17.078Z"
+      "configHash": "55946bf96188af0ff77640f2657756a2fa4cce5d6f778335a1ccda3a1b16e50a",
+      "hash": "9bbe401a4fc8f845a7f2482a6629a5c17211308b5f83e7c15cb0376d6fdf126b",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:45:40.800Z"
     },
-    "shadow-depth:cbcf65d380302dd57ca5cd8aa2696b54a1ce7a2caa3f4b17440e1d20b208a8c5": {
-      "file": "aux-shadow-depth-cbcf65d38030.json",
+    "shadow-depth:5ec5d16c3d52c4dc45186183207f33c77cfe4e5dda5159fb9dd39f677e808349": {
+      "file": "aux-shadow-depth-5ec5d16c3d52.json",
       "shape": "shadow-depth",
-      "configHash": "cbcf65d380302dd57ca5cd8aa2696b54a1ce7a2caa3f4b17440e1d20b208a8c5",
-      "hash": null,
-      "capturedAt": "2026-07-16T19:15:18.807Z"
+      "configHash": "5ec5d16c3d52c4dc45186183207f33c77cfe4e5dda5159fb9dd39f677e808349",
+      "hash": "d045992b85e82ac246e394976de060939f38efe627666ddf33923f5450c294b4",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T12:45:42.912Z"
     }
   },
   "shadow-debug-directional-floor": {
-    "file": "shadow-debug-directional-floor.7d83fde4596d.json",
-    "hash": "7d83fde4596dcbf1fdc8ff296d3b20267918614964ffbf5ea289534a15cbfac9",
+    "file": "shadow-debug-directional-floor.1801553a3c0f.json",
+    "hash": "1801553a3c0fd3768b4b86f052f3b5aec60648cc081fd931cd78d07fdd054af6",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/shared.js:precompile:0",
-        "revision": "f55c6522308758e03d9e289cd707052c3c3d3d5522c923af8612f8b6bc54a06c"
+        "revision": "1bb51e46f424bf32a73c819334b54640e1c0ad82a1997c320afca9a0300603f5",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
       }
     ],
-    "capturedAt": "2026-07-16T19:15:05.219Z"
+    "capturedAt": "2026-08-02T12:45:23.380Z"
   },
   "shadow-debug-directional-cube": {
-    "file": "shadow-debug-directional-cube.5e7233b127f6.json",
-    "hash": "5e7233b127f627285454e0bce89258da54b4c6596dc1328130107cb3a3034916",
+    "file": "shadow-debug-directional-cube.e3663de7a7df.json",
+    "hash": "e3663de7a7df886ba087b6ddc094baa289ebcf8658f39684ec4d0b39c94ef0ba",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/shared.js:precompile:0",
-        "revision": "f55c6522308758e03d9e289cd707052c3c3d3d5522c923af8612f8b6bc54a06c"
+        "revision": "1bb51e46f424bf32a73c819334b54640e1c0ad82a1997c320afca9a0300603f5",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
       }
     ],
-    "capturedAt": "2026-07-16T19:15:05.262Z"
+    "capturedAt": "2026-08-02T12:45:23.549Z"
   },
   "shadow-debug-directional-sphere": {
-    "file": "shadow-debug-directional-sphere.a343920f82e0.json",
-    "hash": "a343920f82e065d99375fd323a39872fa95e119b9fd4815a93ac886ff0845ba8",
+    "file": "shadow-debug-directional-sphere.ff7bdc37dcc3.json",
+    "hash": "ff7bdc37dcc3bce300e2db867f817dd20425a21e941af9b49584cf004cab18db",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/shared.js:precompile:0",
-        "revision": "f55c6522308758e03d9e289cd707052c3c3d3d5522c923af8612f8b6bc54a06c"
+        "revision": "1bb51e46f424bf32a73c819334b54640e1c0ad82a1997c320afca9a0300603f5",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
       }
     ],
-    "capturedAt": "2026-07-16T19:15:05.298Z"
+    "capturedAt": "2026-08-02T12:45:23.751Z"
   },
   "shadow-debug-spot-floor": {
-    "file": "shadow-debug-spot-floor.39ea39efba06.json",
-    "hash": "39ea39efba06cb63d10a642c2916c3482e071ec26d328e85751126e7fe8db3ad",
+    "file": "shadow-debug-spot-floor.f2ec27805d04.json",
+    "hash": "f2ec27805d04f14f257d130f2d108cd2800d64227156c647e97b506f27f72f7b",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/shared.js:precompile:0",
-        "revision": "f55c6522308758e03d9e289cd707052c3c3d3d5522c923af8612f8b6bc54a06c"
+        "revision": "1bb51e46f424bf32a73c819334b54640e1c0ad82a1997c320afca9a0300603f5",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
       }
     ],
-    "capturedAt": "2026-07-16T19:15:12.011Z"
+    "capturedAt": "2026-08-02T12:45:33.320Z"
   },
   "shadow-debug-spot-cube": {
-    "file": "shadow-debug-spot-cube.864fda24749c.json",
-    "hash": "864fda24749c5b8c811fc964ff1a080391a7970d8a4221fce1c2b94edaff458b",
+    "file": "shadow-debug-spot-cube.74e60de0cd10.json",
+    "hash": "74e60de0cd101fc952814960eb3ce8b34fc3fdae368fd7f983019ad1377907b6",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/shared.js:precompile:0",
-        "revision": "f55c6522308758e03d9e289cd707052c3c3d3d5522c923af8612f8b6bc54a06c"
+        "revision": "1bb51e46f424bf32a73c819334b54640e1c0ad82a1997c320afca9a0300603f5",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
       }
     ],
-    "capturedAt": "2026-07-16T19:15:12.055Z"
+    "capturedAt": "2026-08-02T12:45:33.510Z"
   },
   "shadow-debug-spot-sphere": {
-    "file": "shadow-debug-spot-sphere.d0d7320e2c4d.json",
-    "hash": "d0d7320e2c4d952ccbf2b8ca355c5239abb36a5ceeb3761290c58041b81838a2",
+    "file": "shadow-debug-spot-sphere.289dc4944f4a.json",
+    "hash": "289dc4944f4a8d2c0f5b1d4b0e039034caf5687dbcaf233da861f2cabaa2b1e6",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/shared.js:precompile:0",
-        "revision": "f55c6522308758e03d9e289cd707052c3c3d3d5522c923af8612f8b6bc54a06c"
+        "revision": "1bb51e46f424bf32a73c819334b54640e1c0ad82a1997c320afca9a0300603f5",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
       }
     ],
-    "capturedAt": "2026-07-16T19:15:12.096Z"
+    "capturedAt": "2026-08-02T12:45:33.664Z"
   },
   "shadow-debug-point-floor": {
-    "file": "shadow-debug-point-floor.12d0b9aea84c.json",
-    "hash": "12d0b9aea84c39fe90b022168597d698e349f112ab6498e7a36a6b708a93d0d2",
+    "file": "shadow-debug-point-floor.dabbf1cb1684.json",
+    "hash": "dabbf1cb16849ce26f5d66b75b1b94f3bc1783b0678db2fe0430ebea01ca8d06",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/shared.js:precompile:0",
-        "revision": "f55c6522308758e03d9e289cd707052c3c3d3d5522c923af8612f8b6bc54a06c"
+        "revision": "1bb51e46f424bf32a73c819334b54640e1c0ad82a1997c320afca9a0300603f5",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
       }
     ],
-    "capturedAt": "2026-07-16T19:15:18.859Z"
+    "capturedAt": "2026-08-02T12:45:43.008Z"
   },
   "shadow-debug-point-cube": {
-    "file": "shadow-debug-point-cube.bb71f1e53edb.json",
-    "hash": "bb71f1e53edb42ffd8570ed0418bae4340d7baa65c8540a72fb6a0db7e5d6eff",
+    "file": "shadow-debug-point-cube.258314f70827.json",
+    "hash": "258314f70827b94135dcd6bf4db5e1a830ca62566366a10bd2a2cdfef7bc6704",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/shared.js:precompile:0",
-        "revision": "f55c6522308758e03d9e289cd707052c3c3d3d5522c923af8612f8b6bc54a06c"
+        "revision": "1bb51e46f424bf32a73c819334b54640e1c0ad82a1997c320afca9a0300603f5",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
       }
     ],
-    "capturedAt": "2026-07-16T19:15:18.900Z"
+    "capturedAt": "2026-08-02T12:45:43.196Z"
   },
   "shadow-debug-point-sphere": {
-    "file": "shadow-debug-point-sphere.b4829d96b91c.json",
-    "hash": "b4829d96b91c3d81d0906ef6b3c1b04691ef6714814b7bf658a3c605db0b8c88",
+    "file": "shadow-debug-point-sphere.668ec2a4d9b2.json",
+    "hash": "668ec2a4d9b271aab760b9bcec4b83b8952da275bea94cb04d72cd8293808b1e",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/shared.js:precompile:0",
-        "revision": "f55c6522308758e03d9e289cd707052c3c3d3d5522c923af8612f8b6bc54a06c"
+        "revision": "1bb51e46f424bf32a73c819334b54640e1c0ad82a1997c320afca9a0300603f5",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
       }
     ],
-    "capturedAt": "2026-07-16T19:15:18.936Z"
+    "capturedAt": "2026-08-02T12:45:43.360Z"
   }
 }

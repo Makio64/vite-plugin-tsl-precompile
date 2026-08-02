@@ -1,7 +1,7 @@
 {
   "__materialShape": "render-output",
   "__configHash": "3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8",
-  "__hash": "15fcd682dd7725875016c17625cad698022ceb5672714f4ff1ea8df6a3c435a3",
+  "__hash": "6e976d887f0dbf1f99a839a88d7dd3e1cfc83ddd3c4bcff2ec40626ba6cd4c16",
   "__name": "aux-render-output-3f1fa57642fc",
   "threeVersion": "0.185.1",
   "pluginVersion": "0.1.0",
@@ -223,8 +223,8 @@
               "valueSnapshot": {
                 "type": "vec2",
                 "data": [
-                  2952,
-                  1612
+                  1280,
+                  720
                 ]
               }
             }
@@ -269,7 +269,7 @@
             "visibility": 2,
             "source": {
               "kind": "artifact.texture",
-              "textureUuid": "93037ecf-bc2b-4702-9148-64650b812445",
+              "textureUuid": "adeb40d5-50b2-4a0e-ad96-c38420680364",
               "mapping": 300,
               "wrapS": 1001,
               "wrapT": 1001,
@@ -279,8 +279,8 @@
               "generateMipmaps": false,
               "colorSpace": "srgb-linear",
               "flipY": false,
-              "imageWidth": 2952,
-              "imageHeight": 1612,
+              "imageWidth": 1280,
+              "imageHeight": 720,
               "imageDepth": 1,
               "renderTargetSelector": {
                 "schema": "renderer-render-target-texture@1",
@@ -302,8 +302,8 @@
                 "hints": {
                   "name": null,
                   "extent": {
-                    "width": 2952,
-                    "height": 1612,
+                    "width": 1280,
+                    "height": 720,
                     "depth": 1
                   }
                 }
@@ -319,7 +319,7 @@
             "visibility": 2,
             "source": {
               "kind": "artifact.texture",
-              "textureUuid": "93037ecf-bc2b-4702-9148-64650b812445",
+              "textureUuid": "adeb40d5-50b2-4a0e-ad96-c38420680364",
               "mapping": 300,
               "wrapS": 1001,
               "wrapT": 1001,
@@ -329,8 +329,8 @@
               "generateMipmaps": false,
               "colorSpace": "srgb-linear",
               "flipY": false,
-              "imageWidth": 2952,
-              "imageHeight": 1612,
+              "imageWidth": 1280,
+              "imageHeight": 720,
               "imageDepth": 1,
               "renderTargetSelector": {
                 "schema": "renderer-render-target-texture@1",
@@ -352,8 +352,8 @@
                 "hints": {
                   "name": null,
                   "extent": {
-                    "width": 2952,
-                    "height": 1612,
+                    "width": 1280,
+                    "height": 720,
                     "depth": 1
                   }
                 }
@@ -373,7 +373,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "93037ecf-bc2b-4702-9148-64650b812445",
+                "textureUuid": "adeb40d5-50b2-4a0e-ad96-c38420680364",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
@@ -383,8 +383,8 @@
                 "generateMipmaps": false,
                 "colorSpace": "srgb-linear",
                 "flipY": false,
-                "imageWidth": 2952,
-                "imageHeight": 1612,
+                "imageWidth": 1280,
+                "imageHeight": 720,
                 "imageDepth": 1,
                 "renderTargetSelector": {
                   "schema": "renderer-render-target-texture@1",
@@ -406,8 +406,8 @@
                   "hints": {
                     "name": null,
                     "extent": {
-                      "width": 2952,
-                      "height": 1612,
+                      "width": 1280,
+                      "height": 720,
                       "depth": 1
                     }
                   }
@@ -426,7 +426,7 @@
               "visibility": 2,
               "source": {
                 "kind": "artifact.texture",
-                "textureUuid": "93037ecf-bc2b-4702-9148-64650b812445",
+                "textureUuid": "adeb40d5-50b2-4a0e-ad96-c38420680364",
                 "mapping": 300,
                 "wrapS": 1001,
                 "wrapT": 1001,
@@ -436,8 +436,8 @@
                 "generateMipmaps": false,
                 "colorSpace": "srgb-linear",
                 "flipY": false,
-                "imageWidth": 2952,
-                "imageHeight": 1612,
+                "imageWidth": 1280,
+                "imageHeight": 720,
                 "imageDepth": 1,
                 "renderTargetSelector": {
                   "schema": "renderer-render-target-texture@1",
@@ -459,8 +459,8 @@
                   "hints": {
                     "name": null,
                     "extent": {
-                      "width": 2952,
-                      "height": 1612,
+                      "width": 1280,
+                      "height": 720,
                       "depth": 1
                     }
                   }
@@ -484,8 +484,8 @@
                   "valueSnapshot": {
                     "type": "vec2",
                     "data": [
-                      2952,
-                      1612
+                      1280,
+                      720
                     ]
                   }
                 }
@@ -569,8 +569,8 @@
     "renderContextSelectors": [
       "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":0,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":false,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":0,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[],\"depth\":true,\"depthTexture\":null,\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"default\"},\"version\":\"render-object-selector@1\"}"
     ],
-    "materialUuid": "9338a2b2-7c4d-415f-8382-cc62f185bb40",
-    "captureClock": 0.09019999998807907,
+    "materialUuid": "84458e41-d861-4211-a562-3fa25eb2c460",
+    "captureClock": 0.19859999999999128,
     "replayConfig": {
       "schema": "renderer-output@1",
       "toneMapping": 0,
@@ -808,7 +808,7 @@
                 "dtype": "uint",
                 "source": {
                   "kind": "texture.uvFlipY",
-                  "textureUuid": "73893a35-6d59-4423-a22c-341d357f3694",
+                  "textureUuid": "10c23831-02df-4f43-9c57-1204820dbe06",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,
@@ -867,7 +867,7 @@
                 "visibility": 0,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "73893a35-6d59-4423-a22c-341d357f3694",
+                  "textureUuid": "10c23831-02df-4f43-9c57-1204820dbe06",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,
@@ -921,7 +921,7 @@
                   "visibility": 0,
                   "source": {
                     "kind": "artifact.texture",
-                    "textureUuid": "73893a35-6d59-4423-a22c-341d357f3694",
+                    "textureUuid": "10c23831-02df-4f43-9c57-1204820dbe06",
                     "mapping": 300,
                     "wrapS": 1001,
                     "wrapT": 1001,
@@ -992,7 +992,7 @@
                     "dtype": "uint",
                     "source": {
                       "kind": "texture.uvFlipY",
-                      "textureUuid": "73893a35-6d59-4423-a22c-341d357f3694",
+                      "textureUuid": "10c23831-02df-4f43-9c57-1204820dbe06",
                       "mapping": 300,
                       "wrapS": 1001,
                       "wrapT": 1001,
@@ -1309,8 +1309,8 @@
                   "valueSnapshot": {
                     "type": "vec2",
                     "data": [
-                      2952,
-                      1612
+                      1280,
+                      720
                     ]
                   }
                 }
@@ -1355,7 +1355,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "93037ecf-bc2b-4702-9148-64650b812445",
+                  "textureUuid": "adeb40d5-50b2-4a0e-ad96-c38420680364",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,
@@ -1365,8 +1365,8 @@
                   "generateMipmaps": false,
                   "colorSpace": "srgb-linear",
                   "flipY": false,
-                  "imageWidth": 2952,
-                  "imageHeight": 1612,
+                  "imageWidth": 1280,
+                  "imageHeight": 720,
                   "imageDepth": 1,
                   "renderTargetSelector": {
                     "schema": "renderer-render-target-texture@1",
@@ -1388,8 +1388,8 @@
                     "hints": {
                       "name": null,
                       "extent": {
-                        "width": 2952,
-                        "height": 1612,
+                        "width": 1280,
+                        "height": 720,
                         "depth": 1
                       }
                     }
@@ -1405,7 +1405,7 @@
                 "visibility": 2,
                 "source": {
                   "kind": "artifact.texture",
-                  "textureUuid": "93037ecf-bc2b-4702-9148-64650b812445",
+                  "textureUuid": "adeb40d5-50b2-4a0e-ad96-c38420680364",
                   "mapping": 300,
                   "wrapS": 1001,
                   "wrapT": 1001,
@@ -1415,8 +1415,8 @@
                   "generateMipmaps": false,
                   "colorSpace": "srgb-linear",
                   "flipY": false,
-                  "imageWidth": 2952,
-                  "imageHeight": 1612,
+                  "imageWidth": 1280,
+                  "imageHeight": 720,
                   "imageDepth": 1,
                   "renderTargetSelector": {
                     "schema": "renderer-render-target-texture@1",
@@ -1438,8 +1438,8 @@
                     "hints": {
                       "name": null,
                       "extent": {
-                        "width": 2952,
-                        "height": 1612,
+                        "width": 1280,
+                        "height": 720,
                         "depth": 1
                       }
                     }
@@ -1459,7 +1459,7 @@
                   "visibility": 2,
                   "source": {
                     "kind": "artifact.texture",
-                    "textureUuid": "93037ecf-bc2b-4702-9148-64650b812445",
+                    "textureUuid": "adeb40d5-50b2-4a0e-ad96-c38420680364",
                     "mapping": 300,
                     "wrapS": 1001,
                     "wrapT": 1001,
@@ -1469,8 +1469,8 @@
                     "generateMipmaps": false,
                     "colorSpace": "srgb-linear",
                     "flipY": false,
-                    "imageWidth": 2952,
-                    "imageHeight": 1612,
+                    "imageWidth": 1280,
+                    "imageHeight": 720,
                     "imageDepth": 1,
                     "renderTargetSelector": {
                       "schema": "renderer-render-target-texture@1",
@@ -1492,8 +1492,8 @@
                       "hints": {
                         "name": null,
                         "extent": {
-                          "width": 2952,
-                          "height": 1612,
+                          "width": 1280,
+                          "height": 720,
                           "depth": 1
                         }
                       }
@@ -1512,7 +1512,7 @@
                   "visibility": 2,
                   "source": {
                     "kind": "artifact.texture",
-                    "textureUuid": "93037ecf-bc2b-4702-9148-64650b812445",
+                    "textureUuid": "adeb40d5-50b2-4a0e-ad96-c38420680364",
                     "mapping": 300,
                     "wrapS": 1001,
                     "wrapT": 1001,
@@ -1522,8 +1522,8 @@
                     "generateMipmaps": false,
                     "colorSpace": "srgb-linear",
                     "flipY": false,
-                    "imageWidth": 2952,
-                    "imageHeight": 1612,
+                    "imageWidth": 1280,
+                    "imageHeight": 720,
                     "imageDepth": 1,
                     "renderTargetSelector": {
                       "schema": "renderer-render-target-texture@1",
@@ -1545,8 +1545,8 @@
                       "hints": {
                         "name": null,
                         "extent": {
-                          "width": 2952,
-                          "height": 1612,
+                          "width": 1280,
+                          "height": 720,
                           "depth": 1
                         }
                       }
@@ -1570,8 +1570,8 @@
                       "valueSnapshot": {
                         "type": "vec2",
                         "data": [
-                          2952,
-                          1612
+                          1280,
+                          720
                         ]
                       }
                     }

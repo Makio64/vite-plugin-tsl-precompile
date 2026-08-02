@@ -4,27 +4,27 @@
       "file": "aux-render-output-3f1fa57642fc.json",
       "shape": "render-output",
       "configHash": "3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8",
-      "hash": "15fcd682dd7725875016c17625cad698022ceb5672714f4ff1ea8df6a3c435a3",
+      "hash": "6e976d887f0dbf1f99a839a88d7dd3e1cfc83ddd3c4bcff2ec40626ba6cd4c16",
       "threeVersion": "0.185.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-08-02T05:13:50.128Z"
+      "capturedAt": "2026-08-02T12:44:54.401Z"
     }
   },
   "getting-started": {
-    "file": "getting-started.a4067f1ebb6b.json",
-    "hash": "a4067f1ebb6bf49743fad904ee5924ec284e9b2560544e735f9e133e8ccc5bb0",
+    "file": "getting-started.2d6ac9055ef5.json",
+    "hash": "2d6ac9055ef5bab257eac1acf95f0103f39fc758ed65b44a85e37a27838f6338",
     "sourceIdentity": "fa21f08570e880101a6291f2efd85c976e6aaeb5d99b697e5f0ef92cadea0658",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "main.js:precompile:0",
-        "revision": "b9ae6d32720f190085bea3b325e91298ff9cce9fff630c1ee862ba42f1399fbe",
+        "revision": "6fbdea078625b39777bfe3d59c44414e5fb357628deff3bbb18e398661208827",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": []
         }
       }
     ],
-    "capturedAt": "2026-08-02T05:13:50.357Z"
+    "capturedAt": "2026-08-02T12:44:54.460Z"
   }
 }
