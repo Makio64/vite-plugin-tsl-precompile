@@ -14,7 +14,7 @@ import { color, mix, pass, positionLocal, sin, time } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { createMaterialVariants } from '@tsl-precompile/runtime/material-variants';
 import { bindPostprocessAuxByName, POSTPROCESS_AUX_NAMES } from './postprocess-aux.js';
-import { recordLiveRouteFrame } from './site-status.js';
+import { recordLiveRouteFrame, runLiveRouteSetup } from './site-status.js';
 
 const CAPTURE_ENDPOINT = window.__TSLP_E2E?.captureEndpoint || '/__tsl-precompile/capture';
 const IS_E2E = !! window.__TSLP_E2E;
@@ -103,14 +103,74 @@ async function ensurePipelineAux( capture, renderer, scene, camera, postProcessi
 		postProcessing,
 		postProcessingName: name,
 		renderPipeline: postProcessing,
-	} ).catch( ( err ) => {
-
-		console.warn( '[postprocessing-debug/variants] auxiliary capture failed:', err );
-		return [ { shape: 'aux', ok: false, error: err && err.message || String( err ) } ];
-
 	} );
+	const matching = results.filter( ( result ) => result?.shape === 'post-process' && result.ok === true );
+	if ( matching.length !== 1 ) {
+
+		throw new Error(
+			`[postprocessing-debug/variants] named capture ${ JSON.stringify( name ) } returned ` +
+			`${ matching.length } successful post-process artifacts: ${ JSON.stringify( results ) }`,
+		);
+
+	}
 
 	return results.map( ( r ) => `${ r.shape }:${ r.ok ? 'ok' : 'err' }` ).join( ', ' ) || `${ name }:no aux`;
+
+}
+
+async function renderCaptureVariantsOncePerFrame( renderer, postProcessing, variants, cube ) {
+
+	const previousAnimationLoop = renderer.getAnimationLoop();
+
+	await new Promise( ( resolve, reject ) => {
+
+		let variantIndex = 0;
+		let settled = false;
+
+		const restoreAnimationLoop = () => {
+
+			void renderer.setAnimationLoop( previousAnimationLoop );
+
+		};
+		const finish = ( error ) => {
+
+			if ( settled ) return;
+			settled = true;
+			clearTimeout( timeoutId );
+			restoreAnimationLoop();
+
+			if ( error ) reject( error );
+			else resolve();
+
+		};
+		const timeoutId = setTimeout( () => {
+
+			finish( new Error(
+				`[postprocessing-debug/variants] timed out rendering ${ VARIANT_ORDER.length } capture variants`,
+			) );
+
+		}, 10_000 );
+
+		void renderer.setAnimationLoop( () => {
+
+			try {
+
+				const variantName = VARIANT_ORDER[ variantIndex ];
+				variants.select( variantName, cube );
+				postProcessing.render();
+				variantIndex ++;
+
+				if ( variantIndex === VARIANT_ORDER.length ) finish();
+
+			} catch ( error ) {
+
+				finish( error );
+
+			}
+
+		} ).catch( finish );
+
+	} );
 
 }
 
@@ -133,6 +193,7 @@ async function main() {
 		capture = await setupCaptureRuntime( renderer, CAPTURE_ENDPOINT );
 
 	}
+	const captureBaseline = capture?.setup.captureStatus();
 
 	const scene = new Scene();
 	const camera = new PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 0.1, 60 );
@@ -181,6 +242,20 @@ async function main() {
 	scene.add( group );
 
 	const post = makePostPipelines( renderer, scene, camera );
+	if ( capture ) {
+
+		// Each variant owns a distinct shader graph but only one is mounted at a
+		// time. PassNode producers have FRAME cadence, so render one state per
+		// real renderer frame instead of issuing several renders in one frame.
+		await renderCaptureVariantsOncePerFrame( renderer, post.plain, variants, cube );
+		variants.select( 'ember', cube );
+		await capture.setup.waitForCaptureSettled( {
+			since: captureBaseline,
+			timeoutMs: 30_000,
+			settleMs: 50,
+		} );
+
+	}
 	const plainAux = await ensurePipelineAux( capture, renderer, scene, camera, post.plain, POST_PLAIN );
 	const bloomAux = await ensurePipelineAux( capture, renderer, scene, camera, post.bloom, POST_BLOOM );
 	const auxStatus = IS_E2E ? 'ready' : `${ plainAux } / ${ bloomAux }`;
@@ -225,4 +300,4 @@ async function main() {
 
 }
 
-main();
+runLiveRouteSetup( main );

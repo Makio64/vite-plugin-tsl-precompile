@@ -14,6 +14,10 @@ import {
 	PRODUCTION_BROWSER_BASE_ARGS,
 	PRODUCTION_PREVIEW_VIEWPORT,
 } from '../../../examples/preview-smoke/run-production-routes.mjs';
+import {
+	evidenceBrowserLaunchArgs,
+	LINUX_SWIFTSHADER_BROWSER_ARGS,
+} from '../../../examples/batch/e2e-environment.mjs';
 import { RECAPTURE_VIEWPORT } from '../../src/cli/recapture-support.js';
 
 const REPO = resolve( import.meta.dirname, '../../../..' );
@@ -79,15 +83,34 @@ test( 'production preview uses recapture-compatible native WebGPU flags on Darwi
 
 } );
 
-test( 'production preview retains software WebGPU fallback flags on Linux', () => {
+test( 'production preview shares deterministic WebGPU and WebGL SwiftShader flags on Linux', () => {
 
 	const plan = createProductionBrowserLaunchPlan( { platform: 'linux', headless: false } );
-	assert.equal( plan[ 0 ].channel, 'chrome' );
-	assert.equal( plan[ 0 ].options.channel, 'chrome' );
+	const expectedArgs = evidenceBrowserLaunchArgs( PRODUCTION_BROWSER_BASE_ARGS, 'linux' );
+	assert.equal( plan[ 0 ].channel, 'playwright-chromium' );
+	assert.equal( plan[ 0 ].options.channel, undefined );
 	assert.equal( plan[ 0 ].options.headless, false );
-	assert.ok( plan[ 0 ].options.args.includes( '--enable-features=Vulkan,WebGPUService' ) );
-	assert.ok( plan[ 0 ].options.args.includes( '--use-vulkan=swiftshader' ) );
-	assert.ok( plan[ 0 ].options.args.includes( '--use-angle=swiftshader' ) );
+	assert.equal( plan[ 1 ].channel, 'chrome' );
+	assert.equal( plan[ 1 ].options.channel, 'chrome' );
+	for ( const candidate of plan ) {
+
+		assert.deepEqual( candidate.options.args, expectedArgs );
+		for ( const arg of LINUX_SWIFTSHADER_BROWSER_ARGS ) {
+
+			assert.ok( candidate.options.args.includes( arg ) );
+
+		}
+		assert.ok( ! candidate.options.args.includes( '--use-vulkan=swiftshader' ) );
+		assert.ok( ! candidate.options.args.includes( '--enable-features=Vulkan,WebGPUService' ) );
+
+	}
+
+	const source = readFileSync(
+		resolve( REPO, 'packages/examples/preview-smoke/run-production-routes.mjs' ),
+		'utf8',
+	);
+	assert.match( source, /evidenceBrowserLaunchArgs\( PRODUCTION_BROWSER_BASE_ARGS, platform \)/ );
+	assert.doesNotMatch( source, /use-vulkan=swiftshader/ );
 
 } );
 
@@ -262,7 +285,7 @@ test( 'production preview fails closed on fallback, capture, browser, domain, an
 
 } );
 
-test( 'recapture production preview is wired before artifact commit', () => {
+test( 'recapture production preview is wired before commit and fixtures publish domain receipts', () => {
 
 	const recapture = readFileSync(
 		resolve( REPO, 'packages/plugin/src/cli/recapture-all.js' ),
@@ -272,5 +295,33 @@ test( 'recapture production preview is wired before artifact commit', () => {
 	const previewIndex = recapture.indexOf( 'await runProductionPreview(abortController.signal, example, selection.port);' );
 	const commitIndex = recapture.indexOf( 'transaction.commit()' );
 	assert.ok( buildIndex >= 0 && buildIndex < previewIndex && previewIndex < commitIndex );
+
+	const shadow = readFileSync(
+		resolve( REPO, 'packages/examples/shadow-debug/src/shared.js' ),
+		'utf8',
+	);
+	assert.match( shadow, /__TSLP_SITE_DOMAIN__ = shadowReplayReceipt/ );
+	assert.match( shadow, /populateShadowMaps\( scene, camera \)/ );
+	assert.match( shadow, /shadowReplayReceipt\.rendered \|\|=/ );
+	assert.match( shadow, /shadowReplayReceipt\.renderFrames \+= 1/ );
+	assert.match( shadow, /mapPassTexture === shadowLight\.shadow\.__tslpVsmShadowTexture/ );
+
+	const pmrem = readFileSync(
+		resolve( REPO, 'packages/examples/pmrem-debug/src/shared.js' ),
+		'utf8',
+	);
+	assert.match( pmrem, /__TSLP_SITE_DOMAIN__ = pmremReplayReceipt/ );
+	assert.match( pmrem, /isPMREMTexture: environmentTarget\?\.texture\?\.isPMREMTexture === true/ );
+	assert.match( pmrem, /pmremReplayReceipt\.renderFrames \+= 1/ );
+	assert.match( pmrem, /scene\.environment === environmentTarget\.texture/ );
+	for ( const page of [ 'equirect', 'cubemap', 'from-scene', 'transmission' ] ) {
+
+		const html = readFileSync(
+			resolve( REPO, `packages/examples/pmrem-debug/${ page }.html` ),
+			'utf8',
+		);
+		assert.match( html, /src="\/src\/site-status\.js"/ );
+
+	}
 
 } );

@@ -17,6 +17,7 @@ export default defineConfig( {
 	plugins: [
 		tslPrecompile( {
 			artifactsDir: './artifacts',
+			slim: 'source',
 		} ),
 	],
 	server: {

@@ -16,6 +16,7 @@ import {
 	VSMShadowMap,
 } from 'three';
 import { WebGPURenderer, Mesh, MeshStandardNodeMaterial } from 'three/webgpu';
+import { createPrecompiledShadowSupport } from '@tsl-precompile/runtime/slim-support/precompiled-shadows';
 
 const SHADOW_TYPES = {
 	basic: { label: 'Basic', value: BasicShadowMap },
@@ -249,11 +250,49 @@ export async function runShadowDebugExample( {
 
 	scene.add( new AmbientLight( 0xffffff, 0.08 ) );
 	const casters = addDebugGeometry( scene, lightKind );
-	makeLight( lightKind, scene );
+	const shadowLight = makeLight( lightKind, scene );
+	const precompiledShadowSupport = import.meta.env?.PROD === true && shadowKind === 'vsm' && lightKind !== 'point'
+		? createPrecompiledShadowSupport( { renderer } )
+		: null;
+	const shadowReplayReceipt = precompiledShadowSupport ? {
+		type: 'vsm',
+		lightKind,
+		shadowKind,
+		schedulerCalls: 0,
+		complete: false,
+		rendered: false,
+		lights: 0,
+		unsupported: [],
+		renderFrames: 0,
+		outputBound: false,
+	} : null;
+	globalThis.__TSLP_SITE_DOMAIN__ = shadowReplayReceipt;
 
 	function tick() {
 		casters.rotation.y = 0;
+		if ( precompiledShadowSupport ) {
+
+			const result = precompiledShadowSupport.populateShadowMaps( scene, camera );
+			shadowReplayReceipt.schedulerCalls += 1;
+			shadowReplayReceipt.complete = result.complete === true;
+			shadowReplayReceipt.rendered ||= result.rendered === true;
+			shadowReplayReceipt.lights = Math.max( shadowReplayReceipt.lights, result.lights || 0 );
+			shadowReplayReceipt.unsupported = ( result.unsupported || [] ).map( ( entry ) => ( {
+				light: entry?.light?.name || entry?.light?.uuid || null,
+				reason: String( entry?.reason || entry || 'unsupported VSM light' ),
+			} ) );
+			if ( ! result.complete ) throw new Error( '[shadow-debug] compiler-free VSM scheduler did not cover the scene.' );
+
+		}
 		renderer.render( scene, camera );
+		if ( shadowReplayReceipt ) {
+
+			shadowReplayReceipt.renderFrames += 1;
+			const mapPassTexture = shadowLight.shadow.mapPass?.texture;
+			shadowReplayReceipt.outputBound = mapPassTexture?.isTexture === true &&
+				mapPassTexture === shadowLight.shadow.__tslpVsmShadowTexture;
+
+		}
 	}
 
 	// Material markers deliberately wait for a real draw so their captured
@@ -280,4 +319,13 @@ export async function runShadowDebugExample( {
 		camera.updateProjectionMatrix();
 		renderer.setSize( window.innerWidth, window.innerHeight );
 	} );
+
+	window.addEventListener( 'pagehide', () => {
+		// Stop presentation before invalidating the scheduler it calls. A
+		// queued animation callback can otherwise run during iframe/page
+		// teardown and observe an already-disposed VSM support instance.
+		renderer.setAnimationLoop( null );
+		precompiledShadowSupport?.dispose();
+		renderer.dispose();
+	}, { once: true } );
 }

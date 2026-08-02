@@ -1,5 +1,5 @@
 import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
-import { collectArtifactVariantCandidates, createArtifactVariantPayloadFingerprint } from '@tsl-precompile/contract/artifact-variants';
+import { collectArtifactVariantCandidates, createArtifactVariantSemanticFingerprint } from '@tsl-precompile/contract/artifact-variants';
 import { createRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
 import { GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR } from '@tsl-precompile/contract/variant-selector-sidecar';
@@ -265,7 +265,7 @@ function variantPayloadFingerprint( candidate ) {
 
 	try {
 
-		return createArtifactVariantPayloadFingerprint( candidate );
+		return createArtifactVariantSemanticFingerprint( candidate );
 
 	} catch ( _ ) {
 

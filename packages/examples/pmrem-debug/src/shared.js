@@ -9,19 +9,19 @@ import {
 	EquirectangularReflectionMapping,
 	CubeReflectionMapping,
 	Mesh,
-	MeshBasicMaterial,
 	PerspectiveCamera,
 	PlaneGeometry,
 	Scene,
 	SphereGeometry,
 	SRGBColorSpace,
 } from 'three';
-import { WebGPURenderer, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, PMREMGenerator } from 'three/webgpu';
-import { installPrecompileMarker, precompileAuxiliary, registerLiveTexture, setDevRenderer } from '@tsl-precompile/runtime';
-import * as THREE from 'three';
+import { WebGPURenderer, MeshBasicNodeMaterial, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, PMREMGenerator } from 'three/webgpu';
+import { bindAuxByName, registerLiveTexture } from '@tsl-precompile/runtime';
 
 const CAPTURE_ENDPOINT = window.__TSLP_E2E?.captureEndpoint || '/__tsl-precompile/capture';
 const IS_E2E_REPLAY = window.__TSLP_E2E?.mode === 'replay';
+const SHARED_DIRECTIONAL_LIGHT_INTENSITY = 0.45;
+const SHARED_ENVIRONMENT_INTENSITY = 1.25;
 
 const MODES = {
 	equirect: { label: 'Equirect', page: 'equirect.html' },
@@ -116,11 +116,20 @@ function addEnvironmentSceneObjects( scene ) {
 	];
 
 	for ( let i = 0; i < colors.length; i += 1 ) {
-		const material = new MeshBasicMaterial( { color: colors[ i ], side: BackSide } );
+		const material = new MeshBasicNodeMaterial( { color: colors[ i ], side: BackSide } );
 		const mesh = new Mesh( new PlaneGeometry( 5, 5 ), material );
 		mesh.position.set( ...positions[ i ] );
 		mesh.lookAt( 0, 0, 0 );
 		scene.add( mesh );
+		attachPrecompileSource( material, mesh, scene );
+		if ( ! IS_E2E_REPLAY ) {
+			// Capture names are part of the durable artifact identity, so the
+			// transform requires literal arguments at every call site.
+			if ( i === 0 ) material.precompile( 'pmrem-debug-env-face-0' );
+			else if ( i === 1 ) material.precompile( 'pmrem-debug-env-face-1' );
+			else if ( i === 2 ) material.precompile( 'pmrem-debug-env-face-2' );
+			else material.precompile( 'pmrem-debug-env-face-3' );
+		}
 	}
 }
 
@@ -183,7 +192,7 @@ function addSceneGeometry( scene, { transmission = false } = {} ) {
 	return { metalSphere, roughSphere };
 }
 
-async function makeFromSceneTexture( renderer ) {
+async function makeFromSceneTarget( renderer ) {
 	const envScene = new Scene();
 	envScene.background = new Color( 0x161b28 );
 	addEnvironmentSceneObjects( envScene );
@@ -193,13 +202,24 @@ async function makeFromSceneTexture( renderer ) {
 	target.texture.name = 'pmrem-debug-from-scene-texture';
 	registerLiveTexture( target.texture );
 	pmrem.dispose();
-	return target.texture;
+	return target;
 }
 
-function applyEnvironment( scene, texture, mode ) {
-	scene.environment = texture;
-	scene.background = mode === 'from-scene' ? new Color( 0x14171c ) : texture;
-	scene.environmentIntensity = mode === 'transmission' ? 1.6 : 1.25;
+function makeTextureTarget( renderer, sourceTexture, mode ) {
+	const pmrem = new PMREMGenerator( renderer );
+	const target = mode === 'cubemap'
+		? pmrem.fromCubemap( sourceTexture )
+		: pmrem.fromEquirectangular( sourceTexture );
+	target.texture.name = `pmrem-debug-${ mode }-texture`;
+	registerLiveTexture( target.texture );
+	pmrem.dispose();
+	return target;
+}
+
+function applyEnvironment( scene, environmentTexture, backgroundTexture, mode ) {
+	scene.environment = environmentTexture;
+	scene.background = mode === 'from-scene' ? new Color( 0x14171c ) : backgroundTexture;
+	scene.environmentIntensity = SHARED_ENVIRONMENT_INTENSITY;
 	scene.backgroundIntensity = 0.85;
 	scene.backgroundBlurriness = mode === 'cubemap' ? 0.25 : 0.1;
 	scene.backgroundRotation.y = mode === 'cubemap' ? 0.7 : 0.25;
@@ -210,6 +230,7 @@ export async function runPMREMDebugExample( {
 	title = `${ MODES[ mode ]?.label || mode } PMREM`,
 } = {} ) {
 	if ( ! MODES[ mode ] ) throw new Error( `[pmrem-debug] unknown mode: ${ mode }` );
+	globalThis.__TSLP_SITE_DOMAIN__ = null;
 	setHud( title, mode, 'starting' );
 
 	const renderer = new WebGPURenderer( { antialias: true } );
@@ -220,36 +241,100 @@ export async function runPMREMDebugExample( {
 
 	await renderer.init();
 
-	installPrecompileMarker( THREE, { devEndpoint: CAPTURE_ENDPOINT } );
-	setDevRenderer( renderer );
+	// Keep the compiler/capture helpers out of production. Vite folds this
+	// branch away in a source-slim build; the raw batch capture harness has no
+	// import.meta.env and therefore still exercises the development branch.
+	let captureRuntime = null;
+	let captureThree = null;
+	if ( import.meta.env?.PROD !== true && ! IS_E2E_REPLAY ) {
+
+		[ captureRuntime, captureThree ] = await Promise.all( [
+			import( '@tsl-precompile/runtime' ),
+			// Auxiliary PMREM capture must use Three's WebGPU PMREMGenerator;
+			// the root `three` export is the WebGL ShaderMaterial implementation.
+			import( 'three/webgpu' ),
+		] );
+		captureRuntime.installPrecompileMarker( captureThree, { devEndpoint: CAPTURE_ENDPOINT } );
+		captureRuntime.setDevRenderer( renderer );
+
+	}
 
 	const scene = new Scene();
 	const camera = new PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 0.1, 50 );
 	camera.position.set( 3.3, 1.8, 4.2 );
 	camera.lookAt( 0, 0, 0 );
 
-	let environmentTexture;
-	if ( mode === 'cubemap' ) environmentTexture = makeCubeTexture();
-	else if ( mode === 'from-scene' ) environmentTexture = await makeFromSceneTexture( renderer );
-	else environmentTexture = makeEquirectTexture();
+	let environmentSource = null;
+	let environmentTarget;
+	if ( mode === 'from-scene' ) {
 
-	applyEnvironment( scene, environmentTexture, mode );
+		environmentTarget = await makeFromSceneTarget( renderer );
+
+	} else {
+
+		environmentSource = mode === 'cubemap' ? makeCubeTexture() : makeEquirectTexture();
+		// This explicit call is the production proof: `three/webgpu` resolves to
+		// the compiler-free PMREMGenerator, which replays generated
+		// internal-pass artifacts instead of relying on renderer internals.
+		environmentTarget = makeTextureTarget( renderer, environmentSource, mode );
+
+	}
+
+	const pmremReplayReceipt = {
+		type: 'pmrem',
+		mode,
+		generated: Boolean( environmentTarget?.texture ),
+		isPMREMTexture: environmentTarget?.texture?.isPMREMTexture === true,
+		width: environmentTarget?.width,
+		height: environmentTarget?.height,
+		renderFrames: 0,
+		outputBound: false,
+	};
+	globalThis.__TSLP_SITE_DOMAIN__ = pmremReplayReceipt;
+	applyEnvironment( scene, environmentTarget.texture, environmentSource, mode );
+	if ( import.meta.env?.PROD === true && scene.background?.isTexture === true ) {
+
+		bindAuxByName(
+			scene.background,
+			'background',
+			mode === 'cubemap' ? 'pmrem-debug-background-cubemap' : 'pmrem-debug-background-equirect',
+		);
+
+	}
 
 	scene.add( new AmbientLight( 0xffffff, 0.03 ) );
-	const light = new DirectionalLight( 0xffffff, mode === 'transmission' ? 1.2 : 0.45 );
+	// These names deliberately span every route. The atlas UUID, dimensions,
+	// and addressing scalars form one live relation, so recapture must merge
+	// topology-equivalent environments without freezing route-owned values.
+	const light = new DirectionalLight( 0xffffff, SHARED_DIRECTIONAL_LIGHT_INTENSITY );
 	light.position.set( 3, 4, 2 );
 	scene.add( light );
 
-	const objects = addSceneGeometry( scene, { transmission: mode === 'transmission' } );
+	const objects = addSceneGeometry( scene, {
+		transmission: mode === 'transmission',
+	} );
 
-	const auxResults = await precompileAuxiliary( renderer, scene, camera, {
+	// Context-free .precompile() markers are intentionally claimed only by an
+	// author-visible render. Drive that render before awaiting auxiliary PMREM
+	// capture; otherwise the marker wait and the auxiliary sweep deadlock.
+	if ( captureRuntime && ! IS_E2E_REPLAY ) renderer.render( scene, camera );
+
+	const auxResults = captureRuntime ? await captureRuntime.precompileAuxiliary( renderer, scene, camera, {
 		devEndpoint: CAPTURE_ENDPOINT,
-		three: THREE,
-		threeVersion: globalThis.__TSLP_THREE_PACKAGE_VERSION__ || String( THREE.REVISION ).match( /^\d+/ )[ 0 ],
+		three: captureThree,
+		threeVersion: globalThis.__TSLP_THREE_PACKAGE_VERSION__ || String( captureThree.REVISION ).match( /^\d+/ )[ 0 ],
+		// A CubeUV result does not retain the fromScene request that produced
+		// it, so declare this route's durable atlas layout explicitly.
+		pmremSceneSizes: mode === 'from-scene' ? [ 64 ] : [],
+		backgroundName: mode === 'from-scene'
+			? undefined
+			: mode === 'cubemap'
+				? 'pmrem-debug-background-cubemap'
+				: 'pmrem-debug-background-equirect',
 	} ).catch( ( err ) => {
 		console.warn( '[pmrem-debug] auxiliary capture failed:', err );
 		return [ { shape: 'aux', ok: false, error: err && err.message || String( err ) } ];
-	} );
+	} ) : [];
 
 	const auxSummary = auxResults.map( ( r ) => `${ r.shape }:${ r.ok ? 'ok' : 'err' }` ).join( ', ' ) || 'no aux';
 	setHud( title, mode, `rendering - ${ auxSummary }` );
@@ -258,6 +343,9 @@ export async function runPMREMDebugExample( {
 		objects.metalSphere.rotation.y = 0;
 		objects.roughSphere.rotation.y = 0;
 		renderer.render( scene, camera );
+		pmremReplayReceipt.renderFrames += 1;
+		pmremReplayReceipt.outputBound = scene.environment === environmentTarget.texture &&
+			scene.environment?.isPMREMTexture === true;
 	} );
 
 	window.addEventListener( 'resize', () => {
@@ -265,4 +353,13 @@ export async function runPMREMDebugExample( {
 		camera.updateProjectionMatrix();
 		renderer.setSize( window.innerWidth, window.innerHeight );
 	} );
+
+	window.addEventListener( 'pagehide', () => {
+		// Stop rendering before releasing the environment target. Site live
+		// routes run inside a reusable iframe, so unload can overlap an already
+		// queued animation callback.
+		renderer.setAnimationLoop( null );
+		environmentTarget.dispose();
+		renderer.dispose();
+	}, { once: true } );
 }

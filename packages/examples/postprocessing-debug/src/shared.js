@@ -200,7 +200,7 @@ async function preparePipeline( capture, renderer, scene, camera, pipeline, name
 		return [ { shape: 'post-process', ok: true } ];
 
 	}
-	return capture.runtime.precompileAuxiliary( renderer, scene, camera, {
+	const results = await capture.runtime.precompileAuxiliary( renderer, scene, camera, {
 		devEndpoint: CAPTURE_ENDPOINT,
 		three: capture.three,
 		threeVersion: globalThis.__TSLP_THREE_PACKAGE_VERSION__ || String( capture.three.REVISION ).match( /^\d+/ )[ 0 ],
@@ -208,12 +208,17 @@ async function preparePipeline( capture, renderer, scene, camera, pipeline, name
 		postProcessingName: name,
 		renderPipeline: pipeline,
 		...( renderPipelineTarget ? { renderPipelineTarget } : {} ),
-	} ).catch( ( err ) => {
-
-		console.warn( '[postprocessing-debug] auxiliary capture failed:', err );
-		return [ { shape: 'aux', ok: false, error: err && err.message || String( err ) } ];
-
 	} );
+	const matching = results.filter( ( result ) => result?.shape === 'post-process' && result.ok === true );
+	if ( matching.length !== 1 ) {
+
+		throw new Error(
+			`[postprocessing-debug] named capture ${ JSON.stringify( name ) } returned ` +
+			`${ matching.length } successful post-process artifacts: ${ JSON.stringify( results ) }`,
+		);
+
+	}
+	return results;
 
 }
 
@@ -243,6 +248,7 @@ export async function runPostProcessingDebugExample( {
 		capture = await setupCaptureRuntime( renderer, CAPTURE_ENDPOINT );
 
 	}
+	const captureBaseline = capture?.setup.captureStatus();
 
 	const scene = new Scene();
 	const camera = new PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 0.1, 50 );
@@ -265,6 +271,42 @@ export async function runPostProcessingDebugExample( {
 		postProcessing = new RenderPipeline( renderer );
 		if ( effect === 'bloom' ) postProcessing.outputColorTransform = false;
 		postProcessing.outputNode = buildOutputNode( effect, scene, camera );
+
+	}
+
+	const renderFrame = () => {
+
+		objects.rotation.y = 0;
+		if ( fxaaStages ) {
+
+			const currentTarget = renderer.getRenderTarget();
+			try {
+
+				renderer.setRenderTarget( fxaaStages.colorTarget );
+				fxaaStages.colorPipeline.render();
+
+			} finally {
+
+				renderer.setRenderTarget( currentTarget );
+
+			}
+
+		}
+		postProcessing.render();
+
+	};
+
+	// Context-free material markers must first observe the actual PassNode/MRT
+	// topology. Settle that real-render capture wave before auxiliary capture
+	// borrows the same renderer and compiler caches.
+	if ( capture ) {
+
+		renderFrame();
+		await capture.setup.waitForCaptureSettled( {
+			since: captureBaseline,
+			timeoutMs: 30_000,
+			settleMs: 50,
+		} );
 
 	}
 
@@ -296,23 +338,7 @@ export async function runPostProcessingDebugExample( {
 
 	renderer.setAnimationLoop( () => {
 
-		objects.rotation.y = 0;
-		if ( fxaaStages ) {
-
-			const currentTarget = renderer.getRenderTarget();
-			try {
-
-				renderer.setRenderTarget( fxaaStages.colorTarget );
-				fxaaStages.colorPipeline.render();
-
-			} finally {
-
-				renderer.setRenderTarget( currentTarget );
-
-			}
-
-		}
-		postProcessing.render();
+		renderFrame();
 		recordLiveRouteFrame();
 
 	} );

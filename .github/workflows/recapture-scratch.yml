@@ -1,0 +1,86 @@
+name: One-shot example artifact recapture
+
+on:
+  push:
+    branches:
+      - codex/recapture-artifacts
+
+permissions:
+  contents: write
+
+concurrency:
+  group: recapture-artifacts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  recapture:
+    name: Generate and commit r185 example artifacts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Rebuild the checked slim bundle
+        run: pnpm --filter @tsl-precompile/runtime build:slim
+      - name: Transactionally recapture and preview every configured example
+        run: xvfb-run -a pnpm recapture:examples
+      - name: Verify the committed artifact contract
+        run: pnpm verify
+      - name: Package a recoverable artifact snapshot
+        run: |
+          archive_name="recaptured-example-artifacts.tar.gz"
+          archive="$RUNNER_TEMP/$archive_name"
+          tar --create --gzip --file="$archive" \
+            packages/examples/ocean/artifacts \
+            packages/examples/getting-started/artifacts \
+            packages/examples/pbr-shadows/artifacts \
+            packages/examples/shadow-debug/artifacts \
+            packages/examples/postprocessing-debug/artifacts \
+            packages/examples/pmrem-debug/artifacts \
+            packages/examples/mrt-debug/artifacts \
+            packages/examples/background/artifacts \
+            packages/examples/compute-debug/artifacts \
+            packages/examples/wow-showcase/artifacts
+          (
+            cd "$RUNNER_TEMP"
+            sha256sum "$archive_name" > "$archive_name.sha256"
+          )
+      - name: Commit the generated outputs and remove this one-shot workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm .github/workflows/recapture-scratch.yml
+          git add -A -- \
+            .github/workflows/recapture-scratch.yml \
+            packages/runtime/build/three.webgpu.slim.js \
+            packages/runtime/build/three.webgpu.slim.meta.json \
+            packages/examples/ocean/artifacts \
+            packages/examples/getting-started/artifacts \
+            packages/examples/pbr-shadows/artifacts \
+            packages/examples/shadow-debug/artifacts \
+            packages/examples/postprocessing-debug/artifacts \
+            packages/examples/pmrem-debug/artifacts \
+            packages/examples/mrt-debug/artifacts \
+            packages/examples/background/artifacts \
+            packages/examples/compute-debug/artifacts \
+            packages/examples/wow-showcase/artifacts
+          git diff --cached --check
+          git commit -m "chore: refresh r185 example artifacts"
+          git push origin HEAD:codex/recapture-artifacts
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: recaptured-example-artifacts
+          path: |
+            ${{ runner.temp }}/recaptured-example-artifacts.tar.gz
+            ${{ runner.temp }}/recaptured-example-artifacts.tar.gz.sha256
+          if-no-files-found: warn
+          retention-days: 14

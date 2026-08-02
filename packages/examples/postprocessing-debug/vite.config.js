@@ -6,6 +6,9 @@ export default defineConfig( {
 	plugins: [
 		tslPrecompile( {
 			artifactsDir: './artifacts',
+			// shared.js is intentionally reused by separately named single-target
+			// and GTAO/MRT marker families; do not add one cross-topology auto family.
+			autoMark: false,
 			slim: 'source',
 		} ),
 	],

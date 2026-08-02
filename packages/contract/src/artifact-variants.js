@@ -10,6 +10,25 @@ const EPHEMERAL_IDENTITY_FIELDS = Object.freeze( {
 	viewportIdentity: 'viewport',
 } );
 
+const VSM_INTERNAL_PASS_SHAPES = new Set( [
+	'shadow-vsm-vertical',
+	'shadow-vsm-horizontal',
+] );
+
+const VSM_INTERNAL_PASS_ROLE_SOURCE_KINDS = new Set( [
+	'depth.texture',
+	'light.shadowBlurSamples',
+	'light.shadowMapSize',
+	'light.shadowRadius',
+] );
+
+const INTERNAL_PASS_SOURCE_CAPTURE_FIELDS = new Set( [
+	'lightIdentity',
+	'lightIndex',
+	'lightUuid',
+	'valueSnapshot',
+] );
+
 /**
  * Runtime fields that may differ between members of one captured material
  * family. Capture, manifest emission, registry merging, and hydration all use
@@ -257,7 +276,7 @@ function mergeFamilyCandidates( records, candidates ) {
 		// differently. A shared semantic selector plus equivalent payload proves
 		// that this is an alias, so retain the established record and union only
 		// its selectors instead of growing a duplicate family member.
-		const semanticFingerprint = createSemanticVariantFingerprint( payload );
+		const semanticFingerprint = createArtifactVariantSemanticFingerprint( payload );
 		const selectorAlias = [ ...records.entries() ]
 			.sort( ( [ left ], [ right ] ) => left < right ? - 1 : left > right ? 1 : 0 )
 			.find( ( [ , authoritative ] ) =>
@@ -299,7 +318,7 @@ function prepareFamilyCandidate( candidate ) {
 	else if ( payload.renderContextSelectors !== undefined ) payload.renderContextSelectors = [];
 	return {
 		payload,
-		semanticFingerprint: createSemanticVariantFingerprint( payload ),
+		semanticFingerprint: createArtifactVariantSemanticFingerprint( payload ),
 	};
 
 }
@@ -313,7 +332,7 @@ function addFamilyCandidate( records, candidate ) {
 	if ( selectors.length > 0 ) payload.renderContextSelectors = selectors;
 	else if ( payload.renderContextSelectors !== undefined ) payload.renderContextSelectors = [];
 	const fingerprint = createArtifactVariantPayloadFingerprint( payload );
-	const semanticFingerprint = createSemanticVariantFingerprint( payload );
+	const semanticFingerprint = createArtifactVariantSemanticFingerprint( payload );
 	const existing = records.get( variantKey );
 	if ( ! existing ) {
 
@@ -373,7 +392,15 @@ function throwVariantKeyCollision( variantKey, authoritative = null, incoming = 
 
 }
 
-function createSemanticVariantFingerprint( artifact ) {
+/**
+ * Compare independently captured variants by runnable shader/binding meaning.
+ * Capture-session resource identities are canonicalized while their shared
+ * versus distinct topology remains strict.
+ *
+ * @param {?Object} artifact
+ * @return {string}
+ */
+export function createArtifactVariantSemanticFingerprint( artifact ) {
 
 	const payload = normalizeVariantShaderLanguage( createArtifactVariantPayload( artifact ) );
 	delete payload.cacheKey;
@@ -396,6 +423,7 @@ function createSemanticVariantFingerprint( artifact ) {
  */
 function normalizeVariantFingerprintPayload( value ) {
 
+	const vsmInternalPass = !! value && VSM_INTERNAL_PASS_SHAPES.has( value.materialShape );
 	const seen = new Map();
 	const visit = ( current ) => {
 
@@ -424,8 +452,19 @@ function normalizeVariantFingerprintPayload( value ) {
 		);
 		const liveRendererTargetTextureSource = current.kind === 'artifact.texture' &&
 			current.renderTargetSelector?.schema === RENDERER_RENDER_TARGET_TEXTURE_SELECTOR_SCHEMA;
+		const internalPassRoleSource = vsmInternalPass && VSM_INTERNAL_PASS_ROLE_SOURCE_KINDS.has( current.kind );
 		for ( const key of Object.keys( current ) ) {
 
+			// VSM's private blur programs are shared by every non-point light.
+			// The internal-pass descriptor addresses these values and textures by
+			// semantic role, and the replay binder overlays the active LightShadow
+			// before drawing. Captured light identity and fallback values therefore
+			// prove extraction ownership but cannot distinguish runnable programs.
+			// Keep the authoritative evidence in the artifact; omit it only from
+			// family fingerprints so directional and spot captures can alias the
+			// same backend program and selector.
+			if ( vsmInternalPass && current === value && key === 'lightIdentities' ) continue;
+			if ( internalPassRoleSource && INTERNAL_PASS_SOURCE_CAPTURE_FIELDS.has( key ) ) continue;
 			if ( liveFrameSource && key === 'valueSnapshot' ) continue;
 			if ( livePMREMTextureSource && (
 				key === 'imageSrc' ||

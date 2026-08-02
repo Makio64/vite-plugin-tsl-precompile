@@ -6,9 +6,11 @@ import { fileURLToPath } from 'node:url';
 
 import {
 	E2E_ENVIRONMENT_SCHEMA,
+	LINUX_SWIFTSHADER_BROWSER_ARGS,
 	assertEvidenceEnvironment,
 	assertEvidenceEnvironmentMatches,
 	collectEvidenceEnvironment,
+	evidenceBrowserLaunchArgs,
 	launchEvidenceBrowser,
 } from '../e2e-environment.mjs';
 
@@ -17,6 +19,11 @@ const BATCH_ROOT = resolve( dirname( fileURLToPath( import.meta.url ) ), '..' );
 function fakeBrowser( {
 	version = '140.0.7339.0',
 	backend = 'ANGLE Metal Renderer',
+	featureStatus = {
+		webgpu: 'enabled',
+		webgl: 'enabled',
+		gpu_compositing: 'enabled',
+	},
 } = {} ) {
 
 	const visits = [];
@@ -102,10 +109,7 @@ function fakeBrowser( {
 								skiaBackendType: 'GaneshGL',
 								ignoredVolatileField: 'not persisted',
 							},
-							featureStatus: {
-								webgpu: 'enabled',
-								gpu_compositing: 'enabled',
-							},
+							featureStatus: { ...featureStatus },
 							driverBugWorkarounds: [ 'b', 'a', 'a' ],
 						},
 					};
@@ -141,7 +145,10 @@ test( 'browser launch records the actual selected Chrome channel', async () => {
 
 		},
 	};
-	const selectedSystem = await launchEvidenceBrowser( systemChromium, { args: [ '--unsafe' ] } );
+	const selectedSystem = await launchEvidenceBrowser( systemChromium, {
+		args: [ '--unsafe' ],
+		platform: 'darwin',
+	} );
 	assert.equal( selectedSystem.browser, systemBrowser );
 	assert.equal( selectedSystem.channel, 'chrome' );
 	assert.deepEqual( systemCalls, [ {
@@ -161,13 +168,42 @@ test( 'browser launch records the actual selected Chrome channel', async () => {
 
 		},
 	};
-	const selectedBundled = await launchEvidenceBrowser( bundledChromium );
+	const selectedBundled = await launchEvidenceBrowser( bundledChromium, { platform: 'darwin' } );
 	assert.equal( selectedBundled.browser, bundledBrowser );
 	assert.equal( selectedBundled.channel, 'playwright-chromium' );
 	assert.deepEqual( bundledCalls, [
 		{ channel: 'chrome', headless: true, args: [] },
 		{ headless: true, args: [] },
 	] );
+
+} );
+
+test( 'Linux browser launch opts into deterministic WebGPU and WebGL SwiftShader backends', async () => {
+
+	const baseArgs = [ '--enable-unsafe-webgpu', '--no-sandbox' ];
+	const expectedArgs = [
+		...baseArgs,
+		...LINUX_SWIFTSHADER_BROWSER_ARGS.filter( ( argument ) => ! baseArgs.includes( argument ) ),
+	];
+	assert.deepEqual( evidenceBrowserLaunchArgs( baseArgs, 'linux' ), expectedArgs );
+	assert.deepEqual( evidenceBrowserLaunchArgs( baseArgs, 'darwin' ), baseArgs );
+
+	const calls = [];
+	const browser = {};
+	const selected = await launchEvidenceBrowser( {
+		async launch( options ) {
+
+			calls.push( options );
+			return browser;
+
+		},
+	}, { args: baseArgs, platform: 'linux' } );
+	assert.equal( selected.browser, browser );
+	assert.deepEqual( calls, [ {
+		channel: 'chrome',
+		headless: true,
+		args: expectedArgs,
+	} ] );
 
 } );
 
@@ -231,6 +267,45 @@ test( 'browser recycling fails closed when any fingerprinted environment identit
 		() => assertEvidenceEnvironmentMatches( initial, changedChannel ),
 		{ code: 'TSLP_EVIDENCE_ENVIRONMENT_DRIFT' },
 	);
+
+} );
+
+test( 'Linux environment collection rejects unavailable WebGPU or WebGL before case evidence', async () => {
+
+	const unavailable = fakeBrowser( {
+		backend: 'ANGLE SwiftShader',
+		featureStatus: {
+			webgpu: 'unavailable_software',
+			webgl: 'unavailable_software',
+			vulkan: 'disabled_off',
+		},
+	} );
+	await assert.rejects(
+		() => collectEvidenceEnvironment( {
+			browser: unavailable.browser,
+			channel: 'chrome',
+			probeUrl: 'http://127.0.0.1:8729/__tslp__/environment-probe.html',
+			node: { version: 'v24.4.0', platform: 'linux', arch: 'x64' },
+		} ),
+		/unusable Linux browser graphics feature status \(webgpu=unavailable_software, webgl=unavailable_software\)/,
+	);
+	assert.equal( unavailable.contextClosed, true );
+	assert.equal( unavailable.cdpDetached, true );
+
+	const enabled = await collectEvidenceEnvironment( {
+		browser: fakeBrowser( { backend: 'ANGLE SwiftShader' } ).browser,
+		channel: 'chrome',
+		probeUrl: 'http://127.0.0.1:8729/__tslp__/environment-probe.html',
+		node: { version: 'v24.4.0', platform: 'linux', arch: 'x64' },
+	} );
+	assert.equal( enabled.graphics.featureStatus.webgpu, 'enabled' );
+	assert.equal( enabled.graphics.featureStatus.webgl, 'enabled' );
+
+	const nonLinux = structuredClone( enabled );
+	nonLinux.node.platform = 'darwin';
+	nonLinux.graphics.featureStatus.webgpu = 'unavailable_software';
+	nonLinux.graphics.featureStatus.webgl = 'unavailable_software';
+	assert.equal( assertEvidenceEnvironment( nonLinux ), nonLinux );
 
 } );
 

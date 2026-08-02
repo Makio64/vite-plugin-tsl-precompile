@@ -5,6 +5,8 @@ export default defineConfig( {
 	plugins: [
 		tslPrecompile( {
 			artifactsDir: './artifacts',
+			// This fixture owns explicit light/topology-specific marker families.
+			autoMark: false,
 			slim: 'source',
 		} ),
 	],

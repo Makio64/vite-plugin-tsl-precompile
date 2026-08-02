@@ -8,7 +8,7 @@
     "agent": "node scripts/build-agent-assets.mjs",
     "data": "node scripts/build-examples-data.mjs",
     "measurements": "node scripts/build-measurements-data.mjs",
-    "test": "node --test test/**/*.test.mjs",
+    "test": "node --test test/*.test.mjs",
     "test:full": "pnpm run test",
     "live": "node scripts/build-live-examples.mjs",
     "dev": "node scripts/build-agent-assets.mjs && node scripts/build-measurements-data.mjs && vite",

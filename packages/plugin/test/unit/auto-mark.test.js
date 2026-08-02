@@ -11,6 +11,24 @@ import {
 	injectMarkerBootstrapSource,
 } from '../../src/auto-mark.js';
 import { canonicalModuleIdentity, isProjectRootModule } from '../../src/_shared/module-identity.js';
+import postprocessingConfig from '../../../examples/postprocessing-debug/vite.config.js';
+import bloomWrapperConfig from '../../../examples/bloom/vite.config.js';
+
+const POSTPROCESSING_ROOT = fileURLToPath( new URL( '../../../examples/postprocessing-debug/', import.meta.url ) );
+const BLOOM_WRAPPER_ROOT = fileURLToPath( new URL( '../../../examples/bloom/', import.meta.url ) );
+
+function transformContext() {
+
+	return {
+		error( message ) {
+
+			throw message instanceof Error ? message : new Error( String( message ) );
+
+		},
+		warn() {},
+	};
+
+}
 
 test( 'autoMark — rewrites new MeshStandardNodeMaterial() → .precompile()', () => {
 
@@ -231,5 +249,39 @@ test( 'authored getting-started marker takes precedence over default autoMark', 
 
 	assert.deepEqual( result.injectedNames, [] );
 	assert.equal( result.code, source );
+
+} );
+
+test( 'authored postprocessing configs do not add an auto family over their explicit topology families', async () => {
+
+	const sharedId = fileURLToPath( new URL( '../../../examples/postprocessing-debug/src/shared.js', import.meta.url ) );
+	const markersId = fileURLToPath( new URL( '../../../examples/postprocessing-debug/src/standard-materials.js', import.meta.url ) );
+	const sharedSource = await readFile( sharedId, 'utf8' );
+	const markersSource = await readFile( markersId, 'utf8' );
+	const configs = [
+		{ label: 'canonical postprocessing example', config: postprocessingConfig, root: POSTPROCESSING_ROOT },
+		{ label: 'bloom wrapper', config: bloomWrapperConfig, root: BLOOM_WRAPPER_ROOT },
+	];
+
+	for ( const { label, config, root } of configs ) {
+
+		const plugin = config.plugins.find( ( candidate ) => candidate.name === 'vite-plugin-tsl-precompile' );
+		assert.ok( plugin, `${ label } owns a precompile plugin` );
+		await plugin.config( { root }, { command: 'serve' } );
+		await plugin.configResolved( {
+			root,
+			command: 'serve',
+			logger: { warn() {} },
+		} );
+
+		const sharedResult = await plugin.transform.call( transformContext(), sharedSource, sharedId );
+		assert.equal( sharedResult, null, `${ label } leaves the repeated shared.js constructor unmarked` );
+
+		const markerResult = await plugin.transform.call( transformContext(), markersSource, markersId );
+		assert.ok( markerResult, `${ label } still transforms authored markers` );
+		assert.match( markerResult.code, /postprocessing-debug-floor/ );
+		assert.doesNotMatch( markerResult.code, /auto-shared-/ );
+
+	}
 
 } );

@@ -1,5 +1,9 @@
 import { isDeepStrictEqual } from 'node:util';
 
+import { LINUX_SWIFTSHADER_BROWSER_ARGS } from '../../plugin/src/cli/recapture-support.js';
+
+export { LINUX_SWIFTSHADER_BROWSER_ARGS };
+
 export const E2E_ENVIRONMENT_SCHEMA = 'tslp-e2e-execution-environment@1';
 
 const GPU_ADAPTER_INFO_KEYS = Object.freeze( [
@@ -59,6 +63,13 @@ function nonEmptyString( value ) {
 function availableString( value ) {
 
 	return nonEmptyString( value ) && value !== '<unavailable>';
+
+}
+
+export function evidenceBrowserLaunchArgs( args = [], platform = process.platform ) {
+
+	if ( platform !== 'linux' ) return [ ...args ];
+	return [ ...new Set( [ ...args, ...LINUX_SWIFTSHADER_BROWSER_ARGS ] ) ];
 
 }
 
@@ -128,15 +139,18 @@ function normalizeChromiumGpuInfo( gpu ) {
 export async function launchEvidenceBrowser( chromium, {
 	args = [],
 	headless = true,
+	platform = process.platform,
 } = {} ) {
+
+	const launchArgs = evidenceBrowserLaunchArgs( args, platform );
 
 	let browser = await chromium.launch( {
 		channel: 'chrome',
 		headless,
-		args,
+		args: launchArgs,
 	} ).catch( () => null );
 	if ( browser ) return { browser, channel: 'chrome' };
-	browser = await chromium.launch( { headless, args } );
+	browser = await chromium.launch( { headless, args: launchArgs } );
 	return { browser, channel: 'playwright-chromium' };
 
 }
@@ -319,6 +333,28 @@ export function assertEvidenceEnvironment( environment, label = 'Evidence enviro
 	) {
 
 		throw new Error( `${ label } has incomplete GPU/backend provenance.` );
+
+	}
+	if ( environment.node.platform === 'linux' ) {
+
+		const statuses = environment.graphics.featureStatus;
+		const unusable = [ 'webgpu', 'webgl' ].filter( ( feature ) => {
+
+			const status = statuses[ feature ];
+			return ! availableString( status ) || /(?:disabled|unavailable)/i.test( status );
+
+		} );
+		if ( unusable.length > 0 ) {
+
+			const summary = unusable.map( ( feature ) => (
+				`${ feature }=${ statuses[ feature ] || '<missing>' }`
+			) ).join( ', ' );
+			throw new Error(
+				`${ label } has unusable Linux browser graphics feature status (${ summary }). ` +
+				'Launch Chromium with the deterministic SwiftShader WebGPU + WebGL configuration.',
+			);
+
+		}
 
 	}
 	return environment;

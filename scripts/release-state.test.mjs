@@ -692,7 +692,7 @@ test( 'correctness lint has an exact command, authored scope, and generated excl
 
 } );
 
-test( 'declared Vite 6, 7, and 8 support has exact packed-consumer lanes', () => {
+test( 'declared Vite 6, 7, and 8 support has exact Node 24 packed-consumer lanes', () => {
 
 	const rootPackage = JSON.parse( readFileSync( join( TEST_REPO_ROOT, 'package.json' ), 'utf8' ) );
 	assert.equal( rootPackage.packageManager, 'pnpm@10.34.5' );
@@ -711,12 +711,23 @@ test( 'declared Vite 6, 7, and 8 support has exact packed-consumer lanes', () =>
 	assert.equal( rootPackage.scripts[ 'test:fresh-project:minimum' ], 'pnpm test:fresh-project:vite6' );
 
 	const ci = readFileSync( join( TEST_REPO_ROOT, '.github/workflows/ci.yml' ), 'utf8' );
-	for ( const version of [ '6.4.3', '7.3.6', '8.0.16' ] ) {
+	for ( const lane of [
+		{ vite: '6.4.3', typescript: '5.6.3' },
+		{ vite: '7.3.6', typescript: '5.9.3' },
+		{ vite: '8.0.16', typescript: '5.9.3' },
+	] ) {
 
-		assert.match( ci, new RegExp( `vite:\\s+${ version.replaceAll( '.', '\\.' ) }` ) );
+		const vite = lane.vite.replaceAll( '.', '\\.' );
+		assert.match( ci, new RegExp( `label: Node 24 / Vite ${ vite }` ) );
+		assert.match(
+			ci,
+			new RegExp( `node: 24\\.18\\.0[\\s\\S]{0,100}vite: ${ vite }[\\s\\S]{0,100}typescript: ${ lane.typescript.replaceAll( '.', '\\.' )}` ),
+		);
 
 	}
-	assert.match( ci, /Node 22\.12 \/ Vite 7\.3\.6/ );
+	assert.match( ci, /Package checks \(Node 24 LTS\)[\s\S]*?node-version: 24\.18\.0/ );
+	assert.equal( [ ...ci.matchAll( /^\s+node:\s+24\.18\.0$/gm ) ].length, 3 );
+	assert.doesNotMatch( ci, /^\s+node:\s+(?:20|22)\./m );
 
 } );
 
@@ -1868,6 +1879,72 @@ test( 'workflow executables use immutable action SHAs and fixed runtime baseline
 		/--gate-min-pass(?:=|\s|$)/,
 		'batch workflow must not pass the removed stock-renderer gate option',
 	);
+
+} );
+
+test( 'manual batch recapture is isolated from the canonical campaign and uploads every artifact directory', () => {
+
+	const workflow = readFileSync(
+		join( TEST_REPO_ROOT, '.github/workflows/batch.yml' ),
+		'utf8',
+	);
+	const lines = workflow.split( '\n' );
+	const jobBlock = ( name ) => {
+
+		const start = lines.findIndex( ( line ) => line === `  ${ name }:` );
+		assert.notEqual( start, -1, `batch workflow is missing the ${ name } job` );
+		const next = lines.findIndex(
+			( line, index ) => index > start && /^ {2}[A-Za-z0-9_-]+:$/.test( line ),
+		);
+		return lines.slice( start, next === -1 ? lines.length : next ).join( '\n' );
+
+	};
+
+	assert.match( workflow, /default:\s*canonical-campaign/ );
+	assert.match( workflow, /type:\s*choice/ );
+	assert.match( workflow, /^\s*- recapture-examples$/m );
+
+	const canonical = jobBlock( 'batch' );
+	assert.match(
+		canonical,
+		/if: github\.event_name == 'schedule' \|\| inputs\.mode == 'canonical-campaign'/,
+	);
+	assert.match( canonical, /pnpm test:e2e:campaign/ );
+	assert.doesNotMatch( canonical, /pnpm recapture:examples/ );
+	assert.match( canonical, /name: nightly-stock-results/ );
+
+	const recapture = jobBlock( 'recapture-examples' );
+	assert.match(
+		recapture,
+		/if: github\.event_name == 'workflow_dispatch' && inputs\.mode == 'recapture-examples'/,
+	);
+	assert.match( recapture, /node-version:\s*24\.18\.0/ );
+	assert.match( recapture, /pnpm exec playwright install --with-deps chromium/ );
+	assert.match( recapture, /xvfb-run -a pnpm recapture:examples/ );
+	assert.match( recapture, /name: recaptured-example-artifacts/ );
+	assert.match( recapture, /sha256sum "\$archive_name"/ );
+	assert.doesNotMatch( recapture, /pnpm test:e2e:campaign/ );
+
+	for ( const name of [
+		'ocean',
+		'getting-started',
+		'pbr-shadows',
+		'shadow-debug',
+		'postprocessing-debug',
+		'pmrem-debug',
+		'mrt-debug',
+		'background',
+		'compute-debug',
+		'wow-showcase',
+	] ) {
+
+		assert.match(
+			recapture,
+			new RegExp( `packages/examples/${ name }/artifacts` ),
+			`manual recapture archive is missing ${ name }`,
+		);
+
+	}
 
 } );
 

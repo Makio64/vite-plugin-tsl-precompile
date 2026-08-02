@@ -18,6 +18,7 @@ import {
 	isTransientRecaptureNavigationError,
 	navigateWithColdReloadRetry,
 	parseRecaptureArgs,
+	recaptureBrowserLaunchArgs,
 	recoverColdReloadDuringPolling,
 } from '../../src/cli/recapture-support.js';
 
@@ -61,6 +62,37 @@ test( 'recapture CLI parser accepts explicit validated options', () => {
 			help: false,
 		},
 	);
+
+} );
+
+test( 'recapture Chromium launch preserves macOS behavior and enables both software backends on Linux', async () => {
+
+	const macArgs = [
+		'--enable-unsafe-webgpu',
+		'--ignore-gpu-blocklist',
+		'--no-sandbox',
+		'--disable-dev-shm-usage',
+	];
+	assert.deepEqual( recaptureBrowserLaunchArgs( 'chromium', 'darwin' ), macArgs );
+	assert.deepEqual( recaptureBrowserLaunchArgs( 'firefox', 'linux' ), [] );
+
+	const { evidenceBrowserLaunchArgs, LINUX_SWIFTSHADER_BROWSER_ARGS } = await import(
+		'../../../examples/batch/e2e-environment.mjs'
+	);
+	assert.deepEqual(
+		recaptureBrowserLaunchArgs( 'chromium', 'linux' ),
+		evidenceBrowserLaunchArgs( macArgs, 'linux' ),
+	);
+	assert.deepEqual(
+		recaptureBrowserLaunchArgs( 'chromium', 'linux' )
+			.filter( ( arg ) => LINUX_SWIFTSHADER_BROWSER_ARGS.includes( arg ) ),
+		[ ...LINUX_SWIFTSHADER_BROWSER_ARGS ],
+	);
+	for ( const arg of LINUX_SWIFTSHADER_BROWSER_ARGS ) {
+
+		assert.equal( recaptureBrowserLaunchArgs( 'chromium', 'linux' ).includes( arg ), true );
+
+	}
 
 } );
 

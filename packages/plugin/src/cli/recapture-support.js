@@ -2,7 +2,38 @@ const SUPPORTED_BROWSERS = new Set( [ 'chromium', 'firefox', 'webkit' ] );
 const SUPPORTED_RENDERER_BACKENDS = new Set( [ 'webgpu', 'webgl' ] );
 const INTENTIONAL_NON_NETWORK_PROTOCOLS = new Set( [ 'about:', 'blob:', 'data:' ] );
 
+const RECAPTURE_CHROMIUM_BROWSER_ARGS = Object.freeze( [
+	'--enable-unsafe-webgpu',
+	'--ignore-gpu-blocklist',
+	'--no-sandbox',
+	'--disable-dev-shm-usage',
+] );
+
+// Chromium's Linux bots do not have a hardware GPU. This is the shared
+// software-adapter configuration used by both recapture and the evidence
+// harness so WebGPU and WebGL exercise the same deterministic SwiftShader GPU.
+export const LINUX_SWIFTSHADER_BROWSER_ARGS = Object.freeze( [
+	'--enable-unsafe-webgpu',
+	'--use-webgpu-adapter=swiftshader',
+	'--use-gpu-in-tests',
+	'--enable-accelerated-2d-canvas',
+	'--use-gl=angle',
+	'--use-angle=swiftshader',
+	'--enable-unsafe-swiftshader',
+] );
+
 export const RECAPTURE_VIEWPORT = Object.freeze( { width: 1280, height: 720 } );
+
+export function recaptureBrowserLaunchArgs( browserName, platform = process.platform ) {
+
+	if ( browserName !== 'chromium' ) return [];
+	if ( platform !== 'linux' ) return [ ...RECAPTURE_CHROMIUM_BROWSER_ARGS ];
+	return [ ...new Set( [
+		...RECAPTURE_CHROMIUM_BROWSER_ARGS,
+		...LINUX_SWIFTSHADER_BROWSER_ARGS,
+	] ) ];
+
+}
 
 export const RECAPTURE_HELP = `
 Usage: tsl-precompile-recapture [options]

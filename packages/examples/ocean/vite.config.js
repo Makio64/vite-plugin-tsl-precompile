@@ -1,10 +1,11 @@
 import { defineConfig } from 'vite';
 import tslPrecompile from 'vite-plugin-tsl-precompile';
+import { oceanArtifactsDir } from './artifacts-dir.js';
 
 export default defineConfig( {
 	plugins: [
 		tslPrecompile( {
-			artifactsDir: './artifacts',
+			artifactsDir: oceanArtifactsDir(),
 		} ),
 	],
 	server: {

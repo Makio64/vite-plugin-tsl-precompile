@@ -26,6 +26,7 @@ import {
 	isTransientRecaptureNavigationError,
 	navigateWithColdReloadRetry,
 	parseRecaptureArgs,
+	recaptureBrowserLaunchArgs,
 	RECAPTURE_HELP,
 	RECAPTURE_VIEWPORT,
 	recoverColdReloadDuringPolling,
@@ -188,14 +189,7 @@ if ( ! browserType ) {
 
 }
 
-const browserArgs = browserName === 'chromium'
-	? [
-		'--enable-unsafe-webgpu',
-		'--ignore-gpu-blocklist',
-		'--no-sandbox',
-		'--disable-dev-shm-usage',
-	]
-	: [];
+const browserArgs = recaptureBrowserLaunchArgs( browserName );
 
 progress( `[tsl-precompile] Launching ${ browserName }...` );
 let browser;

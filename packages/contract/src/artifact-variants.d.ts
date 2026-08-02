@@ -4,6 +4,7 @@ export const ARTIFACT_VARIANT_FIELDS: readonly string[];
 
 export function createArtifactVariantPayload( artifact: object | null | undefined ): StringRecord;
 export function createArtifactVariantPayloadFingerprint( artifact: object | null | undefined ): string;
+export function createArtifactVariantSemanticFingerprint( artifact: object | null | undefined ): string;
 
 export class ArtifactVariantFamilyError extends Error {
 	readonly code: string;

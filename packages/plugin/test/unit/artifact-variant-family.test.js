@@ -94,6 +94,57 @@ function withUniformSourceSnapshots( value, cameraValue, objectValue, extraSourc
 
 }
 
+function vsmInternalPassArtifact( cacheKey, shaderLanguage, selector, light ) {
+
+	const backend = shaderLanguage === 'wgsl' ? 'webgpu' : 'webgl';
+	const source = {
+		kind: 'light.shadowRadius',
+		lightIdentity: 0,
+		lightIndex: light.captureIndex,
+		lightUuid: light.uuid,
+		valueSnapshot: { type: 'number', data: light.radius },
+	};
+	const slot = { name: 'nodeUniform3', dtype: 'number', source };
+	const shaders = shaderLanguage === 'wgsl' ? {
+		vertexShader: '@vertex fn main() -> @builtin(position) vec4<f32> { return vec4<f32>(0.0); }',
+		fragmentShader: '@fragment fn main() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }',
+	} : {
+		vertexShader: '#version 300 es\nvoid main() { gl_Position = vec4(0.0); }',
+		fragmentShader: '#version 300 es\nprecision highp float;\nout vec4 color;\nvoid main() { color = vec4(1.0); }',
+	};
+	return {
+		cacheKey,
+		variantKey: `${ backend }:${ cacheKey }`,
+		shaderLanguage,
+		materialShape: 'shadow-vsm-horizontal',
+		renderContextSelectors: [ selector ],
+		...shaders,
+		bindings: [],
+		uniformPlan: [ {
+			name: 'render',
+			slots: [ slot ],
+			orderedBindings: [ {
+				type: 'ubo',
+				name: 'render',
+				slots: [ structuredClone( slot ) ],
+			} ],
+		} ],
+		lightIdentities: [ {
+			schema: 'light-identity@1',
+			captureUuid: light.uuid,
+			captureIndex: light.captureIndex,
+			type: light.type,
+			name: light.name,
+			snapshot: {
+				castShadow: true,
+				shadowType: light.shadowType,
+				cameraType: light.cameraType,
+			},
+		} ],
+	};
+
+}
+
 test( 'artifact variant family flattens nested members and canonicalizes equivalent selector aliases', () => {
 
 	const selectorA = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'offscreen-2d' } } );
@@ -369,6 +420,69 @@ test( 'artifact variant family ignores fallback snapshots for live renderer sour
 		);
 
 	}
+
+} );
+
+test( 'VSM internal-pass families reuse one backend program across directional and spot light evidence', () => {
+
+	const selector = ( backend ) => stableJsonStringify( {
+		version: 'render-object-selector@1',
+		renderer: { backend: { kind: backend } },
+		target: { surface: 'offscreen-2d' },
+	} );
+	const directional = {
+		uuid: 'directional-capture-light',
+		captureIndex: 1,
+		type: 'DirectionalLight',
+		name: 'debug-directional-light',
+		shadowType: 'DirectionalLightShadow',
+		cameraType: 'OrthographicCamera',
+		radius: 2,
+	};
+	const spot = {
+		uuid: 'spot-capture-light',
+		captureIndex: 3,
+		type: 'SpotLight',
+		name: 'debug-spot-light',
+		shadowType: 'SpotLightShadow',
+		cameraType: 'PerspectiveCamera',
+		radius: 5,
+	};
+	const webgpu = vsmInternalPassArtifact( 'directional-webgpu', 'wgsl', selector( 'webgpu' ), directional );
+	const webgl = vsmInternalPassArtifact( 'directional-webgl', 'glsl', selector( 'webgl' ), directional );
+	const spotWebgpu = vsmInternalPassArtifact( 'spot-webgpu', 'wgsl', selector( 'webgpu' ), spot );
+
+	assert.equal(
+		createArtifactVariantPayloadFingerprint( webgpu ),
+		createArtifactVariantPayloadFingerprint( spotWebgpu ),
+		'semantic role binding makes capture-light identity and fallback values non-program data',
+	);
+	mergeArtifactVariantFamily( webgpu, [ webgpu, webgl ] );
+	mergeArtifactVariantFamily( webgpu, [ webgpu, spotWebgpu ] );
+
+	const candidates = collectArtifactVariantCandidates( webgpu );
+	assert.deepEqual( candidates.map( ( candidate ) => candidate.shaderLanguage ).sort(), [ 'glsl', 'wgsl' ] );
+	assert.equal(
+		candidates.find( ( candidate ) => candidate.shaderLanguage === 'wgsl' ).lightIdentities[ 0 ].type,
+		'DirectionalLight',
+		'the authoritative capture evidence remains intact',
+	);
+	const validation = validateArtifact( webgpu, { label: 'multi-light VSM backend family' } );
+	assert.equal( validation.ok, true, validation.errors.map( ( error ) => error.message ).join( '\n' ) );
+
+	const ordinaryDirectional = {
+		...vsmInternalPassArtifact( 'ordinary', 'wgsl', selector( 'webgpu' ), directional ),
+		materialShape: 'shadow-depth',
+	};
+	const ordinarySpot = {
+		...vsmInternalPassArtifact( 'ordinary', 'wgsl', selector( 'webgpu' ), spot ),
+		materialShape: 'shadow-depth',
+	};
+	assert.notEqual(
+		createArtifactVariantPayloadFingerprint( ordinaryDirectional ),
+		createArtifactVariantPayloadFingerprint( ordinarySpot ),
+		'ordinary light-consuming programs retain strict light-topology identity',
+	);
 
 } );
 

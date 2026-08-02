@@ -9,6 +9,7 @@ import {
 	BROWSER_FAILURE_POLICY_SHA256,
 	installBrowserFailureCollector,
 } from '../browser-failure-policy.mjs';
+import { evidenceBrowserLaunchArgs } from '../batch/e2e-environment.mjs';
 import {
 	analyzePngFrames,
 	primaryCanvasLocator,
@@ -31,11 +32,6 @@ export const PRODUCTION_BROWSER_BASE_ARGS = Object.freeze( [
 	'--ignore-gpu-blocklist',
 	'--no-sandbox',
 	'--disable-dev-shm-usage',
-] );
-const LINUX_SOFTWARE_WEBGPU_ARGS = Object.freeze( [
-	'--enable-features=Vulkan,WebGPUService',
-	'--use-vulkan=swiftshader',
-	'--use-angle=swiftshader',
 ] );
 export const PRODUCTION_PREVIEW_VIEWPORT = Object.freeze( { width: 1280, height: 800 } );
 
@@ -85,10 +81,7 @@ export function createProductionBrowserLaunchPlan( {
 	headless = true,
 } = {} ) {
 
-	const args = [
-		...PRODUCTION_BROWSER_BASE_ARGS,
-		...( platform === 'linux' ? LINUX_SOFTWARE_WEBGPU_ARGS : [] ),
-	];
+	const args = evidenceBrowserLaunchArgs( PRODUCTION_BROWSER_BASE_ARGS, platform );
 	const bundled = {
 		channel: 'playwright-chromium',
 		options: { headless, args: [ ...args ] },
@@ -98,11 +91,10 @@ export function createProductionBrowserLaunchPlan( {
 		options: { channel: 'chrome', headless, args: [ ...args ] },
 	};
 
-	// Prefer the browser users actually run. Playwright's bundled Chromium can
-	// initialize Metal WebGPU yet produce a blank headless surface on macOS;
-	// the pixel gate below must exercise system Chrome first and fall back only
-	// when that channel is unavailable.
-	return [ system, bundled ];
+	// Bind Linux CI to Playwright's installed Chromium revision so its software
+	// adapter behavior is reproducible. On macOS, retain system Chrome first:
+	// bundled Chromium can initialize Metal WebGPU yet render a blank surface.
+	return platform === 'linux' ? [ bundled, system ] : [ system, bundled ];
 
 }
 

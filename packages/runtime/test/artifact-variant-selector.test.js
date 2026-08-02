@@ -770,6 +770,67 @@ test( 'signed render-output artifacts ignore host, reversed depth, and attachmen
 
 } );
 
+test( 'render-output ambiguity ignores capture-local texture UUID spelling but retains payload differences', () => {
+
+	const outputSelector = ( shadowMapType ) => JSON.stringify( {
+		version: 'render-object-selector@1',
+		renderer: {
+			backend: { kind: 'webgpu' },
+			shadowMap: { enabled: true, type: shadowMapType },
+		},
+		target: { sampleCount: 1 },
+	} );
+	const outputPlan = ( textureUuid ) => {
+
+		const sampler = {
+			name: 'nodeUniform0_sampler',
+			source: { kind: 'artifact.texture', textureUuid },
+		};
+		const texture = {
+			name: 'nodeUniform0',
+			source: { kind: 'artifact.texture', textureUuid },
+		};
+		return [ {
+			name: 'object',
+			textures: [ sampler, texture ],
+			orderedBindings: [
+				{ type: 'texture', ...structuredClone( sampler ) },
+				{ type: 'texture', ...structuredClone( texture ) },
+			],
+		} ];
+
+	};
+	const basic = signedArtifact( [ outputSelector( 0 ) ], {
+		cacheKey: 'basic-output',
+		materialShape: 'render-output',
+		uniformPlan: outputPlan( 'capture-basic-output-texture' ),
+	} );
+	const vsm = signedArtifact( [ outputSelector( 3 ) ], {
+		cacheKey: 'vsm-output',
+		materialShape: 'render-output',
+		uniformPlan: outputPlan( 'capture-vsm-output-texture' ),
+	} );
+	const artifact = { ...basic, variants: { basic, vsm } };
+
+	assert.equal( selectArtifactVariant( artifact, {
+		renderContextSelector: outputSelector( 1 ),
+		renderContextSelectorProfile: 'render-output',
+	} ).fragmentShader, 'fragment' );
+
+	const divergent = {
+		...vsm,
+		fragmentShader: 'different-fragment',
+	};
+	assert.throws(
+		() => selectArtifactVariant( { ...basic, variants: { basic, divergent } }, {
+			renderContextSelector: outputSelector( 1 ),
+			renderContextSelectorProfile: 'render-output',
+		} ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_AMBIGUOUS',
+	);
+
+} );
+
 test( 'signed post-process artifacts ignore adapter-owned output attachments but retain pipeline topology', () => {
 
 	const captureSelector = JSON.stringify( {
