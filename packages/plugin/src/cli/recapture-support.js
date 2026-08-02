@@ -20,9 +20,9 @@ export const LINUX_SWIFTSHADER_BROWSER_ARGS = Object.freeze( [
 	// Vulkan even when the requested WebGPU adapter is SwiftShader. Select the
 	// packaged SwiftShader Vulkan driver explicitly as well; otherwise GPU-less
 	// Linux hosts can expose navigator.gpu but drop Dawn's instance while Three
-	// still has a validation error scope pending.
+	// still has a validation error scope pending. Keep Vulkan surfaces enabled:
+	// disabling them lets Dawn execute while the composited canvas stays stale.
 	'--enable-features=Vulkan',
-	'--disable-vulkan-surface',
 	'--use-vulkan=swiftshader',
 	'--use-gpu-in-tests',
 	'--enable-accelerated-2d-canvas',

@@ -190,7 +190,6 @@ test( 'Linux browser launch opts into deterministic WebGPU and WebGL SwiftShader
 	for ( const required of [
 		'--use-webgpu-adapter=swiftshader',
 		'--enable-features=Vulkan',
-		'--disable-vulkan-surface',
 		'--use-vulkan=swiftshader',
 		'--use-angle=swiftshader',
 	] ) {
@@ -198,6 +197,7 @@ test( 'Linux browser launch opts into deterministic WebGPU and WebGL SwiftShader
 		assert.ok( expectedArgs.includes( required ), `Linux browser args require ${ required }` );
 
 	}
+	assert.ok( ! expectedArgs.includes( '--disable-vulkan-surface' ) );
 
 	const calls = [];
 	const browser = {};
