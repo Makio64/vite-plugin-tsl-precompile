@@ -16,6 +16,26 @@ import {
 
 const PAGE_URL = 'http://127.0.0.1:5192/scene.html';
 
+function mockRequest( url, { errorText = null, method = 'GET' } = {} ) {
+
+	return {
+		failure: () => errorText === null ? null : { errorText },
+		method: () => method,
+		url: () => url,
+	};
+
+}
+
+function emitResponse( page, request, status = 200 ) {
+
+	page.emit( 'response', {
+		request: () => request,
+		status: () => status,
+		url: () => request.url(),
+	} );
+
+}
+
 test( 'favicon exemption is exact, same-origin, and query-free', () => {
 
 	assert.equal( isSameOriginExactFaviconUrl( 'http://127.0.0.1:5192/favicon.ico', PAGE_URL ), true );
@@ -170,6 +190,108 @@ test( 'redirects and intentional non-network requests are not failures', () => {
 		}, { pageUrl: PAGE_URL } ), null );
 
 	}
+
+} );
+
+test( 'collector reconciles an exact aborted duplicate only after a successful response finishes', () => {
+
+	const page = new EventEmitter();
+	const collector = installBrowserFailureCollector( page, { pageUrl: PAGE_URL } );
+	const url = 'https://threejs.org/examples/models/gltf/Soldier.glb';
+	const aborted = mockRequest( url, { errorText: 'net::ERR_ABORTED' } );
+	const completed = mockRequest( url );
+
+	page.emit( 'requestfailed', aborted );
+	assert.match( collector.messages()[ 0 ], /Soldier\.glb.*net::ERR_ABORTED/ );
+	emitResponse( page, completed, 200 );
+	assert.match( collector.messages()[ 0 ], /Soldier\.glb.*net::ERR_ABORTED/ );
+	page.emit( 'requestfinished', completed );
+	assert.deepEqual( collector.failures(), [] );
+	collector.dispose();
+
+} );
+
+test( 'collector requires the successful completion to belong to a distinct duplicate request', () => {
+
+	const page = new EventEmitter();
+	const collector = installBrowserFailureCollector( page, { pageUrl: PAGE_URL } );
+	const request = mockRequest( 'https://cdn.example.invalid/model.glb', { errorText: 'net::ERR_ABORTED' } );
+	page.emit( 'requestfailed', request );
+	emitResponse( page, request, 200 );
+	page.emit( 'requestfinished', request );
+	assert.equal( collector.failures().some( entry => entry.kind === 'requestfailed' ), true );
+	collector.dispose();
+
+} );
+
+test( 'aborted-request reconciliation is exact and remains fail-closed', () => {
+
+	for ( const scenario of [
+		{
+			name: 'method mismatch',
+			failure: mockRequest( 'https://cdn.example.invalid/model.glb', { errorText: 'net::ERR_ABORTED', method: 'GET' } ),
+			completed: mockRequest( 'https://cdn.example.invalid/model.glb', { method: 'HEAD' } ),
+			status: 200,
+		},
+		{
+			name: 'URL mismatch',
+			failure: mockRequest( 'https://cdn.example.invalid/model.glb?v=1', { errorText: 'net::ERR_ABORTED' } ),
+			completed: mockRequest( 'https://cdn.example.invalid/model.glb?v=2' ),
+			status: 200,
+		},
+		{
+			name: 'non-exact abort message',
+			failure: mockRequest( 'https://cdn.example.invalid/model.glb', { errorText: 'net::ERR_ABORTED (canceled)' } ),
+			completed: mockRequest( 'https://cdn.example.invalid/model.glb' ),
+			status: 200,
+		},
+		{
+			name: 'failed HTTP response',
+			failure: mockRequest( 'https://cdn.example.invalid/model.glb', { errorText: 'net::ERR_ABORTED' } ),
+			completed: mockRequest( 'https://cdn.example.invalid/model.glb' ),
+			status: 404,
+		},
+	] ) {
+
+		const page = new EventEmitter();
+		const collector = installBrowserFailureCollector( page, { pageUrl: PAGE_URL } );
+		page.emit( 'requestfailed', scenario.failure );
+		emitResponse( page, scenario.completed, scenario.status );
+		page.emit( 'requestfinished', scenario.completed );
+		assert.equal( collector.failures().some( entry => entry.kind === 'requestfailed' ), true, scenario.name );
+		collector.dispose();
+
+	}
+
+} );
+
+test( 'aborted-request reconciliation is one-for-one and checkpoint-scoped', () => {
+
+	const page = new EventEmitter();
+	const collector = installBrowserFailureCollector( page, { pageUrl: PAGE_URL } );
+	const url = 'https://cdn.example.invalid/model.fbx';
+	const abort = () => page.emit( 'requestfailed', mockRequest( url, { errorText: 'net::ERR_ABORTED' } ) );
+	const finish = () => {
+
+		const request = mockRequest( url );
+		emitResponse( page, request, 204 );
+		page.emit( 'requestfinished', request );
+
+	};
+
+	abort();
+	abort();
+	finish();
+	assert.equal( collector.failures().length, 1 );
+	finish();
+	assert.deepEqual( collector.failures(), [] );
+
+	const checkpoint = collector.checkpoint();
+	abort();
+	assert.equal( collector.failuresSince( checkpoint ).length, 1 );
+	finish();
+	assert.deepEqual( collector.failuresSince( checkpoint ), [] );
+	collector.dispose();
 
 } );
 
