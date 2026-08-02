@@ -313,7 +313,7 @@ console.log( `[batch] static file server on http://localhost:${ port }/ (root: $
 const BROWSER_ARGS = [ '--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--no-sandbox', '--disable-dev-shm-usage' ];
 const MAX_RUNS_PER_BROWSER = 24;
 const NAV_TIMEOUT_MS = 25000;
-const RENDER_TIMEOUT_MS = 12000;
+const RENDER_TIMEOUT_MS = 120000;
 const RENDER_POLL_MS = 400;
 
 async function dumpCanvas( page ) {
