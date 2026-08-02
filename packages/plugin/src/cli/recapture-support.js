@@ -15,6 +15,10 @@ const RECAPTURE_CHROMIUM_BROWSER_ARGS = Object.freeze( [
 export const LINUX_SWIFTSHADER_BROWSER_ARGS = Object.freeze( [
 	'--enable-unsafe-webgpu',
 	'--use-webgpu-adapter=swiftshader',
+	// Dawn's Linux decoder requires Chromium's shared graphics context to use
+	// Vulkan even when the requested WebGPU adapter is SwiftShader.
+	'--enable-features=Vulkan',
+	'--disable-vulkan-surface',
 	'--use-gpu-in-tests',
 	'--enable-accelerated-2d-canvas',
 	'--use-gl=angle',
