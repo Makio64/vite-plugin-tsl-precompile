@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import XRManager from '../src/slim-replay-xr-manager.js';
 
-const R184_PROTOTYPE = [
+const R185_PROTOTYPE = [
 	'constructor',
 	'getController',
 	'getControllerGrip',
@@ -34,15 +34,15 @@ function assertSlimXRError( error ) {
 
 	assert.equal( error && error.code, 'TSLP_SLIM_XR_UNSUPPORTED' );
 	assert.equal( error && error.tslPrecompileSlimOnly, true );
-	assert.match( error.message, /XR is unavailable in the WebGPU-only slim renderer/ );
+	assert.match( error.message, /XR is unavailable in the compiler-free slim renderer/ );
 	assert.match( error.message, /forceWebGL: true/ );
 	return true;
 
 }
 
-test( 'replay XR manager preserves the complete Three r184 prototype', () => {
+test( 'replay XR manager preserves the complete Three r185 prototype', () => {
 
-	assert.deepEqual( Object.getOwnPropertyNames( XRManager.prototype ), R184_PROTOTYPE );
+	assert.deepEqual( Object.getOwnPropertyNames( XRManager.prototype ), R185_PROTOTYPE );
 
 } );
 

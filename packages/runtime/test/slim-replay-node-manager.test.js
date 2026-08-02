@@ -8,6 +8,7 @@ import ReplayNodeFrame from '../src/slim-replay-node-frame.js';
 import PrecompiledMaterial from '../src/_vendor-PrecompiledMaterial.js';
 import { createReplayShadowMaterial } from '../src/slim-replay-shadow-material.js';
 import { setSlimRenderFallback } from '../src/slim-support/render-fallback-registry.js';
+import { getRendererRenderTargetTextureRegistry } from '../src/slim-support/render-target-texture-registry.js';
 import { shouldAdvanceTemporalState, withTemporalFrame } from '../src/slim-support/temporal-frame.js';
 import { createRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
 import { materializeArtifactVariantSelectorAdapters } from '@tsl-precompile/contract/variant-selector-adapter';
@@ -79,6 +80,34 @@ function renderObject( renderer, sourceMaterial, overrides = {} ) {
 
 }
 
+test( 'ReplayNodeManager installs render-target discovery before the first target bind', () => {
+
+	const renderer = {
+		...fakeRenderer(),
+		_target: null,
+		getRenderTarget() {
+
+			return this._target;
+
+		},
+		setRenderTarget( target ) {
+
+			this._target = target;
+
+		},
+	};
+	new ReplayNodeManager( renderer, renderer.backend );
+	const registry = getRendererRenderTargetTextureRegistry( renderer );
+	assert.ok( registry );
+	assert.equal( registry.observedTargetCount, 0 );
+
+	const target = { texture: { isTexture: true } };
+	renderer.setRenderTarget( target );
+	renderer.setRenderTarget( null );
+	assert.equal( registry.observedTargetCount, 1 );
+
+} );
+
 test( 'replay NodeManager exposes the renderer active-light list on its NodeFrame', () => {
 
 	const renderer = fakeRenderer();
@@ -141,6 +170,10 @@ test( 'replay NodeManager returns direct hydrated state and material-scoped sema
 	const bindingsA = firstState.createBindings();
 	const bindingsB = firstState.createBindings();
 	assert.notEqual( bindingsA[ 0 ].bindings[ 0 ], bindingsB[ 0 ].bindings[ 0 ], 'hydrator createBindings keeps per-object UBO clones' );
+	assert.equal( bindingsA[ 0 ].bindings[ 0 ].groupNode.updateType, 'object' );
+	assert.equal( manager.updateGroup( bindingsA[ 0 ].bindings[ 0 ] ), true );
+	assert.equal( manager.updateGroup( bindingsA[ 0 ].bindings[ 0 ] ), true, 'object groups update for every draw in r185' );
+	assert.equal( firstState.hardwareClipping, false );
 	assert.equal( manager.getForRenderDeferred( sameA ), firstState, 'replay has no deferred compiler queue' );
 
 	manager.delete( sameA );
@@ -363,6 +396,7 @@ test( 'replay NodeManager applies the post-process selector profile from artifac
 	const live = renderObject( sourceRenderer, replayMaterial );
 	const captureDescriptor = JSON.parse( createRenderObjectContextSelector( live, sourceRenderer ) );
 	captureDescriptor.material.fog = true;
+	captureDescriptor.renderer.reversedDepthBuffer = true;
 	captureDescriptor.target = {
 		...captureDescriptor.target,
 		surface: 'output-intermediate',
@@ -373,6 +407,25 @@ test( 'replay NodeManager applies the post-process selector profile from artifac
 	materializeArtifactVariantSelectorAdapters( signed );
 
 	const manager = new ReplayNodeManager( sourceRenderer, sourceRenderer.backend );
+	assert.doesNotThrow( () => manager.getForRender( live ) );
+
+} );
+
+test( 'replay NodeManager reuses shader artifacts across indexed and non-indexed draws', () => {
+
+	const renderer = fakeRenderer();
+	const signed = artifact();
+	const replayMaterial = material( signed );
+	const live = renderObject( renderer, replayMaterial );
+	signed.renderContextSelectors = [ createRenderObjectContextSelector( live, renderer ) ];
+	materializeArtifactVariantSelectorAdapters( signed );
+	live.object.geometry.index = {
+		array: new Uint16Array( [ 0, 1, 2 ] ),
+		itemSize: 1,
+		normalized: false,
+	};
+
+	const manager = new ReplayNodeManager( renderer, renderer.backend );
 	assert.doesNotThrow( () => manager.getForRender( live ) );
 
 } );
@@ -391,6 +444,136 @@ test( 'replay NodeManager applies the scene-independent render-output selector p
 
 	const manager = new ReplayNodeManager( renderer, renderer.backend );
 	assert.doesNotThrow( () => manager.getForRender( live ) );
+
+} );
+
+test( 'replay NodeManager updates the r185 array-output layer uniform before every draw', () => {
+
+	const renderer = fakeRenderer();
+	const outputArtifact = artifact( {
+		materialShape: 'render-output',
+		fragmentShader: `
+			var outputTexture: texture_2d_array<f32>;
+			fn sampleOutput() {
+				textureSample( outputTexture, outputSampler, outputUV, render.nodeUniform2 );
+			}
+		`,
+		bindings: [ {
+			name: 'render',
+			bindings: [ { name: 'render', kind: 'uniform-buffer', visibility: 7, byteLength: 16 } ],
+		} ],
+		uniformPlan: [ {
+			name: 'render',
+			byteLength: 16,
+			shared: true,
+			slots: [ {
+				name: 'nodeUniform2',
+				offset: 0,
+				size: 4,
+				dtype: 'int',
+				source: {
+					kind: 'uniform.live',
+					valueSnapshot: { type: 'number', data: 0 },
+					liveNodeId: 0,
+					nodePath: [ 'fragmentNode', 'colorNode', 'depthNode' ],
+				},
+			} ],
+		} ],
+	} );
+	const live = renderObject( renderer, material( outputArtifact ) );
+	const manager = new ReplayNodeManager( renderer, renderer.backend );
+	manager.setOutputLayerIndex( 2 );
+	const state = manager.getForRender( live );
+	live.getNodeBuilderState = () => state;
+
+	manager.updateForRender( live );
+	const binding = state.bindings[ 0 ].bindings[ 0 ];
+	const view = new DataView( binding.buffer.buffer, binding.buffer.byteOffset, binding.buffer.byteLength );
+	assert.equal( view.getInt32( 0, true ), 2 );
+	assert.equal( binding.groupNode.updateType, 'render' );
+
+	manager.setOutputLayerIndex( 1 );
+	manager.updateForRender( live );
+	assert.equal( view.getInt32( 0, true ), 1 );
+	manager.setOutputLayerIndex( 0 );
+	manager.updateForRender( live );
+	assert.equal( view.getInt32( 0, true ), 0, 'Renderer finally-block reset is reflected in the shared output UBO' );
+	assert.equal( outputArtifact.uniformPlan[ 0 ].slots[ 0 ]._liveNode, undefined, 'the captured artifact stays immutable across hydration' );
+
+} );
+
+test( 'replay NodeManager recognises GLSL sampler2DArray output layers', () => {
+
+	const renderer = fakeRenderer();
+	renderer.backend = { isWebGLBackend: true };
+	const outputArtifact = artifact( {
+		materialShape: 'render-output',
+		fragmentShader: `#version 300 es
+			precision highp float;
+			uniform sampler2DArray outputTexture;
+			layout( location = 0 ) out vec4 fragColor;
+			void main() {
+				fragColor = texture( outputTexture, vec3( vec2( 0.5 ), float( nodeUniform2 ) ) );
+			}
+		`,
+		bindings: [ {
+			name: 'render',
+			bindings: [ { name: 'render', kind: 'uniform-buffer', visibility: 0, byteLength: 16 } ],
+		} ],
+		uniformPlan: [ {
+			name: 'render',
+			byteLength: 16,
+			shared: true,
+			slots: [ {
+				name: 'nodeUniform2',
+				offset: 0,
+				size: 4,
+				dtype: 'int',
+				source: {
+					kind: 'uniform.live',
+					valueSnapshot: { type: 'number', data: 0 },
+					liveNodeId: 0,
+					nodePath: [ 'fragmentNode', 'colorNode', 'depthNode' ],
+				},
+			} ],
+		} ],
+	} );
+	const live = renderObject( renderer, material( outputArtifact ) );
+	const manager = new ReplayNodeManager( renderer, renderer.backend );
+	manager.setOutputLayerIndex( 3 );
+	const state = manager.getForRender( live );
+	live.getNodeBuilderState = () => state;
+
+	manager.updateForRender( live );
+	const binding = state.bindings[ 0 ].bindings[ 0 ];
+	const view = new DataView( binding.buffer.buffer, binding.buffer.byteOffset, binding.buffer.byteLength );
+	assert.equal( view.getInt32( 0, true ), 3 );
+	assert.equal( outputArtifact.uniformPlan[ 0 ].slots[ 0 ]._liveNode, undefined );
+
+} );
+
+test( 'hydrated state exposes r185 hardware clipping from captured shader topology', () => {
+
+	const renderer = fakeRenderer();
+	const manager = new ReplayNodeManager( renderer, renderer.backend );
+	const hardwareArtifact = artifact( {
+		vertexShader: `
+			enable clip_distances;
+			struct VaryingsStruct {
+				@builtin( clip_distances ) hw_clip_distances : array<f32, 1>,
+				@builtin( position ) position : vec4<f32>
+			};
+		`,
+	} );
+	const hardwareState = manager.getForRender( renderObject( renderer, material( hardwareArtifact ) ) );
+	assert.equal( hardwareState.hardwareClipping, true );
+
+	const explicitSoftwareArtifact = artifact( {
+		hardwareClipping: false,
+		vertexShader: '@builtin( clip_distances ) hw_clip_distances : array<f32, 1>',
+	} );
+	const softwareState = manager.getForRender( renderObject( renderer, material( explicitSoftwareArtifact ) ) );
+	assert.equal( softwareState.hardwareClipping, false, 'an explicit captured value takes precedence over shader inference' );
 
 } );
 
@@ -443,11 +626,16 @@ test( 'replay NodeManager supports compute, update scheduling, groups, and dispo
 	const manager = new ReplayNodeManager( renderer, renderer.backend );
 	const computeNode = {
 		isPrecompiledCompute: true,
+		version: 0,
 		precompiledArtifact: artifact( { kind: 'compute', vertexShader: '', fragmentShader: '', computeShader: 'compute' } ),
 	};
 	const computeState = manager.getForCompute( computeNode );
 	assert.equal( computeState.computeShader, 'compute' );
 	assert.equal( manager.getForCompute( computeNode ), computeState );
+	computeNode.version ++;
+	const rebuiltComputeState = manager.getForCompute( computeNode );
+	assert.notEqual( rebuiltComputeState, computeState, 'r185 invalidates compute state when the node version changes' );
+	assert.equal( manager.getForCompute( computeNode ), rebuiltComputeState );
 	assert.throws( () => manager.getForCompute( {} ), /only PrecompiledComputeNode/ );
 
 	const groupNode = { version: 1 };
@@ -593,6 +781,38 @@ test( 'replay NodeManager keeps fallback state per object and releases it', () =
 
 } );
 
+test( 'replay NodeManager selects the fallback registered for its renderer', () => {
+
+	const rendererA = fakeRenderer();
+	const rendererB = fakeRenderer();
+	const managerA = new ReplayNodeManager( rendererA, rendererA.backend );
+	const managerB = new ReplayNodeManager( rendererB, rendererB.backend );
+	const fallbackState = ( source ) => ( {
+		vertexShader: source,
+		fragmentShader: source,
+		bindings: [],
+		updateNodes: [],
+		updateBeforeNodes: [],
+		updateAfterNodes: [],
+		observer: { needsRefresh: () => true },
+	} );
+	setSlimRenderFallback( () => fallbackState( 'renderer-a' ), rendererA );
+	setSlimRenderFallback( () => fallbackState( 'renderer-b' ), rendererB );
+
+	try {
+
+		assert.equal( managerA.getForRender( renderObject( rendererA, { type: 'NodeMaterial' } ) ).vertexShader, 'renderer-a' );
+		assert.equal( managerB.getForRender( renderObject( rendererB, { type: 'NodeMaterial' } ) ).vertexShader, 'renderer-b' );
+
+	} finally {
+
+		setSlimRenderFallback( null, rendererA );
+		setSlimRenderFallback( null, rendererB );
+
+	}
+
+} );
+
 test( 'replay NodeManager builds and normalizes legacy raw-builder fallbacks', () => {
 
 	const renderer = fakeRenderer();
@@ -600,6 +820,7 @@ test( 'replay NodeManager builds and normalizes legacy raw-builder fallbacks', (
 	let builds = 0;
 	setSlimRenderFallback( () => ( {
 		vertexShader: '', fragmentShader: '', computeShader: '',
+		hardwareClipping: true,
 		build() {
 
 			builds ++;
@@ -619,6 +840,7 @@ test( 'replay NodeManager builds and normalizes legacy raw-builder fallbacks', (
 		assert.deepEqual( state.nodeAttributes, [ 'position' ] );
 		assert.equal( typeof state.createBindings, 'function' );
 		assert.deepEqual( state.updateBeforeNodes, [] );
+		assert.equal( state.hardwareClipping, true );
 
 	} finally {
 

@@ -10,6 +10,14 @@ import {
 	textureMatchesShaderBinding,
 } from './texture-resolver.js';
 import { isTrivialSnapshot, textureFromSnapshot } from './texture-snapshot.js';
+import {
+	RENDER_TARGET_TEXTURE_RESOLUTION_STATUS,
+	resolveRendererRenderTargetTexture,
+} from '../slim-support/render-target-texture-registry.js';
+import {
+	collectMaterialReflectorBaseNodes,
+	resolveReflectorRenderTarget,
+} from './rebinders/reflector-texture-rebinder.js';
 
 installLiveTextureRegistryPatches();
 
@@ -178,12 +186,33 @@ const ARTIFACT_TEXTURE_STRATEGIES = [
 ];
 
 export const ARTIFACT_TEXTURE_STRATEGY_NAMES = Object.freeze( ARTIFACT_TEXTURE_STRATEGIES.map( strategy => strategy.name ) );
+export const RENDER_TARGET_TEXTURE_RESOLUTION_ERROR_CODE = 'TSLP_RENDER_TARGET_TEXTURE_RESOLUTION';
+const RETRYABLE_RENDER_TARGET_TEXTURE_REASONS = new Set( [
+	'no-render-target-observed',
+	'render-target-attachments-not-ready',
+	'material-render-target-not-ready',
+	'preferred-target-not-renderer-owned',
+] );
 
 const PMREM_CUBE_UV_MAPPING = 306;
 
 function isPMREMArtifactSource( source ) {
 
 	return !! ( source && source.kind === 'artifact.texture' && ( source.mapping === PMREM_CUBE_UV_MAPPING || source.textureName === 'PMREM.cubeUv' ) );
+
+}
+
+function isPMREMRuntimeTexture( texture ) {
+
+	return !! (
+		texture &&
+		texture.isTexture === true &&
+		(
+			texture.isPMREMTexture === true ||
+			texture.mapping === PMREM_CUBE_UV_MAPPING ||
+			texture.name === 'PMREM.cubeUv'
+		)
+	);
 
 }
 
@@ -208,6 +237,17 @@ export function resolveArtifactTextureBinding( context ) {
 	const deps = context.deps || {};
 	context.wantsDepthTexture = shaderDeclaresDepthTexture( context.artifact, context.bindingName );
 	context.wantsMultisampledTexture = shaderDeclaresMultisampledTexture( context.artifact, context.bindingName );
+
+	// PMREM sidecar refs are installed only after the renderer has produced the
+	// shader-compatible CubeUV atlas. Once present they are authoritative: a
+	// same-sized PMREM reachable through the source material graph can be stale
+	// (or owned by another renderer) even though it passes shape validation.
+	if ( isPMREMArtifactSource( context.source ) ) {
+
+		const wiredPMREM = resolveAuthoritativePMREMTextureRefStrategy( context );
+		if ( wiredPMREM ) return textureResolutionResult( wiredPMREM, 'texture-ref' );
+
+	}
 
 	for ( const strategy of ARTIFACT_TEXTURE_STRATEGIES ) {
 
@@ -237,7 +277,14 @@ function resolveMaterialNodeTextureStrategy( context ) {
 	const { artifact, bindingName, material, options, source } = context;
 	const lookupMaterialNodeTexture = context.deps && context.deps.lookupMaterialNodeTexture;
 	if ( ! lookupMaterialNodeTexture ) return null;
-	const texture = lookupMaterialNodeTexture( material, source, artifact, bindingName, options && options.avoidTexture || null );
+	const texture = lookupMaterialNodeTexture(
+		material,
+		source,
+		artifact,
+		bindingName,
+		options && options.avoidTexture || null,
+		options && options.materialNodeTextureCache || null,
+	);
 	if ( ! artifactTextureMatchesSource( texture, source ) ) return null;
 	return applySourceSettings( context, texture );
 
@@ -275,6 +322,32 @@ function resolveLiveTextureIdentityStrategy( context ) {
 function resolveTextureRefStrategy( context ) {
 
 	const { artifact, bindingName, source } = context;
+	const texture = resolveRawTextureRef( context );
+	if ( texture && artifactTextureMatchesSource( texture, source ) && textureMatchesShaderBinding( artifact, bindingName, texture ) ) {
+
+		return applySourceSettings( context, texture );
+
+	}
+	return null;
+
+}
+
+function resolveAuthoritativePMREMTextureRefStrategy( context ) {
+
+	const { artifact, bindingName } = context;
+	const texture = resolveRawTextureRef( context );
+	if ( isPMREMRuntimeTexture( texture ) && textureMatchesShaderBinding( artifact, bindingName, texture ) ) {
+
+		return applySourceSettings( context, texture );
+
+	}
+	return null;
+
+}
+
+function resolveRawTextureRef( context ) {
+
+	const { artifact, bindingName, source } = context;
 	let texture = artifact._textureRefs && artifact._textureRefs.get( source.textureUuid );
 	if ( ! texture ) {
 
@@ -294,12 +367,7 @@ function resolveTextureRefStrategy( context ) {
 		}
 
 	}
-	if ( texture && artifactTextureMatchesSource( texture, source ) && textureMatchesShaderBinding( artifact, bindingName, texture ) ) {
-
-		return applySourceSettings( context, texture );
-
-	}
-	return null;
+	return texture;
 
 }
 
@@ -439,6 +507,194 @@ export function textureResolutionDiagnosticDetails( source, textureEntry, textur
 
 }
 
+function renderTargetResolutionDetails( source, textureEntry, textureTypeHint, result, resolvedTexture = null ) {
+
+	return {
+		...textureResolutionDiagnosticDetails( source, textureEntry, textureTypeHint, resolvedTexture ),
+		renderTargetResolutionStatus: result.status,
+		renderTargetResolutionReason: result.reason,
+		observedTargetCount: result.observedTargetCount,
+		candidateCount: result.candidateCount,
+		matchCount: result.matchCount,
+		hazardCount: result.hazardCount,
+		safeMatchCount: result.safeMatchCount,
+		preferredTargetObserved: result.preferredTargetObserved,
+		preferredTextureRendererOwned: result.preferredTextureRendererOwned,
+	};
+
+}
+
+function materialGraphRenderTargetPreference( material, source, options ) {
+
+	if (
+		! material ||
+		source.kind !== 'depth.texture' ||
+		source.fromMaterialGraph !== true ||
+		! source.renderTargetSelector ||
+		source.renderTargetSelector.attachment && source.renderTargetSelector.attachment.role !== 'depth'
+	) return null;
+
+	const reflectorBaseNodes = collectMaterialReflectorBaseNodes( material );
+	if ( reflectorBaseNodes.length === 0 ) return null;
+
+	let baseNode = null;
+	if ( Number.isInteger( source.reflectorIndex ) && source.reflectorIndex >= 0 ) {
+
+		baseNode = reflectorBaseNodes[ source.reflectorIndex ] || null;
+		if ( ! baseNode ) return {
+			failure: {
+				status: RENDER_TARGET_TEXTURE_RESOLUTION_STATUS.MISSING,
+				reason: 'material-render-target-owner-not-found',
+				texture: null,
+				target: null,
+				attachment: null,
+				observedTargetCount: 0,
+				candidateCount: 0,
+				materialReflectorCount: reflectorBaseNodes.length,
+			},
+		};
+
+	} else if ( reflectorBaseNodes.length === 1 ) {
+
+		baseNode = reflectorBaseNodes[ 0 ];
+
+	} else {
+
+		return {
+			failure: {
+				status: RENDER_TARGET_TEXTURE_RESOLUTION_STATUS.AMBIGUOUS,
+				reason: 'material-render-target-owner-ambiguous',
+				texture: null,
+				target: null,
+				attachment: null,
+				observedTargetCount: 0,
+				candidateCount: reflectorBaseNodes.length,
+				materialReflectorCount: reflectorBaseNodes.length,
+			},
+		};
+
+	}
+
+	const camera = options && options.frame && options.frame.camera || null;
+	const target = resolveReflectorRenderTarget( baseNode, camera );
+	const texture = target && target.depthTexture || null;
+	if ( ! target || ! texture ) return {
+		pending: true,
+		materialReflectorCount: reflectorBaseNodes.length,
+	};
+	return {
+		target,
+		texture,
+		materialReflectorCount: reflectorBaseNodes.length,
+	};
+
+}
+
+function resolveSelectedRenderTargetTexture( artifact, groupName, bindingName, textureEntry, source, textureTypeHint, material, options, pendingTexture ) {
+
+	const renderer = options && options.renderer || options && options.frame && options.frame.renderer || null;
+	// `_textureRefs` identifies the preferred replay owner, but it is not
+	// renderer-ownership proof. The renderer-local registry accepts the hint
+	// only after this renderer observed the target, or after its exact texture
+	// has a non-default GPU resource in this renderer's backend.
+	const referencedTexture = artifact && artifact._textureRefs instanceof Map
+		? artifact._textureRefs.get( source.textureUuid )
+		: null;
+	const materialPreference = materialGraphRenderTargetPreference( material, source, options );
+	const preferredTexture = materialPreference && materialPreference.texture || referencedTexture;
+	const preferredTarget = materialPreference && materialPreference.target
+		|| preferredTexture && preferredTexture.renderTarget;
+	const result = materialPreference && materialPreference.failure
+		? materialPreference.failure
+		: materialPreference && materialPreference.pending
+			? {
+				status: RENDER_TARGET_TEXTURE_RESOLUTION_STATUS.PENDING,
+				reason: 'material-render-target-not-ready',
+				texture: null,
+				target: null,
+				attachment: null,
+				observedTargetCount: 0,
+				candidateCount: 0,
+				materialReflectorCount: materialPreference.materialReflectorCount,
+			}
+			: resolveRendererRenderTargetTexture(
+				renderer,
+				source.renderTargetSelector,
+				preferredTarget ? {
+					preferredTarget,
+					preferredTexture,
+				} : {},
+			);
+	if (
+		result.status === RENDER_TARGET_TEXTURE_RESOLUTION_STATUS.RESOLVED &&
+		result.texture &&
+		textureMatchesShaderBinding( artifact, bindingName, result.texture )
+	) {
+
+		recordTextureResolutionStrategy(
+			artifact,
+			groupName,
+			bindingName,
+			'render-target-selector',
+			renderTargetResolutionDetails( source, textureEntry, textureTypeHint, result, result.texture ),
+		);
+		return result.texture;
+
+	}
+
+	const status = result.status === RENDER_TARGET_TEXTURE_RESOLUTION_STATUS.RESOLVED
+		? RENDER_TARGET_TEXTURE_RESOLUTION_STATUS.MISSING
+		: result.status;
+	const reason = result.status === RENDER_TARGET_TEXTURE_RESOLUTION_STATUS.RESOLVED
+		? 'shader-binding-mismatch'
+		: result.reason;
+	const retryable = status === RENDER_TARGET_TEXTURE_RESOLUTION_STATUS.PENDING
+		&& RETRYABLE_RENDER_TARGET_TEXTURE_REASONS.has( reason );
+	if ( retryable && options && options.deferRenderTargetPending === true && pendingTexture ) {
+
+		recordTextureResolutionStrategy(
+			artifact,
+			groupName,
+			bindingName,
+			'render-target-selector-pending',
+			renderTargetResolutionDetails( source, textureEntry, textureTypeHint, result ),
+		);
+		return pendingTexture;
+
+	}
+	const artifactName = artifact && ( artifact.name || artifact.materialShape ) || '<unnamed>';
+	const setupGuidance = reason === 'registry-not-installed'
+		? ' Use the normal slim renderer/setup path so ReplayNodeManager installs discovery before the first target bind. Only custom integrations that call hydrateNodeBuilderState() directly should install the registry manually with createRendererRenderTargetTextureRegistry(renderer), during renderer setup and before any setRenderTarget() call.'
+		: '';
+	const error = new Error(
+		`[tsl-precompile/hydrator] render-target selector for '${ bindingName }' ` +
+		`(group '${ groupName }', artifact '${ artifactName }') resolved ${ status }: ${ reason }. ` +
+		'Captured render-target provenance is authoritative; legacy texture refs and shape fallbacks are disabled for this binding.' +
+		setupGuidance,
+	);
+	error.code = RENDER_TARGET_TEXTURE_RESOLUTION_ERROR_CODE;
+	error.status = status;
+	error.reason = reason;
+	error.groupName = groupName;
+	error.bindingName = bindingName;
+	error.retryable = retryable;
+	for ( const key of [
+		'observedTargetCount',
+		'candidateCount',
+		'matchCount',
+		'hazardCount',
+		'safeMatchCount',
+		'preferredTargetObserved',
+		'preferredTextureRendererOwned',
+	] ) {
+
+		if ( result[ key ] !== undefined ) error[ key ] = result[ key ];
+
+	}
+	throw error;
+
+}
+
 /**
  * Top-level texture-binding dispatcher. Routes `source.kind` to the right
  * resolution path (depth fallback, builtin, material slot, viewport fallback,
@@ -474,6 +730,34 @@ export function dispatchTextureBinding( { artifact, groupName, bindingName, mate
 	const textureTypeHint = resolvePlanTextureTypeHint( artifact, group, textureEntry, source, bindingName );
 
 	const selectShapeFallback = () => selectFallbackTextureForBinding( artifact, bindingName, fallbacks );
+	const selectPendingRenderTargetFallback = () => (
+		textureTypeHint === '2d' &&
+		! shaderDeclaresDepthTexture( artifact, bindingName ) &&
+		! shaderDeclaresMultisampledTexture( artifact, bindingName ) &&
+		fallbacks.pendingRenderTargetColor
+	) || selectShapeFallback();
+
+	// A captured render-target selector is authoritative. Resolve it before
+	// inspecting `_textureRefs`, material graphs, live UUID indexes, snapshots,
+	// or legacy lookup paths. A narrowly defined pending state may bind an inert,
+	// shape-correct texture while the per-frame rebinder waits for renderer
+	// ownership proof. Missing/ambiguous/incompatible/write-hazard results fail
+	// immediately so a stale capture can never silently sample the wrong target.
+	if ( source.renderTargetSelector !== undefined && ! isPMREMArtifactSource( source ) ) {
+
+		return resolveSelectedRenderTargetTexture(
+			artifact,
+			groupName,
+			bindingName,
+			textureEntry,
+			source,
+			textureTypeHint,
+			material,
+			options,
+			selectPendingRenderTargetFallback(),
+		);
+
+	}
 
 	// Shadow depth textures: the live depth map is allocated by the renderer
 	// after hydration and swapped in by the per-frame shadow rebinder. A
@@ -484,7 +768,8 @@ export function dispatchTextureBinding( { artifact, groupName, bindingName, mate
 		const passDepth = source.fromMaterialGraph === true
 			&& ! source.lightUuid
 			&& ! ( typeof source.lightIndex === 'number' && source.lightIndex >= 0 );
-		const live = passDepth && artifact._textureRefs && artifact._textureRefs.get( source.textureUuid );
+		const internalPassDepth = textureEntry && textureEntry.__tslpInternalPassTextureBinding === true;
+		const live = ( passDepth || internalPassDepth ) && artifact._textureRefs && artifact._textureRefs.get( source.textureUuid );
 		return live && live.isTexture === true && textureMatchesShaderBinding( artifact, bindingName, live ) ? live : selectShapeFallback();
 
 	}

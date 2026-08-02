@@ -7,6 +7,8 @@ import {
 	createRendererOutputConfig,
 	createRenderPipelineConfig,
 } from '@tsl-precompile/contract/output-config';
+import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
+import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import {
 	__resetAuxRegistryForTests,
 	bindAuxConfig,
@@ -19,7 +21,10 @@ import {
 	getReplayRenderOutputCacheKey,
 } from '../src/slim-replay-output.js';
 
-const HASH_OPTIONS = { threeVersion: '0.184.0', pluginVersion: '0.1.0' };
+const HASH_OPTIONS = {
+	threeVersion: SLIM_THREE_PACKAGE_VERSION,
+	pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
+};
 
 function renderer( overrides = {} ) {
 
@@ -66,6 +71,8 @@ function pipelineArtifact( replayConfig, name = 'pipeline' ) {
 			outputColorTransform: replayConfig.outputColorTransform,
 			toneMapping: replayConfig.toneMapping,
 			outputColorSpace: replayConfig.outputColorSpace,
+			...( replayConfig.logarithmicDepthBuffer === true ? { logarithmicDepthBuffer: true } : {} ),
+			...( replayConfig.reversedDepthBuffer === true ? { reversedDepthBuffer: true } : {} ),
 		},
 		vertexShader: `vertex:${ name }`,
 		fragmentShader: `fragment:${ name }`,
@@ -129,6 +136,35 @@ test( 'renderer output selection is exact, per-target, and exposure-independent'
 	const before = getReplayRenderOutputCacheKey( sourceRenderer, firstTexture );
 	sourceRenderer.toneMappingExposure = 2.5;
 	assert.equal( getReplayRenderOutputCacheKey( sourceRenderer, firstTexture ), before );
+
+} );
+
+test( 'renderer output wires the live target across backend variant texture UUIDs', () => {
+
+	const sourceRenderer = renderer();
+	const texture = new Texture();
+	const captured = outputArtifact( '2d', 'webgpu-root' );
+	Object.assign( captured, {
+		cacheKey: 'shared-output-cache',
+		variantKey: 'webgpu:shared-output-cache',
+		shaderLanguage: 'wgsl',
+	} );
+	const webgpu = structuredClone( captured );
+	const webgl = outputArtifact( '2d', 'webgl-variant' );
+	Object.assign( webgl, {
+		cacheKey: 'shared-output-cache',
+		variantKey: 'webgl:shared-output-cache',
+		shaderLanguage: 'glsl',
+	} );
+	captured.variants = {
+		[ webgl.variantKey ]: webgl,
+		[ webgpu.variantKey ]: webgpu,
+	};
+	registerOutput( sourceRenderer, texture, captured );
+
+	const material = createReplayRenderOutputMaterial( sourceRenderer, texture );
+	assert.equal( material.precompiledArtifact._textureRefs.get( 'captured-webgpu-root' ), texture );
+	assert.equal( material.precompiledArtifact._textureRefs.get( 'captured-webgl-variant' ), texture );
 
 } );
 
@@ -213,6 +249,116 @@ test( 'RenderPipeline selects the full config, clones artifacts, and disposes af
 	bindAuxConfig( rebound, 'post-process', captured.__tslpAuxConfigHash );
 	pipeline.outputNode = rebound;
 	assert.equal( createReplayRenderPipelineMaterial( pipeline ).precompiledArtifact.fragmentShader, captured.fragmentShader );
+
+} );
+
+test( 'RenderPipeline hashes and selects normal, logarithmic, and reversed depth independently', () => {
+
+	const makePipeline = ( depthOptions ) => ( {
+		renderer: renderer( depthOptions ),
+		outputNode: { isNode: true, graph: { value: 1 } },
+		outputColorTransform: true,
+	} );
+	const pipelines = [
+		[ 'normal-depth', makePipeline( {
+			logarithmicDepthBuffer: false,
+			reversedDepthBuffer: false,
+		} ) ],
+		[ 'logarithmic-depth', makePipeline( {
+			logarithmicDepthBuffer: true,
+			reversedDepthBuffer: false,
+		} ) ],
+		[ 'reversed-depth', makePipeline( {
+			logarithmicDepthBuffer: false,
+			reversedDepthBuffer: true,
+		} ) ],
+	];
+	const hashes = pipelines.map( ( [ name, pipeline ] ) => {
+
+		const artifact = pipelineArtifact( createRenderPipelineConfig( pipeline ), name );
+		return registerPipeline( pipeline, artifact );
+
+	} );
+
+	assert.equal( new Set( hashes ).size, 3 );
+	const normalConfig = createRenderPipelineConfig( pipelines[ 0 ][ 1 ] );
+	assert.equal(
+		hashNodeGraphSync( normalConfig, { shape: 'post-process', ...HASH_OPTIONS } ),
+		hashNodeGraphSync( {
+			schema: 'render-pipeline@1',
+			outputNode: normalConfig.outputNode,
+			outputColorTransform: normalConfig.outputColorTransform,
+			toneMapping: normalConfig.toneMapping,
+			outputColorSpace: normalConfig.outputColorSpace,
+		}, { shape: 'post-process', ...HASH_OPTIONS } ),
+		'default-depth capture keeps the legacy @1 hash',
+	);
+
+	for ( const [ name, pipeline ] of pipelines ) {
+
+		assert.match(
+			createReplayRenderPipelineMaterial( pipeline ).precompiledArtifact.fragmentShader,
+			new RegExp( name ),
+		);
+
+	}
+
+} );
+
+test( 'RenderPipeline rejects legacy default-depth metadata for a non-default unique fallback', () => {
+
+	const outputNode = { isNode: true, graph: { value: 1 } };
+	const logarithmicPipeline = {
+		renderer: renderer( { logarithmicDepthBuffer: true } ),
+		outputNode,
+		outputColorTransform: true,
+	};
+	const defaultConfig = createRenderPipelineConfig( {
+		...logarithmicPipeline,
+		renderer: renderer(),
+	} );
+	registerAuxArtifact(
+		'post-process',
+		'legacy-default-depth-hash',
+		pipelineArtifact( defaultConfig, 'legacy-default-depth' ),
+		HASH_OPTIONS,
+	);
+
+	assert.throws(
+		() => createReplayRenderPipelineMaterial( logarithmicPipeline ),
+		( error ) => error.name === 'ReplayOutputError' && error.code === 'REPLAY_PIPELINE_CONFIG_MISMATCH',
+	);
+
+} );
+
+test( 'RenderPipeline accepts explicit false depth metadata but rejects malformed values', () => {
+
+	const compatiblePipeline = {
+		renderer: renderer(),
+		outputNode: { isNode: true, graph: { value: 'compatible-false' } },
+		outputColorTransform: true,
+	};
+	const compatible = pipelineArtifact( createRenderPipelineConfig( compatiblePipeline ), 'compatible-false' );
+	compatible.replayConfig.logarithmicDepthBuffer = false;
+	compatible.replayConfig.reversedDepthBuffer = false;
+	registerPipeline( compatiblePipeline, compatible );
+	assert.match(
+		createReplayRenderPipelineMaterial( compatiblePipeline ).precompiledArtifact.fragmentShader,
+		/compatible-false/,
+	);
+
+	const malformedPipeline = {
+		renderer: renderer(),
+		outputNode: { isNode: true, graph: { value: 'malformed-depth' } },
+		outputColorTransform: true,
+	};
+	const malformed = pipelineArtifact( createRenderPipelineConfig( malformedPipeline ), 'malformed-depth' );
+	malformed.replayConfig.reversedDepthBuffer = 'true';
+	registerPipeline( malformedPipeline, malformed );
+	assert.throws(
+		() => createReplayRenderPipelineMaterial( malformedPipeline ),
+		( error ) => error.name === 'ReplayOutputError' && error.code === 'REPLAY_PIPELINE_CONFIG_MISMATCH',
+	);
 
 } );
 

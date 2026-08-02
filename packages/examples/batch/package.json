@@ -7,18 +7,21 @@
   "scripts": {
     "catalogue": "node scripts/build-example-catalogue.mjs",
     "catalogue:check": "node scripts/build-example-catalogue.mjs --check",
+    "catalogue:check:corpus": "node scripts/build-example-catalogue.mjs --check --require-three-repo",
     "test": "node run.mjs",
     "run": "node run.mjs",
     "ui": "node run-ui.mjs",
     "run:ui": "node run-ui.mjs",
     "run:slim": "node run-slim.mjs",
     "run:e2e": "node run-e2e-with-coverage.mjs",
+    "run:e2e:hard-scene": "node run-hard-scene.mjs",
+    "run:evidence-campaign": "node run-evidence-campaign.mjs",
     "run:e2e:tier1": "node run-e2e-with-coverage.mjs --tier=tier1 --report=tier1-report.json",
     "run:e2e:tier2": "node run-e2e-with-coverage.mjs --tier=tier2 --report=tier2-report.json",
     "run:e2e:tier3": "node run-e2e-with-coverage.mjs --tier=tier3 --report=tier3-report.json",
     "run:e2e:raw": "node run-e2e.mjs",
     "run:coverage-summary": "node run-coverage-summary.mjs",
-    "test:diagnostics": "node --test test/coverage-summary.test.mjs test/e2e-capture-module.test.mjs test/e2e-render-selector-recorder.test.mjs test/e2e-report-diagnostics.test.mjs test/e2e-settle-policy.test.mjs test/e2e-shot-output.test.mjs test/material-context-cache.test.mjs test/slim-bundle-provenance.test.mjs test/temporal-jitter.test.mjs test/three-version.test.mjs test/user-artifact-families.test.mjs"
+    "test:diagnostics": "node --test 'test/**/*.test.mjs'"
   },
   "devDependencies": {
     "@tsl-precompile/contract": "workspace:*",

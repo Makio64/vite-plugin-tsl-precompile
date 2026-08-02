@@ -7,9 +7,17 @@
  */
 
 const ready = Promise.resolve();
+const captureStatus = Object.freeze( {
+	pending: 0,
+	acceptedCaptures: 0,
+	failedCaptures: 0,
+	failures: Object.freeze( [] ),
+} );
 const result = Object.freeze( {
 	ready,
 	captureAux: async () => [],
+	captureStatus: () => captureStatus,
+	waitForCaptureSettled: async () => captureStatus,
 	setRenderer() {},
 } );
 

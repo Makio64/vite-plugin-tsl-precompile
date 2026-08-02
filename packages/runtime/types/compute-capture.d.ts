@@ -1,4 +1,4 @@
-import type { PrecompiledComputeArtifact } from './precompiled-compute-runner.d.ts';
+import type { PrecompiledComputeArtifact } from './precompiled-compute-runner.js';
 
 export interface ComputeCaptureEntry {
 	/** Stable artifact name used by `virtual:tsl-precompile/<name>`. */

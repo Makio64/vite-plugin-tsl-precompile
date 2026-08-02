@@ -14,13 +14,16 @@ const generationTests = new Set( [
 	'compile-tsl-framebuffer-warmup.test.js',
 	'compute-artifact.test.js',
 	'compute-bindings-extraction.test.js',
+	'compute-transform-feedback.test.js',
 	'extract-attribute-payload.test.js',
 	'extract-uniform-plan.test.js',
 	'extractor-convergence.test.js',
 	'ltc-capture.test.js',
 	'live-render-harvest.test.js',
 	'live-uniform-node-path.test.js',
+	'public-package-pack.test.js',
 	'range-attribute-integration.test.js',
+	'shader-language-extraction.test.js',
 ] );
 
 const generationImportMarkers = [

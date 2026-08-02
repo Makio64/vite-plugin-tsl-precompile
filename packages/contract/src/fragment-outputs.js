@@ -43,10 +43,53 @@ function countFragmentReturnOutputs( shader ) {
 
 }
 
+function stripShaderComments( shader ) {
+
+	return String( shader || '' )
+		.replace( /\/\*[\s\S]*?\*\//g, '' )
+		.replace( /\/\/.*$/gm, '' );
+
+}
+
+function countGlslFragmentOutputs( shader ) {
+
+	const source = stripShaderComments( shader );
+	const looksLikeGlsl = /^[ \t]*#[ \t]*version\b/m.test( source ) ||
+		/\bprecision\s+(?:lowp|mediump|highp)\s+(?:float|int)\s*;/.test( source ) ||
+		/\bvoid\s+main\s*\(/.test( source );
+	if ( ! looksLikeGlsl ) return null;
+
+	// WebGLBackend emits one explicit location declaration per render-target
+	// attachment. Keep this declaration-level count aligned with WGSL's
+	// `@location` count; metadata remains the fallback for unusual interfaces.
+	const locatedOutputs = source.match(
+		/\blayout\s*\([^)]*\blocation\s*=\s*\d+[^)]*\)\s*(?:(?:centroid|sample|flat|smooth|noperspective|invariant|lowp|mediump|highp)\s+)*out\b[^;{]*;/g,
+	);
+	if ( locatedOutputs && locatedOutputs.length > 0 ) return locatedOutputs.length;
+
+	// A single GLSL output may omit an explicit location and defaults to zero.
+	// Match only top-level declaration-shaped lines so `out` function
+	// parameters cannot be mistaken for framebuffer outputs.
+	const unlocatedOutputs = source.match(
+		/^[ \t]*(?:(?:centroid|sample|flat|smooth|noperspective|invariant|lowp|mediump|highp)\s+)*out\s+[^;{]+;/gm,
+	);
+	if ( unlocatedOutputs && unlocatedOutputs.length > 0 ) return unlocatedOutputs.length;
+
+	if ( /\bgl_FragColor\b/.test( source ) ) return 1;
+	const fragDataLocations = [ ...source.matchAll( /\bgl_FragData\s*\[\s*(\d+)\s*\]/g ) ]
+		.map( ( match ) => Number( match[ 1 ] ) );
+	if ( fragDataLocations.length > 0 ) return new Set( fragDataLocations ).size;
+
+	// A recognisable fragment entrypoint with no output declaration is a valid
+	// depth/discard-only shader, not an unknown single-output shader.
+	return /\bvoid\s+main\s*\(/.test( source ) ? 0 : null;
+
+}
+
 /**
- * Count fragment-stage outputs from WGSL source when the output shape can be
- * determined. Returns `null` when the shader does not expose a recognisable
- * fragment output declaration.
+ * Count fragment-stage outputs from WGSL or GLSL source when the output shape
+ * can be determined. Returns `null` when the shader does not expose a
+ * recognisable fragment output declaration.
  *
  * @param {?string} fragmentShader
  * @returns {?number}
@@ -55,6 +98,9 @@ export function countFragmentOutputsFromShader( fragmentShader ) {
 
 	const shader = String( fragmentShader || '' );
 	if ( shader.length === 0 ) return null;
+
+	const glslCount = countGlslFragmentOutputs( shader );
+	if ( glslCount !== null ) return glslCount;
 
 	const outputVar = shader.match( /var<private>\s+output\s*:\s*([A-Za-z_$][\w$]*)\s*;/ );
 	if ( outputVar ) {

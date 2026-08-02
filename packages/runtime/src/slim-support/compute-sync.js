@@ -24,9 +24,101 @@
  */
 
 import { collectArtifactVariantCandidates } from '@tsl-precompile/contract/artifact-variants';
+import {
+	hasAnonymousStorageResourceIdentity,
+	selectSignedAnonymousStorageAttribute,
+	storageEntryAnonymousResourceIdentity,
+} from '../hydrate/storage-buffer-identity.js';
 import { shareGPUTextureEntry, shareShadowGPUTextureIntoSlim, clearTextureViewCache } from './gpu-texture-share.js';
+import { getTemporalFrameState, withTemporalFrame } from './temporal-frame.js';
+
+export {
+	hasAnonymousStorageResourceIdentity,
+	storageEntryAnonymousResourceIdentity,
+} from '../hydrate/storage-buffer-identity.js';
 
 function asList( node ) { return Array.isArray( node ) ? node : [ node ]; }
+
+function nodeFrameForRenderer( renderer ) {
+
+	const nodes = renderer && ( renderer._nodes || renderer.nodes );
+	return nodes && nodes.nodeFrame || null;
+
+}
+
+/**
+ * Run Three's synchronous compute-node update lifecycle under the source
+ * renderer's effective frame identity.
+ *
+ * An initialized `computeAsync()` performs `compute()` / `updateForCompute()`
+ * synchronously before returning its GPU-completion Promise. Restore the
+ * caller-owned full-renderer frame and temporal scope immediately after that
+ * invocation; retaining mutable renderer state until GPU completion can overlap
+ * a sibling dispatch.
+ *
+ * @param {Object} sourceRenderer - Slim/application renderer that owns time.
+ * @param {Object} fullRenderer - Full renderer delegated to for compilation.
+ * @param {Function} callback - Synchronous compute/computeAsync invocation.
+ * @returns {*} callback result, including an unawaited Promise when applicable.
+ */
+export function invokeAlignedFullCompute( sourceRenderer, fullRenderer, callback ) {
+
+	if ( typeof callback !== 'function' ) throw new TypeError( 'invokeAlignedFullCompute: callback must be a function.' );
+	const sourceFrame = nodeFrameForRenderer( sourceRenderer );
+	const fullFrame = nodeFrameForRenderer( fullRenderer );
+	const temporalState = getTemporalFrameState( sourceRenderer );
+	const sourceFrameId = temporalState && temporalState.frameId !== undefined && temporalState.frameId !== null
+		? temporalState.frameId
+		: sourceFrame && sourceFrame.frameId;
+	const sourceTime = temporalState && Number.isFinite( temporalState.time )
+		? temporalState.time
+		: sourceFrame && Number.isFinite( sourceFrame.time ) ? sourceFrame.time : undefined;
+	const sourceDeltaTime = sourceFrame && Number.isFinite( sourceFrame.deltaTime ) ? sourceFrame.deltaTime : undefined;
+	const snapshot = fullFrame ? {
+		frameId: fullFrame.frameId,
+		time: fullFrame.time,
+		deltaTime: fullFrame.deltaTime,
+		renderId: fullFrame.renderId,
+	} : null;
+
+	try {
+
+		if ( fullFrame ) {
+
+			if ( sourceFrameId !== undefined && sourceFrameId !== null ) fullFrame.frameId = sourceFrameId;
+			if ( sourceTime !== undefined ) fullFrame.time = sourceTime;
+			if ( sourceDeltaTime !== undefined ) fullFrame.deltaTime = sourceDeltaTime;
+
+		}
+		let result;
+		if ( temporalState ) {
+
+			// Deliberately do not return the callback's thenable from this scope.
+			// Three has already consumed the frame during its synchronous compute
+			// lifecycle, while the GPU completion may settle much later.
+			withTemporalFrame( fullRenderer, temporalState, () => { result = callback(); } );
+
+		} else {
+
+			result = callback();
+
+		}
+		return result;
+
+	} finally {
+
+		if ( snapshot ) {
+
+			fullFrame.frameId = snapshot.frameId;
+			fullFrame.time = snapshot.time;
+			fullFrame.deltaTime = snapshot.deltaTime;
+			fullFrame.renderId = snapshot.renderId;
+
+		}
+
+	}
+
+}
 
 function isStorageAttribute( value ) {
 
@@ -129,11 +221,14 @@ function storageEntryAttributeName( entry ) {
 
 function storageEntryAliasKey( entry, groupIndex ) {
 
+	const source = entry && entry.source;
 	return [
 		groupIndex,
 		entry && entry.name || '',
 		storageEntryAttributeName( entry ) || '',
 		storageEntryElementType( entry ) || '',
+		( source && source.anonymousResourceOrdinal ) ?? '',
+		( source && source.anonymousResourceCount ) ?? '',
 		entry && entry.count || 0,
 		entry && entry.itemSize || 0,
 		entry && entry.arrayType || '',
@@ -197,6 +292,81 @@ function bindingFilterAllows( opts, binding, location, direction, kind ) {
 	const filter = typeof opts.bindingFilter === 'function' ? opts.bindingFilter : null;
 	if ( ! filter ) return true;
 	return filter( binding, location, { direction, kind } ) === true;
+
+}
+
+function readDrawingBufferSize( renderer ) {
+
+	if ( ! renderer || typeof renderer.getDrawingBufferSize !== 'function' ) return null;
+	const target = {
+		x: 0,
+		y: 0,
+		set( x, y ) {
+
+			this.x = x;
+			this.y = y;
+			return this;
+
+		},
+		floor() {
+
+			this.x = Math.floor( this.x );
+			this.y = Math.floor( this.y );
+			return this;
+
+		},
+	};
+	try {
+
+		renderer.getDrawingBufferSize( target );
+		const width = Math.floor( Number( target.x ) );
+		const height = Math.floor( Number( target.y ) );
+		return width > 0 && height > 0 ? { width, height } : null;
+
+	} catch ( _ ) {
+
+		return null;
+
+	}
+
+}
+
+/**
+ * Mirror the source renderer's physical drawing-buffer extent into a delegated
+ * full renderer. ScreenNode-backed compute kernels read this size, so sharing a
+ * GPUDevice without sharing the drawing-buffer extent produces incorrect pixel
+ * coordinates.
+ *
+ * @param {Object} fullRenderer
+ * @param {Object} sourceRenderer
+ * @returns {boolean} true when the full renderer was resized
+ */
+export function syncComputeRendererSize( fullRenderer, sourceRenderer ) {
+
+	const expected = readDrawingBufferSize( sourceRenderer );
+	const current = readDrawingBufferSize( fullRenderer );
+	if ( ! expected || ! current ) return false;
+	if ( current.width === expected.width && current.height === expected.height ) return false;
+	try {
+
+		if ( typeof fullRenderer.setDrawingBufferSize === 'function' ) {
+
+			// Use physical pixels with a unit pixel ratio. ScreenNode uniforms in
+			// delegated kernels must see the same drawing-buffer extent as slim;
+			// copying logical size/pixel ratio separately can round differently.
+			fullRenderer.setDrawingBufferSize( expected.width, expected.height, 1 );
+			return true;
+
+		}
+		if ( typeof fullRenderer.setSize === 'function' ) {
+
+			fullRenderer.setSize( expected.width, expected.height, false );
+			return true;
+
+		}
+
+	} catch ( _ ) {}
+	return false;
 
 }
 
@@ -312,6 +482,7 @@ function callResourceHook( hook, resource, binding, location, detail ) {
 
 }
 
+
 /**
  * Pull the compute bind-groups for `computeNode` out of the full renderer's
  * `_bindings.getForCompute()`. Returns an empty array on any failure (the
@@ -420,6 +591,7 @@ export function shareComputeSampledInputs( computeNode, fullRenderer, slimRender
 
 	const stats = { texturesShared: 0, skippedStorageTextures: 0, missingTextures: 0 };
 	if ( ! computeNode || ! fullRenderer || ! slimRenderer || ! fullRenderer.backend || ! slimRenderer.backend ) return stats;
+	syncComputeRendererSize( fullRenderer, slimRenderer );
 
 	const sharedTextures = new Map();
 	const sharedStorageAttrs = new Map();
@@ -602,7 +774,9 @@ export function shareComputeSampledInputs( computeNode, fullRenderer, slimRender
  * from `fullRenderer` to `slimRenderer`.
  *
  * - **Storage textures**: shared via `shareShadowGPUTextureIntoSlim` and
- *   regenerated mip levels if `texture.generateMipmaps !== false`.
+ *   regenerated mip levels only when `texture.generateMipmaps !== false` and
+ *   `texture.mipmapsAutoUpdate === true`, matching Three's storage-texture
+ *   update contract.
  * - **Storage buffers**: if slim has no buffer yet, adopt full's reference
  *   (zero-copy); otherwise enqueue a `copyBufferToBuffer` on slim's device.
  *   When `slimRenderer._attributes.get(attr).version === undefined` the
@@ -681,7 +855,7 @@ export function syncComputeStorageOutputs( computeNode, fullRenderer, slimRender
 
 					}
 					callResourceHook( onOutputSynced, tex, binding, location, { direction: 'output', kind: 'storage-texture' } );
-					if ( firstTextureLocation && generateMipmaps && tex.generateMipmaps !== false && tex.mipmapsAutoUpdate !== false && typeof slimRenderer.backend.generateMipmaps === 'function' ) {
+					if ( firstTextureLocation && generateMipmaps && tex.generateMipmaps !== false && tex.mipmapsAutoUpdate === true && typeof slimRenderer.backend.generateMipmaps === 'function' ) {
 
 						try { slimRenderer.backend.generateMipmaps( tex ); } catch ( _ ) {}
 
@@ -822,6 +996,7 @@ export function syncComputeStorageOutputsPerPass( computeNode, fullRenderer, sli
  * @param {Object} [opts]
  * @param {boolean} [opts.bumpVersion=true] - Bump the live attribute version so cached bind groups rebuild.
  * @param {boolean} [opts.allowVec3ToVec4=true] - Accept WebGPU vec3 storage padding captured as vec4.
+ * @param {boolean} [opts.replaceExisting=false] - Replace an already-live binding when a renderer-owned producer recreated its attribute.
  * @returns {number} number of artifact entries wired
  */
 export function wireArtifactStorageBuffersFromAttributes( artifact, attributes, opts = {} ) {
@@ -834,6 +1009,7 @@ export function wireArtifactStorageBuffersFromAttributes( artifact, attributes, 
 
 	const bumpVersion = opts.bumpVersion !== false;
 	const allowVec3ToVec4 = opts.allowVec3ToVec4 !== false;
+	const replaceExisting = opts.replaceExisting === true;
 	const bumpedAttributes = new Set();
 	let wired = 0;
 
@@ -844,30 +1020,57 @@ export function wireArtifactStorageBuffersFromAttributes( artifact, attributes, 
 		const consumed = new Set();
 		const seenEntries = new Set();
 		const aliasMatches = new Map();
+		const changedAliasKeys = new Set();
 		const wireEntry = ( entry, groupIndex ) => {
 
 			if ( ! entry || seenEntries.has( entry ) ) return;
 			seenEntries.add( entry );
-			if ( isLiveStorageAttribute( entry._liveAttribute ) ) return;
+			if ( isLiveStorageAttribute( entry._liveAttribute ) && ! replaceExisting ) return;
 			const aliasKey = storageEntryAliasKey( entry, groupIndex );
 			const aliasMatch = aliasMatches.get( aliasKey );
 			if ( aliasMatch ) {
 
-				defineLiveStorageAttribute( entry, aliasMatch, false );
+				if ( entry._liveAttribute === aliasMatch ) return;
+				const shouldBump = bumpVersion && ! bumpedAttributes.has( aliasMatch );
+				defineLiveStorageAttribute( entry, aliasMatch, shouldBump );
+				if ( shouldBump ) bumpedAttributes.add( aliasMatch );
+				if ( ! changedAliasKeys.has( aliasKey ) ) {
+
+					changedAliasKeys.add( aliasKey );
+					wired ++;
+
+				}
 				return;
 
 			}
 
 			const attributeName = storageEntryAttributeName( entry );
 			const elementType = storageEntryElementType( entry );
+			const hasAnonymousIdentity = hasAnonymousStorageResourceIdentity( entry );
+			const anonymousIdentity = storageEntryAnonymousResourceIdentity( entry );
+			if ( hasAnonymousIdentity && ! anonymousIdentity ) return;
 			const compatible = candidates.filter( ( candidate ) =>
 				storageShapeMatches( candidate.attribute, entry, allowVec3ToVec4 )
-				&& ( ! elementType || candidate.elementTypes.size === 0 || candidate.elementTypes.has( elementType ) )
+					&& ( ! elementType || candidate.elementTypes.size === 0 || candidate.elementTypes.has( elementType ) )
 			);
 			let matches;
 			if ( attributeName ) {
 
 				matches = compatible.filter( ( candidate ) => candidate.attributeNames.has( attributeName ) );
+
+			} else if ( anonymousIdentity ) {
+
+				// The serialized count and ordinal are signed artifact identity.
+				// Both capture and replay independently rank the exact resource
+				// family by BufferAttribute's monotonic construction ID, so compute
+				// dispatch/discovery order cannot exchange same-shaped resources.
+				// Binding evidence may add Three-generated names to the same raw
+				// attribute record. Those names are not authored resource identity;
+				// the signed cardinality and construction rank remain authoritative.
+				const compatibleAttributes = compatible.map( ( candidate ) => candidate.attribute );
+				const orderedMatch = selectSignedAnonymousStorageAttribute( entry, compatibleAttributes );
+				if ( ! orderedMatch ) return;
+				matches = [ { attribute: orderedMatch } ];
 
 			} else {
 
@@ -877,13 +1080,25 @@ export function wireArtifactStorageBuffersFromAttributes( artifact, attributes, 
 			const uniqueAttributes = [ ...new Set( matches.map( ( candidate ) => candidate.attribute ) ) ];
 			if ( uniqueAttributes.length !== 1 ) return;
 			const match = uniqueAttributes[ 0 ];
+			if ( entry._liveAttribute === match ) {
+
+				if ( ! anonymousIdentity ) consumed.add( match );
+				aliasMatches.set( aliasKey, match );
+				return;
+
+			}
 			const shouldBump = bumpVersion && ! bumpedAttributes.has( match );
 
 			defineLiveStorageAttribute( entry, match, shouldBump );
 			if ( shouldBump ) bumpedAttributes.add( match );
-			consumed.add( match );
+			if ( ! anonymousIdentity ) consumed.add( match );
 			aliasMatches.set( aliasKey, match );
-			wired ++;
+			if ( ! changedAliasKeys.has( aliasKey ) ) {
+
+				changedAliasKeys.add( aliasKey );
+				wired ++;
+
+			}
 
 		};
 

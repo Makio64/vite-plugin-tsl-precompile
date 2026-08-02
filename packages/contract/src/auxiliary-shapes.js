@@ -46,6 +46,8 @@ export const AUXILIARY_MATERIAL_SHAPES = Object.freeze( [
 	'pmrem-equirect',
 	'pmrem-blur',
 	'pmrem-ggx',
+	'shadow-vsm-vertical',
+	'shadow-vsm-horizontal',
 	'mrt',
 	'backdrop',
 	'render-output',

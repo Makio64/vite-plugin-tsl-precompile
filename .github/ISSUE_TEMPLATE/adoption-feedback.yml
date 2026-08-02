@@ -25,8 +25,8 @@ body:
     id: three-version
     attributes:
       label: three.js version
-      description: The exact version pinned in your package.json (e.g. `0.184.0`).
-      placeholder: "0.184.0"
+      description: The exact version pinned in your package.json (e.g. `0.185.1`).
+      placeholder: "0.185.1"
     validations:
       required: true
   - type: input

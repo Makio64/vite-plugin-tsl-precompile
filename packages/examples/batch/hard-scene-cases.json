@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "threeVersion": "0.185.1",
+  "psnrThresholdDb": 30,
+  "cases": [
+    {
+      "filename": "webgpu_pmrem_cubemap.html",
+      "category": "pmrem-cubemap",
+      "features": ["PMREM", "cubemap", "CubeUV"]
+    },
+    {
+      "filename": "webgpu_pmrem_equirectangular.html",
+      "category": "pmrem-cubemap",
+      "features": ["PMREM", "equirectangular", "CubeUV"]
+    },
+    {
+      "filename": "webgpu_pmrem_scene.html",
+      "category": "pmrem-cubemap",
+      "features": ["PMREM", "scene capture", "CubeUV"]
+    },
+    {
+      "filename": "webgpu_pmrem_test.html",
+      "category": "pmrem-cubemap",
+      "features": ["PMREM", "roughness sweep", "environment"]
+    },
+    {
+      "filename": "webgpu_cubemap_dynamic.html",
+      "category": "pmrem-cubemap",
+      "features": ["cubemap", "cube camera", "render target"]
+    },
+    {
+      "filename": "webgpu_cubemap_adjustments.html",
+      "category": "pmrem-cubemap",
+      "features": ["cubemap", "TSL adjustments", "environment"]
+    },
+    {
+      "filename": "webgpu_cubemap_mix.html",
+      "category": "pmrem-cubemap",
+      "features": ["cubemap", "TSL mix", "environment"]
+    },
+    {
+      "filename": "webgpu_materials_cubemap_mipmaps.html",
+      "category": "pmrem-cubemap",
+      "features": ["cubemap", "mipmaps", "material sampling"]
+    },
+    {
+      "filename": "webgpu_reflection.html",
+      "category": "reflector",
+      "features": ["reflector", "camera render target", "lights"]
+    },
+    {
+      "filename": "webgpu_reflection_blurred.html",
+      "category": "reflector",
+      "features": ["reflector", "blur", "offscreen passes"]
+    },
+    {
+      "filename": "webgpu_reflection_roughness.html",
+      "category": "reflector",
+      "features": ["reflector", "roughness", "mip generation"]
+    },
+    {
+      "filename": "webgpu_postprocessing_ssr.html",
+      "category": "postprocessing",
+      "features": ["SSR", "MRT", "render pipeline"]
+    },
+    {
+      "filename": "webgpu_postprocessing_ssr_denoise.html",
+      "category": "postprocessing",
+      "features": ["SSR", "temporal denoise", "history targets"]
+    },
+    {
+      "filename": "webgpu_postprocessing.html",
+      "category": "postprocessing",
+      "features": ["render pipeline", "post-processing", "offscreen targets"]
+    },
+    {
+      "filename": "webgpu_postprocessing_bloom.html",
+      "category": "postprocessing",
+      "features": ["bloom", "blur chain", "post-processing"]
+    },
+    {
+      "filename": "webgpu_postprocessing_ao.html",
+      "category": "postprocessing",
+      "features": ["ambient occlusion", "depth", "post-processing"]
+    },
+    {
+      "filename": "webgpu_postprocessing_sss.html",
+      "category": "postprocessing",
+      "features": ["subsurface scattering", "MRT", "shadow depth"]
+    },
+    {
+      "filename": "webgpu_upscaling_taau.html",
+      "category": "postprocessing",
+      "features": ["TAAU", "temporal history", "velocity"]
+    },
+    {
+      "filename": "webgpu_materials_sss.html",
+      "category": "physical-material",
+      "features": ["subsurface scattering", "physical material", "shadows"]
+    },
+    {
+      "filename": "webgpu_texturegather.html",
+      "category": "render-target-texture",
+      "features": ["textureGather", "color target", "depth target"]
+    },
+    {
+      "filename": "webgpu_shadowmap_progressive.html",
+      "category": "shadows",
+      "features": ["progressive shadows", "accumulation", "lights"]
+    },
+    {
+      "filename": "webgpu_shadowmap_vsm.html",
+      "category": "shadows",
+      "features": ["VSM", "shadow blur", "shadow render targets"]
+    },
+    {
+      "filename": "webgpu_lights_physical.html",
+      "category": "lights",
+      "features": ["physical lights", "PBR", "shadows"]
+    },
+    {
+      "filename": "webgpu_lights_pointlights.html",
+      "category": "lights",
+      "features": ["point lights", "many lights", "dynamic uniforms"]
+    },
+    {
+      "filename": "webgpu_lights_spotlight.html",
+      "category": "lights",
+      "features": ["spot light", "shadow map", "projected texture"]
+    },
+    {
+      "filename": "webgpu_lights_rectarealight.html",
+      "category": "lights",
+      "features": ["rect area light", "physical material", "LTC"]
+    },
+    {
+      "filename": "webgpu_lights_ies_spotlight.html",
+      "category": "lights",
+      "features": ["IES", "spot light", "photometric texture"]
+    }
+  ]
+}

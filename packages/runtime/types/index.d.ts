@@ -13,26 +13,43 @@
  * Everything else is for power users (custom artifact loaders, aux passes,
  * material variants, slim-support helpers, etc.).
  */
+import type { Material } from 'three';
+
 export type {
 	MaterialComputeBinding,
 	AutoComputeCandidateContext,
 	AutoComputeCandidateResolver,
 	AutoComputeDispatchStats,
 	AutoComputeDispatchOptions,
-} from './slim-support/auto-compute.d.ts';
+} from './slim-support/auto-compute.js';
 export type {
 	DispatchMaterialComputesOptions,
 	MaterialComputeDispatchStats,
 	SlimSceneSupportDiagnostics,
 	SlimSceneSupportErrorContext,
 	SlimSceneSupportOptions,
-} from './slim-support/scene-support.d.ts';
+} from './slim-support/scene-support.js';
 export type {
 	ComputeCapture,
 	ComputeCaptureEntry,
 	PrecompileComputeOptions,
 	PrecompileComputesOptions,
-} from './compute-capture.d.ts';
+} from './compute-capture.js';
+export type {
+	CreateInternalPassMaterialOptions,
+	InternalPassBindingController,
+	InternalPassBindings,
+	InternalPassLiveValue,
+} from './slim-support/internal-pass.js';
+export type {
+	PrecompiledShadowResult,
+	PrecompiledShadowSupport,
+	PrecompiledShadowUnsupported,
+} from './slim-support/precompiled-shadows.js';
+export const InternalPassBindingError: typeof import('./slim-support/internal-pass.js').InternalPassBindingError;
+export const cloneInternalPassArtifact: typeof import('./slim-support/internal-pass.js').cloneInternalPassArtifact;
+export const bindInternalPassArtifact: typeof import('./slim-support/internal-pass.js').bindInternalPassArtifact;
+export const createInternalPassMaterial: typeof import('./slim-support/internal-pass.js').createInternalPassMaterial;
 export type {
 	GeneratedPrecompiledComputeModule,
 	PrecompiledComputeArtifact,
@@ -42,20 +59,20 @@ export type {
 	PrecompiledComputeResources,
 	PrecompiledComputeRunner,
 	PrecompiledComputeUniform,
-} from './precompiled-compute-runner.d.ts';
-export const AUTO_COMPUTE_MATERIAL_PROPERTIES: typeof import('./slim-support/auto-compute.d.ts').AUTO_COMPUTE_MATERIAL_PROPERTIES;
-export const MATERIAL_COMPUTE_BINDINGS: typeof import('./slim-support/auto-compute.d.ts').MATERIAL_COMPUTE_BINDINGS;
-export const AutoComputeBindingError: typeof import('./slim-support/auto-compute.d.ts').AutoComputeBindingError;
-export const collectMaterialComputeBindings: typeof import('./slim-support/auto-compute.d.ts').collectMaterialComputeBindings;
-export const collectWritableComputeStorageAttributes: typeof import('./slim-support/auto-compute.d.ts').collectWritableComputeStorageAttributes;
-export const artifactHasUnwiredAnonymousComputeAttribute: typeof import('./slim-support/auto-compute.d.ts').artifactHasUnwiredAnonymousComputeAttribute;
-export const prepareMaterialComputeAttributes: typeof import('./slim-support/auto-compute.d.ts').prepareMaterialComputeAttributes;
-export const applyMaterialComputeAttributeBindings: typeof import('./slim-support/auto-compute.d.ts').applyMaterialComputeAttributeBindings;
-export const invalidateMaterialComputeBindings: typeof import('./slim-support/auto-compute.d.ts').invalidateMaterialComputeBindings;
-export const createAutoComputeDispatcher: typeof import('./slim-support/auto-compute.d.ts').createAutoComputeDispatcher;
-export const createPrecompiledComputeRunner: typeof import('./precompiled-compute-runner.d.ts').createPrecompiledComputeRunner;
-export const precompileCompute: typeof import('./compute-capture.d.ts').precompileCompute;
-export const precompileComputes: typeof import('./compute-capture.d.ts').precompileComputes;
+} from './precompiled-compute-runner.js';
+export const AUTO_COMPUTE_MATERIAL_PROPERTIES: typeof import('./slim-support/auto-compute.js').AUTO_COMPUTE_MATERIAL_PROPERTIES;
+export const MATERIAL_COMPUTE_BINDINGS: typeof import('./slim-support/auto-compute.js').MATERIAL_COMPUTE_BINDINGS;
+export const AutoComputeBindingError: typeof import('./slim-support/auto-compute.js').AutoComputeBindingError;
+export const collectMaterialComputeBindings: typeof import('./slim-support/auto-compute.js').collectMaterialComputeBindings;
+export const collectWritableComputeStorageAttributes: typeof import('./slim-support/auto-compute.js').collectWritableComputeStorageAttributes;
+export const artifactHasUnwiredAnonymousComputeAttribute: typeof import('./slim-support/auto-compute.js').artifactHasUnwiredAnonymousComputeAttribute;
+export const prepareMaterialComputeAttributes: typeof import('./slim-support/auto-compute.js').prepareMaterialComputeAttributes;
+export const applyMaterialComputeAttributeBindings: typeof import('./slim-support/auto-compute.js').applyMaterialComputeAttributeBindings;
+export const invalidateMaterialComputeBindings: typeof import('./slim-support/auto-compute.js').invalidateMaterialComputeBindings;
+export const createAutoComputeDispatcher: typeof import('./slim-support/auto-compute.js').createAutoComputeDispatcher;
+export const createPrecompiledComputeRunner: typeof import('./precompiled-compute-runner.js').createPrecompiledComputeRunner;
+export const precompileCompute: typeof import('./compute-capture.js').precompileCompute;
+export const precompileComputes: typeof import('./compute-capture.js').precompileComputes;
 
 export interface PrecompileCaptureContext {
 	/** Exact renderer whose topology should be captured; useful when one scene is rendered by multiple renderer configurations. */
@@ -83,6 +100,24 @@ declare module 'three' {
 	}
 }
 
+/**
+ * `three/webgpu` NodeMaterial classes inherit from this source module in
+ * `@types/three`, rather than from the `Material` symbol re-exported by the
+ * root `three` module. Augment the inherited base once so every current and
+ * future NodeMaterial subclass exposes the marker through the recommended
+ * `three/webgpu` entry.
+ */
+declare module 'three/src/materials/nodes/NodeMaterial.js' {
+	interface NodeMaterial {
+		/**
+		 * Mark this material for AOT precompilation. The method is installed
+		 * dynamically during development and rewritten by the Vite plugin in
+		 * production builds.
+		 */
+		precompile( name: string, context?: PrecompileCaptureContext ): this;
+	}
+}
+
 // ---------- setupPrecompile (recommended entry) ----------
 
 export interface SetupPrecompileOptions {
@@ -92,6 +127,8 @@ export interface SetupPrecompileOptions {
 	renderer: unknown;
 	/** Custom dev-capture endpoint. Default: `'/__tsl-precompile/capture'`. */
 	devEndpoint?: string;
+	/** Automatically capture renderer-output topologies after real renders. Default: `true`; disable only for named manual output capture. */
+	captureRendererOutput?: boolean;
 	/** `true` exposes `captureAux()`; an object is forwarded as extra opts to `precompileAuxiliary`. */
 	aux?: boolean | Record<string, unknown>;
 	/** Required only when `aux` is truthy. */
@@ -100,11 +137,57 @@ export interface SetupPrecompileOptions {
 	camera?: unknown;
 }
 
+/** Snapshot of development capture activity shared by material and auxiliary captures. */
+export interface DevCaptureFailure {
+	/** Stable machine-readable failure category. */
+	readonly code: string;
+	/** Material or auxiliary capture shape that failed. */
+	readonly shape: string;
+	/** Original capture error text. */
+	readonly error: string;
+	/** Actionable failure detail from the capture implementation or endpoint. */
+	readonly message: string;
+	/** Optional auxiliary family profile, such as a PMREM source profile. */
+	readonly profile: string | null;
+	/** Optional exact auxiliary configuration hash when it was available. */
+	readonly configHash: string | null;
+	/** Local development stack trace when the capture supplied one. */
+	readonly stack?: string;
+}
+
+export interface DevCaptureStatus {
+	/** Capture operations currently in flight. */
+	readonly pending: number;
+	/** Capture operations accepted by the Vite development endpoint. */
+	readonly acceptedCaptures: number;
+	/** Capture operations that failed or were rejected. */
+	readonly failedCaptures: number;
+	/** Bounded, structured details for the most recent failed operations. */
+	readonly failures: readonly DevCaptureFailure[];
+}
+
+export interface WaitForCaptureSettledOptions {
+	/** Baseline used to distinguish a new capture wave from earlier activity. */
+	since?: DevCaptureStatus | null;
+	/** Maximum wait before rejecting. Default: `30_000`. */
+	timeoutMs?: number;
+	/** Time the counters must remain idle after pending work reaches zero. Default: `100`. */
+	settleMs?: number;
+	/** Resolve without observing a new accepted or failed capture. Default: `false`. */
+	allowEmpty?: boolean;
+	/** Reject when the observed capture wave contains a failure. Default: `true`. */
+	rejectOnFailure?: boolean;
+}
+
 export interface SetupPrecompileResult {
 	/** Resolves once the marker is installed and the dev renderer is registered. */
 	ready: Promise<void>;
 	/** Capture aux artifacts (background, PMREM, MRT pass nodes, etc.). No-op unless `aux` was truthy. */
 	captureAux: ( extraOpts?: Record<string, unknown> ) => Promise<unknown[]>;
+	/** Return a synchronous snapshot of development capture activity. */
+	captureStatus: () => DevCaptureStatus;
+	/** Resolve when a new capture wave has completed and remained idle. */
+	waitForCaptureSettled: ( opts?: WaitForCaptureSettledOptions ) => Promise<DevCaptureStatus>;
 	/** Swap the dev renderer (useful when the renderer is recreated). */
 	setRenderer: ( renderer: unknown ) => void;
 }
@@ -147,7 +230,12 @@ export function listUserArtifacts<TArtifactModule = unknown>(): UserArtifactEntr
 
 // ---------- Material classes ----------
 
-export const PrecompiledMaterial: new ( ...args: unknown[] ) => unknown;
+export interface PrecompiledMaterial extends Material {
+	readonly isNodeMaterial: true;
+	readonly isPrecompiledMaterial: true;
+	precompiledArtifact: unknown;
+}
+export const PrecompiledMaterial: new ( artifact: unknown ) => PrecompiledMaterial;
 export const PrecompiledComputeNode: new ( ...args: unknown[] ) => unknown;
 
 // ---------- Precompiled artifact registry (vendor) ----------
@@ -187,6 +275,9 @@ export function writeColorRGBA( view: DataView, byteOffset: number, color: { r: 
 export function writeMat3( view: DataView, byteOffset: number, mat: { elements: ArrayLike<number> } ): void;
 export function writeMat4( view: DataView, byteOffset: number, mat: { elements: ArrayLike<number> } ): void;
 export function writeMat4FromEuler( view: DataView, byteOffset: number, euler: unknown, background: unknown ): void;
+export function writeEnvironmentRotation( view: DataView, byteOffset: number, material: unknown, scene: unknown ): void;
+export function writePMREMScalar( view: DataView, byteOffset: number, kind: string, artifact: unknown, material: unknown, frame: unknown, source?: unknown ): void;
+export function writeTextureUVFlip( view: DataView, byteOffset: number, artifact: unknown, source: unknown ): void;
 export function writeBytes( view: DataView, byteOffset: number, source: ArrayBufferView, sourceByteOffset: number, byteLength: number ): void;
 
 // ---------- Hashing helpers ----------
@@ -217,6 +308,8 @@ export function hashArtifactContentSync( artifact: unknown, opts: HashVersionOpt
 
 export interface AuxCaptureOptions extends Record<string, unknown> {
 	devEndpoint?: string;
+	/** Friendly semantic identity for a background capture; pair with `bindAuxByName()` in replay. */
+	backgroundName?: string;
 	renderPipeline?: unknown;
 	renderPipelineName?: string;
 	/** RenderTarget topology used by the pipeline final quad; capture operates on a disposable structural clone. */
@@ -229,6 +322,13 @@ export interface AuxCaptureOptions extends Record<string, unknown> {
 	cubeRenderTargetTextures?: readonly unknown[];
 	/** CubeRenderTarget constructor options whose format/MSAA/depth topology should be captured. */
 	cubeRenderTargetOptions?: Record<string, unknown>;
+	/**
+	 * Sizes passed to `PMREMGenerator.fromScene(..., { size })`.
+	 * Required for fromScene-only layouts because a generated CubeUV texture
+	 * does not retain its source scene or requested size.
+	 */
+	pmremSceneSizes?: readonly number[];
+	/** The `three/webgpu` module namespace; root `three`.PMREMGenerator is not capture-compatible. */
 	three?: unknown;
 	/** Optional `three/tsl` namespace; loaded lazily during dev capture when omitted. */
 	tsl?: unknown;
@@ -291,7 +391,6 @@ export function attachPostprocessObject3DTargets<TMaterial = unknown>( material:
 export function getReplayRenderOutputCacheKey( renderer: unknown, outputTexture: unknown ): string;
 export function createReplayRenderOutputMaterial( renderer: unknown, outputTexture: unknown, previousMaterial?: unknown ): PrecompiledMaterial;
 export function createReplayRenderPipelineMaterial( pipeline: unknown, previousMaterial?: unknown ): PrecompiledMaterial;
-export function __resetAuxRegistryForTests(): void;
 
 // ---------- Hydrator ----------
 
@@ -358,6 +457,7 @@ export function singleArtifactTextureUuid( artifact: unknown, predicate?: ( sour
 export function attachArtifactTextureRefsByShapeOrder( artifact: unknown, textures: unknown[], predicate?: ( source: Record<string, unknown>, entry: Record<string, unknown>, group: Record<string, unknown> ) => boolean, options?: { overwriteExisting?: boolean } ): number;
 export function attachTextureRefsWhere( artifact: unknown, texture: unknown, predicate: ( source: Record<string, unknown>, entry: Record<string, unknown>, group: Record<string, unknown> ) => boolean ): boolean;
 export function attachArtifactTextureRefsWhere( artifact: unknown, texture: unknown, predicate: ( source: Record<string, unknown>, entry: Record<string, unknown>, group: Record<string, unknown> ) => boolean ): boolean;
+export function attachExactMaterialGraphDepthTextureRefs( artifact: unknown, textures: unknown[] ): number;
 export function rewritePassDepthTextureSources( artifact: unknown, textureUuids?: Set<string> | string[] | null ): number;
 export type ComputeSyncStats = {
 	texturesShared: number;
@@ -407,6 +507,7 @@ export type ShadowFallbackResult = {
 export type PopulateShadowMapsOptions = {
 	fullRenderer?: unknown;
 	threeFullModule?: Record<string, unknown>;
+	forceFullRenderer?: boolean;
 	resolveShadowMaterial?: ( material: unknown, object: unknown, context: { threeFullModule: Record<string, unknown>; originalMaterial: unknown } ) => unknown;
 	cache?: WeakMap<object, unknown> | Map<object, unknown>;
 	renderTarget?: unknown;
@@ -426,6 +527,7 @@ export type WireTRAAResolveArtifactOptions = {
 export type RendererLightingStats = {
 	updated: boolean;
 	cpuTiled: boolean;
+	cpuClustered: boolean;
 	storageAttrs: number;
 	artifactsWired: number;
 	textureRefsWired: number;
@@ -473,13 +575,15 @@ export type WirePrecompiledPostprocessResult = {
 export function getComputeBindGroups( computeNode: unknown, fullRenderer: unknown ): unknown[];
 export function computeNodeUsesStorageTexture( computeNode: unknown, fullRenderer: unknown ): boolean;
 export function computeSyncNeedsPresentation( stats: Partial<ComputeSyncStats> & { storageTextures?: number } | null | undefined ): boolean;
+export function invokeAlignedFullCompute<T>( sourceRenderer: unknown, fullRenderer: unknown, callback: () => T ): T;
+export function syncComputeRendererSize( fullRenderer: unknown, sourceRenderer: unknown ): boolean;
 export function shareComputeSampledInputs( computeNode: unknown, fullRenderer: unknown, slimRenderer: unknown, opts?: Record<string, unknown> ): ComputeInputShareStats;
 export function syncComputeStorageOutputs( computeNode: unknown, fullRenderer: unknown, slimRenderer: unknown, opts?: Record<string, unknown> ): ComputeSyncStats;
 export function syncComputeStorageOutputsPerPass( computeNode: unknown, fullRenderer: unknown, slimRenderer: unknown, passIndex: number | undefined, opts?: Record<string, unknown> ): ComputeSyncPerPassStats;
 export function wireArtifactStorageBuffersFromAttributes( artifact: unknown, attributes: unknown | unknown[], opts?: Record<string, unknown> ): number;
 export function pingPongInvalidate( textureA: unknown, textureB: unknown, renderers: unknown | unknown[] ): boolean;
 export function shareInstancedAttributeBufferIntoSlim( attribute: unknown, fullRenderer: unknown, slimRenderer: unknown ): boolean;
-export function collectSceneLights( scene: unknown ): unknown[];
+export function collectSceneLights( scene: unknown, camera?: unknown ): unknown[];
 export function wireStorageAttributesToSceneArtifacts( scene: unknown, attributes: unknown | unknown[], opts?: Record<string, unknown> ): number;
 export function wireTiledLightingTextureToScene( scene: unknown, texture: unknown, opts?: Record<string, unknown> ): number;
 export function updateRendererLightingForSlim( renderer: unknown, scene: unknown, camera: unknown, opts?: Record<string, unknown> ): RendererLightingStats;
@@ -489,8 +593,9 @@ export function createFullRendererFallback( opts: Record<string, unknown> ): {
 	isInitialised: () => boolean;
 	dispose: () => void;
 };
-export function setSlimRenderFallback( handler: SlimRenderFallbackHandler | null | undefined ): void;
-export function getSlimRenderFallback(): SlimRenderFallbackHandler | null;
+export const createPrecompiledShadowSupport: typeof import('./slim-support/precompiled-shadows.js').createPrecompiledShadowSupport;
+export function setSlimRenderFallback( handler: SlimRenderFallbackHandler | null | undefined, owner?: object | null ): void;
+export function getSlimRenderFallback( owner?: object | null ): SlimRenderFallbackHandler | null;
 export function renderPassWithFullRenderer( args: {
 	passNode: unknown;
 	slimRenderer: unknown;
@@ -547,40 +652,9 @@ export function wirePrecompiledPostprocess( args?: {
 export function collectLiveBloomNodes( root: unknown ): unknown[];
 export function wireBloomNode( bloomNode: unknown, opts?: { bloomIndex?: number } ): WireRegisteredEffectNodeResult;
 export function findPostprocessAux( shape: string, nameOrConfigHash: string ): unknown;
-export function createSlimSceneSupport( opts: import('./slim-support/scene-support.d.ts').SlimSceneSupportOptions ): {
-	liveSceneIndex: unknown;
-	pmrem: unknown;
-	fallback: unknown;
-	materialCompute: ReturnType<typeof import('./slim-support/auto-compute.d.ts').createAutoComputeDispatcher>;
-	diagnostics: Record<string, unknown>;
-	indexScene: ( scene: unknown ) => void;
-	rememberLiveTexture: ( texture: unknown ) => void;
-	getFullRenderer: () => Promise<unknown | null>;
-	ensureFallback: () => Promise<void>;
-	installComputeFallback: ( sourceRenderer?: unknown ) => boolean;
-	generatePMREMAsync: ( sourceTexture: unknown, generator?: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => Promise<unknown | null>;
-	setPMREMGenerator: ( generator: ( renderer: unknown, sourceTexture: unknown ) => Promise<unknown> | unknown ) => void;
-	syncComputeOutputs: ( computeNode: unknown, fullRenderer: unknown, syncOpts?: Record<string, unknown> ) => ComputeSyncStats;
-	dispatchMaterialComputes: ( scene: unknown, computeOpts?: import('./slim-support/scene-support.d.ts').DispatchMaterialComputesOptions ) => Promise<import('./slim-support/scene-support.d.ts').MaterialComputeDispatchStats>;
-	shareComputeInputs: ( computeNode: unknown, fullRenderer: unknown, shareOpts?: Record<string, unknown> ) => ComputeInputShareStats;
-	syncComputeOutputsPerPass: ( computeNode: unknown, fullRenderer: unknown, passIndex: number | undefined, syncOpts?: Record<string, unknown> ) => ComputeSyncPerPassStats;
-	pingPongInvalidate: ( textureA: unknown, textureB: unknown, extraRenderer?: unknown ) => boolean;
-	shareInstancedAttributeBuffer: ( attribute: unknown, sourceRenderer: unknown ) => boolean;
-	computeNodeUsesStorageTexture: ( computeNode: unknown, sourceRenderer: unknown ) => boolean;
-	shareTexture: ( sourceRenderer: unknown, texture: unknown ) => boolean;
-	shareShadowTexture: ( texture: unknown, sourceRenderer: unknown ) => boolean;
-	populateShadowMaps: ( scene: unknown, camera: unknown, shadowOpts?: PopulateShadowMapsOptions ) => Promise<ShadowFallbackResult>;
-	disposeShadowMaps: ( scene?: object ) => Promise<number>;
-	updateRendererLighting: ( scene: unknown, camera: unknown, lightingOpts?: Record<string, unknown> ) => RendererLightingStats;
-	preparePostprocess: ( prepArgs?: Record<string, unknown> ) => { effects: number; prepared: unknown[]; missed: unknown[] };
-	wirePostprocess: ( wireArgs?: Record<string, unknown> ) => { effects: number; wired: unknown[]; missed: unknown[] };
-	renderPassWithFallback: ( passNode: unknown, passOpts?: RenderPassWithFallbackOptions ) => Promise<RenderPassWithFallbackStats>;
-	renderOffscreenOverrideWithFallback: ( scene: unknown, camera: unknown, offscreenOpts?: RenderOffscreenOverrideWithFallbackOptions ) => Promise<RenderPassWithFallbackStats>;
-	pinClock: ( t: number | null | undefined ) => void;
-	unpinClock: () => void;
-	withTemporalFrame: <T>( options: { frameId?: number | string; renderId?: number | string; time?: number; advance?: boolean }, callback: ( state: TemporalFrameState ) => T, extraRenderers?: unknown | unknown[] ) => T;
-	dispose: () => Promise<void>;
-};
+export function createSlimSceneSupport(
+	opts: import('./slim-support/scene-support.js').SlimSceneSupportOptions
+): ReturnType<typeof import('./slim-support/scene-support.js').createSlimSceneSupport>;
 export function pinClock( t: number | null | undefined ): void;
 export function unpinClock(): void;
 export type TemporalFrameState = {

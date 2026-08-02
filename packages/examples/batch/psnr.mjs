@@ -1,12 +1,18 @@
 import { readFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { PNG } from 'pngjs';
 
-const COVERAGE_CONFIG_URL = new URL( './coverage-config.json', import.meta.url );
+import { readSafeContainedFile } from './e2e-evidence.mjs';
+
+const COVERAGE_CONFIG_PATH = fileURLToPath( new URL( './coverage-config.json', import.meta.url ) );
 
 export function readCoverageConfig() {
 
-	return JSON.parse( readFileSync( COVERAGE_CONFIG_URL, 'utf8' ) );
+	return JSON.parse( readSafeContainedFile( dirname( COVERAGE_CONFIG_PATH ), COVERAGE_CONFIG_PATH, {
+		label: 'current coverage configuration',
+	} ).toString( 'utf8' ) );
 
 }
 
@@ -60,11 +66,34 @@ export function minimumBrightFractionForExample( name, defaultMinimum, config = 
 
 export function expectedReplayErrorPatternsForExample( name, config = coverageConfig ) {
 
-	const patterns = config.pixelGate?.expectedReplayErrors?.[ name ];
-	if ( ! Array.isArray( patterns ) ) return [];
+	const patterns = expectedReplayErrorSourcesForExample( name, config );
 	return patterns.map( ( p ) => {
 		try { return new RegExp( p ); } catch ( _ ) { return null; }
 	} ).filter( Boolean );
+
+}
+
+export function expectedReplayErrorSourcesForExample( name, config = coverageConfig ) {
+
+	const patterns = config.pixelGate?.expectedReplayErrors?.[ name ];
+	if ( ! Array.isArray( patterns ) ) return [];
+	return patterns.filter( ( pattern ) => typeof pattern === 'string' && pattern.length > 0 );
+
+}
+
+export function expectedCaptureErrorPatternsForExample( name, config = coverageConfig ) {
+
+	return expectedCaptureErrorSourcesForExample( name, config ).map( ( p ) => {
+		try { return new RegExp( p ); } catch ( _ ) { return null; }
+	} ).filter( Boolean );
+
+}
+
+export function expectedCaptureErrorSourcesForExample( name, config = coverageConfig ) {
+
+	const patterns = config.pixelGate?.expectedCaptureErrors?.[ name ];
+	if ( ! Array.isArray( patterns ) ) return [];
+	return patterns.filter( ( pattern ) => typeof pattern === 'string' && pattern.length > 0 );
 
 }
 
@@ -99,6 +128,24 @@ export function comparePngBuffers( captureBuffer, replayBuffer, opts = {} ) {
 			return { error: `dim mismatch capture=${ a.width }x${ a.height } replay=${ b.width }x${ b.height }`, width: a.width, height: a.height };
 
 		}
+		for ( const [ index, region ] of ignoreRegions.entries() ) {
+
+			const values = [ region?.x, region?.y, region?.width, region?.height ];
+			if (
+				values.some( ( value ) => ! Number.isFinite( value ) || ! Number.isInteger( value ) ) ||
+				region.x < 0 ||
+				region.y < 0 ||
+				region.width <= 0 ||
+				region.height <= 0 ||
+				region.x + region.width > a.width ||
+				region.y + region.height > a.height
+			) {
+
+				return { error: `invalid ignore region ${ index } for ${ a.width }x${ a.height } comparison` };
+
+			}
+
+		}
 
 		const isIgnored = ( x, y ) => ignoreRegions.some( ( region ) => (
 			x >= region.x && y >= region.y &&
@@ -121,12 +168,28 @@ export function comparePngBuffers( captureBuffer, replayBuffer, opts = {} ) {
 
 		}
 
-		const mse = comparedPixels === 0 ? 0 : sumSq / ( comparedPixels * 3 );
+		const totalPixels = a.width * a.height;
+		const comparedFraction = totalPixels > 0 ? comparedPixels / totalPixels : 0;
+		if ( comparedFraction < 0.5 ) {
+
+			return {
+				error: `insufficient compared pixels (${ comparedPixels }/${ totalPixels }, ${( comparedFraction * 100 ).toFixed( 1 ) }%)`,
+				width: a.width,
+				height: a.height,
+				comparedPixels,
+				comparedFraction,
+				ignoredRegions: ignoreRegions,
+			};
+
+		}
+		const mse = sumSq / ( comparedPixels * 3 );
 		const psnr = mse === 0 ? Infinity : 10 * Math.log10( ( 255 * 255 ) / mse );
 		return {
 			psnr: psnr === Infinity ? 'inf' : ( round ? +psnr.toFixed( 2 ) : psnr ),
 			width: a.width,
 			height: a.height,
+			comparedPixels,
+			comparedFraction,
 			ignoredRegions: ignoreRegions,
 		};
 

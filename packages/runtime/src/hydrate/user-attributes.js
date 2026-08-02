@@ -41,7 +41,13 @@ import {
 	GENERATED_INSTANCE_MATRIX_COLUMN_SIDECAR,
 } from '@tsl-precompile/contract/attribute-generators';
 
+import {
+	hasAnonymousStorageResourceIdentity,
+	selectSignedAnonymousStorageAttribute,
+	storageEntryAnonymousResourceIdentity,
+} from './storage-buffer-identity.js';
 import { resolveTypedArrayCtor } from './typed-arrays.js';
+import { walkNodeGraphUnique } from '../slim-support/node-graph-walker.js';
 
 /**
  * Clone only artifact records that acquire live graph-resource sidecars while
@@ -161,7 +167,11 @@ export function createHydrationBindingArtifactView( artifact, options = {} ) {
 		replacements[ sidecar ] = resetOwnerLocalSidecars ? [] : current.slice();
 
 	}
-	return cloneRecord( artifact, replacements );
+	// Texture refs can arrive after the NodeBuilderState is hydrated (PMREM,
+	// compute outputs, async loaders). Keep state-local record clones isolated,
+	// but forward this mutable resource sidecar to the selected/root artifact so
+	// the existing per-frame texture rebinder observes map replacement.
+	return cloneRecord( artifact, replacements, false, [ '_textureRefs' ] );
 
 }
 
@@ -200,9 +210,45 @@ function cloneRecordOnce( record, clones ) {
 
 }
 
-function cloneRecord( record, replacements = null, mutableLiveSidecars = false ) {
+function cloneRecord( record, replacements = null, mutableLiveSidecars = false, forwardedSidecars = [] ) {
 
 	const descriptors = Object.getOwnPropertyDescriptors( record );
+	for ( const property of forwardedSidecars ) {
+
+		descriptors[ property ] = {
+			get() {
+
+				return record[ property ];
+
+			},
+			set( value ) {
+
+				const sourceDescriptor = Object.getOwnPropertyDescriptor( record, property );
+				if ( sourceDescriptor && typeof sourceDescriptor.set === 'function' ) {
+
+					sourceDescriptor.set.call( record, value );
+					return;
+
+				}
+				if ( sourceDescriptor && 'value' in sourceDescriptor && sourceDescriptor.writable === true ) {
+
+					record[ property ] = value;
+					return;
+
+				}
+				Object.defineProperty( record, property, {
+					value,
+					enumerable: false,
+					configurable: true,
+					writable: true,
+				} );
+
+			},
+			enumerable: false,
+			configurable: true,
+		};
+
+	}
 	if ( mutableLiveSidecars ) {
 
 		for ( const property of [ '_liveAttribute', '_liveAttributeSource', '_liveNode', '__tslpLiveSidecarOverlay' ] ) {
@@ -634,8 +680,7 @@ function collectAttributesMatchingEntry( node, entry ) {
 
 	};
 
-	probe( node );
-	if ( typeof node.traverse === 'function' ) node.traverse( probe );
+	walkNodeGraphUnique( node, probe );
 	return matching;
 
 }
@@ -716,12 +761,7 @@ function collectStorageAttributesInOrder( node, candidates, ctx ) {
 
 	};
 
-	visit( node );
-	if ( node && typeof node.traverse === 'function' ) {
-
-		try { node.traverse( visit ); } catch ( _ ) { /* tolerate broken traverse */ }
-
-	}
+	walkNodeGraphUnique( node, visit );
 
 }
 
@@ -797,6 +837,20 @@ export function bindUserStorageBuffersToArtifact( artifact, sourceMaterial ) {
 		return nodeRoots;
 
 	};
+	let signedStorageCandidates = null;
+	const collectSignedStorageCandidates = () => {
+
+		if ( signedStorageCandidates ) return signedStorageCandidates;
+		signedStorageCandidates = new Map();
+		let dfsIndex = 0;
+		for ( const root of collectNodeRoots() ) {
+
+			collectStorageAttributesInOrder( root, signedStorageCandidates, { dfsIndex: () => dfsIndex ++ } );
+
+		}
+		return signedStorageCandidates;
+
+	};
 
 	for ( const group of plan ) {
 
@@ -805,27 +859,41 @@ export function bindUserStorageBuffersToArtifact( artifact, sourceMaterial ) {
 		for ( const entry of entries ) {
 
 			if ( ! entry ) continue;
+			const path = entry.userPath;
+			const exactPath = Array.isArray( path ) && path.length > 1;
+			if ( exactPath ) {
+
+				bindExactMaterialAttributePath( sourceMaterial, path, entry );
+				continue;
+
+			}
+
+			// Anonymous storage identities are signed as a complete family. Rank
+			// the exact compatible live attributes by BufferAttribute ID, matching
+			// capture independently of graph/discovery order. If the signature is
+			// malformed or the family is incomplete/ambiguous, do not fall through
+			// to the legacy first-shape match.
+			if ( hasAnonymousStorageResourceIdentity( entry ) ) {
+
+				if ( ! storageEntryAnonymousResourceIdentity( entry ) ) continue;
+				const compatible = [ ...collectSignedStorageCandidates().keys() ]
+					.filter( ( candidate ) => attributeMatchesEntry( candidate, entry ) );
+				const signedLive = selectSignedAnonymousStorageAttribute( entry, compatible );
+				if ( signedLive ) setLiveAttributeBinding( entry, signedLive, 'anonymous-resource-id' );
+				continue;
+
+			}
+
 			if ( entry._liveAttribute
 				&& entry._liveAttribute.array
 				&& ArrayBuffer.isView( entry._liveAttribute.array )
-				&& ! ( Array.isArray( entry.userPath ) && entry.userPath.length > 0 ) ) continue;
+				&& ! ( Array.isArray( path ) && path.length > 0 ) ) continue;
 
 			let live = null;
-			const path = entry.userPath;
-			const exactPath = Array.isArray( path ) && path.length > 1;
 			if ( Array.isArray( path ) && path.length > 0 ) {
 
-				if ( exactPath ) {
-
-					bindExactMaterialAttributePath( sourceMaterial, path, entry );
-					continue;
-
-				} else {
-
-					const root = sourceMaterial[ path[ 0 ] ];
-					if ( root && root.isNode === true ) live = findFirstAttributeMatchingEntry( root, entry );
-
-				}
+				const root = sourceMaterial[ path[ 0 ] ];
+				if ( root && root.isNode === true ) live = findFirstAttributeMatchingEntry( root, entry );
 
 			}
 

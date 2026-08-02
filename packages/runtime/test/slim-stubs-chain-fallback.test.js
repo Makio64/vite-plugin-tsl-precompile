@@ -98,9 +98,16 @@ test( 'slim PassNode owns named render-target textures for postprocess rebinding
 	assert.equal( pass.renderTarget.texture.name, 'output' );
 	assert.equal( pass.getTextureNode( 'output' ).value, pass.getTexture( 'output' ) );
 
-	pass.setMRT( mrt( { output: {}, normal: {} } ) );
+	pass.setMRT( mrt( { output: {}, diffuseColor: {}, normal: {}, velocity: {} } ) );
+	assert.equal( pass.renderTarget.textures.length, 1, 'setMRT mirrors r185 and does not allocate attachments' );
 	assert.equal( pass.getTexture( 'normal' ).name, 'normal' );
-	assert.equal( pass.renderTarget.textures.length, 2 );
+	assert.equal( pass.getTexture( 'velocity' ).name, 'velocity' );
+	assert.equal( pass.getTexture( 'diffuseColor' ).name, 'diffuseColor' );
+	assert.deepEqual(
+		pass.renderTarget.textures.map( texture => texture.name ),
+		[ 'output', 'normal', 'velocity', 'diffuseColor' ],
+		'attachments follow first getTexture() access, not MRT declaration order',
+	);
 	assert.equal( pass.renderTarget.textures[ 1 ], pass.getTexture( 'normal' ) );
 	assert.deepEqual( pass._mrt.getBlendMode( 'output' ), { blending: 6 } );
 	assert.deepEqual( pass._mrt.getBlendMode( 'normal' ), { blending: 0 } );

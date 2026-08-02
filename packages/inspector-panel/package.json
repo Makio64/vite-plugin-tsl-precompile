@@ -1,6 +1,7 @@
 {
   "name": "@tsl-precompile/inspector-panel",
   "version": "0.0.0",
+  "private": true,
   "description": "three.js Inspector panel that shows captured TSL precompile artifacts live: user materials, aux passes (background / post-process / lights / pmrem), WGSL previews, and unsupported-kind warnings.",
   "type": "module",
   "license": "MIT",
@@ -26,7 +27,7 @@
   },
   "peerDependencies": {
     "@tsl-precompile/runtime": "workspace:*",
-    "three": ">=0.184.0"
+    "three": "0.185.1"
   },
   "keywords": [
     "three.js",

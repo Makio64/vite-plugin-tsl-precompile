@@ -24,7 +24,11 @@ const NULL_MATERIAL = {};
 
 export function createFrameScopedResolutionMemo( resolve ) {
 
-	// artifact → WeakMap( material → Map( `group::binding` → { stamp, avoidTexture, value } ) )
+	// artifact → WeakMap( material → {
+	//   bindings: Map( `group::binding` → { stamp, avoidTexture, value } ),
+	//   stamp,
+	//   materialNodeTextureCache,
+	// } )
 	const cache = new WeakMap();
 
 	return function memoizedResolveTextureBinding( artifact, groupName, bindingName, material, options = null ) {
@@ -50,20 +54,34 @@ export function createFrameScopedResolutionMemo( resolve ) {
 		}
 
 		const materialKey = material && typeof material === 'object' ? material : NULL_MATERIAL;
-		let byBinding = byMaterial.get( materialKey );
-		if ( ! byBinding ) {
+		let materialState = byMaterial.get( materialKey );
+		if ( ! materialState ) {
 
-			byBinding = new Map();
-			byMaterial.set( materialKey, byBinding );
+			materialState = {
+				bindings: new Map(),
+				stamp: null,
+				materialNodeTextureCache: new WeakMap(),
+			};
+			byMaterial.set( materialKey, materialState );
+
+		}
+		if ( materialState.stamp !== stamp ) {
+
+			materialState.stamp = stamp;
+			materialState.materialNodeTextureCache = new WeakMap();
 
 		}
 
 		const key = `${ groupName || '' }::${ bindingName || '' }`;
-		const hit = byBinding.get( key );
+		const hit = materialState.bindings.get( key );
 		if ( hit && hit.stamp === stamp && hit.avoidTexture === avoidTexture ) return hit.value;
 
-		const value = resolve( artifact, groupName, bindingName, material, options );
-		byBinding.set( key, { stamp, avoidTexture, value } );
+		const scopedOptions = {
+			...( options || {} ),
+			materialNodeTextureCache: materialState.materialNodeTextureCache,
+		};
+		const value = resolve( artifact, groupName, bindingName, material, scopedOptions );
+		materialState.bindings.set( key, { stamp, avoidTexture, value } );
 		return value;
 
 	};

@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import Storage3DTexture from 'three/src/renderers/common/Storage3DTexture.js';
 
 import {
 	getComputeBindGroups,
 	computeNodeUsesStorageTexture,
 	computeSyncNeedsPresentation,
+	invokeAlignedFullCompute,
 	shareComputeSampledInputs,
 	syncComputeStorageOutputs,
 	syncComputeStorageOutputsPerPass,
@@ -12,6 +14,7 @@ import {
 	pingPongInvalidate,
 	shareInstancedAttributeBufferIntoSlim,
 } from '../src/slim-support/compute-sync.js';
+import { getTemporalFrameState, withTemporalFrame } from '../src/slim-support/temporal-frame.js';
 
 function fakeDataMap() {
 
@@ -106,6 +109,77 @@ test( 'computeSyncNeedsPresentation recognizes shared in-place output mutations'
 
 } );
 
+test( 'invokeAlignedFullCompute exposes source NodeFrame state only for the synchronous compute lifecycle', async () => {
+
+	const source = {
+		_nodes: {
+			nodeFrame: { frameId: 17, renderId: 19, time: 4.25, deltaTime: 0.125 },
+		},
+	};
+	const fullFrame = { frameId: 3, renderId: 5, time: 1.5, deltaTime: 0.5 };
+	const full = { _nodes: { nodeFrame: fullFrame } };
+	const snapshot = { ...fullFrame };
+	let settle;
+	const completion = new Promise( ( resolve ) => { settle = resolve; } );
+	const result = invokeAlignedFullCompute( source, full, () => {
+
+		assert.deepEqual( fullFrame, {
+			frameId: 17,
+			renderId: 5,
+			time: 4.25,
+			deltaTime: 0.125,
+		} );
+		return completion;
+
+	} );
+
+	assert.equal( result, completion );
+	assert.deepEqual( fullFrame, snapshot, 'mutable full-renderer state restores before GPU completion' );
+	settle();
+	await result;
+	assert.deepEqual( fullFrame, snapshot );
+
+} );
+
+test( 'invokeAlignedFullCompute applies the source temporal scope and restores caller state after failure', () => {
+
+	const source = { _nodes: { nodeFrame: { frameId: 1, renderId: 2, time: 1, deltaTime: 0.25 } } };
+	const fullFrame = { frameId: 4, renderId: 5, time: 6, deltaTime: 0.75 };
+	const full = { _nodes: { nodeFrame: fullFrame } };
+	const snapshot = { ...fullFrame };
+
+	withTemporalFrame( full, { frameId: 'caller', renderId: 'caller-pass', time: 90 }, ( callerState ) => {
+
+		assert.throws( () => withTemporalFrame(
+			source,
+			{ frameId: 23, renderId: 'visible-pass', time: 7.5 },
+			() => invokeAlignedFullCompute( source, full, () => {
+
+				assert.deepEqual( fullFrame, {
+					frameId: 23,
+					renderId: 5,
+					time: 7.5,
+					deltaTime: 0.25,
+				} );
+				assert.deepEqual( getTemporalFrameState( full ), {
+					frameId: 23,
+					renderId: 'visible-pass',
+					time: 7.5,
+					advance: true,
+				} );
+				throw new Error( 'compute failed' );
+
+			} ),
+		), /compute failed/ );
+		assert.equal( getTemporalFrameState( full ), callerState );
+		assert.deepEqual( fullFrame, snapshot );
+
+	} );
+
+	assert.equal( getTemporalFrameState( full ), null );
+
+} );
+
 test( 'shareComputeSampledInputs shares sampled render textures from slim into full', () => {
 
 	const tex = { isTexture: true, name: 'collision-map', version: 2 };
@@ -131,6 +205,21 @@ test( 'shareComputeSampledInputs shares sampled render textures from slim into f
 	assert.equal( full.backend.get( tex ).format, 'rgba16float' );
 	assert.equal( tex.version, 3, 'texture version bumps so full compute bind groups rebuild' );
 	assert.deepEqual( seen, [ [ tex, binding ] ] );
+
+} );
+
+test( 'shareComputeSampledInputs mirrors slim physical drawing-buffer size before delegated compute', () => {
+
+	const slim = fakeRenderer();
+	slim.getDrawingBufferSize = ( target ) => target.set( 640, 480 );
+	const full = fakeRenderer( { bindGroupsForNode: () => [] } );
+	full.getDrawingBufferSize = ( target ) => target.set( 300, 150 );
+	const sizes = [];
+	full.setDrawingBufferSize = ( ...size ) => sizes.push( size );
+
+	shareComputeSampledInputs( 'compute-node', full, slim );
+
+	assert.deepEqual( sizes, [ [ 640, 480, 1 ] ] );
 
 } );
 
@@ -439,9 +528,16 @@ test( 'shareComputeSampledInputs reports a selected storage texture missing from
 
 } );
 
-test( 'syncComputeStorageOutputs shares storage textures and bumps version', () => {
+test( 'syncComputeStorageOutputs shares storage textures and regenerates explicitly automatic mipmaps', () => {
 
-	const tex = { isTexture: true, isStorageTexture: true, name: 'compute-out', version: 7, generateMipmaps: true };
+	const tex = {
+		isTexture: true,
+		isStorageTexture: true,
+		name: 'compute-out',
+		version: 7,
+		generateMipmaps: true,
+		mipmapsAutoUpdate: true,
+	};
 	const binding = { isSampledTexture: true, texture: tex };
 	const bindGroup = { bindings: [ binding ] };
 
@@ -483,6 +579,25 @@ test( 'syncComputeStorageOutputs respects storage texture mipmap opt-out', () =>
 	const stats = syncComputeStorageOutputs( 'compute-node', full, slim );
 
 	assert.equal( stats.texturesShared, 1 );
+	assert.deepEqual( slim.generateMipmapsCalls, [] );
+
+} );
+
+test( 'syncComputeStorageOutputs does not infer automatic mipmaps for r185 Storage3D textures', () => {
+
+	const tex = new Storage3DTexture( 8, 8, 8 );
+	tex.name = 'fire-volume';
+	const binding = { isSampledTexture: true, texture: tex };
+	const bindGroup = { bindings: [ binding ] };
+
+	const full = fakeRenderer( { bindGroupsForNode: () => [ bindGroup ] } );
+	full.backend.get( tex ).texture = { __gpu: 'fire-volume' };
+
+	const slim = fakeRenderer( { bindGroupsForNode: () => [ bindGroup ] } );
+	const stats = syncComputeStorageOutputs( 'compute-node', full, slim );
+
+	assert.equal( stats.texturesShared, 1 );
+	assert.equal( tex.mipmapsAutoUpdate, undefined );
 	assert.deepEqual( slim.generateMipmapsCalls, [] );
 
 } );
@@ -567,7 +682,7 @@ test( 'syncComputeStorageOutputs filters exact outputs and reports duplicate tex
 	const readOnlyAttribute = { isStorageBufferAttribute: true, name: 'read-only' };
 	const outputAttribute = { isStorageBufferAttribute: true, name: 'write-output' };
 	const decoyAttribute = { isStorageBufferAttribute: true, name: 'decoy' };
-	const outputTexture = { isTexture: true, isStorageTexture: true, name: 'shared-output', version: 5, generateMipmaps: true };
+	const outputTexture = { isTexture: true, isStorageTexture: true, name: 'shared-output', version: 5, generateMipmaps: true, mipmapsAutoUpdate: true };
 	const decoyTexture = { isTexture: true, isStorageTexture: true, name: 'decoy-output', version: 1, generateMipmaps: true };
 	const group = { bindings: [
 		storageBufferBinding( readOnlyAttribute ),
@@ -933,6 +1048,214 @@ test( 'wireArtifactStorageBuffersFromAttributes fails closed for ambiguous or mi
 
 } );
 
+test( 'wireArtifactStorageBuffersFromAttributes uses a complete signed anonymous resource order', () => {
+
+	const makeAttribute = ( id ) => ( {
+		id,
+		isStorageBufferAttribute: true,
+		array: new Uint32Array( 307200 ),
+		count: 307200,
+		itemSize: 1,
+		version: 0,
+	} );
+	const screenTri = makeAttribute( 80 );
+	const screenInst = makeAttribute( 81 );
+	const makeEntry = ( name, ordinal ) => ( {
+		name,
+		count: 307200,
+		itemSize: 1,
+		arrayType: 'Uint32Array',
+		source: {
+			kind: 'storage.buffer',
+			elementType: 'uint',
+			anonymousResourceOrdinal: ordinal,
+			anonymousResourceCount: 2,
+		},
+	} );
+	const triEntry = makeEntry( 'StorageBuffer_23', 0 );
+	const instEntry = makeEntry( 'StorageBuffer_25', 1 );
+	const artifact = { uniformPlan: [ { storageBuffers: [ triEntry, instEntry ] } ] };
+	const evidence = ( attribute ) => ( {
+		attribute,
+		binding: { nodeUniform: { name: '', bufferType: 'uint' } },
+	} );
+
+	assert.equal( wireArtifactStorageBuffersFromAttributes( artifact, [ evidence( screenTri ) ] ), 0, 'an incomplete family fails closed' );
+	assert.equal( triEntry._liveAttribute, undefined );
+	assert.equal( instEntry._liveAttribute, undefined );
+
+	assert.equal( wireArtifactStorageBuffersFromAttributes( artifact, [
+		evidence( screenInst ),
+		evidence( screenTri ),
+	] ), 2 );
+	assert.equal( triEntry._liveAttribute, screenTri );
+	assert.equal( instEntry._liveAttribute, screenInst );
+	assert.equal( screenTri.version, 1 );
+	assert.equal( screenInst.version, 1 );
+
+} );
+
+test( 'wireArtifactStorageBuffersFromAttributes reuses a signed family across reversed artifacts and named evidence', () => {
+
+	const makeAttribute = ( id, values ) => ( {
+		id,
+		isStorageBufferAttribute: true,
+		array: new Float32Array( values ),
+		count: 1,
+		itemSize: 4,
+		version: 0,
+	} );
+	const vertex = makeAttribute( 7, [ 1, 2, 3, 1 ] );
+	const normal = makeAttribute( 8, [ - 0.9, 0, 0.3, 0 ] );
+	const makeEntry = ( name, ordinal ) => ( {
+		name,
+		count: 1,
+		itemSize: 4,
+		arrayType: 'Float32Array',
+		source: {
+			kind: 'storage.buffer',
+			elementType: 'vec4',
+			anonymousResourceOrdinal: ordinal,
+			anonymousResourceCount: 2,
+		},
+	} );
+	const firstNormal = makeEntry( 'StorageBuffer_42', 1 );
+	const firstVertex = makeEntry( 'StorageBuffer_43', 0 );
+	const secondVertex = makeEntry( 'StorageBuffer_29', 0 );
+	const secondNormal = makeEntry( 'StorageBuffer_30', 1 );
+	const firstArtifact = { uniformPlan: [ { storageBuffers: [ firstNormal, firstVertex ] } ] };
+	const secondArtifact = { uniformPlan: [ { storageBuffers: [ secondVertex, secondNormal ] } ] };
+	const namedEvidence = ( attribute, name ) => ( {
+		attribute,
+		binding: { nodeUniform: { name, bufferType: 'vec4' } },
+	} );
+	const reverseDiscovery = [
+		normal,
+		namedEvidence( normal, 'StorageBuffer_30' ),
+		vertex,
+		namedEvidence( vertex, 'StorageBuffer_29' ),
+	];
+
+	assert.equal( wireArtifactStorageBuffersFromAttributes( firstArtifact, reverseDiscovery, { bumpVersion: false } ), 2 );
+	assert.equal( wireArtifactStorageBuffersFromAttributes( secondArtifact, reverseDiscovery, { bumpVersion: false } ), 2 );
+	assert.equal( firstVertex._liveAttribute, vertex );
+	assert.equal( firstNormal._liveAttribute, normal );
+	assert.equal( secondVertex._liveAttribute, vertex );
+	assert.equal( secondNormal._liveAttribute, normal );
+	assert.equal( vertex.version, 0 );
+	assert.equal( normal.version, 0 );
+
+	const repeatedVertexA = makeEntry( 'StorageBuffer_29', 0 );
+	const repeatedVertexB = makeEntry( 'StorageBuffer_43', 0 );
+	const repeatedNormal = makeEntry( 'StorageBuffer_30', 1 );
+	assert.equal( wireArtifactStorageBuffersFromAttributes(
+		{ uniformPlan: [ { storageBuffers: [ repeatedVertexA, repeatedVertexB, repeatedNormal ] } ] },
+		reverseDiscovery,
+		{ bumpVersion: false },
+	), 3, 'repeated signed ordinals intentionally alias one live resource' );
+	assert.deepEqual(
+		[ repeatedVertexA._liveAttribute, repeatedVertexB._liveAttribute, repeatedNormal._liveAttribute ],
+		[ vertex, vertex, normal ],
+	);
+
+	const incompleteVertex = makeEntry( 'StorageBuffer_43', 0 );
+	const incompleteNormal = makeEntry( 'StorageBuffer_42', 1 );
+	const repeatedSingleIdentity = [
+		vertex,
+		namedEvidence( vertex, 'StorageBuffer_29' ),
+		namedEvidence( vertex, 'StorageBuffer_43' ),
+	];
+	assert.equal( wireArtifactStorageBuffersFromAttributes(
+		{ uniformPlan: [ { storageBuffers: [ incompleteNormal, incompleteVertex ] } ] },
+		repeatedSingleIdentity,
+		{ bumpVersion: false },
+	), 0 );
+	assert.equal( incompleteVertex._liveAttribute, undefined );
+	assert.equal( incompleteNormal._liveAttribute, undefined );
+
+} );
+
+test( 'wireArtifactStorageBuffersFromAttributes rejects malformed anonymous resource signatures', () => {
+
+	const first = {
+		id: 7,
+		isStorageBufferAttribute: true,
+		array: new Float32Array( 4 ),
+		count: 1,
+		itemSize: 4,
+		version: 0,
+	};
+	const second = {
+		...first,
+		id: 8,
+		array: new Float32Array( 4 ),
+	};
+	const entry = ( source ) => ( {
+		name: 'StorageBuffer_29',
+		count: 1,
+		itemSize: 4,
+		arrayType: 'Float32Array',
+		source: {
+			kind: 'storage.buffer',
+			elementType: 'vec4',
+			...source,
+		},
+	} );
+	const ordinalOnly = entry( { anonymousResourceOrdinal: 0 } );
+	const countOnly = entry( { anonymousResourceCount: 2 } );
+	const outOfRange = entry( {
+		anonymousResourceOrdinal: 2,
+		anonymousResourceCount: 2,
+	} );
+
+	assert.equal( wireArtifactStorageBuffersFromAttributes(
+		{ uniformPlan: [ { storageBuffers: [ ordinalOnly, countOnly, outOfRange ] } ] },
+		[ first, second ],
+	), 0 );
+	assert.equal( ordinalOnly._liveAttribute, undefined );
+	assert.equal( countOnly._liveAttribute, undefined );
+	assert.equal( outOfRange._liveAttribute, undefined );
+
+} );
+
+test( 'wireArtifactStorageBuffersFromAttributes rejects extra or unranked anonymous resources despite matching shape', () => {
+
+	const makeAttribute = ( id ) => ( {
+		...( id === undefined ? {} : { id } ),
+		isStorageBufferAttribute: true,
+		array: new Uint32Array( 8 ),
+		count: 8,
+		itemSize: 1,
+		version: 0,
+	} );
+	const entry = {
+		name: 'StorageBuffer_4',
+		count: 8,
+		itemSize: 1,
+		arrayType: 'Uint32Array',
+		source: {
+			kind: 'storage.buffer',
+			elementType: 'uint',
+			anonymousResourceOrdinal: 0,
+			anonymousResourceCount: 2,
+		},
+	};
+	const artifact = { uniformPlan: [ { storageBuffers: [ entry ] } ] };
+	const attributes = [ makeAttribute( 1 ), makeAttribute( 2 ), makeAttribute( 3 ) ].map( ( attribute ) => ( {
+		attribute,
+		binding: { nodeUniform: { name: '', bufferType: 'uint' } },
+	} ) );
+
+	assert.equal( wireArtifactStorageBuffersFromAttributes( artifact, attributes ), 0 );
+	assert.equal( entry._liveAttribute, undefined );
+	assert.equal( wireArtifactStorageBuffersFromAttributes( artifact, [
+		{ attribute: makeAttribute(), binding: { nodeUniform: { name: '', bufferType: 'uint' } } },
+		{ attribute: makeAttribute( 2 ), binding: { nodeUniform: { name: '', bufferType: 'uint' } } },
+	] ), 0 );
+	assert.equal( entry._liveAttribute, undefined );
+
+} );
+
 test( 'wireArtifactStorageBuffersFromAttributes coalesces JSON-split flat and ordered aliases', () => {
 
 	const attribute = {
@@ -965,6 +1288,25 @@ test( 'wireArtifactStorageBuffersFromAttributes coalesces JSON-split flat and or
 	assert.equal( flat._liveAttribute, attribute );
 	assert.equal( ordered._liveAttribute, attribute );
 	assert.equal( attribute.version, 5, 'the alias pair bumps the live attribute once' );
+
+	const stale = {
+		isStorageBufferAttribute: true,
+		array: new Uint32Array( 8 ),
+		count: 8,
+		itemSize: 1,
+		version: 0,
+	};
+	ordered._liveAttribute = stale;
+	assert.equal( wireArtifactStorageBuffersFromAttributes( artifact, [
+		{ attribute, attributeName: 'Current_Right' },
+	], { replaceExisting: true } ), 1, 'a stale ordered alias reports one logical replacement' );
+	assert.equal( flat._liveAttribute, attribute );
+	assert.equal( ordered._liveAttribute, attribute );
+	assert.equal( attribute.version, 6 );
+	assert.equal( wireArtifactStorageBuffersFromAttributes( artifact, [
+		{ attribute, attributeName: 'Current_Right' },
+	], { replaceExisting: true } ), 0, 'a stable repeated replacement is idempotent' );
+	assert.equal( attribute.version, 6 );
 
 } );
 

@@ -2,6 +2,7 @@
 <html>
 <head>
 	<meta charset="utf-8">
+	<link rel="icon" href="data:,">
 	<title>tsl-precompile / getting-started</title>
 	<style>
 		html, body { margin: 0; padding: 0; height: 100%; background: #101418; color: #fff; font-family: monospace; overflow: hidden; }
@@ -23,13 +24,14 @@
 	</div>
 	<script type="module" src="./main.js"></script>
 	<script type="module">
-		import * as THREE from 'three/webgpu';
+		import { WebGPURenderer } from 'three/webgpu';
 
+		const compilerFree = WebGPURenderer.__TSLP_SLIM__ === true;
 		const result = window.__TSLP_SITE_RESULT__ = {
 			id: 'getting-started',
 			ready: false,
-			runtimeMode: THREE.__TSLP_SLIM__ === true ? 'pure-slim' : 'capture',
-			compilerFree: THREE.__TSLP_SLIM__ === true,
+			runtimeMode: compilerFree ? 'pure-slim' : 'compatibility',
+			compilerFree,
 			animationFrames: 0,
 			canvasCount: 0,
 			errors: [],
@@ -47,7 +49,7 @@
 			result.animationFrames += 1;
 			result.canvasCount = document.querySelectorAll( 'canvas' ).length;
 			const rendererReady = document.getElementById( 'status' )?.textContent === 'renderer ready';
-			const ready = result.compilerFree && rendererReady && result.canvasCount > 0 && result.errors.length === 0;
+			const ready = rendererReady && result.canvasCount > 0 && result.errors.length === 0;
 			if ( ready !== result.ready || result.animationFrames === 1 || result.animationFrames % 120 === 0 ) {
 				result.ready = ready;
 				publish();

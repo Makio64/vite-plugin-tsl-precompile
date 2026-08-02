@@ -24,6 +24,27 @@ const BUDGET = JSON.parse( readFileSync( resolve( HERE, '../../../runtime/build-
 
 const bundleExists = existsSync( BUNDLE );
 
+function assertDocumentedByteBudget( limits, kind ) {
+
+	const baseline = limits[ `baseline${ kind }Bytes` ];
+	const headroom = limits[ `${ kind[ 0 ].toLowerCase() }${ kind.slice( 1 ) }HeadroomBytes` ];
+	assert.equal( baseline + headroom, limits[ `max${ kind }Bytes` ] );
+
+}
+
+test( 'slim bundle — byte caps document their r185.1 baseline and headroom', () => {
+
+	assert.equal( BUDGET.baseline.threeVersion, '0.185.1' );
+	assert.match( BUDGET.baseline.reason, /real compiler-free WebGL2 backend alongside WebGPU/ );
+	assertDocumentedByteBudget( BUDGET.prebuilt, 'Raw' );
+	assertDocumentedByteBudget( BUDGET.prebuilt, 'Gzip' );
+	assertDocumentedByteBudget( BUDGET.consumer.fixtures.prebuiltHelpers, 'Raw' );
+	assertDocumentedByteBudget( BUDGET.consumer.fixtures.prebuiltHelpers, 'Gzip' );
+	assertDocumentedByteBudget( BUDGET.source.fixtures.minimal, 'Gzip' );
+	assertDocumentedByteBudget( BUDGET.source.fixtures.advanced, 'Gzip' );
+
+} );
+
 test( 'slim bundle — exists after pnpm build:slim', { skip: bundleExists ? false : 'run `pnpm --filter @tsl-precompile/runtime build:slim` first' }, () => {
 
 	assert.ok( bundleExists, `expected ${ BUNDLE }` );

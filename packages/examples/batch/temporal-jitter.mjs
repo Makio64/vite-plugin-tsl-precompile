@@ -1,7 +1,6 @@
-// Three r184 builds 32 Halton offsets but advances modulo `length - 1`, so
+// Three r185 builds 32 Halton offsets but advances modulo `length - 1`, so
 // indices 0..30 are the active sequence used by TRAA and TAAU.
 const DEFAULT_ACTIVE_JITTER_SAMPLES = 31;
-const VELOCITY_PROJECTION_MATRIX = Symbol.for( '@tsl-precompile/runtime/velocity-projection-matrix@1' );
 
 function normalizedFrameId( value ) {
 
@@ -81,6 +80,11 @@ function recordTemporalJitterSample( root, node, index, frameId ) {
 export function synchronizeTemporalJitterNode( node, options = {} ) {
 
 	if ( ! node ) return false;
+	if ( typeof options.installVelocityProjectionLifecycle === 'function' ) {
+
+		options.installVelocityProjectionLifecycle( node );
+
+	}
 	const marker = typeof options.marker === 'string' && options.marker.length > 0
 		? options.marker
 		: '__tslpTemporalJitterSynchronized';
@@ -105,11 +109,7 @@ export function synchronizeTemporalJitterNode( node, options = {} ) {
 			const diagnostics = temporalJitterDiagnostics( root );
 			if ( diagnostics ) diagnostics.setViewOffsetCalls ++;
 			recordTemporalJitterSample( root, this, index, temporalJitterFrameId( root ) );
-			const result = originalSetViewOffset.apply( this, args );
-			const camera = this && this.camera;
-			const projectionMatrix = this && this._originalProjectionMatrix;
-			if ( camera && projectionMatrix && projectionMatrix.elements ) camera[ VELOCITY_PROJECTION_MATRIX ] = projectionMatrix;
-			return result;
+			return originalSetViewOffset.apply( this, args );
 
 		};
 
@@ -125,8 +125,6 @@ export function synchronizeTemporalJitterNode( node, options = {} ) {
 			} finally {
 
 				sync( this );
-				const camera = this && this.camera;
-				if ( camera ) delete camera[ VELOCITY_PROJECTION_MATRIX ];
 				const diagnostics = temporalJitterDiagnostics( root );
 				if ( diagnostics ) diagnostics.clearViewOffsetCalls ++;
 

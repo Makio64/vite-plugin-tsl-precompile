@@ -20,13 +20,14 @@ import {
 } from '@tsl-precompile/contract/slim-bundle-provenance-node';
 import {
 	SLIM_BUNDLE_SOURCE_INPUTS,
+	SLIM_BUNDLE_THREE_LICENSE_BANNER,
 	SLIM_BUNDLE_VERSIONS,
 	createSlimBundleProvenancePlugin,
 } from '../rollup.config.js';
 
 const VERSIONS = createSlimBundleVersionIdentity( {
-	threeVersion: '0.184.0',
-	policyVersion: 'slim-three-policy@10',
+	threeVersion: '0.185.1',
+	policyVersion: 'slim-three-policy@12',
 	artifactToolchainVersion: '0.1.0',
 } );
 
@@ -67,6 +68,23 @@ test( 'slim source fingerprint is path-independent, order-independent, and byte-
 		const changedGuard = await computeSlimBundleSourceFingerprint( secondInputs, VERSIONS );
 		assert.notEqual( changedGuard.fingerprint, first.fingerprint );
 		await writeFile( join( secondRoot, 'runtime/build-tools/slim-bundle-analysis.js' ), 'export const analysis = 1;\n' );
+
+		await writeFile( join( secondRoot, 'plugin/build-tools/slim-rewrite.js' ), 'export const buildBoundary = 2;\n' );
+		const changedBuildBoundary = await computeSlimBundleSourceFingerprint( secondInputs, VERSIONS );
+		assert.notEqual( changedBuildBoundary.fingerprint, first.fingerprint );
+		assert.notEqual(
+			changedBuildBoundary.groups.find( ( group ) => group.name === 'plugin/rewrite' ).sha256,
+			first.groups.find( ( group ) => group.name === 'plugin/rewrite' ).sha256,
+		);
+		await writeFile( join( secondRoot, 'plugin/build-tools/slim-rewrite.js' ), 'export { rewrite } from "../src/three-rewrite.js";\n' );
+		await writeFile( join( secondRoot, 'plugin/src/three-rewrite-runtime.js' ), 'export const registry = 2;\n' );
+		const changedRuntimeRegistry = await computeSlimBundleSourceFingerprint( secondInputs, VERSIONS );
+		assert.notEqual( changedRuntimeRegistry.fingerprint, first.fingerprint );
+		assert.notEqual(
+			changedRuntimeRegistry.groups.find( ( group ) => group.name === 'plugin/rewrite' ).sha256,
+			first.groups.find( ( group ) => group.name === 'plugin/rewrite' ).sha256,
+		);
+		await writeFile( join( secondRoot, 'plugin/src/three-rewrite-runtime.js' ), 'export const registry = 1;\n' );
 
 		await writeFile( join( secondRoot, 'runtime/src/runtime.js' ), 'export const runtime = 2;\n' );
 		const changed = await computeSlimBundleSourceFingerprint( secondInputs, VERSIONS );
@@ -167,6 +185,11 @@ test( 'in-memory Rollup emits a post-transform stamp and final-bundle SHA sideca
 		const sidecar = generated.output.find( ( output ) => output.type === 'asset' && output.fileName === SLIM_BUNDLE_METADATA_FILE_NAME );
 
 		assert.ok( chunk.code.startsWith( '/*!@tsl-precompile/slim-bundle:' ) );
+		assert.equal(
+			chunk.code.split( '\n' )[ 1 ],
+			SLIM_BUNDLE_THREE_LICENSE_BANNER,
+			'the post-minification bundle must retain its Three MIT license pointer',
+		);
 		assert.ok( sidecar, 'expected the adjacent provenance sidecar asset' );
 		const metadata = parseSlimBundleMetadata( sidecar.source );
 		assert.equal( metadata.bundle.bytes, Buffer.byteLength( chunk.code ) );
@@ -216,6 +239,7 @@ async function writeSourceFixture( root ) {
 		join( runtimeRoot, 'src' ),
 		join( runtimeRoot, 'build-tools' ),
 		join( contractRoot, 'src' ),
+		join( pluginRoot, 'build-tools' ),
 		join( pluginRoot, 'src/vendor' ),
 	] ) await mkdir( directory, { recursive: true } );
 
@@ -224,7 +248,9 @@ async function writeSourceFixture( root ) {
 		writeFile( join( threeRoot, 'src/math/vector.js' ), 'export const vector = [ 1, 2, 3 ];\n' ),
 		writeFile( join( runtimeRoot, 'src/runtime.js' ), 'export const runtime = 1;\n' ),
 		writeFile( join( contractRoot, 'src/contract.js' ), 'export const contract = 1;\n' ),
+		writeFile( join( pluginRoot, 'build-tools/slim-rewrite.js' ), 'export { rewrite } from "../src/three-rewrite.js";\n' ),
 		writeFile( join( pluginRoot, 'src/three-rewrite.js' ), 'export const rewrite = 1;\n' ),
+		writeFile( join( pluginRoot, 'src/three-rewrite-runtime.js' ), 'export const registry = 1;\n' ),
 		writeFile( join( pluginRoot, 'src/vendor/vendor.js' ), 'export const vendor = 1;\n' ),
 		writeFile( join( runtimeRoot, 'rollup.config.js' ), 'export default {};\n' ),
 		writeFile( join( runtimeRoot, 'build-tools/slim-bundle-analysis.js' ), 'export const analysis = 1;\n' ),

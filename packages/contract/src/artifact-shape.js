@@ -9,6 +9,8 @@
  * @module Contract.ArtifactShape
  */
 
+import { stableJsonStringify } from './stable-json.js';
+
 function artifactRoot( input ) {
 
 	return input && input.artifact && typeof input.artifact === 'object' ? input.artifact : input;
@@ -24,10 +26,32 @@ function pushEntry( out, groupName, section, name, kind ) {
 
 }
 
+function shapeDetails( input, fields ) {
+
+	if ( ! input || typeof input !== 'object' ) return null;
+	const details = {};
+	for ( const field of fields ) {
+
+		if ( input[ field ] !== undefined ) details[ field ] = input[ field ];
+
+	}
+	return Object.keys( details ).length > 0 ? JSON.stringify( details ) : null;
+
+}
+
+function pushDetailedEntry( out, groupName, section, name, kind, input, fields ) {
+
+	pushEntry( out, groupName, section, name, kind );
+	const details = shapeDetails( input, fields );
+	if ( details !== null ) pushEntry( out, groupName, `${ section }-layout`, name, details );
+
+}
+
 /**
  * Collect a sorted, stable list of `group\\tsection\\tname\\tkind` rows that
- * describe an artifact's uniform-plan shape. Collections are flattened with
- * an entry-key prefix on the group name.
+ * describe an artifact's shader stages, attributes, binding layout, and
+ * uniform-plan shape. Numeric snapshots and shader text remain excluded.
+ * Collections are flattened with an entry-key prefix on the group name.
  *
  * @param {object|object[]|Map} input artifact, artifact module, or collection
  * @return {readonly string[]}
@@ -75,17 +99,145 @@ export function fingerprintArtifactShape( input ) {
 	const plan = artifact && Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
 	const rows = [];
 
-	for ( const group of plan ) {
+	for ( const stage of [ 'vertexShader', 'fragmentShader', 'computeShader' ] ) {
+
+		if ( artifact && typeof artifact[ stage ] === 'string' && artifact[ stage ].length > 0 ) {
+
+			pushEntry( rows, 'artifact', 'shader-stage', stage, 'present' );
+
+		}
+
+	}
+
+	const artifactTopology = shapeDetails( artifact, [
+		'materialShape',
+		'mrtOutputCount',
+		'mrtOutputNames',
+		'mrtBlendModes',
+		'workgroupSize',
+		'computeCount',
+		'dispatchSize',
+	] );
+	if ( artifactTopology !== null ) pushEntry( rows, 'artifact', 'topology', 'root', artifactTopology );
+
+	if ( artifact && artifact.computeBindings && typeof artifact.computeBindings === 'object' ) {
+
+		pushEntry(
+			rows,
+			'artifact',
+			'compute-bindings',
+			artifact.computeBindings.version,
+			stableJsonStringify( artifact.computeBindings, 'artifact.computeBindings' ),
+		);
+
+	}
+
+	if ( artifact && artifact.internalPass && typeof artifact.internalPass === 'object' ) {
+
+		pushEntry(
+			rows,
+			'artifact',
+			'internal-pass',
+			`${ artifact.internalPass.family || '<family>' }:${ artifact.internalPass.stage || '<stage>' }`,
+			stableJsonStringify( artifact.internalPass, 'artifact.internalPass' ),
+		);
+
+	}
+
+	for ( const attribute of artifact && Array.isArray( artifact.attributes ) ? artifact.attributes : [] ) {
+
+		pushDetailedEntry(
+			rows,
+			'artifact',
+			'attribute',
+			attribute && attribute.name,
+			attribute && ( attribute.type || attribute.kind || attribute.source ),
+			attribute,
+			[ 'type', 'kind', 'source', 'itemSize', 'arrayType', 'count', 'instanced', 'location' ],
+		);
+
+	}
+
+	for ( const bindingGroup of artifact && Array.isArray( artifact.bindings ) ? artifact.bindings : [] ) {
+
+		const groupName = bindingGroup && bindingGroup.name;
+		const bindings = bindingGroup && Array.isArray( bindingGroup.bindings ) ? bindingGroup.bindings : [];
+		for ( let bindingIndex = 0; bindingIndex < bindings.length; bindingIndex ++ ) {
+
+			const binding = bindings[ bindingIndex ];
+			pushDetailedEntry(
+				rows,
+				groupName,
+				'binding',
+				`${ bindingIndex }:${ binding && binding.name || '<anon>' }`,
+				binding && binding.kind,
+				binding,
+				[ 'visibility', 'textureType', 'byteLength', 'access', 'comparison', 'store', 'mipLevel' ],
+			);
+
+		}
+
+	}
+
+	for ( let groupIndex = 0; groupIndex < plan.length; groupIndex ++ ) {
+
+		const group = plan[ groupIndex ];
 
 		const groupName = group && group.name;
+		const groupDetails = shapeDetails( group, [ 'shared', 'visibility', 'byteLength' ] );
+		if ( groupDetails !== null ) pushEntry( rows, groupName, 'group-layout', String( groupIndex ), groupDetails );
 		for ( const slot of group && Array.isArray( group.slots ) ? group.slots : [] ) {
 
-			pushEntry( rows, groupName, 'slot', slot && slot.name, slot && slot.source && slot.source.kind );
+			pushDetailedEntry(
+				rows,
+				groupName,
+				'slot',
+				slot && slot.name,
+				slot && slot.source && slot.source.kind,
+				slot,
+				[ 'offset', 'size', 'dtype' ],
+			);
 
 		}
 		for ( const texture of group && Array.isArray( group.textures ) ? group.textures : [] ) {
 
-			pushEntry( rows, groupName, 'texture', texture && texture.name, texture && texture.source && texture.source.kind );
+			pushDetailedEntry(
+				rows,
+				groupName,
+				'texture',
+				texture && texture.name,
+				texture && texture.source && texture.source.kind,
+				texture,
+				[ 'bindingKind', 'textureType', 'access', 'visibility', 'comparison', 'store', 'mipLevel' ],
+			);
+
+		}
+		for ( const storage of group && Array.isArray( group.storageBuffers ) ? group.storageBuffers : [] ) {
+
+			pushDetailedEntry(
+				rows,
+				groupName,
+				'storage-buffer',
+				storage && storage.name,
+				storage && storage.source && storage.source.kind,
+				storage,
+				[ 'bindingKind', 'access', 'visibility', 'byteLength', 'count', 'itemSize', 'arrayType' ],
+			);
+
+		}
+		const orderedBindings = group && Array.isArray( group.orderedBindings ) ? group.orderedBindings : [];
+		for ( let bindingIndex = 0; bindingIndex < orderedBindings.length; bindingIndex ++ ) {
+
+			const binding = orderedBindings[ bindingIndex ];
+			pushDetailedEntry(
+				rows,
+				groupName,
+				'ordered-binding',
+				`${ bindingIndex }:${ binding && binding.name || '<anon>' }`,
+				binding && ( binding.type || binding.bindingKind || binding.kind ),
+				binding,
+				[ 'byteLength', 'visibility', 'textureType', 'access', 'comparison', 'store', 'mipLevel' ],
+			);
 
 		}
 
@@ -146,6 +298,23 @@ export function fingerprintArtifactShape( input ) {
 
 	}
 
+	const variants = artifact && artifact.variants;
+	if ( variants && typeof variants === 'object' && ! Array.isArray( variants ) ) {
+
+		for ( const [ key, variant ] of Object.entries( variants ).sort( ( left, right ) =>
+			left[ 0 ] < right[ 0 ] ? - 1 : left[ 0 ] > right[ 0 ] ? 1 : 0
+		) ) {
+
+			for ( const row of fingerprintArtifactShape( variant ) ) {
+
+				rows.push( `[variant:${ JSON.stringify( key ) }]${ row }` );
+
+			}
+
+		}
+
+	}
+
 	return Object.freeze( rows.sort() );
 
 }
@@ -159,14 +328,35 @@ export function fingerprintArtifactShape( input ) {
  */
 export function diffArtifactShapes( expected, actual ) {
 
-	const expectedSet = new Set( expected || [] );
-	const actualSet = new Set( actual || [] );
-	const missing = [ ...expectedSet ].filter( ( row ) => ! actualSet.has( row ) ).sort();
-	const extra = [ ...actualSet ].filter( ( row ) => ! expectedSet.has( row ) ).sort();
+	const expectedCounts = countRows( expected );
+	const actualCounts = countRows( actual );
+	const missing = rowCountDifference( expectedCounts, actualCounts );
+	const extra = rowCountDifference( actualCounts, expectedCounts );
 	return {
 		ok: missing.length === 0 && extra.length === 0,
 		missing,
 		extra,
 	};
+
+}
+
+function countRows( rows ) {
+
+	const counts = new Map();
+	for ( const row of rows || [] ) counts.set( row, ( counts.get( row ) || 0 ) + 1 );
+	return counts;
+
+}
+
+function rowCountDifference( left, right ) {
+
+	const difference = [];
+	for ( const [ row, count ] of left ) {
+
+		const missing = count - ( right.get( row ) || 0 );
+		for ( let index = 0; index < missing; index ++ ) difference.push( row );
+
+	}
+	return difference.sort();
 
 }

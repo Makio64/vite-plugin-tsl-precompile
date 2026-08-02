@@ -31,6 +31,7 @@ import { hashPlainConfigSync } from './graph-hash.js';
 import { createRendererOutputConfig } from '@tsl-precompile/contract/output-config';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { installRangeAttributeCapture } from './range-attribute-capture.js';
+import { getDevCaptureStatus, waitForDevCaptureSettled } from './dev-capture-outcome.js';
 
 const DEFAULT_DEV_ENDPOINT = '/__tsl-precompile/capture';
 const INIT_WRAPPED_FLAG = '__tslpSetupInitWrapped';
@@ -334,6 +335,7 @@ function queueRendererReady( renderer, onReady, onError ) {
  * @param {Object}  opts.three            - The three/webgpu namespace (e.g. `import * as THREE from 'three/webgpu'`). Required unless slim.
  * @param {Object}  opts.renderer         - The WebGPURenderer instance. May be passed before or after `init()`.
  * @param {string} [opts.devEndpoint='/__tsl-precompile/capture']
+ * @param {boolean} [opts.captureRendererOutput=true] - Disable only when the app captures named renderer-output variants manually.
  * @param {boolean|Object} [opts.aux=false] - true → expose captureAux(); object → forwarded as extra opts to precompileAuxiliary.
  * @param {Object} [opts.scene]            - Required only when `aux` is truthy.
  * @param {Object} [opts.camera]           - Required only when `aux` is truthy.
@@ -350,6 +352,7 @@ export function setupPrecompile( opts = {} ) {
 	const { renderer } = opts;
 	const three = opts.three;
 	const devEndpoint = opts.devEndpoint || DEFAULT_DEV_ENDPOINT;
+	const captureRendererOutput = opts.captureRendererOutput !== false;
 	const aux = opts.aux || false;
 	const scene = opts.scene || null;
 	const camera = opts.camera || null;
@@ -371,6 +374,8 @@ export function setupPrecompile( opts = {} ) {
 		return {
 			ready: Promise.resolve(),
 			captureAux: () => Promise.resolve( [] ),
+			captureStatus: () => Object.freeze( { pending: 0, acceptedCaptures: 0, failedCaptures: 0, failures: Object.freeze( [] ) } ),
+			waitForCaptureSettled: () => Promise.resolve( Object.freeze( { pending: 0, acceptedCaptures: 0, failedCaptures: 0, failures: Object.freeze( [] ) } ) ),
 			setRenderer: () => {},
 		};
 
@@ -389,7 +394,7 @@ export function setupPrecompile( opts = {} ) {
 	}
 
 	// RangeNode creates anonymous random Float32 attributes during the first
-	// builder pass. Replace only r184's version-checked physical-attribute branch
+	// builder pass. Replace only r185's version-checked physical-attribute branch
 	// with a local reproducible stream before renderer initialization, so capture
 	// can persist a tiny exact recipe without reading or replacing Math.random.
 	// Unsupported/changed Three shapes keep the ordinary snapshot path.
@@ -417,7 +422,11 @@ export function setupPrecompile( opts = {} ) {
 		Promise.resolve( setDevRenderer( readyRenderer, three ) ).then( () => {
 
 			if ( readyRenderer !== activeRenderer ) return;
-			installAutomaticRendererOutputCapture( readyRenderer, three, devEndpoint, auxOptsObject );
+			if ( captureRendererOutput ) {
+
+				installAutomaticRendererOutputCapture( readyRenderer, three, devEndpoint, auxOptsObject );
+
+			}
 			if ( didSettleReady ) return;
 			didSettleReady = true;
 			resolveReady();
@@ -464,6 +473,24 @@ export function setupPrecompile( opts = {} ) {
 
 	};
 
-	return { ready, captureAux, setRenderer };
+	let lastSettledStatus = getDevCaptureStatus();
+	const captureStatus = () => getDevCaptureStatus();
+	const waitForCaptureSettled = async ( waitOpts = {} ) => {
+
+		if ( ! waitOpts || typeof waitOpts !== 'object' ) {
+
+			throw new TypeError( 'setupPrecompile.waitForCaptureSettled: options must be an object when provided.' );
+
+		}
+		const settled = await waitForDevCaptureSettled( {
+			...waitOpts,
+			since: Object.hasOwn( waitOpts, 'since' ) ? waitOpts.since : lastSettledStatus,
+		} );
+		lastSettledStatus = settled;
+		return settled;
+
+	};
+
+	return { ready, captureAux, captureStatus, waitForCaptureSettled, setRenderer };
 
 }

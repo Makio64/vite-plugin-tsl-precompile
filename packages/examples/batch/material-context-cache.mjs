@@ -143,8 +143,17 @@ export function createStockMaterialTopologyKey( {
 	if ( Object.prototype.hasOwnProperty.call( material, 'onBeforeCompile' ) || Object.prototype.hasOwnProperty.call( material, 'customProgramCacheKey' ) ) return null;
 	if ( Object.prototype.hasOwnProperty.call( object, 'onBeforeRender' ) || Object.prototype.hasOwnProperty.call( object, 'onAfterRender' ) ) return null;
 
-	for ( const key of nodeKeys ) {
+	const knownNodeKeys = new Set( nodeKeys );
+	for ( const key of knownNodeKeys ) {
 
+		let value = null;
+		try { value = material[ key ]; } catch ( _ ) { return null; }
+		if ( value && value.isNode === true ) return null;
+
+	}
+	for ( const key of Object.getOwnPropertyNames( material ) ) {
+
+		if ( ! key.endsWith( 'Node' ) || knownNodeKeys.has( key ) ) continue;
 		let value = null;
 		try { value = material[ key ]; } catch ( _ ) { return null; }
 		if ( value && value.isNode === true ) return null;

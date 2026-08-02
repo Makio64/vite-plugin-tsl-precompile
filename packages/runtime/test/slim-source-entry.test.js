@@ -3,10 +3,14 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import {
+	RUNTIME_SLIM_THREE_PACKAGE_VERSION,
 	RUNTIME_SLIM_THREE_POLICY_VERSION,
 	assertSlimSourcePolicyCompatibility,
 } from '../src/slim-source-policy.js';
-import { SLIM_THREE_POLICY_VERSION } from '@tsl-precompile/contract/slim-three-policy';
+import {
+	SLIM_THREE_PACKAGE_VERSION,
+	SLIM_THREE_POLICY_VERSION,
+} from '@tsl-precompile/contract/slim-three-policy';
 
 const require = createRequire( import.meta.url );
 const commonUrl = new URL( '../src/slim-source-common.js', import.meta.url );
@@ -46,12 +50,14 @@ test( 'guarded and prebuilt slim entries share one exact source surface', () => 
 
 test( 'source entry fails closed when plugin and runtime policy revisions differ', () => {
 
-	assert.equal( RUNTIME_SLIM_THREE_POLICY_VERSION, 'slim-three-policy@10' );
+	assert.equal( RUNTIME_SLIM_THREE_POLICY_VERSION, 'slim-three-policy@12' );
 	assert.equal( RUNTIME_SLIM_THREE_POLICY_VERSION, SLIM_THREE_POLICY_VERSION, 'bump the runtime-owned handshake with the shared policy' );
-	assert.doesNotThrow( () => assertSlimSourcePolicyCompatibility( 'slim-three-policy@10' ) );
+	assert.equal( RUNTIME_SLIM_THREE_PACKAGE_VERSION, '0.185.1' );
+	assert.equal( RUNTIME_SLIM_THREE_PACKAGE_VERSION, SLIM_THREE_PACKAGE_VERSION, 'bump the runtime-owned package identity with the shared policy' );
+	assert.doesNotThrow( () => assertSlimSourcePolicyCompatibility( 'slim-three-policy@12' ) );
 	assert.throws(
-		() => assertSlimSourcePolicyCompatibility( 'slim-three-policy@9' ),
-		/slim source policy mismatch[\s\S]*runtime expects slim-three-policy@10[\s\S]*plugin provided slim-three-policy@9/,
+		() => assertSlimSourcePolicyCompatibility( 'slim-three-policy@11' ),
+		/slim source policy mismatch[\s\S]*runtime expects slim-three-policy@12[\s\S]*plugin provided slim-three-policy@11/,
 	);
 
 } );
@@ -61,7 +67,7 @@ test( 'slim source surface preserves the prebuilt named compatibility allowlist'
 	const exports = namedExports( common );
 	assert.equal( exports.size, 292 );
 	for ( const name of [
-		'WebGPURenderer', 'Scene', 'PerspectiveCamera', 'Mesh', 'BoxGeometry',
+		'WebGPURenderer', 'WebGLBackend', 'Scene', 'PerspectiveCamera', 'Mesh', 'BoxGeometry',
 		'MeshStandardMaterial', 'PrecompiledMaterial', 'PrecompiledComputeNode',
 		'PostProcessing', 'RenderPipeline', 'TSL', 'NodeAccess', 'NodeUtils', 'hydrateNodeBuilderState',
 		'registerAuxArtifacts', '__TSLP_SLIM__',
@@ -69,6 +75,19 @@ test( 'slim source surface preserves the prebuilt named compatibility allowlist'
 		'attachLiveNodeDependency', 'getLiveNodeDependencies',
 		'registerLiveUniformNode',
 	] ) assert.equal( exports.has( name ), true, name );
+
+} );
+
+test( 'slim source surface exports Three\'s real WebGL backend', () => {
+
+	assert.match(
+		common,
+		/export\s*\{\s*default\s+as\s+WebGLBackend\s*\}\s*from\s*['"]three\/src\/renderers\/webgl-fallback\/WebGLBackend\.js['"]/,
+	);
+	const stubExports = [ ...common.matchAll( /export\s*\{([\s\S]*?)\}\s*from\s*['"]([^'"]+)['"]/g ) ]
+		.find( ( match ) => match[ 2 ] === './slim-stubs.js' );
+	assert.ok( stubExports, 'expected the inert compatibility export block' );
+	assert.doesNotMatch( stubExports[ 1 ], /\bWebGLBackend\b/ );
 
 } );
 
@@ -109,5 +128,9 @@ test( 'source bootstrap keeps required initialization explicit without a prematu
 		default: './src/slim-source-entry.js',
 	} );
 	assert.equal( pkg.exports[ './slim' ].types, './types/slim-source.d.ts' );
+	assert.deepEqual( pkg.exports[ './slim-stubs' ], {
+		types: './types/slim-stubs.d.ts',
+		default: './src/slim-stubs.js',
+	} );
 
 } );

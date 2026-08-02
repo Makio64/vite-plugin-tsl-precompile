@@ -303,7 +303,6 @@ export class PassNode {
 	setMRT( mrtNode ) {
 
 		this._mrt = mrtNode;
-		syncPassRenderTargetTextures( this, mrtNode );
 		return this;
 
 	}
@@ -558,23 +557,6 @@ function makePassTextureNode( passNode, name, previousTexture ) {
 
 }
 
-function syncPassRenderTargetTextures( passNode, mrtNode ) {
-
-	if ( ! passNode || ! passNode.renderTarget ) return;
-	const outputNodes = mrtNode && ( mrtNode.outputNodes || mrtNode.outputs );
-	const names = outputNodes && typeof outputNodes === 'object' ? Object.keys( outputNodes ) : [];
-	if ( names.length === 0 ) return;
-	const textures = names.map( ( name ) => passNode.getTexture( name ) ).filter( Boolean );
-	if ( textures.length > 0 ) {
-
-		passNode.renderTarget.textures = textures;
-		passNode.renderTarget.texture = textures[ 0 ];
-
-	}
-
-
-}
-
 /**
  * `NodeMaterial` stub — some examples import the class directly (e.g. for
  * custom-material hacks). It behaves like a lightweight material shell so
@@ -735,14 +717,14 @@ export class VolumeNodeMaterial extends NodeMaterial {
 }
 
 /**
- * `WebGLBackend` stub — slim mode is WebGPU-only, but examples still
- * import the class. Construction throws. Keeps module-load succeeding.
+ * Compatibility-only `WebGLBackend` name for the public slim-stubs entry.
+ * The normal slim entry exports Three's rewritten real backend.
  */
 export class WebGLBackend {
 
 	constructor() {
 
-		throw new Error( '[tsl-precompile/slim] WebGLBackend is stripped from the slim bundle. Remove `forceWebGL: true` or use the full three.webgpu.js.' );
+		throw new Error( '[tsl-precompile/slim] WebGLBackend is unavailable from the compatibility stubs entry. Import it from the normal slim entry.' );
 
 	}
 
@@ -832,7 +814,7 @@ export class CanvasTarget {
 }
 
 /**
- * `NodeUtils` — the r184 graph-free hash surface remains usable by addons;
+ * `NodeUtils` — the r185 graph-free hash surface remains usable by addons;
  * compiler/type-construction helpers retain the loud Proxy-throw behavior.
  */
 export const NodeUtils = /* @__PURE__ */ new Proxy( /* @__PURE__ */ Object.freeze( { hash, hashArray, hashString } ), {

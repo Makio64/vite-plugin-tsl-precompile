@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { attachPostprocessObject3DTargets, attachPostprocessTextureRefs, attachPostprocessUpdateBeforeNodes } from '../src/aux-loader.js';
+import { attachLiveNodeDependency } from '../src/slim-support/node-dependencies.js';
 
 function makeArtifact() {
 
@@ -37,6 +38,25 @@ test( 'attachPostprocessTextureRefs binds PassNode and effect render-target text
 	assert.ok( artifact._textureRefs instanceof Map );
 	assert.equal( artifact._textureRefs.get( 'captured-output' ), outputTexture );
 	assert.equal( artifact._textureRefs.get( 'captured-normal' ), normalTexture );
+	assert.equal( artifact._textureRefs.get( 'captured-ao' ), aoTexture );
+
+} );
+
+test( 'attachPostprocessTextureRefs follows closure-hidden live effect dependencies', () => {
+
+	const aoTexture = { isTexture: true, name: 'GTAONode.AO', uuid: 'live-hidden-ao' };
+	const gtaoNode = {
+		_aoRenderTarget: { isRenderTarget: true, texture: aoTexture },
+	};
+	const contextNode = {
+		isNode: true,
+		value: { getAO() { return gtaoNode; } },
+	};
+	attachLiveNodeDependency( contextNode, gtaoNode, { role: 'ambient-occlusion' } );
+
+	const artifact = attachPostprocessTextureRefs( makeArtifact(), contextNode );
+
+	assert.equal( Object.prototype.hasOwnProperty.call( contextNode, 'gtao' ), false );
 	assert.equal( artifact._textureRefs.get( 'captured-ao' ), aoTexture );
 
 } );

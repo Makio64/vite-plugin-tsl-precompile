@@ -4,9 +4,9 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta name="color-scheme" content="dark">
-	<meta name="description" content="How vite-plugin-tsl-precompile turns a three.js TSL material into a validated WGSL artifact and reconnects it to live scene data in production.">
+	<meta name="description" content="Capture TSL from a real WebGPU render, reject stale artifacts at build time, and replay verified WGSL with live scene data.">
 	<meta property="og:title" content="How TSL precompilation works">
-	<meta property="og:description" content="From real render context to a content-addressed artifact, Vite rewrite, and production hydration.">
+	<meta property="og:description" content="Capture in dev. Validate at build. Replay with live data in production.">
 	<meta property="og:type" content="website">
 	<meta property="og:image" content="https://makio64.github.io/vite-plugin-tsl-precompile/og.png">
 	<meta name="twitter:card" content="summary_large_image">
@@ -15,272 +15,180 @@
 	<link rel="stylesheet" href="/src/styles.css">
 	<link rel="stylesheet" href="/src/explain.css">
 </head>
-<body class="explain-page">
-	<a class="skip-link" href="#explain-main">Skip to explanation</a>
+<body class="page-narrow">
+	<a class="skip-link" href="#main">Skip to explanation</a>
 
 	<nav class="site-nav" aria-label="Site navigation">
 		<a class="site-nav-brand" href="index.html">
 			<span class="mono">vite-plugin-</span><span class="accent">tsl-precompile</span>
 		</a>
 		<div class="site-nav-links">
-			<a href="index.html">Overview</a>
+			<a href="index.html">Start</a>
+			<a href="adopt.html">Existing app</a>
 			<a class="site-nav-current" aria-current="page" href="how-it-works.html">How it works</a>
-			<a href="examples.html">Compatibility</a>
-			<a href="benchmark.html">Evidence</a>
-			<a href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">GitHub ↗</a>
+			<a href="examples.html">Proof</a>
+			<a href="benchmark.html">Numbers</a>
+			<a href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">GitHub <span aria-hidden="true">↗</span></a>
 		</div>
 	</nav>
 
-	<header class="explain-hero">
-		<div class="explain-grid" aria-hidden="true"></div>
-		<div class="explain-hero-inner">
-			<div class="explain-hero-copy">
-				<p class="eyebrow">the mental model</p>
-				<h1>TSL is the authoring format.<br><span class="accent">The artifact is the deployment format.</span></h1>
-				<p>
-					A material starts as a live JavaScript graph. Development captures the shader contract for the scene where that material is used. Vite verifies and embeds it. Production reconnects the embedded shader to live values.
-				</p>
-				<div class="explain-actions">
-					<a class="btn btn-primary" href="#journey">Follow one material</a>
-					<a class="btn btn-ghost" href="index.html#quickstart">Jump to setup</a>
-				</div>
-			</div>
-
-			<div class="model-stack" aria-label="Authoring graph becomes an artifact and then a hydrated production material">
-				<div class="model-card model-author">
-					<div class="model-card-head"><span>01</span><strong>AUTHOR</strong><small>JavaScript / TSL</small></div>
-					<div class="node-cloud" aria-hidden="true">
-						<i class="node node-a">uv</i><i class="node node-b">mix</i><i class="node node-c">color</i><i class="node node-d">time</i><i class="node node-e">PBR</i>
-						<b class="edge edge-a"></b><b class="edge edge-b"></b><b class="edge edge-c"></b><b class="edge edge-d"></b>
-					</div>
-				</div>
-				<div class="model-arrow" aria-hidden="true"><span>capture</span><i>↓</i></div>
-				<div class="model-card model-artifact">
-					<div class="model-card-head"><span>02</span><strong>ARTIFACT</strong><small>checked-in JSON</small></div>
-					<div class="artifact-lines" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
-					<div class="artifact-tags"><span>WGSL</span><span>bindings</span><span>updates</span><span>variants</span></div>
-				</div>
-				<div class="model-arrow" aria-hidden="true"><span>hydrate</span><i>↓</i></div>
-				<div class="model-card model-runtime">
-					<div class="model-card-head"><span>03</span><strong>RUNTIME</strong><small>WebGPU</small></div>
-					<div class="runtime-readout"><b>static WGSL</b><span>+</span><b>live resources</b><em>pipeline ready for creation</em></div>
-				</div>
-			</div>
-		</div>
+	<header class="page-hero">
+		<p class="eyebrow">the pipeline</p>
+		<h1>Write TSL.<br><span class="accent">Ship verified WGSL.</span></h1>
+		<p class="lead">In slim mode, code generation runs in dev. Textures, lights and camera data stay live.</p>
 	</header>
 
-	<main id="explain-main">
-		<section class="explain-section layer-section reveal">
-			<div class="explain-heading">
-				<p class="eyebrow">three layers, separate jobs</p>
-				<h2>Move code generation earlier.<br>Keep scene values live.</h2>
-				<p>Precompilation does not turn a material into a screenshot. It stores the stable program and a plan for reconnecting dynamic values.</p>
+	<main id="main" tabindex="-1">
+		<section class="section">
+			<div class="section-head">
+				<h2>Capture the real scene</h2>
+				<p>Geometry, camera, lights, fog and render targets can change the shader.</p>
 			</div>
 
-			<div class="layer-grid">
-				<article>
-					<span class="layer-num">01 / AUTHOR</span>
-					<h3>Write normal TSL</h3>
-					<p>Build material graphs with the same Three.js APIs. The marker is metadata for the build pipeline, not a new shader language.</p>
-					<pre><code>water.<span class="tok-fn">precompile</span>(<span class="tok-str">'ocean-water'</span>);</code></pre>
-				</article>
-				<article>
-					<span class="layer-num">02 / CAPTURE</span>
-					<h3>Generate a contract</h3>
-					<p>Development records the program, resource layout, variants, render state, and the update plan needed by production.</p>
-					<div class="mini-tags"><span>WGSL</span><span>UBO plan</span><span>context</span></div>
-				</article>
-				<article>
-					<span class="layer-num">03 / PLAYBACK</span>
-					<h3>Reconnect live inputs</h3>
-					<p>The hydrator maps cameras, lights, textures, skeletons, and material properties back onto the captured bindings.</p>
-					<div class="mini-tags"><span>camera</span><span>lights</span><span>textures</span></div>
-				</article>
+			<div class="ctx">
+				<ul class="ctx-row">
+					<li>object + geometry</li><li>camera type</li><li>lights + shadows</li>
+				</ul>
+				<div class="ctx-feed" aria-hidden="true"><i></i><i></i><i></i></div>
+				<div class="ctx-core">
+					<span class="ctx-core-label">one material</span>
+					<strong class="mono">ocean-water</strong>
+					<span class="ctx-out">→ its own shader variant</span>
+				</div>
+				<div class="ctx-feed ctx-feed-up" aria-hidden="true"><i></i><i></i><i></i></div>
+				<ul class="ctx-row">
+					<li>fog + environment</li><li>clipping + skinning</li><li>render target / MRT</li>
+				</ul>
 			</div>
 		</section>
 
-		<section class="explain-section journey-section reveal" id="journey">
-			<div class="explain-heading explain-heading-side">
-				<div>
-					<p class="eyebrow">the journey of one material</p>
-					<h2>From <code>water</code><br>to a production shader.</h2>
-				</div>
-				<p>Each boundary has one owner. The browser supplies scene facts, the plugin owns persistence and rewriting, and the runtime owns hydration.</p>
+		<section class="section">
+			<div class="section-head">
+				<h2>The journey</h2>
 			</div>
 
-			<ol class="journey-list">
-				<li class="journey-item">
-					<div class="journey-rail"><span>01</span><i></i></div>
-					<div class="journey-env">SOURCE</div>
-					<div class="journey-body">
-						<h3>The marker declares intent</h3>
-						<p><code>water.precompile('ocean-water')</code> gives the artifact a project-global name. With <code>autoMark: true</code>, the transform can add generated names instead.</p>
+			<ol class="journey">
+				<li>
+					<span class="j-num">1</span>
+					<div class="j-body">
+						<span class="j-env">vite transform</span>
+						<h3>Detect</h3>
+						<p>Direct NodeMaterial constructors are marked automatically.</p>
 					</div>
-					<div class="journey-output"><span>name</span><strong>ocean-water</strong></div>
+					<span class="j-out mono">auto-…</span>
 				</li>
-
-				<li class="journey-item">
-					<div class="journey-rail"><span>02</span><i></i></div>
-					<div class="journey-env">DEV BROWSER</div>
-					<div class="journey-body">
-						<h3>A real render supplies context</h3>
-						<p>The marker waits until the material is actually rendered. That identifies the owning object and scene topology before an isolated extraction produces the artifact variants.</p>
+				<li>
+					<span class="j-num">2</span>
+					<div class="j-body">
+						<span class="j-env">dev browser</span>
+						<h3>Render</h3>
+						<p>Exercise every scene context you ship.</p>
 					</div>
-					<div class="journey-output journey-output-tags"><span>object</span><span>camera</span><span>lights</span><span>MRT</span></div>
+					<span class="j-out mono">context</span>
 				</li>
-
-				<li class="journey-item">
-					<div class="journey-rail"><span>03</span><i></i></div>
-					<div class="journey-env">DEV SERVER</div>
-					<div class="journey-body">
-						<h3>The plugin persists generated source</h3>
-						<p>The capture endpoint validates the request, applies collision rules, writes an immutable content-addressed file, and updates the manifest.</p>
+				<li>
+					<span class="j-num">3</span>
+					<div class="j-body">
+						<span class="j-env">dev server</span>
+						<h3>Commit</h3>
+						<p>Keep the generated artifact with your source.</p>
 					</div>
-					<div class="journey-output"><span>file</span><strong>ocean-water.&lt;hash&gt;.json</strong></div>
+					<span class="j-out mono">&lt;name&gt;.&lt;hash&gt;.json</span>
 				</li>
-
-				<li class="journey-item">
-					<div class="journey-rail"><span>04</span><i></i></div>
-					<div class="journey-env">VITE BUILD</div>
-					<div class="journey-body">
-						<h3>Validation runs before rewriting</h3>
-						<p>Content, call-site ownership, source revision, and exact Three/toolchain versions must agree. Then Babel replaces the marker with <code>__applyPrecompiled</code> and a virtual artifact import.</p>
+				<li>
+					<span class="j-num">4</span>
+					<div class="j-body">
+						<span class="j-env">vite build</span>
+						<h3>Verify</h3>
+						<p>Vite rejects stale artifacts, then replaces the marker with an import.</p>
 					</div>
-					<div class="journey-output journey-pass"><span>gate</span><strong>validated ✓</strong></div>
+					<span class="j-out j-out-pass mono">validated ✓</span>
 				</li>
-
-				<li class="journey-item journey-item-last">
-					<div class="journey-rail"><span>05</span></div>
-					<div class="journey-env">PRODUCTION</div>
-					<div class="journey-body">
-						<h3>The runtime hydrates, then WebGPU takes over</h3>
-						<p>The embedded shader receives live resources and generated value updates. WebGPU still creates the pipeline and the driver still compiles WGSL to native code.</p>
+				<li>
+					<span class="j-num">5</span>
+					<div class="j-body">
+						<span class="j-env">production</span>
+						<h3>Replay</h3>
+						<p>Static WGSL reconnects to live resources.</p>
 					</div>
-					<div class="journey-output"><span>network</span><strong>no artifact request</strong></div>
+					<span class="j-out mono">no network</span>
 				</li>
 			</ol>
 		</section>
 
-		<section class="context-section reveal">
-			<div class="context-inner">
-				<div class="context-copy">
-					<p class="eyebrow">why capture waits for a render</p>
-					<h2>A material alone is not a shader variant.</h2>
-					<p>Three's generated program depends on where the material is rendered. Capturing only the constructor would miss facts that change WGSL, bindings, or render state.</p>
-					<div class="context-note"><span>Important</span><p>Direct live <code>NodeBuilderState</code> harvesting is a tested architecture direction, not the default shipped capture path yet. Today, real rendering selects context and an isolated compatibility pass performs extraction.</p></div>
-				</div>
-				<div class="context-map" aria-label="Scene context inputs that can select a shader variant">
-					<div class="context-center"><strong>material</strong><small>ocean-water</small></div>
-					<span class="context-chip chip-object">object + geometry</span>
-					<span class="context-chip chip-camera">camera type</span>
-					<span class="context-chip chip-light">lights + shadows</span>
-					<span class="context-chip chip-fog">fog + environment</span>
-					<span class="context-chip chip-clip">clipping + skinning</span>
-					<span class="context-chip chip-mrt">render target / MRT</span>
-				</div>
-			</div>
-		</section>
-
-		<section class="explain-section identity-section reveal">
-			<div class="explain-heading">
-				<p class="eyebrow">four identities, four questions</p>
-				<h2>“Is this still valid?”<br>is not one comparison.</h2>
-				<p>The architecture separates what ships, where it came from, where it renders, and which emitter produced it.</p>
+		<section class="section">
+			<div class="section-head">
+				<h2>What ships</h2>
 			</div>
 
-			<div class="identity-table" role="table" aria-label="Artifact identity responsibilities">
-				<div class="identity-row identity-header" role="row">
-					<span role="columnheader">identity</span><span role="columnheader">question answered</span><span role="columnheader">failure means</span>
-				</div>
-				<div class="identity-row" role="row">
-					<div role="cell"><b>01</b><strong>Content hash</strong></div>
-					<p role="cell">Are the WGSL, bindings, updater plan, state, and variants exactly what was captured?</p>
-					<span role="cell">tampered or corrupt artifact</span>
-				</div>
-				<div class="identity-row" role="row">
-					<div role="cell"><b>02</b><strong>Source owner + revision</strong></div>
-					<p role="cell">Was this build call site observed from this version of its module?</p>
-					<span role="cell">recapture this source owner</span>
-				</div>
-				<div class="identity-row" role="row">
-					<div role="cell"><b>03</b><strong>Render context</strong></div>
-					<p role="cell">Which geometry, scene, camera, lighting, and target topology selected this variant?</p>
-					<span role="cell">capture another variant</span>
-				</div>
-				<div class="identity-row" role="row">
-					<div role="cell"><b>04</b><strong>Exact versions</strong></div>
-					<p role="cell">Did the same Three.js WGSL emitter and artifact toolchain produce this contract?</p>
-					<span role="cell">upgrade deliberately, then recapture</span>
-				</div>
-			</div>
-		</section>
-
-		<section class="explain-section runtime-section reveal">
-			<div class="runtime-split">
-				<article class="runtime-column runtime-precompiled">
-					<p class="eyebrow">what precompilation handles</p>
-					<h2>Stable program,<br>live inputs.</h2>
+			<div class="stacks">
+				<article class="stack">
+					<header><span class="stack-tag">stock runtime</span></header>
 					<ul>
-						<li><span>✓</span><div><strong>Static shader source</strong><p>Captured WGSL is embedded in the production chunk.</p></div></li>
-						<li><span>✓</span><div><strong>Resource reconstruction</strong><p>Bindings reconnect textures, samplers, lights, camera buffers, and other live resources.</p></div></li>
-						<li><span>✓</span><div><strong>Generated updates</strong><p>Supported dynamic values are written through a generated plan instead of rebuilding the graph.</p></div></li>
-						<li><span>✓</span><div><strong>Optional slim runtime</strong><p>Once every path is covered, <code>slim: 'source'</code> removes the runtime NodeBuilder and lets Vite tree-shake unused exports.</p></div></li>
+						<li>WebGPU renderer</li>
+						<li class="stack-hot">TSL node graph + builder</li>
+						<li class="stack-hot">WGSL generated on first use</li>
+						<li>your material graphs</li>
 					</ul>
 				</article>
 
-				<article class="runtime-column runtime-webgpu">
-					<p class="eyebrow">what WebGPU still handles</p>
-					<h2>The GPU work<br>still happens.</h2>
+				<div class="stacks-arrow" aria-hidden="true"><i></i><span>precompile</span></div>
+
+				<article class="stack stack-out">
+					<header><span class="stack-tag">precompiled + slim</span></header>
 					<ul>
-						<li><span>→</span><div><strong>Pipeline creation</strong><p>The browser creates a pipeline for the supplied WGSL and render state.</p></div></li>
-						<li><span>→</span><div><strong>Driver compilation</strong><p>The GPU driver translates WGSL into hardware-native instructions.</p></div></li>
-						<li><span>→</span><div><strong>Resource uploads</strong><p>Textures, buffers, uniforms, and geometry still reach the GPU normally.</p></div></li>
-						<li><span>→</span><div><strong>Rendering</strong><p>Draw submission and GPU execution are unchanged.</p></div></li>
+						<li>WebGPU renderer</li>
+						<li class="stack-gone">TSL node graph + builder</li>
+						<li class="stack-good">static WGSL, already generated</li>
+						<li class="stack-good">generated uniform updater</li>
 					</ul>
 				</article>
 			</div>
+			<p class="fine">Composition, not to scale. WebGPU still creates the pipeline and the driver still compiles WGSL to native code — that part never moves.</p>
 		</section>
 
-		<section class="explain-section failure-section reveal">
-			<div class="explain-heading explain-heading-side">
-				<div>
-					<p class="eyebrow">failure is a feature</p>
-					<h2>Change the shader.<br>The old artifact stops the build.</h2>
-				</div>
-				<p>The pipeline prefers a loud recapture request over silently pairing current source with stale WGSL.</p>
+		<section class="section">
+			<div class="section-head">
+				<h2>Stale artifacts fail the build</h2>
+				<p>Hash, source, context and toolchain must all match.</p>
 			</div>
 
-			<div class="failure-flow">
-				<div class="failure-step"><span>01</span><strong>Edit TSL source</strong><small>module revision changes</small></div>
-				<i aria-hidden="true">→</i>
-				<div class="failure-step failure-stop"><span>02</span><strong>Build refuses reuse</strong><small>owner or content gate fails</small></div>
-				<i aria-hidden="true">→</i>
-				<div class="failure-step"><span>03</span><strong>Run dev + render</strong><small>new artifact is captured</small></div>
-				<i aria-hidden="true">→</i>
-				<div class="failure-step failure-pass"><span>04</span><strong>Build turns green</strong><small>new contract is embedded</small></div>
+			<div class="gates">
+				<article>
+					<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l11 4v9c0 7-4.6 11.4-11 13-6.4-1.6-11-6-11-13V7z"/><path d="M11 16l3.5 3.5L21 13"/></svg>
+					<b>01</b><h3>Content</h3>
+					<p>Is the payload exactly what was captured?</p>
+					<span>tampered or corrupt</span>
+				</article>
+				<article>
+					<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8 4h11l6 6v18H8z"/><path d="M19 4v6h6M12 17h9M12 22h6"/></svg>
+					<b>02</b><h3>Source</h3>
+					<p>Was this call site observed from this module version?</p>
+					<span>recapture this owner</span>
+				</article>
+				<article>
+					<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="4"/><circle cx="16" cy="16" r="11"/><path d="M16 5v-3M16 30v-3M5 16H2M30 16h-3"/></svg>
+					<b>03</b><h3>Context</h3>
+					<p>Which scene topology selected this variant?</p>
+					<span>capture another variant</span>
+				</article>
+				<article>
+					<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 10l10-5 10 5-10 5z"/><path d="M6 16l10 5 10-5M6 22l10 5 10-5"/></svg>
+					<b>04</b><h3>Versions</h3>
+					<p>Same three.js WGSL emitter and toolchain?</p>
+					<span>upgrade, then recapture</span>
+				</article>
 			</div>
+
+			<p class="note"><strong>Changed TSL?</strong> Render in dev, commit the new artifact, rebuild.</p>
 		</section>
 
-		<section class="explain-section adoption-section reveal">
-			<div class="explain-heading">
-				<p class="eyebrow">a safe adoption order</p>
-				<h2>Capture first.<br>Slim down last.</h2>
-			</div>
-			<div class="adoption-steps">
-				<article><span>1</span><h3>Prove one explicit material</h3><p>Install the base pipeline, capture a representative PBR material, and inspect its generated artifact.</p></article>
-				<article><span>2</span><h3>Expand observed coverage</h3><p>Visit relevant routes and states. Use explicit names for control or <code>autoMark</code> for a broad trial.</p></article>
-				<article><span>3</span><h3>Verify compatibility</h3><p>Run the artifact checks and visual/runtime gates appropriate for your scene before changing the renderer bundle.</p></article>
-				<article><span>4</span><h3>Enable <code>slim: 'source'</code></h3><p>Remove the NodeBuilder only when every reachable material path is captured or covered by the lazy full-renderer fallback.</p></article>
-			</div>
-		</section>
-
-		<section class="explain-cta reveal">
-			<p class="eyebrow">ready to see the files?</p>
-			<h2>Precompile one material.<br>Then inspect exactly what changed.</h2>
-			<div class="explain-actions">
-				<a class="btn btn-primary" href="index.html#quickstart">Open the working quickstart</a>
-				<a class="btn btn-ghost" href="examples.html">Browse compatibility evidence</a>
-				<a class="btn btn-ghost" href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/ARCHITECTURE.md" rel="noopener">Read the architecture</a>
+		<section class="section cta">
+			<h2>Try it</h2>
+			<div class="btn-row">
+				<a class="btn btn-primary" href="index.html#quickstart">Give it to an agent</a>
+				<a class="btn btn-ghost" href="adopt.html">Manual integration</a>
+				<a class="btn btn-ghost" href="examples.html">See results</a>
 			</div>
 		</section>
 	</main>
@@ -289,14 +197,13 @@
 		<div class="footer-inner">
 			<div><strong class="mono">vite-plugin-tsl-precompile</strong><span class="footer-sep">·</span><span class="muted">Experimental · MIT</span></div>
 			<nav class="footer-nav" aria-label="Footer navigation">
-				<a href="index.html">Overview</a>
-				<a href="examples.html">Compatibility</a>
-				<a href="benchmark.html">Evidence</a>
+				<a href="index.html">Start</a>
+				<a href="adopt.html">Existing app</a>
+				<a href="examples.html">Proof</a>
+				<a href="benchmark.html">Numbers</a>
 				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">GitHub</a>
 			</nav>
 		</div>
 	</footer>
-
-	<script type="module" src="/src/explain.js"></script>
 </body>
 </html>

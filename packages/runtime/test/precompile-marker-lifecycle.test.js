@@ -9,8 +9,10 @@ import {
 	__createCaptureObjectForTests,
 } from '../src/precompile-marker.js';
 import { __resetRegistry, getArtifact } from '../src/artifact-loader.js';
-import { hashArtifactContentSync } from '../src/graph-hash.js';
+import { hashArtifactContentSync, hashMaterialSync } from '../src/graph-hash.js';
 import { takeRenderObjectHarvest } from '../src/auxiliary/render-object-harvest-handoff.js';
+import { getBackgroundCaptureRenderTargets } from '../src/capture-render-target.js';
+import { getDevCaptureStatus, waitForDevCaptureSettled } from '../src/dev-capture-outcome.js';
 import { beginRenderObjectHarvest } from '../../plugin/src/vendor/render-object-observer.js';
 import {
 	collectArtifactVariantCandidates,
@@ -18,6 +20,7 @@ import {
 	mergeArtifactVariantFamily,
 } from '@tsl-precompile/contract/artifact-variants';
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
+import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 
 test( 'capture clones retain BatchedMesh runtime textures', () => {
 
@@ -249,6 +252,7 @@ async function withBrowser( run, { worker = false } = {} ) {
 		fetch: globalThis.fetch,
 		version: globalThis.__TSLP_THREE_PACKAGE_VERSION__,
 		autoFallbackDelay: globalThis.__TSLP_AUTO_FALLBACK_DELAY_MS__,
+		observeTimeout: globalThis.__TSLP_PRECOMPILE_OBSERVE_TIMEOUT_MS__,
 	};
 	const posts = [];
 	if ( worker ) {
@@ -289,7 +293,9 @@ async function withBrowser( run, { worker = false } = {} ) {
 
 			const globalKey = key === 'version'
 				? '__TSLP_THREE_PACKAGE_VERSION__'
-				: key === 'autoFallbackDelay' ? '__TSLP_AUTO_FALLBACK_DELAY_MS__' : key;
+				: key === 'autoFallbackDelay'
+					? '__TSLP_AUTO_FALLBACK_DELAY_MS__'
+					: key === 'observeTimeout' ? '__TSLP_PRECOMPILE_OBSERVE_TIMEOUT_MS__' : key;
 			if ( value === undefined ) delete globalThis[ globalKey ];
 			else globalThis[ globalKey ] = value;
 
@@ -298,6 +304,44 @@ async function withBrowser( run, { worker = false } = {} ) {
 	}
 
 }
+
+test( 'unobserved marker timeout records a failed settled capture wave', async () => {
+
+	await withBrowser( async () => {
+
+		const three = makeThree( 'unobserved-timeout' );
+		const material = new three.Material();
+		const renderer = { render() {} };
+		install( three, async () => artifactSet( material ) );
+		setDevRenderer( renderer, three );
+		globalThis.__TSLP_PRECOMPILE_OBSERVE_TIMEOUT_MS__ = 5;
+		const baseline = getDevCaptureStatus();
+		const originalError = console.error;
+		console.error = () => {};
+		try {
+
+			material.precompile( 'never-rendered' );
+			await assert.rejects(
+				waitForDevCaptureSettled( {
+					since: baseline,
+					timeoutMs: 1_000,
+					settleMs: 0,
+				} ),
+				/1 development capture operation failed/,
+			);
+			const status = getDevCaptureStatus();
+			assert.equal( status.pending, 0 );
+			assert.equal( status.failedCaptures, baseline.failedCaptures + 1 );
+
+		} finally {
+
+			console.error = originalError;
+
+		}
+
+	} );
+
+} );
 
 test( 'accepted recaptures replace the live inspector artifact', async () => {
 
@@ -364,6 +408,84 @@ test( 'material capture omits enumerable private sidecars without mutating the e
 		assert.equal( posts[ 0 ].artifact.uniformPlan[ 0 ].storageBuffers[ 0 ]._liveAttribute, undefined );
 		assert.equal( extractedArtifact._liveArray, liveArray );
 		assert.equal( extractedArtifact.uniformPlan[ 0 ].storageBuffers[ 0 ]._liveAttribute, liveAttribute );
+
+	} );
+
+} );
+
+test( 'material capture forwards live standalone compute observations cache-only and drops disposed nodes', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'standalone-compute-observation' );
+		const material = new three.Material();
+		const context = mount( three, material );
+		const mrtNode = { outputNodes: { output: {} } };
+		const first = { isComputeNode: true, name: 'clear' };
+		const second = { isComputeNode: true, name: 'rasterize' };
+		const disposeListeners = new Set();
+		const disposed = {
+			isComputeNode: true,
+			name: 'transient',
+			addEventListener( type, listener ) {
+
+				if ( type === 'dispose' ) disposeListeners.add( listener );
+
+			},
+			removeEventListener( type, listener ) {
+
+				if ( type === 'dispose' ) disposeListeners.delete( listener );
+
+			},
+			dispose() {
+
+				for ( const listener of [ ...disposeListeners ] ) listener( { type: 'dispose' } );
+
+			},
+		};
+		const extractorOptions = [];
+		const renderer = {
+			render() {},
+			getRenderTarget: () => null,
+			getMRT: () => mrtNode,
+			compute( node, marker ) {
+
+				assert.equal( this, renderer );
+				assert.equal( marker, 'sync-marker' );
+				return node.name;
+
+			},
+			async computeAsync( nodes, marker ) {
+
+				assert.equal( this, renderer );
+				assert.equal( marker, 'async-marker' );
+				return nodes.length;
+
+			},
+		};
+		install( three, async ( _renderer, _scene, _camera, options ) => {
+
+			extractorOptions.push( options );
+			return artifactSet( material );
+
+		} );
+		await setDevRenderer( renderer, three );
+
+		assert.equal( renderer.compute( disposed, 'sync-marker' ), 'transient' );
+		assert.equal( disposeListeners.size, 1 );
+		disposed.dispose();
+		assert.equal( disposeListeners.size, 0, 'dispose removes the observation listener and strong registry entry' );
+		assert.equal( renderer.compute( first, 'sync-marker' ), 'clear' );
+		assert.equal( await renderer.computeAsync( [ first, second ], 'async-marker' ), 2 );
+		material.precompile( 'standalone-compute-observation', { ...context, mrt: mrtNode } );
+		await waitFor( () => posts.length === 1, 'compute-observed material capture' );
+
+		assert.equal( extractorOptions.length, 2, 'MRT and color sibling are both extracted' );
+		assert.deepEqual( extractorOptions[ 0 ].observedComputeNodes, [ first, second ] );
+		assert.deepEqual( extractorOptions[ 1 ].observedComputeNodes, [ first, second ] );
+		assert.equal( extractorOptions[ 0 ].computeNodes, undefined, 'renderer observations cannot opt into explicit redispatch semantics' );
+		assert.equal( extractorOptions[ 1 ].computeNodes, undefined );
+		assert.equal( extractorOptions[ 1 ].noGlobalMRT, true );
 
 	} );
 
@@ -608,6 +730,51 @@ function install( three, extractor, options = {} ) {
 
 }
 
+test( 'live renderer observation retains exact background target siblings until deferred aux capture', async () => {
+
+	await withBrowser( async () => {
+
+		const three = makeThree( 'background-target-observer' );
+		const scene = new three.Scene();
+		const camera = new three.PerspectiveCamera();
+		scene.backgroundNode = { isNode: true };
+		let captureClone = null;
+		const floatDepthTarget = {
+			depthTexture: { type: 1015 },
+			clone() {
+
+				captureClone = {
+					depthTexture: { type: 1015 },
+					setSize() {},
+					dispose() {},
+				};
+				return captureClone;
+
+			},
+		};
+		let activeTarget = floatDepthTarget;
+		const renderer = {
+			getRenderTarget: () => activeTarget,
+			getMRT: () => null,
+			render() {},
+		};
+		install( three, async () => [] );
+		await setDevRenderer( renderer, three );
+
+		renderer.render( scene, camera );
+		activeTarget = null;
+		renderer.render( scene, camera );
+
+		const contexts = getBackgroundCaptureRenderTargets( scene, renderer );
+		assert.equal( contexts.length, 2 );
+		assert.equal( contexts.find( ( context ) => context.captureRenderTarget ).captureRenderTarget, captureClone );
+		assert.equal( contexts.find( ( context ) => ! context.captureRenderTarget ).mrtNode, null );
+		assert.equal( contexts.some( ( context ) => context.captureRenderTarget === floatDepthTarget ), false );
+
+	} );
+
+} );
+
 test( 'aggregates dynamic cube faces and the following main output in one synchronous real-render harvest', async () => {
 
 	await withBrowser( async ( posts ) => {
@@ -732,6 +899,59 @@ test( 'auto-mark context waits for a real render when output target topology is 
 
 } );
 
+test( 'an authored marker suppresses a later duplicate auto-marker for the same material', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'explicit-over-auto' );
+		const material = new three.Material();
+		const context = mount( three, material );
+		const renderer = { render() {}, getRenderTarget: () => null, getMRT: () => null };
+		install( three, async () => artifactSet( material ) );
+		await setDevRenderer( renderer, three );
+
+		material.precompile( 'authored-material' );
+		renderer.render( context.scene, context.camera );
+		await waitFor( () => posts.length === 1, 'authored material capture' );
+
+		// Mirrors a post-screenshot harness flush: the authored artifact has
+		// already settled before automatic discovery tries another name.
+		material.precompile( 'harness-auto-material', {
+			...context,
+			__tslpAutoMark: true,
+			__tslpObserveNextRender: true,
+		} );
+
+		assert.equal( posts[ 0 ].name, 'authored-material' );
+		assert.equal( globalThis.__tslpPrecompilePending, 0 );
+
+	} );
+
+} );
+
+test( 'multiple authored names on one material remain independently capturable', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'multiple-explicit' );
+		const material = new three.Material();
+		const context = mount( three, material );
+		const renderer = { render() {}, getRenderTarget: () => null, getMRT: () => null };
+		install( three, async () => artifactSet( material ) );
+		await setDevRenderer( renderer, three );
+
+		material.precompile( 'authored-one' );
+		material.precompile( 'authored-two' );
+		renderer.render( context.scene, context.camera );
+		await waitFor( () => posts.length === 2, 'multiple authored captures' );
+
+		assert.deepEqual( posts.map( ( post ) => post.name ).sort(), [ 'authored-one', 'authored-two' ] );
+		assert.equal( globalThis.__tslpPrecompilePending, 0 );
+
+	} );
+
+} );
+
 test( 'observed-pipeline auto-mark waits for a real render despite explicit MRT context', async () => {
 
 	await withBrowser( async ( posts ) => {
@@ -837,6 +1057,77 @@ test( 'capture metadata snapshots node properties before material setup', async 
 		await waitFor( () => posts.length === 1, 'pre-setup node metadata capture' );
 
 		assert.deepEqual( posts[ 0 ].artifact.sourceMaterial.nodeProps, [ 'colorNode' ] );
+
+	} );
+
+} );
+
+test( 'source graph validation snapshots the authored material before extractor setup mutations', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'pre-setup-source-graph' );
+		const material = new three.Material();
+		material.colorNode = { isNode: true, nodeType: 'color', value: 0.25 };
+		const context = mount( three, material );
+		const renderer = { render() {} };
+		const name = 'pre-setup-source-graph';
+		const hashOptions = {
+			name,
+			threeVersion: '0.184.0',
+			toolchainVersion: ARTIFACT_TOOLCHAIN_VERSION,
+		};
+		const authoredHash = hashMaterialSync( material, hashOptions );
+		install( three, async () => {
+
+			// Models ReflectorNode/Line2 setup materializing an internal graph
+			// root during extraction. This is renderer cache state, not authored
+			// source, and must not become the production validation hash.
+			material.vertexNode = { isNode: true, nodeType: 'vec4', generatedBySetup: true };
+			assert.notEqual( hashMaterialSync( material, hashOptions ), authoredHash );
+			return artifactSet( material );
+
+		} );
+		await setDevRenderer( renderer, three );
+
+		material.precompile( name, context );
+		await waitFor( () => posts.length === 1, 'pre-setup source graph capture' );
+
+		assert.equal( posts[ 0 ].artifact.sourceGraphHash, authoredHash );
+
+	} );
+
+} );
+
+test( 'a duplicate queued marker cannot replace the first pristine source graph snapshot', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'duplicate-source-graph' );
+		const material = new three.Material();
+		material.colorNode = { isNode: true, nodeType: 'color', value: 0.75 };
+		const context = mount( three, material );
+		const renderer = { render() {} };
+		const name = 'duplicate-source-graph';
+		const hashOptions = {
+			name,
+			threeVersion: '0.184.0',
+			toolchainVersion: ARTIFACT_TOOLCHAIN_VERSION,
+		};
+		const authoredHash = hashMaterialSync( material, hashOptions );
+		install( three, async () => artifactSet( material ) );
+		await setDevRenderer( renderer, three );
+
+		// Context-free markers remain pending until the real render, leaving a
+		// deterministic window in which setup-like state can appear and the same
+		// marker can be queued again.
+		material.precompile( name );
+		material.vertexNode = { isNode: true, nodeType: 'vec4', generatedBySetup: true };
+		material.precompile( name );
+		renderer.render( context.scene, context.camera );
+		await waitFor( () => posts.length === 1, 'duplicate source graph capture' );
+
+		assert.equal( posts[ 0 ].artifact.sourceGraphHash, authoredHash );
 
 	} );
 
@@ -1161,6 +1452,74 @@ test( 'scene override passes leave object materials pending for their main pass'
 
 } );
 
+test( 'camera layers leave materials pending until a matching pass renders them', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'camera-layers' );
+		const material = new three.Material();
+		const context = mount( three, material );
+		const layers = ( mask ) => ( {
+			mask,
+			test( other ) {
+
+				return ( this.mask & other.mask ) !== 0;
+
+			},
+		} );
+		context.object.layers = layers( 1 << 10 );
+		context.camera.layers = layers( 1 );
+
+		const captureTargets = [];
+		const target = ( name ) => ( {
+			clone() {
+
+				const clone = {
+					name,
+					setSize() {},
+					dispose() {},
+				};
+				captureTargets.push( clone );
+				return clone;
+
+			},
+		} );
+		const sceneTarget = target( 'scene-depthful' );
+		const volumeTarget = target( 'volume-depthless' );
+		let activeTarget = sceneTarget;
+		const renderer = {
+			render() {},
+			getMRT: () => null,
+			getRenderTarget: () => activeTarget,
+		};
+		const extractorOptions = [];
+		install( three, async ( _renderer, _scene, _camera, options ) => {
+
+			extractorOptions.push( options );
+			return artifactSet( material );
+
+		} );
+		await setDevRenderer( renderer, three );
+		material.precompile( 'layered-volume-material' );
+
+		renderer.render( context.scene, context.camera );
+		assert.equal( posts.length, 0 );
+		assert.equal( globalThis.__tslpPrecompilePending, 1, 'layer-mismatched pass leaves the material pending' );
+
+		activeTarget = volumeTarget;
+		context.camera.layers.mask = 1 << 10;
+		renderer.render( context.scene, context.camera );
+		await waitFor( () => posts.length === 1, 'matching-layer capture' );
+
+		assert.equal( extractorOptions.length, 1 );
+		assert.equal( extractorOptions[ 0 ].renderTargetOverride, captureTargets[ 0 ] );
+		assert.equal( captureTargets[ 0 ].name, 'volume-depthless' );
+		assert.equal( globalThis.__tslpPrecompilePending, 0 );
+
+	} );
+
+} );
+
 test( 'only auto-marked unobserved helpers receive a delayed generic fallback', async () => {
 
 	await withBrowser( async ( posts ) => {
@@ -1440,6 +1799,49 @@ test( 'an explicit capture renderer survives installation renderer replacement',
 
 } );
 
+test( 'an explicit observe-next marker leases a replaced renderer only until capture completes', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'explicit-observer-lease' );
+		const observedMaterial = new three.Material();
+		const replacementMaterial = new three.Material();
+		const observedContext = mount( three, observedMaterial );
+		const replacementContext = mount( three, replacementMaterial );
+		const oldRenderer = { name: 'old-renderer', render() {} };
+		const replacementRenderer = { name: 'replacement-renderer', render() {} };
+		const capturedRenderers = [];
+		install( three, async ( renderer ) => {
+
+			capturedRenderers.push( renderer.name );
+			return artifactSet( renderer === oldRenderer ? observedMaterial : replacementMaterial );
+
+		} );
+		await setDevRenderer( oldRenderer, three );
+		await setDevRenderer( replacementRenderer, three );
+
+		observedMaterial.precompile( 'explicit-observed-renderer', {
+			...observedContext,
+			renderer: oldRenderer,
+			__tslpAutoMark: true,
+			__tslpObserveNextRender: true,
+		} );
+		oldRenderer.render( observedContext.scene, observedContext.camera );
+		await waitFor( () => posts.length === 1, 'explicit old-renderer observation' );
+		assert.deepEqual( capturedRenderers, [ 'old-renderer' ] );
+
+		replacementMaterial.precompile( 'replacement-only-marker' );
+		oldRenderer.render( replacementContext.scene, replacementContext.camera );
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+		assert.equal( posts.length, 1, 'the completed observation lease does not reactivate ordinary old-renderer capture' );
+		replacementRenderer.render( replacementContext.scene, replacementContext.camera );
+		await waitFor( () => posts.length === 2, 'replacement renderer capture after lease release' );
+		assert.deepEqual( capturedRenderers, [ 'old-renderer', 'replacement-renderer' ] );
+
+	} );
+
+} );
+
 test( 'worker-only environments can capture marked materials', async () => {
 
 	await withBrowser( async ( posts ) => {
@@ -1485,6 +1887,7 @@ test( 'preserves the source object subclass while forcing synthetic visibility',
 		const material = new three.Material();
 		const context = mount( three, material, SkinnedInstancedMesh );
 		context.object.visible = false;
+		context.object.occlusionTest = true;
 		const renderer = { render() {} };
 		let capturedObject = null;
 		install( three, async ( _renderer, scene ) => {
@@ -1505,6 +1908,7 @@ test( 'preserves the source object subclass while forcing synthetic visibility',
 		assert.equal( capturedObject.isSkinnedMesh, true );
 		assert.equal( capturedObject.isInstancedMesh, true );
 		assert.equal( capturedObject.visible, true );
+		assert.equal( capturedObject.occlusionTest, false, 'synthetic capture does not schedule live occlusion queries' );
 
 	} );
 
@@ -1530,6 +1934,126 @@ test( 'capture cleanup does not overwrite a render function replaced mid-capture
 		renderer.render( context.scene, context.camera );
 		await waitFor( () => posts.length === 1, 'capture' );
 		assert.equal( renderer.render, replacement );
+
+	} );
+
+} );
+
+test( 'capture cleanup waits for a moving renderer compile tail before releasing its render guard', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'moving-compile-tail' );
+		const material = new three.Material();
+		const context = mount( three, material );
+		let realRenderCalls = 0;
+		const renderer = {
+			render() {
+
+				realRenderCalls ++;
+				return 'rendered';
+
+			},
+		};
+		let releaseCompile;
+		const compilePending = new Promise( ( resolve ) => { releaseCompile = resolve; } );
+		let temporaryCompileGuard = null;
+		install( three, async () => {
+
+			const markerGuard = renderer.render;
+			temporaryCompileGuard = function temporaryCompileGuard() {};
+			renderer.render = temporaryCompileGuard;
+			renderer.__tslpCompileLock = compilePending.then( () => {
+
+				renderer.render = markerGuard;
+
+			} );
+			return artifactSet( material );
+
+		} );
+		setDevRenderer( renderer, three );
+		const wrappedRender = renderer.render;
+
+		material.precompile( 'moving-compile-tail-material', context );
+		await waitFor( () => posts.length === 1, 'capture POST before compile-tail release' );
+		assert.equal( renderer.render, temporaryCompileGuard );
+		assert.equal( getDevCaptureStatus().pending, 1, 'capture remains pending until renderer compiles settle' );
+
+		releaseCompile();
+		await waitFor( () => getDevCaptureStatus().pending === 0, 'capture cleanup after compile-tail release' );
+		assert.equal( renderer.render, wrappedRender, 'the marker render guard is not resurrected by queued compile cleanup' );
+		assert.equal( renderer.render( context.scene, context.camera ), 'rendered' );
+		assert.equal( realRenderCalls, 1 );
+
+	} );
+
+} );
+
+test( 'capture cleanup restores atomically before a settled-tail competitor can resurrect its guard', async () => {
+
+	await withBrowser( async ( posts ) => {
+
+		const three = makeThree( 'settled-tail-competitor' );
+		const material = new three.Material();
+		const context = mount( three, material );
+		let realRenderCalls = 0;
+		const renderer = {
+			render() {
+
+				realRenderCalls ++;
+				return 'rendered';
+
+			},
+		};
+		let releaseFirstCompile;
+		const firstCompilePending = new Promise( ( resolve ) => { releaseFirstCompile = resolve; } );
+		let firstTemporaryGuard = null;
+		install( three, async () => {
+
+			const markerGuard = renderer.render;
+			firstTemporaryGuard = function firstTemporaryGuard() {};
+			renderer.render = firstTemporaryGuard;
+			renderer.__tslpCompileLock = firstCompilePending.then( () => {
+
+				renderer.render = markerGuard;
+
+			} );
+			return artifactSet( material );
+
+		} );
+		setDevRenderer( renderer, three );
+		const wrappedRender = renderer.render;
+
+		material.precompile( 'settled-tail-competitor-material', context );
+		await waitFor( () => posts.length === 1, 'capture POST before settled-tail competition' );
+		assert.equal( renderer.render, firstTemporaryGuard );
+		assert.equal( getDevCaptureStatus().pending, 1 );
+
+		const firstTail = renderer.__tslpCompileLock;
+		let releaseSecondCompile;
+		const secondCompilePending = new Promise( ( resolve ) => { releaseSecondCompile = resolve; } );
+		let secondTemporaryGuard = null;
+		firstTail.then( () => {
+
+			const observedRender = renderer.render;
+			secondTemporaryGuard = function secondTemporaryGuard() {};
+			renderer.render = secondTemporaryGuard;
+			renderer.__tslpCompileLock = secondCompilePending.then( () => {
+
+				renderer.render = observedRender;
+
+			} );
+
+		} );
+
+		releaseFirstCompile();
+		await waitFor( () => renderer.render === secondTemporaryGuard, 'second compile guard installation' );
+		releaseSecondCompile();
+		await waitFor( () => getDevCaptureStatus().pending === 0, 'capture cleanup after settled-tail competition' );
+
+		assert.equal( renderer.render, wrappedRender, 'the competitor observes and restores the released application render function' );
+		assert.equal( renderer.render( context.scene, context.camera ), 'rendered' );
+		assert.equal( realRenderCalls, 1 );
 
 	} );
 

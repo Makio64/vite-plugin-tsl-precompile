@@ -1,6 +1,8 @@
 /**
- * `__applyPrecompiled(material, artifactModule, expectedHash)` — injected by
- * the Babel transform in place of every `.precompile(name)` call.
+ * Replay `__applyPrecompiled(material, artifactModule, expectedHash)` —
+ * injected for both slim production modes in place of `.precompile(name)`.
+ * Full-Three builds use `apply-precompiled-full.js` and retain the live
+ * NodeMaterial/compiler instead.
  *
  * Responsibilities:
  *   1. Hash gate: assert `artifactModule.__hash === expectedHash`. Mismatch
@@ -22,100 +24,17 @@
 
 import { default as PrecompiledMaterial } from './_vendor-PrecompiledMaterial.js';
 import { registerPrecompiledArtifacts } from './_vendor-PrecompiledArtifactRegistry.js';
+import { preparePrecompiledArtifact } from './apply-precompiled-common.js';
 import { registerArtifact } from './artifact-loader.js';
 import { attachArtifactTextureRefsByShapeOrder } from './slim-support/artifact-texture-wiring.js';
 import { wireLiveNodeSidecarsToArtifact } from './slim-support/live-node-sidecars.js';
+import { walkNodeGraphUnique } from './slim-support/node-graph-walker.js';
 import {
 	MATERIAL_TEXTURE_PROPS as _TEXTURE_PROPS,
 	NODE_GRAPH_TEXTURE_KEYS as _NODE_GRAPH_KEYS,
 } from '@tsl-precompile/contract/texture-props';
-import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
-import { hashMaterialSync } from './graph-hash.js';
 
 const _NODE_TEXTURE_FIELDS = [ 'value', 'texture', '_value', '_texture', '_pmrem', 'renderTarget' ];
-
-const SOURCE_HASH_FIELDS = Object.freeze( [
-	'sourceGraphHash',
-	'sourceHashVersion',
-	'sourceThreeVersion',
-	'renderContextSignature',
-] );
-
-/**
- * Recompute the captured material-source fingerprint before mutating or
- * adopting the source material. Artifacts captured before source-hash metadata
- * existed remain compatible and continue to use the outer module-hash gate.
- * Once any metadata field is present, however, the record must be complete —
- * silently accepting a partial record would recreate the stale-source hole.
- */
-function assertCapturedSourceIsFresh( material, artifactModule, artifact, name ) {
-
-	const metadataSource = SOURCE_HASH_FIELDS.some( ( key ) => artifact && artifact[ key ] !== undefined )
-		? artifact
-		: SOURCE_HASH_FIELDS.some( ( key ) => artifactModule && artifactModule[ key ] !== undefined )
-			? artifactModule
-			: null;
-	if ( metadataSource === null ) return; // Explicit legacy policy.
-
-	const sourceGraphHash = metadataSource.sourceGraphHash;
-	const sourceHashVersion = metadataSource.sourceHashVersion;
-	const sourceThreeVersion = metadataSource.sourceThreeVersion;
-	const renderContextSignature = metadataSource.renderContextSignature;
-	const sourceValidationMode = artifactModule && artifactModule.__sourceValidationMode || metadataSource.sourceValidationMode;
-
-	if ( typeof sourceGraphHash !== 'string' || ! /^[a-f0-9]{64}$/i.test( sourceGraphHash ) ) {
-
-		throw new Error( `[tsl-precompile] artifact "${ name || '<unnamed>' }" has incomplete source-hash metadata: sourceGraphHash must be a 64-character SHA-256 hex string. Recapture it with the current toolchain.` );
-
-	}
-	if ( sourceHashVersion !== ARTIFACT_TOOLCHAIN_VERSION ) {
-
-		throw new Error( `[tsl-precompile] artifact "${ name || '<unnamed>' }" was captured with source-hash/toolchain version ${ sourceHashVersion || '<missing>' }, but this runtime requires ${ ARTIFACT_TOOLCHAIN_VERSION }. Recapture the artifact.` );
-
-	}
-	if ( typeof sourceThreeVersion !== 'string' || sourceThreeVersion.length === 0 ) {
-
-		throw new Error( `[tsl-precompile] artifact "${ name || '<unnamed>' }" has incomplete source-hash metadata: sourceThreeVersion is missing. Recapture it with the current toolchain.` );
-
-	}
-	if ( typeof name !== 'string' || name.length === 0 ) {
-
-		throw new Error( '[tsl-precompile] source-hash validation requires the captured artifact name. Recapture the unnamed artifact.' );
-
-	}
-
-	const detectedThreeVersion = typeof globalThis !== 'undefined' && typeof globalThis.__TSLP_THREE_PACKAGE_VERSION__ === 'string'
-		? globalThis.__TSLP_THREE_PACKAGE_VERSION__
-		: '';
-	if ( detectedThreeVersion && detectedThreeVersion !== sourceThreeVersion ) {
-
-		throw new Error( `[tsl-precompile] artifact "${ name }" was captured with three ${ sourceThreeVersion }, but this bundle uses three ${ detectedThreeVersion }. Recapture it with the installed three version.` );
-
-	}
-	if ( sourceValidationMode === 'callsite' ) {
-
-		// autoMark is rewritten at `new *NodeMaterial()`, before subsequent
-		// assignments configure the graph. Source slim also replaces application
-		// TSL nodes with inert carriers. In both cases the plugin has already
-		// validated the captured module/call-site revision at build time, while a
-		// runtime graph comparison would necessarily inspect a different shape.
-		return;
-
-	}
-
-	const currentSourceGraphHash = hashMaterialSync( material, {
-		name,
-		threeVersion: detectedThreeVersion || sourceThreeVersion,
-		toolchainVersion: ARTIFACT_TOOLCHAIN_VERSION,
-		renderContextSignature,
-	} );
-	if ( currentSourceGraphHash !== sourceGraphHash ) {
-
-		throw new Error( `[tsl-precompile] stale source graph detected for "${ name }": capture recorded ${ sourceGraphHash }, current material source is ${ currentSourceGraphHash }. Recapture the artifact before building.` );
-
-	}
-
-}
 
 function _readObjectProp( object, prop ) {
 
@@ -157,39 +76,6 @@ function _collectKnownNodeTextureFields( node, out ) {
 
 }
 
-function _walkTextureNodeShape( value, out, seen ) {
-
-	if ( ! value || typeof value !== 'object' || seen.has( value ) ) return;
-	_addTextureCandidate( value, out );
-	if ( value.isTexture === true ) return;
-	seen.add( value );
-
-	const shouldInspect = value.isNode === true || value.isTextureNode === true || typeof value.traverse === 'function' || Object.getPrototypeOf( value ) === Object.prototype;
-	if ( ! shouldInspect ) return;
-
-	_collectKnownNodeTextureFields( value, out );
-	for ( const key of Object.getOwnPropertyNames( value ) ) {
-
-		const child = _readObjectProp( value, key );
-		_addTextureCandidate( child, out );
-		if ( Array.isArray( child ) ) {
-
-			for ( const item of child ) _walkTextureNodeShape( item, out, seen );
-
-		} else if ( child && typeof child === 'object' && child.isTexture !== true ) {
-
-			if ( child.isNode === true || child.isTextureNode === true || Object.getPrototypeOf( child ) === Object.prototype ) {
-
-				_walkTextureNodeShape( child, out, seen );
-
-			}
-
-		}
-
-	}
-
-}
-
 /**
  * Walk a TSL node tree and push any embedded `Texture` instances (the `value`
  * of a TextureNode) into the provided Map keyed by uuid. The TextureNode shape
@@ -203,20 +89,12 @@ function _walkTextureNodeShape( value, out, seen ) {
 function _collectTexturesFromNode( rootNode, out ) {
 
 	if ( ! rootNode ) return;
-	_addTextureCandidate( rootNode, out );
-	_collectKnownNodeTextureFields( rootNode, out );
-	if ( typeof rootNode.traverse === 'function' ) {
+	walkNodeGraphUnique( rootNode, ( node ) => {
 
-		rootNode.traverse( ( n ) => {
+		_addTextureCandidate( node, out );
+		_collectKnownNodeTextureFields( node, out );
 
-			_addTextureCandidate( n, out );
-			_collectKnownNodeTextureFields( n, out );
-
-		} );
-
-	}
-
-	_walkTextureNodeShape( rootNode, out, new Set() );
+	} );
 
 }
 
@@ -297,7 +175,16 @@ export function catalogueArtifactTextureRefs( artifact, sourceMaterial ) {
 			const source = entry.source || {};
 			if ( ! source.textureUuid ) continue;
 			if ( refs && refs.has( source.textureUuid ) ) continue;
-			const tex = liveByUuid.get( source.textureUuid );
+			let tex = liveByUuid.get( source.textureUuid );
+			if ( ! tex && typeof source.kind === 'string' && source.kind.startsWith( 'material.' ) ) {
+
+				const property = typeof source.property === 'string' && source.property.length > 0
+					? source.property
+					: source.kind.slice( 'material.'.length ).split( '.' )[ 0 ];
+				const candidate = property ? _readObjectProp( sourceMaterial, property ) : null;
+				if ( candidate && candidate.isTexture === true ) tex = candidate;
+
+			}
 			if ( ! tex ) continue;
 			if ( ! refs ) refs = new Map();
 			refs.set( source.textureUuid, tex );
@@ -355,22 +242,8 @@ export function __applyPrecompiledWithValidation( material, artifactModule, expe
 
 function applyPrecompiled( material, artifactModule, expectedHash, validateArtifactHook ) {
 
-	if ( ! artifactModule || typeof artifactModule !== 'object' ) {
-
-		throw new Error( '[tsl-precompile] __applyPrecompiled: artifactModule is missing. Did the virtual module resolver run?' );
-
-	}
-
-	const shipped = artifactModule.__hash || ( artifactModule.artifact && artifactModule.artifact.__hash );
-	if ( shipped !== expectedHash ) {
-
-		throw new Error( `[tsl-precompile] stale artifact detected for "${ artifactModule.name || '<unnamed>' }": expected hash ${ expectedHash }, bundle shipped ${ shipped || '<missing>' }. Rebuild — the on-disk artifact is out of sync with source.` );
-
-	}
-
-	const artifact = artifactModule.artifact || artifactModule;
+	const artifact = preparePrecompiledArtifact( material, artifactModule, expectedHash );
 	const name = artifactModule.name || artifact.__name;
-	assertCapturedSourceIsFresh( material, artifactModule, artifact, name );
 	if ( validateArtifactHook ) validateArtifactHook( artifact, name );
 	if ( artifactModule.__hash && ! artifact.__hash ) {
 
@@ -378,10 +251,6 @@ function applyPrecompiled( material, artifactModule, expectedHash, validateArtif
 
 	}
 	attachGeneratedUpdaters( artifact, artifactModule );
-
-	// Cache by name in the module-scoped registry so subsequent lookups
-	// (e.g. when scene is cloned, or the same name is referenced from
-	// multiple call sites) skip the wrap.
 	registerArtifact( name, artifactModule );
 
 	// Hand auxiliary-pass artifacts (shadow-depth, render-pipeline,
@@ -434,16 +303,12 @@ function applyPrecompiled( material, artifactModule, expectedHash, validateArtif
 	// `renderTarget.texture` per frame and rebinds the captured fallback
 	// texture to it — without this, the mirror surface samples a 1×1 white.
 	const reflectorBaseNodes = collectReflectorBaseNodes( material );
-	if ( reflectorBaseNodes.length > 0 ) {
-
-		Object.defineProperty( wrapped, '__tslpReflectorBaseNodes', {
-			value: reflectorBaseNodes,
-			enumerable: false,
-			writable: true,
-			configurable: true,
-		} );
-
-	}
+	Object.defineProperty( wrapped, '__tslpReflectorBaseNodes', {
+		value: reflectorBaseNodes,
+		enumerable: false,
+		writable: true,
+		configurable: true,
+	} );
 
 	// If the source material had its own `mrtNode` (e.g. user did
 	// `mat.mrtNode = mrt({...})` for per-material MRT), and the artifact
@@ -459,6 +324,24 @@ function applyPrecompiled( material, artifactModule, expectedHash, validateArtif
 	copyBackdropMarkers( material, wrapped );
 
 	return adoptPrecompiledMaterial( material, wrapped );
+
+}
+
+function attachGeneratedUpdaters( artifact, artifactModule ) {
+
+	if ( ! artifact || typeof artifact !== 'object' || ! artifactModule ) return;
+
+	if ( typeof artifactModule.update === 'function' ) {
+
+		Object.defineProperty( artifact, '_generatedUpdate', { value: artifactModule.update, enumerable: false, configurable: true } );
+
+	}
+
+	if ( typeof artifactModule.updateGroup === 'function' ) {
+
+		Object.defineProperty( artifact, '_generatedUpdateGroup', { value: artifactModule.updateGroup, enumerable: false, configurable: true } );
+
+	}
 
 }
 
@@ -533,94 +416,13 @@ export function collectReflectorBaseNodes( material ) {
 		result.push( baseNode );
 
 	};
-	const walk = ( value, depth = 0 ) => {
-
-		if ( ! value || depth > 24 ) return;
-		const type = typeof value;
-		if ( type !== 'object' && type !== 'function' ) return;
-		if ( seen.has( value ) ) return;
-		seen.add( value );
-
-		addBaseNode( value );
-
-		if ( typeof value.traverse === 'function' ) {
-
-			try {
-
-				value.traverse( ( child ) => {
-
-					addBaseNode( child );
-					walk( child, depth + 1 );
-
-				} );
-
-			} catch ( _ ) {
-
-				// Keep the reflective walker best-effort; user node graphs can
-				// contain getters that throw outside a builder.
-
-			}
-
-		}
-
-		const shouldInspect = value.isNode === true ||
-			value.isTextureNode === true ||
-			typeof value.traverse === 'function' ||
-			Object.getPrototypeOf( value ) === Object.prototype;
-		if ( ! shouldInspect ) return;
-
-		const skip = new Set( [ 'parent', 'children', 'builder', 'material', 'object', 'geometry', 'scene', 'camera', 'renderer', 'domElement' ] );
-		for ( const key of Object.getOwnPropertyNames( value ) ) {
-
-			if ( skip.has( key ) ) continue;
-			let child;
-			try {
-
-				child = value[ key ];
-
-			} catch ( _ ) {
-
-				continue;
-
-			}
-			if ( Array.isArray( child ) ) {
-
-				for ( const item of child ) walk( item, depth + 1 );
-
-			} else {
-
-				walk( child, depth + 1 );
-
-			}
-
-		}
-
-	};
 	for ( const key of _NODE_GRAPH_KEYS ) {
 
 		const root = material[ key ];
-		walk( root );
+		walkNodeGraphUnique( root, addBaseNode, { seen } );
 
 	}
 	return result;
-
-}
-
-function attachGeneratedUpdaters( artifact, artifactModule ) {
-
-	if ( ! artifact || typeof artifact !== 'object' || ! artifactModule ) return;
-
-	if ( typeof artifactModule.update === 'function' ) {
-
-		Object.defineProperty( artifact, '_generatedUpdate', { value: artifactModule.update, enumerable: false, configurable: true } );
-
-	}
-
-	if ( typeof artifactModule.updateGroup === 'function' ) {
-
-		Object.defineProperty( artifact, '_generatedUpdateGroup', { value: artifactModule.updateGroup, enumerable: false, configurable: true } );
-
-	}
 
 }
 
@@ -640,7 +442,7 @@ function isAuxiliaryShape( shape ) {
  */
 function copyCommonMaterialProperties( src, dst ) {
 
-	// Audited against three.js r184: MeshStandardMaterial, MeshPhysicalMaterial,
+	// Audited against three.js r185: MeshStandardMaterial, MeshPhysicalMaterial,
 	// MeshPhongMaterial, MeshBasicMaterial, MeshLambertMaterial, MeshMatcap-
 	// Material, MeshToonMaterial. Texture slots come from
 	// @tsl-precompile/contract; scalar slots are mirrored by the E2E harness.

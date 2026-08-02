@@ -5,12 +5,13 @@ import type {
 	ComputeSyncPerPassOptions,
 	ComputeSyncStats,
 	ComputeSyncPerPassStats,
-} from './compute-sync.d.ts';
-import type { AutoComputeDispatchOptions, AutoComputeDispatchStats } from './auto-compute.d.ts';
-import type { SharePassRenderTargetTexturesStats } from './pass-render-fallback.d.ts';
-import type { RendererLightingOptions, RendererLightingStats } from './renderer-lighting.d.ts';
-import type { TemporalFrameState } from './temporal-frame.d.ts';
-import type { PopulateShadowMapsWithFullRendererOptions, ShadowFallbackResult } from './shadow-fallback.d.ts';
+} from './compute-sync.js';
+import type { AutoComputeDispatchOptions, AutoComputeDispatchStats } from './auto-compute.js';
+import type { SharePassRenderTargetTexturesStats } from './pass-render-fallback.js';
+import type { RendererLightingOptions, RendererLightingStats } from './renderer-lighting.js';
+import type { TemporalFrameState } from './temporal-frame.js';
+import type { PopulateShadowMapsWithFullRendererOptions, ShadowFallbackResult } from './shadow-fallback.js';
+import type { PrecompiledShadowSupport, PrecompiledShadowResult } from './precompiled-shadows.js';
 
 export type SlimSceneSupportDiagnostics = Record<string, unknown> & {
 	pmrem?: Record<string, unknown>;
@@ -47,6 +48,8 @@ export interface SlimSceneSupportOptions {
 	textureLoaderTracking?: boolean;
 	/** Create the PMREM support helper. @default true */
 	pmrem?: boolean;
+	/** Replay captured PMREM and VSM renderer passes without loading full Three. @default true */
+	precompiledInternalPasses?: boolean;
 	/** Enable compute-output synchronization helpers. @default true */
 	computeSync?: boolean;
 	/** Enable texture-sharing convenience helpers. @default true */
@@ -88,6 +91,8 @@ export type RenderPassWithFallbackStats = SharePassRenderTargetTexturesStats & {
 export type PopulateShadowMapsOptions = Omit<PopulateShadowMapsWithFullRendererOptions, 'scene' | 'camera' | 'slimRenderer' | 'fullRenderer' | 'threeFullModule'> & {
 	fullRenderer?: unknown;
 	threeFullModule?: Record<string, unknown>;
+	/** Bypass captured VSM replay and force the configured full-renderer adapter. */
+	forceFullRenderer?: boolean;
 };
 
 export type MaterialComputeDispatchStats = AutoComputeDispatchStats & ComputeSyncStats & {
@@ -104,8 +109,9 @@ export type DispatchMaterialComputesOptions = Omit<AutoComputeDispatchOptions, '
 export function createSlimSceneSupport( opts: SlimSceneSupportOptions ): {
 	liveSceneIndex: unknown;
 	pmrem: unknown;
+	precompiledShadows: PrecompiledShadowSupport | null;
 	fallback: unknown;
-	materialCompute: ReturnType<typeof import('./auto-compute.d.ts').createAutoComputeDispatcher>;
+	materialCompute: ReturnType<typeof import('./auto-compute.js').createAutoComputeDispatcher>;
 	diagnostics: Record<string, unknown>;
 	indexScene: ( scene: unknown ) => void;
 	rememberLiveTexture: ( texture: unknown ) => void;
@@ -123,7 +129,7 @@ export function createSlimSceneSupport( opts: SlimSceneSupportOptions ): {
 	computeNodeUsesStorageTexture: ( computeNode: unknown, sourceRenderer: unknown ) => boolean;
 	shareTexture: ( sourceRenderer: unknown, texture: unknown ) => boolean;
 	shareShadowTexture: ( texture: unknown, sourceRenderer: unknown ) => boolean;
-	populateShadowMaps: ( scene: unknown, camera: unknown, shadowOpts?: PopulateShadowMapsOptions ) => Promise<ShadowFallbackResult>;
+	populateShadowMaps: ( scene: unknown, camera: unknown, shadowOpts?: PopulateShadowMapsOptions ) => Promise<ShadowFallbackResult | PrecompiledShadowResult>;
 	disposeShadowMaps: ( scene?: object ) => Promise<number>;
 	updateRendererLighting: ( scene: unknown, camera: unknown, lightingOpts?: RendererLightingOptions ) => RendererLightingStats;
 	preparePostprocess: ( prepArgs?: Record<string, unknown> ) => { effects: number; prepared: unknown[]; missed: unknown[] };

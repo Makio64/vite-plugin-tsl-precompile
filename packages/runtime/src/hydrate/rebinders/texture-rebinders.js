@@ -5,6 +5,37 @@ import {
 	textureBindingTargets,
 } from './texture-binding-targets.js';
 
+function updateArtifactTextureRef( artifact, source, texture ) {
+
+	const textureUuid = source && source.textureUuid;
+	if ( ! artifact || typeof textureUuid !== 'string' || textureUuid.length === 0 || ! texture || texture.isTexture !== true ) return;
+	const current = artifact._textureRefs instanceof Map ? artifact._textureRefs : null;
+	if ( current && current.get( textureUuid ) === texture ) return;
+	if ( current ) {
+
+		current.set( textureUuid, texture );
+		return;
+
+	}
+	const refs = new Map( [ [ textureUuid, texture ] ] );
+	const descriptor = Object.getOwnPropertyDescriptor( artifact, '_textureRefs' );
+	if ( descriptor && typeof descriptor.set === 'function' ) {
+
+		artifact._textureRefs = refs;
+
+	} else {
+
+		Object.defineProperty( artifact, '_textureRefs', {
+			value: refs,
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		} );
+
+	}
+
+}
+
 export function createMaterialTextureRebinder( entries, deps ) {
 
 	const { resolveTextureBinding } = deps;
@@ -31,7 +62,12 @@ export function createMaterialTextureRebinder( entries, deps ) {
 				if ( ! binding ) continue;
 
 				const candidate = resolveTextureBinding( entry.artifact, entry.groupName, entry.bindingName, entry.material, { frame } );
-				if ( candidate ) rebindTextureBindingTargets( binding, candidate );
+				if ( candidate ) {
+
+					rebindTextureBindingTargets( binding, candidate );
+					updateArtifactTextureRef( entry.artifact, entry.source, candidate );
+
+				}
 
 				for ( const target of textureBindingTargets( binding ) ) {
 
@@ -84,6 +120,7 @@ export function createArtifactTextureRebinder( entries, deps ) {
 				if ( candidate ) {
 
 					rebindTextureBindingTargets( binding, candidate );
+					updateArtifactTextureRef( entry.artifact, entry.source, candidate );
 
 				}
 

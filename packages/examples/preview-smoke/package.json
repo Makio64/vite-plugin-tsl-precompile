@@ -5,8 +5,9 @@
   "type": "module",
   "description": "Playwright smoke that builds an example, spawns `vite preview`, and asserts the production canvas renders + animates. Locks in the ocean-preview-pipeline regression.",
   "scripts": {
-    "test": "node run.mjs --example=ocean",
-    "test:preview": "node run.mjs --example=ocean"
+    "test": "pnpm run test:unit && node run.mjs --example=ocean",
+    "test:unit": "node --test ../visual-pixel-evidence.test.mjs",
+    "test:preview": "pnpm run test"
   },
   "devDependencies": {
     "playwright": "^1.59.1"

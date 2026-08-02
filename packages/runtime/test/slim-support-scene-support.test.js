@@ -445,8 +445,9 @@ test( 'createSlimSceneSupport ensureFallback registers private _nodes as a slim 
 
 	setSlimRenderFallback( null );
 	const renderObject = { material: { type: 'NodeMaterial' } };
+	const renderer = fakeRenderer();
 	const support = createSlimSceneSupport( {
-		renderer: fakeRenderer(),
+		renderer,
 		fullRendererFallback: true,
 		threeFullModule: { WebGPURenderer: FakeFullRendererWithPrivateNodes },
 	} );
@@ -454,7 +455,7 @@ test( 'createSlimSceneSupport ensureFallback registers private _nodes as a slim 
 	try {
 
 		await support.ensureFallback();
-		const fallback = getSlimRenderFallback();
+		const fallback = getSlimRenderFallback( renderer );
 		assert.equal( typeof fallback, 'function' );
 		const builder = fallback( renderObject );
 		assert.equal( builder.vertexShader, 'vertex' );
@@ -475,18 +476,130 @@ test( 'createSlimSceneSupport ensureFallback registers private _nodes as a slim 
 
 } );
 
+test( 'createSlimSceneSupport scopes render fallbacks per renderer and disposes only its own registration', async () => {
+
+	setSlimRenderFallback( null );
+	const rendererA = fakeRenderer();
+	const rendererB = fakeRenderer();
+	const supportA = createSlimSceneSupport( {
+		renderer: rendererA,
+		fullRendererFallback: true,
+		threeFullModule: { WebGPURenderer: FakeFullRendererWithPrivateNodes },
+	} );
+	const supportB = createSlimSceneSupport( {
+		renderer: rendererB,
+		fullRendererFallback: true,
+		threeFullModule: { WebGPURenderer: FakeFullRendererWithPrivateNodes },
+	} );
+
+	try {
+
+		await Promise.all( [ supportA.ensureFallback(), supportB.ensureFallback() ] );
+		const handlerA = getSlimRenderFallback( rendererA );
+		const handlerB = getSlimRenderFallback( rendererB );
+		assert.equal( typeof handlerA, 'function' );
+		assert.equal( typeof handlerB, 'function' );
+		assert.notEqual( handlerA, handlerB );
+
+		await supportA.dispose();
+		assert.equal( getSlimRenderFallback( rendererA ), null );
+		assert.equal( getSlimRenderFallback( rendererB ), handlerB );
+		assert.equal( handlerB( { material: { type: 'NodeMaterial' } } ).vertexShader, 'vertex' );
+
+	} finally {
+
+		await supportA.dispose();
+		await supportB.dispose();
+		setSlimRenderFallback( null, rendererA );
+		setSlimRenderFallback( null, rendererB );
+		setSlimRenderFallback( null );
+
+	}
+
+} );
+
+test( 'createSlimSceneSupport dispose wins a cached ensureFallback race and is terminal', async () => {
+
+	setSlimRenderFallback( null );
+	const renderer = fakeRenderer();
+	const support = createSlimSceneSupport( {
+		renderer,
+		fullRendererFallback: true,
+		threeFullModule: { WebGPURenderer: FakeFullRendererWithPrivateNodes },
+	} );
+	const full = await support.getFullRenderer();
+	const ensuring = support.ensureFallback();
+	const rejectedEnsure = assert.rejects( ensuring, /cancelled by dispose|cannot run after dispose/ );
+
+	await support.dispose();
+	await rejectedEnsure;
+	assert.equal( full.disposed, true );
+	assert.equal( getSlimRenderFallback( renderer ), null );
+	await assert.rejects( support.getFullRenderer(), /cannot run after dispose/ );
+	await assert.rejects( support.ensureFallback(), /cannot run after dispose/ );
+	assert.equal( support.installComputeFallback( full ), false );
+	assert.equal( getSlimRenderFallback( renderer ), null );
+
+} );
+
+test( 'createSlimSceneSupport disposes an initialization that resolves after dispose', async () => {
+
+	setSlimRenderFallback( null );
+	const renderer = fakeRenderer();
+	let releaseModule;
+	let moduleRequested;
+	const requested = new Promise( ( resolve ) => { moduleRequested = resolve; } );
+	const moduleGate = new Promise( ( resolve ) => { releaseModule = resolve; } );
+	let constructed = null;
+	class RacedFullRenderer extends FakeFullRendererWithPrivateNodes {
+
+		constructor( options ) {
+
+			super( options );
+			constructed = this;
+
+		}
+
+	}
+	const support = createSlimSceneSupport( {
+		renderer,
+		fullRendererFallback: true,
+		loadThreeFullModule: async () => {
+
+			moduleRequested();
+			await moduleGate;
+			return { WebGPURenderer: RacedFullRenderer };
+
+		},
+	} );
+	const ensuring = support.ensureFallback();
+	const rejectedEnsure = assert.rejects( ensuring, /cancelled by dispose|cannot run after dispose/ );
+	await requested;
+	const disposing = support.dispose();
+	releaseModule();
+
+	await rejectedEnsure;
+	await disposing;
+	assert.ok( constructed );
+	assert.equal( constructed.disposed, true );
+	assert.equal( getSlimRenderFallback( renderer ), null );
+	await assert.rejects( support.getFullRenderer(), /cannot run after dispose/ );
+
+} );
+
 test( 'createSlimSceneSupport builds legacy private node builders before fallback replay', async () => {
 
 	setSlimRenderFallback( null );
+	const renderer = fakeRenderer();
 	const support = createSlimSceneSupport( {
-		renderer: fakeRenderer(),
+		renderer,
 		fullRendererFallback: true,
 		threeFullModule: { WebGPURenderer: FakeFullRendererWithBuilderOnly },
 	} );
 	try {
 
 		await support.ensureFallback();
-		const state = getSlimRenderFallback()( { material: { type: 'LegacyNodeMaterial' } } );
+		const state = getSlimRenderFallback( renderer )( { material: { type: 'LegacyNodeMaterial' } } );
 		assert.equal( state.vertexShader, 'built-vertex' );
 		assert.equal( state.fragmentShader, 'built-fragment' );
 		assert.deepEqual( state.getAttributesArray(), [ 'position' ] );
@@ -2190,13 +2303,61 @@ test( 'createSlimSceneSupport patches lazy full-module TextureLoader classes aft
 
 } );
 
-test( 'createSlimSceneSupport generatePMREMAsync demands an explicit generator function', async () => {
+test( 'createSlimSceneSupport generatePMREMAsync uses captured internal passes by default', async () => {
 
-	const support = createSlimSceneSupport( { renderer: fakeRenderer() } );
-	await assert.rejects(
-		() => support.generatePMREMAsync( { isTexture: true } ),
-		/needs a `\(renderer, sourceTexture\) => Promise/,
-	);
+	const errors = [];
+	const renderer = Object.assign( fakeRenderer(), {
+		autoClear: true,
+		getRenderTarget: () => null,
+		getActiveCubeFace: () => 0,
+		getActiveMipmapLevel: () => 0,
+		setRenderTarget() {},
+		render() {},
+	} );
+	const support = createSlimSceneSupport( {
+		renderer,
+		onError: ( error, context ) => errors.push( { error, context } ),
+	} );
+	const result = await support.generatePMREMAsync( {
+		isTexture: true,
+		mapping: Three.EquirectangularReflectionMapping,
+		image: { width: 128, height: 64 },
+	} );
+	assert.equal( result, null );
+	assert.match( errors[ 0 ].error.message, /no "pmrem-(?:blur|equirect|ggx)" artifact is registered/ );
+	assert.equal( errors[ 0 ].context.where, 'pmrem' );
+
+} );
+
+test( 'createSlimSceneSupport waits for built-in PMREM source dimensions without poisoning retries', async () => {
+
+	const errors = [];
+	const renderer = Object.assign( fakeRenderer(), {
+		autoClear: true,
+		getRenderTarget: () => null,
+		getActiveCubeFace: () => 0,
+		getActiveMipmapLevel: () => 0,
+		setRenderTarget() {},
+		render() {},
+	} );
+	const support = createSlimSceneSupport( {
+		renderer,
+		onError: ( error, context ) => errors.push( { error, context } ),
+	} );
+	const source = {
+		isTexture: true,
+		mapping: Three.EquirectangularReflectionMapping,
+		image: null,
+	};
+
+	assert.equal( await support.generatePMREMAsync( source ), null );
+	assert.equal( errors.length, 0, 'an image that is still loading is not a failed generation' );
+
+	source.image = { width: 128, height: 64 };
+	assert.equal( await support.generatePMREMAsync( source ), null );
+	assert.equal( errors.length, 1, 'the ready retry reaches the captured generator' );
+	assert.match( errors[ 0 ].error.message, /no "pmrem-(?:blur|equirect|ggx)" artifact is registered/ );
+	await support.dispose();
 
 } );
 

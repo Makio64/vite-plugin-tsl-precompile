@@ -39,6 +39,7 @@
  */
 
 import { registerPrecompiledArtifact, unregisterPrecompiledArtifacts } from './_vendor-PrecompiledArtifactRegistry.js';
+import { getLiveNodeDependencies } from './slim-support/node-dependencies.js';
 
 /** @type {Map<string, Object>} */
 const REGISTRY = new Map();
@@ -426,27 +427,39 @@ export function listAux() {
 
 /**
  * Find an aux artifact by shape and either its friendly capture name or its
- * config hash. Friendly names come from `precompileAuxiliary(..., {
- * renderPipelineName })` (legacy: `postProcessingName`) or from the generated
- * `aux-<shape>-<hash>` default.
+ * config hash. Friendly names come from `precompileAuxiliary()` semantic-name
+ * options such as `backgroundName` and `renderPipelineName` (legacy:
+ * `postProcessingName`) or from the generated `aux-<shape>-<hash>` default.
+ * Config hashes are exact identities and take precedence over friendly names.
+ * A duplicate friendly name is rejected instead of selecting by registration
+ * order.
  *
  * @param {string} shape
  * @param {string} nameOrConfigHash
  * @return {?{ shape: string, configHash: string, name: ?string, artifact: Object }}
+ * @throws {Error} `AUX_ARTIFACT_AMBIGUOUS` when a friendly name is not unique.
  */
 export function findAux( shape, nameOrConfigHash ) {
 
-	for ( const entry of listAux() ) {
+	const exactArtifact = REGISTRY.get( key( shape, nameOrConfigHash ) );
+	if ( exactArtifact ) return auxEntry( shape, nameOrConfigHash, exactArtifact );
 
-		if ( entry.shape !== shape ) continue;
-		if ( entry.configHash !== nameOrConfigHash && entry.name !== nameOrConfigHash ) continue;
-		return {
-			...entry,
-			artifact: REGISTRY.get( key( entry.shape, entry.configHash ) ),
-		};
+	const matches = registeredAuxEntries( shape )
+		.filter( ( entry ) => entry.name === nameOrConfigHash );
+	if ( matches.length > 1 ) {
+
+		throw auxSelectionError(
+			'AUX_ARTIFACT_AMBIGUOUS',
+			`[tsl-precompile/aux] the friendly name ${ JSON.stringify( nameOrConfigHash ) } matches ` +
+				`${ matches.length } ${ JSON.stringify( shape ) } artifacts: ${ formatAuxEntries( matches ) }. ` +
+				`Use a unique capture name or bind the exact configHash with bindAuxConfig().`,
+			shape,
+			null,
+			matches,
+		);
 
 	}
-	return null;
+	return matches[ 0 ] || null;
 
 }
 
@@ -952,6 +965,11 @@ function collectPostprocessTextures( root, out, seen = new Set(), depth = 0 ) {
 	if ( typeof root !== 'object' && typeof root !== 'function' ) return;
 	if ( seen.has( root ) ) return;
 	seen.add( root );
+	for ( const dependency of getLiveNodeDependencies( root ) ) {
+
+		collectPostprocessTextures( dependency.node, out, seen, depth + 1 );
+
+	}
 
 	if ( root.isTexture === true ) {
 

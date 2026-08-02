@@ -5,4 +5,6 @@ export {
 	shareGPUTextureEntry,
 	sharePMREMGPUTexture,
 	shareShadowGPUTextureIntoSlim,
-} from '../index';
+} from '../index.js';
+
+export function isBorrowedShadowRenderTargetTexture( renderer: unknown, texture: unknown ): boolean;

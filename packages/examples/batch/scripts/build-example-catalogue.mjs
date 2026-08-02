@@ -1,31 +1,25 @@
 #!/usr/bin/env node
 
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import { assertOfficialThreeR185Checkout } from '../_three-version.mjs';
+import { readSafeContainedFile } from '../e2e-evidence.mjs';
+import { shouldSkipE2EExample } from '../example-skip-policy.mjs';
+import { discoverLocalExampleCases } from '../local-example-discovery.mjs';
+import {
+	assertCanonicalExampleId,
+	prepareOutputRoot,
+	writeOutputFileAtomic,
+} from '../output-path-safety.mjs';
 
 const SELF = dirname( fileURLToPath( import.meta.url ) );
 const BATCH_ROOT = resolve( SELF, '..' );
 const REPO_ROOT = resolve( BATCH_ROOT, '../../..' );
 const EXAMPLES_ROOT = resolve( REPO_ROOT, 'packages/examples' );
-const COVERAGE_PATH = resolve( BATCH_ROOT, 'results/coverage-summary.md' );
 const OUTPUT_PATH = resolve( BATCH_ROOT, 'example-catalogue.json' );
-const THREE_VERSION = '0.184.0';
-
-const args = process.argv.slice( 2 );
-const checkOnly = args.includes( '--check' );
-const threeRepoArg = args.find( ( value ) => value.startsWith( '--three-repo=' ) );
-const threeRepo = threeRepoArg ? resolve( threeRepoArg.slice( '--three-repo='.length ) ) : null;
-
-function coverageCaseNames() {
-
-	const markdown = readFileSync( COVERAGE_PATH, 'utf8' );
-	const names = [ ...markdown.matchAll( /^\| ([^ |]+\.html) \|/gm ) ].map( ( match ) => match[ 1 ] );
-	const unique = [ ...new Set( names ) ];
-	if ( unique.length !== names.length ) throw new Error( 'coverage-summary.md contains duplicate example rows' );
-	return unique;
-
-}
+const THREE_VERSION = '0.185.1';
 
 function splitRoute( route ) {
 
@@ -35,48 +29,30 @@ function splitRoute( route ) {
 
 }
 
-function localSources() {
+export function localSources( {
+	repoRoot = REPO_ROOT,
+	examplesRoot = EXAMPLES_ROOT,
+} = {} ) {
 
 	const byName = new Map();
-	const packageDirectories = readdirSync( EXAMPLES_ROOT, { withFileTypes: true } )
+	const packageDirectories = readdirSync( examplesRoot, { withFileTypes: true } )
 		.filter( ( entry ) => entry.isDirectory() && entry.name !== 'batch' )
-		.map( ( entry ) => resolve( EXAMPLES_ROOT, entry.name ) );
+		.map( ( entry ) => resolve( examplesRoot, entry.name ) );
 
 	for ( const packageRoot of packageDirectories ) {
 
 		const project = basename( packageRoot );
-		const manifestPath = resolve( packageRoot, 'e2e-cases.json' );
-		if ( existsSync( manifestPath ) ) {
+		for ( const entry of discoverLocalExampleCases( packageRoot ) ) {
 
-			const parsed = JSON.parse( readFileSync( manifestPath, 'utf8' ) );
-			const cases = Array.isArray( parsed ) ? parsed : parsed.cases || [];
-			for ( const entry of cases ) {
-
-				const name = typeof entry === 'string' ? entry : entry.name;
-				const route = typeof entry === 'string' ? entry : entry.path;
-				if ( ! name || ! route ) continue;
-				const source = splitRoute( route );
-				byName.set( name, {
-					kind: 'local',
-					project,
-					path: relative( REPO_ROOT, resolve( packageRoot, source.path ) ),
-					route,
-				} );
-
-			}
-
-		}
-
-		for ( const filename of readdirSync( packageRoot ) ) {
-
-			if ( filename === 'index.html' || ! filename.endsWith( '.html' ) || byName.has( filename ) ) continue;
+			const routeParts = splitRoute( entry.path );
 			const source = {
 				kind: 'local',
 				project,
-				path: relative( REPO_ROOT, resolve( packageRoot, filename ) ),
-				route: filename,
+				path: relative( repoRoot, resolve( packageRoot, routeParts.path ) ),
+				route: entry.path,
 			};
-			if ( ! byName.has( filename ) ) byName.set( filename, source );
+			if ( byName.has( entry.name ) ) throw new Error( `duplicate local example case name ${ entry.name }` );
+			byName.set( entry.name, source );
 
 		}
 
@@ -85,50 +61,64 @@ function localSources() {
 
 }
 
-function assertThreeCheckout( cases ) {
+export function threeExampleCaseNames( threeRepoPath, verifyCheckout = assertOfficialThreeR185Checkout ) {
 
-	if ( ! threeRepo ) return;
-	const packagePath = resolve( threeRepo, 'package.json' );
-	if ( ! existsSync( packagePath ) ) throw new Error( `three.js checkout is missing package.json: ${ threeRepo }` );
-	const version = JSON.parse( readFileSync( packagePath, 'utf8' ) ).version;
-	if ( version !== THREE_VERSION ) throw new Error( `expected three.js ${ THREE_VERSION }, received ${ version } at ${ threeRepo }` );
-	for ( const entry of cases ) {
+	verifyCheckout( threeRepoPath, 'example-catalogue' );
+	const examplesRoot = resolve( threeRepoPath, 'examples' );
+	if ( ! existsSync( examplesRoot ) ) throw new Error( `three.js checkout is missing examples: ${ examplesRoot }` );
 
-		if ( entry.source.kind !== 'three' ) continue;
-		const sourcePath = resolve( threeRepo, entry.source.path );
-		if ( ! existsSync( sourcePath ) ) throw new Error( `${ entry.id }: missing upstream source ${ sourcePath }` );
-
-	}
+	return readdirSync( examplesRoot, { withFileTypes: true } )
+		.filter( ( entry ) => entry.isFile() )
+		.map( ( entry ) => entry.name )
+		.filter( ( filename ) => filename.startsWith( 'webgpu_' ) && filename.endsWith( '.html' ) )
+		.filter( ( filename ) => ! shouldSkipE2EExample( filename ) )
+		.sort();
 
 }
 
-function buildCatalogue() {
+function upstreamCase( filename ) {
 
-	const local = localSources();
-	const cases = coverageCaseNames().map( ( filename ) => {
+	const id = filename.replace( /\.html$/, '' );
+	return {
+		id,
+		source: {
+			kind: 'three',
+			path: `examples/${ filename }`,
+			route: filename,
+			originalUrl: `https://threejs.org/examples/#${ id }`,
+		},
+	};
 
-		const id = filename.replace( /\.html$/, '' );
-		if ( filename.startsWith( 'webgpu_' ) ) {
+}
 
-			return {
-				id,
-				source: {
-					kind: 'three',
-					path: `examples/${ filename }`,
-					route: filename,
-					originalUrl: `https://threejs.org/examples/#${ id }`,
-				},
-			};
+function localCase( filename, source, repoRoot ) {
 
-		}
-		const source = local.get( filename );
-		if ( ! source ) throw new Error( `${ filename }: no local source route found` );
-		if ( ! existsSync( resolve( REPO_ROOT, source.path ) ) ) throw new Error( `${ filename }: missing local source ${ source.path }` );
-		return { id, source };
+	if ( ! source ) throw new Error( `${ filename }: no local source route found` );
+	if ( ! existsSync( resolve( repoRoot, source.path ) ) ) throw new Error( `${ filename }: missing local source ${ source.path }` );
+	return {
+		id: filename.replace( /\.html$/, '' ),
+		source,
+	};
 
-	} ).sort( ( left, right ) => left.id.localeCompare( right.id ) );
+}
 
-	assertThreeCheckout( cases );
+export function buildCatalogue( {
+	threeRepoPath,
+	repoRoot = REPO_ROOT,
+	examplesRoot = EXAMPLES_ROOT,
+	verifyCheckout = assertOfficialThreeR185Checkout,
+} = {} ) {
+
+	if ( ! threeRepoPath ) throw new Error( 'authoritative catalogue generation requires --three-repo=<exact-r185-checkout>' );
+	const local = localSources( { repoRoot, examplesRoot } );
+	const upstream = threeExampleCaseNames( threeRepoPath, verifyCheckout ).map( upstreamCase );
+	const localCases = [ ...local.entries() ].map( ( [ filename, source ] ) => localCase( filename, source, repoRoot ) );
+	const cases = [ ...upstream, ...localCases ];
+
+	cases.sort( ( left, right ) => left.id.localeCompare( right.id ) );
+	const ids = cases.map( ( entry ) => entry.id );
+	for ( const id of ids ) assertCanonicalExampleId( id, 'Generated example catalogue identifier' );
+	if ( new Set( ids ).size !== ids.length ) throw new Error( 'catalogue contains duplicate case ids' );
 	return {
 		schemaVersion: 1,
 		threeVersion: THREE_VERSION,
@@ -137,19 +127,109 @@ function buildCatalogue() {
 
 }
 
-const catalogue = buildCatalogue();
-const serialized = JSON.stringify( catalogue, null, '\t' ) + '\n';
+export function validateCatalogueSnapshot( {
+	cataloguePath = OUTPUT_PATH,
+	repoRoot = REPO_ROOT,
+	examplesRoot = EXAMPLES_ROOT,
+} = {} ) {
 
-if ( checkOnly ) {
+	if ( ! existsSync( cataloguePath ) ) throw new Error( `missing ${ cataloguePath }` );
+	const raw = readSafeContainedFile(
+		dirname( resolve( cataloguePath ) ),
+		cataloguePath,
+		{ label: 'Example catalogue snapshot' },
+	).toString( 'utf8' );
+	const catalogue = JSON.parse( raw );
+	if ( ! catalogue || Array.isArray( catalogue ) || typeof catalogue !== 'object' ) throw new Error( 'example-catalogue.json must contain an object' );
+	if ( catalogue.schemaVersion !== 1 ) throw new Error( `example-catalogue.json has unsupported schemaVersion ${ catalogue.schemaVersion }` );
+	if ( catalogue.threeVersion !== THREE_VERSION ) throw new Error( `example-catalogue.json targets Three ${ catalogue.threeVersion }, expected ${ THREE_VERSION }` );
+	if ( ! Array.isArray( catalogue.cases ) || catalogue.cases.length === 0 ) throw new Error( 'example-catalogue.json must contain non-empty cases' );
 
-	if ( ! existsSync( OUTPUT_PATH ) ) throw new Error( `missing ${ OUTPUT_PATH }` );
-	const current = readFileSync( OUTPUT_PATH, 'utf8' );
-	if ( current !== serialized ) throw new Error( 'example-catalogue.json is stale; run pnpm --filter examples-batch catalogue' );
-	console.log( `[example-catalogue] ${ catalogue.cases.length } tracked source routes verified` );
+	const ids = catalogue.cases.map( ( entry ) => entry && entry.id );
+	if ( ids.some( ( id ) => typeof id !== 'string' || id.length === 0 ) ) throw new Error( 'example-catalogue.json contains a case without an id' );
+	for ( const id of ids ) assertCanonicalExampleId( id, 'Example catalogue identifier' );
+	if ( new Set( ids ).size !== ids.length ) throw new Error( 'example-catalogue.json contains duplicate case ids' );
+	const sortedIds = ids.slice().sort( ( left, right ) => left.localeCompare( right ) );
+	if ( ids.some( ( id, index ) => id !== sortedIds[ index ] ) ) throw new Error( 'example-catalogue.json cases are not sorted by id' );
 
-} else {
+	const expectedLocal = [ ...localSources( { repoRoot, examplesRoot } ).entries() ]
+		.map( ( [ filename, source ] ) => localCase( filename, source, repoRoot ) )
+		.sort( ( left, right ) => left.id.localeCompare( right.id ) );
+	const actualLocal = catalogue.cases.filter( ( entry ) => entry.source?.kind === 'local' );
+	if ( JSON.stringify( actualLocal ) !== JSON.stringify( expectedLocal ) ) {
 
-	writeFileSync( OUTPUT_PATH, serialized );
-	console.log( `[example-catalogue] wrote ${ OUTPUT_PATH } (${ catalogue.cases.length } source routes)` );
+		throw new Error( 'example-catalogue.json local routes are stale; refresh with an exact r185 checkout' );
+
+	}
+
+	const upstream = catalogue.cases.filter( ( entry ) => entry.source?.kind === 'three' );
+	if ( upstream.length === 0 ) throw new Error( 'example-catalogue.json contains no upstream Three cases' );
+	for ( const entry of upstream ) {
+
+		const filename = `${ entry.id }.html`;
+		if (
+			entry.source.path !== `examples/${ filename }` ||
+			entry.source.route !== filename ||
+			entry.source.originalUrl !== `https://threejs.org/examples/#${ entry.id }`
+		) throw new Error( `example-catalogue.json has an invalid upstream source for ${ entry.id }` );
+		if ( shouldSkipE2EExample( filename ) ) throw new Error( `example-catalogue.json includes intentionally unsupported upstream case ${ filename }` );
+
+	}
+
+	const normalized = JSON.stringify( catalogue, null, '\t' ) + '\n';
+	if ( raw !== normalized ) throw new Error( 'example-catalogue.json is not canonically formatted' );
+	return catalogue;
+
+}
+
+function main() {
+
+	const args = process.argv.slice( 2 );
+	const checkOnly = args.includes( '--check' );
+	const threeRepoArg = args.find( ( value ) => value.startsWith( '--three-repo=' ) );
+	const configuredThreeRepo = threeRepoArg?.slice( '--three-repo='.length ) || process.env.TSLP_THREE_REPO || '';
+	const threeRepoPath = configuredThreeRepo ? resolve( configuredThreeRepo ) : null;
+	if ( args.includes( '--require-three-repo' ) && ! threeRepoPath ) {
+
+		throw new Error( 'authoritative catalogue check requires TSLP_THREE_REPO or --three-repo=<exact-r185-checkout>' );
+
+	}
+	if ( ! checkOnly && ! threeRepoPath ) {
+
+		throw new Error( 'catalogue refresh requires --three-repo=<exact-r185-checkout>' );
+
+	}
+	const catalogue = threeRepoPath
+		? buildCatalogue( { threeRepoPath } )
+		: validateCatalogueSnapshot();
+	const serialized = JSON.stringify( catalogue, null, '\t' ) + '\n';
+
+	if ( checkOnly ) {
+
+		const current = readSafeContainedFile( BATCH_ROOT, OUTPUT_PATH, {
+			label: 'Current example catalogue',
+		} ).toString( 'utf8' );
+		if ( current !== serialized ) throw new Error( 'example-catalogue.json is stale; refresh it with --three-repo=<exact-r185-checkout>' );
+		console.log( `[example-catalogue] ${ catalogue.cases.length } tracked source routes verified${ threeRepoPath ? ' against exact r185 corpus' : ' structurally' }` );
+
+	} else {
+
+		const outputBoundary = prepareOutputRoot( BATCH_ROOT, {
+			repositoryRoot: REPO_ROOT,
+			allowedRepositoryRoots: [ BATCH_ROOT ],
+			label: 'Example catalogue output boundary',
+		} );
+		writeOutputFileAtomic( outputBoundary, OUTPUT_PATH, serialized, {
+			label: 'Example catalogue',
+		} );
+		console.log( `[example-catalogue] wrote ${ OUTPUT_PATH } (${ catalogue.cases.length } source routes)` );
+
+	}
+
+}
+
+if ( process.argv[ 1 ] && import.meta.url === pathToFileURL( resolve( process.argv[ 1 ] ) ).href ) {
+
+	main();
 
 }

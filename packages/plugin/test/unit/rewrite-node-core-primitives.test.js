@@ -1,5 +1,5 @@
 /**
- * Exact r184 whole-module rewrite tests for the final retained Node helpers.
+ * Exact r185 whole-module rewrite tests for the final retained Node helpers.
  */
 
 import test from 'node:test';
@@ -17,7 +17,7 @@ const RUNTIME_ID = 'virtual:tsl-precompile/__slim-rewrite-runtime/node-core-prim
 
 function rewrite( path, source = readFileSync( path, 'utf8' ) ) {
 
-	return rewriteThreeSource( source, path, { threeVersion: '0.184.0', pluginVersion: '0.0.0' } );
+	return rewriteThreeSource( source, path, { threeVersion: '0.185.1', pluginVersion: '0.0.0' } );
 
 }
 
@@ -50,11 +50,14 @@ test( 'rewrite/NodeUtils: replaces the exact stock module with three pure named 
 
 } );
 
-test( 'rewrite/nodes/core/constants: replaces the exact stock module with the NodeAccess re-export', () => {
+test( 'rewrite/nodes/core/constants: replaces the exact stock module with graph-free access/update constants', () => {
 
 	const result = rewrite( NODE_CONSTANTS_PATH );
-	assert.deepEqual( directReExport( result ), [ { local: 'NodeAccess', exported: 'NodeAccess' } ] );
-	assert.doesNotMatch( result.code, /(?:NodeShaderStage|NodeUpdateType|NodeType|defaultShaderStages|vectorComponents)/ );
+	assert.deepEqual( directReExport( result ), [
+		{ local: 'NodeAccess', exported: 'NodeAccess' },
+		{ local: 'NodeUpdateType', exported: 'NodeUpdateType' },
+	] );
+	assert.doesNotMatch( result.code, /(?:NodeShaderStage|NodeType|defaultShaderStages|vectorComponents)/ );
 
 } );
 
@@ -97,7 +100,7 @@ for ( const [ label, path, mutate ] of [
 		const result = rewrite( path, mutate( readFileSync( path, 'utf8' ) ) );
 		assert.ok( result );
 		assert.equal( result.code, null );
-		assert.match( result.warning, /complete r184 module AST changed/ );
+		assert.match( result.warning, /complete r185 module AST changed/ );
 
 	} );
 

@@ -11,14 +11,14 @@ import assert from 'node:assert/strict';
 import {
 	registerArtifact,
 	registerAuxArtifact,
-	__resetAuxRegistryForTests,
 } from '@tsl-precompile/runtime';
+import { __resetAuxRegistryForTests } from '../../runtime/src/aux-loader.js';
 
 import { listAllCaptures, summarise } from '../src/data-source.js';
 
 // Reset shared registries before each test. The user-material registry
-// from artifact-loader.js exposes `__resetRegistry`; the aux one exposes
-// `__resetAuxRegistryForTests`.
+// from artifact-loader.js exposes `__resetRegistry`; the aux test helper stays
+// internal so it cannot accidentally become part of the public runtime API.
 function reset() {
 
 	__resetAuxRegistryForTests();

@@ -71,6 +71,81 @@ test( 'diffArtifactShapes accepts identical fingerprints', () => {
 
 } );
 
+test( 'fingerprintArtifactShape detects GPU binding and byte-layout drift without hashing snapshots or WGSL text', () => {
+
+	const makeArtifact = ( {
+		offset = 0,
+		comparison = false,
+		bindingOrder = [ 'ubo', 'sampler' ],
+		fragmentShader = 'fragment-a',
+	} = {} ) => ( {
+		vertexShader: 'vertex-a',
+		fragmentShader,
+		attributes: [ { name: 'position', type: 'vec3', source: 'geometry' } ],
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'object', kind: 'uniform-buffer', visibility: 3, byteLength: 16 },
+				{ name: 'shadowSampler', kind: 'sampler', visibility: 2, comparison },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			shared: false,
+			visibility: 3,
+			byteLength: 16,
+			slots: [ {
+				name: 'opacity',
+				offset,
+				size: 4,
+				dtype: 'number',
+				source: {
+					kind: 'material.opacity',
+					valueSnapshot: { type: 'number', data: 0.5 },
+				},
+			} ],
+			textures: [ {
+				bindingKind: 'sampler',
+				name: 'shadowSampler',
+				visibility: 2,
+				comparison,
+				source: { kind: 'artifact.texture', snapshot: { width: 1, height: 1 } },
+			} ],
+			orderedBindings: bindingOrder.map( ( type ) => ( {
+				type,
+				name: type === 'ubo' ? 'object' : 'shadowSampler',
+				visibility: type === 'ubo' ? 3 : 2,
+				comparison: type === 'sampler' ? comparison : undefined,
+			} ) ),
+		} ],
+	} );
+
+	const baseline = fingerprintArtifactShape( makeArtifact() );
+	assert.equal( diffArtifactShapes( baseline, fingerprintArtifactShape( makeArtifact( {
+		fragmentShader: 'different WGSL text',
+	} ) ) ).ok, true, 'shader text remains deliberately excluded' );
+
+	for ( const changed of [
+		makeArtifact( { offset: 4 } ),
+		makeArtifact( { comparison: true } ),
+		makeArtifact( { bindingOrder: [ 'sampler', 'ubo' ] } ),
+	] ) {
+
+		assert.equal( diffArtifactShapes( baseline, fingerprintArtifactShape( changed ) ).ok, false );
+
+	}
+
+	const snapshotOnly = makeArtifact();
+	snapshotOnly.uniformPlan[ 0 ].slots[ 0 ].source.valueSnapshot.data = 1;
+	snapshotOnly.uniformPlan[ 0 ].textures[ 0 ].source.snapshot.width = 64;
+	assert.equal(
+		diffArtifactShapes( baseline, fingerprintArtifactShape( snapshotOnly ) ).ok,
+		true,
+		'numeric and texture snapshots remain deliberately excluded',
+	);
+
+} );
+
 test( 'fingerprintArtifactShape includes material-compute ownership and schedule topology', () => {
 
 	const rows = fingerprintArtifactShape( {
@@ -112,5 +187,82 @@ test( 'fingerprintArtifactShape includes material-compute ownership and schedule
 		'material-compute\tresource\tresource:0\tstorage-buffer',
 		'material-compute\tschedule\t5:kernel:0\tobject',
 	] );
+
+} );
+
+test( 'fingerprintArtifactShape includes variant-local layouts', () => {
+
+	const makeFamily = ( offset ) => ( {
+		uniformPlan: [],
+		variants: {
+			opaque: {
+				uniformPlan: [ {
+					name: 'material',
+					slots: [ {
+						name: 'opacity',
+						offset,
+						size: 4,
+						dtype: 'number',
+						source: { kind: 'material.opacity' },
+					} ],
+				} ],
+			},
+		},
+	} );
+
+	const expected = fingerprintArtifactShape( makeFamily( 0 ) );
+	const actual = fingerprintArtifactShape( makeFamily( 64 ) );
+	assert.equal( diffArtifactShapes( expected, actual ).ok, false );
+	assert.match( diffArtifactShapes( expected, actual ).missing[ 0 ], /^\[variant:"opaque"\]/ );
+
+} );
+
+test( 'fingerprintArtifactShape includes compute public mappings and internal-pass schedules', () => {
+
+	const makeArtifact = ( binding, stage = 'horizontal' ) => ( {
+		kind: 'compute',
+		uniformPlan: [],
+		computeBindings: {
+			version: 'compute-bindings@1',
+			entries: [ {
+				key: 'particles',
+				target: 'storage-buffer',
+				group: 0,
+				binding,
+				access: 'read-write',
+				arrayType: 'Float32Array',
+				count: 4,
+				itemSize: 4,
+				byteLength: 64,
+			} ],
+		},
+		internalPass: {
+			schema: 'internal-pass@1',
+			family: 'shadow-vsm',
+			stage,
+			shape: `shadow-vsm-${ stage }`,
+			uniforms: [],
+			inputs: [],
+			output: { topology: { kind: 'texture', dimension: '2d' } },
+			config: { order: 1 },
+		},
+	} );
+
+	const expected = fingerprintArtifactShape( makeArtifact( 0 ) );
+	assert.equal( diffArtifactShapes( expected, fingerprintArtifactShape( makeArtifact( 1 ) ) ).ok, false );
+	assert.equal( diffArtifactShapes( expected, fingerprintArtifactShape( makeArtifact( 0, 'vertical' ) ) ).ok, false );
+
+} );
+
+test( 'diffArtifactShapes compares row multiplicity', () => {
+
+	assert.deepEqual(
+		diffArtifactShapes( [ 'same', 'same' ], [ 'same' ] ),
+		{ ok: false, missing: [ 'same' ], extra: [] },
+	);
+	assert.deepEqual(
+		diffArtifactShapes( [ 'same' ], [ 'same', 'same' ] ),
+		{ ok: false, missing: [], extra: [ 'same' ] },
+	);
 
 } );

@@ -64,6 +64,31 @@ test( 'material texture rebinder re-resolves material texture bindings', () => {
 
 } );
 
+test( 'material texture rebinder refreshes the captured UUID relation for uniform writers', () => {
+
+	const textureA = { isTexture: true, uuid: 'fresh-a', version: 1 };
+	const textureB = { isTexture: true, uuid: 'fresh-b', version: 1 };
+	const binding = createBinding( textureA );
+	const artifact = {};
+	const source = { kind: 'material.map', property: 'map', textureUuid: 'captured-map' };
+	const rebinder = createMaterialTextureRebinder( [ {
+		binding,
+		artifact,
+		groupName: 'render',
+		bindingName: 'nodeTexture0',
+		material: {},
+		source,
+	} ], {
+		resolveTextureBinding: () => textureB,
+	} );
+
+	rebinder.updateBefore( {} );
+
+	assert.equal( artifact._textureRefs.get( source.textureUuid ), textureB );
+	assert.equal( Object.prototype.propertyIsEnumerable.call( artifact, '_textureRefs' ), false );
+
+} );
+
 test( 'artifact texture rebinder passes the current render-target texture as an avoid hint', () => {
 
 	const textureA = { uuid: 'a', version: 1 };
@@ -98,6 +123,46 @@ test( 'artifact texture rebinder passes the current render-target texture as an 
 
 	assert.deepEqual( optionsSeen, { avoidTexture, frame } );
 	assert.equal( binding.texture, textureB );
+
+} );
+
+test( 'artifact texture rebinder refreshes the captured UUID relation for uniform writers', () => {
+
+	const textureA = { isTexture: true, uuid: 'fresh-a', version: 1 };
+	const textureB = { isTexture: true, uuid: 'fresh-b', version: 1 };
+	const binding = createBinding( textureA );
+	const source = { kind: 'artifact.texture', textureUuid: 'captured-texture' };
+	const refs = new Map( [ [ source.textureUuid, textureA ] ] );
+	const rootArtifact = {};
+	Object.defineProperty( rootArtifact, '_textureRefs', {
+		value: refs,
+		enumerable: false,
+		configurable: true,
+		writable: true,
+	} );
+	const artifact = {};
+	Object.defineProperty( artifact, '_textureRefs', {
+		get: () => rootArtifact._textureRefs,
+		set: ( value ) => { rootArtifact._textureRefs = value; },
+		configurable: true,
+	} );
+	const rebinder = createArtifactTextureRebinder( [ {
+		binding,
+		artifact,
+		groupName: 'render',
+		bindingName: 'nodeTexture0',
+		material: {},
+		source,
+	} ], {
+		resolveTextureBinding: () => textureB,
+	} );
+
+	rebinder.updateBefore( {} );
+
+	assert.equal( rootArtifact._textureRefs, refs, 'shared root/view map identity is preserved' );
+	assert.equal( artifact._textureRefs, refs );
+	assert.equal( artifact._textureRefs.get( source.textureUuid ), textureB );
+	assert.equal( Object.prototype.propertyIsEnumerable.call( rootArtifact, '_textureRefs' ), false );
 
 } );
 

@@ -1,30 +1,66 @@
 #!/usr/bin/env node
-// Generate /public/examples.json + /public/examples/thumbs/*.webp from the
-// batch harness output. Run manually after each batch sweep:
-//   pnpm --filter @tsl-precompile/site data
-// CI does not run this — outputs are committed.
+// Generate public/examples.json and its thumbnails exclusively from the
+// canonical schema-2 campaign. Loose screenshots, artifact dumps, reports, and
+// the human-readable coverage markdown are never discovery inputs.
 
-import { readFile, stat, mkdir, writeFile, rename } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { dirname, resolve, join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { readdir } from 'node:fs/promises';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
 import sharp from 'sharp';
 
-const __dirname = dirname( fileURLToPath( import.meta.url ) );
-const SITE_ROOT = resolve( __dirname, '..' );
-const REPO_ROOT = resolve( SITE_ROOT, '..', '..' );
-const RESULTS = resolve( REPO_ROOT, 'packages/examples/batch/results' );
-const SHOTS = resolve( RESULTS, 'shots' );
-const ARTIFACTS = resolve( RESULTS, 'artifacts' );
-const COVERAGE_MD = resolve( RESULTS, 'coverage-summary.md' );
-const REPORT_JSON = resolve( RESULTS, 'report.json' );
-const CATALOGUE_JSON = resolve( REPO_ROOT, 'packages/examples/batch/example-catalogue.json' );
+import {
+	E2E_COVERAGE_JSON,
+	E2E_EVIDENCE_SET_JSON,
+	readSafeContainedFile,
+} from '../../examples/batch/e2e-evidence.mjs';
+import {
+	resolveStockHarnessSourceFiles,
+	stockHarnessFingerprint,
+	validateCanonicalStockReport,
+} from '../../examples/batch/stock-report-contract.mjs';
+import {
+	assertCanonicalExampleId,
+	assertCanonicalExampleName,
+	assertOutputDirectoryTarget,
+	assertOutputFileTarget,
+	ensureOutputDirectory,
+	prepareOutputRoot,
+	removeOutputPath,
+	writeOutputFileAtomic,
+} from '../../examples/batch/output-path-safety.mjs';
+import {
+	assertKnownSiteSelectorArguments,
+	assertPublishableSitePublicEvidence,
+	describeCanonicalStockReport,
+	loadCanonicalExamplesEvidence,
+	resolveCanonicalExamplesEvidenceRoot,
+	resolveCanonicalSitePublicRoot,
+	resolveCanonicalStockReport,
+} from './examples-evidence-contract.mjs';
+import { probeThumbHealth, renderBoundShot } from './evidence-image-buffer.mjs';
 
-const PUBLIC = resolve( SITE_ROOT, 'public' );
-const THUMBS = resolve( PUBLIC, 'examples/thumbs' );
-const OUT_JSON = resolve( PUBLIC, 'examples.json' );
+assertKnownSiteSelectorArguments();
+const SELF = dirname( fileURLToPath( import.meta.url ) );
+const SITE_ROOT = resolve( SELF, '..' );
+const REPO_ROOT = resolve( SITE_ROOT, '../..' );
+const RESULTS = resolveCanonicalExamplesEvidenceRoot( { repositoryRoot: REPO_ROOT } );
+const CATALOGUE_JSON = resolve( REPO_ROOT, 'packages/examples/batch/example-catalogue.json' );
+const STOCK_REPORT_JSON = resolveCanonicalStockReport( { repositoryRoot: REPO_ROOT } );
 const GENERATOR_SOURCE = fileURLToPath( import.meta.url );
+const EVIDENCE_CONTRACT_SOURCE = resolve( SELF, 'examples-evidence-contract.mjs' );
+const IMAGE_BUFFER_SOURCE = resolve( SELF, 'evidence-image-buffer.mjs' );
+
+const SELECTED_PUBLIC = resolveCanonicalSitePublicRoot( { siteRoot: SITE_ROOT } );
+let PUBLIC = SELECTED_PUBLIC;
+let THUMBS_ROOT = resolve( PUBLIC, 'examples/thumbs' );
+let THUMBS = THUMBS_ROOT;
+let THUMB_URL_PREFIX = 'examples/thumbs';
+let OUT_JSON = resolve( PUBLIC, 'examples.json' );
+let OUT_COVERAGE = resolve( PUBLIC, E2E_COVERAGE_JSON );
+let OUT_MANIFEST = resolve( PUBLIC, E2E_EVIDENCE_SET_JSON );
 
 const THUMB_W = 320;
 const THUMB_H = 240;
@@ -33,362 +69,446 @@ const MODAL_H = 480;
 const WEBP_Q = 78;
 
 function sha256( value ) {
+
 	return createHash( 'sha256' ).update( value ).digest( 'hex' );
+
 }
 
-// ---------- coverage-summary.md parser ----------
+async function resizeBoundShot( sourceBytes, destPath, width, height ) {
 
-function parseCoverage( md ) {
-	const lines = md.split( '\n' );
-	const sections = []; // [{ id, label, rows: [{ basename, capture, replay, psnr, verdict, note }] }]
-	let current = null;
+	const bytes = await renderBoundShot( sourceBytes, width, height, { quality: WEBP_Q } );
+	writeOutputFileAtomic( PUBLIC, destPath, bytes, {
+		label: 'Bound example thumbnail',
+	} );
+	return { bytes, sha256: sha256( bytes ) };
 
-	const sectionMap = {
-		'Lights': 'lights',
-		'Materials': 'materials',
-		'Shadows': 'shadows',
-		'Sprites': 'sprites',
-		'Compute': 'compute',
-		'Camera': 'camera',
-		'MRT / RenderTargets': 'mrt',
-		'Particles': 'particles',
-		'Postprocessing': 'postprocessing',
-		'Misc': 'misc',
-	};
-
-	for ( const raw of lines ) {
-		const h = raw.match( /^## (.+?)\s*\(/ );
-		if ( h ) {
-			const label = h[ 1 ];
-			const id = sectionMap[ label ] ?? label.toLowerCase().replace( /\W+/g, '-' );
-			current = { id, label, rows: [] };
-			sections.push( current );
-			continue;
-		}
-		if ( ! current ) continue;
-		const m = raw.match( /^\| ([^ |]+\.html) \| (.+?) \| (.+?) \| (.+?) \| (.+?) \|(.*)\|/ );
-		if ( ! m ) continue;
-		const basename = m[ 1 ].replace( /\.html$/, '' );
-		const capture = m[ 2 ].trim() === '✓';
-		const replay = m[ 3 ].trim() === '✓';
-		const psnrText = m[ 4 ].trim();
-		let psnr = null;
-		if ( psnrText === 'inf' ) psnr = Infinity;
-		else if ( /^[\d.]+$/.test( psnrText ) ) psnr = parseFloat( psnrText );
-		const verdict = m[ 5 ].includes( 'matches' ) ? 'matches' : 'regression';
-		const note = m[ 6 ].trim();
-		current.rows.push( { basename, capture, replay, psnr, verdict, note } );
-	}
-	return sections;
 }
-
-// ---------- aux.json enrichment ----------
-
-async function readAux( basename ) {
-	const path = join( ARTIFACTS, `${basename}.html.aux.json` );
-	if ( ! existsSync( path ) ) return null;
-	try {
-		const raw = await readFile( path, 'utf8' );
-		const arr = JSON.parse( raw );
-		let materialCount = 0;
-		let totalWgslBytes = 0;
-		let hasCompute = false;
-		const shapes = new Set();
-		const matShapes = new Set();
-		for ( const item of arr ) {
-			const a = item.artifact ?? {};
-			const v = a.vertexShader ?? '';
-			const f = a.fragmentShader ?? '';
-			const c = a.computeShader ?? '';
-			if ( v || f || c ) {
-				materialCount += 1;
-				totalWgslBytes += v.length + f.length + c.length;
-			}
-			if ( c ) hasCompute = true;
-			if ( item.shape ) shapes.add( item.shape );
-			if ( a.materialShape ) matShapes.add( a.materialShape );
-		}
-		return {
-			artifactCount: arr.length,
-			materialCount,
-			totalWgslBytes,
-			hasCompute,
-			shapes: [ ...shapes ],
-			materialShapes: [ ...matShapes ],
-		};
-	} catch ( err ) {
-		console.warn( `[examples-data] aux read failed for ${basename}:`, err.message );
-		return null;
-	}
-}
-
-// ---------- thumbnails ----------
-
-async function maybeResize( srcPath, destPath, w, h ) {
-	if ( ! existsSync( srcPath ) ) return false;
-	if ( existsSync( destPath ) ) {
-		const [ s, d ] = await Promise.all( [ stat( srcPath ), stat( destPath ) ] );
-		if ( d.mtimeMs >= s.mtimeMs ) return true;
-	}
-	await mkdir( dirname( destPath ), { recursive: true } );
-	await sharp( srcPath )
-		.resize( { width: w, height: h, fit: 'cover', position: 'attention' } )
-		.webp( { quality: WEBP_Q } )
-		.toFile( destPath );
-	return true;
-}
-
-async function probeThumbHealth( srcPath ) {
-	if ( ! existsSync( srcPath ) ) return 'missing';
-	try {
-		const s = await stat( srcPath );
-		if ( s.size < 2048 ) return 'blank';
-		// Variance test: a truly blank/uniform thumbnail has near-zero stdev across
-		// all RGB channels. Dark demos still have detail and pass this easily.
-		const stats = await sharp( srcPath ).stats();
-		const maxStdev = Math.max( ...stats.channels.slice( 0, 3 ).map( c => c.stdev ) );
-		if ( maxStdev < 2 ) return 'blank';
-		return 'ok';
-	} catch {
-		return 'blank';
-	}
-}
-
-// ---------- per-record assembly ----------
 
 function badgeFor( record ) {
-	const { pixel, hasReplay } = record;
-	if ( ! hasReplay ) return 'capture-only';
-	if ( pixel.identical ) return 'pixel-match';
-	if ( pixel.psnr == null ) return 'renders';
-	if ( pixel.psnr >= 30 ) return 'pixel-match';
-	if ( pixel.psnr >= 20 ) return 'visual-match';
+
+	if ( record.pixel.verdict === 'diagnostic' ) return 'diagnostic';
+	if ( record.pixel.verdict === 'fail' ) return 'fail';
+	return qualityFor( record );
+
+}
+
+function qualityFor( record ) {
+
+	if ( ! record.hasReplay ) return 'capture-only';
+	if ( record.pixel.identical || record.pixel.psnr >= record.pixel.threshold ) return 'pixel-match';
+	if ( record.pixel.psnr !== null && record.pixel.psnr >= 20 ) return 'visual-match';
 	return 'renders';
+
 }
 
 function displayName( basename ) {
-	// "webgpu_lights_rectarealight" → "lights · rectarealight"
+
 	const withoutPrefix = basename.replace( /^webgpu_/, '' );
 	const parts = withoutPrefix.split( '_' );
-	if ( parts.length === 1 ) return parts[ 0 ];
-	return parts[ 0 ] + ' · ' + parts.slice( 1 ).join( ' ' );
+	return parts.length === 1 ? parts[ 0 ] : `${ parts[ 0 ] } · ${ parts.slice( 1 ).join( ' ' ) }`;
+
 }
 
-// "most-impressive first" sort — see plan.
+function categoryIdentity( label ) {
+
+	const known = {
+		Lights: 'lights',
+		Materials: 'materials',
+		Shadows: 'shadows',
+		Sprites: 'sprites',
+		Compute: 'compute',
+		Camera: 'camera',
+		'MRT / RenderTargets': 'mrt',
+		Particles: 'particles',
+		Postprocessing: 'postprocessing',
+		Misc: 'misc',
+	};
+	return known[ label ] || String( label || 'Misc' ).toLowerCase().replace( /\W+/g, '-' );
+
+}
+
 function sortKey( record ) {
-	const tier = { 'pixel-match': 0, 'visual-match': 1, 'renders': 2, 'capture-only': 3 }[ record.badge ] ?? 4;
+
+	const tier = {
+		'pixel-match': 0,
+		'visual-match': 1,
+		diagnostic: 2,
+		renders: 3,
+		'capture-only': 4,
+		fail: 5,
+	}[ record.badge ] ?? 6;
 	const effectivePsnr = record.pixel.identical ? 1e6 : ( record.pixel.psnr ?? 0 );
-	return [ tier, -effectivePsnr, record.basename ];
+	return [ tier, - effectivePsnr, record.basename ];
+
 }
 
-function compareSortKeys( a, b ) {
-	for ( let i = 0; i < a.length; i += 1 ) {
-		if ( a[ i ] < b[ i ] ) return - 1;
-		if ( a[ i ] > b[ i ] ) return 1;
+function compareSortKeys( left, right ) {
+
+	for ( let index = 0; index < left.length; index ++ ) {
+
+		if ( left[ index ] < right[ index ] ) return - 1;
+		if ( left[ index ] > right[ index ] ) return 1;
+
 	}
 	return 0;
+
 }
 
-// Apply category-breadth pass on the pixel-match prefix only.
 function reorderForBreadth( records ) {
-	const greens = records.filter( r => r.badge === 'pixel-match' );
-	const rest = records.filter( r => r.badge !== 'pixel-match' );
-	// One per category before doubling up.
+
+	const greens = records.filter( ( record ) => record.badge === 'pixel-match' );
+	const rest = records.filter( ( record ) => record.badge !== 'pixel-match' );
 	const buckets = new Map();
-	for ( const r of greens ) {
-		if ( ! buckets.has( r.category ) ) buckets.set( r.category, [] );
-		buckets.get( r.category ).push( r );
+	for ( const record of greens ) {
+
+		if ( ! buckets.has( record.category ) ) buckets.set( record.category, [] );
+		buckets.get( record.category ).push( record );
+
 	}
-	const effPsnr = r => r.pixel.identical ? 1e6 : ( r.pixel.psnr ?? 0 );
-	for ( const arr of buckets.values() ) arr.sort( ( a, b ) => effPsnr( b ) - effPsnr( a ) );
+	const effectivePsnr = ( record ) => record.pixel.identical ? 1e6 : ( record.pixel.psnr ?? 0 );
+	for ( const recordsInCategory of buckets.values() ) {
+
+		recordsInCategory.sort( ( left, right ) => effectivePsnr( right ) - effectivePsnr( left ) );
+
+	}
 	const breadth = [];
-	while ( buckets.size ) {
-		for ( const [ cat, arr ] of [ ...buckets.entries() ] ) {
-			breadth.push( arr.shift() );
-			if ( ! arr.length ) buckets.delete( cat );
+	while ( buckets.size > 0 ) {
+
+		for ( const [ category, recordsInCategory ] of [ ...buckets.entries() ] ) {
+
+			breadth.push( recordsInCategory.shift() );
+			if ( recordsInCategory.length === 0 ) buckets.delete( category );
+
 		}
+
 	}
 	return [ ...breadth, ...rest ];
+
 }
 
-// ---------- main ----------
-
 async function main() {
-	console.log( '[examples-data] reading inputs…' );
 
-	const [ md, reportRaw, catalogueRaw, generatorRaw ] = await Promise.all( [
-		readFile( COVERAGE_MD, 'utf8' ),
-		readFile( REPORT_JSON, 'utf8' ),
-		readFile( CATALOGUE_JSON, 'utf8' ),
-		readFile( GENERATOR_SOURCE, 'utf8' ),
-	] );
-	const sections = parseCoverage( md );
-	const report = JSON.parse( reportRaw );
-	const catalogue = JSON.parse( catalogueRaw );
-	const catalogueById = new Map( ( catalogue.cases || [] ).map( ( entry ) => [ entry.id, entry ] ) );
+	console.log( `[examples-data] validating canonical schema-2 evidence at ${ RESULTS }…` );
+	console.log( `[examples-data] validating canonical stock report ${ STOCK_REPORT_JSON }…` );
+	const campaign = loadCanonicalExamplesEvidence( {
+		resultsRoot: RESULTS,
+		cataloguePath: CATALOGUE_JSON,
+	} );
+	const stockReportRaw = readSafeContainedFile( dirname( STOCK_REPORT_JSON ), STOCK_REPORT_JSON, {
+		label: 'current stock report',
+	} );
+	const catalogueRaw = readSafeContainedFile( REPO_ROOT, CATALOGUE_JSON, {
+		label: 'current example catalogue',
+	} );
+	const generatorRaw = readSafeContainedFile( REPO_ROOT, GENERATOR_SOURCE, {
+		label: 'current examples data generator',
+	} );
+	const evidenceContractRaw = readSafeContainedFile( REPO_ROOT, EVIDENCE_CONTRACT_SOURCE, {
+		label: 'current examples evidence contract',
+	} );
+	const imageBufferRaw = readSafeContainedFile( REPO_ROOT, IMAGE_BUFFER_SOURCE, {
+		label: 'current verified evidence image helper',
+	} );
+	const stockHarnessSha256 = stockHarnessFingerprint(
+		resolveStockHarnessSourceFiles( REPO_ROOT ).map( ( path ) => readSafeContainedFile(
+			REPO_ROOT,
+			path,
+			{ label: `current stock harness source ${ relative( REPO_ROOT, path ) }` },
+		) ),
+	);
+	const stockReport = JSON.parse( stockReportRaw.toString( 'utf8' ) );
+	const stockReportDescriptor = describeCanonicalStockReport( STOCK_REPORT_JSON, stockReportRaw, stockReport );
+	const catalogueJson = JSON.parse( catalogueRaw.toString( 'utf8' ) );
+	validateCanonicalStockReport( stockReport, {
+		catalogue: catalogueJson,
+		catalogueSha256: sha256( catalogueRaw ),
+		harnessSha256: stockHarnessSha256,
+	} );
+	const stockByName = new Map( stockReport.details.map( ( detail ) => [ detail.name, detail ] ) );
 
-	const universe = new Set( catalogueById.keys() );
-	const evidenceNames = new Set();
-	for ( const sec of sections ) for ( const row of sec.rows ) evidenceNames.add( row.basename );
-	const missingSources = [ ...evidenceNames ].filter( ( name ) => ! universe.has( name ) );
-	const missingEvidence = [ ...universe ].filter( ( name ) => ! evidenceNames.has( name ) );
-	if ( missingSources.length || missingEvidence.length ) {
-		throw new Error( `source/evidence catalogue drift (missing sources: ${ missingSources.join( ', ' ) || 'none' }; missing evidence: ${ missingEvidence.join( ', ' ) || 'none' })` );
+	for ( const catalogueEntry of campaign.catalogue.records ) {
+
+		assertCanonicalExampleId( catalogueEntry.id, 'Public example catalogue identifier' );
+		assertCanonicalExampleName( catalogueEntry.name, 'Public example catalogue name' );
+
 	}
+	const thumbnailGeneration = assertCanonicalExampleId(
+		[
+			campaign.coverage.campaignId,
+			campaign.coverageSource.sha256.slice( 0, 16 ),
+			sha256( generatorRaw ).slice( 0, 16 ),
+			sha256( imageBufferRaw ).slice( 0, 16 ),
+			sha256( JSON.stringify( sharp.versions ) ).slice( 0, 12 ),
+		].join( '-' ),
+		'Public thumbnail generation identifier',
+	);
+	PUBLIC = prepareOutputRoot( SELECTED_PUBLIC, {
+		repositoryRoot: REPO_ROOT,
+		allowedRepositoryRoots: [ resolve( SITE_ROOT, 'public' ) ],
+		label: 'Site public output root',
+	} );
+	THUMBS_ROOT = resolve( PUBLIC, 'examples/thumbs' );
+	THUMBS = resolve( THUMBS_ROOT, thumbnailGeneration );
+	THUMB_URL_PREFIX = `examples/thumbs/${ thumbnailGeneration }`;
+	OUT_JSON = resolve( PUBLIC, 'examples.json' );
+	OUT_COVERAGE = resolve( PUBLIC, E2E_COVERAGE_JSON );
+	OUT_MANIFEST = resolve( PUBLIC, E2E_EVIDENCE_SET_JSON );
+	console.log( `[examples-data] writing bound public data below ${ PUBLIC }…` );
+	assertOutputDirectoryTarget( PUBLIC, THUMBS_ROOT, { label: 'Public example thumbnail root' } );
+	assertOutputDirectoryTarget( PUBLIC, THUMBS, { label: 'Public example thumbnail generation' } );
+	assertOutputFileTarget( PUBLIC, OUT_JSON, { label: 'Public examples JSON' } );
+	assertOutputFileTarget( PUBLIC, OUT_COVERAGE, { label: 'Public coverage summary' } );
+	assertOutputFileTarget( PUBLIC, OUT_MANIFEST, { label: 'Public campaign manifest' } );
+	ensureOutputDirectory( PUBLIC, THUMBS_ROOT, { label: 'Public example thumbnail root' } );
+	let previousThumbnailGeneration = null;
+	if ( existsSync( OUT_JSON ) ) {
 
-	console.log( `[examples-data] universe: ${universe.size} examples` );
+		const previousRaw = readSafeContainedFile( PUBLIC, OUT_JSON, {
+			label: 'Previous public examples JSON',
+		} );
+		try {
 
-	const rowByBasename = new Map();
-	const categoryByBasename = new Map();
-	for ( const sec of sections ) {
-		for ( const row of sec.rows ) {
-			rowByBasename.set( row.basename, row );
-			categoryByBasename.set( row.basename, { id: sec.id, label: sec.label } );
+			const previous = JSON.parse( previousRaw.toString( 'utf8' ) );
+			if ( previous.provenance?.thumbnailGeneration ) {
+
+				previousThumbnailGeneration = assertCanonicalExampleId(
+					previous.provenance.thumbnailGeneration,
+					'Previous public thumbnail generation',
+				);
+
+			}
+
+		} catch {
+
+			// A malformed previous output cannot safely name a generation to
+			// retain, but it must not prevent a complete validated replacement.
+
 		}
+
 	}
+	for ( const entry of await readdir( THUMBS_ROOT, { withFileTypes: true } ) ) {
 
-	const reportByName = new Map();
-	for ( const d of report.details ?? [] ) reportByName.set( d.name.replace( /\.html$/, '' ), d );
+		if ( entry.isSymbolicLink() ) throw new Error(
+			`Public example thumbnail root contains a symbolic link: ${ entry.name }.`,
+		);
 
-	await mkdir( THUMBS, { recursive: true } );
+	}
+	ensureOutputDirectory( PUBLIC, THUMBS, { label: 'Public example thumbnail generation' } );
 
 	const examples = [];
-	let i = 0;
-	for ( const basename of universe ) {
-		i += 1;
-		if ( i % 25 === 0 ) console.log( `  …${i}/${universe.size}` );
+	const expectedThumbnailFiles = new Set();
+	let index = 0;
+	for ( const catalogueEntry of campaign.catalogue.records ) {
 
-		const cov = rowByBasename.get( basename );
-		const cat = categoryByBasename.get( basename ) ?? { id: 'misc', label: 'Misc' };
-		const rep = reportByName.get( basename );
-		const aux = await readAux( basename );
-		const catalogueEntry = catalogueById.get( basename );
-
-		const replaySrc = join( SHOTS, `${basename}.html.replay.png` );
-		const captureSrc = join( SHOTS, `${basename}.html.capture.png` );
-		const replayThumbDest = join( THUMBS, `${basename}.webp` );
-		const captureThumbDest = join( THUMBS, `${basename}.capture.webp` );
-		const replayModalDest = join( THUMBS, `${basename}.modal.webp` );
-		const captureModalDest = join( THUMBS, `${basename}.capture.modal.webp` );
-
-		const hasReplay = existsSync( replaySrc );
-		const hasCapture = existsSync( captureSrc );
-
-		await Promise.all( [
-			hasReplay && maybeResize( replaySrc, replayThumbDest, THUMB_W, THUMB_H ),
-			hasCapture && maybeResize( captureSrc, captureThumbDest, THUMB_W, THUMB_H ),
-			hasReplay && maybeResize( replaySrc, replayModalDest, MODAL_W, MODAL_H ),
-			hasCapture && maybeResize( captureSrc, captureModalDest, MODAL_W, MODAL_H ),
-		].filter( Boolean ) );
-
-		const thumbHealth = hasReplay ? await probeThumbHealth( replaySrc ) : 'missing';
-
-		const psnrRaw = cov?.psnr ?? null;
-		const psnrIdentical = psnrRaw === Infinity;
+		index ++;
+		if ( index % 25 === 0 ) console.log( `  …${ index }/${ campaign.catalogue.caseCount }` );
+		const name = catalogueEntry.name;
+		const basename = catalogueEntry.id;
+		const row = campaign.rowsByName.get( name );
+		const evidenceCase = campaign.caseByName.get( name );
+		const metrics = row.artifactMetrics;
+		const replayThumbDest = join( THUMBS, `${ basename }.webp` );
+		const captureThumbDest = join( THUMBS, `${ basename }.capture.webp` );
+		const replayModalDest = join( THUMBS, `${ basename }.modal.webp` );
+		const captureModalDest = join( THUMBS, `${ basename }.capture.modal.webp` );
+		for ( const destination of [
+			replayThumbDest,
+			captureThumbDest,
+			replayModalDest,
+			captureModalDest,
+		] ) expectedThumbnailFiles.add( destination.slice( THUMBS.length + 1 ) );
+		const [
+			replayThumb,
+			captureThumb,
+			replayModal,
+			captureModal,
+		] = await Promise.all( [
+			resizeBoundShot( evidenceCase.replay.bytes, replayThumbDest, THUMB_W, THUMB_H ),
+			resizeBoundShot( evidenceCase.capture.bytes, captureThumbDest, THUMB_W, THUMB_H ),
+			resizeBoundShot( evidenceCase.replay.bytes, replayModalDest, MODAL_W, MODAL_H ),
+			resizeBoundShot( evidenceCase.capture.bytes, captureModalDest, MODAL_W, MODAL_H ),
+		] );
+		const thumbHealth = await probeThumbHealth( evidenceCase.replay.bytes );
+		const categoryLabel = row.category;
+		const stock = stockByName.get( name );
 		const record = {
 			basename,
 			displayName: displayName( basename ),
-			category: cat.id,
-			categoryLabel: cat.label,
+			category: categoryIdentity( categoryLabel ),
+			categoryLabel,
 			threejsUrl: catalogueEntry.source.originalUrl ?? null,
 			source: catalogueEntry.source,
-			thumbReplay: hasReplay ? `examples/thumbs/${basename}.webp` : null,
-			thumbCapture: hasCapture ? `examples/thumbs/${basename}.capture.webp` : null,
-			thumbReplayModal: hasReplay ? `examples/thumbs/${basename}.modal.webp` : null,
-			thumbCaptureModal: hasCapture ? `examples/thumbs/${basename}.capture.modal.webp` : null,
+			thumbReplay: `${ THUMB_URL_PREFIX }/${ basename }.webp`,
+			thumbCapture: `${ THUMB_URL_PREFIX }/${ basename }.capture.webp`,
+			thumbReplayModal: `${ THUMB_URL_PREFIX }/${ basename }.modal.webp`,
+			thumbCaptureModal: `${ THUMB_URL_PREFIX }/${ basename }.capture.modal.webp`,
 			smoke: {
-				status: rep?.status ?? null,
-				gpuValidationCount: rep?.gpuValidationCount ?? null,
+				status: stock?.status ?? null,
+				gpuValidationCount: stock?.gpuValidationCount ?? null,
 			},
 			pixel: {
-				psnr: psnrIdentical || psnrRaw == null ? null : psnrRaw,
-				identical: psnrIdentical,
-				threshold: 30,
-				captured: cov?.capture ?? hasCapture,
-				replayed: cov?.replay ?? hasReplay,
+				psnr: row.identical || row.psnr === null ? null : row.psnr,
+				identical: row.identical === true,
+				threshold: row.effectiveThreshold,
+				captured: true,
+				replayed: true,
+				verdict: row.verdict,
 			},
-			hasReplay,
-			hasCapture,
-			materialCount: aux?.materialCount ?? null,
-			artifactCount: aux?.artifactCount ?? null,
-			totalWgslBytes: aux?.totalWgslBytes ?? null,
-			hasCompute: aux?.hasCompute ?? ( cat.id === 'compute' ),
-			shapes: aux?.shapes ?? null,
-			materialShapes: aux?.materialShapes ?? null,
-			notes: cov?.note ?? '',
+			hasReplay: true,
+			hasCapture: true,
+			materialCount: metrics.materialCount,
+			artifactCount: metrics.artifactCount,
+			totalWgslBytes: metrics.totalWgslBytes,
+			hasCompute: metrics.hasCompute,
+			shapes: metrics.shapes,
+			materialShapes: metrics.materialShapes,
+			notes: row.note,
 			thumbHealth,
-		};
-		record.badge = badgeFor( record );
+				evidence: {
+					runId: row.runId,
+					campaignId: campaign.coverage.campaignId,
+					cohort: row.cohort,
+					evidenceRoot: row.evidenceRoot,
+					gate: evidenceCase.detail.evidenceGate,
+					capture: row.capture,
+				replay: row.replay,
+				userArtifacts: row.userArtifacts,
+				auxArtifacts: row.auxArtifacts,
+				artifactMetrics: row.artifactMetrics,
+			},
+			evidenceHashes: {
+				capture: row.capture.sha256,
+				replay: row.replay.sha256,
+				captureThumb: captureThumb.sha256,
+				replayThumb: replayThumb.sha256,
+				captureModal: captureModal.sha256,
+				replayModal: replayModal.sha256,
+			},
+			};
+			record.quality = qualityFor( record );
+			record.badge = badgeFor( record );
 		examples.push( record );
-	}
 
-	// Sort: most-impressive first (tier → -psnr → name), then breadth-promote pixel-matches.
-	examples.sort( ( a, b ) => compareSortKeys( sortKey( a ), sortKey( b ) ) );
+	}
+	examples.sort( ( left, right ) => compareSortKeys( sortKey( left ), sortKey( right ) ) );
 	const ordered = reorderForBreadth( examples );
-
-	// Build categories list (only those that have any visible records).
 	const categoryCounts = new Map();
-	for ( const r of ordered ) {
-		categoryCounts.set( r.category, ( categoryCounts.get( r.category ) ?? 0 ) + 1 );
-	}
-	const categoryLabels = new Map( ordered.map( r => [ r.category, r.categoryLabel ] ) );
-	const CATEGORY_ORDER = [ 'lights', 'materials', 'shadows', 'sprites', 'compute', 'camera', 'mrt', 'particles', 'postprocessing', 'misc' ];
-	const categories = CATEGORY_ORDER
-		.filter( id => categoryCounts.has( id ) )
-		.map( id => ( { id, label: categoryLabels.get( id ), count: categoryCounts.get( id ) } ) );
+	for ( const record of ordered ) categoryCounts.set( record.category, ( categoryCounts.get( record.category ) ?? 0 ) + 1 );
+	const categoryLabels = new Map( ordered.map( ( record ) => [ record.category, record.categoryLabel ] ) );
+	const categoryOrder = [ 'lights', 'materials', 'shadows', 'sprites', 'compute', 'camera', 'mrt', 'particles', 'postprocessing', 'misc' ];
+	const categories = categoryOrder
+		.filter( ( id ) => categoryCounts.has( id ) )
+		.map( ( id ) => ( { id, label: categoryLabels.get( id ), count: categoryCounts.get( id ) } ) );
 	for ( const id of categoryCounts.keys() ) {
-		if ( ! CATEGORY_ORDER.includes( id ) ) {
-			categories.push( { id, label: categoryLabels.get( id ), count: categoryCounts.get( id ) } );
-		}
+
+		if ( ! categoryOrder.includes( id ) ) categories.push( { id, label: categoryLabels.get( id ), count: categoryCounts.get( id ) } );
+
 	}
 
-	// Totals for the hero strip — every number reproducible from the records below.
-	const visible = ordered.filter( r => r.thumbHealth === 'ok' );
-	const totalArtifacts = ordered.reduce( ( a, r ) => a + ( r.artifactCount ?? 0 ), 0 );
-	const totalMaterials = ordered.reduce( ( a, r ) => a + ( r.materialCount ?? 0 ), 0 );
-	const totalWgsl = ordered.reduce( ( a, r ) => a + ( r.totalWgslBytes ?? 0 ), 0 );
-	const pixelMatchCount = ordered.filter( r => r.badge === 'pixel-match' ).length;
-	const visualMatchCount = ordered.filter( r => r.badge === 'visual-match' ).length;
-	const rendersCount = ordered.filter( r => r.badge === 'renders' ).length;
-	const captureOnlyCount = ordered.filter( r => r.badge === 'capture-only' ).length;
-	const blankCount = ordered.length - visible.length;
-
+	const visible = ordered.filter( ( record ) => record.thumbHealth === 'ok' );
+	const upstreamExamples = ordered.filter( ( record ) => record.source.kind === 'three' );
+	const localExamples = ordered.filter( ( record ) => record.source.kind === 'local' );
 	const out = {
+		schemaVersion: 2,
 		generatedAt: new Date().toISOString(),
-		provenance: {
-			coverageSha256: sha256( md ),
-			reportSha256: sha256( reportRaw ),
+				provenance: {
+					campaignId: campaign.coverage.campaignId,
+					coverageSha256: campaign.coverageSource.sha256,
+					evidenceSetSha256: campaign.evidenceSetSource.sha256,
+					publishedEvidence: {
+						summary: {
+							file: E2E_COVERAGE_JSON,
+							sha256: campaign.coverageSource.sha256,
+							campaignId: campaign.coverage.campaignId,
+						},
+						manifest: {
+							file: E2E_EVIDENCE_SET_JSON,
+							sha256: campaign.evidenceSetSource.sha256,
+							campaignId: campaign.coverage.campaignId,
+						},
+					},
+			stockReportSha256: sha256( stockReportRaw ),
+			stockReport: stockReportDescriptor,
 			catalogueSha256: sha256( catalogueRaw ),
 			generatorSha256: sha256( generatorRaw ),
-		},
+			evidenceContractSha256: sha256( evidenceContractRaw ),
+			imageBufferSha256: sha256( imageBufferRaw ),
+			stockHarnessSha256,
+			slimBundleSha256: campaign.coverage.slimBundle.sha256,
+			harnessSourceFingerprint: campaign.coverage.harness.sourceFingerprint,
+				thumbnailGeneration,
+			},
+			coverageVerdicts: {
+				pass: campaign.coverage.totals.pass,
+				diagnostic: campaign.coverage.totals.diagnostic,
+				fail: campaign.coverage.totals.fail,
+			},
 		totals: {
 			examplesProcessed: ordered.length,
+			upstreamExamples: upstreamExamples.length,
+			localExamples: localExamples.length,
+			upstreamReplayCount: upstreamExamples.filter( ( record ) => record.hasCapture && record.hasReplay ).length,
+			localReplayCount: localExamples.filter( ( record ) => record.hasCapture && record.hasReplay ).length,
 			examplesVisible: visible.length,
-			examplesHidden: blankCount,
-			materialsBaked: totalMaterials,
-			artifactsCaptured: totalArtifacts,
-			wgslBytes: totalWgsl,
-			runtimeNodeBuilderCalls: 0,
-			smokeTotal: report.total ?? null,
-			smokePass: report.pass ?? null,
-			smokePassRate: report.total ? Math.round( ( report.pass / report.total ) * 1000 ) / 10 : null,
-			pixelMatchCount,
-			visualMatchCount,
-			rendersCount,
-			captureOnlyCount,
+			examplesHidden: ordered.length - visible.length,
+			materialsBaked: ordered.reduce( ( total, record ) => total + record.materialCount, 0 ),
+			artifactsCaptured: ordered.reduce( ( total, record ) => total + record.artifactCount, 0 ),
+			wgslBytes: ordered.reduce( ( total, record ) => total + record.totalWgslBytes, 0 ),
+			smokeTotal: stockReport.total,
+			smokePass: stockReport.pass,
+			pixelMatchCount: ordered.filter( ( record ) => record.badge === 'pixel-match' ).length,
+			visualMatchCount: ordered.filter( ( record ) => record.badge === 'visual-match' ).length,
+			rendersCount: ordered.filter( ( record ) => record.badge === 'renders' ).length,
+			captureOnlyCount: ordered.filter( ( record ) => record.badge === 'capture-only' ).length,
 		},
-		categories,
-		examples: ordered,
-	};
+			categories,
+			examples: ordered,
+		};
+		assertPublishableSitePublicEvidence( out, 'Generated public site evidence' );
+		for ( const entry of await readdir( THUMBS, { withFileTypes: true } ) ) {
 
-	const tmp = OUT_JSON + '.tmp';
-	await writeFile( tmp, JSON.stringify( out, null, '\t' ) );
-	await rename( tmp, OUT_JSON );
-	console.log( `[examples-data] wrote ${OUT_JSON}` );
-	console.log( `[examples-data] totals: ${out.totals.examplesProcessed} examples, ${out.totals.materialsBaked} materials, ${( out.totals.wgslBytes / 1024 ).toFixed( 1 )} KB WGSL, smoke ${out.totals.smokePassRate}%, pixel-match ${pixelMatchCount}` );
+		if ( expectedThumbnailFiles.has( entry.name ) ) continue;
+		removeOutputPath( PUBLIC, resolve( THUMBS, entry.name ), {
+			recursive: true,
+			label: `Stale generated thumbnail ${ entry.name }`,
+		} );
+
+	}
+	writeOutputFileAtomic( PUBLIC, OUT_JSON, JSON.stringify( out, null, '\t' ), {
+		label: 'Public examples JSON',
+	} );
+	writeOutputFileAtomic( PUBLIC, OUT_COVERAGE, campaign.coverageSource.bytes, {
+		label: 'Public coverage summary',
+	} );
+	writeOutputFileAtomic( PUBLIC, OUT_MANIFEST, campaign.evidenceSetSource.bytes, {
+		label: 'Public campaign manifest',
+	} );
+	for ( const entry of await readdir( THUMBS_ROOT, { withFileTypes: true } ) ) {
+
+		if (
+			! entry.isDirectory() ||
+			entry.name === thumbnailGeneration ||
+			entry.name === previousThumbnailGeneration
+		) continue;
+		removeOutputPath( PUBLIC, resolve( THUMBS_ROOT, entry.name ), {
+			recursive: true,
+			label: `Retired public thumbnail generation ${ entry.name }`,
+		} );
+
+	}
+	console.log( `[examples-data] wrote ${ OUT_JSON } from campaign ${ out.provenance.campaignId }` );
+	console.log(
+		`[examples-data] totals: ${ out.totals.examplesProcessed } examples, ${ out.totals.materialsBaked } materials, ` +
+		`${ ( out.totals.wgslBytes / 1024 ).toFixed( 1 ) } KB WGSL, ` +
+		`official stock smoke ${ out.totals.smokePass }/${ out.totals.smokeTotal }, ` +
+		`pixel-match ${ out.totals.pixelMatchCount }`,
+	);
+
 }
 
-main().catch( err => {
-	console.error( err );
+main().catch( ( error ) => {
+
+	console.error( error );
 	process.exit( 1 );
+
 } );

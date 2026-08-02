@@ -105,3 +105,33 @@ test( 'render pipeline config falls back to the synchronized pipeline cache', ()
 	} );
 
 } );
+
+test( 'render pipeline config partitions non-default depth modes without changing the default shape', () => {
+
+	const outputNode = { isNode: true, type: 'PassTextureNode' };
+	const pipeline = {
+		outputNode,
+		outputColorTransform: true,
+		renderer: {
+			toneMapping: 4,
+			outputColorSpace: 'srgb',
+		},
+	};
+	const normal = createRenderPipelineConfig( pipeline );
+	const logarithmic = createRenderPipelineConfig( {
+		...pipeline,
+		renderer: { ...pipeline.renderer, logarithmicDepthBuffer: true },
+	} );
+	const reversed = createRenderPipelineConfig( {
+		...pipeline,
+		renderer: { ...pipeline.renderer, reversedDepthBuffer: true },
+	} );
+
+	assert.equal( Object.hasOwn( normal, 'logarithmicDepthBuffer' ), false );
+	assert.equal( Object.hasOwn( normal, 'reversedDepthBuffer' ), false );
+	assert.equal( logarithmic.logarithmicDepthBuffer, true );
+	assert.equal( Object.hasOwn( logarithmic, 'reversedDepthBuffer' ), false );
+	assert.equal( reversed.reversedDepthBuffer, true );
+	assert.equal( Object.hasOwn( reversed, 'logarithmicDepthBuffer' ), false );
+
+} );

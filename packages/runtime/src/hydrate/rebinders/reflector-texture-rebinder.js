@@ -53,6 +53,7 @@ export function collectMaterialReflectorBaseNodes( material ) {
 	if ( Array.isArray( list ) ) {
 
 		for ( const node of list ) append( node );
+		return out;
 
 	}
 	for ( const node of collectReflectorBaseNodes( material ) ) append( node );

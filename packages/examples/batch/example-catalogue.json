@@ -1,7 +1,25 @@
 {
 	"schemaVersion": 1,
-	"threeVersion": "0.184.0",
+	"threeVersion": "0.185.1",
 	"cases": [
+		{
+			"id": "abyss",
+			"source": {
+				"kind": "local",
+				"project": "wow-showcase",
+				"path": "packages/examples/wow-showcase/abyss.html",
+				"route": "abyss.html"
+			}
+		},
+		{
+			"id": "architecture",
+			"source": {
+				"kind": "local",
+				"project": "wow-showcase",
+				"path": "packages/examples/wow-showcase/architecture.html",
+				"route": "architecture.html"
+			}
+		},
 		{
 			"id": "bloom",
 			"source": {
@@ -9,6 +27,24 @@
 				"project": "postprocessing-debug",
 				"path": "packages/examples/postprocessing-debug/bloom.html",
 				"route": "bloom.html"
+			}
+		},
+		{
+			"id": "climate",
+			"source": {
+				"kind": "local",
+				"project": "wow-showcase",
+				"path": "packages/examples/wow-showcase/climate.html",
+				"route": "climate.html"
+			}
+		},
+		{
+			"id": "cubemap",
+			"source": {
+				"kind": "local",
+				"project": "pmrem-debug",
+				"path": "packages/examples/pmrem-debug/cubemap.html",
+				"route": "cubemap.html"
 			}
 		},
 		{
@@ -66,6 +102,33 @@
 			}
 		},
 		{
+			"id": "equirect",
+			"source": {
+				"kind": "local",
+				"project": "pmrem-debug",
+				"path": "packages/examples/pmrem-debug/equirect.html",
+				"route": "equirect.html"
+			}
+		},
+		{
+			"id": "fashion",
+			"source": {
+				"kind": "local",
+				"project": "wow-showcase",
+				"path": "packages/examples/wow-showcase/fashion.html",
+				"route": "fashion.html"
+			}
+		},
+		{
+			"id": "from-scene",
+			"source": {
+				"kind": "local",
+				"project": "pmrem-debug",
+				"path": "packages/examples/pmrem-debug/from-scene.html",
+				"route": "from-scene.html"
+			}
+		},
+		{
 			"id": "fxaa",
 			"source": {
 				"kind": "local",
@@ -108,6 +171,15 @@
 				"project": "mrt-debug",
 				"path": "packages/examples/mrt-debug/mask.html",
 				"route": "mask.html"
+			}
+		},
+		{
+			"id": "orbit",
+			"source": {
+				"kind": "local",
+				"project": "wow-showcase",
+				"path": "packages/examples/wow-showcase/orbit.html",
+				"route": "orbit.html"
 			}
 		},
 		{
@@ -192,12 +264,39 @@
 			}
 		},
 		{
+			"id": "pulse",
+			"source": {
+				"kind": "local",
+				"project": "wow-showcase",
+				"path": "packages/examples/wow-showcase/pulse.html",
+				"route": "pulse.html"
+			}
+		},
+		{
+			"id": "race",
+			"source": {
+				"kind": "local",
+				"project": "wow-showcase",
+				"path": "packages/examples/wow-showcase/race.html",
+				"route": "race.html"
+			}
+		},
+		{
 			"id": "reduce",
 			"source": {
 				"kind": "local",
 				"project": "compute-debug",
 				"path": "packages/examples/compute-debug/reduce.html",
 				"route": "reduce.html"
+			}
+		},
+		{
+			"id": "robots",
+			"source": {
+				"kind": "local",
+				"project": "wow-showcase",
+				"path": "packages/examples/wow-showcase/robots.html",
+				"route": "robots.html"
 			}
 		},
 		{
@@ -252,6 +351,24 @@
 				"project": "compute-debug",
 				"path": "packages/examples/compute-debug/texture.html",
 				"route": "texture.html"
+			}
+		},
+		{
+			"id": "tool",
+			"source": {
+				"kind": "local",
+				"project": "wow-showcase",
+				"path": "packages/examples/wow-showcase/tool.html",
+				"route": "tool.html"
+			}
+		},
+		{
+			"id": "transmission",
+			"source": {
+				"kind": "local",
+				"project": "pmrem-debug",
+				"path": "packages/examples/pmrem-debug/transmission.html",
+				"route": "transmission.html"
 			}
 		},
 		{
@@ -471,6 +588,24 @@
 			}
 		},
 		{
+			"id": "webgpu_compute_rasterizer",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_compute_rasterizer.html",
+				"route": "webgpu_compute_rasterizer.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_rasterizer"
+			}
+		},
+		{
+			"id": "webgpu_compute_rasterizer_ibl",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_compute_rasterizer_ibl.html",
+				"route": "webgpu_compute_rasterizer_ibl.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_compute_rasterizer_ibl"
+			}
+		},
+		{
 			"id": "webgpu_compute_reduce",
 			"source": {
 				"kind": "three",
@@ -615,6 +750,42 @@
 			}
 		},
 		{
+			"id": "webgpu_furnace_test",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_furnace_test.html",
+				"route": "webgpu_furnace_test.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_furnace_test"
+			}
+		},
+		{
+			"id": "webgpu_generator_building",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_generator_building.html",
+				"route": "webgpu_generator_building.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_generator_building"
+			}
+		},
+		{
+			"id": "webgpu_generator_city",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_generator_city.html",
+				"route": "webgpu_generator_city.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_generator_city"
+			}
+		},
+		{
+			"id": "webgpu_geometry_loft",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_geometry_loft.html",
+				"route": "webgpu_geometry_loft.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_geometry_loft"
+			}
+		},
+		{
 			"id": "webgpu_hdr",
 			"source": {
 				"kind": "three",
@@ -714,6 +885,15 @@
 			}
 		},
 		{
+			"id": "webgpu_lights_clustered",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_lights_clustered.html",
+				"route": "webgpu_lights_clustered.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_lights_clustered"
+			}
+		},
+		{
 			"id": "webgpu_lights_custom",
 			"source": {
 				"kind": "three",
@@ -801,15 +981,6 @@
 				"path": "examples/webgpu_lights_spotlight.html",
 				"route": "webgpu_lights_spotlight.html",
 				"originalUrl": "https://threejs.org/examples/#webgpu_lights_spotlight"
-			}
-		},
-		{
-			"id": "webgpu_lights_tiled",
-			"source": {
-				"kind": "three",
-				"path": "examples/webgpu_lights_tiled.html",
-				"route": "webgpu_lights_tiled.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_lights_tiled"
 			}
 		},
 		{
@@ -990,6 +1161,15 @@
 				"path": "examples/webgpu_materials_envmaps_bpcem.html",
 				"route": "webgpu_materials_envmaps_bpcem.html",
 				"originalUrl": "https://threejs.org/examples/#webgpu_materials_envmaps_bpcem"
+			}
+		},
+		{
+			"id": "webgpu_materials_envmaps_groundprojected",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_materials_envmaps_groundprojected.html",
+				"route": "webgpu_materials_envmaps_groundprojected.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_materials_envmaps_groundprojected"
 			}
 		},
 		{
@@ -1524,6 +1704,15 @@
 			}
 		},
 		{
+			"id": "webgpu_postprocessing_ssr_denoise",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_postprocessing_ssr_denoise.html",
+				"route": "webgpu_postprocessing_ssr_denoise.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_postprocessing_ssr_denoise"
+			}
+		},
+		{
 			"id": "webgpu_postprocessing_sss",
 			"source": {
 				"kind": "three",
@@ -1731,6 +1920,15 @@
 			}
 		},
 		{
+			"id": "webgpu_skinning_instancing_individual",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_skinning_instancing_individual.html",
+				"route": "webgpu_skinning_instancing_individual.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_skinning_instancing_individual"
+			}
+		},
+		{
 			"id": "webgpu_skinning_points",
 			"source": {
 				"kind": "three",
@@ -1785,6 +1983,15 @@
 			}
 		},
 		{
+			"id": "webgpu_texturegather",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_texturegather.html",
+				"route": "webgpu_texturegather.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_texturegather"
+			}
+		},
+		{
 			"id": "webgpu_texturegrad",
 			"source": {
 				"kind": "three",
@@ -1836,6 +2043,15 @@
 				"path": "examples/webgpu_tonemapping.html",
 				"route": "webgpu_tonemapping.html",
 				"originalUrl": "https://threejs.org/examples/#webgpu_tonemapping"
+			}
+		},
+		{
+			"id": "webgpu_tsl_angular_slicing",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_tsl_angular_slicing.html",
+				"route": "webgpu_tsl_angular_slicing.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_angular_slicing"
 			}
 		},
 		{
@@ -1917,15 +2133,6 @@
 				"path": "examples/webgpu_tsl_raging_sea.html",
 				"route": "webgpu_tsl_raging_sea.html",
 				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_raging_sea"
-			}
-		},
-		{
-			"id": "webgpu_tsl_transpiler",
-			"source": {
-				"kind": "three",
-				"path": "examples/webgpu_tsl_transpiler.html",
-				"route": "webgpu_tsl_transpiler.html",
-				"originalUrl": "https://threejs.org/examples/#webgpu_tsl_transpiler"
 			}
 		},
 		{
@@ -2019,6 +2226,15 @@
 			}
 		},
 		{
+			"id": "webgpu_volume_fire",
+			"source": {
+				"kind": "three",
+				"path": "examples/webgpu_volume_fire.html",
+				"route": "webgpu_volume_fire.html",
+				"originalUrl": "https://threejs.org/examples/#webgpu_volume_fire"
+			}
+		},
+		{
 			"id": "webgpu_volume_lighting",
 			"source": {
 				"kind": "three",
@@ -2061,6 +2277,15 @@
 				"path": "examples/webgpu_water.html",
 				"route": "webgpu_water.html",
 				"originalUrl": "https://threejs.org/examples/#webgpu_water"
+			}
+		},
+		{
+			"id": "women",
+			"source": {
+				"kind": "local",
+				"project": "wow-showcase",
+				"path": "packages/examples/wow-showcase/women.html",
+				"route": "women.html"
 			}
 		}
 	]

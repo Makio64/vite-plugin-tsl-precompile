@@ -5,6 +5,7 @@ import { range } from 'three/tsl';
 import {
 	INSTANCE_MATRIX_ATTRIBUTE_KIND,
 	generateRangeAttributeArray,
+	materializeArtifactAttributeDescriptors,
 } from '@tsl-precompile/contract/attribute-generators';
 import { installMockWebGPU, createMockGPUCanvasContext } from '../../src/mock-webgpu.js';
 import { extractArtifact } from '../../src/vendor/compileTSL.js';
@@ -14,7 +15,7 @@ import { hydrateNodeBuilderState } from '../../../runtime/src/hydrator.js';
 
 installMockWebGPU();
 
-test( 'real r184 RangeNode and instanceMatrix capture as recipes/provenance', async () => {
+test( 'real r185 RangeNode and instanceMatrix capture as recipes/provenance', async () => {
 
 	const THREE = await import( 'three/webgpu' );
 	installRangeAttributeCapture( THREE );
@@ -46,7 +47,7 @@ test( 'real r184 RangeNode and instanceMatrix capture as recipes/provenance', as
 	assert.deepEqual( matrixColumns.map( ( entry ) => entry.objectAttribute.column ).sort(), [ 0, 1, 2, 3 ] );
 	assert.ok( matrixColumns.every( ( entry ) => entry.arraySnapshot === undefined ) );
 
-	const roundTripped = JSON.parse( JSON.stringify( artifact ) );
+	const roundTripped = materializeArtifactAttributeDescriptors( JSON.parse( JSON.stringify( artifact ) ) );
 	const replayState = hydrateNodeBuilderState( roundTripped, material, mesh );
 	const generatedIndex = artifact.attributes.indexOf( generated[ 0 ] );
 	assert.deepEqual(

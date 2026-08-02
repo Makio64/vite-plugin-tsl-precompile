@@ -36,6 +36,7 @@
  */
 
 import { BLOCKED_KINDS, LIGHT_SLOT_KINDS, blockedKindReason, isBlockedKind } from '@tsl-precompile/contract/kinds';
+import { hasExactLiveUniformOverlayAddress } from '@tsl-precompile/contract/dynamic-bindings';
 import { normalizeArtifactLightIdentities } from '@tsl-precompile/contract/light-identities';
 
 // Back-compat export for older tests/callers. The canonical registry now lives
@@ -712,6 +713,33 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 			usedWriters.add( 'writeF32' );
 			return `writeF32(view, ${ off }, frame.renderer ? frame.renderer.toneMappingExposure : 1.0);`;
 
+		case 'environment.intensity': {
+
+			usedWriters.add( 'writeF32' );
+			const fallback = numberSnapshotLiteral( src.valueSnapshot, 1 );
+			return `{ const _value = material && material.envMap ? material.envMapIntensity : frame.scene && frame.scene.environmentIntensity; writeF32(view, ${ off }, typeof _value === "number" ? _value : ${ fallback }); }`;
+
+		}
+
+		case 'environment.rotation':
+			usedWriters.add( 'writeEnvironmentRotation' );
+			return `writeEnvironmentRotation(view, ${ off }, material, frame.scene);`;
+
+		case 'pmrem.maxMip':
+		case 'pmrem.texelWidth':
+		case 'pmrem.texelHeight':
+			usedWriters.add( 'writePMREMScalar' );
+			return `writePMREMScalar(view, ${ off }, ${ JSON.stringify( kind ) }, material && material.precompiledArtifact, material, frame, ${ JSON.stringify( src ) });`;
+
+		case 'texture.uvFlipY': {
+
+			usedWriters.add( 'writeTextureUVFlip' );
+			const sourceRef = `__textureUVFlipSource${ constants.length }`;
+			constants.push( `const ${ sourceRef } = ${ frozenJsonLiteral( src ) };` );
+			return `writeTextureUVFlip(view, ${ off }, material && material.precompiledArtifact, ${ sourceRef });`;
+
+		}
+
 		// Scene-scoped uniforms with non-table shapes. The extractor
 		// prefixes with `scene.fog.` or `scene.`; the hydrator carries
 		// `frame.scene` and `frame.scene.fog` as the live references.
@@ -874,13 +902,14 @@ function emitConstant( slot, off, usedWriters, constants, unsupportedKinds, byte
 }
 
 /**
- * Live uniform. Two shapes exist:
+ * Live uniform. Three shapes exist:
  *   1. Legacy hand-written: `{ kind: 'uniform.live', property, valueType }`
  *      → reads `material.<property>` live each frame.
- *   2. Extractor-produced: `{ kind: 'uniform.live', name, valueSnapshot }`
- *      → no runtime source mapped (the live-node registry is deferred);
- *      emit the snapshot as a constant fallback and flag as blocked with
- *      a clear reason so the build warns but doesn't fail.
+ *   2. Extractor-produced with an exact node path or stable call-site identity
+ *      → the runtime hydrator applies a live-node overlay after this generated
+ *      updater; emit the snapshot only as its fail-closed baseline.
+ *   3. Extractor-produced without an exact overlay address
+ *      → emit the snapshot fallback and flag the frozen value as blocked.
  */
 function emitLive( slot, off, usedWriters, constants, unsupportedKinds, byteOffset ) {
 
@@ -906,23 +935,24 @@ function emitLive( slot, off, usedWriters, constants, unsupportedKinds, byteOffs
 
 	}
 
-	// Path 2: extractor-produced, snapshot-only fallback. The extractor
-	// could not statically resolve the `onRenderUpdate` closure body (no
-	// LightNode / ShadowNode / SceneProperties / MaterialReferenceNode
-	// match in `extractUniformPlan.classifyByIdentity` or
-	// `collectShadowUniformSources`). The slot freezes to whatever the
-	// closure wrote at extract time — animated values WILL diverge from
-	// capture. Surface this clearly so users know to lift the value into
-	// a property the plugin can mirror (material / scene / light / shadow).
+	const exactOverlayAddress = hasExactLiveUniformOverlayAddress( src );
+
+	// Paths 2/3 share the same generated snapshot baseline. Exact-address
+	// sources are overwritten by the hydrator's live-node sidecar after the
+	// generated updater runs; only truly unaddressed sources remain frozen.
 	if ( src.valueSnapshot ) {
 
-		unsupportedKinds.push( {
-			kind: 'uniform.live',
-			severity: 'blocked',
-			reason: `uniform.live "${ src.name || '<unnamed>' }" has no property binding (statically-unresolvable onRenderUpdate / onObjectUpdate closure). Using frozen extract-time snapshot — animation will NOT propagate. Lift the driving value onto material / scene / light / light.shadow so the extractor can mirror it.`,
-			byteOffset,
-			isStaticSnapshot: isStaticSnapshot( src.valueSnapshot ),
-		} );
+		if ( ! exactOverlayAddress ) {
+
+			unsupportedKinds.push( {
+				kind: 'uniform.live',
+				severity: 'blocked',
+				reason: `uniform.live "${ src.name || '<unnamed>' }" has no property binding (statically-unresolvable onRenderUpdate / onObjectUpdate closure). Using frozen extract-time snapshot — animation will NOT propagate. Lift the driving value onto material / scene / light / light.shadow so the extractor can mirror it.`,
+				byteOffset,
+				isStaticSnapshot: isStaticSnapshot( src.valueSnapshot ),
+			} );
+
+		}
 		return emitConstant(
 			{ ...slot, source: { kind: 'constant', valueSnapshot: src.valueSnapshot } },
 			off,
@@ -931,6 +961,12 @@ function emitLive( slot, off, usedWriters, constants, unsupportedKinds, byteOffs
 			unsupportedKinds,
 			byteOffset,
 		);
+
+	}
+
+	if ( exactOverlayAddress ) {
+
+		return `/* uniform.live "${ src.name || '<unnamed>' }" is written by the runtime live-node overlay */`;
 
 	}
 

@@ -47,6 +47,11 @@ import {
 	screenUV,
 } from '../src/slim-stubs.js';
 import { withTemporalFrame } from '../src/slim-support/temporal-frame.js';
+import { attachPMREMRefsByOrder } from '../src/slim-support/pmrem.js';
+import {
+	clearLiveUniformRegistryForTests,
+	registerLiveUniformNode,
+} from '../src/slim-support/live-uniform-registry.js';
 
 test( 'runtime artifact registry round-trips a module', () => {
 
@@ -68,7 +73,7 @@ test( 'runtime hydrator returns a NodeBuilderState-shaped object', () => {
 	assert.equal( state.vertexShader, 'vertex' );
 	assert.equal( state.fragmentShader, 'fragment' );
 	assert.deepEqual( state.createBindings(), [] );
-	assert.equal( typeof state.getUnknownRendererProbe, 'function' );
+	assert.equal( state.getUnknownRendererProbe, undefined );
 
 } );
 
@@ -1242,6 +1247,7 @@ test( 'runtime hydrator uses depth fallback for depth texture bindings', () => {
 	assert.equal( texture.texture.isDepthTexture, true );
 	assert.equal( sampler.texture.isDepthTexture, true );
 	assert.notEqual( sampler.texture.compareFunction, null );
+	assert.ok( sampler.textureNode.compareNode );
 
 } );
 
@@ -1264,6 +1270,7 @@ test( 'runtime hydrator uses comparison fallback for paired depth samplers', () 
 	assert.equal( texture.texture.isDepthTexture, true );
 	assert.equal( sampler.texture.isDepthTexture, true );
 	assert.notEqual( sampler.texture.compareFunction, null );
+	assert.ok( sampler.textureNode.compareNode );
 
 } );
 
@@ -1287,6 +1294,7 @@ test( 'runtime hydrator uses array-shaped fallback for depth texture array bindi
 	assert.equal( texture.texture.isArrayTexture, true );
 	assert.equal( texture.texture.image.depth, 1 );
 	assert.equal( sampler.texture.isDepthTexture, true );
+	assert.ok( sampler.textureNode.compareNode );
 
 } );
 
@@ -1721,6 +1729,73 @@ test( '__applyPrecompiled live sidecars feed the hydrated UBO after user mutatio
 
 	const view = new DataView( ub.buffer.buffer );
 	assert.ok( Math.abs( view.getFloat32( 0, true ) - 0.42 ) < 0.001 );
+
+} );
+
+test( '__applyPrecompiled exact identity overlay wins after the generated snapshot updater', () => {
+
+	clearLiveUniformRegistryForTests();
+	try {
+
+		const liveAmount = registerLiveUniformNode(
+			{ isUniformNode: true, value: 0.15 },
+			'uniform-callsite@1#src/reduce.js#5',
+			0,
+		);
+		const source = { positionNode: { isNode: true } };
+		const artifact = {
+			__hash: 'sha256:exact-live-ubo',
+			bindings: [ {
+				name: 'object',
+				bindings: [
+					{ name: 'object', kind: 'uniform-buffer', visibility: 7, byteLength: 16 },
+				],
+			} ],
+			uniformPlan: [ {
+				name: 'object',
+				byteLength: 16,
+				slots: [ {
+					offset: 0,
+					dtype: 'number',
+					source: {
+						kind: 'uniform.live',
+						liveNodeId: 0,
+						liveNodeIdentity: 'uniform-callsite@1#src/reduce.js#5#0',
+						valueSnapshot: { type: 'number', data: 0.15 },
+					},
+				} ],
+			} ],
+			vertexShader: 'v',
+			fragmentShader: 'f',
+		};
+
+		const wrapped = __applyPrecompiled( source, {
+			__hash: 'sha256:exact-live-ubo',
+			name: 'exact-live-ubo',
+			updateGroup( _frame, _material, view ) {
+
+				view.setFloat32( 0, - 1, true );
+
+			},
+			artifact,
+		}, 'sha256:exact-live-ubo' );
+		const slot = wrapped.precompiledArtifact.uniformPlan[ 0 ].slots[ 0 ];
+		assert.equal( slot._liveNode, liveAmount );
+		assert.equal( slot.__tslpLiveSidecarOverlay, true );
+
+		liveAmount.value = 0.75;
+		const state = hydrateNodeBuilderState( wrapped.precompiledArtifact, wrapped );
+		const ub = state.bindings[ 0 ].bindings[ 0 ];
+		state.updateNodes[ state.updateNodes.length - 1 ].update( { time: 0, camera: null, material: wrapped } );
+
+		const view = new DataView( ub.buffer.buffer );
+		assert.equal( view.getFloat32( 0, true ), 0.75 );
+
+	} finally {
+
+		clearLiveUniformRegistryForTests();
+
+	}
 
 } );
 
@@ -2371,6 +2446,76 @@ test( 'hydrator: variant texture rebinders see sidecars added after hydration', 
 	}
 
 	assert.equal( binding.texture, tex );
+
+} );
+
+test( 'hydrator: state-local live-uniform views observe late PMREM refs without replacing UBOs', () => {
+
+	const source = {
+		kind: 'artifact.texture',
+		textureUuid: 'late-pmrem',
+		textureName: 'PMREM.cubeUv',
+		mapping: 306,
+	};
+	const artifact = {
+		vertexShader: '',
+		fragmentShader: 'var nodeUniform0: texture_2d<f32>;',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'object', kind: 'uniform-buffer', visibility: 3, byteLength: 16 },
+				{ name: 'nodeUniform0_sampler', kind: 'sampler', visibility: 2, textureType: '2d' },
+				{ name: 'nodeUniform0', kind: 'sampled-texture', visibility: 2, textureType: '2d' },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			shared: false,
+			byteLength: 16,
+			slots: [ {
+				offset: 0,
+				type: 'float',
+				source: { kind: 'uniform.live' },
+				valueSnapshot: 1,
+			} ],
+			textures: [
+				{ name: 'nodeUniform0_sampler', textureType: '2d', source },
+				{ name: 'nodeUniform0', textureType: '2d', source },
+			],
+		} ],
+	};
+	const state = hydrateNodeBuilderState( artifact );
+	const bindings = Object.fromEntries( state.createBindings()[ 0 ].bindings.map( ( binding ) => [ binding.name, binding ] ) );
+	const ubo = bindings.object;
+	const fallbackTexture = bindings.nodeUniform0.texture;
+	const groupVersion = bindings.nodeUniform0.groupNode.version;
+	const pmrem = {
+		isTexture: true,
+		uuid: 'runtime-pmrem',
+		name: 'PMREM.cubeUv',
+		mapping: 306,
+		image: { width: 1536, height: 2048 },
+		addEventListener() {},
+		removeEventListener() {},
+		version: 0,
+	};
+
+	assert.notEqual( fallbackTexture, pmrem );
+	assert.equal( attachPMREMRefsByOrder( artifact, [ pmrem ] ), true );
+	for ( const node of state.updateBeforeNodes ) {
+
+		if ( node && typeof node.updateBefore === 'function' ) node.updateBefore( { renderer: null } );
+
+	}
+
+	assert.equal( bindings.nodeUniform0_sampler.texture, pmrem );
+	assert.equal( bindings.nodeUniform0.texture, pmrem );
+	assert.equal( bindings.nodeUniform0_sampler.version, - 1 );
+	assert.equal( bindings.nodeUniform0_sampler.generation, null );
+	assert.equal( bindings.nodeUniform0.version, - 1 );
+	assert.equal( bindings.nodeUniform0.generation, null );
+	assert.ok( bindings.nodeUniform0.groupNode.version > groupVersion );
+	assert.equal( bindings.object, ubo, 'late PMREM rebinding preserves the cloned object UBO identity' );
 
 } );
 
@@ -3059,15 +3204,17 @@ test( 'aux-loader: attachMRTTextureRefs handles missing renderTarget gracefully'
 // Task storage-texture-3d: Storage3DTexture / StorageArrayTexture binding
 // ─────────────────────────────────────────────────────────────────────────────
 
-test( 'storage-texture: resolves Storage3DTexture binding by textureName', async () => {
+test( 'storage-texture: resolves distinct r185 Storage3DTexture bindings by textureName', async () => {
 
 	clearLiveTextureIndex();
 
-	// Simulate a Storage3DTexture created at runtime with .name = 'cloud'.
+	// Simulate two Storage3DTextures created at runtime with distinct names.
 	// Import lazily to avoid top-level ESM issues in the test file.
 	const { default: Storage3DTexture } = await import( 'three/src/renderers/common/Storage3DTexture.js' );
 	const cloudTex = new Storage3DTexture( 128, 128, 128 );
+	const temperatureTex = new Storage3DTexture( 64, 64, 64 );
 	cloudTex.name = 'cloud';
+	temperatureTex.name = 'temperature';
 
 	// Give the microtask queue a tick so the prototype-patch setter can call
 	// registerLiveTexture (it defers via Promise.resolve().then(...)).
@@ -3075,12 +3222,16 @@ test( 'storage-texture: resolves Storage3DTexture binding by textureName', async
 
 	const artifact = {
 		vertexShader: '',
-		fragmentShader: '@group(1) @binding(0) var cloud : texture_3d<f32>;',
+		fragmentShader: [
+			'@group(1) @binding(0) var cloud : texture_3d<f32>;',
+			'@group(1) @binding(1) var temperature : texture_3d<f32>;',
+		].join( '\n' ),
 		computeShader: '',
 		bindings: [ {
 			name: 'compute',
 			bindings: [
 				{ name: 'cloud', kind: 'sampled-texture', visibility: 4, textureType: '3d' },
+				{ name: 'temperature', kind: 'sampled-texture', visibility: 4, textureType: '3d' },
 			],
 		} ],
 		uniformPlan: [ {
@@ -3096,17 +3247,30 @@ test( 'storage-texture: resolves Storage3DTexture binding by textureName', async
 					visibility: 4,
 					source: { kind: 'artifact.texture', textureUuid: 'dead-uuid-cloud', textureName: 'cloud' },
 				},
+				{
+					name: 'temperature',
+					bindingKind: 'sampled-texture',
+					textureType: '3d',
+					access: 'readOnly',
+					visibility: 4,
+					source: { kind: 'artifact.texture', textureUuid: 'dead-uuid-temperature', textureName: 'temperature' },
+				},
 			],
 		} ],
 	};
 
 	const state = hydrateNodeBuilderState( artifact );
 	assert.equal( state.bindings.length, 1 );
-	const binding = state.bindings[ 0 ].bindings[ 0 ];
-	assert.ok( binding.isSampled3DTexture, 'must produce a Sampled3DTexture binding' );
-	assert.ok( binding.isSampledTexture3D, 'isSampledTexture3D must also be true' );
-	assert.equal( binding.texture, cloudTex, 'must resolve to the live Storage3DTexture registered by name' );
-	assert.ok( binding.texture.is3DTexture, 'resolved texture must be a 3D texture' );
+	const [ cloudBinding, temperatureBinding ] = state.bindings[ 0 ].bindings;
+	for ( const binding of [ cloudBinding, temperatureBinding ] ) {
+
+		assert.ok( binding.isSampled3DTexture, 'must produce a Sampled3DTexture binding' );
+		assert.ok( binding.isSampledTexture3D, 'isSampledTexture3D must also be true' );
+		assert.ok( binding.texture.is3DTexture, 'resolved texture must be a 3D texture' );
+
+	}
+	assert.equal( cloudBinding.texture, cloudTex, 'cloud binding must retain its named live texture' );
+	assert.equal( temperatureBinding.texture, temperatureTex, 'temperature binding must not alias the first Storage3DTexture' );
 
 	clearLiveTextureIndex();
 
@@ -3469,6 +3633,32 @@ test( 'catalogueArtifactTextureRefs: stamps node-graph TextureNode uuids onto _t
 	assert.ok( artifact._textureRefs instanceof Map );
 	assert.equal( artifact._textureRefs.get( 'uuid-map' ), mapTex );
 	assert.equal( artifact._textureRefs.get( 'uuid-node' ), nodeTex, 'node-graph TextureNode uuid must be catalogued' );
+
+} );
+
+test( 'catalogueArtifactTextureRefs: maps a fresh material texture onto its captured UUID by declared property', () => {
+
+	const liveMap = { isTexture: true, uuid: 'fresh-runtime-map' };
+	const artifact = {
+		uniformPlan: [ {
+			name: 'object',
+			textures: [ {
+				bindingKind: 'sampled-texture',
+				name: 'nodeTexture0',
+				source: {
+					kind: 'material.map',
+					property: 'map',
+					textureUuid: 'captured-build-map',
+				},
+			} ],
+		} ],
+	};
+
+	const added = catalogueArtifactTextureRefs( artifact, { map: liveMap } );
+
+	assert.equal( added, 1 );
+	assert.equal( artifact._textureRefs.get( 'captured-build-map' ), liveMap );
+	assert.equal( Object.prototype.propertyIsEnumerable.call( artifact, '_textureRefs' ), false );
 
 } );
 

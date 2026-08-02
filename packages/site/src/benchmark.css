@@ -42,6 +42,18 @@
 .bench-card-body code { font-family: var(--font-mono); font-size: 0.85em; color: var(--text); }
 .bench-card-body a { color: var(--accent-1, #22d3ee); text-decoration: none; }
 .bench-card-body a:hover { text-decoration: underline; }
+.bench-card-proof {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.35rem 0.6rem;
+	margin: auto 0 0;
+	padding-top: 0.65rem;
+	border-top: 1px solid var(--border);
+	color: var(--muted);
+	font: 0.65rem/1.45 var(--font-mono);
+}
+.bench-card-proof a { color: var(--accent-1); text-decoration: none; }
+.bench-card-proof a:hover { text-decoration: underline; }
 
 /* ---------- live measurement ---------- */
 .bench-live { margin-bottom: 2.5rem; }
@@ -73,13 +85,32 @@
 	margin: 0 0 1.25rem;
 }
 
-.bench-table {
-	width: 100%;
-	border-collapse: collapse;
-	background: var(--surface);
+.bench-table-scroll {
+	overflow-x: auto;
 	border: 1px solid var(--border);
 	border-radius: var(--radius);
-	overflow: hidden;
+	background: var(--surface);
+	scrollbar-color: var(--border-strong) var(--bg-deep);
+	scrollbar-width: thin;
+}
+.bench-table-scroll:focus-visible {
+	outline: 2px solid var(--accent-1);
+	outline-offset: 3px;
+}
+.bench-scroll-cue {
+	display: none;
+	margin: 0 0 0.5rem;
+	color: var(--muted);
+	font: 0.68rem/1.4 var(--font-mono);
+	letter-spacing: 0.06em;
+	text-align: right;
+	text-transform: uppercase;
+}
+.bench-table {
+	width: 100%;
+	min-width: 720px;
+	border-collapse: collapse;
+	background: var(--surface);
 }
 .bench-table thead th {
 	text-align: right;
@@ -125,6 +156,7 @@
 
 @media (max-width: 760px) {
 	.bench-claims { grid-template-columns: 1fr; }
+	.bench-scroll-cue { display: block; }
 	.bench-table { font-size: 0.9rem; }
 	.bench-table thead th, .bench-table tbody th, .bench-table tbody td { padding: 0.7rem 0.6rem; }
 }

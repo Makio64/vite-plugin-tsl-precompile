@@ -37,12 +37,27 @@ const NUMERIC_ARRAY_TYPES = Object.freeze( {
 export function minifyWgslSource( source ) {
 
 	if ( typeof source !== 'string' || source.length === 0 ) return '';
+	// Artifact emission also passes WebGLBackend's GLSL through this shared
+	// shader-string path. GLSL preprocessor directives are line-oriented, so
+	// collapsing whitespace would turn `#version 300 es\nprecision ...` into an
+	// invalid directive. Leave GLSL byte-for-byte intact while retaining WGSL
+	// compaction and cross-artifact string pooling.
+	if ( looksLikeGlslSource( source ) ) return source;
 
 	return stripWgslComments( source )
 		.replace( /\s+/g, ' ' )
 		.replace( /\s*([{}()[\],;:.])\s*/g, '$1' )
 		.replace( /\s*([=<>!]=?|&&|\|\|)\s*/g, '$1' )
 		.trim();
+
+}
+
+function looksLikeGlslSource( source ) {
+
+	return /^[ \t]*#[ \t]*version\b/m.test( source ) ||
+		/\bprecision\s+(?:lowp|mediump|highp)\s+(?:float|int|[iu]?sampler\w*)\s*;/.test( source ) ||
+		/\blayout\s*\([^)]*\)\s*(?:(?:centroid|sample|patch|flat|smooth|noperspective|invariant|lowp|mediump|highp)\s+)*(?:uniform|in|out)\b/.test( source ) ||
+		/\bvoid\s+main\s*\(\s*(?:void\s*)?\)/.test( source );
 
 }
 

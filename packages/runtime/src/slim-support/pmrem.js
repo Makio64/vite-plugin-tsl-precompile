@@ -88,7 +88,8 @@ export function collectPMREMSourceTexturesFromMaterial( material, opts = {} ) {
 	const out = [];
 	if ( ! material ) return out;
 	const keys = Array.isArray( opts.nodeGraphKeys ) ? opts.nodeGraphKeys : NODE_GRAPH_TEXTURE_KEYS;
-	for ( const key of keys ) collectPMREMSourceTexturesInNode( readGraphValue( material, key ), opts, out );
+	const seen = new Set();
+	for ( const key of keys ) collectPMREMSourceTexturesInNode( readGraphValue( material, key ), opts, out, 0, seen );
 	return out;
 
 }
@@ -168,6 +169,21 @@ function filterPMREMTexturesBySourceSize( textures, sources ) {
 
 	}
 	return candidates;
+
+}
+
+function selectPMREMTexturesWithSizeHint( textures, sources, requiredCount ) {
+
+	const candidates = textures || [];
+	if ( candidates.length < requiredCount ) return [];
+	// Atlas dimensions are live state, not identity. An exact-count material
+	// graph is therefore authoritative even when its current atlas was rebuilt
+	// at a different resolution than capture. When discovery returns extra
+	// candidates, captured dimensions may disambiguate an exact subset, but
+	// never authorize picking an arbitrary prefix.
+	if ( candidates.length === requiredCount ) return candidates;
+	const matching = filterPMREMTexturesBySourceSize( candidates, sources );
+	return matching.length === requiredCount ? matching : [];
 
 }
 
@@ -319,10 +335,11 @@ export function selectPMREMTexturesForArtifact( artifact, opts = {} ) {
 		if ( isPMREMTexture( texture ) ) pushUniqueTexture( nodePmrems, texture );
 
 	}
-	const matchingNodePmrems = filterPMREMTexturesBySourceSize( nodePmrems, sourceEntries );
+	const matchingNodePmrems = selectPMREMTexturesWithSizeHint( nodePmrems, sourceEntries, sourceUuids.length );
 	const materialPMREMSources = [];
 	for ( const texture of collectMaterialPMREMSources( material ) || [] ) pushUniqueTexture( materialPMREMSources, texture );
-	const materialNodeSourcePmrems = filterPMREMTexturesBySourceSize( pmremTexturesForSources( materialPMREMSources, getCachedPMREMForSource ), sourceEntries );
+	const materialNodeSourceCandidates = pmremTexturesForSources( materialPMREMSources, getCachedPMREMForSource );
+	const materialNodeSourcePmrems = selectPMREMTexturesWithSizeHint( materialNodeSourceCandidates, sourceEntries, sourceUuids.length );
 
 	const materialEnvMap = material && material.envMap && material.envMap.isTexture === true ? material.envMap : null;
 	const materialPmrem = materialEnvMap ? getCachedPMREMForSource( materialEnvMap ) : null;

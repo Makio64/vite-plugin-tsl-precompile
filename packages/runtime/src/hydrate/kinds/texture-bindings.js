@@ -1,6 +1,12 @@
 import Sampler from 'three/src/renderers/common/Sampler.js';
 import { SampledTexture, SampledCubeTexture, Sampled3DTexture, SampledArrayTexture } from 'three/src/renderers/common/SampledTexture.js';
 
+// WebGPUTextureUtils and WebGPUBindingUtils in Three r185 only test whether
+// TextureNode.compareNode is null. The precompiled runtime intentionally does
+// not retain the authored node graph, so a stable marker carries the captured
+// comparison intent without changing the Sampler's direct texture ownership.
+const COMPARISON_NODE_MARKER = Object.freeze( { isNode: true } );
+
 export function createSampledTextureBinding( {
 	name,
 	texture,
@@ -29,9 +35,19 @@ export function createSampledTextureBinding( {
 
 }
 
-export function createSamplerBinding( { name, texture, visibility = 0, groupNode = null } ) {
+export function createSamplerBinding( {
+	name,
+	texture,
+	comparison = false,
+	visibility = 0,
+	groupNode = null,
+} ) {
 
-	return prepareTextureBinding( new Sampler( name, texture ), visibility, groupNode );
+	const binding = new Sampler( name, texture );
+	binding.textureNode = {
+		compareNode: comparison === true ? COMPARISON_NODE_MARKER : null,
+	};
+	return prepareTextureBinding( binding, visibility, groupNode );
 
 }
 

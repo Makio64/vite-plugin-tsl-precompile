@@ -141,12 +141,15 @@ export class PrecompilePanel extends Extension {
 		const rows = captures.map( ( c ) => {
 
 			const selected = c.id === this._selectedId ? ' tslp-row-selected' : '';
-			const severity = c.unsupportedKinds.find( ( u ) => u.severity === 'unknown' ) ? ' tslp-row-err'
-				: c.unsupportedKinds.find( ( u ) => u.severity === 'blocked' ) ? ' tslp-row-warn'
+			const unsupportedKinds = Array.isArray( c.unsupportedKinds ) ? c.unsupportedKinds : [];
+			const unknownCount = unsupportedKinds.filter( ( u ) => u && u.severity === 'unknown' ).length;
+			const blockedCount = unsupportedKinds.filter( ( u ) => u && u.severity === 'blocked' ).length;
+			const severity = unknownCount > 0 ? ' tslp-row-err'
+				: blockedCount > 0 ? ' tslp-row-warn'
 					: '';
 			const hash = ( c.hash || c.configHash || '—' ).slice( 0, 12 );
 			const bytes = c.bytesLabel || formatBytes( c.vertexBytes + c.fragmentBytes + c.computeBytes );
-			return `<div class="tslp-row${ selected }${ severity }" data-id="${ escape( c.id ) }">
+			return `<div class="tslp-row${ selected }${ severity }" data-id="${ escape( c.id ) }" data-unknown-count="${ unknownCount }" data-blocked-count="${ blockedCount }">
 				<span class="tslp-cell tslp-cell-shape">${ escape( c.shape ) }</span>
 				<span class="tslp-cell tslp-cell-name">${ escape( c.name ) }</span>
 				<span class="tslp-cell tslp-cell-hash">${ escape( hash ) }</span>

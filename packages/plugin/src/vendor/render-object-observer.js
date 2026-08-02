@@ -10,7 +10,7 @@
 import { createRenderObjectContextSelector, resolveRenderObjectBindingOwner } from '@tsl-precompile/contract/render-selector';
 import { attachDeferredMaterialComputeStatePaths } from '@tsl-precompile/contract/material-compute';
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
-import { observeVelocityProjectionSources } from '../velocity-projection-observation.js';
+import { observeVelocityProjectionSources, observedVelocityProjectionSources } from '../velocity-projection-observation.js';
 
 const OBSERVER_STATE = Symbol.for( '@tsl-precompile/plugin/render-object-observer@1' );
 const REQUEST_OBSERVER_STATE = Symbol.for( '@tsl-precompile/plugin/render-object-request-observer@1' );
@@ -199,7 +199,13 @@ export function observeRenderObjectRequests( renderer, listener ) {
 
 			}
 			observeVelocityProjectionSources( nodeBuilderState );
-			const requestSnapshot = snapshotRenderObjectRequest( renderObject, renderer, cacheKey, currentRenderDispatch( state.dispatchState ) );
+			const requestSnapshot = snapshotRenderObjectRequest(
+				renderObject,
+				renderer,
+				cacheKey,
+				currentRenderDispatch( state.dispatchState ),
+				nodeBuilderState,
+			);
 			const event = {
 				kind: 'render-object-request',
 				renderObject,
@@ -257,9 +263,10 @@ export function observeRenderObjectRequests( renderer, listener ) {
  * @param {?Object} renderer
  * @param {*} cacheKey
  * @param {?{object: Object, scene: Object, camera: Object, geometry: Object, material: Object, group: Object}} renderDispatch
+ * @param {?Object} nodeBuilderState
  * @returns {Object|null}
  */
-export function snapshotRenderObjectRequest( renderObject, renderer, cacheKey = null, renderDispatch = null ) {
+export function snapshotRenderObjectRequest( renderObject, renderer, cacheKey = null, renderDispatch = null, nodeBuilderState = null ) {
 
 	if ( ! renderObject ) return null;
 	const context = safeRead( renderObject, 'context' ) || null;
@@ -363,6 +370,7 @@ export function snapshotRenderObjectRequest( renderObject, renderer, cacheKey = 
 		renderContext,
 		renderContextSelector,
 		captureClock,
+		velocityProjectionSources: Object.freeze( observedVelocityProjectionSources( nodeBuilderState ) ),
 	} );
 
 }
@@ -385,6 +393,11 @@ export function beginRenderObjectHarvest( renderer, callbacks = {} ) {
 
 	const epoch = nextHarvestEpoch ++;
 	const requests = [];
+	const requestOrdinals = new WeakMap();
+	// r185 replaces a RenderObject when its immutable initialCacheKey changes.
+	// Retain the live context-chain identity privately so replacement siblings
+	// can be distinguished from equal-looking requests in separate contexts.
+	const requestRenderContexts = new WeakMap();
 	const pairsByMaterial = new Map();
 	const pending = new Set();
 	const supported = !! (
@@ -453,6 +466,8 @@ export function beginRenderObjectHarvest( renderer, callbacks = {} ) {
 
 		const snapshot = event.requestSnapshot || snapshotRenderObjectRequest( event.renderObject, renderer, event.cacheKey );
 		if ( ! snapshot ) return;
+		requestOrdinals.set( snapshot, requests.length );
+		requestRenderContexts.set( snapshot, safeRead( event.renderObject, 'context' ) || null );
 		requests.push( snapshot );
 		const pair = getPair( snapshot.material, snapshot.cacheKey, true );
 		pair.requests.push( snapshot );
@@ -488,7 +503,9 @@ export function beginRenderObjectHarvest( renderer, callbacks = {} ) {
 		active = false;
 		stopRequests();
 		stopStates();
-		finished = Promise.allSettled( [ ...pending ] ).then( () => buildHarvestResult( epoch, supported, renderer, requests, pairsByMaterial ) );
+		finished = Promise.allSettled( [ ...pending ] ).then( () => (
+			buildHarvestResult( epoch, supported, renderer, requests, requestOrdinals, requestRenderContexts, pairsByMaterial )
+		) );
 		return finished;
 
 	};
@@ -503,7 +520,7 @@ export function beginRenderObjectHarvest( renderer, callbacks = {} ) {
 
 }
 
-function buildHarvestResult( epoch, supported, renderer, requests, pairsByMaterial ) {
+function buildHarvestResult( epoch, supported, renderer, requests, requestOrdinals, requestRenderContexts, pairsByMaterial ) {
 
 	const familiesByMaterial = new Map();
 	const familiesByMaterialUuid = new Map();
@@ -511,7 +528,7 @@ function buildHarvestResult( epoch, supported, renderer, requests, pairsByMateri
 
 		const requestedPairs = [ ...pairs.values() ].filter( ( pair ) => pair.requests.length > 0 );
 		if ( requestedPairs.length === 0 ) continue;
-		const variants = requestedPairs.map( ( pair ) => {
+		const records = requestedPairs.map( ( pair ) => {
 
 			const exactRequests = pair.requests.filter( ( request ) => request.bindingOwnerExact );
 			const authoritativeRequests = exactRequests.length > 0 ? exactRequests : pair.requests;
@@ -520,13 +537,10 @@ function buildHarvestResult( epoch, supported, renderer, requests, pairsByMateri
 			const sourceMaterials = [ ...new Set( sourceOwnerRequests.map( ( request ) =>
 				request.sourceMaterial || ( ! Array.isArray( request.userMaterial ) ? request.userMaterial : null )
 			).filter( Boolean ) ) ];
-			// A deferred Fn() material root can create its ComputeNode only while
-			// NodeBuilder executes the closure. Publish the exact observed identity
-			// beneath that live root before extraction so the normal property-path
-			// contract can serialize it. Ambiguous roots remain untouched.
-			const graphMaterials = sourceMaterials.length > 0 ? sourceMaterials : [ material ];
-			for ( const graphMaterial of graphMaterials ) attachDeferredMaterialComputeStatePaths( graphMaterial, pair.nodeBuilderState );
 			const captureClocks = [ ...new Set( authoritativeRequests.map( ( request ) => request.captureClock ).filter( Number.isFinite ) ) ];
+			const velocityProjectionSources = [ ...new Set( authoritativeRequests.flatMap( ( request ) =>
+				Array.isArray( request.velocityProjectionSources ) ? request.velocityProjectionSources : []
+			) ) ];
 			const missingSelector = authoritativeRequests.some( ( request ) => ! request.renderContextSelector );
 			const complete = pair.cacheKey !== null && pair.cacheKey !== undefined &&
 				pair.nodeBuilderState !== null && pair.ambiguousState === false &&
@@ -534,19 +548,64 @@ function buildHarvestResult( epoch, supported, renderer, requests, pairsByMateri
 			const selectors = [ ...new Set( authoritativeRequests.flatMap( ( request ) =>
 				complete ? renderContextSelectorAliases( request ) : request.renderContextSelector ? [ request.renderContextSelector ] : []
 			) ) ].sort();
-			return Object.freeze( {
+			const ordinals = authoritativeRequests.map( ( request ) => requestOrdinals.get( request ) );
+			return {
 				cacheKey: pair.cacheKey,
 				nodeBuilderState: pair.nodeBuilderState,
 				complete,
 				requestCount: pair.requests.length,
-				renderObjects: Object.freeze( [ ...new Set( authoritativeRequests.map( ( request ) => request.renderObject ).filter( Boolean ) ) ] ),
-				objects: Object.freeze( objects ),
-				sourceMaterials: Object.freeze( sourceMaterials ),
-				sourceOwnerRequests: Object.freeze( sourceOwnerRequests.slice() ),
-				userMaterials: Object.freeze( sourceMaterials ),
-				captureClocks: Object.freeze( captureClocks ),
-				renderContextSelectors: Object.freeze( selectors ),
-				requests: Object.freeze( pair.requests.slice() ),
+				renderObjects: [ ...new Set( authoritativeRequests.map( ( request ) => request.renderObject ).filter( Boolean ) ) ],
+				objects,
+				sourceMaterials,
+				sourceOwnerRequests: sourceOwnerRequests.slice(),
+				captureClocks,
+				velocityProjectionSources,
+				renderContextSelectors: selectors,
+				requests: pair.requests.slice(),
+				firstRequestOrdinal: ordinals.reduce( ( first, ordinal ) => Math.min( first, ordinal ), Infinity ),
+				lastRequestOrdinal: ordinals.reduce( ( last, ordinal ) => Math.max( last, ordinal ), - Infinity ),
+				provenance: {
+					renderContexts: uniqueHarvestValues( authoritativeRequests, ( request ) => requestRenderContexts.get( request ) ),
+					objects: uniqueHarvestValues( authoritativeRequests, ( request ) => request.object ),
+					sourceMaterials: uniqueHarvestValues( authoritativeRequests, harvestRequestSourceMaterial ),
+					scenes: uniqueHarvestValues( authoritativeRequests, ( request ) => request.scene ),
+					cameras: uniqueHarvestValues( authoritativeRequests, ( request ) => request.camera ),
+					lightsNodes: uniqueHarvestValues( authoritativeRequests, ( request ) => request.lightsNode ),
+					clippingContexts: uniqueHarvestValues( authoritativeRequests, ( request ) => request.clippingContext ),
+					bindingOwnerKinds: uniqueHarvestValues( authoritativeRequests, ( request ) => request.bindingOwnerKind ),
+					bindingOwnerExact: uniqueHarvestValues( authoritativeRequests, ( request ) => request.bindingOwnerExact ),
+					captureClocks: uniqueHarvestValues( authoritativeRequests, ( request ) => request.captureClock ),
+				},
+			};
+
+		} );
+		const retainedRecords = retainTemporallyCurrentHarvestRecords( records );
+		const variants = retainedRecords.map( ( record ) => {
+
+			// A deferred Fn() material root can create its ComputeNode only while
+			// NodeBuilder executes the closure. Publish evidence only for variants
+			// that survived temporal supersession so stale builder identities cannot
+			// leak into the material property-path contract.
+			const graphMaterials = record.sourceMaterials.length > 0 ? record.sourceMaterials : [ material ];
+			for ( const graphMaterial of graphMaterials ) {
+
+				attachDeferredMaterialComputeStatePaths( graphMaterial, record.nodeBuilderState );
+
+			}
+			return Object.freeze( {
+				cacheKey: record.cacheKey,
+				nodeBuilderState: record.nodeBuilderState,
+				complete: record.complete,
+				requestCount: record.requestCount,
+				renderObjects: Object.freeze( record.renderObjects ),
+				objects: Object.freeze( record.objects ),
+				sourceMaterials: Object.freeze( record.sourceMaterials ),
+				sourceOwnerRequests: Object.freeze( record.sourceOwnerRequests ),
+				userMaterials: Object.freeze( record.sourceMaterials ),
+				captureClocks: Object.freeze( record.captureClocks ),
+				velocityProjectionSources: Object.freeze( record.velocityProjectionSources ),
+				renderContextSelectors: Object.freeze( record.renderContextSelectors ),
+				requests: Object.freeze( record.requests ),
 			} );
 
 		} );
@@ -570,6 +629,115 @@ function buildHarvestResult( epoch, supported, renderer, requests, pairsByMateri
 		familiesByMaterial,
 		familiesByMaterialUuid,
 	} );
+
+}
+
+/**
+ * Three may replace a RenderObject and its cached NodeBuilderState within one
+ * render-context chain even though every observable render input and exact
+ * selector remains unchanged. Treat the later state as authoritative only when
+ * the observations prove a one-way, non-overlapping transition. A final exact
+ * render dispatch may supersede compile-only evidence from an equivalent
+ * context; other context or provenance differences remain fail closed.
+ */
+function retainTemporallyCurrentHarvestRecords( records ) {
+
+	const retained = new Set( records );
+	const groups = new Map();
+	for ( const record of records ) {
+
+		if ( record.renderContextSelectors.length === 0 ) continue;
+		const selectorSetKey = stableJsonStringify(
+			record.renderContextSelectors,
+			'renderObjectHarvestSelectorSet',
+		);
+		let group = groups.get( selectorSetKey );
+		if ( ! group ) {
+
+			group = [];
+			groups.set( selectorSetKey, group );
+
+		}
+		group.push( record );
+
+	}
+	for ( const group of groups.values() ) {
+
+		if ( group.length < 2 || group.some( ( record ) => (
+			! record.complete ||
+			record.provenance.renderContexts.length === 0 ||
+			record.provenance.renderContexts.some( ( context ) => ! context )
+		) ) ) continue;
+		const baseline = group[ 0 ];
+		if ( group.some( ( record ) => (
+			! equalHarvestValueArrays( baseline.renderContextSelectors, record.renderContextSelectors ) ||
+			! equalHarvestProvenance( baseline.provenance, record.provenance )
+		) ) ) continue;
+		const chronological = group.slice().sort( ( left, right ) => left.firstRequestOrdinal - right.firstRequestOrdinal );
+		if ( chronological.some( ( record ) => (
+			! Number.isSafeInteger( record.firstRequestOrdinal ) ||
+			! Number.isSafeInteger( record.lastRequestOrdinal )
+		) ) ) continue;
+		const sameContextChain = group.every( ( record ) => (
+			equalHarvestValueSets( baseline.provenance.renderContexts, record.provenance.renderContexts ) &&
+			equalHarvestValueSets( baseline.provenance.clippingContexts, record.provenance.clippingContexts )
+		) );
+		const current = chronological[ chronological.length - 1 ];
+		const currentHasExactOwner = current.provenance.bindingOwnerExact.length === 1 &&
+			current.provenance.bindingOwnerExact[ 0 ] === true;
+		if ( ! sameContextChain && ! currentHasExactOwner ) continue;
+		let oneWay = true;
+		for ( let index = 1; index < chronological.length; index ++ ) {
+
+			if ( chronological[ index - 1 ].lastRequestOrdinal >= chronological[ index ].firstRequestOrdinal ) {
+
+				oneWay = false;
+				break;
+
+			}
+
+		}
+		if ( ! oneWay ) continue;
+		for ( const stale of chronological.slice( 0, - 1 ) ) retained.delete( stale );
+
+	}
+	return records.filter( ( record ) => retained.has( record ) );
+
+}
+
+function harvestRequestSourceMaterial( request ) {
+
+	return request.sourceMaterial || ( ! Array.isArray( request.userMaterial ) ? request.userMaterial : null );
+
+}
+
+function uniqueHarvestValues( requests, select ) {
+
+	return [ ...new Set( requests.map( select ) ) ];
+
+}
+
+function equalHarvestProvenance( left, right ) {
+
+	return equalHarvestValueSets( left.objects, right.objects ) &&
+		equalHarvestValueSets( left.sourceMaterials, right.sourceMaterials ) &&
+		equalHarvestValueSets( left.scenes, right.scenes ) &&
+		equalHarvestValueSets( left.cameras, right.cameras ) &&
+		equalHarvestValueSets( left.lightsNodes, right.lightsNodes ) &&
+		equalHarvestValueSets( left.bindingOwnerKinds, right.bindingOwnerKinds ) &&
+		equalHarvestValueSets( left.captureClocks, right.captureClocks );
+
+}
+
+function equalHarvestValueArrays( left, right ) {
+
+	return left.length === right.length && left.every( ( value, index ) => value === right[ index ] );
+
+}
+
+function equalHarvestValueSets( left, right ) {
+
+	return left.length === right.length && left.every( ( value ) => right.includes( value ) );
 
 }
 

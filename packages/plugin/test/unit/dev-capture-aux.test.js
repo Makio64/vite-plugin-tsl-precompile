@@ -14,13 +14,15 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, existsSync, readdirSync, rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createServer } from 'node:http';
-import { attachDevCapture } from '../../src/dev-capture-server.js';
+import { createServer, request as httpRequest } from 'node:http';
+import { attachDevCapture, DEV_CAPTURE_MAX_BODY_BYTES } from '../../src/dev-capture-server.js';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
 import { collectArtifactVariantCandidates, createArtifactVariantPayload } from '@tsl-precompile/contract/artifact-variants';
 import { POSTPROCESS_EFFECT_AUXILIARY_SHAPES } from '@tsl-precompile/contract/auxiliary-shapes';
+import { INTERNAL_PASS_SHAPES } from '@tsl-precompile/contract/internal-pass';
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
 import { computeArtifactContentHash } from '../../src/hash.js';
+import { MARKER_SOURCE_PROVENANCE_SCHEMA } from '../../src/_shared/source-provenance.js';
 
 const SIGNED_SELECTOR_A = stableJsonStringify( {
 	version: 'render-object-selector@1',
@@ -53,9 +55,42 @@ function makeSignedArtifact( options = {} ) {
 		artifactContentHashVersion: ARTIFACT_CONTENT_HASH_VERSION,
 		sourceGraphHash: options.sourceGraphHash || 'f'.repeat( 64 ),
 		sourceHashVersion: options.sourceHashVersion || '0.1.0',
-		sourceThreeVersion: options.sourceThreeVersion || '0.184.0',
+		sourceThreeVersion: options.sourceThreeVersion || '0.185.1',
 		renderContextSignature: selector,
 		sourceValidationMode: options.sourceValidationMode || 'runtime-graph',
+	};
+
+}
+
+function makeSignedBackendAuxArtifact( materialShape, shaderLanguage ) {
+
+	const backend = shaderLanguage === 'wgsl' ? 'webgpu' : 'webgl';
+	const cacheKey = 'renderer-owned-shared-cache';
+	const selector = stableJsonStringify( {
+		version: 'render-object-selector@1',
+		renderer: { backend: { kind: backend } },
+		target: { surface: 'default' },
+	} );
+	const shaders = shaderLanguage === 'wgsl' ? {
+		vertexShader: '@vertex fn main() -> @builtin(position) vec4<f32> { return vec4<f32>(0.0); }',
+		fragmentShader: '@fragment fn main() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }',
+	} : {
+		vertexShader: '#version 300 es\nvoid main() { gl_Position = vec4(0.0); }',
+		fragmentShader: '#version 300 es\nprecision highp float;\nout vec4 color;\nvoid main() { color = vec4(1.0); }',
+	};
+	return {
+		version: 3,
+		cacheKey,
+		variantKey: `${ backend }:${ cacheKey }`,
+		shaderLanguage,
+		materialShape,
+		renderContextSelectors: [ selector ],
+		...shaders,
+		bindings: [],
+		uniformPlan: [],
+		sourceGraphHash: '7'.repeat( 64 ),
+		sourceValidationMode: 'runtime-graph',
+		renderContextSignature: selector,
 	};
 
 }
@@ -111,17 +146,173 @@ function makeFakeViteServer( options = {} ) {
 
 }
 
-async function postJSON( port, path, body ) {
+async function postJSON( port, path, body, options = {} ) {
 
+	const preserveAuxSignature = body.__preserveAuxSignature === true;
+	const payload = typeof body.materialShape === 'string' ? {
+		threeVersion: '0.185.1',
+		pluginVersion: '0.1.0',
+		...body,
+	} : body;
+	delete payload.__preserveAuxSignature;
+	if ( typeof payload.materialShape === 'string' && ! preserveAuxSignature &&
+		typeof payload.threeVersion === 'string' && /^\d+\.\d+\.\d+/.test( payload.threeVersion ) &&
+		typeof payload.pluginVersion === 'string' && payload.pluginVersion.length > 0 &&
+		payload.artifact && typeof payload.artifact === 'object' ) {
+
+		payload.artifact = {
+			...payload.artifact,
+			artifactContentHashVersion: ARTIFACT_CONTENT_HASH_VERSION,
+			sourceThreeVersion: payload.threeVersion,
+			sourceHashVersion: payload.pluginVersion,
+		};
+		payload.hash = computeArtifactContentHash( payload.artifact, {
+			shape: payload.materialShape,
+			threeVersion: payload.threeVersion,
+			pluginVersion: payload.pluginVersion,
+		} );
+
+	}
+	const headers = {
+		'content-type': options.contentType || 'application/json',
+		...options.headers,
+	};
+	if ( options.origin !== null ) headers.origin = options.origin || `http://127.0.0.1:${ port }`;
 	const res = await fetch( `http://127.0.0.1:${ port }${ path }`, {
 		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify( body ),
+		headers,
+		body: JSON.stringify( payload ),
 	} );
 	const text = await res.text();
 	let json = null;
 	try { json = JSON.parse( text ); } catch ( _ ) { /* ignore */ }
 	return { status: res.status, text, json };
+
+}
+
+function postRaw( port, path, options = {} ) {
+
+	return new Promise( ( resolve, reject ) => {
+
+		const request = httpRequest( {
+			hostname: '127.0.0.1',
+			port,
+			path,
+			method: 'POST',
+			headers: {
+				origin: `http://127.0.0.1:${ port }`,
+				'content-type': 'application/json',
+				connection: 'close',
+				...options.headers,
+			},
+		}, ( response ) => {
+
+			const chunks = [];
+			response.on( 'data', ( chunk ) => chunks.push( chunk ) );
+			response.on( 'end', () => {
+
+				const text = Buffer.concat( chunks ).toString( 'utf8' );
+				let json = null;
+				try { json = JSON.parse( text ); } catch ( _ ) { /* ignore */ }
+				resolve( { status: response.statusCode, text, json } );
+
+			} );
+
+		} );
+		request.once( 'error', reject );
+		request.end( options.body || '' );
+
+	} );
+
+}
+
+function postChunkedBytes( port, path, totalBytes ) {
+
+	return new Promise( ( resolve, reject ) => {
+
+		const request = httpRequest( {
+			hostname: '127.0.0.1',
+			port,
+			path,
+			method: 'POST',
+			headers: {
+				origin: `http://127.0.0.1:${ port }`,
+				'content-type': 'application/json',
+				connection: 'close',
+			},
+		}, ( response ) => {
+
+			const chunks = [];
+			response.on( 'data', ( chunk ) => chunks.push( chunk ) );
+			response.on( 'end', () => {
+
+				const text = Buffer.concat( chunks ).toString( 'utf8' );
+				let json = null;
+				try { json = JSON.parse( text ); } catch ( _ ) { /* ignore */ }
+				resolve( { status: response.statusCode, text, json } );
+
+			} );
+
+		} );
+		request.once( 'error', reject );
+		const chunk = Buffer.alloc( 1024 * 1024, 0x20 );
+		let remaining = totalBytes;
+		const writeNext = () => {
+
+			while ( remaining > 0 ) {
+
+				const bytes = Math.min( remaining, chunk.length );
+				remaining -= bytes;
+				if ( ! request.write( bytes === chunk.length ? chunk : chunk.subarray( 0, bytes ) ) ) {
+
+					request.once( 'drain', writeNext );
+					return;
+
+				}
+
+			}
+			request.end();
+
+		};
+		writeNext();
+
+	} );
+
+}
+
+function abortCaptureRequest( port, path ) {
+
+	return new Promise( ( resolve, reject ) => {
+
+		const request = httpRequest( {
+			hostname: '127.0.0.1',
+			port,
+			path,
+			method: 'POST',
+			headers: {
+				origin: `http://127.0.0.1:${ port }`,
+				'content-type': 'application/json',
+				'content-length': '1024',
+				connection: 'close',
+			},
+		} );
+		request.once( 'error', ( error ) => {
+
+			if ( error.code === 'ECONNRESET' ) resolve();
+			else reject( error );
+
+		} );
+		request.once( 'close', resolve );
+		request.write( '{"name":"aborted-request"' );
+		request.once( 'socket', ( socket ) => {
+
+			const abort = () => setImmediate( () => request.destroy() );
+			if ( socket.connecting ) socket.once( 'connect', abort );
+			else abort();
+
+		} );
+
+	} );
 
 }
 
@@ -131,12 +322,13 @@ async function postJSON( port, path, body ) {
  * via `server.middlewares.use(path, fn)`; we translate those registrations
  * into an http request router.
  */
-function spinUpServer( viteServer ) {
+function spinUpServer( viteServer, options = {} ) {
 
 	return new Promise( ( resolve, reject ) => {
 
 		const http = createServer( ( req, res ) => {
 
+			if ( typeof options.onRequestAborted === 'function' ) req.once( 'aborted', options.onRequestAborted );
 			for ( const h of viteServer._handlers ) {
 
 				if ( req.url === h.path || req.url.startsWith( h.path + '?' ) ) {
@@ -157,6 +349,136 @@ function spinUpServer( viteServer ) {
 	} );
 
 }
+
+test( 'dev-capture: accepts same-origin JSON and rejects untrusted browser request metadata', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-http-boundary-' ) );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+	const payload = ( name ) => ( {
+		name,
+		hash: 'a'.repeat( 64 ),
+		artifact: { uniformPlan: [], vertexShader: 'v', fragmentShader: 'f' },
+	} );
+
+	try {
+
+		const allowedLegacy = await postJSON(
+			port,
+			'/__tsl-precompile/capture',
+			payload( 'trusted-legacy' ),
+			{ contentType: 'application/json; charset=utf-8' },
+		);
+		assert.equal( allowedLegacy.status, 200, allowedLegacy.text );
+
+		const crossOrigin = await postJSON(
+			port,
+			'/__tsl-precompile/capture',
+			payload( 'cross-origin' ),
+			{ origin: 'http://attacker.invalid' },
+		);
+		assert.equal( crossOrigin.status, 403 );
+		assert.match( crossOrigin.json.error, /Origin does not match/ );
+
+		const missingOrigin = await postJSON(
+			port,
+			'/__tsl-precompile/capture',
+			payload( 'missing-origin' ),
+			{ origin: null },
+		);
+		assert.equal( missingOrigin.status, 403 );
+		assert.match( missingOrigin.json.error, /requires a same-origin Origin/ );
+
+		const invalidOrigin = await postJSON(
+			port,
+			'/__tsl-precompile/capture',
+			payload( 'invalid-origin' ),
+			{ origin: 'not an origin' },
+		);
+		assert.equal( invalidOrigin.status, 403 );
+		assert.match( invalidOrigin.json.error, /Origin header is invalid/ );
+
+		const crossSiteMetadata = await postJSON(
+			port,
+			'/__tsl-precompile/capture',
+			payload( 'cross-site-metadata' ),
+			{ headers: { 'sec-fetch-site': 'cross-site' } },
+		);
+		assert.equal( crossSiteMetadata.status, 403 );
+		assert.match( crossSiteMetadata.json.error, /same-origin fetch metadata/ );
+
+		const wrongMediaType = await postJSON(
+			port,
+			'/__tsl-precompile/capture',
+			payload( 'wrong-media-type' ),
+			{ contentType: 'text/plain' },
+		);
+		assert.equal( wrongMediaType.status, 415 );
+		assert.match( wrongMediaType.json.error, /Content-Type must be application\/json/ );
+
+		const manifest = JSON.parse( readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' ) );
+		assert.deepEqual( Object.keys( manifest ), [ 'trusted-legacy' ] );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: bounds declared and streamed bodies and survives an aborted upload', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-http-body-' ) );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	let markRequestAborted;
+	const requestAborted = new Promise( ( resolve ) => {
+
+		markRequestAborted = resolve;
+
+	} );
+	const { http, port } = await spinUpServer( vite, { onRequestAborted: markRequestAborted } );
+
+	try {
+
+		const declaredOversize = await postRaw( port, '/__tsl-precompile/capture', {
+			headers: { 'content-length': String( DEV_CAPTURE_MAX_BODY_BYTES + 1 ) },
+			body: '{}',
+		} );
+		assert.equal( declaredOversize.status, 413, declaredOversize.text );
+		assert.match( declaredOversize.json.error, /exceeds the \d+ byte limit/ );
+
+		const streamedOversize = await postChunkedBytes(
+			port,
+			'/__tsl-precompile/capture',
+			DEV_CAPTURE_MAX_BODY_BYTES + 1,
+		);
+		assert.equal( streamedOversize.status, 413, streamedOversize.text );
+		assert.match( streamedOversize.json.error, /exceeds the \d+ byte limit/ );
+
+		await abortCaptureRequest( port, '/__tsl-precompile/capture' );
+		await requestAborted;
+		assert.deepEqual( readdirSync( artifactsDir ), [], 'rejected/aborted uploads must not write partial artifacts' );
+
+		const recovery = await postJSON( port, '/__tsl-precompile/capture', {
+			name: 'after-abort',
+			hash: 'b'.repeat( 64 ),
+			artifact: { uniformPlan: [], vertexShader: 'v', fragmentShader: 'f' },
+		} );
+		assert.equal( recovery.status, 200, recovery.text );
+		assert.equal( recovery.json.ok, true );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
 
 test( 'dev-capture: user-material payload writes <name>.<hash>.json + manifest', async () => {
 
@@ -237,6 +559,52 @@ test( 'dev-capture: strips stale enumerable live sidecars before validation and 
 		assert.equal( stored.artifact.__hash, 'extractor-envelope-hash' );
 		assert.equal( stored.artifact.__name, name );
 		assert.doesNotMatch( JSON.stringify( stored ), /_live(?:Array|Attribute)/ );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: persists only transform-resolved marker dependency provenance', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-source-provenance-' ) );
+	const vite = makeFakeViteServer();
+	const identity = 'src/material.js:precompile:0';
+	const revision = 'b'.repeat( 64 );
+	const provenance = {
+		schema: MARKER_SOURCE_PROVENANCE_SCHEMA,
+		dependencies: [ 'src/material-helper.js' ],
+	};
+	attachDevCapture( vite, {
+		artifactsDir,
+		resolveSourceOwner( requestedIdentity, requestedRevision ) {
+
+			assert.equal( requestedIdentity, identity );
+			assert.equal( requestedRevision, revision );
+			return { identity, revision, provenance };
+
+		},
+	} );
+	const { http, port } = await spinUpServer( vite );
+	const name = 'source-provenance-owner';
+
+	try {
+
+		const response = await postJSON( port, '/__tsl-precompile/capture', makeSignedPayload(
+			name,
+			identity,
+			revision,
+			makeSignedArtifact(),
+		) );
+		assert.equal( response.status, 200, response.text );
+		const { entry, stored } = readUserCapture( artifactsDir, name );
+		const expectedOwner = { identity, revision, provenance };
+		assert.deepEqual( entry.sourceOwners, [ expectedOwner ] );
+		assert.deepEqual( stored.__sourceOwners, [ expectedOwner ] );
 
 	} finally {
 
@@ -334,7 +702,7 @@ test( 'dev-capture: identical user recapture is a file and HMR no-op', async () 
 
 } );
 
-test( 'dev-capture: equivalent signed recapture ignores private cache and UUID churn', async () => {
+test( 'dev-capture: equivalent signed recapture ignores private cache, UUID, and frame-clock churn', async () => {
 
 	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-semantic-user-' ) );
 	const moduleId = '\0virtual:tsl-precompile/signed-repeatable';
@@ -343,7 +711,7 @@ test( 'dev-capture: equivalent signed recapture ignores private cache and UUID c
 	const { http, port } = await spinUpServer( vite );
 	const sourceRevision = 'e'.repeat( 64 );
 	const selector = SIGNED_SELECTOR_A;
-	const makeArtifact = ( cacheKey, textureUuid ) => ( {
+	const makeArtifact = ( cacheKey, textureUuid, frameTime ) => ( {
 		version: 3,
 		cacheKey,
 		materialShape: 'node-material',
@@ -351,21 +719,26 @@ test( 'dev-capture: equivalent signed recapture ignores private cache and UUID c
 		vertexShader: 'vertex',
 		fragmentShader: 'fragment',
 		bindings: [],
-		uniformPlan: [ { textures: [ { source: { kind: 'artifact.texture', textureUuid } } ] } ],
+		uniformPlan: [
+			{
+				slots: [ { source: { kind: 'frame.time', valueSnapshot: { type: 'number', data: frameTime } } } ],
+			},
+			{ textures: [ { source: { kind: 'artifact.texture', textureUuid } } ] },
+		],
 		artifactContentHashVersion: ARTIFACT_CONTENT_HASH_VERSION,
 		sourceGraphHash: 'f'.repeat( 64 ),
 		sourceHashVersion: '0.1.0',
-		sourceThreeVersion: '0.184.0',
+		sourceThreeVersion: '0.185.1',
 		renderContextSignature: selector,
 		sourceValidationMode: 'runtime-graph',
 	} );
 
 	try {
 
-		const firstArtifact = makeArtifact( 'private-cache-a', 'capture-texture-a' );
+		const firstArtifact = makeArtifact( 'private-cache-a', 'capture-texture-a', 2.1473 );
 		const firstHash = computeArtifactContentHash( firstArtifact, {
 			shape: 'material:signed-repeatable',
-			threeVersion: '0.184.0',
+			threeVersion: '0.185.1',
 			pluginVersion: '0.1.0',
 		} );
 		const first = await postJSON( port, '/__tsl-precompile/capture', {
@@ -380,13 +753,13 @@ test( 'dev-capture: equivalent signed recapture ignores private cache and UUID c
 		const artifactBefore = readFileSync( join( artifactsDir, first.json.file ), 'utf8' );
 		const manifestBefore = readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' );
 
-		const repeatedArtifact = makeArtifact( 'private-cache-b', 'capture-texture-b' );
+		const repeatedArtifact = makeArtifact( 'private-cache-b', 'capture-texture-b', 2.4621 );
 		const repeatedHash = computeArtifactContentHash( repeatedArtifact, {
 			shape: 'material:signed-repeatable',
-			threeVersion: '0.184.0',
+			threeVersion: '0.185.1',
 			pluginVersion: '0.1.0',
 		} );
-		assert.equal( repeatedHash, firstHash );
+		assert.notEqual( repeatedHash, firstHash, 'the raw content hash records the captured fallback clock' );
 		const repeated = await postJSON( port, '/__tsl-precompile/capture', {
 			name: 'signed-repeatable',
 			hash: repeatedHash,
@@ -397,6 +770,7 @@ test( 'dev-capture: equivalent signed recapture ignores private cache and UUID c
 
 		assert.equal( repeated.status, 200 );
 		assert.equal( repeated.json.changed, false );
+		assert.equal( repeated.json.hash, firstHash, 'the durable family retains its authoritative fallback clock' );
 		assert.equal( readFileSync( join( artifactsDir, first.json.file ), 'utf8' ), artifactBefore );
 		assert.equal( readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' ), manifestBefore );
 		assert.equal( vite._invalidated.length, 1 );
@@ -757,6 +1131,77 @@ test( 'dev-capture: identical auxiliary recapture preserves artifact and manifes
 
 } );
 
+test( 'dev-capture: auxiliary captures retain WGSL and GLSL backend variants without subset churn', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-aux-backends-' ) );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+	const materialShape = 'render-output';
+	const configHash = '8'.repeat( 64 );
+	const artifacts = [
+		makeSignedBackendAuxArtifact( materialShape, 'wgsl' ),
+		makeSignedBackendAuxArtifact( materialShape, 'glsl' ),
+	];
+
+	try {
+
+		for ( const artifact of artifacts ) {
+
+			const response = await postJSON( port, '/__tsl-precompile/capture', {
+				materialShape,
+				configHash,
+				artifact,
+			} );
+			assert.equal( response.status, 200, response.text );
+			assert.equal( response.json.changed, true );
+
+		}
+
+		const manifestPath = join( artifactsDir, 'manifest.json' );
+		const manifest = JSON.parse( readFileSync( manifestPath, 'utf8' ) );
+		const entry = manifest.__aux[ `${ materialShape }:${ configHash }` ];
+		const artifactPath = join( artifactsDir, entry.file );
+		const stored = JSON.parse( readFileSync( artifactPath, 'utf8' ) );
+		const candidates = collectArtifactVariantCandidates( stored.artifact );
+		assert.deepEqual( candidates.map( ( candidate ) => candidate.shaderLanguage ).sort(), [ 'glsl', 'wgsl' ] );
+		assert.deepEqual(
+			candidates.map( ( candidate ) => candidate.variantKey ).sort(),
+			[ 'webgl:renderer-owned-shared-cache', 'webgpu:renderer-owned-shared-cache' ],
+		);
+		const expectedHash = computeArtifactContentHash( stored.artifact, {
+			shape: materialShape,
+			threeVersion: '0.185.1',
+			pluginVersion: '0.1.0',
+		} );
+		assert.equal( entry.hash, expectedHash );
+		assert.equal( stored.__hash, expectedHash );
+
+		const artifactBytes = readFileSync( artifactPath, 'utf8' );
+		const manifestBytes = readFileSync( manifestPath, 'utf8' );
+		for ( const artifact of artifacts ) {
+
+			const repeated = await postJSON( port, '/__tsl-precompile/capture', {
+				materialShape,
+				configHash,
+				artifact,
+			} );
+			assert.equal( repeated.status, 200, repeated.text );
+			assert.equal( repeated.json.changed, false );
+
+		}
+		assert.equal( readFileSync( artifactPath, 'utf8' ), artifactBytes );
+		assert.equal( readFileSync( manifestPath, 'utf8' ), manifestBytes );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
 test( 'dev-capture: aux background payload writes aux-<shape>-<hash>.json + manifest.__aux', async () => {
 
 	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-' ) );
@@ -790,6 +1235,110 @@ test( 'dev-capture: aux background payload writes aux-<shape>-<hash>.json + mani
 		assert.ok( entry, 'aux manifest should be keyed by shape:configHash' );
 		assert.equal( entry.shape, 'background' );
 		assert.equal( entry.configHash, configHash );
+		assert.equal( entry.threeVersion, '0.185.1' );
+		assert.equal( entry.pluginVersion, '0.1.0' );
+		const envelope = JSON.parse( readFileSync( join( artifactsDir, entry.file ), 'utf8' ) );
+		assert.equal( envelope.threeVersion, entry.threeVersion );
+		assert.equal( envelope.pluginVersion, entry.pluginVersion );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: internal-pass stages require a family envelope while shadow-depth remains standalone', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-internal-pass-envelope-' ) );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+
+	try {
+
+		for ( const [ index, materialShape ] of INTERNAL_PASS_SHAPES.entries() ) {
+
+			const response = await postJSON( port, '/__tsl-precompile/capture', {
+				materialShape,
+				configHash: index.toString( 16 ).padStart( 64, '0' ),
+				artifact: {
+					materialShape,
+					uniformPlan: [],
+					vertexShader: 'vertex',
+					fragmentShader: 'fragment',
+				},
+			} );
+			assert.equal( response.status, 400, `${ materialShape } must not be written standalone` );
+			assert.match(
+				response.json.error,
+				/renderer-owned internal-pass stage.*valid auxiliaryFamily envelope/,
+			);
+
+		}
+		assert.deepEqual( readdirSync( artifactsDir ), [] );
+		assert.equal( INTERNAL_PASS_SHAPES.includes( 'shadow-depth' ), false );
+
+		const shadowDepth = await postJSON( port, '/__tsl-precompile/capture', {
+			materialShape: 'shadow-depth',
+			configHash: 'f'.repeat( 64 ),
+			artifact: {
+				materialShape: 'shadow-depth',
+				uniformPlan: [],
+				vertexShader: 'vertex:shadow-depth',
+				fragmentShader: 'fragment:shadow-depth',
+			},
+		} );
+		assert.equal( shadowDepth.status, 200, shadowDepth.text );
+		assert.equal( shadowDepth.json.materialShape, 'shadow-depth' );
+		const manifest = JSON.parse( readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' ) );
+		assert.deepEqual( Object.keys( manifest.__aux ), [ `shadow-depth:${ 'f'.repeat( 64 ) }` ] );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: rejects a tampered signed auxiliary payload', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-aux-integrity-' ) );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+
+	try {
+
+		const artifact = {
+			uniformPlan: [],
+			vertexShader: 'vertex',
+			fragmentShader: 'original',
+			artifactContentHashVersion: ARTIFACT_CONTENT_HASH_VERSION,
+			sourceThreeVersion: '0.185.1',
+			sourceHashVersion: '0.1.0',
+		};
+		const hash = computeArtifactContentHash( artifact, {
+			shape: 'background',
+			threeVersion: artifact.sourceThreeVersion,
+			pluginVersion: artifact.sourceHashVersion,
+		} );
+		artifact.fragmentShader = 'tampered';
+
+		const response = await postJSON( port, '/__tsl-precompile/capture', {
+			__preserveAuxSignature: true,
+			materialShape: 'background',
+			configHash: 'e'.repeat( 64 ),
+			hash,
+			artifact,
+		} );
+		assert.equal( response.status, 400 );
+		assert.match( response.json.error, /content does not match its stored __hash/ );
+		assert.deepEqual( readdirSync( artifactsDir ), [] );
 
 	} finally {
 
@@ -851,6 +1400,152 @@ test( 'dev-capture: aux payload missing configHash → 400', async () => {
 		} );
 		assert.equal( r.status, 400 );
 		assert.match( r.json.error, /configHash/ );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: malformed JSON, arrays, and unknown auxiliary shapes fail as client errors', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-malformed-' ) );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+
+	try {
+
+		const invalidJsonResponse = await fetch( `http://127.0.0.1:${ port }/__tsl-precompile/capture`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				origin: `http://127.0.0.1:${ port }`,
+			},
+			body: '{',
+		} );
+		assert.equal( invalidJsonResponse.status, 400 );
+		assert.match( ( await invalidJsonResponse.json() ).error, /request body must be valid JSON/ );
+
+		const arrayRoot = await postJSON( port, '/__tsl-precompile/capture', [] );
+		assert.equal( arrayRoot.status, 400 );
+		assert.match( arrayRoot.json.error, /payload must be an object/ );
+
+		const arrayArtifact = await postJSON( port, '/__tsl-precompile/capture', {
+			name: 'array-artifact',
+			hash: 'a'.repeat( 64 ),
+			artifact: [],
+		} );
+		assert.equal( arrayArtifact.status, 400 );
+		assert.match( arrayArtifact.json.error, /payload\.artifact must be an object/ );
+
+		const unknownShape = await postJSON( port, '/__tsl-precompile/capture', {
+			name: 'unknown-shape',
+			materialShape: 'not-a-real-shape',
+			configHash: 'b'.repeat( 64 ),
+			artifact: { uniformPlan: [] },
+		} );
+		assert.equal( unknownShape.status, 400 );
+		assert.match( unknownShape.json.error, /materialShape is not a supported auxiliary shape/ );
+		assert.deepEqual( readdirSync( artifactsDir ), [] );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: aux payload requires exact Three/toolchain provenance', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-aux-provenance-' ) );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+
+	try {
+
+		const missing = await postJSON( port, '/__tsl-precompile/capture', {
+			materialShape: 'background',
+			configHash: 'a'.repeat( 64 ),
+			threeVersion: undefined,
+			pluginVersion: undefined,
+			artifact: { uniformPlan: [] },
+		} );
+		assert.equal( missing.status, 400 );
+		assert.match( missing.json.error, /threeVersion.*exact Three package version/ );
+
+		const revisionOnly = await postJSON( port, '/__tsl-precompile/capture', {
+			materialShape: 'background',
+			configHash: 'b'.repeat( 64 ),
+			threeVersion: '185',
+			artifact: { uniformPlan: [] },
+		} );
+		assert.equal( revisionOnly.status, 400 );
+		assert.match( revisionOnly.json.error, /threeVersion.*exact Three package version/ );
+
+		const stale = await postJSON( port, '/__tsl-precompile/capture', {
+			materialShape: 'background',
+			configHash: 'c'.repeat( 64 ),
+			threeVersion: '0.184.0',
+			artifact: { uniformPlan: [] },
+		} );
+		assert.equal( stale.status, 400 );
+		assert.match( stale.json.error, /threeVersion.*current exact baseline 0\.185\.1/ );
+
+		const oldToolchain = await postJSON( port, '/__tsl-precompile/capture', {
+			materialShape: 'background',
+			configHash: 'd'.repeat( 64 ),
+			pluginVersion: 'old-toolchain',
+			artifact: { uniformPlan: [] },
+		} );
+		assert.equal( oldToolchain.status, 400 );
+		assert.match( oldToolchain.json.error, /pluginVersion.*current toolchain 0\.1\.0/ );
+		assert.deepEqual( readdirSync( artifactsDir ), [] );
+
+	} finally {
+
+		http.close();
+		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: signed user payload requires the current exact Three/toolchain provenance', async () => {
+
+	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-user-provenance-' ) );
+	const vite = makeFakeViteServer();
+	attachDevCapture( vite, { artifactsDir } );
+	const { http, port } = await spinUpServer( vite );
+
+	try {
+
+		const staleThreeArtifact = makeSignedArtifact( { sourceThreeVersion: '0.184.0' } );
+		const staleThree = await postJSON( port, '/__tsl-precompile/capture', makeSignedPayload(
+			'stale-three',
+			'src/stale-three.js:precompile:0',
+			'a'.repeat( 64 ),
+			staleThreeArtifact,
+		) );
+		assert.equal( staleThree.status, 400 );
+		assert.match( staleThree.json.error, /sourceThreeVersion.*current exact baseline 0\.185\.1/ );
+
+		const staleToolchainArtifact = makeSignedArtifact( { sourceHashVersion: 'old-toolchain' } );
+		const staleToolchain = await postJSON( port, '/__tsl-precompile/capture', makeSignedPayload(
+			'stale-toolchain',
+			'src/stale-toolchain.js:precompile:0',
+			'b'.repeat( 64 ),
+			staleToolchainArtifact,
+		) );
+		assert.equal( staleToolchain.status, 400 );
+		assert.match( staleToolchain.json.error, /sourceHashVersion.*current toolchain 0\.1\.0/ );
+		assert.deepEqual( readdirSync( artifactsDir ), [] );
 
 	} finally {
 
@@ -969,7 +1664,7 @@ test( 'dev-capture: rejects a mismatched declared artifact-content hash', async 
 			hash: 'a'.repeat( 64 ),
 			artifact: {
 				artifactContentHashVersion: ARTIFACT_CONTENT_HASH_VERSION,
-				sourceThreeVersion: '0.184.0',
+				sourceThreeVersion: '0.185.1',
 				sourceHashVersion: '0.1.0',
 				vertexShader: 'vertex',
 				fragmentShader: 'fragment',

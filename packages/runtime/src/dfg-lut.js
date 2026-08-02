@@ -19,7 +19,7 @@ import { DataTexture } from 'three/src/textures/DataTexture.js';
 import { RGFormat, HalfFloatType, LinearFilter, ClampToEdgeWrapping } from 'three/src/constants.js';
 
 /**
- * Same 16×16 RG16F data as three.js r184 `DFGLUT.js`.
+ * Same 16×16 RG16F data as three.js r185 `DFGLUT.js`.
  * Precomputed; 4096 samples per texel; roughness × dotNV parametrisation.
  */
 const DFG_DATA = new Uint16Array( [

@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, statSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { lstatSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { parseSlimBundleStamp } from '@tsl-precompile/contract/slim-bundle-provenance-node';
+
+import { readSafeContainedFile } from './e2e-evidence.mjs';
 
 function argumentValue( args, prefix ) {
 
@@ -35,7 +37,7 @@ export function loadSlimBundle( {
 	let stats;
 	try {
 
-		stats = statSync( absolutePath );
+		stats = lstatSync( absolutePath );
 
 	} catch ( error ) {
 
@@ -47,7 +49,9 @@ export function loadSlimBundle( {
 	let bytes;
 	try {
 
-		bytes = readFileSync( absolutePath );
+		bytes = readSafeContainedFile( dirname( absolutePath ), absolutePath, {
+			label: 'Slim bundle',
+		} );
 
 	} catch ( error ) {
 

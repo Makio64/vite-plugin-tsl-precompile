@@ -53,6 +53,27 @@ function escapedBindingName( bindingName ) {
 
 }
 
+function glslSamplerTypeForBinding( artifact, bindingName ) {
+
+	return cachedShaderQuery( artifact, `glsl-sampler:${ bindingName }`, ( a ) => {
+
+		const escaped = escapedBindingName( bindingName );
+		const match = new RegExp(
+			`\\buniform\\s+(?:(?:lowp|mediump|highp)\\s+)?([iu]?sampler[A-Za-z0-9_]*)\\s+${ escaped }\\b`,
+			'm',
+		).exec( shaderSource( a ) );
+		return match ? match[ 1 ] : null;
+
+	} );
+
+}
+
+function glslSamplerHasShape( samplerType, shape ) {
+
+	return typeof samplerType === 'string' && samplerType.toLowerCase().includes( shape );
+
+}
+
 export function resolvePlanTextureTypeHint( artifact, group, textureEntry, source, bindingName ) {
 
 	const textureBindingName = textureBindingNameForSampler( bindingName );
@@ -82,7 +103,8 @@ export function shaderDeclaresDepthTexture( artifact, bindingName ) {
 	return cachedShaderQuery( artifact, `depth:${ bindingName }`, ( a ) => {
 
 		const escaped = escapedBindingName( bindingName );
-		return new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth`, 'm' ).test( shaderSource( a ) );
+		return new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth`, 'm' ).test( shaderSource( a ) ) ||
+			glslSamplerHasShape( glslSamplerTypeForBinding( a, bindingName ), 'shadow' );
 
 	} );
 
@@ -93,7 +115,8 @@ export function shaderDeclaresComparisonSampler( artifact, bindingName ) {
 	return cachedShaderQuery( artifact, `comparison:${ bindingName }`, ( a ) => {
 
 		const escaped = String( bindingName || '' ).replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
-		return new RegExp( `var\\s+${ escaped }\\s*:\\s*sampler_comparison`, 'm' ).test( shaderSource( a ) );
+		return new RegExp( `var\\s+${ escaped }\\s*:\\s*sampler_comparison`, 'm' ).test( shaderSource( a ) ) ||
+			glslSamplerHasShape( glslSamplerTypeForBinding( a, bindingName ), 'shadow' );
 
 	} );
 
@@ -104,7 +127,8 @@ export function shaderDeclaresCubeTexture( artifact, bindingName ) {
 	return cachedShaderQuery( artifact, `cube:${ bindingName }`, ( a ) => {
 
 		const escaped = escapedBindingName( bindingName );
-		return new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_(?:depth_)?cube`, 'm' ).test( shaderSource( a ) );
+		return new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_(?:depth_)?cube`, 'm' ).test( shaderSource( a ) ) ||
+			glslSamplerHasShape( glslSamplerTypeForBinding( a, bindingName ), 'cube' );
 
 	} );
 
@@ -115,7 +139,8 @@ export function shaderDeclaresMultisampledTexture( artifact, bindingName ) {
 	return cachedShaderQuery( artifact, `multisampled:${ bindingName }`, ( a ) => {
 
 		const escaped = escapedBindingName( bindingName );
-		return new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_(?:depth_)?multisampled_2d`, 'm' ).test( shaderSource( a ) );
+		return new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_(?:depth_)?multisampled_2d`, 'm' ).test( shaderSource( a ) ) ||
+			glslSamplerHasShape( glslSamplerTypeForBinding( a, bindingName ), '2dms' );
 
 	} );
 
@@ -126,7 +151,8 @@ export function shaderDeclaresArrayTexture( artifact, bindingName ) {
 	return cachedShaderQuery( artifact, `array:${ bindingName }`, ( a ) => {
 
 		const escaped = escapedBindingName( bindingName );
-		return new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_(?:depth_)?2d_array`, 'm' ).test( shaderSource( a ) );
+		return new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_(?:depth_)?2d_array`, 'm' ).test( shaderSource( a ) ) ||
+			glslSamplerHasShape( glslSamplerTypeForBinding( a, bindingName ), '2darray' );
 
 	} );
 
@@ -142,6 +168,10 @@ export function inferTextureTypeFromShader( artifact, bindingName ) {
 		if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_cube`, 'm' ).test( wgsl ) ) return 'cube';
 		if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_3d`, 'm' ).test( wgsl ) ) return '3d';
 		if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_(?:depth_)?2d_array`, 'm' ).test( wgsl ) ) return '2d-array';
+		const glslSamplerType = glslSamplerTypeForBinding( a, bindingName );
+		if ( glslSamplerHasShape( glslSamplerType, 'cube' ) ) return 'cube';
+		if ( glslSamplerHasShape( glslSamplerType, '3d' ) ) return '3d';
+		if ( glslSamplerHasShape( glslSamplerType, '2darray' ) ) return '2d-array';
 		return null;
 
 	} );
@@ -180,7 +210,7 @@ export function textureMatchesShaderBinding( artifact, bindingName, texture ) {
 	}
 	if ( texture.isDepthTexture === true ) return false;
 	if ( shaderDeclaresCubeTexture( artifact, bindingName ) ) return texture.isCubeTexture === true;
-	if ( textureType === '3d' ) return texture.isData3DTexture === true || texture.isTexture3D === true;
+	if ( textureType === '3d' ) return texture.isData3DTexture === true || texture.is3DTexture === true || texture.isTexture3D === true;
 	if ( textureType === '2d-array' ) return texture.isDataArrayTexture === true || texture.isArrayTexture === true || texture.isCompressedArrayTexture === true || ( texture.isDepthTexture === true && texture.image && texture.image.depth > 1 );
 	return true;
 
@@ -197,17 +227,19 @@ export function selectFallbackTextureForBinding( artifact, bindingName, fallback
 	const cube = fallbacks && fallbacks.cube || texture;
 	const texture3D = fallbacks && fallbacks.texture3D || texture;
 	const array = fallbacks && fallbacks.array || texture;
-	const wgsl = shaderSource( artifact );
-	const escaped = escapedBindingName( bindingName );
+	const wantsDepth = shaderDeclaresDepthTexture( artifact, bindingName );
+	const wantsCube = shaderDeclaresCubeTexture( artifact, bindingName );
+	const wantsArray = shaderDeclaresArrayTexture( artifact, bindingName );
+	const wantsMultisampled = shaderDeclaresMultisampledTexture( artifact, bindingName );
 
+	if ( wantsDepth && wantsCube ) return depthCube;
+	if ( wantsDepth && wantsArray ) return depthArray;
+	if ( wantsDepth && wantsMultisampled ) return multisampledDepth;
 	if ( shaderDeclaresComparisonSampler( artifact, bindingName ) ) return comparisonDepth;
-	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth_cube`, 'm' ).test( wgsl ) ) return depthCube;
-	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth_2d_array`, 'm' ).test( wgsl ) ) return depthArray;
-	if ( shaderDeclaresDepthTexture( artifact, bindingName ) ) return shaderDeclaresMultisampledTexture( artifact, bindingName ) ? multisampledDepth : depth;
-	if ( shaderDeclaresCubeTexture( artifact, bindingName ) ) return cube;
+	if ( wantsDepth ) return depth;
+	if ( wantsCube ) return cube;
 	if ( inferTextureTypeFromShader( artifact, bindingName ) === '3d' ) return texture3D;
-	if ( shaderDeclaresArrayTexture( artifact, bindingName ) ) return array;
-	if ( new RegExp( `var\\s+${ escaped }\\s*:\\s*sampler_comparison`, 'm' ).test( wgsl ) ) return comparisonDepth;
+	if ( wantsArray ) return array;
 	if ( /sampler/i.test( bindingName ) ) {
 
 		const textureName = bindingName.replace( /_sampler$/, '' );

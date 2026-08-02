@@ -14,7 +14,6 @@ import {
 } from '@tsl-precompile/contract/cube-render-target';
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
-import { REVISION } from 'three/src/constants.js';
 import PrecompiledMaterial from './_vendor-PrecompiledMaterial.js';
 import {
 	attachArtifactTextureRefs,
@@ -22,10 +21,11 @@ import {
 	resolveAuxArtifactForInput,
 } from './aux-loader.js';
 import { hashPlainConfigSync } from './graph-hash.js';
+import { RUNTIME_SLIM_THREE_PACKAGE_VERSION } from './slim-source-policy.js';
 
 const SHAPE = 'cube-render-target';
 const DEFAULT_HASH_OPTIONS = Object.freeze( {
-	threeVersion: threePackageVersionFromRevision( REVISION ),
+	threeVersion: RUNTIME_SLIM_THREE_PACKAGE_VERSION,
 	pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
 } );
 
@@ -122,12 +122,5 @@ function replayCubeRenderTargetError( code, message, config, capturedConfig ) {
 	error.config = config;
 	error.capturedConfig = capturedConfig || null;
 	return error;
-
-}
-
-function threePackageVersionFromRevision( revision ) {
-
-	const match = String( revision || '' ).match( /\d+/ );
-	return match ? `0.${ match[ 0 ] }.0` : String( revision || 'unknown' );
 
 }

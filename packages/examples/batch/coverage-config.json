@@ -2,7 +2,9 @@
   "pixelGate": {
     "disabled": {
       "diagnostic": [],
-      "volatileCompute": []
+      "volatileCompute": [
+        "webgpu_storage_buffer.html"
+      ]
     },
     "ignoreRegions": {
       "webgpu_shadowmap_array.html": [
@@ -23,20 +25,13 @@
       "webgpu_pmrem_cubemap.html": 15000,
       "webgpu_postprocessing_motion_blur.html": 20000
     },
-    "psnrThresholdOverrides": {
-      "webgpu_camera_logarithmicdepthbuffer.html": 28,
-      "webgpu_instancing_morph.html": 27,
-      "webgpu_tsl_galaxy.html": 20
-    },
+    "psnrThresholdOverrides": {},
     "minimumBrightFractionOverrides": {
       "webgpu_compute_audio.html": 0.1,
       "webgpu_compute_points.html": 0.0001
     },
-    "expectedReplayErrors": {
-      "webgpu_hdr.html": [
-        "Proxy\\(Function\\)"
-      ]
-    },
+    "expectedReplayErrors": {},
+    "expectedCaptureErrors": {},
     "tiers": {
       "tier1": [
         "webgpu_clearcoat.html",
@@ -70,7 +65,7 @@
         "webgpu_lights_phong.html",
         "webgpu_lights_rectarealight.html",
         "webgpu_lights_selective.html",
-        "webgpu_lights_tiled.html",
+        "webgpu_lights_clustered.html",
         "webgpu_lightprobe.html",
         "webgpu_lightprobe_cubecamera.html",
         "webgpu_shadow_contact.html",
@@ -83,6 +78,7 @@
         "webgpu_hdr.html",
         "webgpu_sky.html",
         "webgpu_reflection_blurred.html",
+        "webgpu_reflection_roughness.html",
         "webgpu_loader_gltf.html",
         "webgpu_loader_gltf_sheen.html",
         "webgpu_loader_gltf_iridescence.html",

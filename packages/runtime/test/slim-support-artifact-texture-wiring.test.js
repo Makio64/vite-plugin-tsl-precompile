@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
 	artifactHasTextureSource,
 	attachArtifactTextureRefsWhere,
+	attachExactMaterialGraphDepthTextureRefs,
 	attachTextureRefsWhere,
 	countArtifactTextureSources,
 	rewritePassDepthTextureSources,
@@ -11,11 +12,61 @@ import {
 	textureMatchesArtifactSource,
 	textureMatchesSource,
 } from '../src/slim-support/artifact-texture-wiring.js';
+import { createRendererRenderTargetTextureSelector } from '../../contract/src/render-target-texture.js';
 
 function makeArtifact( textureEntries ) {
 
 	return {
 		uniformPlan: [ { name: 'render', textures: textureEntries } ],
+	};
+
+}
+
+function makeArrayDepthTarget( overrides = {} ) {
+
+	const colorTexture = {
+		isTexture: true,
+		isDataArrayTexture: true,
+		format: 1023,
+		type: 1009,
+		colorSpace: '',
+	};
+	const depthTexture = {
+		isTexture: true,
+		isDepthTexture: true,
+		isDataArrayTexture: true,
+		name: 'ShadowDepthArrayTexture',
+		format: 1026,
+		type: 1014,
+		colorSpace: '',
+		...overrides.depthTexture,
+	};
+	const target = {
+		isArrayRenderTarget: true,
+		width: 4096,
+		height: 4096,
+		depth: 4,
+		texture: colorTexture,
+		textures: [ colorTexture ],
+		depthTexture,
+		...overrides.target,
+	};
+	colorTexture.renderTarget = target;
+	depthTexture.renderTarget = target;
+	return { target, colorTexture, depthTexture };
+
+}
+
+function materialGraphDepthSource( selector, overrides = {} ) {
+
+	return {
+		kind: 'depth.texture',
+		textureUuid: 'captured-shadow-array-depth',
+		lightIndex: - 1,
+		lightUuid: null,
+		fromMaterialGraph: true,
+		renderTargetSelector: selector,
+		...overrides,
 	};
 
 }
@@ -40,6 +91,41 @@ test( 'textureMatchesSource falls back to basename', () => {
 
 	const tex = { isTexture: true, name: 'a/b/diffuse.png' };
 	assert.equal( textureMatchesSource( tex, { kind: 'artifact.texture', textureName: 'q/r/diffuse.png' } ), true );
+
+} );
+
+test( 'textureMatchesSource matches canonical same-origin paths and rejects same-basename path collisions', () => {
+
+	const locationDescriptor = Object.getOwnPropertyDescriptor( globalThis, 'location' );
+	Object.defineProperty( globalThis, 'location', {
+		value: { href: 'http://localhost:5210/examples/ocean/' },
+		configurable: true,
+	} );
+	try {
+
+		const tex = {
+			isTexture: true,
+			uuid: 'live-texture',
+			name: 'shared.png',
+			image: { src: 'http://localhost:5210/textures/first/shared.png' },
+		};
+		assert.equal( textureMatchesSource( tex, {
+			kind: 'artifact.texture',
+			textureName: 'shared.png',
+			imageSrc: '/textures/first/shared.png',
+		} ), true );
+		assert.equal( textureMatchesSource( tex, {
+			kind: 'artifact.texture',
+			textureName: 'shared.png',
+			imageSrc: '/textures/second/shared.png',
+		} ), false );
+
+	} finally {
+
+		if ( locationDescriptor ) Object.defineProperty( globalThis, 'location', locationDescriptor );
+		else delete globalThis.location;
+
+	}
 
 } );
 
@@ -106,6 +192,11 @@ test( 'attachTextureRefsWhere stamps `_textureRefs` as a non-enumerable Map', ()
 	assert.ok( artifact._textureRefs instanceof Map );
 	assert.equal( artifact._textureRefs.get( 'captured-a' ), tex );
 	assert.equal( Object.prototype.propertyIsEnumerable.call( artifact, '_textureRefs' ), false );
+	assert.equal(
+		attachTextureRefsWhere( artifact, tex, ( source ) => source.textureUuid === 'captured-a' ),
+		false,
+		'repeating the same live texture is not reported as a rebind',
+	);
 
 } );
 
@@ -157,6 +248,210 @@ test( 'attachTextureRefsWhere rejects non-texture inputs', () => {
 	assert.equal( attachTextureRefsWhere( artifact, null, () => true ), false );
 	assert.equal( attachTextureRefsWhere( artifact, { isTexture: false }, () => true ), false );
 	assert.equal( attachTextureRefsWhere( null, { isTexture: true }, () => true ), false );
+
+} );
+
+test( 'attachExactMaterialGraphDepthTextureRefs attaches one exact current array-depth attachment', () => {
+
+	const { target, depthTexture } = makeArrayDepthTarget();
+	const selector = createRendererRenderTargetTextureSelector( target, { texture: depthTexture } );
+	const source = materialGraphDepthSource( selector );
+	const artifact = makeArtifact( [
+		{ bindingKind: 'sampled-texture', source },
+		{ bindingKind: 'sampler', source: { ...source } },
+	] );
+
+	assert.equal( attachExactMaterialGraphDepthTextureRefs( artifact, [ depthTexture ] ), 1 );
+	assert.equal( artifact._textureRefs.get( source.textureUuid ), depthTexture );
+	assert.equal(
+		attachExactMaterialGraphDepthTextureRefs( artifact, [ depthTexture ] ),
+		0,
+		'repeating the exact attachment is idempotent',
+	);
+
+} );
+
+test( 'attachExactMaterialGraphDepthTextureRefs stays pending until the exact attachment is discoverable', () => {
+
+	const { target, depthTexture } = makeArrayDepthTarget();
+	const selector = createRendererRenderTargetTextureSelector( target, { texture: depthTexture } );
+	const artifact = makeArtifact( [ { source: materialGraphDepthSource( selector ) } ] );
+
+	assert.equal( attachExactMaterialGraphDepthTextureRefs( artifact, [] ), 0 );
+	assert.equal( artifact._textureRefs, undefined );
+	assert.equal( attachExactMaterialGraphDepthTextureRefs( artifact, [ depthTexture ] ), 1 );
+	assert.equal( artifact._textureRefs.get( 'captured-shadow-array-depth' ), depthTexture );
+	assert.equal( attachExactMaterialGraphDepthTextureRefs( artifact, [] ), 0 );
+	assert.equal(
+		artifact._textureRefs.has( 'captured-shadow-array-depth' ),
+		false,
+		'losing the live candidate clears its stale preferred ref',
+	);
+
+} );
+
+test( 'attachExactMaterialGraphDepthTextureRefs clears a prior winner when candidates become ambiguous', () => {
+
+	const captured = makeArrayDepthTarget();
+	const selector = createRendererRenderTargetTextureSelector( captured.target, { texture: captured.depthTexture } );
+	const artifact = makeArtifact( [ { source: materialGraphDepthSource( selector ) } ] );
+	const first = makeArrayDepthTarget();
+	const second = makeArrayDepthTarget();
+	const unrelated = { isTexture: true };
+	Object.defineProperty( artifact, '_textureRefs', {
+		value: new Map( [ [ 'unrelated', unrelated ] ] ),
+		configurable: true,
+		writable: true,
+	} );
+
+	assert.equal( attachExactMaterialGraphDepthTextureRefs( artifact, [ first.depthTexture ] ), 1 );
+	assert.equal( artifact._textureRefs.get( 'captured-shadow-array-depth' ), first.depthTexture );
+	assert.equal(
+		attachExactMaterialGraphDepthTextureRefs(
+			artifact,
+			[ first.depthTexture, second.depthTexture ],
+		),
+		0,
+	);
+	assert.equal( artifact._textureRefs.has( 'captured-shadow-array-depth' ), false );
+	assert.equal( artifact._textureRefs.get( 'unrelated' ), unrelated, 'unrelated texture refs are preserved' );
+
+} );
+
+test( 'attachExactMaterialGraphDepthTextureRefs rejects detached, mismatched, ambiguous, and light-owned depths', () => {
+
+	const captured = makeArrayDepthTarget();
+	const selector = createRendererRenderTargetTextureSelector( captured.target, { texture: captured.depthTexture } );
+	const makeArtifactFor = ( overrides = {} ) => makeArtifact( [
+		{ source: materialGraphDepthSource( selector, overrides ) },
+	] );
+
+	const detached = makeArrayDepthTarget();
+	detached.target.depthTexture = { isTexture: true, isDepthTexture: true };
+	assert.equal( attachExactMaterialGraphDepthTextureRefs( makeArtifactFor(), [ detached.depthTexture ] ), 0 );
+
+	for ( const candidate of [
+		makeArrayDepthTarget( { depthTexture: { name: 'DifferentDepthName' } } ),
+		makeArrayDepthTarget( { depthTexture: { format: 1027 } } ),
+		makeArrayDepthTarget( { depthTexture: { type: 1015 } } ),
+		makeArrayDepthTarget( {
+			target: { isArrayRenderTarget: false },
+			depthTexture: { isDataArrayTexture: false },
+		} ),
+	] ) {
+
+		assert.equal(
+			attachExactMaterialGraphDepthTextureRefs( makeArtifactFor(), [ candidate.depthTexture ] ),
+			0,
+		);
+
+	}
+
+	const anonymousCaptured = makeArrayDepthTarget( { depthTexture: { name: '' } } );
+	const anonymousSelector = createRendererRenderTargetTextureSelector(
+		anonymousCaptured.target,
+		{ texture: anonymousCaptured.depthTexture },
+	);
+	const anonymousArtifact = makeArtifact( [
+		{ source: materialGraphDepthSource( anonymousSelector ) },
+	] );
+	const wrongExtent = makeArrayDepthTarget( {
+		target: { depth: 8 },
+		depthTexture: { name: '' },
+	} );
+	assert.equal(
+		attachExactMaterialGraphDepthTextureRefs( anonymousArtifact, [ wrongExtent.depthTexture ] ),
+		0,
+		'anonymous attachments must match their captured extent',
+	);
+
+	const first = makeArrayDepthTarget();
+	const second = makeArrayDepthTarget();
+	assert.equal(
+		attachExactMaterialGraphDepthTextureRefs(
+			makeArtifactFor(),
+			[ first.depthTexture, second.depthTexture ],
+		),
+		0,
+		'multiple exact candidates are ambiguous',
+	);
+	assert.equal(
+		attachExactMaterialGraphDepthTextureRefs(
+			makeArtifactFor( { lightIndex: 0, lightUuid: 'light-a' } ),
+			[ first.depthTexture ],
+		),
+		0,
+		'light-owned shadow sources remain on the dedicated shadow path',
+	);
+
+} );
+
+test( 'attachExactMaterialGraphDepthTextureRefs rejects conflicting selectors for one captured UUID', () => {
+
+	const first = makeArrayDepthTarget();
+	const second = makeArrayDepthTarget( { target: { depth: 8 } } );
+	const firstSelector = createRendererRenderTargetTextureSelector( first.target, { texture: first.depthTexture } );
+	const secondSelector = createRendererRenderTargetTextureSelector( second.target, { texture: second.depthTexture } );
+	const artifact = makeArtifact( [
+		{ source: materialGraphDepthSource( firstSelector ) },
+		{ source: materialGraphDepthSource( secondSelector ) },
+	] );
+
+	assert.equal(
+		attachExactMaterialGraphDepthTextureRefs( artifact, [ first.depthTexture, second.depthTexture ] ),
+		0,
+	);
+	assert.equal( artifact._textureRefs, undefined );
+
+} );
+
+test( 'attachExactMaterialGraphDepthTextureRefs discovers variant-only sources on the root sidecar', () => {
+
+	const { target, depthTexture } = makeArrayDepthTarget();
+	const selector = createRendererRenderTargetTextureSelector( target, { texture: depthTexture } );
+	const artifact = {
+		uniformPlan: [],
+		variants: {
+			arrayDepth: makeArtifact( [
+				{ source: materialGraphDepthSource( selector ) },
+			] ),
+		},
+	};
+
+	assert.equal( attachExactMaterialGraphDepthTextureRefs( artifact, [ depthTexture ] ), 1 );
+	assert.equal( artifact._textureRefs.get( 'captured-shadow-array-depth' ), depthTexture );
+	assert.equal( artifact.variants.arrayDepth._textureRefs, undefined );
+
+} );
+
+test( 'attachExactMaterialGraphDepthTextureRefs rejects selector conflicts across variants', () => {
+
+	const first = makeArrayDepthTarget();
+	const second = makeArrayDepthTarget( { depthTexture: { name: 'OtherDepthArrayTexture' } } );
+	const firstSelector = createRendererRenderTargetTextureSelector( first.target, { texture: first.depthTexture } );
+	const secondSelector = createRendererRenderTargetTextureSelector( second.target, { texture: second.depthTexture } );
+	const artifact = {
+		uniformPlan: [],
+		variants: {
+			first: makeArtifact( [ { source: materialGraphDepthSource( firstSelector ) } ] ),
+			second: makeArtifact( [ { source: materialGraphDepthSource( secondSelector ) } ] ),
+		},
+	};
+	Object.defineProperty( artifact, '_textureRefs', {
+		value: new Map( [ [ 'captured-shadow-array-depth', first.depthTexture ] ] ),
+		configurable: true,
+		writable: true,
+	} );
+
+	assert.equal(
+		attachExactMaterialGraphDepthTextureRefs( artifact, [ first.depthTexture, second.depthTexture ] ),
+		0,
+	);
+	assert.equal(
+		artifact._textureRefs.has( 'captured-shadow-array-depth' ),
+		false,
+		'a cross-variant conflict clears an inherited preferred texture',
+	);
 
 } );
 

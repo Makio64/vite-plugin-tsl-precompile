@@ -6,83 +6,167 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   unit:
     name: Unit tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4.4.0
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 24
+          node-version: 24.18.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Authored JavaScript correctness lint
+        run: pnpm lint:correctness
       - name: Complete suite
         run: pnpm test:full
+      - name: Strict public TypeScript declarations
+        run: pnpm test:types
       - name: Slim production budgets
         run: pnpm test:slim:budget
 
+  minimum-node:
+    name: Package checks (Node 20.19 minimum)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 20.19.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Default package suites
+        run: pnpm test
+      - name: Strict public TypeScript declarations
+        run: pnpm test:types
+      - name: Release guard compatibility
+        run: pnpm test:release-guard
+
   verify:
     name: Staleness audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4.4.0
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 24
+          node-version: 24.18.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
 
-  tier1-visual:
-    name: Tier-1 visual gate
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
+  site-build:
+    name: Site contracts + source audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4.4.0
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Check out the matching three.js examples corpus
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          node-version: 24
+          repository: mrdoob/three.js
+          ref: 2431a09f46f34c560bc8e44b33be0e567723d5b9 # official r185 commit
+          path: three.js
+          fetch-depth: 1
+          sparse-checkout: |
+            examples
+            src
+            package.json
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: npx playwright install --with-deps chromium
+      - name: Verify the checked catalogue against the exact Three corpus
+        run: pnpm --filter examples-batch catalogue:check:corpus
+        env:
+          TSLP_THREE_REPO: ${{ github.workspace }}/three.js
+      - name: Test evidence, transform, accessibility, and content contracts
+        run: pnpm --filter @tsl-precompile/site test
+
+  tier1-visual:
+    name: Tier-1 visual gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      TSLP_E2E_OUT: ${{ runner.temp }}/tier1-e2e
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Check out the matching three.js examples corpus
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: mrdoob/three.js
+          ref: 2431a09f46f34c560bc8e44b33be0e567723d5b9 # official r185 commit
+          path: three.js
+          fetch-depth: 1
+          sparse-checkout: |
+            build
+            examples
+            src
+            package.json
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
       - name: Build slim bundle with rewrite fallbacks fatal
         run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim
       - name: Run configured tier-1 visual subset
-        run: xvfb-run -a pnpm test:e2e:tier1
-      - uses: actions/upload-artifact@v7
+        run: xvfb-run -a pnpm test:e2e:tier1 -- --three-repo="$GITHUB_WORKSPACE/three.js"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
           name: tier1-visual-results
           path: |
-            packages/examples/batch/results/tier1-report.json
-            packages/examples/batch/results/coverage-summary.md
-            packages/examples/batch/results/shots/*.png
+            ${{ runner.temp }}/tier1-e2e/tier1-report.json
+            ${{ runner.temp }}/tier1-e2e/coverage-summary.md
+            ${{ runner.temp }}/tier1-e2e/coverage-summary.json
+            ${{ runner.temp }}/tier1-e2e/coverage-evidence-set.json
+            ${{ runner.temp }}/tier1-e2e/evidence-manifest.json
+            ${{ runner.temp }}/tier1-e2e/evidence/**/shots/*.png
+            ${{ runner.temp }}/tier1-e2e/evidence/**/artifacts/*
+            ${{ runner.temp }}/tier1-e2e/evidence/**/network/*.bin
           if-no-files-found: ignore
 
-  preview-smoke-ocean:
-    name: Preview smoke (ocean)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  example-production:
+    name: Example builds + preview smokes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      TSLP_PREVIEW_RESULTS: ${{ runner.temp }}/example-production/preview-smoke
+      TSLP_WOW_RESULTS: ${{ runner.temp }}/example-production/wow-showcase
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4.4.0
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 24
+          node-version: 24.18.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: npx playwright install --with-deps chromium
-      - name: Run preview smoke for ocean
-        run: xvfb-run -a pnpm --filter examples-preview-smoke test
-      - uses: actions/upload-artifact@v7
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Run batch diagnostics, example builds, and preview smokes
+        run: xvfb-run -a pnpm test:examples:ci
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
-          name: preview-smoke-ocean-results
-          path: packages/examples/preview-smoke/results/**
+          name: example-production-results
+          path: ${{ runner.temp }}/example-production/**
           if-no-files-found: ignore
 
   fresh-project-smoke:
@@ -91,23 +175,47 @@ jobs:
     # capture an artifact, then vite build + preview. Catches publish-time
     # breakage that workspace:* linking hides — see commit history for the
     # inspector-panel constant-folding regression this job exists to prevent.
-    name: Fresh-project smoke (publish path)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    name: Packed smoke (${{ matrix.label }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      TSLP_FRESH_RESULTS: ${{ runner.temp }}/fresh-project-smoke
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Node 24 / Vite 8.0.16
+            node: 24.18.0
+            vite: 8.0.16
+            typescript: 5.9.3
+            artifact: current
+          - label: Node 22.12 / Vite 7.3.6
+            node: 22.12.0
+            vite: 7.3.6
+            typescript: 5.9.3
+            artifact: vite7
+          - label: Node 20.19 / Vite 6.4.3 / TypeScript 5.6.3 minimums
+            node: 20.19.0
+            vite: 6.4.3
+            typescript: 5.6.3
+            artifact: minimum
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4.4.0
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 24
+          node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: npx playwright install --with-deps chromium
-      - name: Run fresh-project-smoke
-        run: xvfb-run -a pnpm test:fresh-project
-      - uses: actions/upload-artifact@v7
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Run packed consumer smoke
+        run: xvfb-run -a pnpm test:fresh-project -- --vite-version=${{ matrix.vite }} --typescript-version=${{ matrix.typescript }}
+      - name: Assert tracked release generators are committed
+        if: always()
+        run: git diff --exit-code -- packages/runtime/build packages/plugin/skill
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
-          name: fresh-project-smoke-results
-          path: packages/examples/fresh-project-smoke/results/**
+          name: fresh-project-smoke-${{ matrix.artifact }}-results
+          path: ${{ runner.temp }}/fresh-project-smoke/**
           if-no-files-found: ignore

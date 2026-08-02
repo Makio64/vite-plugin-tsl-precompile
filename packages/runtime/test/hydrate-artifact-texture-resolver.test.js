@@ -104,6 +104,74 @@ test( 'artifact texture resolver rejects wrong-sized PMREM material-node candida
 
 } );
 
+test( 'artifact texture resolver prefers a wired PMREM over a same-sized material-node candidate', () => {
+
+	const staleNodePMREM = { isTexture: true, name: 'PMREM.cubeUv', mapping: 306, image: { width: 1536, height: 2048 } };
+	const wiredPMREM = { isTexture: true, name: 'PMREM.cubeUv', mapping: 306, image: { width: 1536, height: 2048 } };
+	const artifact = {
+		fragmentShader: 'var nodeTexture0: texture_2d<f32>;',
+		_textureRefs: new Map( [ [ 'pmrem-a', wiredPMREM ] ] ),
+	};
+	const result = resolveArtifactTextureBinding( {
+		artifact,
+		bindingName: 'nodeTexture0',
+		source: {
+			kind: 'artifact.texture',
+			textureUuid: 'pmrem-a',
+			textureName: 'PMREM.cubeUv',
+			mapping: 306,
+			imageWidth: 1536,
+			imageHeight: 2048,
+			imageDepth: 1,
+		},
+		deps: {
+			lookupMaterialNodeTexture() {
+
+				return staleNodePMREM;
+
+			},
+		},
+	} );
+
+	assert.equal( result.strategy, 'texture-ref' );
+	assert.equal( result.texture, wiredPMREM );
+
+} );
+
+test( 'artifact texture resolver accepts an exact wired PMREM whose live atlas size changed', () => {
+
+	const capturedSizeCandidate = { isTexture: true, name: 'PMREM.cubeUv', mapping: 306, image: { width: 336, height: 128 } };
+	const wiredLivePMREM = { isTexture: true, name: 'PMREM.cubeUv', mapping: 306, image: { width: 768, height: 512 } };
+	const artifact = {
+		fragmentShader: 'var nodeTexture0: texture_2d<f32>;',
+		_textureRefs: new Map( [ [ 'pmrem-a', wiredLivePMREM ] ] ),
+	};
+	const result = resolveArtifactTextureBinding( {
+		artifact,
+		bindingName: 'nodeTexture0',
+		source: {
+			kind: 'artifact.texture',
+			textureUuid: 'pmrem-a',
+			textureName: 'PMREM.cubeUv',
+			mapping: 306,
+			imageWidth: 336,
+			imageHeight: 128,
+			imageDepth: 1,
+		},
+		deps: {
+			lookupMaterialNodeTexture() {
+
+				return capturedSizeCandidate;
+
+			},
+		},
+	} );
+
+	assert.equal( result.strategy, 'texture-ref' );
+	assert.equal( result.texture, wiredLivePMREM );
+
+} );
+
 test( 'artifact texture resolver records strategies on non-enumerable artifact state', () => {
 
 	const artifact = {};

@@ -61,6 +61,53 @@ test( 'createFullRendererFallback boots a renderer with the shared device on fir
 
 } );
 
+test( 'createFullRendererFallback fails closed until the shared device exists', async () => {
+
+	const slim = fakeSlimRenderer( { device: null } );
+	const { FakeFull, getInstances } = makeFullRendererClass();
+	const errors = [];
+	const fallback = createFullRendererFallback( {
+		slimRenderer: slim,
+		WebGPURendererClass: FakeFull,
+		onError: ( error ) => errors.push( error.message ),
+	} );
+
+	assert.equal( await fallback.getRenderer(), null );
+	assert.equal( getInstances(), 0, 'must not construct a renderer that would acquire a second device' );
+	assert.match( errors[ 0 ], /initialised slimRenderer\.backend\.device/ );
+
+	slim.backend.device = { id: 'gpu-now-ready' };
+	const renderer = await fallback.getRenderer();
+	assert.ok( renderer, 'a later call retries once the source device is available' );
+	assert.equal( renderer.options.device, slim.backend.device );
+	assert.equal( getInstances(), 1 );
+
+} );
+
+test( 'createFullRendererFallback awaits an in-flight slim init before reusing its device', async () => {
+
+	const slim = fakeSlimRenderer( { device: null } );
+	let finishInit;
+	slim._initPromise = new Promise( ( resolve ) => { finishInit = resolve; } );
+	const { FakeFull, getInstances } = makeFullRendererClass();
+	const fallback = createFullRendererFallback( {
+		slimRenderer: slim,
+		WebGPURendererClass: FakeFull,
+	} );
+
+	const pending = fallback.getRenderer();
+	await Promise.resolve();
+	assert.equal( getInstances(), 0, 'full renderer waits for the source renderer device' );
+
+	slim.backend.device = { id: 'gpu-from-pending-init' };
+	finishInit( slim );
+	const renderer = await pending;
+	assert.ok( renderer );
+	assert.equal( renderer.options.device, slim.backend.device );
+	assert.equal( getInstances(), 1 );
+
+} );
+
 test( 'createFullRendererFallback de-duplicates concurrent calls into a single boot promise', async () => {
 
 	const slim = fakeSlimRenderer();
@@ -91,6 +138,56 @@ test( 'createFullRendererFallback forwards reversedDepthBuffer when slim has it 
 	} );
 	const r = await fallback.getRenderer();
 	assert.equal( r.options.reversedDepthBuffer, true );
+
+} );
+
+test( 'createFullRendererFallback mirrors physical size at boot and before delegated compute', async () => {
+
+	const sourceSize = { width: 640, height: 480 };
+	const slim = fakeSlimRenderer();
+	slim.getDrawingBufferSize = ( target ) => target.set( sourceSize.width, sourceSize.height );
+	const computeCalls = [];
+	class SizedFull {
+
+		constructor() {
+
+			this.shadowMap = { enabled: false };
+			this.size = { width: 1, height: 1 };
+
+		}
+		async init() {}
+		getDrawingBufferSize( target ) { return target.set( this.size.width, this.size.height ); }
+		setDrawingBufferSize( width, height, pixelRatio ) {
+
+			this.size = { width, height };
+			this.pixelRatio = pixelRatio;
+
+		}
+		compute( node ) {
+
+			computeCalls.push( { node, size: { ...this.size }, receiver: this } );
+			return 'computed';
+
+		}
+		dispose() {}
+
+	}
+	const fallback = createFullRendererFallback( {
+		slimRenderer: slim,
+		WebGPURendererClass: SizedFull,
+	} );
+	const full = await fallback.getRenderer();
+
+	assert.deepEqual( full.size, { width: 640, height: 480 } );
+	assert.equal( full.pixelRatio, 1 );
+	sourceSize.width = 960;
+	sourceSize.height = 540;
+	assert.equal( full.compute( 'kernel' ), 'computed' );
+	assert.deepEqual( computeCalls, [ {
+		node: 'kernel',
+		size: { width: 960, height: 540 },
+		receiver: full,
+	} ] );
 
 } );
 

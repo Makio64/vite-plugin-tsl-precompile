@@ -5,13 +5,13 @@
  *   1. `pnpm dev` — runs Vite with the plugin. `setupPrecompile()` wires the
  *      dev-capture endpoint; the first time `.precompile('getting-started')`
  *      runs, the live extractor walks the material and POSTs the artifact
- *      to `./artifacts/getting-started.<hash>.json`. Because this example
- *      enables slim source mode, setup also captures each renderer-output
- *      topology observed after a successful real render.
+ *      to `./artifacts/getting-started.<hash>.json` after a successful real
+ *      render.
  *   2. Commit `./artifacts/` so other developers (and CI) can `build`
  *      without re-running dev capture.
  *   3. `pnpm build` — Vite + the plugin rewrite `.precompile('...')` into
- *      `__applyPrecompiled(...)` and ship the precompiled WGSL.
+ *      `__applyPrecompiled(...)` and use the generated artifact while stock
+ *      Three remains available. Slim mode is a separate, optional proof.
  */
 
 import { Scene, PerspectiveCamera, Mesh, TorusKnotGeometry, DirectionalLight, HemisphereLight, WebGPURenderer, MeshStandardNodeMaterial } from 'three/webgpu';
@@ -32,8 +32,8 @@ document.body.appendChild( renderer.domElement );
 // One-call setup: installs the .precompile() marker and registers this
 // renderer with the dev-capture flow once init() has resolved. In a prod
 // build the babel transform has already replaced .precompile() calls and
-// this helper becomes a harmless no-op. Slim mode also uses this same real
-// render observation to capture only the renderer-output transform in dev.
+// this helper becomes a harmless no-op. If slim is enabled later, the same
+// real render observation captures its renderer-output transform in dev.
 const setup = setupPrecompile( { renderer } );
 await renderer.init();
 await setup.ready;
@@ -60,7 +60,7 @@ material.metalness = 0.1;
 // dev capture. That's by design: the artifact pins this exact graph.
 material.colorNode = mix( color( 0x224488 ), color( 0x88ccff ), uv().y );
 
-material.precompile( 'getting-started' );   // <-- the one line you add
+material.precompile( 'getting-started' );   // optional stable-name override
 
 const mesh = new Mesh( new TorusKnotGeometry( 1, 0.3, 128, 32 ), material );
 scene.add( mesh );

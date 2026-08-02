@@ -11,7 +11,7 @@ export interface UserArtifactEntry<TArtifactModule = unknown> {
 	artifact: TArtifactModule;
 }
 
-export function __applyPrecompiled( material: unknown, artifactModule: unknown, expectedHash: string ): unknown;
+export function __applyPrecompiled<TMaterial>( material: TMaterial, artifactModule: unknown, expectedHash: string ): TMaterial;
 
 export function registerArtifact<TArtifactModule = unknown>( name: string, artifactModule: TArtifactModule ): void;
 export function getArtifact<TArtifactModule = unknown>( name: string ): TArtifactModule | null;
@@ -28,4 +28,7 @@ export function writeColorRGBA( view: DataView, byteOffset: number, color: { r: 
 export function writeMat3( view: DataView, byteOffset: number, mat: { elements: ArrayLike<number> } ): void;
 export function writeMat4( view: DataView, byteOffset: number, mat: { elements: ArrayLike<number> } ): void;
 export function writeMat4FromEuler( view: DataView, byteOffset: number, euler: unknown, background: unknown ): void;
+export function writeEnvironmentRotation( view: DataView, byteOffset: number, material: unknown, scene: unknown ): void;
+export function writePMREMScalar( view: DataView, byteOffset: number, kind: 'pmrem.maxMip' | 'pmrem.texelWidth' | 'pmrem.texelHeight', artifact: unknown, material: unknown, frame: unknown, source?: unknown ): void;
+export function writeTextureUVFlip( view: DataView, byteOffset: number, artifact: unknown, source: unknown ): void;
 export function writeBytes( view: DataView, byteOffset: number, source: ArrayBufferView, sourceByteOffset: number, byteLength: number ): void;

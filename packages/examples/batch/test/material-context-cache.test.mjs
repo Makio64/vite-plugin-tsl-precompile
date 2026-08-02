@@ -35,6 +35,7 @@ test( 'material context cache deduplicates equivalent meshes but separates skinn
 	const indexed32 = mesh();
 	indexed32.geometry.index = indexAttribute( Uint32Array );
 	assert.equal( key( indexed16 ), key( indexed32 ), 'GPU index promotion does not create a new shader context' );
+	assert.equal( key( ordinaryA ), key( indexed16 ), 'indexed and non-indexed draws share shader topology' );
 
 	const cache = new WeakMap();
 	const contexts = getMaterialContextMap( cache, material, true );
@@ -58,7 +59,12 @@ test( 'material context cache separates renderer shader topology without naming 
 	const object = mesh();
 	const normalRenderer = renderer( false, { name: 'normal-target' } );
 	const equivalentNormalRenderer = renderer( false, { name: 'other-target' } );
+	const explicitDefaultRenderer = {
+		...renderer( false, { name: 'explicit-default-target' } ),
+		reversedDepthBuffer: false,
+	};
 	const logarithmicRenderer = renderer( true, { name: 'log-target' } );
+	const reversedRenderer = renderer( false, { name: 'reversed-target' }, true );
 	const key = ( value ) => createMaterialContextKey(
 		createRenderObjectContextSelector,
 		{
@@ -72,7 +78,9 @@ test( 'material context cache separates renderer shader topology without naming 
 	);
 
 	assert.equal( key( normalRenderer ), key( equivalentNormalRenderer ), 'active targets remain represented variants' );
+	assert.equal( key( normalRenderer ), key( explicitDefaultRenderer ), 'explicit default reversed depth retains the legacy cache key' );
 	assert.notEqual( key( normalRenderer ), key( logarithmicRenderer ), 'log-depth selects different shader topology' );
+	assert.notEqual( key( normalRenderer ), key( reversedRenderer ), 'reversed depth selects different shader topology' );
 
 } );
 
@@ -133,6 +141,17 @@ test( 'stock material topology rejects authored or customized compiler paths', (
 	authored.colorNode = { isNode: true };
 	assert.equal( key( authored ), null );
 
+	const authoredLights = new MeshPhysicalNodeMaterial();
+	authoredLights.lightsNode = { isNode: true };
+	assert.equal( key( authoredLights ), null, 'own live node roots omitted from nodeKeys still reject topology reuse' );
+
+	const authoredSpecular = new MeshPhysicalNodeMaterial();
+	Object.defineProperty( authoredSpecular, 'specularNode', {
+		value: { isNode: true },
+		configurable: true,
+	} );
+	assert.equal( key( authoredSpecular ), null, 'non-enumerable material-specific node roots cannot alias graph-free siblings' );
+
 	const hooked = new MeshPhysicalNodeMaterial();
 	hooked.onBeforeCompile = () => {};
 	assert.equal( key( hooked ), null );
@@ -181,11 +200,12 @@ function indexAttribute( ArrayType ) {
 
 }
 
-function renderer( logarithmicDepthBuffer, renderTarget ) {
+function renderer( logarithmicDepthBuffer, renderTarget, reversedDepthBuffer = false ) {
 
 	return {
 		type: 'WebGPURenderer',
 		logarithmicDepthBuffer,
+		...( reversedDepthBuffer === true ? { reversedDepthBuffer: true } : {} ),
 		getRenderTarget: () => renderTarget,
 		getMRT: () => null,
 	};

@@ -626,6 +626,11 @@ test( 'wireTRAAResolveArtifact attaches output, velocity, history, and depth tex
 	const stats = wireTRAAResolveArtifact( artifact, node, { passNodes: [ passNode ] } );
 
 	assert.deepEqual( stats, { outputAttached: 1, velocityAttached: 1, historyAttached: 1, depthAttached: 2 } );
+	assert.deepEqual(
+		wireTRAAResolveArtifact( artifact, node, { passNodes: [ passNode ] } ),
+		stats,
+		'idempotent rewiring must report every live binding that remains proven',
+	);
 	assert.equal( textures.resolve.name, 'TRAANode.resolve' );
 	assert.equal( textures.history.name, 'TRAANode.history' );
 	assert.equal( textures.historyDepth.name, 'TRAANode.history.depth' );
@@ -744,6 +749,33 @@ test( 'preparePrecompiledPostprocess forwards passNodes for TRAA depth replay', 
 	const refs = node._resolveMaterial.precompiledArtifact._textureRefs;
 	assert.equal( refs.get( 'captured-current-depth' ), textures.currentDepth );
 	assert.equal( refs.get( 'captured-history-depth' ), textures.historyDepth );
+
+} );
+
+test( 'preparePrecompiledPostprocess installs TAAU projection lifecycle without an effect handler', () => {
+
+	const velocityProjection = Symbol.for( '@tsl-precompile/runtime/velocity-projection-matrix@1' );
+	const camera = {};
+	const projectionMatrix = { elements: [ 1 ] };
+	const taau = {
+		constructor: { type: 'TAAUNode' },
+		isTAAUNode: true,
+		camera,
+		_originalProjectionMatrix: projectionMatrix,
+		setViewOffset() {},
+		clearViewOffset() {},
+	};
+	const result = preparePrecompiledPostprocess( {
+		outputNode: { nested: taau },
+		loadAux: () => null,
+		PrecompiledMaterial: StubPrecompiledMaterial,
+	} );
+
+	assert.equal( result.effects, 0, 'TAAU has no aux-material effect handler' );
+	taau.setViewOffset();
+	assert.equal( camera[ velocityProjection ], projectionMatrix );
+	taau.clearViewOffset();
+	assert.equal( Object.hasOwn( camera, velocityProjection ), false );
 
 } );
 
@@ -905,6 +937,84 @@ test( 'wireLiveNodeSidecarsToArtifact falls back when a serialized nodePath is s
 
 } );
 
+test( 'wireLiveNodeSidecarsToArtifact recovers a stale liveNodeId path through one graph-local name', () => {
+
+	const liveAmount = { isUniformNode: true, name: 'fogAmount', value: 4 };
+	const sameValueDecoy = { isUniformNode: true, name: 'unrelatedAmount', value: 3 };
+	const sourceMaterial = {
+		colorNode: {
+			isNode: true,
+			liveAmount,
+			sameValueDecoy,
+		},
+	};
+	const slot = {
+		dtype: 'number',
+		source: {
+			kind: 'uniform.live',
+			liveNodeId: 7,
+			name: 'fogAmount',
+			valueSnapshot: { type: 'number', data: 3 },
+			nodePath: [ 'colorNode', 'removedFogAmount' ],
+		},
+	};
+	const artifact = { uniformPlan: [ { slots: [ slot ] } ] };
+
+	// The live value has already advanced beyond the captured snapshot. The
+	// graph-local name must outrank snapshot/cardinality recovery, which would
+	// otherwise claim the unrelated scalar still holding the captured value.
+	const counters = wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, { overlay: true } );
+	assert.equal( counters.uniformsMatched, 1 );
+	assert.equal( slot._liveNode, liveAmount );
+	liveAmount.value = 5;
+	assert.equal( slot._liveNode.value, 5, 'the recovered sidecar stays live after the captured value changes' );
+
+} );
+
+test( 'wireLiveNodeSidecarsToArtifact fails closed for an ambiguous graph-local liveNodeId name', () => {
+
+	const first = { isUniformNode: true, name: 'fogAmount', value: 3 };
+	const second = { isUniformNode: true, name: 'fogAmount', value: 3 };
+	const sourceMaterial = { colorNode: { isNode: true, first, second } };
+	const slot = {
+		dtype: 'number',
+		source: {
+			kind: 'uniform.live',
+			liveNodeId: 7,
+			name: 'fogAmount',
+			valueSnapshot: { type: 'number', data: 3 },
+			nodePath: [ 'colorNode', 'removedFogAmount' ],
+		},
+	};
+	const artifact = { uniformPlan: [ { slots: [ slot ] } ] };
+
+	const counters = wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, { overlay: true } );
+	assert.equal( counters.uniformsMatched, 0 );
+	assert.equal( slot._liveNode, undefined );
+
+} );
+
+test( 'wireLiveNodeSidecarsToArtifact does not dtype-recover an anonymous stale liveNodeId', () => {
+
+	const liveAmount = { isUniformNode: true, value: 4 };
+	const sourceMaterial = { colorNode: { isNode: true, liveAmount } };
+	const slot = {
+		dtype: 'number',
+		source: {
+			kind: 'uniform.live',
+			liveNodeId: 7,
+			valueSnapshot: { type: 'number', data: 3 },
+			nodePath: [ 'colorNode', 'removedAmount' ],
+		},
+	};
+	const artifact = { uniformPlan: [ { slots: [ slot ] } ] };
+
+	const counters = wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, { overlay: true } );
+	assert.equal( counters.uniformsMatched, 0 );
+	assert.equal( slot._liveNode, undefined );
+
+} );
+
 test( 'wireLiveNodeSidecarsToArtifact restores closure-only A/B/A/B identity from the live registry', () => {
 
 	clearLiveUniformRegistryForTests();
@@ -939,6 +1049,64 @@ test( 'wireLiveNodeSidecarsToArtifact restores closure-only A/B/A/B identity fro
 
 } );
 
+test( 'wireLiveNodeSidecarsToArtifact does not cross-bind a call-site matrix to an anonymous PMREM transform', () => {
+
+	clearLiveUniformRegistryForTests();
+	const projectionElements = [
+		2, 0, 0, 0,
+		0, 3, 0, 0,
+		0, 0, 4, 0,
+		5, 6, 7, 1,
+	];
+	const identityElements = [
+		1, 0, 0, 0,
+		0, 1, 0, 0,
+		0, 0, 1, 0,
+		0, 0, 0, 1,
+	];
+	const projectionScreen = registerLiveUniformNode( {
+		isUniformNode: true,
+		value: { isMatrix4: true, elements: projectionElements },
+	}, 'uniform-callsite@1#examples/webgpu_compute_rasterizer_ibl.html#42', 0 );
+	const previousProjectionScreen = registerLiveUniformNode( {
+		isUniformNode: true,
+		value: { isMatrix4: true, elements: identityElements },
+	}, 'uniform-callsite@1#examples/webgpu_compute_rasterizer_ibl.html#43', 0 );
+	const projectionSlot = {
+		dtype: 'mat4',
+		source: {
+			kind: 'uniform.live',
+			liveNodeId: 0,
+			liveNodeIdentity: 'uniform-callsite@1#examples/webgpu_compute_rasterizer_ibl.html#42#0',
+			valueSnapshot: { type: 'mat4', data: projectionElements },
+			nodePath: [ 'positionNode', 'projectionScreen' ],
+		},
+	};
+	const pmremTransformSlot = {
+		dtype: 'mat4',
+		source: {
+			kind: 'uniform.live',
+			liveNodeId: 1,
+			valueSnapshot: { type: 'mat4', data: identityElements },
+		},
+	};
+	const artifact = { uniformPlan: [ { slots: [ projectionSlot, pmremTransformSlot ] } ] };
+
+	// The compiler-injected PMREM transform is not reachable from the material
+	// graph. The exact projection matrix is reachable and owns another liveNodeId;
+	// neither it nor a different identity-tagged registry matrix may become the
+	// PMREM sidecar merely because their dtypes are mat4.
+	const sourceMaterial = { positionNode: { isNode: true, projectionScreen } };
+	const counters = wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, { overlay: true } );
+	assert.equal( counters.uniformsMatched, 1 );
+	assert.equal( projectionSlot._liveNode, projectionScreen );
+	assert.equal( pmremTransformSlot._liveNode, undefined );
+	assert.notEqual( pmremTransformSlot._liveNode, projectionScreen );
+	assert.notEqual( pmremTransformSlot._liveNode, previousProjectionScreen );
+	clearLiveUniformRegistryForTests();
+
+} );
+
 test( 'wireLiveNodeSidecarsToArtifact uses exact call-site identity across equal-valued material closures', () => {
 
 	clearLiveUniformRegistryForTests();
@@ -966,17 +1134,19 @@ test( 'wireLiveNodeSidecarsToArtifact fails closed when a call-site identity has
 
 	clearLiveUniformRegistryForTests();
 	registerLiveUniformNode( { isUniformNode: true, value: 0 }, 'uniform-callsite@1#src/reduce.js#4', 0 );
+	const graphCandidate = { isUniformNode: true, name: 'reductionAmount', value: 0 };
 	const slot = {
 		dtype: 'number',
 		source: {
 			kind: 'uniform.live',
 			liveNodeId: 0,
 			liveNodeIdentity: 'uniform-callsite@1#src/reduce.js#5#0',
+			name: 'reductionAmount',
 			valueSnapshot: { type: 'number', data: 0 },
 		},
 	};
 	const artifact = { uniformPlan: [ { slots: [ slot ] } ] };
-	const counters = wireLiveNodeSidecarsToArtifact( artifact, { positionNode: { isNode: true } }, { overlay: true } );
+	const counters = wireLiveNodeSidecarsToArtifact( artifact, { positionNode: { isNode: true, graphCandidate } }, { overlay: true } );
 	assert.equal( counters.uniformsMatched, 0 );
 	assert.equal( slot._liveNode, undefined );
 	clearLiveUniformRegistryForTests();
@@ -1082,6 +1252,26 @@ test( 'wireLiveNodeSidecarsToArtifact wires VolumeNodeMaterial.steps by shader u
 
 	sourceMaterial.steps = 48;
 	assert.equal( slot._liveNode.value, 48 );
+
+} );
+
+test( 'wireLiveNodeSidecarsToArtifact recognizes WebGLBackend GLSL volume steps', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			slots: [ {
+				name: 'steps',
+				dtype: 'int',
+				source: { kind: 'uniform.live', valueSnapshot: { type: 'number', data: 0 } },
+			} ],
+		} ],
+		fragmentShader: '#version 300 es\nfloat maxSteps = float( object.steps );\nfor ( int i = 0; i < object.steps; i ++ ) {}',
+	};
+	const sourceMaterial = { isVolumeNodeMaterial: true, steps: 32 };
+
+	const counters = wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial, { overlay: true } );
+	assert.equal( counters.uniformsMatched, 1 );
+	assert.equal( artifact.uniformPlan[ 0 ].slots[ 0 ]._liveNode.value, 32 );
 
 } );
 

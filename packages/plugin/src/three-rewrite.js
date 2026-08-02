@@ -12,8 +12,8 @@
  * gzip number).
  *
  * On shape drift (three.js version moved a property, renamed an identifier,
- * etc.) handlers throw. The plugin catches and falls back to the full
- * slim bundle without the rewrite so Vite builds still complete.
+ * etc.) handlers throw. Slim production builds fail closed rather than
+ * shipping the unreduced compiler path or a subtly incompatible rewrite.
  *
  * Current targets include renderer/background/post-processing auxiliaries,
  * shadow-depth auxiliaries,
@@ -32,75 +32,18 @@ import _generate from '@babel/generator';
 import * as t from '@babel/types';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { SLIM_THREE_REWRITE_TARGETS, getSlimThreeRewriteTarget } from '@tsl-precompile/contract/slim-three-policy';
+import {
+	NODE_CORE_PRIMITIVES_VIRTUAL_ID,
+	injectSlimRewriteRuntimeImports,
+} from './three-rewrite-runtime.js';
+
+export {
+	SLIM_REWRITE_RUNTIME_MODULE_RULES,
+	getSlimRewriteRuntimeModuleRule,
+} from './three-rewrite-runtime.js';
 
 const traverse = _traverse.default || _traverse;
 const generate = _generate.default || _generate;
-
-const SLIM_REWRITE_RUNTIME_PREFIX = 'virtual:tsl-precompile/__slim-rewrite-runtime/';
-const NODE_CORE_PRIMITIVES_RUNTIME_MODULE_ID = 'node-core-primitives';
-const NODE_CORE_PRIMITIVES_VIRTUAL_ID = SLIM_REWRITE_RUNTIME_PREFIX + NODE_CORE_PRIMITIVES_RUNTIME_MODULE_ID;
-
-/**
- * Private runtime owners used by rewritten Three source.
- *
- * Both the standalone slim Rollup build and `slim: 'source'` resolve these
- * virtual IDs straight to the owning runtime source file. This keeps helper
- * imports out of the broad public runtime barrel without adding package API.
- */
-export const SLIM_REWRITE_RUNTIME_MODULE_RULES = Object.freeze( [
-	{ id: 'precompiled-material', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'precompiled-material', runtimeFile: '_vendor-PrecompiledMaterial.js' },
-	{ id: 'artifact-registry', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'artifact-registry', runtimeFile: '_vendor-PrecompiledArtifactRegistry.js' },
-	{ id: 'aux-loader', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'aux-loader', runtimeFile: 'aux-loader.js' },
-	{ id: 'graph-hash', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'graph-hash', runtimeFile: 'graph-hash.js' },
-	{ id: 'texture-registry', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'texture-registry', runtimeFile: 'hydrate/live-texture-registry.js' },
-	{ id: 'node-library', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'node-library', runtimeFile: 'slim-replay-node-library.js' },
-	{ id: 'renderer-context', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'renderer-context', runtimeFile: 'slim-replay-renderer-context.js' },
-	{ id: 'renderer-output', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'renderer-output', runtimeFile: 'slim-replay-renderer-output.js' },
-	{ id: 'cube-render-target', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'cube-render-target', runtimeFile: 'slim-replay-cube-render-target.js' },
-	{ id: 'shadow-material', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'shadow-material', runtimeFile: 'slim-replay-shadow-material.js' },
-	{ id: 'render-pipeline', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'render-pipeline', runtimeFile: 'slim-replay-render-pipeline.js' },
-	{ id: 'postprocess-replay', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'postprocess-replay', runtimeFile: 'slim-support/postprocess-effects-replay.js' },
-	{ id: 'hydrator', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'hydrator', runtimeFile: 'hydrator.js' },
-	{ id: 'render-fallback-registry', virtualId: SLIM_REWRITE_RUNTIME_PREFIX + 'render-fallback-registry', runtimeFile: 'slim-support/render-fallback-registry.js' },
-	{ id: NODE_CORE_PRIMITIVES_RUNTIME_MODULE_ID, virtualId: NODE_CORE_PRIMITIVES_VIRTUAL_ID, runtimeFile: 'slim-replay-node-core-primitives.js' },
-].map( ( rule ) => Object.freeze( rule ) ) );
-
-const SLIM_REWRITE_RUNTIME_MODULES_BY_ID = new Map(
-	SLIM_REWRITE_RUNTIME_MODULE_RULES.map( ( rule ) => [ rule.virtualId, rule ] ),
-);
-
-const SLIM_REWRITE_RUNTIME_HELPERS = Object.freeze( {
-	PrecompiledMaterial: Object.freeze( { moduleId: 'precompiled-material', kind: 'default' } ),
-	getShadowArtifact: Object.freeze( { moduleId: 'artifact-registry', kind: 'named' } ),
-	loadAux: Object.freeze( { moduleId: 'aux-loader', kind: 'named' } ),
-	attachArtifactTextureRefs: Object.freeze( { moduleId: 'aux-loader', kind: 'named' } ),
-	attachPostprocessTextureRefs: Object.freeze( { moduleId: 'aux-loader', kind: 'named' } ),
-	attachPostprocessUpdateBeforeNodes: Object.freeze( { moduleId: 'aux-loader', kind: 'named' } ),
-	attachPostprocessObject3DTargets: Object.freeze( { moduleId: 'aux-loader', kind: 'named' } ),
-	hashNodeGraphSync: Object.freeze( { moduleId: 'graph-hash', kind: 'named' } ),
-	hashPlainConfigSync: Object.freeze( { moduleId: 'graph-hash', kind: 'named' } ),
-	installTextureLoaderTracking: Object.freeze( { moduleId: 'texture-registry', kind: 'named' } ),
-	ReplayNodeLibrary: Object.freeze( { moduleId: 'node-library', kind: 'default' } ),
-	createReplayRendererContext: Object.freeze( { moduleId: 'renderer-context', kind: 'named' } ),
-	setReplayRendererHighPrecision: Object.freeze( { moduleId: 'renderer-context', kind: 'named' } ),
-	getReplayRendererHighPrecision: Object.freeze( { moduleId: 'renderer-context', kind: 'named' } ),
-	getReplayRenderOutputCacheKey: Object.freeze( { moduleId: 'renderer-output', kind: 'named' } ),
-	createReplayRenderOutputMaterial: Object.freeze( { moduleId: 'renderer-output', kind: 'named' } ),
-	createReplayCubeRenderTargetMaterial: Object.freeze( { moduleId: 'cube-render-target', kind: 'named' } ),
-	createReplayShadowMaterial: Object.freeze( { moduleId: 'shadow-material', kind: 'named' } ),
-	getReplayRenderCallbackMaterial: Object.freeze( { moduleId: 'shadow-material', kind: 'named' } ),
-	createReplayRenderPipelineMaterial: Object.freeze( { moduleId: 'render-pipeline', kind: 'named' } ),
-	preparePrecompiledPostprocess: Object.freeze( { moduleId: 'postprocess-replay', kind: 'named' } ),
-	hydrateNodeBuilderState: Object.freeze( { moduleId: 'hydrator', kind: 'named' } ),
-	getSlimRenderFallback: Object.freeze( { moduleId: 'render-fallback-registry', kind: 'named' } ),
-} );
-
-/** Return the private runtime owner for a rewrite virtual module ID. */
-export function getSlimRewriteRuntimeModuleRule( id ) {
-
-	return SLIM_REWRITE_RUNTIME_MODULES_BY_ID.get( id ) || null;
-
-}
 
 const REWRITE_HANDLERS_BY_FAMILY = Object.freeze( {
 	'node-utils': rewriteNodeUtils,
@@ -183,7 +126,7 @@ export function rewriteThreeSource( code, id, opts ) {
 
 		// After any per-file rewrite: inject only referenced private runtime
 		// owners, then drop now-unused TSL / NodeMaterial imports.
-		injectRuntimeImports( ast );
+		injectSlimRewriteRuntimeImports( ast );
 		stripUnusedTSLImports( ast );
 
 		const output = generate( ast, { sourceMaps: true, sourceFileName: id }, code );
@@ -234,7 +177,7 @@ function pickHandler( id ) {
 // The slim graph retains only Three's stable hash helpers and the storage
 // access enum. Keeping their stock owner modules also keeps every import and
 // otherwise-unused export in those modules alive because Three does not mark
-// its source as side-effect-free. These handlers replace the complete r184
+// its source as side-effect-free. These handlers replace the complete r185
 // modules with narrow re-export shells owned by the runtime.
 //
 // A compact AST fingerprint deliberately ignores comments and formatting but
@@ -243,9 +186,9 @@ function pickHandler( id ) {
 // retained Three module starts consuming one of the exports we intentionally
 // omit, Rollup's ESM linker fails instead of silently growing the Node graph.
 
-const NODE_UTILS_R184_AST_SHA256 = '6265ad8b2e2337d625ffa0691b9b949fbfef25ee5a6b7034be26dd2f241f1ab7';
-const NODE_CORE_CONSTANTS_R184_AST_SHA256 = 'fe34fd8c46b2a1c9629c137f9eae342f51627602c25abfe6696716458d866c24';
-const LOADER_R184_AST_SHA256 = 'd7e782ece3295a50b0572e08a89c489f97da5be914254adb7e2c15555739467e';
+const NODE_UTILS_R185_AST_SHA256 = 'aa735f703cc42fb24da1a6398d4c2946f1be36ff07fead14f52becb8f4f60edd';
+const NODE_CORE_CONSTANTS_R185_AST_SHA256 = 'fe34fd8c46b2a1c9629c137f9eae342f51627602c25abfe6696716458d866c24';
+const LOADER_R185_AST_SHA256 = 'd7e782ece3295a50b0572e08a89c489f97da5be914254adb7e2c15555739467e';
 
 function compactAstFingerprint( ast ) {
 
@@ -259,7 +202,7 @@ function assertExactModuleShape( ast, label, expectedFingerprint ) {
 	const actualFingerprint = compactAstFingerprint( ast );
 	if ( actualFingerprint !== expectedFingerprint ) {
 
-		throw new Error( `${ label }: complete r184 module AST changed (expected ${ expectedFingerprint }, got ${ actualFingerprint })` );
+		throw new Error( `${ label }: complete r185 module AST changed (expected ${ expectedFingerprint }, got ${ actualFingerprint })` );
 
 	}
 
@@ -277,7 +220,7 @@ function replaceWithNamedRuntimeReExports( ast, names ) {
 
 function rewriteNodeUtils( ast, ctx ) {
 
-	assertExactModuleShape( ast, 'NodeUtils', NODE_UTILS_R184_AST_SHA256 );
+	assertExactModuleShape( ast, 'NodeUtils', NODE_UTILS_R185_AST_SHA256 );
 	replaceWithNamedRuntimeReExports( ast, [ 'hash', 'hashArray', 'hashString' ] );
 	ctx.touched = true;
 
@@ -285,8 +228,8 @@ function rewriteNodeUtils( ast, ctx ) {
 
 function rewriteNodeCoreConstants( ast, ctx ) {
 
-	assertExactModuleShape( ast, 'nodes/core/constants', NODE_CORE_CONSTANTS_R184_AST_SHA256 );
-	replaceWithNamedRuntimeReExports( ast, [ 'NodeAccess' ] );
+	assertExactModuleShape( ast, 'nodes/core/constants', NODE_CORE_CONSTANTS_R185_AST_SHA256 );
+	replaceWithNamedRuntimeReExports( ast, [ 'NodeAccess', 'NodeUpdateType' ] );
 	ctx.touched = true;
 
 }
@@ -299,7 +242,7 @@ function rewriteNodeCoreConstants( ast, ctx ) {
  */
 function rewriteLoaderTracking( ast, ctx ) {
 
-	assertExactModuleShape( ast, 'Loader', LOADER_R184_AST_SHA256 );
+	assertExactModuleShape( ast, 'Loader', LOADER_R185_AST_SHA256 );
 	let loaderClasses = 0;
 	traverse( ast, {
 		ClassDeclaration( path ) {
@@ -426,7 +369,7 @@ function ensureRenderObjectFallbackHelper( ast ) {
 // CubeRenderTarget handler
 // -------------------------------------------------------------------------
 //
-// Expected shape (three@0.184.0):
+// Expected shape (three@0.185.1):
 //
 //   const uvNode = equirectUV( positionWorldDirection );
 //
@@ -444,7 +387,7 @@ function ensureRenderObjectFallbackHelper( ast ) {
 //   material.blending = NoBlending;
 //
 // The graph declaration and `.colorNode = TSL_Texture(...)` assignment are
-// dropped completely. Capture owns the exact r184 graph; replay selects its
+// dropped completely. Capture owns the exact r185 graph; replay selects its
 // artifact from a plain source-texture descriptor and attaches the live
 // texture. The lookup is deliberately hoisted ahead of Three's first source
 // mutation/allocation, so a missing or stale artifact fails without leaking
@@ -471,7 +414,7 @@ function rewriteCubeRenderTarget( ast, ctx ) {
 	traverse( ast, {
 		VariableDeclarator( path ) {
 
-			// Match the exact r184 seam: const material = new NodeMaterial();
+			// Match the exact r185 seam: const material = new NodeMaterial();
 			if ( ! t.isIdentifier( path.node.id, { name: 'material' } ) ) return;
 			if ( ! t.isNewExpression( path.node.init ) ) return;
 			if ( ! t.isIdentifier( path.node.init.callee, { name: 'NodeMaterial' } ) ) return;
@@ -1297,7 +1240,7 @@ function rewriteBackground( ast, ctx ) {
 // ShadowFilterNode.js handler
 // -------------------------------------------------------------------------
 //
-// Expected shape (three@0.184.0):
+// Expected shape (three@0.185.1):
 //
 //   export const getShadowMaterial = ( light ) => {
 //     let material = shadowMaterialLib.get( light );
@@ -1553,13 +1496,31 @@ function narrowNodeFrameImport( ast ) {
 		) );
 		if ( ! nodeFrame ) continue;
 
-		declaration.specifiers = declaration.specifiers.filter( ( specifier ) => specifier !== nodeFrame );
-		const source = declaration.source.value.replace( /Nodes\.js$/, 'core/NodeFrame.js' );
-		const directImport = t.importDeclaration(
+		const nodeUpdateType = declaration.specifiers.find( ( specifier ) => (
+			t.isImportSpecifier( specifier )
+			&& t.isIdentifier( specifier.imported, { name: 'NodeUpdateType' } )
+		) );
+		declaration.specifiers = declaration.specifiers.filter( ( specifier ) => (
+			specifier !== nodeFrame && specifier !== nodeUpdateType
+		) );
+		const nodeFrameSource = declaration.source.value.replace( /Nodes\.js$/, 'core/NodeFrame.js' );
+		const directImports = [ t.importDeclaration(
 			[ t.importDefaultSpecifier( t.identifier( nodeFrame.local.name ) ) ],
-			t.stringLiteral( source ),
-		);
-		ast.program.body.splice( i, 0, directImport );
+			t.stringLiteral( nodeFrameSource ),
+		) ];
+		if ( nodeUpdateType ) {
+
+			const constantsSource = declaration.source.value.replace( /Nodes\.js$/, 'core/constants.js' );
+			directImports.push( t.importDeclaration(
+				[ t.importSpecifier(
+					t.identifier( nodeUpdateType.local.name ),
+					t.identifier( nodeUpdateType.imported.name ),
+				) ],
+				t.stringLiteral( constantsSource ),
+			) );
+
+		}
+		ast.program.body.splice( i, 0, ...directImports );
 		return true;
 
 	}
@@ -1609,7 +1570,7 @@ function parseFunctionBody( source ) {
 
 /**
  * Scan the top-level module for `class X { ... methodName( ... ) { ... } }`
- * and return the first matching ClassMethod node. Used for 0.184's
+ * and return the first matching ClassMethod node. Used for the 0.184+
  * `_createNodeBuilder` helper.
  */
 function findClassMethod( ast, methodName ) {
@@ -1965,6 +1926,7 @@ function patchRobustBindGroupSetting( ast ) {
 
 	let resetPatched = 0;
 	let createPatched = 0;
+	const samplerBindingOwner = getWebGPUBackendSamplerBindingOwner( ast );
 
 	traverse( ast, {
 		VariableDeclaration( path ) {
@@ -1998,13 +1960,38 @@ function patchRobustBindGroupSetting( ast ) {
 			if ( ! t.isIdentifier( declaration.init.callee.property, { name: 'get' } ) ) return;
 			if ( declaration.init.arguments.length !== 1 || ! t.isIdentifier( declaration.init.arguments[ 0 ], { name: 'bindGroup' } ) ) return;
 
+			// r184 declares `bindingsData` immediately before the cache-miss
+			// branch. r185 moved the declaration inside that branch. Accept only
+			// those two exact ownership shapes so an unrelated `this.get(
+			// bindGroup )` declaration cannot receive the replay initialization.
 			const sibling = path.getSibling( path.key + 1 );
-			if ( ! sibling || ! sibling.isIfStatement() ) return;
-			if ( ! generate( sibling.node.test ).code.includes( 'currentBindingGroups' ) ) return;
+			const enclosingIf = path.parentPath && path.parentPath.isBlockStatement()
+				&& path.parentPath.parentPath && path.parentPath.parentPath.isIfStatement()
+				? path.parentPath.parentPath
+				: null;
+			const cacheMissIf = sibling && sibling.isIfStatement() && isWebGPUBindGroupCacheMissTest( sibling.node.test )
+				? sibling
+				: enclosingIf && isWebGPUBindGroupCacheMissTest( enclosingIf.node.test )
+					? enclosingIf
+					: null;
+			if ( ! cacheMissIf ) return;
 
+			const samplerInitialization = samplerBindingOwner === 'binding'
+				? `
+						const bindingData = this.get( binding );
+						if ( bindingData.sampler === undefined ) this.updateSampler( binding );
+				`
+				: `
+						const texture = binding.texture;
+						const textureData = texture ? this.get( texture ) : null;
+						if ( textureData && textureData.sampler === undefined ) this.updateSampler( texture );
+				`;
 			const initBindings = parseFunctionBody( `
 				for ( const binding of bindGroup.bindings ) {
-					if ( binding.isSampledTexture ) {
+					if ( binding.isUniformBuffer ) {
+						const bindingData = this.get( binding );
+						if ( bindingData.buffer === undefined ) this.createUniformBuffer( binding );
+					} else if ( binding.isSampledTexture ) {
 						const texture = binding.texture;
 						const textureData = texture ? this.get( texture ) : null;
 						if ( textureData && textureData.texture === undefined && textureData.externalTexture === undefined ) {
@@ -2016,9 +2003,7 @@ function patchRobustBindGroupSetting( ast ) {
 							}
 						}
 					} else if ( binding.isSampler ) {
-						const texture = binding.texture;
-						const textureData = texture ? this.get( texture ) : null;
-						if ( textureData && textureData.sampler === undefined ) this.updateSampler( texture );
+						${ samplerInitialization }
 					}
 				}
 			` ).body;
@@ -2040,6 +2025,54 @@ function patchRobustBindGroupSetting( ast ) {
 
 	if ( resetPatched === 0 ) throw new Error( 'WebGPUBackend: shape changed (no currentBindingGroups cache found)' );
 	if ( createPatched === 0 ) throw new Error( 'WebGPUBackend: shape changed (no bind group set loop found)' );
+
+}
+
+function isWebGPUBindGroupCacheMissTest( node ) {
+
+	if ( ! t.isBinaryExpression( node, { operator: '!==' } ) ) return false;
+	const left = node.left;
+	const right = node.right;
+	return t.isMemberExpression( left, { computed: true } )
+		&& t.isIdentifier( left.object, { name: 'currentBindingGroups' } )
+		&& t.isIdentifier( left.property, { name: 'i' } )
+		&& t.isMemberExpression( right )
+		&& t.isIdentifier( right.object, { name: 'bindGroup' } )
+		&& t.isIdentifier( right.property, { name: 'id' } );
+
+}
+
+function getWebGPUBackendSamplerBindingOwner( ast ) {
+
+	const method = findClassMethod( ast, 'updateSampler' );
+	if ( ! method || method.params.length !== 1 || ! t.isIdentifier( method.params[ 0 ] ) ) {
+
+		throw new Error( 'WebGPUBackend: updateSampler signature shape changed' );
+
+	}
+	const owner = method.params[ 0 ].name;
+	if ( owner !== 'texture' && owner !== 'binding' ) {
+
+		throw new Error( `WebGPUBackend: unsupported updateSampler owner ${ owner }` );
+
+	}
+	const statements = method.body.body;
+	const returned = statements.length === 1 && t.isReturnStatement( statements[ 0 ] )
+		? statements[ 0 ].argument
+		: null;
+	if ( ! t.isCallExpression( returned )
+		|| ! t.isMemberExpression( returned.callee )
+		|| ! t.isMemberExpression( returned.callee.object )
+		|| ! t.isThisExpression( returned.callee.object.object )
+		|| ! t.isIdentifier( returned.callee.object.property, { name: 'textureUtils' } )
+		|| ! t.isIdentifier( returned.callee.property, { name: 'updateSampler' } )
+		|| returned.arguments.length !== 1
+		|| ! t.isIdentifier( returned.arguments[ 0 ], { name: owner } ) ) {
+
+		throw new Error( 'WebGPUBackend: updateSampler delegation shape changed' );
+
+	}
+	return owner;
 
 }
 
@@ -2199,12 +2232,14 @@ function stubCreateNodeBuilder( ast, importRegex, builderName, fileName ) {
 // Patch: replace the stock import with the runtime-owned graph-free
 // `ReplayNodeLibrary`. It preserves the private empty-registry surface without
 // retaining Three's stock NodeLibrary owner or any registered compiler graph.
+// Keep Three's WebGL backend selection and automatic fallback wiring intact;
+// the dedicated WebGLBackend rewrite removes only GLSLNodeBuilder.
 
 function rewriteWebGPURenderer( ast, ctx ) {
 
 	let foundLibImport = false;
 	let foundLibNew = false;
-	let droppedWebGL = false;
+	let foundWebGLImport = false;
 
 	traverse( ast, {
 		ImportDeclaration( path ) {
@@ -2223,11 +2258,18 @@ function rewriteWebGPURenderer( ast, ctx ) {
 				return;
 
 			}
-			// Drop the WebGL fallback import — slim mode is WebGPU-only.
+			// The slim renderer supports captured GLSL on Three's real WebGL
+			// backend. Retain this import and validate its exact ownership shape;
+			// rewriteWebGLBackend() removes the live GLSL compiler below it.
 			if ( /\/webgl-fallback\/WebGLBackend\.js$/.test( path.node.source.value ) ) {
 
-				path.remove();
-				droppedWebGL = true;
+				const def = path.node.specifiers.find( ( s ) => t.isImportDefaultSpecifier( s ) );
+				if ( ! def || ! t.isIdentifier( def.local, { name: 'WebGLBackend' } ) ) {
+
+					throw new Error( 'WebGPURenderer: WebGLBackend import shape changed' );
+
+				}
+				foundWebGLImport = true;
 				return;
 
 			}
@@ -2243,58 +2285,13 @@ function rewriteWebGPURenderer( ast, ctx ) {
 				return;
 
 			}
-			// Replace `new WebGLBackend( parameters )` with a throw — the
-			// fallback path is unreachable in slim mode, but we want a loud
-			// error if the user passes `forceWebGL: true`.
-			if ( t.isIdentifier( path.node.callee, { name: 'WebGLBackend' } ) ) {
-
-				path.replaceWith( t.callExpression(
-					t.arrowFunctionExpression( [], t.blockStatement( [
-						t.throwStatement( t.newExpression( t.identifier( 'Error' ), [
-							t.stringLiteral( '[tsl-precompile/slim] WebGL fallback is stripped from the slim bundle. Remove `forceWebGL: true` or use the full three.webgpu.js.' ),
-						] ) ),
-					] ) ),
-					[],
-				) );
-
-			}
-
-		},
-		// Also delete the `parameters.getFallback = () => new WebGLBackend(...)`
-		// arrow assignment so the WebGLBackend reference is fully gone.
-		AssignmentExpression( path ) {
-
-			// `BackendClass = WebGLBackend` (line 59 of WebGPURenderer.js) —
-			// bare identifier reference under `if (parameters.forceWebGL)`.
-			// Without this rewrite, removing the import leaves a dangling
-			// reference that throws `WebGLBackend is not defined` at runtime.
-			// Replace the RHS with an IIFE throw so the user sees the same
-			// loud error as the `new WebGLBackend(...)` rewrite above.
-			if ( t.isIdentifier( path.node.right, { name: 'WebGLBackend' } ) ) {
-
-				path.node.right = t.callExpression(
-					t.arrowFunctionExpression( [], t.blockStatement( [
-						t.throwStatement( t.newExpression( t.identifier( 'Error' ), [
-							t.stringLiteral( '[tsl-precompile/slim] WebGL fallback is stripped from the slim bundle. Remove `forceWebGL: true` or use the full three.webgpu.js.' ),
-						] ) ),
-					] ) ),
-					[],
-				);
-				return;
-
-			}
-
-			if ( ! t.isMemberExpression( path.node.left ) ) return;
-			if ( ! t.isIdentifier( path.node.left.property, { name: 'getFallback' } ) ) return;
-			const stmt = path.getStatementParent();
-			if ( stmt ) stmt.remove();
 
 		},
 	} );
 
 	if ( ! foundLibImport ) throw new Error( 'WebGPURenderer: shape changed (no import of StandardNodeLibrary found)' );
 	if ( ! foundLibNew ) throw new Error( 'WebGPURenderer: shape changed (no `new StandardNodeLibrary()` found)' );
-	if ( ! droppedWebGL ) throw new Error( 'WebGPURenderer: shape changed (no import of WebGLBackend found)' );
+	if ( ! foundWebGLImport ) throw new Error( 'WebGPURenderer: shape changed (no import of WebGLBackend found)' );
 
 	ctx.touched = true;
 
@@ -2433,49 +2430,6 @@ function findMaterialAssignments( blockPath, objName ) {
 
 	}
 	return out;
-
-}
-
-/**
- * Import only the helpers referenced by the rewritten AST, grouped by their
- * private runtime owner. Pure compatibility rewrites therefore add no runtime
- * edge, while renderer output never evaluates RenderPipeline replay support.
- */
-function injectRuntimeImports( ast ) {
-
-	const referenced = new Set();
-	traverse( ast, {
-		Identifier( path ) {
-
-			if ( ! path.isReferencedIdentifier() ) return;
-			if ( SLIM_REWRITE_RUNTIME_HELPERS[ path.node.name ] ) referenced.add( path.node.name );
-
-		},
-	} );
-	if ( referenced.size === 0 ) return;
-
-	const runtimeImports = [];
-	for ( const moduleRule of SLIM_REWRITE_RUNTIME_MODULE_RULES ) {
-
-		const helpers = Object.entries( SLIM_REWRITE_RUNTIME_HELPERS )
-			.filter( ( [ name, helper ] ) => referenced.has( name ) && helper.moduleId === moduleRule.id );
-		if ( helpers.length === 0 ) continue;
-		const specifiers = helpers.map( ( [ name, helper ] ) => helper.kind === 'default'
-			? t.importDefaultSpecifier( t.identifier( name ) )
-			: t.importSpecifier( t.identifier( name ), t.identifier( name ) ) );
-		runtimeImports.push( t.importDeclaration( specifiers, t.stringLiteral( moduleRule.virtualId ) ) );
-
-	}
-
-	// Insert at position after the last existing import (keeps relative
-	// ordering predictable).
-	let insertAt = 0;
-	for ( let i = 0; i < ast.program.body.length; i ++ ) {
-
-		if ( t.isImportDeclaration( ast.program.body[ i ] ) ) insertAt = i + 1;
-
-	}
-	ast.program.body.splice( insertAt, 0, ...runtimeImports );
 
 }
 

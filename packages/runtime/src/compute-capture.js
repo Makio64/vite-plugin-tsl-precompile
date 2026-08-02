@@ -12,6 +12,7 @@ import { validateArtifact } from '@tsl-precompile/contract/kinds';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { normalizeRevision } from './_normalize-revision.js';
 import { hashArtifactContentSync, hashNodeGraphSync } from './graph-hash.js';
+import { recordDevCaptureOutcome } from './dev-capture-outcome.js';
 
 const DEFAULT_CAPTURE_ENDPOINT = '/__tsl-precompile/capture';
 const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -126,18 +127,28 @@ function signArtifact( extracted, entry, versions ) {
 
 async function postCapture( endpoint, capture, fetchImpl ) {
 
-	const response = await fetchImpl( endpoint, {
-		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify( capture ),
-	} );
-	if ( ! response || response.ok !== true ) {
+	try {
 
-		const detail = response && typeof response.text === 'function' ? await response.text() : '';
-		throw new Error( `[tsl-precompile/compute] capture failed for ${ JSON.stringify( capture.name ) }: ${ response?.status || 'network error' }${ detail ? ` ${ detail }` : '' }` );
+		const response = await fetchImpl( endpoint, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify( capture ),
+		} );
+		if ( ! response || response.ok !== true ) {
+
+			const detail = response && typeof response.text === 'function' ? await response.text() : '';
+			throw new Error( `[tsl-precompile/compute] capture failed for ${ JSON.stringify( capture.name ) }: ${ response?.status || 'network error' }${ detail ? ` ${ detail }` : '' }` );
+
+		}
+		recordDevCaptureOutcome( true );
+		return capture;
+
+	} catch ( error ) {
+
+		recordDevCaptureOutcome( false );
+		throw error;
 
 	}
-	return capture;
 
 }
 
@@ -163,6 +174,7 @@ export async function precompileComputes( renderer, entries, opts = {} ) {
 	};
 
 	adjustPendingCaptureCount( 1 );
+	let postingStarted = false;
 	try {
 
 		const compileTSL = await loadCompileTSL( opts );
@@ -180,7 +192,20 @@ export async function precompileComputes( renderer, entries, opts = {} ) {
 			return signArtifact( artifact, entry, versions );
 
 		} );
-		return await Promise.all( captures.map( capture => postCapture( endpoint, capture, fetchImpl ) ) );
+		postingStarted = true;
+		const posted = await Promise.allSettled( captures.map( capture => postCapture( endpoint, capture, fetchImpl ) ) );
+		const failed = posted.find( ( result ) => result.status === 'rejected' );
+		if ( failed ) throw failed.reason;
+		return posted.map( ( result ) => result.value );
+
+	} catch ( error ) {
+
+		// postCapture records one outcome per HTTP attempt. Failures before that
+		// phase (extractor loading, compilation, lookup, validation, or signing)
+		// still need one terminal outcome so capture-settlement waiters reject
+		// promptly instead of timing out after pending returns to zero.
+		if ( ! postingStarted ) recordDevCaptureOutcome( false );
+		throw error;
 
 	} finally {
 

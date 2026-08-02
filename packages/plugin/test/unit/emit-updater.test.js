@@ -1,9 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parse } from '@babel/parser';
+import { registerKind, unregisterKind } from '@tsl-precompile/contract/kinds';
 
 import { emitUpdaterSource } from '../../src/emit-updater.js';
 import { linkGeneratedLightIdentitySource, writeGeneratedLightValue } from '../../../runtime/src/generated/light-writer.js';
+import { writeUniformGroup } from '../../../runtime/src/hydrate/material-writers.js';
+import { writeEnvironmentRotation, writeF32, writePMREMScalar } from '../../../runtime/src/writers.js';
 
 function executeLightOnlyUpdater( source ) {
 
@@ -14,6 +17,20 @@ function executeLightOnlyUpdater( source ) {
 		linkGeneratedLightIdentitySource,
 		writeGeneratedLightValue,
 	);
+
+}
+
+function executeEnvironmentUpdater( source ) {
+
+	const executable = source
+		.replace( /^import .*@tsl-precompile\/runtime\/writers.*;\n?/gm, '' )
+		.replace( /export /g, '' );
+	return Function(
+		'writeEnvironmentRotation',
+		'writeF32',
+		'writePMREMScalar',
+		`${ executable }\nreturn { update, updateGroup };`,
+	)( writeEnvironmentRotation, writeF32, writePMREMScalar );
 
 }
 
@@ -201,6 +218,38 @@ test( 'emitUpdaterSource — documented-blocked kind → severity=blocked, emits
 
 } );
 
+test( 'emitUpdaterSource — contract registrations can document blocked vocabulary but cannot claim executable support', () => {
+
+	const kind = 'custom.thirdPartyEffect';
+	unregisterKind( kind );
+	try {
+
+		registerKind( {
+			kind,
+			status: 'blocked',
+			reason: 'Install and land the extractor/codegen/runtime adapter together.',
+		} );
+		const { source, unsupportedKinds } = emitUpdaterSource( {
+			uniformPlan: [ {
+				slots: [ { byteOffset: 48, source: { kind } } ],
+			} ],
+		} );
+		assert.deepEqual( unsupportedKinds, [ {
+			kind,
+			severity: 'blocked',
+			reason: 'Install and land the extractor/codegen/runtime adapter together.',
+			byteOffset: 48,
+		} ] );
+		assert.match( source, /blocked kind custom\.thirdPartyEffect/ );
+
+	} finally {
+
+		unregisterKind( kind );
+
+	}
+
+} );
+
 test( 'emitUpdaterSource — extractor dialect (frame.time, constant with valueSnapshot, camera.projectionMatrixInverse)', () => {
 
 	const artifact = {
@@ -269,22 +318,71 @@ test( 'emitUpdaterSource — frame.time.scaled bakes scale literal and honours _
 
 } );
 
-test( 'emitUpdaterSource — uniform.live with valueSnapshot falls back to frozen snapshot, severity=blocked', () => {
+test( 'emitUpdaterSource — exact uniform.live overlays retain snapshot baselines without blocked diagnostics', () => {
 
 	const artifact = {
 		uniformPlan: [ {
 			slots: [
-				{ offset: 0, source: { kind: 'uniform.live', name: 'shadowMatrix', valueSnapshot: { type: 'mat4', data: new Array( 16 ).fill( 0 ).map( ( _, i ) => i ) } } },
-				{ offset: 64, dtype: 'int', source: { kind: 'uniform.live', name: 'dynamicLightCount', valueSnapshot: { type: 'number', data: 2 } } },
+				{
+					offset: 0,
+					source: {
+						kind: 'uniform.live',
+						name: 'shadowMatrix',
+						liveNodeId: 0,
+						liveNodeIdentity: 'uniform-callsite@1#src/shadows.js#3#0',
+						valueSnapshot: { type: 'mat4', data: new Array( 16 ).fill( 0 ).map( ( _, i ) => i ) },
+					},
+				},
+				{
+					offset: 64,
+					dtype: 'int',
+					source: {
+						kind: 'uniform.live',
+						name: 'dynamicLightCount',
+						nodePath: [ 'colorNode', 'dynamicLightCount' ],
+						valueSnapshot: { type: 'number', data: 2 },
+					},
+				},
+				{
+					offset: 68,
+					dtype: 'number',
+					source: {
+						kind: 'uniform.live',
+						name: 'runtimeOnly',
+						liveNodeId: 1,
+						liveNodeIdentity: 'uniform-callsite@1#src/shadows.js#4#0',
+					},
+				},
 			],
 		} ],
 	};
 	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
-	assert.equal( unsupportedKinds.length, 2 );
-	assert.equal( unsupportedKinds[ 0 ].kind, 'uniform.live' );
-	assert.equal( unsupportedKinds[ 0 ].severity, 'blocked' );
+	assert.deepEqual( unsupportedKinds, [] );
 	assert.match( source, /writeMat4\(view, byteOffset \+ 0, __const0\);/ );
 	assert.match( source, /writeI32\(view, byteOffset \+ 64, __const1\);/ );
+	assert.match( source, /uniform\.live "runtimeOnly" is written by the runtime live-node overlay/ );
+
+} );
+
+test( 'emitUpdaterSource — unaddressed or malformed uniform.live snapshots remain blocked', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			slots: [
+				{ offset: 0, source: { kind: 'uniform.live', name: 'snapshotOnly', valueSnapshot: { type: 'mat4', data: new Array( 16 ).fill( 0 ) } } },
+				{ offset: 64, dtype: 'int', source: { kind: 'uniform.live', name: 'idOnly', liveNodeId: 0, valueSnapshot: { type: 'number', data: 2 } } },
+				{ offset: 68, dtype: 'number', source: { kind: 'uniform.live', name: 'malformedIdentity', liveNodeId: 1, liveNodeIdentity: 'invalid', valueSnapshot: { type: 'number', data: 3 } } },
+				{ offset: 72, dtype: 'number', source: { kind: 'uniform.live', name: 'unsafePath', nodePath: [ 'colorNode', '__proto__' ], valueSnapshot: { type: 'number', data: 4 } } },
+			],
+		} ],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.equal( unsupportedKinds.length, 4 );
+	assert.ok( unsupportedKinds.every( ( entry ) => entry.kind === 'uniform.live' && entry.severity === 'blocked' ) );
+	assert.match( source, /writeMat4\(view, byteOffset \+ 0, __const0\);/ );
+	assert.match( source, /writeI32\(view, byteOffset \+ 64, __const1\);/ );
+	assert.match( source, /writeF32\(view, byteOffset \+ 68, __const2\);/ );
+	assert.match( source, /writeF32\(view, byteOffset \+ 72, __const3\);/ );
 
 } );
 
@@ -555,6 +653,106 @@ test( 'emitUpdaterSource — renderer.toneMappingExposure writes frame.renderer.
 	assert.deepEqual( unsupportedKinds, [] );
 	assert.match( source, /writeF32\(view, byteOffset \+ 128, frame\.renderer \? frame\.renderer\.toneMappingExposure : 1\.0\)/ );
 	assert.match( source, /import \{ writeF32 \}/ );
+
+} );
+
+test( 'emitUpdaterSource — environment and PMREM uniforms remain live', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			name: 'object',
+			slots: [
+				{ offset: 0, source: { kind: 'environment.intensity', valueSnapshot: { type: 'number', data: 1 } } },
+				{ offset: 16, source: { kind: 'environment.rotation', valueSnapshot: { type: 'mat4', data: new Array( 16 ).fill( 0 ) } } },
+				{ offset: 80, source: { kind: 'pmrem.maxMip', textureUuid: 'atlas', valueSnapshot: { type: 'number', data: 5 } } },
+				{ offset: 84, source: { kind: 'pmrem.texelWidth', textureUuid: 'atlas', valueSnapshot: { type: 'number', data: 1 / 336 } } },
+				{ offset: 88, source: { kind: 'pmrem.texelHeight', textureUuid: 'atlas', valueSnapshot: { type: 'number', data: 1 / 128 } } },
+			],
+		} ],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+
+	assert.deepEqual( unsupportedKinds, [] );
+	assert.match( source, /material && material\.envMap \? material\.envMapIntensity : frame\.scene && frame\.scene\.environmentIntensity/ );
+	assert.match( source, /writeEnvironmentRotation\(view, byteOffset \+ 16, material, frame\.scene\)/ );
+	assert.equal( source.match( /writePMREMScalar\(view/g ).length, 3 );
+	assert.match( source, /material && material\.precompiledArtifact/ );
+	assert.match( source, /"textureUuid":"atlas"/ );
+
+} );
+
+test( 'emitUpdaterSource — texture UV flip uses a frozen texture source descriptor', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			name: 'object',
+			slots: [ {
+				offset: 28,
+				dtype: 'uint',
+				source: {
+					kind: 'texture.uvFlipY',
+					textureUuid: 'gradient-map',
+					imageSrc: 'https://cdn.example/gradient.png',
+					valueSnapshot: { type: 'uint', data: 1 },
+				},
+			} ],
+		} ],
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+
+	assert.deepEqual( unsupportedKinds, [] );
+	assert.match( source, /import \{ writeTextureUVFlip \}/ );
+	assert.match( source, /const __textureUVFlipSource0 = Object\.freeze\(\{"kind":"texture\.uvFlipY","textureUuid":"gradient-map","imageSrc":"https:\/\/cdn\.example\/gradient\.png","valueSnapshot":Object\.freeze\(\{"type":"uint","data":1\}\)\}\);/ );
+	assert.match( source, /writeTextureUVFlip\(view, byteOffset \+ 28, material && material\.precompiledArtifact, __textureUVFlipSource0\);/ );
+	assert.doesNotThrow( () => parse( source, { sourceType: 'module' } ) );
+
+} );
+
+test( 'generated and generic environment/PMREM writers produce identical bytes', () => {
+
+	const artifact = {
+		uniformPlan: [ {
+			name: 'object',
+			slots: [
+				{ offset: 0, dtype: 'f32', source: { kind: 'environment.intensity', valueSnapshot: { type: 'number', data: 1 } } },
+				{ offset: 16, dtype: 'mat4', source: { kind: 'environment.rotation', valueSnapshot: { type: 'mat4', data: new Array( 16 ).fill( 0 ) } } },
+				{ offset: 80, dtype: 'f32', source: { kind: 'pmrem.maxMip', textureUuid: 'atlas', valueSnapshot: { type: 'number', data: - 1 } } },
+				{ offset: 84, dtype: 'f32', source: { kind: 'pmrem.texelWidth', textureUuid: 'atlas', valueSnapshot: { type: 'number', data: - 1 } } },
+				{ offset: 88, dtype: 'f32', source: { kind: 'pmrem.texelHeight', textureUuid: 'atlas', valueSnapshot: { type: 'number', data: - 1 } } },
+			],
+		} ],
+	};
+	const atlas = {
+		isTexture: true,
+		mapping: 306,
+		name: 'PMREM.cubeUv',
+		image: { width: 768, height: 512 },
+	};
+	artifact._textureRefs = new Map( [ [ 'atlas', atlas ] ] );
+	const material = {
+		envMap: null,
+		envMapIntensity: 3,
+		envMapRotation: { _x: 0.9, _y: 0.8, _z: 0.7, _order: 'XYZ' },
+		precompiledArtifact: artifact,
+	};
+	const frame = {
+		material,
+		scene: {
+			environment: undefined,
+			environmentIntensity: 1.75,
+			environmentRotation: { _x: 0.23, _y: - 0.41, _z: 0.67, _order: 'ZXY' },
+		},
+	};
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.deepEqual( unsupportedKinds, [] );
+	const generated = new DataView( new ArrayBuffer( 96 ) );
+	executeEnvironmentUpdater( source ).updateGroup( frame, material, generated, 0, 'object' );
+	const generic = new DataView( new ArrayBuffer( 96 ) );
+	writeUniformGroup( artifact.uniformPlan[ 0 ], frame, generic, material, null, artifact );
+	assert.deepEqual(
+		new Uint8Array( generated.buffer ),
+		new Uint8Array( generic.buffer ),
+	);
 
 } );
 

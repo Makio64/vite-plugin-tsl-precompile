@@ -13,6 +13,7 @@ function freshContext( overrides = {} ) {
 		shadowDepthBindings: [],
 		materialDepthBindings: [],
 		artifactTextureBindings: [],
+		lateArtifactTextureBindings: [],
 		materialTextureBindings: [],
 		viewportTextureBindings: [],
 		reflectorTextureBindings: [],
@@ -114,6 +115,37 @@ test( 'classifier dispatches depth.texture into shadowDepthBindings or materialD
 	assert.equal( ctx.shadowDepthBindings[ 0 ].vsm, true );
 	assert.equal( ctx.materialDepthBindings[ 0 ].textureUuid, 'T' );
 	assert.equal( ctx.materialDepthBindings[ 0 ].fromMaterialGraph, true );
+
+} );
+
+test( 'classifier defers selector-backed material depth until its render-target owner has updated', () => {
+
+	const ctx = freshContext();
+	const entry = {
+		kind: 'depth.texture',
+		target: 'sampled-texture',
+		group: 'matgroup',
+		binding: 'depthTex',
+		source: {
+			kind: 'depth.texture',
+			lightIndex: -1,
+			fromMaterialGraph: true,
+			textureUuid: 'reflector-depth',
+			reflectorIndex: 0,
+			renderTargetSelector: { schema: 'renderer-render-target-texture@1' },
+		},
+	};
+	classifyDynamicTextureBinding(
+		entry,
+		{ isSampledTexture: true },
+		{ kind: 'sampled-texture', name: 'depthTex' },
+		ctx,
+	);
+
+	assert.equal( ctx.artifactTextureBindings.length, 0 );
+	assert.equal( ctx.materialDepthBindings.length, 0 );
+	assert.equal( ctx.lateArtifactTextureBindings.length, 1 );
+	assert.equal( ctx.lateArtifactTextureBindings[ 0 ].source.reflectorIndex, 0 );
 
 } );
 

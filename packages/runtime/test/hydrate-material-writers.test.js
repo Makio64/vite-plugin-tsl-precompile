@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Color, Matrix3, Matrix4, Vector3, Vector4 } from 'three';
+import { Color, Euler, Matrix3, Matrix4, Vector3, Vector4 } from 'three';
 
 import { writeMaterialValue, writeUniformGroup } from '../src/hydrate/material-writers.js';
+import { selectArtifactVariant } from '../src/hydrate/variants/artifact-variant-selector.js';
 import { withTemporalFrame } from '../src/slim-support/temporal-frame.js';
 
 function makeView( size = 256 ) {
@@ -468,6 +469,197 @@ test( 'writeUniformGroup writes material scalar with property fallback to kind t
 		null
 	);
 	assert.equal( view2.getFloat32( 0, true ), Math.fround( 0.42 ) );
+
+} );
+
+test( 'writeUniformGroup mirrors live environment owner selection and rotation', () => {
+
+	const view = makeView();
+	const sceneRotation = new Euler( 0.2, 0.4, 0.1 );
+	const materialRotation = new Euler( 0.7, 0.1, 0.3 );
+	const scene = {
+		environment: { isTexture: true },
+		environmentIntensity: 1.75,
+		environmentRotation: sceneRotation,
+	};
+	const material = {
+		envMap: null,
+		envMapIntensity: 4,
+		envMapRotation: materialRotation,
+	};
+	const group = makeGroup( [
+		{ offset: 0, dtype: 'f32', source: { kind: 'environment.intensity' } },
+		{ offset: 16, dtype: 'mat4', source: { kind: 'environment.rotation' } },
+	] );
+
+	writeUniformGroup( group, { material, scene }, view, material );
+	assert.equal( view.getFloat32( 0, true ), 1.75 );
+	const expectedScene = new Matrix4().makeRotationFromEuler( sceneRotation ).transpose();
+	for ( let index = 0; index < 16; index ++ ) {
+
+		assert.ok( Math.abs( view.getFloat32( 16 + index * 4, true ) - Math.fround( expectedScene.elements[ index ] ) ) < 1e-6 );
+
+	}
+
+	material.envMap = { isTexture: true };
+	writeUniformGroup( group, { material, scene }, view, material );
+	assert.equal( view.getFloat32( 0, true ), 4 );
+	const expectedMaterial = new Matrix4().makeRotationFromEuler( materialRotation ).transpose();
+	for ( let index = 0; index < 16; index ++ ) {
+
+		assert.ok( Math.abs( view.getFloat32( 16 + index * 4, true ) - Math.fround( expectedMaterial.elements[ index ] ) ) < 1e-6 );
+
+	}
+
+} );
+
+test( 'environment rotation matches r185 strict-null ownership for every Euler order', () => {
+
+	const group = makeGroup( [
+		{ offset: 0, dtype: 'mat4', source: { kind: 'environment.rotation' } },
+	] );
+	const orders = [ 'XYZ', 'YXZ', 'ZXY', 'ZYX', 'YZX', 'XZY' ];
+	for ( const order of orders ) {
+
+		const rotation = new Euler( 0.23, - 0.41, 0.67, order );
+		const expected = new Matrix4().makeRotationFromEuler( rotation ).transpose();
+		const view = makeView();
+		writeUniformGroup( group, {
+			material: { envMap: null, envMapRotation: new Euler() },
+			scene: { environment: undefined, environmentRotation: rotation },
+		}, view, null );
+		for ( let index = 0; index < 16; index ++ ) {
+
+			assert.ok(
+				Math.abs( view.getFloat32( index * 4, true ) - Math.fround( expected.elements[ index ] ) ) < 1e-6,
+				`${ order } element ${ index }`,
+			);
+
+		}
+
+	}
+
+	const sceneRotation = new Euler( 0.11, 0.22, 0.33, 'YZX' );
+	const materialRotation = new Euler( 0.44, 0.55, 0.66, 'XZY' );
+	const sceneExpected = new Matrix4().makeRotationFromEuler( sceneRotation ).transpose();
+	const materialExpected = new Matrix4().makeRotationFromEuler( materialRotation ).transpose();
+	const cases = [
+		{
+			label: 'environmentNode selects scene when environment is null',
+			material: { envMap: null, envMapRotation: materialRotation },
+			scene: { environment: null, environmentNode: { isNode: true }, environmentRotation: sceneRotation },
+			expected: sceneExpected,
+		},
+		{
+			label: 'undefined envMap selects material even when scene environment exists',
+			material: { envMap: undefined, envMapRotation: materialRotation },
+			scene: { environment: { isTexture: true }, environmentRotation: sceneRotation },
+			expected: materialExpected,
+		},
+	];
+	for ( const fixture of cases ) {
+
+		const view = makeView();
+		writeUniformGroup( group, { material: fixture.material, scene: fixture.scene }, view, null );
+		for ( let index = 0; index < 16; index ++ ) {
+
+			assert.ok(
+				Math.abs( view.getFloat32( index * 4, true ) - Math.fround( fixture.expected.elements[ index ] ) ) < 1e-6,
+				`${ fixture.label }, element ${ index }`,
+			);
+
+		}
+
+	}
+
+} );
+
+test( 'writeUniformGroup derives PMREM scalars from the exact live CubeUV atlas', () => {
+
+	const view = makeView();
+	const texture = {
+		isTexture: true,
+		name: 'PMREM.cubeUv',
+		mapping: 306,
+		image: { width: 336, height: 128 },
+	};
+	const artifact = { _textureRefs: new Map( [ [ 'atlas', texture ] ] ) };
+	const group = makeGroup( [
+		{ offset: 0, dtype: 'f32', source: { kind: 'pmrem.maxMip', textureUuid: 'atlas', valueSnapshot: { type: 'number', data: - 1 } } },
+		{ offset: 4, dtype: 'f32', source: { kind: 'pmrem.texelWidth', textureUuid: 'atlas', valueSnapshot: { type: 'number', data: - 1 } } },
+		{ offset: 8, dtype: 'f32', source: { kind: 'pmrem.texelHeight', textureUuid: 'atlas', valueSnapshot: { type: 'number', data: - 1 } } },
+	] );
+
+	writeUniformGroup( group, { scene: {} }, view, null, null, artifact );
+	assert.equal( view.getFloat32( 0, true ), 5 );
+	assert.equal( view.getFloat32( 4, true ), Math.fround( 1 / 336 ) );
+	assert.equal( view.getFloat32( 8, true ), Math.fround( 1 / 128 ) );
+
+	texture.image.height = 512;
+	writeUniformGroup( group, { scene: {} }, view, null, null, artifact );
+	assert.equal( view.getFloat32( 0, true ), 7 );
+	assert.equal( view.getFloat32( 4, true ), Math.fround( 1 / 384 ) );
+	assert.equal( view.getFloat32( 8, true ), Math.fround( 1 / 512 ) );
+
+} );
+
+test( 'PMREM scalar writers keep the snapshot when the exact atlas relation is missing', () => {
+
+	const wrongAtlas = {
+		isTexture: true,
+		name: 'PMREM.cubeUv',
+		mapping: 306,
+		image: { width: 768, height: 512 },
+	};
+	const artifact = { _textureRefs: new Map( [ [ 'different-atlas', wrongAtlas ] ] ) };
+	const group = makeGroup( [
+		{ offset: 0, dtype: 'f32', source: { kind: 'pmrem.maxMip', textureUuid: 'required-atlas', valueSnapshot: { type: 'number', data: 4.25 } } },
+	] );
+	const view = makeView();
+	writeUniformGroup( group, {
+		material: { envMap: wrongAtlas },
+		scene: { environment: wrongAtlas },
+	}, view, null, null, artifact );
+	assert.equal( view.getFloat32( 0, true ), 4.25 );
+
+} );
+
+test( 'selected non-root variants read their own PMREM texture relation', () => {
+
+	const root = {
+		cacheKey: 'root',
+		vertexShader: 'root-v',
+		fragmentShader: 'root-f',
+		uniformPlan: makeGroup( [
+			{ offset: 0, dtype: 'f32', source: { kind: 'pmrem.maxMip', textureUuid: 'root-atlas', valueSnapshot: { type: 'number', data: - 1 } } },
+		] ),
+		bindings: [],
+		variants: {
+			child: {
+				cacheKey: 'child',
+				vertexShader: 'child-v',
+				fragmentShader: 'child-f',
+				uniformPlan: [ makeGroup( [
+					{ offset: 0, dtype: 'f32', source: { kind: 'pmrem.maxMip', textureUuid: 'child-atlas', valueSnapshot: { type: 'number', data: - 1 } } },
+				] ) ],
+				bindings: [],
+			},
+		},
+	};
+	root.uniformPlan = [ root.uniformPlan ];
+	const childAtlas = {
+		isTexture: true,
+		mapping: 306,
+		image: { width: 384, height: 256 },
+	};
+	Object.defineProperty( root, '_textureRefs', {
+		value: new Map( [ [ 'child-atlas', childAtlas ] ] ),
+		configurable: true,
+	} );
+	const selected = selectArtifactVariant( root, { cacheKey: 'child' } );
+	const view = makeView();
+	writeUniformGroup( selected.uniformPlan[ 0 ], { scene: {} }, view, null, null, selected );
+	assert.equal( view.getFloat32( 0, true ), 6 );
 
 } );
 

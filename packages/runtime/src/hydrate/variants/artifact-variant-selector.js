@@ -278,11 +278,129 @@ function variantPayloadFingerprint( candidate ) {
 function selectorMiss( selector, candidates, profile = null, adapter = null ) {
 
 	const selectors = uniqueSelectors( candidates, profile, adapter );
+	const differencePaths = closestSelectorDifferencePaths( selector, selectors );
+	const differenceHint = differencePaths.length > 0
+		? ` Closest capture differs at ${ differencePaths.join( ', ' ) }.`
+		: '';
+	const artifactContext = {
+		names: [ ...new Set( candidates.map( ( candidate ) => candidate && ( candidate.__tslpAuxName || candidate.name || candidate.__name ) ).filter( ( value ) => typeof value === 'string' && value.length > 0 ) ) ],
+		materialUuids: [ ...new Set( candidates.map( ( candidate ) => candidate && candidate.materialUuid ).filter( ( value ) => typeof value === 'string' && value.length > 0 ) ) ],
+		shapes: [ ...new Set( candidates.map( ( candidate ) => candidate && ( candidate.__tslpAuxShape || candidate.materialShape || candidate.shape ) ).filter( ( value ) => typeof value === 'string' && value.length > 0 ) ) ],
+		cacheKeys: [ ...new Set( candidates.map( ( candidate ) => candidate && candidate.cacheKey ).filter( ( value ) => value !== null && value !== undefined ) ) ],
+	};
+	const remediation = {
+		schema: 'tslp-selector-remediation@1',
+		code: 'capture-missing-render-topology',
+		skill: 'integrate-tsl-precompile',
+		nextActions: [
+			{
+				id: 'capture-missing-render-topology',
+				kind: 'manual',
+				cwd: null,
+				argv: null,
+				dependsOn: [],
+				requiresInput: [ 'route', 'state' ],
+				action: 'Capture the real route and state that exercises closestDifferencePaths.',
+			},
+			{
+				id: 'run-project-doctor',
+				kind: 'manual',
+				cwd: null,
+				argv: null,
+				dependsOn: [ 'capture-missing-render-topology' ],
+				requiresInput: [ 'packageManager', 'projectRoot' ],
+				commandTemplate: '<package-exec> tsl-precompile-doctor --json --compact',
+				argvByPackageManager: {
+					pnpm: [ 'pnpm', 'exec', 'tsl-precompile-doctor', '--json', '--compact' ],
+					npm: [ 'npx', '--no-install', 'tsl-precompile-doctor', '--json', '--compact' ],
+					yarn: [ 'yarn', 'exec', 'tsl-precompile-doctor', '--json', '--compact' ],
+					bun: [ 'bunx', '--bun', 'tsl-precompile-doctor', '--json', '--compact' ],
+				},
+				action: 'Run the project-local doctor and execute its emitted verify/build actions in dependency order.',
+			},
+		],
+		repeatedMismatch: 'Run the doctor command and report the selector difference instead of repeating capture.',
+		generatedArtifactPolicy: 'Do not hand-edit generated artifacts.',
+	};
 	return new ArtifactVariantSelectionError(
 		'TSLP_VARIANT_SELECTOR_MISS',
-		`[tsl-precompile/slim] No captured artifact variant matches the active render topology (${ shortSelector( selector ) }). Captured ${ selectors.length } topology selector(s). Recapture this material with the missing topology.`,
-		{ selector, availableSelectors: selectors },
+		`[tsl-precompile/slim] No captured artifact variant matches the active render topology (${ shortSelector( selector ) }). Captured ${ selectors.length } topology selector(s).${ differenceHint } Use $integrate-tsl-precompile to capture that real route/state, verify, then rebuild slim. If a fresh capture repeats this difference, run the project-local \`tsl-precompile-doctor --json --compact\`; do not hand-edit generated artifacts.`,
+		{
+			selector,
+			availableSelectors: selectors,
+			closestDifferencePaths: differencePaths,
+			artifactContext,
+			cacheKeys: artifactContext.cacheKeys,
+			remediation,
+		},
 	);
+
+}
+
+function closestSelectorDifferencePaths( selector, availableSelectors ) {
+
+	let active;
+	try {
+
+		active = JSON.parse( selector );
+
+	} catch ( _ ) {
+
+		return [];
+
+	}
+	let closest = [];
+	for ( const available of availableSelectors ) {
+
+		let captured;
+		try {
+
+			captured = JSON.parse( available );
+
+		} catch ( _ ) {
+
+			continue;
+
+		}
+		const paths = [];
+		collectSelectorDifferencePaths( active, captured, '', paths, 8 );
+		if ( closest.length === 0 || paths.length < closest.length ) closest = paths;
+
+	}
+	return closest.slice( 0, 4 );
+
+}
+
+function collectSelectorDifferencePaths( active, captured, path, out, limit ) {
+
+	if ( out.length >= limit ) return;
+	if ( Object.is( active, captured ) ) return;
+	const activeObject = active !== null && typeof active === 'object';
+	const capturedObject = captured !== null && typeof captured === 'object';
+	if ( ! activeObject || ! capturedObject || Array.isArray( active ) !== Array.isArray( captured ) ) {
+
+		out.push( path || '<root>' );
+		return;
+
+	}
+	const keys = Array.isArray( active ) && Array.isArray( captured )
+		? Array.from( { length: Math.max( active.length, captured.length ) }, ( _, index ) => String( index ) )
+		: [ ...new Set( [ ...Object.keys( active ), ...Object.keys( captured ) ] ) ].sort();
+	for ( const key of keys ) {
+
+		const childPath = Array.isArray( active ) ? `${ path }[${ key }]` : path ? `${ path }.${ key }` : key;
+		if ( ! Object.prototype.hasOwnProperty.call( active, key ) || ! Object.prototype.hasOwnProperty.call( captured, key ) ) {
+
+			out.push( childPath );
+
+		} else {
+
+			collectSelectorDifferencePaths( active[ key ], captured[ key ], childPath, out, limit );
+
+		}
+		if ( out.length >= limit ) return;
+
+	}
 
 }
 

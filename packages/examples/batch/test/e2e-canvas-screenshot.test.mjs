@@ -3,6 +3,7 @@ import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 
 import {
+	canvasIndicesByBackendThenHorizontalPosition,
 	canvasIndicesByHorizontalPosition,
 	isolateCanvasForScreenshot,
 	restoreCanvasAfterScreenshot,
@@ -77,5 +78,37 @@ test( 'multi-canvas screenshots follow authored horizontal position instead of D
 	assert.deepEqual( canvasIndicesByHorizontalPosition( globalThenLocal, { rightFirst: true } ), [ 0, 1 ] );
 	assert.deepEqual( canvasIndicesByHorizontalPosition( localThenGlobal, { rightFirst: true } ), [ 1, 0 ] );
 	assert.deepEqual( canvasIndicesByHorizontalPosition( globalThenLocal ), [ 1, 0 ] );
+
+} );
+
+test( 'dual-backend canvas identity follows backend markers instead of DOM order', () => {
+
+	const webgpuThenWebgl = [
+		{ index: 0, backend: 'webgpu', left: 0 },
+		{ index: 1, backend: 'webgl', left: 320 },
+	];
+	const webglThenWebgpu = [
+		{ index: 0, backend: 'webgl', left: 320 },
+		{ index: 1, backend: 'webgpu', left: 0 },
+	];
+
+	assert.deepEqual( canvasIndicesByBackendThenHorizontalPosition( webgpuThenWebgl ), [ 0, 1 ] );
+	assert.deepEqual( canvasIndicesByBackendThenHorizontalPosition( webglThenWebgpu ), [ 1, 0 ] );
+
+} );
+
+test( 'dual-backend canvas identity gives equal-position ties deterministic marker priority', () => {
+
+	const candidates = [
+		{ index: 0, backend: 'webgl', left: 100 },
+		{ index: 1, backend: '', left: 100 },
+		{ index: 2, backend: 'webgpu', left: 100 },
+	];
+
+	assert.deepEqual( canvasIndicesByBackendThenHorizontalPosition( candidates ), [ 2, 1, 0 ] );
+	assert.deepEqual(
+		canvasIndicesByBackendThenHorizontalPosition( [ ...candidates ].reverse() ),
+		[ 2, 1, 0 ],
+	);
 
 } );

@@ -8,11 +8,11 @@
  *      matches the binding's texture.
  *   2. Assert the binding's plan source is tagged `kind: 'depth.texture'`
  *      with a `lightIndex` pointing at the right light.
- *   3. Hydrate the artifact and assert the binding's `texture` initially
- *      points at the 1×1 fallback (so bind groups validate before the first
- *      frame), but the rebinder updateBefore-node swaps it to the LIVE
- *      `light.shadow.map.depthTexture` once we drive it with a frame whose
- *      scene contains the light.
+ *   3. Hydrate the artifact and assert light-owned shadow bindings initially
+ *      point at the 1×1 fallback (so bind groups validate before the first
+ *      frame), while an exactly attached material-graph depth texture can bind
+ *      immediately. In both cases the rebinder updateBefore-node follows the
+ *      current live texture before the draw.
  *
  * This guards against regression: if the extractor stops tagging
  * depth.texture bindings, or the hydrator stops emitting the rebinder, the
@@ -69,7 +69,7 @@ function makeShadowReceivingState() {
 		isStorageBuffer: false,
 		visibility: 2,
 		groupNode: { shared: false, version: 0 },
-		textureNode: { value: depthTexture, _value: null, constructor: { type: 'TextureNode' } },
+		textureNode: { value: depthTexture, _value: null, compareNode: { isNode: true }, constructor: { type: 'TextureNode' } },
 		texture: depthTexture,
 	};
 	const textureBinding = {
@@ -80,7 +80,7 @@ function makeShadowReceivingState() {
 		isStorageBuffer: false,
 		visibility: 2,
 		groupNode: { shared: false, version: 0 },
-		textureNode: { value: depthTexture, _value: null, constructor: { type: 'TextureNode' } },
+		textureNode: { value: depthTexture, _value: null, compareNode: { isNode: true }, constructor: { type: 'TextureNode' } },
 		texture: depthTexture,
 	};
 
@@ -128,10 +128,65 @@ test( 'depth-texture/extractor: SampledTexture wrapping DepthTexture is tagged k
 		'depth texture should share the owning light identity record' );
 	assert.equal( shadowEntry.source.vsm, false,
 		'standard shadow path (not VSM) — vsm flag should be false' );
+	assert.equal( shadowEntry.source.shadowMapColor, false,
+		'standard shadow depth must not be tagged as the shadow color attachment' );
+	const samplerEntry = allTextures.find( ( t ) => t.name === 'shadowMapSampler' );
+	assert.equal( samplerEntry.comparison, true,
+		'the uniform plan preserves authored comparison-sampler intent' );
+	const samplerDescriptor = artifact.bindings[ 0 ].bindings.find( ( binding ) => binding.name === 'shadowMapSampler' );
+	assert.equal( samplerDescriptor.comparison, true,
+		'the replay binding descriptor preserves authored comparison-sampler intent' );
 
 	// The companion sampler binding can either inherit the same kind or stay
 	// at its own classification — our hydrator only swaps SampledTexture
 	// bindings, so what matters is that the SAMPLED-TEXTURE entry is tagged.
+
+} );
+
+test( 'depth-texture/extractor: shadow map color attachment keeps its non-VSM role', () => {
+
+	const depthTexture = new DepthTexture( 4, 4 );
+	const shadowColor = new DataTexture( new Uint8Array( [ 255, 128, 0, 255 ] ), 1, 1, RGBAFormat );
+	const dirLight = new DirectionalLight( 0xffffff, 1 );
+	dirLight.shadow.map = { texture: shadowColor, depthTexture };
+
+	const state = {
+		vertexShader: 'v',
+		fragmentShader: '@group(1) @binding(2) var transmittedShadow : texture_2d<f32>;\n',
+		computeShader: '',
+		nodeAttributes: [],
+		updateNodes: [ {
+			isAnalyticLightNode: true,
+			light: dirLight,
+			shadowNode: null,
+		} ],
+		updateBeforeNodes: [],
+		updateAfterNodes: [],
+		bindings: [ {
+			name: 'mat',
+			bindings: [ {
+				name: 'transmittedShadow',
+				isSampledTexture: true,
+				isSampler: false,
+				isUniformBuffer: false,
+				isStorageBuffer: false,
+				visibility: 2,
+				groupNode: { shared: false, version: 0 },
+				textureNode: { value: shadowColor, _value: null, constructor: { type: 'TextureNode' } },
+				texture: shadowColor,
+			} ],
+		} ],
+	};
+
+	const artifact = extractArtifact( 100, state );
+	const entry = artifact.uniformPlan
+		.flatMap( ( group ) => group.textures || [] )
+		.find( ( texture ) => texture.name === 'transmittedShadow' );
+
+	assert.equal( entry.source.kind, 'depth.texture' );
+	assert.equal( entry.source.lightUuid, dirLight.uuid );
+	assert.equal( entry.source.vsm, false );
+	assert.equal( entry.source.shadowMapColor, true );
 
 } );
 
@@ -172,14 +227,10 @@ test( 'depth-texture/extractor: VSM intermediate texture is tagged kind=depth.te
 	const allTextures = artifact.uniformPlan.flatMap( ( g ) => g.textures || [] );
 	const vsmEntry = allTextures.find( ( t ) => t.name === 'vsmShadow' );
 
-	// VSM blur targets aren't DepthTexture instances, so they currently flow
-	// through the regular `artifact.texture` path (not depth.texture). This
-	// is the expected behaviour — we only re-route true DepthTextures.
-	// A future improvement could detect `tex === vsmShadowMapHorizontal.texture`
-	// and use `vsm: true`. For now, just assert the test ran.
 	assert.ok( vsmEntry, 'vsm binding entry exists' );
-	// Either kind is acceptable; we mainly want to exercise the code path
-	// without breaking existing tests.
+	assert.equal( vsmEntry.source.kind, 'depth.texture' );
+	assert.equal( vsmEntry.source.vsm, true );
+	assert.equal( vsmEntry.source.shadowMapColor, false );
 
 } );
 
@@ -282,20 +333,25 @@ test( 'depth-texture/hydrator: orphan DepthTexture binding is rebound from mater
 
 	const initialTex = rtBinding.texture;
 	assert.ok( initialTex && initialTex.isDepthTexture,
-		'pre-frame fallback must be a DepthTexture instance' );
-	assert.notEqual( initialTex, depthTexture,
-		'pre-frame fallback must NOT be the captured live DepthTexture (1×1 placeholder)' );
+		'initial binding must be a DepthTexture instance' );
+	assert.equal( initialTex, depthTexture,
+		'in-process extraction must preserve an exactly attached material-graph DepthTexture' );
 
 	assert.ok( Array.isArray( hydrated.updateBeforeNodes ) && hydrated.updateBeforeNodes.length > 0,
 		'hydrator must register a rebinder for orphan depth.texture bindings' );
 	const rebinder = hydrated.updateBeforeNodes[ 0 ];
 
-	// Orphan rebinding does NOT require a scene; it walks the material's node
-	// graph. Drive with an empty frame to confirm.
+	// Replace the graph texture after hydration. Orphan rebinding does NOT
+	// require a scene; it walks the material's current node graph each frame.
+	const replacementDepthTexture = new DepthTexture( 8, 8 );
+	replacementDepthTexture.name = 'RT_DepthTexture_Replacement';
+	material.colorNode.value = replacementDepthTexture;
 	rebinder.updateBefore( {} );
 
-	assert.equal( rtBinding.texture, depthTexture,
-		'after updateBefore, orphan binding must point at the DepthTexture from material.colorNode' );
+	assert.equal( rtBinding.texture, replacementDepthTexture,
+		'after updateBefore, orphan binding must follow the current DepthTexture from material.colorNode' );
+	assert.notEqual( rtBinding.texture, initialTex,
+		'after updateBefore, orphan binding must no longer point at the previously attached texture' );
 
 } );
 

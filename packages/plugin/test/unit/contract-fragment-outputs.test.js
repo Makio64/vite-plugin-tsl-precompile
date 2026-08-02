@@ -32,6 +32,42 @@ fn main( @location( 0 ) uv : vec2<f32> ) -> OutputStruct {
 
 } );
 
+test( 'contract fragment outputs count WebGLBackend GLSL locations', () => {
+
+	const shader = `#version 300 es
+precision highp float;
+
+layout( location = 0 ) out vec4 fragColor;
+layout( index = 0, location = 1 ) flat out highp vec4 fragNormal;
+layout( location = 2 ) in vec2 ignoredInput;
+// layout( location = 3 ) out vec4 ignoredComment;
+
+void main() {
+	fragColor = vec4( 1.0 );
+	fragNormal = vec4( 0.0 );
+}
+`;
+
+	assert.equal( countFragmentOutputsFromShader( shader ), 2 );
+	assert.equal( countArtifactFragmentOutputs( { fragmentShader: shader, mrtOutputCount: 1 } ), 2 );
+	assert.equal( INDEX_countArtifactFragmentOutputs( { fragmentShader: shader } ), 2 );
+
+} );
+
+test( 'contract fragment outputs recognise GLSL depth-only entrypoints', () => {
+
+	const shader = `#version 300 es
+precision highp float;
+void main() {
+	discard;
+}
+`;
+
+	assert.equal( countFragmentOutputsFromShader( shader ), 0 );
+	assert.equal( hasUsableFragmentOutput( { fragmentShader: shader, mrtOutputCount: 1 } ), false );
+
+} );
+
 test( 'contract fragment outputs treat empty output structs as zero outputs', () => {
 
 	const shader = `

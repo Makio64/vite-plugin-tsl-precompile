@@ -1,5 +1,5 @@
 /**
- * Three r184 queues mutable material references in compileAsync(), restores a
+ * Three r185 queues mutable material references in compileAsync(), restores a
  * transparent DoubleSide material, and only then builds the queued work. The
  * back/front requests consequently both see DoubleSide and collapse onto one
  * generic shader. Keep only each observed back/front pair on Three's existing
@@ -82,6 +82,49 @@ export function compileDoublePassPairsSynchronously( renderer ) {
 		if ( renderer._createObjectPipeline !== wrapper ) return;
 		if ( hadOwnMethod && originalDescriptor ) Object.defineProperty( renderer, '_createObjectPipeline', originalDescriptor );
 		else delete renderer._createObjectPipeline;
+
+	};
+
+}
+
+/**
+ * Prevent compileAsync() update-before nodes from copying the previous frame's
+ * already-submitted WebGPU render context. Keep the renderer-level method live
+ * so Three still allocates and wires the viewport texture; only the backend GPU
+ * copy is suppressed until compilation settles.
+ *
+ * @param {?Object} renderer
+ * @return {Function} Restores the backend's original copy method.
+ */
+export function suppressWebGPUFramebufferCopiesDuringCompile( renderer ) {
+
+	const backend = renderer && renderer.backend;
+	if ( ! backend || backend.isWebGPUBackend !== true || typeof backend.copyFramebufferToTexture !== 'function' ) return () => {};
+
+	const hadOwnMethod = Object.prototype.hasOwnProperty.call( backend, 'copyFramebufferToTexture' );
+	const ownDescriptor = hadOwnMethod ? Object.getOwnPropertyDescriptor( backend, 'copyFramebufferToTexture' ) : null;
+	try {
+
+		Object.defineProperty( backend, 'copyFramebufferToTexture', {
+			value() {},
+			configurable: true,
+			writable: true,
+		} );
+
+	} catch ( _ ) {
+
+		return () => {};
+
+	}
+
+	return () => {
+
+		try {
+
+			if ( hadOwnMethod ) Object.defineProperty( backend, 'copyFramebufferToTexture', ownDescriptor );
+			else delete backend.copyFramebufferToTexture;
+
+		} catch ( _ ) { /* renderer disposal or a sealed test double owns cleanup */ }
 
 	};
 

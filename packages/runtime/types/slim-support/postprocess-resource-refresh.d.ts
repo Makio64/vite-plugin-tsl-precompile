@@ -16,6 +16,16 @@ export type RefreshPreparedPostprocessResourcesOptions = {
 	passNodes?: unknown[];
 };
 
+/** @internal Records replacement state consumed by the public refresh helper. */
+export function rememberPreparedPostprocessResources(
+	node: unknown,
+	state: {
+		handler?: unknown;
+		entries?: unknown[];
+		opts?: Record<string, unknown>;
+	},
+): void;
+
 export function refreshPreparedPostprocessResources(
 	node: unknown,
 	opts?: RefreshPreparedPostprocessResourcesOptions,

@@ -15,6 +15,15 @@ const forwarded = args.filter( ( arg ) =>
 );
 const reportArg = forwarded.find( ( arg ) => arg.startsWith( '--report=' ) );
 const outputRootArg = forwarded.find( ( arg ) => arg.startsWith( '--output-root=' ) );
+if ( ! coverageEnabled && ! outputRootArg && ! process.env.TSLP_E2E_OUT ) {
+
+	console.error(
+		'[e2e-with-coverage] --no-coverage is diagnostic-only and must use --output-root=<isolated-directory> ' +
+		'or TSLP_E2E_OUT so canonical coverage cannot remain stale.',
+	);
+	process.exit( 2 );
+
+}
 
 function signalExitCode( signal ) {
 
@@ -60,12 +69,18 @@ const e2eStatus = await runNode(
 );
 
 let coverageStatus = 0;
-if ( coverageEnabled ) {
+if ( coverageEnabled && e2eStatus === 0 ) {
 
 	coverageStatus = await runNode(
 		'refreshing coverage summary',
 		'run-coverage-summary.mjs',
 		[ reportArg, outputRootArg ].filter( Boolean )
+	);
+
+} else if ( coverageEnabled ) {
+
+	console.error(
+		`[e2e-with-coverage] e2e exited with status ${ e2eStatus }; refusing to read old evidence or refresh coverage.`,
 	);
 
 }

@@ -34,6 +34,7 @@ export {
 export {
 	clearTextureViewCache,
 	invalidateTextureResourceBindings,
+	isBorrowedShadowRenderTargetTexture,
 	markTextureInitialized,
 	shareGPUTextureEntry,
 	sharePMREMGPUTexture,
@@ -49,6 +50,7 @@ export {
 	attachArtifactTextureRefsByShapeOrder,
 	attachTextureRefsWhere,
 	attachArtifactTextureRefsWhere,
+	attachExactMaterialGraphDepthTextureRefs,
 	rewritePassDepthTextureSources,
 } from './artifact-texture-wiring.js';
 
@@ -56,6 +58,10 @@ export {
 	getComputeBindGroups,
 	computeNodeUsesStorageTexture,
 	computeSyncNeedsPresentation,
+	hasAnonymousStorageResourceIdentity,
+	invokeAlignedFullCompute,
+	storageEntryAnonymousResourceIdentity,
+	syncComputeRendererSize,
 	shareComputeSampledInputs,
 	syncComputeStorageOutputs,
 	syncComputeStorageOutputsPerPass,
@@ -63,6 +69,13 @@ export {
 	pingPongInvalidate,
 	shareInstancedAttributeBufferIntoSlim,
 } from './compute-sync.js';
+
+export {
+	InternalPassBindingError,
+	cloneInternalPassArtifact,
+	bindInternalPassArtifact,
+	createInternalPassMaterial,
+} from './internal-pass.js';
 
 export {
 	AUTO_COMPUTE_MATERIAL_PROPERTIES,
@@ -79,6 +92,7 @@ export {
 } from './auto-compute.js';
 
 export { createFullRendererFallback } from './full-renderer-fallback.js';
+export { createPrecompiledShadowSupport } from './precompiled-shadows.js';
 export { createSlimSceneSupport, pinClock, unpinClock } from './scene-support.js';
 export { TemporalFrameIdentityError, createTemporalNodeFrame, getTemporalFrameState, logicalFrameKey, shouldAdvanceTemporalState, withTemporalFrame } from './temporal-frame.js';
 export { POSTPROCESS_FRAME_ROLES, createPostprocessFrameScheduler } from './postprocess-frame-scheduler.js';
@@ -114,6 +128,8 @@ export {
 	cloneAuxArtifact,
 	wireLiveNodeSidecarsToArtifact,
 	artifactLooksLikeRetroPassMaterial,
+	listAux,
+	findAux,
 } from './postprocess-effects-replay.js';
 
 export {
@@ -127,6 +143,14 @@ export {
 	getTRAACurrentDepthTexture,
 	wireTRAAResolveArtifact,
 } from './traa-replay.js';
+
+export {
+	AFTERIMAGE_HISTORY_TEXTURE_NAME,
+	AFTERIMAGE_OUTPUT_TEXTURE_NAME,
+	AfterImageReplayResourceError,
+	getAfterImageReplayTextures,
+	prepareAfterImageReplayResources,
+} from './afterimage-replay.js';
 
 export {
 	getSlimDiagnosticsBag,

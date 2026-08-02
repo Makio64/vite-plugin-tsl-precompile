@@ -93,3 +93,126 @@ test( 'withTemporalFrame restores state after callback failure', () => {
 	assert.equal( getTemporalFrameState( renderer ), null );
 
 } );
+
+test( 'withTemporalFrame rejects overlapping async scopes without corrupting the active frame', async () => {
+
+	const renderer = {};
+	let release;
+	const pending = new Promise( ( resolve ) => { release = resolve; } );
+	const first = withTemporalFrame( renderer, { frameId: 'first' }, async ( state ) => {
+
+		await pending;
+		assert.equal( getTemporalFrameState( renderer ), state );
+
+	} );
+
+	assert.throws(
+		() => withTemporalFrame( renderer, { frameId: 'overlap' }, () => undefined ),
+		( error ) => error && error.code === 'TSLP_TEMPORAL_FRAME_OVERLAP',
+	);
+	assert.equal( getTemporalFrameState( renderer ).frameId, 'first' );
+	release();
+	await first;
+	assert.equal( getTemporalFrameState( renderer ), null );
+
+} );
+
+test( 'duplicate ESM instances coordinate overlap rejection and nested restoration', async () => {
+
+	const duplicate = await import( '../src/slim-support/temporal-frame.js?duplicate-temporal-instance' );
+	const renderer = {};
+	let release;
+	const pending = new Promise( ( resolve ) => { release = resolve; } );
+	const first = withTemporalFrame( renderer, { frameId: 'first' }, async () => {
+
+		await pending;
+
+	} );
+
+	assert.throws(
+		() => duplicate.withTemporalFrame( renderer, { frameId: 'overlap' }, () => undefined ),
+		( error ) => error && error.code === 'TSLP_TEMPORAL_FRAME_OVERLAP',
+	);
+	assert.equal( duplicate.getTemporalFrameState( renderer ).frameId, 'first' );
+	release();
+	await first;
+	assert.equal( getTemporalFrameState( renderer ), null );
+
+	withTemporalFrame( renderer, { frameId: 'outer' }, ( outer ) => {
+
+		duplicate.withTemporalFrame( renderer, { frameId: 'inner' }, () => {
+
+			assert.equal( getTemporalFrameState( renderer ).frameId, 'inner' );
+
+		} );
+		assert.equal( getTemporalFrameState( renderer ), outer );
+
+	} );
+	assert.equal( duplicate.getTemporalFrameState( renderer ), null );
+
+} );
+
+test( 'withTemporalFrame removes settled async ancestors when nested scopes finish out of order', async () => {
+
+	const renderer = {};
+	let releaseInner;
+	const innerPending = new Promise( ( resolve ) => { releaseInner = resolve; } );
+	let inner;
+	const outer = withTemporalFrame( renderer, { frameId: 'outer' }, () => {
+
+		inner = withTemporalFrame( renderer, { frameId: 'inner' }, async () => {
+
+			await innerPending;
+
+		} );
+		return Promise.resolve();
+
+	} );
+
+	await outer;
+	assert.equal( getTemporalFrameState( renderer ).frameId, 'inner' );
+	releaseInner();
+	await inner;
+	assert.equal( getTemporalFrameState( renderer ), null );
+
+} );
+
+test( 'withTemporalFrame rolls back earlier renderers when scope setup fails', () => {
+
+	const first = {};
+	const locked = {};
+	const temporalStateKey = Symbol.for( '@tsl-precompile/runtime/temporal-frame@1' );
+	const sentinel = { frameId: 'locked' };
+	Object.defineProperty( locked, temporalStateKey, {
+		value: sentinel,
+		configurable: false,
+	} );
+
+	assert.throws(
+		() => withTemporalFrame( [ first, locked ], { frameId: 'setup-failure' }, () => undefined ),
+		TypeError,
+	);
+	assert.equal( getTemporalFrameState( first ), null );
+	assert.equal( getTemporalFrameState( locked ), sentinel );
+	assert.doesNotThrow( () => withTemporalFrame( first, { frameId: 'after-failure' }, () => undefined ) );
+	assert.equal( getTemporalFrameState( first ), null );
+
+} );
+
+test( 'withTemporalFrame restores state when callback result then-probing throws', () => {
+
+	const renderer = {};
+	const invalidThenable = Object.defineProperty( {}, 'then', {
+		get() {
+
+			throw new Error( 'broken then getter' );
+
+		},
+	} );
+	assert.throws(
+		() => withTemporalFrame( renderer, { frameId: 'probe-failure' }, () => invalidThenable ),
+		/broken then getter/,
+	);
+	assert.equal( getTemporalFrameState( renderer ), null );
+
+} );

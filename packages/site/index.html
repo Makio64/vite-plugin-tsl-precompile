@@ -4,488 +4,362 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta name="color-scheme" content="dark">
-	<meta name="description" content="Capture marked three.js TSL materials in development, validate content-addressed WGSL artifacts at build time, and optionally ship a node-builder-free WebGPU runtime.">
-	<meta property="og:title" content="vite-plugin-tsl-precompile — Author TSL. Ship WGSL.">
-	<meta property="og:description" content="Ahead-of-time tooling for three.js WebGPU materials: scene-aware capture, content-addressed artifacts, Vite rewrites, and an optional slim runtime.">
+	<meta name="description" content="Precompile three.js WebGPU TSL shaders with Vite. Start with one AI task or four manual steps, capture real render paths, and ship verified WGSL.">
+	<meta property="og:title" content="vite-plugin-tsl-precompile — Precompile TSL. Ship WGSL.">
+	<meta property="og:description" content="One AI task or four manual steps to capture, verify, and ship precompiled TSL shaders.">
 	<meta property="og:type" content="website">
 	<meta property="og:image" content="https://makio64.github.io/vite-plugin-tsl-precompile/og.png">
 	<meta name="twitter:card" content="summary_large_image">
-	<meta name="twitter:title" content="vite-plugin-tsl-precompile — Author TSL. Ship WGSL.">
-	<meta name="twitter:description" content="Move Three's JavaScript TSL-to-WGSL generation out of production for captured materials.">
+	<meta name="twitter:title" content="vite-plugin-tsl-precompile — Precompile TSL. Ship WGSL.">
+	<meta name="twitter:description" content="Start with AI or follow four manual steps: capture real render paths, verify, and prove production.">
 	<meta name="twitter:image" content="https://makio64.github.io/vite-plugin-tsl-precompile/og.png">
 	<link rel="icon" type="image/svg+xml" href="/favicon.svg">
-	<title>Author TSL. Ship WGSL. — vite-plugin-tsl-precompile</title>
+	<title>Precompile TSL. Ship WGSL. — vite-plugin-tsl-precompile</title>
 	<link rel="stylesheet" href="/src/styles.css">
 	<link rel="stylesheet" href="/src/landing.css">
 </head>
-<body class="launch-page">
+<body class="page-narrow">
 	<a class="skip-link" href="#main">Skip to content</a>
 
 	<nav class="site-nav" aria-label="Site navigation">
 		<a class="site-nav-brand" href="index.html" aria-label="vite-plugin-tsl-precompile home">
-			<span class="brand-mark" aria-hidden="true">TSL</span>
-			<span><span class="mono">vite-plugin-</span><span class="accent">tsl-precompile</span></span>
+			<span class="mono">vite-plugin-</span><span class="accent">tsl-precompile</span>
 		</a>
 		<div class="site-nav-links">
-			<a class="site-nav-current" aria-current="page" href="index.html">Overview</a>
+			<a class="site-nav-current" aria-current="page" href="index.html">Start</a>
+			<a href="adopt.html">Existing app</a>
 			<a href="how-it-works.html">How it works</a>
-			<a href="examples.html">Compatibility</a>
-			<a href="benchmark.html">Evidence</a>
-			<a class="nav-github" href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">GitHub <span aria-hidden="true">↗</span></a>
+			<a href="examples.html">Proof</a>
+			<a href="benchmark.html">Numbers</a>
+			<a href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">GitHub <span aria-hidden="true">↗</span></a>
 		</div>
 	</nav>
 
-	<header class="launch-hero" id="top">
-		<div class="hero-grid" aria-hidden="true"></div>
-		<div class="hero-orb hero-orb-cyan" aria-hidden="true"></div>
-		<div class="hero-orb hero-orb-magenta" aria-hidden="true"></div>
-
-		<div class="launch-hero-inner">
-			<div class="hero-headline">
-				<div class="hero-kicker">
-					<span class="signal-dot" aria-hidden="true"></span>
-					AOT tooling for three.js WebGPU + TSL
-				</div>
-				<h1>Author TSL.<br><span class="accent">Ship WGSL.</span></h1>
-				<p class="hero-product-name">vite-plugin-tsl-precompile</p>
-			</div>
-
-			<div class="hero-pitch">
-				<p class="hero-lead">
-					Capture selected materials with the scene context they actually render in. Vite validates and bundles their WGSL, binding layout, render variants, and generated uniform updater for production.
-				</p>
-				<p class="hero-support">
-					Keep normal three.js authoring. Add one marker per material—or let <code>autoMark</code> instrument constructors while you evaluate the pipeline.
-				</p>
-				<div class="hero-actions">
-					<a class="btn btn-primary" href="examples.html#particles">Run compiled WebGPU</a>
-					<a class="btn btn-ghost" href="#quickstart">Precompile your first material</a>
-				</div>
-				<ul class="hero-badges" aria-label="Project status and requirements">
-					<li>Experimental</li>
-					<li>Vite 6.4.3+</li>
-					<li>WebGPU</li>
-					<li>three.js 0.184</li>
-					<li>MIT</li>
-				</ul>
-			</div>
-
-			<div class="hero-product" aria-label="A TSL source material becomes a validated artifact and then a production WebGPU program">
-				<article class="hero-stage hero-stage-source">
-					<header>
-						<div class="window-dots" aria-hidden="true"><span></span><span></span><span></span></div>
-						<span>material.ts</span>
-						<small>AUTHOR</small>
-					</header>
-					<div class="stage-code" aria-hidden="true">
-						<span class="code-short"></span><span class="code-cyan"></span><span class="code-mid"></span>
-						<span class="code-tiny"></span><span class="code-blue"></span><span class="code-long"></span>
-						<span class="code-mid"></span><span class="code-magenta"></span><span class="code-short"></span>
-						<span class="code-tiny"></span><span class="code-purple"></span><span class="code-long"></span>
-					</div>
-					<div class="stage-command"><code>water.precompile(<span>'ocean-water'</span>)</code></div>
-				</article>
-
-				<div class="hero-pipe" aria-hidden="true"><i></i><span>✓</span><i></i><small>CAPTURE</small></div>
-
-				<article class="hero-stage hero-stage-artifact">
-					<header>
-						<div class="stage-file-icon" aria-hidden="true"></div>
-						<span>ocean-water.76d9…json</span>
-						<small>VALIDATE</small>
-					</header>
-					<div class="artifact-visual" aria-hidden="true">
-						<div class="artifact-matrix">
-							<span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
-						</div>
-						<div class="artifact-hash"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-					</div>
-					<ul class="artifact-pills" aria-label="Artifact contents"><li>WGSL</li><li>bindings</li><li>updates</li><li>variants</li></ul>
-				</article>
-
-				<div class="hero-pipe hero-pipe-magenta" aria-hidden="true"><i></i><span>✓</span><i></i><small>INLINE</small></div>
-
-				<article class="hero-stage hero-stage-production">
-					<header>
-						<span class="stage-live-dot" aria-hidden="true"></span>
-						<span>production / WebGPU</span>
-						<small>SHIP</small>
-					</header>
-					<div class="production-cubes" aria-hidden="true">
-						<span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
-					</div>
-					<div class="production-readout"><b>static WGSL</b><span>+</span><b>live values</b></div>
-				</article>
-			</div>
-		</div>
+	<header class="hero">
+		<h1 class="hero-title">Dev in TSL.<br><span class="accent">Ship WGSL.</span></h1>
+		<ol class="hero-schema" aria-label="dev to compile to production files">
+			<li>dev</li>
+			<li>compile</li>
+			<li>prod files</li>
+		</ol>
 	</header>
 
-	<main id="main">
-		<section class="proof-band" aria-label="Latest generated compatibility evidence">
-			<div class="proof-band-inner">
-				<div class="proof-intro">
-					<span class="eyebrow">generated compatibility lab</span>
-					<p>Evidence from the checked-in Three.js WebGPU replay harness—not hand-picked demos.</p>
+	<main id="main" tabindex="-1">
+		<section class="section" id="quickstart">
+			<div class="section-head">
+				<h2>Choose your start</h2>
+			</div>
+
+			<div class="start-list" aria-label="Ways to get started">
+				<div class="start-option start-option-primary">
+					<h3>Agent installs it</h3>
+					<button class="btn btn-primary" data-copy="#agent-prompt" type="button">Copy prompt</button>
 				</div>
-				<dl class="proof-stats">
-					<div><dt data-stat="materialsBaked">819</dt><dd>materials baked</dd></div>
-					<div><dt data-stat="artifactsCaptured">937</dt><dd>artifacts captured</dd></div>
-					<div><dt><span data-stat="smokePassRate">99.5</span><small>%</small></dt><dd>load-smoke pass</dd></div>
-					<div><dt data-stat="runtimeNodeBuilderCalls">0</dt><dd>builder calls in slim replay</dd></div>
-				</dl>
-				<a class="proof-link" href="examples.html">Inspect every result <span aria-hidden="true">→</span></a>
-			</div>
-		</section>
-
-		<section class="launch-section change-section reveal" id="why">
-			<div class="section-heading section-heading-wide">
-				<p class="eyebrow">what changes</p>
-				<h2>Use TSL for authoring,<br>not production code generation.</h2>
-				<p>TSL stays your expressive source language. The deployment format becomes a checked-in, validated shader artifact.</p>
-			</div>
-
-			<div class="path-compare">
-				<article class="path-card path-runtime">
-					<div class="path-card-head">
-						<span class="path-tag">stock runtime path</span>
-						<span class="path-badge path-badge-warm">in the browser</span>
-					</div>
-					<h3>TSL graph → WGSL on first use</h3>
-					<ol class="path-list">
-						<li><span>01</span><p>Ship Three's material graph builder and TSL authoring layer.</p></li>
-						<li><span>02</span><p>Walk the graph when a material variant is first rendered.</p></li>
-						<li><span>03</span><p>Generate WGSL and assemble its bindings in production.</p></li>
-						<li><span>04</span><p>Keep graph machinery available for dynamic updates.</p></li>
-					</ol>
-				</article>
-
-				<div class="compare-switch" aria-hidden="true"><span>move left</span><b>→</b></div>
-
-				<article class="path-card path-aot">
-					<div class="path-card-head">
-						<span class="path-tag">precompiled path</span>
-						<span class="path-badge path-badge-good">before deploy</span>
-					</div>
-					<h3>WGSL + update plan already present</h3>
-					<ol class="path-list">
-						<li><span>01</span><p>Capture the material only after it appears in a real render context.</p></li>
-						<li><span>02</span><p>Store WGSL, binding layout, render state, and dynamic update plan.</p></li>
-						<li><span>03</span><p>Validate the source owner, content, context, and exact toolchain.</p></li>
-						<li><span>04</span><p>Inline everything through a Vite virtual module.</p></li>
-					</ol>
-				</article>
-			</div>
-
-			<div class="honesty-note">
-				<span class="honesty-icon" aria-hidden="true">i</span>
-				<p><strong>The exact boundary:</strong> this moves Three's JavaScript TSL graph walk and WGSL generation out of production for captured materials. WebGPU still creates a GPU pipeline, and the driver still compiles WGSL to native machine code.</p>
-			</div>
-		</section>
-
-		<section class="launch-section pipeline-section reveal" id="pipeline">
-			<div class="section-heading">
-				<p class="eyebrow">the material journey</p>
-				<h2>One shader.<br>Three environments.</h2>
-				<p>Capture happens in development, validation and rewriting happen in Vite, and production only replays the generated contract.</p>
-			</div>
-
-			<div class="pipeline-board">
-				<div class="pipeline-lane lane-dev">
-					<header><span class="lane-light"></span><strong>DEV / BROWSER</strong></header>
-					<div class="pipeline-step">
-						<span class="pipeline-num">01</span>
-						<h3>Mark</h3>
-						<p>Add <code>.precompile('water')</code>, or enable <code>autoMark</code> for an initial audit.</p>
-					</div>
-					<div class="pipeline-connector" aria-hidden="true"></div>
-					<div class="pipeline-step">
-						<span class="pipeline-num">02</span>
-						<h3>Observe</h3>
-						<p>The first real render identifies the material's object, geometry, camera, lights, shadows, fog, clipping, and MRT context.</p>
-					</div>
+				<div class="start-option">
+					<h3>Agent plans the install</h3>
+					<button class="btn btn-ghost" data-copy="#review-agent-prompt" type="button">Copy prompt</button>
 				</div>
-
-				<div class="pipeline-transfer" aria-hidden="true"><span>artifact POST</span><i></i></div>
-
-				<div class="pipeline-lane lane-build">
-					<header><span class="lane-light"></span><strong>REPO / VITE</strong></header>
-					<div class="pipeline-step">
-						<span class="pipeline-num">03</span>
-						<h3>Bake</h3>
-						<p>The dev endpoint writes a content-addressed artifact containing WGSL, bindings, updater data, and variants.</p>
-					</div>
-					<div class="pipeline-connector" aria-hidden="true"></div>
-					<div class="pipeline-step">
-						<span class="pipeline-num">04</span>
-						<h3>Verify + rewrite</h3>
-						<p>Build checks provenance and content, then replaces the marker with an import from a generated virtual module.</p>
-					</div>
-				</div>
-
-				<div class="pipeline-transfer" aria-hidden="true"><span>bundle</span><i></i></div>
-
-				<div class="pipeline-lane lane-prod">
-					<header><span class="lane-light"></span><strong>PROD / BROWSER</strong></header>
-					<div class="pipeline-step pipeline-step-tall">
-						<span class="pipeline-num">05</span>
-						<h3>Hydrate + run</h3>
-						<p>The runtime reconnects live textures, lights, camera resources, and uniforms to the pre-generated shader.</p>
-						<ul class="prod-output">
-							<li>static WGSL</li>
-							<li>generated writes</li>
-							<li>no JSON request</li>
-						</ul>
-					</div>
+				<div class="start-option">
+					<h3>Do it manually</h3>
+					<a class="btn btn-ghost" href="#manual-setup" data-open="#manual-setup">Open 4 steps</a>
 				</div>
 			</div>
 
-			<a class="text-link" href="how-it-works.html">Walk through every boundary in plain English <span aria-hidden="true">→</span></a>
-		</section>
+			<div id="agent-prompt" hidden>
+					<pre><code>Integrate vite-plugin-tsl-precompile into this Vite + three.js WebGPU app.
 
-		<section class="launch-section artifact-section reveal" id="artifact">
-			<div class="section-heading">
-				<p class="eyebrow">the generated contract</p>
-				<h2>Not a cache blob.<br>Auditable build input.</h2>
-				<p>Commit artifacts like generated source or a lockfile. Local builds and CI then consume the same shader inputs.</p>
+Before installing packages or editing files, inspect the lockfile/package manager,
+Vite config, renderer bootstrap, TSL NodeMaterials, routes, current three version,
+and matching @types/three. If this is not a Vite + WebGPURenderer + TSL app, or exact
+three@0.185.1 requires an unapproved migration, stop and report without mutating.
+
+After the fit check passes, use this project's package manager (pnpm shown):
+  pnpm add -D vite-plugin-tsl-precompile@alpha
+  pnpm add @tsl-precompile/runtime@alpha three@0.185.1 --save-exact
+  pnpm add -D @types/three@0.185.1 --save-exact  # TypeScript only
+  pnpm exec tsl-precompile-install-skill --json
+  pnpm exec tsl-precompile-doctor --json --source src
+
+Replace or repeat --source for the source roots discovered in the fit check.
+
+If npm returns 404, stop: the first alpha is not published yet. Do not substitute an
+unrelated package. If the newly installed skill is unavailable in this session, read
+the hosted raw skill and llms.txt below and continue from those instructions.
+
+Use $integrate-tsl-precompile end to end. Start in compatibility mode. Derive the
+complete route/state/render-topology matrix and ask me about authenticated or
+otherwise inaccessible states. Capture real WebGPU paths, verify and commit a
+non-zero artifacts/ set, run the production build, and replay the same matrix in a
+production WebGPU preview.
+Report anything unverified plus a separate slim-readiness verdict. Never hand-edit
+artifacts or enable slim in this change.
+
+Raw skill: https://makio64.github.io/vite-plugin-tsl-precompile/agent/integrate-tsl-precompile/SKILL.md
+AI guide: https://makio64.github.io/vite-plugin-tsl-precompile/llms.txt</code></pre>
 			</div>
 
-			<div class="artifact-grid">
-				<div class="artifact-code-card">
-					<div class="artifact-filebar">
-						<span>artifacts/ocean-water.76d9…json</span>
-						<span class="artifact-size">content-addressed</span>
+			<div id="review-agent-prompt" hidden>
+					<pre><code>Integrate vite-plugin-tsl-precompile into this Vite + three.js WebGPU app in two phases.
+
+PHASE 1 — READ ONLY. Do not install, edit, generate, stage, or delete anything.
+Inspect the lockfile/package manager, Vite config, renderer bootstrap, TSL materials,
+routes, current three/@types versions, and existing artifacts. Report: fit or non-fit,
+any required Three migration, exact files you would touch, how existing config will be
+preserved, the complete route/state/render-topology capture matrix, and acceptance
+criteria. Stop and wait for my approval.
+
+PHASE 2 — only after I approve. Use the detected package manager (pnpm shown):
+  pnpm add -D vite-plugin-tsl-precompile@alpha
+  pnpm add @tsl-precompile/runtime@alpha three@0.185.1 --save-exact
+  pnpm add -D @types/three@0.185.1 --save-exact  # TypeScript only
+  pnpm exec tsl-precompile-install-skill --json
+  pnpm exec tsl-precompile-doctor --json --source src
+
+Replace or repeat --source for the source roots discovered in Phase 1.
+
+If npm returns 404, stop because the first alpha is not published; do not substitute.
+If this session cannot discover the newly installed skill, read the hosted raw skill
+and llms.txt and continue. Use $integrate-tsl-precompile in compatibility mode,
+preserve existing config and initialization, capture the approved matrix, verify a
+non-zero artifacts/ set, run the production build, and replay that matrix in a
+production WebGPU preview. Show
+the final diff, explicit browser/GPU evidence, unverified paths, and remaining risks.
+Do not hand-edit artifacts or enable slim; propose slim as a separate later change.
+
+Raw skill: https://makio64.github.io/vite-plugin-tsl-precompile/agent/integrate-tsl-precompile/SKILL.md
+AI guide: https://makio64.github.io/vite-plugin-tsl-precompile/llms.txt</code></pre>
+			</div>
+
+			<details class="fold" id="manual-setup">
+				<summary>Manual TSL setup<span class="fold-hint">4 steps</span></summary>
+				<div class="fold-body">
+				<p class="fold-intro">Start in compatibility mode. Enable <code>slim: 'source'</code> only after capture, build, and production preview pass.</p>
+				<ol class="steps">
+				<li class="step">
+					<div class="step-head"><span class="step-num">1</span><h3>Install</h3></div>
+					<p>Pin three.js exactly. Artifacts are emitter-specific.</p>
+					<div class="command-picker">
+						<label for="manual-package-manager">Package manager</label>
+						<select id="manual-package-manager" data-package-manager>
+							<option value="pnpm">pnpm</option>
+							<option value="npm">npm</option>
+							<option value="yarn">Yarn</option>
+							<option value="bun">Bun</option>
+						</select>
 					</div>
-					<pre><code>{
-  <span class="artifact-key">"vertexShader"</span>: <span class="tok-str">"... WGSL"</span>,
-  <span class="artifact-key">"fragmentShader"</span>: <span class="tok-str">"... WGSL"</span>,
-  <span class="artifact-key">"bindings"</span>: [ <span class="artifact-value">texture, sampler, uniforms</span> ],
-  <span class="artifact-key">"uniformPlan"</span>: [ <span class="artifact-value">camera, light, material</span> ],
-  <span class="artifact-key">"renderState"</span>: { <span class="artifact-value">depth, blend, topology</span> },
-  <span class="artifact-key">"variants"</span>: { <span class="artifact-value">"&lt;render-key&gt;": { ... }</span> },
-  <span class="artifact-key">"__hash"</span>: <span class="tok-str">"76d9..."</span>
-}</code></pre>
-				</div>
-
-				<div class="artifact-features">
-					<article>
-						<span class="feature-index">A</span>
-						<div><h3>Shader program</h3><p>Readable WGSL for the vertex, fragment, and supported compute stages.</p></div>
-					</article>
-					<article>
-						<span class="feature-index">B</span>
-						<div><h3>Resource layout</h3><p>Bindings, attributes, textures, samplers, and uniform-buffer structure.</p></div>
-					</article>
-					<article>
-						<span class="feature-index">C</span>
-						<div><h3>Live update plan</h3><p>Generated instructions reconnect dynamic scene values instead of freezing frame zero.</p></div>
-					</article>
-					<article>
-						<span class="feature-index">D</span>
-						<div><h3>Variants + provenance</h3><p>Render-context variants and the metadata required to reject incompatible reuse.</p></div>
-					</article>
-				</div>
-			</div>
-
-			<div class="identity-stack">
-				<article><span>01</span><h3>Content identity</h3><p>A hard hash covers the runtime payload that will actually ship.</p></article>
-				<article><span>02</span><h3>Source ownership</h3><p>Module revision and call-site ownership prove this marker was observed.</p></article>
-				<article><span>03</span><h3>Context identity</h3><p>Scene topology stays separate so render variants do not masquerade as source.</p></article>
-				<article><span>04</span><h3>Exact versions</h3><p>Three.js and toolchain versions prevent cross-emitter artifact reuse.</p></article>
-			</div>
-		</section>
-
-		<section class="launch-section modes-section reveal" id="modes">
-			<div class="section-heading section-heading-wide">
-				<p class="eyebrow">adopt it your way</p>
-				<h2>Explicit when you want control.<br>Automatic when you want coverage.</h2>
-				<p>Start with normal precompilation. Turn on the slim runtime only after every reachable material path has been captured and verified.</p>
-			</div>
-
-			<div class="mode-grid">
-				<article class="mode-card mode-recommended">
-					<div class="mode-head"><span class="mode-num">01</span><span class="mode-chip">recommended</span></div>
-					<h3>Explicit markers</h3>
-					<p>Stable, project-wide names make artifact ownership obvious in reviews and error messages.</p>
-					<pre><code>water.<span class="tok-fn">precompile</span>(<span class="tok-str">'ocean-water'</span>);</code></pre>
-					<ul><li>Reviewable names</li><li>Incremental adoption</li><li>Clear failure ownership</li></ul>
-				</article>
-
-				<article class="mode-card">
-					<div class="mode-head"><span class="mode-num">02</span><span class="mode-chip">zero source edits</span></div>
-					<h3>Automatic marking</h3>
-					<p>Instrument transformed <code>new *NodeMaterial()</code> construction to evaluate an existing project quickly.</p>
-					<pre><code><span class="tok-fn">tslPrecompile</span>({ <span class="artifact-key">autoMark</span>: <span class="tok-key">true</span> })</code></pre>
-					<ul><li>Framework subresource-aware</li><li>Collision-checked owners</li><li>Recapture after constructor reorder</li></ul>
-				</article>
-
-				<article class="mode-card">
-					<div class="mode-head"><span class="mode-num">03</span><span class="mode-chip">production optimization</span></div>
-					<h3>Slim runtime</h3>
-					<p>Alias production Three.js to a node-builder-stripped bundle after the base capture workflow is green.</p>
-					<pre><code><span class="tok-fn">tslPrecompile</span>({ <span class="artifact-key">slim</span>: <span class="tok-str">'source'</span> })</code></pre>
-					<ul><li>No runtime NodeBuilder</li><li>Loud uncovered-path errors</li><li>Lazy full-renderer fallback</li></ul>
-				</article>
-			</div>
-		</section>
-
-		<section class="launch-section quickstart-section reveal" id="quickstart">
-			<div class="quickstart-heading">
-				<div>
-					<p class="eyebrow">working quickstart</p>
-					<h2>One-time setup.<br>Then one line per material.</h2>
-				</div>
-				<p>This new-project path uses guarded <code>slim: 'source'</code>. Existing apps can omit slim while they audit capture and fallback coverage.</p>
-			</div>
-
-			<div class="quickstart-steps">
-				<article class="quick-step">
-					<header><span>01</span><div><h3>Install</h3><p>Plugin at build time, runtime in the app.</p></div></header>
 					<div class="code-block">
 						<button class="copy-btn" data-copy type="button" aria-label="Copy install commands">copy</button>
-						<pre><code>pnpm add -D vite-plugin-tsl-precompile
-pnpm add @tsl-precompile/runtime</code></pre>
+						<pre><code data-package-command="install">pnpm add -D vite-plugin-tsl-precompile@alpha
+pnpm add @tsl-precompile/runtime@alpha three@0.185.1 --save-exact
+# TypeScript only:
+pnpm add -D @types/three@0.185.1 --save-exact</code></pre>
 					</div>
-				</article>
+				</li>
 
-				<article class="quick-step">
-					<header><span>02</span><div><h3>Configure Vite</h3><p>Keep top-level await and Three's entries predictable.</p></div></header>
+				<li class="step">
+					<div class="step-head"><span class="step-num">2</span><h3>Configure Vite</h3><code class="step-file">vite.config.js</code></div>
+					<p>Merge this into the existing config; preserve every current plugin and option. Keep <code>slim</code> off during adoption.</p>
 					<div class="code-block">
 						<button class="copy-btn" data-copy type="button" aria-label="Copy Vite configuration">copy</button>
 						<pre><code><span class="tok-key">import</span> { defineConfig } <span class="tok-key">from</span> <span class="tok-str">'vite'</span>;
 <span class="tok-key">import</span> tslPrecompile <span class="tok-key">from</span> <span class="tok-str">'vite-plugin-tsl-precompile'</span>;
 
 <span class="tok-key">export default</span> <span class="tok-fn">defineConfig</span>({
-  plugins: [ <span class="tok-fn">tslPrecompile</span>({ slim: <span class="tok-str">'source'</span> }) ],
+  plugins: [ <span class="tok-fn">tslPrecompile</span>() ],
   build: { target: <span class="tok-str">'esnext'</span> },
   optimizeDeps: {
     include: [ <span class="tok-str">'three'</span>, <span class="tok-str">'three/webgpu'</span>, <span class="tok-str">'three/tsl'</span> ],
   },
 });</code></pre>
 					</div>
-				</article>
+				</li>
 
-				<article class="quick-step quick-step-wide">
-					<header><span>03</span><div><h3>Register the renderer, then mark a material</h3><p>The marker captures only after that material participates in a real render.</p></div></header>
+				<li class="step">
+					<div class="step-head"><span class="step-num">3</span><h3>Register the renderer</h3><code class="step-file">main.js</code></div>
+					<p>Pass the app's existing live renderer—do not create a second one. Put setup after the app's one existing <code>renderer.init()</code>, or before it and await <code>setup.ready</code> only after that same init finishes.</p>
 					<div class="code-block">
-						<button class="copy-btn" data-copy type="button" aria-label="Copy runtime setup">copy</button>
-						<pre><code><span class="tok-key">import</span> { WebGPURenderer, MeshStandardNodeMaterial, Mesh } <span class="tok-key">from</span> <span class="tok-str">'three/webgpu'</span>;
-<span class="tok-key">import</span> { setupPrecompile } <span class="tok-key">from</span> <span class="tok-str">'@tsl-precompile/runtime/setup'</span>;
+						<button class="copy-btn" data-copy type="button" aria-label="Copy app entry code">copy</button>
+						<pre><code><span class="tok-key">import</span> { setupPrecompile } <span class="tok-key">from</span> <span class="tok-str">'@tsl-precompile/runtime/setup'</span>;
 
-<span class="tok-key">const</span> renderer = <span class="tok-key">new</span> <span class="tok-fn">WebGPURenderer</span>();
+<span class="tok-cmt">// Keep the app's existing, single `await renderer.init()` above this.</span>
 <span class="tok-key">const</span> setup = <span class="tok-fn">setupPrecompile</span>({ renderer });
-<span class="tok-key">await</span> renderer.<span class="tok-fn">init</span>();
-<span class="tok-key">await</span> setup.ready;
-
-<span class="tok-key">const</span> water = <span class="tok-key">new</span> <span class="tok-fn">MeshStandardNodeMaterial</span>();
-water.colorNode = waterGraph;
-water.<span class="tok-fn">precompile</span>(<span class="tok-str">'ocean-water'</span>);
-scene.<span class="tok-fn">add</span>( <span class="tok-key">new</span> <span class="tok-fn">Mesh</span>( geometry, water ) );</code></pre>
+<span class="tok-key">await</span> setup.ready;</code></pre>
 					</div>
-				</article>
+					<p class="step-tip">No marker is required for direct <code>new *NodeMaterial(...)</code> calls. Add <code>material.precompile('hero-body')</code> only as a stable-name override; use <code>autoMark: false</code> to opt out globally.</p>
+				</li>
 
-				<article class="quick-step quick-step-run">
-					<header><span>04</span><div><h3>Capture, commit, build</h3><p>Visit every relevant route and state before shipping.</p></div></header>
-					<div class="run-commands">
-						<div><code>pnpm dev</code><span>open the app and render the material</span></div>
-						<i aria-hidden="true">→</i>
-						<div><code>git add artifacts/</code><span>review and commit generated source</span></div>
-						<i aria-hidden="true">→</i>
-						<div><code>pnpm build</code><span>validate and inline the artifact</span></div>
+				<li class="step">
+					<div class="step-head"><span class="step-num">4</span><h3>Capture and prove it</h3></div>
+					<p>Commands show <code>src</code>; replace or repeat <code>--source</code> for the app's actual JavaScript/TypeScript roots. Never fabricate or edit artifact JSON.</p>
+					<div class="terminal-grid">
+						<div>
+							<p class="command-label">Terminal A · keep running</p>
+							<div class="code-block">
+								<button class="copy-btn" data-copy type="button" aria-label="Copy development command">copy</button>
+								<pre><code data-package-command="capture">pnpm dev</code></pre>
+							</div>
+							<p>Open the dev URL in a WebGPU browser and exercise every real route and state.</p>
+						</div>
+						<div>
+							<p class="command-label">Terminal B · after capture</p>
+							<div class="code-block">
+								<button class="copy-btn" data-copy type="button" aria-label="Copy verification and build commands">copy</button>
+								<pre><code data-package-command="verify">pnpm exec tsl-precompile-doctor --source src
+pnpm exec tsl-precompile-verify --source src --source-root . artifacts
+git add artifacts/
+pnpm build</code></pre>
+							</div>
+						</div>
 					</div>
-				</article>
-			</div>
-
-			<div class="quickstart-actions">
-				<a class="btn btn-primary" href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/BYO.md" rel="noopener">Open the 5-minute adoption guide</a>
-				<a class="btn btn-ghost" href="https://github.com/Makio64/vite-plugin-tsl-precompile/tree/main/packages/examples/getting-started" rel="noopener">Browse the runnable example</a>
-			</div>
-		</section>
-
-		<section class="launch-section evidence-section reveal" id="evidence">
-			<div class="evidence-copy">
-				<p class="eyebrow">experimental, with receipts</p>
-				<h2>Compatibility is measured,<br>not implied.</h2>
-				<p>The repository captures and replays the tracked Three.js WebGPU suite, records load-smoke results, and publishes image comparisons and diagnostics. Counts on this page come from the generated evidence file.</p>
-				<div class="evidence-actions">
-					<a class="btn btn-primary" href="examples.html">Explore compatibility results</a>
-					<a class="btn btn-ghost" href="benchmark.html">Read the evidence notes</a>
+					<p class="command-label">Production proof · keep running</p>
+					<div class="code-block">
+						<button class="copy-btn" data-copy type="button" aria-label="Copy production preview command">copy</button>
+						<pre><code data-package-command="preview">pnpm preview</code></pre>
+					</div>
+					<p class="step-tip">Replay the same matrix in preview. Require WebGPU, nonblank changing pixels, and zero page, console, request, capture, or GPU validation errors. Record anything you could not reach.</p>
+				</li>
+				</ol>
 				</div>
+			</details>
+
+		</section>
+
+		<section class="section" id="flow">
+			<div class="section-head">
+				<h2>One workflow, two production milestones</h2>
+				<p>Start with compatibility mode. Slim is an optional upgrade that removes the compiler when you are ready.</p>
 			</div>
 
-			<div class="scope-card">
-				<div class="scope-head"><span class="signal-dot"></span><strong>Best fit today</strong></div>
-				<ul class="scope-list scope-good">
-					<li>Standard and physical NodeMaterials</li>
-					<li>Textures, environment, direct lights, and shadows</li>
-					<li>Fog, common geometry context, and material uniforms</li>
-				</ul>
-				<div class="scope-divider"></div>
-				<div class="scope-head scope-head-muted"><span></span><strong>Plan for explicit coverage</strong></div>
-				<ul class="scope-list scope-watch">
-					<li>MRT, backgrounds, PMREM, and post-processing may need auxiliary capture</li>
-					<li>Captured compute kernels replay in pure slim mode; uncaptured live-only graph paths need explicit hybrid support</li>
-					<li>Artifacts exist only for routes and material variants you actually observe</li>
-				</ul>
+			<div class="milestone-grid">
+				<article>
+					<span>1 / compatibility</span>
+					<h3>First safe ship</h3>
+					<p>Artifacts and source freshness are validated. The live NodeMaterial and NodeBuilder stay available.</p>
+				</article>
+				<article class="milestone-slim">
+					<span>2 / optional slim</span>
+					<h3>Compiler-free ship</h3>
+					<p>Enable slim, repeat capture, verification, build, and preview, then let captured WGSL and generated updates replace NodeBuilder.</p>
+				</article>
+			</div>
+
+			<ol class="flow">
+				<li class="flow-node">
+					<span class="flow-env">dev</span>
+					<svg class="flow-glyph" viewBox="0 0 48 48" aria-hidden="true">
+						<circle cx="10" cy="14" r="4"/><circle cx="10" cy="34" r="4"/>
+						<circle cx="26" cy="24" r="4"/><circle cx="40" cy="24" r="4"/>
+						<path d="M13.4 16.2 22.6 22M13.4 31.8 22.6 26M30 24h6"/>
+					</svg>
+					<h3>Render</h3>
+					<p>Capture each real scene context in dev.</p>
+				</li>
+
+				<li class="flow-link" aria-hidden="true"><i></i><span>capture</span></li>
+
+				<li class="flow-node">
+					<span class="flow-env">repo</span>
+					<svg class="flow-glyph" viewBox="0 0 48 48" aria-hidden="true">
+						<path d="M12 6h16l8 8v28a2 2 0 0 1-2 2H12a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"/>
+						<path d="M28 6v8h8M16 24h12M16 30h12"/>
+						<path class="flow-hash" d="M16 37h2M21 37h2M26 37h2M31 37h1"/>
+					</svg>
+					<h3><code>artifacts/</code></h3>
+					<p>Commit WGSL, bindings, and uniform plans.</p>
+				</li>
+
+				<li class="flow-link" aria-hidden="true"><i></i><span>build</span></li>
+
+				<li class="flow-node flow-node-out">
+					<span class="flow-env">optional slim</span>
+					<svg class="flow-glyph" viewBox="0 0 48 48" aria-hidden="true">
+						<rect x="12" y="12" width="24" height="24" rx="3"/>
+						<rect x="19" y="19" width="10" height="10" rx="1.5"/>
+						<path d="M18 6v6M30 6v6M18 36v6M30 36v6M6 18h6M6 30h6M36 18h6M36 30h6"/>
+					</svg>
+					<h3>Replay</h3>
+					<p>After separate slim proof, Vite inlines verified WGSL and NodeBuilder is absent.</p>
+				</li>
+			</ol>
+		</section>
+
+		<section class="section evidence">
+			<div class="section-head">
+				<h2><span data-stat="examplesProcessed">254</span> tracked WebGPU routes</h2>
+			</div>
+			<div class="evidence-grid">
+			<figure class="seam" data-featured-evidence-example="webgpu_tsl_earth">
+				<div class="seam-frame">
+					<img class="seam-img" data-featured-evidence-image="capture" width="640" height="480" loading="lazy" decoding="async" alt="webgpu_tsl_earth rendered by live three.js">
+					<div class="seam-clip">
+						<img class="seam-img" data-featured-evidence-image="replay" width="640" height="480" loading="lazy" decoding="async" alt="The same frame rendered from the precompiled artifact by the slim runtime">
+					</div>
+					<span class="seam-tag seam-tag-l">live three.js</span>
+					<span class="seam-tag seam-tag-r">precompiled</span>
+					<span class="seam-line" aria-hidden="true"><i></i></span>
+					<input class="seam-range" type="range" min="0" max="100" value="50" step="0.1" aria-label="Drag to compare live three.js with the precompiled replay">
+				</div>
+				<figcaption data-featured-evidence-caption>Validated campaign evidence is injected at build time.</figcaption>
+			</figure>
+
+				<div class="evidence-copy">
+					<p class="evidence-verdicts">
+						<strong><span data-evidence-verdict="pass">253</span> gated passes</strong>
+						<span aria-hidden="true">·</span>
+						<span><span data-evidence-verdict="diagnostic">1</span> diagnostic</span>
+						<span aria-hidden="true">·</span>
+						<span><span data-evidence-verdict="fail">0</span> failures</span>
+					</p>
+					<p><span data-stat="upstreamExamples">209</span> routes come from the exact Three r185 corpus and <span data-stat="localExamples">45</span> exercise local integration paths. Every gallery record publishes its capture, replay, configured pixel gate, and diagnostics.</p>
+					<dl class="stats">
+						<div><dt data-stat="materialsBaked">827</dt><dd>materials baked</dd></div>
+						<div><dt data-stat="artifactsCaptured">947</dt><dd>artifacts captured</dd></div>
+						<div><dt><span data-stat="smokePass">209</span>/<span data-stat="smokeTotal">209</span></dt><dd>official stock routes passed load-smoke</dd></div>
+						<div><dt data-stat="localExamples">45</dt><dd>local capture/replay routes</dd></div>
+					</dl>
+					<p class="stats-note">Verdicts come from the semantic gate; PSNR remains separate quality evidence. <a href="coverage-summary.json">Campaign summary →</a> · <a href="coverage-evidence-set.json">manifest →</a> · <a href="examples.html">inspect frames →</a></p>
+			</div>
 			</div>
 		</section>
 
-		<section class="launch-section faq-section reveal" id="faq">
-			<div class="section-heading">
-				<p class="eyebrow">straight answers</p>
-				<h2>Before you adopt it.</h2>
+		<section class="section" id="faq">
+			<div class="section-head">
+				<h2>Questions</h2>
 			</div>
-			<div class="faq faq-grid">
+			<div class="faq">
 				<details open>
-					<summary>Does the browser still compile a shader?</summary>
-					<p>Yes. WebGPU still creates the pipeline and the GPU driver compiles WGSL to native code. The plugin removes Three's JavaScript TSL graph walk and WGSL generation for captured materials.</p>
+					<summary>What changes in production?</summary>
+					<div class="faq-body"><p>Compatibility mode validates artifacts but keeps three.js's live compiler authoritative. Slim mode replays captured WGSL with generated updates and no NodeBuilder. WebGPU still creates the pipeline and the driver still compiles WGSL to native code. <a href="how-it-works.html">See the boundary →</a></p></div>
 				</details>
 				<details>
-					<summary>Do users download the artifact JSON?</summary>
-					<p>No. The JSON is build input. Vite turns it into tree-shakeable virtual modules containing shader source, metadata, and the generated updater.</p>
+					<summary>Why capture a real render?</summary>
+					<div class="faq-body"><p>Geometry, camera, lights, shadows, fog, clipping, and render targets can change the shader. A source scan cannot prove those runtime contexts.</p></div>
 				</details>
 				<details>
 					<summary>Do I commit <code>artifacts/</code>?</summary>
-					<p>Yes. Treat it like generated source or a lockfile. It makes local builds and CI consume the same shader inputs and lets code review see shader changes.</p>
+					<div class="faq-body"><p>Yes. They are generated build inputs, like a lockfile. Never fabricate or hand-edit them.</p></div>
 				</details>
 				<details>
-					<summary>Is <code>slim: 'source'</code> required?</summary>
-					<p>No. It is the preferred compiler-free profile for a fully covered new Vite app. Existing apps can start with normal capture; either slim mode requires every reachable path to be captured or handled by fallback.</p>
+					<summary>When do I recapture?</summary>
+					<div class="faq-body"><p>After a marked TSL graph, marker name, relevant render topology, three.js version, or artifact schema changes. Render the affected paths again, verify, commit, and rebuild.</p></div>
 				</details>
 				<details>
-					<summary>Can I try it without editing every material?</summary>
-					<p>Use <code>autoMark: true</code>. Generated names are stable per transformed module and framework subresource, but constructor order remains positional, so reordering can require recapture.</p>
+					<summary>When is slim mode safe?</summary>
+					<div class="faq-body"><p>After compatibility capture, non-zero artifact verification, build, and production preview all pass across every reachable render path.</p></div>
 				</details>
-				<details>
-					<summary>Does it support WebGLRenderer?</summary>
-					<p>No. This pipeline targets Three.js <code>WebGPURenderer</code> and WGSL. Pin Three to an exact supported patch because the emitted shader contract follows renderer internals closely.</p>
-				</details>
-			</div>
-		</section>
-
-		<section class="final-cta reveal">
-			<div class="final-cta-glow" aria-hidden="true"></div>
-			<p class="eyebrow">move shader work earlier</p>
-			<h2>Your TSL stays expressive.<br>Your production path gets boring.</h2>
-			<p>Start with one material, inspect the generated artifact, and expand only when the compatibility evidence is green.</p>
-			<div class="hero-actions">
-				<a class="btn btn-primary" href="#quickstart">Precompile one material</a>
-				<a class="btn btn-ghost" href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">View source on GitHub</a>
 			</div>
 		</section>
 	</main>
 
-	<footer class="footer launch-footer">
+	<footer class="footer">
 		<div class="footer-inner">
-			<div class="footer-brand-block">
-				<strong class="mono">vite-plugin-tsl-precompile</strong>
-				<span class="muted">AOT tooling for three.js TSL · Experimental · MIT</span>
-			</div>
+			<div><strong class="mono">vite-plugin-tsl-precompile</strong><span class="footer-sep">·</span><span class="muted">Experimental · MIT</span></div>
 			<nav class="footer-nav" aria-label="Footer navigation">
+				<a href="adopt.html">Existing app</a>
 				<a href="how-it-works.html">How it works</a>
-				<a href="examples.html">Compatibility</a>
-				<a href="benchmark.html">Evidence</a>
+				<a href="examples.html">Proof</a>
+				<a href="benchmark.html">Numbers</a>
 				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/ARCHITECTURE.md" rel="noopener">Architecture</a>
-				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/ARCHITECTURE_EVOLUTION.md" rel="noopener">Evolution</a>
 				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">GitHub</a>
 			</nav>
 		</div>

@@ -34,11 +34,11 @@ test( 'tslPrecompile — accepts every known option', () => {
 
 	const plugin = tslPrecompile( {
 		artifactsDir: './my-artifacts',
-		fail: 'warn',
+		fail: 'error',
 		autoMark: true,
 		autoMarkPrefix: 'demo',
 		slim: true,
-		threeVersion: '0.184.0',
+		threeVersion: '0.185.1',
 		minifyWgsl: false,
 		dedupeWgsl: false,
 	} );
@@ -50,6 +50,19 @@ test( 'tslPrecompile — accepts the guarded source slim mode', () => {
 
 	const plugin = tslPrecompile( { slim: 'source' } );
 	assert.equal( plugin.name, 'vite-plugin-tsl-precompile' );
+
+} );
+
+test( 'tslPrecompile — rejects warning recovery in compiler-free slim modes', () => {
+
+	for ( const slim of [ true, 'source' ] ) {
+
+		assert.throws(
+			() => tslPrecompile( { fail: 'warn', slim } ),
+			/available only in full-Three compatibility mode[\s\S]*require every marker to have a valid captured artifact/,
+		);
+
+	}
 
 } );
 
@@ -121,10 +134,10 @@ test( 'tslPrecompile — warns when app package.json ranges three', async () => 
 	try {
 
 		await writeFile( join( root, 'package.json' ), JSON.stringify( {
-			dependencies: { three: '^0.184.0' },
+			dependencies: { three: '^0.185.1' },
 		} ) );
 		const warnings = [];
-		const plugin = tslPrecompile( { threeVersion: '0.184.0' } );
+		const plugin = tslPrecompile( { threeVersion: '0.185.1' } );
 		await plugin.configResolved( {
 			root,
 			command: 'serve',
@@ -132,7 +145,7 @@ test( 'tslPrecompile — warns when app package.json ranges three', async () => 
 		} );
 
 		assert.equal( warnings.length, 1 );
-		assert.match( warnings[ 0 ], /dependencies\.three is "\^0\.184\.0"/ );
+		assert.match( warnings[ 0 ], /dependencies\.three is "\^0\.185\.1"/ );
 		assert.match( warnings[ 0 ], /pin three to an exact patch version/ );
 
 	} finally {
@@ -149,10 +162,10 @@ test( 'tslPrecompile — accepts exact pinned three package specs without warnin
 	try {
 
 		await writeFile( join( root, 'package.json' ), JSON.stringify( {
-			dependencies: { three: '0.184.0' },
+			dependencies: { three: '0.185.1' },
 		} ) );
 		const warnings = [];
-		const plugin = tslPrecompile( { threeVersion: '0.184.0' } );
+		const plugin = tslPrecompile( { threeVersion: '0.185.1' } );
 		await plugin.configResolved( {
 			root,
 			command: 'build',

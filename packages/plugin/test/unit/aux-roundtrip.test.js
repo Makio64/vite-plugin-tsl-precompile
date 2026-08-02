@@ -25,7 +25,9 @@ import { createServer } from 'node:http';
 import { extractBackgroundArtifact } from '../../src/aux-capture.js';
 import { attachDevCapture } from '../../src/dev-capture-server.js';
 import { VIRTUAL_AUX_MODULE_ID } from '../../src/_shared/constants.js';
+import { computeArtifactContentHash } from '../../src/hash.js';
 import tslPrecompile from '../../src/index.js';
+import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
 import {
 	registerAuxArtifact,
 	registerAuxArtifacts,
@@ -69,13 +71,46 @@ async function spinUpServer( viteServer ) {
 
 async function postJSON( port, path, body ) {
 
+	const payload = typeof body.materialShape === 'string' ? {
+		threeVersion: '0.185.1',
+		pluginVersion: '0.1.0',
+		...body,
+	} : body;
 	const res = await fetch( `http://127.0.0.1:${ port }${ path }`, {
 		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify( body ),
+		headers: {
+			'content-type': 'application/json',
+			origin: `http://127.0.0.1:${ port }`,
+		},
+		body: JSON.stringify( payload ),
 	} );
 	const text = await res.text();
 	return { status: res.status, json: JSON.parse( text ) };
+
+}
+
+function signedAuxEnvelope( shape, configHash, artifact, name = `aux-${ shape }` ) {
+
+	const signedArtifact = {
+		...artifact,
+		sourceThreeVersion: '0.185.1',
+		sourceHashVersion: '0.1.0',
+		artifactContentHashVersion: ARTIFACT_CONTENT_HASH_VERSION,
+	};
+	const hash = computeArtifactContentHash( signedArtifact, {
+		shape,
+		threeVersion: signedArtifact.sourceThreeVersion,
+		pluginVersion: signedArtifact.sourceHashVersion,
+	} );
+	return {
+		__materialShape: shape,
+		__configHash: configHash,
+		__hash: hash,
+		__name: name,
+		threeVersion: signedArtifact.sourceThreeVersion,
+		pluginVersion: signedArtifact.sourceHashVersion,
+		artifact: signedArtifact,
+	};
 
 }
 
@@ -93,7 +128,13 @@ function loadAuxManifest( artifactsDir ) {
 		const parsed = JSON.parse( readFileSync( join( artifactsDir, f ), 'utf8' ) );
 		if ( ! parsed.__materialShape || ! parsed.__configHash ) continue;
 		const key = `${ parsed.__materialShape }:${ parsed.__configHash }`;
-		out[ key ] = { shape: parsed.__materialShape, configHash: parsed.__configHash, artifact: parsed.artifact || parsed };
+		out[ key ] = {
+			shape: parsed.__materialShape,
+			configHash: parsed.__configHash,
+			threeVersion: parsed.threeVersion,
+			pluginVersion: parsed.pluginVersion,
+			artifact: parsed.artifact || parsed,
+		};
 
 	}
 	return out;
@@ -223,21 +264,94 @@ test( 'slim build: user modules import the aux registry even without material ma
 
 } );
 
+test( 'full build registers aux artifacts through the narrow runtime subpath', async () => {
+
+	const root = mkdtempSync( join( tmpdir(), 'tslp-full-aux-registry-' ) );
+	const artifactsDir = join( root, 'artifacts' );
+	mkdirSync( artifactsDir, { recursive: true } );
+	writeFileSync( join( artifactsDir, 'aux-render-output-full.json' ), JSON.stringify(
+		signedAuxEnvelope( 'render-output', 'full-output', {
+			version: 3,
+			materialShape: 'render-output',
+			renderContextSelectors: [ '{"version":"render-object-selector@1","topology":"full"}' ],
+			attributes: [ {
+				name: 'nodeAttribute0',
+				type: 'vec4',
+				arrayGenerator: { kind: 'range@1', seed: 3, min: [ 0, 0, 0, 0 ], max: [ 1, 1, 1, 1 ] },
+			} ],
+			uniformPlan: [],
+		} ),
+	) );
+
+	const plugin = tslPrecompile( { artifactsDir: 'artifacts' } );
+	await plugin.configResolved( { root, command: 'build', logger: { warn() {} } } );
+	try {
+
+		const id = plugin.resolveId( VIRTUAL_AUX_MODULE_ID );
+		const source = await plugin.load.call( makePluginContext(), id );
+		assert.match( source, /import \{ registerAuxArtifacts \} from "@tsl-precompile\/runtime\/aux-registry";/ );
+		assert.doesNotMatch( source, /from "@tsl-precompile\/runtime";/ );
+		assert.doesNotMatch( source, /@tsl-precompile\/runtime\/slim(?:\/source)?/ );
+		assert.doesNotMatch( source, /materializeArtifactAttributeDescriptors|materializeArtifactVariantSelectorAdapters/ );
+
+	} finally {
+
+		rmSync( root, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'production virtual aux module rejects missing or mismatched persisted provenance', async () => {
+
+	for ( const provenance of [
+		{},
+		{ threeVersion: '0.184.0', pluginVersion: '0.1.0' },
+		{ threeVersion: '0.185.1', pluginVersion: 'old-toolchain' },
+	] ) {
+
+		const root = mkdtempSync( join( tmpdir(), 'tslp-aux-provenance-' ) );
+		const artifactsDir = join( root, 'artifacts' );
+		mkdirSync( artifactsDir, { recursive: true } );
+		writeFileSync( join( artifactsDir, 'aux-background.json' ), JSON.stringify( {
+			__materialShape: 'background',
+			__configHash: 'provenance',
+			__hash: 'provenance',
+			...provenance,
+			artifact: { version: 3, materialShape: 'background', uniformPlan: [] },
+		} ) );
+
+		const plugin = tslPrecompile( { artifactsDir: 'artifacts' } );
+		await plugin.configResolved( { root, command: 'build', logger: { warn() {} } } );
+		try {
+
+			const id = plugin.resolveId( VIRTUAL_AUX_MODULE_ID );
+			await assert.rejects(
+				plugin.load.call( makePluginContext(), id ),
+				/missing exact Three\/toolchain provenance|captured with three 0\.184\.0|uses toolchain old-toolchain/,
+			);
+
+		} finally {
+
+			rmSync( root, { recursive: true, force: true } );
+
+		}
+
+	}
+
+} );
+
 test( 'slim build: virtual aux module registers into the slim runtime registry', async () => {
 
 	const root = mkdtempSync( join( tmpdir(), 'tslp-rt-' ) );
 	const artifactsDir = join( root, 'artifacts' );
 	mkdirSync( artifactsDir, { recursive: true } );
-	writeFileSync( join( artifactsDir, 'aux-post-process-abc123.json' ), JSON.stringify( {
-		__materialShape: 'post-process',
-		__configHash: 'abc123',
-		__hash: 'abc123',
-		__name: 'aux-post-process-abc123',
-			artifact: {
-				version: 3,
-				materialShape: 'post-process',
-				renderContextSelectors: [ '{"version":"render-object-selector@1","topology":"aux"}' ],
-				vertexShader: '',
+	writeFileSync( join( artifactsDir, 'aux-post-process-abc123.json' ), JSON.stringify(
+		signedAuxEnvelope( 'post-process', 'abc123', {
+			version: 3,
+			materialShape: 'post-process',
+			renderContextSelectors: [ '{"version":"render-object-selector@1","topology":"aux"}' ],
+			vertexShader: '',
 			fragmentShader: '',
 			computeShader: '',
 			attributes: [ {
@@ -252,8 +366,8 @@ test( 'slim build: virtual aux module registers into the slim runtime registry',
 				arrayGenerator: { kind: 'range@1', seed: 7, min: [ 0, 0, 0, 0 ], max: [ 1, 1, 1, 1 ] },
 			} ],
 			uniformPlan: [],
-		},
-	} ), 'utf8' );
+		}, 'aux-post-process-abc123' ),
+	), 'utf8' );
 
 	const plugin = tslPrecompile( { artifactsDir: 'artifacts', slim: true } );
 	await plugin.configResolved( { root, command: 'build' } );
@@ -264,7 +378,7 @@ test( 'slim build: virtual aux module registers into the slim runtime registry',
 		const source = await plugin.load.call( makePluginContext(), id );
 		assert.match( source, /import \{ registerAuxArtifacts \} from "@tsl-precompile\/runtime\/slim";/ );
 		assert.match( source, /"configHash"\s*:\s*"abc123"/ );
-		assert.match( source, /"threeVersion"\s*:\s*"0\.184\.0"/ );
+		assert.match( source, /"threeVersion"\s*:\s*"0\.185\.1"/ );
 		assert.match( source, /"pluginVersion"\s*:\s*"0\.1\.0"/ );
 		assert.match( source, /materializeArtifactAttributeDescriptors as __tslp_materializeAttributes/ );
 			assert.match( source, /from "@tsl-precompile\/contract\/attribute-generators"/ );
@@ -296,12 +410,14 @@ test( 'source slim build registers aux artifacts into the source runtime instanc
 		exports: { './slim/source': './src/slim-source-entry.js' },
 	} ) );
 	writeFileSync( join( runtimeRoot, 'src/slim-source-entry.js' ), 'export const __TSLP_SLIM__ = true;\n' );
-	writeFileSync( join( artifactsDir, 'aux-post-process-source.json' ), JSON.stringify( {
-		__materialShape: 'post-process',
-		__configHash: 'source123',
-		__hash: 'source123',
-		artifact: { version: 3, materialShape: 'post-process', uniformPlan: [] },
-	} ) );
+	writeFileSync( join( artifactsDir, 'aux-post-process-source.json' ), JSON.stringify(
+		signedAuxEnvelope(
+			'post-process',
+			'source123',
+			{ version: 3, materialShape: 'post-process', uniformPlan: [] },
+			'aux-post-process-source',
+		),
+	) );
 
 	const plugin = tslPrecompile( { artifactsDir: 'artifacts', slim: 'source' } );
 	await plugin.configResolved( { root, command: 'build', logger: { warn() {} } } );

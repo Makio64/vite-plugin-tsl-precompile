@@ -2,19 +2,49 @@
 // Comparison modes: slider (default, draggable seam), split (side-by-side), solo (single image with toggle).
 // Vanilla DOM, no framework — matches the rest of the site.
 
+import {
+	createCatalogueRenderPlan,
+	DEFAULT_GALLERY_BATCH_SIZE,
+	nextGalleryLimit,
+} from './catalogue-window.js';
+import {
+	clampComparisonPosition,
+	COMPARISON_SIDE,
+	comparisonImageAlt,
+	comparisonValueText,
+	resolveSoloFrame,
+} from './comparison-contract.js';
+
 const TIER_LABEL = {
+	'pixel-match': 'Pixel-match',
+	'visual-match': 'Visual-match',
+	diagnostic: 'Diagnostic',
+	'renders': 'Renders',
+	'capture-only': 'Capture only',
+	fail: 'Failure',
+};
+
+const QUALITY_LABEL = {
 	'pixel-match': 'Pixel-match',
 	'visual-match': 'Visual-match',
 	'renders': 'Renders',
 	'capture-only': 'Capture only',
 };
 
-const TIER_RANK = { 'pixel-match': 0, 'visual-match': 1, 'renders': 2, 'capture-only': 3 };
+const TIER_RANK = {
+	'pixel-match': 0,
+	'visual-match': 1,
+	diagnostic: 2,
+	renders: 3,
+	'capture-only': 4,
+	fail: 5,
+};
 const LIVE_FILTER = 'live-compiled';
 
 const TIER_CHIPS = [
 	{ id: 'pixel-match', totalsKey: 'pixelMatchCount' },
 	{ id: 'visual-match', totalsKey: 'visualMatchCount' },
+	{ id: 'diagnostic' },
 	{ id: 'renders', totalsKey: 'rendersCount' },
 	{ id: 'capture-only', totalsKey: 'captureOnlyCount' },
 ];
@@ -30,6 +60,7 @@ const state = {
 	view: [],                 // currently filtered+sorted array (the prev/next walk path)
 	currentBasename: null,
 	viewMode: 'gallery',       // 'gallery' | 'compare'
+	galleryLimit: DEFAULT_GALLERY_BATCH_SIZE,
 	mode: 'slider',           // 'slider' | 'split' | 'solo'
 	soloSide: 'replay',       // 'replay' | 'capture' — used in solo mode
 	sliderPos: 50,            // % — used in slider mode
@@ -64,26 +95,73 @@ function escapeHtml( s ) {
 	}[ c ] ) );
 }
 
-function renderMetrics( totals ) {
+function renderMetrics( totals, verdicts ) {
 	const map = {
 		examplesProcessed: totals.examplesProcessed,
 		materialsBaked: totals.materialsBaked,
 		wgslKb: `${Math.round( totals.wgslBytes / 1024 )} KB`,
-		smokePassRate: `${totals.smokePassRate}%`,
+		stockSmokeFraction: `${totals.smokePass}/${totals.smokeTotal}`,
 		pixelMatchCount: totals.pixelMatchCount,
 		visualMatchCount: totals.visualMatchCount,
 		rendersCount: totals.rendersCount,
 		captureOnlyCount: totals.captureOnlyCount,
+		coveragePass: verdicts.pass,
+		coverageDiagnostic: verdicts.diagnostic,
+		coverageFail: verdicts.fail,
 	};
 	for ( const el of document.querySelectorAll( '[data-key]' ) ) {
 		const k = el.getAttribute( 'data-key' );
 		if ( map[ k ] != null ) el.textContent = map[ k ];
+	}
+	for ( const el of document.querySelectorAll( '[data-evidence-verdict]' ) ) {
+		const key = el.dataset.evidenceVerdict;
+		if ( verdicts[ key ] != null ) el.textContent = verdicts[ key ];
 	}
 }
 
 function verifiedLiveEntries() {
 
 	return ( state.liveManifest?.examples || [] ).filter( entry => verifiedLiveEntry( entry ) );
+
+}
+
+function freeLiveEntries() {
+
+	return verifiedLiveEntries().filter( entry => entry.role === 'free-example' && entry.collection === 'free-tsl' );
+
+}
+
+function renderFreeExamples() {
+
+	const grid = $( '#ex-free-grid' );
+	if ( ! grid ) return;
+	const entries = freeLiveEntries();
+	if ( entries.length === 0 ) {
+
+		grid.innerHTML = '<p class="ex-free-loading">The production examples are unavailable in this build.</p>';
+		return;
+
+	}
+	grid.innerHTML = entries.map( ( entry, index ) => `
+		<article class="ex-free-card" style="--free-accent:${ escapeHtml( entry.accent || '#22d3ee' ) }">
+			<div class="ex-free-media">
+				${ entry.previewUrl
+					? `<img src="${ escapeHtml( entry.previewUrl ) }" alt="${ escapeHtml( entry.title ) } compiler-free TSL website" loading="lazy" decoding="async">`
+					: '<span class="ex-free-placeholder">WebGPU preview</span>' }
+				<span class="ex-free-index">${ String( index + 1 ).padStart( 2, '0' ) }</span>
+				<span class="ex-free-runtime"><i aria-hidden="true"></i> Pure slim</span>
+			</div>
+			<div class="ex-free-body">
+				<p>${ escapeHtml( entry.brand || 'TSL / WORLD' ) }</p>
+				<h3>${ escapeHtml( entry.title ) }</h3>
+				<span>${ escapeHtml( entry.description || 'A compiler-free Three.js WebGPU experience.' ) }</span>
+				<div>
+					<button type="button" data-free-live-id="${ escapeHtml( entry.id ) }">Run live</button>
+					<a href="${ escapeHtml( entry.playUrl ) }" target="_blank" rel="noopener">Open full page ↗</a>
+				</div>
+			</div>
+		</article>
+	` ).join( '' );
 
 }
 
@@ -94,6 +172,7 @@ function renderLiveMetrics( examples ) {
 	const map = {
 		liveRouteCount: liveEntries.length,
 		liveGalleryCount: linked,
+		freeRouteCount: freeLiveEntries().length,
 	};
 	for ( const el of document.querySelectorAll( '[data-key]' ) ) {
 
@@ -104,17 +183,15 @@ function renderLiveMetrics( examples ) {
 
 }
 
-function renderTierBar( totals ) {
-	const total = ( totals.pixelMatchCount ?? 0 )
-		+ ( totals.visualMatchCount ?? 0 )
-		+ ( totals.rendersCount ?? 0 )
-		+ ( totals.captureOnlyCount ?? 0 );
+function renderTierBar( verdicts ) {
+	const total = ( verdicts.pass ?? 0 )
+		+ ( verdicts.diagnostic ?? 0 )
+		+ ( verdicts.fail ?? 0 );
 	if ( ! total ) return;
-	const pct = key => ( ( totals[ key ] ?? 0 ) / total ) * 100;
-	document.querySelector( '.ex-tier-segment[data-tier="pixel-match"]' ).style.setProperty( '--pct', pct( 'pixelMatchCount' ) );
-	document.querySelector( '.ex-tier-segment[data-tier="visual-match"]' ).style.setProperty( '--pct', pct( 'visualMatchCount' ) );
-	document.querySelector( '.ex-tier-segment[data-tier="renders"]' ).style.setProperty( '--pct', pct( 'rendersCount' ) );
-	document.querySelector( '.ex-tier-segment[data-tier="capture-only"]' ).style.setProperty( '--pct', pct( 'captureOnlyCount' ) );
+	const pct = key => ( ( verdicts[ key ] ?? 0 ) / total ) * 100;
+	for ( const key of [ 'pass', 'diagnostic', 'fail' ] ) {
+		document.querySelector( `.ex-tier-segment[data-verdict="${key}"]` ).style.setProperty( '--pct', pct( key ) );
+	}
 }
 
 function renderChips( categories, totals, examples ) {
@@ -123,20 +200,22 @@ function renderChips( categories, totals, examples ) {
 	const tierChips = TIER_CHIPS.map( c => ( {
 		id: c.id,
 		label: TIER_LABEL[ c.id ],
-		count: totals[ c.totalsKey ] ?? 0,
+		count: c.totalsKey
+			? ( totals[ c.totalsKey ] ?? 0 )
+			: examples.filter( record => record.badge === c.id ).length,
 		tier: true,
 	} ) );
 	const all = [
-		{ id: 'all', label: 'All', count: totals.examplesVisible ?? examples.length },
+		{ id: 'all', label: 'All', count: examples.length },
 		{ id: LIVE_FILTER, label: 'Live compiled', count: liveCount, live: true },
 		...tierChips,
 		...categories,
 	];
 	chipsEl.innerHTML = all.map( c => {
-		const sel = state.filter === c.id ? 'true' : 'false';
+		const pressed = state.filter === c.id ? 'true' : 'false';
 		const dot = c.tier ? `<span class="ex-dot ex-dot-${escapeHtml( c.id )}" aria-hidden="true"></span>` : '';
 		const liveDot = c.live ? '<span class="ex-chip-live-dot" aria-hidden="true"></span>' : '';
-		return `<button type="button" role="tab" aria-selected="${sel}" class="ex-chip${c.tier ? ' ex-chip-tier' : ''}${c.live ? ' ex-chip-live' : ''}" data-filter="${escapeHtml( c.id )}">
+		return `<button type="button" aria-pressed="${pressed}" class="ex-chip${c.tier ? ' ex-chip-tier' : ''}${c.live ? ' ex-chip-live' : ''}" data-filter="${escapeHtml( c.id )}">
 			${dot}${liveDot}<span>${escapeHtml( c.label )}</span>
 			<span class="ex-chip-count">${c.count}</span>
 		</button>`;
@@ -147,7 +226,7 @@ function renderChips( categories, totals, examples ) {
 		if ( ! btn ) return;
 		state.filter = btn.dataset.filter;
 		for ( const c of chipsEl.querySelectorAll( '.ex-chip' ) ) {
-			c.setAttribute( 'aria-selected', c === btn ? 'true' : 'false' );
+			c.setAttribute( 'aria-pressed', c === btn ? 'true' : 'false' );
 		}
 		rebuildView( { keepSelection: true } );
 	} );
@@ -156,8 +235,6 @@ function renderChips( categories, totals, examples ) {
 function applyFilters( examples ) {
 	let xs = examples;
 	const isTierFilter = state.filter in TIER_LABEL;
-	// Capture-only entries have thumbHealth !== 'ok'; surface them when that tier is selected.
-	if ( state.filter !== 'capture-only' ) xs = xs.filter( r => r.thumbHealth === 'ok' );
 	if ( state.filter === LIVE_FILTER ) {
 		xs = xs.filter( r => liveEntryForCatalogue( r.basename ) );
 	} else if ( isTierFilter ) {
@@ -212,26 +289,16 @@ function renderSidebar() {
 		: groupByCategory( state.view );
 
 	listEl.innerHTML = groups.map( g => {
-		const items = g.items.map( r => {
-			const isCurrent = r.basename === state.currentBasename;
-			const hasLiveRoute = !! liveEntryForCatalogue( r.basename );
-			return `<a class="ex-side-item${isCurrent ? ' is-current' : ''}"
-				href="#${escapeHtml( r.basename )}"
-				data-basename="${escapeHtml( r.basename )}"
-				aria-current="${isCurrent ? 'true' : 'false'}">
-				<span class="ex-dot ex-dot-${escapeHtml( r.badge )}" aria-hidden="true"></span>
-				<span class="ex-side-name">${escapeHtml( r.displayName )}</span>
-				${hasLiveRoute ? '<span class="ex-side-live">Live</span>' : ''}
-			</a>`;
-		} ).join( '' );
-
-		if ( g.label === null ) return `<div class="ex-side-flat">${items}</div>`;
-		return `<details class="ex-side-group" open>
+		if ( g.label === null ) return `<div class="ex-side-flat">${sidebarItemsMarkup( g.items )}</div>`;
+		const open = g.items.some( item => item.basename === state.currentBasename );
+		return `<details class="ex-side-group"
+			data-sidebar-group="${escapeHtml( g.id )}"
+			data-hydrated="${open ? 'true' : 'false'}"${open ? ' open' : ''}>
 			<summary class="ex-side-group-summary">
 				<span>${escapeHtml( g.label )}</span>
 				<span class="ex-side-group-count">${g.items.length}</span>
 			</summary>
-			<div class="ex-side-group-items">${items}</div>
+			<div class="ex-side-group-items">${open ? sidebarItemsMarkup( g.items ) : ''}</div>
 		</details>`;
 	} ).join( '' );
 
@@ -239,7 +306,65 @@ function renderSidebar() {
 	if ( current ) current.scrollIntoView( { block: 'nearest', behavior: 'auto' } );
 }
 
-function renderGallery() {
+function sidebarItemsMarkup( items ) {
+
+	return items.map( r => {
+
+		const isCurrent = r.basename === state.currentBasename;
+		const hasLiveRoute = !! liveEntryForCatalogue( r.basename );
+		return `<a class="ex-side-item${isCurrent ? ' is-current' : ''}"
+			href="#${escapeHtml( r.basename )}"
+			data-basename="${escapeHtml( r.basename )}"
+			${isCurrent ? 'aria-current="true"' : ''}>
+			<span class="ex-dot ex-dot-${escapeHtml( r.badge )}" aria-hidden="true"></span>
+			<span class="ex-side-name">${escapeHtml( r.displayName )}</span>
+			${hasLiveRoute ? '<span class="ex-side-live">Live</span>' : ''}
+		</a>`;
+
+	} ).join( '' );
+
+}
+
+function hydrateSidebarGroup( details ) {
+
+	if ( ! details || details.dataset.hydrated === 'true' ) return;
+	const group = groupByCategory( state.view ).find( candidate => candidate.id === details.dataset.sidebarGroup );
+	if ( ! group ) return;
+	details.querySelector( '.ex-side-group-items' ).innerHTML = sidebarItemsMarkup( group.items );
+	details.dataset.hydrated = 'true';
+
+}
+
+function syncSidebarSelection( basename ) {
+
+	if ( state.viewMode !== 'compare' ) return;
+	const record = state.view.find( item => item.basename === basename );
+	if ( record ) {
+
+		const details = [ ...document.querySelectorAll( '#ex-sidebar-list .ex-side-group' ) ]
+			.find( group => group.dataset.sidebarGroup === record.category );
+		if ( details ) {
+
+			hydrateSidebarGroup( details );
+			details.open = true;
+
+		}
+
+	}
+	for ( const link of document.querySelectorAll( '.ex-side-item' ) ) {
+
+		const isCurrent = link.dataset.basename === basename;
+		link.classList.toggle( 'is-current', isCurrent );
+		if ( isCurrent ) link.setAttribute( 'aria-current', 'true' );
+		else link.removeAttribute( 'aria-current' );
+
+	}
+	const current = document.querySelector( '.ex-side-item.is-current' );
+	if ( current ) current.scrollIntoView( { block: 'nearest', behavior: 'auto' } );
+
+}
+
+function renderGallery( count ) {
 
 	const gallery = $( '#ex-gallery' );
 	const empty = $( '#ex-gallery-empty' );
@@ -251,7 +376,7 @@ function renderGallery() {
 
 	}
 	empty.hidden = true;
-	gallery.innerHTML = state.view.map( r => {
+	gallery.innerHTML = state.view.slice( 0, count ).map( r => {
 
 		const image = r.thumbReplay || r.thumbCapture;
 		const hasLiveRoute = !! liveEntryForCatalogue( r.basename );
@@ -261,9 +386,9 @@ function renderGallery() {
 		const materials = r.materialCount == null ? null : `${ r.materialCount } material${ r.materialCount === 1 ? '' : 's' }`;
 		return `<a class="ex-gallery-card${hasLiveRoute ? ' is-live' : ''}" href="#${escapeHtml( r.basename )}" data-basename="${escapeHtml( r.basename )}">
 			<span class="ex-gallery-media">
-				${image
+				${image && r.thumbHealth === 'ok'
 					? `<img src="${escapeHtml( image )}" alt="${escapeHtml( r.displayName )} slim-runtime replay" loading="lazy" decoding="async">`
-					: '<span class="ex-gallery-placeholder">Frame unavailable</span>'}
+					: '<span class="ex-gallery-placeholder">Uniform evidence frame</span>'}
 				<span class="ex-gallery-badges">
 					<span class="ex-gallery-tier" data-tier="${escapeHtml( r.badge )}">${escapeHtml( tier )}</span>
 					${hasLiveRoute ? '<span class="ex-gallery-live"><i aria-hidden="true"></i> Live compiled</span>' : ''}
@@ -280,13 +405,64 @@ function renderGallery() {
 
 }
 
+function renderActiveCatalogue() {
+
+	const plan = createCatalogueRenderPlan( {
+		viewMode: state.viewMode,
+		total: state.view.length,
+		galleryLimit: state.galleryLimit,
+	} );
+	const sidebar = $( '#ex-sidebar-list' );
+	const gallery = $( '#ex-gallery' );
+
+	if ( plan.renderSidebar ) {
+
+		renderSidebar();
+
+	} else {
+
+		sidebar.replaceChildren();
+		$( '#ex-empty' ).hidden = true;
+
+	}
+
+	if ( plan.renderGallery ) {
+
+		renderGallery( plan.galleryCount );
+
+	} else {
+
+		gallery.replaceChildren();
+		$( '#ex-gallery-empty' ).hidden = true;
+
+	}
+
+	const progress = $( '#ex-gallery-progress' );
+	const more = $( '#ex-gallery-more' );
+	const footer = $( '#ex-gallery-footer' );
+	const nextCount = Math.min( DEFAULT_GALLERY_BATCH_SIZE, plan.remainingGalleryCount );
+	footer.hidden = ! plan.renderGallery || plan.remainingGalleryCount === 0;
+	more.hidden = plan.remainingGalleryCount === 0;
+	more.textContent = `Load ${ nextCount } more`;
+	progress.textContent = `${ plan.galleryCount } of ${ plan.total } loaded`;
+	$( '#ex-drawer-count' ).textContent = plan.total;
+	$( '#ex-result-count' ).textContent = plan.renderGallery && plan.remainingGalleryCount > 0
+		? `${ plan.total } results · ${ plan.galleryCount } loaded`
+		: `${ plan.total } result${ plan.total === 1 ? '' : 's' }`;
+
+}
+
 function setSliderPos( pct ) {
-	const v = Math.max( 0, Math.min( 100, pct ) );
+	const v = clampComparisonPosition( pct, state.sliderPos );
 	state.sliderPos = v;
 	const slider = document.querySelector( '.cmp-slider' );
 	if ( slider ) slider.style.setProperty( '--slider-pos', `${v}%` );
 	const handle = $( '#cmp-handle' );
-	if ( handle ) handle.setAttribute( 'aria-valuenow', Math.round( v ) );
+	if ( handle ) {
+		const live = Math.round( v );
+		handle.setAttribute( 'aria-valuenow', live );
+		handle.setAttribute( 'aria-valuetext', comparisonValueText( live ) );
+	}
 }
 
 function setMode( mode ) {
@@ -294,7 +470,7 @@ function setMode( mode ) {
 	state.mode = mode;
 	$( '#cmp-viewport' ).dataset.mode = mode;
 	for ( const btn of document.querySelectorAll( '.ex-mode-tabs [data-mode]' ) ) {
-		btn.setAttribute( 'aria-selected', btn.dataset.mode === mode ? 'true' : 'false' );
+		btn.setAttribute( 'aria-pressed', btn.dataset.mode === mode ? 'true' : 'false' );
 	}
 	renderStage();
 }
@@ -303,7 +479,7 @@ function setSoloSide( side ) {
 	if ( side !== 'replay' && side !== 'capture' ) return;
 	state.soloSide = side;
 	for ( const btn of document.querySelectorAll( '.cmp-solo-toggle [data-solo]' ) ) {
-		btn.setAttribute( 'aria-selected', btn.dataset.solo === side ? 'true' : 'false' );
+		btn.setAttribute( 'aria-pressed', btn.dataset.solo === side ? 'true' : 'false' );
 	}
 	renderStage();
 }
@@ -319,6 +495,7 @@ function setViewMode( view, opts = {} ) {
 
 	}
 	if ( view === 'gallery' ) closeDrawer();
+	renderActiveCatalogue();
 	if ( view === 'compare' ) {
 
 		renderStage();
@@ -345,8 +522,11 @@ function renderStage() {
 		$( '#ex-stage-share' ).hidden = true;
 		psnrChip.hidden = true;
 		empty.hidden = false;
-		// Clear images
-		for ( const img of document.querySelectorAll( '.cmp-img' ) ) img.removeAttribute( 'src' );
+		// Clear images and stale alternatives from the prior selection.
+		for ( const img of document.querySelectorAll( '.cmp-img' ) ) {
+			img.removeAttribute( 'src' );
+			img.alt = '';
+		}
 		return;
 	}
 	stage.dataset.empty = 'false';
@@ -356,8 +536,14 @@ function renderStage() {
 	$( '#ex-stage-cat' ).textContent = r.categoryLabel;
 
 	const tier = TIER_LABEL[ r.badge ] ?? r.badge;
+	const quality = QUALITY_LABEL[ r.quality ] ?? r.quality;
 	const psnr = fmtPsnr( r.pixel );
-	$( '#ex-stage-badge' ).innerHTML = `<span class="ex-dot ex-dot-${escapeHtml( r.badge )}"></span>${escapeHtml( tier )} &middot; ${escapeHtml( psnr )}`;
+	$( '#ex-stage-badge' ).innerHTML = `
+		<span class="ex-stage-verdict" data-verdict="${escapeHtml( r.pixel.verdict )}">
+			<span class="ex-dot ex-dot-${escapeHtml( r.badge )}" aria-hidden="true"></span>${escapeHtml( r.pixel.verdict === 'pass' ? 'Gated pass' : tier )}
+		</span>
+		<span class="ex-stage-quality">${escapeHtml( quality )} &middot; ${escapeHtml( psnr )}</span>
+	`;
 
 	const replaySrc = r.thumbReplayModal ?? r.thumbReplay;
 	const captureSrc = r.thumbCaptureModal ?? r.thumbCapture;
@@ -365,7 +551,7 @@ function renderStage() {
 	// PSNR chip
 	if ( replaySrc && captureSrc ) {
 		psnrChip.hidden = false;
-		psnrChip.dataset.tier = r.badge;
+		psnrChip.dataset.tier = r.quality;
 		$( '#cmp-psnr-num' ).textContent = psnr;
 	} else {
 		psnrChip.hidden = true;
@@ -382,15 +568,18 @@ function renderStage() {
 	let effectiveMode = state.mode;
 	if ( ( effectiveMode === 'slider' || effectiveMode === 'split' ) && ! hasBoth ) {
 		effectiveMode = hasAny ? 'solo' : effectiveMode;
-		$( '#cmp-viewport' ).dataset.mode = effectiveMode;
-		for ( const btn of document.querySelectorAll( '.ex-mode-tabs [data-mode]' ) ) {
-			btn.setAttribute( 'aria-selected', btn.dataset.mode === effectiveMode ? 'true' : 'false' );
-		}
+	}
+	$( '#cmp-viewport' ).dataset.mode = effectiveMode;
+	for ( const btn of document.querySelectorAll( '.ex-mode-tabs [data-mode]' ) ) {
+		btn.setAttribute( 'aria-pressed', btn.dataset.mode === effectiveMode ? 'true' : 'false' );
 	}
 
 	if ( ! hasAny ) {
 		empty.hidden = false;
-		for ( const img of document.querySelectorAll( '.cmp-img' ) ) img.removeAttribute( 'src' );
+		for ( const img of document.querySelectorAll( '.cmp-img' ) ) {
+			img.removeAttribute( 'src' );
+			img.alt = '';
+		}
 		$( '#ex-stage-cta' ).hidden = ! r.threejsUrl;
 		if ( r.threejsUrl ) $( '#ex-stage-cta' ).href = r.threejsUrl;
 		updateNotes( r );
@@ -407,24 +596,34 @@ function renderStage() {
 	const splitLeft = $( '#cmp-split-left' );        // capture
 	const splitRight = $( '#cmp-split-right' );      // replay
 	const soloImg = $( '#cmp-solo-img' );
+	const captureAlt = comparisonImageAlt( r.displayName, COMPARISON_SIDE.CAPTURE );
+	const replayAlt = comparisonImageAlt( r.displayName, COMPARISON_SIDE.REPLAY );
 
+	sliderTop.alt = captureSrc ? captureAlt : '';
+	sliderBottom.alt = replaySrc ? replayAlt : '';
+	splitLeft.alt = captureSrc ? captureAlt : '';
+	splitRight.alt = replaySrc ? replayAlt : '';
+	$( '#cmp-handle' ).setAttribute( 'aria-label', `Live three.js reveal for ${ r.displayName }` );
 	if ( captureSrc ) sliderTop.src = captureSrc; else sliderTop.removeAttribute( 'src' );
 	if ( replaySrc ) sliderBottom.src = replaySrc; else sliderBottom.removeAttribute( 'src' );
 	if ( captureSrc ) splitLeft.src = captureSrc; else splitLeft.removeAttribute( 'src' );
 	if ( replaySrc ) splitRight.src = replaySrc; else splitRight.removeAttribute( 'src' );
 
 	// Solo: pick the requested side, fall back to whichever exists.
-	const wantReplay = state.soloSide === 'replay';
-	const soloSrc = ( wantReplay ? replaySrc : captureSrc ) ?? replaySrc ?? captureSrc;
-	if ( soloSrc ) {
-		soloImg.src = soloSrc;
-		soloImg.alt = `${r.displayName} — ${wantReplay ? 'slim replay' : 'live three.js'}`;
+	const soloFrame = resolveSoloFrame( state.soloSide, { captureSrc, replaySrc } );
+	if ( soloFrame.src ) {
+		state.soloSide = soloFrame.side;
+		soloImg.src = soloFrame.src;
+		soloImg.alt = comparisonImageAlt( r.displayName, soloFrame.side );
+	} else {
+		soloImg.removeAttribute( 'src' );
+		soloImg.alt = '';
 	}
 	for ( const btn of document.querySelectorAll( '.cmp-solo-toggle [data-solo]' ) ) {
 		const which = btn.dataset.solo;
 		const has = which === 'replay' ? !! replaySrc : !! captureSrc;
 		btn.disabled = ! has;
-		btn.setAttribute( 'aria-selected', state.soloSide === which ? 'true' : 'false' );
+		btn.setAttribute( 'aria-pressed', state.soloSide === which ? 'true' : 'false' );
 	}
 
 	updateStats( r );
@@ -484,7 +683,12 @@ function updateNotes( r ) {
 	const notesEl = $( '#ex-stage-notes' );
 	const parts = [];
 	if ( r.notes ) parts.push( `<p class="ex-stage-note">${escapeHtml( r.notes )}</p>` );
-	if ( r.badge !== 'pixel-match' && r.badge !== 'visual-match' ) {
+	if ( r.pixel?.verdict === 'diagnostic' ) {
+		parts.push( `<div class="ex-stage-note-block">
+			<strong>Diagnostic, not a gated pass.</strong>
+			This route publishes its capture, replay, and PSNR for inspection, while its configured pixel gate remains disabled.
+		</div>` );
+	} else if ( r.quality !== 'pixel-match' && r.quality !== 'visual-match' ) {
 		parts.push( `<div class="ex-stage-note-block">
 			<strong>Why doesn&rsquo;t this match pixel-perfect?</strong>
 			The slim runtime is still hardening shadow/depth rebinding, transmission and viewport textures,
@@ -516,13 +720,7 @@ function selectExample( basename, opts = {} ) {
 			history.replaceState( null, '', hash );
 		}
 	}
-	for ( const a of document.querySelectorAll( '.ex-side-item' ) ) {
-		const isCurrent = a.dataset.basename === basename;
-		a.classList.toggle( 'is-current', isCurrent );
-		a.setAttribute( 'aria-current', isCurrent ? 'true' : 'false' );
-	}
-	const current = document.querySelector( '.ex-side-item.is-current' );
-	if ( current ) current.scrollIntoView( { block: 'nearest', behavior: 'auto' } );
+	syncSidebarSelection( basename );
 	renderStage();
 	closeDrawer();
 }
@@ -530,10 +728,8 @@ function selectExample( basename, opts = {} ) {
 function rebuildView( opts = {} ) {
 	const filtered = applyFilters( state.data.examples );
 	state.view = defaultSort( filtered );
-	renderSidebar();
-	renderGallery();
-	$( '#ex-drawer-count' ).textContent = state.view.length;
-	$( '#ex-result-count' ).textContent = `${ state.view.length } example${ state.view.length === 1 ? '' : 's' } shown`;
+	state.galleryLimit = DEFAULT_GALLERY_BATCH_SIZE;
+	renderActiveCatalogue();
 
 	const stillIn = state.view.some( x => x.basename === state.currentBasename );
 	if ( opts.keepSelection && stillIn ) {
@@ -548,6 +744,12 @@ function rebuildView( opts = {} ) {
 
 function bindSidebar() {
 	const listEl = $( '#ex-sidebar-list' );
+	listEl.addEventListener( 'toggle', event => {
+
+		const details = event.target.closest?.( '.ex-side-group' );
+		if ( details?.open ) hydrateSidebarGroup( details );
+
+	}, true );
 	listEl.addEventListener( 'click', e => {
 		const a = e.target.closest( '.ex-side-item' );
 		if ( ! a ) return;
@@ -565,6 +767,13 @@ function bindGallery() {
 		event.preventDefault();
 		selectExample( card.dataset.basename );
 		setViewMode( 'compare', { focus: true } );
+
+	} );
+
+	$( '#ex-gallery-more' ).addEventListener( 'click', () => {
+
+		state.galleryLimit = nextGalleryLimit( state.galleryLimit, state.view.length );
+		renderActiveCatalogue();
 
 	} );
 
@@ -633,6 +842,7 @@ function bindSlider() {
 
 	function updateFromClientX( clientX ) {
 		const rect = slider.getBoundingClientRect();
+		if ( rect.width <= 0 ) return;
 		const pct = ( ( clientX - rect.left ) / rect.width ) * 100;
 		setSliderPos( pct );
 	}
@@ -666,12 +876,14 @@ function bindSlider() {
 	window.addEventListener( 'pointerup', onPointerUp );
 	window.addEventListener( 'pointercancel', onPointerUp );
 
-	// Keyboard arrows on handle nudge by 2% / 10%-with-shift.
+	// All standard slider arrows work; Shift and PageUp/PageDown make larger jumps.
 	handle.addEventListener( 'keydown', e => {
 		let delta = 0;
 		const step = e.shiftKey ? 10 : 2;
-		if ( e.key === 'ArrowLeft' ) delta = - step;
-		else if ( e.key === 'ArrowRight' ) delta = step;
+		if ( e.key === 'ArrowLeft' || e.key === 'ArrowDown' ) delta = - step;
+		else if ( e.key === 'ArrowRight' || e.key === 'ArrowUp' ) delta = step;
+		else if ( e.key === 'PageDown' ) delta = - 10;
+		else if ( e.key === 'PageUp' ) delta = 10;
 		else if ( e.key === 'Home' ) { setSliderPos( 0 ); e.preventDefault(); return; }
 		else if ( e.key === 'End' ) { setSliderPos( 100 ); e.preventDefault(); return; }
 		if ( delta ) {
@@ -753,11 +965,10 @@ function bindLivePlayer( manifest ) {
 	if ( ! canary ) {
 		container.dataset.unavailable = 'true';
 		openButton.textContent = 'Compiled route unavailable';
-		return;
+	} else {
+		openButton.disabled = false;
+		openButton.textContent = 'Run production canary';
 	}
-
-	openButton.disabled = false;
-	openButton.textContent = 'Run production canary';
 
 	function openEntry( entry ) {
 
@@ -780,10 +991,18 @@ function bindLivePlayer( manifest ) {
 
 	}
 
-	openButton.addEventListener( 'click', () => openEntry( canary ) );
+	if ( canary ) openButton.addEventListener( 'click', () => openEntry( canary ) );
 	stageButton.addEventListener( 'click', () => {
 
 		const entry = manifest?.examples?.find( item => item.id === stageButton.dataset.liveId );
+		openEntry( entry );
+
+	} );
+	$( '#ex-free-grid' )?.addEventListener( 'click', event => {
+
+		const button = event.target.closest( '[data-free-live-id]' );
+		if ( ! button ) return;
+		const entry = manifest?.examples?.find( item => item.id === button.dataset.freeLiveId );
 		openEntry( entry );
 
 	} );
@@ -814,23 +1033,37 @@ async function init() {
 	let data;
 	let liveManifest = null;
 	try {
-		const [ res, liveRes ] = await Promise.all( [
-			fetch( new URL( 'examples.json', document.baseURI ) ),
-			fetch( new URL( 'live-examples.json', document.baseURI ) ).catch( () => null ),
-		] );
+
+		const res = await fetch( new URL( 'examples.json', document.baseURI ) );
 		if ( ! res.ok ) throw new Error( `HTTP ${res.status}` );
 		data = await res.json();
-		if ( liveRes?.ok ) liveManifest = await liveRes.json();
+
 	} catch ( err ) {
+
 		stageTitle.textContent = `Failed to load examples.json (${err.message}).`;
 		return;
+
+	}
+	try {
+
+		const liveRes = await fetch( new URL( 'live-examples.json', document.baseURI ) );
+		const contentType = liveRes.headers.get( 'content-type' ) || '';
+		if ( liveRes.ok && contentType.includes( 'application/json' ) ) liveManifest = await liveRes.json();
+
+	} catch ( _ ) {
+
+		// The generated live routes are optional. Static capture/replay evidence
+		// remains usable when that separate production build is unavailable.
+
 	}
 	state.data = data;
 	state.liveManifest = liveManifest;
+	const coverageVerdicts = data.coverageVerdicts ?? {};
 
-	renderMetrics( data.totals );
+	renderMetrics( data.totals, coverageVerdicts );
 	renderLiveMetrics( data.examples );
-	renderTierBar( data.totals );
+	renderFreeExamples();
+	renderTierBar( coverageVerdicts );
 	renderChips( data.categories, data.totals, data.examples );
 	bindSidebar();
 	bindGallery();
@@ -848,10 +1081,7 @@ async function init() {
 
 	const filtered = applyFilters( data.examples );
 	state.view = defaultSort( filtered );
-	renderSidebar();
-	renderGallery();
-	$( '#ex-drawer-count' ).textContent = state.view.length;
-	$( '#ex-result-count' ).textContent = `${ state.view.length } example${ state.view.length === 1 ? '' : 's' } shown`;
+	renderActiveCatalogue();
 
 	const hashBasename = decodeURIComponent( location.hash.replace( /^#/, '' ) );
 	const hashHit = hashBasename && data.examples.some( x => x.basename === hashBasename );

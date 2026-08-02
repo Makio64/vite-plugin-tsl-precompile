@@ -23,7 +23,7 @@ function captureThree( RangeNode, Attribute = null ) {
 
 	}
 	return {
-		REVISION: '184',
+		REVISION: '185',
 		RangeNode,
 		InstancedBufferAttribute: Attribute || InstancedBufferAttribute,
 		TSL: {
@@ -144,6 +144,49 @@ test( 'development RangeNode capture leaves an existing deterministic Math.rando
 
 } );
 
+test( 'development RangeNode recipe ignores instrumentation-dependent node ids', () => {
+
+	function captureRecipe( { nodeId, objectId, uuid } ) {
+
+		class RangeNode {
+
+			constructor() {
+
+				this.id = nodeId;
+				this.minNode = { value: 0 };
+				this.maxNode = { value: 1 };
+
+			}
+
+			getConstNode( node ) { return node; }
+			getNodeType() { return 'float'; }
+			setup() { throw new Error( 'the deterministic physical branch should replace stock setup' ); }
+
+		}
+		const geometry = {
+			attribute: null,
+			setAttribute( _name, attribute ) { this.attribute = attribute; },
+			getAttribute() { return this.attribute; },
+		};
+		assert.equal( installRangeAttributeCapture( captureThree( RangeNode ) ), true );
+		new RangeNode().setup( {
+			object: { id: objectId, uuid, count: 3, type: 'InstancedMesh' },
+			geometry,
+			getUniformBufferLimit: () => 0,
+		} );
+		return geometry.attribute;
+
+	}
+	const first = captureRecipe( { nodeId: 4, objectId: 17, uuid: 'stock-object' } );
+	const second = captureRecipe( { nodeId: 4004, objectId: 9017, uuid: 'capture-object' } );
+	assert.deepEqual(
+		first[ RANGE_ATTRIBUTE_GENERATOR_SIDECAR ],
+		second[ RANGE_ATTRIBUTE_GENERATOR_SIDECAR ],
+	);
+	assert.deepEqual( first.array, second.array );
+
+} );
+
 test( 'development RangeNode capture leaves scalar and uniform-buffer random streams untouched', () => {
 
 	class RangeNode {
@@ -192,7 +235,7 @@ test( 'development RangeNode capture fails closed for frozen prototypes and attr
 	class FrozenRangeNode { setup() {} }
 	Object.freeze( FrozenRangeNode.prototype );
 	assert.equal( installRangeAttributeCapture( captureThree( FrozenRangeNode ) ), false );
-	assert.equal( installRangeAttributeCapture( { ...captureThree( class RangeNode { setup() {} } ), REVISION: '185' } ), false );
+	assert.equal( installRangeAttributeCapture( { ...captureThree( class RangeNode { setup() {} } ), REVISION: '184' } ), false );
 
 	class RangeNode {
 

@@ -1,0 +1,93 @@
+# vite-plugin-tsl-precompile
+
+> Capture TSL from real three.js WebGPU renders, validate the artifacts at
+> build time, and optionally replay verified WGSL without NodeBuilder.
+
+Canonical documentation: https://github.com/Makio64/vite-plugin-tsl-precompile
+Agent skill: https://makio64.github.io/vite-plugin-tsl-precompile/agent/integrate-tsl-precompile/SKILL.md
+Generated evidence: https://makio64.github.io/vite-plugin-tsl-precompile/examples.html
+
+## Fit
+
+- Requires Node >=20.19, Vite >=6.4.3 <9, `WebGPURenderer`, TSL NodeMaterials, and
+  exactly `three@0.185.1` for the current alpha.
+- The plugin and runtime must use matching releases.
+- Do not silently migrate a WebGL-only, non-Vite, or non-TSL app.
+
+## Working style
+
+- Delegated: run the full execution contract end to end and return the evidence.
+- Review-first: before application edits, report the fit decision, doctor
+  findings, proposed files, and route/state/render-topology capture matrix.
+  Preserve compatibility mode and present slim mode as a separate later change.
+
+In either style, do not stop at dependency installation or a successful build.
+Generated artifacts and a real WebGPU production preview are part of done.
+
+## Install
+
+Before mutation, inspect the lockfile, Vite config, renderer, TSL materials, and
+current `three`/`@types/three`. Stop without installing when the app is not a fit
+or the exact Three pin would be an unapproved migration.
+
+The first alpha packages are not published to npm yet. If the registry returns
+404, stop and say so; never substitute a similarly named package. Once published,
+use the project's package manager. pnpm:
+
+    pnpm add -D vite-plugin-tsl-precompile@alpha
+    pnpm add @tsl-precompile/runtime@alpha three@0.185.1 --save-exact
+    pnpm add -D @types/three@0.185.1 --save-exact  # TypeScript only
+    pnpm exec tsl-precompile-install-skill --json
+    pnpm exec tsl-precompile-doctor --json --source src
+
+Replace or repeat `--source` for the JavaScript/TypeScript roots found during
+the audit; `src` is an example, not a required layout.
+
+Doctor readiness covers version, setup, source, and artifact checks only; it
+does not prove route/state/render-topology coverage, a passing production build
+or WebGPU preview, or that slim mode is safe.
+
+Then ask:
+
+    Use $integrate-tsl-precompile end to end. Start in compatibility mode with
+    the default automatic NodeMaterial detection. Add explicit markers only for
+    stable semantic names or constructors that cannot be detected. Capture every
+    real render path. Verify and commit a non-zero artifacts/ set. Build and
+    smoke-test production. Do not enable slim until every compatibility gate
+    passes.
+
+The installer defaults to `.agents/skills/integrate-tsl-precompile`. It also
+accepts `--target codex`, `--target claude`, or a project-relative skill root.
+
+## Execution contract
+
+1. Audit config, renderer bootstrap, NodeMaterials, routes, and render
+   topologies before editing.
+2. Start with `tslPrecompile()` compatibility mode.
+3. Register the live renderer once with `setupPrecompile({ renderer })`; await
+   `renderer.init()` and `setup.ready`.
+4. Keep the default automatic detection for direct `new *NodeMaterial(...)`
+   constructors. Add stable `material.precompile('project-global-name')`
+   overrides only where semantic names help or detection cannot see a
+   constructor.
+5. Run dev and exercise every real route and materially different state.
+6. Never fabricate or hand-edit generated artifacts. Commit them.
+7. Require both gates:
+
+       pnpm exec tsl-precompile-verify --source src --source-root . artifacts
+       pnpm build
+
+8. In browser automation, use `setup.captureStatus()` plus
+   `setup.waitForCaptureSettled({ since: status })` instead of a fixed sleep.
+9. Smoke-test production in a WebGPU browser. Only then consider
+   `tslPrecompile({ slim: 'source' })` and repeat capture, build, and preview.
+
+## Done means
+
+- Matching plugin/runtime versions and exact supported three.js.
+- Every intended material is covered by an automatic or explicit marker.
+- Every reachable route and material, background, environment, shadow,
+  post-processing, MRT, renderer-output, and compute topology was rendered.
+- Verification reports a non-zero artifact family.
+- Production build and representative WebGPU preview pass.
+- The handoff states compatibility or separately proven slim mode.

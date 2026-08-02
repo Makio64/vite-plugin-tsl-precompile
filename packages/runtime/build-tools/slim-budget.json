@@ -1,9 +1,17 @@
 {
   "schema": "tslp-slim-budget@1",
   "gzipLevel": 9,
+  "baseline": {
+    "threeVersion": "0.185.1",
+    "reason": "Three 0.185.1 dual-backend replay now retains the real compiler-free WebGL2 backend alongside WebGPU, including native GLSL artifact routing and WebGL2 transform-feedback hydration. The measured increase is the retained WebGL backend/runtime surface; every compiler, stock-adapter, retained Node/TSL, and bare-Three identity budget remains zero."
+  },
   "prebuilt": {
-    "maxRawBytes": 770000,
-    "maxGzipBytes": 212000,
+    "baselineRawBytes": 955613,
+    "rawHeadroomBytes": 14387,
+    "maxRawBytes": 970000,
+    "baselineGzipBytes": 261600,
+    "gzipHeadroomBytes": 6400,
+    "maxGzipBytes": 268000,
     "maxCompilerModules": 0,
     "maxStockAdapterModules": 0,
     "maxRetainedNodeModules": 0,
@@ -12,8 +20,12 @@
   "consumer": {
     "fixtures": {
       "prebuiltHelpers": {
-        "maxRawBytes": 600000,
-        "maxGzipBytes": 170000,
+        "baselineRawBytes": 725953,
+        "rawHeadroomBytes": 14047,
+        "maxRawBytes": 740000,
+        "baselineGzipBytes": 203034,
+        "gzipHeadroomBytes": 5966,
+        "maxGzipBytes": 209000,
         "expectedRuntimeModules": 1,
         "expectedPrebuiltRuntimeModules": 1,
         "maxRuntimeSourceModules": 0
@@ -27,8 +39,16 @@
     "maxRetainedNodeRenderedBytes": 0,
     "maxBareThreeIdentityModules": 0,
     "fixtures": {
-      "minimal": { "maxGzipBytes": 139000 },
-      "advanced": { "maxGzipBytes": 147000 }
+      "minimal": {
+        "baselineGzipBytes": 176256,
+        "gzipHeadroomBytes": 7744,
+        "maxGzipBytes": 184000
+      },
+      "advanced": {
+        "baselineGzipBytes": 185490,
+        "gzipHeadroomBytes": 8510,
+        "maxGzipBytes": 194000
+      }
     }
   }
 }

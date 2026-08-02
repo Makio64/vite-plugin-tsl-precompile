@@ -1,4 +1,6 @@
 import { stableJsonStringify } from './stable-json.js';
+import { detectArtifactShaderLanguage, resolveArtifactVariantKey } from './shader-language.js';
+import { RENDERER_RENDER_TARGET_TEXTURE_SELECTOR_SCHEMA } from './render-target-texture.js';
 import { GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR } from './variant-selector-sidecar.js';
 
 const EPHEMERAL_IDENTITY_FIELDS = Object.freeze( {
@@ -16,6 +18,8 @@ const EPHEMERAL_IDENTITY_FIELDS = Object.freeze( {
 export const ARTIFACT_VARIANT_FIELDS = Object.freeze( [
 	'version',
 	'cacheKey',
+	'variantKey',
+	'shaderLanguage',
 	'renderContextSelectors',
 	'materialShape',
 	'bindingOwner',
@@ -71,8 +75,9 @@ export function createArtifactVariantPayload( artifact ) {
  */
 export function createArtifactVariantPayloadFingerprint( artifact ) {
 
-	const payload = createArtifactVariantPayload( artifact );
+	const payload = normalizeVariantShaderLanguage( createArtifactVariantPayload( artifact ) );
 	delete payload.cacheKey;
+	delete payload.variantKey;
 	delete payload.renderContextSelectors;
 	return stableJsonStringify( normalizeVariantFingerprintPayload( payload ), 'artifactVariant' );
 
@@ -109,9 +114,9 @@ export function collectArtifactVariantCandidates( artifact ) {
 		? Object.values( artifact.variants ).filter( ( candidate ) => candidate && typeof candidate === 'object' )
 		: [];
 	if ( variants.length === 0 ) return [ artifact ];
-	const rootKey = artifact.cacheKey === undefined || artifact.cacheKey === null ? null : String( artifact.cacheKey );
+	const rootKey = resolveArtifactVariantKey( artifact );
 	const rootRepresented = rootKey !== null && variants.some( ( candidate ) =>
-		candidate.cacheKey !== undefined && candidate.cacheKey !== null && String( candidate.cacheKey ) === rootKey
+		resolveArtifactVariantKey( candidate ) === rootKey
 	);
 	return rootRepresented ? variants : [ artifact, ...variants ];
 
@@ -153,12 +158,17 @@ export function mergeArtifactVariantFamily( target, artifacts ) {
 		// root cache key. Do not also merge the root envelope: it can carry
 		// capture-only metadata that is intentionally absent from variants.
 		const canonicalKeys = mergeFamilyCandidates( records, collectArtifactVariantCandidates( input ) );
-		if ( input === target ) canonicalTargetKey = canonicalKeys.get( requiredCacheKey( target ) ) || requiredCacheKey( target );
+		if ( input === target ) {
+
+			const targetKey = requiredArtifactVariantKey( target );
+			canonicalTargetKey = canonicalKeys.get( targetKey ) || targetKey;
+
+		}
 
 	}
 	if ( records.size === 0 ) return target;
 
-	const targetKey = requiredCacheKey( target );
+	const targetKey = requiredArtifactVariantKey( target );
 	const targetRecord = records.get( canonicalTargetKey || targetKey );
 	if ( targetRecord ) {
 
@@ -170,7 +180,7 @@ export function mergeArtifactVariantFamily( target, artifacts ) {
 
 		const variants = {};
 		const orderedRecords = [ ...records.entries() ].sort( ( [ left ], [ right ] ) => left < right ? - 1 : left > right ? 1 : 0 );
-		for ( const [ cacheKey, record ] of orderedRecords ) variants[ cacheKey ] = record.payload;
+		for ( const [ variantKey, record ] of orderedRecords ) variants[ variantKey ] = record.payload;
 		target.variants = variants;
 
 	} else if ( target.variants !== undefined ) {
@@ -198,8 +208,8 @@ function mergeFamilyCandidates( records, candidates ) {
 		.map( prepareFamilyCandidate )
 		.sort( ( left, right ) => {
 
-			const leftKey = requiredCacheKey( left.payload );
-			const rightKey = requiredCacheKey( right.payload );
+			const leftKey = requiredArtifactVariantKey( left.payload );
+			const rightKey = requiredArtifactVariantKey( right.payload );
 			return leftKey < rightKey ? - 1 : leftKey > rightKey ? 1 : 0;
 
 		} );
@@ -209,11 +219,15 @@ function mergeFamilyCandidates( records, candidates ) {
 	const authoritativeRecords = [ ...records.entries() ].sort( ( [ left ], [ right ] ) => left < right ? - 1 : left > right ? 1 : 0 );
 	for ( const incoming of prepared ) {
 
-		const incomingKey = requiredCacheKey( incoming.payload );
+		const incomingKey = requiredArtifactVariantKey( incoming.payload );
 		const sameKey = records.get( incomingKey );
 		if ( sameKey ) {
 
-			if ( sameKey.semanticFingerprint !== incoming.semanticFingerprint ) throwCacheKeyCollision( incomingKey );
+			if ( sameKey.semanticFingerprint !== incoming.semanticFingerprint ) {
+
+				throwVariantKeyCollision( incomingKey, sameKey.payload, incoming.payload );
+
+			}
 			alignEphemeralIdentityAliases( incoming.payload, sameKey.payload, aliases );
 
 		}
@@ -230,11 +244,11 @@ function mergeFamilyCandidates( records, candidates ) {
 	for ( const incoming of prepared ) {
 
 		const payload = applyEphemeralIdentityAliases( incoming.payload, aliases );
-		const cacheKey = requiredCacheKey( payload );
-		if ( records.has( cacheKey ) ) {
+		const variantKey = requiredArtifactVariantKey( payload );
+		if ( records.has( variantKey ) ) {
 
 			addFamilyCandidate( records, payload );
-			canonicalKeyByInputKey.set( cacheKey, cacheKey );
+			canonicalKeyByInputKey.set( variantKey, variantKey );
 			continue;
 
 		}
@@ -253,12 +267,12 @@ function mergeFamilyCandidates( records, candidates ) {
 		if ( selectorAlias ) {
 
 			mergeFamilySelectors( selectorAlias[ 1 ], payload );
-			canonicalKeyByInputKey.set( cacheKey, selectorAlias[ 0 ] );
+			canonicalKeyByInputKey.set( variantKey, selectorAlias[ 0 ] );
 			continue;
 
 		}
 		addFamilyCandidate( records, payload );
-		canonicalKeyByInputKey.set( cacheKey, cacheKey );
+		canonicalKeyByInputKey.set( variantKey, variantKey );
 
 	}
 	return canonicalKeyByInputKey;
@@ -293,23 +307,23 @@ function prepareFamilyCandidate( candidate ) {
 function addFamilyCandidate( records, candidate ) {
 
 	if ( ! candidate || typeof candidate !== 'object' ) return;
-	const cacheKey = requiredCacheKey( candidate );
+	const variantKey = requiredArtifactVariantKey( candidate );
 	const payload = createArtifactVariantPayload( candidate );
 	const selectors = canonicalSelectors( payload.renderContextSelectors );
 	if ( selectors.length > 0 ) payload.renderContextSelectors = selectors;
 	else if ( payload.renderContextSelectors !== undefined ) payload.renderContextSelectors = [];
 	const fingerprint = createArtifactVariantPayloadFingerprint( payload );
 	const semanticFingerprint = createSemanticVariantFingerprint( payload );
-	const existing = records.get( cacheKey );
+	const existing = records.get( variantKey );
 	if ( ! existing ) {
 
-		records.set( cacheKey, { fingerprint, semanticFingerprint, payload } );
+		records.set( variantKey, { fingerprint, semanticFingerprint, payload } );
 		return;
 
 	}
 	if ( existing.fingerprint !== fingerprint ) {
 
-		throwCacheKeyCollision( cacheKey );
+		throwVariantKeyCollision( variantKey, existing.payload, payload );
 
 	}
 	mergeFamilySelectors( existing, payload );
@@ -328,21 +342,42 @@ function mergeFamilySelectors( record, payload ) {
 
 }
 
-function throwCacheKeyCollision( cacheKey ) {
+function throwVariantKeyCollision( variantKey, authoritative = null, incoming = null ) {
 
+	const differingFields = authoritative && incoming
+		? ARTIFACT_VARIANT_FIELDS.filter( ( field ) =>
+			field !== 'cacheKey' &&
+			field !== 'variantKey' &&
+			field !== 'renderContextSelectors' &&
+			stableJsonStringify(
+				remapArtifactEphemeralIdentities( normalizeVariantFingerprintPayload( authoritative[ field ] ) ),
+				'artifactVariantCollisionField',
+			) !== stableJsonStringify(
+				remapArtifactEphemeralIdentities( normalizeVariantFingerprintPayload( incoming[ field ] ) ),
+				'artifactVariantCollisionField',
+			)
+		)
+		: [];
+	const detail = differingFields.length > 0
+		? ` Divergent fields: ${ differingFields.join( ', ' ) }.`
+		: '';
+
+	const explicitVariantKey = authoritative && authoritative.variantKey !== undefined || incoming && incoming.variantKey !== undefined;
+	const identityName = explicitVariantKey ? 'variant key' : 'cache key';
 	throw new ArtifactVariantFamilyError(
-		'TSLP_ARTIFACT_VARIANT_CACHE_KEY_COLLISION',
-		`[tsl-precompile] cache key ${ JSON.stringify( cacheKey ) } identifies divergent artifact variant payloads. ` +
-		'Recapture with the current toolchain; this family cannot be merged safely.',
-		{ cacheKey },
+		explicitVariantKey ? 'TSLP_ARTIFACT_VARIANT_KEY_COLLISION' : 'TSLP_ARTIFACT_VARIANT_CACHE_KEY_COLLISION',
+		`[tsl-precompile] ${ identityName } ${ JSON.stringify( variantKey ) } identifies divergent artifact variant payloads. ` +
+		`Recapture with the current toolchain; this family cannot be merged safely.${ detail }`,
+		{ variantKey, cacheKey: explicitVariantKey ? authoritative && authoritative.cacheKey : variantKey, differingFields },
 	);
 
 }
 
 function createSemanticVariantFingerprint( artifact ) {
 
-	const payload = createArtifactVariantPayload( artifact );
+	const payload = normalizeVariantShaderLanguage( createArtifactVariantPayload( artifact ) );
 	delete payload.cacheKey;
+	delete payload.variantKey;
 	delete payload.renderContextSelectors;
 	return stableJsonStringify(
 		remapArtifactEphemeralIdentities( normalizeVariantFingerprintPayload( payload ) ),
@@ -353,11 +388,11 @@ function createSemanticVariantFingerprint( artifact ) {
 
 /**
  * Normalize only values whose in-memory spelling is known to differ from the
- * durable JSON payload. Camera and render-object snapshots are rewritten from
- * the active frame and are not shader-family identity. JSON.stringify maps
- * non-finite numbers to null, so fingerprint the same representation while
- * preserving legitimate live defaults such as attenuationDistance=Infinity
- * on the authoritative in-process artifact.
+ * durable JSON payload. Camera, clock, renderer, and render-object snapshots
+ * are rewritten from the active frame and are not shader-family identity.
+ * JSON.stringify maps non-finite numbers to null, so fingerprint the same
+ * representation while preserving legitimate live defaults such as
+ * attenuationDistance=Infinity on the authoritative in-process artifact.
  */
 function normalizeVariantFingerprintPayload( value ) {
 
@@ -376,18 +411,107 @@ function normalizeVariantFingerprintPayload( value ) {
 
 		}
 		const liveFrameSource = typeof current.kind === 'string' && (
-			current.kind.startsWith( 'camera.' ) || current.kind.startsWith( 'object.' )
+			current.kind.startsWith( 'camera.' ) ||
+			current.kind.startsWith( 'environment.' ) ||
+			current.kind.startsWith( 'frame.' ) ||
+			current.kind.startsWith( 'object.' ) ||
+			current.kind.startsWith( 'pmrem.' ) ||
+			current.kind.startsWith( 'renderer.' )
 		);
+		const livePMREMTextureSource = current.kind === 'artifact.texture' && (
+			current.mapping === 306 ||
+			current.textureName === 'PMREM.cubeUv'
+		);
+		const liveRendererTargetTextureSource = current.kind === 'artifact.texture' &&
+			current.renderTargetSelector?.schema === RENDERER_RENDER_TARGET_TEXTURE_SELECTOR_SCHEMA;
 		for ( const key of Object.keys( current ) ) {
 
 			if ( liveFrameSource && key === 'valueSnapshot' ) continue;
-			clone[ key ] = visit( current[ key ] );
+			if ( livePMREMTextureSource && (
+				key === 'imageSrc' ||
+				key === 'textureName' ||
+				key === 'imageWidth' ||
+				key === 'imageHeight' ||
+				key === 'imageDepth'
+			) ) continue;
+			if ( liveRendererTargetTextureSource && (
+				key === 'imageWidth' ||
+				key === 'imageHeight' ||
+				key === 'imageDepth'
+			) ) continue;
+			if ( liveRendererTargetTextureSource && key === 'renderTargetSelector' ) {
+
+				const selector = visit( current[ key ] );
+				if ( selector?.hints && typeof selector.hints === 'object' ) {
+
+					delete selector.hints.extent;
+					if ( Object.keys( selector.hints ).length === 0 ) delete selector.hints;
+
+				}
+				clone[ key ] = selector;
+				continue;
+
+			}
+			if ( key === 'imageSrc' &&
+				typeof current.imageSrc === 'string' &&
+				typeof current.textureUuid === 'string' &&
+				current.textureUuid.length > 0 ) {
+
+				clone[ key ] = normalizeLegacyLoopbackImageSrc( current.imageSrc );
+
+			} else {
+
+				clone[ key ] = visit( current[ key ] );
+
+			}
 
 		}
 		return clone;
 
 	};
 	return visit( value );
+
+}
+
+/**
+ * Before same-origin texture URLs were captured as origin-free paths, browser
+ * recaptures persisted the dev server's loopback origin in `imageSrc`. Moving
+ * the same app to another local port then made one unchanged resource look
+ * like a divergent shader-family payload. Normalize only those legacy
+ * loopback HTTP(S) URLs for comparison; durable payload bytes remain
+ * authoritative, while paths, queries, fragments, and external origins stay
+ * strict.
+ */
+function normalizeLegacyLoopbackImageSrc( value ) {
+
+	let parsed;
+	try {
+
+		parsed = new URL( value );
+
+	} catch ( _ ) {
+
+		return value;
+
+	}
+	if ( parsed.protocol !== 'http:' && parsed.protocol !== 'https:' ) return value;
+	if ( parsed.username || parsed.password ) return value;
+	if ( ! isLoopbackHostname( parsed.hostname ) ) return value;
+	return `${ parsed.pathname }${ parsed.search }${ parsed.hash }`;
+
+}
+
+function isLoopbackHostname( hostname ) {
+
+	if ( typeof hostname !== 'string' || hostname.length === 0 ) return false;
+	let normalized = hostname.toLowerCase();
+	if ( normalized.startsWith( '[' ) && normalized.endsWith( ']' ) ) normalized = normalized.slice( 1, - 1 );
+	if ( normalized.endsWith( '.' ) ) normalized = normalized.slice( 0, - 1 );
+	if ( normalized === 'localhost' || normalized === '::1' ) return true;
+	const ipv4 = normalized.split( '.' );
+	return ipv4.length === 4 &&
+		ipv4[ 0 ] === '127' &&
+		ipv4.every( ( segment ) => /^\d{1,3}$/.test( segment ) && Number( segment ) <= 255 );
 
 }
 
@@ -491,9 +615,19 @@ function alignEphemeralIdentityAliases( incoming, authoritative, state ) {
 
 function comparableVariantPayload( artifact ) {
 
-	const payload = createArtifactVariantPayload( artifact );
+	const payload = normalizeVariantShaderLanguage( createArtifactVariantPayload( artifact ) );
 	delete payload.cacheKey;
+	delete payload.variantKey;
 	delete payload.renderContextSelectors;
+	return payload;
+
+}
+
+function normalizeVariantShaderLanguage( payload ) {
+
+	if ( payload.shaderLanguage !== undefined ) return payload;
+	const detected = detectArtifactShaderLanguage( payload );
+	if ( detected ) payload.shaderLanguage = detected;
 	return payload;
 
 }
@@ -590,6 +724,22 @@ function requiredCacheKey( artifact ) {
 
 	}
 	return String( artifact.cacheKey );
+
+}
+
+function requiredArtifactVariantKey( artifact ) {
+
+	requiredCacheKey( artifact );
+	const variantKey = resolveArtifactVariantKey( artifact );
+	if ( variantKey === null ) {
+
+		throw new ArtifactVariantFamilyError(
+			'TSLP_ARTIFACT_VARIANT_KEY_UNAVAILABLE',
+			'[tsl-precompile] artifact variantKey must be a non-empty string when present.',
+		);
+
+	}
+	return variantKey;
 
 }
 

@@ -11,7 +11,7 @@ import { collectArtifactVariantCandidates } from './artifact-variants.js';
 
 export const CUBE_RENDER_TARGET_AUX_CONFIG_SCHEMA = 'cube-render-target@1';
 
-// Three r184 forces these effective source states inside
+// Three r185 forces these effective source states inside
 // fromEquirectangularTexture() before CubeCamera renders. The config helper is
 // called at different points by offline and rewritten paths, so canonicalize
 // the effective draw state instead of signing the caller's pre-call values.

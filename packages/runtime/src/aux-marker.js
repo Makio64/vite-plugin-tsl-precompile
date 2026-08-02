@@ -16,21 +16,48 @@
  * @module AuxMarker
  */
 
-import { hashNodeGraphSync, hashPlainConfigSync } from './graph-hash.js';
+import { hashArtifactContentSync, hashNodeGraphSync, hashPlainConfigSync } from './graph-hash.js';
 import { registerAuxArtifact } from './aux-loader.js';
-import { cloneRenderTargetForCapture } from './capture-render-target.js';
+import {
+	cloneRenderTargetForCapture,
+	takeBackgroundCaptureRenderTargets,
+} from './capture-render-target.js';
 import {
 	assertCubeRenderTargetSourceTexture,
+	awaitRendererCompileQuiescence,
 	captureCubeRenderTargetLive,
 } from './auxiliary/cube-render-target-capture.js';
 import { takeRenderObjectHarvest } from './auxiliary/render-object-harvest-handoff.js';
 import { collectEffectNodes } from './slim-support/postprocess-effects.js';
+import {
+	collectPMREMSourceTexturesFromMaterial,
+	collectPMREMSourceTexturesInNode,
+} from './slim-support/pmrem.js';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
-import { stringifyArtifactJson } from '@tsl-precompile/contract/artifact-content';
+import { ARTIFACT_CONTENT_HASH_VERSION, stringifyArtifactJson } from '@tsl-precompile/contract/artifact-content';
 import { createRenderPipelineConfig } from '@tsl-precompile/contract/output-config';
-import { collectArtifactVariantCandidates, mergeArtifactVariantFamily } from '@tsl-precompile/contract/artifact-variants';
+import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
+import {
+	collectArtifactVariantCandidates,
+	createArtifactVariantPayloadFingerprint,
+	mergeArtifactVariantFamily,
+} from '@tsl-precompile/contract/artifact-variants';
+import {
+	assertInternalPassFamily,
+	assertInternalPassFamilyStages,
+} from '@tsl-precompile/contract/internal-pass';
+import {
+	createPMREMLayoutConfig,
+	createPMREMSourceTopologyKey,
+	createPMREMSupportConfig,
+	pmremRequiredStages,
+	pmremSourceInputTopology,
+} from '@tsl-precompile/contract/pmrem-config';
+import { createBackgroundCaptureTargetTopologyKey } from '@tsl-precompile/contract/render-selector';
+import { recordDevCaptureOutcome, recordDevCaptureResults } from './dev-capture-outcome.js';
 
 const logged = new Set();
+let isolatedCaptureMaterialSerial = 0;
 function logOnce( key, fn ) {
 
 	if ( logged.has( key ) ) return;
@@ -102,7 +129,7 @@ async function captureAndPublishRendererOutput( renderer, scene, camera, opts, h
 			configHash,
 			artifact,
 			name: `aux-${ shape }-${ configHash.slice( 0, 12 ) }`,
-		}, shape, configHash );
+		}, shape, configHash, hashOpts );
 
 	} catch ( err ) {
 
@@ -138,9 +165,18 @@ export async function precompileRendererOutput( renderer, scene, camera, opts = 
 
 	if ( typeof window !== 'undefined' ) window.__tslpPrecompilePending = ( window.__tslpPrecompilePending | 0 ) + 1;
 
+	let captureResults = null;
 	try {
 
-		if ( ! opts.compileTSL && ( await lazyLoadCompileTSL() ) === null ) return [];
+		if (
+			Object.prototype.hasOwnProperty.call( opts, 'compileTSL' ) && opts.compileTSL === null ||
+			! opts.compileTSL && ( await lazyLoadCompileTSL() ) === null
+		) {
+
+			recordDevCaptureOutcome( false );
+			return [];
+
+		}
 		if ( typeof opts.threeVersion !== 'string' || opts.threeVersion.length === 0 ) {
 
 			throw new Error( 'precompileRendererOutput: opts.threeVersion is required.' );
@@ -150,10 +186,17 @@ export async function precompileRendererOutput( renderer, scene, camera, opts = 
 			threeVersion: opts.threeVersion,
 			pluginVersion: opts.pluginVersion || ARTIFACT_TOOLCHAIN_VERSION,
 		};
-		return [ await captureAndPublishRendererOutput( renderer, scene, camera, opts, hashOpts ) ];
+		captureResults = [ await captureAndPublishRendererOutput( renderer, scene, camera, opts, hashOpts ) ];
+		return captureResults;
+
+	} catch ( error ) {
+
+		recordDevCaptureOutcome( false );
+		throw error;
 
 	} finally {
 
+		if ( captureResults ) recordDevCaptureResults( captureResults );
 		if ( typeof window !== 'undefined' ) window.__tslpPrecompilePending = Math.max( 0, ( window.__tslpPrecompilePending | 0 ) - 1 );
 
 	}
@@ -168,6 +211,7 @@ export async function precompileRendererOutput( renderer, scene, camera, opts = 
  * @param {Object} camera - A camera valid for the scene.
  * @param {Object} opts
  * @param {string} opts.devEndpoint - e.g. '/__tsl-precompile/capture'.
+ * @param {?string} [opts.backgroundName] - Friendly semantic name for the background capture.
  * @param {?Object} [opts.renderPipeline] - A RenderPipeline whose real final material should be captured.
  * @param {?string} [opts.renderPipelineName] - Friendly name for the RenderPipeline capture.
  * @param {?Object} [opts.renderPipelineTarget] - RenderTarget topology used by the pipeline's final quad.
@@ -179,9 +223,13 @@ export async function precompileRendererOutput( renderer, scene, camera, opts = 
  * @param {?Object} [opts.cubeRenderTargetOptions] - Destination options used
  *   when the application constructs its CubeRenderTarget. Format/MSAA/depth
  *   topology participates in the capture hash.
- * @param {?Object} [opts.three] - The three module (fallback to scene's constructor's module).
+ * @param {?Array<number>} [opts.pmremSceneSizes] - Explicit
+ *   `PMREMGenerator.fromScene(..., { size })` sizes used by the application.
+ *   This is required for fromScene-only layouts because the generated PMREM
+ *   texture does not retain its source scene or requested size.
+ * @param {?Object} [opts.three] - The `three/webgpu` module namespace.
  * @param {?Object} [opts.tsl] - The `three/tsl` namespace. Loaded lazily when omitted.
- * @param {string} [opts.threeVersion='unknown']
+ * @param {string} opts.threeVersion - Exact resolved Three package version, e.g. `0.185.1`.
  * @param {string} [opts.pluginVersion=ARTIFACT_TOOLCHAIN_VERSION]
  * @return {Promise<Array<{ shape: string, configHash: string, ok: boolean, error?: string }>>}
  */
@@ -204,11 +252,19 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 		// production bundle. When it fails, every downstream capture step would
 		// throw — silently no-op the whole call instead so adopters don't need
 		// `if ( import.meta.env.DEV )` guards in their app code.
-		if ( ! opts.compileTSL && ( await lazyLoadCompileTSL() ) === null ) return [];
+		if (
+			Object.prototype.hasOwnProperty.call( opts, 'compileTSL' ) && opts.compileTSL === null ||
+			! opts.compileTSL && ( await lazyLoadCompileTSL() ) === null
+		) {
+
+			recordDevCaptureOutcome( false );
+			return [];
+
+		}
 
 	if ( typeof opts.threeVersion !== 'string' || opts.threeVersion.length === 0 ) {
 
-		throw new Error( 'precompileAuxiliary: opts.threeVersion is required (>= 184). Pass `threeVersion: String(THREE.REVISION).match(/^\\d+/)[0]` (e.g. "184").' );
+		throw new Error( 'precompileAuxiliary: opts.threeVersion is required. Pass the exact resolved Three package version (for example, globalThis.__TSLP_THREE_PACKAGE_VERSION__ in Vite).' );
 
 	}
 	const hashOpts = {
@@ -235,24 +291,36 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 
 	// Background -------------------------------------------------------------
 	const backgroundInput = scene && ( scene.backgroundNode || scene.background );
-	if ( backgroundInput ) {
+	if ( backgroundInput && backgroundInput.isColor !== true ) {
 
 		const shape = 'background';
 		try {
 
-			const configHash = hashNodeGraphSync( backgroundInput, { shape, ...hashOpts } );
+			const graphConfigHash = hashNodeGraphSync( backgroundInput, { shape, ...hashOpts } );
+			const requestedName = opts.backgroundName || null;
+			const configHash = requestedName ? hashPlainConfigSync( {
+				graphConfigHash,
+				semanticName: requestedName,
+			}, { shape, ...hashOpts } ) : graphConfigHash;
+			const captureName = requestedName || `aux-${ shape }-${ configHash.slice( 0, 12 ) }`;
 			const artifact = await captureBackgroundLive( renderer, scene, camera, mrtNode ? { ...opts, mrtNode } : opts );
-			trackLocal( shape, configHash, artifact );
+			trackLocal( shape, configHash, artifact, captureName );
 			results.push( await post( opts.devEndpoint, {
 				materialShape: shape,
 				configHash,
 				artifact,
-				name: `aux-${ shape }-${ configHash.slice( 0, 12 ) }`,
-			}, shape, configHash ) );
+				name: captureName,
+			}, shape, configHash, hashOpts ) );
 
 		} catch ( err ) {
 
-			results.push( { shape, configHash: null, ok: false, error: err && err.message || String( err ) } );
+			results.push( {
+				shape,
+				configHash: null,
+				ok: false,
+				error: err && err.message || String( err ),
+				...( err && typeof err.stack === 'string' ? { stack: err.stack } : {} ),
+			} );
 
 		}
 
@@ -286,7 +354,7 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 				configHash,
 				artifact,
 				name: captureName,
-			}, shape, configHash ) );
+			}, shape, configHash, hashOpts ) );
 			for ( const extra of extraArtifacts ) {
 
 				if ( ! extra || ! extra.shape || ! extra.configHash || ! extra.artifact ) continue;
@@ -296,13 +364,19 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 					configHash: extra.configHash,
 					artifact: extra.artifact,
 					name: `aux-${ extra.shape }-${ extra.configHash.slice( 0, 12 ) }`,
-				}, extra.shape, extra.configHash ) );
+				}, extra.shape, extra.configHash, hashOpts ) );
 
 			}
 
 		} catch ( err ) {
 
-			results.push( { shape, configHash: null, ok: false, error: err && err.message || String( err ) } );
+			results.push( {
+				shape,
+				configHash: null,
+				ok: false,
+				error: err && err.message || String( err ),
+				...( err && typeof err.stack === 'string' ? { stack: err.stack } : {} ),
+			} );
 
 		}
 
@@ -355,7 +429,7 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 					configHash,
 					artifact,
 					name: `aux-${ shape }-${ configHash.slice( 0, 12 ) }`,
-				}, shape, configHash ) );
+				}, shape, configHash, hashOpts ) );
 
 			} catch ( err ) {
 
@@ -414,7 +488,7 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 					configHash,
 					artifact,
 					name: `aux-${ shape }-${ configHash.slice( 0, 12 ) }`,
-				}, shape, configHash ) );
+				}, shape, configHash, hashOpts ) );
 
 			} catch ( err ) {
 
@@ -453,7 +527,7 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 				configHash,
 				artifact: lightsArtifact,
 				name: `aux-${ shape }-${ configHash.slice( 0, 12 ) }`,
-			}, shape, configHash ) );
+			}, shape, configHash, hashOpts ) );
 
 		} catch ( err ) {
 
@@ -469,25 +543,89 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 		const shape = 'shadow-depth';
 		try {
 
-			const artifact = await captureShadowDepthLive( renderer, scene, camera, opts );
-			if ( artifact ) {
+			const capturedShadowPasses = await captureShadowPassesLive( renderer, scene, camera, opts );
+			const artifact = capturedShadowPasses.depth;
+			if ( ! artifact ) {
 
-				const signature = shadowLights
-					.map( ( l ) => `${ l.type || l.constructor && l.constructor.name || 'Light' }:${ l.shadow && l.shadow.mapSize ? `${ l.shadow.mapSize.width }x${ l.shadow.mapSize.height }` : 'shadow' }` )
-					.sort();
-				const cacheKeys = collectArtifactVariantCandidates( artifact )
-					.map( ( candidate ) => candidate.cacheKey )
-					.filter( ( key ) => key !== undefined && key !== null )
-					.map( ( key ) => String( key ) )
-					.sort();
-				const configHash = hashPlainConfigSync( { signature, cacheKeys }, { shape, ...hashOpts } );
-				trackLocal( shape, configHash, artifact );
-				results.push( await post( opts.devEndpoint, {
-					materialShape: shape,
-					configHash,
-					artifact,
-					name: `aux-${ shape }-${ configHash.slice( 0, 12 ) }`,
-				}, shape, configHash ) );
+				throw new Error( 'shadow internal-pass family is missing the expected shadow-depth stage.' );
+
+			}
+			const vsmLights = shadowLights.filter( ( light ) => light && ! light.isPointLight );
+			const presentVsmStages = [
+				capturedShadowPasses.vsmVertical && 'vertical',
+				capturedShadowPasses.vsmHorizontal && 'horizontal',
+			].filter( Boolean );
+			const expectsVsm = vsmLights.length > 0 && (
+				presentVsmStages.length > 0 ||
+				opts.expectVSM === true ||
+				( Number.isFinite( opts.three?.VSMShadowMap ) && renderer?.shadowMap?.type === opts.three.VSMShadowMap )
+			);
+			if ( expectsVsm ) assertInternalPassFamilyStages(
+				'shadow-vsm',
+				presentVsmStages,
+				{ expectedStages: [ 'vertical', 'horizontal' ] },
+			);
+			const vsmSupportConfig = capturedShadowPasses.vsmVertical?.internalPass?.config ||
+				capturedShadowPasses.vsmHorizontal?.internalPass?.config ||
+				null;
+			if ( expectsVsm ) assertInternalPassFamily(
+				[ capturedShadowPasses.vsmVertical, capturedShadowPasses.vsmHorizontal ],
+				{
+					family: 'shadow-vsm',
+					expectedStages: [ 'vertical', 'horizontal' ],
+					config: vsmSupportConfig,
+				},
+			);
+
+			const signature = shadowLights
+				.map( ( l ) => `${ l.type || l.constructor && l.constructor.name || 'Light' }:${ l.shadow && l.shadow.mapSize ? `${ l.shadow.mapSize.width }x${ l.shadow.mapSize.height }` : 'shadow' }` )
+				.sort();
+			const cacheKeys = collectArtifactVariantCandidates( artifact )
+				.map( ( candidate ) => candidate.cacheKey )
+				.filter( ( key ) => key !== undefined && key !== null )
+				.map( ( key ) => String( key ) )
+				.sort();
+			const configHash = hashPlainConfigSync( { signature, cacheKeys }, { shape, ...hashOpts } );
+			trackLocal( shape, configHash, artifact );
+			const depthPayload = {
+				materialShape: shape,
+				configHash,
+				artifact,
+				name: `aux-${ shape }-${ configHash.slice( 0, 12 ) }`,
+			};
+
+			if ( expectsVsm ) {
+
+				const vsmConfigHash = hashPlainConfigSync(
+					vsmSupportConfig,
+					{ shape: 'shadow-vsm', ...hashOpts },
+				);
+				const familyPayloads = [ depthPayload ];
+				for ( const [ stage, vsmArtifact ] of [
+					[ 'vertical', capturedShadowPasses.vsmVertical ],
+					[ 'horizontal', capturedShadowPasses.vsmHorizontal ],
+				] ) {
+
+					const vsmShape = `shadow-vsm-${ stage }`;
+					trackLocal( vsmShape, vsmConfigHash, vsmArtifact );
+					familyPayloads.push( {
+						materialShape: vsmShape,
+						configHash: vsmConfigHash,
+						artifact: vsmArtifact,
+						name: `aux-${ vsmShape }-${ vsmConfigHash.slice( 0, 12 ) }`,
+					} );
+
+				}
+				results.push( ...await postAuxiliaryFamily(
+					opts.devEndpoint,
+					'shadow-vsm',
+					familyPayloads,
+					hashOpts,
+				) );
+
+			} else {
+
+				results.push( await post( opts.devEndpoint, depthPayload, shape, configHash, hashOpts ) );
 
 			}
 
@@ -501,7 +639,7 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 
 	// CubeRenderTarget equirectangular conversion ---------------------------
 	// CubeRenderTarget.fromEquirectangularTexture() creates a private
-	// NodeMaterial at call time. Capture the exact r184 material graph once for
+	// NodeMaterial at call time. Capture the exact r185 material graph once for
 	// every live source texture so the slim source rewrite can replace that
 	// private compiler path with a precompiled artifact. Explicit options and
 	// scene-level discovery share one identity set: the same Texture referenced
@@ -532,7 +670,7 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 					configHash,
 					artifact,
 					name: `aux-${ shape }-${ configHash.slice( 0, 12 ) }`,
-				}, shape, configHash ) );
+				}, shape, configHash, hashOpts ) );
 
 			} catch ( err ) {
 
@@ -545,49 +683,74 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 	}
 
 	// PMREM ------------------------------------------------------------------
-	// Discover every (kind, sourceWidth, sourceHeight) signature reachable
-	// from the scene that PMREMGenerator could be invoked on. For each unique
-	// signature, capture the 4 internal materials (cubemap, equirect, blur,
-	// ggx) so the slim renderer can drive PMREM through its precompiled
-	// material path. Over-capturing is safe — the runtime only loads the
-	// signatures it actually looks up via loadAux('pmrem-<sub>', hash).
+	// Group reachable inputs by rounded atlas layout, then capture one fresh
+	// family per source topology plus one explicit scene family.
 	{
 
-		const inputs = collectPMREMInputs( scene );
-		for ( const { sourceTexture, kind } of inputs ) {
+		let layouts = [];
+		try {
 
-			try {
+			layouts = collectPMREMInputs( scene, opts, renderer );
 
-				const configInput = {
-					kind,
-					width: sourceTexture.image ? sourceTexture.image.width | 0 : 0,
-					height: sourceTexture.image ? sourceTexture.image.height | 0 : 0,
-					format: sourceTexture.format || 'unknown',
-					type: sourceTexture.type || 'unknown',
-				};
-				const configHash = hashPlainConfigSync( configInput, { shape: 'pmrem', ...hashOpts } );
-				const captured = await capturePMREMLive( renderer, sourceTexture, kind, opts );
-				for ( const subKind of [ 'cubemap', 'equirect', 'blur', 'ggx' ] ) {
+		} catch ( err ) {
 
-					const subArtifact = captured[ subKind ];
-					if ( ! subArtifact ) continue;
-					const subShape = `pmrem-${ subKind }`;
-					trackLocal( subShape, configHash, subArtifact );
-					results.push( await post( opts.devEndpoint, {
-						materialShape: subShape,
-						configHash,
-						artifact: subArtifact,
-						name: `aux-${ subShape }-${ configHash.slice( 0, 12 ) }`,
-					}, subShape, configHash ) );
+			results.push( { shape: 'pmrem', configHash: null, ok: false, error: err && err.message || String( err ) } );
+
+		}
+		for ( const layout of layouts ) {
+
+			for ( const captureJob of createPMREMCaptureJobs( layout ) ) {
+
+				try {
+
+					const captured = await capturePMREMLive( renderer, captureJob, opts );
+					const supportConfig = captured.supportConfig;
+					const configHash = hashPlainConfigSync( supportConfig, { shape: 'pmrem', ...hashOpts } );
+					const expectedStages = pmremRequiredStages( supportConfig.profile );
+					assertInternalPassFamilyStages(
+						'pmrem',
+						Object.keys( captured ),
+						{ profile: supportConfig.profile, config: supportConfig },
+					);
+					assertInternalPassFamily(
+						expectedStages.map( ( stage ) => captured[ stage ] ),
+						{ family: 'pmrem', profile: supportConfig.profile, config: supportConfig },
+					);
+					const familyPayloads = [];
+					for ( const subKind of [ 'cubemap', 'equirect', 'blur', 'ggx' ] ) {
+
+						const subArtifact = captured[ subKind ];
+						if ( ! subArtifact ) continue;
+						const subShape = `pmrem-${ subKind }`;
+						trackLocal( subShape, configHash, subArtifact );
+						familyPayloads.push( {
+							materialShape: subShape,
+							configHash,
+							artifact: subArtifact,
+							name: `aux-${ subShape }-${ configHash.slice( 0, 12 ) }`,
+						} );
+
+					}
+					results.push( ...await postAuxiliaryFamily(
+						opts.devEndpoint,
+						'pmrem',
+						familyPayloads,
+						hashOpts,
+					) );
+
+				} catch ( err ) {
+
+					results.push( {
+						shape: 'pmrem',
+						configHash: null,
+						profile: captureJob.profile,
+						error: err && err.message || String( err ),
+						ok: false,
+					} );
 
 				}
 
-			} catch ( err ) {
-
-				results.push( { shape: 'pmrem', configHash: null, ok: false, error: err && err.message || String( err ) } );
-
 			}
-
 		}
 
 	}
@@ -595,12 +758,18 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 	// Renderer output transform ---------------------------------------------
 	results.push( await captureAndPublishRendererOutput( renderer, scene, camera, opts, hashOpts ) );
 
+	} catch ( error ) {
+
+		recordDevCaptureOutcome( false );
+		throw error;
+
 	} finally {
 
 		if ( typeof window !== 'undefined' ) window.__tslpPrecompilePending = Math.max( 0, ( window.__tslpPrecompilePending | 0 ) - 1 );
 
 	}
 
+	recordDevCaptureResults( results );
 	return results;
 
 }
@@ -617,49 +786,96 @@ async function captureBackgroundLive( renderer, scene, camera, opts ) {
 	const three = opts.three || scene.constructor && scene.constructor.__three || null;
 	const compileTSL = opts.compileTSL || ( await lazyLoadCompileTSL() );
 
-	// Build a minimal throwaway scene with the same backgroundNode. We don't
-	// want to mutate the user's scene (compileTSL attaches debug side-cars).
 	const Ctor = opts.Scene || ( three && three.Scene ) || scene.constructor;
-	const aux = new Ctor();
-	aux.backgroundNode = scene.backgroundNode;
-	aux.background = scene.background;
-
 	const mrtNode = opts.mrtNode || scene && scene.userData && scene.userData.__tslp_mrtNode || null;
 	const passNode = opts.passNode && opts.passNode.isPassNode && opts.passNode.scene === scene ? opts.passNode : null;
-	const renderTargetOverride = cloneRenderTargetForCapture( passNode && passNode.renderTarget );
+	const targetContexts = takeBackgroundCaptureRenderTargets( scene, renderer );
+	const appendTargetContext = ( renderTarget, contextMRT ) => {
 
-	// Plain aux scenes must not inherit a global MRT from the host renderer,
-	// but PassNode MRT backgrounds do need the explicit pass descriptor so the
-	// sky material emits the same multi-output fragment as the live pass. A
-	// background rendered by a non-MRT PassNode still owns an offscreen target;
-	// compile against a structural clone so its target selector and output
-	// format match without clearing or disposing the live pass resources.
-	const compileOpts = mrtNode ? { mrtNode } : { noGlobalMRT: true };
-	if ( renderTargetOverride ) compileOpts.renderTargetOverride = renderTargetOverride;
-	let artifacts;
+		const exactRenderTarget = renderTarget || null;
+		const exactMRT = contextMRT || null;
+		const topologyKey = createBackgroundCaptureTargetTopologyKey( renderer, exactRenderTarget, exactMRT );
+		if ( targetContexts.some( ( context ) => context.topologyKey === topologyKey ) ) return;
+		targetContexts.push( {
+			topologyKey,
+			captureRenderTarget: null,
+			liveRenderTarget: exactRenderTarget,
+			mrtNode: exactMRT,
+			ownsRenderTarget: false,
+		} );
+
+	};
+	if ( passNode ) appendTargetContext( passNode.renderTarget, opts.mrtNode || passNode._mrt || null );
+	if ( targetContexts.length === 0 ) appendTargetContext( passNode && passNode.renderTarget, mrtNode );
+
+	const backgroundArtifacts = [];
+	const renderTargetsToDispose = new Set(
+		targetContexts
+			.filter( ( context ) => context.ownsRenderTarget && context.captureRenderTarget )
+			.map( ( context ) => context.captureRenderTarget ),
+	);
+	let uncloneableTargetContexts = 0;
 	try {
 
-		artifacts = await compileTSL( renderer, aux, camera, compileOpts );
+		for ( const targetContext of targetContexts ) {
+
+			// Build one minimal throwaway scene per observed target. Reusing a scene
+			// would let Three's Background manager reuse the first target's cached
+			// material and hide later exact attachment variants.
+			const aux = new Ctor();
+			aux.backgroundNode = scene.backgroundNode;
+			aux.background = scene.background;
+
+			const liveRenderTarget = targetContext.liveRenderTarget || null;
+			const renderTargetOverride = targetContext.captureRenderTarget ||
+				cloneRenderTargetForCapture( liveRenderTarget );
+			if ( liveRenderTarget && ! renderTargetOverride ) {
+
+				uncloneableTargetContexts ++;
+				continue;
+
+			}
+			if ( renderTargetOverride ) renderTargetsToDispose.add( renderTargetOverride );
+
+			// Plain aux scenes must not inherit a global MRT from the host renderer,
+			// while an observed MRT background needs the exact descriptor paired with
+			// its target. compileTSL borrows the disposable clone transactionally and
+			// restores the renderer's target/MRT state before returning.
+			const contextMRT = targetContext.mrtNode || null;
+			const compileOpts = contextMRT ? { mrtNode: contextMRT } : { noGlobalMRT: true };
+			if ( renderTargetOverride ) compileOpts.renderTargetOverride = renderTargetOverride;
+			const artifacts = await compileTSL( renderer, aux, camera, compileOpts );
+			const mesh = renderer._background && typeof renderer._background.get === 'function' ? renderer._background.get( aux ).backgroundMesh : null;
+			let artifact = null;
+			for ( const candidate of artifacts ) {
+
+				if ( candidate.materialShape === 'background' ) { artifact = candidate; break; }
+				if ( candidate.name === 'Background.material' || candidate.materialName === 'Background.material' ) { artifact = candidate; break; }
+				if ( mesh && candidate.materialUuid === mesh.material.uuid ) { artifact = candidate; break; }
+
+			}
+			if ( ! artifact ) throw new Error( 'captureBackgroundLive: could not locate Background artifact among ' + artifacts.length );
+			backgroundArtifacts.push( artifact );
+
+		}
+
+		if ( backgroundArtifacts.length === 0 && uncloneableTargetContexts > 0 ) {
+
+			throw new Error( 'captureBackgroundLive: could not clone any observed background render target.' );
+
+		}
 
 	} finally {
 
-		if ( renderTargetOverride ) {
+		for ( const renderTarget of renderTargetsToDispose ) {
 
-			try { renderTargetOverride.dispose(); } catch ( _ ) {}
+			try { renderTarget.dispose(); } catch ( _ ) {}
 
 		}
 
 	}
-	const mesh = renderer._background && typeof renderer._background.get === 'function' ? renderer._background.get( aux ).backgroundMesh : null;
-	let artifact = null;
-	for ( const a of artifacts ) {
-
-		if ( a.materialShape === 'background' ) { artifact = a; break; }
-		if ( a.name === 'Background.material' || a.materialName === 'Background.material' ) { artifact = a; break; }
-		if ( mesh && a.materialUuid === mesh.material.uuid ) { artifact = a; break; }
-
-	}
-	if ( ! artifact ) throw new Error( 'captureBackgroundLive: could not locate Background artifact among ' + artifacts.length );
+	const artifact = backgroundArtifacts[ 0 ];
+	if ( backgroundArtifacts.length > 1 ) mergeArtifactVariantFamily( artifact, backgroundArtifacts );
 	return jsonSafe( artifact );
 
 }
@@ -668,45 +884,108 @@ async function capturePostProcessingLive( renderer, renderPipeline, scene, camer
 
 	const three = opts.three || null;
 	const compileTSL = opts.compileTSL || ( await lazyLoadCompileTSL() );
-
-	// Compile through the real pipeline so the artifact includes Three's
-	// context wrapper and implicit renderOutput(toneMapping, colorSpace) pass.
-	if ( ! three || ! three.Scene ) {
-
-		throw new Error( 'capturePostProcessingLive: opts.three must expose Scene' );
-
-	}
-	const captureScene = new three.Scene();
-	const captureCamera = camera || opts.camera || ( three.PerspectiveCamera ? new three.PerspectiveCamera( 45, 1, 0.1, 100 ) : null );
-	// A pipeline may already have rendered before capture. Force `_update()` so
-	// a recently changed outputNode/transform flag cannot reuse stale WGSL.
-	renderPipeline.needsUpdate = true;
-
-	// Isolate this aux capture from any global MRT the host might have set
-	// (e.g. webgpu_multiple_rendertargets's `renderer.setMRT(...)` in init).
-	// Otherwise compileTSL would inherit it and emit a multi-output fragment
-	// for our single-output post-process material, crashing WGSL validation.
-	// A pipeline final quad may intentionally render to an offscreen target.
-	// compileTSL deliberately ignores an ambient renderer target, so make that
-	// topology explicit and clone it before the synthetic render. This keeps
-	// accidental host state isolated while allowing authored multi-stage
-	// pipelines (for example, output-transform -> FXAA) to capture the selector
-	// they actually use in production.
-	const liveRenderTarget = opts.renderPipelineTarget || null;
-	const renderTargetOverride = cloneRenderTargetForCapture( liveRenderTarget );
-	if ( liveRenderTarget && ! renderTargetOverride ) {
-
-		throw new Error( 'capturePostProcessingLive: opts.renderPipelineTarget must be a cloneable RenderTarget' );
-
-	}
-	let artifacts;
+	let liveEffectSetupState = [];
+	let liveEffectCaptureCleanups = [];
+	let renderTargetOverride = null;
+	let isolatedPipeline = null;
+	let captureScene = null;
+	let artifact = null;
+	let liveUpdateBeforeNodes = [];
+	let isolatedMaterial = null;
 	try {
 
-		artifacts = await compileTSL( renderer, captureScene, captureCamera, {
-			renderPipeline,
+	if ( ! three || ! three.Scene || typeof three.QuadMesh !== 'function' ) {
+
+		throw new Error( 'capturePostProcessingLive: opts.three must expose Scene and QuadMesh' );
+
+	}
+	let artifactsPromise = null;
+	await awaitRendererCompileQuiescence( renderer, () => {
+
+		liveEffectSetupState = snapshotEffectSetupState( renderPipeline.outputNode, [
+			renderPipeline && renderPipeline._quadMesh && renderPipeline._quadMesh.material
+				? renderPipeline._quadMesh.material.fragmentNode
+				: null,
+		] );
+		for ( const { handler, node } of collectEffectNodes( renderPipeline.outputNode ) ) {
+
+			if ( typeof handler.prepareCapture !== 'function' ) continue;
+			const cleanup = handler.prepareCapture( node, { renderer } );
+			if ( typeof cleanup === 'function' ) liveEffectCaptureCleanups.push( cleanup );
+
+		}
+
+		// Never warm or compile the caller's live RenderPipeline material. Three
+		// r185 compileAsync() executes every builder updateBefore node and the
+		// historical renderPipeline warm-up executes the full Pass/GTAO/Bloom graph
+		// again. Both paths can poison backend caches keyed by those live identities.
+		// Build only a private final-quad identity, suppress its update phases, and
+		// capture the handler-owned sub-passes separately below.
+		const Pipeline = renderPipeline && renderPipeline.constructor;
+		if ( typeof Pipeline !== 'function' ) throw new Error( 'capturePostProcessingLive: renderPipeline must expose a constructor' );
+		isolatedPipeline = new Pipeline( renderer, renderPipeline.outputNode );
+		if ( ! isolatedPipeline || isolatedPipeline === renderPipeline || typeof isolatedPipeline._update !== 'function' ) {
+
+			throw new Error( 'capturePostProcessingLive: could not construct an isolated RenderPipeline' );
+
+		}
+		isolatedPipeline.outputNode = renderPipeline.outputNode;
+		isolatedPipeline.outputColorTransform = renderPipeline.outputColorTransform === true;
+		if ( Object.hasOwn( renderPipeline, '_toneMapping' ) ) isolatedPipeline._toneMapping = renderPipeline._toneMapping;
+		if ( Object.hasOwn( renderPipeline, '_outputColorSpace' ) ) isolatedPipeline._outputColorSpace = renderPipeline._outputColorSpace;
+		isolatedPipeline.needsUpdate = true;
+		isolatedPipeline._update();
+
+		const isolatedQuad = isolatedPipeline._quadMesh;
+		isolatedMaterial = isolatedQuad && isolatedQuad.material;
+		const liveMaterial = renderPipeline._quadMesh && renderPipeline._quadMesh.material;
+		if (
+			! isolatedQuad
+			|| ! isolatedMaterial
+			|| isolatedMaterial === liveMaterial
+			|| ( liveMaterial && isolatedMaterial.uuid === liveMaterial.uuid )
+		) {
+
+			throw new Error( 'capturePostProcessingLive: isolated pipeline must own a distinct final material UUID' );
+
+		}
+		isolateCaptureMaterialCacheKey( isolatedMaterial, 'post-process' );
+		captureScene = new three.Scene();
+		captureScene.add( isolatedQuad );
+		const captureCamera = isolatedQuad.camera || camera || opts.camera
+			|| ( three.PerspectiveCamera ? new three.PerspectiveCamera( 45, 1, 0.1, 100 ) : null );
+
+		const liveRenderTarget = opts.renderPipelineTarget || null;
+		renderTargetOverride = cloneRenderTargetForCapture( liveRenderTarget );
+		if ( liveRenderTarget && ! renderTargetOverride ) {
+
+			throw new Error( 'capturePostProcessingLive: opts.renderPipelineTarget must be a cloneable RenderTarget' );
+
+		}
+		const workingColorSpace = three.ColorManagement && three.ColorManagement.workingColorSpace;
+		if ( three.NoToneMapping === undefined || workingColorSpace == null ) {
+
+			throw new Error( 'capturePostProcessingLive: opts.three must expose NoToneMapping and ColorManagement.workingColorSpace' );
+
+		}
+		artifactsPromise = compileTSL( renderer, captureScene, captureCamera, {
 			noGlobalMRT: true,
+			skipWarmupRender: true,
+			skipNodeUpdatesForMaterials: [ isolatedMaterial ],
+			rendererStateOverride: {
+				toneMapping: three.NoToneMapping,
+				currentColorSpace: workingColorSpace,
+			},
 			...( renderTargetOverride ? { renderTargetOverride } : {} ),
 		} );
+
+	} );
+	const artifacts = await artifactsPromise;
+	artifact = artifacts.find( ( candidate ) => candidate && candidate.materialUuid === isolatedMaterial.uuid );
+	if ( ! artifact ) throw new Error( 'capturePostProcessingLive: no artifact correlated to the isolated final material' );
+	artifact.materialShape = 'post-process';
+	artifact.replayConfig = renderPipelineReplayMetadata( createRenderPipelineConfig( renderPipeline ) );
+	liveUpdateBeforeNodes = Array.isArray( artifact._liveUpdateBeforeNodes ) ? artifact._liveUpdateBeforeNodes.slice() : [];
 
 	} finally {
 
@@ -715,26 +994,177 @@ async function capturePostProcessingLive( renderer, renderPipeline, scene, camer
 			try { renderTargetOverride.dispose(); } catch ( _ ) {}
 
 		}
+		for ( let index = liveEffectCaptureCleanups.length - 1; index >= 0; index -- ) {
+
+			try { liveEffectCaptureCleanups[ index ](); } catch ( _ ) {}
+
+		}
+		restoreEffectSetupState( liveEffectSetupState );
+		if ( captureScene && isolatedPipeline && isolatedPipeline._quadMesh && typeof captureScene.remove === 'function' ) {
+
+			try { captureScene.remove( isolatedPipeline._quadMesh ); } catch ( _ ) {}
+
+		}
+		if ( isolatedPipeline ) {
+
+			try { isolatedPipeline.dispose(); } catch ( _ ) {
+
+				try { isolatedPipeline._quadMesh && isolatedPipeline._quadMesh.material.dispose(); } catch ( __ ) {}
+
+			}
+
+		}
 
 	}
-	const pipelineMaterial = renderPipeline._quadMesh && renderPipeline._quadMesh.material;
-	const artifact = artifacts.find( ( a ) => pipelineMaterial && a.materialUuid === pipelineMaterial.uuid )
-		|| artifacts.find( ( a ) => a.materialShape === 'render-pipeline' );
-	if ( ! artifact ) throw new Error( 'capturePostProcessingLive: no RenderPipeline artifact produced' );
-	artifact.materialShape = 'post-process';
-	artifact.replayConfig = renderPipelineReplayMetadata( createRenderPipelineConfig( renderPipeline ) );
+
+	// Restore caller-owned pipeline/effect state before starting the subsequent
+	// clone-isolated captures. Each compile coordinates with the renderer queue
+	// independently and must never inherit this synthetic pipeline context.
 	const extraArtifacts = await captureRegisteredEffectArtifactsLive( renderer, renderPipeline.outputNode, opts, hashOpts || {
 		threeVersion: opts.threeVersion,
 		pluginVersion: opts.pluginVersion || ARTIFACT_TOOLCHAIN_VERSION,
-	}, artifact._liveUpdateBeforeNodes );
+	}, liveUpdateBeforeNodes );
 	return { artifact: jsonSafe( artifact ), extraArtifacts };
 
 }
 
-async function captureShadowDepthLive( renderer, scene, camera, opts ) {
+function snapshotEffectSetupState( outputNode, extraRoots = [] ) {
+
+	const matches = collectEffectNodes( outputNode, { extraRoots } );
+	const seen = new Set();
+	const snapshots = [];
+	for ( const match of matches ) {
+
+		const node = match && match.node;
+		if ( ! node || seen.has( node ) ) continue;
+		seen.add( node );
+		snapshots.push( snapshotEffectNodeSetupState( node ) );
+
+	}
+	return snapshots;
+
+}
+
+function snapshotEffectNodeSetupState( node ) {
+
+	const properties = [];
+	const materialSnapshots = [];
+	const seenMaterials = new Set();
+	const snapshotMaterial = ( material ) => {
+
+		if ( ! material || typeof material !== 'object' || seenMaterials.has( material ) ) return;
+		seenMaterials.add( material );
+		const fields = [];
+		for ( const key of [ 'fragmentNode', 'vertexNode', 'outputNode', 'version' ] ) {
+
+			fields.push( {
+				key,
+				hadOwn: Object.hasOwn( material, key ),
+				descriptor: Object.hasOwn( material, key ) ? Object.getOwnPropertyDescriptor( material, key ) : null,
+			} );
+
+		}
+		materialSnapshots.push( { material, fields } );
+
+	};
+
+	for ( const [ key, descriptor ] of Object.entries( Object.getOwnPropertyDescriptors( node ) ) ) {
+
+		if ( ! /material/i.test( key ) || ! ( 'value' in descriptor ) ) continue;
+		const value = descriptor.value;
+		if ( Array.isArray( value ) ) {
+
+			const contents = value.slice();
+			properties.push( { key, descriptor, array: value, contents } );
+			for ( const material of contents ) snapshotMaterial( material );
+
+		} else {
+
+			properties.push( { key, descriptor, material: value } );
+			snapshotMaterial( value );
+
+		}
+
+	}
+	return { node, properties, materialSnapshots };
+
+}
+
+function restoreEffectSetupState( snapshots ) {
+
+	for ( let snapshotIndex = snapshots.length - 1; snapshotIndex >= 0; snapshotIndex -- ) {
+
+		const snapshot = snapshots[ snapshotIndex ];
+		for ( let materialIndex = snapshot.materialSnapshots.length - 1; materialIndex >= 0; materialIndex -- ) {
+
+			const { material, fields } = snapshot.materialSnapshots[ materialIndex ];
+			for ( let fieldIndex = fields.length - 1; fieldIndex >= 0; fieldIndex -- ) {
+
+				const field = fields[ fieldIndex ];
+				try {
+
+					if ( field.hadOwn ) Object.defineProperty( material, field.key, field.descriptor );
+					else delete material[ field.key ];
+
+				} catch ( _ ) { /* sealed custom materials remain caller-owned */ }
+
+			}
+
+		}
+		for ( let propertyIndex = snapshot.properties.length - 1; propertyIndex >= 0; propertyIndex -- ) {
+
+			const property = snapshot.properties[ propertyIndex ];
+			try {
+
+				if ( property.array ) {
+
+					const current = snapshot.node[ property.key ];
+					const originalMaterials = new Set( property.contents );
+					if ( Array.isArray( current ) ) {
+
+						for ( const material of current ) {
+
+							if ( originalMaterials.has( material ) || ! material || typeof material.dispose !== 'function' ) continue;
+							try { material.dispose(); } catch ( _ ) { /* ignore synthetic cleanup errors */ }
+
+						}
+
+					}
+					property.array.splice( 0, property.array.length, ...property.contents );
+
+				} else {
+
+					const originalMaterial = property.descriptor.value;
+					const currentMaterial = snapshot.node[ property.key ];
+					if (
+						currentMaterial !== originalMaterial
+						&& currentMaterial
+						&& typeof currentMaterial.dispose === 'function'
+					) {
+
+						try { currentMaterial.dispose(); } catch ( _ ) { /* ignore synthetic cleanup errors */ }
+
+					}
+
+				}
+				Object.defineProperty( snapshot.node, property.key, property.descriptor );
+
+			} catch ( _ ) { /* sealed custom effect nodes remain caller-owned */ }
+
+		}
+
+	}
+
+}
+
+async function captureShadowPassesLive( renderer, scene, camera, opts ) {
 
 	const compileTSL = opts.compileTSL || ( await lazyLoadCompileTSL() );
-	if ( ! compileTSL || ! scene || ! camera ) return null;
+	if ( ! compileTSL || ! scene || ! camera ) return {
+		depth: null,
+		vsmVertical: null,
+		vsmHorizontal: null,
+	};
 	const hasExplicitHarvest = Object.prototype.hasOwnProperty.call( opts, 'renderObjectHarvest' );
 	const stagedRenderObjectHarvest = hasExplicitHarvest
 		? opts.renderObjectHarvest
@@ -758,11 +1188,154 @@ async function captureShadowDepthLive( renderer, scene, camera, opts ) {
 		...( renderObjectHarvest ? { renderObjectHarvest } : {} ),
 	} );
 	const shadowArtifacts = artifacts.filter( ( artifact ) => artifact && artifact.materialShape === 'shadow-depth' );
-	if ( shadowArtifacts.length === 0 ) return null;
-	shadowArtifacts.sort( ( a, b ) => variantCount( b ) - variantCount( a ) || String( a.cacheKey ).localeCompare( String( b.cacheKey ) ) );
-	const artifact = shadowArtifacts[ 0 ];
-	mergeArtifactVariantFamily( artifact, shadowArtifacts );
-	return jsonSafe( artifact );
+	let depth = null;
+	if ( shadowArtifacts.length > 0 ) {
+
+		shadowArtifacts.sort( ( a, b ) => variantCount( b ) - variantCount( a ) || String( a.cacheKey ).localeCompare( String( b.cacheKey ) ) );
+		const disambiguated = disambiguateShadowVariantCacheKeys( shadowArtifacts, {
+			threeVersion: opts.threeVersion,
+			pluginVersion: opts.pluginVersion || ARTIFACT_TOOLCHAIN_VERSION,
+		} );
+		depth = shadowArtifacts[ 0 ];
+		if ( disambiguated ) {
+
+			// A flattened aggregate keeps root-only capture metadata while ensuring
+			// every represented family member carries its disambiguated key.
+			depth = { ...depth, ...disambiguated[ 0 ] };
+			delete depth.variants;
+			mergeArtifactVariantFamily( depth, [ depth, ...disambiguated.slice( 1 ) ] );
+
+		} else {
+
+			mergeArtifactVariantFamily( depth, shadowArtifacts );
+
+		}
+
+	}
+	const pickInternalPass = ( materialShape ) => {
+
+		const matches = artifacts.filter( ( candidate ) => candidate && candidate.materialShape === materialShape );
+		if ( matches.length === 0 ) return null;
+		matches.sort( ( a, b ) => variantCount( b ) - variantCount( a ) || String( a.cacheKey ).localeCompare( String( b.cacheKey ) ) );
+		const selected = matches[ 0 ];
+		if ( matches.length > 1 ) mergeArtifactVariantFamily( selected, matches );
+		return jsonSafe( selected );
+
+	};
+	return {
+		depth: depth ? jsonSafe( depth ) : null,
+		vsmVertical: pickInternalPass( 'shadow-vsm-vertical' ),
+		vsmHorizontal: pickInternalPass( 'shadow-vsm-horizontal' ),
+	};
+
+}
+
+/**
+ * Three's private shadow-material cache key can be reused across target
+ * topologies even when the resulting signed payload differs. In r185 this is
+ * observable when a 2D shadow pass carries `transparent: true` while the point
+ * light's cube-face pass omits that render-state field under the same numeric
+ * key. Signed render-context selectors are the authoritative routing contract,
+ * so disjoint selector sets can be represented safely by deterministic durable
+ * keys. If selectors overlap (or are absent), retain the original inputs and
+ * let mergeArtifactVariantFamily fail closed.
+ */
+function disambiguateShadowVariantCacheKeys( artifacts, hashOpts ) {
+
+	const candidates = artifacts.flatMap( ( artifact ) => collectArtifactVariantCandidates( artifact ) );
+	const byCacheKey = new Map();
+	for ( const candidate of candidates ) {
+
+		if ( ! candidate || candidate.cacheKey === undefined || candidate.cacheKey === null ) continue;
+		const cacheKey = String( candidate.cacheKey );
+		let group = byCacheKey.get( cacheKey );
+		if ( ! group ) {
+
+			group = [];
+			byCacheKey.set( cacheKey, group );
+
+		}
+		group.push( candidate );
+
+	}
+
+	const divergentKeys = new Set();
+	const fingerprints = new Map();
+	for ( const [ cacheKey, group ] of byCacheKey ) {
+
+		const byFingerprint = new Map();
+		for ( const candidate of group ) {
+
+			const fingerprint = createArtifactVariantPayloadFingerprint( candidate );
+			fingerprints.set( candidate, fingerprint );
+			let members = byFingerprint.get( fingerprint );
+			if ( ! members ) {
+
+				members = [];
+				byFingerprint.set( fingerprint, members );
+
+			}
+			members.push( candidate );
+
+		}
+		if ( byFingerprint.size < 2 ) continue;
+		const selectorOwner = new Map();
+		let selectorsAreDisjoint = true;
+		for ( const [ fingerprint, members ] of byFingerprint ) {
+
+			for ( const member of members ) {
+
+				const selectors = Array.isArray( member.renderContextSelectors )
+					? member.renderContextSelectors.filter( ( selector ) => typeof selector === 'string' && selector.length > 0 )
+					: [];
+				if ( selectors.length === 0 ) {
+
+					selectorsAreDisjoint = false;
+					break;
+
+				}
+				for ( const selector of selectors ) {
+
+					const owner = selectorOwner.get( selector );
+					if ( owner !== undefined && owner !== fingerprint ) {
+
+						selectorsAreDisjoint = false;
+						break;
+
+					}
+					selectorOwner.set( selector, fingerprint );
+
+				}
+				if ( ! selectorsAreDisjoint ) break;
+
+			}
+			if ( ! selectorsAreDisjoint ) break;
+
+		}
+		if ( ! selectorsAreDisjoint ) return null;
+		divergentKeys.add( cacheKey );
+
+	}
+	if ( divergentKeys.size === 0 ) return null;
+
+	return candidates.map( ( candidate ) => {
+
+		const clone = { ...candidate };
+		delete clone.variants;
+		const cacheKey = String( candidate.cacheKey );
+		if ( divergentKeys.has( cacheKey ) ) {
+
+			const fingerprint = fingerprints.get( candidate ) || createArtifactVariantPayloadFingerprint( candidate );
+			const suffix = hashPlainConfigSync( { cacheKey, fingerprint }, {
+				shape: 'shadow-depth-variant-key',
+				...hashOpts,
+			} );
+			clone.cacheKey = `${ cacheKey }:tslp-shadow:${ suffix }`;
+
+		}
+		return clone;
+
+	} ).sort( ( left, right ) => String( left.cacheKey ).localeCompare( String( right.cacheKey ) ) );
 
 }
 
@@ -794,28 +1367,116 @@ async function captureRegisteredEffectArtifactsLive( renderer, outputNode, opts,
 
 		const effectIndex = indexByHandler.get( handler.name ) || 0;
 		indexByHandler.set( handler.name, effectIndex + 1 );
+		const effectSetupState = [ snapshotEffectNodeSetupState( node ) ];
+		const jobs = [];
+		try {
 
-		if ( typeof handler.forceSetup === 'function' ) {
+			if ( typeof handler.forceSetup === 'function' ) {
 
-			try { handler.forceSetup( node, { renderer, sharedContext: {} } ); } catch ( _ ) {}
+				try {
+
+					handler.forceSetup( node, { renderer, sharedContext: {} } );
+
+				} catch ( error ) {
+
+					throw new Error(
+						`captureRegisteredEffectArtifactsLive: ${ handler.name } forceSetup failed: ${ error && error.message || String( error ) }`,
+					);
+
+				}
+
+			}
+
+			let subPasses = [];
+			try {
+
+				subPasses = handler.subPasses( node, effectIndex );
+
+			} catch ( error ) {
+
+				throw new Error(
+					`captureRegisteredEffectArtifactsLive: ${ handler.name } subPass discovery failed: ${ error && error.message || String( error ) }`,
+				);
+
+			}
+			if ( ! Array.isArray( subPasses ) || subPasses.length === 0 ) {
+
+				throw new Error( `captureRegisteredEffectArtifactsLive: ${ handler.name } returned no capturable sub-passes` );
+
+			}
+
+			for ( const subPass of subPasses ) {
+
+				if ( ! subPass || ! subPass.material || typeof subPass.shape !== 'string' ) {
+
+					throw new Error( `captureRegisteredEffectArtifactsLive: ${ handler.name } returned an invalid sub-pass` );
+
+				}
+				jobs.push( {
+					subPass,
+					configHash: hashPlainConfigSync( subPass.config || { type: subPass.shape }, { shape: subPass.shape, ...hashOpts } ),
+					captureMaterial: cloneEffectMaterialForCapture( subPass.material, subPass.shape ),
+					started: false,
+				} );
+
+			}
+
+		} catch ( error ) {
+
+			for ( const job of jobs ) {
+
+				try { job.captureMaterial.dispose(); } catch ( _ ) { /* ignore */ }
+
+			}
+			throw error;
+
+		} finally {
+
+			// forceSetup and sub-pass discovery may materialize or invalidate
+			// handler-owned graphs. All capture materials are cloned above, so
+			// restore the live effect before any asynchronous backend compile.
+			restoreEffectSetupState( effectSetupState );
 
 		}
 
-		let subPasses = [];
-		try { subPasses = handler.subPasses( node, effectIndex ); } catch ( _ ) { continue; }
-		if ( ! Array.isArray( subPasses ) ) continue;
+		try {
 
-		for ( const subPass of subPasses ) {
+			for ( const job of jobs ) {
 
-			if ( ! subPass || ! subPass.material || typeof subPass.shape !== 'string' ) continue;
+				const { subPass, configHash, captureMaterial } = job;
+				job.started = true;
+				try {
 
-			try {
+					const artifact = await captureNodeMaterialAsAuxLive(
+						renderer,
+						subPass.material,
+						opts,
+						compileTSL,
+						subPass.shape,
+						subPass.renderTargetHint || null,
+						subPass.captureOverrides || [],
+						captureMaterial,
+					);
+					out.push( { shape: subPass.shape, configHash, artifact } );
 
-				const configHash = hashPlainConfigSync( subPass.config || { type: subPass.shape }, { shape: subPass.shape, ...hashOpts } );
-				const artifact = await captureNodeMaterialAsAuxLive( renderer, subPass.material, opts, compileTSL, subPass.shape, subPass.renderTargetHint || null );
-				out.push( { shape: subPass.shape, configHash, artifact } );
+				} catch ( error ) {
 
-			} catch ( _ ) {}
+					throw new Error(
+						`captureRegisteredEffectArtifactsLive: ${ handler.name }/${ subPass.shape } capture failed: ${ error && error.message || String( error ) }`,
+					);
+
+				}
+
+			}
+
+		} finally {
+
+			for ( const job of jobs ) {
+
+				if ( job.started ) continue;
+				try { job.captureMaterial.dispose(); } catch ( _ ) { /* ignore */ }
+
+			}
 
 		}
 
@@ -825,56 +1486,192 @@ async function captureRegisteredEffectArtifactsLive( renderer, outputNode, opts,
 
 }
 
-async function captureNodeMaterialAsAuxLive( renderer, material, opts, compileTSL, shape, renderTargetHint = null ) {
+async function captureNodeMaterialAsAuxLive(
+	renderer,
+	material,
+	opts,
+	compileTSL,
+	shape,
+	renderTargetHint = null,
+	captureOverrides = [],
+	ownedCaptureMaterial = null,
+) {
 
 	const three = opts.three || null;
-	const scene = new three.Scene();
-	scene.add( new three.QuadMesh( material ) );
-	const camera = opts.camera || ( three.PerspectiveCamera ? new three.PerspectiveCamera( 45, 1, 0.1, 100 ) : null );
-
-	// Allocate a matching RenderTarget when the sub-pass declares a non-default
-	// fragment-output shape (DOF's `_CoCMaterial.outputNode = outputStruct(...)`
-	// emits a 2-attachment RedFormat/HalfFloat fragment that the default 1×1
-	// RGBA8 warm-up RT rejects). The hint is `{ count, format, type }`; missing
-	// fields fall back to three.js RenderTarget defaults.
-	const compileOpts = { noGlobalMRT: true };
+	const captureMaterial = ownedCaptureMaterial || cloneEffectMaterialForCapture( material, shape );
 	let auxRT = null;
-	if ( renderTargetHint && three && typeof three.RenderTarget === 'function' ) {
+	let overrideSnapshots = [];
+	try {
 
-		try {
+		const scene = new three.Scene();
+		scene.add( new three.QuadMesh( captureMaterial ) );
+		const camera = opts.camera || ( three.PerspectiveCamera ? new three.PerspectiveCamera( 45, 1, 0.1, 100 ) : null );
 
-			const rtOpts = { depthBuffer: false };
-			if ( typeof renderTargetHint.count === 'number' && renderTargetHint.count > 0 ) rtOpts.count = renderTargetHint.count;
-			if ( renderTargetHint.format != null ) rtOpts.format = renderTargetHint.format;
-			if ( renderTargetHint.type != null ) rtOpts.type = renderTargetHint.type;
-			auxRT = new three.RenderTarget( 1, 1, rtOpts );
-			compileOpts.renderTargetOverride = auxRT;
+		// Allocate a matching RenderTarget when the sub-pass declares a
+		// non-default fragment-output shape (DOF's `_CoCMaterial.outputNode =
+		// outputStruct(...)` emits a 2-attachment RedFormat/HalfFloat fragment
+		// that the default 1×1 RGBA8 warm-up RT rejects).
+		const compileOpts = { noGlobalMRT: true };
+		if ( renderTargetHint && three && typeof three.RenderTarget === 'function' ) {
 
-		} catch ( _ ) {
-			// Older three.js may reject `count` here; fall through without the
-			// override and let compileTSL fail noisily so we know to update the
-			// adopter's three version rather than silently corrupting capture.
-			auxRT = null;
+			try {
+
+				const rtOpts = { depthBuffer: false };
+				if ( typeof renderTargetHint.count === 'number' && renderTargetHint.count > 0 ) rtOpts.count = renderTargetHint.count;
+				if ( renderTargetHint.format != null ) rtOpts.format = renderTargetHint.format;
+				if ( renderTargetHint.type != null ) rtOpts.type = renderTargetHint.type;
+				auxRT = new three.RenderTarget( 1, 1, rtOpts );
+				compileOpts.renderTargetOverride = auxRT;
+
+			} catch ( _ ) {
+				// Older three.js may reject `count` here; fall through without
+				// the override and let compileTSL fail noisily.
+				auxRT = null;
+
+			}
 
 		}
 
-	}
+		// Do not expose a temporary live TextureNode value while an earlier
+		// renderer compile still owns the queue. Once the observed tail is
+		// stable, apply the override and synchronously invoke compileTSL so this
+		// capture reserves the next queue turn before yielding again.
+		let artifactsPromise = null;
+		await awaitRendererCompileQuiescence( renderer, () => {
 
-	try {
+			overrideSnapshots = applyCaptureMaterialOverrides( captureMaterial, captureOverrides );
+			artifactsPromise = compileTSL( renderer, scene, camera, compileOpts );
 
-		const artifacts = await compileTSL( renderer, scene, camera, compileOpts );
-		const artifact = artifacts.find( ( a ) => a.materialUuid === material.uuid ) || artifacts[ 0 ];
-		if ( ! artifact ) throw new Error( `captureNodeMaterialAsAuxLive: no artifact produced for ${ shape }` );
+		} );
+		const artifacts = await artifactsPromise;
+		const artifact = artifacts.find( ( a ) => a.materialUuid === captureMaterial.uuid );
+		if ( ! artifact ) {
+
+			throw new Error( `captureNodeMaterialAsAuxLive: no artifact correlated to isolated ${ shape } material ${ captureMaterial.uuid }` );
+
+		}
 		artifact.materialShape = shape;
 		return jsonSafe( artifact );
 
 	} finally {
 
+		restoreCaptureMaterialOverrides( overrideSnapshots );
 		if ( auxRT ) {
 
 			try { auxRT.dispose(); } catch ( _ ) { /* ignore */ }
 
 		}
+		try { captureMaterial.dispose(); } catch ( _ ) { /* ignore */ }
+
+	}
+
+}
+
+function cloneEffectMaterialForCapture( material, shape ) {
+
+	if ( ! material || typeof material.clone !== 'function' ) {
+
+		throw new Error( `captureNodeMaterialAsAuxLive: ${ shape } material must expose clone() for isolated capture` );
+
+	}
+	let clone = null;
+	try {
+
+		clone = material.clone();
+		if ( ! clone || clone === material || clone.uuid === material.uuid ) {
+
+			throw new Error( `captureNodeMaterialAsAuxLive: ${ shape } material clone must have a distinct identity and UUID` );
+
+		}
+
+		// NodeMaterial.copy() intentionally skips ad-hoc properties that are not
+		// present on a fresh NodeMaterial. Effect implementations attach live
+		// sidecars such as Bloom's colorTexture/direction/invSize after
+		// construction, so mirror missing public properties onto the isolated
+		// material. The graph nodes remain shared by design; any temporary value
+		// override below is restored exactly after extraction.
+		for ( const [ key, descriptor ] of Object.entries( Object.getOwnPropertyDescriptors( material ) ) ) {
+
+			if ( key === 'id' || key === 'uuid' || key === 'version' || key.startsWith( '_' ) ) continue;
+			if ( ! Object.hasOwn( clone, key ) ) Object.defineProperty( clone, key, descriptor );
+
+		}
+		isolateCaptureMaterialCacheKey( clone, shape );
+		return clone;
+
+	} catch ( error ) {
+
+		if ( clone && clone !== material ) {
+
+			try { clone.dispose(); } catch ( _ ) { /* ignore */ }
+
+		}
+		throw error;
+	}
+
+}
+
+function isolateCaptureMaterialCacheKey( material, shape ) {
+
+	if ( ! material || typeof shape !== 'string' ) return;
+	let base = shape;
+	if ( typeof material.customProgramCacheKey === 'function' ) {
+
+		try { base = String( material.customProgramCacheKey() ); } catch ( _ ) {}
+
+	}
+	const serial = ++ isolatedCaptureMaterialSerial;
+	material.customProgramCacheKey = () => `${ base }:tslp-isolated-capture:${ shape }:${ serial }`;
+
+}
+
+function applyCaptureMaterialOverrides( material, overrides ) {
+
+	if ( ! Array.isArray( overrides ) || overrides.length === 0 ) return [];
+	const snapshots = [];
+	try {
+
+		for ( const override of overrides ) {
+
+			const property = override && override.property;
+			const key = override && override.key;
+			const target = typeof property === 'string' && material ? material[ property ] : null;
+			if ( ! target || ( typeof target !== 'object' && typeof target !== 'function' ) || typeof key !== 'string' ) {
+
+				throw new Error( `captureNodeMaterialAsAuxLive: invalid capture override ${ String( property ) }.${ String( key ) }` );
+
+			}
+			snapshots.push( {
+				target,
+				key,
+				hadOwn: Object.hasOwn( target, key ),
+				descriptor: Object.hasOwn( target, key ) ? Object.getOwnPropertyDescriptor( target, key ) : null,
+			} );
+			target[ key ] = override.value;
+
+		}
+		return snapshots;
+
+	} catch ( error ) {
+
+		restoreCaptureMaterialOverrides( snapshots );
+		throw error;
+
+	}
+
+}
+
+function restoreCaptureMaterialOverrides( snapshots ) {
+
+	for ( let i = snapshots.length - 1; i >= 0; i -- ) {
+
+		const state = snapshots[ i ];
+		try {
+
+			if ( state.hadOwn ) Object.defineProperty( state.target, state.key, state.descriptor );
+			else delete state.target[ state.key ];
+
+		} catch ( _ ) { /* sealed custom sidecars remain caller-owned */ }
 
 	}
 
@@ -935,6 +1732,8 @@ function renderPipelineReplayMetadata( config ) {
 		outputColorTransform: config.outputColorTransform,
 		toneMapping: config.toneMapping,
 		outputColorSpace: config.outputColorSpace,
+		...( config.logarithmicDepthBuffer === true ? { logarithmicDepthBuffer: true } : {} ),
+		...( config.reversedDepthBuffer === true ? { reversedDepthBuffer: true } : {} ),
 	};
 
 }
@@ -1155,191 +1954,704 @@ async function resolveCubeRenderTargetTSL( opts ) {
 }
 
 /**
- * Walk a scene for textures that PMREMGenerator could be invoked on.
- * Returns deduped entries keyed by (kind, width, height) — the partition
- * the runtime needs.
+ * Walk the adopter scene and explicit fromScene seams for PMREM layouts.
  *
- * Heuristic: cubemaps and 2D textures with reflection mappings are
- * candidate PMREM inputs. CubeUVReflectionMapping (306) is the PMREM
- * RESULT and is excluded.
+ * PMREM's output allocation is grouped by rounded cube-atlas layout, while
+ * source conversion is grouped by shader/binding topology. Three caches one
+ * private source material per PMREMGenerator, so different source topologies
+ * must be driven by independent capture jobs or the first source's WGSL wins.
+ * A generated PMREM result (mapping 306) cannot reveal whether it came from a
+ * texture or a scene and is therefore excluded; fromScene-only applications
+ * declare their source size through `opts.pmremSceneSizes`.
  *
- * @param {Object} scene
- * @return {Array<{ sourceTexture: Object, kind: 'equirect' | 'cube' }>}
+ * @param {?Object} scene
+ * @param {Object} opts
+ * @return {Array<{ cubeSize: number, sources: Map<'equirect'|'cube', Object>, sourceVariants: Map<string, Map<string, Object>>, explicitScene: boolean }>}
  */
-function collectPMREMInputs( scene ) {
+function collectPMREMInputs( scene, opts = {}, renderer = null ) {
 
-	const seen = new Map();
+	const layouts = new Map();
+	const ensureLayout = ( requestedSize ) => {
 
-	function record( tex ) {
+		const cubeSize = normalizePMREMCubeSize( requestedSize );
+		let layout = layouts.get( cubeSize );
+		if ( ! layout ) {
 
-		if ( ! tex || tex.isTexture !== true ) return;
-		if ( tex.mapping === 306 ) return; // CubeUVReflectionMapping = PMREM result, skip
-		let kind = null;
-		if ( tex.isCubeTexture || tex.mapping === 301 || tex.mapping === 302 ) {
-
-			kind = 'cube';
-
-		} else if ( tex.mapping === 303 || tex.mapping === 304 ) {
-
-			kind = 'equirect';
+			layout = {
+				cubeSize,
+				sources: new Map(),
+				sourceVariants: new Map(),
+				explicitScene: false,
+			};
+			layouts.set( cubeSize, layout );
 
 		}
+		return layout;
+
+	};
+	const record = ( texture ) => {
+
+		const kind = classifyPMREMSourceTexture( texture );
 		if ( ! kind ) return;
-		const w = tex.image ? tex.image.width | 0 : 0;
-		const h = tex.image ? tex.image.height | 0 : 0;
-		const key = `${ kind }:${ w }:${ h }:${ tex.format || '' }:${ tex.type || '' }`;
-		if ( seen.has( key ) ) return;
-		seen.set( key, { sourceTexture: tex, kind } );
+		const cubeSize = pmremSourceCubeSize( texture, kind );
+		const layout = ensureLayout( cubeSize );
+		const profile = kind === 'cube' ? 'texture-cubemap' : 'texture-equirect';
+		const topologyKey = createPMREMSourceTopologyKey( texture, profile, { renderer } );
+		let variants = layout.sourceVariants.get( kind );
+		if ( ! variants ) {
+
+			variants = new Map();
+			layout.sourceVariants.set( kind, variants );
+
+		}
+		if ( ! variants.has( topologyKey ) ) variants.set( topologyKey, texture );
+		if ( ! layout.sources.has( kind ) ) layout.sources.set( kind, texture );
+
+	};
+
+	if ( scene ) {
+
+		record( scene.background );
+		record( scene.environment );
+
+		// Walk both scene-level node graphs. PMREMNode keeps its original
+		// cubemap/equirectangular source even after its generated CubeUV result
+		// is assigned elsewhere.
+		for ( const node of [ scene.backgroundNode, scene.environmentNode ] ) {
+
+			for ( const source of collectPMREMSourceTexturesInNode( node ) ) record( source );
+
+		}
+
+		if ( typeof scene.traverse === 'function' ) {
+
+			scene.traverse( ( object ) => {
+
+				const material = object && object.material;
+				if ( ! material ) return;
+				const materials = Array.isArray( material ) ? material : [ material ];
+				for ( const candidate of materials ) {
+
+					record( candidate && candidate.envMap );
+					for ( const source of collectPMREMSourceTexturesFromMaterial( candidate ) ) record( source );
+
+				}
+
+			} );
+
+		}
 
 	}
 
-	if ( ! scene ) return [];
-	if ( scene.background && scene.background.isTexture === true ) record( scene.background );
+	const sceneSizes = opts.pmremSceneSizes;
+	if ( sceneSizes !== undefined && ! Array.isArray( sceneSizes ) ) {
 
-	// Walk scene.backgroundNode for pmremTexture(source) — the real PMREMNode
-	// (dev path uses real three/tsl, not slim stubs) carries `.value`/`.texture`
-	// pointing at the source.
-	if ( scene.backgroundNode ) {
+		throw new TypeError( 'precompileAuxiliary: opts.pmremSceneSizes must be an array of PMREMGenerator.fromScene() sizes.' );
 
-		const found = findTextureInNode( scene.backgroundNode );
-		if ( found ) record( found );
+	}
+	for ( const requestedSize of sceneSizes || [] ) {
+
+		const layout = ensureLayout( requestedSize );
+		layout.explicitScene = true;
 
 	}
 
-	if ( typeof scene.traverse === 'function' ) {
-
-		scene.traverse( ( object ) => {
-
-			const m = object && object.material;
-			if ( ! m ) return;
-			const mats = Array.isArray( m ) ? m : [ m ];
-			for ( const mat of mats ) {
-
-				if ( mat && mat.envMap && mat.envMap.isTexture === true ) record( mat.envMap );
-
-			}
-
-		} );
-
-	}
-
-	return Array.from( seen.values() );
+	return [ ...layouts.values() ].sort( ( left, right ) => left.cubeSize - right.cubeSize );
 
 }
 
-function findTextureInNode( node, depth = 0, seen = new Set() ) {
+function createPMREMCaptureJobs( layout ) {
 
-	if ( ! node || depth > 6 || seen.has( node ) ) return null;
-	seen.add( node );
-	if ( node.isTexture === true ) return node;
-	for ( const key of [ 'value', '_value', 'texture', '_texture' ] ) {
+	const jobs = [];
+	for ( const kind of [ 'equirect', 'cube' ] ) {
 
-		const v = node[ key ];
-		if ( v && v.isTexture === true ) return v;
-
-	}
-	for ( const key of [ 'node', 'aNode', 'bNode', 'uvNode', 'levelNode', 'sourceNode' ] ) {
-
-		const child = node[ key ];
-		if ( child ) {
-
-			const found = findTextureInNode( child, depth + 1, seen );
-			if ( found ) return found;
-
-		}
+		const variants = layout?.sourceVariants instanceof Map ? layout.sourceVariants.get( kind ) : null;
+		for ( const [ topologyKey, sourceTexture ] of [ ...( variants || [] ) ].sort( ( left, right ) =>
+			left[ 0 ] < right[ 0 ] ? - 1 : left[ 0 ] > right[ 0 ] ? 1 : 0
+		) ) jobs.push( {
+			cubeSize: layout.cubeSize,
+			profile: kind === 'cube' ? 'texture-cubemap' : 'texture-equirect',
+			sourceTexture,
+			topologyKey,
+		} );
 
 	}
+	if ( layout?.explicitScene === true ) jobs.push( {
+		cubeSize: layout.cubeSize,
+		profile: 'scene',
+		sourceTexture: null,
+		topologyKey: null,
+	} );
+	return jobs;
+
+}
+
+function classifyPMREMSourceTexture( texture ) {
+
+	if ( ! texture || texture.isTexture !== true || texture.mapping === 306 ) return null;
+	if ( texture.mapping === 301 || texture.mapping === 302 ) return 'cube';
+	if ( texture.mapping === 303 || texture.mapping === 304 ) return 'equirect';
 	return null;
 
 }
 
+function pmremSourceCubeSize( texture, kind ) {
+
+	if ( kind === 'cube' ) {
+
+		const faces = texture && texture.image;
+		if ( Array.isArray( faces ) && faces.length === 0 ) return 16;
+		const firstFace = Array.isArray( faces ) ? faces[ 0 ] : null;
+		const image = firstFace && firstFace.image || firstFace;
+		return Number( image && image.width || 0 );
+
+	}
+	return Number( texture && texture.image && texture.image.width || 0 ) / 4;
+
+}
+
+function normalizePMREMCubeSize( requestedSize ) {
+
+	const size = Number( requestedSize );
+	if ( ! Number.isFinite( size ) || size < 16 ) {
+
+		throw new RangeError( `precompileAuxiliary: PMREM source resolves to a ${ size || 0 }px cube face; Three r185 requires at least 16px.` );
+
+	}
+	const cubeSize = 2 ** Math.floor( Math.log2( size ) );
+	if ( ! Number.isSafeInteger( cubeSize ) ) {
+
+		throw new RangeError( `precompileAuxiliary: PMREM cube size ${ requestedSize } is outside the supported integer range.` );
+
+	}
+	return cubeSize;
+
+}
+
 /**
- * Live capture of PMREMGenerator's 4 internal materials for a given
- * (sourceTexture, kind) signature. Mirrors `extractPMREMArtifact` in the
- * plugin but uses the live renderer (so artifact byte content matches what
- * production builds would emit).
+ * Live capture of one topology-keyed PMREM operation family. Each source
+ * topology receives a fresh Three PMREMGenerator because its private source
+ * material is cached after the first compile. Scene support is captured as a
+ * separate blur/GGX family and never fabricates a source texture.
  *
  * Returns a dict keyed by sub-shape ('cubemap'|'equirect'|'blur'|'ggx').
  *
  * @param {Object} renderer
- * @param {Object} sourceTexture
- * @param {'equirect'|'cube'} kind
+ * @param {{ cubeSize: number, profile: string, sourceTexture: ?Object }} layout
  * @param {Object} opts
- * @return {Promise<{ cubemap: Object, equirect: Object, blur: Object, ggx: Object }>}
+ * @return {Promise<Object>}
  */
-async function capturePMREMLive( renderer, sourceTexture, kind, opts ) {
+async function capturePMREMLive( renderer, layout, opts ) {
 
 	const three = opts.three || null;
 	const compileTSL = opts.compileTSL || ( await lazyLoadCompileTSL() );
+	const beginRenderObjectHarvest = opts.beginRenderObjectHarvest || cachedBeginRenderObjectHarvest;
 
-	if ( ! three || ! three.PMREMGenerator || ! three.Scene || ! three.Mesh || ! three.PlaneGeometry || ! three.PerspectiveCamera ) {
+	if ( ! three || ! three.PMREMGenerator || ! three.Scene || ! three.OrthographicCamera ) {
 
-		throw new Error( 'capturePMREMLive: opts.three must expose PMREMGenerator/Scene/Mesh/PlaneGeometry/PerspectiveCamera' );
+		throw new Error( 'capturePMREMLive: opts.three must expose the WebGPU PMREMGenerator plus Scene/OrthographicCamera' );
+
+	}
+	if ( ! three.NodeMaterial || ! three.WebGPURenderer ) {
+
+		throw new Error( 'capturePMREMLive: opts.three must be the `three/webgpu` namespace; root `three`.PMREMGenerator is the incompatible WebGL ShaderMaterial implementation.' );
+
+	}
+	if ( typeof beginRenderObjectHarvest !== 'function' ) {
+
+		throw new Error( 'capturePMREMLive: the dev extractor does not expose beginRenderObjectHarvest(); exact PMREM capture cannot fall back to synthetic geometry.' );
 
 	}
 
-	const pmrem = new three.PMREMGenerator( renderer );
+	let pmrem = null;
+	let harvestSession = null;
+	const renderTargets = [];
+	const profile = layout && layout.profile;
+	const expectedStages = pmremRequiredStages( profile );
+	const sourceTexture = layout && layout.sourceTexture || null;
+	if ( expectedStages.length === 0 ) throw new Error( `capturePMREMLive: unsupported PMREM profile ${ JSON.stringify( profile ) }` );
+	if ( profile !== 'scene' && ( ! sourceTexture || sourceTexture.isTexture !== true ) ) {
 
-	// Materialise cubemap + equirect blit shaders (compile-only, no render).
-	await pmrem.compileCubemapShader();
-	await pmrem.compileEquirectangularShader();
+		throw new Error( `capturePMREMLive: ${ profile } requires one real source texture` );
 
-	// Materialise blur + ggx by manually invoking _setSizeFromTexture + _init.
-	// We avoid fromX() because that runs render passes we don't need.
-	pmrem._setSizeFromTexture( sourceTexture );
-	const cubeUVRenderTarget = pmrem._allocateTarget();
-	pmrem._init( cubeUVRenderTarget );
+	}
+	let previousTarget = null;
+	let previousFace = 0;
+	let previousMip = 0;
+	let previousAutoClear;
+	let previousToneMapping;
+	let previousXrEnabled;
+	let rendererStateCaptured = false;
+	let cubeUVRenderTarget = null;
+	let renderObjectHarvest = null;
+	let harvestFinished = false;
+	try {
 
-	const materials = {
-		cubemap: pmrem._cubemapMaterial,
-		equirect: pmrem._equirectMaterial,
-		blur: pmrem._blurMaterial,
-		ggx: pmrem._ggxMaterial,
+		pmrem = new three.PMREMGenerator( renderer );
+		try {
+
+			// A marker discovered by the application render closes its capture
+			// epoch in a microtask. Let that handoff publish the compile-queue
+			// tail before checking quiescence; otherwise a cold PMREM render can
+			// run synchronously just before the marker installs its suppression
+			// lock and the real PMREM material family is never harvested.
+			await Promise.resolve();
+			// A material-marker compile temporarily suppresses external renderer
+			// draws while it owns `__tslpCompileLock`. Running PMREM inside that
+			// window makes Three's synchronous source pass disappear entirely,
+			// leaving no harvested material family on a cold startup. Start the
+			// observer and real PMREM render together only after the queue tail is
+			// stable; the callback is synchronous, so no competing compile can
+			// reserve the renderer between the check and the draw sequence.
+			await awaitRendererCompileQuiescence( renderer, () => {
+
+				harvestSession = beginRenderObjectHarvest( renderer );
+				previousTarget = typeof renderer.getRenderTarget === 'function' ? renderer.getRenderTarget() : null;
+				previousFace = typeof renderer.getActiveCubeFace === 'function' ? renderer.getActiveCubeFace() : 0;
+				previousMip = typeof renderer.getActiveMipmapLevel === 'function' ? renderer.getActiveMipmapLevel() : 0;
+				previousAutoClear = renderer.autoClear;
+				previousToneMapping = renderer.toneMapping;
+				previousXrEnabled = renderer.xr && renderer.xr.enabled;
+				rendererStateCaptured = true;
+
+				withSyntheticRenderAccess( () => {
+
+					if ( profile === 'scene' ) {
+
+						// A nonzero sigma captures the complete public fromScene()
+						// scheduler: blur plus GGX. The same family also serves sigma=0,
+						// where the compiler-free scheduler simply skips blur.
+						cubeUVRenderTarget = pmrem.fromScene(
+							new three.Scene(),
+							PMREM_CAPTURE_BLUR_SIGMA,
+							0.1,
+							100,
+							{ size: layout.cubeSize },
+						);
+
+					} else {
+
+						cubeUVRenderTarget = profile === 'texture-cubemap'
+							? pmrem.fromCubemap( sourceTexture )
+							: pmrem.fromEquirectangular( sourceTexture );
+
+					}
+
+				} );
+
+			} );
+			renderTargets.push( cubeUVRenderTarget );
+			harvestFinished = true;
+			renderObjectHarvest = await harvestSession.finish();
+
+		} catch ( error ) {
+
+			if ( ! harvestFinished ) {
+
+				harvestFinished = true;
+				try { await harvestSession.finish(); } catch ( _ ) { /* preserve PMREM failure */ }
+
+			}
+			throw error;
+
+		}
+
+		if ( typeof renderer.setRenderTarget === 'function' ) renderer.setRenderTarget( previousTarget, previousFace, previousMip );
+
+		const materials = {
+			cubemap: pmrem._cubemapMaterial,
+			equirect: pmrem._equirectMaterial,
+			blur: pmrem._blurMaterial,
+			ggx: pmrem._ggxMaterial,
+		};
+		const exercisedSubKinds = expectedStages;
+		const auxScene = new three.Scene();
+		const camera = new three.OrthographicCamera( - 1, 1, 1, - 1, 0, 1 );
+
+		const allArtifacts = await compileTSL( renderer, auxScene, camera, {
+			noGlobalMRT: true,
+			renderObjectHarvest,
+			skipWarmupRender: true,
+		} );
+
+		const captured = {};
+		const replayConfig = createPMREMReplayConfig( pmrem, cubeUVRenderTarget );
+		const supportConfig = createPMREMSupportConfig( replayConfig, profile, sourceTexture, { renderer } );
+		for ( const subKind of exercisedSubKinds ) {
+
+			const material = materials[ subKind ];
+			if ( ! material ) {
+
+				throw new Error( `capturePMREMLive: real PMREM render did not harvest the pmrem-${ subKind } stage.` );
+
+			}
+			const found = mergePMREMArtifactFamily( allArtifacts, material, subKind, renderObjectHarvest );
+			found.materialShape = `pmrem-${ subKind }`;
+			found.pmremKind = subKind;
+			found.replayConfig = replayConfig;
+			found.internalPass = createPMREMInternalPassDescriptor( found, subKind, cubeUVRenderTarget, supportConfig );
+			for ( const variant of Object.values( found.variants || {} ) ) {
+
+				if ( ! variant || typeof variant !== 'object' ) continue;
+				variant.materialShape = `pmrem-${ subKind }`;
+				variant.pmremKind = subKind;
+				variant.replayConfig = replayConfig;
+				variant.internalPass = found.internalPass;
+
+			}
+			captured[ subKind ] = jsonSafe( found );
+
+		}
+
+		if ( Object.keys( captured ).length === 0 ) {
+
+			throw new Error( `capturePMREMLive: produced 0 artifacts (compileTSL returned ${ allArtifacts.length })` );
+
+		}
+
+		Object.defineProperty( captured, 'replayConfig', {
+			value: replayConfig,
+			enumerable: false,
+			configurable: true,
+		} );
+		Object.defineProperty( captured, 'supportConfig', {
+			value: supportConfig,
+			enumerable: false,
+			configurable: true,
+		} );
+		return captured;
+
+		} finally {
+
+			if ( harvestSession && ! harvestFinished ) {
+
+				try { await harvestSession.finish(); } catch ( _ ) { /* preserve capture result */ }
+
+			}
+			try {
+
+				if ( rendererStateCaptured && typeof renderer.setRenderTarget === 'function' ) renderer.setRenderTarget( previousTarget, previousFace, previousMip );
+
+			} catch ( _ ) { /* preserve capture result */ }
+			if ( rendererStateCaptured ) {
+
+				try { renderer.autoClear = previousAutoClear; } catch ( _ ) { /* preserve capture result */ }
+				try { renderer.toneMapping = previousToneMapping; } catch ( _ ) { /* preserve capture result */ }
+				if ( renderer.xr && previousXrEnabled !== undefined ) {
+
+					try { renderer.xr.enabled = previousXrEnabled; } catch ( _ ) { /* preserve capture result */ }
+
+				}
+
+			}
+			for ( const renderTarget of new Set( renderTargets ) ) {
+
+				if ( renderTarget && typeof renderTarget.dispose === 'function' ) {
+
+					try { renderTarget.dispose(); } catch ( _ ) { /* preserve capture result */ }
+
+				}
+
+			}
+			if ( pmrem && typeof pmrem.dispose === 'function' ) {
+
+				try { pmrem.dispose(); } catch ( _ ) { /* preserve capture result */ }
+
+			}
+		}
+
+}
+
+const PMREM_CAPTURE_BLUR_SIGMA = 0.02;
+
+function withSyntheticRenderAccess( callback ) {
+
+	// A material capture keeps its application-frame guard installed through
+	// codegen and the capture POST, after its compile lock has settled. PMREM's
+	// deliberately isolated generator draws may therefore overlap that guard.
+	// Use the same nested capability as compileTSL's warm-up renders so those
+	// exact draws remain observable without reopening arbitrary app frames.
+	globalThis.__tslpSyntheticRenderActive = ( globalThis.__tslpSyntheticRenderActive | 0 ) + 1;
+	try {
+
+		return callback();
+
+	} finally {
+
+		globalThis.__tslpSyntheticRenderActive = ( globalThis.__tslpSyntheticRenderActive | 0 ) - 1;
+
+	}
+
+}
+
+const PMREM_UNIFORM_ROLES = Object.freeze( {
+	blur: Object.freeze( {
+		nodeUniform0: 'latitudinal',
+		nodeUniform1: 'pole-axis',
+		nodeUniform3: 'mip-int',
+		nodeUniform5: 'samples',
+		nodeUniform6: 'd-theta',
+	} ),
+	ggx: Object.freeze( {
+		nodeUniform0: 'roughness',
+		nodeUniform1: 'mip-int',
+	} ),
+} );
+
+function mergePMREMArtifactFamily( artifacts, material, subKind, renderObjectHarvest = null ) {
+
+	const members = artifacts.filter( ( artifact ) => artifact.materialUuid === material.uuid );
+	if ( members.length === 0 ) {
+
+		const available = artifacts.slice( 0, 8 ).map( ( artifact ) =>
+			`${ artifact.materialShape || 'unknown' }@${ artifact.materialUuid || 'no-uuid' }#${ artifact.cacheKey ?? 'no-cache-key' }`
+		).join( ', ' );
+		const omitted = Math.max( 0, artifacts.length - 8 );
+		const harvestedFamily = renderObjectHarvest?.familiesByMaterial instanceof Map
+			? renderObjectHarvest.familiesByMaterial.get( material )
+			: null;
+		const harvestedVariants = harvestedFamily && Array.isArray( harvestedFamily.variants )
+			? harvestedFamily.variants.map( ( variant ) =>
+				`${ variant.cacheKey ?? 'no-cache-key' }:${ variant.complete === true ? 'complete' : 'incomplete' }`
+			).join( ', ' )
+			: 'none';
+		const requestSummary = Array.isArray( renderObjectHarvest?.requests )
+			? renderObjectHarvest.requests.slice( 0, 8 ).map( ( request ) =>
+				`${ request.material?.name || request.material?.type || 'unnamed' }@${ request.material?.uuid || 'no-uuid' }#${ request.cacheKey ?? 'no-cache-key' }`
+			).join( ', ' )
+			: 'none';
+		throw new Error(
+			`capturePMREMLive: no extracted artifact matched the real pmrem-${ subKind } material ` +
+			`${ material.uuid || 'without-uuid' }; extracted ${ artifacts.length } ` +
+			`(${ available || 'none' }${ omitted > 0 ? `, +${ omitted } more` : '' }); ` +
+			`harvest family=${ harvestedFamily ? harvestedFamily.complete === true ? 'complete' : 'incomplete' : 'missing' } ` +
+			`variants=[${ harvestedVariants }], requests=[${ requestSummary || 'none' }]`,
+		);
+
+	}
+	normalizePMREMSelectorDepth( members );
+	normalizePMREMFamilyBindingNames( members, subKind );
+	const family = members[ 0 ];
+	const textureRefs = new Map();
+	for ( const member of members ) {
+
+		if ( ! ( member._textureRefs instanceof Map ) ) continue;
+		for ( const [ uuid, texture ] of member._textureRefs ) {
+
+			const existing = textureRefs.get( uuid );
+			if ( existing && existing !== texture ) {
+
+				throw new Error( `capturePMREMLive: pmrem-${ subKind } captured ambiguous texture identity ${ uuid }` );
+
+			}
+			textureRefs.set( uuid, texture );
+
+		}
+
+	}
+	if ( textureRefs.size > 0 ) Object.defineProperty( family, '_textureRefs', {
+		value: textureRefs,
+		enumerable: false,
+		configurable: true,
+		writable: true,
+	} );
+	mergeArtifactVariantFamily( family, members );
+	return family;
+
+}
+
+function normalizePMREMSelectorDepth( members ) {
+
+	const candidates = new Set();
+	for ( const member of members ) {
+
+		for ( const candidate of collectArtifactVariantCandidates( member ) ) candidates.add( candidate );
+
+	}
+	for ( const candidate of candidates ) {
+
+		if ( ! Array.isArray( candidate.renderContextSelectors ) ) continue;
+		candidate.renderContextSelectors = [ ...new Set( candidate.renderContextSelectors.map( ( selector ) => {
+
+			let descriptor;
+			try {
+
+				descriptor = JSON.parse( selector );
+
+			} catch ( _ ) {
+
+				return selector;
+
+			}
+			const target = descriptor && descriptor.target;
+			if (
+				! target || typeof target !== 'object' || Array.isArray( target )
+				|| Object.prototype.hasOwnProperty.call( target, 'depth' )
+				|| target.depthTexture !== null
+			) return selector;
+			// Three r185's PMREM ping-pong target is explicitly constructed
+			// with depthBuffer:false, but its harvested RenderContext can omit
+			// the `depth` field. Slim creates the same target with an explicit
+			// false value, so persist the known stock topology instead of
+			// signing an instrumentation omission as a third pipeline state.
+			return stableJsonStringify( {
+				...descriptor,
+				target: { ...target, depth: false },
+			}, 'pmremRenderContextSelector' );
+
+		} ) ) ].sort();
+
+	}
+
+}
+
+function normalizePMREMFamilyBindingNames( members, subKind ) {
+
+	if ( subKind !== 'blur' ) return;
+	let canonicalName = null;
+	for ( const member of members ) {
+
+		const group = ( member.uniformPlan || [] ).find( ( candidate ) => candidate && candidate.name === 'object' );
+		const weights = ( group && group.orderedBindings || [] )
+			.filter( ( binding ) => binding && binding.type === 'buffer-uniform' && binding.ref );
+		if ( weights.length !== 1 || typeof weights[ 0 ].ref.name !== 'string' || weights[ 0 ].ref.name.length === 0 ) {
+
+			throw new Error( 'capturePMREMLive: pmrem-blur family member has no exact weights binding name' );
+
+		}
+		if ( canonicalName === null ) canonicalName = weights[ 0 ].ref.name;
+
+	}
+	for ( const member of members ) {
+
+		const group = member.uniformPlan.find( ( candidate ) => candidate && candidate.name === 'object' );
+		const weights = group.orderedBindings.find( ( binding ) => binding && binding.type === 'buffer-uniform' ).ref;
+		const capturedName = weights.name;
+		const bindingGroup = ( member.bindings || [] ).find( ( candidate ) => candidate && candidate.name === 'object' );
+		const bindingDescriptors = ( bindingGroup && bindingGroup.bindings || [] )
+			.filter( ( binding ) => binding && binding.kind === 'uniform-buffer' && binding.name === capturedName );
+		if ( bindingDescriptors.length !== 1 ) {
+
+			throw new Error( `capturePMREMLive: pmrem-blur weights binding ${ capturedName } did not resolve exactly once` );
+
+		}
+		weights.name = canonicalName;
+		bindingDescriptors[ 0 ].name = canonicalName;
+
+	}
+
+}
+
+function createPMREMReplayConfig( pmrem, renderTarget ) {
+
+	const cubeSize = pmrem && pmrem._cubeSize;
+	const lodMax = pmrem && pmrem._lodMax;
+	const width = renderTarget && renderTarget.width;
+	const height = renderTarget && renderTarget.height;
+	if (
+		! Number.isSafeInteger( cubeSize ) || cubeSize <= 0 ||
+		! Number.isSafeInteger( lodMax ) || lodMax < 0 ||
+		! Number.isSafeInteger( width ) || width <= 0 ||
+		! Number.isSafeInteger( height ) || height <= 0
+	) throw new Error( 'capturePMREMLive: real PMREM render did not expose a valid compiled atlas layout' );
+	const config = createPMREMLayoutConfig( cubeSize );
+	if ( config.lodMax !== lodMax || config.target.width !== width || config.target.height !== height ) {
+
+		throw new Error( 'capturePMREMLive: real PMREM render layout diverges from the locked pmrem-layout@1 contract' );
+
+	}
+	return config;
+
+}
+
+function createPMREMInternalPassDescriptor( artifact, subKind, renderTarget, supportConfig ) {
+
+	const group = ( artifact.uniformPlan || [] ).find( ( candidate ) => candidate && candidate.name === 'object' );
+	if ( ! group ) throw new Error( `capturePMREMLive: pmrem-${ subKind } has no object binding group` );
+	const sampledTextures = ( group.textures || [] ).filter( ( binding ) => binding && binding.bindingKind === 'sampled-texture' );
+	if ( sampledTextures.length !== 1 ) throw new Error( `capturePMREMLive: pmrem-${ subKind } expected exactly one sampled texture binding` );
+	const textureBinding = sampledTextures[ 0 ];
+	const source = textureBinding.source || {};
+	const liveTexture = artifact._textureRefs instanceof Map && source.textureUuid
+		? artifact._textureRefs.get( source.textureUuid )
+		: null;
+	const sourceStage = subKind === 'cubemap' || subKind === 'equirect';
+	const textureTopology = sourceStage
+		? pmremSourceInputTopology( supportConfig.source )
+		: { dimension: textureBinding.textureType || '2d' };
+	if ( ! textureTopology ) throw new Error( `capturePMREMLive: pmrem-${ subKind } is missing its source topology config` );
+	if ( ! sourceStage && liveTexture && liveTexture.format !== undefined && liveTexture.format !== null ) textureTopology.format = liveTexture.format;
+	if ( ! sourceStage && liveTexture && liveTexture.internalFormat !== undefined ) textureTopology.internalFormat = liveTexture.internalFormat;
+	if ( ! sourceStage && liveTexture && liveTexture.type !== undefined && liveTexture.type !== null ) textureTopology.type = liveTexture.type;
+	if ( ! sourceStage && liveTexture && liveTexture.colorSpace !== undefined ) textureTopology.colorSpace = liveTexture.colorSpace;
+	const uniforms = [];
+	for ( const [ binding, role ] of Object.entries( PMREM_UNIFORM_ROLES[ subKind ] || {} ) ) {
+
+		const slot = ( group.slots || [] ).find( ( candidate ) => candidate && candidate.name === binding );
+		if ( ! slot ) throw new Error( `capturePMREMLive: pmrem-${ subKind } is missing ${ role } at object.${ binding }` );
+		uniforms.push( {
+			role,
+			group: 'object',
+			binding,
+			valueType: slot.dtype === 'number' ? 'float' : slot.dtype,
+		} );
+
+	}
+	uniforms.sort( ( left, right ) => left.role.localeCompare( right.role ) );
+	const inputs = [ {
+		role: subKind === 'cubemap' || subKind === 'equirect' ? 'source' : 'env-map',
+		kind: 'texture',
+		group: 'object',
+		binding: textureBinding.name,
+		topology: textureTopology,
+	} ];
+	if ( subKind === 'blur' ) {
+
+		const weights = ( group.orderedBindings || [] )
+			.filter( ( binding ) => binding && binding.type === 'buffer-uniform' && binding.ref )
+			.map( ( binding ) => binding.ref );
+		if ( weights.length !== 1 ) throw new Error( 'capturePMREMLive: pmrem-blur expected exactly one uniform-buffer weights binding' );
+		if ( ! Number.isSafeInteger( weights[ 0 ].byteLength ) || weights[ 0 ].byteLength <= 0 || weights[ 0 ].byteLength % 16 !== 0 ) {
+
+			throw new Error( 'capturePMREMLive: pmrem-blur weights must use std140-style scalar stride' );
+
+		}
+		inputs.push( {
+			role: 'weights',
+			kind: 'buffer',
+			group: 'object',
+			binding: weights[ 0 ].name,
+			topology: {
+				byteLength: weights[ 0 ].byteLength,
+				arrayType: weights[ 0 ].arrayType,
+				count: weights[ 0 ].byteLength / 16,
+				itemSize: 1,
+				stride: 4,
+			},
+		} );
+
+	}
+	const outputTexture = renderTarget && renderTarget.texture;
+	const outputTopology = { dimension: '2d', depth: false };
+	if ( outputTexture && outputTexture.format !== undefined && outputTexture.format !== null ) outputTopology.format = outputTexture.format;
+	if ( outputTexture && outputTexture.internalFormat !== undefined ) outputTopology.internalFormat = outputTexture.internalFormat;
+	if ( outputTexture && outputTexture.type !== undefined && outputTexture.type !== null ) outputTopology.type = outputTexture.type;
+	if ( outputTexture && outputTexture.colorSpace !== undefined ) outputTopology.colorSpace = outputTexture.colorSpace;
+	return {
+		schema: 'internal-pass@1',
+		family: 'pmrem',
+		stage: subKind,
+		shape: `pmrem-${ subKind }`,
+		config: supportConfig,
+		uniforms,
+		inputs,
+		output: { topology: outputTopology },
 	};
-
-	const auxScene = new three.Scene();
-	const camera = new three.PerspectiveCamera( 45, 1, 0.1, 100 );
-	camera.position.set( 0, 0, 3 );
-
-	const meshUuids = {};
-	for ( const subKind of [ 'cubemap', 'equirect', 'blur', 'ggx' ] ) {
-
-		const mat = materials[ subKind ];
-		if ( ! mat ) continue;
-		const mesh = new three.Mesh( new three.PlaneGeometry( 1, 1 ), mat );
-		auxScene.add( mesh );
-		meshUuids[ subKind ] = mat.uuid;
-
-	}
-
-	const allArtifacts = await compileTSL( renderer, auxScene, camera, { noGlobalMRT: true } );
-
-	const captured = {};
-	for ( const subKind of [ 'cubemap', 'equirect', 'blur', 'ggx' ] ) {
-
-		const uuid = meshUuids[ subKind ];
-		if ( ! uuid ) continue;
-		const found = allArtifacts.find( ( a ) => a.materialUuid === uuid );
-		if ( ! found ) continue;
-		found.materialShape = `pmrem-${ subKind }`;
-		found.pmremKind = subKind;
-		captured[ subKind ] = jsonSafe( found );
-
-	}
-
-	pmrem.dispose();
-
-	if ( Object.keys( captured ).length === 0 ) {
-
-		throw new Error( `capturePMREMLive: produced 0 artifacts (compileTSL returned ${ allArtifacts.length })` );
-
-	}
-
-	return captured;
 
 }
 
 let cachedCompileTSL = null;
+let cachedBeginRenderObjectHarvest = null;
 let compileTSLLoadFailed = false;
 async function lazyLoadCompileTSL() {
 
@@ -1349,7 +2661,8 @@ async function lazyLoadCompileTSL() {
 
 			const mod = await import( /* @vite-ignore */ 'vite-plugin-tsl-precompile/src/vendor/compileTSL.js' );
 			cachedCompileTSL = mod.compileTSL;
-		return cachedCompileTSL;
+			cachedBeginRenderObjectHarvest = mod.beginRenderObjectHarvest || null;
+			return cachedCompileTSL;
 
 	} catch ( err ) {
 
@@ -1366,14 +2679,21 @@ async function lazyLoadCompileTSL() {
 
 }
 
-async function post( endpoint, payload, shape, configHash ) {
+async function post( endpoint, payload, shape, configHash, provenance ) {
 
 	try {
 
+		if ( ! provenance || typeof provenance.threeVersion !== 'string' || provenance.threeVersion.length === 0 ||
+			typeof provenance.pluginVersion !== 'string' || provenance.pluginVersion.length === 0 ) {
+
+			throw new Error( `Cannot publish ${ shape } auxiliary capture without exact Three/toolchain provenance.` );
+
+		}
+		const signedPayload = createSignedAuxiliaryPayload( payload, shape, provenance );
 		const res = await fetch( endpoint, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify( payload ),
+			body: JSON.stringify( signedPayload ),
 		} );
 		if ( ! res.ok ) {
 
@@ -1388,6 +2708,108 @@ async function post( endpoint, payload, shape, configHash ) {
 		return { shape, configHash, ok: false, error: err && err.message || String( err ) };
 
 	}
+
+}
+
+async function postAuxiliaryFamily( endpoint, family, payloads, provenance ) {
+
+	const fallbackResults = () => ( payloads || [] ).map( ( payload ) => ( {
+		shape: payload?.materialShape || family,
+		configHash: payload?.configHash || null,
+		profile: payload?.artifact?.internalPass?.config?.profile || null,
+		family,
+		ok: false,
+	} ) );
+	try {
+
+		const signedPayload = createSignedAuxiliaryFamilyPayload( family, payloads, provenance );
+		const res = await fetch( endpoint, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify( signedPayload ),
+		} );
+		if ( ! res.ok ) {
+
+			const body = await res.text();
+			return fallbackResults().map( ( result ) => ( {
+				...result,
+				error: `${ res.status } ${ body }`,
+			} ) );
+
+		}
+		return signedPayload.members.map( ( member ) => ( {
+			shape: member.materialShape,
+			configHash: member.configHash,
+			profile: member?.artifact?.internalPass?.config?.profile || null,
+			family,
+			familyTransaction: true,
+			ok: true,
+		} ) );
+
+	} catch ( error ) {
+
+		return fallbackResults().map( ( result ) => ( {
+			...result,
+			error: error && error.message || String( error ),
+		} ) );
+
+	}
+
+}
+
+export function createSignedAuxiliaryFamilyPayload( family, payloads, provenance ) {
+
+	if ( family !== 'pmrem' && family !== 'shadow-vsm' ) throw new TypeError(
+		`Unsupported auxiliary family ${ JSON.stringify( family ) }.`,
+	);
+	if ( ! Array.isArray( payloads ) || payloads.length === 0 ) throw new TypeError(
+		'Auxiliary family capture requires a non-empty payload array.',
+	);
+	return {
+		auxiliaryFamily: family,
+		members: payloads.map( ( payload ) => createSignedAuxiliaryPayload(
+			payload,
+			payload && payload.materialShape,
+			provenance,
+		) ),
+	};
+
+}
+
+export function createSignedAuxiliaryPayload( payload, shape, provenance ) {
+
+	if ( ! payload || ! payload.artifact || typeof payload.artifact !== 'object' ) {
+
+		throw new TypeError( 'Auxiliary capture payload must include an artifact object.' );
+
+	}
+	if ( payload.materialShape !== shape ) {
+
+		throw new Error( `Auxiliary capture shape mismatch: payload=${ payload.materialShape || '<missing>' }, requested=${ shape || '<missing>' }.` );
+
+	}
+	if ( ! provenance || typeof provenance.threeVersion !== 'string' || provenance.threeVersion.length === 0 ||
+		typeof provenance.pluginVersion !== 'string' || provenance.pluginVersion.length === 0 ) {
+
+		throw new Error( `Cannot sign ${ shape || '<unknown>' } auxiliary capture without exact Three/toolchain provenance.` );
+
+	}
+	const artifact = jsonSafe( payload.artifact );
+	artifact.sourceThreeVersion = provenance.threeVersion;
+	artifact.sourceHashVersion = provenance.pluginVersion;
+	artifact.artifactContentHashVersion = ARTIFACT_CONTENT_HASH_VERSION;
+	const hash = hashArtifactContentSync( artifact, {
+		shape,
+		threeVersion: provenance.threeVersion,
+		pluginVersion: provenance.pluginVersion,
+	} );
+	return {
+		...payload,
+		hash,
+		threeVersion: provenance.threeVersion,
+		pluginVersion: provenance.pluginVersion,
+		artifact,
+	};
 
 }
 

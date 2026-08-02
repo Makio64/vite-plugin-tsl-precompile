@@ -27,6 +27,7 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 }
 
 export {
+	__applyPrecompiledWithValidation,
 	catalogueArtifactTextureRefs,
 	collectLiveMaterialTextures,
 	collectReflectorBaseNodes,

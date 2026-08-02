@@ -215,8 +215,9 @@ export { QuaternionKeyframeTrack } from 'three/src/animation/tracks/QuaternionKe
 export { VectorKeyframeTrack } from 'three/src/animation/tracks/VectorKeyframeTrack.js';
 export { error, warn, warnOnce } from 'three/src/utils.js';
 
-// WebGPU renderer surface and replay-owned replacements.
+// Renderer/backend surface and replay-owned replacements.
 export { default as WebGPURenderer } from 'three/src/renderers/webgpu/WebGPURenderer.js';
+export { default as WebGLBackend } from 'three/src/renderers/webgl-fallback/WebGLBackend.js';
 export { default as Lighting } from './slim-replay-lighting.js';
 export { default as QuadMesh } from 'three/src/renderers/common/QuadMesh.js';
 export { default as PostProcessing } from 'three/src/renderers/common/PostProcessing.js';
@@ -247,7 +248,7 @@ export {
 	VolumeNodeMaterial,
 	LineBasicNodeMaterial, LineDashedNodeMaterial, Line2NodeMaterial,
 	PointsNodeMaterial, SpriteNodeMaterial, ShadowNodeMaterial,
-	WebGLBackend, LightsNode, LightingModel, ShadowBaseNode, RectAreaLightNode, NodeAccess, NodeUtils,
+	LightsNode, LightingModel, ShadowBaseNode, RectAreaLightNode, NodeAccess, NodeUtils,
 	R11_EAC_Format, RG11_EAC_Format, R_EAC_Signed_Format, RG_EAC_Signed_Format,
 } from './slim-stubs.js';
 

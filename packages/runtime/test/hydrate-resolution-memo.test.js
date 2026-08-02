@@ -62,6 +62,29 @@ test( 'memo: a new render re-resolves', () => {
 
 } );
 
+test( 'memo: material-node discovery cache is shared across bindings for one render only', () => {
+
+	const caches = [];
+	const memoized = createFrameScopedResolutionMemo( ( _artifact, _group, _binding, _material, options ) => {
+
+		caches.push( options.materialNodeTextureCache );
+		return null;
+
+	} );
+	const artifact = {};
+	const material = {};
+
+	memoized( artifact, 'group', 'map', material, { frame: { renderId: 1, frameId: 1 } } );
+	memoized( artifact, 'group', 'normalMap', material, { frame: { renderId: 1, frameId: 1 } } );
+	memoized( artifact, 'group', 'map', material, { frame: { renderId: 2, frameId: 1 } } );
+
+	assert.equal( caches.length, 3 );
+	assert.equal( caches[ 0 ], caches[ 1 ] );
+	assert.notEqual( caches[ 1 ], caches[ 2 ] );
+	assert.ok( caches.every( ( cache ) => cache instanceof WeakMap ) );
+
+} );
+
 test( 'memo: distinct bindings, materials, and avoidTexture identities do not share slots', () => {
 
 	const { calls, resolve } = makeCountingResolver();

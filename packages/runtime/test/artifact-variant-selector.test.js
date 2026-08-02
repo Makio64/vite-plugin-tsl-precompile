@@ -69,6 +69,15 @@ test( 'signed families fail closed on semantic miss', () => {
 		} ),
 		( error ) => error instanceof ArtifactVariantSelectionError
 			&& error.code === 'TSLP_VARIANT_SELECTOR_MISS'
+			&& error.details.closestDifferencePaths.includes( 'topology' )
+			&& /Closest capture differs at topology/.test( error.message )
+			&& error.details.remediation.schema === 'tslp-selector-remediation@1'
+			&& error.details.remediation.code === 'capture-missing-render-topology'
+			&& error.details.remediation.skill === 'integrate-tsl-precompile'
+			&& error.details.remediation.nextActions[ 1 ].kind === 'manual'
+			&& error.details.remediation.nextActions[ 1 ].argv === null
+			&& error.details.remediation.nextActions[ 1 ].argvByPackageManager.npm[ 0 ] === 'npx'
+			&& /do not hand-edit generated artifacts/.test( error.message )
 			&& error.tslPrecompileVariantSelection === true,
 	);
 
@@ -205,6 +214,204 @@ test( 'signed material artifacts alias pipeline-only sample counts when alpha-to
 		} ),
 		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
 		'attachment topology remains signed',
+	);
+
+} );
+
+test( 'signed material artifacts reuse r185 WebGPU shaders across layered-target attachment layers', () => {
+
+	for ( const surface of [ 'offscreen-array', 'offscreen-3d' ] ) {
+
+		const artifact = signedArtifact( [ layeredTargetSelector( surface, 17 ) ] );
+		assert.equal(
+			selectArtifactVariant( artifact, { renderContextSelector: layeredTargetSelector( surface, 0 ) } ),
+			artifact,
+		);
+		assert.equal(
+			selectArtifactVariant( artifact, {
+				renderContextSelector: layeredTargetSelector( surface, 108 ),
+				renderContextSelectorProfile: 'mesh-basic',
+			} ),
+			artifact,
+		);
+
+	}
+
+} );
+
+test( 'layered-target layer aliases retain every other renderer and attachment axis', () => {
+
+	const captured = layeredTargetSelector( 'offscreen-array', 17 );
+	const artifact = signedArtifact( [ captured ] );
+	const incompatible = [
+		[ 'array-versus-3D surface', layeredTargetSelector( 'offscreen-3d', 0 ) ],
+		[ 'active mip level', layeredTargetSelector( 'offscreen-array', 0, { target: { activeMipmapLevel: 1 } } ) ],
+		[ 'depth attachment', layeredTargetSelector( 'offscreen-array', 0, { target: { depth: true } } ) ],
+		[ 'stencil attachment', layeredTargetSelector( 'offscreen-array', 0, { target: { stencil: true } } ) ],
+		[ 'depth texture', layeredTargetSelector( 'offscreen-array', 0, {
+			target: { depthTexture: { kind: 'depth', format: 1026, dataType: 1014 } },
+		} ) ],
+		[ 'sample count', layeredTargetSelector( 'offscreen-array', 0, { target: { sampleCount: 4 } } ) ],
+		[ 'multiview', layeredTargetSelector( 'offscreen-array', 0, { target: { multiview: true } } ) ],
+		[ 'color format', layeredTargetSelector( 'offscreen-array', 0, {
+			target: { colors: [ { kind: 'render-target', format: 1022, dataType: 1016, colorSpace: '' } ] },
+		} ) ],
+		[ 'color data type', layeredTargetSelector( 'offscreen-array', 0, {
+			target: { colors: [ { kind: 'render-target', format: 1023, dataType: 1015, colorSpace: '' } ] },
+		} ) ],
+		[ 'color resource kind', layeredTargetSelector( 'offscreen-array', 0, {
+			target: { colors: [ { kind: 'data-array', format: 1023, dataType: 1016, colorSpace: '' } ] },
+		} ) ],
+		[ 'color space', layeredTargetSelector( 'offscreen-array', 0, {
+			target: { colors: [ { kind: 'render-target', format: 1023, dataType: 1016, colorSpace: 'srgb' } ] },
+		} ) ],
+		[ 'backend', layeredTargetSelector( 'offscreen-array', 0, { backend: 'webgl' } ) ],
+		[ 'negative layer', layeredTargetSelector( 'offscreen-array', - 1 ) ],
+		[ 'fractional layer', layeredTargetSelector( 'offscreen-array', 0.5 ) ],
+	];
+	const missingLayer = JSON.parse( layeredTargetSelector( 'offscreen-array', 0 ) );
+	delete missingLayer.target.activeCubeFace;
+	incompatible.push( [ 'missing layer', stableJsonStringify( missingLayer, 'renderObjectSelector' ) ] );
+
+	for ( const [ label, selector ] of incompatible ) {
+
+		assert.throws(
+			() => selectArtifactVariant( artifact, { renderContextSelector: selector } ),
+			( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+			label,
+		);
+
+	}
+
+	assert.throws(
+		() => selectArtifactVariant( artifact, {
+			renderContextSelector: layeredTargetSelector( 'offscreen-array', 0 ),
+			renderContextSelectorProfile: 'post-process',
+		} ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+		'non-ordinary profiles do not inherit the layer proof',
+	);
+
+} );
+
+test( 'layered-target layer aliases retain exact-match precedence and family ambiguity', () => {
+
+	const active = layeredTargetSelector( 'offscreen-array', 0 );
+	const exact = signedArtifact( [ active ], { cacheKey: 'exact', fragmentShader: 'exact' } );
+	const sibling = signedArtifact( [ layeredTargetSelector( 'offscreen-array', 17 ) ], {
+		cacheKey: 'sibling',
+		fragmentShader: 'sibling',
+	} );
+	assert.equal(
+		selectArtifactVariant( { ...exact, variants: { exact, sibling } }, { renderContextSelector: active } ).fragmentShader,
+		'exact',
+	);
+
+	const otherSibling = signedArtifact( [ layeredTargetSelector( 'offscreen-array', 18 ) ], {
+		cacheKey: 'other-sibling',
+		fragmentShader: 'other-sibling',
+	} );
+	assert.throws(
+		() => selectArtifactVariant( {
+			...sibling,
+			variants: { sibling, otherSibling },
+		}, { renderContextSelector: active } ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_AMBIGUOUS',
+		'divergent payloads matching the same normalized layer remain ambiguous',
+	);
+
+} );
+
+test( 'signed material artifacts alias r185 linear output-intermediate target realizations', () => {
+
+	const captured = opaqueSelector( 4, {
+		target: {
+			surface: 'output-intermediate',
+			colors: [ { format: 1023, dataType: 1016, colorSpace: 'srgb-linear' } ],
+		},
+	} );
+	const replay = opaqueSelector( 1, {
+		target: {
+			surface: 'offscreen-2d',
+			colors: [ { format: 1023, dataType: 1016, colorSpace: '' } ],
+		},
+	} );
+	const artifact = signedArtifact( [ captured ], { materialShape: 'mesh-standard' } );
+	assert.equal( selectArtifactVariant( artifact, { renderContextSelector: replay } ), artifact );
+
+	for ( const incompatible of [
+		opaqueSelector( 1, {
+			target: {
+				surface: 'offscreen-2d',
+				colors: [ { format: 1023, dataType: 1016, colorSpace: 'srgb' } ],
+			},
+		} ),
+		opaqueSelector( 1, {
+			target: {
+				surface: 'offscreen-2d',
+				colors: [
+					{ format: 1023, dataType: 1016, colorSpace: '' },
+					{ format: 1023, dataType: 1016, colorSpace: '' },
+				],
+			},
+		} ),
+		opaqueSelector( 1, {
+			target: {
+				surface: 'offscreen-cube',
+				colors: [ { format: 1023, dataType: 1016, colorSpace: '' } ],
+			},
+		} ),
+	] ) {
+
+		assert.throws(
+			() => selectArtifactVariant( artifact, { renderContextSelector: incompatible } ),
+			( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+		);
+
+	}
+
+	const alphaToCoverage = signedArtifact( [ opaqueSelector( 4, {
+		target: {
+			surface: 'output-intermediate',
+			colors: [ { format: 1023, dataType: 1016, colorSpace: 'srgb-linear' } ],
+		},
+		material: { alphaToCoverage: true },
+	} ) ] );
+	assert.throws(
+		() => selectArtifactVariant( alphaToCoverage, {
+			renderContextSelector: opaqueSelector( 1, {
+				target: {
+					surface: 'offscreen-2d',
+					colors: [ { format: 1023, dataType: 1016, colorSpace: '' } ],
+				},
+				material: { alphaToCoverage: true },
+			} ),
+		} ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+	);
+
+} );
+
+test( 'signed material artifacts do not alias literal default surfaces to output intermediates', () => {
+
+	const captured = opaqueSelector( 4, {
+		target: {
+			surface: 'output-intermediate',
+			colors: [ { format: 1023, dataType: 1016, colorSpace: 'srgb-linear' } ],
+		},
+	} );
+	const defaultSurface = opaqueSelector( 4, {
+		target: {
+			surface: 'default',
+			colors: [ { format: 1023, dataType: 1016, colorSpace: 'srgb-linear' } ],
+		},
+	} );
+	const artifact = signedArtifact( [ captured ], { materialShape: 'mesh-standard' } );
+
+	assert.throws(
+		() => selectArtifactVariant( artifact, { renderContextSelector: defaultSurface } ),
+		( error ) => error.code === 'TSLP_VARIANT_SELECTOR_MISS',
+		'default surfaces remain fail-closed instead of hiding render-target recovery failures',
 	);
 
 } );
@@ -438,12 +645,81 @@ test( 'signed background artifacts ignore scene and target samples but retain at
 
 } );
 
-test( 'signed render-output artifacts ignore host and attachment identity but retain sample topology', () => {
+test( 'signed background aliases ignore live renderer-size fallback drift', () => {
+
+	const warmupSelector = JSON.stringify( {
+		version: 'render-object-selector@1',
+		renderer: { backend: { kind: 'webgpu' }, shadowMap: { enabled: false, type: 1 } },
+		target: {
+			surface: 'offscreen-2d',
+			sampleCount: 1,
+			colors: [ { kind: 'render-target', format: 1023, dataType: 1016, colorSpace: '' } ],
+		},
+		scene: { fog: null, environment: null },
+		lights: [],
+		camera: { array: false },
+	} );
+	const outputSelector = JSON.stringify( {
+		version: 'render-object-selector@1',
+		renderer: { backend: { kind: 'webgpu' }, shadowMap: { enabled: false, type: 1 } },
+		target: {
+			surface: 'output-intermediate',
+			sampleCount: 4,
+			colors: [ { kind: 'render-target', format: 1023, dataType: 1016, colorSpace: 'srgb-linear' } ],
+		},
+		scene: { fog: null, environment: null },
+		lights: [],
+		camera: { array: false },
+	} );
+	const rendererSizePlan = ( data ) => {
+
+		const slot = {
+			name: 'nodeUniform1',
+			offset: 0,
+			size: 8,
+			dtype: 'vec2',
+			source: { kind: 'renderer.size', valueSnapshot: { type: 'vec2', data } },
+		};
+		return [ {
+			name: 'object',
+			slots: [ slot ],
+			orderedBindings: [ { type: 'ubo', name: 'object', slots: [ structuredClone( slot ) ] } ],
+		} ];
+
+	};
+	const warmup = signedArtifact( [ warmupSelector ], {
+		cacheKey: 'warmup',
+		uniformPlan: rendererSizePlan( [ 1, 1 ] ),
+	} );
+	const output = signedArtifact( [ outputSelector ], {
+		cacheKey: 'output',
+		uniformPlan: rendererSizePlan( [ 640, 480 ] ),
+	} );
+	const artifact = {
+		...output,
+		variants: { warmup, output },
+	};
+
+	assert.equal( selectArtifactVariant( artifact, {
+		renderContextSelector: outputSelector,
+		renderContextSelectorProfile: 'background',
+	} ).fragmentShader, 'fragment' );
+
+} );
+
+test( 'signed render-output artifacts ignore host, reversed depth, and attachment identity but retain sample topology', () => {
 
 	const captureSelector = JSON.stringify( {
 		version: 'render-object-selector@1',
-		renderer: { backend: { kind: 'webgpu' } },
-		target: { surface: 'default', sampleCount: 1, colors: [], depthTexture: null },
+		renderer: { backend: { kind: 'webgpu' }, reversedDepthBuffer: true },
+		target: {
+			surface: 'default',
+			sampleCount: 1,
+			colors: [],
+			depthTexture: null,
+			depth: false,
+			stencil: true,
+		},
 		scene: { environment: { kind: '2d', colorSpace: 'srgb-linear' } },
 		lights: [ { type: 'DirectionalLight', castShadow: true } ],
 		camera: { array: false },
@@ -456,6 +732,8 @@ test( 'signed render-output artifacts ignore host and attachment identity but re
 			sampleCount: 1,
 			colors: [ { kind: 'render-target', format: 1023, dataType: 1016 } ],
 			depthTexture: { kind: 'depth', format: 1026 },
+			depth: true,
+			stencil: false,
 		},
 		scene: null,
 		lights: [],
@@ -496,12 +774,14 @@ test( 'signed post-process artifacts ignore adapter-owned output attachments but
 
 	const captureSelector = JSON.stringify( {
 		version: 'render-object-selector@1',
-		renderer: { backend: { kind: 'webgpu' } },
+		renderer: { backend: { kind: 'webgpu' }, reversedDepthBuffer: true },
 		target: {
 			surface: 'output-intermediate',
 			sampleCount: 1,
 			colors: [ { kind: 'render-target', format: 1023 } ],
 			depthTexture: { kind: 'depth', format: 1026 },
+			depth: false,
+			stencil: true,
 		},
 		camera: { array: false },
 		material: { fog: true, transparent: false },
@@ -509,7 +789,14 @@ test( 'signed post-process artifacts ignore adapter-owned output attachments but
 	const replaySelector = JSON.stringify( {
 		version: 'render-object-selector@1',
 		renderer: { backend: { kind: 'webgpu' } },
-		target: { surface: 'default', sampleCount: 1, colors: [], depthTexture: null },
+		target: {
+			surface: 'default',
+			sampleCount: 1,
+			colors: [],
+			depthTexture: null,
+			depth: true,
+			stencil: false,
+		},
 		camera: { array: false },
 		material: { fog: false, transparent: false },
 	} );
@@ -746,6 +1033,35 @@ function opaqueSelector( sampleCount, overrides = {} ) {
 		...overrides,
 		target: { ...descriptor.target, ...( overrides.target || {} ) },
 		material: { ...descriptor.material, ...( overrides.material || {} ) },
+	}, 'renderObjectSelector' );
+
+}
+
+function layeredTargetSelector( surface, activeCubeFace, { backend = 'webgpu', target = {} } = {} ) {
+
+	return stableJsonStringify( {
+		version: 'render-object-selector@1',
+		renderer: { backend: { kind: backend } },
+		target: {
+			surface,
+			activeCubeFace,
+			activeMipmapLevel: 0,
+			color: true,
+			depth: false,
+			stencil: false,
+			sampleCount: 1,
+			multiview: false,
+			colors: [ {
+				kind: 'render-target',
+				format: 1023,
+				dataType: 1016,
+				colorSpace: '',
+			} ],
+			depthTexture: null,
+			...target,
+		},
+		object: { instanced: false },
+		material: { side: 0, transparent: false, forceSinglePass: false },
 	}, 'renderObjectSelector' );
 
 }

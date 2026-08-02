@@ -35,6 +35,12 @@ import { shaderDeclaresDepthTexture } from './texture-resolver.js';
 const fallbackTexture = new DataTexture( new Uint8Array( [ 255, 255, 255, 255 ] ), 1, 1, RGBAFormat );
 fallbackTexture.needsUpdate = true;
 
+// A color render target that has not been written yet reads as transparent
+// black. Keep this distinct from the generic white texture miss: it is used
+// only while an exact render-target selector waits for renderer ownership.
+const pendingRenderTargetColorTexture = new DataTexture( new Uint8Array( [ 0, 0, 0, 0 ] ), 1, 1, RGBAFormat );
+pendingRenderTargetColorTexture.needsUpdate = true;
+
 // Cube fallback: a six-face neutral grey cube. Supplied to texture_cube
 // bindings whose live cubemap could not be resolved (e.g. capture-side
 // uuids no longer match anything on replay). Without this fallback a
@@ -102,13 +108,14 @@ fallbackDepthCubeTexture.compareFunction = LessEqualCompare;
 fallbackDepthCubeTexture.renderTarget = { samples: 1 };
 
 /**
- * One bag, passed through to `dispatchTextureBinding` whenever the
- * dispatcher needs a shape-appropriate fallback. `selectFallbackTextureForBinding`
- * (texture-resolver.js) keys off the shader-declared type to pick which of
- * these to return — keep keys in sync with that selector.
+ * One bag, passed through to `dispatchTextureBinding` whenever the dispatcher
+ * needs a fallback. Shape keys stay in sync with
+ * `selectFallbackTextureForBinding` (texture-resolver.js); the pending
+ * render-target color key is selected only by the authoritative-selector path.
  */
 export const textureBindingFallbacks = Object.freeze( {
 	texture: fallbackTexture,
+	pendingRenderTargetColor: pendingRenderTargetColorTexture,
 	comparisonDepth: fallbackComparisonDepthTexture,
 	depth: fallbackDepthTexture,
 	depthCube: fallbackDepthCubeTexture,

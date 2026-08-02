@@ -1,11 +1,12 @@
 {
   "name": "@tsl-precompile/runtime",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.0",
   "description": "Runtime helpers for vite-plugin-tsl-precompile: UBO writers, artifact loader, dev-time .precompile marker.",
   "type": "module",
   "license": "MIT",
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "tag": "alpha"
   },
   "author": "David Ronai <davronai@gmail.com>",
   "repository": {
@@ -25,6 +26,12 @@
       "development": "./src/setup-development.js",
       "production": "./src/setup-production.js",
       "default": "./src/setup-production.js"
+    },
+    "./auto-marker": {
+      "types": "./types/auto-marker.d.ts",
+      "development": "./src/auto-marker-development.js",
+      "production": "./src/auto-marker-production.js",
+      "default": "./src/auto-marker-production.js"
     },
     "./core": {
       "types": "./types/core.d.ts",
@@ -56,6 +63,14 @@
       "production": "./src/apply-precompiled.js",
       "default": "./src/apply-precompiled.js"
     },
+    "./apply/full": {
+      "types": "./types/apply-precompiled-full.d.ts",
+      "default": "./src/apply-precompiled-full.js"
+    },
+    "./aux-registry": {
+      "types": "./types/aux-registry.d.ts",
+      "default": "./src/aux-registry.js"
+    },
     "./loader": {
       "types": "./types/artifact-loader.d.ts",
       "default": "./src/artifact-loader.js"
@@ -83,6 +98,14 @@
     "./slim-support/artifact-texture-wiring": {
       "types": "./types/slim-support/artifact-texture-wiring.d.ts",
       "default": "./src/slim-support/artifact-texture-wiring.js"
+    },
+    "./slim-support/internal-pass": {
+      "types": "./types/slim-support/internal-pass.d.ts",
+      "default": "./src/slim-support/internal-pass.js"
+    },
+    "./slim-support/precompiled-shadows": {
+      "types": "./types/slim-support/precompiled-shadows.d.ts",
+      "default": "./src/slim-support/precompiled-shadows.js"
     },
     "./slim-support/compute-sync": {
       "types": "./types/slim-support/compute-sync.d.ts",
@@ -168,9 +191,13 @@
       "types": "./types/slim-source.d.ts",
       "default": "./src/slim-source-entry.js"
     },
-    "./slim-stubs": "./src/slim-stubs.js"
+    "./slim-stubs": {
+      "types": "./types/slim-stubs.d.ts",
+      "default": "./src/slim-stubs.js"
+    }
   },
   "files": [
+    "THIRD_PARTY_NOTICES.md",
     "src",
     "build",
     "build-tools",
@@ -191,12 +218,15 @@
   "devDependencies": {
     "rollup": "^4.60.2",
     "@rollup/plugin-node-resolve": "^16.0.3",
-    "@rollup/plugin-terser": "^1.0.0"
+    "@rollup/plugin-terser": "^1.0.0",
+    "vite-plugin-tsl-precompile": "workspace:*"
   },
   "peerDependencies": {
-    "three": ">=0.184.0"
+    "@types/three": "0.185.1",
+    "three": "0.185.1"
   },
   "peerDependenciesMeta": {
+    "@types/three": { "optional": true },
     "three": { "optional": false }
   }
 }

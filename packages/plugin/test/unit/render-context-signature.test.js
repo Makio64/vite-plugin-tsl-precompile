@@ -31,6 +31,25 @@ test( 'render-context signature covers light/shadow, object, geometry, clipping,
 	skinned.object.isSkinnedMesh = true;
 	assert.notEqual( signature, createRenderContextSignature( skinned ) );
 
+	const instanced = fixture();
+	instanced.object.isInstancedMesh = true;
+	instanced.object.instanceMatrix = {
+		count: 4,
+		itemSize: 16,
+		array: new Float32Array( 4 * 16 ),
+	};
+	const instancedSignature = createRenderContextSignature( instanced );
+	instanced.object.instanceMatrix = {
+		count: 6,
+		itemSize: 16,
+		array: new Float32Array( 6 * 16 ),
+	};
+	assert.notEqual(
+		instancedSignature,
+		createRenderContextSignature( instanced ),
+		'r185 InstanceNode uniform-array capacity is shader topology',
+	);
+
 	const vertexColor = fixture();
 	vertexColor.object.geometry.attributes.color = { itemSize: 3, array: new Uint8Array( 12 ), normalized: true };
 	assert.notEqual( signature, createRenderContextSignature( vertexColor ) );

@@ -11,6 +11,8 @@ export function installAnimationLoopSettleTransition( target = globalThis ) {
 		atTarget = false,
 		computePending = false,
 		holdAnimationUntilReady = false,
+		presentationReady = true,
+		retainAsyncProgress = false,
 		settleFrames = 0,
 		shadowPending = false,
 		waitingForAsyncCounters = false,
@@ -29,10 +31,16 @@ export function installAnimationLoopSettleTransition( target = globalThis ) {
 
 		}
 
-		if ( waitingForAsyncWork ) nextAnimationLoopCalls = 0;
+		// Before the first authoritative presentation, changed loader/compile/
+		// compute inputs invalidate the completed-callback budget. Once a
+		// presentation after the readiness boundary has succeeded, retain that
+		// progress while recurring async work drains. Otherwise a pipeline that
+		// starts a short compile job every frame can reset forever even though it
+		// has already presented the requested scene.
+		if ( waitingForAsyncWork && retainAsyncProgress !== true ) nextAnimationLoopCalls = 0;
 		if (
 			callbackBlocked ||
-			( ! waitingForAsyncWork && nextAnimationLoopCalls >= settleTarget )
+			( presentationReady === true && nextAnimationLoopCalls >= settleTarget )
 		) {
 
 			return { animationLoopCalls: nextAnimationLoopCalls, runCallback: false };
@@ -248,10 +256,21 @@ export function minimumRenderableObjectsForExample( name ) {
 	// async PLY statue is attached. Waiting for one renderable object lets the
 	// stock/reference frame freeze before the loaded subject appears.
 	if ( name === 'webgpu_lights_projector.html' ) return 3;
+	// Progressive shadows create the ground and first TransformControls helper
+	// synchronously, then use an explicit LoadingManager to attach the GLTF
+	// subject and its second helper. The harness only observes
+	// DefaultLoadingManager, and the incomplete helper topology already counts
+	// 68 geometry/material descendants, so require one object beyond it.
+	if ( name === 'webgpu_shadowmap_progressive.html' ) return 69;
 	// Retro starts with the procedural smoke plane, then async-loads the coffee
 	// mug scene. A one-object gate can freeze stock before the model appears,
 	// while replay captures it after loader settle.
 	if ( name === 'webgpu_postprocessing_retro.html' ) return 2;
+	// SSR starts with only its reflective floor. Once the steampunk camera loads,
+	// the main pass observes the floor plus three model meshes. The renderable
+	// tracker retains that maximum so nested fullscreen post-process renders
+	// cannot overwrite it with their single helper mesh.
+	if ( name === 'webgpu_postprocessing_ssr.html' ) return 4;
 	// Motion blur creates the floor, room, and two toruses synchronously, then
 	// adds the Xbot's two skinned meshes from GLTF. Waiting for the generic first
 	// renderable lets capture freeze before either skinned material exists.
@@ -262,9 +281,10 @@ export function minimumRenderableObjectsForExample( name ) {
 	// first couple of shader balls. The final scene is the grid plane plus two
 	// visible meshes per sample (Calibration_Mesh and Preview_Mesh).
 	if ( name === 'webgpu_loader_materialx.html' ) return 65;
-	// Procedural wood yields one block per setTimeout(0) after the HDR/font
-	// loads. Wait for the grid plane, 14 text labels, and all 40 wood blocks.
-	if ( name === 'webgpu_tsl_wood.html' ) return 55;
+	// Procedural wood yields one preset block per setTimeout(0), then appends a
+	// custom label and custom block synchronously. The complete authored scene
+	// is the grid plane, 15 labels, and 41 blocks.
+	if ( name === 'webgpu_tsl_wood.html' ) return 57;
 	return 1;
 
 }
@@ -277,6 +297,12 @@ export function minimumRenderableObjectsForExample( name ) {
  */
 export function holdAnimationUntilReadyForExample( name ) {
 
+	// This page starts its RenderPipeline before the dungeon GLTF callback adds
+	// any meshes. Keep presenting startup frames so the pass can observe that
+	// deferred scene mutation; the generic renderable-object and async-quiescence
+	// gates still prevent an environment-only frame from becoming final evidence.
+	if ( name === 'webgpu_postprocessing_ssr_denoise.html' ) return false;
+
 	if (
 		// Backdrop water advances auto-rotating OrbitControls once per callback,
 		// without a delta. Pause it while loaders/compilers differ between modes.
@@ -284,10 +310,28 @@ export function holdAnimationUntilReadyForExample( name ) {
 		// Rain advances four storage buffers once per author callback. Capture and
 		// replay must not run extra compute steps while their async work differs.
 		name === 'webgpu_compute_particles_rain.html' ||
+		// Temporal upscaling accumulates every callback. Replay performs extra
+		// loader/material preparation, so starting history before the GLTF and
+		// its textures settle compares different temporal phases.
+		name === 'webgpu_upscaling_taau.html' ||
+		// Monaco performs the initial editor build asynchronously. Preserve the
+		// author's first callback until that build can produce a real presentation.
+		name === 'webgpu_tsl_editor.html' ||
 		name === 'webgpu_postprocessing_traa.html' ||
 		name === 'webgpu_postprocessing_lensflare.html' ||
 		name === 'webgpu_postprocessing_smaa.html' ||
 		name === 'webgpu_postprocessing_ssgi_ballpool.html' ||
+		// Sandbox awaits a worker-decoded KTX2 texture before it creates any
+		// scene materials. Its first callback must not consume the pinned tick
+		// while the scene is still empty.
+		name === 'webgpu_sandbox.html' ||
+		// The HDR callback establishes selector-relevant scene environment state.
+		name === 'webgpu_reflection_roughness.html' ||
+		// The graph example renders its ground before the awaited HDR callback
+		// adds the selector-relevant directional light.
+		name === 'webgpu_tsl_graph.html' ||
+		// Both crate textures must be ready before the single camera-alignment callback.
+		name === 'webgpu_textures_anisotropy.html' ||
 		name === 'webgpu_test_memory.html'
 	) return true;
 	return false;
@@ -307,6 +351,10 @@ export function targetTickForExample( name, defaultTargetTick = 0, hasExplicitTa
 	// physics step. Pinning at one gives it a truthy clock, so the later clamped
 	// SSGI/TRAA convergence callbacks keep one stable ball arrangement.
 	if ( name === 'webgpu_postprocessing_ssgi_ballpool.html' ) return 1;
+	// Linked particles spawn from delta time. A nonzero pinned tick yields a
+	// representative deterministic population instead of forty overlapping
+	// particles at the origin; 180 clears the standard visual evidence floor.
+	if ( name === 'webgpu_tsl_vfx_linkedparticles.html' ) return 180;
 	return defaultTargetTick;
 
 }
@@ -324,6 +372,10 @@ export function deterministicTimeoutPolicyForExample( name ) {
 	// the frame on the computed green result in every mode, independent of shader
 	// compilation and renderer-startup latency.
 	if ( name === 'webgpu_compute_reduce.html' ) return Object.freeze( { delayMs: 1000, steps: 4 } );
+	// Storage-buffer starts from its authored immediate inversion. Queueing but
+	// not draining the recurring 1 s callbacks freezes that first stable phase
+	// instead of racing a second in-place inversion at screenshot time.
+	if ( name === 'webgpu_storage_buffer.html' ) return Object.freeze( { delayMs: 1000, steps: 0 } );
 	return null;
 
 }
@@ -353,14 +405,20 @@ export function settleFramesForExample( name, defaultSettleFrames = 8, hasExplic
 	// different number of zoom steps after capture-only shader work.
 	if ( name === 'webgpu_camera_logarithmicdepthbuffer.html' ) return 1;
 	if ( name === 'webgpu_compute_birds.html' ) return 1;
+	// Rasterizer IBL performs a complete visibility-buffer compute transaction
+	// on every animation callback. The generic eight quiet callbacks repeat the
+	// same very large authored dispatch after the deterministic clock is already
+	// pinned, monopolizing the renderer before Playwright can observe its timeout.
+	// One callback still runs the full r185 compute + shaded resolve topology.
+	if ( name === 'webgpu_compute_rasterizer_ibl.html' ) return 1;
 	if ( name === 'webgpu_compute_sort_bitonic.html' ) return 1;
 	if ( name === 'webgpu_tsl_compute_attractors_particles.html' ) return 1;
+	if ( name === 'webgpu_tsl_vfx_linkedparticles.html' ) return 1;
 	if ( name === 'webgpu_instance_path.html' ) return 1;
 	if ( name === 'webgpu_lights_custom.html' ) return 1;
 	if ( name === 'webgpu_lights_projector.html' ) return 1;
 	if ( name === 'webgpu_materials_video.html' ) return 1;
 	if ( name === 'webgpu_textures_anisotropy.html' ) return 1;
-	if ( name === 'webgpu_postprocessing_dof.html' ) return 1;
 	if ( name === 'webgpu_postprocessing_retro.html' ) return 1;
 	if ( name === 'webgpu_postprocessing_smaa.html' ) return 1;
 	if ( name === 'webgpu_postprocessing_ssr.html' ) return 1;
@@ -378,6 +436,10 @@ export function settleFramesForExample( name, defaultSettleFrames = 8, hasExplic
 	// Sixty-four quiet frames let both capture and replay converge before comparison
 	// instead of grading different amounts of residual noise.
 	if ( name === 'webgpu_postprocessing_ssgi.html' ) return 64;
+	// SSR denoise feeds a stochastic SSR sample through a 16-frame
+	// TemporalReproject window and RecurrentDenoise's default 32-frame window.
+	// Let both modes complete the longer authored history before comparison.
+	if ( name === 'webgpu_postprocessing_ssr_denoise.html' ) return 32;
 	// Ballpool has the same stochastic SSGI + TRAA history, after its physics
 	// pose is pinned by targetTickForExample().
 	if ( name === 'webgpu_postprocessing_ssgi_ballpool.html' ) return 64;
@@ -388,6 +450,11 @@ export function settleFramesForExample( name, defaultSettleFrames = 8, hasExplic
 	// stock frame. With jitter pinned in both modes, 80 quiet frames reaches a
 	// bit-for-bit identical replay for this callback-count-driven example.
 	if ( name === 'webgpu_postprocessing_traa.html' ) return 80;
+	// TAAU gives each new sample only 2.5% weight. The generic eight-frame
+	// settle therefore retains about 82% of its mode-specific startup history
+	// and produces a stable but false edge mismatch. Keep the pose pinned while
+	// both temporal histories converge through the same 80 jittered callbacks.
+	if ( name === 'webgpu_upscaling_taau.html' ) return 80;
 	if ( name === 'webgpu_sandbox.html' ) return 1;
 	if ( name === 'webgpu_shadowmap_progressive.html' ) return 1;
 	if ( name === 'webgpu_tsl_wood.html' ) return 1;

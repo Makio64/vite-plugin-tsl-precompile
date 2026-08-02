@@ -42,7 +42,11 @@ if ( textureUtilsPrototype[ TEXTURE_UTILS_PATCH ] !== true ) {
 
 	textureUtilsPrototype.createDefaultTexture = function ( texture ) {
 
-		if ( texture && ( texture.isData3DTexture === true || texture.is3DTexture === true ) ) {
+		if (
+			texture &&
+			texture.isRenderTargetTexture !== true &&
+			( texture.isData3DTexture === true || texture.is3DTexture === true )
+		) {
 
 			const usage = typeof globalThis !== 'undefined' ? globalThis.GPUTextureUsage : null;
 			const format = default3DTextureFormat( texture );
@@ -73,7 +77,11 @@ if ( textureUtilsPrototype[ TEXTURE_UTILS_PATCH ] !== true ) {
 
 	textureUtilsPrototype.createTexture = function ( texture, options = {} ) {
 
-		if ( texture && ( texture.isData3DTexture === true || texture.is3DTexture === true ) ) {
+		if (
+			texture &&
+			texture.isRenderTargetTexture !== true &&
+			( texture.isData3DTexture === true || texture.is3DTexture === true )
+		) {
 
 			const usage = typeof globalThis !== 'undefined' ? globalThis.GPUTextureUsage : null;
 			const format = default3DTextureFormat( texture );
@@ -116,7 +124,12 @@ if ( textureUtilsPrototype[ TEXTURE_UTILS_PATCH ] !== true ) {
 
 	textureUtilsPrototype.updateTexture = function ( texture, options = {} ) {
 
-		if ( texture && ( texture.isData3DTexture === true || texture.is3DTexture === true ) && texture.flipY !== true ) {
+		if (
+			texture &&
+			texture.isRenderTargetTexture !== true &&
+			( texture.isData3DTexture === true || texture.is3DTexture === true ) &&
+			texture.flipY !== true
+		) {
 
 			const image = options.image || texture.image || null;
 			const data = image && image.data || null;

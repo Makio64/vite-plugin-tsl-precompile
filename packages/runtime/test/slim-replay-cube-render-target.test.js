@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { REVISION, Texture } from 'three';
+import { Texture } from 'three';
 import { createCubeRenderTargetAuxConfig } from '@tsl-precompile/contract/cube-render-target';
+import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import {
 	__resetAuxRegistryForTests,
@@ -16,7 +17,7 @@ import { extractCubeRenderTargetArtifact } from '../../plugin/src/aux-capture.js
 
 const SHAPE = 'cube-render-target';
 const HASH_OPTIONS = {
-	threeVersion: threePackageVersionFromRevision( REVISION ),
+	threeVersion: SLIM_THREE_PACKAGE_VERSION,
 	pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
 };
 
@@ -296,12 +297,5 @@ function registerForConfig( config, captured ) {
 function hashConfig( config ) {
 
 	return hashPlainConfigSync( config, { shape: SHAPE, ...HASH_OPTIONS } );
-
-}
-
-function threePackageVersionFromRevision( revision ) {
-
-	const match = String( revision || '' ).match( /\d+/ );
-	return match ? `0.${ match[ 0 ] }.0` : String( revision || 'unknown' );
 
 }

@@ -1,1 +1,1 @@
-export { MaterialVariantSet, createMaterialVariants, applyMaterialVariant } from './index';
+export { MaterialVariantSet, createMaterialVariants, applyMaterialVariant } from './index.js';

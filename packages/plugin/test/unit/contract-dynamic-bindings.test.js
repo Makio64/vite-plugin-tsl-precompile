@@ -4,14 +4,17 @@ import assert from 'node:assert/strict';
 import {
 	createLiveUniformCallsiteIdentity,
 	createLiveUniformNodeIdentity,
+	createStorageBufferSnapshotHash,
 	DYNAMIC_BINDING_PHASE,
 	DYNAMIC_BINDING_TARGET,
 	collectArtifactDynamicBindings,
 	dynamicBindingDescriptor,
+	hasExactLiveUniformOverlayAddress,
 	isDynamicBindingKind,
 	isLiveUniformCallsiteIdentity,
 	isLiveUniformNodeIdentity,
 	validateDynamicBindingSource,
+	validateStorageBufferSnapshot,
 } from '@tsl-precompile/contract/dynamic-bindings';
 import { collectArtifactSourceKinds, validateArtifact } from '@tsl-precompile/contract/kinds';
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
@@ -21,11 +24,26 @@ test( 'dynamicBindingDescriptor resolves exact kinds', () => {
 	assert.equal( dynamicBindingDescriptor( 'artifact.texture' ).target, DYNAMIC_BINDING_TARGET.SAMPLED_TEXTURE );
 	assert.ok( dynamicBindingDescriptor( 'artifact.texture' ).optional.includes( 'imageWidth' ) );
 	assert.equal( dynamicBindingDescriptor( 'depth.texture' ).target, DYNAMIC_BINDING_TARGET.SAMPLED_TEXTURE );
+	assert.ok( dynamicBindingDescriptor( 'depth.texture' ).optional.includes( 'shadowMapColor' ) );
+	assert.ok( dynamicBindingDescriptor( 'depth.texture' ).optional.includes( 'reflectorIndex' ) );
 	assert.ok( dynamicBindingDescriptor( 'reflector.texture' ).optional.includes( 'generateMipmaps' ) );
 	assert.equal( dynamicBindingDescriptor( 'uniform.live' ).target, DYNAMIC_BINDING_TARGET.UNIFORM_SLOT );
 	assert.equal( dynamicBindingDescriptor( 'object3d.nodeUniform' ).owner, 'object3d' );
 	assert.equal( dynamicBindingDescriptor( 'builtin.dfgLUT' ).owner, 'runtime' );
 	assert.ok( dynamicBindingDescriptor( 'storage.buffer' ).optional.includes( 'elementType' ) );
+	assert.equal( dynamicBindingDescriptor( 'environment.rotation' ).owner, 'material-or-scene' );
+	assert.deepEqual( dynamicBindingDescriptor( 'pmrem.maxMip' ).required, [ 'textureUuid' ] );
+
+} );
+
+test( 'PMREM dynamic sources require an exact captured atlas identity', () => {
+
+	assert.equal( validateDynamicBindingSource( { kind: 'pmrem.maxMip' } )[ 0 ].field, 'textureUuid' );
+	assert.deepEqual( validateDynamicBindingSource( {
+		kind: 'pmrem.maxMip',
+		textureUuid: 'atlas',
+		valueSnapshot: { type: 'number', data: 5 },
+	} ), [] );
 
 } );
 
@@ -93,6 +111,58 @@ test( 'validateDynamicBindingSource accepts only non-negative uniform.live ident
 		const errors = validateDynamicBindingSource( { kind: 'uniform.live', liveNodeId } );
 		assert.equal( errors.length, 1 );
 		assert.equal( errors[ 0 ].code, 'dynamic-binding.live-node-id' );
+
+	}
+
+} );
+
+test( 'hasExactLiveUniformOverlayAddress requires a safe path or paired stable identity', () => {
+
+	const identity = 'uniform-callsite@1#src/reduce.js#5#0';
+	assert.equal( hasExactLiveUniformOverlayAddress( {
+		kind: 'uniform.live',
+		nodePath: [ 'positionNode', 'reductionAmount' ],
+	} ), true );
+	assert.equal( hasExactLiveUniformOverlayAddress( {
+		kind: 'uniform.live',
+		liveNodeId: 0,
+		liveNodeIdentity: identity,
+	} ), true );
+	for ( const source of [
+		null,
+		{ kind: 'constant', nodePath: [ 'positionNode', 'reductionAmount' ] },
+		{ kind: 'uniform.live', valueSnapshot: { type: 'number', data: 0 } },
+		{ kind: 'uniform.live', liveNodeId: 0 },
+		{ kind: 'uniform.live', liveNodeIdentity: identity },
+		{ kind: 'uniform.live', liveNodeId: 0, liveNodeIdentity: 'not-an-identity' },
+		{ kind: 'uniform.live', nodePath: [ 'positionNode', '__proto__' ] },
+	] ) {
+
+		assert.equal( hasExactLiveUniformOverlayAddress( source ), false );
+
+	}
+
+} );
+
+test( 'storage.buffer anonymous resource identity is complete, ordered, and unnamed', () => {
+
+	assert.deepEqual( validateDynamicBindingSource( {
+		kind: 'storage.buffer',
+		elementType: 'uint',
+		anonymousResourceOrdinal: 1,
+		anonymousResourceCount: 2,
+	} ), [] );
+	for ( const [ source, code ] of [
+		[ { anonymousResourceOrdinal: - 1, anonymousResourceCount: 2 }, 'dynamic-binding.storage-anonymous-ordinal' ],
+		[ { anonymousResourceOrdinal: 0 }, 'dynamic-binding.storage-anonymous-count' ],
+		[ { anonymousResourceCount: 2 }, 'dynamic-binding.storage-anonymous-ordinal' ],
+		[ { anonymousResourceOrdinal: 0, anonymousResourceCount: 1 }, 'dynamic-binding.storage-anonymous-count' ],
+		[ { anonymousResourceOrdinal: 2, anonymousResourceCount: 2 }, 'dynamic-binding.storage-anonymous-range' ],
+		[ { attributeName: 'Visible', anonymousResourceOrdinal: 0, anonymousResourceCount: 2 }, 'dynamic-binding.storage-anonymous-name' ],
+	] ) {
+
+		const errors = validateDynamicBindingSource( { kind: 'storage.buffer', ...source } );
+		assert.ok( errors.some( ( error ) => error.code === code ), code );
 
 	}
 
@@ -384,5 +454,35 @@ test( 'collectArtifactDynamicBindings is idempotent and does not mutate the inpu
 	assert.equal( b.length, 1 );
 	assert.notEqual( a, b ); // fresh array each call
 	assert.deepEqual( a[ 0 ], b[ 0 ] );
+
+} );
+
+test( 'storage-buffer snapshots require exact typed length and checksum', () => {
+
+	const entry = {
+		name: 'meshletIds',
+		arrayType: 'Uint32Array',
+		count: 4,
+		itemSize: 1,
+		arraySnapshot: [ 0, 1, 0xffffffff, 7 ],
+	};
+	entry.arraySnapshotHash = createStorageBufferSnapshotHash( entry );
+	assert.match( entry.arraySnapshotHash, /^storage-buffer-snapshot@1:[a-f0-9]{16}$/ );
+	assert.deepEqual( validateStorageBufferSnapshot( entry ), [] );
+	assert.equal( validateArtifact( {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		uniformPlan: [ { name: 'render', storageBuffers: [ entry ] } ],
+	} ).ok, true );
+
+	const tampered = JSON.parse( JSON.stringify( entry ) );
+	tampered.arraySnapshot[ 1 ] = 2;
+	assert.equal( validateStorageBufferSnapshot( tampered )[ 0 ].code, 'dynamic-binding.storage-snapshot-integrity' );
+
+	const wrongLength = { ...entry, arraySnapshot: entry.arraySnapshot.slice( 1 ) };
+	assert.equal( validateStorageBufferSnapshot( wrongLength )[ 0 ].code, 'dynamic-binding.storage-snapshot-shape' );
+
+	const wrongType = { ...entry, arrayType: 'BigUint64Array' };
+	assert.equal( validateStorageBufferSnapshot( wrongType )[ 0 ].code, 'dynamic-binding.storage-snapshot-shape' );
 
 } );

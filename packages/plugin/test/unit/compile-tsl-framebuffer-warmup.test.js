@@ -7,6 +7,89 @@ import { beginRenderObjectHarvest } from '../../src/vendor/render-object-observe
 import { VIEWPORT_TEXTURE_IDENTITY_SCHEMA } from '@tsl-precompile/contract/dynamic-bindings';
 import { RENDER_BINDING_OWNER_KINDS } from '@tsl-precompile/contract/render-selector';
 
+test( 'compileTSL lets an awaiting owner restore temporary state before the next queued compile enters', async ( t ) => {
+
+	async function runScenario( failFirstCompile ) {
+
+		const events = [];
+		let sentinel = 'live';
+		let currentRenderTarget = null;
+		let releaseFirstCompile;
+		let markFirstCompileEntered;
+		const firstCompileGate = new Promise( ( resolve ) => { releaseFirstCompile = resolve; } );
+		const firstCompileEntered = new Promise( ( resolve ) => { markFirstCompileEntered = resolve; } );
+		const manager = {
+			nodeBuilderCache: new Map(),
+			getForRenderCacheKey() { return 'unused'; },
+			getForRender() { return null; },
+		};
+		const renderer = {
+			_nodes: manager,
+			getRenderTarget() { return currentRenderTarget; },
+			setRenderTarget( target ) { currentRenderTarget = target; },
+			getMRT() { return null; },
+			setMRT() {},
+			async compileAsync( scene ) {
+
+				events.push( `${ scene.label }:inner:${ sentinel }` );
+				if ( scene.label !== 'A' ) return;
+				markFirstCompileEntered();
+				await firstCompileGate;
+				if ( failFirstCompile ) throw new Error( 'expected A failure' );
+
+			},
+			render() {},
+		};
+		const camera = {};
+		const sceneA = { label: 'A', userData: {}, traverse() {} };
+		const sceneB = { label: 'B', userData: {}, traverse() {} };
+
+		const captureA = ( async () => {
+
+			sentinel = 'temporary-A';
+			try {
+
+				await compileTSL( renderer, sceneA, camera, { skipWarmupRender: true } );
+
+			} finally {
+
+				events.push( 'A:caller-cleanup' );
+				sentinel = 'live';
+
+			}
+
+		} )();
+		await firstCompileEntered;
+		const compileB = compileTSL( renderer, sceneB, camera, { skipWarmupRender: true } );
+		await Promise.resolve();
+		assert.equal(
+			events.some( ( event ) => event.startsWith( 'B:inner:' ) ),
+			false,
+			'B remains queued while A owns the renderer compile lock',
+		);
+		releaseFirstCompile();
+
+		const settlements = await Promise.allSettled( [ captureA, compileB ] );
+		assert.deepEqual(
+			events,
+			[
+				'A:inner:temporary-A',
+				'A:caller-cleanup',
+				'B:inner:live',
+			],
+			'the public queue tail settles behind A owner continuation cleanup',
+		);
+		assert.equal( sentinel, 'live' );
+		assert.equal( settlements[ 0 ].status, failFirstCompile ? 'rejected' : 'fulfilled' );
+		assert.equal( settlements[ 1 ].status, 'fulfilled' );
+
+	}
+
+	await t.test( 'after success', () => runScenario( false ) );
+	await t.test( 'after failure', () => runScenario( true ) );
+
+} );
+
 test( 'compileTSL binds the renderer framebuffer target during canvas warm-up', async () => {
 
 	const framebufferTarget = { label: 'framebuffer-target', samples: 4 };
@@ -60,6 +143,93 @@ test( 'compileTSL binds the renderer framebuffer target during canvas warm-up', 
 
 } );
 
+test( 'compileTSL suppresses r185 WebGPU framebuffer copies during synthetic compile and warm-up', async () => {
+
+	const copyPhases = [];
+	let phase = 'idle';
+	const backend = {
+		isWebGPUBackend: true,
+		copyFramebufferToTexture() {
+
+			copyPhases.push( phase );
+
+		},
+	};
+	const originalCopy = backend.copyFramebufferToTexture;
+	const manager = {
+		nodeBuilderCache: new Map(),
+		getForRenderCacheKey() { return 'unused'; },
+		getForRender() { return null; },
+	};
+	const renderer = {
+		backend,
+		_nodes: manager,
+		getRenderTarget() { return null; },
+		setRenderTarget() {},
+		getMRT() { return null; },
+		setMRT() {},
+		async compileAsync() {
+
+			phase = 'compile';
+			backend.copyFramebufferToTexture();
+			phase = 'idle';
+
+		},
+		render() {
+
+			phase = 'render';
+			backend.copyFramebufferToTexture();
+			phase = 'idle';
+
+		},
+	};
+	const scene = { userData: {}, traverse() {} };
+
+	await compileTSL( renderer, scene, {} );
+
+	assert.deepEqual( copyPhases, [] );
+	assert.equal( backend.copyFramebufferToTexture, originalCopy, 'the live backend method is restored after synthetic warm-up' );
+
+} );
+
+test( 'compileTSL suppresses r185 occlusion queries during compile and warm-up, then restores them', async () => {
+
+	const phases = [];
+	const occluder = { occlusionTest: true };
+	const manager = {
+		nodeBuilderCache: new Map(),
+		getForRenderCacheKey() { return 'unused'; },
+		getForRender() { return null; },
+	};
+	const renderer = {
+		_nodes: manager,
+		getRenderTarget() { return null; },
+		setRenderTarget() {},
+		getMRT() { return null; },
+		setMRT() {},
+		async compileAsync() {
+
+			phases.push( [ 'compile', occluder.occlusionTest ] );
+
+		},
+		render() {
+
+			phases.push( [ 'render', occluder.occlusionTest ] );
+			throw new Error( 'expected warm-up failure' );
+
+		},
+	};
+	const scene = {
+		userData: {},
+		traverse( callback ) { callback( occluder ); },
+	};
+
+	await assert.rejects( compileTSL( renderer, scene, {} ), /expected warm-up failure/ );
+	assert.deepEqual( phases, [ [ 'compile', false ], [ 'render', false ] ] );
+	assert.equal( occluder.occlusionTest, true, 'the live query flag is restored after failure' );
+
+} );
+
 test( 'compileTSL borrows caller render targets without mutation or disposal', async () => {
 
 	const previousTarget = { label: 'previous' };
@@ -103,6 +273,97 @@ test( 'compileTSL borrows caller render targets without mutation or disposal', a
 	);
 	assert.equal( currentRenderTarget, previousTarget, 'failure restores the caller target' );
 	assert.equal( disposeCalls, 0, 'failure leaves borrowed target ownership with the caller' );
+
+} );
+
+test( 'compileTSL captures a pre-first-render postprocess quad while suppressing PassNode side effects', async () => {
+
+	const isolatedMaterial = { uuid: 'isolated-final-quad' };
+	const liveMaterial = { uuid: 'live-scene-material' };
+	const finalQuadWorldMatrix = { elements: Array.from( { length: 16 }, ( _, index ) => index ) };
+	const calls = [];
+	let isolatedWorldMatrix = null;
+	let passNodeUpdateBeforeCalls = 0;
+	const manager = {
+		nodeBuilderCache: new Map(),
+		getForRenderCacheKey() { return 'unused'; },
+		getForRender() { return null; },
+		updateBefore( renderObject ) {
+
+			calls.push( [ 'before', renderObject.material ] );
+			if ( renderObject.material === isolatedMaterial ) passNodeUpdateBeforeCalls ++;
+
+		},
+		updateForRender( renderObject ) {
+
+			calls.push( [ 'update', renderObject.material ] );
+			if ( renderObject.material === isolatedMaterial ) isolatedWorldMatrix = finalQuadWorldMatrix;
+
+		},
+		updateAfter( renderObject ) { calls.push( [ 'after', renderObject.material ] ); },
+	};
+	const originalMethods = {
+		updateBefore: manager.updateBefore,
+		updateForRender: manager.updateForRender,
+		updateAfter: manager.updateAfter,
+	};
+	let currentTarget = null;
+	const renderer = {
+		_nodes: manager,
+		toneMapping: 4,
+		outputColorSpace: 'display',
+		getRenderTarget() { return currentTarget; },
+		setRenderTarget( target ) { currentTarget = target; },
+		getMRT() { return null; },
+		setMRT() {},
+		async compileAsync() {
+
+			assert.equal( this.toneMapping, 0 );
+			assert.equal( this.outputColorSpace, 'working' );
+			for ( const material of [ isolatedMaterial, liveMaterial ] ) {
+
+				const renderObject = { material };
+				manager.updateBefore( renderObject );
+				manager.updateForRender( renderObject );
+				if ( material === isolatedMaterial ) {
+
+					// r185's object.worldMatrix UniformNode starts null before the
+					// first RenderPipeline.render(). Bindings immediately reads
+					// `.elements` after updateForRender initializes that value.
+					assert.equal( isolatedWorldMatrix.elements.length, 16 );
+
+				}
+				manager.updateAfter( renderObject );
+
+			}
+
+		},
+		render() { throw new Error( 'skipWarmupRender must avoid the synthetic render' ); },
+	};
+	const scene = { userData: {}, traverse() {} };
+
+	await compileTSL( renderer, scene, {}, {
+		skipWarmupRender: true,
+		skipNodeUpdatesForMaterials: [ isolatedMaterial ],
+		rendererStateOverride: {
+			toneMapping: 0,
+			currentColorSpace: 'working',
+		},
+	} );
+
+	assert.deepEqual( calls, [
+		[ 'update', isolatedMaterial ],
+		[ 'before', liveMaterial ],
+		[ 'update', liveMaterial ],
+		[ 'after', liveMaterial ],
+	] );
+	assert.equal( isolatedWorldMatrix, finalQuadWorldMatrix );
+	assert.equal( passNodeUpdateBeforeCalls, 0 );
+	assert.equal( manager.updateBefore, originalMethods.updateBefore );
+	assert.equal( manager.updateForRender, originalMethods.updateForRender );
+	assert.equal( manager.updateAfter, originalMethods.updateAfter );
+	assert.equal( renderer.toneMapping, 4 );
+	assert.equal( renderer.outputColorSpace, 'display' );
 
 } );
 
@@ -624,6 +885,89 @@ test( 'compileTSL discards an incomplete supplied family and uses the whole synt
 
 } );
 
+test( 'compileTSL atomically recovers an incomplete supplied family from complete cached states', async () => {
+
+	const {
+		material,
+		manager,
+		renderer,
+		realHarvest,
+		observedFirstState,
+	} = await makeStateIncompleteSuppliedFamilyFixture( 'cache-recovered-private-material' );
+	const recoveredFirstState = makeMinimalState( 'cache-recovered-first' );
+	const recoveredSecondState = makeMinimalState( 'cache-recovered-second' );
+	const family = realHarvest.familiesByMaterial.get( material );
+
+	assert.equal( family.complete, false );
+	assert.equal( family.variants.length, 2 );
+	assert.equal(
+		family.variants.every( ( variant ) =>
+			variant.requests.length > 0 &&
+			variant.requests.every( ( request ) => request.renderContextSelector.length > 0 ) &&
+			variant.renderContextSelectors.length > 0
+		),
+		true,
+		'the family is incomplete only because one builder state was not correlated',
+	);
+
+	manager.nodeBuilderCache.set( 'supplied-first-key', recoveredFirstState );
+	manager.nodeBuilderCache.set( 'supplied-second-key', recoveredSecondState );
+	const scene = { userData: {}, traverse() {} };
+	const artifacts = await compileTSL( renderer, scene, {}, {
+		noGlobalMRT: true,
+		renderObjectHarvest: realHarvest,
+		skipWarmupRender: true,
+	} );
+	const variants = artifacts.byMaterialVariants.get( material.uuid );
+
+	assert.equal( variants.length, 2 );
+	assert.deepEqual(
+		variants.map( ( artifact ) => artifact.vertexShader ).sort(),
+		[ 'cache-recovered-first-vertex', 'cache-recovered-second-vertex' ],
+	);
+	assert.equal(
+		variants.some( ( artifact ) => artifact.vertexShader === observedFirstState.vertexShader ),
+		false,
+		'recovery uses the whole current cache family instead of mixing a harvested sibling',
+	);
+	assert.equal( variants.every( ( artifact ) => artifact.materialUuid === material.uuid ), true );
+	assert.equal( variants.every( ( artifact ) => artifact.renderContextSelectors.length > 0 ), true );
+
+} );
+
+test( 'compileTSL does not partially attribute an incomplete supplied family with a missing cached state', async () => {
+
+	const {
+		material,
+		manager,
+		renderer,
+		realHarvest,
+	} = await makeStateIncompleteSuppliedFamilyFixture( 'cache-partial-private-material' );
+	const cachedFirstState = makeMinimalState( 'cache-partial-first' );
+	manager.nodeBuilderCache.set( 'supplied-first-key', cachedFirstState );
+
+	const scene = { userData: {}, traverse() {} };
+	const artifacts = await compileTSL( renderer, scene, {}, {
+		noGlobalMRT: true,
+		renderObjectHarvest: realHarvest,
+		skipWarmupRender: true,
+	} );
+
+	assert.equal( artifacts.byMaterialUuid.has( material.uuid ), false );
+	assert.equal( artifacts.byMaterialVariants.has( material.uuid ), false );
+	assert.equal(
+		artifacts.some( ( artifact ) => artifact.materialUuid === material.uuid ),
+		false,
+		'the available sibling must not inherit private-material attribution',
+	);
+	assert.equal(
+		artifacts.some( ( artifact ) => artifact.vertexShader === cachedFirstState.vertexShader ),
+		true,
+		'the assertion covers an otherwise extractable accumulated-cache entry',
+	);
+
+} );
+
 test( 'compileTSL stamps shadow-caster ownership only from exact dispatch evidence', async () => {
 
 	const cacheKey = 'exact-shadow-owner';
@@ -708,6 +1052,38 @@ function makeHarvestRenderer( manager ) {
 		setMRT() {},
 		async compileAsync() {},
 		render() {},
+	};
+
+}
+
+async function makeStateIncompleteSuppliedFamilyFixture( materialUuid ) {
+
+	const material = { uuid: materialUuid, isMeshStandardMaterial: true };
+	const object = { material };
+	const observedFirstState = makeMinimalState( 'observed-first' );
+	const stateByObject = new Map();
+	const manager = {
+		nodeBuilderCache: new Map(),
+		getForRenderCacheKey( renderObject ) { return renderObject.cacheKey; },
+		getForRender( renderObject ) { return stateByObject.get( renderObject ) || null; },
+	};
+	const renderer = makeHarvestRenderer( manager );
+	const realSession = beginRenderObjectHarvest( renderer );
+	const observedFirst = { cacheKey: 'supplied-first-key', material, object, context: {} };
+	const missingSecond = { cacheKey: 'supplied-second-key', material, object, context: {} };
+
+	stateByObject.set( observedFirst, observedFirstState );
+	renderer._objects.get( observedFirst );
+	manager.getForRender( observedFirst );
+	renderer._objects.get( missingSecond );
+	const realHarvest = await realSession.finish();
+
+	return {
+		material,
+		manager,
+		renderer,
+		realHarvest,
+		observedFirstState,
 	};
 
 }

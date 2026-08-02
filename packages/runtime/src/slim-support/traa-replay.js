@@ -217,7 +217,29 @@ function isPassRenderedDepthSource( source ) {
 
 function attachArtifactTextureByName( artifact, texture, textureName ) {
 
-	return attachTextureRefsWhere( artifact, texture, ( source ) => source.kind === 'artifact.texture' && source.textureName === textureName );
+	const textureUuids = new Set();
+	for ( const group of artifact && artifact.uniformPlan || [] ) {
+
+		for ( const entry of group.textures || [] ) {
+
+			const source = entry && entry.source || {};
+			if (
+				source.kind === 'artifact.texture' &&
+				source.textureName === textureName &&
+				source.textureUuid
+			) textureUuids.add( source.textureUuid );
+
+		}
+
+	}
+	if ( textureUuids.size === 0 ) return false;
+	attachTextureRefsWhere(
+		artifact,
+		texture,
+		( source ) => source.kind === 'artifact.texture' && source.textureName === textureName,
+	);
+	const refs = artifact._textureRefs;
+	return refs instanceof Map && [ ...textureUuids ].every( ( uuid ) => refs.get( uuid ) === texture );
 
 }
 

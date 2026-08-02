@@ -21,7 +21,6 @@ import {
 import { getSlimRewriteRuntimeModuleRule } from './three-rewrite.js';
 
 const SOURCE_ADAPTER_FILES = Object.freeze( {
-	'webgl-backend': 'slim-stub-webgl-backend.js',
 	'pmrem-generator': 'slim-stub-pmrem-generator.js',
 	background: 'slim-replay-background.js',
 	lighting: 'slim-replay-lighting.js',

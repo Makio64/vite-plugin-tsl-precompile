@@ -112,6 +112,63 @@ test( 'shared material updates each render object\'s cloned generated and live U
 
 } );
 
+test( 'one Object3D keeps distinct cloned UBO targets across render objects', () => {
+
+	const material = {};
+	const artifact = {
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				{ name: 'object', kind: 'uniform-buffer', byteLength: 16, visibility: 3 },
+			],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			shared: false,
+			byteLength: 16,
+			slots: [ {
+				name: 'perObjectValue',
+				offset: 0,
+				dtype: 'float',
+				source: { kind: 'object3d.userData', property: 'perObjectValue', valueSnapshot: { type: 'float', data: 0 } },
+			} ],
+		} ],
+		_generatedUpdateGroup( frame, _material, view ) {
+
+			view.setFloat32( 0, frame.object.userData.perObjectValue, true );
+
+		},
+	};
+	const object = { userData: { perObjectValue: 0.25 } };
+	const renderObjectA = { object, material, renderContext: { pass: 'a' } };
+	const renderObjectB = { object, material, renderContext: { pass: 'b' } };
+	const state = hydrateNodeBuilderState( artifact, material );
+	const updater = state.updateNodes.find( ( node ) => node.getUpdateType() === 'object' );
+
+	updater.update( { object, material, renderObject: renderObjectA } );
+	const bindingA = bindingByName( state.createBindings(), 'object' );
+	object.userData.perObjectValue = 0.75;
+	updater.update( { object, material, renderObject: renderObjectB } );
+	const bindingB = bindingByName( state.createBindings(), 'object' );
+
+	object.userData.perObjectValue = 1;
+	updater.update( { object, material, renderObject: renderObjectA } );
+
+	assert.equal( bindingA.buffer[ 0 ], 1, 'pass A updates its own cloned UBO' );
+	assert.equal( bindingB.buffer[ 0 ], 0.75, 'pass B retains its own cloned UBO value' );
+
+	// RenderObject caches createBindings(), so a later direct clone has no
+	// current owner and must not steal the most recently updated pass target.
+	const detachedBinding = bindingByName( state.createBindings(), 'object' );
+	object.userData.perObjectValue = 1.25;
+	updater.update( { object, material, renderObject: renderObjectA } );
+	assert.equal( bindingA.buffer[ 0 ], 1.25, 'pass A remains the registered target' );
+	assert.equal( detachedBinding.buffer[ 0 ], 0.75, 'owner-less clone remains detached' );
+
+} );
+
 test( 'non-shared bind groups clone wrappers around shared resources with one per-object group node', () => {
 
 	const texture = new DataTexture( new Uint8Array( [ 255, 255, 255, 255 ] ), 1, 1 );
@@ -229,6 +286,50 @@ test( 'skinned object UBOs use each live bind matrix instead of identity snapsho
 			slots: [
 				{ name: 'inverseSlot', offset: 0, dtype: 'mat4', source: { kind: 'uniform.live', valueSnapshot: { type: 'mat4', data: identity } } },
 				{ name: 'bindSlot', offset: 64, dtype: 'mat4', source: { kind: 'uniform.live', valueSnapshot: { type: 'mat4', data: identity } } },
+			],
+		} ],
+	};
+	const matrix = base => ( { elements: Array.from( { length: 16 }, ( _, index ) => base + index ) } );
+	const object = {
+		isSkinnedMesh: true,
+		bindMatrix: matrix( 20 ),
+		bindMatrixInverse: matrix( 40 ),
+	};
+	const state = hydrateNodeBuilderState( artifact, {} );
+	const updater = state.updateNodes.find( node => node.getUpdateType() === 'object' );
+
+	updater.update( { object, material: {} } );
+	const binding = bindingByName( state.createBindings(), 'object' );
+
+	assert.deepEqual( Array.from( binding.buffer.slice( 0, 16 ) ), object.bindMatrixInverse.elements );
+	assert.deepEqual( Array.from( binding.buffer.slice( 16, 32 ) ), object.bindMatrix.elements );
+
+} );
+
+test( 'GLSL skinned object UBOs use each live bind matrix', () => {
+
+	const identity = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ];
+	const artifact = {
+		vertexShader: `#version 300 es
+			layout( std140 ) uniform object {
+				mat4 nodeUniform0;
+				mat4 nodeUniform2;
+			};
+			nodeVar0 = ( nodeUniform2 * vec4( positionLocal, 1.0 ) );
+			positionLocal = ( nodeUniform0 * ( skinWeight.x * buffer1062[ uvec4( skinIndex ).x ] * nodeVar0 ) ).xyz;
+		`,
+		fragmentShader: '',
+		bindings: [ {
+			name: 'object',
+			bindings: [ { name: 'object', kind: 'uniform-buffer', byteLength: 128, visibility: 0 } ],
+		} ],
+		uniformPlan: [ {
+			name: 'object',
+			shared: false,
+			byteLength: 128,
+			slots: [
+				{ name: 'nodeUniform0', offset: 0, dtype: 'mat4', source: { kind: 'uniform.live', valueSnapshot: { type: 'mat4', data: identity } } },
+				{ name: 'nodeUniform2', offset: 64, dtype: 'mat4', source: { kind: 'uniform.live', valueSnapshot: { type: 'mat4', data: identity } } },
 			],
 		} ],
 	};

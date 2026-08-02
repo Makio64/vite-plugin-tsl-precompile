@@ -1,4 +1,4 @@
-import type { EffectHandler, EffectSubPass } from './postprocess-effects.d.ts';
+import type { EffectHandler, EffectSubPass } from './postprocess-effects.js';
 
 export type PostprocessMiss = {
 	shape: string;
@@ -56,13 +56,13 @@ export type LiveSidecarWireStats = {
 
 export function preparePrecompiledPostprocess( args: PreparePrecompiledPostprocessArgs ): PreparePrecompiledPostprocessResult;
 export function prepareEffectNodeForReplay( handler: EffectHandler, node: unknown, opts: PrepareEffectNodeForReplayOptions ): PrepareEffectNodeForReplayResult;
-export { refreshPreparedPostprocessResources } from './postprocess-resource-refresh.d.ts';
-export type { RefreshPreparedPostprocessResourcesOptions, RefreshPreparedPostprocessResourcesResult } from './postprocess-resource-refresh.d.ts';
+export { refreshPreparedPostprocessResources } from './postprocess-resource-refresh.js';
+export type { RefreshPreparedPostprocessResourcesOptions, RefreshPreparedPostprocessResourcesResult } from './postprocess-resource-refresh.js';
 export function makePrecompiledAuxMaterial( shape: string, sourceMaterial: unknown, opts: PrepareEffectNodeForReplayOptions ): unknown | null;
 export function cloneAuxArtifact<T = unknown>( artifact: T ): T;
 export function wireLiveNodeSidecarsToArtifact( artifact: unknown, sourceMaterial: unknown, opts?: { overlay?: boolean } ): LiveSidecarWireStats;
 export function artifactLooksLikeRetroPassMaterial( artifact: unknown ): boolean;
 
-export { listAux, findAux } from '../index';
-export { collectEffectNodes, findEffectHandler, getEffectHandlers } from './postprocess-effects.d.ts';
+export { listAux, findAux } from '../index.js';
+export { collectEffectNodes, findEffectHandler, getEffectHandlers } from './postprocess-effects.js';
 export type { EffectHandler, EffectSubPass };

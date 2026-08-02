@@ -10,16 +10,17 @@ import DataMap from 'three/src/renderers/common/DataMap.js';
 import Color4 from 'three/src/renderers/common/Color4.js';
 import { Mesh } from 'three/src/objects/Mesh.js';
 import { SphereGeometry } from 'three/src/geometries/SphereGeometry.js';
-import { BackSide, CubeUVReflectionMapping, REVISION } from 'three/src/constants.js';
+import { BackSide, CubeUVReflectionMapping } from 'three/src/constants.js';
 import { error } from 'three/src/utils.js';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import PrecompiledMaterial from './_vendor-PrecompiledMaterial.js';
 import { cloneAuxArtifactForReplay, resolveAuxArtifactForInput } from './aux-loader.js';
 import { hashNodeGraphSync } from './graph-hash.js';
+import { RUNTIME_SLIM_THREE_PACKAGE_VERSION } from './slim-source-policy.js';
 
 const _clearColor = /*@__PURE__*/ new Color4();
 const DEFAULT_HASH_OPTIONS = Object.freeze( {
-	threeVersion: threePackageVersionFromRevision( REVISION ),
+	threeVersion: RUNTIME_SLIM_THREE_PACKAGE_VERSION,
 	pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
 } );
 
@@ -168,13 +169,6 @@ function readPrimitiveProperty( object, property ) {
 		return null;
 
 	}
-
-}
-
-function threePackageVersionFromRevision( revision ) {
-
-	const match = String( revision || '' ).match( /\d+/ );
-	return match ? `0.${ match[ 0 ] }.0` : String( revision || 'unknown' );
 
 }
 

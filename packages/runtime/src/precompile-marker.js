@@ -27,7 +27,12 @@ import { MARKER_METHOD_NAME } from './_constants.js';
 import { normalizeRevision } from './_normalize-revision.js';
 import { hashArtifactContentSync, hashMaterialSync } from './graph-hash.js';
 import { __upsertArtifactForDev } from './artifact-loader.js';
-import { cloneRenderTargetForCapture, getMRTCaptureRenderTarget, rememberMRTCaptureRenderTarget } from './capture-render-target.js';
+import {
+	cloneRenderTargetForCapture,
+	getMRTCaptureRenderTarget,
+	rememberBackgroundCaptureRenderTarget,
+	rememberMRTCaptureRenderTarget,
+} from './capture-render-target.js';
 import { installLiveTextureRegistryPatches } from './hydrate/live-texture-registry.js';
 import { MATERIAL_NODE_TEXTURE_KEYS } from '@tsl-precompile/contract/texture-props';
 import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
@@ -40,10 +45,16 @@ import {
 	publishRenderObjectHarvest,
 } from './auxiliary/render-object-harvest-handoff.js';
 import { notifyDevRendererObservers } from './dev-render-observers.js';
+import { recordDevCaptureOutcome } from './dev-capture-outcome.js';
+import { awaitRendererCompileQuiescence } from './auxiliary/cube-render-target-capture.js';
+import { installR185PMREMNodeGuard } from './r185-pmrem-node-guard.js';
 
 const MARKER_STATE_SYMBOL = Symbol.for( '@tsl-precompile/runtime/precompile-marker-state' );
+const EXPLICIT_MARKER_NAMES_SYMBOL = Symbol.for( '@tsl-precompile/runtime/explicit-precompile-marker@1' );
 const DEFAULT_OBSERVE_TIMEOUT_MS = 30_000;
 const DEFAULT_AUTO_FALLBACK_DELAY_MS = 250;
+const MAX_OBSERVED_COMPUTE_NODES = 256;
+const TROUBLESHOOTING_URL = 'https://github.com/Makio64/vite-plugin-tsl-precompile#troubleshooting';
 
 let installations = new WeakMap();
 let installationSet = new Set();
@@ -53,6 +64,7 @@ let lastArrayCameraByRenderer = new WeakMap();
 let lastRenderContextByRenderer = new WeakMap();
 let renderCaptureEpochByRenderer = new WeakMap();
 let renderCaptureEpochs = new Set();
+let observedComputeNodesByRenderer = new WeakMap();
 
 // `.precompile()` is author syntax, but a correct shader variant depends on
 // the real RenderObject + Scene + Camera. Calls without an explicit context
@@ -107,6 +119,27 @@ function exactThreePackageVersion( revision ) {
 
 }
 
+function snapshotMaterialSourceGraphHash( material, name, installation ) {
+
+	try {
+
+		return hashMaterialSync( material, {
+			name,
+			threeVersion: exactThreePackageVersion( installation && installation.three && installation.three.REVISION ),
+			toolchainVersion: ARTIFACT_TOOLCHAIN_VERSION,
+		} );
+
+	} catch ( _ ) {
+
+		// Preserve marker chainability for unusual/proxied author graphs. The
+		// capture path retains its historical late-hash fallback, which will
+		// fail noisily if the graph is still unhashable.
+		return null;
+
+	}
+
+}
+
 function isBrowserOrWorkerRuntime() {
 
 	return typeof window !== 'undefined' || (
@@ -142,6 +175,44 @@ function captureNamesFor( map, material, create = false ) {
 
 	}
 	return names || null;
+
+}
+
+function rememberExplicitMarkerName( material, name ) {
+
+	try {
+
+		let names = material[ EXPLICIT_MARKER_NAMES_SYMBOL ];
+		if ( ! names || typeof names.add !== 'function' ) {
+
+			names = new Set();
+			Object.defineProperty( material, EXPLICIT_MARKER_NAMES_SYMBOL, {
+				value: names,
+				configurable: true,
+			} );
+
+		}
+		names.add( name );
+
+	} catch {
+
+		// Unusual/proxied materials retain normal capture behavior.
+
+	}
+
+}
+
+function hasExplicitMarkerName( material ) {
+
+	try {
+
+		return Number( material[ EXPLICIT_MARKER_NAMES_SYMBOL ]?.size ) > 0;
+
+	} catch {
+
+		return false;
+
+	}
 
 }
 
@@ -197,6 +268,7 @@ function findMaterialOwner( scene, material ) {
 
 function queueMaterialCapture( material, name, installation, context, sourceIdentity = null, sourceRevision = null ) {
 
+	const sourceGraphHash = snapshotMaterialSourceGraphHash( material, name, installation );
 	const queuedNames = captureNamesFor( pendingCaptures, material, true );
 	const alreadyQueued = queuedNames.get( name );
 	if ( alreadyQueued ) {
@@ -213,6 +285,7 @@ function queueMaterialCapture( material, name, installation, context, sourceIden
 		}
 		alreadyQueued.allowAutoFallback = alreadyQueued.allowAutoFallback || context && context.__tslpAutoMark === true;
 		alreadyQueued.observeNextRender = alreadyQueued.observeNextRender || context && context.__tslpObserveNextRender === true;
+		retainExplicitObservationRenderer( alreadyQueued );
 		if ( alreadyQueued.observeNextRender && alreadyQueued.autoFallbackTimer ) {
 
 			clearTimeout( alreadyQueued.autoFallbackTimer );
@@ -227,6 +300,7 @@ function queueMaterialCapture( material, name, installation, context, sourceIden
 		}
 		alreadyQueued.sourceIdentity = sourceIdentity || alreadyQueued.sourceIdentity;
 		alreadyQueued.sourceRevision = sourceRevision || alreadyQueued.sourceRevision;
+		alreadyQueued.sourceGraphHash = alreadyQueued.sourceGraphHash || sourceGraphHash;
 		return;
 
 	}
@@ -254,8 +328,10 @@ function queueMaterialCapture( material, name, installation, context, sourceIden
 		observedRenderTarget: normalizedContext.renderTarget || null,
 		sourceIdentity,
 		sourceRevision,
+		sourceGraphHash,
 		sourceMaterialNodeProps: materialNodeProps( material ),
 	};
+	retainExplicitObservationRenderer( entry );
 	// Auto-mark instrumentation may carry the target observed during an earlier
 	// render, while ordinary markers can be invoked inside the active pass.
 	// Preserve either source before PassNode restores the canvas; otherwise the
@@ -330,6 +406,8 @@ function armCaptureObservationTimeout( entry ) {
 		queuedNames.delete( entry.name );
 		if ( queuedNames.size === 0 ) pendingCaptures.delete( entry.material );
 		adjustPendingCaptureCount( - 1 );
+		releaseExplicitObservationRenderer( entry );
+		recordDevCaptureOutcome( false );
 		console.error( `[tsl-precompile] .precompile(${ JSON.stringify( entry.name ) }) was not observed in a real renderer.render(scene, camera) call within ${ timeoutMs }ms. Mount the material before rendering, or pass { scene, camera, object } as the second argument.` );
 
 	}, timeoutMs );
@@ -409,6 +487,7 @@ function finishCapture( entry ) {
 
 	}
 	adjustPendingCaptureCount( - 1 );
+	releaseExplicitObservationRenderer( entry );
 
 }
 
@@ -431,6 +510,18 @@ function bindPendingCapturesFromRender( renderer, scene, camera, renderTopology 
 	const ready = new Set();
 	const visit = ( object ) => {
 
+		if ( camera && camera.layers && object && object.layers && typeof object.layers.test === 'function' ) {
+
+			try {
+
+				if ( ! object.layers.test( camera.layers ) ) return;
+
+			} catch ( _ ) {
+				// Custom layer implementations may refuse cross-realm objects.
+				// Preserve the prior best-effort capture behavior in that case.
+			}
+
+		}
 		const objectMaterial = object && object.material;
 		const materials = scene.overrideMaterial && object && object.geometry
 			? [ scene.overrideMaterial ]
@@ -569,6 +660,46 @@ function unregisterRendererIfUnused( renderer ) {
 
 	if ( ! renderer || rendererIsAssigned( renderer ) || renderer === devRenderer ) return;
 	registeredRenderers.delete( renderer );
+	clearObservedComputeNodes( renderer );
+
+}
+
+// setDevRenderer() deliberately treats a later renderer as a replacement for
+// ordinary context-free markers. A marker with an explicit renderer and an
+// observe-next-render contract is different: it owns a short observation
+// lease on that exact renderer even if a multi-renderer application initialized
+// another renderer afterward. Release the lease as soon as the marker starts
+// capture or times out so replacement semantics and object retention stay
+// bounded.
+function retainExplicitObservationRenderer( entry ) {
+
+	const renderer = entry && entry.explicitRenderer;
+	if ( ! renderer || entry.observeNextRender !== true || entry.explicitObservationRendererRetained === true ) return;
+	entry.explicitObservationRendererRetained = true;
+	registeredRenderers.add( renderer );
+	wrapDevRenderer( renderer );
+
+}
+
+function releaseExplicitObservationRenderer( entry ) {
+
+	const renderer = entry && entry.explicitRenderer;
+	if ( ! renderer || entry.explicitObservationRendererRetained !== true ) return;
+	entry.explicitObservationRendererRetained = false;
+	for ( const entries of pendingCaptures.values() ) {
+
+		for ( const pendingEntry of entries.values() ) {
+
+			if (
+				pendingEntry !== entry &&
+				pendingEntry.explicitRenderer === renderer &&
+				pendingEntry.explicitObservationRendererRetained === true
+			) return;
+
+		}
+
+	}
+	unregisterRendererIfUnused( renderer );
 
 }
 
@@ -778,6 +909,7 @@ export function installPrecompileMarker( three, opts = {} ) {
 	// runtime build. Patch the namespace the author actually passed instead of
 	// making the slim hydrator dynamically import the entire bare-three barrel.
 	installLiveTextureRegistryPatches( three );
+	installR185PMREMNodeGuard( three );
 
 	const prototype = Material.prototype;
 	let installation = installations.get( prototype );
@@ -876,6 +1008,12 @@ export function installPrecompileMarker( three, opts = {} ) {
 		}
 
 		if ( installation.devEndpointDead ) return this;
+		const autoMarked = context && context.__tslpAutoMark === true;
+		// Authored markers are the source of truth. Test/plugin auto-marking may
+		// discover the same material after the real render has already begun;
+		// queueing a second name then can create an orphan observation timeout.
+		if ( autoMarked && hasExplicitMarkerName( this ) ) return this;
+		if ( ! autoMarked ) rememberExplicitMarkerName( this, name );
 		queueMaterialCapture( this, name, installation, context, sourceIdentity, sourceRevision );
 
 		return this;
@@ -907,9 +1045,10 @@ export function installPrecompileMarker( three, opts = {} ) {
  * this is called.
  *
  * Side-effect: if the renderer carries a `three/addons/inspector/Inspector.js`
- * instance and `@tsl-precompile/inspector-panel` is installed, auto-register
- * the precompile panel. Zero-setup for the common case; users who prefer
- * explicit control can import `attachToInspector` directly.
+ * instance and the application provides the optional inspector integration
+ * module, auto-register the precompile panel. The repository workspace uses
+ * this hook for its local examples; the integration is not a published runtime
+ * dependency.
  *
  * @param {Object} renderer
  * @param {Object} [three] - Optional three namespace; recommended when more than one renderer/three copy is active.
@@ -1064,6 +1203,8 @@ function wrapDevRenderer( renderer ) {
 	// after that real render completes, so three.js has populated its normal
 	// renderer caches before the extractor borrows the renderer.
 	// We only wrap once per renderer instance (guard via __tslpRenderWrapped).
+	wrapDevRendererComputeMethod( renderer, 'compute' );
+	wrapDevRendererComputeMethod( renderer, 'computeAsync' );
 	if ( typeof renderer.render === 'function' && ! renderer.__tslpRenderWrapped ) {
 
 		renderer.__tslpRenderWrapped = true;
@@ -1073,19 +1214,33 @@ function wrapDevRenderer( renderer ) {
 			if ( ! registeredRenderers.has( renderer ) ) return _originalRender( scene, camera, ...rest );
 			let activeMRT = null;
 			let activeRenderTarget = null;
+			const synthetic = ( globalThis.__tslpSyntheticRenderActive | 0 ) > 0;
 			// PassNode binds its private render target and MRT immediately before
 			// renderer.render(scene, camera). Remember that exact target topology
 			// before Three restores the previous target. Keep the target out of
 			// Scene.userData because RenderTarget has circular texture backrefs.
-			if ( scene && scene.isScene === true && typeof renderer.getMRT === 'function' && typeof renderer.getRenderTarget === 'function' ) {
+			if ( scene && scene.isScene === true ) {
 
-				try { activeMRT = renderer.getMRT(); } catch ( _ ) {}
-				try { activeRenderTarget = renderer.getRenderTarget(); } catch ( _ ) {}
+				if ( typeof renderer.getMRT === 'function' ) {
+
+					try { activeMRT = renderer.getMRT(); } catch ( _ ) {}
+
+				}
+				if ( typeof renderer.getRenderTarget === 'function' ) {
+
+					try { activeRenderTarget = renderer.getRenderTarget(); } catch ( _ ) {}
+
+				}
 				if ( activeMRT && activeRenderTarget ) {
 
 					scene.userData = scene.userData || {};
 					scene.userData.__tslp_mrtNode = activeMRT;
 					rememberMRTCaptureRenderTarget( scene, activeRenderTarget, activeMRT );
+
+				}
+				if ( ! synthetic && ( scene.backgroundNode || scene.background ) ) {
+
+					rememberBackgroundCaptureRenderTarget( scene, renderer, activeRenderTarget, activeMRT );
 
 				}
 
@@ -1095,7 +1250,6 @@ function wrapDevRenderer( renderer ) {
 				lastArrayCameraByRenderer.set( renderer, camera );
 
 			}
-			const synthetic = ( globalThis.__tslpSyntheticRenderActive | 0 ) > 0;
 			if ( ! synthetic ) lastRenderContextByRenderer.set( renderer, { scene, camera } );
 			const ready = synthetic ? [] : bindPendingCapturesFromRender( renderer, scene, camera, { mrtNode: activeMRT, renderTarget: activeRenderTarget } );
 			// Open the plugin-owned RenderObject observer before the first real
@@ -1160,6 +1314,91 @@ function wrapDevRenderer( renderer ) {
 
 }
 
+function wrapDevRendererComputeMethod( renderer, methodName ) {
+
+	const original = renderer && renderer[ methodName ];
+	const guard = methodName === 'compute' ? '__tslpComputeObserved' : '__tslpComputeAsyncObserved';
+	if ( typeof original !== 'function' || renderer[ guard ] === true ) return;
+	renderer[ guard ] = true;
+	renderer[ methodName ] = function ( computeNodes, ...rest ) {
+
+		if ( registeredRenderers.has( renderer ) ) recordObservedComputeNodes( renderer, computeNodes );
+		return original.call( this, computeNodes, ...rest );
+
+	};
+
+}
+
+function recordObservedComputeNodes( renderer, computeNodes ) {
+
+	let observation = observedComputeNodesByRenderer.get( renderer );
+	if ( ! observation ) {
+
+		observation = { nodes: new Set(), disposeHandlers: new Map(), overflow: false };
+		observedComputeNodesByRenderer.set( renderer, observation );
+
+	}
+	for ( const node of Array.isArray( computeNodes ) ? computeNodes : [ computeNodes ] ) {
+
+		if ( ! node || node.isComputeNode !== true || observation.nodes.has( node ) ) continue;
+		if ( observation.nodes.size >= MAX_OBSERVED_COMPUTE_NODES ) {
+
+			observation.overflow = true;
+			continue;
+
+		}
+		observation.nodes.add( node );
+		if ( typeof node.addEventListener === 'function' && typeof node.removeEventListener === 'function' ) {
+
+			const onDispose = () => forgetObservedComputeNode( renderer, node );
+			try {
+
+				node.addEventListener( 'dispose', onDispose );
+				observation.disposeHandlers.set( node, onDispose );
+
+			} catch ( _ ) { /* cache-only validation still rejects stale opaque nodes */ }
+
+		}
+
+	}
+
+}
+
+function forgetObservedComputeNode( renderer, node ) {
+
+	const observation = observedComputeNodesByRenderer.get( renderer );
+	if ( ! observation ) return;
+	observation.nodes.delete( node );
+	const onDispose = observation.disposeHandlers && observation.disposeHandlers.get( node );
+	if ( onDispose ) {
+
+		observation.disposeHandlers.delete( node );
+		try { node.removeEventListener( 'dispose', onDispose ); } catch ( _ ) {}
+
+	}
+
+}
+
+function clearObservedComputeNodes( renderer ) {
+
+	const observation = observedComputeNodesByRenderer.get( renderer );
+	if ( ! observation ) return;
+	for ( const node of [ ...observation.nodes ] ) forgetObservedComputeNode( renderer, node );
+	observedComputeNodesByRenderer.delete( renderer );
+
+}
+
+function observedComputeNodesForCapture( renderer ) {
+
+	const observation = observedComputeNodesByRenderer.get( renderer );
+	if ( ! observation ) return [];
+	if ( observation.overflow ) throw new Error(
+		`[tsl-precompile] capture observed more than ${ MAX_OBSERVED_COMPUTE_NODES } distinct compute nodes on one renderer; refusing incomplete storage ownership evidence.`,
+	);
+	return [ ...observation.nodes ];
+
+}
+
 let _inspectorAttachTried = false;
 async function autoAttachInspectorPanel( inspector ) {
 
@@ -1177,9 +1416,10 @@ async function autoAttachInspectorPanel( inspector ) {
 
 	} catch ( err ) {
 
-		// Not installed. That's fine — the panel is optional. Log once so
-		// users who WANTED auto-register see a hint; nobody else is spammed.
-		logOnce( 'no-inspector-panel', () => console.info( '[tsl-precompile] `@tsl-precompile/inspector-panel` is not installed; skipping auto-attach. (Install it to see live captures in the three.js Inspector.)' ) );
+		// The integration is repository/workspace-only unless the application
+		// deliberately provides a compatible module. Keep this informational
+		// and avoid suggesting an unpublished registry package.
+		logOnce( 'no-inspector-panel', () => console.info( '[tsl-precompile] optional Inspector integration is unavailable unless the application provides it; skipping auto-attach.' ) );
 
 	}
 
@@ -1201,6 +1441,7 @@ export function clearDevRenderer() {
 		else installation.renderer = null;
 
 	}
+	for ( const renderer of registeredRenderers ) clearObservedComputeNodes( renderer );
 	registeredRenderers.clear();
 	devRenderer = null;
 
@@ -1210,6 +1451,8 @@ async function captureMaterialInDev( entry ) {
 
 	let guardedRender = null;
 	let installedRenderGuard = null;
+	let renderGuardActive = false;
+	let captureAccepted = false;
 	const { material, name, installation } = entry;
 	const threeModule = installation.three;
 	const captureRenderer = entry.renderer;
@@ -1282,9 +1525,14 @@ async function captureMaterialInDev( entry ) {
 		if ( typeof captureRenderer.render === 'function' && captureRenderer.render.__tslpCaptureGuard !== true ) {
 
 			guardedRender = captureRenderer.render;
+			renderGuardActive = true;
 			const captureRenderGuard = function ( ...args ) {
 
-				if ( ( globalThis.__tslpSyntheticRenderActive | 0 ) > 0 ) return guardedRender.apply( this, args );
+				if ( ! renderGuardActive || ( globalThis.__tslpSyntheticRenderActive | 0 ) > 0 ) {
+
+					return guardedRender.apply( this, args );
+
+				}
 				return undefined;
 
 			};
@@ -1468,6 +1716,11 @@ async function captureMaterialInDev( entry ) {
 		// subclass-specific cull paths (e.g. `intersectsSprite`); the throwaway
 		// camera is a placeholder so culling decisions here are meaningless.
 		mesh.frustumCulled = false;
+		// Occlusion queries describe the live render schedule, not the material
+		// pipeline. Mirroring `occlusionTest` onto this one-object synthetic scene
+		// can ask the WebGPU backend to end a query that its compile/warm-up path
+		// never began, invalidating the capture command buffer.
+		mesh.occlusionTest = false;
 		// Propagate shadow flags. The `for...in Object.keys(sourceObject)` loop
 		// above SKIPS `receiveShadow` / `castShadow` because they're inherited
 		// `Object3D` defaults (so `key in mesh` returns true). Without this,
@@ -1541,6 +1794,9 @@ async function captureMaterialInDev( entry ) {
 		}
 		if ( ! mrtNode ) mrtNode = materialMRTNode;
 		let extractorOpts = renderObjectHarvest ? { renderObjectHarvest } : undefined;
+		const observedComputeNodes = observedComputeNodesForCapture( captureRenderer );
+		extractorOpts ||= {};
+		extractorOpts.observedComputeNodes = observedComputeNodes;
 		if ( mrtNode ) {
 
 			extractorOpts ||= {};
@@ -1586,7 +1842,10 @@ async function captureMaterialInDev( entry ) {
 
 				try {
 
-					const colorArtifacts = await extractor( captureRenderer, scene, camera, { noGlobalMRT: true } );
+						const colorArtifacts = await extractor( captureRenderer, scene, camera, {
+							noGlobalMRT: true,
+							observedComputeNodes,
+						} );
 					artifactSets.push( colorArtifacts );
 
 				} catch ( err ) {
@@ -1642,7 +1901,7 @@ async function captureMaterialInDev( entry ) {
 		// artifact so the runtime can pick the right one per render.
 		attachMaterialVariantFamily( artifact, collectMaterialVariantList( artifactSets, material.uuid ) );
 
-		const sourceGraphHash = hashMaterialSync( material, {
+		const sourceGraphHash = entry.sourceGraphHash || hashMaterialSync( material, {
 			name,
 			threeVersion: sourceThreeVersion,
 			toolchainVersion: ARTIFACT_TOOLCHAIN_VERSION,
@@ -1665,7 +1924,7 @@ async function captureMaterialInDev( entry ) {
 		const blocked = unsupportedKinds.filter( ( u ) => u.severity === 'blocked' );
 		if ( blocked.length > 0 ) {
 
-			logOnce( 'blocked:' + name, () => console.warn( `[tsl-precompile] .precompile(${ JSON.stringify( name ) }): ${ blocked.length } kind(s) are documented-blocked and fall back to frozen snapshots. Animation paths that depend on them won't update. Kinds: ${ blocked.map( ( b ) => b.kind ).join( ', ' ) }` ) );
+			logOnce( 'blocked:' + name, () => console.warn( formatCaptureBlockedKindWarning( name, blocked ) ) );
 
 		}
 
@@ -1715,6 +1974,7 @@ async function captureMaterialInDev( entry ) {
 			artifact: sanitized,
 			threeVersion: sourceThreeVersion,
 		} );
+		captureAccepted = true;
 		const acceptedUnsupportedKinds = accepted.artifact === sanitized
 			? unsupportedKinds
 			: collectCodegenUnsupportedKinds( accepted.artifact, codegen );
@@ -1748,7 +2008,26 @@ async function captureMaterialInDev( entry ) {
 
 	} finally {
 
-		if ( guardedRender && captureRenderer.render === installedRenderGuard ) captureRenderer.render = guardedRender;
+		// Fail open before awaiting cleanup: if a foreign wrapper prevents the
+		// identity-based restore below, this guard can no longer black-hole the
+		// application's future frames.
+		renderGuardActive = false;
+		// Another material or auxiliary capture can start while this capture is
+		// awaiting codegen or the dev-endpoint POST. Its compile transaction
+		// temporarily replaces renderer.render and later restores the guard it
+		// observed here. Wait for the stable (including moving) compile tail
+		// before releasing our guard so a queued compile cannot resurrect it
+		// after cleanup and silently drop every subsequent application frame.
+		if ( installedRenderGuard ) {
+
+			await awaitRendererCompileQuiescence( captureRenderer, () => {
+
+				if ( guardedRender && captureRenderer.render === installedRenderGuard ) captureRenderer.render = guardedRender;
+
+			} );
+
+		}
+		recordDevCaptureOutcome( captureAccepted );
 
 	}
 
@@ -2088,11 +2367,27 @@ function logOnce( key, fn ) {
 }
 
 /**
+ * Dev capture always runs against full Three.js, even when the eventual
+ * production build opts into slim replay. Keep this warning explicit about
+ * which mode is affected so compatibility-mode adopters do not mistake a
+ * future slim limitation for a problem in their current render.
+ */
+export function formatCaptureBlockedKindWarning( name, blocked = [] ) {
+
+	const kinds = [ ...new Set( blocked.map( ( entry ) => entry && entry.kind ).filter( Boolean ) ) ];
+	return `[tsl-precompile] .precompile(${ JSON.stringify( name ) }): capture recorded ${ blocked.length } kind(s) that slim replay cannot update yet. ` +
+		`Full-Three development and compatibility builds remain live and are unaffected. If you later enable slim replay, these values use frozen snapshots and may not animate. ` +
+		`Kinds: ${ kinds.join( ', ' ) || '<unknown>' }. Details: ${ TROUBLESHOOTING_URL }`;
+
+}
+
+/**
  * Reset internal state — test-only helper.
  */
 export function __resetForTests() {
 
 	for ( const epoch of [ ...renderCaptureEpochs ] ) closeRenderCaptureEpoch( epoch, false );
+	for ( const renderer of registeredRenderers ) clearObservedComputeNodes( renderer );
 
 	for ( const entries of pendingCaptures.values() ) {
 
@@ -2112,6 +2407,7 @@ export function __resetForTests() {
 	lastRenderContextByRenderer = new WeakMap();
 	renderCaptureEpochByRenderer = new WeakMap();
 	renderCaptureEpochs = new Set();
+	observedComputeNodesByRenderer = new WeakMap();
 	__resetRenderObjectHarvestHandoffForTests();
 	logged.clear();
 	pendingCaptures = new Map();

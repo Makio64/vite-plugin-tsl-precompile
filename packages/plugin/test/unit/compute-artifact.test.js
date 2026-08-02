@@ -7,10 +7,131 @@ import { validateArtifact } from '@tsl-precompile/contract/kinds';
 import { attachDeferredMaterialComputeStatePaths, validateMaterialComputeDescriptor } from '@tsl-precompile/contract/material-compute';
 import {
 	compileTSL,
+	annotateRenderOnlyStorageBufferSnapshots,
 	extractArtifact,
 	extractComputeArtifact,
 	extractMaterialComputeDescriptor,
 } from '../../src/vendor/compileTSL.js';
+
+test( 'render-only storage snapshots preserve rasterizer inputs without serializing compute outputs', () => {
+
+	const meshletIds = {
+		id: 31,
+		isBufferAttribute: true,
+		isStorageBufferAttribute: true,
+		array: new Uint32Array( 15_952 ),
+		count: 15_952,
+		itemSize: 1,
+	};
+	meshletIds.array[ 1 ] = 17;
+	const uvs = {
+		id: 32,
+		isBufferAttribute: true,
+		isStorageBufferAttribute: true,
+		array: new Float32Array( 10_784 * 2 ),
+		count: 10_784,
+		itemSize: 2,
+	};
+	uvs.array[ 3 ] = 0.75;
+	const computeOwned = {
+		id: 33,
+		isBufferAttribute: true,
+		isStorageBufferAttribute: true,
+		array: new Float32Array( 160_000 * 16 ),
+		count: 160_000,
+		itemSize: 16,
+	};
+	const authoredOnly = storageAttribute( [ 5, 6, 7, 8 ] );
+	authoredOnly.id = 34;
+	const meshletEntryA = { name: 'meshletsA', arrayType: 'Uint32Array', count: 15_952, itemSize: 1 };
+	const meshletEntryB = { name: 'meshletsB', arrayType: 'Uint32Array', count: 15_952, itemSize: 1 };
+	const uvEntryA = { name: 'uvA', arrayType: 'Float32Array', count: 10_784, itemSize: 2 };
+	const uvEntryB = { name: 'uvB', arrayType: 'Float32Array', count: 10_784, itemSize: 2 };
+	const computeRenderEntry = { name: 'world', arrayType: 'Float32Array', count: 160_000, itemSize: 16 };
+	const authoredEntry = { name: 'authored', arrayType: 'Float32Array', count: 1, itemSize: 4, userPath: [ 'positionNode', 'attribute' ] };
+	for ( const [ entry, attribute ] of [
+		[ meshletEntryA, meshletIds ],
+		[ meshletEntryB, meshletIds ],
+		[ uvEntryA, uvs ],
+		[ uvEntryB, uvs ],
+		[ computeRenderEntry, computeOwned ],
+		[ authoredEntry, authoredOnly ],
+	] ) Object.defineProperty( entry, '_liveAttribute', { value: attribute } );
+	const renderArtifact = ( storageBuffers ) => ( {
+		kind: 'render',
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		uniformPlan: [ {
+			name: 'render',
+			storageBuffers,
+			orderedBindings: storageBuffers.map( ( ref ) => ( { type: 'storage-buffer', ref } ) ),
+		} ],
+	} );
+	const artifacts = [
+		renderArtifact( [ meshletEntryA, uvEntryA, computeRenderEntry, authoredEntry ] ),
+		renderArtifact( [ meshletEntryB, uvEntryB ] ),
+		{
+			kind: 'compute',
+			uniformPlan: [ { name: 'compute', storageBuffers: [ {
+				name: 'worldOut',
+				arrayType: 'Float32Array',
+				count: 160_000,
+				itemSize: 16,
+				_liveAttribute: computeOwned,
+			} ] } ],
+		},
+	];
+
+	const stats = annotateRenderOnlyStorageBufferSnapshots( artifacts );
+
+	assert.deepEqual( stats, { resources: 2, aliases: 4, bytes: 150_080 } );
+	assert.equal( meshletEntryA.arraySnapshot, meshletEntryB.arraySnapshot, 'exact aliases share one snapshot value' );
+	assert.equal( uvEntryA.arraySnapshot, uvEntryB.arraySnapshot, 'exact aliases share one snapshot value' );
+	assert.equal( meshletEntryA.arraySnapshotHash, meshletEntryB.arraySnapshotHash );
+	assert.equal( uvEntryA.arraySnapshotHash, uvEntryB.arraySnapshotHash );
+	assert.equal( meshletEntryA.arraySnapshot[ 1 ], 17 );
+	assert.equal( uvEntryA.arraySnapshot[ 3 ], 0.75 );
+	assert.equal( computeRenderEntry.arraySnapshot, undefined, 'compute-owned state is never serialized' );
+	assert.equal( authoredEntry.arraySnapshot, undefined, 'authored live ownership remains authoritative' );
+
+	const roundTrip = JSON.parse( JSON.stringify( artifacts[ 0 ] ) );
+	assert.equal( validateArtifact( roundTrip ).ok, true );
+
+} );
+
+test( 'render-only storage snapshot capture fails closed when exact durable bytes are unavailable', () => {
+
+	const attribute = storageAttribute( [ 1, 2, 3, 4 ] );
+	attribute.array[ 2 ] = Number.NaN;
+	const entry = {
+		name: 'non-finite-render-input',
+		arrayType: 'Float32Array',
+		count: 1,
+		itemSize: 4,
+	};
+	Object.defineProperty( entry, '_liveAttribute', { value: attribute } );
+	const artifact = {
+		kind: 'render',
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		uniformPlan: [ { name: 'render', storageBuffers: [ entry ] } ],
+	};
+
+	assert.throws(
+		() => annotateRenderOnlyStorageBufferSnapshots( [ artifact ] ),
+		( error ) => {
+
+			assert.equal( error.code, 'TSLP_RENDER_ONLY_STORAGE_SNAPSHOT_INVALID' );
+			assert.match( error.message, /cannot be snapshotted exactly/ );
+			assert.match( error.message, /finite typed count × itemSize payload/ );
+			return true;
+
+		},
+	);
+	assert.equal( entry.arraySnapshot, undefined, 'failed capture cannot leave a partial durable snapshot' );
+	assert.equal( entry.arraySnapshotHash, undefined );
+
+} );
 
 function fakeState() {
 
@@ -130,6 +251,52 @@ function materialComputeOwner( node, overrides = {} ) {
 
 }
 
+test( 'extractArtifact recomputes anonymous storage identity after exact user paths are known', () => {
+
+	const anonymous = storageAttribute();
+	const exact = storageAttribute();
+	anonymous.id = 40;
+	exact.id = 41;
+	const binding = ( attribute, name ) => ( {
+		...storageBinding( attribute, name ),
+		nodeUniform: { name: '', bufferType: 'vec4' },
+	} );
+	const state = {
+		computeShader: '',
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		nodeAttributes: [],
+		bindings: [ {
+			name: 'render',
+			bindings: [
+				binding( anonymous, 'StorageBuffer_anonymous' ),
+				binding( exact, 'StorageBuffer_exact' ),
+			],
+		} ],
+		updateNodes: [],
+		updateBeforeNodes: [],
+		updateAfterNodes: [],
+	};
+	const material = {
+		isMeshBasicNodeMaterial: true,
+		positionNode: { isNode: true, value: exact },
+	};
+
+	const artifact = extractArtifact( 1, state, material );
+	const [ anonymousEntry, exactEntry ] = artifact.uniformPlan[ 0 ].storageBuffers;
+
+	assert.deepEqual( anonymousEntry.source, {
+		kind: 'storage.buffer',
+		elementType: 'vec4',
+	} );
+	assert.deepEqual( exactEntry.userPath, [ 'positionNode', 'value' ] );
+	assert.deepEqual( exactEntry.source, {
+		kind: 'storage.buffer',
+		elementType: 'vec4',
+	} );
+
+} );
+
 test( 'extractComputeArtifact preserves numeric compute count and workgroup size', () => {
 
 	const artifact = extractComputeArtifact( 1, fakeState(), {
@@ -156,6 +323,116 @@ test( 'extractComputeArtifact preserves explicit 3D dispatch size when count is 
 
 	assert.deepEqual( artifact.dispatchSize, [ 4, 8, 2 ] );
 	assert.deepEqual( artifact.workgroupSize, [ 8, 4, 2 ] );
+
+} );
+
+test( 'compileTSL reuses observed cached compute state without redispatching the workload', async () => {
+
+	const attribute = storageAttribute();
+	const node = computeNode( { name: 'already-dispatched' } );
+	const state = computeState( attribute );
+	const computeData = new Map( [ [ node, { nodeBuilderState: state } ] ] );
+	const manager = {
+		nodeBuilderCache: new Map(),
+		has( candidate ) { return computeData.has( candidate ); },
+		get( candidate ) { return computeData.get( candidate ); },
+	};
+	let renderTarget = null;
+	const renderer = {
+		_nodes: manager,
+		getRenderTarget() { return renderTarget; },
+		setRenderTarget( target ) { renderTarget = target; },
+		getMRT() { return null; },
+		setMRT() {},
+		async compileAsync() {},
+		async computeAsync() { assert.fail( 'a cached observed compute node must not redispatch during material capture' ); },
+		render() {},
+	};
+
+	const artifacts = await compileTSL( renderer, { userData: {}, traverse() {} }, {}, {
+		observedComputeNodes: [ node ],
+		noGlobalMRT: true,
+		skipWarmupRender: true,
+	} );
+
+	assert.equal( artifacts.byComputeNode.get( node ).name, 'already-dispatched' );
+
+} );
+
+test( 'compileTSL rejects an evicted observed compute state without redispatching it', async () => {
+
+	const node = computeNode( { name: 'evicted-observation' } );
+	const manager = {
+		nodeBuilderCache: new Map(),
+		has() { return false; },
+		get() { assert.fail( 'cache-only observation must not create a DataMap row' ); },
+	};
+	let renderTarget = null;
+	const renderer = {
+		_nodes: manager,
+		getRenderTarget() { return renderTarget; },
+		setRenderTarget( target ) { renderTarget = target; },
+		getMRT() { return null; },
+		setMRT() {},
+		async compileAsync() {},
+		async computeAsync() { assert.fail( 'an evicted observed compute node must never redispatch' ); },
+		render() {},
+	};
+
+	await assert.rejects(
+		compileTSL( renderer, { userData: {}, traverse() {} }, {}, {
+			observedComputeNodes: [ node ],
+			noGlobalMRT: true,
+			skipWarmupRender: true,
+		} ),
+		( error ) => {
+
+			assert.equal( error.code, 'TSLP_OBSERVED_COMPUTE_STATE_MISSING' );
+			assert.match( error.message, /refusing to redispatch application compute/ );
+			return true;
+
+		},
+	);
+
+} );
+
+test( 'compileTSL preserves explicit uncached compute-node dispatch semantics', async () => {
+
+	const attribute = storageAttribute();
+	const node = computeNode( { name: 'explicit-uncached' } );
+	const state = computeState( attribute );
+	const computeData = new Map();
+	const manager = {
+		nodeBuilderCache: new Map(),
+		has( candidate ) { return computeData.has( candidate ); },
+		get( candidate ) { return computeData.get( candidate ); },
+	};
+	let renderTarget = null;
+	let dispatches = 0;
+	const renderer = {
+		_nodes: manager,
+		getRenderTarget() { return renderTarget; },
+		setRenderTarget( target ) { renderTarget = target; },
+		getMRT() { return null; },
+		setMRT() {},
+		async compileAsync() {},
+		async computeAsync( candidate ) {
+
+			dispatches ++;
+			computeData.set( candidate, { nodeBuilderState: state } );
+
+		},
+		render() {},
+	};
+
+	const artifacts = await compileTSL( renderer, { userData: {}, traverse() {} }, {}, {
+		computeNodes: [ node ],
+		noGlobalMRT: true,
+		skipWarmupRender: true,
+	} );
+
+	assert.equal( dispatches, 1 );
+	assert.equal( artifacts.byComputeNode.get( node ).name, 'explicit-uncached' );
 
 } );
 
@@ -241,6 +518,7 @@ test( 'material compute capture uses exact identity and exact WGSL binding indic
 	} ] );
 	assert.equal( descriptor.kernels[ 0 ].artifact.computeShader, computeArtifact.computeShader );
 	assert.equal( descriptor.kernels[ 0 ].artifact.cacheKey, 1, 'nested routing is canonical per descriptor' );
+	assert.equal( descriptor.kernels[ 0 ].artifact.variantKey, 'webgpu:1', 'backend-aware routing follows the canonical nested cache key' );
 	assert.deepEqual( validateMaterialComputeDescriptor( descriptor, { artifact: renderArtifact } ), [] );
 
 	renderArtifact.materialCompute = descriptor;
@@ -803,6 +1081,112 @@ test( 'compileTSL auto-captures material compute from a supplied exact render st
 	assert.equal( artifacts.byComputeNode.get( node ).kind, 'compute' );
 	assert.equal( artifacts.filter( ( artifact ) => artifact.kind === 'compute' ).length, 1 );
 	assert.equal( validateArtifact( renderArtifact ).ok, true );
+
+} );
+
+test( 'compileTSL signs split anonymous storage families without counting exact-path resources', async () => {
+
+	const makeAttribute = ( id ) => ( {
+		id,
+		isBufferAttribute: true,
+		isStorageBufferAttribute: true,
+		array: new Float32Array( 32 ),
+		count: 2,
+		itemSize: 16,
+	} );
+	const later = makeAttribute( 90 );
+	const earlier = makeAttribute( 12 );
+	const exactPathOnly = makeAttribute( 55 );
+	const makeState = ( attribute, name ) => ( {
+		computeShader: '',
+		vertexShader: 'vertex',
+		fragmentShader: 'fragment',
+		nodeAttributes: [],
+		bindings: [ {
+			name: 'object',
+			bindings: [ {
+				...storageBinding( attribute, name ),
+				nodeUniform: { name: '', bufferType: 'mat4' },
+			} ],
+		} ],
+		updateNodes: [],
+		updateBeforeNodes: [],
+		updateAfterNodes: [],
+	} );
+	const materialA = { uuid: 'cross-plan-world', isMeshBasicNodeMaterial: true };
+	const materialB = { uuid: 'cross-plan-mvp', isMeshBasicNodeMaterial: true };
+	const materialC = {
+		uuid: 'cross-plan-exact',
+		isMeshBasicNodeMaterial: true,
+		positionNode: { isNode: true, value: exactPathOnly },
+	};
+	const objectA = { material: materialA };
+	const objectB = { material: materialB };
+	const objectC = { material: materialC };
+	const family = ( material, object, cacheKey, state ) => Object.freeze( {
+		material,
+		complete: true,
+		variants: Object.freeze( [ Object.freeze( {
+			cacheKey,
+			nodeBuilderState: state,
+			objects: Object.freeze( [ object ] ),
+			sourceMaterials: Object.freeze( [ material ] ),
+			sourceOwnerRequests: Object.freeze( [] ),
+			userMaterials: Object.freeze( [ material ] ),
+			captureClocks: Object.freeze( [] ),
+			renderContextSelectors: Object.freeze( [] ),
+			requests: Object.freeze( [] ),
+		} ) ] ),
+	} );
+	const manager = {
+		nodeBuilderCache: new Map(),
+		getForRenderCacheKey( renderObject ) { return renderObject.cacheKey; },
+		getForRender() { return null; },
+	};
+	let renderTarget = null;
+	const renderer = {
+		_nodes: manager,
+		_objects: { get( renderObject ) { return renderObject; } },
+		getRenderTarget() { return renderTarget; },
+		setRenderTarget( target ) { renderTarget = target; },
+		getMRT() { return null; },
+		setMRT() {},
+		async compileAsync() {},
+		render() {},
+	};
+	const artifacts = await compileTSL( renderer, { userData: {}, traverse() {} }, {}, {
+		noGlobalMRT: true,
+		skipWarmupRender: true,
+		renderObjectHarvest: Object.freeze( {
+			renderer,
+			familiesByMaterial: new Map( [
+				[ materialA, family( materialA, objectA, 'world', makeState( later, 'StorageBuffer_world' ) ) ],
+				[ materialB, family( materialB, objectB, 'mvp', makeState( earlier, 'StorageBuffer_mvp' ) ) ],
+				[ materialC, family( materialC, objectC, 'exact', makeState( exactPathOnly, 'StorageBuffer_exact' ) ) ],
+			] ),
+		} ),
+	} );
+	const world = artifacts.byMaterialUuid.get( materialA.uuid ).uniformPlan[ 0 ].storageBuffers[ 0 ];
+	const mvp = artifacts.byMaterialUuid.get( materialB.uuid ).uniformPlan[ 0 ].storageBuffers[ 0 ];
+	const exact = artifacts.byMaterialUuid.get( materialC.uuid ).uniformPlan[ 0 ].storageBuffers[ 0 ];
+
+	assert.deepEqual( world.source, {
+		kind: 'storage.buffer',
+		elementType: 'mat4',
+		anonymousResourceOrdinal: 1,
+		anonymousResourceCount: 2,
+	} );
+	assert.deepEqual( mvp.source, {
+		kind: 'storage.buffer',
+		elementType: 'mat4',
+		anonymousResourceOrdinal: 0,
+		anonymousResourceCount: 2,
+	} );
+	assert.deepEqual( exact.userPath, [ 'positionNode', 'value' ] );
+	assert.deepEqual( exact.source, {
+		kind: 'storage.buffer',
+		elementType: 'mat4',
+	} );
 
 } );
 

@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": false,
+    "types": []
+  },
+  "include": [
+    "packages/plugin/types/**/*.d.ts",
+    "packages/plugin/test/fixtures/public-types/**/*.ts",
+    "packages/runtime/types/**/*.d.ts",
+    "packages/runtime/test/fixtures/public-types/**/*.ts"
+  ]
+}

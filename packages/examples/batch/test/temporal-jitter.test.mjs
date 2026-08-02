@@ -7,6 +7,7 @@ import {
 	temporalJitterFrameId,
 	temporalJitterIndexForFrameId,
 } from '../temporal-jitter.mjs';
+import { installVelocityProjectionLifecycle } from '../../../runtime/src/slim-support/velocity-projection-lifecycle.js';
 
 test( 'logical frame IDs map to Three temporal-AA Halton samples', () => {
 
@@ -85,13 +86,17 @@ test( 'TRAA exposes its unjittered projection only while the pipeline is active'
 	const projectionMatrix = { elements: [ 1 ] };
 	const camera = {};
 	const node = {
+		isTRAANode: true,
 		camera,
 		_originalProjectionMatrix: projectionMatrix,
 		_jitterIndex: 0,
 		setViewOffset() {},
 		clearViewOffset() {},
 	};
-	synchronizeTemporalJitterNode( node, { root: { __tslpFrameCallbackCount: 1 } } );
+	synchronizeTemporalJitterNode( node, {
+		root: { __tslpFrameCallbackCount: 1 },
+		installVelocityProjectionLifecycle,
+	} );
 	node.setViewOffset( 640, 480 );
 	assert.equal( camera[ velocityProjection ], projectionMatrix );
 	node.clearViewOffset();

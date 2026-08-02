@@ -15,7 +15,7 @@ import { stableJsonStringify } from './stable-json.js';
 
 export const SLIM_BUNDLE_SOURCE_SCHEMA = 'tslp-slim-bundle-sources@1';
 export const SLIM_BUNDLE_PROVENANCE_SCHEMA = 'tslp-slim-bundle-provenance@1';
-export const SLIM_BUNDLE_BUILD_TOOLCHAIN_VERSION = 'tslp-slim-rollup@1';
+export const SLIM_BUNDLE_BUILD_TOOLCHAIN_VERSION = 'tslp-slim-rollup@2';
 export const SLIM_BUNDLE_FILE_NAME = 'three.webgpu.slim.js';
 export const SLIM_BUNDLE_METADATA_FILE_NAME = 'three.webgpu.slim.meta.json';
 
@@ -76,7 +76,20 @@ export function createSlimBundleSourceInputs( {
 		threeSourceDirectory: resolve( threePackageRoot, 'src' ),
 		runtimeSourceDirectory: resolve( runtimePackageRoot, 'src' ),
 		contractSourceDirectory: resolve( contractPackageRoot, 'src' ),
-		rewriteImplementationFile: resolve( pluginPackageRoot, 'src/three-rewrite.js' ),
+		rewriteImplementationFiles: [
+			{
+				name: 'build-tools/slim-rewrite.js',
+				file: resolve( pluginPackageRoot, 'build-tools/slim-rewrite.js' ),
+			},
+			{
+				name: 'src/three-rewrite.js',
+				file: resolve( pluginPackageRoot, 'src/three-rewrite.js' ),
+			},
+			{
+				name: 'src/three-rewrite-runtime.js',
+				file: resolve( pluginPackageRoot, 'src/three-rewrite-runtime.js' ),
+			},
+		],
 		rewriteVendorDirectory: resolve( pluginPackageRoot, 'src/vendor' ),
 		// pnpm/npm rewrite workspace protocols, scripts, property order, and
 		// formatting while packing. Hash the shipped build recipe itself; exact
@@ -117,10 +130,7 @@ export async function computeSlimBundleSourceFingerprint( inputs, versions ) {
 		hashDirectoryGroup( 'three/src', inputs && inputs.threeSourceDirectory ),
 		hashDirectoryGroup( 'runtime/src', inputs && inputs.runtimeSourceDirectory ),
 		hashDirectoryGroup( 'contract/src', inputs && inputs.contractSourceDirectory ),
-		hashExplicitFileGroup( 'plugin/rewrite', [ {
-			name: 'src/three-rewrite.js',
-			file: inputs && inputs.rewriteImplementationFile,
-		} ] ),
+		hashExplicitFileGroup( 'plugin/rewrite', inputs && inputs.rewriteImplementationFiles ),
 		hashDirectoryGroup( 'plugin/vendor', inputs && inputs.rewriteVendorDirectory ),
 		hashExplicitFileGroup( 'rollup/recipe', inputs && inputs.rollupRecipeFiles ),
 	] );

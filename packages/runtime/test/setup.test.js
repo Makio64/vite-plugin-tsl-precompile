@@ -9,6 +9,7 @@ import {
 	__cloneLightsIntoForTests,
 	__resetForTests as resetMarkerForTests,
 } from '../src/precompile-marker.js';
+import { recordDevCaptureOutcome } from '../src/dev-capture-outcome.js';
 
 const MARKER_METHOD = 'precompile';
 
@@ -16,7 +17,7 @@ function fakeThree() {
 
 	const Material = function Material() {};
 	Material.prototype = {};
-	return { Material, REVISION: '184' };
+	return { Material, REVISION: '185' };
 
 }
 
@@ -99,12 +100,37 @@ test( 'setupPrecompile installs marker and resolves ready after init', async () 
 	assert.equal( typeof three.Material.prototype[ MARKER_METHOD ], 'function' );
 	assert.ok( setup && typeof setup.ready.then === 'function', 'returns { ready }' );
 	assert.equal( typeof setup.captureAux, 'function' );
+	assert.equal( typeof setup.captureStatus, 'function' );
+	assert.equal( typeof setup.waitForCaptureSettled, 'function' );
 	assert.equal( renderer.__tslpRenderWrapped, undefined, 'renderer is not registered before init resolves' );
 	assert.ok( renderer.backend, 'backend may exist before init without resolving setup.ready' );
 
 	await renderer.init();
 	await setup.ready;
 	assert.equal( renderer.__tslpRenderWrapped, true, 'setDevRenderer ran after ready' );
+
+} );
+
+test( 'setupPrecompile preserves an explicit null capture-settlement baseline', async () => {
+
+	const { three } = freshHarness();
+	const renderer = fakeRenderer( { initialised: true } );
+	const setup = setupPrecompile( { three, renderer } );
+	await setup.ready;
+	recordDevCaptureOutcome( true );
+	await setup.waitForCaptureSettled( {
+		timeoutMs: 1_000,
+		settleMs: 0,
+		rejectOnFailure: false,
+	} );
+
+	const fromProcessStart = await setup.waitForCaptureSettled( {
+		since: null,
+		timeoutMs: 100,
+		settleMs: 0,
+		rejectOnFailure: false,
+	} );
+	assert.ok( fromProcessStart.acceptedCaptures > 0 );
 
 } );
 
@@ -234,6 +260,39 @@ test( 'setupPrecompile is idempotent under double-call', async () => {
 	assert.equal( renderer.__tslpRenderWrapped, true );
 	// Marker method still single; calling install twice should not throw.
 	assert.equal( typeof three.Material.prototype[ MARKER_METHOD ], 'function' );
+
+} );
+
+test( 'setupPrecompile can leave automatic renderer-output capture to named manual captures', async () => {
+
+	const { three } = freshHarness();
+	const renderer = fakeRenderer( { initialised: true } );
+	const autoCaptureState = Symbol.for( '@tsl-precompile/runtime/auto-output-capture-state' );
+	const originalAutoCapture = globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__;
+	globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__ = true;
+
+	try {
+
+		const setup = setupPrecompile( {
+			three,
+			renderer,
+			captureRendererOutput: false,
+		} );
+		await setup.ready;
+
+		assert.equal(
+			renderer[ autoCaptureState ],
+			undefined,
+			'the manual-capture opt-out must not install automatic renderer-output state',
+		);
+
+	} finally {
+
+		resetMarkerForTests();
+		if ( originalAutoCapture === undefined ) delete globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__;
+		else globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__ = originalAutoCapture;
+
+	}
 
 } );
 

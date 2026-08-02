@@ -4,17 +4,132 @@ Companion to [ARCHITECTURE.md](./ARCHITECTURE.md) (what the system is).
 
 This file is the **structural** to-do list: the changes that make the plugins easier to evolve and make 100% visual fidelity *reachable* rather than a per-example grind. The generated [`coverage-summary.md`](packages/examples/batch/results/coverage-summary.md) is the canonical global snapshot, but it can lag targeted fresh reruns; refresh it before quoting a total externally. The remaining work is no longer mostly limited by individual rendering bugs — it is limited by where the fidelity logic lives, how the modules are factored, and how brittle the three.js coupling is. Fix the structure and the per-example work gets cheaper, safer, and shippable to real users.
 
-**Current read.** This roadmap is good to use, but it is not "done." The shared contract now owns represented variant families and material-global compute; the runtime can replay signed compute artifacts directly or execute an exact shared-device hybrid transaction. The prebuilt and guarded source profiles retain zero stock Node/TSL modules, generated helpers converge on one prebuilt runtime identity, and source mode is the recommended compiler-free delivery path for fully captured new Vite apps. The unfinished evolution is narrower: move the remaining harness-only PMREM/pass/shadow policy into `slim-support`, finish the hydrator's source/dynamic-descriptor split, harden the three.js compat matrix, and add a dev-vs-build extractor convergence guard.
+**Current read.** This roadmap is good to use, but it is not "done." The shared contract now owns represented variant families, material-global compute, and renderer-owned PMREM/VSM internal passes; the runtime can replay those artifacts directly or execute an exact shared-device hybrid transaction. The prebuilt and guarded source profiles retain zero stock Node/TSL modules, generated helpers converge on one prebuilt runtime identity, and source mode is the recommended compiler-free delivery path for fully captured new Vite apps. Exact `three@0.185.1` is the shipping baseline under `slim-three-policy@12`; the next-version matrix remains an early-warning surface, not an implicit support promise. The unfinished evolution is narrower: move the remaining harness-only pass/custom-shadow policy into `slim-support`, finish the hydrator's source/dynamic-descriptor split, deepen vendor/extractor diagnostics for the next Three drift, and expand the browser/Node extractor convergence guard beyond its first genuine capture fixture.
 
 Items are ordered **P0 → P3**. Each has: **Symptom** (what's wrong), **Why it blocks evolution/fidelity**, **Change** (target shape), **First step** (a small, low-risk wedge), **Files**.
 
-Last updated: 2026-07-17 (artifact payload/generated scene data, generated
-selector adapters, temporal projection identity, evidence integrity, and
-source-first slim UX; previous full audit 2026-06-09).
+Last updated: 2026-08-02 (compiler-free WebGL backend replay;
+Three r185.1 compatibility and provenance;
+artifact payload/generated scene data, generated selector adapters, temporal
+projection identity, evidence integrity, and source-first slim UX remain from
+2026-07-17; previous full audit 2026-06-09).
 
 ---
 
-## 2026-07-11 capture/identity spike — staged direction
+## 2026-08-02 compiler-free WebGL backend replay
+
+`WebGPURenderer({ forceWebGL: true })` and its automatic WebGPU-unavailable
+fallback now remain live in both slim profiles. The WebGL backend itself is
+retained, while its `GLSLNodeBuilder` import and `createNodeBuilder()` path are
+removed by the same fail-closed rewrite policy used for the WGSL compiler.
+
+Capture labels native shader payloads as WGSL or GLSL. A backend-aware
+`variantKey` namespaces the durable family map while preserving Three's raw
+private `cacheKey`, so one material captured through both renderers cannot
+overwrite one backend with the other. Runtime hydration validates the selected
+shader language against the active backend before creating a pipeline. GLSL is
+kept byte-for-byte during build emission, and output, texture, array-layer, and
+skinning probes understand both native syntaxes.
+
+The recapture client can now execute the full declared route matrix with
+`--backends webgpu,webgl`. The WebGL leg triggers Three's own backend fallback
+inside a fresh context while preserving `navigator.gpu`, and every leg is
+gated against the renderer's observed post-init backend. Fully signed
+auxiliary and renderer-owned family writes aggregate compatible backend
+variants atomically too, so a later GLSL capture cannot shrink an existing
+WGSL family (or vice versa).
+
+This support is for compiler-free render/compute pipeline replay, not WebXR.
+Slim still replaces Three's dynamic XR manager with an explicit unsupported
+adapter; applications that need XR must use full Three with its WebGL backend.
+
+## 2026-07-30 compiler-free PMREM and VSM internal passes
+
+Realtime comparison separated two failures that previously looked alike.
+PMREM extraction compiled a synthetic plane, so its WGSL hard-coded cube face
+zero and its selector described the wrong target/vertex topology. Capture now
+harvests Three r185's real unindexed LOD meshes (`position`, `uv`,
+`faceIndex`) against the RGBA/HalfFloat atlas; direct live-render and extracted
+WGSL hashes match for source conversion, blur, and GGX.
+
+The second PMREM fault was inside Three's generator lifetime. r185 creates
+`_equirectMaterial` or `_cubemapMaterial` around the first source texture and
+reuses that private material. The source texture's sample/component type and
+filterability can change WGSL texture declarations and sampling instructions,
+so one generator cannot be used as a capture cache across heterogeneous source
+topologies. Capture now creates a fresh generator per `pmrem-support@1`
+topology, while equivalent inputs deliberately share the same durable family.
+
+VSM's extracted vertical and horizontal WGSL already matched Three byte for
+byte. Its failure was ownership: the private materials were discarded as
+generic node materials and the transient depth/intermediate resources had no
+durable replay schedule. Exact material-name classification plus
+`AnalyticLightNode.shadowNode` ownership now emits semantic
+`internal-pass@1` descriptors. The shared contract validates role addresses
+without persisting runtime UUIDs; the slim binder overlays live uniforms,
+textures, and the packed PMREM weights buffer.
+
+The slim runtime now keeps Three's PMREM atlas geometry/schedule and resolves
+complete `texture-equirect`, `texture-cubemap`, or `scene` program families by
+`pmrem-support@1`; `pmrem-layout@1` remains the nested atlas replay metadata.
+A VSM scheduler owns raw depth,
+vertical, and horizontal targets and publishes the final moments texture to
+normal shadow hydration. `createSlimSceneSupport()` selects both paths before
+considering a full renderer, so captured PMREM and non-point VSM no longer
+require the compiler-bearing fallback.
+
+Internal-pass publication is transactional as well as family-valid. The
+browser signs and posts one PMREM or VSM envelope; the dev server rejects
+incomplete, duplicate, cross-config, or non-canonical members, writes every
+full-digest content-addressed file, then publishes the generation with one
+atomic manifest rename. Standalone internal stages cannot bypass that family
+transaction, and the batch harness exposes family members through one
+in-memory replacement. Recapture performs production builds and six
+compiler-free PMREM/VSM preview receipts before committing its
+artifact-directory transaction; each receipt proves the generated output is
+installed in the downstream `scene.environment` or shadow `mapPass` binding,
+not merely that an internal pass ran.
+
+## 2026-07-30 Three r185.1 compatibility wedge
+
+The locked baseline advances to exact `three@0.185.1`, with the guarded
+plugin/runtime handshake at `slim-three-policy@12`. Compatibility is validated
+against the official `r185` tag only: its package metadata must report
+`0.185.1` and its exported `REVISION` must be `185`. A nearby development tree
+with mismatched package metadata is not acceptable provenance.
+
+The strict rewrite surface moved with the upstream implementation. The full
+compact AST for `NodeUtils.js` is re-fingerprinted, while the unchanged
+constants and Loader modules are re-gated against r185. The graph-free
+constants surface adds `NodeUpdateType`. `WebGPUBackend` now declares
+`bindingsData` inside the bind-group cache-miss branch and owns sampler updates
+by binding rather than texture; the rewrite recognizes those exact transition
+shapes and rejects unknown ownership or delegation.
+
+Replay parity moved at the renderer boundary too. Hydrated builder state now
+exposes `hardwareClipping` for `RenderObject`; object-update uniform groups
+always refresh; array output passes have the r185 `setOutputLayerIndex()`
+lifecycle; and replay lighting mirrors `enabled`,
+`beginRender(scene)`, and `finishRender(scene)` with nested state restoration.
+These are renderer contracts, not optional compatibility stubs.
+
+Artifacts remain generated, revision-bound build inputs. Every material,
+compute, and auxiliary example artifact must be recaptured after the bump,
+including legacy versionless files, before all-example build and visual gates
+are accepted. Browser auxiliary capture now persists the exact Three and
+toolchain versions in both its artifact envelope and manifest entry; production
+codegen rejects missing or mismatched provenance, and `pnpm verify` gates those
+fields against the current exact baseline. Legacy versionless auxiliary files
+therefore remain usable only long enough for dev mode to recapture them.
+Artifact JSON and screenshots must never be hand-edited.
+
+---
+
+## Historical snapshot: 2026-07-11 capture/identity spike
+
+This section records the state at that checkpoint. Later current-state
+corrections are labeled explicitly rather than rewriting the historical
+sequence of decisions and measurements.
 
 The real-render observation added in July exposed a simpler target than
 reconstructing every render context in a throwaway scene. A mock-WebGPU
@@ -23,27 +138,38 @@ render and extracts complete WGSL plus light, shadow, depth-texture, and fog
 sources without a second compile. The private Three seam is centralized in
 [`packages/plugin/src/vendor/render-object-observer.js`](packages/plugin/src/vendor/render-object-observer.js), which uses a Symbol-backed subscriber registry; `compileTSL` consumes that adapter instead of replacing `NodeManager.getForRender` itself.
 
-`compileTSL` can now consume a completed real-render harvest. The observer
+At that snapshot, `compileTSL` could consume a completed real-render harvest. The observer
 freezes request-time target/face/mip/MRT state, joins cached or newly built
 `NodeBuilderState` objects by material plus Three cache key, and exposes one
 atomic family per material. Extraction prefers a supplied complete family and
 falls back to the whole synthetic family when any requested sibling is
-incomplete; it never mixes a partial real family with synthetic siblings. The
-production marker has **not** switched to handing this harvest across its real
-render yet, so synthetic capture remains its default compatibility path. That
-marker handoff is the next adoption wedge, especially for multi-call epochs
-such as the six CubeCamera faces.
+incomplete; it never mixes a partial real family with synthetic siblings.
+
+**Current handoff (2026-07-30).** The production marker now brackets the
+application's real `renderer.render(scene, camera)` calls with the plugin-owned
+observer. Synchronous multi-call bursts share one bounded epoch, asynchronous
+renders keep that epoch open until settlement, and the finished immutable
+harvest is handed to both marked-material extraction and the exact
+renderer/scene auxiliary-capture slot. Complete real families are preferred
+atomically; incomplete families still fall back atomically to synthetic
+extraction. CubeCamera-style multi-call coverage remains bounded by the
+observer epoch rather than being reconstructed from a throwaway scene.
 
 Identity is now split in the first useful way: `__hash` is derived from runtime
 artifact content (shaders, binding/layout data, uniform plans, render state, and
 variants), while `sourceGraphHash` remains source provenance. Dev captures also
-record stable call-site owners and a conservative whole-module revision; build
-rejects a changed or unobserved owner. `autoMark` relies on that build-time gate
-because it rewrites the constructor before later `*Node` assignments, making an
-adoption-time graph comparison inherently too early. Still open: extend module
-revision to a transitive local-import closure, and use render-context
-fingerprints only for live variant selection rather than treating stored
-context as source freshness.
+record stable call-site owners and a conservative transformed-owner revision.
+That revision now includes the deterministic transitive closure of statically
+resolved project-local imports. Capture and production both use Vite resolution
+(including aliases); the server persists the canonical dependency proof without
+adding it to the runtime marker API, and the source-aware verify scan recomputes
+it directly. Virtual modules, `node_modules`, linked workspaces outside the
+configured root, and unrelated application files are excluded. A changed,
+removed, newly resolved, or retargeted local helper therefore fails closed
+before artifact emission. `autoMark` relies on this build-time gate because it
+rewrites the constructor before later `*Node` assignments, making an
+adoption-time graph comparison inherently too early. Render-context fingerprints
+remain live variant-selection evidence rather than source freshness.
 
 **Live uniform identity wedge (2026-07-13).** Anonymous `uniform.live` slots now
 serialize artifact-local `liveNodeId` identity, plus an exact `nodePath` when the
@@ -175,15 +301,15 @@ is closed while the example's larger visual mismatch remains independent.
 now measured from Rollup module IDs instead of minified string fingerprints.
 `WGSLNodeBuilder`, `GLSLNodeBuilder`, `NodeBuilder`, their parsers,
 `StandardNodeLibrary`, real `NodeMaterial`, and Three's runtime-compiling
-`PMREMGenerator` are hard build failures when they contribute rendered bytes;
+PMREM implementation are hard build failures when they contribute rendered bytes;
 `NodeBuilderState` was initially retained as a renderer data carrier; the
 replay-native manager described below now replaces it with runtime-owned
 hydrated state. Two dead paths were removed immediately:
 NodeManager no longer catches hydration failure by constructing a generic
-NodeMaterial after the backend builder has already been stripped, and the slim
-PMREM export is now a constructible compatibility shell which directs actual
-generation to the documented full-renderer adapter. A focused PMREM equirect
-replay still completes through that adapter. Together these cuts moved the
+NodeMaterial after the backend builder has already been stripped, and the
+initial slim PMREM export was a constructible compatibility shell. It has
+since become a compiler-free replay generator backed by captured
+`internal-pass@1` source/blur/GGX programs. Together the original cuts moved the
 checked bundle from 916,965 raw / ~249,100 gzip bytes to 876,647 raw / 238,462
 gzip bytes (the standard test reports 856.1 / 232.9 KiB).
 
@@ -619,7 +745,7 @@ stubs are annotated pure so unused Node-material shells tree-shake; a broad
 package `sideEffects: false` was tested and rejected because it removes required
 bootstrap and policy effects.
 
-The current deterministic budget report (2026-07-17, gzip-9) is: prebuilt
+The historical deterministic budget snapshot (2026-07-17, gzip-9) was: prebuilt
 769,879 raw / 211,646 gzip bytes (341 modules); generated-helper consumer
 582,641 raw / 164,168 gzip (3 modules); minimal source 494,053 raw / 138,279
 gzip (182 modules); advanced source 522,700 raw / 145,910 gzip (192 modules). Every
@@ -632,17 +758,17 @@ copy.
 
 ## 2026-06-09 audit refresh — corrections to the map
 
-A verified architecture+performance audit (56 findings raised, 26 confirmed after adversarial verification) re-measured this document against the tree. Corrections, so later sections are read with current numbers:
+A verified architecture+performance audit (56 findings raised, 26 confirmed after adversarial verification) re-measured this document against the tree. Its dated measurements are historical unless a bullet explicitly says it was rechecked; the current corrections below keep later sections readable:
 
-- **Current metrics (rechecked 2026-07-17).** `hydrator.js` is 1,175 LOC (the 656 figure below is explicitly historical). [`run-e2e.mjs`](packages/examples/batch/run-e2e.mjs) is **16,415 LOC**, with **489 `__*` helper functions**. `slim-support/` has **28 JavaScript modules** and `hydrate/` has **34 JavaScript files**.
+- **Current metrics (rechecked 2026-07-30).** `hydrator.js` is **1,402 LOC**, backed by **36** focused JavaScript files under `hydrate/`; `aux-marker.js` is **2,688 LOC**; and `slim-support/scene-support.js` is **1,749 LOC** inside a **31**-module JavaScript support surface. [`run-e2e.mjs`](packages/examples/batch/run-e2e.mjs) is now **5,495 LOC**: its **13,269 LOC** injected browser replay factory lives in the separately fingerprinted and directly tested [`e2e-slim-replay-module.mjs`](packages/examples/batch/e2e-slim-replay-module.mjs). Reusable artifact metrics, compressed artifact output/replay, evidence/provenance, environment identity, selection, screenshot handling, settle policy, browser stabilization, workload policy, and output safety also live in focused modules with direct tests. Because active extraction changes these counts frequently, use `wc -l` when quoting them rather than treating this dated snapshot as an invariant.
 - **The audited hydrator regrowth was feature work, not failed decomposition.** At the 2026-06-09 audit, the 656→1,008 growth came from Tier C MRT variant selection (`selectArtifactVariant` + merge views, commits `6a15d662`/`0858b65e`) and live-uniform sidecar/skeleton state (`2e1e32cf`). Focused `hydrate/variants`, `kinds`, writers, and rebinder modules have since landed; §P0.2 now tracks the remaining orchestration seam.
-- **At the 2026-06-09 audit, §P0.1 omitted 11 of 17 slim-support modules** that had landed after its original status write-up. The directory now contains 28 JavaScript modules; the current status below names the product boundary, while its next step continues to track harness-only policy.
-- **The slim bundle regression is fixed at the bundler, not by budget bumps.** The gate in [`slim-bundle.test.js`](packages/plugin/test/unit/slim-bundle.test.js) had been bumped 263 → 420 KB gzip; the checked-in bundle measured 1.59 MB raw / ~407 KB gzip. The audit's per-module analysis found the growth was **not** feature cost: (1) runtime modules importing from bare `'three'` resolved to the *prebuilt* `three.module.js`/`three.core.js`, bundling ~2 MB of three a second time on top of `three/src/**`; (2) `WebGPURenderer.js`'s static `WebGLBackend` import dragged the whole `webgl-fallback/**` subtree (a second, GLSL shader compiler) into a WebGPU-only bundle. Two rollup wedges landed in [`rollup.config.js`](packages/runtime/rollup.config.js) — `threeBareAlias` (bare `three` → `three/src/Three.Core.js`, deduped by Rollup) and `webglFallbackStub` (redirects `WebGLBackend` to a throwing stub, [`src/slim-stub-webgl-backend.js`](packages/runtime/src/slim-stub-webgl-backend.js)) — plus a `TSLP_ANALYZE=1` per-module size reporter. Strict rebuild: **875 KB raw / 238.8 KB gzip**, fallback rendering/compute/offscreen support included. Gate re-tightened to **250 KB**; stale "≤ 350 KB" comments fixed. Lesson under §P0.5: run the analyzer before bumping a budget — both leaks were single-import-path mistakes invisible from the total.
+- **At the 2026-06-09 audit, §P0.1 omitted 11 of 17 slim-support modules** that had landed after its original status write-up. That historical count is not the current surface; the current status below names the product boundary, while its next step continues to track harness-only policy.
+- **The slim bundle regression was fixed at the bundler, not by budget bumps.** The gate in [`slim-bundle.test.js`](packages/plugin/test/unit/slim-bundle.test.js) had been bumped 263 → 420 KB gzip; the checked-in bundle measured 1.59 MB raw / ~407 KB gzip. The audit's per-module analysis found the growth was **not** feature cost: (1) runtime modules importing from bare `'three'` resolved to the *prebuilt* `three.module.js`/`three.core.js`, bundling ~2 MB of three a second time on top of `three/src/**`; (2) `WebGPURenderer.js`'s static `WebGLBackend` import dragged the whole `webgl-fallback/**` subtree, including a second shader compiler, into the then-WebGPU-only bundle. The historical @11 fix redirected that backend to a throwing stub. Policy @12 deliberately retains the backend implementation for native GLSL replay while its `GLSLNodeBuilder` remains forbidden compiler residue, so its measured backend cost is now intentional. Lesson under §P0.5 still applies: run the analyzer before changing a budget and separate compiler residue from required backend runtime.
 - **§P1.8's gap 2 is confirmed closed in code**: aux-artifact injection runs in any production build, not just slim ([`packages/plugin/src/index.js:392-397`](packages/plugin/src/index.js#L392-L397)).
-- **`aux-marker.js` and `aux-loader.js` had no entry in this document** despite being two of the largest runtime files — now tracked as §P2.11 (currently 1,357 and 1,209 LOC).
+- **`aux-marker.js` and `aux-loader.js` had no entry in this document** despite being two of the largest runtime files — now tracked as §P2.11 (currently **2,688** and **1,223 LOC**).
 - **New items from the audit:** §P1.9 (per-render resolution caching — first wedge landed), §P2.11 (aux pipeline doc/convergence), §P2.12 (startup hydration caching — several wedges landed), §P3.13 (bundle surface diet — partially resolved by the gate fix above).
 - **Performance quick wins landed with the audit (2026-06-09):** per-binding `DataView` cache + clipping change-detection + `(group,binding)→planEntry` memo + variant-view memo in [`hydrator.js`](packages/runtime/src/hydrator.js); per-artifact WGSL/regex query cache in [`hydrate/texture-resolver.js`](packages/runtime/src/hydrate/texture-resolver.js); snapshot identity-keyed cache in [`hydrate/texture-snapshot.js`](packages/runtime/src/hydrate/texture-snapshot.js) (fixes a same-shape collision hazard); LTC boxed-array release in [`hydrate/builtin-textures.js`](packages/runtime/src/hydrate/builtin-textures.js); gated shadow-diagnostic payload construction in [`hydrate/rebinders/shadow-depth-rebinder.js`](packages/runtime/src/hydrate/rebinders/shadow-depth-rebinder.js); harness diagnostic removed from `writeColor` in [`writers.js`](packages/runtime/src/writers.js); artifact-path watcher filter + HMR batch window in [`packages/plugin/src/index.js`](packages/plugin/src/index.js) / [`dev-capture-server.js`](packages/plugin/src/dev-capture-server.js).
-- **Deliberate non-changes** (verified intentional; do not "fix"): the serial e2e loop and 2-runs-per-browser recycling (the parallel runner froze machines ~150 examples in — deleted in `ee4ae2e3`; documented at `run-e2e.mjs:13905-13921`); `slim-entry.js`'s aux-loader import (it is exported slim API surface, not a one-call import).
+- **Deliberate non-changes** (verified intentional; do not "fix"): the serial e2e loop and 2-runs-per-browser recycling (the parallel runner froze machines ~150 examples in — deleted in `ee4ae2e3`; documented next to `MAX_RUNS_PER_BROWSER` in `run-e2e.mjs`); `slim-entry.js`'s aux-loader import (it is exported slim API surface, not a one-call import).
 
 ---
 
@@ -688,11 +814,12 @@ Move the harness `__*` helpers in there one cluster at a time (textures → PMRE
 [`packages/runtime/src/slim-support/auto-compute.js`](packages/runtime/src/slim-support/auto-compute.js) now owns the material scene walk that used to be `__wireAutoComputeAttrsToArtifact` / `__dispatchAutoComputeNodes`: it retains every material owner of a shared kernel, filters writable full-renderer storage bindings, rejects ambiguous same-shape outputs, retries transient pre-bootstrap states, invalidates each newly wired material once, and dispatches a shared node once per call. The signed `materialCompute` contract supplies exact kernel/resource/render-binding ownership, lifecycle cadence, and schedule order. `precompiled` mode hydrates proven storage-buffer kernels without a live graph; storage textures and other unsupported proofs use `hybrid-required`, which retains the exact raw kernel and delegates one serialized shared-device transaction. Owner-local mappings are applied only after exact render-variant selection, serialized artifacts remain immutable, and `createSlimSceneSupport().dispatchMaterialComputes(scene)` is the awaited adopter API. The harness is now a thin adapter that retains only frozen-screenshot policy.
 [`packages/runtime/src/slim-support/full-renderer-fallback.js`](packages/runtime/src/slim-support/full-renderer-fallback.js) now owns the lazy bootstrap of a full `WebGPURenderer` on the slim renderer's shared `GPUDevice` — the productized version of `__getComputeRenderer`. Single-promise de-duplication, shared-device + `reversedDepthBuffer` forwarding, `shadowMap.enabled` toggle, optional `loadThreeFullModule()` async factory for non-bundler environments, `dispose()` + re-boot semantics. Unit-test coverage in [`packages/runtime/test/slim-support-full-renderer-fallback.test.js`](packages/runtime/test/slim-support-full-renderer-fallback.test.js); 9 cases covering boot/dedup/option-forwarding/error/dispose paths.
 [`packages/runtime/src/slim-support/shadow-fallback.js`](packages/runtime/src/slim-support/shadow-fallback.js) now owns the standard Directional/Spot/Point depth-shadow fallback: it builds and refreshes a cached full-native proxy scene, performs the two lazy shadow warm-up renders, copies live map/matrix/camera state to the slim lights, and shares depth GPU textures. It preserves native `autoUpdate` behavior, validates shared-device/depth conventions, and fails closed for VSM/transmitted shadows, custom shadow nodes, skinned/batched/morphing casters, clipping shadows, and opaque node graphs unless the caller supplies `resolveShadowMaterial`; `createSlimSceneSupport().populateShadowMaps()` is the public orchestrator surface.
+[`packages/runtime/src/slim-support/precompiled-shadows.js`](packages/runtime/src/slim-support/precompiled-shadows.js) now owns the captured non-point VSM resource graph on slim: shadow-depth render, vertical moments, horizontal moments, live semantic rebinding, target resize, update cadence, and disposal. Point/custom VSM remains explicitly unsupported; the full-renderer shadow adapter covers only the non-VSM depth families it validates.
 [`packages/runtime/src/slim-support/scene-support.js`](packages/runtime/src/slim-support/scene-support.js) is the public **`createSlimSceneSupport()`** orchestrator referenced at the top of this section — composes the focused support modules into a single opt-in entry point (`indexScene`, `getFullRenderer`, `generatePMREMAsync`, `dispatchMaterialComputes`, `syncComputeOutputs`, `populateShadowMaps`, pass fallback, texture sharing, and `dispose`), with a shared diagnostics bag and an `onError(err, where)` for non-fatal sub-module failures. Focused unit coverage exercises opt-in defaults, fallback boot, material compute ownership/delegation, texture sharing, scene indexing, PMREM routing, pass fallback, and missing shadow-fallback configuration.
 
-`run-e2e.mjs` imports the compute primitives and material dispatcher through the runtime package. Its auto-compute block now supplies only the active full renderer, the existing delegated `slimRenderer.compute()` call, and the harness-specific frozen-frame `Set`; owner discovery, attribute matching, retry state, and invalidation are shared with adopters. The harness still owns PMREM-generator scene cloning and several pass/shadow policies.
+`run-e2e.mjs` imports the compute primitives and material dispatcher through the runtime package. Its auto-compute block now supplies only the active full renderer, the existing delegated `slimRenderer.compute()` call, and the harness-specific frozen-frame `Set`; owner discovery, attribute matching, retry state, and invalidation are shared with adopters. Compiler-free PMREM texture generation and non-point VSM scheduling are runtime-owned; the harness still owns example-specific scene cloning and several pass/custom-shadow policies. Harness-only visual interventions are no longer anonymous inline branches: [`e2e-browser-stabilization-policy.mjs`](packages/examples/batch/e2e-browser-stabilization-policy.mjs) is a data-only registry for media, audio, and multi-canvas stabilization, every applied policy is serialized into the fingerprinted per-case configuration, and a source guard rejects new direct example-name branches in the visit/screenshot seams.
 
-**Next step.** Continue migrating the remaining harness PMREM/pass/shadow policy onto the existing support surface, and profile whether hybrid kernels can be retained more narrowly without weakening exact resource ownership. Keep VSM, custom shadow nodes, and GPU/skinned caster proxies as explicit adapters.
+**Next step.** Continue migrating the remaining harness pass/custom-shadow policy onto the existing support surface, and profile whether hybrid kernels can be retained more narrowly without weakening exact resource ownership. Keep point/custom shadow nodes and GPU/skinned caster proxies as explicit adapters until captured schedulers exist.
 
 **Files.** new `packages/runtime/src/slim-support/*`; `packages/runtime/src/index.js` (export); `packages/runtime/package.json` (export map); `packages/examples/batch/run-e2e.mjs` (call, don't inline).
 
@@ -700,7 +827,7 @@ Move the harness `__*` helpers in there one cluster at a time (textures → PMRE
 
 ### P0.2 — Break up `hydrator.js` into a binding-kind pipeline
 
-**Current symptom.** [`hydrator.js`](packages/runtime/src/hydrator.js) is now 1,175 LOC, down from ~3,843. Static binding dispatch, dynamic texture classification, fallback textures, material/light writers, variants, and rebinder execution have moved into focused modules. The remaining broad seam is orchestration: `hydrateRuntimeBindings()` still owns the arrays that connect classified bindings to per-render resolvers, while `resolveTextureBinding()` remains the top-level source-resolution entry point.
+**Current symptom.** [`hydrator.js`](packages/runtime/src/hydrator.js) is now **1,402 LOC**, down from ~3,843. Static binding dispatch, dynamic texture classification, fallback textures, material/light writers, variants, and rebinder execution have moved into focused modules. The remaining broad seam is orchestration: `hydrateRuntimeBindings()` still owns the arrays that connect classified bindings to per-render resolvers, while `resolveTextureBinding()` remains the top-level source-resolution entry point.
 
 **Why it blocks evolution/fidelity.** Texture resolution now records named strategies and can warn or fail strictly on a shape-only fallback, but the artifact does not yet describe every per-render resource uniformly. Adding a dynamic source can still require coordinated classification arrays and orchestration changes instead of one contract-owned descriptor and resolver.
 
@@ -714,7 +841,7 @@ Move the harness `__*` helpers in there one cluster at a time (textures → PMRE
 
 Adding a binding kind becomes: add one static allocator if the renderer binding object is new; add one source resolver if the artifact source vocabulary is new; add one dynamic resolver only if the resource is per-frame. This is less elegant on paper than one universal interface, but it matches the code better and avoids pretending that DFG LUT, viewport, shadow depth, and storage buffers are the same kind of thing.
 
-**Status (2026-05-14).** Hydrator down to **656 LOC** from a session-start of 1193 (-45%) — three fresh extractions: [`packages/runtime/src/hydrate/fallback-textures.js`](packages/runtime/src/hydrate/fallback-textures.js) owns the per-shape fallback singletons + `makeViewportFallback()`; [`packages/runtime/src/hydrate/clipping-planes.js`](packages/runtime/src/hydrate/clipping-planes.js) owns `collectClippingGroupsForObject` + `projectClippingPlanes` + `clippingPlaneSetsForFrame` + `selectClippingPlaneArray`; [`packages/runtime/src/hydrate/user-attributes.js`](packages/runtime/src/hydrate/user-attributes.js) owns `bindUserNodeAttributesToArtifact` + `bindUserStorageBuffersToArtifact` + `findInstancedObjectAttributeMatchingEntry` + `getInstancedMatrixColumnAttribute` + `findFirstAttributeMatchingEntry` + `hydrateNodeAttributes` + `itemSizeFromAttributeType` (~320 LOC of attribute/storage-buffer binding for compute-mesh and instanced paths). `Matrix3` / `Plane` / `InstancedBufferAttribute` / `StorageBufferAttribute` no longer imported into `hydrator.js`. All 278 runtime tests still green.
+**Historical status (2026-05-14).** Hydrator was down to **656 LOC** from a session-start of 1193 (-45%) — three fresh extractions: [`packages/runtime/src/hydrate/fallback-textures.js`](packages/runtime/src/hydrate/fallback-textures.js) owns the per-shape fallback singletons + `makeViewportFallback()`; [`packages/runtime/src/hydrate/clipping-planes.js`](packages/runtime/src/hydrate/clipping-planes.js) owns `collectClippingGroupsForObject` + `projectClippingPlanes` + `clippingPlaneSetsForFrame` + `selectClippingPlaneArray`; [`packages/runtime/src/hydrate/user-attributes.js`](packages/runtime/src/hydrate/user-attributes.js) owns `bindUserNodeAttributesToArtifact` + `bindUserStorageBuffersToArtifact` + `findInstancedObjectAttributeMatchingEntry` + `getInstancedMatrixColumnAttribute` + `findFirstAttributeMatchingEntry` + `hydrateNodeAttributes` + `itemSizeFromAttributeType` (~320 LOC of attribute/storage-buffer binding for compute-mesh and instanced paths). `Matrix3` / `Plane` / `InstancedBufferAttribute` / `StorageBufferAttribute` no longer imported into `hydrator.js`. All 278 runtime tests were green at that checkpoint.
 
 Earlier wedges. [`packages/runtime/src/hydrate/texture-resolver.js`](packages/runtime/src/hydrate/texture-resolver.js) now owns uniform-plan texture lookup, shader texture-shape inference, texture-vs-binding compatibility checks, and shader-compatible fallback texture selection, with focused tests in [`packages/runtime/test/hydrate-texture-resolver.test.js`](packages/runtime/test/hydrate-texture-resolver.test.js). [`packages/runtime/src/hydrate/artifact-texture-resolver.js`](packages/runtime/src/hydrate/artifact-texture-resolver.js) now owns the `artifact.texture` strategy order (`material-node-texture`, `render-target-texture-ref`, `live-texture-identity`, `texture-ref`, `material-slot-uuid`, `anonymous-data-texture`, `snapshot`, `multisampled-depth-fallback`, `anonymous-storage-texture`), records the last strategy per binding on a non-enumerable `_textureResolutionStrategies` map, and exposes `setTextureResolutionDebugHook()` / `getTextureResolutionDebugHook()` for structured resolution events. [`packages/runtime/src/hydrate/texture-snapshot.js`](packages/runtime/src/hydrate/texture-snapshot.js) now owns artifact snapshot hydration for 2D / 3D / array textures, trivial-snapshot classification, mipmap-filter downgrades, typed-array reconstruction, and the non-enumerable snapshot cache. [`packages/runtime/src/hydrate/live-texture-registry.js`](packages/runtime/src/hydrate/live-texture-registry.js) now owns public live-texture registration, image/name identity lookup, anonymous DataTexture shape lookup, anonymous storage-texture lookup, and the idempotent prototype hooks that feed those indexes. [`packages/runtime/src/hydrate/material-node-textures.js`](packages/runtime/src/hydrate/material-node-textures.js) now owns material node-graph texture collection and `artifact.texture` material-node lookup, shared by the hydrator and `slim-support`. [`packages/runtime/src/hydrate/builtin-textures.js`](packages/runtime/src/hydrate/builtin-textures.js) now owns DFG LUT and LTC built-in texture resolution, including LTC half-float reconstruction and per-artifact caching. [`packages/runtime/src/hydrate/kinds/texture-bindings.js`](packages/runtime/src/hydrate/kinds/texture-bindings.js) now owns sampled-texture / sampler binding construction and rebindable clone tracking. [`packages/runtime/src/hydrate/kinds/uniform-buffer.js`](packages/runtime/src/hydrate/kinds/uniform-buffer.js) now owns uniform-buffer allocation, grouped snapshot seeding, flat `NodeUniformBuffer` snapshot seeding, and live typed-array updater attachment. [`packages/runtime/src/hydrate/kinds/storage-buffer.js`](packages/runtime/src/hydrate/kinds/storage-buffer.js) now owns storage-buffer live-attribute reuse, JSON/typed-array snapshot seeding, and `StorageBuffer` metadata setup; typed-array constructor resolution is shared through [`packages/runtime/src/hydrate/typed-arrays.js`](packages/runtime/src/hydrate/typed-arrays.js). [`packages/runtime/src/hydrate/kinds/runtime-binding-dispatcher.js`](packages/runtime/src/hydrate/kinds/runtime-binding-dispatcher.js) now owns dispatch for the extracted runtime binding kinds, so `hydrator.js` only supplies context and dependencies. [`packages/runtime/src/hydrate/rebinders/texture-binding-targets.js`](packages/runtime/src/hydrate/rebinders/texture-binding-targets.js) now owns clone-aware texture binding target collection, rebinding, invalidation, and GPU-resource-change tracking shared by the remaining rebinder factories. [`packages/runtime/src/hydrate/rebinders/texture-rebinders.js`](packages/runtime/src/hydrate/rebinders/texture-rebinders.js) now owns material-slot and artifact-texture rebinder factories. [`packages/runtime/src/hydrate/rebinders/reflector-texture-rebinder.js`](packages/runtime/src/hydrate/rebinders/reflector-texture-rebinder.js) now owns reflector render-target resolution, material reflector-node lookup, and reflector texture rebinding. [`packages/runtime/src/hydrate/rebinders/viewport-texture-rebinder.js`](packages/runtime/src/hydrate/rebinders/viewport-texture-rebinder.js) now owns viewport texture rebinding, zero-thickness transmission fallback selection, and render-id copy dedupe. [`packages/runtime/src/hydrate/rebinders/shadow-depth-rebinder.js`](packages/runtime/src/hydrate/rebinders/shadow-depth-rebinder.js) now owns light shadow-depth rebinding, material-graph depth-texture rebinding, compare-function updates, and GPU-resource-change invalidation.
 
@@ -806,8 +933,8 @@ The full-renderer fallback covers:
 | Feature | Compiler-free path | Explicit fallback for uncaptured/live work |
 |---|---|---|
 | **Compute kernels** | Proven storage-buffer kernels replay from signed `materialCompute` artifacts | A full renderer dispatches `hybrid-required` kernels; contracted writable outputs sync back |
-| **Shadow maps** | Captured signed shadow families replay exact depth artifacts | Shared-device shadow fallback handles a family not represented by a supported capture |
-| **PMREM** | Captured cube conversion/filtering artifacts and cached textures replay directly | A full `PMREMGenerator` performs genuinely new runtime filtering |
+| **Shadow maps** | Captured depth plus non-point VSM vertical/horizontal passes replay on slim | Shared-device fallback handles validated non-VSM depth families; point/custom VSM fails closed |
+| **PMREM** | Captured source conversion, blur, and GGX passes run through the compiler-free slim generator | Full PMREM is optional for an uncaptured layout |
 | **Pass/effect WGSL** | Captured execution plans replay exact producer/effect/consumer order | A full renderer produces an uncaptured dynamic pass and shares its render-target textures |
 | **Clipping context** | Captured planes and live `ClippingGroup` ancestry feed generated writers | A topology outside the signed artifact fails closed until recaptured or explicitly delegated |
 
@@ -844,7 +971,11 @@ slimRenderer.setAnimationLoop( () => slimRenderer.render( scene, camera ) );
 
 `run-e2e.mjs`'s `__getComputeRenderer` now delegates to the productized fallback so the harness exercises exactly the same code path adopters will.
 
-Option (B) has partially landed: signed shadow-depth families and captured clipping topology replay directly. The remaining follow-up is to broaden exact proofs for unsupported dynamic families without turning the fallback into an implicit catch-all.
+Option (B) has advanced: signed shadow-depth families, non-point VSM
+filter scheduling, PMREM source/blur/GGX passes, and captured clipping topology
+replay directly. The remaining follow-up is to broaden exact proofs for
+unsupported dynamic families without turning the fallback into an implicit
+catch-all.
 
 **Files.** [`packages/runtime/src/slim-support/full-renderer-fallback.js`](packages/runtime/src/slim-support/full-renderer-fallback.js); [`packages/runtime/src/slim-support/scene-support.js`](packages/runtime/src/slim-support/scene-support.js); [`packages/examples/batch/run-e2e.mjs`](packages/examples/batch/run-e2e.mjs) `__getComputeRenderer` delegation.
 
@@ -946,9 +1077,61 @@ Inspector preview gap also closed via a Vite plugin middleware (`attachInspector
 
 **Change.** One deterministic offline PSNR path (decode PNGs in Node; a single shared `comparePSNR` used by both the harness and the summary). Always persist shots in CI. Move per-example gate config + ignore-regions to a checked-in `coverage-config.json`. Define a stable **tier-1 subset** that must stay green on every PR, separate from the slow full sweep.
 
-**Status (2026-05-13).** Wedges landed: `run-e2e.mjs` and `run-coverage-summary.mjs` both use [`packages/examples/batch/psnr.mjs`](packages/examples/batch/psnr.mjs), and [`packages/examples/batch/coverage-config.json`](packages/examples/batch/coverage-config.json) now owns pixel-gate disabled reasons, ignore regions, and the first `tier1` subset. [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs that configured `tier1` subset as a PR/push visual gate after a strict slim build, then uploads the tier report, coverage summary, and saved shots. The broad summary generated at that historical wedge was 163 / 226; use the generated summary for the current saved snapshot and targeted reports for newer focused evidence.
+**Status (2026-05-13).** Wedges landed: `run-e2e.mjs` and `run-coverage-summary.mjs` both use [`packages/examples/batch/psnr.mjs`](packages/examples/batch/psnr.mjs), and [`packages/examples/batch/coverage-config.json`](packages/examples/batch/coverage-config.json) now owns pixel-gate disabled reasons, ignore regions, and the first `tier1` subset. [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs that configured `tier1` subset as a PR/push visual gate after a strict slim build, then uploads the tier report, coverage summary, and saved shots. The 163 / 226 total recorded at that historical wedge is chronology, not current evidence; current claims require a manifest-bound exact campaign whose repository-source fingerprint still validates.
 
-**Next step.** Watch CI stability on hosted WebGPU, then expand the tier-1 set only with examples that are deterministic enough to be a PR gate. Keep the full sweep as scheduled/manual coverage.
+**Fail-closed evidence status (2026-07-31).** Pixel similarity is no longer
+allowed to hide an incomplete or failed replay operation.
+[`e2e-evidence-gate.mjs`](packages/examples/batch/e2e-evidence-gate.mjs)
+publishes the schema-validated `tslp-e2e-semantic-evidence-gate@3` record for
+every row. Stock, capture, and replay must all be observed and explicitly
+complete their deterministic freeze boundary. Missing/incomplete phases,
+timeouts, unexpected browser/runtime or GPU errors, and `[tslp*]` or
+`[tsl-precompile*]` warnings
+block the row. Each phase also has to prove that GPU hooks and device observers
+were installed and that submitted work on every observed queue was fenced.
+
+The gate consumes a complete `tslp-e2e-operation-registry@1` and validates each
+outcome against a closed operation/requiredness policy. Material compute,
+direct `NodeMaterial` replacement, `RenderPipeline` pass rendering, and Bloom
+rendering are required when discovered; missing or unknown outcomes,
+duplicates, an incomplete registry, or a requiredness downgrade fail closed.
+Only auxiliary capture may publish optional outcomes, whose failures remain
+visible without becoming product failures. Required failures can pass only
+when every selector-class failure is recorded in order, bound to the exact FSR
+or Bloom component/operation/effect, and paired one-to-one with a later render
+and presentation (plus zero downstream failures for FSR). Coverage aggregation
+and site evidence validation reinspect this record rather than trusting pixel
+verdicts or a stored pass label.
+
+The checked configuration has one explicit pixel diagnostic,
+`webgpu_storage_buffer.html` under `volatileCompute`, because the upstream r185
+shader is nondeterministic under the configured WebGPU execution model. Every
+other canonical row retains its pixel gate, and the diagnostic still has to
+pass artifact, browser/runtime, brightness, freeze, and semantic gates. Cohort
+manifests bind the repository-source and harness fingerprint, so any
+fingerprinted source change invalidates prior results and requires a fresh
+exact campaign before a new coverage claim is current.
+
+Three-source proof is also closed over the exact served file set.
+`threeCheckout.sourceVerification.files` now carries each path's byte count,
+SHA-256, Git blob/mode/object format, and official r185 commit/tree; its shared
+digest and count are recomputed rather than shape-checked. Visual validators
+additionally require those records to match the nonempty
+`manifest.sources.three` snapshot and its checkout fingerprint exactly. Stock
+validation uses the same self-contained proof contract.
+
+Schema-2 artifact descriptors also bind path containment, stored byte length,
+and SHA-256 before bounded gzip decoding; the declared encoding and exact
+uncompressed length must match before strict UTF-8/schema validation. Landing
+the v2 evidence contract changes the harness fingerprint, so this status entry
+does not claim a final 254-route campaign. That claim becomes current only
+after the exact stock/capture/replay rerun and its manifest-bound byte evidence
+validate.
+
+**Next step.** Keep fresh exact-campaign evidence coupled to fingerprinted
+harness changes, watch CI stability on hosted WebGPU, and expand the tier-1 set
+only with examples deterministic enough to be a PR gate. Keep the full sweep as
+scheduled/manual coverage.
 
 **Files.** [`packages/examples/batch/psnr.mjs`](packages/examples/batch/psnr.mjs); new `packages/examples/batch/coverage-config.json`; `packages/examples/batch/run-e2e.mjs`; `packages/examples/batch/run-coverage-summary.mjs`; `.github/workflows/*`.
 
@@ -962,11 +1145,11 @@ Inspector preview gap also closed via a Vite plugin middleware (`attachInspector
 
 **Change.** Have `pnpm verify` (or a dedicated check) diff dev-captured vs build-re-extracted artifacts across the example corpus and fail on shape divergence; document explicitly which scene properties are *allowed* to differ.
 
-**Status.** First wedge landed (2026-07-10). [`packages/contract/src/artifact-shape.js`](packages/contract/src/artifact-shape.js) exports `fingerprintArtifactShape` / `diffArtifactShapes` (uniform-plan group/slot/texture/kind rows, ignoring WGSL). [`packages/plugin/test/unit/extractor-convergence.test.js`](packages/plugin/test/unit/extractor-convergence.test.js) asserts the Node harness is shape-stable across two extracts of the same factory. `pnpm verify` now fingerprints each checked artifact and reports empty-shape counts. Full browser-capture vs Node re-extract diffs across the example corpus are still outstanding.
+**Status.** The first two wedges have landed. [`packages/contract/src/artifact-shape.js`](packages/contract/src/artifact-shape.js) exports `fingerprintArtifactShape` / `diffArtifactShapes` for shader-stage, binding, byte-layout, uniform-plan, variant, compute, and internal-pass topology while intentionally ignoring WGSL, UUIDs, hashes, and live numeric snapshots. [`packages/plugin/test/unit/extractor-convergence.test.js`](packages/plugin/test/unit/extractor-convergence.test.js) asserts both Node-harness repeatability and exact structural convergence between a genuine browser-captured getting-started artifact and a Node re-extract of the same scene. `pnpm verify` fingerprints every checked artifact and reports empty shapes. Corpus-wide browser/Node re-extraction remains outstanding.
 
-**First step (done).** Shared shape fingerprint + Node stability guard + verify wiring.
+**First fixture (done).** Shared shape fingerprint + Node stability guard + browser/Node getting-started convergence + verify wiring.
 
-**Next step.** Diff committed browser-captured example artifacts against Node re-extracts for a small fixture set inside `verify.js` (or a dedicated `pnpm verify:convergence`), documenting which scene properties are allowed to differ.
+**Next step.** Grow the small committed fixture set toward representative shadows, compute, postprocessing, and variants. Keep this as a dedicated deterministic convergence test rather than making structural `pnpm verify` initialize WebGPU for every artifact directory.
 
 **Files.** [`packages/contract/src/artifact-shape.js`](packages/contract/src/artifact-shape.js); `packages/plugin/src/cli/verify.js`; `packages/plugin/src/node-harness.js`; `packages/plugin/test/unit/extractor-convergence.test.js`.
 
@@ -974,7 +1157,7 @@ Inspector preview gap also closed via a Vite plugin middleware (`attachInspector
 
 ### P2.11 — Document & converge the aux artifact pipeline
 
-**Symptom.** Two registration/loading systems: [`precompile-marker.js`](packages/runtime/src/precompile-marker.js) → `apply-precompiled` for user materials, versus [`aux-marker.js`](packages/runtime/src/aux-marker.js) (1,357 LOC) → [`aux-loader.js`](packages/runtime/src/aux-loader.js) (1,209) + [`aux-capture.js`](packages/plugin/src/aux-capture.js) (662) for three.js internals. aux-loader carries texture-wiring predicates (`wireViewportTextureRefs`, `attachPostprocessTextureRefs`, `bindAuxConfig`) overlapping [`slim-support/artifact-texture-wiring.js`](packages/runtime/src/slim-support/artifact-texture-wiring.js) (376 LOC) and [`postprocess-wire.js`](packages/runtime/src/slim-support/postprocess-wire.js) (214 LOC). Neither aux file appeared in this document before 2026-06-09. Shape-fallback warnings fire once per `<shape>:<configHash>` then fall back silently.
+**Symptom.** Two registration/loading systems: [`precompile-marker.js`](packages/runtime/src/precompile-marker.js) → `apply-precompiled` for user materials, versus [`aux-marker.js`](packages/runtime/src/aux-marker.js) (**2,688 LOC**) → [`aux-loader.js`](packages/runtime/src/aux-loader.js) (**1,223 LOC**) + [`aux-capture.js`](packages/plugin/src/aux-capture.js) for three.js internals. aux-loader carries texture-wiring predicates (`wireViewportTextureRefs`, `attachPostprocessTextureRefs`, `bindAuxConfig`) overlapping [`slim-support/artifact-texture-wiring.js`](packages/runtime/src/slim-support/artifact-texture-wiring.js) and [`postprocess-wire.js`](packages/runtime/src/slim-support/postprocess-wire.js). Neither aux file appeared in this document before 2026-06-09. Shape-fallback warnings fire once per `<shape>:<configHash>` then fall back silently.
 
 **Why it blocks evolution/fidelity.** Two of the five largest runtime files have no documented architecture or review bar; verified genuine duplication is ~150–200 LOC of texture-wiring predicates (the split registration models are intentional), but wiring fixes can land in the wrong copy, and stale-hash bugs are invisible after the first warning.
 
@@ -1171,10 +1354,28 @@ outlier modeled at 2,572,456 versus 6,471,576 bytes and 0.035 versus 24.74 ms.
 The format must resolve only contract-proven fields and keep typed sections as
 immutable views; a generic recursive resolver measured slower on the small
 corpus, and eagerly boxing the galaxy views into Arrays cost 9.93 ms. Keep
-`.json` as the readable capture/debug format, preserve logical artifact hashes
-independently of byte encoding, and introduce `.tslb` only with a dual-reader
-migration that does not make today's synchronous apply/hydration APIs depend on
-an async fetch waterfall.
+product capture artifacts as readable `.json`, preserve logical artifact
+hashes independently of byte encoding, and introduce `.tslb` only with a
+dual-reader migration that does not make today's synchronous apply/hydration
+APIs depend on an async fetch waterfall. Run-scoped campaign evidence is a
+separate transport/storage plane and may compress those JSON graphs without
+changing the product artifact format.
+
+**Run-scoped evidence storage (2026-07-30).** The browser campaign runner no
+longer persists full user/auxiliary graphs as pretty-printed JSON. The focused
+`e2e-artifact-output.mjs` boundary serializes compact JSON and writes
+deterministic gzip with the fast level-1 policy and a zero timestamp through
+the existing atomic, path-contained output primitive. Evidence descriptors
+continue to hash stored bytes, now carry explicit `contentEncoding: "gzip"`
+and `uncompressedBytes`, and use `.json.gz`. Replay verifies the generic
+run/path/size/hash descriptor before validating the storage contract, then
+uses a 512 MiB maximum and the exact declared output size to bound
+decompression. Unknown encodings, suffix drift, corrupt/truncated streams,
+invalid UTF-8/JSON, and expansion beyond either bound fail closed. Legacy
+schema-2 `.json` evidence remains readable only when both compression fields
+are absent. The codec itself participates in the harness source fingerprint
+and is required by coverage aggregation, so storage-policy drift makes
+evidence stale rather than silently changing its interpretation.
 
 **Remaining.** Do not add a package-wide `sideEffects: false`: the focused build
 experiment removed required bootstrap and policy effects. Consider an explicit,
@@ -1197,7 +1398,7 @@ P0.3 (shared contract) ─┼─► both feed P0.2 (hydrator split) and P1.7 (dy
 P0.1 (slim-support) ────┴─► enables P1.6 (full-renderer policy) and P3.12 (debug hooks)
                            live-scene-index + PMREM orchestration wedges landed; compute/full-renderer next
 
-P0.5 (three.js seam)  — strict rewrite warnings + locked/latest rewrite/slim matrix landed; vendor diagnostics next
+P0.5 (three.js seam)  — exact r185.1 baseline + strict locked/latest rewrite/slim matrix landed; next-version vendor diagnostics next
 P2.9 (coverage)       — shared PSNR + config/tier data + CI tier gate landed; expand/stabilize next
 P2.8 (codegen)        — parser guard landed; writer table/AST codegen next
 P2.10 (verify) , P3.* — opportunistic

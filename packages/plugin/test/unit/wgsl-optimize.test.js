@@ -27,6 +27,37 @@ fn main( @location( 0 ) position : vec3<f32> ) -> @builtin( position ) vec4<f32>
 
 } );
 
+test( 'shader optimization preserves GLSL preprocessor lines byte-for-byte', () => {
+
+	const shader = `#version 300 es
+precision highp float;
+
+layout( location = 0 ) out vec4 fragColor;
+void main() {
+	fragColor = vec4( 1.0 );
+}
+`;
+
+	assert.equal( minifyWgslSource( shader ), shader );
+
+	const { declarations, expression, value } = emitOptimizedJsonExpression( {
+		first: { fragmentShader: shader },
+		second: { fragmentShader: shader },
+	}, { minDedupeBytes: 1 } );
+	assert.equal( value.first.fragmentShader, shader );
+	assert.equal( value.second.fragmentShader, shader );
+	const roundTrip = Function( `${ declarations.join( '\n' ) }\nreturn ${ expression };` )();
+	assert.equal( roundTrip.first.fragmentShader, shader );
+	assert.match( roundTrip.first.fragmentShader, /^#version 300 es\nprecision highp float;/ );
+
+	const pool = createWgslStringPool( [
+		{ fragmentShader: shader },
+		{ fragmentShader: shader },
+	], { minDedupeBytes: 1 } );
+	assert.deepEqual( pool.strings, [ shader ] );
+
+} );
+
 test( 'emitOptimizedJsonExpression hoists repeated minified WGSL strings', () => {
 
 	const shader = `
@@ -406,7 +437,7 @@ test( 'emitArtifactModule emits WGSL constants before the artifact literal', () 
 
 } );
 
-test( 'source slim emits a call-site freshness policy only for owned captures', () => {
+test( 'compiler-free slim modes emit a call-site freshness policy only for owned captures', () => {
 
 	const artifact = {
 		__hash: 'owned-hash',
@@ -418,10 +449,12 @@ test( 'source slim emits a call-site freshness policy only for owned captures', 
 			fragmentShader: 'fragment',
 		},
 	};
-	const owned = emitArtifactModule( { hash: artifact.__hash }, artifact, { slim: 'source' } ).source;
+	const prebuilt = emitArtifactModule( { hash: artifact.__hash }, artifact, { slim: true } ).source;
+	const source = emitArtifactModule( { hash: artifact.__hash }, artifact, { slim: 'source' } ).source;
 	const legacy = emitArtifactModule( { hash: artifact.__hash }, { ...artifact, __sourceOwners: undefined }, { slim: 'source' } ).source;
 
-	assert.match( owned, /export const __sourceValidationMode = "callsite";/ );
+	assert.match( prebuilt, /export const __sourceValidationMode = "callsite";/ );
+	assert.match( source, /export const __sourceValidationMode = "callsite";/ );
 	assert.match( legacy, /export const __sourceValidationMode = null;/ );
 
 } );

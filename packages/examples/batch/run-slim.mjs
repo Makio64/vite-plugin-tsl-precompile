@@ -34,18 +34,28 @@
  *                                             [--filter=<substr>] [--limit=<n>]
  *                                             [--slim-bundle=<path>]
  *   node packages/examples/batch/run-slim.mjs --pixel-gate [--port=<base>]
+ *                                             [--output-root=<diagnostic-parent>]
  */
 
 import { chromium } from 'playwright';
-import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { resolve, join, dirname, extname } from 'node:path';
+import { readdirSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { resolve, join, dirname, extname, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
-import { spawnSync } from 'node:child_process';
+import { readFile, stat, realpath } from 'node:fs/promises';
 
+import {
+	BROWSER_FAILURE_POLICY_SHA256,
+	installBrowserFailureCollector,
+} from '../browser-failure-policy.mjs';
 import { assertThreeCheckoutMatchesVersion } from './_three-version.mjs';
+import { matchesExampleSkipPrefix } from './example-skip-policy.mjs';
+import {
+	SLIM_BROWSER_GATE_POLICY_SHA256,
+	classifySlimBrowserFailures,
+} from './slim-browser-gate.mjs';
 import { loadSlimBundle, slimBundleHashOptions, slimBundleReportProvenance } from './slim-bundle-provenance.mjs';
+import { createSlimPixelGateRunRoot, runSlimPixelGateChild } from './slim-pixel-gate-child.mjs';
 
 const SELF = dirname( fileURLToPath( import.meta.url ) );
 const OUT = resolve( SELF, 'results' );
@@ -119,8 +129,9 @@ try {
 // capture+replay harness and asserts each replay produced a non-empty frame.
 // We delegate to `run-e2e.mjs` (sister script) per-example so we don't have to
 // duplicate the capture/replay machinery here. Each child runs against the
-// same three.js repo and writes `results/e2e-report.json`; we read that
-// report between runs to harvest `replayBrightFrac`.
+// same three.js repo. Every child receives a new explicit output and input
+// root, so neither its report nor saved evidence can fall back to the
+// canonical `results` directory.
 //
 // Curated examples — chosen to span our coverage matrix without overlapping
 // any single failure mode. If any one of them comes back with a black/empty
@@ -148,10 +159,25 @@ const PIXEL_GATE_BRIGHT_MIN = 0.05;
 if ( pixelGate ) {
 
 	const RUN_E2E = resolve( SELF, 'run-e2e.mjs' );
-	const REPORT = resolve( OUT, 'e2e-report.json' );
+	const requestedOutputParent = getArg( '--output-root=', '' );
+	let pixelGateRunRoot;
+	try {
+
+		pixelGateRunRoot = createSlimPixelGateRunRoot( {
+			...( requestedOutputParent ? { baseRoot: resolve( requestedOutputParent ) } : {} ),
+			canonicalRoot: OUT,
+		} );
+
+	} catch ( error ) {
+
+		console.error( `[batch-slim] could not create an isolated pixel-gate output root: ${ error && error.message || error }` );
+		process.exit( 2 );
+
+	}
 	const results = [];
 
 	console.log( `[batch-slim] pixel-gate: running ${ PIXEL_GATE_EXAMPLES.length } curated examples through run-e2e.mjs` );
+	console.log( `[batch-slim] pixel-gate output: ${ pixelGateRunRoot } (isolated)` );
 
 	for ( let i = 0; i < PIXEL_GATE_EXAMPLES.length; i ++ ) {
 
@@ -160,6 +186,9 @@ if ( pixelGate ) {
 		// run doesn't collide with the next.
 		const childPort = port + i;
 		const label = `[${ i + 1 }/${ PIXEL_GATE_EXAMPLES.length }] ${ name }`;
+		const childOutputRoot = join( pixelGateRunRoot, `${ String( i + 1 ).padStart( 2, '0' ) }-${ name.replace( /\.html$/, '' ) }` );
+		mkdirSync( childOutputRoot );
+		const reportPath = join( childOutputRoot, 'e2e-report.json' );
 
 		// Make sure the source example exists. If three.js is at a revision
 		// that doesn't ship one of our curated names we want a clear error
@@ -184,38 +213,43 @@ if ( pixelGate ) {
 			`--slim-bundle=${ SLIM_BUNDLE }`,
 			`--filter=${ name }`,
 			`--port=${ childPort }`,
+			`--output-root=${ childOutputRoot }`,
+			`--input-root=${ childOutputRoot }`,
+			'--report=e2e-report.json',
 			'--no-pixel-gate',
 		];
 
 		console.log( `${ label } — running run-e2e.mjs (port=${ childPort })...` );
-		const child = spawnSync( process.execPath, childArgs, { stdio: [ 'ignore', 'pipe', 'pipe' ], encoding: 'utf8' } );
-
-		// run-e2e logs per-example progress; surface its tail for debugging
-		// without flooding the slim-batch console.
-		const stdoutTail = ( child.stdout || '' ).split( '\n' ).filter( Boolean ).slice( -3 ).join( ' | ' );
-		const stderrTail = ( child.stderr || '' ).split( '\n' ).filter( Boolean ).slice( -2 ).join( ' | ' );
-
-		if ( child.error || child.status === null ) {
-
-			results.push( { name, status: 'fail', bright: 0, reason: `child crashed: ${ child.error && child.error.message || 'no exit code' } ${ stderrTail }` } );
-			console.log( `${ label } — ✗ child crashed` );
-			continue;
-
-		}
-
-		// Even a failing child writes the report. Trust the report's
-		// `replayBrightFrac` over the child's exit code — run-e2e exits 0
-		// regardless of pass/fail and we want to see actual pixel data.
 		let report;
+		let stdoutTail;
 		try {
 
-			report = JSON.parse( readFileSync( REPORT, 'utf8' ) );
+			( { report, stdoutTail } = runSlimPixelGateChild( {
+				executable: process.execPath,
+				args: childArgs,
+				reportPath,
+			} ) );
 
-		} catch ( err ) {
+		} catch ( error ) {
 
-			results.push( { name, status: 'fail', bright: 0, reason: `could not read e2e-report.json: ${ err.message }` } );
-			console.log( `${ label } — ✗ no report (${ err.message })` );
-			continue;
+			console.error( `${ label } — ✗ ${ error && error.message || error }` );
+			console.error( '[batch-slim] FAIL: refusing to read or reuse any report after a failed run-e2e child.' );
+			process.exit( 1 );
+
+		}
+		if (
+			report.status !== 'completed' ||
+			report.total !== 1 ||
+			report.fail !== 0 ||
+			resolve( report.outputRoot || '' ) !== childOutputRoot
+		) {
+
+			console.error(
+				`${ label } — ✗ run-e2e report does not describe one completed successful run in its isolated output root ` +
+				`(status=${ JSON.stringify( report.status ) }, total=${ JSON.stringify( report.total ) }, ` +
+				`fail=${ JSON.stringify( report.fail ) }, outputRoot=${ JSON.stringify( report.outputRoot ) })`,
+			);
+			process.exit( 1 );
 
 		}
 
@@ -246,7 +280,7 @@ if ( pixelGate ) {
 
 	const failed = results.filter( ( r ) => r.status !== 'pass' );
 	const passed = results.length - failed.length;
-	const reportPath = join( OUT, 'slim-pixel-gate-report.json' );
+	const reportPath = join( pixelGateRunRoot, 'slim-pixel-gate-report.json' );
 	writeFileSync( reportPath, JSON.stringify( { total: results.length, pass: passed, fail: failed.length, threshold: PIXEL_GATE_BRIGHT_MIN, slimBundle: SLIM_BUNDLE_PROVENANCE, details: results }, null, 2 ) );
 
 	console.log( '\n═══ pixel-gate summary ═══' );
@@ -276,7 +310,7 @@ const SKIP_PREFIXES = [
 	'webgpu_compile_async',
 	'webgpu_tsl_precompile',
 ];
-function shouldSkip( name ) { return SKIP_PREFIXES.some( ( p ) => name.includes( p ) ); }
+function shouldSkip( name ) { return matchesExampleSkipPrefix( name, SKIP_PREFIXES ); }
 
 const allExamples = readdirSync( join( threeRepo, 'examples' ) )
 	.filter( ( f ) => f.startsWith( 'webgpu_' ) && f.endsWith( '.html' ) )
@@ -305,6 +339,40 @@ const MIME = {
 // The slim bundle's URL on the test server.
 const SLIM_URL = '/__tsl-precompile__/three.webgpu.slim.js';
 
+function isPathWithin( root, filePath ) {
+
+	const pathFromRoot = relative( root, filePath );
+	return pathFromRoot !== '..' &&
+		! pathFromRoot.startsWith( '../' ) &&
+		! pathFromRoot.startsWith( '..\\' ) &&
+		! isAbsolute( pathFromRoot );
+
+}
+
+async function safeResolveUnder( root, canonicalRoot, requestPath ) {
+
+	const filePath = resolve( root, requestPath.replace( /^\/+/, '' ) );
+	if ( ! isPathWithin( root, filePath ) ) return { status: 'forbidden' };
+
+	let canonicalFilePath;
+	try {
+
+		canonicalFilePath = await realpath( filePath );
+
+	} catch ( error ) {
+
+		if ( error?.code === 'ENOENT' || error?.code === 'ENOTDIR' ) return { status: 'missing' };
+		throw error;
+
+	}
+
+	if ( ! isPathWithin( canonicalRoot, canonicalFilePath ) ) return { status: 'forbidden' };
+	return { status: 'ok', filePath: canonicalFilePath };
+
+}
+
+const canonicalThreeRepo = await realpath( threeRepo );
+
 /**
  * Rewrite an example's HTML importmap so `three/webgpu` → our slim bundle.
  * We leave `three` pointing at the stock core (our slim bundle is WebGPU-
@@ -329,6 +397,14 @@ const server = createServer( async ( req, res ) => {
 
 		const url = new URL( req.url, 'http://localhost' );
 
+		if ( url.pathname === '/favicon.ico' && url.search === '' ) {
+
+			res.statusCode = 204;
+			res.end();
+			return;
+
+		}
+
 		// Serve the slim bundle at a stable path.
 		if ( url.pathname === SLIM_URL ) {
 
@@ -339,8 +415,11 @@ const server = createServer( async ( req, res ) => {
 
 		}
 
-		const filePath = resolve( threeRepo, '.' + url.pathname );
-		if ( ! filePath.startsWith( threeRepo ) ) { res.statusCode = 403; res.end( 'forbidden' ); return; }
+		const requestPath = decodeURIComponent( url.pathname );
+		const resolvedRequest = await safeResolveUnder( threeRepo, canonicalThreeRepo, requestPath );
+		if ( resolvedRequest.status === 'forbidden' ) { res.statusCode = 403; res.end( 'forbidden' ); return; }
+		if ( resolvedRequest.status === 'missing' ) { res.statusCode = 404; res.end( 'not found' ); return; }
+		const { filePath } = resolvedRequest;
 		const s = await stat( filePath ).catch( () => null );
 		if ( ! s || ! s.isFile() ) { res.statusCode = 404; res.end( 'not found' ); return; }
 		let buf = await readFile( filePath );
@@ -375,52 +454,54 @@ const MAX_RUNS_PER_BROWSER = 24;
 const NAV_TIMEOUT_MS = 25000;
 const WAIT_MS = 4000;
 
-// Categories of errors the slim bundle PROVOKES by design (expected):
-const EXPECTED_SLIM_RX = /tsl-precompile\/slim|tsl-precompile\/aux|PrecompiledMaterial|loadAux|hashNodeGraphSync|only PrecompiledMaterial|Run dev mode on this scene so precompileAuxiliary/i;
-// Errors that indicate our bundle is BROKEN (unexpected):
-const MODULE_LOAD_RX = /does not provide an export|is not exported|Failed to resolve module|SyntaxError|Unexpected token|Cannot find module|Unable to resolve specifier/i;
-
 async function runOne( browser, name ) {
 
 	const context = await browser.newContext( { viewport: { width: 640, height: 480 } } );
 	const page = await context.newPage();
-
-	const errors = [];
-	page.on( 'pageerror', ( e ) => errors.push( String( e && e.message || e ) ) );
-	page.on( 'console', ( m ) => { if ( m.type() === 'error' ) errors.push( m.text() ); } );
+	const pageUrl = `http://localhost:${ port }/examples/${ name }`;
+	const browserFailures = installBrowserFailureCollector( page, { pageUrl } );
 
 	try {
 
-		await page.goto( `http://localhost:${ port }/examples/${ name }`, { waitUntil: 'load', timeout: NAV_TIMEOUT_MS } );
+		await page.goto( pageUrl, { waitUntil: 'load', timeout: NAV_TIMEOUT_MS } );
 		await new Promise( ( r ) => setTimeout( r, WAIT_MS ) );
 
 	} catch ( e ) {
 
+		browserFailures.dispose();
 		await context.close();
 		return { name, status: 'fail', category: 'navigation-timeout', firstError: e.message };
 
 	}
 
-	const real = errors.filter( ( e ) => ! /favicon|Failed to load resource/i.test( e ) );
+	const classified = classifySlimBrowserFailures( browserFailures.failures() );
+	browserFailures.dispose();
 	await context.close();
-
-	// Categorise.
-	const moduleLoadFailure = real.find( ( e ) => MODULE_LOAD_RX.test( e ) );
-	if ( moduleLoadFailure ) return { name, status: 'fail', category: 'module-load-error', firstError: moduleLoadFailure.slice( 0, 500 ) };
-
-	const expected = real.find( ( e ) => EXPECTED_SLIM_RX.test( e ) );
-	if ( expected ) return { name, status: 'pass', category: 'expected-slim-fail', firstError: expected.slice( 0, 500 ) };
-
-	if ( real.length === 0 ) return { name, status: 'pass', category: 'clean', firstError: null };
-
-	return { name, status: 'fail', category: 'other-error', firstError: real[ 0 ].slice( 0, 500 ) };
+	return {
+		name,
+		status: classified.status,
+		category: classified.category,
+		firstError: classified.firstError,
+	};
 
 }
 
 let browser = await chromium.launch( { channel: 'chrome', headless: true, args: BROWSER_ARGS } ).catch( () => null );
 if ( ! browser ) browser = await chromium.launch( { headless: true, args: BROWSER_ARGS } );
 
-const report = { total: candidates.length, pass: 0, fail: 0, skip: allExamples.length - candidates.length, slimBundle: SLIM_BUNDLE_PROVENANCE, categories: {}, details: [] };
+const report = {
+	total: candidates.length,
+	pass: 0,
+	fail: 0,
+	skip: allExamples.length - candidates.length,
+	slimBundle: SLIM_BUNDLE_PROVENANCE,
+	harness: {
+		browserFailurePolicySha256: BROWSER_FAILURE_POLICY_SHA256,
+		slimBrowserGatePolicySha256: SLIM_BROWSER_GATE_POLICY_SHA256,
+	},
+	categories: {},
+	details: [],
+};
 let runsSinceRestart = 0;
 
 try {

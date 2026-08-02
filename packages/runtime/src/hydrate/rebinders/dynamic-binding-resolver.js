@@ -31,6 +31,7 @@ import { createViewportTextureRebinder } from './viewport-texture-rebinder.js';
  * @property {Array<Object>} shadowDepthBindings   — depth.texture, owned by lights
  * @property {Array<Object>} materialDepthBindings — depth.texture, owned by the material's node graph (reflector depth etc.)
  * @property {Array<Object>} artifactTextureBindings — artifact.texture
+ * @property {Array<Object>} lateArtifactTextureBindings — selector-backed material-graph textures created by update-before owners
  * @property {Array<Object>} materialTextureBindings — material.* texture slots
  * @property {Array<Object>} viewportTextureBindings — viewport.texture
  * @property {Array<Object>} reflectorTextureBindings — reflector.texture
@@ -117,6 +118,12 @@ export function createDynamicBindingResolvers( bindings, deps ) {
 	if ( bindings.materialDepthBindings && bindings.materialDepthBindings.length > 0 ) {
 
 		lateUpdateBefore.push( createShadowDepthRebinder( bindings.materialDepthBindings, shadowRebinderDeps ) );
+
+	}
+
+	if ( bindings.lateArtifactTextureBindings && bindings.lateArtifactTextureBindings.length > 0 ) {
+
+		lateUpdateBefore.push( createArtifactTextureRebinder( bindings.lateArtifactTextureBindings, { resolveTextureBinding: deps.resolveTextureBinding } ) );
 
 	}
 

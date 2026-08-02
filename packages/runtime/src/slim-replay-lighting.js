@@ -11,6 +11,13 @@ const lightsByScene = /*@__PURE__*/ new WeakMap();
 
 class Lighting {
 
+	constructor() {
+
+		this.enabled = true;
+		this._cache = [];
+
+	}
+
 	createNode( lights = [] ) {
 
 		return new LightsNode().setLights( lights );
@@ -31,6 +38,18 @@ class Lighting {
 
 		}
 		return node;
+
+	}
+
+	beginRender( scene ) {
+
+		this._cache.push( this.getNode( scene ).getLights() );
+
+	}
+
+	finishRender( scene ) {
+
+		this.getNode( scene ).setLights( this._cache.pop() );
 
 	}
 

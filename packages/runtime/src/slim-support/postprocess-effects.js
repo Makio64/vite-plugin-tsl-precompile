@@ -51,7 +51,7 @@ const SKIP_KEYS = new Set( [
 	'geometry', 'material', 'domElement',
 ] );
 
-const DEFAULT_DEPTH_CAP = 32;
+const DEFAULT_DEPTH_CAP = 96;
 
 function isEffectCandidate( node ) {
 
@@ -279,24 +279,44 @@ registerEffectHandler( {
 		}
 		if ( Array.isArray( node._separableBlurMaterials ) ) {
 
-			for ( let i = 0; i < node._separableBlurMaterials.length; i ++ ) {
+			// r185 owns one blur material per mip. A RenderPipeline cache
+			// rebuild can call BloomNode.setup() again and append duplicate
+			// materials without appending render targets, so the material array
+			// is not an authoritative pass count. Bound capture to the live RT
+			// topology (and the declared mip count when present); otherwise a
+			// five-mip bloom incorrectly publishes unsupported blur-5..9 shapes.
+			const topologyCounts = [];
+			if ( Number.isInteger( node._nMips ) && node._nMips > 0 ) topologyCounts.push( node._nMips );
+			if ( Array.isArray( node._renderTargetsHorizontal ) && node._renderTargetsHorizontal.length > 0 ) {
+
+				topologyCounts.push( node._renderTargetsHorizontal.length );
+
+			}
+			if ( Array.isArray( node._renderTargetsVertical ) && node._renderTargetsVertical.length > 0 ) {
+
+				topologyCounts.push( node._renderTargetsVertical.length );
+
+			}
+			const blurCount = Math.min(
+				node._separableBlurMaterials.length,
+				...( topologyCounts.length > 0 ? topologyCounts : [ node._separableBlurMaterials.length ] ),
+			);
+			for ( let i = 0; i < blurCount; i ++ ) {
 
 				const material = node._separableBlurMaterials[ i ];
 				if ( ! material ) continue;
-				try {
-
-					if ( material.colorTexture && node._renderTargetBright && node._renderTargetBright.texture ) {
-
-						material.colorTexture.value = node._renderTargetBright.texture;
-
-					}
-
-				} catch ( _ ) {}
 				out.push( {
 					material,
 					shape: `bloom-blur-${ i }`,
 					config: { type: 'bloom-blur', bloomIndex: index, index: i },
 					renderTargetHint: __singleRenderTargetHint( node._renderTargetsHorizontal[ i ] ),
+					captureOverrides: material.colorTexture && node._renderTargetBright && node._renderTargetBright.texture
+						? [ {
+							property: 'colorTexture',
+							key: 'value',
+							value: node._renderTargetBright.texture,
+						} ]
+						: [],
 				} );
 
 			}
@@ -669,6 +689,50 @@ registerEffectHandler( {
 			&& node._copyMaterial );
 
 	},
+	prepareCapture( node, context = {} ) {
+
+		if ( ! node || typeof node.setSize !== 'function' ) return null;
+		const renderer = context.renderer;
+		if ( ! renderer ) return null;
+		const size = {
+			width: 0,
+			height: 0,
+			set( width, height ) {
+
+				this.width = width;
+				this.height = height;
+				return this;
+
+			},
+		};
+		try {
+
+			if ( typeof renderer.getDrawingBufferSize === 'function' ) renderer.getDrawingBufferSize( size );
+			if ( size.width <= 1 || size.height <= 1 ) {
+
+				size.width = renderer.domElement && renderer.domElement.width || 0;
+				size.height = renderer.domElement && renderer.domElement.height || 0;
+
+			}
+			// Five declared mip levels require a base dimension of at least 16.
+			// Capture can begin before the host applies its final canvas size, so
+			// use the smallest valid temporary target instead of compiling 1×1.
+			size.width = Math.max( 16, size.width | 0 );
+			size.height = Math.max( 16, size.height | 0 );
+			node.setSize( size.width, size.height );
+			// Keep the valid size for the rest of the effect lifecycle. r185
+			// constructs SSRNode.Blur at 1×1 while declaring five mip levels;
+			// restoring that constructor size makes the next renderer access an
+			// invalid WebGPU texture descriptor.
+			return null;
+
+		} catch ( _ ) {
+
+			return null;
+
+		}
+
+	},
 	subPasses( node, index ) {
 
 		const out = [];
@@ -808,7 +872,12 @@ registerEffectHandler( {
 		const out = [];
 		if ( node._resolveMaterial ) {
 
-			out.push( { material: node._resolveMaterial, shape: 'traa-resolve', config: { type: 'traa-resolve', traaIndex: index } } );
+			out.push( {
+				material: node._resolveMaterial,
+				shape: 'traa-resolve',
+				config: { type: 'traa-resolve', traaIndex: index },
+				renderTargetHint: __singleRenderTargetHint( node._resolveRenderTarget ),
+			} );
 
 		}
 		return out;

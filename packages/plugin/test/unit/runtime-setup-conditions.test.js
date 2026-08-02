@@ -42,6 +42,12 @@ test( 'Vite resolves runtime setup and apply entries to development only while s
 		);
 		assert.ok( resolvedApply );
 		assert.match( resolvedApply.id, /\/src\/apply-precompiled-development\.js$/ );
+		const resolvedAutoMarker = await container.resolveId(
+			'@tsl-precompile/runtime/auto-marker',
+			resolve( EXAMPLE_ROOT, 'main.js' ),
+		);
+		assert.ok( resolvedAutoMarker );
+		assert.match( resolvedAutoMarker.id, /\/src\/auto-marker-development\.js$/ );
 
 	} finally {
 
@@ -86,6 +92,57 @@ test( 'Vite slim-source production excludes development apply schema validation'
 		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/packages/contract/src/kinds.js' ) ), false );
 		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/src/graph-hash.js' ) ), true, 'source freshness must stay in production' );
 		assert.equal( moduleIds.some( ( id ) => /\/three\/build\/three\.(?:webgpu|core|tsl)\.js$/.test( id ) ), false );
+
+	} finally {
+
+		if ( originalNodeEnv === undefined ) delete process.env.NODE_ENV;
+		else process.env.NODE_ENV = originalNodeEnv;
+		await rm( cacheDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'Vite full production keeps one stock Three graph and excludes replay material adoption', async () => {
+
+	const cacheDir = await mkdtemp( join( tmpdir(), 'tslp-full-vite-build-' ) );
+	const originalNodeEnv = process.env.NODE_ENV;
+	delete process.env.NODE_ENV;
+	try {
+
+		const result = await viteBuild( {
+			configFile: false,
+			root: EXAMPLE_ROOT,
+			cacheDir,
+			logLevel: 'silent',
+			plugins: [ tslPrecompile( { artifactsDir: './artifacts' } ) ],
+			build: {
+				write: false,
+				target: 'esnext',
+				minify: false,
+			},
+		} );
+		const outputs = Array.isArray( result )
+			? result.flatMap( ( item ) => item.output || [] )
+			: result.output;
+		const moduleIds = outputs
+			.filter( ( item ) => item.type === 'chunk' )
+			.flatMap( ( chunk ) => Object.entries( chunk.modules || {} )
+				.filter( ( [ , info ] ) => info.renderedLength > 0 )
+				.map( ( [ id ] ) => id.replaceAll( '\\', '/' ) ) );
+		const allModuleIds = outputs
+			.filter( ( item ) => item.type === 'chunk' )
+			.flatMap( ( chunk ) => Object.keys( chunk.modules || {} ).map( ( id ) => id.replaceAll( '\\', '/' ) ) );
+
+		assert.equal( moduleIds.some( ( id ) => /\/three\/build\/three\.webgpu\.js$/.test( id ) ), true );
+		assert.deepEqual( moduleIds.filter( ( id ) => /\/three\/src\//.test( id ) ), [] );
+		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/src/apply-precompiled-full.js' ) ), true );
+		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/src/apply-precompiled-common.js' ) ), true );
+		assert.equal( allModuleIds.some( ( id ) => id.endsWith( '/src/aux-registry.js' ) ), true );
+		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/src/aux-loader.js' ) ), true, 'narrow aux entry resolves directly to the registry implementation' );
+		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/src/apply-precompiled.js' ) ), false );
+		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/src/_vendor-PrecompiledMaterial.js' ) ), false );
+		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/src/index.js' ) && id.includes( '/packages/runtime/' ) ), false );
 
 	} finally {
 

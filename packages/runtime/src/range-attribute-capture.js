@@ -3,7 +3,7 @@
  *
  * Three's RangeNode normally fills large anonymous instance attributes with
  * Math.random(). A captured shader artifact then has no reproducible source
- * for those values and must embed every Float32. For the version-checked r184
+ * for those values and must embed every Float32. For the version-checked r185
  * physical-attribute branch, dev capture builds the equivalent node with a
  * local deterministic stream and attaches a private recipe sidecar for the
  * extractor. Math.random is never read or replaced, so capture cannot consume
@@ -17,7 +17,7 @@ import {
 } from '@tsl-precompile/contract/attribute-generators';
 
 const PATCHED = Symbol.for( '@tsl-precompile/range-node-capture-patched@1' );
-const SUPPORTED_THREE_REVISION = '184';
+const SUPPORTED_THREE_REVISION = '185';
 const FNV_OFFSET = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
 
@@ -84,14 +84,18 @@ function arraysAreIdentical( left, right ) {
 
 }
 
-function deterministicRecipeSeed( node, builder, bounds ) {
+function deterministicRecipeSeed( builder, bounds, ordinal ) {
 
 	const object = builder && builder.object || {};
 	const parts = [
 		SUPPORTED_THREE_REVISION,
-		( node && node.id ) ?? '',
-		object.id ?? '',
-		object.uuid ?? '',
+		// Node/Object ids and UUIDs are allocation-order identities. Capture
+		// loads instrumentation modules that stock rendering does not, so the
+		// same authored RangeNode can receive different identities in the two
+		// passes. The per-object setup ordinal is semantic to this graph walk
+		// and remains aligned while still separating equal-bound RangeNodes.
+		ordinal,
+		object.type ?? ( object.constructor && object.constructor.name ) ?? '',
 		object.count ?? '',
 		...bounds.min,
 		...bounds.max,
@@ -146,7 +150,7 @@ function usesPhysicalRangeAttribute( builder ) {
 
 }
 
-function createPhysicalRangeOutput( three, node, builder, bounds ) {
+function createPhysicalRangeOutput( three, node, builder, bounds, ordinal ) {
 
 	const geometry = builder && builder.geometry;
 	const object = builder && builder.object;
@@ -161,7 +165,7 @@ function createPhysicalRangeOutput( three, node, builder, bounds ) {
 		|| typeof node.getNodeType !== 'function' ) return null;
 
 	const recipe = createRangeAttributeGenerator(
-		deterministicRecipeSeed( node, builder, bounds ),
+		deterministicRecipeSeed( builder, bounds, ordinal ),
 		bounds.min,
 		bounds.max,
 	);
@@ -195,6 +199,29 @@ export function installRangeAttributeCapture( three ) {
 	if ( ! Object.isExtensible( prototype ) ) return false;
 	const originalSetup = prototype.setup;
 	const originalDescriptor = Object.getOwnPropertyDescriptor( prototype, 'setup' );
+	const rangeOrdinalsByObject = new WeakMap();
+	const rangeOrdinalsWithoutObject = new WeakMap();
+	let nextOrdinalWithoutObject = 0;
+	const recipeOrdinal = ( node, builder ) => {
+
+		const object = builder && builder.object;
+		if ( object && ( typeof object === 'object' || typeof object === 'function' ) ) {
+
+			let state = rangeOrdinalsByObject.get( object );
+			if ( ! state ) {
+
+				state = { next: 0, byNode: new WeakMap() };
+				rangeOrdinalsByObject.set( object, state );
+
+			}
+			if ( ! state.byNode.has( node ) ) state.byNode.set( node, state.next ++ );
+			return state.byNode.get( node );
+
+		}
+		if ( ! rangeOrdinalsWithoutObject.has( node ) ) rangeOrdinalsWithoutObject.set( node, nextOrdinalWithoutObject ++ );
+		return rangeOrdinalsWithoutObject.get( node );
+
+	};
 	try {
 
 		Object.defineProperty( prototype, 'setup', {
@@ -205,7 +232,7 @@ export function installRangeAttributeCapture( three ) {
 				if ( ! usesPhysicalRangeAttribute( builder ) ) return originalSetup.call( this, builder, ...args );
 				const bounds = rangeBounds( this );
 				if ( ! bounds ) return originalSetup.call( this, builder, ...args );
-				const generated = createPhysicalRangeOutput( three, this, builder, bounds );
+				const generated = createPhysicalRangeOutput( three, this, builder, bounds, recipeOrdinal( this, builder ) );
 				return generated ? generated.output : originalSetup.call( this, builder, ...args );
 
 			},

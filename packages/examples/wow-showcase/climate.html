@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en" data-site="climate">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<meta name="theme-color" content="#06110d">
+		<meta name="description" content="Explore 1.5° LAB, an interactive climate-data concept that makes planetary signals and credible local actions visible.">
+		<title>1.5° LAB — Make the future visible</title>
+		<link rel="stylesheet" href="./src/styles.css">
+	</head>
+	<body class="showcase-page">
+		<a class="skip-link" href="#app">Skip to experience</a>
+		<canvas id="scene-canvas" class="scene-canvas" aria-hidden="true"></canvas>
+		<main id="app" class="site-app" data-site-root>
+			<p class="loading-state" role="status">Loading planetary signals…</p>
+		</main>
+		<noscript><p class="noscript-note">JavaScript is required for this interactive world. <a href="./">Return to the gallery</a>.</p></noscript>
+		<script type="module" src="./src/main.js"></script>
+	</body>
+</html>

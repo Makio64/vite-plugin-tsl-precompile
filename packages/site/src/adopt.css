@@ -1,0 +1,220 @@
+/* Adoption page: hero art, step cards, agent panel, pipeline diagram, guard cards. */
+
+.page-hero h1 {
+	margin: 0;
+	font-size: clamp(2.2rem, 5.4vw, 3.4rem);
+	line-height: 1.05;
+	letter-spacing: -0.03em;
+	font-weight: 800;
+}
+
+/* ---------- hero ---------- */
+.adopt-hero {
+	display: grid;
+	grid-template-columns: 1.05fr 0.95fr;
+	gap: 2.5rem;
+	align-items: center;
+}
+.adopt-hero-copy {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 1.1rem;
+}
+
+.hero-pills {
+	margin: 0.25rem 0 0;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.45rem;
+}
+.hero-release {
+	margin: 0;
+	max-width: 62ch;
+	color: var(--muted);
+	font-size: 0.8rem;
+	line-height: 1.55;
+}
+.hero-release strong { color: #fbbf24; }
+.pill {
+	display: inline-flex;
+	align-items: center;
+	padding: 0.32rem 0.75rem;
+	border: 1px solid var(--border-strong);
+	border-radius: 999px;
+	background: var(--surface);
+	font-family: var(--font-mono);
+	font-size: 0.74rem;
+	letter-spacing: 0.02em;
+	color: var(--text-dim);
+}
+
+.hero-art { position: relative; }
+.hero-art svg { width: 100%; height: auto; }
+
+.art-float { animation: art-float 5s ease-in-out infinite; }
+.art-float-slow { animation: art-float 7s ease-in-out infinite reverse; }
+.art-sparkle { animation: art-sparkle 3.2s ease-in-out infinite; transform-origin: center; }
+
+@keyframes art-float {
+	0%, 100% { transform: translateY(0); }
+	50% { transform: translateY(-6px); }
+}
+@keyframes art-sparkle {
+	0%, 100% { opacity: 0.35; }
+	50% { opacity: 1; }
+}
+
+/* ---------- step cards ---------- */
+.steps-grid {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 1rem;
+}
+.step-card {
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	padding: 1.4rem 1.4rem 1.5rem;
+	transition: border-color 180ms ease, transform 180ms ease;
+}
+.step-card:hover {
+	border-color: var(--border-strong);
+	transform: translateY(-2px);
+}
+.step-icon {
+	width: 46px;
+	height: 46px;
+	border-radius: 13px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--surface-2);
+	border: 1px solid var(--border-strong);
+	margin-bottom: 1rem;
+}
+.step-num {
+	margin: 0 0 0.15rem;
+	font-family: var(--font-mono);
+	font-size: 0.72rem;
+	letter-spacing: 0.16em;
+	color: var(--muted);
+}
+.step-card h3 {
+	margin: 0 0 0.35rem;
+	font-size: 1.05rem;
+	font-weight: 700;
+	letter-spacing: -0.015em;
+}
+.step-card p:last-child {
+	margin: 0;
+	font-size: 0.92rem;
+	line-height: 1.55;
+	color: var(--text-dim);
+}
+
+/* ---------- agent panel ---------- */
+.agent-panel {
+	border: 1px solid transparent;
+	border-radius: var(--radius-lg);
+	background:
+		linear-gradient(var(--surface), var(--surface)) padding-box,
+		var(--gradient) border-box;
+	padding: 0.55rem;
+	box-shadow: 0 0 42px rgba(34, 211, 238, 0.08);
+}
+.agent-panel .code-block pre {
+	background: var(--bg-deep);
+	border: 0;
+	font-size: 0.88rem;
+}
+.agent-panel .copy-btn { top: 16px; right: 16px; }
+
+/* ---------- pipeline diagram ---------- */
+.diagram-card {
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	padding: 1.5rem 1rem 0.5rem;
+	overflow-x: auto;
+}
+.diagram-card svg {
+	width: 100%;
+	min-width: 620px;
+	height: auto;
+}
+
+/* ---------- guard cards ---------- */
+.guard-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 1rem;
+	margin-top: 1.5rem;
+}
+.guard-card {
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 1.1rem 1.25rem;
+}
+.guard-card h3 {
+	margin: 0 0 0.35rem;
+	font-size: 0.98rem;
+	font-weight: 650;
+	display: flex;
+	align-items: center;
+	gap: 0.55rem;
+}
+.guard-card p {
+	margin: 0;
+	font-size: 0.9rem;
+	line-height: 1.6;
+	color: var(--text-dim);
+}
+.guard-dot {
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	flex: none;
+}
+.guard-good { background: var(--good); box-shadow: 0 0 10px rgba(52, 211, 153, 0.6); }
+.guard-warn { background: #fbbf24; box-shadow: 0 0 10px rgba(251, 191, 36, 0.55); }
+
+/* ---------- slim ---------- */
+.slim-block { max-width: 26rem; }
+.slim-note {
+	margin: 0.8rem 0 0;
+	font-size: 0.92rem;
+	color: var(--text-dim);
+}
+
+/* ---------- shared bits used on this page ---------- */
+.section code {
+	background: rgba(255, 255, 255, 0.06);
+	padding: 0.05em 0.35em;
+	border-radius: 3px;
+	font-size: 0.9em;
+	color: var(--text);
+}
+
+.cta h2 {
+	margin: 0 0 1.25rem;
+	font-size: clamp(1.5rem, 3vw, 2rem);
+	letter-spacing: -0.025em;
+	font-weight: 700;
+}
+
+@media (max-width: 900px) {
+	.adopt-hero { grid-template-columns: 1fr; gap: 1.5rem; }
+	.hero-art { max-width: 26rem; }
+	.steps-grid { grid-template-columns: 1fr; }
+	.guard-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 720px) {
+	.page-hero { padding: 3rem 1.1rem 2.25rem; }
+	.section { padding: 3rem 1.1rem; }
+	.code-block pre { font-size: 0.79rem; padding-right: 1.2rem; }
+	.copy-btn { position: static; margin-bottom: 0.4rem; }
+	.agent-panel .copy-btn { margin-left: 0.6rem; }
+}

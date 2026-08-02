@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { extractArtifact } from '../../src/vendor/compileTSL.js';
+import { emitUpdaterSource } from '../../src/emit-updater.js';
 import { LIVE_UNIFORM_NODE_IDENTITY_SYMBOL_KEY } from '@tsl-precompile/contract/dynamic-bindings';
 import { RENDER_BINDING_OWNER_KINDS } from '@tsl-precompile/contract/render-selector';
 
@@ -84,7 +85,13 @@ test( 'extractArtifact serializes exact material paths for anonymous live unifor
 	assert.equal( slots[ 1 ].source.liveNodeIdentity, undefined );
 	assert.equal( slots[ 0 ].source.kind, 'uniform.live' );
 	assert.deepEqual( slots[ 0 ].source.valueSnapshot, { type: 'number', data: - 0.2 } );
-	assert.equal( JSON.parse( JSON.stringify( artifact ) ).uniformPlan[ 0 ].slots[ 0 ].source.nodePath[ 0 ], 'positionNode' );
+	const persisted = JSON.parse( JSON.stringify( artifact ) );
+	assert.equal( persisted.uniformPlan[ 0 ].slots[ 0 ].source.nodePath[ 0 ], 'positionNode' );
+	assert.deepEqual(
+		emitUpdaterSource( persisted ).unsupportedKinds,
+		[],
+		'serialized exact paths and identities are runtime overlay addresses, not blocked codegen kinds',
+	);
 
 } );
 

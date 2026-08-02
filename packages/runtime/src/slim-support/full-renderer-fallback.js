@@ -33,6 +33,7 @@
  */
 
 import { VIRTUAL_FULL_THREE_MODULE_ID } from '@tsl-precompile/contract/virtual-modules';
+import { syncComputeRendererSize } from './compute-sync.js';
 
 const DEFAULT_OPTS = {
 	shadowMapEnabled: true,
@@ -62,7 +63,7 @@ function assertFullThreeSource( value, label ) {
  * @param {Function} [opts.WebGPURendererClass] - Direct full-WebGPURenderer constructor. Overrides `threeFullModule.WebGPURenderer` when provided (useful for test injection).
  * @param {Function} [opts.loadThreeFullModule] - Async factory returning the full-three module. Called once on first `getRenderer()` if `threeFullModule` is absent.
  * @param {boolean} [opts.shadowMapEnabled=true] - Enables `r.shadowMap.enabled` on the booted full renderer so shadow passes can fire.
- * @param {boolean} [opts.reuseDevice=true]      - Pass `{ device }` from the slim renderer's backend into the full renderer so both share the same `GPUDevice`.
+ * @param {boolean} [opts.reuseDevice=true]      - Pass `{ device }` from the initialised slim renderer's backend into the full renderer so both share the same `GPUDevice`. Boot fails closed until that device exists.
  * @param {Function} [opts.onError]              - `(err) => void` called when the lazy boot fails. The promise still rejects/returns null.
  * @returns {{
  *   getRenderer: () => Promise<Object|null>,
@@ -83,6 +84,23 @@ export function createFullRendererFallback( opts = {} ) {
 	let initPromise = null;
 	let resolvedModule = settings.threeFullModule || null;
 	let generation = 0;
+
+	function installComputeSizeSync( renderer ) {
+
+		for ( const method of [ 'compute', 'computeAsync' ] ) {
+
+			const original = renderer && renderer[ method ];
+			if ( typeof original !== 'function' ) continue;
+			renderer[ method ] = function computeWithSourceDrawingBufferSize( ...args ) {
+
+				syncComputeRendererSize( renderer, settings.slimRenderer );
+				return original.apply( this, args );
+
+			};
+
+		}
+
+	}
 
 	async function loadModule() {
 
@@ -127,7 +145,12 @@ export function createFullRendererFallback( opts = {} ) {
 		if ( settings.reuseDevice ) {
 
 			const device = slimRenderer.backend && slimRenderer.backend.device;
-			if ( device ) rendererOptions.device = device;
+			if ( ! device ) {
+
+				throw new Error( 'createFullRendererFallback: reuseDevice requires an initialised slimRenderer.backend.device.' );
+
+			}
+			rendererOptions.device = device;
 
 		}
 		if ( slimRenderer.reversedDepthBuffer !== undefined ) {
@@ -139,10 +162,33 @@ export function createFullRendererFallback( opts = {} ) {
 
 	}
 
+	async function waitForReusableDevice() {
+
+		if ( ! settings.reuseDevice ) return;
+		if ( settings.slimRenderer.backend && settings.slimRenderer.backend.device ) return;
+
+		// Renderer.setAnimationLoop() starts Renderer.init() asynchronously. A
+		// raw compute call made during the same synchronous application setup can
+		// therefore request the full fallback while the source GPUDevice is still
+		// being acquired. Reuse that in-flight base initialisation instead of
+		// allowing the full renderer to race ahead and request a second device.
+		const pendingInit = settings.slimRenderer._initPromise;
+		if ( pendingInit && typeof pendingInit.then === 'function' ) await pendingInit;
+
+		if ( ! ( settings.slimRenderer.backend && settings.slimRenderer.backend.device ) ) {
+
+			throw new Error( 'createFullRendererFallback: reuseDevice requires an initialised slimRenderer.backend.device.' );
+
+		}
+
+	}
+
 	async function bootOnce( bootGeneration ) {
 
 		let r = null;
 		try {
+
+			await waitForReusableDevice();
 
 			// Prefer a directly-injected renderer class (test seam) — skip module
 			// load entirely when one was passed.
@@ -169,6 +215,8 @@ export function createFullRendererFallback( opts = {} ) {
 				return null;
 
 			}
+			syncComputeRendererSize( r, settings.slimRenderer );
+			installComputeSizeSync( r );
 			if ( settings.shadowMapEnabled && r.shadowMap ) r.shadowMap.enabled = true;
 			fullRenderer = r;
 			return r;

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Integrate TSL Precompile"
+  short_description: "Install and validate TSL shader precompilation"
+  default_prompt: "Use $integrate-tsl-precompile to start with tsl-precompile-doctor --json --compact, execute every emitted nextAction in dependency order, integrate TSL precompilation in compatibility mode for WebGPURenderer (not classic WebGLRenderer), capture every real route and advanced topology on each production WebGPU or WebGL 2 backend, verify artifacts, and prove the production build plus backend-matched previews before considering slim mode."

@@ -10,7 +10,8 @@ import { nodeResolve } from '@rollup/plugin-node-resolve';
 import { rollup } from 'rollup';
 
 import * as core from '@tsl-precompile/runtime/core';
-import { __applyPrecompiled as applyPrecompiled } from '@tsl-precompile/runtime/apply';
+import { __applyPrecompiled as applyFull } from '@tsl-precompile/runtime/apply/full';
+import { __applyPrecompiled as applyReplay } from '@tsl-precompile/runtime/apply';
 import * as loader from '@tsl-precompile/runtime/loader';
 import * as runtime from '@tsl-precompile/runtime';
 import * as writers from '@tsl-precompile/runtime/writers';
@@ -26,11 +27,14 @@ const CORE_EXPORTS = Object.freeze( [
 	'writeBytes',
 	'writeColor',
 	'writeColorRGBA',
+	'writeEnvironmentRotation',
 	'writeF32',
 	'writeI32',
 	'writeMat3',
 	'writeMat4',
 	'writeMat4FromEuler',
+	'writePMREMScalar',
+	'writeTextureUVFlip',
 	'writeU32',
 	'writeVec2',
 	'writeVec3',
@@ -44,13 +48,35 @@ test.after( () => __resetRegistry() );
 test( 'core exposes only the additive AOT runtime surface with stable identities', () => {
 
 	assert.deepEqual( Object.keys( core ).sort(), [ ...CORE_EXPORTS ].sort() );
-	assert.equal( core.__applyPrecompiled, applyPrecompiled );
+	assert.equal( core.__applyPrecompiled, applyFull );
+	assert.notEqual( core.__applyPrecompiled, applyReplay );
 	for ( const name of [ 'registerArtifact', 'getArtifact', 'listUserArtifacts' ] ) {
 
 		assert.equal( core[ name ], loader[ name ], name );
 
 	}
 	for ( const name of WRITER_EXPORTS ) assert.equal( core[ name ], writers[ name ], name );
+
+} );
+
+test( 'core application preserves the exact live material identity and prototype', () => {
+
+	class LiveNodeMaterial {}
+	const material = new LiveNodeMaterial();
+	material.isNodeMaterial = true;
+	material.colorNode = { isNode: true };
+	const prototype = Object.getPrototypeOf( material );
+	const artifactModule = {
+		__hash: 'core-full-identity',
+		name: 'core-full-identity',
+		artifact: { vertexShader: 'captured vertex', fragmentShader: 'captured fragment', uniformPlan: [] },
+	};
+
+	assert.equal( core.__applyPrecompiled( material, artifactModule, artifactModule.__hash ), material );
+	assert.equal( Object.getPrototypeOf( material ), prototype );
+	assert.equal( material.isNodeMaterial, true );
+	assert.equal( material.isPrecompiledMaterial, undefined );
+	assert.equal( material.colorNode.isNode, true );
 
 } );
 
@@ -85,6 +111,7 @@ test( 'core package export and declarations expose the same exact names', () => 
 	assert.deepEqual( declarationNames, runtimeNames );
 	assert.doesNotMatch( declarationSource, /from\s*['"]\.\/index(?:\.js)?['"]/ );
 	assert.doesNotMatch( declarationSource, /declare\s+module\s+['"]three['"]/ );
+	assert.match( declarationSource, /__applyPrecompiled<TMaterial>[\s\S]*\): TMaterial/ );
 
 } );
 
@@ -162,18 +189,14 @@ test( 'core micro-bundle excludes dev, hydration, auxiliary, and Node/TSL closur
 		] ) assert.equal( normalizedIds.some( ( id ) => id.includes( pattern ) ), false, pattern );
 
 		assert.deepEqual( runtimeModules, [
-			'_vendor-PrecompiledArtifactRegistry.js',
-			'_vendor-PrecompiledMaterial.js',
-			'apply-precompiled.js',
+			'apply-precompiled-common.js',
+			'apply-precompiled-full.js',
 			'artifact-loader.js',
 			'graph-hash.js',
-			'slim-support/artifact-texture-wiring.js',
-			'slim-support/live-node-sidecars.js',
-			'slim-support/live-uniform-registry.js',
 			'writers.js',
 		] );
-		assert.ok( Buffer.byteLength( chunk.code ) <= 340_000, 'core raw micro-bundle exceeded 340 KB' );
-		assert.ok( gzipSync( chunk.code, { level: 9 } ).length <= 76_000, 'core gzip micro-bundle exceeded 76 KB' );
+		assert.ok( Buffer.byteLength( chunk.code ) <= 100_000, 'core raw micro-bundle exceeded 100 KB' );
+		assert.ok( gzipSync( chunk.code, { level: 9 } ).length <= 24_000, 'core gzip micro-bundle exceeded 24 KB' );
 
 	} finally {
 

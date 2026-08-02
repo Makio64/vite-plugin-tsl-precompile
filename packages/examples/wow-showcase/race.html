@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en" data-site="race">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<meta name="theme-color" content="#070707">
+		<meta name="description" content="Enter APEX 24, an immersive midnight endurance-racing experience rendered live with WebGPU.">
+		<title>APEX 24 — Outrun the night</title>
+		<link rel="stylesheet" href="./src/styles.css">
+	</head>
+	<body class="showcase-page">
+		<a class="skip-link" href="#app">Skip to experience</a>
+		<canvas id="scene-canvas" class="scene-canvas" aria-hidden="true"></canvas>
+		<main id="app" class="site-app" data-site-root>
+			<p class="loading-state" role="status">Preparing the starting grid…</p>
+		</main>
+		<noscript><p class="noscript-note">JavaScript is required for this interactive world. <a href="./">Return to the gallery</a>.</p></noscript>
+		<script type="module" src="./src/main.js"></script>
+	</body>
+</html>

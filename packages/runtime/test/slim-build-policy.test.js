@@ -44,6 +44,21 @@ test( 'checked slim builds reject rewrite drift without a warning fallback', () 
 	);
 	const configSource = readFileSync( new URL( '../rollup.config.js', import.meta.url ), 'utf8' );
 	assert.doesNotMatch( configSource, /TSL_PRECOMPILE_THREE_VERSION/, 'the transform and provenance stamp share one Three identity' );
+	assert.match(
+		configSource,
+		/from\s+['"]vite-plugin-tsl-precompile\/build\/slim-rewrite['"]/,
+		'the runtime build consumes the plugin-owned rewrite through its published build boundary',
+	);
+	assert.doesNotMatch(
+		configSource,
+		/from\s+['"]\.\.\/plugin\/src\//,
+		'the runtime package must not depend on a private monorepo sibling path',
+	);
+	assert.doesNotMatch(
+		configSource,
+		/webglFallbackStub|stub-webgl-fallback|slim-stub-webgl-backend/,
+		'the prebuilt graph must retain the real rewritten WebGL backend',
+	);
 
 } );
 

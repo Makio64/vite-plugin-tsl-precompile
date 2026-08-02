@@ -2,8 +2,8 @@
 /**
  * Local batch-results browser.
  *
- * Shows paired live-three.js capture and slim replay screenshots from
- * results/shots/, then lets you regenerate one example at a time from the UI.
+ * Shows only capture/replay pairs bound by the current schema-2 evidence set,
+ * then lets you run one isolated diagnostic at a time from the UI.
  *
  *   pnpm --filter examples-batch ui
  *   pnpm --filter examples-batch ui -- --port=8787
@@ -11,16 +11,43 @@
  */
 
 import { spawn } from 'node:child_process';
-import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const SELF = dirname( fileURLToPath( import.meta.url ) );
+import {
+	ARTIFACT_EVIDENCE_CONTENT_ENCODING,
+	MAX_ARTIFACT_EVIDENCE_UNCOMPRESSED_BYTES,
+} from './e2e-artifact-output.mjs';
+import {
+	E2E_EVIDENCE_MANIFEST,
+	E2E_EVIDENCE_SCHEMA_VERSION,
+	E2E_EVIDENCE_SET_JSON,
+	assertSafeContainedPath,
+	fingerprintJson,
+	readEvidenceCatalogue,
+	readSafeContainedFile,
+	resolveEvidenceDescriptor,
+	sha256,
+	verifyEvidenceDescriptor,
+} from './e2e-evidence.mjs';
+import { matchesExampleSkipPrefix } from './example-skip-policy.mjs';
+import {
+	assertCanonicalExampleName,
+	prepareOutputRoot,
+} from './output-path-safety.mjs';
+
+const SELF_FILE = fileURLToPath( import.meta.url );
+const SELF = dirname( SELF_FILE );
+const REPO = resolve( SELF, '../../..' );
 const RESULTS = resolve( SELF, 'results' );
-const SHOTS = resolve( RESULTS, 'shots' );
-const COVERAGE_MD = resolve( RESULTS, 'coverage-summary.md' );
-const E2E_REPORT = resolve( RESULTS, 'e2e-report.json' );
+const CATALOGUE_PATH = resolve( SELF, 'example-catalogue.json' );
+const CATALOGUE = readEvidenceCatalogue( CATALOGUE_PATH, {
+	root: REPO,
+	label: 'results UI example catalogue',
+} );
 
 const args = process.argv.slice( 2 );
 
@@ -56,34 +83,118 @@ const CATEGORY_ORDER = [
 
 let currentRun = null;
 let runSeq = 0;
+let uiRunsRoot = null;
+let canonicalEvidenceCache = null;
+let evidenceFiles = new Map();
 
 function shouldSkip( name ) {
 
-	return SKIP_PREFIXES.some( ( prefix ) => name.includes( prefix ) );
+	return matchesExampleSkipPrefix( name, SKIP_PREFIXES );
 
 }
 
-function validExampleName( value ) {
+function getUiRunsRoot() {
 
-	const name = String( value || '' ).trim();
-	const normalized = name.endsWith( '.html' ) ? name : `${ name }.html`;
-	if ( ! /^webgpu_[A-Za-z0-9_.-]+\.html$/.test( normalized ) ) return null;
-	return normalized;
+	if ( ! uiRunsRoot ) uiRunsRoot = mkdtempSync( join( tmpdir(), 'tslp-batch-ui-' ) );
+	return uiRunsRoot;
 
 }
 
-function safeReadJson( path, fallback ) {
+function parseJson( bytes, label ) {
 
-	if ( ! existsSync( path ) ) return fallback;
 	try {
 
-		return JSON.parse( readFileSync( path, 'utf8' ) );
+		return JSON.parse( bytes.toString( 'utf8' ) );
 
-	} catch {
+	} catch ( cause ) {
 
-		return fallback;
+		throw new Error( `${ label } is not valid JSON.`, { cause } );
 
 	}
+
+}
+
+function sameJson( left, right ) {
+
+	return fingerprintJson( left === undefined ? null : left ) ===
+		fingerprintJson( right === undefined ? null : right );
+
+}
+
+function validateDescriptorMetadata( root, descriptor, runId, label ) {
+
+	if (
+		! descriptor ||
+		descriptor.runId !== runId ||
+		! Number.isSafeInteger( descriptor.bytes ) ||
+		descriptor.bytes < 0 ||
+		! /^[a-f0-9]{64}$/.test( descriptor.sha256 || '' )
+	) {
+
+		throw new Error( `${ label } has invalid schema-2 descriptor metadata.` );
+	}
+	const file = resolveEvidenceDescriptor( root, descriptor );
+	const stats = statSync( file );
+	if ( stats.size !== descriptor.bytes ) {
+
+		throw new Error( `${ label } size drifted from its manifest descriptor.` );
+
+	}
+	return {
+		root,
+		runId,
+		descriptor,
+		file,
+		mtimeMs: stats.mtimeMs,
+		size: stats.size,
+	};
+
+}
+
+function validateCaseDescriptor( root, descriptor, runId, name, kind ) {
+
+	if ( ! descriptor ) return null;
+	const screenshot = kind === 'capture' || kind === 'replay';
+	let suffix;
+	if ( screenshot ) {
+
+		if ( descriptor.contentEncoding !== undefined || descriptor.uncompressedBytes !== undefined ) {
+
+			throw new Error( `Evidence ${ kind } for ${ name } must not declare artifact content encoding.` );
+
+		}
+		suffix = `${ kind }.png`;
+
+	} else {
+
+		const basename = kind === 'userArtifacts' ? 'user.json' : 'aux.json';
+		if ( descriptor.contentEncoding === undefined && descriptor.uncompressedBytes === undefined ) {
+
+			suffix = basename;
+
+		} else if (
+			descriptor.contentEncoding === ARTIFACT_EVIDENCE_CONTENT_ENCODING &&
+			Number.isSafeInteger( descriptor.uncompressedBytes ) &&
+			descriptor.uncompressedBytes >= 0 &&
+			descriptor.uncompressedBytes <= MAX_ARTIFACT_EVIDENCE_UNCOMPRESSED_BYTES
+		) {
+
+			suffix = `${ basename }.gz`;
+
+		} else {
+
+			throw new Error( `Evidence ${ kind } for ${ name } has unsupported content encoding.` );
+
+		}
+
+	}
+	const expectedFile = `evidence/${ runId }/${ screenshot ? 'shots' : 'artifacts' }/${ name }.${ suffix }`;
+	if ( descriptor.file !== expectedFile ) {
+
+		throw new Error( `Evidence ${ kind } for ${ name } is not at its run-scoped canonical path.` );
+
+	}
+	return validateDescriptorMetadata( root, descriptor, runId, `Evidence ${ kind } for ${ name }` );
 
 }
 
@@ -91,206 +202,533 @@ function categoryOf( name ) {
 
 	if ( /^webgpu_lights_/.test( name ) || name === 'webgpu_lightprobe_cubecamera.html' ) return 'Lights';
 	if ( /^webgpu_materials_/.test( name ) || name === 'webgpu_clearcoat.html' || name === 'webgpu_sandbox.html' ) return 'Materials';
-	if ( /^webgpu_shadow/.test( name ) ) return 'Shadows';
-	if ( /^webgpu_compute_/.test( name ) ) return 'Compute';
+	if ( /^webgpu_shadow/.test( name ) || /^(directional|point|spot|vsm)(?:-|\.html)/.test( name ) ) return 'Shadows';
+	if ( /^webgpu_compute_/.test( name ) || /^(dispatch2d|instanced|particles|pipeline|reduce|texture|uniform)\.html$/.test( name ) ) return 'Compute';
 	if ( /^webgpu_sprites/.test( name ) ) return 'Sprites';
 	if ( /^webgpu_camera/.test( name ) ) return 'Camera';
-	if ( /^webgpu_mrt/.test( name ) || /^webgpu_multiple_rendertargets/.test( name ) ) return 'MRT / RenderTargets';
+	if ( /^webgpu_mrt/.test( name ) || /^webgpu_multiple_rendertargets/.test( name ) || /^(manual|mask|pass)\.html$/.test( name ) ) return 'MRT / RenderTargets';
 	if ( /^webgpu_particles/.test( name ) ) return 'Particles';
-	if ( /^webgpu_postprocessing_/.test( name ) ) return 'Postprocessing';
+	if ( /^webgpu_postprocessing_/.test( name ) || /^(bloom|fxaa|gtao|passthrough|variants)\.html$/.test( name ) ) return 'Postprocessing';
 	return 'Misc';
-
-}
-
-function parseCoverageSummary() {
-
-	const rows = new Map();
-	if ( ! existsSync( COVERAGE_MD ) ) return rows;
-
-	const tick = String.fromCharCode( 10003 );
-	const lines = readFileSync( COVERAGE_MD, 'utf8' ).split( '\n' );
-	let category = 'Misc';
-
-	for ( const line of lines ) {
-
-		const heading = line.match( /^## (.+?)\s*\(/ );
-		if ( heading ) {
-
-			category = heading[ 1 ];
-			continue;
-
-		}
-
-		const row = line.match( /^\| (webgpu_[^ |]+\.html) \| ([^|]+) \| ([^|]+) \| ([^|]+) \| ([^|]+) \|([^|]*)\|/ );
-		if ( ! row ) continue;
-
-		const psnrText = row[ 4 ].trim();
-		let psnr = null;
-		if ( psnrText === 'inf' ) psnr = Infinity;
-		else if ( /^[0-9.]+$/.test( psnrText ) ) psnr = parseFloat( psnrText );
-
-		rows.set( row[ 1 ], {
-			name: row[ 1 ],
-			category,
-			hasCapture: row[ 2 ].includes( tick ),
-			hasReplay: row[ 3 ].includes( tick ),
-			psnr,
-			verdict: row[ 5 ].includes( 'matches' ) ? 'pass' : 'fail',
-			note: row[ 6 ].trim(),
-		} );
-
-	}
-
-	return rows;
-
-}
-
-function shotPath( name, kind ) {
-
-	return join( SHOTS, `${ name }.${ kind }.png` );
-
-}
-
-function shotInfo( name, kind ) {
-
-	const file = `${ name }.${ kind }.png`;
-	const path = join( SHOTS, file );
-	if ( ! existsSync( path ) ) return null;
-	const stats = statSync( path );
-	return {
-		url: `/shots/${ encodeURIComponent( file ) }?v=${ Math.round( stats.mtimeMs ) }`,
-		mtimeMs: stats.mtimeMs,
-		size: stats.size,
-	};
-
-}
-
-function listShotNames() {
-
-	const names = new Set();
-	if ( ! existsSync( SHOTS ) ) return names;
-	for ( const file of readdirSync( SHOTS ) ) {
-
-		const match = file.match( /^(webgpu_.+\.html)\.(capture|replay)\.png$/ );
-		if ( match ) names.add( match[ 1 ] );
-
-	}
-	return names;
-
-}
-
-function listThreeExampleNames() {
-
-	const names = new Set();
-	const examplesDir = join( threeRepo, 'examples' );
-	if ( ! existsSync( examplesDir ) ) return names;
-	for ( const file of readdirSync( examplesDir ) ) {
-
-		if ( file.startsWith( 'webgpu_' ) && file.endsWith( '.html' ) ) names.add( file );
-
-	}
-	return names;
-
-}
-
-function knownExampleNames() {
-
-	return new Set( [
-		...listThreeExampleNames(),
-		...listShotNames(),
-		...parseCoverageSummary().keys(),
-		...( safeReadJson( E2E_REPORT, { details: [] } ).details || [] )
-			.map( ( detail ) => detail?.name )
-			.filter( Boolean ),
-	] );
 
 }
 
 function formatPsnr( psnr ) {
 
-	if ( psnr === Infinity ) return 'inf';
+	if ( psnr === 'inf' || psnr === Infinity ) return 'inf';
 	if ( typeof psnr === 'number' && Number.isFinite( psnr ) ) return psnr.toFixed( 2 );
 	return null;
 
 }
 
-function buildState() {
+function loadManifestBundle( {
+	root,
+	manifestBytes,
+	catalogue,
+	expectedCohort = null,
+	aggregateCanonical = false,
+	origin = 'canonical',
+} ) {
 
-	const coverage = parseCoverageSummary();
-	const report = safeReadJson( E2E_REPORT, { details: [] } );
-	const reportByName = new Map();
-	for ( const detail of report.details || [] ) {
+	const manifest = parseJson( manifestBytes, `Evidence manifest below ${ root }` );
+	if (
+		manifest.schemaVersion !== E2E_EVIDENCE_SCHEMA_VERSION ||
+		typeof manifest.runId !== 'string' ||
+		typeof manifest.campaignId !== 'string'
+	) {
 
-		if ( detail && detail.name ) reportByName.set( detail.name, detail );
+		throw new Error( `Evidence manifest below ${ root } is not schema ${ E2E_EVIDENCE_SCHEMA_VERSION }.` );
+
+	}
+	if (
+		manifest.catalogue?.sha256 !== catalogue.sha256 ||
+		manifest.catalogue?.caseIdsSha256 !== catalogue.caseIdsSha256 ||
+		manifest.catalogue?.caseCount !== catalogue.caseCount
+	) {
+
+		throw new Error( `Evidence manifest below ${ root } is not bound to the current catalogue.` );
+
+	}
+	if ( expectedCohort ) {
+
+		for ( const key of [ 'runId', 'campaignId', 'canonical' ] ) {
+
+			if ( manifest[ key ] !== expectedCohort[ key ] ) {
+
+				throw new Error( `Evidence cohort ${ expectedCohort.id } ${ key } drifted from its manifest.` );
+
+			}
+
+		}
+		if ( ! sameJson( manifest.corpus, expectedCohort.corpus ) ) {
+
+			throw new Error( `Evidence cohort ${ expectedCohort.id } corpus drifted from its manifest.` );
+
+		}
+	}
+	const reportEvidence = verifyEvidenceDescriptor( root, manifest.report, manifest.runId );
+	const report = parseJson( reportEvidence.bytes, `Manifest-bound report ${ manifest.report.file }` );
+	if (
+		report.schemaVersion !== E2E_EVIDENCE_SCHEMA_VERSION ||
+		report.runId !== manifest.runId ||
+		report.campaignId !== manifest.campaignId ||
+		report.status !== 'completed' ||
+		report.canonical !== manifest.canonical
+	) {
+
+		throw new Error( `Manifest-bound report below ${ root } is not the completed evidence run.` );
+
+	}
+	if (
+		report.configuration?.fingerprint !== manifest.configuration?.fingerprint ||
+		! sameJson( report.configuration?.environment, manifest.configuration?.environment )
+	) {
+
+		throw new Error( `Manifest-bound report below ${ root } has configuration drift.` );
+
+	}
+	const configuration = { ...report.configuration };
+	delete configuration.fingerprint;
+	if ( fingerprintJson( configuration ) !== manifest.configuration.fingerprint ) {
+
+		throw new Error( `Manifest-bound report below ${ root } has an invalid configuration fingerprint.` );
 
 	}
 
-	const names = new Set( [
-		...listThreeExampleNames(),
-		...listShotNames(),
-		...coverage.keys(),
-		...reportByName.keys(),
-	] );
+	const catalogueByName = new Map( catalogue.records.map( ( record ) => [ record.name, record ] ) );
+	const cases = Array.isArray( manifest.cases ) ? manifest.cases : [];
+	const details = Array.isArray( report.details ) ? report.details : [];
+	const corpusNames = Array.isArray( manifest.corpus?.caseNames ) ? manifest.corpus.caseNames : [];
+	const caseNames = cases.map( ( entry ) => entry?.name );
+	const detailNames = details.map( ( detail ) => detail?.name );
+	for ( const names of [ corpusNames, caseNames, detailNames ] ) {
 
-	const examples = [ ...names ].sort( ( a, b ) => {
+		if ( names.some( ( name ) => typeof name !== 'string' ) || new Set( names ).size !== names.length ) {
 
-		const ca = coverage.get( a )?.category || categoryOf( a );
-		const cb = coverage.get( b )?.category || categoryOf( b );
-		const ra = CATEGORY_ORDER.indexOf( ca );
-		const rb = CATEGORY_ORDER.indexOf( cb );
-		if ( ra !== rb ) return ( ra === - 1 ? 99 : ra ) - ( rb === - 1 ? 99 : rb );
-		return a.localeCompare( b );
+			throw new Error( `Evidence run ${ manifest.runId } has invalid or duplicate case names.` );
 
-	} ).map( ( name ) => {
+		}
 
-		const cov = coverage.get( name );
-		const rep = reportByName.get( name );
-		const capture = shotInfo( name, 'capture' );
-		const replay = shotInfo( name, 'replay' );
-		const hasCapture = !! capture;
-		const hasReplay = !! replay;
-		const psnr = cov?.psnr ??
-			( rep?.pixelGate?.psnr === 'inf' ? Infinity : typeof rep?.pixelGate?.psnr === 'number' ? rep.pixelGate.psnr : null );
-		let status = cov?.verdict || null;
-		if ( ! status && rep?.status ) status = rep.status === 'pass' ? 'pass' : 'fail';
-		if ( ! status ) status = hasCapture || hasReplay ? 'unknown' : 'missing';
+	}
+	if ( ! sameJson( [ ...corpusNames ].sort(), [ ...caseNames ].sort() ) ||
+		! sameJson( [ ...corpusNames ].sort(), [ ...detailNames ].sort() ) ) {
 
-		return {
-			name,
-			basename: name.replace( /\.html$/, '' ),
-			category: cov?.category || categoryOf( name ),
-			status,
-			skipped: shouldSkip( name ),
-			hasCapture,
-			hasReplay,
+		throw new Error( `Evidence run ${ manifest.runId } report, manifest, and corpus case names drifted.` );
+
+	}
+
+	const detailsByName = new Map( details.map( ( detail ) => [ detail.name, detail ] ) );
+	const entries = new Map();
+	for ( const entry of cases ) {
+
+		assertCanonicalExampleName( entry.name, `Evidence run ${ manifest.runId } case name` );
+		const record = catalogueByName.get( entry.name );
+		if ( ! record ) throw new Error( `Evidence run ${ manifest.runId } contains unknown case ${ entry.name }.` );
+		if (
+			manifest.corpus.kind === 'three' && record.sourceKind !== 'three' ||
+			manifest.corpus.kind === 'local' &&
+				( record.sourceKind !== 'local' || record.source.project !== manifest.corpus.project )
+		) {
+
+			throw new Error( `Evidence run ${ manifest.runId } source cohort does not own ${ entry.name }.` );
+
+		}
+		const detail = detailsByName.get( entry.name );
+		if (
+			entry.runId !== manifest.runId ||
+			detail?.evidence?.runId !== manifest.runId ||
+			entry.status !== detail?.status ||
+			! [ 'pass', 'fail' ].includes( entry.status )
+		) {
+
+			throw new Error( `Evidence run ${ manifest.runId } case binding drifted for ${ entry.name }.` );
+
+		}
+		for ( const kind of [ 'capture', 'replay', 'userArtifacts', 'auxArtifacts' ] ) {
+
+			if ( ! sameJson( entry[ kind ] || null, detail.evidence?.[ kind ] || null ) ) {
+
+				throw new Error( `Evidence run ${ manifest.runId } ${ kind } binding drifted for ${ entry.name }.` );
+
+			}
+
+		}
+		const capture = validateCaseDescriptor( root, entry.capture, manifest.runId, entry.name, 'capture' );
+		const replay = validateCaseDescriptor( root, entry.replay, manifest.runId, entry.name, 'replay' );
+		const userArtifacts = validateCaseDescriptor( root, entry.userArtifacts, manifest.runId, entry.name, 'userArtifacts' );
+		const auxArtifacts = validateCaseDescriptor( root, entry.auxArtifacts, manifest.runId, entry.name, 'auxArtifacts' );
+		entries.set( entry.name, {
+			name: entry.name,
+			record,
+			root,
+			runId: manifest.runId,
+			campaignId: manifest.campaignId,
+			cohort: manifest.corpus.project || 'upstream',
+			canonical: aggregateCanonical,
+			origin,
+			status: entry.status,
 			capture,
 			replay,
-			psnr: formatPsnr( psnr ),
-			psnrValue: psnr === Infinity ? 1e9 : typeof psnr === 'number' ? psnr : null,
-			note: cov?.note || rep?.error || '',
-			captureErrors: Array.isArray( rep?.captureErrors ) ? rep.captureErrors.length : null,
-			replayErrors: Array.isArray( rep?.replayErrors ) ? rep.replayErrors.length : null,
-			userArtifacts: rep?.userArtifacts ?? null,
-			auxArtifacts: rep?.auxArtifacts ?? null,
-			updatedAt: Math.max( capture?.mtimeMs || 0, replay?.mtimeMs || 0 ) || null,
-			threejsUrl: `https://threejs.org/examples/?q=tsl#${ name.replace( /\.html$/, '' ) }`,
-		};
+			userArtifacts,
+			auxArtifacts,
+			psnr: formatPsnr( detail.pixelGate?.psnr ),
+			psnrValue: detail.pixelGate?.psnr === 'inf'
+				? 1e9
+				: typeof detail.pixelGate?.psnr === 'number' ? detail.pixelGate.psnr : null,
+			note: detail.error || detail.pixelGate?.reason || '',
+			captureErrors: Array.isArray( detail.captureErrors ) ? detail.captureErrors.length : null,
+			replayErrors: Array.isArray( detail.replayErrors ) ? detail.replayErrors.length : null,
+			userArtifactCount: detail.userArtifacts ?? detail.artifactMetrics?.userArtifactCount ?? null,
+			auxArtifactCount: detail.auxArtifacts ?? detail.artifactMetrics?.auxArtifactCount ?? null,
+		} );
+
+	}
+	return { root, manifest, report, entries };
+
+}
+
+export function loadUiEvidenceSnapshot( {
+	resultsRoot = RESULTS,
+	catalogue = CATALOGUE,
+	evidenceSetBytes = null,
+} = {} ) {
+
+	const setPath = resolve( resultsRoot, E2E_EVIDENCE_SET_JSON );
+	const bytes = evidenceSetBytes || readSafeContainedFile( resultsRoot, setPath, {
+		label: 'Results UI evidence set',
+	} );
+	const evidenceSet = parseJson( bytes, 'Results UI evidence set' );
+	if (
+		evidenceSet.schemaVersion !== E2E_EVIDENCE_SCHEMA_VERSION ||
+		typeof evidenceSet.campaignId !== 'string' ||
+		evidenceSet.catalogue?.sha256 !== catalogue.sha256 ||
+		evidenceSet.catalogue?.caseIdsSha256 !== catalogue.caseIdsSha256 ||
+		evidenceSet.catalogue?.caseCount !== catalogue.caseCount ||
+		! Array.isArray( evidenceSet.cohorts )
+	) {
+
+		throw new Error( 'Results UI evidence set is not bound to the current schema-2 catalogue.' );
+
+	}
+
+	const entries = new Map();
+	const bundles = [];
+	for ( const cohort of evidenceSet.cohorts ) {
+
+		if (
+			cohort?.portable !== true ||
+			cohort.manifest?.file !== E2E_EVIDENCE_MANIFEST ||
+			! /^[a-f0-9]{64}$/.test( cohort.manifest?.sha256 || '' )
+		) {
+
+			throw new Error( `Results UI cohort ${ cohort?.id || '<unknown>' } is not a portable manifest reference.` );
+
+		}
+		const root = resolve( resultsRoot, cohort.root );
+		assertSafeContainedPath( resultsRoot, root, {
+			allowRoot: true,
+			kind: 'directory',
+			label: `Results UI cohort ${ cohort.id } root`,
+		} );
+		const manifestPath = resolve( root, cohort.manifest.file );
+		const manifestBytes = readSafeContainedFile( root, manifestPath, {
+			label: `Results UI cohort ${ cohort.id } manifest`,
+		} );
+		if ( sha256( manifestBytes ) !== cohort.manifest.sha256 ) {
+
+			throw new Error( `Results UI cohort ${ cohort.id } manifest hash drifted.` );
+
+		}
+		const bundle = loadManifestBundle( {
+			root,
+			manifestBytes,
+			catalogue,
+			expectedCohort: cohort,
+			aggregateCanonical: evidenceSet.canonical === true,
+			origin: 'canonical',
+		} );
+		for ( const [ name, entry ] of bundle.entries ) {
+
+			if ( entries.has( name ) ) throw new Error( `Results UI evidence cohorts overlap on ${ name }.` );
+			entries.set( name, entry );
+
+		}
+		bundles.push( bundle );
+
+	}
+	if (
+		evidenceSet.corpus?.caseCount !== entries.size ||
+		( evidenceSet.canonical === true &&
+			( entries.size !== catalogue.caseCount ||
+				catalogue.records.some( ( record ) => ! entries.has( record.name ) ) ) )
+	) {
+
+		throw new Error( 'Results UI evidence set case coverage drifted from its declared corpus.' );
+
+	}
+	return {
+		canonical: evidenceSet.canonical === true,
+		campaignId: evidenceSet.campaignId,
+		evidenceSetSha256: sha256( bytes ),
+		catalogue,
+		entries,
+		bundles,
+	};
+
+}
+
+export function loadUiDiagnosticSnapshot( {
+	outputRoot,
+	catalogue = CATALOGUE,
+} ) {
+
+	assertSafeContainedPath( outputRoot, outputRoot, {
+		allowRoot: true,
+		kind: 'directory',
+		label: 'Results UI diagnostic root',
+	} );
+	const manifestPath = resolve( outputRoot, E2E_EVIDENCE_MANIFEST );
+	const manifestBytes = readSafeContainedFile( outputRoot, manifestPath, {
+		label: 'Results UI diagnostic manifest',
+	} );
+	return loadManifestBundle( {
+		root: outputRoot,
+		manifestBytes,
+		catalogue,
+		aggregateCanonical: false,
+		origin: 'diagnostic',
+	} );
+
+}
+
+export function readUiEvidenceShot( reference ) {
+
+	const verified = verifyEvidenceDescriptor( reference.root, reference.descriptor, reference.runId );
+	if (
+		verified.bytes.length < 8 ||
+		! verified.bytes.subarray( 0, 8 ).equals( Buffer.from( [ 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a ] ) )
+	) {
+
+		throw new Error( `Manifest-bound screenshot ${ reference.descriptor.file } is not a PNG.` );
+
+	}
+	return verified.bytes;
+
+}
+
+function readCanonicalEvidence() {
+
+	const evidenceSetPath = resolve( RESULTS, E2E_EVIDENCE_SET_JSON );
+	const bytes = readSafeContainedFile( RESULTS, evidenceSetPath, {
+		label: 'Results UI evidence set',
+	} );
+	const fingerprint = sha256( bytes );
+	if ( canonicalEvidenceCache?.fingerprint === fingerprint ) return canonicalEvidenceCache.snapshot;
+	const snapshot = loadUiEvidenceSnapshot( { evidenceSetBytes: bytes } );
+	canonicalEvidenceCache = { fingerprint, snapshot };
+	return snapshot;
+
+}
+
+function catalogueRecord( name ) {
+
+	return CATALOGUE.records.find( ( record ) => record.name === name ) || null;
+
+}
+
+export function planUiDiagnosticRun( {
+	record,
+	canonicalEntry = null,
+	mode = 'full',
+	sequence,
+	runsRoot,
+	threeRepo: selectedThreeRepo,
+	repositoryRoot = REPO,
+	catalogue = CATALOGUE,
+} ) {
+
+	if ( ! record || ! catalogue.records.some( ( candidate ) => candidate.name === record.name ) ) {
+
+		throw new Error( `Unknown catalogue example ${ record?.name || '<missing>' }.` );
+
+	}
+	const runMode = mode === 'replay' || mode === 'reuse-reference' ? mode : 'full';
+	if ( runMode !== 'full' ) {
+
+		if ( ! canonicalEntry?.canonical || canonicalEntry.origin !== 'canonical' ) {
+
+			throw new Error( `${ runMode } requires the current canonical manifest-bound input cohort.` );
+
+		}
+		if ( ! canonicalEntry.capture || ( runMode === 'replay' && ( ! canonicalEntry.userArtifacts || ! canonicalEntry.auxArtifacts ) ) ) {
+
+			throw new Error( `${ runMode } requires complete canonical saved evidence for ${ record.name }.` );
+
+		}
+
+	}
+	const outputRoot = prepareOutputRoot(
+		resolve( runsRoot, `${ String( sequence ).padStart( 4, '0' ) }-${ record.id }` ),
+		{
+			repositoryRoot,
+			label: 'Results UI diagnostic output root',
+		},
+	);
+	const runnerArgs = [
+		resolve( SELF, 'run-e2e-with-coverage.mjs' ),
+		`--filter=${ record.name }`,
+		`--three-repo=${ resolve( selectedThreeRepo ) }`,
+		`--output-root=${ outputRoot }`,
+	];
+	if ( canonicalEntry ) runnerArgs.push( `--input-root=${ canonicalEntry.root }` );
+	if ( record.sourceKind === 'local' ) {
+
+		runnerArgs.push( `--local-examples-root=${ resolve( repositoryRoot, 'packages/examples', record.source.project ) }` );
+
+	}
+	if ( runMode === 'replay' ) runnerArgs.push( '--replay-only' );
+	if ( runMode === 'reuse-reference' ) runnerArgs.push( '--reuse-reference-shot' );
+	return {
+		mode: runMode,
+		outputRoot,
+		inputRoot: canonicalEntry?.root || null,
+		runnerArgs,
+	};
+
+}
+
+function registerShot( registry, entry, kind ) {
+
+	const reference = entry?.[ kind ];
+	if ( ! reference ) return null;
+	const token = sha256( [
+		entry.origin,
+		entry.runId,
+		entry.name,
+		kind,
+		reference.descriptor.sha256,
+	].join( '\0' ) ).slice( 0, 40 );
+	registry.set( token, reference );
+	return {
+		url: `/evidence/${ token }.png?v=${ reference.descriptor.sha256.slice( 0, 12 ) }`,
+		mtimeMs: reference.mtimeMs,
+		size: reference.size,
+		runId: entry.runId,
+		origin: entry.origin,
+	};
+
+}
+
+function sortExamples( examples ) {
+
+	return examples.sort( ( left, right ) => {
+
+		const leftRank = CATEGORY_ORDER.indexOf( left.category );
+		const rightRank = CATEGORY_ORDER.indexOf( right.category );
+		if ( leftRank !== rightRank ) return ( leftRank === - 1 ? 99 : leftRank ) - ( rightRank === - 1 ? 99 : rightRank );
+		return left.name.localeCompare( right.name );
 
 	} );
 
-	const totals = {
-		total: examples.length,
-		pass: examples.filter( ( example ) => example.status === 'pass' ).length,
-		fail: examples.filter( ( example ) => example.status === 'fail' ).length,
-		missingReplay: examples.filter( ( example ) => ! example.hasReplay ).length,
-		missingCapture: examples.filter( ( example ) => ! example.hasCapture ).length,
-	};
+}
 
+function buildState() {
+
+	let canonical = null;
+	let evidenceError = null;
+	try {
+
+		canonical = readCanonicalEvidence();
+
+	} catch ( error ) {
+
+		evidenceError = error.message;
+
+	}
+	let diagnosticEntry = null;
+	let diagnosticError = null;
+	if ( currentRun && ! currentRun.active && existsSync( resolve( currentRun.outputRoot, E2E_EVIDENCE_MANIFEST ) ) ) {
+
+		try {
+
+			diagnosticEntry = loadUiDiagnosticSnapshot( {
+				outputRoot: currentRun.outputRoot,
+			} ).entries.get( currentRun.name ) || null;
+
+		} catch ( error ) {
+
+			diagnosticError = error.message;
+
+		}
+
+	}
+
+	const registry = new Map();
+	const examples = sortExamples( CATALOGUE.records.map( ( record ) => {
+
+		const canonicalEntry = canonical?.entries.get( record.name ) || null;
+		const shown = diagnosticEntry?.name === record.name ? diagnosticEntry : canonicalEntry;
+		const capture = registerShot( registry, shown, 'capture' );
+		const replay = registerShot( registry, shown, 'replay' );
+		return {
+			name: record.name,
+			basename: record.id,
+			category: categoryOf( record.name ),
+			status: shown?.status || 'missing',
+			canonicalStatus: canonicalEntry?.status || 'missing',
+			canonical: canonical?.canonical === true,
+			diagnostic: shown?.origin === 'diagnostic',
+			canReplay: canonicalEntry?.canonical === true &&
+				!! canonicalEntry.capture &&
+				!! canonicalEntry.userArtifacts &&
+				!! canonicalEntry.auxArtifacts,
+			canReuseCapture: canonicalEntry?.canonical === true && !! canonicalEntry.capture,
+			evidenceLabel: shown
+				? `${ shown.origin === 'diagnostic' ? 'diagnostic run' : canonical?.canonical ? 'canonical campaign' : 'manifest-bound campaign' } ${ shown.runId.slice( 0, 8 ) }`
+				: 'no current manifest-bound evidence',
+			cohort: shown?.cohort || record.source.project || 'upstream',
+			skipped: shouldSkip( record.name ),
+			hasCapture: !! capture,
+			hasReplay: !! replay,
+			capture,
+			replay,
+			psnr: shown?.psnr || null,
+			psnrValue: shown?.psnrValue ?? null,
+			note: shown?.note || '',
+			captureErrors: shown?.captureErrors ?? null,
+			replayErrors: shown?.replayErrors ?? null,
+			userArtifacts: shown?.userArtifactCount ?? null,
+			auxArtifacts: shown?.auxArtifactCount ?? null,
+			updatedAt: Math.max( capture?.mtimeMs || 0, replay?.mtimeMs || 0 ) || null,
+			threejsUrl: record.sourceKind === 'three' ? record.source.originalUrl : null,
+			sourceLabel: record.sourceKind === 'three'
+				? 'Three.js r185'
+				: `${ record.source.project }/${ record.source.route }`,
+		};
+
+	} ) );
+	evidenceFiles = registry;
+	const canonicalExamples = CATALOGUE.records.map( ( record ) => canonical?.entries.get( record.name ) || null );
+	const totals = {
+		total: CATALOGUE.caseCount,
+		pass: canonicalExamples.filter( ( example ) => example?.status === 'pass' ).length,
+		fail: canonicalExamples.filter( ( example ) => example?.status === 'fail' ).length,
+		missingReplay: canonicalExamples.filter( ( example ) => ! example?.replay ).length,
+		missingCapture: canonicalExamples.filter( ( example ) => ! example?.capture ).length,
+		diagnostic: diagnosticEntry ? 1 : 0,
+	};
 	return {
 		generatedAt: new Date().toISOString(),
+		evidence: {
+			schemaVersion: E2E_EVIDENCE_SCHEMA_VERSION,
+			campaignId: canonical?.campaignId || null,
+			canonical: canonical?.canonical === true,
+			error: evidenceError,
+			diagnosticError,
+		},
 		paths: {
 			results: RESULTS,
-			shots: SHOTS,
+			uiRuns: getUiRunsRoot(),
 			threeRepo,
 			hasThreeRepo: existsSync( join( threeRepo, 'examples' ) ),
 		},
@@ -312,6 +750,9 @@ function publicRun() {
 		exitCode: currentRun.exitCode,
 		startedAt: currentRun.startedAt,
 		finishedAt: currentRun.finishedAt,
+		outputRoot: currentRun.outputRoot,
+		inputRoot: currentRun.inputRoot,
+		evidenceKind: 'diagnostic',
 		lines: currentRun.lines.slice( - 180 ),
 	};
 
@@ -354,50 +795,74 @@ function startRun( name, mode ) {
 		throw err;
 
 	}
+	const normalized = String( name || '' ).trim().endsWith( '.html' )
+		? String( name ).trim()
+		: `${ String( name || '' ).trim() }.html`;
+	try {
 
-	const normalized = validExampleName( name );
-	if ( ! normalized ) {
+		assertCanonicalExampleName( normalized, 'Results UI example name' );
+
+	} catch {
 
 		const err = new Error( 'Invalid example name' );
 		err.statusCode = 400;
 		throw err;
 
 	}
-
-	if ( ! knownExampleNames().has( normalized ) ) {
+	const record = catalogueRecord( normalized );
+	if ( ! record ) {
 
 		const err = new Error( `Unknown example: ${ normalized }` );
 		err.statusCode = 404;
 		throw err;
 
 	}
+	let canonical = null;
+	try {
 
-	const runMode = mode === 'replay' || mode === 'reuse-reference' ? mode : 'full';
-	const runnerArgs = [
-		resolve( SELF, 'run-e2e-with-coverage.mjs' ),
-		`--filter=${ normalized }`,
-		`--three-repo=${ threeRepo }`,
-	];
+		canonical = readCanonicalEvidence();
 
-	if ( runMode === 'replay' ) runnerArgs.push( '--replay-only' );
-	if ( runMode === 'reuse-reference' ) runnerArgs.push( '--reuse-reference-shot' );
+	} catch {}
+	const nextSequence = runSeq + 1;
+	let plan;
+	try {
 
+		plan = planUiDiagnosticRun( {
+			record,
+			canonicalEntry: canonical?.entries.get( normalized ) || null,
+			mode,
+			sequence: nextSequence,
+			runsRoot: getUiRunsRoot(),
+			threeRepo,
+		} );
+
+	} catch ( cause ) {
+
+		const err = new Error( cause.message );
+		err.statusCode = 409;
+		throw err;
+
+	}
+	runSeq = nextSequence;
 	const run = {
-		id: ++ runSeq,
+		id: runSeq,
 		name: normalized,
-		mode: runMode,
+		mode: plan.mode,
 		active: true,
 		exitCode: null,
 		startedAt: new Date().toISOString(),
 		finishedAt: null,
+		outputRoot: plan.outputRoot,
+		inputRoot: plan.inputRoot,
 		lines: [],
 		child: null,
 	};
 	currentRun = run;
+	addRunLine( run, `[ui] diagnostic output: ${ plan.outputRoot }` );
+	addRunLine( run, `[ui] canonical input: ${ plan.inputRoot || 'not available' }` );
+	addRunLine( run, `[ui] node ${ plan.runnerArgs.map( ( part ) => part.includes( ' ' ) ? JSON.stringify( part ) : part ).join( ' ' ) }` );
 
-	addRunLine( run, `[ui] node ${ runnerArgs.map( ( part ) => part.includes( ' ' ) ? JSON.stringify( part ) : part ).join( ' ' ) }` );
-
-	const child = spawn( process.execPath, runnerArgs, {
+	const child = spawn( process.execPath, plan.runnerArgs, {
 		cwd: SELF,
 		env: { ...process.env, NO_COLOR: '1' },
 		stdio: [ 'ignore', 'pipe', 'pipe' ],
@@ -406,13 +871,7 @@ function startRun( name, mode ) {
 	run.child = child;
 	attachLines( child.stdout, run );
 	attachLines( child.stderr, run );
-
-	child.on( 'error', ( err ) => {
-
-		addRunLine( run, `[ui] failed to start: ${ err.message }` );
-
-	} );
-
+	child.on( 'error', ( err ) => addRunLine( run, `[ui] failed to start: ${ err.message }` ) );
 	child.on( 'close', ( code, signal ) => {
 
 		run.active = false;
@@ -421,7 +880,6 @@ function startRun( name, mode ) {
 		addRunLine( run, `[ui] finished with ${ signal ? `signal ${ signal }` : `exit ${ code ?? 1 }` }` );
 
 	} );
-
 	return publicRun();
 
 }
@@ -508,30 +966,30 @@ function readBody( req ) {
 
 }
 
-function serveShot( res, pathname ) {
+function serveEvidenceShot( res, pathname ) {
 
-	const file = decodeURIComponent( pathname.slice( '/shots/'.length ) );
-	if ( ! /^[A-Za-z0-9_.-]+\.png$/.test( file ) ) {
+	const match = pathname.match( /^\/evidence\/([a-f0-9]{40})\.png$/ );
+	if ( ! match ) {
 
-		sendText( res, 'Invalid shot path', 400 );
+		sendText( res, 'Invalid evidence token', 400 );
 		return;
 
 	}
-
-	const filePath = resolve( SHOTS, file );
-	const rel = relative( SHOTS, filePath );
-	if ( rel.startsWith( '..' ) || rel.includes( `${ sep }..${ sep }` ) || ! existsSync( filePath ) ) {
+	const reference = evidenceFiles.get( match[ 1 ] );
+	if ( ! reference ) {
 
 		sendText( res, 'Not found', 404 );
 		return;
 
 	}
-
+	const bytes = readUiEvidenceShot( reference );
 	res.writeHead( 200, {
 		'content-type': 'image/png',
-		'cache-control': 'public, max-age=60',
+		'cache-control': 'private, max-age=60, immutable',
+		'content-length': bytes.length,
+		'x-content-type-options': 'nosniff',
 	} );
-	createReadStream( filePath ).pipe( res );
+	res.end( bytes );
 
 }
 
@@ -570,9 +1028,9 @@ async function handleRequest( req, res ) {
 
 		}
 
-		if ( req.method === 'GET' && url.pathname.startsWith( '/shots/' ) ) {
+		if ( req.method === 'GET' && url.pathname.startsWith( '/evidence/' ) ) {
 
-			serveShot( res, url.pathname );
+			serveEvidenceShot( res, url.pathname );
 			return;
 
 		}
@@ -752,6 +1210,7 @@ function appHtml() {
 			box-shadow: var(--shadow);
 		}
 		.card.is-active { border-color: var(--accent-2); }
+		.card.is-diagnostic { border-color: var(--warn); }
 		.card-head {
 			padding: 0.72rem;
 			display: grid;
@@ -974,22 +1433,26 @@ function appHtml() {
 			return '<div class="metric"><strong>' + escapeHtml( value ) + '</strong><span>' + escapeHtml( label ) + '</span></div>';
 		}
 
-		function renderMetrics() {
-			const totals = state.data.totals;
-			$( '#metrics' ).innerHTML = [
-				metric( 'examples', totals.total ),
-				metric( 'pass', totals.pass ),
-				metric( 'fail', totals.fail ),
-				metric( 'no replay', totals.missingReplay ),
-				metric( 'no capture', totals.missingCapture ),
-			].join( '' );
-		}
+			function renderMetrics() {
+				const totals = state.data.totals;
+				$( '#metrics' ).innerHTML = [
+					metric( 'catalogue', totals.total ),
+					metric( 'canonical pass', totals.pass ),
+					metric( 'canonical fail', totals.fail ),
+					metric( 'canonical no replay', totals.missingReplay ),
+					metric( 'diagnostic shown', totals.diagnostic ),
+				].join( '' );
+			}
 
-		function renderSubtitle() {
-			const paths = state.data.paths;
-			const suffix = paths.hasThreeRepo ? paths.threeRepo : 'three.js checkout not found; showing saved results';
-			$( '#subtitle' ).textContent = 'Screenshots: ' + paths.shots + ' | three.js: ' + suffix;
-		}
+			function renderSubtitle() {
+				const paths = state.data.paths;
+				const evidence = state.data.evidence;
+				const suffix = paths.hasThreeRepo ? paths.threeRepo : 'three.js checkout not found; showing saved results';
+				const campaign = evidence.error
+					? 'Evidence unavailable: ' + evidence.error
+					: ( evidence.canonical ? 'Canonical' : 'Non-canonical' ) + ' schema-2 campaign ' + evidence.campaignId;
+				$( '#subtitle' ).textContent = campaign + ' | focused output: ' + paths.uiRuns + ' | three.js: ' + suffix;
+			}
 
 		function renderCategories() {
 			const select = $( '#category' );
@@ -1002,13 +1465,13 @@ function appHtml() {
 			state.category = select.value;
 		}
 
-		function statusText( example ) {
-			if ( example.skipped ) return 'skipped';
-			if ( example.status === 'pass' ) return 'pass';
-			if ( example.status === 'fail' ) return 'fail';
-			if ( example.status === 'missing' ) return 'missing';
-			return 'unknown';
-		}
+			function statusText( example ) {
+				if ( example.skipped ) return 'skipped';
+				if ( example.status === 'pass' ) return example.diagnostic ? 'diagnostic pass' : 'pass';
+				if ( example.status === 'fail' ) return example.diagnostic ? 'diagnostic fail' : 'fail';
+				if ( example.status === 'missing' ) return 'missing';
+				return 'unknown';
+			}
 
 		function matchesFilters( example ) {
 			if ( state.query ) {
@@ -1035,31 +1498,36 @@ function appHtml() {
 			return '<div class="frame"><div class="frame-label"><span>' + escapeHtml( label ) + '</span><span>' + escapeHtml( stamp ) + '</span></div>' + body + '</div>';
 		}
 
-		function renderCard( example ) {
-			const running = state.data.run && state.data.run.active;
-			const active = running && state.data.run.name === example.name;
-			const disabled = running ? ' disabled' : '';
-			const psnr = example.psnr ? example.psnr + ' dB' : 'PSNR n/a';
-			const artifacts = example.userArtifacts == null ? '' : '<span>' + escapeHtml( example.userArtifacts + '+' + example.auxArtifacts + ' artifacts' ) + '</span>';
-			const errors = example.captureErrors || example.replayErrors
-				? '<span>' + escapeHtml( ( example.captureErrors || 0 ) + ' capture errors, ' + ( example.replayErrors || 0 ) + ' replay errors' ) + '</span>'
-				: '';
-			const note = example.note ? '<span title="' + escapeHtml( example.note ) + '">' + escapeHtml( example.note ) + '</span>' : '';
-			return '<article class="card' + ( active ? ' is-active' : '' ) + '" data-name="' + escapeHtml( example.name ) + '">'
-				+ '<div class="card-head">'
-				+ '<div><div class="name">' + escapeHtml( example.name ) + '</div><div class="meta"><span>' + escapeHtml( example.category ) + '</span><span>' + escapeHtml( psnr ) + '</span>' + artifacts + errors + note + '</div></div>'
-				+ '<span class="badge ' + escapeHtml( example.status ) + '">' + escapeHtml( statusText( example ) ) + '</span>'
-				+ '</div>'
-				+ '<div class="compare">' + renderImage( example, 'capture' ) + renderImage( example, 'replay' ) + '</div>'
-				+ '<div class="actions">'
-				+ '<div class="actions-left">'
-				+ '<button class="primary" type="button" data-run="full" data-name="' + escapeHtml( example.name ) + '"' + disabled + '>Regenerate</button>'
-				+ '<button type="button" data-run="replay" data-name="' + escapeHtml( example.name ) + '"' + disabled + '>Replay only</button>'
-				+ '<button type="button" data-run="reuse-reference" data-name="' + escapeHtml( example.name ) + '"' + disabled + '>Reuse capture</button>'
-				+ '</div>'
-				+ '<div class="actions-right"><a class="link" href="' + escapeHtml( example.threejsUrl ) + '" target="_blank" rel="noopener">three.js</a></div>'
-				+ '</div>'
-				+ '</article>';
+			function renderCard( example ) {
+				const running = state.data.run && state.data.run.active;
+				const active = running && state.data.run.name === example.name;
+				const disabled = running ? ' disabled' : '';
+				const replayDisabled = running || ! example.canReplay ? ' disabled' : '';
+				const reuseDisabled = running || ! example.canReuseCapture ? ' disabled' : '';
+				const psnr = example.psnr ? example.psnr + ' dB' : 'PSNR n/a';
+				const artifacts = example.userArtifacts == null ? '' : '<span>' + escapeHtml( example.userArtifacts + '+' + example.auxArtifacts + ' artifacts' ) + '</span>';
+				const errors = example.captureErrors || example.replayErrors
+					? '<span>' + escapeHtml( ( example.captureErrors || 0 ) + ' capture errors, ' + ( example.replayErrors || 0 ) + ' replay errors' ) + '</span>'
+					: '';
+				const note = example.note ? '<span title="' + escapeHtml( example.note ) + '">' + escapeHtml( example.note ) + '</span>' : '';
+				const sourceLink = example.threejsUrl
+					? '<a class="link" href="' + escapeHtml( example.threejsUrl ) + '" target="_blank" rel="noopener">three.js</a>'
+					: '<span class="link">' + escapeHtml( example.sourceLabel ) + '</span>';
+				return '<article class="card' + ( active ? ' is-active' : '' ) + ( example.diagnostic ? ' is-diagnostic' : '' ) + '" data-name="' + escapeHtml( example.name ) + '">'
+					+ '<div class="card-head">'
+					+ '<div><div class="name">' + escapeHtml( example.name ) + '</div><div class="meta"><span>' + escapeHtml( example.category ) + '</span><span>' + escapeHtml( psnr ) + '</span><span>' + escapeHtml( example.evidenceLabel ) + '</span>' + artifacts + errors + note + '</div></div>'
+					+ '<span class="badge ' + escapeHtml( example.status ) + '">' + escapeHtml( statusText( example ) ) + '</span>'
+					+ '</div>'
+					+ '<div class="compare">' + renderImage( example, 'capture' ) + renderImage( example, 'replay' ) + '</div>'
+					+ '<div class="actions">'
+					+ '<div class="actions-left">'
+					+ '<button class="primary" type="button" data-run="full" data-name="' + escapeHtml( example.name ) + '"' + disabled + '>Regenerate</button>'
+					+ '<button type="button" data-run="replay" data-name="' + escapeHtml( example.name ) + '"' + replayDisabled + '>Replay only</button>'
+					+ '<button type="button" data-run="reuse-reference" data-name="' + escapeHtml( example.name ) + '"' + reuseDisabled + '>Reuse capture</button>'
+					+ '</div>'
+					+ '<div class="actions-right">' + sourceLink + '</div>'
+					+ '</div>'
+					+ '</article>';
 		}
 
 		function renderGrid() {
@@ -1077,7 +1545,7 @@ function appHtml() {
 			}
 			runbar.classList.add( 'is-visible' );
 			const stateText = run.active ? 'running' : 'finished: ' + run.exitCode;
-			$( '#run-title' ).textContent = run.name + ' | ' + run.mode + ' | ' + stateText;
+				$( '#run-title' ).textContent = 'diagnostic | ' + run.name + ' | ' + run.mode + ' | ' + stateText;
 			$( '#log' ).textContent = run.lines.join( '\\n' );
 			$( '#stop' ).disabled = ! run.active;
 		}
@@ -1155,18 +1623,28 @@ function appHtml() {
 
 }
 
-const server = createServer( ( req, res ) => {
+export function createUiServer() {
 
-	handleRequest( req, res ).catch( ( err ) => sendJson( res, { error: err.message }, 500 ) );
+	return createServer( ( req, res ) => {
 
-} );
+		handleRequest( req, res ).catch( ( err ) => sendJson( res, { error: err.message }, 500 ) );
 
-server.listen( port, host, () => {
+	} );
 
-	const url = `http://${ host }:${ port }`;
-	console.log( `[examples-ui] ${ url }` );
-	console.log( `[examples-ui] results: ${ RESULTS }` );
-	console.log( `[examples-ui] three.js: ${ threeRepo }` );
-	console.log( '[examples-ui] press Ctrl+C to stop' );
+}
 
-} );
+if ( process.argv[ 1 ] && resolve( process.argv[ 1 ] ) === SELF_FILE ) {
+
+	const server = createUiServer();
+	server.listen( port, host, () => {
+
+		const url = `http://${ host }:${ port }`;
+		console.log( `[examples-ui] ${ url }` );
+		console.log( `[examples-ui] manifest-bound results: ${ RESULTS }` );
+		console.log( `[examples-ui] diagnostic output root: ${ getUiRunsRoot() }` );
+		console.log( `[examples-ui] three.js: ${ threeRepo }` );
+		console.log( '[examples-ui] press Ctrl+C to stop' );
+
+	} );
+
+}

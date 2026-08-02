@@ -21,14 +21,18 @@
  * @module ViteTslPrecompilePlugin
  */
 
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { resolve, join, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 import { annotateDevMarkerSources, instrumentLiveContextDependencies, instrumentLiveUniformIdentities, transformSource } from './babel-transform.js';
-import { autoMarkSource } from './auto-mark.js';
+import { autoMarkSource, injectMarkerBootstrapSource } from './auto-mark.js';
+import { assertArtifactContentIntegrity } from './artifact-content-integrity.js';
+import { loadArtifactDirectory } from './artifact-directory-loader.js';
+import { isProjectRootModule } from './_shared/module-identity.js';
+import { collectMarkerSourceProvenance } from './_shared/source-provenance.js';
 import {
 	ATTRIBUTE_DESCRIPTOR_MATERIALIZER_IMPORT,
 	VARIANT_SELECTOR_ADAPTER_MATERIALIZER_IMPORT,
@@ -39,7 +43,6 @@ import {
 import { createWgslStringPool, emitOptimizedJsonExpression, getExternalWgslRefIdentifiers } from './wgsl-optimize.js';
 import { attachDevCapture } from './dev-capture-server.js';
 import { getSlimRewriteRuntimeModuleRule, isThreeRewriteTarget, rewriteThreeSource } from './three-rewrite.js';
-import { computeArtifactContentHash } from './hash.js';
 import {
 	findRenderedSlimSourceResidue,
 	normalizeSlimMode,
@@ -48,9 +51,9 @@ import {
 	slimRuntimeEntryForMode,
 } from './slim-source.js';
 import { verifySlimPrebuiltBundle } from './slim-prebuilt-provenance.js';
+import { formatBlockedKindWarnings } from './diagnostics.js';
 import { VIRTUAL_MODULE_PREFIX, VIRTUAL_AUX_MODULE_ID, VIRTUAL_WGSL_POOL_MODULE_ID, PLUGIN_VERSION } from './_shared/constants.js';
 import { VIRTUAL_FULL_THREE_MODULE_ID } from '@tsl-precompile/contract/virtual-modules';
-import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
 import {
 	SLIM_THREE_PACKAGE_VERSION,
 	SLIM_THREE_POLICY_VERSION,
@@ -159,6 +162,11 @@ function validateOptions( userOpts ) {
 		throw new TypeError( `[tsl-precompile] \`slim\` must be a boolean or 'source', received ${ JSON.stringify( userOpts.slim ) }.` );
 
 	}
+	if ( userOpts.fail === 'warn' && ( userOpts.slim === true || userOpts.slim === 'source' ) ) {
+
+		throw new Error( '[tsl-precompile] `fail: "warn"` is available only in full-Three compatibility mode (`slim: false`). Compiler-free slim builds require every marker to have a valid captured artifact.' );
+
+	}
 
 	for ( const key of [ 'autoMark', 'minifyWgsl', 'dedupeWgsl' ] ) {
 
@@ -176,7 +184,7 @@ function validateOptions( userOpts ) {
  * @param {Object} [userOpts]
  * @param {string} [userOpts.artifactsDir='./artifacts']
  * @param {'error' | 'warn'} [userOpts.fail='error']
- * @param {boolean} [userOpts.autoMark=false] - Auto-mark every `new *NodeMaterial(...)` with `.precompile('<prefix>-<slug>-<n>')` so unmodified three.js demos flow through the AOT pipeline.
+ * @param {boolean} [userOpts.autoMark=true] - Auto-mark every `new *NodeMaterial(...)` with `.precompile('<prefix>-<slug>-<n>')`. Set to `false` to require explicit markers.
  * @param {string}  [userOpts.autoMarkPrefix='auto'] - Prefix used by auto-mark names.
  * @param {boolean | 'source'} [userOpts.slim=false] - Use `'source'` (recommended for new Vite apps) for the guarded tree-shaken entry, or `true` for the checked single-file prebuilt bundle. Dev/serve keeps full Three for capture.
  * @param {string}  [userOpts.threeVersion] - Override the auto-detected exact three.js package version used in artifact hashes.
@@ -192,7 +200,7 @@ export default function tslPrecompile( userOpts = {} ) {
 	const opts = {
 		artifactsDir: userOpts.artifactsDir || './artifacts',
 		fail: userOpts.fail || 'error',
-		autoMark: !! userOpts.autoMark,
+		autoMark: userOpts.autoMark !== false,
 		autoMarkPrefix: userOpts.autoMarkPrefix || 'auto',
 		slim: normalizeSlimMode( userOpts.slim ),
 		threeVersion: userOpts.threeVersion || null,
@@ -207,67 +215,29 @@ export default function tslPrecompile( userOpts = {} ) {
 	let manifest = null;   // { [name]: { file, hash, entry, mtime } }
 	let auxManifest = null; // { [`<shape>:<configHash>`]: { file, hash, entry, mtime } }
 	let wgslPool = null;    // { strings: string[], refs: Map<string, string> }
+	let manifestLoadGeneration = 0;
+	const devSourceOwners = new Map();
 
 	async function loadManifest() {
 
+		const generation = ++ manifestLoadGeneration;
 		const artifactsDir = resolve( root, opts.artifactsDir );
-		manifest = {};
-		auxManifest = {};
+		const loaded = await loadArtifactDirectory( artifactsDir, isBuild ? {} : {
+			// Capture files and manifest.json are individually atomic, but a
+			// watcher can observe their cross-file transaction midway through:
+			// user recapture may prune a file after a reader took the old
+			// manifest, while aux recapture updates its stable envelope filename
+			// immediately before publishing the new manifest hash.
+			manifestConsistencyRetries: 6,
+			manifestConsistencyRetryDelayMs: 5,
+			allowIncompleteInternalPassFamilies: true,
+		} );
+		// Watcher-triggered reloads can overlap. Never let an older, slower read
+		// replace a newer manifest snapshot.
+		if ( generation !== manifestLoadGeneration ) return manifest;
+		manifest = loaded.manifest;
+		auxManifest = loaded.auxManifest;
 		wgslPool = null;
-
-		if ( ! existsSync( artifactsDir ) ) return manifest;
-
-		const files = await readdir( artifactsDir );
-		for ( const file of files ) {
-
-			if ( ! file.endsWith( '.json' ) ) continue;
-			if ( file === 'manifest.json' ) continue;
-
-			try {
-
-				const raw = await readFile( join( artifactsDir, file ), 'utf8' );
-				const parsed = JSON.parse( raw );
-				const st = await stat( join( artifactsDir, file ) );
-
-				// Aux artifact: carries `__materialShape` + `__configHash`.
-				if ( parsed.__materialShape && parsed.__configHash ) {
-
-					const key = `${ parsed.__materialShape }:${ parsed.__configHash }`;
-					const prev = auxManifest[ key ];
-					if ( prev && prev.mtime > st.mtimeMs ) continue;
-					auxManifest[ key ] = {
-						file,
-						shape: parsed.__materialShape,
-						configHash: parsed.__configHash,
-						hash: parsed.__hash,
-						entry: parsed,
-						mtime: st.mtimeMs,
-					};
-					continue;
-
-				}
-
-				const name = parsed.__name;
-				if ( ! name ) continue;
-
-				const prev = manifest[ name ];
-				if ( prev && prev.mtime > st.mtimeMs ) continue;
-
-				manifest[ name ] = {
-					file,
-					hash: parsed.__hash,
-					entry: parsed,
-					mtime: st.mtimeMs,
-				};
-
-			} catch ( _ ) {
-
-				// Skip unreadable files silently — loud errors belong to the capture endpoint.
-
-			}
-
-		}
-
 		return manifest;
 
 	}
@@ -279,6 +249,7 @@ export default function tslPrecompile( userOpts = {} ) {
 		if ( entry ) assertManifestEntryCompatibility( name, entry );
 		return entry ? {
 			hash: entry.hash,
+			sourceValidationMode: entry.entry && entry.entry.artifact && entry.entry.artifact.sourceValidationMode || null,
 			sourceOwners: Array.isArray( entry.entry && entry.entry.__sourceOwners )
 				? entry.entry.__sourceOwners
 				: null,
@@ -340,6 +311,12 @@ export default function tslPrecompile( userOpts = {} ) {
 		if ( opts.slim === 'prebuilt' && command === 'build' && detected.version !== SLIM_THREE_PACKAGE_VERSION ) {
 
 			throw new Error( `[tsl-precompile] slim build refused: this release's checked-in slim bundle was built against three ${ SLIM_THREE_PACKAGE_VERSION }, but the project resolves three ${ detected.version } from ${ detected.packageRoot }. Pin \"three\": \"${ SLIM_THREE_PACKAGE_VERSION }\" or rebuild/publish a matching @tsl-precompile/runtime slim bundle before enabling \`slim: true\`.` );
+
+		}
+
+		if ( detected.version !== SLIM_THREE_PACKAGE_VERSION ) {
+
+			throw new Error( `[tsl-precompile] unsupported three.js package: this alpha release supports exactly three ${ SLIM_THREE_PACKAGE_VERSION }, but the project resolves three ${ detected.version } from ${ detected.packageRoot }. Pin \"three\": \"${ SLIM_THREE_PACKAGE_VERSION }\" and recapture artifacts before using the plugin.` );
 
 		}
 
@@ -444,8 +421,8 @@ export default function tslPrecompile( userOpts = {} ) {
 			return {
 				resolve: { alias },
 				// Runtime capture cannot recover an npm patch version from
-				// THREE.REVISION (both 0.184.0 and a hypothetical 0.184.1 report
-				// "184"). Expose the exact resolved package identity at compile
+				// THREE.REVISION (both 0.185.0 and 0.185.1 report "185").
+				// Expose the exact resolved package identity at compile
 				// time so marker/setup code can use the same hash input as build.
 				define: {
 					[ THREE_PACKAGE_VERSION_GLOBAL ]: JSON.stringify( detected.version ),
@@ -463,6 +440,7 @@ export default function tslPrecompile( userOpts = {} ) {
 
 			root = config.root;
 			isBuild = config.command === 'build';
+			devSourceOwners.clear();
 			await configureThreeInstallation( root, config.command );
 			await warnIfThreeDependencyIsRanged( root, config );
 			await loadManifest();
@@ -472,7 +450,24 @@ export default function tslPrecompile( userOpts = {} ) {
 		async configureServer( server ) {
 
 			const artifactsRoot = resolve( root, opts.artifactsDir );
-			attachDevCapture( server, { artifactsDir: artifactsRoot } );
+			attachDevCapture( server, {
+				artifactsDir: artifactsRoot,
+				resolveSourceOwner( identity, revision ) {
+
+					const owner = devSourceOwners.get( identity );
+					if ( ! owner || owner.revision !== revision ) {
+
+						const error = new Error(
+							`[tsl-precompile] capture source provenance for ${ JSON.stringify( identity ) } is missing or stale. Reload the transformed owner module before recapturing.`,
+						);
+						error.code = 'EINVAL';
+						throw error;
+
+					}
+					return owner;
+
+				},
+			} );
 			attachInspectorExtensionsShim( server );
 
 			// Re-read manifest when capture files change on disk. The watcher fires
@@ -480,8 +475,15 @@ export default function tslPrecompile( userOpts = {} ) {
 			// this every save anywhere re-reads and re-parses all artifacts.
 			const isArtifactJson = ( file ) =>
 				typeof file === 'string' && file.endsWith( '.json' ) && ( file === artifactsRoot || file.startsWith( artifactsRoot + sep ) );
-			server.watcher.on( 'add', ( file ) => { if ( isArtifactJson( file ) ) loadManifest(); } );
-			server.watcher.on( 'change', ( file ) => { if ( isArtifactJson( file ) ) loadManifest(); } );
+			const reloadManifest = ( file ) => {
+
+				if ( ! isArtifactJson( file ) ) return;
+				void loadManifest().catch( ( error ) => server.config.logger.error( error.message || String( error ) ) );
+
+			};
+			server.watcher.on( 'add', reloadManifest );
+			server.watcher.on( 'change', reloadManifest );
+			server.watcher.on( 'unlink', reloadManifest );
 
 		},
 
@@ -533,22 +535,29 @@ export default function tslPrecompile( userOpts = {} ) {
 
 			if ( ! isTransformable( id ) ) return null;
 
-			// Auto-mark pass: in both dev AND build, when `autoMark` is on,
+			// Auto-mark pass: in both dev AND build unless `autoMark` is disabled,
 			// rewrite every `new *NodeMaterial(...)` to chain
 			// `.precompile('auto-<slug>-<n>')`. The batch harness uses this to
 			// drive unmodified three.js examples through the precompile path.
 			let autoMarked = false;
-			if ( opts.autoMark ) {
+			const autoMarkedNames = new Set();
+			if ( opts.autoMark && isProjectRootModule( id, root ) ) {
 
 				const marked = autoMarkSource( code, { filename: id, root, namePrefix: opts.autoMarkPrefix } );
 				if ( marked.injectedNames.length > 0 ) {
 
 					code = marked.code;
 					autoMarked = true;
+					for ( const name of marked.injectedNames ) autoMarkedNames.add( name );
 
 				}
 
 			}
+
+			const markerBootstrap = isProjectRootModule( id, root )
+				? injectMarkerBootstrapSource( code, { filename: id } )
+				: { code, map: null, touched: false };
+			if ( markerBootstrap.touched ) code = markerBootstrap.code;
 
 			const liveUniformIdentities = instrumentLiveUniformIdentities( code, { filename: id, root } );
 			if ( liveUniformIdentities.touched ) code = liveUniformIdentities.code;
@@ -556,27 +565,105 @@ export default function tslPrecompile( userOpts = {} ) {
 			const contextDependencies = instrumentLiveContextDependencies( code, { filename: id } );
 			if ( contextDependencies.touched ) code = contextDependencies.code;
 
+			let markerSourceProvenance = null;
+			if ( code.includes( '.precompile' ) ) {
+
+				try {
+
+					markerSourceProvenance = await collectMarkerSourceProvenance( {
+						source: code,
+						filename: id,
+						root,
+						resolveDependency: async ( specifier, importer ) => {
+
+							if ( typeof this.resolve === 'function' ) {
+
+								return this.resolve( specifier, importer, { skipSelf: true } );
+
+							}
+							if ( specifier.startsWith( './' ) || specifier.startsWith( '../' ) ) {
+
+								const importerPath = String( importer ).split( /[?#]/, 1 )[ 0 ];
+								return resolve( dirname( importerPath ), specifier );
+
+							}
+							return null;
+
+						},
+						addWatchFile: typeof this.addWatchFile === 'function'
+							? ( file ) => this.addWatchFile( file )
+							: null,
+					} );
+
+				} catch ( error ) {
+
+					this.error( error.message || String( error ) );
+					return null;
+
+				}
+
+			}
+
 			// Dev mode: leave `.precompile()` calls in place so the runtime
 			// marker fires and POSTs to the capture endpoint. Build mode:
 			// rewrite to `__applyPrecompiled`.
 			if ( ! isBuild ) {
 
-				const annotated = annotateDevMarkerSources( code, { filename: id, root } );
-				if ( annotated.touched ) return { code: annotated.code, map: annotated.map };
-				return autoMarked || liveUniformIdentities.touched || contextDependencies.touched ? { code, map: contextDependencies.map || liveUniformIdentities.map } : null;
+				const annotated = annotateDevMarkerSources( code, {
+					filename: id,
+					root,
+					sourceRevision: markerSourceProvenance && markerSourceProvenance.revision,
+				} );
+				if ( annotated.touched ) {
+
+					for ( const owner of annotated.sourceOwners ) {
+
+						devSourceOwners.set( owner.identity, {
+							...owner,
+							provenance: markerSourceProvenance.provenance,
+						} );
+
+					}
+					return { code: annotated.code, map: annotated.map };
+
+				}
+				return autoMarked || markerBootstrap.touched || liveUniformIdentities.touched || contextDependencies.touched
+					? { code, map: contextDependencies.map || liveUniformIdentities.map || markerBootstrap.map }
+					: null;
 
 			}
 
 			try {
 
-					const result = transformSource( code, {
-						filename: id,
-						root,
-						resolveArtifact,
-					} );
+				const result = transformSource( code, {
+					filename: id,
+					root,
+					sourceRevision: markerSourceProvenance && markerSourceProvenance.revision,
+					sourceProvenance: markerSourceProvenance && markerSourceProvenance.provenance.dependencies.length > 0
+						? markerSourceProvenance.provenance
+						: null,
+					resolveArtifact,
+					// Full Three keeps its live NodeMaterial/compiler. Only slim
+					// modes adopt the replay material and hydrate captured WGSL.
+					applyImportSpecifier: opts.slim
+						? '@tsl-precompile/runtime/apply'
+						: '@tsl-precompile/runtime/apply/full',
+					// Compatibility mode can retain the exact live NodeMaterial.
+					// Recover only a missing artifact, one marker at a time:
+					// auto-generated discovery markers always recover here, while
+					// authored markers require the explicit warning policy. Slim
+					// modes never reach this branch with `fail: "warn"`.
+					shouldFallbackMissingArtifact: ( name, marker ) =>
+						! opts.slim && ( ( marker.autoMarked && autoMarkedNames.has( name ) ) || opts.fail === 'warn' ),
+				} );
+				for ( const missing of result.missingArtifacts ) this.warn( missing.message );
 
 				let outputCode = result.code;
-				let touched = result.touchedNames.length > 0 || liveUniformIdentities.touched || contextDependencies.touched;
+				let touched = result.touchedNames.length > 0
+					|| result.missingArtifacts.length > 0
+					|| markerBootstrap.touched
+					|| liveUniformIdentities.touched
+					|| contextDependencies.touched;
 				// Inject the aux-artifact registry virtual module in any production build,
 				// not just slim mode. Without this, captured background / PMREM / post-process
 				// artifacts on disk are never registered in the bundle, and the precompiled
@@ -592,13 +679,8 @@ export default function tslPrecompile( userOpts = {} ) {
 
 			} catch ( err ) {
 
-				if ( opts.fail === 'warn' ) {
-
-					this.warn( err.message );
-					return null;
-
-				}
 				this.error( err.message );
+				return null;
 
 			}
 
@@ -694,14 +776,15 @@ export default function tslPrecompile( userOpts = {} ) {
 				}
 				const auxEntries = entries.map( ( e ) => {
 
+					if ( isBuild ) assertCapturedAuxiliaryCompatibility( `${ e.shape }:${ e.configHash }`, e.entry, opts.threeVersion );
 					const artifact = e.entry && e.entry.artifact ? e.entry.artifact : e.entry;
 					const name = e.entry && ( e.entry.__name || e.entry.name ) || artifact && ( artifact.__name || artifact.name ) || null;
 					return {
 						shape: e.shape,
 						configHash: e.configHash,
 						name,
-						threeVersion: opts.threeVersion,
-						pluginVersion: PLUGIN_VERSION,
+						threeVersion: e.entry.threeVersion || opts.threeVersion,
+						pluginVersion: e.entry.pluginVersion || PLUGIN_VERSION,
 						artifact,
 					};
 
@@ -714,13 +797,21 @@ export default function tslPrecompile( userOpts = {} ) {
 					externalWgslRefs: buildWgslPool().refs,
 				} );
 				const usedWgslPoolRefs = getExternalWgslRefIdentifiers( auxEntriesLiteral );
-				const materializeAttributeDescriptors = artifactNeedsAttributeDescriptorMaterialization( auxEntries );
-				const materializeVariantSelectorAdapter = artifactNeedsVariantSelectorAdapterMaterialization( auxEntries );
+				// Full Three compiles its live aux graphs and keeps these records only
+				// for diagnostics. Replay materializers belong exclusively to slim;
+				// importing them in full mode would create a second Three source graph.
+				const materializeForReplay = ! isBuild || Boolean( opts.slim );
+				const materializeAttributeDescriptors = materializeForReplay && artifactNeedsAttributeDescriptorMaterialization( auxEntries );
+				const materializeVariantSelectorAdapter = materializeForReplay && artifactNeedsVariantSelectorAdapterMaterialization( auxEntries );
 				const lines = [];
 				// Capture/dev always runs against full Three. Routing this virtual
 				// module to the build-only slim source entry makes every dev page
 				// with captured aux data fail before its first render.
-				const runtimeModule = isBuild ? slimRuntimeEntryForMode( opts.slim ) : '@tsl-precompile/runtime';
+				const runtimeModule = isBuild
+					? opts.slim
+						? slimRuntimeEntryForMode( opts.slim )
+						: '@tsl-precompile/runtime/aux-registry'
+					: '@tsl-precompile/runtime';
 				lines.push( `import { registerAuxArtifacts } from ${ JSON.stringify( runtimeModule ) };` );
 				if ( materializeAttributeDescriptors ) lines.push( `import { materializeArtifactAttributeDescriptors as __tslp_materializeAttributes } from ${ JSON.stringify( ATTRIBUTE_DESCRIPTOR_MATERIALIZER_IMPORT ) };` );
 				if ( materializeVariantSelectorAdapter ) lines.push( `import { materializeArtifactVariantSelectorAdapters as __tslp_materializeVariantSelectors } from ${ JSON.stringify( VARIANT_SELECTOR_ADAPTER_MATERIALIZER_IMPORT ) };` );
@@ -748,6 +839,7 @@ export default function tslPrecompile( userOpts = {} ) {
 			assertManifestEntryCompatibility( name, entry );
 			const { source, unsupportedKinds } = emitArtifactModule( entry, entry.entry, {
 				...opts,
+				replay: Boolean( opts.slim ),
 				externalWgslRefs: buildWgslPool().refs,
 			} );
 
@@ -776,23 +868,9 @@ export default function tslPrecompile( userOpts = {} ) {
 
 			}
 
-			if ( blocked.length > 0 ) {
-
-				const staticBlocked = blocked.filter( ( b ) => b.isStaticSnapshot );
-				const liveBlocked = blocked.filter( ( b ) => ! b.isStaticSnapshot );
-
-				if ( staticBlocked.length > 0 ) {
-
-					this.warn( `[tsl-precompile] artifact "${ name }" has ${ staticBlocked.length } static-snapshot uniform slot(s) (${ staticBlocked.map( ( b ) => b.kind ).join( ', ' ) }) — these are provably-static values like identity texture-sampler matrices that don't animate by design. Safe to ignore.` );
-
-				}
-				if ( liveBlocked.length > 0 ) {
-
-					this.warn( `[tsl-precompile] artifact "${ name }" has ${ liveBlocked.length } not-yet-animated kind(s) (${ liveBlocked.map( ( b ) => b.kind ).join( ', ' ) }). The updater ships a frozen-snapshot fallback — frame-0 visual is correct, but values from these kinds won't animate over time. Track support at packages/examples/batch/results/coverage-summary.md.` );
-
-				}
-
-			}
+			for ( const warning of formatBlockedKindWarnings( name, blocked, {
+				replay: Boolean( opts.slim ),
+			} ) ) this.warn( warning );
 
 			return source;
 
@@ -827,7 +905,11 @@ function assertCapturedArtifactCompatibility( name, entry, currentThreeVersion )
 		.some( ( key ) => nested[ key ] !== undefined ) ? nested : entry;
 	const hasSourceMetadata = metadata && [ 'sourceGraphHash', 'sourceHashVersion', 'sourceThreeVersion', 'renderContextSignature' ]
 		.some( ( key ) => metadata[ key ] !== undefined );
-	if ( ! hasSourceMetadata ) return; // Legacy artifacts retain the module-hash gate.
+	if ( ! hasSourceMetadata ) {
+
+		throw new Error( `[tsl-precompile] artifact ${ JSON.stringify( name ) } is unsigned or missing source-hash provenance. Recapture it with the current plugin.` );
+
+	}
 
 	if ( typeof metadata.sourceGraphHash !== 'string' || ! /^[a-f0-9]{64}$/i.test( metadata.sourceGraphHash ) ) {
 
@@ -849,25 +931,52 @@ function assertCapturedArtifactCompatibility( name, entry, currentThreeVersion )
 		throw new Error( `[tsl-precompile] artifact ${ JSON.stringify( name ) } was captured with three ${ metadata.sourceThreeVersion }, but this build resolves three ${ currentThreeVersion }. Recapture it before building.` );
 
 	}
-	if ( nested && nested.artifactContentHashVersion !== undefined ) {
+	if ( nested ) assertArtifactContentIntegrity( nested, entry.__hash, {
+		label: `[tsl-precompile] artifact ${ JSON.stringify( name ) }`,
+		shape: `material:${ name }`,
+		threeVersion: metadata.sourceThreeVersion,
+		pluginVersion: metadata.sourceHashVersion,
+		required: true,
+	} );
 
-		if ( nested.artifactContentHashVersion !== ARTIFACT_CONTENT_HASH_VERSION ) {
+}
 
-			throw new Error( `[tsl-precompile] artifact ${ JSON.stringify( name ) } uses unsupported content-hash version ${ nested.artifactContentHashVersion }. Recapture it.` );
+function assertCapturedAuxiliaryCompatibility( key, entry, currentThreeVersion ) {
 
-		}
-		const computed = computeArtifactContentHash( nested, {
-			shape: `material:${ name }`,
-			threeVersion: metadata.sourceThreeVersion,
-			pluginVersion: metadata.sourceHashVersion,
-		} );
-		if ( entry.__hash !== computed ) {
+	const artifact = entry && entry.artifact && typeof entry.artifact === 'object' ? entry.artifact : null;
+	if ( typeof entry.threeVersion !== 'string' || entry.threeVersion.length === 0 ||
+		typeof entry.pluginVersion !== 'string' || entry.pluginVersion.length === 0 ) {
 
-			throw new Error( `[tsl-precompile] artifact ${ JSON.stringify( name ) } content does not match its stored __hash. The artifact file is corrupt or was edited; recapture it.` );
-
-		}
+		throw new Error( `[tsl-precompile] auxiliary artifact ${ JSON.stringify( key ) } is missing exact Three/toolchain provenance. Run dev mode to recapture it before building.` );
 
 	}
+	if ( entry.pluginVersion !== PLUGIN_VERSION ) {
+
+		throw new Error( `[tsl-precompile] auxiliary artifact ${ JSON.stringify( key ) } uses toolchain ${ entry.pluginVersion }, but this build requires ${ PLUGIN_VERSION }. Recapture it.` );
+
+	}
+	if ( currentThreeVersion && entry.threeVersion !== currentThreeVersion ) {
+
+		throw new Error( `[tsl-precompile] auxiliary artifact ${ JSON.stringify( key ) } was captured with three ${ entry.threeVersion }, but this build resolves three ${ currentThreeVersion }. Recapture it before building.` );
+
+	}
+	if ( ! artifact || artifact.sourceThreeVersion !== entry.threeVersion ) {
+
+		throw new Error( `[tsl-precompile] auxiliary artifact ${ JSON.stringify( key ) } has conflicting envelope and artifact Three provenance. Recapture it.` );
+
+	}
+	if ( ! artifact || artifact.sourceHashVersion !== entry.pluginVersion ) {
+
+		throw new Error( `[tsl-precompile] auxiliary artifact ${ JSON.stringify( key ) } has conflicting envelope and artifact toolchain provenance. Recapture it.` );
+
+	}
+	assertArtifactContentIntegrity( artifact, entry.__hash, {
+		label: `[tsl-precompile] auxiliary artifact ${ JSON.stringify( key ) }`,
+		shape: entry.__materialShape,
+		threeVersion: entry.threeVersion,
+		pluginVersion: entry.pluginVersion,
+		required: true,
+	} );
 
 }
 
@@ -1025,7 +1134,7 @@ async function detectThreeInstallation( root ) {
 
 	}
 
-	throw new Error( `[tsl-precompile] could not locate the consumer three/package.json or resolve three/webgpu from ${ root }. Install three >= 0.184.0 as a project dependency. Checked: ${ attempted.join( ', ' ) }.` );
+	throw new Error( `[tsl-precompile] could not locate the consumer three/package.json or resolve three/webgpu from ${ root }. Install exactly three@${ SLIM_THREE_PACKAGE_VERSION } as a project dependency. Checked: ${ attempted.join( ', ' ) }.` );
 
 }
 
@@ -1105,7 +1214,7 @@ function assertExactThreePackageVersion( version, source ) {
 	const match = typeof version === 'string' && version.match( /^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/ );
 	if ( ! match ) {
 
-		throw new Error( `[tsl-precompile] expected an exact three.js package version such as \"0.184.0\" from ${ source }, received ${ JSON.stringify( version ) }.` );
+		throw new Error( `[tsl-precompile] expected an exact three.js package version such as \"${ SLIM_THREE_PACKAGE_VERSION }\" from ${ source }, received ${ JSON.stringify( version ) }.` );
 
 	}
 	const major = Number.parseInt( match[ 1 ], 10 );

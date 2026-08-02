@@ -41,6 +41,7 @@ import {
 } from './postprocess-effects.js';
 import { wireLiveNodeSidecarsToArtifact } from './live-node-sidecars.js';
 import { rememberPreparedPostprocessResources } from './postprocess-resource-refresh.js';
+import { installVelocityProjectionLifecycle } from './velocity-projection-lifecycle.js';
 
 export { wireLiveNodeSidecarsToArtifact } from './live-node-sidecars.js';
 export { refreshPreparedPostprocessResources } from './postprocess-resource-refresh.js';
@@ -98,6 +99,11 @@ export function preparePrecompiledPostprocess( args = {} ) {
 		return { effects: 0, prepared: [], missed: [ { shape: '*', reason: 'no outputNode passed' } ] };
 
 	}
+	// TAAU deliberately has no aux-material effect handler, but generated
+	// velocity writers still need its unjittered current projection. Install
+	// that lifecycle before handler discovery so it is independent of which
+	// effect families happen to have precompiled sub-passes.
+	installVelocityProjectionLifecycle( root );
 
 	const matches = collectEffectNodes( root );
 	const allPrepared = [];

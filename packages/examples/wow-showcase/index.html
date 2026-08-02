@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en" data-view="gallery">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<meta name="theme-color" content="#07080b">
+		<meta name="description" content="Explore ten immersive WebGPU worlds—from endurance racing and spatial design to deep-sea discovery and orbital travel.">
+		<title>WOW / 10 — Ten immersive WebGPU worlds</title>
+		<link rel="stylesheet" href="./src/styles.css">
+	</head>
+	<body class="gallery-page">
+		<a class="skip-link" href="#gallery">Skip to the worlds</a>
+		<main class="gallery-shell">
+			<header class="gallery-header">
+				<div>
+					<p class="gallery-kicker">A WebGPU anthology</p>
+					<h1>Ten small sites.<br>Ten impossible worlds.</h1>
+				</div>
+				<p class="gallery-intro">
+					Race after midnight. Sculpt a new dimension. Meet minds that moved history.
+					Every chapter has its own art direction and a real precompiled TSL material
+					system—alive in the browser without the shader compiler.
+				</p>
+			</header>
+			<section id="gallery" aria-labelledby="gallery-title">
+				<h2 id="gallery-title" class="visually-hidden">Choose an experience</h2>
+				<div class="gallery-grid" data-gallery-grid></div>
+			</section>
+			<footer class="gallery-footer">
+				<span>10 experiences / 20 compiled materials / one shared engine</span>
+				<span>Move slowly. Pick boldly. ↗</span>
+			</footer>
+		</main>
+		<script type="module" src="./src/gallery.js"></script>
+	</body>
+</html>

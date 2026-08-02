@@ -6,6 +6,7 @@
  */
 
 import { createRendererOutputConfig } from '@tsl-precompile/contract/output-config';
+import { collectArtifactVariantCandidates } from '@tsl-precompile/contract/artifact-variants';
 import PrecompiledMaterial from './_vendor-PrecompiledMaterial.js';
 import {
 	cloneAuxArtifactForReplay,
@@ -67,7 +68,11 @@ export function createReplayRenderOutputMaterial( renderer, outputTexture, previ
 
 	}
 	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
-	refs.set( sampledSource.uuid, outputTexture );
+	for ( const candidate of collectArtifactVariantCandidates( artifact ) ) {
+
+		refs.set( rendererOutputSampledSource( candidate ).uuid, outputTexture );
+
+	}
 	Object.defineProperty( artifact, '_textureRefs', {
 		value: refs,
 		enumerable: false,

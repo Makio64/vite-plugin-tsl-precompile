@@ -4,4 +4,12 @@ export {
 	textureImageReady,
 	textureImageSrc,
 	healTextureImage,
-} from '../index';
+} from '../index.js';
+
+export function newFallbackTextureImage(): {
+	data: Uint8Array;
+	width: 1;
+	height: 1;
+};
+
+export function basenameFromUrl( value: unknown ): string;

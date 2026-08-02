@@ -1,5 +1,5 @@
 /**
- * Mirror Three r184's RenderList transparent/opaque split for pass-scoped
+ * Mirror Three r185's RenderList transparent/opaque split for pass-scoped
  * artifact preparation. Materials excluded by a PassNode must not be
  * retargeted merely to satisfy that pass's MRT output count.
  */

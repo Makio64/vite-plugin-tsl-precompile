@@ -22,7 +22,10 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
-import { getSlimRewriteRuntimeModuleRule, rewriteThreeSource } from '../plugin/src/three-rewrite.js';
+import {
+	getSlimRewriteRuntimeModuleRule,
+	rewriteThreeSource,
+} from 'vite-plugin-tsl-precompile/build/slim-rewrite';
 import {
 	SLIM_BUNDLE_FILE_NAME,
 	SLIM_BUNDLE_METADATA_FILE_NAME,
@@ -40,7 +43,6 @@ import {
 	SLIM_THREE_REPLAY_ADAPTER_MODULES,
 	getSlimThreeCompilerModule,
 	getSlimThreeReplayAdapterModule,
-	getSlimThreeRewriteTarget,
 } from '@tsl-precompile/contract/slim-three-policy';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import {
@@ -56,7 +58,9 @@ const __dirname = dirname( fileURLToPath( import.meta.url ) );
 const requireFromRuntime = createRequire( import.meta.url );
 const threePackageRoot = dirname( dirname( requireFromRuntime.resolve( 'three/src/constants.js' ) ) );
 const contractPackageRoot = dirname( dirname( requireFromRuntime.resolve( '@tsl-precompile/contract/slim-three-policy' ) ) );
-const pluginPackageRoot = resolve( __dirname, '../plugin' );
+const pluginPackageRoot = dirname( dirname(
+	requireFromRuntime.resolve( 'vite-plugin-tsl-precompile/build/slim-rewrite' ),
+) );
 
 export const SLIM_BUNDLE_VERSIONS = createSlimBundleVersionIdentity( {
 	threeVersion: SLIM_THREE_PACKAGE_VERSION,
@@ -70,6 +74,9 @@ export const SLIM_BUNDLE_SOURCE_INPUTS = createSlimBundleSourceInputs( {
 	contractPackageRoot,
 	pluginPackageRoot,
 } );
+
+export const SLIM_BUNDLE_THREE_LICENSE_BANNER =
+	'/*! @license three.js r185 MIT; see THIRD_PARTY_NOTICES.md */';
 
 /**
  * Modules that belong to runtime shader compilation rather than replay.
@@ -191,39 +198,13 @@ const slimRewriteRuntimeModules = {
 };
 
 /**
- * Sever the WebGL fallback backend from the slim bundle.
- *
- * `WebGPURenderer.js` statically imports `WebGLBackend`, which transitively
- * drags in the entire `renderers/webgl-fallback/**` subtree — a second
- * (GLSL) shader compiler `GLSLNodeBuilder`, every `WebGL*Utils`, and the
- * legacy GLSL ShaderChunk strings. slim is WebGPU-only and never instantiates
- * that backend (it is referenced only under `forceWebGL` / the WebGPU-
- * unavailable fallback closure). Redirecting the single import entry point to
- * a throwing stub removes the whole subtree. Must run before `nodeResolve`.
- */
-const webglFallbackStub = {
-	name: 'tsl-precompile:stub-webgl-fallback',
-	resolveId( id, importer ) {
-
-		if ( getSlimThreeRewriteTarget( id, importer )?.id === 'webgl-backend' ) {
-
-			return resolve( __dirname, 'src/slim-stub-webgl-backend.js' );
-
-		}
-		return null;
-
-	},
-};
-
-/**
  * Sever Three's runtime PMREM compiler path from the slim bundle.
  *
- * PMREMGenerator constructs four internal NodeMaterials and compiles them on
- * demand. A precompiled-only renderer cannot execute that path; real users
- * run PMREM on the lazily loaded full renderer through slim-support. Keep a
- * small API-compatible shell so application wrappers can still construct or
- * subclass PMREMGenerator, while removing the unreachable materials/compiler
- * subtree from the shipped bundle. Must run before nodeResolve.
+ * PMREMGenerator constructs private materials and compiles them on demand.
+ * The replacement keeps Three's atlas geometry and schedule but resolves exact
+ * captured `internal-pass@1` programs for source conversion, blur, and GGX.
+ * This removes the compiler subtree while preserving compiler-free PMREM on
+ * the slim renderer. Must run before nodeResolve.
  */
 const pmremGeneratorStub = {
 	name: 'tsl-precompile:stub-pmrem-generator',
@@ -327,10 +308,12 @@ const threeBareAlias = {
 };
 
 /**
- * Add a source-input stamp after minification, then emit the SHA-256 of that
- * final stamped chunk in an adjacent sidecar. The final hash cannot be
- * embedded in the chunk without becoming self-referential, so the stamp and
- * sidecar cross-check the shared source fingerprint instead.
+ * Add a source-input stamp and the redistributed Three license pointer after
+ * minification, then emit the SHA-256 of that final chunk in an adjacent
+ * sidecar. The provenance stamp deliberately remains first because readers
+ * parse it at byte zero. The final hash cannot be embedded in the chunk
+ * without becoming self-referential, so the stamp and sidecar cross-check the
+ * shared source fingerprint instead.
  *
  * `source` is injectable for focused in-memory Rollup tests. Production builds
  * lazily hash the exact shared input scope above and never write intermediate
@@ -371,7 +354,10 @@ export function createSlimBundleProvenancePlugin( {
 					sourceFingerprint: sourceDescriptor.fingerprint,
 					versions,
 				} );
-				return { code: `${ stamp }\n${ code }`, map: null };
+				return {
+					code: `${ stamp }\n${ SLIM_BUNDLE_THREE_LICENSE_BANNER }\n${ code }`,
+					map: null,
+				};
 
 			},
 		},
@@ -496,7 +482,6 @@ export default {
 		runtimeAliasPlugin,
 		slimRewriteRuntimeModules,
 		auxVirtualStub,
-		webglFallbackStub,
 		pmremGeneratorStub,
 		replayBackgroundAdapter,
 		replayLightingAdapter,

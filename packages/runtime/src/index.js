@@ -17,7 +17,7 @@ export {
 	hashArtifactContentSync,
 } from './graph-hash.js';
 export { precompileAuxiliary } from './aux-marker.js';
-export { registerAuxArtifact, registerAuxArtifacts, loadAux, hasAux, listAux, findAux, bindAuxConfig, bindAuxByName, resolveAuxArtifactForInput, cloneAuxArtifactForReplay, attachArtifactTextureRefs, attachPostprocessTextureRefs, attachPostprocessUpdateBeforeNodes, attachPostprocessObject3DTargets, __resetAuxRegistryForTests } from './aux-loader.js';
+export { registerAuxArtifact, registerAuxArtifacts, loadAux, hasAux, listAux, findAux, bindAuxConfig, bindAuxByName, resolveAuxArtifactForInput, cloneAuxArtifactForReplay, attachArtifactTextureRefs, attachPostprocessTextureRefs, attachPostprocessUpdateBeforeNodes, attachPostprocessObject3DTargets } from './aux-loader.js';
 export { getReplayRenderOutputCacheKey, createReplayRenderOutputMaterial, createReplayRenderPipelineMaterial } from './slim-replay-output.js';
 export { hydrateNodeBuilderState, registerLiveTexture, clearLiveTextureIndex, installTextureLoaderTracking } from './hydrator.js';
 export { getTextureResolutionDebugHook, setTextureResolutionDebugHook } from './hydrate/artifact-texture-resolver.js';
@@ -25,10 +25,12 @@ export { getDFGLUT } from './dfg-lut.js';
 export { createLiveSceneIndex, collectMaterialNodeTextures, textureImageReady, textureImageSrc, healTextureImage } from './slim-support/live-scene-index.js';
 export { PMREM_CUBE_UV_MAPPING, isCubeTextureSource, isEnvironmentTextureSource, isPMREMTexture, isPMREMArtifactTextureSource, artifactNeedsPMREM, artifactPMREMSourceUuids, attachPMREMRefsByOrder, collectPMREMSourceTexturesInNode, collectPMREMSourceTexturesFromMaterial, selectPMREMTexturesForArtifact, createPMREMSupport } from './slim-support/pmrem.js';
 export { clearTextureViewCache, invalidateTextureResourceBindings, markTextureInitialized, shareGPUTextureEntry, sharePMREMGPUTexture, shareShadowGPUTextureIntoSlim } from './slim-support/gpu-texture-share.js';
-export { textureMatchesSource, textureMatchesArtifactSource, artifactHasTextureSource, countArtifactTextureSources, singleArtifactTextureUuid, attachArtifactTextureRefsByShapeOrder, attachTextureRefsWhere, attachArtifactTextureRefsWhere, rewritePassDepthTextureSources } from './slim-support/artifact-texture-wiring.js';
-export { getComputeBindGroups, computeNodeUsesStorageTexture, computeSyncNeedsPresentation, shareComputeSampledInputs, syncComputeStorageOutputs, syncComputeStorageOutputsPerPass, wireArtifactStorageBuffersFromAttributes, pingPongInvalidate, shareInstancedAttributeBufferIntoSlim } from './slim-support/compute-sync.js';
+export { textureMatchesSource, textureMatchesArtifactSource, artifactHasTextureSource, countArtifactTextureSources, singleArtifactTextureUuid, attachArtifactTextureRefsByShapeOrder, attachTextureRefsWhere, attachArtifactTextureRefsWhere, attachExactMaterialGraphDepthTextureRefs, rewritePassDepthTextureSources } from './slim-support/artifact-texture-wiring.js';
+export { InternalPassBindingError, cloneInternalPassArtifact, bindInternalPassArtifact, createInternalPassMaterial } from './slim-support/internal-pass.js';
+export { getComputeBindGroups, computeNodeUsesStorageTexture, computeSyncNeedsPresentation, invokeAlignedFullCompute, syncComputeRendererSize, shareComputeSampledInputs, syncComputeStorageOutputs, syncComputeStorageOutputsPerPass, wireArtifactStorageBuffersFromAttributes, pingPongInvalidate, shareInstancedAttributeBufferIntoSlim } from './slim-support/compute-sync.js';
 export { AUTO_COMPUTE_MATERIAL_PROPERTIES, MATERIAL_COMPUTE_BINDINGS, AutoComputeBindingError, collectMaterialComputeBindings, collectWritableComputeStorageAttributes, artifactHasUnwiredAnonymousComputeAttribute, prepareMaterialComputeAttributes, applyMaterialComputeAttributeBindings, invalidateMaterialComputeBindings, createAutoComputeDispatcher } from './slim-support/auto-compute.js';
 export { createFullRendererFallback } from './slim-support/full-renderer-fallback.js';
+export { createPrecompiledShadowSupport } from './slim-support/precompiled-shadows.js';
 export { createSlimSceneSupport, pinClock, unpinClock } from './slim-support/scene-support.js';
 export { TemporalFrameIdentityError, createTemporalNodeFrame, getTemporalFrameState, logicalFrameKey, shouldAdvanceTemporalState, withTemporalFrame } from './slim-support/temporal-frame.js';
 export { POSTPROCESS_FRAME_ROLES, createPostprocessFrameScheduler } from './slim-support/postprocess-frame-scheduler.js';

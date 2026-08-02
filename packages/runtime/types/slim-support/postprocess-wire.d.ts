@@ -1,4 +1,4 @@
-import type { EffectHandler } from './postprocess-effects.d.ts';
+import type { EffectHandler } from './postprocess-effects.js';
 
 export type PostprocessWireMiss = {
 	shape: string;

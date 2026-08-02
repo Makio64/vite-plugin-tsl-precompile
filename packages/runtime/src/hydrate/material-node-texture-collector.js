@@ -1,4 +1,5 @@
 import { MATERIAL_NODE_TEXTURE_KEYS } from '@tsl-precompile/contract/texture-props';
+import { walkNodeGraphUnique } from '../slim-support/node-graph-walker.js';
 
 export function collectMaterialNodeTextures( material, nodeKeys = MATERIAL_NODE_TEXTURE_KEYS ) {
 
@@ -14,26 +15,7 @@ export function collectMaterialNodeTextures( material, nodeKeys = MATERIAL_NODE_
 
 	}
 
-	function walk( node, depth = 0 ) {
-
-		if ( ! node || node.isNode !== true || depth > 32 || seenNodes.has( node ) ) return;
-		seenNodes.add( node );
-		visitTexture( node.value );
-		visitTexture( node._value );
-
-		if ( typeof node.traverse === 'function' ) {
-
-			try {
-
-				node.traverse( ( child ) => {
-
-					if ( child && child !== node ) walk( child, depth + 1 );
-
-				} );
-
-			} catch ( _ ) {}
-
-		}
+	function visitNode( node ) {
 
 		let keys = [];
 		try {
@@ -61,13 +43,11 @@ export function collectMaterialNodeTextures( material, nodeKeys = MATERIAL_NODE_
 			}
 			if ( ! value ) continue;
 			visitTexture( value );
-			if ( value.isNode === true ) walk( value, depth + 1 );
-			else if ( Array.isArray( value ) ) {
+			if ( Array.isArray( value ) ) {
 
 				for ( const item of value ) {
 
 					if ( item && item.isTexture === true ) visitTexture( item );
-					else if ( item && item.isNode === true ) walk( item, depth + 1 );
 
 				}
 
@@ -76,7 +56,6 @@ export function collectMaterialNodeTextures( material, nodeKeys = MATERIAL_NODE_
 				for ( const item of Object.values( value ) ) {
 
 					if ( item && item.isTexture === true ) visitTexture( item );
-					else if ( item && item.isNode === true ) walk( item, depth + 1 );
 
 				}
 
@@ -88,7 +67,7 @@ export function collectMaterialNodeTextures( material, nodeKeys = MATERIAL_NODE_
 
 	if ( material ) {
 
-		for ( const key of nodeKeys ) walk( material[ key ] );
+		for ( const key of nodeKeys ) walkNodeGraphUnique( material[ key ], visitNode, { seen: seenNodes } );
 
 	}
 

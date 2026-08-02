@@ -24,6 +24,7 @@ import {
 	materialComputeBindingStore as materialBindingStore,
 	materialComputeLayoutKey as entryLayoutKey,
 } from '../hydrate/material-compute-bindings.js';
+import { walkNodeGraphUnique } from './node-graph-walker.js';
 
 export { MATERIAL_COMPUTE_BINDINGS, applyMaterialComputeAttributeBindings } from '../hydrate/material-compute-bindings.js';
 
@@ -86,20 +87,7 @@ function sourceMaterialFor( material ) {
 function visitNodeTree( root, visitor ) {
 
 	if ( ! root || root.isNode !== true ) return;
-	const seen = new Set();
-	const visit = ( node ) => {
-
-		if ( ! node || seen.has( node ) ) return;
-		seen.add( node );
-		visitor( node );
-
-	};
-	visit( root );
-	if ( typeof root.traverse === 'function' ) {
-
-		try { root.traverse( visit ); } catch ( _ ) { /* custom node traversal is optional */ }
-
-	}
+	walkNodeGraphUnique( root, visitor );
 
 }
 

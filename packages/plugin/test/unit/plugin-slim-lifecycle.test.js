@@ -7,7 +7,6 @@ import { build as viteBuild } from 'vite';
 
 import tslPrecompile from '../../src/index.js';
 import { autoMarkSource } from '../../src/auto-mark.js';
-import { annotateDevMarkerSources } from '../../src/babel-transform.js';
 import { SLIM_REWRITE_RUNTIME_MODULE_RULES, isThreeRewriteTarget } from '../../src/three-rewrite.js';
 import { computeArtifactContentHash } from '../../src/hash.js';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
@@ -38,7 +37,7 @@ const GENERATED_RUNTIME_HELPER_IMPORTS = Object.freeze( [
 const STATELESS_ATTRIBUTE_MATERIALIZER = '@tsl-precompile/contract/attribute-generators';
 const STATELESS_VARIANT_SELECTOR_MATERIALIZER = '@tsl-precompile/contract/variant-selector-adapter';
 
-async function makeProject( threeVersion = '0.184.0', { provenance = false, bundleBody = null } = {} ) {
+async function makeProject( threeVersion = '0.185.1', { provenance = false, bundleBody = null } = {} ) {
 
 	const root = await mkdtemp( join( tmpdir(), 'tslp-slim-lifecycle-' ) );
 	const threeRoot = join( root, 'node_modules/three' );
@@ -133,6 +132,35 @@ function context() {
 
 }
 
+async function writeSignedMaterialArtifact( fixture, name = 'mode-material' ) {
+
+	const artifactsDir = join( fixture.root, 'artifacts' );
+	await mkdir( artifactsDir, { recursive: true } );
+	const artifact = {
+		artifactContentHashVersion: ARTIFACT_CONTENT_HASH_VERSION,
+		vertexShader: 'captured vertex',
+		fragmentShader: 'captured fragment',
+		bindings: [],
+		uniformPlan: [],
+		sourceGraphHash: 'b'.repeat( 64 ),
+		sourceHashVersion: ARTIFACT_TOOLCHAIN_VERSION,
+		sourceThreeVersion: fixture.threeVersion,
+		renderContextSignature: '',
+	};
+	const hash = computeArtifactContentHash( artifact, {
+		shape: `material:${ name }`,
+		threeVersion: fixture.threeVersion,
+		pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
+	} );
+	await writeFile( join( artifactsDir, `${ name }.json` ), JSON.stringify( {
+		__name: name,
+		__hash: hash,
+		artifact,
+	} ) );
+	return hash;
+
+}
+
 async function buildRealSlimSourceFixture( mainSource ) {
 
 	const root = await realpath( await mkdtemp( join( tmpdir(), 'tslp-source-vite-' ) ) );
@@ -147,7 +175,7 @@ async function buildRealSlimSourceFixture( mainSource ) {
 			name: 'source-build-fixture',
 			private: true,
 			type: 'module',
-			dependencies: { three: '0.184.0', '@tsl-precompile/runtime': '0.1.0' },
+			dependencies: { three: '0.185.1', '@tsl-precompile/runtime': '0.1.0' },
 		} ) );
 		await writeFile( join( root, 'index.html' ), '<script type="module" src="/src/main.js"></script>\n' );
 		await mkdir( join( root, 'src' ), { recursive: true } );
@@ -200,6 +228,49 @@ test( 'non-slim serve does not request an unused renderer-output capture', async
 
 } );
 
+test( 'build transform selects live full apply and replay apply for both slim modes', async () => {
+
+	for ( const mode of [ false, 'source', true ] ) {
+
+		const fixture = await makeProject( '0.185.1', { provenance: mode === true } );
+		try {
+
+			await writeSignedMaterialArtifact( fixture );
+			const plugin = tslPrecompile( mode === false ? {} : { slim: mode } );
+			await plugin.config( { root: fixture.root }, { command: 'build' } );
+			await plugin.configResolved( {
+				root: fixture.root,
+				command: 'build',
+				logger: { warn() {} },
+			} );
+			const transformed = await plugin.transform.call(
+				context(),
+				"const material = createMaterial(); material.precompile('mode-material');",
+				join( fixture.root, 'src/material.js' ),
+			);
+			assert.ok( transformed );
+			if ( mode === false ) {
+
+				assert.match( transformed.code, /from "@tsl-precompile\/runtime\/apply\/full"/ );
+				assert.doesNotMatch( transformed.code, /from "@tsl-precompile\/runtime\/apply"/ );
+
+			} else {
+
+				assert.match( transformed.code, /from "@tsl-precompile\/runtime\/apply"/ );
+				assert.doesNotMatch( transformed.code, /from "@tsl-precompile\/runtime\/apply\/full"/ );
+
+			}
+
+		} finally {
+
+			await rm( fixture.root, { recursive: true, force: true } );
+
+		}
+
+	}
+
+} );
+
 test( 'slim serve keeps full three.js for capture and injects the exact package version', async () => {
 
 	const fixture = await makeProject();
@@ -211,7 +282,7 @@ test( 'slim serve keeps full three.js for capture and injects the exact package 
 		assert.equal( config.resolve.alias.some( ( alias ) => aliasMatches( alias, 'three/tsl' ) ), false );
 		assert.equal( config.resolve.alias.some( ( alias ) => aliasMatches( alias, 'three' ) ), false );
 		for ( const id of GENERATED_RUNTIME_HELPER_IMPORTS ) assert.equal( config.resolve.alias.some( ( alias ) => aliasMatches( alias, id ) ), false, id );
-		assert.equal( config.define[ 'globalThis.__TSLP_THREE_PACKAGE_VERSION__' ], '"0.184.0"' );
+		assert.equal( config.define[ 'globalThis.__TSLP_THREE_PACKAGE_VERSION__' ], '"0.185.1"' );
 		assert.equal( config.define[ 'globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__' ], 'true' );
 
 		await plugin.configResolved( {
@@ -231,7 +302,7 @@ test( 'slim serve keeps full three.js for capture and injects the exact package 
 
 test( 'slim build aliases public three entries but full-three bypasses the alias', async () => {
 
-	const fixture = await makeProject( '0.184.0', { provenance: true } );
+	const fixture = await makeProject( '0.185.1', { provenance: true } );
 	try {
 
 		const plugin = tslPrecompile( { slim: true } );
@@ -281,7 +352,7 @@ test( 'slim build aliases public three entries but full-three bypasses the alias
 
 test( 'prebuilt slim generated helpers converge on one bundled runtime module', async () => {
 
-	const fixture = await makeProject( '0.184.0', {
+	const fixture = await makeProject( '0.185.1', {
 		provenance: true,
 		bundleBody: [
 			'export const __TSLP_SLIM__ = true;',
@@ -342,7 +413,7 @@ test( 'slim build refuses a missing prebuilt bundle or provenance sidecar', asyn
 
 	for ( const missing of [ 'bundle', 'sidecar' ] ) {
 
-		const fixture = await makeProject( '0.184.0', { provenance: true } );
+		const fixture = await makeProject( '0.185.1', { provenance: true } );
 		try {
 
 			await rm( missing === 'bundle' ? fixture.runtimeBundleFile : fixture.runtimeMetadataFile );
@@ -364,7 +435,7 @@ test( 'slim build refuses a missing prebuilt bundle or provenance sidecar', asyn
 
 test( 'slim build refuses a prebuilt bundle whose final bytes were modified', async () => {
 
-	const fixture = await makeProject( '0.184.0', { provenance: true } );
+	const fixture = await makeProject( '0.185.1', { provenance: true } );
 	try {
 
 		await appendFile( fixture.runtimeBundleFile, '// tampered\n' );
@@ -384,7 +455,7 @@ test( 'slim build refuses a prebuilt bundle whose final bytes were modified', as
 
 test( 'slim build refuses a prebuilt bundle after a hashed source input changes', async () => {
 
-	const fixture = await makeProject( '0.184.0', { provenance: true } );
+	const fixture = await makeProject( '0.185.1', { provenance: true } );
 	try {
 
 		await writeFile( join( fixture.runtimeSourceDir, 'slim-source-entry.js' ), 'export const __TSLP_SLIM__ = "changed";\n' );
@@ -404,7 +475,7 @@ test( 'slim build refuses a prebuilt bundle after a hashed source input changes'
 
 test( 'source slim build aliases the tree-shaken entry and routes private Three adapters', async () => {
 
-	const fixture = await makeProject( '0.185.0' );
+	const fixture = await makeProject( '0.185.1' );
 	try {
 
 		const plugin = tslPrecompile( { slim: 'source' } );
@@ -439,11 +510,12 @@ test( 'source slim build aliases the tree-shaken entry and routes private Three 
 		);
 		assert.equal(
 			plugin.resolveId( '../webgl-fallback/WebGLBackend.js', join( fixture.threeRoot, 'src/renderers/webgpu/WebGPURenderer.js' ) ),
-			join( resolvedRuntimeSourceDir, 'slim-stub-webgl-backend.js' ),
+			null,
+			'the real WebGL backend remains in the source graph and is handled by the registered Three rewrite',
 		);
 		const guardId = plugin.resolveId( 'virtual:tsl-precompile/__slim-source' );
 		assert.equal( guardId, '\0virtual:tsl-precompile/__slim-source' );
-		assert.match( await plugin.load( guardId ), /slim-three-policy@10/ );
+		assert.match( await plugin.load( guardId ), /slim-three-policy@12/ );
 
 	} finally {
 
@@ -453,23 +525,28 @@ test( 'source slim build aliases the tree-shaken entry and routes private Three 
 
 } );
 
-test( 'source slim uses the consumer Three patch while artifact compatibility remains exact', async () => {
+test( 'alpha rejects unsupported consumer Three versions in full and source-slim modes', async () => {
 
-	const fixture = await makeProject( '0.185.0' );
-	try {
+	for ( const threeVersion of [ '0.185.0', '0.186.0' ] ) {
 
-		const plugin = tslPrecompile( { slim: 'source' } );
-		await plugin.config( { root: fixture.root }, { command: 'build' } );
-		await plugin.configResolved( {
-			root: fixture.root,
-			command: 'build',
-			logger: { warn() {} },
-		} );
-		assert.equal( plugin.resolveId( 'virtual:tsl-precompile/full-three' ), fixture.webgpuEntry );
+		for ( const slim of [ false, 'source' ] ) {
 
-	} finally {
+			const fixture = await makeProject( threeVersion );
+			try {
 
-		await rm( fixture.root, { recursive: true, force: true } );
+				const plugin = tslPrecompile( slim ? { slim } : {} );
+				await assert.rejects(
+					plugin.config( { root: fixture.root }, { command: 'build' } ),
+					new RegExp( `this alpha release supports exactly three 0\\.185\\.1[\\s\\S]*resolves three ${ threeVersion.replaceAll( '.', '\\.' ) }` ),
+				);
+
+			} finally {
+
+				await rm( fixture.root, { recursive: true, force: true } );
+
+			}
+
+		}
 
 	}
 
@@ -576,7 +653,7 @@ test( 'slim build rejects a consumer three patch that does not match the shipped
 		const plugin = tslPrecompile( { slim: true } );
 		await assert.rejects(
 			plugin.config( { root: fixture.root }, { command: 'build' } ),
-			/slim build refused[\s\S]*built against three 0\.184\.0[\s\S]*resolves three 0\.185\.0/,
+			/slim build refused[\s\S]*built against three 0\.185\.1[\s\S]*resolves three 0\.185\.0/,
 		);
 
 	} finally {
@@ -611,7 +688,7 @@ test( 'threeVersion override must match the exact installed package version', as
 	const fixture = await makeProject();
 	try {
 
-		const plugin = tslPrecompile( { threeVersion: '0.184.1' } );
+		const plugin = tslPrecompile( { threeVersion: '0.185.0' } );
 		await assert.rejects(
 			plugin.config( { root: fixture.root }, { command: 'serve' } ),
 			/Hashing against a version other than the installed WGSL emitter is unsafe/,
@@ -625,12 +702,12 @@ test( 'threeVersion override must match the exact installed package version', as
 
 } );
 
-test( 'plugin passes the resolved project root into autoMarkSource', async () => {
+test( 'plugin auto-marks by default and passes the resolved project root into autoMarkSource', async () => {
 
 	const fixture = await makeProject();
 	try {
 
-		const plugin = tslPrecompile( { autoMark: true } );
+		const plugin = tslPrecompile();
 		await plugin.config( { root: fixture.root }, { command: 'serve' } );
 		await plugin.configResolved( {
 			root: fixture.root,
@@ -640,9 +717,144 @@ test( 'plugin passes the resolved project root into autoMarkSource', async () =>
 		const id = join( fixture.root, 'src/material.js' );
 		const source = 'export const material = new MeshStandardNodeMaterial();\n';
 		const marked = autoMarkSource( source, { filename: id, root: fixture.root, namePrefix: 'auto' } );
-		const expected = annotateDevMarkerSources( marked.code, { filename: id, root: fixture.root } );
 		const transformed = await plugin.transform.call( context(), source, id );
-		assert.equal( transformed.code, expected.code );
+		assert.match( transformed.code, /@tsl-precompile\/runtime\/auto-marker/ );
+		assert.match( transformed.code, new RegExp( marked.injectedNames[ 0 ] ) );
+		assert.match( transformed.code, /"src\/material\.js:precompile:0"/ );
+		assert.match( transformed.code, /"[a-f0-9]{64}"\);$/ );
+
+	} finally {
+
+		await rm( fixture.root, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'plugin allows default auto-marking to be disabled explicitly', async () => {
+
+	const fixture = await makeProject();
+	try {
+
+		const plugin = tslPrecompile( { autoMark: false } );
+		await plugin.config( { root: fixture.root }, { command: 'serve' } );
+		await plugin.configResolved( {
+			root: fixture.root,
+			command: 'serve',
+			logger: { warn() {} },
+		} );
+		const id = join( fixture.root, 'src/material.js' );
+		const source = 'export const material = new MeshStandardNodeMaterial();\n';
+		const transformed = await plugin.transform.call( context(), source, id );
+		assert.equal( transformed, null );
+
+	} finally {
+
+		await rm( fixture.root, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'full build keeps an uncaptured automatic material live without leaving a production marker', async () => {
+
+	const fixture = await makeProject();
+	try {
+
+		const plugin = tslPrecompile();
+		await plugin.config( { root: fixture.root }, { command: 'build' } );
+		await plugin.configResolved( {
+			root: fixture.root,
+			command: 'build',
+			logger: { warn() {} },
+		} );
+		const warnings = [];
+		const transformed = await plugin.transform.call( {
+			warn( message ) { warnings.push( String( message ) ); },
+			error( message ) { throw new Error( message ); },
+		}, 'export const material = new MeshStandardNodeMaterial();\n', join( fixture.root, 'src/material.js' ) );
+
+		assert.ok( transformed );
+		assert.doesNotMatch( transformed.code, /\.precompile\(/ );
+		assert.doesNotMatch( transformed.code, /@tsl-precompile\/runtime\/apply/ );
+		assert.match( transformed.code, /new MeshStandardNodeMaterial\(\)/ );
+		assert.equal( warnings.length, 1 );
+		assert.match( warnings[ 0 ], /keeping the live NodeMaterial in full-Three compatibility mode/ );
+
+	} finally {
+
+		await rm( fixture.root, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'full error mode does not recover an authored marker that collides with an automatic name', async () => {
+
+	const fixture = await makeProject();
+	try {
+
+		const id = join( fixture.root, 'src/material.js' );
+		const generatedName = autoMarkSource(
+			'const automatic = new MeshStandardNodeMaterial();\n',
+			{ filename: id, root: fixture.root },
+		).injectedNames[ 0 ];
+		const plugin = tslPrecompile();
+		await plugin.config( { root: fixture.root }, { command: 'build' } );
+		await plugin.configResolved( {
+			root: fixture.root,
+			command: 'build',
+			logger: { warn() {} },
+		} );
+
+		await assert.rejects(
+			plugin.transform.call( {
+				warn() {},
+				error( message ) { throw new Error( message ); },
+			}, `
+				const automatic = new MeshStandardNodeMaterial();
+				const authored = createMaterial().precompile(${ JSON.stringify( generatedName ) });
+			`, id ),
+			/no captured artifact found/,
+		);
+
+	} finally {
+
+		await rm( fixture.root, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'full warning mode recovers a missing authored marker without skipping captured siblings', async () => {
+
+	const fixture = await makeProject();
+	try {
+
+		await writeSignedMaterialArtifact( fixture );
+		const plugin = tslPrecompile( { autoMark: false, fail: 'warn' } );
+		await plugin.config( { root: fixture.root }, { command: 'build' } );
+		await plugin.configResolved( {
+			root: fixture.root,
+			command: 'build',
+			logger: { warn() {} },
+		} );
+		const warnings = [];
+		const transformed = await plugin.transform.call( {
+			warn( message ) { warnings.push( String( message ) ); },
+			error( message ) { throw new Error( message ); },
+		}, `
+			const missing = createMaterial().precompile('missing');
+			const captured = createMaterial().precompile('mode-material');
+		`, join( fixture.root, 'src/material.js' ) );
+
+		assert.ok( transformed );
+		assert.doesNotMatch( transformed.code, /\.precompile\(/ );
+		assert.match( transformed.code, /const missing = createMaterial\(\)/ );
+		assert.match( transformed.code, /from "@tsl-precompile\/runtime\/apply\/full"/ );
+		assert.match( transformed.code, /virtual:tsl-precompile\/mode-material/ );
+		assert.equal( warnings.length, 1 );
+		assert.match( warnings[ 0 ], /no captured artifact found/ );
 
 	} finally {
 
@@ -654,7 +866,7 @@ test( 'plugin passes the resolved project root into autoMarkSource', async () =>
 
 test( 'slim production fails closed when a registered three rewrite reports drift', async () => {
 
-	const fixture = await makeProject( '0.184.0', { provenance: true } );
+	const fixture = await makeProject( '0.185.1', { provenance: true } );
 	try {
 
 		const plugin = tslPrecompile( { slim: true } );
@@ -691,7 +903,7 @@ test( 'build rejects captured source metadata from another Three or toolchain ve
 
 	for ( const mismatch of [
 		{ sourceThreeVersion: '0.184.9', sourceHashVersion: '0.1.0', expected: /captured with three 0\.184\.9/ },
-		{ sourceThreeVersion: '0.184.0', sourceHashVersion: '0.0.0', expected: /toolchain version 0\.0\.0/ },
+		{ sourceThreeVersion: '0.185.1', sourceHashVersion: '0.0.0', expected: /toolchain version 0\.0\.0/ },
 	] ) {
 
 		const fixture = await makeProject();
@@ -731,6 +943,43 @@ test( 'build rejects captured source metadata from another Three or toolchain ve
 
 } );
 
+test( 'build rejects unsigned legacy material artifacts', async () => {
+
+	const fixture = await makeProject();
+	try {
+
+		const artifactsDir = join( fixture.root, 'artifacts' );
+		await mkdir( artifactsDir, { recursive: true } );
+		await writeFile( join( artifactsDir, 'legacy.json' ), JSON.stringify( {
+			__name: 'legacy',
+			__hash: 'legacy-hash',
+			artifact: {
+				vertexShader: 'vertex',
+				fragmentShader: 'fragment',
+				bindings: [],
+				uniformPlan: [],
+			},
+		} ) );
+		const plugin = tslPrecompile();
+		await plugin.config( { root: fixture.root }, { command: 'build' } );
+		await plugin.configResolved( {
+			root: fixture.root,
+			command: 'build',
+			logger: { warn() {} },
+		} );
+		await assert.rejects(
+			plugin.transform.call( context(), "new MeshStandardNodeMaterial().precompile('legacy');", join( fixture.root, 'src/material.js' ) ),
+			/unsigned or missing source-hash provenance/,
+		);
+
+	} finally {
+
+		await rm( fixture.root, { recursive: true, force: true } );
+
+	}
+
+} );
+
 test( 'build rejects an artifact whose runtime content does not match __hash', async () => {
 
 	const fixture = await makeProject();
@@ -746,12 +995,12 @@ test( 'build rejects an artifact whose runtime content does not match __hash', a
 			uniformPlan: [],
 			sourceGraphHash: 'b'.repeat( 64 ),
 			sourceHashVersion: '0.1.0',
-			sourceThreeVersion: '0.184.0',
+			sourceThreeVersion: '0.185.1',
 			renderContextSignature: '',
 		};
 		const validHash = computeArtifactContentHash( artifact, {
 			shape: 'material:tampered',
-			threeVersion: '0.184.0',
+			threeVersion: '0.185.1',
 			pluginVersion: '0.1.0',
 		} );
 		await writeFile( join( artifactsDir, `tampered.${ validHash.slice( 0, 12 ) }.json` ), JSON.stringify( {

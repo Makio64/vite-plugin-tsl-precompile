@@ -4,7 +4,7 @@
  * Feeds the verbatim three.js CubeRenderTarget.js into `rewriteThreeSource`
  * and asserts structural properties of the output:
  *
- *   a. The exact r184 graph is replaced by the private replay adapter.
+ *   a. The exact r185 graph is replaced by the private replay adapter.
  *   b. All four graph imports and both graph statements are gone.
  *   c. Three's filter/MRT/camera/disposal behavior is unchanged.
  *   d. Shape drift fails closed.
@@ -23,7 +23,7 @@ const CUBE_RT_PATH = resolve( THREE_SRC, 'renderers/common/CubeRenderTarget.js' 
 
 function rewrite( source = readFileSync( CUBE_RT_PATH, 'utf8' ) ) {
 
-	return rewriteThreeSource( source, CUBE_RT_PATH, { threeVersion: '0.184.0', pluginVersion: '0.0.0' } );
+	return rewriteThreeSource( source, CUBE_RT_PATH, { threeVersion: '0.185.1', pluginVersion: '0.0.0' } );
 
 }
 
@@ -129,7 +129,7 @@ for ( const [ label, mutate ] of [
 test( 'rewrite/CubeRenderTarget: not-a-target file returns null (no transformation)', () => {
 
 	const unrelated = 'export const foo = 1;';
-	const result = rewriteThreeSource( unrelated, '/some/unrelated/file.js', { threeVersion: '0.184.0', pluginVersion: '0.0.0' } );
+	const result = rewriteThreeSource( unrelated, '/some/unrelated/file.js', { threeVersion: '0.185.1', pluginVersion: '0.0.0' } );
 	assert.equal( result, null );
 
 } );

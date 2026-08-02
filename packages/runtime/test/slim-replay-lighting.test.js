@@ -50,6 +50,7 @@ test( 'replay LightsNode cache key follows shader-topology light inputs', () => 
 test( 'replay Lighting retains one node per scene and a shared postprocess node', () => {
 
 	const lighting = new ReplayLighting();
+	assert.equal( lighting.enabled, true );
 	const sceneA = {};
 	const sceneB = {};
 	assert.equal( lighting.getNode( sceneA ), lighting.getNode( sceneA ) );
@@ -68,6 +69,29 @@ test( 'replay Lighting retains one node per scene and a shared postprocess node'
 
 	}
 	assert.equal( new CustomLighting().getNode( {} ).custom, true );
+
+} );
+
+test( 'replay Lighting restores scene lights across nested render lifecycles', () => {
+
+	const lighting = new ReplayLighting();
+	const scene = {};
+	const node = lighting.getNode( scene );
+	const beforeRender = [ { id: 1 } ];
+	const outerRender = [ { id: 2 } ];
+	const nestedRender = [ { id: 3 } ];
+
+	node.setLights( beforeRender );
+	lighting.beginRender( scene );
+	node.setLights( outerRender );
+	lighting.beginRender( scene );
+	node.setLights( nestedRender );
+
+	lighting.finishRender( scene );
+	assert.equal( node.getLights(), outerRender );
+
+	lighting.finishRender( scene );
+	assert.equal( node.getLights(), beforeRender );
 
 } );
 

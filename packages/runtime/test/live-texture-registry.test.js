@@ -2,7 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-import { installLiveTextureRegistryPatches } from '../src/hydrate/live-texture-registry.js';
+import {
+	clearLiveTextureIndex,
+	installLiveTextureRegistryPatches,
+	lookupLiveTextureByIdentity,
+	registerLiveTexture,
+} from '../src/hydrate/live-texture-registry.js';
 import { __resetForTests, installPrecompileMarker } from '../src/precompile-marker.js';
 
 function fakeTextureNamespace() {
@@ -73,5 +78,53 @@ test( 'live texture registry does not dynamically import the bare Three barrel',
 
 	const source = await readFile( new URL( '../src/hydrate/live-texture-registry.js', import.meta.url ), 'utf8' );
 	assert.doesNotMatch( source, /import\s*\(\s*['"]three['"]\s*\)/ );
+
+} );
+
+test( 'live texture registry aliases same-origin absolute URLs by exact path without basename collisions', () => {
+
+	const locationDescriptor = Object.getOwnPropertyDescriptor( globalThis, 'location' );
+	Object.defineProperty( globalThis, 'location', {
+		value: { href: 'http://localhost:5210/examples/ocean/' },
+		configurable: true,
+	} );
+	try {
+
+		clearLiveTextureIndex();
+		const first = {
+			isTexture: true,
+			uuid: 'first',
+			name: 'shared.png',
+			image: { src: 'http://localhost:5210/textures/first/shared.png' },
+		};
+		const second = {
+			isTexture: true,
+			uuid: 'second',
+			name: 'shared.png',
+			image: { src: 'http://localhost:5210/textures/second/shared.png' },
+		};
+		registerLiveTexture( first );
+		registerLiveTexture( second );
+
+		assert.equal( lookupLiveTextureByIdentity( {
+			imageSrc: '/textures/first/shared.png',
+			textureName: 'shared.png',
+		} ), first );
+		assert.equal( lookupLiveTextureByIdentity( {
+			imageSrc: '/textures/second/shared.png',
+			textureName: 'shared.png',
+		} ), second );
+		assert.equal( lookupLiveTextureByIdentity( {
+			imageSrc: '/textures/missing/shared.png',
+			textureName: 'shared.png',
+		} ), null, 'a failed exact path match cannot fall through to a different same-basename URL' );
+
+	} finally {
+
+		clearLiveTextureIndex();
+		if ( locationDescriptor ) Object.defineProperty( globalThis, 'location', locationDescriptor );
+		else delete globalThis.location;
+
+	}
 
 } );

@@ -72,6 +72,8 @@ export function createReplaySceneNodeCompatibility( manager ) {
 
 	function getEnvironmentNode( scene ) {
 
+		if ( manager.renderer.lighting.enabled === false ) return null;
+
 		updateEnvironment( scene );
 		const node = scene && scene.environmentNode;
 		return node && node.isNode === true ? node : null;
@@ -89,7 +91,8 @@ export function createReplaySceneNodeCompatibility( manager ) {
 
 		// Observe explicit custom graphs on every request so an identity swap
 		// cannot hide behind the per-draw cache below.
-		updateEnvironment( scene );
+		const lightingEnabled = manager.renderer.lighting.enabled;
+		if ( lightingEnabled ) updateEnvironment( scene );
 		updateFog( scene );
 
 		let byLights = callHashCache.get( scene );
@@ -105,12 +108,24 @@ export function createReplaySceneNodeCompatibility( manager ) {
 		if ( cacheKeyData.callId !== callId ) {
 
 			const cacheKeyValues = [];
-			if ( lightsNode ) cacheKeyValues.push( lightsNode.getCacheKey( true ) );
-			cacheKeyValues.push( hashString( createSceneRenderTopologySelector( scene ) ) );
 			const outputTarget = manager.renderer.getOutputRenderTarget();
 			cacheKeyValues.push( outputTarget && outputTarget.multiview ? 1 : 0 );
-			cacheKeyValues.push( manager.renderer.shadowMap.enabled ? 1 : 0 );
-			cacheKeyValues.push( manager.renderer.shadowMap.type );
+			cacheKeyValues.push( lightingEnabled ? 1 : 0 );
+			if ( lightingEnabled ) {
+
+				if ( lightsNode ) cacheKeyValues.push( lightsNode.getCacheKey( true ) );
+				cacheKeyValues.push( manager.renderer.shadowMap.enabled ? 1 : 0 );
+				cacheKeyValues.push( manager.renderer.shadowMap.type );
+
+			}
+			// r185 removes environment topology from NodeManager's dynamic key
+			// while lighting is disabled, but fog remains independently active.
+			const topologyScene = lightingEnabled || ! scene ? scene : {
+				fog: scene && scene.fog,
+				fogNode: scene && scene.fogNode,
+				overrideMaterial: scene && scene.overrideMaterial,
+			};
+			cacheKeyValues.push( hashString( createSceneRenderTopologySelector( topologyScene ) ) );
 			cacheKeyData.callId = callId;
 			cacheKeyData.cacheKey = hashArray( cacheKeyValues );
 			byLights.set( lightsKey, cacheKeyData );

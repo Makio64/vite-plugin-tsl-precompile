@@ -1,10 +1,22 @@
 import { MATERIAL_TEXTURE_PROPS } from './texture-props.js';
-import { collectArtifactDynamicBindings, dynamicBindingDescriptor, validateDynamicBindingSource } from './dynamic-bindings.js';
+import {
+	collectArtifactDynamicBindings,
+	dynamicBindingDescriptor,
+	validateDynamicBindingSource,
+	validateStorageBufferSnapshot,
+} from './dynamic-bindings.js';
 import { collectArtifactVariantCandidates, createArtifactVariantPayloadFingerprint } from './artifact-variants.js';
 import { validateArtifactLightIdentities } from './light-identities.js';
 import { validateComputeBindingsDescriptor } from './compute-bindings.js';
 import { validateMaterialComputeDescriptor } from './material-compute.js';
+import { validateInternalPassDescriptor } from './internal-pass.js';
 import { RENDER_BINDING_OWNER_KINDS, isRenderBindingOwnerKind } from './render-selector.js';
+import {
+	SHADER_LANGUAGES,
+	createBackendAwareVariantKey,
+	detectShaderLanguage,
+	resolveArtifactVariantKey,
+} from './shader-language.js';
 import { stableJsonStringify } from './stable-json.js';
 import {
 	isInstanceMatrixAttributeDescriptor,
@@ -102,6 +114,12 @@ const CODEGEN_SLOT_KINDS = [
 	'renderer.halfHeight',
 	'renderer.viewport',
 	'renderer.toneMappingExposure',
+	'environment.intensity',
+	'environment.rotation',
+	'pmrem.maxMip',
+	'pmrem.texelWidth',
+	'pmrem.texelHeight',
+	'texture.uvFlipY',
 	'scene.fog.color',
 	'scene.fog.near',
 	'scene.fog.far',
@@ -267,9 +285,7 @@ function dynamicKindInfo( kind ) {
 const USER_KINDS = new Map();
 
 const VALID_REGISTER_STATUSES = new Set( [
-	KIND_STATUS.CODEGEN,
-	KIND_STATUS.RUNTIME_TEXTURE,
-	KIND_STATUS.RUNTIME_DYNAMIC,
+	KIND_STATUS.BLOCKED,
 ] );
 
 function descriptorsEqual( a, b ) {
@@ -290,15 +306,14 @@ function descriptorsEqual( a, b ) {
 }
 
 /**
- * Register a custom `source.kind` so the extractor → codegen → runtime
- * pipeline accepts it.
+ * Register a custom `source.kind` as explicitly blocked vocabulary.
  *
- * The closed built-in registry covers the standard three.js TSL surface; this
- * lets adopters with custom TSL nodes (or third-party libraries that emit
- * binding kinds we don't know about) plug into the system without forking the
- * contract package. `validateArtifact()` consults this after the built-in
- * table, so registered custom kinds pass validation everywhere — dev capture,
- * build verify, runtime hydrator.
+ * Executable source kinds remain a closed, cross-package contract: adding one
+ * requires extractor, codegen, runtime, and drift-test support in the same
+ * change. A contract-only registry cannot safely install those handlers.
+ * Registration therefore exists solely to give an intentionally unsupported
+ * third-party kind a stable, human-readable blocked reason. Build codegen will
+ * report it as blocked instead of mistaking it for unclassified vendor drift.
  *
  * Re-registering the same kind with the same descriptor is a no-op (idempotent
  * across module reloads). Re-registering with a *different* descriptor throws
@@ -306,10 +321,8 @@ function descriptorsEqual( a, b ) {
  *
  * @param {Object} entry
  * @param {string} entry.kind   - the `source.kind` string the extractor emits (e.g. `custom.myEffect`)
- * @param {string} entry.status - one of `'codegen'`, `'runtime-texture'`, `'runtime-dynamic'`
- * @param {string} [entry.codegen] - codegen emitter id (when status === 'codegen')
- * @param {string} [entry.runtime] - runtime resolver id (when status starts with 'runtime')
- * @param {string} [entry.reason]  - optional human-facing description
+ * @param {'blocked'} entry.status - must be `'blocked'`
+ * @param {string} entry.reason  - human-facing explanation and recovery path
  * @param {Object} [entry...]      - additional descriptor fields surfaced via `kindInfo()`
  * @return {Readonly<Object>} the frozen descriptor that's now resolvable via `kindInfo(entry.kind)`
  * @throws {TypeError} on invalid shape
@@ -335,9 +348,14 @@ export function registerKind( entry ) {
 		);
 
 	}
-	if ( Object.prototype.hasOwnProperty.call( KINDS, kind ) ) {
+	if ( typeof entry.reason !== 'string' || entry.reason.trim().length === 0 ) {
 
-		throw new Error( `registerKind: cannot override built-in kind ${ JSON.stringify( kind ) }; built-in descriptors are immutable.` );
+		throw new TypeError( 'registerKind: blocked entries require a non-empty entry.reason.' );
+
+	}
+	if ( entry.codegen !== undefined || entry.runtime !== undefined ) {
+
+		throw new TypeError( 'registerKind: executable codegen/runtime handlers cannot be installed through the contract registry; land cross-package support instead.' );
 
 	}
 	const descriptor = Object.freeze( { ...entry } );
@@ -346,6 +364,11 @@ export function registerKind( entry ) {
 
 		if ( descriptorsEqual( existing, descriptor ) ) return existing;
 		throw new Error( `registerKind: kind ${ JSON.stringify( kind ) } is already registered with a different descriptor.` );
+
+	}
+	if ( dynamicKindInfo( kind ) !== null ) {
+
+		throw new Error( `registerKind: cannot override built-in kind ${ JSON.stringify( kind ) }; built-in and dynamic descriptors are immutable.` );
 
 	}
 	USER_KINDS.set( kind, descriptor );
@@ -445,6 +468,129 @@ function validationError( code, message, path = '' ) {
 
 }
 
+function validateArtifactShaderIdentity( artifact, label, errors ) {
+
+	const declaredLanguage = artifact.shaderLanguage;
+	const validLanguages = Object.values( SHADER_LANGUAGES );
+	const detectedByField = [];
+	for ( const field of [ 'vertexShader', 'fragmentShader', 'computeShader' ] ) {
+
+		const detected = detectShaderLanguage( artifact[ field ] );
+		if ( detected ) detectedByField.push( { field, detected } );
+
+	}
+	const detectedLanguages = new Set( detectedByField.map( ( entry ) => entry.detected ) );
+	if ( detectedLanguages.size > 1 ) {
+
+		errors.push( validationError(
+			'artifact.shaderLanguage.mixed',
+			`${ label }: shader stages must use one native shader language`,
+			'shaderLanguage',
+		) );
+
+	}
+
+	const declaredLanguageValid = declaredLanguage === undefined || validLanguages.includes( declaredLanguage );
+	if ( ! declaredLanguageValid ) {
+
+		errors.push( validationError(
+			'artifact.shaderLanguage',
+			`${ label }: shaderLanguage must be one of ${ validLanguages.join( ', ' ) } when present`,
+			'shaderLanguage',
+		) );
+
+	} else if ( declaredLanguage !== undefined ) {
+
+		for ( const { field, detected } of detectedByField ) {
+
+			if ( detected === declaredLanguage ) continue;
+			errors.push( validationError(
+				'artifact.shaderLanguage.mismatch',
+				`${ label }: ${ field } is ${ detected }, not declared shaderLanguage ${ declaredLanguage }`,
+				field,
+			) );
+
+		}
+
+	}
+
+	if ( artifact.variantKey === undefined ) return;
+	if ( typeof artifact.variantKey !== 'string' || artifact.variantKey.length === 0 ) {
+
+		errors.push( validationError(
+			'artifact.variantKey',
+			`${ label }: variantKey must be a non-empty string when present`,
+			'variantKey',
+		) );
+		return;
+
+	}
+	if ( declaredLanguage === undefined ) {
+
+		errors.push( validationError(
+			'artifact.variantKey.shaderLanguage',
+			`${ label }: variantKey requires shaderLanguage so its backend namespace can be verified`,
+			'variantKey',
+		) );
+		return;
+
+	}
+	if ( ! declaredLanguageValid || artifact.cacheKey === undefined || artifact.cacheKey === null ) return;
+	const canonicalKey = createBackendAwareVariantKey( artifact.cacheKey, declaredLanguage );
+	if ( artifact.variantKey !== canonicalKey ) errors.push( validationError(
+		'artifact.variantKey.canonical',
+		`${ label }: variantKey must be ${ JSON.stringify( canonicalKey ) } for this cacheKey and shaderLanguage`,
+		'variantKey',
+	) );
+
+}
+
+const PMREM_SLOT_KINDS = new Set( [ 'pmrem.maxMip', 'pmrem.texelWidth', 'pmrem.texelHeight' ] );
+const PMREM_CUBE_UV_MAPPING = 306;
+
+function validatePMREMTextureRelations( artifact, label, errors ) {
+
+	// Structural validation reports a malformed uniformPlan separately. Keep
+	// relation checks total over hostile/untrusted artifact input so callers
+	// receive the contract error instead of an incidental iterator exception.
+	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
+	const textureUuids = new Set();
+	for ( const group of plan ) {
+
+		for ( const entry of group && Array.isArray( group.textures ) ? group.textures : [] ) {
+
+			const source = entry && entry.source;
+			if (
+				source && source.kind === 'artifact.texture'
+				&& typeof source.textureUuid === 'string'
+				&& source.textureUuid.length > 0
+				&& ( source.mapping === PMREM_CUBE_UV_MAPPING || source.textureName === 'PMREM.cubeUv' )
+			) textureUuids.add( source.textureUuid );
+
+		}
+
+	}
+	for ( let groupIndex = 0; groupIndex < plan.length; groupIndex ++ ) {
+
+		const group = plan[ groupIndex ];
+		for ( let slotIndex = 0; slotIndex < ( group && Array.isArray( group.slots ) ? group.slots : [] ).length; slotIndex ++ ) {
+
+			const source = group.slots[ slotIndex ] && group.slots[ slotIndex ].source;
+			if ( ! source || ! PMREM_SLOT_KINDS.has( source.kind ) || typeof source.textureUuid !== 'string' ) continue;
+			if ( textureUuids.has( source.textureUuid ) ) continue;
+			const path = `uniformPlan[${ groupIndex }].slots[${ slotIndex }].source.textureUuid`;
+			errors.push( validationError(
+				'pmrem.uniform.texture-reference',
+				`${ label}: ${ path } must reference a PMREM artifact.texture source in the same artifact variant`,
+				path,
+			) );
+
+		}
+
+	}
+
+}
+
 function validateArtifactAttributes( artifact, label, errors ) {
 
 	for ( const listName of [ 'attributes', 'nodeAttributes' ] ) {
@@ -526,8 +672,76 @@ function validateRuntimeBindings( artifact, label, errors ) {
 				) );
 
 			}
+			if ( binding.comparison !== undefined ) {
+
+				if ( typeof binding.comparison !== 'boolean' ) errors.push( validationError(
+					'binding.comparison.type',
+					`${ label}: ${ bindingPath }.comparison must be a boolean when present`,
+					`${ bindingPath }.comparison`,
+				) );
+				if ( binding.kind !== 'sampler' ) errors.push( validationError(
+					'binding.comparison.kind',
+					`${ label}: ${ bindingPath }.comparison is only valid for sampler bindings`,
+					`${ bindingPath }.comparison`,
+				) );
+
+			}
 
 		}
+
+	}
+
+}
+
+function validateSamplerComparisonConvergence( artifact, label, errors ) {
+
+	const runtime = new Map();
+	for ( let groupIndex = 0; groupIndex < ( artifact.bindings || [] ).length; groupIndex ++ ) {
+
+		const group = artifact.bindings[ groupIndex ];
+		if ( ! group || ! Array.isArray( group.bindings ) ) continue;
+		for ( let bindingIndex = 0; bindingIndex < group.bindings.length; bindingIndex ++ ) {
+
+			const binding = group.bindings[ bindingIndex ];
+			if ( ! binding || binding.kind !== 'sampler' || binding.comparison === undefined ) continue;
+			runtime.set( `${ group.name || '' }\u0000${ binding.name || '' }`, {
+				value: binding.comparison,
+				path: `bindings[${ groupIndex }].bindings[${ bindingIndex }].comparison`,
+			} );
+
+		}
+
+	}
+
+	const plan = new Map();
+	for ( let groupIndex = 0; groupIndex < ( artifact.uniformPlan || [] ).length; groupIndex ++ ) {
+
+		const group = artifact.uniformPlan[ groupIndex ];
+		if ( ! group || ! Array.isArray( group.textures ) ) continue;
+		for ( let textureIndex = 0; textureIndex < group.textures.length; textureIndex ++ ) {
+
+			const entry = group.textures[ textureIndex ];
+			if ( ! entry || entry.bindingKind !== 'sampler' || entry.comparison === undefined ) continue;
+			plan.set( `${ group.name || '' }\u0000${ entry.name || '' }`, {
+				value: entry.comparison,
+				path: `uniformPlan[${ groupIndex }].textures[${ textureIndex }].comparison`,
+			} );
+
+		}
+
+	}
+
+	for ( const key of new Set( [ ...runtime.keys(), ...plan.keys() ] ) ) {
+
+		const runtimeEntry = runtime.get( key );
+		const planEntry = plan.get( key );
+		if ( runtimeEntry && planEntry && runtimeEntry.value === planEntry.value ) continue;
+		const path = runtimeEntry ? runtimeEntry.path : planEntry.path;
+		errors.push( validationError(
+			'binding.comparison.mismatch',
+			`${ label}: sampler comparison intent must match between bindings and uniformPlan`,
+			path,
+		) );
 
 	}
 
@@ -732,6 +946,7 @@ export function validateArtifact( input, opts = {} ) {
 		return { ok: false, errors, warnings, sourceKinds: [] };
 
 	}
+	validateArtifactShaderIdentity( artifact, label, errors );
 
 	if ( artifact.bindingOwner !== undefined ) {
 
@@ -868,6 +1083,20 @@ export function validateArtifact( input, opts = {} ) {
 		) );
 
 	}
+	if ( artifact.internalPass !== undefined ) {
+
+		if ( isCompute ) errors.push( validationError(
+			'internal-pass.owner',
+			`${ label }: internalPass is only valid on render artifacts`,
+			'internalPass',
+		) );
+		for ( const internalPassError of validateInternalPassDescriptor( artifact.internalPass, artifact ) ) errors.push( validationError(
+			internalPassError.code,
+			`${ label }: ${ internalPassError.message }`,
+			internalPassError.path,
+		) );
+
+	}
 	for ( const lightIdentityError of validateArtifactLightIdentities( artifact ) ) errors.push( validationError(
 		lightIdentityError.code,
 		`${ label }: ${ lightIdentityError.message }`,
@@ -907,6 +1136,35 @@ export function validateArtifact( input, opts = {} ) {
 				for ( let itemIndex = 0; itemIndex < list.length; itemIndex ++ ) {
 
 					const item = list[ itemIndex ];
+					if ( listName === 'storageBuffers' ) {
+
+						for ( const snapshotError of validateStorageBufferSnapshot( item ) ) {
+
+							const itemPath = `${ groupPath }.storageBuffers[${ itemIndex }]`;
+							errors.push( validationError(
+								snapshotError.code,
+								`${ label}: ${ snapshotError.message } at ${ itemPath }`,
+								`${ itemPath }.${ snapshotError.field }`,
+							) );
+
+						}
+
+					}
+					if ( listName === 'textures' && item && item.comparison !== undefined ) {
+
+						const comparisonPath = `${ groupPath }.textures[${ itemIndex }].comparison`;
+						if ( typeof item.comparison !== 'boolean' ) errors.push( validationError(
+							'uniformPlan.texture.comparison.type',
+							`${ label}: ${ comparisonPath } must be a boolean when present`,
+							comparisonPath,
+						) );
+						if ( item.bindingKind !== 'sampler' ) errors.push( validationError(
+							'uniformPlan.texture.comparison.kind',
+							`${ label}: ${ comparisonPath } is only valid for sampler bindings`,
+							comparisonPath,
+						) );
+
+					}
 					const source = item && item.source;
 					const kind = source && source.kind;
 					if ( kind === undefined ) continue;
@@ -961,6 +1219,8 @@ export function validateArtifact( input, opts = {} ) {
 		}
 
 	}
+	validatePMREMTextureRelations( artifact, label, errors );
+	validateSamplerComparisonConvergence( artifact, label, errors );
 
 	if ( artifact.dynamicBindings !== undefined && ! Array.isArray( artifact.dynamicBindings ) ) {
 
@@ -1065,9 +1325,19 @@ export function validateArtifact( input, opts = {} ) {
 			for ( const [ key, variant ] of Object.entries( artifact.variants ) ) {
 
 				const variantPath = `variants.${ key }`;
-				if ( ! variant || variant.cacheKey === undefined || variant.cacheKey === null || String( variant.cacheKey ) !== key ) {
+				const expectedKey = resolveArtifactVariantKey( variant );
+				if ( ! variant || variant.cacheKey === undefined || variant.cacheKey === null ) {
 
 					errors.push( validationError( 'artifact.variant.cacheKey', `${ label}: ${ variantPath }.cacheKey must match its family key`, `${ variantPath }.cacheKey` ) );
+
+				} else if ( expectedKey !== key ) {
+
+					const identityField = variant.variantKey !== undefined ? 'variantKey' : 'cacheKey';
+					errors.push( validationError(
+						`artifact.variant.${ identityField }`,
+						`${ label}: ${ variantPath }.${ identityField } must match its family key`,
+						`${ variantPath }.${ identityField }`,
+					) );
 
 				}
 				const result = validateArtifact( variant, { ...opts, label: `${ label}.${ variantPath }` } );

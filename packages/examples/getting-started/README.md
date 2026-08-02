@@ -1,34 +1,59 @@
 # getting-started — tsl-precompile
 
-The smallest possible app using `vite-plugin-tsl-precompile`:
+The smallest repository example using `vite-plugin-tsl-precompile`:
 
-- one renderer, one scene, one lit `MeshStandardNodeMaterial`
-- one `.precompile('getting-started')` marker
-- compiler-free, application-tree-shaken `slim: 'source'` production
-- the new `setupPrecompile()` helper — no hand-wired
-  `installPrecompileMarker` / `setDevRenderer` / ordering footgun
+- one renderer, one scene, and one lit `MeshStandardNodeMaterial`
+- one optional `.precompile('getting-started')` stable-name override
+- compatibility mode first: artifacts are validated while stock Three remains
+  authoritative
+- one `setupPrecompile()` call, using the renderer that performs real draws
 
-## Run
+This package intentionally uses `workspace:*`; it runs from this monorepo and is
+not a standalone published template.
+
+## Capture in development
+
+From the repository root:
 
 ```sh
-pnpm install   # from the repo root, once
-pnpm --filter examples-getting-started dev
-# → opens http://localhost:5174
+pnpm install
+pnpm dev:getting-started
 ```
 
-The first dev run captures `./artifacts/getting-started.<hash>.json` and, after
-the first successful real render, one `aux-render-output-<hash>.json`. The
-second artifact is the exact tone-mapping/color-space output material that
-three.js normally builds internally. Slim mode deduplicates that topology and
-would capture another output artifact if the renderer later changed tone
-mapping, color space, sampled-texture dimension, or multiview. It does not
-sweep backgrounds, shadows, PMREM, or passes. Commit the captured files so the
-build step has everything needed for compiler-free replay.
+The dev server opens `http://localhost:5174`. In a WebGPU browser, wait for the
+torus knot to render. The capture writes
+`./artifacts/getting-started.<hash>.json`; commit generated artifacts as build
+inputs and never edit their JSON.
+
+Keep dev running. In a second terminal, verify this example's actual root-level
+source file:
+
+```sh
+pnpm --filter examples-getting-started exec tsl-precompile-doctor \
+  --root . \
+  --source main.js
+pnpm --filter examples-getting-started exec tsl-precompile-verify \
+  --source main.js \
+  --source-root . \
+  artifacts
+```
+
+Then stop dev, build, and keep preview running:
 
 ```sh
 pnpm --filter examples-getting-started build
 pnpm --filter examples-getting-started preview
 ```
+
+Open the preview URL in a WebGPU browser and confirm nonblank changing pixels
+with no page, console, request, capture, or GPU validation errors.
+
+## Optional slim proof
+
+Only after the compatibility sequence passes, change the plugin option to
+`slim: 'source'`, recapture, verify, rebuild, and replay the same scene. Slim
+mode also captures the renderer-output topology used for tone mapping and color
+space, then removes NodeBuilder from the covered production path.
 
 ## Refreshing the artifact
 

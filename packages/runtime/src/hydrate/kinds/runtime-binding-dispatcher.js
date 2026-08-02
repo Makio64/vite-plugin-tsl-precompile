@@ -71,9 +71,15 @@ function createSampledTextureRuntimeBinding( { artifact, groupName, descriptor, 
 function createSamplerRuntimeBinding( { artifact, groupName, descriptor, name, material, groupNode, deps } ) {
 
 	const texture = deps.resolveTextureBinding( artifact, groupName, descriptor.name, material );
+	const comparison = typeof descriptor.comparison === 'boolean'
+		? descriptor.comparison
+		: typeof deps.shaderDeclaresComparisonSampler === 'function'
+			? deps.shaderDeclaresComparisonSampler( artifact, descriptor.name )
+			: false;
 	return createSamplerBinding( {
 		name,
 		texture,
+		comparison,
 		visibility: descriptor.visibility,
 		groupNode,
 	} );

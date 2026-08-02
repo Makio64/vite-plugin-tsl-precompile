@@ -24,6 +24,7 @@ import { Vector4 } from 'three/src/math/Vector4.js';
 import { findShadowMatrixLightForSlot, updateLightShadowMatrixForFrame, writeLightValue } from './light-writers.js';
 import { writeColor, writeInt, writeLiveValue, writeMat3, writeMat4, writeNumber, writeSnapshot, writeUint, writeVec2, writeVec3, writeVec4 } from './snapshot-writers.js';
 import { logicalFrameKey, shouldAdvanceTemporalState } from '../slim-support/temporal-frame.js';
+import { writeEnvironmentRotation, writePMREMScalar, writeTextureUVFlip } from '../writers.js';
 
 // Module-scoped scratch — reused per frame to avoid GC pressure.
 const _rSize = new Vector2( 1, 1 );
@@ -214,15 +215,19 @@ export function writeMaterialValue( view, offset, material, source, kind, dtype 
 
 }
 
-export function writeUniformGroup( group, frame, view, material, materialBindingOwner = null ) {
+export function writeUniformGroup( group, frame, view, material, materialBindingOwner = null, artifact = null ) {
 
 	for ( const slot of group.slots || [] ) {
 
 		const source = slot.source || {};
 		const offset = slot.offset ?? slot.byteOffset ?? 0;
 		const kind = source.kind || 'unknown';
+		const internalPassValue = slot.__tslpInternalPassSidecar === true && slot._liveNode
+			? slot._liveNode.value
+			: undefined;
 
-		if ( kind === 'camera.projectionMatrix' ) writeMat4( view, offset, frame.camera && frame.camera.projectionMatrix, source.valueSnapshot );
+		if ( internalPassValue !== null && internalPassValue !== undefined ) writeLiveValue( view, offset, internalPassValue, slot.dtype );
+		else if ( kind === 'camera.projectionMatrix' ) writeMat4( view, offset, frame.camera && frame.camera.projectionMatrix, source.valueSnapshot );
 		else if ( kind === 'camera.projectionMatrixInverse' ) writeMat4( view, offset, frame.camera && frame.camera.projectionMatrixInverse, source.valueSnapshot );
 		else if ( kind === 'camera.viewMatrix' ) writeMat4( view, offset, frame.camera && frame.camera.matrixWorldInverse, source.valueSnapshot );
 		else if ( kind === 'camera.worldMatrix' ) writeMat4( view, offset, frame.camera && frame.camera.matrixWorld, source.valueSnapshot );
@@ -408,6 +413,31 @@ export function writeUniformGroup( group, frame, view, material, materialBinding
 		} else if ( kind === 'renderer.toneMappingExposure' ) {
 
 			view.setFloat32( offset, frame.renderer ? frame.renderer.toneMappingExposure : ( source.valueSnapshot ? Number( source.valueSnapshot.data ) : 1 ), true );
+
+		}
+		else if ( kind === 'environment.intensity' ) {
+
+			const environmentMaterial = frame.material || material;
+			const value = environmentMaterial && environmentMaterial.envMap
+				? environmentMaterial.envMapIntensity
+				: frame.scene && frame.scene.environmentIntensity;
+			writeNumber( view, offset, value, source.valueSnapshot );
+
+		}
+		else if ( kind === 'environment.rotation' ) {
+
+			writeEnvironmentRotation( view, offset, frame.material || material, frame.scene );
+
+		}
+		else if ( kind === 'pmrem.maxMip' || kind === 'pmrem.texelWidth' || kind === 'pmrem.texelHeight' ) {
+
+			writePMREMScalar( view, offset, kind, artifact, frame.material || material, frame, source );
+
+		}
+		else if ( kind === 'texture.uvFlipY' ) {
+
+			const ownerMaterial = frame.material || material;
+			writeTextureUVFlip( view, offset, artifact || ownerMaterial && ownerMaterial.precompiledArtifact, source );
 
 		}
 		else if ( kind.startsWith( 'material.' ) ) {

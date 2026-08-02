@@ -32,3 +32,6 @@ export function unregisterEffectHandler( name: string ): boolean;
 export function getEffectHandlers(): EffectHandler[];
 export function findEffectHandler( node: unknown ): EffectHandler | null;
 export function collectEffectNodes( root: unknown, opts?: { depthCap?: number; extraRoots?: unknown[] } ): EffectNodeMatch[];
+
+/** @internal Test-only effect registry reset. */
+export function __resetEffectHandlersForTests(): void;

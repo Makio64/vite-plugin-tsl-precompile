@@ -1,10 +1,10 @@
 /**
  * Auto-mark transform.
  *
- * When the plugin is configured with `autoMark: true`, rewrite every
+ * By default (or when configured with `autoMark: true`), rewrite every
  * `new *NodeMaterial(...)` call site to chain `.precompile('auto-<id>')`.
- * This lets the batch harness drive unmodified three.js examples through
- * the precompile path without editing each example's source.
+ * This lets applications and the batch harness drive unmodified three.js
+ * source through the precompile path without per-material edits.
  *
  * Behaviour is deliberately scoped:
  *
@@ -14,8 +14,8 @@
  *   - Names include a stable root-relative source-path identity plus a
  *     per-file counter, so equal basenames in different folders cannot
  *     overwrite one another.
- *   - Already-chained `.precompile(...)` calls (the author or a prior
- *     transform pass already did it) are left alone.
+ *   - Already-chained `.precompile(...)` calls and stable local bindings that
+ *     are explicitly marked later in the module are left alone.
  *
  * @module AutoMark
  */
@@ -30,6 +30,53 @@ import { canonicalModuleIdentity } from './_shared/module-identity.js';
 
 const traverse = _traverse.default || _traverse;
 const generate = _generate.default || _generate;
+export const AUTO_MARKER_IMPORT = '@tsl-precompile/runtime/auto-marker';
+
+function hasMarkerBootstrapImport( ast ) {
+
+	return ast.program.body.some( ( statement ) =>
+		t.isImportDeclaration( statement ) && statement.source.value === AUTO_MARKER_IMPORT
+	);
+
+}
+
+function prependMarkerBootstrapImport( ast ) {
+
+	if ( hasMarkerBootstrapImport( ast ) ) return false;
+	ast.program.body.unshift( t.importDeclaration( [], t.stringLiteral( AUTO_MARKER_IMPORT ) ) );
+	return true;
+
+}
+
+function memberPropertyName( member ) {
+
+	if ( ! t.isMemberExpression( member ) ) return null;
+	if ( member.computed ) return t.isStringLiteral( member.property ) ? member.property.value : null;
+	return t.isIdentifier( member.property ) ? member.property.name : null;
+
+}
+
+function bindingHasExplicitPrecompileCall( newExpressionPath ) {
+
+	const declarator = newExpressionPath.parentPath;
+	if ( ! declarator?.isVariableDeclarator() || declarator.node.init !== newExpressionPath.node ) return false;
+	const id = declarator.get( 'id' );
+	if ( ! id.isIdentifier() ) return false;
+
+	const binding = declarator.scope.getBinding( id.node.name );
+	if ( ! binding || binding.identifier !== id.node || ! binding.constant ) return false;
+
+	return binding.referencePaths.some( ( reference ) => {
+
+		const member = reference.parentPath;
+		if ( ! member?.isMemberExpression() || member.node.object !== reference.node ) return false;
+		if ( memberPropertyName( member.node ) !== 'precompile' ) return false;
+		const call = member.parentPath;
+		return call?.isCallExpression() === true && call.node.callee === member.node;
+
+	} );
+
+}
 
 /**
  * @param {string} source
@@ -37,7 +84,12 @@ const generate = _generate.default || _generate;
  * @param {string} opts.filename
  * @param {string} [opts.root=process.cwd()] - Project root used for stable path identity.
  * @param {string} [opts.namePrefix='auto'] - Per-file prefix for the generated artifact names.
- * @return {{ code: string, map: ?Object, injectedNames: string[] }}
+ * @return {{
+ *   code: string,
+ *   map: ?Object,
+ *   injectedNames: string[],
+ *   injectedMarkers: Array<{ name: string, line: number, column: number }>
+ * }}
  */
 export function autoMarkSource( source, opts ) {
 
@@ -46,7 +98,7 @@ export function autoMarkSource( source, opts ) {
 	// Cheap early-out: skip files with no NodeMaterial constructors.
 	if ( ! /NodeMaterial\b/.test( source ) ) {
 
-		return { code: source, map: null, injectedNames: [] };
+		return { code: source, map: null, injectedNames: [], injectedMarkers: [] };
 
 	}
 
@@ -62,6 +114,7 @@ export function autoMarkSource( source, opts ) {
 	const pathIdentity = createHash( 'sha256' ).update( moduleIdentity ).digest( 'hex' ).slice( 0, 12 );
 	const prefix = slugifySegment( namePrefix, 32 ) || 'auto';
 	const injectedNames = [];
+	const injectedMarkers = [];
 	let counter = 0;
 
 	traverse( ast, {
@@ -83,7 +136,10 @@ export function autoMarkSource( source, opts ) {
 			// If the parent is a MemberExpression with property === 'precompile',
 			// the author already marked this construction; skip.
 			const parent = path.parent;
-			if ( t.isMemberExpression( parent ) && t.isIdentifier( parent.property, { name: 'precompile' } ) ) {
+			if (
+				( t.isMemberExpression( parent ) && memberPropertyName( parent ) === 'precompile' )
+				|| bindingHasExplicitPrecompileCall( path )
+			) {
 
 				return;
 
@@ -91,6 +147,11 @@ export function autoMarkSource( source, opts ) {
 
 			const name = `${ prefix }-${ slug }-${ pathIdentity }-${ counter ++ }`;
 			injectedNames.push( name );
+			injectedMarkers.push( {
+				name,
+				line: path.node.loc?.start.line || 1,
+				column: ( path.node.loc?.start.column || 0 ) + 1,
+			} );
 
 			// Wrap the NewExpression in .precompile('name', { __tslpAutoMark:
 			// true }). The private hint lets the runtime fall back only for an
@@ -117,12 +178,55 @@ export function autoMarkSource( source, opts ) {
 
 	if ( injectedNames.length === 0 ) {
 
-		return { code: source, map: null, injectedNames: [] };
+		return { code: source, map: null, injectedNames: [], injectedMarkers: [] };
 
 	}
 
+	// Imported scene/material modules execute before the importing bootstrap
+	// module's setupPrecompile() call. Install the dev marker as a side effect
+	// in every module that received an automatic marker so eager constructors
+	// cannot race setup. The runtime export resolves to an empty, tree-shakeable
+	// module in production builds, where the marker calls are rewritten away.
+	prependMarkerBootstrapImport( ast );
+
 	const output = generate( ast, { sourceMaps: true, sourceFileName: filename }, source );
-	return { code: output.code, map: output.map, injectedNames };
+	return { code: output.code, map: output.map, injectedNames, injectedMarkers };
+
+}
+
+/**
+ * Ensure authored marker modules also install Material.precompile before any
+ * eager top-level constructor/call executes. This runs independently of the
+ * automatic-constructor option, so `autoMark: false` remains safe.
+ */
+export function injectMarkerBootstrapSource( source, opts = {} ) {
+
+	if ( ! /\.precompile\s*\(/.test( source ) ) {
+
+		return { code: source, map: null, touched: false };
+
+	}
+	const filename = opts.filename || 'unknown.js';
+	const ast = parse( source, {
+		sourceType: 'module',
+		sourceFilename: filename,
+		plugins: [ 'jsx', 'typescript', 'decorators-legacy', 'importAttributes', 'deprecatedImportAssert', 'topLevelAwait' ],
+		errorRecovery: true,
+	} );
+	let ownsMarker = false;
+	traverse( ast, {
+		CallExpression( path ) {
+
+			const callee = path.node.callee;
+			if ( ! t.isMemberExpression( callee ) || memberPropertyName( callee ) !== 'precompile' ) return;
+			ownsMarker = true;
+			path.stop();
+
+		},
+	} );
+	if ( ! ownsMarker || ! prependMarkerBootstrapImport( ast ) ) return { code: source, map: null, touched: false };
+	const output = generate( ast, { sourceMaps: true, sourceFileName: filename }, source );
+	return { code: output.code, map: output.map, touched: true };
 
 }
 

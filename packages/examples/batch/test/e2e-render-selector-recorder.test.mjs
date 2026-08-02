@@ -17,7 +17,17 @@ function selectionError( active, captured ) {
 		code: 'TSLP_VARIANT_SELECTOR_MISS',
 		message: '[tsl-precompile/slim] No captured artifact variant matches the active render topology (selector:abc123). Captured 1 topology selector(s).',
 		tslPrecompileVariantSelection: true,
-		details: { selector: active, availableSelectors: [ captured ], cacheKeys: [ 42 ] },
+		details: {
+			selector: active,
+			availableSelectors: [ captured ],
+			cacheKeys: [ 42 ],
+			closestDifferencePaths: [ 'renderer.reversedDepthBuffer' ],
+			artifactContext: { names: [ 'aux-post-process' ] },
+			remediation: {
+				schema: 'tslp-selector-remediation@1',
+				nextActions: [ { id: 'capture', kind: 'manual', argv: null } ],
+			},
+		},
 	};
 
 }
@@ -58,6 +68,12 @@ test( 'caught selector errors retain canonical active and captured selectors onc
 		availableSelectors: [ captured ],
 		cacheKeys: [ 42 ],
 		selectorCount: null,
+		closestDifferencePaths: [ 'renderer.reversedDepthBuffer' ],
+		artifactContext: { names: [ 'aux-post-process' ] },
+		remediation: {
+			schema: 'tslp-selector-remediation@1',
+			nextActions: [ { id: 'capture', kind: 'manual', argv: null } ],
+		},
 		identity: JSON.stringify( [ 'TSLP_VARIANT_SELECTOR_MISS', active, 'selector:abc123', [ captured ] ] ),
 	} );
 

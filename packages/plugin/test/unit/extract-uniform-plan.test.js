@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Matrix3, Matrix4 } from 'three';
 import { UniformNode } from 'three/webgpu';
+import { materialEnvIntensity, materialEnvRotation } from 'three/tsl';
 import { createViewportTextureIdentity } from '@tsl-precompile/contract/dynamic-bindings';
 import { RENDER_BINDING_OWNER_KINDS } from '@tsl-precompile/contract/render-selector';
 
-import { extractUniformPlan } from '../../src/vendor/extractUniformPlan.js';
+import { annotateAnonymousStorageResourceIdentity, extractUniformPlan } from '../../src/vendor/extractUniformPlan.js';
 import { observeVelocityProjectionSources } from '../../src/velocity-projection-observation.js';
 
 function makeUniformSlot( node, value ) {
@@ -17,6 +18,20 @@ function makeUniformSlot( node, value ) {
 		itemSize: 1,
 		nodeUniform: { node },
 		getType() { return 'float'; },
+		getValue() { return value; },
+	};
+
+}
+
+function makeUintUniformSlot( node, value, offset = 0 ) {
+
+	return {
+		isNumberUniform: true,
+		name: `nodeUniform${ offset }`,
+		offset,
+		itemSize: 1,
+		nodeUniform: { node },
+		getType() { return 'uint'; },
 		getValue() { return value; },
 	};
 
@@ -79,6 +94,39 @@ function makeTextureState( textureNode ) {
 
 }
 
+test( 'extractUniformPlan captures authored comparison-sampler intent', () => {
+
+	const texture = { isTexture: true, uuid: 'depth-a', isDepthTexture: true };
+	const textureNode = {
+		value: texture,
+		compareNode: { isNode: true },
+	};
+	const state = {
+		updateNodes: [],
+		bindings: [ {
+			name: 'object',
+			bindings: [ {
+				isSampledTexture: false,
+				isSampler: true,
+				name: 'nodeUniform0_sampler',
+				visibility: 2,
+				textureNode,
+				texture,
+				groupNode: { shared: false },
+			} ],
+		} ],
+	};
+
+	const comparisonPlan = extractUniformPlan( state, {} );
+	assert.equal( comparisonPlan[ 0 ].textures[ 0 ].bindingKind, 'sampler' );
+	assert.equal( comparisonPlan[ 0 ].textures[ 0 ].comparison, true );
+
+	textureNode.compareNode = null;
+	const regularPlan = extractUniformPlan( state, {} );
+	assert.equal( regularPlan[ 0 ].textures[ 0 ].comparison, false );
+
+} );
+
 test( 'extractUniformPlan emits one ordered entry for a sampled storage texture', () => {
 
 	const texture = { isTexture: true, isStorageTexture: true, uuid: 'storage-texture' };
@@ -93,6 +141,95 @@ test( 'extractUniformPlan emits one ordered entry for a sampled storage texture'
 	assert.equal( plan[ 0 ].orderedBindings.length, 1 );
 	assert.equal( plan[ 0 ].orderedBindings[ 0 ].type, 'sampled-texture' );
 	assert.equal( plan[ 0 ].orderedBindings[ 0 ].ref.access, 'writeOnly' );
+
+} );
+
+test( 'extractUniformPlan associates WebGL TextureNode UV-flip uniforms after sampled-texture resolution', () => {
+
+	const imageBitmapDescriptor = Object.getOwnPropertyDescriptor( globalThis, 'ImageBitmap' );
+	class FakeImageBitmap {
+
+		constructor( src, width, height ) {
+
+			this.src = src;
+			this.width = width;
+			this.height = height;
+
+		}
+
+	}
+	Object.defineProperty( globalThis, 'ImageBitmap', {
+		value: FakeImageBitmap,
+		configurable: true,
+		writable: true,
+	} );
+	try {
+
+		const texture = {
+			isTexture: true,
+			uuid: 'uv-flip-image-bitmap',
+			name: 'gradient-map',
+			mapping: 300,
+			flipY: true,
+			image: new FakeImageBitmap( 'https://cdn.example/gradient.png', 32, 16 ),
+		};
+		const flipUniforms = new Array( 4 ).fill( null ).map( () => ( {
+			isUniformNode: true,
+			constructor: { type: 'UniformNode' },
+			nodeType: 'bool',
+			value: false,
+		} ) );
+		const textureNodes = flipUniforms.map( ( flipUniform ) => ( {
+			constructor: { type: 'TextureNode' },
+			value: texture,
+			_flipYUniform: flipUniform,
+		} ) );
+		const groupNode = { shared: false };
+		const state = {
+			// r185 WebGL keeps all four TextureNodes as update nodes, but folds
+			// their identical sampled Texture into one representative binding.
+			updateNodes: textureNodes,
+			bindings: [ {
+				name: 'object',
+				bindings: [
+					{
+						isUniformsGroup: true,
+						byteLength: 32,
+						visibility: 2,
+						groupNode,
+						uniforms: flipUniforms.map( ( uniform, index ) => makeUintUniformSlot( uniform, 0, index ) ),
+					},
+					{
+						isSampledTexture: true,
+						name: 'nodeTexture0',
+						visibility: 2,
+						groupNode,
+						textureNode: textureNodes[ 0 ],
+					},
+				],
+			} ],
+		};
+
+		const plan = extractUniformPlan( state, {} );
+		const sources = plan[ 0 ].slots.map( ( slot ) => slot.source );
+		assert.deepEqual( sources.map( ( source ) => source.kind ), new Array( 4 ).fill( 'texture.uvFlipY' ) );
+		assert.deepEqual( sources.map( ( source ) => source.valueSnapshot ), new Array( 4 ).fill( null ).map( () => ( { type: 'uint', data: 1 } ) ) );
+		assert.equal( sources[ 0 ].textureUuid, 'uv-flip-image-bitmap' );
+		assert.equal( sources[ 0 ].imageSrc, 'https://cdn.example/gradient.png' );
+		assert.equal( sources[ 0 ].textureName, 'gradient-map' );
+		assert.equal( sources[ 0 ].mapping, 300 );
+		assert.equal( sources[ 0 ].flipY, true );
+		assert.equal( sources[ 0 ].imageWidth, 32 );
+		assert.equal( sources[ 0 ].imageHeight, 16 );
+		assert.equal( plan[ 0 ].textures.length, 1, 'fixture models WebGL sampled-texture deduplication' );
+		assert.equal( plan[ 0 ].textures[ 0 ].source.kind, 'artifact.texture', 'sampled binding keeps its independent texture source' );
+
+	} finally {
+
+		if ( imageBitmapDescriptor ) Object.defineProperty( globalThis, 'ImageBitmap', imageBitmapDescriptor );
+		else delete globalThis.ImageBitmap;
+
+	}
 
 } );
 
@@ -160,6 +297,42 @@ test( 'extractUniformPlan classifies only the exact explicit VelocityNode projec
 
 } );
 
+test( 'extractUniformPlan lets exact Velocity projection identity override a generic camera name', () => {
+
+	const explicitProjection = new Matrix4().makeTranslation( 6, 0, 0 );
+	const velocityNode = {
+		constructor: { type: 'VelocityNode' },
+		projectionMatrix: explicitProjection,
+	};
+	const cameraProjectionNode = new UniformNode( explicitProjection, 'mat4' );
+	cameraProjectionNode.name = 'cameraProjectionMatrix';
+	const state = {
+		updateNodes: [ velocityNode, cameraProjectionNode ],
+		bindings: [ {
+			name: 'object',
+			bindings: [ {
+				isUniformsGroup: true,
+				byteLength: 64,
+				visibility: 3,
+				groupNode: { shared: false },
+				uniforms: [ makeMatrixUniformSlot( cameraProjectionNode, explicitProjection, 'mat4' ) ],
+			} ],
+		} ],
+	};
+
+	assert.equal(
+		extractUniformPlan( state, {} )[ 0 ].slots[ 0 ].source.kind,
+		'velocity.currentProjectionMatrix',
+	);
+
+	velocityNode.projectionMatrix = null;
+	assert.equal(
+		extractUniformPlan( state, {} )[ 0 ].slots[ 0 ].source.kind,
+		'camera.projectionMatrix',
+	);
+
+} );
+
 test( 'extractUniformPlan keeps the normal camera projection source when VelocityNode has no override', () => {
 
 	const cameraProjection = new Matrix4().makeTranslation( 5, 0, 0 );
@@ -195,6 +368,7 @@ test( 'extractUniformPlan retains an observed TRAA projection after VelocityNode
 		projectionMatrix: explicitProjection,
 	};
 	const currentProjectionNode = new UniformNode( explicitProjection, 'mat4' );
+	currentProjectionNode.name = 'cameraProjectionMatrix';
 	const state = {
 		updateNodes: [ velocityNode ],
 		bindings: [ {
@@ -217,6 +391,37 @@ test( 'extractUniformPlan retains an observed TRAA projection after VelocityNode
 	const foreignProjectionNode = new UniformNode( explicitProjection.clone(), 'mat4' );
 	state.bindings[ 0 ].bindings[ 0 ].uniforms = [ makeMatrixUniformSlot( foreignProjectionNode, foreignProjectionNode.value, 'mat4' ) ];
 	assert.equal( extractUniformPlan( state, {} )[ 0 ].slots[ 0 ].source.kind, 'uniform.live' );
+
+} );
+
+test( 'extractUniformPlan accepts exact request-time velocity projection evidence from a harvest', () => {
+
+	const explicitProjection = new Matrix4().makeTranslation( 8, 0, 0 );
+	const currentProjectionNode = new UniformNode( explicitProjection, 'mat4' );
+	currentProjectionNode.name = 'cameraProjectionMatrix';
+	const state = {
+		updateNodes: [],
+		bindings: [ {
+			name: 'object',
+			bindings: [ {
+				isUniformsGroup: true,
+				byteLength: 64,
+				visibility: 3,
+				groupNode: { shared: false },
+				uniforms: [ makeMatrixUniformSlot( currentProjectionNode, explicitProjection, 'mat4' ) ],
+			} ],
+		} ],
+	};
+
+	assert.equal(
+		extractUniformPlan( state, { velocityProjectionSources: [ explicitProjection ] } )[ 0 ].slots[ 0 ].source.kind,
+		'velocity.currentProjectionMatrix',
+	);
+	assert.equal(
+		extractUniformPlan( state, { velocityProjectionSources: [ explicitProjection.clone() ] } )[ 0 ].slots[ 0 ].source.kind,
+		'uniform.live',
+		'equal matrix values are not request-time identity evidence',
+	);
 
 } );
 
@@ -328,6 +533,85 @@ test( 'extractUniformPlan structurally maps renderer tone-mapping exposure refer
 	const plan = extractUniformPlan( state, {} );
 	assert.equal( plan[ 0 ].slots[ 0 ].source.kind, 'renderer.toneMappingExposure' );
 	assert.deepEqual( plan[ 0 ].slots[ 0 ].source.valueSnapshot, { type: 'number', data: 1.25 } );
+
+} );
+
+test( 'extractUniformPlan maps Three material environment singletons to live owner-selecting kinds', () => {
+
+	const intensityValue = materialEnvIntensity.value;
+	const rotationValue = materialEnvRotation.value;
+	const state = {
+		updateNodes: [ materialEnvIntensity, materialEnvRotation ],
+		bindings: [ {
+			name: 'object',
+			bindings: [ {
+				isUniformsGroup: true,
+				byteLength: 80,
+				visibility: 2,
+				groupNode: { shared: false },
+				uniforms: [
+					makeUniformSlot( materialEnvIntensity, intensityValue ),
+					makeMatrixUniformSlot( materialEnvRotation, rotationValue, 'mat4' ),
+				],
+			} ],
+		} ],
+	};
+
+	const plan = extractUniformPlan( state, {} );
+	assert.equal( plan[ 0 ].slots[ 0 ].source.kind, 'environment.intensity' );
+	assert.equal( plan[ 0 ].slots[ 1 ].source.kind, 'environment.rotation' );
+
+} );
+
+test( 'extractUniformPlan maps r185 PMREM CubeUV uniforms to their exact atlas texture', () => {
+
+	const texture = {
+		isTexture: true,
+		uuid: 'pmrem-atlas',
+		name: 'PMREM.cubeUv',
+		mapping: 306,
+		image: { width: 336, height: 128, depth: 1 },
+	};
+	const maxMip = new UniformNode( 5, 'float' );
+	const texelWidth = new UniformNode( 1 / 336, 'float' );
+	const texelHeight = new UniformNode( 1 / 128, 'float' );
+	const pmremNode = {
+		constructor: { type: 'PMREMNode' },
+		_texture: { value: texture },
+		_maxMip: maxMip,
+		_width: texelWidth,
+		_height: texelHeight,
+	};
+	const state = {
+		updateNodes: [],
+		updateBeforeNodes: [ pmremNode ],
+		bindings: [ {
+			name: 'object',
+			bindings: [ {
+				isUniformsGroup: true,
+				byteLength: 16,
+				visibility: 2,
+				groupNode: { shared: false },
+				uniforms: [
+					makeUniformSlot( maxMip, maxMip.value ),
+					makeUniformSlot( texelWidth, texelWidth.value ),
+					makeUniformSlot( texelHeight, texelHeight.value ),
+				],
+			} ],
+		} ],
+	};
+
+	const sources = extractUniformPlan( state, {} )[ 0 ].slots.map( ( slot ) => slot.source );
+	assert.deepEqual( sources.map( ( source ) => source.kind ), [
+		'pmrem.maxMip',
+		'pmrem.texelWidth',
+		'pmrem.texelHeight',
+	] );
+	for ( const source of sources ) {
+
+		assert.equal( source.textureUuid, texture.uuid );
+
+	}
 
 } );
 
@@ -619,6 +903,198 @@ test( 'extractUniformPlan treats plain FramebufferTexture nodes as artifact text
 	assert.equal( source.textureUuid, 'framebuffer-texture-a' );
 	assert.equal( source.imageWidth, 64 );
 	assert.equal( source.imageHeight, 32 );
+
+} );
+
+test( 'extractUniformPlan emits exact render-target selectors only from current attachment identity', () => {
+
+	const color = {
+		isTexture: true,
+		isRenderTargetTexture: true,
+		uuid: 'captured-color',
+		name: 'gathered-color',
+		format: 1023,
+		type: 1009,
+		colorSpace: 'srgb-linear',
+		image: { width: 64, height: 32, depth: 1 },
+	};
+	const depth = {
+		isTexture: true,
+		isRenderTargetTexture: true,
+		isDepthTexture: true,
+		uuid: 'captured-depth',
+		name: 'gathered-depth',
+		format: 1026,
+		type: 1014,
+		colorSpace: '',
+		image: { width: 64, height: 32, depth: 1 },
+	};
+	const renderTarget = {
+		isRenderTarget: true,
+		width: 64,
+		height: 32,
+		depth: 1,
+		texture: color,
+		textures: [ color ],
+		depthTexture: depth,
+	};
+	color.renderTarget = renderTarget;
+	depth.renderTarget = renderTarget;
+
+	const colorSource = extractUniformPlan( makeTextureState( { value: color } ), {} )[ 0 ].textures[ 0 ].source;
+	assert.equal( colorSource.kind, 'artifact.texture' );
+	assert.deepEqual( colorSource.renderTargetSelector.attachment, { role: 'color', index: 0 } );
+	assert.equal( colorSource.renderTargetSelector.hints.name, 'gathered-color' );
+
+	const depthSource = extractUniformPlan( makeTextureState( { value: depth } ), {} )[ 0 ].textures[ 0 ].source;
+	assert.equal( depthSource.kind, 'depth.texture' );
+	assert.equal( depthSource.fromMaterialGraph, true );
+	assert.deepEqual( depthSource.renderTargetSelector.attachment, { role: 'depth', index: null } );
+
+	const firstReflector = { constructor: { type: 'ReflectorBaseNode' } };
+	const owningReflector = { constructor: { type: 'ReflectorBaseNode' } };
+	const reflectorDepthState = makeTextureState( {
+		constructor: { type: 'ReflectorNode' },
+		value: depth,
+		_reflectorBaseNode: owningReflector,
+	} );
+	reflectorDepthState.updateBeforeNodes = [ firstReflector, { constructor: { type: 'OtherUpdateNode' } }, owningReflector ];
+	const reflectorDepthSource = extractUniformPlan( reflectorDepthState, {} )[ 0 ].textures[ 0 ].source;
+	assert.equal( reflectorDepthSource.reflectorIndex, 1, 'reflector depth records its index among reflector owners, not all update nodes' );
+
+	// A stale back-reference is not proof. The contract verifies that the exact
+	// texture is still present at its claimed target before emitting identity.
+	renderTarget.texture = { ...color, uuid: 'replacement-color', renderTarget };
+	renderTarget.textures = [ renderTarget.texture ];
+	const detachedSource = extractUniformPlan( makeTextureState( { value: color } ), {} )[ 0 ].textures[ 0 ].source;
+	assert.equal( detachedSource.kind, 'artifact.texture' );
+	assert.equal( detachedSource.renderTargetSelector, undefined );
+
+} );
+
+test( 'extractUniformPlan excludes PMREM atlases from generic render-target selectors', () => {
+
+	const pmrem = {
+		isTexture: true,
+		isRenderTargetTexture: true,
+		uuid: 'pmrem-render-target-atlas',
+		name: 'PMREM.cubeUv',
+		mapping: 306,
+		format: 1023,
+		type: 1009,
+		colorSpace: 'srgb-linear',
+		image: { width: 336, height: 128, depth: 1 },
+	};
+	const renderTarget = {
+		isRenderTarget: true,
+		width: 336,
+		height: 128,
+		depth: 1,
+		texture: pmrem,
+		textures: [ pmrem ],
+		depthTexture: null,
+	};
+	pmrem.renderTarget = renderTarget;
+
+	const source = extractUniformPlan( makeTextureState( { value: pmrem } ), {} )[ 0 ].textures[ 0 ].source;
+	assert.equal( source.kind, 'artifact.texture' );
+	assert.equal( source.textureUuid, pmrem.uuid );
+	assert.equal( source.mapping, 306 );
+	assert.equal( source.textureName, 'PMREM.cubeUv' );
+	assert.equal( source.renderTargetSelector, undefined );
+
+} );
+
+test( 'extractUniformPlan keeps light-owned shadow textures on light identity instead of render-target selectors', () => {
+
+	const depth = {
+		isTexture: true,
+		isRenderTargetTexture: true,
+		isDepthTexture: true,
+		uuid: 'shadow-depth',
+		format: 1026,
+		type: 1014,
+		colorSpace: '',
+		image: { width: 32, height: 32, depth: 1 },
+	};
+	const renderTarget = {
+		width: 32,
+		height: 32,
+		depth: 1,
+		texture: {
+			isTexture: true,
+			isRenderTargetTexture: true,
+			uuid: 'shadow-color',
+		},
+		depthTexture: depth,
+	};
+	renderTarget.textures = [ renderTarget.texture ];
+	depth.renderTarget = renderTarget;
+	renderTarget.texture.renderTarget = renderTarget;
+	const light = {
+		uuid: 'captured-light',
+		type: 'DirectionalLight',
+		shadow: { map: renderTarget },
+	};
+	const state = makeTextureState( { value: depth } );
+	state.updateNodes.push( {
+		isAnalyticLightNode: true,
+		light,
+		shadowNode: null,
+	} );
+
+	const source = extractUniformPlan( state, {} )[ 0 ].textures[ 0 ].source;
+	assert.equal( source.kind, 'depth.texture' );
+	assert.equal( source.lightUuid, 'captured-light' );
+	assert.equal( source.renderTargetSelector, undefined );
+
+} );
+
+test( 'extractUniformPlan canonicalizes same-document texture URLs without weakening external identity', () => {
+
+	const locationDescriptor = Object.getOwnPropertyDescriptor( globalThis, 'location' );
+	Object.defineProperty( globalThis, 'location', {
+		value: { href: 'http://localhost:5199/examples/ocean/' },
+		configurable: true,
+	} );
+	try {
+
+		const sourceFor = ( src ) => extractUniformPlan( makeTextureState( {
+			constructor: { type: 'TextureNode' },
+			value: {
+				isTexture: true,
+				uuid: `texture:${ src }`,
+				image: { src, width: 16, height: 8 },
+			},
+		} ), {} )[ 0 ].textures[ 0 ].source;
+
+		assert.equal(
+			sourceFor( 'http://localhost:5199/textures/a/waternormals.jpg?rev=1#face' ).imageSrc,
+			'/textures/a/waternormals.jpg?rev=1#face',
+		);
+		assert.equal(
+			sourceFor( 'textures/b/waternormals.jpg' ).imageSrc,
+			'/examples/ocean/textures/b/waternormals.jpg',
+		);
+		assert.equal(
+			sourceFor( 'https://cdn.example/textures/waternormals.jpg?rev=1' ).imageSrc,
+			'https://cdn.example/textures/waternormals.jpg?rev=1',
+		);
+		assert.equal(
+			sourceFor( 'http://user:secret@localhost:5199/textures/private.jpg' ).imageSrc,
+			'http://user:secret@localhost:5199/textures/private.jpg',
+		);
+		assert.equal(
+			sourceFor( 'blob:http://localhost:5199/texture-object' ).imageSrc,
+			'blob:http://localhost:5199/texture-object',
+		);
+
+	} finally {
+
+		if ( locationDescriptor ) Object.defineProperty( globalThis, 'location', locationDescriptor );
+		else delete globalThis.location;
+
+	}
 
 } );
 
@@ -935,5 +1411,231 @@ test( 'extractUniformPlan preserves authored storage element types after WebGPU 
 		{ kind: 'storage.buffer', elementType: 'vec3' },
 		{ kind: 'storage.buffer', elementType: 'vec4' },
 	] );
+
+} );
+
+test( 'extractUniformPlan signs duplicate anonymous storage resources by exact identity and construction order', () => {
+
+	const first = {
+		id: 41,
+		isStorageBufferAttribute: true,
+		array: new Uint32Array( 16 ),
+		count: 16,
+		itemSize: 1,
+	};
+	const second = {
+		id: 17,
+		isStorageBufferAttribute: true,
+		array: new Uint32Array( 16 ),
+		count: 16,
+		itemSize: 1,
+	};
+	const binding = ( name, attribute ) => ( {
+		isStorageBuffer: true,
+		name,
+		nodeUniform: { name: '', bufferType: 'uint' },
+		attribute,
+	} );
+	const plan = extractUniformPlan( {
+		updateNodes: [],
+		bindings: [ {
+			name: 'object',
+			bindings: [
+				binding( 'StorageBuffer_23', first ),
+				binding( 'StorageBuffer_24', first ),
+				binding( 'StorageBuffer_25', second ),
+			],
+		} ],
+	}, {} );
+
+	assert.deepEqual( plan[ 0 ].storageBuffers.map( ( entry ) => entry.source ), [
+		{
+			kind: 'storage.buffer',
+			elementType: 'uint',
+			anonymousResourceOrdinal: 1,
+			anonymousResourceCount: 2,
+		},
+		{
+			kind: 'storage.buffer',
+			elementType: 'uint',
+			anonymousResourceOrdinal: 1,
+			anonymousResourceCount: 2,
+		},
+		{
+			kind: 'storage.buffer',
+			elementType: 'uint',
+			anonymousResourceOrdinal: 0,
+			anonymousResourceCount: 2,
+		},
+	] );
+	assert.equal( plan[ 0 ].orderedBindings[ 0 ].ref, plan[ 0 ].storageBuffers[ 0 ] );
+	assert.equal( plan[ 0 ].orderedBindings[ 2 ].ref, plan[ 0 ].storageBuffers[ 2 ] );
+
+} );
+
+test( 'anonymous storage signing spans plans and ignores artifact discovery order', () => {
+
+	const makePlan = ( id, name ) => {
+
+		const attribute = {
+			id,
+			isStorageBufferAttribute: true,
+			array: new Float32Array( 32 ),
+			count: 2,
+			itemSize: 16,
+		};
+		return extractUniformPlan( {
+			updateNodes: [],
+			bindings: [ {
+				name: 'object',
+				bindings: [ {
+					isStorageBuffer: true,
+					name,
+					nodeUniform: { name: '', bufferType: 'mat4' },
+					attribute,
+				} ],
+			} ],
+		}, {} );
+
+	};
+	const laterConstructedPlan = makePlan( 90, 'StorageBuffer_world' );
+	const earlierConstructedPlan = makePlan( 12, 'StorageBuffer_mvp' );
+
+	assert.equal( laterConstructedPlan[ 0 ].storageBuffers[ 0 ].source.anonymousResourceOrdinal, undefined );
+	assert.equal( earlierConstructedPlan[ 0 ].storageBuffers[ 0 ].source.anonymousResourceOrdinal, undefined );
+	annotateAnonymousStorageResourceIdentity( [ laterConstructedPlan, earlierConstructedPlan ] );
+
+	assert.deepEqual( laterConstructedPlan[ 0 ].storageBuffers[ 0 ].source, {
+		kind: 'storage.buffer',
+		elementType: 'mat4',
+		anonymousResourceOrdinal: 1,
+		anonymousResourceCount: 2,
+	} );
+	assert.deepEqual( earlierConstructedPlan[ 0 ].storageBuffers[ 0 ].source, {
+		kind: 'storage.buffer',
+		elementType: 'mat4',
+		anonymousResourceOrdinal: 0,
+		anonymousResourceCount: 2,
+	} );
+
+} );
+
+test( 'anonymous storage signing excludes exact-path-only identities from family cardinality', () => {
+
+	const attribute = ( id, array ) => ( {
+		id,
+		isStorageBufferAttribute: true,
+		array,
+		count: array.length,
+		itemSize: 1,
+	} );
+	const entry = ( liveAttribute, elementType, userPath = undefined, staleIdentity = null ) => {
+
+		const value = {
+			count: liveAttribute.count,
+			itemSize: liveAttribute.itemSize,
+			arrayType: liveAttribute.array.constructor.name,
+			source: {
+				kind: 'storage.buffer',
+				elementType,
+				...( staleIdentity || {} ),
+			},
+			...( userPath ? { userPath } : {} ),
+		};
+		Object.defineProperty( value, '_liveAttribute', { value: liveAttribute } );
+		return value;
+
+	};
+
+	// Concrete regression: the only anonymous uint resource must not be signed
+	// as count=2 merely because another material owns an exact-path uint buffer.
+	const anonymousOnly = entry( attribute( 10, new Uint32Array( 8 ) ), 'uint' );
+	const exactOnly = entry(
+		attribute( 11, new Uint32Array( 8 ) ),
+		'uint',
+		[ 'positionNode' ],
+		{ anonymousResourceOrdinal: 1, anonymousResourceCount: 2 },
+	);
+
+	// An exact-path alias of an actually anonymous identity does not inflate
+	// the signed family or retain its own stale anonymous signature.
+	const first = attribute( 20, new Float32Array( 8 ) );
+	const second = attribute( 21, new Float32Array( 8 ) );
+	const unrelatedExact = attribute( 22, new Float32Array( 8 ) );
+	const anonymousFirst = entry( first, 'float' );
+	const anonymousSecond = entry( second, 'float' );
+	const exactAliasOfSecond = entry(
+		second,
+		'float',
+		[ 'colorNode' ],
+		{ anonymousResourceOrdinal: 1, anonymousResourceCount: 3 },
+	);
+	const exactUnrelated = entry(
+		unrelatedExact,
+		'float',
+		[ 'normalNode', 'storage', 'value' ],
+		{ anonymousResourceOrdinal: 2, anonymousResourceCount: 3 },
+	);
+
+	annotateAnonymousStorageResourceIdentity( [
+		[ { storageBuffers: [ anonymousOnly, anonymousFirst, exactAliasOfSecond ] } ],
+		[ { storageBuffers: [ exactOnly, anonymousSecond, exactUnrelated ] } ],
+	] );
+
+	assert.deepEqual( anonymousOnly.source, { kind: 'storage.buffer', elementType: 'uint' } );
+	assert.deepEqual( exactOnly.source, { kind: 'storage.buffer', elementType: 'uint' } );
+	assert.deepEqual( anonymousFirst.source, {
+		kind: 'storage.buffer',
+		elementType: 'float',
+		anonymousResourceOrdinal: 0,
+		anonymousResourceCount: 2,
+	} );
+	assert.deepEqual( anonymousSecond.source, {
+		kind: 'storage.buffer',
+		elementType: 'float',
+		anonymousResourceOrdinal: 1,
+		anonymousResourceCount: 2,
+	} );
+	assert.deepEqual( exactAliasOfSecond.source, { kind: 'storage.buffer', elementType: 'float' } );
+	assert.deepEqual( exactUnrelated.source, { kind: 'storage.buffer', elementType: 'float' } );
+
+} );
+
+test( 'anonymous storage batch signing clears stale identity when construction ranks collide', () => {
+
+	const attribute = ( id ) => ( {
+		id,
+		isStorageBufferAttribute: true,
+		array: new Uint32Array( 8 ),
+		count: 8,
+		itemSize: 1,
+	} );
+	const entry = ( liveAttribute, ordinal ) => {
+
+		const value = {
+			count: 8,
+			itemSize: 1,
+			arrayType: 'Uint32Array',
+			source: {
+				kind: 'storage.buffer',
+				elementType: 'uint',
+				anonymousResourceOrdinal: ordinal,
+				anonymousResourceCount: 2,
+			},
+		};
+		Object.defineProperty( value, '_liveAttribute', { value: liveAttribute } );
+		return value;
+
+	};
+	const first = entry( attribute( 5 ), 0 );
+	const second = entry( attribute( 5 ), 1 );
+
+	annotateAnonymousStorageResourceIdentity( [
+		[ { storageBuffers: [ first ] } ],
+		[ { storageBuffers: [ second ] } ],
+	] );
+
+	assert.deepEqual( first.source, { kind: 'storage.buffer', elementType: 'uint' } );
+	assert.deepEqual( second.source, { kind: 'storage.buffer', elementType: 'uint' } );
 
 } );

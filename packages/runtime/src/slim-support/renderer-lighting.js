@@ -5,7 +5,7 @@
  * node graph, so the hydrator can discover them from `material.*Node`.
  * Renderer-level lighting systems are different: three.js can allocate a
  * lighting node whose compute buffers/textures are not reachable from the
- * user's material. Tiled lighting is the important example.
+ * user's material. Tiled and clustered lighting are the important examples.
  *
  * This module exposes the productized version of the batch harness fix:
  * update the renderer lighting node, wire any produced storage buffers into
@@ -22,14 +22,24 @@ const tiledLightWorld = { x: 0, y: 0, z: 0 };
 const tiledLightView = { x: 0, y: 0, z: 0 };
 const tiledLightClip = { x: 0, y: 0, z: 0, w: 1 };
 const tiledLightingSize = createSizeTarget();
+const clusteredViewLightsByNode = new WeakMap();
 
-export function collectSceneLights( scene ) {
+export function collectSceneLights( scene, camera = null ) {
 
 	const lights = [];
-	if ( ! scene || typeof scene.traverse !== 'function' ) return lights;
-	scene.traverse( ( object ) => {
+	if ( ! scene ) return lights;
+	const traverse = typeof scene.traverseVisible === 'function'
+		? scene.traverseVisible.bind( scene )
+		: typeof scene.traverse === 'function' ? scene.traverse.bind( scene ) : null;
+	if ( ! traverse ) return lights;
+	traverse( ( object ) => {
 
-		if ( object && object.isLight === true ) lights.push( object );
+		if ( ! ( object && object.isLight === true ) ) return;
+		if ( object.visible === false ) return;
+		const objectLayers = object.layers;
+		const cameraLayers = camera && camera.layers;
+		if ( objectLayers && cameraLayers && typeof objectLayers.test === 'function' && objectLayers.test( cameraLayers ) === false ) return;
+		lights.push( object );
 
 	} );
 	return lights;
@@ -46,35 +56,31 @@ export function wireStorageAttributesToSceneArtifacts( scene, attributes, opts =
 	const diagnostics = opts.diagnostics || null;
 	let wired = 0;
 	let invalidated = false;
+	const artifactMaterials = collectPrecompiledArtifactMaterials( scene, opts.artifactPredicate );
+	for ( const [ artifact, record ] of artifactMaterials ) {
 
-	scene.traverse( ( object ) => {
+		if ( ! record.eligible ) continue;
+		const count = wireArtifactStorageBuffersFromAttributes( artifact, list, {
+			bumpVersion: opts.bumpVersion !== false,
+			allowVec3ToVec4: opts.allowVec3ToVec4 !== false,
+			replaceExisting: opts.replaceExisting === true,
+		} );
+		if ( count <= 0 ) continue;
 
-		const material = object && object.material;
-		const materials = Array.isArray( material ) ? material : material ? [ material ] : [];
-		for ( const m of materials ) {
+		wired += count;
+		for ( const material of record.materials ) {
 
-			const artifact = m && m.precompiledArtifact;
-			if ( ! ( m && m.isPrecompiledMaterial === true && artifact ) ) continue;
-			if ( typeof opts.artifactPredicate === 'function' && ! opts.artifactPredicate( artifact, m, object ) ) continue;
-
-			const count = wireArtifactStorageBuffersFromAttributes( artifact, list, {
-				bumpVersion: opts.bumpVersion !== false,
-				allowVec3ToVec4: opts.allowVec3ToVec4 !== false,
-			} );
-			if ( count <= 0 ) continue;
-
-			wired += count;
-			invalidateMaterial( renderer, m );
+			invalidateMaterial( renderer, material );
 			invalidated = true;
 			if ( typeof opts.onMaterial === 'function' ) {
 
-				try { opts.onMaterial( m, artifact, count ); } catch ( _ ) {}
+				try { opts.onMaterial( material, artifact, count ); } catch ( _ ) {}
 
 			}
 
 		}
 
-	} );
+	}
 
 	if ( invalidated ) clearRendererNodeCache( renderer );
 	if ( diagnostics ) {
@@ -97,37 +103,61 @@ export function wireTiledLightingTextureToScene( scene, texture, opts = {} ) {
 	const height = Number( image && image.height || 0 );
 	let wired = 0;
 	let invalidated = false;
+	const artifactMaterials = collectPrecompiledArtifactMaterials( scene );
+	for ( const [ artifact, record ] of artifactMaterials ) {
 
-	scene.traverse( ( object ) => {
+		const attached = attachTextureRefsWhere( artifact, texture, ( source ) => (
+			source
+			&& source.kind === 'artifact.texture'
+			&& source.snapshot
+			&& ! source.imageSrc
+			&& ! source.textureName
+			&& ( ! source.imageWidth || ! width || source.imageWidth === width )
+			&& ( ! source.imageHeight || ! height || source.imageHeight === height )
+		) );
+		if ( ! attached ) continue;
 
-		const material = object && object.material;
-		const materials = Array.isArray( material ) ? material : material ? [ material ] : [];
-		for ( const m of materials ) {
+		wired ++;
+		for ( const material of record.materials ) {
 
-			const artifact = m && m.precompiledArtifact;
-			if ( ! ( m && m.isPrecompiledMaterial === true && artifact ) ) continue;
-			const attached = attachTextureRefsWhere( artifact, texture, ( source ) => (
-				source
-				&& source.kind === 'artifact.texture'
-				&& source.snapshot
-				&& ! source.imageSrc
-				&& ! source.textureName
-				&& ( ! source.imageWidth || ! width || source.imageWidth === width )
-				&& ( ! source.imageHeight || ! height || source.imageHeight === height )
-			) );
-			if ( ! attached ) continue;
-
-			wired ++;
-			invalidateMaterial( renderer, m );
+			invalidateMaterial( renderer, material );
 			invalidated = true;
 
 		}
 
-	} );
+	}
 
 	if ( invalidated ) clearRendererNodeCache( renderer );
 	if ( diagnostics ) diagnostics.rendererLightingTextureWires = ( diagnostics.rendererLightingTextureWires | 0 ) + wired;
 	return wired;
+
+}
+
+function collectPrecompiledArtifactMaterials( scene, predicate = null ) {
+
+	const records = new Map();
+	scene.traverse( ( object ) => {
+
+		const material = object && object.material;
+		const materials = Array.isArray( material ) ? material : material ? [ material ] : [];
+		for ( const candidate of materials ) {
+
+			const artifact = candidate && candidate.precompiledArtifact;
+			if ( ! ( candidate && candidate.isPrecompiledMaterial === true && artifact ) ) continue;
+			let record = records.get( artifact );
+			if ( ! record ) {
+
+				record = { materials: new Set(), eligible: predicate === null };
+				records.set( artifact, record );
+
+			}
+			record.materials.add( candidate );
+			if ( predicate && predicate( artifact, candidate, object ) ) record.eligible = true;
+
+		}
+
+	} );
+	return records;
 
 }
 
@@ -136,6 +166,7 @@ export function updateRendererLightingForSlim( renderer, scene, camera, opts = {
 	const stats = {
 		updated: false,
 		cpuTiled: false,
+		cpuClustered: false,
 		storageAttrs: 0,
 		artifactsWired: 0,
 		textureRefsWired: 0,
@@ -155,10 +186,26 @@ export function updateRendererLightingForSlim( renderer, scene, camera, opts = {
 	}
 	if ( ! node || typeof node.updateBefore !== 'function' ) return stats;
 
+	const diagnostics = opts.diagnostics || null;
+	if ( diagnostics && ! diagnostics.rendererLightingNodeShape ) {
+
+		diagnostics.rendererLightingNodeShape = {
+			type: String( node.type || node.constructor && node.constructor.name || '' ),
+			hasTiledLights: Array.isArray( node.tiledLights ),
+			hasClusteredLights: Array.isArray( node.clusteredLights ),
+			keys: Object.keys( node ).filter( ( key ) => /light|cluster|tile|buffer|compute/i.test( key ) ).slice( 0, 32 ),
+		};
+
+	}
+
 	updateWorldMatrices( scene, camera );
 	try {
 
-		if ( typeof node.setLights === 'function' ) node.setLights( collectSceneLights( scene ) );
+		if ( typeof node.setLights === 'function' ) {
+
+			node.setLights( lighting.enabled === false ? [] : collectSceneLights( scene, camera ) );
+
+		}
 
 	} catch ( err ) {
 
@@ -166,13 +213,18 @@ export function updateRendererLightingForSlim( renderer, scene, camera, opts = {
 
 	}
 
-	const diagnostics = opts.diagnostics || null;
 	if ( diagnostics ) diagnostics.lightingUpdateBefore = ( diagnostics.lightingUpdateBefore | 0 ) + 1;
 
 	if ( opts.cpuTiledLighting !== false ) {
 
 		const tiled = updateTiledLightingOnCPU( node, renderer, scene, camera, opts );
 		if ( tiled.cpuTiled ) return Object.assign( stats, tiled );
+
+	}
+	if ( opts.cpuClusteredLighting !== false ) {
+
+		const clustered = updateClusteredLightingOnCPU( node, renderer, scene, camera, opts );
+		if ( clustered.cpuClustered ) return Object.assign( stats, clustered );
 
 	}
 
@@ -190,6 +242,237 @@ export function updateRendererLightingForSlim( renderer, scene, camera, opts = {
 	} finally {
 
 		renderer[ guardKey ] = Math.max( 0, ( renderer[ guardKey ] | 0 ) - 1 );
+
+	}
+	return stats;
+
+}
+
+function updateClusteredLightingOnCPU( node, renderer, scene, camera, opts ) {
+
+	const stats = {
+		updated: false,
+		cpuTiled: false,
+		cpuClustered: false,
+		storageAttrs: 0,
+		artifactsWired: 0,
+		textureRefsWired: 0,
+	};
+
+	if ( ! node || ! Array.isArray( node.clusteredLights ) ) return stats;
+	if ( typeof node.updateProgram !== 'function' || typeof node.updateLightsTexture !== 'function' ) {
+
+		recordClusteredSkip( opts, 'missing-update-methods' );
+		return stats;
+
+	}
+
+	try {
+
+		node.updateProgram( renderer );
+		node.updateLightsTexture( camera );
+		updateClusteredUniforms( node, camera );
+
+	} catch ( err ) {
+
+		reportError( opts, err, 'clusteredLighting.setup' );
+		return stats;
+
+	}
+
+	const storageNode = node._lightIndexes;
+	const attr = storageAttributeOf( storageNode );
+	const array = attr && attr.array;
+	const bufferSize = node._bufferSize;
+	const lightsTexture = node._lightsTexture;
+	const lightsImage = lightsTexture && ( lightsTexture.image || lightsTexture.source && lightsTexture.source.data );
+	const lightsData = lightsImage && lightsImage.data;
+	const zRanges = node._zSliceRangesData;
+	const projection = matrixElements( camera && camera.projectionMatrix );
+	if ( ! array || ! ArrayBuffer.isView( array ) || ! bufferSize ||
+		! lightsData || ! ArrayBuffer.isView( lightsData ) ||
+		! zRanges || ! ArrayBuffer.isView( zRanges ) || ! projection ) {
+
+		recordClusteredSkip( opts, 'missing-live-resources', {
+			hasAttribute: !! attr,
+			hasArray: ArrayBuffer.isView( array ),
+			hasBufferSize: !! bufferSize,
+			hasLightsTexture: !! lightsTexture,
+			hasLightsImage: !! lightsImage,
+			hasLightsData: ArrayBuffer.isView( lightsData ),
+			hasZRanges: ArrayBuffer.isView( zRanges ),
+			hasProjection: !! projection,
+		} );
+		return stats;
+
+	}
+
+	const tileSize = Math.max( 1, Number( node.tileSize ) || 32 );
+	const tilesX = Math.max( 1, Math.floor( Number( bufferSize.width || bufferSize.x || 1 ) / tileSize ) );
+	const tilesY = Math.max( 1, Math.floor( Number( bufferSize.height || bufferSize.y || 1 ) / tileSize ) );
+	const zSlices = Math.max( 1, Math.floor( Number( node.zSlices ) || 1 ) );
+	const maxLightsPerCluster = Math.max( 1, Math.floor( Number( node.maxLightsPerCluster ) || 1 ) );
+	const chunksPerCluster = Math.max( 1, Math.floor( Number( node._chunksPerCluster ) || Math.ceil( maxLightsPerCluster / 4 ) ) );
+	const clusterStride = chunksPerCluster * 4;
+	const clusterCount = tilesX * tilesY * zSlices;
+	if ( array.length < clusterCount * clusterStride || zRanges.length < zSlices * 4 ) {
+
+		recordClusteredSkip( opts, 'resource-shape-mismatch', {
+			arrayLength: array.length,
+			requiredArrayLength: clusterCount * clusterStride,
+			zRangesLength: zRanges.length,
+			requiredZRangesLength: zSlices * 4,
+			tilesX,
+			tilesY,
+			zSlices,
+		} );
+		return stats;
+
+	}
+
+	const near = Number( camera.near );
+	const far = Number( camera.far );
+	const focalX = Number( projection[ 0 ] );
+	const focalY = Number( projection[ 5 ] );
+	if ( ! Number.isFinite( near ) || near <= 0 || ! Number.isFinite( far ) || far <= near ||
+		! Number.isFinite( focalX ) || Math.abs( focalX ) < 1e-8 ||
+		! Number.isFinite( focalY ) || Math.abs( focalY ) < 1e-8 ) {
+
+		recordClusteredSkip( opts, 'invalid-camera', { near, far, focalX, focalY } );
+		return stats;
+
+	}
+
+	const textureWidth = Math.max( 0, Math.floor( Number( lightsImage.width ) || lightsData.length / 8 ) );
+	const lightCount = Math.min( node.clusteredLights.length, textureWidth, Math.floor( lightsData.length / 8 ) );
+	const viewLights = clusteredViewLightData( node, lightCount );
+	for ( let lightIndex = 0; lightIndex < lightCount; lightIndex ++ ) {
+
+		const offset = lightIndex * 4;
+		tiledLightWorld.x = Number( lightsData[ offset ] );
+		tiledLightWorld.y = Number( lightsData[ offset + 1 ] );
+		tiledLightWorld.z = Number( lightsData[ offset + 2 ] );
+		const distance = Number( lightsData[ offset + 3 ] );
+		if ( ! Number.isFinite( tiledLightWorld.x ) || ! Number.isFinite( tiledLightWorld.y ) ||
+			! Number.isFinite( tiledLightWorld.z ) || ! Number.isFinite( distance ) ) {
+
+			viewLights[ offset ] = NaN;
+			continue;
+
+		}
+		transformPoint3( tiledLightView, tiledLightWorld, camera.matrixWorldInverse );
+		viewLights[ offset ] = tiledLightView.x;
+		viewLights[ offset + 1 ] = tiledLightView.y;
+		viewLights[ offset + 2 ] = tiledLightView.z;
+		viewLights[ offset + 3 ] = distance * distance;
+
+	}
+	const invFocalX = 1 / focalX;
+	const invFocalY = 1 / focalY;
+	const farOverNear = far / near;
+	let testedLights = 0;
+	let assignedLights = 0;
+
+	array.fill( 0 );
+	for ( let z = 0; z < zSlices; z ++ ) {
+
+		const rangeStart = clampInteger( zRanges[ z * 4 ], 0, lightCount );
+		const rangeEnd = clampInteger( zRanges[ z * 4 + 1 ], rangeStart, lightCount );
+		if ( rangeStart >= rangeEnd ) continue;
+
+		const zNearCluster = - near * Math.pow( farOverNear, z / zSlices );
+		const zFarCluster = - near * Math.pow( farOverNear, ( z + 1 ) / zSlices );
+		const scaleNearX = - zNearCluster * invFocalX;
+		const scaleFarX = - zFarCluster * invFocalX;
+		const scaleNearY = - zNearCluster * invFocalY;
+		const scaleFarY = - zFarCluster * invFocalY;
+
+		for ( let y = 0; y < tilesY; y ++ ) {
+
+			const ndcYMax = 1 - y * 2 / tilesY;
+			const ndcYMin = 1 - ( y + 1 ) * 2 / tilesY;
+			const aabbMinY = Math.min( ndcYMin * scaleNearY, ndcYMin * scaleFarY );
+			const aabbMaxY = Math.max( ndcYMax * scaleNearY, ndcYMax * scaleFarY );
+
+			for ( let x = 0; x < tilesX; x ++ ) {
+
+				const ndcXMin = x * 2 / tilesX - 1;
+				const ndcXMax = ( x + 1 ) * 2 / tilesX - 1;
+				const aabbMinX = Math.min( ndcXMin * scaleNearX, ndcXMin * scaleFarX );
+				const aabbMaxX = Math.max( ndcXMax * scaleNearX, ndcXMax * scaleFarX );
+				const clusterIndex = x + y * tilesX + z * tilesX * tilesY;
+				const base = clusterIndex * clusterStride;
+				let written = 0;
+
+				for ( let lightIndex = rangeStart; lightIndex < rangeEnd && written < maxLightsPerCluster; lightIndex ++ ) {
+
+					const offset = lightIndex * 4;
+					const lightX = viewLights[ offset ];
+					if ( ! Number.isFinite( lightX ) ) continue;
+					const lightY = viewLights[ offset + 1 ];
+					const lightZ = viewLights[ offset + 2 ];
+					const closestX = Math.max( aabbMinX, Math.min( lightX, aabbMaxX ) );
+					const closestY = Math.max( aabbMinY, Math.min( lightY, aabbMaxY ) );
+					const closestZ = Math.max( zFarCluster, Math.min( lightZ, zNearCluster ) );
+					const dx = lightX - closestX;
+					const dy = lightY - closestY;
+					const dz = lightZ - closestZ;
+					testedLights ++;
+					if ( dx * dx + dy * dy + dz * dz > viewLights[ offset + 3 ] ) continue;
+
+					array[ base + written ] = lightIndex + 1;
+					written ++;
+					assignedLights ++;
+
+				}
+
+			}
+
+		}
+
+	}
+
+	try { attr.needsUpdate = true; } catch ( _ ) {}
+	if ( typeof attr.version === 'number' ) attr.version = attr.version + 1;
+
+	stats.updated = true;
+	stats.cpuClustered = true;
+	stats.storageAttrs = 1;
+	if ( typeof opts.onStorageAttribute === 'function' ) {
+
+		try { opts.onStorageAttribute( attr, node ); } catch ( _ ) {}
+
+	}
+	if ( opts.wireSceneArtifacts !== false ) {
+
+		stats.artifactsWired = wireStorageAttributesToSceneArtifacts( scene, [ storageAttributeEvidence( storageNode, attr ) ], {
+			renderer,
+			diagnostics: opts.diagnostics,
+			bumpVersion: opts.bumpVersion !== false,
+			allowVec3ToVec4: opts.allowVec3ToVec4 !== false,
+			replaceExisting: true,
+			artifactPredicate: opts.artifactPredicate,
+			onMaterial: opts.onMaterial,
+		} );
+
+	}
+	try { lightsTexture.needsUpdate = true; } catch ( _ ) {}
+	if ( opts.wireSceneTextures !== false ) {
+
+		stats.textureRefsWired = wireTiledLightingTextureToScene( scene, lightsTexture, {
+			renderer,
+			diagnostics: opts.diagnostics,
+		} );
+
+	}
+
+	const diagnostics = opts.diagnostics || null;
+	if ( diagnostics ) {
+
+		diagnostics.clusteredCpuUpdates = ( diagnostics.clusteredCpuUpdates | 0 ) + 1;
+		diagnostics.clusteredCpuTests = ( diagnostics.clusteredCpuTests | 0 ) + testedLights;
+		diagnostics.clusteredCpuAssignments = ( diagnostics.clusteredCpuAssignments | 0 ) + assignedLights;
+		diagnostics.storageAttrs = ( diagnostics.storageAttrs | 0 ) + 1;
 
 	}
 	return stats;
@@ -221,7 +504,8 @@ function updateTiledLightingOnCPU( node, renderer, scene, camera, opts ) {
 
 	}
 
-	const attr = node._lightIndexes;
+	const storageNode = node._lightIndexes;
+	const attr = storageAttributeOf( storageNode );
 	const array = attr && attr.array;
 	const bufferSize = node._bufferSize;
 	if ( ! array || ! ArrayBuffer.isView( array ) || ! bufferSize ) return stats;
@@ -287,11 +571,12 @@ function updateTiledLightingOnCPU( node, renderer, scene, camera, opts ) {
 	}
 	if ( opts.wireSceneArtifacts !== false ) {
 
-		stats.artifactsWired = wireStorageAttributesToSceneArtifacts( scene, [ attr ], {
+		stats.artifactsWired = wireStorageAttributesToSceneArtifacts( scene, [ storageAttributeEvidence( storageNode, attr ) ], {
 			renderer,
 			diagnostics: opts.diagnostics,
 			bumpVersion: opts.bumpVersion !== false,
 			allowVec3ToVec4: opts.allowVec3ToVec4 !== false,
+			replaceExisting: true,
 			artifactPredicate: opts.artifactPredicate,
 			onMaterial: opts.onMaterial,
 		} );
@@ -346,6 +631,28 @@ function updateTiledUniforms( node, camera, screenSize ) {
 
 }
 
+function updateClusteredUniforms( node, camera ) {
+
+	try {
+
+		if ( node._lightsCount ) node._lightsCount.value = node.clusteredLights.length;
+		if ( node._cameraNear ) node._cameraNear.value = camera.near;
+		if ( node._cameraFar ) node._cameraFar.value = camera.far;
+		if ( node._cameraProjectionMatrix ) node._cameraProjectionMatrix.value = camera.projectionMatrix;
+		if ( node._cameraViewMatrix ) node._cameraViewMatrix.value = camera.matrixWorldInverse;
+
+	} catch ( _ ) {}
+
+}
+
+function clampInteger( value, min, max ) {
+
+	const numeric = Number( value );
+	if ( ! Number.isFinite( numeric ) ) return min;
+	return Math.max( min, Math.min( max, Math.trunc( numeric ) ) );
+
+}
+
 function rendererDrawingBufferSize( renderer, fallback ) {
 
 	const out = tiledLightingSize.set( Number( fallback.width || 1 ), Number( fallback.height || 1 ) );
@@ -388,6 +695,37 @@ function createSizeTarget() {
 function matrixElements( matrix ) {
 
 	return matrix && matrix.elements || matrix;
+
+}
+
+function clusteredViewLightData( node, lightCount ) {
+
+	const requiredLength = Math.max( 0, lightCount * 4 );
+	let values = clusteredViewLightsByNode.get( node );
+	if ( ! values || values.length < requiredLength ) {
+
+		values = new Float64Array( requiredLength );
+		clusteredViewLightsByNode.set( node, values );
+
+	}
+	return values;
+
+}
+
+function storageAttributeOf( value ) {
+
+	if ( value && ( value.isStorageBufferAttribute === true || value.isStorageInstancedBufferAttribute === true ) ) return value;
+	const attribute = value && value.value;
+	return attribute && ( attribute.isStorageBufferAttribute === true || attribute.isStorageInstancedBufferAttribute === true )
+		? attribute
+		: value;
+
+}
+
+function storageAttributeEvidence( node, attribute ) {
+
+	const attributeName = node && typeof node.name === 'string' ? node.name.trim() : '';
+	return attributeName ? { attribute, attributeName } : attribute;
 
 }
 
@@ -477,6 +815,14 @@ function clearRendererNodeCache( renderer ) {
 		if ( cache && typeof cache.clear === 'function' ) cache.clear();
 
 	} catch ( _ ) {}
+
+}
+
+function recordClusteredSkip( opts, reason, detail = {} ) {
+
+	const diagnostics = opts && opts.diagnostics;
+	if ( ! diagnostics || diagnostics.clusteredCpuSkip ) return;
+	diagnostics.clusteredCpuSkip = { reason, ...detail };
 
 }
 

@@ -97,6 +97,19 @@ test( 'babel — simple .precompile call is rewritten', () => {
 
 } );
 
+test( 'babel — build mode can select the full-Three live-material apply entry', () => {
+
+	const src = `const material = createMaterial();\nmaterial.precompile('hero');\n`;
+	const { code } = transformSource( src, {
+		filename: 'full-mode.js',
+		resolveArtifact: resolveArtifactStub( { hero: 'sha256:abc' } ),
+		applyImportSpecifier: '@tsl-precompile/runtime/apply/full',
+	} );
+	assert.match( code, /import \{ __applyPrecompiled \} from "@tsl-precompile\/runtime\/apply\/full"/ );
+	assert.doesNotMatch( code, /from "@tsl-precompile\/runtime\/apply"/ );
+
+} );
+
 test( 'babel — no-op when file has no marker', () => {
 
 	const src = `const x = 1;\nfoo();\n`;
@@ -116,6 +129,48 @@ test( 'babel — unknown-name call produces a clear build error', () => {
 		filename: 'foo.js',
 		resolveArtifact: () => null,
 	} ), /no captured artifact/ );
+
+} );
+
+test( 'babel — full compatibility fallback removes only missing markers and keeps captured siblings', () => {
+
+	const src = `
+		const missing = getMaterial().precompile('missing', makeCaptureContext());
+		const captured = other.precompile('hero');
+	`;
+	const result = transformSource( src, {
+		filename: 'compatibility.js',
+		resolveArtifact: resolveArtifactStub( { hero: 'sha256:abc' } ),
+		applyImportSpecifier: '@tsl-precompile/runtime/apply/full',
+		shouldFallbackMissingArtifact: ( name ) => name === 'missing',
+	} );
+
+	assert.deepEqual( result.touchedNames, [ 'hero' ] );
+	assert.deepEqual( result.missingArtifacts.map( ( item ) => item.name ), [ 'missing' ] );
+	assert.match( result.missingArtifacts[ 0 ].message, /keeping the live NodeMaterial in full-Three compatibility mode/ );
+	assert.doesNotMatch( result.code, /\.precompile\(/ );
+	assert.match( result.code, /\(__tslp_material, __tslp_context\) => __tslp_material/ );
+	assert.match( result.code, /\)\(getMaterial\(\), makeCaptureContext\(\)\)/ );
+	assert.equal( ( result.code.match( /getMaterial\(\)/g ) || [] ).length, 1 );
+	assert.equal( ( result.code.match( /makeCaptureContext\(\)/g ) || [] ).length, 1 );
+	assert.ok( result.code.indexOf( 'getMaterial()' ) < result.code.indexOf( 'makeCaptureContext()' ) );
+	assert.match( result.code, /__applyPrecompiled\(other, __tsl_art_hero, "sha256:abc"\)/ );
+
+} );
+
+test( 'babel — a fallback-only module does not import the apply runtime', () => {
+
+	const result = transformSource( `const material = createMaterial().precompile('missing');\n`, {
+		filename: 'compatibility-only.js',
+		resolveArtifact: () => null,
+		shouldFallbackMissingArtifact: () => true,
+	} );
+
+	assert.deepEqual( result.touchedNames, [] );
+	assert.deepEqual( result.missingArtifacts.map( ( item ) => item.name ), [ 'missing' ] );
+	assert.doesNotMatch( result.code, /\.precompile\(/ );
+	assert.doesNotMatch( result.code, /@tsl-precompile\/runtime\/apply/ );
+	assert.match( result.code, /const material = createMaterial\(\)/ );
 
 } );
 
@@ -270,6 +325,85 @@ test( 'babel — build rejects a changed captured call-site revision', () => {
 		root: '/project',
 		resolveArtifact: () => ( { hash: 'sha256:abc', sourceOwners: [ owner ] } ),
 	} ), /source changed since capture/ );
+
+} );
+
+test( 'babel — dev annotation and build validation share a supplied dependency-closure revision', () => {
+
+	const source = `material.precompile('hero');\n`;
+	const revision = 'd'.repeat( 64 );
+	const annotated = annotateDevMarkerSources( source, {
+		filename: '/project/src/materials.js',
+		root: '/project',
+		sourceRevision: revision,
+	} );
+	assert.deepEqual( annotated.sourceOwners, [ {
+		identity: 'src/materials.js:precompile:0',
+		revision,
+	} ] );
+	assert.match( annotated.code, new RegExp( `"${ revision }"` ) );
+	assert.doesNotThrow( () => transformSource( source, {
+		filename: '/project/src/materials.js',
+		root: '/project',
+		sourceRevision: revision,
+		resolveArtifact: () => ( {
+			hash: 'sha256:abc',
+			sourceOwners: annotated.sourceOwners,
+		} ),
+	} ) );
+
+} );
+
+test( 'babel — build rejects a missing or different captured dependency-closure proof', () => {
+
+	const source = `material.precompile('hero');\n`;
+	const revision = 'e'.repeat( 64 );
+	const sourceProvenance = {
+		schema: 'marker-source-closure@1',
+		dependencies: [ 'src/helper.js' ],
+	};
+	assert.throws( () => transformSource( source, {
+		filename: '/project/src/materials.js',
+		root: '/project',
+		sourceRevision: revision,
+		sourceProvenance,
+		resolveArtifact: () => ( {
+			hash: 'sha256:abc',
+			sourceOwners: [ {
+				identity: 'src/materials.js:precompile:0',
+				revision,
+			} ],
+		} ),
+	} ), /project-local dependency closure differs from capture/ );
+
+	assert.doesNotThrow( () => transformSource( source, {
+		filename: '/project/src/materials.js',
+		root: '/project',
+		sourceRevision: revision,
+		sourceProvenance,
+		resolveArtifact: () => ( {
+			hash: 'sha256:abc',
+			sourceOwners: [ {
+				identity: 'src/materials.js:precompile:0',
+				revision,
+				provenance: sourceProvenance,
+			} ],
+		} ),
+	} ) );
+
+} );
+
+test( 'babel — call-site validation cannot silently fall back to an ownerless artifact', () => {
+
+	assert.throws( () => transformSource( `material.precompile('hero');\n`, {
+		filename: '/project/src/materials.js',
+		root: '/project',
+		resolveArtifact: () => ( {
+			hash: 'sha256:abc',
+			sourceValidationMode: 'callsite',
+			sourceOwners: [],
+		} ),
+	} ), /requires call-site dependency validation but has no captured source owner/ );
 
 } );
 

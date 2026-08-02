@@ -1,12 +1,12 @@
 import { EventDispatcher } from 'three/src/core/EventDispatcher.js';
 
 const ERROR_CODE = 'TSLP_SLIM_XR_UNSUPPORTED';
-const ERROR_PREFIX = '[tsl-precompile/slim] XR is unavailable in the WebGPU-only slim renderer';
+const ERROR_PREFIX = '[tsl-precompile/slim] XR is unavailable in the compiler-free slim renderer';
 
 function unsupportedXR( operation ) {
 
 	const error = new Error(
-		`${ ERROR_PREFIX }: ${ operation }. Three r184 supports XR only through its WebGL 2 backend; use the full Three renderer with { forceWebGL: true } for XR.`
+		`${ ERROR_PREFIX }: ${ operation }. Three r185 supports XR only through its WebGL 2 backend; use the full Three renderer with { forceWebGL: true } for XR.`
 	);
 	error.code = ERROR_CODE;
 	error.tslPrecompileSlimOnly = true;
@@ -17,10 +17,10 @@ function unsupportedXR( operation ) {
 /**
  * Inactive, graph-free replacement for Three's XRManager.
  *
- * The slim renderer has no WebGL fallback, while Three r184 rejects XR
- * sessions on its WebGPU backend. Keeping the stock manager would therefore
+ * Slim supports precompiled WebGPU and WebGL rendering, but not the dynamic
+ * XR graph/session path. Keeping the stock manager would therefore
  * retain controller, layer, geometry, material, and TSL output code for a
- * path that can never present. This adapter preserves the complete r184
+ * path that can never present. This adapter preserves the complete r185
  * prototype and the idle state consumed by Renderer/replay, then fails at
  * the first operation that would claim XR support.
  */

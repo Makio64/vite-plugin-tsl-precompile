@@ -8,12 +8,16 @@ import {
 	hashArray as threeHashArray,
 	hashString as threeHashString,
 } from 'three/src/nodes/core/NodeUtils.js';
-import { NodeAccess as threeNodeAccess } from 'three/src/nodes/core/constants.js';
+import {
+	NodeAccess as threeNodeAccess,
+	NodeUpdateType as threeNodeUpdateType,
+} from 'three/src/nodes/core/constants.js';
 import {
 	hash,
 	hashArray,
 	hashString,
 	NodeAccess,
+	NodeUpdateType,
 } from '../src/slim-replay-node-core-primitives.js';
 import {
 	NodeAccess as publicNodeAccess,
@@ -21,9 +25,9 @@ import {
 	TSL,
 } from '../src/slim-stubs.js';
 
-test( 'replay-owned hashes retain exact Three r184 string behavior', () => {
+test( 'replay-owned hashes retain exact Three r185 string behavior', () => {
 
-	assert.equal( REVISION, '184', 'update the replay primitive and its parity fixtures before upgrading Three' );
+	assert.equal( REVISION, '185', 'update the replay primitive and its parity fixtures before upgrading Three' );
 	const strings = [
 		'',
 		'a',
@@ -42,7 +46,7 @@ test( 'replay-owned hashes retain exact Three r184 string behavior', () => {
 
 } );
 
-test( 'replay-owned hashes retain exact Three r184 array and variadic numeric behavior', () => {
+test( 'replay-owned hashes retain exact Three r185 array and variadic numeric behavior', () => {
 
 	const arrays = [
 		[],
@@ -69,11 +73,14 @@ test( 'replay-owned hashes retain exact Three r184 array and variadic numeric be
 
 } );
 
-test( 'replay-owned NodeAccess retains the exact Three r184 values and object shape', () => {
+test( 'replay-owned node constants retain the exact Three r185 values and object shapes', () => {
 
 	assert.deepEqual( NodeAccess, threeNodeAccess );
 	assert.deepEqual( Object.keys( NodeAccess ), [ 'READ_ONLY', 'WRITE_ONLY', 'READ_WRITE' ] );
 	assert.equal( Object.isFrozen( NodeAccess ), Object.isFrozen( threeNodeAccess ) );
+	assert.deepEqual( NodeUpdateType, threeNodeUpdateType );
+	assert.deepEqual( Object.keys( NodeUpdateType ), [ 'NONE', 'FRAME', 'RENDER', 'OBJECT' ] );
+	assert.equal( Object.isFrozen( NodeUpdateType ), Object.isFrozen( threeNodeUpdateType ) );
 
 } );
 

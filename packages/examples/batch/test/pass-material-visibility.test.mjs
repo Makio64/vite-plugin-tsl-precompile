@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { isTransparentRenderMaterial, passRendersMaterial } from '../pass-material-visibility.mjs';
 
-test( 'matches Three r184 RenderList transparent classification', () => {
+test( 'matches Three r185 RenderList transparent classification', () => {
 
 	assert.equal( isTransparentRenderMaterial( { transparent: false, transmission: 0 } ), false );
 	assert.equal( isTransparentRenderMaterial( { transparent: true } ), true );

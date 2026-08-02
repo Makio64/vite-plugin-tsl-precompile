@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -81,6 +81,12 @@ test( 'bundle validation rejects missing paths and directories at startup', () =
 		() => loadSlimBundle( { defaultPath: '.', env: {}, cwd: root } ),
 		/Slim bundle path is not a file:/,
 	);
+	writeFileSync( join( root, 'target.js' ), 'target' );
+	symlinkSync( join( root, 'target.js' ), join( root, 'linked.js' ) );
+	assert.throws(
+		() => loadSlimBundle( { defaultPath: 'linked.js', env: {}, cwd: root } ),
+		/Slim bundle path is not a file:/,
+	);
 
 } );
 
@@ -90,8 +96,8 @@ test( 'hash options come from the authoritative minification-safe bundle stamp',
 	const stamp = formatSlimBundleStamp( {
 		sourceFingerprint: 'a'.repeat( 64 ),
 		versions: {
-			three: '0.184.0',
-			policy: 'slim-three-policy@8',
+			three: '0.185.1',
+			policy: 'slim-three-policy@12',
 			artifactToolchain: '0.1.0',
 			buildToolchain: 'tslp-slim-rollup@1',
 		},
@@ -99,11 +105,11 @@ test( 'hash options come from the authoritative minification-safe bundle stamp',
 	writeFileSync( join( root, 'stamped.js' ), `${ stamp }\nconst a={};` );
 	const bundle = loadSlimBundle( { defaultPath: 'stamped.js', env: {}, cwd: root } );
 	assert.deepEqual( slimBundleHashOptions( bundle ), {
-		threeVersion: '0.184.0',
+		threeVersion: '0.185.1',
 		pluginVersion: '0.1.0',
 	} );
 	assert.throws(
-		() => slimBundleHashOptions( { bytes: Buffer.from( 'const threeVersion = "0.184.0";' ) } ),
+		() => slimBundleHashOptions( { bytes: Buffer.from( 'const threeVersion = "0.185.1";' ) } ),
 		/does not begin with its required embedded provenance stamp/,
 	);
 
@@ -111,7 +117,10 @@ test( 'hash options come from the authoritative minification-safe bundle stamp',
 
 test( 'replay imports and forwarded exports share one cache-busted slim module identity', () => {
 
-	const source = readFileSync( new URL( '../run-e2e.mjs', import.meta.url ), 'utf8' );
+	const source = [
+		readFileSync( new URL( '../run-e2e.mjs', import.meta.url ), 'utf8' ),
+		readFileSync( new URL( '../e2e-slim-replay-module.mjs', import.meta.url ), 'utf8' ),
+	].join( '\n' );
 	assert.match( source, /const SLIM_BUNDLE_BROWSER_MODULE = `\/__tslp__\/three\.webgpu\.slim\.js\?v=\$\{ CACHE_BUST \}`/ );
 	assert.match( source, /export \{ \$\{ SLIM_REPLAY_FORWARD_EXPORTS\.join\( ', ' \) \} \} from \$\{ JSON\.stringify\( SLIM_BUNDLE_BROWSER_MODULE \) \}/ );
 	assert.match( source, /import \* as Slim from \$\{ JSON\.stringify\( SLIM_BUNDLE_BROWSER_MODULE \) \}/ );

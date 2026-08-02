@@ -23,7 +23,10 @@ function bloomLike() {
 		],
 		_renderTargetsVertical: [],
 		_highPassFilterMaterial: { name: 'highPass' },
-		_separableBlurMaterials: [ { name: 'b0' }, { name: 'b1' } ],
+		_separableBlurMaterials: [
+			{ name: 'b0', colorTexture: { value: { name: 'live-b0' } } },
+			{ name: 'b1', colorTexture: { value: { name: 'live-b1' } } },
+		],
 		_compositeMaterial: { name: 'composite' },
 	};
 
@@ -95,7 +98,10 @@ function traaLike() {
 	return {
 		_resolveMaterial: { name: 'traa-resolve' },
 		_historyRenderTarget: { isRenderTarget: true },
-		_resolveRenderTarget: { isRenderTarget: true },
+		_resolveRenderTarget: {
+			isRenderTarget: true,
+			texture: { format: 1023, type: 1016 },
+		},
 	};
 
 }
@@ -209,6 +215,8 @@ test( 'bloom handler subPasses returns high-pass + N blur + composite', () => {
 
 	const handler = findEffectHandler( bloomLike() );
 	const node = bloomLike();
+	const liveTexture0 = node._separableBlurMaterials[ 0 ].colorTexture.value;
+	const liveTexture1 = node._separableBlurMaterials[ 1 ].colorTexture.value;
 	const sub = handler.subPasses( node, 0 );
 	assert.equal( sub.length, 4 ); // 1 + 2 + 1
 	assert.equal( sub[ 0 ].shape, 'bloom-high-pass' );
@@ -220,6 +228,33 @@ test( 'bloom handler subPasses returns high-pass + N blur + composite', () => {
 	assert.deepEqual( sub[ 1 ].renderTargetHint, { count: 1, format: 1023, type: 1016 } );
 	assert.deepEqual( sub[ 2 ].renderTargetHint, { count: 1, format: 1026, type: 1009 } );
 	assert.deepEqual( sub[ 3 ].renderTargetHint, { count: 1, format: 1023, type: 1016 } );
+	assert.equal( node._separableBlurMaterials[ 0 ].colorTexture.value, liveTexture0, 'sub-pass discovery does not mutate the live blur input' );
+	assert.equal( node._separableBlurMaterials[ 1 ].colorTexture.value, liveTexture1, 'every live blur input remains untouched' );
+	assert.deepEqual( sub[ 1 ].captureOverrides, [ {
+		property: 'colorTexture',
+		key: 'value',
+		value: node._renderTargetBright.texture,
+	} ] );
+	assert.deepEqual( sub[ 2 ].captureOverrides, sub[ 1 ].captureOverrides );
+
+} );
+
+test( 'bloom handler ignores duplicate setup materials beyond the live mip topology', () => {
+
+	const node = bloomLike();
+	node._nMips = 2;
+	node._renderTargetsVertical = [ {}, {} ];
+	node._separableBlurMaterials.push(
+		{ name: 'duplicate-b0' },
+		{ name: 'duplicate-b1' },
+	);
+	const handler = findEffectHandler( node );
+	const sub = handler.subPasses( node, 0 );
+	assert.deepEqual(
+		sub.map( ( pass ) => pass.shape ),
+		[ 'bloom-high-pass', 'bloom-blur-0', 'bloom-blur-1', 'bloom-composite' ],
+	);
+	assert.equal( sub.some( ( pass ) => pass.shape === 'bloom-blur-2' ), false );
 
 } );
 
@@ -247,6 +282,48 @@ test( 'ssr handler subPasses returns trace+blur+copy', () => {
 		sub.map( ( s ) => s.shape ).sort(),
 		[ 'ssr-blur', 'ssr-copy', 'ssr-trace' ]
 	);
+
+} );
+
+test( 'ssr handler keeps mipmapped targets valid after isolated capture', () => {
+
+	const node = ssrLike();
+	node._ssrRenderTarget.width = 1;
+	node._ssrRenderTarget.height = 1;
+	node.setSizeCalls = [];
+	node.setSize = ( width, height ) => {
+
+		node.setSizeCalls.push( [ width, height ] );
+		node._ssrRenderTarget.width = width;
+		node._ssrRenderTarget.height = height;
+
+	};
+	const renderer = {
+		getDrawingBufferSize( target ) { return target.set( 640, 480 ); },
+	};
+	const cleanup = findEffectHandler( node ).prepareCapture( node, { renderer } );
+
+	assert.deepEqual( node.setSizeCalls, [ [ 640, 480 ] ] );
+	assert.equal( cleanup, null );
+	assert.equal( node._ssrRenderTarget.width, 640 );
+	assert.equal( node._ssrRenderTarget.height, 480 );
+
+} );
+
+test( 'ssr handler uses the smallest legal five-mip target before canvas sizing', () => {
+
+	const node = ssrLike();
+	node._ssrRenderTarget.width = 1;
+	node._ssrRenderTarget.height = 1;
+	node.setSizeCalls = [];
+	node.setSize = ( width, height ) => node.setSizeCalls.push( [ width, height ] );
+	const renderer = {
+		domElement: { width: 1, height: 1 },
+		getDrawingBufferSize( target ) { return target.set( 1, 1 ); },
+	};
+
+	assert.equal( findEffectHandler( node ).prepareCapture( node, { renderer } ), null );
+	assert.deepEqual( node.setSizeCalls, [ [ 16, 16 ] ] );
 
 } );
 
@@ -314,6 +391,11 @@ test( 'traa handler subPasses returns single resolve material', () => {
 	const sub = handler.subPasses( traaLike(), 0 );
 	assert.equal( sub.length, 1 );
 	assert.equal( sub[ 0 ].shape, 'traa-resolve' );
+	assert.deepEqual( sub[ 0 ].renderTargetHint, {
+		count: 1,
+		format: 1023,
+		type: 1016,
+	} );
 
 } );
 
@@ -400,6 +482,20 @@ test( 'collectEffectNodes tolerates cycles through explicit dependencies', () =>
 	attachLiveNodeDependency( owner, bloom );
 	attachLiveNodeDependency( bloom, owner );
 	assert.deepEqual( collectEffectNodes( owner ).map( ( match ) => match.handler.name ), [ 'bloom' ] );
+
+} );
+
+test( 'collectEffectNodes reaches producers through deep cyclic wrapper graphs', () => {
+
+	const ssr = ssrLike();
+	let root = { passTexture: { isPassTextureNode: true, passNode: ssr } };
+	for ( let index = 0; index < 40; index ++ ) root = { wrapped: root };
+	root.feedback = root;
+
+	const matches = collectEffectNodes( root );
+
+	assert.deepEqual( matches.map( ( match ) => match.handler.name ), [ 'ssr' ] );
+	assert.equal( matches[ 0 ].node, ssr );
 
 } );
 

@@ -26,6 +26,45 @@ const JSON_OUTPUT = process.argv.includes( '--json' );
 const PROFILE = process.argv.find( ( argument ) => argument.startsWith( '--profile=' ) )?.slice( '--profile='.length ) || null;
 const PREBUILT_HELPERS_PROFILE = 'prebuilt-helpers';
 
+function assertDocumentedByteBudget( label, limits, kind ) {
+
+	const baseline = limits[ `baseline${ kind }Bytes` ];
+	const headroom = limits[ `${ kind[ 0 ].toLowerCase() }${ kind.slice( 1 ) }HeadroomBytes` ];
+	const maximum = limits[ `max${ kind }Bytes` ];
+	if ( ! Number.isSafeInteger( baseline ) || ! Number.isSafeInteger( headroom ) || ! Number.isSafeInteger( maximum ) ) {
+
+		throw new Error( `${ label} must document integer ${ kind.toLowerCase() } baseline, headroom, and maximum byte values.` );
+
+	}
+	if ( baseline + headroom !== maximum ) {
+
+		throw new Error( `${ label} ${ kind.toLowerCase() } budget must equal its documented baseline plus headroom (${ baseline } + ${ headroom } !== ${ maximum }).` );
+
+	}
+
+}
+
+function validateDocumentedBudgets( budget ) {
+
+	if ( typeof budget.baseline?.threeVersion !== 'string' || ! budget.baseline.threeVersion ) {
+
+		throw new Error( 'Slim budget must document its Three baseline version.' );
+
+	}
+	if ( typeof budget.baseline.reason !== 'string' || ! budget.baseline.reason ) {
+
+		throw new Error( 'Slim budget must document why its byte baseline changed.' );
+
+	}
+	assertDocumentedByteBudget( 'prebuilt', budget.prebuilt, 'Raw' );
+	assertDocumentedByteBudget( 'prebuilt', budget.prebuilt, 'Gzip' );
+	assertDocumentedByteBudget( 'consumer:prebuilt-helpers', budget.consumer.fixtures.prebuiltHelpers, 'Raw' );
+	assertDocumentedByteBudget( 'consumer:prebuilt-helpers', budget.consumer.fixtures.prebuiltHelpers, 'Gzip' );
+	assertDocumentedByteBudget( 'source:minimal', budget.source.fixtures.minimal, 'Gzip' );
+	assertDocumentedByteBudget( 'source:advanced', budget.source.fixtures.advanced, 'Gzip' );
+
+}
+
 function restoreEnvironment( name, value ) {
 
 	if ( value === undefined ) delete process.env[ name ];
@@ -136,7 +175,7 @@ async function buildConsumerProfile( name, gzipLevel, { slim = 'source', runtime
 			name: `tslp-slim-budget-${ name }`,
 			private: true,
 			type: 'module',
-			dependencies: { '@tsl-precompile/contract': '0.1.0', '@tsl-precompile/runtime': '0.1.0', three: '0.184.0' },
+			dependencies: { '@tsl-precompile/contract': '0.1.0', '@tsl-precompile/runtime': '0.1.0', three: '0.185.1' },
 		} ) );
 		const entry = join( root, 'src/main.js' );
 		await writeFile( entry, await readFile( join( FIXTURE_ROOT, `${ name }.js` ) ) );
@@ -255,10 +294,16 @@ async function main() {
 	if ( PROFILE && PROFILE !== PREBUILT_HELPERS_PROFILE ) throw new Error( `Unknown slim budget profile: ${ JSON.stringify( PROFILE ) }` );
 	const budget = JSON.parse( await readFile( BUDGET_FILE, 'utf8' ) );
 	if ( budget.schema !== 'tslp-slim-budget@1' ) throw new Error( `Unsupported slim budget schema: ${ JSON.stringify( budget.schema ) }` );
+	validateDocumentedBudgets( budget );
 	const temporaryRoot = await realpath( await mkdtemp( join( tmpdir(), 'tslp-slim-budget-prebuilt-' ) ) );
 	try {
 
 		const prebuilt = await buildPrebuiltProfile( temporaryRoot );
+		if ( prebuilt.versions.three !== budget.baseline.threeVersion ) {
+
+			throw new Error( `Slim budget baseline targets Three ${ budget.baseline.threeVersion }, but the build resolved ${ prebuilt.versions.three }.` );
+
+		}
 		if ( prebuilt.gzipLevel !== budget.gzipLevel ) throw new Error( `Slim analysis used gzip level ${ prebuilt.gzipLevel }, but the budget requires ${ budget.gzipLevel }.` );
 		const stagedRuntime = await stagePrebuiltRuntime( temporaryRoot, prebuilt.files );
 		const prebuiltHelpers = await buildConsumerProfile( PREBUILT_HELPERS_PROFILE, budget.gzipLevel, {

@@ -9,6 +9,7 @@
  */
 
 import { getLiveUniformNodeIdentity, listLiveUniformNodes } from './live-uniform-registry.js';
+import { walkMaterialNodeGraphUnique } from './node-graph-walker.js';
 
 /**
  * Wire live runtime UniformNode instances from `sourceMaterial`'s node graph
@@ -175,7 +176,7 @@ function wireLiveUniformSlots( artifact, uniformNodes, options = {} ) {
 
 		const used = new Set();
 		const fallbackUniformNodes = Array.isArray( options.fallbackUniformNodes ) ? options.fallbackUniformNodes : uniformNodes;
-		const identityMatches = resolveSerializedIdentityMatches( owner, uniformNodes, options.sourceMaterial, options.slotFilter );
+		const identityMatches = resolveSerializedIdentityMatches( owner, uniformNodes, options.sourceMaterial, options.slotFilter, fallbackUniformNodes );
 		for ( const group of owner.uniformPlan || [] ) {
 
 			for ( const slot of group.slots || [] ) {
@@ -183,16 +184,24 @@ function wireLiveUniformSlots( artifact, uniformNodes, options = {} ) {
 				if ( options.slotFilter && ! options.slotFilter( slot, owner ) ) continue;
 				const source = ( slot && slot.source ) || {};
 				if ( source.kind !== 'uniform.live' || source.property ) continue;
+				const hasSerializedLiveNodeId = Number.isInteger( source.liveNodeId );
 				const requiresExactIdentity = typeof source.liveNodeIdentity === 'string' && source.liveNodeIdentity.length > 0;
 				const hasCapturedValue = uniformSlotHasCapturedValue( slot );
 				const pathMatch = resolveLiveNodePath( options.sourceMaterial, source.nodePath );
 				if ( slot._liveNode && ! pathMatch ) continue;
-				let match = pathMatch || ( Number.isInteger( source.liveNodeId ) ? identityMatches.get( source.liveNodeId ) || null : null );
+				let match = pathMatch || ( hasSerializedLiveNodeId ? identityMatches.get( source.liveNodeId ) || null : null );
 				if ( match && ! valueMatchesDtype( match.value, slot.dtype || '' ) ) match = null;
 				// A serialized call-site identity is an ownership proof. If the
 				// corresponding live node is absent, fail closed instead of letting
 				// equal-valued closure uniforms from another material cross-bind.
 				if ( ! match && ! pathMatch && requiresExactIdentity ) continue;
+				// A liveNodeId is artifact-local and can only be recovered through
+				// path, exact call-site identity, a unique graph-local name, or
+				// cardinality resolution above. If all four fail, retain the frozen
+				// snapshot. Falling through to broad dtype matching can reuse a node
+				// already owned by another ID (for example a projection matrix as
+				// the PMREM cube-UV transform).
+				if ( ! match && ! pathMatch && hasSerializedLiveNodeId ) continue;
 				if ( ! match && source.name ) {
 
 					match = fallbackUniformNodes.find( ( node ) => ! used.has( node ) && node.name === source.name && valueMatchesUniformSlot( node.value, slot ) );
@@ -245,11 +254,12 @@ function wireLiveUniformSlots( artifact, uniformNodes, options = {} ) {
 
 }
 
-function resolveSerializedIdentityMatches( artifact, uniformNodes, sourceMaterial, slotFilter = null ) {
+function resolveSerializedIdentityMatches( artifact, uniformNodes, sourceMaterial, slotFilter = null, fallbackUniformNodes = uniformNodes ) {
 
 	const matches = new Map();
 	const representativeById = new Map();
 	const exactIdentityIds = new Set();
+	const graphUniformNodes = new Set( fallbackUniformNodes );
 	for ( const group of artifact.uniformPlan || [] ) {
 
 		for ( const slot of group.slots || [] ) {
@@ -279,6 +289,30 @@ function resolveSerializedIdentityMatches( artifact, uniformNodes, sourceMateria
 
 	}
 
+	// A unique name on both sides is stronger than captured-value cardinality:
+	// the live value may have advanced before hydration, while an unrelated
+	// scalar can still equal the snapshot. Only graph-reachable candidates are
+	// eligible here; registry-only nodes need their exact call-site identity.
+	const idsBySerializedName = new Map();
+	for ( const [ liveNodeId, slot ] of representativeById ) {
+
+		const name = slot && slot.source && slot.source.name;
+		if ( typeof name !== 'string' || name.length === 0 ) continue;
+		let ids = idsBySerializedName.get( name );
+		if ( ! ids ) idsBySerializedName.set( name, ids = new Set() );
+		ids.add( liveNodeId );
+
+	}
+	for ( const [ liveNodeId, slot ] of representativeById ) {
+
+		if ( matches.has( liveNodeId ) || exactIdentityIds.has( liveNodeId ) ) continue;
+		const name = slot && slot.source && slot.source.name;
+		if ( typeof name !== 'string' || name.length === 0 || idsBySerializedName.get( name ).size !== 1 ) continue;
+		const candidate = resolveUniqueGraphLocalNameMatch( fallbackUniformNodes, name, slot.dtype || '' );
+		if ( candidate ) matches.set( liveNodeId, candidate );
+
+	}
+
 	const usedNodes = new Set( matches.values() );
 	const groupsBySignature = new Map();
 	for ( const [ liveNodeId, slot ] of representativeById ) {
@@ -294,10 +328,17 @@ function resolveSerializedIdentityMatches( artifact, uniformNodes, sourceMateria
 	for ( const group of groupsBySignature.values() ) {
 
 		group.sort( ( a, b ) => a.liveNodeId - b.liveNodeId );
-		const candidates = uniformNodes.filter( ( node ) => ! usedNodes.has( node ) && valueMatchesUniformSlot( node.value, group[ 0 ].slot ) );
+		const candidates = uniformNodes.filter( ( node ) =>
+			! usedNodes.has( node )
+			&& ( graphUniformNodes.has( node ) || getLiveUniformNodeIdentity( node ) === null )
+			&& valueMatchesUniformSlot( node.value, group[ 0 ].slot )
+		);
 		// Only resolve when the candidate cardinality proves the mapping. If
 		// another equal-valued uniform exists elsewhere, retain the old
 		// name/value fallback instead of silently claiming a false identity.
+		// Identity-tagged registry-only nodes belong to another serialized
+		// call-site and must not satisfy an anonymous slot. Untagged registry
+		// nodes retain the legacy closure-only cardinality fallback.
 		if ( candidates.length !== group.length ) continue;
 		for ( let i = 0; i < group.length; i ++ ) {
 
@@ -308,6 +349,20 @@ function resolveSerializedIdentityMatches( artifact, uniformNodes, sourceMateria
 
 	}
 	return matches;
+
+}
+
+function resolveUniqueGraphLocalNameMatch( uniformNodes, name, dtype ) {
+
+	let match = null;
+	for ( const node of uniformNodes ) {
+
+		if ( ! node || node.isUniformNode !== true || node.name !== name || ! valueMatchesDtype( node.value, dtype ) ) continue;
+		if ( match && match !== node ) return null;
+		match = node;
+
+	}
+	return match;
 
 }
 
@@ -419,9 +474,11 @@ function isVolumeStepsUniformSlot( artifact, slot ) {
 	if ( ! artifact || ! slot || ! slot.name ) return false;
 	const source = slot.source || {};
 	if ( source.kind !== 'uniform.live' || slot.dtype !== 'int' ) return false;
-	const shader = volumeStepsShaderSource( artifact );
+	const shader = volumeStepsShaderSource( artifact ).replace( /\s+/g, ' ' );
 	if ( shader === '' ) return false;
-	return shader.includes( `f32( object.${ slot.name } )` ) && shader.includes( `i < object.${ slot.name }` );
+	const reference = `object.${ slot.name }`;
+	const castsSteps = shader.includes( `f32( ${ reference } )` ) || shader.includes( `float( ${ reference } )` );
+	return castsSteps && shader.includes( `i < ${ reference }` );
 
 }
 
@@ -430,48 +487,15 @@ function isVolumeStepsUniformSlot( artifact, slot ) {
 // shape so replay and product runtime bind the same live nodes.
 // ---------------------------------------------------------------------------
 
-const WALK_SKIP_KEYS = new Set( [ 'parent', 'children', 'scene', 'camera', 'renderer', 'geometry', '_cache', 'domElement', 'sourceMaterial', 'precompiledArtifact' ] );
-const DEFAULT_WALK_DEPTH = 24;
 const VALUE_EPSILON = 1e-6;
 
 function walkMaterialNodeGraph( material, visit ) {
 
-	const seen = new Set();
-	const stack = [ { node: material, depth: 0 } ];
-	while ( stack.length > 0 ) {
+	walkMaterialNodeGraphUnique( material, ( node ) => {
 
-		const { node, depth } = stack.pop();
-		if ( ! node || ( typeof node !== 'object' && typeof node !== 'function' ) ) continue;
-		if ( seen.has( node ) || depth > DEFAULT_WALK_DEPTH ) continue;
-		seen.add( node );
+		try { visit( node ); } catch ( _ ) {}
 
-		if ( node !== material ) {
-
-			try { visit( node ); } catch ( _ ) {}
-
-		}
-
-		let keys = [];
-		try { keys = Object.getOwnPropertyNames( node ); } catch ( _ ) { continue; }
-		for ( const key of keys ) {
-
-			if ( WALK_SKIP_KEYS.has( key ) ) continue;
-			let value = null;
-			try { value = node[ key ]; } catch ( _ ) { continue; }
-			if ( ! value ) continue;
-			if ( Array.isArray( value ) ) {
-
-				for ( const item of value ) stack.push( { node: item, depth: depth + 1 } );
-
-			} else if ( typeof value === 'object' || typeof value === 'function' ) {
-
-				stack.push( { node: value, depth: depth + 1 } );
-
-			}
-
-		}
-
-	}
+	} );
 
 }
 

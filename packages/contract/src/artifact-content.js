@@ -5,6 +5,7 @@ import {
 	createArtifactVariantPayload,
 	remapArtifactEphemeralIdentities,
 } from './artifact-variants.js';
+import { detectArtifactShaderLanguage } from './shader-language.js';
 
 const ROOT_METADATA_FIELDS = new Set( [
 	'__hash',
@@ -198,7 +199,14 @@ function canonicalArtifactContent( artifact ) {
 		// Variant views inherit omitted fields from the family root at runtime.
 		// Hash that same effective payload so compact and expanded captures agree.
 		const effective = createArtifactVariantPayload( { ...artifact, ...candidate } );
+		if ( effective.shaderLanguage === undefined ) {
+
+			const detectedShaderLanguage = detectArtifactShaderLanguage( effective );
+			if ( detectedShaderLanguage ) effective.shaderLanguage = detectedShaderLanguage;
+
+		}
 		delete effective.cacheKey;
+		delete effective.variantKey;
 		delete effective.renderContextSelectors;
 		// sourceMaterial describes the author-facing capture owner, not a
 		// variant payload. It is root metadata and can differ between equivalent

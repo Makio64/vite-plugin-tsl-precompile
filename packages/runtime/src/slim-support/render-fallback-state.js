@@ -31,6 +31,7 @@ export function normalizeSlimRenderFallbackState( state ) {
 		updateBeforeNodes: Array.isArray( state.updateBeforeNodes ) ? state.updateBeforeNodes : [],
 		updateAfterNodes: Array.isArray( state.updateAfterNodes ) ? state.updateAfterNodes : [],
 		observer: state.observer || { needsRefresh() { return true; } },
+		hardwareClipping: state.hardwareClipping === true,
 		transforms: Array.isArray( state.transforms ) ? state.transforms : [],
 		usedTimes: 0,
 		createBindings,

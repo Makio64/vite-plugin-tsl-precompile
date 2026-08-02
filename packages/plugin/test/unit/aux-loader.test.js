@@ -146,6 +146,34 @@ test( 'aux-loader: named aux captures can be found and bound to a node', () => {
 
 } );
 
+test( 'aux-loader: named lookup rejects duplicate friendly names but exact hashes remain deterministic', () => {
+
+	__resetAuxRegistryForTests();
+	const first = { kind: 'first' };
+	const second = { kind: 'second' };
+	registerAuxArtifact( 'post-process', 'hash-a', first, { name: 'same-name' } );
+	registerAuxArtifact( 'post-process', 'hash-b', second, { name: 'same-name' } );
+
+	assert.equal( findAux( 'post-process', 'hash-a' ).artifact, first );
+	assert.equal( findAux( 'post-process', 'hash-b' ).artifact, second );
+	assert.throws(
+		() => findAux( 'post-process', 'same-name' ),
+		( error ) => error.name === 'AuxArtifactSelectionError'
+			&& error.code === 'AUX_ARTIFACT_AMBIGUOUS'
+			&& error.shape === 'post-process'
+			&& error.knownCaptures.length === 2
+			&& /Use a unique capture name/.test( error.message ),
+	);
+
+	const node = { isNode: true };
+	assert.throws(
+		() => bindAuxByName( node, 'post-process', 'same-name' ),
+		( error ) => error.code === 'AUX_ARTIFACT_AMBIGUOUS',
+	);
+	assert.equal( node.__tslpAuxConfigHash, undefined );
+
+} );
+
 test( 'aux-loader: deterministic resolver tries each registered hash domain before reporting ambiguity', () => {
 
 	__resetAuxRegistryForTests();

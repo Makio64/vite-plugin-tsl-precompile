@@ -12,6 +12,7 @@ import { findMaterialComputeNodePath } from '@tsl-precompile/contract/material-c
 import {
 	isObservedVelocityProjectionSource,
 	observeVelocityProjectionSources,
+	observedVelocityProjectionSources,
 } from '../../src/velocity-projection-observation.js';
 
 function fixture() {
@@ -75,7 +76,8 @@ test( 'render-object observers snapshot active VelocityNode projection identity'
 	const stopStates = observeRenderObjects( renderer, () => {} );
 	manager.getForRender( renderObject );
 	stopStates();
-	const stopRequests = observeRenderObjectRequests( renderer, () => {} );
+	const requestEvents = [];
+	const stopRequests = observeRenderObjectRequests( renderer, ( event ) => requestEvents.push( event ) );
 	renderObjects.get( renderObject );
 	stopRequests();
 	liveVelocity.projectionMatrix = null;
@@ -84,6 +86,9 @@ test( 'render-object observers snapshot active VelocityNode projection identity'
 	assert.equal( isObservedVelocityProjectionSource( liveState, liveProjection ), true );
 	assert.equal( isObservedVelocityProjectionSource( cachedState, cachedProjection ), true );
 	assert.equal( isObservedVelocityProjectionSource( liveState, {} ), false );
+	assert.deepEqual( observedVelocityProjectionSources( liveState ), [ liveProjection ] );
+	assert.deepEqual( observedVelocityProjectionSources( cachedState ), [ cachedProjection ] );
+	assert.deepEqual( requestEvents[ 0 ].requestSnapshot.velocityProjectionSources, [ cachedProjection ] );
 
 } );
 
@@ -100,6 +105,7 @@ test( 'velocity projection observation preserves async states and fails closed',
 	await Promise.resolve();
 	velocityNode.projectionMatrix = null;
 	assert.equal( isObservedVelocityProjectionSource( state, projection ), true );
+	assert.deepEqual( observedVelocityProjectionSources( state ), [ projection ] );
 
 	const hostileState = new Proxy( {}, { get() { throw new Error( 'hostile getter' ); } } );
 	assert.doesNotThrow( () => observeVelocityProjectionSources( hostileState ) );
@@ -150,7 +156,12 @@ test( 'render-object requests freeze cube face and mip before renderer getters c
 test( 'harvest includes repeated request-only cache hits as one complete material variant', async () => {
 
 	const { manager, renderer, renderObjects } = fixture();
-	const state = { vertexShader: 'cached-vertex', fragmentShader: 'cached-fragment' };
+	const projection = {};
+	const state = {
+		vertexShader: 'cached-vertex',
+		fragmentShader: 'cached-fragment',
+		updateNodes: [ { constructor: { type: 'VelocityNode' }, projectionMatrix: projection } ],
+	};
 	manager.nodeBuilderCache.set( 91, state );
 	const material = { uuid: 'cached-material' };
 	const renderObject = {
@@ -170,6 +181,275 @@ test( 'harvest includes repeated request-only cache hits as one complete materia
 	assert.equal( family.variants.length, 1 );
 	assert.equal( family.variants[ 0 ].requestCount, 2 );
 	assert.equal( family.variants[ 0 ].nodeBuilderState, state );
+	assert.deepEqual(
+		family.variants[ 0 ].velocityProjectionSources,
+		[ projection ],
+		'request-time velocity identity survives the completed family boundary',
+	);
+
+} );
+
+test( 'harvest keeps only the final one-way replacement RenderObject in one context', async () => {
+
+	const { manager, renderer, renderObjects } = fixture();
+	const staleCompute = { isNode: true, isComputeNode: true, isPrecompiledCompute: false };
+	const currentCompute = { isNode: true, isComputeNode: true, isPrecompiledCompute: false };
+	const geometryNode = {
+		isNode: true,
+		isShaderCallNodeInternal: true,
+		shaderNode: { jsFunc() {} },
+	};
+	const material = { uuid: 'one-way-cache-churn', geometryNode };
+	const object = { material };
+	const scene = {};
+	const camera = {};
+	const lightsNode = {};
+	const clippingContext = {};
+	const context = { renderTarget: null, activeCubeFace: 0, activeMipmapLevel: 0, sampleCount: 1 };
+	const sharedRenderObject = {
+		material,
+		object,
+		scene,
+		camera,
+		lightsNode,
+		clippingContext,
+		context,
+	};
+	const staleRenderObject = {
+		...sharedRenderObject,
+		cacheKey: 'stale',
+	};
+	const currentRenderObject = { ...sharedRenderObject, cacheKey: 'current' };
+	const staleState = { vertexShader: 'stale', updateBeforeNodes: [ staleCompute ] };
+	const currentState = { vertexShader: 'current', updateBeforeNodes: [ currentCompute ] };
+	manager.nodeBuilderCache.set( 'stale', staleState );
+	manager.nodeBuilderCache.set( 'current', currentState );
+
+	const session = beginRenderObjectHarvest( renderer );
+	renderObjects.get( staleRenderObject );
+	renderObjects.get( currentRenderObject );
+	const harvest = await session.finish();
+	const family = harvest.familiesByMaterial.get( material );
+
+	assert.equal( harvest.requests.length, 2, 'raw request history remains intact' );
+	assert.equal( family.complete, true );
+	assert.equal( family.variants.length, 1 );
+	assert.equal( family.variants[ 0 ].cacheKey, 'current' );
+	assert.equal( family.variants[ 0 ].nodeBuilderState, currentState );
+	assert.equal( family.variants[ 0 ].requestCount, 1 );
+	assert.equal( findMaterialComputeNodePath( material, staleCompute ), null, 'superseded state has no deferred side effect' );
+	assert.deepEqual(
+		findMaterialComputeNodePath( material, currentCompute ),
+		[ 'geometryNode', '_tslpMaterialComputeNodes', '0' ],
+	);
+
+} );
+
+test( 'harvest preserves complete cached states with distinct raw selectors', async () => {
+
+	const { manager, renderer, renderObjects } = fixture();
+	const material = { uuid: 'selector-distinction' };
+	const object = { material };
+	const context = { renderTarget: null, activeCubeFace: 0, activeMipmapLevel: 0, sampleCount: 1 };
+	const renderObject = { cacheKey: 'single-sample', material, object, context };
+	manager.nodeBuilderCache.set( 'single-sample', { vertexShader: 'single-sample' } );
+	manager.nodeBuilderCache.set( 'multisample', { vertexShader: 'multisample' } );
+
+	const session = beginRenderObjectHarvest( renderer );
+	renderObjects.get( renderObject );
+	renderObject.cacheKey = 'multisample';
+	context.sampleCount = 4;
+	renderObjects.get( renderObject );
+	const harvest = await session.finish();
+	const family = harvest.familiesByMaterial.get( material );
+
+	assert.equal( family.complete, true );
+	assert.equal( family.variants.length, 2 );
+	assert.equal(
+		new Set( family.variants.flatMap( ( variant ) => variant.renderContextSelectors ) ).size,
+		2,
+		'sample topology remains an exact selector distinction',
+	);
+
+} );
+
+test( 'harvest preserves identical selectors observed with different camera provenance', async () => {
+
+	const { manager, renderer, renderObjects } = fixture();
+	const material = { uuid: 'camera-provenance' };
+	const object = { material };
+	const renderObject = {
+		cacheKey: 'first-camera',
+		material,
+		object,
+		camera: {},
+		context: { renderTarget: null, activeCubeFace: 0, activeMipmapLevel: 0, sampleCount: 1 },
+	};
+	manager.nodeBuilderCache.set( 'first-camera', { vertexShader: 'first-camera' } );
+	manager.nodeBuilderCache.set( 'second-camera', { vertexShader: 'second-camera' } );
+
+	const session = beginRenderObjectHarvest( renderer );
+	renderObjects.get( renderObject );
+	renderObject.cacheKey = 'second-camera';
+	renderObject.camera = {};
+	renderObjects.get( renderObject );
+	const harvest = await session.finish();
+	const family = harvest.familiesByMaterial.get( material );
+
+	assert.equal( family.variants.length, 2 );
+	assert.equal(
+		family.variants[ 0 ].renderContextSelectors[ 0 ],
+		family.variants[ 1 ].renderContextSelectors[ 0 ],
+		'the provenance guard, not a selector difference, retains these states',
+	);
+
+} );
+
+test( 'harvest preserves identical-selector siblings from distinct source render contexts', async () => {
+
+	const { manager, renderer, renderObjects } = fixture();
+	const material = { uuid: 'render-object-siblings' };
+	const object = { material };
+	const makeContext = () => ( { renderTarget: null, activeCubeFace: 0, activeMipmapLevel: 0, sampleCount: 1 } );
+	const first = { cacheKey: 'sibling-a', material, object, context: makeContext() };
+	const second = { cacheKey: 'sibling-b', material, object, context: makeContext() };
+	manager.nodeBuilderCache.set( 'sibling-a', { vertexShader: 'sibling-a' } );
+	manager.nodeBuilderCache.set( 'sibling-b', { vertexShader: 'sibling-b' } );
+
+	const session = beginRenderObjectHarvest( renderer );
+	renderObjects.get( first );
+	renderObjects.get( second );
+	const harvest = await session.finish();
+	const family = harvest.familiesByMaterial.get( material );
+
+	assert.equal( family.complete, true );
+	assert.equal( family.variants.length, 2 );
+	assert.equal(
+		family.variants[ 0 ].renderContextSelectors[ 0 ],
+		family.variants[ 1 ].renderContextSelectors[ 0 ],
+	);
+
+} );
+
+test( 'harvest lets a final exact dispatch supersede compile-only context evidence', async () => {
+
+	const { manager, renderer, renderObjects } = fixture();
+	const material = { uuid: 'exact-warmup-owner' };
+	const geometry = { attributes: {}, morphAttributes: {} };
+	const object = { material, geometry };
+	const scene = {};
+	const camera = {};
+	const lightsNode = {};
+	const first = {
+		cacheKey: 'compile-only',
+		material,
+		object,
+		scene,
+		camera,
+		lightsNode,
+		clippingContext: {},
+		context: { renderTarget: null, activeCubeFace: 0, activeMipmapLevel: 0, sampleCount: 1 },
+	};
+	const second = {
+		...first,
+		cacheKey: 'exact-warmup',
+		clippingContext: {},
+		context: { renderTarget: null, activeCubeFace: 0, activeMipmapLevel: 0, sampleCount: 1 },
+	};
+	manager.nodeBuilderCache.set( 'compile-only', { vertexShader: 'compile-only' } );
+	manager.nodeBuilderCache.set( 'exact-warmup', { vertexShader: 'exact-warmup' } );
+	renderer.renderObject = function () { return renderObjects.get( second ); };
+	const ownerEvidence = [];
+
+	const session = beginRenderObjectHarvest( renderer, {
+		onRequest: ( event ) => ownerEvidence.push( event.requestSnapshot.bindingOwnerExact ),
+	} );
+	renderObjects.get( first );
+	renderer.renderObject( object, scene, camera, geometry, material, null, lightsNode, second.clippingContext );
+	const family = ( await session.finish() ).familiesByMaterial.get( material );
+
+	assert.deepEqual( ownerEvidence, [ false, true ] );
+	assert.equal( family.complete, true );
+	assert.equal( family.variants.length, 1 );
+	assert.equal( family.variants[ 0 ].cacheKey, 'exact-warmup' );
+
+} );
+
+test( 'harvest preserves replacement-looking siblings without exact source context identity', async () => {
+
+	const { manager, renderer, renderObjects } = fixture();
+	const material = { uuid: 'missing-render-context' };
+	const object = { material };
+	const first = { cacheKey: 'unknown-context-a', material, object };
+	const second = { cacheKey: 'unknown-context-b', material, object };
+	manager.nodeBuilderCache.set( 'unknown-context-a', { vertexShader: 'unknown-context-a' } );
+	manager.nodeBuilderCache.set( 'unknown-context-b', { vertexShader: 'unknown-context-b' } );
+
+	const session = beginRenderObjectHarvest( renderer );
+	renderObjects.get( first );
+	renderObjects.get( second );
+	const family = ( await session.finish() ).familiesByMaterial.get( material );
+
+	assert.equal( family.complete, true );
+	assert.equal( family.variants.length, 2 );
+
+} );
+
+test( 'harvest preserves an identical-selector family when any cached state is incomplete', async () => {
+
+	const { manager, renderer, renderObjects } = fixture();
+	const material = { uuid: 'incomplete-cache-churn' };
+	const object = { material };
+	const renderObject = {
+		cacheKey: 'complete',
+		material,
+		object,
+		context: { renderTarget: null, activeCubeFace: 0, activeMipmapLevel: 0, sampleCount: 1 },
+	};
+	manager.nodeBuilderCache.set( 'complete', { vertexShader: 'complete' } );
+
+	const session = beginRenderObjectHarvest( renderer );
+	renderObjects.get( renderObject );
+	renderObject.cacheKey = 'incomplete';
+	renderObjects.get( renderObject );
+	const harvest = await session.finish();
+	const family = harvest.familiesByMaterial.get( material );
+
+	assert.equal( harvest.requests.length, 2 );
+	assert.equal( family.complete, false );
+	assert.equal( family.variants.length, 2 );
+	assert.equal( family.variants.find( ( variant ) => variant.cacheKey === 'complete' ).complete, true );
+	assert.equal( family.variants.find( ( variant ) => variant.cacheKey === 'incomplete' ).complete, false );
+
+} );
+
+test( 'harvest preserves oscillating identical-selector cache states', async () => {
+
+	const { manager, renderer, renderObjects } = fixture();
+	const material = { uuid: 'oscillating-cache-churn' };
+	const object = { material };
+	const renderObject = {
+		cacheKey: 'state-a',
+		material,
+		object,
+		context: { renderTarget: null, activeCubeFace: 0, activeMipmapLevel: 0, sampleCount: 1 },
+	};
+	manager.nodeBuilderCache.set( 'state-a', { vertexShader: 'state-a' } );
+	manager.nodeBuilderCache.set( 'state-b', { vertexShader: 'state-b' } );
+
+	const session = beginRenderObjectHarvest( renderer );
+	renderObjects.get( renderObject );
+	renderObject.cacheKey = 'state-b';
+	renderObjects.get( renderObject );
+	renderObject.cacheKey = 'state-a';
+	renderObjects.get( renderObject );
+	const harvest = await session.finish();
+	const family = harvest.familiesByMaterial.get( material );
+
+	assert.equal( harvest.requests.length, 3 );
+	assert.equal( family.complete, true );
+	assert.equal( family.variants.length, 2, 'A-B-A is not a one-way supersession' );
+	assert.equal( family.variants.find( ( variant ) => variant.cacheKey === 'state-a' ).requestCount, 2 );
 
 } );
 

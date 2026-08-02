@@ -76,11 +76,73 @@ test( 'family merging adopts a generated selector adapter from an equivalent inp
 
 } );
 
+test( 'generated selector adapters match only proven WebGPU layered-target layer siblings', () => {
+
+	const active = layeredTargetSelector( 'offscreen-array', 0 );
+	const sibling = signedArtifact( 'sibling', [ layeredTargetSelector( 'offscreen-array', 17 ) ] );
+	const exact = signedArtifact( 'exact', [ active ] );
+	materializeArtifactVariantSelectorAdapters( sibling );
+	const adapter = sibling[ GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR ];
+
+	assert.deepEqual( adapter.match( active, null, [ sibling ] ), [ sibling ] );
+	assert.deepEqual( adapter.match( active, 'mesh-basic', [ sibling ] ), [ sibling ] );
+	assert.deepEqual(
+		adapter.match( active, null, [ sibling, exact ] ),
+		[ exact ],
+		'an exact selector retains precedence over a layer sibling',
+	);
+	assert.deepEqual(
+		adapter.match( layeredTargetSelector( 'offscreen-3d', 0 ), null, [ sibling ] ),
+		[],
+		'array and 3D attachment surfaces are not shader-selector aliases',
+	);
+	assert.deepEqual(
+		adapter.match( active, 'post-process', [ sibling ] ),
+		[],
+		'the proof is limited to ordinary material profiles',
+	);
+	assert.deepEqual(
+		adapter.match( layeredTargetSelector( 'offscreen-array', 0, { backend: 'webgl' } ), null, [ sibling ] ),
+		[],
+		'the proof is specific to the r185 WebGPU RenderObject cache contract',
+	);
+
+} );
+
 function transparentSelector( side ) {
 
 	return stableJsonStringify( {
 		version: 'render-object-selector@1',
 		material: { side, transparent: true, forceSinglePass: false },
+	}, 'renderObjectSelector' );
+
+}
+
+function layeredTargetSelector( surface, activeCubeFace, { backend = 'webgpu', target = {} } = {} ) {
+
+	return stableJsonStringify( {
+		version: 'render-object-selector@1',
+		renderer: { backend: { kind: backend } },
+		target: {
+			surface,
+			activeCubeFace,
+			activeMipmapLevel: 0,
+			color: true,
+			depth: false,
+			stencil: false,
+			sampleCount: 1,
+			multiview: false,
+			colors: [ {
+				kind: 'render-target',
+				format: 1023,
+				dataType: 1016,
+				colorSpace: '',
+			} ],
+			depthTexture: null,
+			...target,
+		},
+		object: { instanced: false },
+		material: { transparent: false },
 	}, 'renderObjectSelector' );
 
 }

@@ -1,11 +1,13 @@
 import { defineConfig } from 'vite';
 import tslPrecompile from 'vite-plugin-tsl-precompile';
 
-export default defineConfig( {
+export default defineConfig( ( { mode } ) => ( {
 	plugins: [
 		tslPrecompile( {
 			artifactsDir: './artifacts',
-			slim: 'source',
+			// Normal `vite build` stays compatibility-first. The docs site uses
+			// a named mode so its separate compiler-free canary remains explicit.
+			...( mode === 'tslp-site-live' ? { slim: 'source' } : {} ),
 		} ),
 	],
 	server: {
@@ -19,4 +21,4 @@ export default defineConfig( {
 		// alias (if enabled) from racing the optimizer.
 		include: [ 'three', 'three/webgpu', 'three/tsl' ],
 	},
-} );
+} ) );

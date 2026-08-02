@@ -22,19 +22,44 @@
  * @module PrecompileTSL
  */
 
-import { extractUniformPlan } from './extractUniformPlan.js';
-import { compileDoublePassPairsSynchronously } from './compile-async-double-pass.js';
+import { annotateAnonymousStorageResourceIdentity, extractUniformPlan, isComparisonSamplerBinding } from './extractUniformPlan.js';
+import {
+	compileDoublePassPairsSynchronously,
+	suppressWebGPUFramebufferCopiesDuringCompile,
+} from './compile-async-double-pass.js';
 import { beginRenderObjectHarvest } from './render-object-observer.js';
 export { beginRenderObjectHarvest };
 import { deriveComputeBindingsDescriptor } from '../compute-bindings.js';
 export { deriveComputeBindingsDescriptor } from '../compute-bindings.js';
-import { DataUtils, FloatType, HalfFloatType, RGBAFormat, RenderTarget } from 'three';
+import {
+	DataUtils,
+	FloatType,
+	HalfFloatType,
+	NearestFilter,
+	RGFormat,
+	RGBAFormat,
+	RenderTarget,
+} from 'three';
 import { countArtifactFragmentOutputs } from '@tsl-precompile/contract/fragment-outputs';
-import { isLiveUniformNodeIdentity, LIVE_UNIFORM_NODE_IDENTITY_SYMBOL_KEY } from '@tsl-precompile/contract/dynamic-bindings';
+import {
+	createStorageBufferSnapshotHash,
+	isLiveUniformNodeIdentity,
+	LIVE_UNIFORM_NODE_IDENTITY_SYMBOL_KEY,
+	validateStorageBufferSnapshot,
+} from '@tsl-precompile/contract/dynamic-bindings';
 import { createRenderObjectContextSelector, RENDER_BINDING_OWNER_KINDS } from '@tsl-precompile/contract/render-selector';
 import { mergeArtifactVariantFamily } from '@tsl-precompile/contract/artifact-variants';
+import {
+	createBackendAwareVariantKey,
+	detectArtifactShaderLanguage,
+} from '@tsl-precompile/contract/shader-language';
 import { normalizeArtifactLightIdentities } from '@tsl-precompile/contract/light-identities';
 import { createRendererOutputConfig } from '@tsl-precompile/contract/output-config';
+import {
+	createVSMSupportConfig,
+	vsmMomentsTopology,
+	vsmSourceInputTopology,
+} from '@tsl-precompile/contract/vsm-config';
 import {
 	RANGE_ATTRIBUTE_GENERATOR_SIDECAR,
 	createInstanceMatrixAttributeReference,
@@ -61,6 +86,8 @@ const LIVE_UNIFORM_NODE_IDENTITY_KEY = Symbol.for( LIVE_UNIFORM_NODE_IDENTITY_SY
  * @property {?string} textureType - For sampled textures: '2d', '3d', 'cube', '2d-array'.
  * @property {?number} byteLength - For buffers: size in bytes when known.
  * @property {?string} access - Access qualifier (read/write) when applicable.
+ * @property {?boolean} comparison - For samplers: whether the authored
+ *     TextureNode performs a comparison lookup.
  */
 
 /**
@@ -75,16 +102,30 @@ const LIVE_UNIFORM_NODE_IDENTITY_KEY = Symbol.for( LIVE_UNIFORM_NODE_IDENTITY_SY
  * A single precompiled shader artifact extracted from a built `NodeBuilderState`.
  *
  * @typedef {Object} PrecompiledArtifact
- * @property {number} cacheKey - Matches `NodeManager.getForRenderCacheKey`.
+ * @property {number|string} cacheKey - Matches `NodeManager.getForRenderCacheKey`.
+ * @property {'wgsl'|'glsl'} [shaderLanguage] - Native shader language when detectable.
+ * @property {string} [variantKey] - Backend-aware durable family identity.
  * @property {string} vertexShader - Native vertex shader source (WGSL or GLSL).
  * @property {string} fragmentShader - Native fragment shader source.
  * @property {string} computeShader - Native compute shader source (may be empty).
  * @property {Array<{name: string, type: string}>} attributes
+ * @property {Array<{varyingName: string, attribute: number}>} transforms -
+ *     Serializable WebGL2 transform-feedback links into `attributes`.
  * @property {Array<PrecompiledBindGroupDescriptor>} bindings
  * @property {Array<Object>} uniformPlan - Per-group list of UBO slots with
  *     `source` descriptors; consumed by the runtime hydrator.
  * @property {Object} meta - Non-serializable counts for reuse validation.
  */
+
+function createNativeShaderIdentity( cacheKey, state ) {
+
+	const shaderLanguage = detectArtifactShaderLanguage( state );
+	return shaderLanguage ? {
+		shaderLanguage,
+		variantKey: createBackendAwareVariantKey( cacheKey, shaderLanguage ),
+	} : {};
+
+}
 
 function describeBinding( binding ) {
 
@@ -128,6 +169,7 @@ function describeBinding( binding ) {
 	} else if ( binding.isSampler ) {
 
 		descriptor.kind = 'sampler';
+		descriptor.comparison = isComparisonSamplerBinding( binding );
 
 	}
 
@@ -159,6 +201,13 @@ export function classifyMaterialShape( material ) {
 	// → getShadowMaterial. Check first so we don't collapse shadow depth
 	// artifacts into the generic 'node-material' bucket.
 	if ( material.isShadowPassMaterial ) return 'shadow-depth';
+	// ShadowNode's private VSM blur quads are plain NodeMaterials. Three r185
+	// exposes no nominal flag for them, but assigns these exact names at the
+	// same construction site that wires the vertical/horizontal render targets.
+	// Keep the match exact so authored names such as "MyVSMVertical" remain
+	// ordinary user material artifacts.
+	if ( material.name === 'VSMVertical' ) return 'shadow-vsm-vertical';
+	if ( material.name === 'VSMHorizontal' ) return 'shadow-vsm-horizontal';
 	// Render-pipeline internal material (post-process + tone mapping) —
 	// RenderPipeline sets `material.name = 'RenderPipeline'` on its
 	// internal quad; Renderer._renderOutput sets `outputColorTransform`.
@@ -212,7 +261,193 @@ export function classifyMaterialShape( material ) {
 
 function isAuxiliaryArtifactShape( materialShape ) {
 
-	return materialShape === 'shadow-depth' || materialShape === 'render-pipeline' || materialShape === 'output-transform';
+	return materialShape === 'shadow-depth'
+		|| materialShape === 'shadow-vsm-vertical'
+		|| materialShape === 'shadow-vsm-horizontal'
+		|| materialShape === 'render-pipeline'
+		|| materialShape === 'output-transform';
+
+}
+
+function recordVsmPassOwner( owners, material, owner ) {
+
+	if ( ! material || ! owner || ! owner.light ) return;
+	const existing = owners.get( material );
+	if ( ! existing ) {
+
+		owners.set( material, owner );
+		return;
+
+	}
+	if ( existing.light === owner.light && existing.stage === owner.stage ) return;
+	throw new Error(
+		`compileTSL: Three's ${ material.name || '<unnamed VSM>' } material was correlated to multiple shadow-pass owners. ` +
+		'Refusing to serialize ambiguous live LightShadow bindings.',
+	);
+
+}
+
+/**
+ * Correlate Three r185's private VSM materials back to the AnalyticLightNode
+ * that created them. The VSM quad states contain only ReferenceNodes, so this
+ * must run across the complete selected entry set before any one artifact is
+ * extracted.
+ */
+function collectVsmPassOwners( extractionEntries ) {
+
+	const owners = new Map();
+	for ( const entry of extractionEntries || [] ) {
+
+		const updateNodes = entry && entry.state && Array.isArray( entry.state.updateNodes )
+			? entry.state.updateNodes
+			: [];
+		let lightIndex = 0;
+		for ( const node of updateNodes ) {
+
+			if ( ! node || node.isAnalyticLightNode !== true ) continue;
+			const light = node.light || null;
+			const shadowNode = node.shadowNode || null;
+			if ( light && shadowNode ) {
+
+				recordVsmPassOwner( owners, shadowNode.vsmMaterialVertical, {
+					stage: 'vertical',
+					light,
+					lightIndex,
+					shadowNode,
+				} );
+				recordVsmPassOwner( owners, shadowNode.vsmMaterialHorizontal, {
+					stage: 'horizontal',
+					light,
+					lightIndex,
+					shadowNode,
+				} );
+
+			}
+			lightIndex ++;
+
+		}
+
+	}
+	return owners;
+
+}
+
+function findInternalPassTextureBinding( artifact, texture ) {
+
+	const candidates = [];
+	for ( const group of artifact && Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [] ) {
+
+		for ( const entry of group && Array.isArray( group.textures ) ? group.textures : [] ) {
+
+			if ( ! entry || entry.bindingKind !== 'sampled-texture' ) continue;
+			const candidate = { group: group.name || '', entry };
+			if ( texture && texture.uuid && entry.source && entry.source.textureUuid === texture.uuid ) return candidate;
+			candidates.push( candidate );
+
+		}
+
+	}
+	return candidates.length === 1 ? candidates[ 0 ] : null;
+
+}
+
+function collectVsmInternalPassUniforms( artifact ) {
+
+	const roles = new Map( [
+		[ 'light.shadowBlurSamples', 'blur-samples' ],
+		[ 'light.shadowRadius', 'radius' ],
+		[ 'light.shadowMapSize', 'map-size' ],
+	] );
+	const uniforms = [];
+	for ( const group of artifact && Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [] ) {
+
+		for ( const slot of group && Array.isArray( group.slots ) ? group.slots : [] ) {
+
+			const source = slot && slot.source || null;
+			const role = source && roles.get( source.kind );
+			if ( ! role ) continue;
+			uniforms.push( {
+				role,
+				group: group.name || '',
+				binding: slot.name || '',
+				valueType: source.uniformType || ( slot.dtype === 'number' ? 'float' : slot.dtype ),
+			} );
+
+		}
+
+	}
+	return uniforms.sort( ( a, b ) => a.role.localeCompare( b.role ) );
+
+}
+
+/**
+ * Describe the VSM producer/consumer edge without serializing a temporary
+ * render-target UUID into the scheduling contract. The ordinary uniformPlan
+ * retains its in-process texture reference; compiler-free replay addresses
+ * that binding by group/name and rewires it to the live resource for `role`.
+ */
+function createVsmInternalPassDescriptor( artifact, owner, renderer ) {
+
+	if ( ! artifact || ! owner || ! owner.light || ! owner.shadowNode ) return null;
+	const { stage, light, shadowNode } = owner;
+	const inputTexture = stage === 'vertical'
+		? light.shadow && light.shadow.map && light.shadow.map.depthTexture
+		: shadowNode.vsmShadowMapVertical && shadowNode.vsmShadowMapVertical.texture;
+	const outputTexture = stage === 'vertical'
+		? shadowNode.vsmShadowMapVertical && shadowNode.vsmShadowMapVertical.texture
+		: shadowNode.vsmShadowMapHorizontal && shadowNode.vsmShadowMapHorizontal.texture;
+	const textureBinding = findInternalPassTextureBinding( artifact, inputTexture );
+	const config = createVSMSupportConfig( { renderer } );
+	assertVsm2DResourceEvidence( stage, inputTexture, outputTexture, textureBinding );
+	const inputs = textureBinding ? [ {
+		role: stage === 'vertical' ? 'shadow-depth' : 'vsm-vertical',
+		kind: 'texture',
+		group: textureBinding.group,
+		binding: textureBinding.entry.name || '',
+		topology: stage === 'vertical'
+			? vsmSourceInputTopology( config )
+			: vsmMomentsTopology( config ),
+	} ] : [];
+	return {
+		schema: 'internal-pass@1',
+		family: 'shadow-vsm',
+		stage,
+		shape: artifact.materialShape,
+		config,
+		uniforms: collectVsmInternalPassUniforms( artifact ),
+		inputs,
+		output: {
+			topology: vsmMomentsTopology( config ),
+		},
+	};
+
+}
+
+function assertVsm2DResourceEvidence( stage, inputTexture, outputTexture, textureBinding ) {
+
+	if ( ! inputTexture || ! outputTexture || ! textureBinding ) throw new Error(
+		`compileTSL: ${ stage } VSM capture is missing its exact input/output texture evidence.`,
+	);
+	if ( textureBinding.entry.textureType !== '2d' ||
+		inputTexture.isArrayTexture === true ||
+		inputTexture.isDataArrayTexture === true ||
+		outputTexture.isArrayTexture === true ||
+		outputTexture.isDataArrayTexture === true ) throw new Error(
+		`compileTSL: ${ stage } VSM capture uses a layered texture topology; compiler-free replay currently supports only 2D VSM.`,
+	);
+	if ( stage === 'vertical' ) {
+
+		if ( inputTexture.isDepthTexture !== true || inputTexture.compareFunction !== null ||
+			inputTexture.minFilter !== NearestFilter || inputTexture.magFilter !== NearestFilter ) throw new Error(
+			'compileTSL: VSMVertical must sample Three r185\'s non-comparison nearest-filtered DepthTexture.',
+		);
+
+	} else if ( inputTexture.format !== RGFormat || inputTexture.type !== HalfFloatType ) throw new Error(
+		'compileTSL: VSMHorizontal must sample Three r185\'s RG/HalfFloat vertical moments texture.',
+	);
+	if ( outputTexture.format !== RGFormat || outputTexture.type !== HalfFloatType ) throw new Error(
+		`compileTSL: ${ stage } VSM output must use Three r185's RG/HalfFloat moments topology.`,
+	);
 
 }
 
@@ -478,6 +713,11 @@ export function extractArtifact( cacheKey, state, material = null, object = null
 	// buffer that the compute kernel writes into, and the render path
 	// allocates a fresh empty buffer.
 	annotateStorageBufferUserPaths( uniformPlan, material, extractionContext );
+	// extractUniformPlan signs before exact material paths are known. Recompute
+	// now so path-only resources cannot inflate an anonymous family in direct
+	// extractArtifact() callers; compileTSL repeats this across the full batch
+	// to retain families split between artifacts.
+	annotateAnonymousStorageResourceIdentity( [ uniformPlan ] );
 
 	// Seed runtime defaults for the material properties the plan references.
 	// PrecompiledMaterial reads these to populate its own color/opacity/etc.
@@ -500,83 +740,12 @@ export function extractArtifact( cacheKey, state, material = null, object = null
 	const artifact = {
 		version: 3,
 		cacheKey,
+		...createNativeShaderIdentity( cacheKey, state ),
 		materialShape,
 		vertexShader: state.vertexShader || '',
 		fragmentShader: state.fragmentShader || '',
 		computeShader: state.computeShader || '',
-		attributes: ( state.nodeAttributes || [] ).map( ( a ) => {
-
-			const liveAttribute = a.node && a.node.attribute;
-			const entry = {
-				name: a.name,
-				type: a.type,
-				source: liveAttribute ? 'node' : 'geometry'
-			};
-
-			if ( liveAttribute ) {
-
-				entry.count = liveAttribute.count || 1;
-				entry.itemSize = liveAttribute.itemSize || itemSizeFromAttributeType( a.type );
-				entry.arrayType = liveAttribute.array && liveAttribute.array.constructor && liveAttribute.array.constructor.name || 'Float32Array';
-				entry.instanced = isInstancedAttribute( liveAttribute );
-				entry.storage = liveAttribute.isStorageBufferAttribute === true || liveAttribute.isStorageInstancedBufferAttribute === true;
-				if ( liveAttribute.normalized === true ) entry.normalized = true;
-				if ( typeof liveAttribute.meshPerAttribute === 'number' && liveAttribute.meshPerAttribute !== 1 ) entry.meshPerAttribute = liveAttribute.meshPerAttribute;
-				if ( typeof liveAttribute.usage === 'number' ) entry.usage = liveAttribute.usage;
-
-				// Record the source-material property whose node sub-tree
-				// references this attribute (e.g. "positionNode" for
-				// `material.positionNode = instancedBufferAttribute(buf)`).
-				// `_liveAttribute` survives only in the in-process capture →
-				// render flow; offline replay reloads from JSON and the
-				// reference is lost. The path lets the apply-side rewalk
-				// the user's freshly-constructed node tree and rebind the
-				// live BufferAttribute the user code created.
-				const objectAttribute = exactObjectAttributeProvenance( object, liveAttribute );
-				const arrayGenerator = verifiedRangeAttributeGenerator(
-					liveAttribute,
-					liveAttribute[ RANGE_ATTRIBUTE_GENERATOR_SIDECAR ],
-				);
-				const userPath = findOwnerQualifiedAttributePath( material, liveAttribute, extractionContext );
-				if ( objectAttribute ) {
-
-					entry.objectAttribute = objectAttribute;
-
-				} else if ( isRangeAttributeGenerator( arrayGenerator ) ) {
-
-					// Copy the verified process-local sidecar into the public artifact
-					// vocabulary. The capture wrapper already compared every generated
-					// Float32 with Three's live attribute, so this never guesses a
-					// recipe from values or shader text.
-					entry.arrayGenerator = {
-						kind: arrayGenerator.kind,
-						seed: arrayGenerator.seed,
-						min: arrayGenerator.min.slice(),
-						max: arrayGenerator.max.slice(),
-					};
-
-				} else if ( userPath ) {
-
-					entry.userPath = userPath;
-
-				} else {
-
-					const snapshot = snapshotAttributeArray( liveAttribute );
-					if ( snapshot ) entry.arraySnapshot = snapshot;
-
-				}
-
-				Object.defineProperty( entry, '_liveAttribute', {
-					value: liveAttribute,
-					enumerable: false,
-					writable: true
-				} );
-
-			}
-
-			return entry;
-
-		} ),
+		attributes: serializeNodeAttributes( state.nodeAttributes, { material, object, extractionContext } ),
 		bindings,
 		uniformPlan,
 		defaults,
@@ -612,6 +781,91 @@ export function extractArtifact( cacheKey, state, material = null, object = null
 	captureLtcTextures( artifact );
 
 	return normalizeArtifactLightIdentities( artifact );
+
+}
+
+/**
+ * Convert Three's live NodeAttribute records into serializable artifact
+ * descriptors while retaining the exact BufferAttribute as an in-process
+ * sidecar. Compute transform-feedback descriptors index this same array, so
+ * both paths converge on one resource identity after hydration.
+ */
+function serializeNodeAttributes( nodeAttributes, options = {} ) {
+
+	const { material = null, object = null, extractionContext = null } = options;
+	return ( Array.isArray( nodeAttributes ) ? nodeAttributes : [] ).map( ( a ) => {
+
+		const liveAttribute = a.node && a.node.attribute;
+		const entry = {
+			name: a.name,
+			type: a.type,
+			source: liveAttribute ? 'node' : 'geometry'
+		};
+
+		if ( liveAttribute ) {
+
+			entry.count = liveAttribute.count || 1;
+			entry.itemSize = liveAttribute.itemSize || itemSizeFromAttributeType( a.type );
+			entry.arrayType = liveAttribute.array && liveAttribute.array.constructor && liveAttribute.array.constructor.name || 'Float32Array';
+			entry.instanced = isInstancedAttribute( liveAttribute );
+			entry.storage = liveAttribute.isStorageBufferAttribute === true || liveAttribute.isStorageInstancedBufferAttribute === true;
+			if ( liveAttribute.normalized === true ) entry.normalized = true;
+			if ( typeof liveAttribute.meshPerAttribute === 'number' && liveAttribute.meshPerAttribute !== 1 ) entry.meshPerAttribute = liveAttribute.meshPerAttribute;
+			if ( typeof liveAttribute.usage === 'number' ) entry.usage = liveAttribute.usage;
+
+			// Record the source-material property whose node sub-tree
+			// references this attribute (e.g. "positionNode" for
+			// `material.positionNode = instancedBufferAttribute(buf)`).
+			// `_liveAttribute` survives only in the in-process capture →
+			// render flow; offline replay reloads from JSON and the
+			// reference is lost. The path lets the apply-side rewalk
+			// the user's freshly-constructed node tree and rebind the
+			// live BufferAttribute the user code created.
+			const objectAttribute = exactObjectAttributeProvenance( object, liveAttribute );
+			const arrayGenerator = verifiedRangeAttributeGenerator(
+				liveAttribute,
+				liveAttribute[ RANGE_ATTRIBUTE_GENERATOR_SIDECAR ],
+			);
+			const userPath = findOwnerQualifiedAttributePath( material, liveAttribute, extractionContext );
+			if ( objectAttribute ) {
+
+				entry.objectAttribute = objectAttribute;
+
+			} else if ( isRangeAttributeGenerator( arrayGenerator ) ) {
+
+				// Copy the verified process-local sidecar into the public artifact
+				// vocabulary. The capture wrapper already compared every generated
+				// Float32 with Three's live attribute, so this never guesses a
+				// recipe from values or shader text.
+				entry.arrayGenerator = {
+					kind: arrayGenerator.kind,
+					seed: arrayGenerator.seed,
+					min: arrayGenerator.min.slice(),
+					max: arrayGenerator.max.slice(),
+				};
+
+			} else if ( userPath ) {
+
+				entry.userPath = userPath;
+
+			} else {
+
+				const snapshot = snapshotAttributeArray( liveAttribute );
+				if ( snapshot ) entry.arraySnapshot = snapshot;
+
+			}
+
+			Object.defineProperty( entry, '_liveAttribute', {
+				value: liveAttribute,
+				enumerable: false,
+				writable: true
+			} );
+
+		}
+
+		return entry;
+
+	} );
 
 }
 
@@ -685,7 +939,7 @@ function isInstancedAttribute( attribute ) {
 
 /**
  * Prove that a physical vec4 attribute is one column of the active
- * InstancedMesh.instanceMatrix. Three r184's InstanceNode creates four
+ * InstancedMesh.instanceMatrix. Three r185's InstanceNode creates four
  * InterleavedBufferAttribute views over the exact instanceMatrix array. Keep
  * every identity/stride/offset check here: value-pattern inference would
  * misclassify unrelated identity-shaped application buffers.
@@ -757,6 +1011,130 @@ function snapshotAttributeArray( attribute ) {
 	}
 
 	return Array.from( attribute.array );
+
+}
+
+function storageBufferPlanEntries( artifact ) {
+
+	const entries = [];
+	const seen = new Set();
+	for ( const group of artifact && Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [] ) {
+
+		for ( const entry of group && Array.isArray( group.storageBuffers ) ? group.storageBuffers : [] ) {
+
+			if ( ! entry || seen.has( entry ) ) continue;
+			seen.add( entry );
+			entries.push( entry );
+
+		}
+
+	}
+	return entries;
+
+}
+
+function computeStorageAttributeSet( artifacts, computeStates = null ) {
+
+	const attributes = new Set();
+	for ( const artifact of artifacts || [] ) {
+
+		if ( ! artifact || artifact.kind !== 'compute' ) continue;
+		for ( const entry of storageBufferPlanEntries( artifact ) ) if ( entry._liveAttribute ) attributes.add( entry._liveAttribute );
+
+	}
+	for ( const state of computeStates || [] ) for ( const group of state && state.bindings || [] ) {
+
+		for ( const binding of group && group.bindings || [] ) {
+
+			if ( binding && binding.isStorageBuffer === true && binding.attribute ) attributes.add( binding.attribute );
+
+		}
+
+	}
+	return attributes;
+
+}
+
+/**
+ * Persist exact initial bytes only for render-only storage resources.
+ *
+ * Compute-owned buffers are deliberately excluded even when they are large and
+ * anonymous: their kernels establish authoritative runtime state, while
+ * serializing them would turn generated output into a multi-megabyte input.
+ * Exact live attribute identity deduplicates aliases across render variants;
+ * every alias points at one snapshot Array and carries a checksum produced by
+ * the shared durable-storage contract.
+ */
+export function annotateRenderOnlyStorageBufferSnapshots( artifacts, computeStates = null ) {
+
+	const computeAttributes = computeStorageAttributeSet( artifacts, computeStates );
+	const aliasesByAttribute = new Map();
+	for ( const artifact of artifacts || [] ) {
+
+		if ( ! artifact || artifact.kind === 'compute' ) continue;
+		for ( const entry of storageBufferPlanEntries( artifact ) ) {
+
+			const attribute = entry._liveAttribute;
+			if ( ! attribute || computeAttributes.has( attribute )) continue;
+			if ( Array.isArray( entry.userPath ) && entry.userPath.length > 0 ) continue;
+			let aliases = aliasesByAttribute.get( attribute );
+			if ( ! aliases ) aliasesByAttribute.set( attribute, aliases = [] );
+			aliases.push( entry );
+
+		}
+
+	}
+
+	let resources = 0;
+	let aliases = 0;
+	let bytes = 0;
+	for ( const [ attribute, entries ] of aliasesByAttribute ) {
+
+		const arraySnapshot = snapshotAttributeArray( attribute );
+		const snapshots = entries.map( ( entry ) => {
+
+			const snapshot = {
+				arrayType: entry.arrayType,
+				count: entry.count,
+				itemSize: entry.itemSize,
+				arraySnapshot,
+			};
+			snapshot.arraySnapshotHash = createStorageBufferSnapshotHash( snapshot );
+			const errors = validateStorageBufferSnapshot( snapshot );
+			if ( errors.length > 0 ) {
+
+				const label = entry.name || entry.source && entry.source.attributeName || '<anonymous>';
+				const error = new Error(
+					`[tsl-precompile] render-only storage buffer ${ JSON.stringify( label ) } cannot be snapshotted exactly: ` +
+					errors.map( ( issue ) => issue.message ).join( '; ' ),
+				);
+				error.code = 'TSLP_RENDER_ONLY_STORAGE_SNAPSHOT_INVALID';
+				error.details = {
+					arrayType: entry.arrayType || null,
+					count: entry.count ?? null,
+					itemSize: entry.itemSize ?? null,
+					issues: errors.map( ( issue ) => ( { ...issue } ) ),
+				};
+				throw error;
+
+			}
+			return snapshot;
+
+		} );
+		for ( let index = 0; index < entries.length; index ++ ) {
+
+			const entry = entries[ index ];
+			const snapshot = snapshots[ index ];
+			entry.arraySnapshot = arraySnapshot;
+			entry.arraySnapshotHash = snapshot.arraySnapshotHash;
+			aliases ++;
+
+		}
+		resources ++;
+		bytes += attribute.array.byteLength;
+
+	}
+	return { resources, aliases, bytes };
 
 }
 
@@ -1192,9 +1570,13 @@ function nestedComputeArtifact( artifact, kernelIndex, material ) {
 	// kernel order and clone the live-uniform slots before stamping owner-local
 	// paths. A shared standalone compute artifact must not retain the first
 	// material owner's graph identity.
+	const cacheKey = kernelIndex + 1;
 	return {
 		...artifact,
-		cacheKey: kernelIndex + 1,
+		cacheKey,
+		...( artifact.shaderLanguage ? {
+			variantKey: createBackendAwareVariantKey( cacheKey, artifact.shaderLanguage ),
+		} : {} ),
 		uniformPlan: cloneMaterialComputeUniformPlan( artifact.uniformPlan, material ),
 	};
 
@@ -1819,6 +2201,9 @@ function sceneMaterialOwnsMRTNode( scene, mrtNode ) {
  * @param {Camera} camera
  * @param {Object} [options]
  * @param {Array<Node>} [options.computeNodes] - Compute nodes to precompile.
+ * @param {Array<Node>} [options.observedComputeNodes] - Renderer-observed
+ *   compute nodes whose already-cached state supplies storage ownership
+ *   evidence. These nodes are never dispatched by capture.
  * @param {Map<Node,Map<string,Object>|Object>} [options.computeBindingResources]
  *   Process-local public resource maps keyed by compute-node identity.
  * @param {RenderPipeline} [options.renderPipeline] - Post-process pipeline to warm up.
@@ -1836,6 +2221,14 @@ function sceneMaterialOwnsMRTNode( scene, mrtNode ) {
  *   observed by the caller. Tone mapping and output color space are restored
  *   transactionally inside the renderer compile lock so a short-lived output
  *   mode queued behind another capture is still extracted exactly.
+ * @param {Object} [options.rendererStateOverride] - Optional synthetic
+ *   `{ toneMapping, currentColorSpace }` applied inside the renderer lock and
+ *   restored at exit. Used for isolated RenderPipeline final-quad extraction.
+ * @param {Array<Object>} [options.skipNodeUpdatesForMaterials] - Private
+ *   synthetic material identities whose compileAsync updateBefore/updateAfter
+ *   phases must not execute. The ordinary updateForRender phase still runs so
+ *   r185 can initialize object/camera matrix uniforms before binding upload.
+ *   Their builder state is still emitted.
  * @param {Object|Promise<Object>} [options.renderObjectHarvest] - Completed
  *   beginRenderObjectHarvest() result (or its session/Promise) from the
  *   application's real render. Complete material families are preferred
@@ -1886,6 +2279,42 @@ async function resolveRenderObjectHarvest( value, renderer ) {
 
 }
 
+function suppressNodeUpdatesForMaterials( manager, materials ) {
+
+	if ( ! manager || ! Array.isArray( materials ) || materials.length === 0 ) return () => {};
+	const identities = new Set( materials.filter( Boolean ) );
+	if ( identities.size === 0 ) return () => {};
+	const restorers = [];
+	for ( const methodName of [ 'updateBefore', 'updateAfter' ] ) {
+
+		const original = manager[ methodName ];
+		if ( typeof original !== 'function' ) continue;
+		const hadOwn = Object.hasOwn( manager, methodName );
+		const descriptor = hadOwn ? Object.getOwnPropertyDescriptor( manager, methodName ) : null;
+		const wrapped = function ( renderObject, ...args ) {
+
+			if ( renderObject && identities.has( renderObject.material ) ) return undefined;
+			return original.call( this, renderObject, ...args );
+
+		};
+		manager[ methodName ] = wrapped;
+		restorers.push( () => {
+
+			if ( manager[ methodName ] !== wrapped ) return;
+			if ( hadOwn ) Object.defineProperty( manager, methodName, descriptor );
+			else delete manager[ methodName ];
+
+		} );
+
+	}
+	return () => {
+
+		for ( let index = restorers.length - 1; index >= 0; index -- ) restorers[ index ]();
+
+	};
+
+}
+
 function addMaterialComputeNodesFromState( state, computeNodes, computeNodeSet ) {
 
 	for ( const node of Array.isArray( state && state.updateBeforeNodes ) ? state.updateBeforeNodes : [] ) {
@@ -1929,6 +2358,7 @@ function cachedComputeState( manager, computeNode, requireExisting = false ) {
 async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 	const explicitComputeNodes = Array.isArray( options.computeNodes ) ? options.computeNodes.slice() : [];
+	const observedComputeNodes = Array.isArray( options.observedComputeNodes ) ? options.observedComputeNodes.slice() : [];
 	const computeBindingResources = options.computeBindingResources;
 	if ( computeBindingResources !== undefined && ( ! computeBindingResources || typeof computeBindingResources.get !== 'function' ) ) throw new TypeError(
 		'compileTSL: options.computeBindingResources must be a Map or WeakMap keyed by compute-node identity',
@@ -1936,10 +2366,20 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	const computeNodes = explicitComputeNodes.slice();
 	const computeNodeSet = new Set( computeNodes );
 	const explicitComputeNodeSet = new Set( computeNodes );
+	const observedComputeNodeSet = new Set();
+	for ( const computeNode of observedComputeNodes ) {
+
+		if ( explicitComputeNodeSet.has( computeNode ) || observedComputeNodeSet.has( computeNode ) ) continue;
+		observedComputeNodeSet.add( computeNode );
+		computeNodeSet.add( computeNode );
+		computeNodes.push( computeNode );
+
+	}
 	const computeStatesByNode = new Map();
 	const renderPipeline = options.renderPipeline || null;
 	const captureRendererOutput = options.captureRendererOutput === true;
 	const rendererOutputConfig = captureRendererOutput && options.rendererOutputConfig || null;
+	const rendererStateOverride = options.rendererStateOverride || rendererOutputConfig;
 	// A marker may bracket the application's completed real render with
 	// beginRenderObjectHarvest() and hand the immutable result in here. Prefer
 	// those exact RenderObjects later; this synthetic compile remains available
@@ -2238,22 +2678,46 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		onRequest: recordRenderObject,
 		onState: recordRenderObject,
 	} );
+	// `compileAsync()` builds pipelines without issuing draws. In r185, a scene
+	// containing `object.occlusionTest = true` still allocates an occlusion query
+	// set for that compile render context, then finishRender() attempts to end a
+	// query that no draw ever began. Queries are runtime scheduling state and do
+	// not affect shader topology, so suppress them transactionally for both the
+	// compile and synthetic warm-up.
+	const suppressedOcclusionTests = [];
+	if ( scene && typeof scene.traverse === 'function' ) {
+
+		scene.traverse( ( object ) => {
+
+			if ( ! object || object.occlusionTest !== true ) return;
+			const hadOwn = Object.prototype.hasOwnProperty.call( object, 'occlusionTest' );
+			const descriptor = hadOwn ? Object.getOwnPropertyDescriptor( object, 'occlusionTest' ) : null;
+			try {
+
+				object.occlusionTest = false;
+				if ( object.occlusionTest === false ) suppressedOcclusionTests.push( { object, hadOwn, descriptor } );
+
+			} catch ( _ ) { /* immutable custom objects remain unsuppressed */ }
+
+		} );
+
+	}
 	try {
 
 		// Automatic output capture may have queued behind another compile after
 		// observing a short-lived tone/color-space topology. Apply that immutable
 		// descriptor only after acquiring the per-renderer lock, then let the
 		// existing finally block restore the host renderer transactionally.
-		if ( rendererOutputConfig ) {
+		if ( rendererStateOverride ) {
 
-			if ( rendererStateSnapshot.hasToneMapping && rendererOutputConfig.toneMapping !== null ) {
+			if ( rendererStateSnapshot.hasToneMapping && rendererStateOverride.toneMapping !== null ) {
 
-				try { renderer.toneMapping = rendererOutputConfig.toneMapping; } catch ( _ ) { /* ignore */ }
+				try { renderer.toneMapping = rendererStateOverride.toneMapping; } catch ( _ ) { /* ignore */ }
 
 			}
-			if ( rendererStateSnapshot.hasOutputColorSpace && rendererOutputConfig.currentColorSpace !== null ) {
+			if ( rendererStateSnapshot.hasOutputColorSpace && rendererStateOverride.currentColorSpace !== null ) {
 
-				try { renderer.outputColorSpace = rendererOutputConfig.currentColorSpace; } catch ( _ ) { /* ignore */ }
+				try { renderer.outputColorSpace = rendererStateOverride.currentColorSpace; } catch ( _ ) { /* ignore */ }
 
 			}
 
@@ -2289,27 +2753,55 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		}
 
 		const restoreObjectPipeline = compileDoublePassPairsSynchronously( renderer );
+		const restoreCompileFramebufferCopy = suppressWebGPUFramebufferCopiesDuringCompile( renderer );
+		const restoreSyntheticNodeUpdates = suppressNodeUpdatesForMaterials(
+			manager,
+			options.skipNodeUpdatesForMaterials,
+		);
 		try {
 
 			await renderer.compileAsync( scene, camera );
 
 		} finally {
 
+			restoreSyntheticNodeUpdates();
+			restoreCompileFramebufferCopy();
 			restoreObjectPipeline();
 
 		}
 
-		// Compute precompile — each computeAsync call forces NodeManager
-		// .getForCompute to build the pipeline and stash the state on the
-		// per-compute-node DataMap entry. We also get the side-effect of a
-		// real GPU dispatch; that's normally fine (compute kernels are
-		// idempotent seeds in our demo) but callers can set `state._seeded`
-		// to skip the init kernel on re-compile.
+		// Compute precompile — ordinary material capture observes compute nodes
+		// only after the application has dispatched them, so reuse the exact
+		// cached NodeBuilderState without executing a potentially massive or
+		// stateful workload again. Explicit callers that provide an uncached node
+		// retain the historical computeAsync compile/dispatch fallback.
 		for ( const computeNode of explicitComputeNodes ) {
 
-			await renderer.computeAsync( computeNode );
-			const state = cachedComputeState( manager, computeNode );
+			let state = cachedComputeState( manager, computeNode, true );
+			if ( ! state ) {
+
+				await renderer.computeAsync( computeNode );
+				state = cachedComputeState( manager, computeNode );
+
+			}
 			if ( state ) computeStatesByNode.set( computeNode, state );
+
+		}
+		for ( const computeNode of observedComputeNodeSet ) {
+
+			const state = cachedComputeState( manager, computeNode, true );
+			if ( ! state ) {
+
+				const label = computeNode && ( computeNode.name || computeNode.uuid ) || '<anonymous>';
+				const error = new Error(
+					`[tsl-precompile] observed compute node ${ JSON.stringify( label ) } no longer has a cached builder state; ` +
+					'refusing to redispatch application compute during material capture.',
+				);
+				error.code = 'TSLP_OBSERVED_COMPUTE_STATE_MISSING';
+				throw error;
+
+			}
+			computeStatesByNode.set( computeNode, state );
 
 		}
 
@@ -2321,37 +2813,49 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		// If the caller passed a RenderPipeline, drive the warm-up through
 		// it so post-process passes (bloom, FXAA, output transform) also
 		// compile and land in nodeBuilderCache as regular artifacts.
-		if ( renderPipeline ) {
+		const restoreWarmupFramebufferCopy = suppressWebGPUFramebufferCopiesDuringCompile( renderer );
+		try {
 
-			// RenderPipeline.render() is sync but requires the renderer to
-			// be initialised (compileAsync already guaranteed that). It
-			// drives renderer.render internally — lift the deferral gate for
-			// the duration. The global flag lets outer capture-scoped render
-			// guards (precompile-marker) recognise synthetic renders too.
-			internalRenderDepth ++;
-			globalThis.__tslpSyntheticRenderActive = ( globalThis.__tslpSyntheticRenderActive | 0 ) + 1;
-			try { renderPipeline.render(); } finally {
+			if ( renderPipeline ) {
 
-				internalRenderDepth --;
-				globalThis.__tslpSyntheticRenderActive = ( globalThis.__tslpSyntheticRenderActive | 0 ) - 1;
+				// RenderPipeline.render() is sync but requires the renderer to
+				// be initialised (compileAsync already guaranteed that). It
+				// drives renderer.render internally — lift the deferral gate for
+				// the duration. The global flag lets outer capture-scoped render
+				// guards (precompile-marker) recognise synthetic renders too.
+				internalRenderDepth ++;
+				globalThis.__tslpSyntheticRenderActive = ( globalThis.__tslpSyntheticRenderActive | 0 ) + 1;
+				try { renderPipeline.render(); } finally {
+
+					internalRenderDepth --;
+					globalThis.__tslpSyntheticRenderActive = ( globalThis.__tslpSyntheticRenderActive | 0 ) - 1;
+
+				}
+
+			} else if ( ! options.skipWarmupRender ) {
+
+				// renderer.render() is the non-deprecated entry; compileAsync
+				// above already ran `init` so the sync form is safe.
+				internalRenderDepth ++;
+				globalThis.__tslpSyntheticRenderActive = ( globalThis.__tslpSyntheticRenderActive | 0 ) + 1;
+				try { renderer.render( scene, camera ); } finally {
+
+					internalRenderDepth --;
+					globalThis.__tslpSyntheticRenderActive = ( globalThis.__tslpSyntheticRenderActive | 0 ) - 1;
+
+				}
 
 			}
 
-		} else if ( ! options.skipWarmupRender ) {
+		} finally {
 
-			// renderer.render() is the non-deprecated entry; compileAsync
-			// above already ran `init` so the sync form is safe.
-			internalRenderDepth ++;
-			globalThis.__tslpSyntheticRenderActive = ( globalThis.__tslpSyntheticRenderActive | 0 ) + 1;
-			try { renderer.render( scene, camera ); } finally {
-
-				internalRenderDepth --;
-				globalThis.__tslpSyntheticRenderActive = ( globalThis.__tslpSyntheticRenderActive | 0 ) - 1;
-
-			}
+			// Renderer.copyFramebufferToTexture still performs its destination
+			// allocation/binding work above the backend. Only the actual GPU
+			// copy is suppressed: the synthetic target can intentionally be
+			// 1x1 while LensflareMesh requests a viewport-space 16x16 region.
+			restoreWarmupFramebufferCopy();
 
 		}
-
 		if ( captureRendererOutput ) {
 
 			renderOutputIdentity = captureActiveRendererOutputIdentity( renderer, renderOutputObservations );
@@ -2422,6 +2926,17 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		}
 
 		for ( const [ mat, node ] of strippedMRTMaterials ) mat.mrtNode = node;
+		for ( let i = suppressedOcclusionTests.length - 1; i >= 0; i -- ) {
+
+			const { object, hadOwn, descriptor } = suppressedOcclusionTests[ i ];
+			try {
+
+				if ( hadOwn ) Object.defineProperty( object, 'occlusionTest', descriptor );
+				else delete object.occlusionTest;
+
+			} catch ( _ ) { /* immutable custom objects retain their current state */ }
+
+		}
 		renderObjectHarvest = await renderObjectHarvestPromise;
 
 	}
@@ -2445,8 +2960,8 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	const extractionEntries = [];
 	const suppliedCompleteOwners = new Set();
 	const suppliedCompleteOwnerUuids = new Set();
-	const selectedCompleteOwners = new Set();
-	const selectedCompleteOwnerUuids = new Set();
+	const selectedFamilyOwners = new Set();
+	const selectedFamilyOwnerUuids = new Set();
 	const handledPairsByMaterial = new Map();
 	const selectedCacheKeys = new Set();
 
@@ -2504,6 +3019,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 				userMaterials: variant.userMaterials || [],
 				meshes: variant.objects || [],
 				renderContextSelectors: variant.renderContextSelectors || [],
+				velocityProjectionSources: variant.velocityProjectionSources || [],
 				captureClock: variant.captureClocks && variant.captureClocks.length > 0 ? variant.captureClocks[ 0 ] : null,
 				mrtNode: firstRequest && firstRequest.renderContext ? firstRequest.renderContext.mrt : null,
 				hasObservedMRT: !! ( firstRequest && firstRequest.renderContext ),
@@ -2518,6 +3034,25 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	const completeFamilies = ( harvest ) => harvest && harvest.familiesByMaterial instanceof Map
 		? [ ...new Set( harvest.familiesByMaterial.values() ) ].filter( ( family ) => family && family.complete && family.material )
 		: [];
+	const hasCompleteSelectorEvidence = ( variant ) => {
+
+		const requests = Array.isArray( variant && variant.requests ) ? variant.requests : [];
+		const exactRequests = requests.filter( ( request ) => request && request.bindingOwnerExact );
+		const authoritativeRequests = exactRequests.length > 0 ? exactRequests : requests;
+		return authoritativeRequests.length > 0 &&
+			authoritativeRequests.every( ( request ) =>
+				typeof request?.renderContextSelector === 'string' && request.renderContextSelector.length > 0
+			) &&
+			Array.isArray( variant.renderContextSelectors ) && variant.renderContextSelectors.length > 0;
+
+	};
+	const hasAtomicCacheRecovery = ( family ) => Array.isArray( family && family.variants ) &&
+		family.variants.length > 0 &&
+		family.variants.every( ( variant ) =>
+			variant && variant.cacheKey !== null && variant.cacheKey !== undefined &&
+			!! cache.get( variant.cacheKey ) &&
+			hasCompleteSelectorEvidence( variant )
+		);
 
 	// Caller-supplied real-render families have first priority. Select every
 	// complete family from that one epoch before considering synthetic data so
@@ -2526,7 +3061,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 		addFamilyEntries( family, true );
 		markFamilyOwners( family, suppliedCompleteOwners, suppliedCompleteOwnerUuids );
-		markFamilyOwners( family, selectedCompleteOwners, selectedCompleteOwnerUuids );
+		markFamilyOwners( family, selectedFamilyOwners, selectedFamilyOwnerUuids );
 
 	}
 	// The compile-local real RenderObjects are the next preference. Do not mix
@@ -2535,7 +3070,25 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 		if ( familyOverlaps( family, suppliedCompleteOwners, suppliedCompleteOwnerUuids ) ) continue;
 		addFamilyEntries( family, true );
-		markFamilyOwners( family, selectedCompleteOwners, selectedCompleteOwnerUuids );
+		markFamilyOwners( family, selectedFamilyOwners, selectedFamilyOwnerUuids );
+
+	}
+	// A caller-supplied family may have complete request/selector evidence even
+	// when its asynchronous NodeBuilderState correlation was missing or
+	// ambiguous. If no complete compile-local family superseded that owner,
+	// recover only when the current cache can supply every sibling atomically.
+	// Never attribute a partial cache family to the caller's private material.
+	if ( suppliedRenderObjectHarvest && suppliedRenderObjectHarvest.familiesByMaterial instanceof Map ) {
+
+		for ( const family of new Set( suppliedRenderObjectHarvest.familiesByMaterial.values() ) ) {
+
+			if ( ! family || family.complete || ! family.material ) continue;
+			if ( familyOverlaps( family, selectedFamilyOwners, selectedFamilyOwnerUuids ) ) continue;
+			if ( ! hasAtomicCacheRecovery( family ) ) continue;
+			addFamilyEntries( family, false );
+			markFamilyOwners( family, selectedFamilyOwners, selectedFamilyOwnerUuids );
+
+		}
 
 	}
 	// A local family with one missing sibling must not contribute its other
@@ -2546,7 +3099,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		for ( const family of new Set( renderObjectHarvest.familiesByMaterial.values() ) ) {
 
 			if ( ! family || family.complete || ! family.material ) continue;
-			if ( familyOverlaps( family, selectedCompleteOwners, selectedCompleteOwnerUuids ) ) continue;
+			if ( familyOverlaps( family, selectedFamilyOwners, selectedFamilyOwnerUuids ) ) continue;
 			addFamilyEntries( family, false );
 
 		}
@@ -2562,9 +3115,9 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		const userMaterial = materialByCacheKey.get( cacheKey + ':user' ) || null;
 		const materialUuid = ownerUuid( material );
 		const userMaterialUuid = ownerUuid( userMaterial );
-		if ( selectedCompleteOwners.has( material ) || selectedCompleteOwners.has( userMaterial ) ||
-			materialUuid && selectedCompleteOwnerUuids.has( materialUuid ) ||
-			userMaterialUuid && selectedCompleteOwnerUuids.has( userMaterialUuid ) ) continue;
+		if ( selectedFamilyOwners.has( material ) || selectedFamilyOwners.has( userMaterial ) ||
+			materialUuid && selectedFamilyOwnerUuids.has( materialUuid ) ||
+			userMaterialUuid && selectedFamilyOwnerUuids.has( userMaterialUuid ) ) continue;
 		const handledKeys = handledPairsByMaterial.get( material );
 		if ( handledKeys && handledKeys.has( cacheKey ) ) continue;
 		if ( ! material && selectedCacheKeys.has( cacheKey ) ) continue;
@@ -2590,6 +3143,10 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	// multiple observed materials in the richer side maps.
 	const cacheOrder = new Map( [ ...cache.keys() ].map( ( cacheKey, index ) => [ cacheKey, index ] ) );
 	extractionEntries.sort( ( a, b ) => ( cacheOrder.get( a.cacheKey ) ?? Number.MAX_SAFE_INTEGER ) - ( cacheOrder.get( b.cacheKey ) ?? Number.MAX_SAFE_INTEGER ) );
+	// VSM's vertical/horizontal quad states do not contain an AnalyticLightNode
+	// of their own. Correlate their private materials against ShadowNodes from
+	// the complete selected batch before extracting either pass.
+	const vsmPassOwners = collectVsmPassOwners( extractionEntries );
 
 	// Discover material-owned kernels from the exact entries selected above,
 	// after supplied-vs-local family overlap and incomplete-family fallback have
@@ -2634,15 +3191,30 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		const exactShadowCasterRequests = classifyMaterialShape( material ) === 'shadow-depth'
 			? ( entry.sourceOwnerRequests || [] ).filter( ( request ) =>
 				request && request.bindingOwnerExact === true &&
-				request.bindingOwnerKind === RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER &&
-				request.sourceMaterial && request.material === material && request.cacheKey === cacheKey
+					request.bindingOwnerKind === RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER &&
+					request.sourceMaterial && request.material === material && request.cacheKey === cacheKey
 			)
 			: [];
 		const materialBindingOwners = new Set( exactShadowCasterRequests.map( ( request ) => request.sourceMaterial ) );
-		const artifact = extractArtifact( cacheKey, state, material, meshes[ 0 ] || null, exactShadowCasterRequests.length > 0 ? {
-			bindingOwnerKind: RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER,
-			materialBindingOwners,
-		} : null );
+		const vsmPassOwner = vsmPassOwners.get( material ) || null;
+		const velocityProjectionSources = Array.isArray( entry.velocityProjectionSources )
+			? entry.velocityProjectionSources
+			: [];
+		const extractionContext = exactShadowCasterRequests.length > 0 || vsmPassOwner || velocityProjectionSources.length > 0 ? {
+			...( exactShadowCasterRequests.length > 0 ? {
+				bindingOwnerKind: RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER,
+				materialBindingOwners,
+			} : {} ),
+			...( vsmPassOwner ? { shadowPassOwner: vsmPassOwner } : {} ),
+			...( velocityProjectionSources.length > 0 ? { velocityProjectionSources } : {} ),
+		} : null;
+		const artifact = extractArtifact( cacheKey, state, material, meshes[ 0 ] || null, extractionContext );
+		if ( vsmPassOwner ) {
+
+			const internalPass = createVsmInternalPassDescriptor( artifact, vsmPassOwner, renderer );
+			if ( internalPass ) artifact.internalPass = internalPass;
+
+		}
 		if ( entry.materialComputeDiscovery === true && Array.isArray( state.updateBeforeNodes ) && state.updateBeforeNodes.some( isRawMaterialComputeNode ) ) materialComputeRecords.push( {
 			artifact,
 			state,
@@ -2766,6 +3338,16 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 	}
 
+	// A same-shaped anonymous storage family can be split across materials:
+	// one render artifact may consume instanceWorld while another consumes
+	// instanceMvp. Per-plan extraction sees each resource alone, so sign the
+	// complete selected render+compute batch after every artifact is available.
+	// Exact live attribute identity deduplicates repeated bindings and
+	// BufferAttribute.id supplies the independently reproducible construction
+	// rank used by replay.
+	annotateAnonymousStorageResourceIdentity( artifacts.map( ( artifact ) => artifact && artifact.uniformPlan ) );
+	annotateRenderOnlyStorageBufferSnapshots( artifacts, computeStatesByNode.values() );
+
 	const materialComputeOwnersByNode = new Map();
 	for ( const record of materialComputeRecords ) {
 
@@ -2871,6 +3453,68 @@ function captureActiveRendererOutputIdentity( renderer, observations ) {
 
 }
 
+function computeTransformExtractionError( transformIndex, reason, details = {} ) {
+
+	const error = new Error(
+		`extractComputeArtifact: WebGL2 transform[${ transformIndex }] ${ reason }. ` +
+		'Transform feedback requires one exact state.nodeAttributes[].node identity; ' +
+		'standalone offline resources must already carry a proven live/userPath binding, and no public-resource identity is inferred.',
+	);
+	error.code = 'TSLP_COMPUTE_TRANSFORM_ATTRIBUTE_UNMAPPED';
+	error.details = { transformIndex, ...details };
+	return error;
+
+}
+
+/**
+ * Three r185 stores WebGL2 transform-feedback targets as live AttributeNode
+ * objects. Persist only the exact node-attribute index: names and buffer shape
+ * are insufficient evidence when multiple compute resources are identical.
+ */
+function serializeComputeTransforms( state ) {
+
+	const transforms = state && state.transforms;
+	if ( transforms === undefined || transforms === null ) return [];
+	if ( ! Array.isArray( transforms ) ) throw computeTransformExtractionError( 0, 'must be an array' );
+	const nodeAttributes = Array.isArray( state.nodeAttributes ) ? state.nodeAttributes : [];
+	return transforms.map( ( transform, transformIndex ) => {
+
+		if ( ! transform || typeof transform !== 'object' || Array.isArray( transform ) ) {
+
+			throw computeTransformExtractionError( transformIndex, 'must be an object' );
+
+		}
+		if ( typeof transform.varyingName !== 'string' || transform.varyingName.length === 0 ) {
+
+			throw computeTransformExtractionError( transformIndex, 'has no stable varyingName' );
+
+		}
+		const matches = [];
+		for ( let index = 0; index < nodeAttributes.length; index ++ ) {
+
+			if ( nodeAttributes[ index ] && nodeAttributes[ index ].node === transform.attributeNode ) matches.push( index );
+
+		}
+		if ( matches.length !== 1 ) throw computeTransformExtractionError(
+			transformIndex,
+			`maps to ${ matches.length } node attributes instead of exactly one`,
+			{ matches },
+		);
+		const attribute = nodeAttributes[ matches[ 0 ] ];
+		if ( ! attribute.node || ! attribute.node.attribute ) throw computeTransformExtractionError(
+			transformIndex,
+			'does not expose a live BufferAttribute resource',
+			{ attribute: matches[ 0 ] },
+		);
+		return {
+			varyingName: transform.varyingName,
+			attribute: matches[ 0 ],
+		};
+
+	} );
+
+}
+
 /**
  * Extract a compute-shader artifact from a built NodeBuilderState.
  *
@@ -2885,6 +3529,8 @@ export function extractComputeArtifact( cacheKey, state, computeNode, publicReso
 
 	const bindings = ( state.bindings || [] ).map( describeBindGroup );
 	const uniformPlan = extractUniformPlan( state );
+	const attributes = serializeNodeAttributes( state.nodeAttributes );
+	const transforms = serializeComputeTransforms( state );
 
 	// Dispatch size — ComputeNode tracks this via `.count` for 1D work, or
 	// `.dispatchSize` when the author passed an explicit [x, y, z] group
@@ -2899,11 +3545,13 @@ export function extractComputeArtifact( cacheKey, state, computeNode, publicReso
 		version: 3,
 		kind: 'compute',
 		cacheKey,
+		...createNativeShaderIdentity( cacheKey, state ),
 		name,
 		computeShader: state.computeShader || '',
 		vertexShader: '',
 		fragmentShader: '',
-		attributes: [],
+		attributes,
+		transforms,
 		bindings,
 		uniformPlan,
 		defaults: {},

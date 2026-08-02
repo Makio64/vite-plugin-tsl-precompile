@@ -22,7 +22,7 @@ with the fields below filled in.
 
 - **Repo / URL:** <link>
 - **What you're using:** explicit markers / `autoMark` / `slim` mode / aux passes
-- **three.js version:** e.g. `0.184.0`
+- **three.js version:** e.g. `0.185.1`
 - **Stack:** Vite + … (other tooling)
 - **First green build:** YYYY-MM-DD
 - **Friction encountered:** what broke, what was confusing, what worked smoothly

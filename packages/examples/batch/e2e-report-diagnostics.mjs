@@ -104,6 +104,79 @@ export function summarizeArtifactRenderSelectors( artifact ) {
 
 }
 
+function artifactShaderLanguage( artifact ) {
+
+	if ( artifact && ( artifact.shaderLanguage === 'wgsl' || artifact.shaderLanguage === 'glsl' ) ) return artifact.shaderLanguage;
+	const source = `${ artifact && artifact.vertexShader || '' }\n${ artifact && artifact.fragmentShader || '' }\n${ artifact && artifact.computeShader || '' }`;
+	if ( /^[ \t]*#[ \t]*version\b/m.test( source ) ) return 'glsl';
+	if ( /(?:^|[^\w])@(vertex|fragment|compute)\b/m.test( source ) ) return 'wgsl';
+	return null;
+
+}
+
+function artifactCandidates( artifact ) {
+
+	if ( ! artifact || typeof artifact !== 'object' ) return [];
+	return [ artifact, ...Object.values( artifact.variants || {} ) ]
+		.filter( ( candidate ) => candidate && typeof candidate === 'object' );
+
+}
+
+/**
+ * Audit a dual-backend capture without relying on Three's process-local cache
+ * keys. Each canonical render selector names the backend that compiled the
+ * candidate, so native WGSL must route only to WebGPU and native GLSL only to
+ * WebGL. Required backends also prove that both halves of a comparison page
+ * contributed replayable artifacts.
+ */
+export function auditArtifactShaderLanguageBackends( bucket, { requiredBackends = [] } = {} ) {
+
+	const enabled = requiredBackends.length > 0;
+	if ( ! enabled ) return { enabled: false, pass: true, observedBackends: [], missingBackends: [], mismatches: [] };
+	const expectedLanguage = { webgpu: 'wgsl', webgl: 'glsl' };
+	const observed = new Set();
+	const mismatches = [];
+	const entries = [
+		...Object.entries( bucket && bucket.user || {} ).map( ( [ name, entry ] ) => ( { name, artifact: entry && entry.artifact } ) ),
+		...( bucket && Array.isArray( bucket.aux ) ? bucket.aux : [] ).map( ( entry, index ) => ( { name: `aux:${ entry && entry.shape || index }`, artifact: entry && entry.artifact } ) ),
+	];
+	for ( const entry of entries ) {
+
+		for ( const candidate of artifactCandidates( entry.artifact ) ) {
+
+			const language = artifactShaderLanguage( candidate );
+			for ( const selector of candidate.renderContextSelectors || [] ) {
+
+				let descriptor = null;
+				try { descriptor = JSON.parse( selector ); } catch ( _ ) { continue; }
+				const backend = descriptor && descriptor.renderer && descriptor.renderer.backend && descriptor.renderer.backend.kind;
+				if ( ! expectedLanguage[ backend ] ) continue;
+				observed.add( backend );
+				if ( language !== expectedLanguage[ backend ] ) mismatches.push( {
+					artifact: entry.name,
+					cacheKey: candidate.cacheKey ?? null,
+					variantKey: candidate.variantKey || null,
+					backend,
+					expectedLanguage: expectedLanguage[ backend ],
+					actualLanguage: language,
+				} );
+
+			}
+
+		}
+
+	}
+	const missingBackends = requiredBackends.filter( ( backend ) => ! observed.has( backend ) );
+	return {
+		enabled: true,
+		pass: missingBackends.length === 0 && mismatches.length === 0,
+		observedBackends: [ ...observed ].sort(),
+		missingBackends,
+		mismatches,
+	};
+
+}
+
 const MISSING = '<missing>';
 
 function selectorDifferences( active, captured, path = '', differences = [] ) {
@@ -198,6 +271,11 @@ export function summarizeRenderSelectorMismatch( record, { maxDifferences = 24 }
 		active,
 		captured,
 		comparisons,
+		closestDifferencePaths: Array.isArray( record.closestDifferencePaths )
+			? record.closestDifferencePaths.filter( ( value ) => typeof value === 'string' )
+			: [],
+		artifactContext: record.artifactContext && typeof record.artifactContext === 'object' ? record.artifactContext : null,
+		remediation: record.remediation && typeof record.remediation === 'object' ? record.remediation : null,
 	};
 
 }

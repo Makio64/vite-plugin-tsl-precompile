@@ -1,0 +1,1 @@
+export const ARTIFACT_TOOLCHAIN_VERSION: '0.1.0';

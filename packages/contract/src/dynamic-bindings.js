@@ -1,10 +1,170 @@
 import { MATERIAL_TEXTURE_PROPS } from './texture-props.js';
 import { isRenderBindingOwnerKind } from './render-selector.js';
+import { rendererRenderTargetTextureSelectorValidationError } from './render-target-texture.js';
 
 const UNSAFE_NODE_PATH_SEGMENTS = new Set( [ '__proto__', 'prototype', 'constructor' ] );
 
 export const LIVE_UNIFORM_CALLSITE_IDENTITY_SCHEMA = 'uniform-callsite@1';
 export const LIVE_UNIFORM_NODE_IDENTITY_SYMBOL_KEY = '@tsl-precompile/runtime/live-uniform-node-identity@1';
+export const STORAGE_BUFFER_SNAPSHOT_HASH_SCHEMA = 'storage-buffer-snapshot@1';
+
+/**
+ * Canonical durable spelling for texture image sources captured in a browser.
+ *
+ * DOM image URLs are exposed as absolute URLs, which would otherwise make an
+ * artifact depend on the dev server's host/port. Only URLs proven to share the
+ * supplied page origin are rewritten; cross-origin sources remain absolute
+ * because their origin is part of resource identity.
+ */
+export function canonicalTextureImageSource( value, baseHref = currentLocationHref() ) {
+
+	if ( typeof value !== 'string' || value.length === 0 ) return value;
+	if ( typeof baseHref !== 'string' || baseHref.length === 0 ) return value;
+	try {
+
+		const base = new URL( baseHref );
+		if ( base.protocol !== 'http:' && base.protocol !== 'https:' ) return value;
+		const resolved = new URL( value, base );
+		if (
+			( resolved.protocol !== 'http:' && resolved.protocol !== 'https:' )
+			|| resolved.username.length > 0
+			|| resolved.password.length > 0
+			|| resolved.origin !== base.origin
+		) return value;
+		return `${ resolved.pathname }${ resolved.search }${ resolved.hash }`;
+
+	} catch ( _ ) {
+
+		return value;
+
+	}
+
+}
+
+/**
+ * Exact lookup keys for a live/captured texture source in the current page.
+ * A live same-origin absolute URL therefore registers both its absolute and
+ * durable root-relative spelling.
+ */
+export function textureImageSourceAliases( value, baseHref = currentLocationHref() ) {
+
+	if ( typeof value !== 'string' || value.length === 0 ) return [];
+	const canonical = canonicalTextureImageSource( value, baseHref );
+	return canonical === value ? [ value ] : [ value, canonical ];
+
+}
+
+export function textureImageSourcesMatch( left, right, baseHref = currentLocationHref() ) {
+
+	const leftAliases = new Set( textureImageSourceAliases( left, baseHref ) );
+	return textureImageSourceAliases( right, baseHref ).some( ( alias ) => leftAliases.has( alias ) );
+
+}
+
+function currentLocationHref() {
+
+	const location = typeof globalThis !== 'undefined' ? globalThis.location : null;
+	return location && typeof location.href === 'string' ? location.href : null;
+
+}
+
+const STORAGE_BUFFER_ARRAY_TYPES = Object.freeze( {
+	Int8Array: Object.freeze( { bytes: 1, setter: 'setInt8', getter: 'getInt8' } ),
+	Uint8Array: Object.freeze( { bytes: 1, setter: 'setUint8', getter: 'getUint8' } ),
+	Uint8ClampedArray: Object.freeze( { bytes: 1, setter: 'setUint8', getter: 'getUint8' } ),
+	Int16Array: Object.freeze( { bytes: 2, setter: 'setInt16', getter: 'getInt16' } ),
+	Uint16Array: Object.freeze( { bytes: 2, setter: 'setUint16', getter: 'getUint16' } ),
+	Int32Array: Object.freeze( { bytes: 4, setter: 'setInt32', getter: 'getInt32' } ),
+	Uint32Array: Object.freeze( { bytes: 4, setter: 'setUint32', getter: 'getUint32' } ),
+	Float32Array: Object.freeze( { bytes: 4, setter: 'setFloat32', getter: 'getFloat32' } ),
+	Float64Array: Object.freeze( { bytes: 8, setter: 'setFloat64', getter: 'getFloat64' } ),
+} );
+
+function exactStorageBufferSnapshotBytes( entry ) {
+
+	const info = entry && STORAGE_BUFFER_ARRAY_TYPES[ entry.arrayType ];
+	const count = entry && entry.count;
+	const itemSize = entry && entry.itemSize;
+	const snapshot = entry && entry.arraySnapshot;
+	if ( ! info
+		|| ! Number.isSafeInteger( count ) || count <= 0
+		|| ! Number.isSafeInteger( itemSize ) || itemSize <= 0 ) return null;
+	const length = count * itemSize;
+	if ( ! Number.isSafeInteger( length ) || ! Array.isArray( snapshot ) || snapshot.length !== length ) return null;
+	const bytes = new Uint8Array( length * info.bytes );
+	const view = new DataView( bytes.buffer );
+	for ( let index = 0; index < snapshot.length; index ++ ) {
+
+		const rawValue = snapshot[ index ];
+		if ( typeof rawValue !== 'number' || ! Number.isFinite( rawValue ) ) return null;
+		// JSON.stringify normalizes negative zero. Hash that durable value at
+		// capture too so the persisted snapshot still verifies after parsing.
+		const value = Object.is( rawValue, -0 ) ? 0 : rawValue;
+		const offset = index * info.bytes;
+		view[ info.setter ]( offset, value, true );
+		if ( ! Object.is( view[ info.getter ]( offset, true ), value ) ) return null;
+
+	}
+	return bytes;
+
+}
+
+function updateStorageBufferSnapshotHash( state, byte ) {
+
+	state[ 0 ] = Math.imul( state[ 0 ] ^ byte, 16777619 ) >>> 0;
+	state[ 1 ] = Math.imul( state[ 1 ] ^ byte, 2246822519 ) >>> 0;
+
+}
+
+/**
+ * Content identity for a JSON-safe storage-buffer initial-state snapshot.
+ *
+ * The artifact's outer SHA-256 remains the security/integrity boundary. This
+ * compact synchronous digest is an inner typed-byte checksum used to reject a
+ * malformed snapshot before hydration and to recognize exact alias records.
+ */
+export function createStorageBufferSnapshotHash( entry ) {
+
+	const bytes = exactStorageBufferSnapshotBytes( entry );
+	if ( ! bytes ) return null;
+	const state = [ 2166136261, 0x9e3779b9 ];
+	const header = `${ entry.arrayType }\0${ entry.count }\0${ entry.itemSize }\0`;
+	for ( let index = 0; index < header.length; index ++ ) updateStorageBufferSnapshotHash( state, header.charCodeAt( index ) & 0xff );
+	for ( const byte of bytes ) updateStorageBufferSnapshotHash( state, byte );
+	return `${ STORAGE_BUFFER_SNAPSHOT_HASH_SCHEMA }:${ state.map( ( value ) => value.toString( 16 ).padStart( 8, '0' ) ).join( '' ) }`;
+
+}
+
+export function validateStorageBufferSnapshot( entry ) {
+
+	const snapshot = entry && entry.arraySnapshot;
+	const hash = entry && entry.arraySnapshotHash;
+	if ( snapshot === undefined && hash === undefined ) return [];
+	const errors = [];
+	if ( snapshot === undefined || hash === undefined ) errors.push( {
+		code: 'dynamic-binding.storage-snapshot-pair',
+		field: snapshot === undefined ? 'arraySnapshot' : 'arraySnapshotHash',
+		message: 'storage-buffer initial state must carry both "arraySnapshot" and "arraySnapshotHash"',
+	} );
+	const computed = createStorageBufferSnapshotHash( entry );
+	if ( snapshot !== undefined && computed === null ) errors.push( {
+		code: 'dynamic-binding.storage-snapshot-shape',
+		field: 'arraySnapshot',
+		message: 'storage-buffer "arraySnapshot" must exactly match its finite typed count × itemSize payload',
+	} );
+	if ( hash !== undefined && ( typeof hash !== 'string' || ! new RegExp( `^${ STORAGE_BUFFER_SNAPSHOT_HASH_SCHEMA }:[a-f0-9]{16}$` ).test( hash ) ) ) errors.push( {
+		code: 'dynamic-binding.storage-snapshot-hash',
+		field: 'arraySnapshotHash',
+		message: 'storage-buffer "arraySnapshotHash" must be a canonical storage snapshot checksum',
+	} );
+	else if ( computed !== null && hash !== computed ) errors.push( {
+		code: 'dynamic-binding.storage-snapshot-integrity',
+		field: 'arraySnapshotHash',
+		message: 'storage-buffer "arraySnapshotHash" does not match its typed snapshot bytes',
+	} );
+	return errors;
+
+}
 
 export function createLiveUniformCallsiteIdentity( moduleIdentity, callIndex ) {
 
@@ -40,6 +200,29 @@ export function isLiveUniformNodeIdentity( identity ) {
 	if ( separator <= 0 || separator === identity.length - 1 ) return false;
 	const occurrence = identity.slice( separator + 1 );
 	return /^(?:0|[1-9]\d*)$/.test( occurrence ) && isLiveUniformCallsiteIdentity( identity.slice( 0, separator ) );
+
+}
+
+function isExactLiveUniformNodePath( nodePath ) {
+
+	return Array.isArray( nodePath )
+		&& nodePath.length > 0
+		&& nodePath.every( ( segment ) => typeof segment === 'string' && segment.length > 0 && ! UNSAFE_NODE_PATH_SEGMENTS.has( segment ) );
+
+}
+
+/**
+ * Whether a serialized uniform.live source has an exact runtime overlay
+ * address. Material-relative node paths resolve directly; closure-only nodes
+ * require both their artifact-local ID and stable call-site identity.
+ */
+export function hasExactLiveUniformOverlayAddress( source ) {
+
+	if ( ! source || source.kind !== 'uniform.live' ) return false;
+	if ( isExactLiveUniformNodePath( source.nodePath ) ) return true;
+	return Number.isInteger( source.liveNodeId )
+		&& source.liveNodeId >= 0
+		&& isLiveUniformNodeIdentity( source.liveNodeIdentity );
 
 }
 
@@ -122,6 +305,76 @@ function materialMatrixDescriptor( kind, property ) {
 }
 
 const exactDescriptors = {
+	'environment.intensity': freezeDescriptor( {
+		kind: 'environment.intensity',
+		target: DYNAMIC_BINDING_TARGET.UNIFORM_SLOT,
+		phase: DYNAMIC_BINDING_PHASE.CODEGEN_UPDATE,
+		owner: 'material-or-scene',
+		resolver: 'emit-updater/environment-intensity',
+		required: [],
+		optional: [ 'valueSnapshot' ],
+	} ),
+	'environment.rotation': freezeDescriptor( {
+		kind: 'environment.rotation',
+		target: DYNAMIC_BINDING_TARGET.UNIFORM_SLOT,
+		phase: DYNAMIC_BINDING_PHASE.CODEGEN_UPDATE,
+		owner: 'material-or-scene',
+		resolver: 'emit-updater/environment-rotation',
+		required: [],
+		optional: [ 'valueSnapshot' ],
+	} ),
+	'pmrem.maxMip': freezeDescriptor( {
+		kind: 'pmrem.maxMip',
+		target: DYNAMIC_BINDING_TARGET.UNIFORM_SLOT,
+		phase: DYNAMIC_BINDING_PHASE.CODEGEN_UPDATE,
+		owner: 'artifact',
+		resolver: 'runtime-writers/pmrem-scalar',
+		required: [ 'textureUuid' ],
+		optional: [ 'valueSnapshot' ],
+	} ),
+	'pmrem.texelWidth': freezeDescriptor( {
+		kind: 'pmrem.texelWidth',
+		target: DYNAMIC_BINDING_TARGET.UNIFORM_SLOT,
+		phase: DYNAMIC_BINDING_PHASE.CODEGEN_UPDATE,
+		owner: 'artifact',
+		resolver: 'runtime-writers/pmrem-scalar',
+		required: [ 'textureUuid' ],
+		optional: [ 'valueSnapshot' ],
+	} ),
+	'pmrem.texelHeight': freezeDescriptor( {
+		kind: 'pmrem.texelHeight',
+		target: DYNAMIC_BINDING_TARGET.UNIFORM_SLOT,
+		phase: DYNAMIC_BINDING_PHASE.CODEGEN_UPDATE,
+		owner: 'artifact',
+		resolver: 'runtime-writers/pmrem-scalar',
+		required: [ 'textureUuid' ],
+		optional: [ 'valueSnapshot' ],
+	} ),
+	'texture.uvFlipY': freezeDescriptor( {
+		kind: 'texture.uvFlipY',
+		target: DYNAMIC_BINDING_TARGET.UNIFORM_SLOT,
+		phase: DYNAMIC_BINDING_PHASE.CODEGEN_UPDATE,
+		owner: 'artifact',
+		resolver: 'runtime-writers/texture-uv-flip',
+		required: [ 'textureUuid' ],
+		optional: [
+			'textureName',
+			'imageSrc',
+			'mapping',
+			'wrapS',
+			'wrapT',
+			'magFilter',
+			'minFilter',
+			'anisotropy',
+			'generateMipmaps',
+			'colorSpace',
+			'flipY',
+			'imageWidth',
+			'imageHeight',
+			'imageDepth',
+			'valueSnapshot',
+		],
+	} ),
 	'uniform.live': freezeDescriptor( {
 		kind: 'uniform.live',
 		target: DYNAMIC_BINDING_TARGET.UNIFORM_SLOT,
@@ -156,7 +409,7 @@ const exactDescriptors = {
 		owner: 'artifact',
 		resolver: 'hydrator/artifact-texture',
 		required: [],
-		optional: [ 'textureUuid', 'textureName', 'imageSrc', 'snapshot', 'mapping', 'textureType', 'textureDimension', 'generateMipmaps', 'colorSpace', 'flipY', 'imageWidth', 'imageHeight', 'imageDepth' ],
+		optional: [ 'textureUuid', 'textureName', 'imageSrc', 'snapshot', 'mapping', 'textureType', 'textureDimension', 'generateMipmaps', 'colorSpace', 'flipY', 'imageWidth', 'imageHeight', 'imageDepth', 'renderTargetSelector' ],
 	} ),
 	'depth.texture': freezeDescriptor( {
 		kind: 'depth.texture',
@@ -165,7 +418,7 @@ const exactDescriptors = {
 		owner: 'light-or-material-graph',
 		resolver: 'hydrator/shadow-depth-rebinder',
 		required: [],
-		optional: [ 'lightIdentity', 'lightIndex', 'lightUuid', 'textureUuid', 'fromMaterialGraph', 'vsm' ],
+		optional: [ 'lightIdentity', 'lightIndex', 'lightUuid', 'textureUuid', 'fromMaterialGraph', 'reflectorIndex', 'vsm', 'shadowMapColor', 'renderTargetSelector' ],
 	} ),
 	'viewport.texture': freezeDescriptor( {
 		kind: 'viewport.texture',
@@ -213,7 +466,17 @@ const exactDescriptors = {
 		owner: 'compute',
 		resolver: 'hydrator/storage-buffer',
 		required: [],
-		optional: [ 'itemSize', 'count', 'usage', 'attributeName', 'elementType', 'computeNodeUuid', 'snapshot' ],
+		optional: [
+			'itemSize',
+			'count',
+			'usage',
+			'attributeName',
+			'elementType',
+			'computeNodeUuid',
+			'snapshot',
+			'anonymousResourceOrdinal',
+			'anonymousResourceCount',
+		],
 	} ),
 };
 
@@ -361,10 +624,7 @@ export function validateDynamicBindingSource( source ) {
 	}
 	if ( kind === 'uniform.live' && source.nodePath !== undefined ) {
 
-		const validPath = Array.isArray( source.nodePath )
-			&& source.nodePath.length > 0
-			&& source.nodePath.every( ( segment ) => typeof segment === 'string' && segment.length > 0 && ! UNSAFE_NODE_PATH_SEGMENTS.has( segment ) );
-		if ( ! validPath ) {
+		if ( ! isExactLiveUniformNodePath( source.nodePath ) ) {
 
 			errors.push( {
 				code: 'dynamic-binding.node-path',
@@ -406,6 +666,39 @@ export function validateDynamicBindingSource( source ) {
 		} );
 
 	}
+	if ( kind === 'storage.buffer' && (
+		source.anonymousResourceOrdinal !== undefined
+		|| source.anonymousResourceCount !== undefined
+	) ) {
+
+		const ordinal = source.anonymousResourceOrdinal;
+		const count = source.anonymousResourceCount;
+		if ( ! Number.isSafeInteger( ordinal ) || ordinal < 0 ) errors.push( {
+			code: 'dynamic-binding.storage-anonymous-ordinal',
+			kind,
+			field: 'anonymousResourceOrdinal',
+			message: `${ kind } source "anonymousResourceOrdinal" must be a non-negative integer`,
+		} );
+		if ( ! Number.isSafeInteger( count ) || count < 2 ) errors.push( {
+			code: 'dynamic-binding.storage-anonymous-count',
+			kind,
+			field: 'anonymousResourceCount',
+			message: `${ kind } source "anonymousResourceCount" must be an integer greater than one`,
+		} );
+		if ( Number.isSafeInteger( ordinal ) && Number.isSafeInteger( count ) && ordinal >= count ) errors.push( {
+			code: 'dynamic-binding.storage-anonymous-range',
+			kind,
+			field: 'anonymousResourceOrdinal',
+			message: `${ kind } source anonymous resource ordinal must be less than its resource count`,
+		} );
+		if ( typeof source.attributeName === 'string' && source.attributeName.trim().length > 0 ) errors.push( {
+			code: 'dynamic-binding.storage-anonymous-name',
+			kind,
+			field: 'attributeName',
+			message: `${ kind } source cannot combine an authored attribute name with anonymous resource identity`,
+		} );
+
+	}
 	if ( kind === 'viewport.texture' && source.viewportIdentity !== undefined && isViewportTextureIdentity( source.viewportIdentity ) === false ) {
 
 		errors.push( {
@@ -413,6 +706,27 @@ export function validateDynamicBindingSource( source ) {
 			kind,
 			field: 'viewportIdentity',
 			message: `${ kind } source "viewportIdentity" must be a known viewport copy-source identity`,
+		} );
+
+	}
+	if ( source && source.renderTargetSelector !== undefined ) {
+
+		const invalidReason = rendererRenderTargetTextureSelectorValidationError( source.renderTargetSelector );
+		if ( invalidReason !== null ) errors.push( {
+			code: 'dynamic-binding.render-target-selector',
+			kind,
+			field: 'renderTargetSelector',
+			message: `${ kind } source "renderTargetSelector" is invalid: ${ invalidReason }`,
+		} );
+		const allowedSource = kind === 'artifact.texture' || kind === 'depth.texture'
+			&& source.fromMaterialGraph === true
+			&& source.lightUuid == null
+			&& ( source.lightIndex === undefined || source.lightIndex < 0 );
+		if ( ! allowedSource ) errors.push( {
+			code: 'dynamic-binding.render-target-selector-owner',
+			kind,
+			field: 'renderTargetSelector',
+			message: `${ kind } source "renderTargetSelector" is only valid for artifact.texture or non-light material-graph depth.texture bindings`,
 		} );
 
 	}

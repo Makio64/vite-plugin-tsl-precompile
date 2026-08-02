@@ -44,6 +44,8 @@ function matchArtifactVariantCandidates( selector, profile, candidates ) {
 	if ( typeof selector !== 'string' || selector.length === 0 || ! Array.isArray( candidates ) ) return [];
 	const exact = candidates.filter( ( candidate ) => candidateSelectors( candidate, profile ).includes( selector ) );
 	if ( exact.length > 0 ) return exact;
+	const layeredTargetLayer = layeredTargetLayerSiblingCandidates( selector, candidates, profile );
+	if ( layeredTargetLayer.length > 0 ) return layeredTargetLayer;
 	const transparent = transparentDoubleSideSiblingCandidates( selector, candidates, profile );
 	if ( transparent.length > 0 ) return transparent;
 	const sampleCount = pipelineSampleCountSiblingCandidates( selector, candidates, profile );
@@ -58,6 +60,35 @@ function candidateSelectors( candidate, profile ) {
 	return candidate.renderContextSelectors
 		.filter( ( selector ) => typeof selector === 'string' && selector.length > 0 )
 		.map( ( selector ) => projectRenderObjectContextSelector( selector, profile ) );
+
+}
+
+function layeredTargetLayerSiblingCandidates( selector, candidates, profile ) {
+
+	if ( profile !== null && profile !== 'mesh-basic' ) return [];
+	const projected = projectLayeredTargetLayer( selector );
+	if ( projected === null ) return [];
+	return candidates.filter( ( candidate ) => candidateSelectors( candidate, profile ).some( ( capturedSelector ) => (
+		projectLayeredTargetLayer( capturedSelector ) === projected
+	) ) );
+
+}
+
+function projectLayeredTargetLayer( selector ) {
+
+	const descriptor = parseCanonicalRenderSelector( selector );
+	const target = descriptor && descriptor.target;
+	if ( ! target || typeof target !== 'object' || Array.isArray( target )
+		|| ( target.surface !== 'offscreen-array' && target.surface !== 'offscreen-3d' )
+		|| ! Number.isSafeInteger( target.activeCubeFace ) || target.activeCubeFace < 0
+		|| renderSelectorBackendKind( descriptor ) !== 'webgpu' ) return null;
+	const projectedTarget = { ...target };
+	// In Three r185 the active array layer / 3D depth slice only selects the
+	// attachment view. It is absent from RenderObject's node-builder cache key
+	// and cannot alter ordinary material WGSL. Keep every other attachment and
+	// pipeline axis signed, including the array-versus-3D surface distinction.
+	delete projectedTarget.activeCubeFace;
+	return stableJsonStringify( { ...descriptor, target: projectedTarget }, 'renderObjectSelector' );
 
 }
 
@@ -112,7 +143,35 @@ function projectPipelineSampleCount( selector ) {
 		|| ! backend || backend.kind !== 'webgpu' ) return null;
 	const projectedTarget = { ...target };
 	delete projectedTarget.sampleCount;
+	// r185 may realize the renderer-owned working-color target twice for the
+	// same ordinary material: the live antialiased output pass uses Three's
+	// private output-intermediate target (4x MSAA, LinearSRGBColorSpace), while
+	// a replay/compile pass uses an ordinary single-sample 2D RenderTarget with
+	// NoColorSpace. Both attachments are in the same linear shader-output
+	// domain; the surface label, sample count, and color-space tag affect the
+	// render pipeline/attachment, not the emitted WGSL. Keep this proof bounded
+	// to one WebGPU color attachment and preserve format, type, depth, and every
+	// other signed target axis.
+	if ( isLinearOutputIntermediateSibling( target ) ) {
+
+		projectedTarget.surface = 'linear-2d-intermediate';
+		projectedTarget.colors = [ {
+			...target.colors[ 0 ],
+			colorSpace: 'linear',
+		} ];
+
+	}
 	return stableJsonStringify( { ...descriptor, target: projectedTarget }, 'renderObjectSelector' );
+
+}
+
+function isLinearOutputIntermediateSibling( target ) {
+
+	if ( target.surface !== 'output-intermediate' && target.surface !== 'offscreen-2d' ) return false;
+	if ( ! Array.isArray( target.colors ) || target.colors.length !== 1 ) return false;
+	const color = target.colors[ 0 ];
+	if ( ! color || typeof color !== 'object' || Array.isArray( color ) ) return false;
+	return color.colorSpace === '' || color.colorSpace === 'srgb-linear';
 
 }
 

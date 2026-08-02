@@ -144,7 +144,7 @@ test( 'cube-render-target config excludes texture identity, pixels, dimensions, 
 
 } );
 
-test( 'cube-render-target config signs Three r184 effective mipmap state', () => {
+test( 'cube-render-target config signs Three r185 effective mipmap state', () => {
 
 	const topology = {
 		isTexture: true,

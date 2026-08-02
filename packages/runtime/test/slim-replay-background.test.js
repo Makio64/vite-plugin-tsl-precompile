@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Color, EventDispatcher, Texture } from 'three';
+import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
+import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import ReplayBackground from '../src/slim-replay-background.js';
 import {
 	__resetAuxRegistryForTests,
@@ -10,7 +12,10 @@ import {
 } from '../src/aux-loader.js';
 import { hashNodeGraphSync } from '../src/graph-hash.js';
 
-const HASH_OPTIONS = { threeVersion: '0.184.0', pluginVersion: '0.1.0' };
+const HASH_OPTIONS = {
+	threeVersion: SLIM_THREE_PACKAGE_VERSION,
+	pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
+};
 
 function artifact( name ) {
 

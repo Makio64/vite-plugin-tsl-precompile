@@ -295,12 +295,16 @@ function visitPlanSources( plan, visit ) {
 			if ( isOwnedLightSource( item.source ) ) visit( item.source );
 
 		};
-		for ( const item of group && group.slots || [] ) visitItem( item );
-		for ( const item of group && group.textures || [] ) visitItem( item );
-		for ( const binding of group && group.orderedBindings || [] ) {
+		const slots = Array.isArray( group?.slots ) ? group.slots : [];
+		const textures = Array.isArray( group?.textures ) ? group.textures : [];
+		const orderedBindings = Array.isArray( group?.orderedBindings ) ? group.orderedBindings : [];
+		for ( const item of slots ) visitItem( item );
+		for ( const item of textures ) visitItem( item );
+		for ( const binding of orderedBindings ) {
 
 			visitItem( binding && binding.ref );
-			for ( const item of binding && binding.slots || [] ) visitItem( item );
+			const bindingSlots = Array.isArray( binding?.slots ) ? binding.slots : [];
+			for ( const item of bindingSlots ) visitItem( item );
 
 		}
 

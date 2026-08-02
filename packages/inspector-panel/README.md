@@ -2,15 +2,19 @@
 
 Three.js **Inspector** tab that shows **live TSL precompile captures** — user materials, aux-pass artifacts (background / post-process / lights / PMREM), WGSL previews, and unsupported-kind warnings.
 
-![Precompile panel mock layout](https://i.imgur.com/placeholder.png) <!-- TODO before publish: replace placeholder.png with real inspector screenshot -->
+> **Repository-only workspace package.** This package is private and is not
+> published to npm. Its API is available to this monorepo's examples and
+> development tooling, but it is not part of the public release surface.
 
-## Install
+## Use in this repository
 
+Install the workspace from the repository root:
+
+```sh
+pnpm install
 ```
-pnpm add @tsl-precompile/inspector-panel @tsl-precompile/runtime three
-```
 
-## Use
+Workspace packages and examples can then import it by name:
 
 ```js
 import { Inspector } from 'three/addons/inspector/Inspector.js';
@@ -28,7 +32,11 @@ installPrecompileMarker( THREE );
 setDevRenderer( renderer );
 ```
 
-`setDevRenderer(renderer)` detects the inspector and **auto-registers** the panel too — so the `attachToInspector()` call is optional once the marker is wired. You only need to call it explicitly when you create the inspector *after* the marker (or when you want the panel in an inspector that doesn't belong to the dev renderer).
+`setDevRenderer(renderer)` detects the inspector and **auto-registers** the
+panel when this workspace module is resolvable, so the `attachToInspector()`
+call is optional once the marker is wired. Call it explicitly when you create
+the inspector after the marker, or when the inspector does not belong to the
+dev renderer.
 
 ## What the panel shows
 
@@ -76,6 +84,10 @@ console.table( captures.map( c => ( { shape: c.shape, name: c.name, hash: c.hash
 
 ## Requirements
 
-- three.js `>=0.184.0` (needs the 0.184 Inspector API — `Extension`, `addTab`).
+- three.js `0.185.1` (uses the r185 Inspector API — `Extension`, `addTab`).
 - `@tsl-precompile/runtime` workspace sibling.
 - A dev environment where the marker can reach the dev-capture endpoint (Vite dev server from `vite-plugin-tsl-precompile` provides this).
+
+External applications should treat this source as experimental repository
+tooling. If the panel becomes a supported public package, it needs a separate
+versioning, packaging, compatibility, and release story first.

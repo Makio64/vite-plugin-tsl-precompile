@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+	createBackgroundCaptureTargetTopologyKey,
 	createSceneRenderTopologySelector,
 	createRenderObjectContextSelector,
 	createShadowCasterTopologySelector,
@@ -135,6 +136,48 @@ test( 'render selector signs enabled renderer high precision without splitting t
 	assert.notEqual( createRenderObjectContextSelector( replay ), defaultSelector );
 	capture.renderer.highPrecision = true;
 	assert.equal( createRenderObjectContextSelector( replay ), createRenderObjectContextSelector( capture ) );
+
+} );
+
+test( 'render selector signs reversed depth without changing the default selector', () => {
+
+	const capture = fixture();
+	const replay = fixture();
+	const defaultSelector = createRenderObjectContextSelector( capture );
+	assert.equal( Object.hasOwn( JSON.parse( defaultSelector ).renderer, 'reversedDepthBuffer' ), false );
+
+	replay.renderer.reversedDepthBuffer = false;
+	assert.equal(
+		createRenderObjectContextSelector( replay ),
+		defaultSelector,
+		'explicit false retains the legacy default selector',
+	);
+	replay.renderer.reversedDepthBuffer = true;
+	assert.notEqual( createRenderObjectContextSelector( replay ), defaultSelector );
+	capture.renderer.reversedDepthBuffer = true;
+	assert.equal( createRenderObjectContextSelector( replay ), createRenderObjectContextSelector( capture ) );
+
+} );
+
+test( 'fullscreen output projections ignore reversed depth while ordinary selectors retain it', () => {
+
+	const capture = fixture();
+	const replay = fixture();
+	replay.renderer.reversedDepthBuffer = true;
+	const captureSelector = createRenderObjectContextSelector( capture );
+	const replaySelector = createRenderObjectContextSelector( replay );
+
+	assert.notEqual( replaySelector, captureSelector, 'ordinary selectors retain reversed-depth topology' );
+	assert.equal(
+		projectRenderObjectContextSelector( replaySelector, 'post-process' ),
+		projectRenderObjectContextSelector( captureSelector, 'post-process' ),
+		'post-process shaders run after scene depth projection',
+	);
+	assert.equal(
+		projectRenderObjectContextSelector( replaySelector, 'render-output' ),
+		projectRenderObjectContextSelector( captureSelector, 'render-output' ),
+		'renderer-owned output transforms ignore the earlier reversed-depth projection',
+	);
 
 } );
 
@@ -321,6 +364,68 @@ test( 'background selector projection ignores scene state and equivalent linear 
 
 } );
 
+test( 'background capture target keys share the exact selector projection and retain MRT topology', () => {
+
+	const renderer = {
+		backend: { isWebGPUBackend: true },
+		getOutputRenderTarget: () => null,
+	};
+	const captureTarget = {
+		isPostProcessingRenderTarget: true,
+		texture: {
+			isRenderTargetTexture: true,
+			format: 1023,
+			type: 1016,
+			colorSpace: 'srgb-linear',
+		},
+		depthTexture: { isDepthTexture: true, format: 1026, type: 1015 },
+		depthBuffer: true,
+		stencilBuffer: false,
+		samples: 4,
+		activeCubeFace: 3,
+		activeMipmapLevel: 2,
+	};
+	const replayTarget = {
+		texture: {
+			isCubeTexture: true,
+			format: 1023,
+			type: 1016,
+			colorSpace: '',
+		},
+		depthTexture: { isDepthTexture: true, format: 1026, type: 1015 },
+		depthBuffer: true,
+		stencilBuffer: false,
+		samples: 1,
+	};
+	const mrt = {
+		outputNodes: { color: {}, normal: {} },
+		blendModes: { color: 1, normal: 2 },
+	};
+
+	assert.equal(
+		createBackgroundCaptureTargetTopologyKey( renderer, captureTarget, mrt ),
+		createBackgroundCaptureTargetTopologyKey( renderer, replayTarget, mrt ),
+		'surface, samples, face/mip, view kind, and equivalent linear color spaces use one owned representative',
+	);
+	replayTarget.depthTexture.type = 1014;
+	assert.notEqual(
+		createBackgroundCaptureTargetTopologyKey( renderer, captureTarget, mrt ),
+		createBackgroundCaptureTargetTopologyKey( renderer, replayTarget, mrt ),
+		'depth attachment data type remains exact topology',
+	);
+	replayTarget.depthTexture.type = 1015;
+	const otherMRT = {
+		outputNodes: { color: {}, normal: {} },
+		blendModes: { color: 1, normal: 3 },
+	};
+	assert.notEqual(
+		createBackgroundCaptureTargetTopologyKey( renderer, captureTarget, mrt ),
+		createBackgroundCaptureTargetTopologyKey( renderer, captureTarget, otherMRT ),
+		'MRT blend topology remains exact',
+	);
+
+} );
+
 test( 'cube-render-target projection ignores scene and face identity while retaining target topology', () => {
 
 	const descriptor = {
@@ -407,16 +512,32 @@ test( 'post-process projection ignores private output attachments but retains pi
 		samples: 1,
 	};
 	capture.context.sampleCount = 1;
+	capture.context.depth = false;
+	capture.context.stencil = true;
 	capture.material.fog = true;
 	replay.context.renderTarget = null;
 	replay.context.textures = [];
 	replay.context.depthTexture = null;
 	replay.context.sampleCount = 1;
+	replay.context.depth = true;
+	replay.context.stencil = false;
 	replay.material.fog = false;
 	assert.notEqual( createRenderObjectContextSelector( capture ), createRenderObjectContextSelector( replay ) );
 	assert.equal(
 		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'post-process' ),
 		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'post-process' ),
+		'fullscreen WGSL ignores adapter-owned color, depth, and stencil attachments',
+	);
+	capture.context.mrt = null;
+	assert.notEqual(
+		createRenderObjectContextSelector( capture ),
+		createRenderObjectContextSelector( replay ),
+		'ordinary material selectors retain the active global MRT',
+	);
+	assert.equal(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'post-process' ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'post-process' ),
+		'explicit post-process fragment nodes ignore the active global MRT',
 	);
 
 	replay.renderer.highPrecision = true;
@@ -447,6 +568,17 @@ test( 'render-output projection ignores the scene shadow filter but retains outp
 		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'render-output' ),
 		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'render-output' ),
 		'output WGSL is independent of the earlier scene shadow-map algorithm',
+	);
+	capture.context.mrt = null;
+	assert.notEqual(
+		createRenderObjectContextSelector( capture ),
+		createRenderObjectContextSelector( replay ),
+		'ordinary material selectors retain the active global MRT',
+	);
+	assert.equal(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( capture ), 'render-output' ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( replay ), 'render-output' ),
+		'explicit renderer-output fragment nodes ignore the active global MRT',
 	);
 
 	replay.context.sampleCount = 1;
@@ -602,12 +734,49 @@ test( 'render selector captures clipping, interleaved layout, morph, and instanc
 		projectRenderObjectContextSelector( beforeStride, 'unknown-profile' ),
 		'unknown profiles remain unprojected',
 	);
+	const indexed = fixture();
+	indexed.object.geometry.index = { array: new Uint16Array( 3 ), itemSize: 1, normalized: false };
+	const indexedSelector = createRenderObjectContextSelector( indexed );
+	assert.notEqual( indexedSelector, beforeStride, 'raw diagnostics retain indexed draw mode' );
+	assert.equal(
+		projectRenderObjectContextSelector( indexedSelector, null ),
+		projectRenderObjectContextSelector( beforeStride, null ),
+		'ordinary artifact selection ignores index-buffer draw mode',
+	);
 	interleaved.object.geometry.attributes.position.itemSize = 4;
 	assert.notEqual(
 		projectRenderObjectContextSelector( createRenderObjectContextSelector( interleaved ), null ),
 		projectRenderObjectContextSelector( beforeStride, null ),
 		'WGSL attribute item size remains signed',
 	);
+
+	const rangeCapture = fixture();
+	rangeCapture.object.geometry.attributes.__range1009 = {
+		itemSize: 4,
+		normalized: false,
+		array: new Float32Array( 16 ),
+	};
+	assert.notEqual( createRenderObjectContextSelector( rangeCapture ), beforeStride, 'raw diagnostics retain compiler-owned range attributes' );
+	assert.equal(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( rangeCapture ), null ),
+		projectRenderObjectContextSelector( beforeStride, null ),
+		'ordinary selection projects the validated r185 compiler-owned range layout',
+	);
+	for ( const [ name, shape ] of [
+		[ '__rangeCustom', { itemSize: 4, normalized: false } ],
+		[ '__range1010', { itemSize: 3, normalized: false } ],
+		[ '__range1011', { itemSize: 4, normalized: true } ],
+	] ) {
+
+		const nearMiss = fixture();
+		nearMiss.object.geometry.attributes[ name ] = { ...shape, array: new Float32Array( 16 ) };
+		assert.notEqual(
+			projectRenderObjectContextSelector( createRenderObjectContextSelector( nearMiss ), null ),
+			projectRenderObjectContextSelector( beforeStride, null ),
+			`${ name } near-miss remains signed`,
+		);
+
+	}
 
 	const morphCapture = fixture();
 	const morphReplay = fixture();
@@ -633,6 +802,38 @@ test( 'render selector captures clipping, interleaved layout, morph, and instanc
 	instanced.object.count = 2;
 	assert.notEqual( createRenderObjectContextSelector( instanced ), beforeCount );
 
+	const instancedCapacity = fixture();
+	instancedCapacity.object.isInstancedMesh = true;
+	instancedCapacity.object.count = 2;
+	instancedCapacity.object.instanceMatrix = {
+		count: 4,
+		itemSize: 16,
+		array: new Float32Array( 4 * 16 ),
+	};
+	const capacityFour = createRenderObjectContextSelector( instancedCapacity );
+	const projectedCapacityFour = projectRenderObjectContextSelector( capacityFour, 'mesh-basic' );
+	instancedCapacity.object.count = 3;
+	assert.equal(
+		createRenderObjectContextSelector( instancedCapacity ),
+		capacityFour,
+		'the mutable draw count does not split fixed-capacity InstanceNode WGSL',
+	);
+	instancedCapacity.object.instanceMatrix = {
+		count: 6,
+		itemSize: 16,
+		array: new Float32Array( 6 * 16 ),
+	};
+	assert.notEqual(
+		createRenderObjectContextSelector( instancedCapacity ),
+		capacityFour,
+		'the physical instance-matrix capacity selects the r185 uniform-array length',
+	);
+	assert.notEqual(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( instancedCapacity ), 'mesh-basic' ),
+		projectedCapacityFour,
+		'ordinary material projection retains the fixed uniform-array topology',
+	);
+
 	const textured = fixture();
 	const beforeMap = createRenderObjectContextSelector( textured );
 	textured.material.normalMap = { isTexture: true, mapping: 300, minFilter: 1008, wrapS: 1000, wrapT: 1000 };
@@ -645,6 +846,42 @@ test( 'render selector captures clipping, interleaved layout, morph, and instanc
 	assert.equal( createRenderObjectContextSelector( indexed16 ), createRenderObjectContextSelector( indexed32 ) );
 	indexed32.object.geometry.index = null;
 	assert.notEqual( createRenderObjectContextSelector( indexed16 ), createRenderObjectContextSelector( indexed32 ) );
+
+} );
+
+test( 'render selector normalizes r185 storage vec3 padding without changing ordinary vec3 attributes', () => {
+
+	const storageVec3 = fixture();
+	storageVec3.object.geometry.attributes.position.isStorageBufferAttribute = true;
+	const storageVec4 = fixture();
+	storageVec4.object.geometry.attributes.position.isStorageBufferAttribute = true;
+	storageVec4.object.geometry.attributes.position.itemSize = 4;
+	const storageInstancedVec3 = fixture();
+	storageInstancedVec3.object.geometry.attributes.position.isStorageInstancedBufferAttribute = true;
+	const ordinaryVec3 = fixture();
+
+	const storageVec3Descriptor = describeRenderObjectContext( storageVec3 );
+	const storageInstancedDescriptor = describeRenderObjectContext( storageInstancedVec3 );
+	const ordinaryDescriptor = describeRenderObjectContext( ordinaryVec3 );
+	assert.equal( storageVec3Descriptor.object.geometry.attributes[ 0 ][ 1 ].itemSize, 4 );
+	assert.equal( storageInstancedDescriptor.object.geometry.attributes[ 0 ][ 1 ].itemSize, 4 );
+	assert.equal( ordinaryDescriptor.object.geometry.attributes[ 0 ][ 1 ].itemSize, 3 );
+
+	assert.equal(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( storageVec3 ), null ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( storageVec4 ), null ),
+		'pre-upload vec3 and r185 post-upload vec4 storage layouts select one artifact',
+	);
+	assert.equal(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( storageInstancedVec3 ), null ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( storageVec4 ), null ),
+		'StorageInstancedBufferAttribute follows the same effective vec4 layout',
+	);
+	assert.notEqual(
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( ordinaryVec3 ), null ),
+		projectRenderObjectContextSelector( createRenderObjectContextSelector( storageVec4 ), null ),
+		'ordinary vertex vec3 remains signed as vec3',
+	);
 
 } );
 
@@ -712,6 +949,227 @@ test( 'render target topology recovers Three compileAsync targets only from exac
 
 	}
 	assert.equal( describeRenderTargetTopology( targetContext( null ), renderer ).surface, 'default', 'a real default context ignores a stale renderer target' );
+
+} );
+
+test( 'inferred Three r185 compileAsync targets use target-owned attachment flags', () => {
+
+	const color = texture( { isData3DTexture: true, type: 1009 } );
+	const target = renderTarget( color, {
+		isRenderTarget3D: true,
+		depthBuffer: false,
+		stencilBuffer: true,
+	} );
+	const renderer = {
+		backend: { isWebGPUBackend: true },
+		getRenderTarget: () => target,
+		getOutputRenderTarget: () => null,
+	};
+	const compileContext = targetContext( null, {
+		textures: [ color ],
+		// r185 compileAsync() leaves these at the renderer/default-surface
+		// values even though it has populated the bound target's textures.
+		color: false,
+		depth: true,
+		stencil: false,
+	} );
+	const descriptor = describeRenderTargetTopology( compileContext, renderer );
+
+	assert.equal( descriptor.surface, 'offscreen-3d' );
+	assert.equal( descriptor.color, true, 'the proven target attachment overrides the stale default color flag' );
+	assert.equal( descriptor.depth, false, 'the proven target depthBuffer flag overrides the stale renderer depth flag' );
+	assert.equal( descriptor.stencil, true, 'the proven target stencilBuffer flag overrides the stale renderer stencil flag' );
+
+	const realRenderContext = targetContext( target, {
+		textures: [ color ],
+		color: false,
+		depth: true,
+		stencil: false,
+	} );
+	const observed = describeRenderTargetTopology( realRenderContext, renderer );
+	assert.equal( observed.color, false, 'real-render request-time flags remain authoritative' );
+	assert.equal( observed.depth, true );
+	assert.equal( observed.stencil, false );
+
+} );
+
+test( 'render target topology replaces a stale non-null compile target only by exact attachment identity', () => {
+
+	const staleColor = texture( { name: 'stale' } );
+	const activeColor = texture( { name: 'active' } );
+	const staleTarget = renderTarget( staleColor, {
+		depthBuffer: true,
+	} );
+	const activeTarget = renderTarget( activeColor, {
+		depthBuffer: false,
+	} );
+	const renderer = {
+		backend: { isWebGPUBackend: true },
+		getRenderTarget: () => activeTarget,
+		getOutputRenderTarget: () => null,
+	};
+	const reusedCompileContext = targetContext( staleTarget, {
+		textures: [ activeColor ],
+		depthTexture: null,
+		// r185 reused the prior context identity and its renderer-global flag.
+		depth: true,
+	} );
+	const descriptor = describeRenderTargetTopology( reusedCompileContext, renderer );
+
+	assert.equal( descriptor.surface, 'offscreen-2d' );
+	assert.equal( descriptor.colors[ 0 ].dataType, activeColor.type );
+	assert.equal( descriptor.depth, false, 'the exact active owner replaces stale context depth' );
+
+	const copiedColor = { ...activeColor };
+	const copiedDescriptor = describeRenderTargetTopology( targetContext( staleTarget, {
+		textures: [ copiedColor ],
+		depthTexture: null,
+		depth: true,
+	} ), renderer );
+	assert.equal( copiedDescriptor.depth, true, 'same-shaped copied attachments cannot replace the observed target' );
+
+} );
+
+test( 'render target topology recovers Three r185 private compile targets from exact attachment owners', () => {
+
+	const color = texture( { type: 1016, colorSpace: 'srgb-linear' } );
+	const depth = texture( { isRenderTargetTexture: false, isDepthTexture: true, format: 1026, type: 1015 } );
+	const target = renderTarget( color, {
+		isPostProcessingRenderTarget: true,
+		depthTexture: depth,
+		samples: 4,
+	} );
+	color.renderTarget = target;
+	depth.renderTarget = target;
+	const renderer = {
+		backend: { isWebGPUBackend: true },
+		getRenderTarget: () => null,
+		getOutputRenderTarget: () => null,
+	};
+	const compileContext = targetContext( null, {
+		textures: [ color ],
+		depthTexture: depth,
+		color: false,
+		depth: false,
+		stencil: true,
+		sampleCount: 4,
+	} );
+	const realRenderContext = targetContext( target );
+
+	assert.deepEqual(
+		describeRenderTargetTopology( compileContext, renderer ),
+		describeRenderTargetTopology( realRenderContext, renderer ),
+		'the private compile context selects the same output-intermediate topology as the real render',
+	);
+	assert.equal( describeRenderTargetTopology( compileContext, renderer ).surface, 'output-intermediate' );
+
+	const secondColor = texture();
+	const secondTarget = renderTarget( secondColor );
+	secondColor.renderTarget = secondTarget;
+	for ( const invalidContext of [
+		targetContext( null, { textures: [ color, secondColor ], depthTexture: null } ),
+		targetContext( null, { textures: [ { ...color } ], depthTexture: null } ),
+		targetContext( null, {
+			textures: [ color ],
+			depthTexture: Object.assign( { ...depth }, { renderTarget: secondTarget } ),
+		} ),
+	] ) {
+
+		assert.equal(
+			describeRenderTargetTopology( invalidContext, renderer ).surface,
+			'default',
+			'mixed, copied, and mismatched-depth attachment owners remain fail-closed',
+		);
+
+	}
+
+} );
+
+test( 'render target topology recovers Three r185 backend-allocated implicit depth attachments', () => {
+
+	const color = texture( { type: 1016, colorSpace: 'srgb-linear' } );
+	const implicitDepth = texture( {
+		isRenderTargetTexture: false,
+		isDepthTexture: true,
+		format: 1026,
+		type: 1014,
+	} );
+	const target = renderTarget( color, {
+		isPostProcessingRenderTarget: true,
+		depthTexture: null,
+		samples: 4,
+	} );
+	color.renderTarget = target;
+	implicitDepth.renderTarget = target;
+	const renderer = {
+		backend: { isWebGPUBackend: true },
+		getRenderTarget: () => null,
+		getOutputRenderTarget: () => null,
+	};
+	const compileContext = targetContext( null, {
+		textures: [ color ],
+		depthTexture: implicitDepth,
+		color: false,
+		depth: false,
+		stencil: true,
+		sampleCount: 4,
+	} );
+	const realRenderContext = targetContext( target, {
+		depthTexture: implicitDepth,
+	} );
+
+	assert.deepEqual(
+		describeRenderTargetTopology( compileContext, renderer ),
+		describeRenderTargetTopology( realRenderContext, renderer ),
+		'the implicit depth owner proves the same private output target as a real render',
+	);
+	assert.equal( describeRenderTargetTopology( compileContext, renderer ).surface, 'output-intermediate' );
+
+} );
+
+test( 'render target topology rejects owner-backed depth when a different depth texture is configured', () => {
+
+	const color = texture();
+	const configuredDepth = texture( { isRenderTargetTexture: false, isDepthTexture: true, format: 1026 } );
+	const observedDepth = texture( { isRenderTargetTexture: false, isDepthTexture: true, format: 1026 } );
+	const target = renderTarget( color, { depthTexture: configuredDepth } );
+	color.renderTarget = target;
+	configuredDepth.renderTarget = target;
+	observedDepth.renderTarget = target;
+	const descriptor = describeRenderTargetTopology( targetContext( null, {
+		textures: [ color ],
+		depthTexture: observedDepth,
+	} ), {
+		backend: { isWebGPUBackend: true },
+		getRenderTarget: () => null,
+		getOutputRenderTarget: () => null,
+	} );
+
+	assert.equal( descriptor.surface, 'default', 'an owner back-reference cannot replace an explicitly configured depth attachment' );
+
+} );
+
+test( 'render target topology rejects stale implicit depth owners on color-only targets', () => {
+
+	const color = texture();
+	const staleDepth = texture( { isRenderTargetTexture: false, isDepthTexture: true, format: 1026 } );
+	const target = renderTarget( color, {
+		depthBuffer: false,
+		stencilBuffer: false,
+		depthTexture: null,
+	} );
+	color.renderTarget = target;
+	staleDepth.renderTarget = target;
+	const descriptor = describeRenderTargetTopology( targetContext( null, {
+		textures: [ color ],
+		depthTexture: staleDepth,
+	} ), {
+		backend: { isWebGPUBackend: true },
+		getRenderTarget: () => null,
+		getOutputRenderTarget: () => null,
+	} );
+
+	assert.equal( descriptor.surface, 'default', 'implicit ownership requires an active depth or stencil attachment' );
 
 } );
 

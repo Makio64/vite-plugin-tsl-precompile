@@ -1,20 +1,38 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { build } from 'vite';
 import { findRenderedSlimSourceResidue } from '../../plugin/src/slim-source.js';
+import { readSafeContainedFile } from '../../examples/batch/e2e-evidence.mjs';
+import { SITES as WOW_SITES } from '../../examples/wow-showcase/src/sites.js';
+import {
+	assertKnownSiteSelectorArguments,
+	resolveCanonicalSitePublicRoot,
+} from './examples-evidence-contract.mjs';
+import {
+	assertCanonicalExampleId,
+	assertCanonicalExampleName,
+	ensureOutputDirectory,
+	prepareOutputRoot,
+	writeOutputFileAtomic,
+} from '../../examples/batch/output-path-safety.mjs';
+import { publishLiveExamplesAtomically } from './live-examples-publication.mjs';
 
+assertKnownSiteSelectorArguments();
 const SITE_ROOT = resolve( dirname( fileURLToPath( import.meta.url ) ), '..' );
 const REPO_ROOT = resolve( SITE_ROOT, '../..' );
-const PUBLIC_ROOT = resolve( SITE_ROOT, 'public' );
-const LIVE_ROOT = resolve( PUBLIC_ROOT, 'live' );
-const MANIFEST_PATH = resolve( PUBLIC_ROOT, 'live-examples.json' );
+const SELECTED_PUBLIC_ROOT = resolveCanonicalSitePublicRoot( { siteRoot: SITE_ROOT } );
+let PUBLIC_ROOT = SELECTED_PUBLIC_ROOT;
+let LIVE_ROOT = resolve( PUBLIC_ROOT, 'live' );
+let MANIFEST_PATH = resolve( PUBLIC_ROOT, 'live-examples.json' );
 const CATALOGUE_PATH = resolve( REPO_ROOT, 'packages/examples/batch/example-catalogue.json' );
-const catalogue = JSON.parse( await readFile( CATALOGUE_PATH, 'utf8' ) );
+const catalogue = JSON.parse( readSafeContainedFile( REPO_ROOT, CATALOGUE_PATH, {
+	label: 'current example catalogue',
+} ).toString( 'utf8' ) );
 const VIRTUAL_ARTIFACT_PREFIX = '\0virtual:tsl-precompile/';
 
 const COMPUTE_DEBUG_KERNEL_NAMES = Object.freeze( {
@@ -29,6 +47,13 @@ const COMPUTE_DEBUG_KERNEL_NAMES = Object.freeze( {
 const COMPUTE_DEBUG_ARTIFACT_NAMES = Object.freeze( Object.values( COMPUTE_DEBUG_KERNEL_NAMES ).flat() );
 if ( COMPUTE_DEBUG_ARTIFACT_NAMES.length !== 11 || new Set( COMPUTE_DEBUG_ARTIFACT_NAMES ).size !== 11 ) throw new Error(
 	'compute-debug: expected 11 unique standalone compute artifact names',
+);
+const WOW_ARTIFACT_NAMES = Object.freeze( WOW_SITES.flatMap( site => [
+	`wow-${ site.id }-surface`,
+	`wow-${ site.id }-accent`,
+] ) );
+if ( WOW_SITES.length !== 10 || WOW_ARTIFACT_NAMES.length !== 20 || new Set( WOW_ARTIFACT_NAMES ).size !== 20 ) throw new Error(
+	'wow-showcase: expected ten routes and twenty unique material artifact names',
 );
 
 function requireExactNames( label, names, expectedNames ) {
@@ -95,6 +120,11 @@ const projects = [
 		routes: catalogueRoutes( 'shadow-debug' ),
 	},
 	{
+		id: 'pmrem-debug',
+		root: resolve( REPO_ROOT, 'packages/examples/pmrem-debug' ),
+		routes: catalogueRoutes( 'pmrem-debug' ),
+	},
+	{
 		id: 'mrt-debug',
 		root: resolve( REPO_ROOT, 'packages/examples/mrt-debug' ),
 		routes: catalogueRoutes( 'mrt-debug' ),
@@ -121,6 +151,25 @@ const projects = [
 		root: resolve( REPO_ROOT, 'packages/examples/compute-debug' ),
 		expectedComputeNames: COMPUTE_DEBUG_ARTIFACT_NAMES,
 		routes: computeDebugRoutes(),
+	},
+	{
+		id: 'wow-showcase',
+		root: resolve( REPO_ROOT, 'packages/examples/wow-showcase' ),
+		previewRoot: resolve( REPO_ROOT, 'packages/examples/wow-showcase/results' ),
+		expectedArtifactNames: WOW_ARTIFACT_NAMES,
+		routes: WOW_SITES.map( site => ( {
+			id: `wow-showcase:${ site.id }`,
+			role: 'free-example',
+			collection: 'free-tsl',
+			title: site.title,
+			brand: site.brand,
+			description: site.description,
+			accent: site.palette.primary,
+			runtimeId: site.id,
+			route: `${ site.id }.html`,
+			previewFile: `${ site.id }.png`,
+			expectsMotion: true,
+		} ) ),
 	},
 ];
 
@@ -159,7 +208,9 @@ async function ensureLiveDocumentMetadata( outDir ) {
 			/<head(?:\s[^>]*)?>/i,
 			match => `${ match }\n\t\t<link rel="icon" type="image/svg+xml" href="${ faviconHref }">`,
 		);
-		await writeFile( path, html );
+		writeOutputFileAtomic( PUBLIC_ROOT, path, html, {
+			label: 'Generated live example HTML',
+		} );
 
 	}
 
@@ -219,12 +270,35 @@ async function computeArtifactNamesUnder( root ) {
 
 }
 
+async function copyProjectPreviews( project, outDir ) {
+
+	if ( ! project.previewRoot ) return;
+	const previewDir = resolve( outDir, 'previews' );
+	ensureOutputDirectory( PUBLIC_ROOT, previewDir, {
+		label: `${ project.id } preview directory`,
+	} );
+	for ( const route of project.routes ) {
+
+		if ( ! route.previewFile ) continue;
+		const previewBytes = await readFile( resolve( project.previewRoot, route.previewFile ) );
+		writeOutputFileAtomic(
+			PUBLIC_ROOT,
+			resolve( previewDir, route.previewFile ),
+			previewBytes,
+			{ label: `${ project.id } preview image` },
+		);
+
+	}
+
+}
+
 async function buildProject( project ) {
 
 	const outDir = resolve( LIVE_ROOT, project.id );
 	const result = await build( {
 		root: project.root,
 		configFile: resolve( project.root, 'vite.config.js' ),
+		...( project.id === 'getting-started' ? { mode: 'tslp-site-live' } : {} ),
 		base: './',
 		build: {
 			outDir,
@@ -240,6 +314,7 @@ async function buildProject( project ) {
 		throw new Error( `${ project.id }: forbidden compiler/runtime residue ${ JSON.stringify( residueCounts ) }` );
 
 	}
+	await copyProjectPreviews( project, outDir );
 	await ensureLiveDocumentMetadata( outDir );
 
 	const output = await directoryFingerprint( outDir );
@@ -255,6 +330,11 @@ async function buildProject( project ) {
 
 	}
 	const compiledArtifactNames = compiledArtifactModules.map( id => id.slice( VIRTUAL_ARTIFACT_PREFIX.length ) );
+	if ( project.expectedArtifactNames ) {
+
+		requireExactNames( `${ project.id }: rendered material virtual modules`, compiledArtifactNames, project.expectedArtifactNames );
+
+	}
 	if ( project.expectedComputeNames ) {
 
 		const computeArtifactNames = await computeArtifactNamesUnder( resolve( project.root, 'artifacts' ) );
@@ -303,6 +383,12 @@ async function buildProject( project ) {
 		expectsMotion: route.expectsMotion === true || route.role === 'canary',
 		catalogueId: route.catalogueId || null,
 		title: route.title,
+		...( route.collection ? { collection: route.collection } : {} ),
+		...( route.brand ? { brand: route.brand } : {} ),
+		...( route.description ? { description: route.description } : {} ),
+		...( route.accent ? { accent: route.accent } : {} ),
+		...( route.runtimeId ? { runtimeId: route.runtimeId } : {} ),
+		...( route.previewFile ? { previewUrl: `live/${ project.id }/previews/${ route.previewFile }` } : {} ),
 		...( route.computeKernelNames ? { computeKernelNames: [ ...route.computeKernelNames ] } : {} ),
 		playUrl: route.route === 'index.html'
 			? `live/${ project.id }/`
@@ -314,26 +400,82 @@ async function buildProject( project ) {
 
 }
 
-await rm( LIVE_ROOT, { recursive: true, force: true } );
-await rm( MANIFEST_PATH, { force: true } );
+function assertPublishedOutputNames() {
 
-const records = [];
-const outputs = [];
-for ( const project of projects ) {
+	for ( const project of projects ) {
 
-	const built = await buildProject( project );
-	records.push( ...built.records );
-	outputs.push( built.output );
+		assertCanonicalExampleId( project.id, 'Published live project identifier' );
+		for ( const route of project.routes ) {
+
+			const routePath = String( route.route || '' ).split( /[?#]/, 1 )[ 0 ];
+			assertCanonicalExampleName( routePath, `${ project.id } published HTML route` );
+			if ( route.catalogueId ) {
+
+				assertCanonicalExampleId( route.catalogueId, `${ project.id } catalogue identifier` );
+
+			}
+			if (
+				route.previewFile &&
+				( ! /^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:png|jpe?g|webp)$/i.test( route.previewFile ) )
+			) {
+
+				throw new Error( `${ project.id } preview filename must be a canonical image basename.` );
+
+			}
+			if ( route.previewFile ) {
+
+				assertCanonicalExampleId(
+					route.previewFile.replace( /\.(?:png|jpe?g|webp)$/i, '' ),
+					`${ project.id } preview filename`,
+				);
+
+			}
+
+		}
+
+	}
 
 }
 
-const manifest = {
-	schemaVersion: 2,
-	manifestSha256: null,
-	examples: records,
-};
-manifest.manifestSha256 = sha256( JSON.stringify( manifest.examples ) );
-await writeFile( MANIFEST_PATH, JSON.stringify( manifest, null, '\t' ) + '\n' );
+assertPublishedOutputNames();
+PUBLIC_ROOT = prepareOutputRoot( SELECTED_PUBLIC_ROOT, {
+	repositoryRoot: REPO_ROOT,
+	allowedRepositoryRoots: [ resolve( SITE_ROOT, 'public' ) ],
+	label: 'Site public output root',
+} );
+LIVE_ROOT = resolve( PUBLIC_ROOT, 'live' );
+MANIFEST_PATH = resolve( PUBLIC_ROOT, 'live-examples.json' );
+const { records, outputs } = await publishLiveExamplesAtomically(
+	PUBLIC_ROOT,
+	async ( { liveRoot, manifestPath } ) => {
+
+		LIVE_ROOT = liveRoot;
+		MANIFEST_PATH = manifestPath;
+		const stagedRecords = [];
+		const stagedOutputs = [];
+		for ( const project of projects ) {
+
+			const built = await buildProject( project );
+			stagedRecords.push( ...built.records );
+			stagedOutputs.push( built.output );
+
+		}
+		const manifest = {
+			schemaVersion: 2,
+			manifestSha256: null,
+			examples: stagedRecords,
+		};
+		manifest.manifestSha256 = sha256( JSON.stringify( manifest.examples ) );
+		writeOutputFileAtomic(
+			PUBLIC_ROOT,
+			MANIFEST_PATH,
+			JSON.stringify( manifest, null, '\t' ) + '\n',
+			{ label: 'Staged live examples manifest' },
+		);
+		return { records: stagedRecords, outputs: stagedOutputs };
+
+	},
+);
 
 const totalBytes = outputs.reduce( ( total, output ) => total + output.bytes, 0 );
 console.log( `[site-live] built ${ records.length } compiler-free route(s) from ${ projects.length } project(s), ${ totalBytes } bytes` );

@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="color-scheme" content="dark">
+	<meta name="description" content="Integrate precompiled TSL into an existing Vite + three.js WebGPU app with one agent task and explicit capture, verification, build, and preview gates.">
+	<meta property="og:title" content="Integrate precompiled TSL into your app — vite-plugin-tsl-precompile">
+	<meta property="og:description" content="One agent task, real render-path capture, verified artifacts, and an explicit production preview gate.">
+	<meta property="og:type" content="website">
+	<meta property="og:image" content="https://makio64.github.io/vite-plugin-tsl-precompile/og.png">
+	<meta name="twitter:card" content="summary_large_image">
+	<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+	<title>Integrate precompiled TSL into your app — vite-plugin-tsl-precompile</title>
+	<link rel="stylesheet" href="/src/styles.css">
+	<link rel="stylesheet" href="/src/adopt.css">
+</head>
+<body class="page-narrow">
+	<a class="skip-link" href="#main">Skip to the guide</a>
+
+	<nav class="site-nav" aria-label="Site navigation">
+		<a class="site-nav-brand" href="index.html">
+			<span class="mono">vite-plugin-</span><span class="accent">tsl-precompile</span>
+		</a>
+		<div class="site-nav-links">
+			<a href="index.html">Start</a>
+			<a class="site-nav-current" aria-current="page" href="adopt.html">Existing app</a>
+			<a href="how-it-works.html">How it works</a>
+			<a href="examples.html">Proof</a>
+			<a href="benchmark.html">Numbers</a>
+			<a href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">GitHub <span aria-hidden="true">↗</span></a>
+		</div>
+	</nav>
+
+	<header class="page-hero adopt-hero">
+		<div class="adopt-hero-copy">
+			<p class="eyebrow">existing app</p>
+			<h1>Bring precompiled TSL<br><span class="accent">to your app.</span></h1>
+			<p class="lead">
+				One task gives your coding agent explicit gates from audit through capture, verification, build, and a production WebGPU preview.
+			</p>
+			<div class="btn-row">
+				<button class="btn btn-primary" data-copy="#adopt-agent-task" type="button">Copy the agent task</button>
+				<a class="btn btn-ghost" href="#how">See what it does</a>
+			</div>
+			<p class="hero-pills" aria-label="Requirements">
+				<span class="pill">Vite ≥6.4.3 &lt;9</span>
+				<span class="pill">three@0.185.1</span>
+				<span class="pill">WebGPURenderer</span>
+				<span class="pill">TSL materials</span>
+			</p>
+			<p class="hero-release"><strong>Pre-release:</strong> the npm packages are not published yet. Run the repository example now; this task stops safely on a registry 404.</p>
+		</div>
+
+		<div class="hero-art" aria-hidden="true">
+			<svg viewBox="0 0 420 320" role="img" aria-label="">
+				<defs>
+					<linearGradient id="hgrad" x1="0" y1="0" x2="1" y2="1">
+						<stop offset="0" stop-color="#22d3ee"/>
+						<stop offset="1" stop-color="#d946ef"/>
+					</linearGradient>
+					<radialGradient id="hglow" cx="0.5" cy="0.45" r="0.6">
+						<stop offset="0" stop-color="#22d3ee" stop-opacity="0.22"/>
+						<stop offset="1" stop-color="#22d3ee" stop-opacity="0"/>
+					</radialGradient>
+				</defs>
+
+				<ellipse cx="210" cy="150" rx="200" ry="140" fill="url(#hglow)"/>
+
+				<!-- agent window -->
+				<rect x="56" y="52" width="280" height="196" rx="18" fill="#0f1118" stroke="#2c3348" stroke-width="1.5"/>
+				<circle cx="82" cy="76" r="4.5" fill="#fb7185"/>
+				<circle cx="98" cy="76" r="4.5" fill="#fbbf24"/>
+				<circle cx="114" cy="76" r="4.5" fill="#34d399"/>
+				<rect x="140" y="69" width="120" height="14" rx="7" fill="#151826"/>
+
+				<!-- robot -->
+				<g class="art-float">
+					<line x1="196" y1="104" x2="196" y2="92" stroke="url(#hgrad)" stroke-width="3" stroke-linecap="round"/>
+					<circle cx="196" cy="86" r="5" fill="url(#hgrad)"/>
+					<rect x="146" y="104" width="100" height="72" rx="20" fill="#151826" stroke="url(#hgrad)" stroke-width="2"/>
+					<rect x="136" y="124" width="10" height="26" rx="5" fill="#1c2133" stroke="#2c3348"/>
+					<rect x="246" y="124" width="10" height="26" rx="5" fill="#1c2133" stroke="#2c3348"/>
+					<circle cx="176" cy="134" r="8" fill="#22d3ee"/>
+					<circle cx="216" cy="134" r="8" fill="#d946ef"/>
+					<circle cx="178" cy="132" r="2.5" fill="#07080d"/>
+					<circle cx="218" cy="132" r="2.5" fill="#07080d"/>
+					<path d="M182 156 q14 10 28 0" fill="none" stroke="#e8eaf1" stroke-width="3" stroke-linecap="round"/>
+					<rect x="162" y="176" width="68" height="34" rx="14" fill="#151826" stroke="#2c3348"/>
+					<circle cx="196" cy="193" r="6" fill="url(#hgrad)"/>
+				</g>
+
+				<!-- sparkles -->
+				<g class="art-sparkle" stroke="url(#hgrad)" stroke-width="2.5" stroke-linecap="round">
+					<path d="M286 108 v14 M279 115 h14"/>
+					<path d="M104 150 v10 M99 155 h10"/>
+					<path d="M300 170 v10 M295 175 h10"/>
+				</g>
+
+				<!-- check chip -->
+				<g class="art-float-slow">
+					<rect x="76" y="218" width="118" height="34" rx="17" fill="#0f1118" stroke="#34d399" stroke-width="1.5"/>
+					<path d="M94 235 l6 6 12 -12" fill="none" stroke="#34d399" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+					<text x="118" y="240" fill="#e8eaf1" font-size="13" font-family="ui-monospace, monospace">verified</text>
+				</g>
+
+				<!-- verification-gate badge -->
+				<g class="art-float">
+					<circle cx="330" cy="238" r="44" fill="url(#hgrad)"/>
+					<circle cx="330" cy="238" r="36" fill="#07080d"/>
+					<text x="330" y="234" text-anchor="middle" fill="#e8eaf1" font-size="15" font-weight="700" font-family="ui-monospace, monospace">5/5</text>
+					<text x="330" y="252" text-anchor="middle" fill="#7d839a" font-size="11" font-family="ui-monospace, monospace">gates</text>
+				</g>
+			</svg>
+		</div>
+	</header>
+
+	<main id="main" tabindex="-1">
+
+		<section class="section" id="how">
+			<div class="section-head">
+				<h2>Three steps. One guided handoff.</h2>
+			</div>
+			<div class="steps-grid">
+				<div class="step-card">
+					<div class="step-icon">
+						<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#22d3ee" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<rect x="6" y="4" width="12" height="17" rx="2.5"/>
+							<path d="M9 4.5 V3.2 A1.2 1.2 0 0 1 10.2 2 h3.6 A1.2 1.2 0 0 1 15 3.2 V4.5"/>
+							<path d="M9.5 11h5M9.5 15h5"/>
+						</svg>
+					</div>
+					<p class="step-num">01</p>
+					<h3>Copy the task</h3>
+					<p>Use the button above. It copies the whole procedure.</p>
+				</div>
+				<div class="step-card">
+					<div class="step-icon">
+						<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#d946ef" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<rect x="4" y="8" width="16" height="11" rx="3"/>
+							<path d="M12 8V4.5M9 4.5h6"/>
+							<circle cx="9" cy="13" r="1.1" fill="#d946ef" stroke="none"/>
+							<circle cx="15" cy="13" r="1.1" fill="#d946ef" stroke="none"/>
+							<path d="M9.5 16.5h5"/>
+						</svg>
+					</div>
+					<p class="step-num">02</p>
+					<h3>Paste it to your agent</h3>
+					<p>Claude, Cursor, Copilot — any coding agent works.</p>
+				</div>
+				<div class="step-card">
+					<div class="step-icon">
+						<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#34d399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<path d="M5 15c-1.5 1.5-2 5-2 5s3.5-.5 5-2"/>
+							<path d="M14 4c3-2 7-2 7-2s0 4-2 7l-7 7-5-5 7-7z"/>
+							<circle cx="15" cy="9" r="1.6"/>
+						</svg>
+					</div>
+					<p class="step-num">03</p>
+					<h3>Review &amp; ship</h3>
+					<p>Verified artifacts in the repo. Production WebGPU preview passed.</p>
+				</div>
+			</div>
+		</section>
+
+		<div id="adopt-agent-task" hidden>
+					<pre><code>Integrate vite-plugin-tsl-precompile into this existing Vite + three.js WebGPU app.
+
+Before installing or editing, inspect the package manager, Vite config, renderer,
+TSL materials, routes, and current three/@types versions. If the app is not a fit
+or exact three@0.185.1 requires an unapproved migration, stop without mutating.
+
+After the fit check passes, use the detected package manager (pnpm shown):
+  pnpm add -D vite-plugin-tsl-precompile@alpha
+  pnpm add @tsl-precompile/runtime@alpha three@0.185.1 --save-exact
+  pnpm add -D @types/three@0.185.1 --save-exact  # TypeScript only
+  pnpm exec tsl-precompile-install-skill --json
+  pnpm exec tsl-precompile-doctor --json --source src
+
+Replace or repeat --source for the source roots found during the audit.
+
+If npm returns 404, stop because the first alpha is not published; do not
+substitute. If the new skill is unavailable in this session, read the linked raw
+skill or llms.txt and continue. Use $integrate-tsl-precompile end to end in
+compatibility mode. Derive the route/state/render-topology matrix and ask about
+inaccessible states. Capture real WebGPU paths, verify and commit a non-zero
+artifacts/ set, build, and replay the same matrix in a production WebGPU preview.
+Report
+unverified paths and a separate slim-readiness verdict. Never hand-edit artifacts
+or enable slim in this change.</code></pre>
+		</div>
+
+		<section class="section">
+			<div class="section-head">
+				<h2>What your agent does for you</h2>
+			</div>
+
+			<div class="diagram-card">
+				<svg viewBox="0 0 960 196" role="img" aria-label="Pipeline: install, detect materials, capture renders, verify artifacts, build and ship">
+					<defs>
+						<linearGradient id="arrow-grad" x1="0" y1="0" x2="1" y2="0">
+							<stop offset="0" stop-color="#22d3ee"/>
+							<stop offset="1" stop-color="#d946ef"/>
+						</linearGradient>
+					</defs>
+
+					<!-- arrows -->
+					<g stroke="url(#arrow-grad)" stroke-width="2" fill="url(#arrow-grad)">
+						<line x1="158" y1="86" x2="208" y2="86"/><path d="M208 80 l10 6 -10 6 z"/>
+						<line x1="354" y1="86" x2="404" y2="86"/><path d="M404 80 l10 6 -10 6 z"/>
+						<line x1="550" y1="86" x2="600" y2="86"/><path d="M600 80 l10 6 -10 6 z"/>
+						<line x1="746" y1="86" x2="796" y2="86"/><path d="M796 80 l10 6 -10 6 z"/>
+					</g>
+
+					<!-- node 1: install -->
+					<g>
+						<rect x="24" y="42" width="128" height="88" rx="14" fill="#151826" stroke="#2c3348" stroke-width="1.5"/>
+						<g transform="translate(64 62)" fill="none" stroke="#22d3ee" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M0 4 l12 -6 12 6 v12 l-12 6 -12 -6 z"/>
+							<path d="M0 4 l12 6 12 -6 M12 10 v12"/>
+						</g>
+						<text x="88" y="112" text-anchor="middle" fill="#e8eaf1" font-size="13.5" font-weight="600">Install</text>
+						<text x="88" y="168" text-anchor="middle" fill="#7d839a" font-size="11.5">adds plugin + runtime</text>
+					</g>
+
+					<!-- node 2: detect -->
+					<g>
+						<rect x="220" y="42" width="128" height="88" rx="14" fill="#151826" stroke="#2c3348" stroke-width="1.5"/>
+						<g transform="translate(260 62)" fill="none" stroke="#22d3ee" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M2 2 h9 l11 11 -13 13 -11 -11 z"/>
+							<circle cx="7.5" cy="7.5" r="1.6" fill="#22d3ee" stroke="none"/>
+						</g>
+						<text x="284" y="112" text-anchor="middle" fill="#e8eaf1" font-size="13.5" font-weight="600">Detect</text>
+						<text x="284" y="168" text-anchor="middle" fill="#7d839a" font-size="11.5">finds direct NodeMaterials</text>
+					</g>
+
+					<!-- node 3: capture -->
+					<g>
+						<rect x="416" y="42" width="128" height="88" rx="14" fill="#151826" stroke="#2c3348" stroke-width="1.5"/>
+						<g transform="translate(456 62)" fill="none" stroke="#d946ef" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+							<rect x="0" y="5" width="24" height="17" rx="3"/>
+							<path d="M7 5 l2.5 -4 h5 l2.5 4"/>
+							<circle cx="12" cy="13.5" r="4.5"/>
+						</g>
+						<text x="480" y="112" text-anchor="middle" fill="#e8eaf1" font-size="13.5" font-weight="600">Capture</text>
+						<text x="480" y="168" text-anchor="middle" fill="#7d839a" font-size="11.5">runs real renders</text>
+					</g>
+
+					<!-- node 4: verify -->
+					<g>
+						<rect x="612" y="42" width="128" height="88" rx="14" fill="#151826" stroke="#2c3348" stroke-width="1.5"/>
+						<g transform="translate(652 60)" fill="none" stroke="#34d399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M12 1 l10 4 v7 c0 7 -4.5 11 -10 13 -5.5 -2 -10 -6 -10 -13 v-7 z"/>
+							<path d="M8 12 l3 3 6 -6"/>
+						</g>
+						<text x="676" y="112" text-anchor="middle" fill="#e8eaf1" font-size="13.5" font-weight="600">Verify</text>
+						<text x="676" y="168" text-anchor="middle" fill="#7d839a" font-size="11.5">checks + commits artifacts</text>
+					</g>
+
+					<!-- node 5: build -->
+					<g>
+						<rect x="808" y="42" width="128" height="88" rx="14" fill="#151826" stroke="#2c3348" stroke-width="1.5"/>
+						<g transform="translate(848 60)" fill="none" stroke="url(#arrow-grad)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M4 16 c-2 2 -2.5 6 -2.5 6 s4 -.5 6 -2.5"/>
+							<path d="M13 3 c3.5 -2.5 8.5 -2.5 8.5 -2.5 s0 5 -2.5 8.5 l-8 8 -6 -6 z"/>
+							<circle cx="16.5" cy="8.5" r="1.6"/>
+						</g>
+						<text x="872" y="112" text-anchor="middle" fill="#e8eaf1" font-size="13.5" font-weight="600">Build</text>
+						<text x="872" y="168" text-anchor="middle" fill="#7d839a" font-size="11.5">validates captured inputs</text>
+					</g>
+				</svg>
+			</div>
+
+			<div class="guard-grid">
+				<div class="guard-card">
+					<h3><span class="guard-dot guard-good" aria-hidden="true"></span>The build is the guardrail</h3>
+					<p>Missing or stale captures fail the build — nothing broken ships. Fix by re-capturing in dev.</p>
+				</div>
+				<div class="guard-card">
+					<h3><span class="guard-dot guard-warn" aria-hidden="true"></span>Changed a shader?</h3>
+					<p>Render the affected paths again, verify, commit the regenerated artifacts, rebuild.</p>
+				</div>
+			</div>
+		</section>
+
+		<section class="section">
+			<div class="section-head">
+				<h2>Slim is opt-in</h2>
+				<p>Flip it on only after capture, verification, build, and preview all pass.</p>
+			</div>
+			<div class="code-block slim-block">
+				<button class="copy-btn" data-copy type="button" aria-label="Copy slim configuration">copy</button>
+				<pre><code><span class="tok-fn">tslPrecompile</span>({ slim: <span class="tok-str">'source'</span> })</code></pre>
+			</div>
+			<p class="slim-note">Removes NodeBuilder from the captured production path. Enable it only after every compatibility gate passes. <a href="agent/integrate-tsl-precompile/references/advanced-capture.md">Slim checklist →</a></p>
+		</section>
+
+		<section class="section">
+			<div class="section-head">
+				<h2>Common questions</h2>
+			</div>
+			<div class="faq">
+				<details open>
+					<summary>Does my app qualify?</summary>
+					<div class="faq-body"><p>It needs Vite, <code>WebGPURenderer</code>, and TSL NodeMaterials. WebGL-only, non-Vite, or classic-material apps need a migration first.</p></div>
+				</details>
+				<details>
+					<summary>Prefer doing it manually?</summary>
+					<div class="faq-body">
+						<p>Install <code>pnpm add -D vite-plugin-tsl-precompile@alpha</code> and <code>pnpm add @tsl-precompile/runtime@alpha three@0.185.1 --save-exact</code>, add <code>tslPrecompile()</code> to your Vite plugins, and call <code>setupPrecompile({ renderer })</code> once. Direct NodeMaterial constructors are detected automatically; explicit <code>material.precompile('hero-body')</code> calls are optional stable-name overrides. Follow the no-AI <a href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/BYO.md" rel="noopener">BYO guide</a>, or use the <a href="agent/integrate-tsl-precompile/SKILL.md">agent skill</a>.</p>
+					</div>
+				</details>
+				<details>
+					<summary>Backgrounds, PMREM, post-processing, MRT, compute?</summary>
+					<div class="faq-body"><p>Capture auxiliary paths after the scene and post-processing graph are assembled, with <code>setupPrecompile({ renderer, scene, camera, aux: true })</code> and <code>setup.captureAux({ postProcessing })</code>. See the <a href="agent/integrate-tsl-precompile/references/advanced-capture.md">advanced capture checklist</a>.</p></div>
+				</details>
+			</div>
+		</section>
+
+		<section class="section cta">
+			<h2>Reference</h2>
+			<div class="btn-row">
+				<a class="btn btn-primary" href="agent/integrate-tsl-precompile/SKILL.md">Raw agent skill</a>
+				<a class="btn btn-ghost" href="llms.txt">llms.txt</a>
+				<a class="btn btn-ghost" href="how-it-works.html">How it works</a>
+				<a class="btn btn-ghost" href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/README.md" rel="noopener">Full options</a>
+				<a class="btn btn-ghost" href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/MIGRATION.md" rel="noopener">Migrations</a>
+			</div>
+		</section>
+	</main>
+
+	<footer class="footer">
+		<div class="footer-inner">
+			<div><strong class="mono">vite-plugin-tsl-precompile</strong><span class="footer-sep">·</span><span class="muted">Experimental · MIT</span></div>
+			<nav class="footer-nav" aria-label="Footer navigation">
+				<a href="index.html">Start</a>
+				<a href="how-it-works.html">How it works</a>
+				<a href="examples.html">Proof</a>
+				<a href="benchmark.html">Numbers</a>
+				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">GitHub</a>
+			</nav>
+		</div>
+	</footer>
+
+	<script type="module" src="/src/main.js"></script>
+</body>
+</html>

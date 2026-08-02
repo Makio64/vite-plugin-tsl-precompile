@@ -53,6 +53,8 @@ test( 'slim-support package subpath resolves through the public export map', () 
 	assert.equal( slimSupport.createAutoComputeDispatcher, createAutoComputeDispatcher );
 	assert.equal( typeof slimSupport.shareComputeSampledInputs, 'function' );
 	assert.equal( typeof slimSupport.computeSyncNeedsPresentation, 'function' );
+	assert.equal( typeof slimSupport.invokeAlignedFullCompute, 'function' );
+	assert.equal( typeof slimSupport.syncComputeRendererSize, 'function' );
 	assert.equal( typeof slimSupport.syncComputeStorageOutputs, 'function' );
 	assert.equal( typeof slimSupport.wireArtifactStorageBuffersFromAttributes, 'function' );
 	assert.equal( typeof slimSupport.updateRendererLightingForSlim, 'function' );

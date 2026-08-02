@@ -12,7 +12,7 @@
  *
  * `loadInspectorOptional()` resolves to the Inspector class in dev and to
  * `null` in production-like environments, using the same runtime-detection
- * trick as `aux-marker.js::lazyLoadCompileTSL`: a `/* @vite-ignore *​/`-marked
+ * trick as `aux-marker.js::lazyLoadCompileTSL`: an `@vite-ignore`-marked
  * dynamic import is left for the browser to resolve, and the production
  * bundle predictably fails. The detection result is cached.
  *

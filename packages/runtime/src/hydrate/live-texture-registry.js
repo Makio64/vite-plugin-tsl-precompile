@@ -4,6 +4,7 @@ import { DataArrayTexture } from 'three/src/textures/DataArrayTexture.js';
 import StorageTexture from 'three/src/renderers/common/StorageTexture.js';
 import Storage3DTexture from 'three/src/renderers/common/Storage3DTexture.js';
 import StorageArrayTexture from 'three/src/renderers/common/StorageArrayTexture.js';
+import { textureImageSourceAliases } from '@tsl-precompile/contract/dynamic-bindings';
 
 // Live-texture identity index. Hosts (harness / app) call
 // `registerLiveTexture(tex)` on every freshly-loaded Texture they want the
@@ -65,7 +66,7 @@ export function registerLiveTexture( texture ) {
 
 	if ( ! texture || texture.isTexture !== true ) return;
 	const src = imageSrcForTexture( texture );
-	if ( typeof src === 'string' && src.length > 0 ) _liveTexturesBySrc.set( src, texture );
+	for ( const alias of textureImageSourceAliases( src ) ) _liveTexturesBySrc.set( alias, texture );
 	registerLiveTextureName( texture.name, texture, src );
 	registerLiveTextureName( basenameFromUrl( src ), texture, src );
 
@@ -415,10 +416,16 @@ export function lookupAnonymousDataTexture( snapshot ) {
 export function lookupLiveTextureByIdentity( source ) {
 
 	if ( ! source ) return null;
-	if ( source.imageSrc && _liveTexturesBySrc.has( source.imageSrc ) ) return _liveTexturesBySrc.get( source.imageSrc );
+	const hasImageSrc = typeof source.imageSrc === 'string' && source.imageSrc.length > 0;
+	for ( const alias of textureImageSourceAliases( source.imageSrc ) ) {
+
+		if ( _liveTexturesBySrc.has( alias ) ) return _liveTexturesBySrc.get( alias );
+
+	}
 	if ( source.textureName && _liveTexturesByName.has( source.textureName ) ) {
 
-		return _liveTexturesByName.get( source.textureName );
+		const texture = _liveTexturesByName.get( source.textureName );
+		if ( ! hasImageSrc || ! imageSrcForTexture( texture ) ) return texture;
 
 	}
 	// Final identity fallback: derive the filename from imageSrc and try the
@@ -428,7 +435,12 @@ export function lookupLiveTextureByIdentity( source ) {
 	if ( source.imageSrc ) {
 
 		const filename = basenameFromUrl( source.imageSrc );
-		if ( filename && _liveTexturesByName.has( filename ) ) return _liveTexturesByName.get( filename );
+		if ( filename && _liveTexturesByName.has( filename ) ) {
+
+			const texture = _liveTexturesByName.get( filename );
+			if ( ! imageSrcForTexture( texture ) ) return texture;
+
+		}
 
 	}
 	return null;

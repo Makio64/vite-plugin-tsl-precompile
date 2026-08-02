@@ -16,8 +16,10 @@ import {
 import { GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR } from '@tsl-precompile/contract/variant-selector-sidecar';
 import { hydrateNodeBuilderState } from './hydrator.js';
 import ReplayNodeFrame from './slim-replay-node-frame.js';
+import { NodeUpdateType } from './slim-replay-node-core-primitives.js';
 import { getSlimRenderFallback } from './slim-support/render-fallback-registry.js';
 import { normalizeSlimRenderFallbackState } from './slim-support/render-fallback-state.js';
+import { createRendererRenderTargetTextureRegistry } from './slim-support/render-target-texture-registry.js';
 import { createReplaySceneNodeCompatibility } from './slim-replay-scene-nodes.js';
 
 class ReplayNodeManager extends DataMap {
@@ -32,6 +34,8 @@ class ReplayNodeManager extends DataMap {
 		this.groupsData = new WeakMap();
 		this._materialIds = new WeakMap();
 		this._nextMaterialId = 1;
+		this._outputLayerIndexNode = { value: 0 };
+		if ( renderer && typeof renderer.setRenderTarget === 'function' ) createRendererRenderTargetTextureRegistry( renderer );
 		this._sceneNodes = createReplaySceneNodeCompatibility( this );
 		this.cacheLib = this._sceneNodes.cacheLib;
 
@@ -40,6 +44,7 @@ class ReplayNodeManager extends DataMap {
 	updateGroup( nodeUniformsGroup ) {
 
 		const groupNode = nodeUniformsGroup.groupNode;
+		if ( groupNode.updateType === NodeUpdateType.OBJECT ) return true;
 		let byBinding = this.groupsData.get( groupNode );
 		if ( byBinding === undefined ) {
 
@@ -78,7 +83,7 @@ class ReplayNodeManager extends DataMap {
 		const material = renderObject.material;
 		if ( ! material || material.isPrecompiledMaterial !== true ) {
 
-			const fallback = getSlimRenderFallback();
+			const fallback = getSlimRenderFallback( this.renderer );
 			if ( fallback ) {
 
 				const fallbackResult = fallback( renderObject );
@@ -171,21 +176,23 @@ class ReplayNodeManager extends DataMap {
 
 	getForCompute( computeNode ) {
 
-		const computeData = this.get( computeNode );
-		if ( computeData.nodeBuilderState !== undefined ) return computeData.nodeBuilderState;
 		if ( ! computeNode || computeNode.isPrecompiledCompute !== true ) {
 
 			throw new Error( '[tsl-precompile/slim] only PrecompiledComputeNode is supported in the slim bundle. Did you forget to wrap a compute artifact?' );
 
 		}
+		const computeData = this.get( computeNode );
+		if ( computeData.nodeBuilderState !== undefined && computeData.version === computeNode.version ) return computeData.nodeBuilderState;
 		const ownerFrame = computeNode.__tslpMaterialComputeFrame || null;
 		const ownerMaterial = computeNode.__tslpMaterialComputeOwner || null;
 		const state = hydrateNodeBuilderState(
 			computeNode.precompiledArtifact,
 			ownerMaterial,
 			ownerFrame && ownerFrame.object || null,
+			{ renderer: this.renderer },
 		);
 		computeData.nodeBuilderState = state;
+		computeData.version = computeNode.version;
 		return state;
 
 	}
@@ -203,8 +210,9 @@ class ReplayNodeManager extends DataMap {
 		return {
 			cacheKey: this.getForRenderCacheKey( renderObject ),
 			bindingMaterial: bindingOwner.kind === RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER ? bindingOwner.material : null,
-			bindingOwnerKind: bindingOwner.kind,
-			renderObject,
+				bindingOwnerKind: bindingOwner.kind,
+				renderObject,
+				renderer: this.renderer,
 			// Project before both cache identity and variant selection. Cube faces
 			// and mip levels share one fixed conversion shader; retaining their raw
 			// values here would hydrate six equivalent states before the selector
@@ -213,6 +221,7 @@ class ReplayNodeManager extends DataMap {
 				? selectorAdapter.project( selector, selectorProfile )
 				: selector,
 			renderContextSelectorProfile: selectorProfile,
+			outputLayerIndexNode: selectorProfile === 'render-output' ? this._outputLayerIndexNode : null,
 		};
 
 	}
@@ -283,6 +292,12 @@ class ReplayNodeManager extends DataMap {
 
 	}
 
+	setOutputLayerIndex( index ) {
+
+		this._outputLayerIndexNode.value = index;
+
+	}
+
 	updateBefore( renderObject ) {
 
 		const state = renderObject.getNodeBuilderState();
@@ -336,6 +351,7 @@ class ReplayNodeManager extends DataMap {
 		this.groupsData = new WeakMap();
 		this._materialIds = new WeakMap();
 		this._nextMaterialId = 1;
+		this._outputLayerIndexNode = { value: 0 };
 		this._sceneNodes = createReplaySceneNodeCompatibility( this );
 		this.cacheLib = this._sceneNodes.cacheLib;
 

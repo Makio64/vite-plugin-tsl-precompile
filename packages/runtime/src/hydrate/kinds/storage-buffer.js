@@ -1,5 +1,6 @@
 import StorageBuffer from 'three/src/renderers/common/StorageBuffer.js';
 import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttribute.js';
+import { validateStorageBufferSnapshot } from '@tsl-precompile/contract/dynamic-bindings';
 
 import { resolveTypedArrayCtor } from '../typed-arrays.js';
 
@@ -32,8 +33,21 @@ export function resolveStorageBufferAttribute( entry ) {
 	const itemSize = entry ? ( entry.itemSize || 1 ) : 1;
 	const TypedArray = resolveTypedArrayCtor( entry ? entry.arrayType : null );
 	const attribute = new StorageBufferAttribute( count, itemSize, TypedArray );
-	seedStorageBufferAttribute( attribute, entry && entry._liveArray );
+	seedStorageBufferAttribute( attribute, storageBufferInitialArray( entry ) );
 	return attribute;
+
+}
+
+function storageBufferInitialArray( entry ) {
+
+	if ( ! entry ) return null;
+	if ( entry._liveArray ) return entry._liveArray;
+	if ( entry.arraySnapshot === undefined && entry.arraySnapshotHash === undefined ) return null;
+	const errors = validateStorageBufferSnapshot( entry );
+	if ( errors.length > 0 ) throw new Error(
+		`[tsl-precompile/slim] Invalid storage-buffer initial snapshot: ${ errors.map( ( error ) => error.message ).join( '; ' ) }.`,
+	);
+	return entry.arraySnapshot;
 
 }
 

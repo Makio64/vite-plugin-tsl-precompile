@@ -83,5 +83,31 @@ function assertPipelineReplayConfig( artifact, activeConfig, required = false ) 
 		);
 
 	}
+	for ( const key of [ 'logarithmicDepthBuffer', 'reversedDepthBuffer' ] ) {
+
+		const capturedValue = captured[ key ];
+		const activeValue = activeConfig[ key ];
+		if (
+			( capturedValue !== undefined && typeof capturedValue !== 'boolean' )
+			|| ( activeValue !== undefined && typeof activeValue !== 'boolean' )
+		) {
+
+			throw replayOutputError(
+				'REPLAY_PIPELINE_CONFIG_MISMATCH',
+				`RenderPipeline ${ key } metadata must be boolean when present; captured ${ JSON.stringify( capturedValue ) }, ` +
+				`replay requested ${ JSON.stringify( activeValue ) }. Recapture this pipeline configuration.`,
+				activeConfig,
+			);
+
+		}
+		if ( ( captured[ key ] === true ) === ( activeConfig[ key ] === true ) ) continue;
+		throw replayOutputError(
+			'REPLAY_PIPELINE_CONFIG_MISMATCH',
+			`Captured RenderPipeline ${ key }=${ captured[ key ] === true }, but replay requested ${ activeConfig[ key ] === true }. ` +
+			`Capture this pipeline configuration or bind the outputNode to the intended capture.`,
+			activeConfig,
+		);
+
+	}
 
 }

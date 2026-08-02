@@ -1,5 +1,5 @@
 /**
- * Exact r184 Loader rewrite tests for tree-shaken live-texture tracking.
+ * Exact r185 Loader rewrite tests for tree-shaken live-texture tracking.
  */
 
 import test from 'node:test';
@@ -16,7 +16,7 @@ const RUNTIME_ID = 'virtual:tsl-precompile/__slim-rewrite-runtime/texture-regist
 
 function rewrite( source = readFileSync( LOADER_PATH, 'utf8' ) ) {
 
-	return rewriteThreeSource( source, LOADER_PATH, { threeVersion: '0.184.0', pluginVersion: '0.0.0' } );
+	return rewriteThreeSource( source, LOADER_PATH, { threeVersion: '0.185.1', pluginVersion: '0.0.0' } );
 
 }
 
@@ -67,7 +67,7 @@ for ( const [ label, mutate ] of [
 		const result = rewrite( mutate( readFileSync( LOADER_PATH, 'utf8' ) ) );
 		assert.ok( result );
 		assert.equal( result.code, null );
-		assert.match( result.warning, /Loader: complete r184 module AST changed/ );
+		assert.match( result.warning, /Loader: complete r185 module AST changed/ );
 
 	} );
 

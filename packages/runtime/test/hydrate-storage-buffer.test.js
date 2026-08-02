@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createStorageBufferSnapshotHash } from '@tsl-precompile/contract/dynamic-bindings';
 
 import {
 	createStorageBufferBinding,
@@ -86,5 +87,43 @@ test( 'storage buffer kind seeds allocated attributes from typed live arrays', (
 
 	assert.equal( attribute.array.constructor, Float32Array );
 	assert.deepEqual( Array.from( attribute.array ), [ 5, 6, 7, 8 ] );
+
+} );
+
+test( 'storage buffer kind seeds exact persisted initial snapshots after JSON roundtrip', () => {
+
+	const entry = {
+		name: 'meshletIds',
+		arrayType: 'Uint32Array',
+		count: 4,
+		itemSize: 1,
+		arraySnapshot: [ 0, 12, 7, 99 ],
+	};
+	entry.arraySnapshotHash = createStorageBufferSnapshotHash( entry );
+	const persisted = JSON.parse( JSON.stringify( entry ) );
+
+	const attribute = resolveStorageBufferAttribute( persisted );
+
+	assert.equal( attribute.array.constructor, Uint32Array );
+	assert.deepEqual( Array.from( attribute.array ), [ 0, 12, 7, 99 ] );
+
+} );
+
+test( 'storage buffer kind rejects tampered persisted snapshots before allocation is used', () => {
+
+	const entry = {
+		name: 'uvs',
+		arrayType: 'Float32Array',
+		count: 2,
+		itemSize: 2,
+		arraySnapshot: [ 0, 0.25, 0.5, 1 ],
+	};
+	entry.arraySnapshotHash = createStorageBufferSnapshotHash( entry );
+	entry.arraySnapshot[ 1 ] = 0.75;
+
+	assert.throws(
+		() => resolveStorageBufferAttribute( entry ),
+		/Invalid storage-buffer initial snapshot.*does not match/,
+	);
 
 } );

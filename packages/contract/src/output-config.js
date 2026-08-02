@@ -51,6 +51,8 @@ export function createRendererOutputConfig( renderer, outputTexture ) {
  *   outputColorTransform: boolean,
  *   toneMapping: string|number|boolean|null,
  *   outputColorSpace: string|number|boolean|null,
+ *   logarithmicDepthBuffer?: true,
+ *   reversedDepthBuffer?: true,
  * }}
  */
 export function createRenderPipelineConfig( pipeline ) {
@@ -61,13 +63,19 @@ export function createRenderPipelineConfig( pipeline ) {
 	const outputColorSpace = scalar( safeRead( renderer, 'outputColorSpace' ) )
 		?? scalar( safeRead( pipeline, '_outputColorSpace' ) );
 
-	return {
+	const config = {
 		schema: 'render-pipeline@1',
 		outputNode: safeRead( pipeline, 'outputNode' ) ?? null,
 		outputColorTransform: safeRead( pipeline, 'outputColorTransform' ) === true,
 		toneMapping,
 		outputColorSpace,
 	};
+	// These renderer flags change the final pipeline shader topology. Keep them
+	// true-only so default-depth @1 configs retain their existing serialized
+	// shape and config hash, while non-default pipelines receive exact keys.
+	if ( safeRead( renderer, 'logarithmicDepthBuffer' ) === true ) config.logarithmicDepthBuffer = true;
+	if ( safeRead( renderer, 'reversedDepthBuffer' ) === true ) config.reversedDepthBuffer = true;
+	return config;
 
 }
 

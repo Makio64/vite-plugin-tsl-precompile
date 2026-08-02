@@ -127,9 +127,11 @@ function resolveLightShadowTexture( light, entry ) {
 
 	if ( ! light || ! light.shadow || ! light.shadow.map ) return null;
 	const map = light.shadow.map;
-	return entry.vsm
-		? ( light.shadow.__tslpVsmShadowTexture || map.texture || null )
-		: ( map.depthTexture || ( map.texture && map.texture.isDepthTexture === true ? map.texture : null ) );
+	if ( entry.shadowMapColor === true ) return map.texture || null;
+	if ( entry.vsm === true ) return light.shadow.__tslpVsmShadowTexture
+		|| map._vsmShadowMapHorizontal && map._vsmShadowMapHorizontal.texture
+		|| null;
+	return map.depthTexture || ( map.texture && map.texture.isDepthTexture === true ? map.texture : null );
 
 }
 
@@ -176,7 +178,14 @@ export function createShadowDepthRebinder( entries, deps = {} ) {
 				let liveTexture = null;
 				let light = null;
 
-				if ( entry.fromMaterialGraph ) {
+				if ( entry.internalPassBound && entry.artifact && entry.artifact._textureRefs instanceof Map ) {
+
+					const boundTexture = entry.artifact._textureRefs.get( entry.textureUuid );
+					if ( boundTexture && boundTexture.isTexture === true ) liveTexture = boundTexture;
+
+				}
+
+				if ( ! liveTexture && entry.fromMaterialGraph ) {
 
 					liveTexture = resolveDepthTextureFromMaterial( entry.material, entry.textureUuid, frame && frame.camera || null );
 					if ( ! liveTexture && diagnosticsEnabled() ) {
@@ -198,7 +207,7 @@ export function createShadowDepthRebinder( entries, deps = {} ) {
 
 					}
 
-				} else {
+				} else if ( ! liveTexture ) {
 
 					if ( ! scene ) continue;
 					light = findLightBySource( scene, entry.source || entry, frame );
@@ -206,7 +215,24 @@ export function createShadowDepthRebinder( entries, deps = {} ) {
 
 				}
 
-				if ( ! liveTexture ) continue;
+				if ( ! liveTexture ) {
+
+					if ( entry.vsm === true && light && diagnosticsEnabled() ) {
+
+						recordDiagnostic( {
+							phase: 'vsmShadowTextureMiss',
+							bindingName: entry.bindingName,
+							artifactName: entry.artifact && entry.artifact.name || null,
+							lightIndex: entry.lightIndex,
+							lightUuid: entry.lightUuid,
+							light: describeLight( light ),
+							hasRawShadowMapTexture: !! ( light.shadow && light.shadow.map && light.shadow.map.texture ),
+						} );
+
+					}
+					continue;
+
+				}
 				markLayeredDepthTextureForArrayBinding( liveTexture, entry.artifact, entry.bindingName );
 				if ( ! textureMatchesShaderBinding( entry.artifact, entry.bindingName, liveTexture ) ) {
 
@@ -228,10 +254,19 @@ export function createShadowDepthRebinder( entries, deps = {} ) {
 
 				const shadowCompareFunction = Number.isFinite( liveTexture.__tslpShadowCompareFunction ) ? liveTexture.__tslpShadowCompareFunction : null;
 				const rendererCompareFunction = frame && frame.renderer && frame.renderer.reversedDepthBuffer ? GreaterEqualCompare : LessEqualCompare;
-				const compareFunction = entry.fromMaterialGraph !== true && entry.vsm !== true && liveTexture.isDepthTexture === true
+				// Internal-pass controllers own the sampled-resource topology.
+				// In particular, VSM vertical consumes a load-only, non-comparison
+				// DepthTexture. Flipping that texture to a comparison sampler marks
+				// the render-target attachment for recreation and leaves Three's
+				// cached WebGPU attachment view pointing at a destroyed GPUTexture.
+				const shouldNormalizeShadowComparison = entry.internalPassBound !== true
+					&& entry.fromMaterialGraph !== true
+					&& entry.vsm !== true
+					&& liveTexture.isDepthTexture === true;
+				const compareFunction = shouldNormalizeShadowComparison
 					? shadowCompareFunction ?? ( liveTexture.compareFunction !== null && liveTexture.compareFunction !== undefined ? liveTexture.compareFunction : rendererCompareFunction )
-					: liveTexture.compareFunction !== null && liveTexture.compareFunction !== undefined ? liveTexture.compareFunction : rendererCompareFunction;
-				if ( entry.fromMaterialGraph !== true && entry.vsm !== true && liveTexture.isDepthTexture === true && liveTexture.compareFunction !== compareFunction ) {
+					: liveTexture.compareFunction;
+				if ( shouldNormalizeShadowComparison && liveTexture.compareFunction !== compareFunction ) {
 
 					liveTexture.compareFunction = compareFunction;
 					liveTexture.needsUpdate = true;

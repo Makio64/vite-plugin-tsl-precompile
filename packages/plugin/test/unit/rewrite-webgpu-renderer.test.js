@@ -16,7 +16,7 @@ import { rewriteThreeSource } from '../../src/three-rewrite.js';
 import { THREE_SRC } from '../_three-src.js';
 const PATH = resolve( THREE_SRC, 'renderers/webgpu/WebGPURenderer.js' );
 
-test( 'rewrite/WebGPURenderer: swaps StandardNodeLibrary for ReplayNodeLibrary + drops WebGL fallback', () => {
+test( 'rewrite/WebGPURenderer: swaps StandardNodeLibrary and retains WebGL backend selection', () => {
 
 	const src = readFileSync( PATH, 'utf8' );
 	const r = rewriteThreeSource( src, PATH, { threeVersion: '175', pluginVersion: '0.0.0' } );
@@ -32,9 +32,14 @@ test( 'rewrite/WebGPURenderer: swaps StandardNodeLibrary for ReplayNodeLibrary +
 	assert.doesNotMatch( out, /new StandardNodeLibrary\s*\(/ );
 	assert.match( out, /new ReplayNodeLibrary\s*\(\s*\)/ );
 
-	// WebGL fallback is gone: no import, no construction, no getFallback wiring.
-	assert.doesNotMatch( out, /import\s+WebGLBackend\s+from/ );
-	assert.doesNotMatch( out, /parameters\.getFallback\s*=/ );
+	// Captured GLSL uses Three's real WebGL backend. Keep both explicit
+	// forceWebGL selection and the WebGPU-unavailable fallback intact.
+	assert.match( out, /import\s+WebGLBackend\s+from\s+["'][^"']*webgl-fallback\/WebGLBackend\.js["']/ );
+	assert.match( out, /if\s*\(\s*parameters\.forceWebGL\s*\)/ );
+	assert.match( out, /BackendClass\s*=\s*WebGLBackend/ );
+	assert.match( out, /parameters\.getFallback\s*=/ );
+	assert.match( out, /new WebGLBackend\s*\(\s*parameters\s*\)/ );
+	assert.doesNotMatch( out, /WebGL fallback is stripped from the slim bundle/ );
 	assert.doesNotMatch( out, /__slim-rewrite-runtime\/(?!node-library)/ );
 
 } );
@@ -57,5 +62,16 @@ test( 'rewrite/WebGPURenderer: shape-gate fails loudly when import shape drifts'
 	assert.ok( r );
 	assert.equal( r.code, null );
 	assert.match( r.warning, /shape changed/ );
+
+} );
+
+test( 'rewrite/WebGPURenderer: shape-gate requires the real WebGL backend import', () => {
+
+	const src = readFileSync( PATH, 'utf8' )
+		.replace( /import\s+WebGLBackend\s+from[^;]+;\n/, '' );
+	const r = rewriteThreeSource( src, PATH, { threeVersion: '175', pluginVersion: '0.0.0' } );
+	assert.ok( r );
+	assert.equal( r.code, null );
+	assert.match( r.warning, /no import of WebGLBackend found/ );
 
 } );

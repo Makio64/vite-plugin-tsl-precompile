@@ -34,6 +34,7 @@ test( 'createDynamicBindingResolvers returns empty arrays when nothing is wired'
 		shadowDepthBindings: [],
 		materialDepthBindings: [],
 		artifactTextureBindings: [],
+		lateArtifactTextureBindings: [],
 		materialTextureBindings: [],
 		viewportTextureBindings: [],
 		reflectorTextureBindings: [],
@@ -49,6 +50,7 @@ test( 'createDynamicBindingResolvers emits one rebinder per non-empty category',
 		shadowDepthBindings: [ makeBinding( { source: { kind: 'depth.texture', lightIndex: 0 } } ) ],
 		materialDepthBindings: [ makeBinding( { source: { kind: 'depth.texture', fromMaterialGraph: true } } ) ],
 		artifactTextureBindings: [ makeBinding() ],
+		lateArtifactTextureBindings: [ makeBinding( { source: { kind: 'depth.texture', fromMaterialGraph: true, renderTargetSelector: {} } } ) ],
 		materialTextureBindings: [ makeBinding( { source: { kind: 'material.map' } } ) ],
 		viewportTextureBindings: [ {
 			binding: { isSampledTexture: true, texture: { isFramebufferTexture: true } },
@@ -65,8 +67,8 @@ test( 'createDynamicBindingResolvers emits one rebinder per non-empty category',
 	}, fakeDeps() );
 	// Early lane: shadow + artifact + material + viewport = 4 rebinders
 	assert.equal( earlyUpdateBefore.length, 4 );
-	// Late lane: materialDepth + reflector = 2 rebinders
-	assert.equal( lateUpdateBefore.length, 2 );
+	// Late lane: materialDepth + selector-backed material target + reflector = 3 rebinders
+	assert.equal( lateUpdateBefore.length, 3 );
 	// Each item is something callable (rebinder object with at least
 	// `getUpdateType` or `updateBefore` on it — the underlying factories
 	// vary, so the shape check is just "non-null object").
@@ -78,12 +80,13 @@ test( 'createDynamicBindingResolvers emits one rebinder per non-empty category',
 
 } );
 
-test( 'createDynamicBindingResolvers preserves the ordering invariant (shadow → artifact → material → viewport in early; materialDepth → reflector in late)', () => {
+test( 'createDynamicBindingResolvers preserves the ordering invariant (shadow → artifact → material → viewport in early; materialDepth → late artifact → reflector in late)', () => {
 
 	const { earlyUpdateBefore, lateUpdateBefore } = createDynamicBindingResolvers( {
 		shadowDepthBindings: [ makeBinding() ],
 		materialDepthBindings: [ makeBinding() ],
 		artifactTextureBindings: [ makeBinding() ],
+		lateArtifactTextureBindings: [ makeBinding() ],
 		materialTextureBindings: [ makeBinding() ],
 		viewportTextureBindings: [ {
 			binding: { isSampledTexture: true, texture: { isFramebufferTexture: true } },
@@ -101,6 +104,6 @@ test( 'createDynamicBindingResolvers preserves the ordering invariant (shadow �
 	// The factories don't tag their output explicitly; assert order by
 	// counts in each lane instead.
 	assert.equal( earlyUpdateBefore.length, 4 );
-	assert.equal( lateUpdateBefore.length, 2 );
+	assert.equal( lateUpdateBefore.length, 3 );
 
 } );

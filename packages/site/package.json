@@ -5,16 +5,20 @@
   "type": "module",
   "description": "Landing site for vite-plugin-tsl-precompile.",
   "scripts": {
+    "agent": "node scripts/build-agent-assets.mjs",
     "data": "node scripts/build-examples-data.mjs",
+    "measurements": "node scripts/build-measurements-data.mjs",
+    "test": "node --test test/**/*.test.mjs",
+    "test:full": "pnpm run test",
     "live": "node scripts/build-live-examples.mjs",
-    "dev": "node scripts/build-live-examples.mjs && vite",
+    "dev": "node scripts/build-agent-assets.mjs && node scripts/build-measurements-data.mjs && vite",
     "check:content": "node ../examples/batch/scripts/build-example-catalogue.mjs --check && node scripts/check-content.mjs",
-    "build": "node scripts/build-live-examples.mjs && vite build && pnpm check:content",
+    "build": "node scripts/build-agent-assets.mjs && node scripts/build-measurements-data.mjs && node scripts/build-live-examples.mjs && vite build && pnpm check:content",
     "preview": "vite preview",
     "test:live": "node scripts/test-live-example.mjs"
   },
   "dependencies": {
-    "three": "0.184.0"
+    "three": "0.185.1"
   },
   "devDependencies": {
     "sharp": "^0.34.5",

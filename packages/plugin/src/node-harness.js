@@ -23,8 +23,8 @@
 
 import { installMockWebGPU, createMockGPUCanvasContext } from './mock-webgpu.js';
 import { computeArtifactContentHash, computeArtifactHash } from './hash.js';
-import { normalizeRevision } from './_shared/normalize-revision.js';
 import { compileTSL, extractArtifact } from './vendor/compileTSL.js';
+import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { createRenderContextSignature } from '@tsl-precompile/contract/render-context';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
@@ -66,7 +66,7 @@ async function importThree() {
  *
  * @param {() => ({ material: Object, name: string, objects?: Array<Object>, camera?: Object })} factory
  * @param {Object} [opts]
- * @param {string} [opts.threeVersion] - Overrides `three.REVISION` in the hash.
+ * @param {string} [opts.threeVersion] - Overrides the supported exact Three package version in the hash.
  * @param {string} [opts.pluginVersion=ARTIFACT_TOOLCHAIN_VERSION]
  * @return {Promise<{ artifact: Object, hash: string, wgslVertex: string, wgslFragment: string }>}
  */
@@ -142,7 +142,7 @@ export async function extractMaterial( factory, opts = {} ) {
 
 	}
 
-	const threeVersion = opts.threeVersion || normalizeRevision( core.REVISION );
+	const threeVersion = opts.threeVersion || SLIM_THREE_PACKAGE_VERSION;
 	const toolchainVersion = opts.pluginVersion || ARTIFACT_TOOLCHAIN_VERSION;
 	const renderContextSignature = createRenderContextSignature( {
 		renderer,

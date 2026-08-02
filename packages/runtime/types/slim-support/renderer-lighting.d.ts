@@ -1,6 +1,7 @@
 export type RendererLightingStats = {
 	updated: boolean;
 	cpuTiled: boolean;
+	cpuClustered: boolean;
 	storageAttrs: number;
 	artifactsWired: number;
 	textureRefsWired: number;
@@ -9,6 +10,7 @@ export type RendererLightingStats = {
 export type RendererLightingOptions = {
 	diagnostics?: Record<string, unknown>;
 	cpuTiledLighting?: boolean;
+	cpuClusteredLighting?: boolean;
 	wireSceneArtifacts?: boolean;
 	wireSceneTextures?: boolean;
 	bumpVersion?: boolean;
@@ -25,6 +27,7 @@ export type WireStorageAttributesOptions = {
 	diagnostics?: Record<string, unknown>;
 	bumpVersion?: boolean;
 	allowVec3ToVec4?: boolean;
+	replaceExisting?: boolean;
 	artifactPredicate?: ( artifact: unknown, material: unknown, object: unknown ) => boolean;
 	onMaterial?: ( material: unknown, artifact: unknown, count: number ) => void;
 };
@@ -34,7 +37,7 @@ export type WireTiledLightingTextureOptions = {
 	diagnostics?: Record<string, unknown>;
 };
 
-export function collectSceneLights( scene: unknown ): unknown[];
+export function collectSceneLights( scene: unknown, camera?: unknown ): unknown[];
 export function wireStorageAttributesToSceneArtifacts(
 	scene: unknown,
 	attributes: unknown | unknown[],

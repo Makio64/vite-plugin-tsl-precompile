@@ -21,14 +21,39 @@
 // and '../utils/Timer.js'. The stock three package re-exports them via 'three/tsl'.
 // If a future three.js release drops them from 'three/tsl', bump the vendor
 // version in VENDORING.md and add a compat shim in _shared/three-compat.js.
-import { modelNormalMatrix, modelWorldMatrixInverse, time, deltaTime, frameId, backgroundBlurriness, backgroundIntensity, backgroundRotation, toneMappingExposure, lightPosition, lightTargetPosition, lightViewPosition, lightShadowMatrix } from 'three/tsl';
+import { modelNormalMatrix, modelWorldMatrixInverse, time, deltaTime, frameId, backgroundBlurriness, backgroundIntensity, backgroundRotation, materialEnvIntensity, materialEnvRotation, toneMappingExposure, lightPosition, lightTargetPosition, lightViewPosition, lightShadowMatrix } from 'three/tsl';
 import { UniformNode } from 'three/webgpu';
-import { createViewportTextureIdentity } from '@tsl-precompile/contract/dynamic-bindings';
+import {
+	canonicalTextureImageSource,
+	createViewportTextureIdentity,
+} from '@tsl-precompile/contract/dynamic-bindings';
 import { createLightSourceIdentityMetadata } from '@tsl-precompile/contract/light-identities';
 import { RENDER_BINDING_OWNER_KINDS, SHADOW_CASTER_COPIED_BINDING_PROPERTIES } from '@tsl-precompile/contract/render-selector';
+import { createRendererRenderTargetTextureSelector } from '@tsl-precompile/contract/render-target-texture';
 import { isObservedVelocityProjectionSource } from '../velocity-projection-observation.js';
 
 const SHADOW_CASTER_COPIED_BINDING_PROPERTY_SET = new Set( SHADOW_CASTER_COPIED_BINDING_PROPERTIES );
+const PMREM_CUBE_UV_MAPPING = 306;
+
+/**
+ * Three r185 decides whether a sampler is a comparison sampler from the
+ * authored TextureNode, not from Texture.compareFunction alone. Preserve that
+ * intent as a boolean because the node graph is deliberately absent at replay.
+ *
+ * @param {?Object} binding
+ * @return {boolean}
+ */
+export function isComparisonSamplerBinding( binding ) {
+
+	return !! (
+		binding &&
+		binding.isSampler === true &&
+		binding.isSampledTexture !== true &&
+		binding.textureNode &&
+		binding.textureNode.compareNode != null
+	);
+
+}
 
 // UniformNode binds update callbacks twice, so `node.update.toString()` is
 // native code and cannot identify Three's lazy high-precision callbacks.
@@ -427,6 +452,11 @@ function classifyByIdentity( node ) {
 	if ( node === backgroundBlurriness ) return { kind: 'scene.backgroundBlurriness', property: 'backgroundBlurriness' };
 	if ( node === backgroundIntensity ) return { kind: 'scene.backgroundIntensity', property: 'backgroundIntensity' };
 	if ( node === backgroundRotation ) return { kind: 'scene.backgroundRotation', property: 'backgroundRotation' };
+	// MaterialProperties.js chooses between material.envMap* and
+	// scene.environment* on every object update. Keep that choice live instead
+	// of baking whichever owner happened to be present during capture.
+	if ( node === materialEnvIntensity ) return { kind: 'environment.intensity' };
+	if ( node === materialEnvRotation ) return { kind: 'environment.rotation' };
 	// toneMappingExposure is a bare `uniform()` with onRenderUpdate that reads
 	// renderer.toneMappingExposure. Without this identity check the slot falls
 	// through to `uniform.live` and freezes at extraction-time — animated
@@ -800,10 +830,16 @@ function collectLightUniformSources( state ) {
  * so animated `shadow.bias`, `shadow.normalBias`, `shadow.radius`,
  * `shadow.intensity`, `shadow.blurSamples`, `shadow.mapSize` never propagate.
  *
+ * Renderer-owned VSM blur quads do not contain their originating
+ * `AnalyticLightNode`; their state only retains ReferenceNodes targeting the
+ * light's `LightShadow`. `context.shadowPassOwner` supplies that exact owner
+ * after compileTSL correlates the private VSM material back to its ShadowNode.
+ *
  * @param {Object} state - A built NodeBuilderState.
+ * @param {?Object} context - Optional extraction context.
  * @return {Map<Object, Object>} UniformNode → shadow source descriptor.
  */
-function collectShadowUniformSources( state ) {
+function collectShadowUniformSources( state, context = null ) {
 
 	const out = new Map();
 	if ( ! state || ! Array.isArray( state.updateNodes ) ) return out;
@@ -812,6 +848,15 @@ function collectShadowUniformSources( state ) {
 	// using the same AnalyticLightNode walk order that `collectLightUniformSources`
 	// uses, so the indices align with the existing `light.<prop>` plan.
 	const shadowToBase = new Map();
+	const explicitOwner = context && context.shadowPassOwner || null;
+	if ( explicitOwner && explicitOwner.light && explicitOwner.light.shadow ) {
+
+		shadowToBase.set(
+			explicitOwner.light.shadow,
+			createLightSourceIdentityMetadata( explicitOwner.light, explicitOwner.lightIndex ),
+		);
+
+	}
 	let lightIndex = 0;
 	for ( const node of state.updateNodes ) {
 
@@ -1136,6 +1181,44 @@ function collectVelocityUniformSources( state ) {
 }
 
 /**
+ * PMREMNode owns three anonymous UniformNodes whose values are derived from
+ * the live CubeUV atlas height. They are updated by PMREMNode.updateBefore(),
+ * not by an independently serializable callback, so ordinary extraction sees
+ * only divergent `uniform.live` snapshots. Correlate the private r185 fields
+ * with the exact generated texture now; replay recomputes them from the
+ * texture wired into artifact._textureRefs.
+ *
+ * Three's private `_width` / `_height` names store texel width / texel height,
+ * respectively. See PMREMNode._generateCubeUVSize() in the pinned r185 source.
+ *
+ * @param {Object} state
+ * @return {Map<Object, Object>} UniformNode → PMREM scalar source descriptor.
+ */
+function collectPMREMUniformSources( state ) {
+
+	const out = new Map();
+	if ( ! state || ! Array.isArray( state.updateBeforeNodes ) ) return out;
+
+	for ( const node of state.updateBeforeNodes ) {
+
+		const type = node && node.constructor ? node.constructor.type : null;
+		if ( type !== 'PMREMNode' && node && node.isPMREMNode !== true ) continue;
+		const textureNode = node._texture || null;
+		const texture = textureNode && ( textureNode.value || textureNode._value ) || null;
+		if ( ! texture || texture.isTexture !== true || typeof texture.uuid !== 'string' || texture.uuid.length === 0 ) continue;
+
+		const sourceBase = { textureUuid: texture.uuid };
+
+		if ( node._maxMip && node._maxMip.isUniformNode === true ) out.set( node._maxMip, { kind: 'pmrem.maxMip', ...sourceBase } );
+		if ( node._width && node._width.isUniformNode === true ) out.set( node._width, { kind: 'pmrem.texelWidth', ...sourceBase } );
+		if ( node._height && node._height.isUniformNode === true ) out.set( node._height, { kind: 'pmrem.texelHeight', ...sourceBase } );
+
+	}
+	return out;
+
+}
+
+/**
  * Walk `state.updateNodes` for `AnalyticLightNode` instances and try to find
  * the one that owns the given depth texture. AnalyticLightNode lazily attaches
  * a `ShadowNode` whose `setup()` allocates `shadow.map.depthTexture`; the
@@ -1143,73 +1226,81 @@ function collectVelocityUniformSources( state ) {
  * return the same `lightIndex` traversal index that `collectLightUniformSources`
  * uses, so the hydrator can resolve `frame.scene`'s Nth light at render time.
  *
- * Also returns `vsm: true` when the matched texture is the
- * VSM-horizontal-pass output (`vsmShadowMapHorizontal.texture`) rather than
- * the raw depth texture — the runtime reads from `shadow.map.texture` in that
- * case.
+ * Also returns `shadowMapColor: true` for the regular shadow render target's
+ * color attachment (`shadow.map.texture`) and `vsm: true` for the final VSM
+ * blur output (`vsmShadowMapHorizontal.texture`). These are distinct:
+ * transmitted shadows sample the former directly, while VSM sampling needs
+ * the filtered moments texture supplied by the shadow pipeline.
+ *
+ * The vertical VSM moments texture is intentionally not returned here. It is
+ * an internal producer/consumer edge between the two blur passes, not a
+ * light-owned final shadow texture. `artifact.internalPass` addresses that
+ * binding by semantic role while retaining the ordinary artifact texture
+ * sidecar as the in-process capture reference.
  *
  * @param {Object} state
  * @param {Object} depthTexture
- * @return {?{ lightIndex: number, lightUuid: ?string, vsm: boolean }}
+ * @param {?Object} context
+ * @return {?{ lightIndex: number, lightUuid: ?string, vsm: boolean, shadowMapColor: boolean }}
  */
-function findLightForDepthTexture( state, depthTexture ) {
+function findLightForDepthTexture( state, depthTexture, context = null ) {
 
 	if ( ! state || ! Array.isArray( state.updateNodes ) || ! depthTexture ) return null;
+
+	const describeForOwner = ( light, lightIndex, shadowNode ) => {
+
+		if ( ! light ) return null;
+		const map = light.shadow && light.shadow.map ? light.shadow.map : null;
+		if ( map ) {
+
+			if ( map.depthTexture === depthTexture ) {
+
+				return {
+					...createLightSourceIdentityMetadata( light, lightIndex ),
+					vsm: false,
+					shadowMapColor: false,
+				};
+
+			}
+			if ( map.texture === depthTexture ) {
+
+				return {
+					...createLightSourceIdentityMetadata( light, lightIndex ),
+					vsm: false,
+					shadowMapColor: true,
+				};
+
+			}
+
+		}
+		if ( shadowNode && shadowNode.vsmShadowMapHorizontal && shadowNode.vsmShadowMapHorizontal.texture === depthTexture ) {
+
+			return {
+				...createLightSourceIdentityMetadata( light, lightIndex ),
+				vsm: true,
+				shadowMapColor: false,
+			};
+
+		}
+		return null;
+
+	};
+
+	const explicitOwner = context && context.shadowPassOwner || null;
+	if ( explicitOwner ) {
+
+		const described = describeForOwner( explicitOwner.light, explicitOwner.lightIndex, explicitOwner.shadowNode );
+		if ( described ) return described;
+
+	}
 
 	let lightIndex = 0;
 	for ( const node of state.updateNodes ) {
 
 		if ( ! node || node.isAnalyticLightNode !== true ) continue;
 		const light = node.light;
-		if ( light ) {
-
-			const map = light.shadow && light.shadow.map ? light.shadow.map : null;
-			if ( map ) {
-
-				if ( map.depthTexture === depthTexture ) {
-
-					return {
-						...createLightSourceIdentityMetadata( light, lightIndex ),
-						vsm: false,
-					};
-
-				}
-				if ( map.texture === depthTexture ) {
-
-					return {
-						...createLightSourceIdentityMetadata( light, lightIndex ),
-						vsm: true,
-					};
-
-				}
-
-			}
-			// VSM blur intermediate textures hang off the ShadowNode itself
-			// (`vsmShadowMapHorizontal.texture`, etc.). Match against those
-			// too so VSM shadow lookups resolve to the right light.
-			const sn = node.shadowNode;
-			if ( sn ) {
-
-				if ( sn.vsmShadowMapHorizontal && sn.vsmShadowMapHorizontal.texture === depthTexture ) {
-
-					return {
-						...createLightSourceIdentityMetadata( light, lightIndex ),
-						vsm: true,
-					};
-
-				}
-				if ( sn.vsmShadowMapVertical && sn.vsmShadowMapVertical.texture === depthTexture ) {
-
-					return {
-						...createLightSourceIdentityMetadata( light, lightIndex ),
-						vsm: true,
-					};
-
-				}
-
-			}
-
-		}
+		const described = describeForOwner( light, lightIndex, node.shadowNode );
+		if ( described ) return described;
 		lightIndex ++;
 
 	}
@@ -1229,15 +1320,15 @@ function textureIdentity( texture ) {
 	const userData = texture.userData || null;
 
 	const src = image && ( image.src || image.currentSrc || null );
-	if ( typeof src === 'string' && src.length > 0 ) out.imageSrc = src;
+	if ( typeof src === 'string' && src.length > 0 ) out.imageSrc = canonicalTextureImageSource( src );
 	const loaderSrc = userData && userData.__tslpLoaderUrl;
-	if ( ! out.imageSrc && typeof loaderSrc === 'string' && loaderSrc.length > 0 ) out.imageSrc = loaderSrc;
+	if ( ! out.imageSrc && typeof loaderSrc === 'string' && loaderSrc.length > 0 ) out.imageSrc = canonicalTextureImageSource( loaderSrc );
 
 	if ( Array.isArray( image ) && image.length > 0 ) {
 
 		const first = image[ 0 ];
 		const firstSrc = first && ( first.src || first.currentSrc || null );
-		if ( typeof firstSrc === 'string' && firstSrc.length > 0 ) out.imageSrc = firstSrc;
+		if ( typeof firstSrc === 'string' && firstSrc.length > 0 ) out.imageSrc = canonicalTextureImageSource( firstSrc );
 
 	}
 
@@ -1278,6 +1369,96 @@ function textureIdentity( texture ) {
 	}
 
 	return Object.keys( out ).length > 0 ? out : null;
+
+}
+
+function textureNeedsUVFlip( texture ) {
+
+	if ( ! texture ) return false;
+	const image = texture.image || null;
+	const imageBitmap = typeof ImageBitmap !== 'undefined' && image instanceof ImageBitmap;
+	return (
+		( imageBitmap && texture.flipY === true ) ||
+		texture.isRenderTargetTexture === true ||
+		texture.isFramebufferTexture === true ||
+		texture.isDepthTexture === true
+	);
+
+}
+
+function createTextureUVFlipSource( texture, sampledSource ) {
+
+	if ( ! texture ) return null;
+	const textureUuid = sampledSource && typeof sampledSource.textureUuid === 'string' && sampledSource.textureUuid.length > 0
+		? sampledSource.textureUuid
+		: typeof texture.uuid === 'string' && texture.uuid.length > 0
+			? texture.uuid
+			: null;
+	if ( textureUuid === null ) return null;
+	const identity = textureIdentity( texture );
+	return {
+		kind: 'texture.uvFlipY',
+		textureUuid,
+		...( identity || {} ),
+		valueSnapshot: {
+			type: 'uint',
+			data: textureNeedsUVFlip( texture ) ? 1 : 0,
+		},
+	};
+
+}
+
+function attachRenderTargetTextureSelector( source, texture ) {
+
+	if ( ! source || ! texture || ! texture.renderTarget ) return source;
+	// PMREM atlases are renderer-generated render-target textures, but their
+	// durable replay identity is the environment/PMREM pipeline, not a generic
+	// producer target. A selector would preempt the dedicated PMREM wiring and
+	// can accidentally match another same-shaped transient atlas.
+	if (
+		source.kind === 'artifact.texture' &&
+		( source.mapping === PMREM_CUBE_UV_MAPPING || source.textureName === 'PMREM.cubeUv' )
+	) return source;
+	const artifactTexture = source.kind === 'artifact.texture';
+	const nonLightDepthTexture = source.kind === 'depth.texture'
+		&& source.fromMaterialGraph === true
+		&& source.lightUuid == null
+		&& ( source.lightIndex === undefined || source.lightIndex < 0 );
+	if ( ! artifactTexture && ! nonLightDepthTexture ) return source;
+	try {
+
+		// Passing the exact texture is the proof: the shared contract rejects a
+		// stale `.renderTarget` back-reference unless the texture is still a
+		// current color/depth attachment and records its exact role/index.
+		return {
+			...source,
+			renderTargetSelector: createRendererRenderTargetTextureSelector(
+				texture.renderTarget,
+				{ texture },
+			),
+		};
+
+	} catch ( _ ) {
+
+		// A detached/replaced texture is not durable render-target evidence.
+		return source;
+
+	}
+
+}
+
+function reflectorBaseNodeIndex( state, baseNode ) {
+
+	if ( ! baseNode || ! Array.isArray( state && state.updateBeforeNodes ) ) return -1;
+	let reflectorIndex = 0;
+	for ( const node of state.updateBeforeNodes ) {
+
+		if ( ! node || ! node.constructor || node.constructor.type !== 'ReflectorBaseNode' ) continue;
+		if ( node === baseNode ) return reflectorIndex;
+		reflectorIndex ++;
+
+	}
+	return -1;
 
 }
 
@@ -1410,20 +1591,31 @@ export function extractUniformPlan( state, context = null ) {
 	// bare UniformNode, but `resolveFromUpdateNode` returns null for it
 	// because we strip the AnalyticLightNode container).
 	const lightUniformSources = collectLightUniformSources( state );
-	const shadowUniformSources = collectShadowUniformSources( state );
+	const shadowUniformSources = collectShadowUniformSources( state, context );
 	const highPrecisionShadowModelMatrixSources = collectHighPrecisionShadowModelMatrixSources( state );
 	const pointShadowCameraUniformSources = collectPointShadowCameraUniformSources( state );
 	const objectUniformSources = collectObjectUniformSources( context && context.object || null );
+	const pmremUniformSources = collectPMREMUniformSources( state );
 	const {
 		uniformSources: velocityUniformSources,
 		valueSources: velocityValueSources,
 	} = collectVelocityUniformSources( state );
+	const harvestedVelocityProjectionSources = new Set(
+		Array.isArray( context && context.velocityProjectionSources )
+			? context.velocityProjectionSources
+			: [],
+	);
 
 	// Walk updateNodes once, build two maps:
 	//   - uniformNode → source (UBO slots)
 	//   - textureNode → source (SampledTexture / Sampler bindings)
 	const uniformNodeToSource = new Map();
 	const textureNodeToSource = new Map();
+	// WebGLNodeBuilder lowers TextureNode's backend-specific UV flip to an
+	// anonymous uint UBO slot. That slot is encountered before its sampled
+	// texture binding, so defer the precise source replacement until every
+	// binding has resolved its live texture identity.
+	const textureFlipUniformSources = new Map();
 	// ScreenNode.setup() can replace its private `_output` UniformNode while a
 	// nested node sub-build is compiling, but the replacement keeps Three's
 	// renderer-owned Vector2/Vector4 value. Retain that exact value identity as
@@ -1486,6 +1678,16 @@ export function extractUniformPlan( state, context = null ) {
 
 	}
 
+	for ( const [ uniformNode, source ] of pmremUniformSources ) {
+
+		if ( ! uniformNodeToSource.has( uniformNode ) ) {
+
+			uniformNodeToSource.set( uniformNode, source );
+
+		}
+
+	}
+
 	for ( const [ uniformNode, source ] of velocityUniformSources ) {
 
 		if ( ! uniformNodeToSource.has( uniformNode ) ) {
@@ -1497,6 +1699,18 @@ export function extractUniformPlan( state, context = null ) {
 	}
 
 	for ( const node of state.updateNodes || [] ) {
+
+		// WebGL may deduplicate several TextureNodes that share one Texture into
+		// a single sampled binding. Seed every live TextureNode's private flip
+		// uniform before that collapse; the representative binding below can
+		// still refine the matching entry with its fully-resolved source.
+		const flipTexture = node && node._flipYUniform ? node.value : null;
+		if ( flipTexture && flipTexture.isTexture === true ) {
+
+			const flipSource = createTextureUVFlipSource( flipTexture, null );
+			if ( flipSource ) textureFlipUniformSources.set( node._flipYUniform, flipSource );
+
+		}
 
 		const entry = resolveFromUpdateNode( node, context );
 		if ( ! entry || ! entry.uniformNode ) continue;
@@ -1510,6 +1724,7 @@ export function extractUniformPlan( state, context = null ) {
 		if ( highPrecisionShadowModelMatrixSources.has( entry.uniformNode ) ) continue;
 		if ( pointShadowCameraUniformSources.has( entry.uniformNode ) ) continue;
 		if ( objectUniformSources.has( entry.uniformNode ) ) continue;
+		if ( pmremUniformSources.has( entry.uniformNode ) ) continue;
 		if ( velocityUniformSources.has( entry.uniformNode ) ) continue;
 
 		if ( entry.source && ( entry.source.kind === 'renderer.size' || entry.source.kind === 'renderer.viewport' ) ) {
@@ -1603,20 +1818,24 @@ export function extractUniformPlan( state, context = null ) {
 
 					const dtype = uniformDtype( uniform );
 					const tslUniformNode = uniform.nodeUniform ? uniform.nodeUniform.node : null;
-					let source = tslUniformNode ? uniformNodeToSource.get( tslUniformNode ) : null;
-					if ( ! source && tslUniformNode ) {
+					const value = tslUniformNode && tslUniformNode.value;
+					const valueHasIdentity = value && ( typeof value === 'object' || typeof value === 'function' );
+					// VelocityNode.setup() can name its anonymous projection
+					// UniformNode `cameraProjectionMatrix`. Exact projection-object
+					// identity is stronger evidence than that generic name: capture
+					// must preserve TRAA/TAAU's unjittered current projection instead
+					// of replaying the camera's jittered render projection.
+					let source = valueHasIdentity
+						? velocityValueSources.get( value ) || (
+							isObservedVelocityProjectionSource( state, value ) || harvestedVelocityProjectionSources.has( value )
+								? { kind: 'velocity.currentProjectionMatrix' }
+								: null
+						)
+						: null;
+					if ( ! source && tslUniformNode ) source = uniformNodeToSource.get( tslUniformNode ) || null;
+					if ( ! source && valueHasIdentity && ! ambiguousScreenValues.has( value ) ) {
 
-						const value = tslUniformNode.value;
-						if ( value && ( typeof value === 'object' || typeof value === 'function' ) ) {
-
-							source = velocityValueSources.get( value ) || (
-								isObservedVelocityProjectionSource( state, value )
-									? { kind: 'velocity.currentProjectionMatrix' }
-									: null
-							);
-							if ( ! source && ! ambiguousScreenValues.has( value ) ) source = screenValueToSource.get( value ) || null;
-
-						}
+						source = screenValueToSource.get( value ) || null;
 
 					}
 
@@ -1687,6 +1906,7 @@ export function extractUniformPlan( state, context = null ) {
 			if ( binding.isSampledTexture || binding.isSampler ) {
 
 				const textureNode = binding.textureNode || null;
+				const boundTexture = textureNode ? textureNode.value || textureNode._value || null : null;
 				let source = textureNode ? textureNodeToSource.get( textureNode ) : null;
 
 				// Enrich `material.<prop>` texture sources with the live
@@ -1765,19 +1985,17 @@ export function extractUniformPlan( state, context = null ) {
 							};
 							if ( isSharedViewport ) source.shared = true;
 
-						} else if ( tex.isDepthTexture === true || ( ( shadowLightInfo = findLightForDepthTexture( state, tex ) ) && shadowLightInfo.vsm ) ) {
+						} else if ( tex.isDepthTexture === true || ( shadowLightInfo = findLightForDepthTexture( state, tex, context ) ) ) {
 
 							// Shadow depth textures live on `light.shadow.map.depthTexture`
-							// (raw depth, PCF/Hard) or, for VSM, on the shadow node's
-							// `vsmShadowMapHorizontal.texture` (an RG HalfFloat render target —
-							// NOT a DepthTexture, hence the explicit `findLightForDepthTexture`
-							// fallback above). Both are (re)allocated by the renderer's shadow
-							// pass per frame, so the captured uuid is dead the moment the example
-							// reloads and the standard artifact.texture uuid lookup can never find
-							// it. Tag the binding with the owning light's traversal index instead;
-							// the hydrator's per-frame rebinder swaps in `frame.scene`'s actual
-							// shadow map (raw depth, or the harness-supplied VSM blur output) at
-							// draw time.
+							// (raw depth, PCF/Hard). Transmitted shadows also sample the regular
+							// `light.shadow.map.texture` color attachment, while VSM samples the
+							// shadow node's filtered moments target. The two color textures are
+							// not DepthTexture instances, hence the explicit
+							// `findLightForDepthTexture` fallback above. All three resources are
+							// (re)allocated by the renderer's shadow pass, so their captured uuid
+							// is dead after reload. Tag the binding with the owning light identity
+							// and exact shadow attachment role instead.
 							//
 							// When no AnalyticLightNode owns this DepthTexture
 							// (e.g. a `RenderTarget.depthTexture` sampled via
@@ -1785,7 +2003,12 @@ export function extractUniformPlan( state, context = null ) {
 							// `lightIndex: -1, fromMaterialGraph: true` — the
 							// runtime rebinder then resolves the live instance
 							// from the binding's owning material node graph.
-							const lightInfo = shadowLightInfo !== undefined ? shadowLightInfo : findLightForDepthTexture( state, tex );
+							const lightInfo = shadowLightInfo !== undefined ? shadowLightInfo : findLightForDepthTexture( state, tex, context );
+							const reflectorBaseNode = textureNode && textureNode.constructor
+								&& textureNode.constructor.type === 'ReflectorNode'
+								? textureNode._reflectorBaseNode || null
+								: null;
+							const reflectorIndex = reflectorBaseNodeIndex( state, reflectorBaseNode );
 							source = lightInfo ? {
 								kind: 'depth.texture',
 								textureUuid: tex.uuid,
@@ -1794,13 +2017,19 @@ export function extractUniformPlan( state, context = null ) {
 								// rather than a raw depth texture; the runtime resolves
 								// the live VSM blur output instead of `shadow.map.depthTexture`.
 								vsm: !! lightInfo.vsm,
+								// `shadowMapColor` is the unfiltered color attachment used
+								// by transmitted-shadow sampling. It must never fall through
+								// to the VSM moments resolver.
+								shadowMapColor: !! lightInfo.shadowMapColor,
 							} : {
 								kind: 'depth.texture',
 								textureUuid: tex.uuid,
 								lightIndex: -1,
 								lightUuid: null,
 								vsm: false,
+								shadowMapColor: false,
 								fromMaterialGraph: true,
+								...( reflectorIndex >= 0 ? { reflectorIndex } : {} ),
 							};
 
 						} else if ( textureNode && textureNode.constructor && textureNode.constructor.type === 'ReflectorNode' ) {
@@ -1818,9 +2047,7 @@ export function extractUniformPlan( state, context = null ) {
 							// `artifact._liveUpdateBeforeNodes` and pull its
 							// per-camera `renderTarget.texture` at draw time.
 							const baseNode = textureNode._reflectorBaseNode || null;
-							const reflectorIndex = baseNode && Array.isArray( state.updateBeforeNodes )
-								? state.updateBeforeNodes.indexOf( baseNode )
-								: -1;
+							const reflectorIndex = reflectorBaseNodeIndex( state, baseNode );
 							source = {
 								kind: 'reflector.texture',
 								textureUuid: tex.uuid,
@@ -1885,9 +2112,17 @@ export function extractUniformPlan( state, context = null ) {
 
 					}
 
-				}
+					}
 
-				const texEntry = {
+					source = attachRenderTargetTextureSelector( source, boundTexture );
+					if ( binding.isSampledTexture === true && textureNode && textureNode._flipYUniform ) {
+
+						const flipSource = createTextureUVFlipSource( boundTexture, source );
+						if ( flipSource ) textureFlipUniformSources.set( textureNode._flipYUniform, flipSource );
+
+					}
+
+					const texEntry = {
 					bindingKind: binding.isSampledTexture ? 'sampled-texture' : 'sampler',
 					name: binding.name || '',
 					textureType: classifyTextureBinding( binding ),
@@ -1895,6 +2130,7 @@ export function extractUniformPlan( state, context = null ) {
 					visibility: binding.visibility | 0,
 					source: source || { kind: 'unsupported' }
 				};
+				if ( binding.isSampledTexture !== true ) texEntry.comparison = isComparisonSamplerBinding( binding );
 				groupEntry.textures.push( texEntry );
 				groupEntry.orderedBindings.push( {
 					type: binding.isSampledTexture ? 'sampled-texture' : 'sampler',
@@ -2028,6 +2264,99 @@ export function extractUniformPlan( state, context = null ) {
 
 	}
 
+	for ( const group of plan ) {
+
+		for ( const slot of group.slots ) {
+
+			const source = textureFlipUniformSources.get( slot._liveNode );
+			if ( source ) slot.source = source;
+
+		}
+
+	}
+
+	annotateAnonymousStorageResourceIdentity( [ plan ] );
 	return plan;
+
+}
+
+function anonymousStorageShapeKey( entry ) {
+
+	const source = entry && entry.source;
+	if ( source && typeof source.attributeName === 'string' && source.attributeName.trim().length > 0 ) return null;
+	return JSON.stringify( [
+		entry && entry.arrayType || '',
+		entry && entry.count || 0,
+		entry && entry.itemSize || 0,
+		source && source.elementType || '',
+	] );
+
+}
+
+function hasExactStorageUserPath( entry ) {
+
+	return Array.isArray( entry && entry.userPath ) && entry.userPath.length > 0;
+
+}
+
+function clearAnonymousStorageResourceIdentity( entry ) {
+
+	const source = entry && entry.source;
+	if ( ! source || (
+		source.anonymousResourceOrdinal === undefined
+		&& source.anonymousResourceCount === undefined
+	) ) return;
+	const {
+		anonymousResourceOrdinal: _staleOrdinal,
+		anonymousResourceCount: _staleCount,
+		...sourceWithoutIdentity
+	} = source;
+	entry.source = sourceWithoutIdentity;
+
+}
+
+/**
+ * Preserve capture-time object identity for otherwise indistinguishable
+ * anonymous storage resources. The ordinal is the relative rank of each exact
+ * live attribute's monotonic BufferAttribute.id; repeated bindings of the same
+ * attribute retain one ordinal. Replay may use this only when it observes the
+ * complete signed resource cardinality and valid distinct construction IDs for
+ * the same shape. Exact userPath resources are outside that cardinality: replay
+ * resolves them before anonymous matching, so counting a path-only sibling
+ * would make the remaining anonymous family impossible to satisfy. An identity
+ * still participates when another entry aliases it without an exact path.
+ */
+export function annotateAnonymousStorageResourceIdentity( plans ) {
+
+	const buckets = new Map();
+	for ( const plan of plans || [] ) for ( const group of plan || [] ) for ( const entry of group && group.storageBuffers || [] ) {
+
+		clearAnonymousStorageResourceIdentity( entry );
+		if ( hasExactStorageUserPath( entry ) ) continue;
+		const key = anonymousStorageShapeKey( entry );
+		const identity = entry && entry._liveAttribute;
+		if ( key === null || ! identity || ( typeof identity !== 'object' && typeof identity !== 'function' ) ) continue;
+		let bucket = buckets.get( key );
+		if ( ! bucket ) buckets.set( key, bucket = { entries: [], identities: new Set() } );
+		bucket.identities.add( identity );
+		bucket.entries.push( { entry, identity } );
+
+	}
+	for ( const bucket of buckets.values() ) {
+
+		const count = bucket.identities.size;
+		if ( count < 2 ) continue;
+		const ranked = [ ...bucket.identities ].sort( ( left, right ) => left.id - right.id );
+		if ( ranked.some( ( identity ) => ! Number.isSafeInteger( identity.id ) || identity.id < 0 ) ) continue;
+		if ( new Set( ranked.map( ( identity ) => identity.id ) ).size !== count ) continue;
+		const ordinalByIdentity = new Map( ranked.map( ( identity, ordinal ) => [ identity, ordinal ] ) );
+		for ( const { entry, identity } of bucket.entries ) entry.source = {
+			...( entry.source || {} ),
+			kind: 'storage.buffer',
+			anonymousResourceOrdinal: ordinalByIdentity.get( identity ),
+			anonymousResourceCount: count,
+		};
+
+	}
 
 }

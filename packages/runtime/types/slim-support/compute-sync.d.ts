@@ -78,11 +78,25 @@ export type ComputeSyncPerPassOptions = ComputeSyncOptions & {
 export type WireArtifactStorageBufferOptions = {
 	bumpVersion?: boolean;
 	allowVec3ToVec4?: boolean;
+	replaceExisting?: boolean;
+};
+
+export type AnonymousStorageResourceIdentity = {
+	ordinal: number;
+	count: number;
 };
 
 export function getComputeBindGroups( computeNode: unknown, fullRenderer: unknown ): unknown[];
 export function computeNodeUsesStorageTexture( computeNode: unknown, fullRenderer: unknown ): boolean;
 export function computeSyncNeedsPresentation( stats: Partial<ComputeSyncStats> & { storageTextures?: number } | null | undefined ): boolean;
+export function hasAnonymousStorageResourceIdentity( entry: unknown ): boolean;
+export function storageEntryAnonymousResourceIdentity( entry: unknown ): AnonymousStorageResourceIdentity | null;
+export function invokeAlignedFullCompute<T>(
+	sourceRenderer: unknown,
+	fullRenderer: unknown,
+	callback: () => T,
+): T;
+export function syncComputeRendererSize( fullRenderer: unknown, sourceRenderer: unknown ): boolean;
 export function shareComputeSampledInputs(
 	computeNode: unknown,
 	fullRenderer: unknown,

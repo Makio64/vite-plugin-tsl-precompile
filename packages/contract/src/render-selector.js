@@ -155,6 +155,52 @@ export function createSceneRenderTopologySelector( scene ) {
 }
 
 /**
+ * Describe only the render-target and MRT topology that survives the
+ * background selector projection. Runtime capture uses this as its
+ * identity-free key for owned, deferred target representatives.
+ *
+ * @param {?Object} renderer
+ * @param {?Object} renderTarget
+ * @param {?Object} [mrtNode]
+ * @return {Object}
+ */
+export function describeBackgroundCaptureTargetTopology( renderer, renderTarget, mrtNode = null ) {
+
+	const texturesValue = safeRead( renderTarget, 'textures' );
+	const textureValue = safeRead( renderTarget, 'texture' );
+	const textures = Array.isArray( texturesValue ) ? texturesValue : textureValue ? [ textureValue ] : [];
+	const context = {
+		renderTarget: renderTarget || null,
+		textures,
+		depthTexture: safeRead( renderTarget, 'depthTexture' ),
+		mrt: mrtNode || null,
+	};
+	return {
+		version: 'background-capture-target@1',
+		target: projectBackgroundTargetTopology( describeRenderTargetTopology( context, renderer ) ),
+		mrt: describeMRT( context ),
+	};
+
+}
+
+/**
+ * Return the canonical topology key used by deferred background capture.
+ *
+ * @param {?Object} renderer
+ * @param {?Object} renderTarget
+ * @param {?Object} [mrtNode]
+ * @return {string}
+ */
+export function createBackgroundCaptureTargetTopologyKey( renderer, renderTarget, mrtNode = null ) {
+
+	return stableJsonStringify(
+		describeBackgroundCaptureTargetTopology( renderer, renderTarget, mrtNode ),
+		'backgroundCaptureTargetTopology',
+	);
+
+}
+
+/**
  * Project a general render-object selector onto topology that can affect a
  * renderer-owned auxiliary pass.
  *
@@ -234,14 +280,24 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 	if ( postProcess || renderOutput ) {
 
 		const projected = { ...descriptor };
+		// Both paths install an explicit fragmentNode. Three's NodeMaterial
+		// setup therefore ignores renderer.getMRT(); retaining the global MRT
+		// here would distinguish identical fullscreen shaders.
+		delete projected.mrt;
 		if ( projected.renderer && typeof projected.renderer === 'object' ) {
 
 			projected.renderer = { ...projected.renderer };
-			// The output transform is a fixed fullscreen color shader. Scene
-			// shadow filtering has already completed before this pass and cannot
-			// change its WGSL or bindings, so one captured output artifact must be
-			// reusable across Basic/PCF/PCFSoft/VSM scene renders.
-			if ( renderOutput ) delete projected.renderer.shadowMap;
+			// These fullscreen passes run after scene depth projection. Reversed
+			// depth therefore cannot change their WGSL or bindings, so one
+			// captured artifact must be reusable across renderer depth modes.
+			delete projected.renderer.reversedDepthBuffer;
+			// The output transform is also independent of the scene shadow
+			// filtering that completed before this pass.
+			if ( renderOutput ) {
+
+				delete projected.renderer.shadowMap;
+
+			}
 
 		}
 		if ( projected.material && typeof projected.material === 'object' ) {
@@ -256,6 +312,11 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 			delete projected.target.surface;
 			delete projected.target.colors;
 			delete projected.target.depthTexture;
+			// Depth/stencil attachment presence selects the WebGPU render
+			// pipeline descriptor owned by the active RenderContext; it cannot
+			// change a fullscreen fragmentNode's WGSL or hydrated bindings.
+			delete projected.target.depth;
+			delete projected.target.stencil;
 
 		}
 		if ( postProcess ) return stableJsonStringify( projected, 'renderObjectSelector' );
@@ -306,27 +367,35 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 	}
 	if ( profile === 'background' && projected.target && typeof projected.target === 'object' ) {
 
-		projected.target = { ...projected.target };
-		delete projected.target.surface;
-		delete projected.target.sampleCount;
-		delete projected.target.activeCubeFace;
-		delete projected.target.activeMipmapLevel;
-		if ( Array.isArray( projected.target.colors ) ) {
-
-			projected.target.colors = projected.target.colors.map( ( color ) => {
-
-				if ( ! color || typeof color !== 'object' ) return color;
-				const attachment = { ...color };
-				delete attachment.kind;
-				if ( attachment.colorSpace === '' || attachment.colorSpace === 'srgb-linear' ) delete attachment.colorSpace;
-				return attachment;
-
-			} );
-
-		}
+		projected.target = projectBackgroundTargetTopology( projected.target );
 
 	}
 	return stableJsonStringify( projected, 'renderObjectSelector' );
+
+}
+
+function projectBackgroundTargetTopology( target ) {
+
+	if ( ! target || typeof target !== 'object' ) return target;
+	const projected = { ...target };
+	delete projected.surface;
+	delete projected.sampleCount;
+	delete projected.activeCubeFace;
+	delete projected.activeMipmapLevel;
+	if ( Array.isArray( projected.colors ) ) {
+
+		projected.colors = projected.colors.map( ( color ) => {
+
+			if ( ! color || typeof color !== 'object' ) return color;
+			const attachment = { ...color };
+			delete attachment.kind;
+			if ( attachment.colorSpace === '' || attachment.colorSpace === 'srgb-linear' ) delete attachment.colorSpace;
+			return attachment;
+
+		} );
+
+	}
+	return projected;
 
 }
 
@@ -336,9 +405,14 @@ function projectShaderVertexLayout( descriptor ) {
 	const geometry = object && object.geometry;
 	if ( ! geometry || typeof geometry !== 'object' ) return descriptor;
 	const projectedGeometry = { ...geometry };
+	// Index buffers choose drawIndexed versus draw, but they do not alter the
+	// vertex/fragment shader or its bindings.
+	delete projectedGeometry.index;
 	if ( Array.isArray( geometry.attributes ) ) {
 
-		projectedGeometry.attributes = geometry.attributes.map( ( entry ) => projectAttributeEntry( entry, false ) );
+		projectedGeometry.attributes = geometry.attributes
+			.filter( ( entry ) => ! isCompilerOwnedRangeAttribute( entry ) )
+			.map( ( entry ) => projectAttributeEntry( entry, false ) );
 
 	}
 	if ( Array.isArray( geometry.morphAttributes ) ) {
@@ -353,6 +427,18 @@ function projectShaderVertexLayout( descriptor ) {
 			geometry: projectedGeometry,
 		},
 	};
+
+}
+
+function isCompilerOwnedRangeAttribute( entry ) {
+
+	if ( ! Array.isArray( entry ) || entry.length < 2 || ! /^__range\d+$/.test( entry[ 0 ] ) ) return false;
+	const shape = entry[ 1 ];
+	return !! shape
+		&& typeof shape === 'object'
+		&& ! Array.isArray( shape )
+		&& shape.itemSize === 4
+		&& shape.normalized === false;
 
 }
 
@@ -510,6 +596,7 @@ function describeRenderer( renderer ) {
 		} ) : null,
 		coordinateSystem: scalar( safeRead( renderer, 'coordinateSystem' ) ),
 		logarithmicDepthBuffer: scalar( safeRead( renderer, 'logarithmicDepthBuffer' ) ),
+		reversedDepthBuffer: safeRead( renderer, 'reversedDepthBuffer' ) === true ? true : undefined,
 		highPrecision: safeRead( renderer, 'highPrecision' ) === true ? true : null,
 		shadowMap: shadowMap ? compactObject( {
 			enabled: safeRead( shadowMap, 'enabled' ) === true,
@@ -540,17 +627,49 @@ export function describeRenderTargetTopology( context, renderer = null ) {
 	const observedActiveCubeFace = safeRead( context, 'activeCubeFace' );
 	const observedActiveMipmapLevel = safeRead( context, 'activeMipmapLevel' );
 	let textures = safeRead( context, 'textures' );
-	const activeRendererTarget = observedRenderTarget === undefined || observedRenderTarget === null
+	const observedDepthTexture = safeRead( context, 'depthTexture' );
+	const observedTargetOwnsAttachments = observedRenderTarget != null && renderTargetOwnsAttachments(
+		observedRenderTarget,
+		textures,
+		observedDepthTexture,
+	);
+	// r185 may reuse a RenderContext keyed by attachment topology during
+	// compileAsync(): its texture list is refreshed for the newly bound target
+	// while renderTarget still points at the prior real-render target. Treat
+	// that non-null identity as stale only when it no longer owns the exact
+	// observed attachments; every recovery candidate below must prove ownership.
+	const recoverCompileTarget = observedRenderTarget === null || (
+		observedRenderTarget !== undefined &&
+		! observedTargetOwnsAttachments &&
+		Array.isArray( textures ) &&
+		textures.length > 0
+	);
+	const activeRendererTarget = observedRenderTarget === undefined || recoverCompileTarget
 		? safeCall( renderer, 'getRenderTarget' )
 		: null;
-	// Three r184 compileAsync() fills RenderContext.textures but leaves its
-	// renderTarget field at the initial null. Recover the explicitly bound
-	// target only when every observed texture is the exact attachment owned by
-	// renderer.getRenderTarget(); a real default surface cannot pass this check.
-	const inferredCompileTarget = observedRenderTarget === null && renderTargetOwnsTextures( activeRendererTarget, textures );
+	// Three r185 compileAsync() fills RenderContext.textures but leaves its
+	// renderTarget field at the initial null. Depending on the path, the
+	// renderer's public target is either still available or has already been
+	// cleared while each attachment retains its exact RenderTarget owner.
+	// Recover a compile target only when every observed attachment proves the
+	// same owner. A real default surface, mixed MRT attachments, copied
+	// textures, and stale owner back-references cannot pass these checks.
+	const rendererCompileTarget = recoverCompileTarget && renderTargetOwnsAttachments(
+		activeRendererTarget,
+		textures,
+		observedDepthTexture,
+	);
+	const attachmentCompileTarget = recoverCompileTarget
+		? inferAttachmentRenderTarget( textures, observedDepthTexture )
+		: null;
+	// Prefer the renderer's exact active target when both sources agree on the
+	// attachments. The attachment-owned fallback exists for Three's private
+	// post-processing target, which compileAsync() does not expose publicly.
+	const compileTarget = rendererCompileTarget ? activeRendererTarget : attachmentCompileTarget;
+	const inferredCompileTarget = compileTarget !== null;
 	const renderTarget = observedRenderTarget === undefined
 		? activeRendererTarget
-		: inferredCompileTarget ? activeRendererTarget : observedRenderTarget;
+		: inferredCompileTarget ? compileTarget : observedRenderTarget;
 	const activeCubeFace = resolveActiveTargetIndex( inferredCompileTarget ? undefined : observedActiveCubeFace, renderTarget, 'activeCubeFace', '_activeCubeFace', renderer, '_activeCubeFace', 'getActiveCubeFace' );
 	const activeMipmapLevel = resolveActiveTargetIndex( inferredCompileTarget ? undefined : observedActiveMipmapLevel, renderTarget, 'activeMipmapLevel', '_activeMipmapLevel', renderer, '_activeMipmapLevel', 'getActiveMipmapLevel' );
 	if ( ! Array.isArray( textures ) ) {
@@ -563,13 +682,27 @@ export function describeRenderTargetTopology( context, renderer = null ) {
 	const outputTarget = safeCall( renderer, 'getOutputRenderTarget' );
 	const surface = classifyRenderSurface( renderTarget, outputTarget, textures );
 	const includeAttachmentNames = safeRead( context, 'mrt' ) != null;
+	// Three r185 compileAsync() updates the target textures but leaves
+	// RenderContext.renderTarget null and keeps depth/stencil at the renderer's
+	// default-surface values. Once exact attachment identity proves which target
+	// is bound, its attachment flags are the authoritative pipeline topology.
+	// Ordinary real-render contexts continue to use their request-time values.
+	const color = inferredCompileTarget
+		? textures.length > 0
+		: safeRead( context, 'color' ) ?? ( textures.length > 0 );
+	const depth = inferredCompileTarget
+		? safeRead( renderTarget, 'depthBuffer' ) ?? safeRead( context, 'depth' )
+		: safeRead( context, 'depth' ) ?? safeRead( renderTarget, 'depthBuffer' );
+	const stencil = inferredCompileTarget
+		? safeRead( renderTarget, 'stencilBuffer' ) ?? safeRead( context, 'stencil' )
+		: safeRead( context, 'stencil' ) ?? safeRead( renderTarget, 'stencilBuffer' );
 	return compactObject( {
 		surface,
 		activeCubeFace,
 		activeMipmapLevel,
-		color: scalar( safeRead( context, 'color' ) ?? ( textures.length > 0 ) ),
-		depth: scalar( safeRead( context, 'depth' ) ?? safeRead( renderTarget, 'depthBuffer' ) ),
-		stencil: scalar( safeRead( context, 'stencil' ) ?? safeRead( renderTarget, 'stencilBuffer' ) ),
+		color: scalar( color ),
+		depth: scalar( depth ),
+		stencil: scalar( stencil ),
 		sampleCount: effectiveSampleCount( context, renderTarget, renderer, textures ),
 		multiview: safeRead( context, 'multiview' ) === true || safeRead( renderTarget, 'multiview' ) === true,
 		colors: textures.map( ( texture ) => describeColorAttachment( texture, includeAttachmentNames ) ),
@@ -585,6 +718,43 @@ function renderTargetOwnsTextures( renderTarget, observedTextures ) {
 	const targetTexture = safeRead( renderTarget, 'texture' );
 	const targetTextures = Array.isArray( targetTextureList ) ? targetTextureList : targetTexture ? [ targetTexture ] : [];
 	return targetTextures.length === observedTextures.length && observedTextures.every( ( texture, index ) => texture === targetTextures[ index ] );
+
+}
+
+function renderTargetOwnsAttachments( renderTarget, observedTextures, observedDepthTexture ) {
+
+	if ( ! renderTargetOwnsTextures( renderTarget, observedTextures ) ) return false;
+	if ( observedDepthTexture === undefined || observedDepthTexture === null ) return true;
+	const configuredDepthTexture = safeRead( renderTarget, 'depthTexture' );
+	if ( configuredDepthTexture !== undefined && configuredDepthTexture !== null ) {
+
+		return configuredDepthTexture === observedDepthTexture;
+
+	}
+	// Three r185 allocates an implicit depth attachment for depth/stencil
+	// render targets without assigning it back to RenderTarget.depthTexture.
+	// The generated texture still retains its exact RenderTarget owner.
+	if (
+		safeRead( renderTarget, 'depthBuffer' ) !== true &&
+		safeRead( renderTarget, 'stencilBuffer' ) !== true
+	) return false;
+	return safeRead( observedDepthTexture, 'renderTarget' ) === renderTarget;
+
+}
+
+function inferAttachmentRenderTarget( observedTextures, observedDepthTexture ) {
+
+	if ( ! Array.isArray( observedTextures ) || observedTextures.length === 0 ) return null;
+	const renderTarget = safeRead( observedTextures[ 0 ], 'renderTarget' );
+	if ( ! renderTarget ) return null;
+	if ( ! observedTextures.every( ( texture ) => safeRead( texture, 'renderTarget' ) === renderTarget ) ) return null;
+	if ( ! renderTargetOwnsAttachments( renderTarget, observedTextures, observedDepthTexture ) ) return null;
+	if (
+		observedDepthTexture !== undefined &&
+		observedDepthTexture !== null &&
+		safeRead( observedDepthTexture, 'renderTarget' ) !== renderTarget
+	) return null;
+	return renderTarget;
 
 }
 
@@ -756,6 +926,7 @@ function describeObject( object, sourceGeometry = safeRead( object, 'geometry' )
 
 	if ( ! object ) return null;
 	const skeleton = safeRead( object, 'skeleton' );
+	const instanceMatrix = safeRead( object, 'instanceMatrix' );
 	return compactObject( {
 		receiveShadow: safeRead( object, 'receiveShadow' ) === true,
 		skinned: safeRead( object, 'isSkinnedMesh' ) === true,
@@ -763,11 +934,28 @@ function describeObject( object, sourceGeometry = safeRead( object, 'geometry' )
 		instanced: safeRead( object, 'isInstancedMesh' ) === true || Number( safeRead( object, 'count' ) ) > 1,
 		batched: safeRead( object, 'isBatchedMesh' ) === true,
 		morphInfluences: Array.isArray( safeRead( object, 'morphTargetInfluences' ) ),
-		instanceMatrix: !! safeRead( object, 'instanceMatrix' ),
+		instanceMatrix: !! instanceMatrix,
+		// Three r185 lowers InstanceNode matrices to a fixed-size
+		// NodeUniformBuffer (`array<mat4x4<f32>, N>`). N is the physical
+		// attribute capacity, not the mutable draw count, and therefore selects
+		// both different WGSL and a different bind-group buffer size.
+		instanceMatrixCount: instanceMatrixCapacity( instanceMatrix ),
 		instanceColor: !! safeRead( object, 'instanceColor' ),
 		batchColors: !! safeRead( object, '_colorsTexture' ),
 		geometry: describeGeometry( sourceGeometry ),
 	} );
+
+}
+
+function instanceMatrixCapacity( instanceMatrix ) {
+
+	if ( ! instanceMatrix ) return undefined;
+	const count = Number( safeRead( instanceMatrix, 'count' ) );
+	if ( Number.isSafeInteger( count ) && count >= 0 ) return count;
+	const array = safeRead( instanceMatrix, 'array' );
+	const itemSize = Number( safeRead( instanceMatrix, 'itemSize' ) ) || 16;
+	if ( ! array || ! Number.isSafeInteger( array.length ) || itemSize <= 0 || array.length % itemSize !== 0 ) return undefined;
+	return array.length / itemSize;
 
 }
 
@@ -795,9 +983,24 @@ function attributeShape( attribute ) {
 	return compactObject( {
 		stride: scalar( safeRead( data, 'stride' ) ),
 		offset: scalar( safeRead( attribute, 'offset' ) ),
-		itemSize: scalar( safeRead( attribute, 'itemSize' ) ),
+		itemSize: effectiveAttributeItemSize( attribute ),
 		normalized: scalar( safeRead( attribute, 'normalized' ) ),
 	} );
+
+}
+
+function effectiveAttributeItemSize( attribute ) {
+
+	const itemSize = scalar( safeRead( attribute, 'itemSize' ) );
+	// WebGPUAttributeUtils in Three r185 pads storage vec3 data to vec4 and
+	// mutates the live attribute during upload. Normalize both the pre-upload
+	// and post-upload observations to the effective storage layout so selector
+	// timing cannot split otherwise identical WGSL artifacts.
+	if ( itemSize === 3 && (
+		safeRead( attribute, 'isStorageBufferAttribute' ) === true
+		|| safeRead( attribute, 'isStorageInstancedBufferAttribute' ) === true
+	) ) return 4;
+	return itemSize;
 
 }
 

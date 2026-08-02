@@ -1,5 +1,5 @@
 /**
- * Browser/dev capture for Three r184's fixed equirectangular CubeRenderTarget
+ * Browser/dev capture for Three r185's fixed equirectangular CubeRenderTarget
  * conversion. This module owns the temporary graph/resources and renderer
  * queue coordination; aux-marker only discovers inputs, hashes, registers,
  * and persists the returned artifact.
@@ -129,27 +129,31 @@ export async function captureCubeRenderTargetLive( renderer, sourceTexture, opts
 		// compileTSL serializes work through renderer.__tslpCompileLock. Wait
 		// until the tail is stable, then invoke compileTSL without another await
 		// so it reserves the next queue turn before the temporary mutation leaks.
-		await awaitRendererCompileQuiescence( renderer );
-		sourceState = {
-			generateMipmaps: sourceTexture.generateMipmaps,
-			minFilter: sourceTexture.minFilter,
-		};
-		sourceTexture.generateMipmaps = true;
+		let artifactsPromise = null;
+		await awaitRendererCompileQuiescence( renderer, () => {
 
-		if ( renderTarget.texture ) {
+			sourceState = {
+				generateMipmaps: sourceTexture.generateMipmaps,
+				minFilter: sourceTexture.minFilter,
+			};
+			sourceTexture.generateMipmaps = true;
 
-			renderTarget.texture.type = sourceTexture.type;
-			renderTarget.texture.colorSpace = sourceTexture.colorSpace;
-			renderTarget.texture.generateMipmaps = true;
-			renderTarget.texture.minFilter = sourceTexture.minFilter;
-			renderTarget.texture.magFilter = sourceTexture.magFilter;
+			if ( renderTarget.texture ) {
 
-		}
-		if ( sourceTexture.minFilter === three.LinearMipmapLinearFilter ) sourceTexture.minFilter = three.LinearFilter;
+				renderTarget.texture.type = sourceTexture.type;
+				renderTarget.texture.colorSpace = sourceTexture.colorSpace;
+				renderTarget.texture.generateMipmaps = true;
+				renderTarget.texture.minFilter = sourceTexture.minFilter;
+				renderTarget.texture.magFilter = sourceTexture.magFilter;
 
-		const artifactsPromise = compileTSL( renderer, captureScene, captureCamera, {
-			noGlobalMRT: true,
-			renderTargetOverride: renderTarget,
+			}
+			if ( sourceTexture.minFilter === three.LinearMipmapLinearFilter ) sourceTexture.minFilter = three.LinearFilter;
+
+			artifactsPromise = compileTSL( renderer, captureScene, captureCamera, {
+				noGlobalMRT: true,
+				renderTargetOverride: renderTarget,
+			} );
+
 		} );
 		const artifacts = await artifactsPromise;
 		if ( ! Array.isArray( artifacts ) ) {
@@ -189,15 +193,20 @@ export async function captureCubeRenderTargetLive( renderer, sourceTexture, opts
 
 }
 
-async function awaitRendererCompileQuiescence( renderer ) {
+export async function awaitRendererCompileQuiescence( renderer, onStable ) {
 
-	if ( ! renderer ) return;
+	const finish = () => typeof onStable === 'function' ? onStable() : undefined;
+	if ( ! renderer ) return finish();
 	for ( ;; ) {
 
 		const pending = renderer.__tslpCompileLock;
-		if ( ! pending || typeof pending.then !== 'function' ) return;
+		if ( ! pending || typeof pending.then !== 'function' ) return finish();
 		try { await pending; } catch ( _ ) {}
-		if ( renderer.__tslpCompileLock === pending ) return;
+		// Run the handoff in the same microtask as the stable-tail check. An
+		// ordinary `await helper(); mutateRenderer()` leaves a gap in which a
+		// competing capture can reserve the settled tail and later restore the
+		// renderer state that the caller was trying to release.
+		if ( renderer.__tslpCompileLock === pending ) return finish();
 
 	}
 

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
 	clearTextureViewCache,
 	invalidateTextureResourceBindings,
+	isBorrowedShadowRenderTargetTexture,
 	markTextureInitialized,
 	shareGPUTextureEntry,
 	sharePMREMGPUTexture,
@@ -70,6 +71,28 @@ test( 'markTextureInitialized sets the Textures DataMap flags', () => {
 
 } );
 
+test( 'borrowed shadow ownership covers every attachment of the render target', () => {
+
+	const renderer = fakeRenderer();
+	const color = fakeTexture( 'ShadowMap' );
+	const depth = fakeTexture( 'ShadowDepthTexture' );
+	const renderTarget = { textures: [ color ], texture: color, depthTexture: depth };
+	color.renderTarget = renderTarget;
+	depth.renderTarget = renderTarget;
+	const gpuDepth = { id: 'full-renderer-shadow-depth' };
+	const depthData = renderer.backend.get( depth );
+	depthData.texture = gpuDepth;
+	depthData.__tslpSharedShadowGPUTexture = gpuDepth;
+
+	assert.equal( isBorrowedShadowRenderTargetTexture( renderer, color ), true );
+	assert.equal( isBorrowedShadowRenderTargetTexture( renderer, depth ), true );
+	assert.equal( isBorrowedShadowRenderTargetTexture( renderer, fakeTexture( 'unrelated' ) ), false );
+
+	depthData.__tslpSharedShadowGPUTexture = { id: 'stale-marker' };
+	assert.equal( isBorrowedShadowRenderTargetTexture( renderer, color ), false );
+
+} );
+
 test( 'invalidateTextureResourceBindings clears views and every cached bind group', () => {
 
 	const renderer = fakeRenderer();
@@ -123,6 +146,75 @@ test( 'shareGPUTextureEntry copies backend data and marks initialised', () => {
 	assert.equal( targetData.version, 1 );
 	assert.equal( target._textures.get( tex ).initialized, true );
 	assert.deepEqual( diagnostics.names, [ 'env' ] );
+
+} );
+
+test( 'shareGPUTextureEntry can invalidate only the target generation', () => {
+
+	const source = fakeRenderer();
+	const target = fakeRenderer();
+	const texture = fakeTexture( 'dynamic-effect-output' );
+	texture.version = 4;
+	source.backend.get( texture ).texture = { __gpu: 'effect-output' };
+	source._textures.get( texture ).version = 4;
+	source._textures.get( texture ).generation = 4;
+
+	assert.equal( shareGPUTextureEntry( target, source, texture, { bumpVersion: false } ), true );
+	assert.equal( texture.version, 4, 'the shared JS texture version remains source-stable' );
+	assert.equal( source._textures.get( texture ).generation, 4, 'the source renderer generation remains untouched' );
+	assert.equal( target._textures.get( texture ).version, 4 );
+	assert.equal( target._textures.get( texture ).generation, 5, 'only the target bind-group generation advances' );
+
+} );
+
+test( 'shareGPUTextureEntry is a strict no-op for the same renderer', () => {
+
+	const renderer = fakeRenderer();
+	const texture = fakeTexture( 'nested-effect-target' );
+	texture.version = 7;
+	const backendData = renderer.backend.get( texture );
+	backendData.texture = { __gpu: 'effect-target' };
+	backendData[ 'view-0' ] = { __gpuView: 'live-view' };
+	const bindGroup = { id: 'live-effect-bind-group' };
+	const textureData = renderer._textures.get( texture );
+	textureData.bindGroups = new Set( [ bindGroup ] );
+	const bindGroupData = renderer.backend.get( bindGroup );
+	bindGroupData.groups = { __gpu: 'live-bind-group' };
+	bindGroupData.versions = [ 7 ];
+	const diagnostics = { calls: 0, success: 0 };
+
+	assert.equal( shareGPUTextureEntry( renderer, renderer, texture, { diagnostics } ), true );
+	assert.equal( texture.version, 7 );
+	assert.ok( backendData[ 'view-0' ] );
+	assert.equal( textureData.bindGroups.has( bindGroup ), true );
+	assert.ok( bindGroupData.groups );
+	assert.deepEqual( bindGroupData.versions, [ 7 ] );
+	assert.deepEqual( diagnostics, { calls: 0, success: 0 } );
+
+} );
+
+test( 'shareGPUTextureEntry preserves an already-shared cross-renderer resource', () => {
+
+	const source = fakeRenderer();
+	const target = fakeRenderer();
+	const texture = fakeTexture( 'recurring-effect-target' );
+	texture.version = 9;
+	const gpuTexture = { __gpu: 'shared-effect-target' };
+	source.backend.get( texture ).texture = gpuTexture;
+	target.backend.get( texture ).texture = gpuTexture;
+	target.backend.get( texture )[ 'view-0' ] = { __gpuView: 'live-view' };
+	const bindGroup = { id: 'live-effect-bind-group' };
+	target._textures.get( texture ).bindGroups = new Set( [ bindGroup ] );
+	target.backend.get( bindGroup ).groups = { __gpu: 'live-bind-group' };
+	const diagnostics = {};
+
+	assert.equal( shareGPUTextureEntry( target, source, texture, { diagnostics } ), true );
+	assert.equal( texture.version, 9 );
+	assert.ok( target.backend.get( texture )[ 'view-0' ] );
+	assert.equal( target._textures.get( texture ).bindGroups.has( bindGroup ), true );
+	assert.ok( target.backend.get( bindGroup ).groups );
+	assert.equal( diagnostics.calls, 1 );
+	assert.equal( diagnostics.alreadyShared, 1 );
 
 } );
 
@@ -198,7 +290,25 @@ test( 'shareGPUTextureEntry invalidates pre-existing bind groups on the target',
 	source.backend.get( tex ).texture = { __gpu: 'shared' };
 
 	// Pre-populate target with a bind group that references this texture.
-	const bindGroup = { id: 'bg-1' };
+	const sampledBinding = {
+		isSampledTexture: true,
+		texture: tex,
+		version: tex.version,
+		generation: 7,
+		reset() {
+
+			this.version = - 1;
+			this.generation = null;
+
+		},
+	};
+	const unrelatedBinding = {
+		isSampledTexture: true,
+		texture: fakeTexture( 'unrelated' ),
+		version: 4,
+		generation: 4,
+	};
+	const bindGroup = { id: 'bg-1', bindings: [ sampledBinding, unrelatedBinding ] };
 	const txData = target._textures.get( tex );
 	txData.bindGroups = new Set( [ bindGroup ] );
 	const bindingsData = target.backend.get( bindGroup );
@@ -211,6 +321,10 @@ test( 'shareGPUTextureEntry invalidates pre-existing bind groups on the target',
 	assert.equal( bindingsData.groups, undefined );
 	assert.equal( bindingsData.versions, undefined );
 	assert.equal( target._textures.get( tex ).bindGroups.size, 0 );
+	assert.equal( sampledBinding.version, - 1, 'the next binding update must observe the replaced resource' );
+	assert.equal( sampledBinding.generation, null );
+	assert.equal( unrelatedBinding.version, 4, 'unrelated texture bindings remain cache-hot' );
+	assert.equal( unrelatedBinding.generation, 4 );
 
 } );
 
@@ -238,7 +352,15 @@ test( 'sharePMREMGPUTexture bumps PMREM-specific diagnostics keys', () => {
 	const slim = fakeRenderer();
 	const full = fakeRenderer();
 	const pmrem = fakeTexture( 'PMREM.cubeUv' );
-	full.backend.get( pmrem ).texture = { __gpu: 'pmrem' };
+	const fullData = full.backend.get( pmrem );
+	fullData.texture = { __gpu: 'pmrem' };
+	const staleBindGroup = { id: 'pmrem-placeholder-bind-group' };
+	const slimData = slim.backend.get( pmrem );
+	slimData.texture = { __gpu: '1x1-placeholder' };
+	slimData[ 'view-0' ] = { __gpuView: 'stale' };
+	slim._textures.get( pmrem ).bindGroups = new Set( [ staleBindGroup ] );
+	slim.backend.get( staleBindGroup ).groups = { __gpuBindGroup: 'stale' };
+	slim.backend.get( staleBindGroup ).versions = [ 0 ];
 
 	const diagnostics = {};
 	const ok = sharePMREMGPUTexture( slim, full, pmrem, { diagnostics } );
@@ -246,7 +368,14 @@ test( 'sharePMREMGPUTexture bumps PMREM-specific diagnostics keys', () => {
 	assert.equal( ok, true );
 	assert.equal( diagnostics.shareCalls, 1 );
 	assert.equal( diagnostics.shareSuccess, 1 );
-	assert.equal( slim.backend.get( pmrem ).texture, full.backend.get( pmrem ).texture );
+	assert.equal( slimData.texture, fullData.texture );
+	assert.equal( slimData[ 'view-0' ], undefined );
+	assert.equal( slim._textures.get( pmrem ).bindGroups.size, 0 );
+	assert.equal( slim.backend.get( staleBindGroup ).groups, undefined );
+	assert.equal( slim.backend.get( staleBindGroup ).versions, undefined );
+	assert.equal( pmrem.version, 1 );
+	assert.equal( fullData.version, 1 );
+	assert.equal( slimData.version, 1 );
 
 } );
 
@@ -263,6 +392,46 @@ test( 'sharePMREMGPUTexture records shareMissingTexture when full side has no GP
 	assert.equal( ok, false );
 	assert.equal( diagnostics.shareMissingTexture, 1 );
 	assert.equal( diagnostics.shareSuccess, undefined );
+
+} );
+
+test( 'sharePMREMGPUTexture fails closed when a replaced PMREM resource cannot be invalidated', () => {
+
+	const full = fakeRenderer();
+	const slimBackend = fakeDataMap();
+	const slim = { backend: slimBackend };
+	const pmrem = fakeTexture( 'PMREM.cubeUv' );
+	const fullTexture = { __gpu: 'generated-pmrem' };
+	const oldTexture = { __gpu: '1x1-placeholder' };
+	full.backend.get( pmrem ).texture = fullTexture;
+	const slimData = slim.backend.get( pmrem );
+	slimData.texture = oldTexture;
+	slimData[ 'view-0' ] = { __gpuView: 'must-not-survive-a-replacement' };
+
+	const diagnostics = {};
+	const ok = sharePMREMGPUTexture( slim, full, pmrem, { diagnostics } );
+
+	assert.equal( ok, false );
+	assert.equal( diagnostics.shareCalls, 1 );
+	assert.equal( diagnostics.shareInvalidationFailed, 1 );
+	assert.equal( diagnostics.shareSuccess, undefined );
+	assert.equal( slimData.texture, oldTexture, 'failed invalidation must not replace the resource' );
+	assert.ok( slimData[ 'view-0' ], 'failed invalidation must leave the old cache untouched' );
+	assert.equal( pmrem.version, 0 );
+
+} );
+
+test( 'sharePMREMGPUTexture permits a first resource without invalidation cache APIs', () => {
+
+	const full = fakeRenderer();
+	const slim = { backend: fakeDataMap() };
+	const pmrem = fakeTexture( 'PMREM.cubeUv' );
+	const fullTexture = { __gpu: 'generated-pmrem' };
+	full.backend.get( pmrem ).texture = fullTexture;
+
+	assert.equal( sharePMREMGPUTexture( slim, full, pmrem ), true );
+	assert.equal( slim.backend.get( pmrem ).texture, fullTexture );
+	assert.equal( pmrem.version, 1 );
 
 } );
 
@@ -322,6 +491,63 @@ test( 'shareShadowGPUTextureIntoSlim invalidates pre-existing slim bind groups',
 	assert.equal( bindingsData.groups, undefined );
 	assert.equal( bindingsData.versions, undefined );
 	assert.equal( txData.bindGroups.size, 0 );
+
+} );
+
+test( 'shareShadowGPUTextureIntoSlim refreshes stale bindings when the GPU texture is already shared', () => {
+
+	const slim = fakeRenderer();
+	const full = fakeRenderer();
+	const depthMap = fakeTexture( 'shadow.depth.already-shared' );
+	depthMap.version = 7;
+	depthMap.isDepthTexture = true;
+	depthMap.image = { width: 512, height: 512, depth: 1 };
+
+	const sharedGPUTexture = { __gpu: 'shared-depth' };
+	const fullData = full.backend.get( depthMap );
+	const slimData = slim.backend.get( depthMap );
+	fullData.texture = sharedGPUTexture;
+	slimData.texture = sharedGPUTexture;
+	slimData[ 'view-0' ] = { stale: true };
+
+	const sampledBinding = {
+		isSampledTexture: true,
+		texture: depthMap,
+		version: 7,
+		generation: 7,
+		reset() {
+
+			this.version = - 1;
+			this.generation = null;
+
+		},
+	};
+	const unrelatedBinding = {
+		isSampledTexture: true,
+		texture: fakeTexture( 'unrelated' ),
+		version: 3,
+		generation: 3,
+	};
+	const bindGroup = { id: 'already-shared-shadow-bg', bindings: [ sampledBinding, unrelatedBinding ] };
+	const textureData = slim._textures.get( depthMap );
+	textureData.bindGroups = new Set( [ bindGroup ] );
+	const bindingsData = slim.backend.get( bindGroup );
+	bindingsData.groups = { cached: true };
+	bindingsData.versions = [ 7 ];
+
+	assert.equal( shareShadowGPUTextureIntoSlim( depthMap, full, slim ), true );
+	assert.equal( slimData.texture, sharedGPUTexture, 'GPU texture identity is preserved' );
+	assert.equal( depthMap.version, 8, 'shadow refresh still advances the JS version' );
+	assert.equal( slimData[ 'view-0' ], undefined, 'stale comparison view is cleared' );
+	assert.equal( sampledBinding.version, - 1, 'matching sampled binding is reset' );
+	assert.equal( sampledBinding.generation, null );
+	assert.equal( unrelatedBinding.version, 3, 'unrelated sampled bindings are untouched' );
+	assert.equal( bindingsData.groups, undefined );
+	assert.equal( bindingsData.versions, undefined );
+	assert.equal( textureData.bindGroups.size, 0 );
+	assert.equal( fullData.version, 8 );
+	assert.equal( slimData.version, 8 );
+	assert.equal( slimData.__tslpSharedShadowGPUTexture, sharedGPUTexture );
 
 } );
 

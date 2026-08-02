@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import * as runtime from '../src/index.js';
 import * as captureEntry from '../src/compute-capture.js';
 import { precompileCompute, precompileComputes } from '../src/compute-capture.js';
+import { getDevCaptureStatus } from '../src/dev-capture-outcome.js';
 import { hashArtifactContentSync } from '../src/graph-hash.js';
 
 const RUNTIME_ROOT = resolve( dirname( fileURLToPath( import.meta.url ) ), '..' );
@@ -139,6 +140,7 @@ test( 'precompileCompute wraps one kernel and rejects missing extraction evidenc
 
 	const { fetch } = fixture();
 	const node = { isNode: true };
+	const baseline = getDevCaptureStatus();
 	await assert.rejects( precompileCompute( {}, node, {
 		name: 'compute-missing',
 		resources: { positions: {} },
@@ -148,6 +150,7 @@ test( 'precompileCompute wraps one kernel and rejects missing extraction evidenc
 		fetch,
 		compileTSL: async () => Object.assign( [], { byComputeNode: new Map() } ),
 	} ), /returned no artifact/ );
+	assert.equal( getDevCaptureStatus().failedCaptures, baseline.failedCaptures + 1 );
 
 } );
 
@@ -173,6 +176,57 @@ test( 'precompileComputes fails closed on duplicate names, invalid resources, an
 		compileTSL,
 		fetch: async () => ( { ok: false, status: 409, text: async () => 'conflict' } ),
 	} ), /409 conflict/ );
+
+} );
+
+test( 'compute batch keeps its pending wave open until every sibling POST settles', async () => {
+
+	const originalWindow = globalThis.window;
+	const originalPending = globalThis.__tslpPrecompilePending;
+	globalThis.window = globalThis;
+	globalThis.__tslpPrecompilePending = 0;
+	let releaseSecond;
+	const secondCanFinish = new Promise( ( resolve ) => { releaseSecond = resolve; } );
+	let fetchCalls = 0;
+	const { compileTSL } = fixture();
+	const capture = precompileComputes( {}, [
+		{ name: 'compute-fast-failure', node: { id: 'fast' }, resources: { positions: {} } },
+		{ name: 'compute-slow-success', node: { id: 'slow' }, resources: { positions: {} } },
+	], {
+		scene: {},
+		camera: {},
+		threeVersion: '0.184.0',
+		compileTSL,
+		fetch: async () => {
+
+			fetchCalls ++;
+			if ( fetchCalls === 1 ) return { ok: false, status: 409, text: async () => 'conflict' };
+			await secondCanFinish;
+			return { ok: true, status: 200, text: async () => '' };
+
+		},
+	} );
+	let settled = false;
+	void capture.finally( () => { settled = true; } ).catch( () => {} );
+	try {
+
+		while ( fetchCalls < 2 ) await Promise.resolve();
+		await Promise.resolve();
+		assert.equal( globalThis.__tslpPrecompilePending, 1 );
+		assert.equal( settled, false );
+		releaseSecond();
+		await assert.rejects( capture, /409 conflict/ );
+		assert.equal( globalThis.__tslpPrecompilePending, 0 );
+		assert.equal( settled, true );
+
+	} finally {
+
+		if ( originalWindow === undefined ) delete globalThis.window;
+		else globalThis.window = originalWindow;
+		if ( originalPending === undefined ) delete globalThis.__tslpPrecompilePending;
+		else globalThis.__tslpPrecompilePending = originalPending;
+
+	}
 
 } );
 

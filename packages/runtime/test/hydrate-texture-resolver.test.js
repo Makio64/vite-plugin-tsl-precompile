@@ -5,7 +5,9 @@ import {
 	inferTextureTypeFromShader,
 	resolvePlanTextureTypeHint,
 	selectFallbackTextureForBinding,
+	shaderDeclaresArrayTexture,
 	shaderDeclaresComparisonSampler,
+	shaderDeclaresCubeTexture,
 	shaderDeclaresDepthTexture,
 	shaderDeclaresMultisampledTexture,
 	textureBindingNameForSampler,
@@ -102,5 +104,62 @@ test( 'texture resolver infers shader binding shape and validates live textures'
 	assert.equal( textureMatchesShaderBinding( artifact, 'volumeTex', { isTexture: true, isData3DTexture: true } ), true );
 	assert.equal( textureMatchesShaderBinding( artifact, 'msTex', { isTexture: true, renderTarget: { samples: 4 } } ), true );
 	assert.equal( textureMatchesShaderBinding( artifact, 'msTex', { isTexture: true, renderTarget: { samples: 1 } } ), false );
+
+} );
+
+test( 'texture resolver infers combined GLSL sampler shapes', () => {
+
+	const artifact = {
+		fragmentShader: `#version 300 es
+precision highp float;
+uniform sampler2D plainTex;
+uniform sampler2DArray arrayTex;
+uniform highp samplerCube cubeTex;
+uniform isampler3D volumeTex;
+uniform sampler2DShadow shadowTex;
+uniform samplerCubeShadow shadowCubeTex;
+uniform sampler2DArrayShadow shadowArrayTex;
+uniform sampler2DMS msTex;
+layout( location = 0 ) out vec4 fragColor;
+void main() { fragColor = texture( plainTex, vec2( 0.5 ) ); }
+`,
+	};
+	const fallbacks = {
+		texture: { id: 'plain' },
+		comparisonDepth: { id: 'comparison-depth' },
+		depth: { id: 'depth' },
+		depthCube: { id: 'depth-cube' },
+		depthArray: { id: 'depth-array' },
+		multisampledDepth: { id: 'multisampled-depth' },
+		cube: { id: 'cube' },
+		texture3D: { id: '3d' },
+		array: { id: 'array' },
+	};
+
+	assert.equal( inferTextureTypeFromShader( artifact, 'arrayTex' ), '2d-array' );
+	assert.equal( inferTextureTypeFromShader( artifact, 'arrayTex_sampler' ), '2d-array' );
+	assert.equal( inferTextureTypeFromShader( artifact, 'cubeTex' ), 'cube' );
+	assert.equal( inferTextureTypeFromShader( artifact, 'volumeTex' ), '3d' );
+	assert.equal( shaderDeclaresArrayTexture( artifact, 'arrayTex' ), true );
+	assert.equal( shaderDeclaresCubeTexture( artifact, 'cubeTex' ), true );
+	assert.equal( shaderDeclaresDepthTexture( artifact, 'shadowTex' ), true );
+	assert.equal( shaderDeclaresComparisonSampler( artifact, 'shadowTex' ), true );
+	assert.equal( shaderDeclaresMultisampledTexture( artifact, 'msTex' ), true );
+
+	assert.equal( selectFallbackTextureForBinding( artifact, 'arrayTex', fallbacks ).id, 'array' );
+	assert.equal( selectFallbackTextureForBinding( artifact, 'cubeTex', fallbacks ).id, 'cube' );
+	assert.equal( selectFallbackTextureForBinding( artifact, 'volumeTex', fallbacks ).id, '3d' );
+	assert.equal( selectFallbackTextureForBinding( artifact, 'shadowTex', fallbacks ).id, 'comparison-depth' );
+	assert.equal( selectFallbackTextureForBinding( artifact, 'shadowCubeTex', fallbacks ).id, 'depth-cube' );
+	assert.equal( selectFallbackTextureForBinding( artifact, 'shadowArrayTex', fallbacks ).id, 'depth-array' );
+	assert.equal( textureMatchesShaderBinding( artifact, 'arrayTex', { isTexture: true, isDataArrayTexture: true } ), true );
+	assert.equal( textureMatchesShaderBinding( artifact, 'arrayTex', { isTexture: true } ), false );
+
+	const group = { textures: [] };
+	assert.equal(
+		resolvePlanTextureTypeHint( artifact, group, { textureType: '2d' }, {}, 'arrayTex' ),
+		'2d-array',
+		'GLSL declaration overrides stale captured 2d metadata',
+	);
 
 } );

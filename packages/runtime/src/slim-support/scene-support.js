@@ -4,11 +4,12 @@
  * runtime adopters.
  *
  * The slim three.js bundle ships no node-graph compiler, so a real-world
- * app sometimes needs to compose two `WebGPURenderer` instances on the
- * same `GPUDevice`: slim for the main render, full for the work that
- * generates dynamic WGSL (compute kernels, shadow scenes, dynamic
- * `PassNode`s, PMREM). The harness has been doing this for ~3.6k lines;
- * this orchestrator is the equivalent public API.
+ * app can compose two `WebGPURenderer` instances on the same `GPUDevice`:
+ * slim for captured work, full only for genuinely uncaptured dynamic WGSL.
+ * Captured PMREM and non-point VSM passes now remain on slim; compute kernels
+ * and dynamic PassNodes can still opt into the shared-device fallback. The
+ * harness has been doing this for ~3.6k lines; this orchestrator is the
+ * equivalent public API.
  *
  * The intent is *opt-in* composition: a project that just precompiles
  * its materials needs nothing here. Projects that need compute or shadow
@@ -42,11 +43,12 @@ import {
 	computeNodeUsesStorageTexture,
 	computeSyncNeedsPresentation,
 	shareComputeSampledInputs,
+	invokeAlignedFullCompute,
 } from './compute-sync.js';
 import { collectMaterialComputeBindings, collectMaterialComputeOwners, createAutoComputeDispatcher } from './auto-compute.js';
 import { shareGPUTextureEntry, shareShadowGPUTextureIntoSlim } from './gpu-texture-share.js';
 import { createFullRendererFallback } from './full-renderer-fallback.js';
-import { setSlimRenderFallback } from './render-fallback-registry.js';
+import { getSlimRenderFallback, setSlimRenderFallback } from './render-fallback-registry.js';
 import { normalizeSlimRenderFallbackState } from './render-fallback-state.js';
 import {
 	renderOffscreenOverrideWithFullRenderer,
@@ -54,6 +56,7 @@ import {
 	sharePassRenderTargetTextures,
 } from './pass-render-fallback.js';
 import { disposeShadowMapsWithFullRenderer, populateShadowMapsWithFullRenderer } from './shadow-fallback.js';
+import { createPrecompiledShadowSupport } from './precompiled-shadows.js';
 import { updateRendererLightingForSlim } from './renderer-lighting.js';
 import { wirePrecompiledPostprocess } from './postprocess-wire.js';
 import { preparePrecompiledPostprocess } from './postprocess-effects-replay.js';
@@ -66,7 +69,9 @@ import {
 	resolveMaterialComputePath,
 } from '../hydrate/material-compute-ownership.js';
 import PrecompiledMaterial from '../_vendor-PrecompiledMaterial.js';
-import { getTemporalFrameState, withTemporalFrame as runWithTemporalFrame } from './temporal-frame.js';
+import PMREMGenerator from '../slim-stub-pmrem-generator.js';
+import { withTemporalFrame as runWithTemporalFrame } from './temporal-frame.js';
+import { CubeReflectionMapping, CubeRefractionMapping, VSMShadowMap } from 'three/src/constants.js';
 
 const DEFAULT_OPTS = {
 	// Wave 5 Phase B3 — default to `'auto'` so any three.js project that
@@ -78,6 +83,7 @@ const DEFAULT_OPTS = {
 	// configured — i.e. zero surprise for legacy callers.
 	fullRendererFallback: 'auto',
 	pmrem: true,
+	precompiledInternalPasses: true,
 	computeSync: true,
 	textureSharing: true,
 };
@@ -97,8 +103,9 @@ const MATERIAL_COMPUTE_READ_ACCESS = new Set( [ 'readOnly', 'readWrite' ] );
  * @param {boolean} [opts.computeSync=true]      - Expose `syncComputeOutputs()` (pure compute output sync; safe to leave on).
  * @param {boolean} [opts.textureSharing=true]   - Expose `shareTexture()` / `shareShadowTexture()` convenience wrappers.
  * @param {Object}  [opts.diagnostics]           - Optional counter bag — sub-modules write under `{ pmrem, textureShare, compute }` namespaces.
- * @param {Function} [opts.pmremGenerator]       - `(renderer, sourceTexture) => Promise<pmremTexture>` used by `generatePMREMAsync()` to bake source environments. Required to call `generatePMREMAsync()`; can be omitted if the caller never asks for PMREM.
- * @param {Function} [opts.textureImageReady]    - Optional readiness predicate for PMREM sources. Defaults to permissive because explicit public generators can own readiness.
+ * @param {boolean} [opts.precompiledInternalPasses=true] - Replay captured PMREM/VSM passes on the slim renderer before considering a full-renderer fallback.
+ * @param {Function} [opts.pmremGenerator]       - Optional `(renderer, sourceTexture) => Promise<pmremTexture>` override. Captured internal passes are used by default.
+ * @param {Function} [opts.textureImageReady]    - Optional readiness predicate for PMREM sources. The built-in captured generator waits for complete source dimensions; explicit custom generators remain permissive.
  * @param {Function} [opts.onError]              - `(err, where) => void` for non-fatal sub-module errors.
  */
 export function createSlimSceneSupport( opts = {} ) {
@@ -144,12 +151,31 @@ export function createSlimSceneSupport( opts = {} ) {
 	}
 
 	// --- PMREM cache + orchestration ----------------------------------------
-	// `pmremGenerator` is the `(renderer, sourceTex) => Promise<pmremTex>` the
-	// caller wires up (typically `(_, src) => new ThreeFull.PMREMGenerator(full).fromEquirectangularAsync(src)`).
-	// It's optional at construction; `generatePMREMAsync()` will throw a
-	// clear error if it's called without one ever being set.
-	let pmremGenerator = typeof settings.pmremGenerator === 'function' ? settings.pmremGenerator : null;
-	const textureImageReady = typeof settings.textureImageReady === 'function' ? settings.textureImageReady : () => true;
+	const retainedPMREMTargets = new Set();
+	let precompiledPMREMGenerator = null;
+	const generatePrecompiledPMREM = async ( activeRenderer, sourceTexture ) => {
+
+		if ( ! precompiledPMREMGenerator ) precompiledPMREMGenerator = new PMREMGenerator( activeRenderer );
+		const isCube = sourceTexture && (
+			sourceTexture.mapping === CubeReflectionMapping ||
+			sourceTexture.mapping === CubeRefractionMapping
+		);
+		const target = isCube
+			? precompiledPMREMGenerator.fromCubemap( sourceTexture )
+			: precompiledPMREMGenerator.fromEquirectangular( sourceTexture );
+		retainedPMREMTargets.add( target );
+		return target.texture;
+
+	};
+	let usesBuiltInPMREMGenerator = typeof settings.pmremGenerator !== 'function' && settings.precompiledInternalPasses === true;
+	let pmremGenerator = typeof settings.pmremGenerator === 'function'
+		? settings.pmremGenerator
+		: settings.precompiledInternalPasses ? generatePrecompiledPMREM : null;
+	const textureImageReady = typeof settings.textureImageReady === 'function'
+		? settings.textureImageReady
+		: ( sourceTexture ) => usesBuiltInPMREMGenerator
+			? liveSceneIndex.textureImageReady( sourceTexture )
+			: true;
 	const pmrem = settings.pmrem ? createPMREMSupport( {
 		diagnostics: diagnostics.pmrem,
 		textureImageReady,
@@ -175,7 +201,11 @@ export function createSlimSceneSupport( opts = {} ) {
 	let cachedFullRenderer = null;
 	const shadowCache = new Map();
 	const shadowDisposals = new Set();
+	const precompiledShadows = settings.precompiledInternalPasses
+		? createPrecompiledShadowSupport( { renderer } )
+		: null;
 	let activeDispose = null;
+	let disposed = false;
 
 	// --- API surface --------------------------------------------------------
 
@@ -194,11 +224,24 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	async function getFullRenderer() {
 
-		if ( cachedFullRenderer ) return cachedFullRenderer;
-		if ( ! fallback ) return null;
-		const fullRenderer = await fallback.getRenderer();
+		if ( disposed ) throw new Error( 'createSlimSceneSupport: getFullRenderer() cannot run after dispose().' );
+		if ( ! cachedFullRenderer && ! fallback ) return null;
+		// Await cached instances as well so a same-turn dispose() always wins
+		// before the renderer escapes to an async caller.
+		const fullRenderer = cachedFullRenderer
+			? await Promise.resolve( cachedFullRenderer )
+			: await fallback.getRenderer();
+		if ( disposed ) {
+
+			// createFullRendererFallback.dispose() invalidates an in-flight boot
+			// by generation and tears down any renderer that still completes.
+			if ( fallback ) fallback.dispose();
+			cachedFullRenderer = null;
+			throw new Error( 'createSlimSceneSupport: getFullRenderer() was cancelled by dispose().' );
+
+		}
 		cachedFullRenderer = fullRenderer || null;
-		trackLoaderNamespace( fallback.getModule && fallback.getModule() );
+		if ( fallback ) trackLoaderNamespace( fallback.getModule && fallback.getModule() );
 		return fullRenderer;
 
 	}
@@ -206,6 +249,7 @@ export function createSlimSceneSupport( opts = {} ) {
 	function setPMREMGenerator( fn ) {
 
 		pmremGenerator = typeof fn === 'function' ? fn : null;
+		usesBuiltInPMREMGenerator = false;
 
 	}
 
@@ -348,11 +392,10 @@ export function createSlimSceneSupport( opts = {} ) {
 	}
 
 	/**
-	 * Populate standard Directional/Spot/Point shadow maps through the lazy full
-	 * renderer and share their depth textures back into slim. Transmitted/VSM,
-	 * custom, skinned/batched, and morphing cases fail closed with structured
-	 * `unsupported` entries; callers can map a retained full node material
-	 * through `resolveShadowMaterial`.
+	 * Populate captured Directional/Spot VSM passes directly on slim. Point
+	 * lights and uncaptured VSM topologies return structured `unsupported`
+	 * entries and fail closed. Non-VSM shadow types continue through the
+	 * separately validated lazy full-renderer adapter.
 	 *
 	 * @param {Object} scene
 	 * @param {Object} camera
@@ -362,6 +405,33 @@ export function createSlimSceneSupport( opts = {} ) {
 	async function populateShadowMaps( scene, camera, shadowOpts = {} ) {
 
 		shadowOpts = shadowOpts || {};
+		if (
+			precompiledShadows &&
+			shadowOpts.forceFullRenderer !== true &&
+			renderer.shadowMap &&
+			renderer.shadowMap.type === VSMShadowMap
+		) {
+
+			try {
+
+				const result = precompiledShadows.populateShadowMaps( scene, camera );
+				const shadowDiagnostics = diagnostics.shadow || ( diagnostics.shadow = { calls: 0, rendered: 0, complete: 0, texturesShared: 0, unsupported: 0, precompiled: 0 } );
+				shadowDiagnostics.precompiled = ( shadowDiagnostics.precompiled | 0 ) + 1;
+				shadowDiagnostics.calls ++;
+				if ( result.rendered ) shadowDiagnostics.rendered ++;
+				if ( result.complete ) shadowDiagnostics.complete ++;
+				shadowDiagnostics.unsupported += result.unsupported && result.unsupported.length || 0;
+				return result;
+
+			} catch ( error ) {
+
+				if ( typeof shadowOpts.onError === 'function' ) shadowOpts.onError( error, { where: 'precompiledShadowMaps' } );
+				if ( onError ) onError( error, { where: 'precompiledShadowMaps' } );
+				throw error;
+
+			}
+
+		}
 		const fullRenderer = shadowOpts.fullRenderer || await getFullRenderer();
 		const threeFullModule = shadowOpts.threeFullModule
 			|| fallback && fallback.getModule && fallback.getModule()
@@ -503,6 +573,7 @@ export function createSlimSceneSupport( opts = {} ) {
 	// materials (Inspector helpers, addon meshes, etc.) instead of throwing.
 	// Idempotent — calling twice is a no-op after the first await resolves.
 	let fallbackRegistered = false;
+	let registeredFallbackHandler = null;
 	let computeFallbackInstalled = false;
 	let restoreComputeFallback = null;
 	let computeFallbackDispatchTail = Promise.resolve();
@@ -591,13 +662,6 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	}
 
-	function nodeFrameForRenderer( targetRenderer ) {
-
-		const nodes = targetRenderer && ( targetRenderer._nodes || targetRenderer.nodes );
-		return nodes && nodes.nodeFrame || null;
-
-	}
-
 	async function initializeFullRendererForCompute( fullRenderer ) {
 
 		if ( fullRenderer && fullRenderer._initialized === false && typeof fullRenderer.init === 'function' ) await fullRenderer.init();
@@ -605,75 +669,9 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	}
 
-	/**
-	 * Run Three's synchronous compute-node lifecycle under the application
-	 * renderer's effective frame identity. The returned value may be a Promise,
-	 * but an initialized Three renderer has already run updateForCompute() before
-	 * returning it, so restore the caller-owned frame and temporal scope now
-	 * rather than holding mutable renderer state until GPU completion.
-	 */
-	function invokeAlignedFullCompute( fullRenderer, callback ) {
-
-		const sourceFrame = nodeFrameForRenderer( renderer );
-		const fullFrame = nodeFrameForRenderer( fullRenderer );
-		const temporalState = getTemporalFrameState( renderer );
-		const sourceFrameId = temporalState && temporalState.frameId !== undefined && temporalState.frameId !== null
-			? temporalState.frameId
-			: sourceFrame && sourceFrame.frameId;
-		const sourceTime = temporalState && Number.isFinite( temporalState.time )
-			? temporalState.time
-			: sourceFrame && Number.isFinite( sourceFrame.time ) ? sourceFrame.time : undefined;
-		const sourceDeltaTime = sourceFrame && Number.isFinite( sourceFrame.deltaTime ) ? sourceFrame.deltaTime : undefined;
-		const snapshot = fullFrame ? {
-			frameId: fullFrame.frameId,
-			time: fullFrame.time,
-			deltaTime: fullFrame.deltaTime,
-			renderId: fullFrame.renderId,
-		} : null;
-
-		try {
-
-			if ( fullFrame ) {
-
-				if ( sourceFrameId !== undefined && sourceFrameId !== null ) fullFrame.frameId = sourceFrameId;
-				if ( sourceTime !== undefined ) fullFrame.time = sourceTime;
-				if ( sourceDeltaTime !== undefined ) fullFrame.deltaTime = sourceDeltaTime;
-
-			}
-
-			let result;
-			if ( temporalState ) {
-
-				// Deliberately do not return the callback's thenable from this scope.
-				// Stock computeAsync() invokes compute()/updateForCompute() synchronously
-				// once initialized; retaining this scope until settlement can overlap a
-				// sibling dispatch or the full renderer's own RAF.
-				runWithTemporalFrame( fullRenderer, temporalState, () => { result = callback(); } );
-
-			} else {
-
-				result = callback();
-
-			}
-			return result;
-
-		} finally {
-
-			if ( snapshot ) {
-
-				fullFrame.frameId = snapshot.frameId;
-				fullFrame.time = snapshot.time;
-				fullFrame.deltaTime = snapshot.deltaTime;
-				fullFrame.renderId = snapshot.renderId;
-
-			}
-
-		}
-
-	}
-
 	function installComputeFallback( sourceRenderer = null ) {
 
+		if ( disposed ) return false;
 		if ( sourceRenderer ) cachedFullRenderer = sourceRenderer;
 		if ( computeFallbackInstalled ) return true;
 		if ( ! fallback && ! cachedFullRenderer ) return false;
@@ -695,7 +693,7 @@ export function createSlimSceneSupport( opts = {} ) {
 				}
 
 				shareComputeInputs( computeNode, fullRenderer );
-				const result = invokeAlignedFullCompute( fullRenderer, () => typeof fullRenderer.compute === 'function'
+				const result = invokeAlignedFullCompute( renderer, fullRenderer, () => typeof fullRenderer.compute === 'function'
 					? fullRenderer.compute( computeNode, ...rest )
 					: fullRenderer.computeAsync( computeNode, ...rest ) );
 				if ( result && typeof result.then === 'function' ) {
@@ -722,7 +720,7 @@ export function createSlimSceneSupport( opts = {} ) {
 			if ( ! fullRenderer ) return undefined;
 			await initializeFullRendererForCompute( fullRenderer );
 			shareComputeInputs( computeNode, fullRenderer );
-			const result = invokeAlignedFullCompute( fullRenderer, () => typeof fullRenderer.computeAsync === 'function'
+			const result = invokeAlignedFullCompute( renderer, fullRenderer, () => typeof fullRenderer.computeAsync === 'function'
 				? fullRenderer.computeAsync( computeNode, ...rest )
 				: typeof fullRenderer.compute === 'function' ? fullRenderer.compute( computeNode, ...rest ) : undefined );
 			if ( result && typeof result.then === 'function' ) await result;
@@ -1296,7 +1294,7 @@ export function createSlimSceneSupport( opts = {} ) {
 				const rest = Array.isArray( args ) ? args : [];
 				await withSuppressedMaterialComputeInitializer( computeNode, async () => {
 
-					const result = invokeAlignedFullCompute( fullRenderer, () => {
+					const result = invokeAlignedFullCompute( renderer, fullRenderer, () => {
 
 						if ( typeof fullRenderer.computeAsync === 'function' ) return fullRenderer.computeAsync( computeNode, ...rest );
 						if ( typeof fullRenderer.compute === 'function' ) return fullRenderer.compute( computeNode, ...rest );
@@ -1426,16 +1424,19 @@ export function createSlimSceneSupport( opts = {} ) {
 
 	async function ensureFallback() {
 
+		if ( disposed ) throw new Error( 'createSlimSceneSupport: ensureFallback() cannot run after dispose().' );
 		if ( ! fallback ) throw new Error( 'createSlimSceneSupport: ensureFallback() requires `fullRendererFallback: true` at construction.' );
-		if ( fallbackRegistered ) return;
+		if ( fallbackRegistered && getSlimRenderFallback( renderer ) === registeredFallbackHandler ) return;
 		const fullRenderer = await getFullRenderer();
+		if ( disposed ) throw new Error( 'createSlimSceneSupport: ensureFallback() was cancelled by dispose().' );
 		const handler = createRenderFallbackHandler( fullRenderer );
 		if ( ! handler ) {
 
 			throw new Error( 'createSlimSceneSupport: ensureFallback() booted a full renderer that has no node render fallback hook — three.js bundle layout has shifted.' );
 
 		}
-		setSlimRenderFallback( handler );
+		setSlimRenderFallback( handler, renderer );
+		registeredFallbackHandler = handler;
 		installComputeFallback();
 		fallbackRegistered = true;
 
@@ -1617,6 +1618,8 @@ export function createSlimSceneSupport( opts = {} ) {
 	function dispose() {
 
 		if ( activeDispose ) return activeDispose;
+		if ( disposed ) return Promise.resolve();
+		disposed = true;
 		materialComputeDisposed = true;
 		for ( const material of delegatedMaterialComputeMaterials ) releaseMaterialComputeDelegation( material, materialComputeDelegationOwner );
 		delegatedMaterialComputeMaterials.clear();
@@ -1637,12 +1640,18 @@ export function createSlimSceneSupport( opts = {} ) {
 			}
 			if ( fallbackRegistered ) {
 
-				setSlimRenderFallback( null );
+				if ( getSlimRenderFallback( renderer ) === registeredFallbackHandler ) setSlimRenderFallback( null, renderer );
 				fallbackRegistered = false;
+				registeredFallbackHandler = null;
 
 			}
-			if ( fallback ) fallback.dispose();
-			cachedFullRenderer = null;
+				if ( fallback ) fallback.dispose();
+				if ( precompiledShadows ) precompiledShadows.dispose();
+				if ( precompiledPMREMGenerator ) precompiledPMREMGenerator.dispose();
+				precompiledPMREMGenerator = null;
+				for ( const target of retainedPMREMTargets ) if ( target && typeof target.dispose === 'function' ) target.dispose();
+				retainedPMREMTargets.clear();
+				cachedFullRenderer = null;
 
 		};
 		const pending = pendingShadowDisposals.slice();
@@ -1665,7 +1674,8 @@ export function createSlimSceneSupport( opts = {} ) {
 	return {
 		// Sub-helpers (exposed for callers that need lower-level access)
 		liveSceneIndex,
-		pmrem,
+			pmrem,
+			precompiledShadows,
 		fallback,
 		materialCompute,
 		diagnostics,

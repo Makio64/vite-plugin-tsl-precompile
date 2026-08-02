@@ -17,6 +17,11 @@
  */
 
 import { basenameFromUrl, textureImageSrc } from './live-scene-index.js';
+import { textureImageSourcesMatch } from '@tsl-precompile/contract/dynamic-bindings';
+import {
+	createRendererRenderTargetTextureSelector,
+	rendererRenderTargetTextureSelectorsMatch,
+} from '@tsl-precompile/contract/render-target-texture';
 
 /**
  * Does the live `texture` match the captured `source`? Order:
@@ -32,9 +37,11 @@ export function textureMatchesSource( texture, source ) {
 	if ( ! texture || texture.isTexture !== true || ! source || ! source.kind ) return false;
 	if ( source.textureUuid && texture.uuid === source.textureUuid ) return true;
 	const textureName = typeof texture.name === 'string' ? texture.name : '';
-	if ( source.textureName && textureName === source.textureName ) return true;
 	const textureSrc = textureImageSrc( texture ) || null;
-	if ( source.imageSrc && textureSrc && source.imageSrc === textureSrc ) return true;
+	const hasExactSourcePair = typeof source.imageSrc === 'string' && source.imageSrc.length > 0 &&
+		typeof textureSrc === 'string' && textureSrc.length > 0;
+	if ( hasExactSourcePair ) return textureImageSourcesMatch( source.imageSrc, textureSrc );
+	if ( source.textureName && textureName === source.textureName ) return true;
 	const sourceBase = basenameFromUrl( source.textureName || source.imageSrc );
 	const textureBase = basenameFromUrl( textureName || textureSrc );
 	return !! ( sourceBase && textureBase && sourceBase === textureBase );
@@ -234,6 +241,7 @@ export function attachTextureRefsWhere( artifact, texture, predicate ) {
 			const source = entry && entry.source || {};
 			if ( ! source.textureUuid ) continue;
 			if ( ! predicate( source, entry, group ) ) continue;
+			if ( refs.get( source.textureUuid ) === texture ) continue;
 			refs.set( source.textureUuid, texture );
 			changed = true;
 
@@ -258,6 +266,134 @@ export function attachTextureRefsWhere( artifact, texture, predicate ) {
 export function attachArtifactTextureRefsWhere( artifact, texture, predicate ) {
 
 	return attachTextureRefsWhere( artifact, texture, ( source, entry, group ) => source.kind === 'artifact.texture' && predicate( source, entry, group ) );
+
+}
+
+function isNonLightMaterialGraphDepthSource( source ) {
+
+	if (
+		! source ||
+		source.kind !== 'depth.texture' ||
+		source.fromMaterialGraph !== true ||
+		typeof source.textureUuid !== 'string' ||
+		source.textureUuid.length === 0 ||
+		! source.renderTargetSelector
+	) return false;
+	if ( typeof source.lightUuid === 'string' && source.lightUuid.length > 0 ) return false;
+	if ( Number.isInteger( source.lightIndex ) && source.lightIndex >= 0 ) return false;
+	return true;
+
+}
+
+function currentDepthAttachmentSelector( texture ) {
+
+	if ( ! texture || texture.isTexture !== true || texture.isDepthTexture !== true ) return null;
+	const target = texture.renderTarget;
+	if ( ! target || target.depthTexture !== texture ) return null;
+	try {
+
+		return createRendererRenderTargetTextureSelector( target, { texture } );
+
+	} catch ( _ ) {
+
+		return null;
+
+	}
+
+}
+
+/**
+ * Bind non-light `depth.texture` sources captured from a material graph to
+ * their exact current render-target attachment.
+ *
+ * This path is deliberately narrower than generic artifact-texture wiring:
+ * the captured selector and a selector recreated from the live attachment
+ * must match including name/extent hints, and exactly one live candidate must
+ * match each captured UUID. Detached, stale, light-owned, or ambiguous depth
+ * textures therefore remain unresolved instead of silently sampling the
+ * wrong render target.
+ *
+ * @param {Object} artifact
+ * @param {Array<Object>} textures
+ * @return {number} number of captured texture UUIDs attached
+ */
+export function attachExactMaterialGraphDepthTextureRefs( artifact, textures ) {
+
+	if ( ! artifact || ! Array.isArray( textures ) ) return 0;
+	const captured = new Map();
+	for ( const member of artifactFamilyMembers( artifact ) ) {
+
+		for ( const group of member.uniformPlan || [] ) {
+
+			for ( const entry of group.textures || [] ) {
+
+				const source = entry && entry.source || {};
+				if ( ! isNonLightMaterialGraphDepthSource( source ) ) continue;
+				const existing = captured.get( source.textureUuid );
+				if (
+					existing &&
+					! rendererRenderTargetTextureSelectorsMatch(
+						existing,
+						source.renderTargetSelector,
+					)
+				) {
+
+					captured.set( source.textureUuid, null );
+					continue;
+
+				}
+				if ( existing !== null ) captured.set( source.textureUuid, source.renderTargetSelector );
+
+			}
+
+		}
+
+	}
+	if ( captured.size === 0 ) return 0;
+
+	const candidates = [];
+	const seenTextures = new Set();
+	for ( const texture of textures ) {
+
+		if ( seenTextures.has( texture ) ) continue;
+		seenTextures.add( texture );
+		const selector = currentDepthAttachmentSelector( texture );
+		if ( selector ) candidates.push( { texture, selector } );
+
+	}
+
+	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
+	let attached = 0;
+	let changed = false;
+	for ( const [ textureUuid, selector ] of captured ) {
+
+		const matches = selector === null ? [] : candidates.filter( ( candidate ) => (
+			rendererRenderTargetTextureSelectorsMatch( selector, candidate.selector )
+		) );
+		if ( matches.length !== 1 ) {
+
+			if ( refs.delete( textureUuid ) ) changed = true;
+			continue;
+
+		}
+		const texture = matches[ 0 ].texture;
+		if ( refs.get( textureUuid ) === texture ) continue;
+		refs.set( textureUuid, texture );
+		changed = true;
+		attached ++;
+
+	}
+	if ( changed ) {
+
+		Object.defineProperty( artifact, '_textureRefs', {
+			value: refs,
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		} );
+
+	}
+	return attached;
 
 }
 

@@ -10,5 +10,8 @@ export {
 	writeMat3,
 	writeMat4,
 	writeMat4FromEuler,
+	writeEnvironmentRotation,
+	writePMREMScalar,
+	writeTextureUVFlip,
 	writeBytes,
-} from './index';
+} from './index.js';

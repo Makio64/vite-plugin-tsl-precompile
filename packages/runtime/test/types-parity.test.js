@@ -80,7 +80,10 @@ test( 'public declarations track the runtime signatures that previously drifted'
 	assert.match( source, /class MaterialVariantSet<TMaterial = unknown>/ );
 	assert.match( source, /createMaterialVariants<TMaterial = unknown>\( variants: MaterialVariantInput<TMaterial>, initialName\?: string \): MaterialVariantSet<TMaterial>;/ );
 	assert.match( source, /applyMaterialVariant<TMaterial = unknown>\( target: unknown \| unknown\[\], material: TMaterial \): TMaterial;/ );
-	assert.match( source, /createSlimSceneSupport\( opts: import\('\.\/slim-support\/scene-support\.d\.ts'\)\.SlimSceneSupportOptions \):/ );
+	assert.match(
+		source,
+		/createSlimSceneSupport\( opts: import\('\.\/slim-support\/scene-support\.js'\)\.SlimSceneSupportOptions \): ReturnType<typeof import\('\.\/slim-support\/scene-support\.js'\)\.createSlimSceneSupport>;/,
+	);
 	assert.match( sceneSupportSource, /export interface SlimSceneSupportOptions \{/ );
 	assert.match( sceneSupportSource, /renderer: object;/ );
 	assert.match( sceneSupportSource, /fullRendererFallback\?: boolean \| 'auto';/ );

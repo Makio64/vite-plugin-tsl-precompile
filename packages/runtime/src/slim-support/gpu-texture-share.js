@@ -149,6 +149,46 @@ function markLayeredDepthTextureAsArray( texture, gpuTexture = null ) {
 }
 
 /**
+ * Return whether `texture` belongs to a render target whose GPU resource was
+ * produced by a full renderer and borrowed by `renderer`.
+ *
+ * Shadow render targets are indivisible: asking a borrowing renderer to
+ * initialise the color attachment also recreates the target's already-shared
+ * depth attachment. Generic graph-sharing code must therefore skip every
+ * attachment when any sibling carries the authoritative shared-shadow marker.
+ *
+ * @param {Object} renderer
+ * @param {Object} texture
+ * @returns {boolean}
+ */
+export function isBorrowedShadowRenderTargetTexture( renderer, texture ) {
+
+	const renderTarget = texture && texture.renderTarget;
+	const backend = renderer && renderer.backend;
+	if ( ! renderTarget || ! backend || typeof backend.get !== 'function' ) return false;
+
+	const candidates = [
+		...( Array.isArray( renderTarget.textures ) ? renderTarget.textures : renderTarget.texture ? [ renderTarget.texture ] : [] ),
+		renderTarget.depthTexture,
+	];
+	for ( const candidate of candidates ) {
+
+		if ( ! candidate || candidate.isTexture !== true ) continue;
+		try {
+
+			const data = typeof backend.has === 'function' && backend.has( candidate ) !== true
+				? null
+				: backend.get( candidate );
+			if ( data && data.texture && data.__tslpSharedShadowGPUTexture === data.texture ) return true;
+
+		} catch ( _ ) {}
+
+	}
+	return false;
+
+}
+
+/**
  * Invalidate every renderer cache that can retain a view of `texture`'s
  * current GPU resource.
  *
@@ -203,6 +243,28 @@ export function invalidateTextureResourceBindings( renderer, texture, opts = {} 
 		}
 		for ( const bindGroup of bindGroups ) {
 
+			// Clearing only the backend bind-group object is insufficient in
+			// r185. Bindings._update() first asks each sampled binding whether its
+			// JS texture/version changed; if that binding still reports "current",
+			// the backend never receives updateBindings() and keeps submitting a
+			// view of the destroyed resource. Reset only bindings that point at
+			// this texture so the next update observes the renderer-local
+			// generation without perturbing unrelated resources.
+			for ( const binding of bindGroup && bindGroup.bindings || [] ) {
+
+				if ( binding && binding.isSampledTexture === true && binding.texture === texture ) {
+
+					if ( typeof binding.reset === 'function' ) binding.reset();
+					else {
+
+						binding.version = - 1;
+						binding.generation = null;
+
+					}
+
+				}
+
+			}
 			const bindingsData = backend.get( bindGroup );
 			if ( bindingsData ) {
 
@@ -242,6 +304,11 @@ export function shareGPUTextureEntry( targetRenderer, sourceRenderer, texture, o
 
 	if ( ! targetRenderer || ! sourceRenderer || ! texture ) return false;
 	if ( ! targetRenderer.backend || ! sourceRenderer.backend ) return false;
+	// Nested full-renderer effects can revisit a producer through a consumer's
+	// node-frame dependency chain. Sharing a renderer with itself must be a
+	// strict no-op: invalidating its bind groups or bumping the render-target
+	// texture version can make Textures.updateTexture destroy an in-flight RT.
+	if ( targetRenderer === sourceRenderer ) return true;
 
 	const diagnostics = opts.diagnostics || null;
 	bump( diagnostics, 'calls' );
@@ -289,12 +356,27 @@ export function shareGPUTextureEntry( targetRenderer, sourceRenderer, texture, o
 
 		}
 
+		const targetData = targetRenderer.backend.get( texture );
+		// Dynamic post-process targets are shared every frame. Once both
+		// renderers already reference the same GPUTexture, invalidating views and
+		// bumping the JS texture version is actively harmful: the source renderer
+		// can interpret that artificial version change as a resource update and
+		// destroy the still-in-flight render target.
+		if ( targetData && targetData.texture === sourceData.texture ) {
+
+			const currentVersion = texture.version | 0;
+			markSharedTextureVersion( sourceRenderer, texture, currentVersion );
+			markSharedTextureVersion( targetRenderer, texture, currentVersion );
+			bump( diagnostics, 'alreadyShared' );
+			return true;
+
+		}
+
 		// Invalidate any bind groups the target had built against the
 		// previous (stand-in) texture so the next render rebuilds them
 		// against the shared GPU resource.
 		invalidateTextureResourceBindings( targetRenderer, texture );
 
-		const targetData = targetRenderer.backend.get( texture );
 		copySharedBackendData( targetData, sourceData );
 		clearTextureViewCache( targetData );
 
@@ -308,6 +390,19 @@ export function shareGPUTextureEntry( targetRenderer, sourceRenderer, texture, o
 		} else {
 
 			markTextureInitialized( targetRenderer, texture );
+			// Keep the shared JS texture version untouched so the source renderer
+			// does not recreate an in-flight render target. Advance only the
+			// target renderer's resource generation; Bindings._update uses this
+			// renderer-local value to rebuild its sampled-texture bind group.
+			const targetTextureData = targetRenderer._textures && typeof targetRenderer._textures.get === 'function'
+				? targetRenderer._textures.get( texture )
+				: null;
+			if ( targetTextureData ) {
+
+				const generation = Number.isFinite( targetTextureData.generation ) ? targetTextureData.generation : texture.version | 0;
+				targetTextureData.generation = generation + 1;
+
+			}
 
 		}
 
@@ -355,8 +450,28 @@ export function sharePMREMGPUTexture( slimRenderer, fullRenderer, pmrem, opts = 
 		}
 
 		const slimData = slimRenderer.backend.get( pmrem );
+		if ( ! slimData ) return false;
+
+		// PMREM artifacts are commonly hydrated before the full renderer has
+		// finished generating their real texture. By then the slim renderer may
+		// already have cached a view/bind group for its 1x1 default texture.
+		// Replacing only the backend `.texture` field leaves those cached objects
+		// sampling the placeholder even though texture resolution diagnostics
+		// report the correct live PMREM object.
+		const replacingResource = !! slimData.texture && slimData.texture !== fullData.texture;
+		if ( replacingResource && ! invalidateTextureResourceBindings( slimRenderer, pmrem ) ) {
+
+			bump( diagnostics, 'shareInvalidationFailed' );
+			return false;
+
+		}
 		copySharedBackendData( slimData, fullData );
-		markTextureInitialized( slimRenderer, pmrem );
+		clearTextureViewCache( slimData );
+
+		const nextVersion = ( pmrem.version | 0 ) + 1;
+		pmrem.version = nextVersion;
+		markSharedTextureVersion( fullRenderer, pmrem, nextVersion );
+		markSharedTextureVersion( slimRenderer, pmrem, nextVersion );
 		bump( diagnostics, 'shareSuccess' );
 		return true;
 
@@ -390,9 +505,28 @@ export function shareShadowGPUTextureIntoSlim( tex, fullRenderer, slimRenderer )
 
 	markLayeredDepthTextureAsArray( tex, fullData.texture );
 
-	if ( ! shareGPUTextureEntry( slimRenderer, fullRenderer, tex ) ) return false;
 	const slimData = slimRenderer.backend.get( tex );
-	slimData.__tslpSharedShadowGPUTexture = fullData.texture;
+	// Shadow textures are the deliberate exception to the generic recurring
+	// share fast path. A loader/maintenance frame can build a comparison bind
+	// group against the 1x1 fallback before the real shadow pass completes.
+	// Another share route may already have copied the final GPUTexture identity,
+	// but identity equality does not make that cached view/bind group current.
+	if ( slimRenderer !== fullRenderer && slimData && slimData.texture === fullData.texture ) {
+
+		if ( ! invalidateTextureResourceBindings( slimRenderer, tex ) ) return false;
+		clearTextureViewCache( slimData );
+		const nextVersion = ( tex.version | 0 ) + 1;
+		tex.version = nextVersion;
+		markSharedTextureVersion( fullRenderer, tex, nextVersion );
+		markSharedTextureVersion( slimRenderer, tex, nextVersion );
+		slimData.__tslpSharedShadowGPUTexture = fullData.texture;
+		return true;
+
+	}
+
+	if ( ! shareGPUTextureEntry( slimRenderer, fullRenderer, tex ) ) return false;
+	const sharedSlimData = slimRenderer.backend.get( tex );
+	sharedSlimData.__tslpSharedShadowGPUTexture = fullData.texture;
 	return true;
 
 }

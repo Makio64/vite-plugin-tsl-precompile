@@ -27,6 +27,26 @@ function isSampledTextureOrSampler( runtimeBinding ) {
 function classifyDepthTexture( entry, runtimeBinding, descriptor, ctx ) {
 
 	const source = entry.source || {};
+	if ( source.renderTargetSelector !== undefined ) {
+
+		if ( ! isSampledTextureOrSampler( runtimeBinding ) ) return;
+		const bindings = source.fromMaterialGraph === true
+			? ctx.lateArtifactTextureBindings
+			: ctx.artifactTextureBindings;
+		bindings.push( {
+			binding: runtimeBinding,
+			artifact: ctx.artifact,
+			groupName: entry.group || '',
+			bindingName: descriptor.name || '',
+			source,
+			textureType: entry.textureType || descriptor.textureType || '2d',
+			material: ctx.graphMaterial || ctx.material,
+		} );
+		return;
+
+	}
+	const planGroup = ( ctx.artifact.uniformPlan || [] ).find( ( group ) => group && group.name === entry.group );
+	const planEntry = planGroup && ( planGroup.textures || [] ).find( ( texture ) => texture && texture.name === entry.binding );
 	const depthBinding = {
 		binding: runtimeBinding,
 		artifact: ctx.artifact,
@@ -35,6 +55,7 @@ function classifyDepthTexture( entry, runtimeBinding, descriptor, ctx ) {
 		lightIndex: Number.isInteger( source.lightIndex ) ? source.lightIndex : 0,
 		lightUuid: typeof source.lightUuid === 'string' ? source.lightUuid : null,
 		vsm: source.vsm === true,
+		shadowMapColor: source.shadowMapColor === true,
 		// Non-light depth textures (e.g. RenderTarget.depthTexture sampled via
 		// `material.colorNode = texture(depthTexture)`) have no owning
 		// AnalyticLightNode. The plan source signals this with
@@ -42,6 +63,7 @@ function classifyDepthTexture( entry, runtimeBinding, descriptor, ctx ) {
 		// live DepthTexture by walking the owning material's node graph
 		// instead of `light.shadow.map`.
 		fromMaterialGraph: source.fromMaterialGraph === true,
+		internalPassBound: planEntry && planEntry.__tslpInternalPassTextureBinding === true,
 		textureUuid: typeof source.textureUuid === 'string' ? source.textureUuid : null,
 		material: ctx.graphMaterial || ctx.material,
 	};
@@ -54,6 +76,7 @@ function classifyDepthTexture( entry, runtimeBinding, descriptor, ctx ) {
 			lightUuid: depthBinding.lightUuid,
 			fromMaterialGraph: depthBinding.fromMaterialGraph,
 			vsm: depthBinding.vsm,
+			shadowMapColor: depthBinding.shadowMapColor,
 			textureUuid: depthBinding.textureUuid,
 			artifactName: ctx.artifact && ctx.artifact.name || ctx.material && ctx.material.name || null,
 			bindingKind: descriptor.kind || null,
@@ -207,7 +230,7 @@ export function indexDynamicTextureBindings( artifact ) {
  * Dispatch a single dynamic-texture binding entry to its per-kind classifier.
  * The classifier mutates `ctx`'s typed-bag arrays
  * (`shadowDepthBindings`, `materialDepthBindings`, `artifactTextureBindings`,
- * `materialTextureBindings`, `viewportTextureBindings`,
+ * `lateArtifactTextureBindings`, `materialTextureBindings`, `viewportTextureBindings`,
  * `reflectorTextureBindings`).
  *
  * @param {Object} entry         — one indexed dynamic texture descriptor

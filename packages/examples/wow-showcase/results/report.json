@@ -1,0 +1,222 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "runtimeMode": "pure-slim",
+  "expectedArtifacts": [
+    "wow-race-surface",
+    "wow-race-accent",
+    "wow-tool-surface",
+    "wow-tool-accent",
+    "wow-women-surface",
+    "wow-women-accent",
+    "wow-robots-surface",
+    "wow-robots-accent",
+    "wow-abyss-surface",
+    "wow-abyss-accent",
+    "wow-orbit-surface",
+    "wow-orbit-accent",
+    "wow-pulse-surface",
+    "wow-pulse-accent",
+    "wow-climate-surface",
+    "wow-climate-accent",
+    "wow-fashion-surface",
+    "wow-fashion-accent",
+    "wow-architecture-surface",
+    "wow-architecture-accent"
+  ],
+  "harness": {
+    "browserFailurePolicySha256": "5da56df5429a83d3d9988f295325f837c48207ea83b632857ea6ceb8e2335046"
+  },
+  "routes": [
+    {
+      "id": "race",
+      "ok": true,
+      "runtime": {
+        "id": "race",
+        "ready": true,
+        "runtimeMode": "pure-slim",
+        "compilerFree": true,
+        "animationFrames": 5,
+        "canvasCount": 1,
+        "errors": [],
+        "webgpu": true
+      },
+      "pixels": {
+        "rgbDeviation": 58.13452079214531,
+        "changedFraction": 0.0717236328125
+      },
+      "failures": []
+    },
+    {
+      "id": "tool",
+      "ok": true,
+      "runtime": {
+        "id": "tool",
+        "ready": true,
+        "runtimeMode": "pure-slim",
+        "compilerFree": true,
+        "animationFrames": 5,
+        "canvasCount": 1,
+        "errors": [],
+        "webgpu": true
+      },
+      "pixels": {
+        "rgbDeviation": 50.77020725647312,
+        "changedFraction": 0.2396748046875
+      },
+      "failures": []
+    },
+    {
+      "id": "women",
+      "ok": true,
+      "runtime": {
+        "id": "women",
+        "ready": true,
+        "runtimeMode": "pure-slim",
+        "compilerFree": true,
+        "animationFrames": 8,
+        "canvasCount": 1,
+        "errors": [],
+        "webgpu": true
+      },
+      "pixels": {
+        "rgbDeviation": 46.21227057823023,
+        "changedFraction": 0.077986328125
+      },
+      "failures": []
+    },
+    {
+      "id": "robots",
+      "ok": true,
+      "runtime": {
+        "id": "robots",
+        "ready": true,
+        "runtimeMode": "pure-slim",
+        "compilerFree": true,
+        "animationFrames": 7,
+        "canvasCount": 1,
+        "errors": [],
+        "webgpu": true
+      },
+      "pixels": {
+        "rgbDeviation": 57.82910400257761,
+        "changedFraction": 0.0748056640625
+      },
+      "failures": []
+    },
+    {
+      "id": "abyss",
+      "ok": true,
+      "runtime": {
+        "id": "abyss",
+        "ready": true,
+        "runtimeMode": "pure-slim",
+        "compilerFree": true,
+        "animationFrames": 8,
+        "canvasCount": 1,
+        "errors": [],
+        "webgpu": true
+      },
+      "pixels": {
+        "rgbDeviation": 51.061573715880705,
+        "changedFraction": 0.07996484375
+      },
+      "failures": []
+    },
+    {
+      "id": "orbit",
+      "ok": true,
+      "runtime": {
+        "id": "orbit",
+        "ready": true,
+        "runtimeMode": "pure-slim",
+        "compilerFree": true,
+        "animationFrames": 8,
+        "canvasCount": 1,
+        "errors": [],
+        "webgpu": true
+      },
+      "pixels": {
+        "rgbDeviation": 59.62899952782988,
+        "changedFraction": 0.1540595703125
+      },
+      "failures": []
+    },
+    {
+      "id": "pulse",
+      "ok": true,
+      "runtime": {
+        "id": "pulse",
+        "ready": true,
+        "runtimeMode": "pure-slim",
+        "compilerFree": true,
+        "animationFrames": 8,
+        "canvasCount": 1,
+        "errors": [],
+        "webgpu": true
+      },
+      "pixels": {
+        "rgbDeviation": 52.99958553109979,
+        "changedFraction": 0.154646484375
+      },
+      "failures": []
+    },
+    {
+      "id": "climate",
+      "ok": true,
+      "runtime": {
+        "id": "climate",
+        "ready": true,
+        "runtimeMode": "pure-slim",
+        "compilerFree": true,
+        "animationFrames": 5,
+        "canvasCount": 1,
+        "errors": [],
+        "webgpu": true
+      },
+      "pixels": {
+        "rgbDeviation": 55.607321414166954,
+        "changedFraction": 0.18125
+      },
+      "failures": []
+    },
+    {
+      "id": "fashion",
+      "ok": true,
+      "runtime": {
+        "id": "fashion",
+        "ready": true,
+        "runtimeMode": "pure-slim",
+        "compilerFree": true,
+        "animationFrames": 8,
+        "canvasCount": 1,
+        "errors": [],
+        "webgpu": true
+      },
+      "pixels": {
+        "rgbDeviation": 53.31269510333836,
+        "changedFraction": 0.2941611328125
+      },
+      "failures": []
+    },
+    {
+      "id": "architecture",
+      "ok": true,
+      "runtime": {
+        "id": "architecture",
+        "ready": true,
+        "runtimeMode": "pure-slim",
+        "compilerFree": true,
+        "animationFrames": 8,
+        "canvasCount": 1,
+        "errors": [],
+        "webgpu": true
+      },
+      "pixels": {
+        "rgbDeviation": 54.95678808637312,
+        "changedFraction": 0.1458896484375
+      },
+      "failures": []
+    }
+  ]
+}

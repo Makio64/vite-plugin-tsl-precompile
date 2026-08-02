@@ -16,6 +16,19 @@ export function installRenderSelectorMismatchRecorder( { target = globalThis, ph
 
 		try {
 
+			const jsonClone = ( value ) => {
+
+				try {
+
+					return value === undefined ? null : JSON.parse( JSON.stringify( value ) );
+
+				} catch ( _ ) {
+
+					return null;
+
+				}
+
+			};
 			const details = error && error.details && typeof error.details === 'object' ? error.details : {};
 			const message = String( error && error.message || error || '' );
 			const code = typeof error?.code === 'string' ? error.code : null;
@@ -40,6 +53,11 @@ export function installRenderSelectorMismatchRecorder( { target = globalThis, ph
 				availableSelectors,
 				cacheKeys: Array.isArray( details.cacheKeys ) ? details.cacheKeys : null,
 				selectorCount: Number.isFinite( details.selectorCount ) ? details.selectorCount : null,
+				closestDifferencePaths: Array.isArray( details.closestDifferencePaths )
+					? details.closestDifferencePaths.filter( ( value ) => typeof value === 'string' )
+					: [],
+				artifactContext: jsonClone( details.artifactContext ),
+				remediation: jsonClone( details.remediation ),
 			};
 			const list = diagnostics.renderSelectorMismatches || ( diagnostics.renderSelectorMismatches = [] );
 			const identity = JSON.stringify( [ record.code, record.selector, record.activeHash, record.availableSelectors ] );

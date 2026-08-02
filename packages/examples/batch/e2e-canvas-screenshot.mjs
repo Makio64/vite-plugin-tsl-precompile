@@ -82,3 +82,25 @@ export function canvasIndicesByHorizontalPosition( candidates, { rightFirst = fa
 		.map( ( candidate ) => candidate.index );
 
 }
+
+/**
+ * Return stable canvas indices for examples that author WebGPU and WebGL
+ * renderers concurrently. Capture/replay wrappers mark each canvas with its
+ * authored backend; stock canvases fall back to horizontal position.
+ */
+export function canvasIndicesByBackendThenHorizontalPosition( candidates ) {
+
+	const backendRank = ( backend ) => backend === 'webgpu' ? 0 : backend === 'webgl' ? 2 : 1;
+	return [ ...( candidates || [] ) ]
+		.sort( ( left, right ) => {
+
+			const leftX = Number.isFinite( left && left.left ) ? left.left : 0;
+			const rightX = Number.isFinite( right && right.left ) ? right.left : 0;
+			return backendRank( left && left.backend ) - backendRank( right && right.backend )
+				|| leftX - rightX
+				|| ( left && left.index || 0 ) - ( right && right.index || 0 );
+
+		} )
+		.map( ( candidate ) => candidate.index );
+
+}

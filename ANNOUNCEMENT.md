@@ -55,7 +55,9 @@ To be published when the project hits its v0.1 beta release gate:
 6. **Extension hooks** — `registerKind()` for custom TSL nodes; `registerMaterial()` for subclassed materials whose class name might be minified across builds.
 7. **Numbers** — bundle size before/after, per-frame CPU before/after, PSNR coverage for the beta slice, full-suite visual coverage.
 8. **What's not done yet** — broad postprocessing (outline / SSGI / godrays still below the gate); AOT compute/storage; bundler abstraction (Vite only for now); custom subclass identity in minified prod (handled via `registerMaterial`).
-9. **Try it** — `pnpm add -D vite-plugin-tsl-precompile @tsl-precompile/runtime` + the 10-line config from README. See [BYO.md](BYO.md) for the 5-minute walkthrough.
+9. **Try it** — `pnpm add -D vite-plugin-tsl-precompile@alpha` and
+   `pnpm add @tsl-precompile/runtime@alpha`, plus the 10-line config from
+   README. See [BYO.md](BYO.md) for the 5-minute walkthrough.
 
 ## What to NOT say
 
@@ -66,8 +68,13 @@ To be published when the project hits its v0.1 beta release gate:
 
 ## Outreach checklist (post-publish)
 
-- [ ] `git tag v0.1.0 && git push --tags`
-- [ ] `pnpm publish --filter @tsl-precompile/contract --filter @tsl-precompile/runtime --filter vite-plugin-tsl-precompile` (pnpm rewrites `workspace:*` automatically on publish; do NOT use `npm publish` directly)
+- [ ] Follow [RELEASING.md](RELEASING.md): push `main`, create and push the
+      annotated `v0.1.0-alpha.0` tag, then run `pnpm release:assert-ready`
+      from that exact commit.
+- [ ] Publish only through `pnpm release:publish --tag=alpha`. The wrapper
+      verifies the release state and exact tarballs, fixes the registry,
+      publishes in dependency order, and verifies the live package
+      integrities and dist-tags.
 - [ ] Post tweet/bluesky
 - [ ] Post three.js Discord
 - [ ] Open a GitHub Discussion "v0.1 beta — looking for first adopters"

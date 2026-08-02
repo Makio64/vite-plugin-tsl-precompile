@@ -9,6 +9,7 @@
 import { validateComputeBindingsDescriptor } from '@tsl-precompile/contract/compute-bindings';
 
 import PrecompiledComputeNode from './precompiled-compute-node.js';
+import { assertArtifactShaderLanguageForRenderer } from './hydrate/shader-language-routing.js';
 
 const ERROR_PREFIX = '[tsl-precompile/compute]';
 
@@ -455,6 +456,7 @@ export function createPrecompiledComputeRunner( renderer, artifactOrModule, reso
 	assertSlimRenderer( renderer );
 	const { artifact, updateGroup } = normalizeArtifactInput( artifactOrModule );
 	validateArtifact( artifact );
+	assertArtifactShaderLanguageForRenderer( artifact, renderer );
 	const boundArtifact = bindResources( artifact, resources );
 	if ( updateGroup ) Object.defineProperty( boundArtifact, '_generatedUpdateGroup', {
 		value: updateGroup,

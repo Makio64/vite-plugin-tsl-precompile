@@ -13,6 +13,7 @@ import { rewriteThreeSource } from '../../src/three-rewrite.js';
 import { THREE_SRC } from '../_three-src.js';
 const NODES_PATH = resolve( THREE_SRC, 'renderers/common/nodes/NodeManager.js' );
 const BACKEND_PATH = resolve( THREE_SRC, 'renderers/webgpu/WebGPUBackend.js' );
+const WEBGL_BACKEND_PATH = resolve( THREE_SRC, 'renderers/webgl-fallback/WebGLBackend.js' );
 const PIPELINE_UTILS_PATH = resolve( THREE_SRC, 'renderers/webgpu/utils/WebGPUPipelineUtils.js' );
 
 test( 'rewrite/Nodes.js: getForRender bypasses createNodeBuilder for precompiled materials', () => {
@@ -54,6 +55,8 @@ test( 'rewrite/Nodes.js: getForRender bypasses createNodeBuilder for precompiled
 	assert.doesNotMatch( out, /materials\/nodes\/NodeMaterial\.js/ );
 	assert.doesNotMatch( out, /nodes\/Nodes\.js/ );
 	assert.match( out, /nodes\/core\/NodeFrame\.js/ );
+	assert.match( out, /nodes\/core\/constants\.js/ );
+	assert.match( out, /NodeUpdateType/ );
 	assert.doesNotMatch( out, /new StackTrace\s*\(/ );
 
 } );
@@ -87,6 +90,12 @@ test( 'rewrite/WebGPUBackend.js: drops WGSLNodeBuilder import + stubs createNode
 	assert.match( out, /this\.createAttribute\(vertexBuffer\)/ );
 	assert.match( out, /currentBindingGroups\.length\s*=\s*0/ );
 	assert.match( out, /this\.createBindings\(bindGroup, bindings, 0\)/ );
+	assert.match( out, /const bindingData = this\.get\(binding\)/ );
+	assert.match( out, /bindingData\.buffer === undefined/ );
+	assert.match( out, /this\.createUniformBuffer\(binding\)/ );
+	assert.match( out, /bindingData\.sampler === undefined/ );
+	assert.match( out, /this\.updateSampler\(binding\)/ );
+	assert.doesNotMatch( out, /this\.updateSampler\(texture\)/ );
 	assert.match( out, /cameraIndex &&/ );
 	assert.match( out, /__tslpPreservedBindingGroups/ );
 	assert.doesNotMatch( out, /__slim-rewrite-runtime\//, 'pure backend rewrite must not add a runtime edge' );
@@ -97,6 +106,32 @@ test( 'rewrite/WebGPUBackend.js: output parses as valid ESM', () => {
 
 	const src = readFileSync( BACKEND_PATH, 'utf8' );
 	const r = rewriteThreeSource( src, BACKEND_PATH, { threeVersion: '175', pluginVersion: '0.0.0' } );
+	assert.ok( r && r.code );
+	assert.doesNotThrow( () => parse( r.code, { sourceType: 'module', plugins: [ 'importAttributes' ] } ) );
+
+} );
+
+test( 'rewrite/WebGLBackend.js: retains the backend and strips only GLSLNodeBuilder', () => {
+
+	const src = readFileSync( WEBGL_BACKEND_PATH, 'utf8' );
+	const r = rewriteThreeSource( src, WEBGL_BACKEND_PATH, { threeVersion: '175', pluginVersion: '0.0.0' } );
+	assert.ok( r, 'handler should return a result' );
+	assert.equal( r.warning, null, `expected no warning; got: ${ r.warning }` );
+
+	const out = r.code;
+	assert.doesNotMatch( out, /import\s+GLSLNodeBuilder\s+from/ );
+	assert.doesNotMatch( out, /new GLSLNodeBuilder\s*\(/ );
+	assert.match( out, /createNodeBuilder\s*\([^)]*\)\s*\{[\s\S]*GLSLNodeBuilder is stripped from the slim bundle/ );
+	assert.match( out, /this\.isWebGLBackend\s*=\s*true/ );
+	assert.match( out, /createRenderPipeline\s*\(/ );
+	assert.doesNotMatch( out, /__slim-rewrite-runtime\//, 'pure backend rewrite must not add a runtime edge' );
+
+} );
+
+test( 'rewrite/WebGLBackend.js: output parses as valid ESM', () => {
+
+	const src = readFileSync( WEBGL_BACKEND_PATH, 'utf8' );
+	const r = rewriteThreeSource( src, WEBGL_BACKEND_PATH, { threeVersion: '175', pluginVersion: '0.0.0' } );
 	assert.ok( r && r.code );
 	assert.doesNotThrow( () => parse( r.code, { sourceType: 'module', plugins: [ 'importAttributes' ] } ) );
 

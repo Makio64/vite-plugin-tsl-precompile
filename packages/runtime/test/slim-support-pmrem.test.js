@@ -62,6 +62,34 @@ test( 'collectPMREMSourceTexturesFromMaterial finds material envNode PMREM sourc
 
 } );
 
+test( 'collectPMREMSourceTexturesFromMaterial visits shared roots once across material properties', () => {
+
+	const env = texture( { uuid: 'env-shared', mapping: 303 } );
+	const pmremNode = {
+		isNode: true,
+		constructor: { type: 'PMREMNode' },
+		_value: env,
+	};
+	let childReads = 0;
+	const sharedRoot = {
+		isNode: true,
+		getChildren() {
+
+			childReads ++;
+			return [ pmremNode ];
+
+		},
+	};
+	const material = { envNode: sharedRoot, colorNode: sharedRoot };
+
+	assert.deepEqual(
+		collectPMREMSourceTexturesFromMaterial( material, { nodeGraphKeys: [ 'envNode', 'colorNode' ] } ),
+		[ env ],
+	);
+	assert.equal( childReads, 1 );
+
+} );
+
 test( 'collectPMREMSourceTexturesInNode accepts slim pmremTexture stub carriers', () => {
 
 	const env = texture( { uuid: 'env', mapping: 303 } );
@@ -174,24 +202,46 @@ test( 'selectPMREMTexturesForArtifact chooses cached material envNode PMREM sour
 
 } );
 
-test( 'selectPMREMTexturesForArtifact rejects wrong-sized material node PMREMs when the artifact has dimensions', () => {
+test( 'selectPMREMTexturesForArtifact accepts one authoritative live material-node atlas at a new size', () => {
 
 	const captured = artifact( [ { kind: 'artifact.texture', textureUuid: 'env', mapping: 306, imageWidth: 1536, imageHeight: 2048, imageDepth: 1 } ] );
-	const staleNodePmrem = texture( { uuid: 'stale-node-pmrem', mapping: 306, image: { width: 256, height: 256 } } );
-	const sceneSource = texture( { uuid: 'scene-source' } );
-	const scenePmrem = texture( { uuid: 'scene-pmrem', mapping: 306, image: { width: 1536, height: 2048 } } );
-	const cache = new Map( [ [ sceneSource, scenePmrem ] ] );
+	const liveNodePmrem = texture( { uuid: 'live-node-pmrem', mapping: 306, image: { width: 768, height: 1024 } } );
 
 	const selected = selectPMREMTexturesForArtifact( captured, {
 		material: { colorNode: {} },
-		collectMaterialNodeTextures: () => [ staleNodePmrem ],
-		getCachedPMREMForSource: ( source ) => cache.get( source ) || null,
-		environmentSources: [ sceneSource ],
+		collectMaterialNodeTextures: () => [ liveNodePmrem ],
+		environmentSources: [],
 	} );
 
-	assert.equal( selected.strategy, 'scene-environment' );
-	assert.deepEqual( selected.nodePmrems, [ staleNodePmrem ] );
-	assert.deepEqual( selected.pmremTextures, [ scenePmrem ] );
+	assert.equal( selected.strategy, 'material-node' );
+	assert.deepEqual( selected.pmremTextures, [ liveNodePmrem ] );
+
+} );
+
+test( 'selectPMREMTexturesForArtifact uses captured size only to disambiguate extra candidates', () => {
+
+	const captured = artifact( [ { kind: 'artifact.texture', textureUuid: 'env', mapping: 306, imageWidth: 1536, imageHeight: 2048, imageDepth: 1 } ] );
+	const wrongSize = texture( { uuid: 'wrong-size', mapping: 306, image: { width: 768, height: 1024 } } );
+	const matchingSize = texture( { uuid: 'matching-size', mapping: 306, image: { width: 1536, height: 2048 } } );
+
+	const selected = selectPMREMTexturesForArtifact( captured, {
+		material: { colorNode: {} },
+		collectMaterialNodeTextures: () => [ wrongSize, matchingSize ],
+		environmentSources: [],
+	} );
+	assert.equal( selected.strategy, 'material-node' );
+	assert.deepEqual( selected.pmremTextures, [ matchingSize ] );
+
+	const ambiguous = selectPMREMTexturesForArtifact( captured, {
+		material: { colorNode: {} },
+		collectMaterialNodeTextures: () => [
+			wrongSize,
+			texture( { uuid: 'also-wrong', mapping: 306, image: { width: 384, height: 512 } } ),
+		],
+		environmentSources: [],
+	} );
+	assert.equal( ambiguous.strategy, 'missing' );
+	assert.deepEqual( ambiguous.pmremTextures, [] );
 
 } );
 

@@ -1,0 +1,26 @@
+{
+  "name": "examples-wow-showcase",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Ten polished Three.js WebGPU mini-sites that prove the complete TSL precompile capture, build, and compiler-free preview flow.",
+  "scripts": {
+    "dev": "vite",
+    "capture": "node scripts/capture.mjs",
+    "build": "pnpm run test:routes && vite build",
+    "preview": "vite preview",
+    "test": "pnpm run test:preview",
+    "test:routes": "node --test test/route-contract.test.mjs",
+    "test:preview": "pnpm run test:routes && node scripts/test-preview.mjs",
+    "test:e2e": "node scripts/run-e2e.mjs"
+  },
+  "dependencies": {
+    "@tsl-precompile/runtime": "workspace:*",
+    "three": "0.185.1"
+  },
+  "devDependencies": {
+    "playwright": "^1.59.1",
+    "vite": "^8.0.16",
+    "vite-plugin-tsl-precompile": "workspace:*"
+  }
+}

@@ -4,14 +4,14 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta name="color-scheme" content="dark">
-	<meta name="description" content="Measured bundle size, generated compatibility evidence, and an honest cold-versus-warm WebGPU explorer for vite-plugin-tsl-precompile.">
-	<meta property="og:title" content="vite-plugin-tsl-precompile · evidence">
-	<meta property="og:description" content="See what is measured, what is generated, and what the current browser experiment cannot prove.">
+	<meta name="description" content="Measured slim bundle fixtures, generated compatibility results, and a clearly bounded cold-versus-warm stock Three.js device test.">
+	<meta property="og:title" content="vite-plugin-tsl-precompile · measurements">
+	<meta property="og:description" content="Bundle fixtures, compatibility evidence, and the exact limit of the browser test.">
 	<meta property="og:type" content="website">
 	<meta property="og:image" content="https://makio64.github.io/vite-plugin-tsl-precompile/og.png">
 	<meta name="twitter:card" content="summary_large_image">
 	<link rel="icon" type="image/svg+xml" href="/favicon.svg">
-	<title>Evidence — vite-plugin-tsl-precompile</title>
+	<title>Measurements — vite-plugin-tsl-precompile</title>
 	<link rel="stylesheet" href="/src/styles.css">
 	<link rel="stylesheet" href="/src/benchmark.css">
 </head>
@@ -24,10 +24,11 @@
 			<span class="mono">vite-plugin-</span><span class="accent">tsl-precompile</span>
 		</a>
 		<div class="site-nav-links">
-			<a href="index.html">Overview</a>
+			<a href="index.html">Start</a>
+			<a href="adopt.html">Existing app</a>
 			<a href="how-it-works.html">How it works</a>
-			<a href="examples.html">Compare</a>
-			<a class="site-nav-current" aria-current="page" href="benchmark.html">Benchmark</a>
+			<a href="examples.html">Proof</a>
+			<a class="site-nav-current" aria-current="page" href="benchmark.html">Numbers</a>
 			<a href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">GitHub ↗</a>
 		</div>
 	</nav>
@@ -35,53 +36,62 @@
 	<!-- ========== HERO ========== -->
 	<header class="bench-hero">
 		<div class="bench-hero-inner">
-			<p class="eyebrow">measured&nbsp; vs &nbsp;inferred</p>
-			<h1 class="bench-hero-title">Evidence, with boundaries.</h1>
+			<p class="eyebrow">measured&nbsp; / &nbsp;not measured</p>
+			<h1 class="bench-hero-title">What the data proves.</h1>
 			<p class="bench-hero-lead">
-				The reference slim bundle size is measured. Compatibility results are generated from the checked-in replay harness.
-				The browser experiment below measures <strong>cold versus warm stock Three.js</strong>—useful context, but not a substitute for a real full-versus-precompiled cold-start benchmark.
+				Bundle sizes are measured. Compatibility comes from the checked-in harness. The device test only compares cold and warm stock three.js; it does not measure precompiled speedup.
 			</p>
 		</div>
 	</header>
 
-	<main id="bench-main" class="bench-main">
+	<main id="bench-main" class="bench-main" tabindex="-1">
 
 		<!-- ===== evidence surfaces ===== -->
 		<section class="bench-claims">
 
 			<article class="bench-card">
-				<h2 class="bench-card-h">Measured reference build</h2>
-				<div class="bench-card-stat">
-					<span class="bench-card-big">138,279 B</span>
-					<span class="bench-card-sub">minimal source fixture, gzip-9</span>
-				</div>
-				<p class="bench-card-body">
-					The advanced source fixture is <strong>145,910 bytes</strong>; the checked single-file prebuilt runtime is <strong>211,646 bytes</strong>.
-					These are deterministic regression fixtures, not a stock-Three comparison or a promise for every app bundle.
-				</p>
+				<h2 class="bench-card-h">Slim bundle fixtures</h2>
+					<div class="bench-card-stat">
+						<span class="bench-card-big"><span data-bench-measurement="profiles.sourceMinimal.gzipBytes">—</span> B</span>
+						<span class="bench-card-sub">minimal source baseline, gzip-9</span>
+					</div>
+					<p class="bench-card-body">
+						Advanced source baseline: <strong><span data-bench-measurement="profiles.sourceAdvanced.gzipBytes">—</span> B</strong>.
+						Checked prebuilt: <strong><span data-bench-measurement="profiles.prebuilt.gzipBytes">—</span> B</strong>.
+						The source figures come from the enforced regression budget; the prebuilt figure is recomputed from the checked bundle.
+					</p>
+					<p class="bench-card-proof">
+						<span data-bench-provenance>Build-time measurement unavailable; exact figures withheld.</span>
+						<a href="measurements.json">Raw manifest ↗</a>
+					</p>
 			</article>
 
 			<article class="bench-card">
-				<h2 class="bench-card-h">Generated compatibility lab</h2>
+				<h2 class="bench-card-h">Compatibility</h2>
 				<div class="bench-card-stat">
-					<span class="bench-card-big" data-bench-stat="examplesProcessed">225</span>
-					<span class="bench-card-sub">tracked examples in the current site dataset</span>
+					<span class="bench-card-big" data-bench-stat="examplesProcessed">254</span>
+					<span class="bench-card-sub">tracked routes</span>
 				</div>
 				<p class="bench-card-body">
-					Captures, slim replays, load-smoke status, image comparisons, and diagnostics are published together.
-					<a href="examples.html">Inspect the results →</a>
+					<strong><span data-evidence-verdict="pass">253</span> gated passes</strong> ·
+					<span data-evidence-verdict="diagnostic">1</span> diagnostic ·
+					<span data-evidence-verdict="fail">0</span> failures.
+					PSNR remains a separate image-quality measurement.
+				</p>
+				<p class="bench-card-proof">
+					<a href="coverage-summary.json">Campaign summary ↗</a>
+					<a href="coverage-evidence-set.json">Campaign manifest ↗</a>
+					<a href="examples.html">Inspect frames →</a>
 				</p>
 			</article>
 
 			<article class="bench-card bench-card-live">
-				<h2 class="bench-card-h">Cold-path explorer</h2>
+				<h2 class="bench-card-h">Device test</h2>
 				<div class="bench-card-stat">
 					<span class="bench-card-big">run it ↓</span>
 					<span class="bench-card-sub">on your own GPU</span>
 				</div>
-				<p class="bench-card-body">
-					Compare a cold first render with warm stock Three.js frames on this device. The difference includes more than TSL generation, so it is not labeled as time saved.
-				</p>
+				<p class="bench-card-body">Cold versus warm stock three.js on this device. Context only—not time saved.</p>
 			</article>
 
 		</section>
@@ -89,40 +99,37 @@
 		<!-- ===== live first-frame measurement ===== -->
 		<section class="bench-live">
 			<div class="bench-live-head">
-				<h2>Stock Three.js cold-path envelope — measured here</h2>
+				<h2 id="bench-table-title">Cold versus warm stock three.js</h2>
 				<button id="bench-run" class="bench-btn" type="button">Run on my hardware</button>
 			</div>
 
 			<p id="bench-status" class="bench-note" hidden></p>
 
-			<table class="bench-table">
-				<thead>
-					<tr>
-						<th scope="col">Scene</th>
-						<th scope="col">Cold first render<br><span class="bench-th-sub">stock Three.js</span></th>
-						<th scope="col">Warm render<br><span class="bench-th-sub">stock Three.js median band</span></th>
-						<th scope="col">Cold overhead<br><span class="bench-th-sub">cold − warm, not “saved”</span></th>
-					</tr>
-				</thead>
-				<tbody id="bench-tbody">
-					<tr class="bench-empty"><td colspan="4">Press <strong>Run on my hardware</strong> to measure on your GPU.</td></tr>
-				</tbody>
-			</table>
+			<p class="bench-scroll-cue">Swipe to inspect every column <span aria-hidden="true">→</span></p>
+			<div class="bench-table-scroll" role="region" aria-labelledby="bench-table-title" tabindex="0">
+				<table class="bench-table">
+					<thead>
+						<tr>
+							<th scope="col">Scene</th>
+							<th scope="col">Cold first render<br><span class="bench-th-sub">stock Three.js</span></th>
+							<th scope="col">Warm render<br><span class="bench-th-sub">stock Three.js median band</span></th>
+							<th scope="col">Cold overhead<br><span class="bench-th-sub">cold − warm, not “saved”</span></th>
+						</tr>
+					</thead>
+					<tbody id="bench-tbody">
+						<tr class="bench-empty"><td colspan="4">Press <strong>Run on my hardware</strong> to measure on your GPU.</td></tr>
+					</tbody>
+				</table>
+			</div>
 
 			<details class="bench-method">
-				<summary>How this is measured—and why it is not a precompiled benchmark</summary>
+				<summary>Method and limits</summary>
 				<div class="bench-method-body">
 					<p>
-						For each scene we build a TSL material with stock <code>three/webgpu</code>, then time the
-						<strong>cold first <code>renderAsync</code></strong> against a <strong>trimmed set of 90 warm frames</strong>
-						after a 40-frame warm-up. The cold path includes Three's TSL graph walk and WGSL generation,
-						WebGPU pipeline creation, driver work, resource initialization, and other one-time costs.
+						Each scene uses stock <code>three/webgpu</code>. We time the first <code>renderAsync</code>, then 90 warm frames after 40 warm-up frames. Cold time includes TSL generation, pipeline creation, driver work, resource setup and other one-time costs.
 					</p>
 					<p class="bench-method-caveats">
-						Caveats: this is wall time around <code>renderAsync</code>, not isolated CPU or GPU time; numbers vary by GPU,
-						driver, browser, and thermal state. A precompiled render still creates and compiles a WebGPU pipeline.
-						Therefore cold minus warm is only a cold-path envelope. A defensible performance claim requires cold stock
-						and cold precompiled runs of the same scene on the same device; this page does not pretend otherwise.
+						Wall time varies by device and browser. Precompiled runs still create and compile WebGPU pipelines. Only matched cold stock and cold precompiled runs can support a speedup claim.
 					</p>
 				</div>
 			</details>
@@ -130,14 +137,26 @@
 
 		<section class="bench-foot">
 			<p>
-				<strong>What the architecture guarantees:</strong> captured materials use embedded WGSL and generated update plans.
-				With either slim mode (<code>slim: 'source'</code> preferred for new Vite apps), the production bundle uses a NodeBuilder-stripped Three build. Without slim mode,
-				the full compiler may still exist elsewhere in the bundle even though marked materials use their artifacts.
-				<a href="how-it-works.html">See the exact boundary →</a>
+				<strong>Guaranteed in slim mode:</strong> captured materials use embedded WGSL and generated update plans, and NodeBuilder is absent. Compatibility mode validates artifacts but keeps three.js's live compiler authoritative.
+				<a href="how-it-works.html">See the boundary →</a>
 			</p>
 		</section>
 
 	</main>
+
+	<footer class="footer">
+		<div class="footer-inner">
+			<div><strong class="mono">vite-plugin-tsl-precompile</strong><span class="footer-sep">·</span><span class="muted">Experimental · MIT</span></div>
+			<nav class="footer-nav" aria-label="Footer navigation">
+				<a href="index.html">Start</a>
+				<a href="adopt.html">Existing app</a>
+				<a href="how-it-works.html">How it works</a>
+				<a href="examples.html">Proof</a>
+				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/ARCHITECTURE.md" rel="noopener">Architecture</a>
+				<a href="https://github.com/Makio64/vite-plugin-tsl-precompile" rel="noopener">GitHub</a>
+			</nav>
+		</div>
+	</footer>
 
 	<script type="module" src="/src/benchmark.js"></script>
 </body>

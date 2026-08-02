@@ -4,7 +4,8 @@
  * Build-mode:  material.precompile('ocean-water')
  *              →  __applyPrecompiled(material, __art_ocean_water, 'sha256:...')
  *              with `import * as __art_ocean_water from 'virtual:tsl-precompile/ocean-water'`
- *              + `import { __applyPrecompiled } from '@tsl-precompile/runtime/apply'` hoisted.
+ *              + a mode-owned `__applyPrecompiled` import hoisted (`/apply`
+ *                for slim replay, `/apply/full` for full Three).
  *
  * Dev mode: leave the call in place, but append a private stable source
  * identity so the capture server can reject duplicate artifact names.
@@ -236,9 +237,13 @@ export function instrumentLiveContextDependencies( source, { filename } ) {
  * source and use transformSource(), so this private third argument never
  * becomes author-facing API.
  */
-export function annotateDevMarkerSources( source, { filename, root = process.cwd() } ) {
+export function annotateDevMarkerSources( source, {
+	filename,
+	root = process.cwd(),
+	sourceRevision: providedSourceRevision = null,
+} ) {
 
-	if ( ! source.includes( '.' + MARKER_METHOD_NAME ) ) return { code: source, map: null, touched: false };
+	if ( ! source.includes( '.' + MARKER_METHOD_NAME ) ) return { code: source, map: null, touched: false, sourceOwners: [] };
 	const ast = parse( source, {
 		sourceType: 'module',
 		sourceFilename: filename,
@@ -246,8 +251,9 @@ export function annotateDevMarkerSources( source, { filename, root = process.cwd
 		errorRecovery: false,
 	} );
 	const { moduleIdentity } = canonicalModuleIdentity( filename, root );
-	const sourceRevision = markerSourceRevision( source );
+	const sourceRevision = providedSourceRevision || markerSourceRevision( source );
 	const callIndexesByName = new Map();
+	const sourceOwners = [];
 	let touched = false;
 
 	traverse( ast, {
@@ -272,13 +278,17 @@ export function annotateDevMarkerSources( source, { filename, root = process.cwd
 				t.stringLiteral( `${ moduleIdentity }:precompile:${ callIndex }` ),
 				t.stringLiteral( sourceRevision ),
 			);
+			sourceOwners.push( {
+				identity: `${ moduleIdentity }:precompile:${ callIndex }`,
+				revision: sourceRevision,
+			} );
 			touched = true;
 
 		},
 	} );
-	if ( ! touched ) return { code: source, map: null, touched: false };
+	if ( ! touched ) return { code: source, map: null, touched: false, sourceOwners: [] };
 	const output = generate( ast, { sourceMaps: true, sourceFileName: filename }, source );
-	return { code: output.code, map: output.map, touched: true };
+	return { code: output.code, map: output.map, touched: true, sourceOwners };
 
 }
 
@@ -292,16 +302,31 @@ export function annotateDevMarkerSources( source, { filename, root = process.cwd
  *     Looks up an artifact by name from the manifest. Returns null if no
  *     artifact has been captured yet — in which case the transform emits
  *     a clear build-time error at the call site.
- * @returns {{ code: string, map: ?Object, touchedNames: string[] }}
+ * @param {(name: string, marker: { autoMarked: boolean, sourceIdentity: string }) => boolean} [opts.shouldFallbackMissingArtifact]
+ *     Full-Three compatibility escape hatch. When true for a missing name,
+ *     replace only that marker with its live material expression and report
+ *     a warning while continuing to transform captured siblings.
+ * @param {string} [opts.applyImportSpecifier='@tsl-precompile/runtime/apply']
+ *     Build-mode-owned apply entry. Full builds select `/apply/full` so stock
+ *     Three retains the live NodeMaterial; slim builds select replay apply.
+ * @returns {{ code: string, map: ?Object, touchedNames: string[], missingArtifacts: Array<{ name: string, message: string }> }}
  */
 export function transformSource( source, opts ) {
 
-	const { filename, resolveArtifact, root = process.cwd() } = opts;
+	const {
+		filename,
+		resolveArtifact,
+		root = process.cwd(),
+		applyImportSpecifier = APPLY_IMPORT_SPECIFIER,
+		shouldFallbackMissingArtifact = null,
+		sourceRevision: providedSourceRevision = null,
+		sourceProvenance = null,
+	} = opts;
 
 	// Cheap early-out: skip files that don't mention the marker name.
 	if ( ! source.includes( '.' + MARKER_METHOD_NAME ) ) {
 
-		return { code: source, map: null, touchedNames: [] };
+		return { code: source, map: null, touchedNames: [], missingArtifacts: [] };
 
 	}
 
@@ -313,11 +338,12 @@ export function transformSource( source, opts ) {
 	} );
 
 	const touchedNames = [];
+	const missingArtifacts = [];
 	const neededImports = new Map(); // raw artifact name → { identifier, specifier }
 	const occupiedIdentifiers = collectBindingNames( ast );
 	const applyFnName = allocateIdentifier( APPLY_FN_NAME, 'runtime-apply', occupiedIdentifiers );
 	const { moduleIdentity } = canonicalModuleIdentity( filename, root );
-	const sourceRevision = markerSourceRevision( source );
+	const sourceRevision = providedSourceRevision || markerSourceRevision( source );
 	const callIndexesByName = new Map();
 
 	traverse( ast, {
@@ -347,10 +373,41 @@ export function transformSource( source, opts ) {
 			const callIndex = callIndexesByName.get( nameKey ) || 0;
 			callIndexesByName.set( nameKey, callIndex + 1 );
 			const sourceIdentity = `${ moduleIdentity }:precompile:${ callIndex }`;
+			const materialExpr = callee.object;
+			const contextArg = args.length === 2 ? args[ 1 ] : null;
+			if ( t.isSpreadElement( contextArg ) || t.isArgumentPlaceholder( contextArg ) ) {
+
+				throwBuildError( filename, path, '.precompile(name, context) requires a normal expression for context, not a spread argument.' );
+
+			}
 			const artifact = resolveArtifact( name );
 			if ( ! artifact ) {
 
+				const fallback = typeof shouldFallbackMissingArtifact === 'function'
+					&& shouldFallbackMissingArtifact( name, {
+						autoMarked: isAutoMarkedCaptureContext( contextArg ),
+						sourceIdentity,
+					} ) === true;
+				if ( fallback ) {
+
+					const message = `.precompile(${ JSON.stringify( name ) }): no captured artifact found; keeping the live NodeMaterial in full-Three compatibility mode. Capture this render path before enabling slim mode.`;
+					missingArtifacts.push( {
+						name,
+						message: formatBuildDiagnostic( filename, path, message ),
+					} );
+					replaceMarkerWithMaterial( path, materialExpr, contextArg );
+					return;
+
+				}
 				throwBuildError( filename, path, `.precompile(${ JSON.stringify( name ) }): no captured artifact found. Run dev mode once to capture it, then rebuild.` );
+
+			}
+			if (
+				( artifact.sourceValidationMode === 'callsite' || sourceProvenance !== null )
+				&& ( ! Array.isArray( artifact.sourceOwners ) || artifact.sourceOwners.length === 0 )
+			) {
+
+				throwBuildError( filename, path, `.precompile(${ JSON.stringify( name ) }) requires call-site dependency validation but has no captured source owner. Run dev mode once to recapture it with the current plugin.` );
 
 			}
 			if ( Array.isArray( artifact.sourceOwners ) && artifact.sourceOwners.length > 0 ) {
@@ -361,6 +418,14 @@ export function transformSource( source, opts ) {
 					throwBuildError( filename, path, `.precompile(${ JSON.stringify( name ) }) was not captured from this call site (${ sourceIdentity }). Run dev mode once, or use a unique project-global artifact name.` );
 
 				}
+				if (
+					sourceProvenance !== null
+					&& JSON.stringify( owner.provenance ) !== JSON.stringify( sourceProvenance )
+				) {
+
+					throwBuildError( filename, path, `.precompile(${ JSON.stringify( name ) }) project-local dependency closure differs from capture. Run dev mode once to refresh the artifact before building.` );
+
+				}
 				if ( owner.revision !== sourceRevision ) {
 
 					throwBuildError( filename, path, `.precompile(${ JSON.stringify( name ) }) source changed since capture. Run dev mode once to refresh the artifact before building.` );
@@ -369,7 +434,6 @@ export function transformSource( source, opts ) {
 
 			}
 
-			const materialExpr = callee.object;
 			const specifier = VIRTUAL_MODULE_PREFIX + name;
 			let artifactImport = neededImports.get( name );
 
@@ -389,12 +453,6 @@ export function transformSource( source, opts ) {
 
 			if ( args.length === 2 ) {
 
-				const contextArg = args[ 1 ];
-				if ( t.isSpreadElement( contextArg ) || t.isArgumentPlaceholder( contextArg ) ) {
-
-					throwBuildError( filename, path, '.precompile(name, context) requires a normal expression for context, not a spread argument.' );
-
-				}
 				// Production hydration does not consume capture context, but the original
 				// member call evaluates its receiver before its arguments. A tiny arrow
 				// wrapper preserves that order and evaluates a side-effectful receiver
@@ -417,18 +475,22 @@ export function transformSource( source, opts ) {
 		},
 	} );
 
-	if ( touchedNames.length === 0 ) {
+	if ( touchedNames.length === 0 && missingArtifacts.length === 0 ) {
 
-		return { code: source, map: null, touchedNames: [] };
+		return { code: source, map: null, touchedNames: [], missingArtifacts: [] };
 
 	}
 
 	// Hoist required imports to the top.
 	const importNodes = [];
-	importNodes.push( t.importDeclaration(
-		[ t.importSpecifier( t.identifier( applyFnName ), t.identifier( APPLY_FN_NAME ) ) ],
-		t.stringLiteral( APPLY_IMPORT_SPECIFIER ),
-	) );
+	if ( touchedNames.length > 0 ) {
+
+		importNodes.push( t.importDeclaration(
+			[ t.importSpecifier( t.identifier( applyFnName ), t.identifier( APPLY_FN_NAME ) ) ],
+			t.stringLiteral( applyImportSpecifier ),
+		) );
+
+	}
 	for ( const { identifier, specifier } of neededImports.values() ) {
 
 		importNodes.push( t.importDeclaration(
@@ -445,7 +507,44 @@ export function transformSource( source, opts ) {
 		code: output.code,
 		map: output.map,
 		touchedNames,
+		missingArtifacts,
 	};
+
+}
+
+function isAutoMarkedCaptureContext( contextArg ) {
+
+	if ( ! t.isObjectExpression( contextArg ) ) return false;
+	return contextArg.properties.some( ( property ) => {
+
+		if ( ! t.isObjectProperty( property ) || property.computed ) return false;
+		const key = t.isIdentifier( property.key )
+			? property.key.name
+			: t.isStringLiteral( property.key ) ? property.key.value : null;
+		return key === '__tslpAutoMark' && t.isBooleanLiteral( property.value, { value: true } );
+
+	} );
+
+}
+
+function replaceMarkerWithMaterial( path, materialExpr, contextArg ) {
+
+	if ( contextArg ) {
+
+		// Preserve the member call's receiver-before-argument evaluation order
+		// and evaluate both expressions exactly once, while returning the live
+		// material to retain `.precompile()` chain semantics.
+		const materialParam = t.identifier( '__tslp_material' );
+		const contextParam = t.identifier( '__tslp_context' );
+		path.replaceWith( t.callExpression(
+			t.arrowFunctionExpression( [ materialParam, contextParam ], materialParam ),
+			[ materialExpr, contextArg ],
+		) );
+		return;
+
+	}
+
+	path.replaceWith( materialExpr );
 
 }
 
@@ -509,10 +608,16 @@ function stableIdentifierSuffix( value ) {
 
 function throwBuildError( filename, path, message ) {
 
-	const loc = path.node.loc;
-	const locStr = loc ? `${ loc.start.line }:${ loc.start.column }` : '';
-	const err = new Error( `[tsl-precompile] ${ filename }:${ locStr } ${ message }` );
+	const err = new Error( formatBuildDiagnostic( filename, path, message ) );
 	err.frame = path.buildCodeFrameError ? path.buildCodeFrameError( message ).message : message;
 	throw err;
+
+}
+
+function formatBuildDiagnostic( filename, path, message ) {
+
+	const loc = path.node.loc;
+	const locStr = loc ? `${ loc.start.line }:${ loc.start.column }` : '';
+	return `[tsl-precompile] ${ filename }:${ locStr } ${ message }`;
 
 }

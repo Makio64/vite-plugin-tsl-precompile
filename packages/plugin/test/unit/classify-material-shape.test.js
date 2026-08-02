@@ -15,3 +15,24 @@ test( 'classifyMaterialShape prefers physical materials over inherited standard 
 	);
 
 } );
+
+test( 'classifyMaterialShape recognizes only Three r185 exact VSM pass names', () => {
+
+	assert.equal(
+		classifyMaterialShape( { name: 'VSMVertical', isNodeMaterial: true } ),
+		'shadow-vsm-vertical',
+	);
+	assert.equal(
+		classifyMaterialShape( { name: 'VSMHorizontal', isNodeMaterial: true } ),
+		'shadow-vsm-horizontal',
+	);
+	assert.equal(
+		classifyMaterialShape( { name: 'MyVSMVertical', isNodeMaterial: true } ),
+		'node-material',
+	);
+	assert.equal(
+		classifyMaterialShape( { name: 'vsmhorizontal', isNodeMaterial: true } ),
+		'node-material',
+	);
+
+} );

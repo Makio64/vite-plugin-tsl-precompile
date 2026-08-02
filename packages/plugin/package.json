@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-tsl-precompile",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.0",
   "description": "Vite plugin that AOT-compiles three.js TSL materials marked with .precompile(name).",
   "type": "module",
   "license": "MIT",
@@ -9,7 +9,8 @@
   },
   "author": "David Ronai <davronai@gmail.com>",
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "tag": "alpha"
   },
   "repository": {
     "type": "git",
@@ -18,7 +19,10 @@
   },
   "main": "./src/index.js",
   "bin": {
-    "tsl-precompile-recapture": "./src/cli/recapture.js"
+    "tsl-precompile-doctor": "./src/cli/doctor.js",
+    "tsl-precompile-install-skill": "./src/cli/install-skill.js",
+    "tsl-precompile-recapture": "./src/cli/recapture.js",
+    "tsl-precompile-verify": "./src/cli/verify.js"
   },
   "types": "./types/index.d.ts",
   "exports": {
@@ -26,9 +30,23 @@
       "types": "./types/index.d.ts",
       "default": "./src/index.js"
     },
-    "./src/*": "./src/*"
+    "./build/slim-rewrite": {
+      "types": "./types/build/slim-rewrite.d.ts",
+      "default": "./build-tools/slim-rewrite.js"
+    },
+    "./src/emit-updater.js": {
+      "types": "./types/emit-updater.d.ts",
+      "default": "./src/emit-updater.js"
+    },
+    "./src/vendor/compileTSL.js": {
+      "types": "./types/vendor/compileTSL.d.ts",
+      "default": "./src/vendor/compileTSL.js"
+    }
   },
   "files": [
+    "THIRD_PARTY_NOTICES.md",
+    "build-tools",
+    "skill",
     "src",
     "types"
   ],
@@ -42,14 +60,20 @@
     "test:coverage": "node test/run-tier.mjs coverage",
     "verify": "node src/cli/verify.js",
     "recapture": "node src/cli/recapture.js",
+    "install-skill": "node scripts/sync-agent-skill.mjs && node src/cli/install-skill.js",
     "vendor:probe": "node scripts/probe-vendor.mjs",
+    "prepack": "node scripts/sync-agent-skill.mjs",
     "prepublishOnly": "pnpm run test:full"
   },
   "peerDependencies": {
-    "three": ">=0.184.0",
-    "vite": ">=6.4.3"
+    "@tsl-precompile/runtime": "workspace:*",
+    "@types/three": "0.185.1",
+    "three": "0.185.1",
+    "vite": ">=6.4.3 <9"
   },
   "peerDependenciesMeta": {
+    "@tsl-precompile/runtime": { "optional": false },
+    "@types/three": { "optional": true },
     "three": { "optional": false },
     "vite": { "optional": false }
   },

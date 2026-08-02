@@ -18,13 +18,26 @@ pnpm dev:ocean           # open the ocean demo
 
 ## How to add a `source.kind`
 
-The AOT codegen lives in [packages/plugin/src/emit-updater.js](packages/plugin/src/emit-updater.js). Every TSL primitive that produces a uniform slot has a `kind` (e.g. `camera.projectionMatrix`, `material.color`).
+Every TSL primitive that produces a binding descriptor has a cross-package
+`source.kind` (for example `camera.projectionMatrix` or `material.color`).
+Executable kinds are a closed contract: the public registry can document a
+custom kind as intentionally blocked, but it cannot install codegen/runtime
+handlers.
 
-1. Add a `case '<kind>':` branch in `emitSlotWrite()` returning a writer call.
-2. Add a fixture in `packages/plugin/test/coverage/<axis>-kinds.test.js` so the cell is gated by CI.
-3. Run `pnpm test:coverage` — the new cell must pass.
+1. Add the vocabulary and status in
+   [`packages/contract/src/kinds.js`](packages/contract/src/kinds.js), including
+   its declaration and contract/drift tests.
+2. Update the extractor so it emits the kind from real captured state.
+3. Add the codegen handling in
+   [`packages/plugin/src/emit-updater.js`](packages/plugin/src/emit-updater.js).
+4. Add the corresponding runtime writer/hydration behavior.
+5. Add coverage fixtures that prove extraction, generated code, and runtime
+   behavior agree, then run `pnpm test:generation`, `pnpm test:coverage`, and
+   the focused runtime tests.
 
-Unsupported kinds emit `throw new Error(...)` AND log to `__unsupportedKinds`. Don't silently fall through — loud failure is the whole point of this architecture.
+Land those pieces together. Unsupported or incomplete kinds must remain
+explicitly blocked with a recovery reason; never make contract validation
+accept vocabulary that codegen/runtime cannot execute.
 
 ## How to upgrade the vendored three.js files
 
@@ -44,7 +57,7 @@ See [packages/plugin/src/vendor/VENDORING.md](packages/plugin/src/vendor/VENDORI
 | 3 — AOT codegen | Done (camera/object/material/time/uniform.constant/uniform.live) |
 | 4 — Build-time rewrite | Done |
 | 5 — Coverage matrix | Fixture coverage exists; expand toward full TSL surface |
-| 6 — 206-example batch harness | Extractor/codegen load-smoke exists |
+| 6 — 254-case batch harness | Exact corpus: 209 official Three r185 WebGPU examples + 45 local routes; capture/replay evidence campaign exists |
 | 7 — Slim runtime bundle | Slim load-smoke exists |
 | 8 — Launch | Docs/site exist; needs external adoption |
 

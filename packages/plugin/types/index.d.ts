@@ -8,14 +8,16 @@ export interface TslPrecompileOptions {
 	/**
 	 * What to do when a named artifact is missing in build mode.
 	 * - `'error'` (default): fail the build.
-	 * - `'warn'`: log and keep building (useful for CI bootstrap before captures exist).
+	 * - `'warn'`: in full-Three compatibility mode, log and keep the live
+	 *   material while continuing to rewrite captured markers in the module.
+	 *   Compiler-free slim modes reject warning recovery.
 	 */
 	fail?: 'error' | 'warn';
 	/**
 	 * Chain `.precompile('<prefix>-<slug>-<module-hash>-<n>')` onto every `new *NodeMaterial(...)`
 	 * automatically. Framework script subresources get distinct module hashes; the final
 	 * per-module ordinal remains positional, so reordering constructors can reshuffle it.
-	 * Default: `false`.
+	 * Enabled by default. Set to `false` to require explicit markers.
 	 */
 	autoMark?: boolean;
 	/** Prefix used by `autoMark` to name artifacts. Default: `'auto'`. */
@@ -29,7 +31,7 @@ export interface TslPrecompileOptions {
 	 * Default: `false`.
 	 */
 	slim?: boolean | 'source';
-	/** Override the auto-detected exact three.js package version used in rewrite hashes. Must match the installed package (for example `0.184.0`). Pass `null` to force auto-detect. */
+	/** Override the auto-detected exact three.js package version used in rewrite hashes. Must match the installed package (for example `0.185.1`). Pass `null` to force auto-detect. */
 	threeVersion?: string | null;
 	/**
 	 * Compact WGSL in emitted virtual modules; captured JSON stays readable.

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+	auditArtifactShaderLanguageBackends,
 	enrichRenderSelectorDiagnostics,
 	resolveE2ERoots,
 	shortRenderSelector,
@@ -68,6 +69,59 @@ test( 'artifact selector summaries retain source and topology axes', () => {
 
 } );
 
+test( 'dual-backend artifact audit requires native WGSL and GLSL candidates', () => {
+
+	const webglSelector = selector( { renderer: { backend: { kind: 'webgl' } } } );
+	const audit = auditArtifactShaderLanguageBackends( {
+		user: {
+			material: {
+				artifact: {
+					cacheKey: 7,
+					variantKey: 'webgpu:7',
+					shaderLanguage: 'wgsl',
+					renderContextSelectors: [ selector() ],
+					variants: {
+						'webgl:7': {
+							cacheKey: 7,
+							variantKey: 'webgl:7',
+							shaderLanguage: 'glsl',
+							renderContextSelectors: [ webglSelector ],
+						},
+					},
+				},
+			},
+		},
+		aux: [],
+	}, { requiredBackends: [ 'webgpu', 'webgl' ] } );
+
+	assert.equal( audit.pass, true );
+	assert.deepEqual( audit.observedBackends, [ 'webgl', 'webgpu' ] );
+	assert.deepEqual( audit.missingBackends, [] );
+	assert.deepEqual( audit.mismatches, [] );
+
+} );
+
+test( 'dual-backend artifact audit fails closed on a cache-key language collision', () => {
+
+	const audit = auditArtifactShaderLanguageBackends( {
+		user: {
+			material: {
+				artifact: {
+					cacheKey: 7,
+					shaderLanguage: 'wgsl',
+					renderContextSelectors: [ selector( { renderer: { backend: { kind: 'webgl' } } } ) ],
+				},
+			},
+		},
+		aux: [],
+	}, { requiredBackends: [ 'webgpu', 'webgl' ] } );
+
+	assert.equal( audit.pass, false );
+	assert.deepEqual( audit.missingBackends, [ 'webgpu' ] );
+	assert.deepEqual( audit.mismatches.map( ( mismatch ) => mismatch.actualLanguage ), [ 'wgsl' ] );
+
+} );
+
 test( 'selector mismatches rank captured candidates and expose exact differing axes', () => {
 
 	const active = selector( { target: { surface: 'offscreen-cube', sampleCount: 1 }, lights: [ { type: 'DirectionalLight', castShadow: false } ] } );
@@ -79,12 +133,18 @@ test( 'selector mismatches rank captured candidates and expose exact differing a
 		code: 'TSLP_VARIANT_SELECTOR_MISS',
 		selector: active,
 		availableSelectors: [ far, close ],
+		closestDifferencePaths: [ 'target.surface' ],
+		artifactContext: { names: [ 'material-card' ] },
+		remediation: { schema: 'tslp-selector-remediation@1', skill: 'integrate-tsl-precompile' },
 	} );
 	assert.equal( summary.active.hash, shortRenderSelector( active ) );
 	assert.equal( summary.captured.length, 2 );
 	assert.equal( summary.comparisons[ 0 ].capturedHash, shortRenderSelector( close ) );
 	assert.deepEqual( summary.comparisons[ 0 ].differences.map( ( difference ) => difference.path ), [ 'target.surface' ] );
 	assert.ok( summary.comparisons[ 1 ].differences.some( ( difference ) => difference.path === 'lights[0].castShadow' ) );
+	assert.deepEqual( summary.closestDifferencePaths, [ 'target.surface' ] );
+	assert.deepEqual( summary.artifactContext, { names: [ 'material-card' ] } );
+	assert.equal( summary.remediation.skill, 'integrate-tsl-precompile' );
 
 } );
 

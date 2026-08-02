@@ -8,6 +8,7 @@ function fixture() {
 	const outputTarget = { multiview: false };
 	const renderer = {
 		info: { calls: 1 },
+		lighting: { enabled: true },
 		shadowMap: { enabled: false, type: 1 },
 		getOutputRenderTarget: () => outputTarget,
 	};
@@ -78,7 +79,7 @@ test( 'scene replay cache key tracks semantic topology but ignores live object v
 
 } );
 
-test( 'scene replay cache key retains light, shadow, and multiview invalidation axes', () => {
+test( 'scene replay cache key retains lighting, light, shadow, and multiview invalidation axes', () => {
 
 	const { adapter, outputTarget, renderer } = fixture();
 	const scene = { fog: null, fogNode: null, environment: null, environmentNode: null };
@@ -102,7 +103,58 @@ test( 'scene replay cache key retains light, shadow, and multiview invalidation 
 
 	outputTarget.multiview = true;
 	nextCall( renderer );
-	assert.notEqual( adapter.getCacheKey( scene, lightsNode ), shadowType );
+	const multiview = adapter.getCacheKey( scene, lightsNode );
+	assert.notEqual( multiview, shadowType );
+
+	renderer.lighting.enabled = false;
+	nextCall( renderer );
+	assert.notEqual( adapter.getCacheKey( scene, lightsNode ), multiview );
+
+} );
+
+test( 'lighting-disabled replay excludes lights, shadows, and environment while retaining fog topology', () => {
+
+	const { adapter, renderer } = fixture();
+	renderer.lighting.enabled = false;
+	const scene = {
+		fog: null,
+		fogNode: null,
+		environment: cubeEnvironment(),
+		environmentNode: { isNode: true },
+		overrideMaterial: null,
+	};
+	const lightsNode = {
+		getCacheKey() { throw new Error( 'disabled lights graph was inspected' ); },
+	};
+	const baseline = adapter.getCacheKey( scene, lightsNode );
+
+	scene.environment = { ...scene.environment, isCubeTexture: false };
+	scene.environmentNode = { isNode: true };
+	renderer.shadowMap.enabled = true;
+	renderer.shadowMap.type = 2;
+	nextCall( renderer );
+	assert.equal( adapter.getCacheKey( scene, lightsNode ), baseline );
+
+	scene.fog = { isFog: true, color: {}, near: 1, far: 20 };
+	nextCall( renderer );
+	assert.notEqual( adapter.getCacheKey( scene, lightsNode ), baseline );
+
+} );
+
+test( 'lighting-disabled replay returns no environment node without observing it', () => {
+
+	const { adapter, renderer } = fixture();
+	renderer.lighting.enabled = false;
+	const scene = { fog: null, fogNode: null };
+	Object.defineProperty( scene, 'environment', {
+		get() { throw new Error( 'disabled environment texture was inspected' ); },
+	} );
+	Object.defineProperty( scene, 'environmentNode', {
+		get() { throw new Error( 'disabled environment node was inspected' ); },
+	} );
+
+	assert.equal( adapter.getEnvironmentNode( scene ), null );
+	assert.doesNotThrow( () => adapter.getCacheKey( scene, null ) );
 
 } );
 

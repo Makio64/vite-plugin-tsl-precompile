@@ -7,10 +7,10 @@
  * replaced by replay adapters, or rejected as runtime compiler residue.
  */
 
-export const SLIM_THREE_POLICY_VERSION = 'slim-three-policy@10';
+export const SLIM_THREE_POLICY_VERSION = 'slim-three-policy@12';
 
 /** Exact Three package patch used to build the published prebuilt slim file. */
-export const SLIM_THREE_PACKAGE_VERSION = '0.184.0';
+export const SLIM_THREE_PACKAGE_VERSION = '0.185.1';
 
 /** Public runtime entries selected by the Vite plugin's slim modes. */
 export const SLIM_THREE_RUNTIME_ENTRIES = Object.freeze( {

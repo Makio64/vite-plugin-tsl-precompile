@@ -4,11 +4,15 @@ on:
   push:
     branches: [main]
     paths:
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - 'packages/site/**'
       - 'packages/plugin/**'
       - 'packages/runtime/**'
       - 'packages/contract/**'
-      - 'packages/examples/getting-started/**'
+      - 'packages/examples/**'
+      - '.agents/skills/integrate-tsl-precompile/**'
       - '.github/workflows/deploy-site.yml'
   workflow_dispatch:
 
@@ -23,31 +27,93 @@ concurrency:
 
 jobs:
   build:
-    name: Build
-    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    name: Reproduce evidence and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      TSLP_E2E_OUT: ${{ runner.temp }}/deploy-e2e
+      TSLP_STOCK_OUT: ${{ runner.temp }}/deploy-stock
+      TSLP_STOCK_REPORT: ${{ runner.temp }}/deploy-stock/report.json
+      TSLP_SITE_PUBLIC_OUT: ${{ runner.temp }}/deploy-site-public
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4.4.0
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Check out the matching three.js examples corpus
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          node-version: 24
+          repository: mrdoob/three.js
+          ref: 2431a09f46f34c560bc8e44b33be0e567723d5b9 # official r185 commit
+          path: three.js
+          fetch-depth: 1
+          sparse-checkout: |
+            build
+            examples
+            src
+            package.json
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build:site
-      - run: npx playwright install --with-deps chromium
+      - name: Verify the checked catalogue against the exact Three corpus
+        run: pnpm --filter examples-batch catalogue:check:corpus
+        env:
+          TSLP_THREE_REPO: ${{ github.workspace }}/three.js
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Build the exact slim bundle with rewrite warnings fatal
+        run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim
+      - name: Run the canonical 209-case stock-renderer sweep
+        run: >-
+          xvfb-run -a node packages/examples/batch/run.mjs
+          --three-repo="$GITHUB_WORKSPACE/three.js"
+          --output-root="$TSLP_STOCK_OUT"
+          --canonical-evidence
+      - name: Run the exact 254-case capture/replay campaign
+        run: >-
+          xvfb-run -a node packages/examples/batch/run-evidence-campaign.mjs
+          --three-repo="$GITHUB_WORKSPACE/three.js"
+          --output-root="$TSLP_E2E_OUT"
+          --campaign-id="deploy-${GITHUB_SHA}"
+      - name: Generate site data from the same immutable evidence
+        run: pnpm --filter @tsl-precompile/site data
+      - name: Build and audit the production site
+        run: pnpm build:site
       - run: xvfb-run -a pnpm --filter @tsl-precompile/site test:live
-      - uses: actions/configure-pages@v6
-      - uses: actions/upload-pages-artifact@v5
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: failure()
+        with:
+          name: deploy-site-evidence-${{ github.sha }}
+          path: |
+            ${{ env.TSLP_E2E_OUT }}/e2e-report.json
+            ${{ env.TSLP_E2E_OUT }}/coverage-summary.json
+            ${{ env.TSLP_E2E_OUT }}/coverage-evidence-set.json
+            ${{ env.TSLP_E2E_OUT }}/evidence-manifest.json
+            ${{ env.TSLP_E2E_OUT }}/evidence/**/shots/*.png
+            ${{ env.TSLP_E2E_OUT }}/evidence/**/artifacts/*
+            ${{ env.TSLP_E2E_OUT }}/evidence/**/network/*.bin
+            ${{ env.TSLP_E2E_OUT }}/cohorts/**/*-e2e-report.json
+            ${{ env.TSLP_E2E_OUT }}/cohorts/**/evidence/**/shots/*.png
+            ${{ env.TSLP_E2E_OUT }}/cohorts/**/evidence/**/artifacts/*
+            ${{ env.TSLP_E2E_OUT }}/cohorts/**/evidence/**/network/*.bin
+            ${{ env.TSLP_STOCK_REPORT }}
+            ${{ env.TSLP_STOCK_OUT }}/network/*.bin
+          if-no-files-found: ignore
+          retention-days: 14
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: packages/site/dist
 
   deploy:
+    if: github.ref == 'refs/heads/main'
     name: Deploy
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5

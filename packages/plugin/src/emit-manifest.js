@@ -2,12 +2,11 @@
  * Manifest codegen — turns one captured artifact into a virtual ES module
  * that the Vite plugin serves at `virtual:tsl-precompile/<name>`.
  *
- * The virtual module inlines the artifact JSON AND the generated updater
- * source directly (renamed-export to sidestep a separate file emission).
- * That way each `import("virtual:tsl-precompile/<name>")` resolves to a
- * self-contained module: the writers import tree-shakes at the bundler,
- * the artifact is a static literal, and the per-frame update function is
- * inlined static JS.
+ * The virtual module always inlines the artifact JSON. Slim material modules
+ * and standalone compute modules also inline the generated updater source
+ * (renamed-export to sidestep a separate file emission). Full-Three material
+ * modules are passive metadata: codegen still runs for build diagnostics, but
+ * replay-only updater/light-helper imports are omitted from the consumer graph.
  *
  * @module EmitManifest
  */
@@ -36,15 +35,20 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 	const artifact = artifactJson.artifact || artifactJson;
 	const hash = artifactJson.__hash || artifact.__hash || manifestEntry.hash;
 	const name = artifactJson.__name || artifact.__name || manifestEntry.name || '';
-	// Source slim intentionally replaces application TSL nodes with inert
+	// Both compiler-free slim modes replace application TSL nodes with inert
 	// runtime carriers, so a browser-side graph re-hash cannot equal the full
 	// graph captured in dev. Only opt into the call-site validation policy when
 	// the capture envelope contains the owners that the Babel transform already
 	// verified for this build.
-	const sourceValidationMode = opts.slim === 'source' &&
+	const sourceValidationMode = Boolean( opts.slim ) &&
 		Array.isArray( artifactJson.__sourceOwners ) && artifactJson.__sourceOwners.length > 0
 		? 'callsite'
 		: null;
+
+	// Standalone compute modules are consumed directly by the compute runner,
+	// including in an otherwise full-Three build, and still require updateGroup.
+	// Passive emission is therefore limited to marker-owned material artifacts.
+	const replayEmission = opts.replay !== false || artifact.kind === 'compute';
 
 	// `dynamicBindings` is a validated, derived view of `uniformPlan`. Persisted
 	// captures keep it as a convergence guard, but serializing the same source
@@ -52,8 +56,9 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 	// redundant literal before light normalization, then reconstruct the public
 	// root/variant views from references into the emitted plan. This preserves
 	// the virtual-module API without duplicating source snapshots in its payload.
-	const artifactForEmission = normalizeArtifactLightIdentitiesDeep( omitDynamicBindingsDeep( artifact ) );
-	const dynamicBindingRestorations = emitDynamicBindingRestorations( artifactForEmission );
+	const normalizedArtifact = normalizeArtifactLightIdentitiesDeep( artifact );
+	const artifactForEmission = replayEmission ? omitDynamicBindingsDeep( normalizedArtifact ) : normalizedArtifact;
+	const dynamicBindingRestorations = replayEmission ? emitDynamicBindingRestorations( artifactForEmission ) : [];
 	const materializeAttributeDescriptors = artifactNeedsAttributeDescriptorMaterialization( artifactForEmission );
 	const materializeVariantSelectorAdapter = artifactNeedsVariantSelectorAdapterMaterialization( artifactForEmission );
 
@@ -74,10 +79,12 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 	// collide. We do this via a small source rewrite — replacing the emitted
 	// `export function update` with `function __generatedUpdate` and appending
 	// a re-export.
-	const mangledUpdater = updaterSource
-		.replace( /export function update\(/, 'function __generatedUpdate(' )
-		.replace( /export function updateGroup\(/, 'function __generatedUpdateGroup(' )
-		.replace( /export const __unsupportedKinds/, 'const __codegenUnsupportedKinds' );
+	const mangledUpdater = replayEmission
+		? updaterSource
+			.replace( /export function update\(/, 'function __generatedUpdate(' )
+			.replace( /export function updateGroup\(/, 'function __generatedUpdateGroup(' )
+			.replace( /export const __unsupportedKinds/, 'const __codegenUnsupportedKinds' )
+		: null;
 
 	const lines = [];
 	if ( materializeAttributeDescriptors ) {
@@ -94,6 +101,27 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 
 		lines.push( `import { ${ usedWgslPoolRefs.join( ', ' ) } } from ${ JSON.stringify( VIRTUAL_WGSL_POOL_MODULE_ID ) };` );
 		lines.push( '' );
+
+	}
+	if ( ! replayEmission ) {
+
+		lines.push(
+			`export const __hash = ${ JSON.stringify( hash ) };`,
+			`export const name = ${ JSON.stringify( name ) };`,
+			`export const __sourceValidationMode = ${ JSON.stringify( sourceValidationMode ) };`,
+			...artifactDeclarations,
+			`export const artifact = ${ artifactLiteral };`,
+			...( materializeAttributeDescriptors ? [ '__tslp_materializeAttributes( artifact );' ] : [] ),
+			...( materializeVariantSelectorAdapter ? [ '__tslp_materializeVariantSelectors( artifact );' ] : [] ),
+			`export const __unsupportedKinds = ${ JSON.stringify( unsupportedKinds ) };`,
+			`export const dynamicBindings = artifact.dynamicBindings;`,
+			`export const update = null;`,
+			`export const updateGroup = null;`,
+			'',
+			`export default { __hash, name, __sourceValidationMode, artifact, update, updateGroup, __unsupportedKinds, dynamicBindings };`,
+			'',
+		);
+		return { source: lines.join( '\n' ), unsupportedKinds };
 
 	}
 	lines.push(

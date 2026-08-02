@@ -266,9 +266,132 @@ test( 'non-shadow asynchronous work still restarts the settle count', () => {
 		animationLoopCalls: 7,
 		atTarget: true,
 		settleFrames: 8,
+		presentationReady: false,
 		waitingForAsyncCounters: true,
 		waitingForAsyncWork: true,
 	} ), { animationLoopCalls: 1, runCallback: true } );
+
+} );
+
+test( 'required presentation keeps callbacks alive after the settle budget is spent', () => {
+
+	const transition = transitionForTest();
+	assert.deepEqual( transition( {
+		animationLoopCalls: 8,
+		atTarget: true,
+		presentationReady: false,
+		settleFrames: 8,
+		waitingForAsyncCounters: false,
+		waitingForAsyncWork: false,
+	} ), { animationLoopCalls: 9, runCallback: true } );
+	assert.deepEqual( transition( {
+		animationLoopCalls: 9,
+		atTarget: true,
+		presentationReady: true,
+		settleFrames: 8,
+		waitingForAsyncCounters: false,
+		waitingForAsyncWork: false,
+	} ), { animationLoopCalls: 9, runCallback: false } );
+
+} );
+
+test( 'a successful presentation retains settle progress across recurring async work', () => {
+
+	const transition = transitionForTest();
+	assert.deepEqual( transition( {
+		animationLoopCalls: 7,
+		atTarget: true,
+		presentationReady: true,
+		retainAsyncProgress: true,
+		settleFrames: 8,
+		waitingForAsyncCounters: true,
+		waitingForAsyncWork: true,
+	} ), { animationLoopCalls: 8, runCallback: true } );
+	assert.deepEqual( transition( {
+		animationLoopCalls: 8,
+		atTarget: true,
+		presentationReady: true,
+		retainAsyncProgress: true,
+		settleFrames: 8,
+		waitingForAsyncCounters: true,
+		waitingForAsyncWork: true,
+	} ), { animationLoopCalls: 8, runCallback: false } );
+
+} );
+
+test( 'stock and capture reset callback progress while scene loaders are pending', () => {
+
+	const transition = transitionForTest();
+	assert.deepEqual( transition( {
+		animationLoopCalls: 7,
+		atTarget: true,
+		presentationReady: true,
+		retainAsyncProgress: false,
+		settleFrames: 8,
+		waitingForAsyncCounters: true,
+		waitingForAsyncWork: true,
+	} ), { animationLoopCalls: 1, runCallback: true } );
+
+} );
+
+test( 'SSR denoise keeps presenting until its deferred subject is ready', () => {
+
+	const transition = transitionForTest();
+	const holdAnimationUntilReady = holdAnimationUntilReadyForExample( 'webgpu_postprocessing_ssr_denoise.html' );
+	const settleFrames = 3;
+	let state = { animationLoopCalls: 0 };
+
+	assert.equal( holdAnimationUntilReady, false );
+
+	for ( let attempt = 0; attempt < 2; attempt ++ ) {
+
+		state = transition( {
+			...state,
+			atTarget: true,
+			holdAnimationUntilReady,
+			presentationReady: false,
+			settleFrames,
+			waitingForAsyncCounters: true,
+			waitingForAsyncWork: true,
+		} );
+		assert.deepEqual( state, { animationLoopCalls: 1, runCallback: true }, `async startup attempt ${ attempt + 1 }` );
+
+	}
+
+	state = transition( {
+		...state,
+		atTarget: true,
+		holdAnimationUntilReady,
+		presentationReady: false,
+		settleFrames,
+		waitingForAsyncCounters: false,
+		waitingForAsyncWork: true,
+	} );
+	assert.deepEqual( state, { animationLoopCalls: 1, runCallback: true }, 'the deferred-object gate still prevents settle progress' );
+
+	for ( let completed = 1; completed < settleFrames; completed ++ ) {
+
+		state = transition( {
+			...state,
+			atTarget: true,
+			holdAnimationUntilReady,
+			presentationReady: false,
+			settleFrames,
+			waitingForAsyncCounters: false,
+			waitingForAsyncWork: false,
+		} );
+		assert.deepEqual( state, { animationLoopCalls: completed + 1, runCallback: true } );
+
+	}
+
+	assert.deepEqual( transition( {
+		...state,
+		atTarget: true,
+		holdAnimationUntilReady,
+		settleFrames,
+		waitingForAsyncCounters: false,
+		waitingForAsyncWork: false,
+	} ), { animationLoopCalls: settleFrames, runCallback: false } );
 
 } );
 
@@ -309,10 +432,24 @@ test( 'deferred subjects must be present before an example can freeze', () => {
 
 	assert.equal( minimumRenderableObjectsForExample( 'webgpu_backdrop.html' ), 9 );
 	assert.equal( minimumRenderableObjectsForExample( 'webgpu_lights_projector.html' ), 3 );
+	assert.equal(
+		minimumRenderableObjectsForExample( 'webgpu_shadowmap_progressive.html' ),
+		69,
+		'progressive shadows wait beyond the ground and first helper for the explicitly managed GLTF subject',
+	);
 	assert.equal( minimumRenderableObjectsForExample( 'webgpu_postprocessing_retro.html' ), 2 );
+	assert.equal(
+		minimumRenderableObjectsForExample( 'webgpu_postprocessing_ssr.html' ),
+		4,
+		'SSR waits for its reflective floor and three loaded model meshes',
+	);
 	assert.equal( minimumRenderableObjectsForExample( 'webgpu_postprocessing_motion_blur.html' ), 6 );
 	assert.equal( minimumRenderableObjectsForExample( 'webgpu_loader_materialx.html' ), 65 );
-	assert.equal( minimumRenderableObjectsForExample( 'webgpu_tsl_wood.html' ), 55 );
+	assert.equal(
+		minimumRenderableObjectsForExample( 'webgpu_tsl_wood.html' ),
+		57,
+		'wood waits for its grid, 15 labels, 40 preset blocks, and final custom block',
+	);
 	assert.equal( minimumRenderableObjectsForExample( 'webgpu_materials.html' ), 1 );
 
 } );
@@ -321,8 +458,15 @@ test( 'callback-driven simulations wait for capture and replay async work', () =
 
 	assert.equal( holdAnimationUntilReadyForExample( 'webgpu_backdrop_water.html' ), true );
 	assert.equal( holdAnimationUntilReadyForExample( 'webgpu_compute_particles_rain.html' ), true );
+	assert.equal( holdAnimationUntilReadyForExample( 'webgpu_upscaling_taau.html' ), true );
+	assert.equal( holdAnimationUntilReadyForExample( 'webgpu_tsl_editor.html' ), true );
 	assert.equal( holdAnimationUntilReadyForExample( 'webgpu_postprocessing_traa.html' ), true );
+	assert.equal( holdAnimationUntilReadyForExample( 'webgpu_postprocessing_ssr_denoise.html' ), false );
 	assert.equal( holdAnimationUntilReadyForExample( 'webgpu_postprocessing_ssgi_ballpool.html' ), true );
+	assert.equal( holdAnimationUntilReadyForExample( 'webgpu_reflection_roughness.html' ), true );
+	assert.equal( holdAnimationUntilReadyForExample( 'webgpu_sandbox.html' ), true );
+	assert.equal( holdAnimationUntilReadyForExample( 'webgpu_tsl_graph.html' ), true );
+	assert.equal( holdAnimationUntilReadyForExample( 'webgpu_textures_anisotropy.html' ), true );
 	assert.equal( holdAnimationUntilReadyForExample( 'webgpu_materials.html' ), false );
 
 } );
@@ -339,15 +483,21 @@ test( 'temporal examples freeze only after their required history is available',
 
 	assert.equal( settleFramesForExample( 'webgpu_postprocessing_motion_blur.html' ), 2 );
 	assert.equal( settleFramesForExample( 'webgpu_postprocessing_ssgi.html' ), 64 );
+	assert.equal( settleFramesForExample( 'webgpu_postprocessing_ssr_denoise.html' ), 32 );
 	assert.equal( settleFramesForExample( 'webgpu_postprocessing_ssgi_ballpool.html' ), 64 );
 	assert.equal( settleFramesForExample( 'webgpu_postprocessing_ao.html' ), 16 );
 	assert.equal( settleFramesForExample( 'webgpu_postprocessing_traa.html' ), 80 );
+	assert.equal( settleFramesForExample( 'webgpu_upscaling_taau.html' ), 80 );
 	assert.equal( settleFramesForExample( 'webgpu_compute_water.html' ), 2 );
+	assert.equal( settleFramesForExample( 'webgpu_compute_rasterizer_ibl.html' ), 1 );
 	assert.equal( settleFramesForExample( 'webgpu_camera_array.html' ), 1 );
 	assert.equal( settleFramesForExample( 'webgpu_camera_logarithmicdepthbuffer.html' ), 1 );
 	assert.equal( settleFramesForExample( 'webgpu_textures_anisotropy.html' ), 1 );
+	assert.equal( settleFramesForExample( 'webgpu_tsl_vfx_linkedparticles.html' ), 1 );
+	assert.equal( settleFramesForExample( 'webgpu_postprocessing_dof.html' ), 8 );
 	assert.equal( settleFramesForExample( 'webgpu_materials.html', 12 ), 12 );
 	assert.equal( settleFramesForExample( 'webgpu_postprocessing_motion_blur.html', 5, true ), 5 );
+	assert.equal( settleFramesForExample( 'webgpu_compute_rasterizer_ibl.html', 3, true ), 3 );
 
 } );
 
@@ -355,6 +505,7 @@ test( 'physics and velocity examples pin after their first deterministic tick', 
 
 	assert.equal( targetTickForExample( 'webgpu_postprocessing_motion_blur.html' ), 1 );
 	assert.equal( targetTickForExample( 'webgpu_postprocessing_ssgi_ballpool.html' ), 1 );
+	assert.equal( targetTickForExample( 'webgpu_tsl_vfx_linkedparticles.html' ), 180 );
 	assert.equal( targetTickForExample( 'webgpu_materials.html' ), 0 );
 	assert.equal( targetTickForExample( 'webgpu_postprocessing_ssgi_ballpool.html', 5, true ), 5 );
 	assert.equal( pixelGateDisabledReasonForExample( 'webgpu_postprocessing_ssgi_ballpool.html' ), null );
@@ -366,6 +517,12 @@ test( 'physics and velocity examples pin after their first deterministic tick', 
 test( 'deterministic timeout policies expose explicit render-state transactions', () => {
 
 	assert.deepEqual( deterministicTimeoutPolicyForExample( 'webgpu_compute_reduce.html' ), { delayMs: 1000, steps: 4 } );
+	assert.deepEqual( deterministicTimeoutPolicyForExample( 'webgpu_storage_buffer.html' ), { delayMs: 1000, steps: 0 } );
+	assert.equal(
+		pixelGateDisabledReasonForExample( 'webgpu_storage_buffer.html' ),
+		'volatileCompute',
+		'the stock r185 fixture dispatches a partial default workgroup and synchronizes storage writes with only workgroupBarrier()',
+	);
 	assert.equal( deterministicTimeoutPolicyForExample( 'webgpu_materials.html' ), null );
 
 } );

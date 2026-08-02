@@ -161,6 +161,7 @@ function describeObject( object ) {
 
 	if ( ! object ) return null;
 	const geometry = safeRead( object, 'geometry' );
+	const instanceMatrix = safeRead( object, 'instanceMatrix' );
 	return compactObject( {
 		type: typeTag( object ),
 		visible: safeRead( object, 'visible' ) !== false,
@@ -169,11 +170,27 @@ function describeObject( object ) {
 		skinned: safeRead( object, 'isSkinnedMesh' ) === true,
 		instanced: safeRead( object, 'isInstancedMesh' ) === true,
 		batched: safeRead( object, 'isBatchedMesh' ) === true,
-		instanceMatrix: !! safeRead( object, 'instanceMatrix' ),
+		instanceMatrix: !! instanceMatrix,
+		// r185 emits a fixed-size uniform array for InstanceNode. Persist its
+		// physical capacity so capture cannot coalesce incompatible shaders
+		// merely because both render objects are instanced.
+		instanceMatrixCount: instanceMatrixCapacity( instanceMatrix ),
 		instanceColor: !! safeRead( object, 'instanceColor' ),
 		batchColors: !! safeRead( object, '_colorsTexture' ),
 		geometry: describeGeometry( geometry ),
 	} );
+
+}
+
+function instanceMatrixCapacity( instanceMatrix ) {
+
+	if ( ! instanceMatrix ) return undefined;
+	const count = Number( safeRead( instanceMatrix, 'count' ) );
+	if ( Number.isSafeInteger( count ) && count >= 0 ) return count;
+	const array = safeRead( instanceMatrix, 'array' );
+	const itemSize = Number( safeRead( instanceMatrix, 'itemSize' ) ) || 16;
+	if ( ! array || ! Number.isSafeInteger( array.length ) || itemSize <= 0 || array.length % itemSize !== 0 ) return undefined;
+	return array.length / itemSize;
 
 }
 

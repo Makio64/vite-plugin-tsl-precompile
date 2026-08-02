@@ -1,0 +1,40 @@
+{
+  "schema": "tslp-site-measurements@1",
+  "threeVersion": "0.185.1",
+  "gzipLevel": 9,
+  "profiles": {
+    "sourceMinimal": {
+      "measurement": "strict-budget-baseline",
+      "gzipBytes": 176256,
+      "maxGzipBytes": 184000,
+      "withinBudget": true
+    },
+    "sourceAdvanced": {
+      "measurement": "strict-budget-baseline",
+      "gzipBytes": 185490,
+      "maxGzipBytes": 194000,
+      "withinBudget": true
+    },
+    "prebuilt": {
+      "measurement": "checked-bundle",
+      "rawBytes": 955943,
+      "gzipBytes": 260780,
+      "maxRawBytes": 970000,
+      "maxGzipBytes": 268000,
+      "withinBudget": true
+    }
+  },
+  "provenance": {
+    "budget": {
+      "path": "packages/runtime/build-tools/slim-budget.json",
+      "sha256": "451b215ca08a40a62df4ecdce1946fbe52455567cbeef311df00ec2e6c5983e2"
+    },
+    "prebuilt": {
+      "path": "packages/runtime/build/three.webgpu.slim.js",
+      "sha256": "b0e76d1687ef413f3b2112dce14d870b859b25a0029efb309d9d5c82cc70c2bc",
+      "metaPath": "packages/runtime/build/three.webgpu.slim.meta.json",
+      "metaSha256": "c2b17a3f89ed59d8f5ca41bebea2d3a86638599cfc3b9b1e682adb1331ccfa14",
+      "sourceFingerprint": "fdae8ed8870812f92f5945bf97ee078c08f241bd02005ef0515ca327ca602dae"
+    }
+  }
+}

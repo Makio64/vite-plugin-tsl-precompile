@@ -5,8 +5,8 @@
  *   1. Build the named example via `pnpm --filter examples-<name> build`.
  *   2. Spawn `vite preview` for that example on a free port.
  *   3. Drive Playwright Chromium with Vulkan/SwiftShader to load the page.
- *   4. Assert the canvas rendered (non-trivial pixels), animation advanced
- *      (inter-frame byte diff above threshold), and no pageerror fired.
+ *   4. Screenshot the canvas element itself, decode both PNGs to RGBA, and
+ *      assert finite content variation plus decoded inter-frame motion.
  *
  * Exits 0 on success with a one-line JSON summary on stdout. On failure,
  * exits non-zero and writes both captured frames + a structured report to
@@ -18,7 +18,14 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+	BROWSER_FAILURE_POLICY_SHA256,
+	installBrowserFailureCollector,
+} from '../browser-failure-policy.mjs';
+import { analyzePngFrames, primaryCanvasLocator, visualEvidenceFailures } from '../visual-pixel-evidence.mjs';
+
 const SELF = dirname( fileURLToPath( import.meta.url ) );
+const RESULTS_ROOT = resolve( process.env.TSLP_PREVIEW_RESULTS || resolve( SELF, 'results' ) );
 
 function getArg( prefix, def ) {
 
@@ -29,13 +36,16 @@ function getArg( prefix, def ) {
 
 const example = getArg( '--example=', 'ocean' );
 const port = parseInt( getArg( '--port=', '4173' ), 10 );
-const minNonZeroRatio = parseFloat( getArg( '--min-nonzero=', '0.5' ) );
-const minDiffRatio = parseFloat( getArg( '--min-diff=', '0.05' ) );
+const minRgbDeviation = parseFloat( getArg( '--min-rgb-deviation=', '4' ) );
+const minLuminanceDeviation = parseFloat( getArg( '--min-luminance-deviation=', '2' ) );
+const minContentFraction = parseFloat( getArg( '--min-content=', '0.005' ) );
+const minChangedFraction = parseFloat( getArg( '--min-changed=', '0.001' ) );
+const minMeanFrameDelta = parseFloat( getArg( '--min-frame-delta=', '0.02' ) );
 const firstFrameMs = parseInt( getArg( '--first-frame-ms=', '5000' ), 10 );
 const interFrameMs = parseInt( getArg( '--inter-frame-ms=', '3000' ), 10 );
 const totalTimeoutMs = parseInt( getArg( '--total-timeout-ms=', '90000' ), 10 );
 
-const resultsDir = resolve( SELF, 'results', example );
+const resultsDir = resolve( RESULTS_ROOT, example );
 mkdirSync( resultsDir, { recursive: true } );
 
 function log( msg ) { console.log( `[preview-smoke:${ example }] ${ msg }` ); }
@@ -86,7 +96,16 @@ async function main() {
 	}
 
 	report.example = example;
-	report.thresholds = { minNonZeroRatio, minDiffRatio };
+	report.thresholds = {
+		minRgbDeviation,
+		minLuminanceDeviation,
+		minContentFraction,
+		minChangedFraction,
+		minMeanFrameDelta,
+	};
+	report.harness = {
+		browserFailurePolicySha256: BROWSER_FAILURE_POLICY_SHA256,
+	};
 
 	writeFileSync( resolve( resultsDir, 'report.json' ), JSON.stringify( report, null, 2 ) );
 	console.log( JSON.stringify( report ) );
@@ -144,36 +163,43 @@ async function probe( url ) {
 	} );
 	const ctx = await browser.newContext( { viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 } );
 	const page = await ctx.newPage();
-	const pageErrors = [];
-	const consoleErrors = [];
-	page.on( 'pageerror', ( e ) => pageErrors.push( e.message ) );
-	page.on( 'console', ( m ) => { if ( m.type() === 'error' ) consoleErrors.push( m.text() ); } );
+	const failureCollector = installBrowserFailureCollector( page, { pageUrl: url } );
 
 	try {
 
 		await page.goto( url, { waitUntil: 'networkidle', timeout: 30000 } );
+		const canvas = await primaryCanvasLocator( page );
+		await canvas.waitFor( { state: 'visible', timeout: 30000 } );
 		await page.waitForTimeout( firstFrameMs );
-		const a = await page.screenshot( { fullPage: false } );
+		const a = await canvas.screenshot();
 		await page.waitForTimeout( interFrameMs );
-		const b = await page.screenshot( { fullPage: false } );
+		const b = await canvas.screenshot();
 
 		writeFileSync( resolve( resultsDir, 'frame-a.png' ), a );
 		writeFileSync( resolve( resultsDir, 'frame-b.png' ), b );
 
-		const aStats = pixelStats( a );
-		const diffRatio = byteDiffRatio( a, b );
-		const nonZeroRatio = aStats.nonZero / aStats.total;
-
 		const failures = [];
-		if ( pageErrors.length > 0 ) failures.push( `${ pageErrors.length } pageerror(s): ${ pageErrors.slice( 0, 3 ).join( '; ' ) }` );
-		if ( consoleErrors.length > 0 ) failures.push( `${ consoleErrors.length } console.error(s): ${ consoleErrors.slice( 0, 3 ).join( '; ' ) }` );
-		if ( nonZeroRatio < minNonZeroRatio ) failures.push( `canvas appears blank (nonZeroRatio=${ nonZeroRatio.toFixed( 3 ) } < ${ minNonZeroRatio })` );
-		if ( diffRatio < minDiffRatio ) failures.push( `frames identical / no animation (diffRatio=${ diffRatio.toFixed( 3 ) } < ${ minDiffRatio })` );
+		const browserFailures = failureCollector.failures();
+		const pageErrors = browserFailures
+			.filter( failure => failure.kind === 'pageerror' )
+			.map( failure => failure.message );
+		const consoleErrors = browserFailures
+			.filter( failure => failure.kind === 'console' )
+			.map( failure => failure.message );
+		failures.push( ...browserFailures.map( failure => failure.text ) );
+		const pixelEvidence = await analyzePngFrames( page, a, b );
+		failures.push( ...visualEvidenceFailures( pixelEvidence, {
+			minRgbDeviation,
+			minLuminanceDeviation,
+			minContentFraction,
+			minChangedFraction,
+			minMeanFrameDelta,
+		} ) );
 
 		return {
 			ok: failures.length === 0,
-			nonZeroRatio: Number( nonZeroRatio.toFixed( 4 ) ),
-			diffRatio: Number( diffRatio.toFixed( 4 ) ),
+			pixelEvidence,
+			browserFailures,
 			pageErrors,
 			consoleErrors,
 			failures,
@@ -181,39 +207,23 @@ async function probe( url ) {
 
 	} finally {
 
+		failureCollector.dispose();
 		await browser.close();
 
 	}
 
 }
 
-function pixelStats( buf ) {
-
-	let total = 0; let nonZero = 0;
-	for ( let i = 8000; i < buf.length; i += 200 ) {
-
-		total ++;
-		if ( buf[ i ] > 5 ) nonZero ++;
-
-	}
-	return { total, nonZero };
-
-}
-
-function byteDiffRatio( a, b ) {
-
-	const n = Math.min( a.length, b.length );
-	if ( n === 0 ) return 0;
-	let diff = 0;
-	for ( let i = 0; i < n; i ++ ) if ( a[ i ] !== b[ i ] ) diff ++;
-	return diff / n;
-
-}
-
 main().catch( ( err ) => {
 
 	console.error( `[preview-smoke:${ example }] FAIL:`, err );
-	writeFileSync( resolve( resultsDir, 'report.json' ), JSON.stringify( { ok: false, error: err && err.message || String( err ) }, null, 2 ) );
+	writeFileSync( resolve( resultsDir, 'report.json' ), JSON.stringify( {
+		ok: false,
+		error: err && err.message || String( err ),
+		harness: {
+			browserFailurePolicySha256: BROWSER_FAILURE_POLICY_SHA256,
+		},
+	}, null, 2 ) );
 	process.exit( 1 );
 
 } );

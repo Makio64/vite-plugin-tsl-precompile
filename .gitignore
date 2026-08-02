@@ -11,11 +11,42 @@ dist/
 packages/plugin/test/.scratch-shadow-live/
 *.log
 
-# Per-project artifact caches (examples produce these when running the plugin)
+# Captured artifacts are generated build inputs. Keep canonical example
+# recaptures visible to Git so a manifest cannot be committed without the JSON
+# it references.
 packages/examples/**/artifacts/
+# The canonical examples are release/CI fixtures and must survive a clean
+# checkout after every recapture.
+!packages/examples/getting-started/artifacts/
+!packages/examples/getting-started/artifacts/**
+# The ocean preview is a release smoke fixture, so its captured production
+# inputs must be present in a clean checkout just like the other checked
+# example fixtures.
+!packages/examples/ocean/artifacts/
+!packages/examples/ocean/artifacts/**
+!packages/examples/pbr-shadows/artifacts/
+!packages/examples/pbr-shadows/artifacts/**
+!packages/examples/shadow-debug/artifacts/
+!packages/examples/shadow-debug/artifacts/**
+!packages/examples/postprocessing-debug/artifacts/
+!packages/examples/postprocessing-debug/artifacts/**
+!packages/examples/pmrem-debug/artifacts/
+!packages/examples/pmrem-debug/artifacts/**
+!packages/examples/mrt-debug/artifacts/
+!packages/examples/mrt-debug/artifacts/**
+!packages/examples/background/artifacts/
+!packages/examples/background/artifacts/**
+!packages/examples/compute-debug/artifacts/
+!packages/examples/compute-debug/artifacts/**
+# The ten public free-TSL routes are production site inputs. A clean Pages
+# checkout must have their captured material and renderer-output artifacts.
+!packages/examples/wow-showcase/artifacts/
+!packages/examples/wow-showcase/artifacts/**
 packages/examples/**/.tsl-precompile-cache/
 packages/site/public/live/
 packages/site/public/live-examples.json
+packages/site/public/agent/
+packages/plugin/skill/
 
 # Playwright/CI scratch
 playwright-report/
