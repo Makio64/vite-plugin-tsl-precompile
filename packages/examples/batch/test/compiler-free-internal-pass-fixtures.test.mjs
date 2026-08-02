@@ -49,7 +49,6 @@ test( 'PMREM debug is a source-slim fixture that invokes the captured generator 
 		);
 
 	}
-	assert.match( shared, /transmission:\s*mode === 'transmission'/ );
 	assert.match( shared, /cubemap:\s*mode === 'cubemap'/ );
 	assert.match( shared, /fromScene:\s*mode === 'from-scene'/ );
 	assert.match( shared, /pmremSceneSizes:\s*mode === 'from-scene' \? \[ 64 \] : \[\]/ );

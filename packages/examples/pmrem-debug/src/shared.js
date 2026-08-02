@@ -147,11 +147,6 @@ function addSceneGeometry( scene, { transmission = false, cubemap = false, fromS
 	attachPrecompileSource( floorMaterial, floor, scene );
 	if ( ! IS_E2E_REPLAY ) {
 
-		// Capture names need literal string arguments at every call site.
-		// Equirect keeps the shared family. Transmission compiles a physical
-		// glass material on the same renderer first; cubemap/from-scene bake
-		// different PMREM passes — each shifts the Three r185 builder layout
-		// under an otherwise identical CubeUV selector.
 		if ( fromScene ) floorMaterial.precompile( 'pmrem-debug-from-scene-floor' );
 		else if ( cubemap ) floorMaterial.precompile( 'pmrem-debug-cubemap-floor' );
 		else if ( transmission ) floorMaterial.precompile( 'pmrem-debug-transmission-floor' );
@@ -329,10 +324,11 @@ export async function runPMREMDebugExample( {
 	}
 
 	scene.add( new AmbientLight( 0xffffff, 0.03 ) );
-	// Equirect owns the shared visible material names. Transmission, cubemap,
-	// and from-scene each leave a different Three r185 builder layout under an
-	// otherwise identical CubeUV render selector, so they use explicit
-	// route-owned marker names.
+	// Every route owns durable material identities. Even when two pages execute
+	// the same PMREM path, their complete scene topology can give Three r185
+	// distinct main-material builder layouts under otherwise identical render
+	// selectors (transmission adds another physical material). Route-owned names
+	// prevent those divergent shaders from being merged into one signed family.
 	const light = new DirectionalLight( 0xffffff, SHARED_DIRECTIONAL_LIGHT_INTENSITY );
 	light.position.set( 3, 4, 2 );
 	scene.add( light );
