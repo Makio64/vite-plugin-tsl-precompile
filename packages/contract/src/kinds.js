@@ -5,7 +5,11 @@ import {
 	validateDynamicBindingSource,
 	validateStorageBufferSnapshot,
 } from './dynamic-bindings.js';
-import { collectArtifactVariantCandidates, createArtifactVariantPayloadFingerprint } from './artifact-variants.js';
+import {
+	ARTIFACT_VARIANT_FIELDS,
+	collectArtifactVariantCandidates,
+	createArtifactVariantPayloadFingerprint,
+} from './artifact-variants.js';
 import { validateArtifactLightIdentities } from './light-identities.js';
 import { validateComputeBindingsDescriptor } from './compute-bindings.js';
 import { validateMaterialComputeDescriptor } from './material-compute.js';
@@ -1397,17 +1401,31 @@ function validateSignedArtifactFamily( artifact, label, errors ) {
 
 			if ( typeof selector !== 'string' || selector.length === 0 ) continue;
 			const existing = selectorPayloads.get( selector );
-			if ( existing !== undefined && existing !== fingerprint ) {
+			if ( existing !== undefined && existing.fingerprint !== fingerprint ) {
+
+				const differingFields = ARTIFACT_VARIANT_FIELDS.filter( ( field ) =>
+					field !== 'cacheKey' &&
+					field !== 'variantKey' &&
+					field !== 'renderContextSelectors' &&
+					stableJsonStringify( existing.candidate[ field ], `selector collision ${ field }` ) !==
+					stableJsonStringify( candidate[ field ], `selector collision ${ field }` )
+				);
+				const existingKey = resolveArtifactVariantKey( existing.candidate );
+				const candidateKey = resolveArtifactVariantKey( candidate );
+				const detail = differingFields.length > 0
+					? ` Divergent fields: ${ differingFields.join( ', ' ) }.`
+					: '';
 
 				errors.push( validationError(
 					'artifact.renderContextSelector.collision',
-					`${ label}: one renderContextSelector identifies divergent variant payloads`,
+					`${ label}: one renderContextSelector identifies divergent variant payloads ` +
+					`(${ JSON.stringify( existingKey ) } and ${ JSON.stringify( candidateKey ) }).${ detail }`,
 					'variants',
 				) );
 
 			} else {
 
-				selectorPayloads.set( selector, fingerprint );
+				selectorPayloads.set( selector, { fingerprint, candidate } );
 
 			}
 
